@@ -6,19 +6,26 @@
 
 TEST_DIRS += ['test']
 
+EXPORTS += [
+    'nsCookiePermission.h',
+]
+
 UNIFIED_SOURCES += [
     'nsCookieModule.cpp',
     'nsCookiePermission.cpp',
     'nsPermission.cpp',
     'nsPermissionManager.cpp',
-    'nsPopupWindowManager.cpp',
+]
+
+LOCAL_INCLUDES += [
+    '/caps',
 ]
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
 
 with Files('**'):

@@ -7,18 +7,13 @@
 
 // Globals
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cu = Components.utils;
-var Cr = Components.results;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function checkService(service, interface) {
-  do_print("Checking that Services." + service + " is an " + interface);
-  do_check_true(service in Services);
-  do_check_true(Services[service] instanceof interface);
+  info("Checking that Services." + service + " is an " + interface);
+  Assert.ok(service in Services);
+  Assert.ok(Services[service] instanceof interface);
 }
 
 // Tests
@@ -28,23 +23,19 @@ function run_test() {
 
   checkService("appShell", Ci.nsIAppShellService);
   checkService("appinfo", Ci.nsIXULRuntime);
-  checkService("blocklist", Ci.nsIBlocklistService);
-  checkService("cache", Ci.nsICacheService);
   checkService("cache2", Ci.nsICacheStorageService);
   checkService("clipboard", Ci.nsIClipboard);
   checkService("console", Ci.nsIConsoleService);
-  checkService("contentPrefs", Ci.nsIContentPrefService);
-  checkService("cookies", Ci.nsICookieManager2);
+  checkService("cookies", Ci.nsICookieManager);
   checkService("dirsvc", Ci.nsIDirectoryService);
   checkService("dirsvc", Ci.nsIProperties);
   checkService("DOMRequest", Ci.nsIDOMRequestService);
   checkService("domStorageManager", Ci.nsIDOMStorageManager);
-  checkService("downloads", Ci.nsIDownloadManager);
   checkService("droppedLinkHandler", Ci.nsIDroppedLinkHandler);
   checkService("eTLD", Ci.nsIEffectiveTLDService);
   checkService("focus", Ci.nsIFocusManager);
   checkService("io", Ci.nsIIOService);
-  checkService("io", Ci.nsIIOService2);
+  checkService("intl", Ci.mozIMozIntl);
   checkService("locale", Ci.mozILocaleService);
   checkService("logins", Ci.nsILoginManager);
   checkService("obs", Ci.nsIObserverService);
@@ -71,17 +62,21 @@ function run_test() {
   if ("nsIAndroidBridge" in Ci) {
     checkService("androidBridge", Ci.nsIAndroidBridge);
   }
+  if ("@mozilla.org/browser/enterprisepolicies;1" in Cc) {
+    checkService("policies", Ci.nsIEnterprisePolicies);
+  }
+
 
   // In xpcshell tests, the "@mozilla.org/xre/app-info;1" component implements
   // only the nsIXULRuntime interface, but not nsIXULAppInfo.  To test the
   // service getter for the latter interface, load mock app-info.
   let tmp = {};
-  Cu.import("resource://testing-common/AppInfo.jsm", tmp);
+  ChromeUtils.import("resource://testing-common/AppInfo.jsm", tmp);
   tmp.updateAppInfo();
 
   // We need to reload the module to update the lazy getter.
   Cu.unload("resource://gre/modules/Services.jsm");
-  Cu.import("resource://gre/modules/Services.jsm");
+  ChromeUtils.import("resource://gre/modules/Services.jsm");
 
   checkService("appinfo", Ci.nsIXULAppInfo);
 

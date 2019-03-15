@@ -10,10 +10,13 @@
 
 #include "GrPathRenderer.h"
 
+#include "GrTypesPriv.h"
+#include "SkNoncopyable.h"
 #include "SkTypes.h"
 #include "SkTArray.h"
 
 class GrContext;
+class GrCoverageCountingPathRenderer;
 
 /**
  * Keeps track of an ordered list of path renderers. When a path needs to be
@@ -24,23 +27,17 @@ class GrContext;
 class GrPathRendererChain : public SkNoncopyable {
 public:
     struct Options {
-        bool fDisableDistanceFieldRenderer = false;
         bool fAllowPathMaskCaching = false;
-        bool fDisableAllPathRenderers = false;
+        GpuPathRenderers fGpuPathRenderers = GpuPathRenderers::kAll;
     };
     GrPathRendererChain(GrContext* context, const Options&);
 
-    ~GrPathRendererChain();
-
     /** Documents how the caller plans to use a GrPathRenderer to draw a path. It affects the PR
         returned by getPathRenderer */
-    enum DrawType {
-        kColor_DrawType,                    // draw to the color buffer, no AA
-        kColorAntiAlias_DrawType,           // draw to color buffer, with partial coverage AA
-        kStencilOnly_DrawType,              // draw just to the stencil buffer
-        kStencilAndColor_DrawType,          // draw the stencil and color buffer, no AA
-        kStencilAndColorAntiAlias_DrawType  // draw the stencil and color buffer, with partial
-                                            // coverage AA.
+    enum class DrawType {
+        kColor,            // draw to the color buffer, no AA
+        kStencil,          // draw just to the stencil buffer
+        kStencilAndColor,  // draw the stencil and color buffer, no AA
     };
 
     /** Returns a GrPathRenderer compatible with the request if one is available. If the caller
@@ -51,14 +48,18 @@ public:
                                     DrawType drawType,
                                     GrPathRenderer::StencilSupport* stencilSupport);
 
-private:
-    // takes a ref and unrefs in destructor
-    GrPathRenderer* addPathRenderer(GrPathRenderer* pr);
+    /** Returns a direct pointer to the coverage counting path renderer, or null if it is not in the
+        chain. */
+    GrCoverageCountingPathRenderer* getCoverageCountingPathRenderer() {
+        return fCoverageCountingPathRenderer;
+    }
 
+private:
     enum {
         kPreAllocCount = 8,
     };
-    SkSTArray<kPreAllocCount, GrPathRenderer*, true>    fChain;
+    SkSTArray<kPreAllocCount, sk_sp<GrPathRenderer>>    fChain;
+    GrCoverageCountingPathRenderer*                     fCoverageCountingPathRenderer = nullptr;
 };
 
 #endif

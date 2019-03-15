@@ -38,7 +38,7 @@ const testData = [
   ["VK_RIGHT", {}, "royalblue", !OPEN, !SELECTED, !CHANGE],
   [" ", {}, "royalblue aliceblue", OPEN, SELECTED, CHANGE],
   ["!", {}, "royalblue !important", !OPEN, !SELECTED, CHANGE],
-  ["VK_ESCAPE", {}, null, !OPEN, !SELECTED, CHANGE]
+  ["VK_ESCAPE", {}, null, !OPEN, !SELECTED, CHANGE],
 ];
 
 const TEST_URI = `
@@ -50,36 +50,36 @@ const TEST_URI = `
   <h1>Test element</h1>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {toolbox, inspector, view, testActor} = yield openRuleView();
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {toolbox, inspector, view, testActor} = await openRuleView();
 
   info("Test autocompletion after 1st page load");
-  yield runAutocompletionTest(toolbox, inspector, view);
+  await runAutocompletionTest(toolbox, inspector, view);
 
   info("Test autocompletion after page navigation");
-  yield reloadPage(inspector, testActor);
-  yield runAutocompletionTest(toolbox, inspector, view);
+  await reloadPage(inspector, testActor);
+  await runAutocompletionTest(toolbox, inspector, view);
 });
 
-function* runAutocompletionTest(toolbox, inspector, view) {
+async function runAutocompletionTest(toolbox, inspector, view) {
   info("Selecting the test node");
-  yield selectNode("h1", inspector);
+  await selectNode("h1", inspector);
 
   info("Focusing a new css property editable property");
-  let ruleEditor = getRuleViewRuleEditor(view, 1);
-  let editor = yield focusNewRuleViewProperty(ruleEditor);
+  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  let editor = await focusNewRuleViewProperty(ruleEditor);
 
   info("Starting to test for css property completion");
   for (let i = 0; i < testData.length; i++) {
     // Re-define the editor at each iteration, because the focus may have moved
     // from property to value and back
     editor = inplaceEditor(view.styleDocument.activeElement);
-    yield testCompletion(testData[i], editor, view);
+    await testCompletion(testData[i], editor, view);
   }
 }
 
-function* testCompletion([key, modifiers, completion, open, selected, change],
+async function testCompletion([key, modifiers, completion, open, selected, change],
                          editor, view) {
   info("Pressing key " + key);
   info("Expecting " + completion);
@@ -101,17 +101,19 @@ function* testCompletion([key, modifiers, completion, open, selected, change],
   }
 
   // Also listening for popup opened/closed events if needed.
-  let popupEvent = open ? "popup-opened" : "popup-closed";
-  let onPopupEvent = editor.popup.isOpen !== open ? once(editor.popup, popupEvent) : null;
+  const popupEvent = open ? "popup-opened" : "popup-closed";
+  const onPopupEvent = editor.popup.isOpen !== open
+    ? once(editor.popup, popupEvent)
+    : null;
 
   info("Synthesizing key " + key + ", modifiers: " + Object.keys(modifiers));
   EventUtils.synthesizeKey(key, modifiers, view.styleWindow);
 
-  // Flush the throttle for the preview text.
-  view.throttle.flush();
+  // Flush the debounce for the preview text.
+  view.debounce.flush();
 
-  yield onDone;
-  yield onPopupEvent;
+  await onDone;
+  await onPopupEvent;
 
   info("Checking the state");
   if (completion !== null) {

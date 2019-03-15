@@ -8,9 +8,9 @@ add_task(async function() {
       observe(subject, topc, data) {
         Services.obs.removeObserver(observer, "addon-install-failed");
         resolve();
-      }
+      },
     };
-    Services.obs.addObserver(observer, "addon-install-failed", false);
+    Services.obs.addObserver(observer, "addon-install-failed");
   });
 
   let url = `${TESTROOT}/addons/browser_dragdrop_incompat.xpi`;

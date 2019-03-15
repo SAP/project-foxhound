@@ -11,8 +11,7 @@
  */
 
 var protocol = require("devtools/shared/protocol");
-var {Arg, Option, RetVal} = protocol;
-var events = require("sdk/event/core");
+var {RetVal} = protocol;
 
 function simpleHello() {
   return {
@@ -28,12 +27,12 @@ const rootSpec = protocol.generateActorSpec({
   methods: {
     simpleReturn: {
       response: { value: RetVal() },
-    }
-  }
+    },
+  },
 });
 
 var RootActor = protocol.ActorClassWithSpec(rootSpec, {
-  initialize: function (conn) {
+  initialize: function(conn) {
     protocol.Actor.prototype.initialize.call(this, conn);
     // Root actor owns itself.
     this.manage(this);
@@ -43,41 +42,41 @@ var RootActor = protocol.ActorClassWithSpec(rootSpec, {
 
   sayHello: simpleHello,
 
-  simpleReturn: function () {
+  simpleReturn: function() {
     return this.sequence++;
-  }
+  },
 });
 
-var RootFront = protocol.FrontClassWithSpec(rootSpec, {
-  initialize: function (client) {
+class RootFront extends protocol.FrontClassWithSpec(rootSpec) {
+  constructor(client) {
+    super(client);
     this.actorID = "root";
-    protocol.Front.prototype.initialize.call(this, client);
     // Root owns itself.
     this.manage(this);
   }
-});
+}
 
 function run_test() {
   if (!Services.prefs.getBoolPref("javascript.options.asyncstack")) {
-    do_print("Async stacks are disabled.");
+    info("Async stacks are disabled.");
     return;
   }
 
   DebuggerServer.createRootActor = RootActor;
   DebuggerServer.init();
 
-  let trace = connectPipeTracing();
-  let client = new DebuggerClient(trace);
-  let rootClient;
+  const trace = connectPipeTracing();
+  const client = new DebuggerClient(trace);
+  let rootFront;
 
   client.connect().then(function onConnect() {
-    rootClient = RootFront(client);
+    rootFront = new RootFront(client);
 
-    rootClient.simpleReturn().then(() => {
+    rootFront.simpleReturn().then(() => {
       let stack = Components.stack;
       while (stack) {
-        do_print(stack.name);
-        if (stack.name == "onConnect") {
+        info(stack.name);
+        if (stack.name.includes("run_test/onConnect")) {
           // Reached back to outer function before request
           ok(true, "Complete stack");
           return;

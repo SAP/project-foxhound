@@ -1,15 +1,14 @@
 "use strict";
 
-module.exports = { // eslint-disable-line no-undef
+module.exports = {
   "extends": [
-    "../../../testing/mochitest/browser.eslintrc.js"
+    "plugin:mozilla/browser-test"
   ],
 
   "rules": {
     "no-unused-vars": ["error", {
-      "vars": "all",
-      "varsIgnorePattern": "^(Cc|Ci|Cr|Cu|EXPORTED_SYMBOLS)$",
-      "args": "none"
+      "args": "none",
+      "vars": "all"
     }]
   }
 };

@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,21 +16,14 @@
 #include "nsBox.h"
 #include "nsGridLayout2.h"
 
-
-nsGridCell::nsGridCell():mBoxInColumn(nullptr),mBoxInRow(nullptr)
-{
-    MOZ_COUNT_CTOR(nsGridCell);
-}                                               
-        
-nsGridCell::~nsGridCell()
-{
-    MOZ_COUNT_DTOR(nsGridCell);
+nsGridCell::nsGridCell() : mBoxInColumn(nullptr), mBoxInRow(nullptr) {
+  MOZ_COUNT_CTOR(nsGridCell);
 }
 
-nsSize
-nsGridCell::GetXULPrefSize(nsBoxLayoutState& aState)
-{
-  nsSize sum(0,0);
+nsGridCell::~nsGridCell() { MOZ_COUNT_DTOR(nsGridCell); }
+
+nsSize nsGridCell::GetXULPrefSize(nsBoxLayoutState& aState) {
+  nsSize sum(0, 0);
 
   // take our 2 children and add them up.
   // we are as wide as the widest child plus its left offset
@@ -56,9 +50,7 @@ nsGridCell::GetXULPrefSize(nsBoxLayoutState& aState)
   return sum;
 }
 
-nsSize
-nsGridCell::GetXULMinSize(nsBoxLayoutState& aState)
-{
+nsSize nsGridCell::GetXULMinSize(nsBoxLayoutState& aState) {
   nsSize sum(0, 0);
 
   // take our 2 children and add them up.
@@ -86,9 +78,7 @@ nsGridCell::GetXULMinSize(nsBoxLayoutState& aState)
   return sum;
 }
 
-nsSize
-nsGridCell::GetXULMaxSize(nsBoxLayoutState& aState)
-{
+nsSize nsGridCell::GetXULMaxSize(nsBoxLayoutState& aState) {
   nsSize sum(NS_INTRINSICSIZE, NS_INTRINSICSIZE);
 
   // take our 2 children and add them up.
@@ -97,7 +87,7 @@ nsGridCell::GetXULMaxSize(nsBoxLayoutState& aState)
 
   if (mBoxInColumn) {
     nsSize max = mBoxInColumn->GetXULMaxSize(aState);
- 
+
     nsBox::AddMargin(mBoxInColumn, max);
     nsGridLayout2::AddOffset(mBoxInColumn, max);
 
@@ -116,12 +106,7 @@ nsGridCell::GetXULMaxSize(nsBoxLayoutState& aState)
   return sum;
 }
 
-
-bool
-nsGridCell::IsXULCollapsed()
-{
+bool nsGridCell::IsXULCollapsed() {
   return ((mBoxInColumn && mBoxInColumn->IsXULCollapsed()) ||
           (mBoxInRow && mBoxInRow->IsXULCollapsed()));
 }
-
-

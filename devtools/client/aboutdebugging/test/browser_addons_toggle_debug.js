@@ -9,57 +9,61 @@
 const ADDON_ID = "test-devtools@mozilla.org";
 const ADDON_NAME = "test-devtools";
 
-add_task(function* () {
+add_task(async function() {
   info("Turn off addon debugging.");
-  yield new Promise(resolve => {
-    let options = {"set": [
+  await new Promise(resolve => {
+    const options = {"set": [
       ["devtools.chrome.enabled", false],
       ["devtools.debugger.remote-enabled", false],
     ]};
     SpecialPowers.pushPrefEnv(options, resolve);
   });
 
-  let { tab, document } = yield openAboutDebugging("addons");
-  yield waitForInitialAddonList(document);
+  const { tab, document } = await openAboutDebugging("addons");
+  await waitForInitialAddonList(document);
 
   info("Install a test addon.");
-  yield installAddon({
+  await installAddon({
     document,
-    path: "addons/unpacked/install.rdf",
+    path: "addons/unpacked/manifest.json",
     name: ADDON_NAME,
   });
 
-  let addonDebugCheckbox = document.querySelector("#enable-addon-debugging");
+  const addonDebugCheckbox = document.querySelector("#enable-addon-debugging");
   ok(!addonDebugCheckbox.checked, "Addons debugging should be disabled.");
 
   info("Check all debug buttons are disabled.");
-  let debugButtons = [...document.querySelectorAll("#addons .debug-button")];
+  const debugButtons = [...document.querySelectorAll("#addons .debug-button")];
   ok(debugButtons.every(b => b.disabled), "Debug buttons should be disabled");
 
   info("Click on 'Enable addons debugging' checkbox.");
-  let addonsContainer = document.getElementById("addons");
-  let onAddonsMutation = waitForMutation(addonsContainer,
-    { subtree: true, attributes: true });
   addonDebugCheckbox.click();
-  yield onAddonsMutation;
 
-  info("Check all debug buttons are enabled.");
-  ok(addonDebugCheckbox.checked, "Addons debugging should be enabled.");
-  debugButtons = [...document.querySelectorAll("#addons .debug-button")];
-  ok(debugButtons.every(b => !b.disabled), "Debug buttons should be enabled");
+  info("Wait until all debug buttons are enabled.");
+  waitUntil(() => addonDebugCheckbox.checked && areDebugButtonsEnabled(document), 100);
+  info("Addons debugging should be enabled and debug buttons are enabled");
 
   info("Click again on 'Enable addons debugging' checkbox.");
-  onAddonsMutation = waitForMutation(addonsContainer,
-    { subtree: true, attributes: true });
   addonDebugCheckbox.click();
-  yield onAddonsMutation;
 
-  info("Check all debug buttons are disabled again.");
-  debugButtons = [...document.querySelectorAll("#addons .debug-button")];
-  ok(debugButtons.every(b => b.disabled), "Debug buttons should be disabled");
+  info("Wait until all debug buttons are enabled.");
+  waitUntil(() => areDebugButtonsDisabled(document), 100);
+  info("All debug buttons are disabled again.");
 
   info("Uninstall addon installed earlier.");
-  yield uninstallAddon({document, id: ADDON_ID, name: ADDON_NAME});
+  await uninstallAddon({document, id: ADDON_ID, name: ADDON_NAME});
 
-  yield closeAboutDebugging(tab);
+  await closeAboutDebugging(tab);
 });
+
+function getDebugButtons(document) {
+  return [...document.querySelectorAll("#addons .debug-button")];
+}
+
+function areDebugButtonsEnabled(document) {
+  return getDebugButtons(document).every(b => !b.disabled);
+}
+
+function areDebugButtonsDisabled(document) {
+  return getDebugButtons(document).every(b => b.disabled);
+}

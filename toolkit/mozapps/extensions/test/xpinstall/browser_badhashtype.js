@@ -13,11 +13,11 @@ function test() {
     "Unsigned XPI": {
       URL: TESTROOT + "amosigned.xpi",
       Hash: "foo:3d0dc22e1f394e159b08aaf5f0f97de4d5c65f4f",
-      toString() { return this.URL; }
-    }
+      toString() { return this.URL; },
+    },
   }));
-  gBrowser.selectedTab = gBrowser.addTab();
-  gBrowser.loadURI(TESTROOT + "installtrigger.html?" + triggers);
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
+  BrowserTestUtils.loadURI(gBrowser, TESTROOT + "installtrigger.html?" + triggers);
 }
 
 function download_failed(install) {

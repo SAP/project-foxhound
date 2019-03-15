@@ -4,8 +4,8 @@
 "use strict";
 
 function simulateItemDragAndEnd(aToDrag, aTarget) {
-  var ds = Components.classes["@mozilla.org/widget/dragservice;1"].
-           getService(Components.interfaces.nsIDragService);
+  var ds = Cc["@mozilla.org/widget/dragservice;1"].
+           getService(Ci.nsIDragService);
 
   ds.startDragSession();
   try {
@@ -19,8 +19,8 @@ function simulateItemDragAndEnd(aToDrag, aTarget) {
   }
 }
 
-add_task(function* checkNoAddingToPanel() {
-  let area = CustomizableUI.AREA_PANEL;
+add_task(async function checkNoAddingToPanel() {
+  let area = CustomizableUI.AREA_FIXED_OVERFLOW_PANEL;
   let previousPlacements = getAreaWidgetIds(area);
   CustomizableUI.addWidgetToArea("separator", area);
   CustomizableUI.addWidgetToArea("spring", area);
@@ -33,7 +33,7 @@ add_task(function* checkNoAddingToPanel() {
   }
 });
 
-add_task(function* checkAddingToToolbar() {
+add_task(async function checkAddingToToolbar() {
   let area = CustomizableUI.AREA_NAVBAR;
   let previousPlacements = getAreaWidgetIds(area);
   CustomizableUI.addWidgetToArea("separator", area);
@@ -42,7 +42,7 @@ add_task(function* checkAddingToToolbar() {
   let expectedPlacements = [...previousPlacements].concat([
     /separator/,
     /spring/,
-    /spacer/
+    /spacer/,
   ]);
   assertAreaPlacements(area, expectedPlacements);
 
@@ -60,9 +60,9 @@ add_task(function* checkAddingToToolbar() {
 });
 
 
-add_task(function* checkDragging() {
-  let startArea = CustomizableUI.AREA_NAVBAR;
-  let targetArea = CustomizableUI.AREA_PANEL;
+add_task(async function checkDragging() {
+  let startArea = CustomizableUI.AREA_TABSTRIP;
+  let targetArea = CustomizableUI.AREA_FIXED_OVERFLOW_PANEL;
   let startingToolbarPlacements = getAreaWidgetIds(startArea);
   let startingTargetPlacements = getAreaWidgetIds(targetArea);
 
@@ -79,9 +79,12 @@ add_task(function* checkDragging() {
   }
   is(elementsToMove.length, 3, "Should have 3 elements to try and drag.");
 
-  yield startCustomizing();
+  await startCustomizing();
+  let existingSpecial = null;
+  existingSpecial = gCustomizeMode.visiblePalette.querySelector("toolbarspring");
+  ok(existingSpecial, "Should have a flexible space in the palette by default in photon");
   for (let id of elementsToMove) {
-    simulateItemDragAndEnd(document.getElementById(id), PanelUI.contents);
+    simulateItemDragAndEnd(document.getElementById(id), document.getElementById(targetArea));
   }
 
   assertAreaPlacements(startArea, placementsWithSpecials);
@@ -94,14 +97,16 @@ add_task(function* checkDragging() {
   assertAreaPlacements(startArea, startingToolbarPlacements);
   assertAreaPlacements(targetArea, startingTargetPlacements);
 
-  ok(!gCustomizeMode.visiblePalette.querySelector("toolbarspring,toolbarseparator,toolbarspacer"),
-     "No specials should make it to the palette alive.");
-  yield endCustomizing();
+  let allSpecials = gCustomizeMode.visiblePalette.querySelectorAll("toolbarspring,toolbarseparator,toolbarspacer");
+  allSpecials = [...allSpecials].filter(special => special != existingSpecial);
+  ok(!allSpecials.length,
+     "No (new) specials should make it to the palette alive.");
+  await endCustomizing();
 });
 
 
-add_task(function* asyncCleanup() {
-  yield endCustomizing();
+add_task(async function asyncCleanup() {
+  await endCustomizing();
   CustomizableUI.reset();
 });
 

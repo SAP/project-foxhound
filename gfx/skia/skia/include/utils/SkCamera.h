@@ -10,6 +10,7 @@
 #ifndef SkCamera_DEFINED
 #define SkCamera_DEFINED
 
+#include "../private/SkNoncopyable.h"
 #include "SkMatrix.h"
 
 class SkCanvas;
@@ -75,7 +76,7 @@ public:
     SkPatch3D();
 
     void    reset();
-    void    transform(const SkMatrix3D&, SkPatch3D* dst = NULL) const;
+    void    transform(const SkMatrix3D&, SkPatch3D* dst = nullptr) const;
 
     // dot a unit vector with the patch's normal
     SkScalar dotWith(SkScalar dx, SkScalar dy, SkScalar dz) const;
@@ -103,10 +104,10 @@ public:
     void update();
     void patchToMatrix(const SkPatch3D&, SkMatrix* matrix) const;
 
-    SkPoint3D   fLocation;
-    SkPoint3D   fAxis;
-    SkPoint3D   fZenith;
-    SkPoint3D   fObserver;
+    SkPoint3D   fLocation;   // origin of the camera's space
+    SkPoint3D   fAxis;       // view direction
+    SkPoint3D   fZenith;     // up direction
+    SkPoint3D   fObserver;   // eye position (may not be the same as the origin)
 
 private:
     mutable SkMatrix    fOrientation;
@@ -115,7 +116,7 @@ private:
     void doUpdate() const;
 };
 
-class Sk3DView : SkNoncopyable {
+class SK_API Sk3DView : SkNoncopyable {
 public:
     Sk3DView();
     ~Sk3DView();

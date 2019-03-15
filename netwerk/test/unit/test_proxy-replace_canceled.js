@@ -1,5 +1,5 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpServer = null;
 
@@ -20,7 +20,7 @@ function contentHandler(metadata, response)
 
 function finish_test(request, buffer)
 {
-  do_check_eq(buffer, "");
+  Assert.equal(buffer, "");
   httpServer.stop(do_test_finished);
 }
 

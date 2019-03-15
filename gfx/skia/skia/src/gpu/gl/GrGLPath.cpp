@@ -196,7 +196,7 @@ inline bool init_path_object_for_general_path(GrGLGpu* gpu, GrGLuint pathID,
 static GrPathRendering::FillType convert_skpath_filltype(SkPath::FillType fill) {
     switch (fill) {
         default:
-            SkFAIL("Incomplete Switch\n");
+            SK_ABORT("Incomplete Switch\n");
         case SkPath::kWinding_FillType:
         case SkPath::kInverseWinding_FillType:
             return GrPathRendering::kWinding_FillType;
@@ -218,7 +218,7 @@ void GrGLPath::InitPathObjectPathData(GrGLGpu* gpu,
                                       const SkPath& skPath) {
     SkASSERT(!skPath.isEmpty());
 
-#ifdef SK_SCALAR_IS_FLOAT
+#if 1  //  SK_SCALAR_IS_FLOAT
     // This branch does type punning, converting SkPoint* to GrGLfloat*.
     if ((skPath.getSegmentMasks() & SkPath::kConic_SegmentMask) == 0) {
         int verbCnt = skPath.countVerbs();

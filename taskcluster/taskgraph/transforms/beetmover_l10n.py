@@ -16,13 +16,10 @@ transforms = TransformSequence()
 @transforms.add
 def make_beetmover_description(config, jobs):
     for job in jobs:
-        dep_job = job['dependent-task']
+        dep_job = job['primary-dependency']
         for locale in dep_job.attributes.get('chunk_locales', []):
 
-            label = job.get('label',
-                            "beetmover-{}-{}".format(locale, dep_job.label))
-
-            group = 'tc-BM-L10n'
+            group = 'BM'
 
             # add the locale code
             symbol = locale
@@ -32,9 +29,11 @@ def make_beetmover_description(config, jobs):
             }
 
             beet_description = {
-                'dependent-task': dep_job,
+                'primary-dependency': dep_job,
                 'treeherder': treeherder,
-                'label': label,
                 'locale': locale,
+                'shipping-phase': job['shipping-phase'],
+                'attributes': job['attributes'],
             }
+
             yield beet_description

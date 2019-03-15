@@ -42,7 +42,6 @@ class ConfigureTestVFS(object):
         self._paths = set(mozpath.abspath(p) for p in paths)
 
     def exists(self, path):
-        path = mozpath.abspath(path)
         if path in self._paths:
             return True
         if mozpath.basedir(path, [topsrcdir, topobjdir]):
@@ -83,12 +82,12 @@ class ConfigureTestSandbox(ConfigureSandbox):
 
         paths = paths.keys()
 
-        environ = dict(environ)
+        environ = copy.copy(environ)
         if 'CONFIG_SHELL' not in environ:
             environ['CONFIG_SHELL'] = mozpath.abspath('/bin/sh')
             self._subprocess_paths[environ['CONFIG_SHELL']] = self.shell
             paths.append(environ['CONFIG_SHELL'])
-        self._environ = copy.copy(environ)
+        self._subprocess_paths[mozpath.join(topsrcdir, 'build/win32/vswhere.exe')] = self.vswhere
 
         vfs = ConfigureTestVFS(paths)
 
@@ -125,8 +124,14 @@ class ConfigureTestSandbox(ConfigureSandbox):
                 Popen=self.Popen,
             )
 
-        if what == 'os.environ':
-            return self._environ
+        if what == 'os.path':
+            return self.imported_os.path
+
+        if what == 'os.path.exists':
+            return self.imported_os.path.exists
+
+        if what == 'os.path.isfile':
+            return self.imported_os.path.isfile
 
         if what == 'ctypes.wintypes':
             return ReadOnlyNamespace(
@@ -214,6 +219,18 @@ class ConfigureTestSandbox(ConfigureSandbox):
         if script in self._subprocess_paths:
             return self._subprocess_paths[script](stdin, args[1:])
         return 127, '', 'File not found'
+
+    def vswhere(self, stdin, args):
+        return 0, '[]', ''
+
+    def get_config(self, name):
+        # Like the loop in ConfigureSandbox.run, but only execute the code
+        # associated with the given config item.
+        for func, args in self._execution_queue:
+            if (func == self._resolve_and_set and args[0] is self._config
+                    and args[1] == name):
+                func(*args)
+                return self._config.get(name)
 
 
 class BaseConfigureTest(unittest.TestCase):

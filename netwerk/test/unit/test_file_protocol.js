@@ -1,6 +1,6 @@
 /* run some tests on the file:// protocol handler */
 
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 const PR_RDONLY = 0x1;  // see prio.h
 
@@ -13,12 +13,12 @@ const special_type = "application/x-our-special-type";
   test_upload_file,
   test_load_replace,
   do_test_finished
-].forEach(add_test);
+].forEach(f => add_test(f));
 
 function getFile(key) {
-  var dirSvc = Components.classes["@mozilla.org/file/directory_service;1"]
-                         .getService(Components.interfaces.nsIProperties);
-  return dirSvc.get(key, Components.interfaces.nsILocalFile);
+  var dirSvc = Cc["@mozilla.org/file/directory_service;1"]
+                 .getService(Ci.nsIProperties);
+  return dirSvc.get(key, Ci.nsIFile);
 }
 
 function new_file_input_stream(file, buffered) {
@@ -232,16 +232,13 @@ function test_load_replace() {
     file = do_get_file("data/system_root.lnk", false);
     var chan = new_file_channel(file);
 
-    // The LOAD_REPLACE flag should be set
-    do_check_eq(chan.loadFlags & chan.LOAD_REPLACE, chan.LOAD_REPLACE);
-
     // The original URI path should differ from the URI path
-    do_check_neq(chan.URI.path, chan.originalURI.path);
+    Assert.notEqual(chan.URI.pathQueryRef, chan.originalURI.pathQueryRef);
 
     // The original URI path should be the same as the lnk file path
     var ios = Cc["@mozilla.org/network/io-service;1"].
               getService(Ci.nsIIOService);
-    do_check_eq(chan.originalURI.path, ios.newFileURI(file).path);
+    Assert.equal(chan.originalURI.pathQueryRef, ios.newFileURI(file).pathQueryRef);
   }
   run_next_test();
 }

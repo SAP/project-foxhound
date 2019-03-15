@@ -16,7 +16,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=816298
 <p id="test2">This<span style="-moz-user-select: none;"><span style="-moz-user-select: text"> text should</span> NOT</span> be copied.</p>
 <p id="test3">This text should<span style="-moz-user-select: -moz-none;"> NOT</span> be copied.</p>
 <p id="test4">This<span style="-moz-user-select: -moz-none;"><span style="-moz-user-select: text"> text should</span> NOT</span> be copied.</p>
-<p id="test5">This<span style="-moz-user-select: all"> text<span style="-moz-user-select: none"> should</span></span> be copied.</p>
+<p id="test5">This<span style="-moz-user-select: all"> text should</span> be copied.</p>
 <div id="content" style="display: none">
   
 </div>
@@ -29,10 +29,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=816298
   var Cc = SpecialPowers.Cc;
   var Ci = SpecialPowers.Ci;
 
-  var webnav = SpecialPowers.wrap(window).QueryInterface(SpecialPowers.Ci.nsIInterfaceRequestor)
-                                         .getInterface(SpecialPowers.Ci.nsIWebNavigation)
-
-  var docShell = webnav.QueryInterface(SpecialPowers.Ci.nsIDocShell);
+  var docShell = SpecialPowers.wrap(window).docShell;
 
   var documentViewer = docShell.contentViewer
                                .QueryInterface(SpecialPowers.Ci.nsIContentViewerEdit);
@@ -43,8 +40,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=816298
   var textarea = SpecialPowers.wrap(document.getElementById('input'));
 
   function getLoadContext() {
-    return SpecialPowers.wrap(window).QueryInterface(Ci.nsIInterfaceRequestor)
-                                     .getInterface(Ci.nsIWebNavigation)
+    return SpecialPowers.wrap(window).docShell
                                      .QueryInterface(Ci.nsILoadContext);
   }
 
@@ -64,13 +60,13 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=816298
     transferable.addDataFlavor(mime);
     clipboard.getData(transferable, 1);
     var data = SpecialPowers.createBlankObject();
-    transferable.getTransferData(mime, data, {}) ;
+    transferable.getTransferData(mime, data) ;
     return SpecialPowers.wrap(data);
   }
   function testHtmlClipboardValue(mime, expected, test) {
     var expectedValue = expected;
     // For Windows, navigator.platform returns "Win32".
-    if (navigator.platform.indexOf("Win") >= 0) {
+    if (navigator.platform.includes("Win")) {
       expectedValue = "<html><body>\n<!--StartFragment-->" + expected + "<!--EndFragment-->\n</body>\n</html>";
     }
     testClipboardValue(mime, expectedValue, test);
@@ -111,7 +107,7 @@ var clipboardHTML = [
   '<p id=\"test2\">This<span style=\"-moz-user-select: text\"> text should</span> be copied.</p>',
   '<p id=\"test3\">This text should be copied.</p>',
   '<p id=\"test4\">This<span style=\"-moz-user-select: text\"> text should</span> be copied.</p>',
-  '<p id=\"test5\">This<span style=\"-moz-user-select: all\"> text<span style=\"-moz-user-select: none\"> should</span></span> be copied.</p>',
+  '<p id=\"test5\">This<span style=\"-moz-user-select: all\"> text should</span> be copied.</p>',
 ];
 
 // expected results for clipboard text/unicode
@@ -131,7 +127,7 @@ var innerHTMLStrings = [
   'This<span style=\"-moz-user-select: none;\"><span style=\"-moz-user-select: text\"> text should</span> NOT</span> be copied.',
   'This text should<span style=\"-moz-user-select: -moz-none;\"> NOT</span> be copied.',
   'This<span style=\"-moz-user-select: -moz-none;\"><span style=\"-moz-user-select: text\"> text should</span> NOT</span> be copied.',
-  'This<span style=\"-moz-user-select: all\"> text<span style=\"-moz-user-select: none\"> should</span></span> be copied.',
+  'This<span style=\"-moz-user-select: all\"> text should</span> be copied.',
 ];
 
 // expected results for pasting into a TEXTAREA

@@ -7,42 +7,40 @@
 #ifndef mozilla_dom_SVGFilterElement_h
 #define mozilla_dom_SVGFilterElement_h
 
-#include "nsSVGEnum.h"
-#include "nsSVGElement.h"
-#include "nsSVGIntegerPair.h"
+#include "SVGEnum.h"
 #include "nsSVGLength2.h"
-#include "nsSVGString.h"
-
-typedef nsSVGElement SVGFilterElementBase;
+#include "SVGString.h"
+#include "mozilla/dom/SVGElement.h"
 
 class nsSVGFilterFrame;
 class nsSVGFilterInstance;
 
-nsresult NS_NewSVGFilterElement(nsIContent **aResult,
-                                already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+nsresult NS_NewSVGFilterElement(
+    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
 namespace mozilla {
 namespace dom {
 class SVGAnimatedLength;
 
-class SVGFilterElement : public SVGFilterElementBase
-{
+typedef SVGElement SVGFilterElementBase;
+
+class SVGFilterElement : public SVGFilterElementBase {
   friend class ::nsSVGFilterFrame;
   friend class ::nsSVGFilterInstance;
 
-protected:
-  friend nsresult (::NS_NewSVGFilterElement(nsIContent **aResult,
-                                            already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
-  explicit SVGFilterElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
-  virtual JSObject* WrapNode(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
+ protected:
+  friend nsresult(::NS_NewSVGFilterElement(
+      nsIContent** aResult,
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
+  explicit SVGFilterElement(
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+  virtual JSObject* WrapNode(JSContext* cx,
+                             JS::Handle<JSObject*> aGivenProto) override;
 
-public:
+ public:
   // nsIContent
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;
-  NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const override;
-
-  // Invalidate users of this filter
-  void Invalidate();
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+  NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
 
   // nsSVGSVGElement methods:
   virtual bool HasValidDimensions() const override;
@@ -56,8 +54,7 @@ public:
   already_AddRefed<SVGAnimatedEnumeration> PrimitiveUnits();
   already_AddRefed<SVGAnimatedString> Href();
 
-protected:
-
+ protected:
   virtual LengthAttributesInfo GetLengthInfo() override;
   virtual EnumAttributesInfo GetEnumInfo() override;
   virtual StringAttributesInfo GetStringInfo() override;
@@ -67,15 +64,15 @@ protected:
   static LengthInfo sLengthInfo[4];
 
   enum { FILTERUNITS, PRIMITIVEUNITS };
-  nsSVGEnum mEnumAttributes[2];
+  SVGEnum mEnumAttributes[2];
   static EnumInfo sEnumInfo[2];
 
   enum { HREF, XLINK_HREF };
-  nsSVGString mStringAttributes[2];
+  SVGString mStringAttributes[2];
   static StringInfo sStringInfo[2];
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_SVGFilterElement_h
+#endif  // mozilla_dom_SVGFilterElement_h

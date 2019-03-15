@@ -7,45 +7,50 @@
 #ifndef mozilla_dom_SVGClipPathElement_h
 #define mozilla_dom_SVGClipPathElement_h
 
-#include "nsSVGEnum.h"
+#include "SVGEnum.h"
 #include "mozilla/dom/SVGTransformableElement.h"
 
 class nsSVGClipPathFrame;
 
-nsresult NS_NewSVGClipPathElement(nsIContent **aResult,
-                                  already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+nsresult NS_NewSVGClipPathElement(
+    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
 namespace mozilla {
 namespace dom {
 
 typedef SVGTransformableElement SVGClipPathElementBase;
 
-class SVGClipPathElement final : public SVGClipPathElementBase
-{
+class SVGClipPathElement final : public SVGClipPathElementBase {
   friend class ::nsSVGClipPathFrame;
 
-protected:
-  friend nsresult (::NS_NewSVGClipPathElement(nsIContent **aResult,
-                                              already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
-  explicit SVGClipPathElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
-  virtual JSObject* WrapNode(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
+ protected:
+  friend nsresult(::NS_NewSVGClipPathElement(
+      nsIContent** aResult,
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
+  explicit SVGClipPathElement(
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+  virtual JSObject* WrapNode(JSContext* cx,
+                             JS::Handle<JSObject*> aGivenProto) override;
 
-public:
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;
+ public:
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // WebIDL
   already_AddRefed<SVGAnimatedEnumeration> ClipPathUnits();
 
-protected:
+  // This is an internal method that does not flush style, and thus
+  // the answer may be out of date if there's a pending style flush.
+  bool IsUnitsObjectBoundingBox() const;
 
+ protected:
   enum { CLIPPATHUNITS };
-  nsSVGEnum mEnumAttributes[1];
+  SVGEnum mEnumAttributes[1];
   static EnumInfo sEnumInfo[1];
 
   virtual EnumAttributesInfo GetEnumInfo() override;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_SVGClipPathElement_h
+#endif  // mozilla_dom_SVGClipPathElement_h

@@ -27,7 +27,7 @@
 #ifndef HB_OT_SHAPE_COMPLEX_INDIC_MACHINE_HH
 #define HB_OT_SHAPE_COMPLEX_INDIC_MACHINE_HH
 
-#include "hb-private.hh"
+#include "hb.hh"
 
 %%{
   machine indic_syllable_machine;
@@ -38,7 +38,6 @@
 %%{
 
 # Same order as enum indic_category_t.  Not sure how to avoid duplication.
-X    = 0;
 C    = 1;
 V    = 2;
 N    = 3;
@@ -47,40 +46,37 @@ ZWNJ = 5;
 ZWJ  = 6;
 M    = 7;
 SM   = 8;
-VD   = 9;
 A    = 10;
 PLACEHOLDER = 11;
 DOTTEDCIRCLE = 12;
 RS    = 13;
-Coeng = 14;
 Repha = 15;
 Ra    = 16;
-CM    = 17;
 Symbol= 18;
+CS    = 19;
 
 c = (C | Ra);			# is_consonant
 n = ((ZWNJ?.RS)? (N.N?)?);	# is_consonant_modifier
 z = ZWJ|ZWNJ;			# is_joiner
-h = H | Coeng;			# is_halant_or_coeng
 reph = (Ra H | Repha);		# possible reph
 
 cn = c.ZWJ?.n?;
 forced_rakar = ZWJ H ZWJ Ra;
 symbol = Symbol.N?;
 matra_group = z{0,3}.M.N?.(H | forced_rakar)?;
-syllable_tail = (z?.SM.SM?.ZWNJ?)? A{0,3}? VD{0,2};
-place_holder = PLACEHOLDER | DOTTEDCIRCLE;
-halant_group = (z?.h.(ZWJ.N?)?);
-final_halant_group = halant_group | h.ZWNJ;
-medial_group = CM?;
-halant_or_matra_group = (final_halant_group | (h.ZWJ)? matra_group{0,4}) (Coeng (cn|V))?;
+syllable_tail = (z?.SM.SM?.ZWNJ?)? A{0,3}?;
+halant_group = (z?.H.(ZWJ.N?)?);
+final_halant_group = halant_group | H.ZWNJ;
+halant_or_matra_group = (final_halant_group | matra_group{0,4});
+
+complex_syllable_tail = (halant_group.cn){0,4} halant_or_matra_group syllable_tail;
 
 
-consonant_syllable =	Repha? (cn.halant_group){0,4} cn medial_group halant_or_matra_group syllable_tail;
-vowel_syllable =	reph? V.n? (ZWJ | (halant_group.cn){0,4} medial_group halant_or_matra_group syllable_tail);
-standalone_cluster =	(Repha? PLACEHOLDER | reph? DOTTEDCIRCLE).n? (halant_group.cn){0,4} medial_group halant_or_matra_group syllable_tail;
+consonant_syllable =	(Repha|CS)? cn complex_syllable_tail;
+vowel_syllable =	reph? V.n? (ZWJ | complex_syllable_tail);
+standalone_cluster =	((Repha|CS)? PLACEHOLDER | reph? DOTTEDCIRCLE).n? complex_syllable_tail;
 symbol_cluster = 	symbol syllable_tail;
-broken_cluster =	reph? n? (halant_group.cn){0,4} medial_group halant_or_matra_group syllable_tail;
+broken_cluster =	reph? n? complex_syllable_tail;
 other =			any;
 
 main := |*
@@ -97,10 +93,9 @@ main := |*
 
 #define found_syllable(syllable_type) \
   HB_STMT_START { \
-    if (0) fprintf (stderr, "syllable %d..%d %s\n", last, p+1, #syllable_type); \
-    for (unsigned int i = last; i < p+1; i++) \
+    if (0) fprintf (stderr, "syllable %d..%d %s\n", ts, te, #syllable_type); \
+    for (unsigned int i = ts; i < te; i++) \
       info[i].syllable() = (syllable_serial << 4) | syllable_type; \
-    last = p+1; \
     syllable_serial++; \
     if (unlikely (syllable_serial == 16)) syllable_serial = 1; \
   } HB_STMT_END
@@ -108,7 +103,7 @@ main := |*
 static void
 find_syllables (hb_buffer_t *buffer)
 {
-  unsigned int p, pe, eof, ts HB_UNUSED, te HB_UNUSED, act HB_UNUSED;
+  unsigned int p, pe, eof, ts, te, act;
   int cs;
   hb_glyph_info_t *info = buffer->info;
   %%{
@@ -119,7 +114,6 @@ find_syllables (hb_buffer_t *buffer)
   p = 0;
   pe = eof = buffer->len;
 
-  unsigned int last = 0;
   unsigned int syllable_serial = 1;
   %%{
     write exec;

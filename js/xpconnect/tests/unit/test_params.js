@@ -2,9 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-
 function run_test() {
 
   // Load the component manifests.
@@ -48,8 +45,8 @@ function test_component(contractid) {
     var a = val1;
     var b = {value: val2};
     var rv = o[name].call(o, a, b);
-    do_check_true(comparator(rv, val2));
-    do_check_true(comparator(val1, b.value));
+    Assert.ok(comparator(rv, val2));
+    Assert.ok(comparator(val1, b.value));
   };
 
   function doIsTest(name, val1, val1Is, val2, val2Is, valComparator, isComparator) {
@@ -61,10 +58,10 @@ function test_component(contractid) {
     var bIs = {value: val2Is};
     var rvIs = {};
     var rv = o[name].call(o, aIs, a, bIs, b, rvIs);
-    do_check_true(valComparator(rv, val2));
-    do_check_true(isComparator(rvIs.value, val2Is));
-    do_check_true(valComparator(val1, b.value));
-    do_check_true(isComparator(val1Is, bIs.value));
+    Assert.ok(valComparator(rv, val2));
+    Assert.ok(isComparator(rvIs.value, val2Is));
+    Assert.ok(valComparator(val1, b.value));
+    Assert.ok(isComparator(val1Is, bIs.value));
   }
 
   // Special-purpose function for testing arrays of iid_is interfaces, where we
@@ -79,12 +76,12 @@ function test_component(contractid) {
     var rvSize = {};
     var rvIID = {};
     var rv = o[name].call(o, aSize, aIID, a, bSize, bIID, b, rvSize, rvIID);
-    do_check_true(arrayComparator(interfaceComparator)(rv, val2));
-    do_check_true(standardComparator(rvSize.value, val2Size));
-    do_check_true(dotEqualsComparator(rvIID.value, val2IID));
-    do_check_true(arrayComparator(interfaceComparator)(val1, b.value));
-    do_check_true(standardComparator(val1Size, bSize.value));
-    do_check_true(dotEqualsComparator(val1IID, bIID.value));
+    Assert.ok(arrayComparator(interfaceComparator)(rv, val2));
+    Assert.ok(standardComparator(rvSize.value, val2Size));
+    Assert.ok(dotEqualsComparator(rvIID.value, val2IID));
+    Assert.ok(arrayComparator(interfaceComparator)(val1, b.value));
+    Assert.ok(standardComparator(val1Size, bSize.value));
+    Assert.ok(dotEqualsComparator(val1IID, bIID.value));
   }
 
   // Check that the given call (type mismatch) results in an exception being thrown.
@@ -95,11 +92,11 @@ function test_component(contractid) {
       doIsTest(name, val1, val1Size, val2, val2Size, comparator);
       
       // An exception was not thrown as would have been expected.
-      do_check_true(false);
+      Assert.ok(false);
     }
     catch (e) {
       // An exception was thrown as expected.
-      do_check_true(true);
+      Assert.ok(true);
     }
   }
 
@@ -109,7 +106,7 @@ function test_component(contractid) {
     var a = val1;
     var b = {value: ""};
     o[name].call(o, a, b);
-    do_check_eq(val1, b.value);
+    Assert.equal(val1, b.value);
   }
 
   // Test all the different types
@@ -127,7 +124,6 @@ function test_component(contractid) {
   doTest("testString", "someString", "another string");
   doTest("testWstring", "Why wasnt this", "turned on before? ಠ_ಠ");
   doTest("testWchar", "z", "ア");
-  doTestWorkaround("testDOMString", "Beware: ☠ s");
   doTestWorkaround("testAString", "Frosty the ☃ ;-)");
   doTestWorkaround("testAUTF8String", "We deliver 〠!");
   doTestWorkaround("testACString", "Just a regular C string.");
@@ -137,7 +133,7 @@ function test_component(contractid) {
   // inouts.
   let outAString = {};
   o.testOutAString(outAString);
-  do_check_eq(outAString.value, "out");
+  Assert.equal(outAString.value, "out");
   try { o.testOutAString(undefined); } catch (e) {} // Don't crash
   try { o.testOutAString(null); } catch (e) {} // Don't crash
   try { o.testOutAString("string"); } catch (e) {} // Don't crash
@@ -166,6 +162,8 @@ function test_component(contractid) {
                                ["we", "are", "being", "sooo", "international", "right", "now"], 7, arrayComparator(standardComparator));
   doIsTest("testInterfaceArray", [makeA(), makeA()], 2,
                                  [makeA(), makeA(), makeA(), makeA(), makeA(), makeA()], 6, arrayComparator(interfaceComparator));
+  doIsTest("testJsvalArray", [{ cheese: 'whiz', apple: 8 }, [1, 5, '3'], /regex/], 3,
+                             ['apple', 2.2e10, 3.3e30, { only: "wheedle", except: {} }], 4, arrayComparator(standardComparator));
 
   // Test typed arrays and ArrayBuffer aliasing.
   var arrayBuffer = new ArrayBuffer(16);
@@ -189,7 +187,7 @@ function test_component(contractid) {
                                     [makeB(), makeB(), makeB()], 3, Ci['nsIXPCTestInterfaceB']);
 
   // Test optional array size.
-  do_check_eq(o.testStringArrayOptionalSize(["some", "string", "array"]), "somestringarray");
+  Assert.equal(o.testStringArrayOptionalSize(["some", "string", "array"]), "somestringarray");
 
   // Test incorrect (too big) array size parameter; this should throw NOT_ENOUGH_ELEMENTS.
   doTypedArrayMismatchTest("testShortArray", new Int16Array([-3, 7, 4]), 4,
@@ -198,4 +196,24 @@ function test_component(contractid) {
   // Test type mismatch (int16 <-> uint16); this should throw BAD_CONVERT_JS.
   doTypedArrayMismatchTest("testShortArray", new Uint16Array([0, 7, 4, 3]), 4,
                                              new Uint16Array([1, 5, 6]), 3);
+
+  // Test Sequence<T> types.
+  doTest("testShortSequence", [2, 4, 6], [1, 3, 5, 7], arrayComparator(standardComparator));
+  doTest("testDoubleSequence", [-10, -0.5], [1, 3, 1e11, -8e-5 ], arrayComparator(fuzzComparator));
+  doTest("testACStringSequence", ["mary", "hat", "hey", "lid", "tell", "lam"],
+                                 ["ids", "fleas", "woes", "wide", "has", "know", "!"],
+                                 arrayComparator(standardComparator));
+  doTest("testAStringSequence", ["沒有語言", "的偉大嗎?]"],
+                                ["we", "are", "being", "sooo", "international", "right", "now"],
+                                arrayComparator(standardComparator));
+
+  doTest("testInterfaceSequence", [makeA(), makeA()],
+                                  [makeA(), makeA(), makeA(), makeA(), makeA(), makeA()], arrayComparator(interfaceComparator));
+
+  doTest("testJsvalSequence", [{ cheese: 'whiz', apple: 8 }, [1, 5, '3'], /regex/],
+                              ['apple', 2.2e10, 3.3e30, { only: "wheedle", except: {} }], arrayComparator(standardComparator));
+
+  doIsTest("testInterfaceIsSequence", [makeA(), makeA(), makeA(), makeA(), makeA()], Ci['nsIXPCTestInterfaceA'],
+                                      [makeB(), makeB(), makeB()], Ci['nsIXPCTestInterfaceB'],
+                                      arrayComparator(interfaceComparator), dotEqualsComparator);
 }

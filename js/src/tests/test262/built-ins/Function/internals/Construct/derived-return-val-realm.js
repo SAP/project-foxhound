@@ -14,10 +14,10 @@ info: |
       b. If kind is "base", return NormalCompletion(thisArgument).
       c. If result.[[Value]] is not undefined, throw a TypeError exception.
   [...]
-features: [class]
+features: [cross-realm, class]
 ---*/
 
-var C = $.createRealm().global.eval(
+var C = $262.createRealm().global.eval(
   '0, class extends Object {' +
   '  constructor() {' +
   '    return null;' +

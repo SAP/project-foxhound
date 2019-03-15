@@ -13,35 +13,35 @@ Bug 960671 - Test attaching and detaching while in the wrong state.
 <pre id="test">
 <script src="memory-helpers.js" type="application/javascript"></script>
 <script>
+"use strict";
+
 window.onload = function() {
   SimpleTest.waitForExplicitFinish();
 
-  Task.spawn(function* () {
-    var { memory, client } = yield startServerAndGetSelectedTabMemory();
+  (async function() {
+    const { memory, target } = await startServerAndGetSelectedTabMemory();
 
-    var e = null;
+    let e = null;
     try {
-      yield memory.detach();
-    }
-    catch (ee) {
+      await memory.detach();
+    } catch (ee) {
       e = ee;
     }
     ok(e, "Should have hit the wrongState error");
 
-    yield memory.attach();
+    await memory.attach();
 
     e = null;
     try {
-      yield memory.attach();
-    }
-    catch (ee) {
+      await memory.attach();
+    } catch (ee) {
       e = ee;
     }
     ok(e, "Should have hit the wrongState error");
 
-    yield memory.detach();
-    destroyServerAndFinish(client);
-  });
+    await memory.detach();
+    destroyServerAndFinish(target);
+  })();
 };
 </script>
 </pre>

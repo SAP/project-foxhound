@@ -4,28 +4,20 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["StartupPerformance"];
+var EXPORTED_SYMBOLS = ["StartupPerformance"];
 
-const { utils: Cu, classes: Cc, interfaces: Ci } = Components;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm", this);
-
-XPCOMUtils.defineLazyModuleGetter(this, "Services",
+ChromeUtils.defineModuleGetter(this, "Services",
   "resource://gre/modules/Services.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "console",
-  "resource://gre/modules/Console.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "setTimeout",
+ChromeUtils.defineModuleGetter(this, "setTimeout",
   "resource://gre/modules/Timer.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "clearTimeout",
+ChromeUtils.defineModuleGetter(this, "clearTimeout",
   "resource://gre/modules/Timer.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Promise",
-  "resource://gre/modules/Promise.jsm");
 
 const COLLECT_RESULTS_AFTER_MS = 10000;
 
 const OBSERVED_TOPICS = ["sessionstore-restoring-on-startup", "sessionstore-initiating-manual-restore"];
 
-this.StartupPerformance = {
+var StartupPerformance = {
   /**
    * Once we have finished restoring initial tabs, we broadcast on this topic.
    */
@@ -57,9 +49,9 @@ this.StartupPerformance = {
   _totalNumberOfTabs: 0,
   _totalNumberOfWindows: 0,
 
-  init: function() {
+  init() {
     for (let topic of OBSERVED_TOPICS) {
-      Services.obs.addObserver(this, topic, false);
+      Services.obs.addObserver(this, topic);
     }
   },
 
@@ -83,7 +75,10 @@ this.StartupPerformance = {
   // Called when restoration starts.
   // Record the start timestamp, setup the timer and `this._promiseFinished`.
   // Behavior is unspecified if there was already an ongoing measure.
-  _onRestorationStarts: function(isAutoRestore) {
+  _onRestorationStarts(isAutoRestore) {
+    if (Services.profiler) {
+      Services.profiler.AddMarker("_onRestorationStarts");
+    }
     this._latestRestoredTimeStamp = this._startTimeStamp = Date.now();
     this._totalNumberOfEagerTabs = 0;
     this._totalNumberOfTabs = 0;
@@ -97,14 +92,14 @@ this.StartupPerformance = {
       Services.obs.removeObserver(this, topic);
     }
 
-    Services.obs.addObserver(this, "sessionstore-single-window-restored", false);
+    Services.obs.addObserver(this, "sessionstore-single-window-restored");
     this._promiseFinished = new Promise(resolve => {
       this._resolveFinished = resolve;
     });
     this._promiseFinished.then(() => {
       try {
         this._isRestored = true;
-        Services.obs.notifyObservers(null, this.RESTORED_TOPIC, "");
+        Services.obs.notifyObservers(null, this.RESTORED_TOPIC);
 
         if (this._latestRestoredTimeStamp == this._startTimeStamp) {
           // Apparently, we haven't restored any tab.
@@ -131,7 +126,7 @@ this.StartupPerformance = {
     });
   },
 
-  _startTimer: function() {
+  _startTimer() {
     if (this._hasFired) {
       return;
     }
@@ -153,7 +148,7 @@ this.StartupPerformance = {
     }, COLLECT_RESULTS_AFTER_MS);
   },
 
-  observe: function(subject, topic, details) {
+  observe(subject, topic, details) {
     try {
       switch (topic) {
         case "sessionstore-restoring-on-startup":
@@ -206,6 +201,9 @@ this.StartupPerformance = {
             // to the user switching to a lazily restored tab, or for tabs
             // that are restoring eagerly.
             if (!event.detail.isRemotenessUpdate) {
+              if (Services.profiler) {
+                Services.profiler.AddMarker("SSTabRestored");
+              }
               this._latestRestoredTimeStamp = Date.now();
               this._totalNumberOfEagerTabs += 1;
             }
@@ -230,5 +228,5 @@ this.StartupPerformance = {
       console.error("StartupPerformance error", ex, ex.stack);
       throw ex;
     }
-  }
+  },
 };

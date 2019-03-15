@@ -3,8 +3,8 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetter(this, "ConsoleAPI",
-                                  "resource://gre/modules/Console.jsm");
+ChromeUtils.defineModuleGetter(this, "ConsoleAPI",
+                               "resource://gre/modules/Console.jsm");
 
 /*
  * Collection of methods and features specific to using a GeckoView instance.
@@ -13,10 +13,10 @@ XPCOMUtils.defineLazyModuleGetter(this, "ConsoleAPI",
 var EmbedRT = {
   _scopes: {},
 
-  observe: function(subject, topic, data) {
-    switch(topic) {
+  onEvent: function(event, data, callback) {
+    switch (event) {
       case "GeckoView:ImportScript":
-        this.importScript(data);
+        this.importScript(data.scriptURL);
         break;
     }
   },
@@ -34,11 +34,11 @@ var EmbedRT = {
     let sandbox = new Cu.Sandbox(principal,
       {
         sandboxName: scriptURL,
-        wantGlobalProperties: ["indexedDB"]
+        wantGlobalProperties: ["indexedDB"],
       }
     );
 
-    sandbox["console"] = new ConsoleAPI({ consoleID: "script/" + scriptURL });
+    sandbox.console = new ConsoleAPI({ consoleID: "script/" + scriptURL });
 
     // As we don't want our caller to control the JS version used for the
     // script file, we run loadSubScript within the context of the
@@ -55,10 +55,10 @@ var EmbedRT = {
       };
 
       try {
-        sandbox["load"](params);
-      } catch(e) {
+        sandbox.load(params);
+      } catch (e) {
         dump("Exception calling 'load' method in script: " + scriptURL + "\n" + e);
       }
     }
-  }
+  },
 };

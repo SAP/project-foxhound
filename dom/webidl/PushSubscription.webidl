@@ -24,7 +24,10 @@ dictionary PushSubscriptionKeys
 dictionary PushSubscriptionJSON
 {
   USVString endpoint;
-  PushSubscriptionKeys keys;
+  // FIXME: bug 1493860: should this "= null" be here?  For that matter, this
+  // PushSubscriptionKeys thing is not even in the spec; "keys" is a record
+  // there.
+  PushSubscriptionKeys keys = null;
 };
 
 dictionary PushSubscriptionInit
@@ -36,7 +39,7 @@ dictionary PushSubscriptionInit
   BufferSource? appServerKey;
 };
 
-[Exposed=(Window,Worker), Func="nsContentUtils::PushEnabled",
+[Exposed=(Window,Worker), Func="mozilla::dom::DOMPrefs::dom_push_enabled",
  ChromeConstructor(PushSubscriptionInit initDict)]
 interface PushSubscription
 {

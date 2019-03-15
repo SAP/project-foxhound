@@ -21,21 +21,17 @@ const {
   setFilterString,
 } = require("devtools/client/memory/actions/filter");
 
-function run_test() {
-  run_next_test();
-}
-
 const EXPECTED_INDIVIDUAL_STATES = [
   individualsState.COMPUTING_DOMINATOR_TREE,
   individualsState.FETCHING,
   individualsState.FETCHED,
 ];
 
-add_task(function* () {
-  let front = new StubbedMemoryFront();
-  let heapWorker = new HeapAnalysesClient();
-  yield front.attach();
-  let store = Store();
+add_task(async function() {
+  const front = new StubbedMemoryFront();
+  const heapWorker = new HeapAnalysesClient();
+  await front.attach();
+  const store = Store();
   const { getState, dispatch } = store;
 
   dispatch(changeView(viewState.CENSUS));
@@ -44,7 +40,7 @@ add_task(function* () {
   // Take a snapshot and wait for the census to finish.
 
   dispatch(takeSnapshotAndCensus(front, heapWorker));
-  yield waitUntilCensusState(store, s => s.census, [censusState.SAVED]);
+  await waitUntilCensusState(store, s => s.census, [censusState.SAVED]);
 
   // Fetch individuals.
 
@@ -63,8 +59,8 @@ add_task(function* () {
   dispatch(fetchIndividuals(heapWorker, snapshotId, breakdown,
                             reportLeafIndex));
 
-  for (let state of EXPECTED_INDIVIDUAL_STATES) {
-    yield waitUntilState(store, s => {
+  for (const state of EXPECTED_INDIVIDUAL_STATES) {
+    await waitUntilState(store, s => {
       return s.view.state === viewState.INDIVIDUALS &&
              s.individuals &&
              s.individuals.state === state;
@@ -79,12 +75,12 @@ add_task(function* () {
 
   // Assert that all the individuals are `Array`s.
 
-  for (let node of getState().individuals.nodes) {
+  for (const node of getState().individuals.nodes) {
     dumpn("Checking node: " + node.label.join(" > "));
     ok(node.label.find(part => part === "Array"),
        "The node should be an Array node");
   }
 
   heapWorker.destroy();
-  yield front.detach();
+  await front.detach();
 });

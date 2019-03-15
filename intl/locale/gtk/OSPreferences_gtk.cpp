@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include <locale.h>
 #include "OSPreferences.h"
 #include "dlfcn.h"
 #include "glib.h"
@@ -11,9 +12,11 @@
 
 using namespace mozilla::intl;
 
-bool
-OSPreferences::ReadSystemLocales(nsTArray<nsCString>& aLocaleList)
-{
+OSPreferences::OSPreferences() {}
+
+OSPreferences::~OSPreferences() {}
+
+bool OSPreferences::ReadSystemLocales(nsTArray<nsCString>& aLocaleList) {
   MOZ_ASSERT(aLocaleList.IsEmpty());
 
   nsAutoCString defaultLang(uloc_getDefault());
@@ -22,6 +25,21 @@ OSPreferences::ReadSystemLocales(nsTArray<nsCString>& aLocaleList)
     aLocaleList.AppendElement(defaultLang);
     return true;
   }
+  return false;
+}
+
+bool OSPreferences::ReadRegionalPrefsLocales(nsTArray<nsCString>& aLocaleList) {
+  MOZ_ASSERT(aLocaleList.IsEmpty());
+
+  // For now we're just taking the LC_TIME from POSIX environment for all
+  // regional preferences.
+  nsAutoCString localeStr(setlocale(LC_TIME, nullptr));
+
+  if (CanonicalizeLanguageTag(localeStr)) {
+    aLocaleList.AppendElement(localeStr);
+    return true;
+  }
+
   return false;
 }
 
@@ -36,18 +54,13 @@ OSPreferences::ReadSystemLocales(nsTArray<nsCString>& aLocaleList)
  */
 typedef GVariant* (*get_value_fn_t)(GSettings*, const gchar*);
 
-static get_value_fn_t
-FindGetValueFunction()
-{
+static get_value_fn_t FindGetValueFunction() {
   get_value_fn_t fn = reinterpret_cast<get_value_fn_t>(
-    dlsym(RTLD_DEFAULT, "g_settings_get_user_value")
-  );
+      dlsym(RTLD_DEFAULT, "g_settings_get_user_value"));
   return fn ? fn : &g_settings_get_value;
 }
 
-static int
-HourCycle()
-{
+static int HourCycle() {
   int rval = 0;
 
   const char* schema;
@@ -118,11 +131,10 @@ HourCycle()
  *  * gtk 24h, pl: 24h
  *  * gtk 12h, en: 12h
  */
-bool
-OSPreferences::ReadDateTimePattern(DateTimeFormatStyle aDateStyle,
-                                   DateTimeFormatStyle aTimeStyle,
-                                   const nsACString& aLocale, nsAString& aRetVal)
-{
+bool OSPreferences::ReadDateTimePattern(DateTimeFormatStyle aDateStyle,
+                                        DateTimeFormatStyle aTimeStyle,
+                                        const nsACString& aLocale,
+                                        nsAString& aRetVal) {
   nsAutoString skeleton;
   if (!GetDateTimeSkeletonForStyle(aDateStyle, aTimeStyle, aLocale, skeleton)) {
     return false;
@@ -134,7 +146,7 @@ OSPreferences::ReadDateTimePattern(DateTimeFormatStyle aDateStyle,
       // If skeleton contains 'H' or 'k', replace with 'h' or 'K' respectively,
       // and add 'a' unless already present.
       if (skeleton.FindChar('H') == -1 && skeleton.FindChar('k') == -1) {
-        break; // nothing to do
+        break;  // nothing to do
       }
       bool foundA = false;
       for (size_t i = 0; i < skeleton.Length(); ++i) {
@@ -159,7 +171,7 @@ OSPreferences::ReadDateTimePattern(DateTimeFormatStyle aDateStyle,
       // If skeleton contains 'h' or 'K', replace with 'H' or 'k' respectively,
       // and delete 'a' if present.
       if (skeleton.FindChar('h') == -1 && skeleton.FindChar('K') == -1) {
-        break; // nothing to do
+        break;  // nothing to do
       }
       for (int32_t i = 0; i < int32_t(skeleton.Length()); ++i) {
         switch (skeleton[i]) {
@@ -184,4 +196,3 @@ OSPreferences::ReadDateTimePattern(DateTimeFormatStyle aDateStyle,
 
   return true;
 }
-

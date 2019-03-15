@@ -26,27 +26,26 @@ namespace a11y {
  * the ApplicationAccessible instance.
  */
 
-class ApplicationAccessible : public AccessibleWrap
-{
-public:
-
+class ApplicationAccessible : public AccessibleWrap {
+ public:
   ApplicationAccessible();
 
-  NS_DECL_ISUPPORTS_INHERITED
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(ApplicationAccessible, AccessibleWrap)
 
   // Accessible
   virtual void Shutdown() override;
   virtual nsIntRect Bounds() const override;
+  virtual nsRect BoundsInAppUnits() const override;
   virtual already_AddRefed<nsIPersistentProperties> NativeAttributes() override;
   virtual GroupPos GroupPosition() override;
-  virtual ENameValueFlag Name(nsString& aName) override;
+  virtual ENameValueFlag Name(nsString& aName) const override;
   virtual void ApplyARIAState(uint64_t* aState) const override;
   virtual void Description(nsString& aDescription) override;
-  virtual void Value(nsString& aValue) override;
-  virtual mozilla::a11y::role NativeRole() override;
+  virtual void Value(nsString& aValue) const override;
+  virtual mozilla::a11y::role NativeRole() const override;
   virtual uint64_t State() override;
-  virtual uint64_t NativeState() override;
-  virtual Relation RelationByType(RelationType aType) override;
+  virtual uint64_t NativeState() const override;
+  virtual Relation RelationByType(RelationType aType) const override;
 
   virtual Accessible* ChildAtPoint(int32_t aX, int32_t aY,
                                    EWhichChildAtPoint aWhichChild) override;
@@ -58,8 +57,7 @@ public:
   // ApplicationAccessible
   void Init();
 
-  void AppName(nsAString& aName) const
-  {
+  void AppName(nsAString& aName) const {
     MOZ_ASSERT(mAppInfo, "no application info");
 
     if (mAppInfo) {
@@ -69,8 +67,7 @@ public:
     }
   }
 
-  void AppVersion(nsAString& aVersion) const
-  {
+  void AppVersion(nsAString& aVersion) const {
     MOZ_ASSERT(mAppInfo, "no application info");
 
     if (mAppInfo) {
@@ -80,13 +77,9 @@ public:
     }
   }
 
-  void PlatformName(nsAString& aName) const
-  {
-    aName.AssignLiteral("Gecko");
-  }
+  void PlatformName(nsAString& aName) const { aName.AssignLiteral("Gecko"); }
 
-  void PlatformVersion(nsAString& aVersion) const
-  {
+  void PlatformVersion(nsAString& aVersion) const {
     MOZ_ASSERT(mAppInfo, "no application info");
 
     if (mAppInfo) {
@@ -96,25 +89,22 @@ public:
     }
   }
 
-protected:
+ protected:
   virtual ~ApplicationAccessible() {}
 
   // Accessible
-  virtual Accessible* GetSiblingAtOffset(int32_t aOffset,
-                                         nsresult *aError = nullptr) const override;
+  virtual Accessible* GetSiblingAtOffset(
+      int32_t aOffset, nsresult* aError = nullptr) const override;
 
-private:
+ private:
   nsCOMPtr<nsIXULAppInfo> mAppInfo;
 };
 
-inline ApplicationAccessible*
-Accessible::AsApplication()
-{
+inline ApplicationAccessible* Accessible::AsApplication() {
   return IsApplication() ? static_cast<ApplicationAccessible*>(this) : nullptr;
 }
 
-} // namespace a11y
-} // namespace mozilla
+}  // namespace a11y
+}  // namespace mozilla
 
 #endif
-

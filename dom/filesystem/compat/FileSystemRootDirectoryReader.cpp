@@ -7,26 +7,25 @@
 #include "FileSystemRootDirectoryReader.h"
 #include "CallbackRunnables.h"
 #include "nsIGlobalObject.h"
+#include "mozilla/dom/FileSystemUtils.h"
 
 namespace mozilla {
 namespace dom {
 
 namespace {
 
-class EntriesCallbackRunnable final : public Runnable
-{
-public:
+class EntriesCallbackRunnable final : public Runnable {
+ public:
   EntriesCallbackRunnable(FileSystemEntriesCallback* aCallback,
                           const Sequence<RefPtr<FileSystemEntry>>& aEntries)
-    : mCallback(aCallback)
-    , mEntries(aEntries)
-  {
+      : Runnable("EntriesCallbackRunnable"),
+        mCallback(aCallback),
+        mEntries(aEntries) {
     MOZ_ASSERT(aCallback);
   }
 
   NS_IMETHOD
-  Run() override
-  {
+  Run() override {
     Sequence<OwningNonNull<FileSystemEntry>> entries;
     for (uint32_t i = 0; i < mEntries.Length(); ++i) {
       if (!entries.AppendElement(mEntries[i].forget(), fallible)) {
@@ -34,16 +33,16 @@ public:
       }
     }
 
-    mCallback->HandleEvent(entries);
+    mCallback->Call(entries);
     return NS_OK;
   }
 
-private:
+ private:
   RefPtr<FileSystemEntriesCallback> mCallback;
   Sequence<RefPtr<FileSystemEntry>> mEntries;
 };
 
-} // anonymous namespace
+}  // anonymous namespace
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(FileSystemRootDirectoryReader,
                                    FileSystemDirectoryReader, mEntries)
@@ -53,33 +52,31 @@ NS_IMPL_ADDREF_INHERITED(FileSystemRootDirectoryReader,
 NS_IMPL_RELEASE_INHERITED(FileSystemRootDirectoryReader,
                           FileSystemDirectoryReader)
 
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(FileSystemRootDirectoryReader)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(FileSystemRootDirectoryReader)
 NS_INTERFACE_MAP_END_INHERITING(FileSystemDirectoryReader)
 
-FileSystemRootDirectoryReader::FileSystemRootDirectoryReader(FileSystemDirectoryEntry* aParentEntry,
-                                                             FileSystem* aFileSystem,
-                                                             const Sequence<RefPtr<FileSystemEntry>>& aEntries)
-  : FileSystemDirectoryReader(aParentEntry, aFileSystem, nullptr)
-  , mEntries(aEntries)
-  , mAlreadyRead(false)
-{
+FileSystemRootDirectoryReader::FileSystemRootDirectoryReader(
+    FileSystemDirectoryEntry* aParentEntry, FileSystem* aFileSystem,
+    const Sequence<RefPtr<FileSystemEntry>>& aEntries)
+    : FileSystemDirectoryReader(aParentEntry, aFileSystem, nullptr),
+      mEntries(aEntries),
+      mAlreadyRead(false) {
   MOZ_ASSERT(aParentEntry);
   MOZ_ASSERT(aFileSystem);
 }
 
-FileSystemRootDirectoryReader::~FileSystemRootDirectoryReader()
-{}
+FileSystemRootDirectoryReader::~FileSystemRootDirectoryReader() {}
 
-void
-FileSystemRootDirectoryReader::ReadEntries(FileSystemEntriesCallback& aSuccessCallback,
-                                           const Optional<OwningNonNull<ErrorCallback>>& aErrorCallback,
-                                           ErrorResult& aRv)
-{
+void FileSystemRootDirectoryReader::ReadEntries(
+    FileSystemEntriesCallback& aSuccessCallback,
+    const Optional<OwningNonNull<ErrorCallback>>& aErrorCallback,
+    ErrorResult& aRv) {
   if (mAlreadyRead) {
     RefPtr<EmptyEntriesCallbackRunnable> runnable =
-      new EmptyEntriesCallbackRunnable(&aSuccessCallback);
-    aRv = NS_DispatchToMainThread(runnable);
-    NS_WARNING_ASSERTION(!aRv.Failed(), "NS_DispatchToMainThread failed");
+        new EmptyEntriesCallbackRunnable(&aSuccessCallback);
+
+    aRv =
+        FileSystemUtils::DispatchRunnable(GetParentObject(), runnable.forget());
     return;
   }
 
@@ -87,10 +84,10 @@ FileSystemRootDirectoryReader::ReadEntries(FileSystemEntriesCallback& aSuccessCa
   mAlreadyRead = true;
 
   RefPtr<EntriesCallbackRunnable> runnable =
-    new EntriesCallbackRunnable(&aSuccessCallback, mEntries);
-  aRv = NS_DispatchToMainThread(runnable);
-  NS_WARNING_ASSERTION(!aRv.Failed(), "NS_DispatchToMainThread failed");
+      new EntriesCallbackRunnable(&aSuccessCallback, mEntries);
+
+  aRv = FileSystemUtils::DispatchRunnable(GetParentObject(), runnable.forget());
 }
 
-} // dom namespace
-} // mozilla namespace
+}  // namespace dom
+}  // namespace mozilla

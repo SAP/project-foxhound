@@ -59,12 +59,20 @@ function MixedContentTestCase(scenario, description, sanityChecker) {
   var resourceMap = {
     "a-tag": requestViaAnchor,
     "area-tag": requestViaArea,
+    "beacon-request": requestViaSendBeacon,
     "fetch-request": requestViaFetch,
     "form-tag": requestViaForm,
     "iframe-tag": requestViaIframe,
     "img-tag":  requestViaImage,
     "script-tag": requestViaScript,
-    "worker-request": requestViaWorker,
+    "worker-request":
+        url => requestViaDedicatedWorker(url),
+    "module-worker-top-level":
+        url => requestViaDedicatedWorker(url, {type: "module"}),
+    "module-data-worker-import":
+        url => requestViaDedicatedWorker(workerUrlThatImports(url), {type: "module"}),
+    "classic-data-worker-fetch":
+        url => requestViaDedicatedWorker(dedicatedWorkerUrlThatFetches(url), {}),
     "xhr-request": requestViaXhr,
     "audio-tag": requestViaAudio,
     "video-tag": requestViaVideo,
@@ -75,27 +83,45 @@ function MixedContentTestCase(scenario, description, sanityChecker) {
     "websocket-request": requestViaWebSocket
   };
 
-  sanityChecker.checkScenario(scenario, resourceMap);
-
   // Mapping all expected MIME types to the scenario.
   var contentType = {
     "a-tag": "text/html",
     "area-tag": "text/html",
+    "beacon-request": "text/plain",
     "fetch-request": "application/json",
     "form-tag": "text/html",
     "iframe-tag": "text/html",
     "img-tag":  "image/png",
     "script-tag": "text/javascript",
+
     "worker-request": "application/javascript",
+    "module-worker-top-level": "application/javascript",
+    "module-data-worker-import": "application/javascript",
+    "classic-data-worker-fetch": "application/javascript",
+
     "xhr-request": "application/json",
-    "audio-tag": "audio/mpeg",
-    "video-tag": "video/mp4",
+    "audio-tag": "audio/wav",
+    "video-tag": "video/ogg",
     "picture-tag": "image/png",
     "object-tag": "text/html",
     "link-css-tag": "text/css",
     "link-prefetch-tag": "text/html",
     "websocket-request": "application/json"
   };
+
+  for (const workletType of ['animation', 'audio', 'layout', 'paint']) {
+    resourceMap[`worklet-${workletType}-top-level`] =
+      url => requestViaWorklet(workletType, url);
+    contentType[`worklet-${workletType}-top-level`] =
+      "application/javascript";
+
+    resourceMap[`worklet-${workletType}-data-import`] =
+      url => requestViaWorklet(workletType, workerUrlThatImports(url));
+    contentType[`worklet-${workletType}-data-import`] =
+      "application/javascript";
+  }
+
+  sanityChecker.checkScenario(scenario, resourceMap);
 
   var mixed_content_test = async_test(description);
 
@@ -119,45 +145,27 @@ function MixedContentTestCase(scenario, description, sanityChecker) {
                              contentType[scenario.subresource];
 
     xhrRequest(announceResourceRequestUrl)
-      .then(function(response) {
+      .then(mixed_content_test.step_func(_ => {
         // Send out the real resource request.
         // This should tear down the key if it's not blocked.
         return resourceMap[scenario.subresource](resourceRequestUrl);
-      })
-      .then(function() {
-        mixed_content_test.step(function() {
-          assert_equals("allowed", scenario.expectation,
-                        "The triggered event should match '" +
-                        scenario.expectation + "'.");
-        }, "Check if success event was triggered.");
-
+      }))
+      .then(mixed_content_test.step_func(_ => {
         // Send request to check if the key has been torn down.
         return xhrRequest(assertResourceRequestUrl);
-      }, function(error) {
-        mixed_content_test.step(function() {
-          assert_equals("blocked", scenario.expectation,
-                        "The triggered event should match '" +
-                        scenario.expectation + "'.");
-          // TODO(kristijanburnik): param "error" can be an event or error.
-          // Map assertion by resource.
-          // e.g.: assert_equals(e.type, "error");
-        }, "Check if error event was triggered.");
-
+      }))
+      .catch(mixed_content_test.step_func(e => {
         // When requestResource fails, we also check the key state.
         return xhrRequest(assertResourceRequestUrl);
-      })
-      .then(function(response) {
+      }))
+      .then(mixed_content_test.step_func_done(response => {
          // Now check if the value has been torn down. If it's still there,
          // we have blocked the request to mixed-content.
-         mixed_content_test.step(function() {
-           assert_equals(response.status, scenario.expectation,
-                  "The resource request should be '" + scenario.expectation +
-                  "'.");
-         }, "Check if request was sent.");
-         mixed_content_test.done();
-      });
+         assert_equals(response.status, scenario.expectation,
+           "The resource request should be '" + scenario.expectation + "'.");
+      }));
 
   }  // runTest
 
-  return {start: runTest};
+  return {start: mixed_content_test.step_func(runTest) };
 }  // MixedContentTestCase

@@ -9,18 +9,13 @@
 // 3. run `[path to]/run-mozilla.sh [path to]/xpcshell genRootCAHashes.js \
 //                                  [absolute path to]/RootHashes.inc'
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cu = Components.utils;
-var Cr = Components.results;
-
 const nsX509CertDB = "@mozilla.org/security/x509certdb;1";
-const CertDb = Components.classes[nsX509CertDB].getService(Ci.nsIX509CertDB);
+const CertDb = Cc[nsX509CertDB].getService(Ci.nsIX509CertDB);
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/FileUtils.jsm");
-Cu.import("resource://gre/modules/NetUtil.jsm");
-const { CommonUtils } = Cu.import("resource://services-common/utils.js", {});
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const { CommonUtils } = ChromeUtils.import("resource://services-common/utils.js", {});
 
 const FILENAME_OUTPUT = "RootHashes.inc";
 const FILENAME_TRUST_ANCHORS = "KnownRootHashes.json";
@@ -177,10 +172,7 @@ function insertTrustAnchorsFromDatabase() {
   const TRUST_TYPE = Ci.nsIX509CertDB.TRUSTED_SSL;
 
   // Iterate through the whole Cert DB
-  let enumerator = CertDb.getCerts().getEnumerator();
-  while (enumerator.hasMoreElements()) {
-    let cert = enumerator.getNext().QueryInterface(Ci.nsIX509Cert);
-
+  for (let cert of CertDb.getCerts().getEnumerator()) {
     // Find the certificate in our existing list. Do it here because we need to check if
     // it's untrusted too.
 
@@ -201,7 +193,7 @@ function insertTrustAnchorsFromDatabase() {
           {
             "label": label,
             "binNumber": gTrustAnchors.maxBin,
-            "sha256Fingerprint": encodedFingerprint
+            "sha256Fingerprint": encodedFingerprint,
           });
       }
     }
@@ -219,7 +211,7 @@ if (arguments.length != 1) {
 
 var trustAnchorsFile = FileUtils.getFile("CurWorkD", [FILENAME_TRUST_ANCHORS]);
 // let rootHashesFile = FileUtils.getFile("CurWorkD", arguments[0]);
-var rootHashesFile = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsILocalFile);
+var rootHashesFile = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
 rootHashesFile.initWithPath(arguments[0]);
 
 // Open the known hashes file; this is to ensure stable bin numbers.

@@ -8,16 +8,15 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_processing/vad/voice_activity_detector.h"
+#include "modules/audio_processing/vad/voice_activity_detector.h"
 
 #include <algorithm>
 
-#include "webrtc/base/checks.h"
+#include "rtc_base/checks.h"
 
 namespace webrtc {
 namespace {
 
-const size_t kMaxLength = 320;
 const size_t kNumChannels = 1;
 
 const double kDefaultVoiceValue = 1.0;
@@ -31,14 +30,15 @@ VoiceActivityDetector::VoiceActivityDetector()
       standalone_vad_(StandaloneVad::Create()) {
 }
 
+VoiceActivityDetector::~VoiceActivityDetector() = default;
+
 // Because ISAC has a different chunk length, it updates
 // |chunkwise_voice_probabilities_| and |chunkwise_rms_| when there is new data.
 // Otherwise it clears them.
 void VoiceActivityDetector::ProcessChunk(const int16_t* audio,
                                          size_t length,
                                          int sample_rate_hz) {
-  RTC_DCHECK_EQ(static_cast<int>(length), sample_rate_hz / 100);
-  RTC_DCHECK_LE(length, kMaxLength);
+  RTC_DCHECK_EQ(length, sample_rate_hz / 100);
   // Resample to the required rate.
   const int16_t* resampled_ptr = audio;
   if (sample_rate_hz != kSampleRateHz) {

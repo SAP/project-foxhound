@@ -9,13 +9,11 @@
   %webideDTD;
 ]>
 
-<?xul-overlay href="chrome://global/content/editMenuOverlay.xul"?>
-
 <?xml-stylesheet href="chrome://global/skin/global.css"?>
 <?xml-stylesheet href="resource://devtools/client/themes/common.css"?>
 <?xml-stylesheet href="chrome://webide/skin/webide.css"?>
 
-<window id="webide" onclose="return UI.canCloseProject();"
+<window id="webide" 
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         xmlns:html="http://www.w3.org/1999/xhtml"
         title="&windowTitle;"
@@ -31,23 +29,23 @@
   <script type="application/javascript" src="runtime-panel.js"></script>
   <script type="application/javascript" src="webide.js"></script>
 
+#include ../../../../toolkit/content/editMenuCommands.inc.xul
+
   <commandset id="mainCommandSet">
-    <commandset id="editMenuCommands"/>
     <commandset id="webideCommands">
       <command id="cmd_quit" oncommand="Cmds.quit()"/>
       <command id="cmd_newApp" oncommand="Cmds.newApp()" label="&projectMenu_newApp_label;"/>
       <command id="cmd_importPackagedApp" oncommand="Cmds.importPackagedApp()" label="&projectMenu_importPackagedApp_label;"/>
       <command id="cmd_importHostedApp" oncommand="Cmds.importHostedApp()" label="&projectMenu_importHostedApp_label;"/>
       <command id="cmd_showDevicePrefs" label="&runtimeMenu_showDevicePrefs_label;" oncommand="Cmds.showDevicePrefs()"/>
+      <command id="cmd_showPerformancePanel" label="&runtimeMenu_showPerformancePanel_label;" oncommand="Cmds.showPerformancePanel()"/>
       <command id="cmd_showSettings" label="&runtimeMenu_showSettings_label;" oncommand="Cmds.showSettings()"/>
       <command id="cmd_removeProject" oncommand="Cmds.removeProject()" label="&projectMenu_remove_label;"/>
       <command id="cmd_showProjectPanel" oncommand="Cmds.showProjectPanel()"/>
       <command id="cmd_showRuntimePanel" oncommand="Cmds.showRuntimePanel()"/>
       <command id="cmd_disconnectRuntime" oncommand="Cmds.disconnectRuntime()" label="&runtimeMenu_disconnect_label;"/>
-      <command id="cmd_showMonitor" oncommand="Cmds.showMonitor()" label="&runtimeMenu_showMonitor_label;"/>
       <command id="cmd_showRuntimeDetails" oncommand="Cmds.showRuntimeDetails()" label="&runtimeMenu_showDetails_label;"/>
       <command id="cmd_takeScreenshot" oncommand="Cmds.takeScreenshot()" label="&runtimeMenu_takeScreenshot_label;"/>
-      <command id="cmd_toggleEditor" oncommand="Cmds.toggleEditors()" label="&viewMenu_toggleEditor_label;"/>
       <command id="cmd_showAddons" oncommand="Cmds.showAddons()"/>
       <command id="cmd_showPrefs" oncommand="Cmds.showPrefs()"/>
       <command id="cmd_showTroubleShooting" oncommand="Cmds.showTroubleShooting()"/>
@@ -60,6 +58,7 @@
     </commandset>
   </commandset>
 
+  <toolbar type="menubar">
   <menubar id="main-menubar">
     <menu id="menu-project" label="&projectMenu_label;" accesskey="&projectMenu_accesskey;">
       <menupopup id="menu-project-popup">
@@ -81,11 +80,11 @@
 
     <menu id="menu-runtime" label="&runtimeMenu_label;" accesskey="&runtimeMenu_accesskey;">
       <menupopup id="menu-runtime-popup">
-        <menuitem command="cmd_showMonitor" accesskey="&runtimeMenu_showMonitor_accesskey;"/>
         <menuitem command="cmd_takeScreenshot" accesskey="&runtimeMenu_takeScreenshot_accesskey;"/>
         <menuitem command="cmd_showRuntimeDetails" accesskey="&runtimeMenu_showDetails_accesskey;"/>
         <menuitem command="cmd_showDevicePrefs" accesskey="&runtimeMenu_showDevicePrefs_accesskey;"/>
         <menuitem command="cmd_showSettings" accesskey="&runtimeMenu_showSettings_accesskey;"/>
+        <menuitem command="cmd_showPerformancePanel" accesskey="&runtimeMenu_showPerformancePanel_accesskey;"/>
         <menuseparator/>
         <menuitem command="cmd_disconnectRuntime" accesskey="&runtimeMenu_disconnect_accesskey;"/>
       </menupopup>
@@ -93,7 +92,6 @@
 
     <menu id="menu-view" label="&viewMenu_label;" accesskey="&viewMenu_accesskey;">
       <menupopup id="menu-ViewPopup">
-        <menuitem command="cmd_toggleEditor" key="key_toggleEditor" accesskey="&viewMenu_toggleEditor_accesskey;"/>
         <menuseparator/>
         <menuitem command="cmd_zoomin" key="key_zoomin" accesskey="&viewMenu_zoomin_accesskey;"/>
         <menuitem command="cmd_zoomout" key="key_zoomout" accesskey="&viewMenu_zoomout_accesskey;"/>
@@ -102,12 +100,12 @@
     </menu>
 
   </menubar>
+  </toolbar>
 
   <keyset id="mainKeyset">
     <key key="&key_quit;" id="key_quit" command="cmd_quit" modifiers="accel"/>
     <key key="&key_showProjectPanel;" id="key_showProjectPanel" command="cmd_showProjectPanel" modifiers="accel"/>
     <key key="&key_play;" id="key_play" command="cmd_play" modifiers="accel"/>
-    <key key="&key_toggleEditor;" id="key_toggleEditor" command="cmd_toggleEditor" modifiers="accel"/>
     <key keycode="&key_toggleToolbox;" id="key_toggleToolbox" command="cmd_toggleToolbox"/>
     <key key="&key_zoomin;" id="key_zoomin" command="cmd_zoomin" modifiers="accel"/>
     <key key="&key_zoomin2;" id="key_zoomin2" command="cmd_zoomin" modifiers="accel"/>
@@ -126,7 +124,7 @@
         <toolbarbutton id="action-button-debug" class="action-button" command="cmd_toggleToolbox" tooltiptext="&projectMenu_debug_label;"/>
         <hbox id="action-busy" align="center">
           <html:img id="action-busy-undetermined" src="chrome://webide/skin/throbber.svg"/>
-          <progressmeter id="action-busy-determined"/>
+          <html:progress id="action-busy-determined"/>
         </hbox>
       </hbox>
 
@@ -141,7 +139,7 @@
     </vbox>
   </toolbar>
 
-  <notificationbox flex="1" id="notificationbox">
+  <vbox flex="1" id="containerbox">
     <div flex="1" id="deck-panels">
       <vbox id="project-listing-panel" class="project-listing panel-list" flex="1">
         <div id="project-listing-wrapper" class="panel-list-wrapper">
@@ -151,14 +149,11 @@
       <splitter class="devtools-side-splitter" id="project-listing-splitter"/>
       <deck flex="1" id="deck" selectedIndex="-1">
         <iframe id="deck-panel-details" flex="1" src="details.xhtml"/>
-        <iframe id="deck-panel-projecteditor" flex="1"/>
         <iframe id="deck-panel-addons" flex="1" src="addons.xhtml"/>
         <iframe id="deck-panel-prefs" flex="1" src="prefs.xhtml"/>
         <iframe id="deck-panel-runtimedetails" flex="1" lazysrc="runtimedetails.xhtml"/>
-        <iframe id="deck-panel-monitor" flex="1" lazysrc="monitor.xhtml"/>
         <iframe id="deck-panel-devicepreferences" flex="1" lazysrc="devicepreferences.xhtml"/>
-        <iframe id="deck-panel-logs" flex="1" src="logs.xhtml"/>
-        <iframe id="deck-panel-simulator" flex="1" lazysrc="simulator.xhtml"/>
+        <iframe id="deck-panel-performance" flex="1" lazysrc="chrome://devtools/content/performance-new/index.xhtml"/>
       </deck>
       <splitter class="devtools-side-splitter" id="runtime-listing-splitter"/>
       <vbox id="runtime-listing-panel" class="runtime-listing panel-list" flex="1">
@@ -169,6 +164,6 @@
     </div>
     <splitter hidden="true" class="devtools-horizontal-splitter" orient="vertical"/>
     <!-- toolbox iframe will be inserted here -->
-  </notificationbox>
+  </vbox>
 
 </window>

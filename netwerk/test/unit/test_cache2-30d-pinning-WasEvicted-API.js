@@ -22,13 +22,10 @@ function log_(msg) { if (true) dump(">>>>>>>>>>>>> " + msg + "\n"); }
 function run_test()
 {
   do_get_profile();
-  if (!newCacheBackEndUsed()) {
-    do_check_true(true, "This test checks only cache2 specific behavior.");
-    return;
-  }
-  var lci = LoadContextInfo.default;
+
+  var lci = Services.loadContextInfo.default;
   var testingInterface = get_cache_service().QueryInterface(Ci.nsICacheTesting);
-  do_check_true(testingInterface);
+  Assert.ok(testingInterface);
 
   var mc = new MultipleCallbacks(1, function() {
     // (2)
@@ -39,7 +36,7 @@ function run_test()
     // entries that are obviously unreferenced.  Yeah, I know, this is wacky...
     gc();
     gc();
-    do_execute_soon(() => {
+    executeSoon(() => {
       gc();
       gc();
       log_("purging");
@@ -106,7 +103,7 @@ function run_test()
 
       mc.fired(); // Finishes this test
     }
-  }, "cacheservice:purge-memory-pools", false);
+  }, "cacheservice:purge-memory-pools");
 
 
   do_test_pending();

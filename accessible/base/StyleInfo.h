@@ -8,16 +8,18 @@
 #define _mozilla_a11y_style_h_
 
 #include "mozilla/gfx/Types.h"
-#include "nsStyleContext.h"
+#include "mozilla/ComputedStyle.h"
 
 namespace mozilla {
+namespace dom {
+class Element;
+}  // namespace dom
 namespace a11y {
 
-class StyleInfo
-{
-public:
-  StyleInfo(dom::Element* aElement, nsIPresShell* aPresShell);
-  ~StyleInfo() { }
+class StyleInfo {
+ public:
+  explicit StyleInfo(dom::Element* aElement);
+  ~StyleInfo() {}
 
   void Display(nsAString& aValue);
   void TextAlign(nsAString& aValue);
@@ -28,21 +30,21 @@ public:
   void MarginBottom(nsAString& aValue) { Margin(eSideBottom, aValue); }
 
   static void FormatColor(const nscolor& aValue, nsString& aFormattedValue);
-  static void FormatFontStyle(const nscoord& aValue, nsAString& aFormattedValue);
-  static void FormatTextDecorationStyle(uint8_t aValue, nsAString& aFormattedValue);
+  static void FormatTextDecorationStyle(uint8_t aValue,
+                                        nsAString& aFormattedValue);
 
-private:
+ private:
   StyleInfo() = delete;
   StyleInfo(const StyleInfo&) = delete;
-  StyleInfo& operator = (const StyleInfo&) = delete;
+  StyleInfo& operator=(const StyleInfo&) = delete;
 
   void Margin(Side aSide, nsAString& aValue);
 
   dom::Element* mElement;
-  RefPtr<nsStyleContext> mStyleContext;
+  RefPtr<ComputedStyle> mComputedStyle;
 };
 
-} // namespace a11y
-} // namespace mozilla
+}  // namespace a11y
+}  // namespace mozilla
 
 #endif

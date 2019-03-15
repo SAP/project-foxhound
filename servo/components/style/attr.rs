@@ -1,32 +1,32 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! Parsed representations of [DOM attributes][attr].
 //!
 //! [attr]: https://dom.spec.whatwg.org/#interface-attr
 
-use {Atom, Prefix, Namespace, LocalName};
+use crate::properties::PropertyDeclarationBlock;
+use crate::shared_lock::Locked;
+use crate::str::str_join;
+use crate::str::{read_exponent, read_fraction, HTML_SPACE_CHARACTERS};
+use crate::str::{read_numbers, split_commas, split_html_space_chars};
+use crate::values::specified::Length;
+use crate::{Atom, LocalName, Namespace, Prefix};
 use app_units::Au;
 use cssparser::{self, Color, RGBA};
 use euclid::num::Zero;
 use num_traits::ToPrimitive;
-use parking_lot::RwLock;
-use properties::PropertyDeclarationBlock;
+use selectors::attr::AttrSelectorOperation;
+use servo_arc::Arc;
 use servo_url::ServoUrl;
-use std::ascii::AsciiExt;
 use std::str::FromStr;
-use std::sync::Arc;
-use str::{HTML_SPACE_CHARACTERS, read_exponent, read_fraction};
-use str::{read_numbers, split_commas, split_html_space_chars};
-#[cfg(not(feature = "gecko"))] use str::str_join;
-use values::specified::Length;
 
 // Duplicated from script::dom::values.
 const UNSIGNED_LONG_MAX: u32 = 2147483647;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-#[cfg_attr(feature = "servo", derive(HeapSizeOf))]
+#[cfg_attr(feature = "servo", derive(MallocSizeOf))]
 pub enum LengthOrPercentageOrAuto {
     Auto,
     Percentage(f32),
@@ -34,7 +34,7 @@ pub enum LengthOrPercentageOrAuto {
 }
 
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "servo", derive(HeapSizeOf))]
+#[cfg_attr(feature = "servo", derive(MallocSizeOf))]
 pub enum AttrValue {
     String(String),
     TokenList(String, Vec<Atom>),
@@ -45,7 +45,12 @@ pub enum AttrValue {
     Length(String, Option<Length>),
     Color(String, Option<RGBA>),
     Dimension(String, LengthOrPercentageOrAuto),
-    Url(String, Option<ServoUrl>),
+
+    /// Stores a URL, computed from the input string and a document's base URL.
+    ///
+    /// The URL is resolved at setting-time, so this kind of attribute value is
+    /// not actually suitable for most URL-reflecting IDL attributes.
+    ResolvedUrl(String, Option<ServoUrl>),
 
     /// Note that this variant is only used transitively as a fast path to set
     /// the property declaration block relevant to the style of an element when
@@ -59,18 +64,19 @@ pub enum AttrValue {
     /// Note that we don't necessarily need to do that (we could just clone the
     /// declaration block), but that avoids keeping a refcounted
     /// declarationblock for longer than needed.
-    Declaration(String,
-                #[cfg_attr(feature = "servo", ignore_heap_size_of = "Arc")]
-                Arc<RwLock<PropertyDeclarationBlock>>)
+    Declaration(
+        String,
+        #[ignore_malloc_size_of = "Arc"] Arc<Locked<PropertyDeclarationBlock>>,
+    ),
 }
 
 /// Shared implementation to parse an integer according to
 /// <https://html.spec.whatwg.org/multipage/#rules-for-parsing-integers> or
 /// <https://html.spec.whatwg.org/multipage/#rules-for-parsing-non-negative-integers>
-fn do_parse_integer<T: Iterator<Item=char>>(input: T) -> Result<i64, ()> {
-    let mut input = input.skip_while(|c| {
-        HTML_SPACE_CHARACTERS.iter().any(|s| s == c)
-    }).peekable();
+fn do_parse_integer<T: Iterator<Item = char>>(input: T) -> Result<i64, ()> {
+    let mut input = input
+        .skip_while(|c| HTML_SPACE_CHARACTERS.iter().any(|s| s == c))
+        .peekable();
 
     let sign = match input.peek() {
         None => return Err(()),
@@ -92,18 +98,14 @@ fn do_parse_integer<T: Iterator<Item=char>>(input: T) -> Result<i64, ()> {
 
 /// Parse an integer according to
 /// <https://html.spec.whatwg.org/multipage/#rules-for-parsing-integers>.
-pub fn parse_integer<T: Iterator<Item=char>>(input: T) -> Result<i32, ()> {
-    do_parse_integer(input).and_then(|result| {
-        result.to_i32().ok_or(())
-    })
+pub fn parse_integer<T: Iterator<Item = char>>(input: T) -> Result<i32, ()> {
+    do_parse_integer(input).and_then(|result| result.to_i32().ok_or(()))
 }
 
 /// Parse an integer according to
 /// <https://html.spec.whatwg.org/multipage/#rules-for-parsing-non-negative-integers>
-pub fn parse_unsigned_integer<T: Iterator<Item=char>>(input: T) -> Result<u32, ()> {
-    do_parse_integer(input).and_then(|result| {
-        result.to_u32().ok_or(())
-    })
+pub fn parse_unsigned_integer<T: Iterator<Item = char>>(input: T) -> Result<u32, ()> {
+    do_parse_integer(input).and_then(|result| result.to_u32().ok_or(()))
 }
 
 /// Parse a floating-point number according to
@@ -117,26 +119,35 @@ pub fn parse_double(string: &str) -> Result<f64, ()> {
         Some(&'-') => {
             input.next();
             (-1f64, -1f64, 1)
-        }
+        },
         Some(&'+') => {
             input.next();
             (1f64, 1f64, 1)
-        }
-        _ => (1f64, 1f64, 0)
+        },
+        _ => (1f64, 1f64, 0),
     };
 
     let (value, value_digits) = if let Some(&'.') = input.peek() {
         (0f64, 0)
     } else {
         let (read_val, read_digits) = read_numbers(input);
-        (value * read_val.and_then(|result| result.to_f64()).unwrap_or(1f64), read_digits)
+        (
+            value * read_val.and_then(|result| result.to_f64()).unwrap_or(1f64),
+            read_digits,
+        )
     };
 
-    let input = trimmed.chars().skip(value_digits + chars_skipped).peekable();
+    let input = trimmed
+        .chars()
+        .skip(value_digits + chars_skipped)
+        .peekable();
 
     let (mut value, fraction_digits) = read_fraction(input, divisor, value);
 
-    let input = trimmed.chars().skip(value_digits + chars_skipped + fraction_digits).peekable();
+    let input = trimmed
+        .chars()
+        .skip(value_digits + chars_skipped + fraction_digits)
+        .peekable();
 
     if let Some(exp) = read_exponent(input) {
         value *= 10f64.powi(exp)
@@ -149,24 +160,28 @@ impl AttrValue {
     pub fn from_serialized_tokenlist(tokens: String) -> AttrValue {
         let atoms =
             split_html_space_chars(&tokens)
+                .map(Atom::from)
+                .fold(vec![], |mut acc, atom| {
+                    if !acc.contains(&atom) {
+                        acc.push(atom)
+                    }
+                    acc
+                });
+        AttrValue::TokenList(tokens, atoms)
+    }
+
+    pub fn from_comma_separated_tokenlist(tokens: String) -> AttrValue {
+        let atoms = split_commas(&tokens)
             .map(Atom::from)
             .fold(vec![], |mut acc, atom| {
-                if !acc.contains(&atom) { acc.push(atom) }
+                if !acc.contains(&atom) {
+                    acc.push(atom)
+                }
                 acc
             });
         AttrValue::TokenList(tokens, atoms)
     }
 
-    pub fn from_comma_separated_tokenlist(tokens: String) -> AttrValue {
-        let atoms = split_commas(&tokens).map(Atom::from)
-                                         .fold(vec![], |mut acc, atom| {
-                                            if !acc.contains(&atom) { acc.push(atom) }
-                                            acc
-                                         });
-        AttrValue::TokenList(tokens, atoms)
-    }
-
-    #[cfg(not(feature = "gecko"))] // Gecko can't borrow atoms as UTF-8.
     pub fn from_atomic_tokens(atoms: Vec<Atom>) -> AttrValue {
         // TODO(ajeffrey): effecient conversion of Vec<Atom> to String
         let tokens = String::from(str_join(&atoms, "\x20"));
@@ -227,9 +242,9 @@ impl AttrValue {
         AttrValue::Atom(value)
     }
 
-    pub fn from_url(base: ServoUrl, url: String) -> AttrValue {
+    pub fn from_resolved_url(base: &ServoUrl, url: String) -> AttrValue {
         let joined = base.join(&url).ok();
-        AttrValue::Url(url, joined)
+        AttrValue::ResolvedUrl(url, joined)
     }
 
     pub fn from_legacy_color(string: String) -> AttrValue {
@@ -307,14 +322,14 @@ impl AttrValue {
         }
     }
 
-    /// Assumes the `AttrValue` is a `Url` and returns its value
+    /// Assumes the `AttrValue` is a `ResolvedUrl` and returns its value.
     ///
     /// ## Panics
     ///
-    /// Panics if the `AttrValue` is not a `Url`
-    pub fn as_url(&self) -> Option<&ServoUrl> {
+    /// Panics if the `AttrValue` is not a `ResolvedUrl`
+    pub fn as_resolved_url(&self) -> Option<&ServoUrl> {
         match *self {
-            AttrValue::Url(_, ref url) => url.as_ref(),
+            AttrValue::ResolvedUrl(_, ref url) => url.as_ref(),
             _ => panic!("Url not found"),
         }
     }
@@ -333,34 +348,66 @@ impl AttrValue {
             panic!("Uint not found");
         }
     }
+
+    /// Return the AttrValue as a dimension computed from its integer
+    /// representation, assuming that integer representation specifies pixels.
+    ///
+    /// This corresponds to attribute values returned as `AttrValue::UInt(_)`
+    /// by `VirtualMethods::parse_plain_attribute()`.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if the `AttrValue` is not a `UInt`
+    pub fn as_uint_px_dimension(&self) -> LengthOrPercentageOrAuto {
+        if let AttrValue::UInt(_, value) = *self {
+            LengthOrPercentageOrAuto::Length(Au::from_px(value as i32))
+        } else {
+            panic!("Uint not found");
+        }
+    }
+
+    pub fn eval_selector(&self, selector: &AttrSelectorOperation<&String>) -> bool {
+        // FIXME(SimonSapin) this can be more efficient by matching on `(self, selector)` variants
+        // and doing Atom comparisons instead of string comparisons where possible,
+        // with SelectorImpl::AttrValue changed to Atom.
+        selector.eval_str(self)
+    }
 }
 
-#[cfg(not(feature = "gecko"))] // Gecko can't borrow atoms as UTF-8.
 impl ::std::ops::Deref for AttrValue {
     type Target = str;
 
     fn deref(&self) -> &str {
         match *self {
             AttrValue::String(ref value) |
-                AttrValue::TokenList(ref value, _) |
-                AttrValue::UInt(ref value, _) |
-                AttrValue::Double(ref value, _) |
-                AttrValue::Length(ref value, _) |
-                AttrValue::Color(ref value, _) |
-                AttrValue::Int(ref value, _) |
-                AttrValue::Url(ref value, _) |
-                AttrValue::Declaration(ref value, _) |
-                AttrValue::Dimension(ref value, _) => &value,
+            AttrValue::TokenList(ref value, _) |
+            AttrValue::UInt(ref value, _) |
+            AttrValue::Double(ref value, _) |
+            AttrValue::Length(ref value, _) |
+            AttrValue::Color(ref value, _) |
+            AttrValue::Int(ref value, _) |
+            AttrValue::ResolvedUrl(ref value, _) |
+            AttrValue::Declaration(ref value, _) |
+            AttrValue::Dimension(ref value, _) => &value,
             AttrValue::Atom(ref value) => &value,
         }
     }
 }
 
-/// https://html.spec.whatwg.org/multipage/#rules-for-parsing-non-zero-dimension-values
+impl PartialEq<Atom> for AttrValue {
+    fn eq(&self, other: &Atom) -> bool {
+        match *self {
+            AttrValue::Atom(ref value) => value == other,
+            _ => other == &**self,
+        }
+    }
+}
+
+/// <https://html.spec.whatwg.org/multipage/#rules-for-parsing-non-zero-dimension-values>
 pub fn parse_nonzero_length(value: &str) -> LengthOrPercentageOrAuto {
     match parse_length(value) {
         LengthOrPercentageOrAuto::Length(x) if x == Au::zero() => LengthOrPercentageOrAuto::Auto,
-        LengthOrPercentageOrAuto::Percentage(0.) => LengthOrPercentageOrAuto::Auto,
+        LengthOrPercentageOrAuto::Percentage(x) if x == 0. => LengthOrPercentageOrAuto::Auto,
         x => x,
     }
 }
@@ -371,7 +418,7 @@ pub fn parse_nonzero_length(value: &str) -> LengthOrPercentageOrAuto {
 pub fn parse_legacy_color(mut input: &str) -> Result<RGBA, ()> {
     // Steps 1 and 2.
     if input.is_empty() {
-        return Err(())
+        return Err(());
     }
 
     // Step 3.
@@ -379,7 +426,7 @@ pub fn parse_legacy_color(mut input: &str) -> Result<RGBA, ()> {
 
     // Step 4.
     if input.eq_ignore_ascii_case("transparent") {
-        return Err(())
+        return Err(());
     }
 
     // Step 5.
@@ -389,12 +436,13 @@ pub fn parse_legacy_color(mut input: &str) -> Result<RGBA, ()> {
 
     // Step 6.
     if input.len() == 4 {
-        if let (b'#', Ok(r), Ok(g), Ok(b)) =
-                (input.as_bytes()[0],
-                hex(input.as_bytes()[1] as char),
-                hex(input.as_bytes()[2] as char),
-                hex(input.as_bytes()[3] as char)) {
-            return Ok(RGBA::new(r * 17, g * 17, b * 17, 255))
+        if let (b'#', Ok(r), Ok(g), Ok(b)) = (
+            input.as_bytes()[0],
+            hex(input.as_bytes()[1] as char),
+            hex(input.as_bytes()[2] as char),
+            hex(input.as_bytes()[3] as char),
+        ) {
+            return Ok(RGBA::new(r * 17, g * 17, b * 17, 255));
         }
     }
 
@@ -413,7 +461,7 @@ pub fn parse_legacy_color(mut input: &str) -> Result<RGBA, ()> {
     for (char_count, (index, _)) in input.char_indices().enumerate() {
         if char_count == 128 {
             input = &input[..index];
-            break
+            break;
         }
     }
 
@@ -440,9 +488,11 @@ pub fn parse_legacy_color(mut input: &str) -> Result<RGBA, ()> {
 
     // Step 12.
     let mut length = input.len() / 3;
-    let (mut red, mut green, mut blue) = (&input[..length],
-                                          &input[length..length * 2],
-                                          &input[length * 2..]);
+    let (mut red, mut green, mut blue) = (
+        &input[..length],
+        &input[length..length * 2],
+        &input[length * 2..],
+    );
 
     // Step 13.
     if length > 8 {
@@ -461,10 +511,12 @@ pub fn parse_legacy_color(mut input: &str) -> Result<RGBA, ()> {
     }
 
     // Steps 15-20.
-    return Ok(RGBA::new(hex_string(red).unwrap(),
-                        hex_string(green).unwrap(),
-                        hex_string(blue).unwrap(),
-                        255));
+    return Ok(RGBA::new(
+        hex_string(red).unwrap(),
+        hex_string(green).unwrap(),
+        hex_string(blue).unwrap(),
+        255,
+    ));
 
     fn hex(ch: char) -> Result<u8, ()> {
         match ch {
@@ -480,10 +532,10 @@ pub fn parse_legacy_color(mut input: &str) -> Result<RGBA, ()> {
             0 => Err(()),
             1 => hex(string[0] as char),
             _ => {
-                let upper = try!(hex(string[0] as char));
-                let lower = try!(hex(string[1] as char));
+                let upper = hex(string[0] as char)?;
+                let lower = hex(string[1] as char)?;
                 Ok((upper << 4) | lower)
-            }
+            },
         }
     }
 }
@@ -491,16 +543,16 @@ pub fn parse_legacy_color(mut input: &str) -> Result<RGBA, ()> {
 /// Parses a [dimension value][dim]. If unparseable, `Auto` is returned.
 ///
 /// [dim]: https://html.spec.whatwg.org/multipage/#rules-for-parsing-dimension-values
-// TODO: this function can be rewritten to return Result<LengthOrPercentage, _>
+// TODO: this function can be rewritten to return Result<LengthPercentage, _>
 pub fn parse_length(mut value: &str) -> LengthOrPercentageOrAuto {
     // Steps 1 & 2 are not relevant
 
     // Step 3
-    value = value.trim_left_matches(HTML_SPACE_CHARACTERS);
+    value = value.trim_start_matches(HTML_SPACE_CHARACTERS);
 
     // Step 4
     if value.is_empty() {
-        return LengthOrPercentageOrAuto::Auto
+        return LengthOrPercentageOrAuto::Auto;
     }
 
     // Step 5
@@ -529,16 +581,16 @@ pub fn parse_length(mut value: &str) -> LengthOrPercentageOrAuto {
             '%' => {
                 found_percent = true;
                 end_index = i;
-                break
-            }
+                break;
+            },
             '.' if !found_full_stop => {
                 found_full_stop = true;
-                continue
-            }
+                continue;
+            },
             _ => {
                 end_index = i;
-                break
-            }
+                break;
+            },
         }
     }
     value = &value[..end_index];
@@ -559,7 +611,7 @@ pub fn parse_length(mut value: &str) -> LengthOrPercentageOrAuto {
 
 /// A struct that uniquely identifies an element's attribute.
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "servo", derive(HeapSizeOf))]
+#[cfg_attr(feature = "servo", derive(MallocSizeOf))]
 pub struct AttrIdentifier {
     pub local_name: LocalName,
     pub name: LocalName,

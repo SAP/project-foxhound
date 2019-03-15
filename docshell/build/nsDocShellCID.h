@@ -7,34 +7,12 @@
 #ifndef nsDocShellCID_h__
 #define nsDocShellCID_h__
 
-#define NS_GLOBALHISTORY2_CONTRACTID "@mozilla.org/browser/global-history;2"
-
-/**
- * A contract for a service that will track download history.  This can be
- * overridden by embedders if they would like to track additional information
- * about downloads.
- *
- * @implements nsIDownloadHistory
- */
-#define NS_DOWNLOADHISTORY_CONTRACTID "@mozilla.org/browser/download-history;1"
-
 /**
  * A contract that can be used to get a service that provides
  * meta-information about nsIWebNavigation objects' capabilities.
  * @implements nsIWebNavigationInfo
  */
 #define NS_WEBNAVIGATION_INFO_CONTRACTID "@mozilla.org/webnavigation-info;1"
-
-/**
- * Class and contract ID for the docshell.  This is the container for a web
- * navigation context.  It implements too many interfaces to count, and the
- * exact ones keep changing; if they stabilize somewhat that will get
- * documented.
- */
-#define NS_DOCSHELL_CID                                                        \
-  { 0xf1eac762, 0x87e9, 0x11d3,                                                \
-    { 0xaf, 0x80, 0x00, 0xa0, 0x24, 0xff, 0xc0, 0x8c } }
-#define NS_DOCSHELL_CONTRACTID "@mozilla.org/docshell/html;1"
 
 /**
  * Contract ID to obtain the IHistory interface.  This is a non-scriptable
@@ -87,4 +65,4 @@
  */
 #define NS_CHROME_WEBNAVIGATION_DESTROY "chrome-webnavigation-destroy"
 
-#endif // nsDocShellCID_h__
+#endif  // nsDocShellCID_h__

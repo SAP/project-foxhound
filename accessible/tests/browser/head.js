@@ -2,10 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-'use strict';
+"use strict";
 
 /* exported initPromise, shutdownPromise, waitForEvent, setE10sPrefs,
-            unsetE10sPrefs, forceGC */
+            unsetE10sPrefs, a11yConsumersChangedPromise */
 
 /**
  * Set e10s related preferences in the test environment.
@@ -15,9 +15,8 @@ function setE10sPrefs() {
   return new Promise(resolve =>
     SpecialPowers.pushPrefEnv({
       set: [
-        ['browser.tabs.remote.autostart', true],
-        ['browser.tabs.remote.force-enable', true],
-        ['extensions.e10sBlocksEnabling', false]
+        ["browser.tabs.remote.autostart", true],
+        ["browser.tabs.remote.force-enable", true]
       ]
     }, resolve));
 }
@@ -33,9 +32,24 @@ function unsetE10sPrefs() {
 }
 
 // Load the shared-head file first.
+/* import-globals-from shared-head.js */
 Services.scriptloader.loadSubScript(
-  'chrome://mochitests/content/browser/accessible/tests/browser/shared-head.js',
+  "chrome://mochitests/content/browser/accessible/tests/browser/shared-head.js",
   this);
+
+/**
+ * Returns a promise that resolves when 'a11y-consumers-changed' event is fired.
+ * @return {Promise} event promise evaluating to event's data
+ */
+function a11yConsumersChangedPromise() {
+  return new Promise(resolve => {
+    let observe = (subject, topic, data) => {
+      Services.obs.removeObserver(observe, "a11y-consumers-changed");
+      resolve(JSON.parse(data));
+    };
+    Services.obs.addObserver(observe, "a11y-consumers-changed");
+  });
+}
 
 /**
  * Returns a promise that resolves when 'a11y-init-or-shutdown' event is fired.
@@ -44,10 +58,10 @@ Services.scriptloader.loadSubScript(
 function a11yInitOrShutdownPromise() {
   return new Promise(resolve => {
     let observe = (subject, topic, data) => {
-      Services.obs.removeObserver(observe, 'a11y-init-or-shutdown');
+      Services.obs.removeObserver(observe, "a11y-init-or-shutdown");
       resolve(data);
     };
-    Services.obs.addObserver(observe, 'a11y-init-or-shutdown', false);
+    Services.obs.addObserver(observe, "a11y-init-or-shutdown");
   });
 }
 
@@ -84,9 +98,9 @@ function initPromise(contentBrowser) {
   let a11yInitPromise = contentBrowser ?
     contentA11yInitOrShutdownPromise(contentBrowser) :
     a11yInitOrShutdownPromise();
-  return promiseOK(a11yInitPromise, '1').then(
-    () => ok(true, 'Service initialized correctly'),
-    () => ok(false, 'Service shutdown incorrectly'));
+  return promiseOK(a11yInitPromise, "1").then(
+    () => ok(true, "Service initialized correctly"),
+    () => ok(false, "Service shutdown incorrectly"));
 }
 
 /**
@@ -102,39 +116,33 @@ function shutdownPromise(contentBrowser) {
   let a11yShutdownPromise = contentBrowser ?
     contentA11yInitOrShutdownPromise(contentBrowser) :
     a11yInitOrShutdownPromise();
-  return promiseOK(a11yShutdownPromise, '0').then(
-    () => ok(true, 'Service shutdown correctly'),
-    () => ok(false, 'Service initialized incorrectly'));
+  return promiseOK(a11yShutdownPromise, "0").then(
+    () => ok(true, "Service shutdown correctly"),
+    () => ok(false, "Service initialized incorrectly"));
 }
 
 /**
  * Simpler verions of waitForEvent defined in
- * accessible/tests/browser/e10s/events.js
+ * accessible/tests/browser/events.js
  */
 function waitForEvent(eventType, expectedId) {
   return new Promise(resolve => {
     let eventObserver = {
       observe(subject) {
         let event = subject.QueryInterface(Ci.nsIAccessibleEvent);
+        let id;
+        try {
+          id = event.accessible.id;
+        } catch (e) {
+          // This can throw NS_ERROR_FAILURE.
+        }
         if (event.eventType === eventType &&
-            event.accessible.id === expectedId) {
-          Services.obs.removeObserver(this, 'accessible-event');
+            id === expectedId) {
+          Services.obs.removeObserver(this, "accessible-event");
           resolve(event);
         }
       }
     };
-    Services.obs.addObserver(eventObserver, 'accessible-event', false);
+    Services.obs.addObserver(eventObserver, "accessible-event");
   });
-}
-
-/**
- * Force garbage collection.
- */
-function forceGC() {
-  SpecialPowers.gc();
-  SpecialPowers.forceGC();
-  SpecialPowers.forceCC();
-  SpecialPowers.gc();
-  SpecialPowers.forceGC();
-  SpecialPowers.forceCC();
 }

@@ -2,21 +2,21 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-'use strict';
+"use strict";
 
-add_task(function* () {
+add_task(async function() {
   // Making sure that the e10s is enabled on Windows for testing.
-  yield setE10sPrefs();
+  await setE10sPrefs();
 
   let docLoaded = waitForEvent(
-    Ci.nsIAccessibleEvent.EVENT_DOCUMENT_LOAD_COMPLETE, 'body');
+    Ci.nsIAccessibleEvent.EVENT_DOCUMENT_LOAD_COMPLETE, "body");
   let a11yInit = initPromise();
-  let accService = Cc['@mozilla.org/accessibilityService;1'].getService(
+  let accService = Cc["@mozilla.org/accessibilityService;1"].getService(
     Ci.nsIAccessibilityService);
-  ok(accService, 'Service initialized');
-  yield a11yInit;
+  ok(accService, "Service initialized");
+  await a11yInit;
 
-  yield BrowserTestUtils.withNewTab({
+  await BrowserTestUtils.withNewTab({
     gBrowser,
     url: `data:text/html,
       <html>
@@ -26,51 +26,51 @@ add_task(function* () {
         </head>
         <body id="body"><div id="div"></div></body>
       </html>`
-  }, function*(browser) {
-    let docLoadedEvent = yield docLoaded;
+  }, async function(browser) {
+    let docLoadedEvent = await docLoaded;
     let docAcc = docLoadedEvent.accessibleDocument;
-    ok(docAcc, 'Accessible document proxy is created');
+    ok(docAcc, "Accessible document proxy is created");
     // Remove unnecessary dangling references
     docLoaded = null;
     docLoadedEvent = null;
     forceGC();
 
     let acc = docAcc.getChildAt(0);
-    ok(acc, 'Accessible proxy is created');
+    ok(acc, "Accessible proxy is created");
 
     let canShutdown = false;
     let a11yShutdown = new Promise((resolve, reject) =>
     shutdownPromise().then(flag => canShutdown ? resolve() :
-      reject('Accessible service was shut down incorrectly')));
+      reject("Accessible service was shut down incorrectly")));
 
     accService = null;
-    ok(!accService, 'Service is removed');
+    ok(!accService, "Service is removed");
     // Force garbage collection that should not trigger shutdown because there
     // is a reference to an accessible proxy.
     forceGC();
     // Have some breathing room when removing a11y service references.
-    yield new Promise(resolve => executeSoon(resolve));
+    await new Promise(resolve => executeSoon(resolve));
 
     // Remove a reference to an accessible document proxy.
     docAcc = null;
-    ok(!docAcc, 'Accessible document proxy is removed');
+    ok(!docAcc, "Accessible document proxy is removed");
     // Force garbage collection that should not trigger shutdown because there is
     // a reference to an accessible proxy.
     forceGC();
     // Have some breathing room when removing a11y service references.
-    yield new Promise(resolve => executeSoon(resolve));
+    await new Promise(resolve => executeSoon(resolve));
 
     // Now allow a11y service to shutdown.
     canShutdown = true;
     // Remove a last reference to an accessible proxy.
     acc = null;
-    ok(!acc, 'Accessible proxy is removed');
+    ok(!acc, "Accessible proxy is removed");
 
     // Force garbage collection that should now trigger shutdown.
     forceGC();
-    yield a11yShutdown;
+    await a11yShutdown;
   });
 
   // Unsetting e10s related preferences.
-  yield unsetE10sPrefs();
+  await unsetE10sPrefs();
 });

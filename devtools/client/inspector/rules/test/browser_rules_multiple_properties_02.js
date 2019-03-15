@@ -9,15 +9,15 @@
 
 const TEST_URI = "<div>Test Element</div>";
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
-  yield selectNode("div", inspector);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, view} = await openRuleView();
+  await selectNode("div", inspector);
 
-  let ruleEditor = getRuleViewRuleEditor(view, 0);
+  const ruleEditor = getRuleViewRuleEditor(view, 0);
   let onDone = view.once("ruleview-changed");
-  yield createNewRuleViewProperty(ruleEditor, "width:");
-  yield onDone;
+  await createNewRuleViewProperty(ruleEditor, "width:");
+  await onDone;
 
   is(ruleEditor.rule.textProps.length, 1,
     "Should have created a new text property.");
@@ -26,12 +26,12 @@ add_task(function* () {
 
   // Value is focused, lets add multiple rules here and make sure they get added
   onDone = view.once("ruleview-changed");
-  let onMutation = inspector.once("markupmutation");
-  let input = view.styleDocument.activeElement;
+  const onMutation = inspector.once("markupmutation");
+  const input = view.styleDocument.activeElement;
   input.value = "height: 10px;color:blue";
   EventUtils.synthesizeKey("VK_RETURN", {}, view.styleWindow);
-  yield onMutation;
-  yield onDone;
+  await onMutation;
+  await onDone;
 
   is(ruleEditor.rule.textProps.length, 2,
     "Should have added the changed value.");

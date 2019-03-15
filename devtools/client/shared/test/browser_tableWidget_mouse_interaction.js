@@ -6,17 +6,7 @@
 
 "use strict";
 
-const TEST_URI = "data:text/xml;charset=UTF-8,<?xml version='1.0'?>" +
-  "<?xml-stylesheet href='chrome://global/skin/global.css'?>" +
-
-  // Uncomment these lines to help with visual debugging. When uncommented they
-  // dump a couple of thousand errors in the log (bug 1258285)
-  // "<?xml-stylesheet href='chrome://devtools/skin/light-theme.css'?>" +
-  // "<?xml-stylesheet href='chrome://devtools/skin/widgets.css'?>" +
-
-  "<window xmlns='http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul'" +
-  " title='Table Widget' width='600' height='500'>" +
-  "<box flex='1' class='theme-light'/></window>";
+const TEST_URI = CHROME_URL_ROOT + "doc_tableWidget_mouse_interaction.xul";
 const TEST_OPT = "chrome,titlebar,toolbar,centerscreen,resizable,dialog=no";
 
 const {TableWidget} = require("devtools/client/shared/widgets/TableWidget");
@@ -25,17 +15,17 @@ var doc, table;
 
 function test() {
   waitForExplicitFinish();
-  let win = Services.ww.openWindow(null, TEST_URI, "_blank", TEST_OPT, null);
+  const win = Services.ww.openWindow(null, TEST_URI, "_blank", TEST_OPT, null);
 
-  win.addEventListener("load", function () {
-    waitForFocus(function () {
+  win.addEventListener("load", function() {
+    waitForFocus(function() {
       doc = win.document;
       table = new TableWidget(doc.querySelector("box"), {
         initialColumns: {
           col1: "Column 1",
           col2: "Column 2",
           col3: "Column 3",
-          col4: "Column 4"
+          col4: "Column 4",
         },
         uniqueId: "col1",
         emptyText: "This is dummy empty text",
@@ -55,24 +45,24 @@ function endTests() {
   finish();
 }
 
-var startTests = Task.async(function* () {
+var startTests = async function() {
   populateTable();
-  yield testMouseInteraction();
+  await testMouseInteraction();
   endTests();
-});
+};
 
 function populateTable() {
   table.push({
     col1: "id1",
     col2: "value10",
     col3: "value20",
-    col4: "value30"
+    col4: "value30",
   });
   table.push({
     col1: "id2",
     col2: "value14",
     col3: "value29",
-    col4: "value32"
+    col4: "value32",
   });
   table.push({
     col1: "id3",
@@ -80,44 +70,44 @@ function populateTable() {
     col3: "value21",
     col4: "value31",
     extraData: "foobar",
-    extraData2: 42
+    extraData2: 42,
   });
   table.push({
     col1: "id4",
     col2: "value12",
     col3: "value26",
-    col4: "value33"
+    col4: "value33",
   });
   table.push({
     col1: "id5",
     col2: "value19",
     col3: "value26",
-    col4: "value37"
+    col4: "value37",
   });
   table.push({
     col1: "id6",
     col2: "value15",
     col3: "value25",
-    col4: "value37"
+    col4: "value37",
   });
   table.push({
     col1: "id7",
     col2: "value18",
     col3: "value21",
     col4: "value36",
-    somethingExtra: "Hello World!"
+    somethingExtra: "Hello World!",
   });
   table.push({
     col1: "id8",
     col2: "value11",
     col3: "value27",
-    col4: "value34"
+    col4: "value34",
   });
   table.push({
     col1: "id9",
     col2: "value11",
     col3: "value23",
-    col4: "value38"
+    col4: "value38",
   });
 }
 
@@ -129,7 +119,7 @@ function click(node, button = 0) {
   } else {
     executeSoon(() => EventUtils.synthesizeMouseAtCenter(node, {
       button: button,
-      type: "contextmenu"
+      type: "contextmenu",
     }, doc.defaultView));
   }
 }
@@ -137,29 +127,29 @@ function click(node, button = 0) {
 /**
  * Tests if clicking the table items does the expected behavior
  */
-var testMouseInteraction = Task.async(function* () {
+var testMouseInteraction = async function() {
   info("Testing mouse interaction with the table");
   ok(!table.selectedRow, "Nothing should be selected beforehand");
 
   let event = table.once(TableWidget.EVENTS.ROW_SELECTED);
-  let firstColumnFirstRowCell = table.tbody.firstChild.firstChild.children[1];
+  const firstColumnFirstRowCell = table.tbody.firstChild.firstChild.children[1];
   info("clicking on the first row");
   ok(!firstColumnFirstRowCell.classList.contains("theme-selected"),
      "Node should not have selected class before clicking");
   click(firstColumnFirstRowCell);
-  let id = yield event;
+  let id = await event;
   ok(firstColumnFirstRowCell.classList.contains("theme-selected"),
      "Node has selected class after click");
   is(id, "id1", "Correct row was selected");
 
   info("clicking on second row to select it");
   event = table.once(TableWidget.EVENTS.ROW_SELECTED);
-  let firstColumnSecondRowCell = table.tbody.firstChild.firstChild.children[2];
+  const firstColumnSecondRowCell = table.tbody.firstChild.firstChild.children[2];
   // node should not have selected class
   ok(!firstColumnSecondRowCell.classList.contains("theme-selected"),
      "New node should not have selected class before clicking");
   click(firstColumnSecondRowCell);
-  id = yield event;
+  id = await event;
   ok(firstColumnSecondRowCell.classList.contains("theme-selected"),
      "New node has selected class after clicking");
   is(id, "id2", "Correct table path is emitted for new node");
@@ -170,13 +160,13 @@ var testMouseInteraction = Task.async(function* () {
 
   info("clicking on the third row cell content to select third row");
   event = table.once(TableWidget.EVENTS.ROW_SELECTED);
-  let firstColumnThirdRowCell = table.tbody.firstChild.firstChild.children[3];
-  let firstColumnThirdRowCellInnerNode = firstColumnThirdRowCell.querySelector("span");
+  const firstColumnThirdRowCell = table.tbody.firstChild.firstChild.children[3];
+  const firstColumnThirdRowCellInnerNode = firstColumnThirdRowCell.querySelector("span");
   // node should not have selected class
   ok(!firstColumnThirdRowCell.classList.contains("theme-selected"),
      "New node should not have selected class before clicking");
   click(firstColumnThirdRowCellInnerNode);
-  id = yield event;
+  id = await event;
   ok(firstColumnThirdRowCell.classList.contains("theme-selected"),
      "New node has selected class after clicking the cell content");
   is(id, "id3", "Correct table path is emitted for new node");
@@ -191,7 +181,7 @@ var testMouseInteraction = Task.async(function* () {
      "Although, something else should be sorted on");
   isnot(doc.querySelector("[sorted]"), node, "Which is not equal to this node");
   click(node);
-  id = yield event;
+  id = await event;
   is(id, "col4", "Correct column was sorted on");
   ok(node.hasAttribute("sorted"),
      "Node should now have sorted attribute after clicking");
@@ -206,7 +196,7 @@ var testMouseInteraction = Task.async(function* () {
   node = table.tbody.firstChild.firstChild.firstChild;
   let onPopupShown = once(table.menupopup, "popupshown");
   click(node, 2);
-  yield onPopupShown;
+  await onPopupShown;
 
   is(table.menupopup.querySelectorAll("[disabled]").length, 1,
      "Only 1 menuitem is disabled");
@@ -222,8 +212,8 @@ var testMouseInteraction = Task.async(function* () {
   ok(!table.tbody.children[2].hasAttribute("hidden"),
      "Column is not hidden before hiding it");
   click(node);
-  id = yield event;
-  yield onPopupHidden;
+  id = await event;
+  await onPopupHidden;
   is(id, "col2", "Correct column was triggered to be hidden");
   is(table.tbody.children[2].getAttribute("hidden"), "true",
      "Column is hidden after hiding it");
@@ -234,7 +224,7 @@ var testMouseInteraction = Task.async(function* () {
   node = table.tbody.firstChild.firstChild.firstChild;
   onPopupShown = once(table.menupopup, "popupshown");
   click(node, 2);
-  yield onPopupShown;
+  await onPopupShown;
 
   is(table.menupopup.querySelectorAll("[disabled]").length, 1,
      "Only 1 menuitem is disabled");
@@ -247,8 +237,8 @@ var testMouseInteraction = Task.async(function* () {
   ok(!table.tbody.children[4].hasAttribute("hidden"),
      "Column is not hidden before hiding it");
   click(node);
-  id = yield event;
-  yield onPopupHidden;
+  id = await event;
+  await onPopupHidden;
   is(id, "col3", "Correct column was triggered to be hidden");
   is(table.tbody.children[4].getAttribute("hidden"), "true",
      "Column is hidden after hiding it");
@@ -259,7 +249,7 @@ var testMouseInteraction = Task.async(function* () {
   node = table.tbody.firstChild.firstChild.firstChild;
   onPopupShown = once(table.menupopup, "popupshown");
   click(node, 2);
-  yield onPopupShown;
+  await onPopupShown;
 
   is(table.menupopup.querySelectorAll("[disabled]").length, 2,
      "2 menuitems are disabled now as only 2 columns remain visible");
@@ -280,8 +270,8 @@ var testMouseInteraction = Task.async(function* () {
   is(table.tbody.children[2].getAttribute("hidden"), "true",
      "Column is hidden before unhiding it");
   click(node);
-  id = yield event;
-  yield onPopupHidden;
+  id = await event;
+  await onPopupHidden;
   is(id, "col2", "Correct column was triggered to be hidden");
   ok(!table.tbody.children[2].hasAttribute("hidden"),
      "Column is not hidden after unhiding it");
@@ -292,7 +282,7 @@ var testMouseInteraction = Task.async(function* () {
   node = table.tbody.firstChild.firstChild.firstChild;
   onPopupShown = once(table.menupopup, "popupshown");
   click(node, 2);
-  yield onPopupShown;
+  await onPopupShown;
 
   // popup should be open now
   // clicking on second column label
@@ -303,8 +293,8 @@ var testMouseInteraction = Task.async(function* () {
   is(table.tbody.children[4].getAttribute("hidden"), "true",
      "Column is hidden before unhiding it");
   click(node);
-  id = yield event;
-  yield onPopupHidden;
+  id = await event;
+  await onPopupHidden;
   is(id, "col3", "Correct column was triggered to be hidden");
   ok(!table.tbody.children[4].hasAttribute("hidden"),
      "Column is not hidden after unhiding it");
@@ -312,4 +302,4 @@ var testMouseInteraction = Task.async(function* () {
   // reset table state
   table.clearSelection();
   table.sortBy("col1");
-});
+};

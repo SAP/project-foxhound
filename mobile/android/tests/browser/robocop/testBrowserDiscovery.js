@@ -5,16 +5,14 @@
 
 "use strict";
 
-var { classes: Cc, interfaces: Ci, utils: Cu } = Components;
-
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // We use a global variable to track the <browser> where the tests are happening
 var browser;
 
 function setHandlerFunc(handler, test) {
   browser.addEventListener("DOMLinkAdded", function(event) {
-    Services.tm.mainThread.dispatch(handler.bind(this, test), Ci.nsIThread.DISPATCH_NORMAL);
+    Services.tm.dispatchToMainThread(handler.bind(this, test));
   }, {once: true});
 }
 
@@ -27,7 +25,7 @@ add_test(function setup_browser() {
   let url = "http://mochi.test:8888/tests/robocop/link_discovery.html";
   browser = BrowserApp.addTab(url, { selected: true, parentId: BrowserApp.selectedTab.id }).browser;
   browser.addEventListener("load", function(event) {
-    Services.tm.mainThread.dispatch(run_next_test, Ci.nsIThread.DISPATCH_NORMAL);
+    Services.tm.dispatchToMainThread(run_next_test);
   }, {capture: true, once: true});
 });
 
@@ -44,7 +42,7 @@ var searchDiscoveryTests = [
   { type: " application/opensearchdescription+xml ", text: "type may contain extra whitespace" },
   { type: "application/opensearchdescription+xml; charset=utf-8", text: "type may have optional parameters (RFC2046)" },
   { type: "aapplication/opensearchdescription+xml", pass: false, text: "type should not be loosely matched" },
-  { rel: "search search search", count: 1, text: "only one engine should be added" }
+  { rel: "search search search", count: 1, text: "only one engine should be added" },
 ];
 
 function execute_search_test(test) {
@@ -96,7 +94,7 @@ var feedDiscoveryTests = [
   { type: " application/atom+xml ", text: "type may contain extra whitespace" },
   { type: "application/atom+xml; charset=utf-8", text: "type may have optional parameters (RFC2046)" },
   { type: "aapplication/atom+xml", pass: false, text: "type should not be loosely matched" },
-  { rel: "alternate alternate alternate", count: 1, text: "only one feed should be added" }
+  { rel: "alternate alternate alternate", count: 1, text: "only one feed should be added" },
 ];
 
 function execute_feed_test(test) {

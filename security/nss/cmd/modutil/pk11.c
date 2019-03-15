@@ -259,6 +259,55 @@ getStringFromFlags(unsigned long flags, const MaskString array[], int elements)
     return buf;
 }
 
+static PRBool
+IsP11KitProxyModule(SECMODModule *module)
+{
+    CK_INFO modinfo;
+    static const char p11KitManufacturerID[33] =
+        "PKCS#11 Kit                     ";
+    static const char p11KitLibraryDescription[33] =
+        "PKCS#11 Kit Proxy Module        ";
+
+    if (PK11_GetModInfo(module, &modinfo) == SECSuccess &&
+        PORT_Memcmp(modinfo.manufacturerID,
+                    p11KitManufacturerID,
+                    sizeof(modinfo.manufacturerID)) == 0 &&
+        PORT_Memcmp(modinfo.libraryDescription,
+                    p11KitLibraryDescription,
+                    sizeof(modinfo.libraryDescription)) == 0) {
+        return PR_TRUE;
+    }
+
+    return PR_FALSE;
+}
+
+PRBool
+IsP11KitEnabled(void)
+{
+    SECMODListLock *lock;
+    SECMODModuleList *mlp;
+    PRBool found = PR_FALSE;
+
+    lock = SECMOD_GetDefaultModuleListLock();
+    if (!lock) {
+        PR_fprintf(PR_STDERR, errStrings[NO_LIST_LOCK_ERR]);
+        return found;
+    }
+
+    SECMOD_GetReadLock(lock);
+
+    mlp = SECMOD_GetDefaultModuleList();
+    for (; mlp != NULL; mlp = mlp->next) {
+        if (IsP11KitProxyModule(mlp->module)) {
+            found = PR_TRUE;
+            break;
+        }
+    }
+
+    SECMOD_ReleaseReadLock(lock);
+    return found;
+}
+
 /**********************************************************************
  *
  * A d d M o d u l e
@@ -397,6 +446,7 @@ static void
 printModule(SECMODModule *module, int *count)
 {
     int slotCount = module->loaded ? module->slotCount : 0;
+    char *modUri;
     int i;
 
     if ((*count)++) {
@@ -408,6 +458,11 @@ printModule(SECMODModule *module, int *count)
         PR_fprintf(PR_STDOUT, "\tlibrary name: %s\n", module->dllName);
     }
 
+    modUri = PK11_GetModuleURI(module);
+    if (modUri) {
+        PR_fprintf(PR_STDOUT, "\t   uri: %s\n", modUri);
+        PORT_Free(modUri);
+    }
     if (slotCount == 0) {
         PR_fprintf(PR_STDOUT,
                    "\t slots: There are no slots attached to this module\n");
@@ -425,10 +480,12 @@ printModule(SECMODModule *module, int *count)
     /* Print slot and token names */
     for (i = 0; i < slotCount; i++) {
         PK11SlotInfo *slot = module->slots[i];
-
+        char *tokenUri = PK11_GetTokenURI(slot);
         PR_fprintf(PR_STDOUT, "\n");
         PR_fprintf(PR_STDOUT, "\t slot: %s\n", PK11_GetSlotName(slot));
         PR_fprintf(PR_STDOUT, "\ttoken: %s\n", PK11_GetTokenName(slot));
+        PR_fprintf(PR_STDOUT, "\t  uri: %s\n", tokenUri);
+        PORT_Free(tokenUri);
     }
     return;
 }
@@ -662,6 +719,39 @@ loser:
 
 /************************************************************************
  *
+ * I n i t P W
+ */
+Error
+InitPW(void)
+{
+    PK11SlotInfo *slot;
+    Error ret = UNSPECIFIED_ERR;
+
+    slot = PK11_GetInternalKeySlot();
+    if (!slot) {
+        PR_fprintf(PR_STDERR, errStrings[NO_SUCH_TOKEN_ERR], "internal");
+        return NO_SUCH_TOKEN_ERR;
+    }
+
+    /* Set the initial password to empty */
+    if (PK11_NeedUserInit(slot)) {
+        if (PK11_InitPin(slot, NULL, "") != SECSuccess) {
+            PR_fprintf(PR_STDERR, errStrings[INITPW_FAILED_ERR]);
+            ret = INITPW_FAILED_ERR;
+            goto loser;
+        }
+    }
+
+    ret = SUCCESS;
+
+loser:
+    PK11_FreeSlot(slot);
+
+    return ret;
+}
+
+/************************************************************************
+ *
  * C h a n g e P W
  */
 Error
@@ -687,7 +777,7 @@ ChangePW(char *tokenName, char *pwFile, char *newpwFile)
                 ret = BAD_PW_ERR;
                 goto loser;
             }
-        } else {
+        } else if (PK11_NeedLogin(slot)) {
             for (matching = PR_FALSE; !matching;) {
                 oldpw = SECU_GetPasswordString(NULL, "Enter old password: ");
                 if (PK11_CheckUserPassword(slot, oldpw) == SECSuccess) {

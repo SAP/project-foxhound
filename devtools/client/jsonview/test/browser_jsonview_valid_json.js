@@ -7,27 +7,37 @@
 
 const TEST_JSON_URL = URL_ROOT + "valid_json.json";
 
-add_task(function* () {
+add_task(async function() {
   info("Test valid JSON started");
 
-  let tab = yield addJsonViewTab(TEST_JSON_URL);
+  const tab = await addJsonViewTab(TEST_JSON_URL);
 
   ok(tab.linkedBrowser.contentPrincipal.isNullPrincipal, "Should have null principal");
 
-  let countBefore = yield getElementCount(".jsonPanelBox .treeTable .treeRow");
-  ok(countBefore == 3, "There must be three rows");
+  is(await countRows(), 3, "There must be three rows");
 
-  let objectCellCount = yield getElementCount(
+  const objectCellCount = await getElementCount(
     ".jsonPanelBox .treeTable .objectCell");
-  ok(objectCellCount == 1, "There must be one object cell");
+  is(objectCellCount, 1, "There must be one object cell");
 
-  let objectCellText = yield getElementText(
+  const objectCellText = await getElementText(
     ".jsonPanelBox .treeTable .objectCell");
-  ok(objectCellText == "", "The summary is hidden when object is expanded");
+  is(objectCellText, "", "The summary is hidden when object is expanded");
 
-  // Collapsed auto-expanded node.
-  yield clickJsonNode(".jsonPanelBox .treeTable .treeLabel");
+  // Clicking the value does not collapse it (so that it can be selected and copied).
+  await clickJsonNode(".jsonPanelBox .treeTable .treeValueCell");
+  is(await countRows(), 3, "There must still be three rows");
 
-  let countAfter = yield getElementCount(".jsonPanelBox .treeTable .treeRow");
-  ok(countAfter == 1, "There must be one row");
+  // Clicking the label collapses the auto-expanded node.
+  await clickJsonNode(".jsonPanelBox .treeTable .treeLabel");
+  is(await countRows(), 1, "There must be one row");
+
+  // Collapsed nodes are preserved when switching panels.
+  await selectJsonViewContentTab("headers");
+  await selectJsonViewContentTab("json");
+  is(await countRows(), 1, "There must still be one row");
 });
+
+function countRows() {
+  return getElementCount(".jsonPanelBox .treeTable .treeRow");
+}

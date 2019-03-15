@@ -8,22 +8,27 @@
 #define mozilla_DataStorage_h
 
 #include "mozilla/Atomics.h"
+#include "mozilla/MemoryReporting.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/StaticPtr.h"
 #include "nsCOMPtr.h"
 #include "nsDataHashtable.h"
 #include "nsIObserver.h"
-#include "nsIThread.h"
 #include "nsITimer.h"
 #include "nsRefPtrHashtable.h"
 #include "nsString.h"
 
+class psm_DataStorageTest;
+
 namespace mozilla {
+class DataStorageMemoryReporter;
 
 namespace dom {
+class ContentChild;
+class DataStorageEntry;
 class DataStorageItem;
-}
+}  // namespace dom
 
 /**
  * DataStorage is a threadsafe, generic, narrow string-based hash map that
@@ -52,11 +57,14 @@ class DataStorageItem;
  *   pending persistent data changes. However, those changes will cause the
  *   timer to be reinitialized and another "data-storage-written" event will
  *   be sent.
- * - When DataStorage observes the topic "profile-before-change" in
- *   anticipation of shutdown, all persistent data is synchronously written to
- *   the backing file. The worker thread responsible for these writes is then
- *   disabled to prevent further writes to that file (the delayed-write timer
- *   is cancelled when this happens).
+ * - When any DataStorage observes the topic "profile-before-change" in
+ *   anticipation of shutdown, all persistent data for all DataStorage instances
+ *   is synchronously written to the appropriate backing file. The worker thread
+ *   responsible for these writes is then disabled to prevent further writes to
+ *   that file (the delayed-write timer is cancelled when this happens). Note
+ *   that the "worker thread" is actually a single thread shared between all
+ *   DataStorage instances. If "profile-before-change" is not observed, this
+ *   happens upon observing "xpcom-shutdown-threads".
  * - For testing purposes, the preference "test.datastorage.write_timer_ms" can
  *   be set to cause the asynchronous writing of data to happen more quickly.
  * - To prevent unbounded memory and disk use, the number of entries in each
@@ -86,22 +94,31 @@ enum DataStorageType {
   DataStorage_Private
 };
 
-class DataStorage : public nsIObserver
-{
+enum class DataStorageClass {
+#define DATA_STORAGE(_) _,
+#include "mozilla/DataStorageList.h"
+#undef DATA_STORAGE
+};
+
+class DataStorage : public nsIObserver {
   typedef dom::DataStorageItem DataStorageItem;
 
-public:
+ public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIOBSERVER
 
   // If there is a profile directory, there is or will eventually be a file
   // by the name specified by aFilename there.
-  static already_AddRefed<DataStorage> Get(const nsString& aFilename);
-  static already_AddRefed<DataStorage> GetIfExists(const nsString& aFilename);
+  static already_AddRefed<DataStorage> Get(DataStorageClass aFilename);
 
   // Initializes the DataStorage. Must be called before using.
   // aDataWillPersist returns whether or not data can be persistently saved.
-  nsresult Init(/*out*/bool& aDataWillPersist);
+  // aItems is used in the content process to initialize a cache of the items
+  // received from the parent process over IPC. nullptr must be passed for the
+  // parent process.
+  nsresult Init(
+      /*out*/ bool& aDataWillPersist,
+      const InfallibleTArray<mozilla::dom::DataStorageItem>* aItems = nullptr);
   // Given a key and a type of data, returns a value. Returns an empty string if
   // the key is not present for that type of data. If Get is called before the
   // "data-storage-ready" event is observed, it will block. NB: It is not
@@ -117,31 +134,49 @@ public:
   // Removes all entries of all types of data.
   nsresult Clear();
 
+  // Read all file names that we know about.
+  static void GetAllFileNames(nsTArray<nsString>& aItems);
+
+  // Read all child process data that we know about.
+  static void GetAllChildProcessData(
+      nsTArray<mozilla::dom::DataStorageEntry>& aEntries);
+
   // Read all of the data items.
   void GetAll(InfallibleTArray<DataStorageItem>* aItems);
 
-private:
+  // Set the cached copy of our DataStorage entries in the content process.
+  static void SetCachedStorageEntries(
+      const InfallibleTArray<mozilla::dom::DataStorageEntry>& aEntries);
+
+  size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
+
+ private:
   explicit DataStorage(const nsString& aFilename);
   virtual ~DataStorage();
+
+  static already_AddRefed<DataStorage> GetFromRawFileName(
+      const nsString& aFilename);
+
+  friend class ::psm_DataStorageTest;
+  friend class mozilla::dom::ContentChild;
+  friend class mozilla::DataStorageMemoryReporter;
 
   class Writer;
   class Reader;
 
-  class Entry
-  {
-  public:
+  class Entry {
+   public:
     Entry();
     bool UpdateScore();
 
     uint32_t mScore;
-    int32_t mLastAccessed; // the last accessed time in days since the epoch
+    int32_t mLastAccessed;  // the last accessed time in days since the epoch
     nsCString mValue;
   };
 
   // Utility class for scanning tables for an entry to evict.
-  class KeyAndEntry
-  {
-  public:
+  class KeyAndEntry {
+   public:
     nsCString mKey;
     Entry mEntry;
   };
@@ -163,6 +198,8 @@ private:
   void ShutdownTimer();
   void NotifyObservers(const char* aTopic);
 
+  void PrefChanged(const char* aPref);
+
   bool GetInternal(const nsCString& aKey, Entry* aEntry, DataStorageType aType,
                    const MutexAutoLock& aProofOfLock);
   nsresult PutInternal(const nsCString& aKey, Entry& aEntry,
@@ -177,27 +214,28 @@ private:
                         InfallibleTArray<DataStorageItem>* aItems,
                         const MutexAutoLock& aProofOfLock);
 
-  Mutex mMutex; // This mutex protects access to the following members:
-  DataStorageTable  mPersistentDataTable;
-  DataStorageTable  mTemporaryDataTable;
-  DataStorageTable  mPrivateDataTable;
-  nsCOMPtr<nsIThread> mWorkerThread;
+  Mutex mMutex;  // This mutex protects access to the following members:
+  DataStorageTable mPersistentDataTable;
+  DataStorageTable mTemporaryDataTable;
+  DataStorageTable mPrivateDataTable;
   nsCOMPtr<nsIFile> mBackingFile;
-  nsCOMPtr<nsITimer> mTimer; // All uses after init must be on the worker thread
-  uint32_t mTimerDelay; // in milliseconds
-  bool mPendingWrite; // true if a write is needed but hasn't been dispatched
+  nsCOMPtr<nsITimer>
+      mTimer;            // All uses after init must be on the worker thread
+  uint32_t mTimerDelay;  // in milliseconds
+  bool mPendingWrite;    // true if a write is needed but hasn't been dispatched
   bool mShuttingDown;
-  mozilla::Atomic<bool> mInitCalled; // Indicates that Init() has been called.
   // (End list of members protected by mMutex)
 
-  Monitor mReadyMonitor; // Do not acquire this at the same time as mMutex.
-  bool mReady; // Indicates that saved data has been read and Get can proceed.
+  mozilla::Atomic<bool> mInitCalled;  // Indicates that Init() has been called.
+
+  Monitor mReadyMonitor;  // Do not acquire this at the same time as mMutex.
+  bool mReady;  // Indicates that saved data has been read and Get can proceed.
 
   const nsString mFilename;
 
   static StaticAutoPtr<DataStorages> sDataStorages;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_DataStorage_h
+#endif  // mozilla_DataStorage_h

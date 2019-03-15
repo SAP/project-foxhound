@@ -5,11 +5,8 @@
 "use strict";
 
 const defer = require("devtools/shared/defer");
-const {Task} = require("devtools/shared/task");
 const {CubicBezierWidget} = require("devtools/client/shared/widgets/CubicBezierWidget");
 const SwatchBasedEditorTooltip = require("devtools/client/shared/widgets/tooltip/SwatchBasedEditorTooltip");
-
-const Heritage = require("sdk/core/heritage");
 
 const XHTML_NS = "http://www.w3.org/1999/xhtml";
 
@@ -25,49 +22,52 @@ const XHTML_NS = "http://www.w3.org/1999/xhtml";
  *        document if the tooltip is a popup tooltip or the panel's document if it is an
  *        inline editor.
  */
-function SwatchCubicBezierTooltip(document) {
-  let stylesheet = "chrome://devtools/content/shared/widgets/cubic-bezier.css";
-  SwatchBasedEditorTooltip.call(this, document, stylesheet);
 
-  // Creating a cubic-bezier instance.
-  // this.widget will always be a promise that resolves to the widget instance
-  this.widget = this.setCubicBezierContent([0, 0, 1, 1]);
-  this._onUpdate = this._onUpdate.bind(this);
-}
+class SwatchCubicBezierTooltip extends SwatchBasedEditorTooltip {
+  constructor(document) {
+    super(document);
 
-SwatchCubicBezierTooltip.prototype = Heritage.extend(SwatchBasedEditorTooltip.prototype, {
+    // Creating a cubic-bezier instance.
+    // this.widget will always be a promise that resolves to the widget instance
+    this.widget = this.setCubicBezierContent([0, 0, 1, 1]);
+    this._onUpdate = this._onUpdate.bind(this);
+  }
+
   /**
    * Fill the tooltip with a new instance of the cubic-bezier widget
    * initialized with the given value, and return a promise that resolves to
    * the instance of the widget
    */
-  setCubicBezierContent: function (bezier) {
-    let { doc } = this.tooltip;
 
-    let container = doc.createElementNS(XHTML_NS, "div");
+  setCubicBezierContent(bezier) {
+    const { doc } = this.tooltip;
+    this.tooltip.panel.innerHTML = "";
+
+    const container = doc.createElementNS(XHTML_NS, "div");
     container.className = "cubic-bezier-container";
 
-    this.tooltip.setContent(container, { width: 510, height: 370 });
+    this.tooltip.panel.appendChild(container);
+    this.tooltip.setContentSize({ width: 510, height: 370 });
 
-    let def = defer();
+    const def = defer();
 
     // Wait for the tooltip to be shown before calling instanciating the widget
     // as it expect its DOM elements to be visible.
     this.tooltip.once("shown", () => {
-      let widget = new CubicBezierWidget(container, bezier);
+      const widget = new CubicBezierWidget(container, bezier);
       def.resolve(widget);
     });
 
     return def.promise;
-  },
+  }
 
   /**
    * Overriding the SwatchBasedEditorTooltip.show function to set the cubic
    * bezier curve in the widget
    */
-  show: Task.async(function* () {
+  async show() {
     // Call the parent class' show function
-    yield SwatchBasedEditorTooltip.prototype.show.call(this);
+    await super.show();
     // Then set the curve and listen to changes to preview them
     if (this.activeSwatch) {
       this.currentBezierValue = this.activeSwatch.nextSibling;
@@ -78,25 +78,25 @@ SwatchCubicBezierTooltip.prototype = Heritage.extend(SwatchBasedEditorTooltip.pr
         this.emit("ready");
       });
     }
-  }),
+  }
 
-  _onUpdate: function (event, bezier) {
+  _onUpdate(bezier) {
     if (!this.activeSwatch) {
       return;
     }
 
     this.currentBezierValue.textContent = bezier + "";
     this.preview(bezier + "");
-  },
+  }
 
-  destroy: function () {
-    SwatchBasedEditorTooltip.prototype.destroy.call(this);
+  destroy() {
+    super.destroy();
     this.currentBezierValue = null;
     this.widget.then(widget => {
       widget.off("updated", this._onUpdate);
       widget.destroy();
     });
   }
-});
+}
 
 module.exports = SwatchCubicBezierTooltip;

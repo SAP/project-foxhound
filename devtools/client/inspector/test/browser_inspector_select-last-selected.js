@@ -21,75 +21,75 @@ var TEST_DATA = [
   {
     url: PAGE_1,
     nodeToSelect: "#id1",
-    selectedNode: "#id1"
+    selectedNode: "#id1",
   },
   {
     url: PAGE_1,
     nodeToSelect: "#id2",
-    selectedNode: "#id2"
+    selectedNode: "#id2",
   },
   {
     url: PAGE_1,
     nodeToSelect: "#id3",
-    selectedNode: "#id3"
+    selectedNode: "#id3",
   },
   {
     url: PAGE_1,
     nodeToSelect: "#id4",
-    selectedNode: "#id4"
+    selectedNode: "#id4",
   },
   {
     url: PAGE_2,
     nodeToSelect: null,
-    selectedNode: "body"
+    selectedNode: "body",
   },
   {
     url: PAGE_1,
     nodeToSelect: "#id5",
-    selectedNode: "body"
+    selectedNode: "body",
   },
   {
     url: PAGE_2,
     nodeToSelect: null,
-    selectedNode: "body"
-  }
+    selectedNode: "body",
+  },
 ];
 
-add_task(function* () {
-  let { inspector, toolbox, testActor } = yield openInspectorForURL(PAGE_1);
+add_task(async function() {
+  const { inspector, toolbox, testActor } = await openInspectorForURL(PAGE_1);
 
-  for (let { url, nodeToSelect, selectedNode } of TEST_DATA) {
+  for (const { url, nodeToSelect, selectedNode } of TEST_DATA) {
     if (nodeToSelect) {
       info("Selecting node " + nodeToSelect + " before navigation.");
-      yield selectNode(nodeToSelect, inspector);
+      await selectNode(nodeToSelect, inspector);
     }
 
-    yield navigateToAndWaitForNewRoot(url);
+    await navigateToAndWaitForNewRoot(url);
 
-    let nodeFront = yield getNodeFront(selectedNode, inspector);
+    const nodeFront = await getNodeFront(selectedNode, inspector);
     ok(nodeFront, "Got expected node front");
     is(inspector.selection.nodeFront, nodeFront,
        selectedNode + " is selected after navigation.");
   }
 
-  function* navigateToAndWaitForNewRoot(url) {
+  async function navigateToAndWaitForNewRoot(url) {
     info("Navigating and waiting for new-root event after navigation.");
 
-    let current = yield testActor.eval("location.href");
+    const current = await testActor.eval("location.href");
     if (url == current) {
       info("Reloading page.");
-      let markuploaded = inspector.once("markuploaded");
-      let onNewRoot = inspector.once("new-root");
-      let onUpdated = inspector.once("inspector-updated");
+      const markuploaded = inspector.once("markuploaded");
+      const onNewRoot = inspector.once("new-root");
+      const onUpdated = inspector.once("inspector-updated");
 
-      let activeTab = toolbox.target.activeTab;
-      yield activeTab.reload();
+      const activeTab = toolbox.target.activeTab;
+      await activeTab.reload();
       info("Waiting for inspector to be ready.");
-      yield markuploaded;
-      yield onNewRoot;
-      yield onUpdated;
+      await markuploaded;
+      await onNewRoot;
+      await onUpdated;
     } else {
-      yield navigateTo(inspector, url);
+      await navigateTo(inspector, url);
     }
   }
 });

@@ -30,9 +30,6 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-
-static char *RCSSTRING __UNUSED__="$Id: stun_build.c,v 1.2 2008/04/28 18:21:30 ekr Exp $";
-
 #include <csi_platform.h>
 #include <assert.h>
 #include <errno.h>
@@ -308,7 +305,7 @@ nr_stun_compute_lt_message_integrity_password(const char *username, const char *
                                               Data *password, Data *hmac_key)
 {
   char digest_input[1000];
-  int i;
+  size_t i;
   int r, _status;
   size_t len;
 

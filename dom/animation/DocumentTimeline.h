@@ -7,53 +7,45 @@
 #ifndef mozilla_dom_DocumentTimeline_h
 #define mozilla_dom_DocumentTimeline_h
 
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentTimelineBinding.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/TimeStamp.h"
 #include "AnimationTimeline.h"
-#include "nsIDocument.h"
-#include "nsDOMNavigationTiming.h" // for DOMHighResTimeStamp
+#include "nsDOMNavigationTiming.h"  // for DOMHighResTimeStamp
 #include "nsRefreshDriver.h"
 
 struct JSContext;
 
-// GetCurrentTime is defined in winbase.h as zero argument macro forwarding to
-// GetTickCount().
-#ifdef GetCurrentTime
-#undef GetCurrentTime
-#endif
-
 namespace mozilla {
 namespace dom {
 
-class DocumentTimeline final
-  : public AnimationTimeline
-  , public nsARefreshObserver
-  , public LinkedListElement<DocumentTimeline>
-{
-public:
-  DocumentTimeline(nsIDocument* aDocument, const TimeDuration& aOriginTime)
-    : AnimationTimeline(aDocument->GetParentObject())
-    , mDocument(aDocument)
-    , mIsObservingRefreshDriver(false)
-    , mOriginTime(aOriginTime)
-  {
+class DocumentTimeline final : public AnimationTimeline,
+                               public nsARefreshObserver,
+                               public nsATimerAdjustmentObserver,
+                               public LinkedListElement<DocumentTimeline> {
+ public:
+  DocumentTimeline(Document* aDocument, const TimeDuration& aOriginTime)
+      : AnimationTimeline(aDocument->GetParentObject()),
+        mDocument(aDocument),
+        mIsObservingRefreshDriver(false),
+        mOriginTime(aOriginTime) {
     if (mDocument) {
       mDocument->Timelines().insertBack(this);
     }
   }
 
-protected:
-  virtual ~DocumentTimeline()
-  {
-    MOZ_ASSERT(!mIsObservingRefreshDriver, "Timeline should have disassociated"
+ protected:
+  virtual ~DocumentTimeline() {
+    MOZ_ASSERT(!mIsObservingRefreshDriver,
+               "Timeline should have disassociated"
                " from the refresh driver before being destroyed");
     if (isInList()) {
       remove();
     }
   }
 
-public:
+ public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(DocumentTimeline,
                                                          AnimationTimeline)
@@ -61,22 +53,23 @@ public:
   virtual JSObject* WrapObject(JSContext* aCx,
                                JS::Handle<JSObject*> aGivenProto) override;
 
-  static already_AddRefed<DocumentTimeline>
-  Constructor(const GlobalObject& aGlobal,
-              const DocumentTimelineOptions& aOptions,
-              ErrorResult& aRv);
+  static already_AddRefed<DocumentTimeline> Constructor(
+      const GlobalObject& aGlobal, const DocumentTimelineOptions& aOptions,
+      ErrorResult& aRv);
 
   // AnimationTimeline methods
-  virtual Nullable<TimeDuration> GetCurrentTime() const override;
 
-  bool TracksWallclockTime() const override
-  {
+  // This is deliberately _not_ called GetCurrentTime since that would clash
+  // with a macro defined in winbase.h
+  virtual Nullable<TimeDuration> GetCurrentTimeAsDuration() const override;
+
+  bool TracksWallclockTime() const override {
     nsRefreshDriver* refreshDriver = GetRefreshDriver();
     return !refreshDriver ||
            !refreshDriver->IsTestControllingRefreshesEnabled();
   }
-  Nullable<TimeDuration> ToTimelineTime(const TimeStamp& aTimeStamp) const
-                                                                     override;
+  Nullable<TimeDuration> ToTimelineTime(
+      const TimeStamp& aTimeStamp) const override;
   TimeStamp ToTimeStamp(const TimeDuration& aTimelineTime) const override;
 
   void NotifyAnimationUpdated(Animation& aAnimation) override;
@@ -85,16 +78,23 @@ public:
 
   // nsARefreshObserver methods
   void WillRefresh(TimeStamp aTime) override;
+  // nsATimerAdjustmentObserver methods
+  void NotifyTimerAdjusted(TimeStamp aTime) override;
 
   void NotifyRefreshDriverCreated(nsRefreshDriver* aDriver);
   void NotifyRefreshDriverDestroying(nsRefreshDriver* aDriver);
 
-protected:
+  Document* GetDocument() const override { return mDocument; }
+
+ protected:
   TimeStamp GetCurrentTimeStamp() const;
   nsRefreshDriver* GetRefreshDriver() const;
   void UnregisterFromRefreshDriver();
+  void MostRecentRefreshTimeUpdated();
+  void ObserveRefreshDriver(nsRefreshDriver* aDriver);
+  void DisconnectRefreshDriver(nsRefreshDriver* aDriver);
 
-  nsCOMPtr<nsIDocument> mDocument;
+  RefPtr<Document> mDocument;
 
   // The most recently used refresh driver time. This is used in cases where
   // we don't have a refresh driver (e.g. because we are in a display:none
@@ -105,7 +105,7 @@ protected:
   TimeDuration mOriginTime;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_DocumentTimeline_h
+#endif  // mozilla_dom_DocumentTimeline_h

@@ -10,6 +10,8 @@ import sys
 import os
 import time
 import types
+import warnings
+
 import mozpack.path as mozpath
 from mozpack.files import FileFinder
 from .sandbox import alphabetical_sorted
@@ -38,7 +40,7 @@ sys.modules['gyp.generator.mozbuild'] = sys.modules[__name__]
 # chrome_src for the default includes, so go backwards from the pylib
 # directory, which is the parent directory of gyp module.
 chrome_src = mozpath.abspath(mozpath.join(mozpath.dirname(gyp.__file__),
-    '../../../..'))
+    '../../../../..'))
 script_dir = mozpath.join(chrome_src, 'build')
 
 
@@ -146,7 +148,7 @@ def process_gyp_result(gyp_result, gyp_dir_attrs, path, config, output,
         spec = targets[target]
 
         # Derive which gyp configuration to use based on MOZ_DEBUG.
-        c = 'Debug' if config.substs['MOZ_DEBUG'] else 'Release'
+        c = 'Debug' if config.substs.get('MOZ_DEBUG') else 'Release'
         if c not in spec['configurations']:
             raise RuntimeError('Missing %s gyp configuration for target %s '
                                'in %s' % (c, target_name, build_file))
@@ -241,12 +243,16 @@ def process_gyp_result(gyp_result, gyp_dir_attrs, path, config, output,
             context['UNIFIED_SOURCES'] = alphabetical_sorted(unified_sources)
 
             defines = target_conf.get('defines', [])
-            if bool(config.substs['_MSC_VER']) and no_chromium:
+            if config.substs['CC_TYPE'] in ('msvc', 'clang-cl') and no_chromium:
                 msvs_settings = gyp.msvs_emulation.MsvsSettings(spec, {})
                 defines.extend(msvs_settings.GetComputedDefines(c))
             for define in defines:
                 if '=' in define:
                     name, value = define.split('=', 1)
+                    # The NSS gyp file doesn't expose a way to override this
+                    # currently, so we do so here.
+                    if name == 'NSS_ALLOW_SSLKEYLOGFILE' and config.substs.get('RELEASE_OR_BETA', False):
+                        continue
                     context['DEFINES'][name] = value
                 else:
                     context['DEFINES'][define] = True
@@ -261,20 +267,24 @@ def process_gyp_result(gyp_result, gyp_dir_attrs, path, config, output,
                     # NSPR_INCLUDE_DIR gets passed into the NSS build this way.
                     include = '!/' + mozpath.relpath(include, config.topobjdir)
                 else:
-                  # moz.build expects all LOCAL_INCLUDES to exist, so ensure they do.
-                  #
-                  # NB: gyp files sometimes have actual absolute paths (e.g.
-                  # /usr/include32) and sometimes paths that moz.build considers
-                  # absolute, i.e. starting from topsrcdir. There's no good way
-                  # to tell them apart here, and the actual absolute paths are
-                  # likely bogus. In any event, actual absolute paths will be
-                  # filtered out by trying to find them in topsrcdir.
-                  if include.startswith('/'):
-                      resolved = mozpath.abspath(mozpath.join(config.topsrcdir, include[1:]))
-                  else:
-                      resolved = mozpath.abspath(mozpath.join(mozpath.dirname(build_file), include))
-                  if not os.path.exists(resolved):
-                      continue
+                    # moz.build expects all LOCAL_INCLUDES to exist, so ensure they do.
+                    #
+                    # NB: gyp files sometimes have actual absolute paths (e.g.
+                    # /usr/include32) and sometimes paths that moz.build considers
+                    # absolute, i.e. starting from topsrcdir. There's no good way
+                    # to tell them apart here, and the actual absolute paths are
+                    # likely bogus. In any event, actual absolute paths will be
+                    # filtered out by trying to find them in topsrcdir.
+                    #
+                    # We do allow !- and %-prefixed paths, assuming they come
+                    # from moz.build and will be handled the same way as if they
+                    # were given to LOCAL_INCLUDES in moz.build.
+                    if include.startswith('/'):
+                        resolved = mozpath.abspath(mozpath.join(config.topsrcdir, include[1:]))
+                    elif not include.startswith(('!', '%')):
+                        resolved = mozpath.abspath(mozpath.join(mozpath.dirname(build_file), include))
+                    if not include.startswith(('!', '%')) and not os.path.exists(resolved):
+                        continue
                 context['LOCAL_INCLUDES'] += [include]
 
             context['ASFLAGS'] = target_conf.get('asflags_mozilla', [])
@@ -324,9 +334,19 @@ def process_gyp_result(gyp_result, gyp_dir_attrs, path, config, output,
           if config.substs['OS_TARGET'] == 'WINNT':
               context['DEFINES']['UNICODE'] = True
               context['DEFINES']['_UNICODE'] = True
-        context['DISABLE_STL_WRAPPING'] = True
+        context['COMPILE_FLAGS']['OS_INCLUDES'] = []
 
-        context.update(gyp_dir_attrs.sandbox_vars)
+        for key, value in gyp_dir_attrs.sandbox_vars.items():
+            if context.get(key) and isinstance(context[key], list):
+                # If we have a key from sanbox_vars that's also been
+                # populated here we use the value from sandbox_vars as our
+                # basis rather than overriding outright.
+                context[key] = value + context[key]
+            elif context.get(key) and isinstance(context[key], dict):
+                context[key].update(value)
+            else:
+                context[key] = value
+
         yield context
 
 
@@ -360,10 +380,11 @@ class GypProcessor(object):
         # gyp expects plain str instead of unicode. The frontend code gives us
         # unicode strings, so convert them.
         path = encode(path)
-        if bool(config.substs['_MSC_VER']):
+        if config.substs['CC_TYPE'] in ('msvc', 'clang-cl'):
             # This isn't actually used anywhere in this generator, but it's needed
             # to override the registry detection of VC++ in gyp.
             os.environ['GYP_MSVS_OVERRIDE_PATH'] = 'fake_path'
+
             os.environ['GYP_MSVS_VERSION'] = config.substs['MSVS_VERSION']
 
         params = {
@@ -379,7 +400,8 @@ class GypProcessor(object):
         else:
             depth = chrome_src
             # Files that gyp_chromium always includes
-            includes = [encode(mozpath.join(script_dir, 'common.gypi'))]
+            includes = [encode(mozpath.join(script_dir, 'gyp_includes',
+                                            'common.gypi'))]
             finder = FileFinder(chrome_src)
             includes.extend(encode(mozpath.join(chrome_src, name))
                             for name, _ in finder.find('*/supplement.gypi'))

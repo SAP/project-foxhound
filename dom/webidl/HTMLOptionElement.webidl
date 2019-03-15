@@ -11,21 +11,20 @@
  * and create derivative works of this document.
  */
 
-[HTMLConstructor, NamedConstructor=Option(optional DOMString text, optional DOMString value, optional boolean defaultSelected, optional boolean selected)]
+[HTMLConstructor, NamedConstructor=Option(optional DOMString text = "", optional DOMString value, optional boolean defaultSelected = false, optional boolean selected = false)]
 interface HTMLOptionElement : HTMLElement {
-           [SetterThrows]
-           attribute boolean disabled;
+  [CEReactions, SetterThrows]
+  attribute boolean disabled;
   readonly attribute HTMLFormElement? form;
-           [SetterThrows]
-           attribute DOMString label;
-           [SetterThrows]
-           attribute boolean defaultSelected;
-           [SetterThrows]
-           attribute boolean selected;
-           [SetterThrows]
-           attribute DOMString value;
+  [CEReactions, SetterThrows]
+  attribute DOMString label;
+  [CEReactions, SetterThrows]
+  attribute boolean defaultSelected;
+  attribute boolean selected;
+  [CEReactions, SetterThrows]
+  attribute DOMString value;
 
-           [SetterThrows]
-           attribute DOMString text;
+  [CEReactions, SetterThrows]
+  attribute DOMString text;
   readonly attribute long index;
 };

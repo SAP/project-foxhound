@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-Components.utils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // Plugin registry uses different field delimeters on different platforms
 var DELIM = mozinfo.os == "win" ? "|" : ":";
@@ -23,15 +23,15 @@ function write_registry(version, info) {
 
   var registry = gProfD.clone();
   registry.append("pluginreg.dat");
-  var foStream = Components.classes["@mozilla.org/network/file-output-stream;1"]
-                           .createInstance(Components.interfaces.nsIFileOutputStream);
+  var foStream = Cc["@mozilla.org/network/file-output-stream;1"]
+                   .createInstance(Ci.nsIFileOutputStream);
   // write, create, truncate
   foStream.init(registry, 0x02 | 0x08 | 0x20, 0o666, 0);
 
   var charset = "UTF-8"; // Can be any character encoding name that Mozilla supports
   var os = Cc["@mozilla.org/intl/converter-output-stream;1"].
            createInstance(Ci.nsIConverterOutputStream);
-  os.init(foStream, charset, 0, 0x0000);
+  os.init(foStream, charset);
 
   os.writeString(header);
   os.writeString(info);
@@ -41,7 +41,7 @@ function write_registry(version, info) {
 function run_test() {
   allow_all_plugins();
   var plugin = get_test_plugintag();
-  do_check_true(plugin == null);
+  Assert.ok(plugin == null);
 
   var file = get_test_plugin();
   if (!file) {
@@ -80,7 +80,7 @@ function run_test() {
 
   // The plugin registry should have been rejected.
   // If not, the test plugin version would be 0.0.0.0
-  do_check_eq(plugin.version, "1.0.0.0");
+  Assert.equal(plugin.version, "1.0.0.0");
 
   // Clean up
   Services.prefs.clearUserPref("plugin.importedState");

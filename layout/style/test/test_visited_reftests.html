@@ -38,6 +38,7 @@ var gTests = [
   "== color-on-link-before-1.html color-on-link-1-ref.html",
   "== color-on-visited-1.html color-on-visited-1-ref.html",
   "== color-on-visited-before-1.html color-on-visited-1-ref.html",
+  "== color-on-visited-text-1.html color-on-visited-text-1-ref.html",
   "!= content-color-on-link-before-1-ref.html content-color-on-visited-before-1-ref.html",
   "== content-color-on-link-before-1.html content-color-on-link-before-1-ref.html",
   "== content-color-on-visited-before-1.html content-color-on-visited-before-1-ref.html",
@@ -68,6 +69,7 @@ var gTests = [
   "== selector-child-2.xhtml selector-child-2-ref.xhtml",
   "== selector-adj-sibling-1.html selector-adj-sibling-1-ref.html",
   "== selector-adj-sibling-2.html selector-adj-sibling-2-ref.html",
+  "== selector-adj-sibling-3.xhtml selector-adj-sibling-3-ref.xhtml",
   "== selector-any-sibling-1.html selector-any-sibling-1-ref.html",
   "== selector-any-sibling-2.html selector-any-sibling-2-ref.html",
   "== subject-of-selector-descendant-1.html subject-of-selector-1-ref.html",
@@ -76,14 +78,23 @@ var gTests = [
   "== subject-of-selector-adj-sibling-1.html subject-of-selector-1-ref.html",
   "== subject-of-selector-any-sibling-1.html subject-of-selector-1-ref.html",
   "== inherit-keyword-1.xhtml inherit-keyword-1-ref.html",
-  "!= svg-image-visited-1-helper.svg lime100x100.svg",
-  "!= svg-image-visited-2-helper.svg lime100x100.svg",
+  "== svg-image-visited-1a.html svg-image-visited-1-ref.html",
+  "== svg-image-visited-1b.html svg-image-visited-1-ref.html",
+  "== svg-image-visited-1c.html svg-image-visited-1-ref.html",
+  "== svg-image-visited-1d.html svg-image-visited-1-ref.html",
   // FIXME: commented out because dynamic changes on the non-first-line
   // part of the test don't work right when the link becomes visited.
   //"== first-line-1.html first-line-1-ref.html",
   "== white-to-transparent-1.html white-to-transparent-1-ref.html",
   "== link-root-1.xhtml link-root-1-ref.xhtml",
   "== mathml-links.html mathml-links-ref.html",
+  "== placeholder-1.html placeholder-1-ref.html",
+  "== visited-inherit-1.html visited-inherit-1-ref.html",
+  "== transition-on-visited.html transition-on-visited-ref.html",
+  "== logical-box-border-color-visited-link-001.html logical-box-border-color-visited-link-ref.html",
+  "== logical-box-border-color-visited-link-002.html logical-box-border-color-visited-link-ref.html",
+  "== logical-box-border-color-visited-link-003.html logical-box-border-color-visited-link-ref.html",
+  "== svg-paint-currentcolor-visited.svg svg-paint-currentcolor-visited-ref.svg",
 ];
 
 // We record the maximum number of times we had to look at a test before

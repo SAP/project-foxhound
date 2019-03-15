@@ -6,87 +6,29 @@
 
 const EXPORTED_SYMBOLS = ["WebNavigationFrames"];
 
-var Ci = Components.interfaces;
-
 /* exported WebNavigationFrames */
-
-function getWindowId(window) {
-  return window.QueryInterface(Ci.nsIInterfaceRequestor)
-               .getInterface(Ci.nsIDOMWindowUtils)
-               .outerWindowID;
-}
-
-function getParentWindowId(window) {
-  return getWindowId(window.parent);
-}
-
-function getDocShellWindowId(docShell) {
-  if (!docShell) {
-    return undefined;
-  }
-
-  return docShell.QueryInterface(Ci.nsIInterfaceRequestor)
-                 .getInterface(Ci.nsIDOMWindow)
-                 .getInterface(Ci.nsIDOMWindowUtils)
-                 .outerWindowID;
-}
-
-/**
- * Retrieve the DOMWindow associated to the docShell passed as parameter.
- *
- * @param    {nsIDocShell}  docShell - the docShell that we want to get the DOMWindow from.
- * @returns  {nsIDOMWindow}          - the DOMWindow associated to the docShell.
- */
-function docShellToWindow(docShell) {
-  return docShell.QueryInterface(Ci.nsIInterfaceRequestor)
-                 .getInterface(Ci.nsIDOMWindow);
-}
 
 /**
  * The FrameDetail object which represents a frame in WebExtensions APIs.
  *
  * @typedef  {Object}  FrameDetail
  * @inner
- * @property {number}  windowId       - Represents the numeric id which identify the frame in its tab.
- * @property {number}  parentWindowId - Represents the numeric id which identify the parent frame.
+ * @property {number}  frameId        - Represents the numeric id which identify the frame in its tab.
+ * @property {number}  parentFrameId  - Represents the numeric id which identify the parent frame.
  * @property {string}  url            - Represents the current location URL loaded in the frame.
  * @property {boolean} errorOccurred  - Indicates whether an error is occurred during the last load
  *                                      happened on this frame (NOT YET SUPPORTED).
  */
 
 /**
- * Convert a docShell object into its internal FrameDetail representation.
- *
- * @param    {nsIDocShell} docShell - the docShell object to be converted into a FrameDetail JSON object.
- * @returns  {FrameDetail} the FrameDetail JSON object which represents the docShell.
- */
-function convertDocShellToFrameDetail(docShell) {
-  let window = docShellToWindow(docShell);
-
-  return {
-    windowId: getWindowId(window),
-    parentWindowId: getParentWindowId(window),
-    url: window.location.href,
-  };
-}
-
-/**
  * A generator function which iterates over a docShell tree, given a root docShell.
  *
  * @param   {nsIDocShell} docShell - the root docShell object
- * @returns {Iterator<DocShell>} the FrameDetail JSON object which represents the docShell.
+ * @returns {Iterator<nsIDocShell>}
  */
-function* iterateDocShellTree(docShell) {
-  let docShellsEnum = docShell.getDocShellEnumerator(
-    Ci.nsIDocShellTreeItem.typeContent,
-    Ci.nsIDocShell.ENUMERATE_FORWARDS
-  );
-
-  while (docShellsEnum.hasMoreElements()) {
-    yield docShellsEnum.getNext();
-  }
-
-  return null;
+function iterateDocShellTree(docShell) {
+  return docShell.getDocShellEnumerator(
+    docShell.typeContent, docShell.ENUMERATE_FORWARDS);
 }
 
 /**
@@ -98,15 +40,50 @@ function* iterateDocShellTree(docShell) {
  * @returns {number}
  */
 function getFrameId(window) {
-  let docShell = window.QueryInterface(Ci.nsIInterfaceRequestor)
-                       .getInterface(Ci.nsIDocShell);
-
-  if (!docShell.sameTypeParent) {
+  if (window.parent === window) {
     return 0;
   }
 
-  let utils = window.getInterface(Ci.nsIDOMWindowUtils);
+  let utils = window.windowUtils;
   return utils.outerWindowID;
+}
+
+/**
+ * Returns the frame ID of the given window's parent.
+ *
+ * @param {Window} window - The window to retrieve the parent frame ID for.
+ * @returns {number}
+ */
+function getParentFrameId(window) {
+  if (window.parent === window) {
+    return -1;
+  }
+
+  return getFrameId(window.parent);
+}
+
+function getDocShellFrameId(docShell) {
+  if (!docShell) {
+    return undefined;
+  }
+
+  return getFrameId(docShell.domWindow);
+}
+
+/**
+ * Convert a docShell object into its internal FrameDetail representation.
+ *
+ * @param    {nsIDocShell} docShell - the docShell object to be converted into a FrameDetail JSON object.
+ * @returns  {FrameDetail} the FrameDetail JSON object which represents the docShell.
+ */
+function convertDocShellToFrameDetail(docShell) {
+  let window = docShell.domWindow;
+
+  return {
+    frameId: getFrameId(window),
+    parentFrameId: getParentFrameId(window),
+    url: window.location.href,
+  };
 }
 
 /**
@@ -121,7 +98,7 @@ function getFrameId(window) {
  */
 function findDocShell(frameId, rootDocShell) {
   for (let docShell of iterateDocShellTree(rootDocShell)) {
-    if (frameId == getFrameId(docShellToWindow(docShell))) {
+    if (frameId == getFrameId(docShell.domWindow)) {
       return docShell;
     }
   }
@@ -129,14 +106,8 @@ function findDocShell(frameId, rootDocShell) {
   return null;
 }
 
-function isDescendantDocShell(targetDocShell, rootDocShell) {
-  return (rootDocShell === targetDocShell.sameTypeRootTreeItem
-                                         .QueryInterface(Ci.nsIDocShell));
-}
-
 var WebNavigationFrames = {
   iterateDocShellTree,
-  isDescendantDocShell,
 
   findDocShell,
 
@@ -149,12 +120,11 @@ var WebNavigationFrames = {
   },
 
   getFrameId,
+  getParentFrameId,
 
   getAllFrames(docShell) {
     return Array.from(iterateDocShellTree(docShell), convertDocShellToFrameDetail);
   },
 
-  getWindowId,
-  getParentWindowId,
-  getDocShellWindowId,
+  getDocShellFrameId,
 };

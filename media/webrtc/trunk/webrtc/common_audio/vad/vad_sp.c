@@ -8,13 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/common_audio/vad/vad_sp.h"
+#include "common_audio/vad/vad_sp.h"
 
-#include <assert.h>
-
-#include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
-#include "webrtc/common_audio/vad/vad_core.h"
-#include "webrtc/typedefs.h"
+#include "rtc_base/checks.h"
+#include "common_audio/signal_processing/include/signal_processing_library.h"
+#include "common_audio/vad/vad_core.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 // Allpass filter coefficients, upper and lower, in Q13.
 // Upper: 0.64, Lower: 0.17.
@@ -72,7 +71,7 @@ int16_t WebRtcVad_FindMinimum(VadInstT* self,
   int16_t* age = &self->index_vector[offset];
   int16_t* smallest_values = &self->low_value_vector[offset];
 
-  assert(channel < kNumChannels);
+  RTC_DCHECK_LT(channel, kNumChannels);
 
   // Each value in |smallest_values| is getting 1 loop older. Update |age|, and
   // remove old values.

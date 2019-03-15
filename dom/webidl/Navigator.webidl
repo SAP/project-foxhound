@@ -14,11 +14,16 @@
  * http://www.w3.org/TR/beacon/#sec-beacon-method
  * https://html.spec.whatwg.org/#navigatorconcurrenthardware
  * http://wicg.github.io/netinfo/#extensions-to-the-navigator-interface
+ * https://w3c.github.io/webappsec-credential-management/#framework-credential-management
+ * https://w3c.github.io/webdriver/webdriver-spec.html#interface
+ * https://wicg.github.io/media-capabilities/#idl-index
  *
  * © Copyright 2004-2011 Apple Computer, Inc., Mozilla Foundation, and
  * Opera Software ASA. You are granted a license to use, reproduce
  * and create derivative works of this document.
  */
+
+interface URI;
 
 // http://www.whatwg.org/specs/web-apps/current-work/#the-navigator-object
 [HeaderFile="Navigator.h"]
@@ -32,11 +37,12 @@ Navigator implements NavigatorContentUtils;
 Navigator implements NavigatorStorageUtils;
 Navigator implements NavigatorConcurrentHardware;
 Navigator implements NavigatorStorage;
+Navigator implements NavigatorAutomationInformation;
 
 [NoInterfaceObject, Exposed=(Window,Worker)]
 interface NavigatorID {
   // WebKit/Blink/Trident/Presto support this (hardcoded "Mozilla").
-  [Constant, Cached]
+  [Constant, Cached, Throws]
   readonly attribute DOMString appCodeName; // constant "Mozilla"
   [Constant, Cached, NeedsCallerType]
   readonly attribute DOMString appName;
@@ -76,9 +82,11 @@ interface NavigatorOnLine {
 [NoInterfaceObject]
 interface NavigatorContentUtils {
   // content handler registration
-  [Throws]
+  [Throws, ChromeOnly]
+  void checkProtocolHandlerAllowed(DOMString scheme, URI handlerURI, URI documentURI);
+  [Throws, Func="nsGlobalWindowInner::RegisterProtocolHandlerAllowedForContext"]
   void registerProtocolHandler(DOMString scheme, DOMString url, DOMString title);
-  [Throws]
+  [Pref="dom.registerContentHandler.enabled", Throws]
   void registerContentHandler(DOMString mimeType, DOMString url, DOMString title);
   // NOT IMPLEMENTED
   //DOMString isProtocolHandlerRegistered(DOMString scheme, DOMString url);
@@ -87,9 +95,9 @@ interface NavigatorContentUtils {
   //void unregisterContentHandler(DOMString mimeType, DOMString url);
 };
 
-[NoInterfaceObject, Exposed=(Window,Worker)]
+[SecureContext, NoInterfaceObject, Exposed=(Window,Worker)]
 interface NavigatorStorage {
-  [Func="mozilla::dom::StorageManager::PrefEnabled"]
+  [Func="mozilla::dom::DOMPrefs::dom_storageManager_enabled"]
   readonly attribute StorageManager storage;
 };
 
@@ -133,12 +141,6 @@ partial interface Navigator {
   Promise<BatteryManager> getBattery();
 };
 
-partial interface Navigator {
-  [NewObject, Pref="dom.flyweb.enabled"]
-  Promise<FlyWebPublishedServer> publishServer(DOMString name,
-                                               optional FlyWebPublishOptions options);
-};
-
 // http://www.w3.org/TR/vibration/#vibration-interface
 partial interface Navigator {
     // We don't support sequences in unions yet
@@ -149,8 +151,15 @@ partial interface Navigator {
 
 // http://www.w3.org/TR/pointerevents/#extensions-to-the-navigator-interface
 partial interface Navigator {
-    [Pref="dom.w3c_pointer_events.enabled"]
+    [Pref="dom.w3c_pointer_events.enabled", NeedsCallerType]
     readonly attribute long maxTouchPoints;
+};
+
+// https://wicg.github.io/media-capabilities/#idl-index
+[Exposed=Window]
+partial interface Navigator {
+  [SameObject, Func="mozilla::dom::MediaCapabilities::Enabled"]
+  readonly attribute MediaCapabilities mediaCapabilities;
 };
 
 // Mozilla-specific extensions
@@ -174,7 +183,6 @@ callback interface MozIdleObserver {
   void onactive();
 };
 
-// nsIDOMNavigator
 partial interface Navigator {
   [Throws, Constant, Cached, NeedsCallerType]
   readonly attribute DOMString oscpu;
@@ -188,11 +196,9 @@ partial interface Navigator {
   readonly attribute boolean cookieEnabled;
   [Throws, Constant, Cached, NeedsCallerType]
   readonly attribute DOMString buildID;
-  [Throws, ChromeOnly, UnsafeInPrerendering]
-  readonly attribute MozPowerManager mozPower;
 
   // WebKit/Blink/Trident/Presto support this.
-  [Throws, NeedsCallerType]
+  [Affects=Nothing, DependsOn=Nothing]
   boolean javaEnabled();
 
   /**
@@ -206,49 +212,6 @@ partial interface Navigator {
    */
   [Throws, ChromeOnly]
   void removeIdleObserver(MozIdleObserver aIdleObserver);
-
-  /**
-   * Request a wake lock for a resource.
-   *
-   * A page holds a wake lock to request that a resource not be turned
-   * off (or otherwise made unavailable).
-   *
-   * The topic is the name of a resource that might be made unavailable for
-   * various reasons. For example, on a mobile device the power manager might
-   * decide to turn off the screen after a period of idle time to save power.
-   *
-   * The resource manager checks the lock state of a topic before turning off
-   * the associated resource. For example, a page could hold a lock on the
-   * "screen" topic to prevent the screensaver from appearing or the screen
-   * from turning off.
-   *
-   * The resource manager defines what each topic means and sets policy.  For
-   * example, the resource manager might decide to ignore 'screen' wake locks
-   * held by pages which are not visible.
-   *
-   * One topic can be locked multiple times; it is considered released only when
-   * all locks on the topic have been released.
-   *
-   * The returned MozWakeLock object is a token of the lock.  You can
-   * unlock the lock via the object's |unlock| method.  The lock is released
-   * automatically when its associated window is unloaded.
-   *
-   * @param aTopic resource name
-   */
-  [Throws, Pref="dom.wakelock.enabled", Func="Navigator::HasWakeLockSupport", UnsafeInPrerendering]
-  MozWakeLock requestWakeLock(DOMString aTopic);
-
-  /**
-   * Make CPU instruction subset information available for UpdateUtils.
-   */
-  [ChromeOnly]
-  readonly attribute boolean cpuHasSSE2;
-};
-
-// nsIDOMNavigatorDesktopNotification
-partial interface Navigator {
-  [Throws, Pref="notification.feature.enabled", UnsafeInPrerendering]
-  readonly attribute DesktopNotificationCenter mozNotification;
 };
 
 // NetworkInformation
@@ -273,27 +236,23 @@ partial interface Navigator {
   // TODO: Use FrozenArray once available. (Bug 1236777)
   [Frozen, Cached, Pure, Pref="dom.vr.enabled"]
   readonly attribute sequence<VRDisplay> activeVRDisplays;
+  [ChromeOnly, Pref="dom.vr.enabled"]
+  readonly attribute boolean isWebVRContentDetected;
+  [ChromeOnly, Pref="dom.vr.enabled"]
+  readonly attribute boolean isWebVRContentPresenting;
+  [ChromeOnly, Pref="dom.vr.enabled"]
+  void requestVRPresentation(VRDisplay display);
 };
 partial interface Navigator {
   [Pref="dom.vr.test.enabled"]
   VRServiceTest requestVRServiceTest();
 };
 
-#ifdef MOZ_TIME_MANAGER
-// nsIDOMMozNavigatorTime
+// http://webaudio.github.io/web-midi-api/#requestmidiaccess
 partial interface Navigator {
-  [Throws, ChromeOnly, UnsafeInPrerendering]
-  readonly attribute MozTimeManager mozTime;
+  [Throws, Pref="dom.webmidi.enabled"]
+  Promise<MIDIAccess> requestMIDIAccess(optional MIDIOptions options);
 };
-#endif // MOZ_TIME_MANAGER
-
-#ifdef MOZ_AUDIO_CHANNEL_MANAGER
-// nsIMozNavigatorAudioChannelManager
-partial interface Navigator {
-  [Throws]
-  readonly attribute AudioChannelManager mozAudioChannelManager;
-};
-#endif // MOZ_AUDIO_CHANNEL_MANAGER
 
 callback NavigatorUserMediaSuccessCallback = void (MediaStream stream);
 callback NavigatorUserMediaErrorCallback = void (MediaStreamError error);
@@ -304,7 +263,7 @@ partial interface Navigator {
 
   // Deprecated. Use mediaDevices.getUserMedia instead.
   [Deprecated="NavigatorGetUserMedia", Throws,
-   Func="Navigator::HasUserMediaSupport", UnsafeInPrerendering,
+   Func="Navigator::HasUserMediaSupport",
    NeedsCallerType]
   void mozGetUserMedia(MediaStreamConstraints constraints,
                        NavigatorUserMediaSuccessCallback successCallback,
@@ -359,19 +318,26 @@ partial interface Navigator {
                               sequence<MediaKeySystemConfiguration> supportedConfigurations);
 };
 
-#ifdef NIGHTLY_BUILD
-partial interface Navigator {
-  [Func="Navigator::IsE10sEnabled"]
-  readonly attribute boolean mozE10sEnabled;
-};
-#endif
-
 [NoInterfaceObject, Exposed=(Window,Worker)]
 interface NavigatorConcurrentHardware {
   readonly attribute unsigned long long hardwareConcurrency;
 };
 
+// https://w3c.github.io/webappsec-credential-management/#framework-credential-management
 partial interface Navigator {
-  [Pref="security.webauth.webauthn", SameObject]
-  readonly attribute WebAuthentication authentication;
+  [Pref="security.webauth.webauthn", SecureContext, SameObject]
+  readonly attribute CredentialsContainer credentials;
+};
+
+// https://w3c.github.io/webdriver/webdriver-spec.html#interface
+[NoInterfaceObject]
+interface NavigatorAutomationInformation {
+  [Pref="dom.webdriver.enabled"]
+  readonly attribute boolean webdriver;
+};
+
+// https://www.w3.org/TR/clipboard-apis/#navigator-interface
+partial interface Navigator {
+  [Pref="dom.events.asyncClipboard", SecureContext, SameObject]
+  readonly attribute Clipboard clipboard;
 };

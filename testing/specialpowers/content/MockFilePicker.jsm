@@ -2,18 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-this.EXPORTED_SYMBOLS = ["MockFilePicker"];
+var EXPORTED_SYMBOLS = ["MockFilePicker"];
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
 const Cm = Components.manager;
-const Cu = Components.utils;
 
 const CONTRACT_ID = "@mozilla.org/filepicker;1";
 
-Cu.import("resource://gre/modules/FileUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "FileUtils",
+                               "resource://gre/modules/FileUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // Allow stuff from this scope to be accessed from non-privileged scopes. This
 // would crash if used outside of automation.
@@ -22,21 +19,21 @@ Cu.forcePermissiveCOWs();
 var registrar = Cm.QueryInterface(Ci.nsIComponentRegistrar);
 var oldClassID, oldFactory;
 var newClassID = Cc["@mozilla.org/uuid-generator;1"].getService(Ci.nsIUUIDGenerator).generateUUID();
-var newFactory = function (window) {
+var newFactory = function(window) {
   return {
-    createInstance: function(aOuter, aIID) {
+    createInstance(aOuter, aIID) {
       if (aOuter)
-        throw Components.results.NS_ERROR_NO_AGGREGATION;
+        throw Cr.NS_ERROR_NO_AGGREGATION;
       return new MockFilePickerInstance(window).QueryInterface(aIID);
     },
-    lockFactory: function(aLock) {
-      throw Components.results.NS_ERROR_NOT_IMPLEMENTED;
+    lockFactory(aLock) {
+      throw Cr.NS_ERROR_NOT_IMPLEMENTED;
     },
-    QueryInterface: XPCOMUtils.generateQI([Ci.nsIFactory])
+    QueryInterface: ChromeUtils.generateQI([Ci.nsIFactory]),
   };
-}
+};
 
-this.MockFilePicker = {
+var MockFilePicker = {
   returnOK: Ci.nsIFilePicker.returnOK,
   returnCancel: Ci.nsIFilePicker.returnCancel,
   returnReplace: Ci.nsIFilePicker.returnReplace,
@@ -55,7 +52,7 @@ this.MockFilePicker = {
   window: null,
   pendingPromises: [],
 
-  init: function(window) {
+  init(window) {
     this.window = window;
 
     this.reset();
@@ -68,10 +65,11 @@ this.MockFilePicker = {
     }
   },
 
-  reset: function() {
+  reset() {
     this.appendFilterCallback = null;
     this.appendFiltersCallback = null;
     this.displayDirectory = null;
+    this.displaySpecialDirectory = "";
     this.filterIndex = 0;
     this.mode = null;
     this.returnData = [];
@@ -82,7 +80,7 @@ this.MockFilePicker = {
     this.showing = false;
   },
 
-  cleanup: function() {
+  cleanup() {
     var previousFactory = this.factory;
     this.reset();
     this.factory = null;
@@ -100,7 +98,7 @@ this.MockFilePicker = {
     };
   },
 
-  useAnyFile: function() {
+  useAnyFile() {
     var file = FileUtils.getDir("TmpD", [], false);
     file.append("testfile");
     file.createUnique(Ci.nsIFile.NORMAL_FILE_TYPE, 0o644);
@@ -108,7 +106,7 @@ this.MockFilePicker = {
                   .then(domFile => domFile, () => null)
                   // domFile can be null.
                   .then(domFile => {
-                    this.returnData = [this.internalFileData({ nsIFile: file, domFile: domFile })];
+                    this.returnData = [this.internalFileData({ nsIFile: file, domFile })];
                   }).then(() => file);
 
     this.pendingPromises = [promise];
@@ -117,14 +115,14 @@ this.MockFilePicker = {
     return promise;
   },
 
-  useBlobFile: function() {
+  useBlobFile() {
     var blob = new this.window.Blob([]);
-    var file = new this.window.File([blob], 'helloworld.txt', { type: 'plain/text' });
+    var file = new this.window.File([blob], "helloworld.txt", { type: "plain/text" });
     this.returnData = [this.internalFileData({ domFile: file })];
     this.pendingPromises = [];
   },
 
-  useDirectory: function(aPath) {
+  useDirectory(aPath) {
     var directory = new this.window.Directory(aPath);
     this.returnData = [this.internalFileData({ domDirectory: directory })];
     this.pendingPromises = [];
@@ -141,7 +139,7 @@ this.MockFilePicker = {
         let promise = this.window.File.createFromNsIFile(file, { existenceCheck: false });
 
         promise.then(domFile => {
-          this.returnData.push(this.internalFileData({ nsIFile: file, domFile: domFile }));
+          this.returnData.push(this.internalFileData({ nsIFile: file, domFile }));
         });
         this.pendingPromises.push(promise);
       }
@@ -153,24 +151,24 @@ this.MockFilePicker = {
       return this.returnData[0].nsIFile;
     }
     return null;
-  }
+  },
 };
 
 function MockFilePickerInstance(window) {
   this.window = window;
-};
+}
 MockFilePickerInstance.prototype = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIFilePicker]),
-  init: function(aParent, aTitle, aMode) {
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIFilePicker]),
+  init(aParent, aTitle, aMode) {
     MockFilePicker.mode = aMode;
     this.filterIndex = MockFilePicker.filterIndex;
     this.parent = aParent;
   },
-  appendFilter: function(aTitle, aFilter) {
+  appendFilter(aTitle, aFilter) {
     if (typeof MockFilePicker.appendFilterCallback == "function")
       MockFilePicker.appendFilterCallback(this, aTitle, aFilter);
   },
-  appendFilters: function(aFilterMask) {
+  appendFilters(aFilterMask) {
     if (typeof MockFilePicker.appendFiltersCallback == "function")
       MockFilePicker.appendFiltersCallback(this, aFilterMask);
   },
@@ -179,6 +177,7 @@ MockFilePickerInstance.prototype = {
   parent: null,
   filterIndex: 0,
   displayDirectory: null,
+  displaySpecialDirectory: "",
   get file() {
     if (MockFilePicker.returnData.length >= 1) {
       return MockFilePicker.returnData[0].nsIFile;
@@ -188,7 +187,7 @@ MockFilePickerInstance.prototype = {
   },
 
   // We don't support directories here.
-  get domFileOrDirectory()  {
+  get domFileOrDirectory() {
     if (MockFilePicker.returnData.length < 1) {
       return null;
     }
@@ -211,48 +210,24 @@ MockFilePickerInstance.prototype = {
 
     return null;
   },
+  * getFiles(asDOM) {
+    for (let d of MockFilePicker.returnData) {
+      if (asDOM) {
+        yield d.domFile || d.domDirectory;
+      } else if (d.nsIFile) {
+        yield d.nsIFile;
+      } else {
+        throw Components.Exception("", Cr.NS_ERROR_FAILURE);
+      }
+    }
+  },
   get files() {
-    return {
-      index: 0,
-      QueryInterface: XPCOMUtils.generateQI([Ci.nsISimpleEnumerator]),
-      hasMoreElements: function() {
-        return this.index < MockFilePicker.returnData.length;
-      },
-      getNext: function() {
-        if (!MockFilePicker.returnData[this.index].nsIFile) {
-          return null;
-        }
-        return MockFilePicker.returnData[this.index++].nsIFile;
-      }
-    };
+    return this.getFiles(false);
   },
-  get domFileOrDirectoryEnumerator()  {
-    let utils = this.parent.QueryInterface(Ci.nsIInterfaceRequestor)
-                           .getInterface(Ci.nsIDOMWindowUtils);
-    return {
-      index: 0,
-      QueryInterface: XPCOMUtils.generateQI([Ci.nsISimpleEnumerator]),
-      hasMoreElements: function() {
-        return this.index < MockFilePicker.returnData.length;
-      },
-      getNext: function() {
-        // window.File does not implement nsIFile
-        if (MockFilePicker.returnData[this.index].domFile) {
-          return MockFilePicker.returnData[this.index++].domFile;
-        }
-
-        if (MockFilePicker.returnData[this.index].domDirectory) {
-          return MockFilePicker.returnData[this.index++].domDirectory;
-        }
-
-        return null;
-      }
-    };
+  get domFileOrDirectoryEnumerator() {
+    return this.getFiles(true);
   },
-  show: function() {
-    throw "This is not implemented";
-  },
-  open: function(aFilePickerShownCallback) {
+  open(aFilePickerShownCallback) {
     MockFilePicker.showing = true;
     this.window.setTimeout(() => {
       // Maybe all the pending promises are already resolved, but we want to be sure.
@@ -269,6 +244,7 @@ MockFilePickerInstance.prototype = {
         }
 
         MockFilePicker.displayDirectory = this.displayDirectory;
+        MockFilePicker.displaySpecialDirectory = this.displaySpecialDirectory;
         MockFilePicker.shown = true;
         if (typeof MockFilePicker.showCallback == "function") {
           try {
@@ -276,7 +252,7 @@ MockFilePickerInstance.prototype = {
             if (typeof returnValue != "undefined") {
               return returnValue;
             }
-          } catch(ex) {
+          } catch (ex) {
             return Ci.nsIFilePicker.returnCancel;
           }
         }
@@ -304,5 +280,5 @@ MockFilePickerInstance.prototype = {
         }
       });
     });
-  }
+  },
 };

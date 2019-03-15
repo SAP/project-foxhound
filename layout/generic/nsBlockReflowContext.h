@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-// vim:cindent:ts=2:et:sw=2:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,7 +16,7 @@ class nsLineBox;
 class nsPresContext;
 namespace mozilla {
 class BlockReflowInput;
-} // namespace mozilla
+}  // namespace mozilla
 
 /**
  * An encapsulation of the state and algorithm for reflowing block frames.
@@ -26,35 +26,28 @@ class nsBlockReflowContext {
   using ReflowInput = mozilla::ReflowInput;
   using ReflowOutput = mozilla::ReflowOutput;
 
-public:
+ public:
   nsBlockReflowContext(nsPresContext* aPresContext,
-                       const ReflowInput& aParentRS);
-  ~nsBlockReflowContext() { }
+                       const ReflowInput& aParentRI);
+  ~nsBlockReflowContext() {}
 
-  void ReflowBlock(const mozilla::LogicalRect& aSpace,
-                   bool                        aApplyBStartMargin,
-                   nsCollapsingMargin&         aPrevMargin,
-                   nscoord                     aClearance,
-                   bool                        aIsAdjacentWithBStart,
-                   nsLineBox*                  aLine,
-                   ReflowInput&          aReflowInput,
-                   nsReflowStatus&             aReflowStatus,
-                   BlockReflowInput&         aState);
+  void ReflowBlock(const mozilla::LogicalRect& aSpace, bool aApplyBStartMargin,
+                   nsCollapsingMargin& aPrevMargin, nscoord aClearance,
+                   bool aIsAdjacentWithBStart, nsLineBox* aLine,
+                   ReflowInput& aReflowInput, nsReflowStatus& aReflowStatus,
+                   BlockReflowInput& aState);
 
-  bool PlaceBlock(const ReflowInput& aReflowInput,
-                  bool                     aForceFit,
-                  nsLineBox*               aLine,
-                  nsCollapsingMargin&      aBEndMarginResult /* out */,
-                  nsOverflowAreas&         aOverflowAreas,
-                  nsReflowStatus           aReflowStatus);
+  bool PlaceBlock(const ReflowInput& aReflowInput, bool aForceFit,
+                  nsLineBox* aLine,
+                  nsCollapsingMargin& aBEndMarginResult /* out */,
+                  nsOverflowAreas& aOverflowAreas,
+                  const nsReflowStatus& aReflowStatus);
 
   nsCollapsingMargin& GetCarriedOutBEndMargin() {
     return mMetrics.mCarriedOutBEndMargin;
   }
 
-  const ReflowOutput& GetMetrics() const {
-    return mMetrics;
-  }
+  const ReflowOutput& GetMetrics() const { return mMetrics; }
 
   /**
    * Computes the collapsed block-start margin (in the context's parent's
@@ -81,7 +74,7 @@ public:
                                     bool* aMayNeedRetry,
                                     bool* aIsEmpty = nullptr);
 
-protected:
+ protected:
   nsPresContext* mPresContext;
   const ReflowInput& mOuterReflowInput;
 

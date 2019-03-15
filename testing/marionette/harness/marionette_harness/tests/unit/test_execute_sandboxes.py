@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 from marionette_driver.errors import JavascriptException
 
 from marionette_harness import MarionetteTestCase
@@ -22,9 +24,8 @@ class TestExecuteSandboxes(MarionetteTestCase):
         # Test that "system" sandbox has elevated privileges in
         # execute_async_script.
         result = self.marionette.execute_async_script("""
-            const Ci = Components.interfaces;
             let result = Ci.nsIPermissionManager.ALLOW_ACTION;
-            marionetteScriptFinished(result);""",
+            arguments[0](result);""",
             sandbox="system")
         self.assertEqual(result, 1)
 
@@ -58,16 +59,16 @@ class TestExecuteSandboxes(MarionetteTestCase):
         # Test that sandboxes are retained when switching between them
         # for execute_async_script.
         self.marionette.execute_async_script(
-            "foo = 1; marionetteScriptFinished()", sandbox="1")
+            "foo = 1; arguments[0]();", sandbox="1")
         self.marionette.execute_async_script(
-            "foo = 2; marionetteScriptFinished()", sandbox='2')
+            "foo = 2; arguments[0]();", sandbox='2')
         foo = self.marionette.execute_async_script(
-            "marionetteScriptFinished(foo)",
+            "arguments[0](foo);",
             sandbox="1",
             new_sandbox=False)
         self.assertEqual(foo, 1)
         foo = self.marionette.execute_async_script(
-            "marionetteScriptFinished(foo)",
+            "arguments[0](foo);",
             sandbox="2",
             new_sandbox=False)
         self.assertEqual(foo, 2)

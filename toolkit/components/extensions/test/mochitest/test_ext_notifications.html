@@ -3,8 +3,9 @@
 <head>
   <title>Test for notifications</title>
   <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/SpawnTask.js"></script>
+  <script type="text/javascript" src="/tests/SimpleTest/AddTask.js"></script>
   <script type="text/javascript" src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
+  <script type="text/javascript" src="head_notifications.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -18,7 +19,11 @@ let image = atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAA" +
                  "ACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=");
 const IMAGE_ARRAYBUFFER = Uint8Array.from(image, byte => byte.charCodeAt(0)).buffer;
 
-add_task(function* test_notification() {
+add_task(async function setup_mock_alert_service() {
+  await MockAlertsService.register();
+});
+
+add_task(async function test_notification() {
   async function background() {
     let opts = {
       type: "basic",
@@ -38,20 +43,22 @@ add_task(function* test_notification() {
     },
     background,
   });
-  yield extension.startup();
-  let x = yield extension.awaitMessage("running");
+  await extension.startup();
+  let x = await extension.awaitMessage("running");
   is(x, "0", "got correct id from notifications.create");
-  yield extension.awaitFinish();
-  yield extension.unload();
+  await extension.awaitFinish();
+  await extension.unload();
 });
 
-add_task(function* test_notification_events() {
+add_task(async function test_notification_events() {
   async function background() {
     let opts = {
       type: "basic",
       title: "Testing Notification",
       message: "Carry on",
     };
+
+    let createdId = "98";
 
     // Test an ignored listener.
     browser.notifications.onButtonClicked.addListener(function() {});
@@ -60,15 +67,24 @@ add_task(function* test_notification_events() {
     // but we can attempt to add a listener.
     browser.notifications.onClicked.addListener(function() {});
 
-    // Test onClosed listener.
-    browser.notifications.onClosed.addListener(id => {
-      browser.test.sendMessage("closed", id);
-      browser.test.notifyPass("background test passed");
+    browser.notifications.onShown.addListener(async function listener(id) {
+      browser.notifications.onShown.removeListener(listener);
+      browser.test.assertEq(createdId, id, "onShown received the expected id.");
+      let newId = await browser.notifications.create(id, opts);
+      browser.test.assertEq(createdId, newId, "create returned the expected id.");
+      browser.test.sendMessage("notification-created-twice");
     });
 
-    await browser.notifications.create("5", opts);
-    let id = await browser.notifications.create("5", opts);
-    browser.test.sendMessage("running", id);
+    // Test onClosed listener.
+    browser.notifications.onClosed.addListener(function listener(id) {
+      browser.notifications.onClosed.removeListener(listener);
+      browser.test.assertEq(createdId, id, "onClosed received the expected id.");
+      browser.test.sendMessage("notification-closed");
+    });
+
+    await browser.notifications.create(createdId, opts);
+
+    browser.test.sendMessage("notification-created-once");
   }
 
   let extension = ExtensionTestUtils.loadExtension({
@@ -77,33 +93,42 @@ add_task(function* test_notification_events() {
     },
     background,
   });
-  yield extension.startup();
-  let x = yield extension.awaitMessage("closed");
-  is(x, "5", "got correct id from onClosed listener");
-  x = yield extension.awaitMessage("running");
-  is(x, "5", "got correct id from notifications.create");
-  yield extension.awaitFinish();
-  yield extension.unload();
+
+  await extension.startup();
+
+  await extension.awaitMessage("notification-created-once");
+  await MockAlertsService.closeNotifications();
+
+  await extension.awaitMessage("notification-closed");
+  await extension.awaitMessage("notification-created-twice");
+
+  await MockAlertsService.closeNotifications();
+
+  await extension.unload();
 });
 
-add_task(function* test_notification_clear() {
-  async function background() {
+add_task(async function test_notification_clear() {
+  function background() {
     let opts = {
       type: "basic",
       title: "Testing Notification",
       message: "Carry on",
     };
 
-    browser.notifications.onClosed.addListener(id => {
-      browser.test.sendMessage("closed", id);
+    let createdId = "99";
+
+    browser.notifications.onShown.addListener(async id => {
+      browser.test.assertEq(createdId, id, "onShown received the expected id.");
+      let wasCleared = await browser.notifications.clear(id);
+      browser.test.assertTrue(wasCleared, "notifications.clear returned true.");
     });
 
-    let id = await browser.notifications.create("99", opts);
+    browser.notifications.onClosed.addListener(id => {
+      browser.test.assertEq(createdId, id, "onClosed received the expected id.");
+      browser.test.notifyPass("background test passed");
+    });
 
-    let wasCleared = await browser.notifications.clear(id);
-    browser.test.sendMessage("cleared", wasCleared);
-
-    browser.test.notifyPass("background test passed");
+    browser.notifications.create(createdId, opts);
   }
 
   let extension = ExtensionTestUtils.loadExtension({
@@ -112,16 +137,13 @@ add_task(function* test_notification_clear() {
     },
     background,
   });
-  yield extension.startup();
-  let x = yield extension.awaitMessage("closed");
-  is(x, "99", "got correct id from onClosed listener");
-  x = yield extension.awaitMessage("cleared");
-  is(x, true, "got correct boolean from notifications.clear");
-  yield extension.awaitFinish();
-  yield extension.unload();
+
+  await extension.startup();
+  await extension.awaitFinish();
+  await extension.unload();
 });
 
-add_task(function* test_notifications_empty_getAll() {
+add_task(async function test_notifications_empty_getAll() {
   async function background() {
     let notifications = await browser.notifications.getAll();
 
@@ -136,12 +158,12 @@ add_task(function* test_notifications_empty_getAll() {
     },
     background,
   });
-  yield extension.startup();
-  yield extension.awaitFinish("getAll empty");
-  yield extension.unload();
+  await extension.startup();
+  await extension.awaitFinish("getAll empty");
+  await extension.unload();
 });
 
-add_task(function* test_notifications_populated_getAll() {
+add_task(async function test_notifications_populated_getAll() {
   async function background() {
     let opts = {
       type: "basic",
@@ -179,12 +201,12 @@ add_task(function* test_notifications_populated_getAll() {
       "a.png": IMAGE_ARRAYBUFFER,
     },
   });
-  yield extension.startup();
-  yield extension.awaitFinish("getAll populated");
-  yield extension.unload();
+  await extension.startup();
+  await extension.awaitFinish("getAll populated");
+  await extension.unload();
 });
 
-add_task(function* test_buttons_unsupported() {
+add_task(async function test_buttons_unsupported() {
   function background() {
     let opts = {
       type: "basic",
@@ -213,9 +235,64 @@ add_task(function* test_buttons_unsupported() {
     },
     background,
   });
-  yield extension.startup();
-  yield extension.awaitFinish("buttons-unsupported");
-  yield extension.unload();
+  await extension.startup();
+  await extension.awaitFinish("buttons-unsupported");
+  await extension.unload();
+});
+
+add_task(async function test_notifications_different_contexts() {
+  async function background() {
+    let opts = {
+      type: "basic",
+      title: "Testing Notification",
+      message: "Carry on",
+    };
+
+    let id = await browser.notifications.create(opts);
+
+    browser.runtime.onMessage.addListener(async (message, sender) => {
+      await browser.tabs.remove(sender.tab.id);
+
+      // We should be able to clear the notification after creating and
+      // destroying the tab.html page.
+      let wasCleared = await browser.notifications.clear(id);
+      browser.test.assertTrue(wasCleared, "The notification was cleared.");
+      browser.test.notifyPass("notifications");
+    });
+
+    browser.tabs.create({url: browser.runtime.getURL("/tab.html")});
+  }
+
+  async function tabScript() {
+    // We should be able to see the notification created in the background page
+    // in this page.
+    let notifications = await browser.notifications.getAll();
+    browser.test.assertEq(1, Object.keys(notifications).length,
+                          "One notification found.");
+    browser.runtime.sendMessage("continue-test");
+  }
+
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      permissions: ["notifications"],
+    },
+    background,
+    files: {
+      "tab.js": tabScript,
+      "tab.html": `<!DOCTYPE html><html><head>
+        <meta charset="utf-8">
+        <script src="tab.js"><\/script>
+      </head></html>`,
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitFinish("notifications");
+  await extension.unload();
+});
+
+add_task(async function teardown_mock_alert_service() {
+  await MockAlertsService.unregister();
 });
 
 </script>

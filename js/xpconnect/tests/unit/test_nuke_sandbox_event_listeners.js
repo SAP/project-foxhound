@@ -4,9 +4,7 @@
 
 // See https://bugzilla.mozilla.org/show_bug.cgi?id=1273251
 
-const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
-
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function promiseEvent(target, event) {
   return new Promise(resolve => {
@@ -14,14 +12,13 @@ function promiseEvent(target, event) {
   });
 }
 
-add_task(function*() {
+add_task(async function() {
   let principal = Services.scriptSecurityManager
     .createCodebasePrincipalFromOrigin("http://example.com/");
 
   let webnav = Services.appShell.createWindowlessBrowser(false);
 
-  let docShell = webnav.QueryInterface(Ci.nsIInterfaceRequestor)
-                       .getInterface(Ci.nsIDocShell);
+  let docShell = webnav.docShell;
 
   docShell.createAboutBlankContentViewer(principal);
 
@@ -29,6 +26,8 @@ add_task(function*() {
   let sandbox = Cu.Sandbox(window, {sandboxPrototype: window});
 
   function sandboxContent() {
+    window.onload = function SandboxOnLoad() {};
+
     window.addEventListener("FromTest", () => {
       window.dispatchEvent(new CustomEvent("FromSandbox"));
     }, true);
@@ -40,29 +39,34 @@ add_task(function*() {
   let fromTestPromise = promiseEvent(window, "FromTest");
   let fromSandboxPromise = promiseEvent(window, "FromSandbox");
 
-  do_print("Dispatch FromTest event");
+  equal(typeof window.onload, "function",
+        "window.onload should contain sandbox event listener");
+  equal(window.onload.name, "SandboxOnLoad",
+        "window.onload have the correct function name");
+
+  info("Dispatch FromTest event");
   window.dispatchEvent(new window.CustomEvent("FromTest"));
 
-  yield fromTestPromise;
-  do_print("Got event from test");
+  await fromTestPromise;
+  info("Got event from test");
 
-  yield fromSandboxPromise;
-  do_print("Got response from sandbox");
+  await fromSandboxPromise;
+  info("Got response from sandbox");
 
 
   window.addEventListener("FromSandbox", () => {
     ok(false, "Got unexpected reply from sandbox");
   }, true);
 
-  do_print("Nuke sandbox");
+  info("Nuke sandbox");
   Cu.nukeSandbox(sandbox);
 
 
-  do_print("Dispatch FromTest event");
+  info("Dispatch FromTest event");
   fromTestPromise = promiseEvent(window, "FromTest");
   window.dispatchEvent(new window.CustomEvent("FromTest"));
-  yield fromTestPromise;
-  do_print("Got event from test");
+  await fromTestPromise;
+  info("Got event from test");
 
 
   // Force cycle collection, which should cause our callback reference
@@ -70,12 +74,14 @@ add_task(function*() {
   Cu.forceGC();
   Cu.forceCC();
 
+  ok(Cu.isDeadWrapper(window.onload),
+     "window.onload should contain a dead wrapper after sandbox is nuked");
 
-  do_print("Dispatch FromTest event");
+  info("Dispatch FromTest event");
   fromTestPromise = promiseEvent(window, "FromTest");
   window.dispatchEvent(new window.CustomEvent("FromTest"));
-  yield fromTestPromise;
-  do_print("Got event from test");
+  await fromTestPromise;
+  info("Got event from test");
 
   let listeners = Services.els.getListenerInfoFor(window);
   ok(!listeners.some(info => info.type == "FromTest"),

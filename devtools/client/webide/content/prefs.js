@@ -4,15 +4,14 @@
 
 "use strict";
 
-const Cu = Components.utils;
-const {Services} = Cu.import("resource://gre/modules/Services.jsm", {});
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm", {});
 
-window.addEventListener("load", function () {
+window.addEventListener("load", function() {
   // Listen to preference changes
-  let inputs = document.querySelectorAll("[data-pref]");
-  for (let i of inputs) {
-    let pref = i.dataset.pref;
-    Services.prefs.addObserver(pref, FillForm, false);
+  const inputs = document.querySelectorAll("[data-pref]");
+  for (const i of inputs) {
+    const pref = i.dataset.pref;
+    Services.prefs.addObserver(pref, FillForm);
     i.addEventListener("change", SaveForm);
   }
 
@@ -23,13 +22,12 @@ window.addEventListener("load", function () {
 
   // Initialize the controls
   FillForm();
-
 }, {capture: true, once: true});
 
-window.addEventListener("unload", function () {
-  let inputs = document.querySelectorAll("[data-pref]");
-  for (let i of inputs) {
-    let pref = i.dataset.pref;
+window.addEventListener("unload", function() {
+  const inputs = document.querySelectorAll("[data-pref]");
+  for (const i of inputs) {
+    const pref = i.dataset.pref;
     i.removeEventListener("change", SaveForm);
     Services.prefs.removeObserver(pref, FillForm);
   }
@@ -44,10 +42,10 @@ function ShowAddons() {
 }
 
 function FillForm() {
-  let inputs = document.querySelectorAll("[data-pref]");
-  for (let i of inputs) {
-    let pref = i.dataset.pref;
-    let val = GetPref(pref);
+  const inputs = document.querySelectorAll("[data-pref]");
+  for (const i of inputs) {
+    const pref = i.dataset.pref;
+    const val = GetPref(pref);
     if (i.type == "checkbox") {
       i.checked = val;
     } else {
@@ -57,9 +55,9 @@ function FillForm() {
 }
 
 function SaveForm(e) {
-  let inputs = document.querySelectorAll("[data-pref]");
-  for (let i of inputs) {
-    let pref = i.dataset.pref;
+  const inputs = document.querySelectorAll("[data-pref]");
+  for (const i of inputs) {
+    const pref = i.dataset.pref;
     if (i.type == "checkbox") {
       SetPref(pref, i.checked);
     } else {
@@ -69,7 +67,7 @@ function SaveForm(e) {
 }
 
 function GetPref(name) {
-  let type = Services.prefs.getPrefType(name);
+  const type = Services.prefs.getPrefType(name);
   switch (type) {
     case Services.prefs.PREF_STRING:
       return Services.prefs.getCharPref(name);
@@ -83,7 +81,7 @@ function GetPref(name) {
 }
 
 function SetPref(name, value) {
-  let type = Services.prefs.getPrefType(name);
+  const type = Services.prefs.getPrefType(name);
   switch (type) {
     case Services.prefs.PREF_STRING:
       return Services.prefs.setCharPref(name, value);
@@ -97,9 +95,9 @@ function SetPref(name, value) {
 }
 
 function RestoreDefaults() {
-  let inputs = document.querySelectorAll("[data-pref]");
-  for (let i of inputs) {
-    let pref = i.dataset.pref;
+  const inputs = document.querySelectorAll("[data-pref]");
+  for (const i of inputs) {
+    const pref = i.dataset.pref;
     Services.prefs.clearUserPref(pref);
   }
 }

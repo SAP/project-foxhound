@@ -13,118 +13,65 @@ class nsPresContext;
 namespace mozilla {
 namespace dom {
 
-MutationEvent::MutationEvent(EventTarget* aOwner,
-                             nsPresContext* aPresContext,
+MutationEvent::MutationEvent(EventTarget* aOwner, nsPresContext* aPresContext,
                              InternalMutationEvent* aEvent)
-  : Event(aOwner, aPresContext,
-          aEvent ? aEvent : new InternalMutationEvent(false, eVoidEvent))
-{
+    : Event(aOwner, aPresContext,
+            aEvent ? aEvent : new InternalMutationEvent(false, eVoidEvent)) {
   mEventIsInternal = (aEvent == nullptr);
 }
 
-NS_INTERFACE_MAP_BEGIN(MutationEvent)
-  NS_INTERFACE_MAP_ENTRY(nsIDOMMutationEvent)
-NS_INTERFACE_MAP_END_INHERITING(Event)
-
-NS_IMPL_ADDREF_INHERITED(MutationEvent, Event)
-NS_IMPL_RELEASE_INHERITED(MutationEvent, Event)
-
-already_AddRefed<nsINode>
-MutationEvent::GetRelatedNode()
-{
-  nsCOMPtr<nsINode> n =
-    do_QueryInterface(mEvent->AsMutationEvent()->mRelatedNode);
-  return n.forget();
+nsINode* MutationEvent::GetRelatedNode() {
+  return mEvent->AsMutationEvent()->mRelatedNode;
 }
 
-NS_IMETHODIMP
-MutationEvent::GetRelatedNode(nsIDOMNode** aRelatedNode)
-{
-  nsCOMPtr<nsINode> relatedNode = GetRelatedNode();
-  nsCOMPtr<nsIDOMNode> relatedDOMNode = relatedNode ? relatedNode->AsDOMNode() : nullptr;
-  relatedDOMNode.forget(aRelatedNode);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-MutationEvent::GetPrevValue(nsAString& aPrevValue)
-{
+void MutationEvent::GetPrevValue(nsAString& aPrevValue) const {
   InternalMutationEvent* mutation = mEvent->AsMutationEvent();
-  if (mutation->mPrevAttrValue)
-    mutation->mPrevAttrValue->ToString(aPrevValue);
-  return NS_OK;
+  if (mutation->mPrevAttrValue) mutation->mPrevAttrValue->ToString(aPrevValue);
 }
 
-NS_IMETHODIMP
-MutationEvent::GetNewValue(nsAString& aNewValue)
-{
+void MutationEvent::GetNewValue(nsAString& aNewValue) const {
   InternalMutationEvent* mutation = mEvent->AsMutationEvent();
-  if (mutation->mNewAttrValue)
-      mutation->mNewAttrValue->ToString(aNewValue);
-  return NS_OK;
+  if (mutation->mNewAttrValue) mutation->mNewAttrValue->ToString(aNewValue);
 }
 
-NS_IMETHODIMP
-MutationEvent::GetAttrName(nsAString& aAttrName)
-{
+void MutationEvent::GetAttrName(nsAString& aAttrName) const {
   InternalMutationEvent* mutation = mEvent->AsMutationEvent();
-  if (mutation->mAttrName)
-      mutation->mAttrName->ToString(aAttrName);
-  return NS_OK;
+  if (mutation->mAttrName) mutation->mAttrName->ToString(aAttrName);
 }
 
-uint16_t
-MutationEvent::AttrChange()
-{
+uint16_t MutationEvent::AttrChange() {
   return mEvent->AsMutationEvent()->mAttrChange;
 }
 
-NS_IMETHODIMP
-MutationEvent::GetAttrChange(uint16_t* aAttrChange)
-{
-  *aAttrChange = AttrChange();
-  return NS_OK;
-}
+void MutationEvent::InitMutationEvent(const nsAString& aType, bool aCanBubble,
+                                      bool aCancelable, nsINode* aRelatedNode,
+                                      const nsAString& aPrevValue,
+                                      const nsAString& aNewValue,
+                                      const nsAString& aAttrName,
+                                      uint16_t& aAttrChange, ErrorResult& aRv) {
+  NS_ENSURE_TRUE_VOID(!mEvent->mFlags.mIsBeingDispatched);
 
-NS_IMETHODIMP
-MutationEvent::InitMutationEvent(const nsAString& aTypeArg,
-                                 bool aCanBubbleArg,
-                                 bool aCancelableArg,
-                                 nsIDOMNode* aRelatedNodeArg,
-                                 const nsAString& aPrevValueArg,
-                                 const nsAString& aNewValueArg,
-                                 const nsAString& aAttrNameArg,
-                                 uint16_t aAttrChangeArg)
-{
-  NS_ENSURE_TRUE(!mEvent->mFlags.mIsBeingDispatched, NS_OK);
-
-  Event::InitEvent(aTypeArg, aCanBubbleArg, aCancelableArg);
+  Event::InitEvent(aType, aCanBubble, aCancelable);
 
   InternalMutationEvent* mutation = mEvent->AsMutationEvent();
-  mutation->mRelatedNode = aRelatedNodeArg;
-  if (!aPrevValueArg.IsEmpty())
-    mutation->mPrevAttrValue = NS_Atomize(aPrevValueArg);
-  if (!aNewValueArg.IsEmpty())
-    mutation->mNewAttrValue = NS_Atomize(aNewValueArg);
-  if (!aAttrNameArg.IsEmpty()) {
-    mutation->mAttrName = NS_Atomize(aAttrNameArg);
+  mutation->mRelatedNode = aRelatedNode;
+  if (!aPrevValue.IsEmpty()) mutation->mPrevAttrValue = NS_Atomize(aPrevValue);
+  if (!aNewValue.IsEmpty()) mutation->mNewAttrValue = NS_Atomize(aNewValue);
+  if (!aAttrName.IsEmpty()) {
+    mutation->mAttrName = NS_Atomize(aAttrName);
   }
-  mutation->mAttrChange = aAttrChangeArg;
-    
-  return NS_OK;
+  mutation->mAttrChange = aAttrChange;
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 using namespace mozilla;
 using namespace mozilla::dom;
 
-already_AddRefed<MutationEvent>
-NS_NewDOMMutationEvent(EventTarget* aOwner,
-                       nsPresContext* aPresContext,
-                       InternalMutationEvent* aEvent) 
-{
+already_AddRefed<MutationEvent> NS_NewDOMMutationEvent(
+    EventTarget* aOwner, nsPresContext* aPresContext,
+    InternalMutationEvent* aEvent) {
   RefPtr<MutationEvent> it = new MutationEvent(aOwner, aPresContext, aEvent);
   return it.forget();
 }

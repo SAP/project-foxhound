@@ -7,8 +7,45 @@
 
 #include "SkPatchUtils.h"
 
-#include "SkColorPriv.h"
+#include "SkArenaAlloc.h"
+#include "SkColorData.h"
+#include "SkColorSpacePriv.h"
+#include "SkConvertPixels.h"
 #include "SkGeometry.h"
+#include "SkPM4f.h"
+#include "SkTo.h"
+
+namespace {
+    enum CubicCtrlPts {
+        kTopP0_CubicCtrlPts = 0,
+        kTopP1_CubicCtrlPts = 1,
+        kTopP2_CubicCtrlPts = 2,
+        kTopP3_CubicCtrlPts = 3,
+
+        kRightP0_CubicCtrlPts = 3,
+        kRightP1_CubicCtrlPts = 4,
+        kRightP2_CubicCtrlPts = 5,
+        kRightP3_CubicCtrlPts = 6,
+
+        kBottomP0_CubicCtrlPts = 9,
+        kBottomP1_CubicCtrlPts = 8,
+        kBottomP2_CubicCtrlPts = 7,
+        kBottomP3_CubicCtrlPts = 6,
+
+        kLeftP0_CubicCtrlPts = 0,
+        kLeftP1_CubicCtrlPts = 11,
+        kLeftP2_CubicCtrlPts = 10,
+        kLeftP3_CubicCtrlPts = 9,
+    };
+
+    // Enum for corner also clockwise.
+    enum Corner {
+        kTopLeft_Corner = 0,
+        kTopRight_Corner,
+        kBottomRight_Corner,
+        kBottomLeft_Corner
+    };
+}
 
 /**
  * Evaluator to sample the values of a cubic bezier using forward differences.
@@ -94,9 +131,10 @@ private:
 static const int kPartitionSize = 10;
 
 /**
- * Calculate the approximate arc length given a bezier curve's control points.
+ *  Calculate the approximate arc length given a bezier curve's control points.
+ *  Returns -1 if bad calc (i.e. non-finite)
  */
-static SkScalar approx_arc_length(SkPoint* points, int count) {
+static SkScalar approx_arc_length(const SkPoint points[], int count) {
     if (count < 2) {
         return 0;
     }
@@ -104,35 +142,45 @@ static SkScalar approx_arc_length(SkPoint* points, int count) {
     for (int i = 0; i < count - 1; i++) {
         arcLength += SkPoint::Distance(points[i], points[i + 1]);
     }
-    return arcLength;
+    return SkScalarIsFinite(arcLength) ? arcLength : -1;
 }
 
 static SkScalar bilerp(SkScalar tx, SkScalar ty, SkScalar c00, SkScalar c10, SkScalar c01,
-                      SkScalar c11) {
+                       SkScalar c11) {
     SkScalar a = c00 * (1.f - tx) + c10 * tx;
     SkScalar b = c01 * (1.f - tx) + c11 * tx;
     return a * (1.f - ty) + b * ty;
 }
 
-SkISize SkPatchUtils::GetLevelOfDetail(const SkPoint cubics[12], const SkMatrix* matrix) {
+static Sk4f bilerp(SkScalar tx, SkScalar ty,
+                   const Sk4f& c00, const Sk4f& c10, const Sk4f& c01, const Sk4f& c11) {
+    Sk4f a = c00 * (1.f - tx) + c10 * tx;
+    Sk4f b = c01 * (1.f - tx) + c11 * tx;
+    return a * (1.f - ty) + b * ty;
+}
 
+SkISize SkPatchUtils::GetLevelOfDetail(const SkPoint cubics[12], const SkMatrix* matrix) {
     // Approximate length of each cubic.
     SkPoint pts[kNumPtsCubic];
-    SkPatchUtils::getTopCubic(cubics, pts);
+    SkPatchUtils::GetTopCubic(cubics, pts);
     matrix->mapPoints(pts, kNumPtsCubic);
     SkScalar topLength = approx_arc_length(pts, kNumPtsCubic);
 
-    SkPatchUtils::getBottomCubic(cubics, pts);
+    SkPatchUtils::GetBottomCubic(cubics, pts);
     matrix->mapPoints(pts, kNumPtsCubic);
     SkScalar bottomLength = approx_arc_length(pts, kNumPtsCubic);
 
-    SkPatchUtils::getLeftCubic(cubics, pts);
+    SkPatchUtils::GetLeftCubic(cubics, pts);
     matrix->mapPoints(pts, kNumPtsCubic);
     SkScalar leftLength = approx_arc_length(pts, kNumPtsCubic);
 
-    SkPatchUtils::getRightCubic(cubics, pts);
+    SkPatchUtils::GetRightCubic(cubics, pts);
     matrix->mapPoints(pts, kNumPtsCubic);
     SkScalar rightLength = approx_arc_length(pts, kNumPtsCubic);
+
+    if (topLength < 0 || bottomLength < 0 || leftLength < 0 || rightLength < 0) {
+        return {0, 0};  // negative length is a sentinel for bad length (i.e. non-finite)
+    }
 
     // Level of detail per axis, based on the larger side between top and bottom or left and right
     int lodX = static_cast<int>(SkMaxScalar(topLength, bottomLength) / kPartitionSize);
@@ -141,89 +189,114 @@ SkISize SkPatchUtils::GetLevelOfDetail(const SkPoint cubics[12], const SkMatrix*
     return SkISize::Make(SkMax32(8, lodX), SkMax32(8, lodY));
 }
 
-void SkPatchUtils::getTopCubic(const SkPoint cubics[12], SkPoint points[4]) {
+void SkPatchUtils::GetTopCubic(const SkPoint cubics[12], SkPoint points[4]) {
     points[0] = cubics[kTopP0_CubicCtrlPts];
     points[1] = cubics[kTopP1_CubicCtrlPts];
     points[2] = cubics[kTopP2_CubicCtrlPts];
     points[3] = cubics[kTopP3_CubicCtrlPts];
 }
 
-void SkPatchUtils::getBottomCubic(const SkPoint cubics[12], SkPoint points[4]) {
+void SkPatchUtils::GetBottomCubic(const SkPoint cubics[12], SkPoint points[4]) {
     points[0] = cubics[kBottomP0_CubicCtrlPts];
     points[1] = cubics[kBottomP1_CubicCtrlPts];
     points[2] = cubics[kBottomP2_CubicCtrlPts];
     points[3] = cubics[kBottomP3_CubicCtrlPts];
 }
 
-void SkPatchUtils::getLeftCubic(const SkPoint cubics[12], SkPoint points[4]) {
+void SkPatchUtils::GetLeftCubic(const SkPoint cubics[12], SkPoint points[4]) {
     points[0] = cubics[kLeftP0_CubicCtrlPts];
     points[1] = cubics[kLeftP1_CubicCtrlPts];
     points[2] = cubics[kLeftP2_CubicCtrlPts];
     points[3] = cubics[kLeftP3_CubicCtrlPts];
 }
 
-void SkPatchUtils::getRightCubic(const SkPoint cubics[12], SkPoint points[4]) {
+void SkPatchUtils::GetRightCubic(const SkPoint cubics[12], SkPoint points[4]) {
     points[0] = cubics[kRightP0_CubicCtrlPts];
     points[1] = cubics[kRightP1_CubicCtrlPts];
     points[2] = cubics[kRightP2_CubicCtrlPts];
     points[3] = cubics[kRightP3_CubicCtrlPts];
 }
 
-bool SkPatchUtils::getVertexData(SkPatchUtils::VertexData* data, const SkPoint cubics[12],
-                   const SkColor colors[4], const SkPoint texCoords[4], int lodX, int lodY) {
-    if (lodX < 1 || lodY < 1 || nullptr == cubics || nullptr == data) {
-        return false;
+static void skcolor_to_float(SkPMColor4f* dst, const SkColor* src, int count, SkColorSpace* dstCS) {
+    SkImageInfo srcInfo = SkImageInfo::Make(count, 1, kBGRA_8888_SkColorType,
+                                            kUnpremul_SkAlphaType, SkColorSpace::MakeSRGB());
+    SkImageInfo dstInfo = SkImageInfo::Make(count, 1, kRGBA_F32_SkColorType,
+                                            kPremul_SkAlphaType, sk_ref_sp(dstCS));
+    SkConvertPixels(dstInfo, dst, 0, srcInfo, src, 0);
+}
+
+static void float_to_skcolor(SkColor* dst, const SkPMColor4f* src, int count, SkColorSpace* srcCS) {
+    SkImageInfo srcInfo = SkImageInfo::Make(count, 1, kRGBA_F32_SkColorType,
+                                            kPremul_SkAlphaType, sk_ref_sp(srcCS));
+    SkImageInfo dstInfo = SkImageInfo::Make(count, 1, kBGRA_8888_SkColorType,
+                                            kUnpremul_SkAlphaType, SkColorSpace::MakeSRGB());
+    SkConvertPixels(dstInfo, dst, 0, srcInfo, src, 0);
+}
+
+sk_sp<SkVertices> SkPatchUtils::MakeVertices(const SkPoint cubics[12], const SkColor srcColors[4],
+                                             const SkPoint srcTexCoords[4], int lodX, int lodY,
+                                             SkColorSpace* colorSpace) {
+    if (lodX < 1 || lodY < 1 || nullptr == cubics) {
+        return nullptr;
     }
 
     // check for overflow in multiplication
     const int64_t lodX64 = (lodX + 1),
-                   lodY64 = (lodY + 1),
-                   mult64 = lodX64 * lodY64;
+    lodY64 = (lodY + 1),
+    mult64 = lodX64 * lodY64;
     if (mult64 > SK_MaxS32) {
-        return false;
+        return nullptr;
     }
-    data->fVertexCount = SkToS32(mult64);
 
+    // Treat null interpolation space as sRGB.
+    if (!colorSpace) {
+        colorSpace = sk_srgb_singleton();
+    }
+
+    int vertexCount = SkToS32(mult64);
     // it is recommended to generate draw calls of no more than 65536 indices, so we never generate
     // more than 60000 indices. To accomplish that we resize the LOD and vertex count
-    if (data->fVertexCount > 10000 || lodX > 200 || lodY > 200) {
-        SkScalar weightX = static_cast<SkScalar>(lodX) / (lodX + lodY);
-        SkScalar weightY = static_cast<SkScalar>(lodY) / (lodX + lodY);
+    if (vertexCount > 10000 || lodX > 200 || lodY > 200) {
+        float weightX = static_cast<float>(lodX) / (lodX + lodY);
+        float weightY = static_cast<float>(lodY) / (lodX + lodY);
 
         // 200 comes from the 100 * 2 which is the max value of vertices because of the limit of
         // 60000 indices ( sqrt(60000 / 6) that comes from data->fIndexCount = lodX * lodY * 6)
-        lodX = static_cast<int>(weightX * 200);
-        lodY = static_cast<int>(weightY * 200);
-        data->fVertexCount = (lodX + 1) * (lodY + 1);
+        // Need a min of 1 since we later divide by lod
+        lodX = std::max(1, sk_float_floor2int_no_saturate(weightX * 200));
+        lodY = std::max(1, sk_float_floor2int_no_saturate(weightY * 200));
+        vertexCount = (lodX + 1) * (lodY + 1);
     }
-    data->fIndexCount = lodX * lodY * 6;
-
-    data->fPoints = new SkPoint[data->fVertexCount];
-    data->fIndices = new uint16_t[data->fIndexCount];
-
-    // if colors is not null then create array for colors
-    SkPMColor colorsPM[kNumCorners];
-    if (colors) {
-        // premultiply colors to avoid color bleeding.
-        for (int i = 0; i < kNumCorners; i++) {
-            colorsPM[i] = SkPreMultiplyColor(colors[i]);
-        }
-        data->fColors = new uint32_t[data->fVertexCount];
+    const int indexCount = lodX * lodY * 6;
+    uint32_t flags = 0;
+    if (srcTexCoords) {
+        flags |= SkVertices::kHasTexCoords_BuilderFlag;
+    }
+    if (srcColors) {
+        flags |= SkVertices::kHasColors_BuilderFlag;
     }
 
-    // if texture coordinates are not null then create array for them
-    if (texCoords) {
-        data->fTexCoords = new SkPoint[data->fVertexCount];
+    SkSTArenaAlloc<2048> alloc;
+    SkPMColor4f* cornerColors = srcColors ? alloc.makeArray<SkPMColor4f>(4) : nullptr;
+    SkPMColor4f* tmpColors = srcColors ? alloc.makeArray<SkPMColor4f>(vertexCount) : nullptr;
+
+    SkVertices::Builder builder(SkVertices::kTriangles_VertexMode, vertexCount, indexCount, flags);
+    SkPoint* pos = builder.positions();
+    SkPoint* texs = builder.texCoords();
+    uint16_t* indices = builder.indices();
+
+    if (cornerColors) {
+        skcolor_to_float(cornerColors, srcColors, kNumCorners, colorSpace);
     }
 
     SkPoint pts[kNumPtsCubic];
-    SkPatchUtils::getBottomCubic(cubics, pts);
+    SkPatchUtils::GetBottomCubic(cubics, pts);
     FwDCubicEvaluator fBottom(pts);
-    SkPatchUtils::getTopCubic(cubics, pts);
+    SkPatchUtils::GetTopCubic(cubics, pts);
     FwDCubicEvaluator fTop(pts);
-    SkPatchUtils::getLeftCubic(cubics, pts);
+    SkPatchUtils::GetLeftCubic(cubics, pts);
     FwDCubicEvaluator fLeft(pts);
-    SkPatchUtils::getRightCubic(cubics, pts);
+    SkPatchUtils::GetRightCubic(cubics, pts);
     FwDCubicEvaluator fRight(pts);
 
     fBottom.restart(lodX);
@@ -254,58 +327,44 @@ bool SkPatchUtils::getVertexData(SkPatchUtils::VertexData* data, const SkPoint c
                                                      + u * fTop.getCtrlPoints()[3].y())
                                        + v * ((1.0f - u) * fBottom.getCtrlPoints()[0].y()
                                               + u * fBottom.getCtrlPoints()[3].y()));
-            data->fPoints[dataIndex] = s0 + s1 - s2;
+            pos[dataIndex] = s0 + s1 - s2;
 
-            if (colors) {
-                uint8_t a = uint8_t(bilerp(u, v,
-                                   SkScalar(SkColorGetA(colorsPM[kTopLeft_Corner])),
-                                   SkScalar(SkColorGetA(colorsPM[kTopRight_Corner])),
-                                   SkScalar(SkColorGetA(colorsPM[kBottomLeft_Corner])),
-                                   SkScalar(SkColorGetA(colorsPM[kBottomRight_Corner]))));
-                uint8_t r = uint8_t(bilerp(u, v,
-                                   SkScalar(SkColorGetR(colorsPM[kTopLeft_Corner])),
-                                   SkScalar(SkColorGetR(colorsPM[kTopRight_Corner])),
-                                   SkScalar(SkColorGetR(colorsPM[kBottomLeft_Corner])),
-                                   SkScalar(SkColorGetR(colorsPM[kBottomRight_Corner]))));
-                uint8_t g = uint8_t(bilerp(u, v,
-                                   SkScalar(SkColorGetG(colorsPM[kTopLeft_Corner])),
-                                   SkScalar(SkColorGetG(colorsPM[kTopRight_Corner])),
-                                   SkScalar(SkColorGetG(colorsPM[kBottomLeft_Corner])),
-                                   SkScalar(SkColorGetG(colorsPM[kBottomRight_Corner]))));
-                uint8_t b = uint8_t(bilerp(u, v,
-                                   SkScalar(SkColorGetB(colorsPM[kTopLeft_Corner])),
-                                   SkScalar(SkColorGetB(colorsPM[kTopRight_Corner])),
-                                   SkScalar(SkColorGetB(colorsPM[kBottomLeft_Corner])),
-                                   SkScalar(SkColorGetB(colorsPM[kBottomRight_Corner]))));
-                data->fColors[dataIndex] = SkPackARGB32(a,r,g,b);
+            if (cornerColors) {
+                bilerp(u, v, Sk4f::Load(cornerColors[kTopLeft_Corner].vec()),
+                             Sk4f::Load(cornerColors[kTopRight_Corner].vec()),
+                             Sk4f::Load(cornerColors[kBottomLeft_Corner].vec()),
+                             Sk4f::Load(cornerColors[kBottomRight_Corner].vec()))
+                    .store(tmpColors[dataIndex].vec());
             }
 
-            if (texCoords) {
-                data->fTexCoords[dataIndex] = SkPoint::Make(
-                                            bilerp(u, v, texCoords[kTopLeft_Corner].x(),
-                                                   texCoords[kTopRight_Corner].x(),
-                                                   texCoords[kBottomLeft_Corner].x(),
-                                                   texCoords[kBottomRight_Corner].x()),
-                                            bilerp(u, v, texCoords[kTopLeft_Corner].y(),
-                                                   texCoords[kTopRight_Corner].y(),
-                                                   texCoords[kBottomLeft_Corner].y(),
-                                                   texCoords[kBottomRight_Corner].y()));
+            if (texs) {
+                texs[dataIndex] = SkPoint::Make(bilerp(u, v, srcTexCoords[kTopLeft_Corner].x(),
+                                                       srcTexCoords[kTopRight_Corner].x(),
+                                                       srcTexCoords[kBottomLeft_Corner].x(),
+                                                       srcTexCoords[kBottomRight_Corner].x()),
+                                                bilerp(u, v, srcTexCoords[kTopLeft_Corner].y(),
+                                                       srcTexCoords[kTopRight_Corner].y(),
+                                                       srcTexCoords[kBottomLeft_Corner].y(),
+                                                       srcTexCoords[kBottomRight_Corner].y()));
 
             }
 
             if(x < lodX && y < lodY) {
                 int i = 6 * (x * lodY + y);
-                data->fIndices[i] = x * stride + y;
-                data->fIndices[i + 1] = x * stride + 1 + y;
-                data->fIndices[i + 2] = (x + 1) * stride + 1 + y;
-                data->fIndices[i + 3] = data->fIndices[i];
-                data->fIndices[i + 4] = data->fIndices[i + 2];
-                data->fIndices[i + 5] = (x + 1) * stride + y;
+                indices[i] = x * stride + y;
+                indices[i + 1] = x * stride + 1 + y;
+                indices[i + 2] = (x + 1) * stride + 1 + y;
+                indices[i + 3] = indices[i];
+                indices[i + 4] = indices[i + 2];
+                indices[i + 5] = (x + 1) * stride + y;
             }
             v = SkScalarClampMax(v + 1.f / lodY, 1);
         }
         u = SkScalarClampMax(u + 1.f / lodX, 1);
     }
-    return true;
 
+    if (tmpColors) {
+        float_to_skcolor(builder.colors(), tmpColors, vertexCount, colorSpace);
+    }
+    return builder.detach();
 }

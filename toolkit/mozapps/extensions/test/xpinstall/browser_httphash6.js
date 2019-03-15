@@ -26,7 +26,7 @@ function test() {
   // Set up the redirect to give a bad hash
   setup_redirect({
     "X-Target-Digest": "sha1:foo",
-    "Location": "http://example.com/browser/" + RELATIVE_DIR + "amosigned.xpi"
+    "Location": "http://example.com/browser/" + RELATIVE_DIR + "amosigned.xpi",
   });
 
   var url = "https://example.com/browser/" + RELATIVE_DIR + "redirect.sjs?mode=redirect";
@@ -34,11 +34,11 @@ function test() {
   var triggers = encodeURIComponent(JSON.stringify({
     "Unsigned XPI": {
       URL: url,
-      toString() { return this.URL; }
-    }
+      toString() { return this.URL; },
+    },
   }));
-  gBrowser.selectedTab = gBrowser.addTab();
-  gBrowser.loadURI(TESTROOT + "installtrigger.html?" + triggers);
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
+  BrowserTestUtils.loadURI(gBrowser, TESTROOT + "installtrigger.html?" + triggers);
 }
 
 function download_failed(install) {
@@ -55,8 +55,8 @@ function finish_failed_download() {
 
   // Give it the right hash this time
   setup_redirect({
-    "X-Target-Digest": "sha1:36ffb0acfd9c6e9682473aaebaab394d38b473c9",
-    "Location": "http://example.com/browser/" + RELATIVE_DIR + "amosigned.xpi"
+    "X-Target-Digest": "sha1:ee95834ad862245a9ef99ccecc2a857cadc16404",
+    "Location": "http://example.com/browser/" + RELATIVE_DIR + "amosigned.xpi",
   });
 
   // The harness expects onNewInstall events for all installs that are about to start

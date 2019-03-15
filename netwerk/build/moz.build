@@ -17,20 +17,29 @@ include('/ipc/chromium/chromium-config.mozbuild')
 FINAL_LIBRARY = 'xul'
 
 LOCAL_INCLUDES += [
+    '/extensions/auth',
     '/netwerk/base',
     '/netwerk/cache',
     '/netwerk/dns',
     '/netwerk/mime',
     '/netwerk/protocol/about',
+    '/netwerk/protocol/data',
+    '/netwerk/protocol/file',
+    '/netwerk/protocol/ftp',
+    '/netwerk/protocol/http',
+    '/netwerk/protocol/res',
+    '/netwerk/protocol/viewsource',
+    '/netwerk/protocol/websocket',
+    '/netwerk/protocol/wyciwyg',
     '/netwerk/socket',
     '/netwerk/streamconv',
     '/netwerk/streamconv/converters',
 ]
 
-protocols = CONFIG['NECKO_PROTOCOLS']
-LOCAL_INCLUDES += sorted([
-    '/netwerk/protocol/%s' % d for d in protocols if d != 'about'
-])
+if 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
+    LOCAL_INCLUDES += [
+        '/netwerk/protocol/gio',
+    ]
 
 if CONFIG['OS_ARCH'] == 'WINNT':
     LOCAL_INCLUDES += [
@@ -62,11 +71,7 @@ if CONFIG['NECKO_WIFI']:
         '/netwerk/wifi',
     ]
 
-if CONFIG['MOZ_RTSP']:
-    LOCAL_INCLUDES += [
-        '/netwerk/protocol/rtsp',
-    ]
-
 LOCAL_INCLUDES += [
     '!/netwerk/dns',
+    '/modules/brotli/dec',
 ]

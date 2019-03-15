@@ -8,38 +8,23 @@
 
 #include "MediaSegment.h"
 #include "nsAutoPtr.h"
+#include "TrackID.h"
 
 namespace mozilla {
 
-/**
- * Unique ID for track within a StreamTracks. Tracks from different
- * StreamTrackss may have the same ID; this matters when appending StreamTrackss,
- * since tracks with the same ID are matched. Only IDs greater than 0 are allowed.
- */
-typedef int32_t TrackID;
-const TrackID TRACK_NONE = 0;
-const TrackID TRACK_INVALID = -1;
-const TrackID TRACK_ANY = -2;
-
-inline bool IsTrackIDExplicit(const TrackID& aId) {
-  return aId > TRACK_NONE;
-}
-
 inline TrackTicks RateConvertTicksRoundDown(TrackRate aOutRate,
                                             TrackRate aInRate,
-                                            TrackTicks aTicks)
-{
-  NS_ASSERTION(0 < aOutRate && aOutRate <= TRACK_RATE_MAX, "Bad out rate");
-  NS_ASSERTION(0 < aInRate && aInRate <= TRACK_RATE_MAX, "Bad in rate");
-  NS_ASSERTION(0 <= aTicks && aTicks <= TRACK_TICKS_MAX, "Bad ticks");
+                                            TrackTicks aTicks) {
+  MOZ_ASSERT(0 < aOutRate && aOutRate <= TRACK_RATE_MAX, "Bad out rate");
+  MOZ_ASSERT(0 < aInRate && aInRate <= TRACK_RATE_MAX, "Bad in rate");
+  MOZ_ASSERT(0 <= aTicks && aTicks <= TRACK_TICKS_MAX, "Bad ticks");
   return (aTicks * aOutRate) / aInRate;
 }
-inline TrackTicks RateConvertTicksRoundUp(TrackRate aOutRate,
-                                          TrackRate aInRate, TrackTicks aTicks)
-{
-  NS_ASSERTION(0 < aOutRate && aOutRate <= TRACK_RATE_MAX, "Bad out rate");
-  NS_ASSERTION(0 < aInRate && aInRate <= TRACK_RATE_MAX, "Bad in rate");
-  NS_ASSERTION(0 <= aTicks && aTicks <= TRACK_TICKS_MAX, "Bad ticks");
+inline TrackTicks RateConvertTicksRoundUp(TrackRate aOutRate, TrackRate aInRate,
+                                          TrackTicks aTicks) {
+  MOZ_ASSERT(0 < aOutRate && aOutRate <= TRACK_RATE_MAX, "Bad out rate");
+  MOZ_ASSERT(0 < aInRate && aInRate <= TRACK_RATE_MAX, "Bad in rate");
+  MOZ_ASSERT(0 <= aTicks && aTicks <= TRACK_TICKS_MAX, "Bad ticks");
   return (aTicks * aOutRate + aInRate - 1) / aInRate;
 }
 
@@ -55,9 +40,8 @@ inline TrackTicks RateConvertTicksRoundUp(TrackRate aOutRate,
  * the data for each track is a MediaSegment. The set of tracks can vary
  * over the timeline of the StreamTracks.
  */
-class StreamTracks
-{
-public:
+class StreamTracks {
+ public:
   /**
    * Every track has a start time --- when it started in the StreamTracks.
    * It has an end flag; when false, no end point is known; when true,
@@ -68,28 +52,25 @@ public:
    * TODO Tracks can also be enabled and disabled over time.
    * Takes ownership of aSegment.
    */
-  class Track final
-  {
+  class Track final {
     Track(TrackID aID, StreamTime aStart, MediaSegment* aSegment)
-      : mStart(aStart),
-        mSegment(aSegment),
-        mID(aID),
-        mEnded(false)
-    {
+        : mStart(aStart),
+          mSegment(aSegment),
+          mID(aID),
+          mEnded(false),
+          mNotifiedEnded(false) {
       MOZ_COUNT_CTOR(Track);
 
       NS_ASSERTION(aID > TRACK_NONE, "Bad track ID");
-      NS_ASSERTION(0 <= aStart && aStart <= aSegment->GetDuration(), "Bad start position");
+      NS_ASSERTION(0 <= aStart && aStart <= aSegment->GetDuration(),
+                   "Bad start position");
     }
 
-  public:
-    ~Track()
-    {
-      MOZ_COUNT_DTOR(Track);
-    }
+   public:
+    ~Track() { MOZ_COUNT_DTOR(Track); }
 
-    template <class T> T* Get() const
-    {
+    template <class T>
+    T* Get() const {
       if (mSegment->GetType() == T::StaticType()) {
         return static_cast<T*>(mSegment.get());
       }
@@ -102,35 +83,32 @@ public:
     StreamTime GetStart() const { return mStart; }
     StreamTime GetEnd() const { return mSegment->GetDuration(); }
     MediaSegment::Type GetType() const { return mSegment->GetType(); }
+    bool NotifiedEnded() const { return mNotifiedEnded; }
 
     void SetEnded() { mEnded = true; }
-    void AppendFrom(Track* aTrack)
-    {
+    void NotifyEnded() {
+      MOZ_ASSERT(mEnded);
+      mNotifiedEnded = true;
+    }
+    void AppendFrom(Track* aTrack) {
       NS_ASSERTION(!mEnded, "Can't append to ended track");
       NS_ASSERTION(aTrack->mID == mID, "IDs must match");
       NS_ASSERTION(aTrack->mStart == 0, "Source track must start at zero");
-      NS_ASSERTION(aTrack->mSegment->GetType() == GetType(), "Track types must match");
+      NS_ASSERTION(aTrack->mSegment->GetType() == GetType(),
+                   "Track types must match");
 
       mSegment->AppendFrom(aTrack->mSegment);
       mEnded = aTrack->mEnded;
     }
-    MediaSegment* RemoveSegment()
-    {
-      return mSegment.forget();
-    }
-    void ForgetUpTo(StreamTime aTime)
-    {
-      mSegment->ForgetUpTo(aTime);
-    }
-    void FlushAfter(StreamTime aNewEnd)
-    {
+    MediaSegment* RemoveSegment() { return mSegment.forget(); }
+    void ForgetUpTo(StreamTime aTime) { mSegment->ForgetUpTo(aTime); }
+    void FlushAfter(StreamTime aNewEnd) {
       // Forget everything after a given endpoint
       // a specified amount
       mSegment->FlushAfter(aNewEnd);
     }
 
-    size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const
-    {
+    size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const {
       size_t amount = aMallocSizeOf(this);
       if (mSegment) {
         amount += mSegment->SizeOfIncludingThis(aMallocSizeOf);
@@ -138,7 +116,7 @@ public:
       return amount;
     }
 
-  private:
+   private:
     friend class StreamTracks;
 
     // Start offset is in ticks at rate mRate
@@ -150,11 +128,12 @@ public:
     TrackID mID;
     // True when the track ends with the data in mSegment
     bool mEnded;
+    // True after NotifiedEnded() has been called.
+    bool mNotifiedEnded;
   };
 
-  class MOZ_STACK_CLASS CompareTracksByID final
-  {
-  public:
+  class MOZ_STACK_CLASS CompareTracksByID final {
+   public:
     bool Equals(Track* aA, Track* aB) const {
       return aA->GetID() == aB->GetID();
     }
@@ -164,23 +143,19 @@ public:
   };
 
   StreamTracks()
-    : mGraphRate(0)
-    , mTracksKnownTime(0)
-    , mForgottenTime(0)
-    , mTracksDirty(false)
+      : mGraphRate(0),
+        mForgottenTime(0),
+        mTracksDirty(false)
 #ifdef DEBUG
-    , mGraphRateIsSet(false)
+        ,
+        mGraphRateIsSet(false)
 #endif
   {
     MOZ_COUNT_CTOR(StreamTracks);
   }
-  ~StreamTracks()
-  {
-    MOZ_COUNT_DTOR(StreamTracks);
-  }
+  ~StreamTracks() { MOZ_COUNT_DTOR(StreamTracks); }
 
-  size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const
-  {
+  size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const {
     size_t amount = 0;
     amount += mTracks.ShallowSizeOfExcludingThis(aMallocSizeOf);
     for (size_t i = 0; i < mTracks.Length(); i++) {
@@ -193,8 +168,7 @@ public:
    * Initialize the graph rate for use in calculating StreamTimes from track
    * ticks.  Called when a MediaStream's graph pointer is initialized.
    */
-  void InitGraphRate(TrackRate aGraphRate)
-  {
+  void InitGraphRate(TrackRate aGraphRate) {
     mGraphRate = aGraphRate;
 #if DEBUG
     MOZ_ASSERT(!mGraphRateIsSet);
@@ -202,8 +176,7 @@ public:
 #endif
   }
 
-  TrackRate GraphRate() const
-  {
+  TrackRate GraphRate() const {
     MOZ_ASSERT(mGraphRateIsSet);
     return mGraphRate;
   }
@@ -213,83 +186,71 @@ public:
    * holding a Track reference.
    * aSegment must have aStart worth of null data.
    */
-  Track& AddTrack(TrackID aID, StreamTime aStart, MediaSegment* aSegment)
-  {
+  Track& AddTrack(TrackID aID, StreamTime aStart, MediaSegment* aSegment) {
     NS_ASSERTION(!FindTrack(aID), "Track with this ID already exists");
 
     Track* track = new Track(aID, aStart, aSegment);
     mTracks.InsertElementSorted(track, CompareTracksByID());
     mTracksDirty = true;
 
-    if (mTracksKnownTime == STREAM_TIME_MAX) {
-      // There exists code like
-      // http://mxr.mozilla.org/mozilla-central/source/media/webrtc/signaling/src/mediapipeline/MediaPipeline.cpp?rev=96b197deb91e&mark=1292-1297#1292
-      NS_WARNING("Adding track to StreamTracks that should have no more tracks");
-    } else {
-      NS_ASSERTION(mTracksKnownTime <= aStart, "Start time too early");
-    }
     return *track;
-  }
-
-  void AdvanceKnownTracksTime(StreamTime aKnownTime)
-  {
-    NS_ASSERTION(aKnownTime >= mTracksKnownTime, "Can't move tracks-known time earlier");
-    mTracksKnownTime = aKnownTime;
   }
 
   /**
    * The end time for the StreamTracks is the latest time for which we have
    * data for all tracks that haven't ended by that time.
    */
-  StreamTime GetEnd() const;
+  StreamTime GetEarliestTrackEnd() const;
 
   /**
-   * Returns the earliest time >= 0 at which all tracks have ended
-   * and all their data has been played out and no new tracks can be added,
-   * or STREAM_TIME_MAX if there is no such time.
+   * Returns the earliest time >= 0 at which all tracks have ended and all
+   * their data has been played out, or STREAM_TIME_MAX if there is no such
+   * time.
    */
-  StreamTime GetAllTracksEnd() const;
+  StreamTime GetLatestTrackEnd() const;
 
 #ifdef DEBUG
   void DumpTrackInfo() const;
 #endif
 
-  Track* FindTrack(TrackID aID);
+  Track* FindTrack(TrackID aID) const;
 
-  class MOZ_STACK_CLASS TrackIter final
-  {
-  public:
+  class MOZ_STACK_CLASS TrackIter final {
+   public:
     /**
      * Iterate through the tracks of aBuffer in order of ID.
      */
-    explicit TrackIter(const StreamTracks& aBuffer) :
-      mBuffer(&aBuffer.mTracks), mIndex(0), mMatchType(false) {}
+    explicit TrackIter(const StreamTracks& aBuffer)
+        : mBuffer(&aBuffer.mTracks),
+          mIndex(0),
+          mType(static_cast<MediaSegment::Type>(0)),
+          mMatchType(false) {}
     /**
      * Iterate through the tracks of aBuffer with type aType, in order of ID.
      */
-    TrackIter(const StreamTracks& aBuffer, MediaSegment::Type aType) :
-      mBuffer(&aBuffer.mTracks), mIndex(0), mType(aType), mMatchType(true) { FindMatch(); }
-    bool IsEnded() { return mIndex >= mBuffer->Length(); }
-    void Next()
-    {
+    TrackIter(const StreamTracks& aBuffer, MediaSegment::Type aType)
+        : mBuffer(&aBuffer.mTracks), mIndex(0), mType(aType), mMatchType(true) {
+      FindMatch();
+    }
+    bool IsEnded() const { return mIndex >= mBuffer->Length(); }
+    void Next() {
       ++mIndex;
       FindMatch();
     }
-    Track* get() { return mBuffer->ElementAt(mIndex); }
+    Track* get() const { return mBuffer->ElementAt(mIndex); }
     Track& operator*() { return *mBuffer->ElementAt(mIndex); }
     Track* operator->() { return mBuffer->ElementAt(mIndex); }
-  private:
-    void FindMatch()
-    {
-      if (!mMatchType)
-        return;
+
+   private:
+    void FindMatch() {
+      if (!mMatchType) return;
       while (mIndex < mBuffer->Length() &&
              mBuffer->ElementAt(mIndex)->GetType() != mType) {
         ++mIndex;
       }
     }
 
-    const nsTArray<nsAutoPtr<Track> >* mBuffer;
+    const nsTArray<nsAutoPtr<Track>>* mBuffer;
     uint32_t mIndex;
     MediaSegment::Type mType;
     bool mMatchType;
@@ -310,13 +271,9 @@ public:
   /**
    * Returns the latest time passed to ForgetUpTo.
    */
-  StreamTime GetForgottenDuration()
-  {
-    return mForgottenTime;
-  }
+  StreamTime GetForgottenDuration() const { return mForgottenTime; }
 
-  bool GetAndResetTracksDirty()
-  {
+  bool GetAndResetTracksDirty() {
     if (!mTracksDirty) {
       return false;
     }
@@ -325,14 +282,11 @@ public:
     return true;
   }
 
-protected:
-  TrackRate mGraphRate; // StreamTime per second
-  // Any new tracks added will start at or after this time. In other words, the track
-  // list is complete and correct for all times less than this time.
-  StreamTime mTracksKnownTime;
+ protected:
+  TrackRate mGraphRate;  // StreamTime per second
   StreamTime mForgottenTime;
 
-private:
+ private:
   // All known tracks for this StreamTracks
   nsTArray<nsAutoPtr<Track>> mTracks;
   bool mTracksDirty;
@@ -342,7 +296,6 @@ private:
 #endif
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif /* MOZILLA_STREAMTRACKS_H_ */
-

@@ -14,28 +14,22 @@
 #include "SkDrawable.h"
 #include "SkRect.h"
 #include "SkTDArray.h"
+#include "SkTemplates.h"
 
-class SkLiteDL final : public SkDrawable {
+class SkLiteDL final {
 public:
-    static sk_sp<SkLiteDL> New(SkRect);
-    void reset(SkRect);
+    ~SkLiteDL();
 
-    void makeThreadsafe();
+    void draw(SkCanvas* canvas) const;
+
+    void reset();
     bool empty() const { return fUsed == 0; }
 
-#ifdef SK_SUPPORT_LEGACY_DRAWFILTER
-    void setDrawFilter(SkDrawFilter*);
-#endif
-
-    // Draws as if...
-    //   SkRect bounds = this->getBounds();
-    //   canvas->saveLayer(&bounds, paint);
-    //       this->draw(canvas, matrix);
-    //   canvas->restore();
-    void drawAsLayer(SkCanvas*, const SkMatrix*, const SkPaint*);
+    void flush();
 
     void save();
-    void saveLayer(const SkRect*, const SkPaint*, const SkImageFilter*, SkCanvas::SaveLayerFlags);
+    void saveLayer(const SkRect*, const SkPaint*, const SkImageFilter*, const SkImage*,
+                   const SkMatrix*, SkCanvas::SaveLayerFlags);
     void restore();
 
     void    concat (const SkMatrix&);
@@ -43,10 +37,10 @@ public:
     void translate(SkScalar, SkScalar);
     void translateZ(SkScalar);
 
-    void clipPath  (const   SkPath&, SkCanvas::ClipOp, bool aa);
-    void clipRect  (const   SkRect&, SkCanvas::ClipOp, bool aa);
-    void clipRRect (const  SkRRect&, SkCanvas::ClipOp, bool aa);
-    void clipRegion(const SkRegion&, SkCanvas::ClipOp);
+    void clipPath  (const   SkPath&, SkClipOp, bool aa);
+    void clipRect  (const   SkRect&, SkClipOp, bool aa);
+    void clipRRect (const  SkRRect&, SkClipOp, bool aa);
+    void clipRegion(const SkRegion&, SkClipOp);
 
     void drawPaint (const SkPaint&);
     void drawPath  (const SkPath&, const SkPaint&);
@@ -60,13 +54,10 @@ public:
     void drawAnnotation     (const SkRect&, const char*, SkData*);
     void drawDrawable       (SkDrawable*, const SkMatrix*);
     void drawPicture        (const SkPicture*, const SkMatrix*, const SkPaint*);
-    void drawShadowedPicture(const SkPicture*, const SkMatrix*,
-                             const SkPaint*, const SkShadowParams& params);
 
     void drawText       (const void*, size_t, SkScalar, SkScalar, const SkPaint&);
     void drawPosText    (const void*, size_t, const SkPoint[], const SkPaint&);
     void drawPosTextH   (const void*, size_t, const SkScalar[], SkScalar, const SkPaint&);
-    void drawTextOnPath (const void*, size_t, const SkPath&, const SkMatrix*, const SkPaint&);
     void drawTextRSXform(const void*, size_t, const SkRSXform[], const SkRect*, const SkPaint&);
     void drawTextBlob   (const SkTextBlob*, SkScalar,SkScalar, const SkPaint&);
 
@@ -78,32 +69,24 @@ public:
                           const SkRect&, const SkPaint*);
 
     void drawPatch(const SkPoint[12], const SkColor[4], const SkPoint[4],
-                   SkXfermode*, const SkPaint&);
+                   SkBlendMode, const SkPaint&);
     void drawPoints(SkCanvas::PointMode, size_t, const SkPoint[], const SkPaint&);
-    void drawVertices(SkCanvas::VertexMode, int, const SkPoint[], const SkPoint[], const SkColor[],
-                      SkXfermode*, const uint16_t[], int, const SkPaint&);
+    void drawVertices(const SkVertices*, const SkVertices::Bone bones[], int boneCount, SkBlendMode,
+                      const SkPaint&);
     void drawAtlas(const SkImage*, const SkRSXform[], const SkRect[], const SkColor[], int,
-                   SkXfermode::Mode, const SkRect*, const SkPaint*);
-
-    void setBounds(const SkRect& bounds);
+                   SkBlendMode, const SkRect*, const SkPaint*);
+    void drawShadowRec(const SkPath&, const SkDrawShadowRec&);
 
 private:
-    SkLiteDL(SkRect);
-    ~SkLiteDL();
-
-    SkRect   onGetBounds() override;
-    void onDraw(SkCanvas*) override;
-
     template <typename T, typename... Args>
     void* push(size_t, Args&&...);
 
     template <typename Fn, typename... Args>
-    void map(const Fn[], Args...);
+    void map(const Fn[], Args...) const;
 
     SkAutoTMalloc<uint8_t> fBytes;
-    size_t                 fUsed;
-    size_t                 fReserved;
-    SkRect                 fBounds;
+    size_t                 fUsed = 0;
+    size_t                 fReserved = 0;
 };
 
 #endif//SkLiteDL_DEFINED

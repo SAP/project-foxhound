@@ -4,17 +4,20 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+@template
+def ReplaceMalloc(name):
+    if CONFIG['MOZ_REPLACE_MALLOC_STATIC']:
+        DEFINES['MOZ_REPLACE_MALLOC_PREFIX'] = name.replace('-', '_')
+        FINAL_LIBRARY = 'memory'
+    else:
+        SharedLibrary(name)
+
 DIRS += [
     'logalloc',
-    'replace',
 ]
-
-# Build jemalloc3 as a replace-malloc lib when building with mozjemalloc
-if not CONFIG['MOZ_JEMALLOC4']:
-    DIRS += ['jemalloc']
-
-if CONFIG['MOZ_REPLACE_MALLOC_LINKAGE'] == 'dummy library':
-    DIRS += ['dummy']
 
 if CONFIG['MOZ_DMD']:
     DIRS += ['dmd']
+
+if CONFIG['MOZ_DEBUG'] and CONFIG['CC_TYPE'] == 'clang-cl':
+    AllowCompilerWarnings()  # workaround for bug 1090497

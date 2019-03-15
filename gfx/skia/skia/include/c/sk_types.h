@@ -53,19 +53,6 @@ typedef uint32_t sk_color_t;
 #define sk_color_get_b(c)               (((c) >>  0) & 0xFF)
 
 typedef enum {
-    UNKNOWN_SK_COLORTYPE,
-    RGBA_8888_SK_COLORTYPE,
-    BGRA_8888_SK_COLORTYPE,
-    ALPHA_8_SK_COLORTYPE,
-} sk_colortype_t;
-
-typedef enum {
-    OPAQUE_SK_ALPHATYPE,
-    PREMUL_SK_ALPHATYPE,
-    UNPREMUL_SK_ALPHATYPE,
-} sk_alphatype_t;
-
-typedef enum {
     INTERSECT_SK_CLIPTYPE,
     DIFFERENCE_SK_CLIPTYPE,
 } sk_cliptype_t;
@@ -77,18 +64,6 @@ typedef enum {
     RGB_V_SK_PIXELGEOMETRY,
     BGR_V_SK_PIXELGEOMETRY,
 } sk_pixelgeometry_t;
-
-/**
-    Return the default sk_colortype_t; this is operating-system dependent.
-*/
-SK_API sk_colortype_t sk_colortype_get_default_8888();
-
-typedef struct {
-    int32_t         width;
-    int32_t         height;
-    sk_colortype_t  colorType;
-    sk_alphatype_t  alphaType;
-} sk_imageinfo_t;
 
 typedef struct {
     sk_pixelgeometry_t pixelGeometry;
@@ -113,6 +88,59 @@ typedef struct {
     float   bottom;
 } sk_rect_t;
 
+/**
+    The sk_matrix_t struct holds a 3x3 perspective matrix for
+    transforming coordinates:
+
+        (X,Y) = T[M]((x,y))
+        X = (M[0] * x + M[1] * y + M[2]) / (M[6] * x + M[7] * y + M[8]);
+        Y = (M[3] * x + M[4] * y + M[5]) / (M[6] * x + M[7] * y + M[8]);
+
+    Therefore, the identity matrix is
+
+        sk_matrix_t identity = {{1, 0, 0,
+                                 0, 1, 0,
+                                 0, 0, 1}};
+
+    A matrix that scales by sx and sy is:
+
+        sk_matrix_t scale = {{sx, 0,  0,
+                              0,  sy, 0,
+                              0,  0,  1}};
+
+    A matrix that translates by tx and ty is:
+
+        sk_matrix_t translate = {{1, 0, tx,
+                                  0, 1, ty,
+                                  0, 0, 1}};
+
+    A matrix that rotates around the origin by A radians:
+
+        sk_matrix_t rotate = {{cos(A), -sin(A), 0,
+                               sin(A),  cos(A), 0,
+                               0,       0,      1}};
+
+    Two matrixes can be concatinated by:
+
+         void concat_matrices(sk_matrix_t* dst,
+                             const sk_matrix_t* matrixU,
+                             const sk_matrix_t* matrixV) {
+            const float* u = matrixU->mat;
+            const float* v = matrixV->mat;
+            sk_matrix_t result = {{
+                    u[0] * v[0] + u[1] * v[3] + u[2] * v[6],
+                    u[0] * v[1] + u[1] * v[4] + u[2] * v[7],
+                    u[0] * v[2] + u[1] * v[5] + u[2] * v[8],
+                    u[3] * v[0] + u[4] * v[3] + u[5] * v[6],
+                    u[3] * v[1] + u[4] * v[4] + u[5] * v[7],
+                    u[3] * v[2] + u[4] * v[5] + u[5] * v[8],
+                    u[6] * v[0] + u[7] * v[3] + u[8] * v[6],
+                    u[6] * v[1] + u[7] * v[4] + u[8] * v[7],
+                    u[6] * v[2] + u[7] * v[5] + u[8] * v[8]
+            }};
+            *dst = result;
+        }
+*/
 typedef struct {
     float   mat[9];
 } sk_matrix_t;
@@ -134,6 +162,17 @@ typedef struct sk_data_t sk_data_t;
     encoded data or other means.
 */
 typedef struct sk_image_t sk_image_t;
+
+/**
+ *  Describes the color components. See ICC Profiles.
+ */
+typedef struct sk_colorspace_t sk_colorspace_t;
+
+/**
+ *  Describes an image buffer : width, height, pixel type, colorspace, etc.
+ */
+typedef struct sk_imageinfo_t sk_imageinfo_t;
+
 /**
     A sk_maskfilter_t is an object that perform transformations on an
     alpha-channel mask before drawing it; it may be installed into a

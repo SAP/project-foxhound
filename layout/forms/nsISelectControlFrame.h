@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,12 +9,11 @@
 
 #include "nsQueryFrame.h"
 
-/** 
-  * nsISelectControlFrame is the interface for combo boxes and listboxes
-  */
-class nsISelectControlFrame : public nsQueryFrame
-{
-public:
+/**
+ * nsISelectControlFrame is the interface for combo boxes and listboxes
+ */
+class nsISelectControlFrame : public nsQueryFrame {
+ public:
   NS_DECL_QUERYFRAME_TARGET(nsISelectControlFrame)
 
   /**
@@ -26,7 +26,7 @@ public:
    * Removes the option at index.  The caller must have a live script
    * blocker while calling this method.
    */
-  NS_IMETHOD RemoveOption(int32_t index) = 0; 
+  NS_IMETHOD RemoveOption(int32_t index) = 0;
 
   /**
    * Sets whether the parser is done adding children
@@ -43,8 +43,8 @@ public:
    * Notify the frame when selectedIndex was changed.  This might
    * destroy the frame.
    */
-  NS_IMETHOD OnSetSelectedIndex(int32_t aOldIndex, int32_t aNewIndex) = 0;
-
+  NS_IMETHOD_(void)
+  OnSetSelectedIndex(int32_t aOldIndex, int32_t aNewIndex) = 0;
 };
 
 #endif

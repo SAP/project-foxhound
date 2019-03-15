@@ -8,11 +8,12 @@
 
 # UITour
 origin	uitour	1	https://www.mozilla.org
-origin	uitour	1	https://self-repair.mozilla.org
+origin	uitour	1	https://screenshots.firefox.com
 origin	uitour	1	https://support.mozilla.org
 origin	uitour	1	https://addons.mozilla.org
 origin	uitour	1	https://discovery.addons.mozilla.org
 origin	uitour	1	about:home
+origin	uitour	1	about:newtab
 
 # XPInstall
 origin	install	1	https://addons.mozilla.org
@@ -21,3 +22,7 @@ origin	install	1	https://testpilot.firefox.com
 # Remote troubleshooting
 origin	remote-troubleshooting	1	https://input.mozilla.org
 origin	remote-troubleshooting	1	https://support.mozilla.org
+
+# Hybrid Content Telemetry - https://firefox-source-docs.mozilla.org/toolkit/components/telemetry/telemetry/collection/hybrid-content.html
+# Adding hc_telemetry permission to a new domain requires Data Collection Review: https://wiki.mozilla.org/Firefox/Data_Collection
+origin	hc_telemetry	1	https://discovery.addons.mozilla.org

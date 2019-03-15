@@ -4,7 +4,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsIDOMXULSelectCntrlEl.idl"
-interface nsIDOMXULTextBoxElement;
+
+webidl Element;
 
 [scriptable, uuid(36c16a17-c0e9-4b35-951b-81a147314ef1)]
 interface nsIDOMXULMenuListElement : nsIDOMXULSelectControlElement {
@@ -12,12 +13,12 @@ interface nsIDOMXULMenuListElement : nsIDOMXULSelectControlElement {
   attribute boolean open;
   
   // label of selected option or value of textfield for editable menu lists
-  readonly attribute DOMString label;
+  readonly attribute AString label;
 
-  attribute DOMString crop;
-  attribute DOMString image;
+  attribute AString crop;
+  attribute AString image;
   
   // For editable menu lists only.
-  readonly attribute nsIDOMNode inputField;
+  readonly attribute Element inputField;
 };
 

@@ -7,73 +7,60 @@
  * Tests if toggling the details pane works as expected.
  */
 
-add_task(function* () {
-  let { tab, monitor } = yield initNetMonitor(SIMPLE_URL);
+add_task(async function() {
+  const { tab, monitor } = await initNetMonitor(SIMPLE_URL);
   info("Starting test... ");
 
-  let { document, gStore, windowRequire } = monitor.panelWin;
-  let Actions = windowRequire("devtools/client/netmonitor/actions/index");
-  let { EVENTS } = windowRequire("devtools/client/netmonitor/constants");
-  let {
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
+  const { EVENTS } = windowRequire("devtools/client/netmonitor/src/constants");
+  const {
     getSelectedRequest,
     getSortedRequests,
-  } = windowRequire("devtools/client/netmonitor/selectors/index");
+  } = windowRequire("devtools/client/netmonitor/src/selectors/index");
 
-  gStore.dispatch(Actions.batchEnable(false));
+  store.dispatch(Actions.batchEnable(false));
 
-  let toggleButton = document.querySelector(".network-details-panel-toggle");
-
-  is(toggleButton.hasAttribute("disabled"), true,
-    "The pane toggle button should be disabled when the frontend is opened.");
-  is(toggleButton.classList.contains("pane-collapsed"), true,
-    "The pane toggle button should indicate that the details pane is " +
-    "collapsed when the frontend is opened.");
+  ok(!document.querySelector(".sidebar-toggle"),
+    "The pane toggle button should not be visible.");
   is(!!document.querySelector(".network-details-panel"), false,
     "The details pane should be hidden when the frontend is opened.");
-  is(getSelectedRequest(gStore.getState()), null,
+  is(getSelectedRequest(store.getState()), null,
     "There should be no selected item in the requests menu.");
 
-  let networkEvent = monitor.panelWin.once(EVENTS.NETWORK_EVENT);
+  const networkEvent = monitor.panelWin.api.once(EVENTS.NETWORK_EVENT);
   tab.linkedBrowser.reload();
-  yield networkEvent;
+  await networkEvent;
 
-  is(toggleButton.hasAttribute("disabled"), false,
-    "The pane toggle button should be enabled after the first request.");
-  is(toggleButton.classList.contains("pane-collapsed"), true,
-    "The pane toggle button should still indicate that the details pane is " +
-    "collapsed after the first request.");
+  ok(!document.querySelector(".sidebar-toggle"),
+    "The pane toggle button should not be visible after the first request.");
   is(!!document.querySelector(".network-details-panel"), false,
     "The details pane should still be hidden after the first request.");
-  is(getSelectedRequest(gStore.getState()), null,
+  is(getSelectedRequest(store.getState()), null,
     "There should still be no selected item in the requests menu.");
 
-  EventUtils.sendMouseEvent({ type: "click" }, toggleButton);
+  store.dispatch(Actions.toggleNetworkDetails());
 
-  is(toggleButton.hasAttribute("disabled"), false,
-    "The pane toggle button should still be enabled after being pressed.");
+  const toggleButton = document.querySelector(".sidebar-toggle");
+
   is(toggleButton.classList.contains("pane-collapsed"), false,
     "The pane toggle button should now indicate that the details pane is " +
-    "not collapsed anymore after being pressed.");
+    "not collapsed anymore.");
   is(!!document.querySelector(".network-details-panel"), true,
     "The details pane should not be hidden after toggle button was pressed.");
-  isnot(getSelectedRequest(gStore.getState()), null,
+  isnot(getSelectedRequest(store.getState()), null,
     "There should be a selected item in the requests menu.");
-  is(getSelectedIndex(gStore.getState()), 0,
+  is(getSelectedIndex(store.getState()), 0,
     "The first item should be selected in the requests menu.");
 
   EventUtils.sendMouseEvent({ type: "click" }, toggleButton);
 
-  is(toggleButton.hasAttribute("disabled"), false,
-    "The pane toggle button should still be enabled after being pressed again.");
-  is(toggleButton.classList.contains("pane-collapsed"), true,
-    "The pane toggle button should now indicate that the details pane is " +
-    "collapsed after being pressed again.");
   is(!!document.querySelector(".network-details-panel"), false,
     "The details pane should now be hidden after the toggle button was pressed again.");
-  is(getSelectedRequest(gStore.getState()), null,
+  is(getSelectedRequest(store.getState()), null,
     "There should now be no selected item in the requests menu.");
 
-  yield teardown(monitor);
+  await teardown(monitor);
 
   function getSelectedIndex(state) {
     if (!state.requests.selectedId) {

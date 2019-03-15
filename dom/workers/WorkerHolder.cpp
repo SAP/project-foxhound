@@ -7,25 +7,37 @@
 #include "WorkerHolder.h"
 #include "WorkerPrivate.h"
 
-BEGIN_WORKERS_NAMESPACE
+namespace mozilla {
+namespace dom {
 
-WorkerHolder::WorkerHolder()
-  : mWorkerPrivate(nullptr)
-{
+namespace {
+
+void AssertOnOwningThread(void* aThread) {
+  if (MOZ_UNLIKELY(aThread != GetCurrentVirtualThread())) {
+    MOZ_CRASH_UNSAFE_OOL("WorkerHolder on the wrong thread.");
+  }
 }
 
-WorkerHolder::~WorkerHolder()
-{
-  NS_ASSERT_OWNINGTHREAD(WorkerHolder);
+}  // namespace
+
+WorkerHolder::WorkerHolder(const char* aName, Behavior aBehavior)
+    : mWorkerPrivate(nullptr),
+      mBehavior(aBehavior),
+      mThread(GetCurrentVirtualThread()),
+      mName(aName) {}
+
+WorkerHolder::~WorkerHolder() {
+  AssertOnOwningThread(mThread);
   ReleaseWorkerInternal();
   MOZ_ASSERT(mWorkerPrivate == nullptr);
 }
 
-bool
-WorkerHolder::HoldWorker(WorkerPrivate* aWorkerPrivate, Status aFailStatus)
-{
-  NS_ASSERT_OWNINGTHREAD(WorkerHolder);
+bool WorkerHolder::HoldWorker(WorkerPrivate* aWorkerPrivate,
+                              WorkerStatus aFailStatus) {
+  AssertOnOwningThread(mThread);
   MOZ_ASSERT(aWorkerPrivate);
+  MOZ_ASSERT(aFailStatus >= Canceling);
+
   aWorkerPrivate->AssertIsOnWorkerThread();
 
   if (!aWorkerPrivate->AddHolder(this, aFailStatus)) {
@@ -36,19 +48,17 @@ WorkerHolder::HoldWorker(WorkerPrivate* aWorkerPrivate, Status aFailStatus)
   return true;
 }
 
-void
-WorkerHolder::ReleaseWorker()
-{
-  NS_ASSERT_OWNINGTHREAD(WorkerHolder);
+void WorkerHolder::ReleaseWorker() {
+  AssertOnOwningThread(mThread);
   MOZ_ASSERT(mWorkerPrivate);
 
   ReleaseWorkerInternal();
 }
 
-void
-WorkerHolder::ReleaseWorkerInternal()
-{
-  NS_ASSERT_OWNINGTHREAD(WorkerHolder);
+WorkerHolder::Behavior WorkerHolder::GetBehavior() const { return mBehavior; }
+
+void WorkerHolder::ReleaseWorkerInternal() {
+  AssertOnOwningThread(mThread);
 
   if (mWorkerPrivate) {
     mWorkerPrivate->AssertIsOnWorkerThread();
@@ -57,4 +67,5 @@ WorkerHolder::ReleaseWorkerInternal()
   }
 }
 
-END_WORKERS_NAMESPACE
+}  // namespace dom
+}  // namespace mozilla

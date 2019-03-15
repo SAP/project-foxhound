@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>execCommand() should only trigger 'input'</title>
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<div id="txt" contenteditable></div>
+<script>
+(function() {
+    let lastBeforeInputType = '';
+    let lastInputType = '';
+    const txt = document.getElementById('txt');
+    txt.addEventListener('beforeinput', function(event) {
+        assert_true(event instanceof InputEvent);
+        assert_false(event.isComposing);
+        lastBeforeInputType = event.inputType;
+    });
+    txt.addEventListener('input', function(event) {
+        assert_true(event instanceof InputEvent);
+        assert_false(event.isComposing);
+        lastInputType = event.inputType;
+    });
+
+    const NO_INPUT_EVENT_FIRED = 'NO_INPUT_EVENT_FIRED';
+    function testExecCommandInputType(command, args, inputType) {
+        const description = `Calling execCommand("${command}", false, ${args})`;
+        test(function() {
+            lastBeforeInputType = NO_INPUT_EVENT_FIRED;
+            lastInputType = NO_INPUT_EVENT_FIRED;
+            try {
+                document.execCommand(command, false, args);
+            } catch (e) {
+                assert(false, `execCommand shouldn't cause any exception: ${e}`);
+            }
+            assert_equals(lastBeforeInputType, NO_INPUT_EVENT_FIRED,
+                          `${description} shouldn't fire beforeinput`);
+            assert_equals(lastInputType, inputType,
+                          `${description} should produce inputType: ${inputType}`);
+        }, description);
+    }
+
+    txt.focus();
+    // InsertText
+    testExecCommandInputType('insertText', 'a', 'insertText');
+    testExecCommandInputType('insertText', 'bc', 'insertText');
+    test(function() {
+        assert_equals(txt.innerHTML, 'abc');
+    }, "execCommand(\"insertText\") should insert \"abc\" into the editor");
+    testExecCommandInputType('insertOrderedList', null, 'insertOrderedList');
+    test(function() {
+        assert_equals(txt.innerHTML, '<ol><li>abc</li></ol>');
+    }, "execCommand(\"insertOrderedList\") should make <ol> and wrap the text with it");
+    testExecCommandInputType('insertUnorderedList', null, 'insertUnorderedList');
+    test(function() {
+        assert_equals(txt.innerHTML, '<ul><li>abc</li></ul>');
+    }, "execCommand(\"insertUnorderedList\") should make <ul> and wrap the text with it");
+    testExecCommandInputType('insertLineBreak', null, 'insertLineBreak');
+    testExecCommandInputType('insertParagraph', null, 'insertParagraph');
+    txt.innerHTML = '';
+    testExecCommandInputType('insertHorizontalRule', null, 'insertHorizontalRule');
+
+    // Styling
+    txt.innerHTML = 'abc';
+    var selection = window.getSelection();
+    selection.collapse(txt, 0);
+    selection.extend(txt, 1);
+    testExecCommandInputType('bold', null, 'formatBold');
+    test(function() {
+        assert_equals(txt.innerHTML, '<b>abc</b>');
+    }, "execCommand(\"bold\") should wrap selected text with <b> element");
+    testExecCommandInputType('italic', null, 'formatItalic');
+    test(function() {
+        assert_equals(txt.innerHTML, '<b><i>abc</i></b>');
+    }, "execCommand(\"italic\") should wrap selected text with <i> element");
+    testExecCommandInputType('underline', null, 'formatUnderline');
+    test(function() {
+        assert_equals(txt.innerHTML, '<b><i><u>abc</u></i></b>');
+    }, "execCommand(\"underline\") should wrap selected text with <u> element");
+    testExecCommandInputType('strikeThrough', null, 'formatStrikeThrough');
+    test(function() {
+        assert_equals(txt.innerHTML, '<b><i><u><strike>abc</strike></u></i></b>');
+    }, "execCommand(\"strikeThrough\") should wrap selected text with <strike> element");
+    testExecCommandInputType('superscript', null, 'formatSuperscript');
+    test(function() {
+        assert_equals(txt.innerHTML, '<b><i><u><strike><sup>abc</sup></strike></u></i></b>');
+    }, "execCommand(\"superscript\") should wrap selected text with <sup> element");
+    testExecCommandInputType('subscript', null, 'formatSubscript');
+    test(function() {
+        assert_equals(txt.innerHTML, '<b><i><u><strike><sub>abc</sub></strike></u></i></b>');
+    }, "execCommand(\"subscript\") should wrap selected text with <sub> element");
+    txt.innerHTML = 'abc';
+    selection.collapse(txt, 0);
+    selection.extend(txt, 1);
+    testExecCommandInputType('backColor', '#000000', 'formatBackColor');
+    testExecCommandInputType('foreColor', '#FFFFFF', 'formatFontColor');
+    testExecCommandInputType('hiliteColor', '#FFFF00', 'formatBackColor');
+    testExecCommandInputType('fontName', 'monospace', 'formatFontName');
+
+    // Formating
+    txt.innerHTML = 'abc';
+    testExecCommandInputType('justifyCenter', null, 'formatJustifyCenter');
+    test(function() {
+        assert_equals(txt.innerHTML, '<div style="text-align: center;">abc</div>');
+    }, "execCommand(\"justifyCenter\") should wrap the text with <div> element whose text-align is center");
+    testExecCommandInputType('justifyFull', null, 'formatJustifyFull');
+    test(function() {
+        assert_equals(txt.innerHTML, '<div style="text-align: justify;">abc</div>');
+    }, "execCommand(\"justifyFull\") should wrap the text with <div> element whose text-align is justify");
+    testExecCommandInputType('justifyRight', null, 'formatJustifyRight');
+    test(function() {
+        assert_equals(txt.innerHTML, '<div style="text-align: right;">abc</div>');
+    }, "execCommand(\"justifyRight\") should wrap the text with <div> element whose text-align is right");
+    testExecCommandInputType('justifyLeft', null, 'formatJustifyLeft');
+    test(function() {
+        assert_equals(txt.innerHTML, '<div style="text-align: left;">abc</div>');
+    }, "execCommand(\"justifyLeft\") should wrap the text with <div> element whose text-align is left");
+    selection.collapse(txt, 0);
+    selection.extend(txt, 1);
+    testExecCommandInputType('removeFormat', null, 'formatRemove');
+    test(function() {
+        assert_equals(txt.innerHTML, '<div style="">abc</div>');
+    }, "execCommand(\"removeFormat\") should remove the style of current block");
+    testExecCommandInputType('indent', null, 'formatIndent');
+    testExecCommandInputType('outdent', null, 'formatOutdent');
+    test(function() {
+        assert_equals(txt.innerHTML, '<div style="">abc</div>');
+    }, "Set of execCommand(\"indent\") and execCommand(\"outdent\") should keep same DOM tree");
+
+    // Copy shouldn't fire 'input'.
+    testExecCommandInputType('copy', null, NO_INPUT_EVENT_FIRED);
+    // Cut/Paste should fire 'input'.
+    testExecCommandInputType('cut', null, 'deleteByCut');
+    testExecCommandInputType('paste', null, 'insertFromPaste');
+
+    // Link and Unlink
+    txt.innerHTML = 'abc';
+    selection.collapse(txt.firstChild, 1);
+    selection.extend(txt.firstChild, 2);
+    testExecCommandInputType('createLink', 'https://example.com/', 'insertLink');
+    test(function() {
+        assert_equals(txt.innerHTML, 'a<a href="https://example.com/">b</a>c');
+    }, "execCommand(\"createLink\") should create a link");
+    testExecCommandInputType('unlink', null, '');
+    test(function() {
+        assert_equals(txt.innerHTML, 'abc');
+    }, "execCommand(\"createLink\") should remove the link");
+})();
+</script>

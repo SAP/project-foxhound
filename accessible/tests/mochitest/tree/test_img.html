@@ -18,27 +18,25 @@
           src="../events.js"></script>
 
   <script type="application/javascript">
-    //gA11yEventDumpToConsole = true;
-    function doPreTest()
-    {
+    // gA11yEventDumpToConsole = true;
+    function doPreTest() {
       waitForImageMap("imgmap", doTest);
     }
 
-    function doTest()
-    {
+    function doTest() {
       // image map
       var accTree = {
         role: ROLE_IMAGE_MAP,
         children: [
           {
             role: ROLE_LINK,
-            children: []
+            children: [],
           },
           {
             role: ROLE_LINK,
-            children: []
-          }
-        ]
+            children: [],
+          },
+        ],
       };
 
       testAccessibleTree("imgmap", accTree);
@@ -46,7 +44,7 @@
       // img
       accTree = {
         role: ROLE_GRAPHIC,
-        children: []
+        children: [],
       };
 
       testAccessibleTree("img", accTree);

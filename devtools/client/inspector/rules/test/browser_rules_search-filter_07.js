@@ -19,19 +19,19 @@ const TEST_URI = `
   <h1 id='testid'>Styled Node</h1>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
-  yield selectNode("#testid", inspector);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, view} = await openRuleView();
+  await selectNode("#testid", inspector);
 
   info("Enter the test value in the search filter");
-  yield setSearchFilter(view, SEARCH);
+  await setSearchFilter(view, SEARCH);
 
   info("Focus the width property name");
-  let ruleEditor = getRuleViewRuleEditor(view, 1);
-  let rule = ruleEditor.rule;
-  let propEditor = rule.textProps[0].editor;
-  yield focusEditableField(view, propEditor.nameSpan);
+  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const rule = ruleEditor.rule;
+  const propEditor = rule.textProps[0].editor;
+  await focusEditableField(view, propEditor.nameSpan);
 
   info("Check that the correct rules are visible");
   is(view.element.children.length, 2, "Should have 2 rules.");
@@ -47,8 +47,8 @@ add_task(function* () {
 
   info("Submit the change");
   let onRuleViewChanged = view.once("ruleview-changed");
-  EventUtils.synthesizeKey("VK_RETURN", {});
-  yield onRuleViewChanged;
+  EventUtils.synthesizeKey("KEY_Enter");
+  await onRuleViewChanged;
 
   ok(propEditor.container.classList.contains("ruleview-highlight"),
     "margin-left text property is correctly highlighted.");
@@ -57,6 +57,6 @@ add_task(function* () {
   // automatically. Blur it now and wait for the rule-view to refresh to avoid
   // pending requests.
   onRuleViewChanged = view.once("ruleview-changed");
-  EventUtils.synthesizeKey("VK_ESCAPE", {});
-  yield onRuleViewChanged;
+  EventUtils.synthesizeKey("KEY_Escape");
+  await onRuleViewChanged;
 });

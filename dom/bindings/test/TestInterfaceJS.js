@@ -4,19 +4,16 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
-const Cu = Components.utils;
-const Ci = Components.interfaces;
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function TestInterfaceJS(anyArg, objectArg) {}
 
 TestInterfaceJS.prototype = {
   classID: Components.ID("{2ac4e026-cf25-47d5-b067-78d553c3cad8}"),
   contractID: "@mozilla.org/dom/test-interface-js;1",
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsISupports,
-                                         Ci.nsIDOMGlobalPropertyInitializer]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIDOMGlobalPropertyInitializer, Ci.mozITestInterfaceJS]),
 
   init: function(win) { this._win = win; },
 
@@ -26,24 +23,23 @@ TestInterfaceJS.prototype = {
     this._anyArg = anyArg;
     this._objectArg = objectArg;
     this._dictionaryArg = dictionaryArg;
-    this._cachedAttr = 15;
   },
 
   get anyArg() { return this._anyArg; },
   get objectArg() { return this._objectArg; },
-  get dictionaryArg() { return this._dictionaryArg; },
+  getDictionaryArg: function() { return this._dictionaryArg; },
   get anyAttr() { return this._anyAttr; },
   set anyAttr(val) { this._anyAttr = val; },
   get objectAttr() { return this._objectAttr; },
   set objectAttr(val) { this._objectAttr = val; },
-  get dictionaryAttr() { return this._dictionaryAttr; },
-  set dictionaryAttr(val) { this._dictionaryAttr = val; },
+  getDictionaryAttr: function() { return this._dictionaryAttr; },
+  setDictionaryAttr: function(val) { this._dictionaryAttr = val; },
   pingPongAny: function(any) { return any; },
   pingPongObject: function(obj) { return obj; },
   pingPongObjectOrString: function(objectOrString) { return objectOrString; },
   pingPongDictionary: function(dict) { return dict; },
   pingPongDictionaryOrLong: function(dictOrLong) { return dictOrLong.anyMember || dictOrLong; },
-  pingPongMap: function(map) { return JSON.stringify(map); },
+  pingPongRecord: function(rec) { return JSON.stringify(rec); },
   objectSequenceLength: function(seq) { return seq.length; },
   anySequenceLength: function(seq) { return seq.length; },
 
@@ -56,10 +52,6 @@ TestInterfaceJS.prototype = {
   pingPongUnionContainingNull: function(x) { return x; },
   pingPongNullableUnion: function(x) { return x; },
   returnBadUnion: function(x) { return 3; },
-
-  get cachedAttr() { return this._cachedAttr; },
-  setCachedAttr: function(n) { this._cachedAttr = n; },
-  clearCachedAttrCache: function () { this.__DOM_IMPL__._clearCachedCachedAttrValue(); },
 
   testSequenceOverload: function(arg) {},
   testSequenceUnion: function(arg) {},
@@ -75,6 +67,16 @@ TestInterfaceJS.prototype = {
 
   testThrowTypeError: function() {
     throw new this._win.TypeError("We are a TypeError");
+  },
+
+  testThrowNsresult: function() {
+      throw Cr.NS_BINDING_ABORTED;
+  },
+
+  testThrowNsresultFromNative: function(x) {
+    // We want to throw an exception that we generate from an nsresult thrown
+    // by a C++ component.
+    Services.netUtils.notImplemented();
   },
 
   testThrowCallbackError: function(callback) {

@@ -28,17 +28,17 @@ public:
      * Creates a RAW decoder
      * Takes ownership of the stream
      */
-    static SkCodec* NewFromStream(SkStream*);
+    static std::unique_ptr<SkCodec> MakeFromStream(std::unique_ptr<SkStream>, Result*);
 
     ~SkRawCodec() override;
 
 protected:
 
     Result onGetPixels(const SkImageInfo& dstInfo, void* dst, size_t dstRowBytes, const Options&,
-            SkPMColor*, int*, int*) override;
+            int*) override;
 
-    SkEncodedFormat onGetEncodedFormat() const override {
-        return kDNG_SkEncodedFormat;
+    SkEncodedImageFormat onGetEncodedFormat() const override {
+        return SkEncodedImageFormat::kDNG;
     }
 
     SkISize onGetScaledDimensions(float desiredScale) const override;
@@ -53,7 +53,7 @@ private:
      */
     SkRawCodec(SkDngImage* dngImage);
 
-    SkAutoTDelete<SkDngImage> fDngImage;
+    std::unique_ptr<SkDngImage> fDngImage;
 
     typedef SkCodec INHERITED;
 };

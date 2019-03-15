@@ -5,7 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
- * Implementations of DOM Core's nsIDOMComment node.
+ * Implementations of DOM Core's Comment node.
  */
 
 #include "nsCOMPtr.h"
@@ -19,39 +19,26 @@ using namespace dom;
 namespace mozilla {
 namespace dom {
 
-Comment::~Comment()
-{
-}
+Comment::~Comment() {}
 
-NS_IMPL_ISUPPORTS_INHERITED(Comment, nsGenericDOMDataNode, nsIDOMNode,
-                            nsIDOMCharacterData, nsIDOMComment)
-
-bool
-Comment::IsNodeOfType(uint32_t aFlags) const
-{
-  return !(aFlags & ~(eCONTENT | eCOMMENT | eDATA_NODE));
-}
-
-nsGenericDOMDataNode*
-Comment::CloneDataNode(mozilla::dom::NodeInfo *aNodeInfo, bool aCloneText) const
-{
+already_AddRefed<CharacterData> Comment::CloneDataNode(
+    mozilla::dom::NodeInfo* aNodeInfo, bool aCloneText) const {
   RefPtr<mozilla::dom::NodeInfo> ni = aNodeInfo;
-  Comment *it = new Comment(ni.forget());
-  if (it && aCloneText) {
+  RefPtr<Comment> it = new Comment(ni.forget());
+  if (aCloneText) {
     it->mText = mText;
   }
 
-  return it;
+  return it.forget();
 }
 
 #ifdef DEBUG
-void
-Comment::List(FILE* out, int32_t aIndent) const
-{
+void Comment::List(FILE* out, int32_t aIndent) const {
   int32_t indx;
-  for (indx = aIndent; --indx >= 0; ) fputs("  ", out);
+  for (indx = aIndent; --indx >= 0;) fputs("  ", out);
 
-  fprintf(out, "Comment@%p refcount=%" PRIuPTR "<!--", (void*)this, mRefCnt.get());
+  fprintf(out, "Comment@%p refcount=%" PRIuPTR "<!--", (void*)this,
+          mRefCnt.get());
 
   nsAutoString tmp;
   ToCString(tmp, 0, mText.GetLength());
@@ -61,11 +48,10 @@ Comment::List(FILE* out, int32_t aIndent) const
 }
 #endif
 
-/* static */ already_AddRefed<Comment>
-Comment::Constructor(const GlobalObject& aGlobal,
-                     const nsAString& aData, ErrorResult& aRv)
-{
-  nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(aGlobal.GetAsSupports());
+/* static */ already_AddRefed<Comment> Comment::Constructor(
+    const GlobalObject& aGlobal, const nsAString& aData, ErrorResult& aRv) {
+  nsCOMPtr<nsPIDOMWindowInner> window =
+      do_QueryInterface(aGlobal.GetAsSupports());
   if (!window || !window->GetDoc()) {
     aRv.Throw(NS_ERROR_FAILURE);
     return nullptr;
@@ -74,11 +60,9 @@ Comment::Constructor(const GlobalObject& aGlobal,
   return window->GetDoc()->CreateComment(aData);
 }
 
-JSObject*
-Comment::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return CommentBinding::Wrap(aCx, this, aGivenProto);
+JSObject* Comment::WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
+  return Comment_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

@@ -12,7 +12,7 @@ var AutomationView = {
   /**
    * Initialization function called when the tool starts up.
    */
-  initialize: function () {
+  initialize: function() {
     this._buttons = $("#automation-param-toolbar-buttons");
     this.graph = new LineGraphWidget($("#automation-graph"), { avg: false });
     this.graph.selectionEnabled = false;
@@ -29,7 +29,7 @@ var AutomationView = {
   /**
    * Destruction function called when the tool cleans up.
    */
-  destroy: function () {
+  destroy: function() {
     this._buttons.removeEventListener("click", this._onButtonClick);
     window.off(EVENTS.UI_INSPECTOR_RESIZE, this._onResize);
     window.off(EVENTS.UI_INSPECTOR_NODE_SET, this._onNodeSet);
@@ -38,7 +38,7 @@ var AutomationView = {
   /**
    * Empties out the props view.
    */
-  resetUI: function () {
+  resetUI: function() {
     this._currentNode = null;
   },
 
@@ -46,26 +46,26 @@ var AutomationView = {
    * On a new node selection, create the Automation panel for
    * that specific node.
    */
-  build: Task.async(function* () {
-    let node = this._currentNode;
+  async build() {
+    const node = this._currentNode;
 
-    let props = yield node.getParams();
-    let params = props.filter(({ flags }) => flags && flags.param);
+    const props = await node.getParams();
+    const params = props.filter(({ flags }) => flags && flags.param);
 
     this._createParamButtons(params);
 
     this._selectedParamName = params[0] ? params[0].param : null;
     this.render();
-  }),
+  },
 
   /**
    * Renders the graph for specified `paramName`. Called when
    * the parameter view is changed, or when new param data events
    * are fired for the currently specified param.
    */
-  render: Task.async(function* () {
-    let node = this._currentNode;
-    let paramName = this._selectedParamName;
+  async render() {
+    const node = this._currentNode;
+    const paramName = this._selectedParamName;
     // Escape if either node or parameter name does not exist.
     if (!node || !paramName) {
       this._setState("no-params");
@@ -73,20 +73,20 @@ var AutomationView = {
       return;
     }
 
-    let { values, events } = yield node.getAutomationData(paramName);
+    const { values, events } = await node.getAutomationData(paramName);
     this._setState(events.length ? "show" : "no-events");
-    yield this.graph.setDataWhenReady(values);
+    await this.graph.setDataWhenReady(values);
     window.emit(EVENTS.UI_AUTOMATION_TAB_RENDERED, node.id);
-  }),
+  },
 
   /**
    * Create the buttons for each AudioParam, that when clicked,
    * render the graph for that AudioParam.
    */
-  _createParamButtons: function (params) {
+  _createParamButtons: function(params) {
     this._buttons.innerHTML = "";
     params.forEach((param, i) => {
-      let button = document.createElement("toolbarbutton");
+      const button = document.createXULElement("toolbarbutton");
       button.setAttribute("class", "devtools-toolbarbutton automation-param-button");
       button.setAttribute("data-param", param.param);
       // Set label to the parameter name, should not be L10N'd
@@ -105,7 +105,7 @@ var AutomationView = {
    * Internally sets the current audio node and rebuilds appropriate
    * views.
    */
-  _setAudioNode: function (node) {
+  _setAudioNode: function(node) {
     this._currentNode = node;
     if (this._currentNode) {
       this.build();
@@ -117,12 +117,12 @@ var AutomationView = {
    * the audio node has no AudioParams, no automation events, or
    * shows the graph.
    */
-  _setState: function (state) {
-    let contentView = $("#automation-content");
-    let emptyView = $("#automation-empty");
+  _setState: function(state) {
+    const contentView = $("#automation-content");
+    const emptyView = $("#automation-empty");
 
-    let graphView = $("#automation-graph-container");
-    let noEventsView = $("#automation-no-events");
+    const graphView = $("#automation-graph-container");
+    const noEventsView = $("#automation-no-events");
 
     contentView.hidden = state === "no-params";
     emptyView.hidden = state !== "no-params";
@@ -135,9 +135,9 @@ var AutomationView = {
    * Event handlers
    */
 
-  _onButtonClick: function (e) {
+  _onButtonClick: function(e) {
     Array.forEach($$(".automation-param-button"), $btn => $btn.removeAttribute("selected"));
-    let paramName = e.target.getAttribute("data-param");
+    const paramName = e.target.getAttribute("data-param");
     e.target.setAttribute("selected", true);
     this._selectedParamName = paramName;
     this.render();
@@ -146,14 +146,14 @@ var AutomationView = {
   /**
    * Called when the inspector is resized.
    */
-  _onResize: function () {
+  _onResize: function() {
     this.graph.refresh();
   },
 
   /**
    * Called when the inspector view determines a node is selected.
    */
-  _onNodeSet: function (_, id) {
+  _onNodeSet: function(id) {
     this._setAudioNode(id != null ? gAudioNodes.get(id) : null);
-  }
+  },
 };

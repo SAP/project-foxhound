@@ -8,14 +8,15 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/test/linux/glx_renderer.h"
+#include "test/linux/glx_renderer.h"
 
 #include <assert.h>
+#include <stdlib.h>
 
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 
-#include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
+#include "common_video/libyuv/include/webrtc_libyuv.h"
 
 namespace webrtc {
 namespace test {
@@ -143,8 +144,7 @@ void GlxRenderer::Resize(size_t width, size_t height) {
   XConfigureWindow(display_, window_, CWWidth | CWHeight, &wc);
 }
 
-void GlxRenderer::RenderFrame(const webrtc::VideoFrame& frame,
-                              int /*render_delay_ms*/) {
+void GlxRenderer::OnFrame(const webrtc::VideoFrame& frame) {
   if (static_cast<size_t>(frame.width()) != width_ ||
       static_cast<size_t>(frame.height()) != height_) {
     Resize(static_cast<size_t>(frame.width()),
@@ -167,7 +167,7 @@ void GlxRenderer::RenderFrame(const webrtc::VideoFrame& frame,
     }
   }
 
-  GlRenderer::RenderFrame(frame, 0);
+  GlRenderer::OnFrame(frame);
   glXSwapBuffers(display_, window_);
 
   if (!glXMakeCurrent(display_, None, NULL)) {

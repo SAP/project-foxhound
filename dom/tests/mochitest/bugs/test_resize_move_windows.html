@@ -202,7 +202,7 @@ function checkChangeIsEnabled(aWindow, aNext)
 
   function posChangeCondition() {
     // With GTK, sometimes, only one dimension changes.
-    if (navigator.platform.indexOf('Linux') != -1) {
+    if (navigator.platform.includes('Linux')) {
       return aWindow.screenX != prevX || aWindow.screenY != prevY;
     }
     return aWindow.screenX != prevX && aWindow.screenY != prevY;
@@ -210,7 +210,7 @@ function checkChangeIsEnabled(aWindow, aNext)
 
   function posChangeTest() {
     // With GTK, sometimes, only one dimension changes.
-    if (navigator.platform.indexOf('Linux') != -1) {
+    if (navigator.platform.includes('Linux')) {
       // With GTK, sometimes, aWindow.screenX changes during two calls.
       // So we call it once and save the returned value.
       var x = aWindow.screenX;
@@ -312,7 +312,11 @@ function checkChangeIsEnabled(aWindow, aNext)
   .then(aNext);
 }
 
-SpecialPowers.pushPrefEnv({"set": [["dom.disable_window_move_resize", false]]}, function() {
+SpecialPowers.pushPrefEnv({
+  "set": [["dom.disable_window_move_resize", false],
+          ["security.data_uri.unique_opaque_origin", false],
+          ["security.data_uri.block_toplevel_data_uri_navigations", false],]},
+                          function() {
 SimpleTest.waitForFocus(function() {
   if (screen.width <= 200 || screen.height <= 200) {
     todo(false, "The screen needs to be bigger than 200px*200px to run this test.");

@@ -2,7 +2,7 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-add_task(function* test_is_allowed_incognito_access() {
+add_task(async function test_is_allowed_incognito_access() {
   async function background() {
     let allowed = await browser.extension.isAllowedIncognitoAccess();
 
@@ -12,15 +12,32 @@ add_task(function* test_is_allowed_incognito_access() {
 
   let extension = ExtensionTestUtils.loadExtension({
     background,
-    manifest: {},
   });
 
-  yield extension.startup();
-  yield extension.awaitFinish("isAllowedIncognitoAccess");
-  yield extension.unload();
+  await extension.startup();
+  await extension.awaitFinish("isAllowedIncognitoAccess");
+  await extension.unload();
 });
 
-add_task(function* test_in_incognito_context_false() {
+add_task(async function test_is_denied_incognito_access() {
+  async function background() {
+    let allowed = await browser.extension.isAllowedIncognitoAccess();
+
+    browser.test.assertEq(false, allowed, "isAllowedIncognitoAccess is false");
+    browser.test.notifyPass("isNotAllowedIncognitoAccess");
+  }
+
+  let extension = ExtensionTestUtils.loadExtension({
+    background,
+    incognitoOverride: "not_allowed",
+  });
+
+  await extension.startup();
+  await extension.awaitFinish("isNotAllowedIncognitoAccess");
+  await extension.unload();
+});
+
+add_task(async function test_in_incognito_context_false() {
   function background() {
     browser.test.assertEq(false, browser.extension.inIncognitoContext, "inIncognitoContext returned false");
     browser.test.notifyPass("inIncognitoContext");
@@ -28,15 +45,14 @@ add_task(function* test_in_incognito_context_false() {
 
   let extension = ExtensionTestUtils.loadExtension({
     background,
-    manifest: {},
   });
 
-  yield extension.startup();
-  yield extension.awaitFinish("inIncognitoContext");
-  yield extension.unload();
+  await extension.startup();
+  await extension.awaitFinish("inIncognitoContext");
+  await extension.unload();
 });
 
-add_task(function* test_is_allowed_file_scheme_access() {
+add_task(async function test_is_allowed_file_scheme_access() {
   async function background() {
     let allowed = await browser.extension.isAllowedFileSchemeAccess();
 
@@ -46,10 +62,9 @@ add_task(function* test_is_allowed_file_scheme_access() {
 
   let extension = ExtensionTestUtils.loadExtension({
     background,
-    manifest: {},
   });
 
-  yield extension.startup();
-  yield extension.awaitFinish("isAllowedFileSchemeAccess");
-  yield extension.unload();
+  await extension.startup();
+  await extension.awaitFinish("isAllowedFileSchemeAccess");
+  await extension.unload();
 });

@@ -8,11 +8,12 @@
  */
 
 [Constructor(DOMString type, FetchEventInit eventInitDict),
- Func="mozilla::dom::workers::ServiceWorkerVisible",
+ Func="ServiceWorkerVisible",
  Exposed=(ServiceWorker)]
 interface FetchEvent : ExtendableEvent {
   [SameObject] readonly attribute Request request;
-  readonly attribute DOMString? clientId;
+  readonly attribute DOMString clientId;
+  readonly attribute DOMString resultingClientId;
   readonly attribute boolean isReload;
 
   [Throws]
@@ -21,6 +22,7 @@ interface FetchEvent : ExtendableEvent {
 
 dictionary FetchEventInit : EventInit {
   required Request request;
-  DOMString? clientId = null;
+  DOMString clientId = "";
+  DOMString resultingClientId = "";
   boolean isReload = false;
 };

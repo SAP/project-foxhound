@@ -67,13 +67,13 @@ list_files files
 popd
 
 # Add the type of update to the beginning of the update manifests.
-> $updatemanifestv2
-> $updatemanifestv3
+> "$updatemanifestv2"
+> "$updatemanifestv3"
 notice ""
 notice "Adding type instruction to update manifests"
 notice "       type complete"
-echo "type \"complete\"" >> $updatemanifestv2
-echo "type \"complete\"" >> $updatemanifestv3
+echo "type \"complete\"" >> "$updatemanifestv2"
+echo "type \"complete\"" >> "$updatemanifestv3"
 
 notice ""
 notice "Adding file add instructions to update manifests"
@@ -93,7 +93,11 @@ for ((i=0; $i<$num_files; i=$i+1)); do
 
   dir=$(dirname "$f")
   mkdir -p "$workdir/$dir"
-  $BZIP2 -cz9 "$targetdir/$f" > "$workdir/$f"
+  if [[ -n $MAR_OLD_FORMAT ]]; then
+    $BZIP2 -cz9 "$targetdir/$f" > "$workdir/$f"
+  else
+    $XZ --compress $BCJ_OPTIONS --lzma2 --format=xz --check=crc64 --force --stdout "$targetdir/$f" > "$workdir/$f"
+  fi
   copy_perm "$targetdir/$f" "$workdir/$f"
 
   targetfiles="$targetfiles \"$f\""
@@ -104,8 +108,13 @@ notice ""
 notice "Adding file and directory remove instructions from file 'removed-files'"
 append_remove_instructions "$targetdir" "$updatemanifestv2" "$updatemanifestv3"
 
-$BZIP2 -z9 "$updatemanifestv2" && mv -f "$updatemanifestv2.bz2" "$updatemanifestv2"
-$BZIP2 -z9 "$updatemanifestv3" && mv -f "$updatemanifestv3.bz2" "$updatemanifestv3"
+if [[ -n $MAR_OLD_FORMAT ]]; then
+  $BZIP2 -z9 "$updatemanifestv2" && mv -f "$updatemanifestv2.bz2" "$updatemanifestv2"
+  $BZIP2 -z9 "$updatemanifestv3" && mv -f "$updatemanifestv3.bz2" "$updatemanifestv3"
+else
+  $XZ --compress $BCJ_OPTIONS --lzma2 --format=xz --check=crc64 --force "$updatemanifestv2" && mv -f "$updatemanifestv2.xz" "$updatemanifestv2"
+  $XZ --compress $BCJ_OPTIONS --lzma2 --format=xz --check=crc64 --force "$updatemanifestv3" && mv -f "$updatemanifestv3.xz" "$updatemanifestv3"
+fi
 
 mar_command="$MAR"
 if [[ -n $MOZ_PRODUCT_VERSION ]]

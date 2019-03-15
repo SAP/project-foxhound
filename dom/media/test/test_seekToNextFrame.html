@@ -32,13 +32,16 @@ function startTest(test, token) {
   function callSeekToNextFrame() {
     v.seekToNextFrame().then(
       () => {
-        ok(v.seenSeeking, "Should have already received seeking event.")
+        if (!v.seenSeeking) {
+          ok(false, v.token + ": Should have already received seeking event.");
+        }
         v.seenSeeking = false;
-        if (!v.seenEnded)
+        if (!v.ended) {
           callSeekToNextFrame();
+        }
       },
       () => {
-        ok(false, "seekToNextFrame() failed.");
+        ok(false, v.token + ": seekToNextFrame() failed.");
       }
     );
   }
@@ -61,7 +64,9 @@ function startTest(test, token) {
   }}(test, v);
 
   var onSeeking = function(test, v) { return function() {
-    ok(!v.seenSeeking, "Should yet receive seeking event.")
+    if (v.seenSeeking) {
+      ok(false, v.token + ": Should yet receive seeking event.");
+    }
     v.seenSeeking = true;
   }}(test, v);
 
@@ -75,7 +80,10 @@ function startTest(test, token) {
 SimpleTest.waitForExplicitFinish();
 SpecialPowers.pushPrefEnv(
   {
-    "set": [["media.seekToNextFrame.enabled", true ]]
+    "set": [
+      ["media.seekToNextFrame.enabled", true ],
+      ["media.dormant-on-pause-timeout-ms", -1]
+    ]
   },
   function() {
     manager.runTests(gSeekToNextFrameTests, startTest);

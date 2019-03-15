@@ -23,9 +23,10 @@ info: |
   [...]
   24. Let result be EvalDeclarationInstantiation(body, varEnv, lexEnv,
       strictEval).
+features: [cross-realm]
 ---*/
 
-var other = $.createRealm().global;
+var other = $262.createRealm().global;
 var otherEval = other.eval;
 
 otherEval('var x = 23;');

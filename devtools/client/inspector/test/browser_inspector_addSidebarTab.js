@@ -12,25 +12,26 @@ const CONTENT_TEXT = "Hello World!";
  * Verify InspectorPanel.addSidebarTab() API that can be consumed
  * by DevTools extensions as well as DevTools code base.
  */
-add_task(function* () {
-  let { inspector } = yield openInspectorForURL(TEST_URI);
+add_task(async function() {
+  const { inspector } = await openInspectorForURL(TEST_URI);
 
-  const React = inspector.React;
-  const { div } = React.DOM;
+  const { Component, createFactory } = inspector.React;
+  const dom = require("devtools/client/shared/vendor/react-dom-factories");
+  const { div } = dom;
 
   info("Adding custom panel.");
 
   // Define custom side-panel.
-  let tabPanel = React.createFactory(React.createClass({
-    displayName: "myTabPanel",
-    render: function () {
+  class myTabPanel extends Component {
+    render() {
       return (
         div({className: "my-tab-panel"},
           CONTENT_TEXT
         )
       );
     }
-  }));
+  }
+  let tabPanel = createFactory(myTabPanel);
 
   // Append custom panel (tab) into the Inspector panel and
   // make sure it's selected by default (the last arg = true).
@@ -39,16 +40,16 @@ add_task(function* () {
      "My Panel is selected by default");
 
   // Define another custom side-panel.
-  tabPanel = React.createFactory(React.createClass({
-    displayName: "myTabPanel2",
-    render: function () {
+  class myTabPanel2 extends Component {
+    render() {
       return (
         div({className: "my-tab-panel2"},
           "Another Content"
         )
       );
     }
-  }));
+  }
+  tabPanel = createFactory(myTabPanel2);
 
   // Append second panel, but don't select it by default.
   inspector.addSidebarTab("myPanel", "My Panel", tabPanel, false);
@@ -56,7 +57,7 @@ add_task(function* () {
      "My Panel is selected by default");
 
   // Check the the panel content is properly rendered.
-  let tabPanelNode = inspector.panelDoc.querySelector(".my-tab-panel");
+  const tabPanelNode = inspector.panelDoc.querySelector(".my-tab-panel");
   is(tabPanelNode.textContent, CONTENT_TEXT,
     "Side panel content has been rendered.");
 });

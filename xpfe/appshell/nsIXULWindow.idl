@@ -26,7 +26,7 @@ interface mozIDOMWindowProxy;
 
 native LiveResizeListenerArray(nsTArray<RefPtr<mozilla::LiveResizeListener>>);
 
-[scriptable, uuid(d6d7a014-e28d-4c9d-8727-1cf6d870619b)]
+[builtinclass, scriptable, uuid(d6d7a014-e28d-4c9d-8727-1cf6d870619b)]
 interface nsIXULWindow : nsISupports
 {
   /**
@@ -65,6 +65,13 @@ interface nsIXULWindow : nsISupports
    * @param aChild the child window being added
    */
   void addChildWindow(in nsIXULWindow aChild);
+
+  /**
+   * Returns the difference between the inner window size (client size) and the
+   * outer window size, in CSS pixels.
+   */
+  [infallible] readonly attribute unsigned long outerToInnerHeightDifferenceInCSSPixels;
+  [infallible] readonly attribute unsigned long outerToInnerWidthDifferenceInCSSPixels;
 
   /**
    * Tell this window that it has lost a child XUL window
@@ -116,21 +123,26 @@ interface nsIXULWindow : nsISupports
    * @param aOpeningTab the TabParent that requested this new window be opened.
    *                    Can be left null.
    * @param aOpener The window which is requesting that this new window be opened.
+   * @param aNextTabParentId The integer ID of the next tab parent actor to use.
+   *        0 means there is no next tab parent actor to use.
    * @return the newly minted window
    */
   nsIXULWindow createNewWindow(in int32_t aChromeFlags,
                                in nsITabParent aOpeningTab,
-                               in mozIDOMWindowProxy aOpener);
+                               in mozIDOMWindowProxy aOpener,
+                               in unsigned long long aNextTabParentId);
 
   attribute nsIXULBrowserWindow XULBrowserWindow;
 
   /**
-   * Back-door method to force application of chrome flags at a particular
-   * time.  Do NOT call this unless you know what you're doing!  In particular,
+   * Back-door method to make sure some stuff is done when the document is
+   * ready for layout, that would cause expensive computation otherwise later.
+   *
+   * Do NOT call this unless you know what you're doing!  In particular,
    * calling this when this XUL window doesn't yet have a document in its
    * docshell could cause problems.
    */
-  [noscript] void applyChromeFlags();
+  [noscript] void beforeStartLayout();
 
   /**
    * Given the dimensions of some content area held within this
@@ -159,4 +171,11 @@ interface nsIXULWindow : nsISupports
                                                  in int32_t aDesiredHeight,
                                                  in int32_t shellItemWidth,
                                                  in int32_t shellItemHeight);
+
+  /**
+   * If the window was opened as a content window by script, this will return the
+   * integer ID of the next TabParent actor to use.
+   */
+  [noscript]
+  readonly attribute unsigned long long nextTabParentId;
 };

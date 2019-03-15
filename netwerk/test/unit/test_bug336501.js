@@ -1,6 +1,3 @@
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-
 function run_test() {
   var f = do_get_file('test_bug336501.js');
 
@@ -23,5 +20,5 @@ function run_test() {
   sis.close();
 
   var data = sis.read(45);
-  do_check_eq(data.length, 0);
+  Assert.equal(data.length, 0);
 }

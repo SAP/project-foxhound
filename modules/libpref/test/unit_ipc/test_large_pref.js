@@ -6,9 +6,6 @@
 // Non-string preferences are not tested here, because their behavior
 // should not be affected by this filtering.
 
-var Ci = Components.interfaces;
-var Cc = Components.classes;
-
 function isParentProcess() {
     let appInfo = Cc["@mozilla.org/xre/app-info;1"];
     return (!appInfo || appInfo.getService(Ci.nsIXULRuntime).processType == Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT);
@@ -55,6 +52,14 @@ function run_test() {
 
   let isParent = isParentProcess();
   if (isParent) {
+    // Preferences with large values will still appear in the shared memory
+    // snapshot that we share with all processes. They should not, however, be
+    // sent with the list of changes on top of the snapshot.
+    //
+    // So, make sure we've generated the initial snapshot before we set the
+    // preference values by launching a child process with an empty test.
+    sendCommand("");
+
     // Set all combinations of none, small and large, for default and user prefs.
     for (let def of testValues) {
       for (let user of testValues) {
@@ -79,14 +84,14 @@ function run_test() {
       }
       let pref_name = prefName(def, user);
       if (isParent || (def.name != "Large" && user.name != "Large")) {
-        do_check_eq(pb.getCharPref(pref_name), expectedPrefValue(def, user));
+        Assert.equal(pb.getCharPref(pref_name), expectedPrefValue(def, user));
       } else {
         // This is the child, and either the default or user value is
         // large, so the preference should not be set.
         let prefExists;
         try {
-          pb.getCharPref(pref_name);
-          prefExists = true;
+          let val = pb.getCharPref(pref_name);
+          prefExists = val.length > 128;
         } catch(e) {
           prefExists = false;
         }

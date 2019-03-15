@@ -5,7 +5,25 @@
 "use strict";
 
 const { Arg, generateActorSpec, RetVal } = require("devtools/shared/protocol");
-require("devtools/shared/specs/node");
+
+const flexboxSpec = generateActorSpec({
+  typeName: "flexbox",
+
+  methods: {
+    getFlexItems: {
+      request: {},
+      response: {
+        flexitems: RetVal("array:flexitem"),
+      },
+    },
+  },
+});
+
+const flexItemSpec = generateActorSpec({
+  typeName: "flexitem",
+
+  methods: {},
+});
 
 const gridSpec = generateActorSpec({
   typeName: "grid",
@@ -16,25 +34,38 @@ const gridSpec = generateActorSpec({
 const layoutSpec = generateActorSpec({
   typeName: "layout",
 
-  events: {
-    "grid-layout-changed": {
-      type: "grid-layout-changed",
-      grids: Arg(0, "array:grid")
-    }
-  },
-
   methods: {
-    getAllGrids: {
+    getCurrentFlexbox: {
       request: {
-        rootNode: Arg(0, "domnode"),
-        traverseFrames: Arg(1, "nullable:boolean")
+        node: Arg(0, "domnode"),
+        onlyLookAtParents: Arg(1, "nullable:boolean"),
       },
       response: {
-        grids: RetVal("array:grid")
-      }
-    }
+        flexbox: RetVal("nullable:flexbox"),
+      },
+    },
+
+    getCurrentGrid: {
+      request: {
+        node: Arg(0, "domnode"),
+      },
+      response: {
+        grid: RetVal("nullable:grid"),
+      },
+    },
+
+    getGrids: {
+      request: {
+        rootNode: Arg(0, "domnode"),
+      },
+      response: {
+        grids: RetVal("array:grid"),
+      },
+    },
   },
 });
 
+exports.flexboxSpec = flexboxSpec;
+exports.flexItemSpec = flexItemSpec;
 exports.gridSpec = gridSpec;
 exports.layoutSpec = layoutSpec;

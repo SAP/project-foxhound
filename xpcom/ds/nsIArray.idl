@@ -31,7 +31,7 @@ interface nsISimpleEnumerator;
  * null is a valid entry in the array, and as such any nsISupports
  * parameters may be null, except where noted.
  */
-[scriptable, uuid(114744d9-c369-456e-b55a-52fe52880d2d)]
+[scriptable, builtinclass, uuid(114744d9-c369-456e-b55a-52fe52880d2d)]
 interface nsIArray : nsISupports
 {
     /**
@@ -47,7 +47,7 @@ interface nsIArray : nsISupports
      * Retrieve a specific element of the array, and QueryInterface it
      * to the specified interface. null is a valid result for
      * this method, but exceptions are thrown in other circumstances
-     * 
+     *
      * @param index position of element
      * @param uuid the IID of the requested interface
      * @param result the object, QI'd to the requested interface
@@ -61,14 +61,14 @@ interface nsIArray : nsISupports
     void queryElementAt(in unsigned long index,
                         in nsIIDRef uuid,
                         [iid_is(uuid), retval] out nsQIResult result);
-    
+
     /**
      * indexOf()
-     * 
+     *
      * Get the position of a specific element. Note that since null is
      * a valid input, exceptions are used to indicate that an element
      * is not found.
-     * 
+     *
      * @param startIndex The initial element to search in the array
      *                   To start at the beginning, use 0 as the
      *                   startIndex
@@ -87,5 +87,17 @@ interface nsIArray : nsISupports
      * @throws NS_ERROR_FAILURE if the array is empty (to make it easy
      *         to detect errors), or NS_ERROR_OUT_OF_MEMORY if out of memory.
      */
-    nsISimpleEnumerator enumerate();
+    [binaryname(ScriptedEnumerate), optional_argc]
+    nsISimpleEnumerator enumerate([optional] in nsIIDRef aElemIID);
+
+    [noscript]
+    nsISimpleEnumerator enumerateImpl(in nsIDRef aElemIID);
+
+    %{C++
+    nsresult
+    Enumerate(nsISimpleEnumerator** aRetVal, const nsID& aElemIID = NS_GET_IID(nsISupports))
+    {
+      return EnumerateImpl(aElemIID, aRetVal);
+    }
+    %}
 };

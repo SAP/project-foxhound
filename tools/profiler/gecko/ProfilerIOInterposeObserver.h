@@ -5,9 +5,8 @@
 #ifndef PROFILERIOINTERPOSEOBSERVER_H
 #define PROFILERIOINTERPOSEOBSERVER_H
 
-#ifdef MOZ_GECKO_PROFILER
-
 #include "mozilla/IOInterposer.h"
+#include "nsISupportsImpl.h"
 
 namespace mozilla {
 
@@ -15,14 +14,16 @@ namespace mozilla {
  * This class is the observer that calls into the profiler whenever
  * main thread I/O occurs.
  */
-class ProfilerIOInterposeObserver final : public IOInterposeObserver
-{
-public:
-  virtual void Observe(Observation& aObservation);
+class ProfilerIOInterposeObserver final : public IOInterposeObserver {
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ProfilerIOInterposeObserver)
+
+ public:
+  virtual void Observe(Observation& aObservation) override;
+
+ protected:
+  virtual ~ProfilerIOInterposeObserver() {}
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // MOZ_GECKO_PROFILER
-
-#endif // PROFILERIOINTERPOSEOBSERVER_H
+#endif  // PROFILERIOINTERPOSEOBSERVER_H

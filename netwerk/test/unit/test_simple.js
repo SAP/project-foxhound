@@ -4,8 +4,8 @@
 
 // Note: sets Cc and Ci variables
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = new HttpServer();
 var testpath = "/simple";
@@ -49,7 +49,7 @@ function serverHandler(metadata, response) {
 
 function checkRequest(request, data, context) {
   if (dbg) { print("============== checkRequest: in"); }
-  do_check_eq(data, httpbody);
+  Assert.equal(data, httpbody);
   httpserver.stop(do_test_finished);
   if (dbg) { print("============== checkRequest: out"); }
 }

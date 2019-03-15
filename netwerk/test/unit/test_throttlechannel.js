@@ -1,7 +1,7 @@
 // Test nsIThrottledInputChannel interface.
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 function test_handler(metadata, response) {
   const originalBody = "the response";
@@ -12,7 +12,7 @@ function test_handler(metadata, response) {
 
 function make_channel(url) {
   return NetUtil.newChannel({uri: url, loadUsingSystemPrincipal: true})
-                .QueryInterface(Components.interfaces.nsIHttpChannel);
+                .QueryInterface(Ci.nsIHttpChannel);
 }
 
 function run_test() {

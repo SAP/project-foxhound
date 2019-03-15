@@ -6,10 +6,10 @@
 /**
  * Test the suggestion-picker helper methods.
  */
-const {require} = Components.utils.import("resource://devtools/shared/Loader.jsm", {});
+const {require} = ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
 const {
   findMostRelevantIndex,
-  findMostRelevantCssPropertyIndex
+  findMostRelevantCssPropertyIndex,
 } = require("devtools/client/shared/suggestion-picker");
 
 /**
@@ -29,26 +29,26 @@ const TEST_DATA = [
     // Match in sortedItems array.
     items: ["chrome", "edge", "firefox"],
     sortedItems: ["firefox", "chrome", "edge"],
-    expectedIndex: 2
+    expectedIndex: 2,
   }, {
     // No match in sortedItems array.
     items: ["apple", "oranges", "banana"],
     sortedItems: ["kiwi", "pear", "peach"],
-    expectedIndex: 0
+    expectedIndex: 0,
   }, {
     // Empty items array.
     items: [],
     sortedItems: ["empty", "arrays", "can't", "have", "relevant", "indexes"],
-    expectedIndex: -1
-  }
+    expectedIndex: -1,
+  },
 ];
 
 function ensureMostRelevantIndexProvidedByHelperFunction() {
-  do_print("Running ensureMostRelevantIndexProvidedByHelperFunction()");
+  info("Running ensureMostRelevantIndexProvidedByHelperFunction()");
 
-  for (let testData of TEST_DATA) {
-    let { items, sortedItems, expectedIndex } = testData;
-    let mostRelevantIndex = findMostRelevantIndex(items, sortedItems);
+  for (const testData of TEST_DATA) {
+    const { items, sortedItems, expectedIndex } = testData;
+    const mostRelevantIndex = findMostRelevantIndex(items, sortedItems);
     strictEqual(mostRelevantIndex, expectedIndex);
   }
 }
@@ -68,9 +68,9 @@ const CSS_TEST_DATA = [
       "background-image",
       "background-origin",
       "background-position",
-      "background-repeat"
+      "background-repeat",
     ],
-    expectedIndex: 1
+    expectedIndex: 1,
   },
   {
     items: [
@@ -83,17 +83,17 @@ const CSS_TEST_DATA = [
       "color-interpolation",
       "color-interpolation-filters",
       "content",
-      "counter-increment"
+      "counter-increment",
     ],
-    expectedIndex: 5
+    expectedIndex: 5,
   },
   {
     items: [
       "direction",
       "display",
-      "dominant-baseline"
+      "dominant-baseline",
     ],
-    expectedIndex: 1
+    expectedIndex: 1,
   },
   {
     items: [
@@ -106,9 +106,9 @@ const CSS_TEST_DATA = [
       "opacity",
       "order",
       "orphans",
-      "outline"
+      "outline",
     ],
-    expectedIndex: 6
+    expectedIndex: 6,
   },
   {
     items: [
@@ -119,31 +119,31 @@ const CSS_TEST_DATA = [
       "word-break",
       "word-spacing",
       "word-wrap",
-      "writing-mode"
+      "writing-mode",
     ],
-    expectedIndex: 2
-  }
+    expectedIndex: 2,
+  },
 ];
 
 function ensureMostRelevantIndexProvidedByClassMethod() {
-  do_print("Running ensureMostRelevantIndexProvidedByClassMethod()");
+  info("Running ensureMostRelevantIndexProvidedByClassMethod()");
 
-  for (let testData of CSS_TEST_DATA) {
-    let { items, expectedIndex } = testData;
-    let mostRelevantIndex = findMostRelevantCssPropertyIndex(items);
+  for (const testData of CSS_TEST_DATA) {
+    const { items, expectedIndex } = testData;
+    const mostRelevantIndex = findMostRelevantCssPropertyIndex(items);
     strictEqual(mostRelevantIndex, expectedIndex);
   }
 }
 
 function ensureErrorThrownWithInvalidArguments() {
-  do_print("Running ensureErrorThrownWithInvalidTypeArgument()");
+  info("Running ensureErrorThrownWithInvalidTypeArgument()");
 
-  let expectedError = "Please provide valid items and sortedItems arrays.";
+  const expectedError = /Please provide valid items and sortedItems arrays\./;
   // No arguments passed.
-  throws(() => findMostRelevantIndex(), expectedError);
+  Assert.throws(() => findMostRelevantIndex(), expectedError);
   // Invalid arguments passed.
-  throws(() => findMostRelevantIndex([]), expectedError);
-  throws(() => findMostRelevantIndex(null, []), expectedError);
-  throws(() => findMostRelevantIndex([], "string"), expectedError);
-  throws(() => findMostRelevantIndex("string", []), expectedError);
+  Assert.throws(() => findMostRelevantIndex([]), expectedError);
+  Assert.throws(() => findMostRelevantIndex(null, []), expectedError);
+  Assert.throws(() => findMostRelevantIndex([], "string"), expectedError);
+  Assert.throws(() => findMostRelevantIndex("string", []), expectedError);
 }

@@ -13,16 +13,16 @@
 
 #include <jni.h>
 
-#include "webrtc/modules/video_capture/android/device_info_android.h"
-#include "webrtc/modules/video_capture/video_capture_impl.h"
+#include "modules/video_capture/android/device_info_android.h"
+#include "modules/video_capture/video_capture_impl.h"
 
 namespace webrtc {
 namespace videocapturemodule {
 
 class VideoCaptureAndroid : public VideoCaptureImpl {
  public:
-  VideoCaptureAndroid(const int32_t id);
-  virtual int32_t Init(const int32_t id, const char* deviceUniqueIdUTF8);
+  VideoCaptureAndroid();
+  virtual int32_t Init(const char* deviceUniqueIdUTF8);
 
   virtual int32_t StartCapture(const VideoCaptureCapability& capability);
   virtual int32_t StopCapture();

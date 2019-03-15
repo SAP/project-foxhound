@@ -4,10 +4,10 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetter(this, "Snackbars", "resource://gre/modules/Snackbars.jsm");
+ChromeUtils.defineModuleGetter(this, "Snackbars", "resource://gre/modules/Snackbars.jsm");
 
 var PrintHelper = {
-  onEvent: function (event, data, callback) {
+  onEvent: function(event, data, callback) {
     let browser = BrowserApp.selectedBrowser;
 
     switch (event) {
@@ -37,7 +37,7 @@ var PrintHelper = {
     printSettings.printFrameType = Ci.nsIPrintSettings.kFramesAsIs;
     printSettings.outputFormat = Ci.nsIPrintSettings.kOutputFormatPDF;
 
-    let webBrowserPrint = aBrowser.contentWindow.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIWebBrowserPrint);
+    let webBrowserPrint = aBrowser.contentWindow.getInterface(Ci.nsIWebBrowserPrint);
 
     return new Promise((resolve, reject) => {
       webBrowserPrint.print(printSettings, {
@@ -58,11 +58,12 @@ var PrintHelper = {
             }
           }
         },
-        onProgressChange: function () {},
-        onLocationChange: function () {},
-        onStatusChange: function () {},
-        onSecurityChange: function () {},
+        onProgressChange: function() {},
+        onLocationChange: function() {},
+        onStatusChange: function() {},
+        onSecurityChange: function() {},
+        onContentBlockingEvent: function() {},
       });
     });
-  }
+  },
 };

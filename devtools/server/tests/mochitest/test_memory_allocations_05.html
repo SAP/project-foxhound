@@ -13,27 +13,30 @@ Bug 1068144 - Test getting the timestamps for allocations.
 <pre id="test">
 <script src="memory-helpers.js" type="application/javascript"></script>
 <script>
+"use strict";
+
 window.onload = function() {
   SimpleTest.waitForExplicitFinish();
 
-  Task.spawn(function* () {
-    var { memory, client } = yield startServerAndGetSelectedTabMemory();
-    yield memory.attach();
+  (async function() {
+    const { memory, target } = await startServerAndGetSelectedTabMemory();
+    await memory.attach();
 
-    var allocs = [];
+    const allocs = [];
     function allocator() {
-      allocs.push(new Object);
+      allocs.push(new Object());
     }
 
     // Using setTimeout results in wildly varying delays that make it hard to
     // test our timestamps and results in intermittent failures. Instead, we
     // actually spin an empty loop for a whole millisecond.
     function actuallyWaitOneWholeMillisecond() {
-      var start = window.performance.now();
-      while (window.performance.now() - start < 1.000) ;
+      const start = window.performance.now();
+      // eslint-disable-next-line curly
+      while (window.performance.now() - start < 1.000);
     }
 
-    yield memory.startRecordingAllocations();
+    await memory.startRecordingAllocations();
 
     allocator();
     actuallyWaitOneWholeMillisecond();
@@ -41,45 +44,48 @@ window.onload = function() {
     actuallyWaitOneWholeMillisecond();
     allocator();
 
-    var response = yield memory.getAllocations();
-    yield memory.stopRecordingAllocations();
+    const response = await memory.getAllocations();
+    await memory.stopRecordingAllocations();
 
     ok(response.allocationsTimestamps, "The response should have timestamps.");
     is(response.allocationsTimestamps.length, response.allocations.length,
        "There should be a timestamp for every allocation.");
 
-    var allocatorIndices = response.allocations
-      .map(function (a, idx) {
-        var frame = response.frames[a];
+    const allocatorIndices = response.allocations
+      .map(function(a, idx) {
+        const frame = response.frames[a];
         if (frame && frame.functionDisplayName === "allocator") {
           return idx;
         }
+        return null;
       })
-      .filter(function (idx) {
-        return idx !== undefined;
+      .filter(function(idx) {
+        return idx !== null;
       });
 
-    is(allocatorIndices.length, 3, "Should have our 3 allocations from the `allocator` timeouts.");
+    is(allocatorIndices.length, 3,
+       "Should have our 3 allocations from the `allocator` timeouts.");
 
-    var lastTimestamp;
-    for (var i = 0; i < 3; i++) {
-      var timestamp = response.allocationsTimestamps[allocatorIndices[i]];
+    let lastTimestamp;
+    for (let i = 0; i < 3; i++) {
+      const timestamp = response.allocationsTimestamps[allocatorIndices[i]];
       info("timestamp", timestamp);
       ok(timestamp, "We should have a timestamp for the `allocator` allocation.");
 
       if (lastTimestamp) {
-        var delta = timestamp - lastTimestamp;
+        const delta = timestamp - lastTimestamp;
         info("delta since last timestamp", delta);
-        ok(delta >= 1 /* ms */,
+        // ms
+        ok(delta >= 1,
            "The timestamp should be about 1 ms after the last timestamp.");
       }
 
       lastTimestamp = timestamp;
     }
 
-    yield memory.detach();
-    destroyServerAndFinish(client);
-  });
+    await memory.detach();
+    destroyServerAndFinish(target);
+  })();
 };
 </script>
 </pre>

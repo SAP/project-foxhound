@@ -16,6 +16,7 @@ Important Concepts
    files-metadata
    Profile Guided Optimization <pgo>
    slow
+   tup
    environment-variables
    build-targets
    python
@@ -27,6 +28,9 @@ Important Concepts
    toolchains
    locales
    rust
+   sparse
+   Support for projects building with GN <gn>
+   telemetry
 
 integrated development environment (IDE)
 ========================================

@@ -10,16 +10,10 @@
 namespace mozilla {
 namespace net {
 
-SimpleBuffer::SimpleBuffer()
-  : mStatus(NS_OK)
-  , mAvailable(0)
-{
-  mOwningThread = PR_GetCurrentThread();
-}
+SimpleBuffer::SimpleBuffer() : mStatus(NS_OK), mAvailable(0) {}
 
-nsresult SimpleBuffer::Write(char *src, size_t len)
-{
-  MOZ_ASSERT(PR_GetCurrentThread() == mOwningThread);
+nsresult SimpleBuffer::Write(char *src, size_t len) {
+  NS_ASSERT_OWNINGTHREAD(SimpleBuffer);
   if (NS_FAILED(mStatus)) {
     return mStatus;
   }
@@ -38,7 +32,8 @@ nsresult SimpleBuffer::Write(char *src, size_t len)
       }
       mBufferList.insertBack(p);
     }
-    size_t roomOnPage = SimpleBufferPage::kSimpleBufferPageSize - p->mWriteOffset;
+    size_t roomOnPage =
+        SimpleBufferPage::kSimpleBufferPageSize - p->mWriteOffset;
     size_t toWrite = std::min(roomOnPage, len);
     memcpy(p->mBuffer + p->mWriteOffset, src, toWrite);
     src += toWrite;
@@ -49,16 +44,15 @@ nsresult SimpleBuffer::Write(char *src, size_t len)
   return NS_OK;
 }
 
-size_t SimpleBuffer::Read(char *dest, size_t maxLen)
-{
-  MOZ_ASSERT(PR_GetCurrentThread() == mOwningThread);
+size_t SimpleBuffer::Read(char *dest, size_t maxLen) {
+  NS_ASSERT_OWNINGTHREAD(SimpleBuffer);
   if (NS_FAILED(mStatus)) {
     return 0;
   }
 
   size_t rv = 0;
-  for (SimpleBufferPage *p = mBufferList.getFirst();
-       p && (rv < maxLen); p = mBufferList.getFirst()) {
+  for (SimpleBufferPage *p = mBufferList.getFirst(); p && (rv < maxLen);
+       p = mBufferList.getFirst()) {
     size_t avail = p->mWriteOffset - p->mReadOffset;
     size_t toRead = std::min(avail, (maxLen - rv));
     memcpy(dest + rv, p->mBuffer + p->mReadOffset, toRead);
@@ -75,15 +69,13 @@ size_t SimpleBuffer::Read(char *dest, size_t maxLen)
   return rv;
 }
 
-size_t SimpleBuffer::Available()
-{
-  MOZ_ASSERT(PR_GetCurrentThread() == mOwningThread);
+size_t SimpleBuffer::Available() {
+  NS_ASSERT_OWNINGTHREAD(SimpleBuffer);
   return NS_SUCCEEDED(mStatus) ? mAvailable : 0;
 }
 
-void SimpleBuffer::Clear()
-{
-  MOZ_ASSERT(PR_GetCurrentThread() == mOwningThread);
+void SimpleBuffer::Clear() {
+  NS_ASSERT_OWNINGTHREAD(SimpleBuffer);
   SimpleBufferPage *p;
   while ((p = mBufferList.popFirst())) {
     delete p;
@@ -91,5 +83,5 @@ void SimpleBuffer::Clear()
   mAvailable = 0;
 }
 
-} // namespace net
-} // namespace mozilla
+}  // namespace net
+}  // namespace mozilla

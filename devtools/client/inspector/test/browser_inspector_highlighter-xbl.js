@@ -7,23 +7,23 @@
 
 const TEST_URL = URL_ROOT + "doc_inspector_highlighter_xbl.xul";
 
-add_task(function* () {
-  let {inspector, toolbox, testActor} = yield openInspectorForURL(TEST_URL);
+add_task(async function() {
+  const {inspector, toolbox, testActor} = await openInspectorForURL(TEST_URL);
 
-  yield startPicker(toolbox);
+  await startPicker(toolbox);
 
-  info("Selecting the scale");
-  yield moveMouseOver("#scale");
-  yield doKeyPick({key: "VK_RETURN", options: {}});
-  is(inspector.selection.nodeFront.className, "scale-slider",
-     "The .scale-slider inside the scale was selected");
+  info("Selecting the tree");
+  await moveMouseOver("#tree");
+  await doKeyPick({key: "VK_RETURN", options: {}});
+  is(inspector.selection.nodeFront.className, "tree-bodybox",
+     "The .tree-bodybox inside the tree was selected");
 
   function doKeyPick(msg) {
     info("Key pressed. Waiting for element to be picked");
     testActor.synthesizeKey(msg);
     return promise.all([
       inspector.selection.once("new-node-front"),
-      inspector.once("inspector-updated")
+      inspector.once("inspector-updated"),
     ]);
   }
 
@@ -32,8 +32,8 @@ add_task(function* () {
     testActor.synthesizeMouse({
       options: {type: "mousemove"},
       center: true,
-      selector: selector
+      selector: selector,
     });
-    return inspector.toolbox.once("picker-node-hovered");
+    return inspector.inspector.nodePicker.once("picker-node-hovered");
   }
 });

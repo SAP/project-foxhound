@@ -2,7 +2,7 @@
 <head>
   <title>Test for Handling of unsafe bidi chars</title>
   <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/SpawnTask.js"></script>
+  <script type="text/javascript" src="/tests/SimpleTest/AddTask.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -38,7 +38,10 @@ function sanitize(name) {
   return replace(name, '_');
 }
 
-add_task(function* () {
+const INSECURE_REGISTER_PREF = "dom.registerProtocolHandler.insecure.enabled";
+
+add_task(async function() {
+  SpecialPowers.setBoolPref(INSECURE_REGISTER_PREF, false);
   let url = SimpleTest.getTestFileURL("unsafeBidi_chromeScript.js");
   let chromeScript = SpecialPowers.loadChromeScript(url);
 
@@ -55,7 +58,7 @@ add_task(function* () {
       let expected = sanitize(test);
       document.getElementById("test").src =
         "unsafeBidiFileName.sjs?name=" + encodeURIComponent(name);
-      is((yield promiseName), expected, "got the expected sanitized name");
+      is((await promiseName), expected, "got the expected sanitized name");
     }
   }
 
@@ -66,7 +69,9 @@ add_task(function* () {
     });
   });
   chromeScript.sendAsyncMessage("unregister");
-  yield promise;
+  await promise;
+
+  SpecialPowers.clearUserPref(INSECURE_REGISTER_PREF);
 
   chromeScript.destroy();
 });

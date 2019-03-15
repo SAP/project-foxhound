@@ -2,15 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const Ci = Components.interfaces;
-const Cu = Components.utils;
-const Cc = Components.classes;
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "Prompt",
-                                  "resource://gre/modules/Prompt.jsm");
+ChromeUtils.defineModuleGetter(this, "Prompt",
+                               "resource://gre/modules/Prompt.jsm");
 
 function ColorPicker() {
 }
@@ -34,13 +30,16 @@ ColorPicker.prototype = {
   },
 
   open: function(aCallback) {
-    let p = new Prompt({ title: this._title,
-                         buttons: [
-                            this.strings.GetStringFromName("inputWidgetHelper.set"),
-                            this.strings.GetStringFromName("inputWidgetHelper.cancel")
-                         ] })
-                      .addColorPicker({ value: this._initial })
-                      .show((data) => {
+    new Prompt({
+      window: this._domWin,
+      title: this._title,
+      buttons: [
+        this.strings.GetStringFromName("inputWidgetHelper.set"),
+        this.strings.GetStringFromName("inputWidgetHelper.cancel"),
+      ],
+    })
+    .addColorPicker({ value: this._initial })
+    .show((data) => {
       if (data.button == 0)
         aCallback.done(data.color0);
       else
@@ -49,7 +48,7 @@ ColorPicker.prototype = {
   },
 
   classID: Components.ID("{430b987f-bb9f-46a3-99a5-241749220b29}"),
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIColorPicker])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIColorPicker]),
 };
 
 this.NSGetFactory = XPCOMUtils.generateNSGetFactory([ColorPicker]);

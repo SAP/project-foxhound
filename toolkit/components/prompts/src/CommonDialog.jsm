@@ -2,33 +2,27 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-this.EXPORTED_SYMBOLS = ["CommonDialog"];
+var EXPORTED_SYMBOLS = ["CommonDialog"];
 
-const Ci = Components.interfaces;
-const Cr = Components.results;
-const Cc = Components.classes;
-const Cu = Components.utils;
-
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "EnableDelayHelper",
-                                  "resource://gre/modules/SharedPromptUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.defineModuleGetter(this, "EnableDelayHelper",
+                               "resource://gre/modules/SharedPromptUtils.jsm");
 
 
-this.CommonDialog = function CommonDialog(args, ui) {
+function CommonDialog(args, ui) {
     this.args = args;
     this.ui   = ui;
 }
 
 CommonDialog.prototype = {
-    args : null,
-    ui   : null,
+    args: null,
+    ui: null,
 
-    hasInputField : true,
-    numButtons    : undefined,
-    iconClass     : undefined,
-    soundID       : undefined,
-    focusTimer    : null,
+    hasInputField: true,
+    numButtons: undefined,
+    iconClass: undefined,
+    soundID: undefined,
+    focusTimer: null,
 
     onLoad(xulDialog) {
         switch (this.args.promptType) {
@@ -91,6 +85,10 @@ CommonDialog.prototype = {
             throw "unknown dialog type";
         }
 
+        if (xulDialog) {
+            xulDialog.setAttribute("windowtype", "prompt:" + this.args.promptType);
+        }
+
         // set the document title
         let title = this.args.title;
         // OS X doesn't have a title on modal dialogs, this is hidden on other platforms.
@@ -140,6 +138,7 @@ CommonDialog.prototype = {
         if (label) {
             // Only show the checkbox if label has a value.
             this.ui.checkboxContainer.hidden = false;
+            this.ui.checkboxContainer.clientTop; // style flush to assure binding is attached
             this.setLabelForNode(this.ui.checkbox, label);
             this.ui.checkbox.checked = this.args.checked;
         }
@@ -163,6 +162,11 @@ CommonDialog.prototype = {
         else
             button.setAttribute("default", "true");
 
+        // For tab prompts, we will need to ensure its content bindings are attached.
+        if (!xulDialog) {
+            this.ui.prompt.ensureXBLBindingAttached();
+        }
+
         // Set default focus / selection.
         this.setDefaultFocus(true);
 
@@ -170,7 +174,7 @@ CommonDialog.prototype = {
             this.delayHelper = new EnableDelayHelper({
                 disableDialog: () => this.setButtonsEnabledState(false),
                 enableDialog: () => this.setButtonsEnabledState(true),
-                focusTarget: this.ui.focusTarget
+                focusTarget: this.ui.focusTarget,
             });
         }
 
@@ -185,10 +189,13 @@ CommonDialog.prototype = {
             Cu.reportError("Couldn't play common dialog event sound: " + e);
         }
 
-        let topic = "common-dialog-loaded";
-        if (!xulDialog)
-            topic = "tabmodal-dialog-loaded";
-        Services.obs.notifyObservers(this.ui.prompt, topic, null);
+        if (xulDialog) {
+            // ui.prompt is the window object of the dialog.
+            Services.obs.notifyObservers(this.ui.prompt, "common-dialog-loaded");
+        } else {
+            // ui.promptContainer is the <tabmodalprompt> element.
+            Services.obs.notifyObservers(this.ui.promptContainer, "tabmodal-dialog-loaded");
+        }
     },
 
     setLabelForNode(aNode, aLabel) {
@@ -239,7 +246,7 @@ CommonDialog.prototype = {
         let button = this.ui["button" + b];
 
         if (!this.hasInputField) {
-            let isOSX = ("nsILocalFileMac" in Components.interfaces);
+            let isOSX = ("nsILocalFileMac" in Ci);
             if (isOSX)
                 this.ui.infoBody.focus();
             else

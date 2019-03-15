@@ -41,36 +41,34 @@ Form History test: form field autocomplete
 
 <pre id="test">
 <script class="testbody" type="text/javascript">
-/* import-globals-from ../../../../testing/mochitest/tests/SimpleTest/EventUtils.js */
-/* import-globals-from satchel_common.js */
+/* eslint-disable complexity */
 
 /** Test for Form History autocomplete **/
 
 var input = $_(1, "field1");
-const shiftModifier = Components.interfaces.nsIDOMEvent.SHIFT_MASK;
 
 function setupFormHistory(aCallback) {
   updateFormHistory([
-    { op : "remove" },
-    { op : "add", fieldname : "field1", value : "historyvalue" },
-    { op : "add", fieldname : "field2", value : "othervalue" },
+    { op: "remove" },
+    { op: "add", fieldname: "field1", value: "historyvalue" },
+    { op: "add", fieldname: "field2", value: "othervalue" },
   ], aCallback);
 }
 
 function setForm(value) {
-    input.value = value;
-    input.focus();
+  input.value = value;
+  input.focus();
 }
 
 // Restore the form to the default state.
 function restoreForm() {
-    setForm("");
+  setForm("");
 }
 
 // Check for expected form data.
 function checkForm(expectedValue) {
-    var formID = input.parentNode.id;
-    is(input.value, expectedValue, "Checking " + formID + " input");
+  let formID = input.parentNode.id;
+  is(input.value, expectedValue, "Checking " + formID + " input");
 }
 
 var testNum = 0;
@@ -100,223 +98,225 @@ registerPopupShownListener(popupShownListener);
 * This is a bit hacky, as many operations happen asynchronously.
 * Various mechanisms call runTests as a result of operations:
 *   - set expectingPopup to true, and the next test will occur when the autocomplete popup is shown
-*   - call waitForMenuChange(x) to run the next test when the autocomplete popup to have x items in it
+*   - call waitForMenuChange(x) to run the next test when the autocomplete popup
+*     to have x items in it
 */
 function runTest() {
-    testNum++;
+  testNum++;
+  let datalist;
 
-    info("Starting test #" + testNum);
+  info("Starting test #" + testNum);
 
-    switch (testNum) {
+  switch (testNum) {
     case 1:
-        // Make sure initial form is empty.
-        checkForm("");
-        // Trigger autocomplete popup
-        expectPopup();
-        restoreForm();
-        doKey("down");
-        break;
+      // Make sure initial form is empty.
+      checkForm("");
+      // Trigger autocomplete popup
+      expectPopup();
+      restoreForm();
+      synthesizeKey("KEY_ArrowDown");
+      break;
     case 2:
-        checkMenuEntries(["historyvalue", "PASS1", "PASS2", "final"], testNum);
-        // Check first entry
-        doKey("down");
-        checkForm(""); // value shouldn't update
-        doKey("return"); // not "enter"!
-        checkForm("historyvalue");
+      checkMenuEntries(["historyvalue", "PASS1", "PASS2", "final"], testNum);
+      // Check first entry
+      synthesizeKey("KEY_ArrowDown");
+      checkForm(""); // value shouldn't update
+      synthesizeKey("KEY_Enter");
+      checkForm("historyvalue");
 
-        // Trigger autocomplete popup
-        expectPopup();
-        restoreForm();
-        doKey("down");
-        break;
+      // Trigger autocomplete popup
+      expectPopup();
+      restoreForm();
+      synthesizeKey("KEY_ArrowDown");
+      break;
 
     case 3:
-        // Check second entry
-        doKey("down");
-        doKey("down");
-        doKey("return"); // not "enter"!
-        checkForm("Google");
+      // Check second entry
+      synthesizeKey("KEY_ArrowDown");
+      synthesizeKey("KEY_ArrowDown");
+      synthesizeKey("KEY_Enter");
+      checkForm("Google");
 
-        // Trigger autocomplete popup
-        expectPopup();
-        restoreForm();
-        doKey("down");
-        break;
+      // Trigger autocomplete popup
+      expectPopup();
+      restoreForm();
+      synthesizeKey("KEY_ArrowDown");
+      break;
 
     case 4:
-        // Check third entry
-        doKey("down");
-        doKey("down");
-        doKey("down");
-        doKey("return");
-        checkForm("Reddit");
+      // Check third entry
+      synthesizeKey("KEY_ArrowDown");
+      synthesizeKey("KEY_ArrowDown");
+      synthesizeKey("KEY_ArrowDown");
+      synthesizeKey("KEY_Enter");
+      checkForm("Reddit");
 
-        // Trigger autocomplete popup
-        expectPopup();
-        restoreForm();
-        doKey("down");
-        break;
+      // Trigger autocomplete popup
+      expectPopup();
+      restoreForm();
+      synthesizeKey("KEY_ArrowDown");
+      break;
 
     case 5:
-        // Check fourth entry
-        doKey("down");
-        doKey("down");
-        doKey("down");
-        doKey("down");
-        doKey("return");
-        checkForm("final");
-        expectPopup();
-        restoreForm();
-        doKey("down");
-        break;
+      // Check fourth entry
+      synthesizeKey("KEY_ArrowDown");
+      synthesizeKey("KEY_ArrowDown");
+      synthesizeKey("KEY_ArrowDown");
+      synthesizeKey("KEY_ArrowDown");
+      synthesizeKey("KEY_Enter");
+      checkForm("final");
+      expectPopup();
+      restoreForm();
+      synthesizeKey("KEY_ArrowDown");
+      break;
 
     case 6:
-        // Delete the first entry (of 3)
-        doKey("down");
-        doKey("delete", shiftModifier);
-        waitForMenuChange(3);
-        break;
+      // Delete the first entry (of 3)
+      synthesizeKey("KEY_ArrowDown");
+      synthesizeKey("KEY_Delete", {shiftKey: true});
+      waitForMenuChange(3);
+      break;
 
     case 7:
-        checkForm("");
-        countEntries("field1", "historyvalue",
-          function(num) {
-            ok(!num, testNum + " checking that form history value was deleted");
-            runTest();
-          });
-        break;
+      checkForm("");
+      countEntries("field1", "historyvalue",
+                   function(num) {
+                     ok(!num, testNum + " checking that form history value was deleted");
+                     runTest();
+                   });
+      break;
 
     case 8:
-        doKey("return");
-        checkForm("Google")
+      synthesizeKey("KEY_Enter");
+      checkForm("Google");
 
-        // Trigger autocomplete popup
-        expectPopup();
-        restoreForm();
-        doKey("down");
-        break;
+      // Trigger autocomplete popup
+      expectPopup();
+      restoreForm();
+      synthesizeKey("KEY_ArrowDown");
+      break;
 
     case 9:
-        // Test deletion
-        checkMenuEntries(["PASS1", "PASS2", "final"], testNum);
-        // Check the new first entry (of 3)
-        doKey("down");
-        doKey("return");
-        checkForm("Google");
+      // Test deletion
+      checkMenuEntries(["PASS1", "PASS2", "final"], testNum);
+      // Check the new first entry (of 3)
+      synthesizeKey("KEY_ArrowDown");
+      synthesizeKey("KEY_Enter");
+      checkForm("Google");
 
-        expectPopup();
-        restoreForm();
-        doKey("down");
-        break;
+      expectPopup();
+      restoreForm();
+      synthesizeKey("KEY_ArrowDown");
+      break;
 
     case 10:
-        // Test autocompletion of datalists with cached results.
-        sendString("PAS");
-        waitForMenuChange(2);
-        break;
+      // Test autocompletion of datalists with cached results.
+      sendString("PAS");
+      waitForMenuChange(2);
+      break;
 
     case 11:
-        // Continuation of test 10
-        sendString("S1");
-        waitForMenuChange(1);
-        break;
+      // Continuation of test 10
+      sendString("S1");
+      waitForMenuChange(1);
+      break;
 
     case 12:
-        doKey("down");
-        doKey("return");
-        checkForm("Google");
+      synthesizeKey("KEY_ArrowDown");
+      synthesizeKey("KEY_Enter");
+      checkForm("Google");
 
-        // Trigger autocomplete popup
-        // Look at form 3, try to trigger autocomplete popup
-        input.value = "";
-        input = $_(3, "field2");
-        testNum = 99;
-        expectPopup();
-        restoreForm();
-        doKey("down");
-        break;
+      // Trigger autocomplete popup
+      // Look at form 3, try to trigger autocomplete popup
+      input.value = "";
+      input = $_(3, "field2");
+      testNum = 99;
+      expectPopup();
+      restoreForm();
+      synthesizeKey("KEY_ArrowDown");
+      break;
 
     case 100:
-        checkMenuEntries(["PASS1", "PASS2", "final"], testNum);
-        // Check first entry
-        doKey("down");
-        checkForm(""); // value shouldn't update
-        doKey("return"); // not "enter"!
-        checkForm("Google");
+      checkMenuEntries(["PASS1", "PASS2", "final"], testNum);
+      // Check first entry
+      synthesizeKey("KEY_ArrowDown");
+      checkForm(""); // value shouldn't update
+      synthesizeKey("KEY_Enter");
+      checkForm("Google");
 
-        // Trigger autocomplete popup
-        expectPopup();
-        restoreForm();
-        doKey("down");
-        break;
+      // Trigger autocomplete popup
+      expectPopup();
+      restoreForm();
+      synthesizeKey("KEY_ArrowDown");
+      break;
 
     case 101:
-        // Check second entry
-        doKey("down");
-        doKey("down");
-        doKey("return"); // not "enter"!
-        checkForm("Reddit");
+      // Check second entry
+      synthesizeKey("KEY_ArrowDown");
+      synthesizeKey("KEY_ArrowDown");
+      synthesizeKey("KEY_Enter");
+      checkForm("Reddit");
 
-        // Trigger autocomplete popup
-        expectPopup();
-        restoreForm();
-        doKey("down");
-        break;
+      // Trigger autocomplete popup
+      expectPopup();
+      restoreForm();
+      synthesizeKey("KEY_ArrowDown");
+      break;
 
     case 102:
-        // Check third entry
-        doKey("down");
-        doKey("down");
-        doKey("down");
-        doKey("return");
-        checkForm("final");
+      // Check third entry
+      synthesizeKey("KEY_ArrowDown");
+      synthesizeKey("KEY_ArrowDown");
+      synthesizeKey("KEY_ArrowDown");
+      synthesizeKey("KEY_Enter");
+      checkForm("final");
 
-        // Trigger autocomplete popup
-        expectPopup();
-        restoreForm();
-        doKey("down");
-        break;
+      // Trigger autocomplete popup
+      expectPopup();
+      restoreForm();
+      synthesizeKey("KEY_ArrowDown");
+      break;
 
     case 103:
-        checkMenuEntries(["PASS1", "PASS2", "final"], testNum);
-        // Check first entry
-        doKey("down");
-        checkForm(""); // value shouldn't update
-        doKey("return"); // not "enter"!
-        checkForm("Google");
+      checkMenuEntries(["PASS1", "PASS2", "final"], testNum);
+      // Check first entry
+      synthesizeKey("KEY_ArrowDown");
+      checkForm(""); // value shouldn't update
+      synthesizeKey("KEY_Enter");
+      checkForm("Google");
 
-        // Trigger autocomplete popup
-        expectPopup();
-        restoreForm();
-        doKey("down");
-        break;
+      // Trigger autocomplete popup
+      expectPopup();
+      restoreForm();
+      synthesizeKey("KEY_ArrowDown");
+      break;
 
     case 104:
-        // Check second entry
-        doKey("down");
-        doKey("down");
-        doKey("return"); // not "enter"!
-        checkForm("Reddit");
+      // Check second entry
+      synthesizeKey("KEY_ArrowDown");
+      synthesizeKey("KEY_ArrowDown");
+      synthesizeKey("KEY_Enter");
+      checkForm("Reddit");
 
-        // Trigger autocomplete popup
-        expectPopup();
-        restoreForm();
-        doKey("down");
-        break;
+      // Trigger autocomplete popup
+      expectPopup();
+      restoreForm();
+      synthesizeKey("KEY_ArrowDown");
+      break;
 
     case 105:
-        // Check third entry
-        doKey("down");
-        doKey("down");
-        doKey("down");
-        doKey("return");
-        checkForm("final");
+      // Check third entry
+      synthesizeKey("KEY_ArrowDown");
+      synthesizeKey("KEY_ArrowDown");
+      synthesizeKey("KEY_ArrowDown");
+      synthesizeKey("KEY_Enter");
+      checkForm("final");
 
-        testNum = 199;
-        expectPopup();
-        restoreForm();
-        doKey("down");
-        break;
+      testNum = 199;
+      expectPopup();
+      restoreForm();
+      synthesizeKey("KEY_ArrowDown");
+      break;
 
     // Test dynamic updates.
     // For some reasons, when there is an update of the list, the selection is
@@ -325,39 +325,39 @@ function runTest() {
     case 200:
       // Removing the second element while on the first then going down and
       // push enter. Value should be one from the third suggesion.
-      doKey("down");
-      var datalist = document.getElementById("suggest");
-      var toRemove = datalist.children[1]
+      synthesizeKey("KEY_ArrowDown");
+      datalist = document.getElementById("suggest");
+      let toRemove = datalist.children[1];
       datalist.removeChild(toRemove);
 
       SimpleTest.executeSoon(function() {
-        doKey("down");
-        doKey("down");
-        doKey("return");
+        synthesizeKey("KEY_ArrowDown");
+        synthesizeKey("KEY_ArrowDown");
+        synthesizeKey("KEY_Enter");
         checkForm("final");
 
         // Restore the element.
         datalist.insertBefore(toRemove, datalist.children[1]);
         expectPopup();
         restoreForm();
-        doKey("down");
+        synthesizeKey("KEY_ArrowDown");
       });
       break;
 
     case 201:
       // Adding an attribute after the first one while on the first then going
       // down and push enter. Value should be the on from the new suggestion.
-      doKey("down");
+      synthesizeKey("KEY_ArrowDown");
       datalist = document.getElementById("suggest");
-      var added = new Option("Foo");
+      let added = new Option("Foo");
       datalist.insertBefore(added, datalist.children[1]);
       waitForMenuChange(4);
       break;
 
     case 202:
-      doKey("down");
-      doKey("down");
-      doKey("return");
+      synthesizeKey("KEY_ArrowDown");
+      synthesizeKey("KEY_ArrowDown");
+      synthesizeKey("KEY_Enter");
       checkForm("Foo");
 
       // Remove the element.
@@ -376,8 +376,8 @@ function runTest() {
       break;
 
     case 204:
-      doKey("down");
-      doKey("return");
+      synthesizeKey("KEY_ArrowDown");
+      synthesizeKey("KEY_Enter");
       checkForm("foo");
 
       datalist = document.getElementById("suggest");
@@ -396,8 +396,8 @@ function runTest() {
       break;
 
     case 206:
-      doKey("down");
-      doKey("return");
+      synthesizeKey("KEY_ArrowDown");
+      synthesizeKey("KEY_Enter");
       checkForm("foobar");
 
       datalist = document.getElementById("suggest");
@@ -410,90 +410,93 @@ function runTest() {
     case 300:
       // Filters with first letter of the word.
       restoreForm();
-      synthesizeKey("f", {});
+      sendString("f");
       expectPopup();
       break;
 
     case 301:
-      doKey("down");
-      doKey("return");
+      synthesizeKey("KEY_ArrowDown");
+      synthesizeKey("KEY_Enter");
       checkForm("final");
       expectPopup();
       restoreForm();
-      doKey("down");
+      synthesizeKey("KEY_ArrowDown");
       break;
 
     case 302:
       // Filter with a letter in the middle of the word.
-      synthesizeKey("i", {});
-      synthesizeKey("n", {});
+      sendString("in");
       waitForMenuChange(1);
       break;
 
     case 303:
       // Continuation of test 302.
-      doKey("down");
-      doKey("return");
+      synthesizeKey("KEY_ArrowDown");
+      synthesizeKey("KEY_Enter");
       checkForm("final");
       expectPopup();
       restoreForm();
-      doKey("down");
+      synthesizeKey("KEY_ArrowDown");
       break;
 
     case 304:
       // Filter is disabled with mozNoFilter.
       input.setAttribute("mozNoFilter", "true");
-      synthesizeKey("f", {});
+      sendString("f");
       waitForMenuChange(3); // no change
       break;
 
     case 305:
       // Continuation of test 304.
-      doKey("down");
-      doKey("return");
+      synthesizeKey("KEY_ArrowDown");
+      synthesizeKey("KEY_Enter");
       checkForm("Google");
       input.removeAttribute("mozNoFilter");
       testNum = 399;
       expectPopup();
       restoreForm();
-      doKey("down");
+      synthesizeKey("KEY_ArrowDown");
       break;
 
     case 400:
       // Check that the input event is fired.
       input.addEventListener("input", function(event) {
         ok(true, "oninput should have been received");
+        ok(event instanceof InputEvent,
+           "input event should be dispatched with InputEvent interface");
         ok(event.bubbles, "input event should bubble");
-        ok(event.cancelable, "input event should be cancelable");
+        ok(!event.cancelable, "input event should be cancelable");
+        is(event.inputType, "insertReplacementText", 'inputType should be "insertReplacementText"');
         checkForm("Google");
         input.blur();
         SimpleTest.finish();
       }, {once: true});
 
-      doKey("down");
+      synthesizeKey("KEY_ArrowDown");
       checkForm("");
-      doKey("return");
+      synthesizeKey("KEY_Enter");
       break;
 
     default:
       ok(false, "Unexpected invocation of test #" + testNum);
       SimpleTest.finish();
-    }
+  }
 }
 
 function waitForMenuChange(expectedCount) {
-    notifyMenuChanged(expectedCount, null, runTest);
+  notifyMenuChanged(expectedCount, null, runTest);
 }
 
 function checkMenuEntries(expectedValues, testNumber) {
-    var actualValues = getMenuEntries();
-    is(actualValues.length, expectedValues.length, testNumber + " Checking length of expected menu");
-    for (var i = 0; i < expectedValues.length; i++)
-        is(actualValues[i], expectedValues[i], testNumber + " Checking menu entry #" + i);
+  let actualValues = getMenuEntries();
+  is(actualValues.length, expectedValues.length, testNumber + " Checking length of expected menu");
+  for (let i = 0; i < expectedValues.length; i++) {
+    is(actualValues[i], expectedValues[i], testNumber + " Checking menu entry #" + i);
+  }
 }
 
 function startTest() {
-    setupFormHistory(runTest);
+  setupFormHistory(runTest);
 }
 
 window.onload = startTest;

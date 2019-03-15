@@ -5,14 +5,14 @@
 /* globals AppConstants, FileUtils */
 /* exported getSubprocessCount, setupHosts, waitForSubprocessExit */
 
-XPCOMUtils.defineLazyModuleGetter(this, "MockRegistry",
-                                  "resource://testing-common/MockRegistry.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "OS",
-                                  "resource://gre/modules/osfile.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "setTimeout",
-                                  "resource://gre/modules/Timer.jsm");
+ChromeUtils.defineModuleGetter(this, "MockRegistry",
+                               "resource://testing-common/MockRegistry.jsm");
+ChromeUtils.defineModuleGetter(this, "OS",
+                               "resource://gre/modules/osfile.jsm");
+ChromeUtils.defineModuleGetter(this, "setTimeout",
+                               "resource://gre/modules/Timer.jsm");
 
-let {Subprocess, SubprocessImpl} = Cu.import("resource://gre/modules/Subprocess.jsm", {});
+let {Subprocess, SubprocessImpl} = ChromeUtils.import("resource://gre/modules/Subprocess.jsm", {});
 
 
 // It's important that we use a space in this directory name to make sure we
@@ -20,28 +20,30 @@ let {Subprocess, SubprocessImpl} = Cu.import("resource://gre/modules/Subprocess.
 let tmpDir = FileUtils.getDir("TmpD", ["Native Messaging"]);
 tmpDir.createUnique(Ci.nsIFile.DIRECTORY_TYPE, FileUtils.PERMS_DIRECTORY);
 
-do_register_cleanup(() => {
+const TYPE_SLUG = AppConstants.platform === "linux" ? "native-messaging-hosts" : "NativeMessagingHosts";
+OS.File.makeDir(OS.Path.join(tmpDir.path, TYPE_SLUG));
+
+registerCleanupFunction(() => {
   tmpDir.remove(true);
 });
 
 function getPath(filename) {
-  return OS.Path.join(tmpDir.path, filename);
+  return OS.Path.join(tmpDir.path, TYPE_SLUG, filename);
 }
 
 const ID = "native@tests.mozilla.org";
 
-
-function* setupHosts(scripts) {
+async function setupHosts(scripts) {
   const PERMS = {unixMode: 0o755};
 
   const env = Cc["@mozilla.org/process/environment;1"].getService(Ci.nsIEnvironment);
-  const pythonPath = yield Subprocess.pathSearch(env.get("PYTHON"));
+  const pythonPath = await Subprocess.pathSearch(env.get("PYTHON"));
 
-  function* writeManifest(script, scriptPath, path) {
+  async function writeManifest(script, scriptPath, path) {
     let body = `#!${pythonPath} -u\n${script.script}`;
 
-    yield OS.File.writeAtomic(scriptPath, body);
-    yield OS.File.setPermissions(scriptPath, PERMS);
+    await OS.File.writeAtomic(scriptPath, body);
+    await OS.File.setPermissions(scriptPath, PERMS);
 
     let manifest = {
       name: script.name,
@@ -52,7 +54,7 @@ function* setupHosts(scripts) {
     };
 
     let manifestPath = getPath(`${script.name}.json`);
-    yield OS.File.writeAtomic(manifestPath, JSON.stringify(manifest));
+    await OS.File.writeAtomic(manifestPath, JSON.stringify(manifest));
 
     return manifestPath;
   }
@@ -62,9 +64,9 @@ function* setupHosts(scripts) {
     case "linux":
       let dirProvider = {
         getFile(property) {
-          if (property == "XREUserNativeMessaging") {
+          if (property == "XREUserNativeManifests") {
             return tmpDir.clone();
-          } else if (property == "XRESysNativeMessaging") {
+          } else if (property == "XRESysNativeManifests") {
             return tmpDir.clone();
           }
           return null;
@@ -72,14 +74,14 @@ function* setupHosts(scripts) {
       };
 
       Services.dirsvc.registerProvider(dirProvider);
-      do_register_cleanup(() => {
+      registerCleanupFunction(() => {
         Services.dirsvc.unregisterProvider(dirProvider);
       });
 
       for (let script of scripts) {
         let path = getPath(`${script.name}.py`);
 
-        yield writeManifest(script, path, path);
+        await writeManifest(script, path, path);
       }
       break;
 
@@ -87,24 +89,26 @@ function* setupHosts(scripts) {
       const REGKEY = String.raw`Software\Mozilla\NativeMessagingHosts`;
 
       let registry = new MockRegistry();
-      do_register_cleanup(() => {
+      registerCleanupFunction(() => {
         registry.shutdown();
       });
 
       for (let script of scripts) {
+        let {scriptExtension = "bat"} = script;
+
         // It's important that we use a space in this filename. See directory
         // name comment above.
-        let batPath = getPath(`batch ${script.name}.bat`);
+        let batPath = getPath(`batch ${script.name}.${scriptExtension}`);
         let scriptPath = getPath(`${script.name}.py`);
 
         let batBody = `@ECHO OFF\n${pythonPath} -u "${scriptPath}" %*\n`;
-        yield OS.File.writeAtomic(batPath, batBody);
+        await OS.File.writeAtomic(batPath, batBody);
 
         // Create absolute and relative path versions of the entry.
         for (let [name, path] of [[script.name, batPath],
                                   [`relative.${script.name}`, OS.Path.basename(batPath)]]) {
           script.name = name;
-          let manifestPath = yield writeManifest(script, scriptPath, path);
+          let manifestPath = await writeManifest(script, scriptPath, path);
 
           registry.setValue(Ci.nsIWindowsRegKey.ROOT_KEY_CURRENT_USER,
                             `${REGKEY}\\${script.name}`, "", manifestPath);

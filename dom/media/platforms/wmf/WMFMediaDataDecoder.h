@@ -5,23 +5,22 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #if !defined(WMFMediaDataDecoder_h_)
-#define WMFMediaDataDecoder_h_
+#  define WMFMediaDataDecoder_h_
 
-#include "MFTDecoder.h"
-#include "PlatformDecoderModule.h"
-#include "WMF.h"
-#include "mozilla/RefPtr.h"
-#include "nsAutoPtr.h"
+#  include "MFTDecoder.h"
+#  include "PlatformDecoderModule.h"
+#  include "WMF.h"
+#  include "mozilla/RefPtr.h"
+#  include "nsAutoPtr.h"
 
 namespace mozilla {
 
 // Encapsulates the initialization of the MFTDecoder appropriate for decoding
 // a given stream, and the process of converting the IMFSample produced
 // by the MFT into a MediaData object.
-class MFTManager
-{
-public:
-  virtual ~MFTManager() { }
+class MFTManager {
+ public:
+  virtual ~MFTManager() {}
 
   // Submit a compressed sample for decoding.
   // This should forward to the MFTDecoder after performing
@@ -34,17 +33,14 @@ public:
   // enough data to produce more output. If this returns a failure code other
   // than MF_E_TRANSFORM_NEED_MORE_INPUT, an error will be reported to the
   // MP4Reader.
-  virtual HRESULT Output(int64_t aStreamOffset,
-                         RefPtr<MediaData>& aOutput) = 0;
+  virtual HRESULT Output(int64_t aStreamOffset, RefPtr<MediaData>& aOutput) = 0;
 
-  virtual void Flush()
-  {
+  virtual void Flush() {
     mDecoder->Flush();
     mSeekTargetThreshold.reset();
   }
 
-  virtual void Drain()
-  {
+  virtual void Drain() {
     if (FAILED(mDecoder->SendMFTMessage(MFT_MESSAGE_COMMAND_DRAIN, 0))) {
       NS_WARNING("Failed to send DRAIN command to MFT");
     }
@@ -53,40 +49,44 @@ public:
   // Destroys all resources.
   virtual void Shutdown() = 0;
 
-  virtual bool IsHardwareAccelerated(nsACString& aFailureReason) const
-  {
+  virtual bool IsHardwareAccelerated(nsACString& aFailureReason) const {
     return false;
   }
 
   virtual TrackInfo::TrackType GetType() = 0;
 
-  virtual const char* GetDescriptionName() const = 0;
+  virtual nsCString GetDescriptionName() const = 0;
 
-  virtual void SetSeekThreshold(const media::TimeUnit& aTime)
-  {
-    mSeekTargetThreshold = Some(aTime);
+  virtual void SetSeekThreshold(const media::TimeUnit& aTime) {
+    if (aTime.IsValid()) {
+      mSeekTargetThreshold = Some(aTime);
+    } else {
+      mSeekTargetThreshold.reset();
+    }
   }
 
-  virtual MediaDataDecoder::ConversionRequired NeedsConversion() const
-  {
+  virtual MediaDataDecoder::ConversionRequired NeedsConversion() const {
     return MediaDataDecoder::ConversionRequired::kNeedNone;
   }
 
-protected:
+ protected:
   // IMFTransform wrapper that performs the decoding.
   RefPtr<MFTDecoder> mDecoder;
 
   Maybe<media::TimeUnit> mSeekTargetThreshold;
 };
 
+DDLoggedTypeDeclNameAndBase(WMFMediaDataDecoder, MediaDataDecoder);
+
 // Decodes audio and video using Windows Media Foundation. Samples are decoded
 // using the MFTDecoder created by the MFTManager. This class implements
 // the higher-level logic that drives mapping the MFT to the async
 // MediaDataDecoder interface. The specifics of decoding the exact stream
 // type are handled by MFTManager and the MFTDecoder it creates.
-class WMFMediaDataDecoder : public MediaDataDecoder
-{
-public:
+class WMFMediaDataDecoder
+    : public MediaDataDecoder,
+      public DecoderDoctorLifeLogger<WMFMediaDataDecoder> {
+ public:
   WMFMediaDataDecoder(MFTManager* aOutputSource, TaskQueue* aTaskQueue);
   ~WMFMediaDataDecoder();
 
@@ -102,21 +102,19 @@ public:
 
   bool IsHardwareAccelerated(nsACString& aFailureReason) const override;
 
-  const char* GetDescriptionName() const override
-  {
-    return mMFTManager ? mMFTManager->GetDescriptionName() : "";
+  nsCString GetDescriptionName() const override {
+    return mMFTManager ? mMFTManager->GetDescriptionName()
+                       : NS_LITERAL_CSTRING("");
   }
 
-  ConversionRequired NeedsConversion() const override
-  {
+  ConversionRequired NeedsConversion() const override {
     MOZ_ASSERT(mMFTManager);
     return mMFTManager->NeedsConversion();
   }
 
   virtual void SetSeekThreshold(const media::TimeUnit& aTime) override;
 
-private:
-
+ private:
   RefPtr<DecodePromise> ProcessError(HRESULT aError, const char* aReason);
 
   // Called on the task queue. Inserts the sample into the decoder, and
@@ -147,8 +145,7 @@ private:
 
   bool mIsShutDown = false;
 
-  enum class DrainStatus
-  {
+  enum class DrainStatus {
     DRAINED,
     DRAINABLE,
     DRAINING,
@@ -160,6 +157,6 @@ private:
   bool mRecordedError = false;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // WMFMediaDataDecoder_h_
+#endif  // WMFMediaDataDecoder_h_

@@ -6,11 +6,7 @@
 // Pref management.
 //
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cu = Components.utils;
-
-Cu.import("resource://testing-common/PromiseTestUtils.jsm");
+ChromeUtils.import("resource://testing-common/PromiseTestUtils.jsm");
 
 ///////////////////
 //
@@ -56,7 +52,7 @@ function do_log_info(aMessage)
 // from the operation callback.
 function executeSoon(fn) {
   var tm = Cc["@mozilla.org/thread-manager;1"].getService(Ci.nsIThreadManager);
-  tm.mainThread.dispatch({run: fn}, Ci.nsIThread.DISPATCH_NORMAL);
+  tm.dispatchToMainThread({run: fn});
 }
 
 //
@@ -69,29 +65,41 @@ function executeSoon(fn) {
 // We wait 3 seconds, just to be safe.
 //
 
-function checkWatchdog(expectInterrupt, continuation) {
+function checkWatchdog(expectInterrupt) {
   var oldTimeout = setScriptTimeout(1);
   var lastWatchdogWakeup = Cu.getWatchdogTimestamp("WatchdogWakeup");
-  setInterruptCallback(function() {
-    // If the watchdog didn't actually trigger the operation callback, ignore
-    // this call. This allows us to test the actual watchdog behavior without
-    // interference from other sites where we trigger the operation callback.
-    if (lastWatchdogWakeup == Cu.getWatchdogTimestamp("WatchdogWakeup")) {
-      return true;
-    }
-    do_check_true(expectInterrupt);
-    setInterruptCallback(undefined);
-    setScriptTimeout(oldTimeout);
-    // Schedule our continuation before we kill this script.
-    executeSoon(continuation);
-    return false;
-  });
-  executeSoon(function() {
-    busyWait(3000);
-    do_check_true(!expectInterrupt);
-    setInterruptCallback(undefined);
-    setScriptTimeout(oldTimeout);
-    continuation();
+
+  return new Promise(resolve => {
+    let inBusyWait = false;
+    setInterruptCallback(function() {
+      // If the watchdog didn't actually trigger the operation callback, ignore
+      // this call. This allows us to test the actual watchdog behavior without
+      // interference from other sites where we trigger the operation callback.
+      if (lastWatchdogWakeup == Cu.getWatchdogTimestamp("WatchdogWakeup")) {
+        return true;
+      }
+      if (!inBusyWait) {
+        Assert.ok(true, "Not in busy wait, ignoring interrupt callback");
+        return true;
+      }
+
+      Assert.ok(expectInterrupt, "Interrupt callback fired");
+      setInterruptCallback(undefined);
+      setScriptTimeout(oldTimeout);
+      // Schedule the promise for resolution before we kill this script.
+      executeSoon(resolve);
+      return false;
+    });
+
+    executeSoon(function() {
+      inBusyWait = true;
+      busyWait(3000);
+      inBusyWait = false;
+      Assert.ok(!expectInterrupt, "Interrupt callback didn't fire");
+      setInterruptCallback(undefined);
+      setScriptTimeout(oldTimeout);
+      resolve();
+    });
   });
 }
 

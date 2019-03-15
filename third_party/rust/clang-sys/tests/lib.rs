@@ -19,7 +19,7 @@ fn parse() {
             0,
             ptr::null_mut(),
             0,
-            CXTranslationUnit_Flags::empty(),
+            0,
         );
         assert!(!tu.is_null());
     }
@@ -41,6 +41,6 @@ fn test() {
 
 #[test]
 fn test_support() {
-    let clang = support::Clang::find(None).unwrap();
+    let clang = support::Clang::find(None, &[]).unwrap();
     println!("{:?}", clang);
 }

@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,422 +8,684 @@
 #define mozilla_Preferences_h
 
 #ifndef MOZILLA_INTERNAL_API
-#error "This header is only usable from within libxul (MOZILLA_INTERNAL_API)."
+#  error "This header is only usable from within libxul (MOZILLA_INTERNAL_API)."
 #endif
 
-#include "nsIPrefService.h"
-#include "nsIPrefBranch.h"
-#include "nsIPrefBranchInternal.h"
-#include "nsIObserver.h"
+#include "mozilla/Atomics.h"
+#include "mozilla/MemoryReporting.h"
+#include "mozilla/Result.h"
+#include "mozilla/StaticPtr.h"
 #include "nsCOMPtr.h"
+#include "nsIObserver.h"
+#include "nsIPrefBranch.h"
+#include "nsIPrefService.h"
+#include "nsString.h"
 #include "nsTArray.h"
 #include "nsWeakReference.h"
-#include "mozilla/MemoryReporting.h"
 
 class nsIFile;
-class nsAdoptingString;
-class nsAdoptingCString;
 
-#ifndef have_PrefChangedFunc_typedef
-typedef void (*PrefChangedFunc)(const char *, void *);
-#define have_PrefChangedFunc_typedef
-#endif
+// The callback function will get passed the pref name which triggered the call
+// and the void* data which was passed to the registered callback function.
+typedef void (*PrefChangedFunc)(const char* aPref, void* aData);
 
-#ifdef DEBUG
-enum pref_initPhase {
-  START,
-  BEGIN_INIT_PREFS,
-  END_INIT_PREFS,
-  BEGIN_ALL_PREFS,
-  END_ALL_PREFS
-};
-
-#define SET_PREF_PHASE(p) Preferences::SetInitPhase(p)
-#else
-#define SET_PREF_PHASE(p) do { } while (0)
-#endif
+class nsPrefBranch;
 
 namespace mozilla {
 
+// A typesafe version of PrefChangeFunc, with its data argument type deduced
+// from the type of the argument passed to RegisterCallback.
+//
+// Note: We specify this as a dependent type TypedPrefChangeFunc<T>::SelfType so
+// that it does not participate in argument type deduction. This allows us to
+// use its implicit conversion constructor, and also allows our Register and
+// Unregister methods to accept non-capturing lambdas (which will not match
+// void(*)(const char*, T*) when used in type deduction) as callback functions.
+template <typename T>
+struct TypedPrefChangeFunc {
+  using Type = TypedPrefChangeFunc<T>;
+  using CallbackType = void (*)(const char*, T*);
+
+  MOZ_IMPLICIT TypedPrefChangeFunc(CallbackType aCallback)
+      : mCallback(aCallback) {}
+
+  template <typename F>
+  MOZ_IMPLICIT TypedPrefChangeFunc(F&& aLambda) : mCallback(aLambda) {}
+
+  operator PrefChangedFunc() const {
+    return reinterpret_cast<PrefChangedFunc>(mCallback);
+  }
+
+  CallbackType mCallback;
+};
+
+// Similar to PrefChangedFunc, but for use with instance methods.
+//
+// Any instance method with this signature may be passed to the
+// PREF_CHANGE_METHOD macro, which will wrap it into a typesafe preference
+// callback function, which accepts a preference name as its first argument, and
+// an instance of the appropriate class as the second.
+//
+// When called, the wrapper will forward the call to the wrapped method on the
+// given instance, with the notified preference as its only argument.
+typedef void(PrefChangedMethod)(const char* aPref);
+
+namespace detail {
+// Helper to extract the instance type from any instance method. For an instance
+// method `Method = U T::*`, InstanceType<Method>::Type returns T.
+template <typename T>
+struct InstanceType;
+
+template <typename T, typename U>
+struct InstanceType<U T::*> {
+  using Type = T;
+};
+
+// A wrapper for a PrefChangeMethod instance method which forwards calls to the
+// wrapped method on the given instance.
+template <typename T, PrefChangedMethod T::*Method>
+void PrefChangeMethod(const char* aPref, T* aInst) {
+  ((*aInst).*Method)(aPref);
+}
+}  // namespace detail
+
+// Creates a wrapper around an instance method, with the signature of
+// PrefChangedMethod, from an arbitrary class, so that it can be used as a
+// preference callback. The closure data passed to RegisterCallback must be an
+// instance of this class.
+//
+// Note: This is implemented as a macro rather than a pure template function
+// because, prior to C++17, value template arguments must have their types
+// fully-specified. Once all of our supported compilers have C++17 support, we
+// can give PrefChangeMethod a single <auto Method> argument, and use
+// PrefChangeMethod<&meth> directly.
+#define PREF_CHANGE_METHOD(meth)         \
+  (&::mozilla::detail::PrefChangeMethod< \
+      ::mozilla::detail::InstanceType<decltype(&meth)>::Type, &meth>)
+
+class PreferenceServiceReporter;
+
 namespace dom {
-class PrefSetting;
-} // namespace dom
+class Pref;
+class PrefValue;
+}  // namespace dom
+
+namespace ipc {
+class FileDescriptor;
+}  // namespace ipc
+
+struct PrefsSizes;
+
+// Xlib.h defines Bool as a macro constant. Don't try to define this enum if
+// it's already been included.
+#ifndef Bool
+
+// Keep this in sync with PrefType in parser/src/lib.rs.
+enum class PrefType : uint8_t {
+  None = 0,  // only used when neither the default nor user value is set
+  String = 1,
+  Int = 2,
+  Bool = 3,
+};
+
+#endif
+
+#ifdef XP_UNIX
+// We need to send two shared memory descriptors to every child process:
+//
+// 1) A read-only/write-protected snapshot of the initial state of the
+//    preference database. This memory is shared between all processes, and
+//    therefore cannot be modified once it has been created.
+//
+// 2) A set of changes on top of the snapshot, containing the current values of
+//    all preferences which have changed since it was created.
+//
+// Since the second set will be different for every process, and the first set
+// cannot be modified, it is unfortunately not possible to combine them into a
+// single file descriptor.
+//
+// XXX: bug 1440207 is about improving how fixed fds such as this are used.
+static const int kPrefsFileDescriptor = 8;
+static const int kPrefMapFileDescriptor = 9;
+#endif
+
+// Keep this in sync with PrefType in parser/src/lib.rs.
+enum class PrefValueKind : uint8_t { Default, User };
 
 class Preferences final : public nsIPrefService,
                           public nsIObserver,
-                          public nsIPrefBranchInternal,
-                          public nsSupportsWeakReference
-{
-public:
-  typedef mozilla::dom::PrefSetting PrefSetting;
+                          public nsIPrefBranch,
+                          public nsSupportsWeakReference {
+  friend class ::nsPrefBranch;
 
+ public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIPREFSERVICE
-  NS_FORWARD_NSIPREFBRANCH(sRootBranch->)
+  NS_FORWARD_NSIPREFBRANCH(mRootBranch->)
   NS_DECL_NSIOBSERVER
 
   Preferences();
 
-  nsresult Init();
-
-  /**
-   * Returns true if the Preferences service is available, false otherwise.
-   */
+  // Returns true if the Preferences service is available, false otherwise.
   static bool IsServiceAvailable();
 
-  /**
-   * Reset loaded user prefs then read them
-   */
-  static nsresult ResetAndReadUserPrefs();
+  // Initialize user prefs from prefs.js/user.js
+  static void InitializeUserPrefs();
 
-  /**
-   * Returns the singleton instance which is addreffed.
-   */
-  static Preferences* GetInstanceForService();
+  // Returns the singleton instance which is addreffed.
+  static already_AddRefed<Preferences> GetInstanceForService();
 
-  /**
-   * Finallizes global members.
-   */
+  // Finallizes global members.
   static void Shutdown();
 
-  /**
-   * Returns shared pref service instance
-   * NOTE: not addreffed.
-   */
-  static nsIPrefService* GetService()
-  {
+  // Returns shared pref service instance NOTE: not addreffed.
+  static nsIPrefService* GetService() {
     NS_ENSURE_TRUE(InitStaticMembers(), nullptr);
     return sPreferences;
   }
 
-  /**
-   * Returns shared pref branch instance.
-   * NOTE: not addreffed.
-   */
-  static nsIPrefBranch* GetRootBranch()
-  {
+  // Returns shared pref branch instance. NOTE: not addreffed.
+  static nsIPrefBranch* GetRootBranch(
+      PrefValueKind aKind = PrefValueKind::User) {
     NS_ENSURE_TRUE(InitStaticMembers(), nullptr);
-    return sRootBranch;
+    return (aKind == PrefValueKind::Default) ? sPreferences->mDefaultRootBranch
+                                             : sPreferences->mRootBranch;
   }
 
-  /**
-   * Returns shared default pref branch instance.
-   * NOTE: not addreffed.
-   */
-  static nsIPrefBranch* GetDefaultRootBranch()
-  {
-    NS_ENSURE_TRUE(InitStaticMembers(), nullptr);
-    return sDefaultRootBranch;
-  }
+  // Gets the type of the pref.
+  static int32_t GetType(const char* aPrefName);
 
-  /**
-   * Gets int or bool type pref value with default value if failed to get
-   * the pref.
-   */
-  static bool GetBool(const char* aPref, bool aDefault = false)
-  {
-    bool result = aDefault;
-    GetBool(aPref, &result);
+  // Fallible value getters. When `aKind` is `User` they will get the user
+  // value if possible, and fall back to the default value otherwise.
+  static nsresult GetBool(const char* aPrefName, bool* aResult,
+                          PrefValueKind aKind = PrefValueKind::User);
+  static nsresult GetInt(const char* aPrefName, int32_t* aResult,
+                         PrefValueKind aKind = PrefValueKind::User);
+  static nsresult GetUint(const char* aPrefName, uint32_t* aResult,
+                          PrefValueKind aKind = PrefValueKind::User) {
+    return GetInt(aPrefName, reinterpret_cast<int32_t*>(aResult), aKind);
+  }
+  static nsresult GetFloat(const char* aPrefName, float* aResult,
+                           PrefValueKind aKind = PrefValueKind::User);
+  static nsresult GetCString(const char* aPrefName, nsACString& aResult,
+                             PrefValueKind aKind = PrefValueKind::User);
+  static nsresult GetString(const char* aPrefName, nsAString& aResult,
+                            PrefValueKind aKind = PrefValueKind::User);
+  static nsresult GetLocalizedCString(
+      const char* aPrefName, nsACString& aResult,
+      PrefValueKind aKind = PrefValueKind::User);
+  static nsresult GetLocalizedString(const char* aPrefName, nsAString& aResult,
+                                     PrefValueKind aKind = PrefValueKind::User);
+  static nsresult GetComplex(const char* aPrefName, const nsIID& aType,
+                             void** aResult,
+                             PrefValueKind aKind = PrefValueKind::User);
+
+  // Infallible getters of user or default values, with fallback results on
+  // failure. When `aKind` is `User` they will get the user value if possible,
+  // and fall back to the default value otherwise.
+  static bool GetBool(const char* aPrefName, bool aFallback = false,
+                      PrefValueKind aKind = PrefValueKind::User) {
+    bool result = aFallback;
+    GetBool(aPrefName, &result, aKind);
+    return result;
+  }
+  static int32_t GetInt(const char* aPrefName, int32_t aFallback = 0,
+                        PrefValueKind aKind = PrefValueKind::User) {
+    int32_t result = aFallback;
+    GetInt(aPrefName, &result, aKind);
+    return result;
+  }
+  static uint32_t GetUint(const char* aPrefName, uint32_t aFallback = 0,
+                          PrefValueKind aKind = PrefValueKind::User) {
+    uint32_t result = aFallback;
+    GetUint(aPrefName, &result, aKind);
+    return result;
+  }
+  static float GetFloat(const char* aPrefName, float aFallback = 0.0f,
+                        PrefValueKind aKind = PrefValueKind::User) {
+    float result = aFallback;
+    GetFloat(aPrefName, &result, aKind);
     return result;
   }
 
-  static int32_t GetInt(const char* aPref, int32_t aDefault = 0)
-  {
-    int32_t result = aDefault;
-    GetInt(aPref, &result);
-    return result;
+  // Value setters. These fail if run outside the parent process.
+
+  static nsresult SetBool(const char* aPrefName, bool aValue,
+                          PrefValueKind aKind = PrefValueKind::User);
+  static nsresult SetInt(const char* aPrefName, int32_t aValue,
+                         PrefValueKind aKind = PrefValueKind::User);
+  static nsresult SetCString(const char* aPrefName, const nsACString& aValue,
+                             PrefValueKind aKind = PrefValueKind::User);
+
+  static nsresult SetUint(const char* aPrefName, uint32_t aValue,
+                          PrefValueKind aKind = PrefValueKind::User) {
+    return SetInt(aPrefName, static_cast<int32_t>(aValue), aKind);
   }
 
-  static uint32_t GetUint(const char* aPref, uint32_t aDefault = 0)
-  {
-    uint32_t result = aDefault;
-    GetUint(aPref, &result);
-    return result;
+  static nsresult SetFloat(const char* aPrefName, float aValue,
+                           PrefValueKind aKind = PrefValueKind::User) {
+    nsAutoCString value;
+    value.AppendFloat(aValue);
+    return SetCString(aPrefName, value, aKind);
   }
 
-  static float GetFloat(const char* aPref, float aDefault = 0)
-  {
-    float result = aDefault;
-    GetFloat(aPref, &result);
-    return result;
+  static nsresult SetCString(const char* aPrefName, const char* aValue,
+                             PrefValueKind aKind = PrefValueKind::User) {
+    return Preferences::SetCString(aPrefName, nsDependentCString(aValue),
+                                   aKind);
   }
 
-  /**
-   * Gets char type pref value directly.  If failed, the get() of result
-   * returns nullptr.  Even if succeeded but the result was empty string, the
-   * get() does NOT return nullptr.  So, you can check whether the method
-   * succeeded or not by:
-   *
-   * nsAdoptingString value = Prefereces::GetString("foo.bar");
-   * if (!value) {
-   *   // failed
-   * }
-   *
-   * Be aware.  If you wrote as:
-   *
-   * nsAutoString value = Preferences::GetString("foo.bar");
-   * if (!value.get()) {
-   *   // the condition is always FALSE!!
-   * }
-   *
-   * The value.get() doesn't return nullptr. You must use nsAdoptingString
-   * when you need to check whether it was failure or not.
-   */
-  static nsAdoptingCString GetCString(const char* aPref);
-  static nsAdoptingString GetString(const char* aPref);
-  static nsAdoptingCString GetLocalizedCString(const char* aPref);
-  static nsAdoptingString GetLocalizedString(const char* aPref);
-
-  /**
-   * Gets int, float, or bool type pref value with raw return value of
-   * nsIPrefBranch.
-   *
-   * @param aPref       A pref name.
-   * @param aResult     Must not be nullptr.  The value is never modified
-   *                    when these methods fail.
-   */
-  static nsresult GetBool(const char* aPref, bool* aResult);
-  static nsresult GetInt(const char* aPref, int32_t* aResult);
-  static nsresult GetFloat(const char* aPref, float* aResult);
-  static nsresult GetUint(const char* aPref, uint32_t* aResult)
-  {
-    int32_t result;
-    nsresult rv = GetInt(aPref, &result);
-    if (NS_SUCCEEDED(rv)) {
-      *aResult = static_cast<uint32_t>(result);
-    }
-    return rv;
+  static nsresult SetString(const char* aPrefName, const char16ptr_t aValue,
+                            PrefValueKind aKind = PrefValueKind::User) {
+    return Preferences::SetCString(aPrefName, NS_ConvertUTF16toUTF8(aValue),
+                                   aKind);
   }
 
-  /**
-   * Gets string type pref value with raw return value of nsIPrefBranch.
-   *
-   * @param aPref       A pref name.
-   * @param aResult     Must not be nullptr.  The value is never modified
-   *                    when these methods fail.
-   */
-  static nsresult GetCString(const char* aPref, nsACString* aResult);
-  static nsresult GetString(const char* aPref, nsAString* aResult);
-  static nsresult GetLocalizedCString(const char* aPref, nsACString* aResult);
-  static nsresult GetLocalizedString(const char* aPref, nsAString* aResult);
-
-  static nsresult GetComplex(const char* aPref, const nsIID &aType,
-                             void** aResult);
-
-  /**
-   * Sets various type pref values.
-   */
-  static nsresult SetBool(const char* aPref, bool aValue);
-  static nsresult SetInt(const char* aPref, int32_t aValue);
-  static nsresult SetUint(const char* aPref, uint32_t aValue)
-  {
-    return SetInt(aPref, static_cast<int32_t>(aValue));
+  static nsresult SetString(const char* aPrefName, const nsAString& aValue,
+                            PrefValueKind aKind = PrefValueKind::User) {
+    return Preferences::SetCString(aPrefName, NS_ConvertUTF16toUTF8(aValue),
+                                   aKind);
   }
-  static nsresult SetFloat(const char* aPref, float aValue);
-  static nsresult SetCString(const char* aPref, const char* aValue);
-  static nsresult SetCString(const char* aPref, const nsACString &aValue);
-  static nsresult SetString(const char* aPref, const char16ptr_t aValue);
-  static nsresult SetString(const char* aPref, const nsAString &aValue);
 
-  static nsresult SetComplex(const char* aPref, const nsIID &aType,
-                             nsISupports* aValue);
+  static nsresult SetComplex(const char* aPrefName, const nsIID& aType,
+                             nsISupports* aValue,
+                             PrefValueKind aKind = PrefValueKind::User);
 
-  /**
-   * Clears user set pref.
-   */
-  static nsresult ClearUser(const char* aPref);
+  static nsresult Lock(const char* aPrefName);
+  static nsresult Unlock(const char* aPrefName);
+  static bool IsLocked(const char* aPrefName);
 
-  /**
-   * Whether the pref has a user value or not.
-   */
+  // Clears user set pref. Fails if run outside the parent process.
+  static nsresult ClearUser(const char* aPrefName);
+
+  // Whether the pref has a user value or not.
   static bool HasUserValue(const char* aPref);
 
-  /**
-   * Gets the type of the pref.
-   */
-  static int32_t GetType(const char* aPref);
+  // Adds/Removes the observer for the root pref branch. See nsIPrefBranch.idl
+  // for details.
+  static nsresult AddStrongObserver(nsIObserver* aObserver,
+                                    const nsACString& aPref);
+  static nsresult AddWeakObserver(nsIObserver* aObserver,
+                                  const nsACString& aPref);
+  static nsresult RemoveObserver(nsIObserver* aObserver,
+                                 const nsACString& aPref);
 
-  /**
-   * Adds/Removes the observer for the root pref branch.
-   * The observer is referenced strongly if AddStrongObserver is used.  On the
-   * other hand, it is referenced weakly, if AddWeakObserver is used.
-   * See nsIPrefBranch.idl for details.
-   */
-  static nsresult AddStrongObserver(nsIObserver* aObserver, const char* aPref);
-  static nsresult AddWeakObserver(nsIObserver* aObserver, const char* aPref);
-  static nsresult RemoveObserver(nsIObserver* aObserver, const char* aPref);
+  template <int N>
+  static nsresult AddStrongObserver(nsIObserver* aObserver,
+                                    const char (&aPref)[N]) {
+    return AddStrongObserver(aObserver, nsLiteralCString(aPref));
+  }
+  template <int N>
+  static nsresult AddWeakObserver(nsIObserver* aObserver,
+                                  const char (&aPref)[N]) {
+    return AddWeakObserver(aObserver, nsLiteralCString(aPref));
+  }
+  template <int N>
+  static nsresult RemoveObserver(nsIObserver* aObserver,
+                                 const char (&aPref)[N]) {
+    return RemoveObserver(aObserver, nsLiteralCString(aPref));
+  }
 
-  /**
-   * Adds/Removes two or more observers for the root pref branch.
-   * Pass to aPrefs an array of const char* whose last item is nullptr.
-   */
+  // Adds/Removes two or more observers for the root pref branch. Pass to
+  // aPrefs an array of const char* whose last item is nullptr.
+  // Note: All preference strings *must* be statically-allocated string
+  // literals.
   static nsresult AddStrongObservers(nsIObserver* aObserver,
                                      const char** aPrefs);
-  static nsresult AddWeakObservers(nsIObserver* aObserver,
-                                   const char** aPrefs);
-  static nsresult RemoveObservers(nsIObserver* aObserver,
-                                  const char** aPrefs);
+  static nsresult AddWeakObservers(nsIObserver* aObserver, const char** aPrefs);
+  static nsresult RemoveObservers(nsIObserver* aObserver, const char** aPrefs);
 
-  /**
-   * Registers/Unregisters the callback function for the aPref.
-   *
-   * Pass ExactMatch for aMatchKind to only get callbacks for
-   * exact matches and not prefixes.
-   */
+  // Registers/Unregisters the callback function for the aPref.
+  template <typename T = void>
+  static nsresult RegisterCallback(
+      typename TypedPrefChangeFunc<T>::Type aCallback, const nsACString& aPref,
+      T* aClosure = nullptr) {
+    return RegisterCallback(aCallback, aPref, aClosure, ExactMatch);
+  }
+
+  template <typename T = void>
+  static nsresult UnregisterCallback(
+      typename TypedPrefChangeFunc<T>::Type aCallback, const nsACString& aPref,
+      T* aClosure = nullptr) {
+    return UnregisterCallback(aCallback, aPref, aClosure, ExactMatch);
+  }
+
+  // Like RegisterCallback, but also calls the callback immediately for
+  // initialization.
+  template <typename T = void>
+  static nsresult RegisterCallbackAndCall(
+      typename TypedPrefChangeFunc<T>::Type aCallback, const nsACString& aPref,
+      T* aClosure = nullptr) {
+    return RegisterCallbackAndCall(aCallback, aPref, aClosure, ExactMatch);
+  }
+
+  // Like RegisterCallback, but registers a callback for a prefix of multiple
+  // pref names, not a single pref name.
+  template <typename T = void>
+  static nsresult RegisterPrefixCallback(
+      typename TypedPrefChangeFunc<T>::Type aCallback, const nsACString& aPref,
+      T* aClosure = nullptr) {
+    return RegisterCallback(aCallback, aPref, aClosure, PrefixMatch);
+  }
+
+  // Like RegisterPrefixCallback, but also calls the callback immediately for
+  // initialization.
+  template <typename T = void>
+  static nsresult RegisterPrefixCallbackAndCall(
+      typename TypedPrefChangeFunc<T>::Type aCallback, const nsACString& aPref,
+      T* aClosure = nullptr) {
+    return RegisterCallbackAndCall(aCallback, aPref, aClosure, PrefixMatch);
+  }
+
+  // Unregister a callback registered with RegisterPrefixCallback or
+  // RegisterPrefixCallbackAndCall.
+  template <typename T = void>
+  static nsresult UnregisterPrefixCallback(
+      typename TypedPrefChangeFunc<T>::Type aCallback, const nsACString& aPref,
+      T* aClosure = nullptr) {
+    return UnregisterCallback(aCallback, aPref, aClosure, PrefixMatch);
+  }
+
+  // Variants of the above which register a single callback to handle multiple
+  // preferences.
+  //
+  // The array of preference names must be null terminated. It may be
+  // dynamically allocated, but the caller is responsible for keeping it alive
+  // until the callback is unregistered.
+  //
+  // Also note that the exact same aPrefs pointer must be passed to the
+  // Unregister call as was passed to the Register call.
+  template <typename T = void>
+  static nsresult RegisterCallbacks(
+      typename TypedPrefChangeFunc<T>::Type aCallback, const char** aPrefs,
+      T* aClosure = nullptr) {
+    return RegisterCallbacks(aCallback, aPrefs, aClosure, ExactMatch);
+  }
+  static nsresult RegisterCallbacksAndCall(PrefChangedFunc aCallback,
+                                           const char** aPrefs,
+                                           void* aClosure = nullptr);
+  template <typename T = void>
+  static nsresult UnregisterCallbacks(
+      typename TypedPrefChangeFunc<T>::Type aCallback, const char** aPrefs,
+      T* aClosure = nullptr) {
+    return UnregisterCallbacks(aCallback, aPrefs, aClosure, ExactMatch);
+  }
+  template <typename T = void>
+  static nsresult RegisterPrefixCallbacks(
+      typename TypedPrefChangeFunc<T>::Type aCallback, const char** aPrefs,
+      T* aClosure = nullptr) {
+    return RegisterCallbacks(aCallback, aPrefs, aClosure, PrefixMatch);
+  }
+  template <typename T = void>
+  static nsresult UnregisterPrefixCallbacks(
+      typename TypedPrefChangeFunc<T>::Type aCallback, const char** aPrefs,
+      T* aClosure = nullptr) {
+    return UnregisterCallbacks(aCallback, aPrefs, aClosure, PrefixMatch);
+  }
+
+  template <int N, typename T = void>
+  static nsresult RegisterCallback(
+      typename TypedPrefChangeFunc<T>::Type aCallback, const char (&aPref)[N],
+      T* aClosure = nullptr) {
+    return RegisterCallback(aCallback, nsLiteralCString(aPref), aClosure,
+                            ExactMatch);
+  }
+
+  template <int N, typename T = void>
+  static nsresult UnregisterCallback(
+      typename TypedPrefChangeFunc<T>::Type aCallback, const char (&aPref)[N],
+      T* aClosure = nullptr) {
+    return UnregisterCallback(aCallback, nsLiteralCString(aPref), aClosure,
+                              ExactMatch);
+  }
+
+  template <int N, typename T = void>
+  static nsresult RegisterCallbackAndCall(
+      typename TypedPrefChangeFunc<T>::Type aCallback, const char (&aPref)[N],
+      T* aClosure = nullptr) {
+    return RegisterCallbackAndCall(aCallback, nsLiteralCString(aPref), aClosure,
+                                   ExactMatch);
+  }
+
+  template <int N, typename T = void>
+  static nsresult RegisterPrefixCallback(
+      typename TypedPrefChangeFunc<T>::Type aCallback, const char (&aPref)[N],
+      T* aClosure = nullptr) {
+    return RegisterCallback(aCallback, nsLiteralCString(aPref), aClosure,
+                            PrefixMatch);
+  }
+
+  template <int N, typename T = void>
+  static nsresult RegisterPrefixCallbackAndCall(
+      typename TypedPrefChangeFunc<T>::Type aCallback, const char (&aPref)[N],
+      T* aClosure = nullptr) {
+    return RegisterCallbackAndCall(aCallback, nsLiteralCString(aPref), aClosure,
+                                   PrefixMatch);
+  }
+
+  template <int N, typename T = void>
+  static nsresult UnregisterPrefixCallback(
+      typename TypedPrefChangeFunc<T>::Type aCallback, const char (&aPref)[N],
+      T* aClosure = nullptr) {
+    return UnregisterCallback(aCallback, nsLiteralCString(aPref), aClosure,
+                              PrefixMatch);
+  }
+
+  // Adds the aVariable to cache table. |aVariable| must be a pointer for a
+  // static variable. The value will be modified when the pref value is changed
+  // but note that even if you modified it, the value isn't assigned to the
+  // pref.
+  static nsresult AddBoolVarCache(bool* aVariable, const nsACString& aPref,
+                                  bool aDefault = false,
+                                  bool aSkipAssignment = false);
+  template <MemoryOrdering Order>
+  static nsresult AddAtomicBoolVarCache(Atomic<bool, Order>* aVariable,
+                                        const nsACString& aPref,
+                                        bool aDefault = false,
+                                        bool aSkipAssignment = false);
+  static nsresult AddIntVarCache(int32_t* aVariable, const nsACString& aPref,
+                                 int32_t aDefault = 0,
+                                 bool aSkipAssignment = false);
+  template <MemoryOrdering Order>
+  static nsresult AddAtomicIntVarCache(Atomic<int32_t, Order>* aVariable,
+                                       const nsACString& aPref,
+                                       int32_t aDefault = 0,
+                                       bool aSkipAssignment = false);
+  static nsresult AddUintVarCache(uint32_t* aVariable, const nsACString& aPref,
+                                  uint32_t aDefault = 0,
+                                  bool aSkipAssignment = false);
+  template <MemoryOrdering Order>
+  static nsresult AddAtomicUintVarCache(Atomic<uint32_t, Order>* aVariable,
+                                        const nsACString& aPref,
+                                        uint32_t aDefault = 0,
+                                        bool aSkipAssignment = false);
+  static nsresult AddFloatVarCache(float* aVariable, const nsACString& aPref,
+                                   float aDefault = 0.0f,
+                                   bool aSkipAssignment = false);
+
+  template <int N>
+  static nsresult AddBoolVarCache(bool* aVariable, const char (&aPref)[N],
+                                  bool aDefault = false,
+                                  bool aSkipAssignment = false) {
+    return AddBoolVarCache(aVariable, nsLiteralCString(aPref), aDefault,
+                           aSkipAssignment);
+  }
+  template <MemoryOrdering Order, int N>
+  static nsresult AddAtomicBoolVarCache(Atomic<bool, Order>* aVariable,
+                                        const char (&aPref)[N],
+                                        bool aDefault = false,
+                                        bool aSkipAssignment = false) {
+    return AddAtomicBoolVarCache<Order>(aVariable, nsLiteralCString(aPref),
+                                        aDefault, aSkipAssignment);
+  }
+  template <int N>
+  static nsresult AddIntVarCache(int32_t* aVariable, const char (&aPref)[N],
+                                 int32_t aDefault = 0,
+                                 bool aSkipAssignment = false) {
+    return AddIntVarCache(aVariable, nsLiteralCString(aPref), aDefault,
+                          aSkipAssignment);
+  }
+  template <MemoryOrdering Order, int N>
+  static nsresult AddAtomicIntVarCache(Atomic<int32_t, Order>* aVariable,
+                                       const char (&aPref)[N],
+                                       int32_t aDefault = 0,
+                                       bool aSkipAssignment = false) {
+    return AddAtomicIntVarCache<Order>(aVariable, nsLiteralCString(aPref),
+                                       aDefault, aSkipAssignment);
+  }
+  template <int N>
+  static nsresult AddUintVarCache(uint32_t* aVariable, const char (&aPref)[N],
+                                  uint32_t aDefault = 0,
+                                  bool aSkipAssignment = false) {
+    return AddUintVarCache(aVariable, nsLiteralCString(aPref), aDefault,
+                           aSkipAssignment);
+  }
+  template <MemoryOrdering Order, int N>
+  static nsresult AddAtomicUintVarCache(Atomic<uint32_t, Order>* aVariable,
+                                        const char (&aPref)[N],
+                                        uint32_t aDefault = 0,
+                                        bool aSkipAssignment = false) {
+    return AddAtomicUintVarCache<Order>(aVariable, nsLiteralCString(aPref),
+                                        aDefault, aSkipAssignment);
+  }
+  template <int N>
+  static nsresult AddFloatVarCache(float* aVariable, const char (&aPref)[N],
+                                   float aDefault = 0.0f,
+                                   bool aSkipAssignment = false) {
+    return AddFloatVarCache(aVariable, nsLiteralCString(aPref), aDefault,
+                            aSkipAssignment);
+  }
+
+  // When a content process is created these methods are used to pass changed
+  // prefs in bulk from the parent process, via shared memory.
+  static void SerializePreferences(nsCString& aStr);
+  static void DeserializePreferences(char* aStr, size_t aPrefsLen);
+
+  static mozilla::ipc::FileDescriptor EnsureSnapshot(size_t* aSize);
+  static void InitSnapshot(const mozilla::ipc::FileDescriptor&, size_t aSize);
+
+  // When a single pref is changed in the parent process, these methods are
+  // used to pass the update to content processes.
+  static void GetPreference(dom::Pref* aPref);
+  static void SetPreference(const dom::Pref& aPref);
+
+#ifdef DEBUG
+  static bool ArePrefsInitedInContentProcess();
+#endif
+
+  static void AddSizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf,
+                                     PrefsSizes& aSizes);
+
+  static void HandleDirty();
+
+  // Explicitly choosing synchronous or asynchronous (if allowed) preferences
+  // file write. Only for the default file.  The guarantee for the "blocking"
+  // is that when it returns, the file on disk reflect the current state of
+  // preferences.
+  nsresult SavePrefFileBlocking();
+  nsresult SavePrefFileAsynchronous();
+
+ private:
+  virtual ~Preferences();
+
+  nsresult NotifyServiceObservers(const char* aSubject);
+
+  // Loads the prefs.js file from the profile, or creates a new one. Returns
+  // the prefs file if successful, or nullptr on failure.
+  already_AddRefed<nsIFile> ReadSavedPrefs();
+
+  // Loads the user.js file from the profile if present.
+  void ReadUserOverridePrefs();
+
+  nsresult MakeBackupPrefFile(nsIFile* aFile);
+
+  // Default pref file save can be blocking or not.
+  enum class SaveMethod { Blocking, Asynchronous };
+
+  // Off main thread is only respected for the default aFile value (nullptr).
+  nsresult SavePrefFileInternal(nsIFile* aFile, SaveMethod aSaveMethod);
+  nsresult WritePrefFile(nsIFile* aFile, SaveMethod aSaveMethod);
+
+  // If this is false, only blocking writes, on main thread are allowed.
+  bool AllowOffMainThreadSave();
+
+  // Helpers for implementing
+  // Register(Prefix)Callback/Unregister(Prefix)Callback.
+ public:
+  // Public so the ValueObserver classes can use it.
   enum MatchKind {
     PrefixMatch,
     ExactMatch,
   };
+
+ private:
+  static void SetupTelemetryPref();
+  static mozilla::Result<mozilla::Ok, const char*> InitInitialObjects(
+      bool aIsStartup);
+
   static nsresult RegisterCallback(PrefChangedFunc aCallback,
-                                   const char* aPref,
-                                   void* aClosure = nullptr,
-                                   MatchKind aMatchKind = PrefixMatch);
+                                   const nsACString& aPref, void* aClosure,
+                                   MatchKind aMatchKind,
+                                   bool aIsPriority = false);
   static nsresult UnregisterCallback(PrefChangedFunc aCallback,
-                                     const char* aPref,
-                                     void* aClosure = nullptr,
-                                     MatchKind aMatchKind = PrefixMatch);
-  // Like RegisterCallback, but also calls the callback immediately for
-  // initialization.
+                                     const nsACString& aPref, void* aClosure,
+                                     MatchKind aMatchKind);
   static nsresult RegisterCallbackAndCall(PrefChangedFunc aCallback,
-                                          const char* aPref,
-                                          void* aClosure = nullptr,
-                                          MatchKind aMatchKind = PrefixMatch);
+                                          const nsACString& aPref,
+                                          void* aClosure, MatchKind aMatchKind);
 
-  /**
-   * Adds the aVariable to cache table.  aVariable must be a pointer for a
-   * static variable.  The value will be modified when the pref value is
-   * changed but note that even if you modified it, the value isn't assigned to
-   * the pref.
-   */
-  static nsresult AddBoolVarCache(bool* aVariable,
-                                  const char* aPref,
-                                  bool aDefault = false);
-  static nsresult AddIntVarCache(int32_t* aVariable,
-                                 const char* aPref,
-                                 int32_t aDefault = 0);
-  static nsresult AddUintVarCache(uint32_t* aVariable,
-                                  const char* aPref,
-                                  uint32_t aDefault = 0);
-  template <MemoryOrdering Order>
-  static nsresult AddAtomicUintVarCache(Atomic<uint32_t, Order>* aVariable,
-                                        const char* aPref,
-                                        uint32_t aDefault = 0);
-  static nsresult AddFloatVarCache(float* aVariable,
-                                   const char* aPref,
-                                   float aDefault = 0.0f);
+  static nsresult RegisterCallbacks(PrefChangedFunc aCallback,
+                                    const char** aPrefs, void* aClosure,
+                                    MatchKind aMatchKind);
+  static nsresult UnregisterCallbacks(PrefChangedFunc aCallback,
+                                      const char** aPrefs, void* aClosure,
+                                      MatchKind aMatchKind);
 
-  /**
-   * Gets the default bool, int or uint value of the pref.
-   * The result is raw result of nsIPrefBranch::Get*Pref().
-   * If the pref could have any value, you needed to use these methods.
-   * If not so, you could use below methods.
-   */
-  static nsresult GetDefaultBool(const char* aPref, bool* aResult);
-  static nsresult GetDefaultInt(const char* aPref, int32_t* aResult);
-  static nsresult GetDefaultUint(const char* aPref, uint32_t* aResult)
-  {
-    return GetDefaultInt(aPref, reinterpret_cast<int32_t*>(aResult));
+  template <typename T>
+  static nsresult RegisterCallbackImpl(PrefChangedFunc aCallback, T& aPref,
+                                       void* aClosure, MatchKind aMatchKind,
+                                       bool aIsPriority = false);
+  template <typename T>
+  static nsresult UnregisterCallbackImpl(PrefChangedFunc aCallback, T& aPref,
+                                         void* aClosure, MatchKind aMatchKind);
+
+  static nsresult RegisterCallback(PrefChangedFunc aCallback, const char* aPref,
+                                   void* aClosure, MatchKind aMatchKind,
+                                   bool aIsPriority = false) {
+    return RegisterCallback(aCallback, nsDependentCString(aPref), aClosure,
+                            aMatchKind, aIsPriority);
+  }
+  static nsresult UnregisterCallback(PrefChangedFunc aCallback,
+                                     const char* aPref, void* aClosure,
+                                     MatchKind aMatchKind) {
+    return UnregisterCallback(aCallback, nsDependentCString(aPref), aClosure,
+                              aMatchKind);
+  }
+  static nsresult RegisterCallbackAndCall(PrefChangedFunc aCallback,
+                                          const char* aPref, void* aClosure,
+                                          MatchKind aMatchKind) {
+    return RegisterCallbackAndCall(aCallback, nsDependentCString(aPref),
+                                   aClosure, aMatchKind);
   }
 
-  /**
-   * Gets the default bool, int or uint value of the pref directly.
-   * You can set an invalid value of the pref to aFailedResult.  If these
-   * methods failed to get the default value, they would return the
-   * aFailedResult value.
-   */
-  static bool GetDefaultBool(const char* aPref, bool aFailedResult)
-  {
-    bool result;
-    return NS_SUCCEEDED(GetDefaultBool(aPref, &result)) ? result :
-                                                          aFailedResult;
-  }
-  static int32_t GetDefaultInt(const char* aPref, int32_t aFailedResult)
-  {
-    int32_t result;
-    return NS_SUCCEEDED(GetDefaultInt(aPref, &result)) ? result : aFailedResult;
-  }
-  static uint32_t GetDefaultUint(const char* aPref, uint32_t aFailedResult)
-  {
-   return static_cast<uint32_t>(
-     GetDefaultInt(aPref, static_cast<int32_t>(aFailedResult)));
-  }
+ private:
+  nsCOMPtr<nsIFile> mCurrentFile;
+  bool mDirty = false;
+  bool mProfileShutdown = false;
+  // We wait a bit after prefs are dirty before writing them. In this period,
+  // mDirty and mSavePending will both be true.
+  bool mSavePending = false;
 
-  /**
-   * Gets the default value of the char type pref.
-   * If the get() of the result returned nullptr, that meant the value didn't
-   * have default value.
-   *
-   * See the comment at definition at GetString() and GetCString() for more
-   * details of the result.
-   */
-  static nsAdoptingString GetDefaultString(const char* aPref);
-  static nsAdoptingCString GetDefaultCString(const char* aPref);
-  static nsAdoptingString GetDefaultLocalizedString(const char* aPref);
-  static nsAdoptingCString GetDefaultLocalizedCString(const char* aPref);
+  nsCOMPtr<nsIPrefBranch> mRootBranch;
+  nsCOMPtr<nsIPrefBranch> mDefaultRootBranch;
 
-  static nsresult GetDefaultCString(const char* aPref, nsACString* aResult);
-  static nsresult GetDefaultString(const char* aPref, nsAString* aResult);
-  static nsresult GetDefaultLocalizedCString(const char* aPref,
-                                             nsACString* aResult);
-  static nsresult GetDefaultLocalizedString(const char* aPref,
-                                            nsAString* aResult);
+  static StaticRefPtr<Preferences> sPreferences;
+  static bool sShutdown;
 
-  static nsresult GetDefaultComplex(const char* aPref, const nsIID &aType,
-                                    void** aResult);
-
-  /**
-   * Gets the type of the pref.
-   */
-  static int32_t GetDefaultType(const char* aPref);
-
-  // Used to synchronise preferences between chrome and content processes.
-  static void GetPreferences(InfallibleTArray<PrefSetting>* aPrefs);
-  static void GetPreference(PrefSetting* aPref);
-  static void SetPreference(const PrefSetting& aPref);
-
-  static void SetInitPreferences(nsTArray<PrefSetting>* aPrefs);
-
-#ifdef DEBUG
-  static void SetInitPhase(pref_initPhase phase);
-#endif
-
-  static int64_t SizeOfIncludingThisAndOtherStuff(mozilla::MallocSizeOf aMallocSizeOf);
-
-  static void DirtyCallback();
-
-protected:
-  virtual ~Preferences();
-
-  nsresult NotifyServiceObservers(const char *aSubject);
-  /**
-   * Reads the default pref file or, if that failed, try to save a new one.
-   *
-   * @return NS_OK if either action succeeded,
-   *         or the error code related to the read attempt.
-   */
-  nsresult UseDefaultPrefFile();
-  nsresult UseUserPrefFile();
-  nsresult ReadAndOwnUserPrefFile(nsIFile *aFile);
-  nsresult ReadAndOwnSharedUserPrefFile(nsIFile *aFile);
-  nsresult SavePrefFileInternal(nsIFile* aFile);
-  nsresult WritePrefFile(nsIFile* aFile);
-  nsresult MakeBackupPrefFile(nsIFile *aFile);
-
-private:
-  nsCOMPtr<nsIFile>        mCurrentFile;
-  bool                     mDirty;
-
-  static Preferences*      sPreferences;
-  static nsIPrefBranch*    sRootBranch;
-  static nsIPrefBranch*    sDefaultRootBranch;
-  static bool              sShutdown;
-
-  /**
-   * Init static members.  TRUE if it succeeded.  Otherwise, FALSE.
-   */
+  // Init static members. Returns true on success.
   static bool InitStaticMembers();
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_Preferences_h
+#endif  // mozilla_Preferences_h

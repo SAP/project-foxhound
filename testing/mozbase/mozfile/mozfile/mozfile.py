@@ -6,8 +6,9 @@
 
 # We don't import all modules at the top for performance reasons. See Bug 1008943
 
-from __future__ import absolute_import
+from __future__ import absolute_import, print_function
 
+from six.moves import urllib
 from contextlib import contextmanager
 import errno
 import os
@@ -55,23 +56,14 @@ def extract_zip(src, dest):
         try:
             bundle = zipfile.ZipFile(src)
         except Exception:
-            print "src: %s" % src
+            print("src: %s" % src)
             raise
 
     namelist = bundle.namelist()
 
     for name in namelist:
+        bundle.extract(name, dest)
         filename = os.path.realpath(os.path.join(dest, name))
-        if name.endswith('/'):
-            if not os.path.isdir(filename):
-                os.makedirs(filename)
-        else:
-            path = os.path.dirname(filename)
-            if not os.path.isdir(path):
-                os.makedirs(path)
-            _dest = open(filename, 'wb')
-            _dest.write(bundle.read(name))
-            _dest.close()
         mode = bundle.getinfo(name).external_attr >> 16 & 0x1FF
         # Only update permissions if attributes are set. Otherwise fallback to the defaults.
         if mode:
@@ -161,8 +153,8 @@ def _call_windows_retry(func, args=(), retry_max=5, retry_delay=0.5):
 
             retry_count += 1
 
-            print '%s() failed for "%s". Reason: %s (%s). Retrying...' % \
-                (func.__name__, args, e.strerror, e.errno)
+            print('%s() failed for "%s". Reason: %s (%s). Retrying...' %
+                  (func.__name__, args, e.strerror, e.errno))
             time.sleep(retry_count * retry_delay)
         else:
             # If no exception has been thrown it should be done
@@ -260,29 +252,11 @@ def depth(directory):
     return level
 
 
-# ASCII delimeters
-ascii_delimeters = {
-    'vertical_line': '|',
-    'item_marker': '+',
-    'last_child': '\\'
-}
-
-# unicode delimiters
-unicode_delimeters = {
-    'vertical_line': '│',
-    'item_marker': '├',
-    'last_child': '└'
-}
-
-
-def tree(directory,
-         item_marker=unicode_delimeters['item_marker'],
-         vertical_line=unicode_delimeters['vertical_line'],
-         last_child=unicode_delimeters['last_child'],
-         sort_key=lambda x: x.lower()):
-    """
-    display tree directory structure for `directory`
-    """
+def tree(directory, sort_key=lambda x: x.lower()):
+    """Display tree directory structure for `directory`."""
+    vertical_line = u'│'
+    item_marker = u'├'
+    last_child = u'└'
 
     retval = []
     indent = []
@@ -420,9 +394,7 @@ def is_url(thing):
     Return True if thing looks like a URL.
     """
 
-    import urlparse
-
-    parsed = urlparse.urlparse(thing)
+    parsed = urllib.parse.urlparse(thing)
     if 'scheme' in parsed:
         return len(parsed.scheme) >= 2
     else:
@@ -433,10 +405,8 @@ def load(resource):
     """
     open a file or URL for reading.  If the passed resource string is not a URL,
     or begins with 'file://', return a ``file``.  Otherwise, return the
-    result of urllib2.urlopen()
+    result of urllib.urlopen()
     """
-
-    import urllib2
 
     # handle file URLs separately due to python stdlib limitations
     if resource.startswith('file://'):
@@ -444,6 +414,6 @@ def load(resource):
 
     if not is_url(resource):
         # if no scheme is given, it is a file path
-        return file(resource)
+        return open(resource)
 
-    return urllib2.urlopen(resource)
+    return urllib.request.urlopen(resource)

@@ -5,6 +5,8 @@
 
 #include "nsIProtocolHandler.idl"
 
+interface nsISubstitutionObserver;
+
 /**
  * Protocol handler superinterface for a protocol which performs substitutions
  * from URIs of its scheme to URIs of another scheme.
@@ -13,15 +15,25 @@
 interface nsISubstitutingProtocolHandler : nsIProtocolHandler
 {
   /**
+   * Content script may access files in this package.
+   */
+  const short ALLOW_CONTENT_ACCESS = 1;
+
+  /**
    * Sets the substitution for the root key:
    *   resource://root/path ==> baseURI.resolve(path)
    *
    * A null baseURI removes the specified substitution.
    *
-   * A root key should always be lowercase; however, this may not be
-   * enforced.
+   * The root key will be converted to lower-case to conform to
+   * case-insensitive URI hostname matching behavior.
    */
   [must_use] void setSubstitution(in ACString root, in nsIURI baseURI);
+
+  /**
+   * Same as setSubstitution, but with specific flags.
+   */
+  [must_use] void setSubstitutionWithFlags(in ACString root, in nsIURI baseURI, in uint32_t flags);
 
   /**
    * Gets the substitution for the root key.
@@ -43,4 +55,18 @@ interface nsISubstitutingProtocolHandler : nsIProtocolHandler
    * @throws NS_ERROR_NOT_AVAILABLE if resURI.host() is an unknown root key.
    */
   [must_use] AUTF8String resolveURI(in nsIURI resURI);
+
+  /**
+   * Adds an observer that will be notified on the main thread whenever a
+   * substitition is set or unset. Notifications are not sent for substitutions
+   * that were set prior to the observer being added. Holds an owning reference
+   * to the observer until removeObserver is called or the protocol handler is
+   * destroyed.
+   */
+  [must_use] void addObserver(in nsISubstitutionObserver observer);
+
+  /**
+   * Removes the observer.
+   */
+  [must_use] void removeObserver(in nsISubstitutionObserver observer);
 };

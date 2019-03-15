@@ -1,12 +1,13 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+"use strict";
+
 // Test the DebuggerClient.registerClient API
 
 var EventEmitter = require("devtools/shared/event-emitter");
 
 var gClient;
-var gActors;
 var gTestClient;
 
 function TestActor(conn) {
@@ -15,15 +16,15 @@ function TestActor(conn) {
 TestActor.prototype = {
   actorPrefix: "test",
 
-  start: function () {
+  start: function() {
     this.conn.sendActorEvent(this.actorID, "foo", {
-      hello: "world"
+      hello: "world",
     });
     return {};
-  }
+  },
 };
 TestActor.prototype.requestTypes = {
-  "start": TestActor.prototype.start
+  "start": TestActor.prototype.start,
 };
 
 function TestClient(client, form) {
@@ -36,25 +37,27 @@ function TestClient(client, form) {
   this.detached = false;
 }
 TestClient.prototype = {
-  start: function () {
+  start: function() {
     this.client.request({
       to: this.actor,
-      type: "start"
+      type: "start",
     });
   },
 
-  detach: function (onDone) {
+  detach: function(onDone) {
     this.detached = true;
     onDone();
-  }
+  },
 };
 
-function run_test()
-{
-  DebuggerServer.addGlobalActor(TestActor);
+function run_test() {
+  ActorRegistry.addGlobalActor({
+    constructorName: "TestActor",
+    constructorFun: TestActor,
+  }, "test");
 
   DebuggerServer.init();
-  DebuggerServer.addBrowserActors();
+  DebuggerServer.registerAllActors();
 
   add_test(init);
   add_test(test_client_events);
@@ -62,24 +65,20 @@ function run_test()
   run_next_test();
 }
 
-function init()
-{
+function init() {
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
   gClient.connect()
-    .then(() => gClient.listTabs())
-    .then(aResponse => {
-      gActors = aResponse;
-      gTestClient = new TestClient(gClient, aResponse);
+    .then(() => gClient.mainRoot.rootForm)
+    .then(response => {
+      gTestClient = new TestClient(gClient, response);
       run_next_test();
     });
 }
 
-function test_client_events()
-{
+function test_client_events() {
   // Test DebuggerClient.registerClient and DebuggerServerConnection.sendActorEvent
-  gTestClient.on("foo", function (type, data) {
-    do_check_eq(type, "foo");
-    do_check_eq(data.hello, "world");
+  gTestClient.on("foo", function(data) {
+    Assert.equal(data.hello, "world");
     run_next_test();
   });
   gTestClient.start();
@@ -88,7 +87,7 @@ function test_client_events()
 function close_client() {
   gClient.close().then(() => {
     // Check that client.detach method is call on client destruction
-    do_check_true(gTestClient.detached);
+    Assert.ok(gTestClient.detached);
     run_next_test();
   });
 }

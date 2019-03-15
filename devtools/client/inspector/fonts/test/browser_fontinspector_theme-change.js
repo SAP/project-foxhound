@@ -9,7 +9,7 @@ requestLongerTimeout(2);
 
 const { getTheme, setTheme } = require("devtools/client/shared/theme");
 
-const TEST_URI = URL_ROOT + "browser_fontinspector.html";
+const TEST_URI = URL_ROOT + "doc_browser_fontinspector.html";
 const originalTheme = getTheme();
 
 registerCleanupFunction(() => {
@@ -17,24 +17,27 @@ registerCleanupFunction(() => {
   setTheme(originalTheme);
 });
 
-add_task(function* () {
-  let { inspector, view } = yield openFontInspectorForURL(TEST_URI);
-  let { chromeDoc: doc } = view;
+add_task(async function() {
+  const { inspector, view } = await openFontInspectorForURL(TEST_URI);
+  const viewDoc = view.document;
 
-  yield selectNode(".normal-text", inspector);
+  await selectNode(".normal-text", inspector);
+  await expandFontsAccordion(viewDoc);
+  const allFontsEls = getAllFontsEls(viewDoc);
+  const fontEl = allFontsEls[0];
 
   // Store the original preview URI for later comparison.
-  let originalURI = doc.querySelector("#all-fonts .font-preview").src;
-  let newTheme = originalTheme === "light" ? "dark" : "light";
+  const originalURI = fontEl.querySelector(".font-preview").src;
+  const newTheme = originalTheme === "light" ? "dark" : "light";
 
   info(`Original theme was '${originalTheme}'.`);
 
-  yield setThemeAndWaitForUpdate(newTheme, inspector);
-  isnot(doc.querySelector("#all-fonts .font-preview").src, originalURI,
+  await setThemeAndWaitForUpdate(newTheme, inspector);
+  isnot(fontEl.querySelector(".font-preview").src, originalURI,
     "The preview image changed with the theme.");
 
-  yield setThemeAndWaitForUpdate(originalTheme, inspector);
-  is(doc.querySelector("#all-fonts .font-preview").src, originalURI,
+  await setThemeAndWaitForUpdate(originalTheme, inspector);
+  is(fontEl.querySelector(".font-preview").src, originalURI,
     "The preview image is correct after the original theme was restored.");
 });
 
@@ -44,12 +47,12 @@ add_task(function* () {
  * @param {String} theme - the new theme
  * @param {Object} inspector - the inspector panel
  */
-function* setThemeAndWaitForUpdate(theme, inspector) {
-  let onUpdated = inspector.once("fontinspector-updated");
+async function setThemeAndWaitForUpdate(theme, inspector) {
+  const onUpdated = inspector.once("fontinspector-updated");
 
   info(`Setting theme to '${theme}'.`);
   setTheme(theme);
 
   info("Waiting for font-inspector to update.");
-  yield onUpdated;
+  await onUpdated;
 }

@@ -23,50 +23,50 @@
 #include "ScopedNSSTypes.h"
 #include "m_cpp_utils.h"
 #include "dtlsidentity.h"
-#include "transportflow.h"
 #include "transportlayer.h"
+#include "ssl.h"
 
 namespace mozilla {
+
+// RFC 5764 (we don't support the NULL cipher)
+static const uint16_t kDtlsSrtpAes128CmHmacSha1_80 = 0x0001;
+static const uint16_t kDtlsSrtpAes128CmHmacSha1_32 = 0x0002;
+// RFC 7714
+static const uint16_t kDtlsSrtpAeadAes128Gcm = 0x0007;
+static const uint16_t kDtlsSrtpAeadAes256Gcm = 0x0008;
 
 struct Packet;
 
 class TransportLayerNSPRAdapter {
  public:
-  explicit TransportLayerNSPRAdapter(TransportLayer *output) :
-  output_(output),
-  input_(),
-  enabled_(true) {}
+  explicit TransportLayerNSPRAdapter(TransportLayer* output)
+      : output_(output), input_(), enabled_(true) {}
 
-  void PacketReceived(const void *data, int32_t len);
-  int32_t Recv(void *buf, int32_t buflen);
-  int32_t Write(const void *buf, int32_t length);
+  void PacketReceived(MediaPacket& packet);
+  int32_t Recv(void* buf, int32_t buflen);
+  int32_t Write(const void* buf, int32_t length);
   void SetEnabled(bool enabled) { enabled_ = enabled; }
 
  private:
   DISALLOW_COPY_ASSIGN(TransportLayerNSPRAdapter);
 
-  TransportLayer *output_;
-  std::queue<Packet *> input_;
+  TransportLayer* output_;
+  std::queue<MediaPacket*> input_;
   bool enabled_;
 };
 
 class TransportLayerDtls final : public TransportLayer {
  public:
-  TransportLayerDtls() :
-      role_(CLIENT),
-      verification_mode_(VERIFY_UNSET),
-      ssl_fd_(nullptr),
-      auth_hook_called_(false),
-      cert_ok_(false) {}
+  TransportLayerDtls() = default;
 
   virtual ~TransportLayerDtls();
 
-  enum Role { CLIENT, SERVER};
-  enum Verification { VERIFY_UNSET, VERIFY_ALLOW_ALL, VERIFY_DIGEST};
+  enum Role { CLIENT, SERVER };
+  enum Verification { VERIFY_UNSET, VERIFY_ALLOW_ALL, VERIFY_DIGEST };
   const static size_t kMaxDigestLength = HASH_LENGTH_MAX;
 
   // DTLS-specific operations
-  void SetRole(Role role) { role_ = role;}
+  void SetRole(Role role) { role_ = role; }
   Role role() { return role_; }
 
   void SetIdentity(const RefPtr<DtlsIdentity>& identity) {
@@ -78,46 +78,47 @@ class TransportLayerDtls final : public TransportLayer {
 
   nsresult SetVerificationAllowAll();
   nsresult SetVerificationDigest(const std::string digest_algorithm,
-                                 const unsigned char *digest_value,
+                                 const unsigned char* digest_value,
                                  size_t digest_len);
 
   nsresult GetCipherSuite(uint16_t* cipherSuite) const;
 
-  nsresult SetSrtpCiphers(std::vector<uint16_t> ciphers);
-  nsresult GetSrtpCipher(uint16_t *cipher) const;
+  nsresult SetSrtpCiphers(const std::vector<uint16_t>& ciphers);
+  nsresult GetSrtpCipher(uint16_t* cipher) const;
+  static std::vector<uint16_t> GetDefaultSrtpCiphers();
 
-  nsresult ExportKeyingMaterial(const std::string& label,
-                                bool use_context,
-                                const std::string& context,
-                                unsigned char *out,
+  nsresult ExportKeyingMaterial(const std::string& label, bool use_context,
+                                const std::string& context, unsigned char* out,
                                 unsigned int outlen);
 
   // Transport layer overrides.
   nsresult InitInternal() override;
   void WasInserted() override;
-  TransportResult SendPacket(const unsigned char *data, size_t len) override;
+  TransportResult SendPacket(MediaPacket& packet) override;
 
   // Signals
-  void StateChange(TransportLayer *layer, State state);
-  void PacketReceived(TransportLayer* layer, const unsigned char *data,
-                      size_t len);
+  void StateChange(TransportLayer* layer, State state);
+  void PacketReceived(TransportLayer* layer, MediaPacket& packet);
 
   // For testing use only.  Returns the fd.
-  PRFileDesc* internal_fd() { CheckThread(); return ssl_fd_.get(); }
+  PRFileDesc* internal_fd() {
+    CheckThread();
+    return ssl_fd_.get();
+  }
 
   TRANSPORT_LAYER_ID("dtls")
 
-  protected:
-  void SetState(State state, const char *file, unsigned line) override;
+ protected:
+  void SetState(State state, const char* file, unsigned line) override;
 
-  private:
+ private:
   DISALLOW_COPY_ASSIGN(TransportLayerDtls);
 
   // A single digest to check
   class VerificationDigest {
    public:
-    VerificationDigest(std::string algorithm,
-                       const unsigned char *value, size_t len) {
+    VerificationDigest(std::string algorithm, const unsigned char* value,
+                       size_t len) {
       MOZ_ASSERT(len <= sizeof(value_));
 
       algorithm_ = algorithm;
@@ -136,32 +137,38 @@ class TransportLayerDtls final : public TransportLayer {
     DISALLOW_COPY_ASSIGN(VerificationDigest);
   };
 
-
   bool Setup();
-  bool SetupCipherSuites(UniquePRFileDesc& ssl_fd) const;
+  bool SetupCipherSuites(UniquePRFileDesc& ssl_fd);
   bool SetupAlpn(UniquePRFileDesc& ssl_fd) const;
+  void GetDecryptedPackets();
   void Handshake();
 
   bool CheckAlpn();
 
-  static SECStatus GetClientAuthDataHook(void *arg, PRFileDesc *fd,
-                                         CERTDistNames *caNames,
-                                         CERTCertificate **pRetCert,
-                                         SECKEYPrivateKey **pRetKey);
-  static SECStatus AuthCertificateHook(void *arg,
-                                       PRFileDesc *fd,
-                                       PRBool checksig,
-                                       PRBool isServer);
-  SECStatus AuthCertificateHook(PRFileDesc *fd,
-                                PRBool checksig,
+  static SECStatus GetClientAuthDataHook(void* arg, PRFileDesc* fd,
+                                         CERTDistNames* caNames,
+                                         CERTCertificate** pRetCert,
+                                         SECKEYPrivateKey** pRetKey);
+  static SECStatus AuthCertificateHook(void* arg, PRFileDesc* fd,
+                                       PRBool checksig, PRBool isServer);
+  SECStatus AuthCertificateHook(PRFileDesc* fd, PRBool checksig,
                                 PRBool isServer);
 
-  static void TimerCallback(nsITimer *timer, void *arg);
+  static void TimerCallback(nsITimer* timer, void* arg);
 
   SECStatus CheckDigest(const RefPtr<VerificationDigest>& digest,
                         UniqueCERTCertificate& cert) const;
 
   void RecordHandshakeCompletionTelemetry(TransportLayer::State endState);
+  void RecordTlsTelemetry();
+
+  static PRBool WriteSrtpXtn(PRFileDesc* fd, SSLHandshakeType message,
+                             uint8_t* data, unsigned int* len,
+                             unsigned int max_len, void* arg);
+
+  static SECStatus HandleSrtpXtn(PRFileDesc* fd, SSLHandshakeType message,
+                                 const uint8_t* data, unsigned int len,
+                                 SSLAlertDescription* alert, void* arg);
 
   RefPtr<DtlsIdentity> identity_;
   // What ALPN identifiers are permitted.
@@ -171,23 +178,23 @@ class TransportLayerDtls final : public TransportLayer {
   std::string alpn_default_;
   // What ALPN string was negotiated.
   std::string alpn_;
-  std::vector<uint16_t> srtp_ciphers_;
+  std::vector<uint16_t> enabled_srtp_ciphers_;
+  uint16_t srtp_cipher_ = 0;
 
-  Role role_;
-  Verification verification_mode_;
+  Role role_ = CLIENT;
+  Verification verification_mode_ = VERIFY_UNSET;
   std::vector<RefPtr<VerificationDigest> > digests_;
 
   // Must delete nspr_io_adapter after ssl_fd_ b/c ssl_fd_ causes an alert
   // (ssl_fd_ contains an un-owning pointer to nspr_io_adapter_)
-  UniquePtr<TransportLayerNSPRAdapter> nspr_io_adapter_;
-  UniquePRFileDesc ssl_fd_;
+  UniquePtr<TransportLayerNSPRAdapter> nspr_io_adapter_ = nullptr;
+  UniquePRFileDesc ssl_fd_ = nullptr;
 
-  nsCOMPtr<nsITimer> timer_;
-  bool auth_hook_called_;
-  bool cert_ok_;
+  nsCOMPtr<nsITimer> timer_ = nullptr;
+  bool auth_hook_called_ = false;
+  bool cert_ok_ = false;
   TimeStamp handshake_started_;
 };
 
-
-}  // close namespace
+}  // namespace mozilla
 #endif

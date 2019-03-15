@@ -10,10 +10,9 @@
 
 namespace mozilla {
 
-template<uint32_t N> nsresult
-AnimationPerformanceWarning::ToLocalizedStringWithIntParams(
-  const char* aKey, nsXPIDLString& aLocalizedString) const
-{
+template <uint32_t N>
+nsresult AnimationPerformanceWarning::ToLocalizedStringWithIntParams(
+    const char* aKey, nsAString& aLocalizedString) const {
   nsAutoString strings[N];
   const char16_t* charParams[N];
 
@@ -26,20 +25,23 @@ AnimationPerformanceWarning::ToLocalizedStringWithIntParams(
       nsContentUtils::eLAYOUT_PROPERTIES, aKey, charParams, aLocalizedString);
 }
 
-bool
-AnimationPerformanceWarning::ToLocalizedString(
-  nsXPIDLString& aLocalizedString) const
-{
+bool AnimationPerformanceWarning::ToLocalizedString(
+    nsAString& aLocalizedString) const {
   const char* key = nullptr;
 
   switch (mType) {
     case Type::ContentTooLarge:
       MOZ_ASSERT(mParams && mParams->Length() == 6,
-                 "Parameter's length should be 6 for ContentTooLarge");
+                 "Parameter's length should be 6 for ContentTooLarge2");
 
-      return NS_SUCCEEDED(
-        ToLocalizedStringWithIntParams<7>(
+      return NS_SUCCEEDED(ToLocalizedStringWithIntParams<7>(
           "CompositorAnimationWarningContentTooLarge2", aLocalizedString));
+    case Type::ContentTooLargeArea:
+      MOZ_ASSERT(mParams && mParams->Length() == 2,
+                 "Parameter's length should be 2 for ContentTooLargeArea");
+
+      return NS_SUCCEEDED(ToLocalizedStringWithIntParams<3>(
+          "CompositorAnimationWarningContentTooLargeArea", aLocalizedString));
     case Type::TransformBackfaceVisibilityHidden:
       key = "CompositorAnimationWarningTransformBackfaceVisibilityHidden";
       break;
@@ -64,12 +66,14 @@ AnimationPerformanceWarning::ToLocalizedString(
     case Type::HasRenderingObserver:
       key = "CompositorAnimationWarningHasRenderingObserver";
       break;
+    case Type::None:
+      MOZ_ASSERT_UNREACHABLE("Uninitialized type shouldn't be used");
+      return false;
   }
 
-  nsresult rv =
-    nsContentUtils::GetLocalizedString(nsContentUtils::eLAYOUT_PROPERTIES,
-                                       key, aLocalizedString);
+  nsresult rv = nsContentUtils::GetLocalizedString(
+      nsContentUtils::eLAYOUT_PROPERTIES, key, aLocalizedString);
   return NS_SUCCEEDED(rv);
 }
 
-} // namespace mozilla
+}  // namespace mozilla

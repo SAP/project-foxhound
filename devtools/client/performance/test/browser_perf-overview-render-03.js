@@ -12,21 +12,21 @@ const { initPerformanceInNewTab, teardownToolboxAndRemoveTab } = require("devtoo
 const { startRecording, stopRecording } = require("devtools/client/performance/test/helpers/actions");
 const { waitUntil } = require("devtools/client/performance/test/helpers/wait-utils");
 
-add_task(function* () {
-  let { panel } = yield initPerformanceInNewTab({
+add_task(async function() {
+  const { panel } = await initPerformanceInNewTab({
     url: SIMPLE_URL,
-    win: window
+    win: window,
   });
 
-  let { PerformanceController, OverviewView } = panel.panelWin;
+  const { PerformanceController, OverviewView } = panel.panelWin;
 
   // Enable memory to test.
   Services.prefs.setBoolPref(UI_ENABLE_MEMORY_PREF, true);
 
-  let doChecks = () => {
-    let markers = OverviewView.graphs.get("timeline");
-    let framerate = OverviewView.graphs.get("framerate");
-    let memory = OverviewView.graphs.get("memory");
+  const doChecks = () => {
+    const markers = OverviewView.graphs.get("timeline");
+    const framerate = OverviewView.graphs.get("framerate");
+    const memory = OverviewView.graphs.get("memory");
 
     ok(markers.width > 0,
       "The overview's markers graph has a width.");
@@ -61,16 +61,16 @@ add_task(function* () {
       "The markers and framerate graphs data scale are the same.");
   };
 
-  yield startRecording(panel);
+  await startRecording(panel);
   doChecks();
 
-  yield waitUntil(() => PerformanceController.getCurrentRecording().getMarkers().length);
-  yield waitUntil(() => PerformanceController.getCurrentRecording().getMemory().length);
-  yield waitUntil(() => PerformanceController.getCurrentRecording().getTicks().length);
+  await waitUntil(() => PerformanceController.getCurrentRecording().getMarkers().length);
+  await waitUntil(() => PerformanceController.getCurrentRecording().getMemory().length);
+  await waitUntil(() => PerformanceController.getCurrentRecording().getTicks().length);
   doChecks();
 
-  yield stopRecording(panel);
+  await stopRecording(panel);
   doChecks();
 
-  yield teardownToolboxAndRemoveTab(panel);
+  await teardownToolboxAndRemoveTab(panel);
 });

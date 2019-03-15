@@ -19,18 +19,15 @@
 #include "nsQueryObject.h"
 #include "mozilla/Sprintf.h"
 
-//Interfaces needed to be included
+// Interfaces needed to be included
+#include "nsGlobalWindowOuter.h"
 #include "nsIAppShell.h"
 #include "nsIAppShellService.h"
 #include "nsIServiceManager.h"
 #include "nsIContentViewer.h"
-#include "nsIDocument.h"
-#include "nsIDOMDocument.h"
-#include "nsIDOMXULDocument.h"
-#include "nsIDOMElement.h"
-#include "nsIDOMXULElement.h"
+#include "mozilla/dom/Document.h"
 #include "nsPIDOMWindow.h"
-#include "nsIDOMScreen.h"
+#include "nsScreen.h"
 #include "nsIEmbeddingSiteWindow.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
@@ -44,14 +41,15 @@
 #include "nsIScriptSecurityManager.h"
 #include "nsIWindowWatcher.h"
 #include "nsIURI.h"
-#include "nsIDOMCSSStyleDeclaration.h"
 #include "nsAppShellCID.h"
 #include "nsReadableUtils.h"
 #include "nsStyleConsts.h"
 #include "nsPresContext.h"
 #include "nsContentUtils.h"
-#include "nsWebShellWindow.h" // get rid of this one, too...
+#include "nsWebShellWindow.h"  // get rid of this one, too...
 #include "nsGlobalWindow.h"
+#include "XULDocument.h"
+#include "nsXULTooltipListener.h"
 
 #include "prenv.h"
 #include "mozilla/AutoRestore.h"
@@ -66,55 +64,51 @@
 using namespace mozilla;
 using dom::AutoNoJSAPI;
 
-#define SIZEMODE_NORMAL     NS_LITERAL_STRING("normal")
-#define SIZEMODE_MAXIMIZED  NS_LITERAL_STRING("maximized")
-#define SIZEMODE_MINIMIZED  NS_LITERAL_STRING("minimized")
+#define SIZEMODE_NORMAL NS_LITERAL_STRING("normal")
+#define SIZEMODE_MAXIMIZED NS_LITERAL_STRING("maximized")
+#define SIZEMODE_MINIMIZED NS_LITERAL_STRING("minimized")
 #define SIZEMODE_FULLSCREEN NS_LITERAL_STRING("fullscreen")
 
 #define WINDOWTYPE_ATTRIBUTE NS_LITERAL_STRING("windowtype")
 
-#define PERSIST_ATTRIBUTE  NS_LITERAL_STRING("persist")
-#define SCREENX_ATTRIBUTE  NS_LITERAL_STRING("screenX")
-#define SCREENY_ATTRIBUTE  NS_LITERAL_STRING("screenY")
-#define WIDTH_ATTRIBUTE    NS_LITERAL_STRING("width")
-#define HEIGHT_ATTRIBUTE   NS_LITERAL_STRING("height")
-#define MODE_ATTRIBUTE     NS_LITERAL_STRING("sizemode")
-#define ZLEVEL_ATTRIBUTE   NS_LITERAL_STRING("zlevel")
-
+#define PERSIST_ATTRIBUTE NS_LITERAL_STRING("persist")
+#define SCREENX_ATTRIBUTE NS_LITERAL_STRING("screenX")
+#define SCREENY_ATTRIBUTE NS_LITERAL_STRING("screenY")
+#define WIDTH_ATTRIBUTE NS_LITERAL_STRING("width")
+#define HEIGHT_ATTRIBUTE NS_LITERAL_STRING("height")
+#define MODE_ATTRIBUTE NS_LITERAL_STRING("sizemode")
+#define ZLEVEL_ATTRIBUTE NS_LITERAL_STRING("zlevel")
 
 //*****************************************************************************
 //***    nsXULWindow: Object Management
 //*****************************************************************************
 
 nsXULWindow::nsXULWindow(uint32_t aChromeFlags)
-  : mChromeTreeOwner(nullptr), 
-    mContentTreeOwner(nullptr),
-    mPrimaryContentTreeOwner(nullptr),
-    mModalStatus(NS_OK),
-    mContinueModalLoop(false),
-    mDebuting(false),
-    mChromeLoaded(false), 
-    mShowAfterLoad(false),
-    mIntrinsicallySized(false),
-    mCenterAfterLoad(false),
-    mIsHiddenWindow(false),
-    mLockedUntilChromeLoad(false),
-    mIgnoreXULSize(false),
-    mIgnoreXULPosition(false),
-    mChromeFlagsFrozen(false),
-    mIgnoreXULSizeMode(false),
-    mDestroying(false),
-    mRegistered(false),
-    mPersistentAttributesDirty(0),
-    mPersistentAttributesMask(0),
-    mChromeFlags(aChromeFlags)
-{
-}
+    : mChromeTreeOwner(nullptr),
+      mContentTreeOwner(nullptr),
+      mPrimaryContentTreeOwner(nullptr),
+      mModalStatus(NS_OK),
+      mContinueModalLoop(false),
+      mDebuting(false),
+      mChromeLoaded(false),
+      mSizingShellFromXUL(false),
+      mShowAfterLoad(false),
+      mIntrinsicallySized(false),
+      mCenterAfterLoad(false),
+      mIsHiddenWindow(false),
+      mLockedUntilChromeLoad(false),
+      mIgnoreXULSize(false),
+      mIgnoreXULPosition(false),
+      mChromeFlagsFrozen(false),
+      mIgnoreXULSizeMode(false),
+      mDestroying(false),
+      mRegistered(false),
+      mPersistentAttributesDirty(0),
+      mPersistentAttributesMask(0),
+      mChromeFlags(aChromeFlags),
+      mNextTabParentId(0) {}
 
-nsXULWindow::~nsXULWindow()
-{
-  Destroy();
-}
+nsXULWindow::~nsXULWindow() { Destroy(); }
 
 //*****************************************************************************
 // nsXULWindow::nsISupports
@@ -129,17 +123,14 @@ NS_INTERFACE_MAP_BEGIN(nsXULWindow)
   NS_INTERFACE_MAP_ENTRY(nsIBaseWindow)
   NS_INTERFACE_MAP_ENTRY(nsIInterfaceRequestor)
   NS_INTERFACE_MAP_ENTRY(nsISupportsWeakReference)
-  if (aIID.Equals(NS_GET_IID(nsXULWindow)))
-    foundInterface = reinterpret_cast<nsISupports*>(this);
-  else
+  NS_INTERFACE_MAP_ENTRY_CONCRETE(nsXULWindow)
 NS_INTERFACE_MAP_END
 
 //*****************************************************************************
 // nsXULWindow::nsIIntefaceRequestor
-//*****************************************************************************   
+//*****************************************************************************
 
-NS_IMETHODIMP nsXULWindow::GetInterface(const nsIID& aIID, void** aSink)
-{
+NS_IMETHODIMP nsXULWindow::GetInterface(const nsIID& aIID, void** aSink) {
   nsresult rv;
 
   NS_ENSURE_ARG_POINTER(aSink);
@@ -148,7 +139,7 @@ NS_IMETHODIMP nsXULWindow::GetInterface(const nsIID& aIID, void** aSink)
     rv = EnsurePrompter();
     if (NS_FAILED(rv)) return rv;
     return mPrompter->QueryInterface(aIID, aSink);
-  }   
+  }
   if (aIID.Equals(NS_GET_IID(nsIAuthPrompt))) {
     rv = EnsureAuthPrompter();
     if (NS_FAILED(rv)) return rv;
@@ -164,21 +155,14 @@ NS_IMETHODIMP nsXULWindow::GetInterface(const nsIID& aIID, void** aSink)
     domWindow.forget(aSink);
     return rv;
   }
-  if (aIID.Equals(NS_GET_IID(nsIDOMWindowInternal))) {
-    nsCOMPtr<mozIDOMWindowProxy> window = nullptr;
-    rv = GetWindowDOMWindow(getter_AddRefs(window));
-    nsCOMPtr<nsIDOMWindowInternal> domWindowInternal = do_QueryInterface(window);
-    domWindowInternal.forget(aSink);
-    return rv;
-  }
-  if (aIID.Equals(NS_GET_IID(nsIWebBrowserChrome)) && 
-    NS_SUCCEEDED(EnsureContentTreeOwner()) &&
-    NS_SUCCEEDED(mContentTreeOwner->QueryInterface(aIID, aSink)))
+  if (aIID.Equals(NS_GET_IID(nsIWebBrowserChrome)) &&
+      NS_SUCCEEDED(EnsureContentTreeOwner()) &&
+      NS_SUCCEEDED(mContentTreeOwner->QueryInterface(aIID, aSink)))
     return NS_OK;
 
-  if (aIID.Equals(NS_GET_IID(nsIEmbeddingSiteWindow)) && 
-    NS_SUCCEEDED(EnsureContentTreeOwner()) &&
-    NS_SUCCEEDED(mContentTreeOwner->QueryInterface(aIID, aSink)))
+  if (aIID.Equals(NS_GET_IID(nsIEmbeddingSiteWindow)) &&
+      NS_SUCCEEDED(EnsureContentTreeOwner()) &&
+      NS_SUCCEEDED(mContentTreeOwner->QueryInterface(aIID, aSink)))
     return NS_OK;
 
   return QueryInterface(aIID, aSink);
@@ -186,10 +170,9 @@ NS_IMETHODIMP nsXULWindow::GetInterface(const nsIID& aIID, void** aSink)
 
 //*****************************************************************************
 // nsXULWindow::nsIXULWindow
-//*****************************************************************************   
+//*****************************************************************************
 
-NS_IMETHODIMP nsXULWindow::GetDocShell(nsIDocShell** aDocShell)
-{
+NS_IMETHODIMP nsXULWindow::GetDocShell(nsIDocShell** aDocShell) {
   NS_ENSURE_ARG_POINTER(aDocShell);
 
   *aDocShell = mDocShell;
@@ -197,9 +180,9 @@ NS_IMETHODIMP nsXULWindow::GetDocShell(nsIDocShell** aDocShell)
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::GetZLevel(uint32_t *outLevel)
-{
-  nsCOMPtr<nsIWindowMediator> mediator(do_GetService(NS_WINDOWMEDIATOR_CONTRACTID));
+NS_IMETHODIMP nsXULWindow::GetZLevel(uint32_t* outLevel) {
+  nsCOMPtr<nsIWindowMediator> mediator(
+      do_GetService(NS_WINDOWMEDIATOR_CONTRACTID));
   if (mediator)
     mediator->GetZLevel(this, outLevel);
   else
@@ -207,16 +190,14 @@ NS_IMETHODIMP nsXULWindow::GetZLevel(uint32_t *outLevel)
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::SetZLevel(uint32_t aLevel)
-{
-  nsCOMPtr<nsIWindowMediator> mediator(do_GetService(NS_WINDOWMEDIATOR_CONTRACTID));
-  if (!mediator)
-    return NS_ERROR_FAILURE;
+NS_IMETHODIMP nsXULWindow::SetZLevel(uint32_t aLevel) {
+  nsCOMPtr<nsIWindowMediator> mediator(
+      do_GetService(NS_WINDOWMEDIATOR_CONTRACTID));
+  if (!mediator) return NS_ERROR_FAILURE;
 
   uint32_t zLevel;
   mediator->GetZLevel(this, &zLevel);
-  if (zLevel == aLevel)
-    return NS_OK;
+  if (zLevel == aLevel) return NS_OK;
 
   /* refuse to raise a maximized window above the normal browser level,
      for fear it could hide newly opened browser windows */
@@ -235,26 +216,24 @@ NS_IMETHODIMP nsXULWindow::SetZLevel(uint32_t aLevel)
   nsCOMPtr<nsIContentViewer> cv;
   mDocShell->GetContentViewer(getter_AddRefs(cv));
   if (cv) {
-    nsCOMPtr<nsIDocument> doc = cv->GetDocument();
+    RefPtr<dom::Document> doc = cv->GetDocument();
     if (doc) {
       ErrorResult rv;
-      RefPtr<dom::Event> event =
-        doc->CreateEvent(NS_LITERAL_STRING("Events"),rv);
+      RefPtr<dom::Event> event = doc->CreateEvent(NS_LITERAL_STRING("Events"),
+                                                  dom::CallerType::System, rv);
       if (event) {
         event->InitEvent(NS_LITERAL_STRING("windowZLevel"), true, false);
 
         event->SetTrusted(true);
 
-        bool defaultActionEnabled;
-        doc->DispatchEvent(event, &defaultActionEnabled);
+        doc->DispatchEvent(*event);
       }
     }
   }
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::GetChromeFlags(uint32_t *aChromeFlags)
-{
+NS_IMETHODIMP nsXULWindow::GetChromeFlags(uint32_t* aChromeFlags) {
   NS_ENSURE_ARG_POINTER(aChromeFlags);
   *aChromeFlags = mChromeFlags;
   /* mChromeFlags is kept up to date, except for scrollbar visibility.
@@ -263,8 +242,7 @@ NS_IMETHODIMP nsXULWindow::GetChromeFlags(uint32_t *aChromeFlags)
      separately. */
 
   // however, it's pointless to ask if the window isn't set up yet
-  if (!mChromeLoaded)
-    return NS_OK;
+  if (!mChromeLoaded) return NS_OK;
 
   if (GetContentScrollbarVisibility())
     *aChromeFlags |= nsIWebBrowserChrome::CHROME_SCROLLBARS;
@@ -274,48 +252,43 @@ NS_IMETHODIMP nsXULWindow::GetChromeFlags(uint32_t *aChromeFlags)
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::SetChromeFlags(uint32_t aChromeFlags)
-{
+NS_IMETHODIMP nsXULWindow::SetChromeFlags(uint32_t aChromeFlags) {
   NS_ASSERTION(!mChromeFlagsFrozen,
                "SetChromeFlags() after AssumeChromeFlagsAreFrozen()!");
 
   mChromeFlags = aChromeFlags;
-  if (mChromeLoaded)
-    NS_ENSURE_SUCCESS(ApplyChromeFlags(), NS_ERROR_FAILURE);
+  if (mChromeLoaded) {
+    ApplyChromeFlags();
+  }
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::AssumeChromeFlagsAreFrozen()
-{
+NS_IMETHODIMP nsXULWindow::AssumeChromeFlagsAreFrozen() {
   mChromeFlagsFrozen = true;
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::SetIntrinsicallySized(bool aIntrinsicallySized)
-{
+NS_IMETHODIMP nsXULWindow::SetIntrinsicallySized(bool aIntrinsicallySized) {
   mIntrinsicallySized = aIntrinsicallySized;
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::GetIntrinsicallySized(bool* aIntrinsicallySized)
-{
+NS_IMETHODIMP nsXULWindow::GetIntrinsicallySized(bool* aIntrinsicallySized) {
   NS_ENSURE_ARG_POINTER(aIntrinsicallySized);
 
   *aIntrinsicallySized = mIntrinsicallySized;
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::GetPrimaryContentShell(nsIDocShellTreeItem** 
-   aDocShellTreeItem)
-{
+NS_IMETHODIMP nsXULWindow::GetPrimaryContentShell(
+    nsIDocShellTreeItem** aDocShellTreeItem) {
   NS_ENSURE_ARG_POINTER(aDocShellTreeItem);
   NS_IF_ADDREF(*aDocShellTreeItem = mPrimaryContentShell);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsXULWindow::TabParentAdded(nsITabParent* aTab, bool aPrimary)
-{
+nsXULWindow::TabParentAdded(nsITabParent* aTab, bool aPrimary) {
   if (aPrimary) {
     mPrimaryTabParent = aTab;
     mPrimaryContentShell = nullptr;
@@ -327,8 +300,7 @@ nsXULWindow::TabParentAdded(nsITabParent* aTab, bool aPrimary)
 }
 
 NS_IMETHODIMP
-nsXULWindow::TabParentRemoved(nsITabParent* aTab)
-{
+nsXULWindow::TabParentRemoved(nsITabParent* aTab) {
   if (aTab == mPrimaryTabParent) {
     mPrimaryTabParent = nullptr;
   }
@@ -337,16 +309,43 @@ nsXULWindow::TabParentRemoved(nsITabParent* aTab)
 }
 
 NS_IMETHODIMP
-nsXULWindow::GetPrimaryTabParent(nsITabParent** aTab)
-{
+nsXULWindow::GetPrimaryTabParent(nsITabParent** aTab) {
   nsCOMPtr<nsITabParent> tab = mPrimaryTabParent;
   tab.forget(aTab);
   return NS_OK;
 }
 
+static LayoutDeviceIntSize GetOuterToInnerSizeDifference(nsIWidget* aWindow) {
+  if (!aWindow) {
+    return LayoutDeviceIntSize();
+  }
+  LayoutDeviceIntSize baseSize(200, 200);
+  LayoutDeviceIntSize windowSize = aWindow->ClientToWindowSize(baseSize);
+  return windowSize - baseSize;
+}
+
+static CSSIntSize GetOuterToInnerSizeDifferenceInCSSPixels(nsIWidget* aWindow) {
+  if (!aWindow) {
+    return {};
+  }
+  LayoutDeviceIntSize devPixelSize = GetOuterToInnerSizeDifference(aWindow);
+  return RoundedToInt(devPixelSize / aWindow->GetDefaultScale());
+}
+
+NS_IMETHODIMP
+nsXULWindow::GetOuterToInnerHeightDifferenceInCSSPixels(uint32_t* aResult) {
+  *aResult = GetOuterToInnerSizeDifferenceInCSSPixels(mWindow).height;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsXULWindow::GetOuterToInnerWidthDifferenceInCSSPixels(uint32_t* aResult) {
+  *aResult = GetOuterToInnerSizeDifferenceInCSSPixels(mWindow).width;
+  return NS_OK;
+}
+
 nsTArray<RefPtr<mozilla::LiveResizeListener>>
-nsXULWindow::GetLiveResizeListeners()
-{
+nsXULWindow::GetLiveResizeListeners() {
   nsTArray<RefPtr<mozilla::LiveResizeListener>> listeners;
   if (mPrimaryTabParent) {
     TabParent* parent = static_cast<TabParent*>(mPrimaryTabParent.get());
@@ -355,25 +354,22 @@ nsXULWindow::GetLiveResizeListeners()
   return listeners;
 }
 
-NS_IMETHODIMP nsXULWindow::AddChildWindow(nsIXULWindow *aChild)
-{
+NS_IMETHODIMP nsXULWindow::AddChildWindow(nsIXULWindow* aChild) {
   // we're not really keeping track of this right now
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::RemoveChildWindow(nsIXULWindow *aChild)
-{
+NS_IMETHODIMP nsXULWindow::RemoveChildWindow(nsIXULWindow* aChild) {
   // we're not really keeping track of this right now
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::ShowModal()
-{
-  PROFILER_LABEL_FUNC(js::ProfileEntry::Category::OTHER);
+NS_IMETHODIMP nsXULWindow::ShowModal() {
+  AUTO_PROFILER_LABEL("nsXULWindow::ShowModal", OTHER);
 
   // Store locally so it doesn't die on us
   nsCOMPtr<nsIWidget> window = mWindow;
-  nsCOMPtr<nsIXULWindow> tempRef = this;  
+  nsCOMPtr<nsIXULWindow> tempRef = this;
 
   window->SetModal(true);
   mContinueModalLoop = true;
@@ -381,11 +377,7 @@ NS_IMETHODIMP nsXULWindow::ShowModal()
 
   {
     AutoNoJSAPI nojsapi;
-    nsIThread *thread = NS_GetCurrentThread();
-    while (mContinueModalLoop) {
-      if (!NS_ProcessNextEvent(thread))
-        break;
-    }
+    SpinEventLoopUntil([&]() { return !mContinueModalLoop; });
   }
 
   mContinueModalLoop = false;
@@ -407,43 +399,39 @@ NS_IMETHODIMP nsXULWindow::ShowModal()
 
 //*****************************************************************************
 // nsXULWindow::nsIBaseWindow
-//*****************************************************************************   
+//*****************************************************************************
 
 NS_IMETHODIMP nsXULWindow::InitWindow(nativeWindow aParentNativeWindow,
-   nsIWidget* parentWidget, int32_t x, int32_t y, int32_t cx, int32_t cy)   
-{
-  //XXX First Check In
+                                      nsIWidget* parentWidget, int32_t x,
+                                      int32_t y, int32_t cx, int32_t cy) {
+  // XXX First Check In
   NS_ASSERTION(false, "Not Yet Implemented");
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::Create()
-{
-  //XXX First Check In
+NS_IMETHODIMP nsXULWindow::Create() {
+  // XXX First Check In
   NS_ASSERTION(false, "Not Yet Implemented");
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::Destroy()
-{
-  if (!mWindow)
-     return NS_OK;
+NS_IMETHODIMP nsXULWindow::Destroy() {
+  if (!mWindow) return NS_OK;
 
   // Ensure we don't reenter this code
-  if (mDestroying)
-    return NS_OK;
+  if (mDestroying) return NS_OK;
 
   mozilla::AutoRestore<bool> guard(mDestroying);
   mDestroying = true;
 
-  nsCOMPtr<nsIAppShellService> appShell(do_GetService(NS_APPSHELLSERVICE_CONTRACTID));
+  nsCOMPtr<nsIAppShellService> appShell(
+      do_GetService(NS_APPSHELLSERVICE_CONTRACTID));
   NS_ASSERTION(appShell, "Couldn't get appShell... xpcom shutdown?");
   if (appShell)
     appShell->UnregisterTopLevelWindow(static_cast<nsIXULWindow*>(this));
 
   nsCOMPtr<nsIXULWindow> parentWindow(do_QueryReferent(mParentWindow));
-  if (parentWindow)
-    parentWindow->RemoveChildWindow(this);
+  if (parentWindow) parentWindow->RemoveChildWindow(this);
 
   // let's make sure the window doesn't get deleted out from under us
   // while we are trying to close....this can happen if the docshell
@@ -464,12 +452,11 @@ NS_IMETHODIMP nsXULWindow::Destroy()
   // thread with NVIDIA driver 310.32. We don't need to worry about user
   // interactions with destroyed windows on X11 either.
 #ifndef MOZ_WIDGET_GTK
-  if (mWindow)
-    mWindow->Show(false);
+  if (mWindow) mWindow->Show(false);
 #endif
 
 #if defined(XP_WIN)
-  // We need to explicitly set the focus on Windows, but 
+  // We need to explicitly set the focus on Windows, but
   // only if the parent is visible.
   nsCOMPtr<nsIBaseWindow> parent(do_QueryReferent(mParentWindow));
   if (parent) {
@@ -480,26 +467,26 @@ NS_IMETHODIMP nsXULWindow::Destroy()
       if (appShell) {
         nsCOMPtr<nsIXULWindow> hiddenWindow;
         appShell->GetHiddenWindow(getter_AddRefs(hiddenWindow));
-        if (hiddenWindow)
-          baseHiddenWindow = do_GetInterface(hiddenWindow);
+        if (hiddenWindow) baseHiddenWindow = do_GetInterface(hiddenWindow);
       }
       // somebody screwed up somewhere. hiddenwindow shouldn't be anybody's
       // parent. still, when it happens, skip activating it.
       if (baseHiddenWindow != parent) {
         nsCOMPtr<nsIWidget> parentWidget;
         parent->GetMainWidget(getter_AddRefs(parentWidget));
-        if (parentWidget)
-          parentWidget->PlaceBehind(eZPlacementTop, 0, true);
+        if (parentWidget) parentWidget->PlaceBehind(eZPlacementTop, 0, true);
       }
     }
   }
 #endif
-   
+
+  RemoveTooltipSupport();
+
   mDOMWindow = nullptr;
   if (mDocShell) {
     nsCOMPtr<nsIBaseWindow> shellAsWin(do_QueryInterface(mDocShell));
     shellAsWin->Destroy();
-    mDocShell = nullptr; // this can cause reentrancy of this function
+    mDocShell = nullptr;  // this can cause reentrancy of this function
   }
 
   mPrimaryContentShell = nullptr;
@@ -517,7 +504,7 @@ NS_IMETHODIMP nsXULWindow::Destroy()
     NS_RELEASE(mChromeTreeOwner);
   }
   if (mWindow) {
-    mWindow->SetWidgetListener(nullptr); // nsWebShellWindow hackery
+    mWindow->SetWidgetListener(nullptr);  // nsWebShellWindow hackery
     mWindow->Destroy();
     mWindow = nullptr;
   }
@@ -538,21 +525,23 @@ NS_IMETHODIMP nsXULWindow::Destroy()
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::GetDevicePixelsPerDesktopPixel(double *aScale)
-{
+NS_IMETHODIMP nsXULWindow::GetDevicePixelsPerDesktopPixel(double* aScale) {
   *aScale = mWindow ? mWindow->GetDesktopToDeviceScale().scale : 1.0;
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::GetUnscaledDevicePixelsPerCSSPixel(double *aScale)
-{
+NS_IMETHODIMP nsXULWindow::GetUnscaledDevicePixelsPerCSSPixel(double* aScale) {
   *aScale = mWindow ? mWindow->GetDefaultScale().scale : 1.0;
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::SetPositionDesktopPix(int32_t aX, int32_t aY)
-{
+NS_IMETHODIMP nsXULWindow::SetPositionDesktopPix(int32_t aX, int32_t aY) {
   mWindow->Move(aX, aY);
+  if (mSizingShellFromXUL) {
+    // If we're invoked for sizing from XUL, we want to neither ignore anything
+    // nor persist anything, since it's already the value in XUL.
+    return NS_OK;
+  }
   if (!mChromeLoaded) {
     // If we're called before the chrome is loaded someone obviously wants this
     // window at this position. We don't persist this one-time position.
@@ -566,8 +555,7 @@ NS_IMETHODIMP nsXULWindow::SetPositionDesktopPix(int32_t aX, int32_t aY)
 
 // The parameters here are device pixels; do the best we can to convert to
 // desktop px, using the window's current scale factor (if available).
-NS_IMETHODIMP nsXULWindow::SetPosition(int32_t aX, int32_t aY)
-{
+NS_IMETHODIMP nsXULWindow::SetPosition(int32_t aX, int32_t aY) {
   // Don't reset the window's size mode here - platforms that don't want to move
   // maximized windows should reset it in their respective Move implementation.
   DesktopToLayoutDeviceScale currScale = mWindow->GetDesktopToDeviceScale();
@@ -575,13 +563,11 @@ NS_IMETHODIMP nsXULWindow::SetPosition(int32_t aX, int32_t aY)
   return SetPositionDesktopPix(pos.x, pos.y);
 }
 
-NS_IMETHODIMP nsXULWindow::GetPosition(int32_t* aX, int32_t* aY)
-{
+NS_IMETHODIMP nsXULWindow::GetPosition(int32_t* aX, int32_t* aY) {
   return GetPositionAndSize(aX, aY, nullptr, nullptr);
 }
 
-NS_IMETHODIMP nsXULWindow::SetSize(int32_t aCX, int32_t aCY, bool aRepaint)
-{
+NS_IMETHODIMP nsXULWindow::SetSize(int32_t aCX, int32_t aCY, bool aRepaint) {
   /* any attempt to set the window's size or position overrides the window's
      zoom state. this is important when these two states are competing while
      the window is being opened. but it should probably just always be so. */
@@ -592,6 +578,11 @@ NS_IMETHODIMP nsXULWindow::SetSize(int32_t aCX, int32_t aCY, bool aRepaint)
   DesktopToLayoutDeviceScale scale = mWindow->GetDesktopToDeviceScale();
   DesktopSize size = LayoutDeviceIntSize(aCX, aCY) / scale;
   mWindow->Resize(size.width, size.height, aRepaint);
+  if (mSizingShellFromXUL) {
+    // If we're invoked for sizing from XUL, we want to neither ignore anything
+    // nor persist anything, since it's already the value in XUL.
+    return NS_OK;
+  }
   if (!mChromeLoaded) {
     // If we're called before the chrome is loaded someone obviously wants this
     // window at this size & in the normal size mode (since it is the only mode
@@ -606,14 +597,13 @@ NS_IMETHODIMP nsXULWindow::SetSize(int32_t aCX, int32_t aCY, bool aRepaint)
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::GetSize(int32_t* aCX, int32_t* aCY)
-{
+NS_IMETHODIMP nsXULWindow::GetSize(int32_t* aCX, int32_t* aCY) {
   return GetPositionAndSize(nullptr, nullptr, aCX, aCY);
 }
 
-NS_IMETHODIMP nsXULWindow::SetPositionAndSize(int32_t aX, int32_t aY, 
-   int32_t aCX, int32_t aCY, uint32_t aFlags)
-{
+NS_IMETHODIMP nsXULWindow::SetPositionAndSize(int32_t aX, int32_t aY,
+                                              int32_t aCX, int32_t aCY,
+                                              uint32_t aFlags) {
   /* any attempt to set the window's size or position overrides the window's
      zoom state. this is important when these two states are competing while
      the window is being opened. but it should probably just always be so. */
@@ -623,8 +613,13 @@ NS_IMETHODIMP nsXULWindow::SetPositionAndSize(int32_t aX, int32_t aY,
 
   DesktopToLayoutDeviceScale scale = mWindow->GetDesktopToDeviceScale();
   DesktopRect rect = LayoutDeviceIntRect(aX, aY, aCX, aCY) / scale;
-  mWindow->Resize(rect.x, rect.y, rect.width, rect.height,
+  mWindow->Resize(rect.X(), rect.Y(), rect.Width(), rect.Height(),
                   !!(aFlags & nsIBaseWindow::eRepaint));
+  if (mSizingShellFromXUL) {
+    // If we're invoked for sizing from XUL, we want to neither ignore anything
+    // nor persist anything, since it's already the value in XUL.
+    return NS_OK;
+  }
   if (!mChromeLoaded) {
     // If we're called before the chrome is loaded someone obviously wants this
     // window at this size and position. We don't persist this one-time setting.
@@ -638,33 +633,24 @@ NS_IMETHODIMP nsXULWindow::SetPositionAndSize(int32_t aX, int32_t aY,
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::GetPositionAndSize(int32_t* x, int32_t* y, int32_t* cx,
-   int32_t* cy)
-{
-
-  if (!mWindow)
-    return NS_ERROR_FAILURE;
+NS_IMETHODIMP nsXULWindow::GetPositionAndSize(int32_t* x, int32_t* y,
+                                              int32_t* cx, int32_t* cy) {
+  if (!mWindow) return NS_ERROR_FAILURE;
 
   LayoutDeviceIntRect rect = mWindow->GetScreenBounds();
 
-  if (x)
-    *x = rect.x;
-  if (y)
-    *y = rect.y;
-  if (cx)
-    *cx = rect.width;
-  if (cy)
-    *cy = rect.height;
+  if (x) *x = rect.X();
+  if (y) *y = rect.Y();
+  if (cx) *cx = rect.Width();
+  if (cy) *cy = rect.Height();
 
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::Center(nsIXULWindow *aRelative, bool aScreen, bool aAlert)
-{
-  int32_t  left, top, width, height,
-           ourWidth, ourHeight;
-  bool     screenCoordinates =  false,
-           windowCoordinates =  false;
+NS_IMETHODIMP nsXULWindow::Center(nsIXULWindow* aRelative, bool aScreen,
+                                  bool aAlert) {
+  int32_t left, top, width, height, ourWidth, ourHeight;
+  bool screenCoordinates = false, windowCoordinates = false;
   nsresult result;
 
   if (!mChromeLoaded) {
@@ -673,12 +659,11 @@ NS_IMETHODIMP nsXULWindow::Center(nsIXULWindow *aRelative, bool aScreen, bool aA
     return NS_OK;
   }
 
-  if (!aScreen && !aRelative)
-    return NS_ERROR_INVALID_ARG;
+  if (!aScreen && !aRelative) return NS_ERROR_INVALID_ARG;
 
-  nsCOMPtr<nsIScreenManager> screenmgr = do_GetService("@mozilla.org/gfx/screenmanager;1", &result);
-  if (NS_FAILED(result))
-    return result;
+  nsCOMPtr<nsIScreenManager> screenmgr =
+      do_GetService("@mozilla.org/gfx/screenmanager;1", &result);
+  if (NS_FAILED(result)) return result;
 
   nsCOMPtr<nsIScreen> screen;
 
@@ -697,7 +682,8 @@ NS_IMETHODIMP nsXULWindow::Center(nsIXULWindow *aRelative, bool aScreen, bool aA
         }
         // if centering on screen, convert that to the corresponding screen
         if (aScreen)
-          screenmgr->ScreenForRect(left, top, width, height, getter_AddRefs(screen));
+          screenmgr->ScreenForRect(left, top, width, height,
+                                   getter_AddRefs(screen));
         else
           windowCoordinates = true;
       } else {
@@ -711,8 +697,9 @@ NS_IMETHODIMP nsXULWindow::Center(nsIXULWindow *aRelative, bool aScreen, bool aA
   if (!aRelative) {
     if (!mOpenerScreenRect.IsEmpty()) {
       // FIXME - check if these are device or display pixels
-      screenmgr->ScreenForRect(mOpenerScreenRect.x, mOpenerScreenRect.y,
-                               mOpenerScreenRect.width, mOpenerScreenRect.height,
+      screenmgr->ScreenForRect(mOpenerScreenRect.X(), mOpenerScreenRect.Y(),
+                               mOpenerScreenRect.Width(),
+                               mOpenerScreenRect.Height(),
                                getter_AddRefs(screen));
     } else {
       screenmgr->GetPrimaryScreen(getter_AddRefs(screen));
@@ -751,15 +738,13 @@ NS_IMETHODIMP nsXULWindow::Center(nsIXULWindow *aRelative, bool aScreen, bool aA
   return NS_ERROR_FAILURE;
 }
 
-NS_IMETHODIMP nsXULWindow::Repaint(bool aForce)
-{
-  //XXX First Check In
+NS_IMETHODIMP nsXULWindow::Repaint(bool aForce) {
+  // XXX First Check In
   NS_ASSERTION(false, "Not Yet Implemented");
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::GetParentWidget(nsIWidget** aParentWidget)
-{
+NS_IMETHODIMP nsXULWindow::GetParentWidget(nsIWidget** aParentWidget) {
   NS_ENSURE_ARG_POINTER(aParentWidget);
   NS_ENSURE_STATE(mWindow);
 
@@ -767,19 +752,19 @@ NS_IMETHODIMP nsXULWindow::GetParentWidget(nsIWidget** aParentWidget)
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::SetParentWidget(nsIWidget* aParentWidget)
-{
-  //XXX First Check In
+NS_IMETHODIMP nsXULWindow::SetParentWidget(nsIWidget* aParentWidget) {
+  // XXX First Check In
   NS_ASSERTION(false, "Not Yet Implemented");
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::GetParentNativeWindow(nativeWindow* aParentNativeWindow)
-{
+NS_IMETHODIMP nsXULWindow::GetParentNativeWindow(
+    nativeWindow* aParentNativeWindow) {
   NS_ENSURE_ARG_POINTER(aParentNativeWindow);
 
   nsCOMPtr<nsIWidget> parentWidget;
-  NS_ENSURE_SUCCESS(GetParentWidget(getter_AddRefs(parentWidget)), NS_ERROR_FAILURE);
+  NS_ENSURE_SUCCESS(GetParentWidget(getter_AddRefs(parentWidget)),
+                    NS_ERROR_FAILURE);
 
   if (parentWidget) {
     *aParentNativeWindow = parentWidget->GetNativeData(NS_NATIVE_WIDGET);
@@ -788,31 +773,31 @@ NS_IMETHODIMP nsXULWindow::GetParentNativeWindow(nativeWindow* aParentNativeWind
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::SetParentNativeWindow(nativeWindow aParentNativeWindow)
-{
-  //XXX First Check In
+NS_IMETHODIMP nsXULWindow::SetParentNativeWindow(
+    nativeWindow aParentNativeWindow) {
+  // XXX First Check In
   NS_ASSERTION(false, "Not Yet Implemented");
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::GetNativeHandle(nsAString& aNativeHandle)
-{
+NS_IMETHODIMP nsXULWindow::GetNativeHandle(nsAString& aNativeHandle) {
   nsCOMPtr<nsIWidget> mainWidget;
-  NS_ENSURE_SUCCESS(GetMainWidget(getter_AddRefs(mainWidget)), NS_ERROR_FAILURE);
+  NS_ENSURE_SUCCESS(GetMainWidget(getter_AddRefs(mainWidget)),
+                    NS_ERROR_FAILURE);
 
   if (mainWidget) {
     nativeWindow nativeWindowPtr = mainWidget->GetNativeData(NS_NATIVE_WINDOW);
     /* the nativeWindow pointer is converted to and exposed as a string. This
        is a more reliable way not to lose information (as opposed to JS
        |Number| for instance) */
-    aNativeHandle = NS_ConvertASCIItoUTF16(nsPrintfCString("0x%p", nativeWindowPtr));
+    aNativeHandle =
+        NS_ConvertASCIItoUTF16(nsPrintfCString("0x%p", nativeWindowPtr));
   }
 
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::GetVisibility(bool* aVisibility)
-{
+NS_IMETHODIMP nsXULWindow::GetVisibility(bool* aVisibility) {
   NS_ENSURE_ARG_POINTER(aVisibility);
 
   // Always claim to be visible for now. See bug
@@ -823,8 +808,7 @@ NS_IMETHODIMP nsXULWindow::GetVisibility(bool* aVisibility)
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::SetVisibility(bool aVisibility)
-{
+NS_IMETHODIMP nsXULWindow::SetVisibility(bool aVisibility) {
   if (!mChromeLoaded) {
     mShowAfterLoad = aVisibility;
     return NS_OK;
@@ -835,7 +819,7 @@ NS_IMETHODIMP nsXULWindow::SetVisibility(bool aVisibility)
   }
   mDebuting = true;  // (Show / Focus is recursive)
 
-  //XXXTAB Do we really need to show docshell and the window?  Isn't 
+  // XXXTAB Do we really need to show docshell and the window?  Isn't
   // the window good enough?
   nsCOMPtr<nsIBaseWindow> shellAsWin(do_QueryInterface(mDocShell));
   shellAsWin->SetVisibility(aVisibility);
@@ -846,23 +830,24 @@ NS_IMETHODIMP nsXULWindow::SetVisibility(bool aVisibility)
   nsCOMPtr<nsIWidget> window = mWindow;
   window->Show(aVisibility);
 
-  nsCOMPtr<nsIWindowMediator> windowMediator(do_GetService(NS_WINDOWMEDIATOR_CONTRACTID));
+  nsCOMPtr<nsIWindowMediator> windowMediator(
+      do_GetService(NS_WINDOWMEDIATOR_CONTRACTID));
   if (windowMediator)
-     windowMediator->UpdateWindowTimeStamp(static_cast<nsIXULWindow*>(this));
+    windowMediator->UpdateWindowTimeStamp(static_cast<nsIXULWindow*>(this));
 
   // notify observers so that we can hide the splash screen if possible
   nsCOMPtr<nsIObserverService> obssvc = services::GetObserverService();
   NS_ASSERTION(obssvc, "Couldn't get observer service.");
   if (obssvc) {
-    obssvc->NotifyObservers(nullptr, "xul-window-visible", nullptr); 
+    obssvc->NotifyObservers(static_cast<nsIXULWindow*>(this),
+                            "xul-window-visible", nullptr);
   }
 
   mDebuting = false;
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::GetEnabled(bool *aEnabled)
-{
+NS_IMETHODIMP nsXULWindow::GetEnabled(bool* aEnabled) {
   NS_ENSURE_ARG_POINTER(aEnabled);
 
   if (mWindow) {
@@ -870,12 +855,11 @@ NS_IMETHODIMP nsXULWindow::GetEnabled(bool *aEnabled)
     return NS_OK;
   }
 
-  *aEnabled = true; // better guess than most
+  *aEnabled = true;  // better guess than most
   return NS_ERROR_FAILURE;
 }
 
-NS_IMETHODIMP nsXULWindow::SetEnabled(bool aEnable)
-{
+NS_IMETHODIMP nsXULWindow::SetEnabled(bool aEnable) {
   if (mWindow) {
     mWindow->Enable(aEnable);
     return NS_OK;
@@ -883,58 +867,39 @@ NS_IMETHODIMP nsXULWindow::SetEnabled(bool aEnable)
   return NS_ERROR_FAILURE;
 }
 
-NS_IMETHODIMP nsXULWindow::GetMainWidget(nsIWidget** aMainWidget)
-{
+NS_IMETHODIMP nsXULWindow::GetMainWidget(nsIWidget** aMainWidget) {
   NS_ENSURE_ARG_POINTER(aMainWidget);
-   
+
   *aMainWidget = mWindow;
   NS_IF_ADDREF(*aMainWidget);
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::SetFocus()
-{
-  //XXX First Check In
+NS_IMETHODIMP nsXULWindow::SetFocus() {
+  // XXX First Check In
   NS_ASSERTION(false, "Not Yet Implemented");
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::GetTitle(char16_t** aTitle)
-{
-  NS_ENSURE_ARG_POINTER(aTitle);
-
-  *aTitle = ToNewUnicode(mTitle);
-  if (!*aTitle)
-    return NS_ERROR_OUT_OF_MEMORY;
+NS_IMETHODIMP nsXULWindow::GetTitle(nsAString& aTitle) {
+  aTitle = mTitle;
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::SetTitle(const char16_t* aTitle)
-{
+NS_IMETHODIMP nsXULWindow::SetTitle(const nsAString& aTitle) {
   NS_ENSURE_STATE(mWindow);
   mTitle.Assign(aTitle);
-  mTitle.StripChars("\n\r");
+  mTitle.StripCRLF();
   NS_ENSURE_SUCCESS(mWindow->SetTitle(mTitle), NS_ERROR_FAILURE);
-
-  // Tell the window mediator that a title has changed
-  nsCOMPtr<nsIWindowMediator> windowMediator(do_GetService(NS_WINDOWMEDIATOR_CONTRACTID));
-  if (!windowMediator)
-    return NS_OK;
-
-  windowMediator->UpdateWindowTitle(static_cast<nsIXULWindow*>(this), aTitle);
-
   return NS_OK;
 }
-
 
 //*****************************************************************************
 // nsXULWindow: Helpers
-//*****************************************************************************   
+//*****************************************************************************
 
-NS_IMETHODIMP nsXULWindow::EnsureChromeTreeOwner()
-{
-  if (mChromeTreeOwner)
-    return NS_OK;
+NS_IMETHODIMP nsXULWindow::EnsureChromeTreeOwner() {
+  if (mChromeTreeOwner) return NS_OK;
 
   mChromeTreeOwner = new nsChromeTreeOwner();
   NS_ADDREF(mChromeTreeOwner);
@@ -943,22 +908,18 @@ NS_IMETHODIMP nsXULWindow::EnsureChromeTreeOwner()
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::EnsureContentTreeOwner()
-{
-  if (mContentTreeOwner)
-    return NS_OK;
+NS_IMETHODIMP nsXULWindow::EnsureContentTreeOwner() {
+  if (mContentTreeOwner) return NS_OK;
 
   mContentTreeOwner = new nsContentTreeOwner(false);
   NS_ADDREF(mContentTreeOwner);
   mContentTreeOwner->XULWindow(this);
-   
+
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::EnsurePrimaryContentTreeOwner()
-{
-  if (mPrimaryContentTreeOwner)
-    return NS_OK;
+NS_IMETHODIMP nsXULWindow::EnsurePrimaryContentTreeOwner() {
+  if (mPrimaryContentTreeOwner) return NS_OK;
 
   mPrimaryContentTreeOwner = new nsContentTreeOwner(true);
   NS_ADDREF(mPrimaryContentTreeOwner);
@@ -967,128 +928,181 @@ NS_IMETHODIMP nsXULWindow::EnsurePrimaryContentTreeOwner()
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::EnsurePrompter()
-{
-  if (mPrompter)
-    return NS_OK;
-   
+NS_IMETHODIMP nsXULWindow::EnsurePrompter() {
+  if (mPrompter) return NS_OK;
+
   nsCOMPtr<mozIDOMWindowProxy> ourWindow;
   nsresult rv = GetWindowDOMWindow(getter_AddRefs(ourWindow));
   if (NS_SUCCEEDED(rv)) {
-    nsCOMPtr<nsIWindowWatcher> wwatch = 
+    nsCOMPtr<nsIWindowWatcher> wwatch =
         do_GetService(NS_WINDOWWATCHER_CONTRACTID);
-    if (wwatch)
-      wwatch->GetNewPrompter(ourWindow, getter_AddRefs(mPrompter));
+    if (wwatch) wwatch->GetNewPrompter(ourWindow, getter_AddRefs(mPrompter));
   }
   return mPrompter ? NS_OK : NS_ERROR_FAILURE;
 }
 
-NS_IMETHODIMP nsXULWindow::EnsureAuthPrompter()
-{
-  if (mAuthPrompter)
-    return NS_OK;
-      
+NS_IMETHODIMP nsXULWindow::EnsureAuthPrompter() {
+  if (mAuthPrompter) return NS_OK;
+
   nsCOMPtr<mozIDOMWindowProxy> ourWindow;
   nsresult rv = GetWindowDOMWindow(getter_AddRefs(ourWindow));
   if (NS_SUCCEEDED(rv)) {
-    nsCOMPtr<nsIWindowWatcher> wwatch(do_GetService(NS_WINDOWWATCHER_CONTRACTID));
+    nsCOMPtr<nsIWindowWatcher> wwatch(
+        do_GetService(NS_WINDOWWATCHER_CONTRACTID));
     if (wwatch)
       wwatch->GetNewAuthPrompter(ourWindow, getter_AddRefs(mAuthPrompter));
   }
   return mAuthPrompter ? NS_OK : NS_ERROR_FAILURE;
 }
- 
-void nsXULWindow::OnChromeLoaded()
-{
+
+NS_IMETHODIMP nsXULWindow::GetAvailScreenSize(int32_t* aAvailWidth,
+                                              int32_t* aAvailHeight) {
+  nsCOMPtr<mozIDOMWindowProxy> domWindow;
+  GetWindowDOMWindow(getter_AddRefs(domWindow));
+  NS_ENSURE_STATE(domWindow);
+
+  auto* window = nsGlobalWindowOuter::Cast(domWindow);
+
+  RefPtr<nsScreen> screen = window->GetScreen();
+  NS_ENSURE_STATE(screen);
+
+  ErrorResult rv;
+  *aAvailWidth = screen->GetAvailWidth(rv);
+  if (NS_WARN_IF(rv.Failed())) {
+    return rv.StealNSResult();
+  }
+
+  *aAvailHeight = screen->GetAvailHeight(rv);
+  if (NS_WARN_IF(rv.Failed())) {
+    return rv.StealNSResult();
+  }
+
+  return NS_OK;
+}
+
+// Rounds window size to 1000x1000, or, if there isn't enough available
+// screen space, to a multiple of 200x100.
+NS_IMETHODIMP nsXULWindow::ForceRoundedDimensions() {
+  if (mIsHiddenWindow) {
+    return NS_OK;
+  }
+
+  int32_t availWidthCSS = 0;
+  int32_t availHeightCSS = 0;
+  int32_t contentWidthCSS = 0;
+  int32_t contentHeightCSS = 0;
+  int32_t windowWidthCSS = 0;
+  int32_t windowHeightCSS = 0;
+  double devicePerCSSPixels = 1.0;
+
+  GetUnscaledDevicePixelsPerCSSPixel(&devicePerCSSPixels);
+
+  GetAvailScreenSize(&availWidthCSS, &availHeightCSS);
+
+  // To get correct chrome size, we have to resize the window to a proper
+  // size first. So, here, we size it to its available size.
+  SetSpecifiedSize(availWidthCSS, availHeightCSS);
+
+  // Get the current window size for calculating chrome UI size.
+  GetSize(&windowWidthCSS, &windowHeightCSS);  // device pixels
+  windowWidthCSS = NSToIntRound(windowWidthCSS / devicePerCSSPixels);
+  windowHeightCSS = NSToIntRound(windowHeightCSS / devicePerCSSPixels);
+
+  // Get the content size for calculating chrome UI size.
+  GetPrimaryContentSize(&contentWidthCSS, &contentHeightCSS);
+
+  // Calculate the chrome UI size.
+  int32_t chromeWidth = 0, chromeHeight = 0;
+  chromeWidth = windowWidthCSS - contentWidthCSS;
+  chromeHeight = windowHeightCSS - contentHeightCSS;
+
+  int32_t targetContentWidth = 0, targetContentHeight = 0;
+
+  // Here, we use the available screen dimensions as the input dimensions to
+  // force the window to be rounded as the maximum available content size.
+  nsContentUtils::CalcRoundedWindowSizeForResistingFingerprinting(
+      chromeWidth, chromeHeight, availWidthCSS, availHeightCSS, availWidthCSS,
+      availHeightCSS,
+      false,  // aSetOuterWidth
+      false,  // aSetOuterHeight
+      &targetContentWidth, &targetContentHeight);
+
+  targetContentWidth = NSToIntRound(targetContentWidth * devicePerCSSPixels);
+  targetContentHeight = NSToIntRound(targetContentHeight * devicePerCSSPixels);
+
+  SetPrimaryContentSize(targetContentWidth, targetContentHeight);
+
+  return NS_OK;
+}
+
+void nsXULWindow::OnChromeLoaded() {
   nsresult rv = EnsureContentTreeOwner();
 
   if (NS_SUCCEEDED(rv)) {
     mChromeLoaded = true;
     ApplyChromeFlags();
     SyncAttributesToWidget();
-
-    int32_t specWidth = -1, specHeight = -1;
-    bool gotSize = false;
-
-    if (!mIgnoreXULSize) {
-      gotSize = LoadSizeFromXUL(specWidth, specHeight);
-    }
-
-    bool positionSet = !mIgnoreXULPosition;
-    nsCOMPtr<nsIXULWindow> parentWindow(do_QueryReferent(mParentWindow));
-#if defined(XP_UNIX) && !defined(XP_MACOSX)
-    // don't override WM placement on unix for independent, top-level windows
-    // (however, we think the benefits of intelligent dependent window placement
-    // trump that override.)
-    if (!parentWindow)
-      positionSet = false;
-#endif
-    if (positionSet) {
-      // We have to do this before sizing the window, because sizing depends
-      // on the resolution of the screen we're on. But positioning needs to
-      // know the size so that it can constrain to screen bounds.... as an
-      // initial guess here, we'll use the specified size (if any).
-      positionSet = LoadPositionFromXUL(specWidth, specHeight);
-    }
-
-    if (gotSize) {
-      SetSpecifiedSize(specWidth, specHeight);
-    }
-
-    if (mIntrinsicallySized) {
-      // (if LoadSizeFromXUL set the size, mIntrinsicallySized will be false)
-      nsCOMPtr<nsIContentViewer> cv;
-      mDocShell->GetContentViewer(getter_AddRefs(cv));
-      if (cv) {
-        nsCOMPtr<nsIDocShellTreeItem> docShellAsItem = do_QueryInterface(mDocShell);
-        nsCOMPtr<nsIDocShellTreeOwner> treeOwner;
-        docShellAsItem->GetTreeOwner(getter_AddRefs(treeOwner));
-        if (treeOwner) {
-          // GetContentSize can fail, so initialise |width| and |height| to be
-          // on the safe side.
-          int32_t width = 0, height = 0;
-          if (NS_SUCCEEDED(cv->GetContentSize(&width, &height))) {
-            treeOwner->SizeShellTo(docShellAsItem, width, height);
-            // Update specified size for the final LoadPositionFromXUL call.
-            specWidth = width;
-            specHeight = height;
-          }
-        }
+    if (mWindow) {
+      SizeShell();
+      if (mShowAfterLoad) {
+        SetVisibility(true);
       }
+      AddTooltipSupport();
     }
-
-    // Now that we have set the window's final size, we can re-do its
-    // positioning so that it is properly constrained to the screen.
-    if (positionSet) {
-      LoadPositionFromXUL(specWidth, specHeight);
-    }
-
-    LoadMiscPersistentAttributesFromXUL();
-
-    if (mCenterAfterLoad && !positionSet) {
-      Center(parentWindow, parentWindow ? false : true, false);
-    }
-
-    if (mShowAfterLoad) {
-      SetVisibility(true);
-      // At this point the window may have been closed during Show(), so
-      // nsXULWindow::Destroy may already have been called. Take care!
-    }
+    // At this point the window may have been closed already during Show() or
+    // SyncAttributesToWidget(), so nsXULWindow::Destroy may already have been
+    // called. Take care!
   }
   mPersistentAttributesMask |= PAD_POSITION | PAD_SIZE | PAD_MISC;
+}
+
+bool nsXULWindow::NeedsTooltipListener() {
+  nsCOMPtr<dom::Element> docShellElement = GetWindowDOMElement();
+  if (!docShellElement || docShellElement->IsXULElement()) {
+    // Tooltips in XUL are handled by each element.
+    return false;
+  }
+  // All other non-XUL document types need a tooltip listener.
+  return true;
+}
+
+void nsXULWindow::AddTooltipSupport() {
+  if (!NeedsTooltipListener()) {
+    return;
+  }
+  nsXULTooltipListener* listener = nsXULTooltipListener::GetInstance();
+  if (!listener) {
+    return;
+  }
+
+  nsCOMPtr<dom::Element> docShellElement = GetWindowDOMElement();
+  MOZ_ASSERT(docShellElement);
+  listener->AddTooltipSupport(docShellElement);
+}
+
+void nsXULWindow::RemoveTooltipSupport() {
+  if (!NeedsTooltipListener()) {
+    return;
+  }
+  nsXULTooltipListener* listener = nsXULTooltipListener::GetInstance();
+  if (!listener) {
+    return;
+  }
+
+  nsCOMPtr<dom::Element> docShellElement = GetWindowDOMElement();
+  MOZ_ASSERT(docShellElement);
+  listener->RemoveTooltipSupport(docShellElement);
 }
 
 // If aSpecWidth and/or aSpecHeight are > 0, we will use these CSS px sizes
 // to fit to the screen when staggering windows; if they're negative,
 // we use the window's current size instead.
-bool nsXULWindow::LoadPositionFromXUL(int32_t aSpecWidth, int32_t aSpecHeight)
-{
-  bool     gotPosition = false;
+bool nsXULWindow::LoadPositionFromXUL(int32_t aSpecWidth, int32_t aSpecHeight) {
+  bool gotPosition = false;
 
   // if we're the hidden window, don't try to validate our size/position. We're
   // special.
-  if (mIsHiddenWindow)
-    return false;
+  if (mIsHiddenWindow) return false;
 
   nsCOMPtr<dom::Element> windowElement = GetWindowDOMElement();
   NS_ENSURE_TRUE(windowElement, false);
@@ -1111,9 +1125,9 @@ bool nsXULWindow::LoadPositionFromXUL(int32_t aSpecWidth, int32_t aSpecHeight)
   // For size, use specified value if > 0, else current value
   double devToCSSScale = 1.0 / mWindow->GetDefaultScale().scale;
   int32_t cssWidth =
-    aSpecWidth > 0 ? aSpecWidth : NSToIntRound(currWidth * devToCSSScale);
+      aSpecWidth > 0 ? aSpecWidth : NSToIntRound(currWidth * devToCSSScale);
   int32_t cssHeight =
-    aSpecHeight > 0 ? aSpecHeight : NSToIntRound(currHeight * devToCSSScale);
+      aSpecHeight > 0 ? aSpecHeight : NSToIntRound(currHeight * devToCSSScale);
 
   // Obtain the position information from the <xul:window> element.
   int32_t specX = currX;
@@ -1147,8 +1161,7 @@ bool nsXULWindow::LoadPositionFromXUL(int32_t aSpecWidth, int32_t aSpecHeight)
         specX += parentX;
         specY += parentY;
       }
-    }
-    else {
+    } else {
       StaggerPosition(specX, specY, cssWidth, cssHeight);
     }
   }
@@ -1160,10 +1173,34 @@ bool nsXULWindow::LoadPositionFromXUL(int32_t aSpecWidth, int32_t aSpecHeight)
   return gotPosition;
 }
 
-bool
-nsXULWindow::LoadSizeFromXUL(int32_t& aSpecWidth, int32_t& aSpecHeight)
-{
-  bool     gotSize = false;
+static Maybe<int32_t> ReadIntAttribute(const Element& aElement, nsAtom* aAtom) {
+  nsAutoString attrString;
+  if (!aElement.GetAttr(kNameSpaceID_None, aAtom, attrString)) {
+    return Nothing();
+  }
+
+  nsresult res = NS_OK;
+  int32_t ret = attrString.ToInteger(&res);
+  return NS_SUCCEEDED(res) ? Some(ret) : Nothing();
+}
+
+static Maybe<int32_t> ReadSize(const Element& aElement, nsAtom* aAttr,
+                               nsAtom* aMinAttr, nsAtom* aMaxAttr) {
+  Maybe<int32_t> attr = ReadIntAttribute(aElement, aAttr);
+  if (!attr) {
+    return Nothing();
+  }
+
+  int32_t min =
+      std::max(100, ReadIntAttribute(aElement, aMinAttr).valueOr(100));
+  int32_t max = ReadIntAttribute(aElement, aMaxAttr)
+                    .valueOr(std::numeric_limits<int32_t>::max());
+
+  return Some(std::min(max, std::max(*attr, min)));
+}
+
+bool nsXULWindow::LoadSizeFromXUL(int32_t& aSpecWidth, int32_t& aSpecHeight) {
+  bool gotSize = false;
 
   // if we're the hidden window, don't try to validate our size/position. We're
   // special.
@@ -1174,50 +1211,36 @@ nsXULWindow::LoadSizeFromXUL(int32_t& aSpecWidth, int32_t& aSpecHeight)
   nsCOMPtr<dom::Element> windowElement = GetWindowDOMElement();
   NS_ENSURE_TRUE(windowElement, false);
 
-  nsresult errorCode;
-  int32_t temp;
-
   // Obtain the sizing information from the <xul:window> element.
   aSpecWidth = 100;
   aSpecHeight = 100;
-  nsAutoString sizeString;
 
-  windowElement->GetAttribute(WIDTH_ATTRIBUTE, sizeString);
-  temp = sizeString.ToInteger(&errorCode);
-  if (NS_SUCCEEDED(errorCode) && temp > 0) {
-    aSpecWidth = std::max(temp, 100);
+  if (auto width = ReadSize(*windowElement, nsGkAtoms::width,
+                            nsGkAtoms::minwidth, nsGkAtoms::maxwidth)) {
+    aSpecWidth = *width;
     gotSize = true;
   }
-  windowElement->GetAttribute(HEIGHT_ATTRIBUTE, sizeString);
-  temp = sizeString.ToInteger(&errorCode);
-  if (NS_SUCCEEDED(errorCode) && temp > 0) {
-    aSpecHeight = std::max(temp, 100);
+
+  if (auto height = ReadSize(*windowElement, nsGkAtoms::height,
+                             nsGkAtoms::minheight, nsGkAtoms::maxheight)) {
+    aSpecHeight = *height;
     gotSize = true;
   }
 
   return gotSize;
 }
 
-void
-nsXULWindow::SetSpecifiedSize(int32_t aSpecWidth, int32_t aSpecHeight)
-{
+void nsXULWindow::SetSpecifiedSize(int32_t aSpecWidth, int32_t aSpecHeight) {
   // constrain to screen size
-  nsCOMPtr<mozIDOMWindowProxy> domWindow;
-  GetWindowDOMWindow(getter_AddRefs(domWindow));
-  if (domWindow) {
-    auto* window = nsPIDOMWindowOuter::From(domWindow);
-    nsCOMPtr<nsIDOMScreen> screen = window->GetScreen();
-    if (screen) {
-      int32_t screenWidth;
-      int32_t screenHeight;
-      screen->GetAvailWidth(&screenWidth); // CSS pixels
-      screen->GetAvailHeight(&screenHeight);
-      if (aSpecWidth > screenWidth) {
-        aSpecWidth = screenWidth;
-      }
-      if (aSpecHeight > screenHeight) {
-        aSpecHeight = screenHeight;
-      }
+  int32_t screenWidth;
+  int32_t screenHeight;
+
+  if (NS_SUCCEEDED(GetAvailScreenSize(&screenWidth, &screenHeight))) {
+    if (aSpecWidth > screenWidth) {
+      aSpecWidth = screenWidth;
+    }
+    if (aSpecHeight > screenHeight) {
+      aSpecHeight = screenHeight;
     }
   }
 
@@ -1225,7 +1248,7 @@ nsXULWindow::SetSpecifiedSize(int32_t aSpecWidth, int32_t aSpecHeight)
 
   int32_t currWidth = 0;
   int32_t currHeight = 0;
-  GetSize(&currWidth, &currHeight); // returns device pixels
+  GetSize(&currWidth, &currHeight);  // returns device pixels
 
   // convert specified values to device pixels, and resize if needed
   double cssToDevPx = mWindow ? mWindow->GetDefaultScale().scale : 1.0;
@@ -1241,57 +1264,43 @@ nsXULWindow::SetSpecifiedSize(int32_t aSpecWidth, int32_t aSpecHeight)
    |persist| attribute, other than size and position. Those are special
    because it's important to load those before one of the misc
    attributes (sizemode) and they require extra processing. */
-bool nsXULWindow::LoadMiscPersistentAttributesFromXUL()
-{
-  bool     gotState = false;
+bool nsXULWindow::UpdateWindowStateFromMiscXULAttributes() {
+  bool gotState = false;
 
   /* There are no misc attributes of interest to the hidden window.
      It's especially important not to try to validate that window's
      size or position, because some platforms (Mac OS X) need to
      make it visible and offscreen. */
-  if (mIsHiddenWindow)
-    return false;
+  if (mIsHiddenWindow) return false;
 
   nsCOMPtr<dom::Element> windowElement = GetWindowDOMElement();
   NS_ENSURE_TRUE(windowElement, false);
 
   nsAutoString stateString;
-
-  // sizemode
-  windowElement->GetAttribute(MODE_ATTRIBUTE, stateString);
   nsSizeMode sizeMode = nsSizeMode_Normal;
-  /* ignore request to minimize, to not confuse novices
-  if (stateString.Equals(SIZEMODE_MINIMIZED))
-    sizeMode = nsSizeMode_Minimized;
-  */
-  if (!mIgnoreXULSizeMode &&
-      (stateString.Equals(SIZEMODE_MAXIMIZED) || stateString.Equals(SIZEMODE_FULLSCREEN))) {
-    /* Honor request to maximize only if the window is sizable.
-       An unsizable, unmaximizable, yet maximized window confuses
-       Windows OS and is something of a travesty, anyway. */
-    if (mChromeFlags & nsIWebBrowserChrome::CHROME_WINDOW_RESIZE) {
-      mIntrinsicallySized = false;
 
-      if (stateString.Equals(SIZEMODE_MAXIMIZED))
-        sizeMode = nsSizeMode_Maximized;
-      else
-        sizeMode = nsSizeMode_Fullscreen;
-    }
-  }
-
-  // If we are told to ignore the size mode attribute update the
-  // document so the attribute and window are in sync.
+  // If we are told to ignore the size mode attribute, force
+  // normal sizemode.
   if (mIgnoreXULSizeMode) {
-    nsAutoString sizeString;
-    if (sizeMode == nsSizeMode_Maximized)
-      sizeString.Assign(SIZEMODE_MAXIMIZED);
-    else if (sizeMode == nsSizeMode_Fullscreen)
-      sizeString.Assign(SIZEMODE_FULLSCREEN);
-    else if (sizeMode == nsSizeMode_Normal)
-      sizeString.Assign(SIZEMODE_NORMAL);
-    if (!sizeString.IsEmpty()) {
-      ErrorResult rv;
-      windowElement->SetAttribute(MODE_ATTRIBUTE, sizeString, rv);
+    windowElement->SetAttribute(MODE_ATTRIBUTE, NS_LITERAL_STRING("normal"),
+                                IgnoreErrors());
+  } else {
+    // Otherwise, read sizemode from DOM and, if the window is resizable,
+    // set it later.
+    windowElement->GetAttribute(MODE_ATTRIBUTE, stateString);
+    if ((stateString.Equals(SIZEMODE_MAXIMIZED) ||
+         stateString.Equals(SIZEMODE_FULLSCREEN))) {
+      /* Honor request to maximize only if the window is sizable.
+         An unsizable, unmaximizable, yet maximized window confuses
+         Windows OS and is something of a travesty, anyway. */
+      if (mChromeFlags & nsIWebBrowserChrome::CHROME_WINDOW_RESIZE) {
+        mIntrinsicallySized = false;
+
+        if (stateString.Equals(SIZEMODE_MAXIMIZED))
+          sizeMode = nsSizeMode_Maximized;
+        else
+          sizeMode = nsSizeMode_Fullscreen;
+      }
     }
   }
 
@@ -1301,6 +1310,12 @@ bool nsXULWindow::LoadMiscPersistentAttributesFromXUL()
     auto* piWindow = nsPIDOMWindowOuter::From(ourWindow);
     piWindow->SetFullScreen(true);
   } else {
+    // For maximized windows, ignore the XUL size and position attributes,
+    // as setting them would set the window back to normal sizemode.
+    if (sizeMode == nsSizeMode_Maximized) {
+      mIgnoreXULSize = true;
+      mIgnoreXULPosition = true;
+    }
     mWindow->SetSizeMode(sizeMode);
   }
   gotState = true;
@@ -1324,52 +1339,48 @@ bool nsXULWindow::LoadMiscPersistentAttributesFromXUL()
    The aRequested{X,Y} parameters here are in desktop pixels;
    the aSpec{Width,Height} parameters are CSS pixel dimensions.
 */
-void nsXULWindow::StaggerPosition(int32_t &aRequestedX, int32_t &aRequestedY,
-                                  int32_t aSpecWidth, int32_t aSpecHeight)
-{
+void nsXULWindow::StaggerPosition(int32_t& aRequestedX, int32_t& aRequestedY,
+                                  int32_t aSpecWidth, int32_t aSpecHeight) {
   // These "constants" will be converted from CSS to desktop pixels
   // for the appropriate screen, assuming we find a screen to use...
   // hence they're not actually declared const here.
   int32_t kOffset = 22;
-  uint32_t kSlop  = 4;
+  uint32_t kSlop = 4;
 
-  bool     keepTrying;
-  int      bouncedX = 0, // bounced off vertical edge of screen
-           bouncedY = 0; // bounced off horizontal edge
+  bool keepTrying;
+  int bouncedX = 0,  // bounced off vertical edge of screen
+      bouncedY = 0;  // bounced off horizontal edge
 
   // look for any other windows of this type
   nsCOMPtr<nsIWindowMediator> wm(do_GetService(NS_WINDOWMEDIATOR_CONTRACTID));
-  if (!wm)
-    return;
+  if (!wm) return;
 
   nsCOMPtr<dom::Element> windowElement = GetWindowDOMElement();
-  if (!windowElement)
-    return;
+  if (!windowElement) return;
 
   nsCOMPtr<nsIXULWindow> ourXULWindow(this);
 
   nsAutoString windowType;
   windowElement->GetAttribute(WINDOWTYPE_ATTRIBUTE, windowType);
 
-  int32_t screenTop = 0,    // it's pointless to initialize these ...
-          screenRight = 0,  // ... but to prevent oversalubrious and ...
-          screenBottom = 0, // ... underbright compilers from ...
-          screenLeft = 0;   // ... issuing warnings.
-  bool    gotScreen = false;
+  int32_t screenTop = 0,  // it's pointless to initialize these ...
+      screenRight = 0,    // ... but to prevent oversalubrious and ...
+      screenBottom = 0,   // ... underbright compilers from ...
+      screenLeft = 0;     // ... issuing warnings.
+  bool gotScreen = false;
 
-  { // fetch screen coordinates
-    nsCOMPtr<nsIScreenManager> screenMgr(do_GetService(
-                                         "@mozilla.org/gfx/screenmanager;1"));
+  {  // fetch screen coordinates
+    nsCOMPtr<nsIScreenManager> screenMgr(
+        do_GetService("@mozilla.org/gfx/screenmanager;1"));
     if (screenMgr) {
       nsCOMPtr<nsIScreen> ourScreen;
       // the coordinates here are already display pixels
-      screenMgr->ScreenForRect(aRequestedX, aRequestedY,
-                               aSpecWidth, aSpecHeight,
-                               getter_AddRefs(ourScreen));
+      screenMgr->ScreenForRect(aRequestedX, aRequestedY, aSpecWidth,
+                               aSpecHeight, getter_AddRefs(ourScreen));
       if (ourScreen) {
         int32_t screenWidth, screenHeight;
-        ourScreen->GetAvailRectDisplayPix(&screenLeft, &screenTop,
-                                          &screenWidth, &screenHeight);
+        ourScreen->GetAvailRectDisplayPix(&screenLeft, &screenTop, &screenWidth,
+                                          &screenHeight);
         screenBottom = screenTop + screenHeight;
         screenRight = screenLeft + screenWidth;
         // Get the screen's scaling factors and convert staggering constants
@@ -1394,15 +1405,14 @@ void nsXULWindow::StaggerPosition(int32_t &aRequestedX, int32_t &aRequestedY,
     nsCOMPtr<nsISimpleEnumerator> windowList;
     wm->GetXULWindowEnumerator(windowType.get(), getter_AddRefs(windowList));
 
-    if (!windowList)
-      break;
+    if (!windowList) break;
 
-    // One full pass through all windows of this type, offset and stop on collision.
+    // One full pass through all windows of this type, offset and stop on
+    // collision.
     do {
       bool more;
       windowList->HasMoreElements(&more);
-      if (!more)
-        break;
+      if (!more) break;
 
       nsCOMPtr<nsISupports> supportsWindow;
       windowList->GetNext(getter_AddRefs(supportsWindow));
@@ -1410,15 +1420,18 @@ void nsXULWindow::StaggerPosition(int32_t &aRequestedX, int32_t &aRequestedY,
       nsCOMPtr<nsIXULWindow> listXULWindow(do_QueryInterface(supportsWindow));
       if (listXULWindow != ourXULWindow) {
         int32_t listX, listY;
-        nsCOMPtr<nsIBaseWindow> listBaseWindow(do_QueryInterface(supportsWindow));
+        nsCOMPtr<nsIBaseWindow> listBaseWindow(
+            do_QueryInterface(supportsWindow));
         listBaseWindow->GetPosition(&listX, &listY);
         double scale;
-        if (NS_SUCCEEDED(listBaseWindow->GetDevicePixelsPerDesktopPixel(&scale))) {
+        if (NS_SUCCEEDED(
+                listBaseWindow->GetDevicePixelsPerDesktopPixel(&scale))) {
           listX = NSToIntRound(listX / scale);
           listY = NSToIntRound(listY / scale);
         }
 
-        if (Abs(listX - aRequestedX) <= kSlop && Abs(listY - aRequestedY) <= kSlop) {
+        if (Abs(listX - aRequestedX) <= kSlop &&
+            Abs(listY - aRequestedY) <= kSlop) {
           // collision! offset and start over
           if (bouncedX & 0x1)
             aRequestedX -= kOffset;
@@ -1428,7 +1441,8 @@ void nsXULWindow::StaggerPosition(int32_t &aRequestedX, int32_t &aRequestedY,
 
           if (gotScreen) {
             // if we're moving to the right and we need to bounce...
-            if (!(bouncedX & 0x1) && ((aRequestedX + aSpecWidth) > screenRight)) {
+            if (!(bouncedX & 0x1) &&
+                ((aRequestedX + aSpecWidth) > screenRight)) {
               aRequestedX = screenRight - aSpecWidth;
               ++bouncedX;
             }
@@ -1453,15 +1467,15 @@ void nsXULWindow::StaggerPosition(int32_t &aRequestedX, int32_t &aRequestedY,
           break;
         }
       }
-    } while(1);
+    } while (1);
   } while (keepTrying);
 }
 
-void nsXULWindow::SyncAttributesToWidget()
-{
+void nsXULWindow::SyncAttributesToWidget() {
   nsCOMPtr<dom::Element> windowElement = GetWindowDOMElement();
-  if (!windowElement)
-    return;
+  if (!windowElement) return;
+
+  MOZ_DIAGNOSTIC_ASSERT(mWindow, "No widget on SyncAttributesToWidget?");
 
   nsAutoString attr;
 
@@ -1471,19 +1485,26 @@ void nsXULWindow::SyncAttributesToWidget()
     mWindow->HideWindowChrome(true);
   }
 
+  NS_ENSURE_TRUE_VOID(mWindow);
+
   // "chromemargin" attribute
   nsIntMargin margins;
   windowElement->GetAttribute(NS_LITERAL_STRING("chromemargin"), attr);
   if (nsContentUtils::ParseIntMarginValue(attr, margins)) {
-    LayoutDeviceIntMargin tmp = LayoutDeviceIntMargin::FromUnknownMargin(margins);
+    LayoutDeviceIntMargin tmp =
+        LayoutDeviceIntMargin::FromUnknownMargin(margins);
     mWindow->SetNonClientMargins(tmp);
   }
+
+  NS_ENSURE_TRUE_VOID(mWindow);
 
   // "windowtype" attribute
   windowElement->GetAttribute(WINDOWTYPE_ATTRIBUTE, attr);
   if (!attr.IsEmpty()) {
     mWindow->SetWindowClass(attr);
   }
+
+  NS_ENSURE_TRUE_VOID(mWindow);
 
   // "id" attribute for icon
   windowElement->GetAttribute(NS_LITERAL_STRING("id"), attr);
@@ -1492,17 +1513,25 @@ void nsXULWindow::SyncAttributesToWidget()
   }
   mWindow->SetIcon(attr);
 
+  NS_ENSURE_TRUE_VOID(mWindow);
+
   // "drawtitle" attribute
   windowElement->GetAttribute(NS_LITERAL_STRING("drawtitle"), attr);
   mWindow->SetDrawsTitle(attr.LowerCaseEqualsLiteral("true"));
+
+  NS_ENSURE_TRUE_VOID(mWindow);
 
   // "toggletoolbar" attribute
   windowElement->GetAttribute(NS_LITERAL_STRING("toggletoolbar"), attr);
   mWindow->SetShowsToolbarButton(attr.LowerCaseEqualsLiteral("true"));
 
+  NS_ENSURE_TRUE_VOID(mWindow);
+
   // "fullscreenbutton" attribute
   windowElement->GetAttribute(NS_LITERAL_STRING("fullscreenbutton"), attr);
   mWindow->SetShowsFullScreenButton(attr.LowerCaseEqualsLiteral("true"));
+
+  NS_ENSURE_TRUE_VOID(mWindow);
 
   // "macanimationtype" attribute
   windowElement->GetAttribute(NS_LITERAL_STRING("macanimationtype"), attr);
@@ -1511,20 +1540,141 @@ void nsXULWindow::SyncAttributesToWidget()
   }
 }
 
-NS_IMETHODIMP nsXULWindow::SavePersistentAttributes()
-{
+enum class ConversionDirection {
+  InnerToOuter,
+  OuterToInner,
+};
+
+static void ConvertWindowSize(nsIXULWindow* aWin, const nsAtom* aAttr,
+                              ConversionDirection aDirection,
+                              nsAString& aInOutString) {
+  MOZ_ASSERT(aWin);
+  MOZ_ASSERT(aAttr == nsGkAtoms::width || aAttr == nsGkAtoms::height);
+
+  nsresult rv;
+  int32_t size = aInOutString.ToInteger(&rv);
+  if (NS_FAILED(rv)) {
+    return;
+  }
+
+  int32_t sizeDiff = aAttr == nsGkAtoms::width
+                         ? aWin->GetOuterToInnerWidthDifferenceInCSSPixels()
+                         : aWin->GetOuterToInnerHeightDifferenceInCSSPixels();
+
+  if (!sizeDiff) {
+    return;
+  }
+
+  int32_t multiplier = aDirection == ConversionDirection::InnerToOuter ? 1 : -1;
+
+  CopyASCIItoUTF16(nsPrintfCString("%d", size + multiplier * sizeDiff),
+                   aInOutString);
+}
+
+nsresult nsXULWindow::GetPersistentValue(const nsAtom* aAttr,
+                                         nsAString& aValue) {
+  nsCOMPtr<dom::Element> docShellElement = GetWindowDOMElement();
+  if (!docShellElement) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsAutoString windowElementId;
+  docShellElement->GetId(windowElementId);
+  // Elements must have an ID to be persisted.
+  if (windowElementId.IsEmpty()) {
+    return NS_OK;
+  }
+
+  RefPtr<dom::Document> ownerDoc = docShellElement->OwnerDoc();
+  nsIURI* docURI = ownerDoc->GetDocumentURI();
+  if (!docURI) {
+    return NS_ERROR_FAILURE;
+  }
+  nsAutoCString utf8uri;
+  nsresult rv = docURI->GetSpec(utf8uri);
+  NS_ENSURE_SUCCESS(rv, rv);
+  NS_ConvertUTF8toUTF16 uri(utf8uri);
+
+  if (!mLocalStore) {
+    mLocalStore = do_GetService("@mozilla.org/xul/xulstore;1");
+    if (NS_WARN_IF(!mLocalStore)) {
+      return NS_ERROR_NOT_INITIALIZED;
+    }
+  }
+
+  rv = mLocalStore->GetValue(uri, windowElementId, nsDependentAtomString(aAttr),
+                             aValue);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  if (aAttr == nsGkAtoms::width || aAttr == nsGkAtoms::height) {
+    // Convert attributes from outer size to inner size for top-level
+    // windows, see bug 1444525 & co.
+    ConvertWindowSize(this, aAttr, ConversionDirection::OuterToInner, aValue);
+  }
+
+  return NS_OK;
+}
+
+nsresult nsXULWindow::SetPersistentValue(const nsAtom* aAttr,
+                                         const nsAString& aValue) {
+  nsCOMPtr<dom::Element> docShellElement = GetWindowDOMElement();
+  if (!docShellElement) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsAutoString windowElementId;
+  docShellElement->GetId(windowElementId);
+  // Match the behavior of XULDocument and only persist values if the element
+  // has an ID.
+  if (windowElementId.IsEmpty()) {
+    return NS_OK;
+  }
+
+  RefPtr<dom::Document> ownerDoc = docShellElement->OwnerDoc();
+  nsIURI* docURI = ownerDoc->GetDocumentURI();
+  if (!docURI) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsAutoCString utf8uri;
+  nsresult rv = docURI->GetSpec(utf8uri);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+  NS_ConvertUTF8toUTF16 uri(utf8uri);
+
+  nsAutoString maybeConvertedValue(aValue);
+  if (aAttr == nsGkAtoms::width || aAttr == nsGkAtoms::height) {
+    // Make sure we store the <window> attributes as outer window size, see
+    // bug 1444525 & co.
+    ConvertWindowSize(this, aAttr, ConversionDirection::InnerToOuter,
+                      maybeConvertedValue);
+  }
+
+  if (!mLocalStore) {
+    mLocalStore = do_GetService("@mozilla.org/xul/xulstore;1");
+    if (NS_WARN_IF(!mLocalStore)) {
+      return NS_ERROR_NOT_INITIALIZED;
+    }
+  }
+
+  return mLocalStore->SetValue(
+      uri, windowElementId, nsDependentAtomString(aAttr), maybeConvertedValue);
+}
+
+NS_IMETHODIMP nsXULWindow::SavePersistentAttributes() {
   // can happen when the persistence timer fires at an inopportune time
   // during window shutdown
-  if (!mDocShell)
-    return NS_ERROR_FAILURE;
+  if (!mDocShell) return NS_ERROR_FAILURE;
 
   nsCOMPtr<dom::Element> docShellElement = GetWindowDOMElement();
-  if (!docShellElement)
-    return NS_ERROR_FAILURE;
+  if (!docShellElement) return NS_ERROR_FAILURE;
 
-  nsAutoString   persistString;
+  nsAutoString persistString;
   docShellElement->GetAttribute(PERSIST_ATTRIBUTE, persistString);
-  if (persistString.IsEmpty()) { // quick check which sometimes helps
+  if (persistString.IsEmpty()) {  // quick check which sometimes helps
     mPersistentAttributesDirty = 0;
     return NS_OK;
   }
@@ -1547,59 +1697,50 @@ NS_IMETHODIMP nsXULWindow::SavePersistentAttributes()
   if (parent && gotRestoredBounds) {
     int32_t parentX, parentY;
     if (NS_SUCCEEDED(parent->GetPosition(&parentX, &parentY))) {
-      rect.x -= parentX;
-      rect.y -= parentY;
+      rect.MoveBy(-parentX, -parentY);
     }
   }
 
-  char                        sizeBuf[10];
-  nsAutoString                sizeString;
-  nsAutoString                windowElementId;
-  nsCOMPtr<nsIDOMXULDocument> ownerXULDoc;
-
-  // fetch docShellElement's ID and XUL owner document
-  ownerXULDoc = do_QueryInterface(docShellElement->OwnerDoc());
-  if (docShellElement->IsXULElement()) {
-    docShellElement->GetId(windowElementId);
-  }
-
-  bool shouldPersist = !isFullscreen && ownerXULDoc;
+  nsAutoString sizeString;
+  bool shouldPersist = !isFullscreen;
   ErrorResult rv;
   // (only for size elements which are persisted)
   if ((mPersistentAttributesDirty & PAD_POSITION) && gotRestoredBounds) {
     if (persistString.Find("screenX") >= 0) {
-      SprintfLiteral(sizeBuf, "%d", NSToIntRound(rect.x / posScale.scale));
-      sizeString.AssignWithConversion(sizeBuf);
+      sizeString.Truncate();
+      sizeString.AppendInt(NSToIntRound(rect.X() / posScale.scale));
       docShellElement->SetAttribute(SCREENX_ATTRIBUTE, sizeString, rv);
       if (shouldPersist) {
-        ownerXULDoc->Persist(windowElementId, SCREENX_ATTRIBUTE);
+        Unused << SetPersistentValue(nsGkAtoms::screenX, sizeString);
       }
     }
     if (persistString.Find("screenY") >= 0) {
-      SprintfLiteral(sizeBuf, "%d", NSToIntRound(rect.y / posScale.scale));
-      sizeString.AssignWithConversion(sizeBuf);
+      sizeString.Truncate();
+      sizeString.AppendInt(NSToIntRound(rect.Y() / posScale.scale));
       docShellElement->SetAttribute(SCREENY_ATTRIBUTE, sizeString, rv);
       if (shouldPersist) {
-        ownerXULDoc->Persist(windowElementId, SCREENY_ATTRIBUTE);
+        Unused << SetPersistentValue(nsGkAtoms::screenY, sizeString);
       }
     }
   }
 
   if ((mPersistentAttributesDirty & PAD_SIZE) && gotRestoredBounds) {
+    LayoutDeviceIntRect innerRect =
+        rect - GetOuterToInnerSizeDifference(mWindow);
     if (persistString.Find("width") >= 0) {
-      SprintfLiteral(sizeBuf, "%d", NSToIntRound(rect.width / sizeScale.scale));
-      sizeString.AssignWithConversion(sizeBuf);
+      sizeString.Truncate();
+      sizeString.AppendInt(NSToIntRound(innerRect.Width() / sizeScale.scale));
       docShellElement->SetAttribute(WIDTH_ATTRIBUTE, sizeString, rv);
       if (shouldPersist) {
-        ownerXULDoc->Persist(windowElementId, WIDTH_ATTRIBUTE);
+        Unused << SetPersistentValue(nsGkAtoms::width, sizeString);
       }
     }
     if (persistString.Find("height") >= 0) {
-      SprintfLiteral(sizeBuf, "%d", NSToIntRound(rect.height / sizeScale.scale));
-      sizeString.AssignWithConversion(sizeBuf);
+      sizeString.Truncate();
+      sizeString.AppendInt(NSToIntRound(innerRect.Height() / sizeScale.scale));
       docShellElement->SetAttribute(HEIGHT_ATTRIBUTE, sizeString, rv);
       if (shouldPersist) {
-        ownerXULDoc->Persist(windowElementId, HEIGHT_ATTRIBUTE);
+        Unused << SetPersistentValue(nsGkAtoms::height, sizeString);
       }
     }
   }
@@ -1616,19 +1757,20 @@ NS_IMETHODIMP nsXULWindow::SavePersistentAttributes()
         sizeString.Assign(SIZEMODE_NORMAL);
       docShellElement->SetAttribute(MODE_ATTRIBUTE, sizeString, rv);
       if (shouldPersist && persistString.Find("sizemode") >= 0) {
-        ownerXULDoc->Persist(windowElementId, MODE_ATTRIBUTE);
+        Unused << SetPersistentValue(nsGkAtoms::sizemode, sizeString);
       }
     }
     if (persistString.Find("zlevel") >= 0) {
       uint32_t zLevel;
-      nsCOMPtr<nsIWindowMediator> mediator(do_GetService(NS_WINDOWMEDIATOR_CONTRACTID));
+      nsCOMPtr<nsIWindowMediator> mediator(
+          do_GetService(NS_WINDOWMEDIATOR_CONTRACTID));
       if (mediator) {
         mediator->GetZLevel(this, &zLevel);
-        SprintfLiteral(sizeBuf, "%" PRIu32, zLevel);
-        sizeString.AssignWithConversion(sizeBuf);
+        sizeString.Truncate();
+        sizeString.AppendInt(zLevel);
         docShellElement->SetAttribute(ZLEVEL_ATTRIBUTE, sizeString, rv);
         if (shouldPersist) {
-          ownerXULDoc->Persist(windowElementId, ZLEVEL_ATTRIBUTE);
+          Unused << SetPersistentValue(nsGkAtoms::zlevel, sizeString);
         }
       }
     }
@@ -1638,12 +1780,10 @@ NS_IMETHODIMP nsXULWindow::SavePersistentAttributes()
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::GetWindowDOMWindow(mozIDOMWindowProxy** aDOMWindow)
-{
+NS_IMETHODIMP nsXULWindow::GetWindowDOMWindow(mozIDOMWindowProxy** aDOMWindow) {
   NS_ENSURE_STATE(mDocShell);
 
-  if (!mDOMWindow)
-    mDOMWindow = mDocShell->GetWindow();
+  if (!mDOMWindow) mDOMWindow = mDocShell->GetWindow();
   NS_ENSURE_TRUE(mDOMWindow, NS_ERROR_FAILURE);
 
   *aDOMWindow = mDOMWindow;
@@ -1651,43 +1791,37 @@ NS_IMETHODIMP nsXULWindow::GetWindowDOMWindow(mozIDOMWindowProxy** aDOMWindow)
   return NS_OK;
 }
 
-dom::Element*
-nsXULWindow::GetWindowDOMElement() const
-{
+dom::Element* nsXULWindow::GetWindowDOMElement() const {
   NS_ENSURE_TRUE(mDocShell, nullptr);
 
   nsCOMPtr<nsIContentViewer> cv;
   mDocShell->GetContentViewer(getter_AddRefs(cv));
   NS_ENSURE_TRUE(cv, nullptr);
 
-  const nsIDocument* document = cv->GetDocument();
+  const dom::Document* document = cv->GetDocument();
   NS_ENSURE_TRUE(document, nullptr);
 
   return document->GetRootElement();
 }
 
 nsresult nsXULWindow::ContentShellAdded(nsIDocShellTreeItem* aContentShell,
-   bool aPrimary)
-{
+                                        bool aPrimary) {
   // Set the default content tree owner
   if (aPrimary) {
     NS_ENSURE_SUCCESS(EnsurePrimaryContentTreeOwner(), NS_ERROR_FAILURE);
     aContentShell->SetTreeOwner(mPrimaryContentTreeOwner);
     mPrimaryContentShell = aContentShell;
     mPrimaryTabParent = nullptr;
-  }
-  else {
+  } else {
     NS_ENSURE_SUCCESS(EnsureContentTreeOwner(), NS_ERROR_FAILURE);
     aContentShell->SetTreeOwner(mContentTreeOwner);
-    if (mPrimaryContentShell == aContentShell)
-      mPrimaryContentShell = nullptr;
+    if (mPrimaryContentShell == aContentShell) mPrimaryContentShell = nullptr;
   }
 
   return NS_OK;
 }
 
-nsresult nsXULWindow::ContentShellRemoved(nsIDocShellTreeItem* aContentShell)
-{
+nsresult nsXULWindow::ContentShellRemoved(nsIDocShellTreeItem* aContentShell) {
   if (mPrimaryContentShell == aContentShell) {
     mPrimaryContentShell = nullptr;
   }
@@ -1695,9 +1829,7 @@ nsresult nsXULWindow::ContentShellRemoved(nsIDocShellTreeItem* aContentShell)
 }
 
 NS_IMETHODIMP
-nsXULWindow::GetPrimaryContentSize(int32_t* aWidth,
-                                   int32_t* aHeight)
-{
+nsXULWindow::GetPrimaryContentSize(int32_t* aWidth, int32_t* aHeight) {
   if (mPrimaryTabParent) {
     return GetPrimaryTabParentSize(aWidth, aHeight);
   } else if (mPrimaryContentShell) {
@@ -1706,12 +1838,11 @@ nsXULWindow::GetPrimaryContentSize(int32_t* aWidth,
   return NS_ERROR_UNEXPECTED;
 }
 
-nsresult
-nsXULWindow::GetPrimaryTabParentSize(int32_t* aWidth,
-                                     int32_t* aHeight)
-{
+nsresult nsXULWindow::GetPrimaryTabParentSize(int32_t* aWidth,
+                                              int32_t* aHeight) {
   TabParent* tabParent = TabParent::GetFrom(mPrimaryTabParent);
-  Element* element = tabParent->GetOwnerElement();
+  // Need strong ref, since Client* can run script.
+  nsCOMPtr<Element> element = tabParent->GetOwnerElement();
   NS_ENSURE_STATE(element);
 
   *aWidth = element->ClientWidth();
@@ -1719,10 +1850,8 @@ nsXULWindow::GetPrimaryTabParentSize(int32_t* aWidth,
   return NS_OK;
 }
 
-nsresult
-nsXULWindow::GetPrimaryContentShellSize(int32_t* aWidth,
-                                        int32_t* aHeight)
-{
+nsresult nsXULWindow::GetPrimaryContentShellSize(int32_t* aWidth,
+                                                 int32_t* aHeight) {
   NS_ENSURE_STATE(mPrimaryContentShell);
 
   nsCOMPtr<nsIBaseWindow> shellWindow(do_QueryInterface(mPrimaryContentShell));
@@ -1742,9 +1871,7 @@ nsXULWindow::GetPrimaryContentShellSize(int32_t* aWidth,
 }
 
 NS_IMETHODIMP
-nsXULWindow::SetPrimaryContentSize(int32_t aWidth,
-                                   int32_t aHeight)
-{
+nsXULWindow::SetPrimaryContentSize(int32_t aWidth, int32_t aHeight) {
   if (mPrimaryTabParent) {
     return SetPrimaryTabParentSize(aWidth, aHeight);
   } else if (mPrimaryContentShell) {
@@ -1753,41 +1880,31 @@ nsXULWindow::SetPrimaryContentSize(int32_t aWidth,
   return NS_ERROR_UNEXPECTED;
 }
 
-nsresult
-nsXULWindow::SetPrimaryTabParentSize(int32_t aWidth,
-                                     int32_t aHeight)
-{
+nsresult nsXULWindow::SetPrimaryTabParentSize(int32_t aWidth, int32_t aHeight) {
   int32_t shellWidth, shellHeight;
   GetPrimaryTabParentSize(&shellWidth, &shellHeight);
 
   double scale = 1.0;
   GetUnscaledDevicePixelsPerCSSPixel(&scale);
 
-  SizeShellToWithLimit(aWidth, aHeight,
-                       shellWidth * scale, shellHeight * scale);
+  SizeShellToWithLimit(aWidth, aHeight, shellWidth * scale,
+                       shellHeight * scale);
   return NS_OK;
 }
 
-nsresult
-nsXULWindow::GetRootShellSize(int32_t* aWidth,
-                              int32_t* aHeight)
-{
+nsresult nsXULWindow::GetRootShellSize(int32_t* aWidth, int32_t* aHeight) {
   nsCOMPtr<nsIBaseWindow> shellAsWin = do_QueryInterface(mDocShell);
   NS_ENSURE_TRUE(shellAsWin, NS_ERROR_FAILURE);
   return shellAsWin->GetSize(aWidth, aHeight);
 }
 
-nsresult
-nsXULWindow::SetRootShellSize(int32_t aWidth,
-                              int32_t aHeight)
-{
-  nsCOMPtr<nsIDocShellTreeItem> docShellAsItem = do_QueryInterface(mDocShell);
+nsresult nsXULWindow::SetRootShellSize(int32_t aWidth, int32_t aHeight) {
+  nsCOMPtr<nsIDocShellTreeItem> docShellAsItem = mDocShell;
   return SizeShellTo(docShellAsItem, aWidth, aHeight);
 }
 
 NS_IMETHODIMP nsXULWindow::SizeShellTo(nsIDocShellTreeItem* aShellItem,
-   int32_t aCX, int32_t aCY)
-{
+                                       int32_t aCX, int32_t aCY) {
   // XXXTAB This is wrong, we should actually reflow based on the passed in
   // shell.  For now we are hacking and doing delta sizing.  This is bad
   // because it assumes all size we add will go to the shell which probably
@@ -1805,10 +1922,8 @@ NS_IMETHODIMP nsXULWindow::SizeShellTo(nsIDocShellTreeItem* aShellItem,
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::ExitModalLoop(nsresult aStatus)
-{
-  if (mContinueModalLoop)
-    EnableParent(true);
+NS_IMETHODIMP nsXULWindow::ExitModalLoop(nsresult aStatus) {
+  if (mContinueModalLoop) EnableParent(true);
   mContinueModalLoop = false;
   mModalStatus = aStatus;
   return NS_OK;
@@ -1816,32 +1931,37 @@ NS_IMETHODIMP nsXULWindow::ExitModalLoop(nsresult aStatus)
 
 // top-level function to create a new window
 NS_IMETHODIMP nsXULWindow::CreateNewWindow(int32_t aChromeFlags,
-                                           nsITabParent *aOpeningTab,
-                                           mozIDOMWindowProxy *aOpener,
-                                           nsIXULWindow **_retval)
-{
+                                           nsITabParent* aOpeningTab,
+                                           mozIDOMWindowProxy* aOpener,
+                                           uint64_t aNextTabParentId,
+                                           nsIXULWindow** _retval) {
   NS_ENSURE_ARG_POINTER(_retval);
 
-  if (aChromeFlags & nsIWebBrowserChrome::CHROME_OPENAS_CHROME)
+  if (aChromeFlags & nsIWebBrowserChrome::CHROME_OPENAS_CHROME) {
+    MOZ_RELEASE_ASSERT(
+        aNextTabParentId == 0,
+        "Unexpected next tab parent ID, should never have a non-zero "
+        "nextTabParentId when creating a new chrome window");
     return CreateNewChromeWindow(aChromeFlags, aOpeningTab, aOpener, _retval);
-  return CreateNewContentWindow(aChromeFlags, aOpeningTab, aOpener, _retval);
+  }
+  return CreateNewContentWindow(aChromeFlags, aOpeningTab, aOpener,
+                                aNextTabParentId, _retval);
 }
 
 NS_IMETHODIMP nsXULWindow::CreateNewChromeWindow(int32_t aChromeFlags,
-                                                 nsITabParent *aOpeningTab,
-                                                 mozIDOMWindowProxy *aOpener,
-                                                 nsIXULWindow **_retval)
-{
-  nsCOMPtr<nsIAppShellService> appShell(do_GetService(NS_APPSHELLSERVICE_CONTRACTID));
+                                                 nsITabParent* aOpeningTab,
+                                                 mozIDOMWindowProxy* aOpener,
+                                                 nsIXULWindow** _retval) {
+  nsCOMPtr<nsIAppShellService> appShell(
+      do_GetService(NS_APPSHELLSERVICE_CONTRACTID));
   NS_ENSURE_TRUE(appShell, NS_ERROR_FAILURE);
 
   // Just do a normal create of a window and return.
   nsCOMPtr<nsIXULWindow> newWindow;
-  appShell->CreateTopLevelWindow(this, nullptr, aChromeFlags,
-                                 nsIAppShellService::SIZE_TO_CONTENT,
-                                 nsIAppShellService::SIZE_TO_CONTENT,
-                                 aOpeningTab, aOpener,
-                                 getter_AddRefs(newWindow));
+  appShell->CreateTopLevelWindow(
+      this, nullptr, aChromeFlags, nsIAppShellService::SIZE_TO_CONTENT,
+      nsIAppShellService::SIZE_TO_CONTENT, aOpeningTab, aOpener,
+      getter_AddRefs(newWindow));
 
   NS_ENSURE_TRUE(newWindow, NS_ERROR_FAILURE);
 
@@ -1852,11 +1972,12 @@ NS_IMETHODIMP nsXULWindow::CreateNewChromeWindow(int32_t aChromeFlags,
 }
 
 NS_IMETHODIMP nsXULWindow::CreateNewContentWindow(int32_t aChromeFlags,
-                                                  nsITabParent *aOpeningTab,
-                                                  mozIDOMWindowProxy *aOpener,
-                                                  nsIXULWindow **_retval)
-{
-  nsCOMPtr<nsIAppShellService> appShell(do_GetService(NS_APPSHELLSERVICE_CONTRACTID));
+                                                  nsITabParent* aOpeningTab,
+                                                  mozIDOMWindowProxy* aOpener,
+                                                  uint64_t aNextTabParentId,
+                                                  nsIXULWindow** _retval) {
+  nsCOMPtr<nsIAppShellService> appShell(
+      do_GetService(NS_APPSHELLSERVICE_CONTRACTID));
   NS_ENSURE_TRUE(appShell, NS_ERROR_FAILURE);
 
   // We need to create a new top level window and then enter a nested
@@ -1865,11 +1986,8 @@ NS_IMETHODIMP nsXULWindow::CreateNewContentWindow(int32_t aChromeFlags,
   // and allow the opening code to proceed.
 
   nsCOMPtr<nsIURI> uri;
-
-  nsAdoptingCString urlStr = Preferences::GetCString("browser.chromeURL");
-  if (urlStr.IsEmpty()) {
-    urlStr.AssignLiteral("chrome://navigator/content/navigator.xul");
-  }
+  nsAutoCString urlStr;
+  urlStr.AssignLiteral(BROWSER_CHROME_URL_QUOTED);
 
   nsCOMPtr<nsIIOService> service(do_GetService(NS_IOSERVICE_CONTRACTID));
   if (service) {
@@ -1887,41 +2005,40 @@ NS_IMETHODIMP nsXULWindow::CreateNewContentWindow(int32_t aChromeFlags,
     // We actually want this toplevel window which we are creating to have a
     // null opener, as we will be creating the content xul:browser window inside
     // of it, so we pass nullptr as our aOpener.
-    appShell->CreateTopLevelWindow(this, uri,
-                                   aChromeFlags, 615, 480,
+    appShell->CreateTopLevelWindow(this, uri, aChromeFlags, 615, 480,
                                    aOpeningTab, nullptr,
                                    getter_AddRefs(newWindow));
     NS_ENSURE_TRUE(newWindow, NS_ERROR_FAILURE);
   }
 
-  // Specify that we want the window to remain locked until the chrome has loaded.
-  nsXULWindow *xulWin = static_cast<nsXULWindow*>
-                                   (static_cast<nsIXULWindow*>
-                                               (newWindow));
+  // Specify that we want the window to remain locked until the chrome has
+  // loaded.
+  nsXULWindow* xulWin =
+      static_cast<nsXULWindow*>(static_cast<nsIXULWindow*>(newWindow));
+
+  if (aNextTabParentId) {
+    xulWin->mNextTabParentId = aNextTabParentId;
+  }
 
   if (aOpener) {
     nsCOMPtr<nsIDocShell> docShell;
     xulWin->GetDocShell(getter_AddRefs(docShell));
     MOZ_ASSERT(docShell);
-    nsCOMPtr<nsIDOMChromeWindow> chromeWindow =
-      do_QueryInterface(docShell->GetWindow());
-    MOZ_ASSERT(chromeWindow);
-
-    chromeWindow->SetOpenerForInitialContentBrowser(aOpener);
+    nsCOMPtr<nsPIDOMWindowOuter> window = docShell->GetWindow();
+    MOZ_ASSERT(window);
+    window->SetOpenerForInitialContentBrowser(
+        nsPIDOMWindowOuter::From(aOpener)->GetBrowsingContext());
   }
 
   xulWin->LockUntilChromeLoad();
 
   {
     AutoNoJSAPI nojsapi;
-    nsIThread *thread = NS_GetCurrentThread();
-    while (xulWin->IsLocked()) {
-      if (!NS_ProcessNextEvent(thread))
-        break;
-    }
+    SpinEventLoopUntil([&]() { return !xulWin->IsLocked(); });
   }
 
   NS_ENSURE_STATE(xulWin->mPrimaryContentShell || xulWin->mPrimaryTabParent);
+  MOZ_ASSERT_IF(xulWin->mPrimaryContentShell, aNextTabParentId == 0);
 
   *_retval = newWindow;
   NS_ADDREF(*_retval);
@@ -1929,30 +2046,24 @@ NS_IMETHODIMP nsXULWindow::CreateNewContentWindow(int32_t aChromeFlags,
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::GetHasPrimaryContent(bool* aResult)
-{
+NS_IMETHODIMP nsXULWindow::GetHasPrimaryContent(bool* aResult) {
   *aResult = mPrimaryTabParent || mPrimaryContentShell;
   return NS_OK;
 }
 
-void nsXULWindow::EnableParent(bool aEnable)
-{
+void nsXULWindow::EnableParent(bool aEnable) {
   nsCOMPtr<nsIBaseWindow> parentWindow;
-  nsCOMPtr<nsIWidget>     parentWidget;
+  nsCOMPtr<nsIWidget> parentWidget;
 
   parentWindow = do_QueryReferent(mParentWindow);
-  if (parentWindow)
-    parentWindow->GetMainWidget(getter_AddRefs(parentWidget));
-  if (parentWidget)
-    parentWidget->Enable(aEnable);
+  if (parentWindow) parentWindow->GetMainWidget(getter_AddRefs(parentWidget));
+  if (parentWidget) parentWidget->Enable(aEnable);
 }
 
 // Constrain the window to its proper z-level
-bool nsXULWindow::ConstrainToZLevel(bool        aImmediate,
-                                      nsWindowZ  *aPlacement,
-                                      nsIWidget  *aReqBelow,
-                                      nsIWidget **aActualBelow)
-{
+bool nsXULWindow::ConstrainToZLevel(bool aImmediate, nsWindowZ* aPlacement,
+                                    nsIWidget* aReqBelow,
+                                    nsIWidget** aActualBelow) {
 #if 0
   /* Do we have a parent window? This means our z-order is already constrained,
      since we're a dependent window. Our window list isn't hierarchical,
@@ -1963,15 +2074,13 @@ bool nsXULWindow::ConstrainToZLevel(bool        aImmediate,
     return false;
 #endif
 
-  nsCOMPtr<nsIWindowMediator> mediator(do_GetService(NS_WINDOWMEDIATOR_CONTRACTID));
-  if (!mediator)
-    return false;
+  nsCOMPtr<nsIWindowMediator> mediator(
+      do_GetService(NS_WINDOWMEDIATOR_CONTRACTID));
+  if (!mediator) return false;
 
-  bool           altered;
-  uint32_t       position,
-                 newPosition,
-                 zLevel;
-  nsIXULWindow  *us = this;
+  bool altered;
+  uint32_t position, newPosition, zLevel;
+  nsIXULWindow* us = this;
 
   altered = false;
   mediator->GetZLevel(this, &zLevel);
@@ -1983,8 +2092,8 @@ bool nsXULWindow::ConstrainToZLevel(bool        aImmediate,
   else if (*aPlacement == nsWindowZRelative)
     position = nsIWindowMediator::zLevelBelow;
 
-  if (NS_SUCCEEDED(mediator->CalculateZPosition(us, position, aReqBelow,
-                               &newPosition, aActualBelow, &altered))) {
+  if (NS_SUCCEEDED(mediator->CalculateZPosition(
+          us, position, aReqBelow, &newPosition, aActualBelow, &altered))) {
     /* If we were asked to move to the top but constrained to remain
        below one of our other windows, first move all windows in that
        window's layer and above to the top. This allows the user to
@@ -2011,8 +2120,9 @@ bool nsXULWindow::ConstrainToZLevel(bool        aImmediate,
         if (ourBase) {
           nsCOMPtr<nsIWidget> ourWidget;
           ourBase->GetMainWidget(getter_AddRefs(ourWidget));
-          ourWidget->PlaceBehind(*aPlacement == nsWindowZBottom ?
-                                   eZPlacementBottom : eZPlacementBelow,
+          ourWidget->PlaceBehind(*aPlacement == nsWindowZBottom
+                                     ? eZPlacementBottom
+                                     : eZPlacementBelow,
                                  *aActualBelow, false);
         }
       }
@@ -2043,40 +2153,37 @@ bool nsXULWindow::ConstrainToZLevel(bool        aImmediate,
 */
 void nsXULWindow::PlaceWindowLayersBehind(uint32_t aLowLevel,
                                           uint32_t aHighLevel,
-                                          nsIXULWindow *aBehind)
-{
+                                          nsIXULWindow* aBehind) {
   // step through windows in z-order from top to bottommost window
 
-  nsCOMPtr<nsIWindowMediator> mediator(do_GetService(NS_WINDOWMEDIATOR_CONTRACTID));
-  if (!mediator)
-    return;
+  nsCOMPtr<nsIWindowMediator> mediator(
+      do_GetService(NS_WINDOWMEDIATOR_CONTRACTID));
+  if (!mediator) return;
 
   nsCOMPtr<nsISimpleEnumerator> windowEnumerator;
   mediator->GetZOrderXULWindowEnumerator(0, true,
-              getter_AddRefs(windowEnumerator));
-  if (!windowEnumerator)
-    return;
+                                         getter_AddRefs(windowEnumerator));
+  if (!windowEnumerator) return;
 
   // each window will be moved behind previousHighWidget, itself
   // a moving target. initialize it.
   nsCOMPtr<nsIWidget> previousHighWidget;
   if (aBehind) {
     nsCOMPtr<nsIBaseWindow> highBase(do_QueryInterface(aBehind));
-    if (highBase)
-      highBase->GetMainWidget(getter_AddRefs(previousHighWidget));
+    if (highBase) highBase->GetMainWidget(getter_AddRefs(previousHighWidget));
   }
 
   // get next lower window
   bool more;
-  while (windowEnumerator->HasMoreElements(&more), more) {
-    uint32_t nextZ; // z-level of nextWindow
+  while (NS_SUCCEEDED(windowEnumerator->HasMoreElements(&more)) && more) {
+    uint32_t nextZ;  // z-level of nextWindow
     nsCOMPtr<nsISupports> nextWindow;
     windowEnumerator->GetNext(getter_AddRefs(nextWindow));
     nsCOMPtr<nsIXULWindow> nextXULWindow(do_QueryInterface(nextWindow));
     nextXULWindow->GetZLevel(&nextZ);
     if (nextZ < aLowLevel)
-      break; // we've processed all windows through aLowLevel
-    
+      break;  // we've processed all windows through aLowLevel
+
     // move it just below its next higher window
     nsCOMPtr<nsIBaseWindow> nextBase(do_QueryInterface(nextXULWindow));
     if (nextBase) {
@@ -2089,9 +2196,9 @@ void nsXULWindow::PlaceWindowLayersBehind(uint32_t aLowLevel,
   }
 }
 
-void nsXULWindow::SetContentScrollbarVisibility(bool aVisible)
-{
-  nsCOMPtr<nsPIDOMWindowOuter> contentWin(do_GetInterface(mPrimaryContentShell));
+void nsXULWindow::SetContentScrollbarVisibility(bool aVisible) {
+  nsCOMPtr<nsPIDOMWindowOuter> contentWin(
+      do_GetInterface(mPrimaryContentShell));
   if (!contentWin) {
     return;
   }
@@ -2099,8 +2206,7 @@ void nsXULWindow::SetContentScrollbarVisibility(bool aVisible)
   nsContentUtils::SetScrollbarsVisibility(contentWin->GetDocShell(), aVisible);
 }
 
-bool nsXULWindow::GetContentScrollbarVisibility()
-{
+bool nsXULWindow::GetContentScrollbarVisibility() {
   // This code already exists in dom/src/base/nsBarProp.cpp, but we
   // can't safely get to that from here as this function is called
   // while the DOM window is being set up, and we need the DOM window
@@ -2109,29 +2215,28 @@ bool nsXULWindow::GetContentScrollbarVisibility()
 
   if (scroller) {
     int32_t prefValue;
-    scroller->GetDefaultScrollbarPreferences(
-                  nsIScrollable::ScrollOrientation_Y, &prefValue);
-    if (prefValue == nsIScrollable::Scrollbar_Never) // try the other way
+    scroller->GetDefaultScrollbarPreferences(nsIScrollable::ScrollOrientation_Y,
+                                             &prefValue);
+    if (prefValue == nsIScrollable::Scrollbar_Never)  // try the other way
       scroller->GetDefaultScrollbarPreferences(
-                  nsIScrollable::ScrollOrientation_X, &prefValue);
+          nsIScrollable::ScrollOrientation_X, &prefValue);
 
-    if (prefValue == nsIScrollable::Scrollbar_Never)
-      return false;
+    if (prefValue == nsIScrollable::Scrollbar_Never) return false;
   }
 
   return true;
 }
 
 // during spinup, attributes that haven't been loaded yet can't be dirty
-void nsXULWindow::PersistentAttributesDirty(uint32_t aDirtyFlags)
-{
+void nsXULWindow::PersistentAttributesDirty(uint32_t aDirtyFlags) {
   mPersistentAttributesDirty |= aDirtyFlags & mPersistentAttributesMask;
 }
 
-NS_IMETHODIMP nsXULWindow::ApplyChromeFlags()
-{
+void nsXULWindow::ApplyChromeFlags() {
   nsCOMPtr<dom::Element> window = GetWindowDOMElement();
-  NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
+  if (!window) {
+    return;
+  }
 
   if (mChromeLoaded) {
     // The two calls in this block don't need to happen early because they
@@ -2140,9 +2245,8 @@ NS_IMETHODIMP nsXULWindow::ApplyChromeFlags()
     // So just don't do these until mChromeLoaded is true.
 
     // Scrollbars have their own special treatment.
-    SetContentScrollbarVisibility(mChromeFlags &
-                                  nsIWebBrowserChrome::CHROME_SCROLLBARS ?
-                                    true : false);
+    SetContentScrollbarVisibility(
+        mChromeFlags & nsIWebBrowserChrome::CHROME_SCROLLBARS ? true : false);
   }
 
   /* the other flags are handled together. we have style rules
@@ -2150,40 +2254,170 @@ NS_IMETHODIMP nsXULWindow::ApplyChromeFlags()
      the 'chromehidden' attribute of the <window> tag. */
   nsAutoString newvalue;
 
-  if (! (mChromeFlags & nsIWebBrowserChrome::CHROME_MENUBAR))
+  if (!(mChromeFlags & nsIWebBrowserChrome::CHROME_MENUBAR))
     newvalue.AppendLiteral("menubar ");
 
-  if (! (mChromeFlags & nsIWebBrowserChrome::CHROME_TOOLBAR))
+  if (!(mChromeFlags & nsIWebBrowserChrome::CHROME_TOOLBAR))
     newvalue.AppendLiteral("toolbar ");
 
-  if (! (mChromeFlags & nsIWebBrowserChrome::CHROME_LOCATIONBAR))
+  if (!(mChromeFlags & nsIWebBrowserChrome::CHROME_LOCATIONBAR))
     newvalue.AppendLiteral("location ");
 
-  if (! (mChromeFlags & nsIWebBrowserChrome::CHROME_PERSONAL_TOOLBAR))
+  if (!(mChromeFlags & nsIWebBrowserChrome::CHROME_PERSONAL_TOOLBAR))
     newvalue.AppendLiteral("directories ");
 
-  if (! (mChromeFlags & nsIWebBrowserChrome::CHROME_STATUSBAR))
+  if (!(mChromeFlags & nsIWebBrowserChrome::CHROME_STATUSBAR))
     newvalue.AppendLiteral("status ");
 
-  if (! (mChromeFlags & nsIWebBrowserChrome::CHROME_EXTRA))
+  if (!(mChromeFlags & nsIWebBrowserChrome::CHROME_EXTRA))
     newvalue.AppendLiteral("extrachrome ");
 
   // Note that if we're not actually changing the value this will be a no-op,
   // so no need to compare to the old value.
-  ErrorResult rv;
+  IgnoredErrorResult rv;
   window->SetAttribute(NS_LITERAL_STRING("chromehidden"), newvalue, rv);
+}
 
+NS_IMETHODIMP
+nsXULWindow::BeforeStartLayout() {
+  ApplyChromeFlags();
+  LoadPersistentWindowState();
+  SyncAttributesToWidget();
+  if (mWindow) {
+    SizeShell();
+  }
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::GetXULBrowserWindow(nsIXULBrowserWindow * *aXULBrowserWindow)
-{
+void nsXULWindow::LoadPersistentWindowState() {
+  nsCOMPtr<dom::Element> docShellElement = GetWindowDOMElement();
+  if (!docShellElement) {
+    return;
+  }
+
+  // Check if the window wants to persist anything.
+  nsAutoString persist;
+  docShellElement->GetAttr(kNameSpaceID_None, nsGkAtoms::persist, persist);
+  if (persist.IsEmpty()) {
+    return;
+  }
+
+  auto loadValue = [&](const nsAtom* aAttr) {
+    nsDependentAtomString attrString(aAttr);
+    if (persist.Find(attrString) >= 0) {
+      nsAutoString value;
+      nsresult rv = GetPersistentValue(aAttr, value);
+      NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "Failed to get persistent state.");
+      if (NS_SUCCEEDED(rv) && !value.IsEmpty()) {
+        IgnoredErrorResult err;
+        docShellElement->SetAttribute(attrString, value, err);
+      }
+    }
+  };
+
+  loadValue(nsGkAtoms::screenX);
+  loadValue(nsGkAtoms::screenY);
+  loadValue(nsGkAtoms::width);
+  loadValue(nsGkAtoms::height);
+  loadValue(nsGkAtoms::sizemode);
+}
+
+void nsXULWindow::SizeShell() {
+  AutoRestore<bool> sizingShellFromXUL(mSizingShellFromXUL);
+  mSizingShellFromXUL = true;
+
+  int32_t specWidth = -1, specHeight = -1;
+  bool gotSize = false;
+
+  nsCOMPtr<dom::Element> windowElement = GetWindowDOMElement();
+  nsAutoString windowType;
+  if (windowElement) {
+    windowElement->GetAttribute(WINDOWTYPE_ATTRIBUTE, windowType);
+  }
+
+  CSSIntSize windowDiff = GetOuterToInnerSizeDifferenceInCSSPixels(mWindow);
+
+  // If we're using fingerprint resistance, we're going to resize the window
+  // once we have primary content.
+  if (nsContentUtils::ShouldResistFingerprinting() &&
+      windowType.EqualsLiteral("navigator:browser")) {
+    // Once we've got primary content, force dimensions.
+    if (mPrimaryContentShell || mPrimaryTabParent) {
+      ForceRoundedDimensions();
+    }
+    // Always avoid setting size/sizemode on this window.
+    mIgnoreXULSize = true;
+    mIgnoreXULSizeMode = true;
+  } else if (!mIgnoreXULSize) {
+    gotSize = LoadSizeFromXUL(specWidth, specHeight);
+    specWidth += windowDiff.width;
+    specHeight += windowDiff.height;
+  }
+
+  bool positionSet = !mIgnoreXULPosition;
+  nsCOMPtr<nsIXULWindow> parentWindow(do_QueryReferent(mParentWindow));
+#if defined(XP_UNIX) && !defined(XP_MACOSX)
+  // don't override WM placement on unix for independent, top-level windows
+  // (however, we think the benefits of intelligent dependent window placement
+  // trump that override.)
+  if (!parentWindow) positionSet = false;
+#endif
+  if (positionSet) {
+    // We have to do this before sizing the window, because sizing depends
+    // on the resolution of the screen we're on. But positioning needs to
+    // know the size so that it can constrain to screen bounds.... as an
+    // initial guess here, we'll use the specified size (if any).
+    positionSet = LoadPositionFromXUL(specWidth, specHeight);
+  }
+
+  if (gotSize) {
+    SetSpecifiedSize(specWidth, specHeight);
+  }
+
+  if (mIntrinsicallySized) {
+    // (if LoadSizeFromXUL set the size, mIntrinsicallySized will be false)
+    nsCOMPtr<nsIContentViewer> cv;
+    mDocShell->GetContentViewer(getter_AddRefs(cv));
+    if (cv) {
+      nsCOMPtr<nsIDocShellTreeItem> docShellAsItem = mDocShell;
+      nsCOMPtr<nsIDocShellTreeOwner> treeOwner;
+      docShellAsItem->GetTreeOwner(getter_AddRefs(treeOwner));
+      if (treeOwner) {
+        // GetContentSize can fail, so initialise |width| and |height| to be
+        // on the safe side.
+        int32_t width = 0, height = 0;
+        if (NS_SUCCEEDED(cv->GetContentSize(&width, &height))) {
+          treeOwner->SizeShellTo(docShellAsItem, width, height);
+          // Update specified size for the final LoadPositionFromXUL call.
+          specWidth = width + windowDiff.width;
+          specHeight = height + windowDiff.height;
+        }
+      }
+    }
+  }
+
+  // Now that we have set the window's final size, we can re-do its
+  // positioning so that it is properly constrained to the screen.
+  if (positionSet) {
+    LoadPositionFromXUL(specWidth, specHeight);
+  }
+
+  UpdateWindowStateFromMiscXULAttributes();
+
+  if (mChromeLoaded && mCenterAfterLoad && !positionSet &&
+      mWindow->SizeMode() == nsSizeMode_Normal) {
+    Center(parentWindow, parentWindow ? false : true, false);
+  }
+}
+
+NS_IMETHODIMP nsXULWindow::GetXULBrowserWindow(
+    nsIXULBrowserWindow** aXULBrowserWindow) {
   NS_IF_ADDREF(*aXULBrowserWindow = mXULBrowserWindow);
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::SetXULBrowserWindow(nsIXULBrowserWindow * aXULBrowserWindow)
-{
+NS_IMETHODIMP nsXULWindow::SetXULBrowserWindow(
+    nsIXULBrowserWindow* aXULBrowserWindow) {
   mXULBrowserWindow = aXULBrowserWindow;
   return NS_OK;
 }
@@ -2191,8 +2425,7 @@ NS_IMETHODIMP nsXULWindow::SetXULBrowserWindow(nsIXULBrowserWindow * aXULBrowser
 void nsXULWindow::SizeShellToWithLimit(int32_t aDesiredWidth,
                                        int32_t aDesiredHeight,
                                        int32_t shellItemWidth,
-                                       int32_t shellItemHeight)
-{
+                                       int32_t shellItemHeight) {
   int32_t widthDelta = aDesiredWidth - shellItemWidth;
   int32_t heightDelta = aDesiredHeight - shellItemHeight;
 
@@ -2211,9 +2444,7 @@ void nsXULWindow::SizeShellToWithLimit(int32_t aDesiredWidth,
   }
 }
 
-nsresult
-nsXULWindow::GetTabCount(uint32_t* aResult)
-{
+nsresult nsXULWindow::GetTabCount(uint32_t* aResult) {
   if (mXULBrowserWindow) {
     return mXULBrowserWindow->GetTabCount(aResult);
   }
@@ -2222,3 +2453,8 @@ nsXULWindow::GetTabCount(uint32_t* aResult)
   return NS_OK;
 }
 
+nsresult nsXULWindow::GetNextTabParentId(uint64_t* aNextTabParentId) {
+  NS_ENSURE_ARG_POINTER(aNextTabParentId);
+  *aNextTabParentId = mNextTabParentId;
+  return NS_OK;
+}

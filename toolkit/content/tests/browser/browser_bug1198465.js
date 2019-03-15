@@ -11,8 +11,8 @@ registerCleanupFunction(function() {
   Services.prefs.clearUserPref(kPrefName);
 });
 
-add_task(function* () {
-  let aTab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, kEmptyURI);
+add_task(async function() {
+  let aTab = await BrowserTestUtils.openNewForegroundTab(gBrowser, kEmptyURI);
   ok(!gFindBarInitialized, "findbar isn't initialized yet");
 
   // Note: the use case here is when the user types directly in the findbar
@@ -25,6 +25,11 @@ add_task(function* () {
   //    a synthesized keypress on the browser implicitely happens after the
   //    browser has dispatched its return message with the prefill value for
   //    the findbar, which essentially nulls these tests.
+
+  // The parent-side of the sidebar initialization is also async, so we do
+  // need to wait for that. We verify a bit further down that _startFindDeferred
+  // hasn't been resolved yet.
+  await gFindBarPromise;
 
   let findBar = gFindBar;
   is(findBar._findField.value, "", "findbar is empty");
@@ -71,5 +76,5 @@ add_task(function* () {
   // Clear the findField value to make the test  run successfully
   // for multiple runs in the same browser session.
   findBar._findField.value = "";
-  yield BrowserTestUtils.removeTab(aTab);
+  BrowserTestUtils.removeTab(aTab);
 });

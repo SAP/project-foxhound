@@ -35,8 +35,8 @@ function initTest()
 
 function runTest()
 {
-  var isMac = (navigator.platform.indexOf("Mac") >= 0);
-  var isWin = (navigator.platform.indexOf("Win") >= 0);
+  var isMac = (navigator.platform.includes("Mac"));
+  var isWin = (navigator.platform.includes("Win"));
 
   function checkFocus(element, visible, testid)
   {
@@ -45,7 +45,7 @@ function runTest()
   }
 
   // make sure that a focus ring appears on the focused button
-  if (navigator.platform.indexOf("Mac") >= 0) {
+  if (navigator.platform.includes("Mac")) {
     var focusedButton = $("b3");
     ok(compareSnapshots(snapShot(focusedButton), snapShot($("b2")), true)[0], "unfocused shows no ring");
     focusedButton.focus();
@@ -77,7 +77,7 @@ function runTest()
 
   synthesizeMouse($("b1"), 4, 4, { });
   checkFocus($("b1"), !isMac && expectedVisible, "appearance on button after mouse focus with :moz-focusring");
-  if (navigator.platform.indexOf("Mac") >= 0) {
+  if (navigator.platform.includes("Mac")) {
     ok(compareSnapshots(snapShot($("b1")), snapShot($("b2")), false)[0], "focus after mouse shows no ring");
   }
 
@@ -86,7 +86,7 @@ function runTest()
 
   // after a key is pressed, the focus ring will always be visible
   $("l2").focus();
-  synthesizeKey("VK_TAB", { });
+  synthesizeKey("KEY_Tab");
   checkFocus($("l3"), true, "appearance on list after tab focus");
 
   if (isMac) {
@@ -161,14 +161,14 @@ SimpleTest.waitForFocus(runTest);
 ]]>
 </script>
 
-<listbox id="l1" class="plain" height="20"/>
-<listbox id="l2" class="plain" height="20"/>
-<listbox id="l3" class="plain" height="20"/>
+<richlistbox id="l1" class="plain" height="20"/>
+<richlistbox id="l2" class="plain" height="20"/>
+<richlistbox id="l3" class="plain" height="20"/>
 <button id="b1" label="Button"/>
 <button id="b2" label="Button"/>
 <button id="b3" label="Button"/>
 
-<iframe id="child" src="data:text/html,&lt;html&gt;&lt;style&gt;* { outline: none; -moz-appearance: none; min-width:10px; min-height:10px; } %23elem:focus { outline: 2px solid red; } %23elem:-moz-focusring { outline: 1px solid blue; }&lt;/style&gt;&lt;div id='container'&gt;&lt;/html&gt;"/>
+<iframe id="child" src="file_focusrings.html"/>
 
 <body xmlns="http://www.w3.org/1999/xhtml" style="height: 300px; overflow: auto;"/>
 

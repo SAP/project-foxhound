@@ -22,10 +22,10 @@ import android.widget.TextView;
 import com.robotium.solo.Condition;
 
 /**
- * This class is an extension of BaseTest that helps with interaction with about:home
+ * This class is an extension of OldBaseTest that helps with interaction with about:home
  * This class contains methods that access the different tabs from about:home, methods that get information like history and bookmarks from the database, edit and remove bookmarks and history items
  * The purpose of this class is to collect all the logically connected methods that deal with about:home
- * To use any of these methods in your test make sure it extends AboutHomeTest instead of BaseTest
+ * To use any of these methods in your test make sure it extends AboutHomeTest instead of OldBaseTest
  */
 abstract class AboutHomeTest extends PixelTest {
     protected enum AboutHomeTabs {
@@ -85,7 +85,7 @@ abstract class AboutHomeTest extends PixelTest {
         View bookmark = getDisplayedBookmark(url);
         if (bookmark != null) {
             Actions.EventExpecter contentEventExpecter =
-                    mActions.expectGlobalEvent(Actions.EventType.GECKO, "Content:DOMContentLoaded");
+                    mActions.expectGlobalEvent(Actions.EventType.UI, "Content:DOMContentLoaded");
             mSolo.clickOnView(bookmark);
             contentEventExpecter.blockForEvent();
             contentEventExpecter.unregisterListener();

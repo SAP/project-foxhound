@@ -49,6 +49,7 @@
   width: 16px;
   height: 16px;
   border: 0;
+  -moz-context-properties: fill;
 }
 
 .side-menu-widget-item-checkbox:not([checked]) .checkbox-check,
@@ -57,12 +58,12 @@
 }
 
 .side-menu-widget-item:not(.selected) .checkbox-check {
-  filter: var(--icon-filter);
+  fill: var(--theme-icon-color);
 }
 
 /* Make sure icon is white when the item is selected */
 .side-menu-widget-item.selected .checkbox-check {
-  filter: invert(1);
+  fill: var(--theme-selection-color);
 }
 
 /* Shader source editors */
@@ -81,6 +82,15 @@
 .editor-label[selected] {
   background-color: var(--theme-selection-background);
   color: var(--theme-selection-color);
+}
+
+.devtools-shader-tooltip-container .devtools-tooltip-simple-text {
+  color: var(--theme-content-color1);
+  border-bottom: 1px solid var(--theme-splitter-color);
+}
+
+.devtools-shader-tooltip-container .devtools-tooltip-simple-text:last-child {
+  border-bottom: 0;
 }
 
 /* Responsive sidebar */

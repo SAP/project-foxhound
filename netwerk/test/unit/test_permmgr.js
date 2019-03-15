@@ -30,14 +30,15 @@ var results = [
 ];
 
 function run_test() {
-  var pm = Components.classes["@mozilla.org/permissionmanager;1"]
-                     .getService(Components.interfaces.nsIPermissionManager);
+  Services.prefs.setCharPref("permissions.manager.defaultsUrl", "");
+  var pm = Cc["@mozilla.org/permissionmanager;1"]
+             .getService(Ci.nsIPermissionManager);
 
-  var ioService = Components.classes["@mozilla.org/network/io-service;1"]
-                            .getService(Components.interfaces.nsIIOService);
+  var ioService = Cc["@mozilla.org/network/io-service;1"]
+                    .getService(Ci.nsIIOService);
 
-  var secMan = Components.classes["@mozilla.org/scriptsecuritymanager;1"]
-                         .getService(Components.interfaces.nsIScriptSecurityManager);
+  var secMan = Cc["@mozilla.org/scriptsecuritymanager;1"]
+                 .getService(Ci.nsIScriptSecurityManager);
 
   // nsIPermissionManager implementation is an extension; don't fail if it's not there
   if (!pm)
@@ -56,19 +57,13 @@ function run_test() {
     let uri = ioService.newURI(results[i][0]);
     let principal = secMan.createCodebasePrincipal(uri, {});
 
-    do_check_eq(pm.testPermissionFromPrincipal(principal, results[i][1]), results[i][2]);
-    do_check_eq(pm.testExactPermissionFromPrincipal(principal, results[i][1]), results[i][3]);
+    Assert.equal(pm.testPermissionFromPrincipal(principal, results[i][1]), results[i][2]);
+    Assert.equal(pm.testExactPermissionFromPrincipal(principal, results[i][1]), results[i][3]);
   }
 
   // test the enumerator ...
-  var j = 0;
-  var perms = new Array();
-  var enumerator = pm.enumerator;
-  while (enumerator.hasMoreElements()) {
-    perms[j] = enumerator.getNext().QueryInterface(Components.interfaces.nsIPermission);
-    ++j;
-  }
-  do_check_eq(perms.length, hosts.length);
+  var perms = Array.from(pm.enumerator);
+  Assert.equal(perms.length, hosts.length);
 
   // ... remove all the hosts ...
   for (var j = 0; j < perms.length; ++j) {
@@ -86,10 +81,10 @@ function run_test() {
       }
     }
   }
-  do_check_eq(perms.length, 0);
+  Assert.equal(perms.length, 0);
 
   // ... and check the permmgr's empty
-  do_check_eq(pm.enumerator.hasMoreElements(), false);
+  Assert.equal(pm.enumerator.hasMoreElements(), false);
 
   // test UTF8 normalization behavior: expect ASCII/ACE host encodings
   var utf8 = "b\u00FCcher.dolske.org"; // "bücher.dolske.org"
@@ -97,23 +92,23 @@ function run_test() {
   var uri = ioService.newURI("http://" + utf8);
   pm.add(uri, "utf8", 1);
   var enumerator = pm.enumerator;
-  do_check_eq(enumerator.hasMoreElements(), true);
-  var ace = enumerator.getNext().QueryInterface(Components.interfaces.nsIPermission);
-  do_check_eq(ace.principal.URI.asciiHost, aceref);
-  do_check_eq(enumerator.hasMoreElements(), false);
+  Assert.equal(enumerator.hasMoreElements(), true);
+  var ace = enumerator.getNext().QueryInterface(Ci.nsIPermission);
+  Assert.equal(ace.principal.URI.asciiHost, aceref);
+  Assert.equal(enumerator.hasMoreElements(), false);
 
   // test removeAll()
   pm.removeAll();
-  do_check_eq(pm.enumerator.hasMoreElements(), false);
+  Assert.equal(pm.enumerator.hasMoreElements(), false);
 
   uri = ioService.newURI("https://www.example.com");
   pm.add(uri, "offline-app", pm.ALLOW_ACTION);
-  principal = secMan.createCodebasePrincipalFromOrigin("https://www.example.com");
+  let principal = secMan.createCodebasePrincipalFromOrigin("https://www.example.com");
   // Remove existing entry.
-  perm = pm.getPermissionObject(principal, "offline-app", true);
+  let perm = pm.getPermissionObject(principal, "offline-app", true);
   pm.removePermission(perm);
   // Try to remove already deleted entry.
   perm = pm.getPermissionObject(principal, "offline-app", true);
   pm.removePermission(perm);
-  do_check_eq(pm.enumerator.hasMoreElements(), false);
+  Assert.equal(pm.enumerator.hasMoreElements(), false);
 }

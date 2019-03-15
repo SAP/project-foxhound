@@ -1,15 +1,9 @@
 toolkit.jar:
 %  content global %content/global/ contentaccessible=yes
-%  content global-platform %content/global-platform/ platform
 *  content/global/license.html
-   content/global/XPCNativeWrapper.js
    content/global/minimal-xul.css
 *  content/global/xul.css
-   content/global/textbox.css
-   content/global/menulist.css
    content/global/autocomplete.css
-   content/global/about.js
-   content/global/about.xhtml
    content/global/aboutAbout.js
    content/global/aboutAbout.xhtml
 #ifdef MOZILLA_OFFICIAL
@@ -23,6 +17,7 @@ toolkit.jar:
    content/global/aboutProfiles.js
    content/global/aboutProfiles.xhtml
 #endif
+   content/global/aboutRights.js
    content/global/aboutServiceWorkers.js
    content/global/aboutServiceWorkers.xhtml
    content/global/aboutwebrtc/aboutWebrtc.css   (aboutwebrtc/aboutWebrtc.css)
@@ -33,29 +28,27 @@ toolkit.jar:
    content/global/aboutTelemetry.js
    content/global/aboutTelemetry.xhtml
    content/global/aboutTelemetry.css
+   content/global/aboutUrlClassifier.js
+   content/global/aboutUrlClassifier.xhtml
+   content/global/aboutUrlClassifier.css
    content/global/directionDetector.html
    content/global/plugins.html
    content/global/plugins.css
    content/global/browser-child.js
    content/global/browser-content.js
 *   content/global/buildconfig.html
+   content/global/buildconfig.css
    content/global/contentAreaUtils.js
-#ifndef MOZ_FENNEC
-   content/global/customizeToolbar.css
-   content/global/customizeToolbar.js
-   content/global/customizeToolbar.xul
-#endif
    content/global/datepicker.xhtml
 #ifndef MOZ_FENNEC
    content/global/editMenuOverlay.js
-*  content/global/editMenuOverlay.xul
-   content/global/finddialog.js
-*  content/global/finddialog.xul
-   content/global/findUtils.js
 #endif
    content/global/filepicker.properties
+   content/global/customElements.js
    content/global/globalOverlay.js
    content/global/mozilla.xhtml
+   content/global/aboutMozilla.css
+   content/global/preferencesBindings.js
    content/global/process-content.js
    content/global/resetProfile.css
    content/global/resetProfile.js
@@ -64,56 +57,53 @@ toolkit.jar:
    content/global/TopLevelVideoDocument.js
    content/global/timepicker.xhtml
    content/global/treeUtils.js
+#ifndef MOZ_FENNEC
    content/global/viewZoomOverlay.js
+#endif
+   content/global/widgets.css
    content/global/bindings/autocomplete.xml    (widgets/autocomplete.xml)
-   content/global/bindings/browser.xml         (widgets/browser.xml)
    content/global/bindings/button.xml          (widgets/button.xml)
    content/global/bindings/calendar.js         (widgets/calendar.js)
    content/global/bindings/checkbox.xml        (widgets/checkbox.xml)
-   content/global/bindings/colorpicker.xml     (widgets/colorpicker.xml)
    content/global/bindings/datekeeper.js       (widgets/datekeeper.js)
    content/global/bindings/datepicker.js       (widgets/datepicker.js)
-   content/global/bindings/datetimepicker.xml  (widgets/datetimepicker.xml)
-   content/global/bindings/datetimepopup.xml   (widgets/datetimepopup.xml)
    content/global/bindings/datetimebox.xml     (widgets/datetimebox.xml)
    content/global/bindings/datetimebox.css     (widgets/datetimebox.css)
 *  content/global/bindings/dialog.xml          (widgets/dialog.xml)
-   content/global/bindings/editor.xml          (widgets/editor.xml)
-   content/global/bindings/expander.xml        (widgets/expander.xml)
-   content/global/bindings/filefield.xml       (widgets/filefield.xml)
-*  content/global/bindings/findbar.xml         (widgets/findbar.xml)
    content/global/bindings/general.xml         (widgets/general.xml)
-   content/global/bindings/groupbox.xml        (widgets/groupbox.xml)
-   content/global/bindings/listbox.xml         (widgets/listbox.xml)
    content/global/bindings/menu.xml            (widgets/menu.xml)
    content/global/bindings/menulist.xml        (widgets/menulist.xml)
    content/global/bindings/notification.xml    (widgets/notification.xml)
-   content/global/bindings/numberbox.xml       (widgets/numberbox.xml)
    content/global/bindings/popup.xml           (widgets/popup.xml)
-*  content/global/bindings/preferences.xml     (widgets/preferences.xml)
-   content/global/bindings/progressmeter.xml   (widgets/progressmeter.xml)
    content/global/bindings/radio.xml           (widgets/radio.xml)
-   content/global/bindings/remote-browser.xml  (widgets/remote-browser.xml)
-   content/global/bindings/resizer.xml         (widgets/resizer.xml)
    content/global/bindings/richlistbox.xml     (widgets/richlistbox.xml)
-   content/global/bindings/scale.xml           (widgets/scale.xml)
-   content/global/bindings/scrollbar.xml       (widgets/scrollbar.xml)
    content/global/bindings/scrollbox.xml       (widgets/scrollbox.xml)
    content/global/bindings/spinner.js          (widgets/spinner.js)
-   content/global/bindings/splitter.xml        (widgets/splitter.xml)
-   content/global/bindings/spinbuttons.xml     (widgets/spinbuttons.xml)
-   content/global/bindings/stringbundle.xml    (widgets/stringbundle.xml)
-*  content/global/bindings/tabbox.xml          (widgets/tabbox.xml)
+   content/global/bindings/tabbox.xml          (widgets/tabbox.xml)
    content/global/bindings/text.xml            (widgets/text.xml)
 *  content/global/bindings/textbox.xml         (widgets/textbox.xml)
    content/global/bindings/timekeeper.js       (widgets/timekeeper.js)
    content/global/bindings/timepicker.js       (widgets/timepicker.js)
-   content/global/bindings/toolbar.xml         (widgets/toolbar.xml)
    content/global/bindings/toolbarbutton.xml   (widgets/toolbarbutton.xml)
-*  content/global/bindings/tree.xml            (widgets/tree.xml)
+   content/global/bindings/tree.xml            (widgets/tree.xml)
    content/global/bindings/videocontrols.xml   (widgets/videocontrols.xml)
-   content/global/bindings/videocontrols.css   (widgets/videocontrols.css)
 *  content/global/bindings/wizard.xml          (widgets/wizard.xml)
+   content/global/elements/browser-custom-element.js          (widgets/browser-custom-element.js)
+   content/global/elements/datetimebox.js      (widgets/datetimebox.js)
+   content/global/elements/findbar.js          (widgets/findbar.js)
+   content/global/elements/editor.js           (widgets/editor.js)
+   content/global/elements/general.js          (widgets/general.js)
+   content/global/elements/notificationbox.js  (widgets/notificationbox.js)
+   content/global/elements/pluginProblem.js    (widgets/pluginProblem.js)
+   content/global/elements/radio.js            (widgets/radio.js)
+   content/global/elements/richlistbox.js      (widgets/richlistbox.js)
+   content/global/elements/marquee.css         (widgets/marquee.css)
+   content/global/elements/marquee.js          (widgets/marquee.js)
+   content/global/elements/stringbundle.js     (widgets/stringbundle.js)
+   content/global/elements/tabbox.js           (widgets/tabbox.js)
+   content/global/elements/textbox.js          (widgets/textbox.js)
+   content/global/elements/videocontrols.js    (widgets/videocontrols.js)
+   content/global/elements/tree.js             (widgets/tree.js)
 #ifdef XP_MACOSX
    content/global/macWindowMenu.js
 #endif

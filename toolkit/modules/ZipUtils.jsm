@@ -2,24 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-this.EXPORTED_SYMBOLS = [ "ZipUtils" ];
+var EXPORTED_SYMBOLS = [ "ZipUtils" ];
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cr = Components.results;
-const Cu = Components.utils;
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "FileUtils",
-                                  "resource://gre/modules/FileUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "OS",
-                                  "resource://gre/modules/osfile.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Promise",
-                                  "resource://gre/modules/Promise.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Task",
-                                  "resource://gre/modules/Task.jsm");
+ChromeUtils.defineModuleGetter(this, "FileUtils",
+                               "resource://gre/modules/FileUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "OS",
+                               "resource://gre/modules/osfile.jsm");
 
 
 // The maximum amount of file data to buffer at a time during file extraction
@@ -40,58 +30,58 @@ const EXTRACTION_BUFFER               = 1024 * 512;
  *         The open OS.File instance to write to.
  */
 function saveStreamAsync(aPath, aStream, aFile) {
-  let deferred = Promise.defer();
+  return new Promise((resolve, reject) => {
 
-  // Read the input stream on a background thread
-  let sts = Cc["@mozilla.org/network/stream-transport-service;1"].
-            getService(Ci.nsIStreamTransportService);
-  let transport = sts.createInputTransport(aStream, -1, -1, true);
-  let input = transport.openInputStream(0, 0, 0)
-                       .QueryInterface(Ci.nsIAsyncInputStream);
-  let source = Cc["@mozilla.org/binaryinputstream;1"].
-               createInstance(Ci.nsIBinaryInputStream);
-  source.setInputStream(input);
+    // Read the input stream on a background thread
+    let sts = Cc["@mozilla.org/network/stream-transport-service;1"].
+              getService(Ci.nsIStreamTransportService);
+    let transport = sts.createInputTransport(aStream, true);
+    let input = transport.openInputStream(0, 0, 0)
+                         .QueryInterface(Ci.nsIAsyncInputStream);
+    let source = Cc["@mozilla.org/binaryinputstream;1"].
+                 createInstance(Ci.nsIBinaryInputStream);
+    source.setInputStream(input);
 
 
-  function readFailed(error) {
-    try {
-      aStream.close();
-    } catch (e) {
-      Cu.reportError("Failed to close JAR stream for " + aPath);
+    function readFailed(error) {
+      try {
+        aStream.close();
+      } catch (e) {
+        Cu.reportError("Failed to close JAR stream for " + aPath);
+      }
+
+      aFile.close().then(function() {
+        reject(error);
+      }, function(e) {
+        Cu.reportError("Failed to close file for " + aPath);
+        reject(error);
+      });
     }
 
-    aFile.close().then(function() {
-      deferred.reject(error);
-    }, function(e) {
-      Cu.reportError("Failed to close file for " + aPath);
-      deferred.reject(error);
-    });
-  }
+    function readData() {
+      try {
+        let count = Math.min(source.available(), EXTRACTION_BUFFER);
+        let data = new Uint8Array(count);
+        source.readArrayBuffer(count, data.buffer);
 
-  function readData() {
-    try {
-      let count = Math.min(source.available(), EXTRACTION_BUFFER);
-      let data = new Uint8Array(count);
-      source.readArrayBuffer(count, data.buffer);
-
-      aFile.write(data, { bytes: count }).then(function() {
-        input.asyncWait(readData, 0, 0, Services.tm.currentThread);
-      }, readFailed);
-    } catch (e) {
-      if (e.result == Cr.NS_BASE_STREAM_CLOSED)
-        deferred.resolve(aFile.close());
-      else
-        readFailed(e);
+        aFile.write(data, { bytes: count }).then(function() {
+          input.asyncWait(readData, 0, 0, Services.tm.currentThread);
+        }, readFailed);
+      } catch (e) {
+        if (e.result == Cr.NS_BASE_STREAM_CLOSED)
+          resolve(aFile.close());
+        else
+          readFailed(e);
+      }
     }
-  }
 
-  input.asyncWait(readData, 0, 0, Services.tm.currentThread);
+    input.asyncWait(readData, 0, 0, Services.tm.currentThread);
 
-  return deferred.promise;
+  });
 }
 
 
-this.ZipUtils = {
+var ZipUtils = {
 
   /**
    * Asynchronously extracts files from a ZIP file into a directory.
@@ -112,13 +102,10 @@ this.ZipUtils = {
       return Promise.reject(e);
     }
 
-    return Task.spawn(function* () {
+    return (async function() {
       // Get all of the entries in the zip and sort them so we create directories
       // before files
-      let entries = zipReader.findEntries(null);
-      let names = [];
-      while (entries.hasMore())
-        names.push(entries.getNext());
+      let names = Array.from(zipReader.findEntries(null));
       names.sort();
 
       for (let name of names) {
@@ -128,7 +115,7 @@ this.ZipUtils = {
 
         if (zipentry.isDirectory) {
           try {
-            yield OS.File.makeDir(path);
+            await OS.File.makeDir(path);
           } catch (e) {
             dump("extractFilesAsync: failed to create directory " + path + "\n");
             throw e;
@@ -136,11 +123,11 @@ this.ZipUtils = {
         } else {
           let options = { unixMode: zipentry.permissions | FileUtils.PERMS_FILE };
           try {
-            let file = yield OS.File.open(path, { truncate: true }, options);
+            let file = await OS.File.open(path, { truncate: true }, options);
             if (zipentry.realSize == 0)
-              yield file.close();
+              await file.close();
             else
-              yield saveStreamAsync(path, zipReader.getInputStream(entryName), file);
+              await saveStreamAsync(path, zipReader.getInputStream(entryName), file);
           } catch (e) {
             dump("extractFilesAsync: failed to extract file " + path + "\n");
             throw e;
@@ -149,7 +136,7 @@ this.ZipUtils = {
       }
 
       zipReader.close();
-    }).then(null, (e) => {
+    })().catch((e) => {
       zipReader.close();
       throw e;
     });
@@ -178,9 +165,7 @@ this.ZipUtils = {
 
     try {
       // create directories first
-      let entries = zipReader.findEntries("*/");
-      while (entries.hasMore()) {
-        let entryName = entries.getNext();
+      for (let entryName of zipReader.findEntries("*/")) {
         let target = getTargetFile(aDir, entryName);
         if (!target.exists()) {
           try {
@@ -192,9 +177,7 @@ this.ZipUtils = {
         }
       }
 
-      entries = zipReader.findEntries(null);
-      while (entries.hasMore()) {
-        let entryName = entries.getNext();
+      for (let entryName of zipReader.findEntries(null)) {
         let target = getTargetFile(aDir, entryName);
         if (target.exists())
           continue;
@@ -209,6 +192,6 @@ this.ZipUtils = {
     } finally {
       zipReader.close();
     }
-  }
+  },
 
 };

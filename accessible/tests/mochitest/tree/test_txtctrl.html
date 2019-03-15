@@ -15,17 +15,16 @@
           src="../role.js"></script>
 
   <script type="application/javascript">
-    function doTest()
-    {
+    function doTest() {
       // editable div
       var accTree = {
         role: ROLE_SECTION,
         children: [
           { // text child
             role: ROLE_TEXT_LEAF,
-            children: []
-          }
-        ]
+            children: [],
+          },
+        ],
       };
 
       testAccessibleTree("txc1", accTree);
@@ -36,9 +35,9 @@
         children: [
           { // text child
             role: ROLE_TEXT_LEAF,
-            children: []
-          }
-        ]
+            children: [],
+          },
+        ],
       };
 
       testAccessibleTree("txc2", accTree);
@@ -54,9 +53,9 @@
         role: ROLE_ENTRY,
         children: [
           {
-            role: ROLE_TEXT_LEAF // hello1\nhello2 text
-          }
-        ]
+            role: ROLE_TEXT_LEAF, // hello1\nhello2 text
+          },
+        ],
       };
 
       testAccessibleTree("txc4", accTree);
@@ -67,22 +66,22 @@
         children: [
           {
             role: ROLE_TEXT_LEAF,
-            children: []
-          }
-        ]
+            children: [],
+          },
+        ],
       };
 
       testAccessibleTree("txc5", accTree);
-      
+    
       // input@type="tel", value
       accTree = {
         role: ROLE_ENTRY,
         children: [
           { // text child
             role: ROLE_TEXT_LEAF,
-            children: []
-          }
-        ]
+            children: [],
+          },
+        ],
       };
 
       testAccessibleTree("txc6", accTree);
@@ -93,9 +92,9 @@
         children: [
           { // text child
             role: ROLE_TEXT_LEAF,
-            children: []
-          }
-        ]
+            children: [],
+          },
+        ],
       };
 
       testAccessibleTree("txc7", accTree);
@@ -106,9 +105,9 @@
         children: [
           { // text child
             role: ROLE_TEXT_LEAF,
-            children: []
-          }
-        ]
+            children: [],
+          },
+        ],
       };
 
       testAccessibleTree("txc8", accTree);

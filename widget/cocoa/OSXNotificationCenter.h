@@ -13,6 +13,11 @@
 #include "nsTArray.h"
 #include "mozilla/RefPtr.h"
 
+// mozNotificationCenterDelegate is used to access the macOS notification
+// center. It is not related to the DesktopNotificationCenter object, which was
+// removed in bug 952453. While there are no direct references to this class
+// elsewhere, removing this will cause push notifications on macOS to stop
+// working.
 @class mozNotificationCenterDelegate;
 
 #if !defined(MAC_OS_X_VERSION_10_8) || (MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_8)
@@ -25,9 +30,8 @@ class OSXNotificationInfo;
 
 class OSXNotificationCenter : public nsIAlertsService,
                               public nsIAlertsIconData,
-                              public nsIAlertNotificationImageListener
-{
-public:
+                              public nsIAlertNotificationImageListener {
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIALERTSSERVICE
   NS_DECL_NSIALERTSICONDATA
@@ -41,15 +45,15 @@ public:
                   unsigned long long aAdditionalActionIndex);
   void ShowPendingNotification(OSXNotificationInfo *osxni);
 
-protected:
+ protected:
   virtual ~OSXNotificationCenter();
 
-private:
+ private:
   mozNotificationCenterDelegate *mDelegate;
   nsTArray<RefPtr<OSXNotificationInfo> > mActiveAlerts;
   nsTArray<RefPtr<OSXNotificationInfo> > mPendingAlerts;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // OSXNotificationCenter_h
+#endif  // OSXNotificationCenter_h

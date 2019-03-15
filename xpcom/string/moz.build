@@ -8,6 +8,7 @@ with Files('**'):
     BUG_COMPONENT = ('Core', 'String')
 
 EXPORTS += [
+    'nsASCIIMask.h',
     'nsAString.h',
     'nsCharTraits.h',
     'nsDependentString.h',
@@ -18,27 +19,23 @@ EXPORTS += [
     'nsReadableUtils.h',
     'nsString.h',
     'nsStringBuffer.h',
+    'nsStringFlags.h',
     'nsStringFwd.h',
     'nsStringIterator.h',
-    'nsSubstring.h',
-    'nsSubstringTuple.h',
     'nsTDependentString.h',
     'nsTDependentSubstring.h',
     'nsTextFormatter.h',
     'nsTLiteralString.h',
     'nsTPromiseFlatString.h',
     'nsTString.h',
+    'nsTStringRepr.h',
     'nsTSubstring.h',
     'nsTSubstringTuple.h',
     'nsUTF8Utils.h',
-    'nsXPCOMStrings.h',
-    'nsXPIDLString.h',
-    'string-template-def-char.h',
-    'string-template-def-unichar.h',
-    'string-template-undef.h',
 ]
 
 UNIFIED_SOURCES += [
+    'nsASCIIMask.cpp',
     'nsDependentString.cpp',
     'nsDependentSubstring.cpp',
     'nsPromiseFlatString.cpp',
@@ -47,17 +44,11 @@ UNIFIED_SOURCES += [
     'nsStringComparator.cpp',
     'nsStringObsolete.cpp',
     'nsSubstring.cpp',
-    'nsSubstringTuple.cpp',
     'nsTextFormatter.cpp',
+    'nsTSubstringTuple.cpp',
+    'precompiled_templates.cpp',
 ]
 
-# Are we targeting x86 or x86-64?  If so, compile the SSE2 functions for
-# nsUTF8Utils.cpp and nsReadableUtils.cpp.
-if CONFIG['INTEL_ARCHITECTURE']:
-    SOURCES += ['nsUTF8UtilsSSE2.cpp']
-    SOURCES['nsUTF8UtilsSSE2.cpp'].flags += CONFIG['SSE2_FLAGS']
-    SOURCES += ['nsReadableUtilsSSE2.cpp']
-    SOURCES['nsReadableUtilsSSE2.cpp'].flags += CONFIG['SSE2_FLAGS']
 
 USE_LIBS += [
     'taint'

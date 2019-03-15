@@ -3,248 +3,242 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #define NS_HTML5_TREE_BUILDER_HANDLE_ARRAY_LENGTH 512
+private:
+using Encoding = mozilla::Encoding;
+template <typename T>
+using NotNull = mozilla::NotNull<T>;
 
-  private:
-    nsHtml5OplessBuilder*                  mBuilder;
-    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    // If mBuilder is not null, the tree op machinery is not in use and
-    // the fields below aren't in use, either.
-    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    nsHtml5Highlighter*                    mViewSource;
-    nsTArray<nsHtml5TreeOperation>         mOpQueue;
-    nsTArray<nsHtml5SpeculativeLoad>       mSpeculativeLoadQueue;
-    nsAHtml5TreeOpSink*                    mOpSink;
-    mozilla::UniquePtr<nsIContent*[]>      mHandles;
-    int32_t                                mHandlesUsed;
-    nsTArray<mozilla::UniquePtr<nsIContent*[]>> mOldHandles;
-    nsHtml5TreeOpStage*                    mSpeculativeLoadStage;
-    nsresult                               mBroken;
-    bool                                   mCurrentHtmlScriptIsAsyncOrDefer;
-    bool                                   mPreventScriptExecution;
+nsHtml5OplessBuilder* mBuilder;
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+// If mBuilder is not null, the tree op machinery is not in use and
+// the fields below aren't in use, either.
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+nsHtml5Highlighter* mViewSource;
+nsTArray<nsHtml5TreeOperation> mOpQueue;
+nsTArray<nsHtml5SpeculativeLoad> mSpeculativeLoadQueue;
+nsAHtml5TreeOpSink* mOpSink;
+mozilla::UniquePtr<nsIContent*[]> mHandles;
+int32_t mHandlesUsed;
+nsTArray<mozilla::UniquePtr<nsIContent*[]>> mOldHandles;
+nsHtml5TreeOpStage* mSpeculativeLoadStage;
+nsresult mBroken;
+bool mCurrentHtmlScriptIsAsyncOrDefer;
+bool mPreventScriptExecution;
 #ifdef DEBUG
-    bool                                   mActive;
+bool mActive;
 #endif
 
-    // DocumentModeHandler
-    /**
-     * Tree builder uses this to report quirkiness of the document
-     */
-    void documentMode(nsHtml5DocumentMode m);
+// DocumentModeHandler
+/**
+ * Tree builder uses this to report quirkiness of the document
+ */
+void documentMode(nsHtml5DocumentMode m);
 
-    nsIContentHandle* getDocumentFragmentForTemplate(nsIContentHandle* aTemplate);
+nsIContentHandle* getDocumentFragmentForTemplate(nsIContentHandle* aTemplate);
 
-    nsIContentHandle* getFormPointerForContext(nsIContentHandle* aContext);
+nsIContentHandle* getFormPointerForContext(nsIContentHandle* aContext);
 
-    /**
-     * Using nsIContent** instead of nsIContent* is the parser deals with DOM
-     * nodes in a way that works off the main thread. Non-main-thread code
-     * can't refcount or otherwise touch nsIContent objects in any way.
-     * Yet, the off-the-main-thread code needs to have a way to hold onto a
-     * particular node and repeatedly operate on the same node.
-     *
-     * The way this works is that the off-the-main-thread code has an
-     * nsIContent** for each DOM node and a given nsIContent** is only ever
-     * actually dereferenced into an actual nsIContent* on the main thread.
-     * When the off-the-main-thread code requests a new node, it gets an
-     * nsIContent** immediately and a tree op is enqueued for later allocating
-     * an actual nsIContent object and writing a pointer to it into the memory
-     * location pointed to by the nsIContent**.
-     *
-     * Since tree ops are in a queue, the node creating tree op will always
-     * run before tree ops that try to further operate on the node that the
-     * nsIContent** is a handle to.
-     *
-     * On-the-main-thread parts of the parser use nsIContent* instead of
-     * nsIContent**. Since both cases share the same parser core, the parser
-     * core casts both to nsIContentHandle*.
-     */
-    nsIContentHandle* AllocateContentHandle();
+/**
+ * Using nsIContent** instead of nsIContent* is the parser deals with DOM
+ * nodes in a way that works off the main thread. Non-main-thread code
+ * can't refcount or otherwise touch nsIContent objects in any way.
+ * Yet, the off-the-main-thread code needs to have a way to hold onto a
+ * particular node and repeatedly operate on the same node.
+ *
+ * The way this works is that the off-the-main-thread code has an
+ * nsIContent** for each DOM node and a given nsIContent** is only ever
+ * actually dereferenced into an actual nsIContent* on the main thread.
+ * When the off-the-main-thread code requests a new node, it gets an
+ * nsIContent** immediately and a tree op is enqueued for later allocating
+ * an actual nsIContent object and writing a pointer to it into the memory
+ * location pointed to by the nsIContent**.
+ *
+ * Since tree ops are in a queue, the node creating tree op will always
+ * run before tree ops that try to further operate on the node that the
+ * nsIContent** is a handle to.
+ *
+ * On-the-main-thread parts of the parser use nsIContent* instead of
+ * nsIContent**. Since both cases share the same parser core, the parser
+ * core casts both to nsIContentHandle*.
+ */
+nsIContentHandle* AllocateContentHandle();
 
-    void accumulateCharactersForced(const char16_t* aBuf, int32_t aStart, int32_t aLength)
-    {
-        // TODO(samuel)
-      accumulateCharacters(aBuf, EmptyTaint, aStart, aLength);
-    }
+void accumulateCharactersForced(const char16_t* aBuf, int32_t aStart,
+                                int32_t aLength) {
+  // TODO(samuel)
+  accumulateCharacters(aBuf, EmptyTaint, aStart, aLength)
+}
 
-    void MarkAsBrokenAndRequestSuspension(nsresult aRv)
-    {
-      mBuilder->MarkAsBroken(aRv);
-      requestSuspension();
-    }
+void MarkAsBrokenAndRequestSuspensionWithBuilder(nsresult aRv) {
+  mBuilder->MarkAsBroken(aRv);
+  requestSuspension();
+}
 
-    void MarkAsBrokenFromPortability(nsresult aRv);
+void MarkAsBrokenAndRequestSuspensionWithoutBuilder(nsresult aRv) {
+  MarkAsBroken(aRv);
+  requestSuspension();
+}
 
-  public:
+void MarkAsBrokenFromPortability(nsresult aRv);
 
-    explicit nsHtml5TreeBuilder(nsHtml5OplessBuilder* aBuilder);
+public:
+explicit nsHtml5TreeBuilder(nsHtml5OplessBuilder* aBuilder);
 
-    nsHtml5TreeBuilder(nsAHtml5TreeOpSink* aOpSink,
-                       nsHtml5TreeOpStage* aStage);
+nsHtml5TreeBuilder(nsAHtml5TreeOpSink* aOpSink, nsHtml5TreeOpStage* aStage);
 
-    ~nsHtml5TreeBuilder();
+~nsHtml5TreeBuilder();
 
-    void StartPlainTextViewSource(const nsAutoString& aTitle);
+void StartPlainTextViewSource(const nsAutoString& aTitle);
 
-    void StartPlainText();
+void StartPlainText();
 
-    void StartPlainTextBody();
+void StartPlainTextBody();
 
-    bool HasScript();
+bool HasScript();
 
-    void SetOpSink(nsAHtml5TreeOpSink* aOpSink)
-    {
-      mOpSink = aOpSink;
-    }
+void SetOpSink(nsAHtml5TreeOpSink* aOpSink) { mOpSink = aOpSink; }
 
-    void ClearOps()
-    {
-      mOpQueue.Clear();
-    }
+void ClearOps() { mOpQueue.Clear(); }
 
-    bool Flush(bool aDiscretionary = false);
+bool Flush(bool aDiscretionary = false);
 
+void FlushLoads();
 
-    void FlushLoads();
+void SetDocumentCharset(NotNull<const Encoding*> aEncoding,
+                        int32_t aCharsetSource);
 
-    void SetDocumentCharset(nsACString& aCharset, int32_t aCharsetSource);
+void StreamEnded();
 
-    void StreamEnded();
+void NeedsCharsetSwitchTo(NotNull<const Encoding*> aEncoding, int32_t aSource,
+                          int32_t aLineNumber);
 
-    void NeedsCharsetSwitchTo(const nsACString& aEncoding,
-                              int32_t aSource,
-                              int32_t aLineNumber);
+void MaybeComplainAboutCharset(const char* aMsgId, bool aError,
+                               int32_t aLineNumber);
 
-    void MaybeComplainAboutCharset(const char* aMsgId,
-                                   bool aError,
-                                   int32_t aLineNumber);
+void TryToEnableEncodingMenu();
 
-    void AddSnapshotToScript(nsAHtml5TreeBuilderState* aSnapshot, int32_t aLine);
+void AddSnapshotToScript(nsAHtml5TreeBuilderState* aSnapshot, int32_t aLine);
 
-    void DropHandles();
+void DropHandles();
 
-    void SetPreventScriptExecution(bool aPrevent)
-    {
-      mPreventScriptExecution = aPrevent;
-    }
+void SetPreventScriptExecution(bool aPrevent) {
+  mPreventScriptExecution = aPrevent;
+}
 
-    bool HasBuilder()
-    {
-      return mBuilder;
-    }
+bool HasBuilder() { return mBuilder; }
 
-    /**
-     * Makes sure the buffers are large enough to be able to tokenize aLength
-     * UTF-16 code units before having to make the buffers larger.
-     *
-     * @param aLength the number of UTF-16 code units to be tokenized before the
-     *                next call to this method.
-     * @return true if successful; false if out of memory
-     */
-    bool EnsureBufferSpace(int32_t aLength);
+/**
+ * Makes sure the buffers are large enough to be able to tokenize aLength
+ * UTF-16 code units before having to make the buffers larger.
+ *
+ * @param aLength the number of UTF-16 code units to be tokenized before the
+ *                next call to this method.
+ * @return true if successful; false if out of memory
+ */
+bool EnsureBufferSpace(int32_t aLength);
 
-    void EnableViewSource(nsHtml5Highlighter* aHighlighter);
+void EnableViewSource(nsHtml5Highlighter* aHighlighter);
 
-    void errStrayStartTag(nsIAtom* aName);
+void errDeepTree();
 
-    void errStrayEndTag(nsIAtom* aName);
+void errStrayStartTag(nsAtom* aName);
 
-    void errUnclosedElements(int32_t aIndex, nsIAtom* aName);
+void errStrayEndTag(nsAtom* aName);
 
-    void errUnclosedElementsImplied(int32_t aIndex, nsIAtom* aName);
+void errUnclosedElements(int32_t aIndex, nsAtom* aName);
 
-    void errUnclosedElementsCell(int32_t aIndex);
+void errUnclosedElementsImplied(int32_t aIndex, nsAtom* aName);
 
-    void errStrayDoctype();
+void errUnclosedElementsCell(int32_t aIndex);
 
-    void errAlmostStandardsDoctype();
+void errStrayDoctype();
 
-    void errQuirkyDoctype();
+void errAlmostStandardsDoctype();
 
-    void errNonSpaceInTrailer();
+void errQuirkyDoctype();
 
-    void errNonSpaceAfterFrameset();
+void errNonSpaceInTrailer();
 
-    void errNonSpaceInFrameset();
+void errNonSpaceAfterFrameset();
 
-    void errNonSpaceAfterBody();
+void errNonSpaceInFrameset();
 
-    void errNonSpaceInColgroupInFragment();
+void errNonSpaceAfterBody();
 
-    void errNonSpaceInNoscriptInHead();
+void errNonSpaceInColgroupInFragment();
 
-    void errFooBetweenHeadAndBody(nsIAtom* aName);
+void errNonSpaceInNoscriptInHead();
 
-    void errStartTagWithoutDoctype();
+void errFooBetweenHeadAndBody(nsAtom* aName);
 
-    void errNoSelectInTableScope();
+void errStartTagWithoutDoctype();
 
-    void errStartSelectWhereEndSelectExpected();
+void errNoSelectInTableScope();
 
-    void errStartTagWithSelectOpen(nsIAtom* aName);
+void errStartSelectWhereEndSelectExpected();
 
-    void errBadStartTagInHead(nsIAtom* aName);
+void errStartTagWithSelectOpen(nsAtom* aName);
 
-    void errImage();
+void errBadStartTagInHead(nsAtom* aName);
 
-    void errIsindex();
+void errImage();
 
-    void errFooSeenWhenFooOpen(nsIAtom* aName);
+void errIsindex();
 
-    void errHeadingWhenHeadingOpen();
+void errFooSeenWhenFooOpen(nsAtom* aName);
 
-    void errFramesetStart();
+void errHeadingWhenHeadingOpen();
 
-    void errNoCellToClose();
+void errFramesetStart();
 
-    void errStartTagInTable(nsIAtom* aName);
+void errNoCellToClose();
 
-    void errFormWhenFormOpen();
+void errStartTagInTable(nsAtom* aName);
 
-    void errTableSeenWhileTableOpen();
+void errFormWhenFormOpen();
 
-    void errStartTagInTableBody(nsIAtom* aName);
+void errTableSeenWhileTableOpen();
 
-    void errEndTagSeenWithoutDoctype();
+void errStartTagInTableBody(nsAtom* aName);
 
-    void errEndTagAfterBody();
+void errEndTagSeenWithoutDoctype();
 
-    void errEndTagSeenWithSelectOpen(nsIAtom* aName);
+void errEndTagAfterBody();
 
-    void errGarbageInColgroup();
+void errEndTagSeenWithSelectOpen(nsAtom* aName);
 
-    void errEndTagBr();
+void errGarbageInColgroup();
 
-    void errNoElementToCloseButEndTagSeen(nsIAtom* aName);
+void errEndTagBr();
 
-    void errHtmlStartTagInForeignContext(nsIAtom* aName);
+void errNoElementToCloseButEndTagSeen(nsAtom* aName);
 
-    void errTableClosedWhileCaptionOpen();
+void errHtmlStartTagInForeignContext(nsAtom* aName);
 
-    void errNoTableRowToClose();
+void errTableClosedWhileCaptionOpen();
 
-    void errNonSpaceInTable();
+void errNoTableRowToClose();
 
-    void errUnclosedChildrenInRuby();
+void errNonSpaceInTable();
 
-    void errStartTagSeenWithoutRuby(nsIAtom* aName);
+void errUnclosedChildrenInRuby();
 
-    void errSelfClosing();
+void errStartTagSeenWithoutRuby(nsAtom* aName);
 
-    void errNoCheckUnclosedElementsOnStack();
+void errSelfClosing();
 
-    void errEndTagDidNotMatchCurrentOpenElement(nsIAtom* aName, nsIAtom* aOther);
+void errNoCheckUnclosedElementsOnStack();
 
-    void errEndTagViolatesNestingRules(nsIAtom* aName);
+void errEndTagDidNotMatchCurrentOpenElement(nsAtom* aName, nsAtom* aOther);
 
-    void errEndWithUnclosedElements(nsIAtom* aName);
+void errEndTagViolatesNestingRules(nsAtom* aName);
 
-    void MarkAsBroken(nsresult aRv);
+void errEndWithUnclosedElements(nsAtom* aName);
 
-    /**
-     * Checks if this parser is broken. Returns a non-NS_OK (i.e. non-0)
-     * value if broken.
-     */
-    nsresult IsBroken()
-    {
-      return mBroken;
-    }
+void MarkAsBroken(nsresult aRv);
+
+/**
+ * Checks if this parser is broken. Returns a non-NS_OK (i.e. non-0)
+ * value if broken.
+ */
+nsresult IsBroken() { return mBroken; }

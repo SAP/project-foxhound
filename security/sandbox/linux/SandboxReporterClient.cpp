@@ -16,20 +16,19 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/PodOperations.h"
+#include "prenv.h"
 #include "sandbox/linux/bpf_dsl/seccomp_macros.h"
 #ifdef ANDROID
-#include "sandbox/linux/system_headers/linux_ucontext.h"
+#  include "sandbox/linux/system_headers/linux_ucontext.h"
 #else
-#include <ucontext.h>
+#  include <ucontext.h>
 #endif
 
 namespace mozilla {
 
 SandboxReporterClient::SandboxReporterClient(SandboxReport::ProcType aProcType,
-					     int aFd)
-  : mProcType(aProcType)
-  , mFd(aFd)
-{
+                                             int aFd)
+    : mProcType(aProcType), mFd(aFd) {
   // Unfortunately, there isn't a good way to check that the fd is a
   // socket connected to the right thing without attempting some kind
   // of in-band handshake.  However, the crash reporter (which also
@@ -37,9 +36,12 @@ SandboxReporterClient::SandboxReporterClient(SandboxReport::ProcType aProcType,
   // so it's probably okay to skip it here.
 }
 
-SandboxReport
-SandboxReporterClient::MakeReport(const void* aContext)
-{
+SandboxReporterClient::SandboxReporterClient(SandboxReport::ProcType aProcType)
+    : SandboxReporterClient(aProcType, kSandboxReporterFileDesc) {
+  MOZ_RELEASE_ASSERT(PR_GetEnv("MOZ_SANDBOXED") != nullptr);
+}
+
+SandboxReport SandboxReporterClient::MakeReport(const void* aContext) {
   SandboxReport report;
   const auto ctx = static_cast<const ucontext_t*>(aContext);
 
@@ -63,9 +65,7 @@ SandboxReporterClient::MakeReport(const void* aContext)
   return report;
 }
 
-void
-SandboxReporterClient::SendReport(const SandboxReport& aReport)
-{
+void SandboxReporterClient::SendReport(const SandboxReport& aReport) {
   // The "common" seccomp-bpf policy allows sendmsg but not send(to),
   // so just use sendmsg even though send would suffice for this.
   struct iovec iov;
@@ -81,9 +81,8 @@ SandboxReporterClient::SendReport(const SandboxReport& aReport)
 
   if (sent != sizeof(SandboxReport)) {
     MOZ_DIAGNOSTIC_ASSERT(sent == -1);
-    SANDBOX_LOG_ERROR("Failed to report rejected syscall: %s",
-		      strerror(errno));
+    SANDBOX_LOG_ERROR("Failed to report rejected syscall: %s", strerror(errno));
   }
 }
 
-} // namespace mozilla
+}  // namespace mozilla

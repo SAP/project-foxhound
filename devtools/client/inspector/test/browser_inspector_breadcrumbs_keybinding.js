@@ -8,44 +8,44 @@
 const TEST_URI = URL_ROOT + "doc_inspector_breadcrumbs.html";
 const TEST_DATA = [{
   desc: "Pressing left should select the parent <body>",
-  key: "VK_LEFT",
-  newSelection: "body"
+  key: "KEY_ArrowLeft",
+  newSelection: "body",
 }, {
   desc: "Pressing left again should select the parent <html>",
-  key: "VK_LEFT",
-  newSelection: "html"
+  key: "KEY_ArrowLeft",
+  newSelection: "html",
 }, {
   desc: "Pressing left again should stay on <html>, it's the first element",
-  key: "VK_LEFT",
-  newSelection: "html"
+  key: "KEY_ArrowLeft",
+  newSelection: "html",
 }, {
   desc: "Pressing right should go to <body>",
-  key: "VK_RIGHT",
-  newSelection: "body"
+  key: "KEY_ArrowRight",
+  newSelection: "body",
 }, {
   desc: "Pressing right again should go to #i2",
-  key: "VK_RIGHT",
-  newSelection: "#i2"
+  key: "KEY_ArrowRight",
+  newSelection: "#i2",
 }, {
   desc: "Pressing right again should stay on #i2, it's the last element",
-  key: "VK_RIGHT",
-  newSelection: "#i2"
+  key: "KEY_ArrowRight",
+  newSelection: "#i2",
 }];
 
-add_task(function* () {
-  let {inspector} = yield openInspectorForURL(TEST_URI);
+add_task(async function() {
+  const {inspector} = await openInspectorForURL(TEST_URI);
 
   info("Selecting the test node");
-  yield selectNode("#i2", inspector);
+  await selectNode("#i2", inspector);
 
   info("Clicking on the corresponding breadcrumbs node to focus it");
-  let container = inspector.panelDoc.getElementById("inspector-breadcrumbs");
+  const container = inspector.panelDoc.getElementById("inspector-breadcrumbs");
 
-  let button = container.querySelector("button[checked]");
+  const button = container.querySelector("button[checked]");
   button.click();
 
   let currentSelection = "#id2";
-  for (let {desc, key, newSelection} of TEST_DATA) {
+  for (const {desc, key, newSelection} of TEST_DATA) {
     info(desc);
 
     // If the selection will change, wait for the breadcrumb to update,
@@ -56,10 +56,10 @@ add_task(function* () {
       onUpdated = inspector.once("breadcrumbs-updated");
     }
 
-    EventUtils.synthesizeKey(key, {});
-    yield onUpdated;
+    EventUtils.synthesizeKey(key);
+    await onUpdated;
 
-    let newNodeFront = yield getNodeFront(newSelection, inspector);
+    const newNodeFront = await getNodeFront(newSelection, inspector);
     is(newNodeFront, inspector.selection.nodeFront,
        "The current selection is correct");
     is(container.getAttribute("aria-activedescendant"),

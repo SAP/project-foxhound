@@ -16,13 +16,14 @@
   </tabbox>
   <script type="application/javascript" src="plugin-utils.js"/>
   <script type="application/javascript"><![CDATA[
+    ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
     const ok = window.opener.wrappedJSObject.ok;
     const is = window.opener.wrappedJSObject.is;
     const done = window.opener.wrappedJSObject.done;
     const SimpleTest = window.opener.wrappedJSObject.SimpleTest;
 
-    const nsIWebProgress = Components.interfaces.nsIWebProgress;
-    const nsIWebProgressListener = Components.interfaces.nsIWebProgressListener;
+    const nsIWebProgress = Ci.nsIWebProgress;
+    const nsIWebProgressListener = Ci.nsIWebProgressListener;
 
     const kURI = 'http://mochi.test:8888/chrome/dom/plugins/test/mochitest/plugin_visibility_loader.html';
 
@@ -36,9 +37,9 @@
       };
     ProgressListener.prototype.QueryInterface = function(iid) {
       if (iid.equals(nsIWebProgressListener) ||
-          iid.equals(Components.interfaces.nsISupportsWeakReference))
+          iid.equals(Ci.nsISupportsWeakReference))
         return this;
-      throw Components.results.NS_ERROR_NO_INTERFACE;
+      throw Cr.NS_ERROR_NO_INTERFACE;
     };
 
     var loadCount = 0;
@@ -57,10 +58,10 @@
     function setup() {
       progressListener1 = new ProgressListener();
       browser1.addProgressListener(progressListener1, nsIWebProgress.NOTIFY_STATE_WINDOW);
-      browser1.loadURI(kURI, null, null);
+      BrowserTestUtils.loadURI(browser1, kURI);
       progressListener2 = new ProgressListener();
       browser2.addProgressListener(progressListener2, nsIWebProgress.NOTIFY_STATE_WINDOW);
-      browser2.loadURI(kURI, null, null);
+      BrowserTestUtils.loadURI(browser2, kURI);
     }
 
     window.addEventListener("load", setup, false);

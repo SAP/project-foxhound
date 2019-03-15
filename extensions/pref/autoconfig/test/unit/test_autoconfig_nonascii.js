@@ -1,20 +1,15 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-var {classes: Cc, interfaces: Ci, results: Cr} = Components;
+/* eslint no-unsafe-finally: "off"*/
+/* Turning off this rule to allow control flow operations in finally block
+ * http://eslint.org/docs/rules/no-unsafe-finally  */
+
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function run_test() {
-  let dirSvc = Cc["@mozilla.org/file/directory_service;1"].
-               getService(Ci.nsIProperties);
-  let obsvc = Cc['@mozilla.org/observer-service;1'].
-              getService(Ci.nsIObserverService);
-  let ps = Cc["@mozilla.org/preferences-service;1"].
-           getService(Ci.nsIPrefService);
-  let defaultPrefs = ps.getDefaultBranch(null);
-  let prefs = ps.getBranch(null);
-
-  let greD = dirSvc.get("GreD", Ci.nsIFile);
-  let defaultPrefD = dirSvc.get("PrfDef", Ci.nsIFile);
+  let greD = Services.dirsvc.get("GreD", Ci.nsIFile);
+  let defaultPrefD = Services.dirsvc.get("PrfDef", Ci.nsIFile);
   let testDir = do_get_cwd();
 
   try {
@@ -24,7 +19,7 @@ function run_test() {
 
     // Make sure nsReadConfig is initialized.
     Cc["@mozilla.org/readconfig;1"].getService(Ci.nsISupports);
-    ps.resetPrefs();
+    Services.prefs.resetPrefs();
 
     var tests = [{
       filename: "autoconfig-utf8.cfg",
@@ -32,8 +27,8 @@ function run_test() {
         "_test.string.ASCII": "UTF-8",
         "_test.string.non-ASCII": "日本語",
         "_test.string.getPref": "日本語",
-        "_test.string.gIsUTF8": "true"
-      }
+        "_test.string.gIsUTF8": "true",
+      },
     }, {
       filename: "autoconfig-latin1.cfg",
       prefs: {
@@ -41,30 +36,35 @@ function run_test() {
         "_test.string.non-ASCII": "日本語",
         "_test.string.getPref": "日本語",
         "_test.string.gIsUTF8": "false",
-      }
+      },
+    }, {
+      filename: "autoconfig-chromecheck.cfg",
+      prefs: {
+        "_test.string.typeofComponents": "undefined",
+      },
     }];
 
     function testAutoConfig(test) {
       // Make sure pref values are unset.
       for (let prefName in test.prefs) {
-        do_check_eq(Ci.nsIPrefBranch.PREF_INVALID, prefs.getPrefType(prefName));
+        Assert.equal(Ci.nsIPrefBranch.PREF_INVALID, Services.prefs.getPrefType(prefName));
       }
 
       let autoConfigCfg = testDir.clone();
       autoConfigCfg.append(test.filename);
       autoConfigCfg.copyTo(greD, "autoconfig.cfg");
-  
-      obsvc.notifyObservers(ps, "prefservice:before-read-userprefs", null);
-  
+
+      Services.obs.notifyObservers(Services.prefs, "prefservice:before-read-userprefs");
+
       for (let prefName in test.prefs) {
-        do_check_eq(test.prefs[prefName],
-                    prefs.getComplexValue(prefName, Ci.nsISupportsString).data);
+        Assert.equal(test.prefs[prefName],
+                     Services.prefs.getStringPref(prefName));
       }
-  
-      ps.resetPrefs();
+
+      Services.prefs.resetPrefs();
       // Make sure pref values are reset.
       for (let prefName in test.prefs) {
-        do_check_eq(Ci.nsIPrefBranch.PREF_INVALID, prefs.getPrefType(prefName));
+        Assert.equal(Ci.nsIPrefBranch.PREF_INVALID, Services.prefs.getPrefType(prefName));
       }
     }
 
@@ -91,7 +91,6 @@ function run_test() {
       }
     }
 
-    ps.resetPrefs();
+    Services.prefs.resetPrefs();
   }
 }
-

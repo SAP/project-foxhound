@@ -4,18 +4,19 @@
   <meta charset="utf-8">
   <title>Test the WebSocket debugger transport</title>
   <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script src="chrome://mochikit/content/tests/SimpleTest/SpawnTask.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/AddTask.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css">
 </head>
 <body>
 <script>
 "use strict";
 
-window.onload = function () {
-  const {require} = Components.utils.import("resource://devtools/shared/Loader.jsm", {});
+window.onload = function() {
+  const {require} = ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
   const Services = require("Services");
-  const {DebuggerClient} = require("devtools/shared/client/main");
+  const {DebuggerClient} = require("devtools/shared/client/debugger-client");
   const {DebuggerServer} = require("devtools/server/main");
+  const { SocketListener } = require("devtools/shared/security/socket");
 
   Services.prefs.setBoolPref("devtools.debugger.remote-enabled", true);
   Services.prefs.setBoolPref("devtools.debugger.prompt-connection", false);
@@ -25,44 +26,39 @@ window.onload = function () {
     Services.prefs.clearUserPref("devtools.debugger.prompt-connection");
   });
 
-  add_task(function* () {
-    if (!DebuggerServer.initialized) {
-      DebuggerServer.init();
-      DebuggerServer.addBrowserActors();
-    }
+  add_task(async function() {
+    DebuggerServer.init();
+    DebuggerServer.registerAllActors();
 
     is(DebuggerServer.listeningSockets, 0, "0 listening sockets");
 
-    let listener = DebuggerServer.createListener();
+    const socketOptions = {
+      portOrPath: -1,
+      webSocket: true,
+    };
+    const listener = new SocketListener(DebuggerServer, socketOptions);
     ok(listener, "Socket listener created");
-    listener.portOrPath = -1;
-    listener.webSocket = true;
-    yield listener.open();
+    await listener.open();
     is(DebuggerServer.listeningSockets, 1, "1 listening socket");
 
-    let transport = yield DebuggerClient.socketConnect({
+    const transport = await DebuggerClient.socketConnect({
       host: "127.0.0.1",
       port: listener.port,
-      webSocket: true
+      webSocket: true,
     });
     ok(transport, "Client transport created");
 
-    let client = new DebuggerClient(transport);
-    let onUnexpectedClose = () => {
+    const client = new DebuggerClient(transport);
+    const onUnexpectedClose = () => {
       ok(false, "Closed unexpectedly");
     };
     client.addListener("closed", onUnexpectedClose);
 
-    yield client.connect();
-    yield client.listTabs();
+    await client.connect();
 
     // Send a message the server that will echo back
-    let message = "message";
-    let reply = yield client.request({
-      to: "root",
-      type: "echo",
-      message
-    });
+    const message = "message";
+    const reply = await client.mainRoot.echo({ message });
     is(reply.message, message, "Echo message matches");
 
     client.removeListener("closed", onUnexpectedClose);

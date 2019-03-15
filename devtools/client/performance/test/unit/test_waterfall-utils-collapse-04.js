@@ -7,10 +7,6 @@
  * when filtering parents and children.
  */
 
-function run_test() {
-  run_next_test();
-}
-
 add_task(function test() {
   const WaterfallUtils = require("devtools/client/performance/modules/logic/waterfall-utils");
 
@@ -19,19 +15,19 @@ add_task(function test() {
     [["Javascript"], gExpectedOutputNoJS],
     [["DOMEvent", "Javascript"], gExpectedOutputNoDOMEventOrJS],
   ].forEach(([filter, expected]) => {
-    let rootMarkerNode = WaterfallUtils.createParentNode({ name: "(root)" });
+    const rootMarkerNode = WaterfallUtils.createParentNode({ name: "(root)" });
 
     WaterfallUtils.collapseMarkersIntoNode({
       rootNode: rootMarkerNode,
       markersList: gTestMarkers,
-      filter
+      filter,
     });
 
     compare(rootMarkerNode, expected);
   });
 
   function compare(marker, expected) {
-    for (let prop in expected) {
+    for (const prop in expected) {
       if (prop === "submarkers") {
         for (let i = 0; i < expected.submarkers.length; i++) {
           compare(marker.submarkers[i], expected.submarkers[i]);
@@ -87,7 +83,7 @@ const gExpectedOutputNoDOMEvent = {
     ]},
     { start: 25, end: 30, name: "Javascript", submarkers: [
       { start: 26, end: 27, name: "Paint" },
-    ]}
+    ]},
   ]};
 
 const gExpectedOutputNoDOMEventOrJS = {

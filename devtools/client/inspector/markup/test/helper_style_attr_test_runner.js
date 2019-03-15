@@ -26,43 +26,43 @@
  *        Array of arrays representing the characters to type for the new
  *        attribute as well as the expected state at each step
  */
-function* runStyleAttributeAutocompleteTests(inspector, testData) {
+async function runStyleAttributeAutocompleteTests(inspector, testData) {
   info("Expand all markup nodes");
-  yield inspector.markup.expandAll();
+  await inspector.markup.expandAll();
 
   info("Select #node14");
-  let container = yield focusNode("#node14", inspector);
+  const container = await focusNode("#node14", inspector);
 
   info("Focus and open the new attribute inplace-editor");
-  let attr = container.editor.newAttr;
+  const attr = container.editor.newAttr;
   attr.focus();
   EventUtils.sendKey("return", inspector.panelWin);
-  let editor = inplaceEditor(attr);
+  const editor = inplaceEditor(attr);
 
   for (let i = 0; i < testData.length; i++) {
-    let data = testData[i];
+    const data = testData[i];
 
     // Expect a markupmutation event at the last iteration since that's when the
     // attribute is actually created.
-    let onMutation = i === testData.length - 1
+    const onMutation = i === testData.length - 1
                      ? inspector.once("markupmutation") : null;
 
     info(`Entering test data ${i}: ${data[0]}, expecting: [${data[1]}]`);
-    yield enterData(data, editor, inspector);
+    await enterData(data, editor, inspector);
 
     info(`Test data ${i} entered. Checking state.`);
-    yield checkData(data, editor, inspector);
+    await checkData(data, editor, inspector);
 
-    yield onMutation;
+    await onMutation;
   }
 
   // Undoing the action will remove the new attribute, so make sure to wait for
   // the markupmutation event here again.
-  let onMutation = inspector.once("markupmutation");
+  const onMutation = inspector.once("markupmutation");
   while (inspector.markup.undo.canUndo()) {
-    yield undoChange(inspector);
+    await undoChange(inspector);
   }
-  yield onMutation;
+  await onMutation;
 }
 
 /**
@@ -75,10 +75,10 @@ function* runStyleAttributeAutocompleteTests(inspector, testData) {
  *         applied
  */
 function enterData(data, editor, inspector) {
-  let key = data[0];
+  const key = data[0];
 
   if (/^click_[0-9]+$/.test(key)) {
-    let suggestionIndex = parseInt(key.split("_")[1], 10);
+    const suggestionIndex = parseInt(key.split("_")[1], 10);
     return clickOnSuggestion(suggestionIndex, editor);
   }
 
@@ -115,8 +115,8 @@ function sendKey(key, editor, inspector) {
  * Verify that the inplace editor is in the expected state for the provided
  * test data.
  */
-function* checkData(data, editor, inspector) {
-  let [, completion, selStart, selEnd, popupOpen] = data;
+async function checkData(data, editor, inspector) {
+  const [, completion, selStart, selEnd, popupOpen] = data;
 
   if (selEnd != -1) {
     is(editor.input.value, completion, "Completed value is correct");
@@ -124,9 +124,9 @@ function* checkData(data, editor, inspector) {
     is(editor.input.selectionEnd, selEnd, "Selection end position is correct");
     is(editor.popup.isOpen, popupOpen, "Popup is " + (popupOpen ? "open" : "closed"));
   } else {
-    let nodeFront = yield getNodeFront("#node14", inspector);
-    let container = getContainerForNodeFront(nodeFront, inspector);
-    let attr = container.editor.attrElements.get("style").querySelector(".editable");
+    const nodeFront = await getNodeFront("#node14", inspector);
+    const container = getContainerForNodeFront(nodeFront, inspector);
+    const attr = container.editor.attrElements.get("style").querySelector(".editable");
     is(attr.textContent, completion, "Correct value is persisted after pressing Enter");
   }
 }

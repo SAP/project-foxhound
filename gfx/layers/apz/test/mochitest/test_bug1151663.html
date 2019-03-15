@@ -18,17 +18,16 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1151663
       // root APZC be scrollable. Mochitest pages themselves often run
       // inside an iframe which means we have no control over the root APZC.
       var w = null;
-      window.onload = function() {
-        pushPrefs([["apz.test.logging_enabled", true]]).then(function() {
-          w = window.open("helper_bug1151663.html", "_blank");
-        });
-      };
+      pushPrefs([["apz.test.logging_enabled", true]])
+          .then(function() {
+            w = window.open("helper_bug1151663.html", "_blank");
+          });
     }
 
     function finishTest() {
       w.close();
       SimpleTest.finish();
-    };
+    }
 
   </script>
 </head>

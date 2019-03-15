@@ -17,16 +17,17 @@
  * - opened from a chrome worker through require().
  */
 
+/* eslint-env node */
+
 "use strict";
 
 var SharedAll;
 if (typeof Components != "undefined") {
-  let Cu = Components.utils;
   // Module is opened as a jsm module
-  Cu.import("resource://gre/modules/ctypes.jsm", this);
+  ChromeUtils.import("resource://gre/modules/ctypes.jsm", this);
 
   SharedAll = {};
-  Cu.import("resource://gre/modules/osfile/osfile_shared_allthreads.jsm", SharedAll);
+  ChromeUtils.import("resource://gre/modules/osfile/osfile_shared_allthreads.jsm", SharedAll);
   this.exports = {};
 } else if (typeof module != "undefined" && typeof require != "undefined") {
   // Module is loaded with require()
@@ -35,7 +36,7 @@ if (typeof Components != "undefined") {
   throw new Error("Please open this module with Component.utils.import or with require()");
 }
 
-var LOG = SharedAll.LOG.bind(SharedAll, "Unix", "allthreads");
+SharedAll.LOG.bind(SharedAll, "Unix", "allthreads");
 var Const = SharedAll.Constants.libc;
 
 // Open libc
@@ -51,8 +52,8 @@ exports.declareFFI = declareFFI;
 var LazyBindings = {};
 libc.declareLazy(LazyBindings, "strerror",
                  "strerror", ctypes.default_abi,
-                 /*return*/ ctypes.char.ptr,
-                 /*errnum*/ ctypes.int);
+                 /* return*/ ctypes.char.ptr,
+                 /* errnum*/ ctypes.int);
 
 /**
  * A File-related error.
@@ -88,7 +89,7 @@ OSError.prototype = Object.create(SharedAll.OSError.prototype);
 OSError.prototype.toString = function toString() {
   return "Unix error " + this.unixErrno +
     " during operation " + this.operation +
-    (this.path? " on file " + this.path : "") +
+    (this.path ? " on file " + this.path : "") +
     " (" + LazyBindings.strerror(this.unixErrno).readString() + ")";
 };
 OSError.prototype.toMsg = function toMsg() {
@@ -102,7 +103,7 @@ OSError.prototype.toMsg = function toMsg() {
 Object.defineProperty(OSError.prototype, "becauseExists", {
   get: function becauseExists() {
     return this.unixErrno == Const.EEXIST;
-  }
+  },
 });
 /**
  * |true| if the error was raised because a file or directory
@@ -111,7 +112,7 @@ Object.defineProperty(OSError.prototype, "becauseExists", {
 Object.defineProperty(OSError.prototype, "becauseNoSuchFile", {
   get: function becauseNoSuchFile() {
     return this.unixErrno == Const.ENOENT;
-  }
+  },
 });
 
 /**
@@ -121,7 +122,7 @@ Object.defineProperty(OSError.prototype, "becauseNoSuchFile", {
  Object.defineProperty(OSError.prototype, "becauseNotEmpty", {
    get: function becauseNotEmpty() {
      return this.unixErrno == Const.ENOTEMPTY;
-   }
+   },
  });
 /**
  * |true| if the error was raised because a file or directory
@@ -130,7 +131,7 @@ Object.defineProperty(OSError.prototype, "becauseNoSuchFile", {
 Object.defineProperty(OSError.prototype, "becauseClosed", {
   get: function becauseClosed() {
     return this.unixErrno == Const.EBADF;
-  }
+  },
 });
 /**
  * |true| if the error was raised because permission is denied to
@@ -139,7 +140,7 @@ Object.defineProperty(OSError.prototype, "becauseClosed", {
 Object.defineProperty(OSError.prototype, "becauseAccessDenied", {
   get: function becauseAccessDenied() {
     return this.unixErrno == Const.EACCES;
-  }
+  },
 });
 /**
  * |true| if the error was raised because some invalid argument was passed,
@@ -148,7 +149,7 @@ Object.defineProperty(OSError.prototype, "becauseAccessDenied", {
 Object.defineProperty(OSError.prototype, "becauseInvalidArgument", {
   get: function becauseInvalidArgument() {
     return this.unixErrno == Const.EINVAL;
-  }
+  },
 });
 
 /**
@@ -163,7 +164,7 @@ OSError.toMsg = function toMsg(error) {
     stack: error.moduleStack,
     operation: error.operation,
     unixErrno: error.unixErrno,
-    path: error.path
+    path: error.path,
   };
 };
 
@@ -273,7 +274,7 @@ AbstractInfo.prototype = {
    */
   get unixMode() {
     return this._unixMode;
-  }
+  },
 };
 exports.AbstractInfo = AbstractInfo;
 
@@ -314,7 +315,7 @@ AbstractEntry.prototype = {
    */
   get path() {
     return this._path;
-  }
+  },
 };
 exports.AbstractEntry = AbstractEntry;
 
@@ -363,10 +364,10 @@ var EXPORTED_SYMBOLS = [
   "Type",
   "POS_START",
   "POS_CURRENT",
-  "POS_END"
+  "POS_END",
 ];
 
-//////////// Boilerplate
+// ////////// Boilerplate
 if (typeof Components != "undefined") {
   this.EXPORTED_SYMBOLS = EXPORTED_SYMBOLS;
   for (let symbol of EXPORTED_SYMBOLS) {

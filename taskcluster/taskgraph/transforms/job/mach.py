@@ -7,30 +7,53 @@ Support for running mach tasks (via run-task)
 
 from __future__ import absolute_import, print_function, unicode_literals
 
-from taskgraph.transforms.job import run_job_using
-from taskgraph.transforms.job.run_task import docker_worker_run_task
-from voluptuous import Schema, Required
+from taskgraph.transforms.job import run_job_using, configure_taskdesc_for_run
+from taskgraph.util.schema import (
+    Schema,
+    taskref_or_string,
+)
+from voluptuous import Required, Optional, Any
 
 mach_schema = Schema({
     Required('using'): 'mach',
 
     # The mach command (omitting `./mach`) to run
-    Required('mach'): basestring,
+    Required('mach'): taskref_or_string,
 
-    # Whether the job requires a build artifact or not. If True, the task
-    # will depend on a build task and run-task will download and set up the
-    # installer. Build labels are determined by the `dependent-build-platforms`
-    # config in kind.yml.
-    Required('requires-build', default=False): bool,
+    # The sparse checkout profile to use. Value is the filename relative to the
+    # directory where sparse profiles are defined (build/sparse-profiles/).
+    Optional('sparse-profile'): Any(basestring, None),
+
+    # if true, perform a checkout of a comm-central based branch inside the
+    # gecko checkout
+    Required('comm-checkout'): bool,
+
+    # Base work directory used to set up the task.
+    Required('workdir'): basestring,
 })
 
 
-@run_job_using("docker-worker", "mach", schema=mach_schema)
-def docker_worker_mach(config, job, taskdesc):
+defaults = {
+    'comm-checkout': False,
+}
+
+
+@run_job_using("docker-worker", "mach", schema=mach_schema, defaults=defaults)
+@run_job_using("native-engine", "mach", schema=mach_schema, defaults=defaults)
+@run_job_using("generic-worker", "mach", schema=mach_schema, defaults=defaults)
+def configure_mach(config, job, taskdesc):
     run = job['run']
 
+    command_prefix = 'cd $GECKO_PATH && ./mach '
+    mach = run['mach']
+    if isinstance(mach, dict):
+        ref, pattern = next(iter(mach.items()))
+        command = {ref: command_prefix + pattern}
+    else:
+        command = command_prefix + mach
+
     # defer to the run_task implementation
-    run['command'] = 'cd /home/worker/checkouts/gecko && ./mach ' + run['mach']
-    run['checkout'] = True
+    run['command'] = command
+    run['using'] = 'run-task'
     del run['mach']
-    docker_worker_run_task(config, job, taskdesc)
+    configure_taskdesc_for_run(config, job, taskdesc, job['worker']['implementation'])

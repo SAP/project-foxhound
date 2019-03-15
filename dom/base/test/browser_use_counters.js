@@ -2,8 +2,7 @@
 
 requestLongerTimeout(2);
 
-var {Promise: promise} = Cu.import("resource://gre/modules/Promise.jsm", {});
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const gHttpTestRoot = "http://example.com/browser/dom/base/test/";
 
@@ -12,7 +11,7 @@ const gHttpTestRoot = "http://example.com/browser/dom/base/test/";
  */
 var gOldContentCanRecord = false;
 var gOldParentCanRecord = false;
-add_task(function* test_initialize() {
+add_task(async function test_initialize() {
   let Telemetry = Cc["@mozilla.org/base/telemetry;1"].getService(Ci.nsITelemetry);
   gOldParentCanRecord = Telemetry.canRecordExtended
   Telemetry.canRecordExtended = true;
@@ -20,9 +19,9 @@ add_task(function* test_initialize() {
   // Because canRecordExtended is a per-process variable, we need to make sure
   // that all of the pages load in the same content process. Limit the number
   // of content processes to at most 1 (or 0 if e10s is off entirely).
-  yield SpecialPowers.pushPrefEnv({ set: [[ "dom.ipc.processCount", 1 ]] });
+  await SpecialPowers.pushPrefEnv({ set: [[ "dom.ipc.processCount", 1 ]] });
 
-  gOldContentCanRecord = yield ContentTask.spawn(gBrowser.selectedBrowser, {}, function () {
+  gOldContentCanRecord = await ContentTask.spawn(gBrowser.selectedBrowser, {}, function () {
     let telemetry = Cc["@mozilla.org/base/telemetry;1"].getService(Ci.nsITelemetry);
     let old = telemetry.canRecordExtended;
     telemetry.canRecordExtended = true;
@@ -31,55 +30,55 @@ add_task(function* test_initialize() {
   info("canRecord for content: " + gOldContentCanRecord);
 });
 
-add_task(function* () {
+add_task(async function() {
   // Check that use counters are incremented by SVGs loaded directly in iframes.
-  yield check_use_counter_iframe("file_use_counter_svg_getElementById.svg",
+  await check_use_counter_iframe("file_use_counter_svg_getElementById.svg",
                                  "SVGSVGELEMENT_GETELEMENTBYID");
-  yield check_use_counter_iframe("file_use_counter_svg_currentScale.svg",
+  await check_use_counter_iframe("file_use_counter_svg_currentScale.svg",
                                  "SVGSVGELEMENT_CURRENTSCALE_getter");
-  yield check_use_counter_iframe("file_use_counter_svg_currentScale.svg",
+  await check_use_counter_iframe("file_use_counter_svg_currentScale.svg",
                                  "SVGSVGELEMENT_CURRENTSCALE_setter");
 
   // Check that even loads from the imglib cache update use counters.  The
   // images should still be there, because we just loaded them in the last
   // set of tests.  But we won't get updated counts for the document
   // counters, because we won't be re-parsing the SVG documents.
-  yield check_use_counter_iframe("file_use_counter_svg_getElementById.svg",
+  await check_use_counter_iframe("file_use_counter_svg_getElementById.svg",
                                  "SVGSVGELEMENT_GETELEMENTBYID", false);
-  yield check_use_counter_iframe("file_use_counter_svg_currentScale.svg",
+  await check_use_counter_iframe("file_use_counter_svg_currentScale.svg",
                                  "SVGSVGELEMENT_CURRENTSCALE_getter", false);
-  yield check_use_counter_iframe("file_use_counter_svg_currentScale.svg",
+  await check_use_counter_iframe("file_use_counter_svg_currentScale.svg",
                                  "SVGSVGELEMENT_CURRENTSCALE_setter", false);
 
   // Check that use counters are incremented by SVGs loaded as images.
   // Note that SVG images are not permitted to execute script, so we can only
   // check for properties here.
-  yield check_use_counter_img("file_use_counter_svg_getElementById.svg",
+  await check_use_counter_img("file_use_counter_svg_getElementById.svg",
                               "PROPERTY_FILL");
-  yield check_use_counter_img("file_use_counter_svg_currentScale.svg",
+  await check_use_counter_img("file_use_counter_svg_currentScale.svg",
                               "PROPERTY_FILL");
 
   // Check that use counters are incremented by directly loading SVGs
   // that reference patterns defined in another SVG file.
-  yield check_use_counter_direct("file_use_counter_svg_fill_pattern.svg",
+  await check_use_counter_direct("file_use_counter_svg_fill_pattern.svg",
                                  "PROPERTY_FILLOPACITY", /*xfail=*/true);
 
   // Check that use counters are incremented by directly loading SVGs
   // that reference patterns defined in the same file or in data: URLs.
-  yield check_use_counter_direct("file_use_counter_svg_fill_pattern_internal.svg",
+  await check_use_counter_direct("file_use_counter_svg_fill_pattern_internal.svg",
                                  "PROPERTY_FILLOPACITY");
   // data: URLs don't correctly propagate to their referring document yet.
   //yield check_use_counter_direct("file_use_counter_svg_fill_pattern_data.svg",
   //                               "PROPERTY_FILL_OPACITY");
 });
 
-add_task(function* () {
+add_task(async function() {
   let Telemetry = Cc["@mozilla.org/base/telemetry;1"].getService(Ci.nsITelemetry);
   Telemetry.canRecordExtended = gOldParentCanRecord;
 
-  yield ContentTask.spawn(gBrowser.selectedBrowser, { oldCanRecord: gOldContentCanRecord }, function* (arg) {
-    Cu.import("resource://gre/modules/PromiseUtils.jsm");
-    yield new Promise(resolve => {
+  await ContentTask.spawn(gBrowser.selectedBrowser, { oldCanRecord: gOldContentCanRecord }, async function(arg) {
+    ChromeUtils.import("resource://gre/modules/PromiseUtils.jsm");
+    await new Promise(resolve => {
       let telemetry = Cc["@mozilla.org/base/telemetry;1"].getService(Ci.nsITelemetry);
       telemetry.canRecordExtended = arg.oldCanRecord;
       resolve();
@@ -89,15 +88,15 @@ add_task(function* () {
 
 
 function waitForDestroyedDocuments() {
-  let deferred = promise.defer();
+  let deferred = PromiseUtils.defer();
   SpecialPowers.exactGC(deferred.resolve);
   return deferred.promise;
 }
 
 function waitForPageLoad(browser) {
-  return ContentTask.spawn(browser, null, function*() {
-    Cu.import("resource://gre/modules/PromiseUtils.jsm");
-    yield new Promise(resolve => {
+  return ContentTask.spawn(browser, null, async function() {
+    ChromeUtils.import("resource://gre/modules/PromiseUtils.jsm");
+    await new Promise(resolve => {
       let listener = () => {
         removeEventListener("load", listener, true);
         resolve();
@@ -109,22 +108,32 @@ function waitForPageLoad(browser) {
 
 function grabHistogramsFromContent(use_counter_middlefix, page_before = null) {
   let telemetry = Cc["@mozilla.org/base/telemetry;1"].getService(Ci.nsITelemetry);
-  let suffix = Services.appinfo.browserTabsRemoteAutostart ? "#content" : "";
-  let gather = () => [
-    telemetry.getHistogramById("USE_COUNTER2_" + use_counter_middlefix + "_PAGE" + suffix).snapshot().sum,
-    telemetry.getHistogramById("USE_COUNTER2_" + use_counter_middlefix + "_DOCUMENT" + suffix).snapshot().sum,
-    telemetry.getHistogramById("CONTENT_DOCUMENTS_DESTROYED" + suffix).snapshot().sum,
-    telemetry.getHistogramById("TOP_LEVEL_CONTENT_DOCUMENTS_DESTROYED" + suffix).snapshot().sum,
-  ];
+  let gather = () => {
+    let snapshots;
+    if (Services.appinfo.browserTabsRemoteAutostart) {
+      snapshots = telemetry.getSnapshotForHistograms("main", false).content;
+    } else {
+      snapshots = telemetry.getSnapshotForHistograms("main", false).parent;
+    }
+    let checkGet = (probe) => {
+      return snapshots[probe] ? snapshots[probe].sum : 0;
+    };
+    return [
+      checkGet("USE_COUNTER2_" + use_counter_middlefix + "_PAGE"),
+      checkGet("USE_COUNTER2_" + use_counter_middlefix + "_DOCUMENT"),
+      checkGet("CONTENT_DOCUMENTS_DESTROYED"),
+      checkGet("TOP_LEVEL_CONTENT_DOCUMENTS_DESTROYED"),
+    ];
+  };
   return BrowserTestUtils.waitForCondition(() => {
-    return page_before != telemetry.getHistogramById("USE_COUNTER2_" + use_counter_middlefix + "_PAGE" + suffix).snapshot().sum;
+    return page_before != gather()[0];
   }).then(gather, gather);
 }
 
 var check_use_counter_iframe = async function(file, use_counter_middlefix, check_documents=true) {
   info("checking " + file + " with histogram " + use_counter_middlefix);
 
-  let newTab = gBrowser.addTab( "about:blank");
+  let newTab = BrowserTestUtils.addTab(gBrowser,  "about:blank");
   gBrowser.selectedTab = newTab;
   newTab.linkedBrowser.stop();
 
@@ -134,15 +143,15 @@ var check_use_counter_iframe = async function(file, use_counter_middlefix, check
        histogram_docs_before, histogram_toplevel_docs_before] =
       await grabHistogramsFromContent(use_counter_middlefix);
 
-  gBrowser.selectedBrowser.loadURI(gHttpTestRoot + "file_use_counter_outer.html");
+  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, gHttpTestRoot + "file_use_counter_outer.html");
   await waitForPageLoad(gBrowser.selectedBrowser);
 
   // Inject our desired file into the iframe of the newly-loaded page.
   await ContentTask.spawn(gBrowser.selectedBrowser, { file: file }, function(opts) {
-    Cu.import("resource://gre/modules/PromiseUtils.jsm");
+    ChromeUtils.import("resource://gre/modules/PromiseUtils.jsm");
     let deferred = PromiseUtils.defer();
 
-    let wu = content.window.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils);
+    let wu = content.window.windowUtils;
 
     let iframe = content.document.getElementById('content');
     iframe.src = opts.file;
@@ -161,7 +170,7 @@ var check_use_counter_iframe = async function(file, use_counter_middlefix, check
 
     return deferred.promise;
   });
-  
+
   // Tear down the page.
   gBrowser.removeTab(newTab);
 
@@ -188,7 +197,7 @@ var check_use_counter_iframe = async function(file, use_counter_middlefix, check
 var check_use_counter_img = async function(file, use_counter_middlefix) {
   info("checking " + file + " as image with histogram " + use_counter_middlefix);
 
-  let newTab = gBrowser.addTab("about:blank");
+  let newTab = BrowserTestUtils.addTab(gBrowser, "about:blank");
   gBrowser.selectedTab = newTab;
   newTab.linkedBrowser.stop();
 
@@ -198,12 +207,12 @@ var check_use_counter_img = async function(file, use_counter_middlefix) {
        histogram_docs_before, histogram_toplevel_docs_before] =
       await grabHistogramsFromContent(use_counter_middlefix);
 
-  gBrowser.selectedBrowser.loadURI(gHttpTestRoot + "file_use_counter_outer.html");
+  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, gHttpTestRoot + "file_use_counter_outer.html");
   await waitForPageLoad(gBrowser.selectedBrowser);
 
   // Inject our desired file into the img of the newly-loaded page.
-  await ContentTask.spawn(gBrowser.selectedBrowser, { file: file }, function*(opts) {
-    Cu.import("resource://gre/modules/PromiseUtils.jsm");
+  await ContentTask.spawn(gBrowser.selectedBrowser, { file: file }, async function(opts) {
+    ChromeUtils.import("resource://gre/modules/PromiseUtils.jsm");
     let deferred = PromiseUtils.defer();
 
     let img = content.document.getElementById('display');
@@ -214,7 +223,7 @@ var check_use_counter_img = async function(file, use_counter_middlefix) {
       // Flush for the image.  It matters what order we do these in, so that
       // the image can propagate its use counters to the document prior to the
       // document reporting its use counters.
-      let wu = content.window.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils);
+      let wu = content.window.windowUtils;
       wu.forceUseCounterFlush(img);
 
       // Flush for the main window.
@@ -226,7 +235,7 @@ var check_use_counter_img = async function(file, use_counter_middlefix) {
 
     return deferred.promise;
   });
-  
+
   // Tear down the page.
   gBrowser.removeTab(newTab);
 
@@ -254,7 +263,7 @@ var check_use_counter_img = async function(file, use_counter_middlefix) {
 var check_use_counter_direct = async function(file, use_counter_middlefix, xfail=false) {
   info("checking " + file + " with histogram " + use_counter_middlefix);
 
-  let newTab = gBrowser.addTab( "about:blank");
+  let newTab = BrowserTestUtils.addTab(gBrowser,  "about:blank");
   gBrowser.selectedTab = newTab;
   newTab.linkedBrowser.stop();
 
@@ -264,14 +273,14 @@ var check_use_counter_direct = async function(file, use_counter_middlefix, xfail
        histogram_docs_before, histogram_toplevel_docs_before] =
       await grabHistogramsFromContent(use_counter_middlefix);
 
-  gBrowser.selectedBrowser.loadURI(gHttpTestRoot + file);
-  await ContentTask.spawn(gBrowser.selectedBrowser, null, function*() {
-    Cu.import("resource://gre/modules/PromiseUtils.jsm");
-    yield new Promise(resolve => {
+  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, gHttpTestRoot + file);
+  await ContentTask.spawn(gBrowser.selectedBrowser, null, async function() {
+    ChromeUtils.import("resource://gre/modules/PromiseUtils.jsm");
+    await new Promise(resolve => {
       let listener = () => {
         removeEventListener("load", listener, true);
 
-        let wu = content.window.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils);
+        let wu = content.window.windowUtils;
         wu.forceUseCounterFlush(content.document);
 
         setTimeout(resolve, 0);
@@ -279,7 +288,7 @@ var check_use_counter_direct = async function(file, use_counter_middlefix, xfail
       addEventListener("load", listener, true);
     });
   });
-  
+
   // Tear down the page.
   gBrowser.removeTab(newTab);
 

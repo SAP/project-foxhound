@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 import os, sys, json, re
 
 script_directory = os.path.dirname(os.path.abspath(__file__))
@@ -13,13 +15,14 @@ test_root_directory = os.path.abspath(os.path.join(script_directory,
 spec_filename = os.path.join(spec_directory, "spec.src.json")
 generated_spec_json_filename = os.path.join(spec_directory, "spec_json.js")
 
-selection_pattern = '%(opt_in_method)s/' + \
+selection_pattern = '%(subresource)s/' + \
+                    '%(opt_in_method)s/' + \
                     '%(origin)s/' + \
-                    '%(subresource)s/' + \
                     '%(context_nesting)s/' + \
                     '%(redirection)s/'
 
-test_file_path_pattern = '%(spec_name)s/' + selection_pattern + \
+test_file_path_pattern = selection_pattern + \
+                         '%(spec_name)s/' + \
                          '%(name)s.%(source_scheme)s.html'
 
 
@@ -48,11 +51,11 @@ def load_spec_json(path_to_spec = None):
     with open(path_to_spec, "r") as f:
         try:
           return json.load(f)
-        except ValueError, ex:
-          print ex.message
+        except ValueError as ex:
+          print(ex.message)
           match = re_error_location.search(ex.message)
           if match:
             line_number, column = int(match.group(1)), int(match.group(2))
-            print read_nth_line(f, line_number).rstrip()
-            print " " * (column - 1) + "^"
+            print(read_nth_line(f, line_number).rstrip())
+            print(" " * (column - 1) + "^")
           sys.exit(1)

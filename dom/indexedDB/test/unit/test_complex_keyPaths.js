@@ -35,7 +35,7 @@ function* testSteps()
     { keyPath: "foo.",    exception: true },
     { keyPath: "fo o",    exception: true },
     { keyPath: "foo ",    exception: true },
-    { keyPath: "foo[bar]",exception: true },
+    { keyPath: "foo[bar]", exception: true },
     { keyPath: "foo[1]",  exception: true },
     { keyPath: "$('id').stuff", exception: true },
     { keyPath: "foo.2.bar", exception: true },
@@ -85,6 +85,7 @@ function* testSteps()
         ok(!("exception" in info), "shouldn't throw" + test);
         is(JSON.stringify(objectStore.keyPath), JSON.stringify(info.keyPath),
            "correct keyPath property" + test);
+        // eslint-disable-next-line no-self-compare
         ok(objectStore.keyPath === objectStore.keyPath,
            "object identity should be preserved");
         stores[indexName] = objectStore;
@@ -100,7 +101,7 @@ function* testSteps()
     let store = stores[indexName];
 
     try {
-      request = store.add(info.value);
+      var request = store.add(info.value);
       ok("key" in info, "successfully created request to insert value" + test);
     } catch (e) {
       ok(!("key" in info), "threw when attempted to insert" + test);
@@ -139,10 +140,18 @@ function* testSteps()
     let newValue = cursor.value;
     let destProp = Array.isArray(info.keyPath) ? info.keyPath[0] : info.keyPath;
     if (destProp) {
-      eval("newValue." + destProp + " = 'newKeyValue'");
+      let splitDestProp = destProp.split(".");
+      if (splitDestProp.length == 1)
+      {
+        newValue[splitDestProp[0]] = "newKeyValue";
+      } else if (splitDestProp.length == 2) {
+        newValue[splitDestProp[0]][splitDestProp[1]] = "newKeyValue";
+      } else {
+        newValue[splitDestProp[0]][splitDestProp[1]][splitDestProp[2]] = "newKeyValue";
+      }
     }
     else {
-      newValue = 'newKeyValue';
+      newValue = "newKeyValue";
     }
     let didThrow;
     try {
@@ -173,6 +182,7 @@ function* testSteps()
         ok(!("exception" in info), "shouldn't throw" + test);
         is(JSON.stringify(index.keyPath), JSON.stringify(info.keyPath),
            "index has correct keyPath property" + test);
+        // eslint-disable-next-line no-self-compare
         ok(index.keyPath === index.keyPath,
            "object identity should be preserved");
         indexes[indexName] = index;
@@ -184,18 +194,18 @@ function* testSteps()
         continue;
       }
     }
-    
+
     let index = indexes[indexName];
 
     request = store.add(info.value, 1);
     if ("key" in info) {
       index.getKey(info.key).onsuccess = grabEventAndContinueHandler;
-      e = yield undefined;
+      let e = yield undefined;
       is(e.target.result, 1, "found value when reading" + test);
     }
     else {
       index.count().onsuccess = grabEventAndContinueHandler;
-      e = yield undefined;
+      let e = yield undefined;
       is(e.target.result, 0, "should be empty" + test);
     }
 
@@ -210,16 +220,16 @@ function* testSteps()
                  { v: { v: "x", foo: { x: "y" } },  k: 4, res: { v: "x", foo: { x: "y", id: 4 }} },
                  { v: { value: 2, foo: { id: 10 }}, k: 10 },
                  { v: { value: 2 },                 k: 11, res: { value: 2, foo: { id: 11 }} },
-                 { v: true,                         },
-                 { v: { value: 2, foo: 12 },        },
-                 { v: { foo: { id: true }},         },
-                 { v: { foo: { x: 5, id: {} }},     },
-                 { v: undefined,                    },
-                 { v: { foo: undefined },           },
-                 { v: { foo: { id: undefined }},    },
-                 { v: null,                         },
-                 { v: { foo: null },                },
-                 { v: { foo: { id: null }},         },
+                 { v: true                         },
+                 { v: { value: 2, foo: 12 }        },
+                 { v: { foo: { id: true }}         },
+                 { v: { foo: { x: 5, id: {} }}     },
+                 { v: undefined                    },
+                 { v: { foo: undefined }           },
+                 { v: { foo: { id: undefined }}    },
+                 { v: null                         },
+                 { v: { foo: null }                },
+                 { v: { foo: { id: null }}         },
                  ];
 
   store = db.createObjectStore("gen", { keyPath: "foo.id", autoIncrement: true });
@@ -237,7 +247,7 @@ function* testSteps()
         store.add(info.v);
         ok(false, "should throw" + test);
       }
-      catch(e) {
+      catch (e) {
         ok(true, "did throw" + test);
         ok(e instanceof DOMException, "Got a DOMException" + test);
         is(e.name, "DataError", "expect a DataError" + test);

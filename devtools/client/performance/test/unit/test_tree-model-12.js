@@ -5,14 +5,10 @@
 // Test that uninverting the call tree works correctly when there are stacks
 // in the profile that prefixes of other stacks.
 
-function run_test() {
-  run_next_test();
-}
-
-add_task(function () {
-  let { ThreadNode } = require("devtools/client/performance/modules/logic/tree-model");
-  let thread = new ThreadNode(gThread, { startTime: 0, endTime: 50 });
-  let root = getFrameNodePath(thread, "(root)");
+add_task(function() {
+  const { ThreadNode } = require("devtools/client/performance/modules/logic/tree-model");
+  const thread = new ThreadNode(gThread, { startTime: 0, endTime: 50 });
+  const root = getFrameNodePath(thread, "(root)");
 
   /**
    * Samples
@@ -48,26 +44,26 @@ var gThread = synthesizeProfileForTest([{
     { location: "(root)" },
     { location: "A" },
     { location: "B" },
-  ]
+  ],
 }, {
   time: 10,
   frames: [
     { location: "(root)" },
     { location: "C" },
     { location: "B" },
-  ]
+  ],
 }, {
   time: 15,
   frames: [
     { location: "(root)" },
     { location: "B" },
-  ]
+  ],
 }, {
   time: 20,
   frames: [
     { location: "(root)" },
     { location: "A" },
-  ]
+  ],
 }, {
   time: 21,
   frames: [
@@ -75,7 +71,7 @@ var gThread = synthesizeProfileForTest([{
     { location: "Z" },
     { location: "Y" },
     { location: "X" },
-  ]
+  ],
 }, {
   time: 22,
   frames: [
@@ -83,12 +79,12 @@ var gThread = synthesizeProfileForTest([{
     { location: "W" },
     { location: "Y" },
     { location: "X" },
-  ]
+  ],
 }, {
   time: 23,
   frames: [
     { location: "(root)" },
     { location: "Y" },
     { location: "X" },
-  ]
+  ],
 }]);

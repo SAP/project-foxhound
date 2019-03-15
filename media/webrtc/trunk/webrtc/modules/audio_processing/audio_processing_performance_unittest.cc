@@ -7,26 +7,33 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
-#include "webrtc/modules/audio_processing/audio_processing_impl.h"
+#include "modules/audio_processing/audio_processing_impl.h"
 
 #include <math.h>
 
 #include <algorithm>
+#include <memory>
 #include <vector>
 
-#include "testing/gtest/include/gtest/gtest.h"
-#include "webrtc/base/array_view.h"
-#include "webrtc/base/criticalsection.h"
-#include "webrtc/base/platform_thread.h"
-#include "webrtc/base/random.h"
-#include "webrtc/base/safe_conversions.h"
-#include "webrtc/config.h"
-#include "webrtc/modules/audio_processing/test/test_utils.h"
-#include "webrtc/modules/include/module_common_types.h"
-#include "webrtc/system_wrappers/include/clock.h"
-#include "webrtc/system_wrappers/include/event_wrapper.h"
-#include "webrtc/system_wrappers/include/sleep.h"
-#include "webrtc/test/testsupport/perf_test.h"
+#include "api/array_view.h"
+#include "modules/audio_processing/test/test_utils.h"
+#include "modules/include/module_common_types.h"
+#include "rtc_base/atomicops.h"
+#include "rtc_base/numerics/safe_conversions.h"
+#include "rtc_base/platform_thread.h"
+#include "rtc_base/random.h"
+#include "system_wrappers/include/clock.h"
+#include "system_wrappers/include/event_wrapper.h"
+#include "test/gtest.h"
+#include "test/testsupport/perf_test.h"
+
+// Check to verify that the define for the intelligibility enhancer is properly
+// set.
+#if !defined(WEBRTC_INTELLIGIBILITY_ENHANCER) || \
+    (WEBRTC_INTELLIGIBILITY_ENHANCER != 0 &&     \
+     WEBRTC_INTELLIGIBILITY_ENHANCER != 1)
+#error "Set WEBRTC_INTELLIGIBILITY_ENHANCER to either 0 or 1"
+#endif
 
 namespace webrtc {
 
@@ -46,8 +53,8 @@ enum class SettingsType {
   kDefaultApmDesktopAndBeamformer,
   kDefaultApmDesktopAndIntelligibilityEnhancer,
   kAllSubmodulesTurnedOff,
-  kDefaultDesktopApmWithoutDelayAgnostic,
-  kDefaultDesktopApmWithoutExtendedFilter
+  kDefaultApmDesktopWithoutDelayAgnostic,
+  kDefaultApmDesktopWithoutExtendedFilter
 };
 
 // Variables related to the audio data and formats.
@@ -84,8 +91,8 @@ struct SimulationConfig {
 #ifndef WEBRTC_ANDROID
     const SettingsType desktop_settings[] = {
         SettingsType::kDefaultApmDesktop, SettingsType::kAllSubmodulesTurnedOff,
-        SettingsType::kDefaultDesktopApmWithoutDelayAgnostic,
-        SettingsType::kDefaultDesktopApmWithoutExtendedFilter};
+        SettingsType::kDefaultApmDesktopWithoutDelayAgnostic,
+        SettingsType::kDefaultApmDesktopWithoutExtendedFilter};
 
     const int desktop_sample_rates[] = {8000, 16000, 32000, 48000};
 
@@ -95,6 +102,7 @@ struct SimulationConfig {
       }
     }
 
+#if WEBRTC_INTELLIGIBILITY_ENHANCER == 1
     const SettingsType intelligibility_enhancer_settings[] = {
         SettingsType::kDefaultApmDesktopAndIntelligibilityEnhancer};
 
@@ -106,6 +114,7 @@ struct SimulationConfig {
         simulation_configs.push_back(SimulationConfig(sample_rate, settings));
       }
     }
+#endif
 
     const SettingsType beamformer_settings[] = {
         SettingsType::kDefaultApmDesktopAndBeamformer};
@@ -150,11 +159,11 @@ struct SimulationConfig {
       case SettingsType::kAllSubmodulesTurnedOff:
         description = "AllSubmodulesOff";
         break;
-      case SettingsType::kDefaultDesktopApmWithoutDelayAgnostic:
-        description = "DefaultDesktopApmWithoutDelayAgnostic";
+      case SettingsType::kDefaultApmDesktopWithoutDelayAgnostic:
+        description = "DefaultApmDesktopWithoutDelayAgnostic";
         break;
-      case SettingsType::kDefaultDesktopApmWithoutExtendedFilter:
-        description = "DefaultDesktopApmWithoutExtendedFilter";
+      case SettingsType::kDefaultApmDesktopWithoutExtendedFilter:
+        description = "DefaultApmDesktopWithoutExtendedFilter";
         break;
     }
     return description;
@@ -168,28 +177,19 @@ struct SimulationConfig {
 class FrameCounters {
  public:
   void IncreaseRenderCounter() {
-    rtc::CritScope cs(&crit_);
-    render_count_++;
+    rtc::AtomicOps::Increment(&render_count_);
   }
 
   void IncreaseCaptureCounter() {
-    rtc::CritScope cs(&crit_);
-    capture_count_++;
-  }
-
-  int GetCaptureCounter() const {
-    rtc::CritScope cs(&crit_);
-    return capture_count_;
-  }
-
-  int GetRenderCounter() const {
-    rtc::CritScope cs(&crit_);
-    return render_count_;
+    rtc::AtomicOps::Increment(&capture_count_);
   }
 
   int CaptureMinusRenderCounters() const {
-    rtc::CritScope cs(&crit_);
-    return capture_count_ - render_count_;
+    // The return value will be approximate, but that's good enough since
+    // by the time we return the value, it's not guaranteed to be correct
+    // anyway.
+    return rtc::AtomicOps::AcquireLoad(&capture_count_) -
+           rtc::AtomicOps::AcquireLoad(&render_count_);
   }
 
   int RenderMinusCaptureCounters() const {
@@ -197,32 +197,32 @@ class FrameCounters {
   }
 
   bool BothCountersExceedeThreshold(int threshold) const {
-    rtc::CritScope cs(&crit_);
-    return (render_count_ > threshold && capture_count_ > threshold);
+    // TODO(tommi): We could use an event to signal this so that we don't need
+    // to be polling from the main thread and possibly steal cycles.
+    const int capture_count = rtc::AtomicOps::AcquireLoad(&capture_count_);
+    const int render_count = rtc::AtomicOps::AcquireLoad(&render_count_);
+    return (render_count > threshold && capture_count > threshold);
   }
 
  private:
-  mutable rtc::CriticalSection crit_;
-  int render_count_ GUARDED_BY(crit_) = 0;
-  int capture_count_ GUARDED_BY(crit_) = 0;
+  int render_count_ = 0;
+  int capture_count_ = 0;
 };
 
-// Class that protects a flag using a lock.
+// Class that represents a flag that can only be raised.
 class LockedFlag {
  public:
   bool get_flag() const {
-    rtc::CritScope cs(&crit_);
-    return flag_;
+    return rtc::AtomicOps::AcquireLoad(&flag_);
   }
 
   void set_flag() {
-    rtc::CritScope cs(&crit_);
-    flag_ = true;
+    if (!get_flag())  // read-only operation to avoid affecting the cache-line.
+      rtc::AtomicOps::CompareAndSwap(&flag_, 0, 1);
   }
 
  private:
-  mutable rtc::CriticalSection crit_;
-  bool flag_ GUARDED_BY(crit_) = false;
+  int flag_ = 0;
 };
 
 // Parent class for the thread processors.
@@ -257,34 +257,21 @@ class TimedThreadApiProcessor {
   bool Process();
 
   // Method for printing out the simulation statistics.
-  void print_processor_statistics(std::string processor_name) const {
+  void print_processor_statistics(const std::string& processor_name) const {
     const std::string modifier = "_api_call_duration";
-
-    // Lambda function for creating a test printout string.
-    auto create_mean_and_std_string = [](int64_t average,
-                                         int64_t standard_dev) {
-      std::string s = std::to_string(average);
-      s += ", ";
-      s += std::to_string(standard_dev);
-      return s;
-    };
 
     const std::string sample_rate_name =
         "_" + std::to_string(simulation_config_->sample_rate_hz) + "Hz";
 
     webrtc::test::PrintResultMeanAndError(
         "apm_timing", sample_rate_name, processor_name,
-        create_mean_and_std_string(GetDurationAverage(),
-                                   GetDurationStandardDeviation()),
+        GetDurationAverage(), GetDurationStandardDeviation(),
         "us", false);
 
     if (kPrintAllDurations) {
-      std::string value_string = "";
-      for (int64_t duration : api_call_durations_) {
-        value_string += std::to_string(duration) + ",";
-      }
       webrtc::test::PrintResultList("apm_call_durations", sample_rate_name,
-                                    processor_name, value_string, "us", false);
+                                    processor_name, api_call_durations_, "us",
+                                    false);
     }
   }
 
@@ -422,10 +409,9 @@ class TimedThreadApiProcessor {
     switch (processor_type_) {
       case ProcessorType::kRender:
         return ReadyToProcessRender();
-        break;
+
       case ProcessorType::kCapture:
         return ReadyToProcessCapture();
-        break;
     }
 
     // Should not be reached, but the return statement is needed for the code to
@@ -443,7 +429,7 @@ class TimedThreadApiProcessor {
   AudioFrameData frame_data_;
   webrtc::Clock* clock_;
   const size_t num_durations_to_store_;
-  std::vector<int64_t> api_call_durations_;
+  std::vector<double> api_call_durations_;
   const float input_level_;
   bool first_process_call_ = true;
   const ProcessorType processor_type_;
@@ -614,7 +600,7 @@ class CallSimulator : public ::testing::TestWithParam<SimulationConfig> {
         turn_off_default_apm_runtime_settings(apm_.get());
         break;
       }
-      case SettingsType::kDefaultDesktopApmWithoutDelayAgnostic: {
+      case SettingsType::kDefaultApmDesktopWithoutDelayAgnostic: {
         Config config;
         config.Set<ExtendedFilter>(new ExtendedFilter(true));
         config.Set<DelayAgnostic>(new DelayAgnostic(false));
@@ -624,7 +610,7 @@ class CallSimulator : public ::testing::TestWithParam<SimulationConfig> {
         apm_->SetExtraOptions(config);
         break;
       }
-      case SettingsType::kDefaultDesktopApmWithoutExtendedFilter: {
+      case SettingsType::kDefaultApmDesktopWithoutExtendedFilter: {
         Config config;
         config.Set<ExtendedFilter>(new ExtendedFilter(false));
         config.Set<DelayAgnostic>(new DelayAgnostic(true));
@@ -667,19 +653,19 @@ class CallSimulator : public ::testing::TestWithParam<SimulationConfig> {
   }
 
   // Event handler for the test.
-  const rtc::scoped_ptr<EventWrapper> test_complete_;
+  const std::unique_ptr<EventWrapper> test_complete_;
 
   // Thread related variables.
-  rtc::scoped_ptr<rtc::PlatformThread> render_thread_;
-  rtc::scoped_ptr<rtc::PlatformThread> capture_thread_;
+  std::unique_ptr<rtc::PlatformThread> render_thread_;
+  std::unique_ptr<rtc::PlatformThread> capture_thread_;
   Random rand_gen_;
 
-  rtc::scoped_ptr<AudioProcessing> apm_;
+  std::unique_ptr<AudioProcessing> apm_;
   const SimulationConfig simulation_config_;
   FrameCounters frame_counters_;
   LockedFlag capture_call_checker_;
-  rtc::scoped_ptr<TimedThreadApiProcessor> render_thread_state_;
-  rtc::scoped_ptr<TimedThreadApiProcessor> capture_thread_state_;
+  std::unique_ptr<TimedThreadApiProcessor> render_thread_state_;
+  std::unique_ptr<TimedThreadApiProcessor> capture_thread_state_;
 };
 
 // Implements the callback functionality for the threads.
@@ -689,6 +675,8 @@ bool TimedThreadApiProcessor::Process() {
   // Wait in a spinlock manner until it is ok to start processing.
   // Note that SleepMs is not applicable since it only allows sleeping
   // on a millisecond basis which is too long.
+  // TODO(tommi): This loop may affect the performance of the test that it's
+  // meant to measure.  See if we could use events instead to signal readiness.
   while (!ReadyToProcess()) {
   }
 
@@ -711,7 +699,8 @@ const float CallSimulator::kRenderInputFloatLevel = 0.5f;
 const float CallSimulator::kCaptureInputFloatLevel = 0.03125f;
 }  // anonymous namespace
 
-TEST_P(CallSimulator, ApiCallDurationTest) {
+// TODO(peah): Reactivate once issue 7712 has been resolved.
+TEST_P(CallSimulator, DISABLED_ApiCallDurationTest) {
   // Run test and verify that it did not time out.
   EXPECT_EQ(kEventSignaled, Run());
 }

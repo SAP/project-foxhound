@@ -11,49 +11,41 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1222409
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css">
   <script type="application/javascript" src="inspector-helpers.js"></script>
   <script type="application/javascript">
-window.onload = function() {
-  const Cu = Components.utils;
-  const {require} = Cu.import("resource://devtools/shared/Loader.jsm", {});
-  const promise = require("promise");
-  const {InspectorFront} = require("devtools/shared/fronts/inspector");
-  const {console} = Cu.import("resource://gre/modules/Console.jsm", {});
+"use strict";
 
+window.onload = function() {
   SimpleTest.waitForExplicitFinish();
 
   let win = null;
   let inspector = null;
 
-  addAsyncTest(function* setup() {
-    info ("Setting up inspector and walker actors.");
+  addAsyncTest(async function setup() {
+    info("Setting up inspector and walker actors.");
 
-    let url = document.getElementById("inspectorContent").href;
+    const url = document.getElementById("inspectorContent").href;
 
-    yield new promise(resolve => {
-      attachURL(url, function(err, client, tab, doc) {
-        win = doc.defaultView;
-        inspector = InspectorFront(client, tab);
-        resolve();
-      });
-    });
-
+    const { target, doc } = await attachURL(url);
+    inspector = await target.getInspector();
+    win = doc.defaultView;
     runNextTest();
   });
 
-  addAsyncTest(function*() {
-    let walker = yield inspector.getWalker();
+  addAsyncTest(async function() {
+    const walker = inspector.walker;
 
     // We can't receive events from the walker if we haven't first executed a
     // method on the actor to initialize it.
-    yield walker.querySelector(walker.rootNode, "img");
+    await walker.querySelector(walker.rootNode, "img");
 
-    let {outerWidth, outerHeight} = win;
-    let onResize = new promise(resolve => {
+    const {outerWidth, outerHeight} = win;
+    // eslint-disable-next-line new-cap
+    const onResize = new Promise(resolve => {
       walker.once("resize", () => {
         resolve();
       });
     });
     win.resizeTo(800, 600);
-    yield onResize;
+    await onResize;
 
     ok(true, "The resize event was emitted");
     win.resizeTo(outerWidth, outerHeight);

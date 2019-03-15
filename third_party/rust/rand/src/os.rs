@@ -11,7 +11,7 @@
 //! Interfaces to the operating system provided random number
 //! generators.
 
-use std::{io, mem};
+use std::{io, mem, fmt};
 use Rng;
 
 /// A random number generator that retrieves randomness straight from
@@ -21,12 +21,17 @@ use Rng;
 ///   `/dev/urandom`, or from `getrandom(2)` system call if available.
 /// - OpenBSD: calls `getentropy(2)`
 /// - FreeBSD: uses the `kern.arandom` `sysctl(2)` mib
-/// - Windows: calls `CryptGenRandom`, using the default cryptographic
-///   service provider with the `PROV_RSA_FULL` type.
+/// - Windows: calls `RtlGenRandom`, exported from `advapi32.dll` as
+///   `SystemFunction036`.
 /// - iOS: calls SecRandomCopyBytes as /dev/(u)random is sandboxed.
 /// - PNaCl: calls into the `nacl-irt-random-0.1` IRT interface.
 ///
-/// This does not block.
+/// This usually does not block. On some systems (e.g. FreeBSD, OpenBSD,
+/// Max OS X, and modern Linux) this may block very early in the init
+/// process, if the CSPRNG has not been seeded yet.[1]
+///
+/// [1] See <https://www.python.org/dev/peps/pep-0524/> for a more
+///     in-depth discussion.
 pub struct OsRng(imp::OsRng);
 
 impl OsRng {
@@ -42,13 +47,19 @@ impl Rng for OsRng {
     fn fill_bytes(&mut self, v: &mut [u8]) { self.0.fill_bytes(v) }
 }
 
-fn next_u32(mut fill_buf: &mut FnMut(&mut [u8])) -> u32 {
+impl fmt::Debug for OsRng {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "OsRng {{}}")
+    }
+}
+
+fn next_u32(fill_buf: &mut FnMut(&mut [u8])) -> u32 {
     let mut buf: [u8; 4] = [0; 4];
     fill_buf(&mut buf);
     unsafe { mem::transmute::<[u8; 4], u32>(buf) }
 }
 
-fn next_u64(mut fill_buf: &mut FnMut(&mut [u8])) -> u64 {
+fn next_u64(fill_buf: &mut FnMut(&mut [u8])) -> u64 {
     let mut buf: [u8; 8] = [0; 8];
     fill_buf(&mut buf);
     unsafe { mem::transmute::<[u8; 8], u64>(buf) }
@@ -57,6 +68,7 @@ fn next_u64(mut fill_buf: &mut FnMut(&mut [u8])) -> u64 {
 #[cfg(all(unix, not(target_os = "ios"),
           not(target_os = "nacl"),
           not(target_os = "freebsd"),
+          not(target_os = "fuchsia"),
           not(target_os = "openbsd"),
           not(target_os = "redox")))]
 mod imp {
@@ -90,7 +102,7 @@ mod imp {
         #[cfg(target_arch = "aarch64")]
         const NR_GETRANDOM: libc::c_long = 278;
         #[cfg(target_arch = "powerpc")]
-        const NR_GETRANDOM: libc::c_long = 384;
+        const NR_GETRANDOM: libc::c_long = 359;
 
         unsafe {
             syscall(NR_GETRANDOM, buf.as_mut_ptr(), buf.len(), 0)
@@ -213,6 +225,7 @@ mod imp {
     use Rng;
     use self::libc::{c_int, size_t};
 
+    #[derive(Debug)]
     pub struct OsRng;
 
     enum SecRandom {}
@@ -259,6 +272,7 @@ mod imp {
 
     use super::{next_u32, next_u64};
 
+    #[derive(Debug)]
     pub struct OsRng;
 
     impl OsRng {
@@ -302,6 +316,7 @@ mod imp {
 
     use super::{next_u32, next_u64};
 
+    #[derive(Debug)]
     pub struct OsRng;
 
     impl OsRng {
@@ -339,6 +354,7 @@ mod imp {
     use Rng;
     use read::ReadRng;
 
+    #[derive(Debug)]
     pub struct OsRng {
         inner: ReadRng<File>,
     }
@@ -365,55 +381,21 @@ mod imp {
     }
 }
 
-#[cfg(windows)]
+#[cfg(target_os = "fuchsia")]
 mod imp {
+    extern crate fuchsia_zircon;
+
     use std::io;
-    use std::ptr;
     use Rng;
 
     use super::{next_u32, next_u64};
 
-    type BOOL = i32;
-    type LPCSTR = *const i8;
-    type DWORD = u32;
-    type HCRYPTPROV = usize;
-    type BYTE = u8;
-
-    const PROV_RSA_FULL: DWORD = 1;
-    const CRYPT_SILENT: DWORD = 0x00000040;
-    const CRYPT_VERIFYCONTEXT: DWORD = 0xF0000000;
-
-    #[link(name = "advapi32")]
-    extern "system" {
-        fn CryptAcquireContextA(phProv: *mut HCRYPTPROV,
-                                szContainer: LPCSTR,
-                                szProvider: LPCSTR,
-                                dwProvType: DWORD,
-                                dwFlags: DWORD) -> BOOL;
-        fn CryptGenRandom(hProv: HCRYPTPROV,
-                          dwLen: DWORD,
-                          pbBuffer: *mut BYTE) -> BOOL;
-        fn CryptReleaseContext(hProv: HCRYPTPROV, dwFlags: DWORD) -> BOOL;
-    }
-
-    pub struct OsRng {
-        hcryptprov: HCRYPTPROV
-    }
+    #[derive(Debug)]
+    pub struct OsRng;
 
     impl OsRng {
         pub fn new() -> io::Result<OsRng> {
-            let mut hcp = 0;
-            let ret = unsafe {
-                CryptAcquireContextA(&mut hcp, ptr::null(), ptr::null(),
-                                     PROV_RSA_FULL,
-                                     CRYPT_VERIFYCONTEXT | CRYPT_SILENT)
-            };
-
-            if ret == 0 {
-                Err(io::Error::last_os_error())
-            } else {
-                Ok(OsRng { hcryptprov: hcp })
-            }
+            Ok(OsRng)
         }
     }
 
@@ -425,29 +407,59 @@ mod imp {
             next_u64(&mut |v| self.fill_bytes(v))
         }
         fn fill_bytes(&mut self, v: &mut [u8]) {
-            // CryptGenRandom takes a DWORD (u32) for the length so we need to
+            for s in v.chunks_mut(fuchsia_zircon::sys::ZX_CPRNG_DRAW_MAX_LEN) {
+                let mut filled = 0;
+                while filled < s.len() {
+                    match fuchsia_zircon::cprng_draw(&mut s[filled..]) {
+                        Ok(actual) => filled += actual,
+                        Err(e) => panic!("cprng_draw failed: {:?}", e),
+                    };
+                }
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+mod imp {
+    extern crate winapi;
+
+    use std::io;
+    use Rng;
+
+    use super::{next_u32, next_u64};
+
+    use self::winapi::shared::minwindef::ULONG;
+    use self::winapi::um::ntsecapi::RtlGenRandom;
+    use self::winapi::um::winnt::PVOID;
+
+    #[derive(Debug)]
+    pub struct OsRng;
+
+    impl OsRng {
+        pub fn new() -> io::Result<OsRng> {
+            Ok(OsRng)
+        }
+    }
+
+    impl Rng for OsRng {
+        fn next_u32(&mut self) -> u32 {
+            next_u32(&mut |v| self.fill_bytes(v))
+        }
+        fn next_u64(&mut self) -> u64 {
+            next_u64(&mut |v| self.fill_bytes(v))
+        }
+        fn fill_bytes(&mut self, v: &mut [u8]) {
+            // RtlGenRandom takes an ULONG (u32) for the length so we need to
             // split up the buffer.
-            for slice in v.chunks_mut(<DWORD>::max_value() as usize) {
+            for slice in v.chunks_mut(<ULONG>::max_value() as usize) {
                 let ret = unsafe {
-                    CryptGenRandom(self.hcryptprov, slice.len() as DWORD,
-                                   slice.as_mut_ptr())
+                    RtlGenRandom(slice.as_mut_ptr() as PVOID, slice.len() as ULONG)
                 };
                 if ret == 0 {
                     panic!("couldn't generate random bytes: {}",
                            io::Error::last_os_error());
                 }
-            }
-        }
-    }
-
-    impl Drop for OsRng {
-        fn drop(&mut self) {
-            let ret = unsafe {
-                CryptReleaseContext(self.hcryptprov, 0)
-            };
-            if ret == 0 {
-                panic!("couldn't release context: {}",
-                       io::Error::last_os_error());
             }
         }
     }
@@ -463,6 +475,7 @@ mod imp {
 
     use super::{next_u32, next_u64};
 
+    #[derive(Debug)]
     pub struct OsRng(extern fn(dest: *mut libc::c_void,
                                bytes: libc::size_t,
                                read: *mut libc::size_t) -> libc::c_int);
@@ -528,6 +541,26 @@ mod imp {
     }
 }
 
+#[cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))]
+mod imp {
+    use std::io;
+    use Rng;
+
+    #[derive(Debug)]
+    pub struct OsRng;
+
+    impl OsRng {
+        pub fn new() -> io::Result<OsRng> {
+            Err(io::Error::new(io::ErrorKind::Other, "Not supported"))
+        }
+    }
+
+    impl Rng for OsRng {
+        fn next_u32(&mut self) -> u32 {
+            panic!("Not supported")
+        }
+    }
+}
 
 #[cfg(test)]
 mod test {

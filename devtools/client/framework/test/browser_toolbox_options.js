@@ -3,7 +3,6 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-/* import-globals-from shared-head.js */
 "use strict";
 
 // Tests that changing preferences in the options panel updates the prefs
@@ -14,47 +13,71 @@ const {LocalizationHelper} = require("devtools/shared/l10n");
 const L10N = new LocalizationHelper("devtools/client/locales/toolbox.properties");
 const {PrefObserver} = require("devtools/client/shared/prefs");
 
-add_task(function* () {
+add_task(async function() {
   const URL = "data:text/html;charset=utf8,test for dynamically registering " +
               "and unregistering tools";
   registerNewTool();
-  let tab = yield addTab(URL);
-  let target = TargetFactory.forTab(tab);
-  toolbox = yield gDevTools.showToolbox(target);
+  const tab = await addTab(URL);
+  const target = await TargetFactory.forTab(tab);
+  toolbox = await gDevTools.showToolbox(target);
+
   doc = toolbox.doc;
-  yield registerNewPerToolboxTool();
-  yield testSelectTool();
-  yield testOptionsShortcut();
-  yield testOptions();
-  yield testToggleTools();
-  yield cleanup();
+  await registerNewPerToolboxTool();
+  await testSelectTool();
+  await testOptionsShortcut();
+  await testOptions();
+  await testToggleTools();
+
+  // Test that registered WebExtensions becomes entries in the
+  // options panel and toggling their checkbox toggle the related
+  // preference.
+  await registerNewWebExtensions();
+  await testToggleWebExtensions();
+
+  await cleanup();
 });
 
 function registerNewTool() {
-  let toolDefinition = {
-    id: "test-tool",
+  const toolDefinition = {
+    id: "testTool",
     isTargetSupported: () => true,
     visibilityswitch: "devtools.test-tool.enabled",
     url: "about:blank",
-    label: "someLabel"
+    label: "someLabel",
   };
 
   ok(gDevTools, "gDevTools exists");
-  ok(!gDevTools.getToolDefinitionMap().has("test-tool"),
+  ok(!gDevTools.getToolDefinitionMap().has("testTool"),
     "The tool is not registered");
 
   gDevTools.registerTool(toolDefinition);
-  ok(gDevTools.getToolDefinitionMap().has("test-tool"),
+  ok(gDevTools.getToolDefinitionMap().has("testTool"),
     "The tool is registered");
 }
 
+// Register a fake WebExtension to check that it is
+// listed in the toolbox options.
+function registerNewWebExtensions() {
+  // Register some fake extensions and init the related preferences
+  // (similarly to ext-devtools.js).
+  for (let i = 0; i < 2; i++) {
+    const extPref = `devtools.webextensions.fakeExtId${i}.enabled`;
+    Services.prefs.setBoolPref(extPref, true);
+
+    toolbox.registerWebExtension(`fakeUUID${i}`, {
+      name: `Fake WebExtension ${i}`,
+      pref: extPref,
+    });
+  }
+}
+
 function registerNewPerToolboxTool() {
-  let toolDefinition = {
+  const toolDefinition = {
     id: "test-pertoolbox-tool",
     isTargetSupported: () => true,
     visibilityswitch: "devtools.test-pertoolbox-tool.enabled",
     url: "about:blank",
-    label: "perToolboxSomeLabel"
+    label: "perToolboxSomeLabel",
   };
 
   ok(gDevTools, "gDevTools exists");
@@ -73,202 +96,331 @@ function registerNewPerToolboxTool() {
      "The per-toolbox tool has been registered to the toolbox");
 }
 
-function* testSelectTool() {
+async function testSelectTool() {
   info("Checking to make sure that the options panel can be selected.");
 
-  let onceSelected = toolbox.once("options-selected");
+  const onceSelected = toolbox.once("options-selected");
   toolbox.selectTool("options");
-  yield onceSelected;
+  await onceSelected;
   ok(true, "Toolbox selected via selectTool method");
 }
 
-function* testOptionsShortcut() {
+async function testOptionsShortcut() {
   info("Selecting another tool, then reselecting options panel with keyboard.");
 
-  yield toolbox.selectTool("webconsole");
-  is(toolbox.currentToolId, "webconsole", "webconsole is selected");
-  synthesizeKeyShortcut(L10N.getStr("toolbox.options.key"));
-  is(toolbox.currentToolId, "options", "Toolbox selected via shortcut key (1)");
-  synthesizeKeyShortcut(L10N.getStr("toolbox.options.key"));
-  is(toolbox.currentToolId, "webconsole", "webconsole is selected (1)");
-
-  yield toolbox.selectTool("webconsole");
+  await toolbox.selectTool("webconsole");
   is(toolbox.currentToolId, "webconsole", "webconsole is selected");
   synthesizeKeyShortcut(L10N.getStr("toolbox.help.key"));
-  is(toolbox.currentToolId, "options", "Toolbox selected via shortcut key (2)");
-  synthesizeKeyShortcut(L10N.getStr("toolbox.options.key"));
-  is(toolbox.currentToolId, "webconsole", "webconsole is reselected (2)");
+  is(toolbox.currentToolId, "options", "Toolbox selected via shortcut key");
   synthesizeKeyShortcut(L10N.getStr("toolbox.help.key"));
-  is(toolbox.currentToolId, "options", "Toolbox selected via shortcut key (2)");
+  is(toolbox.currentToolId, "webconsole", "webconsole is reselected");
+  synthesizeKeyShortcut(L10N.getStr("toolbox.help.key"));
+  is(toolbox.currentToolId, "options", "Toolbox selected via shortcut key");
 }
 
-function* testOptions() {
-  let tool = toolbox.getPanel("options");
+async function testOptions() {
+  const tool = toolbox.getPanel("options");
   panelWin = tool.panelWin;
-  let prefNodes = tool.panelDoc.querySelectorAll(
-    "input[type=checkbox][data-pref]");
+  const prefNodes = tool.panelDoc.querySelectorAll("input[type=checkbox][data-pref]");
 
   // Store modified pref names so that they can be cleared on error.
-  for (let node of tool.panelDoc.querySelectorAll("[data-pref]")) {
-    let pref = node.getAttribute("data-pref");
+  for (const node of tool.panelDoc.querySelectorAll("[data-pref]")) {
+    const pref = node.getAttribute("data-pref");
     modifiedPrefs.push(pref);
   }
 
-  for (let node of prefNodes) {
-    let prefValue = GetPref(node.getAttribute("data-pref"));
+  for (const node of prefNodes) {
+    const prefValue = GetPref(node.getAttribute("data-pref"));
 
     // Test clicking the checkbox for each options pref
-    yield testMouseClick(node, prefValue);
+    await testMouseClick(node, prefValue);
 
     // Do again with opposite values to reset prefs
-    yield testMouseClick(node, !prefValue);
+    await testMouseClick(node, !prefValue);
   }
 
-  let prefSelects = tool.panelDoc.querySelectorAll("select[data-pref]");
-  for (let node of prefSelects) {
-    yield testSelect(node);
+  const prefSelects = tool.panelDoc.querySelectorAll("select[data-pref]");
+  for (const node of prefSelects) {
+    await testSelect(node);
   }
 }
 
-function* testSelect(select) {
-  let pref = select.getAttribute("data-pref");
-  let options = Array.from(select.options);
+async function testSelect(select) {
+  const pref = select.getAttribute("data-pref");
+  const options = Array.from(select.options);
   info("Checking select for: " + pref);
 
   is(select.options[select.selectedIndex].value, GetPref(pref),
     "select starts out selected");
 
-  for (let option of options) {
+  for (const option of options) {
     if (options.indexOf(option) === select.selectedIndex) {
       continue;
     }
 
-    let observer = new PrefObserver("devtools.");
+    const observer = new PrefObserver("devtools.");
 
-    let deferred = defer();
     let changeSeen = false;
-    observer.once(pref, () => {
-      changeSeen = true;
-      is(GetPref(pref), option.value, "Preference been switched for " + pref);
-      deferred.resolve();
+    const changeSeenPromise = new Promise(resolve => {
+      observer.once(pref, () => {
+        changeSeen = true;
+        is(GetPref(pref), option.value, "Preference been switched for " + pref);
+        resolve();
+      });
     });
 
     select.selectedIndex = options.indexOf(option);
-    let changeEvent = new Event("change");
+    const changeEvent = new Event("change");
     select.dispatchEvent(changeEvent);
 
-    yield deferred.promise;
+    await changeSeenPromise;
 
     ok(changeSeen, "Correct pref was changed");
     observer.destroy();
   }
 }
 
-function* testMouseClick(node, prefValue) {
-  let deferred = defer();
+async function testMouseClick(node, prefValue) {
+  const observer = new PrefObserver("devtools.");
 
-  let observer = new PrefObserver("devtools.");
-
-  let pref = node.getAttribute("data-pref");
+  const pref = node.getAttribute("data-pref");
   let changeSeen = false;
-  observer.once(pref, () => {
-    changeSeen = true;
-    is(GetPref(pref), !prefValue, "New value is correct for " + pref);
-    deferred.resolve();
+  const changeSeenPromise = new Promise(resolve => {
+    observer.once(pref, () => {
+      changeSeen = true;
+      is(GetPref(pref), !prefValue, "New value is correct for " + pref);
+      resolve();
+    });
   });
 
   node.scrollIntoView();
 
   // We use executeSoon here to ensure that the element is in view and
   // clickable.
-  executeSoon(function () {
+  executeSoon(function() {
     info("Click event synthesized for pref " + pref);
     EventUtils.synthesizeMouseAtCenter(node, {}, panelWin);
   });
 
-  yield deferred.promise;
+  await changeSeenPromise;
 
   ok(changeSeen, "Correct pref was changed");
   observer.destroy();
 }
 
-function* testToggleTools() {
-  let toolNodes = panelWin.document.querySelectorAll(
+async function testToggleWebExtensions() {
+  const disabledExtensions = new Set();
+  const toggleableWebExtensions = toolbox.listWebExtensions();
+
+  function toggleWebExtension(node) {
+    node.scrollIntoView();
+    EventUtils.synthesizeMouseAtCenter(node, {}, panelWin);
+  }
+
+  function assertExpectedDisabledExtensions() {
+    for (const ext of toggleableWebExtensions) {
+      if (disabledExtensions.has(ext)) {
+        ok(!toolbox.isWebExtensionEnabled(ext.uuid),
+           `The WebExtension "${ext.name}" should be disabled`);
+      } else {
+        ok(toolbox.isWebExtensionEnabled(ext.uuid),
+           `The WebExtension "${ext.name}" should  be enabled`);
+      }
+    }
+  }
+
+  function assertAllExtensionsDisabled() {
+    const enabledUUIDs = toggleableWebExtensions
+            .filter(ext => toolbox.isWebExtensionEnabled(ext.uuid))
+            .map(ext => ext.uuid);
+
+    Assert.deepEqual(enabledUUIDs, [],
+                     "All the registered WebExtensions should be disabled");
+  }
+
+  function assertAllExtensionsEnabled() {
+    const disabledUUIDs = toolbox.listWebExtensions()
+            .filter(ext => !toolbox.isWebExtensionEnabled(ext.uuid))
+            .map(ext => ext.uuid);
+
+    Assert.deepEqual(disabledUUIDs, [],
+                     "All the registered WebExtensions should be enabled");
+  }
+
+  function getWebExtensionNodes() {
+    const toolNodes = panelWin.document.querySelectorAll(
+      "#default-tools-box input[type=checkbox]:not([data-unsupported])," +
+        "#additional-tools-box input[type=checkbox]:not([data-unsupported])");
+
+    return [...toolNodes].filter(node => {
+      return toggleableWebExtensions.some(
+        ({uuid}) => node.getAttribute("id") === `webext-${uuid}`
+      );
+    });
+  }
+
+  let webExtensionNodes = getWebExtensionNodes();
+
+  is(webExtensionNodes.length, toggleableWebExtensions.length,
+     "There should be a toggle checkbox for every WebExtension registered");
+
+  for (const ext of toggleableWebExtensions) {
+    ok(toolbox.isWebExtensionEnabled(ext.uuid),
+       `The WebExtension "${ext.name}" is initially enabled`);
+  }
+
+  // Store modified pref names so that they can be cleared on error.
+  for (const ext of toggleableWebExtensions) {
+    modifiedPrefs.push(ext.pref);
+  }
+
+  // Turn each registered WebExtension to disabled.
+  for (const node of webExtensionNodes) {
+    toggleWebExtension(node);
+
+    const toggledExt = toggleableWebExtensions.find(ext => {
+      return node.id == `webext-${ext.uuid}`;
+    });
+    ok(toggledExt, "Found a WebExtension for the checkbox element");
+    disabledExtensions.add(toggledExt);
+
+    assertExpectedDisabledExtensions();
+  }
+
+  assertAllExtensionsDisabled();
+
+  // Turn each registered WebExtension to enabled.
+  for (const node of webExtensionNodes) {
+    toggleWebExtension(node);
+
+    const toggledExt = toggleableWebExtensions.find(ext => {
+      return node.id == `webext-${ext.uuid}`;
+    });
+    ok(toggledExt, "Found a WebExtension for the checkbox element");
+    disabledExtensions.delete(toggledExt);
+
+    assertExpectedDisabledExtensions();
+  }
+
+  assertAllExtensionsEnabled();
+
+  // Unregister the WebExtensions one by one, and check that only the expected
+  // ones have been unregistered, and the remaining onea are still listed.
+  for (const ext of toggleableWebExtensions) {
+    ok(toolbox.listWebExtensions().length > 0,
+       "There should still be extensions registered");
+    toolbox.unregisterWebExtension(ext.uuid);
+
+    const registeredUUIDs = toolbox.listWebExtensions().map(item => item.uuid);
+    ok(!registeredUUIDs.includes(ext.uuid),
+       `the WebExtension "${ext.name}" should have been unregistered`);
+
+    webExtensionNodes = getWebExtensionNodes();
+
+    const checkboxEl = webExtensionNodes.find(el => el.id === `webext-${ext.uuid}`);
+    is(checkboxEl, undefined,
+       "The unregistered WebExtension checkbox should have been removed");
+
+    is(registeredUUIDs.length, webExtensionNodes.length,
+       "There should be the expected number of WebExtensions checkboxes");
+  }
+
+  is(toolbox.listWebExtensions().length, 0,
+     "All WebExtensions have been unregistered");
+
+  webExtensionNodes = getWebExtensionNodes();
+
+  is(webExtensionNodes.length, 0,
+     "There should not be any checkbox for the unregistered WebExtensions");
+}
+
+function getToolNode(id) {
+  return panelWin.document.getElementById(id);
+}
+
+async function testToggleTools() {
+  const toolNodes = panelWin.document.querySelectorAll(
     "#default-tools-box input[type=checkbox]:not([data-unsupported])," +
     "#additional-tools-box input[type=checkbox]:not([data-unsupported])");
-  let enabledTools = [...toolNodes].filter(node => node.checked);
+  const toolNodeIds = [...toolNodes].map(node => node.id);
+  const enabledToolIds = [...toolNodes].filter(node => node.checked).map(node => node.id);
 
-  let toggleableTools = gDevTools.getDefaultTools()
+  const toggleableTools = gDevTools.getDefaultTools()
                                  .filter(tool => {
                                    return tool.visibilityswitch;
                                  })
                                  .concat(gDevTools.getAdditionalTools())
                                  .concat(toolbox.getAdditionalTools());
 
-
-  for (let node of toolNodes) {
-    let id = node.getAttribute("id");
+  for (const node of toolNodes) {
+    const id = node.getAttribute("id");
     ok(toggleableTools.some(tool => tool.id === id),
-      "There should be a toggle checkbox for: " + id);
+       "There should be a toggle checkbox for: " + id);
   }
 
   // Store modified pref names so that they can be cleared on error.
-  for (let tool of toggleableTools) {
-    let pref = tool.visibilityswitch;
+  for (const tool of toggleableTools) {
+    const pref = tool.visibilityswitch;
     modifiedPrefs.push(pref);
   }
 
   // Toggle each tool
-  for (let node of toolNodes) {
-    yield toggleTool(node);
+  for (const id of toolNodeIds) {
+    await toggleTool(getToolNode(id));
   }
+
   // Toggle again to reset tool enablement state
-  for (let node of toolNodes) {
-    yield toggleTool(node);
+  for (const id of toolNodeIds) {
+    await toggleTool(getToolNode(id));
   }
 
   // Test that a tool can still be added when no tabs are present:
   // Disable all tools
-  for (let node of enabledTools) {
-    yield toggleTool(node);
+  for (const id of enabledToolIds) {
+    await toggleTool(getToolNode(id));
   }
   // Re-enable the tools which are enabled by default
-  for (let node of enabledTools) {
-    yield toggleTool(node);
+  for (const id of enabledToolIds) {
+    await toggleTool(getToolNode(id));
   }
 
   // Toggle first, middle, and last tools to ensure that toolbox tabs are
   // inserted in order
-  let firstTool = toolNodes[0];
-  let middleTool = toolNodes[(toolNodes.length / 2) | 0];
-  let lastTool = toolNodes[toolNodes.length - 1];
+  const firstToolId = toolNodeIds[0];
+  const middleToolId = toolNodeIds[(toolNodeIds.length / 2) | 0];
+  const lastToolId = toolNodeIds[toolNodeIds.length - 1];
 
-  yield toggleTool(firstTool);
-  yield toggleTool(firstTool);
-  yield toggleTool(middleTool);
-  yield toggleTool(middleTool);
-  yield toggleTool(lastTool);
-  yield toggleTool(lastTool);
+  await toggleTool(getToolNode(firstToolId));
+  await toggleTool(getToolNode(firstToolId));
+  await toggleTool(getToolNode(middleToolId));
+  await toggleTool(getToolNode(middleToolId));
+  await toggleTool(getToolNode(lastToolId));
+  await toggleTool(getToolNode(lastToolId));
 }
 
-function* toggleTool(node) {
-  let deferred = defer();
+/**
+ * Toggle tool node checkbox. Note: because toggling the checkbox will result in
+ * re-rendering of the tool list, we must re-query the checkboxes every time.
+ */
+async function toggleTool(node) {
+  const toolId = node.getAttribute("id");
 
-  let toolId = node.getAttribute("id");
-  if (node.checked) {
-    gDevTools.once("tool-unregistered",
-      checkUnregistered.bind(null, toolId, deferred));
-  } else {
-    gDevTools.once("tool-registered",
-      checkRegistered.bind(null, toolId, deferred));
-  }
+  const registeredPromise = new Promise(resolve => {
+    if (node.checked) {
+      gDevTools.once("tool-unregistered",
+        checkUnregistered.bind(null, toolId, resolve));
+    } else {
+      gDevTools.once("tool-registered",
+        checkRegistered.bind(null, toolId, resolve));
+    }
+  });
   node.scrollIntoView();
   EventUtils.synthesizeMouseAtCenter(node, {}, panelWin);
 
-  yield deferred.promise;
+  await registeredPromise;
 }
 
-function checkUnregistered(toolId, deferred, event, data) {
+function checkUnregistered(toolId, resolve, data) {
   if (data == toolId) {
     ok(true, "Correct tool removed");
     // checking tab on the toolbox
@@ -277,23 +429,23 @@ function checkUnregistered(toolId, deferred, event, data) {
   } else {
     ok(false, "Something went wrong, " + toolId + " was not unregistered");
   }
-  deferred.resolve();
+  resolve();
 }
 
-function checkRegistered(toolId, deferred, event, data) {
+async function checkRegistered(toolId, resolve, data) {
   if (data == toolId) {
     ok(true, "Correct tool added back");
     // checking tab on the toolbox
-    let button = doc.getElementById("toolbox-tab-" + toolId);
+    const button = await lookupButtonForToolId(toolId);
     ok(button, "Tab added back for " + toolId);
   } else {
     ok(false, "Something went wrong, " + toolId + " was not registered");
   }
-  deferred.resolve();
+  resolve();
 }
 
 function GetPref(name) {
-  let type = Services.prefs.getPrefType(name);
+  const type = Services.prefs.getPrefType(name);
   switch (type) {
     case Services.prefs.PREF_STRING:
       return Services.prefs.getCharPref(name);
@@ -306,11 +458,28 @@ function GetPref(name) {
   }
 }
 
-function* cleanup() {
-  gDevTools.unregisterTool("test-tool");
-  yield toolbox.destroy();
+/**
+ * Find the button from specified toolId.
+ * Generally, button which access to the tool panel is in toolbox or
+ * tools menu(in the Chevron menu).
+ */
+async function lookupButtonForToolId(toolId) {
+  let button = doc.getElementById("toolbox-tab-" + toolId);
+  if (!button) {
+    // search from the tools menu.
+    await openChevronMenu(toolbox);
+    button = doc.querySelector("#tools-chevron-menupopup-" + toolId);
+
+    await closeChevronMenu(toolbox);
+  }
+  return button;
+}
+
+async function cleanup() {
+  gDevTools.unregisterTool("testTool");
+  await toolbox.destroy();
   gBrowser.removeCurrentTab();
-  for (let pref of modifiedPrefs) {
+  for (const pref of modifiedPrefs) {
     Services.prefs.clearUserPref(pref);
   }
   toolbox = doc = panelWin = modifiedPrefs = null;

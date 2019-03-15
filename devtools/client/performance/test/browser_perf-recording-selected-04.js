@@ -7,18 +7,22 @@
  */
 
 const { SIMPLE_URL } = require("devtools/client/performance/test/helpers/urls");
-const { UI_ENABLE_MEMORY_PREF, UI_ENABLE_ALLOCATIONS_PREF } = require("devtools/client/performance/test/helpers/prefs");
+const {
+  UI_ENABLE_MEMORY_PREF,
+  UI_ENABLE_ALLOCATIONS_PREF,
+  PROFILER_SAMPLE_RATE_PREF,
+} = require("devtools/client/performance/test/helpers/prefs");
 const { initPerformanceInNewTab, teardownToolboxAndRemoveTab } = require("devtools/client/performance/test/helpers/panel-utils");
 const { startRecording, stopRecording, waitForAllWidgetsRendered } = require("devtools/client/performance/test/helpers/actions");
 const { setSelectedRecording } = require("devtools/client/performance/test/helpers/recording-utils");
 
-add_task(function* () {
-  let { panel } = yield initPerformanceInNewTab({
+add_task(async function() {
+  const { panel } = await initPerformanceInNewTab({
     url: SIMPLE_URL,
-    win: window
+    win: window,
   });
 
-  let { DetailsView, DetailsSubview } = panel.panelWin;
+  const { DetailsView, DetailsSubview } = panel.panelWin;
 
   // Enable memory to test the memory overview.
   Services.prefs.setBoolPref(UI_ENABLE_MEMORY_PREF, true);
@@ -26,34 +30,42 @@ add_task(function* () {
   // Enable allocations to test the memory-calltree and memory-flamegraph.
   Services.prefs.setBoolPref(UI_ENABLE_ALLOCATIONS_PREF, true);
 
-  yield startRecording(panel);
-  yield stopRecording(panel);
+  // Because enabling the memory panel has a significant overhead, especially in
+  // slow builds like ccov builds, let's reduce the overhead from the sampling.
+  Services.prefs.setIntPref(PROFILER_SAMPLE_RATE_PREF, 100);
 
-  // Ållow widgets to be updated while hidden, to make testing easier.
+  ok(true, "Starting recording...");
+  await startRecording(panel);
+  ok(true, "Recording started!");
+  ok(true, "Stopping recording...");
+  await stopRecording(panel);
+  ok(true, "Recording stopped!");
+
+  // Allow widgets to be updated while hidden, to make testing easier.
   DetailsSubview.canUpdateWhileHidden = true;
 
   // Cycle through all the views to initialize them. The waterfall is shown
   // by default, but all the other views are created lazily, so won't emit
   // any events.
-  yield DetailsView.selectView("js-calltree");
-  yield DetailsView.selectView("js-flamegraph");
-  yield DetailsView.selectView("memory-calltree");
-  yield DetailsView.selectView("memory-flamegraph");
+  await DetailsView.selectView("js-calltree");
+  await DetailsView.selectView("js-flamegraph");
+  await DetailsView.selectView("memory-calltree");
+  await DetailsView.selectView("memory-flamegraph");
 
-  yield startRecording(panel);
-  yield stopRecording(panel);
+  await startRecording(panel);
+  await stopRecording(panel);
 
   let rerender = waitForAllWidgetsRendered(panel);
   setSelectedRecording(panel, 0);
-  yield rerender;
+  await rerender;
 
   ok(true, "All widgets were rendered when selecting the first recording.");
 
   rerender = waitForAllWidgetsRendered(panel);
   setSelectedRecording(panel, 1);
-  yield rerender;
+  await rerender;
 
   ok(true, "All widgets were rendered when selecting the second recording.");
 
-  yield teardownToolboxAndRemoveTab(panel);
+  await teardownToolboxAndRemoveTab(panel);
 });

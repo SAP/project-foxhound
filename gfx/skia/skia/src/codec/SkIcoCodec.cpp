@@ -7,7 +7,7 @@
 
 #include "SkBmpCodec.h"
 #include "SkCodecPriv.h"
-#include "SkColorPriv.h"
+#include "SkColorData.h"
 #include "SkData.h"
 #include "SkIcoCodec.h"
 #include "SkPngCodec.h"
@@ -26,24 +26,17 @@ bool SkIcoCodec::IsIco(const void* buffer, size_t bytesRead) {
             !memcmp(buffer, curSig, sizeof(curSig)));
 }
 
-/*
- * Assumes IsIco was called and returned true
- * Creates an Ico decoder
- * Reads enough of the stream to determine the image format
- */
-SkCodec* SkIcoCodec::NewFromStream(SkStream* stream) {
-    // Ensure that we do not leak the input stream
-    SkAutoTDelete<SkStream> inputStream(stream);
-
+std::unique_ptr<SkCodec> SkIcoCodec::MakeFromStream(std::unique_ptr<SkStream> stream,
+                                                    Result* result) {
     // Header size constants
-    static const uint32_t kIcoDirectoryBytes = 6;
-    static const uint32_t kIcoDirEntryBytes = 16;
+    constexpr uint32_t kIcoDirectoryBytes = 6;
+    constexpr uint32_t kIcoDirEntryBytes = 16;
 
     // Read the directory header
-    SkAutoTDeleteArray<uint8_t> dirBuffer(new uint8_t[kIcoDirectoryBytes]);
-    if (inputStream.get()->read(dirBuffer.get(), kIcoDirectoryBytes) !=
-            kIcoDirectoryBytes) {
+    std::unique_ptr<uint8_t[]> dirBuffer(new uint8_t[kIcoDirectoryBytes]);
+    if (stream->read(dirBuffer.get(), kIcoDirectoryBytes) != kIcoDirectoryBytes) {
         SkCodecPrintf("Error: unable to read ico directory header.\n");
+        *result = kIncompleteInput;
         return nullptr;
     }
 
@@ -51,14 +44,7 @@ SkCodec* SkIcoCodec::NewFromStream(SkStream* stream) {
     const uint16_t numImages = get_short(dirBuffer.get(), 4);
     if (0 == numImages) {
         SkCodecPrintf("Error: No images embedded in ico.\n");
-        return nullptr;
-    }
-
-    // Ensure that we can read all of indicated directory entries
-    SkAutoTDeleteArray<uint8_t> entryBuffer(new uint8_t[numImages * kIcoDirEntryBytes]);
-    if (inputStream.get()->read(entryBuffer.get(), numImages*kIcoDirEntryBytes) !=
-            numImages*kIcoDirEntryBytes) {
-        SkCodecPrintf("Error: unable to read ico directory entries.\n");
+        *result = kInvalidInput;
         return nullptr;
     }
 
@@ -69,10 +55,24 @@ SkCodec* SkIcoCodec::NewFromStream(SkStream* stream) {
         uint32_t offset;
         uint32_t size;
     };
-    SkAutoTDeleteArray<Entry> directoryEntries(new Entry[numImages]);
+    SkAutoFree dirEntryBuffer(sk_malloc_canfail(sizeof(Entry) * numImages));
+    if (!dirEntryBuffer) {
+        SkCodecPrintf("Error: OOM allocating ICO directory for %i images.\n",
+                      numImages);
+        *result = kInternalError;
+        return nullptr;
+    }
+    auto* directoryEntries = reinterpret_cast<Entry*>(dirEntryBuffer.get());
 
     // Iterate over directory entries
     for (uint32_t i = 0; i < numImages; i++) {
+        uint8_t entryBuffer[kIcoDirEntryBytes];
+        if (stream->read(entryBuffer, kIcoDirEntryBytes) != kIcoDirEntryBytes) {
+            SkCodecPrintf("Error: Dir entries truncated in ico.\n");
+            *result = kIncompleteInput;
+            return nullptr;
+        }
+
         // The directory entry contains information such as width, height,
         // bits per pixel, and number of colors in the color palette.  We will
         // ignore these fields since they are repeated in the header of the
@@ -80,17 +80,20 @@ SkCodec* SkIcoCodec::NewFromStream(SkStream* stream) {
         // defer to the value in the embedded header anyway.
 
         // Specifies the size of the embedded image, including the header
-        uint32_t size = get_int(entryBuffer.get(), 8 + i*kIcoDirEntryBytes);
+        uint32_t size = get_int(entryBuffer, 8);
 
         // Specifies the offset of the embedded image from the start of file.
         // It does not indicate the start of the pixel data, but rather the
         // start of the embedded image header.
-        uint32_t offset = get_int(entryBuffer.get(), 12 + i*kIcoDirEntryBytes);
+        uint32_t offset = get_int(entryBuffer, 12);
 
         // Save the vital fields
-        directoryEntries.get()[i].offset = offset;
-        directoryEntries.get()[i].size = size;
+        directoryEntries[i].offset = offset;
+        directoryEntries[i].size = size;
     }
+
+    // Default Result, if no valid embedded codecs are found.
+    *result = kInvalidInput;
 
     // It is "customary" that the embedded images will be stored in order of
     // increasing offset.  However, the specification does not indicate that
@@ -102,16 +105,15 @@ SkCodec* SkIcoCodec::NewFromStream(SkStream* stream) {
         }
     };
     EntryLessThan lessThan;
-    SkTQSort(directoryEntries.get(), directoryEntries.get() + numImages - 1,
-            lessThan);
+    SkTQSort(directoryEntries, &directoryEntries[numImages - 1], lessThan);
 
     // Now will construct a candidate codec for each of the embedded images
     uint32_t bytesRead = kIcoDirectoryBytes + numImages * kIcoDirEntryBytes;
-    SkAutoTDelete<SkTArray<SkAutoTDelete<SkCodec>, true>> codecs(
-            new (SkTArray<SkAutoTDelete<SkCodec>, true>)(numImages));
+    std::unique_ptr<SkTArray<std::unique_ptr<SkCodec>, true>> codecs(
+            new SkTArray<std::unique_ptr<SkCodec>, true>(numImages));
     for (uint32_t i = 0; i < numImages; i++) {
-        uint32_t offset = directoryEntries.get()[i].offset;
-        uint32_t size = directoryEntries.get()[i].size;
+        uint32_t offset = directoryEntries[i].offset;
+        uint32_t size = directoryEntries[i].size;
 
         // Ensure that the offset is valid
         if (offset < bytesRead) {
@@ -121,32 +123,41 @@ SkCodec* SkIcoCodec::NewFromStream(SkStream* stream) {
 
         // If we cannot skip, assume we have reached the end of the stream and
         // stop trying to make codecs
-        if (inputStream.get()->skip(offset - bytesRead) != offset - bytesRead) {
+        if (stream->skip(offset - bytesRead) != offset - bytesRead) {
             SkCodecPrintf("Warning: could not skip to ico offset.\n");
             break;
         }
         bytesRead = offset;
 
         // Create a new stream for the embedded codec
-        sk_sp<SkData> data(SkData::MakeFromStream(inputStream.get(), size));
-        if (nullptr == data.get()) {
-            SkCodecPrintf("Warning: could not create embedded stream.\n");
+        SkAutoFree buffer(sk_malloc_canfail(size));
+        if (!buffer) {
+            SkCodecPrintf("Warning: OOM trying to create embedded stream.\n");
             break;
         }
-        SkAutoTDelete<SkMemoryStream> embeddedStream(new SkMemoryStream(data));
+
+        if (stream->read(buffer.get(), size) != size) {
+            SkCodecPrintf("Warning: could not create embedded stream.\n");
+            *result = kIncompleteInput;
+            break;
+        }
+
+        sk_sp<SkData> data(SkData::MakeFromMalloc(buffer.release(), size));
+        auto embeddedStream = SkMemoryStream::Make(data);
         bytesRead += size;
 
         // Check if the embedded codec is bmp or png and create the codec
-        SkCodec* codec = nullptr;
+        std::unique_ptr<SkCodec> codec;
+        Result dummyResult;
         if (SkPngCodec::IsPng((const char*) data->bytes(), data->size())) {
-            codec = SkPngCodec::NewFromStream(embeddedStream.release());
+            codec = SkPngCodec::MakeFromStream(std::move(embeddedStream), &dummyResult);
         } else {
-            codec = SkBmpCodec::NewFromIco(embeddedStream.release());
+            codec = SkBmpCodec::MakeFromIco(std::move(embeddedStream), &dummyResult);
         }
 
         // Save a valid codec
         if (nullptr != codec) {
-            codecs->push_back().reset(codec);
+            codecs->push_back().reset(codec.release());
         }
     }
 
@@ -157,53 +168,51 @@ SkCodec* SkIcoCodec::NewFromStream(SkStream* stream) {
     }
 
     // Use the largest codec as a "suggestion" for image info
-    uint32_t maxSize = 0;
-    uint32_t maxIndex = 0;
-    for (int32_t i = 0; i < codecs->count(); i++) {
+    size_t maxSize = 0;
+    int maxIndex = 0;
+    for (int i = 0; i < codecs->count(); i++) {
         SkImageInfo info = codecs->operator[](i)->getInfo();
-        uint32_t size = info.width() * info.height();
+        size_t size = info.computeMinByteSize();
+
         if (size > maxSize) {
             maxSize = size;
             maxIndex = i;
         }
     }
-    int width = codecs->operator[](maxIndex)->getInfo().width();
-    int height = codecs->operator[](maxIndex)->getInfo().height();
-    SkEncodedInfo info = codecs->operator[](maxIndex)->getEncodedInfo();
 
-    // Note that stream is owned by the embedded codec, the ico does not need
-    // direct access to the stream.
-    return new SkIcoCodec(width, height, info, codecs.release());
+    auto maxInfo = codecs->operator[](maxIndex)->getEncodedInfo().copy();
+
+    *result = kSuccess;
+    // The original stream is no longer needed, because the embedded codecs own their
+    // own streams.
+    return std::unique_ptr<SkCodec>(new SkIcoCodec(std::move(maxInfo), codecs.release()));
 }
 
-/*
- * Creates an instance of the decoder
- * Called only by NewFromStream
- */
-SkIcoCodec::SkIcoCodec(int width, int height, const SkEncodedInfo& info,
-                       SkTArray<SkAutoTDelete<SkCodec>, true>* codecs)
-    : INHERITED(width, height, info, nullptr)
+SkIcoCodec::SkIcoCodec(SkEncodedInfo&& info, SkTArray<std::unique_ptr<SkCodec>, true>* codecs)
+    // The source skcms_PixelFormat will not be used. The embedded
+    // codec's will be used instead.
+    : INHERITED(std::move(info), skcms_PixelFormat(), nullptr)
     , fEmbeddedCodecs(codecs)
-    , fCurrScanlineCodec(nullptr)
-    , fCurrIncrementalCodec(nullptr)
+    , fCurrCodec(nullptr)
 {}
 
 /*
  * Chooses the best dimensions given the desired scale
  */
-SkISize SkIcoCodec::onGetScaledDimensions(float desiredScale) const { 
+SkISize SkIcoCodec::onGetScaledDimensions(float desiredScale) const {
     // We set the dimensions to the largest candidate image by default.
     // Regardless of the scale request, this is the largest image that we
     // will decode.
-    int origWidth = this->getInfo().width();
-    int origHeight = this->getInfo().height();
+    int origWidth = this->dimensions().width();
+    int origHeight = this->dimensions().height();
     float desiredSize = desiredScale * origWidth * origHeight;
     // At least one image will have smaller error than this initial value
     float minError = ((float) (origWidth * origHeight)) - desiredSize + 1.0f;
     int32_t minIndex = -1;
     for (int32_t i = 0; i < fEmbeddedCodecs->count(); i++) {
-        int width = fEmbeddedCodecs->operator[](i)->getInfo().width();
-        int height = fEmbeddedCodecs->operator[](i)->getInfo().height();
+        auto dimensions = fEmbeddedCodecs->operator[](i)->dimensions();
+        int width = dimensions.width();
+        int height = dimensions.height();
         float error = SkTAbs(((float) (width * height)) - desiredSize);
         if (error < minError) {
             minError = error;
@@ -212,7 +221,7 @@ SkISize SkIcoCodec::onGetScaledDimensions(float desiredScale) const {
     }
     SkASSERT(minIndex >= 0);
 
-    return fEmbeddedCodecs->operator[](minIndex)->getInfo().dimensions();
+    return fEmbeddedCodecs->operator[](minIndex)->dimensions();
 }
 
 int SkIcoCodec::chooseCodec(const SkISize& requestedSize, int startIndex) {
@@ -220,7 +229,7 @@ int SkIcoCodec::chooseCodec(const SkISize& requestedSize, int startIndex) {
 
     // FIXME: Cache the index from onGetScaledDimensions?
     for (int i = startIndex; i < fEmbeddedCodecs->count(); i++) {
-        if (fEmbeddedCodecs->operator[](i)->getInfo().dimensions() == requestedSize) {
+        if (fEmbeddedCodecs->operator[](i)->dimensions() == requestedSize) {
             return i;
         }
     }
@@ -237,8 +246,8 @@ bool SkIcoCodec::onDimensionsSupported(const SkISize& dim) {
  */
 SkCodec::Result SkIcoCodec::onGetPixels(const SkImageInfo& dstInfo,
                                         void* dst, size_t dstRowBytes,
-                                        const Options& opts, SkPMColor* colorTable,
-                                        int* colorCount, int* rowsDecoded) {
+                                        const Options& opts,
+                                        int* rowsDecoded) {
     if (opts.fSubset) {
         // Subsets are not supported.
         return kUnimplemented;
@@ -252,10 +261,8 @@ SkCodec::Result SkIcoCodec::onGetPixels(const SkImageInfo& dstInfo,
             break;
         }
 
-        SkCodec* embeddedCodec = fEmbeddedCodecs->operator[](index);
-        result = embeddedCodec->getPixels(dstInfo, dst, dstRowBytes, &opts, colorTable,
-                colorCount);
-
+        SkCodec* embeddedCodec = fEmbeddedCodecs->operator[](index).get();
+        result = embeddedCodec->getPixels(dstInfo, dst, dstRowBytes, &opts);
         switch (result) {
             case kSuccess:
             case kIncompleteInput:
@@ -276,7 +283,7 @@ SkCodec::Result SkIcoCodec::onGetPixels(const SkImageInfo& dstInfo,
 }
 
 SkCodec::Result SkIcoCodec::onStartScanlineDecode(const SkImageInfo& dstInfo,
-        const SkCodec::Options& options, SkPMColor colorTable[], int* colorCount) {
+        const SkCodec::Options& options) {
     int index = 0;
     SkCodec::Result result = kInvalidScale;
     while (true) {
@@ -285,11 +292,10 @@ SkCodec::Result SkIcoCodec::onStartScanlineDecode(const SkImageInfo& dstInfo,
             break;
         }
 
-        SkCodec* embeddedCodec = fEmbeddedCodecs->operator[](index);
-        result = embeddedCodec->startScanlineDecode(dstInfo, &options, colorTable, colorCount);
+        SkCodec* embeddedCodec = fEmbeddedCodecs->operator[](index).get();
+        result = embeddedCodec->startScanlineDecode(dstInfo, &options);
         if (kSuccess == result) {
-            fCurrScanlineCodec = embeddedCodec;
-            fCurrIncrementalCodec = nullptr;
+            fCurrCodec = embeddedCodec;
             return result;
         }
 
@@ -301,18 +307,17 @@ SkCodec::Result SkIcoCodec::onStartScanlineDecode(const SkImageInfo& dstInfo,
 }
 
 int SkIcoCodec::onGetScanlines(void* dst, int count, size_t rowBytes) {
-    SkASSERT(fCurrScanlineCodec);
-    return fCurrScanlineCodec->getScanlines(dst, count, rowBytes);
+    SkASSERT(fCurrCodec);
+    return fCurrCodec->getScanlines(dst, count, rowBytes);
 }
 
 bool SkIcoCodec::onSkipScanlines(int count) {
-    SkASSERT(fCurrScanlineCodec);
-    return fCurrScanlineCodec->skipScanlines(count);
+    SkASSERT(fCurrCodec);
+    return fCurrCodec->skipScanlines(count);
 }
 
 SkCodec::Result SkIcoCodec::onStartIncrementalDecode(const SkImageInfo& dstInfo,
-        void* pixels, size_t rowBytes, const SkCodec::Options& options,
-        SkPMColor* colorTable, int* colorCount) {
+        void* pixels, size_t rowBytes, const SkCodec::Options& options) {
     int index = 0;
     while (true) {
         index = this->chooseCodec(dstInfo.dimensions(), index);
@@ -320,12 +325,11 @@ SkCodec::Result SkIcoCodec::onStartIncrementalDecode(const SkImageInfo& dstInfo,
             break;
         }
 
-        SkCodec* embeddedCodec = fEmbeddedCodecs->operator[](index);
+        SkCodec* embeddedCodec = fEmbeddedCodecs->operator[](index).get();
         switch (embeddedCodec->startIncrementalDecode(dstInfo,
-                pixels, rowBytes, &options, colorTable, colorCount)) {
+                pixels, rowBytes, &options)) {
             case kSuccess:
-                fCurrIncrementalCodec = embeddedCodec;
-                fCurrScanlineCodec = nullptr;
+                fCurrCodec = embeddedCodec;
                 return kSuccess;
             case kUnimplemented:
                 // FIXME: embeddedCodec is a BMP. If scanline decoding would work,
@@ -340,8 +344,7 @@ SkCodec::Result SkIcoCodec::onStartIncrementalDecode(const SkImageInfo& dstInfo,
                 // valid for scanline decoding.
                 // Once BMP supports incremental decoding this workaround can go
                 // away.
-                if (embeddedCodec->startScanlineDecode(dstInfo, nullptr,
-                        colorTable, colorCount) == kSuccess) {
+                if (embeddedCodec->startScanlineDecode(dstInfo) == kSuccess) {
                     return kUnimplemented;
                 }
                 // Move on to the next embedded codec.
@@ -358,33 +361,23 @@ SkCodec::Result SkIcoCodec::onStartIncrementalDecode(const SkImageInfo& dstInfo,
 }
 
 SkCodec::Result SkIcoCodec::onIncrementalDecode(int* rowsDecoded) {
-    SkASSERT(fCurrIncrementalCodec);
-    return fCurrIncrementalCodec->incrementalDecode(rowsDecoded);
+    SkASSERT(fCurrCodec);
+    return fCurrCodec->incrementalDecode(rowsDecoded);
 }
 
 SkCodec::SkScanlineOrder SkIcoCodec::onGetScanlineOrder() const {
     // FIXME: This function will possibly return the wrong value if it is called
     //        before startScanlineDecode()/startIncrementalDecode().
-    if (fCurrScanlineCodec) {
-        SkASSERT(!fCurrIncrementalCodec);
-        return fCurrScanlineCodec->getScanlineOrder();
-    }
-
-    if (fCurrIncrementalCodec) {
-        return fCurrIncrementalCodec->getScanlineOrder();
+    if (fCurrCodec) {
+        return fCurrCodec->getScanlineOrder();
     }
 
     return INHERITED::onGetScanlineOrder();
 }
 
 SkSampler* SkIcoCodec::getSampler(bool createIfNecessary) {
-    if (fCurrScanlineCodec) {
-        SkASSERT(!fCurrIncrementalCodec);
-        return fCurrScanlineCodec->getSampler(createIfNecessary);
-    }
-
-    if (fCurrIncrementalCodec) {
-        return fCurrIncrementalCodec->getSampler(createIfNecessary);
+    if (fCurrCodec) {
+        return fCurrCodec->getSampler(createIfNecessary);
     }
 
     return nullptr;

@@ -31,15 +31,15 @@ exports.local = {
    * @return promise
    */
   getOrCreate() {
-    let deferred = defer();
+    const deferred = defer();
     localCertService.getOrCreateCert(localCertName, {
-      handleCert: function (cert, rv) {
+      handleCert: function(cert, rv) {
         if (rv) {
           deferred.reject(rv);
           return;
         }
         deferred.resolve(cert);
-      }
+      },
     });
     return deferred.promise;
   },
@@ -50,17 +50,17 @@ exports.local = {
    * @return promise
    */
   remove() {
-    let deferred = defer();
+    const deferred = defer();
     localCertService.removeCert(localCertName, {
-      handleCert: function (rv) {
+      handleCert: function(rv) {
         if (rv) {
           deferred.reject(rv);
           return;
         }
         deferred.resolve();
-      }
+      },
     });
     return deferred.promise;
-  }
+  },
 
 };

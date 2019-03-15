@@ -6,14 +6,14 @@
 from __future__ import with_statement
 
 from optparse import OptionParser
+import hashlib
 import logging
 import os
-try:
-    import hashlib
-except:
-    hashlib = None
 
-def digest_file(filename, digest, chunk_size=1024):
+logger = logging.getLogger('checksums.py')
+
+
+def digest_file(filename, digest, chunk_size=131072):
     '''Produce a checksum for the file specified by 'filename'.  'filename'
     is a string path to a file that is opened and read in this function.  The
     checksum algorithm is specified by 'digest' and is a valid OpenSSL
@@ -22,35 +22,29 @@ def digest_file(filename, digest, chunk_size=1024):
     that this function will read from the file object it opens based on
     'filename' can be specified by 'chunk_size', which defaults to 1K'''
     assert not os.path.isdir(filename), 'this function only works with files'
-    logger = logging.getLogger('checksums.py')
-    if hashlib is not None:
-        logger.debug('Creating new %s object' % digest)
-        h = hashlib.new(digest)
-        with open(filename, 'rb') as f:
-            while True:
-                data = f.read(chunk_size)
-                if not data:
-                    logger.debug('Finished reading in file')
-                    break
-                h.update(data)
-        hash = h.hexdigest()
-        logger.debug('Hash for %s is %s' % (filename, hash))
-        return hash
-    else:
-        # In this case we could subprocess.Popen and .communicate with
-        # sha1sum or md5sum
-        logger.warn('The python module for hashlib is missing!')
-        return None
+
+    logger.debug('Creating new %s object' % digest)
+    h = hashlib.new(digest)
+    with open(filename, 'rb') as f:
+        while True:
+            data = f.read(chunk_size)
+            if not data:
+                logger.debug('Finished reading in file')
+                break
+            h.update(data)
+    hash = h.hexdigest()
+    logger.debug('Hash for %s is %s' % (filename, hash))
+    return hash
 
 
-def process_files(files, output_filename, digests, strip):
-    '''This function takes a list of file names, 'files'.  It will then
-    compute the checksum for each of the files by opening the files.
+def process_files(dirs, output_filename, digests):
+    '''This function takes a list of directory names, 'drs'. It will then
+    compute the checksum for each of the files in these by by opening the files.
     Once each file is read and its checksum is computed, this function
     will write the information to the file specified by 'output_filename'.
     The path written in the output file will have anything specified by 'strip'
     removed from the path.  The output file is closed before returning nothing
-    The algorithm to compute checksums with can be specified by 'digests' 
+    The algorithm to compute checksums with can be specified by 'digests'
     and needs to be a list of valid OpenSSL algorithms.
 
     The output file is written in the format:
@@ -59,31 +53,24 @@ def process_files(files, output_filename, digests, strip):
         d1fa09a<snip>e4220 sha1 14250744 firefox-4.0b6pre.en-US.mac64.dmg
     '''
 
-    logger = logging.getLogger('checksums.py')
     if os.path.exists(output_filename):
         logger.debug('Overwriting existing checksums file "%s"' %
                      output_filename)
     else:
         logger.debug('Creating a new checksums file "%s"' % output_filename)
     with open(output_filename, 'w+') as output:
-        for file in files:
-            if os.path.isdir(file):
-                logger.warn('%s is a directory, skipping' % file)
-            else:
-                for digest in digests:
-                    hash = digest_file(file, digest)
-                    if hash is None:
-                        logger.warn('Unable to generate a hash for %s. ' +
-                                    'Skipping.' % file)
-                        continue
-                    if file.startswith(strip):
-                        short_file = file[len(strip):]
-                        short_file = short_file.lstrip('/')
-                    else:
-                        short_file = file
-                    print >>output, '%s %s %s %s' % (hash, digest,
-                                                     os.path.getsize(file),
-                                                     short_file)
+        for d in dirs:
+            for root, dirs, files in os.walk(d):
+                for f in files:
+                    full = os.path.join(root, f)
+                    rel = os.path.relpath(full, d)
+
+                    for digest in digests:
+                        hash = digest_file(full, digest)
+
+                        output.write('%s %s %s %s\n' % (
+                            hash, digest, os.path.getsize(full), rel))
+
 
 def setup_logging(level=logging.DEBUG):
     '''This function sets up the logging module using a speficiable logging
@@ -103,6 +90,7 @@ def setup_logging(level=logging.DEBUG):
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
+
 def main():
     '''This is a main function that parses arguments, sets up logging
     and generates a checksum file'''
@@ -117,12 +105,10 @@ def main():
                       action='store_true', dest='verbose', default=False)
     parser.add_option('-q', '--quiet', help='Be quiet', action='store_true',
                       dest='quiet', default=False)
-    parser.add_option('-s', '--strip',
-                      help='strip this path from the filenames',
-                      dest='strip', default=os.getcwd())
+
     options, args = parser.parse_args()
 
-    #Figure out which logging level to use
+    # Figure out which logging level to use
     if options.verbose:
         loglevel = logging.DEBUG
     elif options.quiet:
@@ -130,29 +116,20 @@ def main():
     else:
         loglevel = logging.INFO
 
-    #Set up logging
+    # Set up logging
     setup_logging(loglevel)
-    logger = logging.getLogger('checksums.py')
 
     # Validate the digest type to use
     if not options.digests:
         options.digests = ['sha1']
-    try:
-        for digest in options.digests:
-            hashlib.new(digest)
-    except ValueError, ve:
-        logger.error('Could not create a "%s" hash object (%s)' %
-                     (digest, ve.args[0]))
-        exit(1)
 
-    # Validate the files to checksum
-    files = []
     for i in args:
-        if os.path.exists(i):
-            files.append(i)
-        else:
-            logger.info('File "%s" was not found on the filesystem' % i)
-    process_files(files, options.outfile, options.digests, options.strip)
+        if not os.path.isdir(i):
+            logger.error('%s is not a directory' % i)
+            exit(1)
+
+    process_files(args, options.outfile, options.digests)
+
 
 if __name__ == '__main__':
     main()

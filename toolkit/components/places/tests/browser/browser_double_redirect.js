@@ -2,8 +2,8 @@
 // When a page redirects multiple times, from_visit should point to the
 // previous visit in the chain, not to the first visit in the chain.
 
-add_task(function* () {
-  yield PlacesTestUtils.clearHistory();
+add_task(async function() {
+  await PlacesUtils.history.clear();
 
   const BASE_URL = "http://example.com/tests/toolkit/components/places/tests/browser/";
   const TEST_URI = NetUtil.newURI(BASE_URL + "begin.html");
@@ -11,24 +11,23 @@ add_task(function* () {
   const FINAL_URI = NetUtil.newURI(BASE_URL + "final.html");
 
   let promiseVisits = new Promise(resolve => {
-    PlacesUtils.history.addObserver({
-      __proto__: NavHistoryObserver.prototype,
+    let observer = {
       _notified: [],
-      onVisit(uri, id, time, sessionId, referrerId, transition) {
-        info("Received onVisit: " + uri.spec);
+      onVisit(uri, id, time, referrerId, transition) {
+        info("Received onVisit: " + uri);
         this._notified.push(uri);
 
-        if (!uri.equals(FINAL_URI)) {
+        if (uri != FINAL_URI.spec) {
           return;
         }
 
         is(this._notified.length, 4);
-        PlacesUtils.history.removeObserver(this);
+        PlacesObservers.removeListener(["page-visited"], this.handleEvents);
 
-        Task.spawn(function* () {
+        (async function() {
           // Get all pages visited from the original typed one
-          let db = yield PlacesUtils.promiseDBConnection();
-          let rows = yield db.execute(
+          let db = await PlacesUtils.promiseDBConnection();
+          let rows = await db.execute(
             `SELECT url FROM moz_historyvisits
              JOIN moz_places h ON h.id = place_id
              WHERE from_visit IN
@@ -43,21 +42,35 @@ add_task(function* () {
           is(visitedUrl, FIRST_REDIRECTING_URI.spec, "Check referrer for " + visitedUrl);
 
           resolve();
-        });
-      }
-    }, false);
+        })();
+      },
+      handleEvents(events) {
+        is(events.length, 1, "Right number of visits notified");
+        is(events[0].type, "page-visited");
+        let {
+          url,
+          visitId,
+          visitTime,
+          referringVisitId,
+          transitionType,
+        } = events[0];
+        this.onVisit(url, visitId, visitTime, referringVisitId, transitionType);
+      },
+    };
+    observer.handleEvents = observer.handleEvents.bind(observer);
+    PlacesObservers.addListener(["page-visited"], observer.handleEvents);
   });
 
   PlacesUtils.history.markPageAsTyped(TEST_URI);
-  yield BrowserTestUtils.withNewTab({
+  await BrowserTestUtils.withNewTab({
     gBrowser,
     url: TEST_URI.spec,
-  }, function* (browser) {
+  }, async function(browser) {
     // Load begin page, click link on page to record visits.
-    yield BrowserTestUtils.synthesizeMouseAtCenter("#clickme", {}, browser);
+    await BrowserTestUtils.synthesizeMouseAtCenter("#clickme", {}, browser);
 
-    yield promiseVisits;
+    await promiseVisits;
   });
 
-  yield PlacesTestUtils.clearHistory();
+  await PlacesUtils.history.clear();
 });

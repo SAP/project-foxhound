@@ -22,26 +22,25 @@ linux32/debug:
 linux32/opt:
     build-platform: linux/opt
     test-sets:
-        -  linux32-tests
-        -  linux32-opt-tests
-        -  awsy
+        - linux32-tests
+        - linux32-opt-tests
 linux32-nightly/opt:
     build-platform: linux-nightly/opt
     test-sets:
-        -  linux32-tests
-        -  linux32-opt-tests
-        -  awsy
+        - linux32-tests
+        - linux32-opt-tests
 linux32-devedition/opt:
     build-platform: linux-devedition-nightly/opt
     test-sets:
-        -  linux32-tests
-        -  linux32-opt-tests
+        - linux32-tests
+        - linux32-opt-tests
 
 linux64/debug:
     build-platform: linux64/debug
     test-sets:
         - common-tests
         - web-platform-tests
+        - mochitest-headless
 linux64/opt:
     build-platform: linux64/opt
     test-sets:
@@ -51,6 +50,10 @@ linux64/opt:
         - desktop-screenshot-capture
         - talos
         - awsy
+        - mochitest-headless
+        - linux-talos-flex
+        - raptor-firefox
+        - raptor-fetch-firefox
 linux64-nightly/opt:
     build-platform: linux64-nightly/opt
     test-sets:
@@ -58,8 +61,18 @@ linux64-nightly/opt:
         - web-platform-tests
         - opt-only-tests
         - desktop-screenshot-capture
-        - talos
         - awsy
+        - raptor-chrome
+        - raptor-fetch-chrome
+        - raptor-profiling
+        - raptor-fetch-profiling
+linux64-devedition/opt:
+    build-platform: linux64-devedition-nightly/opt
+    test-sets:
+        - common-tests
+        - web-platform-tests
+        - opt-only-tests
+        - desktop-screenshot-capture
 
 # TODO: use 'pgo' and 'asan' labels here, instead of -pgo/opt
 linux64-pgo/opt:
@@ -68,103 +81,186 @@ linux64-pgo/opt:
         - common-tests
         - web-platform-tests
         - talos
-
-linux64-devedition/opt:
-    build-platform: linux64-devedition-nightly/opt
-    test-sets:
-        - common-tests
-        - web-platform-tests
-        - opt-only-tests
-        - desktop-screenshot-capture
-        - awsy
+        - raptor-firefox
+        - raptor-fetch-firefox
 
 linux64-asan/opt:
     build-platform: linux64-asan/opt
     test-sets:
         - common-tests
+        - web-platform-tests
 
-# Stylo builds only run a subset of tests for the moment. So give them
-# their own test set.
-linux64-stylo/debug:
-    build-platform: linux64-stylo/debug
+# Stylo sequential runs check memory and performance when using a single thread.
+linux64-stylo-sequential/opt:
+    build-platform: linux64/opt
     test-sets:
-        - stylo-tests
-linux64-stylo/opt:
-    build-platform: linux64-stylo/opt
-    test-sets:
-        - stylo-tests
+        - awsy-stylo-sequential
 
-# QR builds just run a subset right now. Note that the tests in this
-# test set are further restricted in tests.yml to run on certain projects
-# only, to avoid adding too much infra load.
+# QR builds just run a subset right now.
 linux64-qr/opt:
-    build-platform: linux64-qr/opt
+    build-platform: linux64/opt
     test-sets:
-        - qr-tests
+        - linux-qr-tests
+        - talos
+        - awsy
+        - web-platform-tests
+        - raptor-firefox
+        - raptor-fetch-firefox
 linux64-qr/debug:
-    build-platform: linux64-qr/debug
+    build-platform: linux64/debug
     test-sets:
-        - qr-tests
+        - linux-qr-tests
+        - web-platform-tests
 
-linux64-ccov/opt:
-    build-platform: linux64-ccov/opt
+linux64-ccov/debug:
+    build-platform: linux64-ccov/debug
     test-sets:
+        - common-tests
+        - web-platform-tests
+        - awsy
+        - talos
         - ccov-code-coverage-tests
-linux64-jsdcov/opt:
-    build-platform: linux64-jsdcov/opt
-    test-sets:
-        - jsdcov-code-coverage-tests
 
 ##
 # Windows platforms (matching /windows.*/)
 
-# win32 vm
-windows7-32-vm/debug:
+# win32
+windows7-32/debug:
     build-platform: win32/debug
     test-sets:
-        - windows-vm-tests
-        - external-media-tests
-windows7-32-vm/opt:
+        - windows-reftest-gpu
+        - windows-tests
+        - web-platform-tests
+
+windows7-32/opt:
     build-platform: win32/opt
     test-sets:
-        - windows-vm-tests
-        - external-media-tests
-        - external-media-tests-slow
         - awsy
+        - desktop-screenshot-capture
+        - windows-reftest-gpu
+        - windows-talos
+        - windows-tests
+        - web-platform-tests
+        - raptor-firefox
 
-# win32 gpu
-#windows7-32/debug:
-#    build-platform: win32/debug
-#    test-sets:
-#        - windows-gpu-tests
-#windows7-32/opt:
-#    build-platform: win32/opt
-#    test-sets:
-#        - windows-gpu-tests
+windows7-32-pgo/opt:
+    build-platform: win32-pgo/opt
+    test-sets:
+        - awsy
+        - desktop-screenshot-capture
+        - windows-reftest-gpu
+        - windows-talos
+        - windows-tests
+        - web-platform-tests
+        - raptor-firefox
 
-# win64 vm
-windows10-64-vm/debug:
+windows7-32-nightly/opt:
+    build-platform: win32-nightly/opt
+    test-sets:
+        - awsy
+        - desktop-screenshot-capture
+        - windows-reftest-gpu
+        - windows-tests
+        - web-platform-tests
+        - raptor-chrome
+
+windows7-32-devedition/opt:
+    build-platform: win32-devedition-nightly/opt
+    test-sets:
+        - desktop-screenshot-capture
+        - windows-reftest-gpu
+        - windows-tests
+        - web-platform-tests
+
+# win64
+windows10-64-ccov/debug:
+    build-platform: win64-ccov/debug
+    test-sets:
+        - awsy
+        - desktop-screenshot-capture
+        - windows-reftest-gpu
+        - windows-talos
+        - marionette-gpu-tests
+        - windows-tests
+        - web-platform-tests
+        - ccov-code-coverage-tests
+
+windows10-64/debug:
     build-platform: win64/debug
     test-sets:
-        - windows-vm-tests
-        - external-media-tests
-windows10-64-vm/opt:
+        - marionette-gpu-tests
+        - windows-tests
+        - web-platform-tests
+        - mochitest-headless
+
+windows10-64/opt:
     build-platform: win64/opt
     test-sets:
-        - windows-vm-tests
-        - external-media-tests
-        - external-media-tests-slow
         - awsy
+        - desktop-screenshot-capture
+        - windows-talos
+        - marionette-gpu-tests
+        - windows-tests
+        - web-platform-tests
+        - mochitest-headless
+        - raptor-firefox
 
-# win64 gpu
-#windows10-64/debug:
-#    build-platform: win64/debug
-#    test-sets:
-#        - windows-gpu-tests
-#windows10-64/opt:
-#    build-platform: win64/opt
-#    test-sets:
-#        - windows-gpu-tests
+windows10-64-ux/opt:
+    build-platform: win64-nightly/opt
+    test-sets:
+        - raptor-firefox
+        - talos-ux
+
+windows10-64-pgo/opt:
+    build-platform: win64-pgo/opt
+    test-sets:
+        - awsy
+        - desktop-screenshot-capture
+        - marionette-gpu-tests
+        - windows-talos
+        - marionette-gpu-tests
+        - windows-tests
+        - web-platform-tests
+        - raptor-firefox
+
+windows10-64-nightly/opt:
+    build-platform: win64-nightly/opt
+    test-sets:
+        - awsy
+        - desktop-screenshot-capture
+        - desktop-instrumentation
+        - marionette-gpu-tests
+        - windows-tests
+        - web-platform-tests
+        - raptor-chrome
+        - raptor-profiling
+
+windows10-64-devedition/opt:
+    build-platform: win64-devedition-nightly/opt
+    test-sets:
+        - desktop-screenshot-capture
+        - marionette-gpu-tests
+        - windows-tests
+        - web-platform-tests
+
+windows10-64-asan/opt:
+    build-platform: win64-asan/opt
+    test-sets:
+        - common-tests
+
+# QR builds just run a subset right now.
+windows10-64-qr/debug:
+    build-platform: win64/debug
+    test-sets:
+        - windows-qr-tests
+
+windows10-64-qr/opt:
+    build-platform: win64/opt
+    test-sets:
+        - awsy
+        - windows-qr-tests
+        - windows-talos
+        - raptor-firefox
 
 ##
 # MacOS X platforms (matching /macosx.*/)
@@ -172,35 +268,109 @@ windows10-64-vm/opt:
 macosx64/debug:
     build-platform: macosx64/debug
     test-sets:
-        - macosx64-tests-debug
+        - macosx64-tests
 
-# macosx64/opt:
-#     build-platform: macosx64/opt
-#     test-sets:
-#         - macosx64-tests-talos
-#         - macosx64-tests-debug
+macosx64/opt:
+    build-platform: macosx64/opt
+    test-sets:
+        - macosx64-talos
+        - macosx64-tests
+        - desktop-screenshot-capture
+        - awsy
+        - raptor-firefox
+
+macosx64-nightly/opt:
+    build-platform: macosx64-nightly/opt
+    test-sets:
+        - macosx64-tests
+        - awsy
+        - raptor-chrome
+        - raptor-profiling
+
+macosx64-devedition/opt:
+    build-platform: macosx64-devedition-nightly/opt
+    test-sets:
+        - macosx64-tests
+
+macosx64-qr/opt:
+    build-platform: macosx64/opt
+    test-sets:
+        - macosx64-qr-tests
+macosx64-qr/debug:
+    build-platform: macosx64/debug
+    test-sets:
+        - macosx64-qr-tests
+
+macosx64-ccov/debug:
+    build-platform: macosx64-ccov/debug
+    test-sets:
+        - macosx64-tests
 
 ##
-# Android platforms (matching /android.*/)
+# Android platforms (matching /android-em.*/)
+#
+# android-em test platforms execute on android emulators.
 
-android-4.3-arm7-api-15/debug:
-    build-platform: android-api-15/debug
+android-em-4.3-arm7-api-16/debug:
+    build-platform: android-api-16/debug
     test-sets:
         - android-common-tests
-        - android-debug-tests
 
-android-4.3-arm7-api-15/opt:
-    build-platform: android-api-15/opt
+android-em-4.3-arm7-api-16-ccov/debug:
+    build-platform: android-api-16-ccov/debug
+    test-sets:
+        - android-ccov-tests
+
+android-em-4.3-arm7-api-16/opt:
+    build-platform: android-api-16/opt
     test-sets:
         - android-common-tests
         - android-opt-tests
 
-android-4.2-x86/opt:
+android-em-7.0-x86/opt:
     build-platform: android-x86/opt
     test-sets:
-        - android-x86-tests
+        - android-x86-kvm-tests
 
-android-4.3-arm7-api-15-gradle/opt:
-    build-platform: android-api-15-gradle/opt
+# android-hw test platforms execute on real devices attached to Autophone hosts.
+
+# android-hw-g5-7-0 Motorola Moto G5 Android 7.0
+
+android-hw-g5-7-0-arm7-api-16/opt:
+    build-platform: android-api-16/opt
     test-sets:
-        - android-gradle-tests
+        - android-hw-arm7-raptor
+        - android-hw-arm7-raptor-power
+        - raptor-fetch-geckoview
+
+# android-hw-p2-8-0 Google Pixel 2 Android 8.0
+
+android-hw-p2-8-0-arm7-api-16/opt:
+    build-platform: android-api-16/opt
+    test-sets:
+        - android-hw-arm7-opt-unittests
+        - android-hw-arm7-raptor
+        - android-hw-arm7-raptor-power
+        - raptor-fetch-geckoview
+
+android-hw-p2-8-0-arm7-api-16/debug:
+    build-platform: android-api-16/debug
+    test-sets:
+        - android-hw-arm7-debug-unittests
+
+android-hw-p2-8-0-android-aarch64/opt:
+    build-platform: android-aarch64/opt
+    test-sets:
+        - android-hw-aarch64-opt-unittests
+        - android-hw-aarch64-raptor
+        - android-hw-aarch64-raptor-power
+
+android-hw-p2-8-0-arm7-api-16-nightly/opt:
+    build-platform: android-api-16-nightly/opt
+    test-sets:
+        - android-hw-arm7-raptor-nightly
+
+android-hw-p2-8-0-android-aarch64-nightly/opt:
+    build-platform: android-aarch64-nightly/opt
+    test-sets:
+        - android-hw-aarch64-raptor-nightly

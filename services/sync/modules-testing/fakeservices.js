@@ -4,21 +4,18 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = [
+var EXPORTED_SYMBOLS = [
   "FakeCryptoService",
   "FakeFilesystemService",
   "FakeGUIDService",
   "fakeSHA256HMAC",
 ];
 
-var {utils: Cu} = Components;
+ChromeUtils.import("resource://services-sync/main.js");
+ChromeUtils.import("resource://services-sync/record.js");
+ChromeUtils.import("resource://services-sync/util.js");
 
-Cu.import("resource://services-sync/record.js");
-Cu.import("resource://services-sync/util.js");
-
-var btoa = Cu.import("resource://gre/modules/Log.jsm").btoa;
-
-this.FakeFilesystemService = function FakeFilesystemService(contents) {
+function FakeFilesystemService(contents) {
   this.fakeContents = contents;
   let self = this;
 
@@ -36,25 +33,18 @@ this.FakeFilesystemService = function FakeFilesystemService(contents) {
     }
   }
 
-  Utils.jsonSave = function jsonSave(filePath, that, obj, callback) {
+  Utils.jsonSave = async function jsonSave(filePath, that, obj) {
     let json = typeof obj == "function" ? obj.call(that) : obj;
     self.fakeContents["weave/" + filePath + ".json"] = JSON.stringify(json);
-    if (callback) {
-      callback.call(that);
-    }
-    return Promise.resolve();
   };
 
-  Utils.jsonLoad = function jsonLoad(filePath, that, cb) {
+  Utils.jsonLoad = async function jsonLoad(filePath, that) {
     let obj;
     let json = self.fakeContents["weave/" + filePath + ".json"];
     if (json) {
       obj = JSON.parse(json);
     }
-    if (cb) {
-      cb.call(that, obj);
-    }
-    return Promise.resolve(obj);
+    return obj;
   };
 
   Utils.jsonMove = function jsonMove(aFrom, aTo, that) {
@@ -68,9 +58,9 @@ this.FakeFilesystemService = function FakeFilesystemService(contents) {
     delete self.fakeContents["weave/" + filePath + ".json"];
     return Promise.resolve();
   };
-};
+}
 
-this.fakeSHA256HMAC = function fakeSHA256HMAC(message) {
+function fakeSHA256HMAC(message) {
    message = message.substr(0, 64);
    while (message.length < 64) {
      message += " ";
@@ -78,7 +68,7 @@ this.fakeSHA256HMAC = function fakeSHA256HMAC(message) {
    return message;
 }
 
-this.FakeGUIDService = function FakeGUIDService() {
+function FakeGUIDService() {
   let latestGUID = 0;
 
   Utils.makeGUID = function makeGUID() {
@@ -92,11 +82,11 @@ this.FakeGUIDService = function FakeGUIDService() {
  * Mock implementation of WeaveCrypto. It does not encrypt or
  * decrypt, merely returning the input verbatim.
  */
-this.FakeCryptoService = function FakeCryptoService() {
+function FakeCryptoService() {
   this.counter = 0;
 
-  delete Svc.Crypto;  // get rid of the getter first
-  Svc.Crypto = this;
+  delete Weave.Crypto; // get rid of the getter first
+  Weave.Crypto = this;
 
   CryptoWrapper.prototype.ciphertextHMAC = function ciphertextHMAC(keyBundle) {
     return fakeSHA256HMAC(this.ciphertext);
@@ -104,15 +94,15 @@ this.FakeCryptoService = function FakeCryptoService() {
 }
 FakeCryptoService.prototype = {
 
-  encrypt: function encrypt(clearText, symmetricKey, iv) {
+  async encrypt(clearText, symmetricKey, iv) {
     return clearText;
   },
 
-  decrypt: function decrypt(cipherText, symmetricKey, iv) {
+  async decrypt(cipherText, symmetricKey, iv) {
     return cipherText;
   },
 
-  generateRandomKey: function generateRandomKey() {
+  async generateRandomKey() {
     return btoa("fake-symmetric-key-" + this.counter++);
   },
 
@@ -125,13 +115,8 @@ FakeCryptoService.prototype = {
     return data;
   },
 
-  deriveKeyFromPassphrase: function deriveKeyFromPassphrase(passphrase,
-                                                            salt, keyLength) {
-    return "some derived key string composed of bytes";
-  },
-
   generateRandomBytes: function generateRandomBytes(byteCount) {
     return "not-so-random-now-are-we-HA-HA-HA! >:)".slice(byteCount);
-  }
+  },
 };
 

@@ -13,57 +13,37 @@
 #include "mozilla/EventForwards.h"
 #include "mozilla/TouchEvents.h"
 #include "nsJSEnvironment.h"
+#include "nsStringFwd.h"
 #include "nsWrapperCache.h"
-
-class nsAString;
 
 namespace mozilla {
 namespace dom {
 
-class TouchList final : public nsISupports
-                      , public nsWrapperCache
-{
-public:
+class TouchList final : public nsISupports, public nsWrapperCache {
+ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(TouchList)
 
-  explicit TouchList(nsISupports* aParent)
-    : mParent(aParent)
-  {
+  explicit TouchList(nsISupports* aParent) : mParent(aParent) {
     nsJSContext::LikelyShortLivingObjectCreated();
   }
-  TouchList(nsISupports* aParent,
-            const WidgetTouchEvent::TouchArray& aTouches)
-    : mParent(aParent)
-    , mPoints(aTouches)
-  {
+  TouchList(nsISupports* aParent, const WidgetTouchEvent::TouchArray& aTouches)
+      : mParent(aParent), mPoints(aTouches) {
     nsJSContext::LikelyShortLivingObjectCreated();
   }
 
-  void Append(Touch* aPoint)
-  {
-    mPoints.AppendElement(aPoint);
-  }
+  void Append(Touch* aPoint) { mPoints.AppendElement(aPoint); }
 
-  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override;
 
-  nsISupports* GetParentObject() const
-  {
-    return mParent;
-  }
+  nsISupports* GetParentObject() const { return mParent; }
 
   static bool PrefEnabled(JSContext* aCx, JSObject* aGlobal);
 
-  uint32_t Length() const
-  {
-    return mPoints.Length();
-  }
-  Touch* Item(uint32_t aIndex) const
-  {
-    return mPoints.SafeElementAt(aIndex);
-  }
-  Touch* IndexedGetter(uint32_t aIndex, bool& aFound) const
-  {
+  uint32_t Length() const { return mPoints.Length(); }
+  Touch* Item(uint32_t aIndex) const { return mPoints.SafeElementAt(aIndex); }
+  Touch* IndexedGetter(uint32_t aIndex, bool& aFound) const {
     aFound = aIndex < mPoints.Length();
     if (!aFound) {
       return nullptr;
@@ -71,33 +51,36 @@ public:
     return mPoints[aIndex];
   }
 
-protected:
+  void Clear() { mPoints.Clear(); }
+
+ protected:
   ~TouchList() {}
 
   nsCOMPtr<nsISupports> mParent;
   WidgetTouchEvent::TouchArray mPoints;
 };
 
-class TouchEvent : public UIEvent
-{
-public:
-  TouchEvent(EventTarget* aOwner,
-             nsPresContext* aPresContext,
+class TouchEvent : public UIEvent {
+ public:
+  TouchEvent(EventTarget* aOwner, nsPresContext* aPresContext,
              WidgetTouchEvent* aEvent);
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(TouchEvent, UIEvent)
 
-  virtual JSObject* WrapObjectInternal(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override
-  {
-    return TouchEventBinding::Wrap(aCx, this, aGivenProto);
+  virtual JSObject* WrapObjectInternal(
+      JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override {
+    return TouchEvent_Binding::Wrap(aCx, this, aGivenProto);
   }
 
-  already_AddRefed<TouchList>
-  CopyTouches(const Sequence<OwningNonNull<Touch>>& aTouches);
+  already_AddRefed<TouchList> CopyTouches(
+      const Sequence<OwningNonNull<Touch>>& aTouches);
 
   TouchList* Touches();
+  // TargetTouches() populates mTargetTouches from widget event's touch list.
   TouchList* TargetTouches();
+  // GetExistingTargetTouches just returns the existing target touches list.
+  TouchList* GetExistingTargetTouches() { return mTargetTouches; }
   TouchList* ChangedTouches();
 
   bool AltKey();
@@ -105,41 +88,36 @@ public:
   bool CtrlKey();
   bool ShiftKey();
 
-  void InitTouchEvent(const nsAString& aType,
-                      bool aCanBubble,
-                      bool aCancelable,
-                      nsGlobalWindow* aView,
-                      int32_t aDetail,
-                      bool aCtrlKey,
-                      bool aAltKey,
-                      bool aShiftKey,
-                      bool aMetaKey,
-                      TouchList* aTouches,
-                      TouchList* aTargetTouches,
-                      TouchList* aChangedTouches);
+  void InitTouchEvent(const nsAString& aType, bool aCanBubble, bool aCancelable,
+                      nsGlobalWindowInner* aView, int32_t aDetail,
+                      bool aCtrlKey, bool aAltKey, bool aShiftKey,
+                      bool aMetaKey, TouchList* aTouches,
+                      TouchList* aTargetTouches, TouchList* aChangedTouches);
 
+  static bool PlatformSupportsTouch();
   static bool PrefEnabled(JSContext* aCx, JSObject* aGlobal);
   static bool PrefEnabled(nsIDocShell* aDocShell);
 
-  static already_AddRefed<Event> Constructor(const GlobalObject& aGlobal,
-                                             const nsAString& aType,
-                                             const TouchEventInit& aParam,
-                                             ErrorResult& aRv);
+  static already_AddRefed<TouchEvent> Constructor(const GlobalObject& aGlobal,
+                                                  const nsAString& aType,
+                                                  const TouchEventInit& aParam,
+                                                  ErrorResult& aRv);
 
-protected:
+ protected:
   ~TouchEvent() {}
+
+  void AssignTouchesToWidgetEvent(TouchList* aList, bool aCheckDuplicates);
 
   RefPtr<TouchList> mTouches;
   RefPtr<TouchList> mTargetTouches;
   RefPtr<TouchList> mChangedTouches;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-already_AddRefed<mozilla::dom::TouchEvent>
-NS_NewDOMTouchEvent(mozilla::dom::EventTarget* aOwner,
-                    nsPresContext* aPresContext,
-                    mozilla::WidgetTouchEvent* aEvent);
+already_AddRefed<mozilla::dom::TouchEvent> NS_NewDOMTouchEvent(
+    mozilla::dom::EventTarget* aOwner, nsPresContext* aPresContext,
+    mozilla::WidgetTouchEvent* aEvent);
 
-#endif // mozilla_dom_TouchEvent_h_
+#endif  // mozilla_dom_TouchEvent_h_

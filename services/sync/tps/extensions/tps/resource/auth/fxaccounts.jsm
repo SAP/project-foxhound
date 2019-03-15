@@ -4,19 +4,20 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = [
+var EXPORTED_SYMBOLS = [
   "Authentication",
 ];
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
+ChromeUtils.import("resource://gre/modules/Log.jsm");
+ChromeUtils.import("resource://gre/modules/Timer.jsm");
+ChromeUtils.import("resource://gre/modules/FxAccounts.jsm");
+ChromeUtils.import("resource://gre/modules/FxAccountsClient.jsm");
+ChromeUtils.import("resource://gre/modules/FxAccountsConfig.jsm");
+ChromeUtils.import("resource://tps/logger.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "Services", "resource://gre/modules/Services.jsm");
 
-Cu.import("resource://gre/modules/FxAccounts.jsm");
-Cu.import("resource://gre/modules/FxAccountsClient.jsm");
-Cu.import("resource://gre/modules/FxAccountsConfig.jsm");
-Cu.import("resource://services-common/async.js");
-Cu.import("resource://services-sync/main.js");
-Cu.import("resource://tps/logger.jsm");
-
+XPCOMUtils.defineLazyGlobalGetters(this, ["fetch"]);
 
 /**
  * Helper object for Firefox Accounts authentication
@@ -26,8 +27,117 @@ var Authentication = {
   /**
    * Check if an user has been logged in
    */
-  get isLoggedIn() {
-    return !!this.getSignedInUser();
+  async isLoggedIn() {
+    return !!(await this.getSignedInUser());
+  },
+
+  async isReady() {
+    let user = await this.getSignedInUser();
+    return user && user.verified;
+  },
+
+  _getRestmailUsername(user) {
+    const restmailSuffix = "@restmail.net";
+    if (user.toLowerCase().endsWith(restmailSuffix)) {
+      return user.slice(0, -restmailSuffix.length);
+    }
+    return null;
+  },
+
+  async shortWaitForVerification(ms) {
+    let userData = await this.getSignedInUser();
+    let timeoutID;
+    let timeoutPromise = new Promise(resolve => {
+      timeoutID = setTimeout(() => {
+        Logger.logInfo(`Warning: no verification after ${ms}ms.`);
+        resolve();
+      }, ms);
+    });
+    await Promise.race([
+      fxAccounts.whenVerified(userData)
+                .finally(() => clearTimeout(timeoutID)),
+      timeoutPromise,
+    ]);
+    userData = await this.getSignedInUser();
+    return userData && userData.verified;
+  },
+
+  async _openVerificationPage(uri) {
+    let mainWindow = Services.wm.getMostRecentWindow("navigator:browser");
+    let newtab = mainWindow.getBrowser().addWebTab(uri);
+    let win = mainWindow.getBrowser().getBrowserForTab(newtab);
+    await new Promise(resolve => {
+      win.addEventListener("loadend", resolve, { once: true });
+    });
+    let didVerify = await this.shortWaitForVerification(10000);
+    mainWindow.getBrowser().removeTab(newtab);
+    return didVerify;
+  },
+
+  async _completeVerification(user) {
+    let username = this._getRestmailUsername(user);
+    if (!username) {
+      Logger.logInfo(`Username "${user}" isn't a restmail username so can't complete verification`);
+      return false;
+    }
+    Logger.logInfo("Fetching mail (from restmail) for user " + username);
+    let restmailURI = `https://www.restmail.net/mail/${encodeURIComponent(username)}`;
+    let triedAlready = new Set();
+    const tries = 10;
+    const normalWait = 2000;
+    for (let i = 0; i < tries; ++i) {
+      let resp = await fetch(restmailURI);
+      let messages = await resp.json();
+      // Sort so that the most recent emails are first.
+      messages.sort((a, b) => new Date(b.receivedAt) - new Date(a.receivedAt));
+      for (let m of messages) {
+        // We look for a link that has a x-link that we haven't yet tried.
+        if (!m.headers["x-link"] || triedAlready.has(m.headers["x-link"])) {
+          continue;
+        }
+        let confirmLink = m.headers["x-link"];
+        triedAlready.add(confirmLink);
+        Logger.logInfo("Trying confirmation link " + confirmLink);
+        try {
+          if (await this._openVerificationPage(confirmLink)) {
+            return true;
+          }
+        } catch (e) {
+          Logger.logInfo("Warning: Failed to follow confirmation link: " + Log.exceptionStr(e));
+        }
+      }
+      if (i === 0) {
+        // first time through after failing we'll do this.
+        await fxAccounts.resendVerificationEmail();
+      }
+      if (await this.shortWaitForVerification(normalWait)) {
+        return true;
+      }
+    }
+    // One last try.
+    return this.shortWaitForVerification(normalWait);
+  },
+
+  async deleteEmail(user) {
+    let username = this._getRestmailUsername(user);
+    if (!username) {
+      Logger.logInfo("Not a restmail username, can't delete");
+      return false;
+    }
+    Logger.logInfo("Deleting mail (from restmail) for user " + username);
+    let restmailURI = `https://www.restmail.net/mail/${encodeURIComponent(username)}`;
+    try {
+      // Clean up after ourselves.
+      let deleteResult = await fetch(restmailURI, { method: "DELETE" });
+      if (!deleteResult.ok) {
+        Logger.logInfo(`Warning: Got non-success status ${deleteResult.status} when deleting emails`);
+        return false;
+      }
+    } catch (e) {
+      Logger.logInfo("Warning: Failed to delete old emails: " + Log.exceptionStr(e));
+      return false;
+    }
+    return true;
   },
 
   /**
@@ -35,17 +145,9 @@ var Authentication = {
    *
    * @returns Information about the currently signed in user
    */
-  getSignedInUser: function getSignedInUser() {
-    let cb = Async.makeSpinningCallback();
-
-    fxAccounts.getSignedInUser().then(user => {
-      cb(null, user);
-    }, error => {
-      cb(error);
-    })
-
+  async getSignedInUser() {
     try {
-      return cb.wait();
+      return (await fxAccounts.getSignedInUser());
     } catch (error) {
       Logger.logError("getSignedInUser() failed with: " + JSON.stringify(error));
       throw error;
@@ -62,34 +164,21 @@ var Authentication = {
    * @param account.password
    *        The user's password
    */
-  signIn: function signIn(account) {
-    let cb = Async.makeSpinningCallback();
+  async signIn(account) {
+    Logger.AssertTrue(account.username, "Username has been found");
+    Logger.AssertTrue(account.password, "Password has been found");
 
-    Logger.AssertTrue(account["username"], "Username has been found");
-    Logger.AssertTrue(account["password"], "Password has been found");
-
-    Logger.logInfo("Login user: " + account["username"]);
-
-    // Required here since we don't go through the real login page
-    Async.promiseSpinningly(FxAccountsConfig.ensureConfigured());
-
-    let client = new FxAccountsClient();
-    client.signIn(account["username"], account["password"], true).then(credentials => {
-      return fxAccounts.setSignedInUser(credentials);
-    }).then(() => {
-      cb(null, true);
-    }, error => {
-      cb(error, false);
-    });
+    Logger.logInfo("Login user: " + account.username);
 
     try {
-      cb.wait();
+      // Required here since we don't go through the real login page
+      await FxAccountsConfig.ensureConfigured();
 
-      if (Weave.Status.login !== Weave.LOGIN_SUCCEEDED) {
-        Logger.logInfo("Logging into Weave.");
-        Weave.Service.login();
-        Logger.AssertEqual(Weave.Status.login, Weave.LOGIN_SUCCEEDED,
-                           "Weave logged in");
+      let client = new FxAccountsClient();
+      let credentials = await client.signIn(account.username, account.password, true);
+      await fxAccounts.setSignedInUser(credentials);
+      if (!credentials.verified) {
+        await this._completeVerification(account.username);
       }
 
       return true;
@@ -99,23 +188,12 @@ var Authentication = {
   },
 
   /**
-   * Sign out of Firefox Accounts. It also clears out the device ID, if we find one.
+   * Sign out of Firefox Accounts.
    */
-  signOut() {
-    if (Authentication.isLoggedIn) {
-      let user = Authentication.getSignedInUser();
-      if (!user) {
-        throw new Error("Failed to get signed in user!");
-      }
-      let fxc = new FxAccountsClient();
-      let { sessionToken, deviceId } = user;
-      if (deviceId) {
-        Logger.logInfo("Destroying device " + deviceId);
-        Async.promiseSpinningly(fxAccounts.deleteDeviceRegistration(sessionToken, deviceId));
-      } else {
-        Logger.logError("No device found.");
-        Async.promiseSpinningly(fxc.signOut(sessionToken, { service: "sync" }));
-      }
+  async signOut() {
+    if (await Authentication.isLoggedIn()) {
+      // Note: This will clean up the device ID.
+      await fxAccounts.signOut();
     }
-  }
+  },
 };

@@ -4,6 +4,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files("**"):
+    BUG_COMPONENT = ("Core", "Audio/Video: Recording")
+
 EXPORTS.libmkv += [
     'EbmlBufferWriter.h',
     'EbmlIDs.h',
@@ -24,4 +27,4 @@ SOURCES += [
 FINAL_LIBRARY = 'gkmedias'
 
 # We allow warnings for third-party code that can be updated from upstream.
-ALLOW_COMPILER_WARNINGS = True
+AllowCompilerWarnings()

@@ -2,13 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const Ci = Components.interfaces;
-const Cu = Components.utils;
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "AddonManager", "resource://gre/modules/AddonManager.jsm");
+ChromeUtils.defineModuleGetter(this, "AddonManager", "resource://gre/modules/AddonManager.jsm");
 
 // -----------------------------------------------------------------------
 // Web Install Prompt service
@@ -18,7 +15,7 @@ function WebInstallPrompt() { }
 
 WebInstallPrompt.prototype = {
   classID: Components.ID("{c1242012-27d8-477e-a0f1-0b098ffc329b}"),
-  QueryInterface: XPCOMUtils.generateQI([Ci.amIWebInstallPrompt]),
+  QueryInterface: ChromeUtils.generateQI([Ci.amIWebInstallPrompt]),
 
   confirm: function(aBrowser, aURL, aInstalls) {
     let bundle = Services.strings.createBundle("chrome://browser/locale/browser.properties");
@@ -31,7 +28,7 @@ WebInstallPrompt.prototype = {
     aInstalls.forEach(function(install) {
       let message;
       if (install.addon.signedState <= AddonManager.SIGNEDSTATE_MISSING) {
-        title = bundle.GetStringFromName("addonsConfirmInstallUnsigned.title")
+        title = bundle.GetStringFromName("addonsConfirmInstallUnsigned.title");
         message = bundle.GetStringFromName("addonsConfirmInstallUnsigned.message") + "\n\n" + install.name;
       } else {
         message = install.name;
@@ -43,7 +40,7 @@ WebInstallPrompt.prototype = {
       else
         install.cancel();
     });
-  }
+  },
 };
 
 this.NSGetFactory = XPCOMUtils.generateNSGetFactory([WebInstallPrompt]);

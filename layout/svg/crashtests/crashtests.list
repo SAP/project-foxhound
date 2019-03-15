@@ -15,7 +15,6 @@ load 325427-1.svg
 load 326495-1.svg
 load 326974-1.svg
 load 327706-1.svg
-load 327709-1.svg
 load 327711-1.svg
 load 328137-1.svg
 load 329848-1.svg
@@ -36,7 +35,7 @@ load 348982-1.xhtml
 load 354777-1.xhtml
 load 359516-1.svg
 load 361015-1.svg
-asserts-if(stylo,0-2) load 361587-1.svg # bug 1324677
+load 361587-1.svg
 load 363611-1.xhtml
 load 364688-1.svg
 load 366956-1.svg
@@ -105,7 +104,7 @@ load 587336-1.html
 load 590291-1.svg
 load 601999-1.html
 load 605626-1.svg
-asserts-if(!stylo,2) load 606914.xhtml # bug 606914, bug 1340561 tracks the stylo bit
+asserts(2) load 606914.xhtml # bug 606914, bug 718883
 load 610594-1.html
 load 610954-1.html
 load 612662-1.svg
@@ -198,4 +197,25 @@ load 1156581-1.svg
 load 1182496-1.html
 load 1209525-1.svg
 load 1223281-1.svg
+load 1322537-1.html
+load 1322537-2.html
+load 1322852.html
+load 1348564.svg
+load 1402109.html
+load 1402124.html
+load 1402486.html
+load 1421807-1.html
+load 1421807-2.html
+load 1422226.html
+load 1443092.html
+load 1467552-1.html
+load 1474982.html
+load conditional-outer-svg-nondirty-reflow-assert.xhtml
 load extref-test-1.xhtml
+load blob-merging-and-retained-display-list.html
+load empty-blob-merging.html
+load grouping-empty-bounds.html
+load 1480275.html
+load 1480224.html
+load 1502936.html
+load 1504918.svg

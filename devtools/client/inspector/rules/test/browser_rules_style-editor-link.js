@@ -4,16 +4,13 @@
 
 "use strict";
 
-// FIXME: Whitelisting this test.
-// As part of bug 1077403, the leaking uncaught rejection should be fixed.
-thisTestLeaksUncaughtRejectionsAndShouldBeFixed("Error: Unknown sheet source");
-
 // Test the links from the rule-view to the styleeditor
 
-const STYLESHEET_URL = "data:text/css," + encodeURIComponent(
-  ["#first {",
-   "color: blue",
-   "}"].join("\n"));
+const STYLESHEET_DATA_URL_CONTENTS = ["#first {",
+                                      "color: blue",
+                                      "}"].join("\n");
+const STYLESHEET_DATA_URL =
+  `data:text/css,${encodeURIComponent(STYLESHEET_DATA_URL_CONTENTS)}`;
 
 const EXTERNAL_STYLESHEET_FILE_NAME = "doc_style_editor_link.css";
 const EXTERNAL_STYLESHEET_URL = URL_ROOT + EXTERNAL_STYLESHEET_FILE_NAME;
@@ -31,7 +28,7 @@ const DOCUMENT_URL = "data:text/html;charset=utf-8," + encodeURIComponent(`
   <style>
   div { font-weight: bold; }
   </style>
-  <link rel="stylesheet" type="text/css" href="${STYLESHEET_URL}">
+  <link rel="stylesheet" type="text/css" href="${STYLESHEET_DATA_URL}">
   <link rel="stylesheet" type="text/css" href="${EXTERNAL_STYLESHEET_URL}">
   </head>
   <body>
@@ -52,107 +49,90 @@ const DOCUMENT_URL = "data:text/html;charset=utf-8," + encodeURIComponent(`
   </html>
 `);
 
-add_task(function* () {
-  yield addTab(DOCUMENT_URL);
-  let {toolbox, inspector, view, testActor} = yield openRuleView();
-  yield selectNode("div", inspector);
+add_task(async function() {
+  await addTab(DOCUMENT_URL);
+  const {toolbox, inspector, view, testActor} = await openRuleView();
+  await selectNode("div", inspector);
 
-  yield testInlineStyle(view);
-  yield testFirstInlineStyleSheet(view, toolbox, testActor);
-  yield testSecondInlineStyleSheet(view, toolbox, testActor);
-  yield testExternalStyleSheet(view, toolbox, testActor);
-  yield testDisabledStyleEditor(view, toolbox);
+  testRuleViewLinkLabel(view);
+  await testFirstInlineStyleSheet(view, toolbox, testActor);
+  await testSecondInlineStyleSheet(view, toolbox, testActor);
+  await testExternalStyleSheet(view, toolbox, testActor);
+  await testDisabledStyleEditor(view, toolbox);
 });
 
-function* testInlineStyle(view) {
-  info("Testing inline style");
-
-  let onTab = waitForTab();
-  info("Clicking on the first link in the rule-view");
-  clickLinkByIndex(view, 0);
-
-  let tab = yield onTab;
-
-  let tabURI = tab.linkedBrowser.documentURI.spec;
-  ok(tabURI.startsWith("view-source:"), "View source tab is open");
-  info("Closing tab");
-  gBrowser.removeTab(tab);
-}
-
-function* testFirstInlineStyleSheet(view, toolbox, testActor) {
+async function testFirstInlineStyleSheet(view, toolbox, testActor) {
   info("Testing inline stylesheet");
 
   info("Listening for toolbox switch to the styleeditor");
-  let onSwitch = waitForStyleEditor(toolbox);
+  const onSwitch = waitForStyleEditor(toolbox);
 
   info("Clicking an inline stylesheet");
   clickLinkByIndex(view, 4);
-  let editor = yield onSwitch;
+  const editor = await onSwitch;
 
   ok(true, "Switched to the style-editor panel in the toolbox");
 
-  yield validateStyleEditorSheet(editor, 0, testActor);
+  await validateStyleEditorSheet(editor, 0, testActor);
 }
 
-function* testSecondInlineStyleSheet(view, toolbox, testActor) {
+async function testSecondInlineStyleSheet(view, toolbox, testActor) {
   info("Testing second inline stylesheet");
 
   info("Waiting for the stylesheet editor to be selected");
-  let panel = toolbox.getCurrentPanel();
-  let onSelected = panel.UI.once("editor-selected");
+  const panel = toolbox.getCurrentPanel();
+  const onSelected = panel.UI.once("editor-selected");
 
   info("Switching back to the inspector panel in the toolbox");
-  yield toolbox.selectTool("inspector");
+  await toolbox.selectTool("inspector");
 
   info("Clicking on second inline stylesheet link");
-  testRuleViewLinkLabel(view);
   clickLinkByIndex(view, 3);
-  let editor = yield onSelected;
+  const editor = await onSelected;
 
   is(toolbox.currentToolId, "styleeditor",
     "The style editor is selected again");
-  yield validateStyleEditorSheet(editor, 1, testActor);
+  await validateStyleEditorSheet(editor, 1, testActor);
 }
 
-function* testExternalStyleSheet(view, toolbox, testActor) {
+async function testExternalStyleSheet(view, toolbox, testActor) {
   info("Testing external stylesheet");
 
   info("Waiting for the stylesheet editor to be selected");
-  let panel = toolbox.getCurrentPanel();
-  let onSelected = panel.UI.once("editor-selected");
+  const panel = toolbox.getCurrentPanel();
+  const onSelected = panel.UI.once("editor-selected");
 
   info("Switching back to the inspector panel in the toolbox");
-  yield toolbox.selectTool("inspector");
+  await toolbox.selectTool("inspector");
 
   info("Clicking on an external stylesheet link");
-  testRuleViewLinkLabel(view);
   clickLinkByIndex(view, 1);
-  let editor = yield onSelected;
+  const editor = await onSelected;
 
   is(toolbox.currentToolId, "styleeditor",
     "The style editor is selected again");
-  yield validateStyleEditorSheet(editor, 2, testActor);
+  await validateStyleEditorSheet(editor, 2, testActor);
 }
 
-function* validateStyleEditorSheet(editor, expectedSheetIndex, testActor) {
+async function validateStyleEditorSheet(editor, expectedSheetIndex, testActor) {
   info("validating style editor stylesheet");
   is(editor.styleSheet.styleSheetIndex, expectedSheetIndex,
      "loaded stylesheet index matches document stylesheet");
 
-  let href = editor.styleSheet.href || editor.styleSheet.nodeHref;
+  const href = editor.styleSheet.href || editor.styleSheet.nodeHref;
 
-  let expectedHref = yield testActor.eval(
-    `content.document.styleSheets[${expectedSheetIndex}].href ||
-     content.document.location.href`);
+  const expectedHref = await testActor.eval(
+    `document.styleSheets[${expectedSheetIndex}].href ||
+     document.location.href`);
 
   is(href, expectedHref, "loaded stylesheet href matches document stylesheet");
 }
 
-function* testDisabledStyleEditor(view, toolbox) {
+async function testDisabledStyleEditor(view, toolbox) {
   info("Testing with the style editor disabled");
 
   info("Switching to the inspector panel in the toolbox");
-  yield toolbox.selectTool("inspector");
+  await toolbox.selectTool("inspector");
 
   info("Disabling the style editor");
   Services.prefs.setBoolPref("devtools.styleeditor.enabled", false);
@@ -169,35 +149,48 @@ function* testDisabledStyleEditor(view, toolbox) {
   gDevTools.emit("tool-registered", "styleeditor");
 
   info("Clicking on a link");
-  let onStyleEditorSelected = toolbox.once("styleeditor-selected");
+  const onStyleEditorSelected = toolbox.once("styleeditor-selected");
   clickLinkByIndex(view, 1);
-  yield onStyleEditorSelected;
+  await onStyleEditorSelected;
   is(toolbox.currentToolId, "styleeditor", "Style Editor should be selected");
 
   Services.prefs.clearUserPref("devtools.styleeditor.enabled");
 }
 
 function testRuleViewLinkLabel(view) {
-  let link = getRuleViewLinkByIndex(view, 2);
+  info("Checking the data URL link label");
+
+  let link = getRuleViewLinkByIndex(view, 1);
   let labelElem = link.querySelector(".ruleview-rule-source-label");
   let value = labelElem.textContent;
   let tooltipText = labelElem.getAttribute("title");
 
-  is(value, EXTERNAL_STYLESHEET_FILE_NAME + ":1",
-    "rule view stylesheet display value matches filename and line number");
-  is(tooltipText, EXTERNAL_STYLESHEET_URL + ":1",
-    "rule view stylesheet tooltip text matches the full URI path");
+  is(value, encodeURIComponent(STYLESHEET_DATA_URL_CONTENTS) + ":1",
+    "Rule view data URL stylesheet display value matches contents");
+  is(tooltipText, STYLESHEET_DATA_URL + ":1",
+    "Rule view data URL stylesheet tooltip text matches the full URI path");
+
+  info("Checking the external link label");
+  link = getRuleViewLinkByIndex(view, 2);
+  labelElem = link.querySelector(".ruleview-rule-source-label");
+  value = labelElem.textContent;
+  tooltipText = labelElem.getAttribute("title");
+
+  is(value, `${EXTERNAL_STYLESHEET_FILE_NAME}:1`,
+    "Rule view external stylesheet display value matches filename and line number");
+  is(tooltipText, `${EXTERNAL_STYLESHEET_URL}:1`,
+    "Rule view external stylesheet tooltip text matches the full URI path");
 }
 
 function testUnselectableRuleViewLink(view, index) {
-  let link = getRuleViewLinkByIndex(view, index);
-  let unselectable = link.hasAttribute("unselectable");
+  const link = getRuleViewLinkByIndex(view, index);
+  const unselectable = link.hasAttribute("unselectable");
 
   ok(unselectable, "Rule view is unselectable");
 }
 
 function clickLinkByIndex(view, index) {
-  let link = getRuleViewLinkByIndex(view, index);
+  const link = getRuleViewLinkByIndex(view, index);
   link.scrollIntoView();
   link.click();
 }

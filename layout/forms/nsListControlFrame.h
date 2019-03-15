@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,25 +20,26 @@
 #include "mozilla/Attributes.h"
 #include "nsGfxScrollFrame.h"
 #include "nsIFormControlFrame.h"
-#include "nsIListControlFrame.h"
 #include "nsISelectControlFrame.h"
 #include "nsSelectsAreaFrame.h"
 
 // X.h defines KeyPress
 #ifdef KeyPress
-#undef KeyPress
+#  undef KeyPress
 #endif
 
-class nsIComboboxControlFrame;
+class nsComboboxControlFrame;
 class nsPresContext;
 class nsListEventListener;
 
 namespace mozilla {
 namespace dom {
+class Event;
 class HTMLOptionElement;
+class HTMLSelectElement;
 class HTMLOptionsCollection;
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 /**
  * Frame-based listbox.
@@ -45,112 +47,100 @@ class HTMLOptionsCollection;
 
 class nsListControlFrame final : public nsHTMLScrollFrame,
                                  public nsIFormControlFrame,
-                                 public nsIListControlFrame,
-                                 public nsISelectControlFrame
-{
-public:
+                                 public nsISelectControlFrame {
+ public:
   typedef mozilla::dom::HTMLOptionElement HTMLOptionElement;
 
   friend nsContainerFrame* NS_NewListControlFrame(nsIPresShell* aPresShell,
-                                                  nsStyleContext* aContext);
+                                                  ComputedStyle* aStyle);
 
   NS_DECL_QUERYFRAME
-  NS_DECL_FRAMEARENA_HELPERS
+  NS_DECL_FRAMEARENA_HELPERS(nsListControlFrame)
 
-    // nsIFrame
+  // nsIFrame
   virtual nsresult HandleEvent(nsPresContext* aPresContext,
                                mozilla::WidgetGUIEvent* aEvent,
                                nsEventStatus* aEventStatus) override;
 
-  virtual void SetInitialChildList(ChildListID     aListID,
-                                   nsFrameList&    aChildList) override;
+  virtual void SetInitialChildList(ChildListID aListID,
+                                   nsFrameList& aChildList) override;
 
-  virtual nscoord GetPrefISize(nsRenderingContext *aRenderingContext) override;
-  virtual nscoord GetMinISize(nsRenderingContext *aRenderingContext) override;
+  virtual nscoord GetPrefISize(gfxContext* aRenderingContext) override;
+  virtual nscoord GetMinISize(gfxContext* aRenderingContext) override;
 
-  virtual void Reflow(nsPresContext*           aCX,
-                      ReflowOutput&     aDesiredSize,
+  virtual void Reflow(nsPresContext* aCX, ReflowOutput& aDesiredSize,
                       const ReflowInput& aReflowInput,
-                      nsReflowStatus&          aStatus) override;
+                      nsReflowStatus& aStatus) override;
 
-  virtual void Init(nsIContent*       aContent,
-                    nsContainerFrame* aParent,
-                    nsIFrame*         aPrevInFlow) override;
+  virtual void Init(nsIContent* aContent, nsContainerFrame* aParent,
+                    nsIFrame* aPrevInFlow) override;
 
-  virtual void DidReflow(nsPresContext*            aPresContext,
-                         const ReflowInput*  aReflowInput,
-                         nsDidReflowStatus         aStatus) override;
-  virtual void DestroyFrom(nsIFrame* aDestructRoot) override;
+  virtual void DidReflow(nsPresContext* aPresContext,
+                         const ReflowInput* aReflowInput) override;
+  virtual void DestroyFrom(nsIFrame* aDestructRoot,
+                           PostDestroyData& aPostDestroyData) override;
 
-  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                                const nsRect&           aDirtyRect,
+  virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                 const nsDisplayListSet& aLists) override;
 
   virtual nsContainerFrame* GetContentInsertionFrame() override;
 
-  /**
-   * Get the "type" of the frame
-   *
-   * @see nsGkAtoms::scrollFrame
-   */
-  virtual nsIAtom* GetType() const override;
-
-  virtual bool IsFrameOfType(uint32_t aFlags) const override
-  {
-    return nsHTMLScrollFrame::IsFrameOfType(aFlags &
-      ~(nsIFrame::eReplaced | nsIFrame::eReplacedContainsBlock));
+  virtual bool IsFrameOfType(uint32_t aFlags) const override {
+    return nsHTMLScrollFrame::IsFrameOfType(
+        aFlags & ~(nsIFrame::eReplaced | nsIFrame::eReplacedContainsBlock));
   }
 
 #ifdef DEBUG_FRAME_DUMP
   virtual nsresult GetFrameName(nsAString& aResult) const override;
 #endif
 
-    // nsIFormControlFrame
-  virtual nsresult SetFormProperty(nsIAtom* aName, const nsAString& aValue) override;
+  // nsIFormControlFrame
+  virtual nsresult SetFormProperty(nsAtom* aName,
+                                   const nsAString& aValue) override;
   virtual void SetFocus(bool aOn = true, bool aRepaint = false) override;
 
-  virtual mozilla::ScrollbarStyles GetScrollbarStyles() const override;
+  virtual mozilla::ScrollStyles GetScrollStyles() const override;
   virtual bool ShouldPropagateComputedBSizeToScrolledContent() const override;
 
-    // for accessibility purposes
+  // for accessibility purposes
 #ifdef ACCESSIBILITY
   virtual mozilla::a11y::AccType AccessibleType() override;
 #endif
 
-    // nsIListControlFrame
-  virtual void SetComboboxFrame(nsIFrame* aComboboxFrame) override;
-  virtual int32_t GetSelectedIndex() override;
-  virtual HTMLOptionElement* GetCurrentOption() override;
+  void SetComboboxFrame(nsIFrame* aComboboxFrame);
+  int32_t GetSelectedIndex();
+  HTMLOptionElement* GetCurrentOption();
 
   /**
    * Gets the text of the currently selected item.
    * If the there are zero items then an empty string is returned
    * If there is nothing selected, then the 0th item's text is returned.
    */
-  virtual void GetOptionText(uint32_t aIndex, nsAString& aStr) override;
+  void GetOptionText(uint32_t aIndex, nsAString& aStr);
 
-  virtual void CaptureMouseEvents(bool aGrabMouseEvents) override;
-  virtual nscoord GetBSizeOfARow() override;
-  virtual uint32_t GetNumberOfOptions() override;
-  virtual void AboutToDropDown() override;
+  void CaptureMouseEvents(bool aGrabMouseEvents);
+  nscoord GetBSizeOfARow();
+  uint32_t GetNumberOfOptions();
+  void AboutToDropDown();
 
   /**
    * @note This method might destroy the frame, pres shell and other objects.
    */
-  virtual void AboutToRollup() override;
+  void AboutToRollup();
 
   /**
    * Dispatch a DOM oninput and onchange event synchroniously.
    * @note This method might destroy the frame, pres shell and other objects.
    */
-  virtual void FireOnInputAndOnChange() override;
+  MOZ_CAN_RUN_SCRIPT
+  void FireOnInputAndOnChange();
 
   /**
    * Makes aIndex the selected option of a combobox list.
    * @note This method might destroy the frame, pres shell and other objects.
    */
-  virtual void ComboboxFinish(int32_t aIndex) override;
-  virtual void OnContentReset() override;
+  void ComboboxFinish(int32_t aIndex);
+  void OnContentReset();
 
   // nsISelectControlFrame
   NS_IMETHOD AddOption(int32_t index) override;
@@ -162,18 +152,22 @@ public:
    * being selected or not selected.
    */
   NS_IMETHOD OnOptionSelected(int32_t aIndex, bool aSelected) override;
-  NS_IMETHOD OnSetSelectedIndex(int32_t aOldIndex, int32_t aNewIndex) override;
+  NS_IMETHOD_(void)
+  OnSetSelectedIndex(int32_t aOldIndex, int32_t aNewIndex) override;
 
   /**
    * Mouse event listeners.
    * @note These methods might destroy the frame, pres shell and other objects.
    */
-  nsresult MouseDown(nsIDOMEvent* aMouseEvent);
-  nsresult MouseUp(nsIDOMEvent* aMouseEvent);
-  nsresult MouseMove(nsIDOMEvent* aMouseEvent);
-  nsresult DragMove(nsIDOMEvent* aMouseEvent);
-  nsresult KeyDown(nsIDOMEvent* aKeyEvent);
-  nsresult KeyPress(nsIDOMEvent* aKeyEvent);
+  nsresult MouseDown(mozilla::dom::Event* aMouseEvent);
+  MOZ_CAN_RUN_SCRIPT
+  nsresult MouseUp(mozilla::dom::Event* aMouseEvent);
+  nsresult MouseMove(mozilla::dom::Event* aMouseEvent);
+  nsresult DragMove(mozilla::dom::Event* aMouseEvent);
+  MOZ_CAN_RUN_SCRIPT
+  nsresult KeyDown(mozilla::dom::Event* aKeyEvent);
+  MOZ_CAN_RUN_SCRIPT
+  nsresult KeyPress(mozilla::dom::Event* aKeyEvent);
 
   /**
    * Returns the options collection for mContent, if any.
@@ -215,9 +209,7 @@ public:
    * Function to ask whether we're currently in what might be the
    * first pass of a two-pass reflow.
    */
-  bool MightNeedSecondPass() const {
-    return mMightNeedSecondPass;
-  }
+  bool MightNeedSecondPass() const { return mMightNeedSecondPass; }
 
   void SetSuppressScrollbarUpdate(bool aSuppress) {
     nsHTMLScrollFrame::SetSuppressScrollbarUpdate(aSuppress);
@@ -240,11 +232,6 @@ public:
   bool GetDropdownCanGrow() const { return mDropdownCanGrow; }
 
   /**
-   * Dropdowns need views
-   */
-  virtual bool NeedsView() override { return IsInDropDownMode(); }
-
-  /**
    * Frees statics owned by this class.
    */
   static void Shutdown();
@@ -255,13 +242,13 @@ public:
    * fire a native focus event for accessibility
    * (Some 3rd party products need to track our focus)
    */
-  void FireMenuItemActiveEvent(); // Inform assistive tech what got focused
+  void FireMenuItemActiveEvent();  // Inform assistive tech what got focused
 #endif
 
-protected:
+ protected:
   /**
    * Return the first non-disabled option starting at aFromIndex (inclusive).
-   * @param aFoundIndex if non-null, set to the index of the returned option 
+   * @param aFoundIndex if non-null, set to the index of the returned option
    */
   HTMLOptionElement* GetNonDisabledOptionFrom(int32_t aFromIndex,
                                               int32_t* aFoundIndex = nullptr);
@@ -271,23 +258,35 @@ protected:
    * @note This method might destroy the frame, pres shell and other objects.
    * Returns false if calling it destroyed |this|.
    */
-  bool       UpdateSelection();
+  MOZ_CAN_RUN_SCRIPT
+  bool UpdateSelection();
 
   /**
    * Returns whether mContent supports multiple selection.
    */
-  bool       GetMultiple() const {
-    return mContent->HasAttr(kNameSpaceID_None, nsGkAtoms::multiple);
+  bool GetMultiple() const {
+    return mContent->AsElement()->HasAttr(kNameSpaceID_None,
+                                          nsGkAtoms::multiple);
   }
-
 
   /**
    * Toggles (show/hide) the combobox dropdown menu.
    * @note This method might destroy the frame, pres shell and other objects.
    */
-  void       DropDownToggleKey(nsIDOMEvent* aKeyEvent);
+  MOZ_CAN_RUN_SCRIPT
+  void DropDownToggleKey(mozilla::dom::Event* aKeyEvent);
 
-  nsresult   IsOptionDisabled(int32_t anIndex, bool &aIsDisabled);
+  /**
+   * @return true if the <option> at aIndex is selectable by the user.
+   */
+  bool IsOptionInteractivelySelectable(int32_t aIndex) const;
+  /**
+   * @return true if aOption in aSelect is selectable by the user.
+   */
+  static bool IsOptionInteractivelySelectable(
+      mozilla::dom::HTMLSelectElement* aSelect,
+      mozilla::dom::HTMLOptionElement* aOption);
+
   /**
    * @note This method might destroy the frame, pres shell and other objects.
    */
@@ -307,15 +306,16 @@ protected:
    *
    * @param aPoint relative to this frame
    */
-  bool       IgnoreMouseEventForSelection(nsIDOMEvent* aEvent);
+  bool IgnoreMouseEventForSelection(mozilla::dom::Event* aEvent);
 
   /**
    * If the dropdown is showing and the mouse has moved below our
    * border-inner-edge, then set mItemSelectionStarted.
    */
-  void       UpdateInListState(nsIDOMEvent* aEvent);
-  void       AdjustIndexForDisabledOpt(int32_t aStartIndex, int32_t &anNewIndex,
-                                       int32_t aNumOptions, int32_t aDoAdjustInc, int32_t aDoAdjustIncNext);
+  void UpdateInListState(mozilla::dom::Event* aEvent);
+  void AdjustIndexForDisabledOpt(int32_t aStartIndex, int32_t& anNewIndex,
+                                 int32_t aNumOptions, int32_t aDoAdjustInc,
+                                 int32_t aDoAdjustIncNext);
 
   /**
    * Resets the select back to it's original default values;
@@ -323,7 +323,7 @@ protected:
    */
   virtual void ResetList(bool aAllowScrolling);
 
-  explicit nsListControlFrame(nsStyleContext* aContext);
+  explicit nsListControlFrame(ComputedStyle* aStyle);
   virtual ~nsListControlFrame();
 
   /**
@@ -332,13 +332,14 @@ protected:
    * @param aPoint the event point, in listcontrolframe coordinates
    * @return NS_OK if it successfully found the selection
    */
-  nsresult GetIndexFromDOMEvent(nsIDOMEvent* aMouseEvent, int32_t& aCurIndex);
+  nsresult GetIndexFromDOMEvent(mozilla::dom::Event* aMouseEvent,
+                                int32_t& aCurIndex);
 
-  bool     CheckIfAllFramesHere();
-  bool     IsLeftButton(nsIDOMEvent* aMouseEvent);
+  bool CheckIfAllFramesHere();
+  bool IsLeftButton(mozilla::dom::Event* aMouseEvent);
 
   // guess at a row block size based on our own style.
-  nscoord  CalcFallbackRowBSize(float aFontSizeInflation);
+  nscoord CalcFallbackRowBSize(float aFontSizeInflation);
 
   // CalcIntrinsicBSize computes our intrinsic block size (taking the
   // "size" attribute into account).  This should only be called in
@@ -346,95 +347,98 @@ protected:
   nscoord CalcIntrinsicBSize(nscoord aBSizeOfARow, int32_t aNumberOfOptions);
 
   // Dropped down stuff
-  void     SetComboboxItem(int32_t aIndex);
+  void SetComboboxItem(int32_t aIndex);
 
   /**
    * Method to reflow ourselves as a dropdown list.  This differs from
    * reflow as a listbox because the criteria for needing a second
    * pass are different.  This will be called from Reflow() as needed.
    */
-  void ReflowAsDropdown(nsPresContext*           aPresContext,
-                        ReflowOutput&     aDesiredSize,
+  void ReflowAsDropdown(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
                         const ReflowInput& aReflowInput,
-                        nsReflowStatus&          aStatus);
+                        nsReflowStatus& aStatus);
 
   // Selection
-  bool     SetOptionsSelectedFromFrame(int32_t aStartIndex,
-                                       int32_t aEndIndex,
-                                       bool aValue,
-                                       bool aClearAll);
-  bool     ToggleOptionSelectedFromFrame(int32_t aIndex);
+  bool SetOptionsSelectedFromFrame(int32_t aStartIndex, int32_t aEndIndex,
+                                   bool aValue, bool aClearAll);
+  bool ToggleOptionSelectedFromFrame(int32_t aIndex);
   /**
    * @note This method might destroy the frame, pres shell and other objects.
    */
-  bool     SingleSelection(int32_t aClickedIndex, bool aDoToggle);
-  bool     ExtendedSelection(int32_t aStartIndex, int32_t aEndIndex,
-                             bool aClearAll);
+  bool SingleSelection(int32_t aClickedIndex, bool aDoToggle);
+  bool ExtendedSelection(int32_t aStartIndex, int32_t aEndIndex,
+                         bool aClearAll);
   /**
    * @note This method might destroy the frame, pres shell and other objects.
    */
-  bool     PerformSelection(int32_t aClickedIndex, bool aIsShift,
-                            bool aIsControl);
+  bool PerformSelection(int32_t aClickedIndex, bool aIsShift, bool aIsControl);
   /**
    * @note This method might destroy the frame, pres shell and other objects.
    */
-  bool     HandleListSelection(nsIDOMEvent * aDOMEvent, int32_t selectedIndex);
-  void     InitSelectionRange(int32_t aClickedIndex);
-  void     PostHandleKeyEvent(int32_t aNewIndex, uint32_t aCharCode,
-                              bool aIsShift, bool aIsControlOrMeta);
+  bool HandleListSelection(mozilla::dom::Event* aDOMEvent,
+                           int32_t selectedIndex);
+  void InitSelectionRange(int32_t aClickedIndex);
+  MOZ_CAN_RUN_SCRIPT
+  void PostHandleKeyEvent(int32_t aNewIndex, uint32_t aCharCode, bool aIsShift,
+                          bool aIsControlOrMeta);
 
-public:
+ public:
   nsSelectsAreaFrame* GetOptionsContainer() const {
     return static_cast<nsSelectsAreaFrame*>(GetScrolledFrame());
   }
 
-protected:
-  nscoord BSizeOfARow() {
-    return GetOptionsContainer()->BSizeOfARow();
-  }
+ protected:
+  nscoord BSizeOfARow() { return GetOptionsContainer()->BSizeOfARow(); }
 
   /**
    * @return how many displayable options/optgroups this frame has.
    */
   uint32_t GetNumberOfRows();
 
+  nsView* GetViewInternal() const override { return mView; }
+  void SetViewInternal(nsView* aView) override { mView = aView; }
+
   // Data Members
-  int32_t      mStartSelectionIndex;
-  int32_t      mEndSelectionIndex;
+  int32_t mStartSelectionIndex;
+  int32_t mEndSelectionIndex;
 
-  nsIComboboxControlFrame *mComboboxFrame;
-  uint32_t     mNumDisplayRows;
-  bool mChangesSinceDragStart:1;
-  bool mButtonDown:1;
-  // Has the user selected a visible item since we showed the
-  // dropdown?
-  bool mItemSelectionStarted:1;
+  nsComboboxControlFrame* mComboboxFrame;
 
-  bool mIsAllContentHere:1;
-  bool mIsAllFramesHere:1;
-  bool mHasBeenInitialized:1;
-  bool mNeedToReset:1;
-  bool mPostChildrenLoadedReset:1;
+  // The view is only created (& non-null) if IsInDropDownMode() is true.
+  nsView* mView;
 
-  //bool value for multiple discontiguous selection
-  bool mControlSelectMode:1;
+  uint32_t mNumDisplayRows;
+  bool mChangesSinceDragStart : 1;
+  bool mButtonDown : 1;
+
+  // Has the user selected a visible item since we showed the dropdown?
+  bool mItemSelectionStarted : 1;
+
+  bool mIsAllContentHere : 1;
+  bool mIsAllFramesHere : 1;
+  bool mHasBeenInitialized : 1;
+  bool mNeedToReset : 1;
+  bool mPostChildrenLoadedReset : 1;
+
+  // bool value for multiple discontiguous selection
+  bool mControlSelectMode : 1;
 
   // True if we're in the middle of a reflow and might need a second
   // pass.  This only happens for auto heights.
-  bool mMightNeedSecondPass:1;
+  bool mMightNeedSecondPass : 1;
 
   /**
    * Set to aPresContext->HasPendingInterrupt() at the start of Reflow.
    * Set to false at the end of DidReflow.
    */
-  bool mHasPendingInterruptAtStartOfReflow:1;
+  bool mHasPendingInterruptAtStartOfReflow : 1;
 
   // True if the drop-down can show more rows.  Always false if this list
   // is not in drop-down mode.
-  bool mDropdownCanGrow:1;
+  bool mDropdownCanGrow : 1;
 
   // True if the selection can be set to nothing or disabled options.
-  bool mForceSelection:1;
+  bool mForceSelection : 1;
 
   // The last computed block size we reflowed at if we're a combobox
   // dropdown.
@@ -448,39 +452,31 @@ protected:
 
   RefPtr<nsListEventListener> mEventListener;
 
-  static nsListControlFrame * mFocused;
-  static nsString * sIncrementalString;
+  static nsListControlFrame* mFocused;
+  static nsString* sIncrementalString;
 
 #ifdef DO_REFLOW_COUNTER
   int32_t mReflowId;
 #endif
 
-private:
+ private:
   // for incremental typing navigation
-  static nsAString& GetIncrementalString ();
+  static nsAString& GetIncrementalString();
   static DOMTimeStamp gLastKeyTime;
 
-  class MOZ_RAII AutoIncrementalSearchResetter
-  {
-  public:
-    AutoIncrementalSearchResetter() :
-      mCancelled(false)
-    {
-    }
-    ~AutoIncrementalSearchResetter()
-    {
+  class MOZ_RAII AutoIncrementalSearchResetter {
+   public:
+    AutoIncrementalSearchResetter() : mCancelled(false) {}
+    ~AutoIncrementalSearchResetter() {
       if (!mCancelled) {
         nsListControlFrame::GetIncrementalString().Truncate();
       }
     }
-    void Cancel()
-    {
-      mCancelled = true;
-    }
-  private:
+    void Cancel() { mCancelled = true; }
+
+   private:
     bool mCancelled;
   };
 };
 
 #endif /* nsListControlFrame_h___ */
-

@@ -95,7 +95,7 @@ public class SyncStorageRequest implements Resource {
   /**
    * A ResourceDelegate that mediates between Resource-level notifications and the SyncStorageRequest.
    */
-  public class SyncStorageResourceDelegate extends BaseResourceDelegate {
+  public static class SyncStorageResourceDelegate extends BaseResourceDelegate {
     private static final String LOG_TAG = "SSResourceDelegate";
     protected SyncStorageRequest request;
 
@@ -157,9 +157,6 @@ public class SyncStorageRequest implements Resource {
       if (ifUnmodifiedSince != null) {
         Logger.debug(LOG_TAG, "Making request with X-If-Unmodified-Since = " + ifUnmodifiedSince);
         request.setHeader("x-if-unmodified-since", ifUnmodifiedSince);
-      }
-      if (request.getMethod().equalsIgnoreCase("DELETE")) {
-        request.addHeader("x-confirm-delete", "1");
       }
     }
   }

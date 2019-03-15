@@ -8,14 +8,15 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_coding/test/TestVADDTX.h"
+#include "modules/audio_coding/test/TestVADDTX.h"
 
 #include <string>
 
-#include "webrtc/engine_configurations.h"
-#include "webrtc/modules/audio_coding/test/PCMFile.h"
-#include "webrtc/modules/audio_coding/test/utility.h"
-#include "webrtc/test/testsupport/fileutils.h"
+#include "modules/audio_coding/codecs/audio_format_conversion.h"
+#include "modules/audio_coding/test/PCMFile.h"
+#include "modules/audio_coding/test/utility.h"
+#include "test/testsupport/fileutils.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -61,8 +62,8 @@ void ActivityMonitor::GetStatistics(uint32_t* counter) {
 }
 
 TestVadDtx::TestVadDtx()
-    : acm_send_(AudioCodingModule::Create(0)),
-      acm_receive_(AudioCodingModule::Create(1)),
+    : acm_send_(AudioCodingModule::Create()),
+      acm_receive_(AudioCodingModule::Create()),
       channel_(new Channel),
       monitor_(new ActivityMonitor) {
   EXPECT_EQ(0, acm_send_->RegisterTransportCallback(channel_.get()));
@@ -73,7 +74,8 @@ TestVadDtx::TestVadDtx()
 void TestVadDtx::RegisterCodec(CodecInst codec_param) {
   // Set the codec for sending and receiving.
   EXPECT_EQ(0, acm_send_->RegisterSendCodec(codec_param));
-  EXPECT_EQ(0, acm_receive_->RegisterReceiveCodec(codec_param));
+  EXPECT_EQ(true, acm_receive_->RegisterReceiveCodec(
+                      codec_param.pltype, CodecInstToSdp(codec_param)));
   channel_->SetIsStereo(codec_param.channels > 1);
 }
 
@@ -101,14 +103,15 @@ void TestVadDtx::Run(std::string in_filename, int frequency, int channels,
   }
 
   uint16_t frame_size_samples = in_file.PayloadLength10Ms();
-  uint32_t time_stamp = 0x12345678;
   AudioFrame audio_frame;
   while (!in_file.EndOfFile()) {
     in_file.Read10MsData(audio_frame);
-    audio_frame.timestamp_ = time_stamp;
-    time_stamp += frame_size_samples;
+    audio_frame.timestamp_ = time_stamp_;
+    time_stamp_ += frame_size_samples;
     EXPECT_GE(acm_send_->Add10MsData(audio_frame), 0);
-    acm_receive_->PlayoutData10Ms(kOutputFreqHz, &audio_frame);
+    bool muted;
+    acm_receive_->PlayoutData10Ms(kOutputFreqHz, &audio_frame, &muted);
+    ASSERT_FALSE(muted);
     out_file.Write10MsData(audio_frame);
   }
 
@@ -254,6 +257,7 @@ void TestOpusDtx::Perform() {
 
   EXPECT_EQ(0, acm_send_->EnableOpusDtx());
   expects[kEmptyFrame] = 1;
+  expects[kAudioFrameCN] = 1;
   Run(webrtc::test::ResourcePath("audio_coding/testfile32kHz", "pcm"),
       32000, 1, out_filename, true, expects);
 
@@ -262,12 +266,14 @@ void TestOpusDtx::Perform() {
   RegisterCodec(kOpusStereo);
   EXPECT_EQ(0, acm_send_->DisableOpusDtx());
   expects[kEmptyFrame] = 0;
+  expects[kAudioFrameCN] = 0;
   Run(webrtc::test::ResourcePath("audio_coding/teststereo32kHz", "pcm"),
       32000, 2, out_filename, false, expects);
 
   EXPECT_EQ(0, acm_send_->EnableOpusDtx());
 
   expects[kEmptyFrame] = 1;
+  expects[kAudioFrameCN] = 1;
   Run(webrtc::test::ResourcePath("audio_coding/teststereo32kHz", "pcm"),
       32000, 2, out_filename, true, expects);
 #endif

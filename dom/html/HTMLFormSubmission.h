@@ -8,9 +8,9 @@
 #define mozilla_dom_HTMLFormSubmission_h
 
 #include "mozilla/Attributes.h"
+#include "mozilla/dom/Element.h"
 #include "nsCOMPtr.h"
-#include "nsIContent.h"
-#include "nsNCRFallbackEncoderWrapper.h"
+#include "mozilla/Encoding.h"
 #include "nsString.h"
 
 class nsIURI;
@@ -23,14 +23,14 @@ namespace dom {
 
 class Blob;
 class Directory;
+class HTMLFormElement;
 
 /**
  * Class for form submissions; encompasses the function to call to submit as
  * well as the form submission name/value pairs
  */
-class HTMLFormSubmission
-{
-public:
+class HTMLFormSubmission {
+ public:
   /**
    * Get a submission object based on attributes in the form (ENCTYPE and
    * METHOD)
@@ -39,15 +39,11 @@ public:
    * @param aOriginatingElement the originating element (can be null)
    * @param aFormSubmission the form submission object (out param)
    */
-  static nsresult
-  GetFromForm(nsGenericHTMLElement* aForm,
-              nsGenericHTMLElement* aOriginatingElement,
-              HTMLFormSubmission** aFormSubmission);
+  static nsresult GetFromForm(HTMLFormElement* aForm,
+                              nsGenericHTMLElement* aOriginatingElement,
+                              HTMLFormSubmission** aFormSubmission);
 
-  virtual ~HTMLFormSubmission()
-  {
-    MOZ_COUNT_DTOR(HTMLFormSubmission);
-  }
+  virtual ~HTMLFormSubmission() { MOZ_COUNT_DTOR(HTMLFormSubmission); }
 
   /**
    * Submit a name/value pair
@@ -55,8 +51,8 @@ public:
    * @param aName the name of the parameter
    * @param aValue the value of the parameter
    */
-  virtual nsresult
-  AddNameValuePair(const nsAString& aName, const nsAString& aValue) = 0;
+  virtual nsresult AddNameValuePair(const nsAString& aName,
+                                    const nsAString& aValue) = 0;
 
   /**
    * Submit a name/blob pair
@@ -66,8 +62,8 @@ public:
    * is actually a File, otherwise 'blob' string is used instead if the aBlob is
    * not null.
    */
-  virtual nsresult
-  AddNameBlobOrNullPair(const nsAString& aName, Blob* aBlob) = 0;
+  virtual nsresult AddNameBlobOrNullPair(const nsAString& aName,
+                                         Blob* aBlob) = 0;
 
   /**
    * Submit a name/directory pair
@@ -79,76 +75,69 @@ public:
                                         Directory* aDirectory) = 0;
 
   /**
-   * Reports whether the instance supports AddIsindex().
-   *
-   * @return true if supported.
-   */
-  virtual bool SupportsIsindexSubmission()
-  {
-    return false;
-  }
-
-  /**
-   * Adds an isindex value to the submission.
-   *
-   * @param aValue the field value
-   */
-  virtual nsresult AddIsindex(const nsAString& aValue)
-  {
-    NS_NOTREACHED("AddIsindex called when not supported");
-    return NS_ERROR_UNEXPECTED;
-  }
-
-  /**
    * Given a URI and the current submission, create the final URI and data
    * stream that will be submitted.  Subclasses *must* implement this.
    *
-   * @param aURI the URI being submitted to [INOUT]
+   * @param aURI the URI being submitted to [IN]
    * @param aPostDataStream a data stream for POST data [OUT]
+   * @param aOutURI the resulting URI. May be the same as aURI [OUT]
    */
-  virtual nsresult
-  GetEncodedSubmission(nsIURI* aURI, nsIInputStream** aPostDataStream) = 0;
+  virtual nsresult GetEncodedSubmission(nsIURI* aURI,
+                                        nsIInputStream** aPostDataStream,
+                                        nsCOMPtr<nsIURI>& aOutURI) = 0;
 
   /**
    * Get the charset that will be used for submission.
    */
-  void GetCharset(nsACString& aCharset)
-  {
-    aCharset = mCharset;
-  }
+  void GetCharset(nsACString& aCharset) { mEncoding->Name(aCharset); }
 
-  nsIContent* GetOriginatingElement() const
-  {
-    return mOriginatingElement.get();
-  }
+  Element* GetOriginatingElement() const { return mOriginatingElement.get(); }
 
-protected:
+  /**
+   * Get the action URI that will be used for submission.
+   */
+  nsIURI* GetActionURL() const { return mActionURL; }
+
+  /**
+   * Get the target that will be used for submission.
+   */
+  void GetTarget(nsAString& aTarget) { aTarget = mTarget; }
+
+ protected:
   /**
    * Can only be constructed by subclasses.
    *
-   * @param aCharset the charset of the form as a string
+   * @param aEncoding the character encoding of the form
    * @param aOriginatingElement the originating element (can be null)
    */
-  HTMLFormSubmission(const nsACString& aCharset,
-                     nsIContent* aOriginatingElement)
-    : mCharset(aCharset)
-    , mOriginatingElement(aOriginatingElement)
-  {
+  HTMLFormSubmission(nsIURI* aActionURL, const nsAString& aTarget,
+                     mozilla::NotNull<const mozilla::Encoding*> aEncoding,
+                     Element* aOriginatingElement)
+      : mActionURL(aActionURL),
+        mTarget(aTarget),
+        mEncoding(aEncoding),
+        mOriginatingElement(aOriginatingElement) {
     MOZ_COUNT_CTOR(HTMLFormSubmission);
   }
 
-  // The name of the encoder charset
-  nsCString mCharset;
+  // The action url.
+  nsCOMPtr<nsIURI> mActionURL;
+
+  // The target.
+  nsString mTarget;
+
+  // The character encoding of this form submission
+  mozilla::NotNull<const mozilla::Encoding*> mEncoding;
 
   // Originating element.
-  nsCOMPtr<nsIContent> mOriginatingElement;
+  RefPtr<Element> mOriginatingElement;
 };
 
-class EncodingFormSubmission : public HTMLFormSubmission
-{
-public:
-  EncodingFormSubmission(const nsACString& aCharset,
-                         nsIContent* aOriginatingElement);
+class EncodingFormSubmission : public HTMLFormSubmission {
+ public:
+  EncodingFormSubmission(nsIURI* aActionURL, const nsAString& aTarget,
+                         mozilla::NotNull<const mozilla::Encoding*> aEncoding,
+                         Element* aOriginatingElement);
 
   virtual ~EncodingFormSubmission();
 
@@ -163,65 +152,64 @@ public:
    */
   nsresult EncodeVal(const nsAString& aStr, nsCString& aResult,
                      bool aHeaderEncode);
-
-private:
-  // The encoder that will encode Unicode names and values
-  nsNCRFallbackEncoderWrapper mEncoder;
 };
 
 /**
  * Handle multipart/form-data encoding, which does files as well as normal
  * inputs.  This always does POST.
  */
-class FSMultipartFormData : public EncodingFormSubmission
-{
-public:
+class FSMultipartFormData : public EncodingFormSubmission {
+ public:
   /**
-   * @param aCharset the charset of the form as a string
+   * @param aEncoding the character encoding of the form
    */
-  FSMultipartFormData(const nsACString& aCharset,
-                      nsIContent* aOriginatingElement);
+  FSMultipartFormData(nsIURI* aActionURL, const nsAString& aTarget,
+                      mozilla::NotNull<const mozilla::Encoding*> aEncoding,
+                      Element* aOriginatingElement);
   ~FSMultipartFormData();
- 
-  virtual nsresult
-  AddNameValuePair(const nsAString& aName, const nsAString& aValue) override;
 
-  virtual nsresult
-  AddNameBlobOrNullPair(const nsAString& aName, Blob* aBlob) override;
+  virtual nsresult AddNameValuePair(const nsAString& aName,
+                                    const nsAString& aValue) override;
 
-  virtual nsresult
-  AddNameDirectoryPair(const nsAString& aName, Directory* aDirectory) override;
+  virtual nsresult AddNameBlobOrNullPair(const nsAString& aName,
+                                         Blob* aBlob) override;
 
-  virtual nsresult
-  GetEncodedSubmission(nsIURI* aURI, nsIInputStream** aPostDataStream) override;
+  virtual nsresult AddNameDirectoryPair(const nsAString& aName,
+                                        Directory* aDirectory) override;
 
-  void GetContentType(nsACString& aContentType)
-  {
+  virtual nsresult GetEncodedSubmission(nsIURI* aURI,
+                                        nsIInputStream** aPostDataStream,
+                                        nsCOMPtr<nsIURI>& aOutURI) override;
+
+  void GetContentType(nsACString& aContentType) {
     aContentType =
-      NS_LITERAL_CSTRING("multipart/form-data; boundary=") + mBoundary;
+        NS_LITERAL_CSTRING("multipart/form-data; boundary=") + mBoundary;
   }
 
   nsIInputStream* GetSubmissionBody(uint64_t* aContentLength);
 
-protected:
-
+ protected:
   /**
    * Roll up the data we have so far and add it to the multiplexed data stream.
    */
   nsresult AddPostDataStream();
 
-private:
-  void AddDataChunk(const nsACString& aName,
-                    const nsACString& aFilename,
+ private:
+  void AddDataChunk(const nsACString& aName, const nsACString& aFilename,
                     const nsACString& aContentType,
-                    nsIInputStream* aInputStream,
-                    uint64_t aInputStreamSize);
+                    nsIInputStream* aInputStream, uint64_t aInputStreamSize);
   /**
    * The post data stream as it is so far.  This is a collection of smaller
    * chunks--string streams and file streams interleaved to make one big POST
    * stream.
    */
-  nsCOMPtr<nsIMultiplexInputStream> mPostDataStream;
+  nsCOMPtr<nsIMultiplexInputStream> mPostData;
+
+  /**
+   * The same stream, but as an nsIInputStream.
+   * Raw pointers because it is just QI of mInputStream.
+   */
+  nsIInputStream* mPostDataStream;
 
   /**
    * The current string chunk.  When a file is hit, the string chunk gets
@@ -245,7 +233,7 @@ private:
   uint64_t mTotalLength;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif /* mozilla_dom_HTMLFormSubmission_h */

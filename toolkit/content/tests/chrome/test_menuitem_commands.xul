@@ -43,7 +43,7 @@ function runTest()
 
 function runTestSet(suffix)
 {
-  var isMac = (navigator.platform.indexOf("Mac") >= 0);
+  var isMac = (navigator.platform.includes("Mac"));
 
   var one = $("one" + suffix);
   var two = $("two" + suffix);
@@ -56,8 +56,7 @@ function runTestSet(suffix)
   checkAttributes(four, "Four", "F", "", "", false);
 
   if (isMac && suffix) {
-    var utils = window.QueryInterface(Components.interfaces.nsIInterfaceRequestor).
-                       getInterface(Components.interfaces.nsIDOMWindowUtils);
+    var utils = window.windowUtils;
     utils.forceUpdateNativeMenuAt("0");
   }
   else {

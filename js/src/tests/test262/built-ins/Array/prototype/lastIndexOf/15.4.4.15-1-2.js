@@ -2,13 +2,14 @@
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
+esid: sec-array.prototype.lastindexof
 es5id: 15.4.4.15-1-2
 description: Array.prototype.lastIndexOf applied to null throws a TypeError
 ---*/
 
 
 assert.throws(TypeError, function() {
-            Array.prototype.lastIndexOf.call(null);
+  Array.prototype.lastIndexOf.call(null);
 });
 
 reportCompare(0, 0);

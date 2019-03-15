@@ -25,7 +25,7 @@
 
     const databaseInfo = [
       { name: window.location.pathname + "1", source: true },
-      { name: window.location.pathname + "2", source: false }
+      { name: window.location.pathname + "2", source: false },
     ];
 
     const objectStoreName = "Blobs";
@@ -69,7 +69,7 @@
       let request = db.transaction([objectStoreName])
                       .objectStore(objectStoreName).get(fileData.key);
       request.onsuccess = grabEventAndContinueHandler;
-      event = yield undefined;
+      let event = yield undefined;
 
       let result = event.target.result;
       verifyBlob(result, fileData.file, 1);
@@ -89,7 +89,7 @@
     // them up.  We clobber our existing content, then trigger deletion to
     // clean up after it.
     SpecialPowers.createFiles(
-      [{ name: fileRelPath, data: '' }],
+      [{ name: fileRelPath, data: "" }],
       grabEventAndContinueHandler, errorCallbackHandler);
     yield undefined;
     // This is async without a callback because it's intended for cleanup.
@@ -109,16 +109,16 @@
       let trans = db.transaction([objectStoreName], READ_WRITE);
       let objectStore = trans.objectStore(objectStoreName);
 
-      request = objectStore.add(fileBackedFile, 2);
+      let request = objectStore.add(fileBackedFile, 2);
       request.onsuccess = unexpectedSuccessHandler;
       request.onerror = expectedErrorHandler("UnknownError");
       trans.onsuccess = unexpectedSuccessHandler;
       trans.onerror = expectedErrorHandler("UnknownError");
       // the database will also throw an error.
       db.onerror = expectedErrorHandler("UnknownError");
-      event = yield undefined;
-      event = yield undefined;
-      event = yield undefined;
+      yield undefined;
+      yield undefined;
+      yield undefined;
       // the database shouldn't throw any more errors now.
       db.onerror = errorHandler;
     }
@@ -133,10 +133,10 @@
 
       // Attempt to fetch the key to verify there's nothing in the DB rather
       // than the value which could return undefined as a misleading error.
-      request = objectStore.getKey(2);
+      let request = objectStore.getKey(2);
       request.onsuccess = grabEventAndContinueHandler;
       request.onerror = errorHandler;
-      event = yield undefined;
+      let event = yield undefined;
 
       let result = event.target.result;
       is(result, undefined, "no key found"); // (the get returns undefined)

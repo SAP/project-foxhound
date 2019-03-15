@@ -8,20 +8,8 @@
     "types": [
      {
         "id": "KeyName",
-        "choices": [
-          {
-            "type": "string",
-            "pattern": "^\\s*(Alt|Ctrl|Command|MacCtrl)\\s*\\+\\s*(Shift\\s*\\+\\s*)?([A-Z0-9]|Comma|Period|Home|End|PageUp|PageDown|Space|Insert|Delete|Up|Down|Left|Right)\\s*$"
-          },
-          {
-            "type": "string",
-            "pattern": "^\\s*((Alt|Ctrl|Command|MacCtrl)\\s*\\+\\s*)?(Shift\\s*\\+\\s*)?(F[1-9]|F1[0-2])\\s*$"
-          },
-          {
-            "type": "string",
-            "pattern": "^(MediaNextTrack|MediaPlayPause|MediaPrevTrack|MediaStop)$"
-          }
-        ]
+        "type": "string",
+        "format": "manifestShortcutKey"
       },
       {
         "$extend": "WebExtensionManifest",
@@ -74,6 +62,7 @@
                 },
                 "description": {
                   "type": "string",
+                  "preprocess": "localize",
                   "optional": true
                 }
               }
@@ -124,6 +113,47 @@
       }
     ],
     "functions": [
+      {
+        "name": "update",
+        "type": "function",
+        "async": true,
+        "description": "Update the details of an already defined command.",
+        "parameters": [
+          {
+            "type": "object",
+            "name": "detail",
+            "description": "The new description for the command.",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "The name of the command."
+                },
+              "description": {
+                "type": "string",
+                "optional": true,
+                "description": "The new description for the command."
+              },
+              "shortcut": {
+                "$ref": "manifest.KeyName",
+                "optional": true
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "reset",
+        "type": "function",
+        "async": true,
+        "description": "Reset a command's details to what is specified in the manifest.",
+        "parameters": [
+          {
+            "type": "string",
+            "name": "name",
+            "description": "The name of the command."
+          }
+        ]
+      },
       {
         "name": "getAll",
         "type": "function",

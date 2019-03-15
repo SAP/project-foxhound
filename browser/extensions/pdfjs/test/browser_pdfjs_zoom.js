@@ -3,7 +3,6 @@
 
 requestLongerTimeout(2);
 
-Components.utils.import("resource://gre/modules/Promise.jsm", this);
 
 const RELATIVE_DIR = "browser/extensions/pdfjs/test/";
 const TESTROOT = "http://example.com/browser/" + RELATIVE_DIR;
@@ -12,53 +11,53 @@ const TESTS = [
   {
     action: {
       selector: "button#zoomIn",
-      event: "click"
+      event: "click",
     },
     expectedZoom: 1, // 1 - zoom in
-    message: "Zoomed in using the '+' (zoom in) button"
+    message: "Zoomed in using the '+' (zoom in) button",
   },
 
   {
     action: {
       selector: "button#zoomOut",
-      event: "click"
+      event: "click",
     },
     expectedZoom: -1, // -1 - zoom out
-    message: "Zoomed out using the '-' (zoom out) button"
+    message: "Zoomed out using the '-' (zoom out) button",
   },
 
   {
     action: {
       keyboard: true,
       keyCode: 61,
-      event: "+"
+      event: "+",
     },
     expectedZoom: 1, // 1 - zoom in
-    message: "Zoomed in using the CTRL++ keys"
+    message: "Zoomed in using the CTRL++ keys",
   },
 
   {
     action: {
       keyboard: true,
       keyCode: 109,
-      event: "-"
+      event: "-",
     },
     expectedZoom: -1, // -1 - zoom out
-    message: "Zoomed out using the CTRL+- keys"
+    message: "Zoomed out using the CTRL+- keys",
   },
 
   {
     action: {
       selector: "select#scaleSelect",
       index: 5,
-      event: "change"
+      event: "change",
     },
     expectedZoom: -1, // -1 - zoom out
-    message: "Zoomed using the zoom picker"
-  }
+    message: "Zoomed using the zoom picker",
+  },
 ];
 
-add_task(function* test() {
+add_task(async function test() {
   let mimeService = Cc["@mozilla.org/mime;1"].getService(Ci.nsIMIMEService);
   let handlerInfo = mimeService.getFromTypeAndExtension("application/pdf", "pdf");
 
@@ -70,11 +69,11 @@ add_task(function* test() {
 
   info("Pref action: " + handlerInfo.preferredAction);
 
-  yield BrowserTestUtils.withNewTab({ gBrowser, url: "about:blank" },
-    function* (newTabBrowser) {
-      yield waitForPdfJS(newTabBrowser, TESTROOT + "file_pdfjs_test.pdf" + "#zoom=100");
+  await BrowserTestUtils.withNewTab({ gBrowser, url: "about:blank" },
+    async function(newTabBrowser) {
+      await waitForPdfJS(newTabBrowser, TESTROOT + "file_pdfjs_test.pdf#zoom=100");
 
-      yield ContentTask.spawn(newTabBrowser, TESTS, function* (contentTESTS) {
+      await ContentTask.spawn(newTabBrowser, TESTS, async function(contentTESTS) {
         let document = content.document;
 
         function waitForRender() {
@@ -92,7 +91,6 @@ add_task(function* test() {
 
         // check that PDF is opened with internal viewer
         Assert.ok(content.document.querySelector("div#viewer"), "document content has viewer UI");
-        Assert.ok("PDFJS" in content.wrappedJSObject, "window content has PDFJS object");
 
         let initialWidth, previousWidth;
         initialWidth = previousWidth =
@@ -123,7 +121,7 @@ add_task(function* test() {
           }
 
           el.dispatchEvent(ev);
-          yield waitForRender();
+          await waitForRender();
 
           var pageZoomScale = content.document.querySelector("select#scaleSelect");
 
@@ -145,7 +143,7 @@ add_task(function* test() {
         }
 
         var viewer = content.wrappedJSObject.PDFViewerApplication;
-        yield viewer.close();
+        await viewer.close();
       });
     });
 });

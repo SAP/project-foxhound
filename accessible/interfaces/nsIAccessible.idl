@@ -7,10 +7,10 @@
 #include "nsIArray.idl"
 
 interface nsIPersistentProperties;
-interface nsIDOMCSSPrimitiveValue;
-interface nsIDOMNode;
 interface nsIAccessibleDocument;
 interface nsIAccessibleRelation;
+
+webidl Node;
 
 %{C++
 namespace mozilla {
@@ -21,11 +21,11 @@ class Accessible;
 %}
 
 /**
- * A cross-platform interface that supports platform-specific 
+ * A cross-platform interface that supports platform-specific
  * accessibility APIs like MSAA and ATK. Contains the sum of what's needed
  * to support IAccessible as well as ATK's generic accessibility objects.
  * Can also be used by in-process accessibility clients to get information
- * about objects in the accessible tree. The accessible tree is a subset of 
+ * about objects in the accessible tree. The accessible tree is a subset of
  * nodes in the DOM tree -- such as documents, focusable elements and text.
  * Mozilla creates the implementations of nsIAccessible on demand.
  * See http://www.mozilla.org/projects/ui/accessibility for more information.
@@ -57,7 +57,7 @@ interface nsIAccessible : nsISupports
    * Last child in accessible tree
    */
   readonly attribute nsIAccessible lastChild;
-  
+
   /**
    * Array of all this element's children.
    */
@@ -77,12 +77,12 @@ interface nsIAccessible : nsISupports
   /**
    * The DOM node this nsIAccessible is associated with.
    */
-  readonly attribute nsIDOMNode DOMNode;
+  readonly attribute Node DOMNode;
 
   /**
     * For remote accessibles the id of the related DOM node.
     */
-  readonly attribute DOMString id;
+  readonly attribute AString id;
 
   /**
    * The document accessible that this access node resides in.
@@ -97,7 +97,7 @@ interface nsIAccessible : nsISupports
   /**
    * The language for the current DOM node, e.g. en, de, etc.
    */
-  readonly attribute DOMString language;
+  readonly attribute AString language;
 
   /**
    * Accessible name -- the main text equivalent for this node. The name is
@@ -125,7 +125,7 @@ interface nsIAccessible : nsISupports
   /**
    * Provides localized string of accesskey name, such as Alt+D.
    * The modifier may be affected by user and platform preferences.
-   * Usually alt+letter, or just the letter alone for menu items. 
+   * Usually alt+letter, or just the letter alone for menu items.
    */
   readonly attribute AString accessKey;
 
@@ -227,9 +227,15 @@ interface nsIAccessible : nsISupports
 
   /**
    * Return accessible's x and y coordinates relative to the screen and
-   * accessible's width and height.
+   * accessible's width and height in Dev pixels.
    */
   void getBounds(out long x, out long y, out long width, out long height);
+
+  /**
+   * Return accessible's x and y coordinates relative to the screen and
+   * accessible's width and height in CSS pixels.
+   */
+  void getBoundsInCSSPixels(out long aX, out long aY, out long aWidth, out long aHeight);
 
   /**
    * Add or remove this accessible to the current selection

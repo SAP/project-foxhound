@@ -9,100 +9,65 @@
 
 use font_descriptor;
 use font_descriptor::{CTFontDescriptor, CTFontDescriptorCreateMatchingFontDescriptors};
-use font_manager::CTFontManagerCopyAvailableFontFamilyNames;
+use font_manager::{CTFontManagerCopyAvailableFontFamilyNames, CTFontManagerCopyAvailablePostScriptNames};
 
 use core_foundation::array::{CFArray, CFArrayRef};
-use core_foundation::base::{CFRelease, CFRetain, CFTypeID, CFTypeRef, TCFType};
+use core_foundation::base::{CFTypeID, TCFType};
 use core_foundation::dictionary::{CFDictionary, CFDictionaryRef};
 use core_foundation::number::CFNumber;
 use core_foundation::set::CFSet;
 use core_foundation::string::{CFString, CFStringRef};
 
-use std::mem;
-use std::ptr;
+use std::os::raw::c_void;
 
 #[repr(C)]
-struct __CTFontCollection;
+pub struct __CTFontCollection(c_void);
 
 pub type CTFontCollectionRef = *const __CTFontCollection;
 
-#[derive(Debug)]
-pub struct CTFontCollection {
-    obj: CTFontCollectionRef,
+declare_TCFType! {
+    CTFontCollection, CTFontCollectionRef
 }
+impl_TCFType!(CTFontCollection, CTFontCollectionRef, CTFontCollectionGetTypeID);
+impl_CFTypeDescription!(CTFontCollection);
 
-impl Drop for CTFontCollection {
-    fn drop(&mut self) {
-        unsafe {
-            CFRelease(self.as_CFTypeRef())
-        }
-    }
-}
-
-impl TCFType<CTFontCollectionRef> for CTFontCollection {
-    #[inline]
-    fn as_concrete_TypeRef(&self) -> CTFontCollectionRef {
-        self.obj
-    }
-
-    #[inline]
-    unsafe fn wrap_under_get_rule(reference: CTFontCollectionRef) -> CTFontCollection {
-        let reference: CTFontCollectionRef = mem::transmute(CFRetain(mem::transmute(reference)));
-        TCFType::wrap_under_create_rule(reference)
-    }
-
-    #[inline]
-    unsafe fn wrap_under_create_rule(obj: CTFontCollectionRef) -> CTFontCollection {
-        CTFontCollection {
-            obj: obj,
-        }
-    }
-
-    #[inline]
-    fn as_CFTypeRef(&self) -> CFTypeRef {
-        unsafe {
-            mem::transmute(self.as_concrete_TypeRef())
-        }
-    }
-
-    #[inline]
-    fn type_id() -> CFTypeID {
-        unsafe {
-            CTFontCollectionGetTypeID()
-        }
-    }
-}
 
 impl CTFontCollection {
-    pub fn get_descriptors(&self) -> CFArray {
+    pub fn get_descriptors(&self) -> Option<CFArray<CTFontDescriptor>> {
         // surprise! this function follows the Get rule, despite being named *Create*.
         // So we have to addRef it to avoid CTFontCollection from double freeing it later.
         unsafe {
-            TCFType::wrap_under_get_rule(CTFontCollectionCreateMatchingFontDescriptors(self.obj))
+            let font_descriptors = CTFontCollectionCreateMatchingFontDescriptors(self.0);
+            if font_descriptors.is_null() {
+                // This returns null if there are no matching font descriptors.
+                None
+            } else {
+                Some(CFArray::wrap_under_get_rule(font_descriptors))
+            }
         }
     }
 }
 
-pub fn new_from_descriptors(descs: &CFArray) -> CTFontCollection {
+pub fn new_from_descriptors(descs: &CFArray<CTFontDescriptor>) -> CTFontCollection {
     unsafe {
-        let key: CFString = TCFType::wrap_under_get_rule(kCTFontCollectionRemoveDuplicatesOption);
-        let value = CFNumber::from_i64(1);
+        let key = CFString::wrap_under_get_rule(kCTFontCollectionRemoveDuplicatesOption);
+        let value = CFNumber::from(1i64);
         let options = CFDictionary::from_CFType_pairs(&[ (key.as_CFType(), value.as_CFType()) ]);
         let font_collection_ref =
             CTFontCollectionCreateWithFontDescriptors(descs.as_concrete_TypeRef(),
                                                       options.as_concrete_TypeRef());
-        TCFType::wrap_under_create_rule(font_collection_ref)
+        CTFontCollection::wrap_under_create_rule(font_collection_ref)
     }
 }
 
 pub fn create_for_all_families() -> CTFontCollection {
     unsafe {
-        let key: CFString = TCFType::wrap_under_get_rule(kCTFontCollectionRemoveDuplicatesOption);
-        let value = CFNumber::from_i64(1);
+        let key = CFString::wrap_under_get_rule(kCTFontCollectionRemoveDuplicatesOption);
+        let value = CFNumber::from(1i64);
         let options = CFDictionary::from_CFType_pairs(&[ (key.as_CFType(), value.as_CFType()) ]);
         let font_collection_ref =
             CTFontCollectionCreateFromAvailableFonts(options.as_concrete_TypeRef());
-        TCFType::wrap_under_create_rule(font_collection_ref)
+        CTFontCollection::wrap_under_create_rule(font_collection_ref)
     }
 }
 
@@ -110,10 +75,10 @@ pub fn create_for_family(family: &str) -> Option<CTFontCollection> {
     use font_descriptor::kCTFontFamilyNameAttribute;
 
     unsafe {
-        let family_attr: CFString = TCFType::wrap_under_get_rule(kCTFontFamilyNameAttribute);
+        let family_attr = CFString::wrap_under_get_rule(kCTFontFamilyNameAttribute);
         let family_name: CFString = family.parse().unwrap();
         let specified_attrs = CFDictionary::from_CFType_pairs(&[
-            (family_attr.as_CFType(), family_name.as_CFType())
+            (family_attr.clone(), family_name.as_CFType())
         ]);
 
         let wildcard_desc: CTFontDescriptor =
@@ -122,19 +87,25 @@ pub fn create_for_family(family: &str) -> Option<CTFontCollection> {
         let matched_descs = CTFontDescriptorCreateMatchingFontDescriptors(
                 wildcard_desc.as_concrete_TypeRef(),
                 mandatory_attrs.as_concrete_TypeRef());
-        if matched_descs == ptr::null() {
+        if matched_descs.is_null() {
             return None;
         }
-        let matched_descs: CFArray = TCFType::wrap_under_create_rule(matched_descs);
+        let matched_descs = CFArray::wrap_under_create_rule(matched_descs);
         // I suppose one doesn't even need the CTFontCollection object at this point.
         // But we stick descriptors into and out of it just to provide a nice wrapper API.
         Some(new_from_descriptors(&matched_descs))
     }
 }
 
-pub fn get_family_names() -> CFArray {
+pub fn get_family_names() -> CFArray<CFString> {
     unsafe {
-        TCFType::wrap_under_create_rule(CTFontManagerCopyAvailableFontFamilyNames())
+        CFArray::wrap_under_create_rule(CTFontManagerCopyAvailableFontFamilyNames())
+    }
+}
+
+pub fn get_postscript_names() -> CFArray<CFString> {
+    unsafe {
+        CFArray::wrap_under_create_rule(CTFontManagerCopyAvailablePostScriptNames())
     }
 }
 
@@ -149,7 +120,7 @@ extern {
     //                                                 descriptors: CFArrayRef,
     //                                                 options: CFDictionaryRef) -> CTFontCollectionRef;
     fn CTFontCollectionCreateFromAvailableFonts(options: CFDictionaryRef) -> CTFontCollectionRef;
-    // this stupid function doesn't actually do any wildcard expansion; 
+    // this stupid function doesn't actually do any wildcard expansion;
     // it just chooses the best match. Use
     // CTFontDescriptorCreateMatchingDescriptors instead.
     fn CTFontCollectionCreateMatchingFontDescriptors(collection: CTFontCollectionRef) -> CFArrayRef;

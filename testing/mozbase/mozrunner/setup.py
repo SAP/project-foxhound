@@ -2,31 +2,32 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import sys
+from __future__ import absolute_import
+
 from setuptools import setup, find_packages
 
 PACKAGE_NAME = 'mozrunner'
-PACKAGE_VERSION = '6.13'
+PACKAGE_VERSION = '7.2.0'
 
 desc = """Reliable start/stop/configuration of Mozilla Applications (Firefox, Thunderbird, etc.)"""
 
-deps = ['mozdevice >= 0.37',
-        'mozfile >= 1.0',
-        'mozinfo >= 0.7',
-        'mozlog >= 3.0',
-        'mozprocess >= 0.23',
-        'mozprofile >= 0.18',
-        ]
+deps = [
+    'mozdevice>=1.1.6',
+    'mozfile>=1.2',
+    'mozinfo>=0.7,<2',
+    'mozlog==3.*',
+    'mozprocess>=0.23,<1',
+    'mozprofile~=2.1',
+    'six>=1.10.0,<2',
+]
 
 EXTRAS_REQUIRE = {'crash': ['mozcrash >= 1.0']}
 
-# we only support python 2 right now
-assert sys.version_info[0] == 2
 
 setup(name=PACKAGE_NAME,
       version=PACKAGE_VERSION,
       description=desc,
-      long_description="see http://mozbase.readthedocs.org/",
+      long_description="see https://firefox-source-docs.mozilla.org/mozbase/index.html",
       classifiers=['Environment :: Console',
                    'Intended Audience :: Developers',
                    'License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)',
@@ -41,9 +42,6 @@ setup(name=PACKAGE_NAME,
       url='https://wiki.mozilla.org/Auto-tools/Projects/Mozbase',
       license='MPL 2.0',
       packages=find_packages(),
-      package_data={'mozrunner': [
-          'resources/metrotestharness.exe'
-      ]},
       zip_safe=False,
       install_requires=deps,
       extras_require=EXTRAS_REQUIRE,

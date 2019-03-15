@@ -6,8 +6,9 @@
 
 #include "StorageDBThread.h"
 #include "StorageDBUpdater.h"
-#include "StorageCache.h"
-#include "StorageManager.h"
+#include "StorageUtils.h"
+#include "LocalStorageCache.h"
+#include "LocalStorageManager.h"
 
 #include "nsIEffectiveTLDService.h"
 #include "nsDirectoryServiceUtils.h"
@@ -22,9 +23,14 @@
 #include "mozIStorageValueArray.h"
 #include "mozIStorageFunction.h"
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/ipc/BackgroundParent.h"
 #include "nsIObserverService.h"
+#include "nsThread.h"
+#include "nsThreadManager.h"
 #include "nsVariant.h"
+#include "mozilla/EventQueue.h"
 #include "mozilla/IOInterposer.h"
+#include "mozilla/ThreadEventQueue.h"
 #include "mozilla/Services.h"
 #include "mozilla/Tokenizer.h"
 #include "GeckoProfiler.h"
@@ -38,110 +44,173 @@
 #define MAX_WAL_SIZE_BYTES 512 * 1024
 
 // Current version of the database schema
-#define CURRENT_SCHEMA_VERSION 1
+#define CURRENT_SCHEMA_VERSION 2
 
 namespace mozilla {
 namespace dom {
 
-namespace { // anon
+using namespace StorageUtils;
 
-// This is only a compatibility code for schema version 0.  Returns the 'scope'
-// key in the schema version 0 format for the scope column.
-nsCString
-Scheme0Scope(StorageCacheBridge* aCache)
-{
-  nsCString result;
+namespace {  // anon
 
-  nsCString suffix = aCache->OriginSuffix();
+StorageDBThread* sStorageThread = nullptr;
 
-  OriginAttributes oa;
-  if (!suffix.IsEmpty()) {
-    DebugOnly<bool> success = oa.PopulateFromSuffix(suffix);
-    MOZ_ASSERT(success);
-  }
+// False until we shut the storage thread down.
+bool sStorageThreadDown = false;
 
-  if (oa.mAppId != nsIScriptSecurityManager::NO_APP_ID ||
-      oa.mInIsolatedMozBrowser) {
-    result.AppendInt(oa.mAppId);
-    result.Append(':');
-    result.Append(oa.mInIsolatedMozBrowser ? 't' : 'f');
-    result.Append(':');
-  }
+}  // namespace
 
-  // If there is more than just appid and/or inbrowser stored in origin
-  // attributes, put it to the schema 0 scope as well.  We must do that
-  // to keep the scope column unique (same resolution as schema 1 has
-  // with originAttributes and originKey columns) so that switch between
-  // schema 1 and 0 always works in both ways.
-  nsAutoCString remaining;
-  oa.mAppId = 0;
-  oa.mInIsolatedMozBrowser = false;
-  oa.CreateSuffix(remaining);
-  if (!remaining.IsEmpty()) {
-    MOZ_ASSERT(!suffix.IsEmpty());
-
-    if (result.IsEmpty()) {
-      // Must contain the old prefix, otherwise we won't search for the whole
-      // origin attributes suffix.
-      result.Append(NS_LITERAL_CSTRING("0:f:"));
-    }
-    // Append the whole origin attributes suffix despite we have already stored
-    // appid and inbrowser.  We are only looking for it when the scope string
-    // starts with "$appid:$inbrowser:" (with whatever valid values).
-    //
-    // The OriginAttributes suffix is a string in a form like:
-    // "^addonId=101&userContextId=5" and it's ensured it always starts with '^'
-    // and never contains ':'.  See OriginAttributes::CreateSuffix.
-    result.Append(suffix);
-    result.Append(':');
-  }
-
-  result.Append(aCache->OriginNoSuffix());
-
-  return result;
-}
-
-} // anon
-
-
+// XXX Fix me!
+#if 0
 StorageDBBridge::StorageDBBridge()
 {
 }
+#endif
 
+class StorageDBThread::InitHelper final : public Runnable {
+  nsCOMPtr<nsIEventTarget> mOwningThread;
+  mozilla::Mutex mMutex;
+  mozilla::CondVar mCondVar;
+  nsString mProfilePath;
+  nsresult mMainThreadResultCode;
+  bool mWaiting;
+
+ public:
+  InitHelper()
+      : Runnable("dom::StorageDBThread::InitHelper"),
+        mOwningThread(GetCurrentThreadEventTarget()),
+        mMutex("InitHelper::mMutex"),
+        mCondVar(mMutex, "InitHelper::mCondVar"),
+        mMainThreadResultCode(NS_OK),
+        mWaiting(true) {}
+
+  // Because of the `sync Preload` IPC, we need to be able to synchronously
+  // initialize, which includes consulting and initializing
+  // some main-thread-only APIs. Bug 1386441 discusses improving this situation.
+  nsresult SyncDispatchAndReturnProfilePath(nsAString& aProfilePath);
+
+ private:
+  ~InitHelper() override = default;
+
+  nsresult RunOnMainThread();
+
+  NS_DECL_NSIRUNNABLE
+};
+
+class StorageDBThread::NoteBackgroundThreadRunnable final : public Runnable {
+  nsCOMPtr<nsIEventTarget> mOwningThread;
+
+ public:
+  NoteBackgroundThreadRunnable()
+      : Runnable("dom::StorageDBThread::NoteBackgroundThreadRunnable"),
+        mOwningThread(GetCurrentThreadEventTarget()) {}
+
+ private:
+  ~NoteBackgroundThreadRunnable() override = default;
+
+  NS_DECL_NSIRUNNABLE
+};
 
 StorageDBThread::StorageDBThread()
-  : mThread(nullptr)
-  , mThreadObserver(new ThreadObserver())
-  , mStopIOThread(false)
-  , mWALModeEnabled(false)
-  , mDBReady(false)
-  , mStatus(NS_OK)
-  , mWorkerStatements(mWorkerConnection)
-  , mReaderStatements(mReaderConnection)
-  , mDirtyEpoch(0)
-  , mFlushImmediately(false)
-  , mPriorityCounter(0)
-{
+    : mThread(nullptr),
+      mThreadObserver(new ThreadObserver()),
+      mStopIOThread(false),
+      mWALModeEnabled(false),
+      mDBReady(false),
+      mStatus(NS_OK),
+      mWorkerStatements(mWorkerConnection),
+      mReaderStatements(mReaderConnection),
+      mFlushImmediately(false),
+      mPriorityCounter(0) {}
+
+// static
+StorageDBThread* StorageDBThread::Get() {
+  AssertIsOnBackgroundThread();
+
+  return sStorageThread;
 }
 
-nsresult
-StorageDBThread::Init()
-{
-  nsresult rv;
+// static
+StorageDBThread* StorageDBThread::GetOrCreate(const nsString& aProfilePath) {
+  AssertIsOnBackgroundThread();
+
+  if (sStorageThread || sStorageThreadDown) {
+    // When sStorageThreadDown is at true, sStorageThread is null.
+    // Checking sStorageThreadDown flag here prevents reinitialization of
+    // the storage thread after shutdown.
+    return sStorageThread;
+  }
+
+  nsAutoPtr<StorageDBThread> storageThread(new StorageDBThread());
+
+  nsresult rv = storageThread->Init(aProfilePath);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return nullptr;
+  }
+
+  sStorageThread = storageThread.forget();
+
+  return sStorageThread;
+}
+
+// static
+nsresult StorageDBThread::GetProfilePath(nsString& aProfilePath) {
+  MOZ_ASSERT(XRE_IsParentProcess());
+  MOZ_ASSERT(NS_IsMainThread());
 
   // Need to determine location on the main thread, since
-  // NS_GetSpecialDirectory access the atom table that can
-  // be accessed only on the main thread.
-  rv = NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR,
-                              getter_AddRefs(mDatabaseFile));
-  NS_ENSURE_SUCCESS(rv, rv);
+  // NS_GetSpecialDirectory accesses the atom table that can
+  // only be accessed on the main thread.
+  nsCOMPtr<nsIFile> profileDir;
+  nsresult rv = NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR,
+                                       getter_AddRefs(profileDir));
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  rv = profileDir->GetPath(aProfilePath);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  // This service has to be started on the main thread currently.
+  nsCOMPtr<mozIStorageService> ss =
+      do_GetService(MOZ_STORAGE_SERVICE_CONTRACTID, &rv);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  return NS_OK;
+}
+
+nsresult StorageDBThread::Init(const nsString& aProfilePath) {
+  AssertIsOnBackgroundThread();
+
+  nsresult rv;
+
+  nsString profilePath;
+  if (aProfilePath.IsEmpty()) {
+    RefPtr<InitHelper> helper = new InitHelper();
+
+    rv = helper->SyncDispatchAndReturnProfilePath(profilePath);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+  } else {
+    profilePath = aProfilePath;
+  }
+
+  mDatabaseFile = do_CreateInstance(NS_LOCAL_FILE_CONTRACTID, &rv);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  rv = mDatabaseFile->InitWithPath(profilePath);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
 
   rv = mDatabaseFile->Append(NS_LITERAL_STRING("webappsstore.sqlite"));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // Ensure mozIStorageService init on the main thread first.
-  nsCOMPtr<mozIStorageService> service =
-    do_GetService(MOZ_STORAGE_SERVICE_CONTRACTID, &rv);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Need to keep the lock to avoid setting mThread later then
@@ -155,12 +224,18 @@ StorageDBThread::Init()
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
+  RefPtr<NoteBackgroundThreadRunnable> runnable =
+      new NoteBackgroundThreadRunnable();
+  MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(runnable));
+
   return NS_OK;
 }
 
-nsresult
-StorageDBThread::Shutdown()
-{
+nsresult StorageDBThread::Shutdown() {
+  AssertIsOnBackgroundThread();
+
+  sStorageThreadDown = true;
+
   if (!mThread) {
     return NS_ERROR_NOT_INITIALIZED;
   }
@@ -182,10 +257,9 @@ StorageDBThread::Shutdown()
   return mStatus;
 }
 
-void
-StorageDBThread::SyncPreload(StorageCacheBridge* aCache, bool aForceSync)
-{
-  PROFILER_LABEL_FUNC(js::ProfileEntry::Category::STORAGE);
+void StorageDBThread::SyncPreload(LocalStorageCacheBridge* aCache,
+                                  bool aForceSync) {
+  AUTO_PROFILER_LABEL("StorageDBThread::SyncPreload", OTHER);
   if (!aForceSync && aCache->LoadedCount()) {
     // Preload already started for this cache, just wait for it to finish.
     // LoadWait will exit after LoadDone on the cache has been called.
@@ -202,8 +276,10 @@ StorageDBThread::SyncPreload(StorageCacheBridge* aCache, bool aForceSync)
     bool pendingTasks;
     {
       MonitorAutoLock monitor(mThreadObserver->GetMonitor());
-      pendingTasks = mPendingTasks.IsOriginUpdatePending(aCache->OriginSuffix(), aCache->OriginNoSuffix()) ||
-                     mPendingTasks.IsOriginClearPending(aCache->OriginSuffix(), aCache->OriginNoSuffix());
+      pendingTasks = mPendingTasks.IsOriginUpdatePending(
+                         aCache->OriginSuffix(), aCache->OriginNoSuffix()) ||
+                     mPendingTasks.IsOriginClearPending(
+                         aCache->OriginSuffix(), aCache->OriginNoSuffix());
     }
 
     if (!pendingTasks) {
@@ -217,7 +293,8 @@ StorageDBThread::SyncPreload(StorageCacheBridge* aCache, bool aForceSync)
   // Need to go asynchronously since WAL is not allowed or scheduled updates
   // need to be flushed first.
   // Schedule preload for this cache as the first operation.
-  nsresult rv = InsertDBOp(new DBOperation(DBOperation::opPreloadUrgent, aCache));
+  nsresult rv =
+      InsertDBOp(new DBOperation(DBOperation::opPreloadUrgent, aCache));
 
   // LoadWait exits after LoadDone of the cache has been called.
   if (NS_SUCCEEDED(rv)) {
@@ -225,33 +302,26 @@ StorageDBThread::SyncPreload(StorageCacheBridge* aCache, bool aForceSync)
   }
 }
 
-void
-StorageDBThread::AsyncFlush()
-{
+void StorageDBThread::AsyncFlush() {
   MonitorAutoLock monitor(mThreadObserver->GetMonitor());
   mFlushImmediately = true;
   monitor.Notify();
 }
 
-bool
-StorageDBThread::ShouldPreloadOrigin(const nsACString& aOrigin)
-{
+bool StorageDBThread::ShouldPreloadOrigin(const nsACString& aOrigin) {
   MonitorAutoLock monitor(mThreadObserver->GetMonitor());
   return mOriginsHavingData.Contains(aOrigin);
 }
 
-void
-StorageDBThread::GetOriginsHavingData(InfallibleTArray<nsCString>* aOrigins)
-{
+void StorageDBThread::GetOriginsHavingData(
+    InfallibleTArray<nsCString>* aOrigins) {
   MonitorAutoLock monitor(mThreadObserver->GetMonitor());
   for (auto iter = mOriginsHavingData.Iter(); !iter.Done(); iter.Next()) {
     aOrigins->AppendElement(iter.Get()->GetKey());
   }
 }
 
-nsresult
-StorageDBThread::InsertDBOp(StorageDBThread::DBOperation* aOperation)
-{
+nsresult StorageDBThread::InsertDBOp(StorageDBThread::DBOperation* aOperation) {
   MonitorAutoLock monitor(mThreadObserver->GetMonitor());
 
   // Sentinel to don't forget to delete the operation when we exit early.
@@ -270,78 +340,82 @@ StorageDBThread::InsertDBOp(StorageDBThread::DBOperation* aOperation)
   }
 
   switch (aOperation->Type()) {
-  case DBOperation::opPreload:
-  case DBOperation::opPreloadUrgent:
-    if (mPendingTasks.IsOriginUpdatePending(aOperation->OriginSuffix(), aOperation->OriginNoSuffix())) {
-      // If there is a pending update operation for the scope first do the flush
-      // before we preload the cache.  This may happen in an extremely rare case
-      // when a child process throws away its cache before flush on the parent
-      // has finished.  If we would preloaded the cache as a priority operation
-      // before the pending flush, we would have got an inconsistent cache
-      // content.
-      mFlushImmediately = true;
-    } else if (mPendingTasks.IsOriginClearPending(aOperation->OriginSuffix(), aOperation->OriginNoSuffix())) {
-      // The scope is scheduled to be cleared, so just quickly load as empty.
-      // We need to do this to prevent load of the DB data before the scope has
-      // actually been cleared from the database.  Preloads are processed
-      // immediately before update and clear operations on the database that are
-      // flushed periodically in batches.
-      MonitorAutoUnlock unlock(mThreadObserver->GetMonitor());
-      aOperation->Finalize(NS_OK);
-      return NS_OK;
-    }
-    MOZ_FALLTHROUGH;
+    case DBOperation::opPreload:
+    case DBOperation::opPreloadUrgent:
+      if (mPendingTasks.IsOriginUpdatePending(aOperation->OriginSuffix(),
+                                              aOperation->OriginNoSuffix())) {
+        // If there is a pending update operation for the scope first do the
+        // flush before we preload the cache.  This may happen in an extremely
+        // rare case when a child process throws away its cache before flush on
+        // the parent has finished.  If we would preloaded the cache as a
+        // priority operation before the pending flush, we would have got an
+        // inconsistent cache content.
+        mFlushImmediately = true;
+      } else if (mPendingTasks.IsOriginClearPending(
+                     aOperation->OriginSuffix(),
+                     aOperation->OriginNoSuffix())) {
+        // The scope is scheduled to be cleared, so just quickly load as empty.
+        // We need to do this to prevent load of the DB data before the scope
+        // has actually been cleared from the database.  Preloads are processed
+        // immediately before update and clear operations on the database that
+        // are flushed periodically in batches.
+        MonitorAutoUnlock unlock(mThreadObserver->GetMonitor());
+        aOperation->Finalize(NS_OK);
+        return NS_OK;
+      }
+      MOZ_FALLTHROUGH;
 
-  case DBOperation::opGetUsage:
-    if (aOperation->Type() == DBOperation::opPreloadUrgent) {
-      SetHigherPriority(); // Dropped back after urgent preload execution
-      mPreloads.InsertElementAt(0, aOperation);
-    } else {
-      mPreloads.AppendElement(aOperation);
-    }
+    case DBOperation::opGetUsage:
+      if (aOperation->Type() == DBOperation::opPreloadUrgent) {
+        SetHigherPriority();  // Dropped back after urgent preload execution
+        mPreloads.InsertElementAt(0, aOperation);
+      } else {
+        mPreloads.AppendElement(aOperation);
+      }
 
-    // DB operation adopted, don't delete it.
-    opScope.forget();
+      // DB operation adopted, don't delete it.
+      opScope.forget();
 
-    // Immediately start executing this.
-    monitor.Notify();
-    break;
+      // Immediately start executing this.
+      monitor.Notify();
+      break;
 
-  default:
-    // Update operations are first collected, coalesced and then flushed
-    // after a short time.
-    mPendingTasks.Add(aOperation);
+    default:
+      // Update operations are first collected, coalesced and then flushed
+      // after a short time.
+      mPendingTasks.Add(aOperation);
 
-    // DB operation adopted, don't delete it.
-    opScope.forget();
+      // DB operation adopted, don't delete it.
+      opScope.forget();
 
-    ScheduleFlush();
-    break;
+      ScheduleFlush();
+      break;
   }
 
   return NS_OK;
 }
 
-void
-StorageDBThread::SetHigherPriority()
-{
+void StorageDBThread::SetHigherPriority() {
   ++mPriorityCounter;
   PR_SetThreadPriority(mThread, PR_PRIORITY_URGENT);
 }
 
-void
-StorageDBThread::SetDefaultPriority()
-{
+void StorageDBThread::SetDefaultPriority() {
   if (--mPriorityCounter <= 0) {
     PR_SetThreadPriority(mThread, PR_PRIORITY_LOW);
   }
 }
 
-void
-StorageDBThread::ThreadFunc(void* aArg)
-{
-  AutoProfilerRegister registerThread("localStorage DB");
-  PR_SetCurrentThreadName("localStorage DB");
+void StorageDBThread::ThreadFunc(void* aArg) {
+  {
+    auto queue =
+        MakeRefPtr<ThreadEventQueue<EventQueue>>(MakeUnique<EventQueue>());
+    Unused << nsThreadManager::get().CreateCurrentThread(
+        queue, nsThread::NOT_MAIN_THREAD);
+  }
+
+  AUTO_PROFILER_REGISTER_THREAD("localStorage DB");
+  NS_SetCurrentThreadName("localStorage DB");
   mozilla::IOInterposer::RegisterCurrentThread();
 
   StorageDBThread* thread = static_cast<StorageDBThread*>(aArg);
@@ -349,9 +423,7 @@ StorageDBThread::ThreadFunc(void* aArg)
   mozilla::IOInterposer::UnregisterCurrentThread();
 }
 
-void
-StorageDBThread::ThreadFunc()
-{
+void StorageDBThread::ThreadFunc() {
   nsresult rv = InitDatabase();
 
   MonitorAutoLock lockMonitor(mThreadObserver->GetMonitor());
@@ -366,7 +438,7 @@ StorageDBThread::ThreadFunc()
   // dispatched to it.
   nsCOMPtr<nsIThread> thread = NS_GetCurrentThread();
   nsCOMPtr<nsIThreadInternal> threadInternal = do_QueryInterface(thread);
-  MOZ_ASSERT(threadInternal); // Should always succeed.
+  MOZ_ASSERT(threadInternal);  // Should always succeed.
   threadInternal->SetObserver(mThreadObserver);
 
   while (MOZ_LIKELY(!mStopIOThread || mPreloads.Length() ||
@@ -382,7 +454,8 @@ StorageDBThread::ThreadFunc()
       } while (NS_SUCCEEDED(rv) && processedEvent);
     }
 
-    if (MOZ_UNLIKELY(TimeUntilFlush() == 0)) {
+    TimeDuration timeUntilFlush = TimeUntilFlush();
+    if (MOZ_UNLIKELY(timeUntilFlush.IsZero())) {
       // Flush time is up or flush has been forced, do it now.
       UnscheduleFlush();
       if (mPendingTasks.Prepare()) {
@@ -406,12 +479,14 @@ StorageDBThread::ThreadFunc()
       }
 
       if (op->Type() == DBOperation::opPreloadUrgent) {
-        SetDefaultPriority(); // urgent preload unscheduled
+        SetDefaultPriority();  // urgent preload unscheduled
       }
     } else if (MOZ_UNLIKELY(!mStopIOThread)) {
-      lockMonitor.Wait(TimeUntilFlush());
+      AUTO_PROFILER_LABEL("StorageDBThread::ThreadFunc::Wait", IDLE);
+      AUTO_PROFILER_THREAD_SLEEP;
+      lockMonitor.Wait(timeUntilFlush);
     }
-  } // thread loop
+  }  // thread loop
 
   mStatus = ShutdownDatabase();
 
@@ -420,12 +495,10 @@ StorageDBThread::ThreadFunc()
   }
 }
 
-
 NS_IMPL_ISUPPORTS(StorageDBThread::ThreadObserver, nsIThreadObserver)
 
 NS_IMETHODIMP
-StorageDBThread::ThreadObserver::OnDispatchedEvent(nsIThreadInternal* aThread)
-{
+StorageDBThread::ThreadObserver::OnDispatchedEvent() {
   MonitorAutoLock lock(mMonitor);
   mHasPendingEvents = true;
   lock.Notify();
@@ -434,48 +507,40 @@ StorageDBThread::ThreadObserver::OnDispatchedEvent(nsIThreadInternal* aThread)
 
 NS_IMETHODIMP
 StorageDBThread::ThreadObserver::OnProcessNextEvent(nsIThreadInternal* aThread,
-                                                    bool mayWait)
-{
+                                                    bool mayWait) {
   return NS_OK;
 }
 
 NS_IMETHODIMP
-StorageDBThread::ThreadObserver::AfterProcessNextEvent(nsIThreadInternal* aThread,
-                                                       bool eventWasProcessed)
-{
+StorageDBThread::ThreadObserver::AfterProcessNextEvent(
+    nsIThreadInternal* aThread, bool eventWasProcessed) {
   return NS_OK;
 }
 
-
-extern void
-ReverseString(const nsCSubstring& aSource, nsCSubstring& aResult);
-
-nsresult
-StorageDBThread::OpenDatabaseConnection()
-{
+nsresult StorageDBThread::OpenDatabaseConnection() {
   nsresult rv;
 
   MOZ_ASSERT(!NS_IsMainThread());
 
-  nsCOMPtr<mozIStorageService> service
-      = do_GetService(MOZ_STORAGE_SERVICE_CONTRACTID, &rv);
+  nsCOMPtr<mozIStorageService> service =
+      do_GetService(MOZ_STORAGE_SERVICE_CONTRACTID, &rv);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = service->OpenUnsharedDatabase(mDatabaseFile, getter_AddRefs(mWorkerConnection));
+  rv = service->OpenUnsharedDatabase(mDatabaseFile,
+                                     getter_AddRefs(mWorkerConnection));
   if (rv == NS_ERROR_FILE_CORRUPTED) {
     // delete the db and try opening again
     rv = mDatabaseFile->Remove(false);
     NS_ENSURE_SUCCESS(rv, rv);
-    rv = service->OpenUnsharedDatabase(mDatabaseFile, getter_AddRefs(mWorkerConnection));
+    rv = service->OpenUnsharedDatabase(mDatabaseFile,
+                                       getter_AddRefs(mWorkerConnection));
   }
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
 }
 
-nsresult
-StorageDBThread::OpenAndUpdateDatabase()
-{
+nsresult StorageDBThread::OpenAndUpdateDatabase() {
   nsresult rv;
 
   // Here we are on the worker thread. This opens the worker connection.
@@ -490,9 +555,7 @@ StorageDBThread::OpenAndUpdateDatabase()
   return NS_OK;
 }
 
-nsresult
-StorageDBThread::InitDatabase()
-{
+nsresult StorageDBThread::InitDatabase() {
   nsresult rv;
 
   // Here we are on the worker thread. This opens the worker connection.
@@ -529,9 +592,10 @@ StorageDBThread::InitDatabase()
   // List scopes having any stored data
   nsCOMPtr<mozIStorageStatement> stmt;
   // Note: result of this select must match StorageManager::CreateOrigin()
-  rv = mWorkerConnection->CreateStatement(NS_LITERAL_CSTRING(
-        "SELECT DISTINCT originAttributes || ':' || originKey FROM webappsstore2"),
-        getter_AddRefs(stmt));
+  rv = mWorkerConnection->CreateStatement(
+      NS_LITERAL_CSTRING("SELECT DISTINCT originAttributes || ':' || originKey "
+                         "FROM webappsstore2"),
+      getter_AddRefs(stmt));
   NS_ENSURE_SUCCESS(rv, rv);
   mozStorageStatementScoper scope(stmt);
 
@@ -548,13 +612,11 @@ StorageDBThread::InitDatabase()
   return NS_OK;
 }
 
-nsresult
-StorageDBThread::SetJournalMode(bool aIsWal)
-{
+nsresult StorageDBThread::SetJournalMode(bool aIsWal) {
   nsresult rv;
 
-  nsAutoCString stmtString(
-    MOZ_STORAGE_UNIQUIFY_QUERY_STR "PRAGMA journal_mode = ");
+  nsAutoCString stmtString(MOZ_STORAGE_UNIQUIFY_QUERY_STR
+                           "PRAGMA journal_mode = ");
   if (aIsWal) {
     stmtString.AppendLiteral("wal");
   } else {
@@ -584,9 +646,7 @@ StorageDBThread::SetJournalMode(bool aIsWal)
   return NS_OK;
 }
 
-nsresult
-StorageDBThread::TryJournalMode()
-{
+nsresult StorageDBThread::TryJournalMode() {
   nsresult rv;
 
   rv = SetJournalMode(true);
@@ -605,14 +665,12 @@ StorageDBThread::TryJournalMode()
   return NS_OK;
 }
 
-nsresult
-StorageDBThread::ConfigureWALBehavior()
-{
+nsresult StorageDBThread::ConfigureWALBehavior() {
   // Get the DB's page size
   nsCOMPtr<mozIStorageStatement> stmt;
-  nsresult rv = mWorkerConnection->CreateStatement(NS_LITERAL_CSTRING(
-    MOZ_STORAGE_UNIQUIFY_QUERY_STR "PRAGMA page_size"
-  ), getter_AddRefs(stmt));
+  nsresult rv = mWorkerConnection->CreateStatement(
+      NS_LITERAL_CSTRING(MOZ_STORAGE_UNIQUIFY_QUERY_STR "PRAGMA page_size"),
+      getter_AddRefs(stmt));
   NS_ENSURE_SUCCESS(rv, rv);
 
   bool hasResult = false;
@@ -625,7 +683,8 @@ StorageDBThread::ConfigureWALBehavior()
 
   // Set the threshold for auto-checkpointing the WAL.
   // We don't want giant logs slowing down reads & shutdown.
-  int32_t thresholdInPages = static_cast<int32_t>(MAX_WAL_SIZE_BYTES / pageSize);
+  int32_t thresholdInPages =
+      static_cast<int32_t>(MAX_WAL_SIZE_BYTES / pageSize);
   nsAutoCString thresholdPragma("PRAGMA wal_autocheckpoint = ");
   thresholdPragma.AppendInt(thresholdInPages);
   rv = mWorkerConnection->ExecuteSimpleSQL(thresholdPragma);
@@ -643,9 +702,7 @@ StorageDBThread::ConfigureWALBehavior()
   return NS_OK;
 }
 
-nsresult
-StorageDBThread::ShutdownDatabase()
-{
+nsresult StorageDBThread::ShutdownDatabase() {
   // Has to be called on the worker thread.
   MOZ_ASSERT(!NS_IsMainThread());
 
@@ -672,60 +729,51 @@ StorageDBThread::ShutdownDatabase()
   return rv;
 }
 
-void
-StorageDBThread::ScheduleFlush()
-{
+void StorageDBThread::ScheduleFlush() {
   if (mDirtyEpoch) {
-    return; // Already scheduled
+    return;  // Already scheduled
   }
 
   // Must be non-zero to indicate we are scheduled
-  mDirtyEpoch = PR_IntervalNow() | 1;
+  mDirtyEpoch = TimeStamp::Now();
 
   // Wake the monitor from indefinite sleep...
   (mThreadObserver->GetMonitor()).Notify();
 }
 
-void
-StorageDBThread::UnscheduleFlush()
-{
+void StorageDBThread::UnscheduleFlush() {
   // We are just about to do the flush, drop flags
   mFlushImmediately = false;
-  mDirtyEpoch = 0;
+  mDirtyEpoch = TimeStamp();
 }
 
-PRIntervalTime
-StorageDBThread::TimeUntilFlush()
-{
+TimeDuration StorageDBThread::TimeUntilFlush() {
   if (mFlushImmediately) {
-    return 0; // Do it now regardless the timeout.
+    return 0;  // Do it now regardless the timeout.
   }
-
-  static_assert(PR_INTERVAL_NO_TIMEOUT != 0,
-      "PR_INTERVAL_NO_TIMEOUT must be non-zero");
 
   if (!mDirtyEpoch) {
-    return PR_INTERVAL_NO_TIMEOUT; // No pending task...
+    return TimeDuration::Forever();  // No pending task...
   }
 
-  static const PRIntervalTime kMaxAge = PR_MillisecondsToInterval(FLUSHING_INTERVAL_MS);
-
-  PRIntervalTime now = PR_IntervalNow() | 1;
-  PRIntervalTime age = now - mDirtyEpoch;
+  TimeStamp now = TimeStamp::Now();
+  TimeDuration age = now - mDirtyEpoch;
+  static const TimeDuration kMaxAge =
+      TimeDuration::FromMilliseconds(FLUSHING_INTERVAL_MS);
   if (age > kMaxAge) {
-    return 0; // It is time.
+    return 0;  // It is time.
   }
 
-  return kMaxAge - age; // Time left, this is used to sleep the monitor
+  return kMaxAge - age;  // Time left. This is used to sleep the monitor.
 }
 
-void
-StorageDBThread::NotifyFlushCompletion()
-{
+void StorageDBThread::NotifyFlushCompletion() {
 #ifdef DOM_STORAGE_TESTS
   if (!NS_IsMainThread()) {
-    RefPtr<nsRunnableMethod<StorageDBThread, void, false> > event =
-      NewNonOwningRunnableMethod(this, &StorageDBThread::NotifyFlushCompletion);
+    RefPtr<nsRunnableMethod<StorageDBThread, void, false>> event =
+        NewNonOwningRunnableMethod(
+            "dom::StorageDBThread::NotifyFlushCompletion", this,
+            &StorageDBThread::NotifyFlushCompletion);
     NS_DispatchToMainThread(event);
     return;
   }
@@ -741,15 +789,15 @@ StorageDBThread::NotifyFlushCompletion()
 
 namespace {
 
-class OriginAttrsPatternMatchSQLFunction final : public mozIStorageFunction
-{
+class OriginAttrsPatternMatchSQLFunction final : public mozIStorageFunction {
   NS_DECL_ISUPPORTS
   NS_DECL_MOZISTORAGEFUNCTION
 
-  explicit OriginAttrsPatternMatchSQLFunction(OriginAttributesPattern const& aPattern)
-    : mPattern(aPattern) {}
+  explicit OriginAttrsPatternMatchSQLFunction(
+      OriginAttributesPattern const& aPattern)
+      : mPattern(aPattern) {}
 
-private:
+ private:
   OriginAttrsPatternMatchSQLFunction() = delete;
   ~OriginAttrsPatternMatchSQLFunction() {}
 
@@ -760,8 +808,7 @@ NS_IMPL_ISUPPORTS(OriginAttrsPatternMatchSQLFunction, mozIStorageFunction)
 
 NS_IMETHODIMP
 OriginAttrsPatternMatchSQLFunction::OnFunctionCall(
-    mozIStorageValueArray* aFunctionArguments, nsIVariant** aResult)
-{
+    mozIStorageValueArray* aFunctionArguments, nsIVariant** aResult) {
   nsresult rv;
 
   nsAutoCString suffix;
@@ -781,66 +828,47 @@ OriginAttrsPatternMatchSQLFunction::OnFunctionCall(
   return NS_OK;
 }
 
-} // namespace
+}  // namespace
 
 // StorageDBThread::DBOperation
 
 StorageDBThread::DBOperation::DBOperation(const OperationType aType,
-                                          StorageCacheBridge* aCache,
+                                          LocalStorageCacheBridge* aCache,
                                           const nsAString& aKey,
                                           const nsAString& aValue)
-: mType(aType)
-, mCache(aCache)
-, mKey(aKey)
-, mValue(aValue)
-{
-  MOZ_ASSERT(mType == opPreload ||
-             mType == opPreloadUrgent ||
-             mType == opAddItem ||
-             mType == opUpdateItem ||
-             mType == opRemoveItem ||
-             mType == opClear ||
-             mType == opClearAll);
+    : mType(aType), mCache(aCache), mKey(aKey), mValue(aValue) {
+  MOZ_ASSERT(mType == opPreload || mType == opPreloadUrgent ||
+             mType == opAddItem || mType == opUpdateItem ||
+             mType == opRemoveItem || mType == opClear || mType == opClearAll);
   MOZ_COUNT_CTOR(StorageDBThread::DBOperation);
 }
 
 StorageDBThread::DBOperation::DBOperation(const OperationType aType,
                                           StorageUsageBridge* aUsage)
-: mType(aType)
-, mUsage(aUsage)
-{
+    : mType(aType), mUsage(aUsage) {
   MOZ_ASSERT(mType == opGetUsage);
   MOZ_COUNT_CTOR(StorageDBThread::DBOperation);
 }
 
 StorageDBThread::DBOperation::DBOperation(const OperationType aType,
                                           const nsACString& aOriginNoSuffix)
-: mType(aType)
-, mCache(nullptr)
-, mOrigin(aOriginNoSuffix)
-{
+    : mType(aType), mCache(nullptr), mOrigin(aOriginNoSuffix) {
   MOZ_ASSERT(mType == opClearMatchingOrigin);
   MOZ_COUNT_CTOR(StorageDBThread::DBOperation);
 }
 
-StorageDBThread::DBOperation::DBOperation(const OperationType aType,
-                                          const OriginAttributesPattern& aOriginNoSuffix)
-: mType(aType)
-, mCache(nullptr)
-, mOriginPattern(aOriginNoSuffix)
-{
+StorageDBThread::DBOperation::DBOperation(
+    const OperationType aType, const OriginAttributesPattern& aOriginNoSuffix)
+    : mType(aType), mCache(nullptr), mOriginPattern(aOriginNoSuffix) {
   MOZ_ASSERT(mType == opClearMatchingOriginAttributes);
   MOZ_COUNT_CTOR(StorageDBThread::DBOperation);
 }
 
-StorageDBThread::DBOperation::~DBOperation()
-{
+StorageDBThread::DBOperation::~DBOperation() {
   MOZ_COUNT_DTOR(StorageDBThread::DBOperation);
 }
 
-const nsCString
-StorageDBThread::DBOperation::OriginNoSuffix() const
-{
+const nsCString StorageDBThread::DBOperation::OriginNoSuffix() const {
   if (mCache) {
     return mCache->OriginNoSuffix();
   }
@@ -848,9 +876,7 @@ StorageDBThread::DBOperation::OriginNoSuffix() const
   return EmptyCString();
 }
 
-const nsCString
-StorageDBThread::DBOperation::OriginSuffix() const
-{
+const nsCString StorageDBThread::DBOperation::OriginSuffix() const {
   if (mCache) {
     return mCache->OriginSuffix();
   }
@@ -858,9 +884,7 @@ StorageDBThread::DBOperation::OriginSuffix() const
   return EmptyCString();
 }
 
-const nsCString
-StorageDBThread::DBOperation::Origin() const
-{
+const nsCString StorageDBThread::DBOperation::Origin() const {
   if (mCache) {
     return mCache->Origin();
   }
@@ -868,9 +892,7 @@ StorageDBThread::DBOperation::Origin() const
   return mOrigin;
 }
 
-const nsCString
-StorageDBThread::DBOperation::Target() const
-{
+const nsCString StorageDBThread::DBOperation::Target() const {
   switch (mType) {
     case opAddItem:
     case opUpdateItem:
@@ -882,345 +904,331 @@ StorageDBThread::DBOperation::Target() const
   }
 }
 
-void
-StorageDBThread::DBOperation::PerformAndFinalize(StorageDBThread* aThread)
-{
+void StorageDBThread::DBOperation::PerformAndFinalize(
+    StorageDBThread* aThread) {
   Finalize(Perform(aThread));
 }
 
-nsresult
-StorageDBThread::DBOperation::Perform(StorageDBThread* aThread)
-{
+nsresult StorageDBThread::DBOperation::Perform(StorageDBThread* aThread) {
   nsresult rv;
 
   switch (mType) {
-  case opPreload:
-  case opPreloadUrgent:
-  {
-    // Already loaded?
-    if (mCache->Loaded()) {
+    case opPreload:
+    case opPreloadUrgent: {
+      // Already loaded?
+      if (mCache->Loaded()) {
+        break;
+      }
+
+      StatementCache* statements;
+      if (MOZ_UNLIKELY(IsOnBackgroundThread())) {
+        statements = &aThread->mReaderStatements;
+      } else {
+        statements = &aThread->mWorkerStatements;
+      }
+
+      // OFFSET is an optimization when we have to do a sync load
+      // and cache has already loaded some parts asynchronously.
+      // It skips keys we have already loaded.
+      nsCOMPtr<mozIStorageStatement> stmt = statements->GetCachedStatement(
+          "SELECT key, value FROM webappsstore2 "
+          "WHERE originAttributes = :originAttributes AND originKey = "
+          ":originKey "
+          "ORDER BY key LIMIT -1 OFFSET :offset");
+      NS_ENSURE_STATE(stmt);
+      mozStorageStatementScoper scope(stmt);
+
+      rv = stmt->BindUTF8StringByName(NS_LITERAL_CSTRING("originAttributes"),
+                                      mCache->OriginSuffix());
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      rv = stmt->BindUTF8StringByName(NS_LITERAL_CSTRING("originKey"),
+                                      mCache->OriginNoSuffix());
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      rv = stmt->BindInt32ByName(NS_LITERAL_CSTRING("offset"),
+                                 static_cast<int32_t>(mCache->LoadedCount()));
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      bool exists;
+      while (NS_SUCCEEDED(rv = stmt->ExecuteStep(&exists)) && exists) {
+        nsAutoString key;
+        rv = stmt->GetString(0, key);
+        NS_ENSURE_SUCCESS(rv, rv);
+
+        nsAutoString value;
+        rv = stmt->GetString(1, value);
+        NS_ENSURE_SUCCESS(rv, rv);
+
+        if (!mCache->LoadItem(key, value)) {
+          break;
+        }
+      }
+      // The loop condition's call to ExecuteStep() may have terminated because
+      // !NS_SUCCEEDED(), we need an early return to cover that case.  This also
+      // covers success cases as well, but that's inductively safe.
+      NS_ENSURE_SUCCESS(rv, rv);
       break;
     }
 
-    StatementCache* statements;
-    if (MOZ_UNLIKELY(NS_IsMainThread())) {
-      statements = &aThread->mReaderStatements;
-    } else {
-      statements = &aThread->mWorkerStatements;
-    }
+    case opGetUsage: {
+      nsCOMPtr<mozIStorageStatement> stmt =
+          aThread->mWorkerStatements.GetCachedStatement(
+              "SELECT SUM(LENGTH(key) + LENGTH(value)) FROM webappsstore2 "
+              "WHERE (originAttributes || ':' || originKey) LIKE :usageOrigin");
+      NS_ENSURE_STATE(stmt);
 
-    // OFFSET is an optimization when we have to do a sync load
-    // and cache has already loaded some parts asynchronously.
-    // It skips keys we have already loaded.
-    nsCOMPtr<mozIStorageStatement> stmt = statements->GetCachedStatement(
-        "SELECT key, value FROM webappsstore2 "
-        "WHERE originAttributes = :originAttributes AND originKey = :originKey "
-        "ORDER BY key LIMIT -1 OFFSET :offset");
-    NS_ENSURE_STATE(stmt);
-    mozStorageStatementScoper scope(stmt);
-
-    rv = stmt->BindUTF8StringByName(NS_LITERAL_CSTRING("originAttributes"),
-                                    mCache->OriginSuffix());
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    rv = stmt->BindUTF8StringByName(NS_LITERAL_CSTRING("originKey"),
-                                    mCache->OriginNoSuffix());
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    rv = stmt->BindInt32ByName(NS_LITERAL_CSTRING("offset"),
-                               static_cast<int32_t>(mCache->LoadedCount()));
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    bool exists;
-    while (NS_SUCCEEDED(rv = stmt->ExecuteStep(&exists)) && exists) {
-      nsAutoString key;
-      rv = stmt->GetString(0, key);
-      NS_ENSURE_SUCCESS(rv, rv);
-
-      nsAutoString value;
-      rv = stmt->GetString(1, value);
-      NS_ENSURE_SUCCESS(rv, rv);
-
-      if (!mCache->LoadItem(key, value)) {
-        break;
-      }
-    }
-
-    mCache->LoadDone(NS_OK);
-    break;
-  }
-
-  case opGetUsage:
-  {
-    nsCOMPtr<mozIStorageStatement> stmt = aThread->mWorkerStatements.GetCachedStatement(
-      "SELECT SUM(LENGTH(key) + LENGTH(value)) FROM webappsstore2 "
-      "WHERE (originAttributes || ':' || originKey) LIKE :usageOrigin"
-    );
-    NS_ENSURE_STATE(stmt);
-
-    mozStorageStatementScoper scope(stmt);
-
-    rv = stmt->BindUTF8StringByName(NS_LITERAL_CSTRING("usageOrigin"),
-                                    mUsage->OriginScope());
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    bool exists;
-    rv = stmt->ExecuteStep(&exists);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    int64_t usage = 0;
-    if (exists) {
-      rv = stmt->GetInt64(0, &usage);
-      NS_ENSURE_SUCCESS(rv, rv);
-    }
-
-    mUsage->LoadUsage(usage);
-    break;
-  }
-
-  case opAddItem:
-  case opUpdateItem:
-  {
-    MOZ_ASSERT(!NS_IsMainThread());
-
-    nsCOMPtr<mozIStorageStatement> stmt = aThread->mWorkerStatements.GetCachedStatement(
-      "INSERT OR REPLACE INTO webappsstore2 (originAttributes, originKey, scope, key, value) "
-      "VALUES (:originAttributes, :originKey, :scope, :key, :value) "
-    );
-    NS_ENSURE_STATE(stmt);
-
-    mozStorageStatementScoper scope(stmt);
-
-    rv = stmt->BindUTF8StringByName(NS_LITERAL_CSTRING("originAttributes"),
-                                    mCache->OriginSuffix());
-    NS_ENSURE_SUCCESS(rv, rv);
-    rv = stmt->BindUTF8StringByName(NS_LITERAL_CSTRING("originKey"),
-                                    mCache->OriginNoSuffix());
-    NS_ENSURE_SUCCESS(rv, rv);
-    // Filling the 'scope' column just for downgrade compatibility reasons
-    rv = stmt->BindUTF8StringByName(NS_LITERAL_CSTRING("scope"),
-                                    Scheme0Scope(mCache));
-    NS_ENSURE_SUCCESS(rv, rv);
-    rv = stmt->BindStringByName(NS_LITERAL_CSTRING("key"),
-                                mKey);
-    NS_ENSURE_SUCCESS(rv, rv);
-    rv = stmt->BindStringByName(NS_LITERAL_CSTRING("value"),
-                                mValue);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    rv = stmt->Execute();
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    MonitorAutoLock monitor(aThread->mThreadObserver->GetMonitor());
-    aThread->mOriginsHavingData.PutEntry(Origin());
-    break;
-  }
-
-  case opRemoveItem:
-  {
-    MOZ_ASSERT(!NS_IsMainThread());
-
-    nsCOMPtr<mozIStorageStatement> stmt = aThread->mWorkerStatements.GetCachedStatement(
-      "DELETE FROM webappsstore2 "
-      "WHERE originAttributes = :originAttributes AND originKey = :originKey "
-        "AND key = :key "
-    );
-    NS_ENSURE_STATE(stmt);
-    mozStorageStatementScoper scope(stmt);
-
-    rv = stmt->BindUTF8StringByName(NS_LITERAL_CSTRING("originAttributes"),
-                                    mCache->OriginSuffix());
-    NS_ENSURE_SUCCESS(rv, rv);
-    rv = stmt->BindUTF8StringByName(NS_LITERAL_CSTRING("originKey"),
-                                    mCache->OriginNoSuffix());
-    NS_ENSURE_SUCCESS(rv, rv);
-    rv = stmt->BindStringByName(NS_LITERAL_CSTRING("key"),
-                                mKey);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    rv = stmt->Execute();
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    break;
-  }
-
-  case opClear:
-  {
-    MOZ_ASSERT(!NS_IsMainThread());
-
-    nsCOMPtr<mozIStorageStatement> stmt = aThread->mWorkerStatements.GetCachedStatement(
-      "DELETE FROM webappsstore2 "
-      "WHERE originAttributes = :originAttributes AND originKey = :originKey"
-    );
-    NS_ENSURE_STATE(stmt);
-    mozStorageStatementScoper scope(stmt);
-
-    rv = stmt->BindUTF8StringByName(NS_LITERAL_CSTRING("originAttributes"),
-                                    mCache->OriginSuffix());
-    NS_ENSURE_SUCCESS(rv, rv);
-    rv = stmt->BindUTF8StringByName(NS_LITERAL_CSTRING("originKey"),
-                                    mCache->OriginNoSuffix());
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    rv = stmt->Execute();
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    MonitorAutoLock monitor(aThread->mThreadObserver->GetMonitor());
-    aThread->mOriginsHavingData.RemoveEntry(Origin());
-    break;
-  }
-
-  case opClearAll:
-  {
-    MOZ_ASSERT(!NS_IsMainThread());
-
-    nsCOMPtr<mozIStorageStatement> stmt = aThread->mWorkerStatements.GetCachedStatement(
-      "DELETE FROM webappsstore2"
-    );
-    NS_ENSURE_STATE(stmt);
-    mozStorageStatementScoper scope(stmt);
-
-    rv = stmt->Execute();
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    MonitorAutoLock monitor(aThread->mThreadObserver->GetMonitor());
-    aThread->mOriginsHavingData.Clear();
-    break;
-  }
-
-  case opClearMatchingOrigin:
-  {
-    MOZ_ASSERT(!NS_IsMainThread());
-
-    nsCOMPtr<mozIStorageStatement> stmt = aThread->mWorkerStatements.GetCachedStatement(
-      "DELETE FROM webappsstore2"
-      " WHERE originKey GLOB :scope"
-    );
-    NS_ENSURE_STATE(stmt);
-    mozStorageStatementScoper scope(stmt);
-
-    rv = stmt->BindUTF8StringByName(NS_LITERAL_CSTRING("scope"),
-                                    mOrigin + NS_LITERAL_CSTRING("*"));
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    rv = stmt->Execute();
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    // No need to selectively clear mOriginsHavingData here.  That hashtable
-    // only prevents preload for scopes with no data.  Leaving a false record in
-    // it has a negligible effect on performance.
-    break;
-  }
-
-  case opClearMatchingOriginAttributes:
-  {
-    MOZ_ASSERT(!NS_IsMainThread());
-
-    // Register the ORIGIN_ATTRS_PATTERN_MATCH function, initialized with the
-    // pattern
-    nsCOMPtr<mozIStorageFunction> patternMatchFunction(
-      new OriginAttrsPatternMatchSQLFunction(mOriginPattern));
-
-    rv = aThread->mWorkerConnection->CreateFunction(
-      NS_LITERAL_CSTRING("ORIGIN_ATTRS_PATTERN_MATCH"), 1, patternMatchFunction);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    nsCOMPtr<mozIStorageStatement> stmt = aThread->mWorkerStatements.GetCachedStatement(
-      "DELETE FROM webappsstore2"
-      " WHERE ORIGIN_ATTRS_PATTERN_MATCH(originAttributes)"
-    );
-
-    if (stmt) {
       mozStorageStatementScoper scope(stmt);
-      rv = stmt->Execute();
-    } else {
-      rv = NS_ERROR_UNEXPECTED;
+
+      rv = stmt->BindUTF8StringByName(NS_LITERAL_CSTRING("usageOrigin"),
+                                      mUsage->OriginScope());
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      bool exists;
+      rv = stmt->ExecuteStep(&exists);
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      int64_t usage = 0;
+      if (exists) {
+        rv = stmt->GetInt64(0, &usage);
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+
+      mUsage->LoadUsage(usage);
+      break;
     }
 
-    // Always remove the function
-    aThread->mWorkerConnection->RemoveFunction(
-      NS_LITERAL_CSTRING("ORIGIN_ATTRS_PATTERN_MATCH"));
+    case opAddItem:
+    case opUpdateItem: {
+      MOZ_ASSERT(!NS_IsMainThread());
 
-    NS_ENSURE_SUCCESS(rv, rv);
+      nsCOMPtr<mozIStorageStatement> stmt =
+          aThread->mWorkerStatements.GetCachedStatement(
+              "INSERT OR REPLACE INTO webappsstore2 (originAttributes, "
+              "originKey, scope, key, value) "
+              "VALUES (:originAttributes, :originKey, :scope, :key, :value) ");
+      NS_ENSURE_STATE(stmt);
 
-    // No need to selectively clear mOriginsHavingData here.  That hashtable
-    // only prevents preload for scopes with no data.  Leaving a false record in
-    // it has a negligible effect on performance.
-    break;
-  }
+      mozStorageStatementScoper scope(stmt);
 
-  default:
-    NS_ERROR("Unknown task type");
-    break;
+      rv = stmt->BindUTF8StringByName(NS_LITERAL_CSTRING("originAttributes"),
+                                      mCache->OriginSuffix());
+      NS_ENSURE_SUCCESS(rv, rv);
+      rv = stmt->BindUTF8StringByName(NS_LITERAL_CSTRING("originKey"),
+                                      mCache->OriginNoSuffix());
+      NS_ENSURE_SUCCESS(rv, rv);
+      // Filling the 'scope' column just for downgrade compatibility reasons
+      rv = stmt->BindUTF8StringByName(
+          NS_LITERAL_CSTRING("scope"),
+          Scheme0Scope(mCache->OriginSuffix(), mCache->OriginNoSuffix()));
+      NS_ENSURE_SUCCESS(rv, rv);
+      rv = stmt->BindStringByName(NS_LITERAL_CSTRING("key"), mKey);
+      NS_ENSURE_SUCCESS(rv, rv);
+      rv = stmt->BindStringByName(NS_LITERAL_CSTRING("value"), mValue);
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      rv = stmt->Execute();
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      MonitorAutoLock monitor(aThread->mThreadObserver->GetMonitor());
+      aThread->mOriginsHavingData.PutEntry(Origin());
+      break;
+    }
+
+    case opRemoveItem: {
+      MOZ_ASSERT(!NS_IsMainThread());
+
+      nsCOMPtr<mozIStorageStatement> stmt =
+          aThread->mWorkerStatements.GetCachedStatement(
+              "DELETE FROM webappsstore2 "
+              "WHERE originAttributes = :originAttributes AND originKey = "
+              ":originKey "
+              "AND key = :key ");
+      NS_ENSURE_STATE(stmt);
+      mozStorageStatementScoper scope(stmt);
+
+      rv = stmt->BindUTF8StringByName(NS_LITERAL_CSTRING("originAttributes"),
+                                      mCache->OriginSuffix());
+      NS_ENSURE_SUCCESS(rv, rv);
+      rv = stmt->BindUTF8StringByName(NS_LITERAL_CSTRING("originKey"),
+                                      mCache->OriginNoSuffix());
+      NS_ENSURE_SUCCESS(rv, rv);
+      rv = stmt->BindStringByName(NS_LITERAL_CSTRING("key"), mKey);
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      rv = stmt->Execute();
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      break;
+    }
+
+    case opClear: {
+      MOZ_ASSERT(!NS_IsMainThread());
+
+      nsCOMPtr<mozIStorageStatement> stmt =
+          aThread->mWorkerStatements.GetCachedStatement(
+              "DELETE FROM webappsstore2 "
+              "WHERE originAttributes = :originAttributes AND originKey = "
+              ":originKey");
+      NS_ENSURE_STATE(stmt);
+      mozStorageStatementScoper scope(stmt);
+
+      rv = stmt->BindUTF8StringByName(NS_LITERAL_CSTRING("originAttributes"),
+                                      mCache->OriginSuffix());
+      NS_ENSURE_SUCCESS(rv, rv);
+      rv = stmt->BindUTF8StringByName(NS_LITERAL_CSTRING("originKey"),
+                                      mCache->OriginNoSuffix());
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      rv = stmt->Execute();
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      MonitorAutoLock monitor(aThread->mThreadObserver->GetMonitor());
+      aThread->mOriginsHavingData.RemoveEntry(Origin());
+      break;
+    }
+
+    case opClearAll: {
+      MOZ_ASSERT(!NS_IsMainThread());
+
+      nsCOMPtr<mozIStorageStatement> stmt =
+          aThread->mWorkerStatements.GetCachedStatement(
+              "DELETE FROM webappsstore2");
+      NS_ENSURE_STATE(stmt);
+      mozStorageStatementScoper scope(stmt);
+
+      rv = stmt->Execute();
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      MonitorAutoLock monitor(aThread->mThreadObserver->GetMonitor());
+      aThread->mOriginsHavingData.Clear();
+      break;
+    }
+
+    case opClearMatchingOrigin: {
+      MOZ_ASSERT(!NS_IsMainThread());
+
+      nsCOMPtr<mozIStorageStatement> stmt =
+          aThread->mWorkerStatements.GetCachedStatement(
+              "DELETE FROM webappsstore2"
+              " WHERE originKey GLOB :scope");
+      NS_ENSURE_STATE(stmt);
+      mozStorageStatementScoper scope(stmt);
+
+      rv = stmt->BindUTF8StringByName(NS_LITERAL_CSTRING("scope"),
+                                      mOrigin + NS_LITERAL_CSTRING("*"));
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      rv = stmt->Execute();
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      // No need to selectively clear mOriginsHavingData here.  That hashtable
+      // only prevents preload for scopes with no data.  Leaving a false record
+      // in it has a negligible effect on performance.
+      break;
+    }
+
+    case opClearMatchingOriginAttributes: {
+      MOZ_ASSERT(!NS_IsMainThread());
+
+      // Register the ORIGIN_ATTRS_PATTERN_MATCH function, initialized with the
+      // pattern
+      nsCOMPtr<mozIStorageFunction> patternMatchFunction(
+          new OriginAttrsPatternMatchSQLFunction(mOriginPattern));
+
+      rv = aThread->mWorkerConnection->CreateFunction(
+          NS_LITERAL_CSTRING("ORIGIN_ATTRS_PATTERN_MATCH"), 1,
+          patternMatchFunction);
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      nsCOMPtr<mozIStorageStatement> stmt =
+          aThread->mWorkerStatements.GetCachedStatement(
+              "DELETE FROM webappsstore2"
+              " WHERE ORIGIN_ATTRS_PATTERN_MATCH(originAttributes)");
+
+      if (stmt) {
+        mozStorageStatementScoper scope(stmt);
+        rv = stmt->Execute();
+      } else {
+        rv = NS_ERROR_UNEXPECTED;
+      }
+
+      // Always remove the function
+      aThread->mWorkerConnection->RemoveFunction(
+          NS_LITERAL_CSTRING("ORIGIN_ATTRS_PATTERN_MATCH"));
+
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      // No need to selectively clear mOriginsHavingData here.  That hashtable
+      // only prevents preload for scopes with no data.  Leaving a false record
+      // in it has a negligible effect on performance.
+      break;
+    }
+
+    default:
+      NS_ERROR("Unknown task type");
+      break;
   }
 
   return NS_OK;
 }
 
-void
-StorageDBThread::DBOperation::Finalize(nsresult aRv)
-{
+void StorageDBThread::DBOperation::Finalize(nsresult aRv) {
   switch (mType) {
-  case opPreloadUrgent:
-  case opPreload:
-    if (NS_FAILED(aRv)) {
-      // When we are here, something failed when loading from the database.
-      // Notify that the storage is loaded to prevent deadlock of the main
-      // thread, even though it is actually empty or incomplete.
-      NS_WARNING("Failed to preload localStorage");
-    }
+    case opPreloadUrgent:
+    case opPreload:
+      if (NS_FAILED(aRv)) {
+        // When we are here, something failed when loading from the database.
+        // Notify that the storage is loaded to prevent deadlock of the main
+        // thread, even though it is actually empty or incomplete.
+        NS_WARNING("Failed to preload localStorage");
+      }
 
-    mCache->LoadDone(aRv);
-    break;
+      mCache->LoadDone(aRv);
+      break;
 
-  case opGetUsage:
-    if (NS_FAILED(aRv)) {
-      mUsage->LoadUsage(0);
-    }
+    case opGetUsage:
+      if (NS_FAILED(aRv)) {
+        mUsage->LoadUsage(0);
+      }
 
-    break;
+      break;
 
-  default:
-    if (NS_FAILED(aRv)) {
-      NS_WARNING("localStorage update/clear operation failed,"
-                 " data may not persist or clean up");
-    }
+    default:
+      if (NS_FAILED(aRv)) {
+        NS_WARNING(
+            "localStorage update/clear operation failed,"
+            " data may not persist or clean up");
+      }
 
-    break;
+      break;
   }
 }
 
 // StorageDBThread::PendingOperations
 
 StorageDBThread::PendingOperations::PendingOperations()
-: mFlushFailureCount(0)
-{
-}
+    : mFlushFailureCount(0) {}
 
-bool
-StorageDBThread::PendingOperations::HasTasks() const
-{
+bool StorageDBThread::PendingOperations::HasTasks() const {
   return !!mUpdates.Count() || !!mClears.Count();
 }
 
 namespace {
 
 bool OriginPatternMatches(const nsACString& aOriginSuffix,
-                          const OriginAttributesPattern& aPattern)
-{
+                          const OriginAttributesPattern& aPattern) {
   OriginAttributes oa;
   DebugOnly<bool> rv = oa.PopulateFromSuffix(aOriginSuffix);
   MOZ_ASSERT(rv);
   return aPattern.Matches(oa);
 }
 
-} // namespace
+}  // namespace
 
-bool
-StorageDBThread::PendingOperations::CheckForCoalesceOpportunity(DBOperation* aNewOp,
-                                                                DBOperation::OperationType aPendingType,
-                                                                DBOperation::OperationType aNewType)
-{
+bool StorageDBThread::PendingOperations::CheckForCoalesceOpportunity(
+    DBOperation* aNewOp, DBOperation::OperationType aPendingType,
+    DBOperation::OperationType aNewType) {
   if (aNewOp->Type() != aNewType) {
     return false;
   }
@@ -1237,9 +1245,8 @@ StorageDBThread::PendingOperations::CheckForCoalesceOpportunity(DBOperation* aNe
   return true;
 }
 
-void
-StorageDBThread::PendingOperations::Add(StorageDBThread::DBOperation* aOperation)
-{
+void StorageDBThread::PendingOperations::Add(
+    StorageDBThread::DBOperation* aOperation) {
   // Optimize: when a key to remove has never been written to disk
   // just bypass this operation.  A key is new when an operation scheduled
   // to write it to the database is of type opAddItem.
@@ -1268,67 +1275,67 @@ StorageDBThread::PendingOperations::Add(StorageDBThread::DBOperation* aOperation
     aOperation->mType = DBOperation::opUpdateItem;
   }
 
-  switch (aOperation->Type())
-  {
-  // Operations on single keys
+  switch (aOperation->Type()) {
+      // Operations on single keys
 
-  case DBOperation::opAddItem:
-  case DBOperation::opUpdateItem:
-  case DBOperation::opRemoveItem:
-    // Override any existing operation for the target (=scope+key).
-    mUpdates.Put(aOperation->Target(), aOperation);
-    break;
+    case DBOperation::opAddItem:
+    case DBOperation::opUpdateItem:
+    case DBOperation::opRemoveItem:
+      // Override any existing operation for the target (=scope+key).
+      mUpdates.Put(aOperation->Target(), aOperation);
+      break;
 
-  // Clear operations
+      // Clear operations
 
-  case DBOperation::opClear:
-  case DBOperation::opClearMatchingOrigin:
-  case DBOperation::opClearMatchingOriginAttributes:
-    // Drop all update (insert/remove) operations for equivavelent or matching
-    // scope.  We do this as an optimization as well as a must based on the
-    // logic, if we would not delete the update tasks, changes would have been
-    // stored to the database after clear operations have been executed.
-    for (auto iter = mUpdates.Iter(); !iter.Done(); iter.Next()) {
-      nsAutoPtr<DBOperation>& pendingTask = iter.Data();
+    case DBOperation::opClear:
+    case DBOperation::opClearMatchingOrigin:
+    case DBOperation::opClearMatchingOriginAttributes:
+      // Drop all update (insert/remove) operations for equivavelent or matching
+      // scope.  We do this as an optimization as well as a must based on the
+      // logic, if we would not delete the update tasks, changes would have been
+      // stored to the database after clear operations have been executed.
+      for (auto iter = mUpdates.Iter(); !iter.Done(); iter.Next()) {
+        nsAutoPtr<DBOperation>& pendingTask = iter.Data();
 
-      if (aOperation->Type() == DBOperation::opClear &&
-          (pendingTask->OriginNoSuffix() != aOperation->OriginNoSuffix() ||
-           pendingTask->OriginSuffix() != aOperation->OriginSuffix())) {
-        continue;
+        if (aOperation->Type() == DBOperation::opClear &&
+            (pendingTask->OriginNoSuffix() != aOperation->OriginNoSuffix() ||
+             pendingTask->OriginSuffix() != aOperation->OriginSuffix())) {
+          continue;
+        }
+
+        if (aOperation->Type() == DBOperation::opClearMatchingOrigin &&
+            !StringBeginsWith(pendingTask->OriginNoSuffix(),
+                              aOperation->Origin())) {
+          continue;
+        }
+
+        if (aOperation->Type() ==
+                DBOperation::opClearMatchingOriginAttributes &&
+            !OriginPatternMatches(pendingTask->OriginSuffix(),
+                                  aOperation->OriginPattern())) {
+          continue;
+        }
+
+        iter.Remove();
       }
 
-      if (aOperation->Type() == DBOperation::opClearMatchingOrigin &&
-          !StringBeginsWith(pendingTask->OriginNoSuffix(), aOperation->Origin())) {
-        continue;
-      }
+      mClears.Put(aOperation->Target(), aOperation);
+      break;
 
-      if (aOperation->Type() == DBOperation::opClearMatchingOriginAttributes &&
-          !OriginPatternMatches(pendingTask->OriginSuffix(), aOperation->OriginPattern())) {
-        continue;
-      }
+    case DBOperation::opClearAll:
+      // Drop simply everything, this is a super-operation.
+      mUpdates.Clear();
+      mClears.Clear();
+      mClears.Put(aOperation->Target(), aOperation);
+      break;
 
-      iter.Remove();
-    }
-
-    mClears.Put(aOperation->Target(), aOperation);
-    break;
-
-  case DBOperation::opClearAll:
-    // Drop simply everything, this is a super-operation.
-    mUpdates.Clear();
-    mClears.Clear();
-    mClears.Put(aOperation->Target(), aOperation);
-    break;
-
-  default:
-    MOZ_ASSERT(false);
-    break;
+    default:
+      MOZ_ASSERT(false);
+      break;
   }
 }
 
-bool
-StorageDBThread::PendingOperations::Prepare()
-{
+bool StorageDBThread::PendingOperations::Prepare() {
   // Called under the lock
 
   // First collect clear operations and then updates, we can
@@ -1349,9 +1356,7 @@ StorageDBThread::PendingOperations::Prepare()
   return !!mExecList.Length();
 }
 
-nsresult
-StorageDBThread::PendingOperations::Execute(StorageDBThread* aThread)
-{
+nsresult StorageDBThread::PendingOperations::Execute(StorageDBThread* aThread) {
   // Called outside the lock
 
   mozStorageTransaction transaction(aThread->mWorkerConnection, false);
@@ -1374,9 +1379,7 @@ StorageDBThread::PendingOperations::Execute(StorageDBThread* aThread)
   return NS_OK;
 }
 
-bool
-StorageDBThread::PendingOperations::Finalize(nsresult aRv)
-{
+bool StorageDBThread::PendingOperations::Finalize(nsresult aRv) {
   // Called under the lock
 
   // The list is kept on a failure to retry it
@@ -1401,11 +1404,9 @@ StorageDBThread::PendingOperations::Finalize(nsresult aRv)
 
 namespace {
 
-bool
-FindPendingClearForOrigin(const nsACString& aOriginSuffix,
-                          const nsACString& aOriginNoSuffix,
-                          StorageDBThread::DBOperation* aPendingOperation)
-{
+bool FindPendingClearForOrigin(
+    const nsACString& aOriginSuffix, const nsACString& aOriginNoSuffix,
+    StorageDBThread::DBOperation* aPendingOperation) {
   if (aPendingOperation->Type() == StorageDBThread::DBOperation::opClearAll) {
     return true;
   }
@@ -1416,12 +1417,14 @@ FindPendingClearForOrigin(const nsACString& aOriginSuffix,
     return true;
   }
 
-  if (aPendingOperation->Type() == StorageDBThread::DBOperation::opClearMatchingOrigin &&
+  if (aPendingOperation->Type() ==
+          StorageDBThread::DBOperation::opClearMatchingOrigin &&
       StringBeginsWith(aOriginNoSuffix, aPendingOperation->Origin())) {
     return true;
   }
 
-  if (aPendingOperation->Type() == StorageDBThread::DBOperation::opClearMatchingOriginAttributes &&
+  if (aPendingOperation->Type() ==
+          StorageDBThread::DBOperation::opClearMatchingOriginAttributes &&
       OriginPatternMatches(aOriginSuffix, aPendingOperation->OriginPattern())) {
     return true;
   }
@@ -1429,22 +1432,22 @@ FindPendingClearForOrigin(const nsACString& aOriginSuffix,
   return false;
 }
 
-} // namespace
+}  // namespace
 
-bool
-StorageDBThread::PendingOperations::IsOriginClearPending(const nsACString& aOriginSuffix,
-                                                         const nsACString& aOriginNoSuffix) const
-{
+bool StorageDBThread::PendingOperations::IsOriginClearPending(
+    const nsACString& aOriginSuffix, const nsACString& aOriginNoSuffix) const {
   // Called under the lock
 
   for (auto iter = mClears.ConstIter(); !iter.Done(); iter.Next()) {
-    if (FindPendingClearForOrigin(aOriginSuffix, aOriginNoSuffix, iter.UserData())) {
+    if (FindPendingClearForOrigin(aOriginSuffix, aOriginNoSuffix,
+                                  iter.UserData())) {
       return true;
     }
   }
 
   for (uint32_t i = 0; i < mExecList.Length(); ++i) {
-    if (FindPendingClearForOrigin(aOriginSuffix, aOriginNoSuffix, mExecList[i])) {
+    if (FindPendingClearForOrigin(aOriginSuffix, aOriginNoSuffix,
+                                  mExecList[i])) {
       return true;
     }
   }
@@ -1454,38 +1457,38 @@ StorageDBThread::PendingOperations::IsOriginClearPending(const nsACString& aOrig
 
 namespace {
 
-bool
-FindPendingUpdateForOrigin(const nsACString& aOriginSuffix,
-                           const nsACString& aOriginNoSuffix,
-                           StorageDBThread::DBOperation* aPendingOperation)
-{
+bool FindPendingUpdateForOrigin(
+    const nsACString& aOriginSuffix, const nsACString& aOriginNoSuffix,
+    StorageDBThread::DBOperation* aPendingOperation) {
   if ((aPendingOperation->Type() == StorageDBThread::DBOperation::opAddItem ||
-       aPendingOperation->Type() == StorageDBThread::DBOperation::opUpdateItem ||
-       aPendingOperation->Type() == StorageDBThread::DBOperation::opRemoveItem) &&
-       aOriginNoSuffix == aPendingOperation->OriginNoSuffix() &&
-       aOriginSuffix == aPendingOperation->OriginSuffix()) {
+       aPendingOperation->Type() ==
+           StorageDBThread::DBOperation::opUpdateItem ||
+       aPendingOperation->Type() ==
+           StorageDBThread::DBOperation::opRemoveItem) &&
+      aOriginNoSuffix == aPendingOperation->OriginNoSuffix() &&
+      aOriginSuffix == aPendingOperation->OriginSuffix()) {
     return true;
   }
 
   return false;
 }
 
-} // namespace
+}  // namespace
 
-bool
-StorageDBThread::PendingOperations::IsOriginUpdatePending(const nsACString& aOriginSuffix,
-                                                          const nsACString& aOriginNoSuffix) const
-{
+bool StorageDBThread::PendingOperations::IsOriginUpdatePending(
+    const nsACString& aOriginSuffix, const nsACString& aOriginNoSuffix) const {
   // Called under the lock
 
   for (auto iter = mUpdates.ConstIter(); !iter.Done(); iter.Next()) {
-    if (FindPendingUpdateForOrigin(aOriginSuffix, aOriginNoSuffix, iter.UserData())) {
+    if (FindPendingUpdateForOrigin(aOriginSuffix, aOriginNoSuffix,
+                                   iter.UserData())) {
       return true;
     }
   }
 
   for (uint32_t i = 0; i < mExecList.Length(); ++i) {
-    if (FindPendingUpdateForOrigin(aOriginSuffix, aOriginNoSuffix, mExecList[i])) {
+    if (FindPendingUpdateForOrigin(aOriginSuffix, aOriginNoSuffix,
+                                   mExecList[i])) {
       return true;
     }
   }
@@ -1493,5 +1496,76 @@ StorageDBThread::PendingOperations::IsOriginUpdatePending(const nsACString& aOri
   return false;
 }
 
-} // namespace dom
-} // namespace mozilla
+nsresult StorageDBThread::InitHelper::SyncDispatchAndReturnProfilePath(
+    nsAString& aProfilePath) {
+  AssertIsOnBackgroundThread();
+
+  MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(this));
+
+  mozilla::MutexAutoLock autolock(mMutex);
+  while (mWaiting) {
+    mCondVar.Wait();
+  }
+
+  if (NS_WARN_IF(NS_FAILED(mMainThreadResultCode))) {
+    return mMainThreadResultCode;
+  }
+
+  aProfilePath = mProfilePath;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+StorageDBThread::InitHelper::Run() {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  nsresult rv = GetProfilePath(mProfilePath);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    mMainThreadResultCode = rv;
+  }
+
+  mozilla::MutexAutoLock lock(mMutex);
+  MOZ_ASSERT(mWaiting);
+
+  mWaiting = false;
+  mCondVar.Notify();
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+StorageDBThread::NoteBackgroundThreadRunnable::Run() {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  StorageObserver* observer = StorageObserver::Self();
+  MOZ_ASSERT(observer);
+
+  observer->NoteBackgroundThread(mOwningThread);
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+StorageDBThread::ShutdownRunnable::Run() {
+  if (NS_IsMainThread()) {
+    mDone = true;
+
+    return NS_OK;
+  }
+
+  AssertIsOnBackgroundThread();
+
+  if (sStorageThread) {
+    sStorageThread->Shutdown();
+
+    delete sStorageThread;
+    sStorageThread = nullptr;
+  }
+
+  MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(this));
+
+  return NS_OK;
+}
+
+}  // namespace dom
+}  // namespace mozilla

@@ -37,15 +37,14 @@ var gTests = [
     preventDefault: true,
   },
 
-  // The next test was once handling feedService.forcePreview().  Now it should
-  // just be like Alt click.
+  // The next test should just be like Alt click.
   {
     desc: "Shift+Alt left click",
     setup() {
-      gPrefService.setBoolPref("browser.altClickSave", true);
+      Services.prefs.setBoolPref("browser.altClickSave", true);
     },
     clean() {
-      gPrefService.clearUserPref("browser.altClickSave");
+      Services.prefs.clearUserPref("browser.altClickSave");
     },
     event: { shiftKey: true,
              altKey: true },
@@ -57,10 +56,10 @@ var gTests = [
   {
     desc: "Shift+Alt left click on XLinks",
     setup() {
-      gPrefService.setBoolPref("browser.altClickSave", true);
+      Services.prefs.setBoolPref("browser.altClickSave", true);
     },
     clean() {
-      gPrefService.clearUserPref("browser.altClickSave");
+      Services.prefs.clearUserPref("browser.altClickSave");
     },
     event: { shiftKey: true,
              altKey: true },
@@ -82,10 +81,10 @@ var gTests = [
   {
     desc: "Alt click",
     setup() {
-      gPrefService.setBoolPref("browser.altClickSave", true);
+      Services.prefs.setBoolPref("browser.altClickSave", true);
     },
     clean() {
-      gPrefService.clearUserPref("browser.altClickSave");
+      Services.prefs.clearUserPref("browser.altClickSave");
     },
     event: { altKey: true },
     targets: [ "commonlink", "maplink" ],
@@ -96,10 +95,10 @@ var gTests = [
   {
     desc: "Alt click on XLinks",
     setup() {
-      gPrefService.setBoolPref("browser.altClickSave", true);
+      Services.prefs.setBoolPref("browser.altClickSave", true);
     },
     clean() {
-      gPrefService.clearUserPref("browser.altClickSave");
+      Services.prefs.clearUserPref("browser.altClickSave");
     },
     event: { altKey: true },
     targets: [ "mathxlink", "svgxlink" ],
@@ -130,10 +129,10 @@ var gTests = [
   {
     desc: "Simple middle click openwin",
     setup() {
-      gPrefService.setBoolPref("browser.tabs.opentabfor.middleclick", false);
+      Services.prefs.setBoolPref("browser.tabs.opentabfor.middleclick", false);
     },
     clean() {
-      gPrefService.clearUserPref("browser.tabs.opentabfor.middleclick");
+      Services.prefs.clearUserPref("browser.tabs.opentabfor.middleclick");
     },
     event: { button: 1 },
     targets: [ "commonlink", "mathxlink", "svgxlink", "maplink" ],
@@ -144,12 +143,12 @@ var gTests = [
   {
     desc: "Middle mouse paste",
     setup() {
-      gPrefService.setBoolPref("middlemouse.contentLoadURL", true);
-      gPrefService.setBoolPref("general.autoScroll", false);
+      Services.prefs.setBoolPref("middlemouse.contentLoadURL", true);
+      Services.prefs.setBoolPref("general.autoScroll", false);
     },
     clean() {
-      gPrefService.clearUserPref("middlemouse.contentLoadURL");
-      gPrefService.clearUserPref("general.autoScroll");
+      Services.prefs.clearUserPref("middlemouse.contentLoadURL");
+      Services.prefs.clearUserPref("general.autoScroll");
     },
     event: { button: 1 },
     targets: [ "emptylink" ],
@@ -170,17 +169,31 @@ var gReplacedMethods = [
   "getShortcutOrURIAndPostData",
 ];
 
+// Returns the target object for the replaced method.
+function getStub(replacedMethod) {
+  let targetObj = replacedMethod == "getShortcutOrURIAndPostData" ? UrlbarUtils : gTestWin;
+  return targetObj[replacedMethod];
+}
+
 // Reference to the new window.
 var gTestWin = null;
-
-// List of methods invoked by a specific call to contentAreaClick.
-var gInvokedMethods = [];
 
 // The test currently running.
 var gCurrentTest = null;
 
+var sandbox;
+
 function test() {
   waitForExplicitFinish();
+
+  /* global sinon */
+  Services.scriptloader.loadSubScript("resource://testing-common/sinon-2.3.2.js");
+  sandbox = sinon.sandbox.create();
+
+  registerCleanupFunction(function() {
+    sandbox.restore();
+    delete window.sinon;
+  });
 
   gTestWin = openDialog(location, "", "chrome,all,dialog=no", "about:blank");
   whenDelayedStartupFinished(gTestWin, function() {
@@ -208,43 +221,36 @@ var gClickHandler = {
     gTestWin.contentAreaClick(event, isPanelClick);
     let prevent = event.defaultPrevented;
     is(prevent, gCurrentTest.preventDefault,
-       gCurrentTest.desc + ": event.defaultPrevented is correct (" + prevent + ")")
+       gCurrentTest.desc + ": event.defaultPrevented is correct (" + prevent + ")");
 
     // Check that all required methods have been called.
-    gCurrentTest.expectedInvokedMethods.forEach(function(aExpectedMethodName) {
-      isnot(gInvokedMethods.indexOf(aExpectedMethodName), -1,
-            gCurrentTest.desc + ":" + aExpectedMethodName + " was invoked");
-    });
+    for (let expectedMethod of gCurrentTest.expectedInvokedMethods) {
+      ok(getStub(expectedMethod).called,
+        `${gCurrentTest.desc}:${expectedMethod} should have been invoked`);
+    }
 
-    if (gInvokedMethods.length != gCurrentTest.expectedInvokedMethods.length) {
-      ok(false, "Wrong number of invoked methods");
-      gInvokedMethods.forEach(method => info(method + " was invoked"));
+    for (let method of gReplacedMethods) {
+      if (getStub(method).called &&
+          !gCurrentTest.expectedInvokedMethods.includes(method)) {
+        ok(false, `Should have not called ${method}`);
+      }
     }
 
     event.preventDefault();
     event.stopPropagation();
 
     executeSoon(runNextTest);
-  }
-}
-
-// Wraps around the methods' replacement mock function.
-function wrapperMethod(aInvokedMethods, aMethodName) {
-  return function() {
-    aInvokedMethods.push(aMethodName);
-    // At least getShortcutOrURIAndPostData requires to return url
-    return (aMethodName == "getShortcutOrURIAndPostData") ? arguments.url : arguments[0];
-  }
-}
+  },
+};
 
 function setupTestBrowserWindow() {
   // Steal click events and don't propagate them.
   gTestWin.addEventListener("click", gClickHandler, true);
 
   // Replace methods.
-  gReplacedMethods.forEach(function(aMethodName) {
-    gTestWin["old_" + aMethodName] = gTestWin[aMethodName];
-    gTestWin[aMethodName] = wrapperMethod(gInvokedMethods, aMethodName);
+  gReplacedMethods.forEach(function(methodName) {
+    let targetObj = methodName == "getShortcutOrURIAndPostData" ? UrlbarUtils : gTestWin;
+    sandbox.stub(targetObj, methodName).returnsArg(0);
   });
 
   // Inject links in content.
@@ -256,7 +262,7 @@ function setupTestBrowserWindow() {
     '<p><a id="emptylink">Empty link</a></p>' +
     '<p><math id="mathxlink" xmlns="http://www.w3.org/1998/Math/MathML" xlink:type="simple" xlink:href="http://mochi.test/moz/"><mtext>MathML XLink</mtext></math></p>' +
     '<p><svg id="svgxlink" xmlns="http://www.w3.org/2000/svg" width="100px" height="50px" version="1.1"><a xlink:type="simple" xlink:href="http://mochi.test/moz/"><text transform="translate(10, 25)">SVG XLink</text></a></svg></p>' +
-    '<p><map name="map" id="map"><area href="http://mochi.test/moz/" shape="rect" coords="0,0,128,128" /></map><img id="maplink" usemap="#map" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAIAAABMXPacAAAABGdBTUEAALGPC%2FxhBQAAAOtJREFUeF7t0IEAAAAAgKD9qRcphAoDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGBgwIAAAT0N51AAAAAASUVORK5CYII%3D"/></p>'
+    '<p><map name="map" id="map"><area href="http://mochi.test/moz/" shape="rect" coords="0,0,128,128" /></map><img id="maplink" usemap="#map" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAIAAABMXPacAAAABGdBTUEAALGPC%2FxhBQAAAOtJREFUeF7t0IEAAAAAgKD9qRcphAoDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGBgwIAAAT0N51AAAAAASUVORK5CYII%3D"/></p>';
   doc.body.appendChild(mainDiv);
 }
 
@@ -267,7 +273,7 @@ function runNextTest() {
   }
 
   if (gCurrentTest.targets.length == 0) {
-    info(gCurrentTest.desc + ": cleaning up...")
+    info(gCurrentTest.desc + ": cleaning up...");
     gCurrentTest.clean();
 
     if (gTests.length > 0) {
@@ -280,7 +286,7 @@ function runNextTest() {
   }
 
   // Move to next target.
-  gInvokedMethods.length = 0;
+  sandbox.resetHistory();
   let target = gCurrentTest.targets.shift();
 
   info(gCurrentTest.desc + ": testing " + target);
@@ -294,13 +300,6 @@ function runNextTest() {
 function finishTest() {
   info("Restoring browser...");
   gTestWin.removeEventListener("click", gClickHandler, true);
-
-  // Restore original methods.
-  gReplacedMethods.forEach(function(aMethodName) {
-    gTestWin[aMethodName] = gTestWin["old_" + aMethodName];
-    delete gTestWin["old_" + aMethodName];
-  });
-
   gTestWin.close();
   finish();
 }

@@ -184,14 +184,6 @@ function test_syntax(postfixes, check_error, ignore_opts) {
   test("try {} catch (e) {} finally { ");
   test("try {} catch (e) {} finally {} ");
 
-  test("try {} catch (e if ");
-  test("try {} catch (e if e  ");
-  test("try {} catch (e if e instanceof ");
-  test("try {} catch (e if e instanceof x ");
-  test("try {} catch (e if e instanceof x) ");
-  test("try {} catch (e if e instanceof x) { ");
-  test("try {} catch (e if e instanceof x) {} ");
-
   // ---- Declarations ----
 
   // var
@@ -767,42 +759,6 @@ function test_syntax(postfixes, check_error, ignore_opts) {
   test("/a/ ");
   test("/a/g ");
 
-  // Array comprehensions
-
-  test("[for ");
-  test("[for ( ");
-  test("[for (x ");
-  test("[for (x of ");
-  test("[for (x of y ");
-  test("[for (x of y) ");
-  test("[for (x of y) x ");
-  test("[for (x of y) if ");
-  test("[for (x of y) if ( ");
-  test("[for (x of y) if (x ");
-  test("[for (x of y) if (x == ");
-  test("[for (x of y) if (x == 1 ");
-  test("[for (x of y) if (x == 1) ");
-  test("[for (x of y) if (x == 1) x ");
-  test("[for (x of y) if (x == 1) x] ");
-
-  // Generator comprehensions
-
-  test("(for ");
-  test("(for ( ");
-  test("(for (x ");
-  test("(for (x of ");
-  test("(for (x of y ");
-  test("(for (x of y) ");
-  test("(for (x of y) x ");
-  test("(for (x of y) if ");
-  test("(for (x of y) if ( ");
-  test("(for (x of y) if (x ");
-  test("(for (x of y) if (x == ");
-  test("(for (x of y) if (x == 1 ");
-  test("(for (x of y) if (x == 1) ");
-  test("(for (x of y) if (x == 1) x ");
-  test("(for (x of y) if (x == 1) x) ");
-
   // ---- Left-hand-side expressions ----
 
   // property access
@@ -1145,43 +1101,6 @@ function test_syntax(postfixes, check_error, ignore_opts) {
   test_fun_arg("...a ");
 
   // ==== Legacy ====
-
-  // Expression closures
-
-  test("function f() 1 ");
-  test("function f() 1; ");
-  test("(function () 1 ");
-  test("(function () 1); ");
-
-  // Legacy generator
-
-  test("function f() { (yield ");
-  test("function f() { (yield 1 ");
-  test("function f() { f(yield ");
-  test("function f() { f(yield 1 ");
-
-  // for each...in
-
-  enableForEach();
-  test("for each ");
-  test("for each (");
-  test("for each (x ");
-  test("for each (x in ");
-  test("for each (x in y ");
-  test("for each (x in y) ");
-
-  test("for each (var ");
-  test("for each (var x ");
-  test("for each (var x in ");
-  test("for each (var x in y ");
-  test("for each (var x in y) ");
-
-  test("for each (let ");
-  test("for each (let x ");
-  test("for each (let x in ");
-  test("for each (let x in y ");
-  test("for each (let x in y) ");
-  disableForEach();
 
   // ==== asm.js ====
 

@@ -2,26 +2,24 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-'use strict';
+"use strict";
 
-/* global EVENT_SHOW, ROLE_DIALOG, ROLE_PUSHBUTTON, ROLE_TEXT_LEAF, ROLE_ENTRY,
-          ROLE_DOCUMENT */
-
-loadScripts({ name: 'role.js', dir: MOCHITESTS_DIR });
+/* import-globals-from ../../mochitest/role.js */
+loadScripts({ name: "role.js", dir: MOCHITESTS_DIR });
 
 // Test ARIA Dialog
-addAccessibleTask('doc_treeupdate_ariadialog.html', function*(browser, accDoc) {
+addAccessibleTask("doc_treeupdate_ariadialog.html", async function(browser, accDoc) {
   testAccessibleTree(accDoc, {
     role: ROLE_DOCUMENT,
     children: [ ]
   });
 
   // Make dialog visible and update its inner content.
-  let onShow = waitForEvent(EVENT_SHOW, 'dialog');
-  yield ContentTask.spawn(browser, {}, () => {
-    content.document.getElementById('dialog').style.display = 'block';
+  let onShow = waitForEvent(EVENT_SHOW, "dialog");
+  await ContentTask.spawn(browser, {}, () => {
+    content.document.getElementById("dialog").style.display = "block";
   });
-  yield onShow;
+  await onShow;
 
   testAccessibleTree(accDoc, {
     role: ROLE_DOCUMENT,

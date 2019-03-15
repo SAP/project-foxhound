@@ -42,16 +42,17 @@
 #include "HTMLURIRefObject.h"
 
 #include "mozilla/mozalloc.h"
+#include "mozilla/dom/Attr.h"
+#include "mozilla/dom/Element.h"
 #include "nsAString.h"
 #include "nsDebug.h"
+#include "nsDOMAttributeMap.h"
 #include "nsError.h"
 #include "nsID.h"
-#include "nsIDOMAttr.h"
-#include "nsIDOMElement.h"
-#include "nsIDOMMozNamedAttrMap.h"
-#include "nsIDOMNode.h"
+#include "nsINode.h"
 #include "nsISupportsUtils.h"
 #include "nsString.h"
+#include "nsGkAtoms.h"
 
 namespace mozilla {
 
@@ -60,152 +61,147 @@ namespace mozilla {
 #define MATCHES(tagName, str) tagName.EqualsIgnoreCase(str)
 
 HTMLURIRefObject::HTMLURIRefObject()
-  : mCurAttrIndex(0)
-  , mAttributeCnt(0)
-{
-}
+    : mCurAttrIndex(0), mAttributeCnt(0), mAttrsInited(false) {}
 
-HTMLURIRefObject::~HTMLURIRefObject()
-{
-}
+HTMLURIRefObject::~HTMLURIRefObject() {}
 
-//Interfaces for addref and release and queryinterface
+// Interfaces for addref and release and queryinterface
 NS_IMPL_ISUPPORTS(HTMLURIRefObject, nsIURIRefObject)
 
 NS_IMETHODIMP
-HTMLURIRefObject::Reset()
-{
+HTMLURIRefObject::Reset() {
   mCurAttrIndex = 0;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-HTMLURIRefObject::GetNextURI(nsAString& aURI)
-{
+HTMLURIRefObject::GetNextURI(nsAString& aURI) {
   NS_ENSURE_TRUE(mNode, NS_ERROR_NOT_INITIALIZED);
 
-  // XXX Why don't you use nsIAtom for comparing the tag name a lot?
-  nsAutoString tagName;
-  nsresult rv = mNode->GetNodeName(tagName);
-  NS_ENSURE_SUCCESS(rv, rv);
+  if (NS_WARN_IF(!mNode->IsElement())) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  RefPtr<dom::Element> element = mNode->AsElement();
 
   // Loop over attribute list:
-  if (!mAttributes) {
-    nsCOMPtr<nsIDOMElement> element (do_QueryInterface(mNode));
-    NS_ENSURE_TRUE(element, NS_ERROR_INVALID_ARG);
-
-    mCurAttrIndex = 0;
-    element->GetAttributes(getter_AddRefs(mAttributes));
-    NS_ENSURE_TRUE(mAttributes, NS_ERROR_NOT_INITIALIZED);
-
-    rv = mAttributes->GetLength(&mAttributeCnt);
-    NS_ENSURE_SUCCESS(rv, rv);
+  if (!mAttrsInited) {
+    mAttrsInited = true;
+    mAttributeCnt = element->GetAttrCount();
     NS_ENSURE_TRUE(mAttributeCnt, NS_ERROR_FAILURE);
     mCurAttrIndex = 0;
   }
 
   while (mCurAttrIndex < mAttributeCnt) {
-    nsCOMPtr<nsIDOMAttr> attrNode;
-    rv = mAttributes->Item(mCurAttrIndex++, getter_AddRefs(attrNode));
-    NS_ENSURE_SUCCESS(rv, rv);
-    NS_ENSURE_ARG_POINTER(attrNode);
-    nsString curAttr;
-    rv = attrNode->GetName(curAttr);
-    NS_ENSURE_SUCCESS(rv, rv);
+    BorrowedAttrInfo attrInfo = element->GetAttrInfoAt(mCurAttrIndex++);
+    NS_ENSURE_ARG_POINTER(attrInfo.mName);
 
     // href >> A, AREA, BASE, LINK
-    if (MATCHES(curAttr, "href")) {
-      if (!MATCHES(tagName, "a") && !MATCHES(tagName, "area") &&
-          !MATCHES(tagName, "base") && !MATCHES(tagName, "link")) {
+    if (attrInfo.mName->Equals(nsGkAtoms::href)) {
+      if (!element->IsAnyOfHTMLElements(nsGkAtoms::a, nsGkAtoms::area,
+                                        nsGkAtoms::base, nsGkAtoms::link)) {
         continue;
       }
-      rv = attrNode->GetValue(aURI);
-      NS_ENSURE_SUCCESS(rv, rv);
-      nsString uri (aURI);
+
+      attrInfo.mValue->ToString(aURI);
       // href pointing to a named anchor doesn't count
-      if (aURI.First() != char16_t('#')) {
-        return NS_OK;
+      if (StringBeginsWith(aURI, NS_LITERAL_STRING("#"))) {
+        aURI.Truncate();
+        return NS_ERROR_INVALID_ARG;
       }
-      aURI.Truncate();
-      return NS_ERROR_INVALID_ARG;
+
+      return NS_OK;
     }
     // src >> FRAME, IFRAME, IMG, INPUT, SCRIPT
-    else if (MATCHES(curAttr, "src")) {
-      if (!MATCHES(tagName, "img") &&
-          !MATCHES(tagName, "frame") && !MATCHES(tagName, "iframe") &&
-          !MATCHES(tagName, "input") && !MATCHES(tagName, "script")) {
+    else if (attrInfo.mName->Equals(nsGkAtoms::src)) {
+      if (!element->IsAnyOfHTMLElements(nsGkAtoms::img, nsGkAtoms::frame,
+                                        nsGkAtoms::iframe, nsGkAtoms::input,
+                                        nsGkAtoms::script)) {
         continue;
       }
-      return attrNode->GetValue(aURI);
+      attrInfo.mValue->ToString(aURI);
+      return NS_OK;
     }
     //<META http-equiv="refresh" content="3,http://www.acme.com/intro.html">
-    else if (MATCHES(curAttr, "content")) {
-      if (!MATCHES(tagName, "meta")) {
+    else if (attrInfo.mName->Equals(nsGkAtoms::content)) {
+      if (!element->IsHTMLElement(nsGkAtoms::meta)) {
         continue;
       }
+
+      // XXXbz And if it is?
     }
     // longdesc >> FRAME, IFRAME, IMG
-    else if (MATCHES(curAttr, "longdesc")) {
-      if (!MATCHES(tagName, "img") &&
-          !MATCHES(tagName, "frame") && !MATCHES(tagName, "iframe")) {
+    else if (attrInfo.mName->Equals(nsGkAtoms::longdesc)) {
+      if (!element->IsAnyOfHTMLElements(nsGkAtoms::img, nsGkAtoms::frame,
+                                        nsGkAtoms::iframe)) {
         continue;
       }
+
+      // XXXbz And if it is?
     }
     // usemap >> IMG, INPUT, OBJECT
-    else if (MATCHES(curAttr, "usemap")) {
-      if (!MATCHES(tagName, "img") &&
-          !MATCHES(tagName, "input") && !MATCHES(tagName, "object")) {
+    else if (attrInfo.mName->Equals(nsGkAtoms::usemap)) {
+      if (!element->IsAnyOfHTMLElements(nsGkAtoms::img, nsGkAtoms::input,
+                                        nsGkAtoms::object)) {
         continue;
       }
     }
     // action >> FORM
-    else if (MATCHES(curAttr, "action")) {
-      if (!MATCHES(tagName, "form")) {
+    else if (attrInfo.mName->Equals(nsGkAtoms::action)) {
+      if (!element->IsHTMLElement(nsGkAtoms::form)) {
         continue;
       }
+
+      // XXXbz And if it is?
     }
     // background >> BODY
-    else if (MATCHES(curAttr, "background")) {
-      if (!MATCHES(tagName, "body")) {
+    else if (attrInfo.mName->Equals(nsGkAtoms::background)) {
+      if (!element->IsHTMLElement(nsGkAtoms::body)) {
         continue;
       }
+
+      // XXXbz And if it is?
     }
-    // codebase >> OBJECT, APPLET
-    else if (MATCHES(curAttr, "codebase")) {
-      if (!MATCHES(tagName, "meta")) {
+    // codebase >> OBJECT
+    else if (attrInfo.mName->Equals(nsGkAtoms::codebase)) {
+      if (!element->IsHTMLElement(nsGkAtoms::object)) {
         continue;
       }
+
+      // XXXbz And if it is?
     }
     // classid >> OBJECT
-    else if (MATCHES(curAttr, "classid")) {
-      if (!MATCHES(tagName, "object")) {
+    else if (attrInfo.mName->Equals(nsGkAtoms::classid)) {
+      if (!element->IsHTMLElement(nsGkAtoms::object)) {
         continue;
       }
+
+      // XXXbz And if it is?
     }
     // data >> OBJECT
-    else if (MATCHES(curAttr, "data")) {
-      if (!MATCHES(tagName, "object")) {
+    else if (attrInfo.mName->Equals(nsGkAtoms::data)) {
+      if (!element->IsHTMLElement(nsGkAtoms::object)) {
         continue;
       }
+
+      // XXXbz And if it is?
     }
     // cite >> BLOCKQUOTE, DEL, INS, Q
-    else if (MATCHES(curAttr, "cite")) {
-      if (!MATCHES(tagName, "blockquote") && !MATCHES(tagName, "q") &&
-          !MATCHES(tagName, "del") && !MATCHES(tagName, "ins")) {
+    else if (attrInfo.mName->Equals(nsGkAtoms::cite)) {
+      if (!element->IsAnyOfHTMLElements(nsGkAtoms::blockquote, nsGkAtoms::q,
+                                        nsGkAtoms::del, nsGkAtoms::ins)) {
         continue;
       }
+
+      // XXXbz And if it is?
     }
     // profile >> HEAD
-    else if (MATCHES(curAttr, "profile")) {
-      if (!MATCHES(tagName, "head")) {
+    else if (attrInfo.mName->Equals(nsGkAtoms::profile)) {
+      if (!element->IsHTMLElement(nsGkAtoms::head)) {
         continue;
       }
-    }
-    // archive attribute on APPLET; warning, it contains a list of URIs.
-    else if (MATCHES(curAttr, "archive")) {
-      if (!MATCHES(tagName, "applet")) {
-        continue;
-      }
+
+      // XXXbz And if it is?
     }
   }
   // Return a code to indicate that there are no more,
@@ -215,29 +211,24 @@ HTMLURIRefObject::GetNextURI(nsAString& aURI)
 
 NS_IMETHODIMP
 HTMLURIRefObject::RewriteAllURIs(const nsAString& aOldPat,
-                                 const nsAString& aNewPat,
-                                 bool aMakeRel)
-{
+                                 const nsAString& aNewPat, bool aMakeRel) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
-HTMLURIRefObject::GetNode(nsIDOMNode** aNode)
-{
+HTMLURIRefObject::GetNode(nsINode** aNode) {
   NS_ENSURE_TRUE(mNode, NS_ERROR_NOT_INITIALIZED);
   NS_ENSURE_TRUE(aNode, NS_ERROR_NULL_POINTER);
-  *aNode = mNode.get();
-  NS_ADDREF(*aNode);
+  *aNode = do_AddRef(mNode).take();
   return NS_OK;
 }
 
 NS_IMETHODIMP
-HTMLURIRefObject::SetNode(nsIDOMNode* aNode)
-{
+HTMLURIRefObject::SetNode(nsINode* aNode) {
   mNode = aNode;
   nsAutoString dummyURI;
   if (NS_SUCCEEDED(GetNextURI(dummyURI))) {
-    mCurAttrIndex = 0;    // Reset so we'll get the first node next time
+    mCurAttrIndex = 0;  // Reset so we'll get the first node next time
     return NS_OK;
   }
 
@@ -247,10 +238,9 @@ HTMLURIRefObject::SetNode(nsIDOMNode* aNode)
   return NS_ERROR_INVALID_ARG;
 }
 
-} // namespace mozilla
+}  // namespace mozilla
 
-nsresult NS_NewHTMLURIRefObject(nsIURIRefObject** aResult, nsIDOMNode* aNode)
-{
+nsresult NS_NewHTMLURIRefObject(nsIURIRefObject** aResult, nsINode* aNode) {
   RefPtr<mozilla::HTMLURIRefObject> refObject = new mozilla::HTMLURIRefObject();
   nsresult rv = refObject->SetNode(aNode);
   if (NS_FAILED(rv)) {

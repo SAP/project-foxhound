@@ -3,22 +3,16 @@
 
 "use strict";
 
-/* exported Cr, CC, NetUtil, defer, errorCount, initTestDebuggerServer,
+/* exported Cr, CC, NetUtil, errorCount, initTestDebuggerServer,
             writeTestTempFile, socket_transport, local_transport, really_long
 */
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cu = Components.utils;
-var Cr = Components.results;
 var CC = Components.Constructor;
 
 const { require } =
-  Cu.import("resource://devtools/shared/Loader.jsm", {});
+  ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
 const { NetUtil } = require("resource://gre/modules/NetUtil.jsm");
-const promise = require("promise");
 const defer = require("devtools/shared/defer");
-const { Task } = require("devtools/shared/task");
 
 const Services = require("Services");
 
@@ -31,8 +25,10 @@ const Services = require("Services");
 // Enable remote debugging for the relevant tests.
 Services.prefs.setBoolPref("devtools.debugger.remote-enabled", true);
 
+const { ActorRegistry } = require("devtools/server/actors/utils/actor-registry");
 const { DebuggerServer } = require("devtools/server/main");
-const { DebuggerClient } = require("devtools/shared/client/main");
+const { DebuggerClient } = require("devtools/shared/client/debugger-client");
+const { SocketListener } = require("devtools/shared/security/socket");
 
 // Convert an nsIScriptError 'flags' value into an appropriate string.
 function scriptErrorFlagsToKind(flags) {
@@ -57,7 +53,7 @@ function scriptErrorFlagsToKind(flags) {
 // into the ether.
 var errorCount = 0;
 var listener = {
-  observe: function (message) {
+  observe: function(message) {
     errorCount++;
     let string = "";
     try {
@@ -87,23 +83,22 @@ var listener = {
     if (!(message.flags & Ci.nsIScriptError.strictFlag)) {
       do_throw("head_dbg.js got console message: " + string + "\n");
     }
-  }
+  },
 };
 
-var consoleService = Cc["@mozilla.org/consoleservice;1"]
-                     .getService(Ci.nsIConsoleService);
-consoleService.registerListener(listener);
+Services.console.registerListener(listener);
 
 /**
  * Initialize the testing debugger server.
  */
 function initTestDebuggerServer() {
-  DebuggerServer.registerModule("devtools/server/actors/script", {
+  ActorRegistry.registerModule("devtools/server/actors/thread", {
     prefix: "script",
     constructor: "ScriptActor",
-    type: { global: true, tab: true }
+    type: { global: true, target: true },
   });
-  DebuggerServer.registerModule("xpcshell-test/testactors");
+  const { createRootActor } = require("xpcshell-test/testactors");
+  DebuggerServer.setRootActor(createRootActor);
   // Allow incoming connections.
   DebuggerServer.init();
 }
@@ -120,13 +115,13 @@ function getTestTempFile(fileName, allowMissing) {
 }
 
 function writeTestTempFile(fileName, content) {
-  let file = getTestTempFile(fileName, true);
-  let stream = Cc["@mozilla.org/network/file-output-stream;1"]
+  const file = getTestTempFile(fileName, true);
+  const stream = Cc["@mozilla.org/network/file-output-stream;1"]
     .createInstance(Ci.nsIFileOutputStream);
   stream.init(file, -1, -1, 0);
   try {
     do {
-      let numWritten = stream.write(content, content.length);
+      const numWritten = stream.write(content, content.length);
       content = content.slice(numWritten);
     } while (content.length > 0);
   } finally {
@@ -136,25 +131,27 @@ function writeTestTempFile(fileName, content) {
 
 /** * Transport Factories ***/
 
-var socket_transport = Task.async(function* () {
+var socket_transport = async function() {
   if (!DebuggerServer.listeningSockets) {
-    let AuthenticatorType = DebuggerServer.Authenticators.get("PROMPT");
-    let authenticator = new AuthenticatorType.Server();
+    const AuthenticatorType = DebuggerServer.Authenticators.get("PROMPT");
+    const authenticator = new AuthenticatorType.Server();
     authenticator.allowConnection = () => {
       return DebuggerServer.AuthenticationResult.ALLOW;
     };
-    let debuggerListener = DebuggerServer.createListener();
-    debuggerListener.portOrPath = -1;
-    debuggerListener.authenticator = authenticator;
-    yield debuggerListener.open();
+    const socketOptions = {
+      authenticator,
+      portOrPath: -1,
+    };
+    const debuggerListener = new SocketListener(DebuggerServer, socketOptions);
+    await debuggerListener.open();
   }
-  let port = DebuggerServer._listeners[0].port;
-  do_print("Debugger server port is " + port);
+  const port = DebuggerServer._listeners[0].port;
+  info("Debugger server port is " + port);
   return DebuggerClient.socketConnect({ host: "127.0.0.1", port });
-});
+};
 
 function local_transport() {
-  return promise.resolve(DebuggerServer.connectPipe());
+  return Promise.resolve(DebuggerServer.connectPipe());
 }
 
 /** * Sample Data ***/

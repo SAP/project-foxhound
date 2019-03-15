@@ -4,29 +4,28 @@
 #[macro_use]
 extern crate nom;
 
-use nom::{HexDisplay,Needed,IResult,be_u16,be_u32,be_u64,be_f32,ErrorKind};
-use nom::{Consumer,ConsumerState,Move,Input,Producer,FileProducer,FileProducerState};
-use nom::IResult::*;
-use nom::Err::*;
+use nom::{IResult, Needed, be_f32, be_u16, be_u32, be_u64};
+//use nom::{Consumer,ConsumerState,Move,Input,Producer,FileProducer,FileProducerState};
+//use nom::IResult;
+use nom::{Err, ErrorKind};
 
 use std::str;
-use std::io::SeekFrom;
 
-fn mp4_box(input:&[u8]) -> IResult<&[u8], &[u8]> {
+fn mp4_box(input: &[u8]) -> IResult<&[u8], &[u8]> {
   match be_u32(input) {
-    Done(i, offset) => {
+    Ok((i, offset)) => {
       let sz: usize = offset as usize;
       if i.len() >= sz - 4 {
-        Done(&i[(sz-4)..], &i[0..(sz-4)])
+        Ok((&i[(sz - 4)..], &i[0..(sz - 4)]))
       } else {
-        Incomplete(Needed::Size(offset as usize + 4))
+        Err(Err::Incomplete(Needed::Size(offset as usize + 4)))
       }
     }
-    Error(e)      => Error(e),
-    Incomplete(e) => Incomplete(e)
+    Err(e) => Err(e),
   }
 }
 
+#[cfg_attr(rustfmt, rustfmt_skip)]
 #[derive(PartialEq,Eq,Debug)]
 struct FileType<'a> {
   major_brand:         &'a str,
@@ -34,6 +33,7 @@ struct FileType<'a> {
   compatible_brands:   Vec<&'a str>
 }
 
+#[cfg_attr(rustfmt, rustfmt_skip)]
 #[allow(non_snake_case)]
 #[derive(Debug,Clone)]
 pub struct Mvhd32 {
@@ -63,6 +63,7 @@ pub struct Mvhd32 {
   track_id:      u32
 }
 
+#[cfg_attr(rustfmt, rustfmt_skip)]
 #[allow(non_snake_case)]
 #[derive(Debug,Clone)]
 pub struct Mvhd64 {
@@ -94,30 +95,30 @@ pub struct Mvhd64 {
 
 #[allow(non_snake_case)]
 named!(mvhd32 <&[u8], MvhdBox>,
-  chain!(
-  version_flags: be_u32 ~
-  created_date:  be_u32 ~
-  modified_date: be_u32 ~
-  scale:         be_u32 ~
-  duration:      be_u32 ~
-  speed:         be_f32 ~
-  volume:        be_u16 ~ // actually a 2 bytes decimal
-              take!(10) ~
-  scale_a:       be_f32 ~
-  rotate_b:      be_f32 ~
-  angle_u:       be_f32 ~
-  rotate_c:      be_f32 ~
-  scale_d:       be_f32 ~
-  angle_v:       be_f32 ~
-  position_x:    be_f32 ~
-  position_y:    be_f32 ~
-  scale_w:       be_f32 ~
-  preview:       be_u64 ~
-  poster:        be_u32 ~
-  selection:     be_u64 ~
-  current_time:  be_u32 ~
-  track_id:      be_u32,
-  ||{
+  do_parse!(
+  version_flags: be_u32 >>
+  created_date:  be_u32 >>
+  modified_date: be_u32 >>
+  scale:         be_u32 >>
+  duration:      be_u32 >>
+  speed:         be_f32 >>
+  volume:        be_u16 >> // actually a 2 bytes decimal
+              take!(10) >>
+  scale_a:       be_f32 >>
+  rotate_b:      be_f32 >>
+  angle_u:       be_f32 >>
+  rotate_c:      be_f32 >>
+  scale_d:       be_f32 >>
+  angle_v:       be_f32 >>
+  position_x:    be_f32 >>
+  position_y:    be_f32 >>
+  scale_w:       be_f32 >>
+  preview:       be_u64 >>
+  poster:        be_u32 >>
+  selection:     be_u64 >>
+  current_time:  be_u32 >>
+  track_id:      be_u32 >>
+  (
     MvhdBox::M32(Mvhd32 {
       version_flags: version_flags,
       created_date:  created_date,
@@ -141,36 +142,35 @@ named!(mvhd32 <&[u8], MvhdBox>,
       current_time:  current_time,
       track_id:      track_id
     })
-  }
-  )
+  ))
 );
 
 #[allow(non_snake_case)]
 named!(mvhd64 <&[u8], MvhdBox>,
-  chain!(
-  version_flags: be_u32 ~
-  created_date:  be_u64 ~
-  modified_date: be_u64 ~
-  scale:         be_u32 ~
-  duration:      be_u64 ~
-  speed:         be_f32 ~
-  volume:        be_u16 ~ // actually a 2 bytes decimal
-              take!(10) ~
-  scale_a:       be_f32 ~
-  rotate_b:      be_f32 ~
-  angle_u:       be_f32 ~
-  rotate_c:      be_f32 ~
-  scale_d:       be_f32 ~
-  angle_v:       be_f32 ~
-  position_x:    be_f32 ~
-  position_y:    be_f32 ~
-  scale_w:       be_f32 ~
-  preview:       be_u64 ~
-  poster:        be_u32 ~
-  selection:     be_u64 ~
-  current_time:  be_u32 ~
-  track_id:      be_u32,
-  ||{
+  do_parse!(
+  version_flags: be_u32 >>
+  created_date:  be_u64 >>
+  modified_date: be_u64 >>
+  scale:         be_u32 >>
+  duration:      be_u64 >>
+  speed:         be_f32 >>
+  volume:        be_u16 >> // actually a 2 bytes decimal
+              take!(10) >>
+  scale_a:       be_f32 >>
+  rotate_b:      be_f32 >>
+  angle_u:       be_f32 >>
+  rotate_c:      be_f32 >>
+  scale_d:       be_f32 >>
+  angle_v:       be_f32 >>
+  position_x:    be_f32 >>
+  position_y:    be_f32 >>
+  scale_w:       be_f32 >>
+  preview:       be_u64 >>
+  poster:        be_u32 >>
+  selection:     be_u64 >>
+  current_time:  be_u32 >>
+  track_id:      be_u32 >>
+  (
     MvhdBox::M64(Mvhd64 {
       version_flags: version_flags,
       created_date:  created_date,
@@ -194,17 +194,16 @@ named!(mvhd64 <&[u8], MvhdBox>,
       current_time:  current_time,
       track_id:      track_id
     })
-  }
-  )
+  ))
 );
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub enum MvhdBox {
   M32(Mvhd32),
-  M64(Mvhd64)
+  M64(Mvhd64),
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub enum MoovBox {
   Mdra,
   Dref,
@@ -214,7 +213,7 @@ pub enum MoovBox {
   Mvhd(MvhdBox),
   Clip,
   Trak,
-  Udta
+  Udta,
 }
 
 #[derive(Debug)]
@@ -234,42 +233,42 @@ enum MP4BoxType {
   Clip,
   Trak,
   Udta,
-  Unknown
+  Unknown,
 }
 
 #[derive(Debug)]
 struct MP4BoxHeader {
   length: u32,
-  tag:    MP4BoxType
+  tag: MP4BoxType,
 }
 
 named!(brand_name<&[u8],&str>, map_res!(take!(4), str::from_utf8));
 
 named!(filetype_parser<&[u8], FileType>,
-  chain!(
-    m: brand_name          ~
-    v: take!(4)            ~
-    c: many0!(brand_name)  ,
-    ||{ FileType{ major_brand: m, major_brand_version:v, compatible_brands: c } }
+  do_parse!(
+    m: brand_name          >>
+    v: take!(4)            >>
+    c: many0!(brand_name)  >>
+    (FileType{ major_brand: m, major_brand_version:v, compatible_brands: c })
   )
 );
 
-fn mvhd_box(input:&[u8]) -> IResult<&[u8],MvhdBox> {
+fn mvhd_box(input: &[u8]) -> IResult<&[u8], MvhdBox> {
   let res = if input.len() < 100 {
-    Incomplete(Needed::Size(100))
+    Err(Err::Incomplete(Needed::Size(100)))
   } else if input.len() == 100 {
     mvhd32(input)
   } else if input.len() == 112 {
     mvhd64(input)
   } else {
-    Error(Position(ErrorKind::Custom(32),input))
+    Err(Err::Error(error_position!(input, ErrorKind::Custom(32u32))))
   };
   println!("res: {:?}", res);
   res
 }
 
-fn unknown_box_type(input:&[u8]) -> IResult<&[u8], MP4BoxType> {
-  Done(input, MP4BoxType::Unknown)
+fn unknown_box_type(input: &[u8]) -> IResult<&[u8], MP4BoxType> {
+  Ok((input, MP4BoxType::Unknown))
 }
 
 //named!(box_type<&[u8], MP4BoxType>,
@@ -303,21 +302,22 @@ named!(moov_type<&[u8], MP4BoxType>,
 );
 
 named!(box_header<&[u8],MP4BoxHeader>,
-  chain!(
-    length: be_u32 ~
-    tag: box_type  ,
-    || { MP4BoxHeader{ length: length, tag: tag} }
+  do_parse!(
+    length: be_u32 >>
+    tag: box_type  >>
+    (MP4BoxHeader{ length: length, tag: tag})
   )
 );
 
 named!(moov_header<&[u8],MP4BoxHeader>,
-  chain!(
-    length: be_u32 ~
-    tag: moov_type  ,
-    || { MP4BoxHeader{ length: length, tag: tag} }
+  do_parse!(
+    length: be_u32 >>
+    tag: moov_type >>
+    (MP4BoxHeader{ length: length, tag: tag})
   )
 );
 
+/*
 #[derive(Debug,PartialEq,Eq)]
 enum MP4State {
   Main,
@@ -343,22 +343,22 @@ impl MP4Consumer {
       Input::Empty     => ConsumerState::Continue(Move::Consume(0)),
       Input::Element(sl) |  Input::Eof(Some(sl)) => {
         match box_header(sl) {
-          Done(i, header) => {
+          Ok((i, header)) => {
             match header.tag {
               MP4BoxType::Ftyp    => {
                 println!("-> FTYP");
                 match filetype_parser(&i[0..(header.length as usize - 8)]) {
-                  Done(rest, filetype_header) => {
+                  Ok((rest, filetype_header)) => {
                     println!("filetype header: {:?}", filetype_header);
                     //return ConsumerState::Await(header.length as usize, header.length as usize - 8);
                     return ConsumerState::Continue(Move::Consume(sl.offset(rest)));
                   }
-                  Error(a) => {
+                  Err(Err::Error(a)) => {
                     println!("ftyp parsing error: {:?}", a);
                     assert!(false);
                     return ConsumerState::Error(());
                   },
-                  Incomplete(n) => {
+                  Err(Err::Incomplete(n)) => {
                     println!("ftyp incomplete -> await: {}", sl.len());
                     return ConsumerState::Continue(Move::Await(n));
                     //return ConsumerState::Await(0, input.len() + 100);
@@ -384,12 +384,12 @@ impl MP4Consumer {
             }
             return ConsumerState::Continue(Move::Seek(SeekFrom::Current((header.length) as i64)))
           },
-          Error(a) => {
+          Err(Err::Error(a)) => {
             println!("mp4 parsing error: {:?}", a);
             assert!(false);
             return ConsumerState::Error(());
           },
-          Incomplete(i) => {
+          Err(Err::Incomplete(i)) => {
             // FIXME: incomplete should send the required size
             println!("mp4 incomplete -> await: {}", sl.len());
             return ConsumerState::Continue(Move::Await(i));
@@ -411,7 +411,7 @@ impl MP4Consumer {
           return ConsumerState::Continue(Move::Consume(0));
         }
         match moov_header(sl) {
-          Done(i, header) => {
+          Ok((i, header)) => {
             match header.tag {
               MP4BoxType::Mvhd    => {
                 println!("-> MVHD");
@@ -438,13 +438,13 @@ impl MP4Consumer {
             println!("remaining moov_bytes: {}", self.moov_bytes);
             return ConsumerState::Continue(Move::Seek(SeekFrom::Current((header.length) as i64)))
           },
-          Error(a) => {
+          Err(Err::Error(a)) => {
             println!("moov parsing error: {:?}", a);
             println!("data:\n{}", sl.to_hex(8));
             assert!(false);
             return ConsumerState::Error(());
           },
-          Incomplete(i) => {
+          Err(Err::Incomplete(i)) => {
             println!("moov incomplete -> await: {}", sl.len());
             return ConsumerState::Continue(Move::Await(i));
           }
@@ -526,6 +526,4 @@ fn small_test() {
 fn big_bunny_test() {
   explore_mp4_file("assets/bigbuckbunny.mp4");
 }
-
-
-
+*/

@@ -70,7 +70,7 @@ To have the battery of generic tests run for a new list attribute, add an elemen
     if it exists, and if the element has a property is of this type (as
     opposed to the element interface inheriting it).
   list_type
-    The name of the SVGXxxList inteface implemented by the baseVal and
+    The name of the SVGXxxList interface implemented by the baseVal and
     animVal objects.
   item_type
     The name of the SVGXxx interface implemented by the list items.
@@ -223,61 +223,6 @@ var tests = [
     }
   },
   {
-    // SVGPathSegList test:
-    target_element_id: 'path',
-    attr_name: 'd',
-    prop_name: null, // SVGAnimatedPathData is an inherited interface!
-    bv_name: 'pathSegList',
-    av_name: 'animatedPathSegList',
-    el_type: 'SVGPathElement',
-    prop_type: null,
-    list_type: 'SVGPathSegList',
-    item_type: 'SVGPathSeg',
-    attr_val_3a: 'M 10,10 L 50,50 L 90,10',
-    attr_val_3b: 'M 10,50 L 50,10 L 90,50',
-    attr_val_4 : 'M 10,10 L 50,50 L 90,10 M 200,100',
-    attr_val_5a: 'M 10,10 L 50,50 L 90,10 L 130,50 L 170,10',
-    attr_val_5b: 'M 50,10 L 50,10 L 90,50 L 130,10 L 170,50',
-    attr_val_5b_firstItem_x3_constructor: function(constructor) {
-      var expected = constructor();
-      is(expected.pathSegTypeAsLetter, "M",
-         "test error -- expected constructor to generate a segment of type M");
-      expected.x = 150;
-      expected.y = 30;
-      return expected;
-    },
-    item_constructor: function() {
-      // XXX return different values each time
-      return document.getElementById('path').createSVGPathSegMovetoAbs(1, 1);
-    },
-    item_is: function(itemA, itemB, message) {
-      ok(typeof(itemA.pathSegTypeAsLetter) != 'undefined' &&
-         typeof(itemB.pathSegTypeAsLetter) != 'undefined',
-         'expecting pathSegTypeAsLetter property');
-
-      // First: are we dealing  with the same type of segment?
-      is(itemA.pathSegTypeAsLetter, itemB.pathSegTypeAsLetter, message);
-      if (itemA.pathSegTypeAsLetter != itemB.pathSegTypeAsLetter)
-        return;  // The rest of this function is nonsense if types don't match.
-
-      // Make sure property-counts match (so we can iterate across itemA's
-      // properties and not worry about itemB having extra properties that
-      // we might be skipping over).
-      is(keys(itemA).length, keys(itemB).length,
-        'expecting same property-count when comparing path segs of same type.');
-
-      // Compare the properties, skipping the constant properties inherited
-      // from 'SVGPathSeg', and skipping the pathSegTypeAsLetter field since we
-      // already checked that above.
-      for (var prop in itemA) {
-        if (!SVGPathSeg.hasOwnProperty(prop) &&
-            prop != 'pathSegTypeAsLetter') {
-          is(itemA[prop], itemB[prop], message);
-        }
-      }
-    }
-  },
-  {
     // SVGStringList test:
     target_element_id: 'g',
     attr_name: 'requiredFeatures', // requiredExtensions, systemLanguage, viewTarget
@@ -371,7 +316,7 @@ The third animation has additive="sum", with fewer items than the lower priority
 
 At t=0s and t=1s we test the effect of an attribute value changes in the absence and presence of SMIL animation respectively.
 
-At t=10s we programatically remove the fill="freeze" from animation 1.
+At t=10s we programmatically remove the fill="freeze" from animation 1.
 */
 function create_animate_elements(test)
 {
@@ -380,7 +325,7 @@ function create_animate_elements(test)
 
   if (is_transform_attr(test.attr_name)) {
     // animateTransform is "special". Although it targets an
-    // nsSVGAnimatedTransformList it only takes nsSVGTransform values as
+    // SVGAnimatedTransformList it only takes SVGTransform values as
     // animation values. Therefore all the assumptions we're testing about the
     // length of lists don't apply. We simply have to test it separately.
     // This is done in test_SVGTransformListAddition.xhtml.
@@ -1170,14 +1115,12 @@ function run_animation_timeline_tests()
        'in the '+t.list_type+' for '+t.bv_path+' to 5.');
 
     // TODO
-    if (t.list_type != 'SVGPathSegList') {
     ok(t.animVal.getItem(3) === t.old_animVal_items[3],
        'When affected by SMIL animation, list items in the '+t.list_type+
        ' for '+t.bv_path+' that are at indexes that existed prior to the '+
        'start of the animation should be the exact same objects as the '+
        'objects that were at those indexes prior to the start of the '+
        'animation.');
-    }
 
     t.old_animVal_items = get_array_of_list_items(t.animVal);
 
@@ -1260,7 +1203,7 @@ function run_animation_timeline_tests()
        t.animVal.getItem(4) === t.old_animVal_items[4],
        'When an animation repeats, the list items that are at a given '+
        'index in the '+t.list_type+' for '+t.av_path+' should be the exact '+
-       'same objects as were at that index before the repeat occured.');
+       'same objects as were at that index before the repeat occurred.');
 
 
     /********************    t = 6s    ********************/
@@ -1276,7 +1219,7 @@ function run_animation_timeline_tests()
        t.animVal.getItem(4) === t.old_animVal_items[4],
        'When an animation repeats, the list items that are at a given '+
        'index in the '+t.list_type+' for '+t.av_path+' should be the exact '+
-       'same objects as were at that index before the repeat occured.');
+       'same objects as were at that index before the repeat occurred.');
 
 
     /********************    t = 7s    ********************/
@@ -1359,7 +1302,7 @@ function run_animation_timeline_tests()
        'Even after an animation finishes and is un-frozen, the list items '+
        'that are at a given index in the '+t.list_type+' for '+t.av_path+
        ' should be the exact same objects as were at that index before the '+
-       'end and unfreezing of the animation occured.');
+       'end and unfreezing of the animation occurred.');
    }
 }
 

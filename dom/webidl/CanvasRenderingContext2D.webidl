@@ -27,6 +27,9 @@ dictionary HitRegionOptions {
 };
 
 typedef (HTMLImageElement or
+         SVGImageElement) HTMLOrSVGImageElement;
+
+typedef (HTMLOrSVGImageElement or
          HTMLCanvasElement or
          HTMLVideoElement or
          ImageBitmap) CanvasImageSource;
@@ -227,18 +230,19 @@ interface CanvasDrawPath {
   void clip(optional CanvasWindingRule winding = "nonzero");
   void clip(Path2D path, optional CanvasWindingRule winding = "nonzero");
 // NOT IMPLEMENTED  void resetClip();
+  [NeedsSubjectPrincipal]
   boolean isPointInPath(unrestricted double x, unrestricted double y, optional CanvasWindingRule winding = "nonzero");
+  [NeedsSubjectPrincipal] // Only required because overloads can't have different extended attributes.
   boolean isPointInPath(Path2D path, unrestricted double x, unrestricted double y, optional CanvasWindingRule winding = "nonzero");
+  [NeedsSubjectPrincipal]
   boolean isPointInStroke(double x, double y);
+  [NeedsSubjectPrincipal] // Only required because overloads can't have different extended attributes.
   boolean isPointInStroke(Path2D path, unrestricted double x, unrestricted double y);
 };
 
 [NoInterfaceObject]
 interface CanvasUserInterface {
   [Pref="canvas.focusring.enabled", Throws] void drawFocusIfNeeded(Element element);
-// NOT IMPLEMENTED  void drawSystemFocusRing(Path path, HTMLElement element);
-  [Pref="canvas.customfocusring.enabled"] boolean drawCustomFocusRing(Element element);
-// NOT IMPLEMENTED  boolean drawCustomFocusRing(Path path, HTMLElement element);
 // NOT IMPLEMENTED  void scrollPathIntoView();
 // NOT IMPLEMENTED  void scrollPathIntoView(Path path);
 };
@@ -271,7 +275,7 @@ interface CanvasImageData {
   ImageData createImageData(double sw, double sh);
   [NewObject, Throws]
   ImageData createImageData(ImageData imagedata);
-  [NewObject, Throws]
+  [NewObject, Throws, NeedsSubjectPrincipal]
   ImageData getImageData(double sx, double sy, double sw, double sh);
   [Throws]
   void putImageData(ImageData imagedata, double dx, double dy);

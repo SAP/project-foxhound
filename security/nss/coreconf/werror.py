@@ -24,7 +24,7 @@ def main():
         # If we aren't clang, make sure we have gcc 4.8 at least
         if not cc_is_clang:
             try:
-                v = subprocess.check_output([cc, '-dumpversion'], stderr=sink)
+                v = subprocess.check_output([cc, '-dumpversion'], stderr=sink).decode("utf-8")
                 v = v.strip(' \r\n').split('.')
                 v = list(map(int, v))
                 if v[0] < 4 or (v[0] == 4 and v[1] < 8):
@@ -54,7 +54,7 @@ def main():
             set_warning(w, 'no-')
         print('-Qunused-arguments')
 
-    # set_warning('shadow') # Bug 1309068
+    set_warning('shadow')
 
 if __name__ == '__main__':
     main()

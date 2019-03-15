@@ -8,7 +8,14 @@ with Files('**'):
     BUG_COMPONENT = ('Core', 'Graphics: WebRender')
 
 EXPORTS.mozilla.webrender += [
+    'RenderBufferTextureHost.h',
+    'RenderCompositor.h',
+    'RenderCompositorOGL.h',
     'RendererOGL.h',
+    'RenderSharedSurfaceTextureHost.h',
+    'RenderTextureHost.h',
+    'RenderTextureHostOGL.h',
+    'RenderTextureHostWrapper.h',
     'RenderThread.h',
     'webrender_ffi.h',
     'WebRenderAPI.h',
@@ -16,11 +23,74 @@ EXPORTS.mozilla.webrender += [
 ]
 
 UNIFIED_SOURCES += [
+    'Moz2DImageRenderer.cpp',
+    'RenderBufferTextureHost.cpp',
+    'RenderCompositor.cpp',
+    'RenderCompositorOGL.cpp',
     'RendererOGL.cpp',
+    'RenderSharedSurfaceTextureHost.cpp',
+    'RenderTextureHost.cpp',
+    'RenderTextureHostOGL.cpp',
+    'RenderTextureHostWrapper.cpp',
     'RenderThread.cpp',
     'WebRenderAPI.cpp',
+    'WebRenderTypes.cpp',
 ]
+
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
+    EXPORTS.mozilla.webrender += [
+        'RenderMacIOSurfaceTextureHostOGL.h',
+    ]
+    UNIFIED_SOURCES += [
+        'RenderMacIOSurfaceTextureHostOGL.cpp',
+    ]
+
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
+    EXPORTS.mozilla.webrender += [
+        'RenderAndroidSurfaceTextureHostOGL.h',
+    ]
+    UNIFIED_SOURCES += [
+        'RenderAndroidSurfaceTextureHostOGL.cpp',
+    ]
+
+if CONFIG['MOZ_ENABLE_D3D10_LAYER']:
+    DEFINES['MOZ_ENABLE_D3D10_LAYER'] = True
+    EXPORTS.mozilla.webrender += [
+        'RenderCompositorANGLE.h',
+        'RenderD3D11TextureHostOGL.h',
+    ]
+    UNIFIED_SOURCES += [
+        'RenderD3D11TextureHostOGL.cpp',
+    ]
+    SOURCES += [
+        'RenderCompositorANGLE.cpp',
+    ]
+
+if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('android', 'gtk3'):
+    CXXFLAGS += CONFIG['MOZ_CAIRO_CFLAGS']
+    CXXFLAGS += CONFIG['CAIRO_FT_CFLAGS']
+
+if CONFIG['COMPILE_ENVIRONMENT']:
+    GENERATED_FILES += [
+        'webrender_ffi_generated.h',
+    ]
+
+    EXPORTS.mozilla.webrender += [
+        '!webrender_ffi_generated.h',
+    ]
+
+    ffi_generated = GENERATED_FILES['webrender_ffi_generated.h']
+    ffi_generated.script = '/layout/style/RunCbindgen.py:generate'
+    ffi_generated.inputs = [
+        '/gfx/webrender_bindings',
+        '/gfx/wr/webrender',
+        '/gfx/wr/webrender_api',
+    ]
+
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
+
+if CONFIG['CC_TYPE'] == 'clang-cl':
+    AllowCompilerWarnings()  # workaround for bug 1090497

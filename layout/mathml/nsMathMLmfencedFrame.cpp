@@ -1,36 +1,37 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-
+#include "gfxContext.h"
 #include "nsMathMLmfencedFrame.h"
-#include "nsRenderingContext.h"
 #include "nsMathMLChar.h"
 #include <algorithm>
 
 using namespace mozilla;
 
+using mozilla::gfx::DrawTarget;
+
 //
 // <mfenced> -- surround content with a pair of fences
 //
 
-nsIFrame*
-NS_NewMathMLmfencedFrame(nsIPresShell* aPresShell, nsStyleContext* aContext)
-{
-  return new (aPresShell) nsMathMLmfencedFrame(aContext);
+nsIFrame* NS_NewMathMLmfencedFrame(nsIPresShell* aPresShell,
+                                   ComputedStyle* aStyle) {
+  return new (aPresShell) nsMathMLmfencedFrame(aStyle);
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsMathMLmfencedFrame)
 
-nsMathMLmfencedFrame::~nsMathMLmfencedFrame()
-{
+void nsMathMLmfencedFrame::DestroyFrom(nsIFrame* aDestructRoot,
+                                       PostDestroyData& aPostDestroyData) {
   RemoveFencesAndSeparators();
+  nsMathMLContainerFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
 }
 
 NS_IMETHODIMP
-nsMathMLmfencedFrame::InheritAutomaticData(nsIFrame* aParent)
-{
+nsMathMLmfencedFrame::InheritAutomaticData(nsIFrame* aParent) {
   // let the base class get the default from our parent
   nsMathMLContainerFrame::InheritAutomaticData(aParent);
 
@@ -42,10 +43,8 @@ nsMathMLmfencedFrame::InheritAutomaticData(nsIFrame* aParent)
   return NS_OK;
 }
 
-void
-nsMathMLmfencedFrame::SetInitialChildList(ChildListID     aListID,
-                                          nsFrameList&    aChildList)
-{
+void nsMathMLmfencedFrame::SetInitialChildList(ChildListID aListID,
+                                               nsFrameList& aChildList) {
   // First, let the base class do its work
   nsMathMLContainerFrame::SetInitialChildList(aListID, aChildList);
 
@@ -53,36 +52,31 @@ nsMathMLmfencedFrame::SetInitialChildList(ChildListID     aListID,
   // frame, so initialize NS_MATHML_STRETCH_ALL_CHILDREN_VERTICALLY for
   // GetPreferredStretchSize() from Reflow().
   mPresentationData.flags |= NS_MATHML_STRETCH_ALL_CHILDREN_VERTICALLY;
-  // No need to track the style contexts given to our MathML chars. 
-  // The Style System will use Get/SetAdditionalStyleContext() to keep them
+  // No need to track the ComputedStyle given to our MathML chars.
+  // The Style System will use Get/SetAdditionalComputedStyle() to keep them
   // up-to-date if dynamic changes arise.
   CreateFencesAndSeparators(PresContext());
 }
 
-nsresult
-nsMathMLmfencedFrame::AttributeChanged(int32_t         aNameSpaceID,
-                                       nsIAtom*        aAttribute,
-                                       int32_t         aModType)
-{
+nsresult nsMathMLmfencedFrame::AttributeChanged(int32_t aNameSpaceID,
+                                                nsAtom* aAttribute,
+                                                int32_t aModType) {
   RemoveFencesAndSeparators();
   CreateFencesAndSeparators(PresContext());
 
-  return nsMathMLContainerFrame::
-         AttributeChanged(aNameSpaceID, aAttribute, aModType);
+  return nsMathMLContainerFrame::AttributeChanged(aNameSpaceID, aAttribute,
+                                                  aModType);
 }
 
-nsresult
-nsMathMLmfencedFrame::ChildListChanged(int32_t aModType)
-{
+nsresult nsMathMLmfencedFrame::ChildListChanged(int32_t aModType) {
   RemoveFencesAndSeparators();
   CreateFencesAndSeparators(PresContext());
 
   return nsMathMLContainerFrame::ChildListChanged(aModType);
 }
 
-void
-nsMathMLmfencedFrame::RemoveFencesAndSeparators()
-{
+void nsMathMLmfencedFrame::RemoveFencesAndSeparators() {
+  MarkNeedsDisplayItemRebuild();
   delete mOpenChar;
   delete mCloseChar;
   if (mSeparatorsChar) delete[] mSeparatorsChar;
@@ -93,15 +87,15 @@ nsMathMLmfencedFrame::RemoveFencesAndSeparators()
   mSeparatorsCount = 0;
 }
 
-void
-nsMathMLmfencedFrame::CreateFencesAndSeparators(nsPresContext* aPresContext)
-{
+void nsMathMLmfencedFrame::CreateFencesAndSeparators(
+    nsPresContext* aPresContext) {
   nsAutoString value;
 
-  //////////////  
+  //////////////
   // see if the opening fence is there ...
-  if (!mContent->GetAttr(kNameSpaceID_None, nsGkAtoms::open, value)) {
-    value = char16_t('('); // default as per the MathML REC
+  if (!mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::open,
+                                      value)) {
+    value = char16_t('(');  // default as per the MathML REC
   } else {
     value.CompressWhitespace();
   }
@@ -109,13 +103,14 @@ nsMathMLmfencedFrame::CreateFencesAndSeparators(nsPresContext* aPresContext)
   if (!value.IsEmpty()) {
     mOpenChar = new nsMathMLChar;
     mOpenChar->SetData(value);
-    ResolveMathMLCharStyle(aPresContext, mContent, mStyleContext, mOpenChar);
+    ResolveMathMLCharStyle(aPresContext, mContent, mComputedStyle, mOpenChar);
   }
 
   //////////////
   // see if the closing fence is there ...
-  if(!mContent->GetAttr(kNameSpaceID_None, nsGkAtoms::close, value)) {
-    value = char16_t(')'); // default as per the MathML REC
+  if (!mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::close,
+                                      value)) {
+    value = char16_t(')');  // default as per the MathML REC
   } else {
     value.CompressWhitespace();
   }
@@ -123,13 +118,14 @@ nsMathMLmfencedFrame::CreateFencesAndSeparators(nsPresContext* aPresContext)
   if (!value.IsEmpty()) {
     mCloseChar = new nsMathMLChar;
     mCloseChar->SetData(value);
-    ResolveMathMLCharStyle(aPresContext, mContent, mStyleContext, mCloseChar);
+    ResolveMathMLCharStyle(aPresContext, mContent, mComputedStyle, mCloseChar);
   }
 
   //////////////
   // see if separators are there ...
-  if (!mContent->GetAttr(kNameSpaceID_None, nsGkAtoms::separators_, value)) {
-    value = char16_t(','); // default as per the MathML REC
+  if (!mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::separators_,
+                                      value)) {
+    value = char16_t(',');  // default as per the MathML REC
   } else {
     value.StripWhitespace();
   }
@@ -143,12 +139,12 @@ nsMathMLmfencedFrame::CreateFencesAndSeparators(nsPresContext* aPresContext)
       for (int32_t i = 0; i < sepCount; i++) {
         if (i < mSeparatorsCount) {
           sepChar = value[i];
-        }
-        else {
-          sepChar = value[mSeparatorsCount-1];
+        } else {
+          sepChar = value[mSeparatorsCount - 1];
         }
         mSeparatorsChar[i].SetData(sepChar);
-        ResolveMathMLCharStyle(aPresContext, mContent, mStyleContext, &mSeparatorsChar[i]);
+        ResolveMathMLCharStyle(aPresContext, mContent, mComputedStyle,
+                               &mSeparatorsChar[i]);
       }
       mSeparatorsCount = sepCount;
     } else {
@@ -159,26 +155,23 @@ nsMathMLmfencedFrame::CreateFencesAndSeparators(nsPresContext* aPresContext)
   }
 }
 
-void
-nsMathMLmfencedFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                                       const nsRect&           aDirtyRect,
-                                       const nsDisplayListSet& aLists)
-{
+void nsMathMLmfencedFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
+                                            const nsDisplayListSet& aLists) {
   /////////////
   // display the content
-  nsMathMLContainerFrame::BuildDisplayList(aBuilder, aDirtyRect, aLists);
-  
+  nsMathMLContainerFrame::BuildDisplayList(aBuilder, aLists);
+
   ////////////
   // display fences and separators
   uint32_t count = 0;
   if (mOpenChar) {
     mOpenChar->Display(aBuilder, this, aLists, count++);
   }
-  
+
   if (mCloseChar) {
     mCloseChar->Display(aBuilder, this, aLists, count++);
   }
-  
+
   for (int32_t i = 0; i < mSeparatorsCount; i++) {
     mSeparatorsChar[i].Display(aBuilder, this, aLists, count++);
   }
@@ -190,31 +183,27 @@ For simplicity the width of the container is always incremented by the width
 of the nsMathMLChar.  As we only stretch fences and separators in the vertical
 direction, this has no impact on overall appearance.
 */
-static void
-ApplyUnstretchedMetrics(nsPresContext*      aPresContext,
-                        DrawTarget*         aDrawTarget,
-                        float               aFontSizeInflation,
-                        nsMathMLChar*       aMathMLChar,
-                        nsBoundingMetrics&  aMetrics,
-                        bool                aIsRTL)
-{
+static void ApplyUnstretchedMetrics(nsIFrame* aFrame, DrawTarget* aDrawTarget,
+                                    float aFontSizeInflation,
+                                    nsMathMLChar* aMathMLChar,
+                                    nsBoundingMetrics& aMetrics, bool aIsRTL) {
   if (aMathMLChar && 0 < aMathMLChar->Length()) {
     nsBoundingMetrics charSize;
-    aMathMLChar->Stretch(aPresContext, aDrawTarget, aFontSizeInflation,
-                         NS_STRETCH_DIRECTION_DEFAULT,
-                         aMetrics, // size is unimportant as we aren't stretching
-                         charSize, NS_STRETCH_NONE, aIsRTL);
+    aMathMLChar->Stretch(
+        aFrame, aDrawTarget, aFontSizeInflation, NS_STRETCH_DIRECTION_DEFAULT,
+        aMetrics,  // size is unimportant as we aren't stretching
+        charSize, NS_STRETCH_NONE, aIsRTL);
     aMetrics += charSize;
   }
 }
 
-void
-nsMathMLmfencedFrame::Reflow(nsPresContext*          aPresContext,
-                             ReflowOutput&     aDesiredSize,
-                             const ReflowInput& aReflowInput,
-                             nsReflowStatus&          aStatus)
-{
+void nsMathMLmfencedFrame::Reflow(nsPresContext* aPresContext,
+                                  ReflowOutput& aDesiredSize,
+                                  const ReflowInput& aReflowInput,
+                                  nsReflowStatus& aStatus) {
   MarkInReflow();
+  MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
+
   mPresentationData.flags &= ~NS_MATHML_ERROR;
   aDesiredSize.ClearSize();
   aDesiredSize.SetBlockStartAscent(0);
@@ -224,12 +213,13 @@ nsMathMLmfencedFrame::Reflow(nsPresContext*          aPresContext,
   const nsStyleFont* font = StyleFont();
   float fontSizeInflation = nsLayoutUtils::FontSizeInflationFor(this);
   RefPtr<nsFontMetrics> fm =
-    nsLayoutUtils::GetFontMetricsForFrame(this, fontSizeInflation);
+      nsLayoutUtils::GetFontMetricsForFrame(this, fontSizeInflation);
   nscoord axisHeight, em;
-  GetAxisHeight(aReflowInput.mRenderingContext->GetDrawTarget(), fm, axisHeight);
+  GetAxisHeight(aReflowInput.mRenderingContext->GetDrawTarget(), fm,
+                axisHeight);
   GetEmHeight(fm, em);
   // leading to be left at the top and the bottom of stretched chars
-  nscoord leading = NSToCoordRound(0.2f * em); 
+  nscoord leading = NSToCoordRound(0.2f * em);
 
   /////////////
   // Reflow children
@@ -237,9 +227,9 @@ nsMathMLmfencedFrame::Reflow(nsPresContext*          aPresContext,
 
   // Note that we don't use the base method nsMathMLContainerFrame::Reflow()
   // because we want to stretch our fences, separators and stretchy frames using
-  // the *same* initial aDesiredSize.mBoundingMetrics. If we were to use the base
-  // method here, our stretchy frames will be stretched and placed, and we may
-  // end up stretching our fences/separators with a different aDesiredSize.
+  // the *same* initial aDesiredSize.mBoundingMetrics. If we were to use the
+  // base method here, our stretchy frames will be stretched and placed, and we
+  // may end up stretching our fences/separators with a different aDesiredSize.
   // XXX The above decision was revisited in bug 121748 and this code can be
   // refactored to use nsMathMLContainerFrame::Reflow() at some stage.
 
@@ -255,25 +245,22 @@ nsMathMLmfencedFrame::Reflow(nsPresContext*          aPresContext,
     descent = fm->MaxDescent();
   }
   while (childFrame) {
-    ReflowOutput childDesiredSize(aReflowInput,
-                                         aDesiredSize.mFlags
-                                         | NS_REFLOW_CALC_BOUNDING_METRICS);
+    ReflowOutput childDesiredSize(aReflowInput);
     WritingMode wm = childFrame->GetWritingMode();
     LogicalSize availSize = aReflowInput.ComputedSize(wm);
     availSize.BSize(wm) = NS_UNCONSTRAINEDSIZE;
-    ReflowInput childReflowInput(aPresContext, aReflowInput,
-                                       childFrame, availSize);
-    ReflowChild(childFrame, aPresContext, childDesiredSize,
-                childReflowInput, childStatus);
-    //NS_ASSERTION(childStatus.IsComplete(), "bad status");
+    ReflowInput childReflowInput(aPresContext, aReflowInput, childFrame,
+                                 availSize);
+    ReflowChild(childFrame, aPresContext, childDesiredSize, childReflowInput,
+                childStatus);
+    // NS_ASSERTION(childStatus.IsComplete(), "bad status");
     SaveReflowAndBoundingMetricsFor(childFrame, childDesiredSize,
                                     childDesiredSize.mBoundingMetrics);
 
     mozilla::WritingMode outerWM = aReflowInput.GetWritingMode();
-    nscoord childDescent = childDesiredSize.BSize(outerWM) -
-                           childDesiredSize.BlockStartAscent();
-    if (descent < childDescent)
-      descent = childDescent;
+    nscoord childDescent =
+        childDesiredSize.BSize(outerWM) - childDesiredSize.BlockStartAscent();
+    if (descent < childDescent) descent = childDescent;
     if (ascent < childDesiredSize.BlockStartAscent())
       ascent = childDesiredSize.BlockStartAscent();
 
@@ -288,8 +275,7 @@ nsMathMLmfencedFrame::Reflow(nsPresContext*          aPresContext,
 
   DrawTarget* drawTarget = aReflowInput.mRenderingContext->GetDrawTarget();
 
-  GetPreferredStretchSize(drawTarget,
-                          0, /* i.e., without embellishments */
+  GetPreferredStretchSize(drawTarget, 0, /* i.e., without embellishments */
                           stretchDir, containerSize);
   childFrame = firstChild;
   while (childFrame) {
@@ -300,22 +286,23 @@ nsMathMLmfencedFrame::Reflow(nsPresContext*          aPresContext,
       GetReflowAndBoundingMetricsFor(childFrame, childDesiredSize,
                                      childDesiredSize.mBoundingMetrics);
 
-      mathmlChild->Stretch(drawTarget,
-                           stretchDir, containerSize, childDesiredSize);
+      mathmlChild->Stretch(drawTarget, stretchDir, containerSize,
+                           childDesiredSize);
       // store the updated metrics
       SaveReflowAndBoundingMetricsFor(childFrame, childDesiredSize,
                                       childDesiredSize.mBoundingMetrics);
 
-      nscoord childDescent = childDesiredSize.Height() - childDesiredSize.BlockStartAscent();
-      if (descent < childDescent)
-        descent = childDescent;
+      nscoord childDescent =
+          childDesiredSize.Height() - childDesiredSize.BlockStartAscent();
+      if (descent < childDescent) descent = childDescent;
       if (ascent < childDesiredSize.BlockStartAscent())
         ascent = childDesiredSize.BlockStartAscent();
     }
     childFrame = childFrame->GetNextSibling();
   }
 
-  // bug 121748: for surrounding fences & separators, use a size that covers everything
+  // bug 121748: for surrounding fences & separators, use a size that covers
+  // everything
   GetPreferredStretchSize(drawTarget, STRETCH_CONSIDER_EMBELLISHMENTS,
                           stretchDir, containerSize);
 
@@ -323,16 +310,13 @@ nsMathMLmfencedFrame::Reflow(nsPresContext*          aPresContext,
 
   // To achieve a minimum size of "1", the container should be enlarged by the
   // unstretched metrics of the fences and separators.
-  ApplyUnstretchedMetrics(aPresContext, drawTarget,
-                          fontSizeInflation, mOpenChar,
+  ApplyUnstretchedMetrics(this, drawTarget, fontSizeInflation, mOpenChar,
                           containerSize, isRTL);
   for (i = 0; i < mSeparatorsCount; i++) {
-    ApplyUnstretchedMetrics(aPresContext, drawTarget,
-                            fontSizeInflation, &mSeparatorsChar[i],
-                            containerSize, isRTL);
+    ApplyUnstretchedMetrics(this, drawTarget, fontSizeInflation,
+                            &mSeparatorsChar[i], containerSize, isRTL);
   }
-  ApplyUnstretchedMetrics(aPresContext, drawTarget,
-                          fontSizeInflation, mCloseChar,
+  ApplyUnstretchedMetrics(this, drawTarget, fontSizeInflation, mCloseChar,
                           containerSize, isRTL);
 
   //////////////////////////////////////////
@@ -340,31 +324,28 @@ nsMathMLmfencedFrame::Reflow(nsPresContext*          aPresContext,
   // adjust the origin of children.
 
   // we need to center around the axis
-  nscoord delta = std::max(containerSize.ascent - axisHeight, 
-                         containerSize.descent + axisHeight);
+  nscoord delta = std::max(containerSize.ascent - axisHeight,
+                           containerSize.descent + axisHeight);
   containerSize.ascent = delta + axisHeight;
   containerSize.descent = delta - axisHeight;
 
   /////////////////
   // opening fence ...
-  ReflowChar(aPresContext, drawTarget, *fm,
-             fontSizeInflation, mOpenChar,
-             NS_MATHML_OPERATOR_FORM_PREFIX, font->mScriptLevel, 
-             axisHeight, leading, em, containerSize, ascent, descent, isRTL);
+  ReflowChar(drawTarget, *fm, fontSizeInflation, mOpenChar,
+             NS_MATHML_OPERATOR_FORM_PREFIX, font->mScriptLevel, axisHeight,
+             leading, em, containerSize, ascent, descent, isRTL);
   /////////////////
   // separators ...
   for (i = 0; i < mSeparatorsCount; i++) {
-    ReflowChar(aPresContext, drawTarget, *fm,
-               fontSizeInflation, &mSeparatorsChar[i],
-               NS_MATHML_OPERATOR_FORM_INFIX, font->mScriptLevel,
-               axisHeight, leading, em, containerSize, ascent, descent, isRTL);
+    ReflowChar(drawTarget, *fm, fontSizeInflation, &mSeparatorsChar[i],
+               NS_MATHML_OPERATOR_FORM_INFIX, font->mScriptLevel, axisHeight,
+               leading, em, containerSize, ascent, descent, isRTL);
   }
   /////////////////
   // closing fence ...
-  ReflowChar(aPresContext, drawTarget, *fm,
-             fontSizeInflation, mCloseChar,
-             NS_MATHML_OPERATOR_FORM_POSTFIX, font->mScriptLevel,
-             axisHeight, leading, em, containerSize, ascent, descent, isRTL);
+  ReflowChar(drawTarget, *fm, fontSizeInflation, mCloseChar,
+             NS_MATHML_OPERATOR_FORM_POSTFIX, font->mScriptLevel, axisHeight,
+             leading, em, containerSize, ascent, descent, isRTL);
 
   //////////////////
   // Adjust the origins of each child.
@@ -399,18 +380,17 @@ nsMathMLmfencedFrame::Reflow(nsPresContext*          aPresContext,
     GetReflowAndBoundingMetricsFor(childFrame, childSize, bm);
     if (firstTime) {
       firstTime = false;
-      aDesiredSize.mBoundingMetrics  = bm;
-    }
-    else  
+      aDesiredSize.mBoundingMetrics = bm;
+    } else
       aDesiredSize.mBoundingMetrics += bm;
 
-    FinishReflowChild(childFrame, aPresContext, childSize, nullptr,
-                      dx, ascent - childSize.BlockStartAscent(), 0);
+    FinishReflowChild(childFrame, aPresContext, childSize, nullptr, dx,
+                      ascent - childSize.BlockStartAscent(), 0);
     dx += childSize.Width();
 
     if (i < mSeparatorsCount) {
-      PlaceChar(&mSeparatorsChar[isRTL ? mSeparatorsCount - 1 - i : i],
-                ascent, bm, dx);
+      PlaceChar(&mSeparatorsChar[isRTL ? mSeparatorsCount - 1 - i : i], ascent,
+                bm, dx);
       aDesiredSize.mBoundingMetrics += bm;
     }
     i++;
@@ -425,8 +405,8 @@ nsMathMLmfencedFrame::Reflow(nsPresContext*          aPresContext,
   if (rightChar) {
     PlaceChar(rightChar, ascent, bm, dx);
     if (firstTime)
-      aDesiredSize.mBoundingMetrics  = bm;
-    else  
+      aDesiredSize.mBoundingMetrics = bm;
+    else
       aDesiredSize.mBoundingMetrics += bm;
   }
 
@@ -446,25 +426,20 @@ nsMathMLmfencedFrame::Reflow(nsPresContext*          aPresContext,
   // Set our overflow area
   GatherAndStoreOverflow(&aDesiredSize);
 
-  aStatus.Reset();
+  MOZ_ASSERT(aStatus.IsEmpty(), "This type of frame can't be split.");
   NS_FRAME_SET_TRUNCATION(aStatus, aReflowInput, aDesiredSize);
 }
 
-static void
-GetCharSpacing(nsMathMLChar*        aMathMLChar,
-               nsOperatorFlags      aForm,
-               int32_t              aScriptLevel,
-               nscoord              em,
-               nscoord&             aLeftSpace,
-               nscoord&             aRightSpace)
-{
+static void GetCharSpacing(nsMathMLChar* aMathMLChar, nsOperatorFlags aForm,
+                           int32_t aScriptLevel, nscoord em,
+                           nscoord& aLeftSpace, nscoord& aRightSpace) {
   nsAutoString data;
   aMathMLChar->GetData(data);
   nsOperatorFlags flags = 0;
   float lspace = 0.0f;
   float rspace = 0.0f;
-  bool found = nsMathMLOperators::LookupOperator(data, aForm,
-                                                   &flags, &lspace, &rspace);
+  bool found =
+      nsMathMLOperators::LookupOperator(data, aForm, &flags, &lspace, &rspace);
 
   // We don't want extra space when we are a script
   if (found && aScriptLevel > 0) {
@@ -477,22 +452,12 @@ GetCharSpacing(nsMathMLChar*        aMathMLChar,
 }
 
 // helper functions to perform the common task of formatting our chars
-/*static*/ nsresult
-nsMathMLmfencedFrame::ReflowChar(nsPresContext*       aPresContext,
-                                 DrawTarget*          aDrawTarget,
-                                 nsFontMetrics&       aFontMetrics,
-                                 float                aFontSizeInflation,
-                                 nsMathMLChar*        aMathMLChar,
-                                 nsOperatorFlags      aForm,
-                                 int32_t              aScriptLevel,
-                                 nscoord              axisHeight,
-                                 nscoord              leading,
-                                 nscoord              em,
-                                 nsBoundingMetrics&   aContainerSize,
-                                 nscoord&             aAscent,
-                                 nscoord&             aDescent,
-                                 bool                 aRTL)
-{
+nsresult nsMathMLmfencedFrame::ReflowChar(
+    DrawTarget* aDrawTarget, nsFontMetrics& aFontMetrics,
+    float aFontSizeInflation, nsMathMLChar* aMathMLChar, nsOperatorFlags aForm,
+    int32_t aScriptLevel, nscoord axisHeight, nscoord leading, nscoord em,
+    nsBoundingMetrics& aContainerSize, nscoord& aAscent, nscoord& aDescent,
+    bool aRTL) {
   if (aMathMLChar && 0 < aMathMLChar->Length()) {
     nscoord leftSpace;
     nscoord rightSpace;
@@ -500,28 +465,25 @@ nsMathMLmfencedFrame::ReflowChar(nsPresContext*       aPresContext,
 
     // stretch the char to the appropriate height if it is not big enough.
     nsBoundingMetrics charSize;
-    nsresult res = aMathMLChar->Stretch(aPresContext, aDrawTarget,
-                                        aFontSizeInflation,
-                                        NS_STRETCH_DIRECTION_VERTICAL,
-                                        aContainerSize, charSize,
-                                        NS_STRETCH_NORMAL, aRTL);
+    nsresult res = aMathMLChar->Stretch(
+        this, aDrawTarget, aFontSizeInflation, NS_STRETCH_DIRECTION_VERTICAL,
+        aContainerSize, charSize, NS_STRETCH_NORMAL, aRTL);
 
-    if (NS_STRETCH_DIRECTION_UNSUPPORTED != aMathMLChar->GetStretchDirection()) {
+    if (NS_STRETCH_DIRECTION_UNSUPPORTED !=
+        aMathMLChar->GetStretchDirection()) {
       // has changed... so center the char around the axis
       nscoord height = charSize.ascent + charSize.descent;
-      charSize.ascent = height/2 + axisHeight;
+      charSize.ascent = height / 2 + axisHeight;
       charSize.descent = height - charSize.ascent;
-    }
-    else {
+    } else {
       // either it hasn't changed or stretching the char failed (i.e.,
       // nsLayoutUtils::AppUnitBoundsOfString failed)
       leading = 0;
       if (NS_FAILED(res)) {
         nsAutoString data;
         aMathMLChar->GetData(data);
-        nsBoundingMetrics metrics =
-          nsLayoutUtils::AppUnitBoundsOfString(data.get(), data.Length(),
-                                               aFontMetrics, aDrawTarget);
+        nsBoundingMetrics metrics = nsLayoutUtils::AppUnitBoundsOfString(
+            data.get(), data.Length(), aFontMetrics, aDrawTarget);
         charSize.ascent = metrics.ascent;
         charSize.descent = metrics.descent;
         charSize.width = metrics.width;
@@ -531,34 +493,31 @@ nsMathMLmfencedFrame::ReflowChar(nsPresContext*       aPresContext,
       }
     }
 
-    if (aAscent < charSize.ascent + leading) 
+    if (aAscent < charSize.ascent + leading)
       aAscent = charSize.ascent + leading;
-    if (aDescent < charSize.descent + leading) 
+    if (aDescent < charSize.descent + leading)
       aDescent = charSize.descent + leading;
 
     // account the spacing
     charSize.width += leftSpace + rightSpace;
 
     // x-origin is used to store lspace ...
-    // y-origin is used to stored the ascent ... 
-    aMathMLChar->SetRect(nsRect(leftSpace, 
-                                charSize.ascent, charSize.width,
+    // y-origin is used to stored the ascent ...
+    aMathMLChar->SetRect(nsRect(leftSpace, charSize.ascent, charSize.width,
                                 charSize.ascent + charSize.descent));
   }
   return NS_OK;
 }
 
-/*static*/ void
-nsMathMLmfencedFrame::PlaceChar(nsMathMLChar*      aMathMLChar,
-                                nscoord            aDesiredAscent,
-                                nsBoundingMetrics& bm,
-                                nscoord&           dx)
-{
+/*static*/ void nsMathMLmfencedFrame::PlaceChar(nsMathMLChar* aMathMLChar,
+                                                nscoord aDesiredAscent,
+                                                nsBoundingMetrics& bm,
+                                                nscoord& dx) {
   aMathMLChar->GetBoundingMetrics(bm);
 
   // the char's x-origin was used to store lspace ...
-  // the char's y-origin was used to store the ascent ... 
-  // the char's width was used to store the advance with (with spacing) ... 
+  // the char's y-origin was used to store the ascent ...
+  // the char's width was used to store the advance with (with spacing) ...
   nsRect rect;
   aMathMLChar->GetRect(rect);
 
@@ -580,17 +539,12 @@ nsMathMLmfencedFrame::PlaceChar(nsMathMLChar*      aMathMLChar,
   dx += rect.width;
 }
 
-static nscoord
-GetMaxCharWidth(nsPresContext*       aPresContext,
-                DrawTarget*          aDrawTarget,
-                float                aFontSizeInflation,
-                nsMathMLChar*        aMathMLChar,
-                nsOperatorFlags      aForm,
-                int32_t              aScriptLevel,
-                nscoord              em)
-{
-  nscoord width = aMathMLChar->GetMaxWidth(aPresContext, aDrawTarget,
-                                           aFontSizeInflation);
+static nscoord GetMaxCharWidth(nsIFrame* aFrame, DrawTarget* aDrawTarget,
+                               float aFontSizeInflation,
+                               nsMathMLChar* aMathMLChar, nsOperatorFlags aForm,
+                               int32_t aScriptLevel, nscoord em) {
+  nscoord width =
+      aMathMLChar->GetMaxWidth(aFrame, aDrawTarget, aFontSizeInflation);
 
   if (0 < aMathMLChar->Length()) {
     nscoord leftSpace;
@@ -599,28 +553,25 @@ GetMaxCharWidth(nsPresContext*       aPresContext,
 
     width += leftSpace + rightSpace;
   }
-  
+
   return width;
 }
 
-/* virtual */ void
-nsMathMLmfencedFrame::GetIntrinsicISizeMetrics(nsRenderingContext* aRenderingContext, ReflowOutput& aDesiredSize)
-{
+/* virtual */ void nsMathMLmfencedFrame::GetIntrinsicISizeMetrics(
+    gfxContext* aRenderingContext, ReflowOutput& aDesiredSize) {
   nscoord width = 0;
 
-  nsPresContext* presContext = PresContext();
   const nsStyleFont* font = StyleFont();
-  float fontSizeInflation = nsLayoutUtils:: FontSizeInflationFor(this);
+  float fontSizeInflation = nsLayoutUtils::FontSizeInflationFor(this);
   RefPtr<nsFontMetrics> fm =
-    nsLayoutUtils::GetFontMetricsForFrame(this, fontSizeInflation);
+      nsLayoutUtils::GetFontMetricsForFrame(this, fontSizeInflation);
   nscoord em;
   GetEmHeight(fm, em);
 
   if (mOpenChar) {
-    width +=
-      GetMaxCharWidth(presContext, aRenderingContext->GetDrawTarget(),
-                      fontSizeInflation, mOpenChar,
-                      NS_MATHML_OPERATOR_FORM_PREFIX, font->mScriptLevel, em);
+    width += GetMaxCharWidth(
+        this, aRenderingContext->GetDrawTarget(), fontSizeInflation, mOpenChar,
+        NS_MATHML_OPERATOR_FORM_PREFIX, font->mScriptLevel, em);
   }
 
   int32_t i = 0;
@@ -632,19 +583,18 @@ nsMathMLmfencedFrame::GetIntrinsicISizeMetrics(nsRenderingContext* aRenderingCon
                                                   nsLayoutUtils::PREF_ISIZE);
 
     if (i < mSeparatorsCount) {
-      width +=
-        GetMaxCharWidth(presContext, aRenderingContext->GetDrawTarget(),
-                        fontSizeInflation, &mSeparatorsChar[i],
-                        NS_MATHML_OPERATOR_FORM_INFIX, font->mScriptLevel, em);
+      width += GetMaxCharWidth(this, aRenderingContext->GetDrawTarget(),
+                               fontSizeInflation, &mSeparatorsChar[i],
+                               NS_MATHML_OPERATOR_FORM_INFIX,
+                               font->mScriptLevel, em);
     }
     i++;
   }
 
   if (mCloseChar) {
-    width +=
-      GetMaxCharWidth(presContext, aRenderingContext->GetDrawTarget(),
-                      fontSizeInflation, mCloseChar,
-                      NS_MATHML_OPERATOR_FORM_POSTFIX, font->mScriptLevel, em);
+    width += GetMaxCharWidth(
+        this, aRenderingContext->GetDrawTarget(), fontSizeInflation, mCloseChar,
+        NS_MATHML_OPERATOR_FORM_POSTFIX, font->mScriptLevel, em);
   }
 
   aDesiredSize.Width() = width;
@@ -653,9 +603,7 @@ nsMathMLmfencedFrame::GetIntrinsicISizeMetrics(nsRenderingContext* aRenderingCon
   aDesiredSize.mBoundingMetrics.rightBearing = width;
 }
 
-nscoord
-nsMathMLmfencedFrame::FixInterFrameSpacing(ReflowOutput& aDesiredSize)
-{
+nscoord nsMathMLmfencedFrame::FixInterFrameSpacing(ReflowOutput& aDesiredSize) {
   nscoord gap = nsMathMLContainerFrame::FixInterFrameSpacing(aDesiredSize);
   if (!gap) return 0;
 
@@ -679,19 +627,19 @@ nsMathMLmfencedFrame::FixInterFrameSpacing(ReflowOutput& aDesiredSize)
 }
 
 // ----------------------
-// the Style System will use these to pass the proper style context to our MathMLChar
-nsStyleContext*
-nsMathMLmfencedFrame::GetAdditionalStyleContext(int32_t aIndex) const
-{
+// the Style System will use these to pass the proper ComputedStyle to our
+// MathMLChar
+ComputedStyle* nsMathMLmfencedFrame::GetAdditionalComputedStyle(
+    int32_t aIndex) const {
   int32_t openIndex = -1;
   int32_t closeIndex = -1;
-  int32_t lastIndex = mSeparatorsCount-1;
+  int32_t lastIndex = mSeparatorsCount - 1;
 
-  if (mOpenChar) { 
-    lastIndex++; 
-    openIndex = lastIndex; 
+  if (mOpenChar) {
+    lastIndex++;
+    openIndex = lastIndex;
   }
-  if (mCloseChar) { 
+  if (mCloseChar) {
     lastIndex++;
     closeIndex = lastIndex;
   }
@@ -700,24 +648,20 @@ nsMathMLmfencedFrame::GetAdditionalStyleContext(int32_t aIndex) const
   }
 
   if (aIndex < mSeparatorsCount) {
-    return mSeparatorsChar[aIndex].GetStyleContext();
-  }
-  else if (aIndex == openIndex) {
-    return mOpenChar->GetStyleContext();
-  }
-  else if (aIndex == closeIndex) {
-    return mCloseChar->GetStyleContext();
+    return mSeparatorsChar[aIndex].GetComputedStyle();
+  } else if (aIndex == openIndex) {
+    return mOpenChar->GetComputedStyle();
+  } else if (aIndex == closeIndex) {
+    return mCloseChar->GetComputedStyle();
   }
   return nullptr;
 }
 
-void
-nsMathMLmfencedFrame::SetAdditionalStyleContext(int32_t          aIndex, 
-                                                nsStyleContext*  aStyleContext)
-{
+void nsMathMLmfencedFrame::SetAdditionalComputedStyle(
+    int32_t aIndex, ComputedStyle* aComputedStyle) {
   int32_t openIndex = -1;
   int32_t closeIndex = -1;
-  int32_t lastIndex = mSeparatorsCount-1;
+  int32_t lastIndex = mSeparatorsCount - 1;
 
   if (mOpenChar) {
     lastIndex++;
@@ -732,12 +676,10 @@ nsMathMLmfencedFrame::SetAdditionalStyleContext(int32_t          aIndex,
   }
 
   if (aIndex < mSeparatorsCount) {
-    mSeparatorsChar[aIndex].SetStyleContext(aStyleContext);
-  }
-  else if (aIndex == openIndex) {
-    mOpenChar->SetStyleContext(aStyleContext);
-  }
-  else if (aIndex == closeIndex) {
-    mCloseChar->SetStyleContext(aStyleContext);
+    mSeparatorsChar[aIndex].SetComputedStyle(aComputedStyle);
+  } else if (aIndex == openIndex) {
+    mOpenChar->SetComputedStyle(aComputedStyle);
+  } else if (aIndex == closeIndex) {
+    mCloseChar->SetComputedStyle(aComputedStyle);
   }
 }

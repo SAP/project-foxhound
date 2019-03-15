@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_coding/neteq/tools/audio_loop.h"
+#include "modules/audio_coding/neteq/tools/audio_loop.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -40,6 +40,7 @@ bool AudioLoop::Init(const std::string file_name,
 
   loop_length_samples_ = samples_read;
   block_length_samples_ = block_length_samples;
+  next_index_ = 0;
   return true;
 }
 

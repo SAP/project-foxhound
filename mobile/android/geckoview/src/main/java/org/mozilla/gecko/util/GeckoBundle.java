@@ -7,13 +7,14 @@ package org.mozilla.gecko.util;
 
 import org.mozilla.gecko.annotation.RobocopTarget;
 import org.mozilla.gecko.annotation.WrapForJNI;
-import org.mozilla.gecko.AppConstants;
 
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Parcel;
 import android.os.Parcelable;
 import android.support.v4.util.SimpleArrayMap;
 
@@ -27,31 +28,17 @@ import java.util.Iterator;
  * int to double) in order to better cooperate with JS objects.
  */
 @RobocopTarget
-public final class GeckoBundle {
+public final class GeckoBundle implements Parcelable {
     private static final String LOGTAG = "GeckoBundle";
     private static final boolean DEBUG = false;
 
     @WrapForJNI(calledFrom = "gecko")
     private static final boolean[] EMPTY_BOOLEAN_ARRAY = new boolean[0];
     private static final int[] EMPTY_INT_ARRAY = new int[0];
+    private static final long[] EMPTY_LONG_ARRAY = new long[0];
     private static final double[] EMPTY_DOUBLE_ARRAY = new double[0];
     private static final String[] EMPTY_STRING_ARRAY = new String[0];
     private static final GeckoBundle[] EMPTY_BUNDLE_ARRAY = new GeckoBundle[0];
-
-    @WrapForJNI(calledFrom = "gecko")
-    private static Object box(boolean b) { return b; }
-    @WrapForJNI(calledFrom = "gecko")
-    private static Object box(int i) { return i; }
-    @WrapForJNI(calledFrom = "gecko")
-    private static Object box(double d) { return d; }
-    @WrapForJNI(calledFrom = "gecko")
-    private static boolean unboxBoolean(Boolean b) { return b; }
-    @WrapForJNI(calledFrom = "gecko")
-    private static int unboxInteger(Number i) { return i.intValue(); }
-    @WrapForJNI(calledFrom = "gecko")
-    private static double unboxDouble(Number d) { return d.doubleValue(); }
-    @WrapForJNI(calledFrom = "gecko")
-    private static String unboxString(Object s) { return s.toString(); }
 
     private SimpleArrayMap<String, Object> mMap;
 
@@ -97,13 +84,14 @@ public final class GeckoBundle {
     }
 
     /**
-     * Returns whether a mapping exists.
+     * Returns whether a mapping exists. Null String, Bundle, or arrays are treated as
+     * nonexistent.
      *
      * @param key Key to look for.
-     * @return True if the specified key exists.
+     * @return True if the specified key exists and the value is not null.
      */
     public boolean containsKey(final String key) {
-        return mMap.containsKey(key) && mMap.get(key) != null;
+        return mMap.get(key) != null;
     }
 
     /**
@@ -246,14 +234,63 @@ public final class GeckoBundle {
     }
 
     /**
+     * Returns the value associated with an int/double mapping as a long value, or
+     * defaultValue if the mapping does not exist.
+     *
+     * @param key Key to look for.
+     * @param defaultValue Value to return if mapping does not exist.
+     * @return Long value
+     */
+    public long getLong(final String key, final long defaultValue) {
+        final Object value = mMap.get(key);
+        return value == null ? defaultValue : ((Number) value).longValue();
+    }
+
+    /**
+     * Returns the value associated with an int/double mapping as a long value, or
+     * 0 if the mapping does not exist.
+     *
+     * @param key Key to look for.
+     * @return Long value
+     */
+    public long getLong(final String key) {
+        return getLong(key, 0L);
+    }
+
+    private static long[] getLongArray(final Object array) {
+        final int len = Array.getLength(array);
+        final long[] ret = new long[len];
+        for (int i = 0; i < len; i++) {
+            ret[i] = ((Number) Array.get(array, i)).longValue();
+        }
+        return ret;
+    }
+
+    /**
+     * Returns the value associated with an int/double array mapping as a long array, or
+     * null if the mapping does not exist.
+     *
+     * @param key Key to look for.
+     * @return Long array value
+     */
+    public long[] getLongArray(final String key) {
+        final Object value = mMap.get(key);
+        return value == null ? null :
+               Array.getLength(value) == 0 ? EMPTY_LONG_ARRAY : getLongArray(value);
+    }
+
+    /**
      * Returns the value associated with a String mapping, or defaultValue if the mapping
      * does not exist.
      *
      * @param key Key to look for.
-     * @param defaultValue Value to return if mapping does not exist.
+     * @param defaultValue Value to return if mapping value is null or mapping does not exist.
      * @return String value
      */
     public String getString(final String key, final String defaultValue) {
+        // If the key maps to null, technically we should return null because the mapping
+        // exists and null is a valid string value. However, people expect the default
+        // value to be returned instead, so we make an exception to return the default value.
         final Object value = mMap.get(key);
         return value == null ? defaultValue : (String) value;
     }
@@ -354,6 +391,23 @@ public final class GeckoBundle {
         return ret;
     }
 
+    private void put(final String key, final Object value) {
+      // We intentionally disallow a generic put() method for type safety and sanity. For
+      // example, we assume elsewhere in the code that a value belongs to a small list of
+      // predefined types, and cannot be any arbitrary object. If you want to put an
+      // Object in the bundle, check the type of the Object first and call the
+      // corresponding put methods. For example,
+      //
+      //   if (obj instanceof Integer) {
+      //     bundle.putInt(key, (Integer) key);
+      //   } else if (obj instanceof String) {
+      //     bundle.putString(key, (String) obj);
+      //   } else {
+      //     throw new IllegalArgumentException("unexpected type");
+      //   }
+      throw new UnsupportedOperationException();
+    }
+
     /**
      * Map a key to a boolean value.
      *
@@ -438,15 +492,7 @@ public final class GeckoBundle {
      * @param value Value to map to.
      */
     public void putDoubleArray(final String key, final Double[] value) {
-        if (value == null) {
-            mMap.put(key, null);
-            return;
-        }
-        final double[] array = new double[value.length];
-        for (int i = 0; i < value.length; i++) {
-            array[i] = value[i];
-        }
-        mMap.put(key, array);
+        putDoubleArray(key, Arrays.asList(value));
     }
 
     /**
@@ -495,15 +541,7 @@ public final class GeckoBundle {
      * @param value Value to map to.
      */
     public void putIntArray(final String key, final Integer[] value) {
-        if (value == null) {
-            mMap.put(key, null);
-            return;
-        }
-        final int[] array = new int[value.length];
-        for (int i = 0; i < value.length; i++) {
-            array[i] = value[i];
-        }
-        mMap.put(key, array);
+        putIntArray(key, Arrays.asList(value));
     }
 
     /**
@@ -521,6 +559,63 @@ public final class GeckoBundle {
         int i = 0;
         for (final Integer element : value) {
             array[i++] = element;
+        }
+        mMap.put(key, array);
+    }
+
+    /**
+     * Map a key to a long value stored as a double value.
+     *
+     * @param key Key to map.
+     * @param value Value to map to.
+     */
+    public void putLong(final String key, final long value) {
+        mMap.put(key, (double) value);
+    }
+
+    /**
+     * Map a key to a long array value stored as a double array value.
+     *
+     * @param key Key to map.
+     * @param value Value to map to.
+     */
+    public void putLongArray(final String key, final long[] value) {
+        if (value == null) {
+            mMap.put(key, null);
+            return;
+        }
+        final double[] array = new double[value.length];
+        for (int i = 0; i < value.length; i++) {
+            array[i] = (double) value[i];
+        }
+        mMap.put(key, array);
+    }
+
+    /**
+     * Map a key to a long array value stored as a double array value.
+     *
+     * @param key Key to map.
+     * @param value Value to map to.
+     */
+    public void putLongArray(final String key, final Long[] value) {
+        putLongArray(key, Arrays.asList(value));
+    }
+
+    /**
+     * Map a key to a long array value stored as a double array value.
+     *
+     * @param key Key to map.
+     * @param value Value to map to.
+     */
+    public void putLongArray(final String key, final Collection<Long> value) {
+        if (value == null) {
+            mMap.put(key, null);
+            return;
+        }
+        final double[] array = new double[value.size()];
+        int i = 0;
+        for (final Long element : value) {
+            array[i++] = (double) element;
         }
         mMap.put(key, array);
     }
@@ -723,11 +818,11 @@ public final class GeckoBundle {
             } else if (value instanceof GeckoBundle[]) {
                 final GeckoBundle[] array = (GeckoBundle[]) value;
                 final JSONArray jsonArray = new JSONArray();
-                for (int j = 0; j < array.length; j++) {
-                    jsonArray.put(array[j] == null ? JSONObject.NULL : array[j].toJSONObject());
+                for (final GeckoBundle element : array) {
+                    jsonArray.put(element == null ? JSONObject.NULL : element.toJSONObject());
                 }
                 jsonValue = jsonArray;
-            } else if (AppConstants.Versions.feature19Plus) {
+            } else if (Build.VERSION.SDK_INT >= 19) {
                 final Object wrapped = JSONObject.wrap(value);
                 jsonValue = wrapped != null ? wrapped : value.toString();
             } else if (value == null) {
@@ -831,7 +926,9 @@ public final class GeckoBundle {
     }
 
     private static Object fromJSONValue(Object value) throws JSONException {
-        if (value instanceof JSONObject || value == JSONObject.NULL) {
+        if (value == null || value == JSONObject.NULL) {
+            return null;
+        } else if (value instanceof JSONObject) {
             return fromJSONObject((JSONObject) value);
         }
         if (value instanceof JSONArray) {
@@ -875,7 +972,7 @@ public final class GeckoBundle {
         if (value instanceof Float || value instanceof Long) {
             return ((Number) value).doubleValue();
         }
-        return value != null ? value.toString() : null;
+        return value.toString();
     }
 
     public static GeckoBundle fromJSONObject(final JSONObject obj) throws JSONException {
@@ -894,4 +991,55 @@ public final class GeckoBundle {
         }
         return new GeckoBundle(keys, values);
     }
+
+    @Override // Parcelable
+    public int describeContents() {
+        return 0;
+    }
+
+    @Override // Parcelable
+    public void writeToParcel(final Parcel dest, final int flags) {
+        final int len = mMap.size();
+        dest.writeInt(len);
+
+        for (int i = 0; i < len; i++) {
+            dest.writeString(mMap.keyAt(i));
+            dest.writeValue(mMap.valueAt(i));
+        }
+    }
+
+    // AIDL code may call readFromParcel even though it's not part of Parcelable.
+    public void readFromParcel(final Parcel source) {
+        final ClassLoader loader = getClass().getClassLoader();
+        final int len = source.readInt();
+        mMap.clear();
+        mMap.ensureCapacity(len);
+
+        for (int i = 0; i < len; i++) {
+            final String key = source.readString();
+            Object val = source.readValue(loader);
+
+            if (val instanceof Parcelable[]) {
+                final Parcelable[] array = (Parcelable[]) val;
+                val = Arrays.copyOf(array, array.length, GeckoBundle[].class);
+            }
+
+            mMap.put(key, val);
+        }
+    }
+
+    public static final Parcelable.Creator<GeckoBundle> CREATOR =
+            new Parcelable.Creator<GeckoBundle>() {
+        @Override
+        public GeckoBundle createFromParcel(final Parcel source) {
+            final GeckoBundle bundle = new GeckoBundle(0);
+            bundle.readFromParcel(source);
+            return bundle;
+        }
+
+        @Override
+        public GeckoBundle[] newArray(final int size) {
+            return new GeckoBundle[size];
+        }
+    };
 }

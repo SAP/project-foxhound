@@ -18,9 +18,9 @@
 
 var runtime = SpecialPowers.Cc["@mozilla.org/xre/app-info;1"]
                                 .getService(SpecialPowers.Ci.nsIXULRuntime);
-var isMac = navigator.platform.indexOf("Mac") != -1;
-var isGtk = runtime.widgetToolkit.indexOf("gtk") != -1;
-var isWin = navigator.platform.indexOf("Win") != -1;
+var isMac = navigator.platform.includes("Mac");
+var isGtk = runtime.widgetToolkit.includes("gtk");
+var isWin = navigator.platform.includes("Win");
 var isSN = /mac os x 10\.6/.test(navigator.userAgent.toLowerCase());
 
 // Half of the scrollbar control width, in CSS pixels
@@ -263,9 +263,13 @@ function doTest() {
 function waitForScrollStart() {
   // Wait for up to 30 frames for scrolling to start
   var testCase = testCases[step];
-  if (testCase.startScroll.y != sc.scrollTop
-      || testCase.startScroll.x != sc.scrollLeft
-      || ++stopFrameCount < 30) {
+  if (++stopFrameCount > 30) {
+    ok(false,
+      "Step " + step + ": Frame count limit reached without scrolling. " +
+      "(" + testCase.description + ")");
+    window.requestAnimationFrame(doMouseUp);
+  } else if (testCase.startScroll.y != sc.scrollTop
+             || testCase.startScroll.x != sc.scrollLeft) {
     window.requestAnimationFrame(doMouseUp);
   } else {
     window.requestAnimationFrame(waitForScrollStart);

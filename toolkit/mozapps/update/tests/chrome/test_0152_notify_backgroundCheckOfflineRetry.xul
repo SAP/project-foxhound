@@ -33,8 +33,8 @@ function runTest() {
   let url = URL_HTTP_UPDATE_XML + "?showDetails=1" + getVersionParams();
   setUpdateURL(url);
 
-  Services.prefs.setBoolPref(PREF_APP_UPDATE_ENABLED, true);
-  Services.prefs.setBoolPref(PREF_APP_UPDATE_AUTO, false);
+  setAppUpdateAutoSync(false);
+  Services.prefs.setBoolPref(PREF_APP_UPDATE_DISABLEDFORTESTING, false);
 
   Services.io.offline = true;
   gProxyPrefValue = Services.prefs.getIntPref("network.proxy.type");
@@ -82,7 +82,7 @@ const updateCheckListener = {
     SimpleTest.executeSoon(resetOffline);
   },
 
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIUpdateCheckListener])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIUpdateCheckListener])
 };
 
 ]]>

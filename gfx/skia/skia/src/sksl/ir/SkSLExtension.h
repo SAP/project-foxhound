@@ -4,7 +4,7 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
- 
+
 #ifndef SKSL_EXTENSION
 #define SKSL_EXTENSION
 
@@ -12,19 +12,23 @@
 
 namespace SkSL {
 
-/** 
- * An extension declaration. 
+/**
+ * An extension declaration.
  */
 struct Extension : public ProgramElement {
-    Extension(Position position, std::string name)
-    : INHERITED(position, kExtension_Kind) 
+    Extension(int offset, String name)
+    : INHERITED(offset, kExtension_Kind)
     , fName(std::move(name)) {}
 
-    std::string description() const override {
+    std::unique_ptr<ProgramElement> clone() const override {
+        return std::unique_ptr<ProgramElement>(new Extension(fOffset, fName));
+    }
+
+    String description() const override {
         return "#extension " + fName + " : enable";
     }
 
-    const std::string fName;
+    const String fName;
 
     typedef ProgramElement INHERITED;
 };

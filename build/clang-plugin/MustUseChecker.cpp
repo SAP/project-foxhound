@@ -7,25 +7,25 @@
 #include "CustomTypeAnnotation.h"
 
 CustomTypeAnnotation MustUse =
-    CustomTypeAnnotation("moz_must_use_type", "must-use");
+    CustomTypeAnnotation(moz_must_use_type, "must-use");
 
-void MustUseChecker::registerMatchers(MatchFinder* AstMatcher) {
+void MustUseChecker::registerMatchers(MatchFinder *AstMatcher) {
   AstMatcher->addMatcher(switchCase().bind("switchcase"), this);
   AstMatcher->addMatcher(compoundStmt().bind("compound"), this);
   AstMatcher->addMatcher(ifStmt().bind("if"), this);
   AstMatcher->addMatcher(whileStmt().bind("while"), this);
   AstMatcher->addMatcher(doStmt().bind("do"), this);
   AstMatcher->addMatcher(forStmt().bind("for"), this);
-  AstMatcher->addMatcher(binaryOperator(binaryCommaOperator()).bind("bin"), this);
+  AstMatcher->addMatcher(binaryOperator(binaryCommaOperator()).bind("bin"),
+                         this);
 }
 
-void MustUseChecker::check(
-    const MatchFinder::MatchResult &Result) {
+void MustUseChecker::check(const MatchFinder::MatchResult &Result) {
   if (auto SC = Result.Nodes.getNodeAs<SwitchCase>("switchcase")) {
     handleUnusedExprResult(SC->getSubStmt());
   }
   if (auto C = Result.Nodes.getNodeAs<CompoundStmt>("compound")) {
-    for (const auto& S : C->body()) {
+    for (const auto &S : C->body()) {
       handleUnusedExprResult(S);
     }
   }
@@ -55,9 +55,10 @@ void MustUseChecker::handleUnusedExprResult(const Stmt *Statement) {
     E = E->IgnoreImplicit(); // Ignore ExprWithCleanup etc. implicit wrappers
     QualType T = E->getType();
     if (MustUse.hasEffectiveAnnotation(T) && !isIgnoredExprForMustUse(E)) {
-      diag(E->getLocStart(), "Unused value of must-use type %0",
-           DiagnosticIDs::Error) << T;
-      MustUse.dumpAnnotationReason(*this, T, E->getLocStart());
+      diag(E->getBeginLoc(), "Unused value of must-use type %0",
+           DiagnosticIDs::Error)
+          << T;
+      MustUse.dumpAnnotationReason(*this, T, E->getBeginLoc());
     }
   }
 }

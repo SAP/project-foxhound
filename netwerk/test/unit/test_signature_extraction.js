@@ -11,16 +11,14 @@
 ////////////////////////////////////////////////////////////////////////////////
 //// Globals
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "FileUtils",
-                                  "resource://gre/modules/FileUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
-                                  "resource://gre/modules/NetUtil.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Promise",
-                                  "resource://gre/modules/Promise.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Task",
-                                  "resource://gre/modules/Task.jsm");
+ChromeUtils.defineModuleGetter(this, "FileUtils",
+                               "resource://gre/modules/FileUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "NetUtil",
+                               "resource://gre/modules/NetUtil.jsm");
+ChromeUtils.defineModuleGetter(this, "FileTestUtils",
+                               "resource://testing-common/FileTestUtils.jsm");
 
 const BackgroundFileSaverOutputStream = Components.Constructor(
       "@mozilla.org/network/background-file-saver;1?mode=outputstream",
@@ -34,17 +32,11 @@ const StringInputStream = Components.Constructor(
 const TEST_FILE_NAME_1 = "test-backgroundfilesaver-1.txt";
 
 /**
- * Returns a reference to a temporary file.  If the file is then created, it
- * will be removed when tests in this file finish.
+ * Returns a reference to a temporary file that is guaranteed not to exist and
+ * is cleaned up later. See FileTestUtils.getTempFile for details.
  */
-function getTempFile(aLeafName) {
-  let file = FileUtils.getFile("TmpD", [aLeafName]);
-  do_register_cleanup(function GTF_cleanup() {
-    if (file.exists()) {
-      file.remove(false);
-    }
-  });
-  return file;
+function getTempFile(leafName) {
+  return FileTestUtils.getTempFile(leafName);
 }
 
 /**
@@ -60,24 +52,24 @@ function getTempFile(aLeafName) {
  * @rejects With an exception, if onSaveComplete is called with a failure code.
  */
 function promiseSaverComplete(aSaver, aOnTargetChangeFn) {
-  let deferred = Promise.defer();
-  aSaver.observer = {
-    onTargetChange: function BFSO_onSaveComplete(aSaver, aTarget)
-    {
-      if (aOnTargetChangeFn) {
-        aOnTargetChangeFn(aTarget);
-      }
-    },
-    onSaveComplete: function BFSO_onSaveComplete(aSaver, aStatus)
-    {
-      if (Components.isSuccessCode(aStatus)) {
-        deferred.resolve();
-      } else {
-        deferred.reject(new Components.Exception("Saver failed.", aStatus));
-      }
-    },
-  };
-  return deferred.promise;
+  return new Promise((resolve, reject) => {
+    aSaver.observer = {
+      onTargetChange: function BFSO_onSaveComplete(aSaver, aTarget)
+      {
+        if (aOnTargetChangeFn) {
+          aOnTargetChangeFn(aTarget);
+        }
+      },
+      onSaveComplete: function BFSO_onSaveComplete(aSaver, aStatus)
+      {
+        if (Components.isSuccessCode(aStatus)) {
+          resolve();
+        } else {
+          reject(new Components.Exception("Saver failed.", aStatus));
+        }
+      },
+    };
+  });
 }
 
 /**
@@ -95,24 +87,24 @@ function promiseSaverComplete(aSaver, aOnTargetChangeFn) {
  * @rejects With an exception, if the copy fails.
  */
 function promiseCopyToSaver(aSourceString, aSaverOutputStream, aCloseWhenDone) {
-  let deferred = Promise.defer();
-  let inputStream = new StringInputStream(aSourceString, aSourceString.length);
-  let copier = Cc["@mozilla.org/network/async-stream-copier;1"]
-               .createInstance(Ci.nsIAsyncStreamCopier);
-  copier.init(inputStream, aSaverOutputStream, null, false, true, 0x8000, true,
-              aCloseWhenDone);
-  copier.asyncCopy({
-    onStartRequest: function () { },
-    onStopRequest: function (aRequest, aContext, aStatusCode)
-    {
-      if (Components.isSuccessCode(aStatusCode)) {
-        deferred.resolve();
-      } else {
-        deferred.reject(new Components.Exception(aResult));
-      }
-    },
-  }, null);
-  return deferred.promise;
+  return new Promise((resolve, reject) => {
+    let inputStream = new StringInputStream(aSourceString, aSourceString.length);
+    let copier = Cc["@mozilla.org/network/async-stream-copier;1"]
+                 .createInstance(Ci.nsIAsyncStreamCopier);
+    copier.init(inputStream, aSaverOutputStream, null, false, true, 0x8000, true,
+                aCloseWhenDone);
+    copier.asyncCopy({
+      onStartRequest: function () { },
+      onStopRequest: function (aRequest, aContext, aStatusCode)
+      {
+        if (Components.isSuccessCode(aStatusCode)) {
+          resolve();
+        } else {
+          reject(new Components.Exception(aResult));
+        }
+      },
+    }, null);
+  });
 }
 
 var gStillRunning = true;
@@ -144,7 +136,7 @@ function readFileToString(aFilename) {
   return buf;
 }
 
-add_task(function test_signature()
+add_task(async function test_signature()
 {
   // Check that we get a signature if the saver is finished on Windows.
   let destFile = getTempFile(TEST_FILE_NAME_1);
@@ -156,45 +148,49 @@ add_task(function test_signature()
   try {
     let signatureInfo = saver.signatureInfo;
     do_throw("Can't get signature before saver is complete.");
-  } catch (ex if ex.result == Cr.NS_ERROR_NOT_AVAILABLE) { }
+  } catch (ex) {
+    if (ex.result != Cr.NS_ERROR_NOT_AVAILABLE) {
+      throw ex;
+    }
+  }
 
   saver.enableSignatureInfo();
   saver.setTarget(destFile, false);
-  yield promiseCopyToSaver(data, saver, true);
+  await promiseCopyToSaver(data, saver, true);
 
   saver.finish(Cr.NS_OK);
-  yield completionPromise;
+  await completionPromise;
 
   // There's only one nsIX509CertList in the signature array.
-  do_check_eq(1, saver.signatureInfo.length);
+  Assert.equal(1, saver.signatureInfo.length);
   let certLists = saver.signatureInfo.enumerate();
-  do_check_true(certLists.hasMoreElements());
+  Assert.ok(certLists.hasMoreElements());
   let certList = certLists.getNext().QueryInterface(Ci.nsIX509CertList);
-  do_check_false(certLists.hasMoreElements());
+  Assert.ok(!certLists.hasMoreElements());
 
   // Check that it has 3 certs.
   let certs = certList.getEnumerator();
-  do_check_true(certs.hasMoreElements());
+  Assert.ok(certs.hasMoreElements());
   let signer = certs.getNext().QueryInterface(Ci.nsIX509Cert);
-  do_check_true(certs.hasMoreElements());
+  Assert.ok(certs.hasMoreElements());
   let issuer = certs.getNext().QueryInterface(Ci.nsIX509Cert);
-  do_check_true(certs.hasMoreElements());
+  Assert.ok(certs.hasMoreElements());
   let root = certs.getNext().QueryInterface(Ci.nsIX509Cert);
-  do_check_false(certs.hasMoreElements());
+  Assert.ok(!certs.hasMoreElements());
 
   // Check that the certs have expected strings attached.
   let organization = "Microsoft Corporation";
-  do_check_eq("Microsoft Corporation", signer.commonName);
-  do_check_eq(organization, signer.organization);
-  do_check_eq("Copyright (c) 2002 Microsoft Corp.", signer.organizationalUnit);
+  Assert.equal("Microsoft Corporation", signer.commonName);
+  Assert.equal(organization, signer.organization);
+  Assert.equal("Copyright (c) 2002 Microsoft Corp.", signer.organizationalUnit);
 
-  do_check_eq("Microsoft Code Signing PCA", issuer.commonName);
-  do_check_eq(organization, issuer.organization);
-  do_check_eq("Copyright (c) 2000 Microsoft Corp.", issuer.organizationalUnit);
+  Assert.equal("Microsoft Code Signing PCA", issuer.commonName);
+  Assert.equal(organization, issuer.organization);
+  Assert.equal("Copyright (c) 2000 Microsoft Corp.", issuer.organizationalUnit);
 
-  do_check_eq("Microsoft Root Authority", root.commonName);
-  do_check_false(root.organization);
-  do_check_eq("Copyright (c) 1997 Microsoft Corp.", root.organizationalUnit);
+  Assert.equal("Microsoft Root Authority", root.commonName);
+  Assert.ok(!root.organization);
+  Assert.equal("Copyright (c) 1997 Microsoft Corp.", root.organizationalUnit);
 
   // Clean up.
   destFile.remove(false);

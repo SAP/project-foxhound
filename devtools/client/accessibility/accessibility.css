@@ -1,0 +1,478 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+:root {
+  --accessibility-font-size: 12px;
+  --accessibility-toolbar-height: 24px;
+  --accessibility-toolbar-height-tall: 35px;
+  --accessibility-toolbar-focus: var(--blue-50);
+  --accessibility-toolbar-focus-alpha30: rgba(10, 132, 255, 0.3);
+  --accessibility-full-length-minus-splitter: calc(100% - 1px);
+  --accessibility-horizontal-padding: 5px;
+  --accessibility-properties-item-width: calc(100% - var(--accessibility-horizontal-padding));
+  --accessibility-arrow-horizontal-padding: 4px;
+  --accessibility-tree-row-height: 21px;
+  --accessibility-unfocused-tree-focused-node-background: var(--grey-20);
+  --accessibility-unfocused-tree-focused-node-twisty-fill: var(--theme-icon-dimmed-color);
+  --accessibility-link-color: var(--blue-60);
+  --accessibility-link-color-active: var(--blue-70);
+  --accessible-role-active-background-color: var(--blue-50);
+  --accessible-role-active-border-color: #FFFFFFB3;
+  --accessible-role-background-color: white;
+  --accessible-role-border-color: #CACAD1;
+  --accessible-role-color: var(--grey-60);
+}
+
+:root.theme-dark {
+  --accessibility-unfocused-tree-focused-node-background: var(--grey-70);
+  --accessibility-unfocused-tree-focused-node-twisty-fill: var(--theme-selection-color);
+  --accessibility-link-color: var(--theme-highlight-blue);
+  --accessibility-link-color-active: var(--blue-40);
+  --accessible-role-active-background-color: var(--blue-60);
+  --accessible-role-active-border-color: #FFF6;
+  --accessible-role-background-color: var(--grey-80);
+  --accessible-role-border-color: var(--grey-50);
+  --accessible-role-color: var(--grey-40);
+}
+
+/* General */
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+}
+
+:root .flash-out {
+  animation: flash-out 0.5s ease-out;
+}
+
+@keyframes flash-out {
+  from {
+    background: var(--theme-contrast-background);
+  }
+}
+
+.accessible .tree .node.focused .theme-twisty,
+.treeTable .treeRow.selected .theme-twisty {
+  fill: var(--theme-selection-color);
+}
+
+.mainFrame .main-panel {
+  flex: 1 1 auto;
+  overflow: auto;
+}
+
+.mainFrame {
+  height: 100%;
+  color: var(--theme-toolbar-color);
+}
+
+.split-box.horz {
+  height: calc(100vh - var(--accessibility-toolbar-height));
+}
+
+.mainFrame .devtools-button,
+.description .devtools-button {
+  padding: unset;
+}
+
+.mainFrame .devtools-button > .btn-content {
+  padding: 2px var(--accessibility-horizontal-padding);
+}
+
+.description .devtools-button > .btn-content {
+  padding: 7px var(--accessibility-horizontal-padding);
+}
+
+.devtools-button:focus,
+.devtools-button > .btn-content:focus,
+.devtools-button::-moz-focus-inner {
+  border: 1px solid transparent;
+  outline: none;
+}
+
+.devtools-button:focus > .btn-content:not(.devtools-throbber) {
+  outline: 2px solid var(--accessibility-toolbar-focus);
+  outline-offset: -2px;
+  box-shadow: 0 0 0 2px var(--accessibility-toolbar-focus-alpha30);
+  border-radius: 2px;
+  -moz-outline-radius: 2px;
+}
+
+.devtools-toolbar {
+  display: flex;
+  align-items: center;
+}
+
+.devtools-toolbar .help {
+  cursor: pointer;
+  width: 18px;
+  margin-inline-start: auto;
+  margin-inline-end: 3px;
+  background: transparent;
+}
+
+.devtools-toolbar .help .btn-content {
+  display: block;
+  padding: 0;
+  -moz-context-properties: fill;
+  fill: var(--theme-body-color);
+  width: 16px;
+  height: 16px;
+  background-image: url(chrome://devtools/skin/images/help.svg);
+  background-repeat: no-repeat;
+  background-size: contain;
+}
+
+.devtools-toolbar .help:focus {
+  outline: 2px solid var(--accessibility-toolbar-focus);
+  box-shadow: 0 0 0 3px var(--accessibility-toolbar-focus-alpha30);
+  border-radius: 2px;
+  outline-offset: -1px;
+  -moz-outline-radius: 2px;
+}
+
+.devtools-toolbar .help:focus > .btn-content {
+  outline: none;
+  box-shadow: none;
+}
+
+/* Description */
+.description {
+  color: var(--theme-toolbar-color);
+  font: message-box;
+  font-size: calc(var(--accessibility-font-size) + 1px);
+  margin: auto;
+  padding-top: 15vh;
+  width: 50vw;
+}
+
+/* To ensure that the message does not look squished in vertical mode, increase its width
+   when the toolbox is narrow */
+@media (max-width: 700px) {
+  .description {
+    width: 80vw;
+  }
+}
+
+.description .general {
+  display: flex;
+  align-items: center;
+  margin-bottom: 1em;
+}
+
+.description img {
+  margin-right: 12px;
+  flex-basis: 42px;
+  flex-shrink: 0;
+  -moz-context-properties: fill;
+  fill: var(--grey-40);
+}
+
+.description .devtools-button {
+  display: flex;
+  align-items: center;
+  margin: auto;
+}
+
+.description .link {
+  color: var(--accessibility-link-color);
+  cursor: pointer;
+  outline: 0;
+}
+
+.description .link:hover:not(:focus) {
+  text-decoration: underline;
+}
+
+.description .link:focus:not(:active) {
+  box-shadow: 0 0 0 2px var(--accessibility-toolbar-focus), 0 0 0 4px var(--accessibility-toolbar-focus-alpha30);
+  border-radius: 2px;
+}
+
+.description .link:active {
+  color: var(--accessibility-link-color-active);
+  text-decoration: underline;
+}
+
+/* TreeView Customization */
+.split-box:not(.horz) .main-panel {
+  height: calc(100vh - var(--accessibility-toolbar-height));
+}
+
+.treeTable > thead {
+  position: sticky;
+  top: 0;
+  /* Bug 1466806 - fix expander arrow for expanding treeview rows rendering over the
+     thead */
+  z-index: 1;
+}
+
+.split-box:not(.horz) .treeTable {
+  /* To compenstate for 1px splitter between the tree and sidebar. */
+  width: var(--accessibility-full-length-minus-splitter);
+}
+
+.split-box.horz .treeTable {
+  width: 100%;
+}
+
+.treeTable .treeRow.highlighted:not(.selected) {
+  background-color: var(--theme-selection-background-hover);
+}
+
+.treeTable .treeLabelCell {
+  min-width: 50%;
+}
+
+.treeTable:focus {
+  outline: 0;
+}
+
+.treeTable::-moz-focus-inner {
+  border: 0;
+}
+
+.treeTable:not(:focus) .treeRow.selected {
+  background-color: var(--accessibility-unfocused-tree-focused-node-background);
+}
+
+.treeTable:not(:focus) .treeRow.selected .theme-twisty {
+  fill: var(--accessibility-unfocused-tree-focused-node-twisty-fill);
+}
+
+.treeTable:not(:focus) .treeRow.selected *,
+.treeTable:not(:focus) .treeRow.selected .treeLabelCell:after {
+  color: inherit;
+}
+
+.treeTable:not(:focus) .treeRow.selected .objectBox-string {
+  color: var(--string-color);
+}
+
+.treeTable > thead {
+  pointer-events: none;
+}
+
+.treeTable > tbody tr {
+  height: var(--accessibility-tree-row-height);
+}
+
+.treeTable > tbody td {
+  -moz-user-select: none;
+}
+
+.treeTable > tbody td > span {
+  -moz-user-select: text;
+}
+
+.mainFrame .treeTable .treeRow.hasChildren > .treeLabelCell > .treeLabel:hover {
+  cursor: unset;
+  text-decoration: none;
+}
+
+.mainFrame .treeTable .treeHeaderRow > .treeHeaderCell:first-child > .treeHeaderCellBox,
+.mainFrame .treeTable .treeHeaderRow > .treeHeaderCell > .treeHeaderCellBox {
+  padding: 0;
+  padding-inline-start: var(--accessibility-arrow-horizontal-padding);
+}
+
+.mainFrame .treeTable .treeHeaderCell {
+  border-bottom: 1px solid var(--theme-splitter-color);
+  background: var(--theme-toolbar-background);
+  font: message-box;
+  font-size: var(--accessibility-font-size);
+  height: var(--accessibility-toolbar-height);
+  color: var(--theme-toolbar-color);
+}
+
+/* Right Sidebar */
+.right-sidebar {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  white-space: nowrap;
+  font: message-box;
+  font-size: var(--accessibility-font-size);
+}
+
+.split-box:not(.horz) .right-sidebar {
+  position: fixed;
+  width: inherit;
+  height: calc(100vh - (var(--accessibility-toolbar-height)));
+}
+
+.right-sidebar ._header {
+  background-color: var(--theme-toolbar-background);
+  border-bottom: 1px solid var(--theme-splitter-color);
+  height: var(--accessibility-toolbar-height);
+  line-height: var(--accessibility-toolbar-height);
+  padding-inline-start: 14px;
+  padding-inline-end: var(--accessibility-arrow-horizontal-padding);
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+}
+
+.right-sidebar ._content {
+  font-size: var(--accessibility-font-size);
+  flex: 2 0;
+  overflow: auto;
+}
+
+/* Tree customization */
+.accessible .tree {
+  flex: 1;
+  height: 100%;
+  white-space: nowrap;
+  overflow: auto;
+  display: block;
+}
+
+.split-box.horz .accessible .tree {
+  width: 100vw;
+}
+
+.accessible .tree button {
+  display: block;
+}
+
+/* NOTE: total height of the node (height + padding + border + margin) must
+   be exactly the same as the value of TREE_ROW_HEIGHT constant in
+   devtools/client/accessibility/constants.js */
+.accessible .tree .node {
+  padding: 0 var(--accessibility-horizontal-padding);
+  position: relative;
+  display: flex;
+  height: var(--accessibility-tree-row-height);
+  width: var(--accessibility-properties-item-width);
+  cursor: default;
+  align-items: center;
+}
+
+.accessible .tree:focus {
+  outline: 0;
+}
+
+.accessible .tree::-moz-focus-inner {
+  border: 0;
+}
+
+/* Unset tree styles leaking from reps.css */
+.accessible .tree .tree-node:not(.focused):hover {
+  background-color: transparent;
+}
+
+.accessible .tree:not(:focus) .node.focused {
+  background-color: var(--accessibility-unfocused-tree-focused-node-background);
+}
+
+.accessible .tree:not(:focus) .node.focused .theme-twisty {
+  fill: var(--accessibility-unfocused-tree-focused-node-twisty-fill);
+}
+
+.accessible .tree .node:not(.focused):hover {
+  background-color: var(--theme-selection-background-hover);
+}
+
+.accessible .tree:focus .node.focused {
+  background-color: var(--theme-selection-background);
+}
+
+.accessible .tree:focus .node.focused * {
+  color: var(--theme-selection-color);
+}
+
+.accessible .tree:focus .node.focused .open-inspector {
+  background-color: var(--grey-30);
+}
+
+.accessible .tree:focus .node.focused:hover .open-inspector {
+  background-color: var(--theme-selection-color);
+}
+
+.accessible .tree .arrow {
+  flex-shrink: 0;
+}
+
+.accessible .tree .object-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.accessible .tree .object-delimiter {
+  padding-inline-end: var(--accessibility-arrow-horizontal-padding);
+}
+
+.accessible .tree .object-label {
+  color: var(--theme-highlight-blue);
+}
+
+.accessible .tree .objectBox-accessible .accessible-role {
+  background-color: var(--accessible-role-background-color);
+  color: var(--accessible-role-color);
+  border: 1px solid var(--accessible-role-border-color);
+  border-radius: 3px;
+  padding: 0px 2px;
+  margin-inline-start: 5px;
+}
+
+.accessible .tree:focus .node.focused .objectBox-accessible .accessible-role {
+  background-color: var(--accessible-role-active-background-color);
+  border-color: var(--accessible-role-active-border-color);
+  color: var(--theme-selection-color);
+}
+
+.accessible .tree:focus .node.focused .open-accessibility-inspector {
+  background-color: var(--grey-30);
+}
+
+.accessible .tree:focus .node.focused:hover .open-accessibility-inspector {
+  background-color: var(--theme-selection-color);
+}
+
+.accessible .tree .objectBox-accessible,
+.accessible .tree .objectBox-node {
+  width: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.accessible .tree .objectBox-accessible .accessible-name,
+.accessible .tree .objectBox-node .attrName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.accessible .tree .objectBox-accessible .open-accessibility-inspector,
+.accessible .tree .objectBox-node .open-inspector{
+  width: 17px;
+  cursor: pointer;
+}
+
+.accessible .tree .objectBox-object,
+.accessible .tree .objectBox-string,
+.accessible .tree .objectBox-text,
+.accessible .tree .objectBox-table,
+.accessible .tree .objectLink-textNode,
+.accessible .tree .objectLink-event,
+.accessible .tree .objectLink-eventLog,
+.accessible .tree .objectLink-regexp,
+.accessible .tree .objectLink-object,
+.accessible .tree .objectLink-Date,
+.theme-dark .accessible .tree .objectBox-object,
+.theme-light .accessible .tree .objectBox-object {
+  white-space: nowrap;
+}
+
+/* Styling for accessible details panel when accessible is not available */
+.accessible .info {
+  color: var(--theme-body-color);
+  font-size: 110%;
+  padding-inline-start: var(--accessibility-arrow-horizontal-padding);
+  height: var(--accessibility-toolbar-height-tall);
+  line-height: var(--accessibility-toolbar-height-tall);
+}

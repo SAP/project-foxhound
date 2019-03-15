@@ -4,12 +4,12 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
- 
+
 #ifndef SKSL_SYMBOLTABLE
 #define SKSL_SYMBOLTABLE
 
-#include <memory>
 #include <unordered_map>
+#include <memory>
 #include <vector>
 #include "SkSLErrorReporter.h"
 #include "SkSLSymbol.h"
@@ -24,29 +24,39 @@ struct FunctionDeclaration;
  */
 class SymbolTable {
 public:
-    SymbolTable(ErrorReporter& errorReporter)
-    : fErrorReporter(errorReporter) {}
+    SymbolTable(ErrorReporter* errorReporter)
+    : fErrorReporter(*errorReporter) {}
 
-    SymbolTable(std::shared_ptr<SymbolTable> parent, ErrorReporter& errorReporter)
+    SymbolTable(std::shared_ptr<SymbolTable> parent, ErrorReporter* errorReporter)
     : fParent(parent)
-    , fErrorReporter(errorReporter) {}
+    , fErrorReporter(*errorReporter) {}
 
-    const Symbol* operator[](const std::string& name);
+    const Symbol* operator[](StringFragment name);
 
-    void add(const std::string& name, std::unique_ptr<Symbol> symbol);
+    void add(StringFragment name, std::unique_ptr<Symbol> symbol);
 
-    void addWithoutOwnership(const std::string& name, const Symbol* symbol);
+    void addWithoutOwnership(StringFragment name, const Symbol* symbol);
 
     Symbol* takeOwnership(Symbol* s);
+
+    IRNode* takeOwnership(IRNode* n);
+
+    void markAllFunctionsBuiltin();
+
+    std::unordered_map<StringFragment, const Symbol*>::iterator begin();
+
+    std::unordered_map<StringFragment, const Symbol*>::iterator end();
 
     const std::shared_ptr<SymbolTable> fParent;
 
 private:
     static std::vector<const FunctionDeclaration*> GetFunctions(const Symbol& s);
 
-    std::vector<std::unique_ptr<Symbol>> fOwnedPointers;
+    std::vector<std::unique_ptr<Symbol>> fOwnedSymbols;
 
-    std::unordered_map<std::string, const Symbol*> fSymbols;
+    std::vector<std::unique_ptr<IRNode>> fOwnedNodes;
+
+    std::unordered_map<StringFragment, const Symbol*> fSymbols;
 
     ErrorReporter& fErrorReporter;
 };

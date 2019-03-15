@@ -7,34 +7,39 @@
  * Tests if the POST requests display the correct information in the UI.
  */
 
-add_task(function* () {
-  let { L10N } = require("devtools/client/netmonitor/utils/l10n");
+add_task(async function() {
+  const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
 
   // Set a higher panel height in order to get full CodeMirror content
-  Services.prefs.setIntPref("devtools.toolbox.footer.height", 400);
+  Services.prefs.setIntPref("devtools.toolbox.footer.height", 600);
 
-  let { tab, monitor } = yield initNetMonitor(POST_DATA_URL);
+  const { tab, monitor } = await initNetMonitor(POST_DATA_URL);
   info("Starting test... ");
 
-  let { document, gStore, windowRequire } = monitor.panelWin;
-  let Actions = windowRequire("devtools/client/netmonitor/actions/index");
-  let {
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
+  const {
     getDisplayedRequests,
     getSortedRequests,
-  } = windowRequire("devtools/client/netmonitor/selectors/index");
+  } = windowRequire("devtools/client/netmonitor/src/selectors/index");
 
-  gStore.dispatch(Actions.batchEnable(false));
+  store.dispatch(Actions.batchEnable(false));
 
-  let wait = waitForNetworkEvents(monitor, 0, 2);
-  yield ContentTask.spawn(tab.linkedBrowser, {}, function* () {
-    content.wrappedJSObject.performRequests();
-  });
-  yield wait;
+  // Execute requests.
+  await performRequests(monitor, tab, 2);
+
+  const requestItems = document.querySelectorAll(".request-list-item");
+  for (const requestItem of requestItems) {
+    requestItem.scrollIntoView();
+    const requestsListStatus = requestItem.querySelector(".status-code");
+    EventUtils.sendMouseEvent({ type: "mouseover" }, requestsListStatus);
+    await waitUntil(() => requestsListStatus.title);
+  }
 
   verifyRequestItemTarget(
     document,
-    getDisplayedRequests(gStore.getState()),
-    getSortedRequests(gStore.getState()).get(0),
+    getDisplayedRequests(store.getState()),
+    getSortedRequests(store.getState()).get(0),
     "POST",
     SIMPLE_SJS + "?foo=bar&baz=42&type=urlencoded",
     {
@@ -43,13 +48,13 @@ add_task(function* () {
       type: "plain",
       fullMimeType: "text/plain; charset=utf-8",
       size: L10N.getFormatStrWithNumbers("networkMenu.sizeB", 12),
-      time: true
+      time: true,
     }
   );
   verifyRequestItemTarget(
     document,
-    getDisplayedRequests(gStore.getState()),
-    getSortedRequests(gStore.getState()).get(1),
+    getDisplayedRequests(store.getState()),
+    getSortedRequests(store.getState()).get(1),
     "POST",
     SIMPLE_SJS + "?foo=bar&baz=42&type=multipart",
     {
@@ -58,7 +63,7 @@ add_task(function* () {
       type: "plain",
       fullMimeType: "text/plain; charset=utf-8",
       size: L10N.getFormatStrWithNumbers("networkMenu.sizeB", 12),
-      time: true
+      time: true,
     }
   );
 
@@ -68,28 +73,26 @@ add_task(function* () {
     document.querySelectorAll(".request-list-item")[0]);
   EventUtils.sendMouseEvent({ type: "click" },
     document.querySelector("#params-tab"));
-  yield wait;
-  yield testParamsTab("urlencoded");
+  await wait;
+  await testParamsTab("urlencoded");
 
   // Wait for all tree sections and editor updated by react
-  let waitForSections = waitForDOM(document, "#params-panel .tree-section", 2);
-  let waitForEditor = waitForDOM(document, "#params-panel .editor-mount iframe");
+  const waitForSections = waitForDOM(document, "#params-panel .tree-section", 2);
+  const waitForSourceEditor = waitForDOM(document, "#params-panel .CodeMirror-code");
   EventUtils.sendMouseEvent({ type: "mousedown" },
     document.querySelectorAll(".request-list-item")[1]);
-  let [, editorFrames] = yield Promise.all([waitForSections, waitForEditor]);
-  yield once(editorFrames[0], "DOMContentLoaded");
-  yield waitForDOM(editorFrames[0].contentDocument, ".CodeMirror-code");
-  yield testParamsTab("multipart");
+  await Promise.all([waitForSections, waitForSourceEditor]);
+  await testParamsTab("multipart");
 
   return teardown(monitor);
 
-  function* testParamsTab(type) {
-    let tabpanel = document.querySelector("#params-panel");
+  function testParamsTab(type) {
+    const tabpanel = document.querySelector("#params-panel");
 
     function checkVisibility(box) {
       is(!tabpanel.querySelector(".treeTable"), !box.includes("params"),
         "The request params doesn't have the indended visibility.");
-      is(tabpanel.querySelector(".editor-mount") === null,
+      is(tabpanel.querySelector(".CodeMirror-code") === null,
         !box.includes("editor"),
         "The request post data doesn't have the indended visibility.");
     }
@@ -99,7 +102,7 @@ add_task(function* () {
     is(tabpanel.querySelectorAll(".empty-notice").length, 0,
       "The empty notice should not be displayed in this tabpanel.");
 
-    let treeSections = tabpanel.querySelectorAll(".tree-section");
+    const treeSections = tabpanel.querySelectorAll(".tree-section");
 
     is(treeSections[0].querySelector(".treeLabel").textContent,
       L10N.getStr("paramsQueryString"),
@@ -109,33 +112,37 @@ add_task(function* () {
       L10N.getStr(type == "urlencoded" ? "paramsFormData" : "paramsPostPayload"),
       "The post section doesn't have the correct title.");
 
-    let labels = tabpanel
+    const labels = tabpanel
       .querySelectorAll("tr:not(.tree-section) .treeLabelCell .treeLabel");
-    let values = tabpanel
+    const values = tabpanel
       .querySelectorAll("tr:not(.tree-section) .treeValueCell .objectBox");
 
     is(labels[0].textContent, "foo", "The first query param name was incorrect.");
-    is(values[0].textContent, "\"bar\"", "The first query param value was incorrect.");
+    is(values[0].textContent, "bar", "The first query param value was incorrect.");
     is(labels[1].textContent, "baz", "The second query param name was incorrect.");
-    is(values[1].textContent, "\"42\"", "The second query param value was incorrect.");
+    is(values[1].textContent, "42", "The second query param value was incorrect.");
     is(labels[2].textContent, "type", "The third query param name was incorrect.");
-    is(values[2].textContent, "\"" + type + "\"",
-      "The third query param value was incorrect.");
+    is(values[2].textContent, type, "The third query param value was incorrect.");
 
     if (type == "urlencoded") {
       checkVisibility("params");
       is(labels.length, 5, "There should be 5 param values displayed in this tabpanel.");
       is(labels[3].textContent, "foo", "The first post param name was incorrect.");
-      is(values[3].textContent, "\"bar\"", "The first post param value was incorrect.");
+      is(values[3].textContent, "bar", "The first post param value was incorrect.");
       is(labels[4].textContent, "baz", "The second post param name was incorrect.");
-      is(values[4].textContent, "\"123\"", "The second post param value was incorrect.");
+      is(values[4].textContent, "123", "The second post param value was incorrect.");
     } else {
       checkVisibility("params editor");
 
       is(labels.length, 3, "There should be 3 param values displayed in this tabpanel.");
 
-      let text = editorFrames[0].contentDocument.querySelector(".CodeMirror-code")
-                                                .textContent;
+      // Collect code lines and combine into one text for checking
+      let text = "";
+      const lines = [...document.querySelectorAll(".CodeMirror-line")];
+
+      lines.forEach((line) => {
+        text += line.textContent + "\n";
+      });
 
       ok(text.includes("Content-Disposition: form-data; name=\"text\""),
         "The text shown in the source editor is incorrect (1.1).");

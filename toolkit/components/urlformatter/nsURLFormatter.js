@@ -1,6 +1,3 @@
-#filter substitution
-#include @OBJDIR@/api_keys
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,40 +13,21 @@
  *   http[s]://%SERVICE%.mozilla.[com|org]/%LOCALE%/
  */
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cu = Components.utils;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
 
 const PREF_APP_DISTRIBUTION           = "distribution.id";
 const PREF_APP_DISTRIBUTION_VERSION   = "distribution.version";
 
-XPCOMUtils.defineLazyModuleGetter(this, "UpdateUtils",
-                                  "resource://gre/modules/UpdateUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "UpdateUtils",
+                               "resource://gre/modules/UpdateUtils.jsm");
 
 function nsURLFormatterService() {
-  XPCOMUtils.defineLazyGetter(this, "appInfo", function UFS_appInfo() {
-    return Cc["@mozilla.org/xre/app-info;1"].
-           getService(Ci.nsIXULAppInfo).
-           QueryInterface(Ci.nsIXULRuntime);
-  });
-
   XPCOMUtils.defineLazyGetter(this, "ABI", function UFS_ABI() {
     let ABI = "default";
     try {
-      ABI = this.appInfo.XPCOMABI;
-
-      if ("@mozilla.org/xpcom/mac-utils;1" in Cc) {
-        // Mac universal build should report a different ABI than either macppc
-        // or mactel.
-        let macutils = Cc["@mozilla.org/xpcom/mac-utils;1"]
-                         .getService(Ci.nsIMacUtils);
-        if (macutils && macutils.isUniversalBinary) {
-          ABI = "Universal-gcc3";
-        }
-      }
+      ABI = Services.appinfo.XPCOMABI;
     } catch (e) {}
 
     return ABI;
@@ -69,57 +47,50 @@ function nsURLFormatterService() {
   });
 
   XPCOMUtils.defineLazyGetter(this, "distribution", function UFS_distribution() {
-    let distribution = { id: "default", version: "default" };
-
     let defaults = Services.prefs.getDefaultBranch(null);
-    try {
-      distribution.id = defaults.getCharPref(PREF_APP_DISTRIBUTION);
-    } catch (e) {}
-    try {
-      distribution.version = defaults.getCharPref(PREF_APP_DISTRIBUTION_VERSION);
-    } catch (e) {}
+    let id = defaults.getCharPref(PREF_APP_DISTRIBUTION, "default");
+    let version = defaults.getCharPref(PREF_APP_DISTRIBUTION_VERSION, "default");
 
-    return distribution;
+    return {id, version};
   });
 }
 
 nsURLFormatterService.prototype = {
   classID: Components.ID("{e6156350-2be8-11db-a98b-0800200c9a66}"),
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIURLFormatter]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIURLFormatter]),
 
   _defaults: {
-    LOCALE:           () => Cc["@mozilla.org/chrome/chrome-registry;1"].
-                            getService(Ci.nsIXULChromeRegistry).
-                            getSelectedLocale('global'),
-    REGION:           function() {
+    LOCALE:           () => Services.locale.appLocaleAsLangTag,
+    REGION() {
       try {
         // When the geoip lookup failed to identify the region, we fallback to
         // the 'ZZ' region code to mean 'unknown'.
         return Services.prefs.getCharPref("browser.search.region") || "ZZ";
-      } catch(e) {
+      } catch (e) {
         return "ZZ";
       }
     },
-    VENDOR:           function() { return this.appInfo.vendor; },
-    NAME:             function() { return this.appInfo.name; },
-    ID:               function() { return this.appInfo.ID; },
-    VERSION:          function() { return this.appInfo.version; },
-    MAJOR_VERSION:    function() { return this.appInfo.version.replace(/^([^\.]+\.[0-9]+[a-z]*).*/gi, "$1"); },
-    APPBUILDID:       function() { return this.appInfo.appBuildID; },
-    PLATFORMVERSION:  function() { return this.appInfo.platformVersion; },
-    PLATFORMBUILDID:  function() { return this.appInfo.platformBuildID; },
-    APP:              function() { return this.appInfo.name.toLowerCase().replace(/ /, ""); },
-    OS:               function() { return this.appInfo.OS; },
-    XPCOMABI:         function() { return this.ABI; },
-    BUILD_TARGET:     function() { return this.appInfo.OS + "_" + this.ABI; },
-    OS_VERSION:       function() { return this.OSVersion; },
+    VENDOR() { return Services.appinfo.vendor; },
+    NAME() { return Services.appinfo.name; },
+    ID() { return Services.appinfo.ID; },
+    VERSION() { return Services.appinfo.version; },
+    MAJOR_VERSION() { return Services.appinfo.version.replace(/^([^\.]+\.[0-9]+[a-z]*).*/gi, "$1"); },
+    APPBUILDID() { return Services.appinfo.appBuildID; },
+    PLATFORMVERSION() { return Services.appinfo.platformVersion; },
+    PLATFORMBUILDID() { return Services.appinfo.platformBuildID; },
+    APP() { return Services.appinfo.name.toLowerCase().replace(/ /, ""); },
+    OS() { return Services.appinfo.OS; },
+    XPCOMABI() { return this.ABI; },
+    BUILD_TARGET() { return Services.appinfo.OS + "_" + this.ABI; },
+    OS_VERSION() { return this.OSVersion; },
     CHANNEL:          () => UpdateUtils.UpdateChannel,
-    MOZILLA_API_KEY:  () => "@MOZ_MOZILLA_API_KEY@",
-    GOOGLE_API_KEY:   () => "@MOZ_GOOGLE_API_KEY@",
-    BING_API_CLIENTID:() => "@MOZ_BING_API_CLIENTID@",
-    BING_API_KEY:     () => "@MOZ_BING_API_KEY@",
-    DISTRIBUTION:     function() { return this.distribution.id; },
-    DISTRIBUTION_VERSION: function() { return this.distribution.version; }
+    MOZILLA_API_KEY:  () => AppConstants.MOZ_MOZILLA_API_KEY,
+    GOOGLE_LOCATION_SERVICE_API_KEY:   () => AppConstants.MOZ_GOOGLE_LOCATION_SERVICE_API_KEY,
+    GOOGLE_SAFEBROWSING_API_KEY:   () => AppConstants.MOZ_GOOGLE_SAFEBROWSING_API_KEY,
+    BING_API_CLIENTID: () => AppConstants.MOZ_BING_API_CLIENTID,
+    BING_API_KEY:     () => AppConstants.MOZ_BING_API_KEY,
+    DISTRIBUTION() { return this.distribution.id; },
+    DISTRIBUTION_VERSION() { return this.distribution.version; },
   },
 
   formatURL: function uf_formatURL(aFormat) {
@@ -130,39 +101,40 @@ nsURLFormatterService.prototype = {
       }
       Cu.reportError("formatURL: Couldn't find value for key: " + aKey);
       return aMatch;
-    }
+    };
     return aFormat.replace(/%([A-Z_]+)%/g, replacementCallback);
   },
 
   formatURLPref: function uf_formatURLPref(aPref) {
     var format = null;
-    var PS = Cc['@mozilla.org/preferences-service;1'].
-             getService(Ci.nsIPrefBranch);
 
     try {
-      format = PS.getComplexValue(aPref, Ci.nsISupportsString).data;
-    } catch(ex) {
+      format = Services.prefs.getStringPref(aPref);
+    } catch (ex) {
       Cu.reportError("formatURLPref: Couldn't get pref: " + aPref);
       return "about:blank";
     }
 
-    if (!PS.prefHasUserValue(aPref) &&
+    if (!Services.prefs.prefHasUserValue(aPref) &&
         /^(data:text\/plain,.+=.+|chrome:\/\/.+\/locale\/.+\.properties)$/.test(format)) {
       // This looks as if it might be a localised preference
       try {
-        format = PS.getComplexValue(aPref, Ci.nsIPrefLocalizedString).data;
-      } catch(ex) {}
+        format = Services.prefs.getComplexValue(aPref, Ci.nsIPrefLocalizedString).data;
+      } catch (ex) {}
     }
 
     return this.formatURL(format);
   },
 
   trimSensitiveURLs: function uf_trimSensitiveURLs(aMsg) {
-    // Only the google API key is sensitive for now.
-    return "@MOZ_GOOGLE_API_KEY@" ? aMsg.replace(/@MOZ_GOOGLE_API_KEY@/g,
+    // Only the google API keys is sensitive for now.
+    aMsg = AppConstants.MOZ_GOOGLE_LOCATION_SERVICE_API_KEY ? aMsg.replace(RegExp(AppConstants.MOZ_GOOGLE_LOCATION_SERVICE_API_KEY, "g"),
                                                  "[trimmed-google-api-key]")
                                   : aMsg;
-  }
+    return AppConstants.MOZ_GOOGLE_SAFEBROWSING_API_KEY ? aMsg.replace(RegExp(AppConstants.MOZ_GOOGLE_SAFEBROWSING_API_KEY, "g"),
+                                                 "[trimmed-google-api-key]")
+                                  : aMsg;
+  },
 };
 
 this.NSGetFactory = XPCOMUtils.generateNSGetFactory([nsURLFormatterService]);

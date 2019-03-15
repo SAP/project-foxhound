@@ -8,11 +8,11 @@
 
 interface nsIURI;
 interface nsIInputStream;
-interface nsIDOMDocument;
 interface nsIWebProgressListener;
 interface nsIFile;
 interface nsIChannel;
 interface nsILoadContext;
+interface nsIPrincipal;
 
 /**
  * Interface for persisting DOM documents and URIs to local or remote storage.
@@ -67,18 +67,12 @@ interface nsIWebBrowserPersist : nsICancelable
   const unsigned long PERSIST_FLAGS_APPEND_TO_FILE = 32768;
 
   /**
-   * Force relevant cookies to be sent with this load even if normally they
-   * wouldn't be.
-   */
-  const unsigned long PERSIST_FLAGS_FORCE_ALLOW_COOKIES = 65536;
-
-  /**
-   * Flags governing how data is fetched and saved from the network. 
+   * Flags governing how data is fetched and saved from the network.
    * It is best to set this value explicitly unless you are prepared
    * to accept the default values.
    */
   attribute unsigned long persistFlags;
-    
+
   /** Persister is ready to save data */
   const unsigned long PERSIST_STATE_READY = 1;
   /** Persister is saving data */
@@ -117,10 +111,9 @@ interface nsIWebBrowserPersist : nsICancelable
    * @param aURI       URI to save to file. Some implementations of this interface
    *                   may also support <CODE>nullptr</CODE> to imply the currently
    *                   loaded URI.
-   * @param aCacheKey  An object representing the URI in the cache or
-   *                   <CODE>nullptr</CODE>.  This can be a necko cache key,
-   *                   an nsIWebPageDescriptor, or the currentDescriptor of an
-   *                   nsIWebPageDescriptor.
+   * @param aTriggeringPrincipal
+   *                   The triggering principal for the URI we're saving.
+   * @param aCacheKey  The necko cache key integer.
    * @param aReferrer  The referrer URI to pass with an HTTP request or
    *                   <CODE>nullptr</CODE>.
    * @param aReferrerPolicy  The referrer policy for when and what to send via
@@ -146,7 +139,8 @@ interface nsIWebBrowserPersist : nsICancelable
    *
    * @throws NS_ERROR_INVALID_ARG One or more arguments was invalid.
    */
-  void saveURI(in nsIURI aURI, in nsISupports aCacheKey,
+  void saveURI(in nsIURI aURI, in nsIPrincipal aTriggeringPrincipal,
+      in unsigned long aCacheKey,
       in nsIURI aReferrer, in unsigned long aReferrerPolicy,
       in nsIInputStream aPostData,
       in string aExtraHeaders, in nsISupports aFile,
@@ -158,7 +152,8 @@ interface nsIWebBrowserPersist : nsICancelable
    *                   of intermediate data, etc.)
    * @see saveURI for all other parameter descriptions
    */
-  void savePrivacyAwareURI(in nsIURI aURI, in nsISupports aCacheKey,
+  void savePrivacyAwareURI(in nsIURI aURI,
+      in nsIPrincipal aTriggeringPrincipal, in unsigned long aCacheKey,
       in nsIURI aReferrer, in unsigned long aReferrerPolicy,
       in nsIInputStream aPostData,
       in string aExtraHeaders, in nsISupports aFile,
@@ -199,14 +194,6 @@ interface nsIWebBrowserPersist : nsICancelable
   /** Convert links to absolute links where possible. */
   const unsigned long ENCODE_FLAGS_ABSOLUTE_LINKS = 128;
 
-  /** 
-   * Attempt to encode entities standardized at W3C (HTML, MathML, etc).
-   * This is a catch-all flag for documents with mixed contents. Beware of
-   * interoperability issues. See below for other flags which might likely
-   * do what you want.
-   */
-  const unsigned long ENCODE_FLAGS_ENCODE_W3C_ENTITIES = 256;
-
   /**
    * Output with carriage return line breaks. May also be combined with
    * ENCODE_FLAGS_LF_LINEBREAKS and if neither is specified, the platform
@@ -225,21 +212,11 @@ interface nsIWebBrowserPersist : nsICancelable
   const unsigned long ENCODE_FLAGS_NOFRAMES_CONTENT = 4096;
 
   /**
-   * Encode basic entities, e.g. output &nbsp; instead of character code 0xa0. 
+   * Encode basic entities, e.g. output &nbsp; instead of character code 0xa0.
    * The basic set is just &nbsp; &amp; &lt; &gt; &quot; for interoperability
    * with older products that don't support &alpha; and friends.
    */
   const unsigned long ENCODE_FLAGS_ENCODE_BASIC_ENTITIES = 8192;
-  /**
-   * Encode Latin1 entities. This includes the basic set and
-   * accented letters between 128 and 255.
-   */
-  const unsigned long ENCODE_FLAGS_ENCODE_LATIN1_ENTITIES = 16384;
-  /**
-   * Encode HTML4 entities. This includes the basic set, accented
-   * letters, greek letters and certain special markup symbols.
-   */
-  const unsigned long ENCODE_FLAGS_ENCODE_HTML_ENTITIES = 32768;
 
   /**
    * Save the specified DOM document to file and optionally all linked files
@@ -249,7 +226,7 @@ interface nsIWebBrowserPersist : nsICancelable
    * @param aDocument          Document to save to file. Some implementations of
    *                           this interface may also support <CODE>nullptr</CODE>
    *                           to imply the currently loaded document.  Can be an
-   *                           nsIWebBrowserPersistDocument or nsIDOMDocument.
+   *                           nsIWebBrowserPersistDocument or Document.
    * @param aFile              Target local file. This may be a nsIFile object or an
    *                           nsIURI object with a file scheme or a scheme that
    *                           supports uploading (e.g. ftp).
@@ -257,7 +234,7 @@ interface nsIWebBrowserPersist : nsICancelable
    *                           are saved or nullptr if no linked URIs should be saved.
    *                           This may be a nsIFile object or an nsIURI object
    *                           with a file scheme.
-   * @param aOutputContentType The desired MIME type format to save the 
+   * @param aOutputContentType The desired MIME type format to save the
    *                           document and all subdocuments into or nullptr to use
    *                           the default behaviour.
    * @param aEncodingFlags     Flags to pass to the encoder.
@@ -266,7 +243,7 @@ interface nsIWebBrowserPersist : nsICancelable
    *                           specified by the encoding flags.
    *
    * @see nsIWebBrowserPersistDocument
-   * @see nsIWebBrowserPersistable
+   * @see WebBrowserPersistable
    * @see nsIFile
    * @see nsIURI
    *
@@ -284,3 +261,16 @@ interface nsIWebBrowserPersist : nsICancelable
    */
   void cancelSave();
 };
+
+/**
+ * We don't export nsWebBrowserPersist.h as a public header, so we need a place
+ * to put the CID/ContractID. All places uses the WebBrowserPersist include
+ * nsIWebBrowserPersist.h, so we define our contract IDs here for now.
+ */
+%{ C++
+// {7E677795-C582-4cd1-9E8D-8271B3474D2A}
+#define NS_WEBBROWSERPERSIST_CID \
+  { 0x7e677795, 0xc582, 0x4cd1, { 0x9e, 0x8d, 0x82, 0x71, 0xb3, 0x47, 0x4d, 0x2a } }
+#define NS_WEBBROWSERPERSIST_CONTRACTID \
+  "@mozilla.org/embedding/browser/nsWebBrowserPersist;1"
+%}

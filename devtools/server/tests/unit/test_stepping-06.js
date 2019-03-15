@@ -1,99 +1,147 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+/* eslint-disable no-shadow, max-nested-callbacks */
+
+"use strict";
 
 /**
  * Check that stepping out of a function returns the right return value.
  */
 
-var gDebuggee;
-var gClient;
-var gThreadClient;
-var gCallback;
-
-function run_test()
-{
-  run_test_with_server(DebuggerServer, function () {
-    run_test_with_server(WorkerDebuggerServer, do_test_finished);
-  });
-  do_test_pending();
+async function invokeAndPause({global, debuggerClient}, expression) {
+  return executeOnNextTickAndWaitForPause(
+    () => Cu.evalInSandbox(expression, global),
+    debuggerClient
+  );
 }
 
-function run_test_with_server(aServer, aCallback)
-{
-  gCallback = aCallback;
-  initTestDebuggerServer(aServer);
-  gDebuggee = addTestGlobal("test-stack", aServer);
-  gClient = new DebuggerClient(aServer.connectPipe());
-  gClient.connect().then(function () {
-    attachTestTabAndResume(gClient, "test-stack", function (aResponse, aTabClient, aThreadClient) {
-      gThreadClient = aThreadClient;
-      // XXX: We have to do an executeSoon so that the error isn't caught and
-      // reported by DebuggerClient.requester (because we are using the local
-      // transport and share a stack) which causes the test to fail.
-      Services.tm.mainThread.dispatch({
-        run: test_simple_stepping
-      }, Ci.nsIThread.DISPATCH_NORMAL);
-    });
-  });
+async function step({threadClient, debuggerClient}, cmd) {
+  return cmd(debuggerClient, threadClient);
 }
 
-function test_simple_stepping()
-{
-  gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-    gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-      // Check that the return value is 10.
-      do_check_eq(aPacket.type, "paused");
-      do_check_eq(aPacket.frame.where.line, gDebuggee.line0 + 5);
-      do_check_eq(aPacket.why.type, "resumeLimit");
-      do_check_eq(aPacket.why.frameFinished.return, 10);
+function getPauseLocation(packet) {
+  const {line, column} = packet.frame.where;
+  return {line, column};
+}
 
-      gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-        gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-          // Check that the return value is undefined.
-          do_check_eq(aPacket.type, "paused");
-          do_check_eq(aPacket.frame.where.line, gDebuggee.line0 + 8);
-          do_check_eq(aPacket.why.type, "resumeLimit");
-          do_check_eq(aPacket.why.frameFinished.return.type, "undefined");
+function getFrameFinished(packet) {
+  return packet.why.frameFinished;
+}
 
-          gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-            gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-              // Check that the exception was thrown.
-              do_check_eq(aPacket.type, "paused");
-              do_check_eq(aPacket.frame.where.line, gDebuggee.line0 + 11);
-              do_check_eq(aPacket.why.type, "resumeLimit");
-              do_check_eq(aPacket.why.frameFinished.throw, "ah");
+async function steps(dbg, sequence) {
+  const locations = [];
+  for (const cmd of sequence) {
+    const packet = await step(dbg, cmd);
+    locations.push(getPauseLocation(packet));
+  }
+  return locations;
+}
 
-              gThreadClient.resume(function () {
-                gClient.close().then(gCallback);
-              });
-            });
-            gThreadClient.stepOut();
-          });
-          gThreadClient.resume();
-        });
-        gThreadClient.stepOut();
-      });
-      gThreadClient.resume();
-    });
-    gThreadClient.stepOut();
+async function testFinish({threadClient, debuggerClient}) {
+  await resume(threadClient);
+  await close(debuggerClient);
 
-  });
+  do_test_finished();
+}
 
-  gDebuggee.eval("var line0 = Error().lineNumber;\n" +
-                 "function f() {\n" +                   // line0 + 1
-                 "  debugger;\n" +                      // line0 + 2
-                 "  var a = 10;\n" +                    // line0 + 3
-                 "  return a;\n" +                      // line0 + 4
-                 "}\n" +                                // line0 + 5
-                 "function g() {\n" +                   // line0 + 6
-                 "  debugger;\n" +                      // line0 + 7
-                 "}\n" +                                // line0 + 8
-                 "function h() {\n" +                   // line0 + 9
-                 "  debugger;\n" +                      // line0 + 10
-                 "  throw 'ah';\n" +                    // line0 + 11
-                 "  return 2;\n" +                      // line0 + 12
-                 "}\n" +                                // line0 + 13
-                 "f();\n" +                             // line0 + 14
-                 "g();\n" +                             // line0 + 15
-                 "try { h() } catch (ex) { };\n");      // line0 + 16
+async function testRet(dbg) {
+  let packet;
+
+  info(`1. Test returning from doRet via stepping over`);
+  await invokeAndPause(dbg, `doRet()`);
+  await steps(dbg, [stepOver, stepIn, stepOver]);
+  packet = await step(dbg, stepOver);
+
+  deepEqual(
+    getPauseLocation(packet),
+    {line: 6, column: 0},
+    `completion location in doRet`
+  );
+  deepEqual(
+    getFrameFinished(packet),
+    {"return": 2}, `completion value`);
+
+  await resume(dbg.threadClient);
+
+  info(`2. Test leaving from doRet via stepping out`);
+  await invokeAndPause(dbg, `doRet()`);
+  await steps(dbg, [stepOver, stepIn]);
+
+  packet = await step(dbg, stepOut);
+
+  deepEqual(
+    getPauseLocation(packet),
+    {line: 15, column: 2},
+    `completion location in doThrow`
+  );
+
+  deepEqual(
+    getFrameFinished(packet),
+    {"return": 2},
+    `completion completion value`
+  );
+
+  await resume(dbg.threadClient);
+}
+
+async function testThrow(dbg) {
+  let packet;
+
+  info(`3. Test leaving from doThrow via stepping over`);
+  await invokeAndPause(dbg, `doThrow()`);
+  await steps(dbg, [stepOver, stepOver, stepIn]);
+  packet = await step(dbg, stepOver);
+
+  deepEqual(
+    getPauseLocation(packet),
+    {line: 9, column: 8},
+    `completion location in doThrow`
+  );
+
+  deepEqual(
+    getFrameFinished(packet).throw.class,
+    "Error",
+    `completion value class`
+  );
+  deepEqual(
+    getFrameFinished(packet).throw.preview.message,
+    "yo",
+    `completion value preview`
+  );
+
+  await resume(dbg.threadClient);
+
+  info(`4. Test leaving from doThrow via stepping out`);
+  await invokeAndPause(dbg, `doThrow()`);
+  await steps(dbg, [stepOver, stepOver, stepIn]);
+
+  packet = await step(dbg, stepOut);
+  deepEqual(
+    getPauseLocation(packet),
+    {line: 22, column: 14},
+    `completion location in doThrow`
+  );
+
+  deepEqual(
+    getFrameFinished(packet).throw.class,
+    "Error",
+    `completion completion value class`
+  );
+  deepEqual(
+    getFrameFinished(packet).throw.preview.message,
+    "yo",
+    `completion completion value preview`
+  );
+  await resume(dbg.threadClient);
+}
+
+function run_test() {
+  return (async function() {
+    const dbg = await setupTestFromUrl("completions.js");
+
+    await testRet(dbg);
+    await testThrow(dbg);
+
+    await testFinish(dbg);
+  })();
 }

@@ -13,14 +13,12 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
+#include "PLDHashTable.h"
 
-class nsIDocument;
 class nsIURI;
 
 namespace mozilla {
 namespace image {
-
-class ImageURL;
 
 /**
  * An ImageLib cache entry key.
@@ -30,22 +28,23 @@ class ImageURL;
  * Controlled documents do not share their cache entries with
  * non-controlled documents, or other controlled documents.
  */
-class ImageCacheKey final
-{
-public:
+class ImageCacheKey final {
+ public:
   ImageCacheKey(nsIURI* aURI, const OriginAttributes& aAttrs,
-                nsIDocument* aDocument, nsresult& aRv);
-  ImageCacheKey(ImageURL* aURI, const OriginAttributes& aAttrs,
-                nsIDocument* aDocument);
+                dom::Document* aDocument, nsresult& aRv);
 
   ImageCacheKey(const ImageCacheKey& aOther);
   ImageCacheKey(ImageCacheKey&& aOther);
 
   bool operator==(const ImageCacheKey& aOther) const;
-  uint32_t Hash() const { return mHash; }
+  PLDHashNumber Hash() const { return mHash; }
 
-  /// A weak pointer to the URI spec for this cache entry. For logging only.
-  const char* Spec() const;
+  /// A weak pointer to the URI.
+  nsIURI* URI() const { return mURI; }
+
+  const OriginAttributes& OriginAttributesRef() const {
+    return mOriginAttributes;
+  }
 
   /// Is this cache entry for a chrome image?
   bool IsChrome() const { return mIsChrome; }
@@ -54,22 +53,24 @@ public:
   /// belongs to, if any.
   void* ControlledDocument() const { return mControlledDocument; }
 
-private:
-  static uint32_t ComputeHash(ImageURL* aURI,
-                              const Maybe<uint64_t>& aBlobSerial,
-                              const OriginAttributes& aAttrs,
-                              void* aControlledDocument);
-  static void* GetControlledDocumentToken(nsIDocument* aDocument);
+ private:
+  bool SchemeIs(const char* aScheme);
 
-  RefPtr<ImageURL> mURI;
+  // For ServiceWorker and for anti-tracking we need to use the document as
+  // token for the key. All those exceptions are handled by this method.
+  static void* GetSpecialCaseDocumentToken(dom::Document* aDocument,
+                                           nsIURI* aURI);
+
+  nsCOMPtr<nsIURI> mURI;
   Maybe<uint64_t> mBlobSerial;
+  nsCString mBlobRef;
   OriginAttributes mOriginAttributes;
   void* mControlledDocument;
-  uint32_t mHash;
+  PLDHashNumber mHash;
   bool mIsChrome;
 };
 
-} // namespace image
-} // namespace mozilla
+}  // namespace image
+}  // namespace mozilla
 
-#endif // mozilla_image_src_ImageCacheKey_h
+#endif  // mozilla_image_src_ImageCacheKey_h

@@ -3,21 +3,21 @@
 
 var stateBackup = ss.getBrowserState();
 
-var statePinned = {windows:[{tabs:[
-  {entries:[{url:"http://example.com#1", triggeringPrincipal_base64}], pinned: true}
+var statePinned = {windows: [{tabs: [
+  {entries: [{url: "http://example.com#1", triggeringPrincipal_base64}], pinned: true},
 ]}]};
 
-var state = {windows:[{tabs:[
-  {entries:[{url:"http://example.com#1", triggeringPrincipal_base64}]},
-  {entries:[{url:"http://example.com#2", triggeringPrincipal_base64}]},
-  {entries:[{url:"http://example.com#3", triggeringPrincipal_base64}]},
-  {entries:[{url:"http://example.com#4", triggeringPrincipal_base64}]},
+var state = {windows: [{tabs: [
+  {entries: [{url: "http://example.com#1", triggeringPrincipal_base64}]},
+  {entries: [{url: "http://example.com#2", triggeringPrincipal_base64}]},
+  {entries: [{url: "http://example.com#3", triggeringPrincipal_base64}]},
+  {entries: [{url: "http://example.com#4", triggeringPrincipal_base64}]},
 ]}]};
 
 function test() {
   waitForExplicitFinish();
 
-  registerCleanupFunction(function () {
+  registerCleanupFunction(function() {
     TabsProgressListener.uninit();
     ss.setBrowserState(stateBackup);
   });
@@ -28,7 +28,7 @@ function test() {
   window.addEventListener("SSWindowStateReady", function() {
     let firstProgress = true;
 
-    TabsProgressListener.setCallback(function (needsRestore, isRestoring) {
+    TabsProgressListener.setCallback(function(needsRestore, isRestoring) {
       if (firstProgress) {
         firstProgress = false;
         is(isRestoring, 3, "restoring 3 tabs concurrently");
@@ -50,18 +50,15 @@ function test() {
 
 function countTabs() {
   let needsRestore = 0, isRestoring = 0;
-  let windowsEnum = Services.wm.getEnumerator("navigator:browser");
-
-  while (windowsEnum.hasMoreElements()) {
-    let window = windowsEnum.getNext();
+  for (let window of Services.wm.getEnumerator("navigator:browser")) {
     if (window.closed)
       continue;
 
     for (let i = 0; i < window.gBrowser.tabs.length; i++) {
-      let browser = window.gBrowser.tabs[i].linkedBrowser;
-      if (browser.__SS_restoreState == TAB_STATE_RESTORING)
+      let browserState = ss.getInternalObjectState(window.gBrowser.tabs[i].linkedBrowser);
+      if (browserState == TAB_STATE_RESTORING)
         isRestoring++;
-      else if (browser.__SS_restoreState == TAB_STATE_NEEDS_RESTORE)
+      else if (browserState == TAB_STATE_NEEDS_RESTORE)
         needsRestore++;
     }
   }
@@ -70,30 +67,30 @@ function countTabs() {
 }
 
 var TabsProgressListener = {
-  init: function () {
-    Services.obs.addObserver(this, "sessionstore-debug-tab-restored", false);
+  init() {
+    Services.obs.addObserver(this, "sessionstore-debug-tab-restored");
   },
 
-  uninit: function () {
+  uninit() {
     Services.obs.removeObserver(this, "sessionstore-debug-tab-restored");
     this.unsetCallback();
  },
 
-  setCallback: function (callback) {
+  setCallback(callback) {
     this.callback = callback;
   },
 
-  unsetCallback: function () {
+  unsetCallback() {
     delete this.callback;
   },
 
-  observe: function (browser, topic, data) {
+  observe(browser, topic, data) {
     TabsProgressListener.onRestored(browser);
   },
 
-  onRestored: function (browser) {
-    if (this.callback && browser.__SS_restoreState == TAB_STATE_RESTORING) {
+  onRestored(browser) {
+    if (this.callback && ss.getInternalObjectState(browser) == TAB_STATE_RESTORING) {
       this.callback.apply(null, countTabs());
     }
-  }
-}
+  },
+};

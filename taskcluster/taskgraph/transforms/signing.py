@@ -7,11 +7,17 @@ Transform the signing task into an actual task description.
 
 from __future__ import absolute_import, print_function, unicode_literals
 
+from taskgraph.loader.single_dep import schema
 from taskgraph.transforms.base import TransformSequence
-from taskgraph.util.schema import validate_schema
-from taskgraph.util.scriptworker import get_signing_cert_scope, get_devedition_signing_cert_scope
+from taskgraph.util.attributes import copy_attributes_from_dependent_job
+from taskgraph.util.schema import taskref_or_string
+from taskgraph.util.scriptworker import (
+    add_scope_prefix,
+    get_signing_cert_scope_per_platform,
+    get_worker_type_for_scope,
+)
 from taskgraph.transforms.task import task_description_schema
-from voluptuous import Schema, Any, Required, Optional
+from voluptuous import Required, Optional
 
 
 # Voluptuous uses marker objects as dictionary *keys*, but they are not
@@ -20,15 +26,7 @@ task_description_schema = {str(k): v for k, v in task_description_schema.schema.
 
 transforms = TransformSequence()
 
-# shortcut for a string where task references are allowed
-taskref_or_string = Any(
-    basestring,
-    {Required('task-reference'): basestring})
-
-signing_description_schema = Schema({
-    # the dependant task (object) for this signing job, used to inform signing.
-    Required('dependent-task'): object,
-
+signing_description_schema = schema.extend({
     # Artifacts from dep task to sign - Sync with taskgraph/transforms/task.py
     # because this is passed directly into the signingscript worker
     Required('upstream-artifacts'): [{
@@ -46,7 +44,7 @@ signing_description_schema = Schema({
     }],
 
     # depname is used in taskref's to identify the taskID of the unsigned things
-    Required('depname', default='build'): basestring,
+    Required('depname'): basestring,
 
     # unique label to describe this signing task, defaults to {dep.label}-signing
     Optional('label'): basestring,
@@ -59,25 +57,30 @@ signing_description_schema = Schema({
     # Routes specific to this task, if defined
     Optional('routes'): [basestring],
 
-    # If True, adds a route which funsize uses to schedule generation of partial mar
-    # files for updates. Expected to be added on nightly builds only.
-    Optional('use-funsize-route'): bool,
+    Optional('shipping-phase'): task_description_schema['shipping-phase'],
+    Optional('shipping-product'): task_description_schema['shipping-product'],
+
+    # Optional control for how long a task may run (aka maxRunTime)
+    Optional('max-run-time'): int,
+    Optional('extra'): {basestring: object},
 })
 
 
 @transforms.add
-def validate(config, jobs):
+def set_defaults(config, jobs):
     for job in jobs:
-        label = job.get('dependent-task', object).__dict__.get('label', '?no-label?')
-        yield validate_schema(
-            signing_description_schema, job,
-            "In signing ({!r} kind) task for {!r}:".format(config.kind, label))
+        job.setdefault('depname', 'build')
+        yield job
+
+
+transforms.add_validate(signing_description_schema)
 
 
 @transforms.add
 def make_task_description(config, jobs):
     for job in jobs:
-        dep_job = job['dependent-task']
+        dep_job = job['primary-dependency']
+        attributes = dep_job.attributes
 
         signing_format_scopes = []
         formats = set([])
@@ -85,54 +88,89 @@ def make_task_description(config, jobs):
             for f in artifacts['formats']:
                 formats.add(f)  # Add each format only once
         for format in formats:
-            signing_format_scopes.append("project:releng:signing:format:{}".format(format))
+            signing_format_scopes.append(
+                add_scope_prefix(config, 'signing:format:{}'.format(format))
+            )
 
-        treeherder = job.get('treeherder', {})
-        treeherder.setdefault('symbol', 'tc(Ns)')
-        dep_th_platform = dep_job.task.get('extra', {}).get(
-            'treeherder', {}).get('machine', {}).get('platform', '')
-        treeherder.setdefault('platform', "{}/opt".format(dep_th_platform))
-        treeherder.setdefault('tier', 1)
-        treeherder.setdefault('kind', 'build')
+        is_nightly = dep_job.attributes.get('nightly', False)
+        treeherder = None
+        if 'partner' not in config.kind and 'eme-free' not in config.kind:
+            treeherder = job.get('treeherder', {})
 
-        label = job.get('label', "{}-signing".format(dep_job.label))
+            dep_th_platform = dep_job.task.get('extra', {}).get(
+                'treeherder', {}).get('machine', {}).get('platform', '')
+            build_type = dep_job.attributes.get('build_type')
+            build_platform = dep_job.attributes.get('build_platform')
+            treeherder.setdefault('platform', _generate_treeherder_platform(
+                dep_th_platform, build_platform, build_type
+            ))
 
-        attributes = {
-            'nightly': dep_job.attributes.get('nightly', False),
-            'build_platform': dep_job.attributes.get('build_platform'),
-            'build_type': dep_job.attributes.get('build_type'),
-        }
+            # ccov builds are tier 2, so they cannot have tier 1 tasks
+            # depending on them.
+            treeherder.setdefault(
+                'tier',
+                dep_job.task.get('extra', {}).get('treeherder', {}).get('tier', 1)
+            )
+            treeherder.setdefault('symbol', _generate_treeherder_symbol(
+                dep_job.task.get('extra', {}).get('treeherder', {}).get('symbol')
+            ))
+            treeherder.setdefault('kind', 'build')
+
+        label = job['label']
+        description = (
+            "Initial Signing for locale '{locale}' for build '"
+            "{build_platform}/{build_type}'".format(
+                locale=attributes.get('locale', 'en-US'),
+                build_platform=attributes.get('build_platform'),
+                build_type=attributes.get('build_type')
+            )
+        )
+
+        attributes = copy_attributes_from_dependent_job(dep_job)
+        attributes['signed'] = True
+
         if dep_job.attributes.get('chunk_locales'):
             # Used for l10n attribute passthrough
             attributes['chunk_locales'] = dep_job.attributes.get('chunk_locales')
 
-        # This code wasn't originally written with the possibility of using different
-        # signing cert scopes for different platforms on the same branch. This isn't
-        # ideal, but it's what we currently have to make this possible.
-        if dep_job.attributes.get('build_platform') in set(
-          ['linux64-devedition-nightly', 'linux-devedition-nightly']):
-            signing_cert_scope = get_devedition_signing_cert_scope(config)
-        else:
-            signing_cert_scope = get_signing_cert_scope(config)
+        signing_cert_scope = get_signing_cert_scope_per_platform(
+            dep_job.attributes.get('build_platform'), is_nightly, config
+        )
 
         task = {
             'label': label,
-            'description': "{} Signing".format(
-                dep_job.task["metadata"]["description"]),
-            'worker-type': "scriptworker-prov-v1/signing-linux-v1",
+            'description': description,
+            'worker-type': get_worker_type_for_scope(config, signing_cert_scope),
             'worker': {'implementation': 'scriptworker-signing',
                        'upstream-artifacts': job['upstream-artifacts'],
-                       'max-run-time': 3600},
+                       'max-run-time': job.get('max-run-time', 3600)},
             'scopes': [signing_cert_scope] + signing_format_scopes,
             'dependencies': {job['depname']: dep_job.label},
             'attributes': attributes,
             'run-on-projects': dep_job.attributes.get('run_on_projects'),
-            'treeherder': treeherder,
+            'optimization': dep_job.optimization,
             'routes': job.get('routes', []),
+            'shipping-product': job.get('shipping-product'),
+            'shipping-phase': job.get('shipping-phase'),
         }
-
-        if job.get('use-funsize-route', False):
-            task['routes'].append("index.project.releng.funsize.level-{level}.{project}".format(
-                project=config.params['project'], level=config.params['level']))
+        if treeherder:
+            task['treeherder'] = treeherder
+        if job.get('extra'):
+            task['extra'] = job['extra']
 
         yield task
+
+
+def _generate_treeherder_platform(dep_th_platform, build_platform, build_type):
+    if '-pgo' in build_platform:
+        actual_build_type = 'pgo'
+    elif '-ccov' in build_platform:
+        actual_build_type = 'ccov'
+    else:
+        actual_build_type = build_type
+    return '{}/{}'.format(dep_th_platform, actual_build_type)
+
+
+def _generate_treeherder_symbol(build_symbol):
+    symbol = build_symbol + 's'
+    return symbol

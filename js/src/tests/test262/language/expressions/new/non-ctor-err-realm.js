@@ -16,9 +16,10 @@ info: |
   12.3.3.1.1 Runtime Semantics: EvaluateNew
 
   7. If IsConstructor(constructor) is false, throw a TypeError exception.
+features: [cross-realm]
 ---*/
 
-var otherParseInt = $.createRealm().global.parseInt;
+var otherParseInt = $262.createRealm().global.parseInt;
 
 assert.sameValue(typeof otherParseInt, 'function');
 

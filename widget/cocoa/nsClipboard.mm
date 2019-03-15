@@ -13,7 +13,6 @@
 #include "nsClipboard.h"
 #include "nsString.h"
 #include "nsISupportsPrimitives.h"
-#include "nsXPIDLString.h"
 #include "nsPrimitiveHelpers.h"
 #include "nsMemory.h"
 #include "nsIFile.h"
@@ -29,7 +28,7 @@ using mozilla::gfx::DataSourceSurface;
 using mozilla::gfx::SourceSurface;
 using mozilla::LogLevel;
 
-extern PRLogModuleInfo* sCocoaLog;
+extern mozilla::LazyLogModule sCocoaLog;
 
 extern void EnsureLogInitialized();
 
@@ -37,8 +36,7 @@ mozilla::StaticRefPtr<nsITransferable> nsClipboard::sSelectionCache;
 
 @implementation UTIHelper
 
-+ (NSString*)stringFromPboardType:(NSString*)aType
-{
++ (NSString*)stringFromPboardType:(NSString*)aType {
   if ([aType isEqualToString:kMozWildcardPboardType] ||
       [aType isEqualToString:kMozCustomTypesPboardType] ||
       [aType isEqualToString:kPublicUrlPboardType] ||
@@ -49,33 +47,25 @@ mozilla::StaticRefPtr<nsITransferable> nsClipboard::sSelectionCache;
       [aType isEqualToString:(NSString*)kUTTypeFileURL] ||
       [aType isEqualToString:NSStringPboardType] ||
       [aType isEqualToString:NSPasteboardTypeString] ||
-      [aType isEqualToString:NSPasteboardTypeHTML] ||
-      [aType isEqualToString:NSPasteboardTypeRTF] ||
-      [aType isEqualToString:NSPasteboardTypeTIFF] ||
-      [aType isEqualToString:NSPasteboardTypePNG]) {
+      [aType isEqualToString:NSPasteboardTypeHTML] || [aType isEqualToString:NSPasteboardTypeRTF] ||
+      [aType isEqualToString:NSPasteboardTypeTIFF] || [aType isEqualToString:NSPasteboardTypePNG]) {
     return [NSString stringWithString:aType];
   }
-  NSString* dynamicType =
-    (NSString*)UTTypeCreatePreferredIdentifierForTag(kUTTagClassNSPboardType,
-                                                     (CFStringRef)aType,
-                                                     kUTTypeData);
+  NSString* dynamicType = (NSString*)UTTypeCreatePreferredIdentifierForTag(
+      kUTTagClassNSPboardType, (CFStringRef)aType, kUTTypeData);
   NSString* result = [NSString stringWithString:dynamicType];
   [dynamicType release];
   return result;
 }
 
-@end // UTIHelper
+@end  // UTIHelper
 
 nsClipboard::nsClipboard()
-  : mCachedClipboard(-1)
-  , mChangeCount(0)
-  , mIgnoreEmptyNotification(false)
-{
+    : mCachedClipboard(-1), mChangeCount(0), mIgnoreEmptyNotification(false) {
   EnsureLogInitialized();
 }
 
-nsClipboard::~nsClipboard()
-{
+nsClipboard::~nsClipboard() {
   EmptyClipboard(kGlobalClipboard);
   EmptyClipboard(kFindClipboard);
   ClearSelectionCache();
@@ -86,35 +76,28 @@ NS_IMPL_ISUPPORTS(nsClipboard, nsIClipboard)
 // We separate this into its own function because after an @try, all local
 // variables within that function get marked as volatile, and our C++ type
 // system doesn't like volatile things.
-static NSData*
-GetDataFromPasteboard(NSPasteboard* aPasteboard, NSString* aType)
-{
-  NSData *data = nil;
+static NSData* GetDataFromPasteboard(NSPasteboard* aPasteboard, NSString* aType) {
+  NSData* data = nil;
   @try {
     data = [aPasteboard dataForType:aType];
   } @catch (NSException* e) {
-    NS_WARNING(nsPrintfCString("Exception raised while getting data from the pasteboard: \"%s - %s\"",
-                               [[e name] UTF8String], [[e reason] UTF8String]).get());
+    NS_WARNING(
+        nsPrintfCString("Exception raised while getting data from the pasteboard: \"%s - %s\"",
+                        [[e name] UTF8String], [[e reason] UTF8String])
+            .get());
     mozilla::Unused << e;
   }
   return data;
 }
 
-void
-nsClipboard::SetSelectionCache(nsITransferable *aTransferable)
-{
+void nsClipboard::SetSelectionCache(nsITransferable* aTransferable) {
   sSelectionCache = aTransferable;
 }
 
-void
-nsClipboard::ClearSelectionCache()
-{
-  sSelectionCache = nullptr;
-}
+void nsClipboard::ClearSelectionCache() { sSelectionCache = nullptr; }
 
 NS_IMETHODIMP
-nsClipboard::SetNativeClipboardData(int32_t aWhichClipboard)
-{
+nsClipboard::SetNativeClipboardData(int32_t aWhichClipboard) {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
   if ((aWhichClipboard != kGlobalClipboard && aWhichClipboard != kFindClipboard) || !mTransferable)
@@ -123,18 +106,15 @@ nsClipboard::SetNativeClipboardData(int32_t aWhichClipboard)
   mIgnoreEmptyNotification = true;
 
   NSDictionary* pasteboardOutputDict = PasteboardDictFromTransferable(mTransferable);
-  if (!pasteboardOutputDict)
-    return NS_ERROR_FAILURE;
+  if (!pasteboardOutputDict) return NS_ERROR_FAILURE;
 
   unsigned int outputCount = [pasteboardOutputDict count];
   NSArray* outputKeys = [pasteboardOutputDict allKeys];
   NSPasteboard* cocoaPasteboard;
   if (aWhichClipboard == kFindClipboard) {
     cocoaPasteboard = [NSPasteboard pasteboardWithName:NSFindPboard];
-    NSString* stringType =
-      [UTIHelper stringFromPboardType:NSPasteboardTypeString];
-    [cocoaPasteboard declareTypes:
-      [NSArray arrayWithObject:stringType] owner:nil];
+    NSString* stringType = [UTIHelper stringFromPboardType:NSPasteboardTypeString];
+    [cocoaPasteboard declareTypes:[NSArray arrayWithObject:stringType] owner:nil];
   } else {
     // Write everything else out to the general pasteboard.
     cocoaPasteboard = [NSPasteboard generalPasteboard];
@@ -145,30 +125,24 @@ nsClipboard::SetNativeClipboardData(int32_t aWhichClipboard)
     NSString* currentKey = [outputKeys objectAtIndex:i];
     id currentValue = [pasteboardOutputDict valueForKey:currentKey];
     if (aWhichClipboard == kFindClipboard) {
-      if ([currentKey isEqualToString:
-            [UTIHelper stringFromPboardType:NSPasteboardTypeString]]) {
+      if ([currentKey isEqualToString:[UTIHelper stringFromPboardType:NSPasteboardTypeString]]) {
         [cocoaPasteboard setString:currentValue forType:currentKey];
       }
     } else {
-      if ([currentKey isEqualToString:
-            [UTIHelper stringFromPboardType:NSPasteboardTypeString]] ||
-          [currentKey isEqualToString:
-            [UTIHelper stringFromPboardType:kPublicUrlPboardType]] ||
-          [currentKey isEqualToString:
-            [UTIHelper stringFromPboardType:kPublicUrlNamePboardType]]) {
+      if ([currentKey isEqualToString:[UTIHelper stringFromPboardType:NSPasteboardTypeString]] ||
+          [currentKey isEqualToString:[UTIHelper stringFromPboardType:kPublicUrlPboardType]] ||
+          [currentKey isEqualToString:[UTIHelper stringFromPboardType:kPublicUrlNamePboardType]]) {
         [cocoaPasteboard setString:currentValue forType:currentKey];
-      } else if ([currentKey isEqualToString:
-                   [UTIHelper stringFromPboardType:
-                     kUrlsWithTitlesPboardType]]) {
-        [cocoaPasteboard setPropertyList:
-          [pasteboardOutputDict valueForKey:currentKey]
+      } else if ([currentKey
+                     isEqualToString:[UTIHelper stringFromPboardType:kUrlsWithTitlesPboardType]]) {
+        [cocoaPasteboard setPropertyList:[pasteboardOutputDict valueForKey:currentKey]
                                  forType:currentKey];
-      } else if ([currentKey isEqualToString:
-                   [UTIHelper stringFromPboardType:NSPasteboardTypeHTML]]) {
+      } else if ([currentKey
+                     isEqualToString:[UTIHelper stringFromPboardType:NSPasteboardTypeHTML]]) {
         [cocoaPasteboard setString:(nsClipboard::WrapHtmlForSystemPasteboard(currentValue))
-                         forType:currentKey];
-      } else if ([currentKey isEqualToString:
-                   [UTIHelper stringFromPboardType:kMozFileUrlsPboardType]]) {
+                           forType:currentKey];
+      } else if ([currentKey
+                     isEqualToString:[UTIHelper stringFromPboardType:kMozFileUrlsPboardType]]) {
         [cocoaPasteboard writeObjects:currentValue];
       } else {
         [cocoaPasteboard setData:currentValue forType:currentKey];
@@ -186,39 +160,28 @@ nsClipboard::SetNativeClipboardData(int32_t aWhichClipboard)
   NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
 }
 
-nsresult
-nsClipboard::TransferableFromPasteboard(nsITransferable *aTransferable, NSPasteboard *cocoaPasteboard)
-{
+nsresult nsClipboard::TransferableFromPasteboard(nsITransferable* aTransferable,
+                                                 NSPasteboard* cocoaPasteboard) {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
-  // get flavor list that includes all acceptable flavors (including ones obtained through conversion)
-  nsCOMPtr<nsIArray> flavorList;
-  nsresult rv = aTransferable->FlavorsTransferableCanImport(getter_AddRefs(flavorList));
-  if (NS_FAILED(rv))
-    return NS_ERROR_FAILURE;
+  // get flavor list that includes all acceptable flavors (including ones obtained through
+  // conversion)
+  nsTArray<nsCString> flavors;
+  nsresult rv = aTransferable->FlavorsTransferableCanImport(flavors);
+  if (NS_FAILED(rv)) return NS_ERROR_FAILURE;
 
-  uint32_t flavorCount;
-  flavorList->GetLength(&flavorCount);
-
-  for (uint32_t i = 0; i < flavorCount; i++) {
-    nsCOMPtr<nsISupportsCString> currentFlavor = do_QueryElementAt(flavorList, i);
-    if (!currentFlavor)
-      continue;
-
-    nsXPIDLCString flavorStr;
-    currentFlavor->ToString(getter_Copies(flavorStr)); // i has a flavr
+  for (uint32_t i = 0; i < flavors.Length(); i++) {
+    nsCString& flavorStr = flavors[i];
 
     // printf("looking for clipboard data of type %s\n", flavorStr.get());
 
-    NSString *pboardType = nil;
+    NSString* pboardType = nil;
     if (nsClipboard::IsStringType(flavorStr, &pboardType)) {
       NSString* pString = [cocoaPasteboard stringForType:pboardType];
-      if (!pString)
-        continue;
+      if (!pString) continue;
 
       NSData* stringData;
-      if ([pboardType isEqualToString:
-            [UTIHelper stringFromPboardType:NSPasteboardTypeRTF]]) {
+      if ([pboardType isEqualToString:[UTIHelper stringFromPboardType:NSPasteboardTypeRTF]]) {
         stringData = [pString dataUsingEncoding:NSASCIIStringEncoding];
       } else {
         stringData = [pString dataUsingEncoding:NSUnicodeStringEncoding];
@@ -233,14 +196,14 @@ nsClipboard::TransferableFromPasteboard(nsITransferable *aTransferable, NSPasteb
 
       // The DOM only wants LF, so convert from MacOS line endings to DOM line endings.
       int32_t signedDataLength = dataLength;
-      nsLinebreakHelpers::ConvertPlatformToDOMLinebreaks(flavorStr, &clipboardDataPtr, &signedDataLength);
+      nsLinebreakHelpers::ConvertPlatformToDOMLinebreaks(flavorStr, &clipboardDataPtr,
+                                                         &signedDataLength);
       dataLength = signedDataLength;
 
-      // skip BOM (Byte Order Mark to distinguish little or big endian)      
+      // skip BOM (Byte Order Mark to distinguish little or big endian)
       char16_t* clipboardDataPtrNoBOM = (char16_t*)clipboardDataPtr;
       if ((dataLength > 2) &&
-          ((clipboardDataPtrNoBOM[0] == 0xFEFF) ||
-           (clipboardDataPtrNoBOM[0] == 0xFFFE))) {
+          ((clipboardDataPtrNoBOM[0] == 0xFEFF) || (clipboardDataPtrNoBOM[0] == 0xFFFE))) {
         dataLength -= sizeof(char16_t);
         clipboardDataPtrNoBOM += 1;
       }
@@ -248,15 +211,13 @@ nsClipboard::TransferableFromPasteboard(nsITransferable *aTransferable, NSPasteb
       nsCOMPtr<nsISupports> genericDataWrapper;
       nsPrimitiveHelpers::CreatePrimitiveForData(flavorStr, clipboardDataPtrNoBOM, dataLength,
                                                  getter_AddRefs(genericDataWrapper));
-      aTransferable->SetTransferData(flavorStr, genericDataWrapper, dataLength);
+      aTransferable->SetTransferData(flavorStr.get(), genericDataWrapper);
       free(clipboardDataPtr);
       break;
-    }
-    else if (flavorStr.EqualsLiteral(kCustomTypesMime)) {
-      NSString* type =
-        [cocoaPasteboard availableTypeFromArray:
-          [NSArray arrayWithObject:
-            [UTIHelper stringFromPboardType:kMozCustomTypesPboardType]]];
+    } else if (flavorStr.EqualsLiteral(kCustomTypesMime)) {
+      NSString* type = [cocoaPasteboard
+          availableTypeFromArray:
+              [NSArray arrayWithObject:[UTIHelper stringFromPboardType:kMozCustomTypesPboardType]]];
       if (!type) {
         continue;
       }
@@ -278,32 +239,25 @@ nsClipboard::TransferableFromPasteboard(nsITransferable *aTransferable, NSPasteb
       nsPrimitiveHelpers::CreatePrimitiveForData(flavorStr, clipboardDataPtr, dataLength,
                                                  getter_AddRefs(genericDataWrapper));
 
-      aTransferable->SetTransferData(flavorStr, genericDataWrapper, dataLength);
+      aTransferable->SetTransferData(flavorStr.get(), genericDataWrapper);
       free(clipboardDataPtr);
-    }
-    else if (flavorStr.EqualsLiteral(kJPEGImageMime) ||
-             flavorStr.EqualsLiteral(kJPGImageMime) ||
-             flavorStr.EqualsLiteral(kPNGImageMime) ||
-             flavorStr.EqualsLiteral(kGIFImageMime)) {
+    } else if (flavorStr.EqualsLiteral(kJPEGImageMime) || flavorStr.EqualsLiteral(kJPGImageMime) ||
+               flavorStr.EqualsLiteral(kPNGImageMime) || flavorStr.EqualsLiteral(kGIFImageMime)) {
       // Figure out if there's data on the pasteboard we can grab (sanity check)
-      NSString* type =
-        [cocoaPasteboard availableTypeFromArray:
-          [NSArray arrayWithObjects:
-            [UTIHelper stringFromPboardType:NSPasteboardTypeTIFF],
-            [UTIHelper stringFromPboardType:NSPasteboardTypePNG],
-            nil]];
-      if (!type)
-        continue;
+      NSString* type = [cocoaPasteboard
+          availableTypeFromArray:
+              [NSArray arrayWithObjects:[UTIHelper stringFromPboardType:(NSString*)kUTTypeFileURL],
+                                        [UTIHelper stringFromPboardType:NSPasteboardTypeTIFF],
+                                        [UTIHelper stringFromPboardType:NSPasteboardTypePNG], nil]];
+      if (!type) continue;
 
       // Read data off the clipboard
-      NSData *pasteboardData = GetDataFromPasteboard(cocoaPasteboard, type);
-      if (!pasteboardData)
-        continue;
+      NSData* pasteboardData = GetDataFromPasteboard(cocoaPasteboard, type);
+      if (!pasteboardData) continue;
 
       // Figure out what type we're converting to
-      CFStringRef outputType = NULL; 
-      if (flavorStr.EqualsLiteral(kJPEGImageMime) ||
-          flavorStr.EqualsLiteral(kJPGImageMime))
+      CFStringRef outputType = NULL;
+      if (flavorStr.EqualsLiteral(kJPEGImageMime) || flavorStr.EqualsLiteral(kJPGImageMime))
         outputType = CFSTR("public.jpeg");
       else if (flavorStr.EqualsLiteral(kPNGImageMime))
         outputType = CFSTR("public.png");
@@ -315,38 +269,38 @@ nsClipboard::TransferableFromPasteboard(nsITransferable *aTransferable, NSPasteb
       // Use ImageIO to interpret the data on the clipboard and transcode.
       // Note that ImageIO, like all CF APIs, allows NULLs to propagate freely
       // and safely in most cases (like ObjC). A notable exception is CFRelease.
-      NSDictionary *options =
-        [NSDictionary dictionaryWithObjectsAndKeys:
-          (NSNumber*)kCFBooleanTrue,
-          kCGImageSourceShouldAllowFloat,
-          (type == [UTIHelper stringFromPboardType:NSPasteboardTypeTIFF] ?
-                     [UTIHelper stringFromPboardType:NSPasteboardTypeTIFF] :
-                     [UTIHelper stringFromPboardType:NSPasteboardTypePNG]),
-          kCGImageSourceTypeIdentifierHint, nil];
+      NSDictionary* options = [NSDictionary
+          dictionaryWithObjectsAndKeys:(NSNumber*)kCFBooleanTrue, kCGImageSourceShouldAllowFloat,
+                                       type, kCGImageSourceTypeIdentifierHint, nil];
+      CGImageSourceRef source = nullptr;
+      if (type == [UTIHelper stringFromPboardType:(NSString*)kUTTypeFileURL]) {
+        NSString* urlStr = [cocoaPasteboard stringForType:type];
+        NSURL* url = [NSURL URLWithString:urlStr];
+        source = CGImageSourceCreateWithURL((CFURLRef)url, (CFDictionaryRef)options);
+      } else {
+        source = CGImageSourceCreateWithData((CFDataRef)pasteboardData, (CFDictionaryRef)options);
+      }
 
-      CGImageSourceRef source = CGImageSourceCreateWithData((CFDataRef)pasteboardData, 
-                                                            (CFDictionaryRef)options);
-      NSMutableData *encodedData = [NSMutableData data];
-      CGImageDestinationRef dest = CGImageDestinationCreateWithData((CFMutableDataRef)encodedData,
-                                                                    outputType,
-                                                                    1, NULL);
+      NSMutableData* encodedData = [NSMutableData data];
+      CGImageDestinationRef dest =
+          CGImageDestinationCreateWithData((CFMutableDataRef)encodedData, outputType, 1, NULL);
       CGImageDestinationAddImageFromSource(dest, source, 0, NULL);
       bool successfullyConverted = CGImageDestinationFinalize(dest);
 
       if (successfullyConverted) {
         // Put the converted data in a form Gecko can understand
         nsCOMPtr<nsIInputStream> byteStream;
-        NS_NewByteInputStream(getter_AddRefs(byteStream), (const char*)[encodedData bytes],
-                                   [encodedData length], NS_ASSIGNMENT_COPY);
-  
-        aTransferable->SetTransferData(flavorStr, byteStream, sizeof(nsIInputStream*));
+        NS_NewByteInputStream(
+            getter_AddRefs(byteStream),
+            mozilla::MakeSpan((const char*)[encodedData bytes], [encodedData length]),
+            NS_ASSIGNMENT_COPY);
+
+        aTransferable->SetTransferData(flavorStr.get(), byteStream);
       }
 
-      if (dest)
-        CFRelease(dest);
-      if (source)
-        CFRelease(source);
-      
+      if (dest) CFRelease(dest);
+      if (source) CFRelease(source);
+
       if (successfullyConverted)
         break;
       else
@@ -361,8 +315,7 @@ nsClipboard::TransferableFromPasteboard(nsITransferable *aTransferable, NSPasteb
 }
 
 NS_IMETHODIMP
-nsClipboard::GetNativeClipboardData(nsITransferable* aTransferable, int32_t aWhichClipboard)
-{
+nsClipboard::GetNativeClipboardData(nsITransferable* aTransferable, int32_t aWhichClipboard) {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
   if ((aWhichClipboard != kGlobalClipboard && aWhichClipboard != kFindClipboard) || !aTransferable)
@@ -374,37 +327,26 @@ nsClipboard::GetNativeClipboardData(nsITransferable* aTransferable, int32_t aWhi
   } else {
     cocoaPasteboard = [NSPasteboard generalPasteboard];
   }
-  if (!cocoaPasteboard)
-    return NS_ERROR_FAILURE;
+  if (!cocoaPasteboard) return NS_ERROR_FAILURE;
 
-  // get flavor list that includes all acceptable flavors (including ones obtained through conversion)
-  nsCOMPtr<nsIArray> flavorList;
-  nsresult rv = aTransferable->FlavorsTransferableCanImport(getter_AddRefs(flavorList));
-  if (NS_FAILED(rv))
-    return NS_ERROR_FAILURE;
-
-  uint32_t flavorCount;
-  flavorList->GetLength(&flavorCount);
+  // get flavor list that includes all acceptable flavors (including ones obtained through
+  // conversion)
+  nsTArray<nsCString> flavors;
+  nsresult rv = aTransferable->FlavorsTransferableCanImport(flavors);
+  if (NS_FAILED(rv)) return NS_ERROR_FAILURE;
 
   // If we were the last ones to put something on the pasteboard, then just use the cached
   // transferable. Otherwise clear it because it isn't relevant any more.
-  if (mCachedClipboard == aWhichClipboard &&
-      mChangeCount == [cocoaPasteboard changeCount]) {
+  if (mCachedClipboard == aWhichClipboard && mChangeCount == [cocoaPasteboard changeCount]) {
     if (mTransferable) {
-      for (uint32_t i = 0; i < flavorCount; i++) {
-        nsCOMPtr<nsISupportsCString> currentFlavor = do_QueryElementAt(flavorList, i);
-        if (!currentFlavor)
-          continue;
-
-        nsXPIDLCString flavorStr;
-        currentFlavor->ToString(getter_Copies(flavorStr));
+      for (uint32_t i = 0; i < flavors.Length(); i++) {
+        nsCString& flavorStr = flavors[i];
 
         nsCOMPtr<nsISupports> dataSupports;
-        uint32_t dataSize = 0;
-        rv = mTransferable->GetTransferData(flavorStr, getter_AddRefs(dataSupports), &dataSize);
+        rv = mTransferable->GetTransferData(flavorStr.get(), getter_AddRefs(dataSupports));
         if (NS_SUCCEEDED(rv)) {
-          aTransferable->SetTransferData(flavorStr, dataSupports, dataSize);
-          return NS_OK; // maybe try to fill in more types? Is there a point?
+          aTransferable->SetTransferData(flavorStr.get(), dataSupports);
+          return NS_OK;  // maybe try to fill in more types? Is there a point?
         }
       }
     }
@@ -423,29 +365,20 @@ nsClipboard::GetNativeClipboardData(nsITransferable* aTransferable, int32_t aWhi
 // returns true if we have *any* of the passed in flavors available for pasting
 NS_IMETHODIMP
 nsClipboard::HasDataMatchingFlavors(const char** aFlavorList, uint32_t aLength,
-                                    int32_t aWhichClipboard, bool* outResult)
-{
+                                    int32_t aWhichClipboard, bool* outResult) {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
   *outResult = false;
 
-  if ((aWhichClipboard != kGlobalClipboard) || !aFlavorList)
-    return NS_OK;
+  if ((aWhichClipboard != kGlobalClipboard) || !aFlavorList) return NS_OK;
 
   // first see if we have data for this in our cached transferable
   if (mTransferable) {
-    nsCOMPtr<nsIArray> transferableFlavorList;
-    nsresult rv = mTransferable->FlavorsTransferableCanImport(getter_AddRefs(transferableFlavorList));
+    nsTArray<nsCString> flavors;
+    nsresult rv = mTransferable->FlavorsTransferableCanImport(flavors);
     if (NS_SUCCEEDED(rv)) {
-      uint32_t transferableFlavorCount;
-      transferableFlavorList->GetLength(&transferableFlavorCount);
-      for (uint32_t j = 0; j < transferableFlavorCount; j++) {
-        nsCOMPtr<nsISupportsCString> currentTransferableFlavor =
-            do_QueryElementAt(transferableFlavorList, j);
-        if (!currentTransferableFlavor)
-          continue;
-        nsXPIDLCString transferableFlavorStr;
-        currentTransferableFlavor->ToString(getter_Copies(transferableFlavorStr));
+      for (uint32_t j = 0; j < flavors.Length(); j++) {
+        const nsCString& transferableFlavorStr = flavors[j];
 
         for (uint32_t k = 0; k < aLength; k++) {
           if (transferableFlavorStr.Equals(aFlavorList[k])) {
@@ -453,41 +386,37 @@ nsClipboard::HasDataMatchingFlavors(const char** aFlavorList, uint32_t aLength,
             return NS_OK;
           }
         }
-      }      
-    }    
+      }
+    }
   }
 
   NSPasteboard* generalPBoard = [NSPasteboard generalPasteboard];
 
   for (uint32_t i = 0; i < aLength; i++) {
     nsDependentCString mimeType(aFlavorList[i]);
-    NSString *pboardType = nil;
+    NSString* pboardType = nil;
 
     if (nsClipboard::IsStringType(mimeType, &pboardType)) {
-      NSString* availableType = [generalPBoard availableTypeFromArray:[NSArray arrayWithObject:pboardType]];
+      NSString* availableType =
+          [generalPBoard availableTypeFromArray:[NSArray arrayWithObject:pboardType]];
       if (availableType && [availableType isEqualToString:pboardType]) {
         *outResult = true;
         break;
       }
     } else if (!strcmp(aFlavorList[i], kCustomTypesMime)) {
-      NSString* availableType =
-        [generalPBoard availableTypeFromArray:
-          [NSArray arrayWithObject:
-            [UTIHelper stringFromPboardType:kMozCustomTypesPboardType]]];
+      NSString* availableType = [generalPBoard
+          availableTypeFromArray:
+              [NSArray arrayWithObject:[UTIHelper stringFromPboardType:kMozCustomTypesPboardType]]];
       if (availableType) {
         *outResult = true;
         break;
       }
-    } else if (!strcmp(aFlavorList[i], kJPEGImageMime) ||
-               !strcmp(aFlavorList[i], kJPGImageMime) ||
-               !strcmp(aFlavorList[i], kPNGImageMime) ||
-               !strcmp(aFlavorList[i], kGIFImageMime)) {
-      NSString* availableType =
-        [generalPBoard availableTypeFromArray:
-          [NSArray arrayWithObjects:
-            [UTIHelper stringFromPboardType:NSPasteboardTypeTIFF],
-            [UTIHelper stringFromPboardType:NSPasteboardTypePNG],
-            nil]];
+    } else if (!strcmp(aFlavorList[i], kJPEGImageMime) || !strcmp(aFlavorList[i], kJPGImageMime) ||
+               !strcmp(aFlavorList[i], kPNGImageMime) || !strcmp(aFlavorList[i], kGIFImageMime)) {
+      NSString* availableType = [generalPBoard
+          availableTypeFromArray:
+              [NSArray arrayWithObjects:[UTIHelper stringFromPboardType:NSPasteboardTypeTIFF],
+                                        [UTIHelper stringFromPboardType:NSPasteboardTypePNG], nil]];
       if (availableType) {
         *outResult = true;
         break;
@@ -502,8 +431,7 @@ nsClipboard::HasDataMatchingFlavors(const char** aFlavorList, uint32_t aLength,
 }
 
 NS_IMETHODIMP
-nsClipboard::SupportsFindClipboard(bool *_retval)
-{
+nsClipboard::SupportsFindClipboard(bool* _retval) {
   NS_ENSURE_ARG_POINTER(_retval);
   *_retval = true;
   return NS_OK;
@@ -512,92 +440,83 @@ nsClipboard::SupportsFindClipboard(bool *_retval)
 // This function converts anything that other applications might understand into the system format
 // and puts it into a dictionary which it returns.
 // static
-NSDictionary* 
-nsClipboard::PasteboardDictFromTransferable(nsITransferable* aTransferable)
-{
+NSDictionary* nsClipboard::PasteboardDictFromTransferable(nsITransferable* aTransferable) {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
 
-  if (!aTransferable)
-    return nil;
+  if (!aTransferable) return nil;
 
   NSMutableDictionary* pasteboardOutputDict = [NSMutableDictionary dictionary];
 
-  nsCOMPtr<nsIArray> flavorList;
-  nsresult rv = aTransferable->FlavorsTransferableCanExport(getter_AddRefs(flavorList));
-  if (NS_FAILED(rv))
-    return nil;
+  nsTArray<nsCString> flavors;
+  nsresult rv = aTransferable->FlavorsTransferableCanExport(flavors);
+  if (NS_FAILED(rv)) return nil;
 
-  uint32_t flavorCount;
-  flavorList->GetLength(&flavorCount);
-  for (uint32_t i = 0; i < flavorCount; i++) {
-    nsCOMPtr<nsISupportsCString> currentFlavor = do_QueryElementAt(flavorList, i);
-    if (!currentFlavor)
-      continue;
+  for (uint32_t i = 0; i < flavors.Length(); i++) {
+    nsCString& flavorStr = flavors[i];
 
-    nsXPIDLCString flavorStr;
-    currentFlavor->ToString(getter_Copies(flavorStr));
+    MOZ_LOG(sCocoaLog, LogLevel::Info,
+            ("writing out clipboard data of type %s (%d)\n", flavorStr.get(), i));
 
-    MOZ_LOG(sCocoaLog, LogLevel::Info, ("writing out clipboard data of type %s (%d)\n", flavorStr.get(), i));
-
-    NSString *pboardType = nil;
+    NSString* pboardType = nil;
 
     if (nsClipboard::IsStringType(flavorStr, &pboardType)) {
-      void* data = nullptr;
-      uint32_t dataSize = 0;
       nsCOMPtr<nsISupports> genericDataWrapper;
-      rv = aTransferable->GetTransferData(flavorStr, getter_AddRefs(genericDataWrapper), &dataSize);
-      nsPrimitiveHelpers::CreateDataFromPrimitive(flavorStr, genericDataWrapper, &data, dataSize);
+      rv = aTransferable->GetTransferData(flavorStr.get(), getter_AddRefs(genericDataWrapper));
+      if (NS_FAILED(rv)) {
+        [pboardType release];
+        continue;
+      }
+
+      nsAutoString data;
+      if (nsCOMPtr<nsISupportsString> text = do_QueryInterface(genericDataWrapper)) {
+        text->GetData(data);
+      }
 
       NSString* nativeString;
-      if (data)
-        nativeString = [NSString stringWithCharacters:(const unichar*)data length:(dataSize / sizeof(char16_t))];
+      if (!data.IsEmpty())
+        nativeString = [NSString stringWithCharacters:(const unichar*)data.get()
+                                               length:data.Length()];
       else
         nativeString = [NSString string];
-      
+
       // be nice to Carbon apps, normalize the receiver's contents using Form C.
       nativeString = [nativeString precomposedStringWithCanonicalMapping];
 
       [pasteboardOutputDict setObject:nativeString forKey:pboardType];
-      
-      free(data);
-    }
-    else if (flavorStr.EqualsLiteral(kCustomTypesMime)) {
-      void* data = nullptr;
-      uint32_t dataSize = 0;
+    } else if (flavorStr.EqualsLiteral(kCustomTypesMime)) {
       nsCOMPtr<nsISupports> genericDataWrapper;
-      rv = aTransferable->GetTransferData(flavorStr, getter_AddRefs(genericDataWrapper), &dataSize);
-      nsPrimitiveHelpers::CreateDataFromPrimitive(flavorStr, genericDataWrapper, &data, dataSize);
-
-      if (data) {
-        NSData* nativeData = [NSData dataWithBytes:data length:dataSize];
-        NSString* customType =
-          [UTIHelper stringFromPboardType:kMozCustomTypesPboardType];
-        [pasteboardOutputDict setObject:nativeData forKey:customType];
-        free(data);
-      }
-    }
-    else if (flavorStr.EqualsLiteral(kPNGImageMime) || flavorStr.EqualsLiteral(kJPEGImageMime) ||
-             flavorStr.EqualsLiteral(kJPGImageMime) || flavorStr.EqualsLiteral(kGIFImageMime) ||
-             flavorStr.EqualsLiteral(kNativeImageMime)) {
-      uint32_t dataSize = 0;
-      nsCOMPtr<nsISupports> transferSupports;
-      aTransferable->GetTransferData(flavorStr, getter_AddRefs(transferSupports), &dataSize);
-      nsCOMPtr<nsISupportsInterfacePointer> ptrPrimitive(do_QueryInterface(transferSupports));
-      if (!ptrPrimitive)
+      rv = aTransferable->GetTransferData(flavorStr.get(), getter_AddRefs(genericDataWrapper));
+      if (NS_FAILED(rv)) {
         continue;
+      }
 
-      nsCOMPtr<nsISupports> primitiveData;
-      ptrPrimitive->GetData(getter_AddRefs(primitiveData));
+      nsAutoCString data;
+      if (nsCOMPtr<nsISupportsCString> text = do_QueryInterface(genericDataWrapper)) {
+        text->GetData(data);
+      }
 
-      nsCOMPtr<imgIContainer> image(do_QueryInterface(primitiveData));
+      if (!data.IsEmpty()) {
+        NSData* nativeData = [NSData dataWithBytes:data.get() length:data.Length()];
+        NSString* customType = [UTIHelper stringFromPboardType:kMozCustomTypesPboardType];
+        [pasteboardOutputDict setObject:nativeData forKey:customType];
+      }
+    } else if (flavorStr.EqualsLiteral(kPNGImageMime) || flavorStr.EqualsLiteral(kJPEGImageMime) ||
+               flavorStr.EqualsLiteral(kJPGImageMime) || flavorStr.EqualsLiteral(kGIFImageMime) ||
+               flavorStr.EqualsLiteral(kNativeImageMime)) {
+      nsCOMPtr<nsISupports> transferSupports;
+      rv = aTransferable->GetTransferData(flavorStr.get(), getter_AddRefs(transferSupports));
+      if (NS_FAILED(rv)) {
+        continue;
+      }
+
+      nsCOMPtr<imgIContainer> image(do_QueryInterface(transferSupports));
       if (!image) {
         NS_WARNING("Image isn't an imgIContainer in transferable");
         continue;
       }
 
       RefPtr<SourceSurface> surface =
-        image->GetFrame(imgIContainer::FRAME_CURRENT,
-                        imgIContainer::FLAG_SYNC_DECODE);
+          image->GetFrame(imgIContainer::FRAME_CURRENT, imgIContainer::FLAG_SYNC_DECODE);
       if (!surface) {
         continue;
       }
@@ -609,48 +528,30 @@ nsClipboard::PasteboardDictFromTransferable(nsITransferable* aTransferable)
 
       // Convert the CGImageRef to TIFF data.
       CFMutableDataRef tiffData = CFDataCreateMutable(kCFAllocatorDefault, 0);
-      CGImageDestinationRef destRef = CGImageDestinationCreateWithData(tiffData,
-                                                                       CFSTR("public.tiff"),
-                                                                       1,
-                                                                       NULL);
+      CGImageDestinationRef destRef =
+          CGImageDestinationCreateWithData(tiffData, CFSTR("public.tiff"), 1, NULL);
       CGImageDestinationAddImage(destRef, imageRef, NULL);
       bool successfullyConverted = CGImageDestinationFinalize(destRef);
 
       CGImageRelease(imageRef);
-      if (destRef)
-        CFRelease(destRef);
+      if (destRef) CFRelease(destRef);
 
       if (!successfullyConverted) {
-        if (tiffData)
-          CFRelease(tiffData);
+        if (tiffData) CFRelease(tiffData);
         continue;
       }
 
-      NSString* tiffType =
-        [UTIHelper stringFromPboardType:NSPasteboardTypeTIFF];
-      [pasteboardOutputDict setObject:(NSMutableData*)tiffData
-                               forKey:tiffType];
-      if (tiffData)
-        CFRelease(tiffData);
-    }
-    else if (flavorStr.EqualsLiteral(kFileMime)) {
-      uint32_t len = 0;
+      NSString* tiffType = [UTIHelper stringFromPboardType:NSPasteboardTypeTIFF];
+      [pasteboardOutputDict setObject:(NSMutableData*)tiffData forKey:tiffType];
+      if (tiffData) CFRelease(tiffData);
+    } else if (flavorStr.EqualsLiteral(kFileMime)) {
       nsCOMPtr<nsISupports> genericFile;
-      rv = aTransferable->GetTransferData(flavorStr, getter_AddRefs(genericFile), &len);
+      rv = aTransferable->GetTransferData(flavorStr.get(), getter_AddRefs(genericFile));
       if (NS_FAILED(rv)) {
         continue;
       }
 
       nsCOMPtr<nsIFile> file(do_QueryInterface(genericFile));
-      if (!file) {
-        nsCOMPtr<nsISupportsInterfacePointer> ptr(do_QueryInterface(genericFile));
-
-        if (ptr) {
-          ptr->GetData(getter_AddRefs(genericFile));
-          file = do_QueryInterface(genericFile);
-        }
-      }
-
       if (!file) {
         continue;
       }
@@ -663,27 +564,18 @@ nsClipboard::PasteboardDictFromTransferable(nsITransferable* aTransferable)
 
       NSString* str = nsCocoaUtils::ToNSString(fileURI);
       NSURL* url = [NSURL fileURLWithPath:str isDirectory:NO];
-      NSString* fileUTType =
-        [UTIHelper stringFromPboardType:(NSString*)kUTTypeFileURL];
-      [pasteboardOutputDict setObject:[url absoluteString]
-                               forKey:fileUTType];
-    }
-    else if (flavorStr.EqualsLiteral(kFilePromiseMime)) {
+      NSString* fileUTType = [UTIHelper stringFromPboardType:(NSString*)kUTTypeFileURL];
+      [pasteboardOutputDict setObject:[url absoluteString] forKey:fileUTType];
+    } else if (flavorStr.EqualsLiteral(kFilePromiseMime)) {
       NSString* urlPromise =
-        [UTIHelper stringFromPboardType:
-          (NSString*)kPasteboardTypeFileURLPromise];
+          [UTIHelper stringFromPboardType:(NSString*)kPasteboardTypeFileURLPromise];
       NSString* urlPromiseContent =
-        [UTIHelper stringFromPboardType:
-          (NSString*)kPasteboardTypeFilePromiseContent];
-      [pasteboardOutputDict setObject:[NSArray arrayWithObject:@""]
-                               forKey:urlPromise];
-      [pasteboardOutputDict setObject:[NSArray arrayWithObject:@""]
-                               forKey:urlPromiseContent];
-    }
-    else if (flavorStr.EqualsLiteral(kURLMime)) {
-      uint32_t len = 0;
+          [UTIHelper stringFromPboardType:(NSString*)kPasteboardTypeFilePromiseContent];
+      [pasteboardOutputDict setObject:[NSArray arrayWithObject:@""] forKey:urlPromise];
+      [pasteboardOutputDict setObject:[NSArray arrayWithObject:@""] forKey:urlPromiseContent];
+    } else if (flavorStr.EqualsLiteral(kURLMime)) {
       nsCOMPtr<nsISupports> genericURL;
-      rv = aTransferable->GetTransferData(flavorStr, getter_AddRefs(genericURL), &len);
+      rv = aTransferable->GetTransferData(flavorStr.get(), getter_AddRefs(genericURL));
       nsCOMPtr<nsISupportsString> urlObject(do_QueryInterface(genericURL));
 
       nsAutoString url;
@@ -699,37 +591,28 @@ nsClipboard::PasteboardDictFromTransferable(nsITransferable* aTransferable)
 
         nsAutoString urlTitle;
         urlObject->GetData(urlTitle);
-        urlTitle.Mid(urlTitle, newlinePos + 1, len - (newlinePos + 1));
+        urlTitle.Mid(urlTitle, newlinePos + 1, urlTitle.Length() - (newlinePos + 1));
 
         nativeTitle =
-          [NSString stringWithCharacters:
-            reinterpret_cast<const unichar*>(urlTitle.get())
-                                  length:urlTitle.Length()];
+            [NSString stringWithCharacters:reinterpret_cast<const unichar*>(urlTitle.get())
+                                    length:urlTitle.Length()];
       }
       // The Finder doesn't like getting random binary data aka
       // Unicode, so change it into an escaped URL containing only
       // ASCII.
       nsAutoCString utf8Data = NS_ConvertUTF16toUTF8(url.get(), url.Length());
       nsAutoCString escData;
-      NS_EscapeURL(utf8Data.get(),
-                   utf8Data.Length(),
-                   esc_OnlyNonASCII|esc_AlwaysCopy,
-                   escData);
+      NS_EscapeURL(utf8Data.get(), utf8Data.Length(), esc_OnlyNonASCII | esc_AlwaysCopy, escData);
 
       NSString* nativeURL = [NSString stringWithUTF8String:escData.get()];
-      NSString* publicUrl =
-        [UTIHelper stringFromPboardType:kPublicUrlPboardType];
+      NSString* publicUrl = [UTIHelper stringFromPboardType:kPublicUrlPboardType];
       [pasteboardOutputDict setObject:nativeURL forKey:publicUrl];
       if (nativeTitle) {
-        NSArray* urlsAndTitles = @[@[nativeURL], @[nativeTitle]];
-        NSString* urlName =
-          [UTIHelper stringFromPboardType:kPublicUrlNamePboardType];
-        NSString* urlsWithTitles =
-          [UTIHelper stringFromPboardType:kUrlsWithTitlesPboardType];
-        [pasteboardOutputDict setObject:nativeTitle
-                                 forKey:urlName];
-        [pasteboardOutputDict setObject:urlsAndTitles
-                                 forKey:urlsWithTitles];
+        NSArray* urlsAndTitles = @[ @[ nativeURL ], @[ nativeTitle ] ];
+        NSString* urlName = [UTIHelper stringFromPboardType:kPublicUrlNamePboardType];
+        NSString* urlsWithTitles = [UTIHelper stringFromPboardType:kUrlsWithTitlesPboardType];
+        [pasteboardOutputDict setObject:nativeTitle forKey:urlName];
+        [pasteboardOutputDict setObject:urlsAndTitles forKey:urlsWithTitles];
       }
     }
     [pboardType release];
@@ -743,49 +626,43 @@ nsClipboard::PasteboardDictFromTransferable(nsITransferable* aTransferable)
 }
 
 // aPasteboardType is being retained and needs to be released by the caller.
-bool nsClipboard::IsStringType(const nsCString& aMIMEType, NSString** aPasteboardType)
-{
+bool nsClipboard::IsStringType(const nsCString& aMIMEType, NSString** aPasteboardType) {
   if (aMIMEType.EqualsLiteral(kUnicodeMime)) {
-    *aPasteboardType =
-      [[UTIHelper stringFromPboardType:NSPasteboardTypeString] retain];
+    *aPasteboardType = [[UTIHelper stringFromPboardType:NSPasteboardTypeString] retain];
     return true;
   } else if (aMIMEType.EqualsLiteral(kRTFMime)) {
-    *aPasteboardType =
-      [[UTIHelper stringFromPboardType:NSPasteboardTypeRTF] retain];
+    *aPasteboardType = [[UTIHelper stringFromPboardType:NSPasteboardTypeRTF] retain];
     return true;
   } else if (aMIMEType.EqualsLiteral(kHTMLMime)) {
-    *aPasteboardType =
-      [[UTIHelper stringFromPboardType:NSPasteboardTypeHTML] retain];
+    *aPasteboardType = [[UTIHelper stringFromPboardType:NSPasteboardTypeHTML] retain];
     return true;
   } else {
     return false;
   }
 }
 
-NSString* nsClipboard::WrapHtmlForSystemPasteboard(NSString* aString)
-{
-  NSString* wrapped =
-    [NSString stringWithFormat:
-      @"<html>"
-         "<head>"
-           "<meta http-equiv=\"content-type\" content=\"text/html; charset=utf-8\">"
-         "</head>"
-         "<body>"
-           "%@"
-         "</body>"
-       "</html>", aString];
+NSString* nsClipboard::WrapHtmlForSystemPasteboard(NSString* aString) {
+  NSString* wrapped = [NSString
+      stringWithFormat:@"<html>"
+                        "<head>"
+                        "<meta http-equiv=\"content-type\" content=\"text/html; charset=utf-8\">"
+                        "</head>"
+                        "<body>"
+                        "%@"
+                        "</body>"
+                        "</html>",
+                       aString];
   return wrapped;
 }
 
 /**
-  * Sets the transferable object
-  *
-  */
+ * Sets the transferable object
+ *
+ */
 NS_IMETHODIMP
 nsClipboard::SetData(nsITransferable* aTransferable, nsIClipboardOwner* anOwner,
-                     int32_t aWhichClipboard)
-{
-  NS_ASSERTION (aTransferable, "clipboard given a null transferable");
+                     int32_t aWhichClipboard) {
+  NS_ASSERTION(aTransferable, "clipboard given a null transferable");
 
   if (aWhichClipboard == kSelectionCache) {
     if (aTransferable) {
@@ -820,13 +697,12 @@ nsClipboard::SetData(nsITransferable* aTransferable, nsIClipboardOwner* anOwner,
 }
 
 /**
-  * Gets the transferable object
-  *
-  */
+ * Gets the transferable object
+ *
+ */
 NS_IMETHODIMP
-nsClipboard::GetData(nsITransferable* aTransferable, int32_t aWhichClipboard)
-{
-  NS_ASSERTION (aTransferable, "clipboard given a null transferable");
+nsClipboard::GetData(nsITransferable* aTransferable, int32_t aWhichClipboard) {
+  NS_ASSERTION(aTransferable, "clipboard given a null transferable");
 
   bool selectClipPresent;
   SupportsSelectionClipboard(&selectClipPresent);
@@ -843,8 +719,7 @@ nsClipboard::GetData(nsITransferable* aTransferable, int32_t aWhichClipboard)
 }
 
 NS_IMETHODIMP
-nsClipboard::EmptyClipboard(int32_t aWhichClipboard)
-{
+nsClipboard::EmptyClipboard(int32_t aWhichClipboard) {
   if (aWhichClipboard == kSelectionCache) {
     ClearSelectionCache();
     return NS_OK;
@@ -872,8 +747,7 @@ nsClipboard::EmptyClipboard(int32_t aWhichClipboard)
 }
 
 NS_IMETHODIMP
-nsClipboard::SupportsSelectionClipboard(bool* _retval)
-{
-  *_retval = false;   // we don't support the selection clipboard by default.
+nsClipboard::SupportsSelectionClipboard(bool* _retval) {
+  *_retval = false;  // we don't support the selection clipboard by default.
   return NS_OK;
 }

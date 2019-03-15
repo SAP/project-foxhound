@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,8 +23,8 @@
 namespace mozilla {
 namespace dom {
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(DataTransferItemList, mDataTransfer, mItems,
-                                      mIndexedItems, mFiles)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(DataTransferItemList, mDataTransfer,
+                                      mItems, mIndexedItems, mFiles)
 NS_IMPL_CYCLE_COLLECTING_ADDREF(DataTransferItemList)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(DataTransferItemList)
 
@@ -32,18 +33,15 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DataTransferItemList)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
-JSObject*
-DataTransferItemList::WrapObject(JSContext* aCx,
-                                 JS::Handle<JSObject*> aGivenProto)
-{
-  return DataTransferItemListBinding::Wrap(aCx, this, aGivenProto);
+JSObject* DataTransferItemList::WrapObject(JSContext* aCx,
+                                           JS::Handle<JSObject*> aGivenProto) {
+  return DataTransferItemList_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-already_AddRefed<DataTransferItemList>
-DataTransferItemList::Clone(DataTransfer* aDataTransfer) const
-{
+already_AddRefed<DataTransferItemList> DataTransferItemList::Clone(
+    DataTransfer* aDataTransfer) const {
   RefPtr<DataTransferItemList> list =
-    new DataTransferItemList(aDataTransfer, mIsExternal);
+      new DataTransferItemList(aDataTransfer, mIsExternal);
 
   // We need to clone the mItems and mIndexedItems lists while keeping the same
   // correspondences between the mIndexedItems and mItems lists (namely, if an
@@ -80,27 +78,23 @@ DataTransferItemList::Clone(DataTransfer* aDataTransfer) const
   return list.forget();
 }
 
-void
-DataTransferItemList::Remove(uint32_t aIndex,
-                             nsIPrincipal& aSubjectPrincipal,
-                             ErrorResult& aRv)
-{
+void DataTransferItemList::Remove(uint32_t aIndex,
+                                  nsIPrincipal& aSubjectPrincipal,
+                                  ErrorResult& aRv) {
   if (mDataTransfer->IsReadOnly()) {
     aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
     return;
   }
 
   if (aIndex >= Length()) {
-    aRv.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
     return;
   }
 
   ClearDataHelper(mItems[aIndex], aIndex, -1, aSubjectPrincipal, aRv);
 }
 
-DataTransferItem*
-DataTransferItemList::IndexedGetter(uint32_t aIndex, bool& aFound) const
-{
+DataTransferItem* DataTransferItemList::IndexedGetter(uint32_t aIndex,
+                                                      bool& aFound) const {
   if (aIndex >= mItems.Length()) {
     aFound = false;
     return nullptr;
@@ -111,9 +105,7 @@ DataTransferItemList::IndexedGetter(uint32_t aIndex, bool& aFound) const
   return mItems[aIndex];
 }
 
-uint32_t
-DataTransferItemList::MozItemCount() const
-{
+uint32_t DataTransferItemList::MozItemCount() const {
   uint32_t length = mIndexedItems.Length();
   // XXX: Compat hack - Index 0 always exists due to changes in internals, but
   // if it is empty, scripts using the moz* APIs should see it as not existing.
@@ -123,10 +115,8 @@ DataTransferItemList::MozItemCount() const
   return length;
 }
 
-void
-DataTransferItemList::Clear(nsIPrincipal& aSubjectPrincipal,
-                            ErrorResult& aRv)
-{
+void DataTransferItemList::Clear(nsIPrincipal& aSubjectPrincipal,
+                                 ErrorResult& aRv) {
   if (NS_WARN_IF(mDataTransfer->IsReadOnly())) {
     return;
   }
@@ -142,17 +132,16 @@ DataTransferItemList::Clear(nsIPrincipal& aSubjectPrincipal,
   MOZ_ASSERT(Length() == 0);
 }
 
-DataTransferItem*
-DataTransferItemList::Add(const nsAString& aData,
-                          const nsAString& aType,
-                          nsIPrincipal& aSubjectPrincipal,
-                          ErrorResult& aRv)
-{
+DataTransferItem* DataTransferItemList::Add(const nsAString& aData,
+                                            const nsAString& aType,
+                                            nsIPrincipal& aSubjectPrincipal,
+                                            ErrorResult& aRv) {
   if (NS_WARN_IF(mDataTransfer->IsReadOnly())) {
     return nullptr;
   }
 
-  nsCOMPtr<nsIVariant> data(new storage::TextVariant(aData));
+  RefPtr<nsVariantCC> data(new nsVariantCC());
+  data->SetAsAString(aData);
 
   nsAutoString format;
   mDataTransfer->GetRealFormat(aType, format);
@@ -165,10 +154,9 @@ DataTransferItemList::Add(const nsAString& aData,
   // We add the textual data to index 0. We set aInsertOnly to true, as we don't
   // want to update an existing entry if it is already present, as per the spec.
   RefPtr<DataTransferItem> item =
-    SetDataWithPrincipal(format, data, 0, &aSubjectPrincipal,
-                         /* aInsertOnly = */ true,
-                         /* aHidden = */ false,
-                         aRv);
+      SetDataWithPrincipal(format, data, 0, &aSubjectPrincipal,
+                           /* aInsertOnly = */ true,
+                           /* aHidden = */ false, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
@@ -177,17 +165,15 @@ DataTransferItemList::Add(const nsAString& aData,
   return item;
 }
 
-DataTransferItem*
-DataTransferItemList::Add(File& aData,
-                          nsIPrincipal& aSubjectPrincipal,
-                          ErrorResult& aRv)
-{
+DataTransferItem* DataTransferItemList::Add(File& aData,
+                                            nsIPrincipal& aSubjectPrincipal,
+                                            ErrorResult& aRv) {
   if (mDataTransfer->IsReadOnly()) {
     return nullptr;
   }
 
   nsCOMPtr<nsISupports> supports = do_QueryObject(&aData);
-  nsCOMPtr<nsIWritableVariant> data = new nsVariant();
+  nsCOMPtr<nsIWritableVariant> data = new nsVariantCC();
   data->SetAsISupports(supports);
 
   nsAutoString type;
@@ -203,10 +189,9 @@ DataTransferItemList::Add(File& aData,
   // the internal specced layout.
   uint32_t index = mIndexedItems.Length();
   RefPtr<DataTransferItem> item =
-    SetDataWithPrincipal(type, data, index, &aSubjectPrincipal,
-                         /* aInsertOnly = */ true,
-                         /* aHidden = */ false,
-                         aRv);
+      SetDataWithPrincipal(type, data, index, &aSubjectPrincipal,
+                           /* aInsertOnly = */ true,
+                           /* aHidden = */ false, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
@@ -215,9 +200,8 @@ DataTransferItemList::Add(File& aData,
   return item;
 }
 
-already_AddRefed<FileList>
-DataTransferItemList::Files(nsIPrincipal* aPrincipal)
-{
+already_AddRefed<FileList> DataTransferItemList::Files(
+    nsIPrincipal* aPrincipal) {
   // The DataTransfer can hold data with varying principals, coming from
   // different windows. This means that permissions checks need to be made when
   // accessing data from the DataTransfer. With the accessor methods, this is
@@ -238,19 +222,20 @@ DataTransferItemList::Files(nsIPrincipal* aPrincipal)
   // advanced caching mechanism for the FileList objects will be required.
   RefPtr<FileList> files;
   if (nsContentUtils::IsSystemPrincipal(aPrincipal)) {
-    files = new FileList(static_cast<nsIDOMDataTransfer*>(mDataTransfer));
+    files = new FileList(mDataTransfer);
     GenerateFiles(files, aPrincipal);
     return files.forget();
   }
 
   if (!mFiles) {
-    mFiles = new FileList(static_cast<nsIDOMDataTransfer*>(mDataTransfer));
+    mFiles = new FileList(mDataTransfer);
     mFilesPrincipal = aPrincipal;
     RegenerateFiles();
   }
 
   if (!aPrincipal->Subsumes(mFilesPrincipal)) {
-    MOZ_ASSERT(false, "This DataTransfer should only be accessed by the system "
+    MOZ_ASSERT(false,
+               "This DataTransfer should only be accessed by the system "
                "and a single principal");
     return nullptr;
   }
@@ -259,12 +244,10 @@ DataTransferItemList::Files(nsIPrincipal* aPrincipal)
   return files.forget();
 }
 
-void
-DataTransferItemList::MozRemoveByTypeAt(const nsAString& aType,
-                                        uint32_t aIndex,
-                                        nsIPrincipal& aSubjectPrincipal,
-                                        ErrorResult& aRv)
-{
+void DataTransferItemList::MozRemoveByTypeAt(const nsAString& aType,
+                                             uint32_t aIndex,
+                                             nsIPrincipal& aSubjectPrincipal,
+                                             ErrorResult& aRv) {
   if (NS_WARN_IF(mDataTransfer->IsReadOnly() ||
                  aIndex >= mIndexedItems.Length())) {
     return;
@@ -304,9 +287,8 @@ DataTransferItemList::MozRemoveByTypeAt(const nsAString& aType,
   }
 }
 
-DataTransferItem*
-DataTransferItemList::MozItemByTypeAt(const nsAString& aType, uint32_t aIndex)
-{
+DataTransferItem* DataTransferItemList::MozItemByTypeAt(const nsAString& aType,
+                                                        uint32_t aIndex) {
   if (NS_WARN_IF(aIndex >= mIndexedItems.Length())) {
     return nullptr;
   }
@@ -325,15 +307,10 @@ DataTransferItemList::MozItemByTypeAt(const nsAString& aType, uint32_t aIndex)
   return nullptr;
 }
 
-already_AddRefed<DataTransferItem>
-DataTransferItemList::SetDataWithPrincipal(const nsAString& aType,
-                                           nsIVariant* aData,
-                                           uint32_t aIndex,
-                                           nsIPrincipal* aPrincipal,
-                                           bool aInsertOnly,
-                                           bool aHidden,
-                                           ErrorResult& aRv)
-{
+already_AddRefed<DataTransferItem> DataTransferItemList::SetDataWithPrincipal(
+    const nsAString& aType, nsIVariant* aData, uint32_t aIndex,
+    nsIPrincipal* aPrincipal, bool aInsertOnly, bool aHidden,
+    ErrorResult& aRv) {
   if (aIndex < mIndexedItems.Length()) {
     nsTArray<RefPtr<DataTransferItem>>& items = mIndexedItems[aIndex];
     uint32_t count = items.Length();
@@ -351,8 +328,8 @@ DataTransferItemList::SetDataWithPrincipal(const nsAString& aType,
         bool subsumes;
         if (NS_WARN_IF(item->Principal() && aPrincipal &&
                        (NS_FAILED(aPrincipal->Subsumes(item->Principal(),
-                                                       &subsumes))
-                        || !subsumes))) {
+                                                       &subsumes)) ||
+                        !subsumes))) {
           aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
           return nullptr;
         }
@@ -360,10 +337,8 @@ DataTransferItemList::SetDataWithPrincipal(const nsAString& aType,
 
         DataTransferItem::eKind oldKind = item->Kind();
         item->SetData(aData);
-        if (oldKind != item->Kind()) {
-          // Types list may have changed, even if aIndex == 0.
-          mDataTransfer->TypesListMayHaveChanged();
-        }
+
+        mDataTransfer->TypesListMayHaveChanged();
 
         if (aIndex != 0) {
           // If the item changes from being a file to not a file or vice-versa,
@@ -395,7 +370,8 @@ DataTransferItemList::SetDataWithPrincipal(const nsAString& aType,
   }
 
   // Add the new item
-  RefPtr<DataTransferItem> item = AppendNewItem(aIndex, aType, aData, aPrincipal, aHidden);
+  RefPtr<DataTransferItem> item =
+      AppendNewItem(aIndex, aType, aData, aPrincipal, aHidden);
 
   if (item->Kind() == DataTransferItem::KIND_FILE) {
     RegenerateFiles();
@@ -404,13 +380,11 @@ DataTransferItemList::SetDataWithPrincipal(const nsAString& aType,
   return item.forget();
 }
 
-DataTransferItem*
-DataTransferItemList::AppendNewItem(uint32_t aIndex,
-                                    const nsAString& aType,
-                                    nsIVariant* aData,
-                                    nsIPrincipal* aPrincipal,
-                                    bool aHidden)
-{
+DataTransferItem* DataTransferItemList::AppendNewItem(uint32_t aIndex,
+                                                      const nsAString& aType,
+                                                      nsIVariant* aData,
+                                                      nsIPrincipal* aPrincipal,
+                                                      bool aHidden) {
   if (mIndexedItems.Length() <= aIndex) {
     MOZ_ASSERT(mIndexedItems.Length() == aIndex);
     mIndexedItems.AppendElement();
@@ -441,8 +415,8 @@ DataTransferItemList::AppendNewItem(uint32_t aIndex,
   return item;
 }
 
-const nsTArray<RefPtr<DataTransferItem>>*
-DataTransferItemList::MozItemsAt(uint32_t aIndex) // -- INDEXED
+const nsTArray<RefPtr<DataTransferItem>>* DataTransferItemList::MozItemsAt(
+    uint32_t aIndex)  // -- INDEXED
 {
   if (aIndex >= mIndexedItems.Length()) {
     return nullptr;
@@ -451,9 +425,7 @@ DataTransferItemList::MozItemsAt(uint32_t aIndex) // -- INDEXED
   return &mIndexedItems[aIndex];
 }
 
-void
-DataTransferItemList::PopIndexZero()
-{
+void DataTransferItemList::PopIndexZero() {
   MOZ_ASSERT(mIndexedItems.Length() > 1);
   MOZ_ASSERT(mIndexedItems[0].IsEmpty());
 
@@ -468,9 +440,7 @@ DataTransferItemList::PopIndexZero()
   }
 }
 
-void
-DataTransferItemList::ClearAllItems()
-{
+void DataTransferItemList::ClearAllItems() {
   // We always need to have index 0, so don't delete that one
   mItems.Clear();
   mIndexedItems.Clear();
@@ -481,13 +451,11 @@ DataTransferItemList::ClearAllItems()
   RegenerateFiles();
 }
 
-void
-DataTransferItemList::ClearDataHelper(DataTransferItem* aItem,
-                                      uint32_t aIndexHint,
-                                      uint32_t aMozOffsetHint,
-                                      nsIPrincipal& aSubjectPrincipal,
-                                      ErrorResult& aRv)
-{
+void DataTransferItemList::ClearDataHelper(DataTransferItem* aItem,
+                                           uint32_t aIndexHint,
+                                           uint32_t aMozOffsetHint,
+                                           nsIPrincipal& aSubjectPrincipal,
+                                           ErrorResult& aRv) {
   MOZ_ASSERT(aItem);
   if (NS_WARN_IF(mDataTransfer->IsReadOnly())) {
     return;
@@ -540,9 +508,7 @@ DataTransferItemList::ClearDataHelper(DataTransferItem* aItem,
   }
 }
 
-void
-DataTransferItemList::RegenerateFiles()
-{
+void DataTransferItemList::RegenerateFiles() {
   // We don't want to regenerate the files list unless we already have a files
   // list. That way we can avoid the unnecessary work if the user never touches
   // the files list.
@@ -556,12 +522,18 @@ DataTransferItemList::RegenerateFiles()
   }
 }
 
-void
-DataTransferItemList::GenerateFiles(FileList* aFiles,
-                                    nsIPrincipal* aFilesPrincipal)
-{
+void DataTransferItemList::GenerateFiles(FileList* aFiles,
+                                         nsIPrincipal* aFilesPrincipal) {
   MOZ_ASSERT(aFiles);
   MOZ_ASSERT(aFilesPrincipal);
+
+  // For non-system principals, the Files list should be empty if the
+  // DataTransfer is protected.
+  if (!nsContentUtils::IsSystemPrincipal(aFilesPrincipal) &&
+      mDataTransfer->IsProtected()) {
+    return;
+  }
+
   uint32_t count = Length();
   for (uint32_t i = 0; i < count; i++) {
     bool found;
@@ -569,9 +541,8 @@ DataTransferItemList::GenerateFiles(FileList* aFiles,
     MOZ_ASSERT(found);
 
     if (item->Kind() == DataTransferItem::KIND_FILE) {
-      IgnoredErrorResult rv;
-      RefPtr<File> file = item->GetAsFile(*aFilesPrincipal, rv);
-      if (NS_WARN_IF(rv.Failed() || !file)) {
+      RefPtr<File> file = item->GetAsFile(*aFilesPrincipal, IgnoreErrors());
+      if (NS_WARN_IF(!file)) {
         continue;
       }
       aFiles->Append(file);
@@ -579,5 +550,5 @@ DataTransferItemList::GenerateFiles(FileList* aFiles,
   }
 }
 
-} // namespace mozilla
-} // namespace dom
+}  // namespace dom
+}  // namespace mozilla

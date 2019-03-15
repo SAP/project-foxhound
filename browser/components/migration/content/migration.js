@@ -4,15 +4,11 @@
 
 "use strict";
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cu = Components.utils;
-
 const kIMig = Ci.nsIBrowserProfileMigrator;
 const kIPStartup = Ci.nsIProfileStartup;
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource:///modules/MigrationUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource:///modules/MigrationUtils.jsm");
 
 var MigrationWizard = { /* exported MigrationWizard */
   _source: "",                  // Source Profile Migrator ContractID suffix
@@ -24,11 +20,11 @@ var MigrationWizard = { /* exported MigrationWizard */
 
   init() {
     let os = Services.obs;
-    os.addObserver(this, "Migration:Started", false);
-    os.addObserver(this, "Migration:ItemBeforeMigrate", false);
-    os.addObserver(this, "Migration:ItemAfterMigrate", false);
-    os.addObserver(this, "Migration:ItemError", false);
-    os.addObserver(this, "Migration:Ended", false);
+    os.addObserver(this, "Migration:Started");
+    os.addObserver(this, "Migration:ItemBeforeMigrate");
+    os.addObserver(this, "Migration:ItemAfterMigrate");
+    os.addObserver(this, "Migration:ItemError");
+    os.addObserver(this, "Migration:Ended");
 
     this._wiz = document.documentElement;
 
@@ -43,7 +39,7 @@ var MigrationWizard = { /* exported MigrationWizard */
       this._autoMigrate = args[3].QueryInterface(kIPStartup);
       this._skipImportSourcePage = args[4];
       if (this._migrator && args[5]) {
-        let sourceProfiles = this._migrator.sourceProfiles;
+        let sourceProfiles = this.spinResolve(this._migrator.getSourceProfiles());
         this._selectedProfile = sourceProfiles.find(profile => profile.id == args[5]);
       }
 
@@ -58,8 +54,7 @@ var MigrationWizard = { /* exported MigrationWizard */
   },
 
   uninit() {
-    var os = Components.classes["@mozilla.org/observer-service;1"]
-                       .getService(Components.interfaces.nsIObserverService);
+    var os = Services.obs;
     os.removeObserver(this, "Migration:Started");
     os.removeObserver(this, "Migration:ItemBeforeMigrate");
     os.removeObserver(this, "Migration:ItemAfterMigrate");
@@ -68,17 +63,33 @@ var MigrationWizard = { /* exported MigrationWizard */
     MigrationUtils.finishMigration();
   },
 
+  spinResolve(promise) {
+    let canAdvance = this._wiz.canAdvance;
+    let canRewind = this._wiz.canRewind;
+    this._wiz.canAdvance = false;
+    this._wiz.canRewind = false;
+    let result = MigrationUtils.spinResolve(promise);
+    this._wiz.canAdvance = canAdvance;
+    this._wiz.canRewind = canRewind;
+    return result;
+  },
+
+  onWizardCancel() {
+    MigrationUtils.forceExitSpinResolve();
+    return true;
+  },
+
   // 1 - Import Source
   onImportSourcePageShow() {
     // Show warning message to close the selected browser when needed
-    function toggleCloseBrowserWarning() {
+    let toggleCloseBrowserWarning = () => {
       let visibility = "hidden";
       if (group.selectedItem.id != "nothing") {
-        let migrator = MigrationUtils.getMigrator(group.selectedItem.id);
+        let migrator = this.spinResolve(MigrationUtils.getMigrator(group.selectedItem.id));
         visibility = migrator.sourceLocked ? "visible" : "hidden";
       }
       document.getElementById("closeSourceBrowser").style.visibility = visibility;
-    }
+    };
     this._wiz.canRewind = false;
 
     var selectedMigrator = null;
@@ -89,7 +100,7 @@ var MigrationWizard = { /* exported MigrationWizard */
     for (var i = 0; i < group.childNodes.length; ++i) {
       var migratorKey = group.childNodes[i].id;
       if (migratorKey != "nothing") {
-        var migrator = MigrationUtils.getMigrator(migratorKey);
+        var migrator = this.spinResolve(MigrationUtils.getMigrator(migratorKey));
         if (migrator) {
           // Save this as the first selectable item, if we don't already have
           // one, or if it is the migrator that was passed to us.
@@ -149,7 +160,7 @@ var MigrationWizard = { /* exported MigrationWizard */
 
     if (!this._migrator || (newSource != this._source)) {
       // Create the migrator for the selected source.
-      this._migrator = MigrationUtils.getMigrator(newSource);
+      this._migrator = this.spinResolve(MigrationUtils.getMigrator(newSource));
 
       this._itemsFlags = kIMig.ALL;
       this._selectedProfile = null;
@@ -157,14 +168,14 @@ var MigrationWizard = { /* exported MigrationWizard */
     this._source = newSource;
 
     // check for more than one source profile
-    var sourceProfiles = this._migrator.sourceProfiles;
+    var sourceProfiles = this.spinResolve(this._migrator.getSourceProfiles());
     if (this._skipImportSourcePage) {
-      this._wiz.currentPage.next = "homePageImport";
+      this._wiz.currentPage.next = "migrating";
     } else if (sourceProfiles && sourceProfiles.length > 1) {
       this._wiz.currentPage.next = "selectProfile";
     } else {
       if (this._autoMigrate)
-        this._wiz.currentPage.next = "homePageImport";
+        this._wiz.currentPage.next = "migrating";
       else
         this._wiz.currentPage.next = "importItems";
 
@@ -185,12 +196,12 @@ var MigrationWizard = { /* exported MigrationWizard */
 
     var profiles = document.getElementById("profiles");
     while (profiles.hasChildNodes())
-      profiles.removeChild(profiles.firstChild);
+      profiles.firstChild.remove();
 
     // Note that this block is still reached even if the user chose 'From File'
     // and we canceled the dialog.  When that happens, _migrator will be null.
     if (this._migrator) {
-      var sourceProfiles = this._migrator.sourceProfiles;
+      var sourceProfiles = this.spinResolve(this._migrator.getSourceProfiles());
 
       for (let profile of sourceProfiles) {
         var item = document.createElement("radio");
@@ -205,29 +216,32 @@ var MigrationWizard = { /* exported MigrationWizard */
 
   onSelectProfilePageRewound() {
     var profiles = document.getElementById("profiles");
-    this._selectedProfile = this._migrator.sourceProfiles.find(
+    let sourceProfiles = this.spinResolve(this._migrator.getSourceProfiles());
+    this._selectedProfile = sourceProfiles.find(
       profile => profile.id == profiles.selectedItem.id
     ) || null;
   },
 
   onSelectProfilePageAdvanced() {
     var profiles = document.getElementById("profiles");
-    this._selectedProfile = this._migrator.sourceProfiles.find(
+    let sourceProfiles = this.spinResolve(this._migrator.getSourceProfiles());
+    this._selectedProfile = sourceProfiles.find(
       profile => profile.id == profiles.selectedItem.id
     ) || null;
 
     // If we're automigrating or just doing bookmarks don't show the item selection page
     if (this._autoMigrate)
-      this._wiz.currentPage.next = "homePageImport";
+      this._wiz.currentPage.next = "migrating";
   },
 
   // 3 - ImportItems
   onImportItemsPageShow() {
     var dataSources = document.getElementById("dataSources");
     while (dataSources.hasChildNodes())
-      dataSources.removeChild(dataSources.firstChild);
+      dataSources.firstChild.remove();
 
-    var items = this._migrator.getMigrateData(this._selectedProfile, this._autoMigrate);
+    var items = this.spinResolve(this._migrator.getMigrateData(this._selectedProfile,
+                                                               this._autoMigrate));
     for (var i = 0; i < 16; ++i) {
       var itemID = (items >> i) & 0x1 ? Math.pow(2, i) : 0;
       if (itemID > 0) {
@@ -272,81 +286,25 @@ var MigrationWizard = { /* exported MigrationWizard */
     this._wiz.canAdvance = oneChecked;
   },
 
-  // 4 - Home Page Selection
-  onHomePageMigrationPageShow() {
-    // only want this on the first run
-    if (!this._autoMigrate) {
-      this._wiz.advance();
-      return;
-    }
-
-    var brandBundle = document.getElementById("brandBundle");
-    var pageTitle, pageDesc, mainStr;
-    // These strings don't exist when not using official branding. If that's
-    // the case, just skip this page.
-    try {
-      pageTitle = brandBundle.getString("homePageMigrationPageTitle");
-      pageDesc = brandBundle.getString("homePageMigrationDescription");
-      mainStr = brandBundle.getString("homePageSingleStartMain");
-    } catch (e) {
-      this._wiz.advance();
-      return;
-    }
-
-    document.getElementById("homePageImport").setAttribute("label", pageTitle);
-    document.getElementById("homePageImportDesc").setAttribute("value", pageDesc);
-
-    this._wiz._adjustWizardHeader();
-
-    var singleStart = document.getElementById("homePageSingleStart");
-    singleStart.setAttribute("label", mainStr);
-    singleStart.setAttribute("value", "DEFAULT");
-
-    var appName = MigrationUtils.getBrowserName(this._source);
-
-    // semi-wallpaper for crash when multiple profiles exist, since we haven't initialized mSourceProfile in places
-    this._migrator.getMigrateData(this._selectedProfile, this._autoMigrate);
-
-    var oldHomePageURL = this._migrator.sourceHomePageURL;
-
-    if (oldHomePageURL && appName) {
-      var oldHomePageLabel =
-        brandBundle.getFormattedString("homePageImport", [appName]);
-      var oldHomePage = document.getElementById("oldHomePage");
-      oldHomePage.setAttribute("label", oldHomePageLabel);
-      oldHomePage.setAttribute("value", oldHomePageURL);
-      oldHomePage.removeAttribute("hidden");
-    } else {
-      // if we don't have at least two options, just advance
-      this._wiz.advance();
-    }
-  },
-
-  onHomePageMigrationPageAdvanced() {
-    // we might not have a selectedItem if we're in fallback mode
-    try {
-      var radioGroup = document.getElementById("homePageRadiogroup");
-
-      this._newHomePage = radioGroup.selectedItem.value;
-    } catch (ex) {}
-  },
-
-  // 5 - Migrating
+  // 4 - Migrating
   onMigratingPageShow() {
     this._wiz.getButton("cancel").disabled = true;
     this._wiz.canRewind = false;
     this._wiz.canAdvance = false;
 
     // When automigrating, show all of the data that can be received from this source.
-    if (this._autoMigrate)
-      this._itemsFlags = this._migrator.getMigrateData(this._selectedProfile, this._autoMigrate);
+    if (this._autoMigrate) {
+      this._itemsFlags =
+        this.spinResolve(this._migrator.getMigrateData(this._selectedProfile,
+                                                       this._autoMigrate));
+    }
 
     this._listItems("migratingItems");
     setTimeout(() => this.onMigratingMigrate(), 0);
   },
 
-  onMigratingMigrate() {
-    this._migrator.migrate(this._itemsFlags, this._autoMigrate, this._selectedProfile);
+  async onMigratingMigrate() {
+    await this._migrator.migrate(this._itemsFlags, this._autoMigrate, this._selectedProfile);
 
     Services.telemetry.getHistogramById("FX_MIGRATION_SOURCE_BROWSER")
                       .add(MigrationUtils.getSourceIdForTelemetry(this._source));
@@ -367,7 +325,7 @@ var MigrationWizard = { /* exported MigrationWizard */
   _listItems(aID) {
     var items = document.getElementById(aID);
     while (items.hasChildNodes())
-      items.removeChild(items.firstChild);
+      items.firstChild.remove();
 
     var itemID;
     for (var i = 0; i < 16; ++i) {
@@ -413,37 +371,6 @@ var MigrationWizard = { /* exported MigrationWizard */
           }
         }
         if (this._autoMigrate) {
-          let hasImportedHomepage = !!(this._newHomePage && this._newHomePage != "DEFAULT");
-          Services.telemetry.getKeyedHistogramById("FX_MIGRATION_IMPORTED_HOMEPAGE")
-                            .add(this._source, hasImportedHomepage);
-          if (this._newHomePage) {
-            try {
-              // set homepage properly
-              var prefSvc = Components.classes["@mozilla.org/preferences-service;1"]
-                                      .getService(Components.interfaces.nsIPrefService);
-              var prefBranch = prefSvc.getBranch(null);
-
-              if (this._newHomePage == "DEFAULT") {
-                prefBranch.clearUserPref("browser.startup.homepage");
-              } else {
-                var str = Components.classes["@mozilla.org/supports-string;1"]
-                                  .createInstance(Components.interfaces.nsISupportsString);
-                str.data = this._newHomePage;
-                prefBranch.setComplexValue("browser.startup.homepage",
-                                           Components.interfaces.nsISupportsString,
-                                           str);
-              }
-
-              var dirSvc = Components.classes["@mozilla.org/file/directory_service;1"]
-                                     .getService(Components.interfaces.nsIProperties);
-              var prefFile = dirSvc.get("ProfDS", Components.interfaces.nsIFile);
-              prefFile.append("prefs.js");
-              prefSvc.savePrefFile(prefFile);
-            } catch (ex) {
-              dump(ex);
-            }
-          }
-
           // We're done now.
           this._wiz.canAdvance = true;
           this._wiz.advance();
@@ -481,9 +408,7 @@ var MigrationWizard = { /* exported MigrationWizard */
             type = "misc. data";
             break;
         }
-        Cc["@mozilla.org/consoleservice;1"]
-          .getService(Ci.nsIConsoleService)
-          .logStringMessage("some " + type + " did not successfully migrate.");
+        Services.console.logStringMessage("some " + type + " did not successfully migrate.");
         Services.telemetry.getKeyedHistogramById("FX_MIGRATION_ERRORS")
                           .add(this._source, Math.log2(numericType));
         break;

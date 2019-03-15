@@ -14,9 +14,9 @@ function run_test() {
   run_next_test();
 }
 
-add_task(function* test_register_invalid_endpoint() {
+add_task(async function test_register_invalid_endpoint() {
   let db = PushServiceWebSocket.newPushDB();
-  do_register_cleanup(() => {return db.drop().then(_ => db.close());});
+  registerCleanupFunction(() => {return db.drop().then(_ => db.close());});
 
   PushServiceWebSocket._generateID = () => channelID;
   PushService.init({
@@ -44,15 +44,16 @@ add_task(function* test_register_invalid_endpoint() {
     }
   });
 
-  yield rejects(
+  await rejects(
     PushService.register({
       scope: 'https://example.net/page/invalid-endpoint',
       originAttributes: ChromeUtils.originAttributesToSuffix(
         { appId: Ci.nsIScriptSecurityManager.NO_APP_ID, inIsolatedMozBrowser: false }),
     }),
+    /Registration error/,
     'Expected error for invalid endpoint'
   );
 
-  let record = yield db.getByKeyID(channelID);
+  let record = await db.getByKeyID(channelID);
   ok(!record, 'Should not store records with invalid endpoints');
 });

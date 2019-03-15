@@ -1,12 +1,15 @@
-from datetime import datetime
-import sys
-import os
-import csv
-import numpy
-import collections
+from __future__ import absolute_import
+
 import argparse
-import compare
+import collections
+import csv
+import os
+import sys
 from calendar import day_name
+from datetime import datetime
+
+import compare
+import numpy
 
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
 
@@ -132,6 +135,7 @@ def main():
 
     f += '-%s' % args.mode
     generate_report(tuple_list, filepath=f + '.csv', mode=args.mode)
+
 
 if __name__ == "__main__":
     main()

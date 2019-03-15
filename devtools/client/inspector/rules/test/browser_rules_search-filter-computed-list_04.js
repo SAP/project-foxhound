@@ -19,20 +19,20 @@ const TEST_URI = `
   <h1 id='testid'>Styled Node</h1>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
-  yield selectNode("#testid", inspector);
-  yield testModifyPropertyValueFilter(inspector, view);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, view} = await openRuleView();
+  await selectNode("#testid", inspector);
+  await testModifyPropertyValueFilter(inspector, view);
 });
 
-function* testModifyPropertyValueFilter(inspector, view) {
-  yield setSearchFilter(view, SEARCH);
+async function testModifyPropertyValueFilter(inspector, view) {
+  await setSearchFilter(view, SEARCH);
 
-  let rule = getRuleViewRuleEditor(view, 1).rule;
-  let propEditor = rule.textProps[0].editor;
-  let computed = propEditor.computed;
-  let editor = yield focusEditableField(view, propEditor.valueSpan);
+  const rule = getRuleViewRuleEditor(view, 1).rule;
+  const propEditor = rule.textProps[0].editor;
+  const computed = propEditor.computed;
+  const editor = await focusEditableField(view, propEditor.valueSpan);
 
   info("Check that the correct rules are visible");
   is(rule.selectorText, "#testid", "Second rule is #testid.");
@@ -42,12 +42,12 @@ function* testModifyPropertyValueFilter(inspector, view) {
     .contains("ruleview-highlight"),
     "top text property is correctly highlighted.");
 
-  let onBlur = once(editor.input, "blur");
-  let onModification = view.once("ruleview-changed");
+  const onBlur = once(editor.input, "blur");
+  const onModification = view.once("ruleview-changed");
   EventUtils.sendString("4px 0px", view.styleWindow);
-  EventUtils.synthesizeKey("VK_RETURN", {});
-  yield onBlur;
-  yield onModification;
+  EventUtils.synthesizeKey("KEY_Enter");
+  await onBlur;
+  await onModification;
 
   ok(propEditor.container.classList.contains("ruleview-highlight"),
     "margin text property is correctly highlighted.");

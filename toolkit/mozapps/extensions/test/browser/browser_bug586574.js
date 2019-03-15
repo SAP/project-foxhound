@@ -27,7 +27,7 @@ registerCleanupFunction(() => {
   enableBackgroundUpdateTimer();
 });
 
-function test() {
+async function test() {
   waitForExplicitFinish();
 
   gProvider = new MockProvider();
@@ -36,17 +36,16 @@ function test() {
     id: "addon1@tests.mozilla.org",
     name: "addon 1",
     version: "1.0",
-    applyBackgroundUpdates: AddonManager.AUTOUPDATE_DISABLE
+    applyBackgroundUpdates: AddonManager.AUTOUPDATE_DISABLE,
   }]);
 
-  open_manager("addons://list/extension", function(aWindow) {
-    gManagerWindow = aWindow;
+  let aWindow = await open_manager("addons://list/extension");
+  gManagerWindow = aWindow;
 
-    gUtilsBtn = gManagerWindow.document.getElementById("header-utils-btn");
-    gUtilsMenu = gManagerWindow.document.getElementById("utils-menu");
+  gUtilsBtn = gManagerWindow.document.getElementById("header-utils-btn");
+  gUtilsMenu = gManagerWindow.document.getElementById("utils-menu");
 
-    run_next_test();
-  });
+  run_next_test();
 }
 
 
@@ -110,7 +109,7 @@ add_test(function() {
         aAddon.applyBackgroundUpdates = AddonManager.AUTOUPDATE_DISABLE;
 
         wait_for_hide(run_next_test);
-      }
+      },
     };
     AddonManager.addAddonListener(listener);
 
@@ -229,7 +228,7 @@ add_test(function() {
         aAddon.applyBackgroundUpdates = AddonManager.AUTOUPDATE_DISABLE;
 
         wait_for_hide(run_next_test);
-      }
+      },
     };
     AddonManager.addAddonListener(listener);
 

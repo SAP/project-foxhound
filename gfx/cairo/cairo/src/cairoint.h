@@ -541,6 +541,9 @@ struct _cairo_font_face_backend {
 			   const cairo_matrix_t		*font_matrix,
 			   const cairo_matrix_t		*ctm,
 			   const cairo_font_options_t	*options);
+
+    void (*lock) (void *font_face);
+    void (*unlock) (void *font_face);
 };
 
 extern const cairo_private struct _cairo_font_face_backend _cairo_user_font_face_backend;
@@ -2473,6 +2476,7 @@ slim_hidden_proto (cairo_scaled_font_get_ctm);
 slim_hidden_proto (cairo_scaled_font_get_font_face);
 slim_hidden_proto (cairo_scaled_font_get_font_matrix);
 slim_hidden_proto (cairo_scaled_font_get_font_options);
+slim_hidden_proto (cairo_scaled_font_get_hint_metrics);
 slim_hidden_proto (cairo_scaled_font_glyph_extents);
 slim_hidden_proto_no_warn (cairo_scaled_font_reference);
 slim_hidden_proto (cairo_scaled_font_status);

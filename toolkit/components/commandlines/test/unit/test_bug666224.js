@@ -1,5 +1,5 @@
 function run_test() {
-    var cmdLine = Components.classes["@mozilla.org/toolkit/command-line;1"].createInstance(Components.interfaces.nsICommandLine);
+    var cmdLine = Cu.createCommandLine();
     try {
         cmdLine.getArgument(cmdLine.length);
     } catch (e) {}

@@ -10,6 +10,7 @@
 
 html {
   background: -moz-Dialog;
+  color: -moz-DialogText;
   font: message-box;
 }
 
@@ -31,6 +32,50 @@ div.section {
   border: 1px solid ThreeDShadow;
   border-radius: 10px;
   background: -moz-Field;
+  color: -moz-FieldText;
+}
+
+div.outputContainer {
+  display: flex;
+}
+
+div.sections {
+  flex: 1;
+  min-width: 0;
+}
+
+div.sidebar {
+  flex: 0 0 max-content;
+  margin-left: 1em;
+}
+
+div.sidebarContents {
+  position: sticky;
+  top: 0.5em;
+}
+
+div.sidebarItem {
+  padding: 0.5em;
+  margin: 1em 0em;
+  border: 1px solid ThreeDShadow;
+  border-radius: 10px;
+  background: -moz-Field;
+  color: -moz-FieldText;
+  -moz-user-select: none;  /* no need to include this when cutting+pasting */
+}
+
+input.filterInput {
+  width: calc(100% - 1em);
+}
+
+ul.index {
+  list-style-position: inside;
+  margin: 0;
+  padding: 0;
+}
+
+ul.index > li {
+  padding-left: 0.5em;
 }
 
 div.opsRow {
@@ -40,10 +85,11 @@ div.opsRow {
   border: 1px solid ThreeDShadow;
   border-radius: 10px;
   background: -moz-Field;
+  color: -moz-FieldText;
   display: inline-block;
 }
 
-div.opsRowLabel {
+div.opsRowLabel, div.sidebarLabel {
   display: block;
   margin-bottom: 0.2em;
   font-weight: bold;
@@ -66,7 +112,6 @@ h1 {
 }
 
 h2 {
-  background: #ddd;
   padding-left: .1em;
 }
 
@@ -80,35 +125,22 @@ a.upDownArrow {
   -moz-user-select: none;  /* no need to include this when cutting+pasting */
 }
 
-.accuracyWarning {
-  color: #d22;
-}
-
-.badInputWarning {
-  color: #f00;
+.accuracyWarning, .badInputWarning, .invalid {
+  /*
+   * Technically this should be used with the default background colour,
+   * instead we're using the default field background colour,
+   * I hope this will be okay.
+   */
+  color: -moz-activehyperlinktext;
 }
 
 .treeline {
-  color: #888;
+  color: -moz-FieldText;
+  opacity: 0.5;
 }
 
 .mrValue {
   font-weight: bold;
-  color: #400;
-}
-
-.mrPerc {
-}
-
-.mrSep {
-}
-
-.mrName {
-  color: #004;
-}
-
-.mrNote {
-  color: #604;
 }
 
 .hasKids {
@@ -141,14 +173,8 @@ a.upDownArrow {
   display: none;
 }
 
-.invalid {
-  color: #fff;
-  background-color: #f00;
-}
-
 /* Desktop-specific parts go here. */
 
 .hasKids:hover {
   text-decoration: underline;
 }
-

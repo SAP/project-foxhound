@@ -8,12 +8,13 @@
 #define mozilla_mscom_Handler_h
 
 #if defined(MOZILLA_INTERNAL_API)
-#error This code is NOT for internal Gecko use!
-#endif // defined(MOZILLA_INTERNAL_API)
+#  error This code is NOT for internal Gecko use!
+#endif  // defined(MOZILLA_INTERNAL_API)
 
 #include <objidl.h>
 
 #include "mozilla/mscom/Aggregation.h"
+#include "mozilla/NotNull.h"
 #include "mozilla/RefPtr.h"
 
 /* WARNING! The code in this file may be loaded into the address spaces of other
@@ -23,9 +24,8 @@
 namespace mozilla {
 namespace mscom {
 
-class Handler : public IMarshal
-{
-public:
+class Handler : public IMarshal {
+ public:
   // IMarshal
   STDMETHODIMP GetUnmarshalClass(REFIID riid, void* pv, DWORD dwDestContext,
                                  void* pvDestContext, DWORD mshlflags,
@@ -51,18 +51,23 @@ public:
    * @param aIid Interface requested, similar to IUnknown::QueryInterface
    * @param aOutInterface Outparam for the resulting interface to return to the
    *                      client.
-   * @return The usual HRESULT codes similarly to IUnknown::QueryInterface
+   * @return The usual HRESULT codes similarly to IUnknown::QueryInterface.
+   *         If E_NOINTERFACE is returned, the proxy will be queried.
+   *         If the handler is certain that this interface is not available,
+   *         it can return S_FALSE to avoid querying the proxy. This will be
+   *         translated to E_NOINTERFACE before it is returned to the client.
    */
   virtual HRESULT QueryHandlerInterface(IUnknown* aProxyUnknown, REFIID aIid,
                                         void** aOutInterface) = 0;
   /**
    * Called when the implementer should deserialize data in aStream.
    * @return S_OK on success;
-   *         S_FALSE if the deserialization was successful but there was no data;
-   *         HRESULT error code otherwise.
+   *         S_FALSE if the deserialization was successful but there was no
+   * data; HRESULT error code otherwise.
    */
-  virtual HRESULT ReadHandlerPayload(IStream* aStream, REFIID aIid)
-  { return S_FALSE; }
+  virtual HRESULT ReadHandlerPayload(IStream* aStream, REFIID aIid) {
+    return S_FALSE;
+  }
 
   /**
    * Unfortunately when COM marshals a proxy, it doesn't implicitly marshal
@@ -80,11 +85,15 @@ public:
    */
   virtual REFIID MarshalAs(REFIID aRequestedIid) { return aRequestedIid; }
 
+  virtual HRESULT GetMarshalInterface(REFIID aMarshalAsIid,
+                                      NotNull<IUnknown*> aProxy,
+                                      NotNull<IID*> aOutIid,
+                                      NotNull<IUnknown**> aOutUnk);
+
   /**
    * Called when the implementer must provide the size of the payload.
    */
-  virtual HRESULT GetHandlerPayloadSize(REFIID aIid, DWORD* aOutPayloadSize)
-  {
+  virtual HRESULT GetHandlerPayloadSize(REFIID aIid, DWORD* aOutPayloadSize) {
     if (!aOutPayloadSize) {
       return E_INVALIDARG;
     }
@@ -95,8 +104,7 @@ public:
   /**
    * Called when the implementer should serialize the payload data into aStream.
    */
-  virtual HRESULT WriteHandlerPayload(IStream* aStream, REFIID aIid)
-  {
+  virtual HRESULT WriteHandlerPayload(IStream* aStream, REFIID aIid) {
     return S_OK;
   }
 
@@ -105,23 +113,22 @@ public:
   static HRESULT Register(REFCLSID aClsid);
   static HRESULT Unregister(REFCLSID aClsid);
 
-protected:
-  Handler(IUnknown* aOuter, HRESULT& aResult);
+ protected:
+  Handler(IUnknown* aOuter, HRESULT* aResult);
   virtual ~Handler() {}
   bool HasPayload() const { return mHasPayload; }
   IUnknown* GetOuter() const { return mOuter; }
 
-private:
-  ULONG             mRefCnt;
-  IUnknown*         mOuter;
-  RefPtr<IUnknown>  mInnerUnk;
-  IMarshal*         mUnmarshal; // WEAK
-  bool              mHasPayload;
+ private:
+  ULONG mRefCnt;
+  IUnknown* mOuter;
+  RefPtr<IUnknown> mInnerUnk;
+  IMarshal* mUnmarshal;  // WEAK
+  bool mHasPayload;
   DECLARE_AGGREGATABLE(Handler);
 };
 
-} // namespace mscom
-} // namespace mozilla
+}  // namespace mscom
+}  // namespace mozilla
 
-#endif // mozilla_mscom_Handler_h
-
+#endif  // mozilla_mscom_Handler_h

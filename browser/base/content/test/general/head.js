@@ -1,24 +1,18 @@
-/* eslint-env mozilla/frame-script */
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
 
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "Promise",
-  "resource://gre/modules/Promise.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Task",
-  "resource://gre/modules/Task.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
+ChromeUtils.defineModuleGetter(this, "PlacesUtils",
   "resource://gre/modules/PlacesUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PlacesTestUtils",
+ChromeUtils.defineModuleGetter(this, "PlacesTestUtils",
   "resource://testing-common/PlacesTestUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "TabCrashHandler",
+ChromeUtils.defineModuleGetter(this, "BrowserTestUtils",
+  "resource://testing-common/BrowserTestUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "TabCrashHandler",
   "resource:///modules/ContentCrashHandlers.jsm");
 
 /**
  * Wait for a <notification> to be closed then call the specified callback.
  */
 function waitForNotificationClose(notification, cb) {
-  let parent = notification.parentNode;
-
   let observer = new MutationObserver(function onMutatations(mutations) {
     for (let mutation of mutations) {
       for (let i = 0; i < mutation.removedNodes.length; i++) {
@@ -31,27 +25,25 @@ function waitForNotificationClose(notification, cb) {
       }
     }
   });
-  observer.observe(parent, {childList: true});
+  observer.observe(notification.control.stack, {childList: true});
 }
 
 function closeAllNotifications() {
-  let notificationBox = document.getElementById("global-notificationbox");
-
-  if (!notificationBox || !notificationBox.currentNotification) {
+  if (!gNotificationBox.currentNotification) {
     return Promise.resolve();
   }
 
-  let deferred = Promise.defer();
-  for (let notification of notificationBox.allNotifications) {
-    waitForNotificationClose(notification, function() {
-      if (notificationBox.allNotifications.length === 0) {
-        deferred.resolve();
-      }
-    });
-    notification.close();
-  }
+  return new Promise(resolve => {
+    for (let notification of gNotificationBox.allNotifications) {
+      waitForNotificationClose(notification, function() {
+        if (gNotificationBox.allNotifications.length === 0) {
+          resolve();
+        }
+      });
+      notification.close();
+    }
 
-  return deferred.promise;
+  });
 }
 
 function whenDelayedStartupFinished(aWindow, aCallback) {
@@ -60,26 +52,7 @@ function whenDelayedStartupFinished(aWindow, aCallback) {
       Services.obs.removeObserver(observer, aTopic);
       executeSoon(aCallback);
     }
-  }, "browser-delayed-startup-finished", false);
-}
-
-function updateTabContextMenu(tab, onOpened) {
-  let menu = document.getElementById("tabContextMenu");
-  if (!tab)
-    tab = gBrowser.selectedTab;
-  var evt = new Event("");
-  tab.dispatchEvent(evt);
-  menu.openPopup(tab, "end_after", 0, 0, true, false, evt);
-  is(TabContextMenu.contextTab, tab, "TabContextMenu context is the expected tab");
-  const onFinished = () => menu.hidePopup();
-  if (onOpened) {
-    return Task.spawn(function*() {
-      yield onOpened();
-      onFinished();
-    });
-  }
-  onFinished();
-  return Promise.resolve();
+  }, "browser-delayed-startup-finished");
 }
 
 function openToolbarCustomizationUI(aCallback, aBrowserWin) {
@@ -90,7 +63,7 @@ function openToolbarCustomizationUI(aCallback, aBrowserWin) {
 
   aBrowserWin.gNavToolbox.addEventListener("customizationready", function() {
     executeSoon(function() {
-      aCallback(aBrowserWin)
+      aCallback(aBrowserWin);
     });
   }, {once: true});
 }
@@ -127,9 +100,9 @@ function waitForCondition(condition, nextTest, errorMsg, retryTimes) {
 }
 
 function promiseWaitForCondition(aConditionFn) {
-  let deferred = Promise.defer();
-  waitForCondition(aConditionFn, deferred.resolve, "Condition didn't pass.");
-  return deferred.promise;
+  return new Promise(resolve => {
+    waitForCondition(aConditionFn, resolve, "Condition didn't pass.");
+  });
 }
 
 function promiseWaitForEvent(object, eventName, capturing = false, chrome = false) {
@@ -189,9 +162,15 @@ function setTestPluginEnabledState(newEnabledState, pluginName) {
 }
 
 function pushPrefs(...aPrefs) {
-  let deferred = Promise.defer();
-  SpecialPowers.pushPrefEnv({"set": aPrefs}, deferred.resolve);
-  return deferred.promise;
+  return new Promise(resolve => {
+    SpecialPowers.pushPrefEnv({"set": aPrefs}, resolve);
+  });
+}
+
+function popPrefs() {
+  return new Promise(resolve => {
+    SpecialPowers.popPrefEnv(resolve);
+  });
 }
 
 function updateBlocklist(aCallback) {
@@ -201,7 +180,7 @@ function updateBlocklist(aCallback) {
     Services.obs.removeObserver(observer, "blocklist-updated");
     SimpleTest.executeSoon(aCallback);
   };
-  Services.obs.addObserver(observer, "blocklist-updated", false);
+  Services.obs.addObserver(observer, "blocklist-updated");
   blocklistNotifier.notify(null);
 }
 
@@ -217,115 +196,46 @@ function resetBlocklist() {
   Services.prefs.setCharPref("extensions.blocklist.url", _originalTestBlocklistURL);
 }
 
-function whenNewWindowLoaded(aOptions, aCallback) {
-  let win = OpenBrowserWindow(aOptions);
-  win.addEventListener("load", function() {
-    aCallback(win);
-  }, {once: true});
-}
-
-function promiseWindowWillBeClosed(win) {
-  return new Promise((resolve, reject) => {
-    Services.obs.addObserver(function observe(subject, topic) {
-      if (subject == win) {
-        Services.obs.removeObserver(observe, topic);
-        resolve();
-      }
-    }, "domwindowclosed", false);
-  });
-}
-
 function promiseWindowClosed(win) {
-  let promise = promiseWindowWillBeClosed(win);
+  let promise = BrowserTestUtils.domWindowClosed(win);
   win.close();
   return promise;
 }
 
 function promiseOpenAndLoadWindow(aOptions, aWaitForDelayedStartup = false) {
-  let deferred = Promise.defer();
-  let win = OpenBrowserWindow(aOptions);
-  if (aWaitForDelayedStartup) {
-    Services.obs.addObserver(function onDS(aSubject, aTopic, aData) {
-      if (aSubject != win) {
-        return;
-      }
-      Services.obs.removeObserver(onDS, "browser-delayed-startup-finished");
-      deferred.resolve(win);
-    }, "browser-delayed-startup-finished", false);
+  return new Promise(resolve => {
+    let win = OpenBrowserWindow(aOptions);
+    if (aWaitForDelayedStartup) {
+      Services.obs.addObserver(function onDS(aSubject, aTopic, aData) {
+        if (aSubject != win) {
+          return;
+        }
+        Services.obs.removeObserver(onDS, "browser-delayed-startup-finished");
+        resolve(win);
+      }, "browser-delayed-startup-finished");
 
-  } else {
-    win.addEventListener("load", function() {
-      deferred.resolve(win);
-    }, {once: true});
-  }
-  return deferred.promise;
-}
-
-/**
- * Waits for all pending async statements on the default connection, before
- * proceeding with aCallback.
- *
- * @param aCallback
- *        Function to be called when done.
- * @param aScope
- *        Scope for the callback.
- * @param aArguments
- *        Arguments array for the callback.
- *
- * @note The result is achieved by asynchronously executing a query requiring
- *       a write lock.  Since all statements on the same connection are
- *       serialized, the end of this write operation means that all writes are
- *       complete.  Note that WAL makes so that writers don't block readers, but
- *       this is a problem only across different connections.
- */
-function waitForAsyncUpdates(aCallback, aScope, aArguments) {
-  let scope = aScope || this;
-  let args = aArguments || [];
-  let db = PlacesUtils.history.QueryInterface(Ci.nsPIPlacesDatabase)
-                              .DBConnection;
-  let begin = db.createAsyncStatement("BEGIN EXCLUSIVE");
-  begin.executeAsync();
-  begin.finalize();
-
-  let commit = db.createAsyncStatement("COMMIT");
-  commit.executeAsync({
-    handleResult() {},
-    handleError() {},
-    handleCompletion(aReason) {
-      aCallback.apply(scope, args);
+    } else {
+      win.addEventListener("load", function() {
+        resolve(win);
+      }, {once: true});
     }
   });
-  commit.finalize();
 }
 
-/**
- * Asynchronously check a url is visited.
-
- * @param aURI The URI.
- * @param aExpectedValue The expected value.
- * @return {Promise}
- * @resolves When the check has been added successfully.
- * @rejects JavaScript exception.
- */
-function promiseIsURIVisited(aURI, aExpectedValue) {
-  let deferred = Promise.defer();
-  PlacesUtils.asyncHistory.isURIVisited(aURI, function(unused, aIsVisited) {
-    deferred.resolve(aIsVisited);
-  });
-
-  return deferred.promise;
-}
-
-function whenNewTabLoaded(aWindow, aCallback) {
+async function whenNewTabLoaded(aWindow, aCallback) {
   aWindow.BrowserOpenTab();
 
+  let expectedURL = aboutNewTabService.newTabURL;
   let browser = aWindow.gBrowser.selectedBrowser;
-  if (browser.contentDocument.readyState === "complete") {
-    aCallback();
-    return;
+  let loadPromise = BrowserTestUtils.browserLoaded(browser, false, expectedURL);
+  let alreadyLoaded = await ContentTask.spawn(browser, expectedURL, url => {
+    let doc = content.document;
+    return doc && doc.readyState === "complete" && doc.location.href == url;
+  });
+  if (!alreadyLoaded) {
+    await loadPromise;
   }
-
-  whenTabLoaded(aWindow.gBrowser.selectedTab, aCallback);
+  aCallback();
 }
 
 function whenTabLoaded(aTab, aCallback) {
@@ -333,154 +243,10 @@ function whenTabLoaded(aTab, aCallback) {
 }
 
 function promiseTabLoaded(aTab) {
-  let deferred = Promise.defer();
-  whenTabLoaded(aTab, deferred.resolve);
-  return deferred.promise;
-}
-
-/**
- * Ensures that the specified URIs are either cleared or not.
- *
- * @param aURIs
- *        Array of page URIs
- * @param aShouldBeCleared
- *        True if each visit to the URI should be cleared, false otherwise
- */
-function promiseHistoryClearedState(aURIs, aShouldBeCleared) {
-  let deferred = Promise.defer();
-  let callbackCount = 0;
-  let niceStr = aShouldBeCleared ? "no longer" : "still";
-  function callbackDone() {
-    if (++callbackCount == aURIs.length)
-      deferred.resolve();
-  }
-  aURIs.forEach(function(aURI) {
-    PlacesUtils.asyncHistory.isURIVisited(aURI, function(uri, isVisited) {
-      is(isVisited, !aShouldBeCleared,
-         "history visit " + uri.spec + " should " + niceStr + " exist");
-      callbackDone();
-    });
-  });
-
-  return deferred.promise;
-}
-
-/**
- * Waits for the next top-level document load in the current browser.  The URI
- * of the document is compared against aExpectedURL.  The load is then stopped
- * before it actually starts.
- *
- * @param aExpectedURL
- *        The URL of the document that is expected to load.
- * @param aStopFromProgressListener
- *        Whether to cancel the load directly from the progress listener. Defaults to true.
- *        If you're using this method to avoid hitting the network, you want the default (true).
- *        However, the browser UI will behave differently for loads stopped directly from
- *        the progress listener (effectively in the middle of a call to loadURI) and so there
- *        are cases where you may want to avoid stopping the load directly from within the
- *        progress listener callback.
- * @return promise
- */
-function waitForDocLoadAndStopIt(aExpectedURL, aBrowser = gBrowser.selectedBrowser, aStopFromProgressListener = true) {
-  function content_script(contentStopFromProgressListener) {
-    let { interfaces: Ci, utils: Cu } = Components;
-    Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-    let wp = docShell.QueryInterface(Ci.nsIWebProgress);
-
-    function stopContent(now, uri) {
-      if (now) {
-        /* Hammer time. */
-        content.stop();
-
-        /* Let the parent know we're done. */
-        sendAsyncMessage("Test:WaitForDocLoadAndStopIt", { uri });
-      } else {
-        setTimeout(stopContent.bind(null, true, uri), 0);
-      }
-    }
-
-    let progressListener = {
-      onStateChange(webProgress, req, flags, status) {
-        dump("waitForDocLoadAndStopIt: onStateChange " + flags.toString(16) + ": " + req.name + "\n");
-
-        if (webProgress.isTopLevel &&
-            flags & Ci.nsIWebProgressListener.STATE_START) {
-          wp.removeProgressListener(progressListener);
-
-          let chan = req.QueryInterface(Ci.nsIChannel);
-          dump(`waitForDocLoadAndStopIt: Document start: ${chan.URI.spec}\n`);
-
-          stopContent(contentStopFromProgressListener, chan.originalURI.spec);
-        }
-      },
-      QueryInterface: XPCOMUtils.generateQI(["nsISupportsWeakReference"])
-    };
-    wp.addProgressListener(progressListener, wp.NOTIFY_STATE_WINDOW);
-
-    /**
-     * As |this| is undefined and we can't extend |docShell|, adding an unload
-     * event handler is the easiest way to ensure the weakly referenced
-     * progress listener is kept alive as long as necessary.
-     */
-    addEventListener("unload", function() {
-      try {
-        wp.removeProgressListener(progressListener);
-      } catch (e) { /* Will most likely fail. */ }
-    });
-  }
-
-  return new Promise((resolve, reject) => {
-    function complete({ data }) {
-      is(data.uri, aExpectedURL, "waitForDocLoadAndStopIt: The expected URL was loaded");
-      mm.removeMessageListener("Test:WaitForDocLoadAndStopIt", complete);
-      resolve();
-    }
-
-    let mm = aBrowser.messageManager;
-    mm.loadFrameScript("data:,(" + content_script.toString() + ")(" + aStopFromProgressListener + ");", true);
-    mm.addMessageListener("Test:WaitForDocLoadAndStopIt", complete);
-    info("waitForDocLoadAndStopIt: Waiting for URL: " + aExpectedURL);
-  });
-}
-
-/**
- * Waits for the next load to complete in any browser or the given browser.
- * If a <tabbrowser> is given it waits for a load in any of its browsers.
- *
- * @return promise
- */
-function waitForDocLoadComplete(aBrowser = gBrowser) {
   return new Promise(resolve => {
-    let listener = {
-      onStateChange(webProgress, req, flags, status) {
-        let docStop = Ci.nsIWebProgressListener.STATE_IS_NETWORK |
-                      Ci.nsIWebProgressListener.STATE_STOP;
-        info("Saw state " + flags.toString(16) + " and status " + status.toString(16));
-
-        // When a load needs to be retargetted to a new process it is cancelled
-        // with NS_BINDING_ABORTED so ignore that case
-        if ((flags & docStop) == docStop && status != Cr.NS_BINDING_ABORTED) {
-          aBrowser.removeProgressListener(this);
-          waitForDocLoadComplete.listeners.delete(this);
-
-          let chan = req.QueryInterface(Ci.nsIChannel);
-          info("Browser loaded " + chan.originalURI.spec);
-          resolve();
-        }
-      },
-      QueryInterface: XPCOMUtils.generateQI([Ci.nsIWebProgressListener,
-                                             Ci.nsISupportsWeakReference])
-    };
-    aBrowser.addProgressListener(listener);
-    waitForDocLoadComplete.listeners.add(listener);
-    info("Waiting for browser load");
+    whenTabLoaded(aTab, resolve);
   });
 }
-
-// Keep a set of progress listeners for waitForDocLoadComplete() to make sure
-// they're not GC'ed before we saw the page load.
-waitForDocLoadComplete.listeners = new Set();
-registerCleanupFunction(() => waitForDocLoadComplete.listeners.clear());
 
 var FullZoomHelper = {
 
@@ -508,7 +274,7 @@ var FullZoomHelper = {
       Services.obs.addObserver(function obs(subj, topic, data) {
         Services.obs.removeObserver(obs, topic);
         resolve();
-      }, "browser-fullZoom:location-change", false);
+      }, "browser-fullZoom:location-change");
     });
   },
 
@@ -529,7 +295,7 @@ var FullZoomHelper = {
           resolve();
       });
 
-      tab.linkedBrowser.loadURI(url);
+      BrowserTestUtils.loadURI(tab.linkedBrowser, url);
     });
   },
 
@@ -556,11 +322,11 @@ var FullZoomHelper = {
       let didPs = false;
       let didZoom = false;
 
-      gBrowser.addEventListener("pageshow", function(event) {
+      BrowserTestUtils.waitForContentEvent(gBrowser.selectedBrowser, "pageshow", true).then(() => {
         didPs = true;
         if (didZoom)
           resolve();
-      }, {capture: true, once: true});
+      });
 
       if (direction == this.BACK)
         gBrowser.goBack();
@@ -638,7 +404,7 @@ function is_hidden(element) {
   if (style.visibility != "visible")
     return true;
   if (style.display == "-moz-popup")
-    return ["hiding", "closed"].indexOf(element.state) != -1;
+    return ["hiding", "closed"].includes(element.state);
 
   // Hiding a parent element will hide all its children
   if (element.parentNode != element.ownerDocument)
@@ -647,25 +413,9 @@ function is_hidden(element) {
   return false;
 }
 
-function is_visible(element) {
-  var style = element.ownerGlobal.getComputedStyle(element);
-  if (style.display == "none")
-    return false;
-  if (style.visibility != "visible")
-    return false;
-  if (style.display == "-moz-popup" && element.state != "open")
-    return false;
-
-  // Hiding a parent element will hide all its children
-  if (element.parentNode != element.ownerDocument)
-    return is_visible(element.parentNode);
-
-  return true;
-}
-
 function is_element_visible(element, msg) {
   isnot(element, null, "Element should not be null, when checking visibility");
-  ok(is_visible(element), msg || "Element should be visible");
+  ok(BrowserTestUtils.is_visible(element), msg || "Element should be visible");
 }
 
 function is_element_hidden(element, msg) {
@@ -673,27 +423,12 @@ function is_element_hidden(element, msg) {
   ok(is_hidden(element), msg || "Element should be hidden");
 }
 
-function promisePopupEvent(popup, eventSuffix) {
-  let endState = {shown: "open", hidden: "closed"}[eventSuffix];
-
-  if (popup.state == endState)
-    return Promise.resolve();
-
-  let eventType = "popup" + eventSuffix;
-  let deferred = Promise.defer();
-  popup.addEventListener(eventType, function(event) {
-    deferred.resolve();
-  }, {once: true});
-
-  return deferred.promise;
-}
-
 function promisePopupShown(popup) {
-  return promisePopupEvent(popup, "shown");
+  return BrowserTestUtils.waitForPopupEvent(popup, "shown");
 }
 
 function promisePopupHidden(popup) {
-  return promisePopupEvent(popup, "hidden");
+  return BrowserTestUtils.waitForPopupEvent(popup, "hidden");
 }
 
 function promiseNotificationShown(notification) {
@@ -707,84 +442,26 @@ function promiseNotificationShown(notification) {
 }
 
 /**
- * Allows waiting for an observer notification once.
- *
- * @param aTopic
- *        Notification topic to observe.
- *
- * @return {Promise}
- * @resolves An object with subject and data properties from the observed
- *           notification.
- * @rejects Never.
- */
-function promiseTopicObserved(aTopic) {
-  return new Promise((resolve) => {
-    Services.obs.addObserver(
-      function PTO_observe(aSubject, aTopic2, aData) {
-        Services.obs.removeObserver(PTO_observe, aTopic2);
-        resolve({subject: aSubject, data: aData});
-      }, aTopic, false);
-  });
-}
-
-function promiseNewSearchEngine(basename) {
-  return new Promise((resolve, reject) => {
-    info("Waiting for engine to be added: " + basename);
-    let url = getRootDirectory(gTestPath) + basename;
-    Services.search.addEngine(url, null, "", false, {
-      onSuccess(engine) {
-        info("Search engine added: " + basename);
-        registerCleanupFunction(() => Services.search.removeEngine(engine));
-        resolve(engine);
-      },
-      onError(errCode) {
-        Assert.ok(false, "addEngine failed with error code " + errCode);
-        reject();
-      },
-    });
-  });
-}
-
-/**
  * Resolves when a bookmark with the given uri is added.
  */
 function promiseOnBookmarkItemAdded(aExpectedURI) {
   return new Promise((resolve, reject) => {
-    let bookmarksObserver = {
-      onItemAdded(aItemId, aFolderId, aIndex, aItemType, aURI) {
-        info("Added a bookmark to " + aURI.spec);
-        PlacesUtils.bookmarks.removeObserver(bookmarksObserver);
-        if (aURI.equals(aExpectedURI)) {
-          resolve();
-        } else {
-          reject(new Error("Added an unexpected bookmark"));
-        }
-      },
-      onBeginUpdateBatch() {},
-      onEndUpdateBatch() {},
-      onItemRemoved() {},
-      onItemChanged() {},
-      onItemVisited() {},
-      onItemMoved() {},
-      QueryInterface: XPCOMUtils.generateQI([
-        Ci.nsINavBookmarkObserver,
-      ])
+    let listener = events => {
+      is(events.length, 1, "Should only receive one event.");
+      info("Added a bookmark to " + events[0].url);
+      PlacesUtils.observers.removeListener(["bookmark-added"], listener);
+      if (events[0].url == aExpectedURI.spec) {
+        resolve();
+      } else {
+        reject(new Error("Added an unexpected bookmark"));
+      }
     };
     info("Waiting for a bookmark to be added");
-    PlacesUtils.bookmarks.addObserver(bookmarksObserver, false);
+    PlacesUtils.observers.addListener(["bookmark-added"], listener);
   });
 }
 
-function promiseErrorPageLoaded(browser) {
-  return new Promise(resolve => {
-    browser.addEventListener("DOMContentLoaded", function onLoad() {
-      browser.removeEventListener("DOMContentLoaded", onLoad, false, true);
-      resolve();
-    }, false, true);
-  });
-}
-
-function* loadBadCertPage(url) {
+async function loadBadCertPage(url) {
   const EXCEPTION_DIALOG_URI = "chrome://pippki/content/exceptionDialog.xul";
   let exceptionDialogResolved = new Promise(function(resolve) {
     // When the certificate exception dialog has opened, click the button to add
@@ -800,70 +477,38 @@ function* loadBadCertPage(url) {
             resolve();
           });
         }
-      }
+      },
     };
 
     Services.obs.addObserver(certExceptionDialogObserver,
-                             "cert-exception-ui-ready", false);
+                             "cert-exception-ui-ready");
   });
 
   let loaded = BrowserTestUtils.waitForErrorPage(gBrowser.selectedBrowser);
-  yield BrowserTestUtils.loadURI(gBrowser.selectedBrowser, url);
-  yield loaded;
+  await BrowserTestUtils.loadURI(gBrowser.selectedBrowser, url);
+  await loaded;
 
-  yield ContentTask.spawn(gBrowser.selectedBrowser, null, function*() {
+  await ContentTask.spawn(gBrowser.selectedBrowser, null, async function() {
     content.document.getElementById("exceptionDialogButton").click();
   });
-  yield exceptionDialogResolved;
-  yield BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
+  if (!Services.prefs.getBoolPref("browser.security.newcerterrorpage.enabled", false)) {
+    await exceptionDialogResolved;
+  }
+  await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
 }
 
 // Utility function to get a handle on the certificate exception dialog.
 // Modified from toolkit/components/passwordmgr/test/prompt_common.js
 function getCertExceptionDialog(aLocation) {
-  let enumerator = Services.wm.getXULWindowEnumerator(null);
-
-  while (enumerator.hasMoreElements()) {
-    let win = enumerator.getNext();
-    let windowDocShell = win.QueryInterface(Ci.nsIXULWindow).docShell;
-
-    let containedDocShells = windowDocShell.getDocShellEnumerator(
-                                      Ci.nsIDocShellTreeItem.typeChrome,
-                                      Ci.nsIDocShell.ENUMERATE_FORWARDS);
-    while (containedDocShells.hasMoreElements()) {
-      // Get the corresponding document for this docshell
-      let childDocShell = containedDocShells.getNext();
-      let childDoc = childDocShell.QueryInterface(Ci.nsIDocShell)
-                                  .contentViewer
-                                  .DOMDocument;
-
-      if (childDoc.location.href == aLocation) {
-        return childDoc;
+  for (let {docShell} of Services.wm.getXULWindowEnumerator(null)) {
+    let containedDocShells = docShell.getDocShellEnumerator(
+                                      docShell.typeChrome,
+                                      docShell.ENUMERATE_FORWARDS);
+    for (let {domWindow} of containedDocShells) {
+      if (domWindow.location.href == aLocation) {
+        return domWindow.document;
       }
     }
   }
   return undefined;
-}
-
-function setupRemoteClientsFixture(fixture) {
-  let oldRemoteClientsGetter =
-    Object.getOwnPropertyDescriptor(gFxAccounts, "remoteClients").get;
-
-  Object.defineProperty(gFxAccounts, "remoteClients", {
-    get() { return fixture; }
-  });
-  return oldRemoteClientsGetter;
-}
-
-function restoreRemoteClients(getter) {
-  Object.defineProperty(gFxAccounts, "remoteClients", {
-    get: getter
-  });
-}
-
-function* openMenuItemSubmenu(id) {
-  let menuPopup = document.getElementById(id).menupopup;
-  let menuPopupPromise = BrowserTestUtils.waitForEvent(menuPopup, "popupshown");
-  menuPopup.showPopup();
-  yield menuPopupPromise;
 }

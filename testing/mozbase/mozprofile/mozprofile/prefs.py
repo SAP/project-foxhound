@@ -5,13 +5,15 @@
 """
 user preferences
 """
+from __future__ import absolute_import, print_function
 
 import json
 import mozfile
 import os
 import tokenize
-from ConfigParser import SafeConfigParser as ConfigParser
-from StringIO import StringIO
+
+from six.moves.configparser import SafeConfigParser as ConfigParser
+from six import StringIO, string_types
 
 __all__ = ('PreferencesReadError', 'Preferences')
 
@@ -63,7 +65,7 @@ class Preferences(object):
           with the ''s removed from both sides
         """
 
-        if not isinstance(value, basestring):
+        if not isinstance(value, string_types):
             return value  # no op
         quote = "'"
         if value == 'true':
@@ -145,8 +147,8 @@ class Preferences(object):
             values = prefs.values()
         else:
             raise PreferencesReadError("Malformed preferences: %s" % path)
-        types = (bool, basestring, int)
-        if [i for i in values if not [isinstance(i, j) for j in types]]:
+        types = (bool, string_types, int)
+        if [i for i in values if not any([isinstance(i, j) for j in types])]:
             raise PreferencesReadError("Only bool, string, and int values allowed")
         return prefs
 
@@ -166,6 +168,9 @@ class Preferences(object):
         lines = [i.strip() for i in mozfile.load(path).readlines()]
         _lines = []
         for line in lines:
+            # decode bytes in case of URL processing
+            if isinstance(line, bytes):
+                line = line.decode()
             if not line.startswith(pref_setter):
                 continue
             if '//' in line:
@@ -185,7 +190,7 @@ class Preferences(object):
         retval = []
 
         def pref(a, b):
-            if interpolation and isinstance(b, basestring):
+            if interpolation and isinstance(b, string_types):
                 b = b.format(**interpolation)
             retval.append((a, b))
         lines = [i.strip().rstrip(';') for i in string.split('\n') if i.strip()]
@@ -196,12 +201,12 @@ class Preferences(object):
             try:
                 eval(line, _globals, {})
             except SyntaxError:
-                print line
+                print(line)
                 raise
 
         # de-magic the marker
         for index, (key, value) in enumerate(retval):
-            if isinstance(value, basestring) and marker in value:
+            if isinstance(value, string_types) and marker in value:
                 retval[index] = (key, value.replace(marker, '//'))
 
         return retval
@@ -210,8 +215,8 @@ class Preferences(object):
     def write(cls, _file, prefs, pref_string='user_pref(%s, %s);'):
         """write preferences to a file"""
 
-        if isinstance(_file, basestring):
-            f = file(_file, 'a')
+        if isinstance(_file, string_types):
+            f = open(_file, 'a')
         else:
             f = _file
 
@@ -225,8 +230,8 @@ class Preferences(object):
 
         # write the preferences
         for _pref in _prefs:
-            print >> f, pref_string % _pref
+            print(pref_string % _pref, file=f)
 
         # close the file if opened internally
-        if isinstance(_file, basestring):
+        if isinstance(_file, string_types):
             f.close()

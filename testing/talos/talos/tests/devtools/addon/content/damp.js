@@ -1,421 +1,308 @@
-Components.utils.import("resource://devtools/client/framework/gDevTools.jsm");
-Components.utils.import("resource://gre/modules/Services.jsm");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm", {});
+const { XPCOMUtils } = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", {});
+const { AddonManager } = ChromeUtils.import("resource://gre/modules/AddonManager.jsm", {});
+const env = Cc["@mozilla.org/process/environment;1"].getService(Ci.nsIEnvironment);
 
-const {devtools} =
-  Components.utils.import("resource://devtools/shared/Loader.jsm", {});
-const { getActiveTab } = devtools.require("sdk/tabs/utils");
-const { getMostRecentBrowserWindow } = devtools.require("sdk/window/utils");
-const ThreadSafeChromeUtils = devtools.require("ThreadSafeChromeUtils");
-const {Task} = Cu.import("resource://gre/modules/Task.jsm", {});
+XPCOMUtils.defineLazyGetter(this, "require", function() {
+  let { require } =
+    ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
+  return require;
+});
 
-const webserver = Services.prefs.getCharPref("addon.test.damp.webserver");
+// Record allocation count in new subtests if DEBUG_DEVTOOLS_ALLOCATIONS is set to
+// "normal". Print allocation sites to stdout if DEBUG_DEVTOOLS_ALLOCATIONS is set to
+// "verbose".
+const DEBUG_ALLOCATIONS = env.get("DEBUG_DEVTOOLS_ALLOCATIONS");
 
-const SIMPLE_URL = webserver + "/tests/devtools/addon/content/pages/simple.html";
-const COMPLICATED_URL = webserver + "/tests/tp5n/bild.de/www.bild.de/index.html";
+// Maximum time spent in one test, in milliseconds
+const TEST_TIMEOUT = 5 * 60000;
 
-function Damp() {
-  // Path to the temp file where the heap snapshot file is saved. Set by
-  // saveHeapSnapshot and read by readHeapSnapshot.
-  this._heapSnapshotFilePath = null;
-  // HeapSnapshot instance. Set by readHeapSnapshot, used by takeCensus.
-  this._snapshot = null;
-
-  // Use the old console for now: https://bugzilla.mozilla.org/show_bug.cgi?id=1306780
-  Services.prefs.setBoolPref("devtools.webconsole.new-frontend-enabled", false);
+function getMostRecentBrowserWindow() {
+  return Services.wm.getMostRecentWindow("navigator:browser");
 }
 
-Damp.prototype = {
+let gmm = window.getGroupMessageManager("browsers");
 
-  addTab: function(url) {
-    return new Promise((resolve, reject) => {
-      let tab = this._win.gBrowser.selectedTab = this._win.gBrowser.addTab(url);
-      let browser = tab.linkedBrowser;
-      browser.addEventListener("load", function onload() {
-        browser.removeEventListener("load", onload, true);
-        resolve(tab);
-      }, true);
+const frameScript = "data:," + encodeURIComponent(`(${
+  function() {
+    addEventListener("load", function(event) {
+      let subframe = event.target != content.document;
+      sendAsyncMessage("browser-test-utils:loadEvent",
+        {subframe, url: event.target.documentURI});
+    }, true);
+  }
+})()`);
+
+gmm.loadFrameScript(frameScript, true);
+
+// This is duplicated from BrowserTestUtils.jsm
+function awaitBrowserLoaded(browser, includeSubFrames = false, wantLoad = null) {
+  // If browser belongs to tabbrowser-tab, ensure it has been
+  // inserted into the document.
+  let tabbrowser = browser.ownerGlobal.gBrowser;
+  if (tabbrowser && tabbrowser.getTabForBrowser) {
+    tabbrowser._insertBrowser(tabbrowser.getTabForBrowser(browser));
+  }
+
+  function isWanted(url) {
+    if (!wantLoad) {
+      return true;
+    } else if (typeof(wantLoad) == "function") {
+      return wantLoad(url);
+    }
+    // It's a string.
+    return wantLoad == url;
+  }
+
+  return new Promise(resolve => {
+    let mm = browser.ownerGlobal.messageManager;
+    mm.addMessageListener("browser-test-utils:loadEvent", function onLoad(msg) {
+      if (msg.target == browser && (!msg.data.subframe || includeSubFrames) &&
+          isWanted(msg.data.url)) {
+        mm.removeMessageListener("browser-test-utils:loadEvent", onLoad);
+        resolve(msg.data.url);
+      }
     });
+  });
+}
+
+/* globals res:true */
+
+function Damp() {}
+
+Damp.prototype = {
+  async garbageCollect() {
+    dump("Garbage collect\n");
+
+    // Minimize memory usage
+    // mimic miminizeMemoryUsage, by only flushing JS objects via GC.
+    // We don't want to flush all the cache like minimizeMemoryUsage,
+    // as it slow down next executions almost like a cold start.
+
+    // See minimizeMemoryUsage code to justify the 3 iterations and the setTimeout:
+    // https://searchfox.org/mozilla-central/rev/33c21c060b7f3a52477a73d06ebcb2bf313c4431/xpcom/base/nsMemoryReporterManager.cpp#2574-2585,2591-2594
+    for (let i = 0; i < 3; i++) {
+      // See minimizeMemoryUsage code here to justify the GC+CC+GC:
+      // https://searchfox.org/mozilla-central/rev/be78e6ea9b10b1f5b2b3b013f01d86e1062abb2b/dom/base/nsJSEnvironment.cpp#341-349
+      Cu.forceGC();
+      Cu.forceCC();
+      Cu.forceGC();
+      await new Promise(done => setTimeout(done, 0));
+    }
   },
 
-  closeCurrentTab: function() {
-    this._win.BrowserCloseTabOrWindow();
-    return this._win.gBrowser.selectedTab;
+  async ensureTalosParentProfiler() {
+    // TalosParentProfiler is part of TalosPowers, which is a separate WebExtension
+    // that may or may not already have finished loading at this point (unlike most
+    // Pageloader tests, Damp doesn't wait for Pageloader to find TalosPowers before
+    // running). getTalosParentProfiler is used to wait for TalosPowers to be around
+    // before continuing.
+    async function getTalosParentProfiler() {
+      try {
+        ChromeUtils.import("resource://talos-powers/TalosParentProfiler.jsm");
+        return TalosParentProfiler;
+      } catch (err) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        return getTalosParentProfiler();
+      }
+    }
+
+    this.TalosParentProfiler = await getTalosParentProfiler();
   },
 
-  reloadPage: function() {
-    let startReloadTimestamp = performance.now();
-    return new Promise((resolve, reject) => {
+  /**
+   * Helper to tell when a test start and when it is finished.
+   * It helps recording its duration, but also put markers for perf-html when profiling
+   * DAMP.
+   *
+   * When this method is called, the test is considered to be starting immediately
+   * When the test is over, the returned object's `done` method should be called.
+   *
+   * @param label String
+   *        Test title, displayed everywhere in PerfHerder, DevTools Perf Dashboard, ...
+   * @param record Boolean
+   *        Optional, if passed false, the test won't be recorded. It won't appear in
+   *        PerfHerder. Instead we will record perf-html markers and only print the
+   *        timings on stdout.
+   *
+   * @return object
+   *         With a `done` method, to be called whenever the test is finished running
+   *         and we should record its duration.
+   */
+  runTest(label, record = true) {
+    if (DEBUG_ALLOCATIONS) {
+      if (!this.allocationTracker) {
+        this.allocationTracker = this.startAllocationTracker();
+      }
+      // Flush the current allocations before running the test
+      this.allocationTracker.flushAllocations();
+    }
+
+    let startLabel = label + ".start";
+    performance.mark(startLabel);
+    let start = performance.now();
+
+    return {
+      done: () => {
+        let end = performance.now();
+        let duration = end - start;
+        performance.measure(label, startLabel);
+        if (record) {
+          this._results.push({
+            name: label,
+            value: duration,
+          });
+        } else {
+          dump(`'${label}' took ${duration}ms.\n`);
+        }
+
+        if (DEBUG_ALLOCATIONS == "normal" && record) {
+          this._results.push({
+            name: label + ".allocations",
+            value: this.allocationTracker.countAllocations(),
+          });
+        } else if (DEBUG_ALLOCATIONS == "verbose") {
+          this.allocationTracker.logAllocationSites();
+        }
+      },
+    };
+  },
+
+  async addTab(url) {
+    // Disable opening animation to avoid intermittents and prevent having to wait for
+    // animation's end. (See bug 1480953)
+    let tab = this._win.gBrowser.selectedTab = this._win.gBrowser.addTrustedTab(url,
+      { skipAnimation: true });
+    let browser = tab.linkedBrowser;
+    await awaitBrowserLoaded(browser);
+    return tab;
+  },
+
+  async waitForPendingPaints(window) {
+    let utils = window.windowUtils;
+    window.performance.mark("pending paints.start");
+    while (utils.isMozAfterPaintPending) {
+      await new Promise(done => {
+        window.addEventListener("MozAfterPaint", function listener() {
+          window.performance.mark("pending paint");
+          done();
+        }, { once: true });
+      });
+    }
+    window.performance.measure("pending paints", "pending paints.start");
+  },
+
+  reloadPage(onReload) {
+    return new Promise(resolve => {
       let browser = gBrowser.selectedBrowser;
-      let self = this;
-      browser.addEventListener("load", function onload() {
-        browser.removeEventListener("load", onload, true);
-        let stopReloadTimestamp = performance.now();
-        resolve({
-          time: stopReloadTimestamp - startReloadTimestamp
-        });
-      }, true);
+      if (typeof(onReload) == "function") {
+        onReload().then(resolve);
+      } else {
+        resolve(awaitBrowserLoaded(browser));
+      }
       browser.reload();
     });
   },
 
-  openToolbox: function (tool = "webconsole") {
-    let tab = getActiveTab(getMostRecentBrowserWindow());
-    let target = devtools.TargetFactory.forTab(tab);
-    let startRecordTimestamp = performance.now();
-    let showPromise = gDevTools.showToolbox(target, tool);
-
-    return showPromise.then(toolbox => {
-      let stopRecordTimestamp = performance.now();
-      return {
-        toolbox,
-        time: stopRecordTimestamp - startRecordTimestamp
-      };
-    });
-  },
-
-  closeToolbox: Task.async(function*() {
-    let tab = getActiveTab(getMostRecentBrowserWindow());
-    let target = devtools.TargetFactory.forTab(tab);
-    yield target.client.waitForRequestsToSettle();
-    let startRecordTimestamp = performance.now();
-    yield gDevTools.closeToolbox(target);
-    let stopRecordTimestamp = performance.now();
-    return {
-      time: stopRecordTimestamp - startRecordTimestamp
-    };
-  }),
-
-  saveHeapSnapshot: function(label) {
-    let tab = getActiveTab(getMostRecentBrowserWindow());
-    let target = devtools.TargetFactory.forTab(tab);
-    let toolbox = gDevTools.getToolbox(target);
-    let panel = toolbox.getCurrentPanel();
-    let memoryFront = panel.panelWin.gFront;
-
-    let start = performance.now();
-    return memoryFront.saveHeapSnapshot().then(filePath => {
-      this._heapSnapshotFilePath = filePath;
-      let end = performance.now();
-      this._results.push({
-        name: label + ".saveHeapSnapshot",
-        value: end - start
-      });
-    });
-  },
-
-  readHeapSnapshot: function(label) {
-    let start = performance.now();
-    this._snapshot = ThreadSafeChromeUtils.readHeapSnapshot(this._heapSnapshotFilePath);
-    let end = performance.now();
-    this._results.push({
-      name: label + ".readHeapSnapshot",
-      value: end - start
-    });
-    return Promise.resolve();
-  },
-
-  waitForNetworkRequests: Task.async(function*(label, toolbox) {
-    const { NetMonitorController } = toolbox.getCurrentPanel().panelWin;
-    const start = performance.now();
-    yield NetMonitorController.waitForAllRequestsFinished();
-    const end = performance.now();
-    this._results.push({
-      name: label + ".requestsFinished.DAMP",
-      value: end - start
-    });
-  }),
-
-  _consoleBulkLoggingTest: Task.async(function*() {
-    let TOTAL_MESSAGES = 10;
-    let tab = yield this.testSetup(SIMPLE_URL);
-    let messageManager = tab.linkedBrowser.messageManager;
-    let {toolbox} = yield this.openToolbox("webconsole");
-    let webconsole = toolbox.getPanel("webconsole");
-
-    // Resolve once the last message has been received.
-    let allMessagesReceived = new Promise(resolve => {
-      function receiveMessages(e, messages) {
-        for (let m of messages) {
-          if (m.node.textContent.includes("damp " + TOTAL_MESSAGES)) {
-            webconsole.hud.ui.off("new-messages", receiveMessages);
-            // Wait for the console to redraw
-            requestAnimationFrame(resolve);
-          }
-        }
-      }
-      webconsole.hud.ui.on("new-messages", receiveMessages);
-    });
-
-    // Load a frame script using a data URI so we can do logs
-    // from the page.  So this is running in content.
-    messageManager.loadFrameScript("data:,(" + encodeURIComponent(
-      `function () {
-        addMessageListener("do-logs", function () {
-          for (var i = 0; i < ${TOTAL_MESSAGES}; i++) {
-            content.console.log('damp', i+1, content);
-          }
-        });
-      }`
-    ) + ")()", true);
-
-    // Kick off the logging
-    messageManager.sendAsyncMessage("do-logs");
-
-    let start = performance.now();
-    yield allMessagesReceived;
-    let end = performance.now();
-
-    this._results.push({
-      name: "console.bulklog",
-      value: end - start
-    });
-
-    yield this.closeToolbox(null);
-    yield this.testTeardown();
-  }),
-
-  // Log a stream of console messages, 1 per rAF.  Then record the average
-  // time per rAF.  The idea is that the console being slow can slow down
-  // content (i.e. Bug 1237368).
-  _consoleStreamLoggingTest: Task.async(function*() {
-    let TOTAL_MESSAGES = 100;
-    let tab = yield this.testSetup(SIMPLE_URL);
-    let messageManager = tab.linkedBrowser.messageManager;
-    let {toolbox} = yield this.openToolbox("webconsole");
-    let webconsole = toolbox.getPanel("webconsole");
-
-    // Load a frame script using a data URI so we can do logs
-    // from the page.  So this is running in content.
-    messageManager.loadFrameScript("data:,(" + encodeURIComponent(
-      `function () {
-        let count = 0;
-        let startTime = content.performance.now();
-        function log() {
-          if (++count < ${TOTAL_MESSAGES}) {
-            content.document.querySelector("h1").textContent += count + "\\n";
-            content.console.log('damp', count,
-                                content,
-                                content.document,
-                                content.document.body,
-                                content.document.documentElement,
-                                new Array(100).join(" DAMP? DAMP! "));
-            content.requestAnimationFrame(log);
-          } else {
-            let avgTime = (content.performance.now() - startTime) / ${TOTAL_MESSAGES};
-            sendSyncMessage("done", Math.round(avgTime));
-          }
-        }
-        log();
-      }`
-    ) + ")()", true);
-
-    let avgTime = yield new Promise(resolve => {
-      messageManager.addMessageListener("done", (e) => {
-        resolve(e.data);
-      });
-    });
-
-    this._results.push({
-      name: "console.streamlog",
-      value: avgTime
-    });
-
-    yield this.closeToolbox(null);
-    yield this.testTeardown();
-  }),
-
-  takeCensus: function(label) {
-    let start = performance.now();
-
-    this._snapshot.takeCensus({
-      breakdown: {
-        by: "coarseType",
-        objects: {
-          by: "objectClass",
-          then: { by: "count", bytes: true, count: true },
-          other: { by: "count", bytes: true, count: true }
-        },
-        strings: {
-          by: "internalType",
-          then: { by: "count", bytes: true, count: true }
-        },
-        scripts: {
-          by: "internalType",
-          then: { by: "count", bytes: true, count: true }
-        },
-        other: {
-          by: "internalType",
-          then: { by: "count", bytes: true, count: true }
-        }
-      }
-    });
-
-    let end = performance.now();
-
-    this._results.push({
-      name: label + ".takeCensus",
-      value: end - start
-    });
-
-    return Promise.resolve();
-  },
-
-  _getToolLoadingTests: function(url, label) {
-
-    let openToolboxAndLog = Task.async(function*(name, tool) {
-      let {time, toolbox} = yield this.openToolbox(tool);
-      this._results.push({name: name + ".open.DAMP", value: time });
-      return toolbox;
-    }.bind(this));
-
-    let closeToolboxAndLog = Task.async(function*(name) {
-      let {time} = yield this.closeToolbox();
-      this._results.push({name: name + ".close.DAMP", value: time });
-    }.bind(this));
-
-    let reloadPageAndLog = Task.async(function*(name) {
-      let {time} = yield this.reloadPage();
-      this._results.push({name: name + ".reload.DAMP", value: time });
-    }.bind(this));
-
-    let subtests = {
-      webconsoleOpen: Task.async(function*() {
-        yield this.testSetup(url);
-        yield openToolboxAndLog(label + ".webconsole", "webconsole");
-        yield reloadPageAndLog(label + ".webconsole");
-        yield closeToolboxAndLog(label + ".webconsole");
-        yield this.testTeardown();
-      }),
-
-      inspectorOpen: Task.async(function*() {
-        yield this.testSetup(url);
-        yield openToolboxAndLog(label + ".inspector", "inspector");
-        yield reloadPageAndLog(label + ".inspector");
-        yield closeToolboxAndLog(label + ".inspector");
-        yield this.testTeardown();
-      }),
-
-      debuggerOpen: Task.async(function*() {
-        yield this.testSetup(url);
-        yield openToolboxAndLog(label + ".jsdebugger", "jsdebugger");
-        yield reloadPageAndLog(label + ".jsdebugger");
-        yield closeToolboxAndLog(label + ".jsdebugger");
-        yield this.testTeardown();
-      }),
-
-      styleEditorOpen: Task.async(function*() {
-        yield this.testSetup(url);
-        yield openToolboxAndLog(label + ".styleeditor", "styleeditor");
-        yield reloadPageAndLog(label + ".styleeditor");
-        yield closeToolboxAndLog(label + ".styleeditor");
-        yield this.testTeardown();
-      }),
-
-      performanceOpen: Task.async(function*() {
-        yield this.testSetup(url);
-        yield openToolboxAndLog(label + ".performance", "performance");
-        yield reloadPageAndLog(label + ".performance");
-        yield closeToolboxAndLog(label + ".performance");
-        yield this.testTeardown();
-      }),
-
-      netmonitorOpen: Task.async(function*() {
-        yield this.testSetup(url);
-        const toolbox = yield openToolboxAndLog(label + ".netmonitor", "netmonitor");
-        const requestsDone = this.waitForNetworkRequests(label + ".netmonitor", toolbox);
-        yield reloadPageAndLog(label + ".netmonitor");
-        yield requestsDone;
-        yield closeToolboxAndLog(label + ".netmonitor");
-        yield this.testTeardown();
-      }),
-
-      saveAndReadHeapSnapshot: Task.async(function*() {
-        yield this.testSetup(url);
-        yield openToolboxAndLog(label + ".memory", "memory");
-        yield reloadPageAndLog(label + ".memory");
-        yield this.saveHeapSnapshot(label);
-        yield this.readHeapSnapshot(label);
-        yield this.takeCensus(label);
-        yield closeToolboxAndLog(label + ".memory");
-        yield this.testTeardown();
-      }),
-    };
-
-    // Construct the sequence array: config.repeat times config.subtests
-    let config = this._config;
-    let sequenceArray = [];
-    for (var i in config.subtests) {
-      for (var r = 0; r < config.repeat; r++) {
-        if (!config.subtests[i] || !subtests[config.subtests[i]]) {
-          continue;
-        }
-
-        sequenceArray.push(subtests[config.subtests[i]]);
-      }
-    }
-
-    return sequenceArray;
-  },
-
-  testSetup: Task.async(function*(url) {
-    let tab = yield this.addTab(url);
-    yield new Promise(resolve => {
-      setTimeout(resolve, this._config.rest);
+  async testSetup(url) {
+    let tab = await this.addTab(url);
+    await new Promise(resolve => {
+      setTimeout(resolve, 100);
     });
     return tab;
-  }),
+  },
 
-  testTeardown: Task.async(function*(url) {
-    this.closeCurrentTab();
-    this._nextCommand();
-  }),
+  async testTeardown(url) {
+    // Disable closing animation to avoid intermittents and prevent having to wait for
+    // animation's end. (See bug 1480953)
+    this._win.gBrowser.removeCurrentTab({ animate: false });
 
-  // Everything below here are common pieces needed for the test runner to function,
-  // just copy and pasted from Tart with /s/TART/DAMP
+    // Force freeing memory now so that it doesn't happen during the next test
+    await this.garbageCollect();
+
+    let duration = Math.round(performance.now() - this._startTime);
+    dump(`${this._currentTest} took ${duration}ms.\n`);
+
+    this._runNextTest();
+  },
 
   _win: undefined,
   _dampTab: undefined,
   _results: [],
-  _config: {subtests: [], repeat: 1, rest: 100},
-  _nextCommandIx: 0,
-  _commands: [],
+  _nextTestIndex: 0,
+  _tests: [],
   _onSequenceComplete: 0,
-  _nextCommand: function() {
-    if (this._nextCommandIx >= this._commands.length) {
+
+  // Timeout ID to guard against current test never finishing
+  _timeout: null,
+
+  // The unix time at which the current test started (ms)
+  _startTime: null,
+
+  // Name of the test currently executed (i.e. path from /tests folder)
+  _currentTest: null,
+
+  // Is DAMP finished executing? Help preventing async execution when DAMP had an error
+  _done: false,
+
+  _runNextTest() {
+    window.clearTimeout(this._timeout);
+
+    if (this._nextTestIndex >= this._tests.length) {
       this._onSequenceComplete();
       return;
     }
-    this._commands[this._nextCommandIx++].call(this);
+
+    let test = this._tests[this._nextTestIndex++];
+    this._startTime = performance.now();
+    this._currentTest = test;
+
+    dump(`Loading test '${test}'\n`);
+    let testMethod = require(this.rootURI.resolve(`content/tests/${test}`));
+
+    this._timeout = window.setTimeout(() => {
+      this.error("Test timed out");
+    }, TEST_TIMEOUT);
+
+    dump(`Executing test '${test}'\n`);
+    let promise = testMethod();
+
+    // If test method is an async function, ensure catching its exceptions
+    if (promise && typeof(promise.catch) == "function") {
+      promise.catch(e => {
+        this.exception(e);
+      });
+    }
   },
   // Each command at the array a function which must call nextCommand once it's done
-  _doSequence: function(commands, onComplete) {
-    this._commands = commands;
+  _doSequence(tests, onComplete) {
+    this._tests = tests;
     this._onSequenceComplete = onComplete;
     this._results = [];
-    this._nextCommandIx = 0;
+    this._nextTestIndex = 0;
 
-    this._nextCommand();
+    this._runNextTest();
   },
 
-  _log: function(str) {
+  _log(str) {
     if (window.MozillaFileLogger && window.MozillaFileLogger.log)
       window.MozillaFileLogger.log(str);
 
     window.dump(str);
   },
 
-  _logLine: function(str) {
+  _logLine(str) {
     return this._log(str + "\n");
   },
 
-  _reportAllResults: function() {
+  _reportAllResults() {
     var testNames = [];
     var testResults = [];
 
     var out = "";
     for (var i in this._results) {
       res = this._results[i];
-      var disp = [].concat(res.value).map(function(a){return (isNaN(a) ? -1 : a.toFixed(1));}).join(" ");
+      var disp = [].concat(res.value).map(function(a) { return (isNaN(a) ? -1 : a.toFixed(1)); }).join(" ");
       out += res.name + ": " + disp + "\n";
 
       if (!Array.isArray(res.value)) { // Waw intervals array is not reported to talos
@@ -425,50 +312,145 @@ Damp.prototype = {
     }
     this._log("\n" + out);
 
-    if (content && content.tpRecordTime) {
-      content.tpRecordTime(testResults.join(','), 0, testNames.join(','));
+    if (this.testDone) {
+      this.testDone({testResults, testNames});
     } else {
-      //alert(out);
+      // alert(out);
     }
   },
 
-  _onTestComplete: null,
+  _doneInternal() {
+    // Ignore any duplicated call to this method
+    if (this._done) {
+      return;
+    }
+    this._done = true;
 
-  _doneInternal: function() {
-    this._logLine("DAMP_RESULTS_JSON=" + JSON.stringify(this._results));
-    this._reportAllResults();
+    if (this.allocationTracker) {
+      this.allocationTracker.stop();
+      this.allocationTracker = null;
+    }
     this._win.gBrowser.selectedTab = this._dampTab;
 
-    if (this._onTestComplete) {
-      this._onTestComplete(JSON.parse(JSON.stringify(this._results))); // Clone results
+    if (this._results) {
+      this._logLine("DAMP_RESULTS_JSON=" + JSON.stringify(this._results));
+      this._reportAllResults();
     }
+
+    this.TalosParentProfiler.pause("DAMP - end");
   },
 
-  startTest: function(doneCallback, config) {
-    this._onTestComplete = function (results) {
-      Profiler.mark("DAMP - end", true);
-      doneCallback(results);
-    };
-    this._config = config;
+  startAllocationTracker() {
+    const { allocationTracker } = require("devtools/shared/test-helpers/allocation-tracker");
+    return allocationTracker();
+  },
 
-    const Ci = Components.interfaces;
-    var wm = Components.classes["@mozilla.org/appshell/window-mediator;1"].getService(Ci.nsIWindowMediator);
-    this._win = wm.getMostRecentWindow("navigator:browser");
-    this._dampTab = this._win.gBrowser.selectedTab;
-    this._win.gBrowser.selectedBrowser.focus(); // Unfocus the URL bar to avoid caret blink
+  error(message) {
+    // Log a unique prefix in order to be interpreted as an error and stop DAMP from
+    // testing/talos/talos/talos_process.py
+    dump("TEST-UNEXPECTED-FAIL | damp | ");
 
-    Profiler.mark("DAMP - start", true);
-
-    let tests = [];
-    tests = tests.concat(this._getToolLoadingTests(SIMPLE_URL, "simple"));
-    tests = tests.concat(this._getToolLoadingTests(COMPLICATED_URL, "complicated"));
-
-    if (config.subtests.indexOf("consoleBulkLogging") > -1) {
-      tests = tests.concat(this._consoleBulkLoggingTest);
+    // Print the currently executed test, if we already started executing one
+    if (this._currentTest) {
+      dump(this._currentTest + ": ");
     }
-    if (config.subtests.indexOf("consoleStreamLogging") > -1) {
-      tests = tests.concat(this._consoleStreamLoggingTest);
+
+    dump(message + "\n");
+
+    // Stop further test execution and immediatly close DAMP
+    this._tests = [];
+    this._results = null;
+    this._doneInternal();
+  },
+
+  exception(e) {
+    this.error(e);
+    dump(e.stack + "\n");
+  },
+
+  // Waits for any pending operations that may execute on Firefox startup and that
+  // can still be pending when we start running DAMP tests.
+  async waitBeforeRunningTests() {
+    // Addons may still be being loaded, so wait for them to be fully set up.
+    if (!AddonManager.isReady) {
+      let onAddonManagerReady = new Promise(resolve => {
+        let listener = {
+          onStartup() {
+            AddonManager.removeManagerListener(listener);
+            resolve();
+          },
+          onShutdown() {},
+        };
+        AddonManager.addManagerListener(listener);
+      });
+      await onAddonManagerReady;
     }
-    this._doSequence(tests, this._doneInternal);
-  }
-}
+
+    // SessionRestore triggers some saving sequence on idle,
+    // so wait for that to be processed before starting tests.
+    // https://searchfox.org/mozilla-central/rev/83a923ef7a3b95a516f240a6810c20664b1e0ac9/browser/components/sessionstore/content/content-sessionStore.js#828-830
+    // https://searchfox.org/mozilla-central/rev/83a923ef7a3b95a516f240a6810c20664b1e0ac9/browser/components/sessionstore/content/content-sessionStore.js#858
+    await new Promise(resolve => {
+      setTimeout(resolve, 1500);
+    });
+    await new Promise(resolve => {
+      requestIdleCallback(resolve, { timeout: 15000 });
+    });
+
+    await this.ensureTalosParentProfiler();
+
+    // Free memory before running the first test, otherwise we may have a GC
+    // related to Firefox startup or DAMP setup during the first test.
+    await this.garbageCollect();
+  },
+
+  startTest(rootURI) {
+    let promise = new Promise(resolve => { this.testDone = resolve; });
+    this.rootURI = rootURI;
+    try {
+      dump("Initialize the head file with a reference to this DAMP instance\n");
+      let head = require(rootURI.resolve("content/tests/head.js"));
+      head.initialize(this);
+
+      this._win = Services.wm.getMostRecentWindow("navigator:browser");
+      this._dampTab = this._win.gBrowser.selectedTab;
+      this._win.gBrowser.selectedBrowser.focus(); // Unfocus the URL bar to avoid caret blink
+
+      // Filter tests via `./mach --subtests filter` command line argument
+      let filter = Services.prefs.getCharPref("talos.subtests", "");
+
+      let DAMP_TESTS = require(rootURI.resolve("content/damp-tests.js"));
+      let tests = DAMP_TESTS.filter(test => !test.disabled)
+                            .filter(test => test.name.includes(filter));
+
+      if (tests.length === 0) {
+        this.error(`Unable to find any test matching '${filter}'`);
+      }
+
+      // Run cold test only once
+      let topWindow = getMostRecentBrowserWindow();
+      if (topWindow.coldRunDAMPDone) {
+        tests = tests.filter(test => !test.cold);
+      } else {
+        topWindow.coldRunDAMPDone = true;
+      }
+
+      // Construct the sequence array while filtering tests
+      let sequenceArray = [];
+      for (let test of tests) {
+        sequenceArray.push(test.path);
+      }
+
+     this.waitBeforeRunningTests().then(() => {
+        this.TalosParentProfiler.resume("DAMP - start");
+        this._doSequence(sequenceArray, this._doneInternal);
+      }).catch(e => {
+        this.exception(e);
+      });
+    } catch (e) {
+      this.exception(e);
+    }
+
+    return promise;
+  },
+};

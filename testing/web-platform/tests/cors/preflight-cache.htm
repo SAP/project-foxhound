@@ -78,7 +78,7 @@ test(function() {
 'age = -1, should not be cached');
 
 (function() {
-    var test = async_test("preflight first request, second from cache, wait, third should preflight again", { timeout: 6000 }),
+    var test = async_test("preflight first request, second from cache, wait, third should preflight again"),
         time = new Date().getTime(),
         dothing = function (url, msg, set_request, func) {
             client = new XMLHttpRequest(),
@@ -118,7 +118,7 @@ test(function() {
                         test = test;
 
                         /* Wait until the preflight cache age is old (and thus cleared) */
-                        setTimeout(test.step_func(function(){
+                        test.step_timeout(() => {
                             dothing(request_url,
                             'third', true, function() {
                                 test = test;
@@ -129,7 +129,7 @@ test(function() {
                                     test.done()
                                 })
                             })
-                        }), 1500)
+                        }, 1500)
                     })
                 })
             })

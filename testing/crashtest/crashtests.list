@@ -13,6 +13,7 @@ include ../../dom/base/crashtests/crashtests.list
 include ../../dom/bindings/crashtests/crashtests.list
 include ../../dom/canvas/crashtests/crashtests.list
 include ../../dom/events/crashtests/crashtests.list
+include ../../dom/file/tests/crashtests/crashtests.list
 include ../../dom/html/crashtests/crashtests.list
 include ../../dom/indexedDB/crashtests/crashtests.list
 include ../../dom/jsurl/crashtests/crashtests.list
@@ -30,7 +31,6 @@ include ../../dom/xbl/crashtests/crashtests.list
 include ../../dom/xml/crashtests/crashtests.list
 include ../../dom/xslt/crashtests/crashtests.list
 include ../../dom/xul/crashtests/crashtests.list
-include ../../dom/xul/templates/crashtests/crashtests.list
 
 include ../../editor/composer/crashtests/crashtests.list
 include ../../editor/libeditor/crashtests/crashtests.list
@@ -49,6 +49,7 @@ include ../../layout/base/crashtests/crashtests.list
 include ../../layout/forms/crashtests/crashtests.list
 include ../../layout/generic/crashtests/crashtests.list
 include ../../layout/mathml/crashtests/crashtests.list
+include ../../layout/painting/crashtests/crashtests.list
 include ../../layout/printing/crashtests/crashtests.list
 include ../../layout/style/crashtests/crashtests.list
 include ../../layout/svg/crashtests/crashtests.list

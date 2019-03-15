@@ -18,6 +18,9 @@ var docURL   = "";
 var progressParams = null;
 
 function ellipseString(aStr, doFront) {
+  if (!aStr)
+    return "";
+
   if (aStr.length > 3 && (aStr.substr(0, 3) == "..." || aStr.substr(aStr.length - 4, 3) == "..."))
     return aStr;
 
@@ -35,7 +38,7 @@ function ellipseString(aStr, doFront) {
 var progressListener = {
 
   onStateChange(aWebProgress, aRequest, aStateFlags, aStatus) {
-    if (aStateFlags & Components.interfaces.nsIWebProgressListener.STATE_STOP)
+    if (aStateFlags & Ci.nsIWebProgressListener.STATE_STOP)
       window.close();
   },
 
@@ -57,24 +60,22 @@ var progressListener = {
 
   onLocationChange(aWebProgress, aRequest, aLocation, aFlags) {},
   onSecurityChange(aWebProgress, aRequest, state) {},
+  onContentBlockingEvent(aWebProgress, aRequest, event) {},
 
   onStatusChange(aWebProgress, aRequest, aStatus, aMessage) {
     if (aMessage)
       dialog.title.setAttribute("value", aMessage);
   },
 
-  QueryInterface(iid) {
-    if (iid.equals(Components.interfaces.nsIWebProgressListener) || iid.equals(Components.interfaces.nsISupportsWeakReference))
-      return this;
-    throw Components.results.NS_NOINTERFACE;
-  }
-}
+  QueryInterface: ChromeUtils.generateQI(["nsIWebProgressListener",
+                                          "nsISupportsWeakReference"]),
+};
 
 function onLoad() {
   // Set global variables.
   printProgress = window.arguments[0];
   if (window.arguments[1]) {
-    progressParams = window.arguments[1].QueryInterface(Components.interfaces.nsIPrintProgressParams)
+    progressParams = window.arguments[1].QueryInterface(Ci.nsIPrintProgressParams);
     if (progressParams) {
       docTitle = ellipseString(progressParams.docTitle, false);
       docURL   = ellipseString(progressParams.docURL, true);
@@ -83,12 +84,12 @@ function onLoad() {
 
   if (!printProgress) {
     dump( "Invalid argument to printPreviewProgress.xul\n" );
-    window.close()
+    window.close();
     return;
   }
 
   dialog         = {};
-  dialog.strings = new Array;
+  dialog.strings = [];
   dialog.title   = document.getElementById("dialog.title");
   dialog.titleLabel = document.getElementById("dialog.titleLabel");
 

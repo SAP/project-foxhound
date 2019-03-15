@@ -15,13 +15,15 @@ class Statement;
 namespace mozilla {
 namespace storage {
 
-class StatementJSHelper : public nsIXPCScriptable
-{
-public:
+class StatementParams;
+class StatementRow;
+
+class StatementJSHelper : public nsIXPCScriptable {
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIXPCSCRIPTABLE
 
-private:
+ private:
   nsresult getRow(Statement *, JSContext *, JSObject *, JS::Value *);
   nsresult getParams(Statement *, JSContext *, JSObject *, JS::Value *);
 };
@@ -31,40 +33,42 @@ private:
  * For cycle-avoidance reasons they do not hold reference-counted references,
  * so it is important we do this.
  */
-class StatementJSObjectHolder : public nsIXPConnectJSObjectHolder
-{
-public:
+
+class StatementParamsHolder final : public nsISupports {
+ public:
   NS_DECL_ISUPPORTS
-  NS_DECL_NSIXPCONNECTJSOBJECTHOLDER
 
-  explicit StatementJSObjectHolder(nsIXPConnectJSObjectHolder* aHolder);
+  explicit StatementParamsHolder(StatementParams *aParams) : mParams(aParams) {}
 
-protected:
-  virtual ~StatementJSObjectHolder() {};
-  nsCOMPtr<nsIXPConnectJSObjectHolder> mHolder;
-};
-
-class StatementParamsHolder final: public StatementJSObjectHolder {
-public:
-  explicit StatementParamsHolder(nsIXPConnectJSObjectHolder* aHolder)
-    : StatementJSObjectHolder(aHolder) {
+  StatementParams *Get() const {
+    MOZ_ASSERT(mParams);
+    return mParams;
   }
 
-private:
+ private:
   virtual ~StatementParamsHolder();
+
+  RefPtr<StatementParams> mParams;
 };
 
-class StatementRowHolder final: public StatementJSObjectHolder {
-public:
-  explicit StatementRowHolder(nsIXPConnectJSObjectHolder* aHolder)
-    : StatementJSObjectHolder(aHolder) {
+class StatementRowHolder final : public nsISupports {
+ public:
+  NS_DECL_ISUPPORTS
+
+  explicit StatementRowHolder(StatementRow *aRow) : mRow(aRow) {}
+
+  StatementRow *Get() const {
+    MOZ_ASSERT(mRow);
+    return mRow;
   }
 
-private:
+ private:
   virtual ~StatementRowHolder();
+
+  RefPtr<StatementRow> mRow;
 };
 
-} // namespace storage
-} // namespace mozilla
+}  // namespace storage
+}  // namespace mozilla
 
-#endif // MOZSTORAGESTATEMENTJSHELPER_H
+#endif  // MOZSTORAGESTATEMENTJSHELPER_H

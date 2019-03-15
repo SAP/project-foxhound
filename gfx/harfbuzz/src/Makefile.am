@@ -1,5 +1,6 @@
 # Process this file with automake to produce Makefile.in
 
+NULL =
 SUBDIRS =
 DIST_SUBDIRS =
 BUILT_SOURCES =
@@ -8,13 +9,12 @@ CLEANFILES =
 DISTCLEANFILES =
 MAINTAINERCLEANFILES =
 DISTCHECK_CONFIGURE_FLAGS = --enable-introspection
-
-# The following warning options are useful for debugging: -Wpadded
-#AM_CXXFLAGS =
+TESTS =
+check_PROGRAMS =
 
 # Convenience targets:
 lib: $(BUILT_SOURCES) libharfbuzz.la
-fuzzing: $(BUILT_SOURCES) libharfbuzz-fuzzing.la
+libs: $(BUILT_SOURCES) $(lib_LTLIBRARIES)
 
 lib_LTLIBRARIES = libharfbuzz.la
 
@@ -27,13 +27,6 @@ HBDEPS =
 HBSOURCES =  $(HB_BASE_sources)
 HBSOURCES += $(HB_BASE_RAGEL_GENERATED_sources)
 HBHEADERS = $(HB_BASE_headers)
-HBNODISTHEADERS = $(HB_NODIST_headers)
-
-if HAVE_OT
-HBSOURCES += $(HB_OT_sources)
-HBSOURCES += $(HB_OT_RAGEL_GENERATED_sources)
-HBHEADERS += $(HB_OT_headers)
-endif
 
 if HAVE_FALLBACK
 HBSOURCES += $(HB_FALLBACK_sources)
@@ -99,9 +92,23 @@ SUBDIRS += hb-ucdn
 HBCFLAGS += -I$(srcdir)/hb-ucdn
 HBLIBS   += hb-ucdn/libhb-ucdn.la
 HBSOURCES += $(HB_UCDN_sources)
+hb-ucdn/libhb-ucdn.la: ucdn
+ucdn:
+	@$(MAKE) $(AM_MAKEFLAGS) -C hb-ucdn
 endif
 DIST_SUBDIRS += hb-ucdn
 
+
+BUILT_SOURCES += \
+	hb-version.h
+
+$(srcdir)/hb-version.h: hb-version.h.in $(top_srcdir)/configure.ac
+	$(AM_V_GEN) $(SED) \
+		-e 's/[@]HB_VERSION_MAJOR@/$(HB_VERSION_MAJOR)/' \
+		-e 's/[@]HB_VERSION_MINOR@/$(HB_VERSION_MINOR)/' \
+		-e 's/[@]HB_VERSION_MICRO@/$(HB_VERSION_MICRO)/' \
+		-e 's/[@]HB_VERSION@/$(HB_VERSION)/' \
+		"$<" > "$@" || ($(RM) "$@"; false)
 
 # Put the library together
 
@@ -110,43 +117,52 @@ HBLIBS += $(HBNONPCLIBS)
 if OS_WIN32
 export_symbols = -export-symbols harfbuzz.def
 harfbuzz_def_dependency = harfbuzz.def
-libharfbuzz_la_LINK = $(CXXLINK) $(libharfbuzz_la_LDFLAGS)
+export_symbols_subset = -export-symbols harfbuzz-subset.def
+harfbuzz_subset_def_dependency = harfbuzz-subset.def
+export_symbols_icu = -export-symbols harfbuzz-icu.def
+harfbuzz_icu_def_dependency = harfbuzz-icu.def
+export_symbols_gobject = -export-symbols harfbuzz-gobject.def
+harfbuzz_gobject_def_dependency = harfbuzz-gobject.def
+chosen_linker = $(CXXLINK)
 else
-# Use a C linker for GCC, not C++; Don't link to libstdc++
+if WITH_LIBSTDCXX
+chosen_linker = $(CXXLINK)
+else
 if HAVE_GCC
-libharfbuzz_la_LINK = $(LINK) $(libharfbuzz_la_LDFLAGS)
+# Use a C linker for GCC, not C++; Don't link to libstdc++
+chosen_linker = $(LINK)
 else
-libharfbuzz_la_LINK = $(CXXLINK) $(libharfbuzz_la_LDFLAGS)
+chosen_linker = $(CXXLINK)
+endif
 endif
 endif
 
-libharfbuzz_la_SOURCES = $(HBSOURCES) $(HBHEADERS) $(HBNODISTHEADERS)
-libharfbuzz_la_CPPFLAGS = $(HBCFLAGS)
-libharfbuzz_la_LDFLAGS = $(AM_LDFLAGS) -version-info $(HB_LIBTOOL_VERSION_INFO) $(export_symbols) -no-undefined
+@CODE_COVERAGE_RULES@
+
+base_link_flags = $(AM_LDFLAGS) -lm -version-info $(HB_LIBTOOL_VERSION_INFO) -no-undefined
+libharfbuzz_la_LINK = $(chosen_linker) $(libharfbuzz_la_LDFLAGS)
+libharfbuzz_la_SOURCES = $(HBSOURCES) $(HBHEADERS)
+libharfbuzz_la_CPPFLAGS = $(HBCFLAGS) $(CODE_COVERAGE_CFLAGS)
+libharfbuzz_la_LDFLAGS = $(base_link_flags) $(export_symbols) $(CODE_COVERAGE_LDFLAGS)
 libharfbuzz_la_LIBADD = $(HBLIBS)
 EXTRA_libharfbuzz_la_DEPENDENCIES = $(harfbuzz_def_dependency)
 pkginclude_HEADERS = $(HBHEADERS)
-nodist_pkginclude_HEADERS = $(HBNODISTHEADERS)
+nodist_pkginclude_HEADERS =
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = harfbuzz.pc
-EXTRA_DIST += harfbuzz.pc.in
+cmakedir = $(libdir)/cmake/harfbuzz
+cmake_DATA = harfbuzz-config.cmake
+EXTRA_DIST += hb-version.h.in harfbuzz.pc.in harfbuzz-config.cmake.in
 
-FUZZING_CPPFLAGS= \
-	-DHB_NDEBUG \
-	-DHB_MAX_NESTING_LEVEL=3 \
-	-DHB_SANITIZE_MAX_EDITS=3 \
-	-DHB_BUFFER_MAX_EXPANSION_FACTOR=3 \
-	-DHB_BUFFER_MAX_LEN_MIN=8 \
-	-DHB_BUFFER_MAX_LEN_DEFAULT=128 \
-	$(NULL)
-EXTRA_LTLIBRARIES = libharfbuzz-fuzzing.la
-libharfbuzz_fuzzing_la_LINK = $(libharfbuzz_la_LINK)
-libharfbuzz_fuzzing_la_SOURCES = $(libharfbuzz_la_SOURCES)
-libharfbuzz_fuzzing_la_CPPFLAGS = $(libharfbuzz_la_CPPFLAGS) $(FUZZING_CPPFLAGS)
-libharfbuzz_fuzzing_la_LDFLAGS = $(libharfbuzz_la_LDFLAGS)
-libharfbuzz_fuzzing_la_LIBADD = $(libharfbuzz_la_LIBADD)
-EXTRA_libharfbuzz_fuzzing_la_DEPENDENCIES = $(EXTRA_libharfbuzz_la_DEPENDENCIES)
-CLEANFILES += libharfbuzz-fuzzing.la
+lib_LTLIBRARIES += libharfbuzz-subset.la
+libharfbuzz_subset_la_SOURCES = $(HB_SUBSET_sources)
+libharfbuzz_subset_la_CPPFLAGS = $(HBCFLAGS) $(CODE_COVERAGE_CFLAGS)
+libharfbuzz_subset_la_LDFLAGS = $(base_link_flags) $(export_symbols_subset) $(CODE_COVERAGE_LDFLAGS)
+libharfbuzz_subset_la_LIBADD = libharfbuzz.la
+EXTRA_libharfbuzz_subset_la_DEPENDENCIES = $(harfbuzz_subset_def_dependency)
+pkginclude_HEADERS += $(HB_SUBSET_headers)
+pkgconfig_DATA += harfbuzz-subset.pc
+EXTRA_DIST += harfbuzz-subset.pc.in
 
 if HAVE_ICU
 if HAVE_ICU_BUILTIN
@@ -157,9 +173,10 @@ HBHEADERS += $(HB_ICU_headers)
 else
 lib_LTLIBRARIES += libharfbuzz-icu.la
 libharfbuzz_icu_la_SOURCES = $(HB_ICU_sources)
-libharfbuzz_icu_la_CPPFLAGS = $(ICU_CFLAGS)
-libharfbuzz_icu_la_LDFLAGS = $(AM_LDFLAGS) -version-info $(HB_LIBTOOL_VERSION_INFO) -no-undefined
+libharfbuzz_icu_la_CPPFLAGS = $(HBCFLAGS) $(ICU_CFLAGS) $(CODE_COVERAGE_CFLAGS)
+libharfbuzz_icu_la_LDFLAGS = $(base_link_flags) $(export_symbols_icu) $(CODE_COVERAGE_LDFLAGS)
 libharfbuzz_icu_la_LIBADD = $(ICU_LIBS) libharfbuzz.la
+EXTRA_libharfbuzz_icu_la_DEPENDENCIES = $(harfbuzz_icu_def_dependency)
 pkginclude_HEADERS += $(HB_ICU_headers)
 pkgconfig_DATA += harfbuzz-icu.pc
 endif
@@ -168,13 +185,15 @@ EXTRA_DIST += harfbuzz-icu.pc.in
 
 if HAVE_GOBJECT
 lib_LTLIBRARIES += libharfbuzz-gobject.la
-libharfbuzz_gobject_la_SOURCES = $(HB_GOBJECT_sources)
-nodist_libharfbuzz_gobject_la_SOURCES = $(HB_GOBJECT_ENUM_sources)
-libharfbuzz_gobject_la_CPPFLAGS = $(GOBJECT_CFLAGS)
-libharfbuzz_gobject_la_LDFLAGS = $(AM_LDFLAGS) -version-info $(HB_LIBTOOL_VERSION_INFO) -no-undefined
+libharfbuzz_gobject_la_LINK = $(chosen_linker) $(libharfbuzz_gobject_la_LDFLAGS)
+libharfbuzz_gobject_la_SOURCES = $(HB_GOBJECT_DIST_sources)
+nodist_libharfbuzz_gobject_la_SOURCES = $(HB_GOBJECT_NODIST_sources)
+libharfbuzz_gobject_la_CPPFLAGS = $(HBCFLAGS) $(GOBJECT_CFLAGS) $(CODE_COVERAGE_CFLAGS)
+libharfbuzz_gobject_la_LDFLAGS = $(base_link_flags) $(CODE_COVERAGE_LDFLAGS)
 libharfbuzz_gobject_la_LIBADD = $(GOBJECT_LIBS) libharfbuzz.la
-pkginclude_HEADERS += $(HB_GOBJECT_headers)
-nodist_pkginclude_HEADERS += $(HB_GOBJECT_ENUM_headers)
+EXTRA_libharfbuzz_gobject_la_DEPENDENCIES = $(harfbuzz_gobject_def_dependency)
+pkginclude_HEADERS += $(HB_GOBJECT_DIST_headers)
+nodist_pkginclude_HEADERS += $(HB_GOBJECT_NODIST_headers)
 pkgconfig_DATA += harfbuzz-gobject.pc
 
 BUILT_SOURCES += \
@@ -186,7 +205,7 @@ DISTCLEANFILES += \
 	$(HB_GOBJECT_ENUM_headers) \
 	$(NULL)
 hb-gobject-enums.%: hb-gobject-enums.%.tmpl $(HBHEADERS)
-	$(AM_V_GEN) $(GLIB_MKENUMS) \
+	$(AM_V_GEN) PYTHONIOENCODING=UTF-8 $(GLIB_MKENUMS) \
 		--identifier-prefix hb_ --symbol-prefix hb_gobject \
 		--template $^ | \
 	sed 's/_t_get_type/_get_type/g; s/_T (/ (/g' > "$@" \
@@ -214,54 +233,75 @@ EXTRA_DIST += \
 CLEANFILES += $(pkgconfig_DATA)
 
 
-CLEANFILES += harfbuzz.def
+DEF_FILES = harfbuzz.def harfbuzz-subset.def harfbuzz-icu.def harfbuzz-deprecated-symbols.txt
+if HAVE_GOBJECT
+DEF_FILES += harfbuzz-gobject.def
+endif
+check: $(DEF_FILES) # For check-symbols.sh
+CLEANFILES += $(DEF_FILES)
 harfbuzz.def: $(HBHEADERS) $(HBNODISTHEADERS)
-	$(AM_V_GEN) (echo EXPORTS; \
-	(cat $^ || echo 'hb_ERROR ()' ) | \
-	$(EGREP) '^hb_.* \(' | \
-	sed -e 's/ (.*//' | \
-	LC_ALL=C sort; \
-	echo LIBRARY libharfbuzz-0.dll; \
-	) >"$@"
-	@ ! grep -q hb_ERROR "$@" \
-	|| ($(RM) "$@"; false)
+	$(AM_V_GEN) $(srcdir)/gen-def.py "$@" $^
+harfbuzz-subset.def: $(HB_SUBSET_headers)
+	$(AM_V_GEN) $(srcdir)/gen-def.py "$@" $^
+harfbuzz-icu.def: $(HB_ICU_headers)
+	$(AM_V_GEN) $(srcdir)/gen-def.py "$@" $^
+harfbuzz-gobject.def: $(HB_GOBJECT_headers)
+	$(AM_V_GEN) $(srcdir)/gen-def.py "$@" $^
+harfbuzz-deprecated-symbols.txt: $(srcdir)/hb-deprecated.h
+	$(AM_V_GEN) PLAIN_LIST=1 $(srcdir)/gen-def.py "$@" $^
 
 
 GENERATORS = \
 	gen-arabic-table.py \
+	gen-def.py \
+	gen-emoji-table.py \
 	gen-indic-table.py \
+	gen-os2-unicode-ranges.py \
+	gen-tag-table.py \
 	gen-use-table.py \
+	gen-vowel-constraints.py \
 	$(NULL)
 EXTRA_DIST += $(GENERATORS)
 
-unicode-tables: arabic-table indic-table use-table
+unicode-tables: arabic-table indic-table tag-table use-table emoji-table
 
 arabic-table: gen-arabic-table.py ArabicShaping.txt UnicodeData.txt Blocks.txt
-	$(AM_V_GEN) $(builddir)/$^ > hb-ot-shape-complex-arabic-table.hh \
-	|| ($(RM) hb-ot-shape-complex-arabic-table.hh; false)
+	$(AM_V_GEN) $(builddir)/$^ > $(srcdir)/hb-ot-shape-complex-arabic-table.hh \
+	|| ($(RM) $(srcdir)/hb-ot-shape-complex-arabic-table.hh; false)
 
-indic-table: gen-indic-table.py IndicSyllabicCategory-7.0.0.txt IndicMatraCategory-7.0.0.txt Blocks.txt
-	$(AM_V_GEN) $(builddir)/$^ > hb-ot-shape-complex-indic-table.cc \
-	|| ($(RM) hb-ot-shape-complex-indic-table.cc; false)
+indic-table: gen-indic-table.py IndicSyllabicCategory.txt IndicPositionalCategory.txt Blocks.txt
+	$(AM_V_GEN) $(builddir)/$^ > $(srcdir)/hb-ot-shape-complex-indic-table.cc \
+	|| ($(RM) $(srcdir)/hb-ot-shape-complex-indic-table.cc; false)
+
+tag-table: gen-tag-table.py languagetags language-subtag-registry
+	$(AM_V_GEN) $(builddir)/$^ > $(srcdir)/hb-ot-tag-table.hh \
+	|| ($(RM) $(srcdir)/hb-ot-tag-table.hh; false)
 
 use-table: gen-use-table.py IndicSyllabicCategory.txt IndicPositionalCategory.txt UnicodeData.txt Blocks.txt
-	$(AM_V_GEN) $(builddir)/$^ > hb-ot-shape-complex-use-table.cc \
-	|| ($(RM) hb-ot-shape-complex-use-table.cc; false)
+	$(AM_V_GEN) $(builddir)/$^ > $(srcdir)/hb-ot-shape-complex-use-table.cc \
+	|| ($(RM) $(srcdir)/hb-ot-shape-complex-use-table.cc; false)
+
+vowel-constraints: gen-vowel-constraints.py HBIndicVowelConstraints.txt Scripts.txt
+	$(AM_V_GEN) $(builddir)/$^ > $(srcdir)/hb-ot-shape-complex-vowel-constraints.cc \
+	|| ($(RM) $(srcdir)/hb-ot-shape-complex-vowel-constraints.cc; false)
+
+emoji-table: gen-emoji-table.py emoji-data.txt
+	$(AM_V_GEN) $(builddir)/$^ > $(srcdir)/hb-unicode-emoji-table.hh \
+	|| ($(RM) $(srcdir)/hb-unicode-emoji-table.hh; false)
 
 built-sources: $(BUILT_SOURCES)
 
-.PHONY: unicode-tables arabic-table indic-table use-table built-sources
+.PHONY: unicode-tables arabic-table indic-table tag-table use-table vowel-constraints emoji-table built-sources
 
 RAGEL_GENERATED = \
 	$(patsubst %,$(srcdir)/%,$(HB_BASE_RAGEL_GENERATED_sources)) \
-	$(patsubst %,$(srcdir)/%,$(HB_OT_RAGEL_GENERATED_sources)) \
 	$(NULL)
 BUILT_SOURCES += $(RAGEL_GENERATED)
 EXTRA_DIST += \
 	$(HB_BASE_RAGEL_sources) \
-	$(HB_OT_RAGEL_sources) \
 	$(NULL)
-MAINTAINERCLEANFILES += $(RAGEL_GENERATED)
+# We decided to add ragel-generated files to git...
+#MAINTAINERCLEANFILES += $(RAGEL_GENERATED)
 $(srcdir)/%.hh: $(srcdir)/%.rl
 	$(AM_V_GEN)(cd $(srcdir) && $(RAGEL) -e -F1 -o "$*.hh" "$*.rl") \
 	|| ($(RM) "$@"; false)
@@ -270,6 +310,7 @@ noinst_PROGRAMS = \
 	main \
 	test \
 	test-buffer-serialize \
+	test-name-table \
 	test-size-params \
 	test-would-substitute \
 	$(NULL)
@@ -283,43 +324,81 @@ test_SOURCES = test.cc
 test_CPPFLAGS = $(HBCFLAGS) $(FREETYPE_CFLAGS)
 test_LDADD = libharfbuzz.la $(HBLIBS) $(FREETYPE_LIBS)
 
-test_would_substitute_SOURCES = test-would-substitute.cc
-test_would_substitute_CPPFLAGS = $(HBCFLAGS) $(FREETYPE_CFLAGS)
-test_would_substitute_LDADD = libharfbuzz.la $(HBLIBS) $(FREETYPE_LIBS)
+test_buffer_serialize_SOURCES = test-buffer-serialize.cc
+test_buffer_serialize_CPPFLAGS = $(HBCFLAGS)
+test_buffer_serialize_LDADD = libharfbuzz.la $(HBLIBS)
+
+test_name_table_SOURCES = test-name-table.cc
+test_name_table_CPPFLAGS = $(HBCFLAGS)
+test_name_table_LDADD = libharfbuzz.la $(HBLIBS)
 
 test_size_params_SOURCES = test-size-params.cc
 test_size_params_CPPFLAGS = $(HBCFLAGS)
 test_size_params_LDADD = libharfbuzz.la $(HBLIBS)
 
-test_buffer_serialize_SOURCES = test-buffer-serialize.cc
-test_buffer_serialize_CPPFLAGS = $(HBCFLAGS)
-test_buffer_serialize_LDADD = libharfbuzz.la $(HBLIBS)
+test_would_substitute_SOURCES = test-would-substitute.cc
+test_would_substitute_CPPFLAGS = $(HBCFLAGS) $(FREETYPE_CFLAGS)
+test_would_substitute_LDADD = libharfbuzz.la $(HBLIBS) $(FREETYPE_LIBS)
 
-check: harfbuzz.def # For check-defs.sh
+if HAVE_FREETYPE
+if HAVE_CAIRO_FT
+noinst_PROGRAMS += test-ot-color
+test_ot_color_SOURCES = test-ot-color.cc
+test_ot_color_CPPFLAGS = $(HBCFLAGS) $(FREETYPE_CFLAGS) $(CAIRO_FT_CFLAGS)
+test_ot_color_LDADD = libharfbuzz.la $(HBLIBS) $(FREETYPE_LIBS) $(CAIRO_LIBS) $(CAIRO_FT_LIBS)
+endif # HAVE_CAIRO_FT
+endif # HAVE_FREETYPE
 
 dist_check_SCRIPTS = \
 	check-c-linkage-decls.sh \
-	check-defs.sh \
+	check-externs.sh \
 	check-header-guards.sh \
 	check-includes.sh \
-	check-libstdc++.sh \
 	check-static-inits.sh \
 	check-symbols.sh \
 	$(NULL)
+TESTS += $(dist_check_SCRIPTS)
 
-check_PROGRAMS = \
-	test-ot-tag \
+if !WITH_LIBSTDCXX
+dist_check_SCRIPTS += \
+	check-libstdc++.sh \
 	$(NULL)
+endif
+
+check_PROGRAMS += \
+	dump-indic-data \
+	dump-khmer-data \
+	dump-myanmar-data \
+	dump-use-data \
+	$(NULL)
+dump_indic_data_SOURCES = dump-indic-data.cc hb-ot-shape-complex-indic-table.cc
+dump_indic_data_CPPFLAGS = $(HBCFLAGS)
+dump_indic_data_LDADD = libharfbuzz.la $(HBLIBS)
+dump_khmer_data_SOURCES = dump-khmer-data.cc hb-ot-shape-complex-indic-table.cc
+dump_khmer_data_CPPFLAGS = $(HBCFLAGS)
+dump_khmer_data_LDADD = libharfbuzz.la $(HBLIBS)
+dump_myanmar_data_SOURCES = dump-myanmar-data.cc hb-ot-shape-complex-indic-table.cc
+dump_myanmar_data_CPPFLAGS = $(HBCFLAGS)
+dump_myanmar_data_LDADD = libharfbuzz.la $(HBLIBS)
+dump_use_data_SOURCES = dump-use-data.cc hb-ot-shape-complex-use-table.cc
+dump_use_data_CPPFLAGS = $(HBCFLAGS)
+dump_use_data_LDADD = libharfbuzz.la $(HBLIBS)
+
+check_PROGRAMS += test-ot-tag test-unicode-ranges
+TESTS += test-ot-tag test-unicode-ranges
+
 test_ot_tag_SOURCES = hb-ot-tag.cc
 test_ot_tag_CPPFLAGS = $(HBCFLAGS) -DMAIN
 test_ot_tag_LDADD = libharfbuzz.la $(HBLIBS)
 
-TESTS = $(dist_check_SCRIPTS) $(check_PROGRAMS)
+test_unicode_ranges_SOURCES = test-unicode-ranges.cc
+test_unicode_ranges_LDADD = libharfbuzz.la $(HBLIBS)
+
 TESTS_ENVIRONMENT = \
 	srcdir="$(srcdir)" \
 	MAKE="$(MAKE) $(AM_MAKEFLAGS)" \
 	HBSOURCES="$(HBSOURCES)" \
-	HBHEADERS="$(HBHEADERS) $(HBNODISTHEADERS)" \
+	HBHEADERS="$(HBHEADERS)" \
 	$(NULL)
 
 if HAVE_INTROSPECTION
@@ -339,6 +418,8 @@ HarfBuzz_0_0_gir_CFLAGS = \
 	-DHB_H_IN \
 	-DHB_OT_H \
 	-DHB_OT_H_IN \
+	-DHB_AAT_H \
+	-DHB_AAT_H_IN \
 	-DHB_GOBJECT_H \
 	-DHB_GOBJECT_H_IN \
 	-DHB_EXTERN= \
@@ -349,12 +430,9 @@ HarfBuzz_0_0_gir_LIBS = \
 	$(NULL)
 HarfBuzz_0_0_gir_FILES = \
 	$(HBHEADERS) \
-	$(HBNODISTHEADERS) \
 	$(HBSOURCES) \
-	$(HB_GOBJECT_ENUM_sources) \
-	$(HB_GOBJECT_ENUM_headers) \
 	$(HB_GOBJECT_sources) \
-	$(HB_GOBJECT_STRUCTS_headers) \
+	$(HB_GOBJECT_headers) \
 	$(NULL)
 
 girdir = $(datadir)/gir-1.0

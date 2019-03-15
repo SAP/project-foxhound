@@ -17,6 +17,7 @@
 //
 // Unit test compact language detector, CLD2
 //
+/* eslint-disable mozilla/no-arbitrary-setTimeout */
 
 // Test strings.
 const kTeststr_en =
@@ -369,11 +370,11 @@ const kTestPairs = [
 
 // Cross-check the main quadgram table build date
 // Change the expected language each time it is rebuilt
-  ["az", "AZERBAIJANI", kTeststr_version]   // 2014.01.31
+  ["az", "AZERBAIJANI", kTeststr_version],   // 2014.01.31
 ];
 
-Components.utils.import("resource://gre/modules/Timer.jsm");
-let detectorModule = Components.utils.import("resource:///modules/translation/LanguageDetector.jsm", {});
+ChromeUtils.import("resource://gre/modules/Timer.jsm");
+let detectorModule = ChromeUtils.import("resource:///modules/translation/LanguageDetector.jsm", {});
 const LanguageDetector = detectorModule.LanguageDetector;
 
 function check_result(result, langCode, expected) {
@@ -401,10 +402,10 @@ function check_result(result, langCode, expected) {
   equal(result.confident, !expected[0], "Expected confidence");
 }
 
-add_task(function* test_pairs() {
+add_task(async function test_pairs() {
   for (let item of kTestPairs) {
     let params = [item[2],
-                  { text: item[2], tld: "com", language: item[0], encoding: "utf-8" }]
+                  { text: item[2], tld: "com", language: item[0], encoding: "utf-8" }];
 
     for (let [i, param] of params.entries()) {
       // For test items with different expected results when using the
@@ -412,7 +413,7 @@ add_task(function* test_pairs() {
       // Otherwise, fall back to the first set of expected values.
       let expected = item[3 + i] || item[3] || [];
 
-      let result = yield LanguageDetector.detectLanguage(param);
+      let result = await LanguageDetector.detectLanguage(param);
       check_result(result, item[0], expected);
     }
   }
@@ -420,7 +421,7 @@ add_task(function* test_pairs() {
 
 // Test that the worker is flushed shortly after processing a large
 // string.
-add_task(function* test_worker_flush() {
+add_task(async function test_worker_flush() {
   let test_string = kTeststr_fr_en_Latn;
   let test_item = kTestPairs.find(item => item[2] == test_string);
 
@@ -432,7 +433,7 @@ add_task(function* test_worker_flush() {
   equal(detectorModule.workerManager._idleTimeout, null,
         "Should have no idle timeout to start with");
 
-  let result = yield LanguageDetector.detectLanguage(test_string);
+  let result = await LanguageDetector.detectLanguage(test_string);
 
   // Make sure the results are still correct.
   check_result(result, test_item[0], test_item[3]);
@@ -446,7 +447,7 @@ add_task(function* test_worker_flush() {
      "Should have a worker promise");
 
   // Wait for the idle timeout to elapse.
-  yield new Promise(resolve => setTimeout(resolve, detectorModule.IDLE_TIMEOUT));
+  await new Promise(resolve => setTimeout(resolve, detectorModule.IDLE_TIMEOUT));
 
   equal(detectorModule.workerManager._idleTimeout, null,
         "Should have no idle timeout after it has elapsed");
@@ -457,7 +458,7 @@ add_task(function* test_worker_flush() {
 
   // We should still be able to use the language detector after its
   // worker has been flushed.
-  result = yield LanguageDetector.detectLanguage(test_string);
+  result = await LanguageDetector.detectLanguage(test_string);
 
   // Make sure the results are still correct.
   check_result(result, test_item[0], test_item[3]);

@@ -1,6 +1,3 @@
-pub type fsblkcnt_t = ::c_ulong;
-pub type fsfilcnt_t = ::c_ulong;
-pub type rlim_t = c_ulong;
 pub type __priority_which_t = ::c_uint;
 
 s! {
@@ -17,7 +14,7 @@ s! {
         __error_code: ::c_int,
         __return_value: ::ssize_t,
         pub aio_offset: off_t,
-        #[cfg(target_pointer_width = "32")]
+        #[cfg(all(not(target_arch = "x86_64"), target_pointer_width = "32"))]
         __unused1: [::c_char; 4],
         __glibc_reserved: [::c_char; 32]
     }
@@ -44,20 +41,24 @@ s! {
 
         #[cfg(any(target_arch = "aarch64",
                   target_arch = "sparc64",
-                  target_pointer_width = "32"))]
+                  all(target_pointer_width = "32",
+                      not(target_arch = "x86_64"))))]
         pub ut_session: ::c_long,
         #[cfg(any(target_arch = "aarch64",
                   target_arch = "sparc64",
-                  target_pointer_width = "32"))]
+                  all(target_pointer_width = "32",
+                      not(target_arch = "x86_64"))))]
         pub ut_tv: ::timeval,
 
         #[cfg(not(any(target_arch = "aarch64",
                       target_arch = "sparc64",
-                      target_pointer_width = "32")))]
+                      all(target_pointer_width = "32",
+                          not(target_arch = "x86_64")))))]
         pub ut_session: ::int32_t,
         #[cfg(not(any(target_arch = "aarch64",
                       target_arch = "sparc64",
-                      target_pointer_width = "32")))]
+                      all(target_pointer_width = "32",
+                          not(target_arch = "x86_64")))))]
         pub ut_tv: __timeval,
 
         pub ut_addr_v6: [::int32_t; 4],
@@ -70,7 +71,7 @@ s! {
         #[cfg(target_arch = "sparc64")]
         __reserved0: ::c_int,
         pub sa_flags: ::c_int,
-        _restorer: *mut ::c_void,
+        pub sa_restorer: ::dox::Option<extern fn()>,
     }
 
     pub struct stack_t {
@@ -84,6 +85,9 @@ s! {
         pub si_errno: ::c_int,
         pub si_code: ::c_int,
         pub _pad: [::c_int; 29],
+        #[cfg(target_arch = "x86_64")]
+        _align: [u64; 0],
+        #[cfg(not(target_arch = "x86_64"))]
         _align: [usize; 0],
     }
 
@@ -98,12 +102,6 @@ s! {
         __unused3: *mut ::c_void,
         __unused4: *mut ::c_void,
         __unused5: *mut ::c_void,
-    }
-
-    pub struct ucred {
-        pub pid: ::pid_t,
-        pub uid: ::uid_t,
-        pub gid: ::gid_t,
     }
 
     pub struct statfs {
@@ -160,12 +158,89 @@ s! {
     }
 
     // FIXME this is actually a union
+    #[cfg_attr(all(feature = "align", target_pointer_width = "32"),
+               repr(align(4)))]
+    #[cfg_attr(all(feature = "align", target_pointer_width = "64"),
+               repr(align(8)))]
     pub struct sem_t {
         #[cfg(target_pointer_width = "32")]
         __size: [::c_char; 16],
         #[cfg(target_pointer_width = "64")]
         __size: [::c_char; 32],
+        #[cfg(not(feature = "align"))]
         __align: [::c_long; 0],
+    }
+
+    pub struct mallinfo {
+        pub arena: ::c_int,
+        pub ordblks: ::c_int,
+        pub smblks: ::c_int,
+        pub hblks: ::c_int,
+        pub hblkhd: ::c_int,
+        pub usmblks: ::c_int,
+        pub fsmblks: ::c_int,
+        pub uordblks: ::c_int,
+        pub fordblks: ::c_int,
+        pub keepcost: ::c_int,
+    }
+
+    pub struct nlmsghdr {
+        pub nlmsg_len: u32,
+        pub nlmsg_type: u16,
+        pub nlmsg_flags: u16,
+        pub nlmsg_seq: u32,
+        pub nlmsg_pid: u32,
+    }
+
+    pub struct nlmsgerr {
+        pub error: ::c_int,
+        pub msg: nlmsghdr,
+    }
+
+    pub struct nl_pktinfo {
+        pub group: u32,
+    }
+
+    pub struct nl_mmap_req {
+        pub nm_block_size: ::c_uint,
+        pub nm_block_nr: ::c_uint,
+        pub nm_frame_size: ::c_uint,
+        pub nm_frame_nr: ::c_uint,
+    }
+
+    pub struct nl_mmap_hdr {
+        pub nm_status: ::c_uint,
+        pub nm_len: ::c_uint,
+        pub nm_group: u32,
+        pub nm_pid: u32,
+        pub nm_uid: u32,
+        pub nm_gid: u32,
+    }
+
+    pub struct nlattr {
+        pub nla_len: u16,
+        pub nla_type: u16,
+    }
+
+    pub struct rtentry {
+        pub rt_pad1: ::c_ulong,
+        pub rt_dst: ::sockaddr,
+        pub rt_gateway: ::sockaddr,
+        pub rt_genmask: ::sockaddr,
+        pub rt_flags: ::c_ushort,
+        pub rt_pad2: ::c_short,
+        pub rt_pad3: ::c_ulong,
+        pub rt_tos: ::c_uchar,
+        pub rt_class: ::c_uchar,
+        #[cfg(target_pointer_width = "64")]
+        pub rt_pad4: [::c_short; 3usize],
+        #[cfg(not(target_pointer_width = "64"))]
+        pub rt_pad4: ::c_short,
+        pub rt_metric: ::c_short,
+        pub rt_dev: *mut ::c_char,
+        pub rt_mtu: ::c_ulong,
+        pub rt_window: ::c_ulong,
+        pub rt_irtt: ::c_ushort,
     }
 }
 
@@ -191,6 +266,18 @@ pub const RLIMIT_RTTIME: ::c_int = 15;
 pub const RLIMIT_NLIMITS: ::c_int = 16;
 
 pub const SOCK_NONBLOCK: ::c_int = O_NONBLOCK;
+
+pub const SOL_RXRPC: ::c_int = 272;
+pub const SOL_PPPOL2TP: ::c_int = 273;
+pub const SOL_BLUETOOTH: ::c_int = 274;
+pub const SOL_PNPIPE: ::c_int = 275;
+pub const SOL_RDS: ::c_int = 276;
+pub const SOL_IUCV: ::c_int = 277;
+pub const SOL_CAIF: ::c_int = 278;
+pub const SOL_ALG: ::c_int = 279;
+pub const SOL_NFC: ::c_int = 280;
+
+pub const MSG_TRYHARD: ::c_int = 4;
 
 pub const LC_PAPER: ::c_int = 7;
 pub const LC_NAME: ::c_int = 8;
@@ -235,6 +322,8 @@ pub const EREMOTEIO: ::c_int = 121;
 pub const SOCK_STREAM: ::c_int = 1;
 pub const SOCK_DGRAM: ::c_int = 2;
 pub const SOCK_SEQPACKET: ::c_int = 5;
+pub const SOCK_DCCP: ::c_int = 6;
+pub const SOCK_PACKET: ::c_int = 10;
 
 pub const TCP_COOKIE_TRANSACTIONS: ::c_int = 15;
 pub const TCP_THIN_LINEAR_TIMEOUTS: ::c_int = 16;
@@ -247,6 +336,27 @@ pub const TCP_REPAIR_OPTIONS: ::c_int = 22;
 pub const TCP_FASTOPEN: ::c_int = 23;
 pub const TCP_TIMESTAMP: ::c_int = 24;
 
+/* DCCP socket options */
+pub const DCCP_SOCKOPT_PACKET_SIZE: ::c_int = 1;
+pub const DCCP_SOCKOPT_SERVICE: ::c_int = 2;
+pub const DCCP_SOCKOPT_CHANGE_L: ::c_int = 3;
+pub const DCCP_SOCKOPT_CHANGE_R: ::c_int = 4;
+pub const DCCP_SOCKOPT_GET_CUR_MPS: ::c_int = 5;
+pub const DCCP_SOCKOPT_SERVER_TIMEWAIT: ::c_int = 6;
+pub const DCCP_SOCKOPT_SEND_CSCOV: ::c_int = 10;
+pub const DCCP_SOCKOPT_RECV_CSCOV: ::c_int = 11;
+pub const DCCP_SOCKOPT_AVAILABLE_CCIDS: ::c_int = 12;
+pub const DCCP_SOCKOPT_CCID: ::c_int = 13;
+pub const DCCP_SOCKOPT_TX_CCID: ::c_int = 14;
+pub const DCCP_SOCKOPT_RX_CCID: ::c_int = 15;
+pub const DCCP_SOCKOPT_QPOLICY_ID: ::c_int = 16;
+pub const DCCP_SOCKOPT_QPOLICY_TXQLEN: ::c_int = 17;
+pub const DCCP_SOCKOPT_CCID_RX_INFO: ::c_int = 128;
+pub const DCCP_SOCKOPT_CCID_TX_INFO: ::c_int = 192;
+
+/// maximum number of services provided on the same listening port
+pub const DCCP_SERVICE_LIST_MAX_LEN: ::c_int = 32;
+
 pub const SIGTTIN: ::c_int = 21;
 pub const SIGTTOU: ::c_int = 22;
 pub const SIGXCPU: ::c_int = 24;
@@ -257,19 +367,87 @@ pub const SIGWINCH: ::c_int = 28;
 
 pub const SIGEV_THREAD_ID: ::c_int = 4;
 
-pub const POLLRDNORM: ::c_short = 0x040;
-pub const POLLRDBAND: ::c_short = 0x080;
-
-pub const FALLOC_FL_KEEP_SIZE: ::c_int = 0x01;
-pub const FALLOC_FL_PUNCH_HOLE: ::c_int = 0x02;
-
 pub const BUFSIZ: ::c_uint = 8192;
 pub const TMP_MAX: ::c_uint = 238328;
 pub const FOPEN_MAX: ::c_uint = 16;
 pub const POSIX_FADV_DONTNEED: ::c_int = 4;
 pub const POSIX_FADV_NOREUSE: ::c_int = 5;
 pub const POSIX_MADV_DONTNEED: ::c_int = 4;
+pub const _SC_EQUIV_CLASS_MAX: ::c_int = 41;
+pub const _SC_CHARCLASS_NAME_MAX: ::c_int = 45;
+pub const _SC_PII: ::c_int = 53;
+pub const _SC_PII_XTI: ::c_int = 54;
+pub const _SC_PII_SOCKET: ::c_int = 55;
+pub const _SC_PII_INTERNET: ::c_int = 56;
+pub const _SC_PII_OSI: ::c_int = 57;
+pub const _SC_POLL: ::c_int = 58;
+pub const _SC_SELECT: ::c_int = 59;
+pub const _SC_PII_INTERNET_STREAM: ::c_int = 61;
+pub const _SC_PII_INTERNET_DGRAM: ::c_int = 62;
+pub const _SC_PII_OSI_COTS: ::c_int = 63;
+pub const _SC_PII_OSI_CLTS: ::c_int = 64;
+pub const _SC_PII_OSI_M: ::c_int = 65;
+pub const _SC_T_IOV_MAX: ::c_int = 66;
 pub const _SC_2_C_VERSION: ::c_int = 96;
+pub const _SC_CHAR_BIT: ::c_int = 101;
+pub const _SC_CHAR_MAX: ::c_int = 102;
+pub const _SC_CHAR_MIN: ::c_int = 103;
+pub const _SC_INT_MAX: ::c_int = 104;
+pub const _SC_INT_MIN: ::c_int = 105;
+pub const _SC_LONG_BIT: ::c_int = 106;
+pub const _SC_WORD_BIT: ::c_int = 107;
+pub const _SC_MB_LEN_MAX: ::c_int = 108;
+pub const _SC_SSIZE_MAX: ::c_int = 110;
+pub const _SC_SCHAR_MAX: ::c_int = 111;
+pub const _SC_SCHAR_MIN: ::c_int = 112;
+pub const _SC_SHRT_MAX: ::c_int = 113;
+pub const _SC_SHRT_MIN: ::c_int = 114;
+pub const _SC_UCHAR_MAX: ::c_int = 115;
+pub const _SC_UINT_MAX: ::c_int = 116;
+pub const _SC_ULONG_MAX: ::c_int = 117;
+pub const _SC_USHRT_MAX: ::c_int = 118;
+pub const _SC_NL_ARGMAX: ::c_int = 119;
+pub const _SC_NL_LANGMAX: ::c_int = 120;
+pub const _SC_NL_MSGMAX: ::c_int = 121;
+pub const _SC_NL_NMAX: ::c_int = 122;
+pub const _SC_NL_SETMAX: ::c_int = 123;
+pub const _SC_NL_TEXTMAX: ::c_int = 124;
+pub const _SC_BASE: ::c_int = 134;
+pub const _SC_C_LANG_SUPPORT: ::c_int = 135;
+pub const _SC_C_LANG_SUPPORT_R: ::c_int = 136;
+pub const _SC_DEVICE_IO: ::c_int = 140;
+pub const _SC_DEVICE_SPECIFIC: ::c_int = 141;
+pub const _SC_DEVICE_SPECIFIC_R: ::c_int = 142;
+pub const _SC_FD_MGMT: ::c_int = 143;
+pub const _SC_FIFO: ::c_int = 144;
+pub const _SC_PIPE: ::c_int = 145;
+pub const _SC_FILE_ATTRIBUTES: ::c_int = 146;
+pub const _SC_FILE_LOCKING: ::c_int = 147;
+pub const _SC_FILE_SYSTEM: ::c_int = 148;
+pub const _SC_MULTI_PROCESS: ::c_int = 150;
+pub const _SC_SINGLE_PROCESS: ::c_int = 151;
+pub const _SC_NETWORKING: ::c_int = 152;
+pub const _SC_REGEX_VERSION: ::c_int = 156;
+pub const _SC_SIGNALS: ::c_int = 158;
+pub const _SC_SYSTEM_DATABASE: ::c_int = 162;
+pub const _SC_SYSTEM_DATABASE_R: ::c_int = 163;
+pub const _SC_USER_GROUPS: ::c_int = 166;
+pub const _SC_USER_GROUPS_R: ::c_int = 167;
+pub const _SC_LEVEL1_ICACHE_SIZE: ::c_int = 185;
+pub const _SC_LEVEL1_ICACHE_ASSOC: ::c_int = 186;
+pub const _SC_LEVEL1_ICACHE_LINESIZE: ::c_int = 187;
+pub const _SC_LEVEL1_DCACHE_SIZE: ::c_int = 188;
+pub const _SC_LEVEL1_DCACHE_ASSOC: ::c_int = 189;
+pub const _SC_LEVEL1_DCACHE_LINESIZE: ::c_int = 190;
+pub const _SC_LEVEL2_CACHE_SIZE: ::c_int = 191;
+pub const _SC_LEVEL2_CACHE_ASSOC: ::c_int = 192;
+pub const _SC_LEVEL2_CACHE_LINESIZE: ::c_int = 193;
+pub const _SC_LEVEL3_CACHE_SIZE: ::c_int = 194;
+pub const _SC_LEVEL3_CACHE_ASSOC: ::c_int = 195;
+pub const _SC_LEVEL3_CACHE_LINESIZE: ::c_int = 196;
+pub const _SC_LEVEL4_CACHE_SIZE: ::c_int = 197;
+pub const _SC_LEVEL4_CACHE_ASSOC: ::c_int = 198;
+pub const _SC_LEVEL4_CACHE_LINESIZE: ::c_int = 199;
 pub const O_ACCMODE: ::c_int = 3;
 pub const ST_RELATIME: ::c_ulong = 4096;
 pub const NI_MAXHOST: ::socklen_t = 1025;
@@ -302,11 +480,8 @@ pub const TMPFS_MAGIC: ::c_long = 0x01021994;
 pub const USBDEVICE_SUPER_MAGIC: ::c_long = 0x00009fa2;
 
 pub const VEOF: usize = 4;
-pub const IUTF8: ::tcflag_t = 0x00004000;
 
 pub const CPU_SETSIZE: ::c_int = 0x400;
-
-pub const QFMT_VFS_V1: ::c_int = 4;
 
 pub const PTRACE_TRACEME: ::c_uint = 0;
 pub const PTRACE_PEEKTEXT: ::c_uint = 1;
@@ -331,13 +506,8 @@ pub const PTRACE_INTERRUPT: ::c_uint = 0x4207;
 pub const PTRACE_LISTEN: ::c_uint = 0x4208;
 pub const PTRACE_PEEKSIGINFO: ::c_uint = 0x4209;
 
-pub const MADV_DODUMP: ::c_int = 17;
-pub const MADV_DONTDUMP: ::c_int = 16;
-
 pub const EPOLLWAKEUP: ::c_int = 0x20000000;
 
-pub const MADV_HUGEPAGE: ::c_int = 14;
-pub const MADV_NOHUGEPAGE: ::c_int = 15;
 pub const MAP_HUGETLB: ::c_int = 0x040000;
 
 pub const SEEK_DATA: ::c_int = 3;
@@ -411,12 +581,6 @@ pub const NLM_F_EXCL: ::c_int = 0x200;
 pub const NLM_F_CREATE: ::c_int = 0x400;
 pub const NLM_F_APPEND: ::c_int = 0x800;
 
-pub const NLMSG_NOOP: ::c_int = 0x1;
-pub const NLMSG_ERROR: ::c_int = 0x2;
-pub const NLMSG_DONE: ::c_int = 0x3;
-pub const NLMSG_OVERRUN: ::c_int = 0x4;
-pub const NLMSG_MIN_TYPE: ::c_int = 0x10;
-
 pub const NETLINK_ADD_MEMBERSHIP: ::c_int = 1;
 pub const NETLINK_DROP_MEMBERSHIP: ::c_int = 2;
 pub const NETLINK_PKTINFO: ::c_int = 3;
@@ -432,6 +596,239 @@ pub const NLA_F_NESTED: ::c_int = 1 << 15;
 pub const NLA_F_NET_BYTEORDER: ::c_int = 1 << 14;
 pub const NLA_TYPE_MASK: ::c_int = !(NLA_F_NESTED | NLA_F_NET_BYTEORDER);
 
+pub const NLA_ALIGNTO: ::c_int = 4;
+
+pub const GENL_UNS_ADMIN_PERM: ::c_int = 0x10;
+
+pub const GENL_ID_VFS_DQUOT: ::c_int = ::NLMSG_MIN_TYPE + 1;
+pub const GENL_ID_PMCRAID: ::c_int = ::NLMSG_MIN_TYPE + 2;
+
+pub const TIOCM_LE: ::c_int = 0x001;
+pub const TIOCM_DTR: ::c_int = 0x002;
+pub const TIOCM_RTS: ::c_int = 0x004;
+pub const TIOCM_ST: ::c_int = 0x008;
+pub const TIOCM_SR: ::c_int = 0x010;
+pub const TIOCM_CTS: ::c_int = 0x020;
+pub const TIOCM_CAR: ::c_int = 0x040;
+pub const TIOCM_RNG: ::c_int = 0x080;
+pub const TIOCM_DSR: ::c_int = 0x100;
+pub const TIOCM_CD: ::c_int = TIOCM_CAR;
+pub const TIOCM_RI: ::c_int = TIOCM_RNG;
+
+pub const NF_NETDEV_INGRESS: ::c_int = 0;
+pub const NF_NETDEV_NUMHOOKS: ::c_int = 1;
+
+pub const NFPROTO_INET: ::c_int = 1;
+pub const NFPROTO_NETDEV: ::c_int = 5;
+
+// linux/netfilter/nf_tables.h
+cfg_if!{
+    if #[cfg(any(target_arch = "arm", target_arch = "powerpc",
+                 target_arch = "powerpc64", target_arch = "aarch64"))] {
+        pub const NFT_TABLE_MAXNAMELEN: ::c_int = 32;
+        pub const NFT_CHAIN_MAXNAMELEN: ::c_int = 32;
+        pub const NFT_SET_MAXNAMELEN: ::c_int = 32;
+        pub const NFT_OBJ_MAXNAMELEN: ::c_int = 32;
+    } else if #[cfg(target_arch = "sparc64")] {
+        pub const NFT_TABLE_MAXNAMELEN: ::c_int = 32;
+        pub const NFT_CHAIN_MAXNAMELEN: ::c_int = 32;
+        pub const NFT_SET_MAXNAMELEN: ::c_int = 32;
+    } else {
+        pub const NFT_TABLE_MAXNAMELEN: ::c_int = 256;
+        pub const NFT_CHAIN_MAXNAMELEN: ::c_int = 256;
+        pub const NFT_SET_MAXNAMELEN: ::c_int = 256;
+        pub const NFT_OBJ_MAXNAMELEN: ::c_int = 256;
+    }
+}
+pub const NFT_USERDATA_MAXLEN: ::c_int = 256;
+
+pub const NFT_REG_VERDICT: ::c_int = 0;
+pub const NFT_REG_1: ::c_int = 1;
+pub const NFT_REG_2: ::c_int = 2;
+pub const NFT_REG_3: ::c_int = 3;
+pub const NFT_REG_4: ::c_int = 4;
+pub const __NFT_REG_MAX: ::c_int = 5;
+pub const NFT_REG32_00: ::c_int = 8;
+pub const NFT_REG32_01: ::c_int = 9;
+pub const NFT_REG32_02: ::c_int = 10;
+pub const NFT_REG32_03: ::c_int = 11;
+pub const NFT_REG32_04: ::c_int = 12;
+pub const NFT_REG32_05: ::c_int = 13;
+pub const NFT_REG32_06: ::c_int = 14;
+pub const NFT_REG32_07: ::c_int = 15;
+pub const NFT_REG32_08: ::c_int = 16;
+pub const NFT_REG32_09: ::c_int = 17;
+pub const NFT_REG32_10: ::c_int = 18;
+pub const NFT_REG32_11: ::c_int = 19;
+pub const NFT_REG32_12: ::c_int = 20;
+pub const NFT_REG32_13: ::c_int = 21;
+pub const NFT_REG32_14: ::c_int = 22;
+pub const NFT_REG32_15: ::c_int = 23;
+
+pub const NFT_REG_SIZE: ::c_int = 16;
+pub const NFT_REG32_SIZE: ::c_int = 4;
+
+pub const NFT_CONTINUE: ::c_int = -1;
+pub const NFT_BREAK: ::c_int = -2;
+pub const NFT_JUMP: ::c_int = -3;
+pub const NFT_GOTO: ::c_int = -4;
+pub const NFT_RETURN: ::c_int = -5;
+
+pub const NFT_MSG_NEWTABLE: ::c_int = 0;
+pub const NFT_MSG_GETTABLE: ::c_int = 1;
+pub const NFT_MSG_DELTABLE: ::c_int = 2;
+pub const NFT_MSG_NEWCHAIN: ::c_int = 3;
+pub const NFT_MSG_GETCHAIN: ::c_int = 4;
+pub const NFT_MSG_DELCHAIN: ::c_int = 5;
+pub const NFT_MSG_NEWRULE: ::c_int = 6;
+pub const NFT_MSG_GETRULE: ::c_int = 7;
+pub const NFT_MSG_DELRULE: ::c_int = 8;
+pub const NFT_MSG_NEWSET: ::c_int = 9;
+pub const NFT_MSG_GETSET: ::c_int = 10;
+pub const NFT_MSG_DELSET: ::c_int = 11;
+pub const NFT_MSG_NEWSETELEM: ::c_int = 12;
+pub const NFT_MSG_GETSETELEM: ::c_int = 13;
+pub const NFT_MSG_DELSETELEM: ::c_int = 14;
+pub const NFT_MSG_NEWGEN: ::c_int = 15;
+pub const NFT_MSG_GETGEN: ::c_int = 16;
+pub const NFT_MSG_TRACE: ::c_int = 17;
+cfg_if! {
+    if #[cfg(not(target_arch = "sparc64"))] {
+        pub const NFT_MSG_NEWOBJ: ::c_int = 18;
+        pub const NFT_MSG_GETOBJ: ::c_int = 19;
+        pub const NFT_MSG_DELOBJ: ::c_int = 20;
+        pub const NFT_MSG_GETOBJ_RESET: ::c_int = 21;
+        pub const NFT_MSG_MAX: ::c_int = 22;
+    } else {
+        pub const NFT_MSG_MAX: ::c_int = 18;
+    }
+}
+
+pub const NFT_SET_ANONYMOUS: ::c_int = 0x1;
+pub const NFT_SET_CONSTANT: ::c_int = 0x2;
+pub const NFT_SET_INTERVAL: ::c_int = 0x4;
+pub const NFT_SET_MAP: ::c_int = 0x8;
+pub const NFT_SET_TIMEOUT: ::c_int = 0x10;
+pub const NFT_SET_EVAL: ::c_int = 0x20;
+
+pub const NFT_SET_POL_PERFORMANCE: ::c_int = 0;
+pub const NFT_SET_POL_MEMORY: ::c_int = 1;
+
+pub const NFT_SET_ELEM_INTERVAL_END: ::c_int = 0x1;
+
+pub const NFT_DATA_VALUE: ::c_uint = 0;
+pub const NFT_DATA_VERDICT: ::c_uint = 0xffffff00;
+
+pub const NFT_DATA_RESERVED_MASK: ::c_uint = 0xffffff00;
+
+pub const NFT_DATA_VALUE_MAXLEN: ::c_int = 64;
+
+pub const NFT_BYTEORDER_NTOH: ::c_int = 0;
+pub const NFT_BYTEORDER_HTON: ::c_int = 1;
+
+pub const NFT_CMP_EQ: ::c_int = 0;
+pub const NFT_CMP_NEQ: ::c_int = 1;
+pub const NFT_CMP_LT: ::c_int = 2;
+pub const NFT_CMP_LTE: ::c_int = 3;
+pub const NFT_CMP_GT: ::c_int = 4;
+pub const NFT_CMP_GTE: ::c_int = 5;
+
+pub const NFT_RANGE_EQ: ::c_int = 0;
+pub const NFT_RANGE_NEQ: ::c_int = 1;
+
+pub const NFT_LOOKUP_F_INV: ::c_int = (1 << 0);
+
+pub const NFT_DYNSET_OP_ADD: ::c_int = 0;
+pub const NFT_DYNSET_OP_UPDATE: ::c_int = 1;
+
+pub const NFT_DYNSET_F_INV: ::c_int = (1 << 0);
+
+pub const NFT_PAYLOAD_LL_HEADER: ::c_int = 0;
+pub const NFT_PAYLOAD_NETWORK_HEADER: ::c_int = 1;
+pub const NFT_PAYLOAD_TRANSPORT_HEADER: ::c_int = 2;
+
+pub const NFT_PAYLOAD_CSUM_NONE: ::c_int = 0;
+pub const NFT_PAYLOAD_CSUM_INET: ::c_int = 1;
+
+pub const NFT_META_LEN: ::c_int = 0;
+pub const NFT_META_PROTOCOL: ::c_int = 1;
+pub const NFT_META_PRIORITY: ::c_int = 2;
+pub const NFT_META_MARK: ::c_int = 3;
+pub const NFT_META_IIF: ::c_int = 4;
+pub const NFT_META_OIF: ::c_int = 5;
+pub const NFT_META_IIFNAME: ::c_int = 6;
+pub const NFT_META_OIFNAME: ::c_int = 7;
+pub const NFT_META_IIFTYPE: ::c_int = 8;
+pub const NFT_META_OIFTYPE: ::c_int = 9;
+pub const NFT_META_SKUID: ::c_int = 10;
+pub const NFT_META_SKGID: ::c_int = 11;
+pub const NFT_META_NFTRACE: ::c_int = 12;
+pub const NFT_META_RTCLASSID: ::c_int = 13;
+pub const NFT_META_SECMARK: ::c_int = 14;
+pub const NFT_META_NFPROTO: ::c_int = 15;
+pub const NFT_META_L4PROTO: ::c_int = 16;
+pub const NFT_META_BRI_IIFNAME: ::c_int = 17;
+pub const NFT_META_BRI_OIFNAME: ::c_int = 18;
+pub const NFT_META_PKTTYPE: ::c_int = 19;
+pub const NFT_META_CPU: ::c_int = 20;
+pub const NFT_META_IIFGROUP: ::c_int = 21;
+pub const NFT_META_OIFGROUP: ::c_int = 22;
+pub const NFT_META_CGROUP: ::c_int = 23;
+pub const NFT_META_PRANDOM: ::c_int = 24;
+
+pub const NFT_CT_STATE: ::c_int = 0;
+pub const NFT_CT_DIRECTION: ::c_int = 1;
+pub const NFT_CT_STATUS: ::c_int = 2;
+pub const NFT_CT_MARK: ::c_int = 3;
+pub const NFT_CT_SECMARK: ::c_int = 4;
+pub const NFT_CT_EXPIRATION: ::c_int = 5;
+pub const NFT_CT_HELPER: ::c_int = 6;
+pub const NFT_CT_L3PROTOCOL: ::c_int = 7;
+pub const NFT_CT_SRC: ::c_int = 8;
+pub const NFT_CT_DST: ::c_int = 9;
+pub const NFT_CT_PROTOCOL: ::c_int = 10;
+pub const NFT_CT_PROTO_SRC: ::c_int = 11;
+pub const NFT_CT_PROTO_DST: ::c_int = 12;
+pub const NFT_CT_LABELS: ::c_int = 13;
+pub const NFT_CT_PKTS: ::c_int = 14;
+pub const NFT_CT_BYTES: ::c_int = 15;
+
+pub const NFT_LIMIT_PKTS: ::c_int = 0;
+pub const NFT_LIMIT_PKT_BYTES: ::c_int = 1;
+
+pub const NFT_LIMIT_F_INV: ::c_int = (1 << 0);
+
+pub const NFT_QUEUE_FLAG_BYPASS: ::c_int = 0x01;
+pub const NFT_QUEUE_FLAG_CPU_FANOUT: ::c_int = 0x02;
+pub const NFT_QUEUE_FLAG_MASK: ::c_int = 0x03;
+
+pub const NFT_QUOTA_F_INV: ::c_int = (1 << 0);
+
+pub const NFT_REJECT_ICMP_UNREACH: ::c_int = 0;
+pub const NFT_REJECT_TCP_RST: ::c_int = 1;
+pub const NFT_REJECT_ICMPX_UNREACH: ::c_int = 2;
+
+pub const NFT_REJECT_ICMPX_NO_ROUTE: ::c_int = 0;
+pub const NFT_REJECT_ICMPX_PORT_UNREACH: ::c_int = 1;
+pub const NFT_REJECT_ICMPX_HOST_UNREACH: ::c_int = 2;
+pub const NFT_REJECT_ICMPX_ADMIN_PROHIBITED: ::c_int = 3;
+
+pub const NFT_NAT_SNAT: ::c_int = 0;
+pub const NFT_NAT_DNAT: ::c_int = 1;
+
+pub const NFT_TRACETYPE_UNSPEC: ::c_int = 0;
+pub const NFT_TRACETYPE_POLICY: ::c_int = 1;
+pub const NFT_TRACETYPE_RETURN: ::c_int = 2;
+pub const NFT_TRACETYPE_RULE: ::c_int = 3;
+
+pub const NFT_NG_INCREMENTAL: ::c_int = 0;
+pub const NFT_NG_RANDOM: ::c_int = 1;
+
+#[doc(hidden)]
+pub const AF_MAX: ::c_int = 42;
+#[doc(hidden)]
+pub const PF_MAX: ::c_int = AF_MAX;
+
 cfg_if! {
     if #[cfg(any(target_arch = "arm", target_arch = "x86",
                  target_arch = "x86_64"))] {
@@ -440,6 +837,13 @@ cfg_if! {
         pub const PTHREAD_STACK_MIN: ::size_t = 0x6000;
     } else {
         pub const PTHREAD_STACK_MIN: ::size_t = 131072;
+    }
+}
+pub const PTHREAD_MUTEX_ADAPTIVE_NP: ::c_int = 3;
+
+f! {
+    pub fn NLA_ALIGN(len: ::c_int) -> ::c_int {
+        return ((len) + NLA_ALIGNTO - 1) & !(NLA_ALIGNTO - 1)
     }
 }
 
@@ -456,13 +860,6 @@ extern {
 
 #[link(name = "util")]
 extern {
-    pub fn sysctl(name: *mut ::c_int,
-                  namelen: ::c_int,
-                  oldp: *mut ::c_void,
-                  oldlenp: *mut ::size_t,
-                  newp: *mut ::c_void,
-                  newlen: ::size_t)
-                  -> ::c_int;
     pub fn ioctl(fd: ::c_int, request: ::c_ulong, ...) -> ::c_int;
     pub fn backtrace(buf: *mut *mut ::c_void,
                      sz: ::c_int) -> ::c_int;
@@ -489,7 +886,27 @@ extern {
     pub fn pthread_setaffinity_np(thread: ::pthread_t,
                                   cpusetsize: ::size_t,
                                   cpuset: *const ::cpu_set_t) -> ::c_int;
+    pub fn pthread_rwlockattr_getkind_np(attr: *const ::pthread_rwlockattr_t,
+                                         val: *mut ::c_int) -> ::c_int;
+    pub fn pthread_rwlockattr_setkind_np(attr: *mut ::pthread_rwlockattr_t,
+                                         val: ::c_int) -> ::c_int;
     pub fn sched_getcpu() -> ::c_int;
+    pub fn mallinfo() -> ::mallinfo;
+    pub fn malloc_usable_size(ptr: *mut ::c_void) -> ::size_t;
+    pub fn getauxval(type_: ::c_ulong) -> ::c_ulong;
+    #[cfg_attr(target_os = "netbsd", link_name = "__getpwent_r50")]
+    #[cfg_attr(target_os = "solaris", link_name = "__posix_getpwent_r")]
+    pub fn getpwent_r(pwd: *mut ::unix::notbsd::linux::passwd,
+                      buf: *mut ::c_char,
+                      buflen: ::size_t,
+                      result: *mut *mut ::unix::notbsd
+                                        ::linux::passwd) -> ::c_int;
+    #[cfg_attr(target_os = "netbsd", link_name = "__getgrent_r50")]
+    #[cfg_attr(target_os = "solaris", link_name = "__posix_getgrent_r")]
+    pub fn getgrent_r(grp: *mut ::group,
+                      buf: *mut ::c_char,
+                      buflen: ::size_t,
+                      result: *mut *mut ::group) -> ::c_int;
 }
 
 cfg_if! {

@@ -4,8 +4,7 @@
 "use strict";
 
 const {cssUsageSpec} = require("devtools/shared/specs/csscoverage");
-const protocol = require("devtools/shared/protocol");
-const {custom} = protocol;
+const { FrontClassWithSpec, registerFront } = require("devtools/shared/protocol");
 
 const {LocalizationHelper} = require("devtools/shared/l10n");
 const L10N = new LocalizationHelper("devtools/shared/locales/csscoverage.properties");
@@ -16,7 +15,7 @@ loader.lazyRequireGetter(this, "gDevTools", "devtools/client/framework/devtools"
  * Allow: let foo = l10n.lookup("csscoverageFoo");
  */
 const l10n = exports.l10n = {
-  lookup: (msg) => L10N.getStr(msg)
+  lookup: (msg) => L10N.getStr(msg),
 };
 
 /**
@@ -32,29 +31,29 @@ var chromeWindow;
 /**
  * Front for CSSUsageActor
  */
-const CSSUsageFront = protocol.FrontClassWithSpec(cssUsageSpec, {
-  initialize: function (client, form) {
-    protocol.Front.prototype.initialize.call(this, client, form);
-    this.actorID = form.cssUsageActor;
+class CSSUsageFront extends FrontClassWithSpec(cssUsageSpec) {
+  constructor(client, form) {
+    super(client, { actor: form.cssUsageActor });
     this.manage(this);
-  },
+    this.before("state-change", this._onStateChange.bind(this));
+  }
 
-  _onStateChange: protocol.preEvent("state-change", function (ev) {
+  _onStateChange(ev) {
     isRunning = ev.isRunning;
     ev.target = target;
 
     if (isRunning) {
-      let gnb = chromeWindow.document.getElementById("global-notificationbox");
+      const gnb = chromeWindow.gNotificationBox;
       notification = gnb.getNotificationWithValue("csscoverage-running");
 
       if (notification == null) {
-        let notifyStop = reason => {
+        const notifyStop = reason => {
           if (reason == "removed") {
             this.stop();
           }
         };
 
-        let msg = l10n.lookup("csscoverageRunningReply");
+        const msg = l10n.lookup("csscoverageRunningReply");
         notification = gnb.appendNotification(msg, "csscoverage-running",
                                               "",
                                               gnb.PRIORITY_INFO_HIGH,
@@ -63,63 +62,42 @@ const CSSUsageFront = protocol.FrontClassWithSpec(cssUsageSpec, {
       }
     } else {
       if (notification) {
-        notification.remove();
+        notification.close();
         notification = undefined;
       }
 
       gDevTools.showToolbox(target, "styleeditor");
       target = undefined;
     }
-  }),
+  }
 
   /**
    * Server-side start is above. Client-side start adds a notification box
    */
-  start: custom(function (newChromeWindow, newTarget, noreload = false) {
+  start(newChromeWindow, newTarget, noreload = false) {
     target = newTarget;
     chromeWindow = newChromeWindow;
 
-    return this._start(noreload);
-  }, {
-    impl: "_start"
-  }),
+    return super.start(noreload);
+  }
 
   /**
    * Server-side start is above. Client-side start adds a notification box
    */
-  toggle: custom(function (newChromeWindow, newTarget) {
+  toggle(newChromeWindow, newTarget) {
     target = newTarget;
     chromeWindow = newChromeWindow;
 
-    return this._toggle();
-  }, {
-    impl: "_toggle"
-  }),
+    return super.toggle();
+  }
 
   /**
    * We count STARTING and STOPPING as 'running'
    */
-  isRunning: function () {
+  isRunning() {
     return isRunning;
   }
-});
+}
 
 exports.CSSUsageFront = CSSUsageFront;
-
-const knownFronts = new WeakMap();
-
-/**
- * Create a CSSUsageFront only when needed (returns a promise)
- * For notes on target.makeRemote(), see
- * https://bugzilla.mozilla.org/show_bug.cgi?id=1016330#c7
- */
-exports.getUsage = function (trgt) {
-  return trgt.makeRemote().then(() => {
-    let front = knownFronts.get(trgt.client);
-    if (front == null && trgt.form.cssUsageActor != null) {
-      front = new CSSUsageFront(trgt.client, trgt.form);
-      knownFronts.set(trgt.client, front);
-    }
-    return front;
-  });
-};
+registerFront(CSSUsageFront);

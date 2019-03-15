@@ -31,13 +31,15 @@ function test() {
 }
 
 function preparePendingTab(aCallback) {
-  let tab = gBrowser.addTab(URL);
+  let tab = BrowserTestUtils.addTab(gBrowser, URL);
 
   whenLoaded(tab.linkedBrowser, function() {
-    BrowserTestUtils.removeTab(tab).then(() => {
+    let sessionUpdatePromise = BrowserTestUtils.waitForSessionStoreUpdate(tab);
+    BrowserTestUtils.removeTab(tab);
+    sessionUpdatePromise.then(() => {
       let [{state}] = JSON.parse(SessionStore.getClosedTabData(window));
 
-      tab = gBrowser.addTab("about:blank");
+      tab = BrowserTestUtils.addTab(gBrowser, "about:blank");
       whenLoaded(tab.linkedBrowser, function() {
         SessionStore.setTabState(tab, JSON.stringify(state));
         ok(tab.hasAttribute("pending"), "tab should be pending");
@@ -47,8 +49,8 @@ function preparePendingTab(aCallback) {
   });
 }
 
-function whenLoaded(aElement, aCallback) {
-  aElement.addEventListener("load", function() {
+function whenLoaded(aBrowser, aCallback) {
+  BrowserTestUtils.browserLoaded(aBrowser).then(() => {
     executeSoon(aCallback);
-  }, {capture: true, once: true});
+  });
 }

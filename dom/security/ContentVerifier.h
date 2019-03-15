@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,10 +21,9 @@
  * If the verification fails or anything else goes wrong, a
  * NS_ERROR_INVALID_SIGNATURE is thrown.
  */
-class ContentVerifier : public nsIStreamListener
-                      , public nsIContentSignatureReceiverCallback
-{
-public:
+class ContentVerifier : public nsIStreamListener,
+                        public nsIContentSignatureReceiverCallback {
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSISTREAMLISTENER
   NS_DECL_NSIREQUESTOBSERVER
@@ -31,17 +31,17 @@ public:
 
   explicit ContentVerifier(nsIStreamListener* aMediatedListener,
                            nsISupports* aMediatedContext)
-    : mNextListener(aMediatedListener)
-    , mContextCreated(false)
-    , mContentRead(false) {}
+      : mNextListener(aMediatedListener),
+        mContextCreated(false),
+        mContentRead(false) {}
 
   nsresult Init(const nsACString& aContentSignatureHeader, nsIRequest* aRequest,
                 nsISupports* aContext);
 
-protected:
+ protected:
   virtual ~ContentVerifier() {}
 
-private:
+ private:
   void FinishSignature();
 
   // buffered content to verify

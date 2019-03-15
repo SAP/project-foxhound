@@ -19,14 +19,10 @@
  * @param headers
  *   an nsHttpHeaders object to use to check validity
  */
-function assertValidHeader(fieldName, fieldValue, headers)
-{
-  try
-  {
+function assertValidHeader(fieldName, fieldValue, headers) {
+  try {
     headers.setHeader(fieldName, fieldValue, false);
-  }
-  catch (e)
-  {
+  } catch (e) {
     do_throw("Unexpected exception thrown: " + e);
   }
 }
@@ -41,32 +37,26 @@ function assertValidHeader(fieldName, fieldValue, headers)
  * @param headers
  *   an nsHttpHeaders object to use to check validity
  */
-function assertInvalidHeader(fieldName, fieldValue, headers)
-{
-  try
-  {
+function assertInvalidHeader(fieldName, fieldValue, headers) {
+  try {
     headers.setHeader(fieldName, fieldValue, false);
     throw "Setting (" + fieldName + ", " +
           fieldValue + ") as header succeeded!";
-  }
-  catch (e)
-  {
-    if (e !== Cr.NS_ERROR_INVALID_ARG)
+  } catch (e) {
+    if (e.result !== Cr.NS_ERROR_INVALID_ARG)
       do_throw("Unexpected exception thrown: " + e);
   }
 }
 
 
-function run_test()
-{
+function run_test() {
   testHeaderValidity();
   testGetHeader();
   testHeaderEnumerator();
   testHasHeader();
 }
 
-function testHeaderValidity()
-{
+function testHeaderValidity() {
   var headers = new nsHttpHeaders();
 
   assertInvalidHeader("f o", "bar", headers);
@@ -102,88 +92,75 @@ function testHeaderValidity()
   assertValidHeader("~~~", "b\r\n\tbar", headers);
 }
 
-function testGetHeader()
-{
+function testGetHeader() {
   var headers = new nsHttpHeaders();
 
   headers.setHeader("Content-Type", "text/html", false);
   var c = headers.getHeader("content-type");
-  do_check_eq(c, "text/html");
+  Assert.equal(c, "text/html");
 
   headers.setHeader("test", "FOO", false);
-  var c = headers.getHeader("test");
-  do_check_eq(c, "FOO");
+  c = headers.getHeader("test");
+  Assert.equal(c, "FOO");
 
-  try
-  {
+  try {
     headers.getHeader(":");
     throw "Failed to throw for invalid header";
-  }
-  catch (e)
-  {
-    if (e !== Cr.NS_ERROR_INVALID_ARG)
+  } catch (e) {
+    if (e.result !== Cr.NS_ERROR_INVALID_ARG)
       do_throw("headers.getHeader(':') must throw invalid arg");
   }
 
-  try
-  {
+  try {
     headers.getHeader("valid");
-    throw 'header doesn\'t exist';
-  }
-  catch (e)
-  {
-    if (e !== Cr.NS_ERROR_NOT_AVAILABLE)
+    throw "header doesn't exist";
+  } catch (e) {
+    if (e.result !== Cr.NS_ERROR_NOT_AVAILABLE)
       do_throw("shouldn't be a header named 'valid' in headers!");
   }
 }
 
-function testHeaderEnumerator()
-{
+function testHeaderEnumerator() {
   var headers = new nsHttpHeaders();
 
   var heads =
     {
       "foo": "17",
       "baz": "two six niner",
-      "decaf": "class Program { int .7; int main(){ .7 = 5; return 7 - .7; } }"
+      "decaf": "class Program { int .7; int main(){ .7 = 5; return 7 - .7; } }",
     };
 
   for (var i in heads)
     headers.setHeader(i, heads[i], false);
 
   var en = headers.enumerator;
-  while (en.hasMoreElements())
-  {
+  while (en.hasMoreElements()) {
     var it = en.getNext().QueryInterface(Ci.nsISupportsString).data;
-    do_check_true(it.toLowerCase() in heads);
+    Assert.ok(it.toLowerCase() in heads);
     delete heads[it.toLowerCase()];
   }
 
-  for (var i in heads)
+  if (Object.keys(heads).length != 0) {
     do_throw("still have properties in heads!?!?");
-
+  }
 }
 
-function testHasHeader()
-{
+function testHasHeader() {
   var headers = new nsHttpHeaders();
 
   headers.setHeader("foo", "bar", false);
-  do_check_true(headers.hasHeader("foo"));
-  do_check_true(headers.hasHeader("fOo"));
-  do_check_false(headers.hasHeader("not-there"));
+  Assert.ok(headers.hasHeader("foo"));
+  Assert.ok(headers.hasHeader("fOo"));
+  Assert.ok(!headers.hasHeader("not-there"));
 
   headers.setHeader("f`'~", "bar", false);
-  do_check_true(headers.hasHeader("F`'~"));
+  Assert.ok(headers.hasHeader("F`'~"));
 
-  try
-  {
+  try {
     headers.hasHeader(":");
     throw "failed to throw";
-  }
-  catch (e)
-  {
-    if (e !== Cr.NS_ERROR_INVALID_ARG)
+  } catch (e) {
+    if (e.result !== Cr.NS_ERROR_INVALID_ARG)
       do_throw(".hasHeader for an invalid name should throw");
   }
 }

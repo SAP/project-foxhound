@@ -7,30 +7,23 @@
 #include "mozilla/dom/DispatcherTrait.h"
 
 #include "mozilla/AbstractThread.h"
-#include "mozilla/Dispatcher.h"
+#include "mozilla/SchedulerGroup.h"
 #include "nsINamed.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
 
-nsresult
-DispatcherTrait::Dispatch(const char* aName,
-                          TaskCategory aCategory,
-                          already_AddRefed<nsIRunnable>&& aRunnable)
-{
-  return Dispatcher::UnlabeledDispatch(aName, aCategory, Move(aRunnable));
+nsresult DispatcherTrait::Dispatch(TaskCategory aCategory,
+                                   already_AddRefed<nsIRunnable>&& aRunnable) {
+  return SchedulerGroup::UnlabeledDispatch(aCategory, std::move(aRunnable));
 }
 
-nsIEventTarget*
-DispatcherTrait::EventTargetFor(TaskCategory aCategory) const
-{
-  nsCOMPtr<nsIEventTarget> main = do_GetMainThread();
-  return main;
+nsISerialEventTarget* DispatcherTrait::EventTargetFor(
+    TaskCategory aCategory) const {
+  return GetMainThreadSerialEventTarget();
 }
 
-AbstractThread*
-DispatcherTrait::AbstractMainThreadFor(TaskCategory aCategory)
-{
+AbstractThread* DispatcherTrait::AbstractMainThreadFor(TaskCategory aCategory) {
   // Return non DocGroup version by default.
   return AbstractThread::MainThread();
 }

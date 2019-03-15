@@ -5,193 +5,65 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WebIDLGlobalNameHash.h"
+#include "js/Class.h"
 #include "js/GCAPI.h"
+#include "js/Id.h"
+#include "js/Wrapper.h"
+#include "jsapi.h"
+#include "jsfriendapi.h"
+#include "mozilla/ArrayUtils.h"
+#include "mozilla/ErrorResult.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/dom/DOMJSClass.h"
 #include "mozilla/dom/DOMJSProxyHandler.h"
+#include "mozilla/dom/JSSlots.h"
+#include "mozilla/dom/PrototypeList.h"
 #include "mozilla/dom/RegisterBindings.h"
+#include "nsGlobalWindow.h"
 #include "nsIMemoryReporter.h"
 #include "nsTHashtable.h"
+#include "WrapperFactory.h"
 
 namespace mozilla {
 namespace dom {
 
-struct MOZ_STACK_CLASS WebIDLNameTableKey
-{
-  explicit WebIDLNameTableKey(JSFlatString* aJSString)
-    : mLength(js::GetFlatStringLength(aJSString))
-  {
-    mNogc.emplace();
-    JSLinearString* jsString = js::FlatStringToLinearString(aJSString);
-    if (js::LinearStringHasLatin1Chars(jsString)) {
-      mLatin1String = reinterpret_cast<const char*>(
-        js::GetLatin1LinearStringChars(*mNogc, jsString));
-      mTwoBytesString = nullptr;
-      mHash = mLatin1String ? HashString(mLatin1String, mLength) : 0;
-    } else {
-      mLatin1String = nullptr;
-      mTwoBytesString = js::GetTwoByteLinearStringChars(*mNogc, jsString);
-      mHash = mTwoBytesString ? HashString(mTwoBytesString, mLength) : 0;
+static JSObject* FindNamedConstructorForXray(
+    JSContext* aCx, JS::Handle<jsid> aId, const WebIDLNameTableEntry* aEntry) {
+  JSObject* interfaceObject =
+      GetPerInterfaceObjectHandle(aCx, aEntry->mConstructorId, aEntry->mCreate,
+                                  /* aDefineOnGlobal = */ false);
+  if (!interfaceObject) {
+    return nullptr;
+  }
+
+  // This is a call over Xrays, so we will actually use the return value
+  // (instead of just having it defined on the global now).  Check for named
+  // constructors with this id, in case that's what the caller is asking for.
+  for (unsigned slot = DOM_INTERFACE_SLOTS_BASE;
+       slot < JSCLASS_RESERVED_SLOTS(js::GetObjectClass(interfaceObject));
+       ++slot) {
+    JSObject* constructor =
+        &js::GetReservedSlot(interfaceObject, slot).toObject();
+    if (JS_GetFunctionId(JS_GetObjectFunction(constructor)) ==
+        JSID_TO_STRING(aId)) {
+      return constructor;
     }
   }
-  explicit WebIDLNameTableKey(const char* aString, size_t aLength)
-    : mLatin1String(aString),
-      mTwoBytesString(nullptr),
-      mLength(aLength),
-      mHash(HashString(aString, aLength))
-  {
-    MOZ_ASSERT(aString[aLength] == '\0');
-  }
 
-  Maybe<JS::AutoCheckCannotGC> mNogc;
-  const char* mLatin1String;
-  const char16_t* mTwoBytesString;
-  size_t mLength;
-  uint32_t mHash;
-};
-
-struct WebIDLNameTableEntry : public PLDHashEntryHdr
-{
-  typedef const WebIDLNameTableKey& KeyType;
-  typedef const WebIDLNameTableKey* KeyTypePointer;
-
-  explicit WebIDLNameTableEntry(KeyTypePointer aKey)
-    : mNameOffset(0),
-      mNameLength(0),
-      mDefine(nullptr),
-      mEnabled(nullptr)
-  {}
-  WebIDLNameTableEntry(WebIDLNameTableEntry&& aEntry)
-    : mNameOffset(aEntry.mNameOffset),
-      mNameLength(aEntry.mNameLength),
-      mDefine(aEntry.mDefine),
-      mEnabled(aEntry.mEnabled)
-  {}
-  ~WebIDLNameTableEntry()
-  {}
-
-  bool KeyEquals(KeyTypePointer aKey) const
-  {
-    if (mNameLength != aKey->mLength) {
-      return false;
-    }
-
-    const char* name = WebIDLGlobalNameHash::sNames + mNameOffset;
-
-    if (aKey->mLatin1String) {
-      return PodEqual(aKey->mLatin1String, name, aKey->mLength);
-    }
-
-    return nsCharTraits<char16_t>::compareASCII(aKey->mTwoBytesString, name,
-                                                aKey->mLength) == 0;
-  }
-
-  static KeyTypePointer KeyToPointer(KeyType aKey)
-  {
-    return &aKey;
-  }
-
-  static PLDHashNumber HashKey(KeyTypePointer aKey)
-  {
-    return aKey->mHash;
-  }
-
-  enum { ALLOW_MEMMOVE = true };
-
-  uint16_t mNameOffset;
-  uint16_t mNameLength;
-  WebIDLGlobalNameHash::DefineGlobalName mDefine;
-  // May be null if enabled unconditionally
-  WebIDLGlobalNameHash::ConstructorEnabled* mEnabled;
-};
-
-static nsTHashtable<WebIDLNameTableEntry>* sWebIDLGlobalNames;
-
-class WebIDLGlobalNamesHashReporter final : public nsIMemoryReporter
-{
-  MOZ_DEFINE_MALLOC_SIZE_OF(MallocSizeOf)
-
-  ~WebIDLGlobalNamesHashReporter() {}
-
-public:
-  NS_DECL_ISUPPORTS
-
-  NS_IMETHOD CollectReports(nsIHandleReportCallback* aHandleReport,
-                            nsISupports* aData, bool aAnonymize) override
-  {
-    int64_t amount =
-      sWebIDLGlobalNames ?
-      sWebIDLGlobalNames->ShallowSizeOfIncludingThis(MallocSizeOf) : 0;
-
-    MOZ_COLLECT_REPORT(
-      "explicit/dom/webidl-globalnames", KIND_HEAP, UNITS_BYTES, amount,
-      "Memory used by the hash table for WebIDL's global names.");
-
-    return NS_OK;
-  }
-};
-
-NS_IMPL_ISUPPORTS(WebIDLGlobalNamesHashReporter, nsIMemoryReporter)
-
-/* static */
-void
-WebIDLGlobalNameHash::Init()
-{
-  sWebIDLGlobalNames = new nsTHashtable<WebIDLNameTableEntry>(sCount);
-  RegisterWebIDLGlobalNames();
-
-  RegisterStrongMemoryReporter(new WebIDLGlobalNamesHashReporter());
+  // None of the named constructors match, so the caller must want the
+  // interface object itself.
+  return interfaceObject;
 }
 
 /* static */
-void
-WebIDLGlobalNameHash::Shutdown()
-{
-  delete sWebIDLGlobalNames;
-}
-
-/* static */
-void
-WebIDLGlobalNameHash::Register(uint16_t aNameOffset, uint16_t aNameLength,
-                               DefineGlobalName aDefine,
-                               ConstructorEnabled* aEnabled)
-{
-  const char* name = sNames + aNameOffset;
-  WebIDLNameTableKey key(name, aNameLength);
-  WebIDLNameTableEntry* entry = sWebIDLGlobalNames->PutEntry(key);
-  entry->mNameOffset = aNameOffset;
-  entry->mNameLength = aNameLength;
-  entry->mDefine = aDefine;
-  entry->mEnabled = aEnabled;
-}
-
-/* static */
-void
-WebIDLGlobalNameHash::Remove(const char* aName, uint32_t aLength)
-{
-  WebIDLNameTableKey key(aName, aLength);
-  sWebIDLGlobalNames->RemoveEntry(key);
-}
-
-/* static */
-bool
-WebIDLGlobalNameHash::DefineIfEnabled(JSContext* aCx,
-                                      JS::Handle<JSObject*> aObj,
-                                      JS::Handle<jsid> aId,
-                                      JS::MutableHandle<JS::PropertyDescriptor> aDesc,
-                                      bool* aFound)
-{
+bool WebIDLGlobalNameHash::DefineIfEnabled(
+    JSContext* aCx, JS::Handle<JSObject*> aObj, JS::Handle<jsid> aId,
+    JS::MutableHandle<JS::PropertyDescriptor> aDesc, bool* aFound) {
   MOZ_ASSERT(JSID_IS_STRING(aId), "Check for string id before calling this!");
 
   const WebIDLNameTableEntry* entry;
-  {
-    WebIDLNameTableKey key(JSID_TO_FLAT_STRING(aId));
-    // Rooting analysis thinks nsTHashtable<...>::GetEntry may GC because it
-    // ends up calling through PLDHashTableOps' matchEntry function pointer, but
-    // we know WebIDLNameTableEntry::KeyEquals can't cause a GC.
-    JS::AutoSuppressGCAnalysis suppress;
-    entry = sWebIDLGlobalNames->GetEntry(key);
-  }
+  { entry = GetEntry(JSID_TO_FLAT_STRING(aId)); }
 
   if (!entry) {
     *aFound = false;
@@ -200,20 +72,26 @@ WebIDLGlobalNameHash::DefineIfEnabled(JSContext* aCx,
 
   *aFound = true;
 
-  ConstructorEnabled* checkEnabledForScope = entry->mEnabled;
+  ConstructorEnabled checkEnabledForScope = entry->mEnabled;
   // We do the enabled check on the current compartment of aCx, but for the
   // actual object we pass in the underlying object in the Xray case.  That
   // way the callee can decide whether to allow access based on the caller
   // or the window being touched.
-  JS::Rooted<JSObject*> global(aCx,
-    js::CheckedUnwrap(aObj, /* stopAtWindowProxy = */ false));
+  JS::Rooted<JSObject*> global(
+      aCx, js::CheckedUnwrap(aObj, /* stopAtWindowProxy = */ false));
   if (!global) {
     return Throw(aCx, NS_ERROR_DOM_SECURITY_ERR);
   }
 
   {
-    DebugOnly<nsGlobalWindow*> win;
-    MOZ_ASSERT(NS_SUCCEEDED(UNWRAP_OBJECT(Window, global, win)));
+    // It's safe to pass "&global" here, because we've already unwrapped it, but
+    // for general sanity better to not have debug code even having the
+    // appearance of mutating things that opt code uses.
+#ifdef DEBUG
+    JS::Rooted<JSObject*> temp(aCx, global);
+    DebugOnly<nsGlobalWindowInner*> win;
+    MOZ_ASSERT(NS_SUCCEEDED(UNWRAP_OBJECT(Window, &temp, win)));
+#endif
   }
 
   if (checkEnabledForScope && !checkEnabledForScope(aCx, global)) {
@@ -255,24 +133,26 @@ WebIDLGlobalNameHash::DefineIfEnabled(JSContext* aCx,
   // This all could use some grand refactoring, but for now we just limp
   // along.
   if (xpc::WrapperFactory::IsXrayWrapper(aObj)) {
-    JS::Rooted<JSObject*> interfaceObject(aCx);
+    JS::Rooted<JSObject*> constructor(aCx);
     {
-      JSAutoCompartment ac(aCx, global);
-      interfaceObject = entry->mDefine(aCx, global, aId, false);
+      JSAutoRealm ar(aCx, global);
+      constructor = FindNamedConstructorForXray(aCx, aId, entry);
     }
-    if (NS_WARN_IF(!interfaceObject)) {
+    if (NS_WARN_IF(!constructor)) {
       return Throw(aCx, NS_ERROR_FAILURE);
     }
-    if (!JS_WrapObject(aCx, &interfaceObject)) {
+    if (!JS_WrapObject(aCx, &constructor)) {
       return Throw(aCx, NS_ERROR_FAILURE);
     }
 
-    FillPropertyDescriptor(aDesc, aObj, 0, JS::ObjectValue(*interfaceObject));
+    FillPropertyDescriptor(aDesc, aObj, 0, JS::ObjectValue(*constructor));
     return true;
   }
 
-  JS::Rooted<JSObject*> interfaceObject(aCx,
-                                        entry->mDefine(aCx, aObj, aId, true));
+  JS::Rooted<JSObject*> interfaceObject(
+      aCx,
+      GetPerInterfaceObjectHandle(aCx, entry->mConstructorId, entry->mCreate,
+                                  /* aDefineOnGlobal = */ true));
   if (NS_WARN_IF(!interfaceObject)) {
     return Throw(aCx, NS_ERROR_FAILURE);
   }
@@ -288,31 +168,103 @@ WebIDLGlobalNameHash::DefineIfEnabled(JSContext* aCx,
 }
 
 /* static */
-bool
-WebIDLGlobalNameHash::MayResolve(jsid aId)
-{
-  WebIDLNameTableKey key(JSID_TO_FLAT_STRING(aId));
-  // Rooting analysis thinks nsTHashtable<...>::Contains may GC because it ends
-  // up calling through PLDHashTableOps' matchEntry function pointer, but we
-  // know WebIDLNameTableEntry::KeyEquals can't cause a GC.
-  JS::AutoSuppressGCAnalysis suppress;
-  return sWebIDLGlobalNames->Contains(key);
+bool WebIDLGlobalNameHash::MayResolve(jsid aId) {
+  return GetEntry(JSID_TO_FLAT_STRING(aId)) != nullptr;
 }
 
 /* static */
-void
-WebIDLGlobalNameHash::GetNames(JSContext* aCx, JS::Handle<JSObject*> aObj,
-                               nsTArray<nsString>& aNames)
-{
-  for (auto iter = sWebIDLGlobalNames->Iter(); !iter.Done(); iter.Next()) {
-    const WebIDLNameTableEntry* entry = iter.Get();
-    if (!entry->mEnabled || entry->mEnabled(aCx, aObj)) {
-      AppendASCIItoUTF16(nsDependentCString(sNames + entry->mNameOffset,
-                                            entry->mNameLength),
-                         *aNames.AppendElement());
+bool WebIDLGlobalNameHash::GetNames(JSContext* aCx, JS::Handle<JSObject*> aObj,
+                                    NameType aNameType,
+                                    JS::AutoIdVector& aNames) {
+  // aObj is always a Window here, so GetProtoAndIfaceCache on it is safe.
+  ProtoAndIfaceCache* cache = GetProtoAndIfaceCache(aObj);
+  for (size_t i = 0; i < sCount; ++i) {
+    const WebIDLNameTableEntry& entry = sEntries[i];
+    // If aNameType is not AllNames, only include things whose entry slot in the
+    // ProtoAndIfaceCache is null.
+    if ((aNameType == AllNames ||
+         !cache->HasEntryInSlot(entry.mConstructorId)) &&
+        (!entry.mEnabled || entry.mEnabled(aCx, aObj))) {
+      JSString* str =
+          JS_AtomizeStringN(aCx, sNames + entry.mNameOffset, entry.mNameLength);
+      if (!str || !aNames.append(NON_INTEGER_ATOM_TO_JSID(str))) {
+        return false;
+      }
     }
   }
+
+  return true;
 }
 
-} // namespace dom
-} // namespace mozilla
+/* static */
+bool WebIDLGlobalNameHash::ResolveForSystemGlobal(JSContext* aCx,
+                                                  JS::Handle<JSObject*> aObj,
+                                                  JS::Handle<jsid> aId,
+                                                  bool* aResolvedp) {
+  MOZ_ASSERT(JS_IsGlobalObject(aObj));
+
+  // First we try to resolve standard classes.
+  if (!JS_ResolveStandardClass(aCx, aObj, aId, aResolvedp)) {
+    return false;
+  }
+  if (*aResolvedp) {
+    return true;
+  }
+
+  // We don't resolve any non-string entries.
+  if (!JSID_IS_STRING(aId)) {
+    return true;
+  }
+
+  // XXX(nika): In the Window case, we unwrap our global object here to handle
+  // XRays. I don't think we ever create xrays to system globals, so I believe
+  // we can skip this step.
+  MOZ_ASSERT(!xpc::WrapperFactory::IsXrayWrapper(aObj), "Xrays not supported!");
+
+  // Look up the corresponding entry in the name table, and resolve if enabled.
+  const WebIDLNameTableEntry* entry = GetEntry(JSID_TO_FLAT_STRING(aId));
+  if (entry && (!entry->mEnabled || entry->mEnabled(aCx, aObj))) {
+    if (NS_WARN_IF(!GetPerInterfaceObjectHandle(
+            aCx, entry->mConstructorId, entry->mCreate,
+            /* aDefineOnGlobal = */ true))) {
+      return Throw(aCx, NS_ERROR_FAILURE);
+    }
+
+    *aResolvedp = true;
+  }
+  return true;
+}
+
+/* static */
+bool WebIDLGlobalNameHash::NewEnumerateSystemGlobal(
+    JSContext* aCx, JS::Handle<JSObject*> aObj, JS::AutoIdVector& aProperties,
+    bool aEnumerableOnly) {
+  MOZ_ASSERT(JS_IsGlobalObject(aObj));
+
+  if (!JS_NewEnumerateStandardClasses(aCx, aObj, aProperties,
+                                      aEnumerableOnly)) {
+    return false;
+  }
+
+  // All properties defined on our global are non-enumerable, so we can skip
+  // remaining properties.
+  if (aEnumerableOnly) {
+    return true;
+  }
+
+  // Enumerate all entries & add enabled ones.
+  for (size_t i = 0; i < sCount; ++i) {
+    const WebIDLNameTableEntry& entry = sEntries[i];
+    if (!entry.mEnabled || entry.mEnabled(aCx, aObj)) {
+      JSString* str =
+          JS_AtomizeStringN(aCx, sNames + entry.mNameOffset, entry.mNameLength);
+      if (!str || !aProperties.append(NON_INTEGER_ATOM_TO_JSID(str))) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+}  // namespace dom
+}  // namespace mozilla

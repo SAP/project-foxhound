@@ -7,13 +7,17 @@
 var originalWindowWidth;
 
 // Drag to overflow chevron should open the overflow panel.
-add_task(function*() {
+add_task(async function() {
+  // Load a page so the identity box can be dragged.
+  BrowserTestUtils.loadURI(gBrowser, "http://mochi.test:8888/");
+  await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
+
   originalWindowWidth = window.outerWidth;
   let navbar = document.getElementById(CustomizableUI.AREA_NAVBAR);
   ok(!navbar.hasAttribute("overflowing"), "Should start with a non-overflowing toolbar.");
   ok(CustomizableUI.inDefaultState, "Should start in default state.");
-  window.resizeTo(400, window.outerHeight);
-  yield waitForCondition(() => navbar.hasAttribute("overflowing"));
+  window.resizeTo(kForceOverflowWidthPx, window.outerHeight);
+  await waitForCondition(() => navbar.hasAttribute("overflowing"));
   ok(navbar.hasAttribute("overflowing"), "Should have an overflowing toolbar.");
 
   let widgetOverflowPanel = document.getElementById("widget-overflow");
@@ -25,15 +29,15 @@ add_task(function*() {
   // async-ness of the 'shown' yield...
   let panelHiddenPromise = promisePanelElementHidden(window, widgetOverflowPanel);
 
-  var ds = Components.classes["@mozilla.org/widget/dragservice;1"].
-           getService(Components.interfaces.nsIDragService);
+  var ds = Cc["@mozilla.org/widget/dragservice;1"].
+           getService(Ci.nsIDragService);
 
   ds.startDragSession();
   try {
     var [result, dataTransfer] = EventUtils.synthesizeDragOver(identityBox, overflowChevron);
 
     // Wait for showing panel before ending drag session.
-    yield panelShownPromise;
+    await panelShownPromise;
 
     EventUtils.synthesizeDropAfterDragOver(result, dataTransfer, overflowChevron);
   } finally {
@@ -43,12 +47,12 @@ add_task(function*() {
   info("Overflow panel is shown.");
 
   widgetOverflowPanel.hidePopup();
-  yield panelHiddenPromise;
+  await panelHiddenPromise;
 });
 
-add_task(function*() {
+add_task(async function() {
   window.resizeTo(originalWindowWidth, window.outerHeight);
   let navbar = document.getElementById(CustomizableUI.AREA_NAVBAR);
-  yield waitForCondition(() => !navbar.hasAttribute("overflowing"));
+  await waitForCondition(() => !navbar.hasAttribute("overflowing"));
   ok(!navbar.hasAttribute("overflowing"), "Should not have an overflowing toolbar.");
 });

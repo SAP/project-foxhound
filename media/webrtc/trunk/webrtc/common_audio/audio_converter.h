@@ -8,11 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_COMMON_AUDIO_AUDIO_CONVERTER_H_
-#define WEBRTC_COMMON_AUDIO_AUDIO_CONVERTER_H_
+#ifndef COMMON_AUDIO_AUDIO_CONVERTER_H_
+#define COMMON_AUDIO_AUDIO_CONVERTER_H_
 
-#include "webrtc/base/constructormagic.h"
-#include "webrtc/base/scoped_ptr.h"
+#include <memory>
+
+#include "rtc_base/constructormagic.h"
 
 namespace webrtc {
 
@@ -26,11 +27,11 @@ class AudioConverter {
  public:
   // Returns a new AudioConverter, which will use the supplied format for its
   // lifetime. Caller is responsible for the memory.
-  static rtc::scoped_ptr<AudioConverter> Create(size_t src_channels,
+  static std::unique_ptr<AudioConverter> Create(size_t src_channels,
                                                 size_t src_frames,
                                                 size_t dst_channels,
                                                 size_t dst_frames);
-  virtual ~AudioConverter() {};
+  virtual ~AudioConverter() {}
 
   // Convert |src|, containing |src_size| samples, to |dst|, having a sample
   // capacity of |dst_capacity|. Both point to a series of buffers containing
@@ -63,4 +64,4 @@ class AudioConverter {
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_COMMON_AUDIO_AUDIO_CONVERTER_H_
+#endif  // COMMON_AUDIO_AUDIO_CONVERTER_H_

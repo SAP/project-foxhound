@@ -16,62 +16,38 @@
 
 namespace mozilla {
 
-class JsepDtlsTransport
-{
-public:
+class JsepDtlsTransport {
+ public:
   JsepDtlsTransport() : mRole(kJsepDtlsInvalidRole) {}
 
   virtual ~JsepDtlsTransport() {}
 
-  enum Role {
-    kJsepDtlsClient,
-    kJsepDtlsServer,
-    kJsepDtlsInvalidRole
-  };
+  enum Role { kJsepDtlsClient, kJsepDtlsServer, kJsepDtlsInvalidRole };
 
-  virtual const SdpFingerprintAttributeList&
-  GetFingerprints() const
-  {
+  virtual const SdpFingerprintAttributeList& GetFingerprints() const {
     return mFingerprints;
   }
 
-  virtual Role
-  GetRole() const
-  {
-    return mRole;
-  }
+  virtual Role GetRole() const { return mRole; }
 
-private:
+ private:
   friend class JsepSessionImpl;
 
   SdpFingerprintAttributeList mFingerprints;
   Role mRole;
 };
 
-class JsepIceTransport
-{
-public:
+class JsepIceTransport {
+ public:
   JsepIceTransport() {}
 
   virtual ~JsepIceTransport() {}
 
-  const std::string&
-  GetUfrag() const
-  {
-    return mUfrag;
-  }
-  const std::string&
-  GetPassword() const
-  {
-    return mPwd;
-  }
-  const std::vector<std::string>&
-  GetCandidates() const
-  {
-    return mCandidates;
-  }
+  const std::string& GetUfrag() const { return mUfrag; }
+  const std::string& GetPassword() const { return mPwd; }
+  const std::vector<std::string>& GetCandidates() const { return mCandidates; }
 
-private:
+ private:
   friend class JsepSessionImpl;
 
   std::string mUfrag;
@@ -79,20 +55,33 @@ private:
   std::vector<std::string> mCandidates;
 };
 
-class JsepTransport
-{
-public:
-  JsepTransport()
-      : mComponents(0)
-  {
+class JsepTransport {
+ public:
+  JsepTransport() : mComponents(0) {}
+
+  JsepTransport(const JsepTransport& orig) { *this = orig; }
+
+  ~JsepTransport() {}
+
+  JsepTransport& operator=(const JsepTransport& orig) {
+    if (this != &orig) {
+      mIce.reset(orig.mIce ? new JsepIceTransport(*orig.mIce) : nullptr);
+      mDtls.reset(orig.mDtls ? new JsepDtlsTransport(*orig.mDtls) : nullptr);
+      mTransportId = orig.mTransportId;
+      mComponents = orig.mComponents;
+      mLocalUfrag = orig.mLocalUfrag;
+      mLocalPwd = orig.mLocalPwd;
+    }
+    return *this;
   }
 
-  void Close()
-  {
+  void Close() {
     mComponents = 0;
     mTransportId.clear();
     mIce.reset();
     mDtls.reset();
+    mLocalUfrag.clear();
+    mLocalPwd.clear();
   }
 
   // Unique identifier for this transport within this call. Group?
@@ -104,13 +93,10 @@ public:
 
   // Number of required components.
   size_t mComponents;
-
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(JsepTransport);
-
-protected:
-  ~JsepTransport() {}
+  std::string mLocalUfrag;
+  std::string mLocalPwd;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif

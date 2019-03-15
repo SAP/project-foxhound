@@ -6,7 +6,7 @@
 'use strict';
 
 /* globals Services */
-Cu.import('resource://gre/modules/Services.jsm');
+ChromeUtils.import('resource://gre/modules/Services.jsm');
 
 add_test(function test_ipv4_any() {
   let socket = Cc['@mozilla.org/network/udp-socket;1'].createInstance(Ci.nsIUDPSocket);
@@ -74,7 +74,7 @@ add_test(function test_ipv6_loopback() {
 
 function run_test(){ // jshint ignore:line
   Services.io.offline = true;
-  do_register_cleanup(() => {
+  registerCleanupFunction(() => {
     Services.io.offline = false;
   });
   run_next_test();

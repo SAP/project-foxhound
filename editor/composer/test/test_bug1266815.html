@@ -2,17 +2,19 @@
 <html>
 <head>
   <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/SpawnTask.js"></script>
+  <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/AddTask.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css" />
 </head>
 <body>
 <p id="display"></p>
 <script type="text/javascript">
+// XXX(nika): Why are we using SpecialPowers here? If we're a chrome mochitest
+// can't we avoid using the SpecialPowers wrappers?
 const Cc = SpecialPowers.Cc;
 const Ci = SpecialPowers.Ci;
 const Cu = SpecialPowers.Cu;
 
-const {XPCOMUtils} = Cu.import("resource://gre/modules/XPCOMUtils.jsm", {});
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", {});
 
 const HELPERAPP_DIALOG_CID =
         SpecialPowers.wrap(SpecialPowers.Components)
@@ -32,13 +34,13 @@ var helperAppDlgPromise = new Promise(function(resolve) {
   }
 
   HelperAppLauncherDialog.prototype = {
-    show: function(aLauncher, aWindowContext, aReason) {
+    show(aLauncher, aWindowContext, aReason) {
       ok(true, "Whether showing Dialog");
       resolve();
       registrar.unregisterFactory(MOCK_HELPERAPP_DIALOG_CID,
                                   mockHelperAppService);
     },
-    QueryInterface: XPCOMUtils.generateQI([Ci.nsIHelperAppLauncherDialog])
+    QueryInterface: ChromeUtils.generateQI(["nsIHelperAppLauncherDialog"]),
   };
 
   mockHelperAppService = XPCOMUtils._getFactory(HelperAppLauncherDialog);
@@ -47,7 +49,7 @@ var helperAppDlgPromise = new Promise(function(resolve) {
                             mockHelperAppService);
 });
 
-add_task(function*() {
+add_task(async function() {
   let promise = new Promise(function(resolve) {
     let iframe = document.createElement("iframe");
     iframe.onload = function() {
@@ -60,20 +62,17 @@ add_task(function*() {
     document.body.appendChild(iframe);
   });
 
-  yield promise;
+  await promise;
 
   let iframe = document.getElementById("testframe");
-  let docShell = SpecialPowers.wrap(iframe.contentWindow)
-                 .QueryInterface(Ci.nsIInterfaceRequestor)
-                 .getInterface(Ci.nsIWebNavigation)
-                 .QueryInterface(Ci.nsIDocShell);
+  let docShell = SpecialPowers.wrap(iframe.contentWindow).docShell;
 
   ok(docShell.hasEditingSession, "Should have editing session");
 
   document.getElementById("testframe").src =
     "data:application/octet-stream,TESTCONTENT";
 
-  yield helperAppDlgPromise;
+  await helperAppDlgPromise;
 
   ok(docShell.hasEditingSession, "Should have editing session");
 });

@@ -8,14 +8,18 @@
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/BinarySearch.h"
+#include "mozilla/CheckedInt.h"
+#include "mozilla/TextUtils.h"
 #include "nsTArray.h"
 #include "nsCRT.h"
 #include "plstr.h"
+#include "nsASCIIMask.h"
 
 static const char hexCharsUpper[] = "0123456789ABCDEF";
 static const char hexCharsUpperLower[] = "0123456789ABCDEFabcdef";
 
 static const int netCharType[256] =
+    // clang-format off
 /*  Bit 0       xalpha      -- the alphas
 **  Bit 1       xpalpha     -- as xalpha but
 **                             converts spaces to plus and plus to %2B
@@ -32,7 +36,8 @@ static const int netCharType[256] =
      7,7,7,7,7,7,7,7,7,7,7,0,0,0,0,7,   /* 5X  PQRSTUVWXYZ[\]^_  */
      0,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,   /* 6x  `abcdefghijklmno  */
      7,7,7,7,7,7,7,7,7,7,7,0,0,0,0,0,   /* 7X  pqrstuvwxyz{\}~  DEL */
-     0, };
+     0,
+  };
 
 /* decode % escaped hex codes into character values
  */
@@ -40,42 +45,37 @@ static const int netCharType[256] =
     ((C >= '0' && C <= '9') ? C - '0' : \
      ((C >= 'A' && C <= 'F') ? C - 'A' + 10 : \
      ((C >= 'a' && C <= 'f') ? C - 'a' + 10 : 0)))
-
+// clang-format on
 
 #define IS_OK(C) (netCharType[((unsigned int)(C))] & (aFlags))
 #define HEX_ESCAPE '%'
 
-static const uint32_t ENCODE_MAX_LEN = 6; // %uABCD
+static const uint32_t ENCODE_MAX_LEN = 6;  // %uABCD
 
-static uint32_t
-AppendPercentHex(char* aBuffer, unsigned char aChar)
-{
+static uint32_t AppendPercentHex(char* aBuffer, unsigned char aChar) {
   uint32_t i = 0;
   aBuffer[i++] = '%';
-  aBuffer[i++] = hexCharsUpper[aChar >> 4]; // high nibble
-  aBuffer[i++] = hexCharsUpper[aChar & 0xF]; // low nibble
+  aBuffer[i++] = hexCharsUpper[aChar >> 4];   // high nibble
+  aBuffer[i++] = hexCharsUpper[aChar & 0xF];  // low nibble
   return i;
 }
 
-static uint32_t
-AppendPercentHex(char16_t* aBuffer, char16_t aChar)
-{
+static uint32_t AppendPercentHex(char16_t* aBuffer, char16_t aChar) {
   uint32_t i = 0;
   aBuffer[i++] = '%';
   if (aChar & 0xff00) {
     aBuffer[i++] = 'u';
-    aBuffer[i++] = hexCharsUpper[aChar >> 12]; // high-byte high nibble
-    aBuffer[i++] = hexCharsUpper[(aChar >> 8) & 0xF]; // high-byte low nibble
+    aBuffer[i++] = hexCharsUpper[aChar >> 12];         // high-byte high nibble
+    aBuffer[i++] = hexCharsUpper[(aChar >> 8) & 0xF];  // high-byte low nibble
   }
-  aBuffer[i++] = hexCharsUpper[(aChar >> 4) & 0xF]; // low-byte high nibble
-  aBuffer[i++] = hexCharsUpper[aChar & 0xF]; // low-byte low nibble
+  aBuffer[i++] = hexCharsUpper[(aChar >> 4) & 0xF];  // low-byte high nibble
+  aBuffer[i++] = hexCharsUpper[aChar & 0xF];         // low-byte low nibble
   return i;
 }
 
 //----------------------------------------------------------------------------------------
-char*
-nsEscape(const char* aStr, size_t aLength, size_t* aOutputLength,
-         nsEscapeMask aFlags)
+char* nsEscape(const char* aStr, size_t aLength, size_t* aOutputLength,
+               nsEscapeMask aFlags)
 //----------------------------------------------------------------------------------------
 {
   if (!aStr) {
@@ -109,9 +109,6 @@ nsEscape(const char* aStr, size_t aLength, size_t* aOutputLength,
   }
 
   char* result = (char*)moz_xmalloc(dstSize);
-  if (!result) {
-    return nullptr;
-  }
 
   unsigned char* dst = (unsigned char*)result;
   src = (const unsigned char*)aStr;
@@ -121,11 +118,11 @@ nsEscape(const char* aStr, size_t aLength, size_t* aOutputLength,
       if (IS_OK(c)) {
         *dst++ = c;
       } else if (c == ' ') {
-        *dst++ = '+';  /* convert spaces to pluses */
+        *dst++ = '+'; /* convert spaces to pluses */
       } else {
         *dst++ = HEX_ESCAPE;
-        *dst++ = hexCharsUpper[c >> 4];  /* high nibble */
-        *dst++ = hexCharsUpper[c & 0x0f];  /* low nibble */
+        *dst++ = hexCharsUpper[c >> 4];   /* high nibble */
+        *dst++ = hexCharsUpper[c & 0x0f]; /* low nibble */
       }
     }
   } else {
@@ -135,13 +132,13 @@ nsEscape(const char* aStr, size_t aLength, size_t* aOutputLength,
         *dst++ = c;
       } else {
         *dst++ = HEX_ESCAPE;
-        *dst++ = hexCharsUpper[c >> 4];  /* high nibble */
-        *dst++ = hexCharsUpper[c & 0x0f];  /* low nibble */
+        *dst++ = hexCharsUpper[c >> 4];   /* high nibble */
+        *dst++ = hexCharsUpper[c & 0x0f]; /* low nibble */
       }
     }
   }
 
-  *dst = '\0';     /* tack on eos */
+  *dst = '\0'; /* tack on eos */
   if (aOutputLength) {
     *aOutputLength = dst - (unsigned char*)result;
   }
@@ -150,8 +147,7 @@ nsEscape(const char* aStr, size_t aLength, size_t* aOutputLength,
 }
 
 //----------------------------------------------------------------------------------------
-char*
-nsUnescape(char* aStr)
+char* nsUnescape(char* aStr)
 //----------------------------------------------------------------------------------------
 {
   nsUnescapeCount(aStr);
@@ -159,8 +155,7 @@ nsUnescape(char* aStr)
 }
 
 //----------------------------------------------------------------------------------------
-int32_t
-nsUnescapeCount(char* aStr)
+int32_t nsUnescapeCount(char* aStr)
 //----------------------------------------------------------------------------------------
 {
   char* src = aStr;
@@ -208,120 +203,31 @@ nsUnescapeCount(char* aStr)
 
 } /* NET_UnEscapeCnt */
 
-
-char*
-nsEscapeHTML(const char* aString)
-{
-  char* rv = nullptr;
-  /* XXX Hardcoded max entity len. The +1 is for the trailing null. */
-  uint32_t len = strlen(aString);
-  if (len >= (UINT32_MAX / 6)) {
-    return nullptr;
+void nsAppendEscapedHTML(const nsACString& aSrc, nsACString& aDst) {
+  // Preparation: aDst's length will increase by at least aSrc's length. If the
+  // addition overflows, we skip this, which is fine, and we'll likely abort
+  // while (infallibly) appending due to aDst becoming too large.
+  mozilla::CheckedInt<nsACString::size_type> newCapacity = aDst.Length();
+  newCapacity += aSrc.Length();
+  if (newCapacity.isValid()) {
+    aDst.SetCapacity(newCapacity.value());
   }
 
-  rv = (char*)moz_xmalloc((6 * len) + 1);
-  char* ptr = rv;
-
-  if (rv) {
-    for (; *aString != '\0'; ++aString) {
-      if (*aString == '<') {
-        *ptr++ = '&';
-        *ptr++ = 'l';
-        *ptr++ = 't';
-        *ptr++ = ';';
-      } else if (*aString == '>') {
-        *ptr++ = '&';
-        *ptr++ = 'g';
-        *ptr++ = 't';
-        *ptr++ = ';';
-      } else if (*aString == '&') {
-        *ptr++ = '&';
-        *ptr++ = 'a';
-        *ptr++ = 'm';
-        *ptr++ = 'p';
-        *ptr++ = ';';
-      } else if (*aString == '"') {
-        *ptr++ = '&';
-        *ptr++ = 'q';
-        *ptr++ = 'u';
-        *ptr++ = 'o';
-        *ptr++ = 't';
-        *ptr++ = ';';
-      } else if (*aString == '\'') {
-        *ptr++ = '&';
-        *ptr++ = '#';
-        *ptr++ = '3';
-        *ptr++ = '9';
-        *ptr++ = ';';
-      } else {
-        *ptr++ = *aString;
-      }
+  for (auto cur = aSrc.BeginReading(); cur != aSrc.EndReading(); cur++) {
+    if (*cur == '<') {
+      aDst.AppendLiteral("&lt;");
+    } else if (*cur == '>') {
+      aDst.AppendLiteral("&gt;");
+    } else if (*cur == '&') {
+      aDst.AppendLiteral("&amp;");
+    } else if (*cur == '"') {
+      aDst.AppendLiteral("&quot;");
+    } else if (*cur == '\'') {
+      aDst.AppendLiteral("&#39;");
+    } else {
+      aDst.Append(*cur);
     }
-    *ptr = '\0';
   }
-
-  return rv;
-}
-
-char16_t*
-nsEscapeHTML2(const char16_t* aSourceBuffer, int32_t aSourceBufferLen)
-{
-  // Calculate the length, if the caller didn't.
-  if (aSourceBufferLen < 0) {
-    aSourceBufferLen = NS_strlen(aSourceBuffer);
-  }
-
-  /* XXX Hardcoded max entity len. */
-  if (uint32_t(aSourceBufferLen) >=
-      ((UINT32_MAX - sizeof(char16_t)) / (6 * sizeof(char16_t)))) {
-    return nullptr;
-  }
-
-  char16_t* resultBuffer = (char16_t*)moz_xmalloc(
-    aSourceBufferLen * 6 * sizeof(char16_t) + sizeof(char16_t('\0')));
-  char16_t* ptr = resultBuffer;
-
-  if (resultBuffer) {
-    int32_t i;
-
-    for (i = 0; i < aSourceBufferLen; ++i) {
-      if (aSourceBuffer[i] == '<') {
-        *ptr++ = '&';
-        *ptr++ = 'l';
-        *ptr++ = 't';
-        *ptr++ = ';';
-      } else if (aSourceBuffer[i] == '>') {
-        *ptr++ = '&';
-        *ptr++ = 'g';
-        *ptr++ = 't';
-        *ptr++ = ';';
-      } else if (aSourceBuffer[i] == '&') {
-        *ptr++ = '&';
-        *ptr++ = 'a';
-        *ptr++ = 'm';
-        *ptr++ = 'p';
-        *ptr++ = ';';
-      } else if (aSourceBuffer[i] == '"') {
-        *ptr++ = '&';
-        *ptr++ = 'q';
-        *ptr++ = 'u';
-        *ptr++ = 'o';
-        *ptr++ = 't';
-        *ptr++ = ';';
-      } else if (aSourceBuffer[i] == '\'') {
-        *ptr++ = '&';
-        *ptr++ = '#';
-        *ptr++ = '3';
-        *ptr++ = '9';
-        *ptr++ = ';';
-      } else {
-        *ptr++ = aSourceBuffer[i];
-      }
-    }
-    *ptr = 0;
-  }
-
-  return resultBuffer;
 }
 
 //----------------------------------------------------------------------------------------
@@ -342,11 +248,12 @@ nsEscapeHTML2(const char16_t* aSourceBuffer, int32_t aSourceBufferLen)
 // esc_Ref           =   512
 
 static const uint32_t EscapeChars[256] =
+    // clang-format off
 //   0    1    2    3    4    5    6    7    8    9    A    B    C    D    E    F
 {
      0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,  // 0x
      0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,  // 1x
-     0,1023,   0, 512,1023,   0,1023, 112,1023,1023,1023,1023,1023,1023, 953, 784,  // 2x   !"#$%&'()*+,-./
+     0,1023,   0, 512,1023,   0,1023, 624,1023,1023,1023,1023,1023,1023, 953, 784,  // 2x   !"#$%&'()*+,-./
   1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,1008,1008,   0,1008,   0, 768,  // 3x  0123456789:;<=>?
   1008,1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,  // 4x  @ABCDEFGHIJKLMNO
   1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,1008, 896,1008, 896,1023,  // 5x  PQRSTUVWXYZ[\]^_
@@ -354,15 +261,15 @@ static const uint32_t EscapeChars[256] =
   1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,1023, 896,1012, 896,1023,   0,  // 7x  pqrstuvwxyz{|}~ DEL
      0                                                                              // 80 to FF are zero
 };
+// clang-format on
 
-static uint16_t dontNeedEscape(unsigned char aChar, uint32_t aFlags)
-{
+static uint16_t dontNeedEscape(unsigned char aChar, uint32_t aFlags) {
   return EscapeChars[(uint32_t)aChar] & aFlags;
 }
-static uint16_t dontNeedEscape(uint16_t aChar, uint32_t aFlags)
-{
-  return aChar < mozilla::ArrayLength(EscapeChars) ?
-    (EscapeChars[(uint32_t)aChar]  & aFlags) : 0;
+static uint16_t dontNeedEscape(uint16_t aChar, uint32_t aFlags) {
+  return aChar < mozilla::ArrayLength(EscapeChars)
+             ? (EscapeChars[(uint32_t)aChar] & aFlags)
+             : 0;
 }
 
 //----------------------------------------------------------------------------------------
@@ -379,18 +286,17 @@ static uint16_t dontNeedEscape(uint16_t aChar, uint32_t aFlags)
  * @param aDidAppend Indicates whether or not data was appended to |aResult|.
  * @return NS_ERROR_INVALID_ARG, NS_ERROR_OUT_OF_MEMORY on failure.
  */
-template<class T>
-static nsresult
-T_EscapeURL(const typename T::char_type* aPart, size_t aPartLen,
-            uint32_t aFlags, T& aResult, bool& aDidAppend)
-{
+template <class T>
+static nsresult T_EscapeURL(const typename T::char_type* aPart, size_t aPartLen,
+                            uint32_t aFlags, const ASCIIMaskArray* aFilterMask,
+                            T& aResult, bool& aDidAppend) {
   typedef nsCharTraits<typename T::char_type> traits;
   typedef typename traits::unsigned_char_type unsigned_char_type;
   static_assert(sizeof(*aPart) == 1 || sizeof(*aPart) == 2,
                 "unexpected char type");
 
   if (!aPart) {
-    NS_NOTREACHED("null pointer");
+    MOZ_ASSERT_UNREACHABLE("null pointer");
     return NS_ERROR_INVALID_ARG;
   }
 
@@ -399,6 +305,7 @@ T_EscapeURL(const typename T::char_type* aPart, size_t aPartLen,
   bool ignoreAscii = !!(aFlags & esc_OnlyNonASCII);
   bool writing = !!(aFlags & esc_AlwaysCopy);
   bool colon = !!(aFlags & esc_Colon);
+  bool spaces = !!(aFlags & esc_Spaces);
 
   auto src = reinterpret_cast<const unsigned_char_type*>(aPart);
 
@@ -408,6 +315,19 @@ T_EscapeURL(const typename T::char_type* aPart, size_t aPartLen,
   bool previousIsNonASCII = false;
   for (size_t i = 0; i < aPartLen; ++i) {
     unsigned_char_type c = *src++;
+
+    // If there is a filter, we wish to skip any characters which match it.
+    // This is needed so we don't perform an extra pass just to extract the
+    // filtered characters.
+    if (aFilterMask && mozilla::ASCIIMask::IsMasked(*aFilterMask, c)) {
+      if (!writing) {
+        if (!aResult.Append(aPart, i, mozilla::fallible)) {
+          return NS_ERROR_OUT_OF_MEMORY;
+        }
+        writing = true;
+      }
+      continue;
+    }
 
     // if the char has not to be escaped or whatever follows % is
     // a valid escaped string, just copy the char.
@@ -423,19 +343,18 @@ T_EscapeURL(const typename T::char_type* aPart, size_t aPartLen,
     // And, we should escape the '|' character when it occurs after any
     // non-ASCII character as it may be aPart of a multi-byte character.
     //
-    // 0x20..0x7e are the valid ASCII characters. We also escape spaces
-    // (0x20) since they are not legal in URLs.
-    if ((dontNeedEscape(c, aFlags) || (c == HEX_ESCAPE && !forced)
-         || (c > 0x7f && ignoreNonAscii)
-         || (c > 0x20 && c < 0x7f && ignoreAscii))
-        && !(c == ':' && colon)
-        && !(previousIsNonASCII && c == '|' && !ignoreNonAscii)) {
+    // 0x20..0x7e are the valid ASCII characters.
+    if ((dontNeedEscape(c, aFlags) || (c == HEX_ESCAPE && !forced) ||
+         (c > 0x7f && ignoreNonAscii) ||
+         (c >= 0x20 && c < 0x7f && ignoreAscii)) &&
+        !(c == ':' && colon) && !(c == ' ' && spaces) &&
+        !(previousIsNonASCII && c == '|' && !ignoreNonAscii)) {
       if (writing) {
         tempBuffer[tempBufferPos++] = c;
       }
     } else { /* do the escape magic */
       if (!writing) {
-        if (!aResult.Append(aPart, i, fallible)) {
+        if (!aResult.Append(aPart, i, mozilla::fallible)) {
           return NS_ERROR_OUT_OF_MEMORY;
         }
         writing = true;
@@ -448,7 +367,7 @@ T_EscapeURL(const typename T::char_type* aPart, size_t aPartLen,
     // Flush the temp buffer if it doesnt't have room for another encoded char.
     if (tempBufferPos >= mozilla::ArrayLength(tempBuffer) - ENCODE_MAX_LEN) {
       NS_ASSERTION(writing, "should be writing");
-      if (!aResult.Append(tempBuffer, tempBufferPos, fallible)) {
+      if (!aResult.Append(tempBuffer, tempBufferPos, mozilla::fallible)) {
         return NS_ERROR_OUT_OF_MEMORY;
       }
       tempBufferPos = 0;
@@ -457,7 +376,7 @@ T_EscapeURL(const typename T::char_type* aPart, size_t aPartLen,
     previousIsNonASCII = (c > 0x7f);
   }
   if (writing) {
-    if (!aResult.Append(tempBuffer, tempBufferPos, fallible)) {
+    if (!aResult.Append(tempBuffer, tempBufferPos, mozilla::fallible)) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
   }
@@ -465,29 +384,35 @@ T_EscapeURL(const typename T::char_type* aPart, size_t aPartLen,
   return NS_OK;
 }
 
-bool
-NS_EscapeURL(const char* aPart, int32_t aPartLen, uint32_t aFlags,
-             nsACString& aResult)
-{
+bool NS_EscapeURL(const char* aPart, int32_t aPartLen, uint32_t aFlags,
+                  nsACString& aResult) {
+  size_t partLen;
   if (aPartLen < 0) {
-    aPartLen = strlen(aPart);
+    partLen = strlen(aPart);
+  } else {
+    partLen = aPartLen;
   }
 
-  bool result = false;
-  nsresult rv = T_EscapeURL(aPart, aPartLen, aFlags, aResult, result);
+  return NS_EscapeURLSpan(MakeSpan(aPart, partLen), aFlags, aResult);
+}
+
+bool NS_EscapeURLSpan(mozilla::Span<const char> aStr, uint32_t aFlags,
+                      nsACString& aResult) {
+  bool appended = false;
+  nsresult rv = T_EscapeURL(aStr.Elements(), aStr.Length(), aFlags, nullptr,
+                            aResult, appended);
   if (NS_FAILED(rv)) {
     ::NS_ABORT_OOM(aResult.Length() * sizeof(nsACString::char_type));
   }
 
-  return result;
+  return appended;
 }
 
-nsresult
-NS_EscapeURL(const nsCSubstring& aStr, uint32_t aFlags, nsCSubstring& aResult,
-             const mozilla::fallible_t&)
-{
+nsresult NS_EscapeURL(const nsACString& aStr, uint32_t aFlags,
+                      nsACString& aResult, const mozilla::fallible_t&) {
   bool appended = false;
-  nsresult rv = T_EscapeURL(aStr.Data(), aStr.Length(), aFlags, aResult, appended);
+  nsresult rv = T_EscapeURL(aStr.Data(), aStr.Length(), aFlags, nullptr,
+                            aResult, appended);
   if (NS_FAILED(rv)) {
     aResult.Truncate();
     return rv;
@@ -500,14 +425,35 @@ NS_EscapeURL(const nsCSubstring& aStr, uint32_t aFlags, nsCSubstring& aResult,
   return rv;
 }
 
-const nsSubstring&
-NS_EscapeURL(const nsSubstring& aStr, uint32_t aFlags, nsSubstring& aResult)
-{
+nsresult NS_EscapeAndFilterURL(const nsACString& aStr, uint32_t aFlags,
+                               const ASCIIMaskArray* aFilterMask,
+                               nsACString& aResult,
+                               const mozilla::fallible_t&) {
+  bool appended = false;
+  nsresult rv = T_EscapeURL(aStr.Data(), aStr.Length(), aFlags, aFilterMask,
+                            aResult, appended);
+  if (NS_FAILED(rv)) {
+    aResult.Truncate();
+    return rv;
+  }
+
+  if (!appended) {
+    if (!aResult.Assign(aStr, fallible)) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+  }
+
+  return rv;
+}
+
+const nsAString& NS_EscapeURL(const nsAString& aStr, uint32_t aFlags,
+                              nsAString& aResult) {
   bool result = false;
-  nsresult rv = T_EscapeURL<nsSubstring>(aStr.Data(), aStr.Length(), aFlags, aResult, result);
+  nsresult rv = T_EscapeURL<nsAString>(aStr.Data(), aStr.Length(), aFlags,
+                                       nullptr, aResult, result);
 
   if (NS_FAILED(rv)) {
-    ::NS_ABORT_OOM(aResult.Length() * sizeof(nsSubstring::char_type));
+    ::NS_ABORT_OOM(aResult.Length() * sizeof(nsAString::char_type));
   }
 
   if (result) {
@@ -517,15 +463,12 @@ NS_EscapeURL(const nsSubstring& aStr, uint32_t aFlags, nsSubstring& aResult)
 }
 
 // Starting at aStr[aStart] find the first index in aStr that matches any
-// character in aForbidden. Return false if not found.
-static bool
-FindFirstMatchFrom(const nsAFlatString& aStr, size_t aStart,
-                   const nsTArray<char16_t>& aForbidden, size_t* aIndex)
-{
-  const size_t len = aForbidden.Length();
+// character that is forbidden by aFunction. Return false if not found.
+static bool FindFirstMatchFrom(const nsString& aStr, size_t aStart,
+                               const std::function<bool(char16_t)>& aFunction,
+                               size_t* aIndex) {
   for (size_t j = aStart, l = aStr.Length(); j < l; ++j) {
-    size_t unused;
-    if (mozilla::BinarySearch(aForbidden, 0, len, aStr[j], &unused)) {
+    if (aFunction(aStr[j])) {
       *aIndex = j;
       return true;
     }
@@ -533,14 +476,13 @@ FindFirstMatchFrom(const nsAFlatString& aStr, size_t aStart,
   return false;
 }
 
-const nsSubstring&
-NS_EscapeURL(const nsAFlatString& aStr, const nsTArray<char16_t>& aForbidden,
-             nsSubstring& aResult)
-{
+const nsAString& NS_EscapeURL(const nsString& aStr,
+                              const std::function<bool(char16_t)>& aFunction,
+                              nsAString& aResult) {
   bool didEscape = false;
-  for (size_t i = 0, strLen = aStr.Length(); i < strLen; ) {
+  for (size_t i = 0, strLen = aStr.Length(); i < strLen;) {
     size_t j;
-    if (MOZ_UNLIKELY(FindFirstMatchFrom(aStr, i, aForbidden, &j))) {
+    if (MOZ_UNLIKELY(FindFirstMatchFrom(aStr, i, aFunction, &j))) {
       if (i == 0) {
         didEscape = true;
         aResult.Truncate();
@@ -569,22 +511,38 @@ NS_EscapeURL(const nsAFlatString& aStr, const nsTArray<char16_t>& aForbidden,
   return aStr;
 }
 
-#define ISHEX(c) memchr(hexCharsUpperLower, c, sizeof(hexCharsUpperLower)-1)
+bool NS_UnescapeURL(const char* aStr, int32_t aLen, uint32_t aFlags,
+                    nsACString& aResult) {
+  bool didAppend = false;
+  nsresult rv =
+      NS_UnescapeURL(aStr, aLen, aFlags, aResult, didAppend, mozilla::fallible);
+  if (rv == NS_ERROR_OUT_OF_MEMORY) {
+    ::NS_ABORT_OOM(aLen * sizeof(nsACString::char_type));
+  }
 
-bool
-NS_UnescapeURL(const char* aStr, int32_t aLen, uint32_t aFlags,
-               nsACString& aResult)
-{
+  return didAppend;
+}
+
+nsresult NS_UnescapeURL(const char* aStr, int32_t aLen, uint32_t aFlags,
+                        nsACString& aResult, bool& aDidAppend,
+                        const mozilla::fallible_t&) {
   if (!aStr) {
-    NS_NOTREACHED("null pointer");
-    return false;
+    MOZ_ASSERT_UNREACHABLE("null pointer");
+    return NS_ERROR_INVALID_ARG;
   }
 
   MOZ_ASSERT(aResult.IsEmpty(),
              "Passing a non-empty string as an out parameter!");
 
+  uint32_t len;
   if (aLen < 0) {
-    aLen = strlen(aStr);
+    size_t stringLength = strlen(aStr);
+    if (stringLength >= UINT32_MAX) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+    len = stringLength;
+  } else {
+    len = aLen;
   }
 
   bool ignoreNonAscii = !!(aFlags & esc_OnlyASCII);
@@ -593,41 +551,64 @@ NS_UnescapeURL(const char* aStr, int32_t aLen, uint32_t aFlags,
   bool skipControl = !!(aFlags & esc_SkipControl);
   bool skipInvalidHostChar = !!(aFlags & esc_Host);
 
+  unsigned char* destPtr;
+  uint32_t destPos;
+
   if (writing) {
-    aResult.SetCapacity(aLen);
+    if (!aResult.SetLength(len, mozilla::fallible)) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+    destPos = 0;
+    destPtr = reinterpret_cast<unsigned char*>(aResult.BeginWriting());
   }
 
   const char* last = aStr;
-  const char* p = aStr;
+  const char* end = aStr + len;
 
-  for (int i = 0; i < aLen; ++i, ++p) {
-    if (*p == HEX_ESCAPE && i < aLen - 2) {
+  for (const char* p = aStr; p < end; ++p) {
+    if (*p == HEX_ESCAPE && p + 2 < end) {
       unsigned char c1 = *((unsigned char*)p + 1);
       unsigned char c2 = *((unsigned char*)p + 2);
       unsigned char u = (UNHEX(c1) << 4) + UNHEX(c2);
-      if (ISHEX(c1) && ISHEX(c2) &&
+      if (mozilla::IsAsciiHexDigit(c1) && mozilla::IsAsciiHexDigit(c2) &&
           (!skipInvalidHostChar || dontNeedEscape(u, aFlags) || c1 >= '8') &&
           ((c1 < '8' && !ignoreAscii) || (c1 >= '8' && !ignoreNonAscii)) &&
           !(skipControl &&
             (c1 < '2' || (c1 == '7' && (c2 == 'f' || c2 == 'F'))))) {
-        if (!writing) {
+        if (MOZ_UNLIKELY(!writing)) {
           writing = true;
-          aResult.SetCapacity(aLen);
+          if (!aResult.SetLength(len, mozilla::fallible)) {
+            return NS_ERROR_OUT_OF_MEMORY;
+          }
+          destPos = 0;
+          destPtr = reinterpret_cast<unsigned char*>(aResult.BeginWriting());
         }
         if (p > last) {
-          aResult.Append(last, p - last);
+          auto toCopy = p - last;
+          memcpy(destPtr + destPos, last, toCopy);
+          destPos += toCopy;
+          MOZ_ASSERT(destPos <= len);
           last = p;
         }
-        aResult.Append(u);
-        i += 2;
+        destPtr[destPos] = u;
+        destPos += 1;
+        MOZ_ASSERT(destPos <= len);
         p += 2;
         last += 3;
       }
     }
   }
-  if (writing && last < aStr + aLen) {
-    aResult.Append(last, aStr + aLen - last);
+  if (writing && last < end) {
+    auto toCopy = end - last;
+    memcpy(destPtr + destPos, last, toCopy);
+    destPos += toCopy;
+    MOZ_ASSERT(destPos <= len);
   }
 
-  return writing;
+  if (writing) {
+    aResult.Truncate(destPos);
+  }
+
+  aDidAppend = writing;
+  return NS_OK;
 }

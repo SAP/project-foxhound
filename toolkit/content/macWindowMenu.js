@@ -5,38 +5,33 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 function macWindowMenuDidShow() {
-  var windowManagerDS =
-    Components.classes["@mozilla.org/rdf/datasource;1?name=window-mediator"]
-              .getService(Components.interfaces.nsIWindowDataSource);
-  var sep = document.getElementById("sep-window-list");
-  // Using double parens to avoid warning
-  while ((sep = sep.nextSibling)) {
-    var url = sep.getAttribute("id");
-    var win = windowManagerDS.getWindowForResource(url);
-    if (win.document.documentElement.getAttribute("inwindowmenu") == "false")
-      sep.hidden = true;
-    else if (win == window)
-      sep.setAttribute("checked", "true");
+  let frag = document.createDocumentFragment();
+  for (let win of Services.wm.getEnumerator("")) {
+    if (win.document.documentElement.getAttribute("inwindowmenu") == "false") {
+      continue;
+    }
+    let item = document.createElement("menuitem");
+    item.setAttribute("label", win.document.title);
+    if (win == window) {
+      item.setAttribute("checked", "true");
+    }
+    item.addEventListener("command", () => {
+      if (win.windowState == window.STATE_MINIMIZED) {
+        win.restore();
+      }
+      win.focus();
+    });
+    frag.appendChild(item);
   }
+  document.getElementById("windowPopup").appendChild(frag);
 }
 
-function toOpenWindow( aWindow ) {
-  // deminiaturize the window, if it's in the Dock
-  if (aWindow.windowState == window.STATE_MINIMIZED)
-    aWindow.restore();
-  aWindow.document.commandDispatcher.focusedWindow.focus();
-}
-
-function ShowWindowFromResource( node ) {
-  var windowManagerDS =
-    Components.classes["@mozilla.org/rdf/datasource;1?name=window-mediator"]
-              .getService(Components.interfaces.nsIWindowDataSource);
-
-  var desiredWindow = null;
-  var url = node.getAttribute("id");
-  desiredWindow = windowManagerDS.getWindowForResource( url );
-  if (desiredWindow)
-    toOpenWindow(desiredWindow);
+function macWindowMenuDidHide() {
+  let sep = document.getElementById("sep-window-list");
+  // Clear old items
+  while (sep.nextElementSibling) {
+    sep.nextElementSibling.remove();
+  }
 }
 
 function zoomWindow() {

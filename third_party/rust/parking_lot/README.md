@@ -3,9 +3,11 @@ parking_lot
 
 [![Build Status](https://travis-ci.org/Amanieu/parking_lot.svg?branch=master)](https://travis-ci.org/Amanieu/parking_lot) [![Build status](https://ci.appveyor.com/api/projects/status/wppcc32ttpud0a30/branch/master?svg=true)](https://ci.appveyor.com/project/Amanieu/parking-lot/branch/master) [![Crates.io](https://img.shields.io/crates/v/parking_lot.svg)](https://crates.io/crates/parking_lot)
 
-[Documentation (synchronization primitives)](https://amanieu.github.io/parking_lot/parking_lot/index.html)
+[Documentation (synchronization primitives)](https://docs.rs/parking_lot/)
 
-[Documentation (core parking lot API)](https://amanieu.github.io/parking_lot/parking_lot_core/index.html)
+[Documentation (core parking lot API)](https://docs.rs/parking_lot_core/)
+
+[Documentation (type-safe lock API)](https://docs.rs/lock_api/)
 
 This library provides implementations of `Mutex`, `RwLock`, `Condvar` and
 `Once` that are smaller, faster and more flexible than those in the Rust
@@ -47,33 +49,36 @@ in the Rust standard library:
    library versions of those types.
 7. `RwLock` takes advantage of hardware lock elision on processors that
    support it, which can lead to huge performance wins with many readers.
-8. `MutexGuard` (and the `RwLock` equivalents) is `Send`, which means it can
-   be unlocked by a different thread than the one that locked it.
-9. `RwLock` uses a task-fair locking policy, which avoids reader and writer
+8. `RwLock` uses a task-fair locking policy, which avoids reader and writer
    starvation, whereas the standard library version makes no guarantees.
-10. `Condvar` is guaranteed not to produce spurious wakeups. A thread will
+9. `Condvar` is guaranteed not to produce spurious wakeups. A thread will
     only be woken up if it timed out or it was woken up by a notification.
-11. `Condvar::notify_all` will only wake up a single thread and requeue the
+10. `Condvar::notify_all` will only wake up a single thread and requeue the
     rest to wait on the associated `Mutex`. This avoids a thundering herd
     problem where all threads try to acquire the lock at the same time.
-12. `RwLock` supports atomically downgrading a write lock into a read lock.
-13. `Mutex` and `RwLock` allow raw unlocking without a RAII guard object.
-14. `Mutex<()>` and `RwLock<()>` allow raw locking without a RAII guard
+11. `RwLock` supports atomically downgrading a write lock into a read lock.
+12. `Mutex` and `RwLock` allow raw unlocking without a RAII guard object.
+13. `Mutex<()>` and `RwLock<()>` allow raw locking without a RAII guard
     object.
-15. `Mutex` and `RwLock` support [eventual fairness](https://trac.webkit.org/changeset/203350)
+14. `Mutex` and `RwLock` support [eventual fairness](https://trac.webkit.org/changeset/203350)
     which allows them to be fair on average without sacrificing performance.
-16. A `ReentrantMutex` type which supports recursive locking.
+15. A `ReentrantMutex` type which supports recursive locking.
+16. An *experimental* deadlock detector that works for `Mutex`,
+    `RwLock` and `ReentrantMutex`. This feature is disabled by default and
+    can be enabled via the `deadlock_detection` feature.
+17. `RwLock` supports atomically upgrading an "upgradable" read lock into a
+    write lock.
 
 ## The parking lot
 
 To keep these primitives small, all thread queuing and suspending
 functionality is offloaded to the *parking lot*. The idea behind this is
-based on the Webkit [`WTF::ParkingLot`]
-(https://webkit.org/blog/6161/locking-in-webkit/) class, which essentially
-consists of a hash table mapping of lock addresses to queues of parked
-(sleeping) threads. The Webkit parking lot was itself inspired by Linux
-[futexes](http://man7.org/linux/man-pages/man2/futex.2.html), but it is more
-powerful since it allows invoking callbacks while holding a queue lock.
+based on the Webkit [`WTF::ParkingLot`](https://webkit.org/blog/6161/locking-in-webkit/)
+class, which essentially consists of a hash table mapping of lock addresses
+to queues of parked (sleeping) threads. The Webkit parking lot was itself
+inspired by Linux [futexes](http://man7.org/linux/man-pages/man2/futex.2.html),
+but it is more powerful since it allows invoking callbacks while holding a queue
+lock.
 
 ## Nightly vs stable
 
@@ -84,8 +89,9 @@ There are a few restrictions when using this library on stable Rust:
   `Condvar` and `RwLock` types instead of `const fn`.
 - `RwLock` will not be able to take advantage of hardware lock elision for
   readers, which improves performance when there are multiple readers.
-- Slightly less efficient code may be generated for `compare_exchange`
-  operations. This should not affect architectures like x86 though.
+
+To enable nightly-only functionality, you need to enable the `nightly` feature
+in Cargo (see below).
 
 ## Usage
 
@@ -93,7 +99,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-parking_lot = "0.3"
+parking_lot = "0.6"
 ```
 
 and this to your crate root:
@@ -106,8 +112,11 @@ To enable nightly-only features, add this to your `Cargo.toml` instead:
 
 ```toml
 [dependencies]
-parking_lot = {version = "0.3", features = ["nightly"]}
+parking_lot = {version = "0.6", features = ["nightly"]}
 ```
+
+The experimental deadlock detector can be enabled with the
+`deadlock_detection` Cargo feature.
 
 The core parking lot API is provided by the `parking_lot_core` crate. It is
 separate from the synchronization primitives in the `parking_lot` crate so that

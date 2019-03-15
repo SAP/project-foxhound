@@ -8,13 +8,13 @@
  * the performance analysis view.
  */
 
-add_task(function* () {
-  let { monitor } = yield initNetMonitor(FILTERING_URL);
+add_task(async function() {
+  const { monitor } = await initNetMonitor(FILTERING_URL);
   info("Starting test... ");
 
-  let panel = monitor.panelWin;
-  let { document, gStore, windowRequire } = panel;
-  let Actions = windowRequire("devtools/client/netmonitor/actions/index");
+  const panel = monitor.panelWin;
+  const { document, store, windowRequire, connector } = panel;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
 
   EventUtils.sendMouseEvent({ type: "click" },
     document.querySelector(".requests-list-filter-html-button"));
@@ -26,15 +26,15 @@ add_task(function* () {
     document.querySelector(".requests-list-filter-ws-button"));
   EventUtils.sendMouseEvent({ type: "click" },
     document.querySelector(".requests-list-filter-other-button"));
-  testFilterButtonsCustom(monitor, [0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1]);
+  testFilterButtonsCustom(monitor, [0, 1, 1, 1, 0, 0, 0, 0, 1, 1]);
   info("The correct filtering predicates are used before entering perf. analysis mode.");
 
-  gStore.dispatch(Actions.openStatistics(true));
+  store.dispatch(Actions.openStatistics(connector, true));
 
   ok(document.querySelector(".statistics-panel"),
     "The main panel is switched to the statistics panel.");
 
-  yield waitUntil(
+  await waitUntil(
     () => document.querySelectorAll(".pie-chart-container:not([placeholder=true])")
                   .length == 2);
   ok(true, "Two real pie charts appear to be rendered correctly.");
@@ -48,5 +48,5 @@ add_task(function* () {
   testFilterButtons(monitor, "html");
   info("The correct filtering predicate is used when exiting perf. analysis mode.");
 
-  yield teardown(monitor);
+  await teardown(monitor);
 });

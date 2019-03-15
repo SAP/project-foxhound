@@ -4,17 +4,18 @@
 
 "use strict";
 
-const { PropTypes } = require("devtools/client/shared/vendor/react");
+const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 
 /**
  * The box model data for the current selected node.
  */
 exports.boxModel = {
-
   // Whether or not the geometry editor is enabled
   geometryEditorEnabled: PropTypes.boolean,
 
   // The layout information of the current selected node
   layout: PropTypes.object,
 
+  // The offset parent for the selected node
+  offsetParent: PropTypes.object,
 };

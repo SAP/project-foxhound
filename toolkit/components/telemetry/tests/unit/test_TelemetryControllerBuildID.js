@@ -15,50 +15,47 @@
 
 "use strict";
 
-Cu.import("resource://gre/modules/Services.jsm", this);
-Cu.import("resource://gre/modules/TelemetryController.jsm", this);
-Cu.import("resource://gre/modules/TelemetrySession.jsm", this);
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-
-// Force the Telemetry enabled preference so that TelemetrySession.testReset() doesn't exit early.
-Services.prefs.setBoolPref(PREF_TELEMETRY_ENABLED, true);
+ChromeUtils.import("resource://gre/modules/Services.jsm", this);
+ChromeUtils.import("resource://gre/modules/TelemetryController.jsm", this);
+ChromeUtils.import("resource://gre/modules/TelemetrySession.jsm", this);
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 // Set up our dummy AppInfo object so we can control the appBuildID.
-Cu.import("resource://testing-common/AppInfo.jsm", this);
+ChromeUtils.import("resource://testing-common/AppInfo.jsm", this);
 updateAppInfo();
 
 // Check that when run with no previous build ID stored, we update the pref but do not
 // put anything into the metadata.
-add_task(function* test_firstRun() {
-  yield TelemetryController.testReset();
+add_task(async function test_firstRun() {
+  await TelemetryController.testReset();
   let metadata = TelemetrySession.getMetadata();
-  do_check_false("previousBuildID" in metadata);
+  Assert.equal(false, "previousBuildID" in metadata);
   let appBuildID = getAppInfo().appBuildID;
-  let buildIDPref = Services.prefs.getCharPref(TelemetrySession.Constants.PREF_PREVIOUS_BUILDID);
-  do_check_eq(appBuildID, buildIDPref);
+  let buildIDPref = Services.prefs.getCharPref(TelemetryUtils.Preferences.PreviousBuildID);
+  Assert.equal(appBuildID, buildIDPref);
 });
 
 // Check that a subsequent run with the same build ID does not put prev build ID in
 // metadata. Assumes testFirstRun() has already been called to set the previousBuildID pref.
-add_task(function* test_secondRun() {
-  yield TelemetryController.testReset();
+add_task(async function test_secondRun() {
+  await TelemetryController.testReset();
   let metadata = TelemetrySession.getMetadata();
-  do_check_false("previousBuildID" in metadata);
+  Assert.equal(false, "previousBuildID" in metadata);
 });
 
 // Set up telemetry with a different app build ID and check that the old build ID
 // is returned in the metadata and the pref is updated to the new build ID.
 // Assumes testFirstRun() has been called to set the previousBuildID pref.
 const NEW_BUILD_ID = "20130314";
-add_task(function* test_newBuild() {
+add_task(async function test_newBuild() {
   let info = getAppInfo();
   let oldBuildID = info.appBuildID;
   info.appBuildID = NEW_BUILD_ID;
-  yield TelemetryController.testReset();
+  await TelemetryController.testReset();
   let metadata = TelemetrySession.getMetadata();
-  do_check_eq(metadata.previousBuildId, oldBuildID);
-  let buildIDPref = Services.prefs.getCharPref(TelemetrySession.Constants.PREF_PREVIOUS_BUILDID);
-  do_check_eq(NEW_BUILD_ID, buildIDPref);
+  Assert.equal(metadata.previousBuildId, oldBuildID);
+  let buildIDPref = Services.prefs.getCharPref(TelemetryUtils.Preferences.PreviousBuildID);
+  Assert.equal(NEW_BUILD_ID, buildIDPref);
 });
 
 

@@ -15,6 +15,9 @@
  * - all path concatenations go through function |join|.
  */
 
+/* global OS */
+/* eslint-env node */
+
 "use strict";
 
 if (typeof Components == "undefined") {
@@ -26,15 +29,14 @@ if (typeof Components == "undefined") {
   }
   module.exports = Path;
 } else {
-  let Cu = Components.utils;
   let Scope = {};
-  Cu.import("resource://gre/modules/osfile/osfile_shared_allthreads.jsm", Scope);
+  ChromeUtils.import("resource://gre/modules/osfile/osfile_shared_allthreads.jsm", Scope);
 
   let Path = {};
   if (Scope.OS.Constants.Win) {
-    Cu.import("resource://gre/modules/osfile/ospath_win.jsm", Path);
+    ChromeUtils.import("resource://gre/modules/osfile/ospath_win.jsm", Path);
   } else {
-    Cu.import("resource://gre/modules/osfile/ospath_unix.jsm", Path);
+    ChromeUtils.import("resource://gre/modules/osfile/ospath_unix.jsm", Path);
   }
 
   this.EXPORTED_SYMBOLS = [];

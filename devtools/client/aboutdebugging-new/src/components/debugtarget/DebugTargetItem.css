@@ -1,0 +1,43 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/*
+ * The current layout of debug target item is
+ *
+ *  +--------+-----------------------------+----------------+
+ *  | [Icon] | Name                        | Action button  |
+ *  +--------+-----------------------------+----------------+
+ *  |        | Detail                                       |
+ *  |        |                                              |
+ *  +--------+----------------------------------------------+
+ */
+.debug-target-item {
+  display: grid;
+  grid-template-columns: calc(var(--base-unit) * 9) 1fr max-content;
+  grid-column-gap: calc(var(--base-unit) * 2);
+  grid-template-areas: "icon name   action"
+                       ".    detail detail";
+  margin-block-end: calc(var(--base-unit) * 4);
+}
+
+.debug-target-item__icon {
+  grid-area: icon;
+  width: 100%;
+}
+
+.debug-target-item__name {
+  grid-area: name;
+  /* so as to ellipsis */
+  min-width: 0;
+  font-size: calc(var(--base-unit) * 5);
+}
+
+.debug-target-item__action {
+  grid-area: action;
+  align-self: center;
+}
+
+.debug-target-item__detail {
+  grid-area: detail;
+}

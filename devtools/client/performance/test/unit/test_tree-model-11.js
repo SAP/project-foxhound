@@ -7,14 +7,10 @@
  * samples.
  */
 
-function run_test() {
-  run_next_test();
-}
-
-add_task(function () {
-  let { ThreadNode } = require("devtools/client/performance/modules/logic/tree-model");
-  let thread = new ThreadNode(gThread, { startTime: 0, endTime: 50,
-                                         flattenRecursion: true });
+add_task(function() {
+  const { ThreadNode } = require("devtools/client/performance/modules/logic/tree-model");
+  const thread = new ThreadNode(gThread, { startTime: 0, endTime: 50,
+                                           flattenRecursion: true });
 
   /**
    * Samples
@@ -30,8 +26,8 @@ add_task(function () {
     [ 100, 0, "(root)", [
       [ 100, 0, "A", [
         [ 100, 50, "B", [
-          [ 50, 50, "C"]
-        ]]
+          [ 50, 50, "C"],
+        ]],
       ]],
     ]],
   ].forEach(compareFrameInfo(thread));
@@ -39,10 +35,10 @@ add_task(function () {
 
 function compareFrameInfo(root, parent) {
   parent = parent || root;
-  return function (def) {
-    let [total, self, name, children] = def;
-    let node = getFrameNodePath(parent, name);
-    let data = node.getInfo({ root });
+  return function(def) {
+    const [total, self, name, children] = def;
+    const node = getFrameNodePath(parent, name);
+    const data = node.getInfo({ root });
     equal(total, data.totalPercentage,
           `${name} has correct total percentage: ${data.totalPercentage}`);
     equal(self, data.selfPercentage,
@@ -61,16 +57,16 @@ var gThread = synthesizeProfileForTest([{
     { location: "B" },
     { location: "B" },
     { location: "B" },
-    { location: "C" }
-  ]
+    { location: "C" },
+  ],
 }, {
   time: 10,
   frames: [
     { location: "(root)" },
     { location: "A" },
     { location: "B" },
-    { location: "C" }
-  ]
+    { location: "C" },
+  ],
 }, {
   time: 15,
   frames: [
@@ -79,12 +75,12 @@ var gThread = synthesizeProfileForTest([{
     { location: "B" },
     { location: "B" },
     { location: "B" },
-  ]
+  ],
 }, {
   time: 20,
   frames: [
     { location: "(root)" },
     { location: "A" },
     { location: "B" },
-  ]
+  ],
 }]);

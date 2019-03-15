@@ -20,31 +20,31 @@ const XHTML = `
 
 const TEST_URI = "data:application/xhtml+xml;charset=utf-8," + encodeURI(XHTML);
 
-add_task(function* () {
-  let {inspector, testActor} = yield openInspectorForURL(TEST_URI);
+add_task(async function() {
+  const {inspector, testActor} = await openInspectorForURL(TEST_URI);
 
-  let testData = [
+  const testData = [
     {
       selector: "svg",
-      tag: "svg:svg"
+      tag: "svg:svg",
     },
     {
       selector: "circle",
-      tag: "svg:circle"
+      tag: "svg:circle",
     },
   ];
 
-  for (let currTest of testData) {
-    yield testNode(currTest, inspector, testActor);
+  for (const currTest of testData) {
+    await testNode(currTest, inspector, testActor);
   }
 });
 
-function* testNode(test, inspector, testActor) {
+async function testNode(test, inspector, testActor) {
   info("Testing " + test.selector);
 
-  yield selectAndHighlightNode(test.selector, inspector);
+  await selectAndHighlightNode(test.selector, inspector);
 
-  let tag = yield testActor.getHighlighterNodeTextContent(
+  const tag = await testActor.getHighlighterNodeTextContent(
     "box-model-infobar-tagname");
   is(tag, test.tag, "node " + test.selector + ": tagName matches.");
 }

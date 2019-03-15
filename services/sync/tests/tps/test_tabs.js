@@ -17,24 +17,22 @@ var phases = { "phase1": "profile1",
  */
 
 var tabs1 = [
-  { uri: "http://mozqa.com/data/firefox/layout/mozilla.html",
-    title: "Mozilla",
-    profile: "profile1"
+  { uri: "https://www.mozilla.org/en-US/firefox/",
+    profile: "profile1",
   },
   { uri: "data:text/html,<html><head><title>Hello</title></head><body>Hello</body></html>",
     title: "Hello",
-    profile: "profile1"
-  }
+    profile: "profile1",
+  },
 ];
 
 var tabs2 = [
-  { uri: "http://mozqa.com/data/firefox/layout/mozilla_community.html",
-    title: "Mozilla Community",
-    profile: "profile2"
+  { uri: "https://www.mozilla.org/en-US/contribute/",
+    profile: "profile2",
   },
   { uri: "data:text/html,<html><head><title>Bye</title></head><body>Bye</body></html>",
-    profile: "profile2"
-  }
+    profile: "profile2",
+  },
 ];
 
 /*
@@ -43,17 +41,17 @@ var tabs2 = [
 
 Phase("phase1", [
   [Tabs.add, tabs1],
-  [Sync]
+  [Sync],
 ]);
 
 Phase("phase2", [
   [Sync],
   [Tabs.verify, tabs1],
   [Tabs.add, tabs2],
-  [Sync]
+  [Sync],
 ]);
 
 Phase("phase3", [
   [Sync],
-  [Tabs.verify, tabs2]
+  [Tabs.verify, tabs2],
 ]);

@@ -16,21 +16,24 @@ namespace a11y {
 /**
  * Accessible for ARIA grid and treegrid.
  */
-class ARIAGridAccessible : public AccessibleWrap,
-                           public TableAccessible
-{
-public:
+class ARIAGridAccessible : public HyperTextAccessibleWrap,
+                           public TableAccessible {
+ public:
   ARIAGridAccessible(nsIContent* aContent, DocAccessible* aDoc);
 
-  NS_DECL_ISUPPORTS_INHERITED
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(ARIAGridAccessible,
+                                       HyperTextAccessibleWrap)
 
   // Accessible
+  virtual a11y::role NativeRole() const override;
+  virtual already_AddRefed<nsIPersistentProperties> NativeAttributes() override;
   virtual TableAccessible* AsTable() override { return this; }
 
   // TableAccessible
-  virtual uint32_t ColCount() override;
+  virtual uint32_t ColCount() const override;
   virtual uint32_t RowCount() override;
-  virtual Accessible* CellAt(uint32_t aRowIndex, uint32_t aColumnIndex) override;
+  virtual Accessible* CellAt(uint32_t aRowIndex,
+                             uint32_t aColumnIndex) override;
   virtual bool IsColSelected(uint32_t aColIdx) override;
   virtual bool IsRowSelected(uint32_t aRowIdx) override;
   virtual bool IsCellSelected(uint32_t aRowIdx, uint32_t aColIdx) override;
@@ -47,18 +50,8 @@ public:
   virtual void UnselectRow(uint32_t aRowIdx) override;
   virtual Accessible* AsAccessible() override { return this; }
 
-protected:
+ protected:
   virtual ~ARIAGridAccessible() {}
-
-  /**
-   * Return row accessible at the given row index.
-   */
-  Accessible* GetRowAt(int32_t aRow);
-
-  /**
-   * Return cell accessible at the given column index in the row.
-   */
-  Accessible* GetCellInRowAt(Accessible* aRow, int32_t aColumn);
 
   /**
    * Set aria-selected attribute value on DOM node of the given accessible.
@@ -72,50 +65,49 @@ protected:
                            bool aNotify = true);
 };
 
-
 /**
  * Accessible for ARIA row.
  */
-class ARIARowAccessible : public AccessibleWrap
-{
-public:
+class ARIARowAccessible : public HyperTextAccessibleWrap {
+ public:
   ARIARowAccessible(nsIContent* aContent, DocAccessible* aDoc);
 
-  NS_DECL_ISUPPORTS_INHERITED
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(ARIARowAccessible,
+                                       HyperTextAccessibleWrap)
 
   // Accessible
+  virtual a11y::role NativeRole() const override;
   virtual mozilla::a11y::GroupPos GroupPosition() override;
 
-protected:
+ protected:
   virtual ~ARIARowAccessible() {}
 };
-
 
 /**
  * Accessible for ARIA gridcell and rowheader/columnheader.
  */
 class ARIAGridCellAccessible : public HyperTextAccessibleWrap,
-                               public TableCellAccessible
-{
-public:
+                               public TableCellAccessible {
+ public:
   ARIAGridCellAccessible(nsIContent* aContent, DocAccessible* aDoc);
 
-  NS_DECL_ISUPPORTS_INHERITED
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(ARIAGridCellAccessible,
+                                       HyperTextAccessibleWrap)
 
   // Accessible
+  virtual a11y::role NativeRole() const override;
   virtual TableCellAccessible* AsTableCell() override { return this; }
   virtual void ApplyARIAState(uint64_t* aState) const override;
   virtual already_AddRefed<nsIPersistentProperties> NativeAttributes() override;
   virtual mozilla::a11y::GroupPos GroupPosition() override;
 
-protected:
+ protected:
   virtual ~ARIAGridCellAccessible() {}
 
   /**
    * Return a containing row.
    */
-  Accessible* Row() const
-  {
+  Accessible* Row() const {
     Accessible* row = Parent();
     return row && row->IsTableRow() ? row : nullptr;
   }
@@ -132,7 +124,7 @@ protected:
   virtual bool Selected() override;
 };
 
-} // namespace a11y
-} // namespace mozilla
+}  // namespace a11y
+}  // namespace mozilla
 
 #endif

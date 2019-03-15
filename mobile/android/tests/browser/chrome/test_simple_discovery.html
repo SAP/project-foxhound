@@ -14,12 +14,10 @@ Migrated from Robocop: https://bugzilla.mozilla.org/show_bug.cgi?id=1184186
 
   "use strict";
 
-  /*globals SimpleServiceDiscovery */
+  /* globals SimpleServiceDiscovery */
 
-  const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
-
-  Cu.import("resource://gre/modules/Services.jsm");
-  Cu.import("resource://gre/modules/SimpleServiceDiscovery.jsm");
+  ChromeUtils.import("resource://gre/modules/Services.jsm");
+  ChromeUtils.import("resource://gre/modules/SimpleServiceDiscovery.jsm");
 
   function discovery_observer(subject, topic, data) {
     dump("Observer: " + data);
@@ -34,14 +32,14 @@ Migrated from Robocop: https://bugzilla.mozilla.org/show_bug.cgi?id=1184186
     is(service.modelName, "Eureka Dongle");
 
     SimpleTest.finish();
-  };
+  }
 
-  var testDevice = {
+var testDevice = {
     id: "test:dummy",
     target: "test:service",
-    factory: function(service) { /* dummy */  },
+    factory: function(service) { },
     types: ["video/mp4"],
-    extensions: ["mp4"]
+    extensions: ["mp4"],
   };
 
   function test_default() {
@@ -50,7 +48,7 @@ Migrated from Robocop: https://bugzilla.mozilla.org/show_bug.cgi?id=1184186
       Services.obs.removeObserver(discovery_observer, "ssdp-service-found");
     });
 
-    Services.obs.addObserver(discovery_observer, "ssdp-service-found", false);
+    Services.obs.addObserver(discovery_observer, "ssdp-service-found");
 
     // We need to register a device or processService will ignore us
     SimpleServiceDiscovery.registerDevice(testDevice);
@@ -58,7 +56,7 @@ Migrated from Robocop: https://bugzilla.mozilla.org/show_bug.cgi?id=1184186
     // Create a pretend service
     let service = {
       location: "http://mochi.test:8888/chrome/mobile/android/tests/browser/chrome/simpleservice.xml",
-      target: "test:service"
+      target: "test:service",
     };
 
     dump("Force a detailed ping from a pretend service");

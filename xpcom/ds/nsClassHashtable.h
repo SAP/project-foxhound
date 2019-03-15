@@ -20,28 +20,25 @@
  * @param Class the class-type being wrapped
  * @see nsInterfaceHashtable, nsClassHashtable
  */
-template<class KeyClass, class T>
-class nsClassHashtable
-  : public nsBaseHashtable<KeyClass, nsAutoPtr<T>, T*>
-{
-public:
+template <class KeyClass, class T>
+class nsClassHashtable : public nsBaseHashtable<KeyClass, nsAutoPtr<T>, T*> {
+ public:
   typedef typename KeyClass::KeyType KeyType;
   typedef T* UserDataType;
   typedef nsBaseHashtable<KeyClass, nsAutoPtr<T>, T*> base_type;
 
   using base_type::IsEmpty;
+  using base_type::Remove;
 
   nsClassHashtable() {}
   explicit nsClassHashtable(uint32_t aInitLength)
-    : nsBaseHashtable<KeyClass, nsAutoPtr<T>, T*>(aInitLength)
-  {
-  }
+      : nsBaseHashtable<KeyClass, nsAutoPtr<T>, T*>(aInitLength) {}
 
   /**
    * Looks up aKey in the hash table. If it doesn't exist a new object of
    * KeyClass will be created (using the arguments provided) and then returned.
    */
-  template<typename... Args>
+  template <typename... Args>
   UserDataType LookupOrAdd(KeyType aKey, Args&&... aConstructionArgs);
 
   /**
@@ -55,42 +52,41 @@ public:
    * @returns nullptr if the key is not present.
    */
   UserDataType Get(KeyType aKey) const;
-
-  /**
-   * Remove the entry for the given key from the hashtable and return it in
-   * aOut.  If the key is not in the hashtable, aOut's pointer is set to
-   * nullptr.
-   *
-   * Normally, an entry is deleted when it's removed from an nsClassHashtable,
-   * but this function transfers ownership of the entry back to the caller
-   * through aOut -- the entry will be deleted when aOut goes out of scope.
-   *
-   * @param aKey the key to get and remove from the hashtable
-   */
-  void RemoveAndForget(KeyType aKey, nsAutoPtr<T>& aOut);
 };
+
+template <typename K, typename T>
+inline void ImplCycleCollectionUnlink(nsClassHashtable<K, T>& aField) {
+  aField.Clear();
+}
+
+template <typename K, typename T>
+inline void ImplCycleCollectionTraverse(
+    nsCycleCollectionTraversalCallback& aCallback,
+    const nsClassHashtable<K, T>& aField, const char* aName,
+    uint32_t aFlags = 0) {
+  for (auto iter = aField.ConstIter(); !iter.Done(); iter.Next()) {
+    ImplCycleCollectionTraverse(aCallback, *iter.UserData(), aName, aFlags);
+  }
+}
 
 //
 // nsClassHashtable definitions
 //
 
-template<class KeyClass, class T>
-template<typename... Args>
-T*
-nsClassHashtable<KeyClass, T>::LookupOrAdd(KeyType aKey,
-                                           Args&&... aConstructionArgs)
-{
+template <class KeyClass, class T>
+template <typename... Args>
+T* nsClassHashtable<KeyClass, T>::LookupOrAdd(KeyType aKey,
+                                              Args&&... aConstructionArgs) {
+  auto count = this->Count();
   typename base_type::EntryType* ent = this->PutEntry(aKey);
-  if (!ent->mData) {
-    ent->mData = new T(mozilla::Forward<Args>(aConstructionArgs)...);
+  if (count != this->Count()) {
+    ent->mData = new T(std::forward<Args>(aConstructionArgs)...);
   }
   return ent->mData;
 }
 
-template<class KeyClass, class T>
-bool
-nsClassHashtable<KeyClass, T>::Get(KeyType aKey, T** aRetVal) const
-{
+template <class KeyClass, class T>
+bool nsClassHashtable<KeyClass, T>::Get(KeyType aKey, T** aRetVal) const {
   typename base_type::EntryType* ent = this->GetEntry(aKey);
 
   if (ent) {
@@ -108,10 +104,8 @@ nsClassHashtable<KeyClass, T>::Get(KeyType aKey, T** aRetVal) const
   return false;
 }
 
-template<class KeyClass, class T>
-T*
-nsClassHashtable<KeyClass, T>::Get(KeyType aKey) const
-{
+template <class KeyClass, class T>
+T* nsClassHashtable<KeyClass, T>::Get(KeyType aKey) const {
   typename base_type::EntryType* ent = this->GetEntry(aKey);
   if (!ent) {
     return nullptr;
@@ -120,21 +114,4 @@ nsClassHashtable<KeyClass, T>::Get(KeyType aKey) const
   return ent->mData;
 }
 
-template<class KeyClass, class T>
-void
-nsClassHashtable<KeyClass, T>::RemoveAndForget(KeyType aKey, nsAutoPtr<T>& aOut)
-{
-  aOut = nullptr;
-
-  typename base_type::EntryType* ent = this->GetEntry(aKey);
-  if (!ent) {
-    return;
-  }
-
-  // Transfer ownership from ent->mData into aOut.
-  aOut = mozilla::Move(ent->mData);
-
-  this->Remove(aKey);
-}
-
-#endif // nsClassHashtable_h__
+#endif  // nsClassHashtable_h__

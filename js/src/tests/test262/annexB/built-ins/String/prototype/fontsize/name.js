@@ -5,7 +5,7 @@
 es6id: B.2.3.8
 description: >
   String.prototype.fontsize.name is "fontsize".
-info: >
+info: |
   String.prototype.fontsize ( color )
 
   17 ECMAScript Standard Built-in Objects:
@@ -19,10 +19,11 @@ info: >
 includes: [propertyHelper.js]
 ---*/
 
-assert.sameValue(String.prototype.fontsize.name, "fontsize");
-
-verifyNotEnumerable(String.prototype.fontsize, "name");
-verifyNotWritable(String.prototype.fontsize, "name");
-verifyConfigurable(String.prototype.fontsize, "name");
+verifyProperty(String.prototype.fontsize, "name", {
+  enumerable: false,
+  writable: false,
+  configurable: true,
+  value: "fontsize"
+});
 
 reportCompare(0, 0);

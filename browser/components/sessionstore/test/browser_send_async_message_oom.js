@@ -1,7 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+/* eslint-disable mozilla/no-arbitrary-setTimeout */
 
-const {Services} = Cu.import("resource://gre/modules/Services.jsm", {});
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm", {});
 
 const HISTOGRAM_NAME = "FX_SESSION_RESTORE_SEND_UPDATE_CAUSED_OOM";
 
@@ -10,17 +11,14 @@ const HISTOGRAM_NAME = "FX_SESSION_RESTORE_SEND_UPDATE_CAUSED_OOM";
  * to Telemetry.
  */
 
-add_task(function* init() {
+add_task(async function init() {
   Services.telemetry.canRecordExtended = true;
 });
 
 function frameScript() {
   // Make send[A]syncMessage("SessionStore:update", ...) simulate OOM.
   // Other operations are unaffected.
-  let mm = docShell.sameTypeRootTreeItem.
-    QueryInterface(Ci.nsIDocShell).
-    QueryInterface(Ci.nsIInterfaceRequestor).
-    getInterface(Ci.nsIContentFrameMessageManager);
+  let mm = docShell.messageManager;
 
   let wrap = function(original) {
     return function(name, ...args) {
@@ -28,21 +26,21 @@ function frameScript() {
         return original(name, ...args);
       }
       throw new Components.Exception("Simulated OOM", Cr.NS_ERROR_OUT_OF_MEMORY);
-    }
-  }
+    };
+  };
 
-  mm.sendAsyncMessage = wrap(mm.sendAsyncMessage);
-  mm.sendSyncMessage = wrap(mm.sendSyncMessage);
+  mm.sendAsyncMessage = wrap(mm.sendAsyncMessage.bind(mm));
+  mm.sendSyncMessage = wrap(mm.sendSyncMessage.bind(mm));
 }
 
-add_task(function*() {
+add_task(async function() {
   // Capture original state.
   let snapshot = Services.telemetry.getHistogramById(HISTOGRAM_NAME).snapshot();
 
   // Open a browser, configure it to cause OOM.
-  let newTab = gBrowser.addTab("about:robots");
+  let newTab = BrowserTestUtils.addTab(gBrowser, "about:robots");
   let browser = newTab.linkedBrowser;
-  yield ContentTask.spawn(browser, null, frameScript);
+  await ContentTask.spawn(browser, null, frameScript);
 
 
   let promiseReported = new Promise(resolve => {
@@ -53,15 +51,15 @@ add_task(function*() {
   let promiseFlushed = TabStateFlusher.flush(browser);
   promiseFlushed.then((success) => {
     if (success) {
-      throw new Error("Flush should have failed")
+      throw new Error("Flush should have failed");
     }
   });
 
   // The frame script should report an error.
-  yield promiseReported;
+  await promiseReported;
 
   // Give us some time to handle that error.
-  yield new Promise(resolve => setTimeout(resolve, 10));
+  await new Promise(resolve => setTimeout(resolve, 10));
 
   // By now, Telemetry should have been updated.
   let snapshot2 = Services.telemetry.getHistogramById(HISTOGRAM_NAME).snapshot();
@@ -70,6 +68,6 @@ add_task(function*() {
   Assert.ok(snapshot2.sum > snapshot.sum);
 });
 
-add_task(function* cleanup() {
+add_task(async function cleanup() {
   Services.telemetry.canRecordExtended = false;
 });

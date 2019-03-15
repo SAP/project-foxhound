@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 from marionette_driver.errors import ScriptTimeoutException
 
 from marionette_harness import MarionetteTestCase
@@ -19,12 +21,13 @@ class TestExecuteIsolationContent(MarionetteTestCase):
         self.marionette.timeout.script = 0.5
         self.assertRaises(ScriptTimeoutException,
                           self.marionette.execute_async_script,
-                          ("setTimeout(function() {{ marionetteScriptFinished(5{}); }}, 3000);"
+                          ("setTimeout(function() {{ arguments[0](5{}); }}, 3000);"
                               .format(multiplier)))
 
         self.marionette.timeout.script = 6
         result = self.marionette.execute_async_script("""
-        setTimeout(function() {{ marionetteScriptFinished(10{}); }}, 5000);
+        let [resolve] = arguments;
+        setTimeout(function() {{ resolve(10{}); }}, 5000);
         """.format(multiplier))
         self.assertEqual(result, 30 if self.content else 10)
 

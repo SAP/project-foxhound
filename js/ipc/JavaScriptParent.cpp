@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+ * vim: set ts=4 sw=2 et tw=80:
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -11,9 +11,9 @@
 #include "nsJSUtils.h"
 #include "nsIScriptError.h"
 #include "jsfriendapi.h"
-#include "jswrapper.h"
 #include "js/Proxy.h"
 #include "js/HeapAPI.h"
+#include "js/Wrapper.h"
 #include "xpcprivate.h"
 #include "mozilla/Casting.h"
 #include "mozilla/Telemetry.h"
@@ -25,189 +25,129 @@ using namespace mozilla;
 using namespace mozilla::jsipc;
 using namespace mozilla::dom;
 
-static void
-TraceParent(JSTracer* trc, void* data)
-{
-    static_cast<JavaScriptParent*>(data)->trace(trc);
+static void TraceParent(JSTracer* trc, void* data) {
+  static_cast<JavaScriptParent*>(data)->trace(trc);
 }
 
-JavaScriptParent::~JavaScriptParent()
-{
-    JS_RemoveExtraGCRootsTracer(danger::GetJSContext(), TraceParent, this);
+JavaScriptParent::JavaScriptParent() : savedNextCPOWNumber_(1) {
+  JS_AddExtraGCRootsTracer(danger::GetJSContext(), TraceParent, this);
 }
 
-bool
-JavaScriptParent::init()
-{
-    if (!WrapperOwner::init())
-        return false;
+JavaScriptParent::~JavaScriptParent() {
+  JS_RemoveExtraGCRootsTracer(danger::GetJSContext(), TraceParent, this);
+}
 
-    JS_AddExtraGCRootsTracer(danger::GetJSContext(), TraceParent, this);
+static bool ForbidUnsafeBrowserCPOWs() {
+  static bool result;
+  static bool cached = false;
+  if (!cached) {
+    cached = true;
+    Preferences::AddBoolVarCache(
+        &result, "dom.ipc.cpows.forbid-unsafe-from-browser", false);
+  }
+  return result;
+}
+
+bool JavaScriptParent::allowMessage(JSContext* cx) {
+  MOZ_ASSERT(cx);
+
+  // If we're running browser code while running tests (in automation),
+  // then we allow all safe CPOWs and forbid unsafe CPOWs
+  // based on a pref (which defaults to forbidden).
+  // We also allow CPOWs unconditionally in selected globals (based on
+  // Cu.permitCPOWsInScope).
+  // A normal (release) browser build will never allow CPOWs,
+  // excecpt as a token to pass round.
+
+  if (!xpc::IsInAutomation()) {
+    JS_ReportErrorASCII(cx, "CPOW usage forbidden");
+    return false;
+  }
+
+  MessageChannel* channel = GetIPCChannel();
+  bool isSafe = channel->IsInTransaction();
+
+  if (isSafe) {
     return true;
-}
+  }
 
-static bool
-ForbidUnsafeBrowserCPOWs()
-{
-    static bool result;
-    static bool cached = false;
-    if (!cached) {
-        cached = true;
-        Preferences::AddBoolVarCache(&result, "dom.ipc.cpows.forbid-unsafe-from-browser", false);
+  nsIGlobalObject* global = dom::GetIncumbentGlobal();
+  JS::Rooted<JSObject*> jsGlobal(
+      cx, global ? global->GetGlobalJSObject() : nullptr);
+  if (jsGlobal) {
+    JSAutoRealm ar(cx, jsGlobal);
+
+    if (!xpc::CompartmentPrivate::Get(jsGlobal)->allowCPOWs &&
+        ForbidUnsafeBrowserCPOWs()) {
+      Telemetry::Accumulate(Telemetry::BROWSER_SHIM_USAGE_BLOCKED, 1);
+      JS_ReportErrorASCII(cx, "unsafe CPOW usage forbidden");
+      return false;
     }
-    return result;
-}
+  }
 
-// Should we allow CPOWs in aAddonId, even though it's marked as multiprocess
-// compatible? This is controlled by two prefs:
-//   If dom.ipc.cpows.forbid-cpows-in-compat-addons is false, then we allow the CPOW.
-//   If dom.ipc.cpows.forbid-cpows-in-compat-addons is true:
-//     We check if aAddonId is listed in dom.ipc.cpows.allow-cpows-in-compat-addons
-//     (which should be a comma-separated string). If it's present there, we allow
-//     the CPOW. Otherwise we forbid the CPOW.
-static bool
-ForbidCPOWsInCompatibleAddon(const nsACString& aAddonId)
-{
-    bool forbid = Preferences::GetBool("dom.ipc.cpows.forbid-cpows-in-compat-addons", false);
-    if (!forbid) {
-        return false;
+  static bool disableUnsafeCPOWWarnings =
+      PR_GetEnv("DISABLE_UNSAFE_CPOW_WARNINGS");
+  if (!disableUnsafeCPOWWarnings) {
+    nsCOMPtr<nsIConsoleService> console(
+        do_GetService(NS_CONSOLESERVICE_CONTRACTID));
+    if (console) {
+      nsAutoString filename;
+      uint32_t lineno = 0, column = 0;
+      nsJSUtils::GetCallingLocation(cx, filename, &lineno, &column);
+      nsCOMPtr<nsIScriptError> error(
+          do_CreateInstance(NS_SCRIPTERROR_CONTRACTID));
+      error->Init(NS_LITERAL_STRING("unsafe/forbidden CPOW usage"), filename,
+                  EmptyString(), lineno, column, nsIScriptError::warningFlag,
+                  "chrome javascript", false /* from private window */);
+      console->LogMessage(error);
+    } else {
+      NS_WARNING("Unsafe synchronous IPC message");
     }
+  }
 
-    nsCString allow;
-    allow.Assign(',');
-    allow.Append(Preferences::GetCString("dom.ipc.cpows.allow-cpows-in-compat-addons"));
-    allow.Append(',');
-
-    nsCString searchString(",");
-    searchString.Append(aAddonId);
-    searchString.Append(',');
-    return allow.Find(searchString) == kNotFound;
+  return true;
 }
 
-bool
-JavaScriptParent::allowMessage(JSContext* cx)
-{
-    // If we're running browser code, then we allow all safe CPOWs and forbid
-    // unsafe CPOWs based on a pref (which defaults to forbidden). We also allow
-    // CPOWs unconditionally in selected globals (based on
-    // Cu.permitCPOWsInScope).
-    //
-    // If we're running add-on code, then we check if the add-on is multiprocess
-    // compatible (which eventually translates to a given setting of allowCPOWs
-    // on the scopw). If it's not compatible, then we allow the CPOW but
-    // warn. If it is marked as compatible, then we check the
-    // ForbidCPOWsInCompatibleAddon; see the comment there.
+void JavaScriptParent::trace(JSTracer* trc) {
+  objects_.trace(trc);
+  unwaivedObjectIds_.trace(trc);
+  waivedObjectIds_.trace(trc);
+}
 
-    MessageChannel* channel = GetIPCChannel();
-    bool isSafe = channel->IsInTransaction();
+JSObject* JavaScriptParent::scopeForTargetObjects() {
+  // CPOWs from the child need to point into the parent's unprivileged junk
+  // scope so that a compromised child cannot compromise the parent. In
+  // practice, this means that a child process can only (a) hold parent
+  // objects alive and (b) invoke them if they are callable.
+  return xpc::UnprivilegedJunkScope();
+}
 
-    bool warn = !isSafe;
-    nsIGlobalObject* global = dom::GetIncumbentGlobal();
-    JSObject* jsGlobal = global ? global->GetGlobalJSObject() : nullptr;
-    if (jsGlobal) {
-        JSAutoCompartment ac(cx, jsGlobal);
-        JSAddonId* addonId = JS::AddonIdOfObject(jsGlobal);
+void JavaScriptParent::afterProcessTask() {
+  if (savedNextCPOWNumber_ == nextCPOWNumber_) {
+    return;
+  }
 
-        if (!xpc::CompartmentPrivate::Get(jsGlobal)->allowCPOWs) {
-            if (!addonId && ForbidUnsafeBrowserCPOWs() && !isSafe) {
-                Telemetry::Accumulate(Telemetry::BROWSER_SHIM_USAGE_BLOCKED, 1);
-                JS_ReportErrorASCII(cx, "unsafe CPOW usage forbidden");
-                return false;
-            }
+  savedNextCPOWNumber_ = nextCPOWNumber_;
 
-            if (addonId) {
-                JSFlatString* flat = JS_ASSERT_STRING_IS_FLAT(JS::StringOfAddonId(addonId));
-                nsString addonIdString;
-                AssignJSFlatString(addonIdString, flat);
-                NS_ConvertUTF16toUTF8 addonIdCString(addonIdString);
-                Telemetry::Accumulate(Telemetry::ADDON_FORBIDDEN_CPOW_USAGE, addonIdCString);
+  MOZ_ASSERT(nextCPOWNumber_ > 0);
+  if (active()) {
+    Unused << SendDropTemporaryStrongReferences(nextCPOWNumber_ - 1);
+  }
+}
 
-                if (ForbidCPOWsInCompatibleAddon(addonIdCString)) {
-                    JS_ReportErrorASCII(cx, "CPOW usage forbidden in this add-on");
-                    return false;
-                }
+PJavaScriptParent* mozilla::jsipc::NewJavaScriptParent() {
+  return new JavaScriptParent();
+}
 
-                warn = true;
-            }
-        }
+void mozilla::jsipc::ReleaseJavaScriptParent(PJavaScriptParent* parent) {
+  static_cast<JavaScriptParent*>(parent)->decref();
+}
+
+void mozilla::jsipc::AfterProcessTask() {
+  for (auto* cp : ContentParent::AllProcesses(ContentParent::eLive)) {
+    if (PJavaScriptParent* p =
+            LoneManagedOrNullAsserts(cp->ManagedPJavaScriptParent())) {
+      static_cast<JavaScriptParent*>(p)->afterProcessTask();
     }
-
-    if (!warn)
-        return true;
-
-    static bool disableUnsafeCPOWWarnings = PR_GetEnv("DISABLE_UNSAFE_CPOW_WARNINGS");
-    if (!disableUnsafeCPOWWarnings) {
-        nsCOMPtr<nsIConsoleService> console(do_GetService(NS_CONSOLESERVICE_CONTRACTID));
-        if (console && cx) {
-            nsAutoString filename;
-            uint32_t lineno = 0, column = 0;
-            nsJSUtils::GetCallingLocation(cx, filename, &lineno, &column);
-            nsCOMPtr<nsIScriptError> error(do_CreateInstance(NS_SCRIPTERROR_CONTRACTID));
-            error->Init(NS_LITERAL_STRING("unsafe/forbidden CPOW usage"), filename,
-                        EmptyString(), lineno, column,
-                        nsIScriptError::warningFlag, "chrome javascript");
-            console->LogMessage(error);
-        } else {
-            NS_WARNING("Unsafe synchronous IPC message");
-        }
-    }
-
-    return true;
-}
-
-void
-JavaScriptParent::trace(JSTracer* trc)
-{
-    objects_.trace(trc);
-    unwaivedObjectIds_.trace(trc);
-    waivedObjectIds_.trace(trc);
-}
-
-JSObject*
-JavaScriptParent::scopeForTargetObjects()
-{
-    // CPOWs from the child need to point into the parent's unprivileged junk
-    // scope so that a compromised child cannot compromise the parent. In
-    // practice, this means that a child process can only (a) hold parent
-    // objects alive and (b) invoke them if they are callable.
-    return xpc::UnprivilegedJunkScope();
-}
-
-void
-JavaScriptParent::afterProcessTask()
-{
-    if (savedNextCPOWNumber_ == nextCPOWNumber_)
-        return;
-
-    savedNextCPOWNumber_ = nextCPOWNumber_;
-
-    MOZ_ASSERT(nextCPOWNumber_ > 0);
-    if (active())
-        Unused << SendDropTemporaryStrongReferences(nextCPOWNumber_ - 1);
-}
-
-PJavaScriptParent*
-mozilla::jsipc::NewJavaScriptParent()
-{
-    JavaScriptParent* parent = new JavaScriptParent();
-    if (!parent->init()) {
-        delete parent;
-        return nullptr;
-    }
-    return parent;
-}
-
-void
-mozilla::jsipc::ReleaseJavaScriptParent(PJavaScriptParent* parent)
-{
-    static_cast<JavaScriptParent*>(parent)->decref();
-}
-
-void
-mozilla::jsipc::AfterProcessTask()
-{
-    for (auto* cp : ContentParent::AllProcesses(ContentParent::eLive)) {
-        if (PJavaScriptParent* p = LoneManagedOrNullAsserts(cp->ManagedPJavaScriptParent()))
-            static_cast<JavaScriptParent*>(p)->afterProcessTask();
-    }
+  }
 }

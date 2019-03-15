@@ -1,9 +1,13 @@
 // |jit-test| error: ReferenceError
 
+setJitCompilerOption("ion.warmup.trigger", 50);
+setJitCompilerOption("offthread-compilation.enable", 0);
+gcPreserveCode();
+
 new Function(`
   while (true) {
     try {
-        var buf = new Uint8ClampedArray(a);
+        var buf = new Uint8ClampedArray(-1);
     } catch (e) {
         break;
     }

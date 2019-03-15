@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-// vim:cindent:tabstop=2:expandtab:shiftwidth=2:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,20 +10,24 @@
 #define mozilla_PreloadedStyleSheet_h
 
 #include "mozilla/css/SheetParsingMode.h"
+#include "mozilla/NotNull.h"
 #include "mozilla/Result.h"
-#include "mozilla/StyleBackendType.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsICSSLoaderObserver.h"
 #include "nsIPreloadedStyleSheet.h"
 
 class nsIURI;
 
 namespace mozilla {
+namespace dom {
+class Promise;
+}
+
 class StyleSheet;
 
-class PreloadedStyleSheet : public nsIPreloadedStyleSheet
-{
-public:
+class PreloadedStyleSheet : public nsIPreloadedStyleSheet {
+ public:
   // *aResult is addrefed.
   static nsresult Create(nsIURI* aURI, css::SheetParsingMode aParsingMode,
                          PreloadedStyleSheet** aResult);
@@ -33,21 +37,43 @@ public:
 
   // *aResult is not addrefed, since the PreloadedStyleSheet holds a strong
   // reference to the sheet.
-  nsresult GetSheet(StyleBackendType aType, StyleSheet** aResult);
+  nsresult GetSheet(StyleSheet** aResult);
 
-protected:
+  nsresult Preload();
+  nsresult PreloadAsync(NotNull<dom::Promise*> aPromise);
+
+ protected:
   virtual ~PreloadedStyleSheet() {}
 
-private:
+ private:
   PreloadedStyleSheet(nsIURI* aURI, css::SheetParsingMode aParsingMode);
 
-  RefPtr<StyleSheet> mGecko;
-  RefPtr<StyleSheet> mServo;
+  class StylesheetPreloadObserver final : public nsICSSLoaderObserver {
+   public:
+    NS_DECL_ISUPPORTS
 
+    explicit StylesheetPreloadObserver(NotNull<dom::Promise*> aPromise,
+                                       PreloadedStyleSheet* aSheet)
+        : mPromise(aPromise), mPreloadedSheet(aSheet) {}
+
+    NS_IMETHOD StyleSheetLoaded(StyleSheet* aSheet, bool aWasAlternate,
+                                nsresult aStatus) override;
+
+   protected:
+    virtual ~StylesheetPreloadObserver() {}
+
+   private:
+    RefPtr<dom::Promise> mPromise;
+    RefPtr<PreloadedStyleSheet> mPreloadedSheet;
+  };
+
+  RefPtr<StyleSheet> mSheet;
+
+  bool mLoaded;
   nsCOMPtr<nsIURI> mURI;
   css::SheetParsingMode mParsingMode;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_PreloadedStyleSheet_h
+#endif  // mozilla_PreloadedStyleSheet_h

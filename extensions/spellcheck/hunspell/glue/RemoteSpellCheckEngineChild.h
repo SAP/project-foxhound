@@ -5,6 +5,7 @@
 #ifndef RemoteSpellcheckEngineChild_h_
 #define RemoteSpellcheckEngineChild_h_
 
+#include "mozilla/MozPromise.h"
 #include "mozilla/PRemoteSpellcheckEngineChild.h"
 #include "mozSpellChecker.h"
 
@@ -12,16 +13,19 @@ class mozSpellChecker;
 
 namespace mozilla {
 
-class RemoteSpellcheckEngineChild : public mozilla::PRemoteSpellcheckEngineChild
-{
-public:
+class RemoteSpellcheckEngineChild
+    : public mozilla::PRemoteSpellcheckEngineChild {
+ public:
   explicit RemoteSpellcheckEngineChild(mozSpellChecker *aOwner);
   virtual ~RemoteSpellcheckEngineChild();
 
-private:
+  RefPtr<GenericPromise> SetCurrentDictionaryFromList(
+      const nsTArray<nsString> &aList);
+
+ private:
   mozSpellChecker *mOwner;
 };
 
-} //namespace mozilla
+}  // namespace mozilla
 
-#endif // RemoteSpellcheckEngineChild_h_
+#endif  // RemoteSpellcheckEngineChild_h_

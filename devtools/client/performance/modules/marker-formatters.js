@@ -7,7 +7,6 @@
  * This file contains utilities for creating elements for markers to be displayed,
  * and parsing out the blueprint to generate correct values for markers.
  */
-const { Ci } = require("chrome");
 const { L10N, PREFS } = require("devtools/client/performance/modules/global");
 
 // String used to fill in platform data when it should be hidden.
@@ -41,17 +40,16 @@ exports.Formatters = {
    * Uses the marker name as the label for markers that do not have
    * a blueprint entry. Uses "Other" in the marker filter menu.
    */
-  UnknownLabel: function (marker = {}) {
+  UnknownLabel: function(marker = {}) {
     return marker.name || L10N.getStr("marker.label.unknown");
   },
 
   /* Group 0 - Reflow and Rendering pipeline */
 
-  StylesFields: function (marker) {
-    if ("restyleHint" in marker) {
-      let label = marker.restyleHint.replace(/eRestyle_/g, "");
+  StylesFields: function(marker) {
+    if ("isAnimationOnly" in marker) {
       return {
-        [L10N.getStr("marker.field.restyleHint")]: label
+        [L10N.getStr("marker.field.isAnimationOnly")]: marker.isAnimationOnly,
       };
     }
     return null;
@@ -59,8 +57,8 @@ exports.Formatters = {
 
   /* Group 1 - JS */
 
-  DOMEventFields: function (marker) {
-    let fields = Object.create(null);
+  DOMEventFields: function(marker) {
+    const fields = Object.create(null);
 
     if ("type" in marker) {
       fields[L10N.getStr("marker.field.DOMEventType")] = marker.type;
@@ -69,13 +67,13 @@ exports.Formatters = {
     if ("eventPhase" in marker) {
       let label;
       switch (marker.eventPhase) {
-        case Ci.nsIDOMEvent.AT_TARGET:
+        case Event.AT_TARGET:
           label = L10N.getStr("marker.value.DOMEventTargetPhase");
           break;
-        case Ci.nsIDOMEvent.CAPTURING_PHASE:
+        case Event.CAPTURING_PHASE:
           label = L10N.getStr("marker.value.DOMEventCapturingPhase");
           break;
-        case Ci.nsIDOMEvent.BUBBLING_PHASE:
+        case Event.BUBBLING_PHASE:
           label = L10N.getStr("marker.value.DOMEventBubblingPhase");
           break;
       }
@@ -85,25 +83,25 @@ exports.Formatters = {
     return fields;
   },
 
-  JSLabel: function (marker = {}) {
-    let generic = L10N.getStr("marker.label.javascript");
+  JSLabel: function(marker = {}) {
+    const generic = L10N.getStr("marker.label.javascript");
     if ("causeName" in marker) {
       return JS_MARKER_MAP[marker.causeName] || generic;
     }
     return generic;
   },
 
-  JSFields: function (marker) {
+  JSFields: function(marker) {
     if ("causeName" in marker && !JS_MARKER_MAP[marker.causeName]) {
-      let label = PREFS["show-platform-data"] ? marker.causeName : GECKO_SYMBOL;
+      const label = PREFS["show-platform-data"] ? marker.causeName : GECKO_SYMBOL;
       return {
-        [L10N.getStr("marker.field.causeName")]: label
+        [L10N.getStr("marker.field.causeName")]: label,
       };
     }
     return null;
   },
 
-  GCLabel: function (marker) {
+  GCLabel: function(marker) {
     if (!marker) {
       return L10N.getStr("marker.label.garbageCollection2");
     }
@@ -115,29 +113,29 @@ exports.Formatters = {
     return L10N.getStr("marker.label.garbageCollection.incremental");
   },
 
-  GCFields: function (marker) {
-    let fields = Object.create(null);
+  GCFields: function(marker) {
+    const fields = Object.create(null);
 
     if ("causeName" in marker) {
-      let cause = marker.causeName;
-      let label = L10N.getStr(`marker.gcreason.label.${cause}`) || cause;
+      const cause = marker.causeName;
+      const label = L10N.getStr(`marker.gcreason.label.${cause}`) || cause;
       fields[L10N.getStr("marker.field.causeName")] = label;
     }
 
     if ("nonincrementalReason" in marker) {
-      let label = marker.nonincrementalReason;
+      const label = marker.nonincrementalReason;
       fields[L10N.getStr("marker.field.nonIncrementalCause")] = label;
     }
 
     return fields;
   },
 
-  MinorGCFields: function (marker) {
-    let fields = Object.create(null);
+  MinorGCFields: function(marker) {
+    const fields = Object.create(null);
 
     if ("causeName" in marker) {
-      let cause = marker.causeName;
-      let label = L10N.getStr(`marker.gcreason.label.${cause}`) || cause;
+      const cause = marker.causeName;
+      const label = L10N.getStr(`marker.gcreason.label.${cause}`) || cause;
       fields[L10N.getStr("marker.field.causeName")] = label;
     }
 
@@ -146,28 +144,28 @@ exports.Formatters = {
     return fields;
   },
 
-  CycleCollectionFields: function (marker) {
-    let label = marker.name.replace(/nsCycleCollector::/g, "");
+  CycleCollectionFields: function(marker) {
+    const label = marker.name.replace(/nsCycleCollector::/g, "");
     return {
-      [L10N.getStr("marker.field.type")]: label
+      [L10N.getStr("marker.field.type")]: label,
     };
   },
 
-  WorkerFields: function (marker) {
+  WorkerFields: function(marker) {
     if ("workerOperation" in marker) {
-      let label = L10N.getStr(`marker.worker.${marker.workerOperation}`);
+      const label = L10N.getStr(`marker.worker.${marker.workerOperation}`);
       return {
-        [L10N.getStr("marker.field.type")]: label
+        [L10N.getStr("marker.field.type")]: label,
       };
     }
     return null;
   },
 
-  MessagePortFields: function (marker) {
+  MessagePortFields: function(marker) {
     if ("messagePortOperation" in marker) {
-      let label = L10N.getStr(`marker.messagePort.${marker.messagePortOperation}`);
+      const label = L10N.getStr(`marker.messagePort.${marker.messagePortOperation}`);
       return {
-        [L10N.getStr("marker.field.type")]: label
+        [L10N.getStr("marker.field.type")]: label,
       };
     }
     return null;
@@ -176,12 +174,12 @@ exports.Formatters = {
   /* Group 2 - User Controlled */
 
   ConsoleTimeFields: {
-    [L10N.getStr("marker.field.consoleTimerName")]: "causeName"
+    [L10N.getStr("marker.field.consoleTimerName")]: "causeName",
   },
 
   TimeStampFields: {
-    [L10N.getStr("marker.field.label")]: "causeName"
-  }
+    [L10N.getStr("marker.field.label")]: "causeName",
+  },
 };
 
 /**
@@ -192,7 +190,7 @@ exports.Formatters = {
  * @param string mainLabel
  * @param string propName
  */
-exports.Formatters.labelForProperty = function (mainLabel, propName) {
+exports.Formatters.labelForProperty = function(mainLabel, propName) {
   return (marker = {}) => marker[propName]
     ? `${mainLabel} (${marker[propName]})`
     : mainLabel;

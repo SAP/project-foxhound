@@ -12,20 +12,22 @@
 
 class SK_API SkBlurImageFilter {
 public:
+    /*! \enum TileMode */
+    enum TileMode {
+      kClamp_TileMode = 0,    /*!< Clamp to the image's edge pixels. */
+                              /*!< This re-weights the filter so samples outside have no effect */
+      kRepeat_TileMode,       /*!< Wrap around to the image's opposite edge. */
+      kClampToBlack_TileMode, /*!< Fill with transparent black. */
+      kLast_TileMode = kClampToBlack_TileMode,
+
+      // TODO: remove kMax - it is non-standard but Chromium uses it
+      kMax_TileMode = kClampToBlack_TileMode
+    };
+
     static sk_sp<SkImageFilter> Make(SkScalar sigmaX, SkScalar sigmaY,
                                      sk_sp<SkImageFilter> input,
-                                     const SkImageFilter::CropRect* cropRect = nullptr) {
-        return SkImageFilter::MakeBlur(sigmaX, sigmaY, input, cropRect);
-    }
-
-#ifdef SK_SUPPORT_LEGACY_IMAGEFILTER_PTR
-    static SkImageFilter* Create(SkScalar sigmaX, SkScalar sigmaY,
-                                 SkImageFilter * input = nullptr,
-                                 const SkImageFilter::CropRect* cropRect = nullptr) {
-        return SkImageFilter::MakeBlur(sigmaX, sigmaY, sk_ref_sp<SkImageFilter>(input),
-                                       cropRect).release();
-    }
-#endif
+                                     const SkImageFilter::CropRect* cropRect = nullptr,
+                                     TileMode tileMode = TileMode::kClampToBlack_TileMode);
 };
 
 #endif

@@ -14,15 +14,17 @@
 //  http://tools.ietf.org/html/draft-zhu-rmcat-nada-06
 //  From March 26, 2015.
 
-#ifndef WEBRTC_MODULES_REMOTE_BITRATE_ESTIMATOR_TEST_ESTIMATORS_NADA_H_
-#define WEBRTC_MODULES_REMOTE_BITRATE_ESTIMATOR_TEST_ESTIMATORS_NADA_H_
+#ifndef MODULES_REMOTE_BITRATE_ESTIMATOR_TEST_ESTIMATORS_NADA_H_
+#define MODULES_REMOTE_BITRATE_ESTIMATOR_TEST_ESTIMATORS_NADA_H_
 
 #include <list>
 #include <map>
+#include <memory>
 
-#include "webrtc/modules/include/module_common_types.h"
-#include "webrtc/modules/remote_bitrate_estimator/test/bwe.h"
-#include "webrtc/voice_engine/channel.h"
+#include "modules/include/module_common_types.h"
+#include "modules/remote_bitrate_estimator/test/bwe.h"
+#include "rtc_base/constructormagic.h"
+#include "voice_engine/channel.h"
 
 namespace webrtc {
 
@@ -50,7 +52,7 @@ class NadaBweReceiver : public BweReceiver {
  private:
   SimulatedClock clock_;
   int64_t last_feedback_ms_;
-  rtc::scoped_ptr<ReceiveStatistics> recv_stats_;
+  std::unique_ptr<ReceiveStatistics> recv_stats_;
   int64_t baseline_delay_ms_;  // Referred as d_f.
   int64_t delay_signal_ms_;    // Referred as d_n.
   int64_t last_congestion_signal_ms_;
@@ -62,6 +64,8 @@ class NadaBweReceiver : public BweReceiver {
 
 class NadaBweSender : public BweSender {
  public:
+  static const int kMinNadaBitrateKbps;
+
   NadaBweSender(int kbps, BitrateObserver* observer, Clock* clock);
   NadaBweSender(BitrateObserver* observer, Clock* clock);
   virtual ~NadaBweSender();
@@ -71,7 +75,7 @@ class NadaBweSender : public BweSender {
   void GiveFeedback(const FeedbackPacket& feedback) override;
   void OnPacketsSent(const Packets& packets) override {}
   int64_t TimeUntilNextProcess() override;
-  int Process() override;
+  void Process() override;
   void AcceleratedRampUp(const NadaFeedback& fb);
   void AcceleratedRampDown(const NadaFeedback& fb);
   void GradualRateUpdate(const NadaFeedback& fb,
@@ -89,8 +93,6 @@ class NadaBweSender : public BweSender {
  private:
   Clock* const clock_;
   BitrateObserver* const observer_;
-  // Used as an upper bound for calling AcceleratedRampDown.
-  const float kMaxCongestionSignalMs = 40.0f + kMinBitrateKbps / 15;
   // Referred as R_min, default initialization for bitrate R_n.
   int64_t last_feedback_ms_ = 0;
   // Referred as delta_0, initialized as an upper bound.
@@ -106,4 +108,4 @@ class NadaBweSender : public BweSender {
 }  // namespace testing
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_REMOTE_BITRATE_ESTIMATOR_TEST_ESTIMATORS_NADA_H_
+#endif  // MODULES_REMOTE_BITRATE_ESTIMATOR_TEST_ESTIMATORS_NADA_H_

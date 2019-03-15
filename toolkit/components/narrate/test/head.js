@@ -13,13 +13,11 @@ const TEST_ARTICLE =
 const TEST_ITALIAN_ARTICLE =
   "http://example.com/browser/toolkit/components/narrate/test/inferno.html";
 
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "Promise",
-  "resource://gre/modules/Promise.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Services",
+ChromeUtils.defineModuleGetter(this, "Services",
   "resource://gre/modules/Services.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "AddonManager",
+ChromeUtils.defineModuleGetter(this, "AddonManager",
   "resource://gre/modules/AddonManager.jsm");
 
 const TEST_PREFS = {
@@ -35,7 +33,7 @@ const TEST_PREFS = {
 function setup(voiceUri = "automatic", filterVoices = false) {
   let prefs = Object.assign({}, TEST_PREFS, {
     "narrate.filter-voices": filterVoices,
-    "narrate.voice": JSON.stringify({ en: voiceUri })
+    "narrate.voice": JSON.stringify({ en: voiceUri }),
   });
 
   // Set required test prefs.
@@ -62,15 +60,18 @@ function spawnInNewReaderTab(url, func) {
   return BrowserTestUtils.withNewTab(
     { gBrowser,
       url: `about:reader?url=${encodeURIComponent(url)}` },
-      function* (browser) {
-        yield ContentTask.spawn(browser, null, function* () {
-          Components.utils.import("chrome://mochitests/content/browser/" +
+      async function(browser) {
+        await ContentTask.spawn(browser, null, async function() {
+          // This imports the test utils for all tests, so we'll declare it as
+          // a global here which will make it ESLint happy.
+          /* global NarrateTestUtils */
+          ChromeUtils.import("chrome://mochitests/content/browser/" +
             "toolkit/components/narrate/test/NarrateTestUtils.jsm");
 
-          yield NarrateTestUtils.getReaderReadyPromise(content);
+          await NarrateTestUtils.getReaderReadyPromise(content);
         });
 
-        yield ContentTask.spawn(browser, null, func);
+        await ContentTask.spawn(browser, null, func);
       });
 }
 

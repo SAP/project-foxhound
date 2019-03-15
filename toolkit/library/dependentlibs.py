@@ -41,10 +41,14 @@ def dependentlibs_dumpbin(lib):
     return deps
 
 def dependentlibs_mingw_objdump(lib):
-    proc = subprocess.Popen(['objdump', '-x', lib], stdout = subprocess.PIPE)
+    try:
+        proc = subprocess.Popen(['objdump', '-x', lib], stdout = subprocess.PIPE)
+    except OSError:
+        # objdump is missing, try using llvm-objdump.
+        proc = subprocess.Popen(['llvm-objdump', '-private-headers', lib], stdout = subprocess.PIPE)
     deps = []
     for line in proc.stdout:
-        match = re.match('\tDLL Name: (\S+)', line)
+        match = re.match('\s+DLL Name: (\S+)', line)
         if match:
             deps.append(match.group(1))
     proc.wait()
@@ -128,7 +132,8 @@ def gen_list(output, lib):
         func = dependentlibs_dumpbin
 
     deps = dependentlibs(lib, libpaths, func)
-    deps[lib] = mozpath.join(libpaths[0], lib)
+    base_lib = mozpath.basename(lib)
+    deps[base_lib] = mozpath.join(libpaths[0], base_lib)
     output.write('\n'.join(deps.keys()) + '\n')
 
     with open(output.name + ".gtest", 'w') as gtest_out:

@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,105 +11,97 @@
 #include "gfxMatrix.h"
 #include "gfxRect.h"
 #include "nsFrame.h"
-#include "nsISVGChildFrame.h"
+#include "nsSVGDisplayableFrame.h"
 #include "nsLiteralString.h"
 #include "nsQueryFrame.h"
 #include "nsSVGUtils.h"
 
 namespace mozilla {
 class SVGGeometryFrame;
+class SVGMarkerObserver;
 namespace gfx {
 class DrawTarget;
-} // namespace gfx
-} // namespace mozilla
+}  // namespace gfx
+}  // namespace mozilla
 
 class gfxContext;
 class nsDisplaySVGGeometry;
-class nsIAtom;
+class nsAtom;
 class nsIFrame;
 class nsIPresShell;
-class nsStyleContext;
 class nsSVGMarkerFrame;
-class nsSVGMarkerProperty;
 
 struct nsRect;
 
-nsIFrame*
-NS_NewSVGGeometryFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
+nsIFrame* NS_NewSVGGeometryFrame(nsIPresShell* aPresShell,
+                                 mozilla::ComputedStyle* aStyle);
 
 namespace mozilla {
 
-class SVGGeometryFrame : public nsFrame
-                       , public nsISVGChildFrame
-{
+class SVGGeometryFrame : public nsFrame, public nsSVGDisplayableFrame {
   typedef mozilla::gfx::DrawTarget DrawTarget;
 
-  friend nsIFrame*
-  ::NS_NewSVGGeometryFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
+  friend nsIFrame* ::NS_NewSVGGeometryFrame(nsIPresShell* aPresShell,
+                                            ComputedStyle* aStyle);
 
   friend class ::nsDisplaySVGGeometry;
 
-protected:
-  explicit SVGGeometryFrame(nsStyleContext* aContext)
-    : nsFrame(aContext)
-  {
-     AddStateBits(NS_FRAME_SVG_LAYOUT | NS_FRAME_MAY_BE_TRANSFORMED);
+ protected:
+  SVGGeometryFrame(ComputedStyle* aStyle, nsIFrame::ClassID aID)
+      : nsFrame(aStyle, aID) {
+    AddStateBits(NS_FRAME_SVG_LAYOUT | NS_FRAME_MAY_BE_TRANSFORMED);
   }
 
-public:
-  NS_DECL_QUERYFRAME_TARGET(SVGGeometryFrame)
+  explicit SVGGeometryFrame(ComputedStyle* aStyle)
+      : SVGGeometryFrame(aStyle, kClassID) {}
+
+ public:
   NS_DECL_QUERYFRAME
-  NS_DECL_FRAMEARENA_HELPERS
+  NS_DECL_FRAMEARENA_HELPERS(SVGGeometryFrame)
 
   // nsIFrame interface:
-  virtual void Init(nsIContent*       aContent,
-                    nsContainerFrame* aParent,
-                    nsIFrame*         aPrevInFlow) override;
+  virtual void Init(nsIContent* aContent, nsContainerFrame* aParent,
+                    nsIFrame* aPrevInFlow) override;
 
-  virtual bool IsFrameOfType(uint32_t aFlags) const override
-  {
-    return nsFrame::IsFrameOfType(aFlags & ~(nsIFrame::eSVG | nsIFrame::eSVGGeometry));
+  virtual bool IsFrameOfType(uint32_t aFlags) const override {
+    if (aFlags & eSupportsContainLayoutAndPaint) {
+      return false;
+    }
+
+    return nsFrame::IsFrameOfType(aFlags &
+                                  ~(nsIFrame::eSVG | nsIFrame::eSVGGeometry));
   }
 
-  virtual nsresult  AttributeChanged(int32_t         aNameSpaceID,
-                                     nsIAtom*        aAttribute,
-                                     int32_t         aModType) override;
+  virtual nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
+                                    int32_t aModType) override;
 
-  virtual void DidSetStyleContext(nsStyleContext* aOldStyleContext) override;
+  virtual void DidSetComputedStyle(ComputedStyle* aOldComputedStyle) override;
 
-  /**
-   * Get the "type" of the frame
-   *
-   * @see nsGkAtoms::svgGeometryFrame
-   */
-  virtual nsIAtom* GetType() const override;
-
-  virtual bool IsSVGTransformed(Matrix *aOwnTransforms = nullptr,
-                                Matrix *aFromParentTransforms = nullptr) const override;
+  virtual bool IsSVGTransformed(
+      Matrix* aOwnTransforms = nullptr,
+      Matrix* aFromParentTransforms = nullptr) const override;
 
 #ifdef DEBUG_FRAME_DUMP
-  virtual nsresult GetFrameName(nsAString& aResult) const override
-  {
+  virtual nsresult GetFrameName(nsAString& aResult) const override {
     return MakeFrameName(NS_LITERAL_STRING("SVGGeometry"), aResult);
   }
 #endif
 
-  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                                const nsRect&           aDirtyRect,
+  virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                 const nsDisplayListSet& aLists) override;
 
   // SVGGeometryFrame methods
   gfxMatrix GetCanvasTM();
-protected:
-  // nsISVGChildFrame interface:
-  virtual DrawResult PaintSVG(gfxContext& aContext,
-                              const gfxMatrix& aTransform,
-                              const nsIntRect* aDirtyRect = nullptr) override;
+
+ protected:
+  // nsSVGDisplayableFrame interface:
+  virtual void PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
+                        imgDrawingParams& aImgParams,
+                        const nsIntRect* aDirtyRect = nullptr) override;
   virtual nsIFrame* GetFrameForPoint(const gfxPoint& aPoint) override;
-  virtual nsRect GetCoveredRegion() override;
   virtual void ReflowSVG() override;
   virtual void NotifySVGChanged(uint32_t aFlags) override;
-  virtual SVGBBox GetBBoxContribution(const Matrix &aToBBoxUserspace,
+  virtual SVGBBox GetBBoxContribution(const Matrix& aToBBoxUserspace,
                                       uint32_t aFlags) override;
   virtual bool IsDisplayContainer() override { return false; }
 
@@ -119,36 +112,19 @@ protected:
    * property on the element.
    */
   virtual uint16_t GetHitTestFlags();
-private:
+
+ private:
   enum { eRenderFill = 1, eRenderStroke = 2 };
   void Render(gfxContext* aContext, uint32_t aRenderComponents,
-              const gfxMatrix& aTransform);
+              const gfxMatrix& aTransform, imgDrawingParams& aImgParams);
 
   /**
    * @param aMatrix The transform that must be multiplied onto aContext to
    *   establish this frame's SVG user space.
    */
-  void PaintMarkers(gfxContext& aContext, const gfxMatrix& aMatrix);
-
-  struct MarkerProperties {
-    nsSVGMarkerProperty* mMarkerStart;
-    nsSVGMarkerProperty* mMarkerMid;
-    nsSVGMarkerProperty* mMarkerEnd;
-
-    bool MarkersExist() const {
-      return mMarkerStart || mMarkerMid || mMarkerEnd;
-    }
-
-    nsSVGMarkerFrame *GetMarkerStartFrame();
-    nsSVGMarkerFrame *GetMarkerMidFrame();
-    nsSVGMarkerFrame *GetMarkerEndFrame();
-  };
-
-  /**
-   * @param aFrame should be the first continuation
-   */
-  static MarkerProperties GetMarkerProperties(SVGGeometryFrame *aFrame);
+  void PaintMarkers(gfxContext& aContext, const gfxMatrix& aMatrix,
+                    imgDrawingParams& aImgParams);
 };
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // __SVGGEOMETRYFRAME_H__
+#endif  // __SVGGEOMETRYFRAME_H__

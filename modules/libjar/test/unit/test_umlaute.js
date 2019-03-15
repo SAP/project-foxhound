@@ -1,7 +1,4 @@
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-
 function run_test() {
   var dirService = Cc["@mozilla.org/file/directory_service;1"].getService(Ci.nsIProperties); 
   var tmpDir = dirService.get("TmpD", Ci.nsIFile); 
@@ -18,21 +15,21 @@ function run_test() {
   zipreader.open(zipfile);
 
   var entries = zipreader.findEntries(null);
-  do_check_true(entries.hasMore()); 
+  Assert.ok(entries.hasMore()); 
 
   var entryName = entries.getNext();
-  do_check_eq(entryName, "test_\u00FC.txt");
+  Assert.equal(entryName, "test_\u00FC.txt");
 
-  do_check_true(zipreader.hasEntry(entryName));
+  Assert.ok(zipreader.hasEntry(entryName));
 
   var target = tmpDir.clone();
   target.append(entryName);
-  target.create(Ci.nsILocalFile.NORMAL_FILE_TYPE, 0o640); // 0640
+  target.create(Ci.nsIFile.NORMAL_FILE_TYPE, 0o640); // 0640
 
   zipreader.extract(entryName, target);
 
   var entry = zipreader.getEntry(entryName);
-  do_check_true(entry != null);
+  Assert.ok(entry != null);
 
   zipreader.test(entryName);
 

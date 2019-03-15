@@ -212,8 +212,8 @@ function runTexStorage2DTest()
             gl.compressedTexImage2D(imageTargets[0], 0, s3tc.COMPRESSED_RGBA_S3TC_DXT3_EXT,
                                     texsize, texsize, 0,
                                     new Uint8Array(texsize * texsize));
+            wtu.glErrorShouldBe(gl, gl.INVALID_OPERATION, "compressedTexImage2D should fail on immutable texture");
         }
-        wtu.glErrorShouldBe(gl, gl.INVALID_OPERATION, "compressedTexImage2D should fail on immutable texture");
         gl.copyTexImage2D(imageTargets[0], 0, gl.RGBA, 0, 0, texsize, texsize, 0);
         wtu.glErrorShouldBe(gl, gl.INVALID_OPERATION, "copyTexImage2D should fail on immutable texture");
 
@@ -283,6 +283,23 @@ function runTexStorage2DTest()
             wtu.checkCanvas(gl, [255, 0, 0, alpha], "texture should sample as red after uploading red pixels with texSubImage2D");
         }
     });
+
+    debug("");
+    debug("Test non-square images:");
+    const levels = 4;
+    const maxSize = 1 << (levels-1);
+
+    function expectOk(x,y) {
+        const tex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texStorage2D(gl.TEXTURE_2D, levels, gl.RGBA8, x, y);
+        wtu.glErrorShouldBe(gl, gl.NO_ERROR,
+                            "texStorage2D should succeed with size [" + ([x,y].join(', ')) + "].");
+        gl.deleteTexture(tex);
+    }
+    expectOk(maxSize, maxSize);
+    expectOk(maxSize,       1);
+    expectOk(      1, maxSize);
 }
 
 debug("");

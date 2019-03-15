@@ -13,47 +13,47 @@
 const TEST_URI = "<style>.title {color: red;}</style>" +
                  "<h1 class=title>Header</h1>";
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let { inspector, view} = yield openRuleView();
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const { inspector, view} = await openRuleView();
 
   info("Selecting the test node");
-  yield selectNode("h1", inspector);
+  await selectNode("h1", inspector);
 
   info("Focusing the new property editable field");
-  let ruleEditor = getRuleViewRuleEditor(view, 1);
-  let editor = yield focusNewRuleViewProperty(ruleEditor);
+  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  let editor = await focusNewRuleViewProperty(ruleEditor);
 
   info("Sending \"background\" to the editable field.");
-  for (let key of "background") {
-    let onSuggest = editor.once("after-suggest");
+  for (const key of "background") {
+    const onSuggest = editor.once("after-suggest");
     EventUtils.synthesizeKey(key, {}, view.styleWindow);
-    yield onSuggest;
+    await onSuggest;
   }
 
   const itemIndex = 4;
-  let bgcItem = editor.popup.getItemAtIndex(itemIndex);
+  const bgcItem = editor.popup.getItemAtIndex(itemIndex);
   is(bgcItem.label, "background-color",
     "Check the expected completion element is background-color.");
-  editor.popup.selectedIndex = itemIndex;
+  editor.popup.selectItemAtIndex(itemIndex);
 
   info("Select the background-color suggestion with a mouse click.");
-  let onSuggest = editor.once("after-suggest");
-  let node = editor.popup.elements.get(bgcItem);
+  const onSuggest = editor.once("after-suggest");
+  const node = editor.popup.elements.get(bgcItem);
   EventUtils.synthesizeMouseAtCenter(node, {}, editor.popup._window);
 
-  yield onSuggest;
+  await onSuggest;
   is(editor.input.value, "background-color", "Correct value is autocompleted");
 
   info("Press RETURN to move the focus to a property value editor.");
   let onModifications = view.once("ruleview-changed");
   EventUtils.synthesizeKey("VK_RETURN", {}, view.styleWindow);
 
-  yield onModifications;
+  await onModifications;
 
   // Getting the new value editor after focus
   editor = inplaceEditor(view.styleDocument.activeElement);
-  let textProp = ruleEditor.rule.textProps[1];
+  const textProp = ruleEditor.rule.textProps[1];
 
   is(ruleEditor.rule.textProps.length, 2,
     "Created a new text property.");
@@ -63,11 +63,12 @@ add_task(function* () {
     "Editing the value span now.");
 
   info("Entering a value and blurring the field to expect a rule change");
-  editor.input.value = "#F00";
-
   onModifications = view.once("ruleview-changed");
-  editor.input.blur();
-  yield onModifications;
+
+  EventUtils.sendString("#F00");
+  EventUtils.synthesizeKey("VK_RETURN", {}, view.styleWindow);
+
+  await onModifications;
 
   is(textProp.value, "#F00", "Text prop should have been changed.");
 });

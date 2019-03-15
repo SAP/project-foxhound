@@ -11,13 +11,17 @@
       'target_name': 'ssl_gtest',
       'type': 'executable',
       'sources': [
+        'bloomfilter_unittest.cc',
         'libssl_internals.c',
+        'selfencrypt_unittest.cc',
         'ssl_0rtt_unittest.cc',
         'ssl_agent_unittest.cc',
         'ssl_auth_unittest.cc',
         'ssl_cert_ext_unittest.cc',
         'ssl_ciphersuite_unittest.cc',
+        'ssl_custext_unittest.cc',
         'ssl_damage_unittest.cc',
+        'ssl_debug_env_unittest.cc',
         'ssl_dhe_unittest.cc',
         'ssl_drop_unittest.cc',
         'ssl_ecdh_unittest.cc',
@@ -29,19 +33,25 @@
         'ssl_gather_unittest.cc',
         'ssl_gtest.cc',
         'ssl_hrr_unittest.cc',
+        'ssl_keyupdate_unittest.cc',
         'ssl_loopback_unittest.cc',
+        'ssl_misc_unittest.cc',
         'ssl_record_unittest.cc',
+        'ssl_recordsize_unittest.cc',
         'ssl_resumption_unittest.cc',
+        'ssl_renegotiation_unittest.cc',
         'ssl_skip_unittest.cc',
         'ssl_staticrsa_unittest.cc',
+        'ssl_tls13compat_unittest.cc',
         'ssl_v2_client_hello_unittest.cc',
         'ssl_version_unittest.cc',
+        'ssl_versionpolicy_unittest.cc',
         'test_io.cc',
         'tls_agent.cc',
         'tls_connect.cc',
         'tls_filter.cc',
         'tls_hkdf_unittest.cc',
-        'tls_parser.cc',
+        'tls_esni_unittest.cc',
         'tls_protect.cc'
       ],
       'dependencies': [
@@ -61,6 +71,7 @@
         '<(DEPTH)/lib/base/base.gyp:nssb',
         '<(DEPTH)/lib/zlib/zlib.gyp:nss_zlib',
         '<(DEPTH)/cpputil/cpputil.gyp:cpputil',
+        '<(DEPTH)/lib/libpkix/libpkix.gyp:libpkix',
       ],
       'conditions': [
         [ 'test_build==1', {
@@ -80,19 +91,12 @@
             '<(DEPTH)/lib/dbm/src/src.gyp:dbm',
           ],
         }],
-        [ 'disable_libpkix==0', {
-          'dependencies': [
-            '<(DEPTH)/lib/libpkix/pkix/certsel/certsel.gyp:pkixcertsel',
-            '<(DEPTH)/lib/libpkix/pkix/checker/checker.gyp:pkixchecker',
-            '<(DEPTH)/lib/libpkix/pkix/crlsel/crlsel.gyp:pkixcrlsel',
-            '<(DEPTH)/lib/libpkix/pkix/params/params.gyp:pkixparams',
-            '<(DEPTH)/lib/libpkix/pkix/results/results.gyp:pkixresults',
-            '<(DEPTH)/lib/libpkix/pkix/store/store.gyp:pkixstore',
-            '<(DEPTH)/lib/libpkix/pkix/top/top.gyp:pkixtop',
-            '<(DEPTH)/lib/libpkix/pkix/util/util.gyp:pkixutil',
-            '<(DEPTH)/lib/libpkix/pkix_pl_nss/system/system.gyp:pkixsystem',
-            '<(DEPTH)/lib/libpkix/pkix_pl_nss/module/module.gyp:pkixmodule',
-            '<(DEPTH)/lib/libpkix/pkix_pl_nss/pki/pki.gyp:pkixpki',
+        [ 'enable_sslkeylogfile==1', {
+          'sources': [
+            'ssl_keylog_unittest.cc',
+          ],
+          'defines': [
+            'NSS_ALLOW_SSLKEYLOGFILE',
           ],
         }],
       ],
@@ -103,7 +107,7 @@
       '../../lib/ssl'
     ],
     'defines': [
-      'NSS_USE_STATIC_LIBS'
+      'NSS_USE_STATIC_LIBS',
     ],
   },
   'variables': {

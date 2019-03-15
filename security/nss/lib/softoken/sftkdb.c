@@ -28,6 +28,9 @@
 #include "utilpars.h"
 #include "secerr.h"
 #include "softoken.h"
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 
 /*
  * We want all databases to have the same binary representation independent of
@@ -40,7 +43,7 @@
  */
 #define BBP 8
 
-static PRBool
+PRBool
 sftkdb_isULONGAttribute(CK_ATTRIBUTE_TYPE type)
 {
     switch (type) {
@@ -1370,7 +1373,8 @@ sftkdb_SetAttributeValue(SFTKDBHandle *handle, SFTKObject *object,
     }
 
     /* make sure we don't have attributes that conflict with the existing DB */
-    crv = sftkdb_checkConflicts(db, object->objclass, template, count, objectID);
+    crv = sftkdb_checkConflicts(db, object->objclass, ntemplate, count,
+                                objectID);
     if (crv != CKR_OK) {
         goto loser;
     }
@@ -1386,8 +1390,8 @@ sftkdb_SetAttributeValue(SFTKDBHandle *handle, SFTKObject *object,
         goto loser;
     }
     inTransaction = PR_TRUE;
-    crv = sftkdb_setAttributeValue(arena, handle, db,
-                                   objectID, template, count);
+    crv = sftkdb_setAttributeValue(arena, handle, db, objectID, ntemplate,
+                                   count);
     if (crv != CKR_OK) {
         goto loser;
     }
@@ -1587,7 +1591,8 @@ static const CK_ATTRIBUTE_TYPE known_attributes[] = {
     CKA_TRUST_EMAIL_PROTECTION, CKA_TRUST_IPSEC_END_SYSTEM,
     CKA_TRUST_IPSEC_TUNNEL, CKA_TRUST_IPSEC_USER, CKA_TRUST_TIME_STAMPING,
     CKA_TRUST_STEP_UP_APPROVED, CKA_CERT_SHA1_HASH, CKA_CERT_MD5_HASH,
-    CKA_NETSCAPE_DB, CKA_NETSCAPE_TRUST, CKA_NSS_OVERRIDE_EXTENSIONS
+    CKA_NETSCAPE_DB, CKA_NETSCAPE_TRUST, CKA_NSS_OVERRIDE_EXTENSIONS,
+    CKA_PUBLIC_KEY_INFO
 };
 
 static unsigned int known_attributes_size = sizeof(known_attributes) /
@@ -2311,6 +2316,13 @@ loser:
         crv = (*handle->update->sdb_GetMetaData)(handle->update, "password",
                                                  &item1, &item2);
         if (crv != CKR_OK) {
+            /* if we get here, neither the source, nor the target has been initialized
+             * with a password entry. Create a metadata table now so that we don't
+             * mistake this for a partially updated database */
+            item1.data[0] = 0;
+            item2.data[0] = 0;
+            item1.len = item2.len = 1;
+            crv = (*handle->db->sdb_PutMetaData)(handle->db, "empty", &item1, &item2);
             goto done;
         }
         crv = (*handle->db->sdb_PutMetaData)(handle->db, "password", &item1,
@@ -2501,6 +2513,53 @@ sftk_oldVersionExists(const char *dir, int version)
     return PR_FALSE;
 }
 
+#if defined(_WIN32)
+/*
+ * Convert an sdb path (encoded in UTF-8) to a legacy path (encoded in the
+ * current system codepage). Fails if the path contains a character outside
+ * the current system codepage.
+ */
+static char *
+sftk_legacyPathFromSDBPath(const char *confdir)
+{
+    wchar_t *confdirWide;
+    DWORD size;
+    char *nconfdir;
+    BOOL unmappable;
+
+    if (!confdir) {
+        return NULL;
+    }
+    confdirWide = _NSSUTIL_UTF8ToWide(confdir);
+    if (!confdirWide) {
+        return NULL;
+    }
+
+    size = WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, confdirWide, -1,
+                               NULL, 0, NULL, &unmappable);
+    if (size == 0 || unmappable) {
+        PORT_Free(confdirWide);
+        return NULL;
+    }
+    nconfdir = PORT_Alloc(sizeof(char) * size);
+    if (!nconfdir) {
+        PORT_Free(confdirWide);
+        return NULL;
+    }
+    size = WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, confdirWide, -1,
+                               nconfdir, size, NULL, &unmappable);
+    PORT_Free(confdirWide);
+    if (size == 0 || unmappable) {
+        PORT_Free(nconfdir);
+        return NULL;
+    }
+
+    return nconfdir;
+}
+#else
+#define sftk_legacyPathFromSDBPath(confdir) PORT_Strdup((confdir))
+#endif
+
 static PRBool
 sftk_hasLegacyDB(const char *confdir, const char *certPrefix,
                  const char *keyPrefix, int certVersion, int keyVersion)
@@ -2560,6 +2619,7 @@ sftk_DBInit(const char *configdir, const char *certPrefix,
     int flags = SDB_RDONLY;
     PRBool newInit = PR_FALSE;
     PRBool needUpdate = PR_FALSE;
+    char *nconfdir = NULL;
 
     if (!readOnly) {
         flags = SDB_CREATE;
@@ -2598,11 +2658,14 @@ sftk_DBInit(const char *configdir, const char *certPrefix,
              * the exists.
              */
             if (crv != CKR_OK) {
-                if (((flags & SDB_RDONLY) == SDB_RDONLY) &&
-                    sftk_hasLegacyDB(confdir, certPrefix, keyPrefix, 8, 3)) {
+                if ((flags & SDB_RDONLY) == SDB_RDONLY) {
+                    nconfdir = sftk_legacyPathFromSDBPath(confdir);
+                }
+                if (nconfdir &&
+                    sftk_hasLegacyDB(nconfdir, certPrefix, keyPrefix, 8, 3)) {
                     /* we have legacy databases, if we failed to open the new format
                      * DB's read only, just use the legacy ones */
-                    crv = sftkdbCall_open(confdir, certPrefix,
+                    crv = sftkdbCall_open(nconfdir, certPrefix,
                                           keyPrefix, 8, 3, flags,
                                           noCertDB ? NULL : &certSDB, noKeyDB ? NULL : &keySDB);
                 }
@@ -2631,7 +2694,10 @@ sftk_DBInit(const char *configdir, const char *certPrefix,
                 /* if the new format DB was also a newly created DB, and we
                  * succeeded, then need to update that new database with data
                  * from the existing legacy DB */
-                if (sftk_hasLegacyDB(confdir, certPrefix, keyPrefix, 8, 3)) {
+                nconfdir = sftk_legacyPathFromSDBPath(confdir);
+                if (nconfdir &&
+                    sftk_hasLegacyDB(nconfdir, certPrefix, keyPrefix, 8, 3)) {
+                    confdir = nconfdir;
                     needUpdate = PR_TRUE;
                 }
             }
@@ -2703,6 +2769,9 @@ sftk_DBInit(const char *configdir, const char *certPrefix,
 done:
     if (appName) {
         PORT_Free(appName);
+    }
+    if (nconfdir) {
+        PORT_Free(nconfdir);
     }
     return forceOpen ? CKR_OK : crv;
 }

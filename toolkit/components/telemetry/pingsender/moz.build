@@ -5,7 +5,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 if CONFIG['OS_TARGET'] != 'Android':
-    Program('pingsender')
+    GeckoProgram('pingsender', linkage=None)
 
     UNIFIED_SOURCES += [
         'pingsender.cpp',
@@ -32,6 +32,10 @@ else:
         'pingsender_unix_common.cpp',
     ]
 
+
 # Don't use the STL wrappers; we don't link with -lmozalloc, and it really
 # doesn't matter here anyway.
-DISABLE_STL_WRAPPING = True
+DisableStlWrapping()
+
+if CONFIG['MOZ_DEBUG'] and CONFIG['CC_TYPE'] == 'clang-cl':
+    AllowCompilerWarnings()  # workaround for bug 1090497

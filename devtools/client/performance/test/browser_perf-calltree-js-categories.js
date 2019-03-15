@@ -14,25 +14,25 @@ const { startRecording, stopRecording } = require("devtools/client/performance/t
 const { busyWait } = require("devtools/client/performance/test/helpers/wait-utils");
 const { once } = require("devtools/client/performance/test/helpers/event-utils");
 
-add_task(function* () {
-  let { panel } = yield initPerformanceInNewTab({
+add_task(async function() {
+  const { panel } = await initPerformanceInNewTab({
     url: SIMPLE_URL,
-    win: window
+    win: window,
   });
 
-  let { EVENTS, $, $$, DetailsView, JsCallTreeView } = panel.panelWin;
+  const { EVENTS, $, $$, DetailsView, JsCallTreeView } = panel.panelWin;
 
   // Enable platform data to show the categories in the tree.
   Services.prefs.setBoolPref(UI_SHOW_PLATFORM_DATA_PREF, true);
 
-  yield startRecording(panel);
+  await startRecording(panel);
   // To show the `Gecko` category in the tree.
-  yield busyWait(100);
-  yield stopRecording(panel);
+  await busyWait(100);
+  await stopRecording(panel);
 
-  let rendered = once(JsCallTreeView, EVENTS.UI_JS_CALL_TREE_RENDERED);
-  yield DetailsView.selectView("js-calltree");
-  yield rendered;
+  const rendered = once(JsCallTreeView, EVENTS.UI_JS_CALL_TREE_RENDERED);
+  await DetailsView.selectView("js-calltree");
+  await rendered;
 
   is($(".call-tree-cells-container").hasAttribute("categories-hidden"), false,
     "The call tree cells container should show the categories now.");
@@ -47,11 +47,11 @@ add_task(function* () {
   ok(!geckoCategoryPresent($$),
     "A category node with the text `Gecko` doesn't exist in the tree anymore.");
 
-  yield teardownToolboxAndRemoveTab(panel);
+  await teardownToolboxAndRemoveTab(panel);
 });
 
 function geckoCategoryPresent($$) {
-  for (let elem of $$(".call-tree-category")) {
+  for (const elem of $$(".call-tree-category")) {
     if (elem.textContent.trim() == "Gecko") {
       return true;
     }

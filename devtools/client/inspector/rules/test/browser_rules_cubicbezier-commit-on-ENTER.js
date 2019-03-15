@@ -15,52 +15,52 @@ const TEST_URI = `
   </style>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {view} = yield openRuleView();
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {view} = await openRuleView();
 
   info("Getting the bezier swatch element");
-  let swatch = getRuleViewProperty(view, "body", "transition").valueSpan
+  const swatch = getRuleViewProperty(view, "body", "transition").valueSpan
     .querySelector(".ruleview-bezierswatch");
 
-  yield testPressingEnterCommitsChanges(swatch, view);
+  await testPressingEnterCommitsChanges(swatch, view);
 });
 
-function* testPressingEnterCommitsChanges(swatch, ruleView) {
-  let bezierTooltip = ruleView.tooltips.cubicBezier;
+async function testPressingEnterCommitsChanges(swatch, ruleView) {
+  const bezierTooltip = ruleView.tooltips.getTooltip("cubicBezier");
 
   info("Showing the tooltip");
-  let onBezierWidgetReady = bezierTooltip.once("ready");
+  const onBezierWidgetReady = bezierTooltip.once("ready");
   swatch.click();
-  yield onBezierWidgetReady;
+  await onBezierWidgetReady;
 
-  let widget = yield bezierTooltip.widget;
+  const widget = await bezierTooltip.widget;
   info("Simulating a change of curve in the widget");
   widget.coordinates = [0.1, 2, 0.9, -1];
-  let expected = "cubic-bezier(0.1, 2, 0.9, -1)";
+  const expected = "cubic-bezier(0.1, 2, 0.9, -1)";
 
-  yield waitForSuccess(function* () {
-    let func = yield getComputedStyleProperty("body", null,
+  await waitForSuccess(async function() {
+    const func = await getComputedStyleProperty("body", null,
                                               "transition-timing-function");
     return func === expected;
   }, "Waiting for the change to be previewed on the element");
 
   ok(getRuleViewProperty(ruleView, "body", "transition").valueSpan.textContent
-    .indexOf("cubic-bezier(") !== -1,
+    .includes("cubic-bezier("),
     "The text of the timing-function was updated");
 
   info("Sending RETURN key within the tooltip document");
   // Pressing RETURN ends up doing 2 rule-view updates, one for the preview and
   // one for the commit when the tooltip closes.
-  let onRuleViewChanged = waitForNEvents(ruleView, "ruleview-changed", 2);
+  const onRuleViewChanged = waitForNEvents(ruleView, "ruleview-changed", 2);
   focusAndSendKey(widget.parent.ownerDocument.defaultView, "RETURN");
-  yield onRuleViewChanged;
+  await onRuleViewChanged;
 
-  let style = yield getComputedStyleProperty("body", null,
+  const style = await getComputedStyleProperty("body", null,
                                              "transition-timing-function");
   is(style, expected, "The element's timing-function was kept after RETURN");
 
-  let ruleViewStyle = getRuleViewProperty(ruleView, "body", "transition")
-                      .valueSpan.textContent.indexOf("cubic-bezier(") !== -1;
+  const ruleViewStyle = getRuleViewProperty(ruleView, "body", "transition")
+                      .valueSpan.textContent.includes("cubic-bezier(");
   ok(ruleViewStyle, "The text of the timing-function was kept after RETURN");
 }

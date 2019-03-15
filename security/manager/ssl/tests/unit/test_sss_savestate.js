@@ -7,7 +7,7 @@
 // writes its state file.
 
 const EXPECTED_ENTRIES = 6;
-const EXPECTED_HSTS_COLUMNS = 3;
+const EXPECTED_HSTS_COLUMNS = 4;
 const EXPECTED_HPKP_COLUMNS = 4;
 var gProfileDir = null;
 
@@ -35,11 +35,9 @@ function checkStateWritten(aSubject, aTopic, aData) {
   for (let line of lines) {
     let parts = line.split("\t");
     let host = parts[0];
-    let score = parts[1];
-    let lastAccessed = parts[2];
     let entry = parts[3].split(",");
     let expectedColumns = EXPECTED_HSTS_COLUMNS;
-    if (host.indexOf("HPKP") != -1) {
+    if (host.includes("HPKP")) {
       expectedColumns = EXPECTED_HPKP_COLUMNS;
     }
     equal(entry.length, expectedColumns);
@@ -117,12 +115,13 @@ function run_test() {
     let maxAge = "max-age=" + (i * 1000);
      // alternate setting includeSubdomains
     let includeSubdomains = (i % 2 == 0 ? "; includeSubdomains" : "");
-    let sslStatus = new FakeSSLStatus();
+    let secInfo = new FakeTransportSecurityInfo();
     SSService.processHeader(Ci.nsISiteSecurityService.HEADER_HSTS,
                             uris[uriIndex], maxAge + includeSubdomains,
-                            sslStatus, 0);
+                            secInfo, 0,
+                            Ci.nsISiteSecurityService.SOURCE_ORGANIC_REQUEST);
   }
 
   do_test_pending();
-  Services.obs.addObserver(checkStateWritten, "data-storage-written", false);
+  Services.obs.addObserver(checkStateWritten, "data-storage-written");
 }

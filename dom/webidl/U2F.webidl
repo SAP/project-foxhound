@@ -4,15 +4,14 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * The origin of this IDL file is a combination of the FIDO U2F Raw Message Formats:
- * https://fidoalliance.org/specs/fido-u2f-v1.0-nfc-bt-amendment-20150514/fido-u2f-raw-message-formats.html
- * and the U2F JavaScript API v1.1, not yet published. While v1.1 is not published,
- * v1.0, is located here:
- * https://fidoalliance.org/specs/fido-u2f-v1.0-nfc-bt-amendment-20150514/fido-u2f-javascript-api.html
+ * https://www.fidoalliance.org/specs/fido-u2f-v1.1-id-20160915/fido-u2f-raw-message-formats-v1.1-id-20160915.html
+ * and the U2F JavaScript API v1.1:
+ * https://www.fidoalliance.org/specs/fido-u2f-v1.1-id-20160915/fido-u2f-javascript-api-v1.1-id-20160915.html
  */
 
 [NoInterfaceObject]
 interface GlobalU2F {
-  [Throws, Pref="security.webauth.u2f"]
+  [SecureContext, Throws, Pref="security.webauth.u2f"]
   readonly attribute U2F u2f;
 };
 
@@ -68,7 +67,7 @@ dictionary SignResponse {
 callback U2FRegisterCallback = void(RegisterResponse response);
 callback U2FSignCallback = void(SignResponse response);
 
-[Pref="security.webauth.u2f"]
+[SecureContext, Pref="security.webauth.u2f"]
 interface U2F {
   // These enumerations are defined in the FIDO U2F Javascript API under the
   // interface "ErrorCode" as constant integers, and also in the U2F.cpp file.

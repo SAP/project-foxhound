@@ -14,11 +14,9 @@
 namespace mozilla {
 namespace net {
 
-class AltDataOutputStreamChild
-  : public PAltDataOutputStreamChild
-  , public nsIOutputStream
-{
-public:
+class AltDataOutputStreamChild : public PAltDataOutputStreamChild,
+                                 public nsIOutputStream {
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIOUTPUTSTREAM
   explicit AltDataOutputStreamChild();
@@ -27,11 +25,12 @@ public:
   void ReleaseIPDLReference();
   // Saves an error code which will be reported to the writer on the next call.
   virtual mozilla::ipc::IPCResult RecvError(const nsresult& err) override;
+  virtual mozilla::ipc::IPCResult RecvDeleteSelf() override;
 
-private:
-  virtual ~AltDataOutputStreamChild();
+ private:
+  virtual ~AltDataOutputStreamChild() = default;
   // Sends data to the parent process in 256k chunks.
-  bool WriteDataInChunks(const nsCString& data);
+  bool WriteDataInChunks(const nsDependentCSubstring& data);
 
   bool mIPCOpen;
   // If there was an error opening the output stream or writing to it on the
@@ -40,7 +39,7 @@ private:
   nsresult mError;
 };
 
-} // namespace net
-} // namespace mozilla
+}  // namespace net
+}  // namespace mozilla
 
-#endif // mozilla_net_AltDataOutputStreamChild_h
+#endif  // mozilla_net_AltDataOutputStreamChild_h

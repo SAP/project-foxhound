@@ -114,12 +114,16 @@ nssSlot_CreateFromPK11SlotInfo(NSSTrustDomain *td, PK11SlotInfo *nss3slot)
     rvSlot->base.refCount = 1;
     rvSlot->base.lock = PZ_NewLock(nssILockOther);
     rvSlot->base.arena = arena;
-    rvSlot->pk11slot = nss3slot;
+    rvSlot->pk11slot = PK11_ReferenceSlot(nss3slot);
     rvSlot->epv = nss3slot->functionList;
     rvSlot->slotID = nss3slot->slotID;
     /* Grab the slot name from the PKCS#11 fixed-length buffer */
     rvSlot->base.name = nssUTF8_Duplicate(nss3slot->slot_name, td->arena);
     rvSlot->lock = (nss3slot->isThreadSafe) ? NULL : nss3slot->sessionLock;
+    rvSlot->isPresentLock = PZ_NewLock(nssiLockOther);
+    rvSlot->isPresentCondition = PR_NewCondVar(rvSlot->isPresentLock);
+    rvSlot->isPresentThread = NULL;
+    rvSlot->lastTokenPingState = nssSlotLastPingState_Reset;
     return rvSlot;
 }
 
@@ -150,7 +154,7 @@ nssToken_CreateFromPK11SlotInfo(NSSTrustDomain *td, PK11SlotInfo *nss3slot)
         return NULL;
     }
     rvToken->base.arena = arena;
-    rvToken->pk11slot = nss3slot;
+    rvToken->pk11slot = PK11_ReferenceSlot(nss3slot);
     rvToken->epv = nss3slot->functionList;
     rvToken->defaultSession = nssSession_ImportNSS3Session(td->arena,
                                                            nss3slot->session,

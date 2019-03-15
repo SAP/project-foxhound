@@ -1,5 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+/* eslint-disable no-shadow */
+
+"use strict";
 
 /**
  * Test behavior of blackboxing sources we are currently paused in.
@@ -9,16 +12,16 @@ var gDebuggee;
 var gClient;
 var gThreadClient;
 
-function run_test()
-{
+function run_test() {
   initTestDebuggerServer();
   gDebuggee = addTestGlobal("test-black-box");
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
-  gClient.connect().then(function () {
-    attachTestTabAndResume(gClient, "test-black-box", function (aResponse, aTabClient, aThreadClient) {
-      gThreadClient = aThreadClient;
-      test_black_box();
-    });
+  gClient.connect().then(function() {
+    attachTestTabAndResume(gClient, "test-black-box",
+                           function(response, targetFront, threadClient) {
+                             gThreadClient = threadClient;
+                             test_black_box();
+                           });
   });
   do_test_pending();
 }
@@ -26,28 +29,25 @@ function run_test()
 const BLACK_BOXED_URL = "http://example.com/blackboxme.js";
 const SOURCE_URL = "http://example.com/source.js";
 
-function test_black_box()
-{
-  gClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-    gThreadClient.eval(aPacket.frame.actor, "doStuff", function (aResponse) {
-      gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-        let obj = gThreadClient.pauseGrip(aPacket.why.frameFinished.return);
+function test_black_box() {
+  gClient.addOneTimeListener("paused", function(event, packet) {
+    gThreadClient.eval(packet.frame.actor, "doStuff", function(response) {
+      gThreadClient.addOneTimeListener("paused", function(event, packet) {
+        const obj = gThreadClient.pauseGrip(packet.why.frameFinished.return);
         obj.getDefinitionSite(runWithSource);
       });
     });
 
-    function runWithSource(aPacket) {
-      let source = gThreadClient.source(aPacket.source);
+    function runWithSource(packet) {
+      const source = gThreadClient.source(packet.source);
       source.setBreakpoint({
-        line: 2
-      }, function (aResponse) {
-        do_check_true(!aResponse.error, "Should be able to set breakpoint.");
-        test_black_box_paused();
-      });
+        line: 2,
+      }).then(test_black_box_paused);
     }
   });
 
-  Components.utils.evalInSandbox(
+  /* eslint-disable no-multi-spaces, no-undef */
+  Cu.evalInSandbox(
     "" + function doStuff(k) { // line 1
       debugger;                // line 2
       k(100);                  // line 3
@@ -58,10 +58,10 @@ function test_black_box()
     1
   );
 
-  Components.utils.evalInSandbox(
+  Cu.evalInSandbox(
     "" + function runTest() { // line 1
       doStuff(                // line 2
-        function (n) {        // line 3
+        function(n) {        // line 3
           return n;           // line 4
         }                     // line 5
       );                      // line 6
@@ -72,17 +72,19 @@ function test_black_box()
     SOURCE_URL,
     1
   );
+  /* eslint-enable no-multi-spaces, no-undef */
 }
 
 function test_black_box_paused() {
-  gThreadClient.getSources(function ({error, sources}) {
-    do_check_true(!error, "Should not get an error: " + error);
-    let sourceClient = gThreadClient.source(sources.filter(s => s.url == BLACK_BOXED_URL)[0]);
+  gThreadClient.getSources(async function({error, sources}) {
+    Assert.ok(!error, "Should not get an error: " + error);
+    const sourceClient = gThreadClient.source(
+      sources.filter(s => s.url == BLACK_BOXED_URL)[0]
+    );
 
-    sourceClient.blackBox(function ({error, pausedInSource}) {
-      do_check_true(!error, "Should not get an error: " + error);
-      do_check_true(pausedInSource, "We should be notified that we are currently paused in this source");
-      finishClient(gClient);
-    });
+    const {pausedInSource} = await blackBox(sourceClient);
+    Assert.ok(pausedInSource,
+      "We should be notified that we are currently paused in this source");
+    finishClient(gClient);
   });
 }

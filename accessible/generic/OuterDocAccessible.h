@@ -14,25 +14,24 @@ class DocAccessibleParent;
 
 /**
  * Used for <browser>, <frame>, <iframe>, <page> or editor> elements.
- * 
+ *
  * In these variable names, "outer" relates to the OuterDocAccessible as
  * opposed to the DocAccessibleWrap which is "inner". The outer node is
  * a something like tags listed above, whereas the inner node corresponds to
  * the inner document root.
  */
 
-class OuterDocAccessible final : public AccessibleWrap
-{
-public:
+class OuterDocAccessible final : public AccessibleWrap {
+ public:
   OuterDocAccessible(nsIContent* aContent, DocAccessible* aDoc);
 
-  NS_DECL_ISUPPORTS_INHERITED
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(OuterDocAccessible, AccessibleWrap)
 
   DocAccessibleParent* RemoteChildDoc() const;
 
   // Accessible
   virtual void Shutdown() override;
-  virtual mozilla::a11y::role NativeRole() override;
+  virtual mozilla::a11y::role NativeRole() const override;
   virtual Accessible* ChildAtPoint(int32_t aX, int32_t aY,
                                    EWhichChildAtPoint aWhichChild) override;
 
@@ -43,19 +42,17 @@ public:
 #if defined(XP_WIN)
   virtual uint32_t ChildCount() const override;
   virtual Accessible* GetChildAt(uint32_t aIndex) const override;
-#endif // defined(XP_WIN)
+#endif  // defined(XP_WIN)
 
-protected:
+ protected:
   virtual ~OuterDocAccessible() override;
 };
 
-inline OuterDocAccessible*
-Accessible::AsOuterDoc()
-{
+inline OuterDocAccessible* Accessible::AsOuterDoc() {
   return IsOuterDoc() ? static_cast<OuterDocAccessible*>(this) : nullptr;
 }
 
-} // namespace a11y
-} // namespace mozilla
+}  // namespace a11y
+}  // namespace mozilla
 
 #endif

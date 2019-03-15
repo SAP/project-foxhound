@@ -12,62 +12,63 @@
 namespace mozilla {
 namespace dom {
 
-class BaseBlobImpl : public BlobImpl
-{
-public:
-  BaseBlobImpl(const nsAString& aName, const nsAString& aContentType,
-               uint64_t aLength, int64_t aLastModifiedDate)
-    : mIsFile(true)
-    , mImmutable(false)
-    , mContentType(aContentType)
-    , mName(aName)
-    , mStart(0)
-    , mLength(aLength)
-    , mLastModificationDate(aLastModifiedDate)
-    , mSerialNumber(NextSerialNumber())
-  {
+class BaseBlobImpl : public BlobImpl {
+ public:
+  BaseBlobImpl(const nsAString& aBlobImplType, const nsAString& aName,
+               const nsAString& aContentType, uint64_t aLength,
+               int64_t aLastModifiedDate)
+      : mBlobImplType(aBlobImplType),
+        mIsFile(true),
+        mImmutable(false),
+        mContentType(aContentType),
+        mName(aName),
+        mStart(0),
+        mLength(aLength),
+        mLastModificationDate(aLastModifiedDate),
+        mSerialNumber(NextSerialNumber()) {
     // Ensure non-null mContentType by default
     mContentType.SetIsVoid(false);
   }
 
-  BaseBlobImpl(const nsAString& aName, const nsAString& aContentType,
+  BaseBlobImpl(const nsAString& aBlobImplType, const nsAString& aName,
+               const nsAString& aContentType, uint64_t aLength)
+      : mBlobImplType(aBlobImplType),
+        mIsFile(true),
+        mImmutable(false),
+        mContentType(aContentType),
+        mName(aName),
+        mStart(0),
+        mLength(aLength),
+        mLastModificationDate(INT64_MAX),
+        mSerialNumber(NextSerialNumber()) {
+    // Ensure non-null mContentType by default
+    mContentType.SetIsVoid(false);
+  }
+
+  BaseBlobImpl(const nsAString& aBlobImplType, const nsAString& aContentType,
                uint64_t aLength)
-    : mIsFile(true)
-    , mImmutable(false)
-    , mContentType(aContentType)
-    , mName(aName)
-    , mStart(0)
-    , mLength(aLength)
-    , mLastModificationDate(INT64_MAX)
-    , mSerialNumber(NextSerialNumber())
-  {
+      : mBlobImplType(aBlobImplType),
+        mIsFile(false),
+        mImmutable(false),
+        mContentType(aContentType),
+        mStart(0),
+        mLength(aLength),
+        mLastModificationDate(INT64_MAX),
+        mSerialNumber(NextSerialNumber()) {
     // Ensure non-null mContentType by default
     mContentType.SetIsVoid(false);
   }
 
-  BaseBlobImpl(const nsAString& aContentType, uint64_t aLength)
-    : mIsFile(false)
-    , mImmutable(false)
-    , mContentType(aContentType)
-    , mStart(0)
-    , mLength(aLength)
-    , mLastModificationDate(INT64_MAX)
-    , mSerialNumber(NextSerialNumber())
-  {
-    // Ensure non-null mContentType by default
-    mContentType.SetIsVoid(false);
-  }
-
-  BaseBlobImpl(const nsAString& aContentType, uint64_t aStart,
-               uint64_t aLength)
-    : mIsFile(false)
-    , mImmutable(false)
-    , mContentType(aContentType)
-    , mStart(aStart)
-    , mLength(aLength)
-    , mLastModificationDate(INT64_MAX)
-    , mSerialNumber(NextSerialNumber())
-  {
+  BaseBlobImpl(const nsAString& aBlobImplType, const nsAString& aContentType,
+               uint64_t aStart, uint64_t aLength)
+      : mBlobImplType(aBlobImplType),
+        mIsFile(false),
+        mImmutable(false),
+        mContentType(aContentType),
+        mStart(aStart),
+        mLength(aLength),
+        mLastModificationDate(INT64_MAX),
+        mSerialNumber(NextSerialNumber()) {
     MOZ_ASSERT(aLength != UINT64_MAX, "Must know length when creating slice");
     // Ensure non-null mContentType by default
     mContentType.SetIsVoid(false);
@@ -90,38 +91,38 @@ public:
   virtual void GetMozFullPathInternal(nsAString& aFileName,
                                       ErrorResult& aRv) const override;
 
-  virtual uint64_t GetSize(ErrorResult& aRv) override
-  {
-    return mLength;
-  }
+  virtual uint64_t GetSize(ErrorResult& aRv) override { return mLength; }
 
   virtual void GetType(nsAString& aType) override;
 
+  size_t GetAllocationSize() const override { return 0; }
+
+  size_t GetAllocationSize(
+      FallibleTArray<BlobImpl*>& aVisitedBlobImpls) const override {
+    return GetAllocationSize();
+  }
+
   virtual uint64_t GetSerialNumber() const override { return mSerialNumber; }
 
-  virtual already_AddRefed<BlobImpl>
-  CreateSlice(uint64_t aStart, uint64_t aLength,
-              const nsAString& aContentType, ErrorResult& aRv) override
-  {
+  virtual already_AddRefed<BlobImpl> CreateSlice(uint64_t aStart,
+                                                 uint64_t aLength,
+                                                 const nsAString& aContentType,
+                                                 ErrorResult& aRv) override {
     return nullptr;
   }
 
-  virtual const nsTArray<RefPtr<BlobImpl>>*
-  GetSubBlobImpls() const override
-  {
+  virtual const nsTArray<RefPtr<BlobImpl>>* GetSubBlobImpls() const override {
     return nullptr;
   }
 
-  virtual void GetInternalStream(nsIInputStream** aStream,
-                                 ErrorResult& aRv) override
-  {
+  virtual void CreateInputStream(nsIInputStream** aStream,
+                                 ErrorResult& aRv) override {
     aRv.Throw(NS_ERROR_NOT_IMPLEMENTED);
   }
 
   virtual int64_t GetFileId() override;
 
-  virtual nsresult GetSendInfo(nsIInputStream** aBody,
-                               uint64_t* aContentLength,
+  virtual nsresult GetSendInfo(nsIInputStream** aBody, uint64_t* aContentLength,
                                nsACString& aContentType,
                                nsACString& aCharset) override;
 
@@ -129,10 +130,9 @@ public:
 
   virtual nsresult SetMutable(bool aMutable) override;
 
-  virtual void
-  SetLazyData(const nsAString& aName, const nsAString& aContentType,
-              uint64_t aLength, int64_t aLastModifiedDate) override
-  {
+  virtual void SetLazyData(const nsAString& aName,
+                           const nsAString& aContentType, uint64_t aLength,
+                           int64_t aLastModifiedDate) override {
     mName = aName;
     mContentType = aContentType;
     mLength = aLength;
@@ -140,27 +140,21 @@ public:
     mIsFile = !aName.IsVoid();
   }
 
-  virtual bool IsMemoryFile() const override
-  {
-    return false;
-  }
+  virtual bool IsMemoryFile() const override { return false; }
 
-  virtual bool IsDateUnknown() const override
-  {
+  virtual bool IsDateUnknown() const override {
     return mIsFile && mLastModificationDate == INT64_MAX;
   }
 
-  virtual bool IsFile() const override
-  {
-    return mIsFile;
+  virtual bool IsFile() const override { return mIsFile; }
+
+  virtual bool IsSizeUnknown() const override { return mLength == UINT64_MAX; }
+
+  virtual void GetBlobImplType(nsAString& aBlobImplType) const override {
+    aBlobImplType = mBlobImplType;
   }
 
-  virtual bool IsSizeUnknown() const override
-  {
-    return mLength == UINT64_MAX;
-  }
-
-protected:
+ protected:
   virtual ~BaseBlobImpl() {}
 
   /**
@@ -170,12 +164,14 @@ protected:
    */
   static uint64_t NextSerialNumber();
 
+  const nsString mBlobImplType;
+
   bool mIsFile;
   bool mImmutable;
 
   nsString mContentType;
   nsString mName;
-  nsString mPath; // The path relative to a directory chosen by the user
+  nsString mPath;  // The path relative to a directory chosen by the user
 
   uint64_t mStart;
   uint64_t mLength;
@@ -185,7 +181,7 @@ protected:
   const uint64_t mSerialNumber;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_BaseBlobImpl_h
+#endif  // mozilla_dom_BaseBlobImpl_h

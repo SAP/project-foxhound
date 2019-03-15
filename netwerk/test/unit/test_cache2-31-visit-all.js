@@ -1,19 +1,15 @@
 function run_test()
 {
   var storage = getCacheStorage("disk");
-  var lcis = [LoadContextInfo.default,
-              LoadContextInfo.custom(false, { userContextId: 1 }),
-              LoadContextInfo.custom(false, { userContextId: 2 }),
-              LoadContextInfo.custom(false, { userContextId: 3 })];
+  var lcis = [Services.loadContextInfo.default,
+              Services.loadContextInfo.custom(false, { userContextId: 1 }),
+              Services.loadContextInfo.custom(false, { userContextId: 2 }),
+              Services.loadContextInfo.custom(false, { userContextId: 3 })];
 
   do_get_profile();
-  if (!newCacheBackEndUsed()) {
-    do_check_true(true, "This test checks only cache2 specific behavior.");
-    return;
-  }
 
   var mc = new MultipleCallbacks(8, function() {
-    do_execute_soon(function() {
+    executeSoon(function() {
       var expectedConsumption = 8192;
       var entries = [{ uri: "http://a/", lci: lcis[0] },    // default
                      { uri: "http://b/", lci: lcis[0] },    // default

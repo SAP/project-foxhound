@@ -20,7 +20,7 @@ const {
   VIEW_NODE_SELECTOR_TYPE,
   VIEW_NODE_PROPERTY_TYPE,
   VIEW_NODE_VALUE_TYPE,
-  VIEW_NODE_IMAGE_URL_TYPE
+  VIEW_NODE_IMAGE_URL_TYPE,
 } = require("devtools/client/inspector/shared/node-types");
 
 const TEST_URI = `
@@ -50,55 +50,55 @@ const TEST_URI = `
 const TEST_DATA = [
   {
     desc: "Testing a null node",
-    getHoveredNode: function* () {
+    getHoveredNode: function() {
       return null;
     },
-    assertNodeInfo: function (nodeInfo) {
+    assertNodeInfo: function(nodeInfo) {
       is(nodeInfo, null);
-    }
+    },
   },
   {
     desc: "Testing a useless node",
-    getHoveredNode: function* (view) {
+    getHoveredNode: function(view) {
       return view.element;
     },
-    assertNodeInfo: function (nodeInfo) {
+    assertNodeInfo: function(nodeInfo) {
       is(nodeInfo, null);
-    }
+    },
   },
   {
     desc: "Testing a property name",
-    getHoveredNode: function* (view) {
+    getHoveredNode: function(view) {
       return getComputedViewProperty(view, "color").nameSpan;
     },
-    assertNodeInfo: function (nodeInfo) {
+    assertNodeInfo: function(nodeInfo) {
       is(nodeInfo.type, VIEW_NODE_PROPERTY_TYPE);
       ok("property" in nodeInfo.value);
       ok("value" in nodeInfo.value);
       is(nodeInfo.value.property, "color");
       is(nodeInfo.value.value, "rgb(255, 0, 0)");
-    }
+    },
   },
   {
     desc: "Testing a property value",
-    getHoveredNode: function* (view) {
+    getHoveredNode: function(view) {
       return getComputedViewProperty(view, "color").valueSpan;
     },
-    assertNodeInfo: function (nodeInfo) {
+    assertNodeInfo: function(nodeInfo) {
       is(nodeInfo.type, VIEW_NODE_VALUE_TYPE);
       ok("property" in nodeInfo.value);
       ok("value" in nodeInfo.value);
       is(nodeInfo.value.property, "color");
       is(nodeInfo.value.value, "rgb(255, 0, 0)");
-    }
+    },
   },
   {
     desc: "Testing an image url",
-    getHoveredNode: function* (view) {
-      let {valueSpan} = getComputedViewProperty(view, "background-image");
+    getHoveredNode: function(view) {
+      const {valueSpan} = getComputedViewProperty(view, "background-image");
       return valueSpan.querySelector(".theme-link");
     },
-    assertNodeInfo: function (nodeInfo) {
+    assertNodeInfo: function(nodeInfo) {
       is(nodeInfo.type, VIEW_NODE_IMAGE_URL_TYPE);
       ok("property" in nodeInfo.value);
       ok("value" in nodeInfo.value);
@@ -106,73 +106,73 @@ const TEST_DATA = [
       is(nodeInfo.value.value,
          "url(\"chrome://global/skin/icons/warning-64.png\")");
       is(nodeInfo.value.url, "chrome://global/skin/icons/warning-64.png");
-    }
+    },
   },
   {
     desc: "Testing a matched rule selector (bestmatch)",
-    getHoveredNode: function* (view) {
-      let el = yield getComputedViewMatchedRules(view, "background-color");
+    getHoveredNode: async function(view) {
+      const el = await getComputedViewMatchedRules(view, "background-color");
       return el.querySelector(".bestmatch");
     },
-    assertNodeInfo: function (nodeInfo) {
+    assertNodeInfo: function(nodeInfo) {
       is(nodeInfo.type, VIEW_NODE_SELECTOR_TYPE);
       is(nodeInfo.value, "div div");
-    }
+    },
   },
   {
     desc: "Testing a matched rule selector (matched)",
-    getHoveredNode: function* (view) {
-      let el = yield getComputedViewMatchedRules(view, "background-color");
+    getHoveredNode: async function(view) {
+      const el = await getComputedViewMatchedRules(view, "background-color");
       return el.querySelector(".matched");
     },
-    assertNodeInfo: function (nodeInfo) {
+    assertNodeInfo: function(nodeInfo) {
       is(nodeInfo.type, VIEW_NODE_SELECTOR_TYPE);
       is(nodeInfo.value, "div");
-    }
+    },
   },
   {
     desc: "Testing a matched rule selector (parentmatch)",
-    getHoveredNode: function* (view) {
-      let el = yield getComputedViewMatchedRules(view, "color");
+    getHoveredNode: async function(view) {
+      const el = await getComputedViewMatchedRules(view, "color");
       return el.querySelector(".parentmatch");
     },
-    assertNodeInfo: function (nodeInfo) {
+    assertNodeInfo: function(nodeInfo) {
       is(nodeInfo.type, VIEW_NODE_SELECTOR_TYPE);
       is(nodeInfo.value, "body");
-    }
+    },
   },
   {
     desc: "Testing a matched rule value",
-    getHoveredNode: function* (view) {
-      let el = yield getComputedViewMatchedRules(view, "color");
-      return el.querySelector(".other-property-value");
+    getHoveredNode: async function(view) {
+      const el = await getComputedViewMatchedRules(view, "color");
+      return el.querySelector(".computed-other-property-value");
     },
-    assertNodeInfo: function (nodeInfo) {
+    assertNodeInfo: function(nodeInfo) {
       is(nodeInfo.type, VIEW_NODE_VALUE_TYPE);
       is(nodeInfo.value.property, "color");
       is(nodeInfo.value.value, "red");
-    }
+    },
   },
   {
     desc: "Testing a matched rule stylesheet link",
-    getHoveredNode: function* (view) {
-      let el = yield getComputedViewMatchedRules(view, "color");
+    getHoveredNode: async function(view) {
+      const el = await getComputedViewMatchedRules(view, "color");
       return el.querySelector(".rule-link .theme-link");
     },
-    assertNodeInfo: function (nodeInfo) {
+    assertNodeInfo: function(nodeInfo) {
       is(nodeInfo, null);
-    }
-  }
+    },
+  },
 ];
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openComputedView();
-  yield selectNode("#testElement", inspector);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, view} = await openComputedView();
+  await selectNode("#testElement", inspector);
 
-  for (let {desc, getHoveredNode, assertNodeInfo} of TEST_DATA) {
+  for (const {desc, getHoveredNode, assertNodeInfo} of TEST_DATA) {
     info(desc);
-    let nodeInfo = view.getNodeInfo(yield getHoveredNode(view));
+    const nodeInfo = view.getNodeInfo(await getHoveredNode(view));
     assertNodeInfo(nodeInfo);
   }
 });

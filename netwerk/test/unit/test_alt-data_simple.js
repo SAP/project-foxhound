@@ -9,9 +9,9 @@
  * - this time the alt data must arive
  */
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpServer.identity.primaryPort + "/content";
@@ -23,11 +23,21 @@ function make_channel(url, callback, ctx) {
   return NetUtil.newChannel({uri: url, loadUsingSystemPrincipal: true});
 }
 
+function inChildProcess() {
+  return Cc["@mozilla.org/xre/app-info;1"]
+           .getService(Ci.nsIXULRuntime)
+           .processType != Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT;
+}
+
 const responseContent = "response body";
+const responseContent2 = "response body 2";
 const altContent = "!@#$%^&*()";
 const altContentType = "text/binary";
 
 var servedNotModified = false;
+var shouldPassRevalidation = true;
+
+var cache_storage = null;
 
 function contentHandler(metadata, response)
 {
@@ -41,12 +51,23 @@ function contentHandler(metadata, response)
     var etag = "";
   }
 
-  if (etag == "test-etag1") {
+  if (etag == "test-etag1" && shouldPassRevalidation) {
     response.setStatusLine(metadata.httpVersion, 304, "Not Modified");
     servedNotModified = true;
   } else {
-    response.bodyOutputStream.write(responseContent, responseContent.length);
+    var content = shouldPassRevalidation ? responseContent : responseContent2;
+    response.bodyOutputStream.write(content, content.length);
   }
+}
+
+function check_has_alt_data_in_index(aHasAltData)
+{
+  if (inChildProcess()) {
+    return;
+  }
+  var hasAltData = {};
+  cache_storage.getCacheIndexEntryAttrs(createURI(URL), "", hasAltData, {});
+  Assert.equal(hasAltData.value, aHasAltData);
 }
 
 function run_test()
@@ -55,57 +76,120 @@ function run_test()
   httpServer = new HttpServer();
   httpServer.registerPathHandler("/content", contentHandler);
   httpServer.start(-1);
+  do_test_pending();
 
+  if (!inChildProcess()) {
+    cache_storage = getCacheStorage("disk") ;
+    wait_for_cache_index(asyncOpen);
+  } else {
+    asyncOpen();
+  }
+}
+
+function asyncOpen()
+{
   var chan = make_channel(URL);
 
   var cc = chan.QueryInterface(Ci.nsICacheInfoChannel);
-  cc.preferAlternativeDataType(altContentType);
+  cc.preferAlternativeDataType(altContentType, "");
 
   chan.asyncOpen2(new ChannelListener(readServerContent, null));
-  do_test_pending();
 }
 
 function readServerContent(request, buffer)
 {
   var cc = request.QueryInterface(Ci.nsICacheInfoChannel);
 
-  do_check_eq(buffer, responseContent);
-  do_check_eq(cc.alternativeDataType, "");
+  Assert.equal(buffer, responseContent);
+  Assert.equal(cc.alternativeDataType, "");
+  check_has_alt_data_in_index(false);
 
-  do_execute_soon(() => {
-    var os = cc.openAlternativeOutputStream(altContentType);
+  executeSoon(() => {
+    var os = cc.openAlternativeOutputStream(altContentType, altContent.length);
     os.write(altContent, altContent.length);
     os.close();
 
-    do_execute_soon(flushAndOpenAltChannel);
+    executeSoon(flushAndOpenAltChannel);
   });
 }
 
 // needs to be rooted
 var cacheFlushObserver = cacheFlushObserver = { observe: function() {
   cacheFlushObserver = null;
-
-  var chan = make_channel(URL);
-  var cc = chan.QueryInterface(Ci.nsICacheInfoChannel);
-  cc.preferAlternativeDataType(altContentType);
-
-  chan.asyncOpen2(new ChannelListener(readAltContent, null));
+  openAltChannel();
 }};
 
 function flushAndOpenAltChannel()
 {
   // We need to do a GC pass to ensure the cache entry has been freed.
   gc();
-  Services.cache2.QueryInterface(Ci.nsICacheTesting).flush(cacheFlushObserver);
+  if (!inChildProcess()) {
+    Services.cache2.QueryInterface(Ci.nsICacheTesting).flush(cacheFlushObserver);
+  } else {
+    do_send_remote_message('flush');
+    do_await_remote_message('flushed').then(() => {
+      openAltChannel();
+    });
+  }
+}
+
+function openAltChannel() {
+  var chan = make_channel(URL);
+  var cc = chan.QueryInterface(Ci.nsICacheInfoChannel);
+  cc.preferAlternativeDataType("dummy1", "text/javascript");
+  cc.preferAlternativeDataType(altContentType, "text/plain");
+  cc.preferAlternativeDataType("dummy2", "");
+
+  chan.asyncOpen2(new ChannelListener(readAltContent, null));
 }
 
 function readAltContent(request, buffer)
 {
   var cc = request.QueryInterface(Ci.nsICacheInfoChannel);
 
-  do_check_eq(servedNotModified, true);
-  do_check_eq(cc.alternativeDataType, altContentType);
-  do_check_eq(buffer, altContent);
+  Assert.equal(servedNotModified, true);
+  Assert.equal(cc.alternativeDataType, altContentType);
+  Assert.equal(buffer, altContent);
+  check_has_alt_data_in_index(true);
+
+  cc.getOriginalInputStream({
+    onInputStreamReady: function(aInputStream) {
+      executeSoon(() => readOriginalInputStream(aInputStream));
+    }
+  });
+}
+
+function readOriginalInputStream(aInputStream)
+{
+  // We expect the async stream length to match the expected content.
+  // If the test times out, it's probably because of this.
+  try {
+    let originalData = read_stream(aInputStream, responseContent.length);
+    Assert.equal(originalData, responseContent);
+    requestAgain();
+  } catch (e) {
+    equal(e.result, Cr.NS_BASE_STREAM_WOULD_BLOCK);
+    executeSoon(() => readOriginalInputStream(aInputStream));
+  }
+}
+
+function requestAgain()
+{
+  shouldPassRevalidation = false;
+  var chan = make_channel(URL);
+  var cc = chan.QueryInterface(Ci.nsICacheInfoChannel);
+  cc.preferAlternativeDataType(altContentType, "");
+  chan.asyncOpen2(new ChannelListener(readEmptyAltContent, null));
+}
+
+function readEmptyAltContent(request, buffer)
+{
+  var cc = request.QueryInterface(Ci.nsICacheInfoChannel);
+
+  // the cache is overwrite and the alt-data is reset
+  Assert.equal(cc.alternativeDataType, "");
+  Assert.equal(buffer, responseContent2);
+  check_has_alt_data_in_index(false);
 
   httpServer.stop(do_test_finished);
 }

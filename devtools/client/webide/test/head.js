@@ -3,22 +3,17 @@
 
 "use strict";
 
-var {utils: Cu, classes: Cc, interfaces: Ci} = Components;
-
-const { require } = Cu.import("resource://devtools/shared/Loader.jsm", {});
+const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
+ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
 const { FileUtils } = require("resource://gre/modules/FileUtils.jsm");
 const { gDevTools } = require("devtools/client/framework/devtools");
-const promise = require("promise");
 const Services = require("Services");
-const { Task } = require("devtools/shared/task");
 const { AppProjects } = require("devtools/client/webide/modules/app-projects");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
 const { DebuggerServer } = require("devtools/server/main");
-const flags = require("devtools/shared/flags");
-flags.testing = true;
 
 var TEST_BASE;
-if (window.location === "chrome://browser/content/browser.xul") {
+if (window.location === AppConstants.BROWSER_CHROME_URL) {
   TEST_BASE = "chrome://mochitests/content/browser/devtools/client/webide/test/";
 } else {
   TEST_BASE = "chrome://mochitests/content/chrome/devtools/client/webide/test/";
@@ -27,37 +22,31 @@ if (window.location === "chrome://browser/content/browser.xul") {
 Services.prefs.setBoolPref("devtools.webide.enabled", true);
 Services.prefs.setBoolPref("devtools.webide.enableLocalRuntime", true);
 
-Services.prefs.setCharPref("devtools.webide.addonsURL", TEST_BASE + "addons/simulators.json");
-Services.prefs.setCharPref("devtools.webide.simulatorAddonsURL", TEST_BASE + "addons/fxos_#SLASHED_VERSION#_simulator-#OS#.xpi");
-Services.prefs.setCharPref("devtools.webide.adbAddonURL", TEST_BASE + "addons/adbhelper-#OS#.xpi");
-Services.prefs.setCharPref("devtools.webide.adaptersAddonURL", TEST_BASE + "addons/fxdt-adapters-#OS#.xpi");
+Services.prefs.setCharPref("devtools.remote.adb.extensionURL", TEST_BASE + "addons/adb-extension-#OS#.xpi");
 Services.prefs.setCharPref("devtools.webide.templatesURL", TEST_BASE + "templates.json");
 Services.prefs.setCharPref("devtools.devices.url", TEST_BASE + "browser_devices.json");
 
 var registerCleanupFunction = registerCleanupFunction ||
                               SimpleTest.registerCleanupFunction;
 registerCleanupFunction(() => {
-  flags.testing = false;
   Services.prefs.clearUserPref("devtools.webide.enabled");
   Services.prefs.clearUserPref("devtools.webide.enableLocalRuntime");
-  Services.prefs.clearUserPref("devtools.webide.autoinstallADBHelper");
-  Services.prefs.clearUserPref("devtools.webide.autoinstallFxdtAdapters");
+  Services.prefs.clearUserPref("devtools.webide.autoinstallADBExtension");
   Services.prefs.clearUserPref("devtools.webide.busyTimeout");
   Services.prefs.clearUserPref("devtools.webide.lastSelectedProject");
   Services.prefs.clearUserPref("devtools.webide.lastConnectedRuntime");
 });
 
-var openWebIDE = Task.async(function* (autoInstallAddons) {
+var openWebIDE = async function(autoInstallAddons) {
   info("opening WebIDE");
 
-  Services.prefs.setBoolPref("devtools.webide.autoinstallADBHelper", !!autoInstallAddons);
-  Services.prefs.setBoolPref("devtools.webide.autoinstallFxdtAdapters", !!autoInstallAddons);
+  Services.prefs.setBoolPref("devtools.webide.autoinstallADBExtension", !!autoInstallAddons);
 
-  let ww = Cc["@mozilla.org/embedcomp/window-watcher;1"].getService(Ci.nsIWindowWatcher);
-  let win = ww.openWindow(null, "chrome://webide/content/", "webide", "chrome,centerscreen,resizable", null);
+  const win = Services.ww.openWindow(null, "chrome://webide/content/", "webide",
+                                   "chrome,centerscreen,resizable", null);
 
-  yield new Promise(resolve => {
-    win.addEventListener("load", function () {
+  await new Promise(resolve => {
+    win.addEventListener("load", function() {
       SimpleTest.requestCompleteLog();
       SimpleTest.executeSoon(resolve);
     }, {once: true});
@@ -66,127 +55,115 @@ var openWebIDE = Task.async(function* (autoInstallAddons) {
   info("WebIDE open");
 
   return win;
-});
+};
 
 function closeWebIDE(win) {
   info("Closing WebIDE");
 
-  let deferred = promise.defer();
+  return new Promise(resolve => {
+    win.addEventListener("unload", function() {
+      info("WebIDE closed");
+      SimpleTest.executeSoon(resolve);
+    }, {once: true});
 
-  Services.prefs.clearUserPref("devtools.webide.widget.enabled");
-
-  win.addEventListener("unload", function () {
-    info("WebIDE closed");
-    SimpleTest.executeSoon(() => {
-      deferred.resolve();
-    });
-  }, {once: true});
-
-  win.close();
-
-  return deferred.promise;
+    win.close();
+  });
 }
 
 function removeAllProjects() {
-  return Task.spawn(function* () {
-    yield AppProjects.load();
+  return (async function() {
+    await AppProjects.load();
     // use a new array so we're not iterating over the same
     // underlying array that's being modified by AppProjects
-    let projects = AppProjects.projects.map(p => p.location);
+    const projects = AppProjects.projects.map(p => p.location);
     for (let i = 0; i < projects.length; i++) {
-      yield AppProjects.remove(projects[i]);
+      await AppProjects.remove(projects[i]);
     }
-  });
+  })();
 }
 
 function nextTick() {
-  let deferred = promise.defer();
-  SimpleTest.executeSoon(() => {
-    deferred.resolve();
+  return new Promise(resolve => {
+    SimpleTest.executeSoon(resolve);
   });
-
-  return deferred.promise;
 }
 
 function waitForUpdate(win, update) {
   info("Wait: " + update);
-  let deferred = promise.defer();
-  win.AppManager.on("app-manager-update", function onUpdate(e, what) {
-    info("Got: " + what);
-    if (what !== update) {
-      return;
-    }
-    win.AppManager.off("app-manager-update", onUpdate);
-    deferred.resolve(win.UI._updatePromise);
+  return new Promise(resolve => {
+    win.AppManager.on("app-manager-update", function onUpdate(what) {
+      info("Got: " + what);
+      if (what !== update) {
+        return;
+      }
+      win.AppManager.off("app-manager-update", onUpdate);
+      resolve(win.UI._updatePromise);
+    });
   });
-  return deferred.promise;
 }
 
 function waitForTime(time) {
-  let deferred = promise.defer();
-  setTimeout(() => {
-    deferred.resolve();
-  }, time);
-  return deferred.promise;
+  return new Promise(resolve => {
+    setTimeout(resolve, time);
+  });
 }
 
 function documentIsLoaded(doc) {
-  let deferred = promise.defer();
-  if (doc.readyState == "complete") {
-    deferred.resolve();
-  } else {
-    doc.addEventListener("readystatechange", function onChange() {
-      if (doc.readyState == "complete") {
-        doc.removeEventListener("readystatechange", onChange);
-        deferred.resolve();
-      }
-    });
-  }
-  return deferred.promise;
+  return new Promise(resolve => {
+    if (doc.readyState == "complete") {
+      resolve();
+    } else {
+      doc.addEventListener("readystatechange", function onChange() {
+        if (doc.readyState == "complete") {
+          doc.removeEventListener("readystatechange", onChange);
+          resolve();
+        }
+      });
+    }
+  });
 }
 
 function lazyIframeIsLoaded(iframe) {
-  let deferred = promise.defer();
-  iframe.addEventListener("load", function () {
-    deferred.resolve(nextTick());
-  }, {capture: true, once: true});
-  return deferred.promise;
+  return new Promise(resolve => {
+    iframe.addEventListener("load", function() {
+      resolve(nextTick());
+    }, {capture: true, once: true});
+  });
 }
 
 function addTab(aUrl, aWindow) {
   info("Adding tab: " + aUrl);
 
-  let deferred = promise.defer();
-  let targetWindow = aWindow || window;
-  let targetBrowser = targetWindow.gBrowser;
+  return new Promise(resolve => {
+    const targetWindow = aWindow || window;
+    const targetBrowser = targetWindow.gBrowser;
 
-  targetWindow.focus();
-  let tab = targetBrowser.selectedTab = targetBrowser.addTab(aUrl);
-  let linkedBrowser = tab.linkedBrowser;
+    targetWindow.focus();
+    const tab = targetBrowser.selectedTab = targetBrowser.addTab(aUrl);
+    const linkedBrowser = tab.linkedBrowser;
 
-  BrowserTestUtils.browserLoaded(linkedBrowser).then(function () {
-    info("Tab added and finished loading: " + aUrl);
-    deferred.resolve(tab);
+    BrowserTestUtils.browserLoaded(linkedBrowser).then(function() {
+      info("Tab added and finished loading: " + aUrl);
+      resolve(tab);
+    });
   });
-
-  return deferred.promise;
 }
 
 function removeTab(aTab, aWindow) {
   info("Removing tab.");
 
-  let deferred = promise.defer();
-  let targetWindow = aWindow || window;
-  let targetBrowser = targetWindow.gBrowser;
-  let tabContainer = targetBrowser.tabContainer;
+  return new Promise(resolve => {
+    const targetWindow = aWindow || window;
+    const targetBrowser = targetWindow.gBrowser;
+    const tabContainer = targetBrowser.tabContainer;
 
-  tabContainer.addEventListener("TabClose", function (aEvent) {
-    info("Tab removed and finished closing.");
-    deferred.resolve();
-  }, {once: true});
+    tabContainer.addEventListener("TabClose", function(aEvent) {
+      info("Tab removed and finished closing.");
+      resolve();
+    }, {once: true});
 
-  targetBrowser.removeTab(aTab);
-  return deferred.promise;
+    targetBrowser.removeTab(aTab);
+  });
 }
 
 function getRuntimeDocument(win) {
@@ -205,19 +182,20 @@ function getProjectWindow(win) {
   return win.document.querySelector("#project-listing-panel-details").contentWindow;
 }
 
+function getAddonsDocument(win) {
+  return win.document.querySelector("#deck-panel-addons").contentDocument;
+}
+
 function connectToLocalRuntime(win) {
   info("Loading local runtime.");
 
-  let panelNode;
-  let runtimePanel;
+  const runtimePanel = getRuntimeDocument(win);
 
-  runtimePanel = getRuntimeDocument(win);
-
-  panelNode = runtimePanel.querySelector("#runtime-panel");
-  let items = panelNode.querySelectorAll(".runtime-panel-item-other");
+  const panelNode = runtimePanel.querySelector("#runtime-panel");
+  const items = panelNode.querySelectorAll(".runtime-panel-item-other");
   is(items.length, 2, "Found 2 custom runtime buttons");
 
-  let updated = waitForUpdate(win, "runtime-global-actors");
+  const updated = waitForUpdate(win, "runtime-global-actors");
   items[1].click();
   return updated;
 }
@@ -229,7 +207,7 @@ function handleError(aError) {
 
 function waitForConnectionChange(expectedState, count = 1) {
   return new Promise(resolve => {
-    let onConnectionChange = (_, state) => {
+    const onConnectionChange = state => {
       if (state != expectedState) {
         return;
       }

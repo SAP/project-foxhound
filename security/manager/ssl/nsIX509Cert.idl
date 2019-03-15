@@ -36,6 +36,7 @@ interface nsIX509Cert : nsISupports {
   /**
    * Did this certificate ship with the platform as a built-in root?
    */
+  [must_use]
   readonly attribute bool isBuiltInRoot;
 
   /**
@@ -45,6 +46,7 @@ interface nsIX509Cert : nsISupports {
    *  @param length The number of strings in the returned array.
    *  @return An array of email addresses.
    */
+  [must_use]
   void getEmailAddresses(out unsigned long length,
                          [retval, array, size_is(length)] out wstring addresses);
 
@@ -57,12 +59,19 @@ interface nsIX509Cert : nsISupports {
    *
    *  @return True if the address is contained in the certificate.
    */
+  [must_use]
   boolean containsEmailAddress(in AString aEmailAddress);
 
   /**
    *  The subject owning the certificate.
    */
   readonly attribute AString subjectName;
+
+  /**
+   *  The subject alternative names of the certificate.
+   *  It's a comma separated string of subject alt names.
+   */
+  readonly attribute AString subjectAltNames;
 
   /**
    *  The subject's common name.
@@ -77,6 +86,7 @@ interface nsIX509Cert : nsISupports {
   /**
    *  The subject's organizational unit.
    */
+  [must_use]
   readonly attribute AString organizationalUnit;
 
   /**
@@ -89,6 +99,7 @@ interface nsIX509Cert : nsISupports {
    *  The fingerprint of the certificate's DER encoding,
    *  calculated using the SHA1 algorithm.
    */
+  [must_use]
   readonly attribute AString sha1Fingerprint;
 
   /**
@@ -105,11 +116,13 @@ interface nsIX509Cert : nsISupports {
   /**
    *  The serial number the issuer assigned to this certificate.
    */
+  [must_use]
   readonly attribute AString serialNumber;
 
   /**
    *  The issuer subject's common name.
    */
+  [must_use]
   readonly attribute AString issuerCommonName;
 
   /**
@@ -120,12 +133,8 @@ interface nsIX509Cert : nsISupports {
   /**
    *  The issuer subject's organizational unit.
    */
+  [must_use]
   readonly attribute AString issuerOrganizationUnit;
-
-  /**
-   *  The certificate used by the issuer to sign this certificate.
-   */
-  readonly attribute nsIX509Cert issuer;
 
   /**
    *  This certificate's validity period.
@@ -135,11 +144,13 @@ interface nsIX509Cert : nsISupports {
   /**
    *  A unique identifier of this certificate within the local storage.
    */
+  [must_use]
   readonly attribute ACString dbKey;
 
   /**
    *  A human readable identifier to label this certificate.
    */
+  [must_use]
   readonly attribute AString displayName;
 
   /**
@@ -161,29 +172,15 @@ interface nsIX509Cert : nsISupports {
    *  True if the certificate is self-signed. CA issued
    *  certificates are always self-signed.
    */
+  [must_use]
   readonly attribute boolean isSelfSigned;
-
-  /**
-   *  Constants for specifying the chain mode when exporting a certificate
-   */
-  const unsigned long CMS_CHAIN_MODE_CertOnly = 1;
-  const unsigned long CMS_CHAIN_MODE_CertChain = 2;
-  const unsigned long CMS_CHAIN_MODE_CertChainWithRoot = 3;
-
-  /**
-   *  Obtain a list of certificates that contains this certificate
-   *  and the issuing certificates of all involved issuers,
-   *  up to the root issuer.
-   *
-   *  @return The chain of certifficates including the issuers.
-   */
-  nsIArray getChain();
 
   /**
    * A comma separated list of localized strings representing the contents of
    * the certificate's key usage extension, if present. The empty string if the
    * certificate doesn't have the key usage extension, or has an empty extension.
    */
+  [must_use]
   readonly attribute AString keyUsages;
 
   /**
@@ -191,6 +188,7 @@ interface nsIX509Cert : nsISupports {
    *  of the certificate.  This can be used when doing a
    *  "pretty print" of the certificate's ASN1 structure.
    */
+  [must_use]
   readonly attribute nsIASN1Object ASN1Structure;
 
   /**
@@ -200,6 +198,7 @@ interface nsIX509Cert : nsISupports {
    *  @param length The number of bytes in the binary encoding.
    *  @param data The bytes representing the DER encoded certificate.
    */
+  [must_use]
   void getRawDER(out unsigned long length,
 	               [retval, array, size_is(length)] out octet data);
 
@@ -209,48 +208,26 @@ interface nsIX509Cert : nsISupports {
    *
    *  @return Whether the certificates are equal
    */
+  [must_use]
   boolean equals(in nsIX509Cert other);
 
   /**
    * The base64 encoding of the DER encoded public key info using the specified
    * digest.
    */
+  [must_use]
   readonly attribute ACString sha256SubjectPublicKeyInfoDigest;
-
-  /**
-   *  Obtain the certificate wrapped in a PKCS#7 SignedData structure,
-   *  with or without the certificate chain
-   *
-   *  @param chainMode Whether to include the chain (with or without the root),
-                       see CMS_CHAIN_MODE constants.
-   *  @param length The number of bytes of the PKCS#7 data.
-   *  @param data The bytes representing the PKCS#7 wrapped certificate.
-   */
-  void exportAsCMS(in unsigned long chainMode,
-                   out unsigned long length,
-                   [retval, array, size_is(length)] out octet data);
 
   /**
    * Retrieves the NSS certificate object wrapped by this interface
    */
-   [notxpcom, noscript] CERTCertificatePtr getCert();
-
-  /**
-   * Human readable names identifying all hardware or
-   * software tokens the certificate is stored on.
-   *
-   * @param length On success, the number of entries in the returned array.
-   * @return On success, an array containing the names of all tokens
-   *         the certificate is stored on (may be empty).
-   *         On failure the function throws/returns an error.
-   */
-  void getAllTokenNames(out unsigned long length,
-                       [retval, array, size_is(length)] out wstring
-                       tokenNames);
+  [notxpcom, noscript, must_use]
+  CERTCertificatePtr getCert();
 
   /**
    * Either delete the certificate from all cert databases,
    * or mark it as untrusted.
    */
+  [must_use]
   void markForPermDeletion();
 };

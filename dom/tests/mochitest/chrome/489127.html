@@ -11,18 +11,17 @@
   function done() { window.opener.done.apply(window.opener, arguments); }
   let e = {};
 
-  let dwu = window.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
-                  .getInterface(Components.interfaces.nsIDOMWindowUtils);
+  let dwu = window.windowUtils;
 
   /*
-    nsIDOMNodeList nodesFromRect(in float aX,
-                                 in float aY,
-                                 in float aTopSize, 
-                                 in float aRightSize,
-                                 in float aBottomSize,
-                                 in float aLeftSize,
-                                 in boolean aIgnoreRootScrollFrame,
-                                 in boolean aFlushLayout);
+    NodeList nodesFromRect(in float aX,
+                           in float aY,
+                           in float aTopSize, 
+                           in float aRightSize,
+                           in float aBottomSize,
+                           in float aLeftSize,
+                           in boolean aIgnoreRootScrollFrame,
+                           in boolean aFlushLayout);
 
   */
 

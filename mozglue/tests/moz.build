@@ -4,8 +4,25 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DISABLE_STL_WRAPPING = True
+DisableStlWrapping()
 
 GeckoCppUnitTests([
     'ShowSSEConfig',
 ], linkage=None)
+
+CppUnitTests([
+    'TestPrintf',
+])
+
+if CONFIG['OS_ARCH'] == 'WINNT':
+    GeckoCppUnitTests([
+        'TestNativeNt',
+    ], linkage=None)
+    TEST_DIRS += [
+        'interceptor',
+        'gtest',
+    ]
+    OS_LIBS += [
+        'mincore',
+        'ntdll',
+    ]

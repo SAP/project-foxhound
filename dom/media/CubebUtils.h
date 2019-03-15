@@ -5,11 +5,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #if !defined(CubebUtils_h_)
-#define CubebUtils_h_
+#  define CubebUtils_h_
 
-#include "cubeb/cubeb.h"
-#include "mozilla/dom/AudioChannelBinding.h"
-#include "mozilla/Maybe.h"
+#  include "cubeb/cubeb.h"
+#  include "nsString.h"
+#  include "mozilla/RefPtr.h"
+
+class AudioDeviceInfo;
 
 namespace mozilla {
 namespace CubebUtils {
@@ -30,26 +32,31 @@ uint32_t MaxNumberOfChannels();
 // Get the sample rate the hardware/mixer runs at. Thread safe.
 uint32_t PreferredSampleRate();
 
-// Get the bit mask of the connected audio device's preferred layout.
-uint32_t PreferredChannelMap(uint32_t aChannels);
+enum Side { Input, Output };
 
-void PrefChanged(const char* aPref, void* aClosure);
 double GetVolumeScale();
 bool GetFirstStream();
 cubeb* GetCubebContext();
-cubeb* GetCubebContextUnlocked();
 void ReportCubebStreamInitFailure(bool aIsFirstStream);
 void ReportCubebBackendUsed();
 uint32_t GetCubebPlaybackLatencyInMilliseconds();
-Maybe<uint32_t> GetCubebMSGLatencyInFrames();
+uint32_t GetCubebMSGLatencyInFrames(cubeb_stream_params* params);
 bool CubebLatencyPrefSet();
-cubeb_channel_layout ConvertChannelMapToCubebLayout(uint32_t aChannelMap);
-#if defined(__ANDROID__) && defined(MOZ_B2G)
-cubeb_stream_type ConvertChannelToCubebType(dom::AudioChannel aChannel);
-#endif
 void GetCurrentBackend(nsAString& aBackend);
+void GetDeviceCollection(nsTArray<RefPtr<AudioDeviceInfo>>& aDeviceInfos,
+                         Side aSide);
+cubeb_stream_prefs GetDefaultStreamPrefs();
+char* GetForcedOutputDevice();
 
-} // namespace CubebUtils
-} // namespace mozilla
+#  ifdef MOZ_WIDGET_ANDROID
+uint32_t AndroidGetAudioOutputSampleRate();
+uint32_t AndroidGetAudioOutputFramesPerBuffer();
+#  endif
 
-#endif // CubebUtils_h_
+#  ifdef ENABLE_SET_CUBEB_BACKEND
+void ForceSetCubebContext(cubeb* aCubebContext);
+#  endif
+}  // namespace CubebUtils
+}  // namespace mozilla
+
+#endif  // CubebUtils_h_

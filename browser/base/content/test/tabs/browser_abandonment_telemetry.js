@@ -1,6 +1,6 @@
 "use strict";
 
-const {TabStateFlusher} = Cu.import("resource:///modules/sessionstore/TabStateFlusher.jsm", {});
+const {TabStateFlusher} = ChromeUtils.import("resource:///modules/sessionstore/TabStateFlusher.jsm", {});
 
 // Keep this in sync with the order in Histograms.json for
 // BUSY_TAB_ABANDONED
@@ -63,9 +63,9 @@ const PROBE_TESTS = [
 
     category: "stop",
 
-    * prepare(browser) {},
+    prepare(browser) {},
 
-    * doAction(browser) {
+    doAction(browser) {
       document.getElementById("Browser:Stop").doCommand();
     },
   },
@@ -76,16 +76,16 @@ const PROBE_TESTS = [
 
     category: "back",
 
-    * prepare(browser) {
-      browser.loadURI(PAGE_2);
-      yield BrowserTestUtils.browserLoaded(browser);
+    async prepare(browser) {
+      BrowserTestUtils.loadURI(browser, PAGE_2);
+      await BrowserTestUtils.browserLoaded(browser);
     },
 
-    * doAction(browser) {
+    async doAction(browser) {
       let pageShow =
         BrowserTestUtils.waitForContentEvent(browser, "pageshow");
       document.getElementById("Browser:Back").doCommand();
-      yield pageShow;
+      await pageShow;
     },
   },
 
@@ -95,20 +95,20 @@ const PROBE_TESTS = [
 
     category: "forward",
 
-    * prepare(browser) {
-      browser.loadURI(PAGE_2);
-      yield BrowserTestUtils.browserLoaded(browser);
+    async prepare(browser) {
+      BrowserTestUtils.loadURI(browser, PAGE_2);
+      await BrowserTestUtils.browserLoaded(browser);
       let pageShow =
         BrowserTestUtils.waitForContentEvent(browser, "pageshow");
       browser.goBack();
-      yield pageShow;
+      await pageShow;
     },
 
-    * doAction(browser) {
+    async doAction(browser) {
       let pageShow =
         BrowserTestUtils.waitForContentEvent(browser, "pageshow");
       document.getElementById("Browser:Forward").doCommand();
-      yield pageShow;
+      await pageShow;
     },
   },
 
@@ -118,19 +118,19 @@ const PROBE_TESTS = [
 
     category: "historyNavigation",
 
-    * prepare(browser) {
-      browser.loadURI(PAGE_2);
-      yield BrowserTestUtils.browserLoaded(browser);
-      browser.loadURI("http://example.com");
-      yield BrowserTestUtils.browserLoaded(browser);
-      yield TabStateFlusher.flush(browser);
+    async prepare(browser) {
+      BrowserTestUtils.loadURI(browser, PAGE_2);
+      await BrowserTestUtils.browserLoaded(browser);
+      BrowserTestUtils.loadURI(browser, "http://example.com");
+      await BrowserTestUtils.browserLoaded(browser);
+      await TabStateFlusher.flush(browser);
     },
 
-    * doAction(browser) {
+    async doAction(browser) {
       let pageShow =
         BrowserTestUtils.waitForContentEvent(browser, "pageshow");
       synthesizeHistoryNavigationToIndex(0);
-      yield pageShow;
+      await pageShow;
     },
   },
 
@@ -140,23 +140,23 @@ const PROBE_TESTS = [
 
     category: "historyNavigation",
 
-    * prepare(browser) {
-      browser.loadURI(PAGE_2);
-      yield BrowserTestUtils.browserLoaded(browser);
-      browser.loadURI("http://example.com");
-      yield BrowserTestUtils.browserLoaded(browser);
+    async prepare(browser) {
+      BrowserTestUtils.loadURI(browser, PAGE_2);
+      await BrowserTestUtils.browserLoaded(browser);
+      BrowserTestUtils.loadURI(browser, "http://example.com");
+      await BrowserTestUtils.browserLoaded(browser);
       let pageShow =
         BrowserTestUtils.waitForContentEvent(browser, "pageshow");
       browser.gotoIndex(0);
-      yield pageShow;
-      yield TabStateFlusher.flush(browser);
+      await pageShow;
+      await TabStateFlusher.flush(browser);
     },
 
-    * doAction(browser) {
+    async doAction(browser) {
       let pageShow =
         BrowserTestUtils.waitForContentEvent(browser, "pageshow");
       synthesizeHistoryNavigationToIndex(2);
-      yield pageShow;
+      await pageShow;
     },
   },
 
@@ -166,11 +166,11 @@ const PROBE_TESTS = [
 
     category: "reload",
 
-    * prepare(browser) {},
+    prepare(browser) {},
 
-    * doAction(browser) {
+    async doAction(browser) {
       document.getElementById("Browser:Reload").doCommand();
-      yield BrowserTestUtils.browserLoaded(browser);
+      await BrowserTestUtils.browserLoaded(browser);
     },
   },
 
@@ -183,14 +183,14 @@ const PROBE_TESTS = [
 
     category: "newURI",
 
-    * prepare(browser) {},
+    prepare(browser) {},
 
-    * doAction(browser) {
-      openUILinkIn(PAGE_2, "current");
-      yield BrowserTestUtils.browserLoaded(browser);
+    async doAction(browser) {
+      openTrustedLinkIn(PAGE_2, "current");
+      await BrowserTestUtils.browserLoaded(browser);
     },
   },
-]
+];
 
 /**
  * Takes a Telemetry histogram snapshot and makes sure
@@ -206,11 +206,11 @@ const PROBE_TESTS = [
  */
 function assertOnlyOneTypeSet(snapshot, category) {
   let categoryIndex = CATEGORIES.indexOf(category);
-  Assert.equal(snapshot.counts[categoryIndex], 1,
+  Assert.equal(snapshot.values[categoryIndex], 1,
                `Should have seen the ${category} count increment.`);
   // Use Array.prototype.reduce to sum up all of the
   // snapshot.count entries
-  Assert.equal(snapshot.counts.reduce((a, b) => a + b), 1,
+  Assert.equal(Object.values(snapshot.values).reduce((a, b) => a + b, 0), 1,
                "Should only be 1 collected value.");
 }
 
@@ -246,7 +246,7 @@ function synthesizeHistoryNavigationToIndex(index) {
  * Goes through each of the categories for the BUSY_TAB_ABANDONED
  * probe, and tests that they're properly changed.
  */
-add_task(function* test_probes() {
+add_task(async function test_probes() {
   let oldCanRecord = Services.telemetry.canRecordExtended;
   Services.telemetry.canRecordExtended = true;
 
@@ -261,14 +261,14 @@ add_task(function* test_probes() {
   // the tab or window hosting the tab closing, see the documentation
   // above PROBE_TESTS for how to hook into this little framework.
   for (let probeTest of PROBE_TESTS) {
-    yield BrowserTestUtils.withNewTab({
+    await BrowserTestUtils.withNewTab({
       gBrowser,
       url: "http://example.com",
-    }, function*(browser) {
+    }, async function(browser) {
       let tab = gBrowser.getTabForBrowser(browser);
       info(`Test: "${probeTest.name}"`);
 
-      yield* probeTest.prepare(browser);
+      await probeTest.prepare(browser);
       // Instead of trying to fiddle with network state or
       // anything, we'll just set this attribute to fool our
       // telemetry probes into thinking the browser is in the
@@ -276,7 +276,7 @@ add_task(function* test_probes() {
       tab.setAttribute("busy", true);
 
       histogram.clear();
-      yield* probeTest.doAction(browser);
+      await probeTest.doAction(browser);
       let snapshot = histogram.snapshot();
       assertOnlyOneTypeSet(snapshot, probeTest.category);
     });
@@ -292,14 +292,14 @@ add_task(function* test_probes() {
   histogram.clear();
   // Now test that we can close a busy tab and get the tabClosed
   // measurement bumped.
-  let newTab = yield BrowserTestUtils.openNewForegroundTab(gBrowser);
+  let newTab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
   // As above, instead of trying to fiddle with network state
   // or anything, we'll just set this attribute to fool our
   // telemetry probes into thinking the browser is in the
   // middle of loading some resources.
   newTab.setAttribute("busy", true);
 
-  yield BrowserTestUtils.removeTab(newTab);
+  BrowserTestUtils.removeTab(newTab);
   let snapshot = histogram.snapshot();
   assertOnlyOneTypeSet(snapshot, "tabClosed");
 });

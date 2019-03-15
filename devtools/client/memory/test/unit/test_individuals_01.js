@@ -18,21 +18,17 @@ const {
   changeView,
 } = require("devtools/client/memory/actions/view");
 
-function run_test() {
-  run_next_test();
-}
-
 const EXPECTED_INDIVIDUAL_STATES = [
   individualsState.COMPUTING_DOMINATOR_TREE,
   individualsState.FETCHING,
   individualsState.FETCHED,
 ];
 
-add_task(function* () {
-  let front = new StubbedMemoryFront();
-  let heapWorker = new HeapAnalysesClient();
-  yield front.attach();
-  let store = Store();
+add_task(async function() {
+  const front = new StubbedMemoryFront();
+  const heapWorker = new HeapAnalysesClient();
+  await front.attach();
+  const store = Store();
   const { getState, dispatch } = store;
 
   equal(getState().individuals, null,
@@ -40,7 +36,7 @@ add_task(function* () {
 
   dispatch(changeView(viewState.CENSUS));
   dispatch(takeSnapshotAndCensus(front, heapWorker));
-  yield waitUntilCensusState(store, s => s.census, [censusState.SAVED]);
+  await waitUntilCensusState(store, s => s.census, [censusState.SAVED]);
 
   const root = getState().snapshots[0].census.report;
   ok(root, "Should have a census");
@@ -58,8 +54,8 @@ add_task(function* () {
                             reportLeafIndex));
 
   // Wait for each expected state.
-  for (let state of EXPECTED_INDIVIDUAL_STATES) {
-    yield waitUntilState(store, s => {
+  for (const state of EXPECTED_INDIVIDUAL_STATES) {
+    await waitUntilState(store, s => {
       return s.view.state === viewState.INDIVIDUALS &&
              s.individuals &&
              s.individuals.state === state;
@@ -73,5 +69,5 @@ add_task(function* () {
      "Should have a positive number of nodes");
 
   heapWorker.destroy();
-  yield front.detach();
+  await front.detach();
 });

@@ -2,7 +2,7 @@
 <title>Test for nsSelectionMoveCommands</title>
 <link rel=stylesheet href="/tests/SimpleTest/test.css">
 <script src="/tests/SimpleTest/SimpleTest.js"></script>
-<script src="/tests/SimpleTest/SpawnTask.js"></script>
+<script src="/tests/SimpleTest/AddTask.js"></script>
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=454004">Mozilla Bug 454004</a>
 
 <iframe id="edit" width="200" height="100" src="about:blank"></iframe>
@@ -13,8 +13,8 @@ SimpleTest.requestFlakyTimeout("Legacy test, possibly no good reason");
 
 var winUtils = SpecialPowers.getDOMWindowUtils(window);
 
-function* setup() {
-  yield SpecialPowers.pushPrefEnv({set: [["general.smoothScroll", false]]});
+async function setup() {
+  await SpecialPowers.pushPrefEnv({set: [["general.smoothScroll", false]]});
   winUtils.advanceTimeAndRefresh(100);
 }
 
@@ -25,15 +25,15 @@ function* runTests() {
   var root = doc.documentElement;
   var body = doc.body;
 
-  body.style.fontSize='16px';
-  body.style.lineHeight='16px';
-  body.style.height='400px';
-  body.style.padding='0px';
-  body.style.margin='0px';
-  body.style.borderWidth='0px';
+  body.style.fontSize = "16px";
+  body.style.lineHeight = "16px";
+  body.style.height = "400px";
+  body.style.padding = "0px";
+  body.style.margin = "0px";
+  body.style.borderWidth = "0px";
 
   var sel = win.getSelection();
-  doc.designMode='on';
+  doc.designMode = "on";
   body.innerHTML = "1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>11<br>12<br>";
   win.focus();
   // Flush out layout to make sure that the subdocument will be the size we
@@ -46,14 +46,7 @@ function* runTests() {
     // http://dev.w3.org/csswg/cssom-view/#dom-element-getboundingclientrect
     // doesn't explicitly rule out -0 here, but for now assume that only
     // positive zeroes are permitted.
-    if (navigator.appVersion.indexOf("Android") != -1 && expectTop != 0) {
-      // Android doesn't get the values exactly correct for some reason
-      todo_is(root.getBoundingClientRect().top, -expectTop + 0, cmd);
-      ok(Math.abs(root.getBoundingClientRect().top + expectTop) < 0.2,
-         cmd + " (approximately)");
-    } else {
-      is(root.getBoundingClientRect().top, -expectTop + 0, cmd);
-    }
+    is(root.getBoundingClientRect().top, -expectTop + 0, cmd);
   }
 
   function testMoveCommand(cmd, expectNode, expectOffset) {
@@ -63,9 +56,9 @@ function* runTests() {
     is(sel.anchorOffset, expectOffset, "offset after " + cmd);
   }
 
-  function findChildNum(e, child) {
+  function findChildNum(element, child) {
     var i = 0;
-    var n = e.firstChild;
+    var n = element.firstChild;
     while (n && n != child) {
       n = n.nextSibling;
       ++i;
@@ -187,7 +180,7 @@ function* runTests() {
     SpecialPowers.doCommand(window, "cmd_moveBottom");
     SpecialPowers.doCommand(window, "cmd_beginLine");
     is(testPageSelectCommand("cmd_selectPageUp", 0), 22 - lineNum, "cmd_selectPageUp");
-  }
+  };
 
   yield SpecialPowers.pushPrefEnv({set: [["layout.word_select.eat_space_to_next_word", false]]});
   runSelectionTests(body, 1);
@@ -200,7 +193,7 @@ function cleanup() {
   SimpleTest.finish();
 }
 
-function* testRunner() {
+async function testRunner() {
   let curTest = runTests();
   while (true) {
     winUtils.advanceTimeAndRefresh(100);
@@ -208,12 +201,12 @@ function* testRunner() {
       break;
     }
     winUtils.advanceTimeAndRefresh(100);
-    yield new Promise(resolve => setTimeout(resolve, 20));
+    await new Promise(resolve => setTimeout(resolve, 20));
   }
 }
 
-spawn_task(setup)
-  .then(() => spawn_task(testRunner))
-  .then(() => spawn_task(cleanup))
+setup()
+  .then(() => testRunner())
+  .then(() => cleanup())
   .catch(err => ok(false, err));
 </script>

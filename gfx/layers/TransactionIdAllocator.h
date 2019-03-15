@@ -1,5 +1,6 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -7,16 +8,18 @@
 #define GFX_TRANSACTION_ID_ALLOCATOR_H
 
 #include "nsISupportsImpl.h"
+#include "mozilla/layers/LayersTypes.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/VsyncDispatcher.h"
 
 namespace mozilla {
 namespace layers {
 
 class TransactionIdAllocator {
-protected:
+ protected:
   virtual ~TransactionIdAllocator() {}
 
-public:
+ public:
   NS_INLINE_DECL_REFCOUNTING(TransactionIdAllocator)
 
   /**
@@ -24,16 +27,18 @@ public:
    * only be called while IsInRefresh().
    *
    * If too many id's are allocated without being returned then
-   * the refresh driver will suspend until they catch up.
+   * the refresh driver will suspend until they catch up. This
+   * "throttling" behaviour can be skipped by passing aThrottle=false.
+   * Otherwise call sites should generally be passing aThrottle=true.
    */
-  virtual uint64_t GetTransactionId() = 0;
+  virtual TransactionId GetTransactionId(bool aThrottle) = 0;
 
   /**
    * Return the transaction id that for the last non-revoked transaction.
    * This allows the caller to tell whether a composite was triggered by
    * a paint that occurred after a call to TransactionId().
    */
-  virtual uint64_t LastTransactionId() const = 0;
+  virtual TransactionId LastTransactionId() const = 0;
 
   /**
    * Notify that all work (including asynchronous composites)
@@ -43,7 +48,7 @@ public:
    * of having too many outstanding id's, then this may
    * resume it.
    */
-  virtual void NotifyTransactionCompleted(uint64_t aTransactionId) = 0;
+  virtual void NotifyTransactionCompleted(TransactionId aTransactionId) = 0;
 
   /**
    * Revoke a transaction id that isn't needed to track
@@ -51,7 +56,7 @@ public:
    * to NotifyTransactionCompleted except avoids
    * return ordering issues.
    */
-  virtual void RevokeTransactionId(uint64_t aTransactionId) = 0;
+  virtual void RevokeTransactionId(TransactionId aTransactionId) = 0;
 
   /**
    * Stop waiting for pending transactions, if any.
@@ -70,16 +75,19 @@ public:
    * id to the last transaction id from previous refresh driver, so that all
    * completed transactions of previous refresh driver will be ignored.
    */
-  virtual void ResetInitialTransactionId(uint64_t aTransactionId) = 0;
+  virtual void ResetInitialTransactionId(TransactionId aTransactionId) = 0;
 
   /**
    * Get the start time of the current refresh tick.
    */
   virtual mozilla::TimeStamp GetTransactionStart() = 0;
+
+  virtual VsyncId GetVsyncId() = 0;
+
+  virtual mozilla::TimeStamp GetVsyncStart() = 0;
 };
 
-} // namespace layers
-} // namespace mozilla
-
+}  // namespace layers
+}  // namespace mozilla
 
 #endif /* GFX_TRANSACTION_ID_ALLOCATOR_H */

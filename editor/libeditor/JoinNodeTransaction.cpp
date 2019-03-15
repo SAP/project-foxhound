@@ -5,51 +5,60 @@
 
 #include "JoinNodeTransaction.h"
 
-#include "mozilla/EditorBase.h"         // for EditorBase
+#include "mozilla/EditorBase.h"  // for EditorBase
+#include "mozilla/dom/Text.h"
 #include "nsAString.h"
-#include "nsDebug.h"                    // for NS_ASSERTION, etc.
-#include "nsError.h"                    // for NS_ERROR_NULL_POINTER, etc.
-#include "nsIContent.h"                 // for nsIContent
-#include "nsIDOMCharacterData.h"        // for nsIDOMCharacterData
-#include "nsIEditor.h"                  // for EditorBase::IsModifiableNode
-#include "nsISupportsImpl.h"            // for QueryInterface, etc.
+#include "nsDebug.h"          // for NS_ASSERTION, etc.
+#include "nsError.h"          // for NS_ERROR_NULL_POINTER, etc.
+#include "nsIContent.h"       // for nsIContent
+#include "nsISupportsImpl.h"  // for QueryInterface, etc.
 
 namespace mozilla {
 
 using namespace dom;
 
+// static
+already_AddRefed<JoinNodeTransaction> JoinNodeTransaction::MaybeCreate(
+    EditorBase& aEditorBase, nsINode& aLeftNode, nsINode& aRightNode) {
+  RefPtr<JoinNodeTransaction> transaction =
+      new JoinNodeTransaction(aEditorBase, aLeftNode, aRightNode);
+  if (NS_WARN_IF(!transaction->CanDoIt())) {
+    return nullptr;
+  }
+  return transaction.forget();
+}
+
 JoinNodeTransaction::JoinNodeTransaction(EditorBase& aEditorBase,
                                          nsINode& aLeftNode,
                                          nsINode& aRightNode)
-  : mEditorBase(aEditorBase)
-  , mLeftNode(&aLeftNode)
-  , mRightNode(&aRightNode)
-  , mOffset(0)
-{
-}
+    : mEditorBase(&aEditorBase),
+      mLeftNode(&aLeftNode),
+      mRightNode(&aRightNode),
+      mOffset(0) {}
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(JoinNodeTransaction, EditTransactionBase,
-                                   mLeftNode,
-                                   mRightNode,
-                                   mParent)
+                                   mEditorBase, mLeftNode, mRightNode, mParent)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(JoinNodeTransaction)
 NS_INTERFACE_MAP_END_INHERITING(EditTransactionBase)
 
-nsresult
-JoinNodeTransaction::CheckValidity()
-{
-  if (!mEditorBase.IsModifiableNode(mLeftNode->GetParentNode())) {
-    return NS_ERROR_FAILURE;
+bool JoinNodeTransaction::CanDoIt() const {
+  if (NS_WARN_IF(!mLeftNode) || NS_WARN_IF(!mRightNode) ||
+      NS_WARN_IF(!mEditorBase) || !mLeftNode->GetParentNode()) {
+    return false;
   }
-  return NS_OK;
+  return mEditorBase->IsModifiableNode(*mLeftNode->GetParentNode());
 }
 
 // After DoTransaction() and RedoTransaction(), the left node is removed from
 // the content tree and right node remains.
 NS_IMETHODIMP
-JoinNodeTransaction::DoTransaction()
-{
+JoinNodeTransaction::DoTransaction() {
+  if (NS_WARN_IF(!mEditorBase) || NS_WARN_IF(!mLeftNode) ||
+      NS_WARN_IF(!mRightNode)) {
+    return NS_ERROR_NOT_INITIALIZED;
+  }
+
   // Get the parent node
   nsCOMPtr<nsINode> leftParent = mLeftNode->GetParentNode();
   NS_ENSURE_TRUE(leftParent, NS_ERROR_NULL_POINTER);
@@ -65,20 +74,25 @@ JoinNodeTransaction::DoTransaction()
   mParent = leftParent;
   mOffset = mLeftNode->Length();
 
-  return mEditorBase.JoinNodesImpl(mRightNode, mLeftNode, mParent);
+  return mEditorBase->DoJoinNodes(mRightNode, mLeftNode, mParent);
 }
 
-//XXX: What if instead of split, we just deleted the unneeded children of
+// XXX: What if instead of split, we just deleted the unneeded children of
 //     mRight and re-inserted mLeft?
 NS_IMETHODIMP
-JoinNodeTransaction::UndoTransaction()
-{
-  MOZ_ASSERT(mParent);
+JoinNodeTransaction::UndoTransaction() {
+  if (NS_WARN_IF(!mParent) || NS_WARN_IF(!mLeftNode) ||
+      NS_WARN_IF(!mRightNode)) {
+    return NS_ERROR_NOT_INITIALIZED;
+  }
 
   // First, massage the existing node so it is in its post-split state
   ErrorResult rv;
   if (mRightNode->GetAsText()) {
-    rv = mRightNode->GetAsText()->DeleteData(0, mOffset);
+    mRightNode->GetAsText()->DeleteData(0, mOffset, rv);
+    if (rv.Failed()) {
+      return rv.StealNSResult();
+    }
   } else {
     nsCOMPtr<nsIContent> child = mRightNode->GetFirstChild();
     for (uint32_t i = 0; i < mOffset; i++) {
@@ -99,11 +113,4 @@ JoinNodeTransaction::UndoTransaction()
   return rv.StealNSResult();
 }
 
-NS_IMETHODIMP
-JoinNodeTransaction::GetTxnDescription(nsAString& aString)
-{
-  aString.AssignLiteral("JoinNodeTransaction");
-  return NS_OK;
-}
-
-} // namespace mozilla
+}  // namespace mozilla

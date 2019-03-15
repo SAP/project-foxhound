@@ -5,10 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SVGLengthListSMILType.h"
-#include "nsSMILValue.h"
-#include "SVGLengthList.h"
-#include "nsMathUtils.h"
+
 #include "mozilla/FloatingPoint.h"
+#include "mozilla/SMILValue.h"
+#include "nsMathUtils.h"
+#include "SVGLengthList.h"
 #include <math.h>
 #include <algorithm>
 
@@ -19,9 +20,7 @@ namespace mozilla {
 //----------------------------------------------------------------------
 // nsISMILType implementation
 
-void
-SVGLengthListSMILType::Init(nsSMILValue &aValue) const
-{
+void SVGLengthListSMILType::Init(SMILValue& aValue) const {
   MOZ_ASSERT(aValue.IsNull(), "Unexpected value type");
 
   SVGLengthListAndInfo* lengthList = new SVGLengthListAndInfo();
@@ -33,53 +32,45 @@ SVGLengthListSMILType::Init(nsSMILValue &aValue) const
   aValue.mType = this;
 }
 
-void
-SVGLengthListSMILType::Destroy(nsSMILValue& aValue) const
-{
-  NS_PRECONDITION(aValue.mType == this, "Unexpected SMIL value type");
+void SVGLengthListSMILType::Destroy(SMILValue& aValue) const {
+  MOZ_ASSERT(aValue.mType == this, "Unexpected SMIL value type");
   delete static_cast<SVGLengthListAndInfo*>(aValue.mU.mPtr);
   aValue.mU.mPtr = nullptr;
-  aValue.mType = nsSMILNullType::Singleton();
+  aValue.mType = SMILNullType::Singleton();
 }
 
-nsresult
-SVGLengthListSMILType::Assign(nsSMILValue& aDest,
-                              const nsSMILValue& aSrc) const
-{
-  NS_PRECONDITION(aDest.mType == aSrc.mType, "Incompatible SMIL types");
-  NS_PRECONDITION(aDest.mType == this, "Unexpected SMIL value");
+nsresult SVGLengthListSMILType::Assign(SMILValue& aDest,
+                                       const SMILValue& aSrc) const {
+  MOZ_ASSERT(aDest.mType == aSrc.mType, "Incompatible SMIL types");
+  MOZ_ASSERT(aDest.mType == this, "Unexpected SMIL value");
 
   const SVGLengthListAndInfo* src =
-    static_cast<const SVGLengthListAndInfo*>(aSrc.mU.mPtr);
+      static_cast<const SVGLengthListAndInfo*>(aSrc.mU.mPtr);
   SVGLengthListAndInfo* dest =
-    static_cast<SVGLengthListAndInfo*>(aDest.mU.mPtr);
+      static_cast<SVGLengthListAndInfo*>(aDest.mU.mPtr);
 
   return dest->CopyFrom(*src);
 }
 
-bool
-SVGLengthListSMILType::IsEqual(const nsSMILValue& aLeft,
-                               const nsSMILValue& aRight) const
-{
-  NS_PRECONDITION(aLeft.mType == aRight.mType, "Incompatible SMIL types");
-  NS_PRECONDITION(aLeft.mType == this, "Unexpected type for SMIL value");
+bool SVGLengthListSMILType::IsEqual(const SMILValue& aLeft,
+                                    const SMILValue& aRight) const {
+  MOZ_ASSERT(aLeft.mType == aRight.mType, "Incompatible SMIL types");
+  MOZ_ASSERT(aLeft.mType == this, "Unexpected type for SMIL value");
 
   return *static_cast<const SVGLengthListAndInfo*>(aLeft.mU.mPtr) ==
          *static_cast<const SVGLengthListAndInfo*>(aRight.mU.mPtr);
 }
 
-nsresult
-SVGLengthListSMILType::Add(nsSMILValue& aDest,
-                           const nsSMILValue& aValueToAdd,
-                           uint32_t aCount) const
-{
-  NS_PRECONDITION(aDest.mType == this, "Unexpected SMIL type");
-  NS_PRECONDITION(aValueToAdd.mType == this, "Incompatible SMIL type");
+nsresult SVGLengthListSMILType::Add(SMILValue& aDest,
+                                    const SMILValue& aValueToAdd,
+                                    uint32_t aCount) const {
+  MOZ_ASSERT(aDest.mType == this, "Unexpected SMIL type");
+  MOZ_ASSERT(aValueToAdd.mType == this, "Incompatible SMIL type");
 
   SVGLengthListAndInfo& dest =
-    *static_cast<SVGLengthListAndInfo*>(aDest.mU.mPtr);
+      *static_cast<SVGLengthListAndInfo*>(aDest.mU.mPtr);
   const SVGLengthListAndInfo& valueToAdd =
-    *static_cast<const SVGLengthListAndInfo*>(aValueToAdd.mU.mPtr);
+      *static_cast<const SVGLengthListAndInfo*>(aValueToAdd.mU.mPtr);
 
   // To understand this code, see the comments documenting our Init() method,
   // and documenting SVGLengthListAndInfo::CanZeroPadList().
@@ -95,11 +86,11 @@ SVGLengthListSMILType::Add(nsSMILValue& aDest,
   // should be, not zeros, and those values are not explicit or otherwise
   // available.
 
-  if (valueToAdd.IsIdentity()) { // Adding identity value - no-op
+  if (valueToAdd.IsIdentity()) {  // Adding identity value - no-op
     return NS_OK;
   }
 
-  if (dest.IsIdentity()) { // Adding *to* an identity value
+  if (dest.IsIdentity()) {  // Adding *to* an identity value
     if (!dest.SetLength(valueToAdd.Length())) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
@@ -107,8 +98,9 @@ SVGLengthListSMILType::Add(nsSMILValue& aDest,
       dest[i].SetValueAndUnit(valueToAdd[i].GetValueInCurrentUnits() * aCount,
                               valueToAdd[i].GetUnit());
     }
-    dest.SetInfo(valueToAdd.Element(), valueToAdd.Axis(),
-                 valueToAdd.CanZeroPadList()); // propagate target element info!
+    dest.SetInfo(
+        valueToAdd.Element(), valueToAdd.Axis(),
+        valueToAdd.CanZeroPadList());  // propagate target element info!
     return NS_OK;
   }
   MOZ_ASSERT(dest.Element() == valueToAdd.Element(),
@@ -140,13 +132,12 @@ SVGLengthListSMILType::Add(nsSMILValue& aDest,
     } else {
       // If units differ, we use the unit of the item in 'dest'.
       // We leave it to the frame code to check that values are finite.
-      valToAdd = valueToAdd[i].GetValueInSpecifiedUnit(dest[i].GetUnit(),
-                                                       dest.Element(),
-                                                       dest.Axis());
+      valToAdd = valueToAdd[i].GetValueInSpecifiedUnit(
+          dest[i].GetUnit(), dest.Element(), dest.Axis());
     }
     dest[i].SetValueAndUnit(
-      dest[i].GetValueInCurrentUnits() + valToAdd * aCount,
-      dest[i].GetUnit());
+        dest[i].GetValueInCurrentUnits() + valToAdd * aCount,
+        dest[i].GetUnit());
   }
 
   // propagate target element info!
@@ -156,26 +147,24 @@ SVGLengthListSMILType::Add(nsSMILValue& aDest,
   return NS_OK;
 }
 
-nsresult
-SVGLengthListSMILType::ComputeDistance(const nsSMILValue& aFrom,
-                                       const nsSMILValue& aTo,
-                                       double& aDistance) const
-{
-  NS_PRECONDITION(aFrom.mType == this, "Unexpected SMIL type");
-  NS_PRECONDITION(aTo.mType == this, "Incompatible SMIL type");
+nsresult SVGLengthListSMILType::ComputeDistance(const SMILValue& aFrom,
+                                                const SMILValue& aTo,
+                                                double& aDistance) const {
+  MOZ_ASSERT(aFrom.mType == this, "Unexpected SMIL type");
+  MOZ_ASSERT(aTo.mType == this, "Incompatible SMIL type");
 
   const SVGLengthListAndInfo& from =
-    *static_cast<const SVGLengthListAndInfo*>(aFrom.mU.mPtr);
+      *static_cast<const SVGLengthListAndInfo*>(aFrom.mU.mPtr);
   const SVGLengthListAndInfo& to =
-    *static_cast<const SVGLengthListAndInfo*>(aTo.mU.mPtr);
+      *static_cast<const SVGLengthListAndInfo*>(aTo.mU.mPtr);
 
   // To understand this code, see the comments documenting our Init() method,
   // and documenting SVGLengthListAndInfo::CanZeroPadList().
 
   NS_ASSERTION((from.CanZeroPadList() == to.CanZeroPadList()) ||
-               (from.CanZeroPadList() && from.IsEmpty()) ||
-               (to.CanZeroPadList() && to.IsEmpty()),
-               "Only \"zero\" nsSMILValues from the SMIL engine should "
+                   (from.CanZeroPadList() && from.IsEmpty()) ||
+                   (to.CanZeroPadList() && to.IsEmpty()),
+               "Only \"zero\" SMILValues from the SMIL engine should "
                "return true for CanZeroPadList() when the attribute "
                "being animated can't be zero padded");
 
@@ -225,32 +214,29 @@ SVGLengthListSMILType::ComputeDistance(const nsSMILValue& aFrom,
   return NS_OK;
 }
 
-nsresult
-SVGLengthListSMILType::Interpolate(const nsSMILValue& aStartVal,
-                                   const nsSMILValue& aEndVal,
-                                   double aUnitDistance,
-                                   nsSMILValue& aResult) const
-{
-  NS_PRECONDITION(aStartVal.mType == aEndVal.mType,
-                  "Trying to interpolate different types");
-  NS_PRECONDITION(aStartVal.mType == this,
-                  "Unexpected types for interpolation");
-  NS_PRECONDITION(aResult.mType == this, "Unexpected result type");
+nsresult SVGLengthListSMILType::Interpolate(const SMILValue& aStartVal,
+                                            const SMILValue& aEndVal,
+                                            double aUnitDistance,
+                                            SMILValue& aResult) const {
+  MOZ_ASSERT(aStartVal.mType == aEndVal.mType,
+             "Trying to interpolate different types");
+  MOZ_ASSERT(aStartVal.mType == this, "Unexpected types for interpolation");
+  MOZ_ASSERT(aResult.mType == this, "Unexpected result type");
 
   const SVGLengthListAndInfo& start =
-    *static_cast<const SVGLengthListAndInfo*>(aStartVal.mU.mPtr);
+      *static_cast<const SVGLengthListAndInfo*>(aStartVal.mU.mPtr);
   const SVGLengthListAndInfo& end =
-    *static_cast<const SVGLengthListAndInfo*>(aEndVal.mU.mPtr);
+      *static_cast<const SVGLengthListAndInfo*>(aEndVal.mU.mPtr);
   SVGLengthListAndInfo& result =
-    *static_cast<SVGLengthListAndInfo*>(aResult.mU.mPtr);
+      *static_cast<SVGLengthListAndInfo*>(aResult.mU.mPtr);
 
   // To understand this code, see the comments documenting our Init() method,
   // and documenting SVGLengthListAndInfo::CanZeroPadList().
 
   NS_ASSERTION((start.CanZeroPadList() == end.CanZeroPadList()) ||
-               (start.CanZeroPadList() && start.IsEmpty()) ||
-               (end.CanZeroPadList() && end.IsEmpty()),
-               "Only \"zero\" nsSMILValues from the SMIL engine should "
+                   (start.CanZeroPadList() && start.IsEmpty()) ||
+                   (end.CanZeroPadList() && end.IsEmpty()),
+               "Only \"zero\" SMILValues from the SMIL engine should "
                "return true for CanZeroPadList() when the attribute "
                "being animated can't be zero padded");
 
@@ -272,7 +258,8 @@ SVGLengthListSMILType::Interpolate(const nsSMILValue& aStartVal,
     } else {
       // If units differ, we use the unit of the item in 'end'.
       // We leave it to the frame code to check that values are finite.
-      s = start[i].GetValueInSpecifiedUnit(end[i].GetUnit(), end.Element(), end.Axis());
+      s = start[i].GetValueInSpecifiedUnit(end[i].GetUnit(), end.Element(),
+                                           end.Axis());
     }
     float e = end[i].GetValueInCurrentUnits();
     result[i].SetValueAndUnit(s + (e - s) * aUnitDistance, end[i].GetUnit());
@@ -282,9 +269,10 @@ SVGLengthListSMILType::Interpolate(const nsSMILValue& aStartVal,
   // loops will run. (Okay, since CanZeroPadList()==true for the other list.)
 
   for (; i < start.Length(); ++i) {
-    result[i].SetValueAndUnit(start[i].GetValueInCurrentUnits() -
-                              start[i].GetValueInCurrentUnits() * aUnitDistance,
-                              start[i].GetUnit());
+    result[i].SetValueAndUnit(
+        start[i].GetValueInCurrentUnits() -
+            start[i].GetValueInCurrentUnits() * aUnitDistance,
+        start[i].GetUnit());
   }
   for (; i < end.Length(); ++i) {
     result[i].SetValueAndUnit(end[i].GetValueInCurrentUnits() * aUnitDistance,
@@ -298,4 +286,4 @@ SVGLengthListSMILType::Interpolate(const nsSMILValue& aStartVal,
   return NS_OK;
 }
 
-} // namespace mozilla
+}  // namespace mozilla

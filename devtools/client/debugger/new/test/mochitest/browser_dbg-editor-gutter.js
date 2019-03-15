@@ -16,49 +16,42 @@ function getLineEl(dbg, line) {
 
 function assertEditorBreakpoint(dbg, line, shouldExist) {
   const exists = !!getLineEl(dbg, line).querySelector(".new-breakpoint");
-  ok(exists === shouldExist,
-     "Breakpoint " + (shouldExist ? "exists" : "does not exist") +
-     " on line " + line);
+  ok(
+    exists === shouldExist,
+    "Breakpoint " +
+      (shouldExist ? "exists" : "does not exist") +
+      " on line " +
+      line
+  );
 }
 
-add_task(function* () {
-  const dbg = yield initDebugger("doc-scripts.html");
-  const { selectors: { getBreakpoints, getBreakpoint }, getState } = dbg;
+add_task(async function() {
+  const dbg = await initDebugger("doc-scripts.html", "simple1.js");
+  const {
+    selectors: { getBreakpoint, getBreakpointCount },
+    getState
+  } = dbg;
   const source = findSource(dbg, "simple1.js");
 
-  yield selectSource(dbg, source.url);
+  await selectSource(dbg, source.url);
 
   // Make sure that clicking the gutter creates a breakpoint icon.
   clickGutter(dbg, 4);
-  yield waitForDispatch(dbg, "ADD_BREAKPOINT");
-  is(getBreakpoints(getState()).size, 1, "One breakpoint exists");
+  await waitForDispatch(dbg, "ADD_BREAKPOINT");
+  is(getBreakpointCount(getState()), 1, "One breakpoint exists");
   assertEditorBreakpoint(dbg, 4, true);
 
   // Make sure clicking at the same place removes the icon.
   clickGutter(dbg, 4);
-  yield waitForDispatch(dbg, "REMOVE_BREAKPOINT");
-  is(getBreakpoints(getState()).size, 0, "No breakpoints exist");
+  await waitForDispatch(dbg, "REMOVE_BREAKPOINT");
+  is(getBreakpointCount(getState()), 0, "No breakpoints exist");
   assertEditorBreakpoint(dbg, 4, false);
 
-  // Test that a breakpoint icon slides down to the correct line.
-  clickGutter(dbg, 2);
-  yield waitForDispatch(dbg, "ADD_BREAKPOINT");
-  is(getBreakpoints(getState()).size, 1, "One breakpoint exists");
-  ok(getBreakpoint(getState(), { sourceId: source.id, line: 4 }),
-     "Breakpoint has correct line");
-  assertEditorBreakpoint(dbg, 2, false);
-  assertEditorBreakpoint(dbg, 4, true);
-
-  // Do the same sliding and make sure it works if there's already a
-  // breakpoint.
-  clickGutter(dbg, 2);
-  yield waitForDispatch(dbg, "ADD_BREAKPOINT");
-  is(getBreakpoints(getState()).size, 1, "One breakpoint exists");
-  assertEditorBreakpoint(dbg, 2, false);
-  assertEditorBreakpoint(dbg, 4, true);
-
+  // Ensure that clicking the gutter removes all breakpoints on a given line
+  await addBreakpoint(dbg, source, 4, 0);
+  await addBreakpoint(dbg, source, 4, 1);
+  await addBreakpoint(dbg, source, 4, 2);
   clickGutter(dbg, 4);
-  yield waitForDispatch(dbg, "REMOVE_BREAKPOINT");
-  is(getBreakpoints(getState()).size, 0, "No breakpoints exist");
+  await waitForState(dbg, state => dbg.selectors.getBreakpointCount(state) === 0);
   assertEditorBreakpoint(dbg, 4, false);
 });

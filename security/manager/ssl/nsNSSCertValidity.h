@@ -8,27 +8,20 @@
 #include "DateTimeFormat.h"
 #include "ScopedNSSTypes.h"
 #include "nsIX509CertValidity.h"
-#include "nsNSSShutDown.h"
 
-class nsX509CertValidity : public nsIX509CertValidity
-                         , public nsNSSShutDownObject
-{
-public:
+class nsX509CertValidity : public nsIX509CertValidity {
+ public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIX509CERTVALIDITY
 
   explicit nsX509CertValidity(const mozilla::UniqueCERTCertificate& cert);
 
-protected:
-  virtual ~nsX509CertValidity();
+ protected:
+  virtual ~nsX509CertValidity() {}
 
-  // Nothing to release.
-  virtual void virtualDestroyNSSReference() override {}
-
-private:
-  nsresult FormatTime(const PRTime& aTime,
-                      PRTimeParamFn aParamFn,
-                      const nsTimeFormatSelector aTimeFormatSelector,
+ private:
+  nsresult FormatTime(const PRTime& aTime, PRTimeParamFn aParamFn,
+                      const mozilla::nsTimeFormatSelector aTimeFormatSelector,
                       nsAString& aFormattedTimeDate);
 
   PRTime mNotBefore;
@@ -39,4 +32,4 @@ private:
   nsX509CertValidity& operator=(const nsX509CertValidity& x) = delete;
 };
 
-#endif // nsNSSCertValidity_h
+#endif  // nsNSSCertValidity_h

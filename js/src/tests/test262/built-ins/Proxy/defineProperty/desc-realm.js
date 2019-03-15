@@ -21,9 +21,10 @@ info: |
   2. Let obj be ObjectCreate(%ObjectPrototype%).
   ...
   11. Return obj.
+features: [cross-realm, Proxy]
 ---*/
 
-var OProxy = $.createRealm().global.Proxy;
+var OProxy = $262.createRealm().global.Proxy;
 var desc;
 var p = new OProxy({}, {
   defineProperty: function(_, __, _desc) {

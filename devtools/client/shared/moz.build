@@ -6,57 +6,61 @@
 
 BROWSER_CHROME_MANIFESTS += ['test/browser.ini']
 XPCSHELL_TESTS_MANIFESTS += ['test/unit/xpcshell.ini']
+TEST_HARNESS_FILES.xpcshell.devtools.client.shared.test += [
+    'test/shared-redux-head.js',
+]
 
 DIRS += [
     'components',
     'redux',
-    'shim',
+    'remote-debugging',
+    'source-map',
     'vendor',
+    'webpack',
     'widgets',
 ]
 
 DevToolsModules(
-    'AppCacheUtils.jsm',
     'autocomplete-popup.js',
+    'browser-loader-mocks.js',
     'browser-loader.js',
     'css-angle.js',
-    'css-reload.js',
     'curl.js',
     'demangle.js',
-    'developer-toolbar.js',
     'devices.js',
-    'devtools-file-watcher.js',
     'DOMHelpers.jsm',
-    'doorhanger.js',
     'enum.js',
     'file-saver.js',
-    'file-watcher-worker.js',
-    'file-watcher.js',
+    'focus.js',
     'getjson.js',
     'inplace-editor.js',
-    'Jsbeautify.jsm',
     'key-shortcuts.js',
     'keycodes.js',
-    'network-throttling-profiles.js',
+    'link.js',
+    'natural-sort.js',
     'node-attribute-parser.js',
     'options-view.js',
     'output-parser.js',
     'poller.js',
     'prefs.js',
+    'react-utils.js',
     'scroll.js',
     'source-utils.js',
     'SplitView.jsm',
+    'stylesheet-utils.js',
     'suggestion-picker.js',
     'telemetry.js',
     'theme.js',
     'undo.js',
+    'unicode-url.js',
     'view-source.js',
+    'WeakMapMap.js',
     'webgl-utils.js',
     'zoom-keys.js',
 )
 
 with Files('**'):
-    BUG_COMPONENT = ('Firefox', 'Developer Tools')
+    BUG_COMPONENT = ('DevTools', 'General')
 
 with Files('components/**'):
-    BUG_COMPONENT = ('Firefox', 'Developer Tools: Shared Components')
+    BUG_COMPONENT = ('DevTools', 'Shared Components')

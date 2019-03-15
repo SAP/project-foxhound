@@ -1,27 +1,26 @@
-/* vim: set shiftwidth=2 tabstop=8 autoindent cindent expandtab: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* Per-block-formatting-context manager of font size inflation for pan and zoom UI. */
+/* Per-block-formatting-context manager of font size inflation for pan and zoom
+ * UI. */
 
 #ifndef nsFontInflationData_h_
 #define nsFontInflationData_h_
 
 #include "nsContainerFrame.h"
 
-class nsFontInflationData
-{
+class nsFontInflationData {
   using ReflowInput = mozilla::ReflowInput;
 
-public:
+ public:
+  static nsFontInflationData *FindFontInflationDataFor(const nsIFrame *aFrame);
 
-  static nsFontInflationData* FindFontInflationDataFor(const nsIFrame *aFrame);
-
-  // Returns whether the effective width changed (which requires the
-  // caller to mark its descendants dirty
-  static bool
-    UpdateFontInflationDataISizeFor(const ReflowInput& aReflowInput);
+  // Returns whether the usable width changed (which requires the
+  // caller to mark its descendants dirty)
+  static bool UpdateFontInflationDataISizeFor(const ReflowInput &aReflowInput);
 
   static void MarkFontInflationDataTextDirty(nsIFrame *aFrame);
 
@@ -32,20 +31,17 @@ public:
     return mInflationEnabled;
   }
 
-  nscoord EffectiveISize() const {
-    return mNCAISize;
-  }
+  nscoord UsableISize() const { return mUsableISize; }
 
-private:
+ private:
+  explicit nsFontInflationData(nsIFrame *aBFCFrame);
 
-  explicit nsFontInflationData(nsIFrame* aBFCFrame);
-
-  nsFontInflationData(const nsFontInflationData&) = delete;
-  void operator=(const nsFontInflationData&) = delete;
+  nsFontInflationData(const nsFontInflationData &) = delete;
+  void operator=(const nsFontInflationData &) = delete;
 
   void UpdateISize(const ReflowInput &aReflowInput);
   enum SearchDirection { eFromStart, eFromEnd };
-  static nsIFrame* FindEdgeInflatableFrameIn(nsIFrame *aFrame,
+  static nsIFrame *FindEdgeInflatableFrameIn(nsIFrame *aFrame,
                                              SearchDirection aDirection);
 
   void MarkTextDirty() { mTextDirty = true; }
@@ -57,8 +53,7 @@ private:
   // crosses mTextThreshold.
   void ScanTextIn(nsIFrame *aFrame);
 
-  static const nsIFrame* FlowRootFor(const nsIFrame *aFrame)
-  {
+  static const nsIFrame *FlowRootFor(const nsIFrame *aFrame) {
     while (!(aFrame->GetStateBits() & NS_FRAME_FONT_INFLATION_FLOW_ROOT)) {
       aFrame = aFrame->GetParent();
     }
@@ -66,9 +61,9 @@ private:
   }
 
   nsIFrame *mBFCFrame;
-  nscoord mNCAISize;
+  nscoord mUsableISize;
   nscoord mTextAmount, mTextThreshold;
-  bool mInflationEnabled; // for this BFC
+  bool mInflationEnabled;  // for this BFC
   bool mTextDirty;
 };
 

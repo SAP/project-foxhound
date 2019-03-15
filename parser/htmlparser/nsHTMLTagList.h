@@ -12,6 +12,12 @@
 
   It is designed to be used as input to various places that will define the
   HTML_TAG macro in useful ways through the magic of C preprocessing.
+  Additionally, it is consumed by the self-regeneration code in
+  ElementName.java from which nsHtml5ElementName.cpp/h is translated.
+  See parser/html/java/README.txt.
+
+  If you edit this list, you need to re-run ElementName.java
+  self-regeneration and the HTML parser Java to C++ translation.
 
   All entries must be enclosed in the macro HTML_TAG which will have cruel
   and unusual things done to it.
@@ -44,7 +50,7 @@ HTML_TAG(a, Anchor, Anchor)
 HTML_HTMLELEMENT_TAG(abbr)
 HTML_HTMLELEMENT_TAG(acronym)
 HTML_HTMLELEMENT_TAG(address)
-HTML_TAG(applet, SharedObject, Applet)
+HTML_TAG(applet, Unknown, Unknown)
 HTML_TAG(area, Area, Area)
 HTML_HTMLELEMENT_TAG(article)
 HTML_HTMLELEMENT_TAG(aside)
@@ -52,6 +58,7 @@ HTML_TAG(audio, Audio, Audio)
 HTML_HTMLELEMENT_TAG(b)
 HTML_TAG(base, Shared, Base)
 HTML_HTMLELEMENT_TAG(basefont)
+HTML_HTMLELEMENT_TAG(bdi)
 HTML_HTMLELEMENT_TAG(bdo)
 HTML_TAG(bgsound, Unknown, Unknown)
 HTML_HTMLELEMENT_TAG(big)
@@ -66,7 +73,6 @@ HTML_HTMLELEMENT_TAG(cite)
 HTML_HTMLELEMENT_TAG(code)
 HTML_TAG(col, TableCol, TableCol)
 HTML_TAG(colgroup, TableCol, TableCol)
-HTML_TAG(content, Content, Content)
 HTML_TAG(data, Data, Data)
 HTML_TAG(datalist, DataList, DataList)
 HTML_HTMLELEMENT_TAG(dd)
@@ -79,7 +85,7 @@ HTML_TAG(div, Div, Div)
 HTML_TAG(dl, SharedList, DList)
 HTML_HTMLELEMENT_TAG(dt)
 HTML_HTMLELEMENT_TAG(em)
-HTML_TAG(embed, SharedObject, Embed)
+HTML_TAG(embed, Embed, Embed)
 HTML_TAG(fieldset, FieldSet, FieldSet)
 HTML_HTMLELEMENT_TAG(figcaption)
 HTML_HTMLELEMENT_TAG(figure)
@@ -115,7 +121,7 @@ HTML_TAG(listing, Pre, Pre)
 HTML_HTMLELEMENT_TAG(main)
 HTML_TAG(map, Map, Map)
 HTML_HTMLELEMENT_TAG(mark)
-HTML_TAG(marquee, Div, Div)
+HTML_TAG(marquee, Marquee, Marquee)
 HTML_TAG(menu, Menu, Menu)
 HTML_TAG(menuitem, MenuItem, MenuItem)
 HTML_TAG(meta, Meta, Meta)
@@ -148,8 +154,8 @@ HTML_HTMLELEMENT_TAG(samp)
 HTML_TAG(script, Script, Script)
 HTML_HTMLELEMENT_TAG(section)
 HTML_TAG(select, Select, Select)
-HTML_TAG(shadow, Shadow, Shadow)
 HTML_HTMLELEMENT_TAG(small)
+HTML_TAG(slot, Slot, Slot)
 HTML_TAG(source, Source, Source)
 HTML_TAG(span, Span, Span)
 HTML_HTMLELEMENT_TAG(strike)
@@ -177,7 +183,6 @@ HTML_HTMLELEMENT_TAG(var)
 HTML_TAG(video, Video, Video)
 HTML_HTMLELEMENT_TAG(wbr)
 HTML_TAG(xmp, Pre, Pre)
-
 
 /* These are not for tags. But they will be included in the nsHTMLTag
    enum anyway */

@@ -2,8 +2,8 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-add_task(function* testExecuteScript() {
-  let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, "http://mochi.test:8888/", true);
+add_task(async function testExecuteScript() {
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, "http://mochi.test:8888/", true);
 
   async function background() {
     let tasks = [
@@ -91,7 +91,7 @@ add_task(function* testExecuteScript() {
       browser.test.notifyPass("removeCSS");
     } catch (e) {
       browser.test.fail(`Error: ${e} :: ${e.stack}`);
-      browser.test.notifyFailure("removeCSS");
+      browser.test.notifyFail("removeCSS");
     }
   }
 
@@ -107,11 +107,32 @@ add_task(function* testExecuteScript() {
     },
   });
 
-  yield extension.startup();
+  await extension.startup();
 
-  yield extension.awaitFinish("removeCSS");
+  await extension.awaitFinish("removeCSS");
 
-  yield extension.unload();
+  // Verify that scripts created by tabs.removeCSS are not added to the content scripts
+  // that requires cleanup (Bug 1464711).
+  await ContentTask.spawn(tab.linkedBrowser, extension.id, async (extId) => {
+    const {
+      DocumentManager,
+    } = ChromeUtils.import("resource://gre/modules/ExtensionContent.jsm", {});
 
-  yield BrowserTestUtils.removeTab(tab);
+    let contentScriptContext = Array.from(
+      DocumentManager.getContexts(content.window).values()
+    ).find(context => context.extension.id === extId);
+
+    for (let script of contentScriptContext.scripts) {
+      if (script.matcher.removeCSS && script.requiresCleanup) {
+        throw new Error("tabs.removeCSS scripts should not require cleanup");
+      }
+    }
+  }).catch(err => {
+    // Log the error so that it is easy to see where the failure is coming from.
+    ok(false, err);
+  });
+
+  await extension.unload();
+
+  BrowserTestUtils.removeTab(tab);
 });

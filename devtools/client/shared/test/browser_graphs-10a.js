@@ -25,42 +25,42 @@ const TEST_DATA = [
   { delta: 3580, value: 39 }, { delta: 3680, value: 42 },
   { delta: 3780, value: 49 }, { delta: 3880, value: 55 },
   { delta: 3980, value: 60 }, { delta: 4080, value: 60 },
-  { delta: 4180, value: 60 }
+  { delta: 4180, value: 60 },
 ];
 const LineGraphWidget = require("devtools/client/shared/widgets/LineGraphWidget");
 
-add_task(function* () {
-  yield addTab("about:blank");
-  yield performTest();
+add_task(async function() {
+  await addTab("about:blank");
+  await performTest();
   gBrowser.removeCurrentTab();
 });
 
-function* performTest() {
-  let [host,, doc] = yield createHost("window");
+async function performTest() {
+  const [host,, doc] = await createHost("window");
   doc.body.setAttribute("style",
                         "position: fixed; width: 100%; height: 100%; margin: 0;");
 
-  let graph = new LineGraphWidget(doc.body, "fps");
-  yield graph.once("ready");
+  const graph = new LineGraphWidget(doc.body, "fps");
+  await graph.once("ready");
 
   let refreshCount = 0;
   graph.on("refresh", () => refreshCount++);
 
-  yield testGraph(host, graph);
+  await testGraph(host, graph);
 
   is(refreshCount, 2, "The graph should've been refreshed 2 times.");
 
-  yield graph.destroy();
+  await graph.destroy();
   host.destroy();
 }
 
-function* testGraph(host, graph) {
+async function testGraph(host, graph) {
   graph.setData(TEST_DATA);
-  let initialBounds = host.frame.getBoundingClientRect();
+  const initialBounds = host.frame.getBoundingClientRect();
 
   host._window.resizeBy(-100, -100);
-  yield graph.once("refresh");
-  let newBounds = host.frame.getBoundingClientRect();
+  await graph.once("refresh");
+  const newBounds = host.frame.getBoundingClientRect();
 
   is(initialBounds.width - newBounds.width, 100,
     "The window was properly resized (1).");
@@ -99,8 +99,8 @@ function* testGraph(host, graph) {
     "The current selection end value is correct (3).");
 
   host._window.resizeBy(100, 100);
-  yield graph.once("refresh");
-  let newerBounds = host.frame.getBoundingClientRect();
+  await graph.once("refresh");
+  const newerBounds = host.frame.getBoundingClientRect();
 
   is(initialBounds.width - newerBounds.width, 0,
     "The window was properly resized (3).");

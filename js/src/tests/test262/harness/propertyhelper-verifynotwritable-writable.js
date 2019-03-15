@@ -6,7 +6,6 @@ description: >
     Objects whose specified property is writable do not satisfy the assertion.
 includes: [propertyHelper.js]
 ---*/
-
 var threw = false;
 var obj = {};
 Object.defineProperty(obj, 'a', {

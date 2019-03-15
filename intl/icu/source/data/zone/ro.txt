@@ -1,8 +1,17 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html#License
 ro{
-    Version{"2.1.28.79"}
+    Version{"2.1.43.94"}
     zoneStrings{
+        "Etc:UTC"{
+            ls{"Timpul universal coordonat"}
+        }
+        "Europe:Dublin"{
+            ld{"Ora de vară a Irlandei"}
+        }
+        "Europe:London"{
+            ld{"Ora de vară britanică"}
+        }
         "meta:Acre"{
             ld{"Ora de vară Acre"}
             lg{"Ora Acre"}
@@ -613,9 +622,9 @@ ro{
             ls{"Ora din Wallis și Futuna"}
         }
         "meta:Yakutsk"{
-            ld{"Ora de vară din Yakuțk"}
-            lg{"Ora din Yakuțk"}
-            ls{"Ora standard din Yakuțk"}
+            ld{"Ora de vară din Iakuțk"}
+            lg{"Ora din Iakuțk"}
+            ls{"Ora standard din Iakuțk"}
         }
         "meta:Yekaterinburg"{
             ld{"Ora de vară din Ekaterinburg"}

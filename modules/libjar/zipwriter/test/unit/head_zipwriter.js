@@ -3,8 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-var Ci = Components.interfaces;
-var Cc = Components.classes;
 const NS_ERROR_IN_PROGRESS = 2152398863;
 
 const PR_RDONLY      = 0x01
@@ -45,7 +43,7 @@ if (tmpFile.exists())
 
 var zipW = new ZipWriter();
 
-do_register_cleanup(function() {
+registerCleanupFunction(function() {
   try {
     zipW.close();
   } catch (e) {

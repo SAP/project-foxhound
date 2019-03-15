@@ -4,7 +4,7 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["TabStateCache"];
+var EXPORTED_SYMBOLS = ["TabStateCache"];
 
 /**
  * A cache for tabs data.
@@ -16,7 +16,7 @@ this.EXPORTED_SYMBOLS = ["TabStateCache"];
  * - that data is used very seldom by SessionStore;
  * - caching private data in addition to public data is memory consuming.
  */
-this.TabStateCache = Object.freeze({
+var TabStateCache = Object.freeze({
   /**
    * Retrieves cached data for a given |tab| or associated |browser|.
    *
@@ -26,7 +26,7 @@ this.TabStateCache = Object.freeze({
    *         The cached data stored for the given |tab|
    *         or associated |browser|.
    */
-  get: function (browserOrTab) {
+  get(browserOrTab) {
     return TabStateCacheInternal.get(browserOrTab);
   },
 
@@ -39,9 +39,9 @@ this.TabStateCache = Object.freeze({
    *        The new data to be stored for the given |tab|
    *        or associated |browser|.
    */
-  update: function (browserOrTab, newData) {
+  update(browserOrTab, newData) {
     TabStateCacheInternal.update(browserOrTab, newData);
-  }
+  },
 });
 
 var TabStateCacheInternal = {
@@ -56,7 +56,7 @@ var TabStateCacheInternal = {
    *         The cached data stored for the given |tab|
    *         or associated |browser|.
    */
-  get: function (browserOrTab) {
+  get(browserOrTab) {
     return this._data.get(browserOrTab.permanentKey);
   },
 
@@ -70,24 +70,30 @@ var TabStateCacheInternal = {
    * @param change (object)
    *        The actual changed values per domain.
    */
-  updatePartialStorageChange: function (data, change) {
+  updatePartialStorageChange(data, change) {
     if (!data.storage) {
       data.storage = {};
     }
 
     let storage = data.storage;
     for (let domain of Object.keys(change)) {
-      for (let key of Object.keys(change[domain])) {
-        let value = change[domain][key];
-        if (value === null) {
-          if (storage[domain] && storage[domain][key]) {
-            delete storage[domain][key];
+      if (!change[domain]) {
+        // We were sent null in place of the change object, which means
+        // we should delete session storage entirely for this domain.
+        delete storage[domain];
+      } else {
+        for (let key of Object.keys(change[domain])) {
+          let value = change[domain][key];
+          if (value === null) {
+            if (storage[domain] && storage[domain][key]) {
+              delete storage[domain][key];
+            }
+          } else {
+            if (!storage[domain]) {
+              storage[domain] = {};
+            }
+            storage[domain][key] = value;
           }
-        } else {
-          if (!storage[domain]) {
-            storage[domain] = {};
-          }
-          storage[domain][key] = value;
         }
       }
     }
@@ -105,7 +111,7 @@ var TabStateCacheInternal = {
    *        Object containing the tail of the history array, and
    *        some additional metadata.
    */
-  updatePartialHistoryChange: function (data, change) {
+  updatePartialHistoryChange(data, change) {
     const kLastIndex = Number.MAX_SAFE_INTEGER - 1;
 
     if (!data.history) {
@@ -140,7 +146,7 @@ var TabStateCacheInternal = {
    *        The new data to be stored for the given |tab|
    *        or associated |browser|.
    */
-  update: function (browserOrTab, newData) {
+  update(browserOrTab, newData) {
     let data = this._data.get(browserOrTab.permanentKey) || {};
 
     for (let key of Object.keys(newData)) {
@@ -163,5 +169,5 @@ var TabStateCacheInternal = {
     }
 
     this._data.set(browserOrTab.permanentKey, data);
-  }
+  },
 };

@@ -11,7 +11,7 @@
 #include "nsGenericHTMLElement.h"
 #include "nsContentUtils.h"
 #include "mozilla/dom/DOMStringMapBinding.h"
-#include "nsIDOMMutationEvent.h"
+#include "mozilla/dom/MutationEventBinding.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -19,7 +19,7 @@ using namespace mozilla::dom;
 NS_IMPL_CYCLE_COLLECTION_CLASS(nsDOMStringMap)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsDOMStringMap)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mElement)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mElement)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsDOMStringMap)
@@ -46,14 +46,11 @@ NS_IMPL_CYCLE_COLLECTING_ADDREF(nsDOMStringMap)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsDOMStringMap)
 
 nsDOMStringMap::nsDOMStringMap(Element* aElement)
-  : mElement(aElement),
-    mRemovingProp(false)
-{
+    : mElement(aElement), mRemovingProp(false) {
   mElement->AddMutationObserver(this);
 }
 
-nsDOMStringMap::~nsDOMStringMap()
-{
+nsDOMStringMap::~nsDOMStringMap() {
   // Check if element still exists, may have been unlinked by cycle collector.
   if (mElement) {
     // Call back to element to null out weak reference to this object.
@@ -62,17 +59,18 @@ nsDOMStringMap::~nsDOMStringMap()
   }
 }
 
-/* virtual */
-JSObject*
-nsDOMStringMap::WrapObject(JSContext *cx, JS::Handle<JSObject*> aGivenProto)
-{
-  return DOMStringMapBinding::Wrap(cx, this, aGivenProto);
+DocGroup* nsDOMStringMap::GetDocGroup() const {
+  return mElement ? mElement->GetDocGroup() : nullptr;
 }
 
-void
-nsDOMStringMap::NamedGetter(const nsAString& aProp, bool& found,
-                            DOMString& aResult) const
-{
+/* virtual */
+JSObject* nsDOMStringMap::WrapObject(JSContext* cx,
+                                     JS::Handle<JSObject*> aGivenProto) {
+  return DOMStringMap_Binding::Wrap(cx, this, aGivenProto);
+}
+
+void nsDOMStringMap::NamedGetter(const nsAString& aProp, bool& found,
+                                 DOMString& aResult) const {
   nsAutoString attr;
 
   if (!DataPropToAttr(aProp, attr)) {
@@ -83,11 +81,8 @@ nsDOMStringMap::NamedGetter(const nsAString& aProp, bool& found,
   found = mElement->GetAttr(attr, aResult);
 }
 
-void
-nsDOMStringMap::NamedSetter(const nsAString& aProp,
-                            const nsAString& aValue,
-                            ErrorResult& rv)
-{
+void nsDOMStringMap::NamedSetter(const nsAString& aProp,
+                                 const nsAString& aValue, ErrorResult& rv) {
   nsAutoString attr;
   if (!DataPropToAttr(aProp, attr)) {
     rv.Throw(NS_ERROR_DOM_SYNTAX_ERR);
@@ -100,7 +95,7 @@ nsDOMStringMap::NamedSetter(const nsAString& aProp,
     return;
   }
 
-  nsCOMPtr<nsIAtom> attrAtom = NS_Atomize(attr);
+  RefPtr<nsAtom> attrAtom = NS_Atomize(attr);
   MOZ_ASSERT(attrAtom, "Should be infallible");
 
   res = mElement->SetAttr(kNameSpaceID_None, attrAtom, aValue, true);
@@ -109,22 +104,20 @@ nsDOMStringMap::NamedSetter(const nsAString& aProp,
   }
 }
 
-void
-nsDOMStringMap::NamedDeleter(const nsAString& aProp, bool& found)
-{
+void nsDOMStringMap::NamedDeleter(const nsAString& aProp, bool& found) {
   // Currently removing property, attribute is already removed.
   if (mRemovingProp) {
     found = false;
     return;
   }
-  
+
   nsAutoString attr;
   if (!DataPropToAttr(aProp, attr)) {
     found = false;
     return;
   }
 
-  nsCOMPtr<nsIAtom> attrAtom = NS_Atomize(attr);
+  RefPtr<nsAtom> attrAtom = NS_Atomize(attr);
   MOZ_ASSERT(attrAtom, "Should be infallible");
 
   found = mElement->HasAttr(kNameSpaceID_None, attrAtom);
@@ -136,9 +129,7 @@ nsDOMStringMap::NamedDeleter(const nsAString& aProp, bool& found)
   }
 }
 
-void
-nsDOMStringMap::GetSupportedNames(nsTArray<nsString>& aNames)
-{
+void nsDOMStringMap::GetSupportedNames(nsTArray<nsString>& aNames) {
   uint32_t attrCount = mElement->GetAttrCount();
 
   // Iterate through all the attributes and add property
@@ -151,8 +142,7 @@ nsDOMStringMap::GetSupportedNames(nsTArray<nsString>& aNames)
     }
 
     nsAutoString prop;
-    if (!AttrToDataProp(nsDependentAtomString(attrName->LocalName()),
-                        prop)) {
+    if (!AttrToDataProp(nsDependentAtomString(attrName->LocalName()), prop)) {
       continue;
     }
 
@@ -165,8 +155,7 @@ nsDOMStringMap::GetSupportedNames(nsTArray<nsString>& aNames)
  * (ex. aBigFish to data-a-big-fish).
  */
 bool nsDOMStringMap::DataPropToAttr(const nsAString& aProp,
-                                    nsAutoString& aResult)
-{
+                                    nsAutoString& aResult) {
   // aResult is an autostring, so don't worry about setting its capacity:
   // SetCapacity is slow even when it's a no-op and we already have enough
   // storage there for most cases, probably.
@@ -182,8 +171,8 @@ bool nsDOMStringMap::DataPropToAttr(const nsAString& aProp,
   const char16_t* cur = start;
   for (; cur < end; ++cur) {
     const char16_t* next = cur + 1;
-    if (char16_t('-') == *cur && next < end &&
-        char16_t('a') <= *next && *next <= char16_t('z')) {
+    if (char16_t('-') == *cur && next < end && char16_t('a') <= *next &&
+        *next <= char16_t('z')) {
       // Syntax error if character following "-" is in range "a" to "z".
       return false;
     }
@@ -194,7 +183,7 @@ bool nsDOMStringMap::DataPropToAttr(const nsAString& aProp,
       // Uncamel-case characters in the range of "A" to "Z".
       aResult.Append(char16_t('-'));
       aResult.Append(*cur - 'A' + 'a');
-      start = next; // We've already appended the thing at *cur
+      start = next;  // We've already appended the thing at *cur
     }
   }
 
@@ -208,8 +197,7 @@ bool nsDOMStringMap::DataPropToAttr(const nsAString& aProp,
  * (ex. data-a-big-fish to aBigFish).
  */
 bool nsDOMStringMap::AttrToDataProp(const nsAString& aAttr,
-                                    nsAutoString& aResult)
-{
+                                    nsAutoString& aResult) {
   // If the attribute name does not begin with "data-" then it can not be
   // a data attribute.
   if (!StringBeginsWith(aAttr, NS_LITERAL_STRING("data-"))) {
@@ -229,8 +217,8 @@ bool nsDOMStringMap::AttrToDataProp(const nsAString& aAttr,
   // Otherwise append character to property name.
   for (; cur < end; ++cur) {
     const char16_t* next = cur + 1;
-    if (char16_t('-') == *cur && next < end && 
-        char16_t('a') <= *next && *next <= char16_t('z')) {
+    if (char16_t('-') == *cur && next < end && char16_t('a') <= *next &&
+        *next <= char16_t('z')) {
       // Upper case the lower case letters that follow a "-".
       aResult.Append(*next - 'a' + 'A');
       // Consume character to account for "-" character.
@@ -244,14 +232,11 @@ bool nsDOMStringMap::AttrToDataProp(const nsAString& aAttr,
   return true;
 }
 
-void
-nsDOMStringMap::AttributeChanged(nsIDocument *aDocument, Element* aElement,
-                                 int32_t aNameSpaceID, nsIAtom* aAttribute,
-                                 int32_t aModType,
-                                 const nsAttrValue* aOldValue)
-{
-  if ((aModType == nsIDOMMutationEvent::ADDITION ||
-       aModType == nsIDOMMutationEvent::REMOVAL) &&
+void nsDOMStringMap::AttributeChanged(Element* aElement, int32_t aNameSpaceID,
+                                      nsAtom* aAttribute, int32_t aModType,
+                                      const nsAttrValue* aOldValue) {
+  if ((aModType == MutationEvent_Binding::ADDITION ||
+       aModType == MutationEvent_Binding::REMOVAL) &&
       aNameSpaceID == kNameSpaceID_None &&
       StringBeginsWith(nsDependentAtomString(aAttribute),
                        NS_LITERAL_STRING("data-"))) {

@@ -28,24 +28,11 @@
  *    _xpcom_factory: { ... },
  *
  *    // QueryInterface implementation, e.g. using the generateQI helper
- *    QueryInterface: XPCOMUtils.generateQI(
+ *    QueryInterface: ChromeUtils.generateQI(
  *      [Components.interfaces.nsIObserver,
  *       Components.interfaces.nsIMyInterface,
  *       "nsIFoo",
  *       "nsIBar" ]),
- *
- *    // [optional] classInfo implementation, e.g. using the generateCI helper.
- *    // Will be automatically returned from QueryInterface if that was
- *    // generated with the generateQI helper.
- *    classInfo: XPCOMUtils.generateCI(
- *      {classID: Components.ID("{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}"),
- *       contractID: "@example.com/xxx;1",
- *       classDescription: "unique text description",
- *       interfaces: [Components.interfaces.nsIObserver,
- *                    Components.interfaces.nsIMyInterface,
- *                    "nsIFoo",
- *                    "nsIBar"],
- *       flags: Ci.nsIClassInfo.SINGLETON}),
  *
  *    // The following properties were used prior to Mozilla 2, but are no
  *    // longer supported. They may still be included for compatibility with
@@ -53,28 +40,6 @@
  *    // included in the .manifest file which registers this JS component.
  *    classDescription: "unique text description",
  *    contractID:       "@example.com/xxx;1",
- *
- *    // [optional] an array of categories to register this component in.
- *    _xpcom_categories: [{
- *      // Each object in the array specifies the parameters to pass to
- *      // nsICategoryManager.addCategoryEntry(). 'true' is passed for
- *      // both aPersist and aReplace params.
- *      category: "some-category",
- *      // optional, defaults to the object's classDescription
- *      entry: "entry name",
- *      // optional, defaults to the object's contractID (unless
- *      // 'service' is specified)
- *      value: "...",
- *      // optional, defaults to false. When set to true, and only if 'value'
- *      // is not specified, the concatenation of the string "service," and the
- *      // object's contractID is passed as aValue parameter of addCategoryEntry.
- *      service: true,
- *      // optional, it can be an array of applications' IDs in the form:
- *      // [ "{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}", ... ]
- *      // If defined the component will be registered in this category only for
- *      // the provided applications.
- *      apps: [...]
- *    }],
  *
  *    // ...component implementation...
  *  };
@@ -88,73 +53,39 @@
  */
 
 
-this.EXPORTED_SYMBOLS = [ "XPCOMUtils" ];
+var EXPORTED_SYMBOLS = [ "XPCOMUtils" ];
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cr = Components.results;
-const Cu = Components.utils;
+let global = Cu.getGlobalForObject({});
 
-this.XPCOMUtils = {
-  /**
-   * Generate a QueryInterface implementation. The returned function must be
-   * assigned to the 'QueryInterface' property of a JS object. When invoked on
-   * that object, it checks if the given iid is listed in the |interfaces|
-   * param, and if it is, returns |this| (the object it was called on).
-   * If the JS object has a classInfo property it'll be returned for the
-   * nsIClassInfo IID, generateCI can be used to generate the classInfo
-   * property.
-   */
-  generateQI: function XPCU_generateQI(interfaces) {
-    /* Note that Ci[Ci.x] == Ci.x for all x */
-    let a = [];
-    if (interfaces) {
-      for (let i = 0; i < interfaces.length; i++) {
-        let iface = interfaces[i];
-        if (Ci[iface]) {
-          a.push(Ci[iface].name);
-        }
-      }
-    }
-    return makeQI(a);
-  },
+const nsIFactoryQI = ChromeUtils.generateQI([Ci.nsIFactory]);
 
-  /**
-   * Generate a ClassInfo implementation for a component. The returned object
-   * must be assigned to the 'classInfo' property of a JS object. The first and
-   * only argument should be an object that contains a number of optional
-   * properties: "interfaces", "contractID", "classDescription", "classID" and
-   * "flags". The values of the properties will be returned as the values of the
-   * various properties of the nsIClassInfo implementation.
-   */
-  generateCI: function XPCU_generateCI(classInfo)
-  {
-    if (QueryInterface in classInfo)
-      throw Error("In generateCI, don't use a component for generating classInfo");
-    /* Note that Ci[Ci.x] == Ci.x for all x */
-    let _interfaces = [];
-    for (let i = 0; i < classInfo.interfaces.length; i++) {
-      let iface = classInfo.interfaces[i];
-      if (Ci[iface]) {
-        _interfaces.push(Ci[iface]);
-      }
-    }
-    return {
-      getInterfaces: function XPCU_getInterfaces(countRef) {
-        countRef.value = _interfaces.length;
-        return _interfaces;
-      },
-      getScriptableHelper: function XPCU_getScriptableHelper() {
-        return null;
-      },
-      contractID: classInfo.contractID,
-      classDescription: classInfo.classDescription,
-      classID: classInfo.classID,
-      flags: classInfo.flags,
-      QueryInterface: this.generateQI([Ci.nsIClassInfo])
-    };
-  },
+// Some global imports expose additional symbols; for example,
+// `Cu.importGlobalProperties(["MessageChannel"])` imports `MessageChannel`
+// and `MessagePort`. This table maps those extra symbols to the main
+// import name.
+const EXTRA_GLOBAL_NAME_TO_IMPORT_NAME = {
+  Headers: "fetch",
+  MessagePort: "MessageChannel",
+  Request: "fetch",
+  Response: "fetch",
+};
 
+/**
+ * Redefines the given property on the given object with the given
+ * value. This can be used to redefine getter properties which do not
+ * implement setters.
+ */
+function redefine(object, prop, value) {
+  Object.defineProperty(object, prop, {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  });
+  return value;
+}
+
+var XPCOMUtils = {
   /**
    * Generate a NSGetFactory function given an array of components.
    */
@@ -188,25 +119,78 @@ this.XPCOMUtils = {
    */
   defineLazyGetter: function XPCU_defineLazyGetter(aObject, aName, aLambda)
   {
+    let redefining = false;
     Object.defineProperty(aObject, aName, {
       get: function () {
-        // Redefine this accessor property as a data property.
-        // Delete it first, to rule out "too much recursion" in case aObject is
-        // a proxy whose defineProperty handler might unwittingly trigger this
-        // getter again.
-        delete aObject[aName];
-        let value = aLambda.apply(aObject);
-        Object.defineProperty(aObject, aName, {
-          value,
-          writable: true,
-          configurable: true,
-          enumerable: true
-        });
-        return value;
+        if (!redefining) {
+          // Make sure we don't get into an infinite recursion loop if
+          // the getter lambda does something shady.
+          redefining = true;
+          return redefine(aObject, aName, aLambda.apply(aObject));
+        }
       },
       configurable: true,
       enumerable: true
     });
+  },
+
+  /**
+   * Defines a getter on a specified object for a script.  The script will not
+   * be loaded until first use.
+   *
+   * @param aObject
+   *        The object to define the lazy getter on.
+   * @param aNames
+   *        The name of the getter to define on aObject for the script.
+   *        This can be a string if the script exports only one symbol,
+   *        or an array of strings if the script can be first accessed
+   *        from several different symbols.
+   * @param aResource
+   *        The URL used to obtain the script.
+   */
+  defineLazyScriptGetter: function XPCU_defineLazyScriptGetter(aObject, aNames,
+                                                               aResource)
+  {
+    if (!Array.isArray(aNames)) {
+      aNames = [aNames];
+    }
+    for (let name of aNames) {
+      Object.defineProperty(aObject, name, {
+        get: function() {
+          Services.scriptloader.loadSubScript(aResource, aObject);
+          return aObject[name];
+        },
+        set(value) {
+          redefine(aObject, name, value);
+        },
+        configurable: true,
+        enumerable: true
+      });
+    }
+  },
+
+  /**
+   * Defines a getter property on the given object for each of the given
+   * global names as accepted by Cu.importGlobalProperties. These
+   * properties are imported into the shared JSM module global, and then
+   * copied onto the given object, no matter which global the object
+   * belongs to.
+   *
+   * @param {object} aObject
+   *        The object on which to define the properties.
+   * @param {string[]} aNames
+   *        The list of global properties to define.
+   */
+  defineLazyGlobalGetters(aObject, aNames) {
+    for (let name of aNames) {
+      this.defineLazyGetter(aObject, name, () => {
+        if (!(name in global)) {
+          let importName = EXTRA_GLOBAL_NAME_TO_IMPORT_NAME[name] || name;
+          Cu.importGlobalProperties([importName]);
+        }
+        return global[name];
+      });
+    }
   },
 
   /**
@@ -227,8 +211,35 @@ this.XPCOMUtils = {
                                                                  aInterfaceName)
   {
     this.defineLazyGetter(aObject, aName, function XPCU_serviceLambda() {
-      return Cc[aContract].getService(Ci[aInterfaceName]);
+      if (aInterfaceName) {
+        return Cc[aContract].getService(Ci[aInterfaceName]);
+      }
+      return Cc[aContract].getService().wrappedJSObject;
     });
+  },
+
+  /**
+   * Defines a lazy service getter on a specified object for each
+   * property in the given object.
+   *
+   * @param aObject
+   *        The object to define the lazy getter on.
+   * @param aServices
+   *        An object with a property for each service to be
+   *        imported, where the property name is the name of the
+   *        symbol to define, and the value is a 1 or 2 element array
+   *        containing the contract ID and, optionally, the interface
+   *        name of the service, as passed to defineLazyServiceGetter.
+   */
+  defineLazyServiceGetters: function XPCU_defineLazyServiceGetters(
+                                   aObject, aServices)
+  {
+    for (let [name, service] of Object.entries(aServices)) {
+      // Note: This is hot code, and cross-compartment array wrappers
+      // are not JIT-friendly to destructuring or spread operators, so
+      // we need to use indexed access instead.
+      this.defineLazyServiceGetter(aObject, name, service[0], service[1] || null);
+    }
   },
 
   /**
@@ -261,6 +272,10 @@ this.XPCOMUtils = {
                                    aObject, aName, aResource, aSymbol,
                                    aPreLambda, aPostLambda, aProxy)
   {
+    if (arguments.length == 3) {
+      return ChromeUtils.defineModuleGetter(aObject, aName, aResource);
+    }
+
     let proxy = aProxy || {};
 
     if (typeof(aPreLambda) === "function") {
@@ -270,7 +285,7 @@ this.XPCOMUtils = {
     this.defineLazyGetter(aObject, aName, function XPCU_moduleLambda() {
       var temp = {};
       try {
-        Cu.import(aResource, temp);
+        ChromeUtils.import(aResource, temp);
 
         if (typeof(aPostLambda) === "function") {
           aPostLambda.apply(proxy);
@@ -281,6 +296,25 @@ this.XPCOMUtils = {
       }
       return temp[aSymbol || aName];
     });
+  },
+
+  /**
+   * Defines a lazy module getter on a specified object for each
+   * property in the given object.
+   *
+   * @param aObject
+   *        The object to define the lazy getter on.
+   * @param aModules
+   *        An object with a property for each module property to be
+   *        imported, where the property name is the name of the
+   *        imported symbol and the value is the module URI.
+   */
+  defineLazyModuleGetters: function XPCU_defineLazyModuleGetters(
+                                   aObject, aModules)
+  {
+    for (let [name, module] of Object.entries(aModules)) {
+      ChromeUtils.defineModuleGetter(aObject, name, module);
+    }
   },
 
   /**
@@ -296,9 +330,19 @@ this.XPCOMUtils = {
    *        The name of the preference to read.
    * @param aDefaultValue
    *        The default value to use, if the preference is not defined.
+   * @param aOnUpdate
+   *        A function to call upon update. Receives as arguments
+   *         `(aPreference, previousValue, newValue)`
+   * @param aTransform
+   *        An optional function to transform the value.  If provided,
+   *        this function receives the new preference value as an argument
+   *        and its return value is used by the getter.
    */
   defineLazyPreferenceGetter: function XPCU_defineLazyPreferenceGetter(
-                                   aObject, aName, aPreference, aDefaultValue = null)
+                                   aObject, aName, aPreference,
+                                   aDefaultValue = null,
+                                   aOnUpdate = null,
+                                   aTransform = val => val)
   {
     // Note: We need to keep a reference to this observer alive as long
     // as aObject is alive. This means that all of our getters need to
@@ -306,13 +350,24 @@ this.XPCOMUtils = {
     // cannot define a value in place of a getter after we read the
     // preference.
     let observer = {
-      QueryInterface: this.generateQI([Ci.nsIObserver, Ci.nsISupportsWeakReference]),
+      QueryInterface: XPCU_lazyPreferenceObserverQI,
 
       value: undefined,
 
       observe(subject, topic, data) {
         if (data == aPreference) {
-          this.value = undefined;
+          if (aOnUpdate) {
+            let previous = this.value;
+
+            // Fetch and cache value.
+            this.value = undefined;
+            let latest = lazyGetter();
+            aOnUpdate(data, previous, latest);
+          } else {
+
+            // Empty cache, next call to the getter will cause refetch.
+            this.value = undefined;
+          }
         }
       },
     }
@@ -327,7 +382,32 @@ this.XPCOMUtils = {
 
     function lazyGetter() {
       if (observer.value === undefined) {
-        observer.value = Preferences.get(aPreference, aDefaultValue);
+        let prefValue;
+        switch (Services.prefs.getPrefType(aPreference)) {
+          case Ci.nsIPrefBranch.PREF_STRING:
+            prefValue = Services.prefs.getStringPref(aPreference);
+            break;
+
+          case Ci.nsIPrefBranch.PREF_INT:
+            prefValue = Services.prefs.getIntPref(aPreference);
+            break;
+
+          case Ci.nsIPrefBranch.PREF_BOOL:
+            prefValue = Services.prefs.getBoolPref(aPreference);
+            break;
+
+          case Ci.nsIPrefBranch.PREF_INVALID:
+            prefValue = aDefaultValue;
+            break;
+
+          default:
+            // This should never happen.
+            throw new Error(`Error getting pref ${aPreference}; its value's type is ` +
+                            `${Services.prefs.getPrefType(aPreference)}, which I don't ` +
+                            `know how to handle.`);
+        }
+
+        observer.value = aTransform(prefValue);
       }
       return observer.value;
     }
@@ -338,40 +418,6 @@ this.XPCOMUtils = {
       defineGetter(lazyGetter);
       return lazyGetter();
     });
-  },
-
-  /**
-   * Helper which iterates over a nsISimpleEnumerator.
-   * @param e The nsISimpleEnumerator to iterate over.
-   * @param i The expected interface for each element.
-   */
-  IterSimpleEnumerator: function* XPCU_IterSimpleEnumerator(e, i)
-  {
-    while (e.hasMoreElements())
-      yield e.getNext().QueryInterface(i);
-  },
-
-  /**
-   * Helper which iterates over a string enumerator.
-   * @param e The string enumerator (nsIUTF8StringEnumerator or
-   *          nsIStringEnumerator) over which to iterate.
-   */
-  IterStringEnumerator: function* XPCU_IterStringEnumerator(e)
-  {
-    while (e.hasMore())
-      yield e.getNext();
-  },
-
-  /**
-   * Helper which iterates over the entries in a category.
-   * @param aCategory The name of the category over which to iterate.
-   */
-  enumerateCategoryEntries: function* XPCOMUtils_enumerateCategoryEntries(aCategory)
-  {
-    let category = this.categoryManager.enumerateCategory(aCategory);
-    for (let entry of this.IterSimpleEnumerator(category, Ci.nsISupportsCString)) {
-      yield [entry.data, this.categoryManager.getCategoryEntry(aCategory, entry.data)];
-    }
   },
 
   /**
@@ -386,23 +432,10 @@ this.XPCOMUtils = {
             throw Cr.NS_ERROR_NO_AGGREGATION;
           return (new component()).QueryInterface(iid);
         },
-        QueryInterface: XPCOMUtils.generateQI([Ci.nsIFactory])
+        QueryInterface: nsIFactoryQI
       }
     }
     return factory;
-  },
-
-  /**
-   * Allows you to fake a relative import. Expects the global object from the
-   * module that's calling us, and the relative filename that we wish to import.
-   */
-  importRelative: function XPCOMUtils__importRelative(that, path, scope) {
-    if (!("__URI__" in that))
-      throw Error("importRelative may only be used from a JSM, and its first argument "+
-                  "must be that JSM's global object (hint: use this)");
-    let uri = that.__URI__;
-    let i = uri.lastIndexOf("/");
-    Components.utils.import(uri.substring(0, i+1) + path, scope || that);
   },
 
   /**
@@ -424,10 +457,7 @@ this.XPCOMUtils = {
         }
         return this._instance.QueryInterface(aIID);
       },
-      lockFactory: function XPCU_SF_lockFactory(aDoLock) {
-        throw Cr.NS_ERROR_NOT_IMPLEMENTED;
-      },
-      QueryInterface: XPCOMUtils.generateQI([Ci.nsIFactory])
+      QueryInterface: nsIFactoryQI
     };
   },
 
@@ -441,31 +471,189 @@ this.XPCOMUtils = {
       writable: false
     });
   },
-};
 
-XPCOMUtils.defineLazyModuleGetter(this, "Preferences",
-                                  "resource://gre/modules/Preferences.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Services",
-                                  "resource://gre/modules/Services.jsm");
+  /**
+   * Defines a proxy which acts as a lazy object getter that can be passed
+   * around as a reference, and will only be evaluated when something in
+   * that object gets accessed.
+   *
+   * The evaluation can be triggered by a function call, by getting or
+   * setting a property, calling this as a constructor, or enumerating
+   * the properties of this object (e.g. during an iteration).
+   *
+   * Please note that, even after evaluated, the object given to you
+   * remains being the proxy object (which forwards everything to the
+   * real object). This is important to correctly use these objects
+   * in pairs of add+remove listeners, for example.
+   * If your use case requires access to the direct object, you can
+   * get it through the untrap callback.
+   *
+   * @param aObject
+   *        The object to define the lazy getter on.
+   *
+   *        You can pass null to aObject if you just want to get this
+   *        proxy through the return value.
+   *
+   * @param aName
+   *        The name of the getter to define on aObject.
+   *
+   * @param aInitFuncOrResource
+   *        A function or a module that defines what this object actually
+   *        should be when it gets evaluated. This will only ever be called once.
+   *
+   *        Short-hand: If you pass a string to this parameter, it will be treated
+   *        as the URI of a module to be imported, and aName will be used as
+   *        the symbol to retrieve from the module.
+   *
+   * @param aStubProperties
+   *        In this parameter, you can provide an object which contains
+   *        properties from the original object that, when accessed, will still
+   *        prevent the entire object from being evaluated.
+   *
+   *        These can be copies or simplified versions of the original properties.
+   *
+   *        One example is to provide an alternative QueryInterface implementation
+   *        to avoid the entire object from being evaluated when it's added as an
+   *        observer (as addObserver calls object.QueryInterface(Ci.nsIObserver)).
+   *
+   *        Once the object has been evaluated, the properties from the real
+   *        object will be used instead of the ones provided here.
+   *
+   * @param aUntrapCallback
+   *        A function that gets called once when the object has just been evaluated.
+   *        You can use this to do some work (e.g. setting properties) that you need
+   *        to do on this object but that can wait until it gets evaluated.
+   *
+   *        Another use case for this is to use during code development to log when
+   *        this object gets evaluated, to make sure you're not accidentally triggering
+   *        it earlier than expected.
+   */
+  defineLazyProxy: function XPCOMUtils__defineLazyProxy(aObject, aName, aInitFuncOrResource,
+                                                        aStubProperties, aUntrapCallback) {
+    let initFunc = aInitFuncOrResource;
 
-XPCOMUtils.defineLazyServiceGetter(XPCOMUtils, "categoryManager",
-                                   "@mozilla.org/categorymanager;1",
-                                   "nsICategoryManager");
-
-/**
- * Helper for XPCOMUtils.generateQI to avoid leaks - see bug 381651#c1
- */
-function makeQI(interfaceNames) {
-  return function XPCOMUtils_QueryInterface(iid) {
-    if (iid.equals(Ci.nsISupports))
-      return this;
-    if (iid.equals(Ci.nsIClassInfo) && "classInfo" in this)
-      return this.classInfo;
-    for (let i = 0; i < interfaceNames.length; i++) {
-      if (Ci[interfaceNames[i]].equals(iid))
-        return this;
+    if (typeof(aInitFuncOrResource) == "string") {
+      initFunc = function () {
+        let tmp = {};
+        ChromeUtils.import(aInitFuncOrResource, tmp);
+        return tmp[aName];
+      };
     }
 
-    throw Cr.NS_ERROR_NO_INTERFACE;
-  };
+    let handler = new LazyProxyHandler(aName, initFunc,
+                                       aStubProperties, aUntrapCallback);
+
+    /*
+     * We cannot simply create a lazy getter for the underlying
+     * object and pass it as the target of the proxy, because
+     * just passing it in `new Proxy` means it would get
+     * evaluated. Becase of this, a full handler needs to be
+     * implemented (the LazyProxyHandler).
+     *
+     * So, an empty object is used as the target, and the handler
+     * replaces it on every call with the real object.
+     */
+    let proxy = new Proxy({}, handler);
+
+    if (aObject) {
+      Object.defineProperty(aObject, aName, {
+        value: proxy,
+        enumerable: true,
+        writable: true,
+      });
+    }
+
+    return proxy;
+  },
+};
+
+/**
+ * LazyProxyHandler
+ * This class implements the handler used
+ * in the proxy from defineLazyProxy.
+ *
+ * This handler forwards all calls to an underlying object,
+ * stored as `this.realObject`, which is obtained as the returned
+ * value from aInitFunc, which will be called on the first time
+ * time that it needs to be used (with an exception in the get() trap
+ * for the properties provided in the `aStubProperties` parameter).
+ */
+
+class LazyProxyHandler {
+  constructor(aName, aInitFunc, aStubProperties, aUntrapCallback) {
+    this.pending = true;
+    this.name = aName;
+    this.initFuncOrResource = aInitFunc;
+    this.stubProperties = aStubProperties;
+    this.untrapCallback = aUntrapCallback;
+  }
+
+  getObject() {
+    if (this.pending) {
+      this.realObject = this.initFuncOrResource.call(null);
+
+      if (this.untrapCallback) {
+        this.untrapCallback.call(null, this.realObject);
+        this.untrapCallback = null;
+      }
+
+      this.pending = false;
+      this.stubProperties = null;
+    }
+    return this.realObject;
+  }
+
+  getPrototypeOf(target) {
+    return Reflect.getPrototypeOf(this.getObject());
+  }
+
+  setPrototypeOf(target, prototype) {
+    return Reflect.setPrototypeOf(this.getObject(), prototype);
+  }
+
+  isExtensible(target) {
+    return Reflect.isExtensible(this.getObject());
+  }
+
+  preventExtensions(target) {
+    return Reflect.preventExtensions(this.getObject());
+  }
+
+  getOwnPropertyDescriptor(target, prop) {
+    return Reflect.getOwnPropertyDescriptor(this.getObject(), prop);
+  }
+
+  defineProperty(target, prop, descriptor) {
+    return Reflect.defineProperty(this.getObject(), prop, descriptor);
+  }
+
+  has(target, prop) {
+    return Reflect.has(this.getObject(), prop);
+  }
+
+  get(target, prop, receiver) {
+    if (this.pending &&
+        this.stubProperties &&
+        Object.prototype.hasOwnProperty.call(this.stubProperties, prop)) {
+      return this.stubProperties[prop];
+    }
+    return Reflect.get(this.getObject(), prop, receiver);
+  }
+
+  set(target, prop, value, receiver) {
+    return Reflect.set(this.getObject(), prop, value, receiver);
+  }
+
+  deleteProperty(target, prop) {
+    return Reflect.deleteProperty(this.getObject(), prop);
+  }
+
+  ownKeys(target) {
+    return Reflect.ownKeys(this.getObject());
+  }
 }
+
+var XPCU_lazyPreferenceObserverQI = ChromeUtils.generateQI([Ci.nsIObserver, Ci.nsISupportsWeakReference]);
+
+ChromeUtils.defineModuleGetter(this, "Services",
+                               "resource://gre/modules/Services.jsm");

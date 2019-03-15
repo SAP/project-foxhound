@@ -5,11 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #if !defined(GMPCrashHelper_h_)
-#define GMPCrashHelper_h_
+#  define GMPCrashHelper_h_
 
-#include "MainThreadUtils.h"
-#include "nsISupportsImpl.h"
-#include "nsPIDOMWindow.h"
+#  include "MainThreadUtils.h"
+#  include "nsISupportsImpl.h"
+#  include "nsPIDOMWindow.h"
 
 namespace mozilla {
 
@@ -18,25 +18,22 @@ namespace mozilla {
 // dispatch the PluginCrashed event if the GMP crashes.
 // GMPCrashHelper has threadsafe refcounting. Its release method ensures
 // that instances are destroyed on the main thread.
-class GMPCrashHelper
-{
-public:
+class GMPCrashHelper {
+ public:
   NS_METHOD_(MozExternalRefCountType) AddRef(void);
   NS_METHOD_(MozExternalRefCountType) Release(void);
 
   // Called on the main thread.
-  virtual already_AddRefed<nsPIDOMWindowInner> GetPluginCrashedEventTarget() = 0;
+  virtual already_AddRefed<nsPIDOMWindowInner>
+  GetPluginCrashedEventTarget() = 0;
 
-protected:
-  virtual ~GMPCrashHelper()
-  {
-    MOZ_ASSERT(NS_IsMainThread());
-  }
+ protected:
+  virtual ~GMPCrashHelper() { MOZ_ASSERT(NS_IsMainThread()); }
   void Destroy();
   mozilla::ThreadSafeAutoRefCnt mRefCnt;
   NS_DECL_OWNINGTHREAD
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // GMPCrashHelper_h_
+#endif  // GMPCrashHelper_h_

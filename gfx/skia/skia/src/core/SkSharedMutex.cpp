@@ -46,6 +46,10 @@
         #define DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK
     #endif
 
+#ifdef __GNUC__
+#pragma GCC visibility push(default)
+#endif
+
     extern "C" {
     void AnnotateRWLockCreate(
         const char *file, int line,
@@ -60,6 +64,10 @@
         const char *file, int line,
         const volatile void *lock, long is_w) DYNAMIC_ANNOTATIONS_ATTRIBUTE_WEAK;
     }
+
+#ifdef __GNUC__
+#pragma GCC visibility pop
+#endif
 
 #else
 
@@ -131,6 +139,9 @@
         int waitingExclusiveCount;
         {
             SkAutoMutexAcquire l(&fMu);
+
+            SkASSERTF(!fCurrentShared->find(threadID),
+                      "Thread %lx already has an shared lock\n", threadID);
 
             if (!fWaitingExclusive->tryAdd(threadID)) {
                 SkDEBUGFAILF("Thread %lx already has an exclusive lock\n", threadID);
@@ -264,7 +275,7 @@
     void SkSharedMutex::acquire() {
         // Increment the count of exclusive queue waiters.
         int32_t oldQueueCounts = fQueueCounts.fetch_add(1 << kWaitingExlusiveOffset,
-                                                        sk_memory_order_acquire);
+                                                        std::memory_order_acquire);
 
         // If there are no other exclusive waiters and no shared threads are running then run
         // else wait.
@@ -277,7 +288,7 @@
     void SkSharedMutex::release() {
         ANNOTATE_RWLOCK_RELEASED(this, 1);
 
-        int32_t oldQueueCounts = fQueueCounts.load(sk_memory_order_relaxed);
+        int32_t oldQueueCounts = fQueueCounts.load(std::memory_order_relaxed);
         int32_t waitingShared;
         int32_t newQueueCounts;
         do {
@@ -302,8 +313,9 @@
                 newQueueCounts |= waitingShared << kSharedOffset;
             }
 
-        } while (!fQueueCounts.compare_exchange(&oldQueueCounts, newQueueCounts,
-                                                sk_memory_order_release, sk_memory_order_relaxed));
+        } while (!fQueueCounts.compare_exchange_strong(oldQueueCounts, newQueueCounts,
+                                                       std::memory_order_release,
+                                                       std::memory_order_relaxed));
 
         if (waitingShared > 0) {
             // Run all the shared.
@@ -315,7 +327,7 @@
     }
 
     void SkSharedMutex::acquireShared() {
-        int32_t oldQueueCounts = fQueueCounts.load(sk_memory_order_relaxed);
+        int32_t oldQueueCounts = fQueueCounts.load(std::memory_order_relaxed);
         int32_t newQueueCounts;
         do {
             newQueueCounts = oldQueueCounts;
@@ -325,8 +337,9 @@
             } else {
                 newQueueCounts += 1 << kSharedOffset;
             }
-        } while (!fQueueCounts.compare_exchange(&oldQueueCounts, newQueueCounts,
-                                                sk_memory_order_acquire, sk_memory_order_relaxed));
+        } while (!fQueueCounts.compare_exchange_strong(oldQueueCounts, newQueueCounts,
+                                                       std::memory_order_acquire,
+                                                       std::memory_order_relaxed));
 
         // If there are waiting exclusives, then this shared waits until after it runs.
         if ((newQueueCounts & kWaitingExclusiveMask) > 0) {
@@ -341,7 +354,7 @@
 
         // Decrement the shared count.
         int32_t oldQueueCounts = fQueueCounts.fetch_sub(1 << kSharedOffset,
-                                                        sk_memory_order_release);
+                                                        std::memory_order_release);
 
         // If shared count is going to zero (because the old count == 1) and there are exclusive
         // waiters, then run a single exclusive waiter.

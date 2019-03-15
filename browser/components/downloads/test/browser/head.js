@@ -7,159 +7,73 @@
  * Provides infrastructure for automated download components tests.
  */
 
-////////////////////////////////////////////////////////////////////////////////
-//// Globals
+// Globals
 
-XPCOMUtils.defineLazyModuleGetter(this, "Downloads",
-                                  "resource://gre/modules/Downloads.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "DownloadsCommon",
-                                  "resource:///modules/DownloadsCommon.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "FileUtils",
-                                  "resource://gre/modules/FileUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Promise",
-                                  "resource://gre/modules/Promise.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Task",
-                                  "resource://gre/modules/Task.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
-                                  "resource://gre/modules/PlacesUtils.jsm");
-const nsIDM = Ci.nsIDownloadManager;
+ChromeUtils.defineModuleGetter(this, "Downloads",
+                               "resource://gre/modules/Downloads.jsm");
+ChromeUtils.defineModuleGetter(this, "DownloadsCommon",
+                               "resource:///modules/DownloadsCommon.jsm");
+ChromeUtils.defineModuleGetter(this, "FileUtils",
+                               "resource://gre/modules/FileUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "PlacesUtils",
+                               "resource://gre/modules/PlacesUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "HttpServer",
+    "resource://testing-common/httpd.js");
 
 var gTestTargetFile = FileUtils.getFile("TmpD", ["dm-ui-test.file"]);
 gTestTargetFile.createUnique(Ci.nsIFile.NORMAL_FILE_TYPE, FileUtils.PERMS_FILE);
 
-// Load mocking/stubbing library, sinon
-// docs: http://sinonjs.org/docs/
-Services.scriptloader.loadSubScript("resource://testing-common/sinon-1.16.1.js");
+// The file may have been already deleted when removing a paused download.
+registerCleanupFunction(() => OS.File.remove(gTestTargetFile.path,
+                                             { ignoreAbsent: true }));
 
-registerCleanupFunction(function () {
-  gTestTargetFile.remove(false);
+// Asynchronous support subroutines
 
-  delete window.sinon;
-  delete window.setImmediate;
-  delete window.clearImmediate;
-});
-
-////////////////////////////////////////////////////////////////////////////////
-//// Asynchronous support subroutines
-
-function promiseOpenAndLoadWindow(aOptions)
-{
-  return new Promise((resolve, reject) => {
-    let win = OpenBrowserWindow(aOptions);
-    win.addEventListener("load", function() {
-      resolve(win);
-    }, {once: true});
+function promiseFocus() {
+  return new Promise(resolve => {
+    waitForFocus(resolve);
   });
 }
 
-/**
- * Waits for a load (or custom) event to finish in a given tab. If provided
- * load an uri into the tab.
- *
- * @param tab
- *        The tab to load into.
- * @param [optional] url
- *        The url to load, or the current url.
- * @param [optional] event
- *        The load event type to wait for.  Defaults to "load".
- * @return {Promise} resolved when the event is handled.
- * @resolves to the received event
- * @rejects if a valid load event is not received within a meaningful interval
- */
-function promiseTabLoadEvent(tab, url, eventType="load")
-{
-  let deferred = Promise.defer();
-  info("Wait tab event: " + eventType);
-
-  function handle(event) {
-    if (event.originalTarget != tab.linkedBrowser.contentDocument ||
-        event.target.location.href == "about:blank" ||
-        (url && event.target.location.href != url)) {
-      info("Skipping spurious '" + eventType + "'' event" +
-           " for " + event.target.location.href);
-      return;
-    }
-    // Remove reference to tab from the cleanup function:
-    realCleanup = () => {};
-    tab.linkedBrowser.removeEventListener(eventType, handle, true);
-    info("Tab event received: " + eventType);
-    deferred.resolve(event);
-  }
-
-  // Juggle a bit to avoid leaks:
-  let realCleanup = () => tab.linkedBrowser.removeEventListener(eventType, handle, true);
-  registerCleanupFunction(() => realCleanup());
-
-  tab.linkedBrowser.addEventListener(eventType, handle, true, true);
-  if (url)
-    tab.linkedBrowser.loadURI(url);
-  return deferred.promise;
-}
-
-function promiseWindowClosed(win)
-{
-  let promise = new Promise((resolve, reject) => {
-    Services.obs.addObserver(function obs(subject, topic) {
-      if (subject == win) {
-        Services.obs.removeObserver(obs, topic);
-        resolve();
-      }
-    }, "domwindowclosed", false);
-  });
-  win.close();
-  return promise;
-}
-
-
-function promiseFocus()
-{
-  let deferred = Promise.defer();
-  waitForFocus(deferred.resolve);
-  return deferred.promise;
-}
-
-function promisePanelOpened()
-{
-  let deferred = Promise.defer();
-
+function promisePanelOpened() {
   if (DownloadsPanel.panel && DownloadsPanel.panel.state == "open") {
-    return deferred.resolve();
+    return Promise.resolve();
   }
 
-  // Hook to wait until the panel is shown.
-  let originalOnPopupShown = DownloadsPanel.onPopupShown;
-  DownloadsPanel.onPopupShown = function () {
-    DownloadsPanel.onPopupShown = originalOnPopupShown;
-    originalOnPopupShown.apply(this, arguments);
+  return new Promise(resolve => {
 
-    // Defer to the next tick of the event loop so that we don't continue
-    // processing during the DOM event handler itself.
-    setTimeout(deferred.resolve, 0);
-  };
+    // Hook to wait until the panel is shown.
+    let originalOnPopupShown = DownloadsPanel.onPopupShown;
+    DownloadsPanel.onPopupShown = function() {
+      DownloadsPanel.onPopupShown = originalOnPopupShown;
+      originalOnPopupShown.apply(this, arguments);
 
-  return deferred.promise;
+      // Defer to the next tick of the event loop so that we don't continue
+      // processing during the DOM event handler itself.
+      setTimeout(resolve, 0);
+    };
+
+  });
 }
 
-function* task_resetState()
-{
+async function task_resetState() {
   // Remove all downloads.
-  let publicList = yield Downloads.getList(Downloads.PUBLIC);
-  let downloads = yield publicList.getAll();
+  let publicList = await Downloads.getList(Downloads.PUBLIC);
+  let downloads = await publicList.getAll();
   for (let download of downloads) {
     publicList.remove(download);
-    yield download.finalize(true);
+    await download.finalize(true);
   }
 
   DownloadsPanel.hidePanel();
 
-  yield promiseFocus();
+  await promiseFocus();
 }
 
-function* task_addDownloads(aItems)
-{
+async function task_addDownloads(aItems) {
   let startTimeMs = Date.now();
 
-  let publicList = yield Downloads.getList(Downloads.PUBLIC);
+  let publicList = await Downloads.getList(Downloads.PUBLIC);
   for (let item of aItems) {
     let download = {
       source: {
@@ -168,11 +82,12 @@ function* task_addDownloads(aItems)
       target: {
         path: gTestTargetFile.path,
       },
-      succeeded: item.state == nsIDM.DOWNLOAD_FINISHED,
-      canceled: item.state == nsIDM.DOWNLOAD_CANCELED ||
-                item.state == nsIDM.DOWNLOAD_PAUSED,
-      error: item.state == nsIDM.DOWNLOAD_FAILED ? new Error("Failed.") : null,
-      hasPartialData: item.state == nsIDM.DOWNLOAD_PAUSED,
+      succeeded: item.state == DownloadsCommon.DOWNLOAD_FINISHED,
+      canceled: item.state == DownloadsCommon.DOWNLOAD_CANCELED ||
+                item.state == DownloadsCommon.DOWNLOAD_PAUSED,
+      error: item.state == DownloadsCommon.DOWNLOAD_FAILED ?
+             new Error("Failed.") : null,
+      hasPartialData: item.state == DownloadsCommon.DOWNLOAD_PAUSED,
       hasBlockedData: item.hasBlockedData || false,
       startTime: new Date(startTimeMs++),
     };
@@ -180,25 +95,24 @@ function* task_addDownloads(aItems)
     if (item.errorObj) {
       download.errorObj = item.errorObj;
     }
-    yield publicList.add(yield Downloads.createDownload(download));
+    await publicList.add(await Downloads.createDownload(download));
   }
 }
 
-function* task_openPanel()
-{
-  yield promiseFocus();
+async function task_openPanel() {
+  await promiseFocus();
 
   let promise = promisePanelOpened();
   DownloadsPanel.showPanel();
-  yield promise;
+  await promise;
 }
 
-function* setDownloadDir() {
+async function setDownloadDir() {
   let tmpDir = Services.dirsvc.get("TmpD", Ci.nsIFile);
   tmpDir.append("testsavedir");
   if (!tmpDir.exists()) {
     tmpDir.create(Ci.nsIFile.DIRECTORY_TYPE, 0o755);
-    registerCleanupFunction(function () {
+    registerCleanupFunction(function() {
       try {
         tmpDir.remove(true);
       } catch (e) {
@@ -207,7 +121,7 @@ function* setDownloadDir() {
     });
   }
 
-  yield SpecialPowers.pushPrefEnv({"set": [
+  await SpecialPowers.pushPrefEnv({"set": [
     ["browser.download.folderList", 2],
     ["browser.download.dir", tmpDir, Ci.nsIFile],
   ]});
@@ -218,8 +132,8 @@ let gHttpServer = null;
 function startServer() {
   gHttpServer = new HttpServer();
   gHttpServer.start(-1);
-  registerCleanupFunction(function*() {
-     yield new Promise(function(resolve) {
+  registerCleanupFunction(async function() {
+     await new Promise(function(resolve) {
       gHttpServer.stop(resolve);
     });
   });
@@ -249,16 +163,6 @@ function httpUrl(aFileName) {
     aFileName;
 }
 
-function task_clearHistory() {
-  return new Promise(function(resolve) {
-    Services.obs.addObserver(function observeCH(aSubject, aTopic, aData) {
-      Services.obs.removeObserver(observeCH, PlacesUtils.TOPIC_EXPIRATION_FINISHED);
-      resolve();
-    }, PlacesUtils.TOPIC_EXPIRATION_FINISHED, false);
-    PlacesUtils.history.clear();
-  });
-}
-
 function openLibrary(aLeftPaneRoot) {
   let library = window.openDialog("chrome://browser/content/places/places.xul",
                                   "", "chrome,toolbar=yes,dialog=no,resizable",
@@ -269,28 +173,48 @@ function openLibrary(aLeftPaneRoot) {
   });
 }
 
-function promiseAlertDialogOpen(buttonAction) {
-  return new Promise(resolve => {
-    Services.ww.registerNotification(function onOpen(subj, topic, data) {
-      if (topic == "domwindowopened" && subj instanceof Ci.nsIDOMWindow) {
-        // The test listens for the "load" event which guarantees that the alert
-        // class has already been added (it is added when "DOMContentLoaded" is
-        // fired).
-        subj.addEventListener("load", function() {
-          if (subj.document.documentURI ==
-              "chrome://global/content/commonDialog.xul") {
-            Services.ww.unregisterNotification(onOpen);
+/**
+ * Waits for a given button to become visible.
+ */
+function promiseButtonShown(id) {
+  let dwu = window.windowUtils;
+  return BrowserTestUtils.waitForCondition(() => {
+    let target = document.getElementById(id);
+    let bounds = dwu.getBoundsWithoutFlushing(target);
+    return bounds.width > 0 && bounds.height > 0;
+  }, `Waiting for button ${id} to have non-0 size`);
+}
 
-            let dialog = subj.document.getElementById("commonDialog");
-            ok(dialog.classList.contains("alert-dialog"),
-               "The dialog element should contain an alert class.");
+async function simulateDropAndCheck(win, dropTarget, urls) {
+  let dragData = [[{type: "text/plain", data: urls.join("\n")}]];
+  let list = await Downloads.getList(Downloads.ALL);
 
-            let doc = subj.document.documentElement;
-            doc.getButton(buttonAction).click();
-            resolve();
-          }
-        }, {once: true});
-      }
+  let added = new Set();
+  let succeeded = new Set();
+  await new Promise(resolve => {
+    let view = {
+      onDownloadAdded(download) {
+        added.add(download.source.url);
+      },
+      onDownloadChanged(download) {
+        if (!added.has(download.source.url)) {
+          return;
+        }
+        if (!download.succeeded) {
+          return;
+        }
+        succeeded.add(download.source.url);
+        if (succeeded.size == urls.length) {
+          list.removeView(view).then(resolve);
+        }
+      },
+    };
+    list.addView(view).then(function() {
+      EventUtils.synthesizeDrop(dropTarget, dropTarget, dragData, "link", win);
     });
   });
+
+  for (let url of urls) {
+    ok(added.has(url), url + " is added to download");
+  }
 }

@@ -1,42 +1,37 @@
 "use strict";
 
-// This file spawns a content task.
-/* eslint-env mozilla/frame-script */
-
 // This file expects these globals to be defined by the test case.
 /* global gTestTab:true, gContentAPI:true, gContentWindow:true, tests:false */
 
-Cu.import("resource://gre/modules/Promise.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "UITour",
-                                  "resource:///modules/UITour.jsm");
+ChromeUtils.defineModuleGetter(this, "UITour",
+                               "resource:///modules/UITour.jsm");
 
 
 const SINGLE_TRY_TIMEOUT = 100;
 const NUMBER_OF_TRIES = 30;
 
 function waitForConditionPromise(condition, timeoutMsg, tryCount = NUMBER_OF_TRIES) {
-  let defer = Promise.defer();
-  let tries = 0;
-  function checkCondition() {
-    if (tries >= tryCount) {
-      defer.reject(timeoutMsg);
+  return new Promise((resolve, reject) => {
+    let tries = 0;
+    function checkCondition() {
+      if (tries >= tryCount) {
+        reject(timeoutMsg);
+      }
+      var conditionPassed;
+      try {
+        conditionPassed = condition();
+      } catch (e) {
+        return reject(e);
+      }
+      if (conditionPassed) {
+        return resolve();
+      }
+      tries++;
+      setTimeout(checkCondition, SINGLE_TRY_TIMEOUT);
+      return undefined;
     }
-    var conditionPassed;
-    try {
-      conditionPassed = condition();
-    } catch (e) {
-      return defer.reject(e);
-    }
-    if (conditionPassed) {
-      return defer.resolve();
-    }
-    tries++;
     setTimeout(checkCondition, SINGLE_TRY_TIMEOUT);
-    return undefined;
-  }
-  setTimeout(checkCondition, SINGLE_TRY_TIMEOUT);
-  return defer.promise;
+  });
 }
 
 function waitForCondition(condition, nextTestFn, errorMsg) {
@@ -52,7 +47,7 @@ function taskify(fun) {
   return (doneFn) => {
     // Output the inner function name otherwise no name will be output.
     info("\t" + fun.name);
-    return Task.spawn(fun).then(doneFn, (reason) => {
+    return fun().then(doneFn, (reason) => {
       ok(false, reason);
       doneFn();
     });
@@ -66,7 +61,7 @@ function is_hidden(element) {
   if (style.visibility != "visible")
     return true;
   if (style.display == "-moz-popup")
-    return ["hiding", "closed"].indexOf(element.state) != -1;
+    return ["hiding", "closed"].includes(element.state);
 
   // Hiding a parent element will hide all its children
   if (element.parentNode != element.ownerDocument)
@@ -123,7 +118,7 @@ function elementHiddenPromise(element, msg) {
 }
 
 function waitForPopupAtAnchor(popup, anchorNode, nextTestFn, msg) {
-  waitForCondition(() => is_visible(popup) && popup.popupBoxObject.anchorNode == anchorNode,
+  waitForCondition(() => is_visible(popup) && popup.anchorNode == anchorNode,
                    () => {
                      ok(true, msg);
                      is_element_visible(popup, "Popup should be visible");
@@ -135,10 +130,20 @@ function waitForPopupAtAnchor(popup, anchorNode, nextTestFn, msg) {
 function getConfigurationPromise(configName) {
   return ContentTask.spawn(gTestTab.linkedBrowser, configName, contentConfigName => {
     return new Promise((resolve) => {
-      let contentWin = Components.utils.waiveXrays(content);
+      let contentWin = Cu.waiveXrays(content);
       contentWin.Mozilla.UITour.getConfiguration(contentConfigName, resolve);
     });
   });
+}
+
+function getShowHighlightTargetName() {
+  let highlight = document.getElementById("UITourHighlight");
+  return highlight.parentElement.getAttribute("targetName");
+}
+
+function getShowInfoTargetName() {
+  let tooltip = document.getElementById("UITourTooltip");
+  return tooltip.getAttribute("targetName");
 }
 
 function hideInfoPromise(...args) {
@@ -156,7 +161,7 @@ function showInfoPromise(target, title, text, icon, buttonsFunctionName, options
   let popup = document.getElementById("UITourTooltip");
   let shownPromise = promisePanelElementShown(window, popup);
   return ContentTask.spawn(gTestTab.linkedBrowser, [...arguments], args => {
-    let contentWin = Components.utils.waiveXrays(content);
+    let contentWin = Cu.waiveXrays(content);
     let [contentTarget,
          contentTitle,
          contentText,
@@ -178,16 +183,16 @@ function showHighlightPromise(...args) {
 function showMenuPromise(name) {
   return ContentTask.spawn(gTestTab.linkedBrowser, name, contentName => {
     return new Promise((resolve) => {
-      let contentWin = Components.utils.waiveXrays(content);
+      let contentWin = Cu.waiveXrays(content);
       contentWin.Mozilla.UITour.showMenu(contentName, resolve);
     });
   });
 }
 
 function waitForCallbackResultPromise() {
-  return ContentTask.spawn(gTestTab.linkedBrowser, null, function*() {
-    let contentWin = Components.utils.waiveXrays(content);
-    yield ContentTaskUtils.waitForCondition(() => {
+  return ContentTask.spawn(gTestTab.linkedBrowser, null, async function() {
+    let contentWin = Cu.waiveXrays(content);
+    await ContentTaskUtils.waitForCondition(() => {
       return contentWin.callbackResult;
     }, "callback should be called");
     return {
@@ -255,10 +260,10 @@ function loadUITourTestPage(callback, host = "https://example.org/") {
   let url = getRootDirectory(gTestPath) + "uitour.html";
   url = url.replace("chrome://mochitests/content/", host);
 
-  gTestTab = gBrowser.addTab(url);
+  gTestTab = BrowserTestUtils.addTab(gBrowser, url);
   gBrowser.selectedTab = gTestTab;
 
-  gTestTab.linkedBrowser.addEventListener("load", function() {
+  BrowserTestUtils.browserLoaded(gTestTab.linkedBrowser).then(() => {
     if (gMultiProcessBrowser) {
       // When e10s is enabled, make gContentAPI and gContentWindow proxies which has every property
       // return a function which calls the method of the same name on
@@ -271,7 +276,7 @@ function loadUITourTestPage(callback, host = "https://example.org/") {
               args,
             };
             return ContentTask.spawn(gTestTab.linkedBrowser, taskArgs, contentArgs => {
-              let contentWin = Components.utils.waiveXrays(content);
+              let contentWin = Cu.waiveXrays(content);
               return contentWin[contentArgs.methodName].apply(contentWin, contentArgs.args);
             });
           };
@@ -313,12 +318,12 @@ function loadUITourTestPage(callback, host = "https://example.org/") {
               args,
               fnIndices,
             };
-            return ContentTask.spawn(browser, taskArgs, function*(contentArgs) {
-              let contentWin = Components.utils.waiveXrays(content);
+            return ContentTask.spawn(browser, taskArgs, async function(contentArgs) {
+              let contentWin = Cu.waiveXrays(content);
               let callbacksCalled = 0;
               let resolveCallbackPromise;
               let allCallbacksCalledPromise = new Promise(resolve => resolveCallbackPromise = resolve);
-              let argumentsWithFunctions = contentArgs.args.map((arg, index) => {
+              let argumentsWithFunctions = Cu.cloneInto(contentArgs.args.map((arg, index) => {
                 if (arg === "" && contentArgs.fnIndices.includes(index)) {
                   return function() {
                     callbacksCalled++;
@@ -329,11 +334,11 @@ function loadUITourTestPage(callback, host = "https://example.org/") {
                   };
                 }
                 return arg;
-              });
+              }), content, {cloneFunctions: true});
               let rv = contentWin.Mozilla.UITour[contentArgs.methodName].apply(contentWin.Mozilla.UITour,
-                                                                        argumentsWithFunctions);
+                                                                               argumentsWithFunctions);
               if (contentArgs.fnIndices.length) {
-                yield allCallbacksCalledPromise;
+                await allCallbacksCalledPromise;
               }
               return rv;
             });
@@ -342,16 +347,16 @@ function loadUITourTestPage(callback, host = "https://example.org/") {
       };
       gContentAPI = new Proxy({}, UITourHandler);
     } else {
-      gContentWindow = Components.utils.waiveXrays(gTestTab.linkedBrowser.contentDocument.defaultView);
+      gContentWindow = Cu.waiveXrays(gTestTab.linkedBrowser.contentDocument.defaultView);
       gContentAPI = gContentWindow.Mozilla.UITour;
     }
 
     waitForFocus(callback, gTestTab.linkedBrowser);
-  }, {capture: true, once: true});
+  });
 }
 
 // Wrapper for UITourTest to be used by add_task tests.
-function* setup_UITourTest() {
+function setup_UITourTest() {
   return UITourTest(true);
 }
 
@@ -435,11 +440,11 @@ function nextTest() {
  * wrapper around their test's generator function to reduce boilerplate.
  */
 function add_UITour_task(func) {
-  let genFun = function*() {
-    yield new Promise((resolve) => {
+  let genFun = async function() {
+    await new Promise((resolve) => {
       waitForFocus(function() {
         loadUITourTestPage(function() {
-          let funcPromise = Task.spawn(func)
+          let funcPromise = (func() || Promise.resolve())
                                 .then(() => done(true),
                                       (reason) => {
                                         ok(false, reason);

@@ -6,11 +6,7 @@
 
 const TOTAL_SITES = 20;
 
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* test_execute() {
+add_task(async function test_execute() {
   let now = (Date.now() - 10000) * 1000;
 
   for (let i = 0; i < TOTAL_SITES; i++) {
@@ -18,7 +14,7 @@ add_task(function* test_execute() {
     let testURI = uri(site);
     let testImageURI = uri(site + "blank.gif");
     let when = now + (i * TOTAL_SITES * 1000);
-    yield PlacesTestUtils.addVisits([
+    await PlacesTestUtils.addVisits([
       { uri: testURI, visitDate: when, transition: TRANSITION_TYPED },
       { uri: testImageURI, visitDate: when + 1000, transition: TRANSITION_EMBED },
       { uri: testImageURI, visitDate: when + 2000, transition: TRANSITION_FRAMED_LINK },
@@ -47,19 +43,19 @@ add_task(function* test_execute() {
   root.containerOpen = true;
   let cc = root.childCount;
   // Embed visits are not added to the database, thus they won't appear.
-  do_check_eq(cc, 3 * TOTAL_SITES);
+  Assert.equal(cc, 3 * TOTAL_SITES);
   for (let i = 0; i < TOTAL_SITES; i++) {
     let index = i * 3;
     let node = root.getChild(index);
     let site = "http://www.test-" + (TOTAL_SITES - 1 - i) + ".com/";
-    do_check_eq(node.uri, site);
-    do_check_eq(node.type, Ci.nsINavHistoryResultNode.RESULT_TYPE_URI);
+    Assert.equal(node.uri, site);
+    Assert.equal(node.type, Ci.nsINavHistoryResultNode.RESULT_TYPE_URI);
     node = root.getChild(++index);
-    do_check_eq(node.uri, site + "blank.gif");
-    do_check_eq(node.type, Ci.nsINavHistoryResultNode.RESULT_TYPE_URI);
+    Assert.equal(node.uri, site + "blank.gif");
+    Assert.equal(node.type, Ci.nsINavHistoryResultNode.RESULT_TYPE_URI);
     node = root.getChild(++index);
-    do_check_eq(node.uri, site);
-    do_check_eq(node.type, Ci.nsINavHistoryResultNode.RESULT_TYPE_URI);
+    Assert.equal(node.uri, site);
+    Assert.equal(node.type, Ci.nsINavHistoryResultNode.RESULT_TYPE_URI);
   }
   root.containerOpen = false;
 
@@ -78,16 +74,16 @@ add_task(function* test_execute() {
   root.containerOpen = true;
   cc = root.childCount;
   // 2 * TOTAL_SITES because we count the TYPED and LINK, but not EMBED or FRAMED
-  do_check_eq(cc, 2 * TOTAL_SITES);
+  Assert.equal(cc, 2 * TOTAL_SITES);
   for (let i = 0; i < TOTAL_SITES; i++) {
     let index = i * 2;
     let node = root.getChild(index);
     let site = "http://www.test-" + (TOTAL_SITES - 1 - i) + ".com/";
-    do_check_eq(node.uri, site);
-    do_check_eq(node.type, Ci.nsINavHistoryResultNode.RESULT_TYPE_URI);
+    Assert.equal(node.uri, site);
+    Assert.equal(node.type, Ci.nsINavHistoryResultNode.RESULT_TYPE_URI);
     node = root.getChild(++index);
-    do_check_eq(node.uri, site);
-    do_check_eq(node.type, Ci.nsINavHistoryResultNode.RESULT_TYPE_URI);
+    Assert.equal(node.uri, site);
+    Assert.equal(node.type, Ci.nsINavHistoryResultNode.RESULT_TYPE_URI);
   }
   root.containerOpen = false;
 
@@ -106,12 +102,12 @@ add_task(function* test_execute() {
                                               options).root;
   root.containerOpen = true;
   cc = root.childCount;
-  do_check_eq(cc, options.maxResults);
+  Assert.equal(cc, options.maxResults);
   for (let i = 0; i < cc; i++) {
     let node = root.getChild(i);
     let site = "http://www.test-" + (TOTAL_SITES - 1 - i) + ".com/";
-    do_check_eq(node.uri, site);
-    do_check_eq(node.type, Ci.nsINavHistoryResultNode.RESULT_TYPE_URI);
+    Assert.equal(node.uri, site);
+    Assert.equal(node.type, Ci.nsINavHistoryResultNode.RESULT_TYPE_URI);
   }
   root.containerOpen = false;
 
@@ -129,12 +125,12 @@ add_task(function* test_execute() {
                                               options).root;
   root.containerOpen = true;
   cc = root.childCount;
-  do_check_eq(cc, TOTAL_SITES);
+  Assert.equal(cc, TOTAL_SITES);
   for (let i = 0; i < 10; i++) {
     let node = root.getChild(i);
     let site = "http://www.test-" + (TOTAL_SITES - 1 - i) + ".com/";
-    do_check_eq(node.uri, site);
-    do_check_eq(node.type, Ci.nsINavHistoryResultNode.RESULT_TYPE_URI);
+    Assert.equal(node.uri, site);
+    Assert.equal(node.type, Ci.nsINavHistoryResultNode.RESULT_TYPE_URI);
   }
   root.containerOpen = false;
 });

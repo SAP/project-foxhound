@@ -4,10 +4,22 @@
 
 %include ../../shared/controlcenter/panel.inc.css
 
-.identity-popup-expander:-moz-focusring {
-  padding: 1px;
+.identity-popup-expander > .button-box,
+.identity-popup-permission-remove-button > .button-box {
+  -moz-appearance: none;
 }
 
-.identity-popup-expander:-moz-focusring > .button-box {
+.identity-popup-expander:-moz-focusring,
+.identity-popup-permission-remove-button:-moz-focusring {
   outline: 1px -moz-dialogtext dotted;
+  outline-offset: -1px;
+}
+
+.tracking-protection-button > .button-box > .button-icon {
+  margin-inline-end: 5px;
+}
+
+/* This overrides color: -moz-buttonhovertext from toolbarbutton.css */
+.identity-popup-content-blocking-category:hover {
+  color: inherit;
 }

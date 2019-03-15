@@ -10,22 +10,20 @@ with Files("**"):
 XPIDL_SOURCES += [
     'nsIDOMWakeLockListener.idl',
     'nsIPowerManagerService.idl',
+    'nsIWakeLock.idl',
 ]
 
 XPIDL_MODULE = 'dom_power'
 
 EXPORTS.mozilla.dom += [
-    'PowerManager.h',
     'WakeLock.h',
 ]
 
 EXPORTS.mozilla.dom.power += [
     'PowerManagerService.h',
-    'Types.h',
 ]
 
 UNIFIED_SOURCES += [
-    'PowerManager.cpp',
     'PowerManagerService.cpp',
     'WakeLock.cpp',
 ]
@@ -33,7 +31,3 @@ UNIFIED_SOURCES += [
 include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
-
-MOCHITEST_MANIFESTS += ['test/mochitest.ini']
-MOCHITEST_CHROME_MANIFESTS += ['test/chrome.ini']
-BROWSER_CHROME_MANIFESTS += ['test/browser.ini']

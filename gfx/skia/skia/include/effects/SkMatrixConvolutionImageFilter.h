@@ -8,6 +8,7 @@
 #ifndef SkMatrixConvolutionImageFilter_DEFINED
 #define SkMatrixConvolutionImageFilter_DEFINED
 
+#include "SkFlattenable.h"
 #include "SkImageFilter.h"
 #include "SkScalar.h"
 #include "SkSize.h"
@@ -28,6 +29,9 @@ public:
       kClamp_TileMode = 0,         /*!< Clamp to the image's edge pixels. */
       kRepeat_TileMode,        /*!< Wrap around to the image's opposite edge. */
       kClampToBlack_TileMode,  /*!< Fill with transparent black. */
+      kLast_TileMode = kClampToBlack_TileMode,
+
+      // TODO: remove kMax - it is non-standard but used by Chromium!
       kMax_TileMode = kClampToBlack_TileMode
     };
 
@@ -64,23 +68,7 @@ public:
                                      sk_sp<SkImageFilter> input,
                                      const CropRect* cropRect = nullptr);
 
-    SK_TO_STRING_OVERRIDE()
-    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkMatrixConvolutionImageFilter)
-
-#ifdef SK_SUPPORT_LEGACY_IMAGEFILTER_PTR
-    static SkImageFilter* Create(const SkISize& kernelSize,
-                                 const SkScalar* kernel,
-                                 SkScalar gain,
-                                 SkScalar bias,
-                                 const SkIPoint& kernelOffset,
-                                 TileMode tileMode,
-                                 bool convolveAlpha,
-                                 SkImageFilter* input = NULL,
-                                 const CropRect* cropRect = NULL) {
-        return Make(kernelSize, kernel, gain, bias, kernelOffset, tileMode, convolveAlpha,
-                    sk_ref_sp<SkImageFilter>(input), cropRect).release();
-    }
-#endif
+    Factory getFactory() const override { return CreateProc; }
 
 protected:
     SkMatrixConvolutionImageFilter(const SkISize& kernelSize,
@@ -96,10 +84,15 @@ protected:
 
     sk_sp<SkSpecialImage> onFilterImage(SkSpecialImage* source, const Context&,
                                         SkIPoint* offset) const override;
-    SkIRect onFilterNodeBounds(const SkIRect&, const SkMatrix&, MapDirection) const override;
+    sk_sp<SkImageFilter> onMakeColorSpace(SkColorSpaceXformer*) const override;
+    SkIRect onFilterNodeBounds(const SkIRect&, const SkMatrix& ctm,
+                               MapDirection, const SkIRect* inputRect) const override;
     bool affectsTransparentBlack() const override;
 
 private:
+    static sk_sp<SkFlattenable> CreateProc(SkReadBuffer&);
+    friend class SkFlattenable::PrivateInitializer;
+
     SkISize   fKernelSize;
     SkScalar* fKernel;
     SkScalar  fGain;
@@ -111,19 +104,23 @@ private:
     template <class PixelFetcher, bool convolveAlpha>
     void filterPixels(const SkBitmap& src,
                       SkBitmap* result,
+                      SkIVector& offset,
                       const SkIRect& rect,
                       const SkIRect& bounds) const;
     template <class PixelFetcher>
     void filterPixels(const SkBitmap& src,
                       SkBitmap* result,
+                      SkIVector& offset,
                       const SkIRect& rect,
                       const SkIRect& bounds) const;
     void filterInteriorPixels(const SkBitmap& src,
                               SkBitmap* result,
+                              SkIVector& offset,
                               const SkIRect& rect,
                               const SkIRect& bounds) const;
     void filterBorderPixels(const SkBitmap& src,
                             SkBitmap* result,
+                            SkIVector& offset,
                             const SkIRect& rect,
                             const SkIRect& bounds) const;
 

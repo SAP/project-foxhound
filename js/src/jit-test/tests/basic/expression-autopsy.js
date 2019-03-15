@@ -150,6 +150,81 @@ check_one("super(...)",
           },
           " is not a function");
 
+check_one("super.a",
+          function() {
+            class X extends Object {
+              test() {
+                super.a();
+              }
+            }
+            var x = new X();
+            x.test();
+          },
+          " is not a function");
+
+check_one("super[a]",
+          function() {
+            var a = "a";
+            class X extends Object {
+              test() {
+                super[a]();
+              }
+            }
+            var x = new X();
+            x.test();
+          },
+          " is not a function");
+
+check_one("super.a(...)",
+          function() {
+            class Y {
+              a() {
+                return 5;
+              }
+            }
+
+            class X extends Y {
+              test() {
+                super.a()();
+              }
+            }
+
+            var x = new X();
+            x.test();
+          },
+          " is not a function");
+
+check_one("super[a](...)",
+          function() {
+            class Y {
+              a() {
+                return 5;
+              }
+            }
+
+            var a = "a";
+            class X extends Y {
+              test() {
+                super[a]()();
+              }
+            }
+
+            var x = new X();
+            x.test();
+          },
+          " is not a function");
+
+check_one("super[1]",
+          function() {
+            class X extends Object {
+              foo() {
+                return super[1]();
+              }
+            }
+            new X().foo();
+          },
+          " is not a function");
+
 check_one("eval(...)",
           function() { eval("")(); },
           " is not a function");
@@ -183,22 +258,10 @@ check_one("[...].foo",
           function() { [undefined, ...[]].foo(); },
           " is not a function");
 
-// Manual testing for this case: the only way to trigger an error is *not* on
-// an attempted property access during destructuring, and the error message
-// invoking ToObject(null) is different: "can't convert {0} to object".
-try
-{
-  (function() {
-    var [{x}] = [null, {}];
-   })();
-  throw new Error("didn't throw");
-}
-catch (e)
-{
-  assertEq(e instanceof TypeError, true,
-           "expected TypeError, got " + e);
-  assertEq(e.message, "can't convert null to object");
-}
+check_one("[...][Symbol.iterator](...).next(...).value",
+          function () { var [{x}] = [null, {}]; }, " is null");
+check_one("[...][Symbol.iterator](...).next(...).value",
+          function () { var [{x}] = [void 0, {}]; }, " is undefined");
 
 try {
   (function() {

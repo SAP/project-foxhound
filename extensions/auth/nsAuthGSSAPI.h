@@ -1,4 +1,4 @@
-/* vim:set ts=4 sw=4 et cindent: */
+/* vim:set ts=4 sw=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,43 +21,42 @@
 /* Some remarks on thread safety ...
  *
  * The thread safety of this class depends largely upon the thread safety of
- * the underlying GSSAPI and Kerberos libraries. This code just loads the 
- * system GSSAPI library, and whilst it avoids loading known bad libraries, 
+ * the underlying GSSAPI and Kerberos libraries. This code just loads the
+ * system GSSAPI library, and whilst it avoids loading known bad libraries,
  * it cannot determine the thread safety of the the code it loads.
  *
- * When used with a non-threadsafe library, it is not safe to simultaneously 
+ * When used with a non-threadsafe library, it is not safe to simultaneously
  * use multiple instantiations of this class.
  *
- * When used with a threadsafe Kerberos library, multiple instantiations of 
- * this class may happily co-exist. Methods may be sequentially called from 
- * multiple threads. The nature of the GSSAPI protocol is such that a correct 
- * implementation will never call methods in parallel, as the results of the 
+ * When used with a threadsafe Kerberos library, multiple instantiations of
+ * this class may happily co-exist. Methods may be sequentially called from
+ * multiple threads. The nature of the GSSAPI protocol is such that a correct
+ * implementation will never call methods in parallel, as the results of the
  * last call are required as input to the next.
  */
 
-class nsAuthGSSAPI final : public nsIAuthModule
-{
-public:
-    NS_DECL_THREADSAFE_ISUPPORTS
-    NS_DECL_NSIAUTHMODULE
+class nsAuthGSSAPI final : public nsIAuthModule {
+ public:
+  NS_DECL_THREADSAFE_ISUPPORTS
+  NS_DECL_NSIAUTHMODULE
 
-    explicit nsAuthGSSAPI(pType package);
+  explicit nsAuthGSSAPI(pType package);
 
-    static void Shutdown();
+  static void Shutdown();
 
-private:
-    ~nsAuthGSSAPI() { Reset(); }
+ private:
+  ~nsAuthGSSAPI() { Reset(); }
 
-    void    Reset();
-    gss_OID GetOID() { return mMechOID; }
+  void Reset();
+  gss_OID GetOID() { return mMechOID; }
 
-private:
-    gss_ctx_id_t mCtx;
-    gss_OID      mMechOID;
-    nsCString    mServiceName;
-    uint32_t     mServiceFlags;
-    nsString     mUsername;
-    bool         mComplete;
+ private:
+  gss_ctx_id_t mCtx;
+  gss_OID mMechOID;
+  nsCString mServiceName;
+  uint32_t mServiceFlags;
+  nsString mUsername;
+  bool mComplete;
 };
 
 #endif /* nsAuthGSSAPI_h__ */

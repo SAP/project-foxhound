@@ -7,16 +7,18 @@
 
 from __future__ import absolute_import, print_function, unicode_literals
 
-from voluptuous import Schema, Any, Required, All
+from voluptuous import Any, Required, All, Optional
 from taskgraph.util.schema import (
     optionally_keyed_by,
     validate_schema,
+    Schema,
 )
 
 
 def even_15_minutes(minutes):
     if minutes % 15 != 0:
         raise ValueError("minutes must be evenly divisible by 15")
+
 
 cron_yml_schema = Schema({
     'jobs': [{
@@ -26,18 +28,22 @@ cron_yml_schema = Schema({
         # what to run
 
         # Description of the job to run, keyed by 'type'
-        Required('job'): Any({
+        Required('job'): {
             Required('type'): 'decision-task',
 
             # Treeherder symbol for the cron task
             Required('treeherder-symbol'): basestring,
 
-            # --triggered-by './mach taskgraph decision' argument
-            'triggered-by': basestring,
-
             # --target-tasks-method './mach taskgraph decision' argument
             'target-tasks-method': basestring,
-        }),
+
+            Optional(
+                'optimize-target-tasks',
+                description='If specified, this indicates whether the target '
+                            'tasks are eligible for optimization. Otherwise, '
+                            'the default for the project is used.',
+            ): bool,
+        },
 
         # when to run it
 
@@ -53,7 +59,17 @@ cron_yml_schema = Schema({
         # for the same job.
         'when': optionally_keyed_by(
             'project',
-            [{'hour': int, 'minute': All(int, even_15_minutes)}]),
+            [
+                {
+                    'hour': int,
+                    'minute': All(int, even_15_minutes),
+                    # You probably don't want both day and weekday.
+                    'day': int,  # Day of the month, as used by datetime.
+                    'weekday': Any('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday',
+                                   'Saturday', 'Sunday')
+                }
+            ]
+        ),
     }],
 })
 

@@ -4,9 +4,12 @@
 //! the IR.
 
 pub mod annotations;
+pub mod analysis;
 pub mod comp;
+pub mod comment;
 pub mod context;
 pub mod derive;
+pub mod dot;
 pub mod enum_ty;
 pub mod function;
 pub mod int;
@@ -14,7 +17,7 @@ pub mod item;
 pub mod item_kind;
 pub mod layout;
 pub mod module;
-pub mod named;
+pub mod template;
 pub mod traversal;
 pub mod ty;
 pub mod var;

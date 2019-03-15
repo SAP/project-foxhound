@@ -8,9 +8,9 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/voip_metric.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/voip_metric.h"
 
-#include "testing/gtest/include/gtest/gtest.h"
+#include "test/gtest.h"
 
 namespace webrtc {
 namespace rtcp {
@@ -51,8 +51,8 @@ TEST(RtcpPacketVoipMetricTest, Create) {
   metric.JBmax = 0x6667;
   metric.JBabsMax = 0x7778;
   VoipMetric metric_block;
-  metric_block.To(kRemoteSsrc);
-  metric_block.WithVoipMetric(metric);
+  metric_block.SetMediaSsrc(kRemoteSsrc);
+  metric_block.SetVoipMetric(metric);
 
   metric_block.Create(buffer);
   EXPECT_EQ(0, memcmp(buffer, kBlock, kBlockSizeBytes));

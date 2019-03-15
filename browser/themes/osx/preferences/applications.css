@@ -51,14 +51,9 @@ menuitem[appHandlerIcon="save"] {
   list-style-image: url("chrome://browser/skin/preferences/saveFile.png");
 }
 
-richlistitem[appHandlerIcon="feed"],
-menuitem[appHandlerIcon="feed"] {
-  list-style-image: url("chrome://browser/skin/page-livemarks.png");
-}
-
 richlistitem[appHandlerIcon="plugin"],
 menuitem[appHandlerIcon="plugin"] {
-  list-style-image: url("chrome://mozapps/skin/plugins/pluginGeneric-16.png");
+  list-style-image: url("chrome://global/skin/plugins/pluginGeneric.svg");
 }
 
 /* Repeat what menu.css does for .menuitem-iconic */
@@ -70,4 +65,24 @@ menuitem[appHandlerIcon] {
 menuitem[appHandlerIcon] > .menu-iconic-left > .menu-iconic-icon {
   margin-inline-start: 0;
   width: 16px;
+}
+
+#appList {
+  min-height: 212px;
+}
+
+#appList > richlistitem {
+  -moz-box-align: center;
+}
+
+#appList > richlistitem > image {
+  margin: 5px;
+  width: 32px;
+  height: 32px;
+}
+
+#appList > richlistitem > label {
+  margin: 0px;
+  padding: 5px;
+  white-space: nowrap;
 }

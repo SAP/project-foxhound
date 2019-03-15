@@ -1,62 +1,106 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
 "use strict";
 
-const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-Cu.import("resource://gre/modules/ExtensionUtils.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "clearTimeout",
-                                  "resource://gre/modules/Timer.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
-                                  "resource://gre/modules/NetUtil.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "require",
-                                  "resource://devtools/shared/Loader.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "setTimeout",
-                                  "resource://gre/modules/Timer.jsm");
-
-XPCOMUtils.defineLazyGetter(this, "colorUtils", () => {
-  return require("devtools/shared/css/color").colorUtils;
+XPCOMUtils.defineLazyModuleGetters(this, {
+  BrowserUtils: "resource://gre/modules/BrowserUtils.jsm",
+  clearTimeout: "resource://gre/modules/Timer.jsm",
+  E10SUtils: "resource://gre/modules/E10SUtils.jsm",
+  ExtensionCommon: "resource://gre/modules/ExtensionCommon.jsm",
+  setTimeout: "resource://gre/modules/Timer.jsm",
 });
 
+ChromeUtils.import("resource://gre/modules/ExtensionUtils.jsm");
 const {
-  stylesheetMap,
+  getWinUtils,
 } = ExtensionUtils;
 
-/* globals addMessageListener, content, docShell, sendAsyncMessage */
+/* eslint-env mozilla/frame-script */
 
 // Minimum time between two resizes.
 const RESIZE_TIMEOUT = 100;
 
+/**
+ * Check if the provided color is fully opaque.
+ *
+ * @param   {string} color
+ *          Any valid CSS color.
+ * @returns {boolean} true if the color is opaque.
+ */
+const isOpaque = function(color) {
+  try {
+    if (/(rgba|hsla)/i.test(color)) {
+      // Match .123456, 123.456, 123456 with an optional % sign.
+      let numberRe = /(\.\d+|\d+\.?\d*)%?/g;
+      // hsla/rgba, opacity is the last number in the color string (can be a percentage).
+      let opacity = color.match(numberRe)[3];
+
+      // Convert to [0, 1] space if the opacity was expressed as a percentage.
+      if (opacity.includes("%")) {
+        opacity = opacity.slice(0, -1);
+        opacity = opacity / 100;
+      }
+
+      return opacity * 1 >= 1;
+    } else if (/^#[a-f0-9]{4}$/i.test(color)) {
+      // Hex color with 4 characters, opacity is one if last character is F
+      return color.toUpperCase().endsWith("F");
+    } else if (/^#[a-f0-9]{8}$/i.test(color)) {
+      // Hex color with 8 characters, opacity is one if last 2 characters are FF
+      return color.toUpperCase().endsWith("FF");
+    }
+  } catch (e) {
+    // Invalid color.
+  }
+  return true;
+};
+
 const BrowserListener = {
-  init({allowScriptsToClose, fixedWidth, maxHeight, maxWidth, stylesheets}) {
+  init({allowScriptsToClose, blockParser, fixedWidth, maxHeight, maxWidth, stylesheets, isInline}) {
     this.fixedWidth = fixedWidth;
     this.stylesheets = stylesheets || [];
 
+    this.isInline = isInline;
     this.maxWidth = maxWidth;
     this.maxHeight = maxHeight;
+
+    this.blockParser = blockParser;
+    this.needsResize = fixedWidth || maxHeight || maxWidth;
 
     this.oldBackground = null;
 
     if (allowScriptsToClose) {
-      content.QueryInterface(Ci.nsIInterfaceRequestor)
-             .getInterface(Ci.nsIDOMWindowUtils)
-             .allowScriptsToClose();
+      getWinUtils(content).allowScriptsToClose();
     }
 
-    addEventListener("DOMWindowCreated", this, true);
+    // Force external links to open in tabs.
+    docShell.isAppTab = true;
+
+    if (this.blockParser) {
+      this.blockingPromise = new Promise(resolve => {
+        this.unblockParser = resolve;
+      });
+      addEventListener("DOMDocElementInserted", this, true);
+    }
+
     addEventListener("load", this, true);
+    addEventListener("DOMWindowCreated", this, true);
     addEventListener("DOMContentLoaded", this, true);
     addEventListener("DOMWindowClose", this, true);
     addEventListener("MozScrolledAreaChanged", this, true);
   },
 
   destroy() {
-    removeEventListener("DOMWindowCreated", this, true);
+    if (this.blockParser) {
+      removeEventListener("DOMDocElementInserted", this, true);
+    }
+
     removeEventListener("load", this, true);
+    removeEventListener("DOMWindowCreated", this, true);
     removeEventListener("DOMContentLoaded", this, true);
     removeEventListener("DOMWindowClose", this, true);
     removeEventListener("MozScrolledAreaChanged", this, true);
@@ -65,19 +109,37 @@ const BrowserListener = {
   receiveMessage({name, data}) {
     if (name === "Extension:InitBrowser") {
       this.init(data);
+    } else if (name === "Extension:UnblockParser") {
+      if (this.unblockParser) {
+        this.unblockParser();
+        this.blockingPromise = null;
+      }
+    } else if (name === "Extension:GrabFocus") {
+      content.window.requestAnimationFrame(() => {
+        Services.focus.focusedWindow = content.window;
+      });
+    }
+  },
+
+  loadStylesheets() {
+    let winUtils = getWinUtils(content);
+
+    for (let url of this.stylesheets) {
+      winUtils.addSheet(ExtensionCommon.stylesheetMap.get(url), winUtils.AGENT_SHEET);
     }
   },
 
   handleEvent(event) {
     switch (event.type) {
+      case "DOMDocElementInserted":
+        if (this.blockingPromise) {
+          event.target.blockParsing(this.blockingPromise);
+        }
+        break;
+
       case "DOMWindowCreated":
         if (event.target === content.document) {
-          let winUtils = content.QueryInterface(Ci.nsIInterfaceRequestor)
-                                .getInterface(Ci.nsIDOMWindowUtils);
-
-          for (let url of this.stylesheets) {
-            winUtils.addSheet(stylesheetMap.get(url), winUtils.AGENT_SHEET);
-          }
+          this.loadStylesheets();
         }
         break;
 
@@ -92,7 +154,10 @@ const BrowserListener = {
       case "DOMContentLoaded":
         if (event.target === content.document) {
           sendAsyncMessage("Extension:BrowserContentLoaded", {url: content.location.href});
-          this.handleDOMChange(true);
+
+          if (this.needsResize) {
+            this.handleDOMChange(true);
+          }
         }
         break;
 
@@ -101,8 +166,18 @@ const BrowserListener = {
           // For about:addons inline <browser>s, we currently receive a load
           // event on the <browser> element, but no load or DOMContentLoaded
           // events from the content window.
+
+          // Inline browsers don't receive the "DOMWindowCreated" event, so this
+          // is a workaround to load the stylesheets.
+          if (this.isInline) {
+            this.loadStylesheets();
+          }
           sendAsyncMessage("Extension:BrowserContentLoaded", {url: content.location.href});
         } else if (event.target !== content.document) {
+          break;
+        }
+
+        if (!this.needsResize) {
           break;
         }
 
@@ -126,7 +201,9 @@ const BrowserListener = {
         break;
 
       case "MozScrolledAreaChanged":
-        this.handleDOMChange();
+        if (this.needsResize) {
+          this.handleDOMChange();
+        }
         break;
     }
   },
@@ -175,21 +252,37 @@ const BrowserListener = {
 
       // Compensate for any offsets (margin, padding, ...) between the scroll
       // area of the body and the outer height of the document.
+      // This calculation is hard to get right for all cases, so take the lower
+      // number of the combination of all padding and margins of the document
+      // and body elements, or the difference between their heights.
       let getHeight = elem => elem.getBoundingClientRect(elem).height;
       let bodyPadding = getHeight(doc.documentElement) - getHeight(body);
+
+      if (body !== doc.documentElement) {
+        let bs = content.getComputedStyle(body);
+        let ds = content.getComputedStyle(doc.documentElement);
+
+        let p = (parseFloat(bs.marginTop) +
+                 parseFloat(bs.marginBottom) +
+                 parseFloat(ds.marginTop) +
+                 parseFloat(ds.marginBottom) +
+                 parseFloat(ds.paddingTop) +
+                 parseFloat(ds.paddingBottom));
+        bodyPadding = Math.min(p, bodyPadding);
+      }
 
       let height = Math.ceil(body.scrollHeight + bodyPadding);
 
       result = {height, detail};
     } else {
       let background = doc.defaultView.getComputedStyle(body).backgroundColor;
-      let bgColor = colorUtils.colorToRGBA(background);
-      if (bgColor.a !== 1) {
+      if (!isOpaque(background)) {
         // Ignore non-opaque backgrounds.
         background = null;
       }
 
-      if (background !== this.oldBackground) {
+      if (background === null ||
+          background !== this.oldBackground) {
         sendAsyncMessage("Extension:BrowserBackgroundChanged", {background});
       }
       this.oldBackground = background;
@@ -215,3 +308,33 @@ const BrowserListener = {
 };
 
 addMessageListener("Extension:InitBrowser", BrowserListener);
+addMessageListener("Extension:UnblockParser", BrowserListener);
+addMessageListener("Extension:GrabFocus", BrowserListener);
+
+var WebBrowserChrome = {
+  onBeforeLinkTraversal(originalTarget, linkURI, linkNode, isAppTab) {
+    // isAppTab is the value for the docShell that received the click.  We're
+    // handling this in the top-level frame and want traversal behavior to
+    // match the value for this frame rather than any subframe, so we pass
+    // through the docShell.isAppTab value rather than what we were handed.
+    return BrowserUtils.onBeforeLinkTraversal(originalTarget, linkURI, linkNode, docShell.isAppTab);
+  },
+
+  shouldLoadURI(docShell, URI, referrer, hasPostData, triggeringPrincipal) {
+    return true;
+  },
+
+  shouldLoadURIInThisProcess(URI) {
+    return E10SUtils.shouldLoadURIInThisProcess(URI);
+  },
+
+  reloadInFreshProcess(docShell, URI, referrer, triggeringPrincipal, loadFlags) {
+    return false;
+  },
+};
+
+if (Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_CONTENT) {
+  let tabchild = docShell.QueryInterface(Ci.nsIInterfaceRequestor)
+                         .getInterface(Ci.nsITabChild);
+  tabchild.webBrowserChrome = WebBrowserChrome;
+}

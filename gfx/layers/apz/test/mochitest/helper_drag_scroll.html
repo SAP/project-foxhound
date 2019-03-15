@@ -30,7 +30,7 @@ function moveTo(mouseY, testDriver) {
   fraction = Math.min(1, fraction);
   var oldScrollPos = document.scrollingElement.scrollTop;
   var newScrollPos = fraction * window.scrollMaxY;
-  SimpleTest.ok(newScrollPos > oldScrollPos, "Scroll position strictly increased");
+  ok(newScrollPos > oldScrollPos, "Scroll position strictly increased");
   // split the scroll in two with a paint in between, just to increase the
   // complexity of the simulated web content, and to ensure this works as well.
   document.scrollingElement.scrollTop = (oldScrollPos + newScrollPos) / 2;
@@ -41,15 +41,15 @@ function moveTo(mouseY, testDriver) {
 }
 
 function setupDragging(testDriver) {
-  bar = document.getElementById('scrollbar');
+  bar = document.getElementById("scrollbar");
   mouseDown = false;
 
-  bar.addEventListener('mousedown', function(e) {
+  bar.addEventListener("mousedown", function(e) {
     mouseDown = true;
     moveTo(e.clientY, testDriver);
   }, true);
 
-  bar.addEventListener('mousemove', function(e) {
+  bar.addEventListener("mousemove", function(e) {
     if (mouseDown) {
       dump("Got mousemove clientY " + e.clientY + "\n");
       moveTo(e.clientY, testDriver);
@@ -57,13 +57,13 @@ function setupDragging(testDriver) {
     }
   }, true);
 
-  bar.addEventListener('mouseup', function(e) {
+  bar.addEventListener("mouseup", function(e) {
     mouseDown = false;
   }, true);
 
-  window.addEventListener('mousemove', function(e) {
+  window.addEventListener("mousemove", function(e) {
     if (mouseDown) {
-      SimpleTest.ok(false, "The mousemove at " + e.clientY + " was not stopped by the bar listener, and is a glitchy event!");
+      ok(false, "The mousemove at " + e.clientY + " was not stopped by the bar listener, and is a glitchy event!");
       setTimeout(testDriver, 0);
     }
   });

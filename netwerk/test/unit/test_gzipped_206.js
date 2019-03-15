@@ -1,6 +1,6 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 
 var httpserver = null;
@@ -26,7 +26,7 @@ function cachedHandler(metadata, response) {
   var body = responseBody;
 
   if (doRangeResponse) {
-    do_check_true(metadata.hasHeader("Range"));
+    Assert.ok(metadata.hasHeader("Range"));
     var matches = metadata.getHeader("Range").match(/^\s*bytes=(\d+)?-(\d+)?\s*$/);
     var from = (matches[1] === undefined) ? 0 : matches[1];
     var to = (matches[2] === undefined) ? responseBody.length - 1 : matches[2];
@@ -58,7 +58,7 @@ function cachedHandler(metadata, response) {
 }
 
 function continue_test(request, data) {
-  do_check_eq(17, data.length);
+  Assert.equal(17, data.length);
   var chan = make_channel("http://localhost:" +
                           httpserver.identity.primaryPort + "/cached/test.gz");
   chan.asyncOpen2(new ChannelListener(finish_test, null, CL_EXPECT_GZIP));
@@ -67,10 +67,10 @@ function continue_test(request, data) {
 var enforcePref;
 
 function finish_test(request, data, ctx) {
-  do_check_eq(request.status, 0);
-  do_check_eq(data.length, responseBody.length);
+  Assert.equal(request.status, 0);
+  Assert.equal(data.length, responseBody.length);
   for (var i = 0; i < data.length; ++i) {
-    do_check_eq(data.charCodeAt(i), responseBody[i]);
+    Assert.equal(data.charCodeAt(i), responseBody[i]);
   }
   Services.prefs.setBoolPref("network.http.enforce-framing.http1", enforcePref);
   httpserver.stop(do_test_finished);

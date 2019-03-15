@@ -9,7 +9,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=740784
 
 <head>
   <title>Test for Bug 740784</title>
-  <script type="application/javascript" src="/MochiKit/packed.js"></script>
   <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
   <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css">
@@ -31,9 +30,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=740784
         var t1 = $("t1");
 
         t1.focus();
-        synthesizeKey("VK_END", {});
-        synthesizeKey("VK_BACK_SPACE", {});
-        synthesizeKey("Z", {accelKey: true});
+        synthesizeKey("KEY_End");
+        synthesizeKey("KEY_Backspace");
+        synthesizeKey("z", {accelKey: true});
 
         // Was the former bogus node changed to a mozBR?
         is(t1.value, "a", "trailing <br> correctly ignored");

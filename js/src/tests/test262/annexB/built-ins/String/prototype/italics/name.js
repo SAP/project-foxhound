@@ -5,7 +5,7 @@
 es6id: B.2.3.9
 description: >
   String.prototype.italics.name is "italics".
-info: >
+info: |
   String.prototype.italics ( )
 
   17 ECMAScript Standard Built-in Objects:
@@ -19,10 +19,11 @@ info: >
 includes: [propertyHelper.js]
 ---*/
 
-assert.sameValue(String.prototype.italics.name, "italics");
-
-verifyNotEnumerable(String.prototype.italics, "name");
-verifyNotWritable(String.prototype.italics, "name");
-verifyConfigurable(String.prototype.italics, "name");
+verifyProperty(String.prototype.italics, "name", {
+  enumerable: false,
+  writable: false,
+  configurable: true,
+  value: "italics"
+});
 
 reportCompare(0, 0);

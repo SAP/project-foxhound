@@ -4,28 +4,30 @@
 
 "use strict";
 
+/* import-globals-from specialpowers.js */
+
 function MozillaLogger(aPath) {
 }
 
 function formatLogMessage(msg) {
-    return msg.info.join(' ') + "\n";
+    return msg.info.join(" ") + "\n";
 }
 
 MozillaLogger.prototype = {
-  init : function(path) {},
+  init(path) {},
 
-  getLogCallback : function() {
-    return function (msg) {
+  getLogCallback() {
+    return function(msg) {
       var data = formatLogMessage(msg);
       dump(data);
     };
   },
 
-  log : function(msg) {
+  log(msg) {
     dump(msg);
   },
 
-  close : function() {}
+  close() {},
 };
 
 
@@ -41,28 +43,28 @@ function SpecialPowersLogger(aPath) {
 }
 
 SpecialPowersLogger.prototype = {
-  init : function (path) {
+  init(path) {
     SpecialPowers.setLogFile(path);
   },
 
-  getLogCallback : function () {
-    return function (msg) {
+  getLogCallback() {
+    return function(msg) {
       var data = formatLogMessage(msg);
       SpecialPowers.log(data);
 
-      if (data.indexOf("SimpleTest FINISH") >= 0) {
+      if (data.includes("SimpleTest FINISH")) {
         SpecialPowers.closeLogFile();
       }
     };
   },
 
-  log : function (msg) {
+  log(msg) {
     SpecialPowers.log(msg);
   },
 
-  close : function () {
+  close() {
     SpecialPowers.closeLogFile();
-  }
+  },
 };
 
 
@@ -82,42 +84,41 @@ function MozillaFileLogger(aPath) {
 
 MozillaFileLogger.prototype = {
 
-  init : function (path) {
+  init(path) {
     var PR_WRITE_ONLY   = 0x02; // Open for writing only.
     var PR_CREATE_FILE  = 0x08;
     var PR_APPEND       = 0x10;
-    this._file = Components.classes["@mozilla.org/file/local;1"].
-                            createInstance(Components.interfaces.nsILocalFile);
+    this._file = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
     this._file.initWithPath(path);
-    this._foStream = Components.classes["@mozilla.org/network/file-output-stream;1"].
-                                     createInstance(Components.interfaces.nsIFileOutputStream);
+    this._foStream = Cc["@mozilla.org/network/file-output-stream;1"]
+                       .createInstance(Ci.nsIFileOutputStream);
     this._foStream.init(this._file, PR_WRITE_ONLY | PR_CREATE_FILE | PR_APPEND,
                                      436 /* 0664 */, 0);
 
-    this._converter = Components.classes["@mozilla.org/intl/converter-output-stream;1"].
-                    createInstance(Components.interfaces.nsIConverterOutputStream);
-    this._converter.init(this._foStream, "UTF-8", 0, 0);
+    this._converter = Cc["@mozilla.org/intl/converter-output-stream;1"]
+                        .createInstance(Ci.nsIConverterOutputStream);
+    this._converter.init(this._foStream, "UTF-8");
   },
 
-  getLogCallback : function() {
-    return function (msg) {
+  getLogCallback() {
+    return function(msg) {
       var data = formatLogMessage(msg);
       if (MozillaFileLogger._converter) {
         this._converter.writeString(data);
       }
 
-      if (data.indexOf("SimpleTest FINISH") >= 0) {
+      if (data.includes("SimpleTest FINISH")) {
         MozillaFileLogger.close();
       }
     };
   },
 
-  log : function(msg) {
+  log(msg) {
     if (this._converter) {
       this._converter.writeString(msg);
     }
   },
-  close : function() {
+  close() {
     if (this._converter) {
       this._converter.flush();
       this._converter.close();
@@ -126,7 +127,7 @@ MozillaFileLogger.prototype = {
     this._foStream = null;
     this._converter = null;
     this._file = null;
-  }
+  },
 };
 
 this.MozillaLogger = MozillaLogger;

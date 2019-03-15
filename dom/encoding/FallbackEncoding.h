@@ -7,14 +7,20 @@
 #ifndef mozilla_dom_FallbackEncoding_h_
 #define mozilla_dom_FallbackEncoding_h_
 
+#include "mozilla/NotNull.h"
+#include "mozilla/StaticPtr.h"
+#include "nsIObserver.h"
 #include "nsString.h"
+#include "nsWeakReference.h"
 
 namespace mozilla {
+class Encoding;
 namespace dom {
 
-class FallbackEncoding
-{
-public:
+class FallbackEncoding : public nsIObserver, nsSupportsWeakReference {
+ public:
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSIOBSERVER
 
   /**
    * Whether FromTopLevelDomain() should be used.
@@ -27,7 +33,7 @@ public:
    *
    * @param aFallback the outparam for the fallback encoding
    */
-  static void FromLocale(nsACString& aFallback);
+  static NotNull<const Encoding*> FromLocale();
 
   /**
    * Checks if it is appropriate to call FromTopLevelDomain() for a given TLD.
@@ -44,7 +50,7 @@ public:
    * @param aTLD the top-level domain (in Punycode)
    * @param aFallback the outparam for the fallback encoding
    */
-  static void FromTopLevelDomain(const nsACString& aTLD, nsACString& aFallback);
+  static NotNull<const Encoding*> FromTopLevelDomain(const nsACString& aTLD);
 
   // public API ends here!
 
@@ -60,23 +66,19 @@ public:
    */
   static void Shutdown();
 
-private:
-
+ private:
   /**
    * The fallback cache.
    */
-  static FallbackEncoding* sInstance;
+  static StaticRefPtr<FallbackEncoding> sInstance;
 
   FallbackEncoding();
-  ~FallbackEncoding();
+  virtual ~FallbackEncoding(){};
 
   /**
    * Invalidates the cache.
    */
-  void Invalidate()
-  {
-    mFallback.Truncate();
-  }
+  void Invalidate() { mFallback = nullptr; }
 
   static void PrefChanged(const char*, void*);
 
@@ -84,13 +86,12 @@ private:
    * Gets the fallback encoding label.
    * @param aFallback the fallback encoding
    */
-  void Get(nsACString& aFallback);
+  NotNull<const Encoding*> Get();
 
-  nsCString mFallback;
+  const Encoding* mFallback;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_FallbackEncoding_h_
-
+#endif  // mozilla_dom_FallbackEncoding_h_

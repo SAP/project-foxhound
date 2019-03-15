@@ -9,16 +9,11 @@
 
 #include "nsDebug.h"
 
-#ifdef MOZ_CRASHREPORTER
-#include "nsExceptionHandler.h"
-#endif
-
 namespace mozilla {
 namespace a11y {
 
 HRESULT
-GetHRESULT(nsresult aResult)
-{
+GetHRESULT(nsresult aResult) {
   switch (aResult) {
     case NS_OK:
       return S_OK;
@@ -37,5 +32,5 @@ GetHRESULT(nsresult aResult)
   }
 }
 
-} // namespace a11y
-} // namespace mozilla
+}  // namespace a11y
+}  // namespace mozilla

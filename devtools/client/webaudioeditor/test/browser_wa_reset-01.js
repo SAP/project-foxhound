@@ -1,20 +1,14 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-//
-// Whitelisting this test.
-// As part of bug 1077403, the leaking uncaught rejection should be fixed.
-//
-thisTestLeaksUncaughtRejectionsAndShouldBeFixed("Error: Connection closed");
-
 /**
  * Tests that reloading a tab will properly listen for the `start-context`
  * event and reshow the tools after reloading.
  */
 
-add_task(function* () {
-  let { target, panel } = yield initWebAudioEditor(SIMPLE_CONTEXT_URL);
-  let { gFront, $ } = panel.panelWin;
+add_task(async function() {
+  const { target, panel } = await initWebAudioEditor(SIMPLE_CONTEXT_URL);
+  const { gFront, $ } = panel.panelWin;
 
   is($("#reload-notice").hidden, false,
     "The 'reload this page' notice should initially be visible.");
@@ -28,7 +22,7 @@ add_task(function* () {
 
   reload(target);
 
-  yield navigating;
+  await navigating;
 
   is($("#reload-notice").hidden, true,
     "The 'reload this page' notice should be hidden when navigating.");
@@ -37,7 +31,7 @@ add_task(function* () {
   is($("#content").hidden, true,
     "The tool's content should still be hidden.");
 
-  yield started;
+  await started;
 
   is($("#reload-notice").hidden, true,
     "The 'reload this page' notice should be hidden after context found.");
@@ -51,8 +45,8 @@ add_task(function* () {
 
   reload(target);
 
-  yield Promise.all([navigating, started]);
-  let rendered = waitForGraphRendered(panel.panelWin, 3, 2);
+  await Promise.all([navigating, started]);
+  const rendered = waitForGraphRendered(panel.panelWin, 3, 2);
 
   is($("#reload-notice").hidden, true,
     "The 'reload this page' notice should be hidden after context found after reload.");
@@ -61,7 +55,7 @@ add_task(function* () {
   is($("#content").hidden, false,
     "The tool's content should reappear without closing and reopening the toolbox.");
 
-  yield rendered;
+  await rendered;
 
-  yield teardown(target);
+  await teardown(target);
 });

@@ -28,6 +28,15 @@ function run_test() {
   strictEqual(ps.getCharPref(prefName), "foo");
   strictEqual(ps.getCharPref(prefName, "string"), "foo");
 
+  prefName = "test.default.values.string";
+  do_check_throws(function() { ps.getCharPref(prefName); },
+                  Cr.NS_ERROR_UNEXPECTED);
+  strictEqual(ps.getStringPref(prefName, ""), "");
+  strictEqual(ps.getStringPref(prefName, "éèçàê€"), "éèçàê€");
+  ps.setStringPref(prefName, "éèçàê€");
+  strictEqual(ps.getStringPref(prefName), "éèçàê€");
+  strictEqual(ps.getStringPref(prefName, "string"), "éèçàê€");
+
   prefName = "test.default.values.float";
   do_check_throws(function() { ps.getFloatPref(prefName); },
                   Cr.NS_ERROR_UNEXPECTED);

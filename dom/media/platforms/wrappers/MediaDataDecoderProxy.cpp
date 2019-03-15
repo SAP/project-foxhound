@@ -8,9 +8,7 @@
 
 namespace mozilla {
 
-RefPtr<MediaDataDecoder::InitPromise>
-MediaDataDecoderProxy::Init()
-{
+RefPtr<MediaDataDecoder::InitPromise> MediaDataDecoderProxy::Init() {
   MOZ_ASSERT(!mIsShutdown);
 
   if (!mProxyThread) {
@@ -18,12 +16,11 @@ MediaDataDecoderProxy::Init()
   }
   RefPtr<MediaDataDecoderProxy> self = this;
   return InvokeAsync(mProxyThread, __func__,
-                     [self, this]() { return mProxyDecoder->Init(); });
+                     [self]() { return self->mProxyDecoder->Init(); });
 }
 
-RefPtr<MediaDataDecoder::DecodePromise>
-MediaDataDecoderProxy::Decode(MediaRawData* aSample)
-{
+RefPtr<MediaDataDecoder::DecodePromise> MediaDataDecoderProxy::Decode(
+    MediaRawData* aSample) {
   MOZ_ASSERT(!mIsShutdown);
 
   if (!mProxyThread) {
@@ -31,14 +28,12 @@ MediaDataDecoderProxy::Decode(MediaRawData* aSample)
   }
   RefPtr<MediaDataDecoderProxy> self = this;
   RefPtr<MediaRawData> sample = aSample;
-  return InvokeAsync(mProxyThread, __func__, [self, this, sample]() {
-    return mProxyDecoder->Decode(sample);
+  return InvokeAsync(mProxyThread, __func__, [self, sample]() {
+    return self->mProxyDecoder->Decode(sample);
   });
 }
 
-RefPtr<MediaDataDecoder::FlushPromise>
-MediaDataDecoderProxy::Flush()
-{
+RefPtr<MediaDataDecoder::FlushPromise> MediaDataDecoderProxy::Flush() {
   MOZ_ASSERT(!mIsShutdown);
 
   if (!mProxyThread) {
@@ -46,12 +41,10 @@ MediaDataDecoderProxy::Flush()
   }
   RefPtr<MediaDataDecoderProxy> self = this;
   return InvokeAsync(mProxyThread, __func__,
-                     [self, this]() { return mProxyDecoder->Flush(); });
+                     [self]() { return self->mProxyDecoder->Flush(); });
 }
 
-RefPtr<MediaDataDecoder::DecodePromise>
-MediaDataDecoderProxy::Drain()
-{
+RefPtr<MediaDataDecoder::DecodePromise> MediaDataDecoderProxy::Drain() {
   MOZ_ASSERT(!mIsShutdown);
 
   if (!mProxyThread) {
@@ -59,12 +52,10 @@ MediaDataDecoderProxy::Drain()
   }
   RefPtr<MediaDataDecoderProxy> self = this;
   return InvokeAsync(mProxyThread, __func__,
-                     [self, this]() { return mProxyDecoder->Drain(); });
+                     [self]() { return self->mProxyDecoder->Drain(); });
 }
 
-RefPtr<ShutdownPromise>
-MediaDataDecoderProxy::Shutdown()
-{
+RefPtr<ShutdownPromise> MediaDataDecoderProxy::Shutdown() {
   MOZ_ASSERT(!mIsShutdown);
 
 #if defined(DEBUG)
@@ -76,28 +67,23 @@ MediaDataDecoderProxy::Shutdown()
   }
   RefPtr<MediaDataDecoderProxy> self = this;
   return InvokeAsync(mProxyThread, __func__,
-                     [self, this]() { return mProxyDecoder->Shutdown(); });
+                     [self]() { return self->mProxyDecoder->Shutdown(); });
 }
 
-const char*
-MediaDataDecoderProxy::GetDescriptionName() const
-{
+nsCString MediaDataDecoderProxy::GetDescriptionName() const {
   MOZ_ASSERT(!mIsShutdown);
 
   return mProxyDecoder->GetDescriptionName();
 }
 
-bool
-MediaDataDecoderProxy::IsHardwareAccelerated(nsACString& aFailureReason) const
-{
+bool MediaDataDecoderProxy::IsHardwareAccelerated(
+    nsACString& aFailureReason) const {
   MOZ_ASSERT(!mIsShutdown);
 
   return mProxyDecoder->IsHardwareAccelerated(aFailureReason);
 }
 
-void
-MediaDataDecoderProxy::SetSeekThreshold(const media::TimeUnit& aTime)
-{
+void MediaDataDecoderProxy::SetSeekThreshold(const media::TimeUnit& aTime) {
   MOZ_ASSERT(!mIsShutdown);
 
   if (!mProxyThread) {
@@ -107,23 +93,21 @@ MediaDataDecoderProxy::SetSeekThreshold(const media::TimeUnit& aTime)
   RefPtr<MediaDataDecoderProxy> self = this;
   media::TimeUnit time = aTime;
   mProxyThread->Dispatch(NS_NewRunnableFunction(
-    [self, time] { self->mProxyDecoder->SetSeekThreshold(time); }));
+      "MediaDataDecoderProxy::SetSeekThreshold",
+      [self, time] { self->mProxyDecoder->SetSeekThreshold(time); }));
 }
 
-bool
-MediaDataDecoderProxy::SupportDecoderRecycling() const
-{
+bool MediaDataDecoderProxy::SupportDecoderRecycling() const {
   MOZ_ASSERT(!mIsShutdown);
 
   return mProxyDecoder->SupportDecoderRecycling();
 }
 
-MediaDataDecoder::ConversionRequired
-MediaDataDecoderProxy::NeedsConversion() const
-{
+MediaDataDecoder::ConversionRequired MediaDataDecoderProxy::NeedsConversion()
+    const {
   MOZ_ASSERT(!mIsShutdown);
 
   return mProxyDecoder->NeedsConversion();
 }
 
-} // namespace mozilla
+}  // namespace mozilla

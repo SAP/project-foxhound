@@ -55,7 +55,7 @@ var AboutTabCrashed = {
   },
 
   init() {
-    this.MESSAGES.forEach((msg) => addMessageListener(msg, this.receiveMessage.bind(this)));
+    this.MESSAGES.forEach((msg) => RPMAddMessageListener(msg, this.receiveMessage.bind(this)));
     addEventListener("DOMContentLoaded", this);
 
     document.title = this.pageData.title;
@@ -105,10 +105,10 @@ var AboutTabCrashed = {
     document.getElementById("email").addEventListener("input", this);
 
     // Error pages are loaded as LOAD_BACKGROUND, so they don't get load events.
-    let event = new CustomEvent("AboutTabCrashedLoad", {bubbles:true});
+    let event = new CustomEvent("AboutTabCrashedLoad", {bubbles: true});
     document.dispatchEvent(event);
 
-    sendAsyncMessage("Load");
+    RPMSendAsyncMessage("Load");
   },
 
   onClick(event) {
@@ -202,7 +202,7 @@ var AboutTabCrashed = {
       document.getElementById("requestAutoSubmit").hidden = false;
     }
 
-    let event = new CustomEvent("AboutTabCrashedReady", {bubbles:true});
+    let event = new CustomEvent("AboutTabCrashedReady", {bubbles: true});
     document.dispatchEvent(event);
   },
 
@@ -295,7 +295,7 @@ var AboutTabCrashed = {
       autoSubmit = document.getElementById("autoSubmit").checked;
     }
 
-    sendAsyncMessage(messageName, {
+    RPMSendAsyncMessage(messageName, {
       sendReport,
       comments,
       email,
@@ -303,6 +303,7 @@ var AboutTabCrashed = {
       includeURL,
       URL,
       autoSubmit,
+      hasReport: this.hasReport,
     });
   },
 };

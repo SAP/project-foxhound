@@ -10,6 +10,7 @@ import org.mozilla.gecko.sync.ExtendedJSONObject;
 import org.mozilla.gecko.sync.HTTPFailureException;
 import org.mozilla.gecko.sync.NonArrayJSONException;
 import org.mozilla.gecko.sync.NonObjectJSONException;
+import org.mozilla.gecko.sync.Server15RecordPostFailedException;
 import org.mozilla.gecko.sync.Utils;
 import org.mozilla.gecko.sync.net.AuthHeaderProvider;
 import org.mozilla.gecko.sync.net.SyncResponse;
@@ -140,14 +141,7 @@ class PayloadUploadDelegate implements SyncStorageRequestDelegate {
 
         if (success != null && !success.isEmpty()) {
             Logger.trace(LOG_TAG, "Successful records: " + success.toString());
-            for (Object o : success) {
-                try {
-                    dispatcher.batchWhiteboard.recordSucceeded((String) o);
-                } catch (ClassCastException e) {
-                    Logger.error(LOG_TAG, "Got exception parsing POST success guid.", e);
-                    // Not much to be done.
-                }
-            }
+            dispatcher.batchWhiteboard.recordsSucceeded(success.size());
         }
         // GC
         success = null;
@@ -165,6 +159,8 @@ class PayloadUploadDelegate implements SyncStorageRequestDelegate {
             for (String guid : failed.keySet()) {
                 dispatcher.recordFailed(guid);
             }
+            dispatcher.payloadFailed(new Server15RecordPostFailedException());
+            return;
         }
         // GC
         failed = null;
@@ -172,7 +168,6 @@ class PayloadUploadDelegate implements SyncStorageRequestDelegate {
         // And we're done! Let uploader finish up.
         dispatcher.payloadSucceeded(
                 response,
-                dispatcher.batchWhiteboard.getSuccessRecordGuids(),
                 isCommit,
                 isLastPayload
         );
@@ -198,9 +193,6 @@ class PayloadUploadDelegate implements SyncStorageRequestDelegate {
         }
         // GC
         postedRecordGuids = null;
-
-        if (isLastPayload) {
-            dispatcher.lastPayloadFailed();
-        }
+        dispatcher.payloadFailed(e);
     }
 }

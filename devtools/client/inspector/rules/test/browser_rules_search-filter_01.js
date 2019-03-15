@@ -21,51 +21,51 @@ const TEST_URI = `
 const TEST_DATA = [
   {
     desc: "Tests that the search filter works properly for property names",
-    search: "color"
+    search: "color",
   },
   {
     desc: "Tests that the search filter works properly for property values",
-    search: "00F"
+    search: "00F",
   },
   {
     desc: "Tests that the search filter works properly for property line input",
-    search: "background-color:#00F"
+    search: "background-color:#00F",
   },
   {
     desc: "Tests that the search filter works properly for parsed property " +
           "names",
-    search: "background:"
+    search: "background:",
   },
   {
     desc: "Tests that the search filter works properly for parsed property " +
           "values",
-    search: ":00F"
+    search: ":00F",
   },
 ];
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
-  yield selectNode("#testid", inspector);
-  yield testAddTextInFilter(inspector, view);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, view} = await openRuleView();
+  await selectNode("#testid", inspector);
+  await testAddTextInFilter(inspector, view);
 });
 
-function* testAddTextInFilter(inspector, view) {
-  for (let data of TEST_DATA) {
+async function testAddTextInFilter(inspector, view) {
+  for (const data of TEST_DATA) {
     info(data.desc);
-    yield setSearchFilter(view, data.search);
-    yield checkRules(view);
-    yield clearSearchAndCheckRules(view);
+    await setSearchFilter(view, data.search);
+    await checkRules(view);
+    await clearSearchAndCheckRules(view);
   }
 }
 
-function* checkRules(view) {
+function checkRules(view) {
   info("Check that the correct rules are visible");
   is(view.element.children.length, 2, "Should have 2 rules.");
   is(getRuleViewRuleEditor(view, 0).rule.selectorText, "element",
     "First rule is inline element.");
 
-  let rule = getRuleViewRuleEditor(view, 1).rule;
+  const rule = getRuleViewRuleEditor(view, 1).rule;
 
   is(rule.selectorText, "#testid, h1", "Second rule is #testid, h1.");
   ok(rule.textProps[0].editor.container.classList
@@ -73,15 +73,15 @@ function* checkRules(view) {
     "background-color text property is correctly highlighted.");
 }
 
-function* clearSearchAndCheckRules(view) {
-  let doc = view.styleDocument;
-  let win = view.styleWindow;
-  let searchField = view.searchField;
-  let searchClearButton = view.searchClearButton;
+async function clearSearchAndCheckRules(view) {
+  const doc = view.styleDocument;
+  const win = view.styleWindow;
+  const searchField = view.searchField;
+  const searchClearButton = view.searchClearButton;
 
   info("Clearing the search filter");
   EventUtils.synthesizeMouseAtCenter(searchClearButton, {}, win);
-  yield view.inspector.once("ruleview-filtered");
+  await view.inspector.once("ruleview-filtered");
 
   info("Check the search filter is cleared and no rules are highlighted");
   is(view.element.children.length, 3, "Should have 3 rules.");

@@ -5,10 +5,10 @@
 // WebChannel, and once with objects allowed. This function allows us to handle
 // both cases without too much pain.
 function makeDetails(object) {
-  if (window.location.search.indexOf("object") >= 0) {
+  if (window.location.search.includes("object")) {
     return object;
   }
-  return JSON.stringify(object)
+  return JSON.stringify(object);
 }
 // Add a listener for responses to our remote requests.
 window.addEventListener("WebChannelMessageToContent", function(event) {
@@ -40,7 +40,7 @@ window.onload = function() {
     }),
   });
   window.dispatchEvent(event);
-}
+};
 </script>
 
 <body>

@@ -10,13 +10,13 @@
 
 "use strict";
 
-var globals = require('globals');
-var util = require('util');
+var globals = require("globals");
+var util = require("util");
 
 var workerGlobals = util._extend({
-  ctypes: false
+  ctypes: false,
 }, globals.worker);
 
 module.exports = {
-  globals: workerGlobals
+  globals: workerGlobals,
 };

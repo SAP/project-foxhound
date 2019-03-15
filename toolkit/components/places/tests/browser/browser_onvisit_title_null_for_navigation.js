@@ -1,17 +1,22 @@
 const TEST_PATH = getRootDirectory(gTestPath).replace("chrome://mochitests/content", "http://example.com");
 
-add_task(function* checkTitleNotificationForNavigation() {
+add_task(async function checkTitleNotificationForNavigation() {
   const EXPECTED_URL = Services.io.newURI(TEST_PATH + "empty_page.html");
   let promiseTitleChanged = new Promise(resolve => {
+    function onVisits(aEvents) {
+      Assert.equal(aEvents.length, 1, "Right number of visits notified");
+      Assert.equal(aEvents[0].type, "page-visited");
+      let {
+        url,
+        lastKnownTitle,
+      } = aEvents[0];
+      info("'page-visited': " + url);
+      if (url == EXPECTED_URL.spec) {
+        Assert.equal(lastKnownTitle, null, "Should not have a title");
+      }
+      PlacesObservers.removeListener(["page-visited"], onVisits);
+    }
     let obs = {
-      onVisit(aURI, aVisitId, aTime, aSessionId, aReferrerVisitId, aTransitionType,
-              aGuid, aHidden, aVisitCount, aTyped, aLastKnownTitle) {
-        info("onVisit: " + aURI.spec);
-        if (aURI.equals(EXPECTED_URL)) {
-          Assert.equal(aLastKnownTitle, null, "Should not have a title");
-        }
-      },
-
       onTitleChanged(aURI, aTitle, aGuid) {
         if (aURI.equals(EXPECTED_URL)) {
           is(aTitle, "I am an empty page", "Should have correct title in titlechanged notification");
@@ -20,9 +25,10 @@ add_task(function* checkTitleNotificationForNavigation() {
         }
       },
     };
-    PlacesUtils.history.addObserver(obs, false);
+    PlacesUtils.history.addObserver(obs);
+    PlacesObservers.addListener(["page-visited"], onVisits);
   });
-  let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, EXPECTED_URL.spec);
-  yield promiseTitleChanged;
-  yield BrowserTestUtils.removeTab(tab);
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, EXPECTED_URL.spec);
+  await promiseTitleChanged;
+  BrowserTestUtils.removeTab(tab);
 });

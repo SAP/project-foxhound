@@ -20,7 +20,7 @@ import android.net.Uri;
  * - updates an element in form history
  * - deletes an element in form history
  */
-public class testFormHistory extends BaseTest {
+public class testFormHistory extends OldBaseTest {
     private static final String DB_NAME = "formhistory.sqlite";
 
     public void testFormHistory() {
@@ -28,8 +28,9 @@ public class testFormHistory extends BaseTest {
         ContentResolver cr = context.getContentResolver();
         ContentValues[] cvs = new ContentValues[1];
         cvs[0] = new ContentValues();
- 
+
         blockForGeckoReady();
+        blockForFormHistoryReady();
 
         Uri formHistoryUri;
         Uri insertUri;

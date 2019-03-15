@@ -8,21 +8,21 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_processing/audio_processing_impl.h"
+#include "modules/audio_processing/audio_processing_impl.h"
 
 #include <algorithm>
+#include <memory>
 #include <vector>
 
-#include "testing/gtest/include/gtest/gtest.h"
-#include "webrtc/base/array_view.h"
-#include "webrtc/base/criticalsection.h"
-#include "webrtc/base/event.h"
-#include "webrtc/base/platform_thread.h"
-#include "webrtc/base/random.h"
-#include "webrtc/config.h"
-#include "webrtc/modules/audio_processing/test/test_utils.h"
-#include "webrtc/modules/include/module_common_types.h"
-#include "webrtc/system_wrappers/include/sleep.h"
+#include "api/array_view.h"
+#include "modules/audio_processing/test/test_utils.h"
+#include "modules/include/module_common_types.h"
+#include "rtc_base/criticalsection.h"
+#include "rtc_base/event.h"
+#include "rtc_base/platform_thread.h"
+#include "rtc_base/random.h"
+#include "system_wrappers/include/sleep.h"
+#include "test/gtest.h"
 
 namespace webrtc {
 
@@ -34,8 +34,7 @@ class AudioProcessingImplLockTest;
 enum class RenderApiImpl {
   ProcessReverseStreamImpl1,
   ProcessReverseStreamImpl2,
-  AnalyzeReverseStreamImpl1,
-  AnalyzeReverseStreamImpl2
+  AnalyzeReverseStreamImpl
 };
 
 // Type of the capture thread APM API call to use in the test.
@@ -84,7 +83,7 @@ class RandomGenerator {
 
  private:
   rtc::CriticalSection crit_;
-  Random rand_gen_ GUARDED_BY(crit_);
+  Random rand_gen_ RTC_GUARDED_BY(crit_);
 };
 
 // Variables related to the audio data and formats.
@@ -149,7 +148,7 @@ struct TestConfig {
       // Create test config for the first processing API function set.
       test_configs.push_back(test_config);
       test_config.render_api_function =
-          RenderApiImpl::AnalyzeReverseStreamImpl2;
+          RenderApiImpl::AnalyzeReverseStreamImpl;
       test_config.capture_api_function = CaptureApiImpl::ProcessStreamImpl3;
       test_configs.push_back(test_config);
     }
@@ -171,15 +170,13 @@ struct TestConfig {
       const AllowedApiCallCombinations api_calls[] = {
           {RenderApiImpl::ProcessReverseStreamImpl1,
            CaptureApiImpl::ProcessStreamImpl1},
-          {RenderApiImpl::AnalyzeReverseStreamImpl1,
-           CaptureApiImpl::ProcessStreamImpl1},
           {RenderApiImpl::ProcessReverseStreamImpl2,
            CaptureApiImpl::ProcessStreamImpl2},
           {RenderApiImpl::ProcessReverseStreamImpl2,
            CaptureApiImpl::ProcessStreamImpl3},
-          {RenderApiImpl::AnalyzeReverseStreamImpl2,
+          {RenderApiImpl::AnalyzeReverseStreamImpl,
            CaptureApiImpl::ProcessStreamImpl2},
-          {RenderApiImpl::AnalyzeReverseStreamImpl2,
+          {RenderApiImpl::AnalyzeReverseStreamImpl,
            CaptureApiImpl::ProcessStreamImpl3}};
       std::vector<TestConfig> out;
       for (auto api_call : api_calls) {
@@ -198,8 +195,12 @@ struct TestConfig {
           AecType::BasicWebRtcAecSettingsWithDelayAgnosticAec,
           AecType::BasicWebRtcAecSettingsWithAecMobile};
       for (auto test_config : in) {
-        for (auto aec_type : aec_types) {
-          test_config.aec_type = aec_type;
+        // Due to a VisualStudio 2015 compiler issue, the internal loop
+        // variable here cannot override a previously defined name.
+        // In other words "type" cannot be named "aec_type" here.
+        // https://connect.microsoft.com/VisualStudio/feedback/details/2291755
+        for (auto type : aec_types) {
+          test_config.aec_type = type;
           out.push_back(test_config);
         }
       }
@@ -298,9 +299,9 @@ class FrameCounters {
   }
 
  private:
-  mutable rtc::CriticalSection crit_;
-  int render_count GUARDED_BY(crit_) = 0;
-  int capture_count GUARDED_BY(crit_) = 0;
+  rtc::CriticalSection crit_;
+  int render_count RTC_GUARDED_BY(crit_) = 0;
+  int capture_count RTC_GUARDED_BY(crit_) = 0;
 };
 
 // Class for handling the capture side processing.
@@ -443,7 +444,7 @@ class AudioProcessingImplLockTest
   rtc::PlatformThread stats_thread_;
   mutable RandomGenerator rand_gen_;
 
-  rtc::scoped_ptr<AudioProcessing> apm_;
+  std::unique_ptr<AudioProcessing> apm_;
   TestConfig test_config_;
   FrameCounters frame_counters_;
   RenderProcessor render_thread_state_;
@@ -477,11 +478,12 @@ void PopulateAudioFrame(AudioFrame* frame,
                         RandomGenerator* rand_gen) {
   ASSERT_GT(amplitude, 0);
   ASSERT_LE(amplitude, 32767);
+  int16_t* frame_data = frame->mutable_data();
   for (size_t ch = 0; ch < frame->num_channels_; ch++) {
     for (size_t k = 0; k < frame->samples_per_channel_; k++) {
       // Store random 16 bit number between -(amplitude+1) and
       // amplitude.
-      frame->data_[k * ch] =
+      frame_data[k * ch] =
           rand_gen->RandInt(2 * amplitude + 1) - amplitude - 1;
     }
   }
@@ -596,7 +598,6 @@ bool StatsProcessor::Process() {
                 (test_config_->aec_type ==
                  AecType::BasicWebRtcAecSettingsWithAecMobile));
   EXPECT_TRUE(apm_->gain_control()->is_enabled());
-  apm_->gain_control()->stream_analog_level();
   EXPECT_TRUE(apm_->noise_suppression()->is_enabled());
 
   // The below return values are not testable.
@@ -709,8 +710,11 @@ void CaptureProcessor::CallApmCaptureSide() {
   // Prepare a proper capture side processing API call input.
   PrepareFrame();
 
-  // Set the stream delay
+  // Set the stream delay.
   apm_->set_stream_delay_ms(30);
+
+  // Set the analog level.
+  apm_->gain_control()->set_stream_analog_level(80);
 
   // Call the specified capture side API processing method.
   int result = AudioProcessing::kNoError;
@@ -733,6 +737,9 @@ void CaptureProcessor::CallApmCaptureSide() {
     default:
       FAIL();
   }
+
+  // Retrieve the new analog level.
+  apm_->gain_control()->stream_analog_level();
 
   // Check the return code for error.
   ASSERT_EQ(AudioProcessing::kNoError, result);
@@ -931,8 +938,6 @@ void RenderProcessor::PrepareFrame() {
   // Restrict to a common fixed sample rate if the AudioFrame interface is
   // used.
   if ((test_config_->render_api_function ==
-       RenderApiImpl::AnalyzeReverseStreamImpl1) ||
-      (test_config_->render_api_function ==
        RenderApiImpl::ProcessReverseStreamImpl1) ||
       (test_config_->aec_type !=
        AecType::BasicWebRtcAecSettingsWithAecMobile)) {
@@ -993,10 +998,7 @@ void RenderProcessor::CallApmRenderSide() {
           &frame_data_.input_frame[0], frame_data_.input_stream_config,
           frame_data_.output_stream_config, &frame_data_.output_frame[0]);
       break;
-    case RenderApiImpl::AnalyzeReverseStreamImpl1:
-      result = apm_->AnalyzeReverseStream(&frame_data_.frame);
-      break;
-    case RenderApiImpl::AnalyzeReverseStreamImpl2:
+    case RenderApiImpl::AnalyzeReverseStreamImpl:
       result = apm_->AnalyzeReverseStream(
           &frame_data_.input_frame[0], frame_data_.input_samples_per_channel,
           frame_data_.input_sample_rate_hz, frame_data_.input_channel_layout);

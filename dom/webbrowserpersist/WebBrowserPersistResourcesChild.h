@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -10,22 +10,22 @@
 #include "mozilla/PWebBrowserPersistResourcesChild.h"
 
 #include "nsIWebBrowserPersistDocument.h"
+#include "nsIContentPolicy.h"
 
 namespace mozilla {
 
 class WebBrowserPersistResourcesChild final
-    : public PWebBrowserPersistResourcesChild
-    , public nsIWebBrowserPersistResourceVisitor
-{
-public:
-    WebBrowserPersistResourcesChild();
+    : public PWebBrowserPersistResourcesChild,
+      public nsIWebBrowserPersistResourceVisitor {
+ public:
+  WebBrowserPersistResourcesChild();
 
-    NS_DECL_NSIWEBBROWSERPERSISTRESOURCEVISITOR
-    NS_DECL_ISUPPORTS
-private:
-    virtual ~WebBrowserPersistResourcesChild();
+  NS_DECL_NSIWEBBROWSERPERSISTRESOURCEVISITOR
+  NS_DECL_ISUPPORTS
+ private:
+  virtual ~WebBrowserPersistResourcesChild();
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // WebBrowserPersistDocumentChild_h__
+#endif  // WebBrowserPersistDocumentChild_h__

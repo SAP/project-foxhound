@@ -1,5 +1,3 @@
-let { classes: Cc, interfaces: Ci } = Components;
-
 var gObs;
 
 function info(s) {
@@ -20,7 +18,7 @@ function obs() {
 
   this.os = Cc["@mozilla.org/observer-service;1"]
               .getService(Ci.nsIObserverService);
-  this.os.addObserver(this, "http-on-modify-request", false);
+  this.os.addObserver(this, "http-on-modify-request");
 }
 
 obs.prototype = {
@@ -43,8 +41,8 @@ obs.prototype = {
     }
 
     // Ignore notifications we don't care about (like favicons)
-    if (channel.URI.spec.indexOf(
-          "http://example.org/tests/extensions/cookie/test/") == -1) {
+    if (!channel.URI.spec.includes(
+          "http://example.org/tests/extensions/cookie/test/")) {
       info("ignoring this one");
       return;
     }
@@ -64,9 +62,7 @@ obs.prototype = {
 
 function getCookieCount(cs) {
   let count = 0;
-  let list = cs.enumerator;
-  while (list.hasMoreElements()) {
-    let cookie = list.getNext().QueryInterface(Ci.nsICookie);
+  for (let cookie of cs.enumerator) {
     info("cookie: " + cookie);
     info("cookie host " + cookie.host + " path " + cookie.path + " name " + cookie.name +
          " value " + cookie.value + " isSecure " + cookie.isSecure + " expires " + cookie.expires);
@@ -78,7 +74,7 @@ function getCookieCount(cs) {
 
 addMessageListener("init", ({ domain }) => {
   let cs = Cc["@mozilla.org/cookiemanager;1"]
-             .getService(Ci.nsICookieManager2);
+             .getService(Ci.nsICookieManager);
 
   info("we are going to remove these cookies");
 
@@ -86,7 +82,8 @@ addMessageListener("init", ({ domain }) => {
   info(count + " cookies");
 
   cs.removeAll();
-  cs.add(domain, "", "oh", "hai", false, false, true, Math.pow(2, 62), {});
+  cs.add(domain, "", "oh", "hai", false, false, true, Math.pow(2, 62), {},
+         Ci.nsICookie2.SAMESITE_UNSET);
   is(cs.countCookiesFromHost(domain), 1, "number of cookies for domain " + domain);
 
   gObs = new obs();
@@ -106,7 +103,7 @@ addMessageListener("shutdown", () => {
   gObs.remove();
 
   let cs = Cc["@mozilla.org/cookiemanager;1"]
-             .getService(Ci.nsICookieManager2);
+             .getService(Ci.nsICookieManager);
   cs.removeAll();
   sendAsyncMessage("shutdown:return");
 });

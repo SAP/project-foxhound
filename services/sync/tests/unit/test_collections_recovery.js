@@ -2,9 +2,8 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 // Verify that we wipe the server if we have to regenerate keys.
-Cu.import("resource://services-sync/service.js");
-Cu.import("resource://services-sync/util.js");
-Cu.import("resource://testing-common/services/sync/utils.js");
+ChromeUtils.import("resource://services-sync/service.js");
+ChromeUtils.import("resource://services-sync/util.js");
 
 add_task(async function test_missing_crypto_collection() {
   enableValidationPrefs();
@@ -29,12 +28,12 @@ add_task(async function test_missing_crypto_collection() {
   let handlers = {
     "/1.1/johndoe/info/collections": maybe_empty(johnHelper.handler),
     "/1.1/johndoe/storage/crypto/keys": johnU("crypto", new ServerWBO("keys").handler()),
-    "/1.1/johndoe/storage/meta/global": johnU("meta", new ServerWBO("global").handler())
+    "/1.1/johndoe/storage/meta/global": johnU("meta", new ServerWBO("global").handler()),
   };
   let collections = ["clients", "bookmarks", "forms", "history",
                      "passwords", "prefs", "tabs"];
   // Disable addon sync because AddonManager won't be initialized here.
-  Service.engineManager.unregister("addons");
+  await Service.engineManager.unregister("addons");
 
   for (let coll of collections) {
     handlers["/1.1/johndoe/storage/" + coll] =
@@ -46,38 +45,33 @@ add_task(async function test_missing_crypto_collection() {
   try {
     let fresh = 0;
     let orig  = Service._freshStart;
-    Service._freshStart = function() {
+    Service._freshStart = async function() {
       _("Called _freshStart.");
-      orig.call(Service);
+      await orig.call(Service);
       fresh++;
     };
 
     _("Startup, no meta/global: freshStart called once.");
     await sync_and_validate_telem();
-    do_check_eq(fresh, 1);
+    Assert.equal(fresh, 1);
     fresh = 0;
 
     _("Regular sync: no need to freshStart.");
-    Service.sync();
-    do_check_eq(fresh, 0);
+    await Service.sync();
+    Assert.equal(fresh, 0);
 
     _("Simulate a bad info/collections.");
     delete johnColls.crypto;
     await sync_and_validate_telem();
-    do_check_eq(fresh, 1);
+    Assert.equal(fresh, 1);
     fresh = 0;
 
     _("Regular sync: no need to freshStart.");
     await sync_and_validate_telem();
-    do_check_eq(fresh, 0);
+    Assert.equal(fresh, 0);
 
   } finally {
     Svc.Prefs.resetBranch("");
     await promiseStopServer(server);
   }
 });
-
-function run_test() {
-  initTestLogging("Trace");
-  run_next_test();
-}

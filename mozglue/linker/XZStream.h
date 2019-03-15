@@ -6,14 +6,14 @@
 #define XZSTREAM_h
 
 #include <cstdlib>
+#include <stdint.h>
 
 #define XZ_DEC_DYNALLOC
 #include "xz.h"
 
 // Used to decode XZ stream buffers.
-class XZStream
-{
-public:
+class XZStream {
+ public:
   // Returns whether the provided buffer is likely a XZ stream.
   static bool IsXZ(const void* aBuf, size_t aBufSize);
 
@@ -33,10 +33,11 @@ public:
   // Note: will return 0 before successful Init().
   size_t UncompressedSize() const;
 
-private:
+ private:
   // Parses the stream footer and returns the size of the index in bytes.
   size_t ParseIndexSize() const;
-  // Parses the stream index and returns the expected uncompressed size in bytes.
+  // Parses the stream index and returns the expected uncompressed size in
+  // bytes.
   size_t ParseUncompressedSize() const;
 
   const uint8_t* mInBuf;
@@ -45,4 +46,4 @@ private:
   xz_dec* mDec;
 };
 
-#endif // XZSTREAM_h
+#endif  // XZSTREAM_h

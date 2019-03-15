@@ -2,16 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#handlersView > richlistitem {
-  -moz-binding: url("chrome://browser/content/preferences/handlers.xml#handler");
-}
-
-#handlersView > richlistitem[selected="true"] {
-  -moz-binding: url("chrome://browser/content/preferences/handlers.xml#handler-selected");
-}
-
 #containersView > richlistitem {
-  -moz-binding: url("chrome://browser/content/preferences/handlers.xml#container");
+  -moz-binding: none;
 }
 
 /**
@@ -22,10 +14,6 @@
 .actionsMenu > menupopup > menuitem > .menu-iconic-left {
   display: -moz-box;
   min-width: 16px;
-}
-
-listitem.offlineapp {
-  -moz-binding: url("chrome://browser/content/preferences/handlers.xml#offlineapp");
 }
 
 /* Apply crisp rendering for favicons at exactly 2dppx resolution */

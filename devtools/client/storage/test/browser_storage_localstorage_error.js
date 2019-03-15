@@ -7,18 +7,18 @@
 // Test that for pages where local/sessionStorage is not available (like about:home),
 // the host still appears in the storage tree and no unhandled exception is thrown.
 
-add_task(function* () {
-  yield openTabAndSetupStorage("about:home");
+add_task(async function() {
+  await openTabAndSetupStorage("about:home");
 
-  let itemsToOpen = [
+  const itemsToOpen = [
     ["localStorage", "about:home"],
-    ["sessionStorage", "about:home"]
+    ["sessionStorage", "about:home"],
   ];
 
-  for (let item of itemsToOpen) {
-    yield selectTreeItem(item);
+  for (const item of itemsToOpen) {
+    await selectTreeItem(item);
     ok(gUI.tree.isSelected(item), `Item ${item.join(" > ")} is present in the tree`);
   }
 
-  yield finishTests();
+  await finishTests();
 });

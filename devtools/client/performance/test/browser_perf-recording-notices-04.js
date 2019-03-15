@@ -15,52 +15,51 @@ const { startRecording, stopRecording } = require("devtools/client/performance/t
 const { waitUntil } = require("devtools/client/performance/test/helpers/wait-utils");
 const { once } = require("devtools/client/performance/test/helpers/event-utils");
 
-add_task(function* () {
+add_task(async function() {
   // Make sure the profiler module is stopped so we can set a new buffer limit.
   pmmLoadFrameScripts(gBrowser);
-  yield pmmStopProfiler();
+  await pmmStopProfiler();
 
   // Keep the profiler's buffer small, to get to 100% really quickly.
   Services.prefs.setIntPref(PROFILER_BUFFER_SIZE_PREF, 10000);
 
-  let { panel } = yield initPerformanceInNewTab({
+  const { panel } = await initPerformanceInNewTab({
     url: SIMPLE_URL,
-    win: window
+    win: window,
   });
 
-  let { gFront, EVENTS, $, PerformanceController, PerformanceView } = panel.panelWin;
+  const { gFront, EVENTS, $, PerformanceController, PerformanceView } = panel.panelWin;
 
   // Set a fast profiler-status update interval
-  yield gFront.setProfilerStatusInterval(10);
+  await gFront.setProfilerStatusInterval(10);
 
-  let DETAILS_CONTAINER = $("#details-pane-container");
-  let NORMAL_BUFFER_STATUS_MESSAGE = $("#recording-notice .buffer-status-message");
+  const DETAILS_CONTAINER = $("#details-pane-container");
+  const NORMAL_BUFFER_STATUS_MESSAGE = $("#recording-notice .buffer-status-message");
   let gPercent;
 
   // Start a manual recording.
-  yield startRecording(panel);
+  await startRecording(panel);
 
-  yield waitUntil(function* () {
-    [, gPercent] = yield once(PerformanceView,
-                              EVENTS.UI_RECORDING_PROFILER_STATUS_RENDERED,
+  await waitUntil(async function() {
+    [gPercent] = await once(PerformanceView, EVENTS.UI_RECORDING_PROFILER_STATUS_RENDERED,
                               { spreadArgs: true });
     return gPercent == 100;
   });
 
   ok(true, "Buffer percentage increased in display.");
 
-  let bufferUsage = PerformanceController.getBufferUsageForRecording(
+  const bufferUsage = PerformanceController.getBufferUsageForRecording(
     PerformanceController.getCurrentRecording());
-  ok(bufferUsage, 1, "Buffer is full for this recording.");
-  ok(DETAILS_CONTAINER.getAttribute("buffer-status"), "full",
+  is(bufferUsage, 1, "Buffer is full for this recording.");
+  is(DETAILS_CONTAINER.getAttribute("buffer-status"), "full",
     "Container has [buffer-status=full].");
-  ok(NORMAL_BUFFER_STATUS_MESSAGE.value.indexOf(gPercent + "%") !== -1,
+  ok(NORMAL_BUFFER_STATUS_MESSAGE.value.includes(gPercent + "%"),
     "Buffer status text has correct percentage.");
 
   // Stop the manual recording.
-  yield stopRecording(panel);
+  await stopRecording(panel);
 
-  yield teardownToolboxAndRemoveTab(panel);
+  await teardownToolboxAndRemoveTab(panel);
 
   pmmClearFrameScripts();
 });

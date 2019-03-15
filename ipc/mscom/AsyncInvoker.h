@@ -10,6 +10,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/Move.h"
 #include "mozilla/mscom/Aggregation.h"
 #include "mozilla/mscom/Utils.h"
@@ -24,18 +25,15 @@ namespace mscom {
 namespace detail {
 
 template <typename AsyncInterface>
-class ForgettableAsyncCall : public ISynchronize
-{
-public:
+class ForgettableAsyncCall : public ISynchronize {
+ public:
   explicit ForgettableAsyncCall(ICallFactory* aCallFactory)
-    : mRefCnt(0)
-    , mAsyncCall(nullptr)
-  {
+      : mRefCnt(0), mAsyncCall(nullptr) {
     StabilizedRefCount<Atomic<ULONG>> stabilizer(mRefCnt);
 
     HRESULT hr =
-      aCallFactory->CreateCall(__uuidof(AsyncInterface), this,
-                               IID_IUnknown, getter_AddRefs(mInnerUnk));
+        aCallFactory->CreateCall(__uuidof(AsyncInterface), this, IID_IUnknown,
+                                 getter_AddRefs(mInnerUnk));
     if (FAILED(hr)) {
       return;
     }
@@ -49,14 +47,10 @@ public:
     }
   }
 
-  AsyncInterface* GetInterface() const
-  {
-    return mAsyncCall;
-  }
+  AsyncInterface* GetInterface() const { return mAsyncCall; }
 
   // IUnknown
-  STDMETHODIMP QueryInterface(REFIID aIid, void** aOutInterface) override
-  {
+  STDMETHODIMP QueryInterface(REFIID aIid, void** aOutInterface) override {
     if (aIid == IID_IUnknown || aIid == IID_ISynchronize) {
       RefPtr<ISynchronize> ptr(this);
       ptr.forget(aOutInterface);
@@ -66,15 +60,13 @@ public:
     return mInnerUnk->QueryInterface(aIid, aOutInterface);
   }
 
-  STDMETHODIMP_(ULONG) AddRef() override
-  {
+  STDMETHODIMP_(ULONG) AddRef() override {
     ULONG result = ++mRefCnt;
     NS_LOG_ADDREF(this, result, "ForgettableAsyncCall", sizeof(*this));
     return result;
   }
 
-  STDMETHODIMP_(ULONG) Release() override
-  {
+  STDMETHODIMP_(ULONG) Release() override {
     ULONG result = --mRefCnt;
     NS_LOG_RELEASE(this, result, "ForgettableAsyncCall");
     if (!result) {
@@ -84,48 +76,41 @@ public:
   }
 
   // ISynchronize
-  STDMETHODIMP Wait(DWORD aFlags, DWORD aTimeoutMilliseconds) override
-  {
+  STDMETHODIMP Wait(DWORD aFlags, DWORD aTimeoutMilliseconds) override {
     return E_NOTIMPL;
   }
 
-  STDMETHODIMP Signal() override
-  {
+  STDMETHODIMP Signal() override {
     // Even though this function is a no-op, we must return S_OK as opposed to
     // E_NOTIMPL or else COM will consider the async call to have failed.
     return S_OK;
   }
 
-  STDMETHODIMP Reset() override
-  {
+  STDMETHODIMP Reset() override {
     // Even though this function is a no-op, we must return S_OK as opposed to
     // E_NOTIMPL or else COM will consider the async call to have failed.
     return S_OK;
   }
 
-protected:
+ protected:
   virtual ~ForgettableAsyncCall() {}
 
-private:
-  Atomic<ULONG>     mRefCnt;
-  RefPtr<IUnknown>  mInnerUnk;
-  AsyncInterface*   mAsyncCall; // weak reference
+ private:
+  Atomic<ULONG> mRefCnt;
+  RefPtr<IUnknown> mInnerUnk;
+  AsyncInterface* mAsyncCall;  // weak reference
 };
 
 template <typename AsyncInterface>
-class WaitableAsyncCall : public ForgettableAsyncCall<AsyncInterface>
-{
-public:
+class WaitableAsyncCall : public ForgettableAsyncCall<AsyncInterface> {
+ public:
   explicit WaitableAsyncCall(ICallFactory* aCallFactory)
-    : ForgettableAsyncCall(aCallFactory)
-    , mEvent(::CreateEventW(nullptr, FALSE, FALSE, nullptr))
-  {
-  }
+      : ForgettableAsyncCall<AsyncInterface>(aCallFactory),
+        mEvent(::CreateEventW(nullptr, FALSE, FALSE, nullptr)) {}
 
-  STDMETHODIMP Wait(DWORD aFlags, DWORD aTimeoutMilliseconds) override
-  {
-    const DWORD waitStart = aTimeoutMilliseconds == INFINITE ? 0 :
-                            ::GetTickCount();
+  STDMETHODIMP Wait(DWORD aFlags, DWORD aTimeoutMilliseconds) override {
+    const DWORD waitStart =
+        aTimeoutMilliseconds == INFINITE ? 0 : ::GetTickCount();
     DWORD flags = aFlags;
     if (XRE_IsContentProcess() && NS_IsMainThread()) {
       flags |= COWAIT_ALERTABLE;
@@ -158,142 +143,197 @@ public:
     }
   }
 
-  STDMETHODIMP Signal() override
-  {
+  STDMETHODIMP Signal() override {
     if (!::SetEvent(mEvent)) {
       return HRESULT_FROM_WIN32(::GetLastError());
     }
     return S_OK;
   }
 
-protected:
-  ~WaitableAsyncCall()
-  {
+ protected:
+  ~WaitableAsyncCall() {
     if (mEvent) {
       ::CloseHandle(mEvent);
     }
   }
 
-private:
+ private:
   HANDLE mEvent;
 };
 
 template <typename AsyncInterface>
-class FireAndForgetInvoker
-{
-protected:
+class FireAndForgetInvoker {
+ protected:
   typedef ForgettableAsyncCall<AsyncInterface> AsyncCallType;
 
   RefPtr<ForgettableAsyncCall<AsyncInterface>> mAsyncCall;
 };
 
 template <typename AsyncInterface>
-class WaitableInvoker
-{
-public:
-  HRESULT Wait(DWORD aTimeout = INFINITE) const
-  {
+class WaitableInvoker {
+ public:
+  HRESULT Wait(DWORD aTimeout = INFINITE) const {
     if (!mAsyncCall) {
-      return E_POINTER;
+      // Nothing to wait for
+      return S_OK;
     }
 
     return mAsyncCall->Wait(0, aTimeout);
   }
 
-protected:
+ protected:
   typedef WaitableAsyncCall<AsyncInterface> AsyncCallType;
 
   RefPtr<WaitableAsyncCall<AsyncInterface>> mAsyncCall;
 };
 
-} // namespace detail
+}  // namespace detail
 
 /**
  * This class is intended for "fire-and-forget" asynchronous invocations of COM
  * interfaces. This requires that an interface be annotated with the
- * |async_uuid| attribute in midl.
+ * |async_uuid| attribute in midl. We also require that there be no outparams
+ * in the desired asynchronous interface (otherwise that would break the
+ * desired "fire-and-forget" semantics).
  *
  * For example, let us suppose we have some IDL as such:
  * [object, uuid(...), async_uuid(...)]
  * interface IFoo : IUnknown
  * {
- *    HRESULT Bar(long baz);
+ *    HRESULT Bar([in] long baz);
  * }
  *
- * Then, given an IFoo, we may construct an AsyncInvoker<AsyncIFoo>:
+ * Then, given an IFoo, we may construct an AsyncInvoker<IFoo, AsyncIFoo>:
  *
  * IFoo* foo = ...;
- * AsyncInvoker<AsyncIFoo> myInvoker(foo);
- * HRESULT hr = myInvoker->Begin_Bar(7);
+ * AsyncInvoker<IFoo, AsyncIFoo> myInvoker(foo);
+ * HRESULT hr = myInvoker.Invoke(&IFoo::Bar, &AsyncIFoo::Begin_Bar, 7);
  *
- * Alternatively you may use the ASYNC_INVOKER_FOR macro, which automatically
- * derives the name of the asynchronous interface from the name of the
- * synchronous interface:
+ * Alternatively you may use the ASYNC_INVOKER_FOR and ASYNC_INVOKE macros,
+ * which automatically deduce the name of the asynchronous interface from the
+ * name of the synchronous interface:
  *
  * ASYNC_INVOKER_FOR(IFoo) myInvoker(foo);
+ * HRESULT hr = ASYNC_INVOKE(myInvoker, Bar, 7);
  *
  * This class may also be used when a synchronous COM call must be made that
  * might reenter the content process. In this case, use the WaitableAsyncInvoker
  * variant, or the WAITABLE_ASYNC_INVOKER_FOR macro:
  *
  * WAITABLE_ASYNC_INVOKER_FOR(Ifoo) myInvoker(foo);
- * myInvoker->Begin_Bar(7);
- * myInvoker.Wait(); // <-- Wait for the COM call to complete.
+ * HRESULT hr = ASYNC_INVOKE(myInvoker, Bar, 7);
+ * if (SUCCEEDED(hr)) {
+ *   myInvoker.Wait(); // <-- Wait for the COM call to complete.
+ * }
  *
  * In general you should avoid using the waitable version, but in some corner
  * cases it is absolutely necessary in order to preserve correctness while
  * avoiding deadlock.
  */
-template <typename AsyncInterface,
-          template <typename Iface> class WaitPolicy = detail::FireAndForgetInvoker>
-class MOZ_RAII AsyncInvoker final : public WaitPolicy<AsyncInterface>
-{
-public:
-  /**
-   * @param aSyncProxy The COM object on which to invoke the asynchronous event.
-   *                   This object must be a proxy to the synchronous variant of
-   *                   AsyncInterface.
-   */
-  explicit AsyncInvoker(IUnknown* aSyncProxy)
-  {
-    MOZ_ASSERT(aSyncProxy);
-    MOZ_ASSERT(IsProxy(aSyncProxy));
+template <typename SyncInterface, typename AsyncInterface,
+          template <typename Iface> class WaitPolicy =
+              detail::FireAndForgetInvoker>
+class MOZ_RAII AsyncInvoker final : public WaitPolicy<AsyncInterface> {
+  using Base = WaitPolicy<AsyncInterface>;
 
-    RefPtr<ICallFactory> callFactory;
-    if (FAILED(aSyncProxy->QueryInterface(IID_ICallFactory,
-                                          getter_AddRefs(callFactory)))) {
+ public:
+  typedef SyncInterface SyncInterfaceT;
+  typedef AsyncInterface AsyncInterfaceT;
+
+  /**
+   * @param aSyncObj The COM object on which to invoke the asynchronous event.
+   *                 If this object is not a proxy to the synchronous variant
+   *                 of AsyncInterface, then it will be invoked synchronously
+   *                 instead (because it is an in-process virtual method call).
+   * @param aIsProxy An optional hint as to whether or not aSyncObj is a proxy.
+   *                 If not specified, AsyncInvoker will automatically detect
+   *                 whether aSyncObj is a proxy, however there may be a
+   *                 performance penalty associated with that.
+   */
+  explicit AsyncInvoker(SyncInterface* aSyncObj,
+                        const Maybe<bool>& aIsProxy = Nothing())
+      : mSyncObj(ResolveIsProxy(aSyncObj, aIsProxy) ? nullptr : aSyncObj) {
+    MOZ_ASSERT(aSyncObj);
+
+    if (mSyncObj) {
       return;
     }
 
-    mAsyncCall = new AsyncCallType(callFactory);
+    RefPtr<ICallFactory> callFactory;
+    if (FAILED(aSyncObj->QueryInterface(IID_ICallFactory,
+                                        getter_AddRefs(callFactory)))) {
+      return;
+    }
+
+    this->mAsyncCall = new typename Base::AsyncCallType(callFactory);
   }
 
-  explicit operator bool() const
-  {
-    return mAsyncCall && mAsyncCall->GetInterface();
-  }
+  /**
+   * @brief Invoke a method on the object. Member function pointers are provided
+   *        for both the sychronous and asynchronous variants of the interface.
+   *        If this invoker's encapsulated COM object is a proxy, then Invoke
+   *        will call the asynchronous member function. Otherwise the
+   *        synchronous version must be used, as the invocation will simply be a
+   *        virtual function call that executes in-process.
+   * @param aSyncMethod Pointer to the method that we would like to invoke on
+   *        the synchronous interface.
+   * @param aAsyncMethod Pointer to the method that we would like to invoke on
+   *        the asynchronous interface.
+   */
+  template <typename SyncMethod, typename AsyncMethod, typename... Args>
+  HRESULT Invoke(SyncMethod aSyncMethod, AsyncMethod aAsyncMethod,
+                 Args... aArgs) {
+    if (mSyncObj) {
+      return (mSyncObj->*aSyncMethod)(std::forward<Args>(aArgs)...);
+    }
 
-  AsyncInterface* operator->() const
-  {
-    return mAsyncCall->GetInterface();
+    MOZ_ASSERT(this->mAsyncCall);
+    if (!this->mAsyncCall) {
+      return E_POINTER;
+    }
+
+    AsyncInterface* asyncInterface = this->mAsyncCall->GetInterface();
+    MOZ_ASSERT(asyncInterface);
+    if (!asyncInterface) {
+      return E_POINTER;
+    }
+
+    return (asyncInterface->*aAsyncMethod)(std::forward<Args>(aArgs)...);
   }
 
   AsyncInvoker(const AsyncInvoker& aOther) = delete;
   AsyncInvoker(AsyncInvoker&& aOther) = delete;
   AsyncInvoker& operator=(const AsyncInvoker& aOther) = delete;
   AsyncInvoker& operator=(AsyncInvoker&& aOther) = delete;
+
+ private:
+  static bool ResolveIsProxy(SyncInterface* aSyncObj,
+                             const Maybe<bool>& aIsProxy) {
+    MOZ_ASSERT(aSyncObj);
+    return aIsProxy.isSome() ? aIsProxy.value() : IsProxy(aSyncObj);
+  }
+
+ private:
+  RefPtr<SyncInterface> mSyncObj;
 };
 
-template <typename AsyncInterface>
-using WaitableAsyncInvoker = AsyncInvoker<AsyncInterface, detail::WaitableInvoker>;
+template <typename SyncInterface, typename AsyncInterface>
+using WaitableAsyncInvoker =
+    AsyncInvoker<SyncInterface, AsyncInterface, detail::WaitableInvoker>;
 
-} // namespace mscom
-} // namespace mozilla
+}  // namespace mscom
+}  // namespace mozilla
 
 #define ASYNC_INVOKER_FOR(SyncIface) \
-  mozilla::mscom::AsyncInvoker<Async##SyncIface>
+  mozilla::mscom::AsyncInvoker<SyncIface, Async##SyncIface>
 
 #define WAITABLE_ASYNC_INVOKER_FOR(SyncIface) \
-  mozilla::mscom::WaitableAsyncInvoker<Async##SyncIface>
+  mozilla::mscom::WaitableAsyncInvoker<SyncIface, Async##SyncIface>
 
-#endif // mozilla_mscom_AsyncInvoker_h
+#define ASYNC_INVOKE(InvokerObj, SyncMethodName, ...)                 \
+  InvokerObj.Invoke(                                                  \
+      &decltype(InvokerObj)::SyncInterfaceT::SyncMethodName,          \
+      &decltype(InvokerObj)::AsyncInterfaceT::Begin_##SyncMethodName, \
+      ##__VA_ARGS__)
+
+#endif  // mozilla_mscom_AsyncInvoker_h

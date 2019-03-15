@@ -22,8 +22,7 @@
 SimpleTest.waitForExplicitFinish();
 SimpleTest.waitForFocus(runTest);
 
-function runDesignModeTest(aDoc, aFocus, aNewSource)
-{
+function runDesignModeTest(aDoc, aFocus, aNewSource) {
   aDoc.designMode = "on";
 
   if (aFocus) {
@@ -36,8 +35,7 @@ function runDesignModeTest(aDoc, aFocus, aNewSource)
   aDoc.documentElement.focus();
 }
 
-function runContentEditableTest(aDoc, aFocus, aNewSource)
-{
+function runContentEditableTest(aDoc, aFocus, aNewSource) {
   if (aFocus) {
     aDoc.body.setAttribute("contenteditable", "true");
     aDoc.body.focus();
@@ -79,18 +77,15 @@ const kTests = [
 var gIFrame;
 var gSetFocusToIFrame = false;
 
-function onLoadIFrame()
-{
+function onLoadIFrame() {
   var frameDoc = gIFrame.contentWindow.document;
 
   var selCon = SpecialPowers.wrap(gIFrame).contentWindow.
-    QueryInterface(SpecialPowers.Ci.nsIInterfaceRequestor).
-    getInterface(SpecialPowers.Ci.nsIWebNavigation).
+    docShell.
     QueryInterface(SpecialPowers.Ci.nsIInterfaceRequestor).
     getInterface(SpecialPowers.Ci.nsISelectionDisplay).
     QueryInterface(SpecialPowers.Ci.nsISelectionController);
   var utils = SpecialPowers.getDOMWindowUtils(window);
-  const nsIDOMNode = SpecialPowers.Ci.nsIDOMNode;
 
   // move focus to the HTML editor
   const kTest = kTests[gTestIndex];
@@ -110,9 +105,9 @@ function onLoadIFrame()
   var content = frameDoc.body.firstChild;
   ok(content, "body doesn't have contents -- " + kTest.description);
   if (content) {
-    is(content.nodeType, nsIDOMNode.TEXT_NODE,
+    is(content.nodeType, Node.TEXT_NODE,
        "the content of body isn't text node -- " + kTest.description);
-    if (content.nodeType == nsIDOMNode.TEXT_NODE) {
+    if (content.nodeType == Node.TEXT_NODE) {
       is(content.data, "ABC",
          "the content of body text isn't 'ABC' -- " + kTest.description);
       is(frameDoc.body.innerHTML, "ABC",
@@ -134,8 +129,7 @@ function onLoadIFrame()
   }
 }
 
-function runTest()
-{
+function runTest() {
   gIFrame = document.createElement("iframe");
   document.getElementById("display").appendChild(gIFrame);
   gIFrame.src = "about:blank";

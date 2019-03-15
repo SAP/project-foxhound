@@ -19,9 +19,9 @@ function write_and_check(str, data, len)
 
 function write_datafile(status, entry)
 {
-  do_check_eq(status, Cr.NS_OK);
-  var os = entry.openOutputStream(0);
+  Assert.equal(status, Cr.NS_OK);
   var data = gen_1MiB();
+  var os = entry.openOutputStream(0, data.length);
 
   write_and_check(os, data, data.length);
 
@@ -36,8 +36,8 @@ function write_datafile(status, entry)
 
 function open_for_readwrite(status, entry)
 {
-  do_check_eq(status, Cr.NS_OK);
-  var os = entry.openOutputStream(entry.dataSize);
+  Assert.equal(status, Cr.NS_OK);
+  var os = entry.openOutputStream(entry.dataSize, -1);
 
   // Opening the entry for appending data calls nsDiskCacheStreamIO::Seek()
   // which initializes mFD. If no data is written then mBufDirty is false and

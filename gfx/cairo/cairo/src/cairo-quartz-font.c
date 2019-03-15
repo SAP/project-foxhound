@@ -340,13 +340,34 @@ const cairo_font_face_backend_t _cairo_quartz_font_face_backend = {
 static CTFontRef
 CreateCTFontFromCGFontWithVariations(CGFontRef aCGFont, CGFloat aSize)
 {
-    // Avoid calling potentially buggy variation APIs on pre-Sierra macOS
-    // versions (see bug 1331683)
     // Declare helper provided by widget/cocoa/nsCocoaFeatures.mm
-    extern bool Gecko_OnSierraOrLater();
-    if (!Gecko_OnSierraOrLater()) {
+    extern bool Gecko_OnSierraExactly();
+
+    // Avoid calling potentially buggy variation APIs on pre-Sierra macOS
+    // versions (see bug 1331683).
+    //
+    // And on HighSierra, CTFontCreateWithGraphicsFont properly carries over
+    // variation settings from the CGFont to CTFont, so we don't need to do
+    // the extra work here -- and this seems to avoid Core Text crashiness
+    // seen in bug 1454094.
+    //
+    // So we only need to do this "the hard way" on Sierra; on other releases,
+    // just let the standard CTFont function do its thing.
+    //
+    // NOTE in case this ever needs further adjustment: there is similar logic
+    // in four places in the tree (sadly):
+    //    CreateCTFontFromCGFontWithVariations in gfxMacFont.cpp
+    //    CreateCTFontFromCGFontWithVariations in ScaledFontMac.cpp
+    //    CreateCTFontFromCGFontWithVariations in cairo-quartz-font.c
+    //    ctfont_create_exact_copy in SkFontHost_mac.cpp
+    //
+    // XXX Does this need to behave differently for installed fonts on High
+    // Sierra, as in other similar places (bug 1455569)?
+
+    if (!Gecko_OnSierraExactly()) {
         return CTFontCreateWithGraphicsFont(aCGFont, aSize, NULL, NULL);
     }
+
     CFDictionaryRef vars = CGFontCopyVariations(aCGFont);
     CTFontRef ctFont;
     if (vars) {

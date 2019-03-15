@@ -267,8 +267,7 @@ sec_pkcs12_generate_key_from_password(SECOidTag algorithm,
         return NULL;
     }
 
-    pre_hash = (unsigned char *)PORT_ArenaZAlloc(poolp, sizeof(char) *
-                                                            (salt->len + password->len));
+    pre_hash = (unsigned char *)PORT_ArenaZAlloc(poolp, sizeof(char) * (salt->len + password->len));
     if (pre_hash == NULL) {
         PORT_SetError(SEC_ERROR_NO_MEMORY);
         goto loser;
@@ -974,6 +973,46 @@ sec_pkcs12_is_pkcs12_pbe_algorithm(SECOidTag algorithm)
         default:
             return PR_FALSE;
     }
+}
+
+/* this function decodes a password from Unicode if necessary,
+ * according to the PBE algorithm.
+ *
+ * we assume that the pwitem is already encoded in Unicode by the
+ * caller.  if the encryption scheme is not the one defined in PKCS
+ * #12, decode the pwitem back into UTF-8. */
+PRBool
+sec_pkcs12_decode_password(PLArenaPool *arena,
+                           SECItem *result,
+                           SECOidTag algorithm,
+                           const SECItem *pwitem)
+{
+    if (!sec_pkcs12_is_pkcs12_pbe_algorithm(algorithm))
+        return sec_pkcs12_convert_item_to_unicode(arena, result,
+                                                  (SECItem *)pwitem,
+                                                  PR_TRUE, PR_FALSE, PR_FALSE);
+
+    return SECITEM_CopyItem(arena, result, pwitem) == SECSuccess;
+}
+
+/* this function encodes a password into Unicode if necessary,
+ * according to the PBE algorithm.
+ *
+ * we assume that the pwitem holds a raw password.  if the encryption
+ * scheme is the one defined in PKCS #12, encode the password into
+ * BMPString. */
+PRBool
+sec_pkcs12_encode_password(PLArenaPool *arena,
+                           SECItem *result,
+                           SECOidTag algorithm,
+                           const SECItem *pwitem)
+{
+    if (sec_pkcs12_is_pkcs12_pbe_algorithm(algorithm))
+        return sec_pkcs12_convert_item_to_unicode(arena, result,
+                                                  (SECItem *)pwitem,
+                                                  PR_TRUE, PR_TRUE, PR_TRUE);
+
+    return SECITEM_CopyItem(arena, result, pwitem) == SECSuccess;
 }
 
 /* pkcs 12 templates */

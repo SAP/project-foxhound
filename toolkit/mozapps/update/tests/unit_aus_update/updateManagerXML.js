@@ -12,38 +12,55 @@ function run_test() {
 
   setUpdateChannel("test_channel");
 
-  // This test expects that the app.update.download.backgroundInterval
-  // preference doesn't already exist.
-  Services.prefs.deleteBranch("app.update.download.backgroundInterval");
-
-  // XXXrstrong - not specifying a detailsURL will cause a leak due to bug 470244
-  // and until bug 470244 is fixed this will not test the value for detailsURL
-  // when it isn't specified in the update xml.
-  let patches = getLocalPatchString("partial", "http://partial/", "SHA256",
-                                    "cd43", "86", "true", STATE_PENDING);
-  let updates = getLocalUpdateString(patches, "major", "New", "version 4",
-                                     "4.0", "20070811053724",
-                                     "http://details1/",
-                                     "http://service1/", "1238441300314",
-                                     "test status text", "false",
-                                     "test_channel", "true", "true", "true",
-                                     "345600", "300", "3.0",
-                                     "custom1_attr=\"custom1 value\"",
-                                     "custom2_attr=\"custom2 value\"");
+  let patchProps = {type: "partial",
+                    url: "http://partial/",
+                    size: "86",
+                    selected: "true",
+                    state: STATE_PENDING,
+                    custom1: "custom1_attr=\"custom1 patch value\"",
+                    custom2: "custom2_attr=\"custom2 patch value\""};
+  let patches = getLocalPatchString(patchProps);
+  let updateProps = {type: "major",
+                     name: "New",
+                     displayVersion: "version 4",
+                     appVersion: "4.0",
+                     buildID: "20070811053724",
+                     detailsURL: "http://details1/",
+                     serviceURL: "http://service1/",
+                     installDate: "1238441300314",
+                     statusText: "test status text",
+                     isCompleteUpdate: "false",
+                     channel: "test_channel",
+                     foregroundDownload: "true",
+                     promptWaitTime: "345600",
+                     previousAppVersion: "3.0",
+                     custom1: "custom1_attr=\"custom1 value\"",
+                     custom2: "custom2_attr=\"custom2 value\""};
+  let updates = getLocalUpdateString(updateProps, patches);
   writeUpdatesToXMLFile(getLocalUpdatesXMLString(updates), true);
   writeStatusFile(STATE_SUCCEEDED);
 
-  patches = getLocalPatchString("complete", "http://complete/", "SHA1", "6232",
-                                "75", "true", STATE_FAILED);
-  updates = getLocalUpdateString(patches, "major", "Existing", null, "3.0",
-                                 null,
-                                 "http://details2/",
-                                 "http://service2/", null,
-                                 getString("patchApplyFailure"), "true",
-                                 "test_channel", "false", null, null, "691200",
-                                 null, null,
-                                 "custom3_attr=\"custom3 value\"",
-                                 "custom4_attr=\"custom4 value\"");
+  patchProps = {type: "complete",
+                url: "http://complete/",
+                size: "75",
+                selected: "true",
+                state: STATE_FAILED,
+                custom1: "custom3_attr=\"custom3 patch value\"",
+                custom2: "custom4_attr=\"custom4 patch value\""};
+  patches = getLocalPatchString(patchProps);
+  updateProps = {type: "minor",
+                 name: "Existing",
+                 appVersion: "3.0",
+                 detailsURL: "http://details2/",
+                 serviceURL: "http://service2/",
+                 statusText: getString("patchApplyFailure"),
+                 isCompleteUpdate: "true",
+                 channel: "test_channel",
+                 foregroundDownload: "false",
+                 promptWaitTime: "691200",
+                 custom1: "custom3_attr=\"custom3 value\"",
+                 custom2: "custom4_attr=\"custom4 value\""};
+  updates = getLocalUpdateString(updateProps, patches);
   writeUpdatesToXMLFile(getLocalUpdatesXMLString(updates), false);
 
   standardInit();
@@ -53,8 +70,8 @@ function run_test() {
   Assert.equal(gUpdateManager.updateCount, 2,
                "the update manager updateCount attribute" + MSG_SHOULD_EQUAL);
 
-  debugDump("checking the activeUpdate properties");
-  let update = gUpdateManager.getUpdateAt(0).QueryInterface(Ci.nsIPropertyBag);
+  debugDump("checking the first update properties");
+  let update = gUpdateManager.getUpdateAt(0).QueryInterface(Ci.nsIWritablePropertyBag);
   Assert.equal(update.state, STATE_SUCCEEDED,
                "the update state attribute" + MSG_SHOULD_EQUAL);
   Assert.equal(update.type, "major",
@@ -80,14 +97,8 @@ function run_test() {
             "the update isCompleteUpdate attribute" + MSG_SHOULD_EQUAL);
   Assert.equal(update.channel, "test_channel",
                "the update channel attribute" + MSG_SHOULD_EQUAL);
-  Assert.ok(!!update.showPrompt,
-            "the update showPrompt attribute" + MSG_SHOULD_EQUAL);
-  Assert.ok(!!update.showNeverForVersion,
-            "the update showNeverForVersion attribute" + MSG_SHOULD_EQUAL);
   Assert.equal(update.promptWaitTime, "345600",
                "the update promptWaitTime attribute" + MSG_SHOULD_EQUAL);
-  Assert.equal(update.getProperty("backgroundInterval"), "300",
-               "the update backgroundInterval attribute" + MSG_SHOULD_EQUAL);
   Assert.equal(update.previousAppVersion, "3.0",
                "the update previousAppVersion attribute" + MSG_SHOULD_EQUAL);
   // Custom attributes
@@ -95,31 +106,73 @@ function run_test() {
                "the update custom1_attr property" + MSG_SHOULD_EQUAL);
   Assert.equal(update.getProperty("custom2_attr"), "custom2 value",
                "the update custom2_attr property" + MSG_SHOULD_EQUAL);
+  // nsIPropertyBag enumerator
+  debugDump("checking the first update enumerator");
+  Assert.ok(update.enumerator instanceof Ci.nsISimpleEnumerator,
+            "update enumerator should be an instance of nsISimpleEnumerator");
+  let results = Array.from(update.enumerator);
+  Assert.equal(results.length, 3,
+               "the length of the array created from the update enumerator" +
+               MSG_SHOULD_EQUAL);
+  Assert.ok(results.every(prop => prop instanceof Ci.nsIProperty),
+            "the objects in the array created from the update enumerator " +
+            "should all be an instance of nsIProperty");
+  Assert.equal(results[0].name, "custom1_attr",
+               "the first property name" + MSG_SHOULD_EQUAL);
+  Assert.equal(results[0].value, "custom1 value",
+               "the first property value" + MSG_SHOULD_EQUAL);
+  Assert.equal(results[1].name, "custom2_attr",
+               "the second property name" + MSG_SHOULD_EQUAL);
+  Assert.equal(results[1].value, "custom2 value",
+               "the second property value" + MSG_SHOULD_EQUAL);
+  Assert.equal(results[2].name, "foregroundDownload",
+               "the second property name" + MSG_SHOULD_EQUAL);
+  Assert.equal(results[2].value, "true",
+               "the third property value" + MSG_SHOULD_EQUAL);
 
-  debugDump("checking the activeUpdate patch properties");
-  let patch = update.selectedPatch;
+  debugDump("checking the first update patch properties");
+  let patch = update.selectedPatch.QueryInterface(Ci.nsIWritablePropertyBag);
   Assert.equal(patch.type, "partial",
                "the update patch type attribute" + MSG_SHOULD_EQUAL);
   Assert.equal(patch.URL, "http://partial/",
                "the update patch URL attribute" + MSG_SHOULD_EQUAL);
-  Assert.equal(patch.hashFunction, "SHA256",
-               "the update patch hashFunction attribute" + MSG_SHOULD_EQUAL);
-  Assert.equal(patch.hashValue, "cd43",
-               "the update patch hashValue attribute" + MSG_SHOULD_EQUAL);
   Assert.equal(patch.size, "86",
                "the update patch size attribute" + MSG_SHOULD_EQUAL);
   Assert.ok(!!patch.selected,
             "the update patch selected attribute" + MSG_SHOULD_EQUAL);
   Assert.equal(patch.state, STATE_SUCCEEDED,
                "the update patch state attribute" + MSG_SHOULD_EQUAL);
+  Assert.equal(patch.getProperty("custom1_attr"), "custom1 patch value",
+               "the update patch custom1_attr property" + MSG_SHOULD_EQUAL);
+  Assert.equal(patch.getProperty("custom2_attr"), "custom2 patch value",
+               "the update patch custom2_attr property" + MSG_SHOULD_EQUAL);
+  // nsIPropertyBag enumerator
+  debugDump("checking the first update patch enumerator");
+  Assert.ok(patch.enumerator instanceof Ci.nsISimpleEnumerator,
+            "patch enumerator should be an instance of nsISimpleEnumerator");
+  results = Array.from(patch.enumerator);
+  Assert.equal(results.length, 2,
+               "the length of the array created from the patch enumerator" +
+               MSG_SHOULD_EQUAL);
+  Assert.ok(results.every(prop => prop instanceof Ci.nsIProperty),
+            "the objects in the array created from the patch enumerator " +
+            "should all be an instance of nsIProperty");
+  Assert.equal(results[0].name, "custom1_attr",
+               "the first property name" + MSG_SHOULD_EQUAL);
+  Assert.equal(results[0].value, "custom1 patch value",
+               "the first property value" + MSG_SHOULD_EQUAL);
+  Assert.equal(results[1].name, "custom2_attr",
+               "the second property name" + MSG_SHOULD_EQUAL);
+  Assert.equal(results[1].value, "custom2 patch value",
+               "the second property value" + MSG_SHOULD_EQUAL);
 
-  debugDump("checking the first update properties");
-  update = gUpdateManager.getUpdateAt(1).QueryInterface(Ci.nsIPropertyBag);
+  debugDump("checking the second update properties");
+  update = gUpdateManager.getUpdateAt(1).QueryInterface(Ci.nsIWritablePropertyBag);
   Assert.equal(update.state, STATE_FAILED,
                "the update state attribute" + MSG_SHOULD_EQUAL);
   Assert.equal(update.name, "Existing",
                "the update name attribute" + MSG_SHOULD_EQUAL);
-  Assert.equal(update.type, "major",
+  Assert.equal(update.type, "minor",
                "the update type attribute" + MSG_SHOULD_EQUAL);
   Assert.equal(update.displayVersion, "3.0",
                "the update displayVersion attribute" + MSG_SHOULD_EQUAL);
@@ -139,39 +192,125 @@ function run_test() {
             "the update isCompleteUpdate attribute" + MSG_SHOULD_EQUAL);
   Assert.equal(update.channel, "test_channel",
                "the update channel attribute" + MSG_SHOULD_EQUAL);
-  Assert.ok(!update.showPrompt,
-            "the update showPrompt attribute" + MSG_SHOULD_EQUAL);
-  Assert.ok(!update.showNeverForVersion,
-            "the update showNeverForVersion attribute" + MSG_SHOULD_EQUAL);
   Assert.equal(update.promptWaitTime, "691200",
                "the update promptWaitTime attribute" + MSG_SHOULD_EQUAL);
-  // The default and maximum value for backgroundInterval is 600
-  Assert.equal(update.getProperty("backgroundInterval"), "600",
-               "the update backgroundInterval attribute" + MSG_SHOULD_EQUAL);
-  Assert.equal(update.previousAppVersion, null,
+  Assert.equal(update.previousAppVersion, "1.0",
                "the update previousAppVersion attribute" + MSG_SHOULD_EQUAL);
   // Custom attributes
   Assert.equal(update.getProperty("custom3_attr"), "custom3 value",
                "the update custom3_attr property" + MSG_SHOULD_EQUAL);
   Assert.equal(update.getProperty("custom4_attr"), "custom4 value",
                "the update custom4_attr property" + MSG_SHOULD_EQUAL);
+  // nsIPropertyBag enumerator
+  debugDump("checking the second update enumerator");
+  Assert.ok(update.enumerator instanceof Ci.nsISimpleEnumerator,
+            "update enumerator should be an instance of nsISimpleEnumerator");
+  results = Array.from(update.enumerator);
+  Assert.equal(results.length, 3,
+               "the length of the array created from the update enumerator" +
+               MSG_SHOULD_EQUAL);
+  Assert.ok(results.every(prop => prop instanceof Ci.nsIProperty),
+            "the objects in the array created from the update enumerator " +
+            "should all be an instance of nsIProperty");
+  Assert.equal(results[0].name, "custom3_attr",
+               "the first property name" + MSG_SHOULD_EQUAL);
+  Assert.equal(results[0].value, "custom3 value",
+               "the first property value" + MSG_SHOULD_EQUAL);
+  Assert.equal(results[1].name, "custom4_attr",
+               "the second property name" + MSG_SHOULD_EQUAL);
+  Assert.equal(results[1].value, "custom4 value",
+               "the second property value" + MSG_SHOULD_EQUAL);
+  Assert.equal(results[2].name, "foregroundDownload",
+               "the third property name" + MSG_SHOULD_EQUAL);
+  Assert.equal(results[2].value, "false",
+               "the third property value" + MSG_SHOULD_EQUAL);
 
-  debugDump("checking the first update patch properties");
-  patch = update.selectedPatch;
+  debugDump("checking the second update patch properties");
+  patch = update.selectedPatch.QueryInterface(Ci.nsIWritablePropertyBag);
   Assert.equal(patch.type, "complete",
                "the update patch type attribute" + MSG_SHOULD_EQUAL);
   Assert.equal(patch.URL, "http://complete/",
                "the update patch URL attribute" + MSG_SHOULD_EQUAL);
-  Assert.equal(patch.hashFunction, "SHA1",
-               "the update patch hashFunction attribute" + MSG_SHOULD_EQUAL);
-  Assert.equal(patch.hashValue, "6232",
-               "the update patch hashValue attribute" + MSG_SHOULD_EQUAL);
   Assert.equal(patch.size, "75",
                "the update patch size attribute" + MSG_SHOULD_EQUAL);
   Assert.ok(!!patch.selected,
             "the update patch selected attribute" + MSG_SHOULD_EQUAL);
   Assert.equal(patch.state, STATE_FAILED,
                "the update patch state attribute" + MSG_SHOULD_EQUAL);
+  Assert.equal(patch.getProperty("custom3_attr"), "custom3 patch value",
+               "the update patch custom3_attr property" + MSG_SHOULD_EQUAL);
+  Assert.equal(patch.getProperty("custom4_attr"), "custom4 patch value",
+               "the update patch custom4_attr property" + MSG_SHOULD_EQUAL);
+  // nsIPropertyBag enumerator
+  debugDump("checking the second update patch enumerator");
+  Assert.ok(patch.enumerator instanceof Ci.nsISimpleEnumerator,
+            "patch enumerator should be an instance of nsISimpleEnumerator");
+  results = Array.from(patch.enumerator);
+  Assert.equal(results.length, 2,
+               "the length of the array created from the patch enumerator" +
+               MSG_SHOULD_EQUAL);
+  Assert.ok(results.every(prop => prop instanceof Ci.nsIProperty),
+            "the objects in the array created from the patch enumerator " +
+            "should all be an instance of nsIProperty");
+  Assert.equal(results[0].name, "custom3_attr",
+               "the first property name" + MSG_SHOULD_EQUAL);
+  Assert.equal(results[0].value, "custom3 patch value",
+               "the first property value" + MSG_SHOULD_EQUAL);
+  Assert.equal(results[1].name, "custom4_attr",
+               "the second property name" + MSG_SHOULD_EQUAL);
+  Assert.equal(results[1].value, "custom4 patch value",
+               "the second property value" + MSG_SHOULD_EQUAL);
 
-  doTestFinish();
+  let attrNames = [
+    "appVersion", "buildID", "channel", "detailsURL", "displayVersion",
+    "elevationFailure", "errorCode", "installDate", "isCompleteUpdate", "name",
+    "previousAppVersion", "promptWaitTime", "serviceURL", "state", "statusText",
+    "type", "unsupported",
+  ];
+  checkIllegalProperties(update, attrNames);
+
+  attrNames = [
+    "errorCode", "finalURL", "selected", "size", "state", "type", "URL",
+  ];
+  checkIllegalProperties(patch, attrNames);
+
+  executeSoon(doTestFinish);
+}
+
+function checkIllegalProperties(object, propertyNames) {
+  let objectName =
+    object instanceof Ci.nsIUpdate ? "nsIUpdate" : "nsIUpdatePatch";
+  propertyNames.forEach(function(name) {
+    // Check that calling getProperty, setProperty, and deleteProperty on an
+    // nsIUpdate attribute throws NS_ERROR_ILLEGAL_VALUE
+    let result = 0;
+    try {
+      object.getProperty(name);
+    } catch (e) {
+      result = e.result;
+    }
+    Assert.equal(result, Cr.NS_ERROR_ILLEGAL_VALUE,
+                 "calling getProperty using an " + objectName + " attribute " +
+                 "name should throw NS_ERROR_ILLEGAL_VALUE");
+
+    result = 0;
+    try {
+      object.setProperty(name, "value");
+    } catch (e) {
+      result = e.result;
+    }
+    Assert.equal(result, Cr.NS_ERROR_ILLEGAL_VALUE,
+                 "calling setProperty using an " + objectName + " attribute " +
+                 "name should throw NS_ERROR_ILLEGAL_VALUE");
+
+    result = 0;
+    try {
+      object.deleteProperty(name);
+    } catch (e) {
+      result = e.result;
+    }
+    Assert.equal(result, Cr.NS_ERROR_ILLEGAL_VALUE,
+                 "calling deleteProperty using an " + objectName + " attribute " +
+                 "name should throw NS_ERROR_ILLEGAL_VALUE");
+  });
 }

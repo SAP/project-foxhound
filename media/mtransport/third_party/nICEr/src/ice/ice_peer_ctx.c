@@ -30,10 +30,6 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-
-
-static char *RCSSTRING __UNUSED__="$Id: ice_peer_ctx.c,v 1.2 2008/04/28 17:59:01 ekr Exp $";
-
 #include <string.h>
 #include <assert.h>
 #include <registry.h>
@@ -48,7 +44,7 @@ static char *RCSSTRING __UNUSED__="$Id: ice_peer_ctx.c,v 1.2 2008/04/28 17:59:01
 
 static void nr_ice_peer_ctx_destroy_cb(NR_SOCKET s, int how, void *cb_arg);
 static int nr_ice_peer_ctx_parse_stream_attributes_int(nr_ice_peer_ctx *pctx, nr_ice_media_stream *stream, nr_ice_media_stream *pstream, char **attrs, int attr_ct);
-static int nr_ice_ctx_parse_candidate(nr_ice_peer_ctx *pctx, nr_ice_media_stream *pstream, char *candidate);
+static int nr_ice_ctx_parse_candidate(nr_ice_peer_ctx *pctx, nr_ice_media_stream *pstream, char *candidate, int trickled);
 static void nr_ice_peer_ctx_start_trickle_timer(nr_ice_peer_ctx *pctx);
 
 int nr_ice_peer_ctx_create(nr_ice_ctx *ctx, nr_ice_handler *handler,char *label, nr_ice_peer_ctx **pctxp)
@@ -70,12 +66,8 @@ int nr_ice_peer_ctx_create(nr_ice_ctx *ctx, nr_ice_handler *handler,char *label,
     /* Decide controlling vs. controlled */
     if(ctx->flags & NR_ICE_CTX_FLAGS_LITE){
       pctx->controlling=0;
-    }
-    else{
-      if(ctx->flags & NR_ICE_CTX_FLAGS_OFFERER)
-        pctx->controlling=1;
-      else if(ctx->flags & NR_ICE_CTX_FLAGS_ANSWERER)
-        pctx->controlling=0;
+    } else {
+      pctx->controlling=1;
     }
     if(r=nr_crypto_random_bytes((UCHAR *)&pctx->tiebreaker,8))
       ABORT(r);
@@ -107,7 +99,7 @@ int nr_ice_peer_ctx_parse_stream_attributes(nr_ice_peer_ctx *pctx, nr_ice_media_
     /*
       Note: use component_ct from our own stream since components other
       than this offered by the other side are unusable */
-    if(r=nr_ice_media_stream_create(pctx->ctx,stream->label,stream->component_ct,&pstream))
+    if(r=nr_ice_media_stream_create(pctx->ctx,stream->label,"","",stream->component_ct,&pstream))
       ABORT(r);
 
     /* Match up the local and remote components */
@@ -128,12 +120,12 @@ int nr_ice_peer_ctx_parse_stream_attributes(nr_ice_peer_ctx *pctx, nr_ice_media_
 
     /* Now that we have the ufrag and password, compute all the username/password
        pairs */
-    lufrag=stream->ufrag?stream->ufrag:pctx->ctx->ufrag;
-    lpwd=stream->pwd?stream->pwd:pctx->ctx->pwd;
+    lufrag=stream->ufrag;
+    lpwd=stream->pwd;
     assert(lufrag);
     assert(lpwd);
-    rufrag=pstream->ufrag?pstream->ufrag:pctx->peer_ufrag;
-    rpwd=pstream->pwd?pstream->pwd:pctx->peer_pwd;
+    rufrag=pstream->ufrag;
+    rpwd=pstream->pwd;
     if (!rufrag || !rpwd)
       ABORT(R_BAD_DATA);
 
@@ -166,7 +158,7 @@ static int nr_ice_peer_ctx_parse_stream_attributes_int(nr_ice_peer_ctx *pctx, nr
         }
       }
       else if (!strncmp(attrs[i],"candidate",9)){
-        if(r=nr_ice_ctx_parse_candidate(pctx,pstream,attrs[i])) {
+        if(r=nr_ice_ctx_parse_candidate(pctx,pstream,attrs[i],0)) {
           r_log(LOG_ICE,LOG_WARNING,"ICE(%s): peer (%s) specified bogus candidate",pctx->ctx->label,pctx->label);
           continue;
         }
@@ -180,7 +172,7 @@ static int nr_ice_peer_ctx_parse_stream_attributes_int(nr_ice_peer_ctx *pctx, nr
     return(0);
   }
 
-static int nr_ice_ctx_parse_candidate(nr_ice_peer_ctx *pctx, nr_ice_media_stream *pstream, char *candidate)
+static int nr_ice_ctx_parse_candidate(nr_ice_peer_ctx *pctx, nr_ice_media_stream *pstream, char *candidate, int trickled)
   {
     nr_ice_candidate *cand=0;
     nr_ice_component *comp;
@@ -189,10 +181,9 @@ static int nr_ice_ctx_parse_candidate(nr_ice_peer_ctx *pctx, nr_ice_media_stream
 
     if(r=nr_ice_peer_candidate_from_attribute(pctx->ctx,candidate,pstream,&cand))
       ABORT(r);
-    if(cand->component_id-1>=pstream->component_ct){
-      r_log(LOG_ICE,LOG_ERR,"ICE(%s): peer (%s) specified too many components",pctx->ctx->label,pctx->label);
-      ABORT(R_BAD_DATA);
-    }
+
+    /* set the trickled flag on the candidate */
+    cand->trickled = trickled;
 
     /* Not the fastest way to find a component, but it's what we got */
     j=1;
@@ -204,16 +195,17 @@ static int nr_ice_ctx_parse_candidate(nr_ice_peer_ctx *pctx, nr_ice_media_stream
     }
 
     if(!comp){
-      r_log(LOG_ICE,LOG_WARNING,"Peer answered with more components than we offered");
-      ABORT(R_BAD_DATA);
+      /* Very common for the answerer when it uses rtcp-mux */
+      r_log(LOG_ICE,LOG_INFO,"ICE(%s): peer (%s) no such component for candidate %s",pctx->ctx->label,pctx->label, candidate);
+      ABORT(R_REJECTED);
     }
 
     if (comp->state == NR_ICE_COMPONENT_DISABLED) {
-      r_log(LOG_ICE,LOG_WARNING,"Peer offered candidates for disabled remote component");
+      r_log(LOG_ICE,LOG_WARNING,"Peer offered candidate for disabled remote component: %s", candidate);
       ABORT(R_BAD_DATA);
     }
     if (comp->local_component->state == NR_ICE_COMPONENT_DISABLED) {
-      r_log(LOG_ICE,LOG_WARNING,"Peer offered candidates for disabled local component");
+      r_log(LOG_ICE,LOG_WARNING,"Peer offered candidate for disabled local component: %s", candidate);
       ABORT(R_BAD_DATA);
     }
 
@@ -297,7 +289,7 @@ int nr_ice_peer_ctx_parse_trickle_candidate(nr_ice_peer_ctx *pctx, nr_ice_media_
         break;
     }
 
-    if(r=nr_ice_ctx_parse_candidate(pctx,pstream,candidate)){
+    if(r=nr_ice_ctx_parse_candidate(pctx,pstream,candidate,1)){
       ABORT(r);
     }
 
@@ -478,8 +470,6 @@ static void nr_ice_peer_ctx_destroy_cb(NR_SOCKET s, int how, void *cb_arg)
 
     NR_async_timer_cancel(pctx->connected_cb_timer);
     RFREE(pctx->label);
-    RFREE(pctx->peer_ufrag);
-    RFREE(pctx->peer_pwd);
 
     STAILQ_FOREACH_SAFE(str1, &pctx->peer_streams, entry, str2){
       STAILQ_REMOVE(&pctx->peer_streams,str1,nr_ice_media_stream_,entry);
@@ -542,10 +532,7 @@ int nr_ice_peer_ctx_start_checks2(nr_ice_peer_ctx *pctx, int allow_non_first)
     pctx->connected_cb_timer = 0;
     pctx->checks_started = 0;
 
-    if((r=nr_ice_peer_ctx_check_if_connected(pctx))) {
-      r_log(LOG_ICE,LOG_ERR,"ICE(%s): peer (%s) initial connected check failed",pctx->ctx->label,pctx->label);
-      ABORT(r);
-    }
+    nr_ice_peer_ctx_check_if_connected(pctx);
 
     if (pctx->reported_connected) {
       r_log(LOG_ICE,LOG_ERR,"ICE(%s): peer (%s) in %s all streams were done",pctx->ctx->label,pctx->label,__FUNCTION__);
@@ -725,29 +712,30 @@ static void nr_ice_peer_ctx_fire_connected(NR_SOCKET s, int how, void *cb_arg)
 
 /* Examine all the streams to see if we're
    maybe miraculously connected */
-int nr_ice_peer_ctx_check_if_connected(nr_ice_peer_ctx *pctx)
+void nr_ice_peer_ctx_check_if_connected(nr_ice_peer_ctx *pctx)
   {
-    int _status;
     nr_ice_media_stream *str;
     int failed=0;
     int succeeded=0;
 
     str=STAILQ_FIRST(&pctx->peer_streams);
     while(str){
-      if(str->ice_state==NR_ICE_MEDIA_STREAM_CHECKS_CONNECTED){
-        succeeded++;
-      }
-      else if(str->ice_state==NR_ICE_MEDIA_STREAM_CHECKS_FAILED){
-        failed++;
-      }
-      else{
-        break;
+      if (!str->local_stream->obsolete){
+        if(str->ice_state==NR_ICE_MEDIA_STREAM_CHECKS_CONNECTED){
+          succeeded++;
+        }
+        else if(str->ice_state==NR_ICE_MEDIA_STREAM_CHECKS_FAILED){
+          failed++;
+        }
+        else{
+          break;
+        }
       }
       str=STAILQ_NEXT(str,entry);
     }
 
     if(str)
-      goto done;  /* Something isn't done */
+      return;  /* Something isn't done */
 
     /* OK, we're finished, one way or another */
     r_log(LOG_ICE,LOG_INFO,"ICE-PEER(%s): all checks completed success=%d fail=%d",pctx->label,succeeded,failed);
@@ -760,10 +748,6 @@ int nr_ice_peer_ctx_check_if_connected(nr_ice_peer_ctx *pctx)
       assert(!pctx->connected_cb_timer);
       NR_ASYNC_TIMER_SET(0,nr_ice_peer_ctx_fire_connected,pctx,&pctx->connected_cb_timer);
     }
-
-  done:
-    _status=0;
-    return(_status);
   }
 
 
@@ -826,6 +810,12 @@ int nr_ice_peer_ctx_deliver_packet_maybe(nr_ice_peer_ctx *pctx, nr_ice_component
 
     if(!cand)
       ABORT(R_REJECTED);
+
+    // accumulate the received bytes for the active candidate pair
+    if (peer_comp->active) {
+      peer_comp->active->bytes_recvd += len;
+      gettimeofday(&peer_comp->active->last_recvd, 0);
+    }
 
     /* OK, there's a match. Call the handler */
 

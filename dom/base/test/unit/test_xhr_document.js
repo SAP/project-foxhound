@@ -2,12 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cu = Components.utils;
-
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+Cu.importGlobalProperties(["DOMParser"]);
 
 var server = new HttpServer();
 server.start(-1);
@@ -25,16 +22,15 @@ function run_test() {
   do_test_pending();
   server.registerPathHandler("/foo", handler);
 
-  var parser = Cc["@mozilla.org/xmlextras/domparser;1"].createInstance(Ci.nsIDOMParser);
-  parser.init();
+  var parser = new DOMParser();
   let doc = parser.parseFromString(docbody, "text/html");
-  let xhr = Cc['@mozilla.org/xmlextras/xmlhttprequest;1'].createInstance(Ci.nsIXMLHttpRequest);
+  let xhr = new XMLHttpRequest();
   xhr.onload = function() {
-    do_check_eq(xhr.responseText, docbody);
+    Assert.equal(xhr.responseText, docbody);
     server.stop(do_test_finished);
   };
   xhr.onerror = function() {
-    do_check_false(false);
+    Assert.equal(false, false);
     server.stop(do_test_finished);
   };
   xhr.open("POST", "http://localhost:" + server.identity.primaryPort + "/foo", true);

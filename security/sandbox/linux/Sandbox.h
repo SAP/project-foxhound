@@ -17,25 +17,51 @@
 
 namespace mozilla {
 
-// This must be called early, while the process is still single-threaded.
-MOZ_EXPORT void SandboxEarlyInit(GeckoProcessType aType);
+namespace dom {
+class MaybeFileDesc;
+}  // namespace dom
+
+// This must be called early, before glib creates any worker threads.
+// (See bug 1176099.)
+MOZ_EXPORT void SandboxEarlyInit();
 
 #ifdef MOZ_CONTENT_SANDBOX
+// A collection of sandbox parameters that have to be extracted from
+// prefs or other libxul facilities and passed down, because
+// libmozsandbox can't link against the APIs to read them.
+struct ContentProcessSandboxParams {
+  // Content sandbox level; see also GetEffectiveSandboxLevel in
+  // SandboxSettings.h and the comments for the Linux version of
+  // "security.sandbox.content.level" in browser/app/profile/firefox.js
+  int mLevel = 0;
+  // The filesystem broker client file descriptor, or -1 to allow
+  // direct filesystem access.  (Warning: this is not a RAII class and
+  // will not close the fd on destruction.)
+  int mBrokerFd = -1;
+  // Determines whether we allow reading all files, for processes that
+  // render file:/// URLs.
+  bool mFileProcess = false;
+  // Syscall numbers to allow even if the seccomp-bpf policy otherwise
+  // wouldn't.
+  std::vector<int> mSyscallWhitelist;
+
+  static ContentProcessSandboxParams ForThisProcess(
+      const dom::MaybeFileDesc& aBroker);
+};
+
 // Call only if SandboxInfo::CanSandboxContent() returns true.
-// (No-op if MOZ_DISABLE_CONTENT_SANDBOX is set.)
-// aBrokerFd is the filesystem broker client file descriptor,
-// or -1 to allow direct filesystem access.
-MOZ_EXPORT bool SetContentProcessSandbox(int aBrokerFd,
-                                         std::vector<int>& aSyscallWhitelist);
+// (No-op if the sandbox is disabled.)
+// isFileProcess determines whether we allow system wide file reads.
+MOZ_EXPORT bool SetContentProcessSandbox(ContentProcessSandboxParams&& aParams);
 #endif
 
 #ifdef MOZ_GMP_SANDBOX
 // Call only if SandboxInfo::CanSandboxMedia() returns true.
 // (No-op if MOZ_DISABLE_GMP_SANDBOX is set.)
 // aFilePath is the path to the plugin file.
-MOZ_EXPORT void SetMediaPluginSandbox(const char *aFilePath);
+MOZ_EXPORT void SetMediaPluginSandbox(const char* aFilePath);
 #endif
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_Sandbox_h
+#endif  // mozilla_Sandbox_h

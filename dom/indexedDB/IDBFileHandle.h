@@ -10,7 +10,7 @@
 #include "IDBFileRequest.h"
 #include "js/TypeDecls.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/dom/FileHandleBase.h"
+#include "mozilla/dom/FileModeBinding.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIRunnable.h"
@@ -21,91 +21,179 @@ class nsPIDOMWindowInner;
 namespace mozilla {
 namespace dom {
 
+class Blob;
+class FileRequestData;
+class FileRequestParams;
 struct IDBFileMetadataParameters;
 class IDBFileRequest;
 class IDBMutableFile;
+class StringOrArrayBufferOrArrayBufferViewOrBlob;
 
-class IDBFileHandle final
-  : public DOMEventTargetHelper
-  , public nsIRunnable
-  , public FileHandleBase
-  , public nsSupportsWeakReference
-{
+namespace indexedDB {
+class BackgroundFileHandleChild;
+}
+
+class IDBFileHandle final : public DOMEventTargetHelper,
+                            public nsIRunnable,
+                            public nsSupportsWeakReference {
+ public:
+  enum ReadyState { INITIAL = 0, LOADING, FINISHING, DONE };
+
+ private:
   RefPtr<IDBMutableFile> mMutableFile;
 
-public:
-  static already_AddRefed<IDBFileHandle>
-  Create(IDBMutableFile* aMutableFile,
-         FileMode aMode);
+  indexedDB::BackgroundFileHandleChild* mBackgroundActor;
+
+  uint64_t mLocation;
+
+  uint32_t mPendingRequestCount;
+
+  ReadyState mReadyState;
+  FileMode mMode;
+
+  bool mAborted;
+  bool mCreating;
+
+#ifdef DEBUG
+  bool mSentFinishOrAbort;
+  bool mFiredCompleteOrAbort;
+#endif
+
+ public:
+  static already_AddRefed<IDBFileHandle> Create(IDBMutableFile* aMutableFile,
+                                                FileMode aMode);
+
+  static IDBFileHandle* GetCurrent();
+
+  void AssertIsOnOwningThread() const
+#ifdef DEBUG
+      ;
+#else
+  {
+  }
+#endif
+
+  void SetBackgroundActor(indexedDB::BackgroundFileHandleChild* aActor);
+
+  void ClearBackgroundActor() {
+    AssertIsOnOwningThread();
+
+    mBackgroundActor = nullptr;
+  }
+
+  void StartRequest(IDBFileRequest* aFileRequest,
+                    const FileRequestParams& aParams);
+
+  void OnNewRequest();
+
+  void OnRequestFinished(bool aActorDestroyedNormally);
+
+  void FireCompleteOrAbortEvents(bool aAborted);
+
+  bool IsOpen() const;
+
+  bool IsFinishingOrDone() const {
+    AssertIsOnOwningThread();
+
+    return mReadyState == FINISHING || mReadyState == DONE;
+  }
+
+  bool IsDone() const {
+    AssertIsOnOwningThread();
+
+    return mReadyState == DONE;
+  }
+
+  bool IsAborted() const {
+    AssertIsOnOwningThread();
+    return mAborted;
+  }
+
+  void Abort();
 
   // WebIDL
-  nsPIDOMWindowInner*
-  GetParentObject() const
-  {
+  nsPIDOMWindowInner* GetParentObject() const {
     AssertIsOnOwningThread();
     return GetOwner();
   }
 
-  IDBMutableFile*
-  GetMutableFile() const
-  {
+  IDBMutableFile* GetMutableFile() const {
     AssertIsOnOwningThread();
     return mMutableFile;
   }
 
-  IDBMutableFile*
-  GetFileHandle() const
-  {
+  IDBMutableFile* GetFileHandle() const {
     AssertIsOnOwningThread();
     return GetMutableFile();
   }
 
-  already_AddRefed<IDBFileRequest>
-  GetMetadata(const IDBFileMetadataParameters& aParameters, ErrorResult& aRv);
-
-  already_AddRefed<IDBFileRequest>
-  ReadAsArrayBuffer(uint64_t aSize, ErrorResult& aRv)
-  {
+  FileMode Mode() const {
     AssertIsOnOwningThread();
-    return Read(aSize, false, NullString(), aRv).downcast<IDBFileRequest>();
+    return mMode;
   }
 
-  already_AddRefed<IDBFileRequest>
-  ReadAsText(uint64_t aSize, const nsAString& aEncoding, ErrorResult& aRv)
-  {
+  bool Active() const {
     AssertIsOnOwningThread();
-    return Read(aSize, true, aEncoding, aRv).downcast<IDBFileRequest>();
+    return IsOpen();
   }
 
-  already_AddRefed<IDBFileRequest>
-  Write(const StringOrArrayBufferOrArrayBufferViewOrBlob& aValue,
-        ErrorResult& aRv)
-  {
+  Nullable<uint64_t> GetLocation() const {
     AssertIsOnOwningThread();
-    return WriteOrAppend(aValue, false, aRv).downcast<IDBFileRequest>();
+
+    if (mLocation == UINT64_MAX) {
+      return Nullable<uint64_t>();
+    }
+
+    return Nullable<uint64_t>(mLocation);
   }
 
-  already_AddRefed<IDBFileRequest>
-  Append(const StringOrArrayBufferOrArrayBufferViewOrBlob& aValue,
-         ErrorResult& aRv)
-  {
+  void SetLocation(const Nullable<uint64_t>& aLocation) {
     AssertIsOnOwningThread();
-    return WriteOrAppend(aValue, true, aRv).downcast<IDBFileRequest>();
+
+    // Null means the end-of-file.
+    if (aLocation.IsNull()) {
+      mLocation = UINT64_MAX;
+    } else {
+      mLocation = aLocation.Value();
+    }
   }
 
-  already_AddRefed<IDBFileRequest>
-  Truncate(const Optional<uint64_t>& aSize, ErrorResult& aRv)
-  {
+  already_AddRefed<IDBFileRequest> GetMetadata(
+      const IDBFileMetadataParameters& aParameters, ErrorResult& aRv);
+
+  already_AddRefed<IDBFileRequest> ReadAsArrayBuffer(uint64_t aSize,
+                                                     ErrorResult& aRv) {
     AssertIsOnOwningThread();
-    return FileHandleBase::Truncate(aSize, aRv).downcast<IDBFileRequest>();
+    return Read(aSize, false, VoidString(), aRv);
   }
 
-  already_AddRefed<IDBFileRequest>
-  Flush(ErrorResult& aRv)
-  {
+  already_AddRefed<IDBFileRequest> ReadAsText(uint64_t aSize,
+                                              const nsAString& aEncoding,
+                                              ErrorResult& aRv) {
     AssertIsOnOwningThread();
-    return FileHandleBase::Flush(aRv).downcast<IDBFileRequest>();
+    return Read(aSize, true, aEncoding, aRv);
   }
+
+  already_AddRefed<IDBFileRequest> Write(
+      const StringOrArrayBufferOrArrayBufferViewOrBlob& aValue,
+      ErrorResult& aRv) {
+    AssertIsOnOwningThread();
+    return WriteOrAppend(aValue, false, aRv);
+  }
+
+  already_AddRefed<IDBFileRequest> Append(
+      const StringOrArrayBufferOrArrayBufferViewOrBlob& aValue,
+      ErrorResult& aRv) {
+    AssertIsOnOwningThread();
+    return WriteOrAppend(aValue, true, aRv);
+  }
+
+  already_AddRefed<IDBFileRequest> Truncate(const Optional<uint64_t>& aSize,
+                                            ErrorResult& aRv);
+
+  already_AddRefed<IDBFileRequest> Flush(ErrorResult& aRv);
+
+  void Abort(ErrorResult& aRv);
 
   IMPL_EVENT_HANDLER(complete)
   IMPL_EVENT_HANDLER(abort)
@@ -115,35 +203,61 @@ public:
   NS_DECL_NSIRUNNABLE
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(IDBFileHandle, DOMEventTargetHelper)
 
-  // nsIDOMEventTarget
-  virtual nsresult
-  GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
+  // EventTarget
+  void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
 
   // WrapperCache
-  virtual JSObject*
-  WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override;
 
-  // FileHandleBase
-  virtual MutableFileBase*
-  MutableFile() const override;
-
-  virtual void
-  HandleCompleteOrAbort(bool aAborted) override;
-
-private:
-  IDBFileHandle(FileMode aMode,
-                IDBMutableFile* aMutableFile);
+ private:
+  IDBFileHandle(IDBMutableFile* aMutableFile, FileMode aMode);
   ~IDBFileHandle();
 
-  // FileHandleBase
-  virtual bool
-  CheckWindow() override;
+  bool CheckState(ErrorResult& aRv);
 
-  virtual already_AddRefed<FileRequestBase>
-  GenerateFileRequest() override;
+  bool CheckStateAndArgumentsForRead(uint64_t aSize, ErrorResult& aRv);
+
+  bool CheckStateForWrite(ErrorResult& aRv);
+
+  bool CheckStateForWriteOrAppend(bool aAppend, ErrorResult& aRv);
+
+  bool CheckWindow();
+
+  already_AddRefed<IDBFileRequest> Read(uint64_t aSize, bool aHasEncoding,
+                                        const nsAString& aEncoding,
+                                        ErrorResult& aRv);
+
+  already_AddRefed<IDBFileRequest> WriteOrAppend(
+      const StringOrArrayBufferOrArrayBufferViewOrBlob& aValue, bool aAppend,
+      ErrorResult& aRv);
+
+  already_AddRefed<IDBFileRequest> WriteOrAppend(const nsAString& aValue,
+                                                 bool aAppend,
+                                                 ErrorResult& aRv);
+
+  already_AddRefed<IDBFileRequest> WriteOrAppend(const ArrayBuffer& aValue,
+                                                 bool aAppend,
+                                                 ErrorResult& aRv);
+
+  already_AddRefed<IDBFileRequest> WriteOrAppend(const ArrayBufferView& aValue,
+                                                 bool aAppend,
+                                                 ErrorResult& aRv);
+
+  already_AddRefed<IDBFileRequest> WriteOrAppend(Blob& aValue, bool aAppend,
+                                                 ErrorResult& aRv);
+
+  already_AddRefed<IDBFileRequest> WriteInternal(const FileRequestData& aData,
+                                                 uint64_t aDataLength,
+                                                 bool aAppend,
+                                                 ErrorResult& aRv);
+
+  void SendFinish();
+
+  void SendAbort();
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_idbfilehandle_h__
+#endif  // mozilla_dom_idbfilehandle_h__

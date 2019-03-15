@@ -5,6 +5,7 @@
 from __future__ import absolute_import
 
 import errno
+import inspect
 import os
 import platform
 import shutil
@@ -12,6 +13,7 @@ import stat
 import subprocess
 import uuid
 import mozbuild.makeutil as makeutil
+from itertools import chain
 from mozbuild.preprocessor import Preprocessor
 from mozbuild.util import FileAvoidWrite
 from mozpack.executables import (
@@ -20,8 +22,12 @@ from mozpack.executables import (
     strip,
     may_elfhack,
     elfhack,
+    xz_compress,
 )
-from mozpack.chrome.manifest import ManifestEntry
+from mozpack.chrome.manifest import (
+    ManifestEntry,
+    ManifestInterfaces,
+)
 from io import BytesIO
 from mozpack.errors import (
     ErrorMessage,
@@ -145,13 +151,13 @@ class BaseFile(object):
         # - keep file type (e.g. S_IFREG)
         ret = stat.S_IFMT(mode)
         # - expand user read and execute permissions to everyone
-        if mode & 0400:
-            ret |= 0444
-        if mode & 0100:
-            ret |= 0111
-        # - keep user write permissions
-        if mode & 0200:
-            ret |= 0200
+        if mode & 0o0400:
+            ret |= 0o0444
+        if mode & 0o0100:
+            ret |= 0o0111
+         # - keep user write permissions
+        if mode & 0o0200:
+            ret |= 0o0200
         # - leave away sticky bit, setuid, setgid
         return ret
 
@@ -219,12 +225,26 @@ class BaseFile(object):
     def read(self):
         raise NotImplementedError('BaseFile.read() not implemented. Bug 1170329.')
 
+    def size(self):
+        """Returns size of the entry.
+
+        Derived classes are highly encouraged to override this with a more
+        optimal implementation.
+        """
+        return len(self.read())
+
     @property
     def mode(self):
         '''
         Return the file's unix mode, or None if it has no meaning.
         '''
         return None
+
+    def inputs(self):
+        '''
+        Return an iterable of the input file paths that impact this output file.
+        '''
+        raise NotImplementedError('BaseFile.inputs() not implemented.')
 
 
 class File(BaseFile):
@@ -250,12 +270,22 @@ class File(BaseFile):
         with open(self.path, 'rb') as fh:
             return fh.read()
 
+    def size(self):
+        return os.stat(self.path).st_size
+
+    def inputs(self):
+        return (self.path,)
+
 
 class ExecutableFile(File):
     '''
     File class for executable and library files on OS/2, OS/X and ELF systems.
     (see mozpack.executables.is_executable documentation).
     '''
+    def __init__(self, path, xz_compress=False):
+        File.__init__(self, path)
+        self.xz_compress = xz_compress
+
     def copy(self, dest, skip_if_older=True):
         real_dest = dest
         if not isinstance(dest, basestring):
@@ -265,7 +295,7 @@ class ExecutableFile(File):
         assert isinstance(dest, basestring)
         # If File.copy didn't actually copy because dest is newer, check the
         # file sizes. If dest is smaller, it means it is already stripped and
-        # elfhacked, so we can skip.
+        # elfhacked and xz_compressed, so we can skip.
         if not File.copy(self, dest, skip_if_older) and \
                 os.path.getsize(self.path) > os.path.getsize(dest):
             return False
@@ -274,6 +304,8 @@ class ExecutableFile(File):
                 strip(dest)
             if may_elfhack(dest):
                 elfhack(dest)
+            if self.xz_compress:
+                xz_compress(dest)
         except ErrorMessage:
             os.remove(dest)
             raise
@@ -380,6 +412,57 @@ class AbsoluteSymlinkFile(File):
         return True
 
 
+class HardlinkFile(File):
+    '''File class that is copied by hard linking (if available)
+
+    This is similar to the AbsoluteSymlinkFile, but with hard links. The symlink
+    implementation requires paths to be absolute, because they are resolved at
+    read time, which makes relative paths messy. Hard links resolve paths at
+    link-creation time, so relative paths are fine.
+    '''
+
+    def copy(self, dest, skip_if_older=True):
+        assert isinstance(dest, basestring)
+
+        if not hasattr(os, 'link'):
+            return super(HardlinkFile, self).copy(
+                dest, skip_if_older=skip_if_older
+            )
+
+        try:
+            path_st = os.stat(self.path)
+        except OSError as e:
+            if e.errno == errno.ENOENT:
+                raise ErrorMessage('Hard link target path does not exist: %s' % self.path)
+            else:
+                raise
+
+        st = None
+        try:
+            st = os.lstat(dest)
+        except OSError as e:
+            if e.errno != errno.ENOENT:
+                raise
+
+        if st:
+            # The dest already points to the right place.
+            if st.st_dev == path_st.st_dev and st.st_ino == path_st.st_ino:
+                return False
+            # The dest exists and it points to the wrong place
+            os.remove(dest)
+
+        # At this point, either the dest used to exist and we just deleted it,
+        # or it never existed. We can now safely create the hard link.
+        try:
+            os.link(self.path, dest)
+        except OSError:
+            # If we can't hard link, fall back to copying
+            return super(HardlinkFile, self).copy(
+                dest, skip_if_older=skip_if_older
+            )
+        return True
+
+
 class ExistingFile(BaseFile):
     '''
     File class that represents a file that may exist but whose content comes
@@ -412,6 +495,9 @@ class ExistingFile(BaseFile):
             errors.fatal("Required existing file doesn't exist: %s" %
                 dest.path)
 
+    def inputs(self):
+        return ()
+
 
 class PreprocessedFile(BaseFile):
     '''
@@ -427,6 +513,17 @@ class PreprocessedFile(BaseFile):
         self.extra_depends = list(extra_depends or [])
         self.silence_missing_directive_warnings = \
             silence_missing_directive_warnings
+
+    def inputs(self):
+        pp = Preprocessor(defines=self.defines, marker=self.marker)
+        pp.setSilenceDirectiveWarnings(self.silence_missing_directive_warnings)
+
+        with open(self.path, 'rU') as input:
+            with open(os.devnull, 'w') as output:
+                pp.processFile(input=input, output=output)
+
+        # This always yields at least self.path.
+        return pp.includes
 
     def copy(self, dest, skip_if_older=True):
         '''
@@ -492,10 +589,29 @@ class GeneratedFile(BaseFile):
     File class for content with no previous existence on the filesystem.
     '''
     def __init__(self, content):
-        self.content = content
+        self._content = content
+
+    @property
+    def content(self):
+        if inspect.isfunction(self._content):
+            self._content = self._content()
+        return self._content
+
+    @content.setter
+    def content(self, content):
+        self._content = content
 
     def open(self):
         return BytesIO(self.content)
+
+    def read(self):
+        return self.content
+
+    def size(self):
+        return len(self.content)
+
+    def inputs(self):
+        return ()
 
 
 class DeflatedFile(BaseFile):
@@ -530,78 +646,6 @@ class ExtractedTarFile(GeneratedFile):
     def read(self):
         return self.content
 
-class XPTFile(GeneratedFile):
-    '''
-    File class for a linked XPT file. It takes several XPT files as input
-    (using the add() and remove() member functions), and links them at copy()
-    time.
-    '''
-    def __init__(self):
-        self._files = set()
-
-    def add(self, xpt):
-        '''
-        Add the given XPT file (as a BaseFile instance) to the list of XPTs
-        to link.
-        '''
-        assert isinstance(xpt, BaseFile)
-        self._files.add(xpt)
-
-    def remove(self, xpt):
-        '''
-        Remove the given XPT file (as a BaseFile instance) from the list of
-        XPTs to link.
-        '''
-        assert isinstance(xpt, BaseFile)
-        self._files.remove(xpt)
-
-    def copy(self, dest, skip_if_older=True):
-        '''
-        Link the registered XPTs and place the resulting linked XPT at the
-        destination given as a string or a Dest instance. Avoids an expensive
-        XPT linking if the interfaces in an existing destination match those of
-        the individual XPTs to link.
-        skip_if_older is ignored.
-        '''
-        if isinstance(dest, basestring):
-            dest = Dest(dest)
-        assert isinstance(dest, Dest)
-
-        from xpt import xpt_link, Typelib, Interface
-        all_typelibs = [Typelib.read(f.open()) for f in self._files]
-        if dest.exists():
-            # Typelib.read() needs to seek(), so use a BytesIO for dest
-            # content.
-            dest_interfaces = \
-                dict((i.name, i)
-                     for i in Typelib.read(BytesIO(dest.read())).interfaces
-                     if i.iid != Interface.UNRESOLVED_IID)
-            identical = True
-            for f in self._files:
-                typelib = Typelib.read(f.open())
-                for i in typelib.interfaces:
-                    if i.iid != Interface.UNRESOLVED_IID and \
-                            not (i.name in dest_interfaces and
-                                 i == dest_interfaces[i.name]):
-                        identical = False
-                        break
-            if identical:
-                return False
-        s = BytesIO()
-        xpt_link(all_typelibs).write(s)
-        dest.write(s.getvalue())
-        return True
-
-    def open(self):
-        raise RuntimeError("Unsupported")
-
-    def isempty(self):
-        '''
-        Return whether there are XPT files to link.
-        '''
-        return len(self._files) == 0
-
-
 class ManifestFile(BaseFile):
     '''
     File class for a manifest file. It takes individual manifest entries (using
@@ -618,8 +662,11 @@ class ManifestFile(BaseFile):
         currently but could in the future.
     '''
     def __init__(self, base, entries=None):
-        self._entries = entries if entries else []
         self._base = base
+        self._entries = []
+        self._interfaces = []
+        for e in entries or []:
+            self.add(e)
 
     def add(self, entry):
         '''
@@ -627,14 +674,20 @@ class ManifestFile(BaseFile):
         instead of add() time so that they can be more easily remove()d.
         '''
         assert isinstance(entry, ManifestEntry)
-        self._entries.append(entry)
+        if isinstance(entry, ManifestInterfaces):
+            self._interfaces.append(entry)
+        else:
+            self._entries.append(entry)
 
     def remove(self, entry):
         '''
         Remove the given entry from the manifest.
         '''
         assert isinstance(entry, ManifestEntry)
-        self._entries.remove(entry)
+        if isinstance(entry, ManifestInterfaces):
+            self._interfaces.remove(entry)
+        else:
+            self._entries.remove(entry)
 
     def open(self):
         '''
@@ -642,19 +695,20 @@ class ManifestFile(BaseFile):
         the manifest.
         '''
         return BytesIO(''.join('%s\n' % e.rebase(self._base)
-                               for e in self._entries))
+                               for e in chain(self._entries,
+                                              self._interfaces)))
 
     def __iter__(self):
         '''
         Iterate over entries in the manifest file.
         '''
-        return iter(self._entries)
+        return chain(self._entries, self._interfaces)
 
     def isempty(self):
         '''
         Return whether there are manifest entries to write
         '''
-        return len(self._entries) == 0
+        return len(self._entries) + len(self._interfaces) == 0
 
 
 class MinifiedProperties(BaseFile):
@@ -901,7 +955,7 @@ class FileFinder(BaseFinder):
 
     def get(self, path):
         srcpath = os.path.join(self.base, path)
-        if not os.path.exists(srcpath):
+        if not os.path.lexists(srcpath):
             return None
 
         for p in self.ignore:
@@ -1074,7 +1128,9 @@ class MercurialRevisionFinder(BaseFinder):
         # operation requires this list.
         out = self._client.rawcommand([b'files', b'--rev', str(self._rev)])
         for relpath in out.splitlines():
-            self._files[relpath] = None
+            # Mercurial may use \ as path separator on Windows. So use
+            # normpath().
+            self._files[mozpath.normpath(relpath)] = None
 
     def _find(self, pattern):
         if self._recognize_repo_paths:
@@ -1083,6 +1139,7 @@ class MercurialRevisionFinder(BaseFinder):
         return self._find_helper(pattern, self._files, self._get)
 
     def get(self, path):
+        path = mozpath.normpath(path)
         if self._recognize_repo_paths:
             if not path.startswith(self._root):
                 raise ValueError('lookups in recognize_repo_paths mode must be '

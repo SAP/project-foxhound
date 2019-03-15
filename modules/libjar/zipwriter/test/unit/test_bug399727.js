@@ -26,8 +26,8 @@ BinaryComparer.prototype = {
 
   onStopRequest: function(aRequest, aContext, aStatusCode) {
     this.fileStream.close();
-    do_check_eq(aStatusCode, Components.results.NS_OK);
-    do_check_eq(this.offset, this.length);
+    Assert.equal(aStatusCode, Cr.NS_OK);
+    Assert.equal(this.offset, this.length);
     this.callback();
   },
 
@@ -80,7 +80,7 @@ function run_test()
   // Set up a pump to push data from the file to the stream converter
   var pump = Cc["@mozilla.org/network/input-stream-pump;1"].
              createInstance(Ci.nsIInputStreamPump);
-  pump.init(fstream, -1, -1, 0, 0, true);
+  pump.init(fstream, 0, 0, true);
   pump.asyncRead(converter, null);
   do_test_pending();
 }

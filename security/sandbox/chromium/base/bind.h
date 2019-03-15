@@ -6,13 +6,12 @@
 #define BASE_BIND_H_
 
 #include "base/bind_internal.h"
-#include "base/callback_internal.h"
 
 // -----------------------------------------------------------------------------
 // Usage documentation
 // -----------------------------------------------------------------------------
 //
-// See base/callback.h for documentation.
+// See //docs/callback.md for documentation.
 //
 //
 // -----------------------------------------------------------------------------
@@ -22,78 +21,242 @@
 // If you're reading the implementation, before proceeding further, you should
 // read the top comment of base/bind_internal.h for a definition of common
 // terms and concepts.
-//
-// RETURN TYPES
-//
-// Though Bind()'s result is meant to be stored in a Callback<> type, it
-// cannot actually return the exact type without requiring a large amount
-// of extra template specializations. The problem is that in order to
-// discern the correct specialization of Callback<>, Bind would need to
-// unwrap the function signature to determine the signature's arity, and
-// whether or not it is a method.
-//
-// Each unique combination of (arity, function_type, num_prebound) where
-// function_type is one of {function, method, const_method} would require
-// one specialization.  We eventually have to do a similar number of
-// specializations anyways in the implementation (see the Invoker<>,
-// classes).  However, it is avoidable in Bind if we return the result
-// via an indirection like we do below.
-//
-// TODO(ajwong): We might be able to avoid this now, but need to test.
-//
-// It is possible to move most of the static_assert into BindState<>, but it
-// feels a little nicer to have the asserts here so people do not need to crack
-// open bind_internal.h.  On the other hand, it makes Bind() harder to read.
 
 namespace base {
 
-template <typename Functor, typename... Args>
-base::Callback<
-    typename internal::BindState<
-        typename internal::FunctorTraits<Functor>::RunnableType,
-        typename internal::FunctorTraits<Functor>::RunType,
-        typename internal::CallbackParamTraits<Args>::StorageType...>
-            ::UnboundRunType>
-Bind(Functor functor, const Args&... args) {
-  // Type aliases for how to store and run the functor.
-  using RunnableType = typename internal::FunctorTraits<Functor>::RunnableType;
-  using RunType = typename internal::FunctorTraits<Functor>::RunType;
+namespace internal {
 
-  // Use RunnableType::RunType instead of RunType above because our
-  // checks below for bound references need to know what the actual
-  // functor is going to interpret the argument as.
-  using BoundRunType = typename RunnableType::RunType;
+// IsOnceCallback<T> is a std::true_type if |T| is a OnceCallback.
+template <typename T>
+struct IsOnceCallback : std::false_type {};
 
-  using BoundArgs =
-      internal::TakeTypeListItem<sizeof...(Args),
-                                 internal::ExtractArgs<BoundRunType>>;
+template <typename Signature>
+struct IsOnceCallback<OnceCallback<Signature>> : std::true_type {};
 
-  // Do not allow binding a non-const reference parameter. Non-const reference
-  // parameters are disallowed by the Google style guide.  Also, binding a
-  // non-const reference parameter can make for subtle bugs because the
-  // invoked function will receive a reference to the stored copy of the
-  // argument and not the original.
-  static_assert(!internal::HasNonConstReferenceItem<BoundArgs>::value,
-                "do not bind functions with nonconst ref");
-
-  const bool is_method = internal::HasIsMethodTag<RunnableType>::value;
-
-  // For methods, we need to be careful for parameter 1.  We do not require
-  // a scoped_refptr because BindState<> itself takes care of AddRef() for
-  // methods. We also disallow binding of an array as the method's target
-  // object.
-  static_assert(!internal::BindsArrayToFirstArg<is_method, Args...>::value,
-                "first bound argument to method cannot be array");
+// Helper to assert that parameter |i| of type |Arg| can be bound, which means:
+// - |Arg| can be retained internally as |Storage|.
+// - |Arg| can be forwarded as |Unwrapped| to |Param|.
+template <size_t i,
+          typename Arg,
+          typename Storage,
+          typename Unwrapped,
+          typename Param>
+struct AssertConstructible {
+ private:
+  static constexpr bool param_is_forwardable =
+      std::is_constructible<Param, Unwrapped>::value;
+  // Unlike the check for binding into storage below, the check for
+  // forwardability drops the const qualifier for repeating callbacks. This is
+  // to try to catch instances where std::move()--which forwards as a const
+  // reference with repeating callbacks--is used instead of base::Passed().
   static_assert(
-      !internal::HasRefCountedParamAsRawPtr<is_method, Args...>::value,
-      "a parameter is a refcounted type and needs scoped_refptr");
+      param_is_forwardable ||
+          !std::is_constructible<Param, typename std::decay<Unwrapped>::type&&>::value,
+      "Bound argument |i| is move-only but will be forwarded by copy. "
+      "Ensure |Arg| is bound using base::Passed(), not std::move().");
+  static_assert(
+      param_is_forwardable,
+      "Bound argument |i| of type |Arg| cannot be forwarded as "
+      "|Unwrapped| to the bound functor, which declares it as |Param|.");
 
-  using BindState = internal::BindState<
-      RunnableType, RunType,
-      typename internal::CallbackParamTraits<Args>::StorageType...>;
+  static constexpr bool arg_is_storable =
+      std::is_constructible<Storage, Arg>::value;
+  static_assert(arg_is_storable ||
+                    !std::is_constructible<Storage, typename std::decay<Arg>::type&&>::value,
+                "Bound argument |i| is move-only but will be bound by copy. "
+                "Ensure |Arg| is mutable and bound using std::move().");
+  static_assert(arg_is_storable,
+                "Bound argument |i| of type |Arg| cannot be converted and "
+                "bound as |Storage|.");
+};
 
-  return Callback<typename BindState::UnboundRunType>(
-      new BindState(internal::MakeRunnable(functor), args...));
+// Takes three same-length TypeLists, and applies AssertConstructible for each
+// triples.
+template <typename Index,
+          typename Args,
+          typename UnwrappedTypeList,
+          typename ParamsList>
+struct AssertBindArgsValidity;
+
+template <size_t... Ns,
+          typename... Args,
+          typename... Unwrapped,
+          typename... Params>
+struct AssertBindArgsValidity<IndexSequence<Ns...>,
+                              TypeList<Args...>,
+                              TypeList<Unwrapped...>,
+                              TypeList<Params...>>
+    : AssertConstructible<Ns, Args, typename std::decay<Args>::type, Unwrapped, Params>... {
+  static constexpr bool ok = true;
+};
+
+// The implementation of TransformToUnwrappedType below.
+template <bool is_once, typename T>
+struct TransformToUnwrappedTypeImpl;
+
+template <typename T>
+struct TransformToUnwrappedTypeImpl<true, T> {
+  using StoredType = typename std::decay<T>::type;
+  using ForwardType = StoredType&&;
+  using Unwrapped = decltype(Unwrap(std::declval<ForwardType>()));
+};
+
+template <typename T>
+struct TransformToUnwrappedTypeImpl<false, T> {
+  using StoredType = typename std::decay<T>::type;
+  using ForwardType = const StoredType&;
+  using Unwrapped = decltype(Unwrap(std::declval<ForwardType>()));
+};
+
+// Transform |T| into `Unwrapped` type, which is passed to the target function.
+// Example:
+//   In is_once == true case,
+//     `int&&` -> `int&&`,
+//     `const int&` -> `int&&`,
+//     `OwnedWrapper<int>&` -> `int*&&`.
+//   In is_once == false case,
+//     `int&&` -> `const int&`,
+//     `const int&` -> `const int&`,
+//     `OwnedWrapper<int>&` -> `int* const &`.
+template <bool is_once, typename T>
+using TransformToUnwrappedType =
+    typename TransformToUnwrappedTypeImpl<is_once, T>::Unwrapped;
+
+// Transforms |Args| into `Unwrapped` types, and packs them into a TypeList.
+// If |is_method| is true, tries to dereference the first argument to support
+// smart pointers.
+template <bool is_once, bool is_method, typename... Args>
+struct MakeUnwrappedTypeListImpl {
+  using Type = TypeList<TransformToUnwrappedType<is_once, Args>...>;
+};
+
+// Performs special handling for this pointers.
+// Example:
+//   int* -> int*,
+//   std::unique_ptr<int> -> int*.
+template <bool is_once, typename Receiver, typename... Args>
+struct MakeUnwrappedTypeListImpl<is_once, true, Receiver, Args...> {
+  using UnwrappedReceiver = TransformToUnwrappedType<is_once, Receiver>;
+  using Type = TypeList<decltype(&*std::declval<UnwrappedReceiver>()),
+                        TransformToUnwrappedType<is_once, Args>...>;
+};
+
+template <bool is_once, bool is_method, typename... Args>
+using MakeUnwrappedTypeList =
+    typename MakeUnwrappedTypeListImpl<is_once, is_method, Args...>::Type;
+
+}  // namespace internal
+
+// Bind as OnceCallback.
+template <typename Functor, typename... Args>
+inline OnceCallback<MakeUnboundRunType<Functor, Args...>>
+BindOnce(Functor&& functor, Args&&... args) {
+  static_assert(
+      !internal::IsOnceCallback<typename std::decay<Functor>::type>() ||
+          (std::is_rvalue_reference<Functor&&>() &&
+           !std::is_const<typename std::remove_reference<Functor>::type>()),
+      "BindOnce requires non-const rvalue for OnceCallback binding."
+      " I.e.: base::BindOnce(std::move(callback)).");
+
+  // This block checks if each |args| matches to the corresponding params of the
+  // target function. This check does not affect the behavior of Bind, but its
+  // error message should be more readable.
+  using Helper = internal::BindTypeHelper<Functor, Args...>;
+  using FunctorTraits = typename Helper::FunctorTraits;
+  using BoundArgsList = typename Helper::BoundArgsList;
+  using UnwrappedArgsList =
+      internal::MakeUnwrappedTypeList<true, FunctorTraits::is_method,
+                                      Args&&...>;
+  using BoundParamsList = typename Helper::BoundParamsList;
+  static_assert(internal::AssertBindArgsValidity<
+                    MakeIndexSequence<Helper::num_bounds>, BoundArgsList,
+                    UnwrappedArgsList, BoundParamsList>::ok,
+                "The bound args need to be convertible to the target params.");
+
+  using BindState = internal::MakeBindStateType<Functor, Args...>;
+  using UnboundRunType = MakeUnboundRunType<Functor, Args...>;
+  using Invoker = internal::Invoker<BindState, UnboundRunType>;
+  using CallbackType = OnceCallback<UnboundRunType>;
+
+  // Store the invoke func into PolymorphicInvoke before casting it to
+  // InvokeFuncStorage, so that we can ensure its type matches to
+  // PolymorphicInvoke, to which CallbackType will cast back.
+  using PolymorphicInvoke = typename CallbackType::PolymorphicInvoke;
+  PolymorphicInvoke invoke_func = &Invoker::RunOnce;
+
+  using InvokeFuncStorage = internal::BindStateBase::InvokeFuncStorage;
+  return CallbackType(new BindState(
+      reinterpret_cast<InvokeFuncStorage>(invoke_func),
+      std::forward<Functor>(functor),
+      std::forward<Args>(args)...));
+}
+
+// Bind as RepeatingCallback.
+template <typename Functor, typename... Args>
+inline RepeatingCallback<MakeUnboundRunType<Functor, Args...>>
+BindRepeating(Functor&& functor, Args&&... args) {
+  static_assert(
+      !internal::IsOnceCallback<typename std::decay<Functor>::type>(),
+      "BindRepeating cannot bind OnceCallback. Use BindOnce with std::move().");
+
+  // This block checks if each |args| matches to the corresponding params of the
+  // target function. This check does not affect the behavior of Bind, but its
+  // error message should be more readable.
+  using Helper = internal::BindTypeHelper<Functor, Args...>;
+  using FunctorTraits = typename Helper::FunctorTraits;
+  using BoundArgsList = typename Helper::BoundArgsList;
+  using UnwrappedArgsList =
+      internal::MakeUnwrappedTypeList<false, FunctorTraits::is_method,
+                                      Args&&...>;
+  using BoundParamsList = typename Helper::BoundParamsList;
+  static_assert(internal::AssertBindArgsValidity<
+                    MakeIndexSequence<Helper::num_bounds>, BoundArgsList,
+                    UnwrappedArgsList, BoundParamsList>::ok,
+                "The bound args need to be convertible to the target params.");
+
+  using BindState = internal::MakeBindStateType<Functor, Args...>;
+  using UnboundRunType = MakeUnboundRunType<Functor, Args...>;
+  using Invoker = internal::Invoker<BindState, UnboundRunType>;
+  using CallbackType = RepeatingCallback<UnboundRunType>;
+
+  // Store the invoke func into PolymorphicInvoke before casting it to
+  // InvokeFuncStorage, so that we can ensure its type matches to
+  // PolymorphicInvoke, to which CallbackType will cast back.
+  using PolymorphicInvoke = typename CallbackType::PolymorphicInvoke;
+  PolymorphicInvoke invoke_func = &Invoker::Run;
+
+  using InvokeFuncStorage = internal::BindStateBase::InvokeFuncStorage;
+  return CallbackType(new BindState(
+      reinterpret_cast<InvokeFuncStorage>(invoke_func),
+      std::forward<Functor>(functor),
+      std::forward<Args>(args)...));
+}
+
+// Unannotated Bind.
+// TODO(tzik): Deprecate this and migrate to OnceCallback and
+// RepeatingCallback, once they get ready.
+template <typename Functor, typename... Args>
+inline Callback<MakeUnboundRunType<Functor, Args...>>
+Bind(Functor&& functor, Args&&... args) {
+  return BindRepeating(std::forward<Functor>(functor),
+                       std::forward<Args>(args)...);
+}
+
+// Special cases for binding to a base::Callback without extra bound arguments.
+template <typename Signature>
+OnceCallback<Signature> BindOnce(OnceCallback<Signature> closure) {
+  return closure;
+}
+
+template <typename Signature>
+RepeatingCallback<Signature> BindRepeating(
+    RepeatingCallback<Signature> closure) {
+  return closure;
+}
+
+template <typename Signature>
+Callback<Signature> Bind(Callback<Signature> closure) {
+  return closure;
 }
 
 }  // namespace base

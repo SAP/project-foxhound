@@ -7,16 +7,12 @@
  * Test toggling the recording of allocation stacks.
  */
 
-let { toggleRecordingAllocationStacks } = require("devtools/client/memory/actions/allocations");
+const { toggleRecordingAllocationStacks } = require("devtools/client/memory/actions/allocations");
 
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* () {
-  let front = new StubbedMemoryFront();
-  yield front.attach();
-  let store = Store();
+add_task(async function() {
+  const front = new StubbedMemoryFront();
+  await front.attach();
+  const store = Store();
   const { getState, dispatch } = store;
 
   equal(getState().allocations.recording, false, "not recording by default");
@@ -24,20 +20,20 @@ add_task(function* () {
         "not in the process of toggling by default");
 
   dispatch(toggleRecordingAllocationStacks(front));
-  yield waitUntilState(store, () => getState().allocations.togglingInProgress);
+  await waitUntilState(store, () => getState().allocations.togglingInProgress);
   ok(true, "`togglingInProgress` set to true when toggling on");
-  yield waitUntilState(store, () => !getState().allocations.togglingInProgress);
+  await waitUntilState(store, () => !getState().allocations.togglingInProgress);
 
   equal(getState().allocations.recording, true, "now we are recording");
   ok(front.recordingAllocations, "front is recording too");
 
   dispatch(toggleRecordingAllocationStacks(front));
-  yield waitUntilState(store, () => getState().allocations.togglingInProgress);
+  await waitUntilState(store, () => getState().allocations.togglingInProgress);
   ok(true, "`togglingInProgress` set to true when toggling off");
-  yield waitUntilState(store, () => !getState().allocations.togglingInProgress);
+  await waitUntilState(store, () => !getState().allocations.togglingInProgress);
 
   equal(getState().allocations.recording, false, "now we are not recording");
   ok(front.recordingAllocations, "front is not recording anymore");
 
-  yield front.detach();
+  await front.detach();
 });

@@ -1,6 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+"use strict";
+
 /**
  * Test that we don't run debuggee code when getting symbol names.
  */
@@ -12,19 +14,21 @@ function run_test() {
   const debuggee = addTestGlobal("test-symbols");
   const client = new DebuggerClient(DebuggerServer.connectPipe());
 
-  client.connect().then(function () {
-    attachTestTabAndResume(client, "test-symbols", function (response, tabClient, threadClient) {
-      add_task(testSymbols.bind(null, client, debuggee));
-      run_next_test();
-    });
+  client.connect().then(function() {
+    attachTestTabAndResume(client, "test-symbols",
+                           function(response, targetFront, threadClient) {
+                             add_task(testSymbols.bind(null, client, debuggee));
+                             run_next_test();
+                           });
   });
 
   do_test_pending();
 }
 
-function* testSymbols(client, debuggee) {
+async function testSymbols(client, debuggee) {
   const evalCode = () => {
-    Components.utils.evalInSandbox(
+    /* eslint-disable */
+    Cu.evalInSandbox(
       "(" + function () {
         Symbol.prototype.toString = () => {
           throw new Error("lololol");
@@ -37,9 +41,10 @@ function* testSymbols(client, debuggee) {
       URL,
       1
     );
+    /* eslint-enable */
   };
 
-  const packet = yield executeOnNextTickAndWaitForPause(evalCode, client);
+  const packet = await executeOnNextTickAndWaitForPause(evalCode, client);
   const { sym } = packet.frame.environment.bindings.variables;
 
   equal(sym.value.type, "symbol");

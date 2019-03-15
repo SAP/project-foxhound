@@ -2,10 +2,19 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-add_task(function* () {
+add_task(async function() {
   let extension = ExtensionTestUtils.loadExtension({
+    files: {
+      "_locales/en/messages.json": {
+        "with_translation": {
+          "message": "The description",
+          "description": "A description",
+        },
+      },
+    },
     manifest: {
       "name": "Commands Extension",
+      "default_locale": "en",
       "commands": {
         "with-desciption": {
           "suggested_key": {
@@ -26,6 +35,9 @@ add_task(function* () {
             "android": "Ctrl+Shift+A",
           },
         },
+        "with-translation": {
+          "description": "__MSG_with_translation__",
+        },
         "without-suggested-key": {
           "description": "has no suggested_key",
         },
@@ -38,7 +50,7 @@ add_task(function* () {
       browser.test.onMessage.addListener((message, additionalScope) => {
         browser.commands.getAll((commands) => {
           let errorMessage = "getAll should return an array of commands";
-          browser.test.assertEq(commands.length, 5, errorMessage);
+          browser.test.assertEq(commands.length, 6, errorMessage);
 
           let command = commands.find(c => c.name == "with-desciption");
 
@@ -69,6 +81,9 @@ add_task(function* () {
           errorMessage = `The shortcut should match the one provided in the manifest for OS='${additionalScope.platform}'`;
           browser.test.assertEq(shortcut, command.shortcut, errorMessage);
 
+          command = commands.find(c => c.name == "with-translation");
+          browser.test.assertEq(command.description, "The description", "The description can be localized");
+
           command = commands.find(c => c.name == "without-suggested-key");
 
           browser.test.assertEq("has no suggested_key", command.description, "The description should match what is provided in the manifest");
@@ -88,9 +103,9 @@ add_task(function* () {
     },
   });
 
-  yield extension.startup();
-  yield extension.awaitMessage("ready");
+  await extension.startup();
+  await extension.awaitMessage("ready");
   extension.sendMessage("additional-scope", {platform: AppConstants.platform});
-  yield extension.awaitFinish("commands");
-  yield extension.unload();
+  await extension.awaitFinish("commands");
+  await extension.unload();
 });

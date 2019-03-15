@@ -10,23 +10,33 @@ LOCAL_INCLUDES += [
 ]
 
 # Suppress warnings in third-party code.
-if CONFIG['_MSC_VER']:
+if CONFIG['CC_TYPE'] in ('msvc', 'clang-cl'):
     CXXFLAGS += [
         '-wd4005', # macro redefinition
+        '-wd4146', # negative unsigned
+        '-wd4334', # 32-bit shift to 64 bits
+        '-wd4804', # unsafe use of type 'bool'
     ]
-elif CONFIG['GNU_CXX']:
+    CFLAGS += [
+        '-wd4312', # conversion to greater size
+    ]
+elif CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += [
         '-Wno-unused-local-typedefs',
         '-Wno-shadow',
+        '-Wno-deprecated-declarations',
+        '-Wno-bool-compare',
+        '-Wno-unused-but-set-variable',
     ]
 
-if CONFIG['CLANG_CXX'] or CONFIG['CLANG_CL']:
-    CXXFLAGS += [
-        '-Wno-implicit-fallthrough',
-        '-Wno-c++11-narrowing',
-    ]
+if CONFIG['CC_TYPE'] in ('clang', 'clang-cl'):
+     CXXFLAGS += [
+         '-Wno-c++11-narrowing',
+     ]
 
-if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gonk':
-    DEFINES['ELFSIZE'] = 32
+if CONFIG['CC_TYPE'] not in ('msvc', 'clang-cl'):
+     CXXFLAGS += [
+         '-Wno-implicit-fallthrough',
+     ]
 
 DEFINES['NO_STABS_SUPPORT'] = True

@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,12 +13,10 @@ class nsAccessKeyInfo;
 class nsAsyncAccesskeyUpdate;
 class nsFontMetrics;
 
-class nsTextBoxFrame : public nsLeafBoxFrame
-{
-public:
-  NS_DECL_QUERYFRAME_TARGET(nsTextBoxFrame)
+class nsTextBoxFrame final : public nsLeafBoxFrame {
+ public:
   NS_DECL_QUERYFRAME
-  NS_DECL_FRAMEARENA_HELPERS
+  NS_DECL_FRAMEARENA_HELPERS(nsTextBoxFrame)
 
   virtual nsSize GetXULPrefSize(nsBoxLayoutState& aBoxLayoutState) override;
   virtual nsSize GetXULMinSize(nsBoxLayoutState& aBoxLayoutState) override;
@@ -27,46 +26,41 @@ public:
 
   enum CroppingStyle { CropNone, CropLeft, CropRight, CropCenter, CropAuto };
 
-  friend nsIFrame* NS_NewTextBoxFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
+  friend nsIFrame* NS_NewTextBoxFrame(nsIPresShell* aPresShell,
+                                      ComputedStyle* aStyle);
 
-  virtual void Init(nsIContent*       aContent,
-                    nsContainerFrame* aParent,
-                    nsIFrame*         asPrevInFlow) override;
+  virtual void Init(nsIContent* aContent, nsContainerFrame* aParent,
+                    nsIFrame* asPrevInFlow) override;
 
-  virtual void DestroyFrom(nsIFrame* aDestructRoot) override;
+  virtual void DestroyFrom(nsIFrame* aDestructRoot,
+                           PostDestroyData& aPostDestroyData) override;
 
-  virtual nsresult AttributeChanged(int32_t         aNameSpaceID,
-                                    nsIAtom*        aAttribute,
-                                    int32_t         aModType) override;
+  virtual nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
+                                    int32_t aModType) override;
 
 #ifdef DEBUG_FRAME_DUMP
   virtual nsresult GetFrameName(nsAString& aResult) const override;
 #endif
 
-  void UpdateAttributes(nsIAtom*         aAttribute,
-                        bool&          aResize,
-                        bool&          aRedraw);
+  void UpdateAttributes(nsAtom* aAttribute, bool& aResize, bool& aRedraw);
 
-  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                                const nsRect&           aDirtyRect,
+  virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                 const nsDisplayListSet& aLists) override;
 
   virtual ~nsTextBoxFrame();
 
-  void PaintTitle(nsRenderingContext& aRenderingContext,
-                  const nsRect&        aDirtyRect,
-                  nsPoint              aPt,
-                  const nscolor*       aOverrideColor);
+  void PaintTitle(gfxContext& aRenderingContext, const nsRect& aDirtyRect,
+                  nsPoint aPt, const nscolor* aOverrideColor);
 
-  nsRect GetComponentAlphaBounds();
+  nsRect GetComponentAlphaBounds() const;
 
   virtual bool ComputesOwnOverflowArea() override;
 
   void GetCroppedTitle(nsString& aTitle) const { aTitle = mCroppedTitle; }
 
-  virtual void DidSetStyleContext(nsStyleContext* aOldStyleContext) override;
+  virtual void DidSetComputedStyle(ComputedStyle* aOldComputedStyle) override;
 
-protected:
+ protected:
   friend class nsAsyncAccesskeyUpdate;
   friend class nsDisplayXULTextBox;
   // Should be called only by nsAsyncAccesskeyUpdate.
@@ -80,37 +74,30 @@ protected:
   void RecomputeTitle();
 
   // REVIEW: SORRY! Couldn't resist devirtualizing these
-  void LayoutTitle(nsPresContext*      aPresContext,
-                   nsRenderingContext& aRenderingContext,
-                   const nsRect&        aRect);
+  void LayoutTitle(nsPresContext* aPresContext, gfxContext& aRenderingContext,
+                   const nsRect& aRect);
 
   void CalculateUnderline(DrawTarget* aDrawTarget, nsFontMetrics& aFontMetrics);
 
   void CalcTextSize(nsBoxLayoutState& aBoxLayoutState);
 
-  void CalcDrawRect(nsRenderingContext &aRenderingContext);
+  void CalcDrawRect(gfxContext& aRenderingContext);
 
-  explicit nsTextBoxFrame(nsStyleContext* aContext);
+  explicit nsTextBoxFrame(ComputedStyle* aStyle);
 
-  nscoord CalculateTitleForWidth(nsRenderingContext& aRenderingContext,
-                                 nscoord              aWidth);
+  nscoord CalculateTitleForWidth(gfxContext& aRenderingContext, nscoord aWidth);
 
-  void GetTextSize(nsRenderingContext& aRenderingContext,
-                   const nsString&      aString,
-                   nsSize&              aSize,
-                   nscoord&             aAscent);
+  void GetTextSize(gfxContext& aRenderingContext, const nsString& aString,
+                   nsSize& aSize, nscoord& aAscent);
 
   nsresult RegUnregAccessKey(bool aDoReg);
 
-private:
-
+ private:
   bool AlwaysAppendAccessKey();
   bool InsertSeparatorBeforeAccessKey();
 
-  void DrawText(nsRenderingContext& aRenderingContext,
-                const nsRect&       aDirtyRect,
-                const nsRect&       aTextRect,
-                const nscolor*      aOverrideColor);
+  void DrawText(gfxContext& aRenderingContext, const nsRect& aDirtyRect,
+                const nsRect& aTextRect, const nscolor* aOverrideColor);
 
   nsString mTitle;
   nsString mCroppedTitle;
@@ -129,6 +116,6 @@ private:
   static bool gInsertSeparatorBeforeAccessKey;
   static bool gInsertSeparatorPrefInitialized;
 
-}; // class nsTextBoxFrame
+};  // class nsTextBoxFrame
 
 #endif /* nsTextBoxFrame_h___ */

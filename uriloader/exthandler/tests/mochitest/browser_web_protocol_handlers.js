@@ -1,32 +1,31 @@
-let testURL = "http://example.com/browser/" +
+let testURL = "https://example.com/browser/" +
   "uriloader/exthandler/tests/mochitest/protocolHandler.html";
 
-add_task(function*() {
+add_task(async function() {
   // Load a page registering a protocol handler.
   let browser = gBrowser.selectedBrowser;
-  browser.loadURI(testURL);
-  yield BrowserTestUtils.browserLoaded(browser, testURL);
+  BrowserTestUtils.loadURI(browser, testURL);
+  await BrowserTestUtils.browserLoaded(browser, false, testURL);
 
   // Register the protocol handler by clicking the notificationbar button.
-  let notificationValue = "Protocol Registration: testprotocol";
+  let notificationValue = "Protocol Registration: web+testprotocol";
   let getNotification = () =>
     gBrowser.getNotificationBox().getNotificationWithValue(notificationValue);
-  yield BrowserTestUtils.waitForCondition(getNotification);
+  await BrowserTestUtils.waitForCondition(getNotification);
   let notification = getNotification();
-  let button =
-    notification.getElementsByClassName("notification-button-default")[0];
+  let button = notification.querySelector("button");
   ok(button, "got registration button");
   button.click();
 
   // Set the new handler as default.
   const protoSvc = Cc["@mozilla.org/uriloader/external-protocol-service;1"].
                      getService(Ci.nsIExternalProtocolService);
-  let protoInfo = protoSvc.getProtocolHandlerInfo("testprotocol");
+  let protoInfo = protoSvc.getProtocolHandlerInfo("web+testprotocol");
   is(protoInfo.preferredAction, protoInfo.useHelperApp,
      "using a helper application is the preferred action");
   ok(!protoInfo.preferredApplicationHandler, "no preferred handler is set");
   let handlers = protoInfo.possibleApplicationHandlers;
-  is(1, handlers.length, "only one handler registered for testprotocol");
+  is(1, handlers.length, "only one handler registered for web+testprotocol");
   let handler = handlers.queryElementAt(0, Ci.nsIHandlerApp);
   ok(handler instanceof Ci.nsIWebHandlerApp, "the handler is a web handler");
   is(handler.uriTemplate, "https://example.com/foobar?uri=%s",
@@ -39,33 +38,32 @@ add_task(function*() {
 
   // Middle-click a testprotocol link and check the new tab is correct
   let link = "#link";
-  const expectedURL = "https://example.com/foobar?uri=testprotocol%3Atest";
+  const expectedURL = "https://example.com/foobar?uri=web%2Btestprotocol%3Atest";
 
   let promiseTabOpened =
     BrowserTestUtils.waitForNewTab(gBrowser, expectedURL);
-  yield BrowserTestUtils.synthesizeMouseAtCenter(link, {button: 1}, browser);
-  let tab = yield promiseTabOpened;
+  await BrowserTestUtils.synthesizeMouseAtCenter(link, {button: 1}, browser);
+  let tab = await promiseTabOpened;
   gBrowser.selectedTab = tab;
   is(gURLBar.value, expectedURL,
      "the expected URL is displayed in the location bar");
-  yield BrowserTestUtils.removeTab(tab);
+  BrowserTestUtils.removeTab(tab);
 
   // Shift-click the testprotocol link and check the new window.
-  let newWindowPromise = BrowserTestUtils.waitForNewWindow();
-  yield BrowserTestUtils.synthesizeMouseAtCenter(link, {shiftKey: true},
+  let newWindowPromise = BrowserTestUtils.waitForNewWindow({url: expectedURL});
+  await BrowserTestUtils.synthesizeMouseAtCenter(link, {shiftKey: true},
                                                  browser);
-  let win = yield newWindowPromise;
-  yield BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser);
-  yield BrowserTestUtils.waitForCondition(() => win.gBrowser.currentURI.spec == expectedURL);
+  let win = await newWindowPromise;
+  await BrowserTestUtils.waitForCondition(() => win.gBrowser.currentURI.spec == expectedURL);
   is(win.gURLBar.value, expectedURL,
      "the expected URL is displayed in the location bar");
-  yield BrowserTestUtils.closeWindow(win);
+  await BrowserTestUtils.closeWindow(win);
 
   // Click the testprotocol link and check the url in the current tab.
   let loadPromise = BrowserTestUtils.browserLoaded(browser);
-  yield BrowserTestUtils.synthesizeMouseAtCenter(link, {}, browser);
-  yield loadPromise;
-  yield BrowserTestUtils.waitForCondition(() => gURLBar.value != testURL);
+  await BrowserTestUtils.synthesizeMouseAtCenter(link, {}, browser);
+  await loadPromise;
+  await BrowserTestUtils.waitForCondition(() => gURLBar.value != testURL);
   is(gURLBar.value, expectedURL,
      "the expected URL is displayed in the location bar");
 

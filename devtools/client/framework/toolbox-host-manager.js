@@ -8,7 +8,12 @@ const Services = require("Services");
 const {LocalizationHelper} = require("devtools/shared/l10n");
 const L10N = new LocalizationHelper("devtools/client/locales/toolbox.properties");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
-const {Task} = require("devtools/shared/task");
+const Telemetry = require("devtools/client/shared/telemetry");
+
+// The min-width of toolbox and browser toolbox.
+const WIDTH_CHEVRON_AND_MEATBALL = 50;
+const WIDTH_CHEVRON_AND_MEATBALL_AND_CLOSE = 74;
+const ZOOM_VALUE_PREF = "devtools.toolbox.zoomValue";
 
 loader.lazyRequireGetter(this, "Toolbox", "devtools/client/framework/toolbox", true);
 loader.lazyRequireGetter(this, "Hosts", "devtools/client/framework/toolbox-hosts", true);
@@ -24,23 +29,12 @@ loader.lazyRequireGetter(this, "Hosts", "devtools/client/framework/toolbox-hosts
  * - switch-host:
  *   Order to display the toolbox in another host (side, bottom, window, or the
  *   previously used one)
- * - toggle-minimize-mode:
- *   When using the bottom host, the toolbox can be miximized to only display
- *   the tool titles
- * - maximize-host:
- *   When using the bottom host in minimized mode, revert back to regular mode
- *   in order to see tool titles and the tools
  * - raise-host:
  *   Focus the tools
  * - set-host-title:
  *   When using the window host, update the window title
  *
  * Messages sent by the chrome to the toolbox:
- * - host-minimized:
- *   The bottom host is done minimizing (after animation end)
- * - host-maximized:
- *   The bottom host is done switching back to regular mode (after animation
- *   end)
  * - switched-host:
  *   The `switch-host` command sent by the toolbox is done
  */
@@ -56,34 +50,64 @@ function ToolboxHostManager(target, hostType, hostOptions) {
 
   if (!hostType) {
     hostType = Services.prefs.getCharPref(LAST_HOST);
+    if (!Hosts[hostType]) {
+      // If the preference value is unexpected, restore to the default value.
+      Services.prefs.clearUserPref(LAST_HOST);
+      hostType = Services.prefs.getCharPref(LAST_HOST);
+    }
   }
-  this.onHostMinimized = this.onHostMinimized.bind(this);
-  this.onHostMaximized = this.onHostMaximized.bind(this);
   this.host = this.createHost(hostType, hostOptions);
   this.hostType = hostType;
+  this.telemetry = new Telemetry();
+  this.setMinWidthWithZoom = this.setMinWidthWithZoom.bind(this);
+  Services.prefs.addObserver(ZOOM_VALUE_PREF, this.setMinWidthWithZoom);
 }
 
 ToolboxHostManager.prototype = {
-  create: Task.async(function* (toolId) {
-    yield this.host.create();
+  async create(toolId) {
+    await this.host.create();
 
     this.host.frame.setAttribute("aria-label", L10N.getStr("toolbox.label"));
     this.host.frame.ownerDocument.defaultView.addEventListener("message", this);
     // We have to listen on capture as no event fires on bubble
     this.host.frame.addEventListener("unload", this, true);
 
-    let toolbox = new Toolbox(this.target, toolId, this.host.type,
-                              this.host.frame.contentWindow, this.frameId);
+    const msSinceProcessStart = parseInt(this.telemetry.msSinceProcessStart(), 10);
+    const toolbox = new Toolbox(this.target, toolId, this.host.type,
+                                this.host.frame.contentWindow, this.frameId,
+                                msSinceProcessStart);
 
     // Prevent reloading the toolbox when loading the tools in a tab
     // (e.g. from about:debugging)
-    let location = this.host.frame.contentWindow.location;
+    const location = this.host.frame.contentWindow.location;
     if (!location.href.startsWith("about:devtools-toolbox")) {
       this.host.frame.setAttribute("src", "about:devtools-toolbox");
     }
 
+    // We set an attribute on the toolbox iframe so that apps do not need
+    // access to the toolbox internals in order to get the session ID.
+    this.host.frame.setAttribute("session_id", msSinceProcessStart);
+
+    this.setMinWidthWithZoom();
     return toolbox;
-  }),
+  },
+
+  setMinWidthWithZoom: function() {
+    const zoomValue =
+          parseFloat(Services.prefs.getCharPref(ZOOM_VALUE_PREF));
+
+    if (isNaN(zoomValue)) {
+      return;
+    }
+
+    if (this.hostType === Toolbox.HostType.LEFT ||
+        this.hostType === Toolbox.HostType.RIGHT) {
+      this.host.frame.minWidth = WIDTH_CHEVRON_AND_MEATBALL_AND_CLOSE * zoomValue;
+    } else if (this.hostType === Toolbox.HostType.WINDOW ||
+               this.hostType === Toolbox.HostType.CUSTOM) {
+      this.host.frame.minWidth = WIDTH_CHEVRON_AND_MEATBALL * zoomValue;
+    }
+  },
 
   handleEvent(event) {
     switch (event.type) {
@@ -113,36 +137,32 @@ ToolboxHostManager.prototype = {
     if (!event.data) {
       return;
     }
+    const msg = event.data;
     // Toolbox document is still chrome and disallow identifying message
     // origin via event.source as it is null. So use a custom id.
-    if (event.data.frameId != this.frameId) {
+    if (msg.frameId != this.frameId) {
       return;
     }
-    switch (event.data.name) {
+    switch (msg.name) {
       case "switch-host":
-        this.switchHost(event.data.hostType);
-        break;
-      case "maximize-host":
-        this.host.maximize();
+        this.switchHost(msg.hostType);
         break;
       case "raise-host":
         this.host.raise();
         break;
-      case "toggle-minimize-mode":
-        this.host.toggleMinimizeMode(event.data.toolbarHeight);
-        break;
       case "set-host-title":
-        this.host.setTitle(event.data.title);
+        this.host.setTitle(msg.title);
         break;
     }
   },
 
   postMessage(data) {
-    let window = this.host.frame.contentWindow;
+    const window = this.host.frame.contentWindow;
     window.postMessage(data, "*");
   },
 
   destroy() {
+    Services.prefs.removeObserver(ZOOM_VALUE_PREF, this.setMinWidthWithZoom);
     this.destroyHost();
     this.host = null;
     this.hostType = null;
@@ -167,44 +187,29 @@ ToolboxHostManager.prototype = {
       throw new Error("Unknown hostType: " + hostType);
     }
 
-    let newHost = new Hosts[hostType](this.target.tab, options);
-    // Update the label and icon when the state changes.
-    newHost.on("minimized", this.onHostMinimized);
-    newHost.on("maximized", this.onHostMaximized);
+    const newHost = new Hosts[hostType](this.target.tab, options);
     return newHost;
   },
 
-  onHostMinimized() {
-    this.postMessage({
-      name: "host-minimized"
-    });
-  },
-
-  onHostMaximized() {
-    this.postMessage({
-      name: "host-maximized"
-    });
-  },
-
-  switchHost: Task.async(function* (hostType) {
+  async switchHost(hostType) {
     if (hostType == "previous") {
       // Switch to the last used host for the toolbox UI.
       // This is determined by the devtools.toolbox.previousHost pref.
       hostType = Services.prefs.getCharPref(PREVIOUS_HOST);
 
       // Handle the case where the previous host happens to match the current
-      // host. If so, switch to bottom if it's not already used, and side if not.
+      // host. If so, switch to bottom if it's not already used, and right side if not.
       if (hostType === this.hostType) {
         if (hostType === Toolbox.HostType.BOTTOM) {
-          hostType = Toolbox.HostType.SIDE;
+          hostType = Toolbox.HostType.RIGHT;
         } else {
           hostType = Toolbox.HostType.BOTTOM;
         }
       }
     }
-    let iframe = this.host.frame;
-    let newHost = this.createHost(hostType);
-    let newIframe = yield newHost.create();
+    const iframe = this.host.frame;
+    const newHost = this.createHost(hostType);
+    const newIframe = await newHost.create();
     // change toolbox document's parent to the new host
     newIframe.swapFrameLoaders(iframe);
 
@@ -220,6 +225,8 @@ ToolboxHostManager.prototype = {
     this.host.frame.ownerDocument.defaultView.addEventListener("message", this);
     this.host.frame.addEventListener("unload", this, true);
 
+    this.setMinWidthWithZoom();
+
     if (hostType != Toolbox.HostType.CUSTOM) {
       Services.prefs.setCharPref(LAST_HOST, hostType);
     }
@@ -227,9 +234,9 @@ ToolboxHostManager.prototype = {
     // Tell the toolbox the host changed
     this.postMessage({
       name: "switched-host",
-      hostType
+      hostType,
     });
-  }),
+  },
 
   /**
    * Destroy the current host, and remove event listeners from its frame.
@@ -244,9 +251,7 @@ ToolboxHostManager.prototype = {
     }
     this.host.frame.removeEventListener("unload", this, true);
 
-    this.host.off("minimized", this.onHostMinimized);
-    this.host.off("maximized", this.onHostMaximized);
     return this.host.destroy();
-  }
+  },
 };
 exports.ToolboxHostManager = ToolboxHostManager;

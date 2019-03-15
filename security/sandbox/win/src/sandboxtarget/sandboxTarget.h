@@ -10,14 +10,15 @@
 #include <windows.h>
 
 #include "mozilla/Assertions.h"
-#include "base/MissingBasicTypes.h"
-#include "sandbox/win/src/sandbox.h"
+
+namespace sandbox {
+class TargetServices;
+}
 
 namespace mozilla {
 
-class SandboxTarget
-{
-public:
+class SandboxTarget {
+ public:
   /**
    * Obtains a pointer to the singleton instance
    */
@@ -30,8 +31,7 @@ public:
    *
    * @param aTargetServices The target services that will be used
    */
-  void SetTargetServices(sandbox::TargetServices* aTargetServices)
-  {
+  void SetTargetServices(sandbox::TargetServices* aTargetServices) {
     MOZ_ASSERT(aTargetServices);
     MOZ_ASSERT(!mTargetServices,
                "Sandbox TargetServices must only be set once.");
@@ -43,12 +43,7 @@ public:
    * Called by the library that wants to "start" the sandbox, i.e. change to the
    * more secure delayed / lockdown policy.
    */
-  void StartSandbox()
-  {
-    if (mTargetServices) {
-      mTargetServices->LowerToken();
-    }
-  }
+  void StartSandbox();
 
   /**
    * Used to duplicate handles via the broker process. The permission for the
@@ -56,28 +51,14 @@ public:
    */
   bool BrokerDuplicateHandle(HANDLE aSourceHandle, DWORD aTargetProcessId,
                              HANDLE* aTargetHandle, DWORD aDesiredAccess,
-                             DWORD aOptions)
-  {
-    if (!mTargetServices) {
-      return false;
-    }
+                             DWORD aOptions);
 
-    sandbox::ResultCode result =
-      mTargetServices->DuplicateHandle(aSourceHandle, aTargetProcessId,
-                                       aTargetHandle, aDesiredAccess, aOptions);
-    return (sandbox::SBOX_ALL_OK == result);
-  }
-
-protected:
-  SandboxTarget() :
-    mTargetServices(nullptr)
-  {
-  }
+ protected:
+  SandboxTarget() : mTargetServices(nullptr) {}
 
   sandbox::TargetServices* mTargetServices;
 };
 
-
-} // mozilla
+}  // namespace mozilla
 
 #endif

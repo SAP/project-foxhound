@@ -12,6 +12,7 @@
 #include "mozilla/dom/cache/Cache.h"
 #include "mozilla/dom/cache/CacheChild.h"
 #include "mozilla/dom/cache/CacheStreamControlChild.h"
+#include "mozilla/dom/cache/CacheWorkerHolder.h"
 
 namespace mozilla {
 namespace dom {
@@ -21,22 +22,18 @@ using mozilla::ipc::PBackgroundChild;
 
 namespace {
 
-void
-AddWorkerHolderToStreamChild(const CacheReadStream& aReadStream,
-                             CacheWorkerHolder* aWorkerHolder)
-{
+void AddWorkerHolderToStreamChild(const CacheReadStream& aReadStream,
+                                  CacheWorkerHolder* aWorkerHolder) {
   MOZ_ASSERT_IF(!NS_IsMainThread(), aWorkerHolder);
   CacheStreamControlChild* cacheControl =
-    static_cast<CacheStreamControlChild*>(aReadStream.controlChild());
+      static_cast<CacheStreamControlChild*>(aReadStream.controlChild());
   if (cacheControl) {
     cacheControl->SetWorkerHolder(aWorkerHolder);
   }
 }
 
-void
-AddWorkerHolderToStreamChild(const CacheResponse& aResponse,
-                             CacheWorkerHolder* aWorkerHolder)
-{
+void AddWorkerHolderToStreamChild(const CacheResponse& aResponse,
+                                  CacheWorkerHolder* aWorkerHolder) {
   MOZ_ASSERT_IF(!NS_IsMainThread(), aWorkerHolder);
 
   if (aResponse.body().type() == CacheReadStreamOrVoid::Tvoid_t) {
@@ -47,10 +44,8 @@ AddWorkerHolderToStreamChild(const CacheResponse& aResponse,
                                aWorkerHolder);
 }
 
-void
-AddWorkerHolderToStreamChild(const CacheRequest& aRequest,
-                             CacheWorkerHolder* aWorkerHolder)
-{
+void AddWorkerHolderToStreamChild(const CacheRequest& aRequest,
+                                  CacheWorkerHolder* aWorkerHolder) {
   MOZ_ASSERT_IF(!NS_IsMainThread(), aWorkerHolder);
 
   if (aRequest.body().type() == CacheReadStreamOrVoid::Tvoid_t) {
@@ -61,32 +56,30 @@ AddWorkerHolderToStreamChild(const CacheRequest& aRequest,
                                aWorkerHolder);
 }
 
-} // namespace
+}  // namespace
 
 CacheOpChild::CacheOpChild(CacheWorkerHolder* aWorkerHolder,
-                           nsIGlobalObject* aGlobal,
-                           nsISupports* aParent, Promise* aPromise)
-  : mGlobal(aGlobal)
-  , mParent(aParent)
-  , mPromise(aPromise)
-{
+                           nsIGlobalObject* aGlobal, nsISupports* aParent,
+                           Promise* aPromise)
+    : mGlobal(aGlobal), mParent(aParent), mPromise(aPromise) {
   MOZ_DIAGNOSTIC_ASSERT(mGlobal);
   MOZ_DIAGNOSTIC_ASSERT(mParent);
   MOZ_DIAGNOSTIC_ASSERT(mPromise);
 
   MOZ_ASSERT_IF(!NS_IsMainThread(), aWorkerHolder);
-  SetWorkerHolder(aWorkerHolder);
+
+  RefPtr<CacheWorkerHolder> workerHolder = CacheWorkerHolder::PreferBehavior(
+      aWorkerHolder, CacheWorkerHolder::PreventIdleShutdownStart);
+
+  SetWorkerHolder(workerHolder);
 }
 
-CacheOpChild::~CacheOpChild()
-{
+CacheOpChild::~CacheOpChild() {
   NS_ASSERT_OWNINGTHREAD(CacheOpChild);
   MOZ_DIAGNOSTIC_ASSERT(!mPromise);
 }
 
-void
-CacheOpChild::ActorDestroy(ActorDestroyReason aReason)
-{
+void CacheOpChild::ActorDestroy(ActorDestroyReason aReason) {
   NS_ASSERT_OWNINGTHREAD(CacheOpChild);
 
   // If the actor was terminated for some unknown reason, then indicate the
@@ -99,10 +92,8 @@ CacheOpChild::ActorDestroy(ActorDestroyReason aReason)
   RemoveWorkerHolder();
 }
 
-mozilla::ipc::IPCResult
-CacheOpChild::Recv__delete__(const ErrorResult& aRv,
-                             const CacheOpResult& aResult)
-{
+mozilla::ipc::IPCResult CacheOpChild::Recv__delete__(
+    const ErrorResult& aRv, const CacheOpResult& aResult) {
   NS_ASSERT_OWNINGTHREAD(CacheOpChild);
 
   if (NS_WARN_IF(aRv.Failed())) {
@@ -116,45 +107,37 @@ CacheOpChild::Recv__delete__(const ErrorResult& aRv,
   }
 
   switch (aResult.type()) {
-    case CacheOpResult::TCacheMatchResult:
-    {
+    case CacheOpResult::TCacheMatchResult: {
       HandleResponse(aResult.get_CacheMatchResult().responseOrVoid());
       break;
     }
-    case CacheOpResult::TCacheMatchAllResult:
-    {
+    case CacheOpResult::TCacheMatchAllResult: {
       HandleResponseList(aResult.get_CacheMatchAllResult().responseList());
       break;
     }
-    case CacheOpResult::TCachePutAllResult:
-    {
+    case CacheOpResult::TCachePutAllResult: {
       mPromise->MaybeResolveWithUndefined();
       break;
     }
-    case CacheOpResult::TCacheDeleteResult:
-    {
+    case CacheOpResult::TCacheDeleteResult: {
       mPromise->MaybeResolve(aResult.get_CacheDeleteResult().success());
       break;
     }
-    case CacheOpResult::TCacheKeysResult:
-    {
+    case CacheOpResult::TCacheKeysResult: {
       HandleRequestList(aResult.get_CacheKeysResult().requestList());
       break;
     }
-    case CacheOpResult::TStorageMatchResult:
-    {
+    case CacheOpResult::TStorageMatchResult: {
       HandleResponse(aResult.get_StorageMatchResult().responseOrVoid());
       break;
     }
-    case CacheOpResult::TStorageHasResult:
-    {
+    case CacheOpResult::TStorageHasResult: {
       mPromise->MaybeResolve(aResult.get_StorageHasResult().success());
       break;
     }
-    case CacheOpResult::TStorageOpenResult:
-    {
-      auto actor = static_cast<CacheChild*>(
-        aResult.get_StorageOpenResult().actorChild());
+    case CacheOpResult::TStorageOpenResult: {
+      auto result = aResult.get_StorageOpenResult();
+      auto actor = static_cast<CacheChild*>(result.actorChild());
 
       // If we have a success status then we should have an actor.  Gracefully
       // reject instead of crashing, though, if we get a nullptr here.
@@ -166,18 +149,20 @@ CacheOpChild::Recv__delete__(const ErrorResult& aRv,
         break;
       }
 
-      actor->SetWorkerHolder(GetWorkerHolder());
-      RefPtr<Cache> cache = new Cache(mGlobal, actor);
+      RefPtr<CacheWorkerHolder> workerHolder =
+          CacheWorkerHolder::PreferBehavior(
+              GetWorkerHolder(), CacheWorkerHolder::AllowIdleShutdownStart);
+
+      actor->SetWorkerHolder(workerHolder);
+      RefPtr<Cache> cache = new Cache(mGlobal, actor, result.ns());
       mPromise->MaybeResolve(cache);
       break;
     }
-    case CacheOpResult::TStorageDeleteResult:
-    {
+    case CacheOpResult::TStorageDeleteResult: {
       mPromise->MaybeResolve(aResult.get_StorageDeleteResult().success());
       break;
     }
-    case CacheOpResult::TStorageKeysResult:
-    {
+    case CacheOpResult::TStorageKeysResult: {
       mPromise->MaybeResolve(aResult.get_StorageKeysResult().keyList());
       break;
     }
@@ -190,38 +175,26 @@ CacheOpChild::Recv__delete__(const ErrorResult& aRv,
   return IPC_OK();
 }
 
-void
-CacheOpChild::StartDestroy()
-{
+void CacheOpChild::StartDestroy() {
   NS_ASSERT_OWNINGTHREAD(CacheOpChild);
 
   // Do not cancel on-going operations when WorkerHolder calls this.  Instead,
   // keep the Worker alive until we are done.
 }
 
-nsIGlobalObject*
-CacheOpChild::GetGlobalObject() const
-{
-  return mGlobal;
-}
+nsIGlobalObject* CacheOpChild::GetGlobalObject() const { return mGlobal; }
 
 #ifdef DEBUG
-void
-CacheOpChild::AssertOwningThread() const
-{
+void CacheOpChild::AssertOwningThread() const {
   NS_ASSERT_OWNINGTHREAD(CacheOpChild);
 }
 #endif
 
-PBackgroundChild*
-CacheOpChild::GetIPCManager()
-{
+PBackgroundChild* CacheOpChild::GetIPCManager() {
   MOZ_CRASH("CacheOpChild does not implement TypeUtils::GetIPCManager()");
 }
 
-void
-CacheOpChild::HandleResponse(const CacheResponseOrVoid& aResponseOrVoid)
-{
+void CacheOpChild::HandleResponse(const CacheResponseOrVoid& aResponseOrVoid) {
   if (aResponseOrVoid.type() == CacheResponseOrVoid::Tvoid_t) {
     mPromise->MaybeResolveWithUndefined();
     return;
@@ -235,9 +208,8 @@ CacheOpChild::HandleResponse(const CacheResponseOrVoid& aResponseOrVoid)
   mPromise->MaybeResolve(response);
 }
 
-void
-CacheOpChild::HandleResponseList(const nsTArray<CacheResponse>& aResponseList)
-{
+void CacheOpChild::HandleResponseList(
+    const nsTArray<CacheResponse>& aResponseList) {
   AutoTArray<RefPtr<Response>, 256> responses;
   responses.SetCapacity(aResponseList.Length());
 
@@ -249,9 +221,8 @@ CacheOpChild::HandleResponseList(const nsTArray<CacheResponse>& aResponseList)
   mPromise->MaybeResolve(responses);
 }
 
-void
-CacheOpChild::HandleRequestList(const nsTArray<CacheRequest>& aRequestList)
-{
+void CacheOpChild::HandleRequestList(
+    const nsTArray<CacheRequest>& aRequestList) {
   AutoTArray<RefPtr<Request>, 256> requests;
   requests.SetCapacity(aRequestList.Length());
 
@@ -263,6 +234,6 @@ CacheOpChild::HandleRequestList(const nsTArray<CacheRequest>& aRequestList)
   mPromise->MaybeResolve(requests);
 }
 
-} // namespace cache
-} // namespace dom
-} // namespace mozilla
+}  // namespace cache
+}  // namespace dom
+}  // namespace mozilla

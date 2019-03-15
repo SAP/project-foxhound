@@ -4,10 +4,10 @@
 
 "use strict";
 
-Components.utils.import("resource://gre/modules/osfile.jsm");
-Components.utils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/osfile.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-do_register_cleanup(function() {
+registerCleanupFunction(function() {
   Services.prefs.setBoolPref("toolkit.osfile.log", false);
 });
 
@@ -20,7 +20,7 @@ function run_test() {
 /**
  * Test OS.File.removeEmptyDir
  */
-add_task(function*() {
+add_task(async function() {
   // Set up profile. We create the directory in the profile, because the profile
   // is removed after every test run.
   do_get_profile();
@@ -28,28 +28,28 @@ add_task(function*() {
   let dir = OS.Path.join(OS.Constants.Path.profileDir, "directory");
 
   // Sanity checking for the test
-  do_check_false((yield OS.File.exists(dir)));
+  Assert.equal(false, (await OS.File.exists(dir)));
 
   // Remove non-existent directory
-  yield OS.File.removeEmptyDir(dir);
+  await OS.File.removeEmptyDir(dir);
 
   // Remove non-existent directory with ignoreAbsent
-  yield OS.File.removeEmptyDir(dir, {ignoreAbsent: true});
+  await OS.File.removeEmptyDir(dir, {ignoreAbsent: true});
 
   // Remove non-existent directory with ignoreAbsent false
   let exception = null;
   try {
-    yield OS.File.removeEmptyDir(dir, {ignoreAbsent: false});
+    await OS.File.removeEmptyDir(dir, {ignoreAbsent: false});
   } catch (ex) {
     exception = ex;
   }
 
-  do_check_true(!!exception);
-  do_check_true(exception instanceof OS.File.Error);
-  do_check_true(exception.becauseNoSuchFile);
+  Assert.ok(!!exception);
+  Assert.ok(exception instanceof OS.File.Error);
+  Assert.ok(exception.becauseNoSuchFile);
 
   // Remove empty directory
-  yield OS.File.makeDir(dir);
-  yield OS.File.removeEmptyDir(dir);
-  do_check_false((yield OS.File.exists(dir)));
+  await OS.File.makeDir(dir);
+  await OS.File.removeEmptyDir(dir);
+  Assert.equal(false, (await OS.File.exists(dir)));
 });

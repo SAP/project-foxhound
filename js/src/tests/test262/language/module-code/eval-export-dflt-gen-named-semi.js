@@ -1,4 +1,4 @@
-// |reftest| skip -- jstests don't yet support module tests
+// |reftest| module
 // Copyright (C) 2016 the V8 project authors. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 /*---
@@ -7,6 +7,7 @@ description: >
     be terminated with a semicolon or newline
 esid: sec-moduleevaluation
 flags: [module]
+features: [generators]
 ---*/
 
 var count = 0;

@@ -10,27 +10,31 @@
 #include "DOMSVGLengthList.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsDebug.h"
-#include "nsIDOMSVGLength.h"
 #include "nsTArray.h"
 #include "SVGLength.h"
 #include "mozilla/Attributes.h"
 #include "nsWrapperCache.h"
-
-class nsSVGElement;
 
 // We make DOMSVGLength a pseudo-interface to allow us to QI to it in order to
 // check that the objects that scripts pass to DOMSVGLengthList methods are our
 // *native* length objects.
 //
 // {A8468350-7F7B-4976-9A7E-3765A1DADF9A}
-#define MOZILLA_DOMSVGLENGTH_IID \
-  { 0xA8468350, 0x7F7B, 0x4976, { 0x9A, 0x7E, 0x37, 0x65, 0xA1, 0xDA, 0xDF, 0x9A } }
+#define MOZILLA_DOMSVGLENGTH_IID                     \
+  {                                                  \
+    0xA8468350, 0x7F7B, 0x4976, {                    \
+      0x9A, 0x7E, 0x37, 0x65, 0xA1, 0xDA, 0xDF, 0x9A \
+    }                                                \
+  }
 
-#define MOZ_SVG_LIST_INDEX_BIT_COUNT 22 // supports > 4 million list items
+#define MOZ_SVG_LIST_INDEX_BIT_COUNT 22  // supports > 4 million list items
 
 namespace mozilla {
 
 class ErrorResult;
+
+namespace dom {
+class SVGElement;
 
 /**
  * Class DOMSVGLength
@@ -74,30 +78,26 @@ class ErrorResult;
  * if-else as appropriate. The bug for doing that work is:
  * https://bugzilla.mozilla.org/show_bug.cgi?id=571734
  */
-class DOMSVGLength final : public nsIDOMSVGLength,
-                           public nsWrapperCache
-{
+class DOMSVGLength final : public nsISupports, public nsWrapperCache {
   friend class AutoChangeLengthNotifier;
 
   /**
-   * Ctor for creating the object returned by nsSVGLength2::ToDOMBaseVal/ToDOMAnimVal
+   * Ctor for creating the object returned by
+   * nsSVGLength2::ToDOMBaseVal/ToDOMAnimVal
    */
-  DOMSVGLength(nsSVGLength2* aVal, nsSVGElement* aSVGElement, bool aAnimVal);
+  DOMSVGLength(nsSVGLength2* aVal, dom::SVGElement* aSVGElement, bool aAnimVal);
 
   ~DOMSVGLength();
 
-public:
+ public:
   NS_DECLARE_STATIC_IID_ACCESSOR(MOZILLA_DOMSVGLENGTH_IID)
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(DOMSVGLength)
-  NS_DECL_NSIDOMSVGLENGTH
 
   /**
    * Generic ctor for DOMSVGLength objects that are created for an attribute.
    */
-  DOMSVGLength(DOMSVGLengthList *aList,
-               uint8_t aAttrEnum,
-               uint32_t aListIndex,
+  DOMSVGLength(DOMSVGLengthList* aList, uint8_t aAttrEnum, uint32_t aListIndex,
                bool aIsAnimValItem);
 
   /**
@@ -107,7 +107,7 @@ public:
   DOMSVGLength();
 
   static already_AddRefed<DOMSVGLength> GetTearOff(nsSVGLength2* aVal,
-                                                   nsSVGElement* aSVGElement,
+                                                   dom::SVGElement* aSVGElement,
                                                    bool aAnimVal);
 
   /**
@@ -116,17 +116,13 @@ public:
    */
   DOMSVGLength* Copy();
 
-  bool IsInList() const {
-    return !!mList;
-  }
+  bool IsInList() const { return !!mList; }
 
   /**
    * In future, if this class is used for non-list lengths, this will be
    * different to IsInList().
    */
-  bool HasOwner() const {
-    return !!mList;
-  }
+  bool HasOwner() const { return !!mList; }
 
   /**
    * Returns whether this length object is reflecting a single SVG element
@@ -134,9 +130,7 @@ public:
    * example, but not an item in an SVGLengthList, such as those in the
    * baseVal or animVal of SVGTextElement.x.
    */
-  bool IsReflectingAttribute() const {
-    return mVal;
-  }
+  bool IsReflectingAttribute() const { return mVal; }
 
   /**
    * This method is called to notify this DOM object that it is being inserted
@@ -147,19 +141,15 @@ public:
    * lists - it can - it's just that the logic to handle that (and send out
    * the necessary notifications) is located elsewhere (in DOMSVGLengthList).)
    */
-  void InsertingIntoList(DOMSVGLengthList *aList,
-                         uint8_t aAttrEnum,
-                         uint32_t aListIndex,
-                         bool aIsAnimValItem);
+  void InsertingIntoList(DOMSVGLengthList* aList, uint8_t aAttrEnum,
+                         uint32_t aListIndex, bool aIsAnimValItem);
 
   static uint32_t MaxListIndex() {
     return (1U << MOZ_SVG_LIST_INDEX_BIT_COUNT) - 1;
   }
 
   /// This method is called to notify this object that its list index changed.
-  void UpdateListIndex(uint32_t aListIndex) {
-    mListIndex = aListIndex;
-  }
+  void UpdateListIndex(uint32_t aListIndex) { mListIndex = aListIndex; }
 
   /**
    * This method is called to notify this DOM object that it is about to be
@@ -177,36 +167,29 @@ public:
   void SetValue(float aValue, ErrorResult& aRv);
   float ValueInSpecifiedUnits();
   void SetValueInSpecifiedUnits(float aValue, ErrorResult& aRv);
-  // The XPCOM GetValueAsString is good
+  void GetValueAsString(nsAString& aValue);
   void SetValueAsString(const nsAString& aValue, ErrorResult& aRv);
-  void NewValueSpecifiedUnits(uint16_t aUnit, float aValue,
-                              ErrorResult& aRv);
+  void NewValueSpecifiedUnits(uint16_t aUnit, float aValue, ErrorResult& aRv);
   void ConvertToSpecifiedUnits(uint16_t aUnit, ErrorResult& aRv);
 
   nsISupports* GetParentObject() const {
     auto svgElement = mList ? Element() : mSVGElement.get();
-    return static_cast<nsIDOMSVGElement*> (svgElement);
+    return svgElement;
   }
 
-  JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
-private:
+ private:
+  dom::SVGElement* Element() const { return mList->Element(); }
 
-  nsSVGElement* Element() const {
-    return mList->Element();
-  }
-
-  uint8_t AttrEnum() const {
-    return mAttrEnum;
-  }
+  uint8_t AttrEnum() const { return mAttrEnum; }
 
   /**
    * Get the axis that this length lies along. This method must only be called
    * when this object is associated with an element (HasOwner() returns true).
    */
-  uint8_t Axis() const {
-    return mList->Axis();
-  }
+  uint8_t Axis() const { return mList->Axis(); }
 
   /**
    * Get a reference to the internal SVGLength list item that this DOM wrapper
@@ -235,23 +218,25 @@ private:
   // Bounds for the following are checked in the ctor, so be sure to update
   // that if you change the capacity of any of the following.
 
-  uint32_t mListIndex:MOZ_SVG_LIST_INDEX_BIT_COUNT;
-  uint32_t mAttrEnum:4; // supports up to 16 attributes
-  uint32_t mIsAnimValItem:1;
+  uint32_t mListIndex : MOZ_SVG_LIST_INDEX_BIT_COUNT;
+  uint32_t mAttrEnum : 4;  // supports up to 16 attributes
+  uint32_t mIsAnimValItem : 1;
 
   // The following members are only used when we're not in a list:
-  uint32_t mUnit:5; // can handle 31 units (the 10 SVG 1.1 units + rem, vw, vh, wm, calc + future additions)
+  uint32_t mUnit : 5;  // can handle 31 units (the 10 SVG 1.1 units + rem, vw,
+                       // vh, wm, calc + future additions)
   float mValue;
 
   // The following members are only used when we have an nsSVGLength2
-  nsSVGLength2* mVal; // kept alive because it belongs to mSVGElement
-  RefPtr<nsSVGElement> mSVGElement;
+  nsSVGLength2* mVal;  // kept alive because it belongs to mSVGElement
+  RefPtr<dom::SVGElement> mSVGElement;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(DOMSVGLength, MOZILLA_DOMSVGLENGTH_IID)
 
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #undef MOZ_SVG_LIST_INDEX_BIT_COUNT
 
-#endif // MOZILLA_DOMSVGLENGTH_H__
+#endif  // MOZILLA_DOMSVGLENGTH_H__

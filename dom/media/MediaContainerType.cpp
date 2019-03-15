@@ -8,35 +8,28 @@
 
 namespace mozilla {
 
-size_t
-MediaContainerType::SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const
-{
+size_t MediaContainerType::SizeOfExcludingThis(
+    MallocSizeOf aMallocSizeOf) const {
   return mExtendedMIMEType.SizeOfExcludingThis(aMallocSizeOf);
 }
 
-Maybe<MediaContainerType>
-MakeMediaContainerType(const nsAString& aType)
-{
+Maybe<MediaContainerType> MakeMediaContainerType(const nsAString& aType) {
   Maybe<MediaExtendedMIMEType> mime = MakeMediaExtendedMIMEType(aType);
   if (mime) {
-    return Some(MediaContainerType(Move(*mime)));
+    return Some(MediaContainerType(std::move(*mime)));
   }
   return Nothing();
 }
 
-Maybe<MediaContainerType>
-MakeMediaContainerType(const nsACString& aType)
-{
+Maybe<MediaContainerType> MakeMediaContainerType(const nsACString& aType) {
   return MakeMediaContainerType(NS_ConvertUTF8toUTF16(aType));
 }
 
-Maybe<MediaContainerType>
-MakeMediaContainerType(const char* aType)
-{
+Maybe<MediaContainerType> MakeMediaContainerType(const char* aType) {
   if (!aType) {
     return Nothing();
   }
   return MakeMediaContainerType(nsDependentCString(aType));
 }
 
-} // namespace mozilla
+}  // namespace mozilla

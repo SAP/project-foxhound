@@ -4,23 +4,24 @@
 
 /* eslint-env mozilla/frame-script */
 
-var testPage = "data:text/html;charset=utf-8,<body><style>:-moz-window-inactive { background-color: red; }</style><div id='area'></div></body>";
+const testPage = getRootDirectory(gTestPath) + "file_window_activation.html";
+const testPage2 = getRootDirectory(gTestPath) + "file_window_activation2.html";
 
 var colorChangeNotifications = 0;
 var otherWindow;
 
 var browser1, browser2;
 
-add_task(function* reallyRunTests() {
+add_task(async function reallyRunTests() {
 
-  let tab1 = yield BrowserTestUtils.openNewForegroundTab(gBrowser, testPage);
+  let tab1 = await BrowserTestUtils.openNewForegroundTab(gBrowser, testPage);
   browser1 = tab1.linkedBrowser;
 
   // This can't use openNewForegroundTab because if we focus tab2 now, we
   // won't send a focus event during test 6, further down in this file.
-  let tab2 = gBrowser.addTab(testPage);
+  let tab2 = BrowserTestUtils.addTab(gBrowser, testPage);
   browser2 = tab2.linkedBrowser;
-  yield BrowserTestUtils.browserLoaded(browser2);
+  await BrowserTestUtils.browserLoaded(browser2);
 
   browser1.messageManager.loadFrameScript("data:,(" + childFunction.toString() + ")();", true);
   browser2.messageManager.loadFrameScript("data:,(" + childFunction.toString() + ")();", true);
@@ -94,10 +95,10 @@ add_task(function* reallyRunTests() {
   // Start the test.
   sendGetBackgroundRequest(true);
 
-  yield testFinished.promise;
+  await testFinished.promise;
 
-  yield BrowserTestUtils.removeTab(tab1);
-  yield BrowserTestUtils.removeTab(tab2);
+  BrowserTestUtils.removeTab(tab1);
+  BrowserTestUtils.removeTab(tab2);
   otherWindow = null;
 });
 
@@ -107,7 +108,7 @@ function sendGetBackgroundRequest(ifChanged) {
 }
 
 function runOtherWindowTests() {
-  otherWindow = window.open("data:text/html;charset=utf-8,<body>Hi</body>", "", "chrome");
+  otherWindow = window.open(testPage2, "", "chrome");
   waitForFocus(function() {
     sendGetBackgroundRequest(true);
   }, otherWindow);

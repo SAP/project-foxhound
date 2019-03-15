@@ -7,48 +7,47 @@
  * Tests if requests render correct information in the details UI.
  */
 
-add_task(function* () {
-  let { L10N } = require("devtools/client/netmonitor/utils/l10n");
+add_task(async function() {
+  const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
 
-  let { tab, monitor } = yield initNetMonitor(SIMPLE_SJS);
+  const { tab, monitor } = await initNetMonitor(SIMPLE_SJS);
   info("Starting test... ");
 
-  let { document, gStore, windowRequire, NetMonitorView } = monitor.panelWin;
-  let Actions = windowRequire("devtools/client/netmonitor/actions/index");
-  let { EVENTS } = windowRequire("devtools/client/netmonitor/constants");
-  let {
+  const { document, store, windowRequire, NetMonitorView } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
+  const { EVENTS } = windowRequire("devtools/client/netmonitor/src/constants");
+  const {
     getSelectedRequest,
     getSortedRequests,
-  } = windowRequire("devtools/client/netmonitor/selectors/index");
-  let Editor = require("devtools/client/sourceeditor/editor");
+  } = windowRequire("devtools/client/netmonitor/src/selectors/index");
+  const Editor = require("devtools/client/sourceeditor/editor");
 
-  gStore.dispatch(Actions.batchEnable(false));
+  store.dispatch(Actions.batchEnable(false));
 
-  let wait = waitForNetworkEvents(monitor, 1);
+  const wait = waitForNetworkEvents(monitor, 1);
   tab.linkedBrowser.reload();
-  yield wait;
+  await wait;
 
-  is(getSelectedRequest(gStore.getState()), undefined,
+  is(getSelectedRequest(store.getState()), undefined,
     "There shouldn't be any selected item in the requests menu.");
-  is(gStore.getState().requests.requests.size, 1,
+  is(store.getState().requests.requests.size, 1,
     "The requests menu should not be empty after the first request.");
   is(!!document.querySelector(".network-details-panel"), false,
     "The network details panel should still be hidden after first request.");
 
-  EventUtils.sendMouseEvent({ type: "click" },
-    document.querySelector(".network-details-panel-toggle"));
+  store.dispatch(Actions.toggleNetworkDetails());
 
-  isnot(getSelectedRequest(gStore.getState()), undefined,
+  isnot(getSelectedRequest(store.getState()), undefined,
     "There should be a selected item in the requests menu.");
-  is(getSelectedIndex(gStore.getState()), 0,
+  is(getSelectedIndex(store.getState()), 0,
     "The first item should be selected in the requests menu.");
   is(!!document.querySelector(".network-details-panel"), true,
     "The network details panel should not be hidden after toggle button was pressed.");
 
   testHeadersTab();
-  yield testCookiesTab();
+  await testCookiesTab();
   testParamsTab();
-  yield testResponseTab();
+  await testResponseTab();
   testTimingsTab();
   return teardown(monitor);
 
@@ -60,8 +59,8 @@ add_task(function* () {
   }
 
   function testHeadersTab() {
-    let tabEl = document.querySelectorAll("#details-pane tab")[0];
-    let tabpanel = document.querySelectorAll("#details-pane tabpanel")[0];
+    const tabEl = document.querySelectorAll("#details-pane tab")[0];
+    const tabpanel = document.querySelectorAll("#details-pane tabpanel")[0];
 
     is(tabEl.getAttribute("selected"), "true",
       "The headers tab in the network details pane should be selected.");
@@ -87,8 +86,8 @@ add_task(function* () {
     is(tabpanel.querySelectorAll(".variables-view-empty-notice").length, 0,
       "The empty notice should not be displayed in this tabpanel.");
 
-    let responseScope = tabpanel.querySelectorAll(".variables-view-scope")[0];
-    let requestScope = tabpanel.querySelectorAll(".variables-view-scope")[1];
+    const responseScope = tabpanel.querySelectorAll(".variables-view-scope")[0];
+    const requestScope = tabpanel.querySelectorAll(".variables-view-scope")[1];
 
     is(responseScope.querySelector(".name").getAttribute("value"),
       L10N.getStr("responseHeaders") + " (" +
@@ -161,14 +160,14 @@ add_task(function* () {
       "\"no-cache\"", "The last request header value was incorrect.");
   }
 
-  function* testCookiesTab() {
-    let onEvent = monitor.panelWin.once(EVENTS.TAB_UPDATED);
+  async function testCookiesTab() {
+    const onEvent = monitor.panelWin.api.once(EVENTS.TAB_UPDATED);
     EventUtils.sendMouseEvent({ type: "mousedown" },
       document.querySelectorAll("#details-pane tab")[1]);
-    yield onEvent;
+    await onEvent;
 
-    let tabEl = document.querySelectorAll("#details-pane tab")[1];
-    let tabpanel = document.querySelectorAll("#details-pane tabpanel")[1];
+    const tabEl = document.querySelectorAll("#details-pane tab")[1];
+    const tabpanel = document.querySelectorAll("#details-pane tabpanel")[1];
 
     is(tabEl.getAttribute("selected"), "true",
       "The cookies tab in the network details pane should be selected.");
@@ -183,8 +182,8 @@ add_task(function* () {
     EventUtils.sendMouseEvent({ type: "mousedown" },
       document.querySelectorAll("#details-pane tab")[2]);
 
-    let tabEl = document.querySelectorAll("#details-pane tab")[2];
-    let tabpanel = document.querySelectorAll("#details-pane tabpanel")[2];
+    const tabEl = document.querySelectorAll("#details-pane tab")[2];
+    const tabpanel = document.querySelectorAll("#details-pane tabpanel")[2];
 
     is(tabEl.getAttribute("selected"), "true",
       "The params tab in the network details pane should be selected.");
@@ -204,14 +203,14 @@ add_task(function* () {
       "The request post data textarea box should be hidden.");
   }
 
-  function* testResponseTab() {
-    let onEvent = monitor.panelWin.once(EVENTS.TAB_UPDATED);
+  async function testResponseTab() {
+    const onEvent = monitor.panelWin.api.once(EVENTS.TAB_UPDATED);
     EventUtils.sendMouseEvent({ type: "mousedown" },
       document.querySelectorAll("#details-pane tab")[3]);
-    yield onEvent;
+    await onEvent;
 
-    let tabEl = document.querySelectorAll("#details-pane tab")[3];
-    let tabpanel = document.querySelectorAll("#details-pane tabpanel")[3];
+    const tabEl = document.querySelectorAll("#details-pane tab")[3];
+    const tabpanel = document.querySelectorAll("#details-pane tabpanel")[3];
 
     is(tabEl.getAttribute("selected"), "true",
       "The response tab in the network details pane should be selected.");
@@ -229,7 +228,7 @@ add_task(function* () {
       .hasAttribute("hidden"), true,
       "The response content image box should be hidden.");
 
-    let editor = yield NetMonitorView.editor("#response-content-textarea");
+    const editor = await NetMonitorView.editor("#response-content-textarea");
     is(editor.getText(), "Hello world!",
       "The text shown in the source editor is incorrect.");
     is(editor.getMode(), Editor.modes.text,
@@ -240,8 +239,8 @@ add_task(function* () {
     EventUtils.sendMouseEvent({ type: "mousedown" },
       document.querySelectorAll("#details-pane tab")[4]);
 
-    let tabEl = document.querySelectorAll("#details-pane tab")[4];
-    let tabpanel = document.querySelectorAll("#details-pane tabpanel")[4];
+    const tabEl = document.querySelectorAll("#details-pane tab")[4];
+    const tabpanel = document.querySelectorAll("#details-pane tabpanel")[4];
 
     is(tabEl.getAttribute("selected"), "true",
       "The timings tab in the network details pane should be selected.");

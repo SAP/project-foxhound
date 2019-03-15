@@ -9,44 +9,55 @@
 
 #include "mozilla/dom/quota/QuotaCommon.h"
 
+#include "mozilla/dom/LocalStorageCommon.h"
 #include "mozilla/dom/ipc/IdType.h"
 
 #include "PersistenceType.h"
 
+class nsIFile;
 class nsIRunnable;
 
 #define IDB_DIRECTORY_NAME "idb"
 #define ASMJSCACHE_DIRECTORY_NAME "asmjs"
 #define DOMCACHE_DIRECTORY_NAME "cache"
+#define SDB_DIRECTORY_NAME "sdb"
+#define LS_DIRECTORY_NAME "ls"
 
 BEGIN_QUOTA_NAMESPACE
 
+class OriginScope;
 class QuotaManager;
 class UsageInfo;
 
 // An abstract interface for quota manager clients.
 // Each storage API must provide an implementation of this interface in order
 // to participate in centralized quota and storage handling.
-class Client
-{
-public:
+class Client {
+ public:
+  typedef mozilla::Atomic<bool> AtomicBool;
+
   NS_INLINE_DECL_PURE_VIRTUAL_REFCOUNTING
 
   enum Type {
     IDB = 0,
-    //LS,
-    //APPCACHE,
+    // APPCACHE,
     ASMJS,
     DOMCACHE,
+    SDB,
+    LS,
     TYPE_MAX
   };
 
-  virtual Type
-  GetType() = 0;
+  static Type TypeMax() {
+    if (CachedNextGenLocalStorageEnabled()) {
+      return TYPE_MAX;
+    }
+    return LS;
+  }
 
-  static nsresult
-  TypeToText(Type aType, nsAString& aText)
-  {
+  virtual Type GetType() = 0;
+
+  static nsresult TypeToText(Type aType, nsAString& aText) {
     switch (aType) {
       case IDB:
         aText.AssignLiteral(IDB_DIRECTORY_NAME);
@@ -60,84 +71,116 @@ public:
         aText.AssignLiteral(DOMCACHE_DIRECTORY_NAME);
         break;
 
+      case SDB:
+        aText.AssignLiteral(SDB_DIRECTORY_NAME);
+        break;
+
+      case LS:
+        if (CachedNextGenLocalStorageEnabled()) {
+          aText.AssignLiteral(LS_DIRECTORY_NAME);
+          break;
+        }
+        MOZ_FALLTHROUGH;
+
       case TYPE_MAX:
       default:
-        NS_NOTREACHED("Bad id value!");
+        MOZ_ASSERT_UNREACHABLE("Bad id value!");
         return NS_ERROR_UNEXPECTED;
     }
 
     return NS_OK;
   }
 
-  static nsresult
-  TypeFromText(const nsAString& aText, Type& aType)
-  {
+  static nsresult TypeFromText(const nsAString& aText, Type& aType) {
     if (aText.EqualsLiteral(IDB_DIRECTORY_NAME)) {
       aType = IDB;
-    }
-    else if (aText.EqualsLiteral(ASMJSCACHE_DIRECTORY_NAME)) {
+    } else if (aText.EqualsLiteral(ASMJSCACHE_DIRECTORY_NAME)) {
       aType = ASMJS;
-    }
-    else if (aText.EqualsLiteral(DOMCACHE_DIRECTORY_NAME)) {
+    } else if (aText.EqualsLiteral(DOMCACHE_DIRECTORY_NAME)) {
       aType = DOMCACHE;
-    }
-    else {
+    } else if (aText.EqualsLiteral(SDB_DIRECTORY_NAME)) {
+      aType = SDB;
+    } else if (CachedNextGenLocalStorageEnabled() &&
+               aText.EqualsLiteral(LS_DIRECTORY_NAME)) {
+      aType = LS;
+    } else {
       return NS_ERROR_FAILURE;
     }
 
     return NS_OK;
   }
 
-  // Methods which are called on the IO thred.
-  virtual nsresult
-  InitOrigin(PersistenceType aPersistenceType,
-             const nsACString& aGroup,
-             const nsACString& aOrigin,
-             UsageInfo* aUsageInfo) = 0;
+  static nsresult NullableTypeFromText(const nsAString& aText,
+                                       Nullable<Type>* aType) {
+    if (aText.IsVoid()) {
+      *aType = Nullable<Type>();
+      return NS_OK;
+    }
 
-  virtual nsresult
-  GetUsageForOrigin(PersistenceType aPersistenceType,
-                    const nsACString& aGroup,
-                    const nsACString& aOrigin,
-                    UsageInfo* aUsageInfo) = 0;
+    Type type;
+    nsresult rv = TypeFromText(aText, type);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
 
-  virtual void
-  OnOriginClearCompleted(PersistenceType aPersistenceType,
-                         const nsACString& aOrigin) = 0;
+    *aType = Nullable<Type>(type);
+    return NS_OK;
+  }
 
-  virtual void
-  ReleaseIOThreadObjects() = 0;
+  // Methods which are called on the IO thread.
+  virtual nsresult UpgradeStorageFrom1_0To2_0(nsIFile* aDirectory) {
+    return NS_OK;
+  }
 
-  // Methods which are called on the background thred.
-  virtual void
-  AbortOperations(const nsACString& aOrigin) = 0;
+  virtual nsresult UpgradeStorageFrom2_0To2_1(nsIFile* aDirectory) {
+    return NS_OK;
+  }
 
-  virtual void
-  AbortOperationsForProcess(ContentParentId aContentParentId) = 0;
+  virtual nsresult InitOrigin(PersistenceType aPersistenceType,
+                              const nsACString& aGroup,
+                              const nsACString& aOrigin,
+                              const AtomicBool& aCanceled,
+                              UsageInfo* aUsageInfo) = 0;
 
-  virtual void
-  StartIdleMaintenance() = 0;
+  virtual nsresult GetUsageForOrigin(PersistenceType aPersistenceType,
+                                     const nsACString& aGroup,
+                                     const nsACString& aOrigin,
+                                     const AtomicBool& aCanceled,
+                                     UsageInfo* aUsageInfo) = 0;
 
-  virtual void
-  StopIdleMaintenance() = 0;
+  // This method is called when origins are about to be cleared
+  // (except the case when clearing is triggered by the origin eviction).
+  virtual nsresult AboutToClearOrigins(
+      const Nullable<PersistenceType>& aPersistenceType,
+      const OriginScope& aOriginScope) {
+    return NS_OK;
+  }
 
-  virtual void
-  ShutdownWorkThreads() = 0;
+  virtual void OnOriginClearCompleted(PersistenceType aPersistenceType,
+                                      const nsACString& aOrigin) = 0;
+
+  virtual void ReleaseIOThreadObjects() = 0;
+
+  // Methods which are called on the background thread.
+  virtual void AbortOperations(const nsACString& aOrigin) = 0;
+
+  virtual void AbortOperationsForProcess(ContentParentId aContentParentId) = 0;
+
+  virtual void StartIdleMaintenance() = 0;
+
+  virtual void StopIdleMaintenance() = 0;
+
+  virtual void ShutdownWorkThreads() = 0;
 
   // Methods which are called on the main thread.
-  virtual void
-  DidInitialize(QuotaManager* aQuotaManager)
-  { }
+  virtual void DidInitialize(QuotaManager* aQuotaManager) {}
 
-  virtual void
-  WillShutdown()
-  { }
+  virtual void WillShutdown() {}
 
-protected:
-  virtual ~Client()
-  { }
+ protected:
+  virtual ~Client() {}
 };
 
 END_QUOTA_NAMESPACE
 
-#endif // mozilla_dom_quota_client_h__
+#endif  // mozilla_dom_quota_client_h__

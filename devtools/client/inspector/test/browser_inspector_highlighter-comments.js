@@ -5,74 +5,69 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-//
-// Whitelisting this test.
-// As part of bug 1077403, the leaking uncaught rejection should be fixed.
-//
-thisTestLeaksUncaughtRejectionsAndShouldBeFixed("false");
-
 // Test that hovering over the markup-view's containers doesn't always show the
 // highlighter, depending on the type of node hovered over.
 
 const TEST_PAGE = URL_ROOT +
   "doc_inspector_highlighter-comments.html";
 
-add_task(function* () {
-  let {inspector, testActor} = yield openInspectorForURL(TEST_PAGE);
-  let markupView = inspector.markup;
-  yield selectNode("p", inspector);
+add_task(async function() {
+  const {inspector, testActor} = await openInspectorForURL(TEST_PAGE);
+  const markupView = inspector.markup;
+  await selectNode("p", inspector);
 
   info("Hovering over #id1 and waiting for highlighter to appear.");
-  yield hoverElement("#id1");
-  yield assertHighlighterShownOn("#id1");
+  await hoverElement("#id1");
+  await assertHighlighterShownOn("#id1");
 
   info("Hovering over comment node and ensuring highlighter doesn't appear.");
-  yield hoverComment();
-  yield assertHighlighterHidden();
+  await hoverComment();
+  await assertHighlighterHidden();
 
   info("Hovering over #id1 again and waiting for highlighter to appear.");
-  yield hoverElement("#id1");
-  yield assertHighlighterShownOn("#id1");
+  await hoverElement("#id1");
+  await assertHighlighterShownOn("#id1");
 
   info("Hovering over #id2 and waiting for highlighter to appear.");
-  yield hoverElement("#id2");
-  yield assertHighlighterShownOn("#id2");
+  await hoverElement("#id2");
+  await assertHighlighterShownOn("#id2");
 
   info("Hovering over <script> and ensuring highlighter doesn't appear.");
-  yield hoverElement("script");
-  yield assertHighlighterHidden();
+  await hoverElement("script");
+  await assertHighlighterHidden();
 
   info("Hovering over #id3 and waiting for highlighter to appear.");
-  yield hoverElement("#id3");
-  yield assertHighlighterShownOn("#id3");
+  await hoverElement("#id3");
+  await assertHighlighterShownOn("#id3");
 
   info("Hovering over hidden #id4 and ensuring highlighter doesn't appear.");
-  yield hoverElement("#id4");
-  yield assertHighlighterHidden();
+  await hoverElement("#id4");
+  await assertHighlighterHidden();
 
   info("Hovering over a text node and waiting for highlighter to appear.");
-  yield hoverTextNode("Visible text node");
-  yield assertHighlighterShownOnTextNode("body", 14);
+  await hoverTextNode("Visible text node");
+  await assertHighlighterShownOnTextNode("body", 14);
 
   function hoverContainer(container) {
-    let promise = inspector.toolbox.once("node-highlight");
+    const promise = inspector.highlighter.once("node-highlight");
 
+    container.tagLine.scrollIntoView();
     EventUtils.synthesizeMouse(container.tagLine, 2, 2, {type: "mousemove"},
         markupView.doc.defaultView);
 
     return promise;
   }
 
-  function* hoverElement(selector) {
+  async function hoverElement(selector) {
     info(`Hovering node ${selector} in the markup view`);
-    let container = yield getContainerForSelector(selector, inspector);
+    const container = await getContainerForSelector(selector, inspector);
     return hoverContainer(container);
   }
 
   function hoverComment() {
     info("Hovering the comment node in the markup view");
-    for (let [node, container] of markupView._containers) {
-      if (node.nodeType === Ci.nsIDOMNode.COMMENT_NODE) {
+    for (const [node, container] of markupView._containers) {
+      if (node.nodeType === Node.COMMENT_NODE) {
         return hoverContainer(container);
       }
     }
@@ -81,25 +76,25 @@ add_task(function* () {
 
   function hoverTextNode(text) {
     info(`Hovering the text node "${text}" in the markup view`);
-    let container = [...markupView._containers].filter(([nodeFront]) => {
-      return nodeFront.nodeType === Ci.nsIDOMNode.TEXT_NODE &&
+    const container = [...markupView._containers].filter(([nodeFront]) => {
+      return nodeFront.nodeType === Node.TEXT_NODE &&
              nodeFront._form.nodeValue.trim() === text.trim();
     })[0][1];
     return hoverContainer(container);
   }
 
-  function* assertHighlighterShownOn(selector) {
-    ok((yield testActor.assertHighlightedNode(selector)),
+  async function assertHighlighterShownOn(selector) {
+    ok((await testActor.assertHighlightedNode(selector)),
        "Highlighter is shown on the right node: " + selector);
   }
 
-  function* assertHighlighterShownOnTextNode(parentSelector, childNodeIndex) {
-    ok((yield testActor.assertHighlightedTextNode(parentSelector, childNodeIndex)),
+  async function assertHighlighterShownOnTextNode(parentSelector, childNodeIndex) {
+    ok((await testActor.assertHighlightedTextNode(parentSelector, childNodeIndex)),
        "Highlighter is shown on the right text node");
   }
 
-  function* assertHighlighterHidden() {
-    let isVisible = yield testActor.isHighlighting();
+  async function assertHighlighterHidden() {
+    const isVisible = await testActor.isHighlighting();
     ok(!isVisible, "Highlighter is hidden");
   }
 });

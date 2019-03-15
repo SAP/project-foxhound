@@ -10,7 +10,7 @@
  * This is a private interface used by the internals of the networking library.
  * It will never be frozen.  Do not use it in external code.
  */
-[scriptable, uuid(18f73bf1-b35b-4b7b-aa9a-11bcbdbc389c)]
+[builtinclass, scriptable, uuid(18f73bf1-b35b-4b7b-aa9a-11bcbdbc389c)]
 
 interface nsPISocketTransportService : nsIRoutedSocketTransportService
 {
@@ -49,13 +49,12 @@ interface nsPISocketTransportService : nsIRoutedSocketTransportService
 
 %{C++
 /*
- * Network activity indicator: we send out these topics no more than every
- * blipIntervalMilliseconds (as set by the
- * "network.activity.blipIntervalMilliseconds" preference: if 0 no notifications
- * are sent) if the network is currently active (i.e. we're sending/receiving
- * data to/from the socket).
+ * I/O activity observer topic. Sends out information about the
+ * amount of data we're sending/receiving via sockets and disk files.
+ *
+ * Activated via the "io.activity.enabled" preference.
  */
-#define NS_NETWORK_ACTIVITY_BLIP_UPLOAD_TOPIC   "network-activity-blip-upload"
-#define NS_NETWORK_ACTIVITY_BLIP_DOWNLOAD_TOPIC "network-activity-blip-download"
+#define NS_IO_ACTIVITY "io-activity"
+
 
 %}

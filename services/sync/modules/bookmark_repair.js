@@ -4,22 +4,23 @@
 
 "use strict";
 
-const Cu = Components.utils;
+var EXPORTED_SYMBOLS = ["BookmarkRepairRequestor", "BookmarkRepairResponder"];
 
-this.EXPORTED_SYMBOLS = ["BookmarkRepairRequestor", "BookmarkRepairResponder"];
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Preferences.jsm");
+ChromeUtils.import("resource://gre/modules/Log.jsm");
+ChromeUtils.import("resource://services-sync/util.js");
+ChromeUtils.import("resource://services-sync/collection_repair.js");
+ChromeUtils.import("resource://services-sync/constants.js");
+ChromeUtils.import("resource://services-sync/resource.js");
+ChromeUtils.import("resource://services-sync/doctor.js");
+ChromeUtils.import("resource://services-sync/telemetry.js");
+ChromeUtils.import("resource://services-common/async.js");
+ChromeUtils.import("resource://services-common/utils.js");
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Preferences.jsm");
-Cu.import("resource://gre/modules/Log.jsm");
-Cu.import("resource://gre/modules/PlacesUtils.jsm");
-Cu.import("resource://gre/modules/PlacesSyncUtils.jsm");
-Cu.import("resource://services-sync/util.js");
-Cu.import("resource://services-sync/collection_repair.js");
-Cu.import("resource://services-sync/constants.js");
-Cu.import("resource://services-sync/resource.js");
-Cu.import("resource://services-sync/doctor.js");
-Cu.import("resource://services-sync/telemetry.js");
-Cu.import("resource://services-common/utils.js");
+ChromeUtils.defineModuleGetter(this, "PlacesSyncUtils",
+                               "resource://gre/modules/PlacesSyncUtils.jsm");
 
 const log = Log.repository.getLogger("Sync.Engine.Bookmarks.Repair");
 
@@ -108,7 +109,10 @@ class BookmarkRepairRequestor extends CollectionRepairRequestor {
     // that tests have a slightly easier time, hence the `|| []` in each loop.
 
     // Missing children records when the parent exists but a child doesn't.
-    for (let { child } of validationInfo.problems.missingChildren || []) {
+    for (let { parent, child } of validationInfo.problems.missingChildren || []) {
+      // We can't be sure if the child is missing or our copy of the parent is
+      // wrong, so request both
+      ids.add(parent);
       ids.add(child);
     }
     if (ids.size > MAX_REQUESTED_IDS) {
@@ -127,18 +131,22 @@ class BookmarkRepairRequestor extends CollectionRepairRequestor {
       return ids; // might as well give up here - we aren't going to repair.
     }
 
-    // Entries where we have the parent but know for certain that the child was
-    // deleted.
-    for (let { parent } of validationInfo.problems.deletedChildren || []) {
+    // Entries where we have the parent but we have a record from the server that
+    // claims the child was deleted.
+    for (let { parent, child } of validationInfo.problems.deletedChildren || []) {
+      // Request both, since we don't know if it's a botched deletion or revival
       ids.add(parent);
+      ids.add(child);
     }
     if (ids.size > MAX_REQUESTED_IDS) {
       return ids; // might as well give up here - we aren't going to repair.
     }
 
     // Entries where the child references a parent that we don't have, but we
-    // know why: the parent was deleted.
-    for (let { child } of validationInfo.problems.deletedParents || []) {
+    // have a record from the server that claims the parent was deleted.
+    for (let { parent, child } of validationInfo.problems.deletedParents || []) {
+      // Request both, since we don't know if it's a botched deletion or revival
+      ids.add(parent);
       ids.add(child);
     }
     if (ids.size > MAX_REQUESTED_IDS) {
@@ -166,15 +174,37 @@ class BookmarkRepairRequestor extends CollectionRepairRequestor {
       ids.add(child);
     }
 
-    // XXX - any others we should consider?
     return ids;
+  }
+
+  _countServerOnlyFixableProblems(validationInfo) {
+    const fixableProblems = ["clientMissing", "serverMissing", "serverDeleted"];
+    return fixableProblems.reduce((numProblems, problemLabel) => {
+      return numProblems + validationInfo.problems[problemLabel].length;
+    }, 0);
+  }
+
+  tryServerOnlyRepairs(validationInfo) {
+    if (this._countServerOnlyFixableProblems(validationInfo) == 0) {
+      return false;
+    }
+    let engine = this.service.engineManager.get("bookmarks");
+    for (let id of validationInfo.problems.serverMissing) {
+      engine.addForWeakUpload(id);
+    }
+    engine.toFetch = Utils.setAddAll(
+      Utils.setAddAll(engine.toFetch,
+                      validationInfo.problems.clientMissing),
+      validationInfo.problems.serverDeleted
+    );
+    return true;
   }
 
   /* See if the repairer is willing and able to begin a repair process given
      the specified validation information.
      Returns true if a repair was started and false otherwise.
   */
-  startRepairs(validationInfo, flowID) {
+  async startRepairs(validationInfo, flowID) {
     if (this._currentState != STATE.NOT_REPAIRING) {
       log.info(`Can't start a repair - repair with ID ${this._flowID} is already in progress`);
       return false;
@@ -184,7 +214,7 @@ class BookmarkRepairRequestor extends CollectionRepairRequestor {
     if (ids.size > MAX_REQUESTED_IDS) {
       log.info("Not starting a repair as there are over " + MAX_REQUESTED_IDS + " problems");
       let extra = { flowID, reason: `too many problems: ${ids.size}` };
-      this.service.recordTelemetryEvent("repair", "aborted", undefined, extra)
+      this.service.recordTelemetryEvent("repair", "aborted", undefined, extra);
       return false;
     }
 
@@ -196,7 +226,7 @@ class BookmarkRepairRequestor extends CollectionRepairRequestor {
     if (this.anyClientsRepairing()) {
       log.info("Can't start repair, since other clients are already repairing bookmarks");
       let extra = { flowID, reason: "other clients repairing" };
-      this.service.recordTelemetryEvent("repair", "aborted", undefined, extra)
+      this.service.recordTelemetryEvent("repair", "aborted", undefined, extra);
       return false;
     }
 
@@ -214,7 +244,7 @@ class BookmarkRepairRequestor extends CollectionRepairRequestor {
      Returns true if we could continue the repair - even if the state didn't
      actually move. Returns false if we aren't actually repairing.
   */
-  continueRepairs(response = null) {
+  async continueRepairs(response = null) {
     // Note that "ABORTED" and "FINISHED" should never be current when this
     // function returns - this function resets to NOT_REPAIRING in those cases.
     if (this._currentState == STATE.NOT_REPAIRING) {
@@ -229,7 +259,7 @@ class BookmarkRepairRequestor extends CollectionRepairRequestor {
       state = this._currentState;
       log.info("continueRepairs starting with state", state);
       try {
-        newState = this._continueRepairs(state, response);
+        newState = await this._continueRepairs(state, response);
         log.info("continueRepairs has next state", newState);
       } catch (ex) {
         if (!(ex instanceof AbortRepairError)) {
@@ -270,7 +300,7 @@ class BookmarkRepairRequestor extends CollectionRepairRequestor {
     return true;
   }
 
-  _continueRepairs(state, response = null) {
+  async _continueRepairs(state, response = null) {
     if (this.anyClientsRepairing(this._flowID)) {
       throw new AbortRepairError("other clients repairing");
     }
@@ -298,11 +328,11 @@ class BookmarkRepairRequestor extends CollectionRepairRequestor {
           let extra = {
             deviceID: this.service.identity.hashedDeviceID(clientID),
             flowID,
-          }
+          };
           this.service.recordTelemetryEvent("repair", "abandon", "missing", extra);
           break;
         }
-        if (this._isCommandPending(clientID, flowID)) {
+        if ((await this._isCommandPending(clientID, flowID))) {
           // So the command we previously sent is still queued for the client
           // (ie, that client is yet to have synced). Let's see if we should
           // give up on that client.
@@ -315,7 +345,7 @@ class BookmarkRepairRequestor extends CollectionRepairRequestor {
             let extra = {
               deviceID: this.service.identity.hashedDeviceID(clientID),
               flowID,
-            }
+            };
             this.service.recordTelemetryEvent("repair", "abandon", "silent", extra);
             break;
           }
@@ -332,7 +362,7 @@ class BookmarkRepairRequestor extends CollectionRepairRequestor {
         if (state == STATE.SENT_REQUEST) {
           log.info(`previous request to client ${clientID} was removed - trying a second time`);
           state = STATE.SENT_SECOND_REQUEST;
-          this._writeRequest(clientID);
+          await this._writeRequest(clientID);
         } else {
           // this was the second time around, so give up on this client
           log.info(`previous 2 requests to client ${clientID} were removed - need a new client`);
@@ -349,7 +379,7 @@ class BookmarkRepairRequestor extends CollectionRepairRequestor {
         }
         this._addToPreviousRemoteClients(this._currentRemoteClient);
         this._currentRemoteClient = newClientID;
-        this._writeRequest(newClientID);
+        await this._writeRequest(newClientID);
         state = STATE.SENT_REQUEST;
         break;
 
@@ -359,7 +389,7 @@ class BookmarkRepairRequestor extends CollectionRepairRequestor {
       case STATE.FINISHED:
         break;
 
-      case NOT_REPAIRING:
+      case STATE.NOT_REPAIRING:
         // No repair is in progress. This is a common case, so only log trace.
         log.trace("continue repairs called but no repair in progress.");
         break;
@@ -403,14 +433,14 @@ class BookmarkRepairRequestor extends CollectionRepairRequestor {
       deviceID: this.service.identity.hashedDeviceID(clientID),
       flowID,
       numIDs: response.ids.length.toString(),
-    }
+    };
     this.service.recordTelemetryEvent("repair", "response", "upload", extra);
     return state;
   }
 
   /* Issue a repair request to a specific client.
   */
-  _writeRequest(clientID) {
+  async _writeRequest(clientID) {
     log.trace("writing repair request to client", clientID);
     let ids = this._currentIDs;
     if (!ids) {
@@ -424,15 +454,15 @@ class BookmarkRepairRequestor extends CollectionRepairRequestor {
       requestor: this.service.clientsEngine.localID,
       ids,
       flowID,
-    }
-    this.service.clientsEngine.sendCommand("repairRequest", [request], clientID, { flowID });
+    };
+    await this.service.clientsEngine.sendCommand("repairRequest", [request], clientID, { flowID });
     this.prefs.set(PREF.REPAIR_WHEN, Math.floor(this._now()));
     // record telemetry about this
     let extra = {
       deviceID: this.service.identity.hashedDeviceID(clientID),
       flowID,
       numIDs: ids.length.toString(),
-    }
+    };
     this.service.recordTelemetryEvent("repair", "request", "upload", extra);
   }
 
@@ -444,7 +474,7 @@ class BookmarkRepairRequestor extends CollectionRepairRequestor {
     remoteClients.sort((a, b) => b.serverLastModified - a.serverLastModified);
     for (let client of remoteClients) {
       log.trace("findNextClient considering", client);
-      if (alreadyDone.indexOf(client.id) == -1 && this._isSuitableClient(client)) {
+      if (!alreadyDone.includes(client.id) && this._isSuitableClient(client)) {
         return client.id;
       }
     }
@@ -462,11 +492,12 @@ class BookmarkRepairRequestor extends CollectionRepairRequestor {
 
   /* Is our command still in the "commands" queue for the specific client?
   */
-  _isCommandPending(clientID, flowID) {
+  async _isCommandPending(clientID, flowID) {
     // getClientCommands() is poorly named - it's only outgoing commands
     // from us we have yet to write. For our purposes, we want to check
     // them and commands previously written (which is in .commands)
-    let commands = [...this.service.clientsEngine.getClientCommands(clientID),
+    let clientCommands = await this.service.clientsEngine.getClientCommands(clientID);
+    let commands = [...clientCommands,
                     ...this.service.clientsEngine.remoteClient(clientID).commands || []];
     for (let command of commands) {
       if (command.command != "repairRequest" || command.args.length != 1) {
@@ -526,7 +557,7 @@ class BookmarkRepairRequestor extends CollectionRepairRequestor {
   */
   _now() {
     // We use the server time, which is SECONDS
-    return AsyncResource.serverTime;
+    return Resource.serverTime;
   }
 }
 
@@ -535,8 +566,8 @@ class BookmarkRepairRequestor extends CollectionRepairRequestor {
 class BookmarkRepairResponder extends CollectionRepairResponder {
   async repair(request, rawCommand) {
     if (request.request != "upload") {
-      this._abortRepair(request, rawCommand,
-                        `Don't understand request type '${request.request}'`);
+      await this._abortRepair(request, rawCommand,
+                              `Don't understand request type '${request.request}'`);
       return;
     }
 
@@ -549,8 +580,9 @@ class BookmarkRepairResponder extends CollectionRepairResponder {
     this._currentState = {
       request,
       rawCommand,
+      processedCommand: false,
       ids: [],
-    }
+    };
 
     try {
       let engine = this.service.engineManager.get("bookmarks");
@@ -562,11 +594,11 @@ class BookmarkRepairResponder extends CollectionRepairResponder {
         // persist in the case of a restart, but that's OK - we'll then end up here
         // again) and also record them in the response we send back.
         for (let id of toUpload) {
-          engine._modified.setWeak(id, { tombstone: false });
+          engine.addForWeakUpload(id);
           this._currentState.ids.push(id);
         }
         for (let id of toDelete) {
-          engine._modified.setWeak(id, { tombstone: true });
+          engine.addForWeakUpload(id, { forceTombstone: true });
           this._currentState.ids.push(id);
         }
 
@@ -581,7 +613,7 @@ class BookmarkRepairResponder extends CollectionRepairResponder {
         this.service.recordTelemetryEvent("repairResponse", "uploading", undefined, eventExtra);
       } else {
         // We were unable to help with the repair, so report that we are done.
-        this._finishRepair();
+        await this._finishRepair();
       }
     } catch (ex) {
       if (Async.isShutdownException(ex)) {
@@ -592,7 +624,7 @@ class BookmarkRepairResponder extends CollectionRepairResponder {
       // on, but we record the failure reason in telemetry.
       log.error("Failed to respond to the repair request", ex);
       this._currentState.failureReason = SyncTelemetry.transformError(ex);
-      this._finishRepair();
+      await this._finishRepair();
     }
   }
 
@@ -605,8 +637,8 @@ class BookmarkRepairResponder extends CollectionRepairResponder {
     let engine = this.service.engineManager.get("bookmarks");
     // Determine every item that may be impacted by the requested IDs - eg,
     // this may include children if a requested ID is a folder.
-    // Turn an array of { syncId, syncable } into a map of syncId -> syncable.
-    let repairable = await PlacesSyncUtils.bookmarks.fetchSyncIdsForRepair(request.ids);
+    // Turn an array of { recordId, syncable } into a map of recordId -> syncable.
+    let repairable = await PlacesSyncUtils.bookmarks.fetchRecordIdsForRepair(request.ids);
     if (repairable.length == 0) {
       // server will get upset if we request an empty set, and we can't do
       // anything in that case, so bail now.
@@ -615,9 +647,9 @@ class BookmarkRepairResponder extends CollectionRepairResponder {
 
     // which of these items exist on the server?
     let itemSource = engine.itemSource();
-    itemSource.ids = repairable.map(item => item.syncId);
+    itemSource.ids = repairable.map(item => item.recordId);
     log.trace(`checking the server for items`, itemSource.ids);
-    let itemsResponse = itemSource.get();
+    let itemsResponse = await itemSource.get();
     // If the response failed, don't bother trying to parse the output.
     // Throwing here means we abort the repair, which isn't ideal for transient
     // errors (eg, no network, 500 service outage etc), but we don't currently
@@ -627,7 +659,7 @@ class BookmarkRepairResponder extends CollectionRepairResponder {
     if (!itemsResponse.success) {
       throw new Error(`request for server IDs failed: ${itemsResponse.status}`);
     }
-    let existRemotely = new Set(JSON.parse(itemsResponse));
+    let existRemotely = new Set(itemsResponse.obj);
     // We need to be careful about handing the requested items:
     // * If the item exists locally but isn't in the tree of items we sync
     //   (eg, it might be a left-pane item or similar, we write a tombstone.
@@ -635,7 +667,7 @@ class BookmarkRepairResponder extends CollectionRepairResponder {
     //   children which don't exist on the server. (Note that we assume the
     //   parents *do* exist)
     // Bug 1343101 covers additional issues we might repair in the future.
-    for (let { syncId: id, syncable } of repairable) {
+    for (let { recordId: id, syncable } of repairable) {
       if (requested.has(id)) {
         if (syncable) {
           log.debug(`repair request to upload item '${id}' which exists locally; uploading`);
@@ -645,18 +677,16 @@ class BookmarkRepairResponder extends CollectionRepairResponder {
           log.debug(`repair request to upload item '${id}' but it isn't under a syncable root; writing a tombstone`);
           toDelete.add(id);
         }
+      // The item wasn't explicitly requested - only upload if it is syncable
+      // and doesn't exist on the server.
+      } else if (syncable && !existRemotely.has(id)) {
+        log.debug(`repair request found related item '${id}' which isn't on the server; uploading`);
+        toUpload.add(id);
+      } else if (!syncable && existRemotely.has(id)) {
+        log.debug(`repair request found non-syncable related item '${id}' on the server; writing a tombstone`);
+        toDelete.add(id);
       } else {
-        // The item wasn't explicitly requested - only upload if it is syncable
-        // and doesn't exist on the server.
-        if (syncable && !existRemotely.has(id)) {
-          log.debug(`repair request found related item '${id}' which isn't on the server; uploading`);
-          toUpload.add(id);
-        } else if (!syncable && existRemotely.has(id)) {
-          log.debug(`repair request found non-syncable related item '${id}' on the server; writing a tombstone`);
-          toDelete.add(id);
-        } else {
-          log.debug(`repair request found related item '${id}' which we will not upload; ignoring`);
-        }
+        log.debug(`repair request found related item '${id}' which we will not upload; ignoring`);
       }
     }
     return { toUpload, toDelete };
@@ -667,11 +697,14 @@ class BookmarkRepairResponder extends CollectionRepairResponder {
       return;
     }
     Svc.Obs.remove("weave:engine:sync:uploaded", this.onUploaded, this);
-    log.debug(`bookmarks engine has uploaded stuff - creating a repair response`);
-    this._finishRepair();
+    if (subject.failed) {
+      return;
+    }
+    log.debug(`bookmarks engine has uploaded stuff - creating a repair response`, subject);
+    this.service.clientsEngine._tracker.asyncObserver.enqueueCall(() => this._finishRepair());
   }
 
-  _finishRepair() {
+  async _finishRepair() {
     let clientsEngine = this.service.clientsEngine;
     let flowID = this._currentState.request.flowID;
     let response = {
@@ -680,19 +713,19 @@ class BookmarkRepairResponder extends CollectionRepairResponder {
       clientID: clientsEngine.localID,
       flowID,
       ids: this._currentState.ids,
-    }
+    };
     let clientID = this._currentState.request.requestor;
-    clientsEngine.sendCommand("repairResponse", [response], clientID, { flowID });
+    await clientsEngine.sendCommand("repairResponse", [response], clientID, { flowID });
     // and nuke the request from our client.
-    clientsEngine.removeLocalCommand(this._currentState.rawCommand);
+    await clientsEngine.removeLocalCommand(this._currentState.rawCommand);
     let eventExtra = {
       flowID,
       numIDs: response.ids.length.toString(),
-    }
+    };
     if (this._currentState.failureReason) {
       // *sob* - recording this in "extra" means the value must be a string of
       // max 85 chars.
-      eventExtra.failureReason = JSON.stringify(this._currentState.failureReason).substring(0, 85)
+      eventExtra.failureReason = JSON.stringify(this._currentState.failureReason).substring(0, 85);
       this.service.recordTelemetryEvent("repairResponse", "failed", undefined, eventExtra);
     } else {
       this.service.recordTelemetryEvent("repairResponse", "finished", undefined, eventExtra);
@@ -700,9 +733,9 @@ class BookmarkRepairResponder extends CollectionRepairResponder {
     this._currentState = null;
   }
 
-  _abortRepair(request, rawCommand, why) {
+  async _abortRepair(request, rawCommand, why) {
     log.warn(`aborting repair request: ${why}`);
-    this.service.clientsEngine.removeLocalCommand(rawCommand);
+    await this.service.clientsEngine.removeLocalCommand(rawCommand);
     // record telemetry for this.
     let eventExtra = {
       flowID: request.flowID,

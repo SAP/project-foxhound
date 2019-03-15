@@ -29,19 +29,13 @@ NS_INTERFACE_MAP_BEGIN(nsStructuredCloneContainer)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
-nsStructuredCloneContainer::nsStructuredCloneContainer()
-  : mVersion(0)
-{
-}
+nsStructuredCloneContainer::nsStructuredCloneContainer() : mVersion(0) {}
 
-nsStructuredCloneContainer::~nsStructuredCloneContainer()
-{
-}
+nsStructuredCloneContainer::~nsStructuredCloneContainer() {}
 
 NS_IMETHODIMP
 nsStructuredCloneContainer::InitFromJSVal(JS::Handle<JS::Value> aData,
-                                          JSContext* aCx)
-{
+                                          JSContext* aCx) {
   if (DataLength()) {
     return NS_ERROR_FAILURE;
   }
@@ -57,9 +51,8 @@ nsStructuredCloneContainer::InitFromJSVal(JS::Handle<JS::Value> aData,
 }
 
 NS_IMETHODIMP
-nsStructuredCloneContainer::InitFromBase64(const nsAString &aData,
-                                           uint32_t aFormatVersion)
-{
+nsStructuredCloneContainer::InitFromBase64(const nsAString& aData,
+                                           uint32_t aFormatVersion) {
   if (DataLength()) {
     return NS_ERROR_FAILURE;
   }
@@ -78,10 +71,8 @@ nsStructuredCloneContainer::InitFromBase64(const nsAString &aData,
   return NS_OK;
 }
 
-nsresult
-nsStructuredCloneContainer::DeserializeToJsval(JSContext* aCx,
-                                               JS::MutableHandle<JS::Value> aValue)
-{
+nsresult nsStructuredCloneContainer::DeserializeToJsval(
+    JSContext* aCx, JS::MutableHandle<JS::Value> aValue) {
   aValue.setNull();
   JS::Rooted<JS::Value> jsStateObj(aCx);
 
@@ -97,8 +88,7 @@ nsStructuredCloneContainer::DeserializeToJsval(JSContext* aCx,
 
 NS_IMETHODIMP
 nsStructuredCloneContainer::DeserializeToVariant(JSContext* aCx,
-                                                 nsIVariant** aData)
-{
+                                                 nsIVariant** aData) {
   NS_ENSURE_ARG_POINTER(aData);
   *aData = nullptr;
 
@@ -115,7 +105,7 @@ nsStructuredCloneContainer::DeserializeToVariant(JSContext* aCx,
 
   // Now wrap the JS::Value as an nsIVariant.
   nsCOMPtr<nsIVariant> varStateObj;
-  nsCOMPtr<nsIXPConnect> xpconnect = do_GetService(nsIXPConnect::GetCID());
+  nsCOMPtr<nsIXPConnect> xpconnect = nsIXPConnect::XPConnect();
   NS_ENSURE_STATE(xpconnect);
   xpconnect->JSValToVariant(aCx, jsStateObj, getter_AddRefs(varStateObj));
   NS_ENSURE_STATE(varStateObj);
@@ -125,8 +115,7 @@ nsStructuredCloneContainer::DeserializeToVariant(JSContext* aCx,
 }
 
 NS_IMETHODIMP
-nsStructuredCloneContainer::GetDataAsBase64(nsAString &aOut)
-{
+nsStructuredCloneContainer::GetDataAsBase64(nsAString& aOut) {
   aOut.Truncate();
 
   if (!DataLength()) {
@@ -137,7 +126,7 @@ nsStructuredCloneContainer::GetDataAsBase64(nsAString &aOut)
     return NS_ERROR_FAILURE;
   }
 
-  auto iter = Data().Iter();
+  auto iter = Data().Start();
   size_t size = Data().Size();
   nsAutoCString binaryData;
   binaryData.SetLength(size);
@@ -148,13 +137,15 @@ nsStructuredCloneContainer::GetDataAsBase64(nsAString &aOut)
     return rv;
   }
 
-  CopyASCIItoUTF16(base64Data, aOut);
+  if (!CopyASCIItoUTF16(base64Data, aOut, fallible)) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsStructuredCloneContainer::GetSerializedNBytes(uint64_t* aSize)
-{
+nsStructuredCloneContainer::GetSerializedNBytes(uint64_t* aSize) {
   NS_ENSURE_ARG_POINTER(aSize);
 
   if (!DataLength()) {
@@ -166,8 +157,7 @@ nsStructuredCloneContainer::GetSerializedNBytes(uint64_t* aSize)
 }
 
 NS_IMETHODIMP
-nsStructuredCloneContainer::GetFormatVersion(uint32_t* aFormatVersion)
-{
+nsStructuredCloneContainer::GetFormatVersion(uint32_t* aFormatVersion) {
   NS_ENSURE_ARG_POINTER(aFormatVersion);
 
   if (!DataLength()) {

@@ -8,13 +8,14 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_COMMON_AUDIO_VAD_INCLUDE_VAD_H_
-#define WEBRTC_COMMON_AUDIO_VAD_INCLUDE_VAD_H_
+#ifndef COMMON_AUDIO_VAD_INCLUDE_VAD_H_
+#define COMMON_AUDIO_VAD_INCLUDE_VAD_H_
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/common_audio/vad/include/webrtc_vad.h"
-#include "webrtc/typedefs.h"
+#include <memory>
+
+#include "common_audio/vad/include/webrtc_vad.h"
+#include "rtc_base/checks.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -43,8 +44,8 @@ class Vad {
 };
 
 // Returns a Vad instance that's implemented on top of WebRtcVad.
-rtc::scoped_ptr<Vad> CreateVad(Vad::Aggressiveness aggressiveness);
+std::unique_ptr<Vad> CreateVad(Vad::Aggressiveness aggressiveness);
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_COMMON_AUDIO_VAD_INCLUDE_VAD_H_
+#endif  // COMMON_AUDIO_VAD_INCLUDE_VAD_H_

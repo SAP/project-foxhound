@@ -20,52 +20,111 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=429547
           src="../events.js"></script>
 
   <script type="application/javascript">
-    //gA11yEventDumpToConsole = true; // debugging
+    // gA11yEventDumpToConsole = true; // debugging
 
-    function changeARIAActiveDescendant(aID, aItemID)
-    {
+    function changeARIAActiveDescendant(aID, aItemID) {
       this.eventSeq = [
-        new focusChecker(aItemID)
+        new focusChecker(aItemID),
       ];
 
-      this.invoke = function changeARIAActiveDescendant_invoke()
-      {
+      this.invoke = function changeARIAActiveDescendant_invoke() {
         getNode(aID).setAttribute("aria-activedescendant", aItemID);
-      }
+      };
 
-      this.getID = function changeARIAActiveDescendant_getID()
-      {
+      this.getID = function changeARIAActiveDescendant_getID() {
         return "change aria-activedescendant on " + aItemID;
-      }
+      };
     }
 
-    function insertItemNFocus(aID, aNewItemID)
-    {
+    function clearARIAActiveDescendant(aID) {
       this.eventSeq = [
-        new invokerChecker(EVENT_SHOW, aNewItemID),
-        new focusChecker(aNewItemID)
+        new focusChecker(aID),
       ];
 
-      this.invoke = function insertItemNFocus_invoke()
-      {
+      this.invoke = function clearARIAActiveDescendant_invoke() {
+        getNode(aID).removeAttribute("aria-activedescendant");
+      };
+
+      this.getID = function clearARIAActiveDescendant_getID() {
+        return "clear aria-activedescendant on container " + aID;
+      };
+    }
+
+    /**
+     * Change aria-activedescendant to an invalid (non-existent) id.
+     * Ensure that focus is fired on the element itself.
+     */
+    function changeARIAActiveDescendantInvalid(aID, aInvalidID) {
+      if (!aInvalidID) {
+        aInvalidID = "invalid";
+      }
+
+      this.eventSeq = [
+        new focusChecker(aID),
+      ];
+
+      this.invoke = function changeARIAActiveDescendant_invoke() {
+        getNode(aID).setAttribute("aria-activedescendant", aInvalidID);
+      };
+
+      this.getID = function changeARIAActiveDescendant_getID() {
+        return "change aria-activedescendant to invalid id";
+      };
+    }
+    
+    function insertItemNFocus(aID, aNewItemID) {
+      this.eventSeq = [
+        new invokerChecker(EVENT_SHOW, aNewItemID),
+        new focusChecker(aNewItemID),
+      ];
+
+      this.invoke = function insertItemNFocus_invoke() {
         var container  = getNode(aID);
+
         var itemNode = document.createElement("div");
         itemNode.setAttribute("id", aNewItemID);
+        itemNode.setAttribute("role", "listitem");
         itemNode.textContent = aNewItemID;
         container.appendChild(itemNode);
 
         container.setAttribute("aria-activedescendant", aNewItemID);
-      }
+      };
 
-      this.getID = function insertItemNFocus_getID()
-      {
+      this.getID = function insertItemNFocus_getID() {
         return "insert new node and focus it with ID: " + aNewItemID;
-      }
+      };
+    }
+
+    /**
+     * Change the id of an element to another id which is the target of
+     * aria-activedescendant.
+     * If another element already has the desired id, remove it from that
+     * element first.
+     * Ensure that focus is fired on the target element which was given the
+     * desired id.
+     * @param aFromID The existing id of the target element.
+     * @param aToID The desired id to be given to the target element.
+    */
+    function moveARIAActiveDescendantID(aFromID, aToID) {
+      this.eventSeq = [
+        new focusChecker(aToID),
+      ];
+
+      this.invoke = function moveARIAActiveDescendantID_invoke() {
+        let orig = document.getElementById(aToID);
+        if (orig) {
+          orig.id = "";
+        }
+        document.getElementById(aFromID).id = aToID;
+      };
+
+      this.getID = function moveARIAActiveDescendantID_getID() {
+        return "move aria-activedescendant id " + aToID;
+      };
     }
 
     var gQueue = null;
-    function doTest()
-    {
+    function doTest() {
       gQueue = new eventQueue();
 
       gQueue.push(new synthFocus("listbox", new focusChecker("item1")));
@@ -75,8 +134,17 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=429547
       gQueue.push(new synthFocus("combobox_entry", new focusChecker("combobox_entry")));
       gQueue.push(new changeARIAActiveDescendant("combobox", "combobox_option2"));
 
-      todo(false, "No focus for inserted element, bug 687011");
-      //gQueue.push(new insertItemNFocus("listbox", "item4"));
+      gQueue.push(new synthFocus("listbox", new focusChecker("item3")));
+      gQueue.push(new insertItemNFocus("listbox", "item4"));
+
+      gQueue.push(new clearARIAActiveDescendant("listbox"));
+      gQueue.push(new changeARIAActiveDescendant("listbox", "item1"));
+      gQueue.push(new changeARIAActiveDescendantInvalid("listbox", "invalid"));
+
+      gQueue.push(new changeARIAActiveDescendant("listbox", "roaming"));
+      gQueue.push(new moveARIAActiveDescendantID("roaming2", "roaming"));
+      gQueue.push(new changeARIAActiveDescendantInvalid("listbox", "roaming3"));
+      gQueue.push(new moveARIAActiveDescendantID("roaming", "roaming3"));
 
       gQueue.invoke(); // Will call SimpleTest.finish();
     }
@@ -106,6 +174,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=429547
        aria-owns="item3">
     <div role="listitem" id="item1">item1</div>
     <div role="listitem" id="item2">item2</div>
+    <div role="listitem" id="roaming">roaming</div>
+    <div role="listitem" id="roaming2">roaming2</div>
   </div>
   <div role="listitem" id="item3">item3</div>
 

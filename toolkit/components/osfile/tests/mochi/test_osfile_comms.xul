@@ -18,10 +18,12 @@
 
 let worker;
 
+SpecialPowers.pushPrefEnv({"set": [["security.allow_eval_with_system_principal",
+																		true]]});
 let test = function test() {
   SimpleTest.info("test_osfile_comms.xul: Starting test");
-  Components.utils.import("resource://gre/modules/ctypes.jsm");
-  Components.utils.import("resource://gre/modules/osfile.jsm");
+  ChromeUtils.import("resource://gre/modules/ctypes.jsm");
+  ChromeUtils.import("resource://gre/modules/osfile.jsm");
   worker = new ChromeWorker("worker_test_osfile_comms.js");
   SimpleTest.waitForExplicitFinish();
   try {
@@ -29,7 +31,7 @@ let test = function test() {
       SimpleTest.ok(false, "received error "+error);
     }
    worker.onmessage = function onmessage(msg) {
-    Components.utils.forceShrinkingGC();
+    Cu.forceShrinkingGC();
     switch (msg.data.kind) {
       case "is":
         SimpleTest.ok(msg.data.outcome, msg.data.description +

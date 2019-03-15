@@ -34,17 +34,17 @@ const TEST_URI = `
   </body>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
-  yield selectNode("#testid", inspector);
-  yield testMarkOverridden(inspector, view);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, view} = await openRuleView();
+  await selectNode("#testid", inspector);
+  await testMarkOverridden(inspector, view);
 });
 
-function* testMarkOverridden(inspector, view) {
-  let elementStyle = view._elementStyle;
+function testMarkOverridden(inspector, view) {
+  const elementStyle = view._elementStyle;
 
-  let RESULTS = [
+  const RESULTS = [
     // We skip the first element
     [],
     [{name: "margin-left", value: "23px", overridden: true}],
@@ -52,15 +52,15 @@ function* testMarkOverridden(inspector, view) {
      {name: "margin-left", value: "1px", overridden: false}],
     [{name: "font-size", value: "12px", overridden: false}],
     [{name: "margin-right", value: "1px", overridden: true},
-     {name: "font-size", value: "79px", overridden: true}]
+     {name: "font-size", value: "79px", overridden: true}],
   ];
 
   for (let i = 1; i < RESULTS.length; ++i) {
-    let idRule = elementStyle.rules[i];
+    const idRule = elementStyle.rules[i];
 
-    for (let propIndex in RESULTS[i]) {
-      let expected = RESULTS[i][propIndex];
-      let prop = idRule.textProps[propIndex];
+    for (const propIndex in RESULTS[i]) {
+      const expected = RESULTS[i][propIndex];
+      const prop = idRule.textProps[propIndex];
 
       info("Checking rule " + i + ", property " + propIndex);
 

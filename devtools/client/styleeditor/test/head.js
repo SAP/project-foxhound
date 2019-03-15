@@ -21,21 +21,20 @@ const TEST_HOST = "mochi.test:8888";
  * @param {Window} win The window to add the tab to (default: current window).
  * @return a promise that resolves to the tab object when the url is loaded
  */
-var addTab = function (url, win) {
+var addTab = function(url, win) {
   info("Adding a new tab with URL: '" + url + "'");
-  let def = defer();
 
-  let targetWindow = win || window;
-  let targetBrowser = targetWindow.gBrowser;
+  return new Promise(resolve => {
+    const targetWindow = win || window;
+    const targetBrowser = targetWindow.gBrowser;
 
-  let tab = targetBrowser.selectedTab = targetBrowser.addTab(url);
-  BrowserTestUtils.browserLoaded(targetBrowser.selectedBrowser)
-    .then(function () {
-      info("URL '" + url + "' loading complete");
-      def.resolve(tab);
-    });
-
-  return def.promise;
+    const tab = targetBrowser.selectedTab = BrowserTestUtils.addTab(targetBrowser, url);
+    BrowserTestUtils.browserLoaded(targetBrowser.selectedBrowser)
+      .then(function() {
+        info("URL '" + url + "' loading complete");
+        resolve(tab);
+      });
+  });
 };
 
 /**
@@ -43,60 +42,58 @@ var addTab = function (url, win) {
  * @param {String} url The url to be loaded in the current tab.
  * @return a promise that resolves when the page has fully loaded.
  */
-var navigateTo = Task.async(function* (url) {
+var navigateTo = function(url) {
   info(`Navigating to ${url}`);
-  let browser = gBrowser.selectedBrowser;
+  const browser = gBrowser.selectedBrowser;
 
-  let navigating = defer();
-  browser.addEventListener("load", function () {
-    navigating.resolve();
-  }, {capture: true, once: true});
+  BrowserTestUtils.loadURI(browser, url);
+  return BrowserTestUtils.browserLoaded(browser);
+};
 
-  browser.loadURI(url);
+var navigateToAndWaitForStyleSheets = async function(url, ui) {
+  const onReset = ui.once("stylesheets-reset");
+  await navigateTo(url);
+  await onReset;
+};
 
-  yield navigating.promise;
-});
-
-var navigateToAndWaitForStyleSheets = Task.async(function* (url, ui) {
-  let onReset = ui.once("stylesheets-reset");
-  yield navigateTo(url);
-  yield onReset;
-});
-
-var reloadPageAndWaitForStyleSheets = Task.async(function* (ui) {
+var reloadPageAndWaitForStyleSheets = async function(ui) {
   info("Reloading the page.");
 
-  let onReset = ui.once("stylesheets-reset");
-  let browser = gBrowser.selectedBrowser;
-  yield ContentTask.spawn(browser, null, "() => content.location.reload()");
-  yield onReset;
-});
+  const onReset = ui.once("stylesheets-reset");
+  const browser = gBrowser.selectedBrowser;
+  await ContentTask.spawn(browser, null, "() => content.location.reload()");
+  await onReset;
+};
 
 /**
  * Open the style editor for the current tab.
  */
-var openStyleEditor = Task.async(function* (tab) {
+var openStyleEditor = async function(tab) {
   if (!tab) {
     tab = gBrowser.selectedTab;
   }
-  let target = TargetFactory.forTab(tab);
-  let toolbox = yield gDevTools.showToolbox(target, "styleeditor");
-  let panel = toolbox.getPanel("styleeditor");
-  let ui = panel.UI;
+  const target = await TargetFactory.forTab(tab);
+  const toolbox = await gDevTools.showToolbox(target, "styleeditor");
+  const panel = toolbox.getPanel("styleeditor");
+  const ui = panel.UI;
+
+  // The stylesheet list appears with an animation. Let this animation finish.
+  const animations = ui._root.getAnimations({subtree: true});
+  await Promise.all(animations.map(a => a.finished));
 
   return { toolbox, panel, ui };
-});
+};
 
 /**
  * Creates a new tab in specified window navigates it to the given URL and
  * opens style editor in it.
  */
-var openStyleEditorForURL = Task.async(function* (url, win) {
-  let tab = yield addTab(url, win);
-  let result = yield openStyleEditor(tab);
+var openStyleEditorForURL = async function(url, win) {
+  const tab = await addTab(url, win);
+  const result = await openStyleEditor(tab);
   result.tab = tab;
   return result;
-});
+};
 
 /**
  * Send an async message to the frame script and get back the requested
@@ -109,12 +106,39 @@ var openStyleEditorForURL = Task.async(function* (url, win) {
  * @param {String} name
  *        name of the property.
  */
-var getComputedStyleProperty = function* (args) {
-  return yield ContentTask.spawn(gBrowser.selectedBrowser, args,
-    function ({selector, pseudo, name}) {
-      let element = content.document.querySelector(selector);
-      let style = content.getComputedStyle(element, pseudo);
+var getComputedStyleProperty = async function(args) {
+  return ContentTask.spawn(gBrowser.selectedBrowser, args,
+    function({selector, pseudo, name}) {
+      const element = content.document.querySelector(selector);
+      const style = content.getComputedStyle(element, pseudo);
       return style.getPropertyValue(name);
     }
   );
 };
+
+/**
+ * Wait for "media-list-changed" events to settle on StyleEditorUI.
+ * Returns a promise that resolves the number of events caught while waiting.
+ *
+ * @param {StyleEditorUI} ui
+ *        Current StyleEditorUI on which media-list-changed events should be fired.
+ * @param {Number} delay
+ */
+function waitForManyEvents(ui, delay) {
+  return new Promise(resolve => {
+    let timer;
+    let count = 0;
+    const onEvent = () => {
+      count++;
+      clearTimeout(timer);
+
+      // Wait for some time to catch subsequent events.
+      timer = setTimeout(() => {
+        // Remove the listener and resolve.
+        ui.off("media-list-changed", onEvent);
+        resolve(count);
+      }, delay);
+    };
+    ui.on("media-list-changed", onEvent);
+  });
+}

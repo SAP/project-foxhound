@@ -1,10 +1,9 @@
-// |jit-test| error: StopIteration
-// Returning {throw:} from an onPop handler when yielding works and
-// does closes the generator-iterator.
+// Returning {throw:} from an onPop handler when yielding works.
+// It closes the generator-iterator.
 
 load(libdir + "asserts.js");
 
-var g = newGlobal();
+var g = newGlobal({newCompartment: true});
 var dbg = new Debugger;
 var gw = dbg.addDebuggee(g);
 dbg.onDebuggerStatement = function handleDebugger(frame) {
@@ -12,10 +11,10 @@ dbg.onDebuggerStatement = function handleDebugger(frame) {
         return {throw: "fit"};
     };
 };
-g.eval("function g() { for (var i = 0; i < 10; i++) { debugger; yield i; } }");
+g.eval("function* g() { for (var i = 0; i < 10; i++) { debugger; yield i; } }");
 g.eval("var it = g();");
 var rv = gw.executeInGlobal("it.next();");
 assertEq(rv.throw, "fit");
 
 dbg.enabled = false;
-g.it.next();
+assertEq(g.it.next().value, undefined);

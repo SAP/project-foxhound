@@ -18,22 +18,22 @@ const TEST_URI = `
   <div id='testid'>Styled Node</div>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
-  yield selectNode("#testid", inspector);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, view} = await openRuleView();
+  await selectNode("#testid", inspector);
 
   info("Getting the first property in the rule");
-  let rule = getRuleViewRuleEditor(view, 1).rule;
+  const rule = getRuleViewRuleEditor(view, 1).rule;
   let prop = rule.textProps[0];
 
   info("Clearing the property value");
-  yield setProperty(view, prop, null, false);
+  await setProperty(view, prop, null, false);
 
-  let newValue = yield executeInContent("Test:GetRulePropertyValue", {
+  let newValue = await executeInContent("Test:GetRulePropertyValue", {
     styleSheetIndex: 0,
     ruleIndex: 0,
-    name: "background-color"
+    name: "background-color",
   });
   is(newValue, "", "background-color should have been unset.");
 
@@ -46,12 +46,12 @@ add_task(function* () {
   view.styleDocument.activeElement.blur();
 
   info("Clearing the property value");
-  yield setProperty(view, prop, null, false);
+  await setProperty(view, prop, null, false);
 
-  newValue = yield executeInContent("Test:GetRulePropertyValue", {
+  newValue = await executeInContent("Test:GetRulePropertyValue", {
     styleSheetIndex: 0,
     ruleIndex: 0,
-    name: "color"
+    name: "color",
   });
   is(newValue, "", "color should have been unset.");
 

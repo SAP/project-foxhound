@@ -7,18 +7,18 @@
 
 /* bidi */
 
-[dir] {
+:-moz-has-dir-attr {
   unicode-bidi: isolate;
 }
-[dir="rtl"] {
+:-moz-dir-attr-rtl {
   direction: rtl;
 }
-[dir="ltr"] {
+:-moz-dir-attr-ltr {
   direction: ltr;
 }
 
-bdi:dir(ltr), [dir="auto"]:dir(ltr) { direction: ltr; }
-bdi:dir(rtl), [dir="auto"]:dir(rtl) { direction: rtl; }
+:-moz-dir-attr-like-auto:dir(ltr) { direction: ltr; }
+:-moz-dir-attr-like-auto:dir(rtl) { direction: rtl; }
 
 /* To ensure http://www.w3.org/TR/REC-html40/struct/dirlang.html#style-bidi:
  *
@@ -89,10 +89,15 @@ xmp {
 bdi, output {
   unicode-bidi: isolate;
 }
-bdo, bdo[dir] {
+/* We need the "bdo:-moz-has-dir-attr" bit because "bdo" has lower
+   specificity than the ":-moz-has-dir-attr" selector above. */
+bdo, bdo:-moz-has-dir-attr {
   unicode-bidi: isolate-override;
 }
-textarea[dir="auto"], pre[dir="auto"] { unicode-bidi: plaintext; }
+textarea:-moz-dir-attr-like-auto,
+pre:-moz-dir-attr-like-auto {
+    unicode-bidi: plaintext;
+}
 
 /* blocks */
 
@@ -466,7 +471,7 @@ table > tr {
 td { 
   display: table-cell;
   vertical-align: inherit;
-  text-align: inherit; 
+  text-align: unset; 
   padding: 1px;
 }
 
@@ -628,7 +633,7 @@ hr {
   margin-inline-end: auto;
   color: gray;
   -moz-float-edge: margin-box;
-  box-sizing: border-box;
+  box-sizing: content-box;
 }
 
 hr[size="1"] {
@@ -637,14 +642,12 @@ hr[size="1"] {
 
 img:-moz-broken::before, input:-moz-broken::before,
 img:-moz-user-disabled::before, input:-moz-user-disabled::before,
-img:-moz-loading::before, input:-moz-loading::before,
-applet:-moz-empty-except-children-with-localname(param):-moz-broken::before,
-applet:-moz-empty-except-children-with-localname(param):-moz-user-disabled::before {
+img:-moz-loading::before, input:-moz-loading::before {
   content: -moz-alt-content !important;
   unicode-bidi: isolate;
 }
 
-:-moz-any(object,applet):-moz-any(:-moz-broken,:-moz-user-disabled) > *|* {
+object:-moz-any(:-moz-broken,:-moz-user-disabled) > *|* {
   /*
     Inherit in the object's alignment so that if we aren't aligned explicitly
     we'll end up in the right place vertically.  See bug 36997.  Note that this
@@ -654,7 +657,7 @@ applet:-moz-empty-except-children-with-localname(param):-moz-user-disabled::befo
 }
 
 img:-moz-suppressed, input:-moz-suppressed, object:-moz-suppressed,
-embed:-moz-suppressed, applet:-moz-suppressed {
+embed:-moz-suppressed {
   /*
     Set visibility too in case the page changes display.  Note that we _may_
     want to just set visibility and not display, in general, if we find that
@@ -725,7 +728,7 @@ area {
 iframe:fullscreen {
   /* iframes in full-screen mode don't show a border. */
   border: none !important;
-  padding: 0 !important;
+  padding: unset !important;
 }
 
 /* media elements */
@@ -773,7 +776,14 @@ video > .caption-box {
   width: 100%;
   height: 100%;
   position: relative;
-  overflow: hidden;
+}
+
+/* ::cue default settings */
+::cue {
+  color: rgba(255, 255, 255, 1);
+  white-space: pre-line;
+  background-color: rgba(0, 0, 0, 0.8);
+  font: var(--cue-font-size) sans-serif;
 }
 
 /* datetime elements */
@@ -809,8 +819,8 @@ details > summary:first-of-type > *|* {
 
 dialog {
   position: absolute;
-  offset-inline-start: 0;
-  offset-inline-end: 0;
+  inset-inline-start: 0;
+  inset-inline-end: 0;
   color: black;
   margin: auto;
   border-width: initial;
@@ -832,12 +842,22 @@ marquee {
   display: inline-block;
   vertical-align: text-bottom;
   text-align: start;
-  -moz-binding: url('chrome://xbl-marquee/content/xbl-marquee.xml#marquee-horizontal');
 }
 
 marquee[direction="up"], marquee[direction="down"] {
-  -moz-binding: url('chrome://xbl-marquee/content/xbl-marquee.xml#marquee-vertical');
   block-size: 200px;
+}
+
+@supports not -moz-bool-pref("dom.ua_widget.enabled") {
+
+  marquee {
+    -moz-binding: url('chrome://xbl-marquee/content/xbl-marquee.xml#marquee-horizontal');
+  }
+
+  marquee[direction="up"], marquee[direction="down"] {
+    -moz-binding: url('chrome://xbl-marquee/content/xbl-marquee.xml#marquee-vertical');
+  }
+
 }
 
 /* PRINT ONLY rules follow */
@@ -888,8 +908,14 @@ rtc:lang(zh-TW), rt:lang(zh-TW) {
   -moz-min-font-size-ratio: 30%;
 }
 rtc > rt {
-  font-size: inherit;
+  font-size: unset;
 }
 ruby, rb, rt, rtc {
   unicode-bidi: isolate;
+}
+
+/* Shadow DOM v1
+ * https://drafts.csswg.org/css-scoping/#slots-in-shadow-tree */
+slot {
+  display: contents;
 }

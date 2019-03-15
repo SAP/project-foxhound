@@ -1,0 +1,24 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+DevToolsModules(
+    'DebugTargetItem.css',
+    'DebugTargetItem.js',
+    'DebugTargetList.css',
+    'DebugTargetList.js',
+    'DebugTargetPane.css',
+    'DebugTargetPane.js',
+    'ExtensionDetail.css',
+    'ExtensionDetail.js',
+    'FieldPair.js',
+    'InspectAction.js',
+    'ServiceWorkerAction.js',
+    'TabDetail.js',
+    'TemporaryExtensionAction.js',
+    'TemporaryExtensionDetail.css',
+    'TemporaryExtensionDetail.js',
+    'TemporaryExtensionInstaller.js',
+    'WorkerDetail.css',
+    'WorkerDetail.js',
+)

@@ -7,7 +7,6 @@
 #include "BroadcastChannelChild.h"
 #include "BroadcastChannel.h"
 #include "jsapi.h"
-#include "mozilla/dom/ipc/BlobChild.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/MessageEvent.h"
 #include "mozilla/dom/MessageEventBinding.h"
@@ -16,7 +15,6 @@
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/dom/ipc/StructuredCloneData.h"
-#include "WorkerPrivate.h"
 
 namespace mozilla {
 
@@ -24,30 +22,21 @@ using namespace ipc;
 
 namespace dom {
 
-using namespace workers;
-
 BroadcastChannelChild::BroadcastChannelChild(const nsACString& aOrigin)
-  : mBC(nullptr)
-  , mActorDestroyed(false)
-{
+    : mBC(nullptr), mActorDestroyed(false) {
   CopyUTF8toUTF16(aOrigin, mOrigin);
 }
 
-BroadcastChannelChild::~BroadcastChannelChild()
-{
-  MOZ_ASSERT(!mBC);
-}
+BroadcastChannelChild::~BroadcastChannelChild() { MOZ_ASSERT(!mBC); }
 
-mozilla::ipc::IPCResult
-BroadcastChannelChild::RecvNotify(const ClonedMessageData& aData)
-{
+mozilla::ipc::IPCResult BroadcastChannelChild::RecvNotify(
+    const ClonedMessageData& aData) {
   // Make sure to retrieve all blobs from the message before returning to avoid
   // leaking their actors.
   ipc::StructuredCloneDataNoTransfers cloneData;
   cloneData.BorrowFromClonedMessageDataForBackgroundChild(aData);
 
-  nsCOMPtr<DOMEventTargetHelper> helper = mBC;
-  nsCOMPtr<EventTarget> eventTarget = do_QueryInterface(helper);
+  nsCOMPtr<EventTarget> eventTarget = mBC;
 
   // The object is going to be deleted soon. No notify is required.
   if (!eventTarget) {
@@ -66,7 +55,7 @@ BroadcastChannelChild::RecvNotify(const ClonedMessageData& aData)
   nsCOMPtr<nsIGlobalObject> globalObject;
 
   if (NS_IsMainThread()) {
-    globalObject = do_QueryInterface(mBC->GetParentObject());
+    globalObject = mBC->GetParentObject();
   } else {
     WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
     MOZ_ASSERT(workerPrivate);
@@ -81,10 +70,10 @@ BroadcastChannelChild::RecvNotify(const ClonedMessageData& aData)
   JSContext* cx = jsapi.cx();
   JS::Rooted<JS::Value> value(cx, JS::NullValue());
   if (cloneData.DataLength()) {
-    ErrorResult rv;
+    IgnoredErrorResult rv;
     cloneData.Read(cx, &value, rv);
     if (NS_WARN_IF(rv.Failed())) {
-      rv.SuppressException();
+      DispatchError(cx);
       return IPC_OK();
     }
   }
@@ -95,27 +84,32 @@ BroadcastChannelChild::RecvNotify(const ClonedMessageData& aData)
   init.mOrigin = mOrigin;
   init.mData = value;
 
-  ErrorResult rv;
   RefPtr<MessageEvent> event =
-    MessageEvent::Constructor(mBC, NS_LITERAL_STRING("message"), init, rv);
-  if (NS_WARN_IF(rv.Failed())) {
-    rv.SuppressException();
-    return IPC_OK();
-  }
+      MessageEvent::Constructor(mBC, NS_LITERAL_STRING("message"), init);
 
   event->SetTrusted(true);
 
-  bool status;
-  mBC->DispatchEvent(static_cast<Event*>(event.get()), &status);
+  mBC->DispatchEvent(*event);
 
   return IPC_OK();
 }
 
-void
-BroadcastChannelChild::ActorDestroy(ActorDestroyReason aWhy)
-{
+void BroadcastChannelChild::ActorDestroy(ActorDestroyReason aWhy) {
   mActorDestroyed = true;
 }
 
-} // namespace dom
-} // namespace mozilla
+void BroadcastChannelChild::DispatchError(JSContext* aCx) {
+  RootedDictionary<MessageEventInit> init(aCx);
+  init.mBubbles = false;
+  init.mCancelable = false;
+  init.mOrigin = mOrigin;
+
+  RefPtr<Event> event =
+      MessageEvent::Constructor(mBC, NS_LITERAL_STRING("messageerror"), init);
+  event->SetTrusted(true);
+
+  mBC->DispatchEvent(*event);
+}
+
+}  // namespace dom
+}  // namespace mozilla

@@ -7,75 +7,65 @@
 #ifndef mozilla_dom_SVGViewElement_h
 #define mozilla_dom_SVGViewElement_h
 
-#include "nsSVGElement.h"
-#include "nsSVGEnum.h"
-#include "nsSVGViewBox.h"
 #include "SVGAnimatedPreserveAspectRatio.h"
+#include "SVGEnum.h"
 #include "SVGStringList.h"
-
-static const unsigned short SVG_ZOOMANDPAN_UNKNOWN = 0;
-static const unsigned short SVG_ZOOMANDPAN_DISABLE = 1;
-static const unsigned short SVG_ZOOMANDPAN_MAGNIFY = 2;
-
-typedef nsSVGElement SVGViewElementBase;
+#include "SVGViewBox.h"
+#include "mozilla/dom/SVGElement.h"
 
 class nsSVGOuterSVGFrame;
 
-nsresult NS_NewSVGViewElement(nsIContent **aResult,
-                              already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+nsresult NS_NewSVGViewElement(
+    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
 namespace mozilla {
 class SVGFragmentIdentifier;
 
 namespace dom {
-class SVGSVGElement;
+class SVGViewportElement;
 
-class SVGViewElement : public SVGViewElementBase
-{
-protected:
+typedef SVGElement SVGViewElementBase;
+
+class SVGViewElement : public SVGViewElementBase {
+ protected:
   friend class mozilla::SVGFragmentIdentifier;
   friend class SVGSVGElement;
+  friend class SVGViewportElement;
   friend class ::nsSVGOuterSVGFrame;
-  explicit SVGViewElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
-  friend nsresult (::NS_NewSVGViewElement(nsIContent **aResult,
-                                          already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
-  virtual JSObject* WrapNode(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
+  explicit SVGViewElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+  friend nsresult(::NS_NewSVGViewElement(
+      nsIContent** aResult,
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
+  virtual JSObject* WrapNode(JSContext* cx,
+                             JS::Handle<JSObject*> aGivenProto) override;
 
-public:
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;
+ public:
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // WebIDL
   uint16_t ZoomAndPan() { return mEnumAttributes[ZOOMANDPAN].GetAnimValue(); }
   void SetZoomAndPan(uint16_t aZoomAndPan, ErrorResult& rv);
   already_AddRefed<SVGAnimatedRect> ViewBox();
   already_AddRefed<DOMSVGAnimatedPreserveAspectRatio> PreserveAspectRatio();
-  already_AddRefed<DOMSVGStringList> ViewTarget();
 
-private:
-
-  // nsSVGElement overrides
+ private:
+  // SVGElement overrides
 
   virtual EnumAttributesInfo GetEnumInfo() override;
 
   enum { ZOOMANDPAN };
-  nsSVGEnum mEnumAttributes[1];
-  static nsSVGEnumMapping sZoomAndPanMap[];
+  SVGEnum mEnumAttributes[1];
+  static SVGEnumMapping sZoomAndPanMap[];
   static EnumInfo sEnumInfo[1];
 
-  virtual nsSVGViewBox *GetViewBox() override;
-  virtual SVGAnimatedPreserveAspectRatio *GetPreserveAspectRatio() override;
+  virtual SVGViewBox* GetViewBox() override;
+  virtual SVGAnimatedPreserveAspectRatio* GetPreserveAspectRatio() override;
 
-  nsSVGViewBox                   mViewBox;
+  SVGViewBox mViewBox;
   SVGAnimatedPreserveAspectRatio mPreserveAspectRatio;
-
-  virtual StringListAttributesInfo GetStringListInfo() override;
-
-  enum { VIEW_TARGET };
-  SVGStringList mStringListAttributes[1];
-  static StringListInfo sStringListInfo[1];
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_SVGViewElement_h
+#endif  // mozilla_dom_SVGViewElement_h

@@ -5,8 +5,8 @@
 
 @import url(resource://devtools/client/themes/variables.css);
 @import url(resource://devtools/client/themes/common.css);
-@import url(toolbars.css);
-@import url(tooltips.css);
+@import url(chrome://devtools/skin/toolbars.css);
+@import url(chrome://devtools/skin/tooltips.css);
 
 body {
   margin: 0;
@@ -27,10 +27,6 @@ body {
   color: var(--theme-selection-color);
 }
 
-.theme-bg-darker {
-  background: var(--theme-selection-background-semitransparent);
-}
-
 .theme-selected,
 .CodeMirror-hint-active {
   background-color: var(--theme-selection-background);
@@ -45,7 +41,7 @@ body {
 .theme-link,
 .cm-s-mozilla .cm-link,
 .CodeMirror-Tern-type {
-  color: var(--theme-highlight-blue);
+  color: var(--theme-comment);
 }
 
 /*
@@ -67,16 +63,6 @@ body {
   color: var(--theme-comment);
 }
 
-.theme-gutter {
-  background-color: var(--theme-tab-toolbar-background);
-  color: var(--theme-content-color3);
-  border-color: var(--theme-splitter-color);
-}
-
-.theme-separator { /* grey */
-  border-color: #cddae5;
-}
-
 .cm-s-mozilla .cm-unused-line {
   text-decoration: line-through;
   text-decoration-color: var(--theme-highlight-bluegrey);
@@ -86,7 +72,6 @@ body {
   background-color: #fcfffc;
 }
 
-.theme-fg-color1,
 .cm-s-mozilla .cm-number,
 .variable-or-property .token-number,
 .variable-or-property[return] > .title > .name,
@@ -98,16 +83,25 @@ body {
   background-color: hsl(72,100%,27%);
 }
 
-.theme-fg-color2,
+.theme-fg-color1,
 .cm-s-mozilla .cm-attribute,
 .cm-s-mozilla .cm-builtin,
-.cm-s-mozilla .cm-property,
+.cm-s-mozilla .cm-keyword,
 .variables-view-variable > .title > .name {
   color: var(--theme-highlight-red);
 }
 
-.cm-s-mozilla .cm-def {
-  color: var(--theme-body-color);
+.cm-s-mozilla .cm-def,
+.cm-s-mozilla .cm-variable-2 {
+  color: var(--blue-55);
+}
+
+.cm-s-mozilla .cm-variable {
+  color: var(--purple-60);
+}
+
+.cm-s-mozilla .cm-property {
+  color: var(--theme-highlight-green);
 }
 
 .CodeMirror-Tern-completion-object:before {
@@ -115,7 +109,6 @@ body {
 }
 
 .theme-fg-color3,
-.cm-s-mozilla .cm-variable,
 .cm-s-mozilla .cm-tag,
 .cm-s-mozilla .cm-header,
 .cm-s-mozilla .cm-bracket,
@@ -128,16 +121,7 @@ body {
   background-color: var(--theme-highlight-bluegrey);
 }
 
-.theme-fg-color4 {
-  color: var(--theme-highlight-orange);
-}
-
-.theme-fg-color5,
-.cm-s-mozilla .cm-keyword {
-  color: var(--theme-highlight-red);
-}
-
-.theme-fg-color6,
+.theme-fg-color2,
 .cm-s-mozilla .cm-string,
 .cm-s-mozilla .cm-string-2,
 .variable-or-property .token-string,
@@ -150,7 +134,6 @@ body {
   background-color: hsl(24,85%,39%);
 }
 
-.theme-fg-color7,
 .cm-s-mozilla .cm-atom,
 .cm-s-mozilla .cm-quote,
 .cm-s-mozilla .cm-error,
@@ -183,7 +166,7 @@ body {
 }
 
 .ruleview-swatch,
-.computedview-colorswatch {
+.computed-colorswatch {
   box-shadow: 0 0 0 1px #c4c4c4;
 }
 
@@ -198,7 +181,6 @@ body {
 }
 
 .CodeMirror.cm-s-mozilla  pre,
-.cm-s-mozilla .cm-variable-2,
 .cm-s-mozilla .cm-variable-3,
 .cm-s-mozilla .cm-operator,
 .cm-s-mozilla .cm-special {
@@ -245,7 +227,7 @@ div.CodeMirror span.eval-text {
 }
 
 .cm-s-mozilla .CodeMirror-linenumber { /* line number text */
-  color: var(--theme-content-color3);
+  color: var(--grey-50);
 }
 
 .cm-s-mozilla .CodeMirror-gutters { /* vertical line next to line numbers */
@@ -256,79 +238,6 @@ div.CodeMirror span.eval-text {
 .cm-s-markup-view pre {
   line-height: 1.4em;
   min-height: 1.4em;
-}
-
-/* XUL panel styling (see devtools/client/shared/widgets/tooltip/Tooltip.js) */
-
-.theme-tooltip-panel .panel-arrowcontent {
-  padding: 4px;
-  background: rgba(255, 255, 255, .9);
-  border-radius: 5px;
-  box-shadow: none;
-  border: 3px solid #d9e1e8;
-}
-
-/* Overring panel arrow images to fit with our light and dark themes */
-
-.theme-tooltip-panel .panel-arrow {
-  --arrow-margin: -4px;
-}
-
-:root[platform="win"] .theme-tooltip-panel .panel-arrow {
-  --arrow-margin: -7px;
-}
-
-.theme-tooltip-panel .panel-arrow[side="top"],
-.theme-tooltip-panel .panel-arrow[side="bottom"] {
-  list-style-image: url("chrome://devtools/skin/tooltip/arrow-vertical-light.png");
-  /* !important is needed to override the popup.css rules in toolkit/themes */
-  width: 39px !important;
-  height: 16px !important;
-}
-
-.theme-tooltip-panel .panel-arrow[side="left"],
-.theme-tooltip-panel .panel-arrow[side="right"] {
-  list-style-image: url("chrome://devtools/skin/tooltip/arrow-horizontal-light.png");
-  /* !important is needed to override the popup.css rules in toolkit/themes */
-  width: 16px !important;
-  height: 39px !important;
-}
-
-.theme-tooltip-panel .panel-arrow[side="top"] {
-  margin-bottom: var(--arrow-margin);
-}
-
-.theme-tooltip-panel .panel-arrow[side="bottom"] {
-  margin-top: var(--arrow-margin);
-}
-
-.theme-tooltip-panel .panel-arrow[side="left"] {
-  margin-right: var(--arrow-margin);
-}
-
-.theme-tooltip-panel .panel-arrow[side="right"] {
-  margin-left: var(--arrow-margin);
-}
-
-@media (min-resolution: 1.1dppx) {
-  .theme-tooltip-panel .panel-arrow[side="top"],
-  .theme-tooltip-panel .panel-arrow[side="bottom"] {
-    list-style-image: url("chrome://devtools/skin/tooltip/arrow-vertical-light@2x.png");
-  }
-
-  .theme-tooltip-panel .panel-arrow[side="left"],
-  .theme-tooltip-panel .panel-arrow[side="right"] {
-    list-style-image: url("chrome://devtools/skin/tooltip/arrow-horizontal-light@2x.png");
-  }
-}
-
-.theme-tooltip-panel .devtools-tooltip-simple-text {
-  color: black;
-  border-bottom: 1px solid #d9e1e8;
-}
-
-.theme-tooltip-panel .devtools-tooltip-simple-text:last-child {
-  border-bottom: 0;
 }
 
 .CodeMirror-hints,

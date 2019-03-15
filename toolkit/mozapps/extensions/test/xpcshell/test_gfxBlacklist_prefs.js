@@ -2,25 +2,13 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-var { classes: Cc, interfaces: Ci } = Components;
-
-// Test whether the blacklist succesfully adds and removes the prefs that store
+// Test whether the blacklist successfully adds and removes the prefs that store
 // its decisions when the remote blacklist is changed.
 // Uses test_gfxBlacklist.xml and test_gfxBlacklist2.xml
 
-Components.utils.import("resource://testing-common/httpd.js");
-
-var gTestserver = new HttpServer();
-gTestserver.start(-1);
+var gTestserver = AddonTestUtils.createHttpServer({hosts: ["example.com"]});
 gPort = gTestserver.identity.primaryPort;
-mapFile("/data/test_gfxBlacklist.xml", gTestserver);
-mapFile("/data/test_gfxBlacklist2.xml", gTestserver);
-
-function get_platform() {
-  var xulRuntime = Components.classes["@mozilla.org/xre/app-info;1"]
-                             .getService(Components.interfaces.nsIXULRuntime);
-  return xulRuntime.OS;
-}
+gTestserver.registerDirectory("/data/", do_get_file("data"));
 
 function load_blocklist(file) {
   Services.prefs.setCharPref("extensions.blocklist.url", "http://localhost:" +
@@ -31,7 +19,7 @@ function load_blocklist(file) {
 }
 
 // Performs the initial setup
-function run_test() {
+async function run_test() {
   try {
     var gfxInfo = Cc["@mozilla.org/gfx/info;1"].getService(Ci.nsIGfxInfo);
   } catch (e) {
@@ -48,7 +36,7 @@ function run_test() {
   gfxInfo.QueryInterface(Ci.nsIGfxInfoDebug);
 
   // Set the vendor/device ID, etc, to match the test file.
-  switch (get_platform()) {
+  switch (Services.appinfo.OS) {
     case "WINNT":
       gfxInfo.spoofVendorID("0xabcd");
       gfxInfo.spoofDeviceID("0x1234");
@@ -72,60 +60,56 @@ function run_test() {
       break;
   }
 
-  createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "3", "8");
-  startupManager();
-
   do_test_pending();
+
+  createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "3", "8");
+  await promiseStartupManager();
 
   function blacklistAdded(aSubject, aTopic, aData) {
     // If we wait until after we go through the event loop, gfxInfo is sure to
     // have processed the gfxItems event.
-    do_execute_soon(ensureBlacklistSet);
+    executeSoon(ensureBlacklistSet);
   }
   function ensureBlacklistSet() {
     var status = gfxInfo.getFeatureStatus(Ci.nsIGfxInfo.FEATURE_DIRECT2D);
-    do_check_eq(status, Ci.nsIGfxInfo.FEATURE_BLOCKED_DRIVER_VERSION);
+    Assert.equal(status, Ci.nsIGfxInfo.FEATURE_BLOCKED_DRIVER_VERSION);
 
     // Make sure unrelated features aren't affected
     status = gfxInfo.getFeatureStatus(Ci.nsIGfxInfo.FEATURE_DIRECT3D_9_LAYERS);
-    do_check_eq(status, Ci.nsIGfxInfo.FEATURE_STATUS_OK);
+    Assert.equal(status, Ci.nsIGfxInfo.FEATURE_STATUS_OK);
 
-    var prefs = Cc["@mozilla.org/preferences-service;1"].
-          getService(Ci.nsIPrefBranch);
-    do_check_eq(prefs.getIntPref("gfx.blacklist.direct2d"),
-                Ci.nsIGfxInfo.FEATURE_BLOCKED_DRIVER_VERSION);
+    Assert.equal(Services.prefs.getIntPref("gfx.blacklist.direct2d"),
+                 Ci.nsIGfxInfo.FEATURE_BLOCKED_DRIVER_VERSION);
 
     Services.obs.removeObserver(blacklistAdded, "blocklist-data-gfxItems");
-    Services.obs.addObserver(blacklistRemoved, "blocklist-data-gfxItems", false);
+    Services.obs.addObserver(blacklistRemoved, "blocklist-data-gfxItems");
     load_blocklist("test_gfxBlacklist2.xml");
   }
 
   function blacklistRemoved(aSubject, aTopic, aData) {
     // If we wait until after we go through the event loop, gfxInfo is sure to
     // have processed the gfxItems event.
-    do_execute_soon(ensureBlacklistUnset);
+    executeSoon(ensureBlacklistUnset);
   }
   function ensureBlacklistUnset() {
     var status = gfxInfo.getFeatureStatus(Ci.nsIGfxInfo.FEATURE_DIRECT2D);
-    do_check_eq(status, Ci.nsIGfxInfo.FEATURE_STATUS_OK);
+    Assert.equal(status, Ci.nsIGfxInfo.FEATURE_STATUS_OK);
 
     // Make sure unrelated features aren't affected
     status = gfxInfo.getFeatureStatus(Ci.nsIGfxInfo.FEATURE_DIRECT3D_9_LAYERS);
-    do_check_eq(status, Ci.nsIGfxInfo.FEATURE_STATUS_OK);
+    Assert.equal(status, Ci.nsIGfxInfo.FEATURE_STATUS_OK);
 
-    var prefs = Cc["@mozilla.org/preferences-service;1"].
-          getService(Ci.nsIPrefBranch);
     var exists = false;
     try {
-      prefs.getIntPref("gfx.blacklist.direct2d");
+      Services.prefs.getIntPref("gfx.blacklist.direct2d");
       exists = true;
     } catch (e) {}
 
-    do_check_false(exists);
+    Assert.ok(!exists);
 
-    gTestserver.stop(do_test_finished);
+    do_test_finished();
   }
 
-  Services.obs.addObserver(blacklistAdded, "blocklist-data-gfxItems", false);
+  Services.obs.addObserver(blacklistAdded, "blocklist-data-gfxItems");
   load_blocklist("test_gfxBlacklist.xml");
 }

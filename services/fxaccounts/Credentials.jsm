@@ -11,23 +11,18 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["Credentials"];
+var EXPORTED_SYMBOLS = ["Credentials"];
 
-const {utils: Cu, interfaces: Ci} = Components;
-
-Cu.import("resource://gre/modules/Log.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Promise.jsm");
-Cu.import("resource://services-crypto/utils.js");
-Cu.import("resource://services-common/utils.js");
+ChromeUtils.import("resource://gre/modules/Log.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://services-crypto/utils.js");
+ChromeUtils.import("resource://services-common/utils.js");
 
 const PROTOCOL_VERSION = "identity.mozilla.com/picl/v1/";
 const PBKDF2_ROUNDS = 1000;
 const STRETCHED_PW_LENGTH_BYTES = 32;
 const HKDF_SALT = CommonUtils.hexToBytes("00");
 const HKDF_LENGTH = 32;
-const HMAC_ALGORITHM = Ci.nsICryptoHMAC.SHA256;
-const HMAC_LENGTH = 32;
 
 // loglevel preference should be one of: "FATAL", "ERROR", "WARN", "INFO",
 // "CONFIG", "DEBUG", "TRACE" or "ALL". We will be logging error messages by
@@ -45,7 +40,7 @@ var log = Log.repository.getLogger("Identity.FxAccounts");
 log.level = LOG_LEVEL;
 log.addAppender(new Log.ConsoleAppender(new Log.BasicFormatter()));
 
-this.Credentials = Object.freeze({
+var Credentials = Object.freeze({
   /**
    * Make constants accessible to tests
    */
@@ -55,8 +50,6 @@ this.Credentials = Object.freeze({
     STRETCHED_PW_LENGTH_BYTES,
     HKDF_SALT,
     HKDF_LENGTH,
-    HMAC_ALGORITHM,
-    HMAC_LENGTH,
   },
 
   /**
@@ -94,43 +87,39 @@ this.Credentials = Object.freeze({
   },
 
   setup(emailInput, passwordInput, options = {}) {
-    let deferred = Promise.defer();
-    log.debug("setup credentials for " + emailInput);
+    return new Promise(resolve => {
+      log.debug("setup credentials for " + emailInput);
 
-    let hkdfSalt = options.hkdfSalt || HKDF_SALT;
-    let hkdfLength = options.hkdfLength || HKDF_LENGTH;
-    let hmacLength = options.hmacLength || HMAC_LENGTH;
-    let hmacAlgorithm = options.hmacAlgorithm || HMAC_ALGORITHM;
-    let stretchedPWLength = options.stretchedPassLength || STRETCHED_PW_LENGTH_BYTES;
-    let pbkdf2Rounds = options.pbkdf2Rounds || PBKDF2_ROUNDS;
+      let hkdfSalt = options.hkdfSalt || HKDF_SALT;
+      let hkdfLength = options.hkdfLength || HKDF_LENGTH;
+      let stretchedPWLength = options.stretchedPassLength || STRETCHED_PW_LENGTH_BYTES;
+      let pbkdf2Rounds = options.pbkdf2Rounds || PBKDF2_ROUNDS;
 
-    let result = {};
+      let result = {};
 
-    let password = CommonUtils.encodeUTF8(passwordInput);
-    let salt = this.keyWordExtended("quickStretch", emailInput);
+      let password = CommonUtils.encodeUTF8(passwordInput);
+      let salt = this.keyWordExtended("quickStretch", emailInput);
 
-    let runnable = () => {
-      let start = Date.now();
-      let quickStretchedPW = CryptoUtils.pbkdf2Generate(
-          password, salt, pbkdf2Rounds, stretchedPWLength, hmacAlgorithm, hmacLength);
+      let runnable = async () => {
+        let start = Date.now();
+        let quickStretchedPW = await CryptoUtils.pbkdf2Generate(
+            password, salt, pbkdf2Rounds, stretchedPWLength);
 
-      result.quickStretchedPW = quickStretchedPW;
+        result.quickStretchedPW = quickStretchedPW;
 
-      result.authPW =
-        CryptoUtils.hkdf(quickStretchedPW, hkdfSalt, this.keyWord("authPW"), hkdfLength);
+        result.authPW =
+          await CryptoUtils.hkdfLegacy(quickStretchedPW, hkdfSalt, this.keyWord("authPW"), hkdfLength);
 
-      result.unwrapBKey =
-        CryptoUtils.hkdf(quickStretchedPW, hkdfSalt, this.keyWord("unwrapBkey"), hkdfLength);
+        result.unwrapBKey =
+          await CryptoUtils.hkdfLegacy(quickStretchedPW, hkdfSalt, this.keyWord("unwrapBkey"), hkdfLength);
 
-      log.debug("Credentials set up after " + (Date.now() - start) + " ms");
-      deferred.resolve(result);
-    }
+        log.debug("Credentials set up after " + (Date.now() - start) + " ms");
+        resolve(result);
+      };
 
-    Services.tm.currentThread.dispatch(runnable,
-        Ci.nsIThread.DISPATCH_NORMAL);
-    log.debug("Dispatched thread for credentials setup crypto work");
-
-    return deferred.promise;
-  }
+      Services.tm.dispatchToMainThread(runnable);
+      log.debug("Dispatched thread for credentials setup crypto work");
+    });
+  },
 });
 

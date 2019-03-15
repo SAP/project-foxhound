@@ -15,7 +15,7 @@ import android.content.Context;
  * A basic jar reader test. Tests reading a png from fennec's apk, as well
  * as loading some invalid jar urls.
  */
-public class testJarReader extends BaseTest {
+public class testJarReader extends OldBaseTest {
     public void testJarReader() {
         // Invalid characters are escaped.
         final String s = GeckoJarReader.computeJarURI("some[1].apk", "something/else");
@@ -28,7 +28,7 @@ public class testJarReader extends BaseTest {
 
         // Test reading a file from a jar url that looks correct.
         String url = "jar:file://" + appPath + "!/" + AppConstants.OMNIJAR_NAME;
-        InputStream stream = GeckoJarReader.getStream(context, "jar:" + url + "!/chrome/chrome/content/branding/favicon32.png");
+        InputStream stream = GeckoJarReader.getStream(context, "jar:" + url + "!/chrome/geckoview/content/branding/favicon32.png");
         mAsserter.isnot(stream, null, "JarReader returned non-null for valid file in valid jar");
 
         // Test looking for an non-existent file in a jar.

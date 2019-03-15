@@ -9,6 +9,8 @@ BROWSER_CHROME_MANIFESTS += ['test/browser.ini']
 with Files('**'):
     BUG_COMPONENT = ('Core', 'Security: Process Sandboxing')
 
+DIRS += ['common']
+
 if CONFIG['OS_ARCH'] == 'Linux':
     DIRS += ['linux']
 elif CONFIG['OS_ARCH'] == 'Darwin':
@@ -42,11 +44,17 @@ elif CONFIG['OS_ARCH'] == 'WINNT':
         'chromium/base/cpu.cc',
         'chromium/base/debug/alias.cc',
         'chromium/base/debug/profiler.cc',
+        'chromium/base/environment.cc',
         'chromium/base/hash.cc',
         'chromium/base/lazy_instance.cc',
         'chromium/base/location.cc',
         'chromium/base/memory/ref_counted.cc',
+        'chromium/base/memory/shared_memory_handle.cc',
+        'chromium/base/memory/shared_memory_handle_win.cc',
+        'chromium/base/memory/shared_memory_win.cc',
         'chromium/base/memory/singleton.cc',
+        'chromium/base/process/process_handle_win.cc',
+        'chromium/base/rand_util_win.cc',
         'chromium/base/strings/nullable_string16.cc',
         'chromium/base/strings/string_number_conversions.cc',
         'chromium/base/strings/string_piece.cc',
@@ -65,17 +73,18 @@ elif CONFIG['OS_ARCH'] == 'WINNT':
         'chromium/base/threading/platform_thread_win.cc',
         'chromium/base/threading/thread_collision_warner.cc',
         'chromium/base/threading/thread_id_name_manager.cc',
-        'chromium/base/threading/thread_local_win.cc',
+        'chromium/base/threading/thread_local_storage.cc',
+        'chromium/base/threading/thread_local_storage_win.cc',
         'chromium/base/threading/thread_restrictions.cc',
         'chromium/base/time/time.cc',
         'chromium/base/time/time_win.cc',
+        'chromium/base/unguessable_token.cc',
         'chromium/base/win/pe_image.cc',
         'chromium/base/win/scoped_handle.cc',
         'chromium/base/win/scoped_process_information.cc',
         'chromium/base/win/startup_information.cc',
         'chromium/base/win/windows_version.cc',
         'chromium/sandbox/win/src/acl.cc',
-        'chromium/sandbox/win/src/app_container.cc',
         'chromium/sandbox/win/src/broker_services.cc',
         'chromium/sandbox/win/src/crosscall_server.cc',
         'chromium/sandbox/win/src/eat_resolver.cc',
@@ -87,6 +96,7 @@ elif CONFIG['OS_ARCH'] == 'WINNT':
         'chromium/sandbox/win/src/handle_dispatcher.cc',
         'chromium/sandbox/win/src/handle_interception.cc',
         'chromium/sandbox/win/src/handle_policy.cc',
+        'chromium/sandbox/win/src/heap_helper.cc',
         'chromium/sandbox/win/src/interception.cc',
         'chromium/sandbox/win/src/interception_agent.cc',
         'chromium/sandbox/win/src/job.cc',
@@ -134,37 +144,32 @@ elif CONFIG['OS_ARCH'] == 'WINNT':
         'win/SandboxInitialization.cpp',
     ]
 
-    if CONFIG['CPU_ARCH'] == 'x86_64':
+    if CONFIG['CPU_ARCH'] in ('x86_64', 'aarch64'):
         SOURCES += [
             'chromium/sandbox/win/src/interceptors_64.cc',
             'chromium/sandbox/win/src/resolver_64.cc',
             'chromium/sandbox/win/src/service_resolver_64.cc',
-            'chromium/sandbox/win/src/Wow64_64.cc',
         ]
     else:
         SOURCES += [
             'chromium/sandbox/win/src/resolver_32.cc',
             'chromium/sandbox/win/src/service_resolver_32.cc',
-            'chromium/sandbox/win/src/sidestep/ia32_modrm_map.cpp',
-            'chromium/sandbox/win/src/sidestep/ia32_opcode_map.cpp',
-            'chromium/sandbox/win/src/sidestep/mini_disassembler.cpp',
-            'chromium/sandbox/win/src/sidestep/preamble_patcher_with_stub.cpp',
-            'chromium/sandbox/win/src/sidestep_resolver.cc',
-            'chromium/sandbox/win/src/Wow64.cc',
         ]
 
-    for var in ('UNICODE', '_UNICODE', 'NS_NO_XPCOM', 'SANDBOX_EXPORTS',
+    for var in ('UNICODE', '_UNICODE', 'NS_NO_XPCOM',
                 '_CRT_RAND_S', 'CHROMIUM_SANDBOX_BUILD'):
         DEFINES[var] = True
+    if CONFIG['CC_TYPE'] not in ('gcc', 'clang'):
+        DEFINES['SANDBOX_EXPORTS'] = True
 
     LOCAL_INCLUDES += ['/security/sandbox/chromium-shim']
     LOCAL_INCLUDES += ['/security/sandbox/chromium']
     LOCAL_INCLUDES += ['/nsprpub']
 
-    DISABLE_STL_WRAPPING = True
+    DisableStlWrapping()
 
     # Suppress warnings in third-party code.
-    if CONFIG['_MSC_VER']:
+    if CONFIG['CC_TYPE'] in ('msvc', 'clang-cl'):
         CXXFLAGS += [
             '-wd4275', # non dll-interface class exception used as base for dll-interface class
             '-wd4717', # recursive on all control paths, function will cause runtime stack overflow
@@ -173,3 +178,6 @@ elif CONFIG['OS_ARCH'] == 'WINNT':
             '-wd4311', # 'reinterpret_cast': pointer truncation from 'LPOVERLAPPED' to 'DWORD'
             '-wd4312', # 'reinterpret_cast': conversion from 'DWORD' to 'LPOVERLAPPED' of greater size
         ]
+
+if CONFIG['CC_TYPE'] == 'clang-cl':
+    AllowCompilerWarnings()  # workaround for bug 1090497

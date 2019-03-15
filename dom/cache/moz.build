@@ -82,10 +82,6 @@ IPDL_SOURCES += [
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
-LOCAL_INCLUDES += [
-    '../workers',
-]
-
 FINAL_LIBRARY = 'xul'
 
 MOCHITEST_MANIFESTS += [
@@ -100,5 +96,5 @@ XPCSHELL_TESTS_MANIFESTS += [
     'test/xpcshell/xpcshell.ini',
 ]
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

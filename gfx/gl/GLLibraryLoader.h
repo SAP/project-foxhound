@@ -9,54 +9,50 @@
 
 #include "GLDefs.h"
 #include "nscore.h"
-#include "prlink.h"
+#include "mozilla/SharedLibrary.h"
 
 namespace mozilla {
 namespace gl {
 
-class GLLibraryLoader
-{
-public:
-    bool OpenLibrary(const char* library);
+class GLLibraryLoader {
+ public:
+  bool OpenLibrary(const char* library);
 
-    typedef PRFuncPtr (GLAPIENTRY * PlatformLookupFunction) (const char*);
+  typedef PRFuncPtr(GLAPIENTRY* PlatformLookupFunction)(const char*);
 
-    enum {
-        MAX_SYMBOL_NAMES = 6,
-        MAX_SYMBOL_LENGTH = 128
-    };
+  enum { MAX_SYMBOL_NAMES = 6, MAX_SYMBOL_LENGTH = 128 };
 
-    typedef struct {
-        PRFuncPtr* symPointer;
-        const char* symNames[MAX_SYMBOL_NAMES];
-    } SymLoadStruct;
+  typedef struct {
+    PRFuncPtr* symPointer;
+    const char* symNames[MAX_SYMBOL_NAMES];
+  } SymLoadStruct;
 
-    bool LoadSymbols(const SymLoadStruct* firstStruct,
-                     bool tryplatform = false,
-                     const char* prefix = nullptr,
-                     bool warnOnFailure = true);
+  bool LoadSymbols(const SymLoadStruct* firstStruct, bool tryplatform = false,
+                   const char* prefix = nullptr, bool warnOnFailure = true);
 
-    PRFuncPtr LookupSymbol(const char* symname);
+  static void ClearSymbols(const SymLoadStruct* firstStruct);
 
-    /*
-     * Static version of the functions in this class
-     */
-    static PRFuncPtr LookupSymbol(PRLibrary* lib,
-                                  const char* symname,
-                                  PlatformLookupFunction lookupFunction = nullptr);
-    static bool LoadSymbols(PRLibrary* lib,
-                            const SymLoadStruct* firstStruct,
-                            PlatformLookupFunction lookupFunction = nullptr,
-                            const char* prefix = nullptr,
-                            bool warnOnFailure = true);
-protected:
-    GLLibraryLoader() {
-        mLibrary = nullptr;
-        mLookupFunc = nullptr;
-    }
+  PRFuncPtr LookupSymbol(const char* symname);
 
-    PRLibrary* mLibrary;
-    PlatformLookupFunction mLookupFunc;
+  /*
+   * Static version of the functions in this class
+   */
+  static PRFuncPtr LookupSymbol(
+      PRLibrary* lib, const char* symname,
+      PlatformLookupFunction lookupFunction = nullptr);
+  static bool LoadSymbols(PRLibrary* lib, const SymLoadStruct* firstStruct,
+                          PlatformLookupFunction lookupFunction = nullptr,
+                          const char* prefix = nullptr,
+                          bool warnOnFailure = true);
+
+ protected:
+  GLLibraryLoader() {
+    mLibrary = nullptr;
+    mLookupFunc = nullptr;
+  }
+
+  PRLibrary* mLibrary;
+  PlatformLookupFunction mLookupFunc;
 };
 
 } /* namespace gl */

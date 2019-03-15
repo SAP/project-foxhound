@@ -8,7 +8,6 @@ description: >
 includes: [propertyHelper.js]
 flags: [noStrict]
 ---*/
-
 var threw = false;
 var obj = {};
 Object.defineProperty(obj, 'a', {

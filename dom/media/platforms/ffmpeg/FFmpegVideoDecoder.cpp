@@ -7,27 +7,34 @@
 #include "FFmpegVideoDecoder.h"
 #include "FFmpegLog.h"
 #include "ImageContainer.h"
-#include "MediaInfo.h"
 #include "MP4Decoder.h"
+#include "MediaInfo.h"
 #include "VPXDecoder.h"
+#include "mozilla/layers/KnowsCompositor.h"
 
 #include "libavutil/pixfmt.h"
 #if LIBAVCODEC_VERSION_MAJOR < 54
-#define AVPixelFormat PixelFormat
-#define AV_PIX_FMT_YUV420P PIX_FMT_YUV420P
-#define AV_PIX_FMT_YUVJ420P PIX_FMT_YUVJ420P
-#define AV_PIX_FMT_YUV444P PIX_FMT_YUV444P
-#define AV_PIX_FMT_NONE PIX_FMT_NONE
+#  define AVPixelFormat PixelFormat
+#  define AV_PIX_FMT_YUV420P PIX_FMT_YUV420P
+#  define AV_PIX_FMT_YUVJ420P PIX_FMT_YUVJ420P
+#  define AV_PIX_FMT_YUV420P10LE PIX_FMT_YUV420P10LE
+#  define AV_PIX_FMT_YUV422P PIX_FMT_YUV422P
+#  define AV_PIX_FMT_YUV422P10LE PIX_FMT_YUV422P10LE
+#  define AV_PIX_FMT_YUV444P PIX_FMT_YUV444P
+#  define AV_PIX_FMT_YUV444P10LE PIX_FMT_YUV444P10LE
+#  define AV_PIX_FMT_NONE PIX_FMT_NONE
 #endif
 #include "mozilla/PodOperations.h"
 #include "mozilla/TaskQueue.h"
 #include "nsThreadUtils.h"
-
+#include "prsystem.h"
 
 typedef mozilla::layers::Image Image;
 typedef mozilla::layers::PlanarYCbCrImage PlanarYCbCrImage;
 
 namespace mozilla {
+
+using media::TimeUnit;
 
 /**
  * FFmpeg calls back to this function with a list of pixel formats it supports.
@@ -35,21 +42,43 @@ namespace mozilla {
  * For now, we just look for YUV420P, YUVJ420P and YUV444 as those are the only
  * only non-HW accelerated format supported by FFmpeg's H264 and VP9 decoder.
  */
-static AVPixelFormat
-ChoosePixelFormat(AVCodecContext* aCodecContext, const AVPixelFormat* aFormats)
-{
+static AVPixelFormat ChoosePixelFormat(AVCodecContext* aCodecContext,
+                                       const AVPixelFormat* aFormats) {
   FFMPEG_LOG("Choosing FFmpeg pixel format for video decoding.");
   for (; *aFormats > -1; aFormats++) {
     switch (*aFormats) {
-      case AV_PIX_FMT_YUV444P:
-        FFMPEG_LOG("Requesting pixel format YUV444P.");
-        return AV_PIX_FMT_YUV444P;
       case AV_PIX_FMT_YUV420P:
         FFMPEG_LOG("Requesting pixel format YUV420P.");
         return AV_PIX_FMT_YUV420P;
       case AV_PIX_FMT_YUVJ420P:
         FFMPEG_LOG("Requesting pixel format YUVJ420P.");
         return AV_PIX_FMT_YUVJ420P;
+      case AV_PIX_FMT_YUV420P10LE:
+        FFMPEG_LOG("Requesting pixel format YUV420P10LE.");
+        return AV_PIX_FMT_YUV420P10LE;
+      case AV_PIX_FMT_YUV422P:
+        FFMPEG_LOG("Requesting pixel format YUV422P.");
+        return AV_PIX_FMT_YUV422P;
+      case AV_PIX_FMT_YUV422P10LE:
+        FFMPEG_LOG("Requesting pixel format YUV422P10LE.");
+        return AV_PIX_FMT_YUV422P10LE;
+      case AV_PIX_FMT_YUV444P:
+        FFMPEG_LOG("Requesting pixel format YUV444P.");
+        return AV_PIX_FMT_YUV444P;
+      case AV_PIX_FMT_YUV444P10LE:
+        FFMPEG_LOG("Requesting pixel format YUV444P10LE.");
+        return AV_PIX_FMT_YUV444P10LE;
+#if LIBAVCODEC_VERSION_MAJOR >= 57
+      case AV_PIX_FMT_YUV420P12LE:
+        FFMPEG_LOG("Requesting pixel format YUV420P12LE.");
+        return AV_PIX_FMT_YUV420P12LE;
+      case AV_PIX_FMT_YUV422P12LE:
+        FFMPEG_LOG("Requesting pixel format YUV422P12LE.");
+        return AV_PIX_FMT_YUV422P12LE;
+      case AV_PIX_FMT_YUV444P12LE:
+        FFMPEG_LOG("Requesting pixel format YUV444P12LE.");
+        return AV_PIX_FMT_YUV444P12LE;
+#endif
       default:
         break;
     }
@@ -60,17 +89,13 @@ ChoosePixelFormat(AVCodecContext* aCodecContext, const AVPixelFormat* aFormats)
 }
 
 FFmpegVideoDecoder<LIBAV_VER>::PtsCorrectionContext::PtsCorrectionContext()
-  : mNumFaultyPts(0)
-  , mNumFaultyDts(0)
-  , mLastPts(INT64_MIN)
-  , mLastDts(INT64_MIN)
-{
-}
+    : mNumFaultyPts(0),
+      mNumFaultyDts(0),
+      mLastPts(INT64_MIN),
+      mLastDts(INT64_MIN) {}
 
-int64_t
-FFmpegVideoDecoder<LIBAV_VER>::PtsCorrectionContext::GuessCorrectPts(
-  int64_t aPts, int64_t aDts)
-{
+int64_t FFmpegVideoDecoder<LIBAV_VER>::PtsCorrectionContext::GuessCorrectPts(
+    int64_t aPts, int64_t aDts) {
   int64_t pts = AV_NOPTS_VALUE;
 
   if (aDts != int64_t(AV_NOPTS_VALUE)) {
@@ -81,8 +106,8 @@ FFmpegVideoDecoder<LIBAV_VER>::PtsCorrectionContext::GuessCorrectPts(
     mNumFaultyPts += aPts <= mLastPts;
     mLastPts = aPts;
   }
-  if ((mNumFaultyPts <= mNumFaultyDts || aDts == int64_t(AV_NOPTS_VALUE))
-      && aPts != int64_t(AV_NOPTS_VALUE)) {
+  if ((mNumFaultyPts <= mNumFaultyDts || aDts == int64_t(AV_NOPTS_VALUE)) &&
+      aPts != int64_t(AV_NOPTS_VALUE)) {
     pts = aPts;
   } else {
     pts = aDts;
@@ -90,9 +115,7 @@ FFmpegVideoDecoder<LIBAV_VER>::PtsCorrectionContext::GuessCorrectPts(
   return pts;
 }
 
-void
-FFmpegVideoDecoder<LIBAV_VER>::PtsCorrectionContext::Reset()
-{
+void FFmpegVideoDecoder<LIBAV_VER>::PtsCorrectionContext::Reset() {
   mNumFaultyPts = 0;
   mNumFaultyDts = 0;
   mLastPts = INT64_MIN;
@@ -100,35 +123,30 @@ FFmpegVideoDecoder<LIBAV_VER>::PtsCorrectionContext::Reset()
 }
 
 FFmpegVideoDecoder<LIBAV_VER>::FFmpegVideoDecoder(
-  FFmpegLibWrapper* aLib, TaskQueue* aTaskQueue, const VideoInfo& aConfig,
-  ImageContainer* aImageContainer, bool aLowLatency)
-  : FFmpegDataDecoder(aLib, aTaskQueue, GetCodecId(aConfig.mMimeType))
-  , mImageContainer(aImageContainer)
-  , mInfo(aConfig)
-  , mCodecParser(nullptr)
-  , mLastInputDts(INT64_MIN)
-  , mLowLatency(aLowLatency)
-{
-  MOZ_COUNT_CTOR(FFmpegVideoDecoder);
+    FFmpegLibWrapper* aLib, TaskQueue* aTaskQueue, const VideoInfo& aConfig,
+    KnowsCompositor* aAllocator, ImageContainer* aImageContainer,
+    bool aLowLatency)
+    : FFmpegDataDecoder(aLib, aTaskQueue, GetCodecId(aConfig.mMimeType)),
+      mImageAllocator(aAllocator),
+      mImageContainer(aImageContainer),
+      mInfo(aConfig),
+      mLowLatency(aLowLatency) {
   // Use a new MediaByteBuffer as the object will be modified during
   // initialization.
   mExtraData = new MediaByteBuffer;
   mExtraData->AppendElements(*aConfig.mExtraData);
 }
 
-RefPtr<MediaDataDecoder::InitPromise>
-FFmpegVideoDecoder<LIBAV_VER>::Init()
-{
-  if (NS_FAILED(InitDecoder())) {
-    return InitPromise::CreateAndReject(NS_ERROR_DOM_MEDIA_FATAL_ERR, __func__);
+RefPtr<MediaDataDecoder::InitPromise> FFmpegVideoDecoder<LIBAV_VER>::Init() {
+  MediaResult rv = InitDecoder();
+  if (NS_FAILED(rv)) {
+    return InitPromise::CreateAndReject(rv, __func__);
   }
 
   return InitPromise::CreateAndResolve(TrackInfo::kVideoTrack, __func__);
 }
 
-void
-FFmpegVideoDecoder<LIBAV_VER>::InitCodecContext()
-{
+void FFmpegVideoDecoder<LIBAV_VER>::InitCodecContext() {
   mCodecContext->width = mInfo.mImage.width;
   mCodecContext->height = mInfo.mImage.height;
 
@@ -145,7 +163,7 @@ FFmpegVideoDecoder<LIBAV_VER>::InitCodecContext()
   }
 
   if (mLowLatency) {
-    mCodecContext->flags |= CODEC_FLAG_LOW_DELAY;
+    mCodecContext->flags |= AV_CODEC_FLAG_LOW_DELAY;
     // ffvp9 and ffvp8 at this stage do not support slice threading, but it may
     // help with the h264 decoder if there's ever one.
     mCodecContext->thread_type = FF_THREAD_SLICE;
@@ -160,88 +178,70 @@ FFmpegVideoDecoder<LIBAV_VER>::InitCodecContext()
 
   // FFmpeg will call back to this to negotiate a video pixel format.
   mCodecContext->get_format = ChoosePixelFormat;
-
-  mCodecParser = mLib->av_parser_init(mCodecID);
-  if (mCodecParser) {
-    mCodecParser->flags |= PARSER_FLAG_COMPLETE_FRAMES;
-  }
 }
 
-RefPtr<MediaDataDecoder::DecodePromise>
-FFmpegVideoDecoder<LIBAV_VER>::ProcessDecode(MediaRawData* aSample)
-{
-  bool gotFrame = false;
-  DecodedData results;
-  MediaResult rv = DoDecode(aSample, &gotFrame, results);
-  if (NS_FAILED(rv)) {
-    return DecodePromise::CreateAndReject(rv, __func__);
-  }
-  return DecodePromise::CreateAndResolve(Move(results), __func__);
-}
-
-MediaResult
-FFmpegVideoDecoder<LIBAV_VER>::DoDecode(MediaRawData* aSample, bool* aGotFrame,
-                                        MediaDataDecoder::DecodedData& aResults)
-{
-  uint8_t* inputData = const_cast<uint8_t*>(aSample->Data());
-  size_t inputSize = aSample->Size();
-
-#if LIBAVCODEC_VERSION_MAJOR >= 54
-  if (inputSize && mCodecParser && (mCodecID == AV_CODEC_ID_VP8
-#if LIBAVCODEC_VERSION_MAJOR >= 55
-      || mCodecID == AV_CODEC_ID_VP9
-#endif
-      )) {
-    while (inputSize) {
-      uint8_t* data;
-      int size;
-      int len = mLib->av_parser_parse2(
-        mCodecParser, mCodecContext, &data, &size, inputData, inputSize,
-        aSample->mTime, aSample->mTimecode, aSample->mOffset);
-      if (size_t(len) > inputSize) {
-        return NS_ERROR_DOM_MEDIA_DECODE_ERR;
-      }
-      inputData += len;
-      inputSize -= len;
-      if (size) {
-        bool gotFrame = false;
-        MediaResult rv = DoDecode(aSample, data, size, &gotFrame, aResults);
-        if (NS_FAILED(rv)) {
-          return rv;
-        }
-        if (gotFrame && aGotFrame) {
-          *aGotFrame = true;
-        }
-      }
-    }
-    return NS_OK;
-  }
-#endif
-  return DoDecode(aSample, inputData, inputSize, aGotFrame, aResults);
-}
-
-MediaResult
-FFmpegVideoDecoder<LIBAV_VER>::DoDecode(MediaRawData* aSample,
-                                        uint8_t* aData, int aSize,
-                                        bool* aGotFrame,
-                                        MediaDataDecoder::DecodedData& aResults)
-{
+MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
+    MediaRawData* aSample, uint8_t* aData, int aSize, bool* aGotFrame,
+    MediaDataDecoder::DecodedData& aResults) {
   AVPacket packet;
   mLib->av_init_packet(&packet);
 
   packet.data = aData;
   packet.size = aSize;
-  packet.dts = mLastInputDts = aSample->mTimecode;
-  packet.pts = aSample->mTime;
+  packet.dts = aSample->mTimecode.ToMicroseconds();
+  packet.pts = aSample->mTime.ToMicroseconds();
   packet.flags = aSample->mKeyframe ? AV_PKT_FLAG_KEY : 0;
   packet.pos = aSample->mOffset;
 
+#if LIBAVCODEC_VERSION_MAJOR >= 58
+  packet.duration = aSample->mDuration.ToMicroseconds();
+  int res = mLib->avcodec_send_packet(mCodecContext, &packet);
+  if (res < 0) {
+    // In theory, avcodec_send_packet could sent -EAGAIN should its internal
+    // buffers be full. In practice this can't happen as we only feed one frame
+    // at a time, and we immediately call avcodec_receive_frame right after.
+    FFMPEG_LOG("avcodec_send_packet error: %d", res);
+    return MediaResult(NS_ERROR_DOM_MEDIA_DECODE_ERR,
+                       RESULT_DETAIL("avcodec_send_packet error: %d", res));
+  }
+
+  if (aGotFrame) {
+    *aGotFrame = false;
+  }
+  do {
+    if (!PrepareFrame()) {
+      NS_WARNING("FFmpeg h264 decoder failed to allocate frame.");
+      return MediaResult(NS_ERROR_OUT_OF_MEMORY, __func__);
+    }
+    res = mLib->avcodec_receive_frame(mCodecContext, mFrame);
+    if (res == int(AVERROR_EOF)) {
+      return NS_ERROR_DOM_MEDIA_END_OF_STREAM;
+    }
+    if (res == AVERROR(EAGAIN)) {
+      return NS_OK;
+    }
+    if (res < 0) {
+      FFMPEG_LOG("avcodec_receive_frame error: %d", res);
+      return MediaResult(NS_ERROR_DOM_MEDIA_DECODE_ERR,
+                         RESULT_DETAIL("avcodec_receive_frame error: %d", res));
+    }
+    MediaResult rv = CreateImage(mFrame->pkt_pos, mFrame->pkt_pts,
+                                 mFrame->pkt_duration, aResults);
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
+    if (aGotFrame) {
+      *aGotFrame = true;
+    }
+  } while (true);
+#else
   // LibAV provides no API to retrieve the decoded sample's duration.
   // (FFmpeg >= 1.0 provides av_frame_get_pkt_duration)
   // As such we instead use a map using the dts as key that we will retrieve
   // later.
   // The map will have a typical size of 16 entry.
-  mDurationMap.Insert(aSample->mTimecode, aSample->mDuration);
+  mDurationMap.Insert(aSample->mTimecode.ToMicroseconds(),
+                      aSample->mDuration.ToMicroseconds());
 
   if (!PrepareFrame()) {
     NS_WARNING("FFmpeg h264 decoder failed to allocate frame.");
@@ -253,13 +253,15 @@ FFmpegVideoDecoder<LIBAV_VER>::DoDecode(MediaRawData* aSample,
 
   int decoded;
   int bytesConsumed =
-    mLib->avcodec_decode_video2(mCodecContext, mFrame, &decoded, &packet);
+      mLib->avcodec_decode_video2(mCodecContext, mFrame, &decoded, &packet);
 
-  FFMPEG_LOG("DoDecodeFrame:decode_video: rv=%d decoded=%d "
-             "(Input: pts(%" PRId64 ") dts(%" PRId64 ") Output: pts(%" PRId64 ") "
-             "opaque(%" PRId64 ") pkt_pts(%" PRId64 ") pkt_dts(%" PRId64 "))",
-             bytesConsumed, decoded, packet.pts, packet.dts, mFrame->pts,
-             mFrame->reordered_opaque, mFrame->pkt_pts, mFrame->pkt_dts);
+  FFMPEG_LOG(
+      "DoDecodeFrame:decode_video: rv=%d decoded=%d "
+      "(Input: pts(%" PRId64 ") dts(%" PRId64 ") Output: pts(%" PRId64
+      ") "
+      "opaque(%" PRId64 ") pkt_pts(%" PRId64 ") pkt_dts(%" PRId64 "))",
+      bytesConsumed, decoded, packet.pts, packet.dts, mFrame->pts,
+      mFrame->reordered_opaque, mFrame->pkt_pts, mFrame->pkt_dts);
 
   if (bytesConsumed < 0) {
     return MediaResult(NS_ERROR_DOM_MEDIA_DECODE_ERR,
@@ -282,16 +284,27 @@ FFmpegVideoDecoder<LIBAV_VER>::DoDecode(MediaRawData* aSample,
   int64_t duration;
   if (!mDurationMap.Find(mFrame->pkt_dts, duration)) {
     NS_WARNING("Unable to retrieve duration from map");
-    duration = aSample->mDuration;
+    duration = aSample->mDuration.ToMicroseconds();
     // dts are probably incorrectly reported ; so clear the map as we're
     // unlikely to find them in the future anyway. This also guards
     // against the map becoming extremely big.
     mDurationMap.Clear();
   }
-  FFMPEG_LOG(
-    "Got one frame output with pts=%" PRId64 " dts=%" PRId64
-    " duration=%" PRId64 " opaque=%" PRId64,
-    pts, mFrame->pkt_dts, duration, mCodecContext->reordered_opaque);
+
+  MediaResult rv = CreateImage(aSample->mOffset, pts, duration, aResults);
+  if (NS_SUCCEEDED(rv) && aGotFrame) {
+    *aGotFrame = true;
+  }
+  return rv;
+#endif
+}
+
+MediaResult FFmpegVideoDecoder<LIBAV_VER>::CreateImage(
+    int64_t aOffset, int64_t aPts, int64_t aDuration,
+    MediaDataDecoder::DecodedData& aResults) {
+  FFMPEG_LOG("Got one frame output with pts=%" PRId64 " dts=%" PRId64
+             " duration=%" PRId64 " opaque=%" PRId64,
+             aPts, mFrame->pkt_dts, aDuration, mCodecContext->reordered_opaque);
 
   VideoData::YCbCrBuffer b;
   b.mPlanes[0].mData = mFrame->data[0];
@@ -308,12 +321,49 @@ FFmpegVideoDecoder<LIBAV_VER>::DoDecode(MediaRawData* aSample,
 
   b.mPlanes[0].mWidth = mFrame->width;
   b.mPlanes[0].mHeight = mFrame->height;
-  if (mCodecContext->pix_fmt == AV_PIX_FMT_YUV444P) {
+  if (mCodecContext->pix_fmt == AV_PIX_FMT_YUV444P ||
+      mCodecContext->pix_fmt == AV_PIX_FMT_YUV444P10LE
+#if LIBAVCODEC_VERSION_MAJOR >= 57
+      || mCodecContext->pix_fmt == AV_PIX_FMT_YUV444P12LE
+#endif
+  ) {
     b.mPlanes[1].mWidth = b.mPlanes[2].mWidth = mFrame->width;
     b.mPlanes[1].mHeight = b.mPlanes[2].mHeight = mFrame->height;
+    if (mCodecContext->pix_fmt == AV_PIX_FMT_YUV444P10LE) {
+      b.mColorDepth = gfx::ColorDepth::COLOR_10;
+    }
+#if LIBAVCODEC_VERSION_MAJOR >= 57
+    else if (mCodecContext->pix_fmt == AV_PIX_FMT_YUV444P12LE) {
+      b.mColorDepth = gfx::ColorDepth::COLOR_12;
+    }
+#endif
+  } else if (mCodecContext->pix_fmt == AV_PIX_FMT_YUV422P ||
+             mCodecContext->pix_fmt == AV_PIX_FMT_YUV422P10LE
+#if LIBAVCODEC_VERSION_MAJOR >= 57
+             || mCodecContext->pix_fmt == AV_PIX_FMT_YUV422P12LE
+#endif
+  ) {
+    b.mPlanes[1].mWidth = b.mPlanes[2].mWidth = (mFrame->width + 1) >> 1;
+    b.mPlanes[1].mHeight = b.mPlanes[2].mHeight = mFrame->height;
+    if (mCodecContext->pix_fmt == AV_PIX_FMT_YUV422P10LE) {
+      b.mColorDepth = gfx::ColorDepth::COLOR_10;
+    }
+#if LIBAVCODEC_VERSION_MAJOR >= 57
+    else if (mCodecContext->pix_fmt == AV_PIX_FMT_YUV422P12LE) {
+      b.mColorDepth = gfx::ColorDepth::COLOR_12;
+    }
+#endif
   } else {
     b.mPlanes[1].mWidth = b.mPlanes[2].mWidth = (mFrame->width + 1) >> 1;
     b.mPlanes[1].mHeight = b.mPlanes[2].mHeight = (mFrame->height + 1) >> 1;
+    if (mCodecContext->pix_fmt == AV_PIX_FMT_YUV420P10LE) {
+      b.mColorDepth = gfx::ColorDepth::COLOR_10;
+    }
+#if LIBAVCODEC_VERSION_MAJOR >= 57
+    else if (mCodecContext->pix_fmt == AV_PIX_FMT_YUV420P12LE) {
+      b.mColorDepth = gfx::ColorDepth::COLOR_12;
+    }
+#endif
   }
   if (mLib->av_frame_get_colorspace) {
     switch (mLib->av_frame_get_colorspace(mFrame)) {
@@ -335,61 +385,29 @@ FFmpegVideoDecoder<LIBAV_VER>::DoDecode(MediaRawData* aSample,
         break;
     }
   }
-  RefPtr<VideoData> v =
-    VideoData::CreateAndCopyData(mInfo,
-                                  mImageContainer,
-                                  aSample->mOffset,
-                                  pts,
-                                  duration,
-                                  b,
-                                  !!mFrame->key_frame,
-                                  -1,
-                                  mInfo.ScaledImageRect(mFrame->width,
-                                                        mFrame->height));
+  RefPtr<VideoData> v = VideoData::CreateAndCopyData(
+      mInfo, mImageContainer, aOffset, TimeUnit::FromMicroseconds(aPts),
+      TimeUnit::FromMicroseconds(aDuration), b, !!mFrame->key_frame,
+      TimeUnit::FromMicroseconds(-1),
+      mInfo.ScaledImageRect(mFrame->width, mFrame->height), mImageAllocator);
 
   if (!v) {
     return MediaResult(NS_ERROR_OUT_OF_MEMORY,
                        RESULT_DETAIL("image allocation error"));
   }
-  aResults.AppendElement(Move(v));
-  if (aGotFrame) {
-    *aGotFrame = true;
-  }
+  aResults.AppendElement(std::move(v));
   return NS_OK;
 }
 
-RefPtr<MediaDataDecoder::DecodePromise>
-FFmpegVideoDecoder<LIBAV_VER>::ProcessDrain()
-{
-  RefPtr<MediaRawData> empty(new MediaRawData());
-  empty->mTimecode = mLastInputDts;
-  bool gotFrame = false;
-  DecodedData results;
-  while (NS_SUCCEEDED(DoDecode(empty, &gotFrame, results)) && gotFrame) {
-  }
-  return DecodePromise::CreateAndResolve(Move(results), __func__);
-}
-
 RefPtr<MediaDataDecoder::FlushPromise>
-FFmpegVideoDecoder<LIBAV_VER>::ProcessFlush()
-{
+FFmpegVideoDecoder<LIBAV_VER>::ProcessFlush() {
   mPtsContext.Reset();
   mDurationMap.Clear();
   return FFmpegDataDecoder::ProcessFlush();
 }
 
-FFmpegVideoDecoder<LIBAV_VER>::~FFmpegVideoDecoder()
-{
-  MOZ_COUNT_DTOR(FFmpegVideoDecoder);
-  if (mCodecParser) {
-    mLib->av_parser_close(mCodecParser);
-    mCodecParser = nullptr;
-  }
-}
-
-AVCodecID
-FFmpegVideoDecoder<LIBAV_VER>::GetCodecId(const nsACString& aMimeType)
-{
+AVCodecID FFmpegVideoDecoder<LIBAV_VER>::GetCodecId(
+    const nsACString& aMimeType) {
   if (MP4Decoder::IsH264(aMimeType)) {
     return AV_CODEC_ID_H264;
   }
@@ -413,4 +431,4 @@ FFmpegVideoDecoder<LIBAV_VER>::GetCodecId(const nsACString& aMimeType)
   return AV_CODEC_ID_NONE;
 }
 
-} // namespace mozilla
+}  // namespace mozilla

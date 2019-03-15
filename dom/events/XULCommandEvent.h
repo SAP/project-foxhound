@@ -4,75 +4,62 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// This class implements a XUL "command" event.  See nsIDOMXULCommandEvent.idl
+// This class implements a XUL "command" event.  See XULCommandEvent.webidl
 
 #ifndef mozilla_dom_XULCommandEvent_h_
 #define mozilla_dom_XULCommandEvent_h_
 
+#include "mozilla/RefPtr.h"
 #include "mozilla/dom/UIEvent.h"
 #include "mozilla/dom/XULCommandEventBinding.h"
-#include "nsIDOMXULCommandEvent.h"
 
 namespace mozilla {
 namespace dom {
 
-class XULCommandEvent : public UIEvent,
-                        public nsIDOMXULCommandEvent
-{
-public:
-  XULCommandEvent(EventTarget* aOwner,
-                  nsPresContext* aPresContext,
+class XULCommandEvent : public UIEvent {
+ public:
+  XULCommandEvent(EventTarget* aOwner, nsPresContext* aPresContext,
                   WidgetInputEvent* aEvent);
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(XULCommandEvent, UIEvent)
-  NS_DECL_NSIDOMXULCOMMANDEVENT
 
-  // Forward our inherited virtual methods to the base class
-  NS_FORWARD_TO_UIEVENT
-
-  virtual JSObject* WrapObjectInternal(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override
-  {
-    return XULCommandEventBinding::Wrap(aCx, this, aGivenProto);
+  virtual JSObject* WrapObjectInternal(
+      JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override {
+    return XULCommandEvent_Binding::Wrap(aCx, this, aGivenProto);
   }
+
+  virtual XULCommandEvent* AsXULCommandEvent() override { return this; }
 
   bool AltKey();
   bool CtrlKey();
   bool ShiftKey();
   bool MetaKey();
+  uint16_t InputSource();
 
-  already_AddRefed<Event> GetSourceEvent()
-  {
-    RefPtr<Event> e =
-      mSourceEvent ? mSourceEvent->InternalDOMEvent() : nullptr;
+  already_AddRefed<Event> GetSourceEvent() {
+    RefPtr<Event> e = mSourceEvent;
     return e.forget();
   }
 
-  void InitCommandEvent(const nsAString& aType,
-                        bool aCanBubble, bool aCancelable,
-                        nsGlobalWindow* aView,
-                        int32_t aDetail,
-                        bool aCtrlKey, bool aAltKey,
-                        bool aShiftKey, bool aMetaKey,
-                        Event* aSourceEvent)
-  {
-    InitCommandEvent(aType, aCanBubble, aCancelable, aView->AsInner(),
-                     aDetail, aCtrlKey, aAltKey, aShiftKey, aMetaKey,
-                     aSourceEvent);
-  }
+  void InitCommandEvent(const nsAString& aType, bool aCanBubble,
+                        bool aCancelable, nsGlobalWindowInner* aView,
+                        int32_t aDetail, bool aCtrlKey, bool aAltKey,
+                        bool aShiftKey, bool aMetaKey, Event* aSourceEvent,
+                        uint16_t aInputSource, ErrorResult& aRv);
 
-protected:
+ protected:
   ~XULCommandEvent() {}
 
-  nsCOMPtr<nsIDOMEvent> mSourceEvent;
+  RefPtr<Event> mSourceEvent;
+  uint16_t mInputSource;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-already_AddRefed<mozilla::dom::XULCommandEvent>
-NS_NewDOMXULCommandEvent(mozilla::dom::EventTarget* aOwner,
-                         nsPresContext* aPresContext,
-                         mozilla::WidgetInputEvent* aEvent);
+already_AddRefed<mozilla::dom::XULCommandEvent> NS_NewDOMXULCommandEvent(
+    mozilla::dom::EventTarget* aOwner, nsPresContext* aPresContext,
+    mozilla::WidgetInputEvent* aEvent);
 
-#endif // mozilla_dom_XULCommandEvent_h_
+#endif  // mozilla_dom_XULCommandEvent_h_

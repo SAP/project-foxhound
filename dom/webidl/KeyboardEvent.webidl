@@ -7,14 +7,20 @@
 [Constructor(DOMString typeArg, optional KeyboardEventInit keyboardEventInitDict)]
 interface KeyboardEvent : UIEvent
 {
+  [NeedsCallerType]
   readonly attribute unsigned long    charCode;
+  [NeedsCallerType]
   readonly attribute unsigned long    keyCode;
 
+  [NeedsCallerType]
   readonly attribute boolean          altKey;
+  [NeedsCallerType]
   readonly attribute boolean          ctrlKey;
+  [NeedsCallerType]
   readonly attribute boolean          shiftKey;
   readonly attribute boolean          metaKey;
 
+  [NeedsCallerType]
   boolean getModifierState(DOMString key);
 
   const unsigned long DOM_KEY_LOCATION_STANDARD = 0x00;
@@ -27,8 +33,20 @@ interface KeyboardEvent : UIEvent
   readonly attribute boolean       isComposing;
 
   readonly attribute DOMString key;
-  [Pref="dom.keyboardevent.code.enabled"]
+  [NeedsCallerType]
   readonly attribute DOMString code;
+
+  [Throws, BinaryName="initKeyboardEventJS"]
+  void initKeyboardEvent(DOMString typeArg,
+                         optional boolean bubblesArg = false,
+                         optional boolean cancelableArg = false,
+                         optional Window? viewArg = null,
+                         optional DOMString keyArg = "",
+                         optional unsigned long locationArg = 0,
+                         optional boolean ctrlKey = false,
+                         optional boolean altKey = false,
+                         optional boolean shiftKey = false,
+                         optional boolean metaKey = false);
 
   // This returns the initialized dictionary for generating a
   // same-type keyboard event

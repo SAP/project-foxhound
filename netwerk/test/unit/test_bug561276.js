@@ -3,8 +3,8 @@
 // coming from cache.
 //
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = new HttpServer();
 var iteration = 0;
@@ -15,14 +15,14 @@ function setupChannel(suffix)
       uri: "http://localhost:" + httpserver.identity.primaryPort + suffix,
       loadUsingSystemPrincipal: true
     });
-    var httpChan = chan.QueryInterface(Components.interfaces.nsIHttpChannel);
+    var httpChan = chan.QueryInterface(Ci.nsIHttpChannel);
     httpChan.requestMethod = "GET";
     return httpChan;
 }
 
 function checkValueAndTrigger(request, data, ctx)
 {
-    do_check_eq("Ok", data);
+    Assert.equal("Ok", data);
     httpserver.stop(do_test_finished);
 }
 

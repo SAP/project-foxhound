@@ -2,9 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var {classes: Cc, interfaces: Ci, utils: Cu} = Components;
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource:///modules/webrtcUI.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource:///modules/webrtcUI.jsm");
 
 const BUNDLE_URL = "chrome://browser/locale/webrtcIndicator.properties";
 var gStringBundle;
@@ -39,6 +38,10 @@ function init(event) {
 }
 
 function updateIndicatorState() {
+  // If gStringBundle isn't set, the window hasn't finished loading.
+  if (!gStringBundle)
+    return;
+
   updateWindowAttr("sharingvideo", webrtcUI.showCameraIndicator);
   updateWindowAttr("sharingaudio", webrtcUI.showMicrophoneIndicator);
   updateWindowAttr("sharingscreen", webrtcUI.showScreenSharingIndicator);
@@ -185,5 +188,5 @@ var PositionHandler = {
           Math.abs(this._startWindowX - window.screenX) >= this.threshold;
         break;
     }
-  }
+  },
 };

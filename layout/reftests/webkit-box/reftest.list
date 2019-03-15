@@ -10,8 +10,8 @@ default-preferences pref(layout.css.prefixes.webkit,true)
 # WebKit/Blink on them.  (The reference case represents the WebKit/Blink
 # rendering.) We could probably make them pass by implementing some quirks, if
 # it turns out that the web depends on WebKit/Blink's behavior in these cases.
-== webkit-box-anon-flex-items-1a.html webkit-box-anon-flex-items-1-ref.html
-== webkit-box-anon-flex-items-1b.html webkit-box-anon-flex-items-1-ref.html
+random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == webkit-box-anon-flex-items-1a.html webkit-box-anon-flex-items-1-ref.html # Bug 1392106
+random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == webkit-box-anon-flex-items-1b.html webkit-box-anon-flex-items-1-ref.html # Bug 1392106
 fails == webkit-box-anon-flex-items-2.html webkit-box-anon-flex-items-2-ref.html
 fails == webkit-box-anon-flex-items-3.html webkit-box-anon-flex-items-3-ref.html
 
@@ -44,3 +44,8 @@ fails == webkit-box-ordinal-group-2.html webkit-box-ordinal-group-2-ref.html
 == webkit-box-pack-horiz-1a.html webkit-box-pack-horiz-1-ref.html
 == webkit-box-pack-horiz-1b.html webkit-box-pack-horiz-1-ref.html
 == webkit-box-pack-vert-1.html webkit-box-pack-vert-1-ref.html
+
+# Tests for "display: -webkit-box" container mixed with modern flex properties
+# (which shouldn't influence behavior of -webkit-box)
+== webkit-box-with-modern-css-1.html webkit-box-with-modern-css-1-ref.html
+== webkit-box-with-modern-css-2.html webkit-box-with-modern-css-2-ref.html

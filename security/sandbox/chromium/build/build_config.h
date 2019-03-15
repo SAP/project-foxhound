@@ -6,6 +6,7 @@
 //  Operating System:
 //    OS_WIN / OS_MACOSX / OS_LINUX / OS_POSIX (MACOSX or LINUX) /
 //    OS_NACL (NACL_SFI or NACL_NONSFI) / OS_NACL_SFI / OS_NACL_NONSFI
+//    OS_CHROMEOS is set by the build system
 //  Compiler:
 //    COMPILER_MSVC / COMPILER_GCC
 //  Processor:
@@ -48,18 +49,25 @@
 #endif
 #elif defined(_WIN32)
 #define OS_WIN 1
-#define TOOLKIT_VIEWS 1
+#elif defined(__Fuchsia__)
+#define OS_FUCHSIA 1
 #elif defined(__FreeBSD__)
 #define OS_FREEBSD 1
+#elif defined(__NetBSD__)
+#define OS_NETBSD 1
 #elif defined(__OpenBSD__)
 #define OS_OPENBSD 1
 #elif defined(__sun)
 #define OS_SOLARIS 1
 #elif defined(__QNXNTO__)
 #define OS_QNX 1
+#elif defined(_AIX)
+#define OS_AIX 1
 #else
 #error Please add support for your platform in build/build_config.h
 #endif
+// NOTE: Adding a new port? Please follow
+// https://chromium.googlesource.com/chromium/src/+/master/docs/new_port_policy.md
 
 #if defined(USE_OPENSSL_CERTS) && defined(USE_NSS_CERTS)
 #error Cannot use both OpenSSL and NSS for certificates
@@ -67,15 +75,16 @@
 
 // For access to standard BSD features, use OS_BSD instead of a
 // more specific macro.
-#if defined(OS_FREEBSD) || defined(OS_OPENBSD)
+#if defined(OS_FREEBSD) || defined(OS_NETBSD) || defined(OS_OPENBSD)
 #define OS_BSD 1
 #endif
 
 // For access to standard POSIXish features, use OS_POSIX instead of a
 // more specific macro.
-#if defined(OS_MACOSX) || defined(OS_LINUX) || defined(OS_FREEBSD) ||     \
-    defined(OS_OPENBSD) || defined(OS_SOLARIS) || defined(OS_ANDROID) ||  \
-    defined(OS_NACL) || defined(OS_QNX)
+#if defined(OS_AIX) || defined(OS_ANDROID) || defined(OS_FREEBSD) ||  \
+    defined(OS_FUCHSIA) || defined(OS_LINUX) || defined(OS_MACOSX) || \
+    defined(OS_NACL) || defined(OS_NETBSD) || defined(OS_OPENBSD) ||  \
+    defined(OS_QNX) || defined(OS_SOLARIS)
 #define OS_POSIX 1
 #endif
 
@@ -108,12 +117,32 @@
 #define ARCH_CPU_X86 1
 #define ARCH_CPU_32_BITS 1
 #define ARCH_CPU_LITTLE_ENDIAN 1
+#elif defined(__s390x__)
+#define ARCH_CPU_S390_FAMILY 1
+#define ARCH_CPU_S390X 1
+#define ARCH_CPU_64_BITS 1
+#define ARCH_CPU_BIG_ENDIAN 1
+#elif defined(__s390__)
+#define ARCH_CPU_S390_FAMILY 1
+#define ARCH_CPU_S390 1
+#define ARCH_CPU_31_BITS 1
+#define ARCH_CPU_BIG_ENDIAN 1
+#elif (defined(__PPC64__) || defined(__PPC__)) && defined(__BIG_ENDIAN__)
+#define ARCH_CPU_PPC64_FAMILY 1
+#define ARCH_CPU_PPC64 1
+#define ARCH_CPU_64_BITS 1
+#define ARCH_CPU_BIG_ENDIAN 1
+#elif defined(__PPC64__)
+#define ARCH_CPU_PPC64_FAMILY 1
+#define ARCH_CPU_PPC64 1
+#define ARCH_CPU_64_BITS 1
+#define ARCH_CPU_LITTLE_ENDIAN 1
 #elif defined(__ARMEL__)
 #define ARCH_CPU_ARM_FAMILY 1
 #define ARCH_CPU_ARMEL 1
 #define ARCH_CPU_32_BITS 1
 #define ARCH_CPU_LITTLE_ENDIAN 1
-#elif defined(__aarch64__)
+#elif defined(__aarch64__) || defined(_M_ARM64)
 #define ARCH_CPU_ARM_FAMILY 1
 #define ARCH_CPU_ARM64 1
 #define ARCH_CPU_64_BITS 1
@@ -123,7 +152,7 @@
 #define ARCH_CPU_LITTLE_ENDIAN 1
 #elif defined(__MIPSEL__)
 #if defined(__LP64__)
-#define ARCH_CPU_MIPS64_FAMILY 1
+#define ARCH_CPU_MIPS_FAMILY 1
 #define ARCH_CPU_MIPS64EL 1
 #define ARCH_CPU_64_BITS 1
 #define ARCH_CPU_LITTLE_ENDIAN 1
@@ -133,6 +162,18 @@
 #define ARCH_CPU_32_BITS 1
 #define ARCH_CPU_LITTLE_ENDIAN 1
 #endif
+#elif defined(__MIPSEB__)
+#if defined(__LP64__)
+#define ARCH_CPU_MIPS_FAMILY 1
+#define ARCH_CPU_MIPS64 1
+#define ARCH_CPU_64_BITS 1
+#define ARCH_CPU_BIG_ENDIAN 1
+#else
+#define ARCH_CPU_MIPS_FAMILY 1
+#define ARCH_CPU_MIPS 1
+#define ARCH_CPU_32_BITS 1
+#define ARCH_CPU_BIG_ENDIAN 1
+#endif
 #else
 #error Please add support for your architecture in build/build_config.h
 #endif
@@ -140,12 +181,10 @@
 // Type detection for wchar_t.
 #if defined(OS_WIN)
 #define WCHAR_T_IS_UTF16
-#elif defined(OS_POSIX) && defined(COMPILER_GCC) && \
-    defined(__WCHAR_MAX__) && \
+#elif defined(OS_POSIX) && defined(COMPILER_GCC) && defined(__WCHAR_MAX__) && \
     (__WCHAR_MAX__ == 0x7fffffff || __WCHAR_MAX__ == 0xffffffff)
 #define WCHAR_T_IS_UTF32
-#elif defined(OS_POSIX) && defined(COMPILER_GCC) && \
-    defined(__WCHAR_MAX__) && \
+#elif defined(OS_POSIX) && defined(COMPILER_GCC) && defined(__WCHAR_MAX__) && \
     (__WCHAR_MAX__ == 0x7fff || __WCHAR_MAX__ == 0xffff)
 // On Posix, we'll detect short wchar_t, but projects aren't guaranteed to
 // compile in this mode (in particular, Chrome doesn't). This is intended for

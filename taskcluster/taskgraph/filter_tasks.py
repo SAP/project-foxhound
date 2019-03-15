@@ -24,7 +24,7 @@ def filter_task(name):
 
 
 @filter_task('target_tasks_method')
-def filter_target_tasks(graph, parameters):
+def filter_target_tasks(graph, parameters, graph_config):
     """Proxy filter to use legacy target tasks code.
 
     This should go away once target_tasks are converted to filters.
@@ -32,4 +32,4 @@ def filter_target_tasks(graph, parameters):
 
     attr = parameters.get('target_tasks_method', 'all_tasks')
     fn = target_tasks.get_method(attr)
-    return fn(graph, parameters)
+    return fn(graph, parameters, graph_config)

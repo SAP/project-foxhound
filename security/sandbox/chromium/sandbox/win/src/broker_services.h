@@ -7,9 +7,12 @@
 
 #include <list>
 #include <map>
+#include <memory>
 #include <set>
 #include <utility>
+
 #include "base/compiler_specific.h"
+#include "base/environment.h"
 #include "base/macros.h"
 #include "base/win/scoped_handle.h"
 #include "sandbox/win/src/crosscall_server.h"
@@ -28,8 +31,6 @@ struct PeerTracker;
 
 namespace sandbox {
 
-class PolicyBase;
-
 // BrokerServicesBase ---------------------------------------------------------
 // Broker implementation version 0
 //
@@ -46,16 +47,16 @@ class BrokerServicesBase final : public BrokerServices,
 
   // BrokerServices interface.
   ResultCode Init() override;
-  TargetPolicy* CreatePolicy() override;
+  scoped_refptr<TargetPolicy> CreatePolicy() override;
   ResultCode SpawnTarget(const wchar_t* exe_path,
                          const wchar_t* command_line,
-                         TargetPolicy* policy,
+                         base::EnvironmentMap& env_map,
+                         scoped_refptr<TargetPolicy> policy,
+                         ResultCode* last_warning,
+                         DWORD* last_error,
                          PROCESS_INFORMATION* target) override;
   ResultCode WaitForAllTargets() override;
   ResultCode AddTargetPeer(HANDLE peer_process) override;
-  ResultCode InstallAppContainer(const wchar_t* sid,
-                                 const wchar_t* name) override;
-  ResultCode UninstallAppContainer(const wchar_t* sid) override;
 
   // Checks if the supplied process ID matches one of the broker's active
   // target processes
@@ -89,18 +90,19 @@ class BrokerServicesBase final : public BrokerServices,
   // threads at the same time.
   CRITICAL_SECTION lock_;
 
-  // provides a pool of threads that are used to wait on the IPC calls.
-  ThreadProvider* thread_pool_;
+  // Provides a pool of threads that are used to wait on the IPC calls.
+  std::unique_ptr<ThreadProvider> thread_pool_;
 
   // List of the trackers for closing and cleanup purposes.
-  JobTrackerList tracker_list_;
+  std::list<std::unique_ptr<JobTracker>> tracker_list_;
 
   // Maps peer process IDs to the saved handle and wait event.
   // Prevents peer callbacks from accessing the broker after destruction.
   PeerTrackerMap peer_map_;
 
   // Provides a fast lookup to identify sandboxed processes that belong to a
-  // job. Consult |jobless_process_handles_| for handles of pocess without job.
+  // job. Consult |jobless_process_handles_| for handles of processes without
+  // jobs.
   std::set<DWORD> child_process_ids_;
 
   DISALLOW_COPY_AND_ASSIGN(BrokerServicesBase);

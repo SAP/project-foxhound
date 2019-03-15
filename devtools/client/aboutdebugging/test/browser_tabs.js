@@ -5,59 +5,73 @@
 
 const TAB_URL = "data:text/html,<title>foo</title>";
 
-add_task(function* setup() {
-  yield SpecialPowers.pushPrefEnv({
-    set: [["dom.ipc.processCount", 1]]
-  });
-});
-
-add_task(function* () {
-  let { tab, document } = yield openAboutDebugging("tabs");
+add_task(async function() {
+  const { tab, document } = await openAboutDebugging("tabs");
 
   // Wait for initial tabs list which may be empty
   let tabsElement = getTabList(document);
-  if (tabsElement.querySelectorAll(".target-name").length == 0) {
-    yield waitForMutation(tabsElement, { childList: true });
-  }
+  await waitUntilElement(".target-name", tabsElement);
+
   // Refresh tabsElement to get the .target-list element
   tabsElement = getTabList(document);
 
   let names = [...tabsElement.querySelectorAll(".target-name")];
-  let initialTabCount = names.length;
+  const initialTabCount = names.length;
 
-  // Open a new tab in background and wait for its addition in the UI
-  let onNewTab = waitForMutation(tabsElement, { childList: true });
-  let newTab = yield addTab(TAB_URL, { background: true });
-  yield onNewTab;
+  info("Open a new background tab");
+  const newTab = await addTab(TAB_URL, { background: true });
 
-  // Check that the new tab appears in the UI, but with an empty name
-  let newNames = [...tabsElement.querySelectorAll(".target-name")];
-  newNames = newNames.filter(node => !names.includes(node));
-  is(newNames.length, 1, "A new tab appeared in the list");
-  let newTabTarget = newNames[0];
+  info("Wait for the tab to appear in the list with the correct name");
+  const container = await waitUntilTabContainer("foo", document);
 
-  // Then wait for title update, but on slow test runner, the title may already
-  // be set to the expected value
-  if (newTabTarget.textContent != "foo") {
-    yield waitForContentMutation(newTabTarget);
-  }
+  info("Wait until the title to update");
+  await waitUntil(() => {
+    return container.querySelector(".target-name").title === TAB_URL;
+  }, 100);
 
-  // Then wait for title update, but on slow test runner, the title may already
-  // be set to the expected value
-  yield waitUntil(() => newTabTarget.title === TAB_URL);
+  const icon = container.querySelector(".target-icon");
+  ok(icon && icon.src, "Tab icon found and src attribute is not empty");
 
-  // Check that the new tab appears in the UI
-  is(newTabTarget.textContent, "foo", "The tab title got updated");
-  is(newTabTarget.title, TAB_URL, "The tab tooltip is the url");
+  info("Check if the tab icon is a valid image");
+  await new Promise(r => {
+    const image = new Image();
+    image.onload = () => {
+      ok(true, "Favicon is not a broken image");
+      r();
+    };
+    image.onerror = () => {
+      ok(false, "Favicon is a broken image");
+      r();
+    };
+    image.src = icon.src;
+  });
 
   // Finally, close the tab
-  let onTabsUpdate = waitForMutation(tabsElement, { childList: true });
-  yield removeTab(newTab);
-  yield onTabsUpdate;
+  await removeTab(newTab);
+
+  info("Wait until the tab container is removed");
+  await waitUntil(() => !getTabContainer("foo", document), 100);
 
   // Check that the tab disappeared from the UI
   names = [...tabsElement.querySelectorAll("#tabs .target-name")];
   is(names.length, initialTabCount, "The tab disappeared from the UI");
 
-  yield closeAboutDebugging(tab);
+  await closeAboutDebugging(tab);
 });
+
+function getTabContainer(name, document) {
+  const nameElements = [...document.querySelectorAll("#tabs .target-name")];
+  const nameElement = nameElements.filter(element => element.textContent === name)[0];
+  if (nameElement) {
+    return nameElement.closest(".target-container");
+  }
+
+  return null;
+}
+
+async function waitUntilTabContainer(name, document) {
+  await waitUntil(() => {
+    return getTabContainer(name, document);
+  });
+  return getTabContainer(name, document);
+}

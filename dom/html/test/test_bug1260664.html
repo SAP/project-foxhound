@@ -18,13 +18,11 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1260664
 <script type="application/javascript">
 
 /** Test for Bug 1260664 **/
-SpecialPowers.setBoolPref("network.http.enablePerElementReferrer", true);
-
 SimpleTest.waitForExplicitFinish();
 SimpleTest.waitForFocus(runTests);
 
 function runTests() {
-  var elements = [ "iframe", "img", "a", "area", "link" ];
+  var elements = [ "iframe", "img", "a", "area", "link", "script"];
 
   for (var i = 0; i < elements.length; ++i) {
     reflectLimitedEnumerated({
@@ -44,7 +42,6 @@ function runTests() {
     });
   }
 
-  SpecialPowers.clearUserPref("network.http.enablePerElementReferrer");
   SimpleTest.finish();
 }
 

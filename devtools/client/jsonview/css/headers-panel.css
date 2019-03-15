@@ -24,7 +24,7 @@
 }
 
 .headersPanelBox .netInfoHeadersGroup {
-  color: var(--theme-body-color-alt);
+  color: var(--theme-toolbar-color);
   margin-bottom: 10px;
   border-bottom: 1px solid var(--theme-splitter-color);
   padding-top: 8px;
@@ -64,15 +64,4 @@
 
 .theme-dark .netInfoParamValue {
   color: var(--theme-highlight-gray);
-}
-
-/* Firebug Theme */
-.theme-firebug .netInfoHeadersTable {
-  font-family: Lucida Grande, Tahoma, sans-serif;
-  font-size: 11px;
-  line-height: 12px;
-}
-
-.theme-firebug .netInfoParamValue {
-  font-family: var(--monospace-font-family);
 }

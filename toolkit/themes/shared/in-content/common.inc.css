@@ -7,37 +7,75 @@
 @namespace xul "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
 
 *|*:root {
-  --in-content-page-color: #424e5a;
-  --in-content-page-background: #fbfbfb;
-  --in-content-text-color: #333;
+  --in-content-page-color: #0c0c0d;
+  --in-content-page-background: #f9f9fa;
+  --in-content-text-color: var(--grey-90);
   --in-content-selected-text: #fff;
-  --in-content-header-border-color: #c8c8c8;
   --in-content-box-background: #fff;
-  --in-content-box-background-odd: #f3f6fa;
-  --in-content-box-background-hover: #ebebeb;
-  --in-content-box-background-active: #dadada;
-  --in-content-box-border-color: #c1c1c1;
-  --in-content-item-hover: rgba(0,149,221,0.25);
-  --in-content-item-selected: #0095dd;
-  --in-content-border-highlight: #ff9500;
-  --in-content-border-focus: #0095dd;
-  --in-content-border-color: #c1c1c1;
-  --in-content-category-text: #c1c1c1;
-  --in-content-category-border-focus: 1px dotted #fff;
-  --in-content-category-text-selected: #f2f2f2;
-  --in-content-category-background: #424f5a;
-  --in-content-category-background-hover: #5e6972;
-  --in-content-category-background-active: #343f48;
+  --in-content-box-background-odd: rgba(12, 12, 13, 0.05); /* grey 90 a05 */
+  --in-content-box-background-hover: #ededf0; /* grey 20 */
+  --in-content-box-background-active: #d7d7db; /* grey 30 */
+  --in-content-box-border-color: var(--grey-90-a40);
+  --in-content-item-hover: rgba(69, 161, 255, 0.2); /* blue 40 a20 */
+  --in-content-item-selected: #0a84ff;
+  --in-content-border-highlight: #0a84ff;
+  --in-content-border-focus: #0a84ff;
+  --in-content-border-hover: var(--grey-90-a50);
+  --in-content-border-active: var(--blue-50);
+  --in-content-border-active-shadow: var(--blue-50-a30);
+  --in-content-border-invalid: var(--red-50);
+  --in-content-border-invalid-shadow: var(--red-50-a30);
+  --in-content-border-color: #d7d7db;
+  --in-content-category-outline-focus: 1px dotted #0a84ff;
+  --in-content-category-text-selected: #0a84ff;
+  --in-content-category-text-selected-active: #0060df;
+  --in-content-category-background-hover: rgba(12,12,13,0.1);
+  --in-content-category-background-active: rgba(12,12,13,0.15);
+  --in-content-category-background-selected-hover: rgba(12,12,13,0.15);
+  --in-content-category-background-selected-active: rgba(12,12,13,0.2);
   --in-content-tab-color: #424f5a;
-  --in-content-link-color: #0095dd;
-  --in-content-link-color-hover: #178ce5;
-  --in-content-link-color-active: #ff9500;
-  --in-content-link-color-visited: #551a8b;
-  --in-content-primary-button-background: #0095dd;
-  --in-content-primary-button-background-hover: #008acb;
-  --in-content-primary-button-background-active: #006b9d;
+  --in-content-link-color: #0a8dff;
+  --in-content-link-color-hover: #0060df;
+  --in-content-link-color-active: #003eaa;
+  --in-content-link-color-visited: #0a8dff;
+  --in-content-button-background: var(--grey-90-a10);
+  --in-content-button-background-hover: var(--grey-90-a20);
+  --in-content-button-background-active: var(--grey-90-a30);
+  --in-content-primary-button-background: var(--blue-60);
+  --in-content-primary-button-background-hover: var(--blue-70);
+  --in-content-primary-button-background-active: var(--blue-80);
+  --in-content-table-background: #ebebeb;
   --in-content-table-border-dark-color: #d1d1d1;
-  --in-content-table-header-background: #0095dd;
+  --in-content-table-header-background: #0a84ff;
+
+  --blue-40: #45a1ff;
+  --blue-40-a10: rgb(69, 161, 255, 0.1);
+  --blue-50: #0a84ff;
+  --blue-50-a30: rgba(10, 132, 255, 0.3);
+  --blue-60: #0060df;
+  --blue-70: #003eaa;
+  --blue-80: #002275;
+  --grey-20: #ededf0;
+  --grey-30: #d7d7db;
+  --grey-60: #4a4a4f;
+  --grey-90: #0c0c0d;
+  --grey-90-a10: rgba(12, 12, 13, 0.1);
+  --grey-90-a20: rgba(12, 12, 13, 0.2);
+  --grey-90-a30: rgba(12, 12, 13, 0.3);
+  --grey-90-a40: rgba(12, 12, 13, 0.4);
+  --grey-90-a50: rgba(12, 12, 13, 0.5);
+  --red-50: #ff0039;
+  --red-50-a30: rgba(255, 0, 57, 0.3);
+  --red-60: #d70022;
+  --yellow-50: #ffe900;
+  --yellow-90: #3e2800;
+
+  --shadow-10: 0 1px 4px var(--grey-90-a10);
+  --card-padding: 16px;
+  --card-shadow: var(--shadow-10);
+  --card-outline-color: var(--grey-30);
+  --card-shadow-hover: var(--card-shadow), 0 0 0 5px var(--card-outline-color);
+  --card-shadow-focus: 0 0 0 2px var(--blue-50), 0 0 0 6px var(--blue-50-a30);
 }
 
 html|html,
@@ -69,60 +107,20 @@ html|hr {
   border-color: var(--in-content-border-color);
 }
 
-xul|caption {
-  -moz-appearance: none;
-  margin: 0;
-}
-
-html|h2,
-xul|caption > xul|checkbox,
-xul|caption > xul|label {
-  font-size: 1.3rem;
-  font-weight: bold;
-  line-height: 22px;
-}
-
-xul|caption > xul|checkbox,
-xul|caption > xul|label {
-  margin: 0 !important;
+html|h2 {
+  font-weight: 600;
+  line-height: 1.4em;
 }
 
 *|*.main-content {
-  padding-top: 40px;
-  padding-inline-end: 44px; /* compensate the 4px margin of child elements */
-  padding-bottom: 48px;
-  padding-inline-start: 48px;
+  padding: 40px 28px;
   overflow: auto;
-}
-
-xul|prefpane > xul|*.content-box {
-  overflow: visible;
-}
-
-/* groupboxes */
-
-xul|groupbox {
-  -moz-appearance: none;
-  border: none;
-  margin: 15px 0 0;
-  padding-inline-start: 0;
-  padding-inline-end: 0;
-  font-size: 1.25rem;
-}
-
-xul|groupbox xul|label:not(.menu-accel):not(.menu-text):not(.indent):not(.learnMore),
-xul|groupbox xul|description {
-  /* !important needed to override toolkit !important rule */
-  margin-inline-start: 0 !important;
-  margin-inline-end: 0 !important;
 }
 
 /* tabpanels and tabs */
 
 xul|tabpanels {
   -moz-appearance: none;
-  font-size: 1.25rem;
-  line-height: 22px;
   border: none;
   padding: 0;
   background-color: transparent;
@@ -134,23 +132,17 @@ xul|tabs {
   border-top: 1px solid var(--in-content-box-border-color);
   border-bottom: 1px solid var(--in-content-box-border-color);
   background-color: var(--in-content-page-background);
-}
-
-xul|*.tabs-left,
-xul|*.tabs-right {
-  border-bottom: none;
+  color: var(--in-content-tab-color);
 }
 
 xul|tab {
   -moz-appearance: none;
   margin-top: 0;
-  padding: 4px 20px;
+  padding: 4px 20px 0 !important;
   min-height: 44px;
-  color: var(--in-content-tab-color);
+  color: inherit;
   background-color: var(--in-content-page-background);
-  border-width: 0;
-  /* !important overrides tabbox.css RTL and visuallyselected rules */
-  border-radius: 0 !important;
+  border-bottom: 4px solid transparent;
   transition: background-color 50ms ease 0s;
 }
 
@@ -160,69 +152,106 @@ xul|tab:hover {
 
 xul|tab[selected] {
   background-color: var(--in-content-box-background-hover);
-  padding-bottom: 0; /* compensate the 4px border */
-  border-bottom: 4px solid var(--in-content-border-highlight);
-}
-
-xul|*.tab-text {
-  font-size: 1.3rem;
-  line-height: 22px;
+  border-bottom-color: var(--in-content-border-highlight);
 }
 
 /* html buttons */
 
 html|button {
   padding: 3px;
-  /* override forms.css */
-  font: inherit;
 }
 
 /* xul buttons and menulists */
 
 *|button,
 html|select,
-xul|colorpicker[type="button"],
+html|input[type="color"],
 xul|menulist {
   -moz-appearance: none;
-  min-height: 30px;
-  color: var(--in-content-text-color);
-  border: 1px solid var(--in-content-box-border-color);
-  -moz-border-top-colors: none !important;
-  -moz-border-right-colors: none !important;
-  -moz-border-bottom-colors: none !important;
-  -moz-border-left-colors: none !important;
+  min-height: 32px;
+  /* !important overrides button.css for disabled and default XUL buttons: */
+  color: inherit !important;
+  border: 1px solid transparent; /* needed for high-contrast mode, where it'll show up */
   border-radius: 2px;
-  background-color: var(--in-content-page-background);
+  background-color: var(--in-content-button-background);
+  font-weight: 400;
+  padding: 0 8px;
+  text-decoration: none;
+  margin: 4px 8px;
+  /* Ensure font-size isn't overridden by widget styling (e.g. in forms.css) */
+  font-size: 1em;
+}
+
+xul|button,
+html|button {
+  /* use the same margin of other elements for the alignment */
+  margin-left: 4px;
+  margin-right: 4px;
+}
+
+html|button::-moz-focus-inner,
+html|select::-moz-focus-inner,
+html|input[type="color"]::-moz-focus-inner {
+  border: none;
+}
+
+*|button:-moz-focusring,
+html|select:-moz-focusring,
+html|input[type="color"]:-moz-focusring,
+xul|menulist:-moz-focusring {
+  outline: 2px solid var(--in-content-border-active);
+  /* offset outline to align with 1px border-width set for buttons/menulists above. */
+  outline-offset: -1px;
+  /* Make outline-radius slightly bigger than the border-radius set above,
+   * to make the thicker outline corners look smooth */
+  -moz-outline-radius: 3px;
+  box-shadow: 0 0 0 4px var(--in-content-border-active-shadow);
+}
+
+html|select:not([size]):not([multiple]) {
+  background-image: url("chrome://global/skin/in-content/dropdown.svg#dropdown");
+  background-position: right 3px center;
+  background-repeat: no-repeat;
+  background-size: auto 18px;
+  font-size: inherit;
+  padding-inline-start: 5px;
+  padding-inline-end: 24px;
+  text-overflow: ellipsis;
+}
+
+html|select:not([size]):not([multiple]):dir(rtl) {
+  background-position: left 3px center;
 }
 
 html|button:enabled:hover,
-html|select:enabled:hover,
+html|select:not([size]):not([multiple]):enabled:hover,
+html|input[type="color"]:hover,
 xul|button:not([disabled="true"]):hover,
-xul|colorpicker[type="button"]:not([disabled="true"]):hover,
 xul|menulist:not([disabled="true"]):hover {
-  background-color: var(--in-content-box-background-hover);
+  background-color: var(--in-content-button-background-hover);
 }
 
 html|button:enabled:hover:active,
-html|select:enabled:hover:active,
+html|select:not([size]):not([multiple]):enabled:hover:active,
+html|input[type="color"]:enabled:hover:active,
 xul|button:not([disabled="true"]):hover:active,
-xul|colorpicker[type="button"]:not([disabled="true"]):hover:active,
+xul|button[open],
+xul|button[open]:hover,
 xul|menulist[open="true"]:not([disabled="true"]) {
-  background-color: var(--in-content-box-background-active);
+  background-color: var(--in-content-button-background-active);
 }
 
 html|button:disabled,
 html|select:disabled,
+html|input[type="color"]:disabled,
 xul|button[disabled="true"],
-xul|colorpicker[type="button"][disabled="true"],
 xul|menulist[disabled="true"] {
-  opacity: 0.5;
+  opacity: 0.4;
 }
 
 *|button.primary {
   background-color: var(--in-content-primary-button-background);
-  border-color: transparent;
-  color: var(--in-content-selected-text);
+  color: var(--in-content-selected-text) !important;
 }
 
 html|button.primary:enabled:hover,
@@ -235,149 +264,43 @@ xul|button.primary:not([disabled="true"]):hover:active {
   background-color: var(--in-content-primary-button-background-active);
 }
 
-xul|colorpicker[type="button"] {
+html|input[type="color"] {
   padding: 6px;
   width: 50px;
-}
-
-xul|button > xul|*.button-box,
-xul|menulist > xul|*.menulist-label-box {
-  padding-right: 10px !important;
-  padding-left: 10px !important;
 }
 
 xul|menulist > xul|*.menulist-label-box > xul|*.menulist-icon[src] {
   margin-inline-end: 5px;
 }
 
-xul|button[type="menu"] > xul|*.button-box > xul|*.button-menu-dropmarker {
-  -moz-appearance: none;
-  margin: 1px 0;
-  margin-inline-start: 10px;
-  padding: 0;
-  width: 10px;
-  height: 16px;
-  border: none;
-  background-color: transparent;
-  list-style-image: url("chrome://global/skin/in-content/dropdown.svg#dropdown");
-}
-
-xul|*.help-button {
-  min-width: 16px;
-  margin-inline-end: 0;
-  border-width: 0;
-  background-image: none;
-  box-shadow: none;
-  list-style-image: url("chrome://global/skin/in-content/help-glyph.svg#help");
-}
-
-xul|*.help-button:not([disabled="true"]):hover {
-  background-image: none;
-  /* Override default button background */
-  background-color: transparent;
-  list-style-image: url("chrome://global/skin/in-content/help-glyph.svg#help-hover");
-}
-
-xul|*.help-button:not([disabled="true"]):hover:active {
-  background-image: none;
-  /* Override default button background */
-  background-color: transparent;
-  list-style-image: url("chrome://global/skin/in-content/help-glyph.svg#help-pressed");
-}
-
-xul|*.close-icon > xul|*.button-box,
-xul|*.help-button > xul|*.button-box {
+xul|*.close-icon > xul|*.button-box {
   padding-top: 0;
   padding-bottom: 0;
   padding-right: 0 !important;
   padding-left: 0 !important;
 }
 
-xul|*.help-button > xul|*.button-box > xul|*.button-icon {
-  width: 16px;
-  height: 16px;
-}
-
-xul|*.help-button > xul|*.button-box > xul|*.button-text {
-  display: none;
-}
-
-html|*.help-button {
-  width: 16px;
-  height: 16px;
-  border: 0;
-  padding: 0;
-  display: inline-block;
-  background-image: url("chrome://global/skin/in-content/help-glyph.svg#help");
-  background-repeat: no-repeat;
-  background-position: center center;
-  background-size: contain;
-}
-
-html|*.help-button:hover {
-  background-image: url("chrome://global/skin/in-content/help-glyph.svg#help-hover");
-}
-
-html|*.help-button:hover:active {
-  background-image: url("chrome://global/skin/in-content/help-glyph.svg#help-pressed");
-}
-
-xul|*.spinbuttons-button {
-  min-height: initial;
-  margin-inline-start: 10px !important;
-  margin-inline-end: 2px !important;
-}
-
-xul|*.spinbuttons-up {
-  margin-top: 2px !important;
-  border-radius: 1px 1px 0 0;
-}
-
-xul|*.spinbuttons-down  {
-  margin-bottom: 2px !important;
-  border-radius: 0 0 1px 1px;
-}
-
-xul|*.spinbuttons-button > xul|*.button-box {
-  padding: 1px 5px 2px !important;
-}
-
-xul|*.spinbuttons-up > xul|*.button-box > xul|*.button-icon {
-  list-style-image: url("chrome://global/skin/arrow/arrow-up.gif");
-}
-
-xul|*.spinbuttons-up[disabled="true"] > xul|*.button-box > xul|*.button-icon {
-  list-style-image: url("chrome://global/skin/arrow/arrow-up-dis.gif");
-}
-
-xul|*.spinbuttons-down > xul|*.button-box > xul|*.button-icon {
-  list-style-image: url("chrome://global/skin/arrow/arrow-dn.gif");
-}
-
-xul|*.spinbuttons-down[disabled="true"] > xul|*.button-box > xul|*.button-icon {
-  list-style-image: url("chrome://global/skin/arrow/arrow-dn-dis.gif");
-}
-
-xul|menulist:not([editable="true"]) > xul|*.menulist-dropmarker {
+xul|*.menulist-dropmarker {
   -moz-appearance: none;
   margin-inline-end: 4px;
   padding: 0;
   border: none;
   background-color: transparent;
-  list-style-image: url("chrome://global/skin/in-content/dropdown.svg#dropdown");
+  list-style-image: url("chrome://global/skin/in-content/dropdown.svg");
+  -moz-context-properties: fill;
+  fill: -moz-DialogText;
 }
 
-xul|menulist:not([editable="true"]) > xul|*.menulist-dropmarker > xul|*.dropmarker-icon {
+xul|*.menulist-dropmarker > xul|*.dropmarker-icon {
   width: 18px;
   height: 18px;
 }
 
-xul|menulist[disabled="true"]:not([editable="true"]) > xul|*.menulist-dropmarker {
-  list-style-image: url("chrome://global/skin/in-content/dropdown.svg#dropdown-disabled")
+xul|menulist[disabled="true"] > xul|*.menulist-dropmarker {
+  fill: GrayText;
 }
 
-xul|menulist > xul|menupopup,
-xul|button[type="menu"] > xul|menupopup {
+xul|menulist > xul|menupopup {
   -moz-appearance: none;
   border: 1px solid var(--in-content-box-border-color);
   border-radius: 2px;
@@ -385,9 +308,7 @@ xul|button[type="menu"] > xul|menupopup {
 }
 
 xul|menulist > xul|menupopup xul|menu,
-xul|menulist > xul|menupopup xul|menuitem,
-xul|button[type="menu"] > xul|menupopup xul|menu,
-xul|button[type="menu"] > xul|menupopup xul|menuitem {
+xul|menulist > xul|menupopup xul|menuitem {
   -moz-appearance: none;
   font-size: 1em;
   color: var(--in-content-text-color);
@@ -398,33 +319,26 @@ xul|button[type="menu"] > xul|menupopup xul|menuitem {
 }
 
 xul|menulist > xul|menupopup > xul|menu:not([disabled="true"])[_moz-menuactive="true"],
-xul|menulist > xul|menupopup > xul|menuitem:not([disabled="true"])[_moz-menuactive="true"],
-xul|button[type="menu"] > xul|menupopup > xul|menu:not([disabled="true"])[_moz-menuactive="true"],
-xul|button[type="menu"] > xul|menupopup > xul|menuitem:not([disabled="true"])[_moz-menuactive="true"] {
+xul|menulist > xul|menupopup > xul|menuitem:not([disabled="true"])[_moz-menuactive="true"] {
   color: var(--in-content-text-color);
   background-color: var(--in-content-item-hover);
 }
 
 xul|menulist > xul|menupopup > xul|menu:not([disabled="true"])[selected="true"],
-xul|menulist > xul|menupopup > xul|menuitem:not([disabled="true"])[selected="true"],
-xul|button[type="menu"] > xul|menupopup > xul|menu:not([disabled="true"])[selected="true"],
-xul|button[type="menu"] > xul|menupopup > xul|menuitem:not([disabled="true"])[selected="true"] {
+xul|menulist > xul|menupopup > xul|menuitem:not([disabled="true"])[selected="true"] {
   color: var(--in-content-selected-text);
   background-color: var(--in-content-item-selected);
 }
 
 xul|menulist > xul|menupopup > xul|menu[disabled="true"],
-xul|menulist > xul|menupopup > xul|menuitem[disabled="true"],
-xul|button[type="menu"] > xul|menupopup > xul|menu[disabled="true"],
-xul|button[type="menu"] > xul|menupopup > xul|menuitem[disabled="true"] {
+xul|menulist > xul|menupopup > xul|menuitem[disabled="true"] {
   color: #999;
   /* override the [_moz-menuactive="true"] background color from
      global/menu.css */
   background-color: transparent;
 }
 
-xul|menulist > xul|menupopup xul|menuseparator,
-xul|button[type="menu"] > xul|menupopup xul|menuseparator {
+xul|menulist > xul|menupopup xul|menuseparator {
   -moz-appearance: none;
   margin: 0;
   padding: 0;
@@ -434,24 +348,32 @@ xul|button[type="menu"] > xul|menupopup xul|menuseparator {
 
 /* textboxes */
 
+html|input[type="email"],
+html|input[type="tel"],
 html|input[type="text"],
+html|input[type="number"],
 html|textarea,
 xul|textbox {
   -moz-appearance: none;
-  color: var(--in-content-text-color);
   border: 1px solid var(--in-content-box-border-color);
-  -moz-border-top-colors: none !important;
-  -moz-border-right-colors: none !important;
-  -moz-border-bottom-colors: none !important;
-  -moz-border-left-colors: none !important;
   border-radius: 2px;
-  background-color: var(--in-content-box-background);
+  /* !important to override disabled styling from textbox.css. We reduce the
+     opacity instead of changing colors. */
+  color: inherit !important;
+  background-color: var(--in-content-box-background) !important;
+}
+
+/* The focus/border styles for nested textareas inside textbox[multiline] will
+ * be provided by the textbox */
+xul|textbox[multiline] html|textarea {
+  border: none !important;
+  box-shadow: none !important;
 }
 
 xul|textbox {
   min-height: 30px;
-  padding-right: 10px;
-  padding-left: 10px;
+  padding-right: 8px;
+  padding-left: 8px;
 }
 
 /* Create a separate rule to unset these styles on .tree-input instead of
@@ -462,23 +384,62 @@ xul|textbox.tree-input {
   padding-left: unset;
 }
 
+html|input[type="email"],
+html|input[type="tel"],
 html|input[type="text"],
+html|input[type="number"],
 html|textarea {
   font-family: inherit;
   font-size: inherit;
-  padding: 5px 10px;
+  padding: 5px 8px;
 }
 
+html|input[type="email"]:enabled:not(:focus):hover,
+html|input[type="tel"]:enabled:not(:focus):hover,
+html|input[type="text"]:enabled:not(:focus):hover,
+html|input[type="number"]:enabled:not(:focus):hover,
+html|textarea:enabled:not(:focus):hover,
+xul|textbox:not([disabled="true"]):not([focused]):hover {
+  border-color: var(--in-content-border-hover);
+}
+
+html|input[type="email"]:focus,
+html|input[type="tel"]:focus,
 html|input[type="text"]:focus,
+html|input[type="number"]:focus,
 html|textarea:focus,
 xul|textbox[focused] {
-  border-color: var(--in-content-border-focus);
+  border-color: var(--in-content-border-active);
+  box-shadow: 0 0 0 1px var(--in-content-border-active),
+    0 0 0 4px var(--in-content-border-active-shadow);
 }
 
+html|input[type="email"]:-moz-ui-invalid,
+html|input[type="tel"]:-moz-ui-invalid,
+html|input[type="text"]:-moz-ui-invalid,
+html|input[type="number"]:-moz-ui-invalid,
+html|textarea:-moz-ui-invalid {
+  border-color: var(--in-content-border-invalid);
+}
+
+/* Don't show the field error outlines and focus borders at the same time.
+   This doesn't apply to XUL <textbox> since they don't expose validity
+   attributes */
+html|input[type="email"]:-moz-ui-invalid:focus,
+html|input[type="tel"]:-moz-ui-invalid:focus,
+html|input[type="text"]:-moz-ui-invalid:focus,
+html|input[type="number"]:-moz-ui-invalid:focus,
+html|textarea:-moz-ui-invalid:focus {
+  box-shadow: 0 0 0 3px var(--in-content-border-invalid-shadow);
+}
+
+html|input[type="email"]:disabled,
+html|input[type="tel"]:disabled,
 html|input[type="text"]:disabled,
+html|input[type="number"]:disabled,
 html|textarea:disabled,
 xul|textbox[disabled="true"] {
-  opacity: 0.5;
+  opacity: 0.4;
 }
 
 /* Links */
@@ -508,23 +469,24 @@ html|a:hover:active,
 /* Checkboxes and radio buttons */
 
 xul|checkbox {
-  margin-inline-start: 0;
+  -moz-appearance: none;
+  height: 30px;
+  margin: 2px 0;
 }
 
 xul|*.checkbox-check,
 html|input[type="checkbox"] {
   -moz-appearance: none;
-  width: 23px;
-  height: 23px;
-  border-radius: 2px;
+  width: 20px;
+  height: 20px;
+  padding: 1px;
   border: 1px solid var(--in-content-box-border-color);
+  border-radius: 2px;
+  margin: 0;
   margin-inline-end: 10px;
-  background-color: #f1f1f1;
-  /* !important needed to override toolkit checked !important rule */
-  background-image: linear-gradient(#fff, rgba(255,255,255,0.8)) !important;
-  background-position: center center;
+  background-color: var(--in-content-box-background);
+  background-position: center;
   background-repeat: no-repeat;
-  box-shadow: 0 1px 1px 0 #fff, inset 0 2px 0 0 rgba(0,0,0,0.03);
 }
 
 xul|checkbox:not([disabled="true"]):hover > xul|*.checkbox-check,
@@ -533,21 +495,20 @@ html|input[type="checkbox"]:not(:disabled):hover {
 }
 
 xul|*.checkbox-check[checked] {
-  list-style-image: url("chrome://global/skin/in-content/check.svg#check");
+  list-style-image: url("chrome://global/skin/icons/check.svg");
+  -moz-context-properties: fill;
+  fill: #2292d0;
 }
 
 html|input[type="checkbox"]:checked {
-  background-image: url("chrome://global/skin/in-content/check.svg#check"), linear-gradient(#fff, rgba(255,255,255,0.8)) !important;
+  background-image: url("chrome://global/skin/icons/check.svg");
+  -moz-context-properties: fill;
+  fill: #2292d0;
 }
 
 xul|checkbox[disabled="true"] > xul|*.checkbox-check,
 html|input[type="checkbox"]:disabled {
   opacity: 0.5;
-}
-
-xul|*.checkbox-label-box {
-  margin-inline-start: -1px; /* negative margin for the transparent border */
-  padding-inline-start: 0;
 }
 
 xul|richlistitem > xul|*.checkbox-check {
@@ -561,18 +522,18 @@ html|*.toggle-container-with-text {
 
 xul|radio {
   margin-inline-start: 0;
+  -moz-appearance: none;
 }
 
 xul|*.radio-check {
   -moz-appearance: none;
-  width: 23px;
-  height: 23px;
+  width: 20px;
+  height: 20px;
   border: 1px solid var(--in-content-box-border-color);
   border-radius: 50%;
+  margin: 0;
   margin-inline-end: 10px;
-  background-color: #f1f1f1;
-  background-image: linear-gradient(#fff, rgba(255,255,255,0.80));
-  box-shadow: 0 1px 1px 0 #fff, inset 0 2px 0 0 rgba(0,0,0,0.03);
+  background-color: var(--in-content-box-background);
 }
 
 xul|radio:not([disabled="true"]):hover > xul|*.radio-check {
@@ -580,7 +541,9 @@ xul|radio:not([disabled="true"]):hover > xul|*.radio-check {
 }
 
 xul|*.radio-check[selected] {
-  list-style-image: url("chrome://global/skin/in-content/radio.svg#radio");
+  list-style-image: url("chrome://global/skin/in-content/radio.svg");
+  -moz-context-properties: fill;
+  fill: #2292d0;
 }
 
 xul|radio[disabled="true"] > xul|*.radio-check {
@@ -589,7 +552,7 @@ xul|radio[disabled="true"] > xul|*.radio-check {
 
 xul|*.radio-label-box {
   margin-inline-start: -1px; /* negative margin for the transparent border */
-  margin-inline-end: 10px;
+  margin-inline-end: 8px;
   padding-inline-start: 0;
 }
 
@@ -597,42 +560,54 @@ xul|*.radio-label-box {
 
 *|*#categories {
   -moz-appearance: none;
-  background-color: var(--in-content-category-background);
-  padding-top: 39px;
-  margin: 0;
+  background-color: initial; /* override the background-color set on all richlistboxes in common.inc.css */
+  margin: 70px 0 0;
   border-width: 0;
+  width: 240px;
 }
 
-*|*.category {
+*|*#categories > *|*.category {
+  min-height: 48px;
   -moz-appearance: none;
-  color: var(--in-content-category-text);
-  border-inline-end-width: 0;
-  padding-inline-start: 15px;
-  padding-inline-end: 21px;
-  min-height: 40px;
+  margin-inline-start: 34px;
+  padding-inline-end: 10px;
+  padding-inline-start: 10px;
   transition: background-color 150ms;
 }
 
-*|*.category:hover {
+*|*#categories > *|*.category:hover {
   background-color: var(--in-content-category-background-hover);
+  border-radius: 2px;
 }
 
-*|*.category[selected],
-*|*.category.selected {
+*|*#categories > *|*.category:hover:active {
   background-color: var(--in-content-category-background-active);
+}
+
+*|*#categories > *|*.category[selected],
+*|*#categories > *|*.category.selected {
   color: var(--in-content-category-text-selected);
-  padding-inline-start: 11px; /* compensate the 4px border */
-  border-inline-start: solid 4px var(--in-content-border-highlight);
+  background-color: transparent;
+}
+
+*|*#categories > *|*.category[selected]:hover,
+*|*#categories > *|*.category.selected:hover {
+  background-color: var(--in-content-category-background-selected-hover);
+}
+
+*|*#categories > *|*.category[selected]:hover:active,
+*|*#categories > *|*.category.selected:hover:active {
+  color: var(--in-content-category-text-selected-active);
+  background-color: var(--in-content-category-background-selected-active);
 }
 
 *|*#categories[keyboard-navigation="true"]:-moz-focusring > *|*.category[current] {
-  border-top: var(--in-content-category-border-focus);
-  border-bottom: var(--in-content-category-border-focus);
+  outline: var(--in-content-category-outline-focus);
 }
 
 *|*.category-name {
-  line-height: 22px;
-  font-size: 1.25rem;
+  font-size: 1.07em;
+  line-height: 1.4em;
   padding-bottom: 2px;
   padding-inline-start: 9px;
   margin: 0;
@@ -642,12 +617,42 @@ xul|*.radio-label-box {
 *|*.category-icon {
   width: 24px;
   height: 24px;
+  -moz-context-properties: fill, fill-opacity;
+  fill: currentColor;
+}
+
+*|*.category[selected] > *|*.category-icon,
+*|*.category.selected > *|*.category-icon {
+  fill-opacity: 1;
+}
+
+@media (max-width: 830px) {
+  #categories {
+    width: 118px;
+  }
+
+  .category-icon + .category-name {
+    display: none;
+  }
+
+  #categories > .category {
+    padding-inline-start: 13px; /* make category icons align center */
+    margin-inline-end: 33px;
+  }
+
+  .main-content {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .pane-container {
+    margin-inline-end: 10px;
+  }
 }
 
 /* header */
 
 *|*.header {
-  border-bottom: 1px solid var(--in-content-header-border-color);
   margin-inline-end: 4px; /* add the 4px end-margin of other elements */
   margin-bottom: 15px;
   padding-bottom: 15px;
@@ -655,70 +660,44 @@ xul|*.radio-label-box {
 }
 
 *|*.header-name {
-  font-size: 2.5rem;
-  font-weight: normal;
-  line-height: 40px;
+  font-size: 1.46em;
+  font-weight: 300;
+  line-height: 1.3em;
   margin: 0;
   -moz-user-select: none;
 }
 
-/* File fields */
-
-xul|filefield {
-  -moz-appearance: none;
-  background-color: transparent;
-  border: none;
-  padding: 0;
-}
-
-xul|*.fileFieldContentBox {
-  background-color: transparent;
-}
-
-xul|*.fileFieldIcon {
-  margin-inline-start: 10px;
-  margin-inline-end: 0;
-}
-
-xul|*.fileFieldLabel {
-  margin-inline-start: -26px;
-  padding-inline-start: 36px;
-}
-
-xul|textbox:-moz-locale-dir(rtl),
-xul|*.fileFieldLabel:-moz-locale-dir(rtl),
-xul|textbox + xul|button:-moz-locale-dir(ltr),
-xul|filefield + xul|button:-moz-locale-dir(ltr) {
-  border-top-left-radius: 0;
-  border-bottom-left-radius: 0;
-}
-
-xul|textbox:-moz-locale-dir(ltr),
-xul|*.fileFieldLabel:-moz-locale-dir(ltr),
-xul|textbox + xul|button:-moz-locale-dir(rtl),
-xul|filefield + xul|button:-moz-locale-dir(rtl) {
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 0;
-}
-
-xul|textbox + xul|button,
-xul|filefield + xul|button {
-  border-inline-start: none;
-}
-
 /* List boxes */
 
-xul|richlistbox,
-xul|listbox {
+html|select[size][multiple],
+xul|listheader,
+xul|richlistbox {
   -moz-appearance: none;
-  margin-inline-start: 0;
+  margin-left: 0;
+  margin-right: 0;
   background-color: var(--in-content-box-background);
   border: 1px solid var(--in-content-box-border-color);
+  border-radius: 2px;
   color: var(--in-content-text-color);
 }
 
-xul|treechildren::-moz-tree-row,
-xul|listbox xul|listitem {
+xul|listheader {
+  border-bottom: none;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  padding-bottom: 1px;
+  box-shadow: inset 0 -1px var(--in-content-border-color);
+}
+
+xul|listheader + xul|richlistbox {
+  margin-top: 0;
+  border-top: none;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+html|select[size][multiple] > html|option,
+xul|treechildren::-moz-tree-row {
   padding: 0.3em;
   margin: 0;
   border: none;
@@ -726,15 +705,17 @@ xul|listbox xul|listitem {
   background-image: none;
 }
 
-xul|treechildren::-moz-tree-row(hover),
-xul|listbox xul|listitem:hover {
+xul|treechildren::-moz-tree-row(multicol, odd) {
+  background-color: var(--in-content-box-background-odd);
+}
+
+html|select[size][multiple] > html|option:hover,
+xul|treechildren::-moz-tree-row(hover) {
   background-color: var(--in-content-item-hover);
 }
 
-xul|treechildren::-moz-tree-row(selected),
-xul|listbox xul|listitem[selected="true"] {
+xul|treechildren::-moz-tree-row(selected) {
   background-color: var(--in-content-item-selected);
-  color: var(--in-content-selected-text);
 }
 
 /* Trees */
@@ -743,6 +724,7 @@ xul|tree {
   -moz-appearance: none;
   font-size: 1em;
   border: 1px solid var(--in-content-box-border-color);
+  border-radius: 2px;
   background-color: var(--in-content-box-background);
   margin: 0;
 }
@@ -752,16 +734,11 @@ xul|richlistbox:-moz-focusring {
   border: 1px dotted var(--in-content-border-focus);
 }
 
-xul|listheader,
 xul|treecols {
   -moz-appearance: none;
   border: none;
   border-bottom: 1px solid var(--in-content-border-color);
   padding: 0;
-}
-
-.autocomplete-tree > xul|treecols {
-  border-bottom: none !important;
 }
 
 xul|treecol:not([hideheader="true"]),
@@ -786,13 +763,15 @@ xul|treecolpicker {
   border-image: linear-gradient(transparent 0%, transparent 20%, #c1c1c1 20%, #c1c1c1 80%, transparent 80%, transparent 100%) 1 1;
 }
 
-xul|treecol:not([hideheader="true"]) > xul|*.treecol-sortdirection[sortDirection] {
-  list-style-image: url("chrome://global/skin/in-content/dropdown.svg#dropdown");
+xul|treecol[sortDirection]:not([hideheader="true"]) > xul|*.treecol-sortdirection {
+  list-style-image: url("chrome://global/skin/in-content/dropdown.svg");
+  -moz-context-properties: fill;
+  fill: -moz-DialogText;
   width: 18px;
   height: 18px;
 }
 
-xul|treecol:not([hideheader="true"]) > xul|*.treecol-sortdirection[sortDirection="ascending"] {
+xul|treecol[sortDirection="ascending"]:not([hideheader="true"]) > xul|*.treecol-sortdirection {
   transform: scaleY(-1);
 }
 
@@ -802,10 +781,175 @@ xul|treechildren::-moz-tree-row {
 }
 
 /* Color needs to be set on tree cell in order to be applied */
-xul|treechildren::-moz-tree-cell-text {
+xul|treechildren::-moz-tree-cell-text,
+xul|treechildren::-moz-tree-twisty,
+xul|treechildren::-moz-tree-image {
   color: var(--in-content-text-color);
 }
 
-xul|treechildren::-moz-tree-cell-text(selected) {
+xul|treechildren::-moz-tree-cell-text(selected),
+xul|treechildren::-moz-tree-twisty(selected),
+xul|treechildren::-moz-tree-image(selected) {
   color: var(--in-content-selected-text);
+}
+
+/* Message bars */
+.message-bar {
+  background-color: var(--grey-20);
+  border-radius: 4px;
+  color: var(--grey-90);
+  min-height: 32px;
+  -moz-box-align: center;
+  padding: 4px;
+}
+
+.message-bar-description {
+  margin: 0;
+  line-height: 1.25;
+}
+
+/* The message-bar-button styles have extra specificity to override
+ * the defaults for buttons. */
+.message-bar-content > .message-bar-button {
+  background-color: var(--grey-90-a10);
+  border: none;
+  border-radius: 2px;
+  height: 24px;
+  margin-inline-start: 8px;
+  padding: 0 8px;
+}
+
+.message-bar-content > .message-bar-button:hover {
+  background-color: var(--grey-90-a20);
+}
+
+.message-bar-content > .message-bar-button:hover:active {
+  background-color: var(--grey-90-a30);
+}
+
+.message-bar-icon {
+  list-style-image: url("chrome://browser/skin/identity-icon.svg");
+  width: 24px;
+  height: 24px;
+  padding: 4px;
+  margin-inline-end: 4px;
+  -moz-context-properties: fill;
+  fill: currentColor;
+}
+
+/* Warning styles */
+.message-bar-warning {
+  background-color: var(--yellow-50);
+  color: var(--yellow-90);
+}
+
+.message-bar-warning > .message-bar-icon {
+  list-style-image: url("chrome://browser/skin/warning.svg");
+}
+
+.card {
+  background: var(--in-content-box-background);
+  /* Needed for high-contrast where the border will appear. */
+  border: 1px solid transparent;
+  border-radius: 4px;
+  box-shadow: var(--card-shadow);
+  margin: 0 0 8px;
+  /* Remove the border from the overall padding. */
+  padding: calc(var(--card-padding) - 1px);
+  transition: box-shadow 150ms;
+}
+
+.card:hover {
+  box-shadow: var(--card-shadow-hover);
+}
+
+.card-heading-image {
+  border-top-left-radius: 4px;
+  border-top-right-radius: 4px;
+  margin: -16px -16px 16px;
+}
+
+.sidebar-footer-button {
+  padding: 1px; /* Adding padding around help label in order to make entire keyboard focusing outline visible */
+}
+
+.sidebar-footer-button > .text-link {
+  -moz-box-flex: 1;
+  margin-inline-start: 34px;
+  margin-inline-end: 0;
+  text-decoration: none;
+  color: currentColor;
+  width: 36px;
+  height: 36px;
+  cursor: default;
+}
+
+.sidebar-footer-button > .text-link:hover {
+  background-color: var(--in-content-category-background-hover);
+  border-radius: 2px;
+}
+
+.sidebar-footer-button > .text-link:hover:active:not([disabled]) {
+  background-color: var(--in-content-category-background-active);
+}
+
+.sidebar-footer-button > .text-link:-moz-focusring {
+  outline: var(--in-content-category-outline-focus);
+}
+
+.sidebar-footer-icon {
+  -moz-context-properties: fill, fill-opacity;
+  fill: currentColor;
+  width: 16px;
+  height: 16px;
+  margin: 10px;
+  margin-inline-start: 13px;
+  vertical-align: middle;
+}
+
+.sidebar-footer-icon:hover {
+  fill: currentColor !important;
+}
+
+.sidebar-footer-button:last-of-type {
+  margin-bottom: 36px;
+}
+
+.help-icon {
+  list-style-image: url("chrome://global/skin/icons/help.svg");
+}
+
+.preferences-icon {
+  list-style-image: url("chrome://browser/skin/preferences/in-content/general.svg");
+}
+
+.addons-icon {
+  list-style-image: url("chrome://mozapps/skin/extensions/category-extensions.svg");
+  /* The add-ons icon doesn't have much (any?) margin, so make it a bit smaller. */
+  width: 14px;
+  height: 14px;
+  margin-inline-start: 15px;
+}
+
+.sidebar-footer-label {
+  margin: 0 4px;
+  font-size: .9em;
+  -moz-user-select: none;
+}
+
+@media (max-width: 830px) {
+  .sidebar-footer-button > .text-link {
+    -moz-box-flex: 0;
+    width: 36px;
+    height: 36px;
+    margin-inline-start: 0;
+  }
+
+  .sidebar-footer-icon {
+    margin: 10px;
+  }
+
+  .sidebar-footer-label {
+    display: none;
+  }
 }

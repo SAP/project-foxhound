@@ -7,30 +7,30 @@
 
 const {FlameGraph} = require("devtools/client/shared/widgets/FlameGraph");
 
-add_task(function* () {
-  yield addTab("about:blank");
-  yield performTest();
+add_task(async function() {
+  await addTab("about:blank");
+  await performTest();
   gBrowser.removeCurrentTab();
 });
 
-function* performTest() {
-  let [host,, doc] = yield createHost();
+async function performTest() {
+  const [host,, doc] = await createHost();
   doc.body.setAttribute("style",
                         "position: fixed; width: 100%; height: 100%; margin: 0;");
 
-  let graph = new FlameGraph(doc.body);
+  const graph = new FlameGraph(doc.body);
 
   let readyEventEmitted;
   graph.once("ready", () => {
     readyEventEmitted = true;
   });
 
-  yield graph.ready();
+  await graph.ready();
   ok(readyEventEmitted, "The 'ready' event should have been emitted");
 
   testGraph(host, graph);
 
-  yield graph.destroy();
+  await graph.destroy();
   host.destroy();
 }
 
@@ -40,11 +40,11 @@ function testGraph(host, graph) {
   ok(graph._canvas.classList.contains("flame-graph-widget-canvas"),
     "The correct graph container was created.");
 
-  let bounds = host.frame.getBoundingClientRect();
+  const bounds = host.frame.getBoundingClientRect();
 
-  is(graph.width, bounds.width * window.devicePixelRatio,
+  is(graph.width, Math.round(bounds.width * window.devicePixelRatio),
     "The graph has the correct width.");
-  is(graph.height, bounds.height * window.devicePixelRatio,
+  is(graph.height, Math.round(bounds.height * window.devicePixelRatio),
     "The graph has the correct height.");
 
   ok(graph._selection.start === null,

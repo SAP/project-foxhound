@@ -42,19 +42,17 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = [
+var EXPORTED_SYMBOLS = [
   "LoginStore",
 ];
 
 // Globals
 
-const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "JSONFile",
-                                  "resource://gre/modules/JSONFile.jsm");
+ChromeUtils.defineModuleGetter(this, "JSONFile",
+                               "resource://gre/modules/JSONFile.jsm");
 
 /**
  * Current data version assigned by the code that last touched the data.
@@ -84,7 +82,7 @@ const PERMISSION_SAVE_LOGINS = "login-saving";
 function LoginStore(aPath) {
   JSONFile.call(this, {
     path: aPath,
-    dataPostProcessor: this._dataPostProcessor.bind(this)
+    dataPostProcessor: this._dataPostProcessor.bind(this),
   });
 }
 

@@ -8,57 +8,54 @@
 #ifndef GrGLSLXferProcessor_DEFINED
 #define GrGLSLXferProcessor_DEFINED
 
+#include "SkPoint.h"
 #include "glsl/GrGLSLProgramDataManager.h"
-#include "glsl/GrGLSLSampler.h"
+#include "glsl/GrGLSLUniformHandler.h"
 
 class GrXferProcessor;
-class GrGLSLCaps;
-class GrGLSLUniformHandler;
 class GrGLSLXPBuilder;
 class GrGLSLXPFragmentBuilder;
+class GrShaderCaps;
+class GrTexture;
 
 class GrGLSLXferProcessor {
 public:
     GrGLSLXferProcessor() {}
     virtual ~GrGLSLXferProcessor() {}
 
-    typedef GrGLSLProgramDataManager::UniformHandle SamplerHandle;
+    using SamplerHandle = GrGLSLUniformHandler::SamplerHandle;
 
     struct EmitArgs {
         EmitArgs(GrGLSLXPFragmentBuilder* fragBuilder,
                  GrGLSLUniformHandler* uniformHandler,
-                 const GrGLSLCaps* caps,
+                 const GrShaderCaps* caps,
                  const GrXferProcessor& xp,
                  const char* inputColor,
                  const char* inputCoverage,
                  const char* outputPrimary,
                  const char* outputSecondary,
-                 const SamplerHandle* texSamplers,
-                 const SamplerHandle* bufferSamplers,
-                 const bool usePLSDstRead)
-            : fXPFragBuilder(fragBuilder)
-            , fUniformHandler(uniformHandler)
-            , fGLSLCaps(caps)
-            , fXP(xp)
-            , fInputColor(inputColor)
-            , fInputCoverage(inputCoverage)
-            , fOutputPrimary(outputPrimary)
-            , fOutputSecondary(outputSecondary)
-            , fTexSamplers(texSamplers)
-            , fBufferSamplers(bufferSamplers)
-            , fUsePLSDstRead(usePLSDstRead) {}
-
+                 const SamplerHandle dstTextureSamplerHandle,
+                 GrSurfaceOrigin dstTextureOrigin)
+                : fXPFragBuilder(fragBuilder)
+                , fUniformHandler(uniformHandler)
+                , fShaderCaps(caps)
+                , fXP(xp)
+                , fInputColor(inputColor ? inputColor : "half4(1.0)")
+                , fInputCoverage(inputCoverage)
+                , fOutputPrimary(outputPrimary)
+                , fOutputSecondary(outputSecondary)
+                , fDstTextureSamplerHandle(dstTextureSamplerHandle)
+                , fDstTextureOrigin(dstTextureOrigin) {}
         GrGLSLXPFragmentBuilder* fXPFragBuilder;
         GrGLSLUniformHandler* fUniformHandler;
-        const GrGLSLCaps* fGLSLCaps;
+        const GrShaderCaps* fShaderCaps;
         const GrXferProcessor& fXP;
         const char* fInputColor;
         const char* fInputCoverage;
         const char* fOutputPrimary;
         const char* fOutputSecondary;
-        const SamplerHandle* fTexSamplers;
-        const SamplerHandle* fBufferSamplers;
-        bool fUsePLSDstRead;
+        const SamplerHandle fDstTextureSamplerHandle;
+        GrSurfaceOrigin fDstTextureOrigin;
     };
     /**
      * This is similar to emitCode() in the base class, except it takes a full shader builder.
@@ -73,7 +70,8 @@ public:
         to have an identical processor key as the one that created this GrGLSLXferProcessor. This
         function calls onSetData on the subclass of GrGLSLXferProcessor
      */
-    void setData(const GrGLSLProgramDataManager& pdm, const GrXferProcessor& xp);
+    void setData(const GrGLSLProgramDataManager& pdm, const GrXferProcessor& xp,
+                 const GrTexture* dstTexture, const SkIPoint& dstTextureOffset);
 
 protected:
     static void DefaultCoverageModulation(GrGLSLXPFragmentBuilder* fragBuilder,
@@ -90,7 +88,7 @@ private:
      * it can construct a GrXferProcessor that will not read the dst color.
      */
     virtual void emitOutputsForBlendState(const EmitArgs&) {
-        SkFAIL("emitOutputsForBlendState not implemented.");
+        SK_ABORT("emitOutputsForBlendState not implemented.");
     }
 
     /**
@@ -106,7 +104,7 @@ private:
                                          const char* outColor,
                                          const char* outColorSecondary,
                                          const GrXferProcessor&) {
-        SkFAIL("emitBlendCodeForDstRead not implemented.");
+        SK_ABORT("emitBlendCodeForDstRead not implemented.");
     }
 
     virtual void onSetData(const GrGLSLProgramDataManager&, const GrXferProcessor&) = 0;

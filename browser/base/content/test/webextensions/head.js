@@ -1,6 +1,17 @@
+ChromeUtils.defineModuleGetter(this, "AddonTestUtils", "resource://testing-common/AddonTestUtils.jsm");
 
 const BASE = getRootDirectory(gTestPath)
   .replace("chrome://mochitests/content/", "https://example.com/");
+
+ChromeUtils.import("resource:///modules/ExtensionsUI.jsm");
+XPCOMUtils.defineLazyGetter(this, "Management", () => {
+  // eslint-disable-next-line no-shadow
+  const {Management} = ChromeUtils.import("resource://gre/modules/Extension.jsm", {});
+  return Management;
+});
+
+ChromeUtils.import("resource://testing-common/CustomizableUITestUtils.jsm", this);
+let gCUITestUtils = new CustomizableUITestUtils(window);
 
 /**
  * Wait for the given PopupNotification to display
@@ -21,10 +32,31 @@ function promisePopupNotificationShown(name) {
       ok(PopupNotifications.isPanelOpen, "notification panel open");
 
       PopupNotifications.panel.removeEventListener("popupshown", popupshown);
-      resolve(PopupNotifications.panel.firstChild);
+      resolve(PopupNotifications.panel.firstElementChild);
     }
 
     PopupNotifications.panel.addEventListener("popupshown", popupshown);
+  });
+}
+
+function promiseAppMenuNotificationShown(id) {
+  ChromeUtils.import("resource://gre/modules/AppMenuNotifications.jsm");
+  return new Promise(resolve => {
+    function popupshown() {
+      let notification = AppMenuNotifications.activeNotification;
+      if (!notification) { return; }
+
+      is(notification.id, id, `${id} notification shown`);
+      ok(PanelUI.isNotificationPanelOpen, "notification panel open");
+
+      PanelUI.notificationPanel.removeEventListener("popupshown", popupshown);
+
+      let popupnotificationID = PanelUI._getPopupId(notification);
+      let popupnotification = document.getElementById(popupnotificationID);
+
+      resolve(popupnotification);
+    }
+    PanelUI.notificationPanel.addEventListener("popupshown", popupshown);
   });
 }
 
@@ -58,24 +90,67 @@ function promiseInstallEvent(addon, event) {
  *
  * @param {string} url
  *        URL of the .xpi file to install
+ * @param {Object?} installTelemetryInfo
+ *        an optional object that contains additional details used by the telemetry events.
  *
  * @returns {Promise}
  *          Resolves when the extension has been installed with the Addon
  *          object as the resolution value.
  */
-function promiseInstallAddon(url) {
-  return AddonManager.getInstallForURL(url, null, "application/x-xpinstall")
-                     .then(install => {
-                       ok(install, "Created install");
-                       return new Promise(resolve => {
-                         install.addListener({
-                           onInstallEnded(_install, addon) {
-                             resolve(addon);
-                           },
-                         });
-                         install.install();
-                       });
-                     });
+async function promiseInstallAddon(url, installTelemetryInfo) {
+  let install = await AddonManager.getInstallForURL(url, "application/x-xpinstall",
+                                                    null, null, null, null, null,
+                                                    installTelemetryInfo);
+  install.install();
+
+  let addon = await new Promise(resolve => {
+    install.addListener({
+      onInstallEnded(_install, _addon) {
+        resolve(_addon);
+      },
+    });
+  });
+
+  if (addon.isWebExtension) {
+    await new Promise(resolve => {
+      function listener(event, extension) {
+        if (extension.id == addon.id) {
+          Management.off("ready", listener);
+          resolve();
+        }
+      }
+      Management.on("ready", listener);
+    });
+  }
+
+  return addon;
+}
+
+/**
+ * Wait for an update to the given webextension to complete.
+ * (This does not actually perform an update, it just watches for
+ * the events that occur as a result of an update.)
+ *
+ * @param {AddonWrapper} addon
+ *        The addon to be updated.
+ *
+ * @returns {Promise}
+ *          Resolves when the extension has ben updated.
+ */
+async function waitForUpdate(addon) {
+  let installPromise = promiseInstallEvent(addon, "onInstallEnded");
+  let readyPromise = new Promise(resolve => {
+    function listener(event, extension) {
+      if (extension.id == addon.id) {
+        Management.off("ready", listener);
+        resolve();
+      }
+    }
+    Management.on("ready", listener);
+  });
+
+  let [newAddon ] = await Promise.all([installPromise, readyPromise]);
+  return newAddon;
 }
 
 function isDefaultIcon(icon) {
@@ -84,38 +159,6 @@ function isDefaultIcon(icon) {
   // generates referces to the latter.
   return (icon == "chrome://browser/content/extension.svg" ||
           icon == "chrome://mozapps/skin/extensions/extensionGeneric.svg");
-}
-
-function is_hidden(element) {
-  var style = element.ownerGlobal.getComputedStyle(element);
-  if (style.display == "none")
-    return true;
-  if (style.visibility != "visible")
-    return true;
-  if (style.display == "-moz-popup")
-    return ["hiding", "closed"].indexOf(element.state) != -1;
-
-  // Hiding a parent element will hide all its children
-  if (element.parentNode != element.ownerDocument)
-    return is_hidden(element.parentNode);
-
-  return false;
-}
-
-function is_visible(element) {
-  var style = element.ownerGlobal.getComputedStyle(element);
-  if (style.display == "none")
-    return false;
-  if (style.visibility != "visible")
-    return false;
-  if (style.display == "-moz-popup" && element.state != "open")
-    return false;
-
-  // Hiding a parent element will hide all its children
-  if (element.parentNode != element.ownerDocument)
-    return is_visible(element.parentNode);
-
-  return true;
 }
 
 /**
@@ -172,7 +215,7 @@ function checkNotification(panel, checkIcon, permissions) {
   let header = document.getElementById("addon-webext-perm-intro");
 
   if (checkIcon instanceof RegExp) {
-    ok(checkIcon.test(icon), "Notification icon is correct");
+    ok(checkIcon.test(icon), `Notification icon is correct ${JSON.stringify(icon)} ~= ${checkIcon}`);
   } else if (typeof checkIcon == "function") {
     ok(checkIcon(icon), "Notification icon is correct");
   } else {
@@ -201,10 +244,13 @@ function checkNotification(panel, checkIcon, permissions) {
  *        Callable that takes the name of an xpi file to install and
  *        starts to install it.  Should return a Promise that resolves
  *        when the install is finished or rejects if the install is canceled.
+ * @param {string} telemetryBase
+ *        If supplied, the base type for telemetry events that should be
+ *        recorded for this install method.
  *
  * @returns {Promise}
  */
-async function testInstallMethod(installFn) {
+async function testInstallMethod(installFn, telemetryBase) {
   const PERMS_XPI = "browser_webext_permissions.xpi";
   const NO_PERMS_XPI = "browser_webext_nopermissions.xpi";
   const ID = "permissions@test.mozilla.org";
@@ -212,10 +258,11 @@ async function testInstallMethod(installFn) {
   await SpecialPowers.pushPrefEnv({set: [
     ["extensions.webapi.testing", true],
     ["extensions.install.requireBuiltInCerts", false],
-
-    // XXX remove this when prompts are enabled by default
-    ["extensions.webextPermissionPrompts", true],
   ]});
+
+  if (telemetryBase !== undefined) {
+    hookExtensionsTelemetry();
+  }
 
   let testURI = makeURI("https://example.com/");
   Services.perms.add(testURI, "install", Services.perms.ALLOW_ACTION);
@@ -265,8 +312,10 @@ async function testInstallMethod(installFn) {
         ["webextPerms.hostDescription.wildcard", "wildcard.domain"],
         ["webextPerms.hostDescription.oneSite", "singlehost.domain"],
         ["webextPerms.description.nativeMessaging"],
-        ["webextPerms.description.tabs"],
+        // The below permissions are deliberately in this order as permissions
+        // are sorted alphabetically by the permission string to match AMO.
         ["webextPerms.description.history"],
+        ["webextPerms.description.tabs"],
       ]);
     } else if (filename == NO_PERMS_XPI) {
       checkNotification(panel, isDefaultIcon, []);
@@ -279,7 +328,7 @@ async function testInstallMethod(installFn) {
       } catch (err) {}
     } else {
       // Look for post-install notification
-      let postInstallPromise = promisePopupNotificationShown("addon-installed");
+      let postInstallPromise = promiseAppMenuNotificationShown("addon-installed");
       panel.button.click();
 
       // Press OK on the post-install notification
@@ -297,10 +346,10 @@ async function testInstallMethod(installFn) {
     } else {
       ok(result, "Installation completed");
       isnot(addon, null, "Extension is installed");
-      addon.uninstall();
+      await addon.uninstall();
     }
 
-    await BrowserTestUtils.removeTab(tab);
+    BrowserTestUtils.removeTab(tab);
   }
 
   // A few different tests for each installation method:
@@ -316,7 +365,155 @@ async function testInstallMethod(installFn) {
   //    the extension to clean up.)
   await runOnce(PERMS_XPI, false);
 
+  if (telemetryBase !== undefined) {
+    // Should see 2 canceled installs followed by 1 successful install
+    // for this method.
+    expectTelemetry([`${telemetryBase}Rejected`, `${telemetryBase}Rejected`, `${telemetryBase}Accepted`]);
+  }
+
   await SpecialPowers.popPrefEnv();
+}
+
+// Helper function to test a specific scenario for interactive updates.
+// `checkFn` is a callable that triggers a check for updates.
+// `autoUpdate` specifies whether the test should be run with
+// updates applied automatically or not.
+async function interactiveUpdateTest(autoUpdate, checkFn) {
+  AddonTestUtils.initMochitest(this);
+
+  const ID = "update2@tests.mozilla.org";
+  const FAKE_INSTALL_SOURCE = "fake-install-source";
+
+  await SpecialPowers.pushPrefEnv({set: [
+    // We don't have pre-pinned certificates for the local mochitest server
+    ["extensions.install.requireBuiltInCerts", false],
+    ["extensions.update.requireBuiltInCerts", false],
+
+    ["extensions.update.autoUpdateDefault", autoUpdate],
+
+    // Point updates to the local mochitest server
+    ["extensions.update.url", `${BASE}/browser_webext_update.json`],
+  ]});
+
+  AddonTestUtils.hookAMTelemetryEvents();
+
+  // Trigger an update check, manually applying the update if we're testing
+  // without auto-update.
+  async function triggerUpdate(win, addon) {
+    let manualUpdatePromise;
+    if (!autoUpdate) {
+      manualUpdatePromise = new Promise(resolve => {
+        let listener = {
+          onNewInstall() {
+            AddonManager.removeInstallListener(listener);
+            resolve();
+          },
+        };
+        AddonManager.addInstallListener(listener);
+      });
+    }
+
+    let promise = checkFn(win, addon);
+
+    if (manualUpdatePromise) {
+      await manualUpdatePromise;
+
+      let list = win.document.getElementById("addon-list");
+
+      // Make sure we have XBL bindings
+      list.clientHeight;
+
+      let item = list.itemChildren.find(_item => _item.value == ID);
+      EventUtils.synthesizeMouseAtCenter(item._updateBtn, {}, win);
+    }
+
+    return {promise};
+  }
+
+  // Navigate away from the starting page to force about:addons to load
+  // in a new tab during the tests below.
+  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "about:robots");
+  await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
+
+  // Install version 1.0 of the test extension
+  let addon = await promiseInstallAddon(`${BASE}/browser_webext_update1.xpi`, {
+    source: FAKE_INSTALL_SOURCE,
+  });
+  ok(addon, "Addon was installed");
+  is(addon.version, "1.0", "Version 1 of the addon is installed");
+
+  let win = await BrowserOpenAddonsMgr("addons://list/extension");
+
+  // Trigger an update check
+  let popupPromise = promisePopupNotificationShown("addon-webext-permissions");
+  let {promise: checkPromise} = await triggerUpdate(win, addon);
+  let panel = await popupPromise;
+
+  // Click the cancel button, wait to see the cancel event
+  let cancelPromise = promiseInstallEvent(addon, "onInstallCancelled");
+  panel.secondaryButton.click();
+  await cancelPromise;
+
+  addon = await AddonManager.getAddonByID(ID);
+  is(addon.version, "1.0", "Should still be running the old version");
+
+  // Make sure the update check is completely finished.
+  await checkPromise;
+
+  // Trigger a new update check
+  popupPromise = promisePopupNotificationShown("addon-webext-permissions");
+  checkPromise = (await triggerUpdate(win, addon)).promise;
+
+  // This time, accept the upgrade
+  let updatePromise = waitForUpdate(addon);
+  panel = await popupPromise;
+  panel.button.click();
+
+  addon = await updatePromise;
+  is(addon.version, "2.0", "Should have upgraded");
+
+  await checkPromise;
+
+  BrowserTestUtils.removeTab(gBrowser.selectedTab);
+  await addon.uninstall();
+  await SpecialPowers.popPrefEnv();
+
+  const collectedUpdateEvents = AddonTestUtils.getAMTelemetryEvents().filter(evt => {
+    return evt.method === "update";
+  });
+
+  Assert.deepEqual(collectedUpdateEvents.map(evt => evt.extra.step), [
+    // First update is cancelled on the permission prompt.
+    "started", "download_started", "download_completed", "permissions_prompt", "cancelled",
+    // Second update is expected to be completed.
+    "started", "download_started", "download_completed", "permissions_prompt", "completed",
+  ], "Got the expected sequence on update telemetry events");
+
+  ok(collectedUpdateEvents.every(evt => evt.extra.addon_id === ID),
+     "Every update telemetry event should have the expected addon_id extra var");
+
+  ok(collectedUpdateEvents.every(evt => evt.extra.source === FAKE_INSTALL_SOURCE),
+     "Every update telemetry event should have the expected source extra var");
+
+  ok(collectedUpdateEvents.every(evt => evt.extra.updated_from === "user"),
+     "Every update telemetry event should have the update_from extra var 'user'");
+
+  let hasPermissionsExtras = collectedUpdateEvents.filter(evt => {
+    return evt.extra.step === "permissions_prompt";
+  }).every(evt => !!evt.extra.num_perms && !!evt.extra.num_origins);
+
+  ok(hasPermissionsExtras,
+     "Every 'permissions_prompt' update telemetry event should have the permissions extra vars");
+
+  let hasDownloadTimeExtras = collectedUpdateEvents.filter(evt => {
+    return evt.extra.step === "download_completed";
+  }).every(evt => {
+    const download_time = parseInt(evt.extra.download_time, 10);
+    return !isNaN(download_time) && download_time > 0;
+  });
+
+  ok(hasDownloadTimeExtras,
+     "Every 'download_completed' update telemetry event should have a download_time extra vars");
 }
 
 // The tests in this directory install a bunch of extensions but they
@@ -342,8 +539,25 @@ add_task(async function() {
     for (let addon of await AddonManager.getAllAddons()) {
       if (!existingAddons.has(addon.id)) {
         ok(false, `Addon ${addon.id} was left installed at the end of the test`);
-        addon.uninstall();
+        await addon.uninstall();
       }
     }
   });
 });
+
+let collectedTelemetry = [];
+function hookExtensionsTelemetry() {
+  let originalHistogram = ExtensionsUI.histogram;
+  ExtensionsUI.histogram = {
+    add(value) { collectedTelemetry.push(value); },
+  };
+  registerCleanupFunction(() => {
+    is(collectedTelemetry.length, 0, "No unexamined telemetry after test is finished");
+    ExtensionsUI.histogram = originalHistogram;
+  });
+}
+
+function expectTelemetry(values) {
+  Assert.deepEqual(values, collectedTelemetry);
+  collectedTelemetry = [];
+}

@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,11 +13,10 @@
 #include "nsSVGContainerFrame.h"
 #include "nsSVGUtils.h"
 
-class nsIAtom;
+class nsAtom;
 class nsIContent;
 class nsIFrame;
 class nsIPresShell;
-class nsStyleContext;
 class nsSVGLength2;
 
 struct nsRect;
@@ -24,76 +24,62 @@ struct nsRect;
 namespace mozilla {
 namespace dom {
 class SVGFilterElement;
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-class nsSVGFilterFrame : public nsSVGContainerFrame
-{
-  friend nsIFrame*
-  NS_NewSVGFilterFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
-protected:
-  explicit nsSVGFilterFrame(nsStyleContext* aContext)
-    : nsSVGContainerFrame(aContext)
-    , mLoopFlag(false)
-    , mNoHRefURI(false)
-  {
+class nsSVGFilterFrame final : public nsSVGContainerFrame {
+  friend nsIFrame* NS_NewSVGFilterFrame(nsIPresShell* aPresShell,
+                                        ComputedStyle* aStyle);
+
+ protected:
+  explicit nsSVGFilterFrame(ComputedStyle* aStyle)
+      : nsSVGContainerFrame(aStyle, kClassID),
+        mLoopFlag(false),
+        mNoHRefURI(false) {
     AddStateBits(NS_FRAME_IS_NONDISPLAY);
   }
 
-public:
-  NS_DECL_FRAMEARENA_HELPERS
+ public:
+  NS_DECL_FRAMEARENA_HELPERS(nsSVGFilterFrame)
 
   // nsIFrame methods:
-  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                                const nsRect&           aDirtyRect,
+  virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                 const nsDisplayListSet& aLists) override {}
 
-  virtual nsresult AttributeChanged(int32_t         aNameSpaceID,
-                                    nsIAtom*        aAttribute,
-                                    int32_t         aModType) override;
+  virtual nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
+                                    int32_t aModType) override;
 
 #ifdef DEBUG
-  virtual void Init(nsIContent*       aContent,
-                    nsContainerFrame* aParent,
-                    nsIFrame*         aPrevInFlow) override;
+  virtual void Init(nsIContent* aContent, nsContainerFrame* aParent,
+                    nsIFrame* aPrevInFlow) override;
 #endif
 
-  /**
-   * Get the "type" of the frame
-   *
-   * @see nsGkAtoms::svgFilterFrame
-   */
-  virtual nsIAtom* GetType() const override;
-
-private:
-  // Parse our xlink:href and set up our nsSVGPaintingProperty if we
-  // reference another filter and we don't have a property. Return
-  // the referenced filter's frame if available, null otherwise.
-  class AutoFilterReferencer;
+ private:
   friend class nsSVGFilterInstance;
+
+  /**
+   * Parses this frame's href and - if it references another filter - returns
+   * it.  It also makes this frame a rendering observer of the specified ID.
+   */
   nsSVGFilterFrame* GetReferencedFilter();
-  nsSVGFilterFrame* GetReferencedFilterIfNotInUse();
 
   // Accessors to lookup filter attributes
-  uint16_t GetEnumValue(uint32_t aIndex, nsIContent *aDefault);
-  uint16_t GetEnumValue(uint32_t aIndex)
-  {
+  uint16_t GetEnumValue(uint32_t aIndex, nsIContent* aDefault);
+  uint16_t GetEnumValue(uint32_t aIndex) {
     return GetEnumValue(aIndex, mContent);
   }
-  const nsSVGLength2 *GetLengthValue(uint32_t aIndex, nsIContent *aDefault);
-  const nsSVGLength2 *GetLengthValue(uint32_t aIndex)
-  {
+  const nsSVGLength2* GetLengthValue(uint32_t aIndex, nsIContent* aDefault);
+  const nsSVGLength2* GetLengthValue(uint32_t aIndex) {
     return GetLengthValue(aIndex, mContent);
   }
-  const mozilla::dom::SVGFilterElement *GetFilterContent(nsIContent *aDefault);
-  const mozilla::dom::SVGFilterElement *GetFilterContent()
-  {
+  const mozilla::dom::SVGFilterElement* GetFilterContent(nsIContent* aDefault);
+  const mozilla::dom::SVGFilterElement* GetFilterContent() {
     return GetFilterContent(mContent);
   }
 
   // This flag is used to detect loops in xlink:href processing
-  bool                              mLoopFlag;
-  bool                              mNoHRefURI;
+  bool mLoopFlag;
+  bool mNoHRefURI;
 };
 
 #endif

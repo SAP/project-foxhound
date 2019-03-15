@@ -9,9 +9,7 @@ with Files("**"):
     BUG_COMPONENT = ("Core", "DOM")
 
 XPIDL_SOURCES += [
-    'nsCWebBrowserPersist.idl',
     'nsIWebBrowserPersist.idl',
-    'nsIWebBrowserPersistable.idl',
     'nsIWebBrowserPersistDocument.idl',
 ]
 
@@ -23,7 +21,7 @@ IPDL_SOURCES += [
     'PWebBrowserPersistSerialize.ipdl',
 ]
 
-SOURCES += [
+UNIFIED_SOURCES += [
     'nsWebBrowserPersist.cpp',
     'WebBrowserPersistDocumentChild.cpp',
     'WebBrowserPersistDocumentParent.cpp',
@@ -49,5 +47,5 @@ LOCAL_INCLUDES += [
     '/dom/html',
 ]
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

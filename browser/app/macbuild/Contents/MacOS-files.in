@@ -2,6 +2,9 @@
 /*.dylib
 /certutil
 /taintfox-bin
+#if defined(MOZ_GECKODRIVER)
+/geckodriver
+#endif
 /gtest/***
 #if defined(MOZ_ASAN) || defined(MOZ_TSAN)
 /llvm-symbolizer
@@ -9,5 +12,6 @@
 /pingsender
 /pk12util
 /ssltunnel
+/webrtc-gtest
 /xpcshell
 /XUL

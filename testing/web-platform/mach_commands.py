@@ -20,83 +20,172 @@ from mach.decorators import (
     Command,
 )
 
-# This should probably be consolidated with similar classes in other test
-# runners.
-class InvalidTestPathError(Exception):
-    """Exception raised when the test path is not valid."""
+from mach_commands_base import WebPlatformTestsRunner, create_parser_wpt
 
-class WebPlatformTestsRunner(MozbuildObject):
-    """Run web platform tests."""
 
-    def setup_kwargs(self, kwargs):
-        from wptrunner import wptcommandline
+class WebPlatformTestsRunnerSetup(MozbuildObject):
+    default_log_type = "mach"
 
+    def __init__(self, *args, **kwargs):
+        super(WebPlatformTestsRunnerSetup, self).__init__(*args, **kwargs)
+        self._here = os.path.join(self.topsrcdir, 'testing', 'web-platform')
+        kwargs["tests_root"] = os.path.join(self._here, "tests")
+        sys.path.insert(0, kwargs["tests_root"])
         build_path = os.path.join(self.topobjdir, 'build')
         if build_path not in sys.path:
             sys.path.append(build_path)
 
+    def kwargs_common(self, kwargs):
+        tests_src_path = os.path.join(self._here, "tests")
+        if kwargs["product"] == "fennec":
+            # package_name may be non-fennec in the future
+            package_name = kwargs["package_name"]
+            if not package_name:
+                package_name = self.substs["ANDROID_PACKAGE_NAME"]
+
+            # Note that this import may fail in non-fennec trees
+            from mozrunner.devices.android_device import verify_android_device, grant_runtime_permissions
+            verify_android_device(self, install=True, verbose=False, xre=True, app=package_name)
+
+            grant_runtime_permissions(self, package_name, kwargs["device_serial"])
+            if kwargs["certutil_binary"] is None:
+                kwargs["certutil_binary"] = os.path.join(os.environ.get('MOZ_HOST_BIN'), "certutil")
+
+            if kwargs["install_fonts"] is None:
+                kwargs["install_fonts"] = True
+
         if kwargs["config"] is None:
-            kwargs["config"] = os.path.join(self.topsrcdir, 'testing', 'web-platform', 'wptrunner.ini')
+            kwargs["config"] = os.path.join(self.topobjdir, '_tests', 'web-platform', 'wptrunner.local.ini')
+
+        if kwargs["prefs_root"] is None:
+            kwargs["prefs_root"] = os.path.join(self.topsrcdir, 'testing', 'profiles')
+
+        if kwargs["stackfix_dir"] is None:
+            kwargs["stackfix_dir"] = self.bindir
+
+        if kwargs["exclude"] is None and kwargs["include"] is None and not sys.platform.startswith("linux"):
+            kwargs["exclude"] = ["css"]
+
+        if kwargs["ssl_type"] in (None, "pregenerated"):
+            cert_root = os.path.join(tests_src_path, "tools", "certs")
+            if kwargs["ca_cert_path"] is None:
+                kwargs["ca_cert_path"] = os.path.join(cert_root, "cacert.pem")
+
+            if kwargs["host_key_path"] is None:
+                kwargs["host_key_path"] = os.path.join(cert_root, "web-platform.test.key")
+
+            if kwargs["host_cert_path"] is None:
+                kwargs["host_cert_path"] = os.path.join(cert_root, "web-platform.test.pem")
+
+        if kwargs["lsan_dir"] is None:
+            kwargs["lsan_dir"] = os.path.join(self.topsrcdir, "build", "sanitizers")
+
+        if kwargs["reftest_screenshot"] is None:
+            kwargs["reftest_screenshot"] = "fail"
+
+        kwargs["capture_stdio"] = True
+
+        return kwargs
+
+    def kwargs_firefox(self, kwargs):
+        import mozinfo
+        from wptrunner import wptcommandline
+        kwargs = self.kwargs_common(kwargs)
 
         if kwargs["binary"] is None:
             kwargs["binary"] = self.get_binary_path()
 
-        if kwargs["prefs_root"] is None:
-            kwargs["prefs_root"] = os.path.join(self.topobjdir, '_tests', 'web-platform', "prefs")
-
         if kwargs["certutil_binary"] is None:
             kwargs["certutil_binary"] = self.get_binary_path('certutil')
 
-        if kwargs["stackfix_dir"] is None:
-            kwargs["stackfix_dir"] = os.path.split(
-                self.get_binary_path(validate_exists=False))[0]
+        if kwargs["webdriver_binary"] is None:
+            kwargs["webdriver_binary"] = self.get_binary_path("geckodriver", validate_exists=False)
 
-        here = os.path.split(__file__)[0]
 
-        if kwargs["ssl_type"] in (None, "pregenerated"):
-            if kwargs["ca_cert_path"] is None:
-                kwargs["ca_cert_path"] = os.path.join(here, "certs", "cacert.pem")
-
-            if kwargs["host_key_path"] is None:
-                kwargs["host_key_path"] = os.path.join(here, "certs", "web-platform.test.key")
-
-            if kwargs["host_cert_path"] is None:
-                kwargs["host_cert_path"] = os.path.join(here, "certs", "web-platform.test.pem")
-
-        kwargs["capture_stdio"] = True
+        if mozinfo.info["os"] == "win" and mozinfo.info["os_version"] == "6.1":
+            # On Windows 7 --install-fonts fails, so fall back to a Firefox-specific codepath
+            self.setup_fonts_firefox()
+        else:
+            kwargs["install_fonts"] = True
 
         kwargs = wptcommandline.check_args(kwargs)
 
-    def run_tests(self, **kwargs):
-        from wptrunner import wptrunner
+        return kwargs
 
-        self.setup_kwargs(kwargs)
+    def kwargs_wptrun(self, kwargs):
+        from wptrunner import wptcommandline
 
-        logger = wptrunner.setup_logging(kwargs, {"mach": sys.stdout})
-        result = wptrunner.run_tests(**kwargs)
+        if kwargs["metadata_root"] is None:
+            metadir = os.path.join(self._here, "products", kwargs["product"])
+            if not os.path.exists(metadir):
+                os.makedirs(metadir)
+            kwargs["metadata_root"] = metadir
 
-        return int(not result)
+        src_manifest = os.path.join(self._here, "meta", "MANIFEST.json")
+        dest_manifest = os.path.join(kwargs["metadata_root"], "MANIFEST.json")
 
-    def list_test_groups(self, **kwargs):
-        from wptrunner import wptrunner
+        if not os.path.exists(dest_manifest) and os.path.exists(src_manifest):
+            with open(src_manifest) as src, open(dest_manifest, "w") as dest:
+                dest.write(src.read())
 
-        self.setup_kwargs(kwargs)
+        from tools.wpt import run
 
-        wptrunner.list_test_groups(**kwargs)
+        # Add additional kwargs consumed by the run frontend. Currently we don't
+        # have a way to set these through mach
+        kwargs["channel"] = None
+        kwargs["prompt"] = True
+        kwargs["install_browser"] = False
+
+        try:
+            kwargs = run.setup_wptrunner(run.virtualenv.Virtualenv(self.virtualenv_manager.virtualenv_root),
+                                         **kwargs)
+        except run.WptrunError as e:
+            print(e.message, file=sys.stderr)
+            sys.exit(1)
+
+        return kwargs
+
+    def setup_fonts_firefox(self):
+        # Ensure the Ahem font is available
+        if not sys.platform.startswith("darwin"):
+            font_path = os.path.join(os.path.dirname(self.get_binary_path()), "fonts")
+        else:
+            font_path = os.path.join(os.path.dirname(self.get_binary_path()), os.pardir, "Resources", "res", "fonts")
+        ahem_src = os.path.join(self.topsrcdir, "testing", "web-platform", "tests", "fonts", "Ahem.ttf")
+        ahem_dest = os.path.join(font_path, "Ahem.ttf")
+        if not os.path.exists(ahem_dest) and os.path.exists(ahem_src):
+            with open(ahem_src, "rb") as src, open(ahem_dest, "wb") as dest:
+                dest.write(src.read())
+
+
 
 class WebPlatformTestsUpdater(MozbuildObject):
     """Update web platform tests."""
-    def run_update(self, **kwargs):
+    def setup_logging(self, **kwargs):
+        import update
+        return update.setup_logging(kwargs, {"mach": sys.stdout})
+
+    def update_manifest(self, logger, **kwargs):
+        import manifestupdate
+        return manifestupdate.run(logger=logger,
+                                  src_root=self.topsrcdir,
+                                  obj_root=self.topobjdir,
+                                  **kwargs)
+
+    def run_update(self, logger, **kwargs):
         import update
         from update import updatecommandline
 
+        self.update_manifest(logger, **kwargs)
+
         if kwargs["config"] is None:
-            kwargs["config"] = os.path.join(self.topsrcdir, 'testing', 'web-platform', 'wptrunner.ini')
+            kwargs["config"] = os.path.join(self.topobjdir, '_tests', 'web-platform', 'wptrunner.local.ini')
         if kwargs["product"] is None:
             kwargs["product"] = "firefox"
 
-        updatecommandline.check_args(kwargs)
-        logger = update.setup_logging(kwargs, {"mach": sys.stdout})
+        kwargs["store_state"] = False
+
+        kwargs = updatecommandline.check_args(kwargs)
 
         try:
             update.run_update(logger, **kwargs)
@@ -106,22 +195,6 @@ class WebPlatformTestsUpdater(MozbuildObject):
             traceback.print_exc()
 #            pdb.post_mortem()
 
-class WebPlatformTestsReduce(WebPlatformTestsRunner):
-
-    def run_reduce(self, **kwargs):
-        from wptrunner import reduce
-
-        self.setup_kwargs(kwargs)
-
-        kwargs["capture_stdio"] = True
-        logger = reduce.setup_logging(kwargs, {"mach": sys.stdout})
-        tests = reduce.do_reduce(**kwargs)
-
-        if not tests:
-            logger.warning("Test was not unstable")
-
-        for item in tests:
-            logger.info(item.id)
 
 class WebPlatformTestsCreator(MozbuildObject):
     template_prefix = """<!doctype html>
@@ -183,7 +256,6 @@ testing/web-platform/tests for tests that may be shared
             testing/web-platform/mozilla/tests for Gecko-only tests""" % ref_path)
             return 1
 
-
         if os.path.exists(path) and not kwargs["overwrite"]:
             print("Test path already exists, pass --overwrite to replace")
             return 1
@@ -216,6 +288,11 @@ testing/web-platform/tests for tests that may be shared
         with open(path, "w") as f:
             f.write(template)
 
+        ref_path = kwargs["ref"]
+        if ref_path and not os.path.exists(ref_path):
+            with open(ref_path, "w") as f:
+                f.write(self.template_prefix % {"documentElement": ""})
+
         if kwargs["no_editor"]:
             editor = None
         elif kwargs["editor"]:
@@ -229,38 +306,18 @@ testing/web-platform/tests for tests that may be shared
 
         proc = None
         if editor:
+            if ref_path:
+                path = "%s %s" % (path, ref_path)
             proc = subprocess.Popen("%s %s" % (editor, path), shell=True)
-
-        if not kwargs["no_run"]:
-            p = create_parser_wpt()
-            wpt_kwargs = vars(p.parse_args(["--manifest-update", path]))
-            context.commands.dispatch("web-platform-tests", context, **wpt_kwargs)
 
         if proc:
             proc.wait()
 
 
-class WPTManifestUpdater(MozbuildObject):
-    def run_update(self, check_clean=False, **kwargs):
-        import manifestupdate
-        from wptrunner import wptlogging
-
-        logger = wptlogging.setup(kwargs, {"mach": sys.stdout})
-        wpt_dir = os.path.abspath(os.path.join(self.topsrcdir, 'testing', 'web-platform'))
-        manifestupdate.update(logger, wpt_dir, check_clean)
-
-
-def create_parser_wpt():
-    from wptrunner import wptcommandline
-    return wptcommandline.create_parser(["firefox"])
-
 def create_parser_update():
     from update import updatecommandline
     return updatecommandline.create_parser()
 
-def create_parser_reduce():
-    from wptrunner import wptcommandline
-    return wptcommandline.create_parser_reduce()
 
 def create_parser_create():
     import argparse
@@ -268,15 +325,13 @@ def create_parser_create():
     p.add_argument("--no-editor", action="store_true",
                    help="Don't try to open the test in an editor")
     p.add_argument("-e", "--editor", action="store", help="Editor to use")
-    p.add_argument("--no-run", action="store_true",
-                   help="Don't try to update the wpt manifest or open the test in a browser")
     p.add_argument("--long-timeout", action="store_true",
                    help="Test should be given a long timeout (typically 60s rather than 10s, but varies depending on environment)")
     p.add_argument("--overwrite", action="store_true",
                    help="Allow overwriting an existing test file")
     p.add_argument("-r", "--reftest", action="store_true",
                    help="Create a reftest rather than a testharness (js) test"),
-    p.add_argument("-ref", "--reference", dest="ref", help="Path to the reference file")
+    p.add_argument("-m", "--reference", dest="ref", help="Path to the reference file")
     p.add_argument("--mismatch", action="store_true",
                    help="Create a mismatch reftest")
     p.add_argument("--wait", action="store_true",
@@ -297,65 +352,63 @@ class MachCommands(MachCommandBase):
 
     @Command("web-platform-tests",
              category="testing",
-             conditions=[conditions.is_firefox],
+             conditions=[conditions.is_firefox_or_android],
+             description="Run web-platform-tests.",
              parser=create_parser_wpt)
     def run_web_platform_tests(self, **params):
         self.setup()
-
+        if conditions.is_android(self) and params["product"] != "fennec":
+            if params["product"] is None:
+                params["product"] = "fennec"
+            else:
+                raise ValueError("Must specify --product=fennec in Android environment.")
         if "test_objects" in params:
             for item in params["test_objects"]:
                 params["include"].append(item["name"])
             del params["test_objects"]
 
-        wpt_runner = self._spawn(WebPlatformTestsRunner)
+        wpt_setup = self._spawn(WebPlatformTestsRunnerSetup)
+        wpt_runner = WebPlatformTestsRunner(wpt_setup)
 
-        if params["list_test_groups"]:
-            return wpt_runner.list_test_groups(**params)
-        else:
-            return wpt_runner.run_tests(**params)
+        if params["log_mach_screenshot"] is None:
+            params["log_mach_screenshot"] = True
+
+        logger = wpt_runner.setup_logging(**params)
+
+        return wpt_runner.run(logger, **params)
 
     @Command("wpt",
              category="testing",
-             conditions=[conditions.is_firefox],
+             conditions=[conditions.is_firefox_or_android],
+             description="Run web-platform-tests.",
              parser=create_parser_wpt)
     def run_wpt(self, **params):
         return self.run_web_platform_tests(**params)
 
     @Command("web-platform-tests-update",
              category="testing",
+             description="Update web-platform-test metadata.",
              parser=create_parser_update)
     def update_web_platform_tests(self, **params):
         self.setup()
-        self.virtualenv_manager.install_pip_package('html5lib==0.99')
+        self.virtualenv_manager.install_pip_package('html5lib==1.0.1')
+        self.virtualenv_manager.install_pip_package('ujson')
         self.virtualenv_manager.install_pip_package('requests')
+
         wpt_updater = self._spawn(WebPlatformTestsUpdater)
-        return wpt_updater.run_update(**params)
+        logger = wpt_updater.setup_logging(**params)
+        return wpt_updater.run_update(logger, **params)
 
     @Command("wpt-update",
              category="testing",
+             description="Update web-platform-test metadata.",
              parser=create_parser_update)
     def update_wpt(self, **params):
         return self.update_web_platform_tests(**params)
 
-    @Command("web-platform-tests-reduce",
-             category="testing",
-             conditions=[conditions.is_firefox],
-             parser=create_parser_reduce)
-    def unstable_web_platform_tests(self, **params):
-        self.setup()
-        wpt_reduce = self._spawn(WebPlatformTestsReduce)
-        return wpt_reduce.run_reduce(**params)
-
-    @Command("wpt-reduce",
-             category="testing",
-             conditions=[conditions.is_firefox],
-             parser=create_parser_reduce)
-    def unstable_wpt(self, **params):
-        return self.unstable_web_platform_tests(**params)
-
     @Command("web-platform-tests-create",
              category="testing",
-             conditions=[conditions.is_firefox],
+             description="Create a new web-platform test.",
              parser=create_parser_create)
     def create_web_platform_test(self, **params):
         self.setup()
@@ -364,15 +417,18 @@ class MachCommands(MachCommandBase):
 
     @Command("wpt-create",
              category="testing",
-             conditions=[conditions.is_firefox],
+             description="Create a new web-platform test.",
              parser=create_parser_create)
     def create_wpt(self, **params):
         return self.create_web_platform_test(**params)
 
     @Command("wpt-manifest-update",
              category="testing",
+             description="Update web-platform-test manifests.",
              parser=create_parser_manifest_update)
     def wpt_manifest_update(self, **params):
         self.setup()
-        wpt_manifest_updater = self._spawn(WPTManifestUpdater)
-        return wpt_manifest_updater.run_update(**params)
+        wpt_setup = self._spawn(WebPlatformTestsRunnerSetup)
+        wpt_runner = WebPlatformTestsRunner(wpt_setup)
+        logger = wpt_runner.setup_logging(**params)
+        return 0 if wpt_runner.update_manifest(logger, **params) else 1

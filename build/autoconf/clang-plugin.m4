@@ -4,10 +4,6 @@ dnl file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 AC_DEFUN([MOZ_CONFIG_CLANG_PLUGIN], [
 
-MOZ_ARG_ENABLE_BOOL(clang-plugin,
-[  --enable-clang-plugin   Enable building with the mozilla clang plugin ],
-   ENABLE_CLANG_PLUGIN=1,
-   ENABLE_CLANG_PLUGIN= )
 if test -n "$ENABLE_CLANG_PLUGIN"; then
     if test -z "${CLANG_CC}${CLANG_CL}"; then
         AC_MSG_ERROR([Can't use clang plugin without clang.])
@@ -61,7 +57,7 @@ if test -n "$ENABLE_CLANG_PLUGIN"; then
         dnl version that what our build machines have installed.
         LLVM_LDFLAGS=`echo "$LLVM_LDFLAGS" | sed -E 's/-L[[^ ]]+\/clang\/lib//'`
     elif test "${HOST_OS_ARCH}" = "WINNT"; then
-        CLANG_LDFLAGS="clang.lib"
+        CLANG_LDFLAGS="clangASTMatchers.lib clang.lib"
     else
         CLANG_LDFLAGS="-lclangASTMatchers"
     fi
@@ -103,21 +99,24 @@ if test -n "$ENABLE_CLANG_PLUGIN"; then
     dnl middle of the 3.8 cycle, our CLANG_VERSION_FULL is impossible to use
     dnl correctly, so we have to detect this at configure time.
     AC_CACHE_CHECK(for new ASTMatcher API,
-                   ac_cv_have_new_ASTMatcher_api,
+                   ac_cv_have_new_ASTMatcher_names,
         [
             AC_LANG_SAVE
             AC_LANG_CPLUSPLUS
             _SAVE_CXXFLAGS="$CXXFLAGS"
+            _SAVE_CPPFLAGS="$CPPFLAGS"
             _SAVE_CXX="$CXX"
             _SAVE_MACOSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET"
             unset MACOSX_DEPLOYMENT_TARGET
             CXXFLAGS="${LLVM_CXXFLAGS}"
+            CPPFLAGS=""
             CXX="${HOST_CXX}"
             AC_TRY_COMPILE([#include "clang/ASTMatchers/ASTMatchers.h"],
                            [clang::ast_matchers::cxxConstructExpr();],
                            ac_cv_have_new_ASTMatcher_names="yes",
                            ac_cv_have_new_ASTMatcher_names="no")
             CXX="$_SAVE_CXX"
+            CPPFLAGS="$_SAVE_CPPFLAGS"
             CXXFLAGS="$_SAVE_CXXFLAGS"
             export MACOSX_DEPLOYMENT_TARGET="$_SAVE_MACOSX_DEPLOYMENT_TARGET"
             AC_LANG_RESTORE
@@ -135,10 +134,12 @@ if test -n "$ENABLE_CLANG_PLUGIN"; then
             AC_LANG_SAVE
             AC_LANG_CPLUSPLUS
             _SAVE_CXXFLAGS="$CXXFLAGS"
+            _SAVE_CPPFLAGS="$CPPFLAGS"
             _SAVE_CXX="$CXX"
             _SAVE_MACOSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET"
             unset MACOSX_DEPLOYMENT_TARGET
             CXXFLAGS="${LLVM_CXXFLAGS}"
+            CPPFLAGS=""
             CXX="${HOST_CXX}"
             AC_TRY_COMPILE([#include "clang/ASTMatchers/ASTMatchers.h"],
                            [using namespace clang::ast_matchers;
@@ -147,6 +148,7 @@ if test -n "$ENABLE_CLANG_PLUGIN"; then
                            ac_cv_has_accepts_ignoringParenImpCasts="yes",
                            ac_cv_has_accepts_ignoringParenImpCasts="no")
             CXX="$_SAVE_CXX"
+            CPPFLAGS="$_SAVE_CPPFLAGS"
             CXXFLAGS="$_SAVE_CXXFLAGS"
             export MACOSX_DEPLOYMENT_TARGET="$_SAVE_MACOSX_DEPLOYMENT_TARGET"
             AC_LANG_RESTORE
@@ -155,13 +157,36 @@ if test -n "$ENABLE_CLANG_PLUGIN"; then
       LLVM_CXXFLAGS="$LLVM_CXXFLAGS -DHAS_ACCEPTS_IGNORINGPARENIMPCASTS"
     fi
 
+    CLANG_PLUGIN_FLAGS="-Xclang -load -Xclang $CLANG_PLUGIN -Xclang -add-plugin -Xclang moz-check"
+
     AC_DEFINE(MOZ_CLANG_PLUGIN)
 fi
 
-AC_SUBST(LLVM_CXXFLAGS)
-AC_SUBST(LLVM_LDFLAGS)
-AC_SUBST(CLANG_LDFLAGS)
+if test -n "$ENABLE_MOZSEARCH_PLUGIN"; then
+    if test -z "${ENABLE_CLANG_PLUGIN}"; then
+        AC_MSG_ERROR([Can't use mozsearch plugin without --enable-clang-plugin.])
+    fi
+
+    dnl We use this construct rather than $_objdir to avoid getting /js/src in the
+    dnl path when compiling JS code.
+    OBJDIR="$(dirname $(dirname $(dirname $CLANG_PLUGIN)))"
+
+    CLANG_PLUGIN_FLAGS="$CLANG_PLUGIN_FLAGS -Xclang -add-plugin -Xclang mozsearch-index"
+
+    dnl Parameters are: srcdir, outdir (path where output JSON is stored), objdir.
+    CLANG_PLUGIN_FLAGS="$CLANG_PLUGIN_FLAGS -Xclang -plugin-arg-mozsearch-index -Xclang $_topsrcdir"
+    CLANG_PLUGIN_FLAGS="$CLANG_PLUGIN_FLAGS -Xclang -plugin-arg-mozsearch-index -Xclang $OBJDIR/mozsearch_index"
+    CLANG_PLUGIN_FLAGS="$CLANG_PLUGIN_FLAGS -Xclang -plugin-arg-mozsearch-index -Xclang $OBJDIR"
+
+    AC_DEFINE(MOZ_MOZSEARCH_PLUGIN)
+fi
+
+AC_SUBST_LIST(CLANG_PLUGIN_FLAGS)
+AC_SUBST_LIST(LLVM_CXXFLAGS)
+AC_SUBST_LIST(LLVM_LDFLAGS)
+AC_SUBST_LIST(CLANG_LDFLAGS)
 
 AC_SUBST(ENABLE_CLANG_PLUGIN)
+AC_SUBST(ENABLE_MOZSEARCH_PLUGIN)
 
 ])

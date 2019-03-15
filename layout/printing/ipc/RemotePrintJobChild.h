@@ -13,15 +13,14 @@
 #include "nsIWebProgressListener.h"
 
 class nsPagePrintTimer;
-class nsPrintEngine;
+class nsPrintJob;
 
 namespace mozilla {
 namespace layout {
 
-class RemotePrintJobChild final : public PRemotePrintJobChild
-                                , public nsIWebProgressListener
-{
-public:
+class RemotePrintJobChild final : public PRemotePrintJobChild,
+                                  public nsIWebProgressListener {
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIWEBPROGRESSLISTENER
 
@@ -31,31 +30,36 @@ public:
 
   nsresult InitializePrint(const nsString& aDocumentTitle,
                            const nsString& aPrintToFile,
-                           const int32_t& aStartPage,
-                           const int32_t& aEndPage);
+                           const int32_t& aStartPage, const int32_t& aEndPage);
 
-  mozilla::ipc::IPCResult RecvPrintInitializationResult(const nsresult& aRv) final;
+  mozilla::ipc::IPCResult RecvPrintInitializationResult(
+      const nsresult& aRv, const FileDescriptor& aFd) final;
 
-  void ProcessPage(const nsCString& aPageFileName);
+  void ProcessPage();
 
-  mozilla::ipc::IPCResult RecvPageProcessed() final;
+  mozilla::ipc::IPCResult RecvPageProcessed(const FileDescriptor& aFd) final;
 
   mozilla::ipc::IPCResult RecvAbortPrint(const nsresult& aRv) final;
 
   void SetPagePrintTimer(nsPagePrintTimer* aPagePrintTimer);
 
-  void SetPrintEngine(nsPrintEngine* aPrintEngine);
+  void SetPrintJob(nsPrintJob* aPrintJob);
 
-private:
+  PRFileDesc* GetNextPageFD();
+
+ private:
   ~RemotePrintJobChild() final;
+  void SetNextPageFD(const mozilla::ipc::FileDescriptor& aFd);
 
   bool mPrintInitialized = false;
+  bool mDestroyed = false;
   nsresult mInitializationResult = NS_OK;
   RefPtr<nsPagePrintTimer> mPagePrintTimer;
-  RefPtr<nsPrintEngine> mPrintEngine;
+  RefPtr<nsPrintJob> mPrintJob;
+  PRFileDesc* mNextPageFD = nullptr;
 };
 
-} // namespace layout
-} // namespace mozilla
+}  // namespace layout
+}  // namespace mozilla
 
-#endif // mozilla_layout_RemotePrintJobChild_h
+#endif  // mozilla_layout_RemotePrintJobChild_h

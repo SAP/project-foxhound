@@ -11,48 +11,41 @@ var gVisits = [{url: "http://www.mozilla.com/",
                {url: "http://www.espn.com/",
                 transition: TRANSITION_LINK}];
 
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* test_execute() {
-  let observer;
+add_task(async function test_execute() {
   let completionPromise = new Promise(resolveCompletionPromise => {
-    observer = {
-      __proto__: NavHistoryObserver.prototype,
-      _visitCount: 0,
-      onVisit(aURI, aVisitID, aTime, aSessionID, aReferringID,
-                        aTransitionType, aAdded) {
-        do_check_eq(aURI.spec, gVisits[this._visitCount].url);
-        do_check_eq(aTransitionType, gVisits[this._visitCount].transition);
-        this._visitCount++;
+    let visitCount = 0;
+    function listener(aEvents) {
+      Assert.equal(aEvents.length, 1, "Right number of visits notified");
+      Assert.equal(aEvents[0].type, "page-visited");
+      let event = aEvents[0];
+      Assert.equal(event.url, gVisits[visitCount].url);
+      Assert.equal(event.transitionType, gVisits[visitCount].transition);
+      visitCount++;
 
-        if (this._visitCount == gVisits.length) {
-          resolveCompletionPromise();
-        }
-      },
-    };
+      if (visitCount == gVisits.length) {
+        resolveCompletionPromise();
+        PlacesObservers.removeListener(["page-visited"], listener);
+      }
+    }
+    PlacesObservers.addListener(["page-visited"], listener);
   });
 
-  PlacesUtils.history.addObserver(observer, false);
 
   for (var visit of gVisits) {
     if (visit.transition == TRANSITION_TYPED)
       PlacesUtils.history.markPageAsTyped(uri(visit.url));
     else if (visit.transition == TRANSITION_BOOKMARK)
-      PlacesUtils.history.markPageAsFollowedBookmark(uri(visit.url))
+      PlacesUtils.history.markPageAsFollowedBookmark(uri(visit.url));
     else {
      // because it is a top level visit with no referrer,
      // it will result in TRANSITION_LINK
     }
-    yield PlacesTestUtils.addVisits({
+    await PlacesTestUtils.addVisits({
       uri: uri(visit.url),
-      transition: visit.transition
+      transition: visit.transition,
     });
   }
 
-  yield completionPromise;
+  await completionPromise;
 
-  PlacesUtils.history.removeObserver(observer);
 });
-

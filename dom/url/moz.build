@@ -14,11 +14,13 @@ EXPORTS.mozilla.dom += [
 
 UNIFIED_SOURCES += [
     'URL.cpp',
+    'URLMainThread.cpp',
     'URLSearchParams.cpp',
+    'URLWorker.cpp',
 ]
 
 LOCAL_INCLUDES += [
-    '../workers',
+    '/netwerk/base',
 ]
 
 MOCHITEST_MANIFESTS += ['tests/mochitest.ini']

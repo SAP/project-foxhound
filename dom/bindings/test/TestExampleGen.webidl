@@ -632,11 +632,11 @@ interface TestExampleInterface {
   void exerciseTypedefInterfaces3(YetAnotherNameForTestInterface arg);
 
   // Deprecated methods and attributes
-  [Deprecated="GetAttributeNode"]
+  [Deprecated="EnablePrivilege"]
   attribute boolean deprecatedAttribute;
-  [Deprecated="GetAttributeNode"]
+  [Deprecated="EnablePrivilege"]
   void deprecatedMethod(boolean arg);
-  [Deprecated="GetAttributeNode"]
+  [Deprecated="EnablePrivilege"]
   void deprecatedMethodWithContext(any arg);
 
   // Static methods and attributes
@@ -645,11 +645,11 @@ interface TestExampleInterface {
   static void staticMethodWithContext(any arg);
 
   // Deprecated methods and attributes;
-  [Deprecated="GetAttributeNode"]
+  [Deprecated="EnablePrivilege"]
   static attribute boolean staticDeprecatedAttribute;
-  [Deprecated="GetAttributeNode"]
+  [Deprecated="EnablePrivilege"]
   static void staticDeprecatedMethod(boolean arg);
-  [Deprecated="GetAttributeNode"]
+  [Deprecated="EnablePrivilege"]
   static void staticDeprecatedMethodWithContext(any arg);
 
   // Overload resolution tests
@@ -783,32 +783,50 @@ interface TestExampleInterface {
   [SetterCanOOM] attribute boolean canOOMSetterAttr;
   [NeedsSubjectPrincipal] void needsSubjectPrincipalMethod();
   [NeedsSubjectPrincipal] attribute boolean needsSubjectPrincipalAttr;
+  [NeedsSubjectPrincipal=NonSystem] void needsNonSystemSubjectPrincipalMethod();
+  [NeedsSubjectPrincipal=NonSystem] attribute boolean needsNonSystemSubjectPrincipalAttr;
   [NeedsCallerType] void needsCallerTypeMethod();
   [NeedsCallerType] attribute boolean needsCallerTypeAttr;
+  [CEReactions] void ceReactionsMethod();
+  [CEReactions] void ceReactionsMethodOverload();
+  [CEReactions] void ceReactionsMethodOverload(DOMString bar);
+  [CEReactions] attribute boolean ceReactionsAttr;
   legacycaller short(unsigned long arg1, TestInterface arg2);
   void passArgsWithDefaults(optional long arg1,
                             optional TestInterface? arg2 = null,
                             optional Dict arg3, optional double arg4 = 5.0,
                             optional float arg5);
-  attribute any jsonifierShouldSkipThis;
-  attribute TestParentInterface jsonifierShouldSkipThis2;
-  attribute TestCallbackInterface jsonifierShouldSkipThis3;
-  jsonifier;
+  attribute any toJSONShouldSkipThis;
+  attribute TestParentInterface toJSONShouldSkipThis2;
+  attribute TestCallbackInterface toJSONShouldSkipThis3;
+  [Default] object toJSON();
 
   attribute byte dashed-attribute;
   void dashed-method();
+
+  // [NonEnumerable] tests
+  [NonEnumerable]
+  attribute boolean nonEnumerableAttr;
+  [NonEnumerable]
+  const boolean nonEnumerableConst = true;
+  [NonEnumerable]
+  void nonEnumerableMethod();
+
+  // [NeedsWindowsUndef] test generation
+  [NeedsWindowsUndef]
+  const unsigned long NO_ERROR = 0xffffffff;
 
   // If you add things here, add them to TestCodeGen and TestJSImplGen as well
 };
 
 interface TestExampleProxyInterface {
   getter long longIndexedGetter(unsigned long ix);
-  setter creator void longIndexedSetter(unsigned long y, long z);
+  setter void longIndexedSetter(unsigned long y, long z);
   readonly attribute unsigned long length;
   stringifier DOMString myStringifier();
   getter short shortNameGetter(DOMString nom);
   deleter void (DOMString nomnom);
-  setter creator void shortNamedSetter(DOMString me, short value);
+  setter void shortNamedSetter(DOMString me, short value);
 };
 
 [Exposed=(Window,Worker)]
@@ -817,4 +835,6 @@ interface TestExampleWorkerInterface {
   [NeedsSubjectPrincipal] attribute boolean needsSubjectPrincipalAttr;
   [NeedsCallerType] void needsCallerTypeMethod();
   [NeedsCallerType] attribute boolean needsCallerTypeAttr;
+  [NeedsSubjectPrincipal=NonSystem] void needsNonSystemSubjectPrincipalMethod();
+  [NeedsSubjectPrincipal=NonSystem] attribute boolean needsNonSystemSubjectPrincipalAttr;
 };

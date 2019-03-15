@@ -4,25 +4,16 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = [];
+var EXPORTED_SYMBOLS = [];
 
 const DEBUG = false;
 function debug(s) { dump("-*- NotificationDB component: " + s + "\n"); }
 
-const Cu = Components.utils;
-const Cc = Components.classes;
-const Ci = Components.interfaces;
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/osfile.jsm");
-Cu.import("resource://gre/modules/Promise.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "Services",
-                                  "resource://gre/modules/Services.jsm");
-
-XPCOMUtils.defineLazyServiceGetter(this, "ppmm",
-                                   "@mozilla.org/parentprocessmessagemanager;1",
-                                   "nsIMessageListenerManager");
+ChromeUtils.defineModuleGetter(this, "Services",
+                               "resource://gre/modules/Services.jsm");
 
 XPCOMUtils.defineLazyServiceGetter(this, "notificationStorage",
                                    "@mozilla.org/notificationStorage;1",
@@ -55,19 +46,19 @@ var NotificationDB = {
     this.tasks = []; // read/write operation queue
     this.runningTask = null;
 
-    Services.obs.addObserver(this, "xpcom-shutdown", false);
+    Services.obs.addObserver(this, "xpcom-shutdown");
     this.registerListeners();
   },
 
   registerListeners: function() {
     for (let message of kMessages) {
-      ppmm.addMessageListener(message, this);
+      Services.ppmm.addMessageListener(message, this);
     }
   },
 
   unregisterListeners: function() {
     for (let message of kMessages) {
-      ppmm.removeMessageListener(message, this);
+      Services.ppmm.removeMessageListener(message, this);
     }
   },
 
@@ -103,7 +94,7 @@ var NotificationDB = {
   load: function() {
     var promise = OS.File.read(NOTIFICATION_STORE_PATH, { encoding: "utf-8"});
     return promise.then(
-      function onSuccess(data) {
+      data => {
         if (data.length > 0) {
           // Preprocessing phase intends to cleanly separate any migration-related
           // tasks.
@@ -124,13 +115,13 @@ var NotificationDB = {
         }
 
         this.loaded = true;
-      }.bind(this),
+      },
 
       // If read failed, we assume we have no notifications to load.
-      function onFailure(reason) {
+      reason => {
         this.loaded = true;
         return this.createStore();
-      }.bind(this)
+      }
     );
   },
 
@@ -262,7 +253,7 @@ var NotificationDB = {
 
     // Always make sure we are loaded before performing any read/write tasks.
     this.ensureLoaded()
-    .then(function() {
+    .then(() => {
       var task = this.runningTask;
 
       switch (task.operation) {
@@ -279,22 +270,22 @@ var NotificationDB = {
           break;
       }
 
-    }.bind(this))
-    .then(function(payload) {
+    })
+    .then(payload => {
       if (DEBUG) {
         debug("Finishing task: " + this.runningTask.operation);
       }
       this.runningTask.defer.resolve(payload);
-    }.bind(this))
-    .catch(function(err) {
+    })
+    .catch(err => {
       if (DEBUG) {
         debug("Error while running " + this.runningTask.operation + ": " + err);
       }
       this.runningTask.defer.reject(new String(err));
-    }.bind(this))
-    .then(function() {
+    })
+    .then(() => {
       this.runNextTask();
-    }.bind(this));
+    });
   },
 
   taskGetAll: function(data) {
@@ -303,8 +294,15 @@ var NotificationDB = {
     var notifications = [];
     // Grab only the notifications for specified origin.
     if (this.notifications[origin]) {
-      for (var i in this.notifications[origin]) {
-        notifications.push(this.notifications[origin][i]);
+      if (data.tag) {
+        let n;
+        if ((n = this.byTag[origin][data.tag])) {
+          notifications.push(n);
+        }
+      } else {
+        for (var i in this.notifications[origin]) {
+          notifications.push(this.notifications[origin][i]);
+        }
       }
     }
     return Promise.resolve(notifications);

@@ -15,6 +15,12 @@ window {
   border-style: none;
 }
 
+#audioVideoButton,
+#screenShareButton {
+  -moz-context-properties: fill;
+  fill: white;
+}
+
 #firefoxButton {
   background-image: url("chrome://branding/content/icon48.png");
   background-repeat: no-repeat;
@@ -29,7 +35,7 @@ window {
 }
 
 #screenShareButton {
-  background-image: url("chrome://browser/skin/notification-icons.svg#screen-indicator");
+  background-image: url("chrome://browser/skin/notification-icons/screen.svg");
   background-position: center center;
   background-repeat: no-repeat;
   background-size: 16px;
@@ -61,17 +67,17 @@ window[sharingaudio] > #audioVideoButton {
 }
 
 window[sharingvideo] > #audioVideoButton {
-  background-image: url("chrome://browser/skin/notification-icons.svg#camera-indicator");
+  background-image: url("chrome://browser/skin/notification-icons/camera.svg");
 }
 
 window[sharingaudio] > #audioVideoButton {
-  background-image: url("chrome://browser/skin/notification-icons.svg#microphone-indicator");
+  background-image: url("chrome://browser/skin/notification-icons/microphone.svg");
 }
 
 /* Multi-icon button: */
 window[sharingaudio][sharingvideo] > #audioVideoButton {
-  background-image: url("chrome://browser/skin/notification-icons.svg#camera-indicator"),
-                    url("chrome://browser/skin/notification-icons.svg#microphone-indicator");
+  background-image: url("chrome://browser/skin/notification-icons/camera.svg"),
+                    url("chrome://browser/skin/notification-icons/microphone.svg");
   background-position: 6px center, 26px center;
   background-size: 16px, 16px;
   min-width: 46px;
@@ -111,6 +117,6 @@ window[sharingscreen][sharingaudio] > #shareSeparator {
 }
 
 :-moz-any(#audioVideoButton, #screenShareButton,
-          #firefoxButton):-moz-focusring > .button-box {
-  border: none;
+          #firefoxButton):-moz-focusring {
+  outline: none;
 }

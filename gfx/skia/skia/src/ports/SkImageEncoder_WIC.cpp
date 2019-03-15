@@ -7,35 +7,19 @@
 
 #include "SkTypes.h"
 
-#if defined(SK_BUILD_FOR_WIN32)
+#if defined(SK_BUILD_FOR_WIN)
 
-// Workaround for:
-// http://connect.microsoft.com/VisualStudio/feedback/details/621653/
-// http://crbug.com/225822
-// In VS2010 both intsafe.h and stdint.h define the following without guards.
-// SkTypes brought in windows.h and stdint.h and the following defines are
-// not used by this file. However, they may be re-introduced by wincodec.h.
-#undef INT8_MIN
-#undef INT16_MIN
-#undef INT32_MIN
-#undef INT64_MIN
-#undef INT8_MAX
-#undef UINT8_MAX
-#undef INT16_MAX
-#undef UINT16_MAX
-#undef INT32_MAX
-#undef UINT32_MAX
-#undef INT64_MAX
-#undef UINT64_MAX
-
-#include <wincodec.h>
 #include "SkAutoCoInitialize.h"
+#include "SkAutoMalloc.h"
 #include "SkBitmap.h"
-#include "SkImageEncoder.h"
+#include "SkImageEncoderPriv.h"
 #include "SkIStream.h"
+#include "SkImageEncoder.h"
 #include "SkStream.h"
 #include "SkTScopedComPtr.h"
+#include "SkTemplates.h"
 #include "SkUnPreMultiply.h"
+#include <wincodec.h>
 
 //All Windows SDKs back to XPSP2 export the CLSID_WICImagingFactory symbol.
 //In the Windows8 SDK the CLSID_WICImagingFactory symbol is still exported
@@ -46,36 +30,30 @@
 #undef CLSID_WICImagingFactory
 #endif
 
-class SkImageEncoder_WIC : public SkImageEncoder {
-public:
-    SkImageEncoder_WIC(Type t) : fType(t) {}
-
-protected:
-    virtual bool onEncode(SkWStream* stream, const SkBitmap& bm, int quality);
-
-private:
-    Type fType;
-};
-
-bool SkImageEncoder_WIC::onEncode(SkWStream* stream
-                                , const SkBitmap& bitmapOrig
-                                , int quality)
-{
+bool SkEncodeImageWithWIC(SkWStream* stream, const SkPixmap& pixmap,
+                          SkEncodedImageFormat format, int quality) {
     GUID type;
-    switch (fType) {
-        case kJPEG_Type:
+    switch (format) {
+        case SkEncodedImageFormat::kJPEG:
             type = GUID_ContainerFormatJpeg;
             break;
-        case kPNG_Type:
+        case SkEncodedImageFormat::kPNG:
             type = GUID_ContainerFormatPng;
             break;
         default:
             return false;
     }
+    SkBitmap bitmapOrig;
+    if (!bitmapOrig.installPixels(pixmap)) {
+        return false;
+    }
+    bitmapOrig.setImmutable();
 
     // First convert to BGRA if necessary.
     SkBitmap bitmap;
-    if (!bitmapOrig.copyTo(&bitmap, kBGRA_8888_SkColorType)) {
+    if (!bitmap.tryAllocPixels(bitmapOrig.info().makeColorType(kBGRA_8888_SkColorType)) ||
+        !bitmapOrig.readPixels(bitmap.info(), bitmap.getPixels(), bitmap.rowBytes(), 0, 0))
+    {
         return false;
     }
 
@@ -97,7 +75,7 @@ bool SkImageEncoder_WIC::onEncode(SkWStream* stream
     size_t rowBytes = bitmap.rowBytes();
     SkAutoMalloc pixelStorage;
     WICPixelFormatGUID formatDesired = GUID_WICPixelFormat32bppBGRA;
-    if (kJPEG_Type == fType) {
+    if (SkEncodedImageFormat::kJPEG == format) {
         formatDesired = GUID_WICPixelFormat24bppBGR;
         rowBytes = SkAlign4(bitmap.width() * 3);
         pixelStorage.reset(rowBytes * bitmap.height());
@@ -159,10 +137,11 @@ bool SkImageEncoder_WIC::onEncode(SkWStream* stream
     }
 
     if (SUCCEEDED(hr)) {
-        PROPBAG2 name = { 0 };
+        PROPBAG2 name;
+        memset(&name, 0, sizeof(name));
         name.dwType = PROPBAG2_TYPE_DATA;
         name.vt = VT_R4;
-        name.pstrName = L"ImageQuality";
+        name.pstrName = const_cast<LPOLESTR>(L"ImageQuality");
 
         VARIANT value;
         VariantInit(&value);
@@ -216,25 +195,4 @@ bool SkImageEncoder_WIC::onEncode(SkWStream* stream
     return SUCCEEDED(hr);
 }
 
-///////////////////////////////////////////////////////////////////////////////
-
-#ifdef SK_USE_WIC_ENCODER
-static SkImageEncoder* sk_imageencoder_wic_factory(SkImageEncoder::Type t) {
-    switch (t) {
-        case SkImageEncoder::kPNG_Type:
-        case SkImageEncoder::kJPEG_Type:
-            break;
-        default:
-            return nullptr;
-    }
-    return new SkImageEncoder_WIC(t);
-}
-
-static SkImageEncoder_EncodeReg gEReg(sk_imageencoder_wic_factory);
-#endif
-
-SkImageEncoder* CreateImageEncoder_WIC(SkImageEncoder::Type type) {
-    return new SkImageEncoder_WIC(type);
-}
-
-#endif // defined(SK_BUILD_FOR_WIN32)
+#endif // defined(SK_BUILD_FOR_WIN)

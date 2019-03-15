@@ -27,40 +27,36 @@ const {
 } = require("devtools/client/memory/actions/snapshot");
 const { changeView } = require("devtools/client/memory/actions/view");
 
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* () {
-  let front = new StubbedMemoryFront();
-  let heapWorker = new HeapAnalysesClient();
-  yield front.attach();
-  let store = Store();
+add_task(async function() {
+  const front = new StubbedMemoryFront();
+  const heapWorker = new HeapAnalysesClient();
+  await front.attach();
+  const store = Store();
   const { getState, dispatch } = store;
   dispatch(changeView(viewState.CENSUS));
 
-  yield dispatch(setCensusDisplayAndRefresh(heapWorker,
+  await dispatch(setCensusDisplayAndRefresh(heapWorker,
                                         censusDisplays.allocationStack));
   equal(getState().censusDisplay.inverted, false,
         "not inverted at start");
 
   equal(getState().diffing, null, "not diffing by default");
 
-  const s1 = yield dispatch(takeSnapshot(front, heapWorker));
-  const s2 = yield dispatch(takeSnapshot(front, heapWorker));
-  const s3 = yield dispatch(takeSnapshot(front, heapWorker));
+  const s1 = await dispatch(takeSnapshot(front, heapWorker));
+  const s2 = await dispatch(takeSnapshot(front, heapWorker));
+  const s3 = await dispatch(takeSnapshot(front, heapWorker));
   dispatch(readSnapshot(heapWorker, s1));
   dispatch(readSnapshot(heapWorker, s2));
   dispatch(readSnapshot(heapWorker, s3));
-  yield waitUntilSnapshotState(store,
+  await waitUntilSnapshotState(store,
     [snapshotState.READ, snapshotState.READ, snapshotState.READ]);
 
-  yield dispatch(toggleDiffing());
+  await dispatch(toggleDiffing());
   dispatch(selectSnapshotForDiffingAndRefresh(heapWorker,
                                               getState().snapshots[0]));
   dispatch(selectSnapshotForDiffingAndRefresh(heapWorker,
                                               getState().snapshots[1]));
-  yield waitUntilState(store,
+  await waitUntilState(store,
                        state => state.diffing.state === diffingState.TOOK_DIFF);
 
   const shouldTriggerRecompute = [
@@ -68,30 +64,30 @@ add_task(function* () {
       name: "toggling inversion",
       func: () => dispatch(setCensusDisplayAndRefresh(
         heapWorker,
-        censusDisplays.invertedAllocationStack))
+        censusDisplays.invertedAllocationStack)),
     },
     {
       name: "filtering",
-      func: () => dispatch(setFilterStringAndRefresh("scr", heapWorker))
+      func: () => dispatch(setFilterStringAndRefresh("scr", heapWorker)),
     },
     {
       name: "changing displays",
       func: () =>
         dispatch(setCensusDisplayAndRefresh(heapWorker,
-                                            censusDisplays.coarseType))
-    }
+                                            censusDisplays.coarseType)),
+    },
   ];
 
-  for (let { name, func } of shouldTriggerRecompute) {
+  for (const { name, func } of shouldTriggerRecompute) {
     dumpn(`Testing that "${name}" triggers a diff recompute`);
     func();
 
-    yield waitUntilState(store,
+    await waitUntilState(store,
                          state =>
                            state.diffing.state === diffingState.TAKING_DIFF);
     ok(true, "triggered diff recompute.");
 
-    yield waitUntilState(store,
+    await waitUntilState(store,
                          state =>
                            state.diffing.state === diffingState.TOOK_DIFF);
     ok(true, "And then the diff should complete.");
@@ -109,5 +105,5 @@ add_task(function* () {
   }
 
   heapWorker.destroy();
-  yield front.detach();
+  await front.detach();
 });

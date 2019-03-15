@@ -6,11 +6,11 @@ function test() {
 
   let eventReceived = false;
 
-  registerCleanupFunction(function () {
+  registerCleanupFunction(function() {
     ok(eventReceived, "SSWindowClosing event received");
   });
 
-  newWindow(function (win) {
+  newWindow(function(win) {
     win.addEventListener("SSWindowClosing", function() {
       eventReceived = true;
     }, {once: true});
@@ -23,7 +23,7 @@ function test() {
 
 function newWindow(callback) {
   let opts = "chrome,all,dialog=no,height=800,width=800";
-  let win = window.openDialog(getBrowserURL(), "_blank", opts);
+  let win = window.openDialog(AppConstants.BROWSER_CHROME_URL, "_blank", opts);
 
   win.addEventListener("load", function() {
     executeSoon(() => callback(win));

@@ -1,4 +1,4 @@
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 function check_request_header(chan, name, value) {
   var chanValue;
@@ -7,7 +7,7 @@ function check_request_header(chan, name, value) {
   } catch (e) {
     do_throw("Expected to find header '" + name + "' but didn't find it");
   }
-  do_check_eq(chanValue, value);
+  Assert.equal(chanValue, value);
 }
 
 function run_test() {
@@ -15,7 +15,7 @@ function run_test() {
   var chan = NetUtil.newChannel ({
     uri: "http://www.mozilla.org/",
     loadUsingSystemPrincipal: true
-  }).QueryInterface(Components.interfaces.nsIHttpChannel);
+  }).QueryInterface(Ci.nsIHttpChannel);
 
   check_request_header(chan, "host", "www.mozilla.org");
   check_request_header(chan, "Host", "www.mozilla.org");

@@ -34,26 +34,26 @@ const TEST_URL = "data:text/html;charset=utf-8," + encodeURIComponent(HTML);
 // Note that after each test case, undo is called.
 const TEST_DATA = [{
   selector: "#first",
-  focusedSelector: "#second"
+  focusedSelector: "#second",
 }, {
   selector: "#second",
-  focusedSelector: "#third"
+  focusedSelector: "#third",
 }, {
   selector: "#third",
-  focusedSelector: "#second"
+  focusedSelector: "#second",
 }, {
   selector: "#fourth",
-  focusedSelector: "#only-child"
+  focusedSelector: "#only-child",
 }, {
   selector: "#fifth",
   focusedSelector: "#pseudo",
-  pseudo: "after"
+  pseudo: "after",
 }];
 
-add_task(function* () {
-  let {inspector} = yield openInspectorForURL(TEST_URL);
+add_task(async function() {
+  const {inspector} = await openInspectorForURL(TEST_URL);
 
-  for (let data of TEST_DATA) {
-    yield checkDeleteAndSelection(inspector, "delete", data);
+  for (const data of TEST_DATA) {
+    await checkDeleteAndSelection(inspector, "delete", data);
   }
 });

@@ -4,16 +4,13 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["ScrollbarSampler"];
+var EXPORTED_SYMBOLS = ["ScrollbarSampler"];
 
-const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
-
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var gSystemScrollbarWidth = null;
 
-this.ScrollbarSampler = {
+var ScrollbarSampler = {
   getSystemScrollbarWidth() {
     if (gSystemScrollbarWidth !== null) {
       return Promise.resolve(gSystemScrollbarWidth);
@@ -40,8 +37,7 @@ this.ScrollbarSampler = {
     hdoc.appendChild(iframe);
 
     let cwindow = iframe.contentWindow;
-    let utils = cwindow.QueryInterface(Ci.nsIInterfaceRequestor)
-                       .getInterface(Ci.nsIDOMWindowUtils);
+    let utils = cwindow.windowUtils;
 
     return new Promise(resolve => {
       cwindow.addEventListener("load", function(aEvent) {
@@ -59,6 +55,6 @@ this.ScrollbarSampler = {
         iframe.remove();
       }, {once: true});
     });
-  }
+  },
 };
 Object.freeze(this.ScrollbarSampler);

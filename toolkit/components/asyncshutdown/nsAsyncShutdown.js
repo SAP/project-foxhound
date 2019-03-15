@@ -8,18 +8,9 @@
 
 "use strict";
 
-const Cu = Components.utils;
-const Ci = Components.interfaces;
-const Cc = Components.classes;
-const Cr = Components.results;
-
-var XPCOMUtils = Cu.import("resource://gre/modules/XPCOMUtils.jsm", {}).XPCOMUtils;
-XPCOMUtils.defineLazyModuleGetter(this, "AsyncShutdown",
+var XPCOMUtils = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", {}).XPCOMUtils;
+ChromeUtils.defineModuleGetter(this, "AsyncShutdown",
   "resource://gre/modules/AsyncShutdown.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Promise",
-  "resource://gre/modules/Promise.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Task",
-  "resource://gre/modules/Task.jsm");
 
 
 /**
@@ -32,9 +23,7 @@ var PropertyBagConverter = {
       throw new TypeError("Not a property bag");
     }
     let result = {};
-    let enumerator = bag.enumerator;
-    while (enumerator.hasMoreElements()) {
-      let {name, value: property} = enumerator.getNext().QueryInterface(Ci.nsIProperty);
+    for (let {name, value: property} of bag.enumerator) {
       let value = this.toValue(property);
       result[name] = value;
     }
@@ -186,8 +175,8 @@ nsAsyncShutdownClient.prototype = {
   },
 
   /* ........ QueryInterface .............. */
-  QueryInterface :  XPCOMUtils.generateQI([Ci.nsIAsyncShutdownBarrier]),
-  classID:          Components.ID("{314e9e96-cc37-4d5c-843b-54709ce11426}"),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIAsyncShutdownBarrier]),
+  classID: Components.ID("{314e9e96-cc37-4d5c-843b-54709ce11426}"),
 };
 
 /**
@@ -218,8 +207,8 @@ nsAsyncShutdownBarrier.prototype = {
   },
 
   /* ........ QueryInterface .............. */
-  QueryInterface :  XPCOMUtils.generateQI([Ci.nsIAsyncShutdownBarrier]),
-  classID:          Components.ID("{29a0e8b5-9111-4c09-a0eb-76cd02bf20fa}"),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIAsyncShutdownBarrier]),
+  classID: Components.ID("{29a0e8b5-9111-4c09-a0eb-76cd02bf20fa}"),
 };
 
 function nsAsyncShutdownService() {
@@ -247,16 +236,16 @@ function nsAsyncShutdownService() {
         let wrapped = AsyncShutdown[k]; // May be undefined, if we're on the wrong process.
         let result = wrapped ? new nsAsyncShutdownClient(wrapped) : undefined;
         Object.defineProperty(this, k, {
-          value: result
+          value: result,
         });
         return result;
-      }
+      },
     });
   }
 
   // Hooks for testing purpose
   this.wrappedJSObject = {
-    _propertyBagConverter: PropertyBagConverter
+    _propertyBagConverter: PropertyBagConverter,
   };
 }
 nsAsyncShutdownService.prototype = {
@@ -265,8 +254,8 @@ nsAsyncShutdownService.prototype = {
   },
 
   /* ........ QueryInterface .............. */
-  QueryInterface :  XPCOMUtils.generateQI([Ci.nsIAsyncShutdownService]),
-  classID:          Components.ID("{35c496de-a115-475d-93b5-ffa3f3ae6fe3}"),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIAsyncShutdownService]),
+  classID: Components.ID("{35c496de-a115-475d-93b5-ffa3f3ae6fe3}"),
 };
 
 

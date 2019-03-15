@@ -7,28 +7,25 @@
  * Tests if the empty-requests reload button works.
  */
 
-add_task(function* () {
-  let { monitor } = yield initNetMonitor(SIMPLE_URL);
+add_task(async function() {
+  const { monitor } = await initNetMonitor(SIMPLE_URL);
   info("Starting test... ");
 
-  let { document } = monitor.panelWin;
-  let button = document.querySelector(".requests-list-reload-notice-button");
+  const { document } = monitor.panelWin;
+
+  const markersDone = waitForTimelineMarkers(monitor);
+
+  const button = document.querySelector(".requests-list-reload-notice-button");
   button.click();
 
-  let markers = [];
-
-  monitor.panelWin.on(EVENTS.TIMELINE_EVENT, (_, marker) => {
-    markers.push(marker);
-  });
-
-  yield waitForNetworkEvents(monitor, 1);
-  yield waitUntil(() => markers.length == 2);
+  await waitForNetworkEvents(monitor, 1);
+  const markers = await markersDone;
 
   ok(true, "Reloading finished");
 
-  is(markers[0].name, "document::DOMContentLoaded",
+  is(markers[0].name, "dom-interactive",
     "The first received marker is correct.");
-  is(markers[1].name, "document::Load",
+  is(markers[1].name, "dom-complete",
     "The second received marker is correct.");
 
   return teardown(monitor);

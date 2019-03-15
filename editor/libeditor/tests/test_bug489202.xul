@@ -29,13 +29,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=489202
   <script class="testbody" type="application/javascript">
   <![CDATA[
   var utils = SpecialPowers.getDOMWindowUtils(window);
-  var Cc = Components.classes;
-  var Ci = Components.interfaces;
 
 function getLoadContext() {
-  return window.QueryInterface(Ci.nsIInterfaceRequestor)
-               .getInterface(Ci.nsIWebNavigation)
-               .QueryInterface(Ci.nsILoadContext);
+  return window.docShell.QueryInterface(Ci.nsILoadContext);
 }
 
 function runTest() {
@@ -49,12 +45,10 @@ function runTest() {
   cstr.data = test_data;
   trans.setTransferData("text/html", cstr, test_data.length*2);
 
-  window.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
-     .getInterface(Components.interfaces.nsIWebNavigation)
-     .QueryInterface(Components.interfaces.nsIDocShellTreeItem)
+  window.docShell
      .rootTreeItem
-     .QueryInterface(Components.interfaces.nsIDocShell)
-     .appType = Components.interfaces.nsIDocShell.APP_TYPE_EDITOR; 
+     .QueryInterface(Ci.nsIDocShell)
+     .appType = Ci.nsIDocShell.APP_TYPE_EDITOR; 
   var e = document.getElementById('i1');
   var doc = e.contentDocument;
   doc.designMode = "on";

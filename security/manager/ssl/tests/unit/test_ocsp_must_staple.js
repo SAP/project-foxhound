@@ -10,10 +10,11 @@
 
 var gExpectOCSPRequest;
 
-function add_ocsp_test(aHost, aExpectedResult, aStaplingEnabled) {
+function add_ocsp_test(aHost, aExpectedResult, aStaplingEnabled,
+                       aExpectOCSPRequest = false) {
   add_connection_test(aHost, aExpectedResult,
     function() {
-      gExpectOCSPRequest = !aStaplingEnabled;
+      gExpectOCSPRequest = aExpectOCSPRequest;
       clearOCSPCache();
       clearSessionCache();
       Services.prefs.setBoolPref("security.ssl.enable_ocsp_stapling",
@@ -36,9 +37,10 @@ function add_tests() {
     let header = `max-age=1000; pin-sha256="${keyHash}"; pin-sha256="${backupKeyHash}"`;
     let ssservice = Cc["@mozilla.org/ssservice;1"]
                       .getService(Ci.nsISiteSecurityService);
-    let sslStatus = new FakeSSLStatus();
-    sslStatus.serverCert = constructCertFromFile("ocsp_certs/must-staple-ee-with-must-staple-int.pem");
-    ssservice.processHeader(Ci.nsISiteSecurityService.HEADER_HPKP, uri, header, sslStatus, 0);
+    let secInfo = new FakeTransportSecurityInfo();
+    secInfo.serverCert = constructCertFromFile("ocsp_certs/must-staple-ee-with-must-staple-int.pem");
+    ssservice.processHeader(Ci.nsISiteSecurityService.HEADER_HPKP, uri, header, secInfo, 0,
+                            Ci.nsISiteSecurityService.SOURCE_ORGANIC_REQUEST);
     ok(ssservice.isSecureURI(Ci.nsISiteSecurityService.HEADER_HPKP, uri, 0),
        "ocsp-stapling-must-staple-ee-with-must-staple-int.example.com should have HPKP set");
 
@@ -72,13 +74,24 @@ function add_tests() {
                 SEC_ERROR_REVOKED_CERTIFICATE, true);
 
   add_ocsp_test("ocsp-stapling-must-staple-missing.example.com",
-                MOZILLA_PKIX_ERROR_REQUIRED_TLS_FEATURE_MISSING, true);
+                MOZILLA_PKIX_ERROR_REQUIRED_TLS_FEATURE_MISSING, true, true);
 
   add_ocsp_test("ocsp-stapling-must-staple-empty.example.com",
                 SEC_ERROR_OCSP_MALFORMED_RESPONSE, true);
 
   add_ocsp_test("ocsp-stapling-must-staple-missing.example.com",
-                PRErrorCodeSuccess, false);
+                PRErrorCodeSuccess, false, true);
+
+  // If the stapled response is expired, we will try to fetch a new one.
+  // If that fails, we should report the original error.
+  add_ocsp_test("ocsp-stapling-must-staple-expired.example.com",
+                SEC_ERROR_OCSP_OLD_RESPONSE, true, true);
+  // Similarly with a "try server later" response.
+  add_ocsp_test("ocsp-stapling-must-staple-try-later.example.com",
+                SEC_ERROR_OCSP_TRY_SERVER_LATER, true, true);
+  // And again with an invalid OCSP response signing certificate.
+  add_ocsp_test("ocsp-stapling-must-staple-invalid-signer.example.com",
+                SEC_ERROR_OCSP_INVALID_SIGNING_CERT, true, true);
 
   // check that disabling must-staple works
   add_test(function() {
@@ -88,12 +101,17 @@ function add_tests() {
   });
 
   add_ocsp_test("ocsp-stapling-must-staple-missing.example.com",
-                PRErrorCodeSuccess, true);
+                PRErrorCodeSuccess, true, true);
 }
 
 function run_test() {
   do_get_profile();
   Services.prefs.setBoolPref("security.ssl.enable_ocsp_must_staple", true);
+  Services.prefs.setIntPref("security.OCSP.enabled", 1);
+  // This test may sometimes fail on android due to an OCSP request timing out.
+  // That aspect of OCSP requests is not what we're testing here, so we can just
+  // bump the timeout and hopefully avoid these failures.
+  Services.prefs.setIntPref("security.OCSP.timeoutMilliseconds.soft", 5000);
 
   let fakeOCSPResponder = new HttpServer();
   fakeOCSPResponder.registerPrefixHandler("/", function (request, response) {

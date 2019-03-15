@@ -6,7 +6,7 @@
 /* globals define */
 
 // Make this available to both AMD and CJS environments
-define(function (require, exports, module) {
+define(function(require, exports, module) {
   module.exports = {
     ELEMENT_NODE: 1,
     ATTRIBUTE_NODE: 2,
@@ -27,6 +27,6 @@ define(function (require, exports, module) {
     DOCUMENT_POSITION_FOLLOWING: 0x04,
     DOCUMENT_POSITION_CONTAINS: 0x08,
     DOCUMENT_POSITION_CONTAINED_BY: 0x10,
-    DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC: 0x20
+    DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC: 0x20,
   };
 });

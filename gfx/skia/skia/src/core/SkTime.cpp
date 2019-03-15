@@ -5,9 +5,11 @@
  * found in the LICENSE file.
  */
 
+#include "SkTime.h"
+
 #include "SkLeanWindows.h"
 #include "SkString.h"
-#include "SkTime.h"
+#include "SkTo.h"
 #include "SkTypes.h"
 
 void SkTime::DateTime::toISO8601(SkString* dst) const {
@@ -25,7 +27,7 @@ void SkTime::DateTime::toISO8601(SkString* dst) const {
     }
 }
 
-#ifdef SK_BUILD_FOR_WIN32
+#ifdef SK_BUILD_FOR_WIN
 
 void SkTime::GetDateTime(DateTime* dt) {
     if (dt) {
@@ -42,35 +44,38 @@ void SkTime::GetDateTime(DateTime* dt) {
     }
 }
 
-#else // SK_BUILD_FOR_WIN32
+#else // SK_BUILD_FOR_WIN
 
 #include <time.h>
 void SkTime::GetDateTime(DateTime* dt) {
     if (dt) {
         time_t m_time;
         time(&m_time);
-        struct tm* tstruct;
-        tstruct = gmtime(&m_time);
+        struct tm tstruct;
+        gmtime_r(&m_time, &tstruct);
         dt->fTimeZoneMinutes = 0;
-        dt->fYear       = tstruct->tm_year + 1900;
-        dt->fMonth      = SkToU8(tstruct->tm_mon + 1);
-        dt->fDayOfWeek  = SkToU8(tstruct->tm_wday);
-        dt->fDay        = SkToU8(tstruct->tm_mday);
-        dt->fHour       = SkToU8(tstruct->tm_hour);
-        dt->fMinute     = SkToU8(tstruct->tm_min);
-        dt->fSecond     = SkToU8(tstruct->tm_sec);
+        dt->fYear       = tstruct.tm_year + 1900;
+        dt->fMonth      = SkToU8(tstruct.tm_mon + 1);
+        dt->fDayOfWeek  = SkToU8(tstruct.tm_wday);
+        dt->fDay        = SkToU8(tstruct.tm_mday);
+        dt->fHour       = SkToU8(tstruct.tm_hour);
+        dt->fMinute     = SkToU8(tstruct.tm_min);
+        dt->fSecond     = SkToU8(tstruct.tm_sec);
     }
 }
-#endif // SK_BUILD_FOR_WIN32
+#endif // SK_BUILD_FOR_WIN
 
-#if defined(SK_BUILD_FOR_UNIX) || defined(SK_BUILD_FOR_ANDROID)
+#if !defined(__has_feature)
+    #define  __has_feature(x) 0
+#endif
+
+#if __has_feature(memory_sanitizer) || defined(SK_BUILD_FOR_UNIX) || defined(SK_BUILD_FOR_ANDROID)
 #include <time.h>
 double SkTime::GetNSecs() {
-    struct timespec ts;
-    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
-      return 0.0;
-    }
-    return ts.tv_sec * 1e9 + ts.tv_nsec;
+    // See skia:6504
+    struct timespec tp;
+    clock_gettime(CLOCK_MONOTONIC, &tp);
+    return tp.tv_sec * 1e9 + tp.tv_nsec;
 }
 #else
 #include <chrono>

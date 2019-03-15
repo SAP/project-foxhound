@@ -53,14 +53,16 @@ struct IDWriteFontFallback;
 SK_API SkTypeface* SkCreateTypefaceFromDWriteFont(IDWriteFactory* aFactory,
                                                   IDWriteFontFace* aFontFace,
                                                   SkFontStyle aStyle,
-                                                  bool aForceGDI);
+                                                  bool aForceGDI,
+                                                  float aGamma,
+                                                  float aContrast);
 
-SK_API SkFontMgr* SkFontMgr_New_GDI();
-SK_API SkFontMgr* SkFontMgr_New_DirectWrite(IDWriteFactory* factory = NULL,
-                                            IDWriteFontCollection* collection = NULL);
-SK_API SkFontMgr* SkFontMgr_New_DirectWrite(IDWriteFactory* factory,
-                                            IDWriteFontCollection* collection,
-                                            IDWriteFontFallback* fallback);
+SK_API sk_sp<SkFontMgr> SkFontMgr_New_GDI();
+SK_API sk_sp<SkFontMgr> SkFontMgr_New_DirectWrite(IDWriteFactory* factory = NULL,
+                                                  IDWriteFontCollection* collection = NULL);
+SK_API sk_sp<SkFontMgr> SkFontMgr_New_DirectWrite(IDWriteFactory* factory,
+                                                  IDWriteFontCollection* collection,
+                                                  IDWriteFontFallback* fallback);
 
 /**
  *  Creates an SkFontMgr which renders using DirectWrite and obtains its data
@@ -68,7 +70,7 @@ SK_API SkFontMgr* SkFontMgr_New_DirectWrite(IDWriteFactory* factory,
  *
  *  If DirectWrite could not be initialized, will return NULL.
  */
-SK_API SkFontMgr* SkFontMgr_New_DirectWriteRenderer(SkRemotableFontMgr*);
+SK_API sk_sp<SkFontMgr> SkFontMgr_New_DirectWriteRenderer(sk_sp<SkRemotableFontMgr>);
 
 /**
  *  Creates an SkRemotableFontMgr backed by DirectWrite using the default
@@ -76,7 +78,7 @@ SK_API SkFontMgr* SkFontMgr_New_DirectWriteRenderer(SkRemotableFontMgr*);
  *
  *  If DirectWrite could not be initialized, will return NULL.
  */
-SK_API SkRemotableFontMgr* SkRemotableFontMgr_New_DirectWrite();
+SK_API sk_sp<SkRemotableFontMgr> SkRemotableFontMgr_New_DirectWrite();
 
 #endif  // SK_BUILD_FOR_WIN
 #endif  // SkTypeface_win_DEFINED

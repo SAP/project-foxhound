@@ -24,43 +24,36 @@ struct sqlite3_stmt;
 namespace mozilla {
 namespace storage {
 
-class StatementData
-{
-public:
+class StatementData {
+ public:
   StatementData(sqlite3_stmt *aStatement,
                 already_AddRefed<BindingParamsArray> aParamsArray,
                 StorageBaseStatementInternal *aStatementOwner)
-  : mStatement(aStatement)
-  , mParamsArray(aParamsArray)
-  , mStatementOwner(aStatementOwner)
-  {
-    NS_PRECONDITION(mStatementOwner, "Must have a statement owner!");
+      : mStatement(aStatement),
+        mParamsArray(aParamsArray),
+        mStatementOwner(aStatementOwner) {
+    MOZ_ASSERT(mStatementOwner, "Must have a statement owner!");
   }
   StatementData(const StatementData &aSource)
-  : mStatement(aSource.mStatement)
-  , mParamsArray(aSource.mParamsArray)
-  , mStatementOwner(aSource.mStatementOwner)
-  {
-    NS_PRECONDITION(mStatementOwner, "Must have a statement owner!");
+      : mStatement(aSource.mStatement),
+        mParamsArray(aSource.mParamsArray),
+        mStatementOwner(aSource.mStatementOwner) {
+    MOZ_ASSERT(mStatementOwner, "Must have a statement owner!");
   }
-  StatementData()
-  : mStatement(nullptr)
-  {
-  }
-  ~StatementData()
-  {
+  StatementData() : mStatement(nullptr) {}
+  ~StatementData() {
     // We need to ensure that mParamsArray is released on the main thread,
     // as the binding arguments may be XPConnect values, which are safe
     // to release only on the main thread.
-    NS_ReleaseOnMainThread(mParamsArray.forget());
+    NS_ReleaseOnMainThreadSystemGroup("StatementData::mParamsArray",
+                                      mParamsArray.forget());
   }
 
   /**
    * Return the sqlite statement, fetching it from the storage statement.  In
-   * the case of AsyncStatements this may actually create the statement 
+   * the case of AsyncStatements this may actually create the statement
    */
-  inline int getSqliteStatement(sqlite3_stmt **_stmt)
-  {
+  inline int getSqliteStatement(sqlite3_stmt **_stmt) {
     if (!mStatement) {
       int rc = mStatementOwner->getAsyncStatement(&mStatement);
       NS_ENSURE_TRUE(rc == SQLITE_OK, rc);
@@ -75,22 +68,8 @@ public:
    * NULLs out our sqlite3_stmt (it is held by the owner) after reseting it and
    * clear all bindings to it.  This is expected to occur on the async thread.
    */
-  inline void reset()
-  {
-    NS_PRECONDITION(mStatementOwner, "Must have a statement owner!");
-#ifdef DEBUG
-    {
-      nsCOMPtr<nsIEventTarget> asyncThread =
-        mStatementOwner->getOwner()->getAsyncExecutionTarget();
-      // It's possible that we are shutting down the async thread, and this
-      // method would return nullptr as a result.
-      if (asyncThread) {
-        bool onAsyncThread;
-        NS_ASSERTION(NS_SUCCEEDED(asyncThread->IsOnCurrentThread(&onAsyncThread)) && onAsyncThread,
-                     "This should only be running on the async thread!");
-      }
-    }
-#endif
+  inline void reset() {
+    MOZ_ASSERT(mStatementOwner, "Must have a statement owner!");
     // In the AsyncStatement case we may never have populated mStatement if the
     // AsyncExecuteStatements got canceled or a failure occurred in constructing
     // the statement.
@@ -119,8 +98,7 @@ public:
    * @note In the case of AsyncStatements this may actually create the
    *       statement.
    */
-  inline uint32_t needsTransaction()
-  {
+  inline uint32_t needsTransaction() {
     MOZ_ASSERT(!NS_IsMainThread());
     // Be sure to use the getSqliteStatement helper, since sqlite3_stmt_readonly
     // can only analyze prepared statements and AsyncStatements are prepared
@@ -133,7 +111,7 @@ public:
     return mParamsArray ? mParamsArray->length() : 1;
   }
 
-private:
+ private:
   sqlite3_stmt *mStatement;
   RefPtr<BindingParamsArray> mParamsArray;
 
@@ -144,7 +122,7 @@ private:
   nsCOMPtr<StorageBaseStatementInternal> mStatementOwner;
 };
 
-} // namespace storage
-} // namespace mozilla
+}  // namespace storage
+}  // namespace mozilla
 
-#endif // mozStorageStatementData_h
+#endif  // mozStorageStatementData_h

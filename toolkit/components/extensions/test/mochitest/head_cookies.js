@@ -3,8 +3,9 @@
 "use strict";
 
 /* exported testCookies */
+/* import-globals-from head.js */
 
-function* testCookies(options) {
+async function testCookies(options) {
   // Changing the options object is a bit of a hack, but it allows us to easily
   // pass an expiration date to the background script.
   options.expiry = Date.now() / 1000 + 3600;
@@ -24,7 +25,6 @@ function* testCookies(options) {
       changed.push(`${event.cookie.name}:${event.cause}`);
     });
     browser.test.sendMessage("change-cookies");
-
 
     // Try to access some cookies in various ways.
     let {url, domain, secure} = backgroundOptions;
@@ -91,77 +91,111 @@ function* testCookies(options) {
     background: `(${background})(${JSON.stringify(options)})`,
   });
 
+  let stepOne = loadChromeScript(() => {
+    const {addMessageListener, sendAsyncMessage} = this;
+    addMessageListener("options", options => {
+      let domain = options.domain.replace(/^\.?/, ".");
+      // This will be evicted after we add a fourth cookie.
+      Services.cookies.add(domain, "/", "evicted", "bar", options.secure, false,
+                           false, options.expiry, {},
+                           Ci.nsICookie2.SAMESITE_UNSET);
+      // This will be modified by the background script.
+      Services.cookies.add(domain, "/", "foo", "bar", options.secure, false,
+                           false, options.expiry, {},
+                           Ci.nsICookie2.SAMESITE_UNSET);
+      // This will be deleted by the background script.
+      Services.cookies.add(domain, "/", "deleted", "bar", options.secure, false,
+                           false, options.expiry, {},
+                           Ci.nsICookie2.SAMESITE_UNSET);
+      sendAsyncMessage("done");
+    });
+  });
+  stepOne.sendAsyncMessage("options", options);
+  await stepOne.promiseOneMessage("done");
+  stepOne.destroy();
 
-  let cookieSvc = SpecialPowers.Services.cookies;
+  await extension.startup();
 
-  let domain = options.domain.replace(/^\.?/, ".");
+  await extension.awaitMessage("change-cookies");
 
-  // This will be evicted after we add a fourth cookie.
-  cookieSvc.add(domain, "/", "evicted", "bar", options.secure, false, false, options.expiry);
-  // This will be modified by the background script.
-  cookieSvc.add(domain, "/", "foo", "bar", options.secure, false, false, options.expiry);
-  // This will be deleted by the background script.
-  cookieSvc.add(domain, "/", "deleted", "bar", options.secure, false, false, options.expiry);
+  let stepTwo = loadChromeScript(() => {
+    const {addMessageListener, sendAsyncMessage} = this;
+    addMessageListener("options", options => {
+      let domain = options.domain.replace(/^\.?/, ".");
 
+      Services.cookies.add(domain, "/", "x", "y", options.secure, false, false,
+                           options.expiry, {}, Ci.nsICookie2.SAMESITE_UNSET);
+      Services.cookies.add(domain, "/", "x", "z", options.secure, false, false,
+                           options.expiry, {}, Ci.nsICookie2.SAMESITE_UNSET);
+      Services.cookies.remove(domain, "x", "/", false, {});
+      sendAsyncMessage("done");
+    });
+  });
+  stepTwo.sendAsyncMessage("options", options);
+  await stepTwo.promiseOneMessage("done");
+  stepTwo.destroy();
 
-  yield extension.startup();
-
-  yield extension.awaitMessage("change-cookies");
-  cookieSvc.add(domain, "/", "x", "y", options.secure, false, false, options.expiry);
-  cookieSvc.add(domain, "/", "x", "z", options.secure, false, false, options.expiry);
-  cookieSvc.remove(domain, "x", "/", false, {});
   extension.sendMessage("cookies-changed");
 
-  yield extension.awaitFinish("cookie-permissions");
-  yield extension.unload();
+  await extension.awaitFinish("cookie-permissions");
+  await extension.unload();
 
 
-  function getCookies(host) {
-    let cookies = [];
-    let enum_ = cookieSvc.getCookiesFromHost(host, {});
-    while (enum_.hasMoreElements()) {
-      cookies.push(enum_.getNext().QueryInterface(SpecialPowers.Ci.nsICookie2));
+  let stepThree = loadChromeScript(() => {
+    const {addMessageListener, sendAsyncMessage, assert} = this;
+    let cookieSvc = Services.cookies;
+
+    function getCookies(host) {
+      let cookies = [];
+      for (let cookie of cookieSvc.getCookiesFromHost(host, {})) {
+        cookies.push(cookie);
+      }
+      return cookies.sort((a, b) => a.name.localeCompare(b.name));
     }
-    return cookies.sort((a, b) => a.name.localeCompare(b.name));
-  }
 
-  let cookies = getCookies(options.domain);
-  info(`Cookies: ${cookies.map(c => `${c.name}=${c.value}`)}`);
+    addMessageListener("options", options => {
+      let cookies = getCookies(options.domain);
 
-  if (options.shouldPass) {
-    is(cookies.length, 2, "expected two cookies for host");
+      if (options.shouldPass) {
+        assert.equal(cookies.length, 2, "expected two cookies for host");
 
-    is(cookies[0].name, "bar", "correct cookie name");
-    is(cookies[0].value, "quux", "correct cookie value");
+        assert.equal(cookies[0].name, "bar", "correct cookie name");
+        assert.equal(cookies[0].value, "quux", "correct cookie value");
 
-    is(cookies[1].name, "foo", "correct cookie name");
-    is(cookies[1].value, "baz", "correct cookie value");
-  } else if (options.shouldWrite) {
-    // Note: |shouldWrite| applies only when |shouldPass| is false.
-    // This is necessary because, unfortunately, websites (and therefore web
-    // extensions) are allowed to write some cookies which they're not allowed
-    // to read.
-    is(cookies.length, 3, "expected three cookies for host");
+        assert.equal(cookies[1].name, "foo", "correct cookie name");
+        assert.equal(cookies[1].value, "baz", "correct cookie value");
+      } else if (options.shouldWrite) {
+        // Note: |shouldWrite| applies only when |shouldPass| is false.
+        // This is necessary because, unfortunately, websites (and therefore web
+        // extensions) are allowed to write some cookies which they're not allowed
+        // to read.
+        assert.equal(cookies.length, 3, "expected three cookies for host");
 
-    is(cookies[0].name, "bar", "correct cookie name");
-    is(cookies[0].value, "quux", "correct cookie value");
+        assert.equal(cookies[0].name, "bar", "correct cookie name");
+        assert.equal(cookies[0].value, "quux", "correct cookie value");
 
-    is(cookies[1].name, "deleted", "correct cookie name");
+        assert.equal(cookies[1].name, "deleted", "correct cookie name");
 
-    is(cookies[2].name, "foo", "correct cookie name");
-    is(cookies[2].value, "baz", "correct cookie value");
-  } else {
-    is(cookies.length, 2, "expected two cookies for host");
+        assert.equal(cookies[2].name, "foo", "correct cookie name");
+        assert.equal(cookies[2].value, "baz", "correct cookie value");
+      } else {
+        assert.equal(cookies.length, 2, "expected two cookies for host");
 
-    is(cookies[0].name, "deleted", "correct second cookie name");
+        assert.equal(cookies[0].name, "deleted", "correct second cookie name");
 
-    is(cookies[1].name, "foo", "correct cookie name");
-    is(cookies[1].value, "bar", "correct cookie value");
-  }
+        assert.equal(cookies[1].name, "foo", "correct cookie name");
+        assert.equal(cookies[1].value, "bar", "correct cookie value");
+      }
 
-  for (let cookie of cookies) {
-    cookieSvc.remove(cookie.host, cookie.name, "/", false, {});
-  }
-  // Make sure we don't silently poison subsequent tests if something goes wrong.
-  is(getCookies(options.domain).length, 0, "cookies cleared");
+      for (let cookie of cookies) {
+        cookieSvc.remove(cookie.host, cookie.name, "/", false, {});
+      }
+      // Make sure we don't silently poison subsequent tests if something goes wrong.
+      assert.equal(getCookies(options.domain).length, 0, "cookies cleared");
+      sendAsyncMessage("done");
+    });
+  });
+  stepThree.sendAsyncMessage("options", options);
+  await stepThree.promiseOneMessage("done");
+  stepThree.destroy();
 }

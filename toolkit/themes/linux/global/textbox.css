@@ -15,25 +15,28 @@ textbox {
   -moz-appearance: textfield;
   cursor: text;
   margin: 2px 4px;
-  border: 2px solid;
-  -moz-border-top-colors: ThreeDShadow ThreeDDarkShadow;
-  -moz-border-right-colors: ThreeDHighlight ThreeDLightShadow;
-  -moz-border-bottom-colors: ThreeDHighlight ThreeDLightShadow;
-  -moz-border-left-colors: ThreeDShadow ThreeDDarkShadow;
   padding: 2px 2px 3px;
   padding-inline-start: 4px;
   background-color: -moz-Field;
   color: -moz-FieldText;
 }
 
-html|*.textbox-input, 
+html|*.textbox-input,
 html|*.textbox-textarea {
-  margin: 0px !important;
-  border: none !important;
-  padding: 0px 1px !important;
-  background-color: inherit;
+  -moz-appearance: none;
+  margin: 0;
+  border: none;
+  padding: 0 1px;
+  background-color: transparent;
   color: inherit;
   font: inherit;
+  text-shadow: inherit;
+  box-sizing: border-box;
+  -moz-box-flex: 1;
+}
+
+html|*.textbox-input {
+  text-align: inherit;
 }
 
 .textbox-contextmenu {
@@ -72,8 +75,13 @@ textbox.plain html|*.textbox-textarea {
 
 /* ::::: search textbox ::::: */
 
-.textbox-search-icon {
-  list-style-image: url(moz-icon://stock/gtk-find?size=menu);
+textbox:not([searchbutton]) > moz-input-box > .textbox-search-sign {
+  list-style-image: url(chrome://global/skin/icons/search-textbox.svg);
+  margin-inline-end: 5px;
+}
+
+.textbox-search-icon[searchbutton] {
+  list-style-image: url(chrome://global/skin/icons/search-textbox.svg);
 }
 
 .textbox-search-clear {
@@ -87,6 +95,6 @@ textbox.plain html|*.textbox-textarea {
 
 /* ::::: textboxes inside toolbarpaletteitems ::::: */
 
-toolbarpaletteitem > toolbaritem > textbox > .textbox-input-box > html|*.textbox-input {
+toolbarpaletteitem > toolbaritem > textbox > moz-input-box > html|*.textbox-input {
   visibility: hidden;
 }

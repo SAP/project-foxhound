@@ -56,12 +56,8 @@ function testQueryContents(aQuery, aOptions, aCallback) {
   root.containerOpen = false;
 }
 
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* test_initialize() {
-  yield task_populateDB(gTestData);
+add_task(async function test_initialize() {
+  await task_populateDB(gTestData);
 });
 
 add_task(function pages_query() {
@@ -71,11 +67,11 @@ add_task(function pages_query() {
     for (let i = 0; i < root.childCount; i++) {
       let node = root.getChild(i);
       let uri = NetUtil.newURI(node.uri);
-      do_check_eq(node.tags, null);
+      Assert.equal(node.tags, null);
       PlacesUtils.tagging.tagURI(uri, ["test-tag"]);
-      do_check_eq(node.tags, "test-tag");
+      Assert.equal(node.tags, "test-tag");
       PlacesUtils.tagging.untagURI(uri, ["test-tag"]);
-      do_check_eq(node.tags, null);
+      Assert.equal(node.tags, null);
     }
   });
 });
@@ -88,28 +84,28 @@ add_task(function visits_query() {
     for (let i = 0; i < root.childCount; i++) {
       let node = root.getChild(i);
       let uri = NetUtil.newURI(node.uri);
-      do_check_eq(node.tags, null);
+      Assert.equal(node.tags, null);
       PlacesUtils.tagging.tagURI(uri, ["test-tag"]);
-      do_check_eq(node.tags, "test-tag");
+      Assert.equal(node.tags, "test-tag");
       PlacesUtils.tagging.untagURI(uri, ["test-tag"]);
-      do_check_eq(node.tags, null);
+      Assert.equal(node.tags, null);
     }
   });
 });
 
 add_task(function bookmarks_query() {
   let [query, options] = newQueryWithOptions();
-  query.setFolders([PlacesUtils.unfiledBookmarksFolderId], 1);
+  query.setParents([PlacesUtils.bookmarks.unfiledGuid], 1);
   testQueryContents(query, options, function(root) {
     compareArrayToResult([gTestData[0], gTestData[1], gTestData[2]], root);
     for (let i = 0; i < root.childCount; i++) {
       let node = root.getChild(i);
       let uri = NetUtil.newURI(node.uri);
-      do_check_eq(node.tags, null);
+      Assert.equal(node.tags, null);
       PlacesUtils.tagging.tagURI(uri, ["test-tag"]);
-      do_check_eq(node.tags, "test-tag");
+      Assert.equal(node.tags, "test-tag");
       PlacesUtils.tagging.untagURI(uri, ["test-tag"]);
-      do_check_eq(node.tags, null);
+      Assert.equal(node.tags, null);
     }
   });
 });
@@ -122,11 +118,11 @@ add_task(function pages_searchterm_query() {
     for (let i = 0; i < root.childCount; i++) {
       let node = root.getChild(i);
       let uri = NetUtil.newURI(node.uri);
-      do_check_eq(node.tags, null);
+      Assert.equal(node.tags, null);
       PlacesUtils.tagging.tagURI(uri, ["test-tag"]);
-      do_check_eq(node.tags, "test-tag");
+      Assert.equal(node.tags, "test-tag");
       PlacesUtils.tagging.untagURI(uri, ["test-tag"]);
-      do_check_eq(node.tags, null);
+      Assert.equal(node.tags, null);
     }
   });
 });
@@ -140,50 +136,52 @@ add_task(function visits_searchterm_query() {
     for (let i = 0; i < root.childCount; i++) {
       let node = root.getChild(i);
       let uri = NetUtil.newURI(node.uri);
-      do_check_eq(node.tags, null);
+      Assert.equal(node.tags, null);
       PlacesUtils.tagging.tagURI(uri, ["test-tag"]);
-      do_check_eq(node.tags, "test-tag");
+      Assert.equal(node.tags, "test-tag");
       PlacesUtils.tagging.untagURI(uri, ["test-tag"]);
-      do_check_eq(node.tags, null);
+      Assert.equal(node.tags, null);
     }
   });
 });
 
-add_task(function pages_searchterm_is_tag_query() {
+add_task(async function pages_searchterm_is_tag_query() {
   let [query, options] = newQueryWithOptions();
   query.searchTerms = "test-tag";
-  testQueryContents(query, options, function(root) {
-    compareArrayToResult([], root);
-    gTestData.forEach(function(data) {
-      let uri = NetUtil.newURI(data.uri);
-      PlacesUtils.bookmarks.insertBookmark(PlacesUtils.unfiledBookmarksFolderId,
-                                           uri,
-                                           PlacesUtils.bookmarks.DEFAULT_INDEX,
-                                           data.title);
-      PlacesUtils.tagging.tagURI(uri, ["test-tag"]);
-      compareArrayToResult([data], root);
-      PlacesUtils.tagging.untagURI(uri, ["test-tag"]);
-      compareArrayToResult([], root);
+  let root;
+  testQueryContents(query, options, rv => root = rv);
+  compareArrayToResult([], root);
+  for (let data of gTestData) {
+    let uri = NetUtil.newURI(data.uri);
+    await PlacesUtils.bookmarks.insert({
+      parentGuid: PlacesUtils.bookmarks.unfiledGuid,
+      url: uri,
+      title: data.title,
     });
-  });
+    PlacesUtils.tagging.tagURI(uri, ["test-tag"]);
+    compareArrayToResult([data], root);
+    PlacesUtils.tagging.untagURI(uri, ["test-tag"]);
+    compareArrayToResult([], root);
+  }
 });
 
-add_task(function visits_searchterm_is_tag_query() {
+add_task(async function visits_searchterm_is_tag_query() {
   let [query, options] = newQueryWithOptions();
   query.searchTerms = "test-tag";
   options.resultType = Ci.nsINavHistoryQueryOptions.RESULTS_AS_VISIT;
-  testQueryContents(query, options, function(root) {
-    compareArrayToResult([], root);
-    gTestData.forEach(function(data) {
-      let uri = NetUtil.newURI(data.uri);
-      PlacesUtils.bookmarks.insertBookmark(PlacesUtils.unfiledBookmarksFolderId,
-                                           uri,
-                                           PlacesUtils.bookmarks.DEFAULT_INDEX,
-                                           data.title);
-      PlacesUtils.tagging.tagURI(uri, ["test-tag"]);
-      compareArrayToResult([data], root);
-      PlacesUtils.tagging.untagURI(uri, ["test-tag"]);
-      compareArrayToResult([], root);
+  let root;
+  testQueryContents(query, options, rv => root = rv);
+  compareArrayToResult([], root);
+  for (let data of gTestData) {
+    let uri = NetUtil.newURI(data.uri);
+    await PlacesUtils.bookmarks.insert({
+      parentGuid: PlacesUtils.bookmarks.unfiledGuid,
+      url: uri,
+      title: data.title,
     });
-  });
+    PlacesUtils.tagging.tagURI(uri, ["test-tag"]);
+    compareArrayToResult([data], root);
+    PlacesUtils.tagging.untagURI(uri, ["test-tag"]);
+    compareArrayToResult([], root);
+  }
 });

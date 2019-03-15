@@ -29,9 +29,7 @@ extern mozilla::LazyLogModule gStorageLog;
 namespace mozilla {
 namespace storage {
 
-nsresult
-convertResultCode(int aSQLiteResultCode)
-{
+nsresult convertResultCode(int aSQLiteResultCode) {
   // Drop off the extended result bits of the result code.
   int rc = aSQLiteResultCode & 0xFF;
 
@@ -68,7 +66,7 @@ convertResultCode(int aSQLiteResultCode)
       return NS_ERROR_STORAGE_CONSTRAINT;
   }
 
-  // generic error
+    // generic error
 #ifdef DEBUG
   nsAutoCString message;
   message.AppendLiteral("SQLite returned error code ");
@@ -79,20 +77,16 @@ convertResultCode(int aSQLiteResultCode)
   return NS_ERROR_FAILURE;
 }
 
-void
-checkAndLogStatementPerformance(sqlite3_stmt *aStatement)
-{
+void checkAndLogStatementPerformance(sqlite3_stmt *aStatement) {
   // Check to see if the query performed sorting operations or not.  If it
   // did, it may need to be optimized!
   int count = ::sqlite3_stmt_status(aStatement, SQLITE_STMTSTATUS_SORT, 1);
-  if (count <= 0)
-    return;
+  if (count <= 0) return;
 
   const char *sql = ::sqlite3_sql(aStatement);
 
   // Check to see if this is marked to not warn
-  if (::strstr(sql, "/* do not warn (bug "))
-    return;
+  if (::strstr(sql, "/* do not warn (bug ")) return;
 
   // CREATE INDEX always sorts (sorting is a necessary step in creating
   // an index).  So ignore the warning there.
@@ -114,40 +108,29 @@ checkAndLogStatementPerformance(sqlite3_stmt *aStatement)
   NS_WARNING(message.get());
 }
 
-nsIVariant *
-convertJSValToVariant(
-  JSContext *aCtx,
-  const JS::Value& aValue)
-{
-  if (aValue.isInt32())
-    return new IntegerVariant(aValue.toInt32());
+nsIVariant *convertJSValToVariant(JSContext *aCtx, const JS::Value &aValue) {
+  if (aValue.isInt32()) return new IntegerVariant(aValue.toInt32());
 
-  if (aValue.isDouble())
-    return new FloatVariant(aValue.toDouble());
+  if (aValue.isDouble()) return new FloatVariant(aValue.toDouble());
 
   if (aValue.isString()) {
     nsAutoJSString value;
-    if (!value.init(aCtx, aValue.toString()))
-        return nullptr;
+    if (!value.init(aCtx, aValue.toString())) return nullptr;
     return new TextVariant(value);
   }
 
-  if (aValue.isBoolean())
-    return new IntegerVariant(aValue.isTrue() ? 1 : 0);
+  if (aValue.isBoolean()) return new IntegerVariant(aValue.isTrue() ? 1 : 0);
 
-  if (aValue.isNull())
-    return new NullVariant();
+  if (aValue.isNull()) return new NullVariant();
 
   if (aValue.isObject()) {
-    JS::Rooted<JSObject*> obj(aCtx, &aValue.toObject());
+    JS::Rooted<JSObject *> obj(aCtx, &aValue.toObject());
     // We only support Date instances, all others fail.
     bool valid;
-    if (!js::DateIsValid(aCtx, obj, &valid) || !valid)
-      return nullptr;
+    if (!js::DateIsValid(aCtx, obj, &valid) || !valid) return nullptr;
 
     double msecd;
-    if (!js::DateGetMsecSinceEpoch(aCtx, obj, &msecd))
-      return nullptr;
+    if (!js::DateGetMsecSinceEpoch(aCtx, obj, &msecd)) return nullptr;
 
     msecd *= 1000.0;
     int64_t msec = msecd;
@@ -158,9 +141,7 @@ convertJSValToVariant(
   return nullptr;
 }
 
-Variant_base *
-convertVariantToStorageVariant(nsIVariant* aVariant)
-{
+Variant_base *convertVariantToStorageVariant(nsIVariant *aVariant) {
   RefPtr<Variant_base> variant = do_QueryObject(aVariant);
   if (variant) {
     // JS helpers already convert the JS representation to a Storage Variant,
@@ -168,12 +149,9 @@ convertVariantToStorageVariant(nsIVariant* aVariant)
     return variant;
   }
 
-  if (!aVariant)
-    return new NullVariant();
+  if (!aVariant) return new NullVariant();
 
-  uint16_t dataType;
-  nsresult rv = aVariant->GetDataType(&dataType);
-  NS_ENSURE_SUCCESS(rv, nullptr);
+  uint16_t dataType = aVariant->GetDataType();
 
   switch (dataType) {
     case nsIDataType::VTYPE_BOOL:
@@ -186,14 +164,14 @@ convertVariantToStorageVariant(nsIVariant* aVariant)
     case nsIDataType::VTYPE_INT64:
     case nsIDataType::VTYPE_UINT64: {
       int64_t v;
-      rv = aVariant->GetAsInt64(&v);
+      nsresult rv = aVariant->GetAsInt64(&v);
       NS_ENSURE_SUCCESS(rv, nullptr);
       return new IntegerVariant(v);
     }
     case nsIDataType::VTYPE_FLOAT:
     case nsIDataType::VTYPE_DOUBLE: {
       double v;
-      rv = aVariant->GetAsDouble(&v);
+      nsresult rv = aVariant->GetAsDouble(&v);
       NS_ENSURE_SUCCESS(rv, nullptr);
       return new FloatVariant(v);
     }
@@ -203,17 +181,16 @@ convertVariantToStorageVariant(nsIVariant* aVariant)
     case nsIDataType::VTYPE_UTF8STRING:
     case nsIDataType::VTYPE_CSTRING: {
       nsCString v;
-      rv = aVariant->GetAsAUTF8String(v);
+      nsresult rv = aVariant->GetAsAUTF8String(v);
       NS_ENSURE_SUCCESS(rv, nullptr);
       return new UTF8TextVariant(v);
     }
     case nsIDataType::VTYPE_WCHAR:
-    case nsIDataType::VTYPE_DOMSTRING:
     case nsIDataType::VTYPE_WCHAR_STR:
     case nsIDataType::VTYPE_WSTRING_SIZE_IS:
     case nsIDataType::VTYPE_ASTRING: {
       nsString v;
-      rv = aVariant->GetAsAString(v);
+      nsresult rv = aVariant->GetAsAString(v);
       NS_ENSURE_SUCCESS(rv, nullptr);
       return new TextVariant(v);
     }
@@ -223,7 +200,7 @@ convertVariantToStorageVariant(nsIVariant* aVariant)
       uint32_t len;
       void *rawArray;
       // Note this copies the array data.
-      rv = aVariant->GetAsArray(&type, &iid, &len, &rawArray);
+      nsresult rv = aVariant->GetAsArray(&type, &iid, &len, &rawArray);
       NS_ENSURE_SUCCESS(rv, nullptr);
       if (type == nsIDataType::VTYPE_UINT8) {
         std::pair<uint8_t *, int> v(static_cast<uint8_t *>(rawArray), len);
@@ -248,30 +225,26 @@ convertVariantToStorageVariant(nsIVariant* aVariant)
 }
 
 namespace {
-class CallbackEvent : public Runnable
-{
-public:
+class CallbackEvent : public Runnable {
+ public:
   explicit CallbackEvent(mozIStorageCompletionCallback *aCallback)
-  : mCallback(aCallback)
-  {
-  }
+      : Runnable("storage::CallbackEvent"), mCallback(aCallback) {}
 
-  NS_IMETHOD Run() override
-  {
+  NS_IMETHOD Run() override {
     (void)mCallback->Complete(NS_OK, nullptr);
     return NS_OK;
   }
-private:
+
+ private:
   nsCOMPtr<mozIStorageCompletionCallback> mCallback;
 };
-} // namespace
-already_AddRefed<nsIRunnable>
-newCompletionEvent(mozIStorageCompletionCallback *aCallback)
-{
+}  // namespace
+already_AddRefed<nsIRunnable> newCompletionEvent(
+    mozIStorageCompletionCallback *aCallback) {
   NS_ASSERTION(aCallback, "Passing a null callback is a no-no!");
   nsCOMPtr<nsIRunnable> event = new CallbackEvent(aCallback);
   return event.forget();
 }
 
-} // namespace storage
-} // namespace mozilla
+}  // namespace storage
+}  // namespace mozilla

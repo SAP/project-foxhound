@@ -16,11 +16,11 @@ function test() {
     "Unsigned XPI": {
       URL: TESTROOT + "amosigned.xpi",
       IconURL: TESTROOT + "icon.png",
-      toString() { return this.URL; }
-    }
+      toString() { return this.URL; },
+    },
   })));
-  gBrowser.selectedTab = gBrowser.addTab();
-  gBrowser.loadURI(TESTROOT2 + "installtrigger_frame.html?" + inner_url);
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
+  BrowserTestUtils.loadURI(gBrowser, TESTROOT2 + "installtrigger_frame.html?" + inner_url);
 }
 
 function install_blocked(installInfo) {

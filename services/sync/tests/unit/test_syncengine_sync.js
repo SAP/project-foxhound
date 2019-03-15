@@ -1,15 +1,15 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Cu.import("resource://services-sync/constants.js");
-Cu.import("resource://services-sync/engines.js");
-Cu.import("resource://services-sync/policies.js");
-Cu.import("resource://services-sync/record.js");
-Cu.import("resource://services-sync/resource.js");
-Cu.import("resource://services-sync/service.js");
-Cu.import("resource://services-sync/util.js");
-Cu.import("resource://testing-common/services/sync/rotaryengine.js");
-Cu.import("resource://testing-common/services/sync/utils.js");
+ChromeUtils.import("resource://services-sync/constants.js");
+ChromeUtils.import("resource://services-sync/engines.js");
+ChromeUtils.import("resource://services-sync/main.js");
+ChromeUtils.import("resource://services-sync/policies.js");
+ChromeUtils.import("resource://services-sync/record.js");
+ChromeUtils.import("resource://services-sync/resource.js");
+ChromeUtils.import("resource://services-sync/service.js");
+ChromeUtils.import("resource://services-sync/util.js");
+ChromeUtils.import("resource://testing-common/services/sync/rotaryengine.js");
 
 function makeRotaryEngine() {
   return new RotaryEngine(Service);
@@ -19,7 +19,7 @@ async function clean(engine) {
   Svc.Prefs.resetBranch("");
   Svc.Prefs.set("log.logger.engine.rotary", "Trace");
   Service.recordManager.clearCache();
-  engine._tracker.clearChangedIDs();
+  await engine._tracker.clearChangedIDs();
   await engine.finalize();
 }
 
@@ -35,12 +35,12 @@ async function promiseClean(engine, server) {
 
 async function createServerAndConfigureClient() {
   let engine = new RotaryEngine(Service);
+  let syncID = await engine.resetLocalSyncID();
 
   let contents = {
-    meta: {global: {engines: {rotary: {version: engine.version,
-                                       syncID:  engine.syncID}}}},
+    meta: {global: {engines: {rotary: {version: engine.version, syncID}}}},
     crypto: {},
-    rotary: {}
+    rotary: {},
   };
 
   const USER = "foo";
@@ -55,11 +55,6 @@ async function createServerAndConfigureClient() {
   return [engine, server, USER];
 }
 
-function run_test() {
-  generateNewKeys(Service.collectionKeys);
-  Svc.Prefs.set("log.logger.engine.rotary", "Trace");
-  run_next_test();
-}
 
 /*
  * Tests
@@ -75,6 +70,11 @@ function run_test() {
  * different scenarios below.
  */
 
+add_task(async function setup() {
+  await generateNewKeys(Service.collectionKeys);
+  Svc.Prefs.set("log.logger.engine.rotary", "Trace");
+});
+
 add_task(async function test_syncStartup_emptyOrOutdatedGlobalsResetsSync() {
   _("SyncEngine._syncStartup resets sync and wipes server data if there's no or an outdated global record");
 
@@ -88,7 +88,7 @@ add_task(async function test_syncStartup_emptyOrOutdatedGlobalsResetsSync() {
                                     denomination: "Flying Scotsman"}));
 
   let server = sync_httpd_setup({
-      "/1.1/foo/storage/rotary": collection.handler()
+      "/1.1/foo/storage/rotary": collection.handler(),
   });
 
   await SyncTestingInfrastructure(server);
@@ -98,28 +98,28 @@ add_task(async function test_syncStartup_emptyOrOutdatedGlobalsResetsSync() {
   try {
 
     // Confirm initial environment
-    do_check_eq(engine._tracker.changedIDs["rekolok"], undefined);
-    let metaGlobal = Service.recordManager.get(engine.metaURL);
-    do_check_eq(metaGlobal.payload.engines, undefined);
-    do_check_true(!!collection.payload("flying"));
-    do_check_true(!!collection.payload("scotsman"));
+    const changes = await engine._tracker.getChangedIDs();
+    Assert.equal(changes.rekolok, undefined);
+    let metaGlobal = await Service.recordManager.get(engine.metaURL);
+    Assert.equal(metaGlobal.payload.engines, undefined);
+    Assert.ok(!!collection.payload("flying"));
+    Assert.ok(!!collection.payload("scotsman"));
 
-    engine.lastSync = Date.now() / 1000;
-    engine.lastSyncLocal = Date.now();
+    await engine.setLastSync(Date.now() / 1000);
 
     // Trying to prompt a wipe -- we no longer track CryptoMeta per engine,
     // so it has nothing to check.
-    engine._syncStartup();
+    await engine._syncStartup();
 
     // The meta/global WBO has been filled with data about the engine
-    let engineData = metaGlobal.payload.engines["rotary"];
-    do_check_eq(engineData.version, engine.version);
-    do_check_eq(engineData.syncID, engine.syncID);
+    let engineData = metaGlobal.payload.engines.rotary;
+    Assert.equal(engineData.version, engine.version);
+    Assert.equal(engineData.syncID, await engine.getSyncID());
 
     // Sync was reset and server data was wiped
-    do_check_eq(engine.lastSync, 0);
-    do_check_eq(collection.payload("flying"), undefined);
-    do_check_eq(collection.payload("scotsman"), undefined);
+    Assert.equal(await engine.getLastSync(), 0);
+    Assert.equal(collection.payload("flying"), undefined);
+    Assert.equal(collection.payload("scotsman"), undefined);
 
   } finally {
     await cleanAndGo(engine, server);
@@ -131,7 +131,7 @@ add_task(async function test_syncStartup_serverHasNewerVersion() {
 
   let global = new ServerWBO("global", {engines: {rotary: {version: 23456}}});
   let server = httpd_setup({
-      "/1.1/foo/storage/meta/global": global.handler()
+      "/1.1/foo/storage/meta/global": global.handler(),
   });
 
   await SyncTestingInfrastructure(server);
@@ -143,11 +143,11 @@ add_task(async function test_syncStartup_serverHasNewerVersion() {
     // handle.  That should give us an exception.
     let error;
     try {
-      engine._syncStartup();
+      await engine._syncStartup();
     } catch (ex) {
       error = ex;
     }
-    do_check_eq(error.failureCode, VERSION_OUT_OF_DATE);
+    Assert.equal(error.failureCode, VERSION_OUT_OF_DATE);
 
   } finally {
     await cleanAndGo(engine, server);
@@ -172,18 +172,18 @@ add_task(async function test_syncStartup_syncIDMismatchResetsClient() {
   try {
 
     // Confirm initial environment
-    do_check_eq(engine.syncID, "fake-guid-00");
-    do_check_eq(engine._tracker.changedIDs["rekolok"], undefined);
+    Assert.equal(await engine.getSyncID(), "");
+    const changes = await engine._tracker.getChangedIDs();
+    Assert.equal(changes.rekolok, undefined);
 
-    engine.lastSync = Date.now() / 1000;
-    engine.lastSyncLocal = Date.now();
-    engine._syncStartup();
+    await engine.setLastSync(Date.now() / 1000);
+    await engine._syncStartup();
 
     // The engine has assumed the server's syncID
-    do_check_eq(engine.syncID, "foobar");
+    Assert.equal(await engine.getSyncID(), "foobar");
 
     // Sync was reset
-    do_check_eq(engine.lastSync, 0);
+    Assert.equal(await engine.getLastSync(), 0);
 
   } finally {
     await cleanAndGo(engine, server);
@@ -196,7 +196,7 @@ add_task(async function test_processIncoming_emptyServer() {
 
   let collection = new ServerCollection();
   let server = sync_httpd_setup({
-      "/1.1/foo/storage/rotary": collection.handler()
+      "/1.1/foo/storage/rotary": collection.handler(),
   });
 
   await SyncTestingInfrastructure(server);
@@ -205,8 +205,8 @@ add_task(async function test_processIncoming_emptyServer() {
   try {
 
     // Merely ensure that this code path is run without any errors
-    engine._processIncoming();
-    do_check_eq(engine.lastSync, 0);
+    await engine._processIncoming();
+    Assert.equal(await engine.getLastSync(), 0);
 
   } finally {
     await cleanAndGo(engine, server);
@@ -234,39 +234,39 @@ add_task(async function test_processIncoming_createFromServer() {
   let server = sync_httpd_setup({
       "/1.1/foo/storage/rotary": collection.handler(),
       "/1.1/foo/storage/rotary/flying": collection.wbo("flying").handler(),
-      "/1.1/foo/storage/rotary/scotsman": collection.wbo("scotsman").handler()
+      "/1.1/foo/storage/rotary/scotsman": collection.wbo("scotsman").handler(),
   });
 
   await SyncTestingInfrastructure(server);
 
-  generateNewKeys(Service.collectionKeys);
+  await generateNewKeys(Service.collectionKeys);
 
   let engine = makeRotaryEngine();
+  let syncID = await engine.resetLocalSyncID();
   let meta_global = Service.recordManager.set(engine.metaURL,
                                               new WBORecord(engine.metaURL));
-  meta_global.payload.engines = {rotary: {version: engine.version,
-                                         syncID: engine.syncID}};
+  meta_global.payload.engines = {rotary: {version: engine.version, syncID}};
 
   try {
 
     // Confirm initial environment
-    do_check_eq(engine.lastSync, 0);
-    do_check_eq(engine.lastModified, null);
-    do_check_eq(engine._store.items.flying, undefined);
-    do_check_eq(engine._store.items.scotsman, undefined);
-    do_check_eq(engine._store.items["../pathological"], undefined);
+    Assert.equal(await engine.getLastSync(), 0);
+    Assert.equal(engine.lastModified, null);
+    Assert.equal(engine._store.items.flying, undefined);
+    Assert.equal(engine._store.items.scotsman, undefined);
+    Assert.equal(engine._store.items["../pathological"], undefined);
 
-    engine._syncStartup();
-    engine._processIncoming();
+    await engine._syncStartup();
+    await engine._processIncoming();
 
     // Timestamps of last sync and last server modification are set.
-    do_check_true(engine.lastSync > 0);
-    do_check_true(engine.lastModified > 0);
+    Assert.ok((await engine.getLastSync()) > 0);
+    Assert.ok(engine.lastModified > 0);
 
     // Local records have been created from the server data.
-    do_check_eq(engine._store.items.flying, "LNER Class A3 4472");
-    do_check_eq(engine._store.items.scotsman, "Flying Scotsman");
-    do_check_eq(engine._store.items["../pathological"], "Pathological Case");
+    Assert.equal(engine._store.items.flying, "LNER Class A3 4472");
+    Assert.equal(engine._store.items.scotsman, "Flying Scotsman");
+    Assert.equal(engine._store.items["../pathological"], "Pathological Case");
 
   } finally {
     await cleanAndGo(engine, server);
@@ -318,7 +318,7 @@ add_task(async function test_processIncoming_reconcile() {
                                     deleted: true}));
 
   let server = sync_httpd_setup({
-      "/1.1/foo/storage/rotary": collection.handler()
+      "/1.1/foo/storage/rotary": collection.handler(),
   });
 
   await SyncTestingInfrastructure(server);
@@ -331,53 +331,55 @@ add_task(async function test_processIncoming_reconcile() {
                          long_original: "Long Original Entry",
                          nukeme: "Nuke me!"};
   // Make this record 1 min old, thus older than the one on the server
-  engine._tracker.addChangedID("newerserver", Date.now() / 1000 - 60);
+  await engine._tracker.addChangedID("newerserver", Date.now() / 1000 - 60);
   // This record has been changed 2 mins later than the one on the server
-  engine._tracker.addChangedID("olderidentical", Date.now() / 1000);
+  await engine._tracker.addChangedID("olderidentical", Date.now() / 1000);
 
+  let syncID = await engine.resetLocalSyncID();
   let meta_global = Service.recordManager.set(engine.metaURL,
                                               new WBORecord(engine.metaURL));
-  meta_global.payload.engines = {rotary: {version: engine.version,
-                                         syncID: engine.syncID}};
+  meta_global.payload.engines = {rotary: {version: engine.version, syncID}};
 
   try {
 
     // Confirm initial environment
-    do_check_eq(engine._store.items.newrecord, undefined);
-    do_check_eq(engine._store.items.newerserver, "New data, but not as new as server!");
-    do_check_eq(engine._store.items.olderidentical, "Older but identical");
-    do_check_eq(engine._store.items.updateclient, "Got data?");
-    do_check_eq(engine._store.items.nukeme, "Nuke me!");
-    do_check_true(engine._tracker.changedIDs["olderidentical"] > 0);
+    Assert.equal(engine._store.items.newrecord, undefined);
+    Assert.equal(engine._store.items.newerserver, "New data, but not as new as server!");
+    Assert.equal(engine._store.items.olderidentical, "Older but identical");
+    Assert.equal(engine._store.items.updateclient, "Got data?");
+    Assert.equal(engine._store.items.nukeme, "Nuke me!");
+    let changes = await engine._tracker.getChangedIDs();
+    Assert.ok(changes.olderidentical > 0);
 
-    engine._syncStartup();
-    engine._processIncoming();
+    await engine._syncStartup();
+    await engine._processIncoming();
 
     // Timestamps of last sync and last server modification are set.
-    do_check_true(engine.lastSync > 0);
-    do_check_true(engine.lastModified > 0);
+    Assert.ok((await engine.getLastSync()) > 0);
+    Assert.ok(engine.lastModified > 0);
 
     // The new record is created.
-    do_check_eq(engine._store.items.newrecord, "New stuff...");
+    Assert.equal(engine._store.items.newrecord, "New stuff...");
 
     // The 'newerserver' record is updated since the server data is newer.
-    do_check_eq(engine._store.items.newerserver, "New data!");
+    Assert.equal(engine._store.items.newerserver, "New data!");
 
     // The data for 'olderidentical' is identical on the server, so
     // it's no longer marked as changed anymore.
-    do_check_eq(engine._store.items.olderidentical, "Older but identical");
-    do_check_eq(engine._tracker.changedIDs["olderidentical"], undefined);
+    Assert.equal(engine._store.items.olderidentical, "Older but identical");
+    changes = await engine._tracker.getChangedIDs();
+    Assert.equal(changes.olderidentical, undefined);
 
     // Updated with server data.
-    do_check_eq(engine._store.items.updateclient, "Get this!");
+    Assert.equal(engine._store.items.updateclient, "Get this!");
 
     // The incoming ID is preferred.
-    do_check_eq(engine._store.items.original, undefined);
-    do_check_eq(engine._store.items.duplication, "Original Entry");
-    do_check_neq(engine._delete.ids.indexOf("original"), -1);
+    Assert.equal(engine._store.items.original, undefined);
+    Assert.equal(engine._store.items.duplication, "Original Entry");
+    Assert.notEqual(engine._delete.ids.indexOf("original"), -1);
 
     // The 'nukeme' record marked as deleted is removed.
-    do_check_eq(engine._store.items.nukeme, undefined);
+    Assert.equal(engine._store.items.nukeme, undefined);
   } finally {
     await cleanAndGo(engine, server);
   }
@@ -391,7 +393,7 @@ add_task(async function test_processIncoming_reconcile_local_deleted() {
   let [engine, server, user] = await createServerAndConfigureClient();
 
   let now = Date.now() / 1000 - 10;
-  engine.lastSync = now;
+  await engine.setLastSync(now);
   engine.lastModified = now + 1;
 
   let record = encryptPayload({id: "DUPE_INCOMING", denomination: "incoming"});
@@ -402,18 +404,18 @@ add_task(async function test_processIncoming_reconcile_local_deleted() {
   wbo = new ServerWBO("DUPE_LOCAL", record, now - 1);
   server.insertWBO(user, "rotary", wbo);
 
-  engine._store.create({id: "DUPE_LOCAL", denomination: "local"});
-  do_check_true(engine._store.itemExists("DUPE_LOCAL"));
-  do_check_eq("DUPE_LOCAL", engine._findDupe({id: "DUPE_INCOMING"}));
+  await engine._store.create({id: "DUPE_LOCAL", denomination: "local"});
+  Assert.ok((await engine._store.itemExists("DUPE_LOCAL")));
+  Assert.equal("DUPE_LOCAL", (await engine._findDupe({id: "DUPE_INCOMING"})));
 
-  engine._sync();
+  await engine._sync();
 
   do_check_attribute_count(engine._store.items, 1);
-  do_check_true("DUPE_INCOMING" in engine._store.items);
+  Assert.ok("DUPE_INCOMING" in engine._store.items);
 
   let collection = server.getCollection(user, "rotary");
-  do_check_eq(1, collection.count());
-  do_check_neq(undefined, collection.wbo("DUPE_INCOMING"));
+  Assert.equal(1, collection.count());
+  Assert.notEqual(undefined, collection.wbo("DUPE_INCOMING"));
 
   await cleanAndGo(engine, server);
 });
@@ -424,7 +426,7 @@ add_task(async function test_processIncoming_reconcile_equivalent() {
   let [engine, server, user] = await createServerAndConfigureClient();
 
   let now = Date.now() / 1000 - 10;
-  engine.lastSync = now;
+  await engine.setLastSync(now);
   engine.lastModified = now + 1;
 
   let record = encryptPayload({id: "entry", denomination: "denomination"});
@@ -432,9 +434,9 @@ add_task(async function test_processIncoming_reconcile_equivalent() {
   server.insertWBO(user, "rotary", wbo);
 
   engine._store.items = {entry: "denomination"};
-  do_check_true(engine._store.itemExists("entry"));
+  Assert.ok((await engine._store.itemExists("entry")));
 
-  engine._sync();
+  await engine._sync();
 
   do_check_attribute_count(engine._store.items, 1);
 
@@ -451,7 +453,7 @@ add_task(async function test_processIncoming_reconcile_locally_deleted_dupe_new(
   let [engine, server, user] = await createServerAndConfigureClient();
 
   let now = Date.now() / 1000 - 10;
-  engine.lastSync = now;
+  await engine.setLastSync(now);
   engine.lastModified = now + 1;
 
   let record = encryptPayload({id: "DUPE_INCOMING", denomination: "incoming"});
@@ -460,22 +462,23 @@ add_task(async function test_processIncoming_reconcile_locally_deleted_dupe_new(
 
   // Simulate a locally-deleted item.
   engine._store.items = {};
-  engine._tracker.addChangedID("DUPE_LOCAL", now + 3);
-  do_check_false(engine._store.itemExists("DUPE_LOCAL"));
-  do_check_false(engine._store.itemExists("DUPE_INCOMING"));
-  do_check_eq("DUPE_LOCAL", engine._findDupe({id: "DUPE_INCOMING"}));
+  await engine._tracker.addChangedID("DUPE_LOCAL", now + 3);
+  Assert.equal(false, (await engine._store.itemExists("DUPE_LOCAL")));
+  Assert.equal(false, (await engine._store.itemExists("DUPE_INCOMING")));
+  Assert.equal("DUPE_LOCAL", (await engine._findDupe({id: "DUPE_INCOMING"})));
 
-  engine._sync();
+  engine.lastModified = server.getCollection(user, engine.name).timestamp;
+  await engine._sync();
 
   // After the sync, the server's payload for the original ID should be marked
   // as deleted.
   do_check_empty(engine._store.items);
   let collection = server.getCollection(user, "rotary");
-  do_check_eq(1, collection.count());
+  Assert.equal(1, collection.count());
   wbo = collection.wbo("DUPE_INCOMING");
-  do_check_neq(null, wbo);
-  let payload = JSON.parse(JSON.parse(wbo.payload).ciphertext);
-  do_check_true(payload.deleted);
+  Assert.notEqual(null, wbo);
+  let payload = wbo.getCleartext();
+  Assert.ok(payload.deleted);
 
   await cleanAndGo(engine, server);
 });
@@ -489,7 +492,7 @@ add_task(async function test_processIncoming_reconcile_locally_deleted_dupe_old(
   let [engine, server, user] = await createServerAndConfigureClient();
 
   let now = Date.now() / 1000 - 10;
-  engine.lastSync = now;
+  await engine.setLastSync(now);
   engine.lastModified = now + 1;
 
   let record = encryptPayload({id: "DUPE_INCOMING", denomination: "incoming"});
@@ -498,23 +501,23 @@ add_task(async function test_processIncoming_reconcile_locally_deleted_dupe_old(
 
   // Simulate a locally-deleted item.
   engine._store.items = {};
-  engine._tracker.addChangedID("DUPE_LOCAL", now + 1);
-  do_check_false(engine._store.itemExists("DUPE_LOCAL"));
-  do_check_false(engine._store.itemExists("DUPE_INCOMING"));
-  do_check_eq("DUPE_LOCAL", engine._findDupe({id: "DUPE_INCOMING"}));
+  await engine._tracker.addChangedID("DUPE_LOCAL", now + 1);
+  Assert.equal(false, (await engine._store.itemExists("DUPE_LOCAL")));
+  Assert.equal(false, (await engine._store.itemExists("DUPE_INCOMING")));
+  Assert.equal("DUPE_LOCAL", (await engine._findDupe({id: "DUPE_INCOMING"})));
 
-  engine._sync();
+  await engine._sync();
 
   // Since the remote change is newer, the incoming item should exist locally.
   do_check_attribute_count(engine._store.items, 1);
-  do_check_true("DUPE_INCOMING" in engine._store.items);
-  do_check_eq("incoming", engine._store.items.DUPE_INCOMING);
+  Assert.ok("DUPE_INCOMING" in engine._store.items);
+  Assert.equal("incoming", engine._store.items.DUPE_INCOMING);
 
   let collection = server.getCollection(user, "rotary");
-  do_check_eq(1, collection.count());
+  Assert.equal(1, collection.count());
   wbo = collection.wbo("DUPE_INCOMING");
-  let payload = JSON.parse(JSON.parse(wbo.payload).ciphertext);
-  do_check_eq("incoming", payload.denomination);
+  let payload = wbo.getCleartext();
+  Assert.equal("incoming", payload.denomination);
 
   await cleanAndGo(engine, server);
 });
@@ -525,7 +528,7 @@ add_task(async function test_processIncoming_reconcile_changed_dupe() {
   let [engine, server, user] = await createServerAndConfigureClient();
 
   let now = Date.now() / 1000 - 10;
-  engine.lastSync = now;
+  await engine.setLastSync(now);
   engine.lastModified = now + 1;
 
   // The local record is newer than the incoming one, so it should be retained.
@@ -533,25 +536,26 @@ add_task(async function test_processIncoming_reconcile_changed_dupe() {
   let wbo = new ServerWBO("DUPE_INCOMING", record, now + 2);
   server.insertWBO(user, "rotary", wbo);
 
-  engine._store.create({id: "DUPE_LOCAL", denomination: "local"});
-  engine._tracker.addChangedID("DUPE_LOCAL", now + 3);
-  do_check_true(engine._store.itemExists("DUPE_LOCAL"));
-  do_check_eq("DUPE_LOCAL", engine._findDupe({id: "DUPE_INCOMING"}));
+  await engine._store.create({id: "DUPE_LOCAL", denomination: "local"});
+  await engine._tracker.addChangedID("DUPE_LOCAL", now + 3);
+  Assert.ok((await engine._store.itemExists("DUPE_LOCAL")));
+  Assert.equal("DUPE_LOCAL", (await engine._findDupe({id: "DUPE_INCOMING"})));
 
-  engine._sync();
+  engine.lastModified = server.getCollection(user, engine.name).timestamp;
+  await engine._sync();
 
   // The ID should have been changed to incoming.
   do_check_attribute_count(engine._store.items, 1);
-  do_check_true("DUPE_INCOMING" in engine._store.items);
+  Assert.ok("DUPE_INCOMING" in engine._store.items);
 
   // On the server, the local ID should be deleted and the incoming ID should
   // have its payload set to what was in the local record.
   let collection = server.getCollection(user, "rotary");
-  do_check_eq(1, collection.count());
+  Assert.equal(1, collection.count());
   wbo = collection.wbo("DUPE_INCOMING");
-  do_check_neq(undefined, wbo);
-  let payload = JSON.parse(JSON.parse(wbo.payload).ciphertext);
-  do_check_eq("local", payload.denomination);
+  Assert.notEqual(undefined, wbo);
+  let payload = wbo.getCleartext();
+  Assert.equal("local", payload.denomination);
 
   await cleanAndGo(engine, server);
 });
@@ -564,168 +568,35 @@ add_task(async function test_processIncoming_reconcile_changed_dupe_new() {
   let [engine, server, user] = await createServerAndConfigureClient();
 
   let now = Date.now() / 1000 - 10;
-  engine.lastSync = now;
+  await engine.setLastSync(now);
   engine.lastModified = now + 1;
 
   let record = encryptPayload({id: "DUPE_INCOMING", denomination: "incoming"});
   let wbo = new ServerWBO("DUPE_INCOMING", record, now + 2);
   server.insertWBO(user, "rotary", wbo);
 
-  engine._store.create({id: "DUPE_LOCAL", denomination: "local"});
-  engine._tracker.addChangedID("DUPE_LOCAL", now + 1);
-  do_check_true(engine._store.itemExists("DUPE_LOCAL"));
-  do_check_eq("DUPE_LOCAL", engine._findDupe({id: "DUPE_INCOMING"}));
+  await engine._store.create({id: "DUPE_LOCAL", denomination: "local"});
+  await engine._tracker.addChangedID("DUPE_LOCAL", now + 1);
+  Assert.ok((await engine._store.itemExists("DUPE_LOCAL")));
+  Assert.equal("DUPE_LOCAL", (await engine._findDupe({id: "DUPE_INCOMING"})));
 
-  engine._sync();
+  engine.lastModified = server.getCollection(user, engine.name).timestamp;
+  await engine._sync();
 
   // The ID should have been changed to incoming.
   do_check_attribute_count(engine._store.items, 1);
-  do_check_true("DUPE_INCOMING" in engine._store.items);
+  Assert.ok("DUPE_INCOMING" in engine._store.items);
 
   // On the server, the local ID should be deleted and the incoming ID should
   // have its payload retained.
   let collection = server.getCollection(user, "rotary");
-  do_check_eq(1, collection.count());
+  Assert.equal(1, collection.count());
   wbo = collection.wbo("DUPE_INCOMING");
-  do_check_neq(undefined, wbo);
-  let payload = JSON.parse(JSON.parse(wbo.payload).ciphertext);
-  do_check_eq("incoming", payload.denomination);
+  Assert.notEqual(undefined, wbo);
+  let payload = wbo.getCleartext();
+  Assert.equal("incoming", payload.denomination);
   await cleanAndGo(engine, server);
 });
-
-add_task(async function test_processIncoming_mobile_batchSize() {
-  _("SyncEngine._processIncoming doesn't fetch everything at once on mobile clients");
-
-  Svc.Prefs.set("client.type", "mobile");
-
-  // A collection that logs each GET
-  let collection = new ServerCollection();
-  collection.get_log = [];
-  collection._get = collection.get;
-  collection.get = function(options) {
-    this.get_log.push(options);
-    return this._get(options);
-  };
-
-  // Let's create some 234 server side records. They're all at least
-  // 10 minutes old.
-  for (let i = 0; i < 234; i++) {
-    let id = "record-no-" + i;
-    let payload = encryptPayload({id, denomination: "Record No. " + i});
-    let wbo = new ServerWBO(id, payload);
-    wbo.modified = Date.now() / 1000 - 60 * (i + 10);
-    collection.insertWBO(wbo);
-  }
-
-  let server = sync_httpd_setup({
-      "/1.1/foo/storage/rotary": collection.handler()
-  });
-
-  await SyncTestingInfrastructure(server);
-
-  let engine = makeRotaryEngine();
-  let meta_global = Service.recordManager.set(engine.metaURL,
-                                              new WBORecord(engine.metaURL));
-  meta_global.payload.engines = {rotary: {version: engine.version,
-                                         syncID: engine.syncID}};
-
-  try {
-
-    _("On a mobile client, we get new records from the server in batches of 50.");
-    engine._syncStartup();
-    engine._processIncoming();
-    do_check_attribute_count(engine._store.items, 234);
-    do_check_true("record-no-0" in engine._store.items);
-    do_check_true("record-no-49" in engine._store.items);
-    do_check_true("record-no-50" in engine._store.items);
-    do_check_true("record-no-233" in engine._store.items);
-
-    // Verify that the right number of GET requests with the right
-    // kind of parameters were made.
-    do_check_eq(collection.get_log.length,
-                Math.ceil(234 / MOBILE_BATCH_SIZE) + 1);
-    do_check_eq(collection.get_log[0].full, 1);
-    do_check_eq(collection.get_log[0].limit, MOBILE_BATCH_SIZE);
-    do_check_eq(collection.get_log[1].full, undefined);
-    do_check_eq(collection.get_log[1].limit, undefined);
-    for (let i = 1; i <= Math.floor(234 / MOBILE_BATCH_SIZE); i++) {
-      do_check_eq(collection.get_log[i + 1].full, 1);
-      do_check_eq(collection.get_log[i + 1].limit, undefined);
-      if (i < Math.floor(234 / MOBILE_BATCH_SIZE))
-        do_check_eq(collection.get_log[i + 1].ids.length, MOBILE_BATCH_SIZE);
-      else
-        do_check_eq(collection.get_log[i + 1].ids.length, 234 % MOBILE_BATCH_SIZE);
-    }
-
-  } finally {
-    await cleanAndGo(engine, server);
-  }
-});
-
-
-add_task(async function test_processIncoming_store_toFetch() {
-  _("If processIncoming fails in the middle of a batch on mobile, state is saved in toFetch and lastSync.");
-  Svc.Prefs.set("client.type", "mobile");
-
-  // A collection that throws at the fourth get.
-  let collection = new ServerCollection();
-  collection._get_calls = 0;
-  collection._get = collection.get;
-  collection.get = function() {
-    this._get_calls += 1;
-    if (this._get_calls > 3) {
-      throw "Abort on fourth call!";
-    }
-    return this._get.apply(this, arguments);
-  };
-
-  // Let's create three batches worth of server side records.
-  for (var i = 0; i < MOBILE_BATCH_SIZE * 3; i++) {
-    let id = "record-no-" + i;
-    let payload = encryptPayload({id, denomination: "Record No. " + id});
-    let wbo = new ServerWBO(id, payload);
-    wbo.modified = Date.now() / 1000 + 60 * (i - MOBILE_BATCH_SIZE * 3);
-    collection.insertWBO(wbo);
-  }
-
-  let engine = makeRotaryEngine();
-  engine.enabled = true;
-
-  let server = sync_httpd_setup({
-      "/1.1/foo/storage/rotary": collection.handler()
-  });
-
-  await SyncTestingInfrastructure(server);
-
-  let meta_global = Service.recordManager.set(engine.metaURL,
-                                              new WBORecord(engine.metaURL));
-  meta_global.payload.engines = {rotary: {version: engine.version,
-                                         syncID: engine.syncID}};
-  try {
-
-    // Confirm initial environment
-    do_check_eq(engine.lastSync, 0);
-    do_check_empty(engine._store.items);
-
-    try {
-      await sync_engine_and_validate_telem(engine, true);
-    } catch (ex) {
-    }
-
-    // Only the first two batches have been applied.
-    do_check_eq(Object.keys(engine._store.items).length,
-                MOBILE_BATCH_SIZE * 2);
-
-    // The third batch is stuck in toFetch. lastSync has been moved forward to
-    // the last successful item's timestamp.
-    do_check_eq(engine.toFetch.length, MOBILE_BATCH_SIZE);
-    do_check_eq(engine.lastSync, collection.wbo("record-no-99").modified);
-
-  } finally {
-    await promiseClean(engine, server);
-  }
-});
-
 
 add_task(async function test_processIncoming_resume_toFetch() {
   _("toFetch and previousFailed items left over from previous syncs are fetched on the next sync, along with new items.");
@@ -757,144 +628,38 @@ add_task(async function test_processIncoming_resume_toFetch() {
 
   // Time travel 10 seconds into the future but still download the above WBOs.
   let engine = makeRotaryEngine();
-  engine.lastSync = LASTSYNC;
-  engine.toFetch = ["flying", "scotsman"];
-  engine.previousFailed = ["failed0", "failed1", "failed2"];
+  await engine.setLastSync(LASTSYNC);
+  engine.toFetch = new SerializableSet(["flying", "scotsman"]);
+  engine.previousFailed = new SerializableSet(["failed0", "failed1", "failed2"]);
 
   let server = sync_httpd_setup({
-      "/1.1/foo/storage/rotary": collection.handler()
+      "/1.1/foo/storage/rotary": collection.handler(),
   });
 
   await SyncTestingInfrastructure(server);
 
+  let syncID = await engine.resetLocalSyncID();
   let meta_global = Service.recordManager.set(engine.metaURL,
                                               new WBORecord(engine.metaURL));
-  meta_global.payload.engines = {rotary: {version: engine.version,
-                                         syncID: engine.syncID}};
+  meta_global.payload.engines = {rotary: {version: engine.version, syncID}};
   try {
 
     // Confirm initial environment
-    do_check_eq(engine._store.items.flying, undefined);
-    do_check_eq(engine._store.items.scotsman, undefined);
-    do_check_eq(engine._store.items.rekolok, undefined);
+    Assert.equal(engine._store.items.flying, undefined);
+    Assert.equal(engine._store.items.scotsman, undefined);
+    Assert.equal(engine._store.items.rekolok, undefined);
 
-    engine._syncStartup();
-    engine._processIncoming();
+    await engine._syncStartup();
+    await engine._processIncoming();
 
     // Local records have been created from the server data.
-    do_check_eq(engine._store.items.flying, "LNER Class A3 4472");
-    do_check_eq(engine._store.items.scotsman, "Flying Scotsman");
-    do_check_eq(engine._store.items.rekolok, "Rekonstruktionslokomotive");
-    do_check_eq(engine._store.items.failed0, "Record No. 0");
-    do_check_eq(engine._store.items.failed1, "Record No. 1");
-    do_check_eq(engine._store.items.failed2, "Record No. 2");
-    do_check_eq(engine.previousFailed.length, 0);
-  } finally {
-    await cleanAndGo(engine, server);
-  }
-});
-
-
-add_task(async function test_processIncoming_applyIncomingBatchSize_smaller() {
-  _("Ensure that a number of incoming items less than applyIncomingBatchSize is still applied.");
-
-  // Engine that doesn't like the first and last record it's given.
-  const APPLY_BATCH_SIZE = 10;
-  let engine = makeRotaryEngine();
-  engine.applyIncomingBatchSize = APPLY_BATCH_SIZE;
-  engine._store._applyIncomingBatch = engine._store.applyIncomingBatch;
-  engine._store.applyIncomingBatch = function(records) {
-    let failed1 = records.shift();
-    let failed2 = records.pop();
-    this._applyIncomingBatch(records);
-    return [failed1.id, failed2.id];
-  };
-
-  // Let's create less than a batch worth of server side records.
-  let collection = new ServerCollection();
-  for (let i = 0; i < APPLY_BATCH_SIZE - 1; i++) {
-    let id = "record-no-" + i;
-    let payload = encryptPayload({id, denomination: "Record No. " + id});
-    collection.insert(id, payload);
-  }
-
-  let server = sync_httpd_setup({
-      "/1.1/foo/storage/rotary": collection.handler()
-  });
-
-  await SyncTestingInfrastructure(server);
-
-  let meta_global = Service.recordManager.set(engine.metaURL,
-                                              new WBORecord(engine.metaURL));
-  meta_global.payload.engines = {rotary: {version: engine.version,
-                                         syncID: engine.syncID}};
-  try {
-
-    // Confirm initial environment
-    do_check_empty(engine._store.items);
-
-    engine._syncStartup();
-    engine._processIncoming();
-
-    // Records have been applied and the expected failures have failed.
-    do_check_attribute_count(engine._store.items, APPLY_BATCH_SIZE - 1 - 2);
-    do_check_eq(engine.toFetch.length, 0);
-    do_check_eq(engine.previousFailed.length, 2);
-    do_check_eq(engine.previousFailed[0], "record-no-0");
-    do_check_eq(engine.previousFailed[1], "record-no-8");
-
-  } finally {
-    await cleanAndGo(engine, server);
-  }
-});
-
-
-add_task(async function test_processIncoming_applyIncomingBatchSize_multiple() {
-  _("Ensure that incoming items are applied according to applyIncomingBatchSize.");
-
-  const APPLY_BATCH_SIZE = 10;
-
-  // Engine that applies records in batches.
-  let engine = makeRotaryEngine();
-  engine.applyIncomingBatchSize = APPLY_BATCH_SIZE;
-  let batchCalls = 0;
-  engine._store._applyIncomingBatch = engine._store.applyIncomingBatch;
-  engine._store.applyIncomingBatch = function(records) {
-    batchCalls += 1;
-    do_check_eq(records.length, APPLY_BATCH_SIZE);
-    this._applyIncomingBatch.apply(this, arguments);
-  };
-
-  // Let's create three batches worth of server side records.
-  let collection = new ServerCollection();
-  for (let i = 0; i < APPLY_BATCH_SIZE * 3; i++) {
-    let id = "record-no-" + i;
-    let payload = encryptPayload({id, denomination: "Record No. " + id});
-    collection.insert(id, payload);
-  }
-
-  let server = sync_httpd_setup({
-      "/1.1/foo/storage/rotary": collection.handler()
-  });
-
-  await SyncTestingInfrastructure(server);
-
-  let meta_global = Service.recordManager.set(engine.metaURL,
-                                              new WBORecord(engine.metaURL));
-  meta_global.payload.engines = {rotary: {version: engine.version,
-                                         syncID: engine.syncID}};
-  try {
-
-    // Confirm initial environment
-    do_check_empty(engine._store.items);
-
-    engine._syncStartup();
-    engine._processIncoming();
-
-    // Records have been applied in 3 batches.
-    do_check_eq(batchCalls, 3);
-    do_check_attribute_count(engine._store.items, APPLY_BATCH_SIZE * 3);
-
+    Assert.equal(engine._store.items.flying, "LNER Class A3 4472");
+    Assert.equal(engine._store.items.scotsman, "Flying Scotsman");
+    Assert.equal(engine._store.items.rekolok, "Rekonstruktionslokomotive");
+    Assert.equal(engine._store.items.failed0, "Record No. 0");
+    Assert.equal(engine._store.items.failed1, "Record No. 1");
+    Assert.equal(engine._store.items.failed2, "Record No. 2");
+    Assert.equal(engine.previousFailed.size, 0);
   } finally {
     await cleanAndGo(engine, server);
   }
@@ -904,41 +669,44 @@ add_task(async function test_processIncoming_applyIncomingBatchSize_multiple() {
 add_task(async function test_processIncoming_notify_count() {
   _("Ensure that failed records are reported only once.");
 
-  const APPLY_BATCH_SIZE = 5;
   const NUMBER_OF_RECORDS = 15;
 
-  // Engine that fails the first record.
+  // Engine that fails every 5 records.
   let engine = makeRotaryEngine();
-  engine.applyIncomingBatchSize = APPLY_BATCH_SIZE;
   engine._store._applyIncomingBatch = engine._store.applyIncomingBatch;
-  engine._store.applyIncomingBatch = function(records) {
-    engine._store._applyIncomingBatch(records.slice(1));
-    return [records[0].id];
+  engine._store.applyIncomingBatch = async function(records) {
+    let sortedRecords = records.sort((a, b) => a.id > b.id ? 1 : -1);
+    let recordsToApply = [], recordsToFail = [];
+    for (let i = 0; i < sortedRecords.length; i++) {
+      (i % 5 === 0 ? recordsToFail : recordsToApply).push(sortedRecords[i]);
+    }
+    await engine._store._applyIncomingBatch(recordsToApply);
+    return recordsToFail.map(record => record.id);
   };
 
   // Create a batch of server side records.
   let collection = new ServerCollection();
   for (var i = 0; i < NUMBER_OF_RECORDS; i++) {
-    let id = "record-no-" + i;
+    let id = "record-no-" + i.toString(10).padStart(2, "0");
     let payload = encryptPayload({id, denomination: "Record No. " + id});
     collection.insert(id, payload);
   }
 
   let server = sync_httpd_setup({
-      "/1.1/foo/storage/rotary": collection.handler()
+      "/1.1/foo/storage/rotary": collection.handler(),
   });
 
   await SyncTestingInfrastructure(server);
 
+  let syncID = await engine.resetLocalSyncID();
   let meta_global = Service.recordManager.set(engine.metaURL,
                                               new WBORecord(engine.metaURL));
-  meta_global.payload.engines = {rotary: {version: engine.version,
-                                         syncID: engine.syncID}};
+  meta_global.payload.engines = {rotary: {version: engine.version, syncID}};
   try {
     // Confirm initial environment.
-    do_check_eq(engine.lastSync, 0);
-    do_check_eq(engine.toFetch.length, 0);
-    do_check_eq(engine.previousFailed.length, 0);
+    Assert.equal(await engine.getLastSync(), 0);
+    Assert.equal(engine.toFetch.size, 0);
+    Assert.equal(engine.previousFailed.size, 0);
     do_check_empty(engine._store.items);
 
     let called = 0;
@@ -951,36 +719,33 @@ add_task(async function test_processIncoming_notify_count() {
     Svc.Obs.add("weave:engine:sync:applied", onApplied);
 
     // Do sync.
-    engine._syncStartup();
-    engine._processIncoming();
+    await engine._syncStartup();
+    await engine._processIncoming();
 
     // Confirm failures.
     do_check_attribute_count(engine._store.items, 12);
-    do_check_eq(engine.previousFailed.length, 3);
-    do_check_eq(engine.previousFailed[0], "record-no-0");
-    do_check_eq(engine.previousFailed[1], "record-no-5");
-    do_check_eq(engine.previousFailed[2], "record-no-10");
+    Assert.deepEqual(Array.from(engine.previousFailed).sort(),
+                     ["record-no-00", "record-no-05", "record-no-10"].sort());
 
     // There are newly failed records and they are reported.
-    do_check_eq(called, 1);
-    do_check_eq(counts.failed, 3);
-    do_check_eq(counts.applied, 15);
-    do_check_eq(counts.newFailed, 3);
-    do_check_eq(counts.succeeded, 12);
+    Assert.equal(called, 1);
+    Assert.equal(counts.failed, 3);
+    Assert.equal(counts.applied, 15);
+    Assert.equal(counts.newFailed, 3);
+    Assert.equal(counts.succeeded, 12);
 
     // Sync again, 1 of the failed items are the same, the rest didn't fail.
-    engine._processIncoming();
+    await engine._processIncoming();
 
     // Confirming removed failures.
     do_check_attribute_count(engine._store.items, 14);
-    do_check_eq(engine.previousFailed.length, 1);
-    do_check_eq(engine.previousFailed[0], "record-no-0");
+    Assert.deepEqual(Array.from(engine.previousFailed), ["record-no-00"]);
 
-    do_check_eq(called, 2);
-    do_check_eq(counts.failed, 1);
-    do_check_eq(counts.applied, 3);
-    do_check_eq(counts.newFailed, 0);
-    do_check_eq(counts.succeeded, 2);
+    Assert.equal(called, 2);
+    Assert.equal(counts.failed, 1);
+    Assert.equal(counts.applied, 3);
+    Assert.equal(counts.newFailed, 0);
+    Assert.equal(counts.succeeded, 2);
 
     Svc.Obs.remove("weave:engine:sync:applied", onApplied);
   } finally {
@@ -991,83 +756,79 @@ add_task(async function test_processIncoming_notify_count() {
 
 add_task(async function test_processIncoming_previousFailed() {
   _("Ensure that failed records are retried.");
-  Svc.Prefs.set("client.type", "mobile");
 
-  const APPLY_BATCH_SIZE = 4;
   const NUMBER_OF_RECORDS = 14;
 
-  // Engine that fails the first 2 records.
+  // Engine that alternates between failing and applying every 2 records.
   let engine = makeRotaryEngine();
-  engine.mobileGUIDFetchBatchSize = engine.applyIncomingBatchSize = APPLY_BATCH_SIZE;
   engine._store._applyIncomingBatch = engine._store.applyIncomingBatch;
-  engine._store.applyIncomingBatch = function(records) {
-    engine._store._applyIncomingBatch(records.slice(2));
-    return [records[0].id, records[1].id];
+  engine._store.applyIncomingBatch = async function(records) {
+    let sortedRecords = records.sort((a, b) => a.id > b.id ? 1 : -1);
+    let recordsToApply = [], recordsToFail = [];
+    let chunks = Array.from(PlacesSyncUtils.chunkArray(sortedRecords, 2));
+    for (let i = 0; i < chunks.length; i++) {
+      (i % 2 === 0 ? recordsToFail : recordsToApply).push(...chunks[i]);
+    }
+    await engine._store._applyIncomingBatch(recordsToApply);
+    return recordsToFail.map(record => record.id);
   };
 
   // Create a batch of server side records.
   let collection = new ServerCollection();
   for (var i = 0; i < NUMBER_OF_RECORDS; i++) {
-    let id = "record-no-" + i;
+    let id = "record-no-" + i.toString(10).padStart(2, "0");
     let payload = encryptPayload({id, denomination: "Record No. " + i});
     collection.insert(id, payload);
   }
 
   let server = sync_httpd_setup({
-      "/1.1/foo/storage/rotary": collection.handler()
+      "/1.1/foo/storage/rotary": collection.handler(),
   });
 
   await SyncTestingInfrastructure(server);
 
+  let syncID = await engine.resetLocalSyncID();
   let meta_global = Service.recordManager.set(engine.metaURL,
                                               new WBORecord(engine.metaURL));
-  meta_global.payload.engines = {rotary: {version: engine.version,
-                                         syncID: engine.syncID}};
+  meta_global.payload.engines = {rotary: {version: engine.version, syncID}};
   try {
     // Confirm initial environment.
-    do_check_eq(engine.lastSync, 0);
-    do_check_eq(engine.toFetch.length, 0);
-    do_check_eq(engine.previousFailed.length, 0);
+    Assert.equal(await engine.getLastSync(), 0);
+    Assert.equal(engine.toFetch.size, 0);
+    Assert.equal(engine.previousFailed.size, 0);
     do_check_empty(engine._store.items);
 
     // Initial failed items in previousFailed to be reset.
-    let previousFailed = [Utils.makeGUID(), Utils.makeGUID(), Utils.makeGUID()];
+    let previousFailed = new SerializableSet([Utils.makeGUID(), Utils.makeGUID(), Utils.makeGUID()]);
     engine.previousFailed = previousFailed;
-    do_check_eq(engine.previousFailed, previousFailed);
+    Assert.equal(engine.previousFailed, previousFailed);
 
     // Do sync.
-    engine._syncStartup();
-    engine._processIncoming();
+    await engine._syncStartup();
+    await engine._processIncoming();
 
     // Expected result: 4 sync batches with 2 failures each => 8 failures
     do_check_attribute_count(engine._store.items, 6);
-    do_check_eq(engine.previousFailed.length, 8);
-    do_check_eq(engine.previousFailed[0], "record-no-0");
-    do_check_eq(engine.previousFailed[1], "record-no-1");
-    do_check_eq(engine.previousFailed[2], "record-no-4");
-    do_check_eq(engine.previousFailed[3], "record-no-5");
-    do_check_eq(engine.previousFailed[4], "record-no-8");
-    do_check_eq(engine.previousFailed[5], "record-no-9");
-    do_check_eq(engine.previousFailed[6], "record-no-12");
-    do_check_eq(engine.previousFailed[7], "record-no-13");
+    Assert.deepEqual(
+      Array.from(engine.previousFailed).sort(),
+      ["record-no-00", "record-no-01", "record-no-04", "record-no-05",
+       "record-no-08", "record-no-09", "record-no-12", "record-no-13"].sort());
 
     // Sync again with the same failed items (records 0, 1, 8, 9).
-    engine._processIncoming();
+    await engine._processIncoming();
 
     // A second sync with the same failed items should not add the same items again.
     // Items that did not fail a second time should no longer be in previousFailed.
     do_check_attribute_count(engine._store.items, 10);
-    do_check_eq(engine.previousFailed.length, 4);
-    do_check_eq(engine.previousFailed[0], "record-no-0");
-    do_check_eq(engine.previousFailed[1], "record-no-1");
-    do_check_eq(engine.previousFailed[2], "record-no-8");
-    do_check_eq(engine.previousFailed[3], "record-no-9");
+    Assert.deepEqual(
+      Array.from(engine.previousFailed).sort(),
+      ["record-no-00", "record-no-01", "record-no-08", "record-no-09"].sort());
 
     // Refetched items that didn't fail the second time are in engine._store.items.
-    do_check_eq(engine._store.items["record-no-4"], "Record No. 4");
-    do_check_eq(engine._store.items["record-no-5"], "Record No. 5");
-    do_check_eq(engine._store.items["record-no-12"], "Record No. 12");
-    do_check_eq(engine._store.items["record-no-13"], "Record No. 13");
+    Assert.equal(engine._store.items["record-no-04"], "Record No. 4");
+    Assert.equal(engine._store.items["record-no-05"], "Record No. 5");
+    Assert.equal(engine._store.items["record-no-12"], "Record No. 12");
+    Assert.equal(engine._store.items["record-no-13"], "Record No. 13");
   } finally {
     await cleanAndGo(engine, server);
   }
@@ -1078,13 +839,14 @@ add_task(async function test_processIncoming_failed_records() {
   _("Ensure that failed records from _reconcile and applyIncomingBatch are refetched.");
 
   // Let's create three and a bit batches worth of server side records.
+  let APPLY_BATCH_SIZE = 50;
   let collection = new ServerCollection();
-  const NUMBER_OF_RECORDS = MOBILE_BATCH_SIZE * 3 + 5;
+  const NUMBER_OF_RECORDS = APPLY_BATCH_SIZE * 3 + 5;
   for (let i = 0; i < NUMBER_OF_RECORDS; i++) {
     let id = "record-no-" + i;
     let payload = encryptPayload({id, denomination: "Record No. " + id});
     let wbo = new ServerWBO(id, payload);
-    wbo.modified = Date.now() / 1000 + 60 * (i - MOBILE_BATCH_SIZE * 3);
+    wbo.modified = Date.now() / 1000 + 60 * (i - APPLY_BATCH_SIZE * 3);
     collection.insertWBO(wbo);
   }
 
@@ -1093,26 +855,25 @@ add_task(async function test_processIncoming_failed_records() {
   // in applyIncoming.
   const BOGUS_RECORDS = ["record-no-" + 42,
                          "record-no-" + 23,
-                         "record-no-" + (42 + MOBILE_BATCH_SIZE),
-                         "record-no-" + (23 + MOBILE_BATCH_SIZE),
-                         "record-no-" + (42 + MOBILE_BATCH_SIZE * 2),
-                         "record-no-" + (23 + MOBILE_BATCH_SIZE * 2),
-                         "record-no-" + (2 + MOBILE_BATCH_SIZE * 3),
-                         "record-no-" + (1 + MOBILE_BATCH_SIZE * 3)];
+                         "record-no-" + (42 + APPLY_BATCH_SIZE),
+                         "record-no-" + (23 + APPLY_BATCH_SIZE),
+                         "record-no-" + (42 + APPLY_BATCH_SIZE * 2),
+                         "record-no-" + (23 + APPLY_BATCH_SIZE * 2),
+                         "record-no-" + (2 + APPLY_BATCH_SIZE * 3),
+                         "record-no-" + (1 + APPLY_BATCH_SIZE * 3)];
   let engine = makeRotaryEngine();
-  engine.applyIncomingBatchSize = MOBILE_BATCH_SIZE;
 
   engine.__reconcile = engine._reconcile;
-  engine._reconcile = function _reconcile(record) {
+  engine._reconcile = async function _reconcile(record) {
     if (BOGUS_RECORDS.indexOf(record.id) % 2 == 0) {
-      throw "I don't like this record! Baaaaaah!";
+      throw new Error("I don't like this record! Baaaaaah!");
     }
     return this.__reconcile.apply(this, arguments);
   };
   engine._store._applyIncoming = engine._store.applyIncoming;
-  engine._store.applyIncoming = function(record) {
+  engine._store.applyIncoming = async function(record) {
     if (BOGUS_RECORDS.indexOf(record.id) % 2 == 1) {
-      throw "I don't like this record! Baaaaaah!";
+      throw new Error("I don't like this record! Baaaaaah!");
     }
     return this._applyIncoming.apply(this, arguments);
   };
@@ -1129,22 +890,22 @@ add_task(async function test_processIncoming_failed_records() {
     };
   }
   let server = sync_httpd_setup({
-      "/1.1/foo/storage/rotary": recording_handler(collection)
+      "/1.1/foo/storage/rotary": recording_handler(collection),
   });
 
   await SyncTestingInfrastructure(server);
 
+  let syncID = await engine.resetLocalSyncID();
   let meta_global = Service.recordManager.set(engine.metaURL,
                                               new WBORecord(engine.metaURL));
-  meta_global.payload.engines = {rotary: {version: engine.version,
-                                         syncID: engine.syncID}};
+  meta_global.payload.engines = {rotary: {version: engine.version, syncID}};
 
   try {
 
     // Confirm initial environment
-    do_check_eq(engine.lastSync, 0);
-    do_check_eq(engine.toFetch.length, 0);
-    do_check_eq(engine.previousFailed.length, 0);
+    Assert.equal(await engine.getLastSync(), 0);
+    Assert.equal(engine.toFetch.size, 0);
+    Assert.equal(engine.previousFailed.size, 0);
     do_check_empty(engine._store.items);
 
     let observerSubject;
@@ -1155,52 +916,41 @@ add_task(async function test_processIncoming_failed_records() {
       observerData = data;
     });
 
-    engine._syncStartup();
-    engine._processIncoming();
+    await engine._syncStartup();
+    await engine._processIncoming();
 
     // Ensure that all records but the bogus 4 have been applied.
     do_check_attribute_count(engine._store.items,
                              NUMBER_OF_RECORDS - BOGUS_RECORDS.length);
 
     // Ensure that the bogus records will be fetched again on the next sync.
-    do_check_eq(engine.previousFailed.length, BOGUS_RECORDS.length);
-    engine.previousFailed.sort();
-    BOGUS_RECORDS.sort();
-    for (let i = 0; i < engine.previousFailed.length; i++) {
-      do_check_eq(engine.previousFailed[i], BOGUS_RECORDS[i]);
-    }
+    Assert.equal(engine.previousFailed.size, BOGUS_RECORDS.length);
+    Assert.deepEqual(Array.from(engine.previousFailed).sort(), BOGUS_RECORDS.sort());
 
     // Ensure the observer was notified
-    do_check_eq(observerData, engine.name);
-    do_check_eq(observerSubject.failed, BOGUS_RECORDS.length);
-    do_check_eq(observerSubject.newFailed, BOGUS_RECORDS.length);
+    Assert.equal(observerData, engine.name);
+    Assert.equal(observerSubject.failed, BOGUS_RECORDS.length);
+    Assert.equal(observerSubject.newFailed, BOGUS_RECORDS.length);
 
     // Testing batching of failed item fetches.
     // Try to sync again. Ensure that we split the request into chunks to avoid
     // URI length limitations.
-    function batchDownload(batchSize) {
+    async function batchDownload(batchSize) {
       count = 0;
       uris  = [];
       engine.guidFetchBatchSize = batchSize;
-      engine._processIncoming();
+      await engine._processIncoming();
       _("Tried again. Requests: " + count + "; URIs: " + JSON.stringify(uris));
       return count;
     }
 
     // There are 8 bad records, so this needs 3 fetches.
     _("Test batching with ID batch size 3, normal mobile batch size.");
-    do_check_eq(batchDownload(3), 3);
+    Assert.equal((await batchDownload(3)), 3);
 
     // Now see with a more realistic limit.
     _("Test batching with sufficient ID batch size.");
-    do_check_eq(batchDownload(BOGUS_RECORDS.length), 1);
-
-    // If we're on mobile, that limit is used by default.
-    _("Test batching with tiny mobile batch size.");
-    Svc.Prefs.set("client.type", "mobile");
-    engine.mobileGUIDFetchBatchSize = 2;
-    do_check_eq(batchDownload(BOGUS_RECORDS.length), 4);
-
+    Assert.equal((await batchDownload(BOGUS_RECORDS.length)), 1);
   } finally {
     await cleanAndGo(engine, server);
   }
@@ -1225,10 +975,11 @@ add_task(async function test_processIncoming_decrypt_failed() {
   collection._wbos.nodecrypt2 = new ServerWBO("nodecrypt2", "Decrypt this!");
 
   // Patch the fake crypto service to throw on the record above.
-  Svc.Crypto._decrypt = Svc.Crypto.decrypt;
-  Svc.Crypto.decrypt = function(ciphertext) {
+  Weave.Crypto._decrypt = Weave.Crypto.decrypt;
+  Weave.Crypto.decrypt = function(ciphertext) {
     if (ciphertext == "Decrypt this!") {
-      throw "Derp! Cipher finalized failed. Im ur crypto destroyin ur recordz.";
+      throw new Error(
+          "Derp! Cipher finalized failed. Im ur crypto destroyin ur recordz.");
     }
     return this._decrypt.apply(this, arguments);
   };
@@ -1240,20 +991,20 @@ add_task(async function test_processIncoming_decrypt_failed() {
                          nodecrypt: "Valid ciphertext"};
 
   let server = sync_httpd_setup({
-      "/1.1/foo/storage/rotary": collection.handler()
+      "/1.1/foo/storage/rotary": collection.handler(),
   });
 
   await SyncTestingInfrastructure(server);
 
+  let syncID = await engine.resetLocalSyncID();
   let meta_global = Service.recordManager.set(engine.metaURL,
                                               new WBORecord(engine.metaURL));
-  meta_global.payload.engines = {rotary: {version: engine.version,
-                                         syncID: engine.syncID}};
+  meta_global.payload.engines = {rotary: {version: engine.version, syncID}};
   try {
 
     // Confirm initial state
-    do_check_eq(engine.toFetch.length, 0);
-    do_check_eq(engine.previousFailed.length, 0);
+    Assert.equal(engine.toFetch.size, 0);
+    Assert.equal(engine.previousFailed.size, 0);
 
     let observerSubject;
     let observerData;
@@ -1263,22 +1014,22 @@ add_task(async function test_processIncoming_decrypt_failed() {
       observerData = data;
     });
 
-    engine.lastSync = collection.wbo("nojson").modified - 1;
+    await engine.setLastSync(collection.wbo("nojson").modified - 1);
     let ping = await sync_engine_and_validate_telem(engine, true);
-    do_check_eq(ping.engines[0].incoming.applied, 2);
-    do_check_eq(ping.engines[0].incoming.failed, 4);
-    do_check_eq(ping.engines[0].incoming.newFailed, 4);
+    Assert.equal(ping.engines[0].incoming.applied, 2);
+    Assert.equal(ping.engines[0].incoming.failed, 4);
+    Assert.equal(ping.engines[0].incoming.newFailed, 4);
 
-    do_check_eq(engine.previousFailed.length, 4);
-    do_check_eq(engine.previousFailed[0], "nojson");
-    do_check_eq(engine.previousFailed[1], "nojson2");
-    do_check_eq(engine.previousFailed[2], "nodecrypt");
-    do_check_eq(engine.previousFailed[3], "nodecrypt2");
+    Assert.equal(engine.previousFailed.size, 4);
+    Assert.ok(engine.previousFailed.has("nojson"));
+    Assert.ok(engine.previousFailed.has("nojson2"));
+    Assert.ok(engine.previousFailed.has("nodecrypt"));
+    Assert.ok(engine.previousFailed.has("nodecrypt2"));
 
     // Ensure the observer was notified
-    do_check_eq(observerData, engine.name);
-    do_check_eq(observerSubject.applied, 2);
-    do_check_eq(observerSubject.failed, 4);
+    Assert.equal(observerData, engine.name);
+    Assert.equal(observerSubject.applied, 2);
+    Assert.equal(observerSubject.failed, 4);
 
   } finally {
     await promiseClean(engine, server);
@@ -1296,55 +1047,51 @@ add_task(async function test_uploadOutgoing_toEmptyServer() {
   let server = sync_httpd_setup({
       "/1.1/foo/storage/rotary": collection.handler(),
       "/1.1/foo/storage/rotary/flying": collection.wbo("flying").handler(),
-      "/1.1/foo/storage/rotary/scotsman": collection.wbo("scotsman").handler()
+      "/1.1/foo/storage/rotary/scotsman": collection.wbo("scotsman").handler(),
   });
 
   await SyncTestingInfrastructure(server);
-  generateNewKeys(Service.collectionKeys);
+  await generateNewKeys(Service.collectionKeys);
 
   let engine = makeRotaryEngine();
-  engine.lastSync = 123; // needs to be non-zero so that tracker is queried
   engine._store.items = {flying: "LNER Class A3 4472",
                          scotsman: "Flying Scotsman"};
   // Mark one of these records as changed
-  engine._tracker.addChangedID("scotsman", 0);
+  await engine._tracker.addChangedID("scotsman", 0);
 
+  let syncID = await engine.resetLocalSyncID();
   let meta_global = Service.recordManager.set(engine.metaURL,
                                               new WBORecord(engine.metaURL));
-  meta_global.payload.engines = {rotary: {version: engine.version,
-                                         syncID: engine.syncID}};
+  meta_global.payload.engines = {rotary: {version: engine.version, syncID}};
 
   try {
+    await engine.setLastSync(123); // needs to be non-zero so that tracker is queried
 
     // Confirm initial environment
-    do_check_eq(engine.lastSyncLocal, 0);
-    do_check_eq(collection.payload("flying"), undefined);
-    do_check_eq(collection.payload("scotsman"), undefined);
+    Assert.equal(collection.payload("flying"), undefined);
+    Assert.equal(collection.payload("scotsman"), undefined);
 
-    engine._syncStartup();
-    engine._uploadOutgoing();
-
-    // Local timestamp has been set.
-    do_check_true(engine.lastSyncLocal > 0);
+    await engine._syncStartup();
+    await engine._uploadOutgoing();
 
     // Ensure the marked record ('scotsman') has been uploaded and is
     // no longer marked.
-    do_check_eq(collection.payload("flying"), undefined);
-    do_check_true(!!collection.payload("scotsman"));
-    do_check_eq(JSON.parse(collection.wbo("scotsman").data.ciphertext).id,
-                "scotsman");
-    do_check_eq(engine._tracker.changedIDs["scotsman"], undefined);
+    Assert.equal(collection.payload("flying"), undefined);
+    Assert.ok(!!collection.payload("scotsman"));
+    Assert.equal(collection.cleartext("scotsman").id, "scotsman");
+    const changes = await engine._tracker.getChangedIDs();
+    Assert.equal(changes.scotsman, undefined);
 
     // The 'flying' record wasn't marked so it wasn't uploaded
-    do_check_eq(collection.payload("flying"), undefined);
+    Assert.equal(collection.payload("flying"), undefined);
 
   } finally {
     await cleanAndGo(engine, server);
   }
 });
 
-
-add_task(async function test_uploadOutgoing_huge() {
+async function test_uploadOutgoing_max_record_payload_bytes(allowSkippedRecord) {
+  _("SyncEngine._uploadOutgoing throws when payload is bigger than max_record_payload_bytes");
   let collection = new ServerCollection();
   collection._wbos.flying = new ServerWBO("flying");
   collection._wbos.scotsman = new ServerWBO("scotsman");
@@ -1352,41 +1099,71 @@ add_task(async function test_uploadOutgoing_huge() {
   let server = sync_httpd_setup({
       "/1.1/foo/storage/rotary": collection.handler(),
       "/1.1/foo/storage/rotary/flying": collection.wbo("flying").handler(),
+      "/1.1/foo/storage/rotary/scotsman": collection.wbo("scotsman").handler(),
   });
 
   await SyncTestingInfrastructure(server);
-  generateNewKeys(Service.collectionKeys);
+  await generateNewKeys(Service.collectionKeys);
 
   let engine = makeRotaryEngine();
-  engine.allowSkippedRecord = true;
-  engine.lastSync = 1;
-  engine._store.items = { flying: "a".repeat(1024 * 1024) };
+  engine.allowSkippedRecord = allowSkippedRecord;
+  engine._store.items = { flying: "a".repeat(1024 * 1024), scotsman: "abcd" };
 
-  engine._tracker.addChangedID("flying", 1000);
+  await engine._tracker.addChangedID("flying", 1000);
+  await engine._tracker.addChangedID("scotsman", 1000);
 
+  let syncID = await engine.resetLocalSyncID();
   let meta_global = Service.recordManager.set(engine.metaURL,
                                               new WBORecord(engine.metaURL));
-  meta_global.payload.engines = {rotary: {version: engine.version,
-                                         syncID: engine.syncID}};
+  meta_global.payload.engines = {rotary: {version: engine.version, syncID}};
 
   try {
+    await engine.setLastSync(1); // needs to be non-zero so that tracker is queried
 
     // Confirm initial environment
-    do_check_eq(engine.lastSyncLocal, 0);
-    do_check_eq(collection.payload("flying"), undefined);
+    Assert.equal(collection.payload("flying"), undefined);
+    Assert.equal(collection.payload("scotsman"), undefined);
 
-    engine._syncStartup();
-    engine._uploadOutgoing();
-    engine.trackRemainingChanges();
+    await engine._syncStartup();
+    await engine._uploadOutgoing();
 
-    // Check we didn't upload to the server
-    do_check_eq(collection.payload("flying"), undefined);
-    // And that we won't try to upload it again next time.
-    do_check_eq(engine._tracker.changedIDs["flying"], undefined);
+    if (!allowSkippedRecord) {
+      do_throw("should not get here");
+    }
 
+    await engine.trackRemainingChanges();
+
+    // Check we uploaded the other record to the server
+    Assert.ok(collection.payload("scotsman"));
+    // And that we won't try to upload the huge record next time.
+    const changes = await engine._tracker.getChangedIDs();
+    Assert.equal(changes.flying, undefined);
+
+  } catch (e) {
+    if (allowSkippedRecord) {
+      do_throw("should not get here");
+    }
+
+    await engine.trackRemainingChanges();
+
+    // Check that we will try to upload the huge record next time
+    const changes = await engine._tracker.getChangedIDs();
+    Assert.equal(changes.flying, 1000);
   } finally {
+    // Check we didn't upload the oversized record to the server
+    Assert.equal(collection.payload("flying"), undefined);
     await cleanAndGo(engine, server);
   }
+}
+
+
+add_task(async function test_uploadOutgoing_max_record_payload_bytes_disallowSkippedRecords() {
+  return test_uploadOutgoing_max_record_payload_bytes(false);
+});
+
+
+add_task(async function test_uploadOutgoing_max_record_payload_bytes_allowSkippedRecords() {
+  return test_uploadOutgoing_max_record_payload_bytes(true);
 });
 
 
@@ -1399,13 +1176,12 @@ add_task(async function test_uploadOutgoing_failed() {
   collection._wbos.flying = new ServerWBO("flying");
 
   let server = sync_httpd_setup({
-      "/1.1/foo/storage/rotary": collection.handler()
+      "/1.1/foo/storage/rotary": collection.handler(),
   });
 
   await SyncTestingInfrastructure(server);
 
   let engine = makeRotaryEngine();
-  engine.lastSync = 123; // needs to be non-zero so that tracker is queried
   engine._store.items = {flying: "LNER Class A3 4472",
                          scotsman: "Flying Scotsman",
                          peppercorn: "Peppercorn Class"};
@@ -1413,108 +1189,40 @@ add_task(async function test_uploadOutgoing_failed() {
   const FLYING_CHANGED = 12345;
   const SCOTSMAN_CHANGED = 23456;
   const PEPPERCORN_CHANGED = 34567;
-  engine._tracker.addChangedID("flying", FLYING_CHANGED);
-  engine._tracker.addChangedID("scotsman", SCOTSMAN_CHANGED);
-  engine._tracker.addChangedID("peppercorn", PEPPERCORN_CHANGED);
+  await engine._tracker.addChangedID("flying", FLYING_CHANGED);
+  await engine._tracker.addChangedID("scotsman", SCOTSMAN_CHANGED);
+  await engine._tracker.addChangedID("peppercorn", PEPPERCORN_CHANGED);
 
+  let syncID = await engine.resetLocalSyncID();
   let meta_global = Service.recordManager.set(engine.metaURL,
                                               new WBORecord(engine.metaURL));
-  meta_global.payload.engines = {rotary: {version: engine.version,
-                                         syncID: engine.syncID}};
+  meta_global.payload.engines = {rotary: {version: engine.version, syncID}};
 
   try {
+    await engine.setLastSync(123); // needs to be non-zero so that tracker is queried
 
     // Confirm initial environment
-    do_check_eq(engine.lastSyncLocal, 0);
-    do_check_eq(collection.payload("flying"), undefined);
-    do_check_eq(engine._tracker.changedIDs["flying"], FLYING_CHANGED);
-    do_check_eq(engine._tracker.changedIDs["scotsman"], SCOTSMAN_CHANGED);
-    do_check_eq(engine._tracker.changedIDs["peppercorn"], PEPPERCORN_CHANGED);
+    Assert.equal(collection.payload("flying"), undefined);
+    let changes = await engine._tracker.getChangedIDs();
+    Assert.equal(changes.flying, FLYING_CHANGED);
+    Assert.equal(changes.scotsman, SCOTSMAN_CHANGED);
+    Assert.equal(changes.peppercorn, PEPPERCORN_CHANGED);
 
     engine.enabled = true;
     await sync_engine_and_validate_telem(engine, true);
 
-    // Local timestamp has been set.
-    do_check_true(engine.lastSyncLocal > 0);
-
     // Ensure the 'flying' record has been uploaded and is no longer marked.
-    do_check_true(!!collection.payload("flying"));
-    do_check_eq(engine._tracker.changedIDs["flying"], undefined);
+    Assert.ok(!!collection.payload("flying"));
+    changes = await engine._tracker.getChangedIDs();
+    Assert.equal(changes.flying, undefined);
 
     // The 'scotsman' and 'peppercorn' records couldn't be uploaded so
     // they weren't cleared from the tracker.
-    do_check_eq(engine._tracker.changedIDs["scotsman"], SCOTSMAN_CHANGED);
-    do_check_eq(engine._tracker.changedIDs["peppercorn"], PEPPERCORN_CHANGED);
+    Assert.equal(changes.scotsman, SCOTSMAN_CHANGED);
+    Assert.equal(changes.peppercorn, PEPPERCORN_CHANGED);
 
   } finally {
     await promiseClean(engine, server);
-  }
-});
-
-/* A couple of "functional" tests to ensure we split records into appropriate
-   POST requests. More comprehensive unit-tests for this "batching" are in
-   test_postqueue.js.
-*/
-add_task(async function test_uploadOutgoing_MAX_UPLOAD_RECORDS() {
-  _("SyncEngine._uploadOutgoing uploads in batches of MAX_UPLOAD_RECORDS");
-
-  let collection = new ServerCollection();
-
-  // Let's count how many times the client posts to the server
-  var noOfUploads = 0;
-  collection.post = (function(orig) {
-    return function(data, request) {
-      // This test doesn't arrange for batch semantics - so we expect the
-      // first request to come in with batch=true and the others to have no
-      // batch related headers at all (as the first response did not provide
-      // a batch ID)
-      if (noOfUploads == 0) {
-        do_check_eq(request.queryString, "batch=true");
-      } else {
-        do_check_eq(request.queryString, "");
-      }
-      noOfUploads++;
-      return orig.call(this, data, request);
-    };
-  }(collection.post));
-
-  // Create a bunch of records (and server side handlers)
-  let engine = makeRotaryEngine();
-  for (var i = 0; i < 234; i++) {
-    let id = "record-no-" + i;
-    engine._store.items[id] = "Record No. " + i;
-    engine._tracker.addChangedID(id, 0);
-    collection.insert(id);
-  }
-
-  let meta_global = Service.recordManager.set(engine.metaURL,
-                                              new WBORecord(engine.metaURL));
-  meta_global.payload.engines = {rotary: {version: engine.version,
-                                         syncID: engine.syncID}};
-
-  let server = sync_httpd_setup({
-      "/1.1/foo/storage/rotary": collection.handler()
-  });
-
-  await SyncTestingInfrastructure(server);
-  try {
-
-    // Confirm initial environment.
-    do_check_eq(noOfUploads, 0);
-
-    engine._syncStartup();
-    engine._uploadOutgoing();
-
-    // Ensure all records have been uploaded.
-    for (i = 0; i < 234; i++) {
-      do_check_true(!!collection.payload("record-no-" + i));
-    }
-
-    // Ensure that the uploads were performed in batches of MAX_UPLOAD_RECORDS.
-    do_check_eq(noOfUploads, Math.ceil(234 / MAX_UPLOAD_RECORDS));
-
-  } finally {
-    await cleanAndGo(engine, server);
   }
 });
 
@@ -1525,7 +1233,7 @@ async function createRecordFailTelemetry(allowSkippedRecord) {
   collection._wbos.scotsman = new ServerWBO("scotsman");
 
   let server = sync_httpd_setup({
-      "/1.1/foo/storage/rotary": collection.handler()
+      "/1.1/foo/storage/rotary": collection.handler(),
   });
 
   await SyncTestingInfrastructure(server);
@@ -1533,33 +1241,34 @@ async function createRecordFailTelemetry(allowSkippedRecord) {
   let engine = makeRotaryEngine();
   engine.allowSkippedRecord = allowSkippedRecord;
   let oldCreateRecord = engine._store.createRecord;
-  engine._store.createRecord = (id, col) => {
+  engine._store.createRecord = async (id, col) => {
     if (id != "flying") {
       throw new Error("oops");
     }
     return oldCreateRecord.call(engine._store, id, col);
-  }
-  engine.lastSync = 123; // needs to be non-zero so that tracker is queried
+  };
   engine._store.items = {flying: "LNER Class A3 4472",
                          scotsman: "Flying Scotsman"};
   // Mark these records as changed
   const FLYING_CHANGED = 12345;
   const SCOTSMAN_CHANGED = 23456;
-  engine._tracker.addChangedID("flying", FLYING_CHANGED);
-  engine._tracker.addChangedID("scotsman", SCOTSMAN_CHANGED);
+  await engine._tracker.addChangedID("flying", FLYING_CHANGED);
+  await engine._tracker.addChangedID("scotsman", SCOTSMAN_CHANGED);
 
+  let syncID = await engine.resetLocalSyncID();
   let meta_global = Service.recordManager.set(engine.metaURL,
                                               new WBORecord(engine.metaURL));
-  meta_global.payload.engines = {rotary: {version: engine.version,
-                                         syncID: engine.syncID}};
+  meta_global.payload.engines = {rotary: {version: engine.version, syncID}};
 
   let ping;
   try {
+    await engine.setLastSync(123); // needs to be non-zero so that tracker is queried
+
     // Confirm initial environment
-    do_check_eq(engine.lastSyncLocal, 0);
-    do_check_eq(collection.payload("flying"), undefined);
-    do_check_eq(engine._tracker.changedIDs["flying"], FLYING_CHANGED);
-    do_check_eq(engine._tracker.changedIDs["scotsman"], SCOTSMAN_CHANGED);
+    Assert.equal(collection.payload("flying"), undefined);
+    let changes = await engine._tracker.getChangedIDs();
+    Assert.equal(changes.flying, FLYING_CHANGED);
+    Assert.equal(changes.scotsman, SCOTSMAN_CHANGED);
 
     engine.enabled = true;
     ping = await sync_engine_and_validate_telem(engine, true, onErrorPing => {
@@ -1571,27 +1280,27 @@ async function createRecordFailTelemetry(allowSkippedRecord) {
     }
 
     // Ensure the 'flying' record has been uploaded and is no longer marked.
-    do_check_true(!!collection.payload("flying"));
-    do_check_eq(engine._tracker.changedIDs["flying"], undefined);
+    Assert.ok(!!collection.payload("flying"));
+    changes = await engine._tracker.getChangedIDs();
+    Assert.equal(changes.flying, undefined);
   } catch (err) {
     if (allowSkippedRecord) {
       do_throw("should not get here");
     }
 
     // Ensure the 'flying' record has not been uploaded and is still marked
-    do_check_false(collection.payload("flying"));
-    do_check_true(engine._tracker.changedIDs["flying"]);
+    Assert.ok(!collection.payload("flying"));
+    const changes = await engine._tracker.getChangedIDs();
+    Assert.ok(changes.flying);
   } finally {
-    // Local timestamp has been set.
-    do_check_true(engine.lastSyncLocal > 0);
-
     // We reported in telemetry that we failed a record
-    do_check_eq(ping.engines[0].outgoing[0].failed, 1);
+    Assert.equal(ping.engines[0].outgoing[0].failed, 1);
 
     // In any case, the 'scotsman' record couldn't be created so it wasn't
     // uploaded nor it was not cleared from the tracker.
-    do_check_false(collection.payload("scotsman"));
-    do_check_eq(engine._tracker.changedIDs["scotsman"], SCOTSMAN_CHANGED);
+    Assert.ok(!collection.payload("scotsman"));
+    const changes = await engine._tracker.getChangedIDs();
+    Assert.equal(changes.scotsman, SCOTSMAN_CHANGED);
 
     engine._store.createRecord = oldCreateRecord;
     await promiseClean(engine, server);
@@ -1609,33 +1318,32 @@ add_task(async function test_uploadOutgoing_createRecord_throws_dontAllowSkipRec
 });
 
 add_task(async function test_uploadOutgoing_largeRecords() {
-  _("SyncEngine._uploadOutgoing throws on records larger than MAX_UPLOAD_BYTES");
+  _("SyncEngine._uploadOutgoing throws on records larger than the max record payload size");
 
   let collection = new ServerCollection();
 
   let engine = makeRotaryEngine();
   engine.allowSkippedRecord = false;
-  engine._store.items["large-item"] = "Y".repeat(MAX_UPLOAD_BYTES * 2);
-  engine._tracker.addChangedID("large-item", 0);
+  engine._store.items["large-item"] = "Y".repeat(Service.getMaxRecordPayloadSize() * 2);
+  await engine._tracker.addChangedID("large-item", 0);
   collection.insert("large-item");
 
-
+  let syncID = await engine.resetLocalSyncID();
   let meta_global = Service.recordManager.set(engine.metaURL,
                                               new WBORecord(engine.metaURL));
-  meta_global.payload.engines = {rotary: {version: engine.version,
-                                         syncID: engine.syncID}};
+  meta_global.payload.engines = {rotary: {version: engine.version, syncID}};
 
   let server = sync_httpd_setup({
-      "/1.1/foo/storage/rotary": collection.handler()
+      "/1.1/foo/storage/rotary": collection.handler(),
   });
 
   await SyncTestingInfrastructure(server);
 
   try {
-    engine._syncStartup();
+    await engine._syncStartup();
     let error = null;
     try {
-      engine._uploadOutgoing();
+      await engine._uploadOutgoing();
     } catch (e) {
       error = e;
     }
@@ -1643,23 +1351,6 @@ add_task(async function test_uploadOutgoing_largeRecords() {
   } finally {
     await cleanAndGo(engine, server);
   }
-});
-
-
-add_task(async function test_syncFinish_noDelete() {
-  _("SyncEngine._syncFinish resets tracker's score");
-
-  let server = httpd_setup({});
-
-  await SyncTestingInfrastructure(server);
-  let engine = makeRotaryEngine();
-  engine._delete = {}; // Nothing to delete
-  engine._tracker.score = 100;
-
-  // _syncFinish() will reset the engine's score.
-  engine._syncFinish();
-  do_check_eq(engine.score, 0);
-  server.stop(run_next_test);
 });
 
 
@@ -1678,23 +1369,23 @@ add_task(async function test_syncFinish_deleteByIds() {
                                 denomination: "Rekonstruktionslokomotive"}));
 
   let server = httpd_setup({
-      "/1.1/foo/storage/rotary": collection.handler()
+      "/1.1/foo/storage/rotary": collection.handler(),
   });
   await SyncTestingInfrastructure(server);
 
   let engine = makeRotaryEngine();
   try {
     engine._delete = {ids: ["flying", "rekolok"]};
-    engine._syncFinish();
+    await engine._syncFinish();
 
     // The 'flying' and 'rekolok' records were deleted while the
     // 'scotsman' one wasn't.
-    do_check_eq(collection.payload("flying"), undefined);
-    do_check_true(!!collection.payload("scotsman"));
-    do_check_eq(collection.payload("rekolok"), undefined);
+    Assert.equal(collection.payload("flying"), undefined);
+    Assert.ok(!!collection.payload("scotsman"));
+    Assert.equal(collection.payload("rekolok"), undefined);
 
     // The deletion todo list has been reset.
-    do_check_eq(engine._delete.ids, undefined);
+    Assert.equal(engine._delete.ids, undefined);
 
   } finally {
     await cleanAndGo(engine, server);
@@ -1727,7 +1418,7 @@ add_task(async function test_syncFinish_deleteLotsInBatches() {
   }
 
   let server = httpd_setup({
-      "/1.1/foo/storage/rotary": collection.handler()
+      "/1.1/foo/storage/rotary": collection.handler(),
   });
 
   await SyncTestingInfrastructure(server);
@@ -1736,7 +1427,7 @@ add_task(async function test_syncFinish_deleteLotsInBatches() {
   try {
 
     // Confirm initial environment
-    do_check_eq(noOfUploads, 0);
+    Assert.equal(noOfUploads, 0);
 
     // Declare what we want to have deleted: all records no. 100 and
     // up and all records that are less than 200 mins old (which are
@@ -1747,24 +1438,24 @@ add_task(async function test_syncFinish_deleteLotsInBatches() {
       engine._delete.ids.push("record-no-" + i);
     }
 
-    engine._syncFinish();
+    await engine._syncFinish();
 
     // Ensure that the appropriate server data has been wiped while
     // preserving records 90 thru 200.
     for (i = 0; i < 234; i++) {
       let id = "record-no-" + i;
       if (i <= 90 || i >= 100) {
-        do_check_eq(collection.payload(id), undefined);
+        Assert.equal(collection.payload(id), undefined);
       } else {
-        do_check_true(!!collection.payload(id));
+        Assert.ok(!!collection.payload(id));
       }
     }
 
     // The deletion was done in batches
-    do_check_eq(noOfUploads, 2 + 1);
+    Assert.equal(noOfUploads, 2 + 1);
 
     // The deletion todo list has been reset.
-    do_check_eq(engine._delete.ids, undefined);
+    Assert.equal(engine._delete.ids, undefined);
 
   } finally {
     await cleanAndGo(engine, server);
@@ -1777,21 +1468,24 @@ add_task(async function test_sync_partialUpload() {
 
   let collection = new ServerCollection();
   let server = sync_httpd_setup({
-      "/1.1/foo/storage/rotary": collection.handler()
+      "/1.1/foo/storage/rotary": collection.handler(),
   });
+  let oldServerConfiguration = Service.serverConfiguration;
+  Service.serverConfiguration = {
+    max_post_records: 100,
+  };
   await SyncTestingInfrastructure(server);
-  generateNewKeys(Service.collectionKeys);
+  await generateNewKeys(Service.collectionKeys);
 
   let engine = makeRotaryEngine();
-  engine.lastSync = 123; // needs to be non-zero so that tracker is queried
-  engine.lastSyncLocal = 456;
 
   // Let the third upload fail completely
   var noOfUploads = 0;
   collection.post = (function(orig) {
     return function() {
-      if (noOfUploads == 2)
-        throw "FAIL!";
+      if (noOfUploads == 2) {
+        throw new Error("FAIL!");
+      }
       noOfUploads++;
       return orig.apply(this, arguments);
     };
@@ -1801,19 +1495,20 @@ add_task(async function test_sync_partialUpload() {
   for (let i = 0; i < 234; i++) {
     let id = "record-no-" + i;
     engine._store.items[id] = "Record No. " + i;
-    engine._tracker.addChangedID(id, i);
+    await engine._tracker.addChangedID(id, i);
     // Let two items in the first upload batch fail.
     if ((i != 23) && (i != 42)) {
       collection.insert(id);
     }
   }
 
+  let syncID = await engine.resetLocalSyncID();
   let meta_global = Service.recordManager.set(engine.metaURL,
                                               new WBORecord(engine.metaURL));
-  meta_global.payload.engines = {rotary: {version: engine.version,
-                                         syncID: engine.syncID}};
+  meta_global.payload.engines = {rotary: {version: engine.version, syncID}};
 
   try {
+    await engine.setLastSync(123); // needs to be non-zero so that tracker is queried
 
     engine.enabled = true;
     let error;
@@ -1825,22 +1520,22 @@ add_task(async function test_sync_partialUpload() {
 
     ok(!!error);
 
-    // The timestamp has been updated.
-    do_check_true(engine.lastSyncLocal > 456);
-
+    const changes = await engine._tracker.getChangedIDs();
     for (let i = 0; i < 234; i++) {
       let id = "record-no-" + i;
       // Ensure failed records are back in the tracker:
       // * records no. 23 and 42 were rejected by the server,
-      // * records no. 200 and higher couldn't be uploaded because we failed
-      //   hard on the 3rd upload.
-      if ((i == 23) || (i == 42) || (i >= 200))
-        do_check_eq(engine._tracker.changedIDs[id], i);
-      else
-        do_check_false(id in engine._tracker.changedIDs);
+      // * records after the third batch and higher couldn't be uploaded because
+      //   we failed hard on the 3rd upload.
+      if ((i == 23) || (i == 42) || (i >= 200)) {
+        Assert.equal(changes[id], i);
+      } else {
+        Assert.equal(false, id in changes);
+      }
     }
 
   } finally {
+    Service.serverConfiguration = oldServerConfiguration;
     await promiseClean(engine, server);
   }
 });
@@ -1857,14 +1552,14 @@ add_task(async function test_canDecrypt_noCryptoKeys() {
                                 denomination: "LNER Class A3 4472"}));
 
   let server = sync_httpd_setup({
-      "/1.1/foo/storage/rotary": collection.handler()
+      "/1.1/foo/storage/rotary": collection.handler(),
   });
 
   await SyncTestingInfrastructure(server);
   let engine = makeRotaryEngine();
   try {
 
-    do_check_false(engine.canDecrypt());
+    Assert.equal(false, (await engine.canDecrypt()));
 
   } finally {
     await cleanAndGo(engine, server);
@@ -1874,7 +1569,7 @@ add_task(async function test_canDecrypt_noCryptoKeys() {
 add_task(async function test_canDecrypt_true() {
   _("SyncEngine.canDecrypt returns true if the engine can decrypt the items on the server.");
 
-  generateNewKeys(Service.collectionKeys);
+  await generateNewKeys(Service.collectionKeys);
 
   let collection = new ServerCollection();
   collection._wbos.flying = new ServerWBO(
@@ -1882,14 +1577,14 @@ add_task(async function test_canDecrypt_true() {
                                 denomination: "LNER Class A3 4472"}));
 
   let server = sync_httpd_setup({
-      "/1.1/foo/storage/rotary": collection.handler()
+      "/1.1/foo/storage/rotary": collection.handler(),
   });
 
   await SyncTestingInfrastructure(server);
   let engine = makeRotaryEngine();
   try {
 
-    do_check_true(engine.canDecrypt());
+    Assert.ok((await engine.canDecrypt()));
 
   } finally {
     await cleanAndGo(engine, server);
@@ -1911,15 +1606,15 @@ add_task(async function test_syncapplied_observer() {
   }
 
   let server = httpd_setup({
-    "/1.1/foo/storage/rotary": collection.handler()
+    "/1.1/foo/storage/rotary": collection.handler(),
   });
 
   await SyncTestingInfrastructure(server);
 
+  let syncID = await engine.resetLocalSyncID();
   let meta_global = Service.recordManager.set(engine.metaURL,
                                               new WBORecord(engine.metaURL));
-  meta_global.payload.engines = {rotary: {version: engine.version,
-                                         syncID: engine.syncID}};
+  meta_global.payload.engines = {rotary: {version: engine.version, syncID}};
 
   let numApplyCalls = 0;
   let engine_name;
@@ -1936,16 +1631,16 @@ add_task(async function test_syncapplied_observer() {
     Service.scheduler.hasIncomingItems = false;
 
     // Do sync.
-    engine._syncStartup();
-    engine._processIncoming();
+    await engine._syncStartup();
+    await engine._processIncoming();
 
     do_check_attribute_count(engine._store.items, 10);
 
-    do_check_eq(numApplyCalls, 1);
-    do_check_eq(engine_name, "rotary");
-    do_check_eq(count.applied, 10);
+    Assert.equal(numApplyCalls, 1);
+    Assert.equal(engine_name, "rotary");
+    Assert.equal(count.applied, 10);
 
-    do_check_true(Service.scheduler.hasIncomingItems);
+    Assert.ok(Service.scheduler.hasIncomingItems);
   } finally {
     await cleanAndGo(engine, server);
     Service.scheduler.hasIncomingItems = false;

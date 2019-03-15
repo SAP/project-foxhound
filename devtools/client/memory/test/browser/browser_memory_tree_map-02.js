@@ -14,7 +14,7 @@ const PIXEL_SCROLL_MODE = 0;
 const PIXEL_DELTA = 10;
 const MAX_RAF_LOOP = 1000;
 
-this.test = makeMemoryTest(TEST_URL, function* ({ tab, panel }) {
+this.test = makeMemoryTest(TEST_URL, async function({ tab, panel }) {
   const panelWin = panel.panelWin;
   const panelDoc = panelWin.document;
   const div = panelDoc.createElement("div");
@@ -24,16 +24,16 @@ this.test = makeMemoryTest(TEST_URL, function* ({ tab, panel }) {
     height: "200px",
     position: "absolute",
     left: 0,
-    top: 0
+    top: 0,
   });
 
-  let rafMock = createRAFMock();
+  const rafMock = createRAFMock();
 
   panelDoc.body.appendChild(div);
 
-  let canvases = new CanvasUtils(div, 0);
-  let dragZoom = new DragZoom(canvases.container, 0, rafMock.raf);
-  let style = canvases.container.style;
+  const canvases = new CanvasUtils(div, 0);
+  const dragZoom = new DragZoom(canvases.container, 0, rafMock.raf);
+  const style = canvases.container.style;
 
   info("Check initial state of dragZoom");
   {
@@ -45,7 +45,7 @@ this.test = makeMemoryTest(TEST_URL, function* ({ tab, panel }) {
 
     canvases.container.dispatchEvent(new WheelEvent("wheel", {
       deltaY: -PIXEL_DELTA,
-      deltaMode: PIXEL_SCROLL_MODE
+      deltaMode: PIXEL_SCROLL_MODE,
     }));
 
     is(style.transform, "translate(0px, 0px) scale(1.05)",
@@ -101,7 +101,7 @@ this.test = makeMemoryTest(TEST_URL, function* ({ tab, panel }) {
   {
     canvases.container.dispatchEvent(new WheelEvent("wheel", {
       deltaY: -PIXEL_DELTA,
-      deltaMode: PIXEL_SCROLL_MODE
+      deltaMode: PIXEL_SCROLL_MODE,
     }));
     // Run through the RAF loop to zoom in towards that value.
     let lastCallCount;
@@ -125,12 +125,12 @@ this.test = makeMemoryTest(TEST_URL, function* ({ tab, panel }) {
 
   info("Scroll isn't tracked after destruction");
   {
-    let previousZoom = dragZoom.zoom;
-    let previousSmoothZoom = dragZoom.smoothZoom;
+    const previousZoom = dragZoom.zoom;
+    const previousSmoothZoom = dragZoom.smoothZoom;
 
     canvases.container.dispatchEvent(new WheelEvent("wheel", {
       deltaY: -PIXEL_DELTA,
-      deltaMode: PIXEL_SCROLL_MODE
+      deltaMode: PIXEL_SCROLL_MODE,
     }));
 
     is(dragZoom.zoom, previousZoom,
@@ -141,8 +141,8 @@ this.test = makeMemoryTest(TEST_URL, function* ({ tab, panel }) {
 
   info("Translation isn't tracked after destruction");
   {
-    let initialX = dragZoom.translateX;
-    let initialY = dragZoom.translateY;
+    const initialX = dragZoom.translateX;
+    const initialY = dragZoom.translateY;
 
     div.dispatchEvent(new MouseEvent("mousedown"));
     div.dispatchEvent(new MouseEvent("mousemove"), {

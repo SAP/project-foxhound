@@ -7,6 +7,7 @@
 #ifndef mozilla_dom_cache_CacheStreamControlParent_h
 #define mozilla_dom_cache_CacheStreamControlParent_h
 
+#include "mozilla/dom/cache/Manager.h"
 #include "mozilla/dom/cache/PCacheStreamControlParent.h"
 #include "mozilla/dom/cache/StreamControl.h"
 #include "nsTObserverArray.h"
@@ -14,17 +15,17 @@
 namespace mozilla {
 namespace ipc {
 class AutoIPCStream;
-} // namespace ipc
+}  // namespace ipc
 namespace dom {
 namespace cache {
 
 class ReadStream;
 class StreamList;
 
-class CacheStreamControlParent final : public PCacheStreamControlParent
-                                     , public StreamControl
-{
-public:
+class CacheStreamControlParent final : public PCacheStreamControlParent,
+                                       public StreamControl,
+                                       Manager::Listener {
+ public:
   CacheStreamControlParent();
   ~CacheStreamControlParent();
 
@@ -34,24 +35,29 @@ public:
   void Shutdown();
 
   // StreamControl methods
-  virtual void
-  SerializeControl(CacheReadStream* aReadStreamOut) override;
+  virtual void SerializeControl(CacheReadStream* aReadStreamOut) override;
 
-  virtual void
-  SerializeStream(CacheReadStream* aReadStreamOut, nsIInputStream* aStream,
-                  nsTArray<UniquePtr<mozilla::ipc::AutoIPCStream>>& aStreamCleanupList) override;
+  virtual void SerializeStream(CacheReadStream* aReadStreamOut,
+                               nsIInputStream* aStream,
+                               nsTArray<UniquePtr<mozilla::ipc::AutoIPCStream>>&
+                                   aStreamCleanupList) override;
 
-private:
-  virtual void
-  NoteClosedAfterForget(const nsID& aId) override;
+  virtual void OpenStream(const nsID& aId,
+                          InputStreamResolver&& aResolver) override;
+
+ private:
+  virtual void NoteClosedAfterForget(const nsID& aId) override;
 
 #ifdef DEBUG
-  virtual void
-  AssertOwningThread() override;
+  virtual void AssertOwningThread() override;
 #endif
 
   // PCacheStreamControlParent methods
   virtual void ActorDestroy(ActorDestroyReason aReason) override;
+
+  virtual mozilla::ipc::IPCResult RecvOpenStream(
+      const nsID& aStreamId, OpenStreamResolver&& aResolve) override;
+
   virtual mozilla::ipc::IPCResult RecvNoteClosed(const nsID& aId) override;
 
   void NotifyClose(const nsID& aId);
@@ -65,8 +71,8 @@ private:
   NS_DECL_OWNINGTHREAD
 };
 
-} // namespace cache
-} // namespace dom
-} // namespace mozilla
+}  // namespace cache
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_cache_CacheStreamControlParent_h
+#endif  // mozilla_dom_cache_CacheStreamControlParent_h

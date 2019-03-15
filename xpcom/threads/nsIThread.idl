@@ -4,16 +4,22 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsIEventTarget.idl"
-#include "nsIIdlePeriod.idl"
+#include "nsISerialEventTarget.idl"
 
 %{C++
 #include "mozilla/AlreadyAddRefed.h"
+namespace mozilla {
+class TimeStamp;
+enum class EventQueuePriority;
+}
 %}
 
 [ptr] native PRThread(PRThread);
+native EventQueuePriority(mozilla::EventQueuePriority);
 
-native alreadyAddRefed_nsIIdlePeriod(already_AddRefed<nsIIdlePeriod>);
+native nsIEventTargetPtr(nsIEventTarget*);
+native nsISerialEventTargetPtr(nsISerialEventTarget*);
+native TimeStamp(mozilla::TimeStamp);
 
 /**
  * This interface provides a high-level abstraction for an operating system
@@ -24,8 +30,8 @@ native alreadyAddRefed_nsIIdlePeriod(already_AddRefed<nsIIdlePeriod>);
  *
  * See nsIThreadManager for the API used to create and locate threads.
  */
-[scriptable, uuid(5801d193-29d1-4964-a6b7-70eb697ddf2b)]
-interface nsIThread : nsIEventTarget
+[builtinclass, scriptable, uuid(5801d193-29d1-4964-a6b7-70eb697ddf2b)]
+interface nsIThread : nsISerialEventTarget
 {
   /**
    * @returns
@@ -80,6 +86,11 @@ interface nsIThread : nsIEventTarget
   boolean hasPendingEvents();
 
   /**
+   * Similar to above, but checks only possible high priority queue.
+   */
+  boolean hasPendingHighPriorityEvents();
+
+  /**
    * Process the next event.  If there are no pending events, then this method
    * may wait -- depending on the value of the mayWait parameter -- until an
    * event is dispatched to this thread.  This method is re-entrant but may
@@ -121,29 +132,48 @@ interface nsIThread : nsIEventTarget
   void asyncShutdown();
 
   /**
-   * Register an instance of nsIIdlePeriod which works as a facade of
-   * the abstract notion of a "current idle period". The
-   * nsIIdlePeriod should always represent the "current" idle period
-   * with regard to expected work for the thread. The thread is free
-   * to use this when there are no higher prioritized tasks to process
-   * to determine if it is reasonable to schedule tasks that could run
-   * when the thread is idle. The responsibility of the registered
-   * nsIIdlePeriod is to answer with an estimated deadline at which
-   * the thread should expect that it could receive new higher
-   * priority tasks.
-   */
-  [noscript] void registerIdlePeriod(in alreadyAddRefed_nsIIdlePeriod aIdlePeriod);
-
-  /**
-   * Dispatch an event to the thread's idle queue.  This function may be called
-   * from any thread, and it may be called re-entrantly.
+   * Dispatch an event to a specified queue for the thread.  This function
+   * may be called from any thread, and it may be called re-entrantly.
+   * Most users should use the NS_Dispatch*() functions in nsThreadUtils instead
+   * of calling this directly.
    *
    * @param event
    *   The alreadyAddRefed<> event to dispatch.
    *   NOTE that the event will be leaked if it fails to dispatch.
+   * @param queue
+   *   Which event priority queue this should be added to
    *
    * @throws NS_ERROR_INVALID_ARG
    *   Indicates that event is null.
+   * @throws NS_ERROR_UNEXPECTED
+   *   Indicates that the thread is shutting down and has finished processing
+   * events, so this event would never run and has not been dispatched.
    */
-  [noscript] void idleDispatch(in alreadyAddRefed_nsIRunnable event);
+  [noscript] void dispatchToQueue(in alreadyAddRefed_nsIRunnable event,
+                                  in EventQueuePriority queue);
+
+  /**
+   * Use this attribute to dispatch runnables to the thread. Eventually, the
+   * eventTarget attribute will be the only way to dispatch events to a
+   * thread--nsIThread will no longer inherit from nsIEventTarget.
+   */
+  readonly attribute nsIEventTarget eventTarget;
+
+  /**
+   * A fast C++ getter for the eventTarget.
+   */
+  [noscript,notxpcom] nsIEventTargetPtr EventTarget();
+
+  /**
+   * A fast C++ getter for the eventTarget. It asserts that the thread's event
+   * target is an nsISerialEventTarget and then returns it.
+   */
+  [noscript,notxpcom] nsISerialEventTargetPtr SerialEventTarget();
+
+  /**
+   * This is set to the end of the last 50+ms event that was executed on
+   * this thread (for MainThread only).  Otherwise returns a null TimeStamp.
+   */
+  [noscript] readonly attribute TimeStamp lastLongTaskEnd;
+  [noscript] readonly attribute TimeStamp lastLongNonIdleTaskEnd;
 };

@@ -8,7 +8,7 @@
  * startSearch call.
  */
 
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 
 /**
@@ -40,11 +40,11 @@ AutoCompleteInput.prototype = {
     selectBy() {},
     invalidate() {},
     set selectedIndex(val) { return val; }, // ignore
-    get selectedIndex() { return -1 },
-    QueryInterface: XPCOMUtils.generateQI([Ci.nsIAutoCompletePopup])
+    get selectedIndex() { return -1; },
+    QueryInterface: ChromeUtils.generateQI([Ci.nsIAutoCompletePopup]),
   },
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIAutoCompleteInput])
-}
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIAutoCompleteInput]),
+};
 
 
 /**
@@ -58,20 +58,20 @@ AutoCompleteSearch.prototype = {
   stopSearchInvoked: true,
   startSearch(aSearchString, aSearchParam, aPreviousResult, aListener) {
     print("Check stop search has been called");
-    do_check_true(this.stopSearchInvoked);
+    Assert.ok(this.stopSearchInvoked);
     this.stopSearchInvoked = false;
   },
   stopSearch() {
     this.stopSearchInvoked = true;
   },
-  QueryInterface: XPCOMUtils.generateQI([
-    Ci.nsIFactory
-  , Ci.nsIAutoCompleteSearch
+  QueryInterface: ChromeUtils.generateQI([
+    Ci.nsIFactory,
+    Ci.nsIAutoCompleteSearch,
   ]),
   createInstance(outer, iid) {
     return this.QueryInterface(iid);
-  }
-}
+  },
+};
 
 
 /**
@@ -133,7 +133,9 @@ var gTests = [
 
   function(controller) {
     print("handleKeyNavigation");
-    controller.handleKeyNavigation(Ci.nsIDOMKeyEvent.DOM_VK_UP);
+    // Hardcode KeyboardEvent.DOM_VK_RIGHT, because we can't easily
+    // include KeyboardEvent here.
+    controller.handleKeyNavigation(0x26 /* KeyboardEvent.DOM_VK_UP */);
   },
 ];
 
@@ -153,13 +155,13 @@ function run_test() {
   controller.input = input;
 
   input.onSearchBegin = function() {
-    do_execute_soon(function() {
+    executeSoon(function() {
       gCurrentTest(controller);
     });
   };
   input.onSearchComplete = function() {
     run_next_test(controller);
-  }
+  };
 
   // Search is asynchronous, so don't let the test finish immediately
   do_test_pending();

@@ -5,12 +5,9 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 with Files('**'):
-    BUG_COMPONENT = ('Core', 'XP Toolkit/Widgets: XUL')
+    BUG_COMPONENT = ('Core', 'XUL')
 
 XPIDL_SOURCES += [
-    'nsITreeBoxObject.idl',
-    'nsITreeColumns.idl',
-    'nsITreeContentView.idl',
     'nsITreeSelection.idl',
     'nsITreeView.idl',
 ]
@@ -23,10 +20,6 @@ EXPORTS += [
     'nsTreeUtils.h',
 ]
 
-EXPORTS.mozilla.dom += [
-    'TreeBoxObject.h'
-]
-
 UNIFIED_SOURCES += [
     'nsTreeBodyFrame.cpp',
     'nsTreeColFrame.cpp',
@@ -36,7 +29,6 @@ UNIFIED_SOURCES += [
     'nsTreeSelection.cpp',
     'nsTreeStyleCache.cpp',
     'nsTreeUtils.cpp',
-    'TreeBoxObject.cpp',
 ]
 
 FINAL_LIBRARY = 'xul'
@@ -51,5 +43,5 @@ LOCAL_INCLUDES += [
     '/dom/xul',
 ]
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

@@ -9,6 +9,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=790732
   <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <script type="application/javascript">
+SimpleTest.waitForExplicitFinish();
+
+async function doTest() {
+  await SpecialPowers.pushPrefEnv({set: [["dom.use_components_shim", true]]})
 
   // Basic stuff
   ok(Components, "Components shim exists!");
@@ -21,32 +25,21 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=790732
   // it's working as intended we just check that the objects themselves are the
   // same.
   is(Ci.nsIXMLHttpRequest.HEADERS_RECEIVED, XMLHttpRequest.HEADERS_RECEIVED);
-  is(Ci.nsIDOMDOMException.DATA_CLONE_ERR, DOMException.DATA_CLONE_ERR);
   is(Ci.nsIDOMNode.DOCUMENT_NODE, Node.DOCUMENT_NODE);
-  is(Ci.nsIDOMCSSPrimitiveValue.CSS_PX, CSSPrimitiveValue.CSS_PX);
-  is(Ci.nsIDOMCSSRule.NAMESPACE_RULE, CSSRule.NAMESPACE_RULE);
-  is(Ci.nsIDOMCSSValue.CSS_PRIMITIVE_VALUE, CSSValue.CSS_PRIMITIVE_VALUE);
-  is(Ci.nsIDOMEvent.FOCUS, Event.FOCUS);
-  is(Ci.nsIDOMNSEvent.CLICK, Event.CLICK);
   is(Ci.nsIDOMKeyEvent, KeyEvent);
   is(Ci.nsIDOMMouseEvent, MouseEvent);
   is(Ci.nsIDOMMouseScrollEvent, MouseScrollEvent);
   is(Ci.nsIDOMMutationEvent, MutationEvent);
-  is(Ci.nsIDOMSimpleGestureEvent, SimpleGestureEvent);
   is(Ci.nsIDOMUIEvent, UIEvent);
   is(Ci.nsIDOMHTMLMediaElement, HTMLMediaElement);
-  is(Ci.nsIDOMOfflineResourceList, OfflineResourceList);
   is(Ci.nsIDOMRange, Range);
-  is(Ci.nsIDOMSVGLength, SVGLength);
   is(Ci.nsIDOMNodeFilter, NodeFilter);
   is(Ci.nsIDOMXPathResult, XPathResult);
 
-  // Test for Bug 895231
-  for (var k of Object.keys(Components.interfaces)) {
-    ok(SpecialPowers.Ci.hasOwnProperty(k),
-       k + " should be removed from the Components shim");
-  }
+  SimpleTest.finish();
+}
 
+doTest();
   </script>
 </head>
 <body>

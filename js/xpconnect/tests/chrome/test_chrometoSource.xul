@@ -15,11 +15,8 @@
   <!-- test code goes here -->
   <script type="application/javascript" src="outoflinexulscript.js"></script>
   <script type="application/javascript"><![CDATA[
-var Cu = Components.utils;
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-Cu.import("resource://gre/modules/NetUtil.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function inlinefunction() {
          return 42;
@@ -49,14 +46,22 @@ src = ns.NetUtil.asyncFetch.toSource();
 isnot(src.indexOf("return"), -1, "subscript of a subscript should have source");
 
 ns = {};
-Services.scriptloader.loadSubScript(resolvedBase + "utf8_subscript.js", ns, "UTF-8");
+Services.scriptloader.loadSubScript(resolvedBase + "utf8_subscript.js", ns);
 src = ns.f.toSource();
 isnot(src.indexOf("return 42;"), -1, "encoded subscript should have correct source");
 
 ns = {};
 Services.scriptloader.loadSubScriptWithOptions(resolvedBase + "utf8_subscript.js",
-                                               {target: ns, charset: "UTF-8", ignoreCache: true});
+                                               {target: ns, ignoreCache: true});
 src = ns.f.toSource();
 isnot(src.indexOf("return 42;"), -1, "encoded subscript should have correct source");
+
+ns = {};
+let b = new Blob([
+  "var Exported = 17;"
+]);
+var blobUrl = URL.createObjectURL(b);
+Services.scriptloader.loadSubScript(blobUrl, ns);
+is(ns.Exported, 17, "subscript from a blob URL should work");
   ]]></script>
 </window>

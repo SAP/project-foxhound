@@ -46,12 +46,12 @@ var tests = [
     constraint: "mediaSource" },
   { message: "emtpy constraint fails",
     constraints: { },
-    error: "NotSupportedError" },
+    error: "TypeError" },
   { message: "Triggering mock failure in default video device fails",
-    constraints: { video: { deviceId: 'bad device' }, fake: true },
+    constraints: { video: { deviceId: 'bad device' } },
     error: "NotReadableError" },
   { message: "Triggering mock failure in default audio device fails",
-    constraints: { audio: { deviceId: 'bad device' }, fake: true },
+    constraints: { audio: { deviceId: 'bad device' } },
     error: "NotReadableError" },
   { message: "Success-path: optional video facingMode + audio ignoring facingMode",
     constraints: { audio: { mediaSource: 'microphone',
@@ -74,9 +74,10 @@ var tests = [
 
 var mustSupport = [
   'width', 'height', 'frameRate', 'facingMode', 'deviceId',
+  'echoCancellation', 'noiseSuppression', 'autoGainControl', 'channelCount',
+
   // Yet to add:
-  //  'aspectRatio', 'frameRate', 'volume', 'sampleRate', 'sampleSize',
-  //  'latency', 'groupId'
+  //  'aspectRatio', 'volume', 'sampleRate', 'sampleSize', 'latency', 'groupId'
 
   // http://fluffy.github.io/w3c-screen-share/#screen-based-video-constraints
   // OBE by http://w3c.github.io/mediacapture-screen-share
@@ -85,8 +86,6 @@ var mustSupport = [
   // Experimental https://bugzilla.mozilla.org/show_bug.cgi?id=1131568#c3
   'browserWindow', 'scrollWithPage',
   'viewportOffsetX', 'viewportOffsetY', 'viewportWidth', 'viewportHeight',
-
-  'echoCancellation', 'mozNoiseSuppression', 'mozAutoGainControl'
 ];
 
 var mustFailWith = (msg, reason, constraint, f) =>
@@ -102,16 +101,22 @@ var mustFailWith = (msg, reason, constraint, f) =>
  * test by verifying that the right resolution and rejection is fired.
  */
 
-runTest(() => Promise.resolve()
+runTest(() => pushPrefs(
+    // This test expects fake devices, particularly for the 'triggering mock
+    // failure *' steps. So explicitly disable loopback and setup fakes
+    ['media.audio_loopback_dev', ''],
+    ['media.video_loopback_dev', ''],
+    ['media.navigator.streams.fake', true]
+  )
   .then(() => {
     // Check supported constraints first.
     var dict = navigator.mediaDevices.getSupportedConstraints();
     var supported = Object.keys(dict);
 
-    mustSupport.forEach(key => ok(supported.indexOf(key) != -1 && dict[key],
+    mustSupport.forEach(key => ok(supported.includes(key) && dict[key],
                                   "Supports " + key));
 
-    var unexpected = supported.filter(key => mustSupport.indexOf(key) == -1);
+    var unexpected = supported.filter(key => !mustSupport.includes(key));
     is(unexpected.length, 0,
        "Unanticipated support (please update test): " + unexpected);
   })
@@ -145,8 +150,12 @@ runTest(() => Promise.resolve()
       "getUserMedia with unsatisfied required constraint",
       "OverconstrainedError", "deviceId",
       () => getUserMedia({ audio: true,
-                           video: { deviceId: { exact: "unheardof" } } }))));
-
+                           video: { deviceId: { exact: "unheardof" } } })))
+  .then(() => mustFailWith(
+      "getUserMedia with unsatisfied required constraint array",
+      "OverconstrainedError", "deviceId",
+      () => getUserMedia({ audio: true,
+                           video: { deviceId: { exact: ["a", "b"] } } }))));
 </script>
 </pre>
 </body>

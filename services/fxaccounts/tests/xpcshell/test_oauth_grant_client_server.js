@@ -5,8 +5,9 @@
 // hit.
 "use strict";
 
-Cu.import("resource://gre/modules/FxAccountsCommon.js");
-Cu.import("resource://gre/modules/FxAccountsOAuthGrantClient.jsm");
+ChromeUtils.import("resource://gre/modules/FxAccountsCommon.js");
+ChromeUtils.import("resource://gre/modules/FxAccountsOAuthGrantClient.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // handlers for our server.
 var numTokenFetches;
@@ -29,7 +30,7 @@ function destroy(request, response) {
   sis.close();
   let token = body.token;
   ok(activeTokens.delete(token));
-  print("after destroy have", activeTokens.size, "tokens left.")
+  print("after destroy have", activeTokens.size, "tokens left.");
   response.setStatusLine("1.1", 200, "OK");
   response.write("{}");
 }
@@ -44,30 +45,25 @@ function startServer() {
   return srv;
 }
 
-function promiseStopServer(server) {
-  return new Promise(resolve => {
-    server.stop(resolve);
-  });
-}
-
-add_task(function* getAndRevokeToken() {
+add_task(async function getAndRevokeToken() {
+  Services.prefs.setBoolPref("identity.fxaccounts.allowHttp", true);
   let server = startServer();
-  let clientOptions = {
-    serverURL: "http://localhost:" + server.identity.primaryPort + "/v1",
-    client_id: "abc123",
-  }
+  try {
+    let clientOptions = {
+      serverURL: "http://localhost:" + server.identity.primaryPort + "/v1",
+      client_id: "abc123",
+    };
 
-  let client = new FxAccountsOAuthGrantClient(clientOptions);
-  let result = yield client.getTokenFromAssertion("assertion", "scope");
-  equal(result.access_token, "token0");
-  equal(numTokenFetches, 1, "we hit the server to fetch a token");
-  yield client.destroyToken("token0");
-  equal(activeTokens.size, 0, "We hit the server to revoke it");
-  yield promiseStopServer(server);
+    let client = new FxAccountsOAuthGrantClient(clientOptions);
+    let result = await client.getTokenFromAssertion("assertion", "scope");
+    equal(result.access_token, "token0");
+    equal(numTokenFetches, 1, "we hit the server to fetch a token");
+    await client.destroyToken("token0");
+    equal(activeTokens.size, 0, "We hit the server to revoke it");
+  } finally {
+    await promiseStopServer(server);
+    Services.prefs.clearUserPref("identity.fxaccounts.allowHttp");
+  }
 });
 
 // XXX - TODO - we should probably add more tests for unexpected responses etc.
-
-function run_test() {
-  run_next_test();
-}

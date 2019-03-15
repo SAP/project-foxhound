@@ -6,7 +6,6 @@ var db;
 function startDBWork() {
   indexedDB.open(parent.location, 1).onupgradeneeded = function(e) {
     db = e.target.result;
-    var trans = e.target.transaction;
     if (db.objectStoreNames.contains("mystore")) {
       db.deleteObjectStore("mystore");
     }
@@ -22,7 +21,7 @@ function madeMod() {
               objectStore("mystore");
   trans.oncomplete = function() {
     parent.postMessage("didcommit", "*");
-  }
+  };
 
   store.put({ hello: "officer" }, 42).onsuccess = function(e) {
     // Make this transaction run until the end of time or until the page is
@@ -32,8 +31,8 @@ function madeMod() {
     }
     doGet();
     document.location = "about:blank";
-  }
-  
+  };
+
 }
   </script>
 </head>

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,13 +13,10 @@ namespace mozilla {
 namespace dom {
 
 /* static */
-StaticAutoPtr<AvailabilityCollection>
-AvailabilityCollection::sSingleton;
+StaticAutoPtr<AvailabilityCollection> AvailabilityCollection::sSingleton;
 static bool gOnceAliveNowDead = false;
 
-/* static */ AvailabilityCollection*
-AvailabilityCollection::GetSingleton()
-{
+/* static */ AvailabilityCollection* AvailabilityCollection::GetSingleton() {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (!sSingleton && !gOnceAliveNowDead) {
@@ -30,20 +27,16 @@ AvailabilityCollection::GetSingleton()
   return sSingleton;
 }
 
-AvailabilityCollection::AvailabilityCollection()
-{
+AvailabilityCollection::AvailabilityCollection() {
   MOZ_COUNT_CTOR(AvailabilityCollection);
 }
 
-AvailabilityCollection::~AvailabilityCollection()
-{
+AvailabilityCollection::~AvailabilityCollection() {
   MOZ_COUNT_DTOR(AvailabilityCollection);
   gOnceAliveNowDead = true;
 }
 
-void
-AvailabilityCollection::Add(PresentationAvailability* aAvailability)
-{
+void AvailabilityCollection::Add(PresentationAvailability* aAvailability) {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (!aAvailability) {
@@ -58,9 +51,7 @@ AvailabilityCollection::Add(PresentationAvailability* aAvailability)
   mAvailabilities.AppendElement(aAvailability);
 }
 
-void
-AvailabilityCollection::Remove(PresentationAvailability* aAvailability)
-{
+void AvailabilityCollection::Remove(PresentationAvailability* aAvailability) {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (!aAvailability) {
@@ -71,9 +62,8 @@ AvailabilityCollection::Remove(PresentationAvailability* aAvailability)
   mAvailabilities.RemoveElement(availability);
 }
 
-already_AddRefed<PresentationAvailability>
-AvailabilityCollection::Find(const uint64_t aWindowId, const nsTArray<nsString>& aUrls)
-{
+already_AddRefed<PresentationAvailability> AvailabilityCollection::Find(
+    const uint64_t aWindowId, const nsTArray<nsString>& aUrls) {
   MOZ_ASSERT(NS_IsMainThread());
 
   // Loop backwards to allow removing elements in the loop.
@@ -91,9 +81,8 @@ AvailabilityCollection::Find(const uint64_t aWindowId, const nsTArray<nsString>&
     }
   }
 
-
   return nullptr;
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

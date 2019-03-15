@@ -2,14 +2,14 @@
 
 var CC = Components.Constructor;
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var obs = Cc["@mozilla.org/observer-service;1"]
             .getService(Ci.nsIObserverService);
 
 var ios = Cc["@mozilla.org/network/io-service;1"]
-            .getService(Components.interfaces.nsIIOService);
+            .getService(Ci.nsIIOService);
 
 // baseUrl is always the initial connection attempt and is handled by
 // failResponseHandler since every test expects that request will either be
@@ -21,7 +21,7 @@ function failResponseHandler(metadata, response)
   var text = "failure response";
   response.setHeader("Content-Type", "text/plain", false);
   response.bodyOutputStream.write(text, text.length);
-  do_check_true(false, "Received request when we shouldn't.");
+  Assert.ok(false, "Received request when we shouldn't.");
 }
 
 function successResponseHandler(metadata, response)
@@ -29,7 +29,7 @@ function successResponseHandler(metadata, response)
   var text = "success response";
   response.setHeader("Content-Type", "text/plain", false);
   response.bodyOutputStream.write(text, text.length);
-  do_check_true(true, "Received expected request.");
+  Assert.ok(true, "Received expected request.");
 }
 
 function onModifyListener(callback) {
@@ -40,7 +40,7 @@ function onModifyListener(callback) {
       obs.removeObserver(this, "http-on-modify-request");
       callback(subject.QueryInterface(Ci.nsIHttpChannel));
     }
-  }, "http-on-modify-request", false);
+  }, "http-on-modify-request");
 }
 
 function startChannelRequest(baseUrl, flags, expectedResponse=null) {
@@ -50,11 +50,11 @@ function startChannelRequest(baseUrl, flags, expectedResponse=null) {
   });
   chan.asyncOpen2(new ChannelListener((request, data, context) => {
     if (expectedResponse) {
-      do_check_eq(data, expectedResponse);
+      Assert.equal(data, expectedResponse);
     } else {
-      do_check_true(!!!data, "no response");
+      Assert.ok(!!!data, "no response");
     }
-    do_execute_soon(run_next_test)
+    executeSoon(run_next_test)
   }, null, flags));
 }
 
@@ -169,7 +169,7 @@ function run_test() {
 
   run_next_test();
 
-  do_register_cleanup(function(){
+  registerCleanupFunction(function(){
     httpServer.stop(() => {});
   });
 }

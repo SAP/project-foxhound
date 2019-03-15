@@ -6,45 +6,30 @@
 
 /* These styles are intended to mimic XUL trees and the XUL search box. */
 
-html {
-  background-color: #EEF3FA;
-}
-
-.item {
-  padding-inline-end: 0;
-}
-
 .item-title {
   margin: 1px 0 0;
-}
-
-.item-title {
   margin-inline-end: 6px;
 }
 
 .search-box {
   -moz-appearance: textfield;
   cursor: text;
-  margin: 2px 4px;
+  margin: 4px;
   padding: 2px 2px 3px;
   padding-inline-start: 4px;
   color: -moz-FieldText;
 }
 
-.textbox-search-icon {
-  width: 16px;
-  height: 16px;
-  background-image: url(chrome://global/skin/icons/Search-glass.png);
+.search-box > .textbox-input-box {
+  background-image: url(chrome://global/skin/icons/search-textbox.svg);
   background-repeat: no-repeat;
-  display: block;
+  background-size: 12px 12px;
+  background-position: left center;
+  padding-inline-start: 14px;
 }
 
-.textbox-search-icon:-moz-locale-dir(rtl) {
-  transform: scaleX(-1);
-}
-
-.textbox-search-icon[searchbutton]:not([disabled]) {
-  cursor: pointer;
+.search-box > .textbox-input-box:-moz-locale-dir(rtl) {
+  background-position: right center;
 }
 
 .textbox-search-clear {
@@ -58,17 +43,11 @@ html {
   cursor: default;
 }
 
-.textbox-search-icon:not([disabled]) {
-  cursor: text;
-}
-
-.textbox-search-clear:not([disabled]):hover ,
-.textbox-search-icon:not([disabled]):hover {
+.textbox-search-clear:not([disabled]):hover {
   background-position: -16px 0;
 }
 
-.textbox-search-clear:not([disabled]):hover:active ,
-.textbox-search-icon:not([disabled]):hover:active {
+.textbox-search-clear:not([disabled]):hover:active {
   background-position: -32px 0;
 }
 
@@ -88,45 +67,4 @@ html {
   background-size: 16px 16px;
   background-repeat: no-repeat;
   background-position: center;
-}
-
-.item-twisty-container {
-  background-size: contain;
-  background-repeat: no-repeat;
-  background-position: center;
-  padding-top: 5px;
-  min-width: 9px; /* The image's width is 9 pixels */
-  height: 9px;
-}
-
-.item.client .item-twisty-container {
-  background-image: url("chrome://global/skin/tree/twisty.svg#open");
-}
-
-.item.client.closed .item-twisty-container {
-  background-image: url("chrome://global/skin/tree/twisty.svg#clsd");
-}
-
-.item.client .item-twisty-container:hover {
-  background-image: url("chrome://global/skin/tree/twisty.svg#open-hover");
-}
-
-.item.client.closed .item-twisty-container:hover {
-  background-image: url("chrome://global/skin/tree/twisty.svg#clsd-hover");
-}
-
-.item.client .item-twisty-container:dir(rtl) {
-  background-image: url("chrome://global/skin/tree/twisty.svg#open-rtl");
-}
-
-.item.client.closed .item-twisty-container:dir(rtl) {
-  background-image: url("chrome://global/skin/tree/twisty.svg#clsd-rtl");
-}
-
-.item.client .item-twisty-container:hover:dir(rtl) {
-  background-image: url("chrome://global/skin/tree/twisty.svg#open-hover-rtl");
-}
-
-.item.client.closed .item-twisty-container:hover:dir(rtl) {
-  background-image: url("chrome://global/skin/tree/twisty.svg#clsd-hover-rtl");
 }

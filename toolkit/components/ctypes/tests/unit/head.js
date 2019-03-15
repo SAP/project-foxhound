@@ -1,9 +1,11 @@
-/* global ThreadSafeChromeUtils */
+/* global ChromeUtils */
+
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 try {
   // We might be running without privileges, in which case it's up to the
   // harness to give us the 'ctypes' object.
-  Components.utils.import("resource://gre/modules/ctypes.jsm");
+  ChromeUtils.import("resource://gre/modules/ctypes.jsm");
 } catch (e) {
 }
 
@@ -24,8 +26,8 @@ ResourceCleaner.prototype = {
     return v;
   },
   cleanup: function ResourceCleaner_cleanup() {
-    let keys = ThreadSafeChromeUtils.nondeterministicGetWeakMapKeys(this._map);
-    keys.forEach((function cleaner(k) {
+    let keys = ChromeUtils.nondeterministicGetWeakMapKeys(this._map);
+    keys.forEach(k => {
       try {
         k.dispose();
       } catch (x) {
@@ -33,8 +35,8 @@ ResourceCleaner.prototype = {
         // during the test. This is normal.
       }
       this._map.delete(k);
-    }).bind(this));
-  }
+    });
+  },
 };
 
 /**
@@ -59,7 +61,7 @@ ResourceTester.prototype = {
     trigger_gc();
     cleaner.cleanup();
     this._stop();
-  }
+  },
 };
 
 function structural_check_eq(a, b) {
@@ -75,7 +77,7 @@ function structural_check_eq(a, b) {
   } catch (x) {
   }
   if (finished) {
-    do_check_eq(asource, bsource);
+    Assert.equal(asource, bsource);
     return;
   }
 
@@ -88,7 +90,7 @@ function structural_check_eq(a, b) {
     dump(x);
     result = false;
   }
-  do_check_true(result);
+  Assert.ok(result);
 }
 function structural_check_eq_aux(a, b) {
   let ak;
@@ -111,7 +113,7 @@ function structural_check_eq_aux(a, b) {
 
 function trigger_gc() {
   dump("Triggering garbage-collection");
-  Components.utils.forceGC();
+  Cu.forceGC();
 }
 
 function must_throw(f, expected) {
@@ -120,13 +122,13 @@ function must_throw(f, expected) {
     f();
   } catch (x) {
     if (expected) {
-      do_check_eq(x.toString(), expected);
+      Assert.equal(x.toString(), expected);
     }
     has_thrown = true;
   }
-  do_check_true(has_thrown);
+  Assert.ok(has_thrown);
 }
 
 function get_os() {
-  return Components.classes["@mozilla.org/xre/app-info;1"].getService(Components.interfaces.nsIXULRuntime).OS;
+  return Services.appinfo.OS;
 }

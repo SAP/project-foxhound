@@ -1,50 +1,44 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+/* eslint-disable no-shadow */
+
+"use strict";
 
 /**
  * Test that setting ignoreCaughtExceptions will cause the debugger to ignore
  * caught exceptions, but not uncaught ones.
  */
 
-var gDebuggee;
-var gClient;
-var gThreadClient;
+add_task(threadClientTest(async ({ threadClient, client, debuggee }) => {
+  await executeOnNextTickAndWaitForPause(() => evaluateTestCode(debuggee), client);
 
-function run_test()
-{
-  initTestDebuggerServer();
-  gDebuggee = addTestGlobal("test-stack");
-  gClient = new DebuggerClient(DebuggerServer.connectPipe());
-  gClient.connect().then(function () {
-    attachTestTabAndResume(gClient, "test-stack", function (aResponse, aTabClient, aThreadClient) {
-      gThreadClient = aThreadClient;
-      test_pause_frame();
-    });
-  });
-  do_test_pending();
-}
+  threadClient.pauseOnExceptions(true, true);
+  await resume(threadClient);
+  const paused = await waitForPause(client);
+  Assert.equal(paused.why.type, "exception");
+  equal(paused.frame.where.line, 6, "paused at throw");
 
-function test_pause_frame()
-{
-  gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-    gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-      do_check_eq(aPacket.why.type, "exception");
-      do_check_eq(aPacket.why.exception, "bar");
-      gThreadClient.resume(function () {
-        finishClient(gClient);
-      });
-    });
-    gThreadClient.pauseOnExceptions(true, true);
-    gThreadClient.resume();
-  });
+  await resume(threadClient);
+}, {
+  // Bug 1508289, exception tests fails in worker scope
+  doNotRunWorker: true,
+}));
 
+function evaluateTestCode(debuggee) {
+  /* eslint-disable */
   try {
-    gDebuggee.eval("(" + function () {
-      debugger;
-      try {
-        throw "foo";
-      } catch (e) {}
-      throw "bar";
-    } + ")()");
+  Cu.evalInSandbox(`                    // 1
+   debugger;                            // 2
+   try {                                // 3           
+     throw "foo";                       // 4
+   } catch (e) {}                       // 5
+   throw "bar";                         // 6  
+  `,                                    // 7
+    debuggee,
+    "1.8",
+    "test_pause_exceptions-03.js",
+    1
+  );
   } catch (e) {}
+  /* eslint-disable */
 }

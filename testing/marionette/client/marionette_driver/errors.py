@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 import traceback
 
 
@@ -165,6 +167,10 @@ class UnknownException(MarionetteException):
 
 class UnsupportedOperationException(MarionetteException):
     status = "unsupported operation"
+
+
+class UnresponsiveInstanceException(Exception):
+    pass
 
 
 es_ = [e for e in locals().values() if type(e) == type and issubclass(e, MarionetteException)]

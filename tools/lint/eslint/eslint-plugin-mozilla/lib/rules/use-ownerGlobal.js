@@ -12,8 +12,6 @@
 // Rule Definition
 // -----------------------------------------------------------------------------
 
-var helpers = require("../helpers");
-
 module.exports = function(context) {
 
   // ---------------------------------------------------------------------------
@@ -32,6 +30,6 @@ module.exports = function(context) {
 
       context.report(node,
                      "use .ownerGlobal instead of .ownerDocument.defaultView");
-    }
+    },
   };
 };

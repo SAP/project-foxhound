@@ -4,21 +4,17 @@
 
 "use strict";
 
-var Cu = Components.utils;
-var Ci = Components.interfaces;
-var Cc = Components.classes;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // This constant tells how many messages to process in a single timer execution.
-const MESSAGES_IN_INTERVAL = 1500
+const MESSAGES_IN_INTERVAL = 1500;
 
 const STORAGE_MAX_EVENTS = 1000;
 
 var _consoleStorage = new Map();
 
-const CONSOLEAPISTORAGE_CID = Components.ID('{96cf7855-dfa9-4c6d-8276-f9705b4890f2}');
+const CONSOLEAPISTORAGE_CID = Components.ID("{96cf7855-dfa9-4c6d-8276-f9705b4890f2}");
 
 /**
  * The ConsoleAPIStorage is meant to cache window.console API calls for later
@@ -47,38 +43,28 @@ function ConsoleAPIStorageService() {
 }
 
 ConsoleAPIStorageService.prototype = {
-  classID : CONSOLEAPISTORAGE_CID,
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIConsoleAPIStorage,
-                                         Ci.nsIObserver]),
-  classInfo: XPCOMUtils.generateCI({
-    classID: CONSOLEAPISTORAGE_CID,
-    contractID: '@mozilla.org/consoleAPI-storage;1',
-    interfaces: [Ci.nsIConsoleAPIStorage, Ci.nsIObserver],
-    flags: Ci.nsIClassInfo.SINGLETON
-  }),
+  classID: CONSOLEAPISTORAGE_CID,
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIConsoleAPIStorage,
+                                          Ci.nsIObserver]),
 
-  observe: function CS_observe(aSubject, aTopic, aData)
-  {
+  observe: function CS_observe(aSubject, aTopic, aData) {
     if (aTopic == "xpcom-shutdown") {
       Services.obs.removeObserver(this, "xpcom-shutdown");
       Services.obs.removeObserver(this, "inner-window-destroyed");
       Services.obs.removeObserver(this, "memory-pressure");
-    }
-    else if (aTopic == "inner-window-destroyed") {
+    } else if (aTopic == "inner-window-destroyed") {
       let innerWindowID = aSubject.QueryInterface(Ci.nsISupportsPRUint64).data;
       this.clearEvents(innerWindowID + "");
-    }
-    else if (aTopic == "memory-pressure") {
+    } else if (aTopic == "memory-pressure") {
       this.clearEvents();
     }
   },
 
   /** @private */
-  init: function CS_init()
-  {
-    Services.obs.addObserver(this, "xpcom-shutdown", false);
-    Services.obs.addObserver(this, "inner-window-destroyed", false);
-    Services.obs.addObserver(this, "memory-pressure", false);
+  init: function CS_init() {
+    Services.obs.addObserver(this, "xpcom-shutdown");
+    Services.obs.addObserver(this, "inner-window-destroyed");
+    Services.obs.addObserver(this, "memory-pressure");
   },
 
   /**
@@ -92,15 +78,14 @@ ConsoleAPIStorageService.prototype = {
    *          given this function returns all of the cached events, from any
    *          window.
    */
-  getEvents: function CS_getEvents(aId)
-  {
+  getEvents: function CS_getEvents(aId) {
     if (aId != null) {
       return (_consoleStorage.get(aId) || []).slice(0);
     }
 
     let result = [];
 
-    for (let [id, events] of _consoleStorage) {
+    for (let [, events] of _consoleStorage) {
       result.push.apply(result, events);
     }
 
@@ -121,18 +106,12 @@ ConsoleAPIStorageService.prototype = {
    * @param object aEvent
    *        A JavaScript object you want to store.
    */
-  recordEvent: function CS_recordEvent(aId, aOuterId, aEvent)
-  {
+  recordEvent: function CS_recordEvent(aId, aOuterId, aEvent) {
     if (!_consoleStorage.has(aId)) {
       _consoleStorage.set(aId, []);
     }
 
     let storage = _consoleStorage.get(aId);
-
-    // Clone originAttributes to prevent "TypeError: can't access dead object"
-    // exceptions when cached console messages are retrieved/filtered
-    // by the devtools webconsole actor.
-    aEvent.originAttributes = Cu.cloneInto(aEvent.originAttributes, {});
 
     storage.push(aEvent);
 
@@ -153,14 +132,12 @@ ConsoleAPIStorageService.prototype = {
    *        messages. If this is not specified all of the cached messages are
    *        cleared, from all window objects.
    */
-  clearEvents: function CS_clearEvents(aId)
-  {
+  clearEvents: function CS_clearEvents(aId) {
     if (aId != null) {
       _consoleStorage.delete(aId);
-    }
-    else {
+    } else {
       _consoleStorage.clear();
-      Services.obs.notifyObservers(null, "console-storage-reset", null);
+      Services.obs.notifyObservers(null, "console-storage-reset");
     }
   },
 };

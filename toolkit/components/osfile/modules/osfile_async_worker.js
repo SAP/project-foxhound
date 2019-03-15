@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/* eslint-env worker */
 
 if (this.Components) {
   throw new Error("This worker can only be loaded from a worker thread");
@@ -17,7 +18,7 @@ if (this.Components) {
   // to the main thread.
   let timeStamps = {
     entered: Date.now(),
-    loaded: null
+    loaded: null,
   };
 
   importScripts("resource://gre/modules/osfile.jsm");
@@ -29,7 +30,7 @@ if (this.Components) {
   let worker = new PromiseWorker.AbstractWorker();
   worker.dispatch = function(method, args = []) {
     return Agent[method](...args);
-  },
+  };
   worker.log = LOG;
   worker.postMessage = function(message, ...transfers) {
     if (timeStamps) {
@@ -58,7 +59,7 @@ if (this.Components) {
    /**
     * Get a resource from its unique identifier.
     */
-   get: function(id) {
+   get(id) {
      let result = this._map.get(id);
      if (result == null) {
        return result;
@@ -68,7 +69,7 @@ if (this.Components) {
    /**
     * Remove a resource from its unique identifier.
     */
-   remove: function(id) {
+   remove(id) {
      if (!this._map.has(id)) {
        throw new Error("Cannot find resource id " + id);
      }
@@ -83,9 +84,9 @@ if (this.Components) {
     * @return {*} A unique identifier. For the moment, this is a number,
     * but this might not remain the case forever.
     */
-   add: function(resource, info) {
+   add(resource, info) {
      let id = this._idgen++;
-     this._map.set(id, {resource:resource, info:info});
+     this._map.set(id, {resource, info});
      return id;
    },
    /**
@@ -94,7 +95,7 @@ if (this.Components) {
     */
    listOpenedResources: function listOpenedResources() {
      return Array.from(this._map, ([id, resource]) => resource.info.path);
-   }
+   },
   };
 
  /**
@@ -153,12 +154,12 @@ if (this.Components) {
   */
   let Agent = {
    // Update worker's OS.Shared.DEBUG flag message from controller.
-   SET_DEBUG: function(aDEBUG) {
+   SET_DEBUG(aDEBUG) {
      SharedAll.Config.DEBUG = aDEBUG;
    },
    // Return worker's current OS.Shared.DEBUG value to controller.
    // Note: This is used for testing purposes.
-   GET_DEBUG: function() {
+   GET_DEBUG() {
      return SharedAll.Config.DEBUG;
    },
    /**
@@ -167,11 +168,11 @@ if (this.Components) {
     * @param {bool} If |true|, kill the worker if this would not cause
     * leaks.
     */
-   Meta_shutdown: function(kill) {
+   Meta_shutdown(kill) {
      let result = {
        openedFiles: OpenedFiles.listOpenedResources(),
        openedDirectoryIterators: OpenedDirectoryIterators.listOpenedResources(),
-       killed: false // Placeholder
+       killed: false, // Placeholder
      };
 
      // Is it safe to kill the worker?
@@ -207,10 +208,6 @@ if (this.Components) {
      return File.move(Type.path.fromMsg(sourcePath),
        Type.path.fromMsg(destPath), options);
    },
-   getAvailableFreeSpace: function getAvailableFreeSpace(sourcePath) {
-     return Type.uint64_t.toMsg(
-       File.getAvailableFreeSpace(Type.path.fromMsg(sourcePath)));
-   },
    makeDir: function makeDir(path, options) {
      return File.makeDir(Type.path.fromMsg(path), options);
    },
@@ -226,7 +223,7 @@ if (this.Components) {
      return OpenedFiles.add(file, {
        // Adding path information to keep track of opened files
        // to report leaks when debugging.
-       path: filePath
+       path: filePath,
      });
    },
    openUnique: function openUnique(path, options) {
@@ -235,12 +232,12 @@ if (this.Components) {
      let resourceId = OpenedFiles.add(openedFile.file, {
        // Adding path information to keep track of opened files
        // to report leaks when debugging.
-       path: openedFile.path
+       path: openedFile.path,
      });
 
      return {
        path: openedFile.path,
-       file: resourceId
+       file: resourceId,
      };
    },
    read: function read(path, bytes, options) {
@@ -251,9 +248,9 @@ if (this.Components) {
      return new Meta({
          buffer: data.buffer,
          byteOffset: data.byteOffset,
-         byteLength: data.byteLength
+         byteLength: data.byteLength,
      }, {
-       transfers: [data.buffer]
+       transfers: [data.buffer],
      });
    },
    exists: function exists(path) {
@@ -268,7 +265,7 @@ if (this.Components) {
                              options
                             );
    },
-   removeDir: function(path, options) {
+   removeDir(path, options) {
      return File.removeDir(Type.path.fromMsg(path), options);
    },
    new_DirectoryIterator: function new_DirectoryIterator(path, options) {
@@ -277,7 +274,7 @@ if (this.Components) {
      return OpenedDirectoryIterators.add(iterator, {
        // Adding path information to keep track of opened directory
        // iterators to report leaks when debugging.
-       path: directoryPath
+       path: directoryPath,
      });
    },
    // Methods of OS.File
@@ -316,9 +313,9 @@ if (this.Components) {
          return new Meta({
              buffer: data.buffer,
              byteOffset: data.byteOffset,
-             byteLength: data.byteLength
+             byteLength: data.byteLength,
          }, {
-           transfers: [data.buffer]
+           transfers: [data.buffer],
          });
        }
      );
@@ -359,14 +356,12 @@ if (this.Components) {
    DirectoryIterator_prototype_next: function next(dir) {
      return withDir(dir,
        function do_next() {
-         try {
-           return File.DirectoryIterator.Entry.toMsg(this.next());
-         } catch (x) {
-           if (x == StopIteration) {
-             OpenedDirectoryIterators.remove(dir);
-           }
-           throw x;
+         let {value, done} = this.next();
+         if (done) {
+           OpenedDirectoryIterators.remove(dir);
+           return {value: undefined, done: true};
          }
+         return {value: File.DirectoryIterator.Entry.toMsg(value), done: false};
        }, false);
    },
    DirectoryIterator_prototype_nextBatch: function nextBatch(dir, size) {
@@ -394,7 +389,7 @@ if (this.Components) {
        function do_exists() {
          return this.exists();
        });
-   }
+   },
   };
   if (!SharedAll.Constants.Win) {
     Agent.unixSymLink = function unixSymLink(sourcePath, destPath) {

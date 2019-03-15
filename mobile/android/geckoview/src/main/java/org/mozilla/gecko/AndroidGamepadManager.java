@@ -129,11 +129,11 @@ public class AndroidGamepadManager {
         }
     }
 
-    @WrapForJNI(calledFrom = "ui", dispatchTo = "gecko")
+    @WrapForJNI(calledFrom = "ui")
     private static native void onGamepadChange(int id, boolean added);
-    @WrapForJNI(calledFrom = "ui", dispatchTo = "gecko")
+    @WrapForJNI(calledFrom = "ui")
     private static native void onButtonChange(int id, int button, boolean pressed, float value);
-    @WrapForJNI(calledFrom = "ui", dispatchTo = "gecko")
+    @WrapForJNI(calledFrom = "ui")
     private static native void onAxisChange(int id, boolean[] valid, float[] values);
 
     private static boolean sStarted;
@@ -146,45 +146,45 @@ public class AndroidGamepadManager {
     }
 
     @WrapForJNI
-    private static void start() {
+    private static void start(final Context context) {
         ThreadUtils.postToUiThread(new Runnable() {
             @Override
             public void run() {
-                doStart();
+                doStart(context);
             }
         });
     }
 
-    /* package */ static void doStart() {
+    /* package */ static void doStart(final Context context) {
         ThreadUtils.assertOnUiThread();
         if (!sStarted) {
             scanForGamepads();
-            addDeviceListener();
+            addDeviceListener(context);
             sStarted = true;
         }
     }
 
     @WrapForJNI
-    private static void stop() {
+    private static void stop(final Context context) {
         ThreadUtils.postToUiThread(new Runnable() {
             @Override
             public void run() {
-                doStop();
+                doStop(context);
             }
         });
     }
 
-    /* package */ static void doStop() {
+    /* package */ static void doStop(final Context context) {
         ThreadUtils.assertOnUiThread();
         if (sStarted) {
-            removeDeviceListener();
+            removeDeviceListener(context);
             sPendingGamepads.clear();
             sGamepads.clear();
             sStarted = false;
         }
     }
 
-    @WrapForJNI(calledFrom = "gecko")
+    @WrapForJNI
     private static void onGamepadAdded(final int device_id, final int service_id) {
         ThreadUtils.postToUiThread(new Runnable() {
             @Override
@@ -362,7 +362,7 @@ public class AndroidGamepadManager {
         sGamepads.remove(deviceId);
     }
 
-    private static void addDeviceListener() {
+    private static void addDeviceListener(final Context context) {
         if (Build.VERSION.SDK_INT < 16) {
             // Poll known gamepads to see if they've disappeared.
             sPollTimer = new Timer();
@@ -407,18 +407,22 @@ public class AndroidGamepadManager {
                 public void onInputDeviceChanged(int deviceId) {
                 }
             };
-            ((InputManager) GeckoAppShell.getContext().getSystemService(Context.INPUT_SERVICE)).registerInputDeviceListener(sListener, ThreadUtils.getUiHandler());
+            final InputManager im = (InputManager)
+                    context.getSystemService(Context.INPUT_SERVICE);
+            im.registerInputDeviceListener(sListener, ThreadUtils.getUiHandler());
         }
     }
 
-    private static void removeDeviceListener() {
+    private static void removeDeviceListener(final Context context) {
         if (Build.VERSION.SDK_INT < 16) {
             if (sPollTimer != null) {
                 sPollTimer.cancel();
                 sPollTimer = null;
             }
         } else {
-            ((InputManager) GeckoAppShell.getContext().getSystemService(Context.INPUT_SERVICE)).unregisterInputDeviceListener(sListener);
+            final InputManager im = (InputManager)
+                    context.getSystemService(Context.INPUT_SERVICE);
+            im.unregisterInputDeviceListener(sListener);
             sListener = null;
         }
     }

@@ -91,10 +91,16 @@ public class SyncAction extends BaseAction {
                     studyRequired |= createContent(catalog, object);
                 }
             }
+
+            DownloadContentTelemetry.eventSyncSuccess(rawCatalog.length() > 0, cleanupRequired || studyRequired);
         } catch (UnrecoverableDownloadContentException e) {
             Log.e(LOGTAG, "UnrecoverableDownloadContentException", e);
+
+            DownloadContentTelemetry.eventSyncFailure(DownloadContentTelemetry.ERROR_UNRECOVERABLE);
         } catch (RecoverableDownloadContentException e) {
             Log.e(LOGTAG, "RecoverableDownloadContentException");
+
+            DownloadContentTelemetry.eventSyncFailure(e);
         } catch (JSONException e) {
             Log.e(LOGTAG, "JSONException", e);
         }
@@ -111,11 +117,11 @@ public class SyncAction extends BaseAction {
     }
 
     protected void startStudyAction(Context context) {
-        DownloadContentService.startStudy(context);
+        DlcStudyService.enqueueServiceWork(context);
     }
 
     protected void startCleanupAction(Context context) {
-        DownloadContentService.startCleanup(context);
+        DlcCleanupService.enqueueServiceWork(context);
     }
 
     protected JSONArray fetchRawCatalog(long lastModified)
@@ -130,7 +136,7 @@ public class SyncAction extends BaseAction {
             }
             // Only select the fields we are actually going to read.
             builder.appendQueryParameter(KINTO_PARAMETER_FIELDS,
-                    "attachment.location,attachment.original.filename,attachment.original.hash,attachment.hash,type,kind,attachment.original.size,match");
+                    "type,kind,attachment.location,attachment.hash,attachment.original.size,attachment.original.filename,attachment.original.hash,match");
 
             // We want to process items in the order they have been modified. This is to ensure that
             // our last_modified values are correct if we processing is interrupted and not all items

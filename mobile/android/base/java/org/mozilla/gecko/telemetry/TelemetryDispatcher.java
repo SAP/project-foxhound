@@ -10,6 +10,7 @@ import android.content.Context;
 import android.support.annotation.WorkerThread;
 import android.util.Log;
 import org.mozilla.gecko.telemetry.pingbuilders.TelemetryCorePingBuilder;
+import org.mozilla.gecko.telemetry.pingbuilders.TelemetryCrashPingBuilder;
 import org.mozilla.gecko.telemetry.schedulers.TelemetryUploadScheduler;
 import org.mozilla.gecko.telemetry.schedulers.TelemetryUploadAllPingsImmediatelyScheduler;
 import org.mozilla.gecko.telemetry.stores.TelemetryJSONFilePingStore;
@@ -55,8 +56,10 @@ public class TelemetryDispatcher {
 
     private static final String STORE_CONTAINER_DIR_NAME = "telemetry_java";
     private static final String CORE_STORE_DIR_NAME = "core";
+    private static final String CRASH_STORE_DIR_NAME = "crash";
 
     private final TelemetryJSONFilePingStore coreStore;
+    private final TelemetryJSONFilePingStore crashStore;
 
     private final TelemetryUploadAllPingsImmediatelyScheduler uploadAllPingsImmediatelyScheduler;
 
@@ -68,12 +71,13 @@ public class TelemetryDispatcher {
         // when the ping is stored. However, for simplicity, we use the json store and accept the possible
         // loss of data (see bug 1243585 comment 16+ for more).
         coreStore = new TelemetryJSONFilePingStore(new File(storePath, CORE_STORE_DIR_NAME), profileName);
+        crashStore = new TelemetryJSONFilePingStore(new File(storePath, CRASH_STORE_DIR_NAME), profileName);
 
         uploadAllPingsImmediatelyScheduler = new TelemetryUploadAllPingsImmediatelyScheduler();
     }
 
-    private void queuePingForUpload(final Context context, final TelemetryPing ping, final TelemetryPingStore store,
-            final TelemetryUploadScheduler scheduler) {
+    private void queuePingForUpload(final Context context, final TelemetryOutgoingPing ping, final TelemetryPingStore store,
+                                    final TelemetryUploadScheduler scheduler) {
         final QueuePingRunnable runnable = new QueuePingRunnable(context, ping, store, scheduler);
         ThreadUtils.postToBackgroundThread(runnable); // TODO: Investigate how busy this thread is. See if we want another.
     }
@@ -82,18 +86,26 @@ public class TelemetryDispatcher {
      * Queues the given ping for upload and potentially schedules upload. This method can be called from any thread.
      */
     public void queuePingForUpload(final Context context, final TelemetryCorePingBuilder pingBuilder) {
-        final TelemetryPing ping = pingBuilder.build();
+        final TelemetryOutgoingPing ping = pingBuilder.build();
         queuePingForUpload(context, ping, coreStore, uploadAllPingsImmediatelyScheduler);
     }
 
-    private static class QueuePingRunnable implements Runnable {
+    /**
+     * Queues the given crash ping for upload and potentially schedules upload. This method can be called from any thread.
+     */
+    public void queuePingForUpload(final Context context, final TelemetryCrashPingBuilder pingBuilder) {
+        final TelemetryOutgoingPing ping = pingBuilder.build();
+        queuePingForUpload(context, ping, crashStore, uploadAllPingsImmediatelyScheduler);
+    }
+
+    /* package-private */ static class QueuePingRunnable implements Runnable {
         private final Context applicationContext;
-        private final TelemetryPing ping;
+        private final TelemetryOutgoingPing ping;
         private final TelemetryPingStore store;
         private final TelemetryUploadScheduler scheduler;
 
-        public QueuePingRunnable(final Context context, final TelemetryPing ping, final TelemetryPingStore store,
-                final TelemetryUploadScheduler scheduler) {
+        /* package-private */ QueuePingRunnable(final Context context, final TelemetryOutgoingPing ping, final TelemetryPingStore store,
+                                                final TelemetryUploadScheduler scheduler) {
             this.applicationContext = context.getApplicationContext();
             this.ping = ping;
             this.store = store;
@@ -110,7 +122,7 @@ public class TelemetryDispatcher {
                 Log.e(LOGTAG, "Unable to write ping to disk. Continuing with upload attempt");
             }
 
-            if (scheduler.isReadyToUpload(store)) {
+            if (scheduler.isReadyToUpload(applicationContext, store)) {
                 scheduler.scheduleUpload(applicationContext, store);
             }
         }

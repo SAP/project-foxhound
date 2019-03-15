@@ -15,11 +15,11 @@
         onunload="MigrationWizard.uninit()"
         style="width: 40em;"
         buttons="accept,cancel"
-        branded="true">
+        branded="true"
+        onwizardcancel="return MigrationWizard.onWizardCancel();">
 
+  <script type="application/javascript" src="chrome://global/content/customElements.js"/>
   <script type="application/javascript" src="chrome://browser/content/migration/migration.js"/>
-
-  <stringbundle id="brandBundle" src="chrome://branding/locale/brand.properties"/>
 
   <wizardpage id="importSource" pageid="importSource" next="selectProfile"
               label="&importSource.title;"
@@ -48,6 +48,8 @@
       <radio id="canary"    label="&importFromCanary.label;"    accesskey="&importFromCanary.accesskey;"/>
 #elifdef XP_UNIX
       <radio id="chrome"    label="&importFromChrome.label;"    accesskey="&importFromChrome.accesskey;"/>
+      <radio id="chrome-beta" label="&importFromChromeBeta.label;" accesskey="&importFromChromeBeta.accesskey;"/>
+      <radio id="chrome-dev"  label="&importFromChromeDev.label;"  accesskey="&importFromChromeDev.accesskey;"/>
       <radio id="chromium"  label="&importFromChromium.label;"  accesskey="&importFromChromium.accesskey;"/>
 #endif
       <radio id="nothing"   label="&importFromNothing.label;"   accesskey="&importFromNothing.accesskey;" hidden="true"/>
@@ -68,7 +70,7 @@
   </wizardpage>
 
   <wizardpage id="importItems" pageid="importItems" label="&importItems.title;"
-              next="homePageImport"
+              next="migrating"
               onpageshow="return MigrationWizard.onImportItemsPageShow();"
               onpagerewound="return MigrationWizard.onImportItemsPageRewound();"
               onpageadvanced="return MigrationWizard.onImportItemsPageAdvanced();"
@@ -76,18 +78,6 @@
     <description control="dataSources">&importItems.label;</description>
 
     <vbox id="dataSources" style="overflow: auto; -moz-appearance: listbox" align="left" flex="1" role="group"/>
-  </wizardpage>
-
-  <wizardpage id="homePageImport" pageid="homePageImport"
-              next="migrating"
-              onpageshow="return MigrationWizard.onHomePageMigrationPageShow();"
-              onpageadvanced="return MigrationWizard.onHomePageMigrationPageAdvanced();">
-
-    <description id="homePageImportDesc" control="homePageRadioGroup"/>
-    <radiogroup id="homePageRadiogroup">
-      <radio id="homePageSingleStart" selected="true" />
-      <radio id="oldHomePage" hidden="true" />
-    </radiogroup>
   </wizardpage>
 
   <wizardpage id="migrating" pageid="migrating" label="&migrating.title;"

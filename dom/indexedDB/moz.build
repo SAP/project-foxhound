@@ -7,9 +7,10 @@
 with Files("**"):
     BUG_COMPONENT = ("Core", "DOM: IndexedDB")
 
-TEST_DIRS += ['test/extensions']
-
-MOCHITEST_MANIFESTS += ['test/mochitest.ini']
+MOCHITEST_MANIFESTS += [
+    'test/mochitest-intl-api.ini',
+    'test/mochitest.ini',
+]
 
 BROWSER_CHROME_MANIFESTS += ['test/browser.ini']
 
@@ -19,9 +20,6 @@ XPCSHELL_TESTS_MANIFESTS += [
     'test/unit/xpcshell-child-process.ini',
     'test/unit/xpcshell-parent-process.ini'
 ]
-
-if CONFIG['ENABLE_INTL_API']:
-    MOCHITEST_MANIFESTS += ['test/mochitest-intl-api.ini']
 
 EXPORTS.mozilla.dom += [
     'IDBCursor.h',
@@ -97,7 +95,7 @@ include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
 
-if CONFIG['GNU_CC']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     # Suppress gcc warning about a comparison being always false due to the
     # range of the data type
     SOURCES['Key.cpp'].flags += ['-Wno-error=type-limits']
@@ -107,8 +105,16 @@ LOCAL_INCLUDES += [
     '/db/sqlite3/src',
     '/dom/base',
     '/dom/storage',
-    '/dom/workers',
     '/ipc/glue',
     '/xpcom/build',
-    '/xpcom/threads',
 ]
+
+XPIDL_SOURCES += [
+    'nsIIDBPermissionsRequest.idl',
+]
+
+XPIDL_MODULE = 'dom_indexeddb'
+
+if (not CONFIG['HAVE_64BIT_BUILD'] and
+    CONFIG['ENABLE_CLANG_PLUGIN'] and CONFIG['CC_TYPE'] == 'clang-cl'):
+    AllowCompilerWarnings()  # workaround for bug 1090497

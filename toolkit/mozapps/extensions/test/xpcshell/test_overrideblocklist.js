@@ -18,20 +18,20 @@ const gAppDir = FileUtils.getFile(KEY_APPDIR, []);
 
 var oldAddon = {
   id: "old@tests.mozilla.org",
-  version: 1
-}
+  version: 1,
+};
 var newAddon = {
   id: "new@tests.mozilla.org",
-  version: 1
-}
+  version: 1,
+};
 var ancientAddon = {
   id: "ancient@tests.mozilla.org",
-  version: 1
-}
+  version: 1,
+};
 var invalidAddon = {
   id: "invalid@tests.mozilla.org",
-  version: 1
-}
+  version: 1,
+};
 
 function incrementAppVersion() {
   gAppInfo.version = "" + (parseInt(gAppInfo.version) + 1);
@@ -47,9 +47,10 @@ function clearBlocklists() {
     blocklist.remove(true);
 }
 
-function reloadBlocklist() {
+async function reloadBlocklist() {
   Services.prefs.setBoolPref(PREF_BLOCKLIST_ENABLED, false);
   Services.prefs.setBoolPref(PREF_BLOCKLIST_ENABLED, true);
+  await Blocklist._lastUpdate;
 }
 
 function copyToApp(file) {
@@ -75,7 +76,7 @@ function run_test() {
       todo(false, "Aborting test due to unmovable blocklist file: " + e);
       return;
     }
-    do_register_cleanup(function() {
+    registerCleanupFunction(function() {
       clearBlocklists();
       appBlocklist.moveTo(gAppDir, FILE_BLOCKLIST);
     });
@@ -84,116 +85,115 @@ function run_test() {
   run_next_test();
 }
 
+async function isBlocklisted(addon, appVer, toolkitVer) {
+  let state = await Blocklist.getAddonBlocklistState(addon, appVer, toolkitVer);
+  return state != Services.blocklist.STATE_NOT_BLOCKED;
+}
+
 // On first run whataver is in the app dir should get copied to the profile
-add_test(function test_copy() {
+add_test(async function test_copy() {
   clearBlocklists();
   copyToApp(OLD);
 
   incrementAppVersion();
-  startupManager();
+  await promiseStartupManager();
 
-  reloadBlocklist();
-  let blocklist = AM_Cc["@mozilla.org/extensions/blocklist;1"].
-                  getService(AM_Ci.nsIBlocklistService);
-  do_check_false(blocklist.isAddonBlocklisted(invalidAddon));
-  do_check_false(blocklist.isAddonBlocklisted(ancientAddon));
-  do_check_true(blocklist.isAddonBlocklisted(oldAddon));
-  do_check_false(blocklist.isAddonBlocklisted(newAddon));
+  await reloadBlocklist();
+  Assert.ok(!(await isBlocklisted(invalidAddon)));
+  Assert.ok(!(await isBlocklisted(ancientAddon)));
+  Assert.ok(await isBlocklisted(oldAddon));
+  Assert.ok(!(await isBlocklisted(newAddon)));
 
-  shutdownManager();
+  await promiseShutdownManager();
 
   run_next_test();
 });
 
 // An ancient blocklist should be ignored
-add_test(function test_ancient() {
+add_test(async function test_ancient() {
   clearBlocklists();
   copyToApp(ANCIENT);
   copyToProfile(OLD, OLD_TSTAMP);
 
   incrementAppVersion();
-  startupManager();
+  await promiseStartupManager();
 
-  reloadBlocklist();
-  let blocklist = AM_Cc["@mozilla.org/extensions/blocklist;1"].
-                  getService(AM_Ci.nsIBlocklistService);
-  do_check_false(blocklist.isAddonBlocklisted(invalidAddon));
-  do_check_false(blocklist.isAddonBlocklisted(ancientAddon));
-  do_check_true(blocklist.isAddonBlocklisted(oldAddon));
-  do_check_false(blocklist.isAddonBlocklisted(newAddon));
+  await reloadBlocklist();
 
-  shutdownManager();
+  Assert.ok(!(await isBlocklisted(invalidAddon)));
+  Assert.ok(!(await isBlocklisted(ancientAddon)));
+  Assert.ok(await isBlocklisted(oldAddon));
+  Assert.ok(!(await isBlocklisted(newAddon)));
+
+  await promiseShutdownManager();
 
   run_next_test();
 });
 
 // A new blocklist should override an old blocklist
-add_test(function test_override() {
+add_test(async function test_override() {
   clearBlocklists();
   copyToApp(NEW);
   copyToProfile(OLD, OLD_TSTAMP);
 
   incrementAppVersion();
-  startupManager();
+  await promiseStartupManager();
 
-  reloadBlocklist();
-  let blocklist = AM_Cc["@mozilla.org/extensions/blocklist;1"].
-                  getService(AM_Ci.nsIBlocklistService);
-  do_check_false(blocklist.isAddonBlocklisted(invalidAddon));
-  do_check_false(blocklist.isAddonBlocklisted(ancientAddon));
-  do_check_false(blocklist.isAddonBlocklisted(oldAddon));
-  do_check_true(blocklist.isAddonBlocklisted(newAddon));
+  await reloadBlocklist();
 
-  shutdownManager();
+  Assert.ok(!(await isBlocklisted(invalidAddon)));
+  Assert.ok(!(await isBlocklisted(ancientAddon)));
+  Assert.ok(!(await isBlocklisted(oldAddon)));
+  Assert.ok(await isBlocklisted(newAddon));
+
+  await promiseShutdownManager();
 
   run_next_test();
 });
 
 // An old blocklist shouldn't override a new blocklist
-add_test(function test_retain() {
+add_test(async function test_retain() {
   clearBlocklists();
   copyToApp(OLD);
   copyToProfile(NEW, NEW_TSTAMP);
 
   incrementAppVersion();
-  startupManager();
+  await promiseStartupManager();
 
-  reloadBlocklist();
-  let blocklist = AM_Cc["@mozilla.org/extensions/blocklist;1"].
-                  getService(AM_Ci.nsIBlocklistService);
-  do_check_false(blocklist.isAddonBlocklisted(invalidAddon));
-  do_check_false(blocklist.isAddonBlocklisted(ancientAddon));
-  do_check_false(blocklist.isAddonBlocklisted(oldAddon));
-  do_check_true(blocklist.isAddonBlocklisted(newAddon));
+  await reloadBlocklist();
 
-  shutdownManager();
+  Assert.ok(!(await isBlocklisted(invalidAddon)));
+  Assert.ok(!(await isBlocklisted(ancientAddon)));
+  Assert.ok(!(await isBlocklisted(oldAddon)));
+  Assert.ok(await isBlocklisted(newAddon));
+
+  await promiseShutdownManager();
 
   run_next_test();
 });
 
 // A missing blocklist in the profile should still load an app-shipped blocklist
-add_test(function test_missing() {
+add_test(async function test_missing() {
   clearBlocklists();
   copyToApp(OLD);
   copyToProfile(NEW, NEW_TSTAMP);
 
   incrementAppVersion();
-  startupManager();
-  shutdownManager();
+  await promiseStartupManager();
+  await promiseShutdownManager();
 
   let blocklist = FileUtils.getFile(KEY_PROFILEDIR, [FILE_BLOCKLIST]);
   blocklist.remove(true);
-  startupManager(false);
+  await promiseStartupManager();
 
-  reloadBlocklist();
-  blocklist = AM_Cc["@mozilla.org/extensions/blocklist;1"].
-              getService(AM_Ci.nsIBlocklistService);
-  do_check_false(blocklist.isAddonBlocklisted(invalidAddon));
-  do_check_false(blocklist.isAddonBlocklisted(ancientAddon));
-  do_check_true(blocklist.isAddonBlocklisted(oldAddon));
-  do_check_false(blocklist.isAddonBlocklisted(newAddon));
+  await reloadBlocklist();
 
-  shutdownManager();
+  Assert.ok(!(await isBlocklisted(invalidAddon)));
+  Assert.ok(!(await isBlocklisted(ancientAddon)));
+  Assert.ok(await isBlocklisted(oldAddon));
+  Assert.ok(!(await isBlocklisted(newAddon)));
+
+  await promiseShutdownManager();
 
   run_next_test();
 });

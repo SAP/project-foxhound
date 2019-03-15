@@ -42,7 +42,7 @@ interface AnonymousContent {
    * Set the value of an attribute of an element inside this custom anonymous
    * content.
    */
-  [Throws]
+  [NeedsSubjectPrincipal=NonSystem, Throws]
   void setAttributeForElement(DOMString elementId,
                               DOMString attributeName,
                               DOMString value);
@@ -62,7 +62,7 @@ interface AnonymousContent {
   nsISupports? getCanvasContext(DOMString elementId,
                                 DOMString contextId);
 
-  [Func="nsDocument::IsElementAnimateEnabled", Throws]
+  [Throws]
   Animation setAnimationForElement(DOMString elementId,
                                    object? keyframes,
                                    optional UnrestrictedDoubleOrKeyframeAnimationOptions

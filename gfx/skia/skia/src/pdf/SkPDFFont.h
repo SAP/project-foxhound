@@ -11,12 +11,10 @@
 
 #include "SkAdvancedTypefaceMetrics.h"
 #include "SkBitSet.h"
+#include "SkPDFCanon.h"
 #include "SkPDFTypes.h"
-#include "SkTDArray.h"
+#include "SkStrikeCache.h"
 #include "SkTypeface.h"
-
-class SkPDFCanon;
-class SkPDFFont;
 
 /** \class SkPDFFont
     A PDF Object class representing a font.  The font may have resources
@@ -28,7 +26,7 @@ class SkPDFFont;
 class SkPDFFont : public SkPDFDict {
 
 public:
-    virtual ~SkPDFFont();
+    ~SkPDFFont() override;
 
     /** Returns the typeface represented by this class. Returns nullptr for the
      *  default typeface.
@@ -41,11 +39,14 @@ public:
     SkAdvancedTypefaceMetrics::FontType getType() const { return fFontType; }
 
     static SkAdvancedTypefaceMetrics::FontType FontType(const SkAdvancedTypefaceMetrics&);
+    static void GetType1GlyphNames(const SkTypeface&, SkString*);
 
     static bool IsMultiByte(SkAdvancedTypefaceMetrics::FontType type) {
         return type == SkAdvancedTypefaceMetrics::kType1CID_Font ||
                type == SkAdvancedTypefaceMetrics::kTrueType_Font;
     }
+
+    static SkExclusiveStrikePtr MakeVectorCache(SkTypeface*, int* sizeOut);
 
     /** Returns true if this font encoding supports glyph IDs above 255.
      */
@@ -80,16 +81,19 @@ public:
      *  @param typeface  The typeface to find, not nullptr.
      *  @param glyphID   Specify which section of a large font is of interest.
      */
-    static SkPDFFont* GetFontResource(SkPDFCanon* canon,
-                                      SkTypeface* typeface,
-                                      SkGlyphID glyphID);
+    static sk_sp<SkPDFFont> GetFontResource(SkPDFCanon* canon,
+                                            SkGlyphCache* cache,
+                                            SkTypeface* typeface,
+                                            SkGlyphID glyphID);
 
-    /** Uses (kGlyphNames_PerGlyphInfo | kToUnicode_PerGlyphInfo) to get 
-     *  SkAdvancedTypefaceMetrics, and caches the result.
+    /** Gets SkAdvancedTypefaceMetrics, and caches the result.
      *  @param typeface can not be nullptr.
      *  @return nullptr only when typeface is bad.
      */
     static const SkAdvancedTypefaceMetrics* GetMetrics(SkTypeface* typeface,
+                                                       SkPDFCanon* canon);
+
+    static const std::vector<SkUnichar>& GetUnicodeMap(const SkTypeface* typeface,
                                                        SkPDFCanon* canon);
 
     /** Subset the font based on current usage.

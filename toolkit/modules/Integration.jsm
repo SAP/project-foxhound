@@ -106,13 +106,11 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = [
+var EXPORTED_SYMBOLS = [
   "Integration",
 ];
 
-const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 /**
  * Maps integration point names to IntegrationPoint objects.
@@ -126,7 +124,7 @@ const gIntegrationPoints = new Map();
  *   Integration.downloads.register(...);
  *   Integration["addon-provided-integration"].register(...);
  */
-this.Integration = new Proxy({}, {
+var Integration = new Proxy({}, {
   get(target, name) {
     let integrationPoint = gIntegrationPoints.get(name);
     if (!integrationPoint) {
@@ -140,9 +138,10 @@ this.Integration = new Proxy({}, {
 /**
  * Individual integration point for which overrides can be registered.
  */
-this.IntegrationPoint = function() {
+var IntegrationPoint = function() {
   this._overrideFns = new Set();
   this._combined = {
+    // eslint-disable-next-line mozilla/use-chromeutils-generateqi
     QueryInterface() {
       let ex = new Components.Exception(
                    "Integration objects should not be used with XPCOM because" +
@@ -152,7 +151,7 @@ this.IntegrationPoint = function() {
       throw ex;
     },
   };
-}
+};
 
 this.IntegrationPoint.prototype = {
   /**

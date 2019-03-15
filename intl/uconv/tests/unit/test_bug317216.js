@@ -9,10 +9,7 @@
  * UTF16 character and mid-surrogate pair
  */
 
-var Ci = Components.interfaces;
-var Cu = Components.utils;
-
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 const test = [
 // 0: Valid surrogate pair
@@ -96,7 +93,7 @@ function testCase(testText, expectedText, bufferLength, charset)
   } while (more);
 
   // escape the strings before comparing for better readability
-  do_check_eq(escape(outStr), escape(expectedText));
+  Assert.equal(escape(outStr), escape(expectedText));
 }
 
 // Add 32 dummy characters to the test text to work around the minimum buffer

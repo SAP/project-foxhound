@@ -1,20 +1,20 @@
 <!DOCTYPE HTML>
 <html>
 <head>
-  <title>WebExtension test</title>
-  <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/SpawnTask.js"></script>
-  <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/ExtensionTestUtils.js"></script>
-  <script type="text/javascript" src="chrome_head.js"></script>
+  <title>WebExtension cookies test</title>
+  <meta charset="utf-8">
+  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="text/javascript" src="/tests/SimpleTest/AddTask.js"></script>
+  <script type="text/javascript" src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
   <script type="text/javascript" src="head.js"></script>
-  <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
 
 <script type="text/javascript">
 "use strict";
 
-add_task(function* test_cookies_expiry() {
+add_task(async function test_cookies_expiry() {
   function background() {
     let expectedEvents = [];
 
@@ -37,7 +37,6 @@ add_task(function* test_cookies_expiry() {
     }, 1000);
   }
 
-  let domain = ".example.com";
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       "permissions": ["http://example.com/", "cookies"],
@@ -45,25 +44,27 @@ add_task(function* test_cookies_expiry() {
     background,
   });
 
-  let cookieSvc = SpecialPowers.Services.cookies;
+  let chromeScript = loadChromeScript(() => {
+    const {sendAsyncMessage} = this;
+    Services.cookies.add(".example.com", "/", "first", "one", false, false, false, Date.now() / 1000 + 1, {}, Ci.nsICookie2.SAMESITE_UNSET);
+    sendAsyncMessage("done");
+  });
+  await chromeScript.promiseOneMessage("done");
+  chromeScript.destroy();
 
-  let cookie = {
-    host: domain,
-    name: "first",
-    path: "/",
-  };
+  await extension.startup();
+  await extension.awaitMessage("change-cookies");
 
-  do {
-    cookieSvc.add(cookie.host, cookie.path, cookie.name, "one", false, false, false, Date.now() / 1000 + 1);
-  } while (!cookieSvc.cookieExists(cookie));
+  chromeScript = loadChromeScript(() => {
+    const {sendAsyncMessage} = this;
+    Services.cookies.add(".example.com", "/", "first", "one-again", false, false, false, Date.now() / 1000 + 10, {}, Ci.nsICookie2.SAMESITE_UNSET);
+    sendAsyncMessage("done");
+  });
+  await chromeScript.promiseOneMessage("done");
+  chromeScript.destroy();
 
-  yield extension.startup();
-  yield extension.awaitMessage("change-cookies");
-
-  cookieSvc.add(cookie.host, cookie.path, cookie.name, "one-again", false, false, false, Date.now() / 1000 + 10);
-
-  yield extension.awaitFinish("cookie-expiry");
-  yield extension.unload();
+  await extension.awaitFinish("cookie-expiry");
+  await extension.unload();
 });
 
 </script>

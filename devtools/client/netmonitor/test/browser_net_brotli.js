@@ -10,61 +10,57 @@ const BROTLI_REQUESTS = 1;
  * Test brotli encoded response is handled correctly on HTTPS.
  */
 
-add_task(function* () {
-  let { L10N } = require("devtools/client/netmonitor/utils/l10n");
+add_task(async function() {
+  const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
 
-  let { tab, monitor } = yield initNetMonitor(BROTLI_URL);
+  const { tab, monitor } = await initNetMonitor(BROTLI_URL);
   info("Starting test... ");
 
-  let { document, gStore, windowRequire } = monitor.panelWin;
-  let Actions = windowRequire("devtools/client/netmonitor/actions/index");
-  let {
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
+  const {
     getDisplayedRequests,
     getSortedRequests,
-  } = windowRequire("devtools/client/netmonitor/selectors/index");
+  } = windowRequire("devtools/client/netmonitor/src/selectors/index");
 
-  gStore.dispatch(Actions.batchEnable(false));
+  store.dispatch(Actions.batchEnable(false));
 
-  let wait = waitForNetworkEvents(monitor, BROTLI_REQUESTS);
-  yield ContentTask.spawn(tab.linkedBrowser, {}, function* () {
-    content.wrappedJSObject.performRequests();
-  });
-  yield wait;
+  // Execute requests.
+  await performRequests(monitor, tab, BROTLI_REQUESTS);
+
+  const requestItem = document.querySelector(".request-list-item");
+  const requestsListStatus = requestItem.querySelector(".status-code");
+  EventUtils.sendMouseEvent({ type: "mouseover" }, requestsListStatus);
+  await waitUntil(() => requestsListStatus.title);
 
   verifyRequestItemTarget(
     document,
-    getDisplayedRequests(gStore.getState()),
-    getSortedRequests(gStore.getState()).get(0),
+    getDisplayedRequests(store.getState()),
+    getSortedRequests(store.getState()).get(0),
     "GET", HTTPS_CONTENT_TYPE_SJS + "?fmt=br", {
       status: 200,
       statusText: "Connected",
       type: "plain",
       fullMimeType: "text/plain",
-      transferred: L10N.getFormatStrWithNumbers("networkMenu.sizeB", 10),
+      transferred: L10N.getFormatStrWithNumbers("networkMenu.sizeB", 60),
       size: L10N.getFormatStrWithNumbers("networkMenu.sizeB", 64),
-      time: true
+      time: true,
     });
 
-  wait = waitForDOM(document, "#response-panel .editor-mount iframe");
-  EventUtils.sendMouseEvent({ type: "click" },
-    document.querySelector(".network-details-panel-toggle"));
+  wait = waitForDOM(document, ".CodeMirror-code");
+  const onResponseContent = monitor.panelWin.api.once(EVENTS.RECEIVED_RESPONSE_CONTENT);
+  store.dispatch(Actions.toggleNetworkDetails());
   EventUtils.sendMouseEvent({ type: "click" },
     document.querySelector("#response-tab"));
-  let [editorFrame] = yield wait;
+  await wait;
+  await onResponseContent;
+  await testResponse("br");
+  await teardown(monitor);
 
-  yield once(editorFrame, "DOMContentLoaded");
-  yield waitForDOM(editorFrame.contentDocument, ".CodeMirror-code");
-  yield testResponse("br");
-
-  yield teardown(monitor);
-
-  function* testResponse(type) {
+  function testResponse(type) {
     switch (type) {
       case "br": {
-        let text = editorFrame.contentDocument
-          .querySelector(".CodeMirror-line").textContent;
-
-        is(text, "X".repeat(64),
+        is(document.querySelector(".CodeMirror-line").textContent, "X".repeat(64),
           "The text shown in the source editor is incorrect for the brotli request.");
         break;
       }

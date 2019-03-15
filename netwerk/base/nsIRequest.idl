@@ -124,6 +124,25 @@ interface nsIRequest : nsISupports
      */
     const unsigned long LOAD_BACKGROUND = 1 << 0;
 
+    /**
+     * This flag marks the request as being made to load the data for an html
+     * <object> tag. This means that the LOAD_DOCUMENT_URI flag may be set after
+     * the channel has been provided with the MIME type.
+     */
+    const unsigned long LOAD_HTML_OBJECT_DATA = 1 << 1;
+
+    /**
+     * This flag marks the request as belonging to a document that requires access
+     * to the document.cookies API.
+     */
+    const unsigned long LOAD_DOCUMENT_NEEDS_COOKIE = 1 << 2;
+
+
+    /**
+     * Set this flag to disable TRR for this request.
+     */
+    const unsigned long LOAD_DISABLE_TRR = 1 << 3;
+
     /**************************************************************************
      * The following flags control the flow of data into the cache.
      */
@@ -205,6 +224,8 @@ interface nsIRequest : nsISupports
     /**
      * When set, this flag indicates that caches of network connections,
      * particularly HTTP persistent connections, should not be used.
+     * Use this together with LOAD_INITIAL_DOCUMENT_URI as otherwise it has no
+     * effect.
      */
     const unsigned long LOAD_FRESH_CONNECTION = 1 << 15;
 };

@@ -110,7 +110,6 @@
 
 #include "base/base_export.h"
 #include "base/compiler_specific.h"
-#include "base/containers/hash_tables.h"
 #include "base/macros.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_piece.h"
@@ -138,6 +137,7 @@ namespace base {
 
 class Pickle;
 class PickleIterator;
+class PickleSizer;
 
 // An abstraction to isolate users from the differences between native
 // pathnames on different platforms.
@@ -180,6 +180,13 @@ class BASE_EXPORT FilePath {
   explicit FilePath(StringPieceType path);
   ~FilePath();
   FilePath& operator=(const FilePath& that);
+
+  // Constructs FilePath with the contents of |that|, which is left in valid but
+  // unspecified state.
+  FilePath(FilePath&& that) noexcept;
+  // Replaces the contents with those of |that|, which is left in valid but
+  // unspecified state.
+  FilePath& operator=(FilePath&& that);
 
   bool operator==(const FilePath& that) const;
 
@@ -372,11 +379,12 @@ class BASE_EXPORT FilePath {
   // internally calls SysWideToNativeMB() on POSIX systems other than Mac
   // and Chrome OS, to mitigate the encoding issue. See the comment at
   // AsUTF8Unsafe() for details.
-  static FilePath FromUTF8Unsafe(const std::string& utf8);
+  static FilePath FromUTF8Unsafe(StringPiece utf8);
 
   // Similar to FromUTF8Unsafe, but accepts UTF-16 instead.
-  static FilePath FromUTF16Unsafe(const string16& utf16);
+  static FilePath FromUTF16Unsafe(StringPiece16 utf16);
 
+  void GetSizeForPickle(PickleSizer* sizer) const;
   void WriteToPickle(Pickle* pickle) const;
   bool ReadFromPickle(PickleIterator* iter);
 
@@ -443,11 +451,8 @@ class BASE_EXPORT FilePath {
   StringType path_;
 };
 
-// This is required by googletest to print a readable output on test failures.
-// This is declared here for use in gtest-based unit tests but is defined in
-// the test_support_base target. Depend on that to use this in your unit test.
-// This should not be used in production code - call ToString() instead.
-void PrintTo(const FilePath& path, std::ostream* out);
+BASE_EXPORT std::ostream& operator<<(std::ostream& out,
+                                     const FilePath& file_path);
 
 }  // namespace base
 
@@ -461,17 +466,17 @@ void PrintTo(const FilePath& path, std::ostream* out);
 #define PRFilePath "ls"
 #endif  // OS_WIN
 
-// Provide a hash function so that hash_sets and maps can contain FilePath
-// objects.
-namespace BASE_HASH_NAMESPACE {
+namespace std {
 
-template<>
+template <>
 struct hash<base::FilePath> {
-  size_t operator()(const base::FilePath& f) const {
+  typedef base::FilePath argument_type;
+  typedef std::size_t result_type;
+  result_type operator()(argument_type const& f) const {
     return hash<base::FilePath::StringType>()(f.value());
   }
 };
 
-}  // namespace BASE_HASH_NAMESPACE
+}  // namespace std
 
 #endif  // BASE_FILES_FILE_PATH_H_

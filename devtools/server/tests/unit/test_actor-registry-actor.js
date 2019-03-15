@@ -1,6 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+"use strict";
+
 /**
  * Check that you can register new actors via the ActorRegistrationActor.
  */
@@ -8,53 +10,45 @@
 var gClient;
 var gRegistryFront;
 var gActorFront;
-var gOldPref;
 
-const { ActorRegistryFront } = require("devtools/shared/fronts/actor-registry");
-
-function run_test()
-{
-  gOldPref = Services.prefs.getBoolPref("devtools.debugger.forbid-certified-apps");
-  Services.prefs.setBoolPref("devtools.debugger.forbid-certified-apps", false);
+function run_test() {
   initTestDebuggerServer();
-  DebuggerServer.addBrowserActors();
+  DebuggerServer.registerAllActors();
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
   gClient.connect().then(getRegistry);
   do_test_pending();
 }
 
-function getRegistry() {
-  gClient.listTabs((response) => {
-    gRegistryFront = ActorRegistryFront(gClient, response);
-    registerNewActor();
-  });
+async function getRegistry() {
+  gRegistryFront = await gClient.mainRoot.getFront("actorRegistry");
+  registerNewActor();
 }
 
 function registerNewActor() {
-  let options = {
+  const options = {
     prefix: "helloActor",
     constructor: "HelloActor",
-    type: { global: true }
+    type: { global: true },
   };
 
   gRegistryFront
     .registerActor("resource://test/hello-actor.js", options)
-    .then(actorFront => gActorFront = actorFront)
+    .then(actorFront => (gActorFront = actorFront))
     .then(talkToNewActor)
-    .then(null, e => {
+    .catch(e => {
       DevToolsUtils.reportException("registerNewActor", e);
-      do_check_true(false);
+      Assert.ok(false);
     });
 }
 
 function talkToNewActor() {
-  gClient.listTabs(({ helloActor }) => {
-    do_check_true(!!helloActor);
+  gClient.mainRoot.getRoot().then(({ helloActor }) => {
+    Assert.ok(!!helloActor);
     gClient.request({
       to: helloActor,
-      type: "hello"
+      type: "hello",
     }, response => {
-      do_check_true(!response.error);
+      Assert.ok(!response.error);
       unregisterNewActor();
     });
   });
@@ -64,17 +58,16 @@ function unregisterNewActor() {
   gActorFront
     .unregister()
     .then(testActorIsUnregistered)
-    .then(null, e => {
+    .catch(e => {
       DevToolsUtils.reportException("unregisterNewActor", e);
-      do_check_true(false);
+      Assert.ok(false);
     });
 }
 
 function testActorIsUnregistered() {
-  gClient.listTabs(({ helloActor }) => {
-    do_check_true(!helloActor);
+  gClient.mainRoot.rootForm.then(({ helloActor }) => {
+    Assert.ok(!helloActor);
 
-    Services.prefs.setBoolPref("devtools.debugger.forbid-certified-apps", gOldPref);
     finishClient(gClient);
   });
 }

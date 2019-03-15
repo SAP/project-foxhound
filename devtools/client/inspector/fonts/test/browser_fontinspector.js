@@ -5,104 +5,77 @@
 
 requestLongerTimeout(2);
 
-const TEST_URI = URL_ROOT + "browser_fontinspector.html";
-const FONTS = [{
-  name: "Ostrich Sans Medium",
-  remote: true,
-  url: URL_ROOT + "ostrich-regular.ttf",
-  format: "truetype",
-  cssName: "bar"
-}, {
-  name: "Ostrich Sans Black",
-  remote: true,
-  url: URL_ROOT + "ostrich-black.ttf",
-  format: "",
-  cssName: "bar"
-}, {
-  name: "Ostrich Sans Black",
-  remote: true,
-  url: URL_ROOT + "ostrich-black.ttf",
-  format: "",
-  cssName: "bar"
-}, {
-  name: "Ostrich Sans Medium",
-  remote: true,
-  url: URL_ROOT + "ostrich-regular.ttf",
-  format: "",
-  cssName: "barnormal"
-}];
+const TEST_URI = URL_ROOT + "doc_browser_fontinspector.html";
 
-add_task(function* () {
-  let { inspector, view } = yield openFontInspectorForURL(TEST_URI);
+add_task(async function() {
+  const { inspector, view } = await openFontInspectorForURL(TEST_URI);
   ok(!!view, "Font inspector document is alive.");
 
-  let viewDoc = view.chromeDoc;
+  const viewDoc = view.document;
 
-  yield testBodyFonts(inspector, viewDoc);
-  yield testDivFonts(inspector, viewDoc);
-  yield testShowAllFonts(inspector, viewDoc);
+  await testBodyFonts(inspector, viewDoc);
+  await testDivFonts(inspector, viewDoc);
 });
 
-function* testBodyFonts(inspector, viewDoc) {
-  let s = viewDoc.querySelectorAll("#all-fonts > section");
-  is(s.length, 5, "Found 5 fonts");
+async function testBodyFonts(inspector, viewDoc) {
+  const FONTS = [{
+    familyName: "bar",
+    name: ["Ostrich Sans Medium", "Ostrich Sans Black"],
+  }, {
+    familyName: "barnormal",
+    name: "Ostrich Sans Medium",
+  }, {
+    // On Linux, Arial does not exist. Liberation Sans is used instead.
+    familyName: ["Arial", "Liberation Sans"],
+    name: ["Arial", "Liberation Sans"],
+  }];
+
+  await selectNode("body", inspector);
+
+  const groups = getUsedFontGroupsEls(viewDoc);
+  is(groups.length, 3, "Found 3 font families used on BODY");
 
   for (let i = 0; i < FONTS.length; i++) {
-    let section = s[i];
-    let font = FONTS[i];
-    is(section.querySelector(".font-name").textContent, font.name,
-       "font " + i + " right font name");
-    is(section.classList.contains("is-remote"), font.remote,
-       "font " + i + " remote value correct");
-    is(section.querySelector(".font-url").value, font.url,
-       "font " + i + " url correct");
-    is(section.querySelector(".font-format").hidden, !font.format,
-       "font " + i + " format hidden value correct");
-    is(section.querySelector(".font-format").textContent,
-       font.format, "font " + i + " format correct");
-    is(section.querySelector(".font-css-name").textContent,
-       font.cssName, "font " + i + " css name correct");
+    const groupEL = groups[i];
+    const font = FONTS[i];
+
+    const familyName = getFamilyName(groupEL);
+    ok(font.familyName.includes(familyName),
+      `Font families used on BODY include: ${familyName}`);
+
+    const fontName = getName(groupEL);
+    ok(font.name.includes(fontName),
+      `Fonts used on BODY include: ${fontName}`);
   }
-
-  // test that the bold and regular fonts have different previews
-  let regSrc = s[0].querySelector(".font-preview").src;
-  let boldSrc = s[1].querySelector(".font-preview").src;
-  isnot(regSrc, boldSrc, "preview for bold font is different from regular");
-
-  // test system font
-  let localFontName = s[4].querySelector(".font-name").textContent;
-  let localFontCSSName = s[4].querySelector(".font-css-name").textContent;
-
-  // On Linux test machines, the Arial font doesn't exist.
-  // The fallback is "Liberation Sans"
-  ok((localFontName == "Arial") || (localFontName == "Liberation Sans"),
-     "local font right font name");
-  ok(s[4].classList.contains("is-local"), "local font is local");
-  ok((localFontCSSName == "Arial") || (localFontCSSName == "Liberation Sans"),
-     "Arial", "local font has right css name");
 }
 
-function* testDivFonts(inspector, viewDoc) {
-  let updated = inspector.once("fontinspector-updated");
-  yield selectNode("div", inspector);
-  yield updated;
+async function testDivFonts(inspector, viewDoc) {
+  const FONTS = [{
+    selector: "div",
+    familyName: "bar",
+    name: "Ostrich Sans Medium",
+  }, {
+    selector: ".normal-text",
+    familyName: "barnormal",
+    name: "Ostrich Sans Medium",
+  }, {
+    selector: ".bold-text",
+    familyName: "bar",
+    name: "Ostrich Sans Black",
+  }, {
+    selector: ".black-text",
+    familyName: "bar",
+    name: "Ostrich Sans Black",
+  }];
 
-  let sections1 = viewDoc.querySelectorAll("#all-fonts > section");
-  is(sections1.length, 1, "Found 1 font on DIV");
-  is(sections1[0].querySelector(".font-name").textContent,
-     "Ostrich Sans Medium",
-     "The DIV font has the right name");
-}
+  for (let i = 0; i < FONTS.length; i++) {
+    await selectNode(FONTS[i].selector, inspector);
+    const groups = getUsedFontGroupsEls(viewDoc);
+    const groupEl = groups[0];
+    const font = FONTS[i];
 
-function* testShowAllFonts(inspector, viewDoc) {
-  info("testing showing all fonts");
-
-  let updated = inspector.once("fontinspector-updated");
-  viewDoc.querySelector("#font-showall").click();
-  yield updated;
-
-  // shouldn't change the node selection
-  is(inspector.selection.nodeFront.nodeName, "DIV", "Show all fonts selected");
-  let sections = viewDoc.querySelectorAll("#all-fonts > section");
-  is(sections.length, 6, "Font inspector shows 6 fonts (1 from iframe)");
+    is(groups.length, 1, `Found 1 font on ${FONTS[i].selector}`);
+    is(getName(groupEl), font.name, "The DIV font has the right name");
+    is(getFamilyName(groupEl), font.familyName, `font has the right family name`);
+  }
 }

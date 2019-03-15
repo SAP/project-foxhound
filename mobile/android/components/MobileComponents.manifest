@@ -11,12 +11,10 @@ contract @mozilla.org/network/protocol/about;1?what=downloads {322ba47e-7047-4f7
 contract @mozilla.org/network/protocol/about;1?what=reader {322ba47e-7047-4f71-aebf-cb7d69325cd9}
 contract @mozilla.org/network/protocol/about;1?what=feedback {322ba47e-7047-4f71-aebf-cb7d69325cd9}
 contract @mozilla.org/network/protocol/about;1?what=privatebrowsing {322ba47e-7047-4f71-aebf-cb7d69325cd9}
-#ifdef MOZ_SERVICES_HEALTHREPORT
-contract @mozilla.org/network/protocol/about;1?what=healthreport {322ba47e-7047-4f71-aebf-cb7d69325cd9}
-#endif
 contract @mozilla.org/network/protocol/about;1?what=blocked {322ba47e-7047-4f71-aebf-cb7d69325cd9}
 contract @mozilla.org/network/protocol/about;1?what=accounts {322ba47e-7047-4f71-aebf-cb7d69325cd9}
 contract @mozilla.org/network/protocol/about;1?what=logins {322ba47e-7047-4f71-aebf-cb7d69325cd9}
+contract @mozilla.org/network/protocol/about;1?what=experiments {322ba47e-7047-4f71-aebf-cb7d69325cd9}
 
 # DirectoryProvider.js
 component {ef0f7a87-c1ee-45a8-8d67-26f586e46a4b} DirectoryProvider.js
@@ -24,7 +22,7 @@ contract @mozilla.org/browser/directory-provider;1 {ef0f7a87-c1ee-45a8-8d67-26f5
 category xpcom-directory-providers browser-directory-provider @mozilla.org/browser/directory-provider;1
 
 # stylesheets
-category agent-style-sheets browser-content-stylesheet chrome://browser/skin/content.css
+category agent-style-sheets browser-content-stylesheet chrome://geckoview/skin/content.css
 
 # SessionStore.js
 component {8c1f07d6-cba3-4226-a315-8bd43d67d032} SessionStore.js
@@ -66,7 +64,7 @@ contract @mozilla.org/helperapplauncherdialog;1 {e9d277a0-268a-4ec2-bb8c-10fdf3e
 # BrowserCLH.js
 component {be623d20-d305-11de-8a39-0800200c9a66} BrowserCLH.js application={aa3c5121-dab2-40e2-81ca-7ea25febc110}
 contract @mozilla.org/browser/browser-clh;1 {be623d20-d305-11de-8a39-0800200c9a66}
-category app-startup BrowserCLH @mozilla.org/browser/browser-clh;1
+category app-startup BrowserCLH service,@mozilla.org/browser/browser-clh;1
 
 # ContentDispatchChooser.js
 component {5a072a22-1e66-4100-afc1-07aed8b62fc5} ContentDispatchChooser.js
@@ -90,10 +88,6 @@ component {cbc08081-49b6-4561-9c18-a7707a50bda1} NSSDialogService.js
 contract @mozilla.org/nsCertificateDialogs;1 {cbc08081-49b6-4561-9c18-a7707a50bda1}
 contract @mozilla.org/nsClientAuthDialogs;1 {cbc08081-49b6-4561-9c18-a7707a50bda1}
 
-# SiteSpecificUserAgent.js
-component {d5234c9d-0ee2-4b3c-9da3-18be9e5cf7e6} SiteSpecificUserAgent.js
-contract @mozilla.org/dom/site-specific-user-agent;1 {d5234c9d-0ee2-4b3c-9da3-18be9e5cf7e6}
-
 # FilePicker.js
 component {18a4e042-7c7c-424b-a583-354e68553a7f} FilePicker.js
 contract @mozilla.org/filepicker;1 {18a4e042-7c7c-424b-a583-354e68553a7f}
@@ -108,12 +102,6 @@ category android-push-service FxAccountsPush @mozilla.org/fxa-push;1
 component {5850c76e-b916-4218-b99a-31f004e0a7e7} TabSource.js
 contract @mozilla.org/tab-source-service;1 {5850c76e-b916-4218-b99a-31f004e0a7e7}
 #endif
-
-# Snippets.js
-component {a78d7e59-b558-4321-a3d6-dffe2f1e76dd} Snippets.js
-contract @mozilla.org/snippets;1 {a78d7e59-b558-4321-a3d6-dffe2f1e76dd}
-category browser-delayed-startup-finished Snippets @mozilla.org/snippets;1
-category update-timer Snippets @mozilla.org/snippets;1,getService,snippets-update-timer,browser.snippets.updateInterval,86400
 
 # ColorPicker.js
 component {430b987f-bb9f-46a3-99a5-241749220b29} ColorPicker.js

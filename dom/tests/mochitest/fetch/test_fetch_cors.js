@@ -64,9 +64,9 @@ function testSameOriginCredentials() {
                 withCred: "same-origin",
               },
               {
-                // Default mode is "omit".
+                // Default mode is "same-origin".
                 pass: 1,
-                noCookie: 1,
+                cookie: cookieStr,
               },
               {
                 pass: 1,
@@ -180,9 +180,7 @@ function testModeCors() {
                },
 
                // nonempty password
-               // XXXbz this passes for now, because we ignore passwords
-               // without usernames in most cases.
-               { pass: 1,
+               { pass: 0,
                  method: "GET",
                  noAllowPreflight: 1,
                  password: "password",
@@ -750,10 +748,10 @@ function testModeCors() {
         return lName != "accept" &&
                lName != "accept-language" &&
                (lName != "content-type" ||
-                ["text/plain",
+                !["text/plain",
                  "multipart/form-data",
                  "application/x-www-form-urlencoded"]
-                   .indexOf(test.headers[name].toLowerCase()) == -1);
+                   .includes(test.headers[name].toLowerCase()));
       }
       req.url += "&headers=" + escape(test.headers.toSource());
       reqHeaders =
@@ -801,7 +799,7 @@ function testModeCors() {
         }
         if (test.responseHeaders) {
           for (header in test.responseHeaders) {
-            if (test.expectedResponseHeaders.indexOf(header) == -1) {
+            if (!test.expectedResponseHeaders.includes(header)) {
               is(res.headers.has(header), false,
                  "|Headers.has()|wrong response header (" + header + ") in test for " +
                  test.toSource());
@@ -1723,7 +1721,7 @@ function testReferrer() {
   var dict = {
     'Referer': referrer
   };
-  return fetch(corsServerPath + "headers=" + dict.toSource()).then(function(res) {
+  return fetch(corsServerPath + "headers=" + encodeURIComponent(dict.toSource())).then(function(res) {
     is(res.status, 200, "expected correct referrer header to be sent");
     dump(res.statusText);
   }, function(e) {

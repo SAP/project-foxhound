@@ -10,6 +10,10 @@
 
 #include "nsISupports.idl"
 
+%{ C++
+class nsDocShellLoadState;
+%}
+
 interface mozIDOMWindowProxy;
 interface nsIDOMWindow;
 interface nsISimpleEnumerator;
@@ -17,7 +21,7 @@ interface nsIWebBrowserChrome;
 interface nsIDocShellTreeItem;
 interface nsIArray;
 interface nsITabParent;
-interface nsIDocShellLoadInfo;
+native nsDocShellLoadStatePtr(nsDocShellLoadState*);
 
 [uuid(d162f9c4-19d5-4723-931f-f1e51bfa9f68)]
 
@@ -62,8 +66,8 @@ interface nsPIWindowWatcher : nsISupports
                             looking for existing windows with the given name,
                             not setting an opener on the newly opened window,
                             and returning null from this method.
-      @param aLoadInfo if aNavigate is true, this allows the caller to pass in
-                       an nsIDocShellLoadInfo to use for the navigation.
+      @param aLoadState if aNavigate is true, this allows the caller to pass in
+                        an nsIDocShellLoadState to use for the navigation.
                        Callers can pass in null if they want the windowwatcher
                        to just construct a loadinfo itself.  If aNavigate is
                        false, this argument is ignored.
@@ -86,7 +90,7 @@ interface nsPIWindowWatcher : nsISupports
                                  in nsISupports aArgs,
                                  in boolean aIsPopupSpam,
                                  in boolean aForceNoOpener,
-                                 in nsIDocShellLoadInfo aLoadInfo);
+                                 in nsDocShellLoadStatePtr aLoadState);
 
   /**
    * Opens a new window so that the window that aOpeningTab belongs to
@@ -102,6 +106,12 @@ interface nsPIWindowWatcher : nsISupports
    * @param aOpenerFullZoom
    *        The current zoom multiplier for the opener tab. This is then
    *        applied to the newly opened window.
+   * @param aNextTabParentId
+   *        The integer ID for the next tab parent actor.
+   *        0 means there is no next tab parent actor to use.
+   * @param aForceNoOpener
+   *        If true, then aOpeningTab will not be used to set the opener
+   *        for the newly created window.
    *
    * @return the nsITabParent of the initial browser for the newly opened
    *         window.
@@ -109,7 +119,9 @@ interface nsPIWindowWatcher : nsISupports
   nsITabParent openWindowWithTabParent(in nsITabParent aOpeningTab,
                                        in ACString aFeatures,
                                        in boolean aCalledFromJS,
-                                       in float aOpenerFullZoom);
+                                       in float aOpenerFullZoom,
+                                       in unsigned long long aNextTabParentId,
+                                       in boolean aForceNoOpener);
 
   /**
    * Find a named docshell tree item amongst all windows registered

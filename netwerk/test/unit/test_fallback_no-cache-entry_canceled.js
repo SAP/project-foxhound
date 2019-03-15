@@ -1,6 +1,6 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 
 var httpServer = null;
@@ -51,7 +51,7 @@ function contentHandler(metadata, response)
 // finally check we got fallback content
 function finish_test(request, buffer)
 {
-  do_check_eq(buffer, "");
+  Assert.equal(buffer, "");
   httpServer.stop(do_test_finished);
 }
 
@@ -79,7 +79,7 @@ function run_test()
     .getService(Ci.nsIPrefBranch);
   dump(ps.getBoolPref("browser.cache.offline.enable"));
   ps.setBoolPref("browser.cache.offline.enable", true);
-  ps.setComplexValue("browser.cache.offline.parent_directory", Ci.nsILocalFile, do_get_profile());
+  ps.setComplexValue("browser.cache.offline.parent_directory", Ci.nsIFile, do_get_profile());
 
   cacheUpdateObserver = {observe: function() {
     dump("got offline-cache-update-completed\n");
@@ -97,7 +97,7 @@ function run_test()
 
   var os = Cc["@mozilla.org/observer-service;1"].
            getService(Ci.nsIObserverService);
-  os.addObserver(cacheUpdateObserver, "offline-cache-update-completed", false);
+  os.addObserver(cacheUpdateObserver, "offline-cache-update-completed");
 
   var us = Cc["@mozilla.org/offlinecacheupdate-service;1"].
            getService(Ci.nsIOfflineCacheUpdateService);

@@ -19,18 +19,15 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(XMLHttpRequestEventTarget,
                                                 DOMEventTargetHelper)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(XMLHttpRequestEventTarget)
-  NS_INTERFACE_MAP_ENTRY(nsIXMLHttpRequestEventTarget)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(XMLHttpRequestEventTarget)
 NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 
 NS_IMPL_ADDREF_INHERITED(XMLHttpRequestEventTarget, DOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(XMLHttpRequestEventTarget, DOMEventTargetHelper)
 
-void
-XMLHttpRequestEventTarget::DisconnectFromOwner()
-{
+void XMLHttpRequestEventTarget::DisconnectFromOwner() {
   DOMEventTargetHelper::DisconnectFromOwner();
 }
 
-} // dom namespace
-} // mozilla namespace
+}  // namespace dom
+}  // namespace mozilla

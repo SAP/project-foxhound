@@ -8,62 +8,43 @@
 
 #include "stddef.h"
 #include "content_decryption_module.h"
-#include "gmp-api/gmp-decryption.h"
-#include "gmp-api/gmp-platform.h"
 #include "nsISupportsImpl.h"
 #include "nsTArray.h"
 #include "mozilla/Logging.h"
 
 namespace mozilla {
 
-namespace detail {
-LogModule* GetCDMLog();
-} // namespace detail
+#define ENSURE_TRUE(condition, rv)                             \
+  {                                                            \
+    if (!(condition)) {                                        \
+      GMP_LOG("ENSURE_TRUE FAILED %s:%d", __FILE__, __LINE__); \
+      return rv;                                               \
+    }                                                          \
+  }
 
-#define CDM_LOG(...) MOZ_LOG(detail::GetCDMLog(), mozilla::LogLevel::Debug, (__VA_ARGS__))
+#define ENSURE_GMP_SUCCESS(err, rv)                                   \
+  {                                                                   \
+    if (GMP_FAILED(err)) {                                            \
+      GMP_LOG("ENSURE_GMP_SUCCESS FAILED %s:%d", __FILE__, __LINE__); \
+      return rv;                                                      \
+    }                                                                 \
+  }
 
-#define ENSURE_TRUE(condition, rv) { \
-  if (!(condition)) {\
-    CDM_LOG("ENSURE_TRUE FAILED %s:%d", __FILE__, __LINE__); \
-    return rv; \
-  } \
-} \
+namespace gmp {
+class CDMShmemBuffer;
+}
+class WidevineBuffer;
 
-#define ENSURE_GMP_SUCCESS(err, rv) { \
-  if (GMP_FAILED(err)) {\
-    CDM_LOG("ENSURE_GMP_SUCCESS FAILED %s:%d", __FILE__, __LINE__); \
-    return rv; \
-    } \
-} \
-
-GMPErr
-ToGMPErr(cdm::Status aStatus);
-
-class WidevineDecryptor;
-
-class CDMWrapper {
-public:
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(CDMWrapper)
-
-  explicit CDMWrapper(cdm::ContentDecryptionModule_8* aCDM,
-                      WidevineDecryptor* aDecryptor);
-  cdm::ContentDecryptionModule_8* GetCDM() const { return mCDM; }
-private:
-  ~CDMWrapper();
-  cdm::ContentDecryptionModule_8* mCDM;
-  RefPtr<WidevineDecryptor> mDecryptor;
+// Base class for our cdm::Buffer implementations, so we can tell at runtime
+// whether the buffer is a Shmem or non-Shmem buffer.
+class CDMBuffer : public cdm::Buffer {
+ public:
+  virtual WidevineBuffer* AsArrayBuffer() { return nullptr; }
+  virtual gmp::CDMShmemBuffer* AsShmemBuffer() { return nullptr; }
 };
 
-void InitInputBuffer(const GMPEncryptedBufferMetadata* aCrypto,
-                     int64_t aTimestamp,
-                     const uint8_t* aData,
-                     size_t aDataSize,
-                     cdm::InputBuffer &aInputBuffer,
-                     nsTArray<cdm::SubsampleEntry> &aSubsamples);
-
-class WidevineBuffer : public cdm::Buffer
-{
-public:
+class WidevineBuffer : public CDMBuffer {
+ public:
   explicit WidevineBuffer(size_t aSize);
   ~WidevineBuffer() override;
   void Destroy() override;
@@ -76,16 +57,16 @@ public:
   // Note: This empties the buffer.
   nsTArray<uint8_t> ExtractBuffer();
 
-private:
+  WidevineBuffer* AsArrayBuffer() override { return this; }
+
+ private:
   nsTArray<uint8_t> mBuffer;
   WidevineBuffer(const WidevineBuffer&);
   void operator=(const WidevineBuffer&);
 };
 
-class WidevineDecryptedBlock : public cdm::DecryptedBlock
-{
-public:
-
+class WidevineDecryptedBlock : public cdm::DecryptedBlock {
+ public:
   WidevineDecryptedBlock();
   ~WidevineDecryptedBlock() override;
   void SetDecryptedBuffer(cdm::Buffer* aBuffer) override;
@@ -93,11 +74,11 @@ public:
   void SetTimestamp(int64_t aTimestamp) override;
   int64_t Timestamp() const override;
 
-private:
+ private:
   cdm::Buffer* mBuffer;
   int64_t mTimestamp;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // WidevineUtils_h_
+#endif  // WidevineUtils_h_

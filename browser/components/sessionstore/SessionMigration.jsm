@@ -4,23 +4,21 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["SessionMigration"];
+var EXPORTED_SYMBOLS = ["SessionMigration"];
 
-const Cu = Components.utils;
-Cu.import("resource://gre/modules/XPCOMUtils.jsm", this);
-Cu.import("resource://gre/modules/Task.jsm", this);
-Cu.import("resource://gre/modules/osfile.jsm", this);
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
+ChromeUtils.import("resource://gre/modules/osfile.jsm", this);
 
-XPCOMUtils.defineLazyModuleGetter(this, "Utils",
+ChromeUtils.defineModuleGetter(this, "Utils",
   "resource://gre/modules/sessionstore/Utils.jsm");
 
 // An encoder to UTF-8.
-XPCOMUtils.defineLazyGetter(this, "gEncoder", function () {
+XPCOMUtils.defineLazyGetter(this, "gEncoder", function() {
   return new TextEncoder();
 });
 
 // A decoder.
-XPCOMUtils.defineLazyGetter(this, "gDecoder", function () {
+XPCOMUtils.defineLazyGetter(this, "gDecoder", function() {
   return new TextDecoder();
 });
 
@@ -39,10 +37,10 @@ var SessionMigrationInternal = {
    * The complete state is then wrapped into the "about:welcomeback" page as
    * form field info to be restored when restoring the state.
    */
-  convertState: function(aStateObj) {
+  convertState(aStateObj) {
     let state = {
       selectedWindow: aStateObj.selectedWindow,
-      _closedWindows: []
+      _closedWindows: [],
     };
     state.windows = aStateObj.windows.map(function(oldWin) {
       var win = {extData: {}};
@@ -71,36 +69,36 @@ var SessionMigrationInternal = {
   /**
    * Asynchronously read session restore state (JSON) from a path
    */
-  readState: function(aPath) {
-    return Task.spawn(function*() {
-      let bytes = yield OS.File.read(aPath);
+  readState(aPath) {
+    return (async function() {
+      let bytes = await OS.File.read(aPath, {compression: "lz4"});
       let text = gDecoder.decode(bytes);
       let state = JSON.parse(text);
       return state;
-    });
+    })();
   },
   /**
    * Asynchronously write session restore state as JSON to a path
    */
-  writeState: function(aPath, aState) {
+  writeState(aPath, aState) {
     let bytes = gEncoder.encode(JSON.stringify(aState));
-    return OS.File.writeAtomic(aPath, bytes, {tmpPath: aPath + ".tmp"});
-  }
-}
+    return OS.File.writeAtomic(aPath, bytes, {tmpPath: aPath + ".tmp", compression: "lz4"});
+  },
+};
 
 var SessionMigration = {
   /**
    * Migrate a limited set of session data from one path to another.
    */
-  migrate: function(aFromPath, aToPath) {
-    return Task.spawn(function*() {
-      let inState = yield SessionMigrationInternal.readState(aFromPath);
+  migrate(aFromPath, aToPath) {
+    return (async function() {
+      let inState = await SessionMigrationInternal.readState(aFromPath);
       let outState = SessionMigrationInternal.convertState(inState);
       // Unfortunately, we can't use SessionStore's own SessionFile to
       // write out the data because it has a dependency on the profile dir
       // being known. When the migration runs, there is no guarantee that
       // that's true.
-      yield SessionMigrationInternal.writeState(aToPath, outState);
-    });
-  }
+      await SessionMigrationInternal.writeState(aToPath, outState);
+    })();
+  },
 };

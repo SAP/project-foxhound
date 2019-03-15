@@ -10,6 +10,8 @@
 #include <Cocoa/Cocoa.h>
 #include "nsObjCExceptions.h"
 #include "nsDebug.h"
+#include "nsString.h"
+#include "mozilla/MacStringHelpers.h"
 
 // Need to cope with us using old versions of the SDK and needing this on 10.10+
 #if !defined(MAC_OS_X_VERSION_10_10) || (MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_10)
@@ -18,15 +20,14 @@ const CFStringRef kCFURLQuarantinePropertiesKey = CFSTR("NSURLQuarantineProperti
 
 namespace CocoaFileUtils {
 
-nsresult RevealFileInFinder(CFURLRef url)
-{
+nsresult RevealFileInFinder(CFURLRef url) {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
-  if (NS_WARN_IF(!url))
-    return NS_ERROR_INVALID_ARG;
+  if (NS_WARN_IF(!url)) return NS_ERROR_INVALID_ARG;
 
   NSAutoreleasePool* ap = [[NSAutoreleasePool alloc] init];
-  BOOL success = [[NSWorkspace sharedWorkspace] selectFile:[(NSURL*)url path] inFileViewerRootedAtPath:@""];
+  BOOL success = [[NSWorkspace sharedWorkspace] selectFile:[(NSURL*)url path]
+                                  inFileViewerRootedAtPath:@""];
   [ap release];
 
   return (success ? NS_OK : NS_ERROR_FAILURE);
@@ -34,12 +35,10 @@ nsresult RevealFileInFinder(CFURLRef url)
   NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
 }
 
-nsresult OpenURL(CFURLRef url)
-{
+nsresult OpenURL(CFURLRef url) {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
-  if (NS_WARN_IF(!url))
-    return NS_ERROR_INVALID_ARG;
+  if (NS_WARN_IF(!url)) return NS_ERROR_INVALID_ARG;
 
   NSAutoreleasePool* ap = [[NSAutoreleasePool alloc] init];
   BOOL success = [[NSWorkspace sharedWorkspace] openURL:(NSURL*)url];
@@ -50,21 +49,20 @@ nsresult OpenURL(CFURLRef url)
   NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
 }
 
-nsresult GetFileCreatorCode(CFURLRef url, OSType *creatorCode)
-{
+nsresult GetFileCreatorCode(CFURLRef url, OSType* creatorCode) {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
-  if (NS_WARN_IF(!url) || NS_WARN_IF(!creatorCode))
-    return NS_ERROR_INVALID_ARG;
+  if (NS_WARN_IF(!url) || NS_WARN_IF(!creatorCode)) return NS_ERROR_INVALID_ARG;
 
   nsAutoreleasePool localPool;
 
-  NSString *resolvedPath = [[(NSURL*)url path] stringByResolvingSymlinksInPath];
+  NSString* resolvedPath = [[(NSURL*)url path] stringByResolvingSymlinksInPath];
   if (!resolvedPath) {
     return NS_ERROR_FAILURE;
   }
 
-  NSDictionary* dict = [[NSFileManager defaultManager] attributesOfItemAtPath:resolvedPath error:nil];
+  NSDictionary* dict = [[NSFileManager defaultManager] attributesOfItemAtPath:resolvedPath
+                                                                        error:nil];
   if (!dict) {
     return NS_ERROR_FAILURE;
   }
@@ -80,37 +78,38 @@ nsresult GetFileCreatorCode(CFURLRef url, OSType *creatorCode)
   NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
 }
 
-nsresult SetFileCreatorCode(CFURLRef url, OSType creatorCode)
-{
+nsresult SetFileCreatorCode(CFURLRef url, OSType creatorCode) {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
-  if (NS_WARN_IF(!url))
-    return NS_ERROR_INVALID_ARG;
+  if (NS_WARN_IF(!url)) return NS_ERROR_INVALID_ARG;
 
   NSAutoreleasePool* ap = [[NSAutoreleasePool alloc] init];
-  NSDictionary* dict = [NSDictionary dictionaryWithObject:[NSNumber numberWithUnsignedLong:creatorCode] forKey:NSFileHFSCreatorCode];
-  BOOL success = [[NSFileManager defaultManager] setAttributes:dict ofItemAtPath:[(NSURL*)url path] error:nil];
+  NSDictionary* dict =
+      [NSDictionary dictionaryWithObject:[NSNumber numberWithUnsignedLong:creatorCode]
+                                  forKey:NSFileHFSCreatorCode];
+  BOOL success = [[NSFileManager defaultManager] setAttributes:dict
+                                                  ofItemAtPath:[(NSURL*)url path]
+                                                         error:nil];
   [ap release];
   return (success ? NS_OK : NS_ERROR_FAILURE);
 
   NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
 }
 
-nsresult GetFileTypeCode(CFURLRef url, OSType *typeCode)
-{
+nsresult GetFileTypeCode(CFURLRef url, OSType* typeCode) {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
-  if (NS_WARN_IF(!url) || NS_WARN_IF(!typeCode))
-    return NS_ERROR_INVALID_ARG;
+  if (NS_WARN_IF(!url) || NS_WARN_IF(!typeCode)) return NS_ERROR_INVALID_ARG;
 
   nsAutoreleasePool localPool;
 
-  NSString *resolvedPath = [[(NSURL*)url path] stringByResolvingSymlinksInPath];
+  NSString* resolvedPath = [[(NSURL*)url path] stringByResolvingSymlinksInPath];
   if (!resolvedPath) {
     return NS_ERROR_FAILURE;
   }
 
-  NSDictionary* dict = [[NSFileManager defaultManager] attributesOfItemAtPath:resolvedPath error:nil];
+  NSDictionary* dict = [[NSFileManager defaultManager] attributesOfItemAtPath:resolvedPath
+                                                                        error:nil];
   if (!dict) {
     return NS_ERROR_FAILURE;
   }
@@ -126,24 +125,25 @@ nsresult GetFileTypeCode(CFURLRef url, OSType *typeCode)
   NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
 }
 
-nsresult SetFileTypeCode(CFURLRef url, OSType typeCode)
-{
+nsresult SetFileTypeCode(CFURLRef url, OSType typeCode) {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
-  if (NS_WARN_IF(!url))
-    return NS_ERROR_INVALID_ARG;
+  if (NS_WARN_IF(!url)) return NS_ERROR_INVALID_ARG;
 
   NSAutoreleasePool* ap = [[NSAutoreleasePool alloc] init];
-  NSDictionary* dict = [NSDictionary dictionaryWithObject:[NSNumber numberWithUnsignedLong:typeCode] forKey:NSFileHFSTypeCode];
-  BOOL success = [[NSFileManager defaultManager] setAttributes:dict ofItemAtPath:[(NSURL*)url path] error:nil];
+  NSDictionary* dict = [NSDictionary dictionaryWithObject:[NSNumber numberWithUnsignedLong:typeCode]
+                                                   forKey:NSFileHFSTypeCode];
+  BOOL success = [[NSFileManager defaultManager] setAttributes:dict
+                                                  ofItemAtPath:[(NSURL*)url path]
+                                                         error:nil];
   [ap release];
   return (success ? NS_OK : NS_ERROR_FAILURE);
 
   NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
 }
 
-void AddOriginMetadataToFile(const CFStringRef filePath,
-                             const CFURLRef sourceURL,
+// Can be called off of the main thread.
+void AddOriginMetadataToFile(const CFStringRef filePath, const CFURLRef sourceURL,
                              const CFURLRef referrerURL) {
   typedef OSStatus (*MDItemSetAttribute_type)(MDItemRef, CFStringRef, CFTypeRef);
   static MDItemSetAttribute_type mdItemSetAttributeFunc = NULL;
@@ -157,8 +157,8 @@ void AddOriginMetadataToFile(const CFStringRef filePath,
       return;
     }
 
-    mdItemSetAttributeFunc = (MDItemSetAttribute_type)
-        ::CFBundleGetFunctionPointerForName(metadata_bundle, CFSTR("MDItemSetAttribute"));
+    mdItemSetAttributeFunc = (MDItemSetAttribute_type)::CFBundleGetFunctionPointerForName(
+        metadata_bundle, CFSTR("MDItemSetAttribute"));
   }
   if (!mdItemSetAttributeFunc) {
     return;
@@ -191,46 +191,58 @@ void AddOriginMetadataToFile(const CFStringRef filePath,
   ::CFRelease(mdItem);
 }
 
-void AddQuarantineMetadataToFile(const CFStringRef filePath,
-                                 const CFURLRef sourceURL,
-                                 const CFURLRef referrerURL,
-                                 const bool isFromWeb) {
-  CFURLRef fileURL = ::CFURLCreateWithFileSystemPath(kCFAllocatorDefault,
-                                                     filePath,
-                                                     kCFURLPOSIXPathStyle,
-                                                     false);
-
-  // The properties key changed in 10.10:
-  CFStringRef quarantinePropKey;
+// Can be called off of the main thread.
+CFStringRef GetQuarantinePropKey() {
   if (nsCocoaFeatures::OnYosemiteOrLater()) {
-    quarantinePropKey = kCFURLQuarantinePropertiesKey;
-  } else {
-    quarantinePropKey = kLSItemQuarantineProperties;
+    return kCFURLQuarantinePropertiesKey;
   }
-  CFDictionaryRef quarantineProps = NULL;
-  Boolean success = ::CFURLCopyResourcePropertyForKey(fileURL,
-                                                      quarantinePropKey,
-                                                      &quarantineProps,
-                                                      NULL);
+  return kLSItemQuarantineProperties;
+}
 
-  // If there aren't any quarantine properties then the user probably
-  // set up an exclusion and we don't need to add metadata.
-  if (!success || !quarantineProps) {
-    ::CFRelease(fileURL);
-    return;
+// Can be called off of the main thread.
+CFMutableDictionaryRef CreateQuarantineDictionary(const CFURLRef aFileURL,
+                                                  const bool aCreateProps) {
+  // The properties key changed in 10.10:
+  CFDictionaryRef quarantineProps = NULL;
+  if (aCreateProps) {
+    quarantineProps = ::CFDictionaryCreate(NULL, NULL, NULL, 0, &kCFTypeDictionaryKeyCallBacks,
+                                           &kCFTypeDictionaryValueCallBacks);
+  } else {
+    Boolean success =
+        ::CFURLCopyResourcePropertyForKey(aFileURL, GetQuarantinePropKey(), &quarantineProps, NULL);
+    // If there aren't any quarantine properties then the user probably
+    // set up an exclusion and we don't need to add metadata.
+    if (!success || !quarantineProps) {
+      return NULL;
+    }
   }
 
   // We don't know what to do if the props aren't a dictionary.
   if (::CFGetTypeID(quarantineProps) != ::CFDictionaryGetTypeID()) {
-    ::CFRelease(fileURL);
     ::CFRelease(quarantineProps);
-    return;
+    return NULL;
   }
 
   // Make a mutable copy of the properties.
   CFMutableDictionaryRef mutQuarantineProps =
-    ::CFDictionaryCreateMutableCopy(kCFAllocatorDefault, 0, (CFDictionaryRef)quarantineProps);
+      ::CFDictionaryCreateMutableCopy(kCFAllocatorDefault, 0, (CFDictionaryRef)quarantineProps);
   ::CFRelease(quarantineProps);
+
+  return mutQuarantineProps;
+}
+
+// Can be called off of the main thread.
+void AddQuarantineMetadataToFile(const CFStringRef filePath, const CFURLRef sourceURL,
+                                 const CFURLRef referrerURL, const bool isFromWeb,
+                                 const bool createProps /* = false */) {
+  CFURLRef fileURL =
+      ::CFURLCreateWithFileSystemPath(kCFAllocatorDefault, filePath, kCFURLPOSIXPathStyle, false);
+
+  CFMutableDictionaryRef mutQuarantineProps = CreateQuarantineDictionary(fileURL, createProps);
+  if (!mutQuarantineProps) {
+    ::CFRelease(fileURL);
+    return;
+  }
 
   // Add metadata that the OS couldn't infer.
 
@@ -248,13 +260,36 @@ void AddQuarantineMetadataToFile(const CFStringRef filePath,
   }
 
   // Set quarantine properties on file.
-  ::CFURLSetResourcePropertyForKey(fileURL,
-                                   quarantinePropKey,
-                                   mutQuarantineProps,
-                                   NULL);
+  ::CFURLSetResourcePropertyForKey(fileURL, GetQuarantinePropKey(), mutQuarantineProps, NULL);
 
   ::CFRelease(fileURL);
   ::CFRelease(mutQuarantineProps);
 }
 
-} // namespace CocoaFileUtils
+// Can be called off of the main thread.
+void CopyQuarantineReferrerUrl(const CFStringRef aFilePath, nsAString& aReferrer) {
+  CFURLRef fileURL =
+      ::CFURLCreateWithFileSystemPath(kCFAllocatorDefault, aFilePath, kCFURLPOSIXPathStyle, false);
+
+  CFMutableDictionaryRef mutQuarantineProps = CreateQuarantineDictionary(fileURL, false);
+  ::CFRelease(fileURL);
+  if (!mutQuarantineProps) {
+    return;
+  }
+
+  CFTypeRef referrerRef = ::CFDictionaryGetValue(mutQuarantineProps, kLSQuarantineOriginURLKey);
+  if (referrerRef && ::CFGetTypeID(referrerRef) == ::CFURLGetTypeID()) {
+    // URL string must be copied prior to releasing the dictionary.
+    mozilla::CopyCocoaStringToXPCOMString(
+        (NSString*)::CFURLGetString(static_cast<CFURLRef>(referrerRef)), aReferrer);
+  }
+
+  ::CFRelease(mutQuarantineProps);
+}
+
+CFURLRef GetTemporaryFolderCFURLRef() {
+  NSString* tempDir = ::NSTemporaryDirectory();
+  return tempDir == nil ? NULL : (CFURLRef)[NSURL fileURLWithPath:tempDir isDirectory:YES];
+}
+
+}  // namespace CocoaFileUtils

@@ -15,20 +15,28 @@
 namespace mozilla {
 namespace a11y {
 
-inline DocAccessible*
-sdnAccessible::GetDocument() const
-{
+inline DocAccessible* sdnAccessible::GetDocument() const {
   return GetExistingDocAccessible(mNode->OwnerDoc());
 }
 
-inline Accessible*
-sdnAccessible::GetAccessible() const
-{
+inline AccessibleWrap* sdnAccessible::GetAccessible() {
+  if (mWrap) {
+    return mWrap;
+  }
+
   DocAccessible* document = GetDocument();
-  return document ? document->GetAccessibleEvenIfNotInMap(mNode) : nullptr;
+  if (!document) {
+    return nullptr;
+  }
+
+  // Once we have an accessible, we should hold a reference to it so that we
+  // may preserve object identity.
+  mWrap = static_cast<AccessibleWrap*>(
+      document->GetAccessibleEvenIfNotInMap(mNode));
+  return mWrap;
 }
 
-} // namespace a11y
-} // namespace mozilla
+}  // namespace a11y
+}  // namespace mozilla
 
-#endif // mozilla_a11y_sdnAccessible_inl_h_
+#endif  // mozilla_a11y_sdnAccessible_inl_h_

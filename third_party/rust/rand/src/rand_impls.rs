@@ -10,8 +10,7 @@
 
 //! The implementations of `Rand` for the built-in types.
 
-use std::char;
-use std::mem;
+use core::{char, mem};
 
 use {Rand,Rng};
 
@@ -54,6 +53,14 @@ impl Rand for i64 {
     }
 }
 
+#[cfg(feature = "i128_support")]
+impl Rand for i128 {
+    #[inline]
+    fn rand<R: Rng>(rng: &mut R) -> i128 {
+        rng.gen::<u128>() as i128
+    }
+}
+
 impl Rand for usize {
     #[inline]
     fn rand<R: Rng>(rng: &mut R) -> usize {
@@ -92,6 +99,15 @@ impl Rand for u64 {
         rng.next_u64()
     }
 }
+
+#[cfg(feature = "i128_support")]
+impl Rand for u128 {
+    #[inline]
+    fn rand<R: Rng>(rng: &mut R) -> u128 {
+        ((rng.next_u64() as u128) << 64) | (rng.next_u64() as u128)
+    }
+}
+
 
 macro_rules! float_impls {
     ($mod_name:ident, $ty:ty, $mantissa_bits:expr, $method_name:ident) => {

@@ -2,25 +2,29 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-this.EXPORTED_SYMBOLS = ["TabEngine", "TabSetRecord"];
+var EXPORTED_SYMBOLS = ["TabEngine", "TabSetRecord"];
 
-var {classes: Cc, interfaces: Ci, utils: Cu} = Components;
+const TABS_TTL = 1814400; // 21 days.
+const TAB_ENTRIES_LIMIT = 5; // How many URLs to include in tab history.
 
-const TABS_TTL = 1814400;          // 21 days.
-const TAB_ENTRIES_LIMIT = 5;      // How many URLs to include in tab history.
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Log.jsm");
+ChromeUtils.import("resource://services-sync/engines.js");
+ChromeUtils.import("resource://services-sync/record.js");
+ChromeUtils.import("resource://services-sync/util.js");
+ChromeUtils.import("resource://services-sync/constants.js");
 
-Cu.import("resource://gre/modules/Preferences.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://services-sync/engines.js");
-Cu.import("resource://services-sync/engines/clients.js");
-Cu.import("resource://services-sync/record.js");
-Cu.import("resource://services-sync/util.js");
-Cu.import("resource://services-sync/constants.js");
-
-XPCOMUtils.defineLazyModuleGetter(this, "PrivateBrowsingUtils",
+ChromeUtils.defineModuleGetter(this, "PrivateBrowsingUtils",
   "resource://gre/modules/PrivateBrowsingUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "SessionStore",
+  "resource:///modules/sessionstore/SessionStore.jsm");
 
-this.TabSetRecord = function TabSetRecord(collection, id) {
+XPCOMUtils.defineLazyModuleGetters(this, {
+  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
+});
+
+function TabSetRecord(collection, id) {
   CryptoWrapper.call(this, collection, id);
 }
 TabSetRecord.prototype = {
@@ -32,30 +36,30 @@ TabSetRecord.prototype = {
 Utils.deferGetSet(TabSetRecord, "cleartext", ["clientName", "tabs"]);
 
 
-this.TabEngine = function TabEngine(service) {
+function TabEngine(service) {
   SyncEngine.call(this, "Tabs", service);
-
-  // Reset the client on every startup so that we fetch recent tabs.
-  this._resetClient();
 }
 TabEngine.prototype = {
   __proto__: SyncEngine.prototype,
   _storeObj: TabStore,
   _trackerObj: TabTracker,
   _recordObj: TabSetRecord,
-  // A flag to indicate if we have synced in this session. This is to help
-  // consumers of remote tabs that may want to differentiate between "I've an
-  // empty tab list as I haven't yet synced" vs "I've an empty tab list
-  // as there really are no tabs"
-  hasSyncedThisSession: false,
 
   syncPriority: 3,
 
-  getChangedIDs() {
+  async initialize() {
+    await SyncEngine.prototype.initialize.call(this);
+
+    // Reset the client on every startup so that we fetch recent tabs.
+    await this._resetClient();
+  },
+
+  async getChangedIDs() {
     // No need for a proper timestamp (no conflict resolution needed).
     let changedIDs = {};
-    if (this._tracker.modified)
+    if (this._tracker.modified) {
       changedIDs[this.service.clientsEngine.localID] = 0;
+    }
     return changedIDs;
   },
 
@@ -68,43 +72,26 @@ TabEngine.prototype = {
     return this._store._remoteClients[id];
   },
 
-  _resetClient() {
-    SyncEngine.prototype._resetClient.call(this);
-    this._store.wipe();
+  async _resetClient() {
+    await SyncEngine.prototype._resetClient.call(this);
+    await this._store.wipe();
     this._tracker.modified = true;
-    this.hasSyncedThisSession = false;
   },
 
-  removeClientData() {
+  async removeClientData() {
     let url = this.engineURL + "/" + this.service.clientsEngine.localID;
-    this.service.resource(url).delete();
+    await this.service.resource(url).delete();
   },
 
-  /**
-   * Return a Set of open URLs.
-   */
-  getOpenURLs() {
-    let urls = new Set();
-    for (let entry of this._store.getAllTabs()) {
-      urls.add(entry.urlHistory[0]);
-    }
-    return urls;
-  },
-
-  _reconcile(item) {
+  async _reconcile(item) {
     // Skip our own record.
     // TabStore.itemExists tests only against our local client ID.
-    if (this._store.itemExists(item.id)) {
+    if ((await this._store.itemExists(item.id))) {
       this._log.trace("Ignoring incoming tab item because of its id: " + item.id);
       return false;
     }
 
     return SyncEngine.prototype._reconcile.call(this, item);
-  },
-
-  _syncFinish() {
-    this.hasSyncedThisSession = true;
-    return SyncEngine.prototype._syncFinish.call(this);
   },
 };
 
@@ -115,7 +102,7 @@ function TabStore(name, engine) {
 TabStore.prototype = {
   __proto__: Store.prototype,
 
-  itemExists(id) {
+  async itemExists(id) {
     return id == this.engine.service.clientsEngine.localID;
   },
 
@@ -129,17 +116,15 @@ TabStore.prototype = {
   },
 
   getTabState(tab) {
-    return JSON.parse(Svc.Session.getTabState(tab));
+    return JSON.parse(SessionStore.getTabState(tab));
   },
 
-  getAllTabs(filter) {
+  async getAllTabs(filter) {
     let filteredUrls = new RegExp(Svc.Prefs.get("engine.tabs.filteredUrls"), "i");
 
     let allTabs = [];
 
-    let winEnum = this.getWindowEnumerator();
-    while (winEnum.hasMoreElements()) {
-      let win = winEnum.getNext();
+    for (let win of this.getWindowEnumerator()) {
       if (this.shouldSkipWindow(win)) {
         continue;
       }
@@ -165,7 +150,7 @@ TabStore.prototype = {
           continue;
         }
 
-        if (current.url.length >= (MAX_UPLOAD_BYTES - 1000)) {
+        if (current.url.length > URI_LENGTH_MAX) {
           this._log.trace("Skipping over-long URL.");
           continue;
         }
@@ -179,19 +164,25 @@ TabStore.prototype = {
 
         let urls = candidates.map((entry) => entry.url)
                              .filter(acceptable)
-                             .reverse();                       // Because Sync puts current at index 0, and history after.
+                             .reverse(); // Because Sync puts current at index 0, and history after.
 
         // Truncate if necessary.
         if (urls.length > TAB_ENTRIES_LIMIT) {
           urls.length = TAB_ENTRIES_LIMIT;
         }
 
+        // tabState has .image, but it's a large data: url. So we ask the favicon service for the url.
+        let icon = "";
+        try {
+          let iconData = await PlacesUtils.promiseFaviconData(urls[0]);
+          icon = iconData.uri.spec;
+        } catch (ex) {
+          this._log.warn(`Failed to fetch favicon for ${urls[0]}`, ex);
+        }
         allTabs.push({
           title: current.title || "",
           urlHistory: urls,
-          icon: tabState.image ||
-                (tabState.attributes && tabState.attributes.image) ||
-                "",
+          icon,
           lastUsed: Math.floor((tabState.lastAccessed || 0) / 1000),
         });
       }
@@ -200,50 +191,39 @@ TabStore.prototype = {
     return allTabs;
   },
 
-  createRecord(id, collection) {
+  async createRecord(id, collection) {
     let record = new TabSetRecord(collection, id);
     record.clientName = this.engine.service.clientsEngine.localName;
 
     // Sort tabs in descending-used order to grab the most recently used
-    let tabs = this.getAllTabs(true).sort(function(a, b) {
+    let tabs = (await this.getAllTabs(true)).sort(function(a, b) {
       return b.lastUsed - a.lastUsed;
     });
+    const maxPayloadSize = this.engine.service.getMemcacheMaxRecordPayloadSize();
+    let records = Utils.tryFitItems(tabs, maxPayloadSize);
 
-    // Figure out how many tabs we can pack into a payload.
-    // See bug 535326 comment 8 for an explanation of the estimation
-    // If the server configuration is absent, we use the old max payload size of 28K
-    let size = JSON.stringify(tabs).length;
-    let origLength = tabs.length;
-    const MAX_TAB_SIZE = (this.engine.service.serverConfiguration ?
-                          this.engine.service.serverConfiguration.max_record_payload_bytes :
-                          28672) / 4 * 3 - 1500;
-    if (size > MAX_TAB_SIZE) {
-      // Estimate a little more than the direct fraction to maximize packing
-      let cutoff = Math.ceil(tabs.length * MAX_TAB_SIZE / size);
-      tabs = tabs.slice(0, cutoff + 1);
-
-      // Keep dropping off the last entry until the data fits
-      while (JSON.stringify(tabs).length > MAX_TAB_SIZE)
-        tabs.pop();
+    if (records.length != tabs.length) {
+      this._log.warn(`Can't fit all tabs in sync payload: have ${
+                     tabs.length}, but can only fit ${records.length}.`);
     }
 
-    this._log.trace("Created tabs " + tabs.length + " of " + origLength);
-    tabs.forEach(function(tab) {
-      this._log.trace("Wrapping tab: " + JSON.stringify(tab));
-    }, this);
+    if (this._log.level <= Log.Level.Trace) {
+      records.forEach(tab => {
+        this._log.trace("Wrapping tab: ", tab);
+      });
+    }
 
-    record.tabs = tabs;
+    record.tabs = records;
     return record;
   },
 
-  getAllIDs() {
+  async getAllIDs() {
     // Don't report any tabs if all windows are in private browsing for
     // first syncs.
     let ids = {};
     let allWindowsArePrivate = false;
-    let wins = Services.wm.getEnumerator("navigator:browser");
-    while (wins.hasMoreElements()) {
-      if (PrivateBrowsingUtils.isWindowPrivate(wins.getNext())) {
+    for (let win of Services.wm.getEnumerator("navigator:browser")) {
+      if (PrivateBrowsingUtils.isWindowPrivate(win)) {
         // Ensure that at least there is a private window.
         allWindowsArePrivate = true;
       } else {
@@ -262,18 +242,18 @@ TabStore.prototype = {
     return ids;
   },
 
-  wipe() {
+  async wipe() {
     this._remoteClients = {};
   },
 
-  create(record) {
+  async create(record) {
     this._log.debug("Adding remote tabs from " + record.clientName);
     this._remoteClients[record.id] = Object.assign({}, record.cleartext, {
-      lastModified: record.modified
+      lastModified: record.modified,
     });
   },
 
-  update(record) {
+  async update(record) {
     this._log.trace("Ignoring tab updates as local ones win");
   },
 };
@@ -281,8 +261,6 @@ TabStore.prototype = {
 
 function TabTracker(name, engine) {
   Tracker.call(this, name, engine);
-  Svc.Obs.add("weave:engine:start-tracking", this);
-  Svc.Obs.add("weave:engine:stop-tracking", this);
 
   // Make sure "this" pointer is always set correctly for event listeners.
   this.onTab = Utils.bind2(this, this.onTab);
@@ -291,7 +269,7 @@ function TabTracker(name, engine) {
 TabTracker.prototype = {
   __proto__: Tracker.prototype,
 
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIObserver]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver]),
 
   clearChangedIDs() {
     this.modified = false;
@@ -326,25 +304,21 @@ TabTracker.prototype = {
     }
   },
 
-  startTracking() {
-    Svc.Obs.add("domwindowopened", this);
-    let wins = Services.wm.getEnumerator("navigator:browser");
-    while (wins.hasMoreElements()) {
-      this._registerListenersForWindow(wins.getNext());
+  onStart() {
+    Svc.Obs.add("domwindowopened", this.asyncObserver);
+    for (let win of Services.wm.getEnumerator("navigator:browser")) {
+      this._registerListenersForWindow(win);
     }
   },
 
-  stopTracking() {
-    Svc.Obs.remove("domwindowopened", this);
-    let wins = Services.wm.getEnumerator("navigator:browser");
-    while (wins.hasMoreElements()) {
-      this._unregisterListenersForWindow(wins.getNext());
+  onStop() {
+    Svc.Obs.remove("domwindowopened", this.asyncObserver);
+    for (let win of Services.wm.getEnumerator("navigator:browser")) {
+      this._unregisterListenersForWindow(win);
     }
   },
 
-  observe(subject, topic, data) {
-    Tracker.prototype.observe.call(this, subject, topic, data);
-
+  async observe(subject, topic, data) {
     switch (topic) {
       case "domwindowopened":
         let onLoad = () => {

@@ -7,26 +7,24 @@
 #ifndef ADTS_DECODER_H_
 #define ADTS_DECODER_H_
 
-#include "MediaDecoder.h"
+#include "mozilla/UniquePtr.h"
+#include "nsTArray.h"
 
 namespace mozilla {
 
 class MediaContainerType;
+class TrackInfo;
 
-class ADTSDecoder : public MediaDecoder
-{
-public:
-  // MediaDecoder interface.
-  explicit ADTSDecoder(MediaDecoderOwner* aOwner) : MediaDecoder(aOwner) {}
-  MediaDecoder* Clone(MediaDecoderOwner* aOwner) override;
-  MediaDecoderStateMachine* CreateStateMachine() override;
-
+class ADTSDecoder {
+ public:
   // Returns true if the ADTS backend is pref'ed on, and we're running on a
   // platform that is likely to have decoders for the format.
   static bool IsEnabled();
   static bool IsSupportedType(const MediaContainerType& aContainerType);
+  static nsTArray<UniquePtr<TrackInfo>> GetTracksInfo(
+      const MediaContainerType& aType);
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // !ADTS_DECODER_H_
+#endif  // !ADTS_DECODER_H_

@@ -8,8 +8,7 @@
 
 var srv;
 
-function run_test()
-{
+function run_test() {
   srv;
 
   srv = createServer();
@@ -20,12 +19,11 @@ function run_test()
 }
 
 
-/************
+/** **********
  * HANDLERS *
  ************/
 
-function pathHandler(request, response)
-{
+function pathHandler(request, response) {
   response.setHeader("Cache-Control", "no-cache", false);
 
   response.setHeader("Proxy-Authenticate", "First line 1", true);
@@ -43,25 +41,24 @@ function pathHandler(request, response)
   response.setHeader("X-Single-Header-Merge", "Single 2", true);
 }
 
-/***************
+/** *************
  * BEGIN TESTS *
  ***************/
 
 XPCOMUtils.defineLazyGetter(this, "tests", function() {
   return [
     new Test("http://localhost:" + srv.identity.primaryPort + "/path-handler",
-             null, check)
+             null, check),
   ];
 });
 
-function check(ch, cx)
-{
+function check(ch, cx) {
   var headerValue;
 
   headerValue = ch.getResponseHeader("Proxy-Authenticate");
-  do_check_eq(headerValue, "First line 1\nSecond line 1\nThird line 1");
+  Assert.equal(headerValue, "First line 1\nSecond line 1\nThird line 1");
   headerValue = ch.getResponseHeader("WWW-Authenticate");
-  do_check_eq(headerValue, "First line 2\nSecond line 2\nThird line 2");
+  Assert.equal(headerValue, "First line 2\nSecond line 2\nThird line 2");
   headerValue = ch.getResponseHeader("X-Single-Header-Merge");
-  do_check_eq(headerValue, "Single 1,Single 2");
+  Assert.equal(headerValue, "Single 1,Single 2");
 }

@@ -3,37 +3,57 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+// This header has two implementations, the real one in nsExceptionHandler.cpp
+// and a dummy in nsDummyExceptionHandler.cpp. The latter is used in builds
+// configured with --disable-crashreporter. If you add or remove a function
+// from this header you must update both implementations otherwise you'll break
+// builds that disable the crash reporter.
+
 #ifndef nsExceptionHandler_h__
 #define nsExceptionHandler_h__
 
 #include "mozilla/Assertions.h"
+#include "mozilla/EnumeratedArray.h"
+
+#include "CrashAnnotations.h"
 
 #include <stddef.h>
 #include <stdint.h>
 #include "nsError.h"
-#include "nsStringGlue.h"
+#include "nsString.h"
+#include "prio.h"
 
 #if defined(XP_WIN32)
-#ifdef WIN32_LEAN_AND_MEAN
-#undef WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
+#  ifdef WIN32_LEAN_AND_MEAN
+#    undef WIN32_LEAN_AND_MEAN
+#  endif
+#  include <windows.h>
 #endif
 
 #if defined(XP_MACOSX)
-#include <mach/mach.h>
+#  include <mach/mach.h>
 #endif
 
 #if defined(XP_LINUX)
-#include <signal.h>
+#  include <signal.h>
 #endif
 
 class nsIFile;
-template<class KeyClass, class DataType> class nsDataHashtable;
-class nsCStringHashKey;
 
 namespace CrashReporter {
-nsresult SetExceptionHandler(nsIFile* aXREDirectory, bool force=false);
+
+/**
+ * Returns true if the crash reporter is using the dummy implementation.
+ */
+static inline bool IsDummy() {
+#ifdef MOZ_CRASHREPORTER
+  return false;
+#else
+  return true;
+#endif
+}
+
+nsresult SetExceptionHandler(nsIFile* aXREDirectory, bool force = false);
 nsresult UnsetExceptionHandler();
 
 /**
@@ -59,42 +79,46 @@ void SetTelemetrySessionId(const nsACString& id);
 /**
  * Get the path where crash event files should be written.
  */
-bool     GetCrashEventsDir(nsAString& aPath);
+bool GetCrashEventsDir(nsAString& aPath);
 
-bool     GetEnabled();
-bool     GetServerURL(nsACString& aServerURL);
+bool GetEnabled();
+bool GetServerURL(nsACString& aServerURL);
 nsresult SetServerURL(const nsACString& aServerURL);
-bool     GetMinidumpPath(nsAString& aPath);
+bool GetMinidumpPath(nsAString& aPath);
 nsresult SetMinidumpPath(const nsAString& aPath);
-
 
 // AnnotateCrashReport, RemoveCrashReportAnnotation and
 // AppendAppNotesToCrashReport may be called from any thread in a chrome
 // process, but may only be called from the main thread in a content process.
-nsresult AnnotateCrashReport(const nsACString& key, const nsACString& data);
-nsresult RemoveCrashReportAnnotation(const nsACString& key);
+nsresult AnnotateCrashReport(Annotation key, bool data);
+nsresult AnnotateCrashReport(Annotation key, int data);
+nsresult AnnotateCrashReport(Annotation key, unsigned int data);
+nsresult AnnotateCrashReport(Annotation key, const nsACString& data);
+nsresult RemoveCrashReportAnnotation(Annotation key);
 nsresult AppendAppNotesToCrashReport(const nsACString& data);
+
+// Called after the crash reporter client has been created in a content
+// process, allowing annotations to be processed.
+void NotifyCrashReporterClientCreated();
 
 void AnnotateOOMAllocationSize(size_t size);
 void AnnotateTexturesSize(size_t size);
-void AnnotatePendingIPC(size_t aNumOfPendingIPC,
-                        uint32_t aTopPendingIPCCount,
-                        const char* aTopPendingIPCName,
-                        uint32_t aTopPendingIPCType);
 nsresult SetGarbageCollecting(bool collecting);
 void SetEventloopNestingLevel(uint32_t level);
+void SetMinidumpAnalysisAllThreads();
 
 nsresult SetRestartArgs(int argc, char** argv);
-nsresult SetupExtraData(nsIFile* aAppDataDirectory,
-                        const nsACString& aBuildID);
-bool GetLastRunCrashID(nsAString& id);
-
+nsresult SetupExtraData(nsIFile* aAppDataDirectory, const nsACString& aBuildID);
 // Registers an additional memory region to be included in the minidump
 nsresult RegisterAppMemory(void* ptr, size_t length);
 nsresult UnregisterAppMemory(void* ptr);
 
+// Include heap regions of the crash context.
+void SetIncludeContextHeap(bool aValue);
+
 // Functions for working with minidumps and .extras
-typedef nsDataHashtable<nsCStringHashKey, nsCString> AnnotationTable;
+typedef mozilla::EnumeratedArray<Annotation, Annotation::Count, nsCString>
+    AnnotationTable;
 
 void DeleteMinidumpFilesForID(const nsAString& id);
 bool GetMinidumpForID(const nsAString& id, nsIFile** minidump);
@@ -103,7 +127,6 @@ bool GetExtraFileForID(const nsAString& id, nsIFile** extraFile);
 bool GetExtraFileForMinidump(nsIFile* minidump, nsIFile** extraFile);
 bool AppendExtraData(const nsAString& id, const AnnotationTable& data);
 bool AppendExtraData(nsIFile* extraFile, const AnnotationTable& data);
-void RunMinidumpAnalyzer(const nsAString& id);
 
 /*
  * Renames the stand alone dump file aDumpFile to:
@@ -115,17 +138,18 @@ void RunMinidumpAnalyzer(const nsAString& id);
  * @param aOwnerDumpFile - the new owner of aDumpFile.
  * @param aDumpFileProcessType - process name associated with aDumpFile.
  */
-void RenameAdditionalHangMinidump(nsIFile* aDumpFile, const nsIFile* aOwnerDumpFile,
+void RenameAdditionalHangMinidump(nsIFile* aDumpFile,
+                                  const nsIFile* aOwnerDumpFile,
                                   const nsACString& aDumpFileProcessType);
 
 #ifdef XP_WIN32
-  nsresult WriteMinidumpForException(EXCEPTION_POINTERS* aExceptionInfo);
+nsresult WriteMinidumpForException(EXCEPTION_POINTERS* aExceptionInfo);
 #endif
 #ifdef XP_LINUX
-  bool WriteMinidumpForSigInfo(int signo, siginfo_t* info, void* uc);
+bool WriteMinidumpForSigInfo(int signo, siginfo_t* info, void* uc);
 #endif
 #ifdef XP_MACOSX
-  nsresult AppendObjCExceptionInfoToAppNotes(void *inException);
+nsresult AppendObjCExceptionInfoToAppNotes(void* inException);
 #endif
 nsresult GetSubmitReports(bool* aSubmitReport);
 nsresult SetSubmitReports(bool aSubmitReport);
@@ -153,20 +177,32 @@ bool TakeMinidump(nsIFile** aResult, bool aMoveToPending = false);
 // path in |dump|.  The caller owns the last reference to |dump| if it
 // is non-nullptr. The sequence parameter will be filled with an ordinal
 // indicating which remote process crashed first.
-bool TakeMinidumpForChild(uint32_t childPid,
-                          nsIFile** dump,
+bool TakeMinidumpForChild(uint32_t childPid, nsIFile** dump,
                           uint32_t* aSequence = nullptr);
 
 #if defined(XP_WIN)
 typedef HANDLE ProcessHandle;
+typedef DWORD ProcessId;
 typedef DWORD ThreadId;
+typedef HANDLE FileHandle;
 #elif defined(XP_MACOSX)
 typedef task_t ProcessHandle;
+typedef pid_t ProcessId;
 typedef mach_port_t ThreadId;
+typedef int FileHandle;
 #else
 typedef int ProcessHandle;
+typedef pid_t ProcessId;
 typedef int ThreadId;
+typedef int FileHandle;
 #endif
+
+#if !defined(XP_WIN)
+int GetAnnotationTimeCrashFd();
+#endif
+void RegisterChildCrashAnnotationFileDescriptor(ProcessId aProcess,
+                                                PRFileDesc* aFd);
+void DeregisterChildCrashAnnotationFileDescriptor(ProcessId aProcess);
 
 // Return the current thread's ID.
 //
@@ -211,18 +247,17 @@ bool CreateAdditionalChildMinidump(ProcessHandle childPid,
                                    nsIFile* parentMinidump,
                                    const nsACString& name);
 
-#  if defined(XP_WIN32) || defined(XP_MACOSX)
+#if defined(XP_WIN32) || defined(XP_MACOSX)
 // Parent-side API for children
 const char* GetChildNotificationPipe();
 
-#ifdef MOZ_CRASHREPORTER_INJECTOR
+#  ifdef MOZ_CRASHREPORTER_INJECTOR
 // Inject a crash report client into an arbitrary process, and inform the
 // callback object when it crashes. Parent process only.
 
-class InjectorCrashCallback
-{
-public:
-  InjectorCrashCallback() { }
+class InjectorCrashCallback {
+ public:
+  InjectorCrashCallback() {}
 
   /**
    * Inform the callback of a crash. The client code should call
@@ -237,13 +272,17 @@ public:
 // This method implies OOPInit
 void InjectCrashReporterIntoProcess(DWORD processID, InjectorCrashCallback* cb);
 void UnregisterInjectorCallback(DWORD processID);
-#endif
+#  endif
 
 // Child-side API
+#  if defined(XP_WIN32)
+bool SetRemoteExceptionHandler(const nsACString& crashPipe,
+                               uintptr_t aCrashTimeAnnotationFile);
+#  else
 bool SetRemoteExceptionHandler(const nsACString& crashPipe);
-void InitChildProcessTmpDir();
+#  endif
 
-#  elif defined(XP_LINUX)
+#else
 // Parent-side API for children
 
 // Set the outparams for crash reporter server's fd (|childCrashFd|)
@@ -267,18 +306,21 @@ bool UnsetRemoteExceptionHandler();
 // Android creates child process as services so we must explicitly set
 // the handle for the pipe since it can't get remapped to a default value.
 void SetNotificationPipeForChild(int childCrashFd);
+void SetCrashAnnotationPipeForChild(int childCrashAnnotationFd);
 
 // Android builds use a custom library loader, so /proc/<pid>/maps
 // will just show anonymous mappings for all the non-system
 // shared libraries. This API is to work around that by providing
 // info about the shared libraries that are mapped into these anonymous
 // mappings.
-void AddLibraryMapping(const char* library_name,
-                       uintptr_t   start_address,
-                       size_t      mapping_length,
-                       size_t      file_offset);
+void AddLibraryMapping(const char* library_name, uintptr_t start_address,
+                       size_t mapping_length, size_t file_offset);
 
 #endif
-} // namespace CrashReporter
+
+// Annotates the crash report with the name of the calling thread.
+void SetCurrentThreadName(const char* aName);
+
+}  // namespace CrashReporter
 
 #endif /* nsExceptionHandler_h__ */

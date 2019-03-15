@@ -29,7 +29,6 @@
 // Boilerplate used to be able to import this module both from the main
 // thread and from worker threads.
 if (typeof Components != "undefined") {
-  Components.utils.importGlobalProperties(["URL"]);
   // Global definition of |exports|, to keep everybody happy.
   // In non-main thread, |exports| is provided by the module
   // loader.
@@ -94,19 +93,18 @@ var dirname = function(path, options) {
     if (!noDrive) {
       // Return the drive path if possible, falling back to "."
       return this.winGetDrive(path) || ".";
-    } else {
-      // Or just "."
-      return ".";
     }
+    // Or just "."
+    return ".";
   }
 
   if (index == 1 && path.charAt(0) == "\\") {
     // The path is reduced to a UNC drive
     if (noDrive) {
       return ".";
-    } else {
-      return path;
     }
+    return path;
+
   }
 
   // Ignore any occurrence of "\\: immediately before that one
@@ -247,7 +245,7 @@ var normalize = function(path) {
   // popping whenever there is a ".."
   path.split("\\").forEach(function loop(v) {
     switch (v) {
-    case "":  case ".": // Ignore
+    case "": case ".": // Ignore
       break;
     case "..":
       if (stack.length == 0) {
@@ -256,13 +254,11 @@ var normalize = function(path) {
         } else {
          stack.push("..");
         }
-      } else {
-        if (stack[stack.length - 1] == "..") {
+      } else if (stack[stack.length - 1] == "..") {
           stack.push("..");
         } else {
           stack.pop();
         }
-      }
       break;
     default:
       stack.push(v);
@@ -297,7 +293,7 @@ var split = function(path) {
   return {
     absolute: this.winIsAbsolute(path),
     winDrive: this.winGetDrive(path),
-    components: path.split("\\")
+    components: path.split("\\"),
   };
 };
 exports.split = split;
@@ -306,12 +302,12 @@ exports.split = split;
  * Return the file:// URI file path of the given local file path.
  */
 // The case of %3b is designed to match Services.io, but fundamentally doesn't matter.
-var toFileURIExtraEncodings = {';': '%3b', '?': '%3F', '#': '%23'};
+var toFileURIExtraEncodings = {";": "%3b", "?": "%3F", "#": "%23"};
 var toFileURI = function toFileURI(path) {
   // URI-escape forward slashes and convert backward slashes to forward
-  path = this.normalize(path).replace(/[\\\/]/g, m => (m=='\\')? '/' : '%2F');
+  path = this.normalize(path).replace(/[\\\/]/g, m => (m == "\\") ? "/" : "%2F");
   // Per https://url.spec.whatwg.org we should not encode [] in the path
-  let dontNeedEscaping = {'%5B': '[', '%5D': ']'};
+  let dontNeedEscaping = {"%5B": "[", "%5D": "]"};
   let uri = encodeURI(path).replace(/%(5B|5D)/gi,
     match => dontNeedEscaping[match]);
 
@@ -321,8 +317,8 @@ var toFileURI = function toFileURI(path) {
   uri = prefix + uri.replace(/[;?#]/g, match => toFileURIExtraEncodings[match]);
 
   // turn e.g., file:///C: into file:///C:/
-  if (uri.charAt(uri.length - 1) === ':') {
-    uri += "/"
+  if (uri.charAt(uri.length - 1) === ":") {
+    uri += "/";
   }
 
   return uri;
@@ -334,7 +330,7 @@ exports.toFileURI = toFileURI;
  */
 var fromFileURI = function fromFileURI(uri) {
   let url = new URL(uri);
-  if (url.protocol != 'file:') {
+  if (url.protocol != "file:") {
     throw new Error("fromFileURI expects a file URI");
   }
 
@@ -361,10 +357,10 @@ exports.fromFileURI = fromFileURI;
 * from a string.
 */
 var trimBackslashes = function trimBackslashes(string) {
-  return string.replace(/^\\+|\\+$/g,'');
+  return string.replace(/^\\+|\\+$/g, "");
 };
 
-//////////// Boilerplate
+// ////////// Boilerplate
 if (typeof Components != "undefined") {
   this.EXPORTED_SYMBOLS = EXPORTED_SYMBOLS;
   for (let symbol of EXPORTED_SYMBOLS) {

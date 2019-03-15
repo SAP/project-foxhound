@@ -7,13 +7,11 @@
 #include "nsIArray.idl"
 #include "nsISupports.idl"
 #include "nsIDragSession.idl"
-#include "nsIScriptableRegion.idl"
-#include "nsIContentPolicyBase.idl"
+#include "nsIContentPolicy.idl"
 
-interface nsIDOMNode;
-interface nsIDOMDragEvent;
-interface nsIDOMDataTransfer;
-interface nsISelection;
+webidl DragEvent;
+webidl Node;
+webidl Selection;
 
 %{C++
 #include "mozilla/EventForwards.h"
@@ -21,11 +19,13 @@ interface nsISelection;
 namespace mozilla {
 namespace dom {
 class ContentParent;
+class DataTransfer;
 } // namespace dom
 } // namespace mozilla
 %}
 
 [ptr] native ContentParentPtr(mozilla::dom::ContentParent);
+[ptr] native DataTransferPtr(mozilla::dom::DataTransfer);
 native EventMessage(mozilla::EventMessage);
 
 [scriptable, uuid(ebd6b3a2-af16-43af-a698-3091a087dd62), builtinclass]
@@ -42,17 +42,17 @@ interface nsIDragService : nsISupports
     *
     * Note: This method is deprecated for non-native code.
     *
+    * @param  aPrincipal - the triggering principal of the drag, or null if
+    *                      it's from browser chrome or OS
     * @param  aTransferables - an array of transferables to be dragged
-    * @param  aRegion - a region containing rectangles for cursor feedback, 
-    *            in window coordinates.
     * @param  aActionType - specified which of copy/move/link are allowed
     * @param  aContentPolicyType - the contentPolicyType that will be
     *           passed to the loadInfo when creating a new channel
     *           (defaults to TYPE_OTHER)
     */
-  void invokeDragSession (in nsIDOMNode aDOMNode,
-                          in nsIArray aTransferables, 
-                          in nsIScriptableRegion aRegion,
+  void invokeDragSession (in Node aDOMNode,
+                          in nsIPrincipal aPrincipal,
+                          in nsIArray aTransferables,
                           in unsigned long aActionType,
                           [optional] in nsContentPolicyType aContentPolicyType);
 
@@ -83,15 +83,16 @@ interface nsIDragService : nsISupports
    * The aDragEvent must be supplied as the current screen coordinates of the
    * event are needed to calculate the image location.
    */
-  void invokeDragSessionWithImage(in nsIDOMNode aDOMNode,
+  [noscript]
+  void invokeDragSessionWithImage(in Node aDOMNode,
+                                  in nsIPrincipal aPrincipal,
                                   in nsIArray aTransferableArray,
-                                  in nsIScriptableRegion aRegion,
                                   in unsigned long aActionType,
-                                  in nsIDOMNode aImage,
+                                  in Node aImage,
                                   in long aImageX,
                                   in long aImageY,
-                                  in nsIDOMDragEvent aDragEvent,
-                                  in nsIDOMDataTransfer aDataTransfer);
+                                  in DragEvent aDragEvent,
+                                  in DataTransferPtr aDataTransfer);
 
   /**
    * Start a modal drag session using the selection as the drag image.
@@ -100,16 +101,17 @@ interface nsIDragService : nsISupports
    *
    * Note: This method is deprecated for non-native code.
    */
-  void invokeDragSessionWithSelection(in nsISelection aSelection,
+  void invokeDragSessionWithSelection(in Selection aSelection,
+                                      in nsIPrincipal aPrincipal,
                                       in nsIArray aTransferableArray,
                                       in unsigned long aActionType,
-                                      in nsIDOMDragEvent aDragEvent,
-                                      in nsIDOMDataTransfer aDataTransfer);
+                                      in DragEvent aDragEvent,
+                                      in DataTransferPtr aDataTransfer);
 
   /**
-    * Returns the current Drag Session  
+    * Returns the current Drag Session
     */
-  nsIDragSession getCurrentSession ( ) ;
+  nsIDragSession getCurrentSession();
 
   /**
     * Tells the Drag Service to start a drag session. This is called when
@@ -124,12 +126,14 @@ interface nsIDragService : nsISupports
     * If aDoneDrag is true, the drag has finished, otherwise the drag has
     * just left the window.
     */
-  void endDragSession ( in boolean aDoneDrag ) ;
+  void endDragSession(in boolean aDoneDrag,
+                      [optional] in unsigned long aKeyModifiers);
 
   /**
    * Fire a drag event at the source of the drag
    */
-  [noscript] void fireDragEventAtSource(in EventMessage aEventMessage);
+  [noscript] void fireDragEventAtSource(in EventMessage aEventMessage,
+                                        in unsigned long aKeyModifiers);
 
   /**
    * Increase/decrease dragging suppress level by one.

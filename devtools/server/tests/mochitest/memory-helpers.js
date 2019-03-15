@@ -1,41 +1,35 @@
-var Cu = Components.utils;
-var Cc = Components.classes;
-var Ci = Components.interfaces;
+/* exported Task, startServerAndGetSelectedTabMemory, destroyServerAndFinish,
+   waitForTime, waitUntil */
+"use strict";
 
-var { require } = Cu.import("resource://devtools/shared/Loader.jsm", {});
-const { Task } = require("devtools/shared/task");
-var Services = require("Services");
-var { DebuggerClient } = require("devtools/shared/client/main");
-var { DebuggerServer } = require("devtools/server/main");
-
-var { MemoryFront } = require("devtools/shared/fronts/memory");
+const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
+const Services = require("Services");
+const { TargetFactory } = require("devtools/client/framework/target");
 
 // Always log packets when running tests.
 Services.prefs.setBoolPref("devtools.debugger.log", true);
-SimpleTest.registerCleanupFunction(function () {
+var gReduceTimePrecision = Services.prefs.getBoolPref("privacy.reduceTimerPrecision");
+Services.prefs.setBoolPref("privacy.reduceTimerPrecision", false);
+SimpleTest.registerCleanupFunction(function() {
   Services.prefs.clearUserPref("devtools.debugger.log");
+  Services.prefs.setBoolPref("privacy.reduceTimerPrecision", gReduceTimePrecision);
 });
 
-function startServerAndGetSelectedTabMemory() {
-  DebuggerServer.init();
-  DebuggerServer.addBrowserActors();
-  var client = new DebuggerClient(DebuggerServer.connectPipe());
-
-  return client.connect()
-    .then(() => client.listTabs())
-    .then(response => {
-      var form = response.tabs[response.selected];
-      var memory = MemoryFront(client, form, response);
-
-      return { memory, client };
-    });
+async function getTargetForSelectedTab() {
+  const browserWindow = Services.wm.getMostRecentWindow("navigator:browser");
+  const target = await TargetFactory.forTab(browserWindow.gBrowser.selectedTab);
+  return target;
 }
 
-function destroyServerAndFinish(client) {
-  client.close().then(() => {
-    DebuggerServer.destroy();
-    SimpleTest.finish();
-  });
+async function startServerAndGetSelectedTabMemory() {
+  const target = await getTargetForSelectedTab();
+  const memory = await target.getFront("memory");
+  return {memory, target};
+}
+
+async function destroyServerAndFinish(target) {
+  await target.destroy();
+  SimpleTest.finish();
 }
 
 function waitForTime(ms) {
@@ -48,5 +42,6 @@ function waitUntil(predicate) {
   if (predicate()) {
     return Promise.resolve(true);
   }
-  return new Promise(resolve => setTimeout(() => waitUntil(predicate).then(() => resolve(true)), 10));
+  return new Promise(resolve => setTimeout(() => waitUntil(predicate)
+         .then(() => resolve(true)), 10));
 }

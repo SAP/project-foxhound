@@ -5,7 +5,7 @@
 description: >
     `Promise.race` invoked on a constructor value
 es6id: 25.4.4.3
-info: >
+info: |
     1. Let C be the this value.
     [...]
     6. Let promiseCapability be NewPromiseCapability(C).
@@ -28,7 +28,7 @@ class SubPromise extends Promise {
   }
 }
 
-var instance = Promise.race.call(SubPromise);
+var instance = Promise.race.call(SubPromise, []);
 
 assert.sameValue(instance.constructor, SubPromise);
 assert.sameValue(instance instanceof SubPromise, true);

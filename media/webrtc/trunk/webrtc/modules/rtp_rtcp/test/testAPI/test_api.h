@@ -7,19 +7,18 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
-#ifndef WEBRTC_MODULES_RTP_RTCP_TEST_TESTAPI_TEST_API_H_
-#define WEBRTC_MODULES_RTP_RTCP_TEST_TESTAPI_TEST_API_H_
+#ifndef MODULES_RTP_RTCP_TEST_TESTAPI_TEST_API_H_
+#define MODULES_RTP_RTCP_TEST_TESTAPI_TEST_API_H_
 
-#include "testing/gtest/include/gtest/gtest.h"
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/common_types.h"
-#include "webrtc/modules/rtp_rtcp/include/receive_statistics.h"
-#include "webrtc/modules/rtp_rtcp/include/rtp_header_parser.h"
-#include "webrtc/modules/rtp_rtcp/include/rtp_payload_registry.h"
-#include "webrtc/modules/rtp_rtcp/include/rtp_receiver.h"
-#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
-#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
-#include "webrtc/transport.h"
+#include "api/call/transport.h"
+#include "common_types.h"  // NOLINT(build/include)
+#include "modules/rtp_rtcp/include/receive_statistics.h"
+#include "modules/rtp_rtcp/include/rtp_header_parser.h"
+#include "modules/rtp_rtcp/include/rtp_payload_registry.h"
+#include "modules/rtp_rtcp/include/rtp_receiver.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+#include "test/gtest.h"
 
 namespace webrtc {
 
@@ -52,11 +51,11 @@ class LoopBackTransport : public Transport {
   RtpRtcp* rtp_rtcp_module_;
 };
 
-class TestRtpReceiver : public NullRtpData {
+class TestRtpReceiver : public RtpData {
  public:
   int32_t OnReceivedPayloadData(
       const uint8_t* payload_data,
-      const size_t payload_size,
+      size_t payload_size,
       const webrtc::WebRtcRTPHeader* rtp_header) override;
 
   const uint8_t* payload_data() const { return payload_data_; }
@@ -70,4 +69,4 @@ class TestRtpReceiver : public NullRtpData {
 };
 
 }  // namespace webrtc
-#endif  // WEBRTC_MODULES_RTP_RTCP_TEST_TESTAPI_TEST_API_H_
+#endif  // MODULES_RTP_RTCP_TEST_TESTAPI_TEST_API_H_

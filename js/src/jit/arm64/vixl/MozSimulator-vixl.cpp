@@ -29,6 +29,8 @@
 #include "jit/arm64/vixl/Debugger-vixl.h"
 #include "jit/arm64/vixl/Simulator-vixl.h"
 #include "jit/IonTypes.h"
+#include "js/UniquePtr.h"
+#include "js/Utility.h"
 #include "threading/LockGuard.h"
 #include "vm/Runtime.h"
 
@@ -36,9 +38,9 @@ js::jit::SimulatorProcess* js::jit::SimulatorProcess::singleton_ = nullptr;
 
 namespace vixl {
 
-
 using mozilla::DebugOnly;
 using js::jit::ABIFunctionType;
+using js::jit::JitActivation;
 using js::jit::SimulatorProcess;
 
 Simulator::Simulator(Decoder* decoder, FILE* stream)
@@ -93,7 +95,6 @@ void Simulator::ResetState() {
   }
   // Returning to address 0 exits the Simulator.
   set_lr(kEndOfSimAddress);
-  set_resume_pc(nullptr);
 }
 
 
@@ -120,7 +121,7 @@ void Simulator::init(Decoder* decoder, FILE* stream) {
   ResetState();
 
   // Allocate and set up the simulator stack.
-  stack_ = (byte*)js_malloc(stack_size_);
+  stack_ = js_pod_malloc<byte>(stack_size_);
   if (!stack_) {
     oom_ = true;
     return;
@@ -136,10 +137,12 @@ void Simulator::init(Decoder* decoder, FILE* stream) {
   set_sp(tos);
 
   // Set the sample period to 10, as the VIXL examples and tests are short.
-  instrumentation_ = js_new<Instrument>("vixl_stats.csv", 10);
-  if (!instrumentation_) {
-    oom_ = true;
-    return;
+  if (getenv("VIXL_STATS")) {
+    instrumentation_ = js_new<Instrument>("vixl_stats.csv", 10);
+    if (!instrumentation_) {
+      oom_ = true;
+      return;
+    }
   }
 
   // Print a warning about exclusive-access instructions, but only the first
@@ -156,7 +159,7 @@ Simulator* Simulator::Current() {
 }
 
 
-Simulator* Simulator::Create(JSContext* cx) {
+Simulator* Simulator::Create() {
   Decoder *decoder = js_new<vixl::Decoder>();
   if (!decoder)
     return nullptr;
@@ -164,19 +167,17 @@ Simulator* Simulator::Create(JSContext* cx) {
   // FIXME: This just leaks the Decoder object for now, which is probably OK.
   // FIXME: We should free it at some point.
   // FIXME: Note that it can't be stored in the SimulatorRuntime due to lifetime conflicts.
-  Simulator *sim;
+  js::UniquePtr<Simulator> sim;
   if (getenv("USE_DEBUGGER") != nullptr)
-    sim = js_new<Debugger>(decoder, stdout);
+    sim.reset(js_new<Debugger>(decoder, stdout));
   else
-    sim = js_new<Simulator>(decoder, stdout);
+    sim.reset(js_new<Simulator>(decoder, stdout));
 
   // Check if Simulator:init ran out of memory.
-  if (sim && sim->oom()) {
-    js_delete(sim);
+  if (sim && sim->oom())
     return nullptr;
-  }
 
-  return sim;
+  return sim.release();
 }
 
 
@@ -189,18 +190,7 @@ void Simulator::ExecuteInstruction() {
   // The program counter should always be aligned.
   VIXL_ASSERT(IsWordAligned(pc_));
   decoder_->Decode(pc_);
-  const Instruction* rpc = resume_pc_;
   increment_pc();
-
-  if (MOZ_UNLIKELY(rpc)) {
-    JSContext::innermostWasmActivation()->setResumePC((void*)pc());
-    set_pc(rpc);
-    // Just calling set_pc turns the pc_modified_ flag on, which means it doesn't
-    // auto-step after executing the next instruction.  Force that to off so it
-    // will auto-step after executing the first instruction of the handler.
-    pc_modified_ = false;
-    resume_pc_ = nullptr;
-  }
 }
 
 
@@ -216,21 +206,27 @@ uintptr_t* Simulator::addressOfStackLimit() {
 
 bool Simulator::overRecursed(uintptr_t newsp) const {
   if (newsp)
-    newsp = xreg(31, Reg31IsStackPointer);
+    newsp = get_sp();
   return newsp <= stackLimit();
 }
 
 
 bool Simulator::overRecursedWithExtra(uint32_t extra) const {
-  uintptr_t newsp = xreg(31, Reg31IsStackPointer) - extra;
+  uintptr_t newsp = get_sp() - extra;
   return newsp <= stackLimit();
 }
 
 
-void Simulator::set_resume_pc(void* new_resume_pc) {
-  resume_pc_ = AddressUntag(reinterpret_cast<Instruction*>(new_resume_pc));
+JS::ProfilingFrameIterator::RegisterState
+Simulator::registerState()
+{
+  JS::ProfilingFrameIterator::RegisterState state;
+  state.pc = (uint8_t*) get_pc();
+  state.fp = (uint8_t*) get_fp();
+  state.lr = (uint8_t*) get_lr();
+  state.sp = (uint8_t*) get_sp();
+  return state;
 }
-
 
 int64_t Simulator::call(uint8_t* entry, int argument_count, ...) {
   va_list parameters;
@@ -274,12 +270,12 @@ int64_t Simulator::call(uint8_t* entry, int argument_count, ...) {
   va_end(parameters);
 
   // Call must transition back to native code on exit.
-  VIXL_ASSERT(xreg(30) == int64_t(kEndOfSimAddress));
+  VIXL_ASSERT(get_lr() == int64_t(kEndOfSimAddress));
 
   // Execute the simulation.
-  DebugOnly<int64_t> entryStack = xreg(31, Reg31IsStackPointer);
+  DebugOnly<int64_t> entryStack = get_sp();
   RunFrom((Instruction*)entry);
-  DebugOnly<int64_t> exitStack = xreg(31, Reg31IsStackPointer);
+  DebugOnly<int64_t> exitStack = get_sp();
   VIXL_ASSERT(entryStack == exitStack);
 
   int64_t result = xreg(0);
@@ -345,8 +341,9 @@ class Redirection
       }
     }
 
+    // Note: we can't use js_new here because the constructor is private.
     js::AutoEnterOOMUnsafeRegion oomUnsafe;
-    Redirection* redir = (Redirection*)js_malloc(sizeof(Redirection));
+    Redirection* redir = js_pod_malloc<Redirection>(1);
     if (!redir)
         oomUnsafe.crash("Simulator redirection");
     new(redir) Redirection(nativeFunction, type);
@@ -374,7 +371,6 @@ void* Simulator::RedirectNativeFunction(void* nativeFunction, ABIFunctionType ty
   return redirection->addressOfSvcInstruction();
 }
 
-
 void Simulator::VisitException(const Instruction* instr) {
   switch (instr->Mask(ExceptionMask)) {
     case BRK: {
@@ -385,9 +381,15 @@ void Simulator::VisitException(const Instruction* instr) {
     }
     case HLT:
       switch (instr->ImmException()) {
-        case kUnreachableOpcode:
+        case kUnreachableOpcode: {
+          uint8_t* newPC;
+          if (js::wasm::HandleIllegalInstruction(registerState(), &newPC)) {
+            set_pc((Instruction*)newPC);
+            return;
+          }
           DoUnreachable(instr);
           return;
+        }
         case kTraceOpcode:
           DoTrace(instr);
           return;
@@ -408,11 +410,14 @@ void Simulator::VisitException(const Instruction* instr) {
         case kCallRtRedirected:
           VisitCallRedirection(instr);
           return;
-        case kMarkStackPointer:
-          spStack_.append(xreg(31, Reg31IsStackPointer));
+        case kMarkStackPointer: {
+          js::AutoEnterOOMUnsafeRegion oomUnsafe;
+          if (!spStack_.append(get_sp()))
+            oomUnsafe.crash("tracking stack for ARM64 simulator");
           return;
+        }
         case kCheckStackPointer: {
-          int64_t current = xreg(31, Reg31IsStackPointer);
+          int64_t current = get_sp();
           int64_t expected = spStack_.popCopy();
           VIXL_ASSERT(current == expected);
           return;
@@ -460,18 +465,23 @@ typedef int64_t (*Prototype_General7)(int64_t arg0, int64_t arg1, int64_t arg2, 
                                       int64_t arg4, int64_t arg5, int64_t arg6);
 typedef int64_t (*Prototype_General8)(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3,
                                       int64_t arg4, int64_t arg5, int64_t arg6, int64_t arg7);
+typedef int64_t (*Prototype_GeneralGeneralGeneralInt64)(int64_t arg0, int64_t arg1, int64_t arg2,
+                                                        int64_t arg3);
+typedef int64_t (*Prototype_GeneralGeneralInt64Int64)(int64_t arg0, int64_t arg1, int64_t arg2,
+                                                      int64_t arg3);
 
 typedef int64_t (*Prototype_Int_Double)(double arg0);
-typedef int64_t (*Prototype_Int_IntDouble)(int32_t arg0, double arg1);
+typedef int64_t (*Prototype_Int_IntDouble)(int64_t arg0, double arg1);
 typedef int64_t (*Prototype_Int_DoubleIntInt)(double arg0, uint64_t arg1, uint64_t arg2);
 typedef int64_t (*Prototype_Int_IntDoubleIntInt)(uint64_t arg0, double arg1,
                                                  uint64_t arg2, uint64_t arg3);
 
 typedef float (*Prototype_Float32_Float32)(float arg0);
+typedef float (*Prototype_Float32_Float32Float32)(float arg0, float arg1);
 
 typedef double (*Prototype_Double_None)();
 typedef double (*Prototype_Double_Double)(double arg0);
-typedef double (*Prototype_Double_Int)(int32_t arg0);
+typedef double (*Prototype_Double_Int)(int64_t arg0);
 typedef double (*Prototype_Double_DoubleInt)(double arg0, int64_t arg1);
 typedef double (*Prototype_Double_IntDouble)(int64_t arg0, double arg1);
 typedef double (*Prototype_Double_DoubleDouble)(double arg0, double arg1);
@@ -506,7 +516,7 @@ Simulator::VisitCallRedirection(const Instruction* instr)
   DebugOnly<int64_t> x27 = xreg(27);
   DebugOnly<int64_t> x28 = xreg(28);
   DebugOnly<int64_t> x29 = xreg(29);
-  DebugOnly<int64_t> savedSP = xreg(31, Reg31IsStackPointer);
+  DebugOnly<int64_t> savedSP = get_sp();
 
   // Remember LR for returning from the "call".
   int64_t savedLR = xreg(30);
@@ -529,6 +539,7 @@ Simulator::VisitCallRedirection(const Instruction* instr)
   double d2 = dreg(2);
   double d3 = dreg(3);
   float s0 = sreg(0);
+  float s1 = sreg(1);
 
   // Dispatch the call and set the return value.
   switch (redir->type()) {
@@ -578,6 +589,16 @@ Simulator::VisitCallRedirection(const Instruction* instr)
       setGPR64Result(ret);
       break;
     }
+    case js::jit::Args_Int_GeneralGeneralGeneralInt64: {
+      int64_t ret = reinterpret_cast<Prototype_GeneralGeneralGeneralInt64>(nativeFn)(x0, x1, x2, x3);
+      setGPR64Result(ret);
+      break;
+    }
+    case js::jit::Args_Int_GeneralGeneralInt64Int64: {
+      int64_t ret = reinterpret_cast<Prototype_GeneralGeneralInt64Int64>(nativeFn)(x0, x1, x2, x3);
+      setGPR64Result(ret);
+      break;
+    }
 
     // Cases with GPR return type. This can be int32 or int64, but int64 is a safer assumption.
     case js::jit::Args_Int_Double: {
@@ -606,6 +627,11 @@ Simulator::VisitCallRedirection(const Instruction* instr)
     // Cases with float return type.
     case js::jit::Args_Float32_Float32: {
       float ret = reinterpret_cast<Prototype_Float32_Float32>(nativeFn)(s0);
+      setFP32Result(ret);
+      break;
+    }
+    case js::jit::Args_Float32_Float32Float32: {
+      float ret = reinterpret_cast<Prototype_Float32_Float32Float32>(nativeFn)(s0, s1);
       setFP32Result(ret);
       break;
     }
@@ -673,7 +699,7 @@ Simulator::VisitCallRedirection(const Instruction* instr)
   VIXL_ASSERT(xreg(29) == x29);
 
   // Assert that the stack is unchanged.
-  VIXL_ASSERT(savedSP == xreg(31, Reg31IsStackPointer));
+  VIXL_ASSERT(savedSP == get_sp());
 
   // Simulate a return.
   set_lr(savedLR);

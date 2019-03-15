@@ -9,10 +9,10 @@
 /**
  * CallTree view containing memory allocation sites, controlled by DetailsView.
  */
-var MemoryCallTreeView = Heritage.extend(DetailsSubview, {
+var MemoryCallTreeView = extend(DetailsSubview, {
 
   rerenderPrefs: [
-    "invert-call-tree"
+    "invert-call-tree",
   ],
 
   // Units are in milliseconds.
@@ -21,7 +21,7 @@ var MemoryCallTreeView = Heritage.extend(DetailsSubview, {
   /**
    * Sets up the view with event binding.
    */
-  initialize: function () {
+  initialize: function() {
     DetailsSubview.initialize.call(this);
 
     this._onLink = this._onLink.bind(this);
@@ -32,7 +32,7 @@ var MemoryCallTreeView = Heritage.extend(DetailsSubview, {
   /**
    * Unbinds events.
    */
-  destroy: function () {
+  destroy: function() {
     DetailsSubview.destroy.call(this);
   },
 
@@ -42,13 +42,13 @@ var MemoryCallTreeView = Heritage.extend(DetailsSubview, {
    * @param object interval [optional]
    *        The { startTime, endTime }, in milliseconds.
    */
-  render: function (interval = {}) {
-    let options = {
-      invertTree: PerformanceController.getOption("invert-call-tree")
+  render: function(interval = {}) {
+    const options = {
+      invertTree: PerformanceController.getOption("invert-call-tree"),
     };
-    let recording = PerformanceController.getCurrentRecording();
-    let allocations = recording.getAllocations();
-    let threadNode = this._prepareCallTree(allocations, interval, options);
+    const recording = PerformanceController.getCurrentRecording();
+    const allocations = recording.getAllocations();
+    const threadNode = this._prepareCallTree(allocations, interval, options);
     this._populateCallTree(threadNode, options);
     this.emit(EVENTS.UI_MEMORY_CALL_TREE_RENDERED);
   },
@@ -56,8 +56,8 @@ var MemoryCallTreeView = Heritage.extend(DetailsSubview, {
   /**
    * Fired on the "link" event for the call tree in this container.
    */
-  _onLink: function (_, treeItem) {
-    let { url, line } = treeItem.frame.getInfo();
+  _onLink: function(treeItem) {
+    const { url, line } = treeItem.frame.getInfo();
     gToolbox.viewSourceInDebugger(url, line).then(success => {
       if (success) {
         this.emit(EVENTS.SOURCE_SHOWN_IN_JS_DEBUGGER);
@@ -71,9 +71,9 @@ var MemoryCallTreeView = Heritage.extend(DetailsSubview, {
    * Called when the recording is stopped and prepares data to
    * populate the call tree.
    */
-  _prepareCallTree: function (allocations, { startTime, endTime }, options) {
-    let thread = RecordingUtils.getProfileThreadFromAllocations(allocations);
-    let { invertTree } = options;
+  _prepareCallTree: function(allocations, { startTime, endTime }, options) {
+    const thread = RecordingUtils.getProfileThreadFromAllocations(allocations);
+    const { invertTree } = options;
 
     return new ThreadNode(thread, { startTime, endTime, invertTree });
   },
@@ -81,13 +81,13 @@ var MemoryCallTreeView = Heritage.extend(DetailsSubview, {
   /**
    * Renders the call tree.
    */
-  _populateCallTree: function (frameNode, options = {}) {
+  _populateCallTree: function(frameNode, options = {}) {
     // If we have an empty profile (no samples), then don't invert the tree, as
     // it would hide the root node and a completely blank call tree space can be
     // mis-interpreted as an error.
-    let inverted = options.invertTree && frameNode.samples > 0;
+    const inverted = options.invertTree && frameNode.samples > 0;
 
-    let root = new CallView({
+    const root = new CallView({
       frame: frameNode,
       inverted: inverted,
       // Root nodes are hidden in inverted call trees.
@@ -106,8 +106,8 @@ var MemoryCallTreeView = Heritage.extend(DetailsSubview, {
         countPercentage: true,
         selfSizePercentage: true,
         sizePercentage: true,
-        function: true
-      }
+        function: true,
+      },
     });
 
     // Bind events.
@@ -124,7 +124,7 @@ var MemoryCallTreeView = Heritage.extend(DetailsSubview, {
     root.toggleCategories(false);
   },
 
-  toString: () => "[object MemoryCallTreeView]"
+  toString: () => "[object MemoryCallTreeView]",
 });
 
 EventEmitter.decorate(MemoryCallTreeView);

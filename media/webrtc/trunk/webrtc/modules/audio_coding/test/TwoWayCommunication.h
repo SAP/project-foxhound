@@ -8,15 +8,16 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_TEST_TWOWAYCOMMUNICATION_H_
-#define WEBRTC_MODULES_AUDIO_CODING_TEST_TWOWAYCOMMUNICATION_H_
+#ifndef MODULES_AUDIO_CODING_TEST_TWOWAYCOMMUNICATION_H_
+#define MODULES_AUDIO_CODING_TEST_TWOWAYCOMMUNICATION_H_
 
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/modules/audio_coding/include/audio_coding_module.h"
-#include "webrtc/modules/audio_coding/test/ACMTest.h"
-#include "webrtc/modules/audio_coding/test/Channel.h"
-#include "webrtc/modules/audio_coding/test/PCMFile.h"
-#include "webrtc/modules/audio_coding/test/utility.h"
+#include <memory>
+
+#include "modules/audio_coding/include/audio_coding_module.h"
+#include "modules/audio_coding/test/ACMTest.h"
+#include "modules/audio_coding/test/Channel.h"
+#include "modules/audio_coding/test/PCMFile.h"
+#include "modules/audio_coding/test/utility.h"
 
 namespace webrtc {
 
@@ -31,11 +32,11 @@ class TwoWayCommunication : public ACMTest {
   void SetUp();
   void SetUpAutotest();
 
-  rtc::scoped_ptr<AudioCodingModule> _acmA;
-  rtc::scoped_ptr<AudioCodingModule> _acmB;
+  std::unique_ptr<AudioCodingModule> _acmA;
+  std::unique_ptr<AudioCodingModule> _acmB;
 
-  rtc::scoped_ptr<AudioCodingModule> _acmRefA;
-  rtc::scoped_ptr<AudioCodingModule> _acmRefB;
+  std::unique_ptr<AudioCodingModule> _acmRefA;
+  std::unique_ptr<AudioCodingModule> _acmRefB;
 
   Channel* _channel_A2B;
   Channel* _channel_B2A;
@@ -57,4 +58,4 @@ class TwoWayCommunication : public ACMTest {
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_AUDIO_CODING_TEST_TWOWAYCOMMUNICATION_H_
+#endif  // MODULES_AUDIO_CODING_TEST_TWOWAYCOMMUNICATION_H_

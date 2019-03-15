@@ -10,7 +10,6 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
 #include "nsIGlobalObject.h"
-#include "nsNSSShutDown.h"
 #include "prtime.h"
 #include "sslt.h"
 #include "ScopedNSSTypes.h"
@@ -29,19 +28,15 @@ namespace dom {
 
 class ObjectOrString;
 
-class RTCCertificate final
-    : public nsISupports,
-      public nsWrapperCache,
-      public nsNSSShutDownObject
-{
-public:
+class RTCCertificate final : public nsISupports, public nsWrapperCache {
+ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(RTCCertificate)
 
   // WebIDL method that implements RTCPeerConnection.generateCertificate.
   static already_AddRefed<Promise> GenerateCertificate(
       const GlobalObject& aGlobal, const ObjectOrString& aOptions,
-      ErrorResult& aRv, JSCompartment* aCompartment = nullptr);
+      ErrorResult& aRv, JS::Compartment* aCompartment = nullptr);
 
   explicit RTCCertificate(nsIGlobalObject* aGlobal);
   RTCCertificate(nsIGlobalObject* aGlobal, SECKEYPrivateKey* aPrivateKey,
@@ -54,36 +49,25 @@ public:
 
   // WebIDL expires attribute.  Note: JS dates are milliseconds since epoch;
   // NSPR PRTime is in microseconds since the same epoch.
-  uint64_t Expires() const
-  {
-    return mExpires / PR_USEC_PER_MSEC;
-  }
+  uint64_t Expires() const { return mExpires / PR_USEC_PER_MSEC; }
 
   // Accessors for use by PeerConnectionImpl.
   RefPtr<DtlsIdentity> CreateDtlsIdentity() const;
   const UniqueCERTCertificate& Certificate() const { return mCertificate; }
 
-  // For nsNSSShutDownObject
-  virtual void virtualDestroyNSSReference() override;
-  void destructorSafeDestroyNSSReference();
-
   // Structured clone methods
   bool WriteStructuredClone(JSStructuredCloneWriter* aWriter) const;
   bool ReadStructuredClone(JSStructuredCloneReader* aReader);
 
-private:
-  ~RTCCertificate();
+ private:
+  ~RTCCertificate() {}
   void operator=(const RTCCertificate&) = delete;
   RTCCertificate(const RTCCertificate&) = delete;
 
-  bool ReadCertificate(JSStructuredCloneReader* aReader,
-                       const nsNSSShutDownPreventionLock& /*lockproof*/);
-  bool ReadPrivateKey(JSStructuredCloneReader* aReader,
-                      const nsNSSShutDownPreventionLock& aLockProof);
-  bool WriteCertificate(JSStructuredCloneWriter* aWriter,
-                        const nsNSSShutDownPreventionLock& /*lockproof*/) const;
-  bool WritePrivateKey(JSStructuredCloneWriter* aWriter,
-                       const nsNSSShutDownPreventionLock& aLockProof) const;
+  bool ReadCertificate(JSStructuredCloneReader* aReader);
+  bool ReadPrivateKey(JSStructuredCloneReader* aReader);
+  bool WriteCertificate(JSStructuredCloneWriter* aWriter) const;
+  bool WritePrivateKey(JSStructuredCloneWriter* aWriter) const;
 
   RefPtr<nsIGlobalObject> mGlobal;
   UniqueSECKEYPrivateKey mPrivateKey;
@@ -92,7 +76,7 @@ private:
   PRTime mExpires;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_RTCCertificate_h
+#endif  // mozilla_dom_RTCCertificate_h

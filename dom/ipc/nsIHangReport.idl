@@ -6,8 +6,8 @@
 
 #include "nsISupports.idl"
 
-interface nsIDOMElement;
-interface nsIFrameLoader;
+webidl FrameLoader;
+webidl Element;
 
 /**
  * When a content process hangs, Gecko notifies "process-hang-report" observers
@@ -30,9 +30,9 @@ interface nsIHangReport : nsISupports
   // For SLOW_SCRIPT reports, these fields contain information about the
   // slow script.
   // Only valid for SLOW_SCRIPT reports.
-  readonly attribute nsIDOMElement scriptBrowser;
+  readonly attribute Element scriptBrowser;
   readonly attribute ACString scriptFileName;
-  readonly attribute unsigned long scriptLineNo;
+  readonly attribute AString addonId;
 
   // For PLUGIN_HANGs, this field contains information about the plugin.
   // Only valid for PLUGIN_HANG reports.
@@ -45,6 +45,11 @@ interface nsIHangReport : nsISupports
   // Terminate the slow script if it is still running.
   // Only valid for SLOW_SCRIPT reports.
   void terminateScript();
+
+  // Terminate all scripts on the global that triggered the slow script
+  // warning.
+  // Only valid for SLOW_SCRIPT reports.
+  void terminateGlobal();
 
   // Terminate the plugin if it is still hung.
   // Only valid for PLUGIN_HANG reports.
@@ -62,5 +67,5 @@ interface nsIHangReport : nsISupports
 
   // Inquire whether the report is for a content process loaded by the given
   // frameloader.
-  bool isReportForBrowser(in nsIFrameLoader aFrameLoader);
+  bool isReportForBrowser(in FrameLoader aFrameLoader);
 };

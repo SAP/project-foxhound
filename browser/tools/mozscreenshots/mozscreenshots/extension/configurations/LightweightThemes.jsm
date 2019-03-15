@@ -4,16 +4,13 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["LightweightThemes"];
+var EXPORTED_SYMBOLS = ["LightweightThemes"];
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
+ChromeUtils.import("resource://gre/modules/LightweightThemeManager.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
-Cu.import("resource://gre/modules/LightweightThemeManager.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
-Cu.import("resource://gre/modules/Timer.jsm");
-
-this.LightweightThemes = {
+var LightweightThemes = {
   init(libDir) {
     // convert -size 3000x200 canvas:#333 black_theme.png
     let blackImage = libDir.clone();
@@ -28,18 +25,19 @@ this.LightweightThemes = {
 
   configurations: {
     noLWT: {
-      applyConfig: Task.async(function*() {
+      selectors: [],
+      async applyConfig() {
         LightweightThemeManager.currentTheme = null;
-      }),
+      },
     },
 
     darkLWT: {
+      selectors: [],
       applyConfig() {
         LightweightThemeManager.setLocalTheme({
           id:          "black",
           name:        "black",
           headerURL:   LightweightThemes._blackImageURL,
-          footerURL:   LightweightThemes._blackImageURL,
           textcolor:   "#eeeeee",
           accentcolor: "#111111",
         });
@@ -47,28 +45,42 @@ this.LightweightThemes = {
         // Wait for LWT listener
         return new Promise(resolve => {
           setTimeout(() => {
-            resolve("darkLWT");
+            resolve();
           }, 500);
         });
       },
     },
 
     lightLWT: {
+      selectors: [],
       applyConfig() {
         LightweightThemeManager.setLocalTheme({
           id:          "white",
           name:        "white",
           headerURL:   LightweightThemes._whiteImageURL,
-          footerURL:   LightweightThemes._whiteImageURL,
           textcolor:   "#111111",
           accentcolor: "#eeeeee",
         });
         // Wait for LWT listener
         return new Promise(resolve => {
           setTimeout(() => {
-            resolve("lightLWT");
+            resolve();
           }, 500);
         });
+      },
+    },
+
+    compactLight: {
+      selectors: [],
+      applyConfig() {
+        LightweightThemeManager.currentTheme = LightweightThemeManager.getUsedTheme("firefox-compact-light@mozilla.org");
+      },
+    },
+
+    compactDark: {
+      selectors: [],
+      applyConfig() {
+        LightweightThemeManager.currentTheme = LightweightThemeManager.getUsedTheme("firefox-compact-dark@mozilla.org");
       },
     },
   },

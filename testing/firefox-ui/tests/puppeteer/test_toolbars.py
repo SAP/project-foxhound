@@ -22,7 +22,7 @@ class TestNavBar(PuppeteerMixin, MarionetteTestCase):
         # TODO: check why self.puppeteer.places.remove_all_history() does not work here
         self.marionette.execute_script("""
             let count = gBrowser.sessionHistory.count;
-            gBrowser.sessionHistory.PurgeHistory(count);
+            gBrowser.sessionHistory.legacySHistory.PurgeHistory(count);
         """)
 
     def test_elements(self):
@@ -153,16 +153,13 @@ class TestAutoCompleteResults(PuppeteerMixin, MarionetteTestCase):
             super(TestAutoCompleteResults, self).tearDown()
 
     def test_popup_elements(self):
-        # TODO: This test is not very robust because it relies on the history
-        # in the default profile.
         self.assertFalse(self.autocomplete_results.is_open)
-        self.browser.navbar.locationbar.urlbar.send_keys('a')
-        results = self.autocomplete_results.results
+        self.browser.navbar.locationbar.urlbar.send_keys('.')
         Wait(self.marionette).until(lambda _: self.autocomplete_results.is_complete)
-        visible_result_count = len(self.autocomplete_results.visible_results)
-        self.assertTrue(visible_result_count > 0)
-        self.assertEqual(visible_result_count,
-                         int(results.get_property('itemCount')))
+        count_visible_results = len(self.autocomplete_results.visible_results)
+        self.assertTrue(count_visible_results > 0)
+        self.assertLessEqual(count_visible_results,
+                             self.autocomplete_results.element.get_property('maxResults'))
 
     def test_close(self):
         self.browser.navbar.locationbar.urlbar.send_keys('a')
@@ -210,7 +207,7 @@ class TestIdentityPopup(PuppeteerMixin, MarionetteTestCase):
         self.locationbar = self.browser.navbar.locationbar
         self.identity_popup = self.locationbar.identity_popup
 
-        self.url = 'https://ssl-ev.mozqa.com'
+        self.url = 'https://extended-validation.badssl.com'
 
         with self.marionette.using_context('content'):
             self.marionette.navigate(self.url)

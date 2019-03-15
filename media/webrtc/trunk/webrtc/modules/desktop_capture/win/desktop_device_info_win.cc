@@ -2,16 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "webrtc/modules/desktop_capture/win/desktop_device_info_win.h"
-#include "webrtc/modules/desktop_capture/win/screen_capture_utils.h"
-#include "webrtc/modules/desktop_capture/win/win_shared.h"
+#include "modules/desktop_capture/win/desktop_device_info_win.h"
+#include "modules/desktop_capture/win/screen_capture_utils.h"
+#include "modules/desktop_capture/win/win_shared.h"
 #include <inttypes.h>
 #include <stdio.h>
 #include <VersionHelpers.h>
 
 // Duplicating declaration so that it always resolves in decltype use
 // typedef BOOL (WINAPI *QueryFullProcessImageNameProc)(HANDLE hProcess, DWORD dwFlags, LPTSTR lpExeName, PDWORD lpdwSize);
-BOOL WINAPI QueryFullProcessImageName(HANDLE hProcess, DWORD dwFlags, LPTSTR lpExeName, PDWORD lpdwSize);
+WINBASEAPI BOOL WINAPI QueryFullProcessImageName(HANDLE hProcess, DWORD dwFlags, LPWSTR lpExeName, PDWORD lpdwSize);
 
 // Duplicating declaration so that it always resolves in decltype use
 // typedoef DWORD (WINAPI *GetProcessImageFileNameProc)(HANDLE hProcess, LPTSTR lpImageFileName, DWORD nSize);
@@ -19,11 +19,12 @@ DWORD WINAPI GetProcessImageFileName(HANDLE hProcess, LPTSTR lpImageFileName, DW
 
 namespace webrtc {
 
+// static
 DesktopDeviceInfo * DesktopDeviceInfoImpl::Create() {
   DesktopDeviceInfoWin * pDesktopDeviceInfo = new DesktopDeviceInfoWin();
   if(pDesktopDeviceInfo && pDesktopDeviceInfo->Init() != 0){
     delete pDesktopDeviceInfo;
-    pDesktopDeviceInfo = NULL;
+    pDesktopDeviceInfo = nullptr;
   }
   return pDesktopDeviceInfo;
 }
@@ -48,8 +49,8 @@ void DesktopDeviceInfoWin::MultiMonitorScreenshare()
     desktop_display_list_[desktop_device_info->getScreenId()] = desktop_device_info;
   }
 #else
-  ScreenCapturer::ScreenList screens;
-  GetScreenList(&screens);
+  DesktopCapturer::SourceList screens;
+  webrtc::GetScreenList(&screens);
   auto num_of_screens = screens.size();
 
   for (decltype(num_of_screens) i = 0; i < num_of_screens; ++i) {

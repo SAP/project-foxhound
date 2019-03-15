@@ -14,7 +14,10 @@ const TEST_PATH = getRootDirectory(gTestPath).replace("chrome://mochitests/conte
 
 var readerButton = document.getElementById("reader-mode-button");
 
-add_task(function* test_reader_button() {
+ChromeUtils.defineModuleGetter(this, "PlacesTestUtils",
+  "resource://testing-common/PlacesTestUtils.jsm");
+
+add_task(async function test_reader_button() {
   registerCleanupFunction(function() {
     // Reset test prefs.
     TEST_PREFS.forEach(([name, value]) => {
@@ -29,44 +32,46 @@ add_task(function* test_reader_button() {
   TEST_PREFS.forEach(([name, value]) => {
     Services.prefs.setBoolPref(name, value);
   });
-  Services.prefs.setBoolPref("browser.reader.detectedFirstArticle", false);
 
-  let tab = gBrowser.selectedTab = gBrowser.addTab();
+  let tab = gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
   is_element_hidden(readerButton, "Reader mode button is not present on a new tab");
   ok(!UITour.isInfoOnTarget(window, "readerMode-urlBar"),
      "Info panel shouldn't appear without the reader mode button");
-  ok(!Services.prefs.getBoolPref("browser.reader.detectedFirstArticle"),
-     "Shouldn't have detected the first article");
 
-  // We're going to show the reader mode intro popup, make sure we wait for it:
-  let tourPopupShownPromise =
-    BrowserTestUtils.waitForEvent(document.getElementById("UITourTooltip"), "popupshown");
   // Point tab to a test page that is reader-able.
   let url = TEST_PATH + "readerModeArticle.html";
-  yield promiseTabLoadEvent(tab, url);
-  yield promiseWaitForCondition(() => !readerButton.hidden);
-  yield tourPopupShownPromise;
+  // Set up favicon for testing.
+  let favicon = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAA" +
+                "AAAA6fptVAAAACklEQVQI12NgAAAAAgAB4iG8MwAAAABJRU5ErkJggg==";
+  info("Adding visit so we can add favicon");
+  await PlacesTestUtils.addVisits(new URL(url));
+  info("Adding favicon");
+  await PlacesTestUtils.addFavicons(new Map([[url, favicon]]));
+  info("Opening tab and waiting for reader mode button to show up");
+
+  await promiseTabLoadEvent(tab, url);
+  await TestUtils.waitForCondition(() => !readerButton.hidden);
+
   is_element_visible(readerButton, "Reader mode button is present on a reader-able page");
-  ok(UITour.isInfoOnTarget(window, "readerMode-urlBar"),
-     "Info panel should be anchored at the reader mode button");
-  ok(Services.prefs.getBoolPref("browser.reader.detectedFirstArticle"),
-     "Should have detected the first article");
 
   // Switch page into reader mode.
   let promiseTabLoad = promiseTabLoadEvent(tab);
   readerButton.click();
-  yield promiseTabLoad;
-  ok(!UITour.isInfoOnTarget(window, "readerMode-urlBar"), "Info panel should have closed");
+  await promiseTabLoad;
 
   let readerUrl = gBrowser.selectedBrowser.currentURI.spec;
   ok(readerUrl.startsWith("about:reader"), "about:reader loaded after clicking reader mode button");
   is_element_visible(readerButton, "Reader mode button is present on about:reader");
+  let iconEl = document.getAnonymousElementByAttribute(tab, "anonid", "tab-icon-image");
+  await TestUtils.waitForCondition(() => iconEl.getBoundingClientRect().width != 0);
+  is_element_visible(iconEl, "Favicon should be visible");
+  is(iconEl.src, favicon, "Correct favicon should be loaded");
 
   is(gURLBar.value, readerUrl, "gURLBar value is about:reader URL");
   is(gURLBar.textValue, url.substring("http://".length), "gURLBar is displaying original article URL");
 
   // Check selected value for URL bar
-  yield new Promise((resolve, reject) => {
+  await new Promise((resolve, reject) => {
     waitForClipboard(url, function() {
       gURLBar.focus();
       gURLBar.select();
@@ -79,7 +84,7 @@ add_task(function* test_reader_button() {
   // Switch page back out of reader mode.
   let promisePageShow = BrowserTestUtils.waitForContentEvent(tab.linkedBrowser, "pageshow");
   readerButton.click();
-  yield promisePageShow;
+  await promisePageShow;
   is(gBrowser.selectedBrowser.currentURI.spec, url,
     "Back to the original page after clicking active reader mode button");
   ok(gBrowser.selectedBrowser.canGoForward,
@@ -88,36 +93,36 @@ add_task(function* test_reader_button() {
   let nonReadableUrl = TEST_PATH + "readerModeNonArticle.html";
 
   // Load a new tab that is NOT reader-able.
-  let newTab = gBrowser.selectedTab = gBrowser.addTab();
-  yield promiseTabLoadEvent(newTab, nonReadableUrl);
-  yield promiseWaitForCondition(() => readerButton.hidden);
+  let newTab = gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
+  await promiseTabLoadEvent(newTab, nonReadableUrl);
+  await TestUtils.waitForCondition(() => readerButton.hidden);
   is_element_hidden(readerButton, "Reader mode button is not present on a non-reader-able page");
 
   // Switch back to the original tab to make sure reader mode button is still visible.
   gBrowser.removeCurrentTab();
-  yield promiseWaitForCondition(() => !readerButton.hidden);
+  await TestUtils.waitForCondition(() => !readerButton.hidden);
   is_element_visible(readerButton, "Reader mode button is present on a reader-able page");
 
   // Load a new tab in reader mode that is NOT reader-able in the reader mode.
-  newTab = gBrowser.selectedTab = gBrowser.addTab();
+  newTab = gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
   let promiseAboutReaderError = BrowserTestUtils.waitForContentEvent(newTab.linkedBrowser, "AboutReaderContentError");
-  yield promiseTabLoadEvent(newTab, "about:reader?url=" + nonReadableUrl);
-  yield promiseAboutReaderError;
-  yield promiseWaitForCondition(() => !readerButton.hidden);
+  await promiseTabLoadEvent(newTab, "about:reader?url=" + nonReadableUrl);
+  await promiseAboutReaderError;
+  await TestUtils.waitForCondition(() => !readerButton.hidden);
   is_element_visible(readerButton, "Reader mode button is present on about:reader even in error state");
 
   // Switch page back out of reader mode.
   promisePageShow = BrowserTestUtils.waitForContentEvent(newTab.linkedBrowser, "pageshow");
   readerButton.click();
-  yield promisePageShow;
+  await promisePageShow;
   is(gBrowser.selectedBrowser.currentURI.spec, nonReadableUrl,
     "Back to the original non-reader-able page after clicking active reader mode button");
-  yield promiseWaitForCondition(() => readerButton.hidden);
+  await TestUtils.waitForCondition(() => readerButton.hidden);
   is_element_hidden(readerButton, "Reader mode button is not present on a non-reader-able page");
 });
 
-add_task(function* test_getOriginalUrl() {
-  let { ReaderMode } = Cu.import("resource://gre/modules/ReaderMode.jsm", {});
+add_task(async function test_getOriginalUrl() {
+  let { ReaderMode } = ChromeUtils.import("resource://gre/modules/ReaderMode.jsm", {});
   let url = "http://foo.com/article.html";
 
   is(ReaderMode.getOriginalUrl("about:reader?url=" + encodeURIComponent(url)), url, "Found original URL from encoded URL");
@@ -129,7 +134,7 @@ add_task(function* test_getOriginalUrl() {
   is(ReaderMode.getOriginalUrl("about:reader?url=" + badUrl), badUrl, "Found original URL from non-encoded malformed URL");
 });
 
-add_task(function* test_reader_view_element_attribute_transform() {
+add_task(async function test_reader_view_element_attribute_transform() {
   registerCleanupFunction(function() {
     while (gBrowser.tabs.length > 1) {
       gBrowser.removeCurrentTab();
@@ -151,59 +156,59 @@ add_task(function* test_reader_view_element_attribute_transform() {
       observer.observe(element, {
         attributes: true,
         attributeOldValue: true,
-        attributeFilter: [attribute]
+        attributeFilter: [attribute],
       });
 
       triggerFn();
     });
   }
 
-  let command = document.getElementById("View:ReaderView");
-  let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser);
-  is(command.hidden, true, "Command element should have the hidden attribute");
+  let menuitem = document.getElementById("menu_readerModeItem");
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
+  is(menuitem.hidden, true, "menuitem element should have the hidden attribute");
 
   info("Navigate a reader-able page");
   let waitForPageshow = BrowserTestUtils.waitForContentEvent(tab.linkedBrowser, "pageshow");
-  yield observeAttribute(command, "hidden",
+  await observeAttribute(menuitem, "hidden",
     () => {
       let url = TEST_PATH + "readerModeArticle.html";
-      tab.linkedBrowser.loadURI(url);
+      BrowserTestUtils.loadURI(tab.linkedBrowser, url);
     },
     () => {
-      is(command.hidden, false, "Command's hidden attribute should be false on a reader-able page");
+      is(menuitem.hidden, false, "menuitem's hidden attribute should be false on a reader-able page");
     }
   );
-  yield waitForPageshow;
+  await waitForPageshow;
 
   info("Navigate a non-reader-able page");
   waitForPageshow = BrowserTestUtils.waitForContentEvent(tab.linkedBrowser, "pageshow");
-  yield observeAttribute(command, "hidden",
+  await observeAttribute(menuitem, "hidden",
     () => {
       let url = TEST_PATH + "readerModeArticleHiddenNodes.html";
-      tab.linkedBrowser.loadURI(url);
+      BrowserTestUtils.loadURI(tab.linkedBrowser, url);
     },
     () => {
-      is(command.hidden, true, "Command's hidden attribute should be true on a non-reader-able page");
+      is(menuitem.hidden, true, "menuitem's hidden attribute should be true on a non-reader-able page");
     }
   );
-  yield waitForPageshow;
+  await waitForPageshow;
 
   info("Navigate a reader-able page");
   waitForPageshow = BrowserTestUtils.waitForContentEvent(tab.linkedBrowser, "pageshow");
-  yield observeAttribute(command, "hidden",
+  await observeAttribute(menuitem, "hidden",
     () => {
       let url = TEST_PATH + "readerModeArticle.html";
-      tab.linkedBrowser.loadURI(url);
+      BrowserTestUtils.loadURI(tab.linkedBrowser, url);
     },
     () => {
-      is(command.hidden, false, "Command's hidden attribute should be false on a reader-able page");
+      is(menuitem.hidden, false, "menuitem's hidden attribute should be false on a reader-able page");
     }
   );
-  yield waitForPageshow;
+  await waitForPageshow;
 
   info("Enter Reader Mode");
   waitForPageshow = BrowserTestUtils.waitForContentEvent(tab.linkedBrowser, "pageshow");
-  yield observeAttribute(readerButton, "readeractive",
+  await observeAttribute(readerButton, "readeractive",
     () => {
       readerButton.click();
     },
@@ -211,11 +216,11 @@ add_task(function* test_reader_view_element_attribute_transform() {
       is(readerButton.getAttribute("readeractive"), "true", "readerButton's readeractive attribute should be true when entering reader mode");
     }
   );
-  yield waitForPageshow;
+  await waitForPageshow;
 
   info("Exit Reader Mode");
   waitForPageshow = BrowserTestUtils.waitForContentEvent(tab.linkedBrowser, "pageshow");
-  yield observeAttribute(readerButton, "readeractive",
+  await observeAttribute(readerButton, "readeractive",
     () => {
       readerButton.click();
     },
@@ -223,18 +228,18 @@ add_task(function* test_reader_view_element_attribute_transform() {
       is(readerButton.getAttribute("readeractive"), "", "readerButton's readeractive attribute should be empty when reader mode is exited");
     }
   );
-  yield waitForPageshow;
+  await waitForPageshow;
 
   info("Navigate a non-reader-able page");
   waitForPageshow = BrowserTestUtils.waitForContentEvent(tab.linkedBrowser, "pageshow");
-  yield observeAttribute(command, "hidden",
+  await observeAttribute(menuitem, "hidden",
     () => {
       let url = TEST_PATH + "readerModeArticleHiddenNodes.html";
-      tab.linkedBrowser.loadURI(url);
+      BrowserTestUtils.loadURI(tab.linkedBrowser, url);
     },
     () => {
-      is(command.hidden, true, "Command's hidden attribute should be true on a non-reader-able page");
+      is(menuitem.hidden, true, "menuitem's hidden attribute should be true on a non-reader-able page");
     }
   );
-  yield waitForPageshow;
+  await waitForPageshow;
 });

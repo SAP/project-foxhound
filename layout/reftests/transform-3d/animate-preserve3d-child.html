@@ -43,7 +43,8 @@ body { padding: 50px }
 
 <script>
 
-document.getElementById("parent").addEventListener("animationiteration", IterationListener);
+document.getElementById("parent")
+        .addEventListener("animationiteration", IterationListener);
 
 function IterationListener(event) {
   setTimeout(RemoveReftestWait, 0);

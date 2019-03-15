@@ -13,9 +13,9 @@
 #include "GrWindowRectsState.h"
 
 /**
- * GrFixedClip is a clip that gets implemented by fixed-function hardware.
+ * Implements GrHardClip with scissor and window rectangles.
  */
-class GrFixedClip final : public GrClip {
+class GrFixedClip final : public GrHardClip {
 public:
     GrFixedClip() = default;
     explicit GrFixedClip(const SkIRect& scissorRect) : fScissorState(scissorRect) {}
@@ -26,6 +26,9 @@ public:
 
     void disableScissor() { fScissorState.setDisabled(); }
 
+    void setScissor(const SkIRect& irect) {
+        fScissorState.set(irect);
+    }
     bool SK_WARN_UNUSED_RESULT intersect(const SkIRect& irect) {
         return fScissorState.intersect(irect);
     }
@@ -35,15 +38,14 @@ public:
 
     void disableWindowRectangles() { fWindowRectsState.setDisabled(); }
 
-    void setWindowRectangles(const GrWindowRectangles& windows, const SkIPoint& origin,
-                             GrWindowRectsState::Mode mode) {
-        fWindowRectsState.set(windows, origin, mode);
+    void setWindowRectangles(const GrWindowRectangles& windows, GrWindowRectsState::Mode mode) {
+        fWindowRectsState.set(windows, mode);
     }
 
     bool quickContains(const SkRect&) const override;
     void getConservativeBounds(int w, int h, SkIRect* devResult, bool* iior) const override;
-    bool isRRect(const SkRect& rtBounds, SkRRect* rr, bool* aa) const override;
-    bool apply(GrContext*, GrDrawContext*, bool, bool, GrAppliedClip* out) const override;
+    bool isRRect(const SkRect& rtBounds, SkRRect* rr, GrAA*) const override;
+    bool apply(int rtWidth, int rtHeight, GrAppliedHardClip*, SkRect*) const override;
 
     static const GrFixedClip& Disabled();
 

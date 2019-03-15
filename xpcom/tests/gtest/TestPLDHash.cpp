@@ -6,6 +6,7 @@
 
 #include "PLDHashTable.h"
 #include "nsCOMPtr.h"
+#include "nsICrashReporter.h"
 #include "nsServiceManagerUtils.h"
 #include "gtest/gtest.h"
 
@@ -13,16 +14,12 @@
 // operations wouldn't be a bad thing.
 
 #ifdef XP_UNIX
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/wait.h>
+#  include <unistd.h>
+#  include <sys/types.h>
+#  include <sys/wait.h>
 
 // This global variable is defined in toolkit/xre/nsSigHandlers.cpp.
 extern unsigned int _gdb_sleep_duration;
-#endif
-
-#ifdef MOZ_CRASHREPORTER
-#include "nsICrashReporter.h"
 #endif
 
 // We can test that certain operations cause expected aborts by forking
@@ -33,9 +30,7 @@ extern unsigned int _gdb_sleep_duration;
 //   up when running this test locally, which is surprising and annoying.
 // - On ASAN builds, because ASAN alters the way a MOZ_CRASHing process
 //   terminates, which makes it harder to test if the right thing has occurred.
-void
-TestCrashyOperation(void (*aCrashyOperation)())
-{
+void TestCrashyOperation(void (*aCrashyOperation)()) {
 #if defined(XP_UNIX) && defined(DEBUG) && !defined(MOZ_ASAN)
   // We're about to trigger a crash. When it happens don't pause to allow GDB
   // to be attached.
@@ -49,19 +44,19 @@ TestCrashyOperation(void (*aCrashyOperation)())
     // Disable the crashreporter -- writing a crash dump in the child will
     // prevent the parent from writing a subsequent dump. Crashes here are
     // expected, so we don't want their stacks to show up in the log anyway.
-#ifdef MOZ_CRASHREPORTER
     nsCOMPtr<nsICrashReporter> crashreporter =
-      do_GetService("@mozilla.org/toolkit/crash-reporter;1");
+        do_GetService("@mozilla.org/toolkit/crash-reporter;1");
     if (crashreporter) {
       crashreporter->SetEnabled(false);
     }
-#endif
 
     // Child: perform the crashy operation.
-    fprintf(stderr, "TestCrashyOperation: The following crash is expected. Do not panic.\n");
+    fprintf(stderr,
+            "TestCrashyOperation: The following crash is expected. Do not "
+            "panic.\n");
     aCrashyOperation();
     fprintf(stderr, "TestCrashyOperation: didn't crash?!\n");
-    ASSERT_TRUE(false);   // shouldn't reach here
+    ASSERT_TRUE(false);  // shouldn't reach here
   }
 
   // Parent: check that child crashed as expected.
@@ -92,24 +87,24 @@ TestCrashyOperation(void (*aCrashyOperation)())
 #endif
 }
 
-void
-InitCapacityOk_InitialLengthTooBig()
-{
+void InitCapacityOk_InitialLengthTooBig() {
   PLDHashTable t(PLDHashTable::StubOps(), sizeof(PLDHashEntryStub),
                  PLDHashTable::kMaxInitialLength + 1);
 }
 
-void
-InitCapacityOk_InitialEntryStoreTooBig()
-{
+void InitCapacityOk_InitialEntryStoreTooBig() {
   // Try the smallest disallowed power-of-two entry store size, which is 2^32
   // bytes (which overflows to 0). (Note that the 2^23 *length* gets converted
   // to a 2^24 *capacity*.)
-  PLDHashTable t(PLDHashTable::StubOps(), (uint32_t)1 << 23, (uint32_t)1 << 8);
+  PLDHashTable t(PLDHashTable::StubOps(), (uint32_t)1 << 8, (uint32_t)1 << 23);
 }
 
-TEST(PLDHashTableTest, InitCapacityOk)
-{
+void InitCapacityOk_EntrySizeTooBig() {
+  // Try the smallest disallowed entry size, which is 256 bytes.
+  PLDHashTable t(PLDHashTable::StubOps(), 256);
+}
+
+TEST(PLDHashTableTest, InitCapacityOk) {
   // Try the largest allowed capacity.  With kMaxCapacity==1<<26, this
   // would allocate (if we added an element) 0.5GB of entry store on 32-bit
   // platforms and 1GB on 64-bit platforms.
@@ -118,7 +113,7 @@ TEST(PLDHashTableTest, InitCapacityOk)
 
   // Try the largest allowed power-of-two entry store size, which is 2^31 bytes
   // (Note that the 2^23 *length* gets converted to a 2^24 *capacity*.)
-  PLDHashTable t2(PLDHashTable::StubOps(), (uint32_t)1 << 23, (uint32_t)1 << 7);
+  PLDHashTable t2(PLDHashTable::StubOps(), (uint32_t)1 << 7, (uint32_t)1 << 23);
 
   // Try a too-large capacity (which aborts).
   TestCrashyOperation(InitCapacityOk_InitialLengthTooBig);
@@ -127,14 +122,19 @@ TEST(PLDHashTableTest, InitCapacityOk)
   // overflow (causing abort).
   TestCrashyOperation(InitCapacityOk_InitialEntryStoreTooBig);
 
+  // Try the largest allowed entry size.
+  PLDHashTable t3(PLDHashTable::StubOps(), 255);
+
+  // Try an overly large entry size.
+  TestCrashyOperation(InitCapacityOk_EntrySizeTooBig);
+
   // Ideally we'd also try a large-but-ok capacity that almost but doesn't
   // quite overflow, but that would result in allocating slightly less than 4
   // GiB of entry storage. That would be very likely to fail on 32-bit
   // platforms, so such a test wouldn't be reliable.
 }
 
-TEST(PLDHashTableTest, LazyStorage)
-{
+TEST(PLDHashTableTest, LazyStorage) {
   PLDHashTable t(PLDHashTable::StubOps(), sizeof(PLDHashEntryStub));
 
   // PLDHashTable allocates entry storage lazily. Check that all the non-add
@@ -152,7 +152,7 @@ TEST(PLDHashTableTest, LazyStorage)
   t.Remove((const void*)2);
 
   for (auto iter = t.Iter(); !iter.Done(); iter.Next()) {
-    ASSERT_TRUE(false); // shouldn't hit this on an empty table
+    ASSERT_TRUE(false);  // shouldn't hit this on an empty table
   }
 
   ASSERT_EQ(t.ShallowSizeOfExcludingThis(moz_malloc_size_of), 0u);
@@ -161,60 +161,57 @@ TEST(PLDHashTableTest, LazyStorage)
 // A trivial hash function is good enough here. It's also super-fast for the
 // GrowToMaxCapacity test because we insert the integers 0.., which means it's
 // collision-free.
-static PLDHashNumber
-TrivialHash(const void *key)
-{
+static PLDHashNumber TrivialHash(const void* key) {
   return (PLDHashNumber)(size_t)key;
 }
 
-static void
-TrivialInitEntry(PLDHashEntryHdr* aEntry, const void* aKey)
-{
+static void TrivialInitEntry(PLDHashEntryHdr* aEntry, const void* aKey) {
   auto entry = static_cast<PLDHashEntryStub*>(aEntry);
   entry->key = aKey;
 }
 
 static const PLDHashTableOps trivialOps = {
-  TrivialHash,
-  PLDHashTable::MatchEntryStub,
-  PLDHashTable::MoveEntryStub,
-  PLDHashTable::ClearEntryStub,
-  TrivialInitEntry
-};
+    TrivialHash, PLDHashTable::MatchEntryStub, PLDHashTable::MoveEntryStub,
+    PLDHashTable::ClearEntryStub, TrivialInitEntry};
 
-TEST(PLDHashTableTest, MoveSemantics)
-{
+TEST(PLDHashTableTest, MoveSemantics) {
   PLDHashTable t1(&trivialOps, sizeof(PLDHashEntryStub));
   t1.Add((const void*)88);
   PLDHashTable t2(&trivialOps, sizeof(PLDHashEntryStub));
   t2.Add((const void*)99);
 
-  t1 = mozilla::Move(t1);   // self-move
+#if defined(__clang__)
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wself-move"
+#endif
+  t1 = std::move(t1);  // self-move
+#if defined(__clang__)
+#  pragma clang diagnostic pop
+#endif
 
-  t1 = mozilla::Move(t2);   // empty overwritten with empty
+  t1 = std::move(t2);  // empty overwritten with empty
 
   PLDHashTable t3(&trivialOps, sizeof(PLDHashEntryStub));
   PLDHashTable t4(&trivialOps, sizeof(PLDHashEntryStub));
   t3.Add((const void*)88);
 
-  t3 = mozilla::Move(t4);   // non-empty overwritten with empty
+  t3 = std::move(t4);  // non-empty overwritten with empty
 
   PLDHashTable t5(&trivialOps, sizeof(PLDHashEntryStub));
   PLDHashTable t6(&trivialOps, sizeof(PLDHashEntryStub));
   t6.Add((const void*)88);
 
-  t5 = mozilla::Move(t6);   // empty overwritten with non-empty
+  t5 = std::move(t6);  // empty overwritten with non-empty
 
   PLDHashTable t7(&trivialOps, sizeof(PLDHashEntryStub));
-  PLDHashTable t8(mozilla::Move(t7));  // new table constructed with uninited
+  PLDHashTable t8(std::move(t7));  // new table constructed with uninited
 
   PLDHashTable t9(&trivialOps, sizeof(PLDHashEntryStub));
   t9.Add((const void*)88);
-  PLDHashTable t10(mozilla::Move(t9));  // new table constructed with inited
+  PLDHashTable t10(std::move(t9));  // new table constructed with inited
 }
 
-TEST(PLDHashTableTest, Clear)
-{
+TEST(PLDHashTableTest, Clear) {
   PLDHashTable t1(&trivialOps, sizeof(PLDHashEntryStub));
 
   t1.Clear();
@@ -242,8 +239,7 @@ TEST(PLDHashTableTest, Clear)
   ASSERT_EQ(t1.EntryCount(), 0u);
 }
 
-TEST(PLDHashTableTest, Iterator)
-{
+TEST(PLDHashTableTest, Iterator) {
   PLDHashTable t(&trivialOps, sizeof(PLDHashEntryStub));
 
   // Explicitly test the move constructor. We do this because, due to copy
@@ -251,13 +247,13 @@ TEST(PLDHashTableTest, Iterator)
   // iterator use.
   {
     PLDHashTable::Iterator iter1(&t);
-    PLDHashTable::Iterator iter2(mozilla::Move(iter1));
+    PLDHashTable::Iterator iter2(std::move(iter1));
   }
 
   // Iterate through the empty table.
   for (PLDHashTable::Iterator iter(&t); !iter.Done(); iter.Next()) {
-    (void) iter.Get();
-    ASSERT_TRUE(false); // shouldn't hit this
+    (void)iter.Get();
+    ASSERT_TRUE(false);  // shouldn't hit this
   }
 
   // Add three entries.
@@ -296,7 +292,7 @@ TEST(PLDHashTableTest, Iterator)
   // The first removing iterator does no removing; capacity and entry count are
   // unchanged.
   for (PLDHashTable::Iterator iter(&t); !iter.Done(); iter.Next()) {
-    (void) iter.Get();
+    (void)iter.Get();
   }
   ASSERT_EQ(t.EntryCount(), 64u);
   ASSERT_EQ(t.Capacity(), 128u);
@@ -339,11 +335,10 @@ TEST(PLDHashTableTest, Iterator)
 //
 // Also, it's slow, and so should always be last.
 #ifdef HAVE_64BIT_BUILD
-TEST(PLDHashTableTest, GrowToMaxCapacity)
-{
+TEST(PLDHashTableTest, GrowToMaxCapacity) {
   // This is infallible.
   PLDHashTable* t =
-    new PLDHashTable(&trivialOps, sizeof(PLDHashEntryStub), 128);
+      new PLDHashTable(&trivialOps, sizeof(PLDHashEntryStub), 128);
 
   // Keep inserting elements until failure occurs because the table is full.
   size_t numInserted = 0;
@@ -365,4 +360,3 @@ TEST(PLDHashTableTest, GrowToMaxCapacity)
   delete t;
 }
 #endif
-

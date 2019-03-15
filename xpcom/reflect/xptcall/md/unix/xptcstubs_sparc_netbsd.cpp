@@ -23,11 +23,10 @@ PrepareAndDispatch(nsXPTCStubBase* self, uint32_t methodIndex, uint32_t* args)
 
     nsXPTCMiniVariant paramBuffer[PARAM_BUFFER_COUNT];
     nsXPTCMiniVariant* dispatchParams = nullptr;
-    nsIInterfaceInfo* iface_info = nullptr;
+    const nsXPTInterfaceInfo* iface_info = nullptr;
     const nsXPTMethodInfo* info;
     uint8_t paramCount;
     uint8_t i;
-    nsresult result = NS_ERROR_FAILURE;
 
     NS_ASSERTION(self,"no self");
 
@@ -69,7 +68,7 @@ PrepareAndDispatch(nsXPTCStubBase* self, uint32_t methodIndex, uint32_t* args)
         case nsXPTType::T_I32    : dp->val.i32 = *((int32_t*) ap);       break;
         case nsXPTType::T_DOUBLE :
         case nsXPTType::T_U64    :
-        case nsXPTType::T_I64    : ((DU *)dp)->hi = ((DU *)ap)->hi; 
+        case nsXPTType::T_I64    : ((DU *)dp)->hi = ((DU *)ap)->hi;
                                    ((DU *)dp)->lo = ((DU *)ap)->lo;
                                    ap++;
                                    break;
@@ -86,9 +85,8 @@ PrepareAndDispatch(nsXPTCStubBase* self, uint32_t methodIndex, uint32_t* args)
         }
     }
 
-    result = self->CallMethod((uint16_t)methodIndex, info, dispatchParams);
-
-    NS_RELEASE(iface_info);
+    nsresult result = self->CallMethod((uint16_t)methodIndex, info,
+                                       dispatchParams);
 
     if(dispatchParams != paramBuffer)
         delete [] dispatchParams;

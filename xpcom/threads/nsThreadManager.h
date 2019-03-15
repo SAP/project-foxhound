@@ -9,22 +9,18 @@
 
 #include "mozilla/Mutex.h"
 #include "nsIThreadManager.h"
-#include "nsRefPtrHashtable.h"
 #include "nsThread.h"
 
 class nsIRunnable;
 
-class nsThreadManager : public nsIThreadManager
-{
-public:
+class nsThreadManager : public nsIThreadManager {
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSITHREADMANAGER
 
-  static nsThreadManager& get()
-  {
-    static nsThreadManager sInstance;
-    return sInstance;
-  }
+  static nsThreadManager& get();
+
+  static void InitializeShutdownObserver();
 
   nsresult Init();
 
@@ -41,8 +37,21 @@ public:
   void UnregisterCurrentThread(nsThread& aThread);
 
   // Returns the current thread.  Returns null if OOM or if ThreadManager isn't
-  // initialized.
+  // initialized.  Creates the nsThread if one does not exist yet.
   nsThread* GetCurrentThread();
+
+  // Returns true iff the currently running thread has an nsThread associated
+  // with it (ie; whether this is a thread that we can dispatch runnables to).
+  bool IsNSThread() const;
+
+  // CreateCurrentThread sets up an nsThread for the current thread. It uses the
+  // event queue and main thread flags passed in. It should only be called once
+  // for the current thread. After it returns, GetCurrentThread() will return
+  // the thread that was created. GetCurrentThread() will also create a thread
+  // (lazily), but it doesn't allow the queue or main-thread attributes to be
+  // specified.
+  nsThread* CreateCurrentThread(mozilla::SynchronizedEventQueue* aQueue,
+                                nsThread::MainThreadFlag aMainThread);
 
   // Returns the maximal number of threads that have been in existence
   // simultaneously during the execution of the thread manager.
@@ -50,40 +59,37 @@ public:
 
   // This needs to be public in order to support static instantiation of this
   // class with older compilers (e.g., egcs-2.91.66).
-  ~nsThreadManager()
-  {
-  }
+  ~nsThreadManager() {}
 
-private:
+  void EnableMainThreadEventPrioritization();
+  void FlushInputEventPrioritization();
+  void SuspendInputEventPrioritization();
+  void ResumeInputEventPrioritization();
+
+  static bool MainThreadHasPendingHighPriorityEvents();
+
+ private:
   nsThreadManager()
-    : mCurThreadIndex(0)
-    , mMainPRThread(nullptr)
-    , mLock("nsThreadManager.mLock")
-    , mInitialized(false)
-    , mCurrentNumberOfThreads(1)
-    , mHighestNumberOfThreads(1)
-  {
-  }
+      : mCurThreadIndex(0), mMainPRThread(nullptr), mInitialized(false) {}
 
-  nsRefPtrHashtable<nsPtrHashKey<PRThread>, nsThread> mThreadsByPRThread;
-  unsigned            mCurThreadIndex;  // thread-local-storage index
-  RefPtr<nsThread>  mMainThread;
-  PRThread*         mMainPRThread;
-  mozilla::OffTheBooksMutex mLock;  // protects tables
-  mozilla::Atomic<bool> mInitialized;
+  nsresult SpinEventLoopUntilInternal(nsINestedEventLoopCondition* aCondition,
+                                      bool aCheckingShutdown);
 
-  // The current number of threads
-  uint32_t            mCurrentNumberOfThreads;
-  // The highest number of threads encountered so far during the session
-  uint32_t            mHighestNumberOfThreads;
+  static void ReleaseThread(void* aData);
+
+  unsigned mCurThreadIndex;  // thread-local-storage index
+  RefPtr<nsThread> mMainThread;
+  PRThread* mMainPRThread;
+  mozilla::Atomic<bool, mozilla::SequentiallyConsistent,
+                  mozilla::recordreplay::Behavior::DontPreserve>
+      mInitialized;
 };
 
-#define NS_THREADMANAGER_CID                       \
-{ /* 7a4204c6-e45a-4c37-8ebb-6709a22c917c */       \
-  0x7a4204c6,                                      \
-  0xe45a,                                          \
-  0x4c37,                                          \
-  {0x8e, 0xbb, 0x67, 0x09, 0xa2, 0x2c, 0x91, 0x7c} \
-}
+#define NS_THREADMANAGER_CID                         \
+  { /* 7a4204c6-e45a-4c37-8ebb-6709a22c917c */       \
+    0x7a4204c6, 0xe45a, 0x4c37, {                    \
+      0x8e, 0xbb, 0x67, 0x09, 0xa2, 0x2c, 0x91, 0x7c \
+    }                                                \
+  }
 
 #endif  // nsThreadManager_h__

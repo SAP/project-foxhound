@@ -29,6 +29,7 @@ include root.mk
 # Main rules (export, compile, libs and tools) call recurse_* rules.
 # This wrapping is only really useful for build status.
 $(TIERS)::
+	$(if $(filter $@,$(MAKECMDGOALS)),$(call BUILDSTATUS,TIERS $@),)
 	$(call BUILDSTATUS,TIER_START $@)
 	+$(MAKE) recurse_$@
 	$(call BUILDSTATUS,TIER_FINISH $@)
@@ -40,7 +41,7 @@ binaries::
 # Carefully avoid $(eval) type of rule generation, which makes pymake slower
 # than necessary.
 # Get current tier and corresponding subtiers from the data in root.mk.
-CURRENT_TIER := $(filter $(foreach tier,$(TIERS),recurse_$(tier) $(tier)-deps),$(MAKECMDGOALS))
+CURRENT_TIER := $(filter $(foreach tier,$(TIERS) $(non_default_tiers),recurse_$(tier) $(tier)-deps),$(MAKECMDGOALS))
 ifneq (,$(filter-out 0 1,$(words $(CURRENT_TIER))))
 $(error $(CURRENT_TIER) not supported on the same make command line)
 endif
@@ -60,15 +61,36 @@ export NO_RECURSE_MAKELEVEL=$(word $(MAKELEVEL),2 3 4 5 6 7 8 9 10 11 12 13 14 1
 endif
 endif
 
+RECURSE = $(if $(RECURSE_TRACE_ONLY),@echo $2/$1,$(call SUBMAKE,$1,$2))
+
 # Use the $(*_dirs) variables available in root.mk
 CURRENT_DIRS := $($(CURRENT_TIER)_dirs)
 
 # Need a list of compile targets because we can't use pattern rules:
 # https://savannah.gnu.org/bugs/index.php?42833
 # Only recurse the paths starting with RECURSE_BASE_DIR when provided.
-.PHONY: $(compile_targets)
-$(compile_targets):
-	$(if $(filter $(RECURSE_BASE_DIR)%,$@),$(call SUBMAKE,$(@F),$(@D)))
+.PHONY: $(compile_targets) $(syms_targets)
+$(compile_targets) $(syms_targets):
+	$(if $(filter $(RECURSE_BASE_DIR)%,$@),$(call RECURSE,$(@F),$(@D)))
+
+$(syms_targets): %/syms: %/target
+
+# Only hook symbols targets into the main compile graph in automation.
+ifdef MOZ_AUTOMATION
+ifeq (1,$(MOZ_AUTOMATION_BUILD_SYMBOLS))
+recurse_compile: $(syms_targets)
+endif
+endif
+
+# Create a separate rule that depends on every 'syms' target so that
+# symbols can be dumped on demand locally.
+.PHONY: recurse_syms
+recurse_syms: $(syms_targets)
+
+# Ensure dump_syms gets built before any syms targets, all of which depend on it.
+ifneq (,$(filter toolkit/crashreporter/google-breakpad/src/tools/%/dump_syms/host,$(compile_targets)))
+$(syms_targets): $(filter toolkit/crashreporter/google-breakpad/src/tools/%/dump_syms/host,$(compile_targets))
+endif
 
 # The compile tier has different rules from other tiers.
 ifneq ($(CURRENT_TIER),compile)
@@ -76,7 +98,7 @@ ifneq ($(CURRENT_TIER),compile)
 # Recursion rule for all directories traversed for all subtiers in the
 # current tier.
 $(addsuffix /$(CURRENT_TIER),$(CURRENT_DIRS)): %/$(CURRENT_TIER):
-	$(call SUBMAKE,$(CURRENT_TIER),$*)
+	$(call RECURSE,$(CURRENT_TIER),$*)
 
 .PHONY: $(addsuffix /$(CURRENT_TIER),$(CURRENT_DIRS))
 
@@ -144,19 +166,24 @@ ifeq (.,$(DEPTH))
 js/xpconnect/src/export: dom/bindings/export xpcom/xpidl/export
 accessible/xpcom/export: xpcom/xpidl/export
 
-# The widget binding generator code is part of the annotationProcessors.
-widget/android/bindings/export: build/annotationProcessors/export
+# The Android SDK bindings needs to build the Java generator code
+# source code in order to write the SDK bindings.
+widget/android/bindings/export: mobile/android/base/export
+
+# The widget JNI wrapper generator code needs to build the GeckoView
+# and Fennec source code in order to find JNI wrapper annotations.
+widget/android/fennec/export: mobile/android/base/export
+widget/android/export: mobile/android/base/export
 
 # .xpt generation needs the xpidl lex/yacc files
 xpcom/xpidl/export: xpcom/idl-parser/xpidl/export
 
-# The roboextender addon includes a classes.dex containing a test Java addon.
-# The test addon must be built first.
-mobile/android/tests/browser/robocop/roboextender/tools: mobile/android/tests/javaaddons/tools
+# CSS2Properties.webidl needs ServoCSSPropList.py from layout/style
+dom/bindings/export: layout/style/export
 
 ifdef ENABLE_CLANG_PLUGIN
-$(filter-out config/host build/unix/stdc++compat/% build/clang-plugin/%,$(compile_targets)): build/clang-plugin/target build/clang-plugin/tests/target
-build/clang-plugin/tests/target: build/clang-plugin/target
+$(filter-out config/host build/unix/stdc++compat/% build/clang-plugin/%,$(compile_targets)): build/clang-plugin/host build/clang-plugin/tests/target
+build/clang-plugin/tests/target: build/clang-plugin/host
 endif
 
 # Interdependencies that moz.build world don't know about yet for compilation.
@@ -168,10 +195,7 @@ ifdef MOZ_LDAP_XPCOM
 ldap/target: security/target mozglue/build/target
 toolkit/library/target: ldap/target
 endif
-ifeq ($(MOZ_REPLACE_MALLOC_LINKAGE),dummy library)
-mozglue/build/target memory/replace/logalloc/replay/target: memory/replace/dummy/target
-endif
 endif
 # Most things are built during compile (target/host), but some things happen during export
 # Those need to depend on config/export for system wrappers.
-$(addprefix build/unix/stdc++compat/,target host) build/clang-plugin/target: config/export
+$(addprefix build/unix/stdc++compat/,target host) build/clang-plugin/host: config/export

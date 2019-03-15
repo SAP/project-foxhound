@@ -11,6 +11,7 @@
 
   <script type="application/javascript">
     "use strict";
+    /* eslint-env mozilla/frame-script */
 
     SimpleTest.waitForExplicitFinish();
 
@@ -19,8 +20,6 @@
 
     function childFrameScript() {
       "use strict";
-
-      const Ci = Components.interfaces;
 
       function test1(message) {
         // NB: This is a no-op because we're a data: document with a null
@@ -42,7 +41,8 @@
         test.next(msg.data);
       }
 
-      mm.addMessageListener("testCPOWCookies:test1Finished", testDone);
+      mm.addMessageListener("testCPOWCookies:test1Finished",
+                            SpecialPowers.wrapCallback(testDone));
 
       mm.sendAsyncMessage("testCPOWCookies:test1", {});
       lastResult = yield;
@@ -81,8 +81,9 @@
           ["dom.ipc.browser_frames.oop_by_default", true],
           ["dom.mozBrowserFramesEnabled", true],
           ["network.disable.ipc.security", true],
-          ["browser.pagethumbnails.capturing_disabled", true]
-        ]
+          ["browser.pagethumbnails.capturing_disabled", true],
+          ["security.data_uri.block_toplevel_data_uri_navigations", false],
+        ],
       }, runTests);
     });
   </script>

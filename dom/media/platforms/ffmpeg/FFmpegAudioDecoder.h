@@ -12,14 +12,19 @@
 
 namespace mozilla {
 
-template <int V> class FFmpegAudioDecoder
-{
-};
+template <int V>
+class FFmpegAudioDecoder {};
 
 template <>
-class FFmpegAudioDecoder<LIBAV_VER> : public FFmpegDataDecoder<LIBAV_VER>
-{
-public:
+class FFmpegAudioDecoder<LIBAV_VER>;
+DDLoggedTypeNameAndBase(FFmpegAudioDecoder<LIBAV_VER>,
+                        FFmpegDataDecoder<LIBAV_VER>);
+
+template <>
+class FFmpegAudioDecoder<LIBAV_VER>
+    : public FFmpegDataDecoder<LIBAV_VER>,
+      public DecoderDoctorLifeLogger<FFmpegAudioDecoder<LIBAV_VER>> {
+ public:
   FFmpegAudioDecoder(FFmpegLibWrapper* aLib, TaskQueue* aTaskQueue,
                      const AudioInfo& aConfig);
   virtual ~FFmpegAudioDecoder();
@@ -27,16 +32,15 @@ public:
   RefPtr<InitPromise> Init() override;
   void InitCodecContext() override;
   static AVCodecID GetCodecId(const nsACString& aMimeType);
-  const char* GetDescriptionName() const override
-  {
-    return "ffmpeg audio decoder";
+  nsCString GetDescriptionName() const override {
+    return NS_LITERAL_CSTRING("ffmpeg audio decoder");
   }
 
-private:
-  RefPtr<DecodePromise> ProcessDecode(MediaRawData* aSample) override;
-  RefPtr<DecodePromise> ProcessDrain() override;
+ private:
+  MediaResult DoDecode(MediaRawData* aSample, uint8_t* aData, int aSize,
+                       bool* aGotFrame, DecodedData& aResults) override;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // __FFmpegAACDecoder_h__
+#endif  // __FFmpegAACDecoder_h__

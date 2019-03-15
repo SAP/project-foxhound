@@ -24,9 +24,8 @@ typedef nsTArray<_Prefix> _PrefixArray;
 // This function removes common elements of inArray and outArray from
 // outArray. This is used by partial update testcase to ensure partial update
 // data won't contain prefixes we already have.
-static void
-RemoveIntersection(const _PrefixArray& inArray, _PrefixArray& outArray)
-{
+static void RemoveIntersection(const _PrefixArray& inArray,
+                               _PrefixArray& outArray) {
   for (uint32_t i = 0; i < inArray.Length(); i++) {
     int32_t idx = outArray.BinaryIndexOf(inArray[i]);
     if (idx >= 0) {
@@ -37,51 +36,44 @@ RemoveIntersection(const _PrefixArray& inArray, _PrefixArray& outArray)
 
 // This fucntion removes elements from outArray by index specified in
 // removal array.
-static void
-RemoveElements(const nsTArray<uint32_t>& removal, _PrefixArray& outArray)
-{
+static void RemoveElements(const nsTArray<uint32_t>& removal,
+                           _PrefixArray& outArray) {
   for (int32_t i = removal.Length() - 1; i >= 0; i--) {
     outArray.RemoveElementAt(removal[i]);
   }
 }
 
-static void
-MergeAndSortArray(const _PrefixArray& array1,
-                  const _PrefixArray& array2,
-                  _PrefixArray& output)
-{
+static void MergeAndSortArray(const _PrefixArray& array1,
+                              const _PrefixArray& array2,
+                              _PrefixArray& output) {
   output.Clear();
   output.AppendElements(array1);
   output.AppendElements(array2);
   output.Sort();
 }
 
-static void
-CalculateCheckSum(_PrefixArray& prefixArray, nsCString& checksum)
-{
+static void CalculateCheckSum(_PrefixArray& prefixArray, nsCString& checksum) {
   prefixArray.Sort();
 
   nsresult rv;
   nsCOMPtr<nsICryptoHash> cryptoHash =
-    do_CreateInstance(NS_CRYPTO_HASH_CONTRACTID, &rv);
+      do_CreateInstance(NS_CRYPTO_HASH_CONTRACTID, &rv);
 
   cryptoHash->Init(nsICryptoHash::SHA256);
   for (uint32_t i = 0; i < prefixArray.Length(); i++) {
     const _Prefix& prefix = prefixArray[i];
-    cryptoHash->Update(reinterpret_cast<uint8_t*>(
-                       const_cast<char*>(prefix.get())), prefix.Length());
+    cryptoHash->Update(
+        reinterpret_cast<uint8_t*>(const_cast<char*>(prefix.get())),
+        prefix.Length());
   }
   cryptoHash->Finish(false, checksum);
 }
 
 // N: Number of prefixes, MIN/MAX: minimum/maximum prefix size
 // This function will append generated prefixes to outArray.
-static void
-CreateRandomSortedPrefixArray(uint32_t N,
-                              uint32_t MIN,
-                              uint32_t MAX,
-                              _PrefixArray& outArray)
-{
+static void CreateRandomSortedPrefixArray(uint32_t N, uint32_t MIN,
+                                          uint32_t MAX,
+                                          _PrefixArray& outArray) {
   outArray.SetCapacity(outArray.Length() + N);
 
   const uint32_t range = (MAX - MIN + 1);
@@ -108,11 +100,8 @@ CreateRandomSortedPrefixArray(uint32_t N,
 }
 
 // N: Number of removal indices, MAX: maximum index
-static void
-CreateRandomRemovalIndices(uint32_t N,
-                           uint32_t MAX,
-                           nsTArray<uint32_t>& outArray)
-{
+static void CreateRandomRemovalIndices(uint32_t N, uint32_t MAX,
+                                       nsTArray<uint32_t>& outArray) {
   for (uint32_t i = 0; i < N; i++) {
     uint32_t idx = rand() % MAX;
     if (!outArray.Contains(idx)) {
@@ -122,21 +111,15 @@ CreateRandomRemovalIndices(uint32_t N,
 }
 
 // Function to generate TableUpdateV4.
-static void
-GenerateUpdateData(bool fullUpdate,
-                   PrefixStringMap& add,
-                   nsTArray<uint32_t>* removal,
-                   nsCString* checksum,
-                   nsTArray<TableUpdate*>& tableUpdates)
-{
-  TableUpdateV4* tableUpdate = new TableUpdateV4(GTEST_TABLE);
+static void GenerateUpdateData(bool fullUpdate, PrefixStringMap& add,
+                               nsTArray<uint32_t>* removal, nsCString* checksum,
+                               TableUpdateArray& tableUpdates) {
+  RefPtr<TableUpdateV4> tableUpdate = new TableUpdateV4(GTEST_TABLE);
   tableUpdate->SetFullUpdate(fullUpdate);
 
   for (auto iter = add.ConstIter(); !iter.Done(); iter.Next()) {
     nsCString* pstring = iter.Data();
-    std::string str(pstring->BeginReading(), pstring->Length());
-
-    tableUpdate->NewPrefixes(iter.Key(), str);
+    tableUpdate->NewPrefixes(iter.Key(), *pstring);
   }
 
   if (removal) {
@@ -145,7 +128,8 @@ GenerateUpdateData(bool fullUpdate,
 
   if (checksum) {
     std::string stdChecksum;
-    stdChecksum.assign(const_cast<char*>(checksum->BeginReading()), checksum->Length());
+    stdChecksum.assign(const_cast<char*>(checksum->BeginReading()),
+                       checksum->Length());
 
     tableUpdate->NewChecksum(stdChecksum);
   }
@@ -153,9 +137,7 @@ GenerateUpdateData(bool fullUpdate,
   tableUpdates.AppendElement(tableUpdate);
 }
 
-static void
-VerifyPrefixSet(PrefixStringMap& expected)
-{
+static void VerifyPrefixSet(PrefixStringMap& expected) {
   // Verify the prefix set is written to disk.
   nsCOMPtr<nsIFile> file;
   NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR, getter_AddRefs(file));
@@ -178,95 +160,86 @@ VerifyPrefixSet(PrefixStringMap& expected)
   }
 }
 
-static void
-Clear()
-{
+static void Clear() {
   nsCOMPtr<nsIFile> file;
   NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR, getter_AddRefs(file));
 
-  UniquePtr<Classifier> classifier(new Classifier());
+  RefPtr<Classifier> classifier = new Classifier();
   classifier->Open(*file);
   classifier->Reset();
 }
 
-static void
-testUpdateFail(nsTArray<TableUpdate*>& tableUpdates)
-{
+static void testUpdateFail(TableUpdateArray& tableUpdates) {
   nsCOMPtr<nsIFile> file;
   NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR, getter_AddRefs(file));
 
-  UniquePtr<Classifier> classifier(new Classifier());
+  RefPtr<Classifier> classifier = new Classifier();
   classifier->Open(*file);
 
-  RunTestInNewThread([&] () -> void {
-    nsresult rv = classifier->ApplyUpdates(&tableUpdates);
-    ASSERT_TRUE(NS_FAILED(rv));
-  });
+  nsresult rv = SyncApplyUpdates(classifier, tableUpdates);
+  ASSERT_TRUE(NS_FAILED(rv));
 }
 
-static void
-testUpdate(nsTArray<TableUpdate*>& tableUpdates,
-           PrefixStringMap& expected)
-{
+static void testUpdate(TableUpdateArray& tableUpdates,
+                       PrefixStringMap& expected) {
   nsCOMPtr<nsIFile> file;
   NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR, getter_AddRefs(file));
 
-  UniquePtr<Classifier> classifier(new Classifier());
+  {
+    // Force nsIUrlClassifierUtils loading on main thread
+    // because nsIUrlClassifierDBService will not run in advance
+    // in gtest.
+    nsresult rv;
+    nsCOMPtr<nsIUrlClassifierUtils> dummy =
+        do_GetService(NS_URLCLASSIFIERUTILS_CONTRACTID, &rv);
+    ASSERT_TRUE(NS_SUCCEEDED(rv));
+  }
+
+  RefPtr<Classifier> classifier = new Classifier();
   classifier->Open(*file);
 
-  RunTestInNewThread([&] () -> void {
-    nsresult rv = classifier->ApplyUpdates(&tableUpdates);
-    ASSERT_TRUE(rv == NS_OK);
-
-    VerifyPrefixSet(expected);
-  });
+  nsresult rv = SyncApplyUpdates(classifier, tableUpdates);
+  ASSERT_TRUE(rv == NS_OK);
+  VerifyPrefixSet(expected);
 }
 
-static void
-testFullUpdate(PrefixStringMap& add, nsCString* checksum)
-{
-  nsTArray<TableUpdate*> tableUpdates;
+static void testFullUpdate(PrefixStringMap& add, nsCString* checksum) {
+  TableUpdateArray tableUpdates;
 
   GenerateUpdateData(true, add, nullptr, checksum, tableUpdates);
 
   testUpdate(tableUpdates, add);
 }
 
-static void
-testPartialUpdate(PrefixStringMap& add,
-                  nsTArray<uint32_t>* removal,
-                  nsCString* checksum,
-                  PrefixStringMap& expected)
-{
-  nsTArray<TableUpdate*> tableUpdates;
+static void testPartialUpdate(PrefixStringMap& add, nsTArray<uint32_t>* removal,
+                              nsCString* checksum, PrefixStringMap& expected) {
+  TableUpdateArray tableUpdates;
   GenerateUpdateData(false, add, removal, checksum, tableUpdates);
 
   testUpdate(tableUpdates, expected);
 }
 
-static void
-testOpenLookupCache()
-{
+static void testOpenLookupCache() {
   nsCOMPtr<nsIFile> file;
   NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR, getter_AddRefs(file));
   file->AppendNative(GTEST_SAFEBROWSING_DIR);
 
-  RunTestInNewThread([&] () -> void {
-    LookupCacheV4 cache(nsCString(GTEST_TABLE), EmptyCString(), file);
-    nsresult rv = cache.Init();
+  RunTestInNewThread([&]() -> void {
+    RefPtr<LookupCacheV4> cache =
+        new LookupCacheV4(nsCString(GTEST_TABLE), EmptyCString(), file);
+    nsresult rv = cache->Init();
     ASSERT_EQ(rv, NS_OK);
 
-    rv = cache.Open();
+    rv = cache->Open();
     ASSERT_EQ(rv, NS_OK);
   });
 }
 
 // Tests start from here.
-TEST(UrlClassifierTableUpdateV4, FixLenghtPSetFullUpdate)
-{
+TEST(UrlClassifierTableUpdateV4, FixLenghtPSetFullUpdate) {
   srand(time(NULL));
 
-   _PrefixArray array;
+  _PrefixArray array;
   PrefixStringMap map;
   nsCString checksum;
 
@@ -279,9 +252,8 @@ TEST(UrlClassifierTableUpdateV4, FixLenghtPSetFullUpdate)
   Clear();
 }
 
-TEST(UrlClassifierTableUpdateV4, VariableLenghtPSetFullUpdate)
-{
-   _PrefixArray array;
+TEST(UrlClassifierTableUpdateV4, VariableLenghtPSetFullUpdate) {
+  _PrefixArray array;
   PrefixStringMap map;
   nsCString checksum;
 
@@ -295,9 +267,8 @@ TEST(UrlClassifierTableUpdateV4, VariableLenghtPSetFullUpdate)
 }
 
 // This test contain both variable length prefix set and fixed-length prefix set
-TEST(UrlClassifierTableUpdateV4, MixedPSetFullUpdate)
-{
-   _PrefixArray array;
+TEST(UrlClassifierTableUpdateV4, MixedPSetFullUpdate) {
+  _PrefixArray array;
   PrefixStringMap map;
   nsCString checksum;
 
@@ -311,8 +282,7 @@ TEST(UrlClassifierTableUpdateV4, MixedPSetFullUpdate)
   Clear();
 }
 
-TEST(UrlClassifierTableUpdateV4, PartialUpdateWithRemoval)
-{
+TEST(UrlClassifierTableUpdateV4, PartialUpdateWithRemoval) {
   _PrefixArray fArray;
 
   // Apply a full update first.
@@ -355,8 +325,7 @@ TEST(UrlClassifierTableUpdateV4, PartialUpdateWithRemoval)
   Clear();
 }
 
-TEST(UrlClassifierTableUpdateV4, PartialUpdateWithoutRemoval)
-{
+TEST(UrlClassifierTableUpdateV4, PartialUpdateWithoutRemoval) {
   _PrefixArray fArray;
 
   // Apply a full update first.
@@ -396,8 +365,7 @@ TEST(UrlClassifierTableUpdateV4, PartialUpdateWithoutRemoval)
 
 // Expect failure because partial update contains prefix already
 // in old prefix set.
-TEST(UrlClassifierTableUpdateV4, PartialUpdatePrefixAlreadyExist)
-{
+TEST(UrlClassifierTableUpdateV4, PartialUpdatePrefixAlreadyExist) {
   _PrefixArray fArray;
 
   // Apply a full update fist.
@@ -417,7 +385,7 @@ TEST(UrlClassifierTableUpdateV4, PartialUpdatePrefixAlreadyExist)
   {
     _PrefixArray pArray;
     PrefixStringMap pMap;
-    nsTArray<TableUpdate*> tableUpdates;
+    TableUpdateArray tableUpdates;
 
     // Pick one prefix from full update prefix and add it to partial update.
     // This should result a failure when call ApplyUpdates.
@@ -433,8 +401,7 @@ TEST(UrlClassifierTableUpdateV4, PartialUpdatePrefixAlreadyExist)
 }
 
 // Test apply partial update directly without applying an full update first.
-TEST(UrlClassifierTableUpdateV4, OnlyPartialUpdate)
-{
+TEST(UrlClassifierTableUpdateV4, OnlyPartialUpdate) {
   _PrefixArray pArray;
   PrefixStringMap pMap;
   nsCString checksum;
@@ -450,8 +417,7 @@ TEST(UrlClassifierTableUpdateV4, OnlyPartialUpdate)
 }
 
 // Test partial update without any ADD prefixes, only removalIndices.
-TEST(UrlClassifierTableUpdateV4, PartialUpdateOnlyRemoval)
-{
+TEST(UrlClassifierTableUpdateV4, PartialUpdateOnlyRemoval) {
   _PrefixArray fArray;
 
   // Apply a full update first.
@@ -488,13 +454,12 @@ TEST(UrlClassifierTableUpdateV4, PartialUpdateOnlyRemoval)
 }
 
 // Test one tableupdate array contains full update and multiple partial updates.
-TEST(UrlClassifierTableUpdateV4, MultipleTableUpdates)
-{
+TEST(UrlClassifierTableUpdateV4, MultipleTableUpdates) {
   _PrefixArray fArray, pArray, mergedArray;
   PrefixStringMap fMap, pMap, mergedMap;
   nsCString checksum;
 
-  nsTArray<TableUpdate*> tableUpdates;
+  TableUpdateArray tableUpdates;
 
   // Generate first full udpate
   CreateRandomSortedPrefixArray(10000, 4, 4, fArray);
@@ -542,8 +507,7 @@ TEST(UrlClassifierTableUpdateV4, MultipleTableUpdates)
 
 // Test apply full update first, and then apply multiple partial updates
 // in one tableupdate array.
-TEST(UrlClassifierTableUpdateV4, MultiplePartialUpdateTableUpdates)
-{
+TEST(UrlClassifierTableUpdateV4, MultiplePartialUpdateTableUpdates) {
   _PrefixArray fArray;
 
   // Apply a full update first
@@ -566,7 +530,7 @@ TEST(UrlClassifierTableUpdateV4, MultiplePartialUpdateTableUpdates)
     PrefixStringMap pMap, mergedMap;
     nsCString checksum;
     nsTArray<uint32_t> removal;
-    nsTArray<TableUpdate*> tableUpdates;
+    TableUpdateArray tableUpdates;
 
     // Generate first partial update
     CreateRandomSortedPrefixArray(3000, 4, 4, pArray);
@@ -611,8 +575,7 @@ TEST(UrlClassifierTableUpdateV4, MultiplePartialUpdateTableUpdates)
 }
 
 // Test removal indices are larger than the original prefix set.
-TEST(UrlClassifierTableUpdateV4, RemovalIndexTooLarge)
-{
+TEST(UrlClassifierTableUpdateV4, RemovalIndexTooLarge) {
   _PrefixArray fArray;
 
   // Apply a full update first
@@ -633,13 +596,13 @@ TEST(UrlClassifierTableUpdateV4, RemovalIndexTooLarge)
     _PrefixArray pArray;
     PrefixStringMap pMap;
     nsTArray<uint32_t> removal;
-    nsTArray<TableUpdate*> tableUpdates;
+    TableUpdateArray tableUpdates;
 
     CreateRandomSortedPrefixArray(200, 4, 32, pArray);
     RemoveIntersection(fArray, pArray);
     PrefixArrayToPrefixStringMap(pArray, pMap);
 
-    for (uint32_t i = 0; i < fArray.Length() + 1 ;i++) {
+    for (uint32_t i = 0; i < fArray.Length() + 1; i++) {
       removal.AppendElement(i);
     }
 
@@ -650,8 +613,7 @@ TEST(UrlClassifierTableUpdateV4, RemovalIndexTooLarge)
   Clear();
 }
 
-TEST(UrlClassifierTableUpdateV4, ChecksumMismatch)
-{
+TEST(UrlClassifierTableUpdateV4, ChecksumMismatch) {
   // Apply a full update first
   {
     _PrefixArray fArray;
@@ -670,14 +632,14 @@ TEST(UrlClassifierTableUpdateV4, ChecksumMismatch)
     _PrefixArray pArray;
     PrefixStringMap pMap;
     nsCString checksum;
-    nsTArray<TableUpdate*> tableUpdates;
+    TableUpdateArray tableUpdates;
 
     CreateRandomSortedPrefixArray(200, 4, 32, pArray);
     PrefixArrayToPrefixStringMap(pArray, pMap);
 
-    // Checksum should be calculated with both old prefix set and add prefix set,
-    // here we only calculate checksum with add prefix set to check if applyUpdate
-    // will return failure.
+    // Checksum should be calculated with both old prefix set and add prefix
+    // set, here we only calculate checksum with add prefix set to check if
+    // applyUpdate will return failure.
     CalculateCheckSum(pArray, checksum);
 
     GenerateUpdateData(false, pMap, nullptr, &checksum, tableUpdates);
@@ -687,8 +649,7 @@ TEST(UrlClassifierTableUpdateV4, ChecksumMismatch)
   Clear();
 }
 
-TEST(UrlClassifierTableUpdateV4, ApplyUpdateThenLoad)
-{
+TEST(UrlClassifierTableUpdateV4, ApplyUpdateThenLoad) {
   // Apply update with checksum
   {
     _PrefixArray fArray;
@@ -724,26 +685,35 @@ TEST(UrlClassifierTableUpdateV4, ApplyUpdateThenLoad)
 }
 
 // This test is used to avoid an eror from nsICryptoHash
-TEST(UrlClassifierTableUpdateV4, ApplyUpdateWithFixedChecksum)
-{
-  _PrefixArray fArray = { _Prefix("enus"), _Prefix("apollo"), _Prefix("mars"),
-                          _Prefix("Hecatonchires cyclopes"),
-                          _Prefix("vesta"), _Prefix("neptunus"), _Prefix("jupiter"),
-                          _Prefix("diana"), _Prefix("minerva"), _Prefix("ceres"),
-                          _Prefix("Aidos,Adephagia,Adikia,Aletheia"),
-                          _Prefix("hecatonchires"), _Prefix("alcyoneus"), _Prefix("hades"),
-                          _Prefix("vulcanus"), _Prefix("juno"), _Prefix("mercury"),
-                          _Prefix("Stheno, Euryale and Medusa")
-                        };
+TEST(UrlClassifierTableUpdateV4, ApplyUpdateWithFixedChecksum) {
+  _PrefixArray fArray = {_Prefix("enus"),
+                         _Prefix("apollo"),
+                         _Prefix("mars"),
+                         _Prefix("Hecatonchires cyclopes"),
+                         _Prefix("vesta"),
+                         _Prefix("neptunus"),
+                         _Prefix("jupiter"),
+                         _Prefix("diana"),
+                         _Prefix("minerva"),
+                         _Prefix("ceres"),
+                         _Prefix("Aidos,Adephagia,Adikia,Aletheia"),
+                         _Prefix("hecatonchires"),
+                         _Prefix("alcyoneus"),
+                         _Prefix("hades"),
+                         _Prefix("vulcanus"),
+                         _Prefix("juno"),
+                         _Prefix("mercury"),
+                         _Prefix("Stheno, Euryale and Medusa")};
   fArray.Sort();
 
   PrefixStringMap fMap;
   PrefixArrayToPrefixStringMap(fArray, fMap);
 
-  nsCString checksum("\xae\x18\x94\xd7\xd0\x83\x5f\xc1"
-                     "\x58\x59\x5c\x2c\x72\xb9\x6e\x5e"
-                     "\xf4\xe8\x0a\x6b\xff\x5e\x6b\x81"
-                     "\x65\x34\x06\x16\x06\x59\xa0\x67");
+  nsCString checksum(
+      "\xae\x18\x94\xd7\xd0\x83\x5f\xc1"
+      "\x58\x59\x5c\x2c\x72\xb9\x6e\x5e"
+      "\xf4\xe8\x0a\x6b\xff\x5e\x6b\x81"
+      "\x65\x34\x06\x16\x06\x59\xa0\x67");
 
   testFullUpdate(fMap, &checksum);
 
@@ -753,3 +723,65 @@ TEST(UrlClassifierTableUpdateV4, ApplyUpdateWithFixedChecksum)
   Clear();
 }
 
+// This test ensure that an empty update works correctly. Empty update
+// should be skipped by CheckValidUpdate in Classifier::UpdateTableV4.
+TEST(UrlClassifierTableUpdateV4, EmptyUpdate) {
+  PrefixStringMap emptyAddition;
+  nsTArray<uint32_t> emptyRemoval;
+
+  _PrefixArray array;
+  PrefixStringMap map;
+  nsCString checksum;
+
+  CalculateCheckSum(array, checksum);
+
+  // Test apply empty full/partial update before we already
+  // have data in DB.
+  testFullUpdate(emptyAddition, &checksum);
+  testPartialUpdate(emptyAddition, &emptyRemoval, &checksum, map);
+
+  // Apply an full update.
+  CreateRandomSortedPrefixArray(100, 4, 4, array);
+  CreateRandomSortedPrefixArray(10, 5, 32, array);
+  PrefixArrayToPrefixStringMap(array, map);
+  CalculateCheckSum(array, checksum);
+
+  testFullUpdate(map, &checksum);
+
+  // Test apply empty full/partial update when we already
+  // have data in DB
+  testPartialUpdate(emptyAddition, &emptyRemoval, &checksum, map);
+  testFullUpdate(emptyAddition, &checksum);
+
+  Clear();
+}
+
+// This test ensure applying an empty update directly through update algorithm
+// should be correct.
+TEST(UrlClassifierTableUpdateV4, EmptyUpdate2) {
+  // Setup LookupCache with initial data
+  _PrefixArray array;
+  CreateRandomSortedPrefixArray(100, 4, 4, array);
+  CreateRandomSortedPrefixArray(10, 5, 32, array);
+  RefPtr<LookupCacheV4> cache = SetupLookupCache<LookupCacheV4>(array);
+
+  // Setup TableUpdate object with only checksum from previous update(initial
+  // data).
+  nsCString checksum;
+  CalculateCheckSum(array, checksum);
+  std::string stdChecksum;
+  stdChecksum.assign(const_cast<char*>(checksum.BeginReading()),
+                     checksum.Length());
+
+  RefPtr<TableUpdateV4> tableUpdate = new TableUpdateV4(GTEST_TABLE);
+  tableUpdate->NewChecksum(stdChecksum);
+
+  // Apply update directly through LookupCache interface
+  PrefixStringMap input, output;
+  PrefixArrayToPrefixStringMap(array, input);
+  nsresult rv = cache->ApplyUpdate(tableUpdate.get(), input, output);
+
+  ASSERT_TRUE(rv == NS_OK);
+
+  Clear();
+}

@@ -180,16 +180,18 @@ STAN_RemoveModuleFromDefaultTrustDomain(
     NSSTrustDomain *td;
     int i;
     td = STAN_GetDefaultTrustDomain();
-    NSSRWLock_LockWrite(td->tokensLock);
     for (i = 0; i < module->slotCount; i++) {
         token = PK11Slot_GetNSSToken(module->slots[i]);
         if (token) {
             nssToken_NotifyCertsNotVisible(token);
+            NSSRWLock_LockWrite(td->tokensLock);
             nssList_Remove(td->tokenList, token);
+            NSSRWLock_UnlockWrite(td->tokensLock);
             PK11Slot_SetNSSToken(module->slots[i], NULL);
             nssToken_Destroy(token);
         }
     }
+    NSSRWLock_LockWrite(td->tokensLock);
     nssListIterator_Destroy(td->tokens);
     td->tokens = nssList_CreateIterator(td->tokenList);
     NSSRWLock_UnlockWrite(td->tokensLock);
@@ -831,8 +833,10 @@ fill_CERTCertificateFields(NSSCertificate *c, CERTCertificate *cc, PRBool forced
     cc->dbhandle = c->object.trustDomain;
     /* subjectList ? */
     /* istemp and isperm are supported in NSS 3.4 */
+    CERT_LockCertTempPerm(cc);
     cc->istemp = PR_FALSE; /* CERT_NewTemp will override this */
     cc->isperm = PR_TRUE;  /* by default */
+    CERT_UnlockCertTempPerm(cc);
     /* pointer back */
     cc->nssCertificate = c;
     if (trust) {
@@ -1139,8 +1143,8 @@ STAN_ChangeCertTrust(CERTCertificate *cc, CERTCertTrust *trust)
         (PRBool)(trust->sslFlags & CERTDB_GOVT_APPROVED_CA);
     if (c->object.cryptoContext != NULL) {
         /* The cert is in a context, set the trust there */
-        NSSCryptoContext *cc = c->object.cryptoContext;
-        nssrv = nssCryptoContext_ImportTrust(cc, nssTrust);
+        NSSCryptoContext *cctx = c->object.cryptoContext;
+        nssrv = nssCryptoContext_ImportTrust(cctx, nssTrust);
         if (nssrv != PR_SUCCESS) {
             goto done;
         }

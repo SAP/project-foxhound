@@ -17,11 +17,11 @@ function test() {
   var triggers = encodeURIComponent(JSON.stringify({
     "Unsigned XPI": {
       URL: url,
-      toString() { return this.URL; }
-    }
+      toString() { return this.URL; },
+    },
   }));
-  gBrowser.selectedTab = gBrowser.addTab();
-  gBrowser.loadURI(TESTROOT + "installtrigger.html?" + triggers);
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
+  BrowserTestUtils.loadURI(gBrowser, TESTROOT + "installtrigger.html?" + triggers);
 }
 
 function download_failed(install) {

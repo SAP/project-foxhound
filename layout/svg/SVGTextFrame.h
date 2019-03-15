@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,7 +14,7 @@
 #include "gfxRect.h"
 #include "gfxTextRun.h"
 #include "nsAutoPtr.h"
-#include "nsIContent.h" // for GetContent
+#include "nsIContent.h"  // for GetContent
 #include "nsStubMutationObserver.h"
 #include "nsSVGContainerFrame.h"
 
@@ -33,8 +34,8 @@ class TextRenderedRunIterator;
 
 namespace dom {
 class SVGIRect;
-class SVGPathElement;
-} // namespace dom
+class SVGGeometryElement;
+}  // namespace dom
 
 /**
  * Information about the positioning for a single character in an SVG <text>
@@ -43,50 +44,35 @@ class SVGPathElement;
  * During SVG text layout, we use infinity values to represent positions and
  * rotations that are not explicitly specified with x/y/rotate attributes.
  */
-struct CharPosition
-{
+struct CharPosition {
   CharPosition()
-    : mAngle(0),
-      mHidden(false),
-      mUnaddressable(false),
-      mClusterOrLigatureGroupMiddle(false),
-      mRunBoundary(false),
-      mStartOfChunk(false)
-  {
-  }
+      : mAngle(0),
+        mHidden(false),
+        mUnaddressable(false),
+        mClusterOrLigatureGroupMiddle(false),
+        mRunBoundary(false),
+        mStartOfChunk(false) {}
 
   CharPosition(gfxPoint aPosition, double aAngle)
-    : mPosition(aPosition),
-      mAngle(aAngle),
-      mHidden(false),
-      mUnaddressable(false),
-      mClusterOrLigatureGroupMiddle(false),
-      mRunBoundary(false),
-      mStartOfChunk(false)
-  {
-  }
+      : mPosition(aPosition),
+        mAngle(aAngle),
+        mHidden(false),
+        mUnaddressable(false),
+        mClusterOrLigatureGroupMiddle(false),
+        mRunBoundary(false),
+        mStartOfChunk(false) {}
 
-  static CharPosition Unspecified(bool aUnaddressable)
-  {
+  static CharPosition Unspecified(bool aUnaddressable) {
     CharPosition cp(UnspecifiedPoint(), UnspecifiedAngle());
     cp.mUnaddressable = aUnaddressable;
     return cp;
   }
 
-  bool IsAngleSpecified() const
-  {
-    return mAngle != UnspecifiedAngle();
-  }
+  bool IsAngleSpecified() const { return mAngle != UnspecifiedAngle(); }
 
-  bool IsXSpecified() const
-  {
-    return mPosition.x != UnspecifiedCoord();
-  }
+  bool IsXSpecified() const { return mPosition.x != UnspecifiedCoord(); }
 
-  bool IsYSpecified() const
-  {
-    return mPosition.y != UnspecifiedCoord();
-  }
+  bool IsYSpecified() const { return mPosition.y != UnspecifiedCoord(); }
 
   gfxPoint mPosition;
   double mAngle;
@@ -106,19 +92,16 @@ struct CharPosition
   // an anchored chunk begins here
   bool mStartOfChunk;
 
-private:
-  static gfxFloat UnspecifiedCoord()
-  {
+ private:
+  static gfxFloat UnspecifiedCoord() {
     return std::numeric_limits<gfxFloat>::infinity();
   }
 
-  static double UnspecifiedAngle()
-  {
+  static double UnspecifiedAngle() {
     return std::numeric_limits<double>::infinity();
   }
 
-  static gfxPoint UnspecifiedPoint()
-  {
+  static gfxPoint UnspecifiedPoint() {
     return gfxPoint(UnspecifiedCoord(), UnspecifiedCoord());
   }
 };
@@ -128,16 +111,18 @@ private:
  * and to invalid the bounds of the SVGTextFrame frame.
  */
 class GlyphMetricsUpdater : public Runnable {
-public:
+ public:
   NS_DECL_NSIRUNNABLE
-  explicit GlyphMetricsUpdater(SVGTextFrame* aFrame) : mFrame(aFrame) { }
+  explicit GlyphMetricsUpdater(SVGTextFrame* aFrame)
+      : Runnable("GlyphMetricsUpdater"), mFrame(aFrame) {}
   static void Run(SVGTextFrame* aFrame);
   void Revoke() { mFrame = nullptr; }
-private:
+
+ private:
   SVGTextFrame* mFrame;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 /**
  * Frame class for SVG <text> elements.
@@ -172,10 +157,9 @@ private:
  * itself do the painting.  Otherwise, a DrawPathCallback is passed to
  * PaintText so that we can fill the text geometry with SVG paint servers.
  */
-class SVGTextFrame final : public nsSVGDisplayContainerFrame
-{
-  friend nsIFrame*
-  NS_NewSVGTextFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
+class SVGTextFrame final : public nsSVGDisplayContainerFrame {
+  friend nsIFrame* NS_NewSVGTextFrame(nsIPresShell* aPresShell,
+                                      ComputedStyle* aStyle);
 
   friend class mozilla::CharIterator;
   friend class mozilla::GlyphMetricsUpdater;
@@ -190,89 +174,71 @@ class SVGTextFrame final : public nsSVGDisplayContainerFrame
   typedef mozilla::gfx::DrawTarget DrawTarget;
   typedef mozilla::gfx::Path Path;
   typedef mozilla::gfx::Point Point;
-  typedef mozilla::image::DrawResult DrawResult;
 
-protected:
-  explicit SVGTextFrame(nsStyleContext* aContext)
-    : nsSVGDisplayContainerFrame(aContext)
-    , mTrailingUndisplayedCharacters(0)
-    , mFontSizeScaleFactor(1.0f)
-    , mLastContextScale(1.0f)
-    , mLengthAdjustScaleFactor(1.0f)
-  {
-    AddStateBits(NS_STATE_SVG_POSITIONING_DIRTY);
+ protected:
+  explicit SVGTextFrame(ComputedStyle* aStyle)
+      : nsSVGDisplayContainerFrame(aStyle, kClassID),
+        mTrailingUndisplayedCharacters(0),
+        mFontSizeScaleFactor(1.0f),
+        mLastContextScale(1.0f),
+        mLengthAdjustScaleFactor(1.0f) {
+    AddStateBits(NS_STATE_SVG_TEXT_CORRESPONDENCE_DIRTY |
+                 NS_STATE_SVG_POSITIONING_DIRTY);
   }
 
   ~SVGTextFrame() {}
 
-public:
-  NS_DECL_QUERYFRAME_TARGET(SVGTextFrame)
+ public:
   NS_DECL_QUERYFRAME
-  NS_DECL_FRAMEARENA_HELPERS
+  NS_DECL_FRAMEARENA_HELPERS(SVGTextFrame)
 
   // nsIFrame:
-  virtual void Init(nsIContent*       aContent,
-                    nsContainerFrame* aParent,
-                    nsIFrame*         aPrevInFlow) override;
+  virtual void Init(nsIContent* aContent, nsContainerFrame* aParent,
+                    nsIFrame* aPrevInFlow) override;
 
-  virtual nsresult AttributeChanged(int32_t aNamespaceID,
-                                    nsIAtom* aAttribute,
+  virtual nsresult AttributeChanged(int32_t aNamespaceID, nsAtom* aAttribute,
                                     int32_t aModType) override;
 
-  virtual nsContainerFrame* GetContentInsertionFrame() override
-  {
+  virtual nsContainerFrame* GetContentInsertionFrame() override {
     return PrincipalChildList().FirstChild()->GetContentInsertionFrame();
   }
 
-  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                                const nsRect&           aDirtyRect,
+  virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                 const nsDisplayListSet& aLists) override;
 
-  /**
-   * Get the "type" of the frame
-   *
-   * @see nsGkAtoms::svgTextFrame
-   */
-  virtual nsIAtom* GetType() const override;
-
 #ifdef DEBUG_FRAME_DUMP
-  virtual nsresult GetFrameName(nsAString& aResult) const override
-  {
+  virtual nsresult GetFrameName(nsAString& aResult) const override {
     return MakeFrameName(NS_LITERAL_STRING("SVGText"), aResult);
   }
 #endif
 
-  virtual void DidSetStyleContext(nsStyleContext* aOldStyleContext) override;
+  virtual void DidSetComputedStyle(ComputedStyle* aOldComputedStyle) override;
 
   /**
    * Finds the nsTextFrame for the closest rendered run to the specified point.
    */
-  virtual void FindCloserFrameForSelection(nsPoint aPoint,
-                                          FrameWithDistance* aCurrentBestFrame) override;
+  virtual void FindCloserFrameForSelection(
+      const nsPoint& aPoint, FrameWithDistance* aCurrentBestFrame) override;
 
-
-
-  // nsISVGChildFrame interface:
+  // nsSVGDisplayableFrame interface:
   virtual void NotifySVGChanged(uint32_t aFlags) override;
-  virtual DrawResult PaintSVG(gfxContext& aContext,
-                              const gfxMatrix& aTransform,
-                              const nsIntRect* aDirtyRect = nullptr) override;
+  virtual void PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
+                        imgDrawingParams& aImgParams,
+                        const nsIntRect* aDirtyRect = nullptr) override;
   virtual nsIFrame* GetFrameForPoint(const gfxPoint& aPoint) override;
   virtual void ReflowSVG() override;
-  virtual nsRect GetCoveredRegion() override;
   virtual SVGBBox GetBBoxContribution(const Matrix& aToBBoxUserspace,
                                       uint32_t aFlags) override;
 
-  // nsSVGContainerFrame methods:
-  virtual gfxMatrix GetCanvasTM() override;
-  
   // SVG DOM text methods:
   uint32_t GetNumberOfChars(nsIContent* aContent);
   float GetComputedTextLength(nsIContent* aContent);
-  nsresult SelectSubString(nsIContent* aContent, uint32_t charnum, uint32_t nchars);
+  nsresult SelectSubString(nsIContent* aContent, uint32_t charnum,
+                           uint32_t nchars);
   nsresult GetSubStringLength(nsIContent* aContent, uint32_t charnum,
                               uint32_t nchars, float* aResult);
-  int32_t GetCharNumAtPosition(nsIContent* aContent, mozilla::nsISVGPoint* point);
+  int32_t GetCharNumAtPosition(nsIContent* aContent,
+                               mozilla::nsISVGPoint* point);
 
   nsresult GetStartPositionOfChar(nsIContent* aContent, uint32_t aCharNum,
                                   mozilla::nsISVGPoint** aResult);
@@ -291,7 +257,7 @@ public:
    */
   void HandleAttributeChangeInDescendant(mozilla::dom::Element* aElement,
                                          int32_t aNameSpaceID,
-                                         nsIAtom* aAttribute);
+                                         nsAtom* aAttribute);
 
   /**
    * Schedules mPositions to be recomputed and the covered region to be
@@ -354,33 +320,25 @@ public:
                                        nsIFrame* aChildFrame);
 
   /**
-   * Takes a rectangle, aRect, in the <text> element's user space, and
-   * returns a rectangle in aChildFrame's frame user space that
-   * covers intersections of aRect with each rendered run for text frames
-   * within aChildFrame.
-   */
-  gfxRect TransformFrameRectToTextChild(const gfxRect& aRect,
-                                        nsIFrame* aChildFrame);
-
-  /**
    * Takes an app unit rectangle in the coordinate space of a given descendant
    * frame of this frame, and returns a rectangle in the <text> element's user
    * space that covers all parts of rendered runs that intersect with the
    * rectangle.
    */
   gfxRect TransformFrameRectFromTextChild(const nsRect& aRect,
-                                          nsIFrame* aChildFrame);
+                                          const nsIFrame* aChildFrame);
 
-private:
+  // Return our ::-moz-svg-text anonymous box.
+  void AppendDirectlyOwnedAnonBoxes(nsTArray<OwnedAnonBox>& aResult) override;
+
+ private:
   /**
    * Mutation observer used to watch for text positioning attribute changes
    * on descendent text content elements (like <tspan>s).
    */
   class MutationObserver final : public nsStubMutationObserver {
-  public:
-    explicit MutationObserver(SVGTextFrame* aFrame)
-      : mFrame(aFrame)
-    {
+   public:
+    explicit MutationObserver(SVGTextFrame* aFrame) : mFrame(aFrame) {
       MOZ_ASSERT(mFrame, "MutationObserver needs a non-null frame");
       mFrame->GetContent()->AddMutationObserver(this);
     }
@@ -395,14 +353,16 @@ private:
     NS_DECL_NSIMUTATIONOBSERVER_CHARACTERDATACHANGED
     NS_DECL_NSIMUTATIONOBSERVER_ATTRIBUTECHANGED
 
-  private:
-    ~MutationObserver()
-    {
-      mFrame->GetContent()->RemoveMutationObserver(this);
-    }
+   private:
+    ~MutationObserver() { mFrame->GetContent()->RemoveMutationObserver(this); }
 
     SVGTextFrame* const mFrame;
   };
+
+  /**
+   * Resolves Bidi for the anonymous block child if it needs it.
+   */
+  void MaybeResolveBidiForAnonymousBlockChild();
 
   /**
    * Reflows the anonymous block child if it is dirty or has dirty
@@ -428,6 +388,17 @@ private:
   void DoGlyphPositioning();
 
   /**
+   * This fallback version of GetSubStringLength that flushes layout and takes
+   * into account glyph positioning.  As per the SVG 2 spec, typically glyph
+   * positioning does not affect the results of getSubStringLength, but one
+   * exception is text in a textPath where we need to ignore characters that
+   * fall off the end of the textPath path.
+   */
+  nsresult GetSubStringLengthSlowFallback(nsIContent* aContent,
+                                          uint32_t charnum, uint32_t nchars,
+                                          float* aResult);
+
+  /**
    * Converts the specified index into mPositions to an addressable
    * character index (as can be used with the SVG DOM text methods)
    * relative to the specified text child content element.
@@ -439,9 +410,8 @@ private:
    * @return The addressable index, or -1 if the index cannot be
    *   represented as an addressable index relative to aContent.
    */
-  int32_t
-  ConvertTextElementCharIndexToAddressableIndex(int32_t aIndex,
-                                                nsIContent* aContent);
+  int32_t ConvertTextElementCharIndexToAddressableIndex(int32_t aIndex,
+                                                        nsIContent* aContent);
 
   /**
    * Recursive helper for ResolvePositions below.
@@ -462,9 +432,9 @@ private:
 
   /**
    * Initializes mPositions with character position information based on
-   * x/y/rotate attributes, leaving unspecified values in the array if a position
-   * was not given for that character.  Also fills aDeltas with values based on
-   * dx/dy attributes.
+   * x/y/rotate attributes, leaving unspecified values in the array if a
+   * position was not given for that character.  Also fills aDeltas with values
+   * based on dx/dy attributes.
    *
    * @param aDeltas (in/out) Receives the resolved dx/dy values for each
    *   character.
@@ -534,8 +504,6 @@ private:
   bool ShouldRenderAsPath(nsTextFrame* aFrame, bool& aShouldPaintSVGGlyphs);
 
   // Methods to get information for a <textPath> frame.
-  mozilla::dom::SVGPathElement*
-  GetTextPathPathElement(nsIFrame* aTextPathFrame);
   already_AddRefed<Path> GetTextPath(nsIFrame* aTextPathFrame);
   gfxFloat GetOffsetScale(nsIFrame* aTextPathFrame);
   gfxFloat GetStartOffset(nsIFrame* aTextPathFrame);
@@ -544,11 +512,6 @@ private:
    * The MutationObserver we have registered for the <text> element subtree.
    */
   RefPtr<MutationObserver> mMutationObserver;
-
-  /**
-   * Cached canvasTM value.
-   */
-  nsAutoPtr<gfxMatrix> mCanvasTM;
 
   /**
    * The number of characters in the DOM after the final nsTextFrame.  For

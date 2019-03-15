@@ -87,7 +87,7 @@ var FindHelper = {
     this._initialViewport = JSON.stringify(this._targetTab.getViewport());
     this._viewportChanged = false;
 
-    GlobalEventDispatcher.registerListener(this, [
+    WindowEventDispatcher.registerListener(this, [
       "Tab:Selected",
     ]);
   },
@@ -109,7 +109,7 @@ var FindHelper = {
     this._initialViewport = null;
     this._viewportChanged = false;
 
-    GlobalEventDispatcher.unregisterListener(this, [
+    WindowEventDispatcher.unregisterListener(this, [
       "Tab:Selected",
     ]);
   },
@@ -179,7 +179,7 @@ var FindHelper = {
     this._result = result;
 
     GlobalEventDispatcher.sendRequest(Object.assign({
-      type: "FindInPage:MatchesCountResult"
+      type: "FindInPage:MatchesCountResult",
     }, this._result));
   },
 
@@ -221,5 +221,5 @@ var FindHelper = {
       // ZoomHelper.zoomToRect(aData.rect);
       this._viewportChanged = true;
     }
-  }
+  },
 };

@@ -63,11 +63,6 @@
     }
   ]]></style>
   <script type="application/javascript"><![CDATA[
-    if (Cc === undefined) {
-      var Cc = Components.classes;
-      var Ci = Components.interfaces;
-    }
-
     var gConfig;
 
     var gDumper = {
@@ -115,6 +110,7 @@
     function browserTest(aTestFile) {
       this.path = aTestFile['url'];
       this.expected = aTestFile['expected'];
+      this.usesUnsafeCPOWs = aTestFile['uses-unsafe-cpows'] || false;
       this.dumper = gDumper;
       this.results = [];
       this.scope = null;
@@ -131,6 +127,9 @@
       },
       get failCount() {
         return this.results.filter(t => !t.info && !t.pass).length;
+      },
+      get allowedFailureCount() {
+        return this.results.filter(t => t.allowedFailure).length;
       },
 
       addResult: function addResult(result) {
@@ -233,7 +232,11 @@
     function createTester(links) {
       var windowMediator = Cc['@mozilla.org/appshell/window-mediator;1'].
                              getService(Ci.nsIWindowMediator);
-      var winType = gConfig.testRoot == "browser" ? "navigator:browser" : null;
+      var winType = null;
+      if (gConfig.testRoot == "browser") {
+        const IS_THUNDERBIRD = Services.appinfo.ID == "{3550f703-e582-4d05-9a08-453d09bdfdc6}";
+        winType = IS_THUNDERBIRD ? "mail:3pane" : "navigator:browser";
+      }
       if (!winType) {
         throw new Error("Unrecognized gConfig.testRoot: " + gConfig.testRoot);
       }
@@ -257,7 +260,7 @@
 
     function executeSoon(callback) {
       let tm = Cc["@mozilla.org/thread-manager;1"].getService(Ci.nsIThreadManager);
-      tm.mainThread.dispatch(callback, Ci.nsIThread.DISPATCH_NORMAL);
+      tm.dispatchToMainThread(callback);
     }
 
     function waitForFocus(callback, win) {
@@ -325,8 +328,7 @@
       if (!line)
         return;
 
-      var boxObject = document.getElementById("results").parentNode.boxObject;
-      boxObject.scrollToElement(line);
+      line.scrollIntoView();
     }
   ]]></script>
   <button id="runTestsButton" oncommand="runTests();" label="Run All Tests"/>

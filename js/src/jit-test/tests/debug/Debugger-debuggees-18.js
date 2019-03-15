@@ -1,5 +1,3 @@
-// |jit-test| need-for-each
-
 // Debugger.prototype.{addDebuggee,hasDebuggee,removeDebuggee} recognize globals
 // regardless of how they are specified.
 
@@ -8,16 +6,16 @@ var dbg = new Debugger;
 // Assert that dbg's debuggees are exactly the set passed as arguments.
 // The arguments are assumed to be Debugger.Object instances referring to
 // globals without wrappers --- which is the sort returned by addDebuggee.
-function assertDebuggees() {
-  print("assertDebuggees([" + Array.prototype.slice.call(arguments).map((g) => g.toSource()) + "])");
+function assertDebuggees(...expected) {
+  print("assertDebuggees([" + expected.map((g) => g.toSource()) + "])");
   var debuggees = dbg.getDebuggees();
-  assertEq(arguments.length, debuggees.length);
-  for each (g in arguments)
+  assertEq(expected.length, debuggees.length);
+  for (let g of expected)
     assertEq(debuggees.indexOf(g) != -1, true);
 }
 
-var g1 = newGlobal(); g1.toSource = function () { return "[global g1]"; };
-var g2 = newGlobal(); g2.toSource = function () { return "[global g2]"; };
+var g1 = newGlobal({newCompartment: true}); g1.toSource = function () { return "[global g1]"; };
+var g2 = newGlobal({newCompartment: true}); g2.toSource = function () { return "[global g2]"; };
 
 assertDebuggees();
 
@@ -36,7 +34,6 @@ assertDebuggees();
 // "dg1" means "Debugger.Object referring (directly) to g1".
 var dg1 = dbg.addDebuggee(g1);
 dg1.toSource = function() { return "[Debugger.Object for global g1]"; };
-assertEq(dg1.global, dg1);
 assertEq(dg1.unwrap(), dg1);
 assertDebuggees(dg1);
 
@@ -44,13 +41,11 @@ assertDebuggees(dg1);
 // to it without a wrapper.
 var dg2 = dbg.addDebuggee(g2);
 dg2.toSource = function() { return "[Debugger.Object for global g2]"; };
-assertEq(dg2.global, dg2);
 assertEq(dg2.unwrap(), dg2);
 assertDebuggees(dg1, dg2);
 
 // "dwg1" means "Debugger.Object referring to CCW of g1".
 var dwg1 = dg2.makeDebuggeeValue(g1);
-assertEq(dwg1.global, dg2);
 assertEq(dwg1.unwrap(), dg1);
 dwg1.toSource = function() { return "[Debugger.Object for CCW of global g1]"; };
 

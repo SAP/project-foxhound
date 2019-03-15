@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=4 ts=8 et tw=80 : */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,11 +7,14 @@
 #ifndef mozilla_layers_GeckoContentController_h
 #define mozilla_layers_GeckoContentController_h
 
-#include "FrameMetrics.h"               // for FrameMetrics, etc
-#include "InputData.h"                  // for PinchGestureInput
-#include "Units.h"                      // for CSSPoint, CSSRect, etc
-#include "mozilla/Assertions.h"         // for MOZ_ASSERT_HELPER2
-#include "mozilla/EventForwards.h"      // for Modifiers
+#include "InputData.h"                           // for PinchGestureInput
+#include "LayersTypes.h"                         // for ScrollDirection
+#include "Units.h"                               // for CSSPoint, CSSRect, etc
+#include "mozilla/Assertions.h"                  // for MOZ_ASSERT_HELPER2
+#include "mozilla/DefineEnum.h"                  // for MOZ_DEFINE_ENUM
+#include "mozilla/EventForwards.h"               // for Modifiers
+#include "mozilla/layers/RepaintRequest.h"       // for RepaintRequest
+#include "mozilla/layers/ScrollableLayerGuid.h"  // for ScrollableLayerGuid, etc
 #include "nsISupportsImpl.h"
 
 namespace mozilla {
@@ -20,13 +23,12 @@ class Runnable;
 
 namespace layers {
 
-class GeckoContentController
-{
-public:
+class GeckoContentController {
+ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GeckoContentController)
 
   /**
-   * Requests a paint of the given FrameMetrics |aFrameMetrics| from Gecko.
+   * Requests a paint of the given RepaintRequest |aRequest| from Gecko.
    * Implementations per-platform are responsible for actually handling this.
    *
    * This method must always be called on the repaint thread, which depends
@@ -34,7 +36,7 @@ public:
    * Gecko main thread, while for RemoteContentController it is the compositor
    * thread where it can send IPDL messages.
    */
-  virtual void RequestContentRepaint(const FrameMetrics& aFrameMetrics) = 0;
+  virtual void RequestContentRepaint(const RepaintRequest& aRequest) = 0;
 
   /**
    * Different types of tap-related events that can be sent in
@@ -49,24 +51,23 @@ public:
    * a click event with detail=2 to web content (similar to what a mouse double-
    * click would do).
    */
-  enum class TapType {
-    eSingleTap,
-    eDoubleTap,
-    eSecondTap,
-    eLongTap,
-    eLongTapUp,
-
-    eSentinel,
-  };
+  // clang-format off
+  MOZ_DEFINE_ENUM_CLASS_AT_CLASS_SCOPE(
+    TapType, (
+      eSingleTap,
+      eDoubleTap,
+      eSecondTap,
+      eLongTap,
+      eLongTapUp
+  ));
+  // clang-format on
 
   /**
    * Requests handling of a tap event. |aPoint| is in LD pixels, relative to the
    * current scroll offset.
    */
-  virtual void HandleTap(TapType aType,
-                         const LayoutDevicePoint& aPoint,
-                         Modifiers aModifiers,
-                         const ScrollableLayerGuid& aGuid,
+  virtual void HandleTap(TapType aType, const LayoutDevicePoint& aPoint,
+                         Modifiers aModifiers, const ScrollableLayerGuid& aGuid,
                          uint64_t aInputBlockId) = 0;
 
   /**
@@ -95,10 +96,12 @@ public:
    * in the future.
    * This method must always be called on the controller thread.
    */
-  virtual void PostDelayedTask(already_AddRefed<Runnable> aRunnable, int aDelayMs) = 0;
+  virtual void PostDelayedTask(already_AddRefed<Runnable> aRunnable,
+                               int aDelayMs) = 0;
 
   /**
-   * Returns true if we are currently on the thread that can send repaint requests.
+   * Returns true if we are currently on the thread that can send repaint
+   * requests.
    */
   virtual bool IsRepaintThread() = 0;
 
@@ -107,34 +110,34 @@ public:
    */
   virtual void DispatchToRepaintThread(already_AddRefed<Runnable> aTask) = 0;
 
-  enum class APZStateChange {
-    /**
-     * APZ started modifying the view (including panning, zooming, and fling).
-     */
-    eTransformBegin,
-    /**
-     * APZ finished modifying the view.
-     */
-    eTransformEnd,
-    /**
-     * APZ started a touch.
-     * |aArg| is 1 if touch can be a pan, 0 otherwise.
-     */
-    eStartTouch,
-    /**
-     * APZ started a pan.
-     */
-    eStartPanning,
-    /**
-     * APZ finished processing a touch.
-     * |aArg| is 1 if touch was a click, 0 otherwise.
-     */
-    eEndTouch,
+  // clang-format off
+  MOZ_DEFINE_ENUM_CLASS_AT_CLASS_SCOPE(
+    APZStateChange, (
+      /**
+       * APZ started modifying the view (including panning, zooming, and fling).
+       */
+      eTransformBegin,
+      /**
+       * APZ finished modifying the view.
+       */
+      eTransformEnd,
+      /**
+       * APZ started a touch.
+       * |aArg| is 1 if touch can be a pan, 0 otherwise.
+       */
+      eStartTouch,
+      /**
+       * APZ started a pan.
+       */
+      eStartPanning,
+      /**
+       * APZ finished processing a touch.
+       * |aArg| is 1 if touch was a click, 0 otherwise.
+       */
+      eEndTouch
+  ));
+  // clang-format on
 
-    // Sentinel value for IPC, this must be the last item in the enum and
-    // should not be used as an actual message value.
-    eSentinel
-  };
   /**
    * General notices of APZ state changes for consumers.
    * |aGuid| identifies the APZC originating the state change.
@@ -143,25 +146,42 @@ public:
    *        the documentation for each state change above)
    */
   virtual void NotifyAPZStateChange(const ScrollableLayerGuid& aGuid,
-                                    APZStateChange aChange,
-                                    int aArg = 0) {}
+                                    APZStateChange aChange, int aArg = 0) {}
 
   /**
    * Notify content of a MozMouseScrollFailed event.
    */
-  virtual void NotifyMozMouseScrollEvent(const FrameMetrics::ViewID& aScrollId, const nsString& aEvent)
-  {}
+  virtual void NotifyMozMouseScrollEvent(
+      const ScrollableLayerGuid::ViewID& aScrollId, const nsString& aEvent) {}
 
   /**
    * Notify content that the repaint requests have been flushed.
    */
   virtual void NotifyFlushComplete() = 0;
 
-  virtual void NotifyAsyncScrollbarDragRejected(const FrameMetrics::ViewID& aScrollId) = 0;
+  /**
+   * If the async scrollbar-drag initiation code kicks in on the APZ side, then
+   * we need to let content know that we are dragging the scrollbar. Otherwise,
+   * by the time the mousedown events is handled by content, the scrollthumb
+   * could already have been moved via a RequestContentRepaint message at a
+   * new scroll position, and the mousedown might end up triggering a click-to-
+   * scroll on where the thumb used to be.
+   */
+  virtual void NotifyAsyncScrollbarDragInitiated(
+      uint64_t aDragBlockId, const ScrollableLayerGuid::ViewID& aScrollId,
+      ScrollDirection aDirection) = 0;
+  virtual void NotifyAsyncScrollbarDragRejected(
+      const ScrollableLayerGuid::ViewID& aScrollId) = 0;
 
-  virtual void UpdateOverscrollVelocity(float aX, float aY, bool aIsRootContent) {}
-  virtual void UpdateOverscrollOffset(float aX, float aY, bool aIsRootContent) {}
-  virtual void SetScrollingRootContent(bool isRootContent) {}
+  virtual void NotifyAsyncAutoscrollRejected(
+      const ScrollableLayerGuid::ViewID& aScrollId) = 0;
+
+  virtual void CancelAutoscroll(const ScrollableLayerGuid& aGuid) = 0;
+
+  virtual void UpdateOverscrollVelocity(float aX, float aY,
+                                        bool aIsRootContent) {}
+  virtual void UpdateOverscrollOffset(float aX, float aY, bool aIsRootContent) {
+  }
 
   GeckoContentController() {}
 
@@ -170,12 +190,12 @@ public:
    */
   virtual void Destroy() {}
 
-protected:
+ protected:
   // Protected destructor, to discourage deletion outside of Release():
   virtual ~GeckoContentController() {}
 };
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla
 
-#endif // mozilla_layers_GeckoContentController_h
+#endif  // mozilla_layers_GeckoContentController_h

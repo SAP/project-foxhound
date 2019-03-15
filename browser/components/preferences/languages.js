@@ -3,23 +3,34 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/* import-globals-from ../../../toolkit/content/preferencesBindings.js */
+
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+
+document.documentElement.addEventListener("dialoghelp", window.top.openPrefsHelp);
+
+Preferences.addAll([
+  { id: "intl.accept_languages", type: "wstring" },
+  { id: "pref.browser.language.disable_button.up", type: "bool" },
+  { id: "pref.browser.language.disable_button.down", type: "bool" },
+  { id: "pref.browser.language.disable_button.remove", type: "bool" },
+  { id: "privacy.spoof_english", type: "int" },
+]);
+
 var gLanguagesDialog = {
 
-  _availableLanguagesList : [],
-  _acceptLanguages        : { },
+  _availableLanguagesList: [],
+  _acceptLanguages: { },
 
-  _selectedItemID         : null,
+  _selectedItemID: null,
 
-  init() {
-    if (!this._availableLanguagesList.length)
-      this._loadAvailableLanguages();
-  },
+  onLoad() {
+    Preferences.get("intl.accept_languages").on("change",
+      () => this._readAcceptLanguages().catch(Cu.reportError));
 
-  // Ugly hack used to trigger extra reflow in order to work around XUL bug 1194844;
-  // see bug 1194346.
-  forceReflow() {
-    this._activeLanguages.style.fontKerning = "none";
-    setTimeout("gLanguagesDialog._activeLanguages.style.removeProperty('font-kerning')", 0);
+    if (!this._availableLanguagesList.length) {
+      document.mozSubdialogReady = this._loadAvailableLanguages();
+    }
   },
 
   get _activeLanguages() {
@@ -30,140 +41,145 @@ var gLanguagesDialog = {
     return document.getElementById("availableLanguages");
   },
 
-  _loadAvailableLanguages() {
+  async _loadAvailableLanguages() {
     // This is a parser for: resource://gre/res/language.properties
     // The file is formatted like so:
     // ab[-cd].accept=true|false
     //  ab = language
     //  cd = region
     var bundleAccepted    = document.getElementById("bundleAccepted");
-    var bundleRegions     = document.getElementById("bundleRegions");
-    var bundleLanguages   = document.getElementById("bundleLanguages");
-    var bundlePreferences = document.getElementById("bundlePreferences");
 
-    function LanguageInfo(aName, aABCD, aIsVisible) {
-      this.name = aName;
-      this.abcd = aABCD;
+    function LocaleInfo(aLocaleName, aLocaleCode, aIsVisible) {
+      this.name = aLocaleName;
+      this.code = aLocaleCode;
       this.isVisible = aIsVisible;
     }
 
     // 1) Read the available languages out of language.properties
-    var strings = bundleAccepted.strings;
-    while (strings.hasMoreElements()) {
-      var currString = strings.getNext();
-      if (!(currString instanceof Components.interfaces.nsIPropertyElement))
-        break;
 
+    let localeCodes = [];
+    let localeValues = [];
+    for (let currString of bundleAccepted.strings) {
       var property = currString.key.split("."); // ab[-cd].accept
       if (property[1] == "accept") {
-        var abCD = property[0];
-        var abCDPairs = abCD.split("-");      // ab[-cd]
-        var useABCDFormat = abCDPairs.length > 1;
-        var ab = useABCDFormat ? abCDPairs[0] : abCD;
-        var cd = useABCDFormat ? abCDPairs[1] : "";
-        if (ab) {
-          var language = "";
-          try {
-            language = bundleLanguages.getString(ab);
-          } catch (e) { continue; }
-
-          var region = "";
-          if (useABCDFormat) {
-            try {
-              region = bundleRegions.getString(cd);
-            } catch (e) { continue; }
-          }
-
-          var name = "";
-          if (useABCDFormat)
-            name = bundlePreferences.getFormattedString("languageRegionCodeFormat",
-                                                        [language, region, abCD]);
-          else
-            name = bundlePreferences.getFormattedString("languageCodeFormat",
-                                                        [language, abCD]);
-
-          if (name && abCD) {
-            var isVisible = currString.value == "true" &&
-                            (!(abCD in this._acceptLanguages) || !this._acceptLanguages[abCD]);
-            var li = new LanguageInfo(name, abCD, isVisible);
-            this._availableLanguagesList.push(li);
-          }
-        }
+        localeCodes.push(property[0]);
+        localeValues.push(currString.value);
       }
     }
-    this._buildAvailableLanguageList();
+
+    let localeNames = Services.intl.getLocaleDisplayNames(undefined, localeCodes);
+
+    for (let i in localeCodes) {
+      let isVisible = localeValues[i] == "true" &&
+        (!(localeCodes[i] in this._acceptLanguages) || !this._acceptLanguages[localeCodes[i]]);
+
+      let li = new LocaleInfo(localeNames[i], localeCodes[i], isVisible);
+      this._availableLanguagesList.push(li);
+    }
+
+    await this._buildAvailableLanguageList();
+    await this._readAcceptLanguages();
   },
 
-  _buildAvailableLanguageList() {
+  async _buildAvailableLanguageList() {
     var availableLanguagesPopup = document.getElementById("availableLanguagesPopup");
     while (availableLanguagesPopup.hasChildNodes())
-      availableLanguagesPopup.removeChild(availableLanguagesPopup.firstChild);
+      availableLanguagesPopup.firstChild.remove();
 
-    // Sort the list of languages by name
-    this._availableLanguagesList.sort(function(a, b) {
-                                        return a.name.localeCompare(b.name);
-                                      });
+    let frag = document.createDocumentFragment();
 
     // Load the UI with the data
     for (var i = 0; i < this._availableLanguagesList.length; ++i) {
-      var abCD = this._availableLanguagesList[i].abcd;
-      if (this._availableLanguagesList[i].isVisible &&
-          (!(abCD in this._acceptLanguages) || !this._acceptLanguages[abCD])) {
-        var menuitem = document.createElement("menuitem");
-        menuitem.id = this._availableLanguagesList[i].abcd;
-        availableLanguagesPopup.appendChild(menuitem);
-        menuitem.setAttribute("label", this._availableLanguagesList[i].name);
+      let locale = this._availableLanguagesList[i];
+      let localeCode = locale.code;
+      if (locale.isVisible &&
+          (!(localeCode in this._acceptLanguages) || !this._acceptLanguages[localeCode])) {
+        var menuitem = document.createXULElement("menuitem");
+        menuitem.id = localeCode;
+        document.l10n.setAttributes(menuitem, "languages-code-format", {
+          locale: locale.name,
+          code: localeCode,
+        });
+        frag.appendChild(menuitem);
       }
     }
+
+    await document.l10n.translateFragment(frag);
+
+    // Sort the list of languages by name
+    let comp = new Services.intl.Collator(undefined, {
+      usage: "sort",
+    });
+
+    let items = Array.from(frag.children);
+
+    items.sort((a, b) => {
+      return comp.compare(a.getAttribute("label"), b.getAttribute("label"));
+    });
+
+    // Re-append items in the correct order:
+    items.forEach(item => frag.appendChild(item));
+
+    availableLanguagesPopup.appendChild(frag);
+
+    this._availableLanguages.setAttribute("label", this._availableLanguages.getAttribute("placeholder"));
   },
 
-  readAcceptLanguages() {
+  async _readAcceptLanguages() {
     while (this._activeLanguages.hasChildNodes())
-      this._activeLanguages.removeChild(this._activeLanguages.firstChild);
+      this._activeLanguages.firstChild.remove();
 
     var selectedIndex = 0;
-    var preference = document.getElementById("intl.accept_languages");
+    var preference = Preferences.get("intl.accept_languages");
     if (preference.value == "")
-      return undefined;
+      return;
     var languages = preference.value.toLowerCase().split(/\s*,\s*/);
     for (var i = 0; i < languages.length; ++i) {
-      var name = this._getLanguageName(languages[i]);
-      if (!name)
-        name = "[" + languages[i] + "]";
-      var listitem = document.createElement("listitem");
+      var listitem = document.createXULElement("richlistitem");
+      var label = document.createXULElement("label");
+      listitem.appendChild(label);
       listitem.id = languages[i];
       if (languages[i] == this._selectedItemID)
         selectedIndex = i;
       this._activeLanguages.appendChild(listitem);
-      listitem.setAttribute("label", name);
+      var localeName = this._getLocaleName(languages[i]);
+      document.l10n.setAttributes(label, "languages-active-code-format", {
+        locale: localeName,
+        code: languages[i],
+      });
 
       // Hash this language as an "Active" language so we don't
       // show it in the list that can be added.
       this._acceptLanguages[languages[i]] = true;
     }
 
+    // We're forcing an early localization here because otherwise
+    // the initial sizing of the dialog will happen before it and
+    // result in overflow.
+    await document.l10n.translateFragment(this._activeLanguages);
+
     if (this._activeLanguages.childNodes.length > 0) {
       this._activeLanguages.ensureIndexIsVisible(selectedIndex);
       this._activeLanguages.selectedIndex = selectedIndex;
     }
 
-    return undefined;
-  },
-
-  writeAcceptLanguages() {
-    return undefined;
+    // Update states of accept-language list and buttons according to
+    // privacy.resistFingerprinting and privacy.spoof_english.
+    this.readSpoofEnglish();
   },
 
   onAvailableLanguageSelect() {
+    var availableLanguages = this._availableLanguages;
     var addButton = document.getElementById("addButton");
-    addButton.disabled = false;
+    addButton.disabled = availableLanguages.disabled ||
+                         availableLanguages.selectedIndex < 0;
 
     this._availableLanguages.removeAttribute("accesskey");
   },
 
   addLanguage() {
     var selectedID = this._availableLanguages.selectedItem.id;
-    var preference = document.getElementById("intl.accept_languages");
+    var preference = Preferences.get("intl.accept_languages");
     var arrayOfPrefs = preference.value.toLowerCase().split(/\s*,\s*/);
     for (var i = 0; i < arrayOfPrefs.length; ++i ) {
       if (arrayOfPrefs[i] == selectedID)
@@ -183,9 +199,7 @@ var gLanguagesDialog = {
     this._availableLanguages.selectedItem = null;
 
     // Rebuild the available list with the added item removed...
-    this._buildAvailableLanguageList();
-
-    this._availableLanguages.setAttribute("label", this._availableLanguages.getAttribute("label2"));
+    this._buildAvailableLanguageList().catch(Cu.reportError);
   },
 
   removeLanguage() {
@@ -209,17 +223,17 @@ var gLanguagesDialog = {
     this._selectedItemID = selectItem;
 
     // Update the preference and force a UI rebuild
-    var preference = document.getElementById("intl.accept_languages");
+    var preference = Preferences.get("intl.accept_languages");
     preference.value = string;
 
-    this._buildAvailableLanguageList();
+    this._buildAvailableLanguageList().catch(Cu.reportError);
   },
 
-  _getLanguageName(aABCD) {
+  _getLocaleName(localeCode) {
     if (!this._availableLanguagesList.length)
       this._loadAvailableLanguages();
     for (var i = 0; i < this._availableLanguagesList.length; ++i) {
-      if (aABCD == this._availableLanguagesList[i].abcd)
+      if (localeCode == this._availableLanguagesList[i].code)
         return this._availableLanguagesList[i].name;
     }
     return "";
@@ -244,7 +258,7 @@ var gLanguagesDialog = {
     this._selectedItemID = selectedItem.id;
 
     // Update the preference and force a UI rebuild
-    var preference = document.getElementById("intl.accept_languages");
+    var preference = Preferences.get("intl.accept_languages");
     preference.value = string;
   },
 
@@ -267,7 +281,7 @@ var gLanguagesDialog = {
     this._selectedItemID = selectedItem.id;
 
     // Update the preference and force a UI rebuild
-    var preference = document.getElementById("intl.accept_languages");
+    var preference = Preferences.get("intl.accept_languages");
     preference.value = string;
   },
 
@@ -289,6 +303,39 @@ var gLanguagesDialog = {
       downButton.disabled = true;
       removeButton.disabled = false;
     }
-  }
-};
+  },
 
+  readSpoofEnglish() {
+    var checkbox = document.getElementById("spoofEnglish");
+    var resistFingerprinting = Services.prefs.getBoolPref("privacy.resistFingerprinting");
+    if (!resistFingerprinting) {
+      checkbox.hidden = true;
+      return false;
+    }
+
+    var spoofEnglish = Preferences.get("privacy.spoof_english").value;
+    var activeLanguages = this._activeLanguages;
+    var availableLanguages = this._availableLanguages;
+    checkbox.hidden = false;
+    switch (spoofEnglish) {
+    case 1: // don't spoof intl.accept_languages
+      activeLanguages.disabled = false;
+      activeLanguages.selectItem(activeLanguages.firstChild);
+      availableLanguages.disabled = false;
+      this.onAvailableLanguageSelect();
+      return false;
+    case 2: // spoof intl.accept_languages
+      activeLanguages.clearSelection();
+      activeLanguages.disabled = true;
+      availableLanguages.disabled = true;
+      this.onAvailableLanguageSelect();
+      return true;
+    default: // will prompt for spoofing intl.accept_languages if resisting fingerprinting
+      return false;
+    }
+  },
+
+  writeSpoofEnglish() {
+    return document.getElementById("spoofEnglish").checked ? 2 : 1;
+  },
+};

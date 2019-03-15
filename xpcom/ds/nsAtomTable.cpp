@@ -8,287 +8,152 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/MruCache.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/Unused.h"
 
+#include "nsAtom.h"
 #include "nsAtomTable.h"
-#include "nsStaticAtom.h"
-#include "nsString.h"
+#include "nsAutoPtr.h"
 #include "nsCRT.h"
+#include "nsDataHashtable.h"
+#include "nsGkAtoms.h"
+#include "nsHashKeys.h"
+#include "nsPrintfCString.h"
+#include "nsString.h"
+#include "nsThreadUtils.h"
+#include "nsUnicharUtils.h"
 #include "PLDHashTable.h"
 #include "prenv.h"
-#include "nsThreadUtils.h"
-#include "nsDataHashtable.h"
-#include "nsHashKeys.h"
-#include "nsAutoPtr.h"
-#include "nsUnicharUtils.h"
-#include "nsPrintfCString.h"
 
 // There are two kinds of atoms handled by this module.
 //
-// - DynamicAtom: the atom itself is heap allocated, as is the nsStringBuffer it
-//   points to. |gAtomTable| holds weak references to them DynamicAtoms. When
-//   the refcount of a DynamicAtom drops to zero, we increment a static counter.
+// - Dynamic: the atom itself is heap allocated, as is the char buffer it
+//   points to. |gAtomTable| holds weak references to dynamic atoms. When the
+//   refcount of a dynamic atom drops to zero, we increment a static counter.
 //   When that counter reaches a certain threshold, we iterate over the atom
-//   table, removing and deleting DynamicAtoms with refcount zero. This allows
+//   table, removing and deleting dynamic atoms with refcount zero. This allows
 //   us to avoid acquiring the atom table lock during normal refcounting.
 //
-// - StaticAtom: the atom itself is heap allocated, but it points to a static
-//   nsStringBuffer. |gAtomTable| effectively owns StaticAtoms, because such
-//   atoms ignore all AddRef/Release calls, which ensures they stay alive until
-//   |gAtomTable| itself is destroyed whereupon they are explicitly deleted.
+// - Static: both the atom and its chars are statically allocated and
+//   immutable, so it ignores all AddRef/Release calls.
 //
-//   Note that gAtomTable is used on multiple threads, and callers must
-//   acquire gAtomTableLock before touching it.
+// Note that gAtomTable is used on multiple threads, and has internal
+// synchronization.
 
 using namespace mozilla;
 
 //----------------------------------------------------------------------
 
-class CheckStaticAtomSizes
-{
-  CheckStaticAtomSizes()
-  {
-    static_assert((sizeof(nsFakeStringBuffer<1>().mRefCnt) ==
-                   sizeof(nsStringBuffer().mRefCount)) &&
-                  (sizeof(nsFakeStringBuffer<1>().mSize) ==
-                   sizeof(nsStringBuffer().mStorageSize)) &&
-                  (offsetof(nsFakeStringBuffer<1>, mRefCnt) ==
-                   offsetof(nsStringBuffer, mRefCount)) &&
-                  (offsetof(nsFakeStringBuffer<1>, mSize) ==
-                   offsetof(nsStringBuffer, mStorageSize)) &&
-                  (offsetof(nsFakeStringBuffer<1>, mStringData) ==
-                   sizeof(nsStringBuffer)),
-                  "mocked-up strings' representations should be compatible");
-  }
+enum class GCKind {
+  RegularOperation,
+  Shutdown,
 };
 
 //----------------------------------------------------------------------
 
-static Atomic<uint32_t, ReleaseAcquire> gUnusedAtomCount(0);
+// gUnusedAtomCount is incremented when an atom loses its last reference
+// (and thus turned into unused state), and decremented when an unused
+// atom gets a reference again. The atom table relies on this value to
+// schedule GC. This value can temporarily go below zero when multiple
+// threads are operating the same atom, so it has to be signed so that
+// we wouldn't use overflow value for comparison.
+// See nsAtom::AddRef() and nsAtom::Release().
+// This atomic can be accessed during the GC and other places where recorded
+// events are not allowed, so its value is not preserved when recording or
+// replaying.
+Atomic<int32_t, ReleaseAcquire, recordreplay::Behavior::DontPreserve>
+    nsDynamicAtom::gUnusedAtomCount;
 
-class DynamicAtom final : public nsIAtom
-{
-public:
-  static already_AddRefed<DynamicAtom> Create(const nsAString& aString, uint32_t aHash)
-  {
-    // The refcount is appropriately initialized in the constructor.
-    return dont_AddRef(new DynamicAtom(aString, aHash));
-  }
+nsDynamicAtom::nsDynamicAtom(const nsAString& aString, uint32_t aHash,
+                             bool aIsAsciiLowercase)
+    : nsAtom(aString, aHash, aIsAsciiLowercase), mRefCnt(1) {}
 
-  static void GCAtomTable();
-
-  enum class GCKind {
-    RegularOperation,
-    Shutdown,
-  };
-
-  static void GCAtomTableLocked(const MutexAutoLock& aProofOfLock,
-                                GCKind aKind);
-
-private:
-  DynamicAtom(const nsAString& aString, uint32_t aHash)
-    : mRefCnt(1)
-  {
-    mLength = aString.Length();
-    mIsStatic = false;
-    RefPtr<nsStringBuffer> buf = nsStringBuffer::FromString(aString);
-    if (buf) {
-      mString = static_cast<char16_t*>(buf->Data());
-    } else {
-      const size_t size = (mLength + 1) * sizeof(char16_t);
-      buf = nsStringBuffer::Alloc(size);
-      if (MOZ_UNLIKELY(!buf)) {
-        // We OOM because atom allocations should be small and it's hard to
-        // handle them more gracefully in a constructor.
-        NS_ABORT_OOM(size);
-      }
-      mString = static_cast<char16_t*>(buf->Data());
-      CopyUnicodeTo(aString, 0, mString, mLength);
-      mString[mLength] = char16_t(0);
+// Returns true if ToLowercaseASCII would return the string unchanged.
+static bool IsAsciiLowercase(const char16_t* aString, const uint32_t aLength) {
+  for (uint32_t i = 0; i < aLength; ++i) {
+    if (IS_ASCII_UPPER(aString[i])) {
+      return false;
     }
-
-    mHash = aHash;
-    MOZ_ASSERT(mHash == HashString(mString, mLength));
-
-    NS_ASSERTION(mString[mLength] == char16_t(0), "null terminated");
-    NS_ASSERTION(buf && buf->StorageSize() >= (mLength + 1) * sizeof(char16_t),
-                 "enough storage");
-    NS_ASSERTION(Equals(aString), "correct data");
-
-    // Take ownership of buffer
-    mozilla::Unused << buf.forget();
   }
 
-private:
-  // We don't need a virtual destructor because we always delete via a
-  // DynamicAtom* pointer (in GCAtomTable()), not an nsIAtom* pointer.
-  ~DynamicAtom();
+  return true;
+}
 
-public:
-  NS_DECL_THREADSAFE_ISUPPORTS
-  NS_DECL_NSIATOM
-};
+nsDynamicAtom* nsDynamicAtom::Create(const nsAString& aString, uint32_t aHash) {
+  // We tack the chars onto the end of the nsDynamicAtom object.
+  size_t numCharBytes = (aString.Length() + 1) * sizeof(char16_t);
+  size_t numTotalBytes = sizeof(nsDynamicAtom) + numCharBytes;
 
-class StaticAtom final : public nsIAtom
-{
-public:
-  StaticAtom(nsStringBuffer* aStringBuffer, uint32_t aLength, uint32_t aHash)
-  {
-    mLength = aLength;
-    mIsStatic = true;
-    mString = static_cast<char16_t*>(aStringBuffer->Data());
-    // Technically we could currently avoid doing this addref by instead making
-    // the static atom buffers have an initial refcount of 2.
-    aStringBuffer->AddRef();
+  bool isAsciiLower = ::IsAsciiLowercase(aString.Data(), aString.Length());
 
-    mHash = aHash;
-    MOZ_ASSERT(mHash == HashString(mString, mLength));
+  nsDynamicAtom* atom = (nsDynamicAtom*)moz_xmalloc(numTotalBytes);
+  new (atom) nsDynamicAtom(aString, aHash, isAsciiLower);
+  memcpy(const_cast<char16_t*>(atom->String()),
+         PromiseFlatString(aString).get(), numCharBytes);
 
-    MOZ_ASSERT(mString[mLength] == char16_t(0), "null terminated");
-    MOZ_ASSERT(aStringBuffer &&
-               aStringBuffer->StorageSize() == (mLength + 1) * sizeof(char16_t),
-               "correct storage");
+  MOZ_ASSERT(atom->String()[atom->GetLength()] == char16_t(0));
+  MOZ_ASSERT(atom->Equals(aString));
+  MOZ_ASSERT(atom->mHash == HashString(atom->String(), atom->GetLength()));
+  MOZ_ASSERT(atom->mIsAsciiLowercase == isAsciiLower);
+
+  return atom;
+}
+
+void nsDynamicAtom::Destroy(nsDynamicAtom* aAtom) {
+  aAtom->~nsDynamicAtom();
+  free(aAtom);
+}
+
+void nsAtom::ToString(nsAString& aString) const {
+  // See the comment on |mString|'s declaration.
+  if (IsStatic()) {
+    // AssignLiteral() lets us assign without copying. This isn't a string
+    // literal, but it's a static atom and thus has an unbounded lifetime,
+    // which is what's important.
+    aString.AssignLiteral(AsStatic()->String(), mLength);
+  } else {
+    aString.Assign(AsDynamic()->String(), mLength);
   }
-
-  // We don't need a virtual destructor because we always delete via a
-  // StaticAtom* pointer (in AtomTableClearEntry()), not an nsIAtom* pointer.
-  ~StaticAtom() {}
-
-  NS_DECL_ISUPPORTS
-  NS_DECL_NSIATOM
-};
-
-NS_IMPL_QUERY_INTERFACE(StaticAtom, nsIAtom)
-
-NS_IMETHODIMP_(MozExternalRefCountType)
-StaticAtom::AddRef()
-{
-  return 2;
 }
 
-NS_IMETHODIMP_(MozExternalRefCountType)
-StaticAtom::Release()
-{
-  return 1;
+void nsAtom::ToUTF8String(nsACString& aBuf) const {
+  CopyUTF16toUTF8(nsDependentString(GetUTF16String(), mLength), aBuf);
 }
 
-NS_IMETHODIMP
-DynamicAtom::ScriptableToString(nsAString& aBuf)
-{
-  nsStringBuffer::FromData(mString)->ToString(mLength, aBuf);
-  return NS_OK;
+void nsAtom::AddSizeOfIncludingThis(MallocSizeOf aMallocSizeOf,
+                                    AtomsSizes& aSizes) const {
+  // Static atoms are in static memory, and so are not measured here.
+  if (IsDynamic()) {
+    aSizes.mDynamicAtoms += aMallocSizeOf(this);
+  }
 }
 
-NS_IMETHODIMP
-StaticAtom::ScriptableToString(nsAString& aBuf)
-{
-  nsStringBuffer::FromData(mString)->ToString(mLength, aBuf);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-DynamicAtom::ToUTF8String(nsACString& aBuf)
-{
-  CopyUTF16toUTF8(nsDependentString(mString, mLength), aBuf);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-StaticAtom::ToUTF8String(nsACString& aBuf)
-{
-  CopyUTF16toUTF8(nsDependentString(mString, mLength), aBuf);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-DynamicAtom::ScriptableEquals(const nsAString& aString, bool* aResult)
-{
-  *aResult = aString.Equals(nsDependentString(mString, mLength));
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-StaticAtom::ScriptableEquals(const nsAString& aString, bool* aResult)
-{
-  *aResult = aString.Equals(nsDependentString(mString, mLength));
-  return NS_OK;
-}
-
-NS_IMETHODIMP_(size_t)
-DynamicAtom::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf)
-{
-  size_t n = aMallocSizeOf(this);
-  n += nsStringBuffer::FromData(mString)->SizeOfIncludingThisIfUnshared(
-         aMallocSizeOf);
-  return n;
-}
-
-NS_IMETHODIMP_(size_t)
-StaticAtom::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf)
-{
-  size_t n = aMallocSizeOf(this);
-  // Don't measure the string buffer pointed to by the StaticAtom because it's
-  // in static memory.
-  return n;
+char16ptr_t nsAtom::GetUTF16String() const {
+  return IsStatic() ? AsStatic()->String() : AsDynamic()->String();
 }
 
 //----------------------------------------------------------------------
 
-/**
- * The shared hash table for atom lookups.
- *
- * Callers must hold gAtomTableLock before manipulating the table.
- */
-static PLDHashTable* gAtomTable;
-static Mutex* gAtomTableLock;
-
-struct AtomTableKey
-{
-  AtomTableKey(const char16_t* aUTF16String, uint32_t aLength, uint32_t aHash)
-    : mUTF16String(aUTF16String)
-    , mUTF8String(nullptr)
-    , mLength(aLength)
-    , mHash(aHash)
-  {
-    MOZ_ASSERT(mHash == HashString(mUTF16String, mLength));
+struct AtomTableKey {
+  explicit AtomTableKey(const nsStaticAtom* aAtom)
+      : mUTF16String(aAtom->String()),
+        mUTF8String(nullptr),
+        mLength(aAtom->GetLength()),
+        mHash(aAtom->hash()) {
+    MOZ_ASSERT(HashString(mUTF16String, mLength) == mHash);
   }
 
-  AtomTableKey(const char* aUTF8String, uint32_t aLength, uint32_t aHash)
-    : mUTF16String(nullptr)
-    , mUTF8String(aUTF8String)
-    , mLength(aLength)
-    , mHash(aHash)
-  {
-    mozilla::DebugOnly<bool> err;
-    MOZ_ASSERT(aHash == HashUTF8AsUTF16(mUTF8String, mLength, &err));
-  }
-
-  AtomTableKey(const char16_t* aUTF16String, uint32_t aLength,
-               uint32_t* aHashOut)
-    : mUTF16String(aUTF16String)
-    , mUTF8String(nullptr)
-    , mLength(aLength)
-  {
+  AtomTableKey(const char16_t* aUTF16String, uint32_t aLength)
+      : mUTF16String(aUTF16String), mUTF8String(nullptr), mLength(aLength) {
     mHash = HashString(mUTF16String, mLength);
-    *aHashOut = mHash;
   }
 
-  AtomTableKey(const char* aUTF8String, uint32_t aLength, uint32_t* aHashOut)
-    : mUTF16String(nullptr)
-    , mUTF8String(aUTF8String)
-    , mLength(aLength)
-  {
-    bool err;
-    mHash = HashUTF8AsUTF16(mUTF8String, mLength, &err);
-    if (err) {
-      mUTF8String = nullptr;
-      mLength = 0;
-      mHash = 0;
-    }
-    *aHashOut = mHash;
+  AtomTableKey(const char* aUTF8String, uint32_t aLength, bool* aErr)
+      : mUTF16String(nullptr), mUTF8String(aUTF8String), mLength(aLength) {
+    mHash = HashUTF8AsUTF16(mUTF8String, mLength, aErr);
   }
 
   const char16_t* mUTF16String;
@@ -297,105 +162,270 @@ struct AtomTableKey
   uint32_t mHash;
 };
 
-struct AtomTableEntry : public PLDHashEntryHdr
-{
-  // These references are either to DynamicAtoms, in which case they are
-  // non-owning, or they are to StaticAtoms, which aren't really refcounted.
+struct AtomTableEntry : public PLDHashEntryHdr {
+  // These references are either to dynamic atoms, in which case they are
+  // non-owning, or they are to static atoms, which aren't really refcounted.
   // See the comment at the top of this file for more details.
-  nsIAtom* MOZ_NON_OWNING_REF mAtom;
+  nsAtom* MOZ_NON_OWNING_REF mAtom;
 };
 
-static PLDHashNumber
-AtomTableGetHash(const void* aKey)
-{
+struct AtomCache : public MruCache<AtomTableKey, nsAtom*, AtomCache> {
+  static HashNumber Hash(const AtomTableKey& aKey) { return aKey.mHash; }
+  static bool Match(const AtomTableKey& aKey, const nsAtom* aVal) {
+    MOZ_ASSERT(aKey.mUTF16String);
+    return aVal->Equals(aKey.mUTF16String, aKey.mLength);
+  }
+};
+
+static AtomCache sRecentlyUsedMainThreadAtoms;
+
+// In order to reduce locking contention for concurrent atomization, we segment
+// the atom table into N subtables, each with a separate lock. If the hash
+// values we use to select the subtable are evenly distributed, this reduces the
+// probability of contention by a factor of N. See bug 1440824.
+//
+// NB: This is somewhat similar to the technique used by Java's
+// ConcurrentHashTable.
+class nsAtomSubTable {
+  friend class nsAtomTable;
+  Mutex mLock;
+  PLDHashTable mTable;
+  nsAtomSubTable();
+  void GCLocked(GCKind aKind);
+  void AddSizeOfExcludingThisLocked(MallocSizeOf aMallocSizeOf,
+                                    AtomsSizes& aSizes);
+
+  AtomTableEntry* Search(AtomTableKey& aKey) const {
+    mLock.AssertCurrentThreadOwns();
+    return static_cast<AtomTableEntry*>(mTable.Search(&aKey));
+  }
+
+  AtomTableEntry* Add(AtomTableKey& aKey) {
+    mLock.AssertCurrentThreadOwns();
+    return static_cast<AtomTableEntry*>(mTable.Add(&aKey));  // Infallible
+  }
+};
+
+// The outer atom table, which coordinates access to the inner array of
+// subtables.
+class nsAtomTable {
+ public:
+  nsAtomSubTable& SelectSubTable(AtomTableKey& aKey);
+  void AddSizeOfIncludingThis(MallocSizeOf aMallocSizeOf, AtomsSizes& aSizes);
+  void GC(GCKind aKind);
+  already_AddRefed<nsAtom> Atomize(const nsAString& aUTF16String);
+  already_AddRefed<nsAtom> Atomize(const nsACString& aUTF8String);
+  already_AddRefed<nsAtom> AtomizeMainThread(const nsAString& aUTF16String);
+  nsStaticAtom* GetStaticAtom(const nsAString& aUTF16String);
+  void RegisterStaticAtoms(const nsStaticAtom* aAtoms, size_t aAtomsLen);
+
+  // The result of this function may be imprecise if other threads are operating
+  // on atoms concurrently. It's also slow, since it triggers a GC before
+  // counting.
+  size_t RacySlowCount();
+
+  // This hash table op is a static member of this class so that it can take
+  // advantage of |friend| declarations.
+  static void AtomTableClearEntry(PLDHashTable* aTable,
+                                  PLDHashEntryHdr* aEntry);
+
+  // We achieve measurable reduction in locking contention in parallel CSS
+  // parsing by increasing the number of subtables up to 128. This has been
+  // measured to have neglible impact on the performance of initialization, GC,
+  // and shutdown.
+  //
+  // Another important consideration is memory, since we're adding fixed
+  // overhead per content process, which we try to avoid. Measuring a
+  // mostly-empty page [1] with various numbers of subtables, we get the
+  // following deep sizes for the atom table:
+  //       1 subtable:  278K
+  //       8 subtables: 279K
+  //      16 subtables: 282K
+  //      64 subtables: 286K
+  //     128 subtables: 290K
+  //
+  // So 128 subtables costs us 12K relative to a single table, and 4K relative
+  // to 64 subtables. Conversely, measuring parallel (6 thread) CSS parsing on
+  // tp6-facebook, a single table provides ~150ms of locking overhead per
+  // thread, 64 subtables provides ~2-3ms of overhead, and 128 subtables
+  // provides <1ms. And so while either 64 or 128 subtables would probably be
+  // acceptable, achieving a measurable reduction in contention for 4k of fixed
+  // memory overhead is probably worth it.
+  //
+  // [1] The numbers will look different for content processes with complex
+  // pages loaded, but in those cases the actual atoms will dominate memory
+  // usage and the overhead of extra tables will be negligible. We're mostly
+  // interested in the fixed cost for nearly-empty content processes.
+  const static size_t kNumSubTables = 128;  // Must be power of two.
+
+ private:
+  nsAtomSubTable mSubTables[kNumSubTables];
+};
+
+// Static singleton instance for the atom table.
+static nsAtomTable* gAtomTable;
+
+static PLDHashNumber AtomTableGetHash(const void* aKey) {
   const AtomTableKey* k = static_cast<const AtomTableKey*>(aKey);
   return k->mHash;
 }
 
-static bool
-AtomTableMatchKey(const PLDHashEntryHdr* aEntry, const void* aKey)
-{
+static bool AtomTableMatchKey(const PLDHashEntryHdr* aEntry, const void* aKey) {
   const AtomTableEntry* he = static_cast<const AtomTableEntry*>(aEntry);
   const AtomTableKey* k = static_cast<const AtomTableKey*>(aKey);
 
   if (k->mUTF8String) {
-    return
-      CompareUTF8toUTF16(nsDependentCSubstring(k->mUTF8String,
-                                               k->mUTF8String + k->mLength),
-                         nsDependentAtomString(he->mAtom)) == 0;
+    bool err = false;
+    return (CompareUTF8toUTF16(nsDependentCSubstring(
+                                   k->mUTF8String, k->mUTF8String + k->mLength),
+                               nsDependentAtomString(he->mAtom), &err) == 0) &&
+           !err;
   }
 
-  uint32_t length = he->mAtom->GetLength();
-  if (length != k->mLength) {
-    return false;
-  }
-
-  return memcmp(he->mAtom->GetUTF16String(),
-                k->mUTF16String, length * sizeof(char16_t)) == 0;
+  return he->mAtom->Equals(k->mUTF16String, k->mLength);
 }
 
-static void
-AtomTableClearEntry(PLDHashTable* aTable, PLDHashEntryHdr* aEntry)
-{
+void nsAtomTable::AtomTableClearEntry(PLDHashTable* aTable,
+                                      PLDHashEntryHdr* aEntry) {
   auto entry = static_cast<AtomTableEntry*>(aEntry);
-  nsIAtom* atom = entry->mAtom;
-  if (atom->IsStaticAtom()) {
-    // This case -- when the entry being cleared holds a StaticAtom -- only
-    // occurs when gAtomTable is destroyed, whereupon all StaticAtoms within it
-    // must be explicitly deleted. The cast is required because StaticAtom
-    // doesn't have a virtual destructor.
-    delete static_cast<StaticAtom*>(atom);
-  }
+  entry->mAtom = nullptr;
 }
 
-static void
-AtomTableInitEntry(PLDHashEntryHdr* aEntry, const void* aKey)
-{
+static void AtomTableInitEntry(PLDHashEntryHdr* aEntry, const void* aKey) {
   static_cast<AtomTableEntry*>(aEntry)->mAtom = nullptr;
 }
 
 static const PLDHashTableOps AtomTableOps = {
-  AtomTableGetHash,
-  AtomTableMatchKey,
-  PLDHashTable::MoveEntryStub,
-  AtomTableClearEntry,
-  AtomTableInitEntry
-};
+    AtomTableGetHash, AtomTableMatchKey, PLDHashTable::MoveEntryStub,
+    nsAtomTable::AtomTableClearEntry, AtomTableInitEntry};
 
-//----------------------------------------------------------------------
+// The atom table very quickly gets 10,000+ entries in it (or even 100,000+).
+// But choosing the best initial subtable length has some subtleties: we add
+// ~2700 static atoms at start-up, and then we start adding and removing
+// dynamic atoms. If we make the tables too big to start with, when the first
+// dynamic atom gets removed from a given table the load factor will be < 25%
+// and we will shrink it.
+//
+// So we first make the simplifying assumption that the atoms are more or less
+// evenly-distributed across the subtables (which is the case empirically).
+// Then, we take the total atom count when the first dynamic atom is removed
+// (~2700), divide that across the N subtables, and the largest capacity that
+// will allow each subtable to be > 25% full with that count.
+//
+// So want an initial subtable capacity less than (2700 / N) * 4 = 10800 / N.
+// Rounding down to the nearest power of two gives us 8192 / N. Since the
+// capacity is double the initial length, we end up with (4096 / N) per
+// subtable.
+#define INITIAL_SUBTABLE_LENGTH (4096 / nsAtomTable::kNumSubTables)
 
-void
-DynamicAtom::GCAtomTable()
-{
-  MutexAutoLock lock(*gAtomTableLock);
-  GCAtomTableLocked(lock, GCKind::RegularOperation);
+nsAtomSubTable& nsAtomTable::SelectSubTable(AtomTableKey& aKey) {
+  // There are a few considerations around how we select subtables.
+  //
+  // First, we want entries to be evenly distributed across the subtables. This
+  // can be achieved by using any bits in the hash key, assuming the key itself
+  // is evenly-distributed. Empirical measurements indicate that this method
+  // produces a roughly-even distribution across subtables.
+  //
+  // Second, we want to use the hash bits that are least likely to influence an
+  // entry's position within the subtable. If we used the exact same bits used
+  // by the subtables, then each subtable would compute the same position for
+  // every entry it observes, leading to pessimal performance. In this case,
+  // we're using PLDHashTable, whose primary hash function uses the N leftmost
+  // bits of the hash value (where N is the log2 capacity of the table). This
+  // means we should prefer the rightmost bits here.
+  //
+  // Note that the below is equivalent to mHash % kNumSubTables, a replacement
+  // which an optimizing compiler should make, but let's avoid any doubt.
+  static_assert((kNumSubTables & (kNumSubTables - 1)) == 0,
+                "must be power of two");
+  return mSubTables[aKey.mHash & (kNumSubTables - 1)];
 }
 
-void
-DynamicAtom::GCAtomTableLocked(const MutexAutoLock& aProofOfLock,
-                               GCKind aKind)
-{
-  uint32_t removedCount = 0; // Use a non-atomic temporary for cheaper increments.
+void nsAtomTable::AddSizeOfIncludingThis(MallocSizeOf aMallocSizeOf,
+                                         AtomsSizes& aSizes) {
+  MOZ_ASSERT(NS_IsMainThread());
+  aSizes.mTable += aMallocSizeOf(this);
+  for (auto& table : mSubTables) {
+    MutexAutoLock lock(table.mLock);
+    table.AddSizeOfExcludingThisLocked(aMallocSizeOf, aSizes);
+  }
+}
+
+void nsAtomTable::GC(GCKind aKind) {
+  MOZ_ASSERT(NS_IsMainThread());
+  sRecentlyUsedMainThreadAtoms.Clear();
+
+  // Note that this is effectively an incremental GC, since only one subtable
+  // is locked at a time.
+  for (auto& table : mSubTables) {
+    MutexAutoLock lock(table.mLock);
+    table.GCLocked(aKind);
+  }
+
+  // We would like to assert that gUnusedAtomCount matches the number of atoms
+  // we found in the table which we removed. However, there are two problems
+  // with this:
+  // * We have multiple subtables, each with their own lock. For optimal
+  //   performance we only want to hold one lock at a time, but this means
+  //   that atoms can be added and removed between GC slices.
+  // * Even if we held all the locks and performed all GC slices atomically,
+  //   the locks are not acquired for AddRef() and Release() calls. This means
+  //   we might see a gUnusedAtomCount value in between, say, AddRef()
+  //   incrementing mRefCnt and it decrementing gUnusedAtomCount.
+  //
+  // So, we don't bother asserting that there are no unused atoms at the end of
+  // a regular GC. But we can (and do) assert this just after the last GC at
+  // shutdown.
+  //
+  // Note that, barring refcounting bugs, an atom can only go from a zero
+  // refcount to a non-zero refcount while the atom table lock is held, so
+  // so we won't try to resurrect a zero refcount atom while trying to delete
+  // it.
+
+  MOZ_ASSERT_IF(aKind == GCKind::Shutdown,
+                nsDynamicAtom::gUnusedAtomCount == 0);
+}
+
+size_t nsAtomTable::RacySlowCount() {
+  // Trigger a GC so that the result is deterministic modulo other threads.
+  GC(GCKind::RegularOperation);
+  size_t count = 0;
+  for (auto& table : mSubTables) {
+    MutexAutoLock lock(table.mLock);
+    count += table.mTable.EntryCount();
+  }
+
+  return count;
+}
+
+nsAtomSubTable::nsAtomSubTable()
+    : mLock("Atom Sub-Table Lock"),
+      mTable(&AtomTableOps, sizeof(AtomTableEntry), INITIAL_SUBTABLE_LENGTH) {}
+
+void nsAtomSubTable::GCLocked(GCKind aKind) {
+  MOZ_ASSERT(NS_IsMainThread());
+  mLock.AssertCurrentThreadOwns();
+
+  int32_t removedCount = 0;  // A non-atomic temporary for cheaper increments.
   nsAutoCString nonZeroRefcountAtoms;
   uint32_t nonZeroRefcountAtomsCount = 0;
-  for (auto i = gAtomTable->Iter(); !i.Done(); i.Next()) {
+  for (auto i = mTable.Iter(); !i.Done(); i.Next()) {
     auto entry = static_cast<AtomTableEntry*>(i.Get());
-    if (entry->mAtom->IsStaticAtom()) {
+    if (entry->mAtom->IsStatic()) {
       continue;
     }
 
-    auto atom = static_cast<DynamicAtom*>(entry->mAtom);
-    if (atom->mRefCnt == 0) {
+    nsAtom* atom = entry->mAtom;
+    if (atom->IsDynamic() && atom->AsDynamic()->mRefCnt == 0) {
       i.Remove();
-      delete atom;
+      nsDynamicAtom::Destroy(atom->AsDynamic());
       ++removedCount;
     }
 #ifdef NS_FREE_PERMANENT_DATA
     else if (aKind == GCKind::Shutdown && PR_GetEnv("XPCOM_MEM_BLOAT_LOG")) {
-      // Only report leaking atoms in leak-checking builds in a run
-      // where we are checking for leaks, during shutdown. If
-      // something is anomalous, then we'll assert later in this
-      // function.
+      // Only report leaking atoms in leak-checking builds in a run where we
+      // are checking for leaks, during shutdown. If something is anomalous,
+      // then we'll assert later in this function.
       nsAutoCString name;
       atom->ToUTF8String(name);
       if (nonZeroRefcountAtomsCount == 0) {
@@ -408,7 +438,6 @@ DynamicAtom::GCAtomTableLocked(const MutexAutoLock& aProofOfLock,
       nonZeroRefcountAtomsCount++;
     }
 #endif
-
   }
   if (nonZeroRefcountAtomsCount) {
     nsPrintfCString msg("%d dynamic atom(s) with non-zero refcount: %s",
@@ -416,334 +445,228 @@ DynamicAtom::GCAtomTableLocked(const MutexAutoLock& aProofOfLock,
     NS_ASSERTION(nonZeroRefcountAtomsCount == 0, msg.get());
   }
 
-  // During the course of this function, the atom table is locked. This means
-  // that, barring refcounting bugs in consumers, an atom can never go from
-  // refcount == 0 to refcount != 0 during a GC. However, an atom _can_ go from
-  // refcount != 0 to refcount == 0 if a Release() occurs in parallel with GC.
-  // This means that we cannot assert that gUnusedAtomCount == removedCount, and
-  // thus that there are no unused atoms at the end of a GC. We can and do,
-  // however, assert this after the last GC at shutdown.
-  if (aKind == GCKind::RegularOperation) {
-    MOZ_ASSERT(removedCount <= gUnusedAtomCount);
-  } else {
-    // Complain if somebody adds new GCKind enums.
-    MOZ_ASSERT(aKind == GCKind::Shutdown);
-    // Our unused atom count should be accurate.
-    MOZ_ASSERT(removedCount == gUnusedAtomCount);
-  }
-
-  gUnusedAtomCount -= removedCount;
+  nsDynamicAtom::gUnusedAtomCount -= removedCount;
 }
 
-NS_IMPL_QUERY_INTERFACE(DynamicAtom, nsIAtom)
-
-NS_IMETHODIMP_(MozExternalRefCountType)
-DynamicAtom::AddRef(void)
-{
-  nsrefcnt count = ++mRefCnt;
-  if (count == 1) {
-    MOZ_ASSERT(gUnusedAtomCount > 0);
-    gUnusedAtomCount--;
+void nsDynamicAtom::GCAtomTable() {
+  MOZ_ASSERT(gAtomTable);
+  if (NS_IsMainThread()) {
+    gAtomTable->GC(GCKind::RegularOperation);
   }
-  return count;
-}
-
-#ifdef DEBUG
-// We set a lower GC threshold for atoms in debug builds so that we exercise
-// the GC machinery more often.
-static const uint32_t kAtomGCThreshold = 20;
-#else
-static const uint32_t kAtomGCThreshold = 10000;
-#endif
-
-NS_IMETHODIMP_(MozExternalRefCountType)
-DynamicAtom::Release(void)
-{
-  MOZ_ASSERT(mRefCnt > 0);
-  nsrefcnt count = --mRefCnt;
-  if (count == 0) {
-    if (++gUnusedAtomCount >= kAtomGCThreshold) {
-      GCAtomTable();
-    }
-  }
-
-  return count;
-}
-
-DynamicAtom::~DynamicAtom()
-{
-  nsStringBuffer::FromData(mString)->Release();
 }
 
 //----------------------------------------------------------------------
 
-class StaticAtomEntry : public PLDHashEntryHdr
-{
-public:
-  typedef const nsAString& KeyType;
-  typedef const nsAString* KeyTypePointer;
+// Have the static atoms been inserted into the table?
+static bool gStaticAtomsDone = false;
 
-  explicit StaticAtomEntry(KeyTypePointer aKey) {}
-  StaticAtomEntry(const StaticAtomEntry& aOther) : mAtom(aOther.mAtom) {}
-
-  // We do not delete the atom because that's done when gAtomTable is
-  // destroyed -- which happens immediately after gStaticAtomTable is destroyed
-  // -- in NS_PurgeAtomTable().
-  ~StaticAtomEntry() {}
-
-  bool KeyEquals(KeyTypePointer aKey) const
-  {
-    return mAtom->Equals(*aKey);
-  }
-
-  static KeyTypePointer KeyToPointer(KeyType aKey) { return &aKey; }
-  static PLDHashNumber HashKey(KeyTypePointer aKey)
-  {
-    return HashString(*aKey);
-  }
-
-  enum { ALLOW_MEMMOVE = true };
-
-  // StaticAtoms aren't really refcounted. Because these entries live in a
-  // global hashtable, this reference is essentially owning.
-  StaticAtom* MOZ_OWNING_REF mAtom;
-};
-
-/**
- * A hashtable of static atoms that existed at app startup. This hashtable
- * helps nsHtml5AtomTable.
- */
-typedef nsTHashtable<StaticAtomEntry> StaticAtomTable;
-static StaticAtomTable* gStaticAtomTable = nullptr;
-
-/**
- * Whether it is still OK to add atoms to gStaticAtomTable.
- */
-static bool gStaticAtomTableSealed = false;
-
-// The atom table very quickly gets 10,000+ entries in it (or even 100,000+).
-// But choosing the best initial length has some subtleties: we add ~2700
-// static atoms to the table at start-up, and then we start adding and removing
-// dynamic atoms. If we make the table too big to start with, when the first
-// dynamic atom gets removed the load factor will be < 25% and so we will
-// shrink it to 4096 entries.
-//
-// By choosing an initial length of 4096, we get an initial capacity of 8192.
-// That's the biggest initial capacity that will let us be > 25% full when the
-// first dynamic atom is removed (when the count is ~2700), thus avoiding any
-// shrinking.
-#define ATOM_HASHTABLE_INITIAL_LENGTH  4096
-
-void
-NS_InitAtomTable()
-{
+void NS_InitAtomTable() {
+  MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(!gAtomTable);
-  gAtomTable = new PLDHashTable(&AtomTableOps, sizeof(AtomTableEntry),
-                                ATOM_HASHTABLE_INITIAL_LENGTH);
-  gAtomTableLock = new Mutex("Atom Table Lock");
 
-  // Bug 1340710 has caused us to generate an empty atom at arbitrary times
-  // after startup.  If we end up creating one before nsGkAtoms::_empty is
-  // registered, we get an assertion about transmuting a dynamic atom into a
-  // static atom.  In order to avoid that, we register an empty string static
-  // atom as soon as we initialize the atom table to guarantee that the empty
-  // string atom will always be static.
-  NS_STATIC_ATOM_BUFFER(empty, "");
-  static nsIAtom* empty_atom = nullptr;
-  static const nsStaticAtom default_atoms[] = {
-    NS_STATIC_ATOM(empty, &empty_atom)
-  };
-  NS_RegisterStaticAtoms(default_atoms);
+  // We register static atoms immediately so they're available for use as early
+  // as possible.
+  gAtomTable = new nsAtomTable();
+  gAtomTable->RegisterStaticAtoms(nsGkAtoms::sAtoms, nsGkAtoms::sAtomsLen);
+  gStaticAtomsDone = true;
 }
 
-void
-NS_ShutdownAtomTable()
-{
-  delete gStaticAtomTable;
-  gStaticAtomTable = nullptr;
+void NS_ShutdownAtomTable() {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(gAtomTable);
 
 #ifdef NS_FREE_PERMANENT_DATA
   // Do a final GC to satisfy leak checking. We skip this step in release
   // builds.
-  {
-    MutexAutoLock lock(*gAtomTableLock);
-    DynamicAtom::GCAtomTableLocked(lock, DynamicAtom::GCKind::Shutdown);
-  }
+  gAtomTable->GC(GCKind::Shutdown);
 #endif
 
   delete gAtomTable;
   gAtomTable = nullptr;
-  delete gAtomTableLock;
-  gAtomTableLock = nullptr;
 }
 
-void
-NS_SizeOfAtomTablesIncludingThis(MallocSizeOf aMallocSizeOf,
-                                 size_t* aMain, size_t* aStatic)
-{
-  MutexAutoLock lock(*gAtomTableLock);
-  *aMain = gAtomTable->ShallowSizeOfIncludingThis(aMallocSizeOf);
-  for (auto iter = gAtomTable->Iter(); !iter.Done(); iter.Next()) {
+void NS_AddSizeOfAtoms(MallocSizeOf aMallocSizeOf, AtomsSizes& aSizes) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(gAtomTable);
+  return gAtomTable->AddSizeOfIncludingThis(aMallocSizeOf, aSizes);
+}
+
+void nsAtomSubTable::AddSizeOfExcludingThisLocked(MallocSizeOf aMallocSizeOf,
+                                                  AtomsSizes& aSizes) {
+  mLock.AssertCurrentThreadOwns();
+  aSizes.mTable += mTable.ShallowSizeOfExcludingThis(aMallocSizeOf);
+  for (auto iter = mTable.Iter(); !iter.Done(); iter.Next()) {
     auto entry = static_cast<AtomTableEntry*>(iter.Get());
-    *aMain += entry->mAtom->SizeOfIncludingThis(aMallocSizeOf);
+    entry->mAtom->AddSizeOfIncludingThis(aMallocSizeOf, aSizes);
   }
-
-  // The atoms pointed to by gStaticAtomTable are also pointed to by gAtomTable,
-  // and they're measured by the loop above. So no need to measure them here.
-  *aStatic = gStaticAtomTable
-           ? gStaticAtomTable->ShallowSizeOfIncludingThis(aMallocSizeOf)
-           : 0;
 }
 
-static inline AtomTableEntry*
-GetAtomHashEntry(const char* aString, uint32_t aLength, uint32_t* aHashOut)
-{
-  gAtomTableLock->AssertCurrentThreadOwns();
-  AtomTableKey key(aString, aLength, aHashOut);
-  // This is an infallible add.
-  return static_cast<AtomTableEntry*>(gAtomTable->Add(&key));
-}
+void nsAtomTable::RegisterStaticAtoms(const nsStaticAtom* aAtoms,
+                                      size_t aAtomsLen) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_RELEASE_ASSERT(!gStaticAtomsDone, "Static atom insertion is finished!");
 
-static inline AtomTableEntry*
-GetAtomHashEntry(const char16_t* aString, uint32_t aLength, uint32_t* aHashOut)
-{
-  gAtomTableLock->AssertCurrentThreadOwns();
-  AtomTableKey key(aString, aLength, aHashOut);
-  // This is an infallible add.
-  return static_cast<AtomTableEntry*>(gAtomTable->Add(&key));
-}
+  for (uint32_t i = 0; i < aAtomsLen; ++i) {
+    const nsStaticAtom* atom = &aAtoms[i];
+    MOZ_ASSERT(nsCRT::IsAscii(atom->String()));
+    MOZ_ASSERT(NS_strlen(atom->String()) == atom->GetLength());
+    MOZ_ASSERT(atom->IsAsciiLowercase() ==
+               ::IsAsciiLowercase(atom->String(), atom->GetLength()));
 
-void
-RegisterStaticAtoms(const nsStaticAtom* aAtoms, uint32_t aAtomCount)
-{
-  MutexAutoLock lock(*gAtomTableLock);
+    // This assertion ensures the static atom's precomputed hash value matches
+    // what would be computed by mozilla::HashString(aStr), which is what we use
+    // when atomizing strings. We compute this hash in Atom.py.
+    MOZ_ASSERT(HashString(atom->String()) == atom->hash());
 
-  MOZ_RELEASE_ASSERT(!gStaticAtomTableSealed,
-                     "Atom table has already been sealed!");
+    AtomTableKey key(atom);
+    nsAtomSubTable& table = SelectSubTable(key);
+    MutexAutoLock lock(table.mLock);
+    AtomTableEntry* he = table.Add(key);
 
-  if (!gStaticAtomTable) {
-    gStaticAtomTable = new StaticAtomTable();
-  }
-
-  for (uint32_t i = 0; i < aAtomCount; ++i) {
-    nsStringBuffer* stringBuffer = aAtoms[i].mStringBuffer;
-    nsIAtom** atomp = aAtoms[i].mAtom;
-
-    MOZ_ASSERT(nsCRT::IsAscii(static_cast<char16_t*>(stringBuffer->Data())));
-
-    uint32_t stringLen = stringBuffer->StorageSize() / sizeof(char16_t) - 1;
-
-    uint32_t hash;
-    AtomTableEntry* he =
-      GetAtomHashEntry(static_cast<char16_t*>(stringBuffer->Data()),
-                       stringLen, &hash);
-
-    nsIAtom* atom = he->mAtom;
-    if (atom) {
-      // Disallow creating a dynamic atom, and then later, while the
-      // dynamic atom is still alive, registering that same atom as a
-      // static atom.  It causes subtle bugs, and we're programming in
-      // C++ here, not Smalltalk.
-      if (!atom->IsStaticAtom()) {
-        nsAutoCString name;
-        atom->ToUTF8String(name);
-        MOZ_CRASH_UNSAFE_PRINTF(
-          "Static atom registration for %s should be pushed back", name.get());
-      }
-    } else {
-      atom = new StaticAtom(stringBuffer, stringLen, hash);
-      he->mAtom = atom;
+    if (he->mAtom) {
+      // There are two ways we could get here.
+      // - Register two static atoms with the same string.
+      // - Create a dynamic atom and then register a static atom with the same
+      //   string while the dynamic atom is alive.
+      // Both cases can cause subtle bugs, and are disallowed. We're
+      // programming in C++ here, not Smalltalk.
+      nsAutoCString name;
+      he->mAtom->ToUTF8String(name);
+      MOZ_CRASH_UNSAFE_PRINTF("Atom for '%s' already exists", name.get());
     }
-    *atomp = atom;
-
-    if (!gStaticAtomTableSealed) {
-      StaticAtomEntry* entry =
-        gStaticAtomTable->PutEntry(nsDependentAtomString(atom));
-      MOZ_ASSERT(atom->IsStaticAtom());
-      entry->mAtom = static_cast<StaticAtom*>(atom);
-    }
+    he->mAtom = const_cast<nsStaticAtom*>(atom);
   }
 }
 
-already_AddRefed<nsIAtom>
-NS_Atomize(const char* aUTF8String)
-{
-  return NS_Atomize(nsDependentCString(aUTF8String));
+already_AddRefed<nsAtom> NS_Atomize(const char* aUTF8String) {
+  MOZ_ASSERT(gAtomTable);
+  return gAtomTable->Atomize(nsDependentCString(aUTF8String));
 }
 
-already_AddRefed<nsIAtom>
-NS_Atomize(const nsACString& aUTF8String)
-{
-  MutexAutoLock lock(*gAtomTableLock);
-  uint32_t hash;
-  AtomTableEntry* he = GetAtomHashEntry(aUTF8String.Data(),
-                                        aUTF8String.Length(),
-                                        &hash);
+already_AddRefed<nsAtom> nsAtomTable::Atomize(const nsACString& aUTF8String) {
+  bool err;
+  AtomTableKey key(aUTF8String.Data(), aUTF8String.Length(), &err);
+  if (MOZ_UNLIKELY(err)) {
+    MOZ_ASSERT_UNREACHABLE("Tried to atomize invalid UTF-8.");
+    // The input was invalid UTF-8. Let's replace the errors with U+FFFD
+    // and atomize the result.
+    nsString str;
+    CopyUTF8toUTF16(aUTF8String, str);
+    return Atomize(str);
+  }
+  nsAtomSubTable& table = SelectSubTable(key);
+  MutexAutoLock lock(table.mLock);
+  AtomTableEntry* he = table.Add(key);
 
   if (he->mAtom) {
-    nsCOMPtr<nsIAtom> atom = he->mAtom;
-
+    RefPtr<nsAtom> atom = he->mAtom;
     return atom.forget();
   }
 
-  // This results in an extra addref/release of the nsStringBuffer.
-  // Unfortunately there doesn't seem to be any APIs to avoid that.
-  // Actually, now there is, sort of: ForgetSharedBuffer.
   nsString str;
   CopyUTF8toUTF16(aUTF8String, str);
-  RefPtr<DynamicAtom> atom = DynamicAtom::Create(str, hash);
+  RefPtr<nsAtom> atom = dont_AddRef(nsDynamicAtom::Create(str, key.mHash));
 
   he->mAtom = atom;
 
   return atom.forget();
 }
 
-already_AddRefed<nsIAtom>
-NS_Atomize(const char16_t* aUTF16String)
-{
-  return NS_Atomize(nsDependentString(aUTF16String));
+already_AddRefed<nsAtom> NS_Atomize(const nsACString& aUTF8String) {
+  MOZ_ASSERT(gAtomTable);
+  return gAtomTable->Atomize(aUTF8String);
 }
 
-already_AddRefed<nsIAtom>
-NS_Atomize(const nsAString& aUTF16String)
-{
-  MutexAutoLock lock(*gAtomTableLock);
-  uint32_t hash;
-  AtomTableEntry* he = GetAtomHashEntry(aUTF16String.Data(),
-                                        aUTF16String.Length(),
-                                        &hash);
+already_AddRefed<nsAtom> NS_Atomize(const char16_t* aUTF16String) {
+  MOZ_ASSERT(gAtomTable);
+  return gAtomTable->Atomize(nsDependentString(aUTF16String));
+}
+
+already_AddRefed<nsAtom> nsAtomTable::Atomize(const nsAString& aUTF16String) {
+  AtomTableKey key(aUTF16String.Data(), aUTF16String.Length());
+  nsAtomSubTable& table = SelectSubTable(key);
+  MutexAutoLock lock(table.mLock);
+  AtomTableEntry* he = table.Add(key);
 
   if (he->mAtom) {
-    nsCOMPtr<nsIAtom> atom = he->mAtom;
-
+    RefPtr<nsAtom> atom = he->mAtom;
     return atom.forget();
   }
 
-  RefPtr<DynamicAtom> atom = DynamicAtom::Create(aUTF16String, hash);
+  RefPtr<nsAtom> atom =
+      dont_AddRef(nsDynamicAtom::Create(aUTF16String, key.mHash));
   he->mAtom = atom;
 
   return atom.forget();
 }
 
-nsrefcnt
-NS_GetNumberOfAtoms(void)
-{
-  DynamicAtom::GCAtomTable(); // Trigger a GC so that we return a deterministic result.
-  MutexAutoLock lock(*gAtomTableLock);
-  return gAtomTable->EntryCount();
+already_AddRefed<nsAtom> NS_Atomize(const nsAString& aUTF16String) {
+  MOZ_ASSERT(gAtomTable);
+  return gAtomTable->Atomize(aUTF16String);
 }
 
-nsIAtom*
-NS_GetStaticAtom(const nsAString& aUTF16String)
-{
-  NS_PRECONDITION(gStaticAtomTable, "Static atom table not created yet.");
-  NS_PRECONDITION(gStaticAtomTableSealed, "Static atom table not sealed yet.");
-  StaticAtomEntry* entry = gStaticAtomTable->GetEntry(aUTF16String);
-  return entry ? entry->mAtom : nullptr;
+already_AddRefed<nsAtom> nsAtomTable::AtomizeMainThread(
+    const nsAString& aUTF16String) {
+  MOZ_ASSERT(NS_IsMainThread());
+  RefPtr<nsAtom> retVal;
+  AtomTableKey key(aUTF16String.Data(), aUTF16String.Length());
+  auto p = sRecentlyUsedMainThreadAtoms.Lookup(key);
+  if (p) {
+    retVal = p.Data();
+    return retVal.forget();
+  }
+
+  nsAtomSubTable& table = SelectSubTable(key);
+  MutexAutoLock lock(table.mLock);
+  AtomTableEntry* he = table.Add(key);
+
+  if (he->mAtom) {
+    retVal = he->mAtom;
+  } else {
+    RefPtr<nsAtom> newAtom =
+        dont_AddRef(nsDynamicAtom::Create(aUTF16String, key.mHash));
+    he->mAtom = newAtom;
+    retVal = newAtom.forget();
+  }
+
+  p.Set(retVal);
+  return retVal.forget();
 }
 
-void
-NS_SealStaticAtomTable()
-{
-  gStaticAtomTableSealed = true;
+already_AddRefed<nsAtom> NS_AtomizeMainThread(const nsAString& aUTF16String) {
+  MOZ_ASSERT(gAtomTable);
+  return gAtomTable->AtomizeMainThread(aUTF16String);
+}
+
+nsrefcnt NS_GetNumberOfAtoms(void) {
+  MOZ_ASSERT(gAtomTable);
+  return gAtomTable->RacySlowCount();
+}
+
+int32_t NS_GetUnusedAtomCount(void) { return nsDynamicAtom::gUnusedAtomCount; }
+
+nsStaticAtom* NS_GetStaticAtom(const nsAString& aUTF16String) {
+  MOZ_ASSERT(gStaticAtomsDone, "Static atom setup not yet done.");
+  MOZ_ASSERT(gAtomTable);
+  return gAtomTable->GetStaticAtom(aUTF16String);
+}
+
+nsStaticAtom* nsAtomTable::GetStaticAtom(const nsAString& aUTF16String) {
+  AtomTableKey key(aUTF16String.Data(), aUTF16String.Length());
+  nsAtomSubTable& table = SelectSubTable(key);
+  MutexAutoLock lock(table.mLock);
+  AtomTableEntry* he = table.Search(key);
+  return he && he->mAtom->IsStatic() ? static_cast<nsStaticAtom*>(he->mAtom)
+                                     : nullptr;
+}
+
+void ToLowerCaseASCII(RefPtr<nsAtom>& aAtom) {
+  // Assume the common case is that the atom is already ASCII lowercase.
+  if (aAtom->IsAsciiLowercase()) {
+    return;
+  }
+
+  nsAutoString lowercased;
+  ToLowerCaseASCII(nsDependentAtomString(aAtom), lowercased);
+  aAtom = NS_Atomize(lowercased);
 }

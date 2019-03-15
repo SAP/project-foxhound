@@ -14,82 +14,80 @@
 const SERVICE_WORKER = URL_ROOT + "service-workers/push-sw.js";
 const TAB_URL = URL_ROOT + "service-workers/push-sw.html";
 
-add_task(function* () {
-  yield enableServiceWorkerDebugging();
-  let { tab, document } = yield openAboutDebugging("workers");
+add_task(async function() {
+  await enableServiceWorkerDebugging();
+  const { tab, document } = await openAboutDebugging("workers");
 
   // Listen for mutations in the service-workers list.
-  let serviceWorkersElement = getServiceWorkerList(document);
-  let onMutation = waitForMutation(serviceWorkersElement, { childList: true });
+  const serviceWorkersElement = getServiceWorkerList(document);
 
   // Open a tab that registers a push service worker.
-  let swTab = yield addTab(TAB_URL);
+  const swTab = await addTab(TAB_URL);
 
   info("Make the test page notify us when the service worker sends a message.");
 
-  yield ContentTask.spawn(swTab.linkedBrowser, {}, function () {
-    let win = content.wrappedJSObject;
-    win.navigator.serviceWorker.addEventListener("message", function (event) {
+  await ContentTask.spawn(swTab.linkedBrowser, {}, function() {
+    const win = content.wrappedJSObject;
+    win.navigator.serviceWorker.addEventListener("message", function(event) {
       sendAsyncMessage(event.data);
     });
   });
 
   // Expect the service worker to claim the test window when activating.
-  let mm = swTab.linkedBrowser.messageManager;
-  let onClaimed = new Promise(done => {
-    mm.addMessageListener("sw-claimed", function listener() {
-      mm.removeMessageListener("sw-claimed", listener);
-      done();
-    });
-  });
+  const onClaimed = onTabMessage(swTab, "sw-claimed");
 
-  // Wait for the service-workers list to update.
-  yield onMutation;
-
-  // Check that the service worker appears in the UI.
-  assertHasTarget(true, document, "service-workers", SERVICE_WORKER);
+  info("Wait until the service worker appears in the UI");
+  await waitUntilServiceWorkerContainer(SERVICE_WORKER, document);
 
   info("Ensure that the registration resolved before trying to interact with " +
     "the service worker.");
-  yield waitForServiceWorkerRegistered(swTab);
+  await waitForServiceWorkerRegistered(swTab);
   ok(true, "Service worker registration resolved");
 
-  yield waitForServiceWorkerActivation(SERVICE_WORKER, document);
+  await waitForServiceWorkerActivation(SERVICE_WORKER, document);
 
   // Retrieve the Push button for the worker.
-  let names = [...document.querySelectorAll("#service-workers .target-name")];
-  let name = names.filter(element => element.textContent === SERVICE_WORKER)[0];
+  const names = [...document.querySelectorAll("#service-workers .target-name")];
+  const name = names.filter(element => element.textContent === SERVICE_WORKER)[0];
   ok(name, "Found the service worker in the list");
 
-  let targetElement = name.parentNode.parentNode;
+  const targetElement = name.parentNode.parentNode;
 
-  let pushBtn = targetElement.querySelector(".push-button");
+  const pushBtn = targetElement.querySelector(".push-button");
   ok(pushBtn, "Found its push button");
 
-  info("Wait for the service worker to claim the test window before " +
-    "proceeding.");
-  yield onClaimed;
+  info("Wait for the service worker to claim the test window before proceeding.");
+  await onClaimed;
 
   info("Click on the Push button and wait for the service worker to receive " +
     "a push notification");
-  let onPushNotification = new Promise(done => {
-    mm.addMessageListener("sw-pushed", function listener() {
-      mm.removeMessageListener("sw-pushed", listener);
-      done();
-    });
-  });
+  const onPushNotification = onTabMessage(swTab, "sw-pushed");
+
   pushBtn.click();
-  yield onPushNotification;
+  await onPushNotification;
   ok(true, "Service worker received a push notification");
 
   // Finally, unregister the service worker itself.
   try {
-    yield unregisterServiceWorker(swTab, serviceWorkersElement);
+    await unregisterServiceWorker(swTab, serviceWorkersElement);
     ok(true, "Service worker registration unregistered");
   } catch (e) {
     ok(false, "SW not unregistered; " + e);
   }
 
-  yield removeTab(swTab);
-  yield closeAboutDebugging(tab);
+  await removeTab(swTab);
+  await closeAboutDebugging(tab);
 });
+
+/**
+ * Helper to listen once on a message sent using postMessage from the provided tab.
+ */
+function onTabMessage(tab, message) {
+  const mm = tab.linkedBrowser.messageManager;
+  return new Promise(done => {
+    mm.addMessageListener(message, function listener() {
+      mm.removeMessageListener(message, listener);
+      done();
+    });
+  });
+}

@@ -19,13 +19,13 @@ const TEST_URI = `
   <div id='testid' class='testclass'>Styled Node</div>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
-  yield selectNode("#testid", inspector);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, view} = await openRuleView();
+  await selectNode("#testid", inspector);
 
-  let idRule = getRuleViewRuleEditor(view, 1).rule;
-  let idProp = idRule.textProps[0];
+  const idRule = getRuleViewRuleEditor(view, 1).rule;
+  const idProp = idRule.textProps[0];
   is(idProp.name, "background-color",
     "First ID property should be background-color");
   is(idProp.value, "blue", "First ID property value should be blue");
@@ -33,8 +33,8 @@ add_task(function* () {
   ok(!idProp.editor.element.classList.contains("ruleview-overridden"),
     "ID property editor should not have ruleview-overridden class");
 
-  let classRule = getRuleViewRuleEditor(view, 2).rule;
-  let classProp = classRule.textProps[0];
+  const classRule = getRuleViewRuleEditor(view, 2).rule;
+  const classProp = classRule.textProps[0];
   is(classProp.name, "background-color",
     "First class prop should be background-color");
   is(classProp.value, "green", "First class property value should be green");
@@ -43,7 +43,7 @@ add_task(function* () {
     "Class property editor should have ruleview-overridden class");
 
   // Override background-color by changing the element style.
-  let elementProp = yield addProperty(view, 0, "background-color", "purple");
+  const elementProp = await addProperty(view, 0, "background-color", "purple");
 
   ok(!elementProp.overridden,
     "Element style property should not be overridden");

@@ -11,20 +11,21 @@
 #include "mozilla/Mutex.h"
 
 #if !defined(OS_WIN) && !defined(OS_NETBSD) && !defined(OS_OPENBSD)
-#include <pthread.h>
-#include "SharedMemoryBasic.h"
-#include "mozilla/Atomics.h"
+#  include <pthread.h>
+#  include "SharedMemoryBasic.h"
+#  include "mozilla/Atomics.h"
 #endif
 
 namespace IPC {
-template<typename T>
+template <typename T>
 struct ParamTraits;
-} // namespace IPC
+}  // namespace IPC
 
 //
 // Provides:
 //
-//  - CrossProcessMutex, a non-recursive mutex that can be shared across processes
+//  - CrossProcessMutex, a non-recursive mutex that can be shared across
+//    processes
 //  - CrossProcessMutexAutoLock, an RAII class for ensuring that Mutexes are
 //    properly locked and unlocked
 //
@@ -42,9 +43,8 @@ typedef mozilla::ipc::SharedMemoryBasic::Handle CrossProcessMutexHandle;
 typedef uintptr_t CrossProcessMutexHandle;
 #endif
 
-class CrossProcessMutex
-{
-public:
+class CrossProcessMutex {
+ public:
   /**
    * CrossProcessMutex
    * @param name A name which can reference this lock (currently unused)
@@ -91,12 +91,12 @@ public:
    */
   CrossProcessMutexHandle ShareToProcess(base::ProcessId aTargetPid);
 
-private:
+ private:
   friend struct IPC::ParamTraits<CrossProcessMutex>;
 
   CrossProcessMutex();
   CrossProcessMutex(const CrossProcessMutex&);
-  CrossProcessMutex &operator=(const CrossProcessMutex&);
+  CrossProcessMutex& operator=(const CrossProcessMutex&);
 
 #if defined(OS_WIN)
   HANDLE mMutex;
@@ -107,9 +107,9 @@ private:
 #endif
 };
 
-typedef BaseAutoLock<CrossProcessMutex> CrossProcessMutexAutoLock;
-typedef BaseAutoUnlock<CrossProcessMutex> CrossProcessMutexAutoUnlock;
+typedef BaseAutoLock<CrossProcessMutex&> CrossProcessMutexAutoLock;
+typedef BaseAutoUnlock<CrossProcessMutex&> CrossProcessMutexAutoUnlock;
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif

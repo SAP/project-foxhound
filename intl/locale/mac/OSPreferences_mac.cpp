@@ -5,43 +5,71 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "OSPreferences.h"
+#include "mozilla/intl/LocaleService.h"
 #include <Carbon/Carbon.h>
 
 using namespace mozilla::intl;
 
-bool
-OSPreferences::ReadSystemLocales(nsTArray<nsCString>& aLocaleList)
-{
-  MOZ_ASSERT(aLocaleList.IsEmpty());
-
-  // Get string representation of user's current locale
-  CFLocaleRef userLocaleRef = ::CFLocaleCopyCurrent();
-  CFStringRef userLocaleStr = ::CFLocaleGetIdentifier(userLocaleRef);
-
-  AutoTArray<UniChar, 32> buffer;
-  int size = ::CFStringGetLength(userLocaleStr);
-  buffer.SetLength(size);
-
-  CFRange range = ::CFRangeMake(0, size);
-  ::CFStringGetCharacters(userLocaleStr, range, buffer.Elements());
-
-  // Convert the locale string to the format that Mozilla expects
-  NS_LossyConvertUTF16toASCII locale(
-      reinterpret_cast<const char16_t*>(buffer.Elements()), buffer.Length());
-
-  CFRelease(userLocaleRef);
-
-  if (CanonicalizeLanguageTag(locale)) {
-    aLocaleList.AppendElement(locale);
-    return true;
+static void LocaleChangedNotificationCallback(CFNotificationCenterRef center,
+                                              void* observer, CFStringRef name,
+                                              const void* object,
+                                              CFDictionaryRef userInfo) {
+  if (!::CFEqual(name, kCFLocaleCurrentLocaleDidChangeNotification)) {
+    return;
   }
-
-  return false;
+  static_cast<OSPreferences*>(observer)->Refresh();
 }
 
-static CFDateFormatterStyle
-ToCFDateFormatterStyle(OSPreferences::DateTimeFormatStyle aFormatStyle)
-{
+OSPreferences::OSPreferences() {
+  ::CFNotificationCenterAddObserver(
+      ::CFNotificationCenterGetLocalCenter(), this,
+      LocaleChangedNotificationCallback,
+      kCFLocaleCurrentLocaleDidChangeNotification, 0,
+      CFNotificationSuspensionBehaviorDeliverImmediately);
+}
+
+OSPreferences::~OSPreferences() {
+  ::CFNotificationCenterRemoveObserver(
+      ::CFNotificationCenterGetLocalCenter(), this,
+      kCTFontManagerRegisteredFontsChangedNotification, 0);
+}
+
+bool OSPreferences::ReadSystemLocales(nsTArray<nsCString>& aLocaleList) {
+  MOZ_ASSERT(aLocaleList.IsEmpty());
+
+  CFArrayRef langs = ::CFLocaleCopyPreferredLanguages();
+  for (CFIndex i = 0; i < ::CFArrayGetCount(langs); i++) {
+    CFStringRef lang = (CFStringRef)::CFArrayGetValueAtIndex(langs, i);
+
+    AutoTArray<UniChar, 32> buffer;
+    int size = ::CFStringGetLength(lang);
+    buffer.SetLength(size);
+
+    CFRange range = ::CFRangeMake(0, size);
+    ::CFStringGetCharacters(lang, range, buffer.Elements());
+
+    // Convert the locale string to the format that Mozilla expects
+    NS_LossyConvertUTF16toASCII locale(
+        reinterpret_cast<const char16_t*>(buffer.Elements()), buffer.Length());
+
+    if (CanonicalizeLanguageTag(locale)) {
+      aLocaleList.AppendElement(locale);
+    }
+  }
+
+  ::CFRelease(langs);
+
+  return !aLocaleList.IsEmpty();
+}
+
+bool OSPreferences::ReadRegionalPrefsLocales(nsTArray<nsCString>& aLocaleList) {
+  // For now we're just taking System Locales since we don't know of any better
+  // API for regional prefs.
+  return ReadSystemLocales(aLocaleList);
+}
+
+static CFDateFormatterStyle ToCFDateFormatterStyle(
+    OSPreferences::DateTimeFormatStyle aFormatStyle) {
   switch (aFormatStyle) {
     case OSPreferences::DateTimeFormatStyle::None:
       return kCFDateFormatterNoStyle;
@@ -64,17 +92,26 @@ ToCFDateFormatterStyle(OSPreferences::DateTimeFormatStyle aFormatStyle)
 // May return null on failure.
 // Follows Core Foundation's Create rule, so the caller is responsible to
 // release the returned reference.
-static CFLocaleRef
-CreateCFLocaleFor(const nsACString& aLocale)
-{
+static CFLocaleRef CreateCFLocaleFor(const nsACString& aLocale) {
+  nsAutoCString reqLocale;
+  nsAutoCString systemLocale;
+
+  OSPreferences::GetInstance()->GetSystemLocale(systemLocale);
+
   if (aLocale.IsEmpty()) {
-    return CFLocaleCopyCurrent();
+    LocaleService::GetInstance()->GetAppLocaleAsBCP47(reqLocale);
+  } else {
+    reqLocale.Assign(aLocale);
   }
-  CFStringRef identifier =
-    CFStringCreateWithBytesNoCopy(kCFAllocatorDefault,
-                                  (const uint8_t*)aLocale.BeginReading(),
-                                  aLocale.Length(), kCFStringEncodingASCII,
-                                  false, kCFAllocatorNull);
+
+  bool match = LocaleService::LanguagesMatch(reqLocale, systemLocale);
+  if (match) {
+    return ::CFLocaleCopyCurrent();
+  }
+
+  CFStringRef identifier = CFStringCreateWithBytesNoCopy(
+      kCFAllocatorDefault, (const uint8_t*)reqLocale.BeginReading(),
+      reqLocale.Length(), kCFStringEncodingASCII, false, kCFAllocatorNull);
   if (!identifier) {
     return nullptr;
   }
@@ -91,20 +128,21 @@ CreateCFLocaleFor(const nsACString& aLocale)
  *
  * In all other cases it will return the default pattern for a given locale.
  */
-bool
-OSPreferences::ReadDateTimePattern(DateTimeFormatStyle aDateStyle,
-                                   DateTimeFormatStyle aTimeStyle,
-                                   const nsACString& aLocale, nsAString& aRetVal)
-{
+bool OSPreferences::ReadDateTimePattern(DateTimeFormatStyle aDateStyle,
+                                        DateTimeFormatStyle aTimeStyle,
+                                        const nsACString& aLocale,
+                                        nsAString& aRetVal) {
   CFLocaleRef locale = CreateCFLocaleFor(aLocale);
   if (!locale) {
     return false;
   }
 
-  CFDateFormatterRef formatter =
-    CFDateFormatterCreate(kCFAllocatorDefault, locale,
-                          ToCFDateFormatterStyle(aDateStyle),
-                          ToCFDateFormatterStyle(aTimeStyle));
+  CFDateFormatterRef formatter = CFDateFormatterCreate(
+      kCFAllocatorDefault, locale, ToCFDateFormatterStyle(aDateStyle),
+      ToCFDateFormatterStyle(aTimeStyle));
+  if (!formatter) {
+    return false;
+  }
   CFStringRef format = CFDateFormatterGetFormat(formatter);
   CFRelease(locale);
 

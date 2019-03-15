@@ -10,7 +10,7 @@ const kTestWidgetCount = 3;
 registerCleanupFunction(removeCustomToolbars);
 
 // unregisterArea should keep placements by default and restore them when re-adding the area
-add_task(function*() {
+add_task(async function() {
   let widgetIds = [];
   for (let i = 0; i < kTestWidgetCount; i++) {
     let id = kTestWidgetPfx + i;
@@ -86,7 +86,7 @@ add_task(function*() {
 
 function checkAbstractAndRealPlacements(aNode, aExpectedPlacements) {
   assertAreaPlacements(kToolbarName, aExpectedPlacements);
-  let physicalWidgetIds = Array.from(aNode.childNodes, (node) => node.id);
+  let physicalWidgetIds = Array.from(aNode.children, (node) => node.id);
   placementArraysEqual(aNode.id, physicalWidgetIds, aExpectedPlacements);
 }
 
@@ -101,6 +101,6 @@ function checkWidgetFates(aWidgetIds) {
   }
 }
 
-add_task(function* asyncCleanup() {
-  yield resetCustomization();
+add_task(async function asyncCleanup() {
+  await resetCustomization();
 });

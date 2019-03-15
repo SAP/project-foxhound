@@ -19,16 +19,17 @@
 #include "nsIDTD.h"
 #include "mozilla/dom/FromParser.h"
 
-class nsIDocument;
 class nsIURI;
 class nsIContent;
 class nsIParser;
+class nsTextNode;
 
 namespace mozilla {
 namespace dom {
 class NodeInfo;
-} // namespace dom
-} // namespace mozilla
+class ProcessingInstruction;
+}  // namespace dom
+}  // namespace mozilla
 
 typedef enum {
   eXMLContentSinkState_InProlog,
@@ -44,15 +45,12 @@ struct StackNode {
 class nsXMLContentSink : public nsContentSink,
                          public nsIXMLContentSink,
                          public nsITransformObserver,
-                         public nsIExpatSink
-{
-public:
+                         public nsIExpatSink {
+ public:
   nsXMLContentSink();
 
-  nsresult Init(nsIDocument* aDoc,
-                nsIURI* aURL,
-                nsISupports* aContainer,
-                nsIChannel* aChannel);
+  nsresult Init(mozilla::dom::Document* aDoc, nsIURI* aURL,
+                nsISupports* aContainer, nsIChannel* aChannel);
 
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
@@ -69,25 +67,27 @@ public:
   NS_IMETHOD WillInterrupt(void) override;
   NS_IMETHOD WillResume(void) override;
   NS_IMETHOD SetParser(nsParserBase* aParser) override;
+  virtual void InitialDocumentTranslationCompleted() override;
   virtual void FlushPendingNotifications(mozilla::FlushType aType) override;
-  NS_IMETHOD SetDocumentCharset(nsACString& aCharset) override;
-  virtual nsISupports *GetTarget() override;
+  virtual void SetDocumentCharset(NotNull<const Encoding*> aEncoding) override;
+  virtual nsISupports* GetTarget() override;
   virtual bool IsScriptExecuting() override;
   virtual void ContinueInterruptedParsingAsync() override;
 
   // nsITransformObserver
-  NS_IMETHOD OnDocumentCreated(nsIDocument *aResultDocument) override;
-  NS_IMETHOD OnTransformDone(nsresult aResult, nsIDocument *aResultDocument) override;
+  NS_IMETHOD OnDocumentCreated(
+      mozilla::dom::Document* aResultDocument) override;
+  NS_IMETHOD OnTransformDone(nsresult aResult,
+                             mozilla::dom::Document* aResultDocument) override;
 
   // nsICSSLoaderObserver
-  NS_IMETHOD StyleSheetLoaded(mozilla::StyleSheet* aSheet,
-                              bool aWasAlternate,
+  NS_IMETHOD StyleSheetLoaded(mozilla::StyleSheet* aSheet, bool aWasAlternate,
                               nsresult aStatus) override;
-  static bool ParsePIData(const nsString &aData, nsString &aHref,
-                          nsString &aTitle, nsString &aMedia,
-                          bool &aIsAlternate);
+  static bool ParsePIData(const nsString& aData, nsString& aHref,
+                          nsString& aTitle, nsString& aMedia,
+                          bool& aIsAlternate);
 
-protected:
+ protected:
   virtual ~nsXMLContentSink();
 
   nsIParser* GetParser();
@@ -99,23 +99,23 @@ protected:
   // stylesheets are all done loading.
   virtual void MaybeStartLayout(bool aIgnorePendingSheets);
 
-  virtual nsresult AddAttributes(const char16_t** aNode, nsIContent* aContent);
+  virtual nsresult AddAttributes(const char16_t** aNode, Element* aElement);
   nsresult AddText(const char16_t* aString, int32_t aLength);
 
-  virtual bool OnOpenContainer(const char16_t **aAtts, 
-                                 uint32_t aAttsCount, 
-                                 int32_t aNameSpaceID, 
-                                 nsIAtom* aTagName,
-                                 uint32_t aLineNumber) { return true; }
+  virtual bool OnOpenContainer(const char16_t** aAtts, uint32_t aAttsCount,
+                               int32_t aNameSpaceID, nsAtom* aTagName,
+                               uint32_t aLineNumber) {
+    return true;
+  }
   // Set the given content as the root element for the created document
   //  don't set if root element was already set.
   //  return TRUE if this call set the root element
-  virtual bool SetDocElement(int32_t aNameSpaceID, 
-                               nsIAtom *aTagName,
-                               nsIContent *aContent);
+  virtual bool SetDocElement(int32_t aNameSpaceID, nsAtom* aTagName,
+                             nsIContent* aContent);
   virtual bool NotifyForDocElement() { return true; }
   virtual nsresult CreateElement(const char16_t** aAtts, uint32_t aAttsCount,
-                                 mozilla::dom::NodeInfo* aNodeInfo, uint32_t aLineNumber,
+                                 mozilla::dom::NodeInfo* aNodeInfo,
+                                 uint32_t aLineNumber, uint32_t aColumnNumber,
                                  nsIContent** aResult, bool* aAppendContent,
                                  mozilla::dom::FromParser aFromParser);
 
@@ -125,11 +125,11 @@ protected:
 
   virtual nsresult FlushText(bool aReleaseTextNode = true);
 
-  nsresult AddContentAsLeaf(nsIContent *aContent);
+  nsresult AddContentAsLeaf(nsIContent* aContent);
 
   nsIContent* GetCurrentContent();
   StackNode* GetCurrentStackNode();
-  nsresult PushContent(nsIContent *aContent);
+  nsresult PushContent(nsIContent* aContent);
   void PopContent();
   bool HaveNotifiedForCurrentContent() const;
 
@@ -137,34 +137,43 @@ protected:
 
   void UpdateChildCounts() override;
 
-  void DidAddContent()
-  {
-    if (IsTimeToNotify()) {
-      FlushTags();	
+  void DidAddContent() {
+    if (!mXSLTProcessor && IsTimeToNotify()) {
+      FlushTags();
     }
   }
-  
+
   // nsContentSink override
-  virtual nsresult ProcessStyleLink(nsIContent* aElement,
-                                    const nsSubstring& aHref,
-                                    bool aAlternate,
-                                    const nsSubstring& aTitle,
-                                    const nsSubstring& aType,
-                                    const nsSubstring& aMedia) override;
+  virtual nsresult ProcessStyleLinkFromHeader(
+      const nsAString& aHref, bool aAlternate, const nsAString& aTitle,
+      const nsAString& aType, const nsAString& aMedia,
+      const nsAString& aReferrerPolicy) override;
+
+  // Try to handle an XSLT style link.  If NS_OK is returned and aWasXSLT is not
+  // null, *aWasXSLT will be set to whether we processed this link as XSLT.
+  //
+  // aProcessingInstruction can be null if this information comes from a Link
+  // header; otherwise it will be the xml-styleshset XML PI that the loading
+  // information comes from.
+  virtual nsresult MaybeProcessXSLTLink(
+      mozilla::dom::ProcessingInstruction* aProcessingInstruction,
+      const nsAString& aHref, bool aAlternate, const nsAString& aTitle,
+      const nsAString& aType, const nsAString& aMedia,
+      const nsAString& aReferrerPolicy, bool* aWasXSLT = nullptr);
 
   nsresult LoadXSLStyleSheet(nsIURI* aUrl);
 
   bool CanStillPrettyPrint();
 
   nsresult MaybePrettyPrint();
-  
+
   bool IsMonolithicContainer(mozilla::dom::NodeInfo* aNodeInfo);
 
-  nsresult HandleStartElement(const char16_t *aName, const char16_t **aAtts, 
+  nsresult HandleStartElement(const char16_t* aName, const char16_t** aAtts,
                               uint32_t aAttsCount, uint32_t aLineNumber,
-                              bool aInterruptable);
-  nsresult HandleEndElement(const char16_t *aName, bool aInterruptable);
-  nsresult HandleCharacterData(const char16_t *aData, uint32_t aLength,
+                              uint32_t aColumnNumber, bool aInterruptable);
+  nsresult HandleEndElement(const char16_t* aName, bool aInterruptable);
+  nsresult HandleCharacterData(const char16_t* aData, uint32_t aLength,
                                bool aInterruptable);
 
   nsCOMPtr<nsIContent> mDocElement;
@@ -174,9 +183,9 @@ protected:
 
   // The length of the valid data in mText.
   int32_t mTextLength;
-  
+
   int32_t mNotifyLevel;
-  nsCOMPtr<nsIContent> mLastTextNode;
+  RefPtr<nsTextNode> mLastTextNode;
 
   uint8_t mPrettyPrintXML : 1;
   uint8_t mPrettyPrintHasSpecialRoot : 1;
@@ -185,14 +194,21 @@ protected:
                                 // decided we should in fact prettyprint.
   // True to call prevent script execution in the fragment mode.
   uint8_t mPreventScriptExecution : 1;
-  
-  nsTArray<StackNode>              mContentStack;
+
+  nsTArray<StackNode> mContentStack;
 
   nsCOMPtr<nsIDocumentTransformer> mXSLTProcessor;
+
+  // Holds the children in the prolog until the root element is added, after
+  // which they're inserted in the document. However, if we're doing an XSLT
+  // transform this will actually hold all the children of the source document,
+  // until the transform is finished. After the transform is finished we'll just
+  // discard the children.
+  nsTArray<nsCOMPtr<nsIContent>> mDocumentChildren;
 
   static const int NS_ACCUMULATION_BUFFER_SIZE = 4096;
   // Our currently accumulated text that we have not flushed to a textnode yet.
   char16_t mText[NS_ACCUMULATION_BUFFER_SIZE];
 };
 
-#endif // nsXMLContentSink_h__
+#endif  // nsXMLContentSink_h__

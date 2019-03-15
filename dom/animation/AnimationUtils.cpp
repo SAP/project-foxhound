@@ -6,28 +6,28 @@
 
 #include "AnimationUtils.h"
 
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/KeyframeEffect.h"
+#include "mozilla/EffectSet.h"
+#include "mozilla/Preferences.h"
 #include "nsDebug.h"
-#include "nsIAtom.h"
+#include "nsAtom.h"
 #include "nsIContent.h"
-#include "nsIDocument.h"
 #include "nsGlobalWindow.h"
 #include "nsString.h"
-#include "xpcpublic.h" // For xpc::NativeGlobal
-#include "mozilla/EffectSet.h"
-#include "mozilla/dom/KeyframeEffectReadOnly.h"
-#include "mozilla/Preferences.h"
+#include "xpcpublic.h"  // For xpc::NativeGlobal
+
+using namespace mozilla::dom;
 
 namespace mozilla {
 
-/* static */ void
-AnimationUtils::LogAsyncAnimationFailure(nsCString& aMessage,
-                                         const nsIContent* aContent)
-{
+/* static */ void AnimationUtils::LogAsyncAnimationFailure(
+    nsCString& aMessage, const nsIContent* aContent) {
   if (aContent) {
     aMessage.AppendLiteral(" [");
     aMessage.Append(nsAtomCString(aContent->NodeInfo()->NameAtom()));
 
-    nsIAtom* id = aContent->GetID();
+    nsAtom* id = aContent->GetID();
     if (id) {
       aMessage.AppendLiteral(" with id '");
       aMessage.Append(nsAtomCString(aContent->GetID()));
@@ -39,19 +39,24 @@ AnimationUtils::LogAsyncAnimationFailure(nsCString& aMessage,
   printf_stderr("%s", aMessage.get());
 }
 
-/* static */ nsIDocument*
-AnimationUtils::GetCurrentRealmDocument(JSContext* aCx)
-{
-  nsGlobalWindow* win = xpc::CurrentWindowOrNull(aCx);
+/* static */ Document* AnimationUtils::GetCurrentRealmDocument(JSContext* aCx) {
+  nsGlobalWindowInner* win = xpc::CurrentWindowOrNull(aCx);
   if (!win) {
     return nullptr;
   }
   return win->GetDoc();
 }
 
-/* static */ bool
-AnimationUtils::IsOffscreenThrottlingEnabled()
-{
+/* static */ Document* AnimationUtils::GetDocumentFromGlobal(
+    JSObject* aGlobalObject) {
+  nsGlobalWindowInner* win = xpc::WindowOrNull(aGlobalObject);
+  if (!win) {
+    return nullptr;
+  }
+  return win->GetDoc();
+}
+
+/* static */ bool AnimationUtils::IsOffscreenThrottlingEnabled() {
   static bool sOffscreenThrottlingEnabled;
   static bool sPrefCached = false;
 
@@ -64,32 +69,9 @@ AnimationUtils::IsOffscreenThrottlingEnabled()
   return sOffscreenThrottlingEnabled;
 }
 
-/* static */ bool
-AnimationUtils::IsCoreAPIEnabled()
-{
-  static bool sCoreAPIEnabled;
-  static bool sPrefCached = false;
-
-  if (!sPrefCached) {
-    sPrefCached = true;
-    Preferences::AddBoolVarCache(&sCoreAPIEnabled,
-                                 "dom.animations-api.core.enabled");
-  }
-
-  return sCoreAPIEnabled;
-}
-
-/* static */ bool
-AnimationUtils::IsCoreAPIEnabledForCaller(dom::CallerType aCallerType)
-{
-  return IsCoreAPIEnabled() || aCallerType == dom::CallerType::System;
-}
-
-/* static */ bool
-AnimationUtils::EffectSetContainsAnimatedScale(EffectSet& aEffects,
-                                               const nsIFrame* aFrame)
-{
-  for (const dom::KeyframeEffectReadOnly* effect : aEffects) {
+/* static */ bool AnimationUtils::EffectSetContainsAnimatedScale(
+    EffectSet& aEffects, const nsIFrame* aFrame) {
+  for (const dom::KeyframeEffect* effect : aEffects) {
     if (effect->ContainsAnimatedScale(aFrame)) {
       return true;
     }
@@ -98,4 +80,4 @@ AnimationUtils::EffectSetContainsAnimatedScale(EffectSet& aEffects,
   return false;
 }
 
-} // namespace mozilla
+}  // namespace mozilla

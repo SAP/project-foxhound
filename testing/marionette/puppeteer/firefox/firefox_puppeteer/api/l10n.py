@@ -8,6 +8,8 @@
 # Replace its use in tests when Firefox 45 ESR support ends with
 # marionette_driver.localization.L10n
 
+from __future__ import absolute_import
+
 import copy
 
 from marionette_driver.errors import (
@@ -71,8 +73,8 @@ class L10n(BaseLib):
 
             with self.marionette.using_context('chrome'):
                 value = self.marionette.execute_script("""
-                    var parser = Components.classes["@mozilla.org/xmlextras/domparser;1"]
-                                 .createInstance(Components.interfaces.nsIDOMParser);
+                    Cu.importGlobalProperties(["DOMParser"]);
+                    var parser = new DOMParser();
                     var doc = parser.parseFromString(arguments[0], "text/xml");
                     var node = doc.querySelector("elem[id='entity']");
 

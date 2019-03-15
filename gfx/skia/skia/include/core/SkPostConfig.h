@@ -10,10 +10,6 @@
 #ifndef SkPostConfig_DEFINED
 #define SkPostConfig_DEFINED
 
-#if defined(SK_BUILD_FOR_WIN32)
-#  define SK_BUILD_FOR_WIN
-#endif
-
 #if !defined(SK_DEBUG) && !defined(SK_RELEASE)
     #ifdef NDEBUG
         #define SK_RELEASE
@@ -26,10 +22,6 @@
 #  error "cannot define both SK_DEBUG and SK_RELEASE"
 #elif !defined(SK_DEBUG) && !defined(SK_RELEASE)
 #  error "must define either SK_DEBUG or SK_RELEASE"
-#endif
-
-#if defined(SK_SUPPORT_UNITTEST) && !defined(SK_DEBUG)
-#  error "can't have unittests without debug"
 #endif
 
 /**
@@ -77,25 +69,14 @@
 #  endif
 #endif
 
-// As usual, there are two ways to increase alignment... the MSVC way and the everyone-else way.
-#ifndef SK_STRUCT_ALIGN
-    #ifdef _MSC_VER
-        #define SK_STRUCT_ALIGN(N) __declspec(align(N))
-    #else
-        #define SK_STRUCT_ALIGN(N) __attribute__((aligned(N)))
-    #endif
-#endif
-
-#if defined(_MSC_VER) && SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSE2
-    #define SK_VECTORCALL __vectorcall
-#elif defined(SK_CPU_ARM32) && defined(SK_ARM_HAS_NEON)
-    #define SK_VECTORCALL __attribute__((pcs("aapcs-vfp")))
-#else
-    #define SK_VECTORCALL
-#endif
-
 #if !defined(SK_SUPPORT_GPU)
 #  define SK_SUPPORT_GPU 1
+#endif
+
+#if !defined(SK_SUPPORT_ATLAS_TEXT)
+#  define SK_SUPPORT_ATLAS_TEXT 0
+#elif SK_SUPPORT_ATLAS_TEXT && !SK_SUPPORT_GPU
+#  error "SK_SUPPORT_ATLAS_TEXT requires SK_SUPPORT_GPU"
 #endif
 
 /**
@@ -116,12 +97,6 @@
 
 ///////////////////////////////////////////////////////////////////////////////
 
-// TODO(mdempsky): Move elsewhere as appropriate.
-#include <new>
-
-
-///////////////////////////////////////////////////////////////////////////////
-
 #ifdef SK_BUILD_FOR_WIN
 #  ifndef SK_A32_SHIFT
 #    define SK_A32_SHIFT 24
@@ -132,7 +107,7 @@
 #
 #endif
 
-#if defined(GOOGLE3)
+#if defined(SK_BUILD_FOR_GOOGLE3)
     void SkDebugfForDumpStackTrace(const char* data, void* unused);
     void DumpStackTrace(int skip_count, void w(const char*, void*), void* arg);
 #  define SK_DUMP_GOOGLE3_STACK() DumpStackTrace(0, SkDebugfForDumpStackTrace, nullptr)
@@ -140,11 +115,20 @@
 #  define SK_DUMP_GOOGLE3_STACK()
 #endif
 
+#ifdef SK_BUILD_FOR_WIN
+// permits visual studio to follow error back to source
+#define SK_DUMP_LINE_FORMAT(message) \
+    SkDebugf("%s(%d): fatal error: \"%s\"\n", __FILE__, __LINE__, message)
+#else
+#define SK_DUMP_LINE_FORMAT(message) \
+    SkDebugf("%s:%d: fatal error: \"%s\"\n", __FILE__, __LINE__, message)
+#endif
+
 #ifndef SK_ABORT
 #  define SK_ABORT(message) \
     do { \
        SkNO_RETURN_HINT(); \
-       SkDebugf("%s:%d: fatal error: \"%s\"\n", __FILE__, __LINE__, message); \
+       SK_DUMP_LINE_FORMAT(message); \
        SK_DUMP_GOOGLE3_STACK(); \
        sk_abort_no_print(); \
     } while (false)
@@ -201,67 +185,21 @@
 
 //////////////////////////////////////////////////////////////////////////////////////////////
 
-#if defined SK_DEBUG && defined SK_BUILD_FOR_WIN32
-#  ifdef free
-#    undef free
-#  endif
-#  include <crtdbg.h>
-#  undef free
-#
-#  ifdef SK_DEBUGx
-#    if defined(SK_SIMULATE_FAILED_MALLOC) && defined(__cplusplus)
-       void * operator new(
-           size_t cb,
-           int nBlockUse,
-           const char * szFileName,
-           int nLine,
-           int foo
-           );
-       void * operator new[](
-           size_t cb,
-           int nBlockUse,
-           const char * szFileName,
-           int nLine,
-           int foo
-           );
-       void operator delete(
-           void *pUserData,
-           int, const char*, int, int
-           );
-       void operator delete(
-           void *pUserData
-           );
-       void operator delete[]( void * p );
-#      define DEBUG_CLIENTBLOCK   new( _CLIENT_BLOCK, __FILE__, __LINE__, 0)
-#    else
-#      define DEBUG_CLIENTBLOCK   new( _CLIENT_BLOCK, __FILE__, __LINE__)
-#    endif
-#    define new DEBUG_CLIENTBLOCK
-#  else
-#    define DEBUG_CLIENTBLOCK
-#  endif
+#if defined SK_DEBUG && defined SK_BUILD_FOR_WIN
+    #ifdef free
+        #undef free
+    #endif
+    #include <crtdbg.h>
+    #undef free
 #endif
 
 //////////////////////////////////////////////////////////////////////
 
 #if !defined(SK_UNUSED)
-#  if defined(_MSC_VER)
+#  if !defined(__clang__) && defined(_MSC_VER)
 #    define SK_UNUSED __pragma(warning(suppress:4189))
 #  else
 #    define SK_UNUSED SK_ATTRIBUTE(unused)
-#  endif
-#endif
-
-#if !defined(SK_ATTR_DEPRECATED)
-   // FIXME: we ignore msg for now...
-#  define SK_ATTR_DEPRECATED(msg) SK_ATTRIBUTE(deprecated)
-#endif
-
-#if !defined(SK_ATTR_EXTERNALLY_DEPRECATED)
-#  if !defined(SK_INTERNAL)
-#    define SK_ATTR_EXTERNALLY_DEPRECATED(msg) SK_ATTR_DEPRECATED(msg)
-#  else
-#    define SK_ATTR_EXTERNALLY_DEPRECATED(msg)
 #  endif
 #endif
 
@@ -317,7 +255,7 @@
 //////////////////////////////////////////////////////////////////////
 
 #ifndef SK_SIZE_T_SPECIFIER
-#  if defined(_MSC_VER)
+#  if defined(_MSC_VER) && !defined(__clang__)
 #    define SK_SIZE_T_SPECIFIER "%Iu"
 #  else
 #    define SK_SIZE_T_SPECIFIER "%zu"
@@ -332,16 +270,6 @@
 
 //////////////////////////////////////////////////////////////////////
 
-#ifndef SK_EGL
-#  if defined(SK_BUILD_FOR_ANDROID)
-#    define SK_EGL 1
-#  else
-#    define SK_EGL 0
-#  endif
-#endif
-
-//////////////////////////////////////////////////////////////////////
-
 #if !defined(SK_GAMMA_EXPONENT)
     #define SK_GAMMA_EXPONENT (0.0f)  // SRGB
 #endif
@@ -349,7 +277,7 @@
 //////////////////////////////////////////////////////////////////////
 
 #ifndef GR_TEST_UTILS
-#  define GR_TEST_UTILS 1
+#  define GR_TEST_UTILS 0
 #endif
 
 //////////////////////////////////////////////////////////////////////

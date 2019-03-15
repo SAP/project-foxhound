@@ -33,6 +33,7 @@
 #include <limits.h>
 #include <list>
 #include <stdint.h>
+#include <vector>
 
 #include "google_breakpad/common/minidump_format.h"
 
@@ -41,8 +42,21 @@ namespace google_breakpad {
 // One of these is produced for each mapping in the process (i.e. line in
 // /proc/$x/maps).
 struct MappingInfo {
+  // On Android, relocation packing can mean that the reported start
+  // address of the mapping must be adjusted by a bias in order to
+  // compensate for the compression of the relocation section. The
+  // following two members hold (after LateInit) the adjusted mapping
+  // range. See crbug.com/606972 for more information.
   uintptr_t start_addr;
   size_t size;
+  // When Android relocation packing causes |start_addr| and |size| to
+  // be modified with a load bias, we need to remember the unbiased
+  // address range. The following structure holds the original mapping
+  // address range as reported by the operating system.
+  struct {
+    uintptr_t start_addr;
+    uintptr_t end_addr;
+  } system_mapping_info;
   size_t offset;  // offset into the backed file.
   bool exec;  // true if the mapping has the execute bit set.
   char name[NAME_MAX];
@@ -50,7 +64,7 @@ struct MappingInfo {
 
 struct MappingEntry {
   MappingInfo first;
-  uint8_t second[sizeof(MDGUID)];
+  std::vector<uint8_t> second;
 };
 
 // A list of <MappingInfo, GUID>

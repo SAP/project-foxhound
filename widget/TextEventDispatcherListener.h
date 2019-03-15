@@ -12,14 +12,16 @@ namespace widget {
 
 class TextEventDispatcher;
 struct IMENotification;
+struct IMENotificationRequests;
 
 #define NS_TEXT_INPUT_PROXY_LISTENER_IID \
-{ 0xf2226f55, 0x6ddb, 0x40d5, \
-  { 0x8a, 0x24, 0xce, 0x4d, 0x5b, 0x38, 0x15, 0xf0 } };
+  {0xf2226f55,                           \
+   0x6ddb,                               \
+   0x40d5,                               \
+   {0x8a, 0x24, 0xce, 0x4d, 0x5b, 0x38, 0x15, 0xf0}};
 
-class TextEventDispatcherListener : public nsSupportsWeakReference
-{
-public:
+class TextEventDispatcherListener : public nsSupportsWeakReference {
+ public:
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_TEXT_INPUT_PROXY_LISTENER_IID)
 
   /**
@@ -31,11 +33,16 @@ public:
                        const IMENotification& aNotification) = 0;
 
   /**
+   * Returns preference for which IME notification are received by NotifyIME().
+   */
+  NS_IMETHOD_(IMENotificationRequests) GetIMENotificationRequests() = 0;
+
+  /**
    * OnRemovedFrom() is called when the TextEventDispatcher stops working and
    * is releasing the listener.
    */
-  NS_IMETHOD_(void) OnRemovedFrom(
-                      TextEventDispatcher* aTextEventDispatcher) = 0;
+  NS_IMETHOD_(void)
+  OnRemovedFrom(TextEventDispatcher* aTextEventDispatcher) = 0;
 
   /**
    * WillDispatchKeyboardEvent() may be called immediately before
@@ -73,17 +80,16 @@ public:
    *                                Finally, you can use it like:
    *                                |static_cast<NativeEventHandler*>(aData)|
    */
-  NS_IMETHOD_(void) WillDispatchKeyboardEvent(
-                      TextEventDispatcher* aTextEventDispatcher,
-                      WidgetKeyboardEvent& aKeyboardEvent,
-                      uint32_t aIndexOfKeypress,
-                      void* aData) = 0;
+  NS_IMETHOD_(void)
+  WillDispatchKeyboardEvent(TextEventDispatcher* aTextEventDispatcher,
+                            WidgetKeyboardEvent& aKeyboardEvent,
+                            uint32_t aIndexOfKeypress, void* aData) = 0;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(TextEventDispatcherListener,
                               NS_TEXT_INPUT_PROXY_LISTENER_IID)
 
-} // namespace widget
-} // namespace mozilla
+}  // namespace widget
+}  // namespace mozilla
 
-#endif // #ifndef mozilla_textinputdispatcherlistener_h_
+#endif  // #ifndef mozilla_textinputdispatcherlistener_h_

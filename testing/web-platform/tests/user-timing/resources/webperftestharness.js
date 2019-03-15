@@ -6,37 +6,38 @@ policies and contribution forms [3].
 [1] http://www.w3.org/Consortium/Legal/2008/04-testsuite-license
 [2] http://www.w3.org/Consortium/Legal/2008/03-bsd-license
 [3] http://www.w3.org/2004/10/27-testcases
+
+author: W3C http://www.w3.org/
+help: http://www.w3.org/TR/navigation-timing/#sec-window.performance-attribute
  */
 
 //
 // Helper Functions for NavigationTiming W3C tests
 //
 
-var performanceNamespace = self.performance;
 var timingAttributes = [
-    'connectEnd',
-    'connectStart',
-    'domComplete',
-    'domContentLoadedEventEnd',
-    'domContentLoadedEventStart',
-    'domInteractive',
-    'domLoading',
-    'domainLookupEnd',
-    'domainLookupStart',
-    'fetchStart',
-    'loadEventEnd',
-    'loadEventStart',
-    'navigationStart',
-    'redirectEnd',
-    'redirectStart',
-    'requestStart',
-    'responseEnd',
-    'responseStart',
-    'unloadEventEnd',
-    'unloadEventStart'
+    "navigationStart",
+    "unloadEventStart",
+    "unloadEventEnd",
+    "redirectStart",
+    "redirectEnd",
+    "fetchStart",
+    "domainLookupStart",
+    "domainLookupEnd",
+    "connectStart",
+    "connectEnd",
+    "secureConnectionStart",
+    "requestStart",
+    "responseStart",
+    "responseEnd",
+    "domLoading",
+    "domInteractive",
+    "domContentLoadedEventStart",
+    "domContentLoadedEventEnd",
+    "domComplete",
+    "loadEventStart",
+    "loadEventEnd"
 ];
-
-var namespace_check = false;
 
 function has_required_interfaces()
 {
@@ -53,40 +54,16 @@ function has_required_interfaces()
     return true;
 }
 
-//
-// All test() functions in the WebPerf test suite should use wp_test() instead.
-//
-// wp_test() validates the window.performance namespace exists prior to running tests and
-// immediately shows a single failure if it does not.
-//
-
-function wp_test(func, msg, properties)
-{
-    // only run the namespace check once
-    if (!namespace_check)
-    {
-        namespace_check = true;
-
-        if (performanceNamespace === undefined || performanceNamespace == null)
-        {
-            // show a single error that window.performance is undefined
-            test(function() { assert_true(performanceNamespace !== undefined && performanceNamespace != null, "window.performance is defined and not null"); }, "window.performance is defined and not null.", {author:"W3C http://www.w3.org/",help:"http://www.w3.org/TR/navigation-timing/#sec-window.performance-attribute",assert:"The window.performance attribute provides a hosting area for performance related attributes. "});
-        }
-    }
-
-    test(func, msg, properties);
-}
-
 function test_namespace(child_name, skip_root)
 {
     if (skip_root === undefined) {
         var msg = 'window.performance is defined';
-        wp_test(function () { assert_true(performanceNamespace !== undefined, msg); }, msg,{author:"W3C http://www.w3.org/",help:"http://www.w3.org/TR/navigation-timing/#sec-window.performance-attribute",assert:"The window.performance attribute provides a hosting area for performance related attributes. "});
+        wp_test(function () { assert_true(performanceNamespace !== undefined, msg); }, msg);
     }
 
     if (child_name !== undefined) {
         var msg2 = 'window.performance.' + child_name + ' is defined';
-        wp_test(function() { assert_true(performanceNamespace[child_name] !== undefined, msg2); }, msg2,{author:"W3C http://www.w3.org/",help:"http://www.w3.org/TR/navigation-timing/#sec-window.performance-attribute",assert:"The window.performance attribute provides a hosting area for performance related attributes. "});
+        wp_test(function() { assert_true(performanceNamespace[child_name] !== undefined, msg2); }, msg2);
     }
 }
 
@@ -143,16 +120,6 @@ function sleep_milliseconds(n)
 //
 // Common helper functions
 //
-
-function test_true(value, msg, properties)
-{
-    wp_test(function () { assert_true(value, msg); }, msg, properties);
-}
-
-function test_equals(value, equals, msg, properties)
-{
-    wp_test(function () { assert_equals(value, equals, msg); }, msg, properties);
-}
 
 function test_greater_than(value, greater_than, msg, properties)
 {

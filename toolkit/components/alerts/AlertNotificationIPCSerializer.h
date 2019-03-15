@@ -15,17 +15,11 @@
 
 #include "mozilla/dom/PermissionMessageUtils.h"
 
-typedef nsIAlertNotification* AlertNotificationType;
-
 namespace IPC {
 
 template <>
-struct ParamTraits<AlertNotificationType>
-{
-  typedef AlertNotificationType paramType;
-
-  static void Write(Message* aMsg, const paramType& aParam)
-  {
+struct ParamTraits<nsIAlertNotification> {
+  static void Write(Message* aMsg, nsIAlertNotification* aParam) {
     bool isNull = !aParam;
     if (isNull) {
       WriteParam(aMsg, isNull);
@@ -45,10 +39,12 @@ struct ParamTraits<AlertNotificationType>
         NS_WARN_IF(NS_FAILED(aParam->GetDir(dir))) ||
         NS_WARN_IF(NS_FAILED(aParam->GetLang(lang))) ||
         NS_WARN_IF(NS_FAILED(aParam->GetData(data))) ||
-        NS_WARN_IF(NS_FAILED(aParam->GetPrincipal(getter_AddRefs(principal)))) ||
-        NS_WARN_IF(NS_FAILED(aParam->GetInPrivateBrowsing(&inPrivateBrowsing))) ||
-        NS_WARN_IF(NS_FAILED(aParam->GetRequireInteraction(&requireInteraction)))) {
-
+        NS_WARN_IF(
+            NS_FAILED(aParam->GetPrincipal(getter_AddRefs(principal)))) ||
+        NS_WARN_IF(
+            NS_FAILED(aParam->GetInPrivateBrowsing(&inPrivateBrowsing))) ||
+        NS_WARN_IF(
+            NS_FAILED(aParam->GetRequireInteraction(&requireInteraction)))) {
       // Write a `null` object if any getter returns an error. Otherwise, the
       // receiver will try to deserialize an incomplete object and crash.
       WriteParam(aMsg, /* isNull */ true);
@@ -70,8 +66,8 @@ struct ParamTraits<AlertNotificationType>
     WriteParam(aMsg, requireInteraction);
   }
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter, paramType* aResult)
-  {
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   RefPtr<nsIAlertNotification>* aResult) {
     bool isNull;
     NS_ENSURE_TRUE(ReadParam(aMsg, aIter, &isNull), false);
     if (isNull) {
@@ -83,24 +79,19 @@ struct ParamTraits<AlertNotificationType>
     bool textClickable, inPrivateBrowsing, requireInteraction;
     IPC::Principal principal;
 
-    if (!ReadParam(aMsg, aIter, &name) ||
-        !ReadParam(aMsg, aIter, &imageURL) ||
-        !ReadParam(aMsg, aIter, &title) ||
-        !ReadParam(aMsg, aIter, &text) ||
+    if (!ReadParam(aMsg, aIter, &name) || !ReadParam(aMsg, aIter, &imageURL) ||
+        !ReadParam(aMsg, aIter, &title) || !ReadParam(aMsg, aIter, &text) ||
         !ReadParam(aMsg, aIter, &textClickable) ||
-        !ReadParam(aMsg, aIter, &cookie) ||
-        !ReadParam(aMsg, aIter, &dir) ||
-        !ReadParam(aMsg, aIter, &lang) ||
-        !ReadParam(aMsg, aIter, &data) ||
+        !ReadParam(aMsg, aIter, &cookie) || !ReadParam(aMsg, aIter, &dir) ||
+        !ReadParam(aMsg, aIter, &lang) || !ReadParam(aMsg, aIter, &data) ||
         !ReadParam(aMsg, aIter, &principal) ||
         !ReadParam(aMsg, aIter, &inPrivateBrowsing) ||
         !ReadParam(aMsg, aIter, &requireInteraction)) {
-
       return false;
     }
 
     nsCOMPtr<nsIAlertNotification> alert =
-      do_CreateInstance(ALERT_NOTIFICATION_CONTRACTID);
+        do_CreateInstance(ALERT_NOTIFICATION_CONTRACTID);
     if (NS_WARN_IF(!alert)) {
       *aResult = nullptr;
       return true;
@@ -112,11 +103,11 @@ struct ParamTraits<AlertNotificationType>
       *aResult = nullptr;
       return true;
     }
-    alert.forget(aResult);
+    *aResult = alert.forget();
     return true;
   }
 };
 
-} // namespace IPC
+}  // namespace IPC
 
 #endif /* mozilla_AlertNotificationIPCSerializer_h__ */

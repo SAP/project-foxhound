@@ -13,7 +13,6 @@ load 403356-1.html
 load 418139-1.svg
 load 420513-1.html
 load 453935-1.html
-load 462926.html
 load 467693-1.html
 load 468552-1.html
 load 471366-1.html
@@ -26,7 +25,6 @@ load 512815-1.html
 load 515726-1.html
 load 545291-1.html
 load 558979.html
-load 582649.html
 load 601284-1.html
 load 603146-1.html
 load 603858-1.html
@@ -36,8 +34,8 @@ load 616930-1.html
 # timeouts on mac. See bug 908895.
 skip-if(cocoaWidget&&isDebugBuild) load 639737-1.html
 load 648206-1.html
-load 705875.html
 load 720305-1.html
+load 721910.html
 load 723465.html
 load 732870.html
 load 751995.html
@@ -54,3 +52,4 @@ load 854139.html
 load 854604.html
 pref(dom.use_xbl_scopes_for_remote_xul,true) load 898939.html
 pref(security.fileuri.strict_origin_policy,false) load 938297.html
+load 977538.html

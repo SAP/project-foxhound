@@ -8,10 +8,10 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_INCLUDE_MODULE_H_
-#define WEBRTC_MODULES_INCLUDE_MODULE_H_
+#ifndef MODULES_INCLUDE_MODULE_H_
+#define MODULES_INCLUDE_MODULE_H_
 
-#include "webrtc/typedefs.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -32,7 +32,7 @@ class Module {
 
   // Process any pending tasks such as timeouts.
   // Called on a worker thread.
-  virtual int32_t Process() = 0;
+  virtual void Process() = 0;
 
   // This method is called when the module is attached to a *running* process
   // thread or detached from one.  In the case of detaching, |process_thread|
@@ -58,24 +58,6 @@ class Module {
  protected:
   virtual ~Module() {}
 };
-
-// Reference counted version of the Module interface.
-class RefCountedModule : public Module {
- public:
-  // Increase the reference count by one.
-  // Returns the incremented reference count.
-  virtual int32_t AddRef() const = 0;
-
-  // Decrease the reference count by one.
-  // Returns the decreased reference count.
-  // Returns 0 if the last reference was just released.
-  // When the reference count reaches 0 the object will self-destruct.
-  virtual int32_t Release() const = 0;
-
- protected:
-  ~RefCountedModule() override = default;
-};
-
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_INCLUDE_MODULE_H_
+#endif  // MODULES_INCLUDE_MODULE_H_

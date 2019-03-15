@@ -9,8 +9,8 @@
 #define GrGLSLShaderBuilder_DEFINED
 
 #include "GrAllocator.h"
+#include "GrShaderVar.h"
 #include "glsl/GrGLSLUniformHandler.h"
-#include "glsl/GrGLSLShaderVar.h"
 #include "SkTDArray.h"
 
 #include <stdarg.h>
@@ -25,32 +25,33 @@ public:
     GrGLSLShaderBuilder(GrGLSLProgramBuilder* program);
     virtual ~GrGLSLShaderBuilder() {}
 
-    typedef GrGLSLUniformHandler::SamplerHandle SamplerHandle;
+    using SamplerHandle      = GrGLSLUniformHandler::SamplerHandle;
 
     /** Appends a 2D texture sample with projection if necessary. coordType must either be Vec2f or
         Vec3f. The latter is interpreted as projective texture coords. The vec length and swizzle
-        order of the result depends on the GrTextureAccess associated with the GrGLSLSampler.
+        order of the result depends on the GrProcessor::TextureSampler associated with the
+        SamplerHandle.
         */
     void appendTextureLookup(SkString* out,
                              SamplerHandle,
                              const char* coordName,
-                             GrSLType coordType = kVec2f_GrSLType) const;
+                             GrSLType coordType = kHalf2_GrSLType) const;
 
     /** Version of above that appends the result to the shader code instead.*/
     void appendTextureLookup(SamplerHandle,
                              const char* coordName,
-                             GrSLType coordType = kVec2f_GrSLType,
+                             GrSLType coordType = kHalf2_GrSLType,
                              GrGLSLColorSpaceXformHelper* colorXformHelper = nullptr);
 
 
     /** Does the work of appendTextureLookup and modulates the result by modulation. The result is
-        always a vec4. modulation and the swizzle specified by GrGLSLSampler must both be
-        vec4 or float. If modulation is "" or nullptr it this function acts as though
+        always a half4. modulation and the swizzle specified by SamplerHandle must both be
+        half4 or half. If modulation is "" or nullptr it this function acts as though
         appendTextureLookup were called. */
     void appendTextureLookupAndModulate(const char* modulation,
                                         SamplerHandle,
                                         const char* coordName,
-                                        GrSLType coordType = kVec2f_GrSLType,
+                                        GrSLType coordType = kHalf2_GrSLType,
                                         GrGLSLColorSpaceXformHelper* colorXformHelper = nullptr);
 
     /** Adds a helper function to facilitate color gamut transformation, and produces code that
@@ -63,33 +64,31 @@ public:
     /** Version of above that appends the result to the shader code instead. */
     void appendColorGamutXform(const char* srcColor, GrGLSLColorSpaceXformHelper* colorXformHelper);
 
-    /** Fetches an unfiltered texel from a sampler at integer coordinates. coordExpr must match the
-        dimensionality of the sampler and must be within the sampler's range. coordExpr is emitted
-        exactly once, so expressions like "idx++" are acceptable. */
-    void appendTexelFetch(SkString* out, SamplerHandle, const char* coordExpr) const;
-
-    /** Version of above that appends the result to the shader code instead.*/
-    void appendTexelFetch(SamplerHandle, const char* coordExpr);
-
     /**
-    * Adds a #define directive to the top of the shader.
+    * Adds a constant declaration to the top of the shader.
     */
-    void define(const char* macro, const char* replacement) {
-        this->definitions().appendf("#define %s %s\n", macro, replacement);
+    void defineConstant(const char* type, const char* name, const char* value) {
+        this->definitions().appendf("const %s %s = %s;\n", type, name, value);
     }
 
-    void define(const char* macro, int replacement) {
-        this->definitions().appendf("#define %s %i\n", macro, replacement);
+    void defineConstant(const char* name, int value) {
+        this->definitions().appendf("const int %s = %i;\n", name, value);
     }
 
-    void definef(const char* macro, const char* replacement, ...) {
-       this->definitions().appendf("#define %s ", macro);
+    void defineConstant(const char* name, float value) {
+        this->definitions().appendf("const float %s = %f;\n", name, value);
+    }
+
+    void defineConstantf(const char* type, const char* name, const char* fmt, ...) {
+       this->definitions().appendf("const %s %s = ", type, name);
        va_list args;
-       va_start(args, replacement);
-       this->definitions().appendVAList(replacement, args);
+       va_start(args, fmt);
+       this->definitions().appendVAList(fmt, args);
        va_end(args);
-       this->definitions().append("\n");
+       this->definitions().append(";\n");
     }
+
+    void declareGlobal(const GrShaderVar&);
 
     /**
     * Called by GrGLSLProcessors to add code to one of the shaders.
@@ -103,6 +102,8 @@ public:
 
     void codeAppend(const char* str) { this->code().append(str); }
 
+    void codeAppend(const char* str, size_t length) { this->code().append(str, length); }
+
     void codePrependf(const char format[], ...) SK_PRINTF_LIKE(2, 3) {
        va_list args;
        va_start(args, format);
@@ -113,18 +114,13 @@ public:
     /**
      * Appends a variable declaration to one of the shaders
      */
-    void declAppend(const GrGLSLShaderVar& var);
-
-    /**
-     * Appends a precision qualifier followed by a space, if relevant for the GLSL version.
-     */
-    void appendPrecisionModifier(GrSLPrecision);
+    void declAppend(const GrShaderVar& var);
 
     /** Emits a helper function outside of main() in the fragment shader. */
     void emitFunction(GrSLType returnType,
                       const char* name,
                       int argCnt,
-                      const GrGLSLShaderVar* args,
+                      const GrShaderVar* args,
                       const char* body,
                       SkString* outName);
 
@@ -156,7 +152,7 @@ public:
     };
 
 protected:
-    typedef GrTAllocator<GrGLSLShaderVar> VarArray;
+    typedef GrTAllocator<GrShaderVar> VarArray;
     void appendDecls(const VarArray& vars, SkString* out) const;
 
     /**
@@ -166,13 +162,9 @@ protected:
         kFragCoordConventions_GLSLPrivateFeature,
         kBlendEquationAdvanced_GLSLPrivateFeature,
         kBlendFuncExtended_GLSLPrivateFeature,
-        kExternalTexture_GLSLPrivateFeature,
-        kTexelBuffer_GLSLPrivateFeature,
         kFramebufferFetch_GLSLPrivateFeature,
         kNoPerspectiveInterpolation_GLSLPrivateFeature,
-        kSampleVariables_GLSLPrivateFeature,
-        kSampleMaskOverrideCoverage_GLSLPrivateFeature,
-        kLastGLSLPrivateFeature = kSampleMaskOverrideCoverage_GLSLPrivateFeature
+        kLastGLSLPrivateFeature = kNoPerspectiveInterpolation_GLSLPrivateFeature
     };
 
     /*
@@ -183,6 +175,7 @@ protected:
     bool addFeature(uint32_t featureBit, const char* extensionName);
 
     enum InterfaceQualifier {
+        kIn_InterfaceQualifier,
         kOut_InterfaceQualifier,
         kLastInterfaceQualifier = kOut_InterfaceQualifier
     };
@@ -197,12 +190,6 @@ protected:
     void addLayoutQualifier(const char* param, InterfaceQualifier);
 
     void compileAndAppendLayoutQualifiers();
-
-    /* Appends any swizzling we may need to get from some backend internal format to the format used
-     * in GrPixelConfig. If this is implemented by the GrGpu object, then swizzle will be rgba. For
-     * shader prettiness we omit the swizzle rather than appending ".rgba".
-     */
-    void appendTextureSwizzle(SkString* out, GrPixelConfig) const;
 
     void nextStage() {
         fShaderStrings.push_back();
@@ -254,10 +241,12 @@ protected:
     int fCodeIndex;
     bool fFinalized;
 
+    friend class GrCCCoverageProcessor; // to access code().
     friend class GrGLSLProgramBuilder;
     friend class GrGLProgramBuilder;
     friend class GrGLSLVaryingHandler; // to access noperspective interpolation feature.
     friend class GrGLPathProgramBuilder; // to access fInputs.
     friend class GrVkPipelineStateBuilder;
+    friend class GrMtlPipelineStateBuilder;
 };
 #endif

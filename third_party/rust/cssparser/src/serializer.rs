@@ -2,10 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::ascii::AsciiExt;
+use dtoa_short::{self, Notation};
+use itoa;
+#[allow(unused_imports)] use std::ascii::AsciiExt;
 use std::fmt::{self, Write};
+use std::io;
+use std::str;
 
-use super::{Token, NumericValue, PercentageValue};
+use super::Token;
 
 
 /// Trait for things the can serialize themselves in CSS syntax.
@@ -22,42 +26,28 @@ pub trait ToCss {
         self.to_css(&mut s).unwrap();
         s
     }
-
-    /// Serialize `self` in CSS syntax and return a result compatible with `std::fmt::Show`.
-    ///
-    /// Typical usage is, for a `Foo` that implements `ToCss`:
-    ///
-    /// ```{rust,ignore}
-    /// use std::fmt;
-    /// impl fmt::Show for Foo {
-    ///     #[inline] fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { self.fmt_to_css(f) }
-    /// }
-    /// ```
-    ///
-    /// (This is a convenience wrapper for `to_css` and probably should not be overridden.)
-    #[inline]
-    fn fmt_to_css<W>(&self, dest: &mut W) -> fmt::Result where W: fmt::Write {
-        self.to_css(dest).map_err(|_| fmt::Error)
-    }
 }
 
-
 #[inline]
-fn write_numeric<W>(value: NumericValue, dest: &mut W) -> fmt::Result where W: fmt::Write {
+fn write_numeric<W>(value: f32, int_value: Option<i32>, has_sign: bool, dest: &mut W)
+                    -> fmt::Result where W: fmt::Write {
     // `value.value >= 0` is true for negative 0.
-    if value.has_sign && value.value.is_sign_positive() {
-        try!(dest.write_str("+"));
+    if has_sign && value.is_sign_positive() {
+        dest.write_str("+")?;
     }
 
-    if value.value == 0.0 && value.value.is_sign_negative() {
+    let notation = if value == 0.0 && value.is_sign_negative() {
         // Negative zero. Work around #20596.
-        try!(dest.write_str("-0"))
+        dest.write_str("-0")?;
+        Notation { decimal_point: false, scientific: false }
     } else {
-        try!(write!(dest, "{}", value.value))
-    }
+        dtoa_short::write(dest, value)?
+    };
 
-    if value.int_value.is_none() && value.value.fract() == 0. {
-        try!(dest.write_str(".0"));
+    if int_value.is_none() && value.fract() == 0. {
+        if !notation.decimal_point && !notation.scientific {
+            dest.write_str(".0")?;
+        }
     }
     Ok(())
 }
@@ -66,81 +56,113 @@ fn write_numeric<W>(value: NumericValue, dest: &mut W) -> fmt::Result where W: f
 impl<'a> ToCss for Token<'a> {
     fn to_css<W>(&self, dest: &mut W) -> fmt::Result where W: fmt::Write {
         match *self {
-            Token::Ident(ref value) => try!(serialize_identifier(&**value, dest)),
+            Token::Ident(ref value) => serialize_identifier(&**value, dest)?,
             Token::AtKeyword(ref value) => {
-                try!(dest.write_str("@"));
-                try!(serialize_identifier(&**value, dest));
+                dest.write_str("@")?;
+                serialize_identifier(&**value, dest)?;
             },
             Token::Hash(ref value) => {
-                try!(dest.write_str("#"));
-                try!(serialize_name(value, dest));
+                dest.write_str("#")?;
+                serialize_name(value, dest)?;
             },
             Token::IDHash(ref value) => {
-                try!(dest.write_str("#"));
-                try!(serialize_identifier(&**value, dest));
+                dest.write_str("#")?;
+                serialize_identifier(&**value, dest)?;
             }
-            Token::QuotedString(ref value) => try!(serialize_string(&**value, dest)),
+            Token::QuotedString(ref value) => serialize_string(&**value, dest)?,
             Token::UnquotedUrl(ref value) => {
-                try!(dest.write_str("url("));
-                try!(serialize_unquoted_url(&**value, dest));
-                try!(dest.write_str(")"));
+                dest.write_str("url(")?;
+                serialize_unquoted_url(&**value, dest)?;
+                dest.write_str(")")?;
             },
-            Token::Delim(value) => try!(write!(dest, "{}", value)),
+            Token::Delim(value) => dest.write_char(value)?,
 
-            Token::Number(value) => try!(write_numeric(value, dest)),
-            Token::Percentage(PercentageValue { unit_value, int_value, has_sign }) => {
-                let value = NumericValue {
-                    value: unit_value * 100.,
-                    int_value: int_value,
-                    has_sign: has_sign,
-                };
-                try!(write_numeric(value, dest));
-                try!(dest.write_str("%"));
+            Token::Number { value, int_value, has_sign } => {
+                write_numeric(value, int_value, has_sign, dest)?
+            }
+            Token::Percentage { unit_value, int_value, has_sign } => {
+                write_numeric(unit_value * 100., int_value, has_sign, dest)?;
+                dest.write_str("%")?;
             },
-            Token::Dimension(value, ref unit) => {
-                try!(write_numeric(value, dest));
+            Token::Dimension { value, int_value, has_sign, ref unit } => {
+                write_numeric(value, int_value, has_sign, dest)?;
                 // Disambiguate with scientific notation.
                 let unit = &**unit;
                 if unit == "e" || unit == "E" || unit.starts_with("e-") || unit.starts_with("E-") {
-                    try!(dest.write_str("\\65 "));
-                    try!(serialize_name(&unit[1..], dest));
+                    dest.write_str("\\65 ")?;
+                    serialize_name(&unit[1..], dest)?;
                 } else {
-                    try!(serialize_identifier(unit, dest));
+                    serialize_identifier(unit, dest)?;
                 }
             },
 
-            Token::WhiteSpace(content) => try!(dest.write_str(content)),
-            Token::Comment(content) => try!(write!(dest, "/*{}*/", content)),
-            Token::Colon => try!(dest.write_str(":")),
-            Token::Semicolon => try!(dest.write_str(";")),
-            Token::Comma => try!(dest.write_str(",")),
-            Token::IncludeMatch => try!(dest.write_str("~=")),
-            Token::DashMatch => try!(dest.write_str("|=")),
-            Token::PrefixMatch => try!(dest.write_str("^=")),
-            Token::SuffixMatch => try!(dest.write_str("$=")),
-            Token::SubstringMatch => try!(dest.write_str("*=")),
-            Token::Column => try!(dest.write_str("||")),
-            Token::CDO => try!(dest.write_str("<!--")),
-            Token::CDC => try!(dest.write_str("-->")),
+            Token::WhiteSpace(content) => dest.write_str(content)?,
+            Token::Comment(content) => {
+                dest.write_str("/*")?;
+                dest.write_str(content)?;
+                dest.write_str("*/")?
+            }
+            Token::Colon => dest.write_str(":")?,
+            Token::Semicolon => dest.write_str(";")?,
+            Token::Comma => dest.write_str(",")?,
+            Token::IncludeMatch => dest.write_str("~=")?,
+            Token::DashMatch => dest.write_str("|=")?,
+            Token::PrefixMatch => dest.write_str("^=")?,
+            Token::SuffixMatch => dest.write_str("$=")?,
+            Token::SubstringMatch => dest.write_str("*=")?,
+            Token::CDO => dest.write_str("<!--")?,
+            Token::CDC => dest.write_str("-->")?,
 
             Token::Function(ref name) => {
-                try!(serialize_identifier(&**name, dest));
-                try!(dest.write_str("("));
+                serialize_identifier(&**name, dest)?;
+                dest.write_str("(")?;
             },
-            Token::ParenthesisBlock => try!(dest.write_str("(")),
-            Token::SquareBracketBlock => try!(dest.write_str("[")),
-            Token::CurlyBracketBlock => try!(dest.write_str("{")),
+            Token::ParenthesisBlock => dest.write_str("(")?,
+            Token::SquareBracketBlock => dest.write_str("[")?,
+            Token::CurlyBracketBlock => dest.write_str("{")?,
 
-            Token::BadUrl => try!(dest.write_str("url(<bad url>)")),
-            Token::BadString => try!(dest.write_str("\"<bad string>\n")),
-            Token::CloseParenthesis => try!(dest.write_str(")")),
-            Token::CloseSquareBracket => try!(dest.write_str("]")),
-            Token::CloseCurlyBracket => try!(dest.write_str("}")),
+            Token::BadUrl(ref contents) => {
+                dest.write_str("url(")?;
+                dest.write_str(contents)?;
+                dest.write_char(')')?;
+            }
+            Token::BadString(ref value) => {
+                // During tokenization, an unescaped newline after a quote causes
+                // the token to be a BadString instead of a QuotedString.
+                // The BadString token ends just before the newline
+                // (which is in a separate WhiteSpace token),
+                // and therefore does not have a closing quote.
+                dest.write_char('"')?;
+                CssStringWriter::new(dest).write_str(value)?;
+            },
+            Token::CloseParenthesis => dest.write_str(")")?,
+            Token::CloseSquareBracket => dest.write_str("]")?,
+            Token::CloseCurlyBracket => dest.write_str("}")?,
         }
         Ok(())
     }
 }
 
+fn hex_escape<W>(ascii_byte: u8, dest: &mut W) -> fmt::Result where W:fmt::Write {
+    static HEX_DIGITS: &'static [u8; 16] = b"0123456789abcdef";
+    let b3;
+    let b4;
+    let bytes = if ascii_byte > 0x0F {
+        let high = (ascii_byte >> 4) as usize;
+        let low = (ascii_byte & 0x0F) as usize;
+        b4 = [b'\\', HEX_DIGITS[high], HEX_DIGITS[low], b' '];
+        &b4[..]
+    } else {
+        b3 = [b'\\', HEX_DIGITS[ascii_byte as usize], b' '];
+        &b3[..]
+    };
+    dest.write_str(unsafe { str::from_utf8_unchecked(&bytes) })
+}
+
+fn char_escape<W>(ascii_byte: u8, dest: &mut W) -> fmt::Result where W:fmt::Write {
+    let bytes = [b'\\', ascii_byte];
+    dest.write_str(unsafe { str::from_utf8_unchecked(&bytes) })
+}
 
 /// Write a CSS identifier, escaping characters as necessary.
 pub fn serialize_identifier<W>(mut value: &str, dest: &mut W) -> fmt::Result where W:fmt::Write {
@@ -149,25 +171,28 @@ pub fn serialize_identifier<W>(mut value: &str, dest: &mut W) -> fmt::Result whe
     }
 
     if value.starts_with("--") {
-        try!(dest.write_str("--"));
+        dest.write_str("--")?;
         serialize_name(&value[2..], dest)
     } else if value == "-" {
         dest.write_str("\\-")
     } else {
         if value.as_bytes()[0] == b'-' {
-            try!(dest.write_str("-"));
+            dest.write_str("-")?;
             value = &value[1..];
         }
         if let digit @ b'0'...b'9' = value.as_bytes()[0] {
-            try!(write!(dest, "\\3{} ", digit as char));
+            hex_escape(digit, dest)?;
             value = &value[1..];
         }
         serialize_name(value, dest)
     }
 }
 
-
-fn serialize_name<W>(value: &str, dest: &mut W) -> fmt::Result where W:fmt::Write {
+/// Write a CSS name, like a custom property name.
+///
+/// You should only use this when you know what you're doing, when in doubt,
+/// consider using `serialize_identifier`.
+pub fn serialize_name<W>(value: &str, dest: &mut W) -> fmt::Result where W:fmt::Write {
     let mut chunk_start = 0;
     for (i, b) in value.bytes().enumerate() {
         let escaped = match b {
@@ -176,13 +201,13 @@ fn serialize_name<W>(value: &str, dest: &mut W) -> fmt::Result where W:fmt::Writ
             b'\0' => Some("\u{FFFD}"),
             _ => None,
         };
-        try!(dest.write_str(&value[chunk_start..i]));
+        dest.write_str(&value[chunk_start..i])?;
         if let Some(escaped) = escaped {
-            try!(dest.write_str(escaped));
+            dest.write_str(escaped)?;
         } else if (b >= b'\x01' && b <= b'\x1F') || b == b'\x7F' {
-            try!(write!(dest, "\\{:x} ", b));
+            hex_escape(b, dest)?;
         } else {
-            try!(write!(dest, "\\{}", b as char));
+            char_escape(b, dest)?;
         }
         chunk_start = i + 1;
     }
@@ -198,11 +223,11 @@ fn serialize_unquoted_url<W>(value: &str, dest: &mut W) -> fmt::Result where W:f
             b'(' | b')' | b'"' | b'\'' | b'\\' => false,
             _ => continue
         };
-        try!(dest.write_str(&value[chunk_start..i]));
+        dest.write_str(&value[chunk_start..i])?;
         if hex {
-            try!(write!(dest, "\\{:X} ", b));
+            hex_escape(b, dest)?;
         } else {
-            try!(write!(dest, "\\{}", b as char));
+            char_escape(b, dest)?;
         }
         chunk_start = i + 1;
     }
@@ -212,9 +237,9 @@ fn serialize_unquoted_url<W>(value: &str, dest: &mut W) -> fmt::Result where W:f
 
 /// Write a double-quoted CSS string token, escaping content as necessary.
 pub fn serialize_string<W>(value: &str, dest: &mut W) -> fmt::Result where W: fmt::Write {
-    try!(dest.write_str("\""));
-    try!(CssStringWriter::new(dest).write_str(value));
-    try!(dest.write_str("\""));
+    dest.write_str("\"")?;
+    CssStringWriter::new(dest).write_str(value)?;
+    dest.write_str("\"")?;
     Ok(())
 }
 
@@ -251,15 +276,17 @@ impl<'a, W> fmt::Write for CssStringWriter<'a, W> where W: fmt::Write {
         let mut chunk_start = 0;
         for (i, b) in s.bytes().enumerate() {
             let escaped = match b {
-                b'"' => "\\\"",
-                b'\\' => "\\\\",
-                b'\n' => "\\A ",
-                b'\r' => "\\D ",
-                b'\x0C' => "\\C ",
+                b'"' => Some("\\\""),
+                b'\\' => Some("\\\\"),
+                b'\0' => Some("\u{FFFD}"),
+                b'\x01'...b'\x1F' | b'\x7F' => None,
                 _ => continue,
             };
-            try!(self.inner.write_str(&s[chunk_start..i]));
-            try!(self.inner.write_str(escaped));
+            self.inner.write_str(&s[chunk_start..i])?;
+            match escaped {
+                Some(x) => self.inner.write_str(x)?,
+                None => hex_escape(b, self.inner)?,
+            };
             chunk_start = i + 1;
         }
         self.inner.write_str(&s[chunk_start..])
@@ -267,27 +294,63 @@ impl<'a, W> fmt::Write for CssStringWriter<'a, W> where W: fmt::Write {
 }
 
 
-macro_rules! impl_tocss_for_number {
+macro_rules! impl_tocss_for_int {
     ($T: ty) => {
         impl<'a> ToCss for $T {
             fn to_css<W>(&self, dest: &mut W) -> fmt::Result where W: fmt::Write {
-                write!(dest, "{}", *self)
+                struct AssumeUtf8<W: fmt::Write>(W);
+
+                impl<W: fmt::Write> io::Write for AssumeUtf8<W> {
+                    #[inline]
+                    fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
+                        // Safety: itoa only emits ASCII, which is also well-formed UTF-8.
+                        debug_assert!(buf.is_ascii());
+                        self.0.write_str(unsafe { str::from_utf8_unchecked(buf) })
+                            .map_err(|_| io::ErrorKind::Other.into())
+                    }
+
+                    #[inline]
+                    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+                        self.write_all(buf)?;
+                        Ok(buf.len())
+                    }
+
+                    #[inline]
+                    fn flush(&mut self) -> io::Result<()> {
+                        Ok(())
+                    }
+                }
+
+                match itoa::write(AssumeUtf8(dest), *self) {
+                    Ok(_) => Ok(()),
+                    Err(_) => Err(fmt::Error)
+                }
             }
         }
     }
 }
 
-impl_tocss_for_number!(f32);
-impl_tocss_for_number!(f64);
-impl_tocss_for_number!(i8);
-impl_tocss_for_number!(u8);
-impl_tocss_for_number!(i16);
-impl_tocss_for_number!(u16);
-impl_tocss_for_number!(i32);
-impl_tocss_for_number!(u32);
-impl_tocss_for_number!(i64);
-impl_tocss_for_number!(u64);
+impl_tocss_for_int!(i8);
+impl_tocss_for_int!(u8);
+impl_tocss_for_int!(i16);
+impl_tocss_for_int!(u16);
+impl_tocss_for_int!(i32);
+impl_tocss_for_int!(u32);
+impl_tocss_for_int!(i64);
+impl_tocss_for_int!(u64);
 
+macro_rules! impl_tocss_for_float {
+    ($T: ty) => {
+        impl<'a> ToCss for $T {
+            fn to_css<W>(&self, dest: &mut W) -> fmt::Result where W: fmt::Write {
+                dtoa_short::write(dest, *self).map(|_| ())
+            }
+        }
+    }
+}
+
+impl_tocss_for_float!(f32);
+impl_tocss_for_float!(f64);
 
 /// A category of token. See the `needs_separator_when_before` method.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
@@ -376,7 +439,7 @@ impl<'a> Token<'a> {
         TokenSerializationType(match *self {
             Token::Ident(_) => Ident,
             Token::AtKeyword(_) | Token::Hash(_) | Token::IDHash(_) => AtKeywordOrHash,
-            Token::UnquotedUrl(_) | Token::BadUrl => UrlOrBadUrl,
+            Token::UnquotedUrl(_) | Token::BadUrl(_) => UrlOrBadUrl,
             Token::Delim('#') => DelimHash,
             Token::Delim('@') => DelimAt,
             Token::Delim('.') | Token::Delim('+') => DelimDotOrPlus,
@@ -387,20 +450,19 @@ impl<'a> Token<'a> {
             Token::Delim('|') => DelimBar,
             Token::Delim('/') => DelimSlash,
             Token::Delim('*') => DelimAsterisk,
-            Token::Number(_) => Number,
-            Token::Percentage(_) => Percentage,
-            Token::Dimension(..) => Dimension,
+            Token::Number { .. } => Number,
+            Token::Percentage { .. } => Percentage,
+            Token::Dimension { .. } => Dimension,
             Token::WhiteSpace(_) => WhiteSpace,
             Token::Comment(_) => DelimSlash,
             Token::DashMatch => DashMatch,
             Token::SubstringMatch => SubstringMatch,
-            Token::Column => DelimBar,
             Token::CDC => CDC,
             Token::Function(_) => Function,
             Token::ParenthesisBlock => OpenParen,
             Token::SquareBracketBlock | Token::CurlyBracketBlock |
             Token::CloseParenthesis | Token::CloseSquareBracket | Token::CloseCurlyBracket |
-            Token::QuotedString(_) | Token::BadString |
+            Token::QuotedString(_) | Token::BadString(_) |
             Token::Delim(_) | Token::Colon | Token::Semicolon | Token::Comma | Token::CDO |
             Token::IncludeMatch | Token::PrefixMatch | Token::SuffixMatch
             => Other,

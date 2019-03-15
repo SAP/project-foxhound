@@ -44,17 +44,17 @@ function cleanupLocaleTests() {
  */
 function createUtf16Database() {
   print("Creating the in-memory UTF-16-encoded database.");
-  let conn = getService().openSpecialDatabase("memory");
+  let conn = Services.storage.openSpecialDatabase("memory");
   conn.executeSimpleSQL("PRAGMA encoding = 'UTF-16'");
 
   print("Make sure the encoding was set correctly and is now UTF-16.");
   let stmt = conn.createStatement("PRAGMA encoding");
-  do_check_true(stmt.executeStep());
+  Assert.ok(stmt.executeStep());
   let enc = stmt.getString(0);
   stmt.finalize();
 
   // The value returned will actually be UTF-16le or UTF-16be.
-  do_check_true(enc === "UTF-16le" || enc === "UTF-16be");
+  Assert.ok(enc === "UTF-16le" || enc === "UTF-16be");
 
   return conn;
 }
@@ -72,9 +72,9 @@ function ensureResultsAreCorrect(aActual, aExpected) {
   print("Actual results:   " + aActual);
   print("Expected results: " + aExpected);
 
-  do_check_eq(aActual.length, aExpected.length);
+  Assert.equal(aActual.length, aExpected.length);
   for (let i = 0; i < aActual.length; i++)
-    do_check_eq(aActual[i], aExpected[i]);
+    Assert.equal(aActual[i], aExpected[i]);
 }
 
 /**
@@ -168,7 +168,7 @@ function readTestData() {
   let istream = Cc["@mozilla.org/network/file-input-stream;1"].
                 createInstance(Ci.nsIFileInputStream);
   istream.init(file, -1, -1, 0);
-  istream.QueryInterface(Components.interfaces.nsILineInputStream);
+  istream.QueryInterface(Ci.nsILineInputStream);
 
   let line = {};
   let lines = [];
@@ -242,42 +242,42 @@ function setup() {
 var gTests = [
   {
     desc: "Case and accent sensitive UTF-8",
-    run:   () => runUtf8Test("locale_case_accent_sensitive")
+    run:   () => runUtf8Test("locale_case_accent_sensitive"),
   },
 
   {
     desc: "Case sensitive, accent insensitive UTF-8",
-    run:   () => runUtf8Test("locale_case_sensitive")
+    run:   () => runUtf8Test("locale_case_sensitive"),
   },
 
   {
     desc: "Case insensitive, accent sensitive UTF-8",
-    run:   () => runUtf8Test("locale_accent_sensitive")
+    run:   () => runUtf8Test("locale_accent_sensitive"),
   },
 
   {
     desc: "Case and accent insensitive UTF-8",
-    run:   () => runUtf8Test("locale")
+    run:   () => runUtf8Test("locale"),
   },
 
   {
     desc: "Case and accent sensitive UTF-16",
-    run:   () => runUtf16Test("locale_case_accent_sensitive")
+    run:   () => runUtf16Test("locale_case_accent_sensitive"),
   },
 
   {
     desc: "Case sensitive, accent insensitive UTF-16",
-    run:   () => runUtf16Test("locale_case_sensitive")
+    run:   () => runUtf16Test("locale_case_sensitive"),
   },
 
   {
     desc: "Case insensitive, accent sensitive UTF-16",
-    run:   () => runUtf16Test("locale_accent_sensitive")
+    run:   () => runUtf16Test("locale_accent_sensitive"),
   },
 
   {
     desc: "Case and accent insensitive UTF-16",
-    run:   () => runUtf16Test("locale")
+    run:   () => runUtf16Test("locale"),
   },
 ];
 
@@ -287,4 +287,5 @@ function run_test() {
     print("-- Running test: " + test.desc);
     test.run();
   });
+  cleanupLocaleTests();
 }

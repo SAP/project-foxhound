@@ -19,9 +19,7 @@ XPIDL_SOURCES += [
     'nsIMemoryReporter.idl',
     'nsIMessageLoop.idl',
     'nsIMutable.idl',
-    'nsIProgrammingLanguage.idl',
     'nsISecurityConsoleMessage.idl',
-    'nsIStatusReporter.idl',
     'nsISupports.idl',
     'nsIUUIDGenerator.idl',
     'nsIVersionComparator.idl',
@@ -31,20 +29,26 @@ XPIDL_SOURCES += [
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
     XPIDL_SOURCES += [
+        'nsIMacPreferencesReader.idl',
         'nsIMacUtils.idl',
     ]
     EXPORTS.mozilla += [
         'MacHelpers.h',
+        'MacStringHelpers.h',
+        'nsMacPreferencesReader.h',
     ]
     UNIFIED_SOURCES += [
         'MacHelpers.mm',
+        'MacStringHelpers.mm',
+        'nsMacPreferencesReader.mm',
     ]
 
 XPIDL_MODULE = 'xpcom_base'
 
 EXPORTS += [
+    '!ErrorList.h',
+    '!ErrorNamesInternal.h',
     'CodeAddressService.h',
-    'ErrorList.h',
     'nsAgg.h',
     'nsAlgorithm.h',
     'nsAutoPtr.h',
@@ -62,6 +66,7 @@ EXPORTS += [
     'nsDebugImpl.h',
     'nsDumpUtils.h',
     'nsError.h',
+    'nsErrorService.h',
     'nsGZFileWriter.h',
     'nsIClassInfoImpl.h',
     'nsID.h',
@@ -74,13 +79,14 @@ EXPORTS += [
     'nsISupportsImpl.h',
     'nsISupportsUtils.h',
     'nsIWeakReferenceUtils.h',
+    'nsMaybeWeakPtr.h',
     'nsMemory.h',
     'nsObjCExceptions.h',
     'nsQueryObject.h',
+    'nsSystemInfo.h',
     'nsTraceRefcnt.h',
     'nsTWeakRef.h',
     'nsVersionComparator.h',
-    'nsWeakPtr.h',
     'nsWeakReference.h',
 ]
 
@@ -88,6 +94,10 @@ if CONFIG['OS_ARCH'] == 'WINNT':
     EXPORTS += [
         'nsWindowsHelpers.h',
     ]
+    if CONFIG['CC_TYPE'] not in ('gcc', 'clang'):
+        OS_LIBS += [
+            'wscapi',
+        ]
 
 EXPORTS.mozilla += [
     'AutoRestore.h',
@@ -95,6 +105,7 @@ EXPORTS.mozilla += [
     'ClearOnShutdown.h',
     'CountingAllocatorBase.h',
     'CycleCollectedJSContext.h',
+    'CycleCollectedJSRuntime.h',
     'Debug.h',
     'DebuggerOnGCRunnable.h',
     'DeferredFinalize.h',
@@ -103,15 +114,19 @@ EXPORTS.mozilla += [
     'HoldDropJSObjects.h',
     'IntentionalCrash.h',
     'JSObjectHolder.h',
-    'LinuxUtils.h',
     'Logging.h',
+    'MemoryInfo.h',
+    'MemoryMapping.h',
     'MemoryReportingProcess.h',
+    'MemoryTelemetry.h',
     'nsMemoryInfoDumper.h',
     'NSPRLogModulesParser.h',
     'OwningNonNull.h',
+    'SizeOfState.h',
+    'StaticMonitor.h',
     'StaticMutex.h',
     'StaticPtr.h',
-    'SystemMemoryReporter.h',
+    'TupleCycleCollection.h',
 ]
 
 # nsDebugImpl isn't unified because we disable PGO so that NS_ABORT_OOM isn't
@@ -125,14 +140,17 @@ UNIFIED_SOURCES += [
     'AvailableMemoryTracker.cpp',
     'ClearOnShutdown.cpp',
     'CycleCollectedJSContext.cpp',
+    'CycleCollectedJSRuntime.cpp',
     'Debug.cpp',
     'DebuggerOnGCRunnable.cpp',
     'DeferredFinalize.cpp',
     'ErrorNames.cpp',
     'HoldDropJSObjects.cpp',
     'JSObjectHolder.cpp',
+    'LogCommandLineHandler.cpp',
     'Logging.cpp',
     'LogModulePrefWatcher.cpp',
+    'MemoryTelemetry.cpp',
     'nsClassInfoImpl.cpp',
     'nsCOMPtr.cpp',
     'nsConsoleMessage.cpp',
@@ -156,7 +174,6 @@ UNIFIED_SOURCES += [
     'nsMessageLoop.cpp',
     'NSPRLogModulesParser.cpp',
     'nsSecurityConsoleMessage.cpp',
-    'nsStatusReporterManager.cpp',
     'nsSystemInfo.cpp',
     'nsTraceRefcnt.cpp',
     'nsUUIDGenerator.cpp',
@@ -165,11 +182,25 @@ UNIFIED_SOURCES += [
     'nsWeakReference.cpp',
 ]
 
-if CONFIG['OS_ARCH'] == 'Linux':
-    SOURCES += [
-        'LinuxUtils.cpp',
-        'SystemMemoryReporter.cpp',
+if CONFIG['OS_TARGET'] in ('Linux', 'Android'):
+    UNIFIED_SOURCES += [
+        'MemoryMapping.cpp',
     ]
+
+if CONFIG['OS_TARGET'] == 'WINNT':
+    UNIFIED_SOURCES += [
+        'MemoryInfo.cpp',
+    ]
+
+GENERATED_FILES += [
+    "error_list.rs",
+    "ErrorList.h",
+    "ErrorNamesInternal.h",
+]
+
+GENERATED_FILES["ErrorList.h"].script = "ErrorList.py:error_list_h"
+GENERATED_FILES["ErrorNamesInternal.h"].script = "ErrorList.py:error_names_internal_h"
+GENERATED_FILES["error_list.rs"].script = "ErrorList.py:error_list_rs"
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
     SOURCES += [
@@ -186,8 +217,14 @@ FINAL_LIBRARY = 'xul'
 
 LOCAL_INCLUDES += [
     '../build',
+    '/dom/base',
+    '/mfbt',
+    '/netwerk/base',
     '/xpcom/ds',
 ]
 
 if 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
     CXXFLAGS += CONFIG['TK_CFLAGS']
+
+if CONFIG['ENABLE_CLANG_PLUGIN'] and CONFIG['CC_TYPE'] == 'clang-cl':
+    AllowCompilerWarnings()  # workaround for bug 1090497

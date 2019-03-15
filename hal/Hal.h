@@ -10,15 +10,12 @@
 #include "base/basictypes.h"
 #include "base/platform_thread.h"
 #include "nsTArray.h"
-#include "mozilla/dom/battery/Types.h"
-#include "mozilla/dom/MozPowerManagerBinding.h"
-#include "mozilla/dom/network/Types.h"
-#include "mozilla/dom/power/Types.h"
-#include "mozilla/dom/ScreenOrientation.h"
 #include "mozilla/hal_sandbox/PHal.h"
+#include "mozilla/HalBatteryInformation.h"
+#include "mozilla/HalNetworkInformation.h"
 #include "mozilla/HalScreenConfiguration.h"
+#include "mozilla/HalWakeLockInformation.h"
 #include "mozilla/HalTypes.h"
-#include "mozilla/Observer.h"
 #include "mozilla/Types.h"
 
 /*
@@ -34,24 +31,30 @@
 class nsPIDOMWindowInner;
 
 #ifndef MOZ_HAL_NAMESPACE
-# define MOZ_HAL_NAMESPACE hal
-# define MOZ_DEFINED_HAL_NAMESPACE 1
+#  define MOZ_HAL_NAMESPACE hal
+#  define MOZ_DEFINED_HAL_NAMESPACE 1
 #endif
 
 namespace mozilla {
 
 namespace hal {
 
-typedef Observer<void_t> AlarmObserver;
-
 class WindowIdentifier;
 
-typedef Observer<int64_t> SystemClockChangeObserver;
-typedef Observer<SystemTimezoneChangeInformation> SystemTimezoneChangeObserver;
-
-} // namespace hal
+}  // namespace hal
 
 namespace MOZ_HAL_NAMESPACE {
+
+/**
+ * Initializes the HAL. This must be called before any other HAL function.
+ */
+void Init();
+
+/**
+ * Shuts down the HAL. Besides freeing all the used resources this will check
+ * that all observers have been properly deregistered and assert if not.
+ */
+void Shutdown();
 
 /**
  * Turn the default vibrator device on/off per the pattern specified
@@ -68,10 +71,9 @@ namespace MOZ_HAL_NAMESPACE {
  * nsIDOMWindow* in place of the WindowIdentifier parameter.
  * The method with WindowIdentifier will be called automatically.
  */
+void Vibrate(const nsTArray<uint32_t>& pattern, nsPIDOMWindowInner* aWindow);
 void Vibrate(const nsTArray<uint32_t>& pattern,
-             nsPIDOMWindowInner* aWindow);
-void Vibrate(const nsTArray<uint32_t>& pattern,
-             const hal::WindowIdentifier &id);
+             const hal::WindowIdentifier& id);
 
 /**
  * Cancel a vibration started by the content window identified by
@@ -86,19 +88,21 @@ void Vibrate(const nsTArray<uint32_t>& pattern,
  * automatically.
  */
 void CancelVibrate(nsPIDOMWindowInner* aWindow);
-void CancelVibrate(const hal::WindowIdentifier &id);
+void CancelVibrate(const hal::WindowIdentifier& id);
 
-/**
- * Inform the battery backend there is a new battery observer.
- * @param aBatteryObserver The observer that should be added.
- */
-void RegisterBatteryObserver(BatteryObserver* aBatteryObserver);
+#define MOZ_DEFINE_HAL_OBSERVER(name_)                             \
+  /**                                                              \
+   * Inform the backend there is a new |name_| observer.           \
+   * @param aObserver The observer that should be added.           \
+   */                                                              \
+  void Register##name_##Observer(hal::name_##Observer* aObserver); \
+  /**                                                              \
+   * Inform the backend a |name_| observer unregistered.           \
+   * @param aObserver The observer that should be removed.         \
+   */                                                              \
+  void Unregister##name_##Observer(hal::name_##Observer* aObserver);
 
-/**
- * Inform the battery backend a battery observer unregistered.
- * @param aBatteryObserver The observer that should be removed.
- */
-void UnregisterBatteryObserver(BatteryObserver* aBatteryObserver);
+MOZ_DEFINE_HAL_OBSERVER(Battery);
 
 /**
  * Returns the current battery information.
@@ -112,80 +116,26 @@ void GetCurrentBatteryInformation(hal::BatteryInformation* aBatteryInfo);
 void NotifyBatteryChange(const hal::BatteryInformation& aBatteryInfo);
 
 /**
- * Determine whether the device's screen is currently enabled.
- */
-bool GetScreenEnabled();
-
-/**
- * Enable or disable the device's screen.
- *
- * Note that it may take a few seconds for the screen to turn on or off.
- */
-void SetScreenEnabled(bool aEnabled);
-
-/**
- * Determine whether the device's keypad/button backlight is currently enabled.
- */
-bool GetKeyLightEnabled();
-
-/**
- * Enable or disable the device's keypad/button backlight.
- */
-void SetKeyLightEnabled(bool aEnabled);
-
-/**
- * Get the brightness of the device's screen's backlight, on a scale from 0
- * (very dim) to 1 (full blast).
- *
- * If the display is currently disabled, this returns the brightness the
- * backlight will have when the display is re-enabled.
- */
-double GetScreenBrightness();
-
-/**
- * Set the brightness of the device's screen's backlight, on a scale from 0
- * (very dimm) to 1 (full blast).  Values larger than 1 are treated like 1, and
- * values smaller than 0 are treated like 0.
- *
- * Note that we may reduce the resolution of the given brightness value before
- * sending it to the screen.  Therefore if you call SetScreenBrightness(x)
- * followed by GetScreenBrightness(), the value returned by
- * GetScreenBrightness() may not be exactly x.
- */
-void SetScreenBrightness(double aBrightness);
-
-/**
- * Determine whether the device is allowed to sleep.
- */
-bool GetCpuSleepAllowed();
-
-/**
- * Set whether the device is allowed to suspend automatically after
- * the screen is disabled.
- */
-void SetCpuSleepAllowed(bool aAllowed);
-
-/**
  * Register an observer for the sensor of given type.
  *
  * The observer will receive data whenever the data generated by the
  * sensor is avaiable.
  */
 void RegisterSensorObserver(hal::SensorType aSensor,
-                            hal::ISensorObserver *aObserver);
+                            hal::ISensorObserver* aObserver);
 
 /**
  * Unregister an observer for the sensor of given type.
  */
 void UnregisterSensorObserver(hal::SensorType aSensor,
-                              hal::ISensorObserver *aObserver);
+                              hal::ISensorObserver* aObserver);
 
 /**
  * Post a value generated by a sensor.
  *
  * This API is internal to hal; clients shouldn't call it directly.
  */
-void NotifySensorChange(const hal::SensorData &aSensorData);
+void NotifySensorChange(const hal::SensorData& aSensorData);
 
 /**
  * Enable sensor notifications from the backend
@@ -203,18 +153,7 @@ void EnableSensorNotifications(hal::SensorType aSensor);
  */
 void DisableSensorNotifications(hal::SensorType aSensor);
 
-
-/**
- * Inform the network backend there is a new network observer.
- * @param aNetworkObserver The observer that should be added.
- */
-void RegisterNetworkObserver(NetworkObserver* aNetworkObserver);
-
-/**
- * Inform the network backend a network observer unregistered.
- * @param aNetworkObserver The observer that should be removed.
- */
-void UnregisterNetworkObserver(NetworkObserver* aNetworkObserver);
+MOZ_DEFINE_HAL_OBSERVER(Network);
 
 /**
  * Returns the current network information.
@@ -226,86 +165,6 @@ void GetCurrentNetworkInformation(hal::NetworkInformation* aNetworkInfo);
  * @param aNetworkInfo The new network information.
  */
 void NotifyNetworkChange(const hal::NetworkInformation& aNetworkInfo);
-
-/**
- * Adjusting system clock.
- * @param aDeltaMilliseconds The difference compared with current system clock.
- */
-void AdjustSystemClock(int64_t aDeltaMilliseconds);
-
-/**
- * Set timezone
- * @param aTimezoneSpec The definition can be found in
- * http://en.wikipedia.org/wiki/List_of_tz_database_time_zones
- */
-void SetTimezone(const nsCString& aTimezoneSpec);
-
-/**
- * Get timezone
- * http://en.wikipedia.org/wiki/List_of_tz_database_time_zones
- */
-nsCString GetTimezone();
-
-/**
- * Get timezone offset
- * returns the timezone offset relative to UTC in minutes (DST effect included)
- */
-int32_t GetTimezoneOffset();
-
-/**
- * Register observer for system clock changed notification.
- * @param aObserver The observer that should be added.
- */
-void RegisterSystemClockChangeObserver(
-  hal::SystemClockChangeObserver* aObserver);
-
-/**
- * Unregister the observer for system clock changed.
- * @param aObserver The observer that should be removed.
- */
-void UnregisterSystemClockChangeObserver(
-  hal::SystemClockChangeObserver* aObserver);
-
-/**
- * Notify of a change in the system clock.
- * @param aClockDeltaMS
- */
-void NotifySystemClockChange(const int64_t& aClockDeltaMS);
-
-/**
- * Register observer for system timezone changed notification.
- * @param aObserver The observer that should be added.
- */
-void RegisterSystemTimezoneChangeObserver(
-  hal::SystemTimezoneChangeObserver* aObserver);
-
-/**
- * Unregister the observer for system timezone changed.
- * @param aObserver The observer that should be removed.
- */
-void UnregisterSystemTimezoneChangeObserver(
-  hal::SystemTimezoneChangeObserver* aObserver);
-
-/**
- * Notify of a change in the system timezone.
- * @param aSystemTimezoneChangeInfo
- */
-void NotifySystemTimezoneChange(
-  const hal::SystemTimezoneChangeInformation& aSystemTimezoneChangeInfo);
-
-/**
- * Reboot the device.
- *
- * This API is currently only allowed to be used from the main process.
- */
-void Reboot();
-
-/**
- * Power off the device.
- *
- * This API is currently only allowed to be used from the main process.
- */
-void PowerOff();
 
 /**
  * Enable wake lock notifications from the backend.
@@ -321,17 +180,7 @@ void EnableWakeLockNotifications();
  */
 void DisableWakeLockNotifications();
 
-/**
- * Inform the wake lock backend there is a new wake lock observer.
- * @param aWakeLockObserver The observer that should be added.
- */
-void RegisterWakeLockObserver(WakeLockObserver* aObserver);
-
-/**
- * Inform the wake lock backend a wake lock observer unregistered.
- * @param aWakeLockObserver The observer that should be removed.
- */
-void UnregisterWakeLockObserver(WakeLockObserver* aObserver);
+MOZ_DEFINE_HAL_OBSERVER(WakeLock);
 
 /**
  * Adjust a wake lock's counts on behalf of a given process.
@@ -349,8 +198,7 @@ void UnregisterWakeLockObserver(WakeLockObserver* aObserver);
  *                      CONTENT_PROCESS_ID_MAIN: The root process
  *                      X: The process with ContentChild::GetID() == X
  */
-void ModifyWakeLock(const nsAString &aTopic,
-                    hal::WakeLockControl aLockAdjust,
+void ModifyWakeLock(const nsAString& aTopic, hal::WakeLockControl aLockAdjust,
                     hal::WakeLockControl aHiddenAdjust,
                     uint64_t aProcessID = hal::CONTENT_PROCESS_ID_UNKNOWN);
 
@@ -359,7 +207,8 @@ void ModifyWakeLock(const nsAString &aTopic,
  * @param aTopic        lock topic
  * @param aWakeLockInfo wake lock numbers
  */
-void GetWakeLockInfo(const nsAString &aTopic, hal::WakeLockInformation *aWakeLockInfo);
+void GetWakeLockInfo(const nsAString& aTopic,
+                     hal::WakeLockInformation* aWakeLockInfo);
 
 /**
  * Notify of a change in the wake lock state.
@@ -367,34 +216,27 @@ void GetWakeLockInfo(const nsAString &aTopic, hal::WakeLockInformation *aWakeLoc
  */
 void NotifyWakeLockChange(const hal::WakeLockInformation& aWakeLockInfo);
 
-/**
- * Inform the backend there is a new screen configuration observer.
- * @param aScreenConfigurationObserver The observer that should be added.
- */
-void RegisterScreenConfigurationObserver(hal::ScreenConfigurationObserver* aScreenConfigurationObserver);
-
-/**
- * Inform the backend a screen configuration observer unregistered.
- * @param aScreenConfigurationObserver The observer that should be removed.
- */
-void UnregisterScreenConfigurationObserver(hal::ScreenConfigurationObserver* aScreenConfigurationObserver);
+MOZ_DEFINE_HAL_OBSERVER(ScreenConfiguration);
 
 /**
  * Returns the current screen configuration.
  */
-void GetCurrentScreenConfiguration(hal::ScreenConfiguration* aScreenConfiguration);
+void GetCurrentScreenConfiguration(
+    hal::ScreenConfiguration* aScreenConfiguration);
 
 /**
  * Notify of a change in the screen configuration.
  * @param aScreenConfiguration The new screen orientation.
  */
-void NotifyScreenConfigurationChange(const hal::ScreenConfiguration& aScreenConfiguration);
+void NotifyScreenConfigurationChange(
+    const hal::ScreenConfiguration& aScreenConfiguration);
 
 /**
  * Lock the screen orientation to the specific orientation.
  * @return Whether the lock has been accepted.
  */
-MOZ_MUST_USE bool LockScreenOrientation(const dom::ScreenOrientationInternal& aOrientation);
+MOZ_MUST_USE bool LockScreenOrientation(
+    const hal::ScreenOrientation& aOrientation);
 
 /**
  * Unlock the screen orientation.
@@ -402,70 +244,10 @@ MOZ_MUST_USE bool LockScreenOrientation(const dom::ScreenOrientationInternal& aO
 void UnlockScreenOrientation();
 
 /**
- * Register an observer for the switch of given SwitchDevice.
- *
- * The observer will receive data whenever the data generated by the
- * given switch.
+ * Return true if the current platform supports the setting of process
+ * priority.
  */
-void RegisterSwitchObserver(hal::SwitchDevice aDevice, hal::SwitchObserver *aSwitchObserver);
-
-/**
- * Unregister an observer for the switch of given SwitchDevice.
- */
-void UnregisterSwitchObserver(hal::SwitchDevice aDevice, hal::SwitchObserver *aSwitchObserver);
-
-/**
- * Notify the state of the switch.
- *
- * This API is internal to hal; clients shouldn't call it directly.
- */
-void NotifySwitchChange(const hal::SwitchEvent& aEvent);
-
-/**
- * Get current switch information.
- */
-hal::SwitchState GetCurrentSwitchState(hal::SwitchDevice aDevice);
-
-/**
- * Notify switch status change from input device.
- */
-void NotifySwitchStateFromInputDevice(hal::SwitchDevice aDevice,
-                                      hal::SwitchState aState);
-
-/**
- * Register an observer that is notified when a programmed alarm
- * expires.
- *
- * Currently, there can only be 0 or 1 alarm observers.
- */
-MOZ_MUST_USE bool RegisterTheOneAlarmObserver(hal::AlarmObserver* aObserver);
-
-/**
- * Unregister the alarm observer.  Doing so will implicitly cancel any
- * programmed alarm.
- */
-void UnregisterTheOneAlarmObserver();
-
-/**
- * Notify that the programmed alarm has expired.
- *
- * This API is internal to hal; clients shouldn't call it directly.
- */
-void NotifyAlarmFired();
-
-/**
- * Program the real-time clock to expire at the time |aSeconds|,
- * |aNanoseconds|.  These specify a point in real time relative to the
- * UNIX epoch.  The alarm will fire at this time point even if the
- * real-time clock is changed; that is, this alarm respects changes to
- * the real-time clock.  Return true iff the alarm was programmed.
- *
- * The alarm can be reprogrammed at any time.
- *
- * This API is currently only allowed to be used from non-sandboxed
- * contexts.
- */
-MOZ_MUST_USE bool SetAlarm(int32_t aSeconds, int32_t aNanoseconds);
+bool SetProcessPrioritySupported();
 
 /**
  * Set the priority of the given process.
@@ -474,87 +256,14 @@ MOZ_MUST_USE bool SetAlarm(int32_t aSeconds, int32_t aNanoseconds);
  * background processes higher nice values.  On other platforms, we might
  * ignore this call entirely.
  */
-void SetProcessPriority(int aPid,
-                        hal::ProcessPriority aPriority,
-                        uint32_t aLRU = 0);
+void SetProcessPriority(int aPid, hal::ProcessPriority aPriority);
 
-
-/**
- * Set the current thread's priority to appropriate platform-specific value for
- * given functionality. Instead of providing arbitrary priority numbers you
- * must specify a type of function like THREAD_PRIORITY_COMPOSITOR.
- */
-void SetCurrentThreadPriority(hal::ThreadPriority aThreadPriority);
-
-/**
- * Set a thread priority to appropriate platform-specific value for
- * given functionality. Instead of providing arbitrary priority numbers you
- * must specify a type of function like THREAD_PRIORITY_COMPOSITOR.
- */
-void SetThreadPriority(PlatformThreadId aThreadId,
-                       hal::ThreadPriority aThreadPriority);
-
-/**
- * Start a watchdog to compulsively shutdown the system if it hangs.
- * @param aMode Specify how to shutdown the system.
- * @param aTimeoutSecs Specify the delayed seconds to shutdown the system.
- *
- * This API is currently only allowed to be used from the main process.
- */
-void StartForceQuitWatchdog(hal::ShutdownMode aMode, int32_t aTimeoutSecs);
-
-/**
- * Perform Factory Reset to wipe out all user data.
- */
-void FactoryReset(mozilla::dom::FactoryResetReason& aReason);
-
-/**
- * Start monitoring disk space for low space situations.
- *
- * This API is currently only allowed to be used from the main process.
- */
-void StartDiskSpaceWatcher();
-
-/**
- * Stop monitoring disk space for low space situations.
- *
- * This API is currently only allowed to be used from the main process.
- */
-void StopDiskSpaceWatcher();
-
-/**
- * Get total system memory of device being run on in bytes.
- *
- * Returns 0 if we are unable to determine this information from /proc/meminfo.
- */
-uint32_t GetTotalSystemMemory();
-
-/**
- * Determine whether the headphone switch event is from input device
- */
-bool IsHeadphoneEventFromInputDev();
-
-/**
- * Start the system service with the specified name and arguments.
- */
-nsresult StartSystemService(const char* aSvcName, const char* aArgs);
-
-/**
- * Stop the system service with the specified name.
- */
-void StopSystemService(const char* aSvcName);
-
-/**
- * Determine whether the system service with the specified name is running.
- */
-bool SystemServiceIsRunning(const char* aSvcName);
-
-} // namespace MOZ_HAL_NAMESPACE
-} // namespace mozilla
+}  // namespace MOZ_HAL_NAMESPACE
+}  // namespace mozilla
 
 #ifdef MOZ_DEFINED_HAL_NAMESPACE
-# undef MOZ_DEFINED_HAL_NAMESPACE
-# undef MOZ_HAL_NAMESPACE
+#  undef MOZ_DEFINED_HAL_NAMESPACE
+#  undef MOZ_HAL_NAMESPACE
 #endif
 
 #endif  // mozilla_Hal_h

@@ -24,7 +24,10 @@ macro_rules! link {
         #[cfg($cfg)]
         pub fn $name(library: &mut super::SharedLibrary) {
             let symbol = unsafe { library.library.get(stringify!($name).as_bytes()) }.ok();
-            library.functions.$name = symbol.map(|s| *s);
+            library.functions.$name = match symbol {
+                Some(s) => *s,
+                None => None,
+            };
         }
 
         #[cfg(not($cfg))]
@@ -40,15 +43,9 @@ macro_rules! link {
         use std::sync::{Arc};
 
         /// The set of functions loaded dynamically.
-        #[derive(Debug)]
+        #[derive(Debug, Default)]
         pub struct Functions {
-            $($(#[cfg($cfg)])* pub $name: Option<extern fn($($pname: $pty), *) $(-> $ret)*>,)+
-        }
-
-        impl Default for Functions {
-            fn default() -> Functions {
-                unsafe { std::mem::zeroed() }
-            }
+            $($(#[cfg($cfg)])* pub $name: Option<unsafe extern fn($($pname: $pty), *) $(-> $ret)*>,)+
         }
 
         /// A dynamically loaded instance of the `libclang` library.
@@ -83,6 +80,7 @@ macro_rules! link {
         }
 
         $(
+            #[cfg_attr(feature="cargo-clippy", allow(too_many_arguments))]
             $(#[cfg($cfg)])*
             pub unsafe fn $name($($pname: $pty), *) $(-> $ret)* {
                 let f = with_library(|l| {
@@ -116,13 +114,22 @@ macro_rules! link {
         /// * a `libclang` shared library could not be found
         /// * the `libclang` shared library could not be opened
         pub fn load_manually() -> Result<SharedLibrary, String> {
-            #[path="../build.rs"]
-            mod build;
+            mod build {
+                pub mod common { include!(concat!(env!("OUT_DIR"), "/common.rs")); }
+                pub mod dynamic { include!(concat!(env!("OUT_DIR"), "/dynamic.rs")); }
+            }
 
-            let file = try!(build::find_shared_library());
-            let library = libloading::Library::new(&file).map_err(|_| {
-                format!("the `libclang` shared library could not be opened: {}", file.display())
+            let (directory, filename) = try!(build::dynamic::find(true));
+            let path = directory.join(filename);
+
+            let library = libloading::Library::new(&path).map_err(|e| {
+                format!(
+                    "the `libclang` shared library at {} could not be opened: {}",
+                    path.display(),
+                    e,
+                )
             });
+
             let mut library = SharedLibrary::new(try!(library));
             $(load::$name(&mut library);)+
             Ok(library)
@@ -180,5 +187,10 @@ macro_rules! link {
 macro_rules! link {
     ($($(#[cfg($cfg:meta)])* pub fn $name:ident($($pname:ident: $pty:ty), *) $(-> $ret:ty)*;)+) => (
         extern { $($(#[cfg($cfg)])* pub fn $name($($pname: $pty), *) $(-> $ret)*;)+ }
+
+        $($(#[cfg($cfg)])*
+        pub mod $name {
+            pub fn is_loaded() -> bool { true }
+        })+
     )
 }

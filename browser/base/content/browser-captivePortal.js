@@ -2,18 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-XPCOMUtils.defineLazyServiceGetter(this, "cps",
-                                   "@mozilla.org/network/captive-portal-service;1",
-                                   "nsICaptivePortalService");
-
 var CaptivePortalWatcher = {
-  /**
-   * This constant is chosen to be large enough for a portal recheck to complete,
-   * and small enough that the delay in opening a tab isn't too noticeable.
-   * Please see comments for _delayedCaptivePortalDetected for more details.
-   */
-  PORTAL_RECHECK_DELAY_MS: Preferences.get("captivedetect.portalRecheckDelayMS", 500),
-
   // This is the value used to identify the captive portal notification.
   PORTAL_NOTIFICATION_VALUE: "captive-portal-detected",
 
@@ -34,8 +23,8 @@ var CaptivePortalWatcher = {
   _waitingForRecheck: false,
 
   get _captivePortalNotification() {
-    let nb = document.getElementById("high-priority-global-notificationbox");
-    return nb.getNotificationWithValue(this.PORTAL_NOTIFICATION_VALUE);
+    return gHighPriorityNotificationBox.getNotificationWithValue(
+                                           this.PORTAL_NOTIFICATION_VALUE);
   },
 
   get canonicalURL() {
@@ -49,22 +38,32 @@ var CaptivePortalWatcher = {
   },
 
   init() {
-    Services.obs.addObserver(this, "captive-portal-login", false);
-    Services.obs.addObserver(this, "captive-portal-login-abort", false);
-    Services.obs.addObserver(this, "captive-portal-login-success", false);
+    Services.obs.addObserver(this, "captive-portal-login");
+    Services.obs.addObserver(this, "captive-portal-login-abort");
+    Services.obs.addObserver(this, "captive-portal-login-success");
 
-    if (cps.state == cps.LOCKED_PORTAL) {
+    this._cps = Cc["@mozilla.org/network/captive-portal-service;1"]
+                  .getService(Ci.nsICaptivePortalService);
+
+    if (this._cps.state == this._cps.LOCKED_PORTAL) {
       // A captive portal has already been detected.
       this._captivePortalDetected();
 
       // Automatically open a captive portal tab if there's no other browser window.
-      let windows = Services.wm.getEnumerator("navigator:browser");
-      if (windows.getNext() == window && !windows.hasMoreElements()) {
+      if (BrowserWindowTracker.windowCount == 1) {
         this.ensureCaptivePortalTab();
       }
+    } else if (this._cps.state == this._cps.UNKNOWN) {
+      // We trigger a portal check after delayed startup to avoid doing a network
+      // request before first paint.
+      this._delayedRecheckPending = true;
     }
 
-    cps.recheckCaptivePortal();
+    // This constant is chosen to be large enough for a portal recheck to complete,
+    // and small enough that the delay in opening a tab isn't too noticeable.
+    // Please see comments for _delayedCaptivePortalDetected for more details.
+    XPCOMUtils.defineLazyPreferenceGetter(this, "PORTAL_RECHECK_DELAY_MS",
+                                          "captivedetect.portalRecheckDelayMS", 500);
   },
 
   uninit() {
@@ -72,9 +71,13 @@ var CaptivePortalWatcher = {
     Services.obs.removeObserver(this, "captive-portal-login-abort");
     Services.obs.removeObserver(this, "captive-portal-login-success");
 
+    this._cancelDelayedCaptivePortal();
+  },
 
-    if (this._delayedCaptivePortalDetectedInProgress) {
-      Services.obs.removeObserver(this, "xul-window-visible");
+  delayedStartup() {
+    if (this._delayedRecheckPending) {
+      delete this._delayedRecheckPending;
+      this._cps.recheckCaptivePortal();
     }
   },
 
@@ -87,8 +90,8 @@ var CaptivePortalWatcher = {
       case "captive-portal-login-success":
         this._captivePortalGone();
         break;
-      case "xul-window-visible":
-        this._delayedCaptivePortalDetected();
+      case "delayed-captive-portal-handled":
+        this._cancelDelayedCaptivePortal();
         break;
     }
   },
@@ -98,14 +101,22 @@ var CaptivePortalWatcher = {
       return;
     }
 
-    let win = RecentWindow.getMostRecentBrowserWindow();
+    let win = BrowserWindowTracker.getTopWindow();
+
+    // Used by tests: ignore the main test window in order to enable testing of
+    // the case where we have no open windows.
+    if (win.document.documentElement.getAttribute("ignorecaptiveportal")) {
+      win = null;
+    }
+
     // If no browser window has focus, open and show the tab when we regain focus.
     // This is so that if a different application was focused, when the user
     // (re-)focuses a browser window, we open the tab immediately in that window
     // so they can log in before continuing to browse.
-    if (win != Services.ww.activeWindow) {
+    if (win != Services.focus.activeWindow) {
       this._delayedCaptivePortalDetectedInProgress = true;
-      Services.obs.addObserver(this, "xul-window-visible", false);
+      window.addEventListener("activate", this, { once: true });
+      Services.obs.addObserver(this, "delayed-captive-portal-handled");
     }
 
     this._showNotification();
@@ -121,69 +132,76 @@ var CaptivePortalWatcher = {
       return;
     }
 
-    let win = RecentWindow.getMostRecentBrowserWindow();
-    if (win != Services.ww.activeWindow) {
-      // The window that got focused was not a browser window.
+    // Used by tests: ignore the main test window in order to enable testing of
+    // the case where we have no open windows.
+    if (window.document.documentElement.getAttribute("ignorecaptiveportal")) {
       return;
     }
-    Services.obs.removeObserver(this, "xul-window-visible");
-    this._delayedCaptivePortalDetectedInProgress = false;
 
-    if (win != window) {
-      // Some other browser window got focus, we don't have to do anything.
-      return;
-    }
+    Services.obs.notifyObservers(null, "delayed-captive-portal-handled");
+
     // Trigger a portal recheck. The user may have logged into the portal via
     // another client, or changed networks.
-    cps.recheckCaptivePortal();
+    this._cps.recheckCaptivePortal();
     this._waitingForRecheck = true;
     let requestTime = Date.now();
 
-    let self = this;
-    Services.obs.addObserver(function observer() {
+    let observer = () => {
       let time = Date.now() - requestTime;
       Services.obs.removeObserver(observer, "captive-portal-check-complete");
-      self._waitingForRecheck = false;
-      if (cps.state != cps.LOCKED_PORTAL) {
+      this._waitingForRecheck = false;
+      if (this._cps.state != this._cps.LOCKED_PORTAL) {
         // We're free of the portal!
         return;
       }
 
-      if (time <= self.PORTAL_RECHECK_DELAY_MS) {
+      if (time <= this.PORTAL_RECHECK_DELAY_MS) {
         // The amount of time elapsed since we requested a recheck (i.e. since
         // the browser window was focused) was small enough that we can add and
         // focus a tab with the login page with no noticeable delay.
-        self.ensureCaptivePortalTab();
+        this.ensureCaptivePortalTab();
       }
-    }, "captive-portal-check-complete", false);
+    };
+    Services.obs.addObserver(observer, "captive-portal-check-complete");
   },
 
   _captivePortalGone() {
-    if (this._delayedCaptivePortalDetectedInProgress) {
-      Services.obs.removeObserver(this, "xul-window-visible");
-      this._delayedCaptivePortalDetectedInProgress = false;
-    }
-
+    this._cancelDelayedCaptivePortal();
     this._removeNotification();
   },
 
+  _cancelDelayedCaptivePortal() {
+    if (this._delayedCaptivePortalDetectedInProgress) {
+      this._delayedCaptivePortalDetectedInProgress = false;
+      Services.obs.removeObserver(this, "delayed-captive-portal-handled");
+      window.removeEventListener("activate", this);
+    }
+  },
+
   handleEvent(aEvent) {
-    if (aEvent.type != "TabSelect" || !this._captivePortalTab || !this._captivePortalNotification) {
-      return;
-    }
+    switch (aEvent.type) {
+      case "activate":
+        this._delayedCaptivePortalDetected();
+        break;
+      case "TabSelect":
+        if (!this._captivePortalTab || !this._captivePortalNotification) {
+          break;
+        }
 
-    let tab = this._captivePortalTab.get();
-    let n = this._captivePortalNotification;
-    if (!tab || !n) {
-      return;
-    }
+        let tab = this._captivePortalTab.get();
+        let n = this._captivePortalNotification;
+        if (!tab || !n) {
+          break;
+        }
 
-    let doc = tab.ownerDocument;
-    let button = n.querySelector("button.notification-button");
-    if (doc.defaultView.gBrowser.selectedTab == tab) {
-      button.style.visibility = "hidden";
-    } else {
-      button.style.visibility = "visible";
+        let doc = tab.ownerDocument;
+        let button = n.querySelector("button.notification-button");
+        if (doc.defaultView.gBrowser.selectedTab == tab) {
+          button.style.visibility = "hidden";
+        } else {
+          button.style.visibility = "visible";
+        }
+        break;
     }
   },
 
@@ -197,7 +215,6 @@ var CaptivePortalWatcher = {
           // Returning true prevents the notification from closing.
           return true;
         },
-        isDefault: true,
       },
     ];
 
@@ -210,9 +227,9 @@ var CaptivePortalWatcher = {
       gBrowser.tabContainer.removeEventListener("TabSelect", this);
     };
 
-    let nb = document.getElementById("high-priority-global-notificationbox");
-    nb.appendNotification(message, this.PORTAL_NOTIFICATION_VALUE, "",
-                          nb.PRIORITY_INFO_MEDIUM, buttons, closeHandler);
+    gHighPriorityNotificationBox.appendNotification(
+      message, this.PORTAL_NOTIFICATION_VALUE, "",
+      gHighPriorityNotificationBox.PRIORITY_INFO_MEDIUM, buttons, closeHandler);
 
     gBrowser.tabContainer.addEventListener("TabSelect", this);
   },
@@ -233,7 +250,12 @@ var CaptivePortalWatcher = {
 
     // If the tab is gone or going, we need to open a new one.
     if (!tab || tab.closing || !tab.parentNode) {
-      tab = gBrowser.addTab(this.canonicalURL, { ownerTab: gBrowser.selectedTab });
+      tab = gBrowser.addWebTab(this.canonicalURL, {
+        ownerTab: gBrowser.selectedTab,
+        triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal({
+          userContextId: gBrowser.contentPrincipal.userContextId,
+        }),
+      });
       this._captivePortalTab = Cu.getWeakReference(tab);
     }
 
@@ -250,8 +272,8 @@ var CaptivePortalWatcher = {
         return;
       }
       gBrowser.removeTab(tab);
-    }
-    Services.obs.addObserver(tabCloser, "captive-portal-login-abort", false);
-    Services.obs.addObserver(tabCloser, "captive-portal-login-success", false);
+    };
+    Services.obs.addObserver(tabCloser, "captive-portal-login-abort");
+    Services.obs.addObserver(tabCloser, "captive-portal-login-success");
   },
 };

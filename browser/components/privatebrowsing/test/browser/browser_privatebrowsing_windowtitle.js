@@ -5,7 +5,7 @@
 // This test makes sure that the window title changes correctly while switching
 // from and to private browsing mode.
 
-add_task(function* test() {
+add_task(async function test() {
   const testPageURL = "http://mochi.test:8888/browser/" +
     "browser/components/privatebrowsing/test/browser/browser_privatebrowsing_windowtitle_page.html";
   requestLongerTimeout(2);
@@ -23,17 +23,17 @@ add_task(function* test() {
   if (isOSX) {
     page_with_title = test_title;
     page_without_title = app_name;
-    about_pb_title = "Open a private window?";
+    about_pb_title = app_name;
     pb_page_with_title = test_title + " - (Private Browsing)";
     pb_page_without_title = app_name + " - (Private Browsing)";
-    pb_about_pb_title = "Private Browsing - (Private Browsing)";
+    pb_about_pb_title = app_name + " - (Private Browsing)";
   } else {
     page_with_title = test_title + " - " + app_name;
     page_without_title = app_name;
-    about_pb_title = "Open a private window?" + " - " + app_name;
+    about_pb_title = app_name;
     pb_page_with_title = test_title + " - " + app_name + " (Private Browsing)";
     pb_page_without_title = app_name + " (Private Browsing)";
-    pb_about_pb_title = "Private Browsing - " + app_name + " (Private Browsing)";
+    pb_about_pb_title = app_name + " (Private Browsing)";
   }
 
   async function testTabTitle(aWindow, url, insidePB, expected_title) {
@@ -54,7 +54,7 @@ add_task(function* test() {
 
     await BrowserTestUtils.waitForCondition(() => {
       return win.document.title === expected_title;
-    }, `Window title should be ${expected_title}, got ${aWindow.document.title}`);
+    }, `Window title should be ${expected_title}, got ${win.document.title}`);
 
     is(win.document.title, expected_title, "The window title for " + url +
        " detached tab is correct (" + (insidePB ? "inside" : "outside") +
@@ -67,10 +67,10 @@ add_task(function* test() {
   function openWin(private) {
     return BrowserTestUtils.openNewBrowserWindow({ private });
   }
-  yield testTabTitle((yield openWin(false)), "about:blank", false, page_without_title);
-  yield testTabTitle((yield openWin(false)), testPageURL, false, page_with_title);
-  yield testTabTitle((yield openWin(false)), "about:privatebrowsing", false, about_pb_title);
-  yield testTabTitle((yield openWin(true)), "about:blank", true, pb_page_without_title);
-  yield testTabTitle((yield openWin(true)), testPageURL, true, pb_page_with_title);
-  yield testTabTitle((yield openWin(true)), "about:privatebrowsing", true, pb_about_pb_title);
+  await testTabTitle((await openWin(false)), "about:blank", false, page_without_title);
+  await testTabTitle((await openWin(false)), testPageURL, false, page_with_title);
+  await testTabTitle((await openWin(false)), "about:privatebrowsing", false, about_pb_title);
+  await testTabTitle((await openWin(true)), "about:blank", true, pb_page_without_title);
+  await testTabTitle((await openWin(true)), testPageURL, true, pb_page_with_title);
+  await testTabTitle((await openWin(true)), "about:privatebrowsing", true, pb_about_pb_title);
 });

@@ -15,47 +15,12 @@ set -e
 cwd=$(cd $(dirname $0); pwd -P)
 source "$cwd"/coreconf/nspr.sh
 source "$cwd"/coreconf/sanitizers.sh
+GYP=${GYP:-gyp}
 
 # Usage info
 show_help()
 {
-    cat << EOF
-Usage: ${0##*/} [-hcv] [-j <n>] [--nspr] [--gyp|-g] [--opt|-o] [-m32]
-                [--test] [--pprof] [--scan-build[=output]] [--ct-verif]
-                [--asan] [--ubsan] [--msan] [--sancov[=edge|bb|func|...]]
-                [--disable-tests] [--fuzz[=tls|oss]]
-
-This script builds NSS with gyp and ninja.
-
-This build system is still under development.  It does not yet support all
-the features or platforms that NSS supports.
-
-NSS build tool options:
-
-    -h               display this help and exit
-    -c               clean before build
-    -v               verbose build
-    -j <n>           run at most <n> concurrent jobs
-    --nspr           force a rebuild of NSPR
-    --gyp|-g         force a rerun of gyp
-    --opt|-o         do an opt build
-    -m32             do a 32-bit build on a 64-bit system
-    --test           ignore map files and export everything we have
-    --fuzz           build fuzzing targets (this always enables test builds)
-                     --fuzz=tls to enable TLS fuzzing mode
-                     --fuzz=oss to build for OSS-Fuzz
-    --pprof          build with gperftool support
-    --ct-verif       build with valgrind for ct-verif
-    --scan-build     run the build with scan-build (scan-build has to be in the path)
-                     --scan-build=/out/path sets the output path for scan-build
-    --asan           do an asan build
-    --ubsan          do an ubsan build
-                     --ubsan=bool,shift,... sets specific UB sanitizers
-    --msan           do an msan build
-    --sancov         do sanitize coverage builds
-                     --sancov=func sets coverage to function level for example
-    --disable-tests  don't build tests and corresponding cmdline utils
-EOF
+    cat "$cwd"/help.txt
 }
 
 run_verbose()
@@ -84,63 +49,91 @@ verbose=0
 fuzz=0
 fuzz_tls=0
 fuzz_oss=0
+no_local_nspr=0
+sslkeylogfile=1
 
 gyp_params=(--depth="$cwd" --generator-output=".")
-nspr_params=()
 ninja_params=()
 
-# try to guess sensible defaults
-arch=$(python "$cwd"/coreconf/detect_host_arch.py)
-if [ "$arch" = "x64" -o "$arch" = "aarch64" ]; then
-    build_64=1
+# Assume that the target architecture is the same as the host by default.
+host_arch=$(python "$cwd"/coreconf/detect_host_arch.py)
+target_arch=$host_arch
+
+# Assume that MSVC is wanted if this is running on windows.
+platform=$(uname -s)
+if [ "${platform%-*}" = "MINGW32_NT" -o "${platform%-*}" = "MINGW64_NT" ]; then
+    msvc=1
 fi
 
-# parse command line arguments
+# Parse command line arguments.
 while [ $# -gt 0 ]; do
-    case $1 in
+    case "$1" in
         -c) clean=1 ;;
-        --gyp|-g) rebuild_gyp=1 ;;
-        --nspr) nspr_clean; rebuild_nspr=1 ;;
-        -j) ninja_params+=(-j "$2"); shift ;;
+        -cc) clean_only=1 ;;
         -v) ninja_params+=(-v); verbose=1 ;;
-        --test) gyp_params+=(-Dtest_build=1) ;;
-        --fuzz) fuzz=1 ;;
-        --fuzz=oss) fuzz=1; fuzz_oss=1 ;;
-        --fuzz=tls) fuzz=1; fuzz_tls=1 ;;
+        -j) ninja_params+=(-j "$2"); shift ;;
+        --gyp|-g) rebuild_gyp=1 ;;
+        --opt|-o) opt_build=1 ;;
+        -m32|--m32) target_arch=ia32; echo 'Warning: use -t instead of -m32' 1>&2 ;;
+        -t|--target) target_arch="$2"; shift ;;
+        --target=*) target_arch="${1#*=}" ;;
+        --clang) export CC=clang; export CCC=clang++; export CXX=clang++; msvc=0 ;;
+        --gcc) export CC=gcc; export CCC=g++; export CXX=g++; msvc=0 ;;
+        --msvc) msvc=1 ;;
         --scan-build) enable_scanbuild  ;;
         --scan-build=?*) enable_scanbuild "${1#*=}" ;;
-        --opt|-o) opt_build=1 ;;
-        -m32|--m32) build_64=0 ;;
+        --disable-tests) gyp_params+=(-Ddisable_tests=1) ;;
+        --pprof) gyp_params+=(-Duse_pprof=1) ;;
         --asan) enable_sanitizer asan ;;
         --msan) enable_sanitizer msan ;;
         --ubsan) enable_ubsan ;;
         --ubsan=?*) enable_ubsan "${1#*=}" ;;
+        --fuzz) fuzz=1 ;;
+        --fuzz=oss) fuzz=1; fuzz_oss=1 ;;
+        --fuzz=tls) fuzz=1; fuzz_tls=1 ;;
         --sancov) enable_sancov ;;
         --sancov=?*) enable_sancov "${1#*=}" ;;
-        --pprof) gyp_params+=(-Duse_pprof=1) ;;
-        --ct-verif) gyp_params+=(-Dct_verif=1) ;;
-        --disable-tests) gyp_params+=(-Ddisable_tests=1) ;;
+        --emit-llvm) gyp_params+=(-Demit_llvm=1 -Dsign_libs=0) ;;
         --no-zdefs) gyp_params+=(-Dno_zdefs=1) ;;
+        --test) gyp_params+=(-Dtest_build=1) ;;
+        --ct-verif) gyp_params+=(-Dct_verif=1) ;;
+        --nspr) nspr_clean; rebuild_nspr=1 ;;
+        --with-nspr=?*) set_nspr_path "${1#*=}"; no_local_nspr=1 ;;
+        --system-nspr) set_nspr_path "/usr/include/nspr/:"; no_local_nspr=1 ;;
+        --system-sqlite) gyp_params+=(-Duse_system_sqlite=1) ;;
+        --enable-fips) gyp_params+=(-Ddisable_fips=0) ;;
+        --enable-libpkix) gyp_params+=(-Ddisable_libpkix=0) ;;
+        --mozpkix-only) gyp_params+=(-Dmozpkix_only=1 -Ddisable_tests=1 -Dsign_libs=0) ;;
+        --disable-keylog) sslkeylogfile=0 ;;
         *) show_help; exit 2 ;;
     esac
     shift
 done
 
+# Set the target architecture and build type.
+gyp_params+=(-Dtarget_arch="$target_arch")
 if [ "$opt_build" = 1 ]; then
     target=Release
 else
     target=Debug
 fi
-if [ "$build_64" = 1 ]; then
-    nspr_params+=(--enable-64bit)
-else
-    gyp_params+=(-Dtarget_arch=ia32)
-fi
+
+gyp_params+=(-Denable_sslkeylogfile="$sslkeylogfile")
+
+# Do special setup.
 if [ "$fuzz" = 1 ]; then
     source "$cwd"/coreconf/fuzz.sh
 fi
+nspr_set_flags $sanitizer_flags
+if [ ! -z "$sanitizer_flags" ]; then
+    gyp_params+=(-Dsanitizer_flags="$sanitizer_flags")
+fi
 
-# set paths
+if [ "$msvc" = 1 ]; then
+    source "$cwd"/coreconf/msvc.sh
+fi
+
+# Setup build paths.
 target_dir="$cwd"/out/$target
 mkdir -p "$target_dir"
 dist_dir="$cwd"/../dist
@@ -148,10 +141,15 @@ dist_dir=$(mkdir -p "$dist_dir"; cd "$dist_dir"; pwd -P)
 gyp_params+=(-Dnss_dist_dir="$dist_dir")
 
 # -c = clean first
-if [ "$clean" = 1 ]; then
+if [ "$clean" = 1 -o "$clean_only" = 1 ]; then
     nspr_clean
     rm -rf "$cwd"/out
     rm -rf "$dist_dir"
+    # -cc = only clean, don't build
+    if [ "$clean_only" = 1 ]; then
+        echo "Cleaned"
+        exit 0
+    fi
 fi
 
 # This saves a canonical representation of arguments that we are passing to gyp
@@ -166,6 +164,7 @@ check_config()
     echo CC="$CC" >"$newconf"
     echo CCC="$CCC" >>"$newconf"
     echo CXX="$CXX" >>"$newconf"
+    echo target_arch="$target_arch" >>"$newconf"
     for i in "$@"; do echo $i; done | sort >>"$newconf"
 
     # Note: The following diff fails if $oldconf isn't there as well, which
@@ -176,6 +175,7 @@ check_config()
 gyp_config="$cwd"/out/gyp_config
 nspr_config="$cwd"/out/$target/nspr_config
 
+# Now check what needs to be rebuilt.
 # If we don't have a build directory make sure that we rebuild.
 if [ ! -d "$target_dir" ]; then
     rebuild_nspr=1
@@ -184,51 +184,50 @@ elif [ ! -d "$dist_dir"/$target ]; then
     rebuild_nspr=1
 fi
 
-# Update NSPR ${C,CXX,LD}FLAGS.
-nspr_set_flags $sanitizer_flags
-
-if check_config "$nspr_config" "${nspr_params[@]}" \
+if check_config "$nspr_config" \
                  nspr_cflags="$nspr_cflags" \
                  nspr_cxxflags="$nspr_cxxflags" \
                  nspr_ldflags="$nspr_ldflags"; then
     rebuild_nspr=1
 fi
 
-# Forward sanitizer flags.
-if [ ! -z "$sanitizer_flags" ]; then
-    gyp_params+=(-Dsanitizer_flags="$sanitizer_flags")
-fi
-
 if check_config "$gyp_config" "${gyp_params[@]}"; then
     rebuild_gyp=1
 fi
 
-# save the chosen target
+# Save the chosen target.
 mkdir -p "$dist_dir"
 echo $target > "$dist_dir"/latest
 
-if [ "$rebuild_nspr" = 1 ]; then
-    nspr_build "${nspr_params[@]}"
+# Build.
+# NSPR.
+if [[ "$rebuild_nspr" = 1 && "$no_local_nspr" = 0 ]]; then
+    nspr_build
     mv -f "$nspr_config".new "$nspr_config"
 fi
+# gyp.
 if [ "$rebuild_gyp" = 1 ]; then
-
+    if ! hash ${GYP} 2> /dev/null; then
+        echo "Please install gyp" 1>&2
+        exit 1
+    fi
     # These extra arguments aren't used in determining whether to rebuild.
     obj_dir="$dist_dir"/$target
     gyp_params+=(-Dnss_dist_obj_dir=$obj_dir)
-    gyp_params+=(-Dnspr_lib_dir=$obj_dir/lib)
-    gyp_params+=(-Dnspr_include_dir=$obj_dir/include/nspr)
+    if [ "$no_local_nspr" = 0 ]; then
+        set_nspr_path "$obj_dir/include/nspr:$obj_dir/lib"
+    fi
 
-    run_verbose run_scanbuild gyp -f ninja "${gyp_params[@]}" "$cwd"/nss.gyp
+    run_verbose run_scanbuild ${GYP} -f ninja "${gyp_params[@]}" "$cwd"/nss.gyp
 
     mv -f "$gyp_config".new "$gyp_config"
 fi
 
-# Run ninja.
-if hash ninja 2>/dev/null; then
-    ninja=ninja
-elif hash ninja-build 2>/dev/null; then
+# ninja.
+if hash ninja-build 2>/dev/null; then
     ninja=ninja-build
+elif hash ninja 2>/dev/null; then
+    ninja=ninja
 else
     echo "Please install ninja" 1>&2
     exit 1

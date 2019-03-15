@@ -1,4 +1,4 @@
-/* -*-  Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2; -*- */
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,16 +27,17 @@
 #include "prio.h"
 #include "prprf.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/Printf.h"
 #include "mozilla/UniquePtr.h"
+#include "nsNetCID.h"
+#include "nsIURIMutator.h"
 
 using namespace JS;
 
 using namespace mozilla::scache;
 using mozilla::UniquePtr;
 
-void
-WaitForStartupTimer()
-{
+void WaitForStartupTimer() {
   StartupCache* sc = StartupCache::GetSingleton();
   PR_Sleep(10 * PR_TicksPerSecond());
 
@@ -49,36 +50,37 @@ WaitForStartupTimer()
   }
 }
 
-class TestStartupCache : public ::testing::Test
-{
-protected:
+class TestStartupCache : public ::testing::Test {
+ protected:
   TestStartupCache();
   ~TestStartupCache();
 
   nsCOMPtr<nsIFile> mSCFile;
 };
 
-TestStartupCache::TestStartupCache()
-{
+TestStartupCache::TestStartupCache() {
   NS_GetSpecialDirectory(NS_OS_TEMP_DIR, getter_AddRefs(mSCFile));
   mSCFile->AppendNative(NS_LITERAL_CSTRING("test-startupcache.tmp"));
+#ifdef XP_WIN
+  nsAutoString env(NS_LITERAL_STRING("MOZ_STARTUP_CACHE="));
+  env.Append(mSCFile->NativePath());
+  _wputenv(env.get());
+#else
   nsAutoCString path;
   mSCFile->GetNativePath(path);
-  char* env = PR_smprintf("MOZ_STARTUP_CACHE=%s", path.get());
+  char* env = mozilla::Smprintf("MOZ_STARTUP_CACHE=%s", path.get()).release();
   PR_SetEnv(env);
   // We intentionally leak `env` here because it is required by PR_SetEnv
   MOZ_LSAN_INTENTIONALLY_LEAK_OBJECT(env);
+#endif
   StartupCache::GetSingleton()->InvalidateCache();
 }
-TestStartupCache::~TestStartupCache()
-{
+TestStartupCache::~TestStartupCache() {
   PR_SetEnv("MOZ_STARTUP_CACHE=");
   StartupCache::GetSingleton()->InvalidateCache();
 }
 
-
-TEST_F(TestStartupCache, StartupWriteRead)
-{
+TEST_F(TestStartupCache, StartupWriteRead) {
   nsresult rv;
   StartupCache* sc = StartupCache::GetSingleton();
 
@@ -87,7 +89,7 @@ TEST_F(TestStartupCache, StartupWriteRead)
   UniquePtr<char[]> outbuf;
   uint32_t len;
 
-  rv = sc->PutBuffer(id, buf, strlen(buf) + 1);
+  rv = sc->PutBuffer(id, UniquePtr<char[]>(strdup(buf)), strlen(buf) + 1);
   EXPECT_TRUE(NS_SUCCEEDED(rv));
 
   rv = sc->GetBuffer(id, &outbuf, &len);
@@ -103,8 +105,7 @@ TEST_F(TestStartupCache, StartupWriteRead)
   EXPECT_STREQ(buf, outbuf.get());
 }
 
-TEST_F(TestStartupCache, WriteInvalidateRead)
-{
+TEST_F(TestStartupCache, WriteInvalidateRead) {
   nsresult rv;
   const char* buf = "BeardBook competitive analysis";
   const char* id = "id";
@@ -113,7 +114,7 @@ TEST_F(TestStartupCache, WriteInvalidateRead)
   StartupCache* sc = StartupCache::GetSingleton();
   ASSERT_TRUE(sc);
 
-  rv = sc->PutBuffer(id, buf, strlen(buf) + 1);
+  rv = sc->PutBuffer(id, UniquePtr<char[]>(strdup(buf)), strlen(buf) + 1);
   EXPECT_TRUE(NS_SUCCEEDED(rv));
 
   sc->InvalidateCache();
@@ -122,16 +123,13 @@ TEST_F(TestStartupCache, WriteInvalidateRead)
   EXPECT_EQ(rv, NS_ERROR_NOT_AVAILABLE);
 }
 
-TEST_F(TestStartupCache, WriteObject)
-{
+TEST_F(TestStartupCache, WriteObject) {
   nsresult rv;
 
-  nsCOMPtr<nsIURI> obj
-    = do_CreateInstance("@mozilla.org/network/simple-uri;1");
-  ASSERT_TRUE(obj);
+  nsCOMPtr<nsIURI> obj;
 
   NS_NAMED_LITERAL_CSTRING(spec, "http://www.mozilla.org");
-  rv = obj->SetSpec(spec);
+  rv = NS_MutateURI(NS_SIMPLEURIMUTATOR_CONTRACTID).SetSpec(spec).Finalize(obj);
   EXPECT_TRUE(NS_SUCCEEDED(rv));
 
   StartupCache* sc = StartupCache::GetSingleton();
@@ -141,19 +139,18 @@ TEST_F(TestStartupCache, WriteObject)
   // StartupCache::GetSingleton in debug builds, and we
   // don't have access to that here. Obviously.
   const char* id = "id";
-  nsCOMPtr<nsIStorageStream> storageStream
-    = do_CreateInstance("@mozilla.org/storagestream;1");
+  nsCOMPtr<nsIStorageStream> storageStream =
+      do_CreateInstance("@mozilla.org/storagestream;1");
   ASSERT_TRUE(storageStream);
 
-  rv = storageStream->Init(256, (uint32_t) -1);
+  rv = storageStream->Init(256, (uint32_t)-1);
   EXPECT_TRUE(NS_SUCCEEDED(rv));
 
-  nsCOMPtr<nsIObjectOutputStream> objectOutput
-    = do_CreateInstance("@mozilla.org/binaryoutputstream;1");
+  nsCOMPtr<nsIObjectOutputStream> objectOutput =
+      do_CreateInstance("@mozilla.org/binaryoutputstream;1");
   ASSERT_TRUE(objectOutput);
 
-  nsCOMPtr<nsIOutputStream> outputStream
-    = do_QueryInterface(storageStream);
+  nsCOMPtr<nsIOutputStream> outputStream = do_QueryInterface(storageStream);
 
   rv = objectOutput->SetOutputStream(outputStream);
   EXPECT_TRUE(NS_SUCCEEDED(rv));
@@ -168,7 +165,7 @@ TEST_F(TestStartupCache, WriteObject)
 
   // Since this is a post-startup write, it should be written and
   // available.
-  rv = sc->PutBuffer(id, buf.get(), len);
+  rv = sc->PutBuffer(id, std::move(buf), len);
   EXPECT_TRUE(NS_SUCCEEDED(rv));
 
   UniquePtr<char[]> buf2;
@@ -177,7 +174,7 @@ TEST_F(TestStartupCache, WriteObject)
   rv = sc->GetBuffer(id, &buf2, &len2);
   EXPECT_TRUE(NS_SUCCEEDED(rv));
 
-  rv = NewObjectInputStreamFromBuffer(Move(buf2), len2,
+  rv = NewObjectInputStreamFromBuffer(std::move(buf2), len2,
                                       getter_AddRefs(objectInput));
   EXPECT_TRUE(NS_SUCCEEDED(rv));
 

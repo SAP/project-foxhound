@@ -10,8 +10,7 @@
                  type="text/css"?>
 
 <?xml-stylesheet href="chrome://browser/content/places/places.css"?>
-<?xml-stylesheet href="chrome://browser/skin/places/places.css"?>
-<?xul-overlay href="chrome://browser/content/places/placesOverlay.xul"?>
+<?xml-stylesheet href="chrome://browser/skin/places/tree-icons.css"?>
 
 <window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         title="549491: 'The root node is never visible' exception when details of the root node are modified "
@@ -47,10 +46,10 @@
     function runTest() {
       SimpleTest.waitForExplicitFinish();
 
-      Task.spawn(function* () {
-        yield PlacesTestUtils.clearHistory();
+      (async function() {
+        await PlacesUtils.history.clear();
 
-        yield PlacesTestUtils.addVisits({
+        await PlacesTestUtils.addVisits({
           uri: Services.io.newURI("http://example.tld/"),
           transition: PlacesUtils.history.TRANSITION_TYPED
         });
@@ -58,7 +57,7 @@
         // Make a history query.
         let query = PlacesUtils.history.getNewQuery();
         let opts = PlacesUtils.history.getNewQueryOptions();
-        let queryURI = PlacesUtils.history.queriesToQueryString([query], 1, opts);
+        let queryURI = PlacesUtils.history.queryToQueryString(query, opts);
 
         // Setup the places tree contents.
         let tree = document.getElementById("tree");
@@ -71,8 +70,8 @@
         ok(true, "No exceptions thrown");
 
         // Cleanup.
-        yield PlacesTestUtils.clearHistory();
-      }).then(SimpleTest.finish);
+        await PlacesUtils.history.clear();
+      })().then(SimpleTest.finish);
     }
   ]]></script>
 </window>

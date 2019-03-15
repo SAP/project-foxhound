@@ -4,13 +4,11 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = [ "Deprecated" ];
+var EXPORTED_SYMBOLS = [ "Deprecated" ];
 
-const Cu = Components.utils;
-const Ci = Components.interfaces;
 const PREF_DEPRECATION_WARNINGS = "devtools.errorconsole.deprecation_warnings";
 
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // A flag that indicates whether deprecation warnings should be logged.
 var logWarnings = Services.prefs.getBoolPref(PREF_DEPRECATION_WARNINGS);
@@ -18,7 +16,7 @@ var logWarnings = Services.prefs.getBoolPref(PREF_DEPRECATION_WARNINGS);
 Services.prefs.addObserver(PREF_DEPRECATION_WARNINGS,
   function(aSubject, aTopic, aData) {
     logWarnings = Services.prefs.getBoolPref(PREF_DEPRECATION_WARNINGS);
-  }, false);
+  });
 
 /**
  * Build a callstack log message.
@@ -43,7 +41,7 @@ function stringifyCallstack(aStack) {
   return msg;
 }
 
-this.Deprecated = {
+var Deprecated = {
   /**
    * Log a deprecation warning.
    *
@@ -77,5 +75,5 @@ this.Deprecated = {
 
     // Report deprecation warning.
     Cu.reportError(textMessage);
-  }
+  },
 };

@@ -2,19 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-Components.utils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 const BASE_LIST_ID = "base";
 const CONTENT_LIST_ID = "content";
 const TRACK_SUFFIX = "-track-digest256";
 const TRACKING_TABLE_PREF = "urlclassifier.trackingTable";
 const LISTS_PREF_BRANCH = "browser.safebrowsing.provider.mozilla.lists.";
-const UPDATE_TIME_PREF = "browser.safebrowsing.provider.mozilla.nextupdatetime";
 
 var gBlocklistManager = {
   _type: "",
   _blockLists: [],
-  _brandShortName : null,
-  _bundle: null,
   _tree: null,
 
   _view: {
@@ -25,10 +22,7 @@ var gBlocklistManager = {
     getCellText(row, column) {
       if (column.id == "listCol") {
         let list = gBlocklistManager._blockLists[row];
-        let desc = list.description ? list.description : "";
-        let text = gBlocklistManager._bundle.getFormattedString("mozNameTemplate",
-                                                                [list.name, desc]);
-        return text;
+        return list.name;
       }
       return "";
     },
@@ -38,7 +32,6 @@ var gBlocklistManager = {
     isContainer(index) { return false; },
     setTree(tree) {},
     getImageSrc(row, column) {},
-    getProgressMode(row, column) {},
     getCellValue(row, column) {
       if (column.id == "selectionCol")
         return gBlocklistManager._blockLists[row].selected;
@@ -53,7 +46,7 @@ var gBlocklistManager = {
       }
 
       return "";
-    }
+    },
   },
 
   onWindowKeyPress(event) {
@@ -65,7 +58,6 @@ var gBlocklistManager = {
   },
 
   onLoad() {
-    this._bundle = document.getElementById("bundlePreferences");
     let params = window.arguments[0];
     this.init(params);
   },
@@ -77,15 +69,6 @@ var gBlocklistManager = {
     }
 
     this._type = "tracking";
-    this._brandShortName = params.brandShortName;
-
-    let blocklistsText = document.getElementById("blocklistsText");
-    while (blocklistsText.hasChildNodes()) {
-      blocklistsText.removeChild(blocklistsText.firstChild);
-    }
-    blocklistsText.appendChild(document.createTextNode(params.introText));
-
-    document.title = params.windowTitle;
 
     this._loadBlockLists();
   },
@@ -112,41 +95,26 @@ var gBlocklistManager = {
     }
 
     if (activeList !== selected.id) {
-      const Cc = Components.classes, Ci = Components.interfaces;
-      let msg = this._bundle.getFormattedString("blocklistChangeRequiresRestart",
-                                                [this._brandShortName]);
-      let title = this._bundle.getFormattedString("shouldRestartTitle",
-                                                  [this._brandShortName]);
-      let shouldProceed = Services.prompt.confirm(window, title, msg);
-      if (shouldProceed) {
-        let cancelQuit = Cc["@mozilla.org/supports-PRBool;1"]
-                           .createInstance(Ci.nsISupportsPRBool);
-        Services.obs.notifyObservers(cancelQuit, "quit-application-requested",
-                                     "restart");
-        shouldProceed = !cancelQuit.data;
-
-        if (shouldProceed) {
-          let trackingTable = Services.prefs.getCharPref(TRACKING_TABLE_PREF);
-          if (selected.id != CONTENT_LIST_ID) {
-            trackingTable = trackingTable.replace("," + CONTENT_LIST_ID + TRACK_SUFFIX, "");
-          } else {
-            trackingTable += "," + CONTENT_LIST_ID + TRACK_SUFFIX;
-          }
-          Services.prefs.setCharPref(TRACKING_TABLE_PREF, trackingTable);
-          Services.prefs.setCharPref(UPDATE_TIME_PREF, 42);
-
-          Services.startup.quit(Ci.nsIAppStartup.eAttemptQuit |
-                                Ci.nsIAppStartup.eRestart);
-        }
+      let trackingTable = Services.prefs.getCharPref(TRACKING_TABLE_PREF);
+      if (selected.id != CONTENT_LIST_ID) {
+        trackingTable = trackingTable.replace("," + CONTENT_LIST_ID + TRACK_SUFFIX, "");
+      } else {
+        trackingTable += "," + CONTENT_LIST_ID + TRACK_SUFFIX;
       }
+      Services.prefs.setCharPref(TRACKING_TABLE_PREF, trackingTable);
 
-      // Don't close the dialog in case we didn't quit.
-      return;
+      // Force an update after changing the tracking protection table.
+      let listmanager = Cc["@mozilla.org/url-classifier/listmanager;1"]
+                        .getService(Ci.nsIUrlListManager);
+      if (listmanager) {
+        listmanager.forceUpdates(trackingTable);
+      }
     }
+
     window.close();
   },
 
-  _loadBlockLists() {
+  async _loadBlockLists() {
     this._blockLists = [];
 
     // Load blocklists into a table.
@@ -154,7 +122,8 @@ var gBlocklistManager = {
     let itemArray = branch.getChildList("");
     for (let itemName of itemArray) {
       try {
-        this._createOrUpdateBlockList(itemName);
+        let list = await this._createBlockList(itemName);
+        this._blockLists.push(list);
       } catch (e) {
         // Ignore bogus or missing list name.
         continue;
@@ -164,25 +133,21 @@ var gBlocklistManager = {
     this._updateTree();
   },
 
-  _createOrUpdateBlockList(itemName) {
+  async _createBlockList(id) {
     let branch = Services.prefs.getBranch(LISTS_PREF_BRANCH);
-    let key = branch.getCharPref(itemName);
-    let value = this._bundle.getString(key);
+    let l10nKey = branch.getCharPref(id);
+    let [listName, description] = await document.l10n.formatValues([
+      {id: `blocklist-item-${l10nKey}-listName`},
+      {id: `blocklist-item-${l10nKey}-description`},
+    ]);
+    let name = await document.l10n.formatValue(
+      "blocklist-item-list-template", {listName, description});
 
-    let suffix = itemName.slice(itemName.lastIndexOf("."));
-    let id = itemName.replace(suffix, "");
-    let list = this._blockLists.find(el => el.id === id);
-    if (!list) {
-      list = { id };
-      this._blockLists.push(list);
-    }
-    list.selected = this._getActiveList() === id;
-
-    // Get the property name from the suffix (e.g. ".name" -> "name").
-    let prop = suffix.slice(1);
-    list[prop] = value;
-
-    return list;
+    return {
+      id,
+      name,
+      selected: this._getActiveList() === id,
+    };
   },
 
   _updateTree() {
@@ -194,9 +159,5 @@ var gBlocklistManager = {
   _getActiveList() {
     let trackingTable = Services.prefs.getCharPref(TRACKING_TABLE_PREF);
     return trackingTable.includes(CONTENT_LIST_ID) ? CONTENT_LIST_ID : BASE_LIST_ID;
-  }
+  },
 };
-
-function initWithParams(params) {
-  gBlocklistManager.init(params);
-}

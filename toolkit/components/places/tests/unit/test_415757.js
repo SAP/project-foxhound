@@ -14,7 +14,7 @@
 function uri_in_db(aURI) {
   var options = PlacesUtils.history.getNewQueryOptions();
   options.maxResults = 1;
-  options.resultType = options.RESULTS_AS_URI
+  options.resultType = options.RESULTS_AS_URI;
   var query = PlacesUtils.history.getNewQuery();
   query.uri = aURI;
   var result = PlacesUtils.history.executeQuery(query, options);
@@ -28,73 +28,60 @@ function uri_in_db(aURI) {
 const TOTAL_SITES = 20;
 
 // main
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* test_execute() {
+add_task(async function test_execute() {
   // add pages to global history
   for (let i = 0; i < TOTAL_SITES; i++) {
-    let site = "http://www.test-" + i + ".com/";
-    let testURI = uri(site);
+    let uri = "http://www.test-" + i + ".com/";
     let when = Date.now() * 1000 + (i * TOTAL_SITES);
-    yield PlacesTestUtils.addVisits({ uri: testURI, visitDate: when });
+    await PlacesTestUtils.addVisits({ uri, visitDate: when });
   }
   for (let i = 0; i < TOTAL_SITES; i++) {
-    let site = "http://www.test.com/" + i + "/";
-    let testURI = uri(site);
+    let uri = "http://www.test.com/" + i + "/";
     let when = Date.now() * 1000 + (i * TOTAL_SITES);
-    yield PlacesTestUtils.addVisits({ uri: testURI, visitDate: when });
+    await PlacesTestUtils.addVisits({ uri, visitDate: when });
   }
 
   // set a page annotation on one of the urls that will be removed
-  var testAnnoDeletedURI = uri("http://www.test.com/1/");
+  var testAnnoDeletedURI = "http://www.test.com/1/";
   var testAnnoDeletedName = "foo";
   var testAnnoDeletedValue = "bar";
-  PlacesUtils.annotations.setPageAnnotation(testAnnoDeletedURI,
-                                            testAnnoDeletedName,
-                                            testAnnoDeletedValue, 0,
-                                            PlacesUtils.annotations.EXPIRE_WITH_HISTORY);
+  await PlacesUtils.history.update({
+    url: testAnnoDeletedURI,
+    annotations: new Map([[testAnnoDeletedName, testAnnoDeletedValue]]),
+  });
 
   // set a page annotation on one of the urls that will NOT be removed
-  var testAnnoRetainedURI = uri("http://www.test-1.com/");
+  var testAnnoRetainedURI = "http://www.test-1.com/";
   var testAnnoRetainedName = "foo";
   var testAnnoRetainedValue = "bar";
-  PlacesUtils.annotations.setPageAnnotation(testAnnoRetainedURI,
-                                            testAnnoRetainedName,
-                                            testAnnoRetainedValue, 0,
-                                            PlacesUtils.annotations.EXPIRE_WITH_HISTORY);
+  await PlacesUtils.history.update({
+    url: testAnnoRetainedURI,
+    annotations: new Map([[testAnnoRetainedName, testAnnoRetainedValue]]),
+  });
 
   // remove pages from www.test.com
-  PlacesUtils.history.removePagesFromHost("www.test.com", false);
+  await PlacesUtils.history.removeByFilter({ host: "www.test.com" });
 
   // check that all pages in www.test.com have been removed
   for (let i = 0; i < TOTAL_SITES; i++) {
     let site = "http://www.test.com/" + i + "/";
     let testURI = uri(site);
-    do_check_false(uri_in_db(testURI));
+    Assert.ok(!uri_in_db(testURI));
   }
 
   // check that all pages in www.test-X.com have NOT been removed
   for (let i = 0; i < TOTAL_SITES; i++) {
     let site = "http://www.test-" + i + ".com/";
     let testURI = uri(site);
-    do_check_true(uri_in_db(testURI));
+    Assert.ok(uri_in_db(testURI));
   }
 
   // check that annotation on the removed item does not exists
-  try {
-    PlacesUtils.annotations.getPageAnnotation(testAnnoDeletedURI, testAnnoDeletedName);
-    do_throw("fetching page-annotation that doesn't exist, should've thrown");
-  } catch (ex) {}
+  await assertNoOrphanPageAnnotations();
 
   // check that annotation on the NOT removed item still exists
-  try {
-    var annoVal = PlacesUtils.annotations.getPageAnnotation(testAnnoRetainedURI,
-                                                            testAnnoRetainedName);
-  } catch (ex) {
-    do_throw("The annotation has been removed erroneously");
-  }
-  do_check_eq(annoVal, testAnnoRetainedValue);
+  let pageInfo = await PlacesUtils.history.fetch(testAnnoRetainedURI, {includeAnnotations: true});
 
+  Assert.equal(pageInfo.annotations.get(testAnnoRetainedName), testAnnoRetainedValue,
+    "Should have kept the annotation for the non-removed items");
 });

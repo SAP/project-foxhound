@@ -2,31 +2,27 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-// As part of bug 1077403, the leaking uncaught rejection should be fixed.
-thisTestLeaksUncaughtRejectionsAndShouldBeFixed("");
-
 // Bug 570760 - Make ctrl-f and / focus the search box in the add-ons manager
 
 var gManagerWindow;
 var focusCount = 0;
 
-function test() {
+async function test() {
   waitForExplicitFinish();
 
-  open_manager(null, function(aWindow) {
-    gManagerWindow = aWindow;
+  let aWindow = await open_manager(null);
+  gManagerWindow = aWindow;
 
-    var searchBox = gManagerWindow.document.getElementById("header-search");
-    function focusHandler() {
-      searchBox.blur();
-      focusCount++;
-    }
-    searchBox.addEventListener("focus", focusHandler);
-    f_key_test();
-    slash_key_test();
-    searchBox.removeEventListener("focus", focusHandler);
-    end_test();
-  });
+  var searchBox = gManagerWindow.document.getElementById("header-search");
+  function focusHandler() {
+    searchBox.blur();
+    focusCount++;
+  }
+  searchBox.addEventListener("focus", focusHandler);
+  f_key_test();
+  slash_key_test();
+  searchBox.removeEventListener("focus", focusHandler);
+  end_test();
 }
 
 function end_test() {

@@ -29,7 +29,7 @@ public class StudyAction extends BaseAction {
                 continue;
             }
 
-            if (content.isAssetArchive() && content.isFont()) {
+            if (content.isKnownContent()) {
                 catalog.scheduleDownload(content);
 
                 Log.d(LOGTAG, "Scheduled download: " + content);
@@ -76,6 +76,6 @@ public class StudyAction extends BaseAction {
     }
 
     protected void startDownloads(Context context) {
-        DownloadContentService.startDownloads(context);
+        DlcDownloadService.enqueueServiceWork(context);
     }
 }

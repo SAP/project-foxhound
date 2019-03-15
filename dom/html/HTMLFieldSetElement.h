@@ -9,7 +9,6 @@
 
 #include "mozilla/Attributes.h"
 #include "nsGenericHTMLElement.h"
-#include "nsIDOMHTMLFieldSetElement.h"
 #include "nsIConstraintValidation.h"
 #include "mozilla/dom/HTMLFormElement.h"
 #include "mozilla/dom/ValidityState.h"
@@ -19,42 +18,38 @@ class EventChainPreVisitor;
 namespace dom {
 
 class HTMLFieldSetElement final : public nsGenericHTMLFormElement,
-                                  public nsIDOMHTMLFieldSetElement,
-                                  public nsIConstraintValidation
-{
-public:
+                                  public nsIConstraintValidation {
+ public:
   using nsGenericHTMLFormElement::GetForm;
-  using nsIConstraintValidation::Validity;
-  using nsIConstraintValidation::CheckValidity;
-  using nsIConstraintValidation::ReportValidity;
   using nsIConstraintValidation::GetValidationMessage;
+  using nsIConstraintValidation::SetCustomValidity;
 
-  explicit HTMLFieldSetElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit HTMLFieldSetElement(
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
-  NS_IMPL_FROMCONTENT_HTML_WITH_TAG(HTMLFieldSetElement, fieldset)
+  NS_IMPL_FROMNODE_HTML_WITH_TAG(HTMLFieldSetElement, fieldset)
 
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
 
-  // nsIDOMHTMLFieldSetElement
-  NS_DECL_NSIDOMHTMLFIELDSETELEMENT
-
   // nsIContent
-  virtual nsresult GetEventTargetParent(
-                     EventChainPreVisitor& aVisitor) override;
-  virtual nsresult AfterSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
-                                const nsAttrValue* aValue, bool aNotify) override;
+  void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
+  virtual nsresult AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                                const nsAttrValue* aValue,
+                                const nsAttrValue* aOldValue,
+                                nsIPrincipal* aSubjectPrincipal,
+                                bool aNotify) override;
 
-  virtual nsresult InsertChildAt(nsIContent* aChild, uint32_t aIndex,
+  virtual nsresult InsertChildBefore(nsIContent* aChild,
+                                     nsIContent* aBeforeThis,
                                      bool aNotify) override;
-  virtual void RemoveChildAt(uint32_t aIndex, bool aNotify) override;
+  virtual void RemoveChildNode(nsIContent* aKid, bool aNotify) override;
 
   // nsIFormControl
-  NS_IMETHOD_(uint32_t) GetType() const override { return NS_FORM_FIELDSET; }
   NS_IMETHOD Reset() override;
   NS_IMETHOD SubmitNamesValues(HTMLFormSubmission* aFormSubmission) override;
-  virtual bool IsDisabledForEvents(EventMessage aMessage) override;
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;
+  virtual bool IsDisabledForEvents(WidgetEvent* aEvent) override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   const nsIContent* GetFirstLegend() const { return mFirstLegend; }
 
@@ -66,23 +61,18 @@ public:
                                            nsGenericHTMLFormElement)
 
   // WebIDL
-  bool Disabled() const
-  {
-    return GetBoolAttr(nsGkAtoms::disabled);
-  }
-  void SetDisabled(bool aValue, ErrorResult& aRv)
-  {
+  bool Disabled() const { return GetBoolAttr(nsGkAtoms::disabled); }
+  void SetDisabled(bool aValue, ErrorResult& aRv) {
     SetHTMLBoolAttr(nsGkAtoms::disabled, aValue, aRv);
   }
 
-  // XPCOM GetName is OK for us
+  void GetName(nsAString& aValue) { GetHTMLAttr(nsGkAtoms::name, aValue); }
 
-  void SetName(const nsAString& aValue, ErrorResult& aRv)
-  {
+  void SetName(const nsAString& aValue, ErrorResult& aRv) {
     SetHTMLAttr(nsGkAtoms::name, aValue, aRv);
   }
 
-  // XPCOM GetType is OK for us
+  void GetType(nsAString& aType) const;
 
   nsIHTMLCollection* Elements();
 
@@ -98,11 +88,10 @@ public:
 
   virtual EventStates IntrinsicState() const override;
 
-
   /*
    * This method will update the fieldset's validity.  This method has to be
-   * called by fieldset elements whenever their validity state or status regarding
-   * constraint validation changes.
+   * called by fieldset elements whenever their validity state or status
+   * regarding constraint validation changes.
    *
    * @note If an element becomes barred from constraint validation, it has to
    * be considered as valid.
@@ -111,13 +100,13 @@ public:
    */
   void UpdateValidity(bool aElementValidityState);
 
-protected:
+ protected:
   virtual ~HTMLFieldSetElement();
 
-  virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapNode(JSContext* aCx,
+                             JS::Handle<JSObject*> aGivenProto) override;
 
-private:
-
+ private:
   /**
    * Notify all elements (in mElements) that the first legend of the fieldset
    * has now changed.
@@ -126,7 +115,7 @@ private:
 
   // This function is used to generate the nsContentList (listed form elements).
   static bool MatchListedElements(Element* aElement, int32_t aNamespaceID,
-                                  nsIAtom* aAtom, void* aData);
+                                  nsAtom* aAtom, void* aData);
 
   // listed form controls elements.
   RefPtr<nsContentList> mElements;
@@ -145,7 +134,7 @@ private:
   int32_t mInvalidElementsCount;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif /* mozilla_dom_HTMLFieldSetElement_h */

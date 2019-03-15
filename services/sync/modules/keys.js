@@ -4,16 +4,15 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = [
+var EXPORTED_SYMBOLS = [
   "BulkKeyBundle",
-  "SyncKeyBundle"
 ];
 
-var {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
-
-Cu.import("resource://services-sync/constants.js");
-Cu.import("resource://gre/modules/Log.jsm");
-Cu.import("resource://services-sync/util.js");
+ChromeUtils.import("resource://services-common/utils.js");
+ChromeUtils.import("resource://services-sync/constants.js");
+ChromeUtils.import("resource://gre/modules/Log.jsm");
+ChromeUtils.import("resource://services-sync/main.js");
+ChromeUtils.import("resource://services-sync/util.js");
 
 /**
  * Represents a pair of keys.
@@ -106,9 +105,12 @@ KeyBundle.prototype = {
   /**
    * Populate this key pair with 2 new, randomly generated keys.
    */
-  generateRandom: function generateRandom() {
-    let generatedHMAC = Svc.Crypto.generateRandomKey();
-    let generatedEncr = Svc.Crypto.generateRandomKey();
+  async generateRandom() {
+    // Compute both at that same time
+    let [generatedHMAC, generatedEncr] = await Promise.all([
+      Weave.Crypto.generateRandomKey(),
+      Weave.Crypto.generateRandomKey(),
+    ]);
     this.keyPairB64 = [generatedEncr, generatedHMAC];
   },
 
@@ -119,13 +121,20 @@ KeyBundle.prototype = {
  *
  * This is just a KeyBundle with a collection attached.
  */
-this.BulkKeyBundle = function BulkKeyBundle(collection) {
+function BulkKeyBundle(collection) {
   let log = Log.repository.getLogger("Sync.BulkKeyBundle");
   log.info("BulkKeyBundle being created for " + collection);
   KeyBundle.call(this);
 
   this._collection = collection;
 }
+BulkKeyBundle.fromHexKey = function(hexKey) {
+  let key = CommonUtils.hexToBytes(hexKey);
+  let bundle = new BulkKeyBundle();
+  // [encryptionKey, hmacKey]
+  bundle.keyPair = [key.slice(0, 32), key.slice(32, 64)];
+  return bundle;
+};
 
 BulkKeyBundle.prototype = {
   __proto__: KeyBundle.prototype,
@@ -162,53 +171,7 @@ BulkKeyBundle.prototype = {
                       "keys.");
     }
 
-    this.encryptionKey  = Utils.safeAtoB(value[0]);
-    this.hmacKey        = Utils.safeAtoB(value[1]);
+    this.encryptionKey  = CommonUtils.safeAtoB(value[0]);
+    this.hmacKey        = CommonUtils.safeAtoB(value[1]);
   },
 };
-
-/**
- * Represents a key pair derived from a Sync Key via HKDF.
- *
- * Instances of this type should be considered immutable. You create an
- * instance by specifying the username and 26 character "friendly" Base32
- * encoded Sync Key. The Sync Key is derived at instance creation time.
- *
- * If the username or Sync Key is invalid, an Error will be thrown.
- */
-this.SyncKeyBundle = function SyncKeyBundle(username, syncKey) {
-  let log = Log.repository.getLogger("Sync.SyncKeyBundle");
-  log.info("SyncKeyBundle being created.");
-  KeyBundle.call(this);
-
-  this.generateFromKey(username, syncKey);
-}
-SyncKeyBundle.prototype = {
-  __proto__: KeyBundle.prototype,
-
-  /*
-   * If we've got a string, hash it into keys and store them.
-   */
-  generateFromKey: function generateFromKey(username, syncKey) {
-    if (!username || (typeof username != "string")) {
-      throw new Error("Sync Key cannot be generated from non-string username.");
-    }
-
-    if (!syncKey || (typeof syncKey != "string")) {
-      throw new Error("Sync Key cannot be generated from non-string key.");
-    }
-
-    if (!Utils.isPassphrase(syncKey)) {
-      throw new Error("Provided key is not a passphrase, cannot derive Sync " +
-                      "Key Bundle.");
-    }
-
-    // Expand the base32 Sync Key to an AES 256 and 256 bit HMAC key.
-    let prk = Utils.decodeKeyBase32(syncKey);
-    let info = HMAC_INPUT + username;
-    let okm = Utils.hkdfExpand(prk, info, 32 * 2);
-    this.encryptionKey = okm.slice(0, 32);
-    this.hmacKey = okm.slice(32, 64);
-  },
-};
-

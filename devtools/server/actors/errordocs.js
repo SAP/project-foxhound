@@ -9,9 +9,10 @@
 
 "use strict";
 
-const baseURL = "https://developer.mozilla.org/docs/Web/JavaScript/Reference/Errors/";
+const baseErrorURL = "https://developer.mozilla.org/docs/Web/JavaScript/Reference/Errors/";
 const params =
   "?utm_source=mozilla&utm_medium=firefox-console-errors&utm_campaign=default";
+
 const ErrorDocs = {
   JSMSG_READ_ONLY: "Read-only",
   JSMSG_BAD_ARRAY_LENGTH: "Invalid_array_length",
@@ -39,7 +40,7 @@ const ErrorDocs = {
   JSMSG_NO_PROPERTIES: "No_properties",
   JSMSG_ALREADY_HAS_PRAGMA: "Already_has_pragma",
   JSMSG_BAD_RETURN_OR_YIELD: "Bad_return_or_yield",
-  JSMSG_SEMI_BEFORE_STMNT: "Missing_semicolon_before_statement",
+  JSMSG_UNEXPECTED_TOKEN_NO_EXPECT: "Missing_semicolon_before_statement",
   JSMSG_OVER_RECURSED: "Too_much_recursion",
   JSMSG_BRACKET_AFTER_LIST: "Missing_bracket_after_list",
   JSMSG_PAREN_AFTER_ARGS: "Missing_parenthesis_after_argument_list",
@@ -50,15 +51,54 @@ const ErrorDocs = {
   JSMSG_CURLY_AFTER_LIST: "Missing_curly_after_property_list",
   JSMSG_DEPRECATED_FOR_EACH: "For-each-in_loops_are_deprecated",
   JSMSG_STRICT_NON_SIMPLE_PARAMS: "Strict_Non_Simple_Params",
+  JSMSG_DEAD_OBJECT: "Dead_object",
+  JSMSG_NOT_NONNULL_OBJECT: "No_non-null_object",
+  JSMSG_IDSTART_AFTER_NUMBER: "Identifier_after_number",
+  JSMSG_DEPRECATED_EXPR_CLOSURE: "Deprecated_expression_closures",
+  JSMSG_ILLEGAL_CHARACTER: "Illegal_character",
+  JSMSG_BAD_REGEXP_FLAG: "Bad_regexp_flag",
+  JSMSG_INVALID_FOR_IN_DECL_WITH_INIT: "Invalid_for-in_initializer",
+  JSMSG_CANT_REDEFINE_PROP: "Cant_redefine_property",
+  JSMSG_COLON_AFTER_ID: "Missing_colon_after_property_id",
+  JSMSG_IN_NOT_OBJECT: "in_operator_no_object",
+  JSMSG_CURLY_AFTER_BODY: "Missing_curly_after_function_body",
+  JSMSG_NAME_AFTER_DOT: "Missing_name_after_dot_operator",
+  JSMSG_DEPRECATED_OCTAL: "Deprecated_octal",
+  JSMSG_PAREN_AFTER_COND: "Missing_parenthesis_after_condition",
+  JSMSG_JSON_CYCLIC_VALUE: "Cyclic_object_value",
+  JSMSG_NO_VARIABLE_NAME: "No_variable_name",
+  JSMSG_UNNAMED_FUNCTION_STMT: "Unnamed_function_statement",
+  JSMSG_CANT_DEFINE_PROP_OBJECT_NOT_EXTENSIBLE:
+    "Cant_define_property_object_not_extensible",
+  JSMSG_TYPED_ARRAY_BAD_ARGS: "Typed_array_invalid_arguments",
+  JSMSG_GETTER_ONLY: "Getter_only",
+  JSMSG_INVALID_DATE: "Invalid_date",
+  JSMSG_DEPRECATED_STRING_METHOD: "Deprecated_String_generics",
+  JSMSG_RESERVED_ID: "Reserved_identifier",
+  JSMSG_BAD_CONST_ASSIGN: "Invalid_const_assignment",
+  JSMSG_BAD_CONST_DECL: "Missing_initializer_in_const",
+  JSMSG_OF_AFTER_FOR_LOOP_DECL: "Invalid_for-of_initializer",
+  JSMSG_BAD_URI: "Malformed_URI",
+  JSMSG_DEPRECATED_DELETE_OPERAND: "Delete_in_strict_mode",
+  JSMSG_MISSING_FORMAL: "Missing_formal_parameter",
+  JSMSG_CANT_TRUNCATE_ARRAY: "Non_configurable_array_element",
+  JSMSG_INCOMPATIBLE_PROTO: "Called_on_incompatible_type",
+  JSMSG_INCOMPATIBLE_METHOD: "Called_on_incompatible_type",
+  JSMSG_BAD_INSTANCEOF_RHS: "invalid_right_hand_side_instanceof_operand",
+  JSMSG_EMPTY_ARRAY_REDUCE: "Reduce_of_empty_array_with_no_initial_value",
+  JSMSG_NOT_ITERABLE: "is_not_iterable",
+  JSMSG_PROPERTY_FAIL: "cant_access_property",
+  JSMSG_PROPERTY_FAIL_EXPR: "cant_access_property",
 };
 
 const MIXED_CONTENT_LEARN_MORE = "https://developer.mozilla.org/docs/Web/Security/Mixed_content";
 const TRACKING_PROTECTION_LEARN_MORE = "https://developer.mozilla.org/Firefox/Privacy/Tracking_Protection";
 const INSECURE_PASSWORDS_LEARN_MORE = "https://developer.mozilla.org/docs/Web/Security/Insecure_passwords";
-const PUBLIC_KEY_PINS_LEARN_MORE = "https://developer.mozilla.org/docs/Web/Security/Public_Key_Pinning";
-const STRICT_TRANSPORT_SECURITY_LEARN_MORE = "https://developer.mozilla.org/docs/Web/Security/HTTP_strict_transport_security";
+const PUBLIC_KEY_PINS_LEARN_MORE = "https://developer.mozilla.org/docs/Web/HTTP/Public_Key_Pinning";
+const STRICT_TRANSPORT_SECURITY_LEARN_MORE = "https://developer.mozilla.org/docs/Web/HTTP/Headers/Strict-Transport-Security";
 const WEAK_SIGNATURE_ALGORITHM_LEARN_MORE = "https://developer.mozilla.org/docs/Web/Security/Weak_Signature_Algorithm";
 const MIME_TYPE_MISMATCH_LEARN_MORE = "https://developer.mozilla.org/docs/Web/HTTP/Headers/X-Content-Type-Options";
+const SOURCE_MAP_LEARN_MORE = "https://developer.mozilla.org/en-US/docs/Tools/Debugger/Source_map_errors";
 const ErrorCategories = {
   "Insecure Password Field": INSECURE_PASSWORDS_LEARN_MORE,
   "Mixed Content Message": MIXED_CONTENT_LEARN_MORE,
@@ -68,6 +108,28 @@ const ErrorCategories = {
   "SHA-1 Signature": WEAK_SIGNATURE_ALGORITHM_LEARN_MORE,
   "Tracking Protection": TRACKING_PROTECTION_LEARN_MORE,
   "MIMEMISMATCH": MIME_TYPE_MISMATCH_LEARN_MORE,
+  "source map": SOURCE_MAP_LEARN_MORE,
+};
+
+const baseCorsErrorUrl = "https://developer.mozilla.org/docs/Web/HTTP/CORS/Errors/";
+const corsParams =
+  "?utm_source=devtools&utm_medium=firefox-cors-errors&utm_campaign=default";
+const CorsErrorDocs = {
+  CORSDisabled: "CORSDisabled",
+  CORSDidNotSucceed: "CORSDidNotSucceed",
+  CORSOriginHeaderNotAdded: "CORSOriginHeaderNotAdded",
+  CORSExternalRedirectNotAllowed: "CORSExternalRedirectNotAllowed",
+  CORSRequestNotHttp: "CORSRequestNotHttp",
+  CORSMissingAllowOrigin: "CORSMissingAllowOrigin",
+  CORSMultipleAllowOriginNotAllowed: "CORSMultipleAllowOriginNotAllowed",
+  CORSAllowOriginNotMatchingOrigin: "CORSAllowOriginNotMatchingOrigin",
+  CORSNotSupportingCredentials: "CORSNotSupportingCredentials",
+  CORSMethodNotFound: "CORSMethodNotFound",
+  CORSMissingAllowCredentials: "CORSMissingAllowCredentials",
+  CORSPreflightDidNotSucceed: "CORSPreflightDidNotSucceed",
+  CORSInvalidAllowMethod: "CORSInvalidAllowMethod",
+  CORSInvalidAllowHeader: "CORSInvalidAllowHeader",
+  CORSMissingAllowHeaderFromPreflight: "CORSMissingAllowHeaderFromPreflight",
 };
 
 exports.GetURL = (error) => {
@@ -75,12 +137,17 @@ exports.GetURL = (error) => {
     return undefined;
   }
 
-  let doc = ErrorDocs[error.errorMessageName];
+  const doc = ErrorDocs[error.errorMessageName];
   if (doc) {
-    return baseURL + doc + params;
+    return baseErrorURL + doc + params;
   }
 
-  let categoryURL = ErrorCategories[error.category];
+  const corsDoc = CorsErrorDocs[error.category];
+  if (corsDoc) {
+    return baseCorsErrorUrl + corsDoc + corsParams;
+  }
+
+  const categoryURL = ErrorCategories[error.category];
   if (categoryURL) {
     return categoryURL + params;
   }

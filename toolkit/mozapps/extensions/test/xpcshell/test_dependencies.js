@@ -6,80 +6,73 @@ const profileDir = gProfD.clone();
 profileDir.append("extensions");
 
 createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "1");
-startupManager();
-
-const BOOTSTRAP = String.raw`
-  Components.utils.import("resource://gre/modules/Services.jsm");
-
-  function startup(data) {
-    Services.obs.notifyObservers(null, "test-addon-bootstrap-startup", data.id);
-  }
-  function shutdown(data) {
-    Services.obs.notifyObservers(null, "test-addon-bootstrap-shutdown", data.id);
-  }
-  function install() {}
-  function uninstall() {}
-`;
 
 const ADDONS = [
   {
-    id: "addon1@dependency-test.mozilla.org",
-    dependencies: ["addon2@dependency-test.mozilla.org"],
+    id: "addon1@experiments.addons.mozilla.org",
+    dependencies: ["experiments.addon2"],
   },
   {
-    id: "addon2@dependency-test.mozilla.org",
-    dependencies: ["addon3@dependency-test.mozilla.org"],
+    id: "addon2@experiments.addons.mozilla.org",
+    dependencies: ["experiments.addon3"],
   },
   {
-    id: "addon3@dependency-test.mozilla.org",
+    id: "addon3@experiments.addons.mozilla.org",
   },
   {
-    id: "addon4@dependency-test.mozilla.org",
+    id: "addon4@experiments.addons.mozilla.org",
   },
   {
-    id: "addon5@dependency-test.mozilla.org",
-    dependencies: ["addon2@dependency-test.mozilla.org"],
+    id: "addon5@experiments.addons.mozilla.org",
+    dependencies: ["experiments.addon2"],
   },
 ];
 
 let addonFiles = [];
 
 let events = [];
-add_task(function* setup() {
-  let startupObserver = (subject, topic, data) => {
-    events.push(["startup", data]);
-  };
-  let shutdownObserver = (subject, topic, data) => {
-    events.push(["shutdown", data]);
+
+function promiseAddonStartup(id) {
+  return new Promise(resolve => {
+    const onBootstrapMethod = (event, {method, params}) => {
+      if (method == "startup" && params.id == id) {
+        AddonTestUtils.off("bootstrap-method", onBootstrapMethod);
+        resolve();
+      }
+    };
+
+    AddonTestUtils.on("bootstrap-method", onBootstrapMethod);
+  });
+}
+
+add_task(async function setup() {
+  await promiseStartupManager();
+
+  const onBootstrapMethod = (event, {method, params}) => {
+    if (method == "startup" || method == "shutdown") {
+      events.push([method, params.id]);
+    }
   };
 
-  Services.obs.addObserver(startupObserver, "test-addon-bootstrap-startup", false);
-  Services.obs.addObserver(shutdownObserver, "test-addon-bootstrap-shutdown", false);
-  do_register_cleanup(() => {
-    Services.obs.removeObserver(startupObserver, "test-addon-bootstrap-startup");
-    Services.obs.removeObserver(shutdownObserver, "test-addon-bootstrap-shutdown");
+  AddonTestUtils.on("bootstrap-method", onBootstrapMethod);
+  registerCleanupFunction(() => {
+    AddonTestUtils.off("bootstrap-method", onBootstrapMethod);
   });
 
   for (let addon of ADDONS) {
-    Object.assign(addon, {
-      targetApplications: [{
-        id: "xpcshell@tests.mozilla.org",
-        minVersion: "1",
-        maxVersion: "1",
-      }],
-      version: "1.0",
-      name: addon.id,
-      bootstrap: true,
-    });
+    let manifest = {
+      applications: {gecko: {id: addon.id}},
+      permissions: addon.dependencies,
+    };
 
-    addonFiles.push(createTempXPIFile(addon, {"bootstrap.js": BOOTSTRAP}));
+    addonFiles.push(await createTempWebExtensionFile({manifest}));
   }
 });
 
-add_task(function*() {
+add_task(async function() {
   deepEqual(events, [], "Should have no events");
 
-  yield promiseInstallAllFiles([addonFiles[3]]);
+  await promiseInstallFile(addonFiles[3]);
 
   deepEqual(events, [
     ["startup", ADDONS[3].id],
@@ -87,13 +80,16 @@ add_task(function*() {
 
   events.length = 0;
 
-  yield promiseInstallAllFiles([addonFiles[0]]);
+  await promiseInstallFile(addonFiles[0]);
   deepEqual(events, [], "Should have no events");
 
-  yield promiseInstallAllFiles([addonFiles[1]]);
+  await promiseInstallFile(addonFiles[1]);
   deepEqual(events, [], "Should have no events");
 
-  yield promiseInstallAllFiles([addonFiles[2]]);
+  await Promise.all([
+    promiseInstallFile(addonFiles[2]),
+    promiseAddonStartup(ADDONS[0].id),
+  ]);
 
   deepEqual(events, [
     ["startup", ADDONS[2].id],
@@ -103,7 +99,10 @@ add_task(function*() {
 
   events.length = 0;
 
-  yield promiseInstallAllFiles([addonFiles[2]]);
+  await Promise.all([
+    promiseInstallFile(addonFiles[2]),
+    promiseAddonStartup(ADDONS[0].id),
+  ]);
 
   deepEqual(events, [
     ["shutdown", ADDONS[0].id],
@@ -117,7 +116,7 @@ add_task(function*() {
 
   events.length = 0;
 
-  yield promiseInstallAllFiles([addonFiles[4]]);
+  await promiseInstallFile(addonFiles[4]);
 
   deepEqual(events, [
     ["startup", ADDONS[4].id],
@@ -125,7 +124,7 @@ add_task(function*() {
 
   events.length = 0;
 
-  yield promiseRestartManager();
+  await promiseRestartManager();
 
   deepEqual(events, [
     ["shutdown", ADDONS[4].id],
@@ -140,5 +139,7 @@ add_task(function*() {
     ["startup", ADDONS[3].id],
     ["startup", ADDONS[4].id],
   ]);
+
+  await promiseShutdownManager();
 });
 

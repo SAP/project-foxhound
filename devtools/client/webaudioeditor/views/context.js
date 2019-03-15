@@ -5,14 +5,14 @@
 
 /* import-globals-from ../includes.js */
 
-const { debounce } = require("sdk/lang/functional");
+const { debounce } = require("devtools/shared/debounce");
 const flags = require("devtools/shared/flags");
 
 // Globals for d3 stuff
 // Default properties of the graph on rerender
 const GRAPH_DEFAULTS = {
   translate: [20, 20],
-  scale: 1
+  scale: 1,
 };
 
 // Sizes of SVG arrows in graph
@@ -22,12 +22,12 @@ const ARROW_WIDTH = 8;
 // Styles for markers as they cannot be done with CSS.
 const MARKER_STYLING = {
   light: "#AAA",
-  dark: "#CED3D9"
+  dark: "#CED3D9",
 };
 Object.defineProperty(this, "MARKER_STYLING", {
   value: MARKER_STYLING,
   enumerable: true,
-  writable: false
+  writable: false,
 });
 
 const GRAPH_DEBOUNCE_TIMER = 100;
@@ -43,7 +43,7 @@ var ContextView = {
   /**
    * Initialization function, called when the tool is started.
    */
-  initialize: function () {
+  initialize: function() {
     this._onGraphClick = this._onGraphClick.bind(this);
     this._onThemeChange = this._onThemeChange.bind(this);
     this._onStartContext = this._onStartContext.bind(this);
@@ -60,7 +60,7 @@ var ContextView = {
   /**
    * Destruction function, called when the tool is closed.
    */
-  destroy: function () {
+  destroy: function() {
     // If the graph was rendered at all, then the handler
     // for zooming in will be set. We must remove it to prevent leaks.
     if (this._zoomBinding) {
@@ -77,7 +77,7 @@ var ContextView = {
    * Called when a page is reloaded and waiting for a "start-context" event
    * and clears out old content
    */
-  resetUI: function () {
+  resetUI: function() {
     this.clearGraph();
     this.resetGraphTransform();
   },
@@ -86,17 +86,17 @@ var ContextView = {
    * Clears out the rendered graph, called when resetting the SVG elements to draw again,
    * or when resetting the entire UI tool
    */
-  clearGraph: function () {
+  clearGraph: function() {
     $("#graph-target").innerHTML = "";
   },
 
   /**
    * Moves the graph back to its original scale and translation.
    */
-  resetGraphTransform: function () {
+  resetGraphTransform: function() {
     // Only reset if the graph was ever drawn.
     if (this._zoomBinding) {
-      let { translate, scale } = GRAPH_DEFAULTS;
+      const { translate, scale } = GRAPH_DEFAULTS;
       // Must set the `zoomBinding` so the next `zoom` event is in sync with
       // where the graph is visually (set by the `transform` attribute).
       this._zoomBinding.scale(scale);
@@ -106,11 +106,11 @@ var ContextView = {
     }
   },
 
-  getCurrentScale: function () {
+  getCurrentScale: function() {
     return this._zoomBinding ? this._zoomBinding.scale() : null;
   },
 
-  getCurrentTranslation: function () {
+  getCurrentTranslation: function() {
     return this._zoomBinding ? this._zoomBinding.translate() : null;
   },
 
@@ -119,7 +119,7 @@ var ContextView = {
    * focused styles from all other nodes. If no `actorID` specified,
    * make all nodes appear unselected.
    */
-  focusNode: function (actorID) {
+  focusNode: function(actorID) {
     // Remove class "selected" from all nodes
     Array.forEach($$(".nodes > g"), $node => $node.classList.remove("selected"));
     // Add to "selected"
@@ -131,7 +131,7 @@ var ContextView = {
   /**
    * Takes an actorID and returns the corresponding DOM SVG element in the graph
    */
-  _getNodeByID: function (actorID) {
+  _getNodeByID: function(actorID) {
     return $(".nodes > g[data-id='" + actorID + "']");
   },
 
@@ -139,8 +139,8 @@ var ContextView = {
    * Sets the appropriate class on an SVG node when its bypass
    * status is toggled.
    */
-  _bypassNode: function (node, enabled) {
-    let el = this._getNodeByID(node.id);
+  _bypassNode: function(node, enabled) {
+    const el = this._getNodeByID(node.id);
     el.classList[enabled ? "add" : "remove"]("bypassed");
   },
 
@@ -149,21 +149,21 @@ var ContextView = {
    * throttled to be called at most every `GRAPH_DEBOUNCE_TIMER` milliseconds.
    * It's called whenever the audio context routing changes, after being debounced.
    */
-  draw: function () {
+  draw: function() {
     // Clear out previous SVG information
     this.clearGraph();
 
-    let graph = new dagreD3.Digraph();
-    let renderer = new dagreD3.Renderer();
+    const graph = new dagreD3.Digraph();
+    const renderer = new dagreD3.Renderer();
     gAudioNodes.populateGraph(graph);
 
     // Post-render manipulation of the nodes
-    let oldDrawNodes = renderer.drawNodes();
-    renderer.drawNodes(function (graph, root) {
-      let svgNodes = oldDrawNodes(graph, root);
-      svgNodes.each(function (n) {
-        let node = graph.node(n);
-        let classString = "audionode type-" + node.type + (node.bypassed ? " bypassed" : "");
+    const oldDrawNodes = renderer.drawNodes();
+    renderer.drawNodes(function(graph, root) {
+      const svgNodes = oldDrawNodes(graph, root);
+      svgNodes.each(function(n) {
+        const node = graph.node(n);
+        const classString = "audionode type-" + node.type + (node.bypassed ? " bypassed" : "");
         this.setAttribute("class", classString);
         this.setAttribute("data-id", node.id);
         this.setAttribute("data-type", node.type);
@@ -172,17 +172,17 @@ var ContextView = {
     });
 
     // Post-render manipulation of edges
-    let oldDrawEdgePaths = renderer.drawEdgePaths();
-    let defaultClasses = "edgePath enter";
+    const oldDrawEdgePaths = renderer.drawEdgePaths();
+    const defaultClasses = "edgePath enter";
 
-    renderer.drawEdgePaths(function (graph, root) {
-      let svgEdges = oldDrawEdgePaths(graph, root);
-      svgEdges.each(function (e) {
-        let edge = graph.edge(e);
+    renderer.drawEdgePaths(function(graph, root) {
+      const svgEdges = oldDrawEdgePaths(graph, root);
+      svgEdges.each(function(e) {
+        const edge = graph.edge(e);
 
         // We have to manually specify the default classes on the edges
         // as to not overwrite them
-        let edgeClass = defaultClasses + (edge.param ? (" param-connection " + edge.param) : "");
+        const edgeClass = defaultClasses + (edge.param ? (" param-connection " + edge.param) : "");
 
         this.setAttribute("data-source", edge.source);
         this.setAttribute("data-target", edge.target);
@@ -202,8 +202,8 @@ var ContextView = {
       // For now, manually set it on creation, and the `_onThemeChange`
       // function will fire when the devtools theme changes to update the
       // styling manually.
-      let theme = Services.prefs.getCharPref("devtools.theme");
-      let markerColor = MARKER_STYLING[theme];
+      const theme = Services.prefs.getCharPref("devtools.theme");
+      const markerColor = MARKER_STYLING[theme];
       if (graph.isDirected() && root.select("#arrowhead").empty()) {
         root
           .append("svg:defs")
@@ -212,7 +212,7 @@ var ContextView = {
           .attr("viewBox", "0 0 10 10")
           .attr("refX", ARROW_WIDTH)
           .attr("refY", ARROW_HEIGHT)
-          .attr("markerUnits", "strokewidth")
+          .attr("markerUnits", "strokeWidth")
           .attr("markerWidth", ARROW_WIDTH)
           .attr("markerHeight", ARROW_HEIGHT)
           .attr("orient", "auto")
@@ -222,7 +222,7 @@ var ContextView = {
       }
 
       // Reselect the previously selected audio node
-      let currentNode = InspectorView.getCurrentAudioNode();
+      const currentNode = InspectorView.getCurrentAudioNode();
       if (currentNode) {
         this.focusNode(currentNode.id);
       }
@@ -236,13 +236,13 @@ var ContextView = {
       window.emit(EVENTS.UI_GRAPH_RENDERED, info.nodes, info.edges, info.paramEdges);
     });
 
-    let layout = dagreD3.layout().rankDir("LR");
+    const layout = dagreD3.layout().rankDir("LR");
     renderer.layout(layout).run(graph, d3.select("#graph-target"));
 
     // Handle the sliding and zooming of the graph,
     // store as `this._zoomBinding` so we can unbind during destruction
     if (!this._zoomBinding) {
-      this._zoomBinding = d3.behavior.zoom().on("zoom", function () {
+      this._zoomBinding = d3.behavior.zoom().on("zoom", function() {
         var ev = d3.event;
         d3.select("#graph-target")
           .attr("transform", "translate(" + ev.translate + ") scale(" + ev.scale + ")");
@@ -263,7 +263,7 @@ var ContextView = {
    * Called once "start-context" is fired, indicating that there is an audio
    * context being created to view so render the graph.
    */
-  _onStartContext: function () {
+  _onStartContext: function() {
     this.draw();
   },
 
@@ -271,7 +271,7 @@ var ContextView = {
    * Called when `gAudioNodes` fires an event -- most events (listed
    * in GRAPH_REDRAW_EVENTS) qualify as a redraw event.
    */
-  _onEvent: function (eventName, ...args) {
+  _onEvent: function(eventName, ...args) {
     // If bypassing, just toggle the class on the SVG node
     // rather than rerendering everything
     if (eventName === "bypass") {
@@ -285,9 +285,9 @@ var ContextView = {
   /**
    * Fired when the devtools theme changes.
    */
-  _onThemeChange: function (eventName, theme) {
-    let markerColor = MARKER_STYLING[theme];
-    let marker = $("#arrowhead");
+  _onThemeChange: function(theme) {
+    const markerColor = MARKER_STYLING[theme];
+    const marker = $("#arrowhead");
     if (marker) {
       marker.setAttribute("style", "fill: " + markerColor);
     }
@@ -299,16 +299,17 @@ var ContextView = {
    * @param Event e
    *        Click event.
    */
-  _onGraphClick: function (e) {
-    let node = findGraphNodeParent(e.target);
+  _onGraphClick: function(e) {
+    const node = findGraphNodeParent(e.target);
     // If node not found (clicking outside of an audio node in the graph),
     // then ignore this event
-    if (!node)
+    if (!node) {
       return;
+    }
 
-    let id = node.getAttribute("data-id");
+    const id = node.getAttribute("data-id");
 
     this.focusNode(id);
     window.emit(EVENTS.UI_SELECT_NODE, id);
-  }
+  },
 };

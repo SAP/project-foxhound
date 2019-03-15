@@ -7,7 +7,13 @@ console.assert(false, "Failing mozscreenshots assertion");
 
 console.group("Grouped Message");
 console.log("group message 1");
-console.groupEnd("Grouped Message");
+console.groupEnd();
 
 console.count("counter");
 console.count("counter");
+
+console.log("first", {a: 1}, "second", {b: "hello"}, "third", {c: new Map()});
+console.log("first", {a: 1}, "second", {b: "hello"});
+console.log("first", {a: 1}, "\nsecond", {b: "hello"});
+console.log("first", "\nsecond");
+console.log("\nfirst", "second");

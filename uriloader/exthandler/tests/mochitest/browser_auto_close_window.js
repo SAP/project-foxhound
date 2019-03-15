@@ -1,10 +1,10 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const URL =
-  getRootDirectory(gTestPath).replace("chrome://mochitests/content",
-                                      "https://example.com") +
-    "download_page.html";
+const ROOT = getRootDirectory(gTestPath).replace("chrome://mochitests/content",
+                                                 "https://example.com");
+const PAGE_URL = ROOT + "download_page.html";
+const SJS_URL = ROOT + "download.sjs";
 
 const HELPERAPP_DIALOG_CONTRACT_ID = "@mozilla.org/helperapplauncherdialog;1";
 const HELPERAPP_DIALOG_CID =
@@ -25,7 +25,7 @@ HelperAppLauncherDialog.prototype = {
     curDialogResolve(aWindowContext);
     executeSoon(() => { aLauncher.cancel(Cr.NS_ERROR_ABORT); });
   },
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIHelperAppLauncherDialog])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIHelperAppLauncherDialog])
 };
 
 function promiseHelperAppDialog() {
@@ -47,33 +47,39 @@ add_task(async function setup() {
 add_task(async function simple_navigation() {
   // Tests that simple navigation gives us the right windowContext (that is,
   // the window that we're using).
-  await BrowserTestUtils.withNewTab({ gBrowser, url: URL }, function* (browser) {
+  await BrowserTestUtils.withNewTab({ gBrowser, url: PAGE_URL }, async function(browser) {
     let dialogAppeared = promiseHelperAppDialog();
-    yield BrowserTestUtils.synthesizeMouseAtCenter("#regular_load", {}, browser);
-    let windowContext = yield dialogAppeared;
+    await BrowserTestUtils.synthesizeMouseAtCenter("#regular_load", {}, browser);
+    let windowContext = await dialogAppeared;
 
-    is(windowContext.gBrowser.selectedBrowser.currentURI.spec, URL,
-       "got the right windowContext");
+    is(windowContext, browser.ownerGlobal, "got the right windowContext");
   });
 });
+
+// Given a browser pointing to download_page.html, clicks on the link that
+// opens with target="_blank" (i.e. a new tab) and ensures that we
+// automatically open and close that tab.
+async function testNewTab(browser) {
+  let targetURL = browser.currentURI.spec;
+  let dialogAppeared = promiseHelperAppDialog();
+  let tabOpened = BrowserTestUtils.waitForEvent(gBrowser.tabContainer, "TabOpen").then((event) => {
+    return [ event.target, BrowserTestUtils.waitForTabClosing(event.target) ];
+  });
+
+  await BrowserTestUtils.synthesizeMouseAtCenter("#target_blank", {}, browser);
+
+  let windowContext = await dialogAppeared;
+  is(windowContext, browser.ownerGlobal, "got the right windowContext");
+  let [ tab, closingPromise ] = await tabOpened;
+  await closingPromise;
+  is(tab.linkedBrowser, null, "tab was opened and closed");
+}
 
 add_task(async function target_blank() {
   // Tests that a link with target=_blank opens a new tab and closes it,
   // returning the window that we're using for navigation.
-  await BrowserTestUtils.withNewTab({ gBrowser, url: URL }, function* (browser) {
-    let dialogAppeared = promiseHelperAppDialog();
-    let tabOpened = BrowserTestUtils.waitForEvent(gBrowser.tabContainer, "TabOpen").then((event) => {
-      return [ event.target, BrowserTestUtils.tabRemoved(event.target) ];
-    });
-
-    yield BrowserTestUtils.synthesizeMouseAtCenter("#target_blank", {}, browser);
-
-    let windowContext = yield dialogAppeared;
-    is(windowContext.gBrowser.selectedBrowser.currentURI.spec, URL,
-       "got the right windowContext");
-    let [ tab, closed ] = yield tabOpened;
-    yield closed;
-    is(tab.linkedBrowser, null, "tab was opened and closed");
+  await BrowserTestUtils.withNewTab({ gBrowser, url: PAGE_URL }, async function(browser) {
+    await testNewTab(browser);
   });
 });
 
@@ -82,20 +88,42 @@ add_task(async function new_window() {
   // width and a height in window.open) opens a new window for the load,
   // realizes that we need to close that window and returns the *original*
   // window as the window context.
-  await BrowserTestUtils.withNewTab({ gBrowser, url: URL }, function* (browser) {
+  await BrowserTestUtils.withNewTab({ gBrowser, url: PAGE_URL }, async function(browser) {
     let dialogAppeared = promiseHelperAppDialog();
-    let windowOpened = BrowserTestUtils.waitForNewWindow(false);
+    let windowOpened = BrowserTestUtils.waitForNewWindow();
 
-    yield BrowserTestUtils.synthesizeMouseAtCenter("#new_window", {}, browser);
+    await BrowserTestUtils.synthesizeMouseAtCenter("#new_window", {}, browser);
+    let win = await windowOpened;
+    // Now allow request to complete:
+    fetch(SJS_URL + "?finish");
 
-    let windowContext = yield dialogAppeared;
-    is(windowContext.gBrowser.selectedBrowser.currentURI.spec, URL,
-       "got the right windowContext");
-    let win = yield windowOpened;
+
+    let windowContext = await dialogAppeared;
+    is(windowContext, browser.ownerGlobal, "got the right windowContext");
 
     // The window should close on its own. If not, this test will time out.
-    yield BrowserTestUtils.domWindowClosed(win);
+    await BrowserTestUtils.domWindowClosed(win);
     ok(win.closed, "window was opened and closed");
+  });
+});
+
+add_task(async function nested_window_opens() {
+  // Tests that the window auto-closing feature works if the download is
+  // initiated by a window that, itself, has an opener (see bug 1373109).
+  await BrowserTestUtils.withNewTab({ gBrowser, url: PAGE_URL }, async function(outerBrowser) {
+    let secondTabPromise = BrowserTestUtils.waitForNewTab(gBrowser, `${PAGE_URL}?newwin`, true);
+    BrowserTestUtils.synthesizeMouseAtCenter("#open_in_new_tab", {}, outerBrowser);
+    let secondTab = await secondTabPromise;
+    let nestedBrowser = secondTab.linkedBrowser;
+
+    await ContentTask.spawn(nestedBrowser, null, function() {
+      ok(content.opener, "this window has an opener");
+    });
+
+    await testNewTab(nestedBrowser);
+
+    isnot(secondTab.linkedBrowser, null, "the page that triggered the download is still open");
+    BrowserTestUtils.removeTab(secondTab);
   });
 });
 

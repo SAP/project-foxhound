@@ -5,6 +5,10 @@
 
 #include "nsISupports.idl"
 
+%{C++
+#include "nsLiteralString.h"
+%}
+
 interface nsIObserver;
 
 /**
@@ -23,7 +27,7 @@ interface nsIObserver;
  * @see nsIPrefService
  */
 
-[scriptable, uuid(55d25e49-793f-4727-a69f-de8b15f4b985)]
+[scriptable, builtinclass, uuid(55d25e49-793f-4727-a69f-de8b15f4b985)]
 interface nsIPrefBranch : nsISupports
 {
 
@@ -41,7 +45,7 @@ interface nsIPrefBranch : nsISupports
    * Called to get the root on which this branch is based, such as
    * "browser.startup."
    */
-  readonly attribute string root;
+  readonly attribute ACString root;
 
   /**
    * Called to determine the type of a specific preference.
@@ -99,22 +103,23 @@ interface nsIPrefBranch : nsISupports
   float getFloatPrefXPCOM(in string aPrefName);
 
   /**
-   * Called to get the state of an individual string preference.
+   * Called to get the state of an individual ascii string preference.
    *
    * @param aPrefName The string preference to retrieve.
    * @param aDefaultValue The string to return if the preference is not set.
    *
-   * @return string   The value of the requested string preference.
+   * @return ACString   The value of the requested string preference.
    *
    * @see setCharPref
    */
   [optional_argc,binaryname(GetCharPrefWithDefault)]
-  string getCharPref(in string aPrefName, [optional] in string aDefaultValue);
+  ACString getCharPref(in string aPrefName,
+                       [optional] in ACString aDefaultValue);
   [noscript,binaryname(GetCharPref)]
-  string getCharPrefXPCOM(in string aPrefName);
+  ACString getCharPrefXPCOM(in string aPrefName);
 
   /**
-   * Called to set the state of an individual string preference.
+   * Called to set the state of an individual ascii string preference.
    *
    * @param aPrefName The string preference to set.
    * @param aValue    The string value to set the preference to.
@@ -124,7 +129,34 @@ interface nsIPrefBranch : nsISupports
    *
    * @see getCharPref
    */
-  void setCharPref(in string aPrefName, in string aValue);
+  void setCharPref(in string aPrefName, in ACString aValue);
+
+  /**
+   * Called to get the state of an individual unicode string preference.
+   *
+   * @param aPrefName The string preference to retrieve.
+   * @param aDefaultValue The string to return if the preference is not set.
+   *
+   * @return AUTF8String   The value of the requested string preference.
+   *
+   * @see setStringPref
+   */
+  [optional_argc]
+  AUTF8String getStringPref(in string aPrefName,
+                            [optional] in AUTF8String aDefaultValue);
+
+  /**
+   * Called to set the state of an individual unicode string preference.
+   *
+   * @param aPrefName The string preference to set.
+   * @param aValue    The string value to set the preference to.
+   *
+   * @throws Error if setting failed or the preference has a default
+             value of a type other than string.
+   *
+   * @see getStringPref
+   */
+  void setStringPref(in string aPrefName, in AUTF8String aValue);
 
   /**
    * Called to get the state of an individual integer preference.
@@ -163,7 +195,6 @@ interface nsIPrefBranch : nsISupports
    * @param aType     The XPCOM interface that this complex preference
    *                  represents. Interfaces currently supported are:
    *                    - nsIFile
-   *                    - nsISupportsString (UniChar)
    *                    - nsIPrefLocalizedString (Localized UniChar)
    * @param aValue    The XPCOM object into which to the complex preference 
    *                  value should be retrieved.
@@ -185,6 +216,7 @@ interface nsIPrefBranch : nsISupports
    *                  represents. Interfaces currently supported are:
    *                    - nsIFile
    *                    - nsISupportsString (UniChar)
+   *                      (deprecated; see setStringPref)
    *                    - nsIPrefLocalizedString (Localized UniChar)
    * @param aValue    The XPCOM object from which to set the complex preference 
    *                  value.
@@ -393,8 +425,9 @@ interface nsIPrefBranch : nsISupports
    * @see nsIObserver
    * @see removeObserver
    */
-  void addObserver(in string aDomain, in nsIObserver aObserver,
-                   in boolean aHoldWeak);
+  [binaryname(AddObserverImpl)]
+  void addObserver(in ACString aDomain, in nsIObserver aObserver,
+                   [optional] in boolean aHoldWeak);
 
   /**
    * Remove a preference change observer.
@@ -410,7 +443,34 @@ interface nsIPrefBranch : nsISupports
    * @see nsIObserver
    * @see addObserver
    */
-  void removeObserver(in string aDomain, in nsIObserver aObserver);
+  [binaryname(RemoveObserverImpl)]
+  void removeObserver(in ACString aDomain, in nsIObserver aObserver);
+
+  %{C++
+  nsresult AddObserver(const nsACString& aDomain, nsIObserver* aObserver,
+                       bool aHoldWeak = false)
+  {
+    return AddObserverImpl(aDomain, aObserver, aHoldWeak);
+  }
+
+  template <int N>
+  nsresult AddObserver(const char (&aDomain)[N], nsIObserver* aObserver,
+                       bool aHoldWeak = false)
+  {
+    return AddObserverImpl(nsLiteralCString(aDomain), aObserver, aHoldWeak);
+  }
+
+  nsresult RemoveObserver(const nsACString& aDomain, nsIObserver* aObserver)
+  {
+    return RemoveObserverImpl(aDomain, aObserver);
+  }
+
+  template <int N>
+  nsresult RemoveObserver(const char (&aDomain)[N], nsIObserver* aObserver)
+  {
+    return RemoveObserverImpl(nsLiteralCString(aDomain), aObserver);
+  }
+  %}
 };
 
 

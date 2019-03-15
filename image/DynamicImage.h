@@ -18,22 +18,21 @@ namespace image {
  * a gfxDrawable. It's anticipated that most uses of DynamicImage will be
  * ephemeral.
  */
-class DynamicImage : public Image
-{
-public:
+class DynamicImage : public Image {
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_IMGICONTAINER
 
-  explicit DynamicImage(gfxDrawable* aDrawable)
-    : mDrawable(aDrawable)
-  {
+  explicit DynamicImage(gfxDrawable* aDrawable) : mDrawable(aDrawable) {
     MOZ_ASSERT(aDrawable, "Must have a gfxDrawable to wrap");
   }
 
   // Inherited methods from Image.
+  nsresult GetNativeSizes(nsTArray<gfx::IntSize>& aNativeSizes) const override;
+  size_t GetNativeSizesLength() const override;
   virtual already_AddRefed<ProgressTracker> GetProgressTracker() override;
   virtual size_t SizeOfSourceWithComputedFallback(
-                                 MallocSizeOf aMallocSizeOf) const override;
+      SizeOfState& aState) const override;
   virtual void CollectSizeOfSurfaces(nsTArray<SurfaceMemoryCounter>& aCounters,
                                      MallocSizeOf aMallocSizeOf) const override;
 
@@ -49,11 +48,10 @@ public:
                                         uint64_t aSourceOffset,
                                         uint32_t aCount) override;
   virtual nsresult OnImageDataComplete(nsIRequest* aRequest,
-                                       nsISupports* aContext,
-                                       nsresult aStatus,
+                                       nsISupports* aContext, nsresult aStatus,
                                        bool aLastPart) override;
 
-  virtual void OnSurfaceDiscarded() override;
+  virtual void OnSurfaceDiscarded(const SurfaceKey& aSurfaceKey) override;
 
   virtual void SetInnerWindowID(uint64_t aInnerWindowId) override;
   virtual uint64_t InnerWindowID() const override;
@@ -61,15 +59,15 @@ public:
   virtual bool HasError() override;
   virtual void SetHasError() override;
 
-  virtual ImageURL* GetURI() override;
+  nsIURI* GetURI() const override;
 
-private:
-  virtual ~DynamicImage() { }
+ private:
+  virtual ~DynamicImage() {}
 
   RefPtr<gfxDrawable> mDrawable;
 };
 
-} // namespace image
-} // namespace mozilla
+}  // namespace image
+}  // namespace mozilla
 
-#endif // mozilla_image_DynamicImage_h
+#endif  // mozilla_image_DynamicImage_h

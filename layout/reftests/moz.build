@@ -56,21 +56,21 @@ TEST_HARNESS_FILES.testing.mochitest.tests.fonts += [
 REFTEST_MANIFESTS += ['reftest.list']
 
 with Files('abs-pos/**'):
-    BUG_COMPONENT = ('Core', 'Layout: R & A Pos')
+    BUG_COMPONENT = ('Core', 'Layout: Positioned')
 with Files('async-scrolling/**'):
     BUG_COMPONENT = ('Core', 'Layout')
 with Files('backgrounds/**'):
     BUG_COMPONENT = ('Core', 'Layout')
 with Files('bidi/**'):
-    BUG_COMPONENT = ('Core', 'Layout: Text')
+    BUG_COMPONENT = ('Core', 'Layout: Text and Fonts')
 with Files('border-image/**'):
     BUG_COMPONENT = ('Core', 'Layout')
 with Files('border-radius/**'):
     BUG_COMPONENT = ('Core', 'Layout')
 with Files('box/**'):
-    BUG_COMPONENT = ('Core', 'XP Toolkit/Widgets: XUL')
+    BUG_COMPONENT = ('Core', 'XUL')
 with Files('box-ordinal/**'):
-    BUG_COMPONENT = ('Core', 'XP Toolkit/Widgets: XUL')
+    BUG_COMPONENT = ('Core', 'XUL')
 with Files('box-properties/**'):
     BUG_COMPONENT = ('Core', 'Layout')
 with Files('box-shadow/**'):
@@ -80,7 +80,7 @@ with Files('box-sizing/**'):
 with Files('bugs/**'):
     BUG_COMPONENT = ('Core', 'Layout')
 with Files('canvas/**'):
-    BUG_COMPONENT = ('Core', 'Layout: Images')
+    BUG_COMPONENT = ('Core', 'Layout: Images, Video, and HTML Frames')
 with Files('columns/**'):
     BUG_COMPONENT = ('Core', 'Layout: Block and Inline')
 with Files('counter-style/**'):
@@ -88,7 +88,7 @@ with Files('counter-style/**'):
 with Files('counters/**'):
     BUG_COMPONENT = ('Core', 'Layout')
 with Files('css-animations/**'):
-    BUG_COMPONENT = ('Core', 'CSS Parsing and Computation')
+    BUG_COMPONENT = ('Core', 'CSS Transitions and Animations')
 with Files('css-blending/**'):
     BUG_COMPONENT = ('Core', 'Layout')
 with Files('css-break/**'):
@@ -130,7 +130,7 @@ with Files('css-selectors/**'):
 with Files('css-submit-invalid/**'):
     BUG_COMPONENT = ('Core', 'Layout: Form Controls')
 with Files('css-transitions/**'):
-    BUG_COMPONENT = ('Core', 'CSS Parsing and Computation')
+    BUG_COMPONENT = ('Core', 'CSS Transitions and Animations')
 with Files('css-ui-invalid/**'):
     BUG_COMPONENT = ('Core', 'Layout: Form Controls')
 with Files('css-ui-valid/**'):
@@ -162,15 +162,15 @@ with Files('floats/**'):
 with Files('font-face/**'):
     BUG_COMPONENT = ('Core', 'CSS Parsing and Computation')
 with Files('font-features/**'):
-    BUG_COMPONENT = ('Core', 'Layout: Text')
+    BUG_COMPONENT = ('Core', 'Layout: Text and Fonts')
 with Files('font-inflation/**'):
-    BUG_COMPONENT = ('Core', 'Layout: Text')
+    BUG_COMPONENT = ('Core', 'Layout: Text and Fonts')
 with Files('font-loading-api/**'):
     BUG_COMPONENT = ('Core', 'CSS Parsing and Computation')
 with Files('font-matching/**'):
-    BUG_COMPONENT = ('Core', 'Layout: Text')
+    BUG_COMPONENT = ('Core', 'Layout: Text and Fonts')
 with Files('fonts/**'):
-    BUG_COMPONENT = ('Core', 'Layout: Text')
+    BUG_COMPONENT = ('Core', 'Layout: Text and Fonts')
 with Files('forms/**'):
     BUG_COMPONENT = ('Core', 'Layout: Form Controls')
 with Files('generated-content/**'):
@@ -178,15 +178,15 @@ with Files('generated-content/**'):
 with Files('ib-split/**'):
     BUG_COMPONENT = ('Core', 'Layout: Block and Inline')
 with Files('image/**'):
-    BUG_COMPONENT = ('Core', 'Layout: Images')
+    BUG_COMPONENT = ('Core', 'Layout: Images, Video, and HTML Frames')
 with Files('image-element/**'):
-    BUG_COMPONENT = ('Core', 'Layout: Images')
+    BUG_COMPONENT = ('Core', 'Layout: Images, Video, and HTML Frames')
 with Files('image-rect/**'):
     BUG_COMPONENT = ('Core', 'Layout')
 with Files('image-region/**'):
-    BUG_COMPONENT = ('Core', 'Layout: Images')
+    BUG_COMPONENT = ('Core', 'Layout: Images, Video, and HTML Frames')
 with Files('indic-shaping/**'):
-    BUG_COMPONENT = ('Core', 'Layout: Text')
+    BUG_COMPONENT = ('Core', 'Layout: Text and Fonts')
 with Files('inline/**'):
     BUG_COMPONENT = ('Core', 'Layout: Block and Inline')
 with Files('inline-borderpadding/**'):
@@ -210,7 +210,7 @@ with Files('native-theme/**'):
 with Files('object/**'):
     BUG_COMPONENT = ('Core', 'DOM')
 with Files('ogg-video/**'):
-    BUG_COMPONENT = ('Core', 'Video/Audio')
+    BUG_COMPONENT = ('Core', 'Audio/Video')
 with Files('outline/**'):
     BUG_COMPONENT = ('Core', 'Layout')
 with Files('pagination/**'):
@@ -220,17 +220,15 @@ with Files('percent-overflow-sizing/**'):
 with Files('pixel-rounding/**'):
     BUG_COMPONENT = ('Core', 'Layout')
 with Files('position-dynamic-changes/**'):
-    BUG_COMPONENT = ('Core', 'Layout: R & A Pos')
+    BUG_COMPONENT = ('Core', 'Layout: Positioned')
 with Files('position-relative/**'):
-    BUG_COMPONENT = ('Core', 'Layout: R & A Pos')
+    BUG_COMPONENT = ('Core', 'Layout: Positioned')
 with Files('position-sticky/**'):
-    BUG_COMPONENT = ('Core', 'Layout: R & A Pos')
+    BUG_COMPONENT = ('Core', 'Layout: Positioned')
 with Files('printing/**'):
     BUG_COMPONENT = ('Core', 'Printing: Output')
 with Files('reftest-sanity/**'):
     BUG_COMPONENT = ('Testing', 'Reftest')
-with Files('scoped-style/**'):
-    BUG_COMPONENT = ('Core', 'CSS Parsing and Computation')
 with Files('scrolling/**'):
     BUG_COMPONENT = ('Core', 'Layout')
 with Files('selection/**'):
@@ -238,7 +236,7 @@ with Files('selection/**'):
 with Files('svg/**'):
     BUG_COMPONENT = ('Core', 'SVG')
 with Files('tab-size/**'):
-    BUG_COMPONENT = ('Core', 'Layout: Text')
+    BUG_COMPONENT = ('Core', 'Layout: Text and Fonts')
 with Files('table-anonymous-boxes/**'):
     BUG_COMPONENT = ('Core', 'Layout: Tables')
 with Files('table-background/**'):
@@ -252,19 +250,19 @@ with Files('table-overflow/**'):
 with Files('table-width/**'):
     BUG_COMPONENT = ('Core', 'Layout: Tables')
 with Files('text/**'):
-    BUG_COMPONENT = ('Core', 'Layout: Text')
+    BUG_COMPONENT = ('Core', 'Layout: Text and Fonts')
 with Files('text-decoration/**'):
     BUG_COMPONENT = ('Core', 'Layout: Block and Inline')
 with Files('text-indent/**'):
     BUG_COMPONENT = ('Core', 'Layout: Block and Inline')
 with Files('text-overflow/**'):
-    BUG_COMPONENT = ('Core', 'Layout: Text')
+    BUG_COMPONENT = ('Core', 'Layout: Text and Fonts')
 with Files('text-shadow/**'):
-    BUG_COMPONENT = ('Core', 'Layout: Text')
+    BUG_COMPONENT = ('Core', 'Layout: Text and Fonts')
 with Files('text-svgglyphs/**'):
     BUG_COMPONENT = ('Core', 'SVG')
 with Files('text-transform/**'):
-    BUG_COMPONENT = ('Core', 'Layout: Text')
+    BUG_COMPONENT = ('Core', 'Layout: Text and Fonts')
 with Files('transform/**'):
     BUG_COMPONENT = ('Core', 'Layout')
 with Files('transform-3d/**'):
@@ -275,11 +273,11 @@ with Files('view-source/**'):
     BUG_COMPONENT = ('Core', 'HTML: Parser')
 with Files('w3c-css/**'):
     BUG_COMPONENT = ('Core', 'Layout')
-with Files('w3c-css/received/css-conditional-3/**'):
+with Files('w3c-css/received/css-conditional/**'):
     BUG_COMPONENT = ('Core', 'CSS Parsing and Computation')
-with Files('w3c-css/received/css-namespaces-3/**'):
+with Files('w3c-css/received/css-namespaces/**'):
     BUG_COMPONENT = ('Core', 'CSS Parsing and Computation')
-with Files('w3c-css/received/css-values-3/**'):
+with Files('w3c-css/received/css-values/**'):
     BUG_COMPONENT = ('Core', 'CSS Parsing and Computation')
 with Files('w3c-css/submitted/conditional3/**'):
     BUG_COMPONENT = ('Core', 'CSS Parsing and Computation')
@@ -288,7 +286,9 @@ with Files('w3c-css/submitted/css21/**'):
 with Files('w3c-css/submitted/flexbox/**'):
     BUG_COMPONENT = ('Core', 'Layout')
 with Files('w3c-css/submitted/fonts3/**'):
-    BUG_COMPONENT = ('Core', 'Layout: Text')
+    BUG_COMPONENT = ('Core', 'Layout: Text and Fonts')
+with Files('w3c-css/submitted/ib-split/**'):
+    BUG_COMPONENT = ('Core', 'Layout: Block and Inline')
 with Files('w3c-css/submitted/images3/**'):
     BUG_COMPONENT = ('Core', 'Layout')
 with Files('w3c-css/submitted/lists-3/**'):
@@ -297,6 +297,8 @@ with Files('w3c-css/submitted/multicol3/**'):
     BUG_COMPONENT = ('Core', 'Layout')
 with Files('w3c-css/submitted/ruby/**'):
     BUG_COMPONENT = ('Core', 'Layout: Block and Inline')
+with Files('w3c-css/submitted/sizing/**'):
+    BUG_COMPONENT = ('Core', 'Layout')
 with Files('w3c-css/submitted/text-decor-3/**'):
     BUG_COMPONENT = ('Core', 'Layout: Block and Inline')
 with Files('w3c-css/submitted/ui3/**'):
@@ -308,12 +310,12 @@ with Files('w3c-css/submitted/variables/**'):
 with Files('webcomponents/**'):
     BUG_COMPONENT = ('Core', 'DOM')
 with Files('webm-video/**'):
-    BUG_COMPONENT = ('Core', 'Video/Audio')
+    BUG_COMPONENT = ('Core', 'Audio/Video')
 with Files('writing-mode/**'):
     BUG_COMPONENT = ('Core', 'Layout: Block and Inline')
 with Files('xul/**'):
-    BUG_COMPONENT = ('Core', 'XP Toolkit/Widgets: XUL')
+    BUG_COMPONENT = ('Core', 'XUL')
 with Files('xul-document-load/**'):
-    BUG_COMPONENT = ('Core', 'XP Toolkit/Widgets: XUL')
+    BUG_COMPONENT = ('Core', 'XUL')
 with Files('z-index/**'):
     BUG_COMPONENT = ('Core', 'Layout')

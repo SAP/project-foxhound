@@ -5,40 +5,40 @@
  * Tests that properties are not updated when modifying the VariablesView.
  */
 
-add_task(function* () {
-  let { target, panel } = yield initWebAudioEditor(COMPLEX_CONTEXT_URL);
-  let { panelWin } = panel;
-  let { gFront, $, $$, EVENTS, PropertiesView } = panelWin;
-  let gVars = PropertiesView._propsView;
+add_task(async function() {
+  const { target, panel } = await initWebAudioEditor(COMPLEX_CONTEXT_URL);
+  const { panelWin } = panel;
+  const { gFront, $, $$, EVENTS, PropertiesView } = panelWin;
+  const gVars = PropertiesView._propsView;
 
-  let started = once(gFront, "start-context");
+  const started = once(gFront, "start-context");
 
-  let events = Promise.all([
+  const events = Promise.all([
     getN(gFront, "create-node", 8),
-    waitForGraphRendered(panelWin, 8, 8)
+    waitForGraphRendered(panelWin, 8, 8),
   ]);
   reload(target);
-  let [actors] = yield events;
-  let nodeIds = actors.map(actor => actor.actorID);
+  const [actors] = await events;
+  const nodeIds = actors.map(actor => actor.actorID);
 
   click(panelWin, findGraphNode(panelWin, nodeIds[3]));
   // Wait for the node to be set as well as the inspector to come fully into the view
-  yield Promise.all([
+  await Promise.all([
     waitForInspectorRender(panelWin, EVENTS),
     once(panelWin, EVENTS.UI_INSPECTOR_TOGGLED),
   ]);
 
-  let errorEvent = once(panelWin, EVENTS.UI_SET_PARAM_ERROR);
+  const errorEvent = once(panelWin, EVENTS.UI_SET_PARAM_ERROR);
 
   try {
-    yield modifyVariableView(panelWin, gVars, 0, "bufferSize", 2048);
+    await modifyVariableView(panelWin, gVars, 0, "bufferSize", 2048);
   } catch (e) {
     // we except modifyVariableView to fail here, because bufferSize is not writable
   }
 
-  yield errorEvent;
+  await errorEvent;
 
   checkVariableView(gVars, 0, {bufferSize: 4096}, "check that unwritable variable is not updated");
 
-  yield teardown(target);
+  await teardown(target);
 });

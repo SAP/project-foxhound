@@ -54,14 +54,15 @@ function do_state_read(aSubject, aTopic, aData) {
   ok(gSSService.isSecureURI(
        Ci.nsISiteSecurityService.HEADER_HSTS,
        Services.io.newURI("https://frequentlyused.example.com"), 0));
-  let sslStatus = new FakeSSLStatus();
+  let secInfo = new FakeTransportSecurityInfo();
   for (let i = 0; i < 2000; i++) {
     let uri = Services.io.newURI("http://bad" + i + ".example.com");
     gSSService.processHeader(Ci.nsISiteSecurityService.HEADER_HSTS, uri,
-                            "max-age=1000", sslStatus, 0);
+                            "max-age=1000", secInfo, 0,
+                            Ci.nsISiteSecurityService.SOURCE_ORGANIC_REQUEST);
   }
   do_test_pending();
-  Services.obs.addObserver(do_state_written, "data-storage-written", false);
+  Services.obs.addObserver(do_state_written, "data-storage-written");
   do_test_finished();
 }
 
@@ -78,7 +79,7 @@ function run_test() {
   let line = "frequentlyused.example.com:HSTS\t4\t0\t" + (now + 100000) + ",1,0\n";
   outputStream.write(line, line.length);
   outputStream.close();
-  Services.obs.addObserver(do_state_read, "data-storage-ready", false);
+  Services.obs.addObserver(do_state_read, "data-storage-ready");
   do_test_pending();
   gSSService = Cc["@mozilla.org/ssservice;1"]
                  .getService(Ci.nsISiteSecurityService);

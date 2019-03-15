@@ -5,13 +5,11 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["Home"];
+var EXPORTED_SYMBOLS = ["Home"];
 
-const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
-
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/SharedPreferences.jsm");
-Cu.import("resource://gre/modules/Messaging.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/SharedPreferences.jsm");
+ChromeUtils.import("resource://gre/modules/Messaging.jsm");
 
 // Keep this in sync with the constant defined in PanelAuthCache.java
 const PREFS_PANEL_AUTH_PREFIX = "home_panels_auth_";
@@ -25,7 +23,7 @@ function resolveGeckoURI(aURI) {
     throw "Can't resolve an empty uri";
 
   if (aURI.startsWith("chrome://")) {
-    let registry = Cc['@mozilla.org/chrome/chrome-registry;1'].getService(Ci["nsIChromeRegistry"]);
+    let registry = Cc["@mozilla.org/chrome/chrome-registry;1"].getService(Ci.nsIChromeRegistry);
     return registry.convertChromeURL(Services.io.newURI(aURI)).spec;
   } else if (aURI.startsWith("resource://")) {
     let handler = Services.io.getProtocolHandler("resource").QueryInterface(Ci.nsIResProtocolHandler);
@@ -61,7 +59,7 @@ function BannerMessage(options) {
 // private members without leaking it outside Home.jsm.
 var HomeBannerMessageHandlers;
 
-var HomeBanner = (function () {
+var HomeBanner = (function() {
   // Whether there is a "HomeBanner:Get" request we couldn't fulfill.
   let _pendingRequest = false;
 
@@ -73,7 +71,7 @@ var HomeBanner = (function () {
       } else {
         _pendingRequest = true;
       }
-    }
+    },
   };
 
   // Holds the messages that will rotate through the banner.
@@ -98,7 +96,7 @@ var HomeBanner = (function () {
           type: "HomeBanner:Data",
           id: message.id,
           text: message.text,
-          iconURI: message.iconURI
+          iconURI: message.iconURI,
         }).then(id => _handleShown(id));
         return;
       }
@@ -125,7 +123,7 @@ var HomeBanner = (function () {
 
   return Object.freeze({
     onEvent: function(event, data, callback) {
-      switch(event) {
+      switch (event) {
         case "HomeBanner:Click":
           _handleClick(data.id);
           break;
@@ -182,7 +180,7 @@ var HomeBanner = (function () {
           "HomeBanner:Dismiss",
         ]);
       }
-    }
+    },
   });
 })();
 
@@ -190,7 +188,7 @@ var HomeBanner = (function () {
 // private members without leaking it outside Home.jsm.
 var HomePanelsMessageHandlers;
 
-var HomePanels = (function () {
+var HomePanels = (function() {
   // Functions used to handle messages sent from Java.
   HomePanelsMessageHandlers = {
 
@@ -201,10 +199,10 @@ var HomePanels = (function () {
       let panels = [];
       for (let id in _registeredPanels) {
         // Null ids means we want to fetch all available panels
-        if (ids == null || ids.indexOf(id) >= 0) {
+        if (ids == null || ids.includes(id)) {
           try {
             panels.push(_generatePanel(id));
-          } catch(e) {
+          } catch (e) {
             Cu.reportError("Home.panels: Invalid options, panel.id = " + id + ": " + e);
           }
         }
@@ -213,7 +211,7 @@ var HomePanels = (function () {
       EventDispatcher.instance.sendRequest({
         type: "HomePanels:Data",
         panels: panels,
-        requestId: requestId
+        requestId: requestId,
       });
     },
 
@@ -273,7 +271,7 @@ var HomePanels = (function () {
         throw "Home.panels: Invalid onuninstall function: panel.id = " + this.id;
       }
       options.onuninstall();
-    }
+    },
   };
 
   // Holds the current set of registered panels that can be
@@ -286,26 +284,26 @@ var HomePanels = (function () {
 
   // Valid layouts for a panel.
   let Layout = Object.freeze({
-    FRAME: "frame"
+    FRAME: "frame",
   });
 
   // Valid types of views for a dataset.
   let View = Object.freeze({
     LIST: "list",
-    GRID: "grid"
+    GRID: "grid",
   });
 
   // Valid item types for a panel view.
   let Item = Object.freeze({
     ARTICLE: "article",
     IMAGE: "image",
-    ICON: "icon"
+    ICON: "icon",
   });
 
   // Valid item handlers for a panel view.
   let ItemHandler = Object.freeze({
     BROWSER: "browser",
-    INTENT: "intent"
+    INTENT: "intent",
   });
 
   function Panel(id, options) {
@@ -369,7 +367,7 @@ var HomePanels = (function () {
 
       this.authConfig = {
         messageText: options.auth.messageText,
-        buttonText: options.auth.buttonText
+        buttonText: options.auth.buttonText,
       };
 
       // Include optional image URL if it is specified.
@@ -434,7 +432,7 @@ var HomePanels = (function () {
 
       EventDispatcher.instance.sendRequest({
         type: "HomePanels:Install",
-        panel: _generatePanel(id)
+        panel: _generatePanel(id),
       });
     },
 
@@ -443,7 +441,7 @@ var HomePanels = (function () {
 
       EventDispatcher.instance.sendRequest({
         type: "HomePanels:Uninstall",
-        id: id
+        id: id,
       });
     },
 
@@ -452,7 +450,7 @@ var HomePanels = (function () {
 
       EventDispatcher.instance.sendRequest({
         type: "HomePanels:Update",
-        panel: _generatePanel(id)
+        panel: _generatePanel(id),
       });
     },
 
@@ -462,17 +460,17 @@ var HomePanels = (function () {
       let authKey = PREFS_PANEL_AUTH_PREFIX + id;
       let sharedPrefs = SharedPreferences.forProfile();
       sharedPrefs.setBoolPref(authKey, isAuthenticated);
-    }
+    },
   });
 })();
 
 // Public API
-this.Home = Object.freeze({
+var Home = Object.freeze({
   banner: HomeBanner,
   panels: HomePanels,
 
   // Lazy notification observer registered in browser.js
-  onEvent: function (event, data, callback) {
+  onEvent: function(event, data, callback) {
     if (event in HomeBannerMessageHandlers) {
       HomeBannerMessageHandlers[event](data);
     } else if (event in HomePanelsMessageHandlers) {
@@ -480,5 +478,5 @@ this.Home = Object.freeze({
     } else {
       Cu.reportError("Home.observe: message handler not found for event: " + event);
     }
-  }
+  },
 });

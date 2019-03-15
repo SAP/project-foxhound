@@ -5,13 +5,13 @@
  * Test basic communication of Web Audio actor
  */
 
-add_task(function* () {
-  let { target, front } = yield initBackend(SIMPLE_CONTEXT_URL);
-  let [_, __, [destNode, oscNode, gainNode], [connect1, connect2]] = yield Promise.all([
+add_task(async function() {
+  const { target, front } = await initBackend(SIMPLE_CONTEXT_URL);
+  const [_, __, [destNode, oscNode, gainNode], [connect1, connect2]] = await Promise.all([
     front.setup({ reload: true }),
     once(front, "start-context"),
     get3(front, "create-node"),
-    get2(front, "connect-node")
+    get2(front, "connect-node"),
   ]);
 
   is(destNode.type, "AudioDestinationNode", "WebAudioActor:create-node returns AudioNodeActor for AudioDestination");
@@ -26,5 +26,5 @@ add_task(function* () {
   is(source.actorID, gainNode.actorID, "WebAudioActor:connect-node returns correct actor with ID on source (gain->dest)");
   is(dest.actorID, destNode.actorID, "WebAudioActor:connect-node returns correct actor with ID on dest (gain->dest)");
 
-  yield removeTab(target.tab);
+  await removeTab(target.tab);
 });

@@ -2,10 +2,15 @@
 # waitpid to dispatch tasks.  This avoids several deadlocks that are possible
 # with fork/exec + threads + Python.
 
-import errno, os, select, sys
+import errno
+import os
+import select
+import signal
+import sys
 from datetime import datetime, timedelta
 from progressbar import ProgressBar
 from results import NullTestOutput, TestOutput, escape_cmdline
+
 
 class Task(object):
     def __init__(self, test, prefix, pid, stdout, stderr):
@@ -17,6 +22,7 @@ class Task(object):
         self.start = datetime.now()
         self.out = []
         self.err = []
+
 
 def spawn_test(test, prefix, passthrough, run_skipped, show_cmd):
     """Spawn one child, return a task struct."""
@@ -48,6 +54,7 @@ def spawn_test(test, prefix, passthrough, run_skipped, show_cmd):
 
     os.execvp(cmd[0], cmd)
 
+
 def get_max_wait(tasks, timeout):
     """
     Return the maximum time we can wait before any task should time out.
@@ -69,6 +76,7 @@ def get_max_wait(tasks, timeout):
     # Return the wait time in seconds, clamped between zero and max_wait.
     return max(wait.total_seconds(), 0)
 
+
 def flush_input(fd, frags):
     """
     Read any pages sitting in the file descriptor 'fd' into the list 'frags'.
@@ -86,6 +94,7 @@ def flush_input(fd, frags):
         rv = os.read(fd, 4096)
         frags.append(rv)
 
+
 def read_input(tasks, timeout):
     """
     Select on input or errors from the given task list for a max of timeout
@@ -93,7 +102,7 @@ def read_input(tasks, timeout):
     """
     rlist = []
     exlist = []
-    outmap = {} # Fast access to fragment list given fd.
+    outmap = {}  # Fast access to fragment list given fd.
     for t in tasks:
         rlist.append(t.stdout)
         rlist.append(t.stderr)
@@ -106,12 +115,13 @@ def read_input(tasks, timeout):
     readable = []
     try:
         readable, _, _ = select.select(rlist, [], exlist, timeout)
-    except OverflowError as e:
+    except OverflowError:
         print >> sys.stderr, "timeout value", timeout
         raise
 
     for fd in readable:
         flush_input(fd, outmap[fd])
+
 
 def remove_task(tasks, pid):
     """
@@ -129,16 +139,20 @@ def remove_task(tasks, pid):
     tasks.pop(index)
     return out
 
+
 def timed_out(task, timeout):
     """
-    Return True if the given task has been running for longer than |timeout|.
-    |timeout| may be falsy, indicating an infinite timeout (in which case
-    timed_out always returns False).
+    Return a timedelta with the amount we are overdue, or False if the timeout
+    has not yet been reached (or timeout is falsy, indicating there is no
+    timeout.)
     """
-    if timeout:
-        now = datetime.now()
-        return (now - task.start) > timedelta(seconds=timeout)
-    return False
+    if not timeout:
+        return False
+
+    elapsed = datetime.now() - task.start
+    over = elapsed - timedelta(seconds=timeout)
+    return over if over.total_seconds() > 0 else False
+
 
 def reap_zombies(tasks, timeout):
     """
@@ -176,16 +190,25 @@ def reap_zombies(tasks, timeout):
                 ''.join(ended.err),
                 returncode,
                 (datetime.now() - ended.start).total_seconds(),
-                timed_out(ended, timeout)))
+                timed_out(ended, timeout),
+                {'pid': ended.pid}))
     return tasks, finished
+
 
 def kill_undead(tasks, timeout):
     """
-    Signal all children that are over the given timeout.
+    Signal all children that are over the given timeout. Use SIGABRT first to
+    generate a stack dump. If it still doesn't die for another 30 seconds, kill
+    with SIGKILL.
     """
     for task in tasks:
-        if timed_out(task, timeout):
-            os.kill(task.pid, 9)
+        over = timed_out(task, timeout)
+        if over:
+            if over.total_seconds() < 30:
+                os.kill(task.pid, signal.SIGABRT)
+            else:
+                os.kill(task.pid, signal.SIGKILL)
+
 
 def run_all_tests(tests, prefix, pb, options):
     # Copy and reverse for fast pop off end.
@@ -200,7 +223,7 @@ def run_all_tests(tests, prefix, pb, options):
         while len(tests) and len(tasks) < options.worker_count:
             test = tests.pop()
             task = spawn_test(test, prefix,
-                    options.passthrough, options.run_skipped, options.show_cmd)
+                              options.passthrough, options.run_skipped, options.show_cmd)
             if task:
                 tasks.append(task)
             else:
@@ -220,4 +243,3 @@ def run_all_tests(tests, prefix, pb, options):
         # the test harness is at least not frozen.
         if len(finished) == 0:
             pb.poke()
-

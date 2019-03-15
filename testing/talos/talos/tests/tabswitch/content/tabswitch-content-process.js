@@ -1,32 +1,61 @@
-const {classes: Cc, utils: Cu, interfaces: Ci} = Components;
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+const WEBEXTENSION_ID = "tabswitch-talos@mozilla.org";
+const ABOUT_PAGE_NAME = "tabswitch";
+const Registrar = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
+const UUID = "0f459ab4-b4ba-4741-ac89-ee47dea07adb";
+const ABOUT_PATH_PATH = "content/test.html";
 
-const CHROME_URI = "chrome://tabswitch/content/test.html";
+const {WebExtensionPolicy} = Cu.getGlobalForObject(Services);
 
-class TabSwitchAboutModule {
-  constructor() {
-    this.QueryInterface = XPCOMUtils.generateQI([Ci.nsIAboutModule]);
-  }
+const TPSProcessScript = {
+  init() {
+    let extensionPolicy = WebExtensionPolicy.getByID(WEBEXTENSION_ID);
+    let aboutPageURI = extensionPolicy.getURL(ABOUT_PATH_PATH);
 
-  newChannel(aURI, aLoadInfo) {
-    let uri = Services.io.newURI(CHROME_URI);
-    let chan = Services.io.newChannelFromURIWithLoadInfo(uri, aLoadInfo);
-    chan.originalURI = aURI;
-    return chan;
-  }
+    class TabSwitchAboutModule {
+      constructor() {
+        this.QueryInterface = ChromeUtils.generateQI([Ci.nsIAboutModule]);
+      }
+      newChannel(aURI, aLoadInfo) {
+        let uri = Services.io.newURI(aboutPageURI);
+        let chan = Services.io.newChannelFromURIWithLoadInfo(uri, aLoadInfo);
+        chan.originalURI = aURI;
+        return chan;
+      }
+      getURIFlags(aURI) {
+        return Ci.nsIAboutModule.ALLOW_SCRIPT |
+               Ci.nsIAboutModule.URI_MUST_LOAD_IN_CHILD;
+      }
+    }
 
-  getURIFlags(aURI) {
-    return Ci.nsIAboutModule.ALLOW_SCRIPT |
-           Ci.nsIAboutModule.URI_MUST_LOAD_IN_CHILD;
-  }
-}
+    let factory = XPCOMUtils._getFactory(TabSwitchAboutModule);
+    this._factory = factory;
 
-let factory = XPCOMUtils._getFactory(TabSwitchAboutModule);
-let registrar = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
-let UUIDGenerator = Cc["@mozilla.org/uuid-generator;1"].getService(Ci.nsIUUIDGenerator);
+    Registrar.registerFactory(
+      Components.ID(UUID), "",
+      `@mozilla.org/network/protocol/about;1?what=${ABOUT_PAGE_NAME}`,
+      factory);
 
-registrar.registerFactory(UUIDGenerator.generateUUID(), "",
-                          "@mozilla.org/network/protocol/about;1?what=tabswitch",
-                          factory);
+    this._hasSetup = true;
+  },
+
+  teardown() {
+    if (!this._hasSetup) {
+      return;
+    }
+
+    Registrar.unregisterFactory(Components.ID(UUID), this._factory);
+    this._hasSetup = false;
+    this._factory = null;
+  },
+
+  receiveMessage(msg) {
+    if (msg.name == "TPS:Teardown") {
+      this.teardown();
+    }
+  },
+};
+
+TPSProcessScript.init();

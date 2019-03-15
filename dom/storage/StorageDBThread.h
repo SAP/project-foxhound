@@ -14,6 +14,7 @@
 #include "mozilla/Monitor.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/storage/StatementCache.h"
+#include "mozilla/TimeStamp.h"
 #include "nsAutoPtr.h"
 #include "nsString.h"
 #include "nsCOMPtr.h"
@@ -26,12 +27,21 @@ class mozIStorageConnection;
 namespace mozilla {
 namespace dom {
 
-class StorageCacheBridge;
+class LocalStorageCacheBridge;
 class StorageUsageBridge;
 class StorageUsage;
 
 typedef mozilla::storage::StatementCache<mozIStorageStatement> StatementCache;
 
+// XXX Fix me!
+//     1. Move comments to StorageDBThread/StorageDBChild.
+//     2. Devirtualize relevant methods in StorageDBThread/StorageDBChild.
+//     3. Remove relevant methods in StorageDBThread/StorageDBChild that are
+//        unused.
+//     4. Remove this class completely.
+//
+//     See bug 1387636 for more details.
+#if 0
 // Interface used by the cache to post operations to the asynchronous
 // database thread or process.
 class StorageDBBridge
@@ -51,7 +61,8 @@ public:
   // one.  This method is responsible to keep hard reference to the cache for
   // the time of the preload or, when preload cannot be performed, call
   // LoadDone() immediately.
-  virtual void AsyncPreload(StorageCacheBridge* aCache, bool aPriority = false) = 0;
+  virtual void AsyncPreload(LocalStorageCacheBridge* aCache,
+                            bool aPriority = false) = 0;
 
   // Asynchronously fill the |usage| object with actual usage of data by its
   // scope.  The scope is eTLD+1 tops, never deeper subdomains.
@@ -59,29 +70,29 @@ public:
 
   // Synchronously fills the cache, when |aForceSync| is false and cache already
   // got some data before, the method waits for the running preload to finish
-  virtual void SyncPreload(StorageCacheBridge* aCache,
+  virtual void SyncPreload(LocalStorageCacheBridge* aCache,
                            bool aForceSync = false) = 0;
 
   // Called when an existing key is modified in the storage, schedules update to
   // the database
-  virtual nsresult AsyncAddItem(StorageCacheBridge* aCache,
+  virtual nsresult AsyncAddItem(LocalStorageCacheBridge* aCache,
                                 const nsAString& aKey,
                                 const nsAString& aValue) = 0;
 
   // Called when an existing key is modified in the storage, schedules update to
   // the database
-  virtual nsresult AsyncUpdateItem(StorageCacheBridge* aCache,
+  virtual nsresult AsyncUpdateItem(LocalStorageCacheBridge* aCache,
                                    const nsAString& aKey,
                                    const nsAString& aValue) = 0;
 
   // Called when an item is removed from the storage, schedules delete of the
   // key
-  virtual nsresult AsyncRemoveItem(StorageCacheBridge* aCache,
+  virtual nsresult AsyncRemoveItem(LocalStorageCacheBridge* aCache,
                                    const nsAString& aKey) = 0;
 
   // Called when the whole storage is cleared by the DOM API, schedules delete
   // of the scope
-  virtual nsresult AsyncClear(StorageCacheBridge* aCache) = 0;
+  virtual nsresult AsyncClear(LocalStorageCacheBridge* aCache) = 0;
 
   // Called when chrome deletes e.g. cookies, schedules delete of the whole
   // database
@@ -99,26 +110,22 @@ public:
   // Check whether the scope has any data stored on disk and is thus allowed to
   // preload
   virtual bool ShouldPreloadOrigin(const nsACString& aOriginNoSuffix) = 0;
-
-  // Get the complete list of scopes having data
-  virtual void GetOriginsHavingData(InfallibleTArray<nsCString>* aOrigins) = 0;
 };
+#endif
 
 // The implementation of the the database engine, this directly works
 // with the sqlite or any other db API we are based on
-// This class is resposible for collecting and processing asynchronous 
-// DB operations over caches (StorageCache) communicating though 
-// StorageCacheBridge interface class
-class StorageDBThread final : public StorageDBBridge
-{
-public:
+// This class is resposible for collecting and processing asynchronous
+// DB operations over caches (LocalStorageCache) communicating though
+// LocalStorageCacheBridge interface class
+class StorageDBThread final {
+ public:
   class PendingOperations;
 
   // Representation of a singe database task, like adding and removing keys,
   // (pre)loading the whole origin data, cleaning.
-  class DBOperation
-  {
-  public:
+  class DBOperation {
+   public:
     typedef enum {
       // Only operation that reads data from the database
       opPreload,
@@ -148,13 +155,11 @@ public:
     } OperationType;
 
     explicit DBOperation(const OperationType aType,
-                         StorageCacheBridge* aCache = nullptr,
+                         LocalStorageCacheBridge* aCache = nullptr,
                          const nsAString& aKey = EmptyString(),
                          const nsAString& aValue = EmptyString());
-    DBOperation(const OperationType aType,
-                StorageUsageBridge* aUsage);
-    DBOperation(const OperationType aType,
-                const nsACString& aOriginNoSuffix);
+    DBOperation(const OperationType aType, StorageUsageBridge* aUsage);
+    DBOperation(const OperationType aType, const nsACString& aOriginNoSuffix);
     DBOperation(const OperationType aType,
                 const OriginAttributesPattern& aOriginNoSuffix);
     ~DBOperation();
@@ -183,18 +188,17 @@ public:
     const nsCString Target() const;
 
     // Pattern to delete matching data with this op
-    const OriginAttributesPattern& OriginPattern() const
-    {
+    const OriginAttributesPattern& OriginPattern() const {
       return mOriginPattern;
     }
 
-  private:
+   private:
     // The operation implementation body
     nsresult Perform(StorageDBThread* aThread);
 
     friend class PendingOperations;
     OperationType mType;
-    RefPtr<StorageCacheBridge> mCache;
+    RefPtr<LocalStorageCacheBridge> mCache;
     RefPtr<StorageUsageBridge> mUsage;
     nsString const mKey;
     nsString const mValue;
@@ -205,7 +209,7 @@ public:
   // Encapsulation of collective and coalescing logic for all pending operations
   // except preloads that are handled separately as priority operations
   class PendingOperations {
-  public:
+   public:
     PendingOperations();
 
     // Method responsible for coalescing redundant update operations with the
@@ -238,8 +242,8 @@ public:
     bool IsOriginUpdatePending(const nsACString& aOriginSuffix,
                                const nsACString& aOriginNoSuffix) const;
 
-  private:
-    // Returns true iff new operation is of type newType and there is a pending 
+   private:
+    // Returns true iff new operation is of type newType and there is a pending
     // operation of type pendingType for the same key (target).
     bool CheckForCoalesceOpportunity(DBOperation* aNewOp,
                                      DBOperation::OperationType aPendingType,
@@ -258,16 +262,12 @@ public:
     uint32_t mFlushFailureCount;
   };
 
-  class ThreadObserver final : public nsIThreadObserver
-  {
+  class ThreadObserver final : public nsIThreadObserver {
     NS_DECL_THREADSAFE_ISUPPORTS
     NS_DECL_NSITHREADOBSERVER
 
     ThreadObserver()
-      : mHasPendingEvents(false)
-      , mMonitor("StorageThreadMonitor")
-    {
-    }
+        : mHasPendingEvents(false), mMonitor("StorageThreadMonitor") {}
 
     bool HasPendingEvents() {
       mMonitor.AssertCurrentThreadOwns();
@@ -279,75 +279,96 @@ public:
     }
     Monitor& GetMonitor() { return mMonitor; }
 
-  private:
+   private:
     virtual ~ThreadObserver() {}
     bool mHasPendingEvents;
     // The monitor we drive the thread with
     Monitor mMonitor;
   };
 
-public:
+  class InitHelper;
+
+  class NoteBackgroundThreadRunnable;
+
+  class ShutdownRunnable : public Runnable {
+    // Only touched on the main thread.
+    bool& mDone;
+
+   public:
+    explicit ShutdownRunnable(bool& aDone)
+        : Runnable("dom::StorageDBThread::ShutdownRunnable"), mDone(aDone) {
+      MOZ_ASSERT(NS_IsMainThread());
+    }
+
+   private:
+    ~ShutdownRunnable() {}
+
+    NS_DECL_NSIRUNNABLE
+  };
+
+ public:
   StorageDBThread();
   virtual ~StorageDBThread() {}
 
-  virtual nsresult Init();
+  static StorageDBThread* Get();
+
+  static StorageDBThread* GetOrCreate(const nsString& aProfilePath);
+
+  static nsresult GetProfilePath(nsString& aProfilePath);
+
+  virtual nsresult Init(const nsString& aProfilePath);
+
+  // Flushes all uncommited data and stops the I/O thread.
   virtual nsresult Shutdown();
 
-  virtual void AsyncPreload(StorageCacheBridge* aCache, bool aPriority = false)
-  {
-    InsertDBOp(new DBOperation(aPriority
-                                 ? DBOperation::opPreloadUrgent
-                                 : DBOperation::opPreload,
-                               aCache));
+  virtual void AsyncPreload(LocalStorageCacheBridge* aCache,
+                            bool aPriority = false) {
+    InsertDBOp(new DBOperation(
+        aPriority ? DBOperation::opPreloadUrgent : DBOperation::opPreload,
+        aCache));
   }
 
-  virtual void SyncPreload(StorageCacheBridge* aCache, bool aForce = false);
+  virtual void SyncPreload(LocalStorageCacheBridge* aCache,
+                           bool aForce = false);
 
-  virtual void AsyncGetUsage(StorageUsageBridge* aUsage)
-  {
+  virtual void AsyncGetUsage(StorageUsageBridge* aUsage) {
     InsertDBOp(new DBOperation(DBOperation::opGetUsage, aUsage));
   }
 
-  virtual nsresult AsyncAddItem(StorageCacheBridge* aCache,
+  virtual nsresult AsyncAddItem(LocalStorageCacheBridge* aCache,
                                 const nsAString& aKey,
-                                const nsAString& aValue)
-  {
-    return InsertDBOp(new DBOperation(DBOperation::opAddItem, aCache, aKey,
-                                      aValue));
+                                const nsAString& aValue) {
+    return InsertDBOp(
+        new DBOperation(DBOperation::opAddItem, aCache, aKey, aValue));
   }
 
-  virtual nsresult AsyncUpdateItem(StorageCacheBridge* aCache,
+  virtual nsresult AsyncUpdateItem(LocalStorageCacheBridge* aCache,
                                    const nsAString& aKey,
-                                   const nsAString& aValue)
-  {
-    return InsertDBOp(new DBOperation(DBOperation::opUpdateItem, aCache, aKey,
-                                      aValue));
+                                   const nsAString& aValue) {
+    return InsertDBOp(
+        new DBOperation(DBOperation::opUpdateItem, aCache, aKey, aValue));
   }
 
-  virtual nsresult AsyncRemoveItem(StorageCacheBridge* aCache,
-                                   const nsAString& aKey)
-  {
+  virtual nsresult AsyncRemoveItem(LocalStorageCacheBridge* aCache,
+                                   const nsAString& aKey) {
     return InsertDBOp(new DBOperation(DBOperation::opRemoveItem, aCache, aKey));
   }
 
-  virtual nsresult AsyncClear(StorageCacheBridge* aCache)
-  {
+  virtual nsresult AsyncClear(LocalStorageCacheBridge* aCache) {
     return InsertDBOp(new DBOperation(DBOperation::opClear, aCache));
   }
 
-  virtual void AsyncClearAll()
-  {
+  virtual void AsyncClearAll() {
     InsertDBOp(new DBOperation(DBOperation::opClearAll));
   }
 
-  virtual void AsyncClearMatchingOrigin(const nsACString& aOriginNoSuffix)
-  {
-    InsertDBOp(new DBOperation(DBOperation::opClearMatchingOrigin,
-                               aOriginNoSuffix));
+  virtual void AsyncClearMatchingOrigin(const nsACString& aOriginNoSuffix) {
+    InsertDBOp(
+        new DBOperation(DBOperation::opClearMatchingOrigin, aOriginNoSuffix));
   }
 
-  virtual void AsyncClearMatchingOriginAttributes(const OriginAttributesPattern& aPattern)
-  {
+  virtual void AsyncClearMatchingOriginAttributes(
+      const OriginAttributesPattern& aPattern) {
     InsertDBOp(new DBOperation(DBOperation::opClearMatchingOriginAttributes,
                                aPattern));
   }
@@ -355,9 +376,11 @@ public:
   virtual void AsyncFlush();
 
   virtual bool ShouldPreloadOrigin(const nsACString& aOrigin);
-  virtual void GetOriginsHavingData(InfallibleTArray<nsCString>* aOrigins);
 
-private:
+  // Get the complete list of scopes having data.
+  void GetOriginsHavingData(InfallibleTArray<nsCString>* aOrigins);
+
+ private:
   nsCOMPtr<nsIFile> mDatabaseFile;
   PRThread* mThread;
 
@@ -393,7 +416,7 @@ private:
 
   // Time the first pending operation has been added to the pending operations
   // list
-  PRIntervalTime mDirtyEpoch;
+  TimeStamp mDirtyEpoch;
 
   // Flag to force immediate flush of all pending operations
   bool mFlushImmediately;
@@ -439,12 +462,12 @@ private:
   // 2. as in indicator that flush has to be performed
   //
   // Return:
-  // - PR_INTERVAL_NO_TIMEOUT when no pending tasks are scheduled
-  // - larger then zero when tasks have been scheduled, but it is
-  //   still not time to perform the flush ; it is actual interval
-  //   time to wait until the flush has to happen
-  // - 0 when it is time to do the flush
-  PRIntervalTime TimeUntilFlush();
+  // - TimeDuration::Forever() when no pending tasks are scheduled
+  // - Non-zero TimeDuration when tasks have been scheduled, but it
+  //   is still not time to perform the flush ; it is actual time to
+  //   wait until the flush has to happen.
+  // - 0 TimeDuration when it is time to do the flush
+  TimeDuration TimeUntilFlush();
 
   // Notifies to the main thread that flush has completed
   void NotifyFlushCompletion();
@@ -454,7 +477,7 @@ private:
   void ThreadFunc();
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_StorageDBThread_h
+#endif  // mozilla_dom_StorageDBThread_h

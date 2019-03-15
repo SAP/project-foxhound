@@ -1,21 +1,21 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=99: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "VsyncIOThreadHolder.h"
 
+#include "mozilla/SystemGroup.h"
+
 namespace mozilla {
 namespace gfx {
 
-VsyncIOThreadHolder::VsyncIOThreadHolder()
-{
+VsyncIOThreadHolder::VsyncIOThreadHolder() {
   MOZ_COUNT_CTOR(VsyncIOThreadHolder);
 }
 
-VsyncIOThreadHolder::~VsyncIOThreadHolder()
-{
+VsyncIOThreadHolder::~VsyncIOThreadHolder() {
   MOZ_COUNT_DTOR(VsyncIOThreadHolder);
 
   if (!mThread) {
@@ -25,22 +25,18 @@ VsyncIOThreadHolder::~VsyncIOThreadHolder()
   if (NS_IsMainThread()) {
     mThread->AsyncShutdown();
   } else {
-    NS_DispatchToMainThread(NewRunnableMethod(mThread, &nsIThread::AsyncShutdown));
+    SystemGroup::Dispatch(TaskCategory::Other,
+                          NewRunnableMethod("nsIThread::AsyncShutdown", mThread,
+                                            &nsIThread::AsyncShutdown));
   }
 }
 
-bool
-VsyncIOThreadHolder::Start()
-{
+bool VsyncIOThreadHolder::Start() {
   nsresult rv = NS_NewNamedThread("VsyncIOThread", getter_AddRefs(mThread));
   return NS_SUCCEEDED(rv);
 }
 
-RefPtr<nsIThread>
-VsyncIOThreadHolder::GetThread() const
-{
-  return mThread;
-}
+RefPtr<nsIThread> VsyncIOThreadHolder::GetThread() const { return mThread; }
 
-} // namespace gfx
-} // namespace mozilla
+}  // namespace gfx
+}  // namespace mozilla

@@ -5,32 +5,24 @@
 #ifndef nsNSSCertTrust_h
 #define nsNSSCertTrust_h
 
-#include "certdb.h"
 #include "certt.h"
 
 /*
  * Class for maintaining trust flags for an NSS certificate.
  */
-class nsNSSCertTrust
-{
-public:
+class nsNSSCertTrust {
+ public:
   nsNSSCertTrust();
-  nsNSSCertTrust(unsigned int ssl, unsigned int email, unsigned int objsign);
+  nsNSSCertTrust(unsigned int ssl, unsigned int email);
   explicit nsNSSCertTrust(CERTCertTrust *t);
   virtual ~nsNSSCertTrust();
 
   /* query */
   bool HasAnyCA();
   bool HasAnyUser();
-  bool HasPeer(bool checkSSL = true, 
-                 bool checkEmail = true,  
-                 bool checkObjSign = true);
-  bool HasTrustedCA(bool checkSSL = true, 
-                      bool checkEmail = true,  
-                      bool checkObjSign = true);
-  bool HasTrustedPeer(bool checkSSL = true, 
-                        bool checkEmail = true,  
-                        bool checkObjSign = true);
+  bool HasPeer(bool checkSSL = true, bool checkEmail = true);
+  bool HasTrustedCA(bool checkSSL = true, bool checkEmail = true);
+  bool HasTrustedPeer(bool checkSSL = true, bool checkEmail = true);
 
   /* common defaults */
   /* equivalent to "c,c,c" */
@@ -40,31 +32,24 @@ public:
 
   /* general setters */
   /* read: "p, P, c, C, T, u, w" */
-  void SetSSLTrust(bool peer, bool tPeer,
-                   bool ca,   bool tCA, bool tClientCA,
-                   bool user, bool warn); 
+  void SetSSLTrust(bool peer, bool tPeer, bool ca, bool tCA, bool tClientCA,
+                   bool user, bool warn);
 
-  void SetEmailTrust(bool peer, bool tPeer,
-                     bool ca,   bool tCA, bool tClientCA,
+  void SetEmailTrust(bool peer, bool tPeer, bool ca, bool tCA, bool tClientCA,
                      bool user, bool warn);
 
-  void SetObjSignTrust(bool peer, bool tPeer,
-                       bool ca,   bool tCA, bool tClientCA,
-                       bool user, bool warn);
-
   /* set c <--> CT */
-  void AddCATrust(bool ssl, bool email, bool objSign);
+  void AddCATrust(bool ssl, bool email);
   /* set p <--> P */
-  void AddPeerTrust(bool ssl, bool email, bool objSign);
+  void AddPeerTrust(bool ssl, bool email);
 
-  /* get it (const?) (shallow?) */
-  CERTCertTrust * GetTrust() { return &mTrust; }
+  CERTCertTrust &GetTrust() { return mTrust; }
 
-private:
+ private:
   void addTrust(unsigned int *t, unsigned int v);
   void removeTrust(unsigned int *t, unsigned int v);
   bool hasTrust(unsigned int t, unsigned int v);
   CERTCertTrust mTrust;
 };
 
-#endif // nsNSSCertTrust_h
+#endif  // nsNSSCertTrust_h

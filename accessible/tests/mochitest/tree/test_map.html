@@ -14,8 +14,7 @@
           src="../role.js"></script>
 
   <script type="application/javascript">
-    function doTest()
-    {
+    function doTest() {
       // map used as imagemap, not accessible
       var accTree =
         { SECTION: [ ] };
@@ -28,14 +27,14 @@
           { PARAGRAPH: [
             { TEXT_LEAF: [ ] },
             { LINK: [
-              { TEXT_LEAF: [ ] }
+              { TEXT_LEAF: [ ] },
             ] },
             { TEXT_LEAF: [ ] },
             { LINK: [
-              { TEXT_LEAF: [ ] }
+              { TEXT_LEAF: [ ] },
             ] },
-            { TEXT_LEAF: [ ] }
-          ] }
+            { TEXT_LEAF: [ ] },
+          ] },
         ] };
 
       testAccessibleTree("mapgroup", accTree);

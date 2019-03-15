@@ -18,9 +18,9 @@ function arrContains(arr, target) {
     let value = arr[i];
 
     if (value < target)
-      start = i+1;
+      start = i + 1;
     else if (value > target)
-      end = i-1;
+      end = i - 1;
     else
       break;
   }
@@ -36,16 +36,16 @@ function checkContents(pset, prefixes) {
   var outcount = {}, outset = {};
   outset = pset.getPrefixes(outcount);
   let inset = prefixes;
-  do_check_eq(inset.length, outset.length);
-  inset.sort((x,y) => x - y);
+  Assert.equal(inset.length, outset.length);
+  inset.sort((x, y) => x - y);
   for (let i = 0; i < inset.length; i++) {
-    do_check_eq(inset[i], outset[i]);
+    Assert.equal(inset[i], outset[i]);
   }
 }
 
 function wrappedProbe(pset, prefix) {
   return pset.contains(prefix);
-};
+}
 
 // doRandomLookups: we use this to test for false membership with random input
 // over the range of prefixes (unsigned 32-bits integers).
@@ -58,7 +58,7 @@ function doRandomLookups(pset, prefixes, N) {
     while (arrContains(prefixes, randInt))
       randInt = Math.floor(Math.random() * Math.pow(2, 32));
 
-    do_check_false(wrappedProbe(pset, randInt));
+    Assert.ok(!wrappedProbe(pset, randInt));
   }
 }
 
@@ -67,9 +67,9 @@ function doRandomLookups(pset, prefixes, N) {
 //    prefixes:
 function doExpectedLookups(pset, prefixes, N) {
   for (let i = 0; i < N; i++) {
-    prefixes.forEach(function (x) {
+    prefixes.forEach(function(x) {
       dump("Checking " + x + "\n");
-      do_check_true(wrappedProbe(pset, x));
+      Assert.ok(wrappedProbe(pset, x));
     });
   }
 }
@@ -79,14 +79,14 @@ function doExpectedLookups(pset, prefixes, N) {
 function testBasicPset() {
   let pset = Cc["@mozilla.org/url-classifier/prefixset;1"]
                .createInstance(Ci.nsIUrlClassifierPrefixSet);
-  let prefixes = [2,50,100,2000,78000,1593203];
+  let prefixes = [2, 50, 100, 2000, 78000, 1593203];
   pset.setPrefixes(prefixes, prefixes.length);
 
-  do_check_true(wrappedProbe(pset, 100));
-  do_check_false(wrappedProbe(pset, 100000));
-  do_check_true(wrappedProbe(pset, 1593203));
-  do_check_false(wrappedProbe(pset, 999));
-  do_check_false(wrappedProbe(pset, 0));
+  Assert.ok(wrappedProbe(pset, 100));
+  Assert.ok(!wrappedProbe(pset, 100000));
+  Assert.ok(wrappedProbe(pset, 1593203));
+  Assert.ok(!wrappedProbe(pset, 999));
+  Assert.ok(!wrappedProbe(pset, 0));
 
 
   checkContents(pset, prefixes);
@@ -95,15 +95,15 @@ function testBasicPset() {
 function testDuplicates() {
   let pset = Cc["@mozilla.org/url-classifier/prefixset;1"]
                .createInstance(Ci.nsIUrlClassifierPrefixSet);
-  let prefixes = [1,1,2,2,2,3,3,3,3,3,3,5,6,6,7,7,9,9,9];
+  let prefixes = [1, 1, 2, 2, 2, 3, 3, 3, 3, 3, 3, 5, 6, 6, 7, 7, 9, 9, 9];
   pset.setPrefixes(prefixes, prefixes.length);
 
-  do_check_true(wrappedProbe(pset, 1));
-  do_check_true(wrappedProbe(pset, 2));
-  do_check_true(wrappedProbe(pset, 5));
-  do_check_true(wrappedProbe(pset, 9));
-  do_check_false(wrappedProbe(pset, 4));
-  do_check_false(wrappedProbe(pset, 8));
+  Assert.ok(wrappedProbe(pset, 1));
+  Assert.ok(wrappedProbe(pset, 2));
+  Assert.ok(wrappedProbe(pset, 5));
+  Assert.ok(wrappedProbe(pset, 9));
+  Assert.ok(!wrappedProbe(pset, 4));
+  Assert.ok(!wrappedProbe(pset, 8));
 
 
   checkContents(pset, prefixes);
@@ -111,7 +111,7 @@ function testDuplicates() {
 
 function testSimplePset() {
   let pset = newPset();
-  let prefixes = [1,2,100,400,123456789];
+  let prefixes = [1, 2, 100, 400, 123456789];
   pset.setPrefixes(prefixes, prefixes.length);
 
   doRandomLookups(pset, prefixes, 100);
@@ -133,7 +133,7 @@ function testReSetPrefixes() {
 
   doExpectedLookups(pset, secondPrefixes, 1);
   for (let i = 0; i < prefixes.length; i++) {
-    do_check_false(wrappedProbe(pset, prefixes[i]));
+    Assert.ok(!wrappedProbe(pset, prefixes[i]));
   }
 
 
@@ -149,7 +149,7 @@ function testLoadSaveLargeSet() {
     arr.push(randInt);
   }
 
-  arr.sort((x,y) => x - y);
+  arr.sort((x, y) => x - y);
 
   let pset = newPset();
   pset.setPrefixes(arr, arr.length);
@@ -160,7 +160,7 @@ function testLoadSaveLargeSet() {
   checkContents(pset, arr);
 
   // Now try to save, restore, and redo the lookups
-  var file = dirSvc.get('ProfLD', Ci.nsIFile);
+  var file = Services.dirsvc.get("ProfLD", Ci.nsIFile);
   file.append("testLarge.pset");
 
   pset.storeToFile(file);
@@ -180,13 +180,13 @@ function testTinySet() {
   let prefixes = [1];
   pset.setPrefixes(prefixes, prefixes.length);
 
-  do_check_true(wrappedProbe(pset, 1));
-  do_check_false(wrappedProbe(pset, 100000));
+  Assert.ok(wrappedProbe(pset, 1));
+  Assert.ok(!wrappedProbe(pset, 100000));
   checkContents(pset, prefixes);
 
   prefixes = [];
   pset.setPrefixes(prefixes, prefixes.length);
-  do_check_false(wrappedProbe(pset, 1));
+  Assert.ok(!wrappedProbe(pset, 1));
   checkContents(pset, prefixes);
 }
 
@@ -205,7 +205,7 @@ function testLoadSaveNoDelta() {
 
   doExpectedLookups(pset, arr, 1);
 
-  var file = dirSvc.get('ProfLD', Ci.nsIFile);
+  var file = Services.dirsvc.get("ProfLD", Ci.nsIFile);
   file.append("testNoDelta.pset");
 
   pset.storeToFile(file);

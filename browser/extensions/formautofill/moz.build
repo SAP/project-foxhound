@@ -7,21 +7,42 @@
 DEFINES['MOZ_APP_VERSION'] = CONFIG['MOZ_APP_VERSION']
 DEFINES['MOZ_APP_MAXVERSION'] = CONFIG['MOZ_APP_MAXVERSION']
 
-DIRS += ['locale']
+DIRS += ['locales']
 
 FINAL_TARGET_FILES.features['formautofill@mozilla.org'] += [
-  'bootstrap.js'
+  'api.js',
+  'background.js',
+  'manifest.json',
+  'schema.json',
 ]
 
-FINAL_TARGET_PP_FILES.features['formautofill@mozilla.org'] += [
-  'install.rdf.in'
-]
+if CONFIG['OS_ARCH'] == 'Linux':
+    FINAL_TARGET_FILES.features['formautofill@mozilla.org'].chrome.res += [
+        'skin/linux/autocomplete-item.css',
+        'skin/linux/editDialog.css',
+    ]
+elif CONFIG['OS_ARCH'] == 'Darwin':
+    FINAL_TARGET_FILES.features['formautofill@mozilla.org'].chrome.res += [
+        'skin/osx/autocomplete-item.css',
+        'skin/osx/editDialog.css',
+    ]
+elif CONFIG['OS_ARCH'] == 'WINNT':
+    FINAL_TARGET_FILES.features['formautofill@mozilla.org'].chrome.res += [
+        'skin/windows/autocomplete-item.css',
+        'skin/windows/editDialog.css',
+    ]
+
+TESTING_JS_MODULES += ['test/fixtures/OSKeyStoreTestUtils.jsm']
 
 BROWSER_CHROME_MANIFESTS += ['test/browser/browser.ini']
 
 XPCSHELL_TESTS_MANIFESTS += ['test/unit/xpcshell.ini']
 
+MOCHITEST_MANIFESTS += ['test/mochitest/mochitest.ini']
+
 JAR_MANIFESTS += ['jar.mn']
 
+SPHINX_TREES['docs'] = 'docs'
+
 with Files('**'):
-    BUG_COMPONENT = ('Toolkit', 'Form Manager')
+    BUG_COMPONENT = ('Toolkit', 'Form Autofill')

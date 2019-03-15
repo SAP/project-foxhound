@@ -43,7 +43,7 @@
       ok(loaded >= 0 && loaded <= total, "Correct loaded progress");
       is(total, testBuffer.byteLength, "Correct total progress");
       sum += event.loaded - sum;
-    }
+    };
     request.onsuccess = grabEventAndContinueHandler;
     event = yield undefined;
 
@@ -59,7 +59,7 @@
       ok(loaded >= 0 && loaded <= total, "Correct loaded progress");
       is(total, testBuffer.byteLength, "Correct total progress");
       sum += event.loaded - sum;
-    }
+    };
     request.onsuccess = grabEventAndContinueHandler;
     event = yield undefined;
 

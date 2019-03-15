@@ -1,16 +1,16 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-function run_test () {
-  Components.utils.import("resource://testing-common/StructuredLog.jsm");
+function run_test() {
+  ChromeUtils.import("resource://testing-common/StructuredLog.jsm");
 
   let testBuffer = [];
 
-  let appendBuffer = function (msg) {
+  let appendBuffer = function(msg) {
     testBuffer.push(JSON.stringify(msg));
-  }
+  };
 
-  let assertLastMsg = function (refData) {
+  let assertLastMsg = function(refData) {
     // Check all fields in refData agree with those in the
     // last message logged, and pop that message.
     let lastMsg = JSON.parse(testBuffer.pop());
@@ -21,11 +21,11 @@ function run_test () {
     equal(lastMsg.source, "test_log");
     // The source_file field is always set by the mutator function.
     equal(lastMsg.source_file, "test_structuredlog.js");
-  }
+  };
 
-  let addFileName = function (data) {
+  let addFileName = function(data) {
     data.source_file = "test_structuredlog.js";
-  }
+  };
 
   let logger = new StructuredLogger("test_log", appendBuffer, [addFileName]);
 
@@ -38,7 +38,7 @@ function run_test () {
   });
 
   logger.info("Test message",
-              extra={foo: "bar"});
+              {foo: "bar"});
   assertLastMsg({
     action: "log",
     message: "Test message",
@@ -57,7 +57,7 @@ function run_test () {
   assertLastMsg({
     test: "aTest",
     action: "test_end",
-    status: "OK"
+    status: "OK",
   });
 
   // A failed test populates the "expected" field.
@@ -67,7 +67,7 @@ function run_test () {
     action: "test_end",
     test: "aTest",
     status: "FAIL",
-    expected: "PASS"
+    expected: "PASS",
   });
 
   // A failed test populates the "expected" field.
@@ -78,7 +78,7 @@ function run_test () {
     test: "aTest",
     status: "FAIL",
     expected: "PASS",
-    stack: "Many\nlines\nof\nstack\n"
+    stack: "Many\nlines\nof\nstack\n",
   });
 
   // Skipped tests don't log failures
@@ -88,7 +88,7 @@ function run_test () {
   assertLastMsg({
     action: "test_end",
     test: "aTest",
-    status: "SKIP"
+    status: "SKIP",
   });
 
   logger.testStatus("aTest", "foo", "PASS", "PASS", "Passed test");
@@ -98,7 +98,7 @@ function run_test () {
     test: "aTest",
     subtest: "foo",
     status: "PASS",
-    message: "Passed test"
+    message: "Passed test",
   });
 
   logger.testStatus("aTest", "bar", "FAIL");
@@ -107,7 +107,7 @@ function run_test () {
     test: "aTest",
     subtest: "bar",
     status: "FAIL",
-    expected: "PASS"
+    expected: "PASS",
   });
 
   logger.testStatus("aTest", "bar", "FAIL", "PASS", null,
@@ -118,7 +118,7 @@ function run_test () {
     subtest: "bar",
     status: "FAIL",
     expected: "PASS",
-    stack: "Many\nlines\nof\nstack\n"
+    stack: "Many\nlines\nof\nstack\n",
   });
 
   // Skipped tests don't log failures
@@ -128,7 +128,7 @@ function run_test () {
     action: "test_status",
     test: "aTest",
     subtest: "baz",
-    status: "SKIP"
+    status: "SKIP",
   });
 
   // Suite start and end messages.

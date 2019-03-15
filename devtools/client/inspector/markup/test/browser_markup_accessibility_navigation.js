@@ -30,7 +30,7 @@ const TESTS = [
     activedescendant: "body.tagLine",
     key: "VK_LEFT",
     options: { },
-    waitFor: "collapsed"
+    waitFor: "collapsed",
   },
   {
     desc: "Expand body container",
@@ -38,7 +38,7 @@ const TESTS = [
     activedescendant: "body.tagLine",
     key: "VK_RIGHT",
     options: { },
-    waitFor: "expanded"
+    waitFor: "expanded",
   },
   {
     desc: "Select header container",
@@ -46,7 +46,7 @@ const TESTS = [
     activedescendant: "header.tagLine",
     key: "VK_DOWN",
     options: { },
-    waitFor: "inspector-updated"
+    waitFor: "inspector-updated",
   },
   {
     desc: "Expand header container",
@@ -54,7 +54,7 @@ const TESTS = [
     activedescendant: "header.tagLine",
     key: "VK_RIGHT",
     options: { },
-    waitFor: "expanded"
+    waitFor: "expanded",
   },
   {
     desc: "Select text container",
@@ -62,7 +62,7 @@ const TESTS = [
     activedescendant: "container-0.tagLine",
     key: "VK_DOWN",
     options: { },
-    waitFor: "inspector-updated"
+    waitFor: "inspector-updated",
   },
   {
     desc: "Select header container again",
@@ -70,7 +70,7 @@ const TESTS = [
     activedescendant: "header.tagLine",
     key: "VK_UP",
     options: { },
-    waitFor: "inspector-updated"
+    waitFor: "inspector-updated",
   },
   {
     desc: "Collapse header container",
@@ -78,84 +78,84 @@ const TESTS = [
     activedescendant: "header.tagLine",
     key: "VK_LEFT",
     options: { },
-    waitFor: "collapsed"
+    waitFor: "collapsed",
   },
   {
     desc: "Focus on header container tag",
     focused: "header.focusableElms.0",
     activedescendant: "header.tagLine",
     key: "VK_RETURN",
-    options: { }
+    options: { },
   },
   {
     desc: "Remove focus from header container tag",
     focused: "root.elt",
     activedescendant: "header.tagLine",
     key: "VK_ESCAPE",
-    options: { }
+    options: { },
   },
   {
     desc: "Focus on header container tag again",
     focused: "header.focusableElms.0",
     activedescendant: "header.tagLine",
     key: "VK_SPACE",
-    options: { }
+    options: { },
   },
   {
     desc: "Focus on header id attribute",
     focused: "header.focusableElms.1",
     activedescendant: "header.tagLine",
     key: "VK_TAB",
-    options: { }
+    options: { },
   },
   {
     desc: "Focus on header class attribute",
     focused: "header.focusableElms.2",
     activedescendant: "header.tagLine",
     key: "VK_TAB",
-    options: { }
+    options: { },
   },
   {
     desc: "Focus on header new attribute",
     focused: "header.focusableElms.3",
     activedescendant: "header.tagLine",
     key: "VK_TAB",
-    options: { }
+    options: { },
   },
   {
     desc: "Circle back and focus on header tag again",
     focused: "header.focusableElms.0",
     activedescendant: "header.tagLine",
     key: "VK_TAB",
-    options: { }
+    options: { },
   },
   {
     desc: "Circle back and focus on header new attribute again",
     focused: "header.focusableElms.3",
     activedescendant: "header.tagLine",
     key: "VK_TAB",
-    options: { shiftKey: true }
+    options: { shiftKey: true },
   },
   {
     desc: "Tab back and focus on header class attribute",
     focused: "header.focusableElms.2",
     activedescendant: "header.tagLine",
     key: "VK_TAB",
-    options: { shiftKey: true }
+    options: { shiftKey: true },
   },
   {
     desc: "Tab back and focus on header id attribute",
     focused: "header.focusableElms.1",
     activedescendant: "header.tagLine",
     key: "VK_TAB",
-    options: { shiftKey: true }
+    options: { shiftKey: true },
   },
   {
     desc: "Tab back and focus on header tag",
     focused: "header.focusableElms.0",
     activedescendant: "header.tagLine",
     key: "VK_TAB",
-    options: { shiftKey: true }
+    options: { shiftKey: true },
   },
   {
     desc: "Expand header container, ensure that focus is still on header tag",
@@ -163,70 +163,70 @@ const TESTS = [
     activedescendant: "header.tagLine",
     key: "VK_RIGHT",
     options: { },
-    waitFor: "expanded"
+    waitFor: "expanded",
   },
   {
     desc: "Activate header tag editor",
     focused: "header.editor.tag.inplaceEditor.input",
     activedescendant: "header.tagLine",
     key: "VK_RETURN",
-    options: { }
+    options: { },
   },
   {
     desc: "Activate header id attribute editor",
     focused: "header.editor.attrList.children.0.children.1.inplaceEditor.input",
     activedescendant: "header.tagLine",
     key: "VK_TAB",
-    options: { }
+    options: { },
   },
   {
     desc: "Deselect text in header id attribute editor",
     focused: "header.editor.attrList.children.0.children.1.inplaceEditor.input",
     activedescendant: "header.tagLine",
     key: "VK_TAB",
-    options: { }
+    options: { },
   },
   {
     desc: "Activate header class attribute editor",
     focused: "header.editor.attrList.children.1.children.1.inplaceEditor.input",
     activedescendant: "header.tagLine",
     key: "VK_TAB",
-    options: { }
+    options: { },
   },
   {
     desc: "Deselect text in header class attribute editor",
     focused: "header.editor.attrList.children.1.children.1.inplaceEditor.input",
     activedescendant: "header.tagLine",
     key: "VK_TAB",
-    options: { }
+    options: { },
   },
   {
     desc: "Activate header new attribute editor",
     focused: "header.editor.newAttr.inplaceEditor.input",
     activedescendant: "header.tagLine",
     key: "VK_TAB",
-    options: { }
+    options: { },
   },
   {
     desc: "Circle back and activate header tag editor again",
     focused: "header.editor.tag.inplaceEditor.input",
     activedescendant: "header.tagLine",
     key: "VK_TAB",
-    options: { }
+    options: { },
   },
   {
     desc: "Circle back and activate header new attribute editor again",
     focused: "header.editor.newAttr.inplaceEditor.input",
     activedescendant: "header.tagLine",
     key: "VK_TAB",
-    options: { shiftKey: true }
+    options: { shiftKey: true },
   },
   {
     desc: "Exit edit mode and keep focus on header new attribute",
     focused: "header.focusableElms.3",
     activedescendant: "header.tagLine",
     key: "VK_ESCAPE",
-    options: { }
+    options: { },
   },
   {
     desc: "Move the selection to body and reset focus to container tree",
@@ -234,15 +234,15 @@ const TESTS = [
     activedescendant: "body.tagLine",
     key: "VK_UP",
     options: { },
-    waitFor: "inspector-updated"
+    waitFor: "inspector-updated",
   },
 ];
 
 let containerID = 0;
 let elms = {};
 
-add_task(function* () {
-  let { inspector } = yield openInspectorForURL(`data:text/html;charset=utf-8,
+add_task(async function() {
+  const { inspector } = await openInspectorForURL(`data:text/html;charset=utf-8,
     <h1 id="some-id" class="some-class">foo<span>Child span<span></h1>`);
 
   // Record containers that are created after inspector is initialized to be
@@ -254,8 +254,8 @@ add_task(function* () {
 
   elms.docBody = inspector.markup.doc.body;
   elms.root = inspector.markup.getContainer(inspector.markup._rootNode);
-  elms.header = yield getContainerForSelector("h1", inspector);
-  elms.body = yield getContainerForSelector("body", inspector);
+  elms.header = await getContainerForSelector("h1", inspector);
+  elms.body = await getContainerForSelector("body", inspector);
 
   // Initial focus is on root element and active descendant should be set on
   // body tag line.
@@ -264,14 +264,14 @@ add_task(function* () {
   // Focus on the tree element.
   elms.root.elt.focus();
 
-  for (let testData of TESTS) {
-    yield runAccessibilityNavigationTest(inspector, elms, testData);
+  for (const testData of TESTS) {
+    await runAccessibilityNavigationTest(inspector, elms, testData);
   }
 
   elms = null;
 });
 
 // Record all containers that are created dynamically into elms object.
-function memorizeContainer(event, container) {
+function memorizeContainer(container) {
   elms[`container-${containerID++}`] = container;
 }

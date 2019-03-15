@@ -55,15 +55,25 @@ load 639733.xhtml
 load 669767.html
 load 682684.xhtml
 load 865602.html
+load 893331.html
 load 893332-1.html
 load 944198.html
-skip-if(stylo) load 949891.xhtml # bug 1323693, bug 1341973
+load 949891.xhtml
 load 959311.html
 load 960277-2.html
 load 997709-1.html
 load 1102791.html
-skip-if(stylo) load 1140216.html # bug 1323693, bug 1341973
+load 1140216.html
 load 1182414.html
 load 1212688.html
 load 1228670.xhtml
 load 1279354.html
+load 1388230-1.html
+load 1388230-2.html
+load 1405830.html
+load 1418477.html
+load 1432853.html
+asserts(2-4) load 1460787-1.html
+load 1464165-1.html
+load 1471157.html
+load 1488219.html

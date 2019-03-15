@@ -1,22 +1,26 @@
-function run_test()
-{
-  Components.utils.import("resource://gre/modules/jsdebugger.jsm");
+/* eslint-disable strict */
+function run_test() {
+  Services.prefs.setBoolPref("security.allow_eval_with_system_principal", true);
+  registerCleanupFunction(() => {
+    Services.prefs.clearUserPref("security.allow_eval_with_system_principal");
+  });
+  ChromeUtils.import("resource://gre/modules/jsdebugger.jsm");
   addDebuggerToGlobal(this);
-  var xpcInspector = Cc["@mozilla.org/jsinspector;1"].getService(Ci.nsIJSInspector);
-  var g = testGlobal("test1");
+  const xpcInspector = Cc["@mozilla.org/jsinspector;1"].getService(Ci.nsIJSInspector);
+  const g = testGlobal("test1");
 
-  var dbg = new Debugger();
+  const dbg = new Debugger();
   dbg.uncaughtExceptionHook = testExceptionHook;
 
   dbg.addDebuggee(g);
-  dbg.onDebuggerStatement = function (aFrame) {
-    do_check_true(aFrame === dbg.getNewestFrame());
+  dbg.onDebuggerStatement = function(frame) {
+    Assert.ok(frame === dbg.getNewestFrame());
     // Execute from the nested event loop, dbg.getNewestFrame() won't
     // be working anymore.
 
-    do_execute_soon(function () {
+    executeSoon(function() {
       try {
-        do_check_true(aFrame === dbg.getNewestFrame());
+        Assert.ok(frame === dbg.getNewestFrame());
       } finally {
         xpcInspector.exitNestedEventLoop("test");
       }

@@ -5,22 +5,22 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsCOMPtr.h"
-#include "nsIAtom.h"
+#include "nsAtom.h"
 #include "nsXBLDocumentInfo.h"
 #include "nsIInputStream.h"
 #include "nsNameSpaceManager.h"
 #include "nsIURI.h"
 #include "nsIURL.h"
 #include "nsIChannel.h"
-#include "nsXPIDLString.h"
+#include "nsString.h"
 #include "nsReadableUtils.h"
 #include "plstr.h"
 #include "nsIContent.h"
-#include "nsIDocument.h"
+#include "mozilla/dom/Document.h"
 #include "nsContentUtils.h"
 #include "ChildIterator.h"
 #ifdef MOZ_XUL
-#include "nsIXULDocument.h"
+#  include "XULDocument.h"
 #endif
 #include "nsIXMLContentSink.h"
 #include "nsContentCID.h"
@@ -49,14 +49,9 @@
 #include "nsNodeUtils.h"
 #include "nsJSUtils.h"
 
-// Nasty hack.  Maybe we could move some of the classinfo utility methods
-// (e.g. WrapNative) over to nsContentUtils?
-#include "nsDOMClassInfo.h"
-
 #include "mozilla/DeferredFinalize.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/dom/ShadowRoot.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -67,75 +62,48 @@ using namespace mozilla::dom;
 //
 // The JS class for XBLBinding
 //
-static void
-XBLFinalize(JSFreeOp *fop, JSObject *obj)
-{
+static void XBLFinalize(JSFreeOp* fop, JSObject* obj) {
   nsXBLDocumentInfo* docInfo =
-    static_cast<nsXBLDocumentInfo*>(::JS_GetPrivate(obj));
+      static_cast<nsXBLDocumentInfo*>(::JS_GetPrivate(obj));
   DeferredFinalize(docInfo);
 }
 
-static bool
-XBLEnumerate(JSContext *cx, JS::Handle<JSObject*> obj)
-{
-  nsXBLPrototypeBinding* protoBinding =
-    static_cast<nsXBLPrototypeBinding*>(::JS_GetReservedSlot(obj, 0).toPrivate());
+static bool XBLEnumerate(JSContext* cx, JS::Handle<JSObject*> obj) {
+  nsXBLPrototypeBinding* protoBinding = static_cast<nsXBLPrototypeBinding*>(
+      ::JS_GetReservedSlot(obj, 0).toPrivate());
   MOZ_ASSERT(protoBinding);
 
   return protoBinding->ResolveAllFields(cx, obj);
 }
 
 static const JSClassOps gPrototypeJSClassOps = {
-    nullptr, nullptr, nullptr, nullptr,
-    XBLEnumerate, nullptr,
-    nullptr, XBLFinalize,
-    nullptr, nullptr, nullptr, nullptr
-};
+    nullptr,     nullptr, XBLEnumerate, nullptr, nullptr, nullptr,
+    XBLFinalize, nullptr, nullptr,      nullptr, nullptr};
 
 static const JSClass gPrototypeJSClass = {
     "XBL prototype JSClass",
-    JSCLASS_HAS_PRIVATE |
-    JSCLASS_PRIVATE_IS_NSISUPPORTS |
-    JSCLASS_FOREGROUND_FINALIZE |
-    // Our one reserved slot holds the relevant nsXBLPrototypeBinding
-    JSCLASS_HAS_RESERVED_SLOTS(1),
-    &gPrototypeJSClassOps
-};
+    JSCLASS_HAS_PRIVATE | JSCLASS_PRIVATE_IS_NSISUPPORTS |
+        JSCLASS_FOREGROUND_FINALIZE |
+        // Our one reserved slot holds the relevant nsXBLPrototypeBinding
+        JSCLASS_HAS_RESERVED_SLOTS(1),
+    &gPrototypeJSClassOps};
 
-// Implementation /////////////////////////////////////////////////////////////////
+// Implementation //////////////////////////////////////////////////////////////
 
 // Constructors/Destructors
 nsXBLBinding::nsXBLBinding(nsXBLPrototypeBinding* aBinding)
-  : mMarkedForDeath(false)
-  , mUsingContentXBLScope(false)
-  , mIsShadowRootBinding(false)
-  , mPrototypeBinding(aBinding)
-{
+    : mMarkedForDeath(false),
+      mUsingContentXBLScope(false),
+      mPrototypeBinding(aBinding),
+      mBoundElement(nullptr) {
   NS_ASSERTION(mPrototypeBinding, "Must have a prototype binding!");
   // Grab a ref to the document info so the prototype binding won't die
   NS_ADDREF(mPrototypeBinding->XBLDocumentInfo());
 }
 
-// Constructor used by web components.
-nsXBLBinding::nsXBLBinding(ShadowRoot* aShadowRoot, nsXBLPrototypeBinding* aBinding)
-  : mMarkedForDeath(false),
-    mUsingContentXBLScope(false),
-    mIsShadowRootBinding(true),
-    mPrototypeBinding(aBinding),
-    mContent(aShadowRoot)
-{
-  NS_ASSERTION(mPrototypeBinding, "Must have a prototype binding!");
-  // Grab a ref to the document info so the prototype binding won't die
-  NS_ADDREF(mPrototypeBinding->XBLDocumentInfo());
-}
-
-nsXBLBinding::~nsXBLBinding(void)
-{
-  if (mContent && !mIsShadowRootBinding) {
-    // It is unnecessary to uninstall anonymous content in a shadow tree
-    // because the ShadowRoot itself is a DocumentFragment and does not
-    // need any additional cleanup.
-    nsXBLBinding::UninstallAnonymousContent(mContent->OwnerDoc(), mContent);
+nsXBLBinding::~nsXBLBinding() {
+  if (mContent) {
+    nsXBLBinding::UnbindAnonymousContent(mContent->OwnerDoc(), mContent);
   }
   nsXBLDocumentInfo* info = mPrototypeBinding->XBLDocumentInfo();
   NS_RELEASE(info);
@@ -146,9 +114,9 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(nsXBLBinding)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsXBLBinding)
   // XXX Probably can't unlink mPrototypeBinding->XBLDocumentInfo(), because
   //     mPrototypeBinding is weak.
-  if (tmp->mContent && !tmp->mIsShadowRootBinding) {
-    nsXBLBinding::UninstallAnonymousContent(tmp->mContent->OwnerDoc(),
-                                            tmp->mContent);
+  if (tmp->mContent) {
+    nsXBLBinding::UnbindAnonymousContent(tmp->mContent->OwnerDoc(),
+                                         tmp->mContent);
   }
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mContent)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mNextBinding)
@@ -169,20 +137,16 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(nsXBLBinding, AddRef)
 NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(nsXBLBinding, Release)
 
-void
-nsXBLBinding::SetBaseBinding(nsXBLBinding* aBinding)
-{
+void nsXBLBinding::SetBaseBinding(nsXBLBinding* aBinding) {
   if (mNextBinding) {
     NS_ERROR("Base XBL binding is already defined!");
     return;
   }
 
-  mNextBinding = aBinding; // Comptr handles rel/add
+  mNextBinding = aBinding;  // Comptr handles rel/add
 }
 
-nsXBLBinding*
-nsXBLBinding::GetBindingWithContent()
-{
+nsXBLBinding* nsXBLBinding::GetBindingWithContent() {
   if (mContent) {
     return this;
   }
@@ -190,10 +154,9 @@ nsXBLBinding::GetBindingWithContent()
   return mNextBinding ? mNextBinding->GetBindingWithContent() : nullptr;
 }
 
-void
-nsXBLBinding::InstallAnonymousContent(nsIContent* aAnonParent, nsIContent* aElement,
-                                      bool aChromeOnlyContent)
-{
+void nsXBLBinding::BindAnonymousContent(nsIContent* aAnonParent,
+                                        nsIContent* aElement,
+                                        bool aChromeOnlyContent) {
   // We need to ensure two things.
   // (1) The anonymous content should be fooled into thinking it's in the bound
   // element's document, assuming that the bound element is in a document
@@ -203,20 +166,18 @@ nsXBLBinding::InstallAnonymousContent(nsIContent* aAnonParent, nsIContent* aElem
   // aElement.
   // (2) The children's parent back pointer should not be to this synthetic root
   // but should instead point to the enclosing parent element.
-  nsIDocument* doc = aElement->GetUncomposedDoc();
-  bool allowScripts = AllowScripts();
+  Document* doc = aElement->GetUncomposedDoc();
 
   nsAutoScriptBlocker scriptBlocker;
-  for (nsIContent* child = aAnonParent->GetFirstChild();
-       child;
+  for (nsIContent* child = aAnonParent->GetFirstChild(); child;
        child = child->GetNextSibling()) {
     child->UnbindFromTree();
     if (aChromeOnlyContent) {
       child->SetFlags(NODE_CHROME_ONLY_ACCESS |
                       NODE_IS_ROOT_OF_CHROME_ONLY_ACCESS);
     }
-    nsresult rv =
-      child->BindToTree(doc, aElement, mBoundElement, allowScripts);
+    child->SetFlags(NODE_IS_ANONYMOUS_ROOT);
+    nsresult rv = child->BindToTree(doc, aElement, mBoundElement);
     if (NS_FAILED(rv)) {
       // Oh, well... Just give up.
       // XXXbz This really shouldn't be a void method!
@@ -224,48 +185,34 @@ nsXBLBinding::InstallAnonymousContent(nsIContent* aAnonParent, nsIContent* aElem
       return;
     }
 
-    child->SetFlags(NODE_IS_ANONYMOUS_ROOT);
-
 #ifdef MOZ_XUL
-    // To make XUL templates work (and other goodies that happen when
-    // an element is added to a XUL document), we need to notify the
-    // XUL document using its special API.
-    nsCOMPtr<nsIXULDocument> xuldoc(do_QueryInterface(doc));
-    if (xuldoc)
-      xuldoc->AddSubtreeToDocument(child);
-#endif
-  }
-}
-
-void
-nsXBLBinding::UninstallAnonymousContent(nsIDocument* aDocument,
-                                        nsIContent* aAnonParent)
-{
-  nsAutoScriptBlocker scriptBlocker;
-  // Hold a strong ref while doing this, just in case.
-  nsCOMPtr<nsIContent> anonParent = aAnonParent;
-#ifdef MOZ_XUL
-  nsCOMPtr<nsIXULDocument> xuldoc =
-    do_QueryInterface(aDocument);
-#endif
-  for (nsIContent* child = aAnonParent->GetFirstChild();
-       child;
-       child = child->GetNextSibling()) {
-    child->UnbindFromTree();
-#ifdef MOZ_XUL
-    if (xuldoc) {
-      xuldoc->RemoveSubtreeFromDocument(child);
+    // To make other goodies that happen when an element is added to a XUL
+    // document work, we need to notify the XUL document using its special API.
+    //
+    // FIXME(emilio): Is this needed anymore? Do we really use <linkset> or
+    // <link> from XBL stuff?
+    if (doc && doc->IsXULDocument()) {
+      doc->AsXULDocument()->AddSubtreeToDocument(child);
     }
 #endif
   }
 }
 
-void
-nsXBLBinding::SetBoundElement(nsIContent* aElement)
-{
+void nsXBLBinding::UnbindAnonymousContent(Document* aDocument,
+                                          nsIContent* aAnonParent,
+                                          bool aNullParent) {
+  nsAutoScriptBlocker scriptBlocker;
+  // Hold a strong ref while doing this, just in case.
+  nsCOMPtr<nsIContent> anonParent = aAnonParent;
+  for (nsIContent* child = aAnonParent->GetFirstChild(); child;
+       child = child->GetNextSibling()) {
+    child->UnbindFromTree(true, aNullParent);
+  }
+}
+
+void nsXBLBinding::SetBoundElement(Element* aElement) {
   mBoundElement = aElement;
-  if (mNextBinding)
-    mNextBinding->SetBoundElement(aElement);
+  if (mNextBinding) mNextBinding->SetBoundElement(aElement);
 
   if (!mBoundElement) {
     return;
@@ -279,34 +226,28 @@ nsXBLBinding::SetBoundElement(nsIContent* aElement)
   // is not given in the handler declaration.
   nsCOMPtr<nsIGlobalObject> go = mBoundElement->OwnerDoc()->GetScopeObject();
   NS_ENSURE_TRUE_VOID(go && go->GetGlobalJSObject());
-  mUsingContentXBLScope = xpc::UseContentXBLScope(js::GetObjectCompartment(go->GetGlobalJSObject()));
+  mUsingContentXBLScope = xpc::UseContentXBLScope(
+      JS::GetObjectRealmOrNull(go->GetGlobalJSObject()));
 }
 
-bool
-nsXBLBinding::HasStyleSheets() const
-{
+bool nsXBLBinding::HasStyleSheets() const {
   // Find out if we need to re-resolve style.  We'll need to do this
   // if we have additional stylesheets in our binding document.
-  if (mPrototypeBinding->HasStyleSheets())
-    return true;
+  if (mPrototypeBinding->HasStyleSheets()) return true;
 
   return mNextBinding ? mNextBinding->HasStyleSheets() : false;
 }
 
-void
-nsXBLBinding::GenerateAnonymousContent()
-{
+void nsXBLBinding::GenerateAnonymousContent() {
   NS_ASSERTION(!nsContentUtils::IsSafeToRunScript(),
                "Someone forgot a script blocker");
 
   // Fetch the content element for this binding.
-  nsIContent* content =
-    mPrototypeBinding->GetImmediateChild(nsGkAtoms::content);
+  Element* content = mPrototypeBinding->GetImmediateChild(nsGkAtoms::content);
 
   if (!content) {
     // We have no anonymous content.
-    if (mNextBinding)
-      mNextBinding->GenerateAnonymousContent();
+    if (mNextBinding) mNextBinding->GenerateAnonymousContent();
 
     return;
   }
@@ -318,18 +259,19 @@ nsXBLBinding::GenerateAnonymousContent()
   // Plan to build the content by default.
   bool hasContent = (contentCount > 0);
   if (hasContent) {
-    nsIDocument* doc = mBoundElement->OwnerDoc();
+    Document* doc = mBoundElement->OwnerDoc();
 
-    nsCOMPtr<nsINode> clonedNode;
-    nsCOMArray<nsINode> nodesWithProperties;
-    nsNodeUtils::Clone(content, true, doc->NodeInfoManager(),
-                       nodesWithProperties, getter_AddRefs(clonedNode));
+    nsCOMPtr<nsINode> clonedNode = nsNodeUtils::Clone(
+        content, true, doc->NodeInfoManager(), nullptr, IgnoreErrors());
+    // FIXME: Bug 1399558, Why is this code OK assuming that nsNodeUtils::Clone
+    // never fails?
     mContent = clonedNode->AsElement();
 
     // Search for <xbl:children> elements in the XBL content. In the presence
     // of multiple default insertion points, we use the last one in document
     // order.
-    for (nsIContent* child = mContent; child; child = child->GetNextNode(mContent)) {
+    for (nsIContent* child = mContent; child;
+         child = child->GetNextNode(mContent)) {
       if (child->NodeInfo()->Equals(nsGkAtoms::children, kNameSpaceID_XBL)) {
         XBLChildrenElement* point = static_cast<XBLChildrenElement*>(child);
         if (point->IsDefaultInsertion()) {
@@ -342,36 +284,44 @@ nsXBLBinding::GenerateAnonymousContent()
 
     // Do this after looking for <children> as this messes up the parent
     // pointer which would make the GetNextNode call above fail
-    InstallAnonymousContent(mContent, mBoundElement,
-                            mPrototypeBinding->ChromeOnlyContent());
+    BindAnonymousContent(mContent, mBoundElement,
+                         mPrototypeBinding->ChromeOnlyContent());
 
     // Insert explicit children into insertion points
     if (mDefaultInsertionPoint && mInsertionPoints.IsEmpty()) {
       ExplicitChildIterator iter(mBoundElement);
-      for (nsIContent* child = iter.GetNextChild(); child; child = iter.GetNextChild()) {
-        mDefaultInsertionPoint->AppendInsertedChild(child);
+      for (nsIContent* child = iter.GetNextChild(); child;
+           child = iter.GetNextChild()) {
+        // Pass aNotify = false because we're just setting up the whole thing.
+        // Furthermore we do it from frame construction, so passing true here
+        // would reenter into it which is... not great.
+        mDefaultInsertionPoint->AppendInsertedChild(child, false);
       }
     } else {
       // It is odd to come into this code if mInsertionPoints is not empty, but
       // we need to make sure to do the compatibility hack below if the bound
       // node has any non <xul:template> or <xul:observes> children.
       ExplicitChildIterator iter(mBoundElement);
-      for (nsIContent* child = iter.GetNextChild(); child; child = iter.GetNextChild()) {
+      for (nsIContent* child = iter.GetNextChild(); child;
+           child = iter.GetNextChild()) {
         XBLChildrenElement* point = FindInsertionPointForInternal(child);
         if (point) {
-          point->AppendInsertedChild(child);
+          // Pass aNotify = false because we're just setting up the whole thing.
+          // (see the similar call above for more details).
+          point->AppendInsertedChild(child, false);
         } else {
-          NodeInfo *ni = child->NodeInfo();
-          if (ni->NamespaceID() != kNameSpaceID_XUL ||
-              (!ni->Equals(nsGkAtoms::_template) &&
-               !ni->Equals(nsGkAtoms::observes))) {
+          NodeInfo* ni = child->NodeInfo();
+          if (!child->TextIsOnlyWhitespace() &&
+              (ni->NamespaceID() != kNameSpaceID_XUL ||
+               (!ni->Equals(nsGkAtoms::_template) &&
+                !ni->Equals(nsGkAtoms::observes)))) {
             // Compatibility hack. For some reason the original XBL
             // implementation dropped the content of a binding if any child of
             // the bound element didn't match any of the <children> in the
             // binding. This became a pseudo-API that we have to maintain.
 
-            // Undo InstallAnonymousContent
-            UninstallAnonymousContent(doc, mContent);
+            // Undo BindAnonymousContent
+            UnbindAnonymousContent(doc, mContent);
 
             // Clear out our children elements to avoid dangling references.
             ClearInsertionPoints();
@@ -403,7 +353,7 @@ nsXBLBinding::GenerateAnonymousContent()
     int32_t namespaceID = attrInfo.mName->NamespaceID();
     // Hold a strong reference here so that the atom doesn't go away during
     // UnsetAttr.
-    nsCOMPtr<nsIAtom> name = attrInfo.mName->LocalName();
+    RefPtr<nsAtom> name = attrInfo.mName->LocalName();
 
     if (name != nsGkAtoms::includes) {
       if (!nsContentUtils::HasNonEmptyAttr(mBoundElement, namespaceID, name)) {
@@ -415,16 +365,15 @@ nsXBLBinding::GenerateAnonymousContent()
     }
 
     // Conserve space by wiping the attributes off the clone.
-    if (mContent)
-      mContent->UnsetAttr(namespaceID, name, false);
+    //
+    // FIXME(emilio): It'd be nice to make `mContent` a `RefPtr<Element>`.
+    if (mContent) mContent->AsElement()->UnsetAttr(namespaceID, name, false);
   }
 }
 
-nsIURI*
-nsXBLBinding::GetSourceDocURI()
-{
+nsIURI* nsXBLBinding::GetSourceDocURI() {
   nsIContent* targetContent =
-    mPrototypeBinding->GetImmediateChild(nsGkAtoms::content);
+      mPrototypeBinding->GetImmediateChild(nsGkAtoms::content);
   if (!targetContent) {
     return nullptr;
   }
@@ -432,22 +381,18 @@ nsXBLBinding::GetSourceDocURI()
   return targetContent->OwnerDoc()->GetDocumentURI();
 }
 
-XBLChildrenElement*
-nsXBLBinding::FindInsertionPointFor(nsIContent* aChild)
-{
+XBLChildrenElement* nsXBLBinding::FindInsertionPointFor(nsIContent* aChild) {
   // XXX We should get rid of this function as it causes us to traverse the
   // binding chain multiple times
   if (mContent) {
     return FindInsertionPointForInternal(aChild);
   }
 
-  return mNextBinding ? mNextBinding->FindInsertionPointFor(aChild)
-                      : nullptr;
+  return mNextBinding ? mNextBinding->FindInsertionPointFor(aChild) : nullptr;
 }
 
-XBLChildrenElement*
-nsXBLBinding::FindInsertionPointForInternal(nsIContent* aChild)
-{
+XBLChildrenElement* nsXBLBinding::FindInsertionPointForInternal(
+    nsIContent* aChild) {
   for (uint32_t i = 0; i < mInsertionPoints.Length(); ++i) {
     XBLChildrenElement* point = mInsertionPoints[i];
     if (point->Includes(aChild)) {
@@ -458,21 +403,17 @@ nsXBLBinding::FindInsertionPointForInternal(nsIContent* aChild)
   return mDefaultInsertionPoint;
 }
 
-void
-nsXBLBinding::ClearInsertionPoints()
-{
+void nsXBLBinding::ClearInsertionPoints() {
   if (mDefaultInsertionPoint) {
     mDefaultInsertionPoint->ClearInsertedChildren();
   }
 
-  for (uint32_t i = 0; i < mInsertionPoints.Length(); ++i) {
-    mInsertionPoints[i]->ClearInsertedChildren();
+  for (const auto& insertionPoint : mInsertionPoints) {
+    insertionPoint->ClearInsertedChildren();
   }
 }
 
-nsAnonymousContentList*
-nsXBLBinding::GetAnonymousNodeList()
-{
+nsAnonymousContentList* nsXBLBinding::GetAnonymousNodeList() {
   if (!mContent) {
     return mNextBinding ? mNextBinding->GetAnonymousNodeList() : nullptr;
   }
@@ -484,30 +425,26 @@ nsXBLBinding::GetAnonymousNodeList()
   return mAnonymousContentList;
 }
 
-void
-nsXBLBinding::InstallEventHandlers()
-{
+void nsXBLBinding::InstallEventHandlers() {
   // Don't install handlers if scripts aren't allowed.
   if (AllowScripts()) {
     // Fetch the handlers prototypes for this binding.
-    nsXBLPrototypeHandler* handlerChain = mPrototypeBinding->GetPrototypeHandlers();
+    nsXBLPrototypeHandler* handlerChain =
+        mPrototypeBinding->GetPrototypeHandlers();
 
     if (handlerChain) {
-      EventListenerManager* manager = mBoundElement->GetOrCreateListenerManager();
-      if (!manager)
-        return;
+      EventListenerManager* manager =
+          mBoundElement->GetOrCreateListenerManager();
+      if (!manager) return;
 
-      bool isChromeDoc =
-        nsContentUtils::IsChromeDoc(mBoundElement->OwnerDoc());
+      bool isChromeDoc = nsContentUtils::IsChromeDoc(mBoundElement->OwnerDoc());
       bool isChromeBinding = mPrototypeBinding->IsChrome();
       nsXBLPrototypeHandler* curr;
       for (curr = handlerChain; curr; curr = curr->GetNextHandler()) {
         // Fetch the event type.
-        nsCOMPtr<nsIAtom> eventAtom = curr->GetEventName();
-        if (!eventAtom ||
-            eventAtom == nsGkAtoms::keyup ||
-            eventAtom == nsGkAtoms::keydown ||
-            eventAtom == nsGkAtoms::keypress)
+        RefPtr<nsAtom> eventAtom = curr->GetEventName();
+        if (!eventAtom || eventAtom == nsGkAtoms::keyup ||
+            eventAtom == nsGkAtoms::keydown || eventAtom == nsGkAtoms::keypress)
           continue;
 
         nsXBLEventHandler* handler = curr->GetEventHandler();
@@ -517,26 +454,27 @@ nsXBLBinding::InstallEventHandlers()
           flags.mCapture = (curr->GetPhase() == NS_PHASE_CAPTURING);
 
           // If this is a command, add it in the system event group
-          if ((curr->GetType() & (NS_HANDLER_TYPE_XBL_COMMAND |
-                                  NS_HANDLER_TYPE_SYSTEM)) &&
-              (isChromeBinding || mBoundElement->IsInNativeAnonymousSubtree())) {
+          if ((curr->GetType() &
+               (NS_HANDLER_TYPE_XBL_COMMAND | NS_HANDLER_TYPE_SYSTEM)) &&
+              (isChromeBinding ||
+               mBoundElement->IsInNativeAnonymousSubtree())) {
             flags.mInSystemGroup = true;
           }
 
           bool hasAllowUntrustedAttr = curr->HasAllowUntrustedAttr();
           if ((hasAllowUntrustedAttr && curr->AllowUntrustedEvents()) ||
-              (!hasAllowUntrustedAttr && !isChromeDoc && !mUsingContentXBLScope)) {
+              (!hasAllowUntrustedAttr && !isChromeDoc &&
+               !mUsingContentXBLScope)) {
             flags.mAllowUntrustedEvents = true;
           }
 
-          manager->AddEventListenerByType(handler,
-                                          nsDependentAtomString(eventAtom),
-                                          flags);
+          manager->AddEventListenerByType(
+              handler, nsDependentAtomString(eventAtom), flags);
         }
       }
 
       const nsCOMArray<nsXBLKeyEventHandler>* keyHandlers =
-        mPrototypeBinding->GetKeyEventHandlers();
+          mPrototypeBinding->GetKeyEventHandlers();
       int32_t i;
       for (i = 0; i < keyHandlers->Count(); ++i) {
         nsXBLKeyEventHandler* handler = keyHandlers->ObjectAt(i);
@@ -553,8 +491,8 @@ nsXBLBinding::InstallEventHandlers()
         EventListenerFlags flags;
         flags.mCapture = (handler->GetPhase() == NS_PHASE_CAPTURING);
 
-        if ((handler->GetType() & (NS_HANDLER_TYPE_XBL_COMMAND |
-                                   NS_HANDLER_TYPE_SYSTEM)) &&
+        if ((handler->GetType() &
+             (NS_HANDLER_TYPE_XBL_COMMAND | NS_HANDLER_TYPE_SYSTEM)) &&
             (isChromeBinding || mBoundElement->IsInNativeAnonymousSubtree())) {
           flags.mInSystemGroup = true;
         }
@@ -569,13 +507,10 @@ nsXBLBinding::InstallEventHandlers()
     }
   }
 
-  if (mNextBinding)
-    mNextBinding->InstallEventHandlers();
+  if (mNextBinding) mNextBinding->InstallEventHandlers();
 }
 
-nsresult
-nsXBLBinding::InstallImplementation()
-{
+nsresult nsXBLBinding::InstallImplementation() {
   // Always install the base class properties first, so that
   // derived classes can reference the base class properties.
 
@@ -584,62 +519,49 @@ nsXBLBinding::InstallImplementation()
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  // iterate through each property in the prototype's list and install the property.
-  if (AllowScripts())
-    return mPrototypeBinding->InstallImplementation(this);
+  // iterate through each property in the prototype's list and install the
+  // property.
+  if (AllowScripts()) return mPrototypeBinding->InstallImplementation(this);
 
   return NS_OK;
 }
 
-nsIAtom*
-nsXBLBinding::GetBaseTag(int32_t* aNameSpaceID)
-{
-  nsIAtom *tag = mPrototypeBinding->GetBaseTag(aNameSpaceID);
-  if (!tag && mNextBinding)
-    return mNextBinding->GetBaseTag(aNameSpaceID);
+nsAtom* nsXBLBinding::GetBaseTag(int32_t* aNameSpaceID) {
+  nsAtom* tag = mPrototypeBinding->GetBaseTag(aNameSpaceID);
+  if (!tag && mNextBinding) return mNextBinding->GetBaseTag(aNameSpaceID);
 
   return tag;
 }
 
-void
-nsXBLBinding::AttributeChanged(nsIAtom* aAttribute, int32_t aNameSpaceID,
-                               bool aRemoveFlag, bool aNotify)
-{
-  // XXX Change if we ever allow multiple bindings in a chain to contribute anonymous content
+void nsXBLBinding::AttributeChanged(nsAtom* aAttribute, int32_t aNameSpaceID,
+                                    bool aRemoveFlag, bool aNotify) {
+  // XXX Change if we ever allow multiple bindings in a chain to contribute
+  // anonymous content
   if (!mContent) {
     if (mNextBinding)
-      mNextBinding->AttributeChanged(aAttribute, aNameSpaceID,
-                                     aRemoveFlag, aNotify);
+      mNextBinding->AttributeChanged(aAttribute, aNameSpaceID, aRemoveFlag,
+                                     aNotify);
   } else {
     mPrototypeBinding->AttributeChanged(aAttribute, aNameSpaceID, aRemoveFlag,
                                         mBoundElement, mContent, aNotify);
   }
 }
 
-void
-nsXBLBinding::ExecuteAttachedHandler()
-{
-  if (mNextBinding)
-    mNextBinding->ExecuteAttachedHandler();
+void nsXBLBinding::ExecuteAttachedHandler() {
+  if (mNextBinding) mNextBinding->ExecuteAttachedHandler();
 
-  if (AllowScripts())
-    mPrototypeBinding->BindingAttached(mBoundElement);
+  if (AllowScripts()) mPrototypeBinding->BindingAttached(mBoundElement);
 }
 
-void
-nsXBLBinding::ExecuteDetachedHandler()
-{
-  if (AllowScripts())
-    mPrototypeBinding->BindingDetached(mBoundElement);
+void nsXBLBinding::ExecuteDetachedHandler() {
+  if (AllowScripts()) mPrototypeBinding->BindingDetached(mBoundElement);
 
-  if (mNextBinding)
-    mNextBinding->ExecuteDetachedHandler();
+  if (mNextBinding) mNextBinding->ExecuteDetachedHandler();
 }
 
-void
-nsXBLBinding::UnhookEventHandlers()
-{
-  nsXBLPrototypeHandler* handlerChain = mPrototypeBinding->GetPrototypeHandlers();
+void nsXBLBinding::UnhookEventHandlers() {
+  nsXBLPrototypeHandler* handlerChain =
+      mPrototypeBinding->GetPrototypeHandlers();
 
   if (handlerChain) {
     EventListenerManager* manager = mBoundElement->GetExistingListenerManager();
@@ -655,11 +577,9 @@ nsXBLBinding::UnhookEventHandlers()
         continue;
       }
 
-      nsCOMPtr<nsIAtom> eventAtom = curr->GetEventName();
-      if (!eventAtom ||
-          eventAtom == nsGkAtoms::keyup ||
-          eventAtom == nsGkAtoms::keydown ||
-          eventAtom == nsGkAtoms::keypress)
+      RefPtr<nsAtom> eventAtom = curr->GetEventName();
+      if (!eventAtom || eventAtom == nsGkAtoms::keyup ||
+          eventAtom == nsGkAtoms::keydown || eventAtom == nsGkAtoms::keypress)
         continue;
 
       // Figure out if we're using capturing or not.
@@ -669,19 +589,18 @@ nsXBLBinding::UnhookEventHandlers()
       // If this is a command, remove it from the system event group,
       // otherwise remove it from the standard event group.
 
-      if ((curr->GetType() & (NS_HANDLER_TYPE_XBL_COMMAND |
-                              NS_HANDLER_TYPE_SYSTEM)) &&
+      if ((curr->GetType() &
+           (NS_HANDLER_TYPE_XBL_COMMAND | NS_HANDLER_TYPE_SYSTEM)) &&
           (isChromeBinding || mBoundElement->IsInNativeAnonymousSubtree())) {
         flags.mInSystemGroup = true;
       }
 
-      manager->RemoveEventListenerByType(handler,
-                                         nsDependentAtomString(eventAtom),
-                                         flags);
+      manager->RemoveEventListenerByType(
+          handler, nsDependentAtomString(eventAtom), flags);
     }
 
     const nsCOMArray<nsXBLKeyEventHandler>* keyHandlers =
-      mPrototypeBinding->GetKeyEventHandlers();
+        mPrototypeBinding->GetKeyEventHandlers();
     int32_t i;
     for (i = 0; i < keyHandlers->Count(); ++i) {
       nsXBLKeyEventHandler* handler = keyHandlers->ObjectAt(i);
@@ -696,7 +615,8 @@ nsXBLBinding::UnhookEventHandlers()
       // If this is a command, remove it from the system event group, otherwise
       // remove it from the standard event group.
 
-      if ((handler->GetType() & (NS_HANDLER_TYPE_XBL_COMMAND | NS_HANDLER_TYPE_SYSTEM)) &&
+      if ((handler->GetType() &
+           (NS_HANDLER_TYPE_XBL_COMMAND | NS_HANDLER_TYPE_SYSTEM)) &&
           (isChromeBinding || mBoundElement->IsInNativeAnonymousSubtree())) {
         flags.mInSystemGroup = true;
       }
@@ -706,39 +626,9 @@ nsXBLBinding::UnhookEventHandlers()
   }
 }
 
-static void
-UpdateInsertionParent(XBLChildrenElement* aPoint,
-                      nsIContent* aOldBoundElement)
-{
-  if (aPoint->IsDefaultInsertion()) {
-    return;
-  }
-
-  for (size_t i = 0; i < aPoint->InsertedChildrenLength(); ++i) {
-    nsIContent* child = aPoint->InsertedChild(i);
-
-    MOZ_ASSERT(child->GetParentNode());
-
-    // Here, we're iterating children that we inserted. There are two cases:
-    // either |child| is an explicit child of |aOldBoundElement| and is no
-    // longer inserted anywhere or it's a child of a <children> element
-    // parented to |aOldBoundElement|. In the former case, the child is no
-    // longer inserted anywhere, so we set its insertion parent to null. In the
-    // latter case, the child is now inserted into |aOldBoundElement| from some
-    // binding above us, so we set its insertion parent to aOldBoundElement.
-    if (child->GetParentNode() == aOldBoundElement) {
-      child->SetXBLInsertionParent(nullptr);
-    } else {
-      child->SetXBLInsertionParent(aOldBoundElement);
-    }
-  }
-}
-
-void
-nsXBLBinding::ChangeDocument(nsIDocument* aOldDocument, nsIDocument* aNewDocument)
-{
-  if (aOldDocument == aNewDocument)
-    return;
+void nsXBLBinding::ChangeDocument(Document* aOldDocument,
+                                  Document* aNewDocument) {
+  if (aOldDocument == aNewDocument) return;
 
   // Now the binding dies.  Unhook our prototypes.
   if (mPrototypeBinding->HasImplementation()) {
@@ -759,11 +649,11 @@ nsXBLBinding::ChangeDocument(nsIDocument* aOldDocument, nsIDocument* aNewDocumen
         // that was...
 
         // Find the right prototype.
-        JSAutoCompartment ac(cx, scriptObject);
+        JSAutoRealm ar(cx, scriptObject);
 
         JS::Rooted<JSObject*> base(cx, scriptObject);
         JS::Rooted<JSObject*> proto(cx);
-        for ( ; true; base = proto) { // Will break out on null proto
+        for (; true; base = proto) {  // Will break out on null proto
           if (!JS_GetPrototype(cx, base, &proto)) {
             return;
           }
@@ -777,7 +667,7 @@ nsXBLBinding::ChangeDocument(nsIDocument* aOldDocument, nsIDocument* aNewDocumen
           }
 
           RefPtr<nsXBLDocumentInfo> docInfo =
-            static_cast<nsXBLDocumentInfo*>(::JS_GetPrivate(proto));
+              static_cast<nsXBLDocumentInfo*>(::JS_GetPrivate(proto));
           if (!docInfo) {
             // Not the proto we seek
             continue;
@@ -823,55 +713,33 @@ nsXBLBinding::ChangeDocument(nsIDocument* aOldDocument, nsIDocument* aNewDocumen
 
     // Update the anonymous content.
     // XXXbz why not only for style bindings?
-    if (mContent && !mIsShadowRootBinding) {
-      nsXBLBinding::UninstallAnonymousContent(aOldDocument, mContent);
+    if (mContent) {
+      nsXBLBinding::UnbindAnonymousContent(aOldDocument, mContent);
     }
 
-    // Now that we've unbound our anonymous content from the tree and updated
-    // its binding parent, update the insertion parent for content inserted
-    // into our <children> elements.
-    if (mDefaultInsertionPoint) {
-      UpdateInsertionParent(mDefaultInsertionPoint, mBoundElement);
-    }
-
-    for (size_t i = 0; i < mInsertionPoints.Length(); ++i) {
-      UpdateInsertionParent(mInsertionPoints[i], mBoundElement);
-    }
-
-    // Now that our inserted children no longer think they're inserted
-    // anywhere, make sure our internal state reflects that as well.
     ClearInsertionPoints();
   }
 }
 
-bool
-nsXBLBinding::InheritsStyle() const
-{
-  // XXX Will have to change if we ever allow multiple bindings to contribute anonymous content.
-  // Most derived binding with anonymous content determines style inheritance for now.
+bool nsXBLBinding::InheritsStyle() const {
+  // XXX Will have to change if we ever allow multiple bindings to contribute
+  // anonymous content. Most derived binding with anonymous content determines
+  // style inheritance for now.
 
-  // XXX What about bindings with <content> but no kids, e.g., my treecell-text binding?
-  if (mContent)
-    return mPrototypeBinding->InheritsStyle();
+  // XXX What about bindings with <content> but no kids, e.g., my treecell-text
+  // binding?
+  if (mContent) return mPrototypeBinding->InheritsStyle();
 
-  if (mNextBinding)
-    return mNextBinding->InheritsStyle();
+  if (mNextBinding) return mNextBinding->InheritsStyle();
 
   return true;
 }
 
-void
-nsXBLBinding::WalkRules(nsIStyleRuleProcessor::EnumFunc aFunc, void* aData)
-{
-  if (mNextBinding)
-    mNextBinding->WalkRules(aFunc, aData);
-
-  nsIStyleRuleProcessor *rules = mPrototypeBinding->GetRuleProcessor();
-  if (rules)
-    (*aFunc)(rules, aData);
+const RawServoAuthorStyles* nsXBLBinding::GetServoStyles() const {
+  return mPrototypeBinding->GetServoStyles();
 }
 
-// Internal helper methods ////////////////////////////////////////////////////////////////
+// Internal helper methods /////////////////////////////////////////////////////
 
 // Get or create a WeakMap object on a given XBL-hosting global.
 //
@@ -881,9 +749,9 @@ nsXBLBinding::WalkRules(nsIStyleRuleProcessor::EnumFunc aFunc, void* aData)
 // content before it was bound, and the prototype of the class object that we
 // splice in. The values in the WeakMap are simple dictionary-style objects,
 // mapping from XBL class names to class objects.
-static JSObject*
-GetOrCreateClassObjectMap(JSContext *cx, JS::Handle<JSObject*> scope, const char *mapName)
-{
+static JSObject* GetOrCreateClassObjectMap(JSContext* cx,
+                                           JS::Handle<JSObject*> scope,
+                                           const char* mapName) {
   AssertSameCompartment(cx, scope);
   MOZ_ASSERT(JS_IsGlobalObject(scope));
   MOZ_ASSERT(scope == xpc::GetXBLScopeOrGlobal(cx, scope));
@@ -901,17 +769,14 @@ GetOrCreateClassObjectMap(JSContext *cx, JS::Handle<JSObject*> scope, const char
   // It's not there. Create and define it.
   JS::Rooted<JSObject*> map(cx, JS::NewWeakMapObject(cx));
   if (!map || !JS_DefineProperty(cx, scope, mapName, map,
-                                 JSPROP_PERMANENT | JSPROP_READONLY,
-                                 JS_STUBGETTER, JS_STUBSETTER))
-  {
+                                 JSPROP_PERMANENT | JSPROP_READONLY)) {
     return nullptr;
   }
   return map;
 }
 
-static JSObject*
-GetOrCreateMapEntryForPrototype(JSContext *cx, JS::Handle<JSObject*> proto)
-{
+static JSObject* GetOrCreateMapEntryForPrototype(JSContext* cx,
+                                                 JS::Handle<JSObject*> proto) {
   AssertSameCompartment(cx, proto);
   // We want to hang our class objects off the XBL scope. But since we also
   // hoist anonymous content into the XBL scope, this creates the potential for
@@ -924,18 +789,20 @@ GetOrCreateMapEntryForPrototype(JSContext *cx, JS::Handle<JSObject*> proto)
   // So we define two maps - one class objects that live in content (prototyped
   // to content prototypes), and the other for class objects that live in the
   // XBL scope (prototyped to cross-compartment-wrapped content prototypes).
-  const char* name = xpc::IsInContentXBLScope(proto) ? "__ContentClassObjectMap__"
-                                                     : "__XBLClassObjectMap__";
+  const char* name = xpc::IsInContentXBLScope(proto)
+                         ? "__ContentClassObjectMap__"
+                         : "__XBLClassObjectMap__";
 
   // Now, enter the XBL scope, since that's where we need to operate, and wrap
   // the proto accordingly. We hang the map off of the content XBL scope for
   // content, and the Window for chrome (whether add-ons are involved or not).
-  JS::Rooted<JSObject*> scope(cx, xpc::GetXBLScopeOrGlobal(cx, proto));
+  JS::Rooted<JSObject*> scope(
+      cx, xpc::GetXBLScopeOrGlobal(cx, JS::CurrentGlobalOrNull(cx)));
   NS_ENSURE_TRUE(scope, nullptr);
-  MOZ_ASSERT(js::GetGlobalForObjectCrossCompartment(scope) == scope);
+  MOZ_ASSERT(JS_IsGlobalObject(scope));
 
   JS::Rooted<JSObject*> wrappedProto(cx, proto);
-  JSAutoCompartment ac(cx, scope);
+  JSAutoRealm ar(cx, scope);
   if (!JS_WrapObject(cx, &wrappedProto)) {
     return nullptr;
   }
@@ -963,31 +830,26 @@ GetOrCreateMapEntryForPrototype(JSContext *cx, JS::Handle<JSObject*> proto)
   }
   JS::Rooted<JS::Value> entryVal(cx, JS::ObjectValue(*entry));
   if (!JS::SetWeakMapEntry(cx, map, wrappedProto, entryVal)) {
-    NS_WARNING("SetWeakMapEntry failed, probably due to non-preservable WeakMap "
-               "key. XBL binding will fail for this element.");
+    NS_WARNING(
+        "SetWeakMapEntry failed, probably due to non-preservable WeakMap "
+        "key. XBL binding will fail for this element.");
     return nullptr;
   }
   return entry;
 }
 
-static
-nsXBLPrototypeBinding*
-GetProtoBindingFromClassObject(JSObject* obj)
-{
+static nsXBLPrototypeBinding* GetProtoBindingFromClassObject(JSObject* obj) {
   MOZ_ASSERT(JS_GetClass(obj) == &gPrototypeJSClass);
-  return static_cast<nsXBLPrototypeBinding*>(::JS_GetReservedSlot(obj, 0).toPrivate());
+  return static_cast<nsXBLPrototypeBinding*>(
+      ::JS_GetReservedSlot(obj, 0).toPrivate());
 }
 
-
 // static
-nsresult
-nsXBLBinding::DoInitJSClass(JSContext *cx,
-                            JS::Handle<JSObject*> obj,
-                            const nsAFlatString& aClassName,
-                            nsXBLPrototypeBinding* aProtoBinding,
-                            JS::MutableHandle<JSObject*> aClassObject,
-                            bool* aNew)
-{
+nsresult nsXBLBinding::DoInitJSClass(JSContext* cx, JS::Handle<JSObject*> obj,
+                                     const nsString& aClassName,
+                                     nsXBLPrototypeBinding* aProtoBinding,
+                                     JS::MutableHandle<JSObject*> aClassObject,
+                                     bool* aNew) {
   MOZ_ASSERT(obj);
 
   // Note that, now that NAC reflectors are created in the XBL scope, the
@@ -996,14 +858,27 @@ nsXBLBinding::DoInitJSClass(JSContext *cx,
   // and defining it as a property on the XBL scope's global. This works fine,
   // but we need to make sure never to assume that the the reflector and
   // prototype are same-compartment with the bound document.
-  JS::Rooted<JSObject*> global(cx, js::GetGlobalForObjectCrossCompartment(obj));
+  JS::Rooted<JSObject*> global(cx, JS::GetNonCCWObjectGlobal(obj));
+
+  // We must be in obj's realm.
+  MOZ_ASSERT(JS::CurrentGlobalOrNull(cx) == global);
 
   // We never store class objects in add-on scopes.
   JS::Rooted<JSObject*> xblScope(cx, xpc::GetXBLScopeOrGlobal(cx, global));
   NS_ENSURE_TRUE(xblScope, NS_ERROR_UNEXPECTED);
 
   JS::Rooted<JSObject*> parent_proto(cx);
-  if (!JS_GetPrototype(cx, obj, &parent_proto)) {
+  {
+    JS::RootedObject wrapped(cx, obj);
+    JSAutoRealm ar(cx, xblScope);
+    if (!JS_WrapObject(cx, &wrapped)) {
+      return NS_ERROR_FAILURE;
+    }
+    if (!JS_GetPrototype(cx, wrapped, &parent_proto)) {
+      return NS_ERROR_FAILURE;
+    }
+  }
+  if (!JS_WrapObject(cx, &parent_proto)) {
     return NS_ERROR_FAILURE;
   }
 
@@ -1014,34 +889,35 @@ nsXBLBinding::DoInitJSClass(JSContext *cx,
   if (parent_proto) {
     holder = GetOrCreateMapEntryForPrototype(cx, parent_proto);
   } else {
-    JSAutoCompartment innerAC(cx, xblScope);
-    holder = GetOrCreateClassObjectMap(cx, xblScope, "__ContentClassObjectMap__");
+    JSAutoRealm innerAR(cx, xblScope);
+    holder =
+        GetOrCreateClassObjectMap(cx, xblScope, "__ContentClassObjectMap__");
   }
   if (NS_WARN_IF(!holder)) {
     return NS_ERROR_FAILURE;
   }
   js::AssertSameCompartment(holder, xblScope);
-  JSAutoCompartment ac(cx, holder);
+  JSAutoRealm ar(cx, holder);
 
   // Look up the class on the property holder. The only properties on the
   // holder should be class objects. If we don't find the class object, we need
   // to create and define it.
   JS::Rooted<JSObject*> proto(cx);
   JS::Rooted<JS::PropertyDescriptor> desc(cx);
-  if (!JS_GetOwnUCPropertyDescriptor(cx, holder, aClassName.get(), &desc)) {
+  if (!JS_GetOwnUCPropertyDescriptor(cx, holder, aClassName.get(),
+                                     aClassName.Length(), &desc)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
   *aNew = !desc.object();
   if (desc.object()) {
     proto = &desc.value().toObject();
     DebugOnly<nsXBLPrototypeBinding*> cachedBinding =
-      GetProtoBindingFromClassObject(js::UncheckedUnwrap(proto));
+        GetProtoBindingFromClassObject(js::UncheckedUnwrap(proto));
     MOZ_ASSERT(cachedBinding == aProtoBinding);
   } else {
-
-    // We need to create the prototype. First, enter the compartment where it's
+    // We need to create the prototype. First, enter the realm where it's
     // going to live, and create it.
-    JSAutoCompartment ac2(cx, global);
+    JSAutoRealm ar2(cx, global);
     proto = JS_NewObjectWithGivenProto(cx, &gPrototypeJSClass, parent_proto);
     if (!proto) {
       return NS_ERROR_OUT_OF_MEMORY;
@@ -1056,23 +932,22 @@ nsXBLBinding::DoInitJSClass(JSContext *cx,
     nsXBLDocumentInfo* docInfo = aProtoBinding->XBLDocumentInfo();
     ::JS_SetPrivate(proto, docInfo);
     NS_ADDREF(docInfo);
+    RecordReplayRegisterDeferredFinalize(docInfo);
     JS_SetReservedSlot(proto, 0, JS::PrivateValue(aProtoBinding));
 
-    // Next, enter the compartment of the property holder, wrap the proto, and
+    // Next, enter the realm of the property holder, wrap the proto, and
     // stick it on.
-    JSAutoCompartment ac3(cx, holder);
+    JSAutoRealm ar3(cx, holder);
     if (!JS_WrapObject(cx, &proto) ||
         !JS_DefineUCProperty(cx, holder, aClassName.get(), -1, proto,
-                             JSPROP_READONLY | JSPROP_PERMANENT,
-                             JS_STUBGETTER, JS_STUBSETTER))
-    {
+                             JSPROP_READONLY | JSPROP_PERMANENT)) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
   }
 
-  // Whew. We have the proto. Wrap it back into the compartment of |obj|,
+  // Whew. We have the proto. Wrap it back into the realm of |obj|,
   // splice it in, and return it.
-  JSAutoCompartment ac4(cx, obj);
+  JSAutoRealm ar4(cx, obj);
   if (!JS_WrapObject(cx, &proto) || !JS_SetPrototype(cx, obj, proto)) {
     return NS_ERROR_FAILURE;
   }
@@ -1080,24 +955,18 @@ nsXBLBinding::DoInitJSClass(JSContext *cx,
   return NS_OK;
 }
 
-bool
-nsXBLBinding::AllowScripts()
-{
+bool nsXBLBinding::AllowScripts() {
   return mBoundElement && mPrototypeBinding->GetAllowScripts();
 }
 
-nsXBLBinding*
-nsXBLBinding::RootBinding()
-{
-  if (mNextBinding)
-    return mNextBinding->RootBinding();
+nsXBLBinding* nsXBLBinding::RootBinding() {
+  if (mNextBinding) return mNextBinding->RootBinding();
 
   return this;
 }
 
-bool
-nsXBLBinding::ResolveAllFields(JSContext *cx, JS::Handle<JSObject*> obj) const
-{
+bool nsXBLBinding::ResolveAllFields(JSContext* cx,
+                                    JS::Handle<JSObject*> obj) const {
   if (!mPrototypeBinding->ResolveAllFields(cx, obj)) {
     return false;
   }
@@ -1109,10 +978,9 @@ nsXBLBinding::ResolveAllFields(JSContext *cx, JS::Handle<JSObject*> obj) const
   return true;
 }
 
-bool
-nsXBLBinding::LookupMember(JSContext* aCx, JS::Handle<jsid> aId,
-                           JS::MutableHandle<JS::PropertyDescriptor> aDesc)
-{
+bool nsXBLBinding::LookupMember(
+    JSContext* aCx, JS::Handle<jsid> aId,
+    JS::MutableHandle<JS::PropertyDescriptor> aDesc) {
   // We should never enter this function with a pre-filled property descriptor.
   MOZ_ASSERT(!aDesc.object());
 
@@ -1142,9 +1010,8 @@ nsXBLBinding::LookupMember(JSContext* aCx, JS::Handle<jsid> aId,
   //
   // This code is only called for content XBL, so we don't have to worry about
   // add-on scopes here.
-  JS::Rooted<JSObject*> boundScope(aCx,
-    js::GetGlobalForObjectCrossCompartment(mBoundElement->GetWrapper()));
-  MOZ_RELEASE_ASSERT(!xpc::IsInAddonScope(boundScope));
+  JS::Rooted<JSObject*> boundScope(
+      aCx, JS::GetNonCCWObjectGlobal(mBoundElement->GetWrapper()));
   MOZ_RELEASE_ASSERT(!xpc::IsInContentXBLScope(boundScope));
   JS::Rooted<JSObject*> xblScope(aCx, xpc::GetXBLScope(aCx, boundScope));
   NS_ENSURE_TRUE(xblScope, false);
@@ -1152,7 +1019,7 @@ nsXBLBinding::LookupMember(JSContext* aCx, JS::Handle<jsid> aId,
 
   // Enter the xbl scope and invoke the internal version.
   {
-    JSAutoCompartment ac(aCx, xblScope);
+    JSAutoRealm ar(aCx, xblScope);
     JS::Rooted<jsid> id(aCx, aId);
     if (!LookupMemberInternal(aCx, name, id, aDesc, xblScope)) {
       return false;
@@ -1163,12 +1030,10 @@ nsXBLBinding::LookupMember(JSContext* aCx, JS::Handle<jsid> aId,
   return JS_WrapPropertyDescriptor(aCx, aDesc);
 }
 
-bool
-nsXBLBinding::LookupMemberInternal(JSContext* aCx, nsString& aName,
-                                   JS::Handle<jsid> aNameAsId,
-                                   JS::MutableHandle<JS::PropertyDescriptor> aDesc,
-                                   JS::Handle<JSObject*> aXBLScope)
-{
+bool nsXBLBinding::LookupMemberInternal(
+    JSContext* aCx, nsString& aName, JS::Handle<jsid> aNameAsId,
+    JS::MutableHandle<JS::PropertyDescriptor> aDesc,
+    JS::Handle<JSObject*> aXBLScope) {
   // First, see if we have an implementation. If we don't, it means that this
   // binding doesn't have a class object, and thus doesn't have any members.
   // Skip it.
@@ -1176,12 +1041,12 @@ nsXBLBinding::LookupMemberInternal(JSContext* aCx, nsString& aName,
     if (!mNextBinding) {
       return true;
     }
-    return mNextBinding->LookupMemberInternal(aCx, aName, aNameAsId,
-                                              aDesc, aXBLScope);
+    return mNextBinding->LookupMemberInternal(aCx, aName, aNameAsId, aDesc,
+                                              aXBLScope);
   }
 
-  // Find our class object. It's in a protected scope and permanent just in case,
-  // so should be there no matter what.
+  // Find our class object. It's in a protected scope and permanent just in
+  // case, so should be there no matter what.
   JS::Rooted<JS::Value> classObject(aCx);
   if (!JS_GetUCProperty(aCx, aXBLScope, PrototypeBinding()->ClassName().get(),
                         -1, &classObject)) {
@@ -1213,24 +1078,18 @@ nsXBLBinding::LookupMemberInternal(JSContext* aCx, nsString& aName,
                                             aXBLScope);
 }
 
-bool
-nsXBLBinding::HasField(nsString& aName)
-{
+bool nsXBLBinding::HasField(nsString& aName) {
   // See if this binding has such a field.
   return mPrototypeBinding->FindField(aName) ||
-    (mNextBinding && mNextBinding->HasField(aName));
+         (mNextBinding && mNextBinding->HasField(aName));
 }
 
-void
-nsXBLBinding::MarkForDeath()
-{
+void nsXBLBinding::MarkForDeath() {
   mMarkedForDeath = true;
   ExecuteDetachedHandler();
 }
 
-bool
-nsXBLBinding::ImplementsInterface(REFNSIID aIID) const
-{
+bool nsXBLBinding::ImplementsInterface(REFNSIID aIID) const {
   return mPrototypeBinding->ImplementsInterface(aIID) ||
-    (mNextBinding && mNextBinding->ImplementsInterface(aIID));
+         (mNextBinding && mNextBinding->ImplementsInterface(aIID));
 }

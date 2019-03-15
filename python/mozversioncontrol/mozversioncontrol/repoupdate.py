@@ -2,12 +2,13 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this,
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import unicode_literals
+from __future__ import absolute_import, unicode_literals
 
 import os
 import subprocess
 
 # The logic here is far from robust. Improvements are welcome.
+
 
 def update_mercurial_repo(hg, repo, path, revision='default',
                           hostfingerprints=None, global_args=None):
@@ -20,7 +21,7 @@ def update_mercurial_repo(hg, repo, path, revision='default',
 
     for host, fingerprint in sorted(hostfingerprints.items()):
         args.extend(['--config', 'hostfingerprints.%s=%s' % (host,
-            fingerprint)])
+                     fingerprint)])
 
     if os.path.exists(path):
         subprocess.check_call(args + ['pull', repo], cwd=path)

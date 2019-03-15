@@ -16,7 +16,7 @@ V1_CUTOFF = 20150801000000 # YYYYmmddHHMMSS
 def android_version_code_v0(buildid, cpu_arch=None, min_sdk=0, max_sdk=0):
     base = int(str(buildid)[:10])
     # None is interpreted as arm.
-    if not cpu_arch or cpu_arch in ['armeabi', 'armeabi-v7a']:
+    if not cpu_arch or cpu_arch == 'armeabi-v7a':
         # Increment by MIN_SDK_VERSION -- this adds 9 to every build ID as a
         # minimum.  Our split APK starts at 15.
         return base + min_sdk + 0
@@ -49,21 +49,24 @@ def android_version_code_v1(buildid, cpu_arch=None, min_sdk=0, max_sdk=0):
 
     The bits labelled 'x', 'p', and 'g' are feature flags.
 
-    The bit labelled 'x' is 1 if the build is for an x86 architecture and 0
-    otherwise, which means the build is for an ARM architecture.  (Fennec no
-    longer supports ARMv6, so ARM is equivalent to ARMv7 and above.)
+    The bit labelled 'x' is 1 if the build is for an x86 or x86-64 architecture,
+    and 0 otherwise, which means the build is for an ARM or ARM64 architecture.
+    (Fennec no longer supports ARMv6, so ARM is equivalent to ARMv7.
+     ARM64 is also known as AArch64; it is logically ARMv8.)
 
-    The bit labelled 'p' is a placeholder that is always 0 (for now).
+    For the same release, x86 and x86_64 builds have higher version codes and
+    take precedence over ARM builds, so that they are preferred over ARM on
+    devices that have ARM emulation.
 
-    Firefox no longer supports API 14 or earlier.
+    The bit labelled 'p' is 1 if the build is for a 64-bit architecture (x86-64
+    or ARM64), and 0 otherwise, which means the build is for a 32-bit
+    architecture (x86 or ARM). 64-bit builds have higher version codes so
+    they take precedence over 32-bit builds on devices that support 64-bit.
 
-    This version code computation allows for a split on API levels that allowed
-    us to ship builds specifically for Gingerbread (API 9-10); we preserve
-    that functionality for sanity's sake, and to allow us to reintroduce a
-    split in the future.
-
-    At present, the bit labelled 'g' is 1 if the build is an ARM build
-    targeting API 15+, which will always be the case.
+    The bit labelled 'g' is 1 if the build targets a recent API level, which
+    is currently always the case, because Firefox no longer ships releases that
+    are split by API levels. However, we may reintroduce a split in the future,
+    in which case the release that targets an older API level will
 
     We throw an explanatory exception when we are within one calendar year of
     running out of build events.  This gives lots of time to update the version
@@ -108,23 +111,26 @@ def android_version_code_v1(buildid, cpu_arch=None, min_sdk=0, max_sdk=0):
     # for architecture and APK splits.
     version |= base << 3
 
-    # None is interpreted as arm.
-    if not cpu_arch or cpu_arch in ['armeabi', 'armeabi-v7a']:
-        # 0 is interpreted as SDK 9.
-        if not min_sdk or min_sdk == 9:
-            pass
-        # This used to compare to 11. The 15+ APK directly supersedes 11+, so
-        # we reuse this check.
-        elif min_sdk == 15:
-            version |= 1 << 0
-        else:
-            raise ValueError("Don't know how to compute android:versionCode "
-                             "for CPU arch %s and min SDK %s" % (cpu_arch, min_sdk))
-    elif cpu_arch in ['x86']:
+    # 'x' bit is 1 for x86/x86-64 architectures (`None` is interpreted as ARM).
+    if cpu_arch in ['x86', 'x86_64']:
         version |= 1 << 2
+    elif not cpu_arch or cpu_arch in ['armeabi-v7a', 'arm64-v8a']:
+        pass
     else:
         raise ValueError("Don't know how to compute android:versionCode "
                          "for CPU arch %s" % cpu_arch)
+
+    # 'p' bit is 1 for 64-bit architectures.
+    if cpu_arch in ['arm64-v8a', 'x86_64']:
+        version |= 1 << 1
+    elif cpu_arch in ['armeabi-v7a', 'x86']:
+        pass
+    else:
+        raise ValueError("Don't know how to compute android:versionCode "
+                         "for CPU arch %s" % cpu_arch)
+
+    # 'g' bit is currently always 1, but may depend on `min_sdk` in the future.
+    version |= 1 << 0
 
     return version
 
@@ -143,7 +149,11 @@ def main(argv):
                         default=False,
                         help='Be verbose')
     parser.add_argument('--with-android-cpu-arch', dest='cpu_arch',
-                        choices=['armeabi', 'armeabi-v7a', 'mips', 'x86'],
+                        choices=['armeabi',
+                                 'armeabi-v7a',
+                                 'arm64-v8a',
+                                 'x86',
+                                 'x86_64'],
                         help='The target CPU architecture')
     parser.add_argument('--with-android-min-sdk-version', dest='min_sdk',
                         type=int, default=0,

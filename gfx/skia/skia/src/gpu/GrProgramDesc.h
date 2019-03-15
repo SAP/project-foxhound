@@ -12,8 +12,10 @@
 #include "GrTypesPriv.h"
 #include "SkOpts.h"
 #include "SkTArray.h"
+#include "SkTo.h"
+#include "glsl/GrGLSLFragmentShaderBuilder.h"
 
-class GrGLSLCaps;
+class GrShaderCaps;
 class GrPipeline;
 class GrPrimitiveProcessor;
 
@@ -34,14 +36,14 @@ public:
     *                        general draw information, as well as the specific color, geometry,
     *                        and coverage stages which will be used to generate the GL Program for
     *                        this optstate.
-    * @param GrGLSLCaps     Capabilities of the GLSL backend.
+    * @param GrShaderCaps   Capabilities of the shading language.
     * @param GrProgramDesc  The built and finalized descriptor
     **/
     static bool Build(GrProgramDesc*,
                       const GrPrimitiveProcessor&,
                       bool hasPointSize,
                       const GrPipeline&,
-                      const GrGLSLCaps&);
+                      const GrShaderCaps&);
 
     // Returns this as a uint32_t array to be used as a key in the program cache.
     const uint32_t* asKey() const {
@@ -80,6 +82,11 @@ public:
         return !(*this == other);
     }
 
+    void setSurfaceOriginKey(int key) {
+        KeyHeader* header = this->atOffset<KeyHeader, kHeaderOffset>();
+        header->fSurfaceOriginKey = key;
+    }
+
     static bool Less(const GrProgramDesc& a, const GrProgramDesc& b) {
         SkASSERT(SkIsAlign4(a.keyLength()));
         int l = a.keyLength() >> 2;
@@ -94,19 +101,15 @@ public:
     }
 
     struct KeyHeader {
-        // Set to uniquely identify the sample pattern, or 0 if the shader doesn't use sample
-        // locations.
-        uint8_t                     fSamplePatternKey;
         // Set to uniquely idenitify any swizzling of the shader's output color(s).
-        uint8_t                     fOutputSwizzle;
-        uint8_t                     fColorFragmentProcessorCnt : 4;
-        uint8_t                     fCoverageFragmentProcessorCnt : 4;
+        uint8_t fOutputSwizzle;
+        uint8_t fColorFragmentProcessorCnt; // Can be packed into 4 bits if required.
+        uint8_t fCoverageFragmentProcessorCnt;
         // Set to uniquely identify the rt's origin, or 0 if the shader does not require this info.
-        uint8_t                     fSurfaceOriginKey : 2;
-        uint8_t                     fIgnoresCoverage : 1;
-        uint8_t                     fSnapVerticesToPixelCenters : 1;
-        uint8_t                     fHasPointSize : 1;
-        uint8_t                     fPad : 3;
+        uint8_t fSurfaceOriginKey : 2;
+        bool fSnapVerticesToPixelCenters : 1;
+        bool fHasPointSize : 1;
+        uint8_t fPad : 4;
     };
     GR_STATIC_ASSERT(sizeof(KeyHeader) == 4);
 

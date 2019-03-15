@@ -10,53 +10,74 @@
 #include "nsCOMPtr.h"
 #include "nsIURIContentListener.h"
 #include "nsWeakReference.h"
+#include "nsITimer.h"
 
 class nsDocShell;
+class nsIInterfaceRequestor;
 class nsIWebNavigationInfo;
-class nsIHttpChannel;
-class nsAString;
+class nsPIDOMWindowOuter;
 
-class nsDSURIContentListener final
-  : public nsIURIContentListener
-  , public nsSupportsWeakReference
-{
+// Helper Class to eventually close an already openend window
+class MaybeCloseWindowHelper final : public nsITimerCallback {
+ public:
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSITIMERCALLBACK
+
+  explicit MaybeCloseWindowHelper(nsIInterfaceRequestor* aContentContext);
+
+  /**
+   * Closes the provided window async (if mShouldCloseWindow is true)
+   * and returns its opener if the window was just openend.
+   */
+  nsIInterfaceRequestor* MaybeCloseWindow();
+
+  void SetShouldCloseWindow(bool aShouldCloseWindow);
+
+ protected:
+  ~MaybeCloseWindowHelper();
+
+ private:
+  /**
+   * The dom window associated to handle content.
+   */
+  nsCOMPtr<nsIInterfaceRequestor> mContentContext;
+
+  /**
+   * Used to close the window on a timer, to avoid any exceptions that are
+   * thrown if we try to close the window before it's fully loaded.
+   */
+  nsCOMPtr<nsPIDOMWindowOuter> mWindowToClose;
+  nsCOMPtr<nsITimer> mTimer;
+
+  /**
+   * This is set based on whether the channel indicates that a new window
+   * was opened, e.g. for a download, or was blocked. If so, then we
+   * close it.
+   */
+  bool mShouldCloseWindow;
+};
+
+class nsDSURIContentListener final : public nsIURIContentListener,
+                                     public nsSupportsWeakReference {
   friend class nsDocShell;
 
-public:
+ public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIURICONTENTLISTENER
 
   nsresult Init();
 
-protected:
+ protected:
   explicit nsDSURIContentListener(nsDocShell* aDocShell);
   virtual ~nsDSURIContentListener();
 
-  void DropDocShellReference()
-  {
+  void DropDocShellReference() {
     mDocShell = nullptr;
     mExistingJPEGRequest = nullptr;
     mExistingJPEGStreamListener = nullptr;
   }
 
-  // Determine if X-Frame-Options allows content to be framed
-  // as a subdocument
-  bool CheckFrameOptions(nsIRequest* aRequest);
-  bool CheckOneFrameOptionsPolicy(nsIHttpChannel* aHttpChannel,
-                                  const nsAString& aPolicy);
-
-  enum XFOHeader
-  {
-    eDENY,
-    eSAMEORIGIN,
-    eALLOWFROM
-  };
-
-  void ReportXFOViolation(nsIDocShellTreeItem* aTopDocShellItem,
-                          nsIURI* aThisURI,
-                          XFOHeader aHeader);
-
-protected:
+ protected:
   nsDocShell* mDocShell;
   // Hack to handle multipart images without creating a new viewer
   nsCOMPtr<nsIStreamListener> mExistingJPEGStreamListener;

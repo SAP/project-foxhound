@@ -14,11 +14,14 @@ Contents:
    localeswitching
    uitelemetry
    activitystreamtelemetry
+   downloadcontenttelemetry
    adjust
+   mma
    defaultdomains
-   bouncer
    shutdown
    push
+   gradle
+   testcoverage
 
 Indices and tables
 ==================

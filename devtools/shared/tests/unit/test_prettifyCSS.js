@@ -6,7 +6,6 @@
 "use strict";
 
 const {prettifyCSS} = require("devtools/shared/inspector/css-logic");
-const Services = require("Services");
 
 const EXPAND_TAB = "devtools.editor.expandtab";
 
@@ -16,16 +15,16 @@ const TESTS_TAB_INDENT = [
     expected: [
       "div {",
       "\tfont-family:'Arial Black', Arial, sans-serif;",
-      "}"
-    ]
+      "}",
+    ],
   },
 
   { name: "whitespace before open brace. indent using tabs",
     input: "div{}",
     expected: [
       "div {",
-      "}"
-    ]
+      "}",
+    ],
   },
 
   { name: "minified with trailing newline. indent using tabs",
@@ -40,8 +39,8 @@ const TESTS_TAB_INDENT = [
       "}",
       "span {",
       "\tcolor:green;",
-      "}"
-    ]
+      "}",
+    ],
   },
 
   { name: "leading whitespace. indent using tabs",
@@ -49,8 +48,8 @@ const TESTS_TAB_INDENT = [
     expected: [
       "div {",
       "\tcolor: red;",
-      "}"
-    ]
+      "}",
+    ],
   },
 
   { name: "CSS with extra closing brace. indent using tabs",
@@ -63,7 +62,7 @@ const TESTS_TAB_INDENT = [
       "div {",
       "\tcolor:red",
       "}",
-    ]
+    ],
   },
 ];
 
@@ -73,16 +72,16 @@ const TESTS_SPACE_INDENT = [
     expected: [
       "div {",
       " font-family:'Arial Black', Arial, sans-serif;",
-      "}"
-    ]
+      "}",
+    ],
   },
 
   { name: "whitespace before open brace. indent using spaces",
     input: "div{}",
     expected: [
       "div {",
-      "}"
-    ]
+      "}",
+    ],
   },
 
   { name: "minified with trailing newline. indent using spaces",
@@ -97,8 +96,8 @@ const TESTS_SPACE_INDENT = [
       "}",
       "span {",
       " color:green;",
-      "}"
-    ]
+      "}",
+    ],
   },
 
   { name: "leading whitespace. indent using spaces",
@@ -106,8 +105,8 @@ const TESTS_SPACE_INDENT = [
     expected: [
       "div {",
       " color: red;",
-      "}"
-    ]
+      "}",
+    ],
   },
 
   { name: "CSS with extra closing brace. indent using spaces",
@@ -120,7 +119,46 @@ const TESTS_SPACE_INDENT = [
       "div {",
       " color:red",
       "}",
-    ]
+    ],
+  },
+
+  { name: "HTML comments with some whitespace padding",
+    input: "  \n\n\t  <!--\n\n\t body {color:red}  \n\n-->   \t\n",
+    expected: [
+      "body {",
+      " color:red",
+      "}",
+    ],
+  },
+
+  { name: "HTML comments without whitespace padding",
+    input: "<!--body {color:red}-->",
+    expected: [
+      "body {",
+      " color:red",
+      "}",
+    ],
+  },
+
+  { name: "Breaking after commas in selectors",
+    input: "@media screen, print {div, span, input {color: red;}}" +
+           "div, div, input, pre, table {color: blue;}",
+    expected: [
+      "@media screen, print {",
+      " div,",
+      " span,",
+      " input {",
+      "  color: red;",
+      " }",
+      "}",
+      "div,",
+      "div,",
+      "input,",
+      "pre,",
+      "table {",
+      " color: blue;",
+      "}",
+    ],
   },
 ];
 
@@ -130,23 +168,23 @@ function run_test() {
   prettifyCSS("");
 
   Services.prefs.setBoolPref(EXPAND_TAB, true);
-  for (let test of TESTS_SPACE_INDENT) {
-    do_print(test.name);
+  for (const test of TESTS_SPACE_INDENT) {
+    info(test.name);
 
-    let input = test.input.split("\n").join(prettifyCSS.LINE_SEPARATOR);
-    let output = prettifyCSS(input);
-    let expected = test.expected.join(prettifyCSS.LINE_SEPARATOR) +
+    const input = test.input.split("\n").join(prettifyCSS.LINE_SEPARATOR);
+    const output = prettifyCSS(input);
+    const expected = test.expected.join(prettifyCSS.LINE_SEPARATOR) +
         prettifyCSS.LINE_SEPARATOR;
     equal(output, expected, test.name);
   }
 
   Services.prefs.setBoolPref(EXPAND_TAB, false);
-  for (let test of TESTS_TAB_INDENT) {
-    do_print(test.name);
+  for (const test of TESTS_TAB_INDENT) {
+    info(test.name);
 
-    let input = test.input.split("\n").join(prettifyCSS.LINE_SEPARATOR);
-    let output = prettifyCSS(input);
-    let expected = test.expected.join(prettifyCSS.LINE_SEPARATOR) +
+    const input = test.input.split("\n").join(prettifyCSS.LINE_SEPARATOR);
+    const output = prettifyCSS(input);
+    const expected = test.expected.join(prettifyCSS.LINE_SEPARATOR) +
         prettifyCSS.LINE_SEPARATOR;
     equal(output, expected, test.name);
   }

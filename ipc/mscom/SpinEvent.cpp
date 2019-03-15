@@ -8,76 +8,69 @@
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
+#include "mozilla/TimeStamp.h"
 #include "nsServiceManagerUtils.h"
 #include "nsString.h"
 #include "nsSystemInfo.h"
 
-// This gives us compiler intrinsics for the x86 PAUSE instruction
-#if defined(_MSC_VER)
-#include <intrin.h>
-#pragma intrinsic(_mm_pause)
-#define CPU_PAUSE() _mm_pause()
-#elif defined(__GNUC__) || defined(__clang__)
-#define CPU_PAUSE() __builtin_ia32_pause()
-#endif
-
 namespace mozilla {
 namespace mscom {
 
-SpinEvent::SpinEvent()
-  : mDone(false)
-{
-  static const bool sIsMulticore = []() {
-    nsCOMPtr<nsIPropertyBag2> infoService = do_GetService(NS_SYSTEMINFO_CONTRACTID);
-    if (!infoService) {
-      return false;
-    }
+static const TimeDuration kMaxSpinTime = TimeDuration::FromMilliseconds(30);
+bool SpinEvent::sIsMulticore = false;
 
-    uint32_t cpuCount;
-    nsresult rv = infoService->GetPropertyAsUint32(NS_LITERAL_STRING("cpucount"),
-                                                   &cpuCount);
-    return NS_SUCCEEDED(rv) && cpuCount > 1;
-  }();
-
-  if (!sIsMulticore) {
-    mDoneEvent.own(::CreateEventW(nullptr, FALSE, FALSE, nullptr));
-    MOZ_ASSERT(mDoneEvent);
-  }
+/* static */ bool SpinEvent::InitStatics() {
+  SYSTEM_INFO sysInfo;
+  ::GetSystemInfo(&sysInfo);
+  sIsMulticore = sysInfo.dwNumberOfProcessors > 1;
+  return true;
 }
 
-bool
-SpinEvent::Wait(HANDLE aTargetThread)
-{
+SpinEvent::SpinEvent() : mDone(false) {
+  static const bool gotStatics = InitStatics();
+  MOZ_ASSERT(gotStatics);
+
+  mDoneEvent.own(::CreateEventW(nullptr, FALSE, FALSE, nullptr));
+  MOZ_ASSERT(mDoneEvent);
+}
+
+bool SpinEvent::Wait(HANDLE aTargetThread) {
   MOZ_ASSERT(aTargetThread);
   if (!aTargetThread) {
     return false;
   }
 
-  if (mDoneEvent) {
-    HANDLE handles[] = {mDoneEvent, aTargetThread};
-    DWORD waitResult = ::WaitForMultipleObjects(mozilla::ArrayLength(handles),
-                                                handles, FALSE, INFINITE);
-    return waitResult == WAIT_OBJECT_0;
+  if (sIsMulticore) {
+    // Bug 1311834: Spinning allows for faster response than waiting on an
+    // event, as events are constrained by the system's timer resolution.
+    // Bug 1429665: However, we only want to spin for a very short time. If
+    // we're waiting for a while, we don't want to be burning CPU for the
+    // entire time. At that point, a few extra ms isn't going to make much
+    // difference to perceived responsiveness.
+    TimeStamp start(TimeStamp::Now());
+    while (!mDone) {
+      TimeDuration elapsed(TimeStamp::Now() - start);
+      if (elapsed >= kMaxSpinTime) {
+        break;
+      }
+      YieldProcessor();
+    }
+    if (mDone) {
+      return true;
+    }
   }
 
-  while (!mDone) {
-    // The PAUSE instruction is a hint to the CPU that we're doing a spin
-    // loop. It is a no-op on older processors that don't support it, so
-    // it is safe to use here without any CPUID checks.
-    CPU_PAUSE();
-  }
-  return true;
+  MOZ_ASSERT(mDoneEvent);
+  HANDLE handles[] = {mDoneEvent, aTargetThread};
+  DWORD waitResult = ::WaitForMultipleObjects(mozilla::ArrayLength(handles),
+                                              handles, FALSE, INFINITE);
+  return waitResult == WAIT_OBJECT_0;
 }
 
-void
-SpinEvent::Signal()
-{
-  if (mDoneEvent) {
-    ::SetEvent(mDoneEvent);
-  } else {
-    mDone = true;
-  }
+void SpinEvent::Signal() {
+  ::SetEvent(mDoneEvent);
+  mDone = true;
 }
 
-} // namespace mscom
-} // namespace mozilla
+}  // namespace mscom
+}  // namespace mozilla

@@ -18,8 +18,8 @@ var toolbox;
 var target;
 
 function test() {
-  addTab(TEST_URL).then(tab => {
-    target = TargetFactory.forTab(tab);
+  addTab(TEST_URL).then(async (tab) => {
+    target = await TargetFactory.forTab(tab);
 
     gDevTools.showToolbox(target)
       .then(toolboxRegister)
@@ -40,8 +40,6 @@ var waitForToolInstanceDestroyed = new Promise((resolve) => {
 function toolboxRegister(aToolbox) {
   toolbox = aToolbox;
 
-  var resolveToolInstanceBuild;
-
   waitForToolInstanceBuild = new Promise((resolve) => {
     resolveToolInstanceBuild = resolve;
   });
@@ -53,7 +51,7 @@ function toolboxRegister(aToolbox) {
     label: "per-toolbox Test Tool",
     inMenu: true,
     isTargetSupported: () => true,
-    build: function () {
+    build: function() {
       info("per-toolbox tool has been built.");
       resolveToolInstanceBuild();
 
@@ -64,7 +62,7 @@ function toolboxRegister(aToolbox) {
         },
       };
     },
-    key: "t"
+    key: "t",
   });
 }
 
@@ -74,20 +72,20 @@ function testToolRegistered() {
      "per-toolbox tool registered to the specific toolbox");
 
   // Test that the tool appeared in the UI.
-  let doc = toolbox.doc;
-  let tab = doc.getElementById("toolbox-tab-" + TOOL_ID);
+  const doc = toolbox.doc;
+  const tab = doc.getElementById("toolbox-tab-" + TOOL_ID);
   ok(tab, "new tool's tab exists in toolbox UI");
 
-  let panel = doc.getElementById("toolbox-panel-" + TOOL_ID);
+  const panel = doc.getElementById("toolbox-panel-" + TOOL_ID);
   ok(panel, "new tool's panel exists in toolbox UI");
 
-  for (let win of getAllBrowserWindows()) {
-    let key = win.document.getElementById("key_" + TOOL_ID);
+  for (const win of getAllBrowserWindows()) {
+    const key = win.document.getElementById("key_" + TOOL_ID);
     if (win.document == doc) {
       continue;
     }
     ok(!key, "key for new tool should not exists in the other browser windows");
-    let menuitem = win.document.getElementById("menuitem_" + TOOL_ID);
+    const menuitem = win.document.getElementById("menuitem_" + TOOL_ID);
     ok(!menuitem, "menu item should not exists in the other browser window");
   }
 
@@ -99,12 +97,7 @@ function testToolRegistered() {
 }
 
 function getAllBrowserWindows() {
-  let wins = [];
-  let enumerator = Services.wm.getEnumerator("navigator:browser");
-  while (enumerator.hasMoreElements()) {
-    wins.push(enumerator.getNext());
-  }
-  return wins;
+  return Array.from(Services.wm.getEnumerator("navigator:browser"));
 }
 
 function testUnregister() {
@@ -112,7 +105,7 @@ function testUnregister() {
   toolbox.removeAdditionalTool(TOOL_ID);
 
   Promise.all([
-    waitForToolInstanceDestroyed
+    waitForToolInstanceDestroyed,
   ]).then(toolboxToolUnregistered);
 }
 
@@ -121,18 +114,18 @@ function toolboxToolUnregistered() {
      "per-toolbox tool unregistered from the specific toolbox");
 
   // test that it disappeared from the UI
-  let doc = toolbox.doc;
-  let tab = doc.getElementById("toolbox-tab-" + TOOL_ID);
+  const doc = toolbox.doc;
+  const tab = doc.getElementById("toolbox-tab-" + TOOL_ID);
   ok(!tab, "tool's tab was removed from the toolbox UI");
 
-  let panel = doc.getElementById("toolbox-panel-" + TOOL_ID);
+  const panel = doc.getElementById("toolbox-panel-" + TOOL_ID);
   ok(!panel, "tool's panel was removed from toolbox UI");
 
   cleanup();
 }
 
 function cleanup() {
-  toolbox.destroy().then(() => {;
+  toolbox.destroy().then(() => {
     toolbox = null;
     gBrowser.removeCurrentTab();
     finish();

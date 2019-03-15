@@ -5,28 +5,28 @@
  * Test AudioNode#getParams()
  */
 
-add_task(function* () {
-  let { target, front } = yield initBackend(SIMPLE_NODES_URL);
-  let [_, nodes] = yield Promise.all([
+add_task(async function() {
+  const { target, front } = await initBackend(SIMPLE_NODES_URL);
+  const [_, nodes] = await Promise.all([
     front.setup({ reload: true }),
-    getN(front, "create-node", 15)
+    getN(front, "create-node", 15),
   ]);
 
-  yield loadFrameScripts();
+  await loadFrameScriptUtils();
 
-  let allNodeParams = yield Promise.all(nodes.map(node => node.getParams()));
-  let nodeTypes = [
+  const allNodeParams = await Promise.all(nodes.map(node => node.getParams()));
+  const nodeTypes = [
     "AudioDestinationNode",
     "AudioBufferSourceNode", "ScriptProcessorNode", "AnalyserNode", "GainNode",
     "DelayNode", "BiquadFilterNode", "WaveShaperNode", "PannerNode", "ConvolverNode",
     "ChannelSplitterNode", "ChannelMergerNode", "DynamicsCompressorNode", "OscillatorNode",
-    "StereoPannerNode"
+    "StereoPannerNode",
   ];
 
-  let defaults = yield Promise.all(nodeTypes.map(type => nodeDefaultValues(type)));
+  const defaults = await Promise.all(nodeTypes.map(type => nodeDefaultValues(type)));
 
   nodeTypes.map((type, i) => {
-    let params = allNodeParams[i];
+    const params = allNodeParams[i];
 
     params.forEach(({param, value, flags}) => {
       ok(param in defaults[i], "expected parameter for " + type);
@@ -35,15 +35,13 @@ add_task(function* () {
 
       if (param === "buffer") {
         is(flags.Buffer, true, "`buffer` params have Buffer flag");
-      }
-      else if (param === "bufferSize" || param === "frequencyBinCount") {
+      } else if (param === "bufferSize" || param === "frequencyBinCount") {
         is(flags.readonly, true, param + " is readonly");
-      }
-      else if (param === "curve") {
-        is(flags["Float32Array"], true, "`curve` param has Float32Array flag");
+      } else if (param === "curve") {
+        is(flags.Float32Array, true, "`curve` param has Float32Array flag");
       }
     });
   });
 
-  yield removeTab(target.tab);
+  await removeTab(target.tab);
 });

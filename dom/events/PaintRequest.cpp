@@ -21,40 +21,21 @@ NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(PaintRequest, mParent)
 
 NS_INTERFACE_TABLE_HEAD(PaintRequest)
   NS_WRAPPERCACHE_INTERFACE_TABLE_ENTRY
-  NS_INTERFACE_TABLE(PaintRequest, nsIDOMPaintRequest)
   NS_INTERFACE_TABLE_TO_MAP_SEGUE_CYCLE_COLLECTION(PaintRequest)
 NS_INTERFACE_MAP_END
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(PaintRequest)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(PaintRequest)
 
-/* virtual */ JSObject*
-PaintRequest::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return PaintRequestBinding::Wrap(aCx, this, aGivenProto);
+/* virtual */ JSObject* PaintRequest::WrapObject(
+    JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
+  return PaintRequest_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-already_AddRefed<DOMRect>
-PaintRequest::ClientRect()
-{
+already_AddRefed<DOMRect> PaintRequest::ClientRect() {
   RefPtr<DOMRect> clientRect = new DOMRect(this);
   clientRect->SetLayoutRect(mRequest);
   return clientRect.forget();
-}
-
-NS_IMETHODIMP
-PaintRequest::GetClientRect(nsIDOMClientRect** aResult)
-{
-  RefPtr<DOMRect> clientRect = ClientRect();
-  clientRect.forget(aResult);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-PaintRequest::GetXPCOMReason(nsAString& aResult)
-{
-  GetReason(aResult);
-  return NS_OK;
 }
 
 /******************************************************************************
@@ -71,11 +52,10 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTING_ADDREF(PaintRequestList)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(PaintRequestList)
 
-JSObject*
-PaintRequestList::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return PaintRequestListBinding::Wrap(aCx, this, aGivenProto);
+JSObject* PaintRequestList::WrapObject(JSContext* aCx,
+                                       JS::Handle<JSObject*> aGivenProto) {
+  return PaintRequestList_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

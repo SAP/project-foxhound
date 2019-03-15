@@ -11,21 +11,21 @@ const { initPerformanceInNewTab, teardownToolboxAndRemoveTab } = require("devtoo
 const { startRecording, stopRecording, waitForOverviewRenderedWithMarkers } = require("devtools/client/performance/test/helpers/actions");
 const { once } = require("devtools/client/performance/test/helpers/event-utils");
 
-add_task(function* () {
-  let { panel } = yield initPerformanceInNewTab({
+add_task(async function() {
+  const { panel } = await initPerformanceInNewTab({
     url: SIMPLE_URL,
-    win: window
+    win: window,
   });
 
-  let { $, $$, EVENTS, WaterfallView } = panel.panelWin;
+  const { $, $$, EVENTS, WaterfallView } = panel.panelWin;
 
-  yield startRecording(panel);
+  await startRecording(panel);
   ok(true, "Recording has started.");
 
   // Ensure overview is rendering and some markers were received.
-  yield waitForOverviewRenderedWithMarkers(panel);
+  await waitForOverviewRenderedWithMarkers(panel);
 
-  yield stopRecording(panel);
+  await stopRecording(panel);
   ok(true, "Recording has ended.");
 
   // Test the header container.
@@ -63,13 +63,13 @@ add_task(function* () {
 
   // Test the sidebar.
 
-  let detailsView = WaterfallView.details;
+  const detailsView = WaterfallView.details;
   // Make sure the bounds are up to date.
   WaterfallView._recalculateBounds();
 
-  let parentWidthBefore = $("#waterfall-view").getBoundingClientRect().width;
-  let sidebarWidthBefore = $(".waterfall-sidebar").getBoundingClientRect().width;
-  let detailsWidthBefore = $("#waterfall-details").getBoundingClientRect().width;
+  const parentWidthBefore = $("#waterfall-view").getBoundingClientRect().width;
+  const sidebarWidthBefore = $(".waterfall-sidebar").getBoundingClientRect().width;
+  const detailsWidthBefore = $("#waterfall-details").getBoundingClientRect().width;
 
   ok(detailsView.hidden,
     "The details view in the waterfall view is hidden by default.");
@@ -80,13 +80,13 @@ add_task(function* () {
                        - WaterfallView.WATERFALL_MARKER_SIDEBAR_SAFE_BOUNDS,
      "The waterfall width is correct (1).");
 
-  let waterfallRerendered = once(WaterfallView, EVENTS.UI_WATERFALL_RENDERED);
+  const waterfallRerendered = once(WaterfallView, EVENTS.UI_WATERFALL_RENDERED);
   $$(".waterfall-tree-item")[0].click();
-  yield waterfallRerendered;
+  await waterfallRerendered;
 
-  let parentWidthAfter = $("#waterfall-view").getBoundingClientRect().width;
-  let sidebarWidthAfter = $(".waterfall-sidebar").getBoundingClientRect().width;
-  let detailsWidthAfter = $("#waterfall-details").getBoundingClientRect().width;
+  const parentWidthAfter = $("#waterfall-view").getBoundingClientRect().width;
+  const sidebarWidthAfter = $(".waterfall-sidebar").getBoundingClientRect().width;
+  const detailsWidthAfter = $("#waterfall-details").getBoundingClientRect().width;
 
   ok(!detailsView.hidden,
     "The details view in the waterfall view is now visible.");
@@ -101,5 +101,5 @@ add_task(function* () {
                       - WaterfallView.WATERFALL_MARKER_SIDEBAR_SAFE_BOUNDS,
      "The waterfall width is correct (2).");
 
-  yield teardownToolboxAndRemoveTab(panel);
+  await teardownToolboxAndRemoveTab(panel);
 });

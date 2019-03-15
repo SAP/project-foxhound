@@ -4,7 +4,7 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
- 
+
 #ifndef SKSL_WHILESTATEMENT
 #define SKSL_WHILESTATEMENT
 
@@ -17,18 +17,23 @@ namespace SkSL {
  * A 'while' loop.
  */
 struct WhileStatement : public Statement {
-    WhileStatement(Position position, std::unique_ptr<Expression> test, 
+    WhileStatement(int offset, std::unique_ptr<Expression> test,
                    std::unique_ptr<Statement> statement)
-    : INHERITED(position, kWhile_Kind)
+    : INHERITED(offset, kWhile_Kind)
     , fTest(std::move(test))
     , fStatement(std::move(statement)) {}
 
-    std::string description() const override {
+    std::unique_ptr<Statement> clone() const override {
+        return std::unique_ptr<Statement>(new WhileStatement(fOffset, fTest->clone(),
+                                                             fStatement->clone()));
+    }
+
+    String description() const override {
         return "while (" + fTest->description() + ") " + fStatement->description();
     }
 
-    const std::unique_ptr<Expression> fTest;
-    const std::unique_ptr<Statement> fStatement;
+    std::unique_ptr<Expression> fTest;
+    std::unique_ptr<Statement> fStatement;
 
     typedef Statement INHERITED;
 };

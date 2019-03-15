@@ -1,6 +1,6 @@
 // Debugger.Object.prototype.isArrowFunction recognizes arrow functions.
 
-var g = newGlobal();
+var g = newGlobal({newCompartment: true});
 var dbg = new Debugger;
 var gDO = dbg.addDebuggee(g);
 var hits = 0;
@@ -20,3 +20,5 @@ checkIsArrow(false, 'Math.atan2');
 checkIsArrow(false, 'Function.prototype');
 checkIsArrow(false, 'Function("")');
 checkIsArrow(false, 'new Function("")');
+checkIsArrow(false, '(async function f () {})');
+checkIsArrow(true,  '(async () => { })');

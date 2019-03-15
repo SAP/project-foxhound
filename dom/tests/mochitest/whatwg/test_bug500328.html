@@ -153,17 +153,15 @@ function popstateExpected(msg) {
 }
 
 function getColor(elem) {
-  var utils = SpecialPowers.wrap(document).defaultView.
-                QueryInterface(SpecialPowers.Ci.nsIInterfaceRequestor).
-                getInterface(SpecialPowers.Ci.nsIDOMWindowUtils);
+  var utils = SpecialPowers.getDOMWindowUtils(document.defaultView);
   return utils.getVisitedDependentComputedStyle(elem, "", "color");
 }
 
 function getSHistory(theWindow)
 {
   const Ci = SpecialPowers.Ci;
-  var sh = SpecialPowers.wrap(theWindow.QueryInterface(Ci.nsIInterfaceRequestor))
-                        .getInterface(Ci.nsIWebNavigation)
+  var sh = SpecialPowers.wrap(theWindow).docShell
+                        .QueryInterface(Ci.nsIWebNavigation)
                         .sessionHistory;
   if (!sh || sh == null)
     throw("Couldn't get shistory for window!");
@@ -177,7 +175,7 @@ function getSHTitle(sh, offset)
     offset = 0;
 
   // False instructs the SHistory not to modify its current index.
-  return sh.getEntryAtIndex(sh.index + offset, false).title;
+  return sh.legacySHistory.getEntryAtIndex(sh.index + offset).title;
 }
 
 // Tests that win's location ends with str

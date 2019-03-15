@@ -11,6 +11,7 @@
 #include "mozilla/dom/GamepadBinding.h"
 #include "mozilla/dom/GamepadButton.h"
 #include "mozilla/dom/GamepadPose.h"
+#include "mozilla/dom/GamepadHapticActuator.h"
 #include "mozilla/dom/Performance.h"
 #include <stdint.h>
 #include "nsCOMPtr.h"
@@ -34,23 +35,22 @@ const int kLeftStickYAxis = 1;
 const int kRightStickXAxis = 2;
 const int kRightStickYAxis = 3;
 
+class Gamepad final : public nsISupports, public nsWrapperCache {
+ public:
+  Gamepad(nsISupports* aParent, const nsAString& aID, uint32_t aIndex,
+          uint32_t aHashKey, GamepadMappingType aMapping, GamepadHand aHand,
+          uint32_t aDisplayID, uint32_t aNumButtons, uint32_t aNumAxes,
+          uint32_t aNumHaptics);
 
-class Gamepad final : public nsISupports,
-                      public nsWrapperCache
-{
-public:
-  Gamepad(nsISupports* aParent,
-          const nsAString& aID, uint32_t aIndex,
-          GamepadMappingType aMapping, GamepadHand aHand,
-          uint32_t aNumButtons, uint32_t aNumAxes);
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(Gamepad)
 
   void SetConnected(bool aConnected);
-  void SetButton(uint32_t aButton, bool aPressed, double aValue);
+  void SetButton(uint32_t aButton, bool aPressed, bool aTouched, double aValue);
   void SetAxis(uint32_t aAxis, double aValue);
   void SetIndex(uint32_t aIndex);
   void SetPose(const GamepadPoseState& aPose);
+  void SetHand(GamepadHand aHand);
 
   // Make the state of this gamepad equivalent to other.
   void SyncState(Gamepad* aOther);
@@ -59,67 +59,51 @@ public:
   // parented to aParent.
   already_AddRefed<Gamepad> Clone(nsISupports* aParent);
 
-  nsISupports* GetParentObject() const
-  {
-    return mParent;
-  }
+  nsISupports* GetParentObject() const { return mParent; }
 
-  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override;
 
-  void GetId(nsAString& aID) const
-  {
-    aID = mID;
-  }
+  void GetId(nsAString& aID) const { aID = mID; }
 
-  DOMHighResTimeStamp Timestamp() const
-  {
-     return mTimestamp;
-  }
+  DOMHighResTimeStamp Timestamp() const { return mTimestamp; }
 
-  GamepadMappingType Mapping()
-  {
-    return mMapping;
-  }
+  GamepadMappingType Mapping() { return mMapping; }
 
-  GamepadHand Hand()
-  {
-    return mHand;
-  }
+  uint32_t DisplayId() const { return mDisplayId; }
 
-  bool Connected() const
-  {
-    return mConnected;
-  }
+  GamepadHand Hand() { return mHand; }
 
-  uint32_t Index() const
-  {
-    return mIndex;
-  }
+  bool Connected() const { return mConnected; }
 
-  void GetButtons(nsTArray<RefPtr<GamepadButton>>& aButtons) const
-  {
+  uint32_t Index() const { return mIndex; }
+
+  uint32_t HashKey() const { return mHashKey; }
+
+  void GetButtons(nsTArray<RefPtr<GamepadButton>>& aButtons) const {
     aButtons = mButtons;
   }
 
-  void GetAxes(nsTArray<double>& aAxes) const
-  {
-    aAxes = mAxes;
+  void GetAxes(nsTArray<double>& aAxes) const { aAxes = mAxes; }
+
+  GamepadPose* GetPose() const { return mPose; }
+
+  void GetHapticActuators(
+      nsTArray<RefPtr<GamepadHapticActuator>>& aHapticActuators) const {
+    aHapticActuators = mHapticActuators;
   }
 
-  GamepadPose* GetPose() const
-  {
-    return mPose;
-  }
-
-private:
+ private:
   virtual ~Gamepad() {}
   void UpdateTimestamp();
 
-protected:
+ protected:
   nsCOMPtr<nsISupports> mParent;
   nsString mID;
   uint32_t mIndex;
-
+  // the gamepad hash key in GamepadManager
+  uint32_t mHashKey;
+  uint32_t mDisplayId;
   // The mapping in use.
   GamepadMappingType mMapping;
   GamepadHand mHand;
@@ -132,9 +116,10 @@ protected:
   nsTArray<double> mAxes;
   DOMHighResTimeStamp mTimestamp;
   RefPtr<GamepadPose> mPose;
+  nsTArray<RefPtr<GamepadHapticActuator>> mHapticActuators;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_gamepad_Gamepad_h
+#endif  // mozilla_dom_gamepad_Gamepad_h

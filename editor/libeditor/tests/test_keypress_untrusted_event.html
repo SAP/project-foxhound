@@ -5,7 +5,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=622245
 -->
 <head>
   <title>Test for untrusted keypress events</title>
-  <script type="application/javascript" src="/MochiKit/packed.js"></script>
   <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
@@ -50,8 +49,7 @@ addLoadEvent(function() {
   });
 });
 
-function runTextareaTest()
-{
+function runTextareaTest() {
   textarea.addEventListener("keypress",
     function(aEvent) {
       is(aEvent.target, textarea,
@@ -70,8 +68,7 @@ function runTextareaTest()
   textarea.dispatchEvent(keypress);
 }
 
-function runContentediableTest()
-{
+function runContentediableTest() {
   div.addEventListener("keypress",
     function(aEvent) {
       is(aEvent.target, div,

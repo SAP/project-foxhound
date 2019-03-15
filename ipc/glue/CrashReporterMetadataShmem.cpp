@@ -6,10 +6,13 @@
 
 #include "CrashReporterMetadataShmem.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/EnumeratedRange.h"
 #include "nsISupportsImpl.h"
 
 namespace mozilla {
 namespace ipc {
+
+using CrashReporter::Annotation;
 
 enum class EntryType : uint8_t {
   None,
@@ -17,42 +20,34 @@ enum class EntryType : uint8_t {
 };
 
 CrashReporterMetadataShmem::CrashReporterMetadataShmem(const Shmem& aShmem)
- : mShmem(aShmem)
-{
+    : mShmem(aShmem) {
   MOZ_COUNT_CTOR(CrashReporterMetadataShmem);
 }
 
-CrashReporterMetadataShmem::~CrashReporterMetadataShmem()
-{
+CrashReporterMetadataShmem::~CrashReporterMetadataShmem() {
   MOZ_COUNT_DTOR(CrashReporterMetadataShmem);
 }
 
-void
-CrashReporterMetadataShmem::AnnotateCrashReport(const nsCString& aKey, const nsCString& aData)
-{
-  mNotes.Put(aKey, aData);
+void CrashReporterMetadataShmem::AnnotateCrashReport(Annotation aKey,
+                                                     const nsCString& aData) {
+  mAnnotations[aKey] = aData;
   SyncNotesToShmem();
 }
 
-void
-CrashReporterMetadataShmem::AppendAppNotes(const nsCString& aData)
-{
+void CrashReporterMetadataShmem::AppendAppNotes(const nsCString& aData) {
   mAppNotes.Append(aData);
-  mNotes.Put(NS_LITERAL_CSTRING("Notes"), mAppNotes);
+  mAnnotations[Annotation::Notes] = mAppNotes;
   SyncNotesToShmem();
 }
 
-class MOZ_STACK_CLASS MetadataShmemWriter
-{
-public:
+class MOZ_STACK_CLASS MetadataShmemWriter {
+ public:
   explicit MetadataShmemWriter(const Shmem& aShmem)
-   : mCursor(aShmem.get<uint8_t>()),
-     mEnd(mCursor + aShmem.Size<uint8_t>())
-  {
+      : mCursor(aShmem.get<uint8_t>()), mEnd(mCursor + aShmem.Size<uint8_t>()) {
     *mCursor = uint8_t(EntryType::None);
   }
 
-  MOZ_MUST_USE bool WriteAnnotation(const nsCString& aKey, const nsCString& aValue) {
+  MOZ_MUST_USE bool WriteAnnotation(Annotation aKey, const nsCString& aValue) {
     // This shouldn't happen because Commit() guarantees mCursor < mEnd. But
     // we might as well be safe.
     if (mCursor >= mEnd) {
@@ -68,7 +63,7 @@ public:
     return Commit(start, EntryType::Annotation);
   }
 
-private:
+ private:
   // On success, append a new terminal byte. On failure, rollback the cursor.
   MOZ_MUST_USE bool Commit(uint8_t* aStart, EntryType aType) {
     MOZ_ASSERT(aStart < mEnd);
@@ -120,27 +115,23 @@ private:
   uint8_t* mEnd;
 };
 
-void
-CrashReporterMetadataShmem::SyncNotesToShmem()
-{
+void CrashReporterMetadataShmem::SyncNotesToShmem() {
   MetadataShmemWriter writer(mShmem);
 
-  for (auto it = mNotes.Iter(); !it.Done(); it.Next()) {
-    nsCString key = nsCString(it.Key());
-    nsCString value = nsCString(it.Data());
-    if (!writer.WriteAnnotation(key, value)) {
-      return;
+  for (auto key : MakeEnumeratedRange(Annotation::Count)) {
+    if (!mAnnotations[key].IsEmpty()) {
+      if (!writer.WriteAnnotation(key, mAnnotations[key])) {
+        return;
+      }
     }
   }
 }
 
 // Helper class to iterate over metadata entries encoded in shmem.
-class MOZ_STACK_CLASS MetadataShmemReader
-{
-public:
+class MOZ_STACK_CLASS MetadataShmemReader {
+ public:
   explicit MetadataShmemReader(const Shmem& aShmem)
-   : mEntryType(EntryType::None)
-  {
+      : mEntryType(EntryType::None) {
     mCursor = aShmem.get<uint8_t>();
     mEnd = mCursor + aShmem.Size<uint8_t>();
 
@@ -148,18 +139,19 @@ public:
     Next();
   }
 
-  bool Done() const {
-    return mCursor >= mEnd || Type() == EntryType::None;
-  }
-  EntryType Type() const {
-    return mEntryType;
-  }
+  bool Done() const { return mCursor >= mEnd || Type() == EntryType::None; }
+  EntryType Type() const { return mEntryType; }
   void Next() {
     if (mCursor < mEnd) {
       mEntryType = EntryType(*mCursor++);
     } else {
       mEntryType = EntryType::None;
     }
+  }
+
+  template <typename T>
+  bool Read(T* aOut) {
+    return Read(aOut, sizeof(T));
   }
 
   bool Read(nsCString& aOut) {
@@ -173,15 +165,11 @@ public:
       return false;
     }
 
-    aOut.Assign((const char *)src, length);
+    aOut.Assign((const char*)src, length);
     return true;
   }
 
-private:
-  template <typename T>
-  bool Read(T* aOut) {
-    return Read(aOut, sizeof(T));
-  }
+ private:
   bool Read(void* aOut, size_t aLength) {
     const uint8_t* src = Read(aLength);
     if (!src) {
@@ -202,25 +190,24 @@ private:
     return result;
   }
 
-private:
+ private:
   const uint8_t* mCursor;
   const uint8_t* mEnd;
   EntryType mEntryType;
 };
 
-#ifdef MOZ_CRASHREPORTER
-void
-CrashReporterMetadataShmem::ReadAppNotes(const Shmem& aShmem, CrashReporter::AnnotationTable* aNotes)
-{
+void CrashReporterMetadataShmem::ReadAppNotes(const Shmem& aShmem,
+                                              AnnotationTable& aNotes) {
   for (MetadataShmemReader reader(aShmem); !reader.Done(); reader.Next()) {
     switch (reader.Type()) {
       case EntryType::Annotation: {
-        nsCString key, value;
-        if (!reader.Read(key) || !reader.Read(value)) {
+        Annotation key;
+        nsCString value;
+        if (!reader.Read(&key) || !reader.Read(value)) {
           return;
         }
 
-        aNotes->Put(key, value);
+        aNotes[key] = value;
         break;
       }
       default:
@@ -229,7 +216,6 @@ CrashReporterMetadataShmem::ReadAppNotes(const Shmem& aShmem, CrashReporter::Ann
     }
   }
 }
-#endif
 
-} // namespace ipc
-} // namespace mozilla
+}  // namespace ipc
+}  // namespace mozilla

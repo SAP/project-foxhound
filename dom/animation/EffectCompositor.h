@@ -7,57 +7,48 @@
 #ifndef mozilla_EffectCompositor_h
 #define mozilla_EffectCompositor_h
 
+#include "mozilla/AnimationPerformanceWarning.h"
 #include "mozilla/EnumeratedArray.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/OwningNonNull.h"
 #include "mozilla/PseudoElementHashEntry.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/ServoTypes.h"
 #include "nsCSSPropertyID.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsDataHashtable.h"
-#include "nsIStyleRuleProcessor.h"
 #include "nsTArray.h"
 
 class nsCSSPropertyIDSet;
+class nsAtom;
 class nsIFrame;
-class nsIStyleRule;
 class nsPresContext;
-class nsStyleContext;
+struct RawServoAnimationValueMap;
+typedef RawServoAnimationValueMap* RawServoAnimationValueMapBorrowedMut;
 
 namespace mozilla {
 
+class ComputedStyle;
 class EffectSet;
 class RestyleTracker;
 class StyleAnimationValue;
-class ServoAnimationRule;
-struct AnimationPerformanceWarning;
 struct AnimationProperty;
 struct NonOwningAnimationTarget;
 
 namespace dom {
 class Animation;
 class Element;
-}
+}  // namespace dom
 
-class EffectCompositor
-{
-public:
+class EffectCompositor {
+ public:
   explicit EffectCompositor(nsPresContext* aPresContext)
-    : mPresContext(aPresContext)
-  {
-    for (size_t i = 0; i < kCascadeLevelCount; i++) {
-      CascadeLevel cascadeLevel = CascadeLevel(i);
-      mRuleProcessors[cascadeLevel] =
-        new AnimationStyleRuleProcessor(this, cascadeLevel);
-    }
-  }
+      : mPresContext(aPresContext) {}
 
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(EffectCompositor)
   NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(EffectCompositor)
 
-  void Disconnect() {
-    mPresContext = nullptr;
-  }
+  void Disconnect() { mPresContext = nullptr; }
 
   // Animations can be applied at two different levels in the CSS cascade:
   enum class CascadeLevel : uint32_t {
@@ -70,7 +61,7 @@ public:
   // We don't define this as part of CascadeLevel as then we'd have to add
   // explicit checks for the Count enum value everywhere CascadeLevel is used.
   static const size_t kCascadeLevelCount =
-    static_cast<size_t>(CascadeLevel::Transitions) + 1;
+      static_cast<size_t>(CascadeLevel::Transitions) + 1;
 
   // NOTE: This can return null after Disconnect().
   nsPresContext* PresContext() const { return mPresContext; }
@@ -96,10 +87,8 @@ public:
   // (pseudo-)element at the specified cascade level needs to be updated.
   // The specified steps taken to update the animation rule depend on
   // |aRestyleType| whose values are described above.
-  void RequestRestyle(dom::Element* aElement,
-                      CSSPseudoElementType aPseudoType,
-                      RestyleType aRestyleType,
-                      CascadeLevel aCascadeLevel);
+  void RequestRestyle(dom::Element* aElement, CSSPseudoElementType aPseudoType,
+                      RestyleType aRestyleType, CascadeLevel aCascadeLevel);
 
   // Schedule an animation restyle. This is called automatically by
   // RequestRestyle when necessary. However, it is exposed here since we also
@@ -114,77 +103,35 @@ public:
   // posted because updates on the main thread are throttled.
   void PostRestyleForThrottledAnimations();
 
-  // Called when the style context on the specified (pseudo-) element might
+  // Clear all pending restyle requests for the given (pseudo-) element (and its
+  // ::before and ::after elements if the given element is not pseudo).
+  void ClearRestyleRequestsFor(dom::Element* aElement);
+
+  // Called when computed style on the specified (pseudo-) element might
   // have changed so that any context-sensitive values stored within
   // animation effects (e.g. em-based endpoints used in keyframe effects)
   // can be re-resolved to computed values.
-  void UpdateEffectProperties(nsStyleContext* aStyleContext,
+  void UpdateEffectProperties(const ComputedStyle* aStyle,
                               dom::Element* aElement,
                               CSSPseudoElementType aPseudoType);
 
-  // Updates the animation rule stored on the EffectSet for the
-  // specified (pseudo-)element for cascade level |aLevel|.
-  // If the animation rule is not marked as needing an update,
-  // no work is done.
-  // |aStyleContext| is used for UpdateCascadingResults.
-  // |aStyleContext| can be nullptr if style context, which is associated with
-  // the primary frame of the specified (pseudo-)element, is the current style
-  // context.
-  // If we are resolving a new style context, we shoud pass the newly created
-  // style context, otherwise we may use an old style context, it will result
-  // unexpected cascading results.
-  void MaybeUpdateAnimationRule(dom::Element* aElement,
-                                CSSPseudoElementType aPseudoType,
-                                CascadeLevel aCascadeLevel,
-                                nsStyleContext *aStyleContext);
-
-  // We need to pass the newly resolved style context as |aStyleContext| when
-  // we call this function during resolving style context because this function
-  // calls UpdateCascadingResults with a style context if necessary, at the
-  // time, we end up using the previous style context if we don't pass the new
-  // style context.
-  // When we are not resolving style context, |aStyleContext| can be nullptr, we
-  // will use a style context associated with the primary frame of the specified
-  // (pseudo-)element.
-  nsIStyleRule* GetAnimationRule(dom::Element* aElement,
-                                 CSSPseudoElementType aPseudoType,
-                                 CascadeLevel aCascadeLevel,
-                                 nsStyleContext* aStyleContext);
-
   // Get animation rule for stylo. This is an equivalent of GetAnimationRule
-  // and will be called from servo side. We need to be careful while doing any
-  // modification because it may case some thread-safe issues.
-  ServoAnimationRule* GetServoAnimationRule(const dom::Element* aElement,
-                                            CSSPseudoElementType aPseudoType,
-                                            CascadeLevel aCascadeLevel);
-
-  // Clear mElementsToRestyle hashtable. Unlike GetAnimationRule,
-  // in GetServoAnimationRule, we don't remove the entry of the composed
-  // animation, so we can prevent the thread-safe issues of dom::Element.
-  // Therefore, we need to call Clear mElementsToRestyle until we go back to
-  // Gecko side.
-  // FIXME: we shouldn't clear the animations on the compositor.
-  void ClearElementsToRestyle();
+  // and will be called from servo side.
+  // The animation rule is stored in |RawServoAnimationValueMapBorrowed|.
+  // We need to be careful while doing any modification because it may cause
+  // some thread-safe issues.
+  bool GetServoAnimationRule(
+      const dom::Element* aElement, CSSPseudoElementType aPseudoType,
+      CascadeLevel aCascadeLevel,
+      RawServoAnimationValueMapBorrowedMut aAnimationValues);
 
   bool HasPendingStyleUpdates() const;
-  bool HasThrottledStyleUpdates() const;
-
-  // Tell the restyle tracker about all the animated styles that have
-  // pending updates so that it can update the animation rule for these
-  // elements.
-  void AddStyleUpdatesTo(RestyleTracker& aTracker);
-
-  nsIStyleRuleProcessor* RuleProcessor(CascadeLevel aCascadeLevel) const
-  {
-    return mRuleProcessors[aCascadeLevel];
-  }
 
   static bool HasAnimationsForCompositor(const nsIFrame* aFrame,
                                          nsCSSPropertyID aProperty);
 
-  static nsTArray<RefPtr<dom::Animation>>
-  GetAnimationsForCompositor(const nsIFrame* aFrame,
-                             nsCSSPropertyID aProperty);
+  static nsTArray<RefPtr<dom::Animation>> GetAnimationsForCompositor(
+      const nsIFrame* aFrame, nsCSSPropertyID aProperty);
 
   static void ClearIsRunningOnCompositor(const nsIFrame* aFrame,
                                          nsCSSPropertyID aProperty);
@@ -193,26 +140,27 @@ public:
   // but only if we have marked the cascade as needing an update due a
   // the change in the set of effects or a change in one of the effects'
   // "in effect" state.
-  // |aStyleContext| may be nullptr in which case we will use the
-  // nsStyleContext of the primary frame of the specified (pseudo-)element.
   //
   // This method does NOT detect if other styles that apply above the
   // animation level of the cascade have changed.
-  static void
-  MaybeUpdateCascadeResults(dom::Element* aElement,
-                            CSSPseudoElementType aPseudoType,
-                            nsStyleContext* aStyleContext);
+  static void MaybeUpdateCascadeResults(dom::Element* aElement,
+                                        CSSPseudoElementType aPseudoType);
 
   // Update the mPropertiesWithImportantRules and
-  // mPropertiesForAnimationsLevel members of the corresponding EffectSet.
+  // mPropertiesForAnimationsLevel members of the given EffectSet, and also
+  // request any restyles required by changes to the cascade result.
   //
-  // This can be expensive so we should only call it if styles that apply
+  // NOTE: This can be expensive so we should only call it if styles that apply
   // above the animation level of the cascade might have changed. For all
   // other cases we should call MaybeUpdateCascadeResults.
-  static void
-  UpdateCascadeResults(dom::Element* aElement,
-                       CSSPseudoElementType aPseudoType,
-                       nsStyleContext* aStyleContext);
+  //
+  // This is typically reserved for internal callers but is public here since
+  // when we detect changes to the cascade on the Servo side we can't call
+  // MarkCascadeNeedsUpdate during the traversal so instead we call this as part
+  // of a follow-up sequential task.
+  static void UpdateCascadeResults(EffectSet& aEffectSet,
+                                   dom::Element* aElement,
+                                   CSSPseudoElementType aPseudoType);
 
   // Helper to fetch the corresponding element and pseudo-type from a frame.
   //
@@ -223,42 +171,54 @@ public:
   // Returns an empty result when a suitable element cannot be found including
   // when the frame represents a pseudo-element on which we do not support
   // animations.
-  static Maybe<NonOwningAnimationTarget>
-  GetAnimationElementAndPseudoForFrame(const nsIFrame* aFrame);
+  static Maybe<NonOwningAnimationTarget> GetAnimationElementAndPseudoForFrame(
+      const nsIFrame* aFrame);
 
   // Associates a performance warning with effects on |aFrame| that animates
   // |aProperty|.
   static void SetPerformanceWarning(
-    const nsIFrame* aFrame,
-    nsCSSPropertyID aProperty,
-    const AnimationPerformanceWarning& aWarning);
+      const nsIFrame* aFrame, nsCSSPropertyID aProperty,
+      const AnimationPerformanceWarning& aWarning);
 
-private:
-  ~EffectCompositor() = default;
+  // Do a bunch of stuff that we should avoid doing during the parallel
+  // traversal (e.g. changing member variables) for all elements that we expect
+  // to restyle on the next traversal.
+  //
+  // Returns true if there are elements needing a restyle for animation.
+  bool PreTraverse(ServoTraversalFlags aFlags);
 
-  // Rebuilds the animation rule corresponding to |aCascadeLevel| on the
-  // EffectSet associated with the specified (pseudo-)element.
-  static void ComposeAnimationRule(dom::Element* aElement,
-                                   CSSPseudoElementType aPseudoType,
-                                   CascadeLevel aCascadeLevel);
+  // Similar to the above but only for the (pseudo-)element.
+  bool PreTraverse(dom::Element* aElement, CSSPseudoElementType aPseudoType);
 
+  // Similar to the above but for all elements in the subtree rooted
+  // at aElement.
+  bool PreTraverseInSubtree(ServoTraversalFlags aFlags, dom::Element* aRoot);
+
+  // Returns the target element for restyling.
+  //
+  // If |aPseudoType| is ::after or ::before, returns the generated content
+  // element of which |aElement| is the parent. If |aPseudoType| is any other
+  // pseudo type (other thant CSSPseudoElementType::NotPseudo) returns nullptr.
+  // Otherwise, returns |aElement|.
   static dom::Element* GetElementToRestyle(dom::Element* aElement,
-                                           CSSPseudoElementType
-                                             aPseudoType);
+                                           CSSPseudoElementType aPseudoType);
+
+  // Returns true if any type of compositor animations on |aFrame| allow
+  // runnning on the compositor.
+  // Sets the reason in |aWarning| if the result is false.
+  static bool AllowCompositorAnimationsOnFrame(
+      const nsIFrame* aFrame,
+      AnimationPerformanceWarning::Type& aWarning /* out */);
+
+ private:
+  ~EffectCompositor() = default;
 
   // Get the properties in |aEffectSet| that we are able to animate on the
   // compositor but which are also specified at a higher level in the cascade
-  // than the animations level in |aStyleContext|.
-  static void
-  GetOverriddenProperties(nsStyleContext* aStyleContext,
-                          EffectSet& aEffectSet,
-                          nsCSSPropertyIDSet& aPropertiesOverridden);
-
-  static void
-  UpdateCascadeResults(EffectSet& aEffectSet,
-                       dom::Element* aElement,
-                       CSSPseudoElementType aPseudoType,
-                       nsStyleContext* aStyleContext);
+  // than the animations level.
+  static nsCSSPropertyIDSet GetOverriddenProperties(
+      EffectSet& aEffectSet, dom::Element* aElement,
+      CSSPseudoElementType aPseudoType);
 
   static nsPresContext* GetPresContext(dom::Element* aElement);
 
@@ -271,54 +231,11 @@ private:
   // posting a restyle to update it.
   EnumeratedArray<CascadeLevel, CascadeLevel(kCascadeLevelCount),
                   nsDataHashtable<PseudoElementHashEntry, bool>>
-                    mElementsToRestyle;
+      mElementsToRestyle;
 
-  class AnimationStyleRuleProcessor final : public nsIStyleRuleProcessor
-  {
-  public:
-    AnimationStyleRuleProcessor(EffectCompositor* aCompositor,
-                                CascadeLevel aCascadeLevel)
-      : mCompositor(aCompositor)
-      , mCascadeLevel(aCascadeLevel)
-    {
-      MOZ_ASSERT(aCompositor);
-    }
-
-    NS_DECL_ISUPPORTS
-
-    // nsIStyleRuleProcessor (parts)
-    nsRestyleHint HasStateDependentStyle(
-                        StateRuleProcessorData* aData) override;
-    nsRestyleHint HasStateDependentStyle(
-                        PseudoElementStateRuleProcessorData* aData) override;
-    bool HasDocumentStateDependentStyle(StateRuleProcessorData* aData) override;
-    nsRestyleHint HasAttributeDependentStyle(
-                        AttributeRuleProcessorData* aData,
-                        RestyleHintData& aRestyleHintDataResult) override;
-    bool MediumFeaturesChanged(nsPresContext* aPresContext) override;
-    void RulesMatching(ElementRuleProcessorData* aData) override;
-    void RulesMatching(PseudoElementRuleProcessorData* aData) override;
-    void RulesMatching(AnonBoxRuleProcessorData* aData) override;
-#ifdef MOZ_XUL
-    void RulesMatching(XULTreeRuleProcessorData* aData) override;
-#endif
-    size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf)
-      const MOZ_MUST_OVERRIDE override;
-    size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf)
-      const MOZ_MUST_OVERRIDE override;
-
-  private:
-    ~AnimationStyleRuleProcessor() = default;
-
-    EffectCompositor* mCompositor;
-    CascadeLevel      mCascadeLevel;
-  };
-
-  EnumeratedArray<CascadeLevel, CascadeLevel(kCascadeLevelCount),
-                  OwningNonNull<AnimationStyleRuleProcessor>>
-                    mRuleProcessors;
+  bool mIsInPreTraverse = false;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_EffectCompositor_h
+#endif  // mozilla_EffectCompositor_h

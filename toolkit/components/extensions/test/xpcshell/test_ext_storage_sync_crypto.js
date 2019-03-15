@@ -5,9 +5,9 @@
 
 const {
   EncryptionRemoteTransformer,
-} = Cu.import("resource://gre/modules/ExtensionStorageSync.jsm", {});
-Cu.import("resource://services-crypto/utils.js");
-Cu.import("resource://services-sync/util.js");
+} = ChromeUtils.import("resource://gre/modules/ExtensionStorageSync.jsm", {});
+ChromeUtils.import("resource://services-crypto/utils.js");
+ChromeUtils.import("resource://services-sync/util.js");
 
 /**
  * Like Assert.throws, but for generators.
@@ -17,11 +17,11 @@ Cu.import("resource://services-sync/util.js");
  * @param {function} f
  *        The function to call.
  */
-function* throwsGen(constraint, f) {
+async function throwsGen(constraint, f) {
   let threw = false;
   let exception;
   try {
-    yield* f();
+    await f();
   } catch (e) {
     threw = true;
     exception = e;
@@ -30,14 +30,14 @@ function* throwsGen(constraint, f) {
   ok(threw, "did not throw an exception");
 
   const debuggingMessage = `got ${exception}, expected ${constraint}`;
-  let message = exception;
-  if (typeof exception === "object") {
-    message = exception.message;
-  }
 
   if (typeof constraint === "function") {
-    ok(constraint(message), debuggingMessage);
+    ok(constraint(exception), debuggingMessage);
   } else {
+    let message = exception;
+    if (typeof exception === "object") {
+      message = exception.message;
+    }
     ok(constraint === message, debuggingMessage);
   }
 }
@@ -57,14 +57,17 @@ class StaticKeyEncryptionRemoteTransformer extends EncryptionRemoteTransformer {
   }
 }
 const BORING_KB = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-const STRETCHED_KEY = CryptoUtils.hkdf(BORING_KB, undefined, `testing storage.sync encryption`, 2 * 32);
-const KEY_BUNDLE = {
-  sha256HMACHasher: Utils.makeHMACHasher(Ci.nsICryptoHMAC.SHA256, Utils.makeHMACKey(STRETCHED_KEY.slice(0, 32))),
-  encryptionKeyB64: btoa(STRETCHED_KEY.slice(32, 64)),
-};
-const transformer = new StaticKeyEncryptionRemoteTransformer(KEY_BUNDLE);
+let transformer;
+add_task(async function setup() {
+  const STRETCHED_KEY = await CryptoUtils.hkdfLegacy(BORING_KB, undefined, `testing storage.sync encryption`, 2 * 32);
+  const KEY_BUNDLE = {
+    sha256HMACHasher: Utils.makeHMACHasher(Ci.nsICryptoHMAC.SHA256, Utils.makeHMACKey(STRETCHED_KEY.slice(0, 32))),
+    encryptionKeyB64: btoa(STRETCHED_KEY.slice(32, 64)),
+  };
+  transformer = new StaticKeyEncryptionRemoteTransformer(KEY_BUNDLE);
+});
 
-add_task(function* test_encryption_transformer_roundtrip() {
+add_task(async function test_encryption_transformer_roundtrip() {
   const POSSIBLE_DATAS = [
     "string",
     2,          // number
@@ -75,19 +78,19 @@ add_task(function* test_encryption_transformer_roundtrip() {
   for (let data of POSSIBLE_DATAS) {
     const record = {data, id: "key-some_2D_key", key: "some-key"};
 
-    deepEqual(record, yield transformer.decode(yield transformer.encode(record)));
+    deepEqual(record, await transformer.decode(await transformer.encode(record)));
   }
 });
 
-add_task(function* test_refuses_to_decrypt_tampered() {
-  const encryptedRecord = yield transformer.encode({data: [1, 2, 3], id: "key-some_2D_key", key: "some-key"});
+add_task(async function test_refuses_to_decrypt_tampered() {
+  const encryptedRecord = await transformer.encode({data: [1, 2, 3], id: "key-some_2D_key", key: "some-key"});
   const tamperedHMAC = Object.assign({}, encryptedRecord, {hmac: "0000000000000000000000000000000000000000000000000000000000000001"});
-  yield* throwsGen(Utils.isHMACMismatch, function* () {
-    yield transformer.decode(tamperedHMAC);
+  await throwsGen(Utils.isHMACMismatch, async function() {
+    await transformer.decode(tamperedHMAC);
   });
 
   const tamperedIV = Object.assign({}, encryptedRecord, {IV: "aaaaaaaaaaaaaaaaaaaaaa=="});
-  yield* throwsGen(Utils.isHMACMismatch, function* () {
-    yield transformer.decode(tamperedIV);
+  await throwsGen(Utils.isHMACMismatch, async function() {
+    await transformer.decode(tamperedIV);
   });
 });

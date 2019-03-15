@@ -6,24 +6,24 @@
 
 // Test for as-authored styles.
 
-function* createTestContent(style) {
-  let html = `<style type="text/css">
+async function createTestContent(style) {
+  const html = `<style type="text/css">
       ${style}
       </style>
       <div id="testid" class="testclass">Styled Node</div>`;
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(html));
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(html));
 
-  let {inspector, view} = yield openRuleView();
-  yield selectNode("#testid", inspector);
+  const {inspector, view} = await openRuleView();
+  await selectNode("#testid", inspector);
   return view;
 }
 
-add_task(function* () {
-  let gradientText1 = "(orange, blue);";
-  let gradientText2 = "(pink, teal);";
+add_task(async function() {
+  const gradientText1 = "(orange, blue);";
+  const gradientText2 = "(pink, teal);";
 
-  let view =
-      yield createTestContent("#testid {" +
+  const view =
+      await createTestContent("#testid {" +
                               "  background-image: linear-gradient" +
                               gradientText1 +
                               "  background-image: -ms-linear-gradient" +
@@ -32,21 +32,21 @@ add_task(function* () {
                               gradientText2 +
                               "} ");
 
-  let elementStyle = view._elementStyle;
-  let rule = elementStyle.rules[1];
+  const elementStyle = view._elementStyle;
+  const rule = elementStyle.rules[1];
 
   // Initially the last property should be active.
   for (let i = 0; i < 3; ++i) {
-    let prop = rule.textProps[i];
+    const prop = rule.textProps[i];
     is(prop.name, "background-image", "check the property name");
     is(prop.overridden, i !== 2, "check overridden for " + i);
   }
 
-  yield togglePropStatus(view, rule.textProps[2]);
+  await togglePropStatus(view, rule.textProps[2]);
 
   // Now the first property should be active.
   for (let i = 0; i < 3; ++i) {
-    let prop = rule.textProps[i];
+    const prop = rule.textProps[i];
     is(prop.overridden || !prop.enabled, i !== 0,
        "post-change check overridden for " + i);
   }

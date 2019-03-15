@@ -23,10 +23,7 @@ from mozpack.copier import (
     FileCopier,
 )
 from mozpack.packager import SimplePackager
-from mozpack.packager.formats import (
-    FlatFormatter,
-    STARTUP_CACHE_PATHS,
-)
+from mozpack.packager.formats import FlatFormatter
 from urlparse import urlparse
 
 
@@ -54,7 +51,7 @@ class UnpackFinder(BaseFinder):
         self.omnijar = None
         self.jarlogs = {}
         self.optimizedjars = False
-        self.compressed = True
+        self.compressed = False
 
         jars = set()
 
@@ -146,8 +143,7 @@ class UnpackFinder(BaseFinder):
         jar = JarReader(fileobj=file.open())
         if jar.is_optimized:
             self.optimizedjars = True
-        if not any(f.compressed for f in jar):
-            self.compressed = False
+        self.compressed = max(self.compressed, jar.compression)
         if jar.last_preloaded:
             jarlog = jar.entries.keys()
             self.jarlogs[path] = jarlog[:jarlog.index(jar.last_preloaded) + 1]
@@ -188,8 +184,7 @@ def unpack_to_registry(source, registry):
     finder = UnpackFinder(source)
     packager = SimplePackager(FlatFormatter(registry))
     for p, f in finder.find('*'):
-        if mozpath.split(p)[0] not in STARTUP_CACHE_PATHS:
-            packager.add(p, f)
+        packager.add(p, f)
     packager.close()
 
 

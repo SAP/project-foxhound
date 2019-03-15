@@ -7,10 +7,12 @@
 #ifndef mozilla_dom_StorageIPC_h
 #define mozilla_dom_StorageIPC_h
 
-#include "mozilla/dom/PStorageChild.h"
-#include "mozilla/dom/PStorageParent.h"
+#include "mozilla/dom/PBackgroundLocalStorageCacheChild.h"
+#include "mozilla/dom/PBackgroundLocalStorageCacheParent.h"
+#include "mozilla/dom/PBackgroundStorageChild.h"
+#include "mozilla/dom/PBackgroundStorageParent.h"
 #include "StorageDBThread.h"
-#include "StorageCache.h"
+#include "LocalStorageCache.h"
 #include "StorageObserver.h"
 #include "mozilla/Mutex.h"
 #include "nsAutoPtr.h"
@@ -19,24 +21,75 @@ namespace mozilla {
 
 class OriginAttributesPattern;
 
+namespace ipc {
+
+class BackgroundChildImpl;
+class PrincipalInfo;
+
+}  // namespace ipc
+
 namespace dom {
 
-class DOMLocalStorageManager;
+class LocalStorageManager;
+class PBackgroundStorageParent;
+
+class LocalStorageCacheChild final : public PBackgroundLocalStorageCacheChild {
+  friend class mozilla::ipc::BackgroundChildImpl;
+  friend class LocalStorageCache;
+  friend class LocalStorageManager;
+
+  // LocalStorageCache effectively owns this instance, although IPC handles its
+  // allocation/deallocation.  When the LocalStorageCache destructor runs, it
+  // will invoke SendDeleteMeInternal() which will trigger both instances to
+  // drop their mutual references and cause IPC to destroy the actor after the
+  // DeleteMe round-trip.
+  LocalStorageCache* MOZ_NON_OWNING_REF mCache;
+
+  NS_DECL_OWNINGTHREAD
+
+ public:
+  void AssertIsOnOwningThread() const {
+    NS_ASSERT_OWNINGTHREAD(LocalStorageCacheChild);
+  }
+
+ private:
+  // Only created by LocalStorageManager.
+  explicit LocalStorageCacheChild(LocalStorageCache* aCache);
+
+  // Only destroyed by mozilla::ipc::BackgroundChildImpl.
+  ~LocalStorageCacheChild();
+
+  // Only called by LocalStorageCache.
+  void SendDeleteMeInternal();
+
+  // IPDL methods are only called by IPDL.
+  void ActorDestroy(ActorDestroyReason aWhy) override;
+
+  mozilla::ipc::IPCResult RecvObserve(const PrincipalInfo& aPrincipalInfo,
+                                      const uint32_t& aPrivateBrowsingId,
+                                      const nsString& aDocumentURI,
+                                      const nsString& aKey,
+                                      const nsString& aOldValue,
+                                      const nsString& aNewValue) override;
+};
 
 // Child side of the IPC protocol, exposes as DB interface but
 // is responsible to send all requests to the parent process
 // and expects asynchronous answers. Those are then transparently
 // forwarded back to consumers on the child process.
-class StorageDBChild final : public StorageDBBridge
-                           , public PStorageChild
-{
+class StorageDBChild final : public PBackgroundStorageChild {
+  class ShutdownObserver;
+
   virtual ~StorageDBChild();
 
-public:
-  explicit StorageDBChild(DOMLocalStorageManager* aManager);
+ public:
+  explicit StorageDBChild(LocalStorageManager* aManager);
 
-  NS_IMETHOD_(MozExternalRefCountType) AddRef(void);
-  NS_IMETHOD_(MozExternalRefCountType) Release(void);
+  static StorageDBChild* Get();
+
+  static StorageDBChild* GetOrCreate();
+
+  NS_INLINE_DECL_REFCOUNTING(StorageDBChild);
 
   void AddIPDLReference();
   void ReleaseIPDLReference();
@@ -44,70 +97,69 @@ public:
   virtual nsresult Init();
   virtual nsresult Shutdown();
 
-  virtual void AsyncPreload(StorageCacheBridge* aCache, bool aPriority = false);
+  virtual void AsyncPreload(LocalStorageCacheBridge* aCache,
+                            bool aPriority = false);
   virtual void AsyncGetUsage(StorageUsageBridge* aUsage);
 
-  virtual void SyncPreload(StorageCacheBridge* aCache, bool aForceSync = false);
+  virtual void SyncPreload(LocalStorageCacheBridge* aCache,
+                           bool aForceSync = false);
 
-  virtual nsresult AsyncAddItem(StorageCacheBridge* aCache,
+  virtual nsresult AsyncAddItem(LocalStorageCacheBridge* aCache,
                                 const nsAString& aKey, const nsAString& aValue);
-  virtual nsresult AsyncUpdateItem(StorageCacheBridge* aCache,
+  virtual nsresult AsyncUpdateItem(LocalStorageCacheBridge* aCache,
                                    const nsAString& aKey,
                                    const nsAString& aValue);
-  virtual nsresult AsyncRemoveItem(StorageCacheBridge* aCache,
+  virtual nsresult AsyncRemoveItem(LocalStorageCacheBridge* aCache,
                                    const nsAString& aKey);
-  virtual nsresult AsyncClear(StorageCacheBridge* aCache);
+  virtual nsresult AsyncClear(LocalStorageCacheBridge* aCache);
 
-  virtual void AsyncClearAll()
-  {
+  virtual void AsyncClearAll() {
     if (mOriginsHavingData) {
       mOriginsHavingData->Clear(); /* NO-OP on the child process otherwise */
     }
   }
 
-  virtual void AsyncClearMatchingOrigin(const nsACString& aOriginNoSuffix)
-    { /* NO-OP on the child process */ }
+  virtual void AsyncClearMatchingOrigin(const nsACString& aOriginNoSuffix) {
+    MOZ_CRASH("Shouldn't be called!");
+  }
 
-  virtual void AsyncClearMatchingOriginAttributes(const OriginAttributesPattern& aPattern)
-    { /* NO-OP on the child process */ }
+  virtual void AsyncClearMatchingOriginAttributes(
+      const OriginAttributesPattern& aPattern) {
+    MOZ_CRASH("Shouldn't be called!");
+  }
 
-  virtual void AsyncFlush()
-    { SendAsyncFlush(); }
+  virtual void AsyncFlush() { MOZ_CRASH("Shouldn't be called!"); }
 
   virtual bool ShouldPreloadOrigin(const nsACString& aOriginNoSuffix);
-  virtual void GetOriginsHavingData(InfallibleTArray<nsCString>* aOrigins)
-    { NS_NOTREACHED("Not implemented for child process"); }
 
-private:
+ private:
   mozilla::ipc::IPCResult RecvObserve(const nsCString& aTopic,
                                       const nsString& aOriginAttributesPattern,
-                                      const nsCString& aOriginScope);
+                                      const nsCString& aOriginScope) override;
   mozilla::ipc::IPCResult RecvLoadItem(const nsCString& aOriginSuffix,
                                        const nsCString& aOriginNoSuffix,
                                        const nsString& aKey,
-                                       const nsString& aValue);
+                                       const nsString& aValue) override;
   mozilla::ipc::IPCResult RecvLoadDone(const nsCString& aOriginSuffix,
                                        const nsCString& aOriginNoSuffix,
-                                       const nsresult& aRv);
-  mozilla::ipc::IPCResult RecvOriginsHavingData(nsTArray<nsCString>&& aOrigins);
+                                       const nsresult& aRv) override;
+  mozilla::ipc::IPCResult RecvOriginsHavingData(
+      nsTArray<nsCString>&& aOrigins) override;
   mozilla::ipc::IPCResult RecvLoadUsage(const nsCString& aOriginNoSuffix,
-                                        const int64_t& aUsage);
-  mozilla::ipc::IPCResult RecvError(const nsresult& aRv);
+                                        const int64_t& aUsage) override;
+  mozilla::ipc::IPCResult RecvError(const nsresult& aRv) override;
 
   nsTHashtable<nsCStringHashKey>& OriginsHavingData();
 
-  ThreadSafeAutoRefCnt mRefCnt;
-  NS_DECL_OWNINGTHREAD
-
   // Held to get caches to forward answers to.
-  RefPtr<DOMLocalStorageManager> mManager;
+  RefPtr<LocalStorageManager> mManager;
 
   // Origins having data hash, for optimization purposes only
   nsAutoPtr<nsTHashtable<nsCStringHashKey>> mOriginsHavingData;
 
   // List of caches waiting for preload.  This ensures the contract that
   // AsyncPreload call references the cache for time of the preload.
-  nsTHashtable<nsRefPtrHashKey<StorageCacheBridge>> mLoadingCaches;
+  nsTHashtable<nsRefPtrHashKey<LocalStorageCacheBridge>> mLoadingCaches;
 
   // Status of the remote database
   nsresult mStatus;
@@ -115,19 +167,50 @@ private:
   bool mIPCOpen;
 };
 
+class LocalStorageCacheParent final
+    : public PBackgroundLocalStorageCacheParent {
+  const PrincipalInfo mPrincipalInfo;
+  const nsCString mOriginKey;
+  uint32_t mPrivateBrowsingId;
+  bool mActorDestroyed;
+
+ public:
+  // Created in AllocPBackgroundLocalStorageCacheParent.
+  LocalStorageCacheParent(const PrincipalInfo& aPrincipalInfo,
+                          const nsACString& aOriginKey,
+                          uint32_t aPrivateBrowsingId);
+
+  NS_INLINE_DECL_REFCOUNTING(mozilla::dom::LocalStorageCacheParent)
+
+ private:
+  // Reference counted.
+  ~LocalStorageCacheParent();
+
+  // IPDL methods are only called by IPDL.
+  void ActorDestroy(ActorDestroyReason aWhy) override;
+
+  mozilla::ipc::IPCResult RecvDeleteMe() override;
+
+  mozilla::ipc::IPCResult RecvNotify(const nsString& aDocumentURI,
+                                     const nsString& aKey,
+                                     const nsString& aOldValue,
+                                     const nsString& aNewValue) override;
+};
 
 // Receives async requests from child processes and is responsible
 // to send back responses from the DB thread.  Exposes as a fake
-// StorageCache consumer.
+// LocalStorageCache consumer.
 // Also responsible for forwardning all chrome operation notifications
 // such as cookie cleaning etc to the child process.
-class StorageDBParent final : public PStorageParent
-                            , public StorageObserverSink
-{
+class StorageDBParent final : public PBackgroundStorageParent {
+  class ObserverSink;
+
   virtual ~StorageDBParent();
 
-public:
-  StorageDBParent();
+ public:
+  explicit StorageDBParent(const nsString& aProfilePath);
+
+  void Init();
 
   NS_IMETHOD_(MozExternalRefCountType) AddRef(void);
   NS_IMETHOD_(MozExternalRefCountType) Release(void);
@@ -137,35 +220,45 @@ public:
 
   bool IPCOpen() { return mIPCOpen; }
 
-public:
+ public:
   // Fake cache class receiving async callbacks from DB thread, sending
   // them back to appropriate cache object on the child process.
-  class CacheParentBridge : public StorageCacheBridge {
-  public:
+  class CacheParentBridge : public LocalStorageCacheBridge {
+   public:
     CacheParentBridge(StorageDBParent* aParentDB,
                       const nsACString& aOriginSuffix,
                       const nsACString& aOriginNoSuffix)
-      : mParent(aParentDB)
-      , mOriginSuffix(aOriginSuffix), mOriginNoSuffix(aOriginNoSuffix)
-      , mLoaded(false), mLoadedCount(0) {}
+        : mOwningEventTarget(GetCurrentThreadSerialEventTarget()),
+          mParent(aParentDB),
+          mOriginSuffix(aOriginSuffix),
+          mOriginNoSuffix(aOriginNoSuffix),
+          mLoaded(false),
+          mLoadedCount(0) {}
     virtual ~CacheParentBridge() {}
 
-    // StorageCacheBridge
-    virtual const nsCString Origin() const;
-    virtual const nsCString& OriginNoSuffix() const
-      { return mOriginNoSuffix; }
-    virtual const nsCString& OriginSuffix() const
-      { return mOriginSuffix; }
-    virtual bool Loaded()
-      { return mLoaded; }
-    virtual uint32_t LoadedCount()
-      { return mLoadedCount; }
+    // LocalStorageCacheBridge
+    virtual const nsCString Origin() const override;
+    virtual const nsCString& OriginNoSuffix() const override {
+      return mOriginNoSuffix;
+    }
+    virtual const nsCString& OriginSuffix() const override {
+      return mOriginSuffix;
+    }
+    virtual bool Loaded() override { return mLoaded; }
+    virtual uint32_t LoadedCount() override { return mLoadedCount; }
 
-    virtual bool LoadItem(const nsAString& aKey, const nsString& aValue);
-    virtual void LoadDone(nsresult aRv);
-    virtual void LoadWait();
+    virtual bool LoadItem(const nsAString& aKey,
+                          const nsString& aValue) override;
+    virtual void LoadDone(nsresult aRv) override;
+    virtual void LoadWait() override;
 
-  private:
+    NS_IMETHOD_(void)
+    Release(void) override;
+
+   private:
+    void Destroy();
+
+    nsCOMPtr<nsISerialEventTarget> mOwningEventTarget;
     RefPtr<StorageDBParent> mParent;
     nsCString mOriginSuffix, mOriginNoSuffix;
     bool mLoaded;
@@ -173,26 +266,35 @@ public:
   };
 
   // Fake usage class receiving async callbacks from DB thread
-  class UsageParentBridge : public StorageUsageBridge
-  {
-  public:
+  class UsageParentBridge : public StorageUsageBridge {
+   public:
     UsageParentBridge(StorageDBParent* aParentDB,
                       const nsACString& aOriginScope)
-      : mParent(aParentDB), mOriginScope(aOriginScope) {}
+        : mOwningEventTarget(GetCurrentThreadSerialEventTarget()),
+          mParent(aParentDB),
+          mOriginScope(aOriginScope) {}
     virtual ~UsageParentBridge() {}
 
     // StorageUsageBridge
-    virtual const nsCString& OriginScope() { return mOriginScope; }
-    virtual void LoadUsage(const int64_t usage);
+    virtual const nsCString& OriginScope() override { return mOriginScope; }
+    virtual void LoadUsage(const int64_t usage) override;
 
-  private:
+    NS_IMETHOD_(MozExternalRefCountType)
+    Release(void) override;
+
+   private:
+    void Destroy();
+
+    nsCOMPtr<nsISerialEventTarget> mOwningEventTarget;
     RefPtr<StorageDBParent> mParent;
     nsCString mOriginScope;
   };
 
-private:
+ private:
   // IPC
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
+  mozilla::ipc::IPCResult RecvDeleteMe() override;
+
   mozilla::ipc::IPCResult RecvAsyncPreload(const nsCString& aOriginSuffix,
                                            const nsCString& aOriginNoSuffix,
                                            const bool& aPriority) override;
@@ -202,7 +304,8 @@ private:
                                       InfallibleTArray<nsString>* aKeys,
                                       InfallibleTArray<nsString>* aValues,
                                       nsresult* aRv) override;
-  mozilla::ipc::IPCResult RecvAsyncGetUsage(const nsCString& aOriginNoSuffix) override;
+  mozilla::ipc::IPCResult RecvAsyncGetUsage(
+      const nsCString& aOriginNoSuffix) override;
   mozilla::ipc::IPCResult RecvAsyncAddItem(const nsCString& aOriginSuffix,
                                            const nsCString& aOriginNoSuffix,
                                            const nsString& aKey,
@@ -214,18 +317,33 @@ private:
   mozilla::ipc::IPCResult RecvAsyncRemoveItem(const nsCString& aOriginSuffix,
                                               const nsCString& aOriginNoSuffix,
                                               const nsString& aKey) override;
-  mozilla::ipc::IPCResult RecvAsyncClear(const nsCString& aOriginSuffix,
-                                         const nsCString& aOriginNoSuffix) override;
+  mozilla::ipc::IPCResult RecvAsyncClear(
+      const nsCString& aOriginSuffix,
+      const nsCString& aOriginNoSuffix) override;
   mozilla::ipc::IPCResult RecvAsyncFlush() override;
 
-  // StorageObserverSink
-  virtual nsresult Observe(const char* aTopic,
-                           const nsAString& aOriginAttrPattern,
-                           const nsACString& aOriginScope) override;
+  mozilla::ipc::IPCResult RecvStartup() override;
+  mozilla::ipc::IPCResult RecvClearAll() override;
+  mozilla::ipc::IPCResult RecvClearMatchingOrigin(
+      const nsCString& aOriginNoSuffix) override;
+  mozilla::ipc::IPCResult RecvClearMatchingOriginAttributes(
+      const OriginAttributesPattern& aPattern) override;
 
-private:
+  void Observe(const nsCString& aTopic, const nsString& aOriginAttrPattern,
+               const nsCString& aOriginScope);
+
+ private:
   CacheParentBridge* NewCache(const nsACString& aOriginSuffix,
                               const nsACString& aOriginNoSuffix);
+
+  RefPtr<ObserverSink> mObserverSink;
+
+  // A hack to deal with deadlock between the parent process main thread and
+  // background thread when invoking StorageDBThread::GetOrCreate because it
+  // cannot safely perform a synchronous dispatch back to the main thread
+  // (because we are already synchronously doing things on the stack).
+  // Populated for the same process actors, empty for other process actors.
+  nsString mProfilePath;
 
   ThreadSafeAutoRefCnt mRefCnt;
   NS_DECL_OWNINGTHREAD
@@ -234,7 +352,28 @@ private:
   bool mIPCOpen;
 };
 
-} // namespace dom
-} // namespace mozilla
+PBackgroundLocalStorageCacheParent* AllocPBackgroundLocalStorageCacheParent(
+    const mozilla::ipc::PrincipalInfo& aPrincipalInfo,
+    const nsCString& aOriginKey, const uint32_t& aPrivateBrowsingId);
 
-#endif // mozilla_dom_StorageIPC_h
+mozilla::ipc::IPCResult RecvPBackgroundLocalStorageCacheConstructor(
+    mozilla::ipc::PBackgroundParent* aBackgroundActor,
+    PBackgroundLocalStorageCacheParent* aActor,
+    const mozilla::ipc::PrincipalInfo& aPrincipalInfo,
+    const nsCString& aOriginKey, const uint32_t& aPrivateBrowsingId);
+
+bool DeallocPBackgroundLocalStorageCacheParent(
+    PBackgroundLocalStorageCacheParent* aActor);
+
+PBackgroundStorageParent* AllocPBackgroundStorageParent(
+    const nsString& aProfilePath);
+
+mozilla::ipc::IPCResult RecvPBackgroundStorageConstructor(
+    PBackgroundStorageParent* aActor, const nsString& aProfilePath);
+
+bool DeallocPBackgroundStorageParent(PBackgroundStorageParent* aActor);
+
+}  // namespace dom
+}  // namespace mozilla
+
+#endif  // mozilla_dom_StorageIPC_h

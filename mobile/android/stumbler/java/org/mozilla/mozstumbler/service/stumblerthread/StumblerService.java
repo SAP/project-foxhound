@@ -5,16 +5,24 @@
 package org.mozilla.mozstumbler.service.stumblerthread;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
+import android.app.Notification;
+import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.location.Location;
 import android.os.AsyncTask;
+import android.support.v4.app.NotificationCompat;
 import android.support.v4.content.ContextCompat;
 import android.util.Log;
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.mozilla.gecko.AppConstants;
+import org.mozilla.gecko.IntentHelper;
+import org.mozilla.gecko.R;
+import org.mozilla.gecko.notifications.NotificationHelper;
 import org.mozilla.mozstumbler.service.AppGlobals;
 import org.mozilla.mozstumbler.service.Prefs;
 import org.mozilla.mozstumbler.service.stumblerthread.blocklist.WifiBlockListInterface;
@@ -47,6 +55,8 @@ public class StumblerService extends PersistentIntentService
 
     // Used to guard against attempting to upload too frequently in passive mode.
     private static final long PASSIVE_UPLOAD_FREQ_GUARD_MSEC = 5 * 60 * 1000;
+
+    private static final String BROWSERAPP = "org.mozilla.gecko.BrowserApp";
 
     public StumblerService() {
         this("StumblerService");
@@ -132,6 +142,26 @@ public class StumblerService extends PersistentIntentService
         setIntentRedelivery(true);
     }
 
+    @Override
+    @SuppressLint("NewApi")
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        if (!AppConstants.Versions.preO) {
+            final Notification notification = new NotificationCompat.Builder(this,
+                    NotificationHelper.getInstance(this)
+                            .getNotificationChannel(NotificationHelper.Channel.MLS).getId())
+                    .setSmallIcon(R.drawable.ic_status_logo)
+                    .setContentTitle(getString(R.string.datareporting_stumbler_notification_title))
+                    .setContentIntent(createContentIntent())
+                    .setOngoing(true)
+                    .setShowWhen(false)
+                    .setWhen(0)
+                    .build();
+
+            startForeground(R.id.stumblerNotification, notification);
+        }
+        return super.onStartCommand(intent, flags, startId);
+    }
+
     // Called from the main thread
     @Override
     public void onDestroy() {
@@ -180,11 +210,6 @@ public class StumblerService extends PersistentIntentService
         // Post-init(), set the mode to passive.
         mScanManager.setPassiveMode(true);
 
-        if (!hasLocationPermission()) {
-            Log.d(LOG_TAG, "Location permission not granted. Aborting.");
-            return;
-        }
-
         if (intent == null) {
             return;
         }
@@ -193,6 +218,11 @@ public class StumblerService extends PersistentIntentService
 
         if (!isScanEnabledInPrefs && intent.getBooleanExtra(ACTION_NOT_FROM_HOST_APP, false)) {
             stopSelf();
+            return;
+        }
+
+        if (!hasLocationPermission()) {
+            Log.d(LOG_TAG, "Location permission not granted. Aborting.");
             return;
         }
 
@@ -250,5 +280,18 @@ public class StumblerService extends PersistentIntentService
 
     private boolean hasLocationPermission() {
         return ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private PendingIntent createContentIntent() {
+        Intent intent = IntentHelper.getPrivacySettingsIntent();
+        return PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        if (rootIntent != null && rootIntent.getComponent() != null &&
+                BROWSERAPP.equals(rootIntent.getComponent().getClassName())) {
+            stopSelf();
+        }
     }
 }

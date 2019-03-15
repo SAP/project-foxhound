@@ -4,15 +4,47 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-# These files cannot be built in unified mode because they rely on plarena.h
-SOURCES += [
-    'mozJSComponentLoader.cpp',
+UNIFIED_SOURCES += [
+    'AutoMemMap.cpp',
+    'ChromeScriptLoader.cpp',
     'mozJSLoaderUtils.cpp',
     'mozJSSubScriptLoader.cpp',
+    'nsImportModule.cpp',
+    'ScriptCacheActors.cpp',
+    'ScriptPreloader.cpp',
+    'URLPreloader.cpp',
+]
+
+# mozJSComponentLoader.cpp cannot be built in unified mode because it uses
+# windows.h
+SOURCES += [
+    'mozJSComponentLoader.cpp',
+]
+
+IPDL_SOURCES += [
+    'PScriptCache.ipdl',
+]
+
+EXPORTS += [
+    'nsImportModule.h'
+]
+
+EXPORTS.mozilla += [
+    'AutoMemMap.h',
+    'ScriptPreloader.h',
+    'URLPreloader.h',
+]
+
+EXPORTS.mozilla.dom += [
+    'PrecompiledScript.h',
+]
+
+EXPORTS.mozilla.loader += [
+    'AutoMemMap.h',
+    'ScriptCacheActors.h',
 ]
 
 EXTRA_JS_MODULES += [
-    'ISO8601DateUtils.jsm',
     'XPCOMUtils.jsm',
 ]
 
@@ -22,7 +54,10 @@ LOCAL_INCLUDES += [
     '../src',
     '../wrappers',
     '/dom/base',
+    '/xpcom/base/',
 ]
 
-if CONFIG['GNU_CXX']:
+include('/ipc/chromium/chromium-config.mozbuild')
+
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-shadow']

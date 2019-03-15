@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,296 +18,37 @@
 #include "nsLayoutUtils.h"
 #include "nsStyleStruct.h"
 #include "nsIFrame.h"
+#include "nsImageRenderer.h"
 #include "nsCSSRenderingBorders.h"
 
-class gfxDrawable;
-class nsStyleContext;
+class gfxContext;
 class nsPresContext;
-class nsRenderingContext;
 
 namespace mozilla {
+
+class ComputedStyle;
 
 namespace gfx {
 struct Color;
 class DrawTarget;
-} // namespace gfx
+}  // namespace gfx
 
 namespace layers {
 class ImageContainer;
-} // namespace layers
+class StackingContextHelper;
+class WebRenderParentCommand;
+class LayerManager;
+class RenderRootStateManager;
+}  // namespace layers
 
-// A CSSSizeOrRatio represents a (possibly partially specified) size for use
-// in computing image sizes. Either or both of the width and height might be
-// given. A ratio of width to height may also be given. If we at least two
-// of these then we can compute a concrete size, that is a width and height.
-struct CSSSizeOrRatio
-{
-  CSSSizeOrRatio()
-    : mRatio(0, 0)
-    , mHasWidth(false)
-    , mHasHeight(false) {}
+namespace wr {
+class DisplayListBuilder;
+}  // namespace wr
 
-  bool CanComputeConcreteSize() const
-  {
-    return mHasWidth + mHasHeight + HasRatio() >= 2;
-  }
-  bool IsConcrete() const { return mHasWidth && mHasHeight; }
-  bool HasRatio() const { return mRatio.width > 0 && mRatio.height > 0; }
-  bool IsEmpty() const
-  {
-    return (mHasWidth && mWidth <= 0) ||
-           (mHasHeight && mHeight <= 0) ||
-           mRatio.width <= 0 || mRatio.height <= 0; 
-  }
-
-  // CanComputeConcreteSize must return true when ComputeConcreteSize is
-  // called.
-  nsSize ComputeConcreteSize() const;
-
-  void SetWidth(nscoord aWidth)
-  {
-    mWidth = aWidth;
-    mHasWidth = true;
-    if (mHasHeight) {
-      mRatio = nsSize(mWidth, mHeight);
-    }
-  }
-  void SetHeight(nscoord aHeight)
-  {
-    mHeight = aHeight;
-    mHasHeight = true;
-    if (mHasWidth) {
-      mRatio = nsSize(mWidth, mHeight);
-    }
-  }
-  void SetSize(const nsSize& aSize)
-  {
-    mWidth = aSize.width;
-    mHeight = aSize.height;
-    mHasWidth = true;
-    mHasHeight = true;
-    mRatio = aSize;    
-  }
-  void SetRatio(const nsSize& aRatio)
-  {
-    MOZ_ASSERT(!mHasWidth || !mHasHeight,
-               "Probably shouldn't be setting a ratio if we have a concrete size");
-    mRatio = aRatio;
-  }
-
-  nsSize mRatio;
-  nscoord mWidth;
-  nscoord mHeight;
-  bool mHasWidth;
-  bool mHasHeight;
-};
-
-enum class PaintBorderFlags : uint8_t
-{
-  SYNC_DECODE_IMAGES = 1 << 0
-};
+enum class PaintBorderFlags : uint8_t { SYNC_DECODE_IMAGES = 1 << 0 };
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(PaintBorderFlags)
 
-} // namespace mozilla
-
-/**
- * This is a small wrapper class to encapsulate image drawing that can draw an
- * nsStyleImage image, which may internally be a real image, a sub image, or a
- * CSS gradient.
- *
- * @note Always call the member functions in the order of PrepareImage(),
- * SetSize(), and Draw*().
- */
-class nsImageRenderer {
-public:
-  typedef mozilla::image::DrawResult DrawResult;
-  typedef mozilla::layers::LayerManager LayerManager;
-  typedef mozilla::layers::ImageContainer ImageContainer;
-
-  enum {
-    FLAG_SYNC_DECODE_IMAGES = 0x01,
-    FLAG_PAINTING_TO_WINDOW = 0x02
-  };
-  enum FitType
-  {
-    CONTAIN,
-    COVER
-  };
-
-  nsImageRenderer(nsIFrame* aForFrame, const nsStyleImage* aImage, uint32_t aFlags);
-  ~nsImageRenderer();
-  /**
-   * Populates member variables to get ready for rendering.
-   * @return true iff the image is ready, and there is at least a pixel to
-   * draw.
-   */
-  bool PrepareImage();
-
-  /**
-   * The three Compute*Size functions correspond to the sizing algorthms and
-   * definitions from the CSS Image Values and Replaced Content spec. See
-   * http://dev.w3.org/csswg/css-images-3/#sizing .
-   */
-
-  /**
-   * Compute the intrinsic size of the image as defined in the CSS Image Values
-   * spec. The intrinsic size is the unscaled size which the image would ideally
-   * like to be in app units.
-   */
-  mozilla::CSSSizeOrRatio ComputeIntrinsicSize();
-
-  /**
-   * Computes the placement for a background image, or for the image data
-   * inside of a replaced element.
-   *
-   * @param aPos The CSS <position> value that specifies the image's position.
-   * @param aOriginBounds The box to which the tiling position should be
-   *          relative. For background images, this should correspond to
-   *          'background-origin' for the frame, except when painting on the
-   *          canvas, in which case the origin bounds should be the bounds
-   *          of the root element's frame. For a replaced element, this should
-   *          be the element's content-box.
-   * @param aTopLeft [out] The top-left corner where an image tile should be
-   *          drawn.
-   * @param aAnchorPoint [out] A point which should be pixel-aligned by
-   *          nsLayoutUtils::DrawImage. This is the same as aTopLeft, unless
-   *          CSS specifies a percentage (including 'right' or 'bottom'), in
-   *          which case it's that percentage within of aOriginBounds. So
-   *          'right' would set aAnchorPoint.x to aOriginBounds.XMost().
-   *
-   * Points are returned relative to aOriginBounds.
-   */
-  static void ComputeObjectAnchorPoint(const mozilla::Position& aPos,
-                                       const nsSize& aOriginBounds,
-                                       const nsSize& aImageSize,
-                                       nsPoint* aTopLeft,
-                                       nsPoint* aAnchorPoint);
-
-  /**
-   * Compute the size of the rendered image using either the 'cover' or
-   * 'contain' constraints (aFitType).
-   * aIntrinsicRatio may be an invalid ratio, that is one or both of its
-   * dimensions can be less than or equal to zero.
-   */
-  static nsSize ComputeConstrainedSize(const nsSize& aConstrainingSize,
-                                       const nsSize& aIntrinsicRatio,
-                                       FitType aFitType);
-  /**
-   * Compute the size of the rendered image (the concrete size) where no cover/
-   * contain constraints are given. The 'default algorithm' from the CSS Image
-   * Values spec.
-   */
-  static nsSize ComputeConcreteSize(const mozilla::CSSSizeOrRatio& aSpecifiedSize,
-                                    const mozilla::CSSSizeOrRatio& aIntrinsicSize,
-                                    const nsSize& aDefaultSize);
-
-  /**
-   * Set this image's preferred size. This will be its intrinsic size where
-   * specified and the default size where it is not. Used as the unscaled size
-   * when rendering the image.
-   */
-  void SetPreferredSize(const mozilla::CSSSizeOrRatio& aIntrinsicSize,
-                        const nsSize& aDefaultSize);
-
-  /**
-   * Draws the image to the target rendering context using
-   * {background|mask}-specific arguments.
-   * @see nsLayoutUtils::DrawImage() for parameters.
-   */
-  DrawResult DrawLayer(nsPresContext*       aPresContext,
-                       nsRenderingContext&  aRenderingContext,
-                       const nsRect&        aDest,
-                       const nsRect&        aFill,
-                       const nsPoint&       aAnchor,
-                       const nsRect&        aDirty,
-                       const nsSize&        aRepeatSize,
-                       float                aOpacity);
-
-  /**
-   * Draw the image to a single component of a border-image style rendering.
-   * aFill The destination rect to be drawn into
-   * aSrc is the part of the image to be rendered into a tile (aUnitSize in
-   * aFill), if aSrc and the dest tile are different sizes, the image will be
-   * scaled to map aSrc onto the dest tile.
-   * aHFill and aVFill are the repeat patterns for the component -
-   * NS_STYLE_BORDER_IMAGE_REPEAT_*
-   * aUnitSize The scaled size of a single source rect (in destination coords)
-   * aIndex identifies the component: 0 1 2
-   *                                  3 4 5
-   *                                  6 7 8
-   * aSVGViewportSize The image size evaluated by default sizing algorithm.
-   * Pass Nothing() if we can read a valid viewport size or aspect-ratio from
-   * the drawing image directly, otherwise, pass Some() with viewport size
-   * evaluated from default sizing algorithm.
-   * aHasIntrinsicRatio is used to record if the source image has fixed
-   * intrinsic ratio.
-   */
-  DrawResult
-  DrawBorderImageComponent(nsPresContext*       aPresContext,
-                           nsRenderingContext&  aRenderingContext,
-                           const nsRect&        aDirtyRect,
-                           const nsRect&        aFill,
-                           const mozilla::CSSIntRect& aSrc,
-                           uint8_t              aHFill,
-                           uint8_t              aVFill,
-                           const nsSize&        aUnitSize,
-                           uint8_t              aIndex,
-                           const mozilla::Maybe<nsSize>& aSVGViewportSize,
-                           const bool           aHasIntrinsicRatio);
-
-  bool IsRasterImage();
-  bool IsAnimatedImage();
-
-  /// Retrieves the image associated with this nsImageRenderer, if there is one.
-  already_AddRefed<imgIContainer> GetImage();
-
-  bool IsReady() const { return mPrepareResult == DrawResult::SUCCESS; }
-  DrawResult PrepareResult() const { return mPrepareResult; }
-  void SetExtendMode(mozilla::gfx::ExtendMode aMode) { mExtendMode = aMode; }
-  void SetMaskOp(uint8_t aMaskOp) { mMaskOp = aMaskOp; }
-  void PurgeCacheForViewportChange(const mozilla::Maybe<nsSize>& aSVGViewportSize,
-                                   const bool aHasRatio);
-
-private:
-  /**
-   * Draws the image to the target rendering context.
-   * aSrc is a rect on the source image which will be mapped to aDest; it's
-   * currently only used for gradients.
-   *
-   * @see nsLayoutUtils::DrawImage() for other parameters.
-   */
-  DrawResult Draw(nsPresContext*       aPresContext,
-                  nsRenderingContext&  aRenderingContext,
-                  const nsRect&        aDirtyRect,
-                  const nsRect&        aDest,
-                  const nsRect&        aFill,
-                  const nsPoint&       aAnchor,
-                  const nsSize&        aRepeatSize,
-                  const mozilla::CSSIntRect& aSrc,
-                  float                aOpacity = 1.0);
-
-  /**
-   * Helper method for creating a gfxDrawable from mPaintServerFrame or
-   * mImageElementSurface.
-   * Requires mType is eStyleImageType_Element.
-   * Returns null if we cannot create the drawable.
-   */
-  already_AddRefed<gfxDrawable> DrawableForElement(const nsRect& aImageRect,
-                                                   nsRenderingContext&  aRenderingContext);
-
-  nsIFrame*                 mForFrame;
-  const nsStyleImage*       mImage;
-  nsStyleImageType          mType;
-  nsCOMPtr<imgIContainer>   mImageContainer;
-  RefPtr<nsStyleGradient> mGradientData;
-  nsIFrame*                 mPaintServerFrame;
-  nsLayoutUtils::SurfaceFromElementResult mImageElementSurface;
-  DrawResult                mPrepareResult;
-  nsSize                    mSize; // unscaled size of the image, in app units
-  uint32_t                  mFlags;
-  mozilla::gfx::ExtendMode  mExtendMode;
-  uint8_t                   mMaskOp;
-};
+}  // namespace mozilla
 
 /**
  * A struct representing all the information needed to paint a background
@@ -315,14 +57,14 @@ private:
  */
 struct nsBackgroundLayerState {
   typedef mozilla::gfx::CompositionOp CompositionOp;
+  typedef mozilla::nsImageRenderer nsImageRenderer;
 
   /**
    * @param aFlags some combination of nsCSSRendering::PAINTBG_* flags
    */
   nsBackgroundLayerState(nsIFrame* aForFrame, const nsStyleImage* aImage,
                          uint32_t aFlags)
-    : mImageRenderer(aForFrame, aImage, aFlags)
-  {}
+      : mImageRenderer(aForFrame, aImage, aFlags) {}
 
   /**
    * The nsImageRenderer that will be used to draw the background.
@@ -362,122 +104,125 @@ struct nsCSSRendering {
   typedef mozilla::gfx::Rect Rect;
   typedef mozilla::gfx::Size Size;
   typedef mozilla::gfx::RectCornerRadii RectCornerRadii;
-  typedef mozilla::image::DrawResult DrawResult;
+  typedef mozilla::layers::LayerManager LayerManager;
+  typedef mozilla::image::ImgDrawResult ImgDrawResult;
   typedef nsIFrame::Sides Sides;
 
   /**
    * Initialize any static variables used by nsCSSRendering.
    */
   static void Init();
-  
+
   /**
    * Clean up any static variables used by nsCSSRendering.
    */
   static void Shutdown();
-  
-  static bool GetShadowInnerRadii(nsIFrame* aFrame,
-                                  const nsRect& aFrameArea,
+
+  static bool IsBoxDecorationSlice(const nsStyleBorder& aStyleBorder);
+  static nsRect BoxDecorationRectForBorder(
+      nsIFrame* aFrame, const nsRect& aBorderArea, Sides aSkipSides,
+      const nsStyleBorder* aStyleBorder = nullptr);
+  static nsRect BoxDecorationRectForBackground(
+      nsIFrame* aFrame, const nsRect& aBorderArea, Sides aSkipSides,
+      const nsStyleBorder* aStyleBorder = nullptr);
+
+  static bool GetShadowInnerRadii(nsIFrame* aFrame, const nsRect& aFrameArea,
                                   RectCornerRadii& aOutInnerRadii);
   static nsRect GetBoxShadowInnerPaddingRect(nsIFrame* aFrame,
                                              const nsRect& aFrameArea);
-  static bool CanPaintBoxShadowInner(nsIFrame* aFrame);
+  static bool ShouldPaintBoxShadowInner(nsIFrame* aFrame);
   static void PaintBoxShadowInner(nsPresContext* aPresContext,
-                                  nsRenderingContext& aRenderingContext,
+                                  gfxContext& aRenderingContext,
                                   nsIFrame* aForFrame,
                                   const nsRect& aFrameArea);
 
   static bool GetBorderRadii(const nsRect& aFrameRect,
-                             const nsRect& aBorderRect,
-                             nsIFrame* aFrame,
+                             const nsRect& aBorderRect, nsIFrame* aFrame,
                              RectCornerRadii& aOutRadii);
-  static nsRect GetShadowRect(const nsRect aFrameArea,
-                              bool aNativeTheme,
+  static nsRect GetShadowRect(const nsRect& aFrameArea, bool aNativeTheme,
                               nsIFrame* aForFrame);
   static mozilla::gfx::Color GetShadowColor(nsCSSShadowItem* aShadow,
-                                   nsIFrame* aFrame,
-                                   float aOpacity);
+                                            nsIFrame* aFrame, float aOpacity);
   // Returns if the frame has a themed frame.
   // aMaybeHasBorderRadius will return false if we can early detect
   // that we don't have a border radius.
   static bool HasBoxShadowNativeTheme(nsIFrame* aFrame,
                                       bool& aMaybeHasBorderRadius);
   static void PaintBoxShadowOuter(nsPresContext* aPresContext,
-                                  nsRenderingContext& aRenderingContext,
-                                  nsIFrame* aForFrame,
-                                  const nsRect& aFrameArea,
+                                  gfxContext& aRenderingContext,
+                                  nsIFrame* aForFrame, const nsRect& aFrameArea,
                                   const nsRect& aDirtyRect,
                                   float aOpacity = 1.0);
 
-  static void ComputePixelRadii(const nscoord *aAppUnitsRadii,
+  static void ComputePixelRadii(const nscoord* aAppUnitsRadii,
                                 nscoord aAppUnitsPerPixel,
-                                RectCornerRadii *oBorderRadii);
+                                RectCornerRadii* oBorderRadii);
 
   /**
    * Render the border for an element using css rendering rules
    * for borders. aSkipSides says which sides to skip
    * when rendering, the default is to skip none.
    */
-  static DrawResult PaintBorder(nsPresContext* aPresContext,
-                                nsRenderingContext& aRenderingContext,
-                                nsIFrame* aForFrame,
-                                const nsRect& aDirtyRect,
-                                const nsRect& aBorderArea,
-                                nsStyleContext* aStyleContext,
-                                mozilla::PaintBorderFlags aFlags,
-                                Sides aSkipSides = Sides());
+  static ImgDrawResult PaintBorder(
+      nsPresContext* aPresContext, gfxContext& aRenderingContext,
+      nsIFrame* aForFrame, const nsRect& aDirtyRect, const nsRect& aBorderArea,
+      mozilla::ComputedStyle* aComputedStyle, mozilla::PaintBorderFlags aFlags,
+      Sides aSkipSides = Sides());
 
   /**
    * Like PaintBorder, but taking an nsStyleBorder argument instead of
-   * getting it from aStyleContext. aSkipSides says which sides to skip
+   * getting it from aComputedStyle. aSkipSides says which sides to skip
    * when rendering, the default is to skip none.
    */
-  static DrawResult PaintBorderWithStyleBorder(nsPresContext* aPresContext,
-                                               nsRenderingContext& aRenderingContext,
-                                               nsIFrame* aForFrame,
-                                               const nsRect& aDirtyRect,
-                                               const nsRect& aBorderArea,
-                                               const nsStyleBorder& aBorderStyle,
-                                               nsStyleContext* aStyleContext,
-                                               mozilla::PaintBorderFlags aFlags,
-                                               Sides aSkipSides = Sides());
+  static ImgDrawResult PaintBorderWithStyleBorder(
+      nsPresContext* aPresContext, gfxContext& aRenderingContext,
+      nsIFrame* aForFrame, const nsRect& aDirtyRect, const nsRect& aBorderArea,
+      const nsStyleBorder& aBorderStyle, mozilla::ComputedStyle* aComputedStyle,
+      mozilla::PaintBorderFlags aFlags, Sides aSkipSides = Sides());
+
+  static mozilla::Maybe<nsCSSBorderRenderer> CreateBorderRenderer(
+      nsPresContext* aPresContext, DrawTarget* aDrawTarget, nsIFrame* aForFrame,
+      const nsRect& aDirtyRect, const nsRect& aBorderArea,
+      mozilla::ComputedStyle* aComputedStyle, bool* aOutBorderIsEmpty,
+      Sides aSkipSides = Sides());
 
   static mozilla::Maybe<nsCSSBorderRenderer>
-  CreateBorderRenderer(nsPresContext* aPresContext,
-                       DrawTarget* aDrawTarget,
-                       nsIFrame* aForFrame,
-                       const nsRect& aDirtyRect,
-                       const nsRect& aBorderArea,
-                       nsStyleContext* aStyleContext,
-                       Sides aSkipSides = Sides());
+  CreateBorderRendererWithStyleBorder(
+      nsPresContext* aPresContext, DrawTarget* aDrawTarget, nsIFrame* aForFrame,
+      const nsRect& aDirtyRect, const nsRect& aBorderArea,
+      const nsStyleBorder& aBorderStyle, mozilla::ComputedStyle* aComputedStyle,
+      bool* aOutBorderIsEmpty, Sides aSkipSides = Sides());
 
-  static mozilla::Maybe<nsCSSBorderRenderer>
-  CreateBorderRendererWithStyleBorder(nsPresContext* aPresContext,
-                                      DrawTarget* aDrawTarget,
-                                      nsIFrame* aForFrame,
-                                      const nsRect& aDirtyRect,
-                                      const nsRect& aBorderArea,
-                                      const nsStyleBorder& aBorderStyle,
-                                      nsStyleContext* aStyleContext,
-                                      Sides aSkipSides = Sides());
+  static mozilla::Maybe<nsCSSBorderRenderer> CreateBorderRendererForOutline(
+      nsPresContext* aPresContext, gfxContext* aRenderingContext,
+      nsIFrame* aForFrame, const nsRect& aDirtyRect, const nsRect& aBorderArea,
+      mozilla::ComputedStyle* aComputedStyle);
 
-  static mozilla::Maybe<nsCSSBorderRenderer>
-  CreateBorderRendererForOutline(nsPresContext* aPresContext,
-                                 nsRenderingContext* aRenderingContext,
-                                 nsIFrame* aForFrame,
-                                 const nsRect& aDirtyRect,
-                                 const nsRect& aBorderArea,
-                                 nsStyleContext* aStyleContext);
+  static ImgDrawResult CreateWebRenderCommandsForBorder(
+      nsDisplayItem* aItem, nsIFrame* aForFrame, const nsRect& aBorderArea,
+      mozilla::wr::DisplayListBuilder& aBuilder,
+      mozilla::wr::IpcResourceUpdateQueue& aResources,
+      const mozilla::layers::StackingContextHelper& aSc,
+      mozilla::layers::RenderRootStateManager* aManager,
+      nsDisplayListBuilder* aDisplayListBuilder);
+
+  static ImgDrawResult CreateWebRenderCommandsForBorderWithStyleBorder(
+      nsDisplayItem* aItem, nsIFrame* aForFrame, const nsRect& aBorderArea,
+      mozilla::wr::DisplayListBuilder& aBuilder,
+      mozilla::wr::IpcResourceUpdateQueue& aResources,
+      const mozilla::layers::StackingContextHelper& aSc,
+      mozilla::layers::RenderRootStateManager* aManager,
+      nsDisplayListBuilder* aDisplayListBuilder,
+      const nsStyleBorder& aStyleBorder);
 
   /**
    * Render the outline for an element using css rendering rules
    * for borders.
    */
   static void PaintOutline(nsPresContext* aPresContext,
-                          nsRenderingContext& aRenderingContext,
-                          nsIFrame* aForFrame,
-                          const nsRect& aDirtyRect,
-                          const nsRect& aBorderArea,
-                          nsStyleContext* aStyleContext);
+                           gfxContext& aRenderingContext, nsIFrame* aForFrame,
+                           const nsRect& aDirtyRect, const nsRect& aBorderArea,
+                           mozilla::ComputedStyle* aComputedStyle);
 
   /**
    * Render keyboard focus on an element.
@@ -485,10 +230,8 @@ struct nsCSSRendering {
    * Uses a fixed style equivalent to "1px dotted |aColor|".
    * Not used for controls, because the native theme may differ.
    */
-  static void PaintFocus(nsPresContext* aPresContext,
-                         DrawTarget* aDrawTarget,
-                         const nsRect& aFocusRect,
-                         nscolor aColor);
+  static void PaintFocus(nsPresContext* aPresContext, DrawTarget* aDrawTarget,
+                         const nsRect& aFocusRect, nscolor aColor);
 
   /**
    * Render a gradient for an element.
@@ -500,13 +243,10 @@ struct nsCSSRendering {
    * onto aDest.
    * aIntrinsicSize is the size of the source gradient.
    */
-  static void PaintGradient(nsPresContext* aPresContext,
-                            gfxContext& aContext,
+  static void PaintGradient(nsPresContext* aPresContext, gfxContext& aContext,
                             nsStyleGradient* aGradient,
-                            const nsRect& aDirtyRect,
-                            const nsRect& aDest,
-                            const nsRect& aFill,
-                            const nsSize& aRepeatSize,
+                            const nsRect& aDirtyRect, const nsRect& aDest,
+                            const nsRect& aFill, const nsSize& aRepeatSize,
                             const mozilla::CSSIntRect& aSrc,
                             const nsSize& aIntrinsiceSize,
                             float aOpacity = 1.0);
@@ -532,14 +272,16 @@ struct nsCSSRendering {
    * @return true if there is some meaningful background.
    */
   static bool FindBackground(nsIFrame* aForFrame,
-                             nsStyleContext** aBackgroundSC);
+                             mozilla::ComputedStyle** aBackgroundSC);
+  static bool FindBackgroundFrame(nsIFrame* aForFrame,
+                                  nsIFrame** aBackgroundFrame);
 
   /**
    * As FindBackground, but the passed-in frame is known to be a root frame
    * (returned from nsCSSFrameConstructor::GetRootElementStyleFrame())
    * and there is always some meaningful background returned.
    */
-  static nsStyleContext* FindRootFrameBackground(nsIFrame* aForFrame);
+  static mozilla::ComputedStyle* FindRootFrameBackground(nsIFrame* aForFrame);
 
   /**
    * Returns background style information for the canvas.
@@ -552,17 +294,21 @@ struct nsCSSRendering {
    * @param aBackground
    *   contains background style information for the canvas on return
    */
-  static nsStyleContext*
-  FindCanvasBackground(nsIFrame* aForFrame, nsIFrame* aRootElementFrame)
-  {
+
+  static nsIFrame* FindCanvasBackgroundFrame(nsIFrame* aForFrame,
+                                             nsIFrame* aRootElementFrame) {
     MOZ_ASSERT(IsCanvasFrame(aForFrame), "not a canvas frame");
-    if (aRootElementFrame)
-      return FindRootFrameBackground(aRootElementFrame);
+    if (aRootElementFrame) return FindBackgroundStyleFrame(aRootElementFrame);
 
     // This should always give transparent, so we'll fill it in with the
     // default color if needed.  This seems to happen a bit while a page is
     // being loaded.
-    return aForFrame->StyleContext();
+    return aForFrame;
+  }
+
+  static mozilla::ComputedStyle* FindCanvasBackground(
+      nsIFrame* aForFrame, nsIFrame* aRootElementFrame) {
+    return FindCanvasBackgroundFrame(aForFrame, aRootElementFrame)->Style();
   }
 
   /**
@@ -574,36 +320,42 @@ struct nsCSSRendering {
    * Be very hesitant if you're considering calling this function -- it's
    * usually not what you want.
    */
-  static nsIFrame*
-  FindNonTransparentBackgroundFrame(nsIFrame* aFrame,
-                                    bool aStartAtParent = false);
+  static nsIFrame* FindNonTransparentBackgroundFrame(
+      nsIFrame* aFrame, bool aStartAtParent = false);
 
   /**
    * Determine the background color to draw taking into account print settings.
    */
-  static nscolor
-  DetermineBackgroundColor(nsPresContext* aPresContext,
-                           nsStyleContext* aStyleContext,
-                           nsIFrame* aFrame,
-                           bool& aDrawBackgroundImage,
-                           bool& aDrawBackgroundColor);
+  static nscolor DetermineBackgroundColor(
+      nsPresContext* aPresContext, mozilla::ComputedStyle* aComputedStyle,
+      nsIFrame* aFrame, bool& aDrawBackgroundImage, bool& aDrawBackgroundColor);
 
-  static nsRect
-  ComputeImageLayerPositioningArea(nsPresContext* aPresContext,
-                                   nsIFrame* aForFrame,
-                                   const nsRect& aBorderArea,
-                                   const nsStyleImageLayers::Layer& aLayer,
-                                   nsIFrame** aAttachedToFrame,
-                                   bool* aOutTransformedFixed);
+  static nsRect ComputeImageLayerPositioningArea(
+      nsPresContext* aPresContext, nsIFrame* aForFrame,
+      const nsRect& aBorderArea, const nsStyleImageLayers::Layer& aLayer,
+      nsIFrame** aAttachedToFrame, bool* aOutTransformedFixed);
 
-  static nsBackgroundLayerState
-  PrepareImageLayer(nsPresContext* aPresContext,
-                    nsIFrame* aForFrame,
-                    uint32_t aFlags,
-                    const nsRect& aBorderArea,
-                    const nsRect& aBGClipRect,
-                    const nsStyleImageLayers::Layer& aLayer,
-                    bool* aOutIsTransformedFixed = nullptr);
+  // Implementation of the formula for computation of background-repeat round
+  // See http://dev.w3.org/csswg/css3-background/#the-background-size
+  // This function returns the adjusted size of the background image.
+  static nscoord ComputeRoundedSize(nscoord aCurrentSize,
+                                    nscoord aPositioningSize);
+
+  /* ComputeBorderSpacedRepeatSize
+   * aImageDimension: the image width/height
+   * aAvailableSpace: the background positioning area width/height
+   * aSpace: the space between each image
+   * Returns the image size plus gap size of app units for use as spacing
+   */
+  static nscoord ComputeBorderSpacedRepeatSize(nscoord aImageDimension,
+                                               nscoord aAvailableSpace,
+                                               nscoord& aSpace);
+
+  static nsBackgroundLayerState PrepareImageLayer(
+      nsPresContext* aPresContext, nsIFrame* aForFrame, uint32_t aFlags,
+      const nsRect& aBorderArea, const nsRect& aBGClipRect,
+      const nsStyleImageLayers::Layer& aLayer,
+      bool* aOutIsTransformedFixed = nullptr);
 
   struct ImageLayerClipState {
     nsRect mBGClipArea;            // Affected by mClippedRadii
@@ -621,22 +373,23 @@ struct nsCSSRendering {
     bool mCustomClip;
 
     ImageLayerClipState()
-     : mHasRoundedCorners(false),
-       mHasAdditionalBGClipArea(false),
-       mCustomClip(false)
-    {
+        : mHasRoundedCorners(false),
+          mHasAdditionalBGClipArea(false),
+          mCustomClip(false) {
       memset(mRadii, 0, sizeof(nscoord) * 8);
     }
 
     bool IsValid() const;
   };
 
-  static void
-  GetImageLayerClip(const nsStyleImageLayers::Layer& aLayer,
-                    nsIFrame* aForFrame, const nsStyleBorder& aBorder,
-                    const nsRect& aBorderArea, const nsRect& aCallerDirtyRect,
-                    bool aWillPaintBorder, nscoord aAppUnitsPerPixel,
-                    /* out */ ImageLayerClipState* aClipState);
+  static void GetImageLayerClip(const nsStyleImageLayers::Layer& aLayer,
+                                nsIFrame* aForFrame,
+                                const nsStyleBorder& aBorder,
+                                const nsRect& aBorderArea,
+                                const nsRect& aCallerDirtyRect,
+                                bool aWillPaintBorder,
+                                nscoord aAppUnitsPerPixel,
+                                /* out */ ImageLayerClipState* aClipState);
 
   /**
    * Render the background for an element using css rendering rules
@@ -666,58 +419,45 @@ struct nsCSSRendering {
 
   struct PaintBGParams {
     nsPresContext& presCtx;
-    nsRenderingContext& renderingCtx;
     nsRect dirtyRect;
     nsRect borderArea;
     nsIFrame* frame;
     uint32_t paintFlags;
     nsRect* bgClipRect = nullptr;
-    int32_t layer;                  // -1 means painting all layers; other
-                                    // value means painting one specific
-                                    // layer only.
+    int32_t layer;  // -1 means painting all layers; other
+                    // value means painting one specific
+                    // layer only.
     CompositionOp compositionOp;
     float opacity;
 
     static PaintBGParams ForAllLayers(nsPresContext& aPresCtx,
-                                      nsRenderingContext& aRenderingCtx,
                                       const nsRect& aDirtyRect,
                                       const nsRect& aBorderArea,
-                                      nsIFrame *aFrame,
-                                      uint32_t aPaintFlags,
+                                      nsIFrame* aFrame, uint32_t aPaintFlags,
                                       float aOpacity = 1.0);
-    static PaintBGParams ForSingleLayer(nsPresContext& aPresCtx,
-                                        nsRenderingContext& aRenderingCtx,
-                                        const nsRect& aDirtyRect,
-                                        const nsRect& aBorderArea,
-                                        nsIFrame *aFrame,
-                                        uint32_t aPaintFlags,
-                                        int32_t aLayer,
-                                        CompositionOp aCompositionOp  = CompositionOp::OP_OVER,
-                                        float aOpacity = 1.0);
+    static PaintBGParams ForSingleLayer(
+        nsPresContext& aPresCtx, const nsRect& aDirtyRect,
+        const nsRect& aBorderArea, nsIFrame* aFrame, uint32_t aPaintFlags,
+        int32_t aLayer, CompositionOp aCompositionOp = CompositionOp::OP_OVER,
+        float aOpacity = 1.0);
 
-  private:
-    PaintBGParams(nsPresContext& aPresCtx,
-                  nsRenderingContext& aRenderingCtx,
-                  const nsRect& aDirtyRect,
-                  const nsRect& aBorderArea,
-                  nsIFrame* aFrame,
-                  uint32_t aPaintFlags,
-                  int32_t aLayer,
-                  CompositionOp aCompositionOp,
-                  float aOpacity)
-     : presCtx(aPresCtx),
-       renderingCtx(aRenderingCtx),
-       dirtyRect(aDirtyRect),
-       borderArea(aBorderArea),
-       frame(aFrame),
-       paintFlags(aPaintFlags),
-       layer(aLayer),
-       compositionOp(aCompositionOp),
-       opacity(aOpacity) {}
+   private:
+    PaintBGParams(nsPresContext& aPresCtx, const nsRect& aDirtyRect,
+                  const nsRect& aBorderArea, nsIFrame* aFrame,
+                  uint32_t aPaintFlags, int32_t aLayer,
+                  CompositionOp aCompositionOp, float aOpacity)
+        : presCtx(aPresCtx),
+          dirtyRect(aDirtyRect),
+          borderArea(aBorderArea),
+          frame(aFrame),
+          paintFlags(aPaintFlags),
+          layer(aLayer),
+          compositionOp(aCompositionOp),
+          opacity(aOpacity) {}
   };
 
-  static DrawResult PaintStyleImageLayer(const PaintBGParams& aParams);
-
+  static ImgDrawResult PaintStyleImageLayer(const PaintBGParams& aParams,
+                                            gfxContext& aRenderingCtx);
 
   /**
    * Same as |PaintStyleImageLayer|, except using the provided style structs.
@@ -728,13 +468,30 @@ struct nsCSSRendering {
    * The default value for aLayer, -1, means that all layers will be painted.
    * The background color will only be painted if the back-most layer is also
    * being painted and (aParams.paintFlags & PAINTBG_MASK_IMAGE) is false.
-   * aCompositionOp is only respected if a single layer is specified (aLayer != -1).
-   * If all layers are painted, the image layer's blend mode (or the mask
+   * aCompositionOp is only respected if a single layer is specified (aLayer !=
+   * -1). If all layers are painted, the image layer's blend mode (or the mask
    * layer's composition mode) will be used.
    */
-  static DrawResult PaintStyleImageLayerWithSC(const PaintBGParams& aParams,
-                                               nsStyleContext *mBackgroundSC,
-                                               const nsStyleBorder& aBorder);
+  static ImgDrawResult PaintStyleImageLayerWithSC(
+      const PaintBGParams& aParams, gfxContext& aRenderingCtx,
+      mozilla::ComputedStyle* mBackgroundSC, const nsStyleBorder& aBorder);
+
+  static bool CanBuildWebRenderDisplayItemsForStyleImageLayer(
+      LayerManager* aManager, nsPresContext& aPresCtx, nsIFrame* aFrame,
+      const nsStyleBackground* aBackgroundStyle, int32_t aLayer,
+      uint32_t aPaintFlags);
+  static ImgDrawResult BuildWebRenderDisplayItemsForStyleImageLayer(
+      const PaintBGParams& aParams, mozilla::wr::DisplayListBuilder& aBuilder,
+      mozilla::wr::IpcResourceUpdateQueue& aResources,
+      const mozilla::layers::StackingContextHelper& aSc,
+      mozilla::layers::RenderRootStateManager* aManager, nsDisplayItem* aItem);
+
+  static ImgDrawResult BuildWebRenderDisplayItemsForStyleImageLayerWithSC(
+      const PaintBGParams& aParams, mozilla::wr::DisplayListBuilder& aBuilder,
+      mozilla::wr::IpcResourceUpdateQueue& aResources,
+      const mozilla::layers::StackingContextHelper& aSc,
+      mozilla::layers::RenderRootStateManager* aManager, nsDisplayItem* aItem,
+      mozilla::ComputedStyle* mBackgroundSC, const nsStyleBorder& aBorder);
 
   /**
    * Returns the rectangle covered by the given background layer image, taking
@@ -760,24 +517,41 @@ struct nsCSSRendering {
    */
   static void EndFrameTreesLocked();
 
-  // Draw a border segment in the table collapsing border model without
-  // beveling corners
-  static void DrawTableBorderSegment(DrawTarget&   aDrawTarget,
-                                     uint8_t       aBorderStyle,
-                                     nscolor       aBorderColor,
-                                     nscolor       aBGColor,
-                                     const nsRect& aBorderRect,
-                                     int32_t       aAppUnitsPerDevPixel,
-                                     int32_t       aAppUnitsPerCSSPixel,
-                                     uint8_t       aStartBevelSide = 0,
-                                     nscoord       aStartBevelOffset = 0,
-                                     uint8_t       aEndBevelSide = 0,
-                                     nscoord       aEndBevelOffset = 0);
+  // Draw a border segment in the table collapsing border model with beveling
+  // corners.
+  static void DrawTableBorderSegment(
+      DrawTarget& aDrawTarget, mozilla::StyleBorderStyle aBorderStyle,
+      nscolor aBorderColor, const nsRect& aBorderRect,
+      int32_t aAppUnitsPerDevPixel, mozilla::Side aStartBevelSide,
+      nscoord aStartBevelOffset, mozilla::Side aEndBevelSide,
+      nscoord aEndBevelOffset);
+
+  // A single border bevel.
+  struct Bevel {
+    mozilla::Side mSide;
+    nscoord mOffset;
+  };
+
+  // A single solid beveled border segment.
+  struct SolidBeveledBorderSegment {
+    nsRect mRect;
+    nscolor mColor;
+    Bevel mStartBevel;
+    Bevel mEndBevel;
+  };
+
+  // Collect the table border segments with beveling. Can't be called with
+  // dashed / dotted borders, since we don't support beveling those.
+  static void GetTableBorderSolidSegments(
+      nsTArray<SolidBeveledBorderSegment>& aSegments,
+      mozilla::StyleBorderStyle aBorderStyle, nscolor aBorderColor,
+      const nsRect& aBorderRect, int32_t aAppUnitsPerDevPixel,
+      mozilla::Side aStartBevelSide, nscoord aStartBevelOffset,
+      mozilla::Side aEndBevelSide, nscoord aEndBevelOffset);
 
   // NOTE: pt, dirtyRect, lineSize, ascent, offset in the following
   //       structs are non-rounded device pixels, not app units.
-  struct DecorationRectParams
-  {
+  struct DecorationRectParams {
     // The width [length] and the height [thickness] of the decoration
     // line. This is a "logical" size in textRun orientation, so that
     // for a vertical textrun, width will actually be a physical height;
@@ -806,9 +580,10 @@ struct nsCSSRendering {
     // NS_STYLE_TEXT_DECORATION_STYLE_*.
     uint8_t style = NS_STYLE_TEXT_DECORATION_STYLE_NONE;
     bool vertical = false;
+    bool sidewaysLeft = false;
   };
-  struct PaintDecorationLineParams : DecorationRectParams
-  {
+
+  struct PaintDecorationLineParams : DecorationRectParams {
     // No need to paint outside this rect.
     Rect dirtyRect;
     // The top/left edge of the text.
@@ -853,36 +628,61 @@ struct nsCSSRendering {
 
   static CompositionOp GetGFXBlendMode(uint8_t mBlendMode) {
     switch (mBlendMode) {
-      case NS_STYLE_BLEND_NORMAL:      return CompositionOp::OP_OVER;
-      case NS_STYLE_BLEND_MULTIPLY:    return CompositionOp::OP_MULTIPLY;
-      case NS_STYLE_BLEND_SCREEN:      return CompositionOp::OP_SCREEN;
-      case NS_STYLE_BLEND_OVERLAY:     return CompositionOp::OP_OVERLAY;
-      case NS_STYLE_BLEND_DARKEN:      return CompositionOp::OP_DARKEN;
-      case NS_STYLE_BLEND_LIGHTEN:     return CompositionOp::OP_LIGHTEN;
-      case NS_STYLE_BLEND_COLOR_DODGE: return CompositionOp::OP_COLOR_DODGE;
-      case NS_STYLE_BLEND_COLOR_BURN:  return CompositionOp::OP_COLOR_BURN;
-      case NS_STYLE_BLEND_HARD_LIGHT:  return CompositionOp::OP_HARD_LIGHT;
-      case NS_STYLE_BLEND_SOFT_LIGHT:  return CompositionOp::OP_SOFT_LIGHT;
-      case NS_STYLE_BLEND_DIFFERENCE:  return CompositionOp::OP_DIFFERENCE;
-      case NS_STYLE_BLEND_EXCLUSION:   return CompositionOp::OP_EXCLUSION;
-      case NS_STYLE_BLEND_HUE:         return CompositionOp::OP_HUE;
-      case NS_STYLE_BLEND_SATURATION:  return CompositionOp::OP_SATURATION;
-      case NS_STYLE_BLEND_COLOR:       return CompositionOp::OP_COLOR;
-      case NS_STYLE_BLEND_LUMINOSITY:  return CompositionOp::OP_LUMINOSITY;
-      default:      MOZ_ASSERT(false); return CompositionOp::OP_OVER;
+      case NS_STYLE_BLEND_NORMAL:
+        return CompositionOp::OP_OVER;
+      case NS_STYLE_BLEND_MULTIPLY:
+        return CompositionOp::OP_MULTIPLY;
+      case NS_STYLE_BLEND_SCREEN:
+        return CompositionOp::OP_SCREEN;
+      case NS_STYLE_BLEND_OVERLAY:
+        return CompositionOp::OP_OVERLAY;
+      case NS_STYLE_BLEND_DARKEN:
+        return CompositionOp::OP_DARKEN;
+      case NS_STYLE_BLEND_LIGHTEN:
+        return CompositionOp::OP_LIGHTEN;
+      case NS_STYLE_BLEND_COLOR_DODGE:
+        return CompositionOp::OP_COLOR_DODGE;
+      case NS_STYLE_BLEND_COLOR_BURN:
+        return CompositionOp::OP_COLOR_BURN;
+      case NS_STYLE_BLEND_HARD_LIGHT:
+        return CompositionOp::OP_HARD_LIGHT;
+      case NS_STYLE_BLEND_SOFT_LIGHT:
+        return CompositionOp::OP_SOFT_LIGHT;
+      case NS_STYLE_BLEND_DIFFERENCE:
+        return CompositionOp::OP_DIFFERENCE;
+      case NS_STYLE_BLEND_EXCLUSION:
+        return CompositionOp::OP_EXCLUSION;
+      case NS_STYLE_BLEND_HUE:
+        return CompositionOp::OP_HUE;
+      case NS_STYLE_BLEND_SATURATION:
+        return CompositionOp::OP_SATURATION;
+      case NS_STYLE_BLEND_COLOR:
+        return CompositionOp::OP_COLOR;
+      case NS_STYLE_BLEND_LUMINOSITY:
+        return CompositionOp::OP_LUMINOSITY;
+      default:
+        MOZ_ASSERT(false);
+        return CompositionOp::OP_OVER;
     }
   }
 
   static CompositionOp GetGFXCompositeMode(uint8_t aCompositeMode) {
     switch (aCompositeMode) {
-      case NS_STYLE_MASK_COMPOSITE_ADD:       return CompositionOp::OP_OVER;
-      case NS_STYLE_MASK_COMPOSITE_SUBTRACT:  return CompositionOp::OP_OUT;
-      case NS_STYLE_MASK_COMPOSITE_INTERSECT: return CompositionOp::OP_IN;
-      case NS_STYLE_MASK_COMPOSITE_EXCLUDE:   return CompositionOp::OP_XOR;
-      default: MOZ_ASSERT(false);             return CompositionOp::OP_OVER;
+      case NS_STYLE_MASK_COMPOSITE_ADD:
+        return CompositionOp::OP_OVER;
+      case NS_STYLE_MASK_COMPOSITE_SUBTRACT:
+        return CompositionOp::OP_OUT;
+      case NS_STYLE_MASK_COMPOSITE_INTERSECT:
+        return CompositionOp::OP_IN;
+      case NS_STYLE_MASK_COMPOSITE_EXCLUDE:
+        return CompositionOp::OP_XOR;
+      default:
+        MOZ_ASSERT(false);
+        return CompositionOp::OP_OVER;
     }
   }
-protected:
+
+ protected:
   static gfxRect GetTextDecorationRectInternal(
       const Point& aPt, const DecorationRectParams& aParams);
 
@@ -906,12 +706,8 @@ protected:
    *     @param aCycleLength      the width of one cycle of the line style.
    */
   static Rect ExpandPaintingRectForDecorationLine(
-                   nsIFrame* aFrame,
-                   const uint8_t aStyle,
-                   const Rect &aClippedRect,
-                   const Float aICoordInFrame,
-                   const Float aCycleLength,
-                   bool aVertical);
+      nsIFrame* aFrame, const uint8_t aStyle, const Rect& aClippedRect,
+      const Float aICoordInFrame, const Float aCycleLength, bool aVertical);
 };
 
 /*
@@ -932,10 +728,8 @@ class nsContextBoxBlur {
   typedef mozilla::gfx::DrawTarget DrawTarget;
   typedef mozilla::gfx::RectCornerRadii RectCornerRadii;
 
-public:
-  enum {
-    FORCE_MASK = 0x01
-  };
+ public:
+  enum { FORCE_MASK = 0x01, DISABLE_HARDWARE_ACCELERATION_BLUR = 0x02 };
   /**
    * Prepares a gfxContext to draw on. Do not call this twice; if you want
    * to get the gfxContext again use GetContext().
@@ -962,14 +756,15 @@ public:
    *                             calling Init().
    *
    * @param aDirtyRect           The absolute dirty rect in app units. Used to
-   *                             optimize the temporary surface size and speed up blur.
+   *                             optimize the temporary surface size and speed
+   * up blur.
    *
-   * @param aSkipRect            An area in device pixels (NOT app units!) to avoid
-   *                             blurring over, to prevent unnecessary work.
-   *                             
-   * @param aFlags               FORCE_MASK to ensure that the content drawn to the
-   *                             returned gfxContext is used as a mask, and not
-   *                             drawn directly to aDestinationCtx.
+   * @param aSkipRect            An area in device pixels (NOT app units!) to
+   * avoid blurring over, to prevent unnecessary work.
+   *
+   * @param aFlags               FORCE_MASK to ensure that the content drawn to
+   * the returned gfxContext is used as a mask, and not drawn directly to
+   * aDestinationCtx.
    *
    * @return            A blank 8-bit alpha-channel-only graphics context to
    *                    draw on, or null on error. Must not be freed. The
@@ -985,10 +780,9 @@ public:
    * directly on it instead of any temporary surface created in this class.
    */
   gfxContext* Init(const nsRect& aRect, nscoord aSpreadRadius,
-                   nscoord aBlurRadius,
-                   int32_t aAppUnitsPerDevPixel, gfxContext* aDestinationCtx,
-                   const nsRect& aDirtyRect, const gfxRect* aSkipRect,
-                   uint32_t aFlags = 0);
+                   nscoord aBlurRadius, int32_t aAppUnitsPerDevPixel,
+                   gfxContext* aDestinationCtx, const nsRect& aDirtyRect,
+                   const gfxRect* aSkipRect, uint32_t aFlags = 0);
 
   /**
    * Does the actual blurring and mask applying. Users of this object *must*
@@ -1003,7 +797,6 @@ public:
    * constructed at that point.
    */
   gfxContext* GetContext();
-
 
   /**
    * Get the margin associated with the given blur radius, i.e., the
@@ -1030,17 +823,15 @@ public:
    * @param aBlurRadius          The blur radius in app units.
    * @param aShadowColor         The color to draw the blurred shadow.
    * @param aDirtyRect           The absolute dirty rect in app units. Used to
-   *                             optimize the temporary surface size and speed up blur.
-   * @param aSkipRect            An area in device pixels (NOT app units!) to avoid
-   *                             blurring over, to prevent unnecessary work.
+   *                             optimize the temporary surface size and speed
+   * up blur.
+   * @param aSkipRect            An area in device pixels (NOT app units!) to
+   * avoid blurring over, to prevent unnecessary work.
    */
-  static void BlurRectangle(gfxContext* aDestinationCtx,
-                            const nsRect& aRect,
+  static void BlurRectangle(gfxContext* aDestinationCtx, const nsRect& aRect,
                             int32_t aAppUnitsPerDevPixel,
-                            RectCornerRadii* aCornerRadii,
-                            nscoord aBlurRadius,
-                            const Color& aShadowColor,
-                            const nsRect& aDirtyRect,
+                            RectCornerRadii* aCornerRadii, nscoord aBlurRadius,
+                            const Color& aShadowColor, const nsRect& aDirtyRect,
                             const gfxRect& aSkipRect);
 
   /**
@@ -1061,27 +852,25 @@ public:
    *                             pass this from the current PresContext if
    *                             available.
    * @param aHasBorderRadius     If this inset box blur has a border radius
-   * @param aInnerClipRectRadii  The clip rect radii used for the inside rect's path.
-   * @param aSkipRect            An area in device pixels (NOT app units!) to avoid
-   *                             blurring over, to prevent unnecessary work.
+   * @param aInnerClipRectRadii  The clip rect radii used for the inside rect's
+   * path.
+   * @param aSkipRect            An area in device pixels (NOT app units!) to
+   * avoid blurring over, to prevent unnecessary work.
    */
   bool InsetBoxBlur(gfxContext* aDestinationCtx,
                     mozilla::gfx::Rect aDestinationRect,
                     mozilla::gfx::Rect aShadowClipRect,
                     mozilla::gfx::Color& aShadowColor,
-                    nscoord aBlurRadiusAppUnits,
-                    nscoord aSpreadRadiusAppUnits,
-                    int32_t aAppUnitsPerDevPixel,
-                    bool aHasBorderRadius,
+                    nscoord aBlurRadiusAppUnits, nscoord aSpreadRadiusAppUnits,
+                    int32_t aAppUnitsPerDevPixel, bool aHasBorderRadius,
                     RectCornerRadii& aInnerClipRectRadii,
                     mozilla::gfx::Rect aSkipRect,
                     mozilla::gfx::Point aShadowOffset);
 
-protected:
+ protected:
   static void GetBlurAndSpreadRadius(DrawTarget* aDestDrawTarget,
                                      int32_t aAppUnitsPerDevPixel,
-                                     nscoord aBlurRadius,
-                                     nscoord aSpreadRadius,
+                                     nscoord aBlurRadius, nscoord aSpreadRadius,
                                      mozilla::gfx::IntSize& aOutBlurRadius,
                                      mozilla::gfx::IntSize& aOutSpreadRadius,
                                      bool aConstrainSpreadRadius = true);

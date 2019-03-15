@@ -100,11 +100,11 @@ GrVkCopyPipeline* GrVkCopyPipeline::Create(GrVkGpu* gpu,
     };
 
     static const VkPipelineColorBlendAttachmentState attachmentState = {
-        VK_TRUE,                                             // belndEnable
-        VK_BLEND_FACTOR_ONE,                                 // srcColorBlendFactor
+        VK_FALSE,                                             // blendEnable
+        VK_BLEND_FACTOR_ONE,                                  // srcColorBlendFactor
         VK_BLEND_FACTOR_ZERO,                                 // dstColorBlendFactor
         VK_BLEND_OP_ADD,                                      // colorBlendOp
-        VK_BLEND_FACTOR_ONE,                                 // srcAlphaBlendFactor
+        VK_BLEND_FACTOR_ONE,                                  // srcAlphaBlendFactor
         VK_BLEND_FACTOR_ZERO,                                 // dstAlphaBlendFactor
         VK_BLEND_OP_ADD,                                      // alphaBlendOp
         VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | // colorWriteMask
@@ -179,6 +179,7 @@ GrVkCopyPipeline* GrVkCopyPipeline::Create(GrVkGpu* gpu,
                                                                           &pipelineCreateInfo,
                                                                           nullptr, &vkPipeline));
     if (err) {
+        SkDebugf("Failed to create copy pipeline. Error: %d\n", err);
         return nullptr;
     }
 

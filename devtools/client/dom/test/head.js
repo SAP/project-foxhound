@@ -2,16 +2,13 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 /* eslint no-unused-vars: [2, {"vars": "local", "args": "none"}] */
-/* import-globals-from ../../framework/test/shared-head.js */
+/* import-globals-from ../../shared/test/shared-head.js */
 
 "use strict";
 
-const FRAME_SCRIPT_UTILS_URL =
-  "chrome://devtools/content/shared/frame-script-utils.js";
-
 // shared-head.js handles imports, constants, and utility functions
 Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/devtools/client/framework/test/shared-head.js", this);
+  "chrome://mochitests/content/browser/devtools/client/shared/test/shared-head.js", this);
 
 // DOM panel actions.
 const constants = require("devtools/client/dom/content/constants");
@@ -40,8 +37,8 @@ function addTestTab(url) {
 
   return new Promise(resolve => {
     addTab(url).then(tab => {
-      // Load devtools/shared/frame-script-utils.js
-      getFrameScript();
+      // Load devtools/shared/test/frame-script-utils.js
+      loadFrameScriptUtils();
 
       // Select the DOM panel and wait till it's initialized.
       initDOMPanel(tab).then(panel => {
@@ -49,7 +46,7 @@ function addTestTab(url) {
           resolve({
             tab: tab,
             browser: tab.linkedBrowser,
-            panel: panel
+            panel: panel,
           });
         });
       });
@@ -60,19 +57,16 @@ function addTestTab(url) {
 /**
  * Open the DOM panel for the given tab.
  *
- * @param {nsIDOMElement} tab
+ * @param {Element} tab
  *        Optional tab element for which you want open the DOM panel.
  *        The default tab is taken from the global variable |tab|.
  * @return a promise that is resolved once the web console is open.
  */
-function initDOMPanel(tab) {
-  return new Promise(resolve => {
-    let target = TargetFactory.forTab(tab || gBrowser.selectedTab);
-    gDevTools.showToolbox(target, "dom").then(toolbox => {
-      let panel = toolbox.getCurrentPanel();
-      resolve(panel);
-    });
-  });
+async function initDOMPanel(tab) {
+  const target = await TargetFactory.forTab(tab || gBrowser.selectedTab);
+  const toolbox = await gDevTools.showToolbox(target, "dom");
+  const panel = toolbox.getCurrentPanel();
+  return panel;
 }
 
 /**
@@ -91,9 +85,9 @@ function synthesizeMouseClickSoon(panel, element) {
  * Returns tree row with specified label.
  */
 function getRowByLabel(panel, text) {
-  let doc = panel.panelWin.document;
-  let labels = [...doc.querySelectorAll(".treeLabel")];
-  let label = labels.find(node => node.textContent == text);
+  const doc = panel.panelWin.document;
+  const labels = [...doc.querySelectorAll(".treeLabel")];
+  const label = labels.find(node => node.textContent == text);
   return label ? label.closest(".treeRow") : null;
 }
 
@@ -104,9 +98,9 @@ function getRowByLabel(panel, text) {
 function getAllRowsForLabel(panel, text) {
   let rootObjectLevel;
   let node;
-  let result = [];
-  let doc = panel.panelWin.document;
-  let nodes = [...doc.querySelectorAll(".treeLabel")];
+  const result = [];
+  const doc = panel.panelWin.document;
+  const nodes = [...doc.querySelectorAll(".treeLabel")];
 
   // Find the label (object name) for which we want the children. We remove
   // nodes from the start of the array until we reach the property. The children
@@ -127,12 +121,12 @@ function getAllRowsForLabel(panel, text) {
 
   // Now get the children.
   for (node of nodes) {
-    let level = node.getAttribute("data-level");
+    const level = node.getAttribute("data-level");
 
     if (level > rootObjectLevel) {
       result.push({
         name: normalizeTreeValue(node.textContent),
-        value: normalizeTreeValue(node.parentNode.nextElementSibling.textContent)
+        value: normalizeTreeValue(node.parentNode.nextElementSibling.textContent),
       });
     } else {
       break;
@@ -170,7 +164,7 @@ function normalizeTreeValue(value) {
  * children are received from the backend.
  */
 function expandRow(panel, labelText) {
-  let row = getRowByLabel(panel, labelText);
+  const row = getRowByLabel(panel, labelText);
   return synthesizeMouseClickSoon(panel, row).then(() => {
     // Wait till children (properties) are fetched
     // from the backend.
@@ -179,16 +173,12 @@ function expandRow(panel, labelText) {
 }
 
 function evaluateJSAsync(panel, expression) {
-  return new Promise(resolve => {
-    panel.target.activeConsole.evaluateJSAsync(expression, res => {
-      resolve(res);
-    });
-  });
+  return panel.target.activeConsole.evaluateJSAsync(expression);
 }
 
 function refreshPanel(panel) {
-  let doc = panel.panelWin.document;
-  let button = doc.querySelector(".btn.refresh");
+  const doc = panel.panelWin.document;
+  const button = doc.querySelector("#dom-refresh-button");
   return synthesizeMouseClickSoon(panel, button).then(() => {
     // Wait till children (properties) are fetched
     // from the backend.
@@ -218,7 +208,7 @@ function _afterDispatchDone(store, type) {
       },
       run: (dispatch, getState, action) => {
         resolve(action);
-      }
+      },
     });
   });
 }
@@ -228,12 +218,12 @@ function waitForDispatch(panel, type, eventRepeat = 1) {
   const actionType = constants[type];
   let count = 0;
 
-  return Task.spawn(function* () {
+  return (async function() {
     info("Waiting for " + type + " to dispatch " + eventRepeat + " time(s)");
     while (count < eventRepeat) {
-      yield _afterDispatchDone(store, actionType);
+      await _afterDispatchDone(store, actionType);
       count++;
       info(type + " dispatched " + count + " time(s)");
     }
-  });
+  })();
 }

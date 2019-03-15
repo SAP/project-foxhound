@@ -24,7 +24,6 @@
 #include "nsTArray.h"
 #include "LookupResult.h"
 #include "nsThreadUtils.h"
-#include "DecodePool.h"
 #include "DecoderFactory.h"
 #include "FrameAnimator.h"
 #include "ImageMetadata.h"
@@ -35,26 +34,24 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/NotNull.h"
-#include "mozilla/Pair.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/WeakPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "ImageContainer.h"
 #include "PlaybackType.h"
 #ifdef DEBUG
-  #include "imgIContainerDebug.h"
+#  include "imgIContainerDebug.h"
 #endif
 
 class nsIInputStream;
 class nsIRequest;
 
-#define NS_RASTERIMAGE_CID \
-{ /* 376ff2c1-9bf6-418a-b143-3340c00112f7 */         \
-     0x376ff2c1,                                     \
-     0x9bf6,                                         \
-     0x418a,                                         \
-    {0xb1, 0x43, 0x33, 0x40, 0xc0, 0x01, 0x12, 0xf7} \
-}
+#define NS_RASTERIMAGE_CID                           \
+  { /* 376ff2c1-9bf6-418a-b143-3340c00112f7 */       \
+    0x376ff2c1, 0x9bf6, 0x418a, {                    \
+      0xb1, 0x43, 0x33, 0x40, 0xc0, 0x01, 0x12, 0xf7 \
+    }                                                \
+  }
 
 /**
  * Handles static and animated image containers.
@@ -131,7 +128,8 @@ namespace mozilla {
 namespace layers {
 class ImageContainer;
 class Image;
-} // namespace layers
+class LayersManager;
+}  // namespace layers
 
 namespace image {
 
@@ -141,17 +139,18 @@ struct DecoderTelemetry;
 class ImageMetadata;
 class SourceBuffer;
 
-class RasterImage final : public ImageResource
-                        , public nsIProperties
-                        , public SupportsWeakPtr<RasterImage>
+class RasterImage final : public ImageResource,
+                          public nsIProperties,
+                          public SupportsWeakPtr<RasterImage>
 #ifdef DEBUG
-                        , public imgIContainerDebug
+    ,
+                          public imgIContainerDebug
 #endif
 {
   // (no public constructor - use ImageFactory)
   virtual ~RasterImage();
 
-public:
+ public:
   MOZ_DECLARE_WEAKREFERENCE_TYPENAME(RasterImage)
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIPROPERTIES
@@ -160,20 +159,21 @@ public:
   NS_DECL_IMGICONTAINERDEBUG
 #endif
 
+  nsresult GetNativeSizes(nsTArray<gfx::IntSize>& aNativeSizes) const override;
+  size_t GetNativeSizesLength() const override;
   virtual nsresult StartAnimation() override;
   virtual nsresult StopAnimation() override;
 
   // Methods inherited from Image
-  virtual void OnSurfaceDiscarded() override;
+  virtual void OnSurfaceDiscarded(const SurfaceKey& aSurfaceKey) override;
 
-  virtual size_t SizeOfSourceWithComputedFallback(MallocSizeOf aMallocSizeOf)
-    const override;
+  virtual size_t SizeOfSourceWithComputedFallback(
+      SizeOfState& aState) const override;
   virtual void CollectSizeOfSurfaces(nsTArray<SurfaceMemoryCounter>& aCounters,
                                      MallocSizeOf aMallocSizeOf) const override;
 
   /* Triggers discarding. */
   void Discard();
-
 
   //////////////////////////////////////////////////////////////////////////////
   // Decoder callbacks.
@@ -187,9 +187,9 @@ public:
    * @param aProgress    The progress notifications to send.
    * @param aInvalidRect An invalidation rect to send.
    * @param aFrameCount  If Some(), an updated count of the number of frames of
-   *                     animation the decoder has finished decoding so far. This
-   *                     is a lower bound for the total number of animation
-   *                     frames this image has.
+   *                     animation the decoder has finished decoding so far.
+   *                     This is a lower bound for the total number of
+   *                     animation frames this image has.
    * @param aDecoderFlags The decoder flags used by the decoder that generated
    *                      these notifications, or DefaultDecoderFlags() if the
    *                      notifications don't come from a decoder.
@@ -209,31 +209,26 @@ public:
    *
    * Main-thread only.
    *
-   * @param aStatus       Final status information about the decoder. (Whether it
-   *                      encountered an error, etc.)
+   * @param aStatus       Final status information about the decoder. (Whether
+   * it encountered an error, etc.)
    * @param aMetadata     Metadata about this image that the decoder gathered.
    * @param aTelemetry    Telemetry data about the decoder.
    * @param aProgress     Any final progress notifications to send.
    * @param aInvalidRect  Any final invalidation rect to send.
-   * @param aFrameCount   If Some(), a final updated count of the number of frames
-   *                      of animation the decoder has finished decoding so far.
-   *                      This is a lower bound for the total number of animation
-   *                      frames this image has.
+   * @param aFrameCount   If Some(), a final updated count of the number of
+   * frames of animation the decoder has finished decoding so far. This is a
+   * lower bound for the total number of animation frames this image has.
    * @param aDecoderFlags The decoder flags used by the decoder.
    * @param aSurfaceFlags The surface flags used by the decoder.
    */
-  void NotifyDecodeComplete(const DecoderFinalStatus& aStatus,
-                            const ImageMetadata& aMetadata,
-                            const DecoderTelemetry& aTelemetry,
-                            Progress aProgress,
-                            const gfx::IntRect& aInvalidRect,
-                            const Maybe<uint32_t>& aFrameCount,
-                            DecoderFlags aDecoderFlags,
-                            SurfaceFlags aSurfaceFlags);
+  void NotifyDecodeComplete(
+      const DecoderFinalStatus& aStatus, const ImageMetadata& aMetadata,
+      const DecoderTelemetry& aTelemetry, Progress aProgress,
+      const gfx::IntRect& aInvalidRect, const Maybe<uint32_t>& aFrameCount,
+      DecoderFlags aDecoderFlags, SurfaceFlags aSurfaceFlags);
 
   // Helper method for NotifyDecodeComplete.
   void ReportDecoderError();
-
 
   //////////////////////////////////////////////////////////////////////////////
   // Network callbacks.
@@ -245,8 +240,7 @@ public:
                                         uint64_t aSourceOffset,
                                         uint32_t aCount) override;
   virtual nsresult OnImageDataComplete(nsIRequest* aRequest,
-                                       nsISupports* aContext,
-                                       nsresult aStatus,
+                                       nsISupports* aContext, nsresult aStatus,
                                        bool aLastPart) override;
 
   void NotifyForLoadEvent(Progress aProgress);
@@ -264,7 +258,7 @@ public:
    */
   nsresult SetSourceSizeHint(uint32_t aSizeHint);
 
- nsCString GetURIString() {
+  nsCString GetURIString() {
     nsCString spec;
     if (GetURI()) {
       GetURI()->GetSpec(spec);
@@ -272,7 +266,7 @@ public:
     return spec;
   }
 
-private:
+ private:
   nsresult Init(const char* aMimeType, uint32_t aFlags);
 
   /**
@@ -283,45 +277,32 @@ private:
    * data, we'll attempt a sync decode if no matching surface is found. If
    * FLAG_SYNC_DECODE was not specified and no matching surface was found, we'll
    * kick off an async decode so that the surface is (hopefully) available next
-   * time it's requested.
+   * time it's requested. aMarkUsed determines if we mark the surface used in
+   * the surface cache or not.
    *
    * @return a drawable surface, which may be empty if the requested surface
    *         could not be found.
    */
-  DrawableSurface LookupFrame(const gfx::IntSize& aSize,
-                              uint32_t aFlags,
-                              PlaybackType aPlaybackType);
+  LookupResult LookupFrame(const gfx::IntSize& aSize, uint32_t aFlags,
+                           PlaybackType aPlaybackType, bool aMarkUsed);
 
   /// Helper method for LookupFrame().
-  LookupResult LookupFrameInternal(const gfx::IntSize& aSize,
-                                   uint32_t aFlags,
-                                   PlaybackType aPlaybackType);
+  LookupResult LookupFrameInternal(const gfx::IntSize& aSize, uint32_t aFlags,
+                                   PlaybackType aPlaybackType, bool aMarkUsed);
 
-  DrawResult DrawInternal(DrawableSurface&& aFrameRef,
-                          gfxContext* aContext,
-                          const nsIntSize& aSize,
-                          const ImageRegion& aRegion,
-                          gfx::SamplingFilter aSamplingFilter,
-                          uint32_t aFlags,
-                          float aOpacity);
+  ImgDrawResult DrawInternal(DrawableSurface&& aFrameRef, gfxContext* aContext,
+                             const nsIntSize& aSize, const ImageRegion& aRegion,
+                             gfx::SamplingFilter aSamplingFilter,
+                             uint32_t aFlags, float aOpacity);
 
-  Pair<DrawResult, RefPtr<gfx::SourceSurface>>
-    GetFrameInternal(const gfx::IntSize& aSize,
-                     uint32_t aWhichFrame,
-                     uint32_t aFlags);
+  Tuple<ImgDrawResult, gfx::IntSize, RefPtr<gfx::SourceSurface>>
+  GetFrameInternal(const gfx::IntSize& aSize,
+                   const Maybe<SVGImageContext>& aSVGContext,
+                   uint32_t aWhichFrame, uint32_t aFlags) override;
 
-  Pair<DrawResult, RefPtr<layers::Image>>
-    GetCurrentImage(layers::ImageContainer* aContainer, uint32_t aFlags);
-
-  void UpdateImageContainer();
-
-  // We would like to just check if we have a zero lock count, but we can't do
-  // that for animated images because in EnsureAnimExists we lock the image and
-  // never unlock so that animated images always have their lock count >= 1. In
-  // that case we use our animation consumers count as a proxy for lock count.
-  bool IsUnlocked() {
-    return (mLockCount == 0 || (mAnimationState && mAnimationConsumers == 0));
-  }
+  Tuple<ImgDrawResult, gfx::IntSize> GetImageContainerSize(
+      layers::LayerManager* aManager, const gfx::IntSize& aSize,
+      uint32_t aFlags) override;
 
   //////////////////////////////////////////////////////////////////////////////
   // Decoding.
@@ -339,8 +320,7 @@ private:
    *
    * Returns true of the decode was run synchronously.
    */
-  bool Decode(const gfx::IntSize& aSize,
-              uint32_t aFlags,
+  bool Decode(const gfx::IntSize& aSize, uint32_t aFlags,
               PlaybackType aPlaybackType);
 
   /**
@@ -371,21 +351,24 @@ private:
    * metadata decode proves to be wrong due to image corruption, the frames we
    * have may violate this class's invariants. Either way, we need to
    * immediately discard the invalid frames and redecode so that callers don't
-   * perceive that we've entered an invalid state. 
+   * perceive that we've entered an invalid state.
    *
    * RecoverFromInvalidFrames discards all existing frames and redecodes using
    * the provided @aSize and @aFlags.
    */
   void RecoverFromInvalidFrames(const nsIntSize& aSize, uint32_t aFlags);
 
-private: // data
-  nsIntSize                  mSize;
-  Orientation                mOrientation;
+  void OnSurfaceDiscardedInternal(bool aAnimatedFramesDiscarded);
+
+ private:  // data
+  nsIntSize mSize;
+  nsTArray<nsIntSize> mNativeSizes;
+  Orientation mOrientation;
 
   /// If this has a value, we're waiting for SetSize() to send the load event.
-  Maybe<Progress>            mLoadProgress;
+  Maybe<Progress> mLoadProgress;
 
-  nsCOMPtr<nsIProperties>   mProperties;
+  nsCOMPtr<nsIProperties> mProperties;
 
   /// If this image is animated, a FrameAnimator which manages its animation.
   UniquePtr<FrameAnimator> mFrameAnimator;
@@ -394,57 +377,46 @@ private: // data
   Maybe<AnimationState> mAnimationState;
 
   // Image locking.
-  uint32_t                   mLockCount;
+  uint32_t mLockCount;
 
-  // The type of decoder this image needs. Computed from the MIME type in Init().
-  DecoderType                mDecoderType;
+  // The type of decoder this image needs. Computed from the MIME type in
+  // Init().
+  DecoderType mDecoderType;
 
   // How many times we've decoded this image.
   // This is currently only used for statistics
-  int32_t                        mDecodeCount;
-
-  // A weak pointer to our ImageContainer, which stays alive only as long as
-  // the layer system needs it.
-  WeakPtr<layers::ImageContainer> mImageContainer;
-
-  layers::ImageContainer::ProducerID mImageProducerID;
-  layers::ImageContainer::FrameID mLastFrameID;
-
-  // If mImageContainer is non-null, this contains the DrawResult we obtained
-  // the last time we updated it.
-  DrawResult mLastImageContainerDrawResult;
+  int32_t mDecodeCount;
 
 #ifdef DEBUG
-  uint32_t                       mFramesNotified;
+  uint32_t mFramesNotified;
 #endif
 
   // The source data for this image.
-  NotNull<RefPtr<SourceBuffer>>  mSourceBuffer;
+  NotNull<RefPtr<SourceBuffer>> mSourceBuffer;
 
   // Boolean flags (clustered together to conserve space):
-  bool                       mHasSize:1;        // Has SetSize() been called?
-  bool                       mTransient:1;      // Is the image short-lived?
-  bool                       mSyncLoad:1;       // Are we loading synchronously?
-  bool                       mDiscardable:1;    // Is container discardable?
-  bool                       mSomeSourceData:1; // Do we have some source data?
-  bool                       mAllSourceData:1;  // Do we have all the source data?
-  bool                       mHasBeenDecoded:1; // Decoded at least once?
+  bool mHasSize : 1;         // Has SetSize() been called?
+  bool mTransient : 1;       // Is the image short-lived?
+  bool mSyncLoad : 1;        // Are we loading synchronously?
+  bool mDiscardable : 1;     // Is container discardable?
+  bool mSomeSourceData : 1;  // Do we have some source data?
+  bool mAllSourceData : 1;   // Do we have all the source data?
+  bool mHasBeenDecoded : 1;  // Decoded at least once?
 
   // Whether we're waiting to start animation. If we get a StartAnimation() call
   // but we don't yet have more than one frame, mPendingAnimation is set so that
   // we know to start animation later if/when we have more frames.
-  bool                       mPendingAnimation:1;
+  bool mPendingAnimation : 1;
 
   // Whether the animation can stop, due to running out
   // of frames, or no more owning request
-  bool                       mAnimationFinished:1;
+  bool mAnimationFinished : 1;
 
   // Whether, once we are done doing a metadata decode, we should immediately
   // kick off a full decode.
-  bool                       mWantFullDecode:1;
+  bool mWantFullDecode : 1;
 
   TimeStamp mDrawStartTime;
-
 
   //////////////////////////////////////////////////////////////////////////////
   // Scaling.
@@ -454,13 +426,11 @@ private: // data
   // parameters.
   bool CanDownscaleDuringDecode(const nsIntSize& aSize, uint32_t aFlags);
 
-
   // Error handling.
   void DoError();
 
-  class HandleErrorWorker : public Runnable
-  {
-  public:
+  class HandleErrorWorker : public Runnable {
+   public:
     /**
      * Called from decoder threads when DoError() is called, since errors can't
      * be handled safely off-main-thread. Dispatches an event which reinvokes
@@ -468,9 +438,9 @@ private: // data
      */
     static void DispatchIfNeeded(RasterImage* aImage);
 
-    NS_IMETHOD Run();
+    NS_IMETHOD Run() override;
 
-  private:
+   private:
     explicit HandleErrorWorker(RasterImage* aImage);
 
     RefPtr<RasterImage> mImage;
@@ -481,30 +451,28 @@ private: // data
 
   bool IsOpaque();
 
-  DrawableSurface RequestDecodeForSizeInternal(const gfx::IntSize& aSize, uint32_t aFlags);
+  DrawableSurface RequestDecodeForSizeInternal(const gfx::IntSize& aSize,
+                                               uint32_t aFlags);
 
-protected:
-  explicit RasterImage(ImageURL* aURI = nullptr);
+ protected:
+  explicit RasterImage(nsIURI* aURI = nullptr);
 
   bool ShouldAnimate() override;
 
   friend class ImageFactory;
 };
 
-inline NS_IMETHODIMP
-RasterImage::GetAnimationMode(uint16_t* aAnimationMode) {
+inline NS_IMETHODIMP RasterImage::GetAnimationMode(uint16_t* aAnimationMode) {
   return GetAnimationModeInternal(aAnimationMode);
 }
 
-} // namespace image
-} // namespace mozilla
+}  // namespace image
+}  // namespace mozilla
 
 /**
  * Casting RasterImage to nsISupports is ambiguous. This method handles that.
  */
-inline nsISupports*
-ToSupports(mozilla::image::RasterImage* p)
-{
+inline nsISupports* ToSupports(mozilla::image::RasterImage* p) {
   return NS_ISUPPORTS_CAST(mozilla::image::ImageResource*, p);
 }
 

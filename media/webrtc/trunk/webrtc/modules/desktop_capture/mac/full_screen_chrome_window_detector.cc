@@ -8,73 +8,22 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/desktop_capture/mac/full_screen_chrome_window_detector.h"
+#include "modules/desktop_capture/mac/full_screen_chrome_window_detector.h"
 
 #include <assert.h>
 #include <libproc.h>
 #include <string>
 
-#include "webrtc/base/macutils.h"
-#include "webrtc/modules/desktop_capture/mac/desktop_configuration.h"
-#include "webrtc/modules/desktop_capture/mac/window_list_utils.h"
-#include "webrtc/system_wrappers/include/logging.h"
-
+#include "modules/desktop_capture/mac/window_list_utils.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/macutils.h"
+#include "rtc_base/timeutils.h"
 
 namespace webrtc {
 
 namespace {
 
 const int64_t kUpdateIntervalMs = 500;
-
-// Returns true if the window is minimized.
-bool IsWindowMinimized(CGWindowID id) {
-  CFArrayRef window_id_array =
-      CFArrayCreate(NULL, reinterpret_cast<const void **>(&id), 1, NULL);
-  CFArrayRef window_array =
-      CGWindowListCreateDescriptionFromArray(window_id_array);
-  bool minimized = false;
-
-  if (window_array && CFArrayGetCount(window_array)) {
-    CFDictionaryRef window = reinterpret_cast<CFDictionaryRef>(
-        CFArrayGetValueAtIndex(window_array, 0));
-    CFBooleanRef on_screen =  reinterpret_cast<CFBooleanRef>(
-        CFDictionaryGetValue(window, kCGWindowIsOnscreen));
-
-    minimized = !on_screen;
-  }
-
-  CFRelease(window_id_array);
-  CFRelease(window_array);
-
-  return minimized;
-}
-
-// Returns true if the window is occupying a full screen.
-bool IsWindowFullScreen(const MacDesktopConfiguration& desktop_config,
-                        CFDictionaryRef window) {
-  bool fullscreen = false;
-
-  CFDictionaryRef bounds_ref = reinterpret_cast<CFDictionaryRef>(
-      CFDictionaryGetValue(window, kCGWindowBounds));
-
-  CGRect bounds;
-  if (bounds_ref &&
-      CGRectMakeWithDictionaryRepresentation(bounds_ref, &bounds)) {
-    for (MacDisplayConfigurations::const_iterator it =
-             desktop_config.displays.begin();
-         it != desktop_config.displays.end(); ++it) {
-      if (it->bounds.equals(DesktopRect::MakeXYWH(bounds.origin.x,
-                                                  bounds.origin.y,
-                                                  bounds.size.width,
-                                                  bounds.size.height))) {
-        fullscreen = true;
-        break;
-      }
-    }
-  }
-
-  return fullscreen;
-}
 
 std::string GetWindowTitle(CGWindowID id) {
   CFArrayRef window_id_array =
@@ -192,13 +141,13 @@ bool IsChromeWindow(CGWindowID id) {
 }  // namespace
 
 FullScreenChromeWindowDetector::FullScreenChromeWindowDetector()
-    : ref_count_(0) {}
+    : last_update_time_ns_(0) {}
 
 FullScreenChromeWindowDetector::~FullScreenChromeWindowDetector() {}
 
 CGWindowID FullScreenChromeWindowDetector::FindFullScreenWindow(
     CGWindowID original_window) {
-  if (!IsChromeWindow(original_window) || !IsWindowMinimized(original_window))
+  if (!IsChromeWindow(original_window) || IsWindowOnScreen(original_window))
     return kCGNullWindowID;
 
   CGWindowID full_screen_window_id =
@@ -207,15 +156,11 @@ CGWindowID FullScreenChromeWindowDetector::FindFullScreenWindow(
   if (full_screen_window_id == kCGNullWindowID)
     return kCGNullWindowID;
 
-  for (WindowCapturer::WindowList::iterator it = previous_window_list_.begin();
-       it != previous_window_list_.end(); ++it) {
-    if (static_cast<CGWindowID>(it->id) != full_screen_window_id)
+  for (const auto& window : previous_window_list_) {
+    if (static_cast<CGWindowID>(window.id) != full_screen_window_id)
       continue;
 
-    int64_t time_interval =
-        (TickTime::Now() - last_udpate_time_).Milliseconds();
-    LOG(LS_WARNING) << "The full-screen window exists in the list, "
-                    << "which was updated " << time_interval << "ms ago.";
+    RTC_LOG(LS_WARNING) << "The full-screen window exists in the list.";
     return kCGNullWindowID;
   }
 
@@ -225,19 +170,19 @@ CGWindowID FullScreenChromeWindowDetector::FindFullScreenWindow(
 void FullScreenChromeWindowDetector::UpdateWindowListIfNeeded(
     CGWindowID original_window) {
   if (IsChromeWindow(original_window) &&
-      (TickTime::Now() - last_udpate_time_).Milliseconds()
+      (rtc::TimeNanos() - last_update_time_ns_) / rtc::kNumNanosecsPerMillisec
           > kUpdateIntervalMs) {
     previous_window_list_.clear();
     previous_window_list_.swap(current_window_list_);
 
     // No need to update the window list when the window is minimized.
-    if (IsWindowMinimized(original_window)) {
+    if (!IsWindowOnScreen(original_window)) {
       previous_window_list_.clear();
       return;
     }
 
-    GetWindowList(&current_window_list_);
-    last_udpate_time_ = TickTime::Now();
+    GetWindowList(&current_window_list_, false);
+    last_update_time_ns_ = rtc::TimeNanos();
   }
 }
 

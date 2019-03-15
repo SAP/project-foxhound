@@ -6,7 +6,7 @@ function getTestServerPort() {
   if (!Number.isFinite(port) || port < 1 || port > 65535) {
     throw new Error(`Invalid port in MOZHTTP2_PORT env var: ${portEnv}`);
   }
-  do_print(`Using HTTP/2 server on port ${port}`);
+  info(`Using HTTP/2 server on port ${port}`);
   return port;
 }
 
@@ -30,11 +30,11 @@ CertOverrideListener.prototype = {
         aIID.equals(Ci.nsIInterfaceRequestor) ||
         aIID.equals(Ci.nsISupports))
       return this;
-    throw Components.results.NS_ERROR_NO_INTERFACE;
+    throw Cr.NS_ERROR_NO_INTERFACE;
   },
 
-  notifyCertProblem: function(socketInfo, sslStatus, targetHost) {
-    var cert = sslStatus.QueryInterface(Ci.nsISSLStatus).serverCert;
+  notifyCertProblem: function(socketInfo, secInfo, targetHost) {
+    var cert = secInfo.serverCert;
     var cos = Cc["@mozilla.org/security/certoverride;1"].
               getService(Ci.nsICertOverrideService);
     cos.rememberValidityOverride(this.host, this.port, cert, this.bits, false);
@@ -44,8 +44,7 @@ CertOverrideListener.prototype = {
 };
 
 function addCertOverride(host, port, bits) {
-  var req = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"]
-            .createInstance(Ci.nsIXMLHttpRequest);
+  var req = new XMLHttpRequest();
   try {
     var url;
     if (port && (port > 0) && (port !== 443)) {

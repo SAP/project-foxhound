@@ -10,20 +10,26 @@ const TEST_URI = "data:text/html;charset=utf-8," +
 // opened we make use of setTimeout() to create tool active times.
 const TOOL_DELAY = 200;
 
-add_task(function* () {
+add_task(async function() {
   info("Activating the webaudioeditor");
-  let originalPref = Services.prefs.getBoolPref("devtools.webaudioeditor.enabled");
+  const originalPref = Services.prefs.getBoolPref("devtools.webaudioeditor.enabled");
   Services.prefs.setBoolPref("devtools.webaudioeditor.enabled", true);
 
-  yield addTab(TEST_URI);
-  let Telemetry = loadTelemetryAndRecordLogs();
+  await addTab(TEST_URI);
+  startTelemetry();
 
-  yield openAndCloseToolbox(2, TOOL_DELAY, "webaudioeditor");
-  checkTelemetryResults(Telemetry);
+  await openAndCloseToolbox(2, TOOL_DELAY, "webaudioeditor");
+  checkResults();
 
-  stopRecordingTelemetryLogs(Telemetry);
   gBrowser.removeCurrentTab();
 
   info("De-activating the webaudioeditor");
   Services.prefs.setBoolPref("devtools.webaudioeditor.enabled", originalPref);
 });
+
+function checkResults() {
+  // For help generating these tests use generateTelemetryTests("DEVTOOLS_WEBAUDIOEDITOR")
+  // here.
+  checkTelemetry("DEVTOOLS_WEBAUDIOEDITOR_OPENED_COUNT", "", {0: 2, 1: 0}, "array");
+  checkTelemetry("DEVTOOLS_WEBAUDIOEDITOR_TIME_ACTIVE_SECONDS", "", null, "hasentries");
+}

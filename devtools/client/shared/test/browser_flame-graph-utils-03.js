@@ -8,15 +8,15 @@
 const {FlameGraphUtils} = require("devtools/client/shared/widgets/FlameGraph");
 const {PALLETTE_SIZE} = require("devtools/client/shared/widgets/FlameGraph");
 
-add_task(function* () {
-  yield addTab("about:blank");
-  yield performTest();
+add_task(async function() {
+  await addTab("about:blank");
+  await performTest();
   gBrowser.removeCurrentTab();
 });
 
-function* performTest() {
-  let out = FlameGraphUtils.createFlameGraphDataFromThread(TEST_DATA, {
-    contentOnly: true
+function performTest() {
+  const out = FlameGraphUtils.createFlameGraphDataFromThread(TEST_DATA, {
+    contentOnly: true,
   });
 
   ok(out, "Some data was outputted properly");
@@ -25,8 +25,8 @@ function* performTest() {
   info("Got flame graph data:\n" + out.toSource() + "\n");
 
   for (let i = 0; i < out.length; i++) {
-    let found = out[i];
-    let expected = EXPECTED_OUTPUT[i];
+    const found = out[i];
+    const expected = EXPECTED_OUTPUT[i];
 
     is(found.blocks.length, expected.blocks.length,
       "The correct number of blocks were found in this bucket.");
@@ -48,23 +48,23 @@ function* performTest() {
 
 var TEST_DATA = synthesizeProfileForTest([{
   frames: [{
-    location: "http://A"
+    location: "http://A",
   }, {
-    location: "https://B"
+    location: "https://B",
   }, {
     location: "file://C",
   }, {
-    location: "chrome://D"
+    location: "chrome://D",
   }, {
-    location: "resource://E"
+    location: "resource://E",
   }],
   time: 50,
 }]);
 
 var EXPECTED_OUTPUT = [{
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
   blocks: [{
     startTime: 0,
@@ -73,14 +73,14 @@ var EXPECTED_OUTPUT = [{
     y: 0,
     width: 50,
     height: 15,
-    text: "http://A"
-  }]
+    text: "http://A",
+  }],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
   blocks: [{
     startTime: 0,
@@ -89,10 +89,10 @@ var EXPECTED_OUTPUT = [{
     y: 45,
     width: 50,
     height: 15,
-    text: "Gecko"
-  }]
+    text: "Gecko",
+  }],
 }, {
-  blocks: []
+  blocks: [],
 }, {
   blocks: [{
     startTime: 0,
@@ -101,14 +101,14 @@ var EXPECTED_OUTPUT = [{
     y: 15,
     width: 50,
     height: 15,
-    text: "https://B"
-  }]
+    text: "https://B",
+  }],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
   blocks: [{
     startTime: 0,
@@ -117,20 +117,20 @@ var EXPECTED_OUTPUT = [{
     y: 30,
     width: 50,
     height: 15,
-    text: "file://C"
-  }]
+    text: "file://C",
+  }],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }];

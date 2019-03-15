@@ -7,7 +7,7 @@
 // Options passed to MemoryFront's startRecordingAllocations never change.
 exports.ALLOCATION_RECORDING_OPTIONS = {
   probability: 1,
-  maxLogLength: 1
+  maxLogLength: 1,
 };
 
 // If TREE_ROW_HEIGHT changes, be sure to change `var(--heap-tree-row-height)`
@@ -122,9 +122,10 @@ actions.RESIZE_SHORTEST_PATHS = "resize-shortest-paths";
 
 const COUNT = Object.freeze({ by: "count", count: true, bytes: true });
 const INTERNAL_TYPE = Object.freeze({ by: "internalType", then: COUNT });
+const DESCRIPTIVE_TYPE = Object.freeze({ by: "descriptiveType", then: COUNT });
 const ALLOCATION_STACK = Object.freeze({
   by: "allocationStack", then: COUNT,
-  noStack: COUNT
+  noStack: COUNT,
 });
 const OBJECT_CLASS = Object.freeze({ by: "objectClass", then: COUNT, other: COUNT });
 const COARSE_TYPE = Object.freeze({
@@ -134,9 +135,10 @@ const COARSE_TYPE = Object.freeze({
   scripts: {
     by: "filename",
     then: INTERNAL_TYPE,
-    noFilename: INTERNAL_TYPE
+    noFilename: INTERNAL_TYPE,
   },
   other: INTERNAL_TYPE,
+  domNode: DESCRIPTIVE_TYPE,
 });
 
 exports.censusDisplays = Object.freeze({
@@ -149,7 +151,7 @@ exports.censusDisplays = Object.freeze({
       return L10N.getStr("censusDisplays.coarseType.tooltip");
     },
     inverted: true,
-    breakdown: COARSE_TYPE
+    breakdown: COARSE_TYPE,
   }),
 
   allocationStack: Object.freeze({
@@ -186,6 +188,7 @@ const DOMINATOR_TREE_LABEL_COARSE_TYPE = Object.freeze({
   }),
   strings: INTERNAL_TYPE,
   other: INTERNAL_TYPE,
+  domNode: DESCRIPTIVE_TYPE,
 });
 
 exports.labelDisplays = Object.freeze({
@@ -195,7 +198,7 @@ exports.labelDisplays = Object.freeze({
       const { L10N } = require("./utils");
       return L10N.getStr("dominatorTreeDisplays.coarseType.tooltip");
     },
-    breakdown: DOMINATOR_TREE_LABEL_COARSE_TYPE
+    breakdown: DOMINATOR_TREE_LABEL_COARSE_TYPE,
   }),
 
   allocationStack: Object.freeze({
@@ -221,7 +224,7 @@ exports.treeMapDisplays = Object.freeze({
     },
     breakdown: COARSE_TYPE,
     inverted: false,
-  })
+  }),
 });
 
 /** * View States **************************************************************/

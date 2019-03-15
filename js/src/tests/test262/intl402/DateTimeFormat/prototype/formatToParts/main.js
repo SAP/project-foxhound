@@ -1,4 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty('Intl')) -- needs Intl
 // Copyright 2016 Mozilla Corporation. All rights reserved.
 // This code is governed by the license found in the LICENSE file.
 
@@ -39,5 +38,38 @@ compareFTPtoFormat(['ar'], {
   day: 'numeric',
   year: '2-digit'
 }, Date.now());
+
+const actualPartTypes = new Intl.DateTimeFormat('en-us', {
+  weekday: 'long',
+  era: 'long',
+  year: 'numeric',
+  month: 'numeric',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: 'numeric',
+  second: 'numeric',
+  hour12: true,
+  timeZone: 'UTC',
+  timeZoneName: 'long'
+}).formatToParts(Date.UTC(2012, 11, 17, 3, 0, 42))
+  .map(part => part.type);
+
+const legalPartTypes = [
+  'weekday',
+  'era',
+  'year',
+  'month',
+  'day',
+  'hour',
+  'minute',
+  'second',
+  'literal',
+  'dayPeriod',
+  'timeZoneName',
+];
+
+actualPartTypes.forEach(function(type) {
+  assert(legalPartTypes.includes(type), `${type} is not a legal type`);
+});
 
 reportCompare(0, 0);

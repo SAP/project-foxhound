@@ -15,6 +15,7 @@ ka{
     }
     ExemplarCharacters{"[ა ბ გ დ ე ვ ზ თ ი კ ლ მ ნ ო პ ჟ რ ს ტ უ ფ ქ ღ ყ შ ჩ ც ძ წ ჭ ხ ჯ ჰ]"}
     ExemplarCharactersIndex{"[ა ბ გ დ ე ვ ზ თ ი კ ლ მ ნ ო პ ჟ რ ს ტ უ ფ ქ ღ ყ შ ჩ ც ძ წ ჭ ხ ჯ ჰ]"}
+    ExemplarCharactersNumbers{"[  \\- , % ‰ + 0 1 2 3 4 5 6 7 8 9]"}
     ExemplarCharactersPunctuation{
         "[\\- ‐ – — , ; \\: ! ? . … ჻ ' ‘ ‚ “ „ « » ( ) \\[ \\] \\{ \\} § @ * / \\& #"
         " † ‡ ′ ″ №]"
@@ -24,14 +25,16 @@ ka{
         default{"latn"}
         latn{
             miscPatterns{
+                approximately{"≈{0}"}
                 atLeast{"{0}+"}
+                atMost{"≤{0}"}
                 range{"{0}-{1}"}
             }
             patterns{
                 accountingFormat{"#,##0.00 ¤"}
                 currencyFormat{"#,##0.00 ¤"}
                 decimalFormat{"#,##0.###"}
-                percentFormat{"#,##0 %"}
+                percentFormat{"#,##0%"}
                 scientificFormat{"#E0"}
             }
             patternsLong{
@@ -203,11 +206,22 @@ ka{
                 timeSeparator{":"}
             }
         }
+        minimalPairs{
+            ordinal{
+                many{"მე-{0}"}
+                one{"{0}-ლი"}
+                other{"{0}-ე"}
+            }
+            plural{
+                one{"კალათში {0} X-ია. შეიძენთ მას?"}
+                other{"კალათში {0} X-ია. შეიძენთ მათ?"}
+            }
+        }
         minimumGroupingDigits{"2"}
         native{"latn"}
         traditional{"geor"}
     }
-    Version{"2.1.29.20"}
+    Version{"2.1.43.50"}
     calendar{
         generic{
             DateTimePatterns{
@@ -226,8 +240,17 @@ ka{
                 "{1}, {0}",
             }
             availableFormats{
+                Bh{"h B"}
+                Bhm{"h:mm B"}
+                Bhms{"h:mm:ss B"}
                 E{"ccc"}
+                EBhm{"E h:mm B"}
+                EBhms{"E h:mm:ss B"}
+                EHm{"E HH:mm"}
+                EHms{"E HH:mm:ss"}
                 Ed{"d E"}
+                Ehm{"E h:mm a"}
+                Ehms{"E h:mm:ss a"}
                 Gy{"y G"}
                 GyMMM{"MMM, y G"}
                 GyMMMEd{"E, d MMM, y G"}
@@ -387,7 +410,12 @@ ka{
                 Timezone{"{0} {1}"}
             }
             availableFormats{
+                Bh{"h B"}
+                Bhm{"h:mm B"}
+                Bhms{"h:mm:ss B"}
                 E{"ccc"}
+                EBhm{"E h:mm B"}
+                EBhms{"E h:mm:ss B"}
                 EHm{"E, HH:mm"}
                 EHms{"E, HH:mm:ss"}
                 Ed{"d E"}
@@ -431,8 +459,8 @@ ka{
                 yQQQ{"QQQ, y"}
                 yQQQQ{"QQQQ, y"}
                 yw{
-                    one{"კვირა w, y"}
-                    other{"კვირა w, y"}
+                    one{"კვირა w, Y"}
+                    other{"კვირა w, Y"}
                 }
             }
             dayNames{
@@ -975,10 +1003,25 @@ ka{
                 }
             }
         }
+        dayOfYear{
+            dn{"წლის დღე"}
+        }
         dayperiod{
             dn{"დღის ნახევარი"}
         }
+        dayperiod-narrow{
+            dn{"დღ. ნახევარი"}
+        }
+        dayperiod-short{
+            dn{"დღ. ნახევარი"}
+        }
         era{
+            dn{"ეპოქა"}
+        }
+        era-narrow{
+            dn{"ეპოქა"}
+        }
+        era-short{
             dn{"ეპოქა"}
         }
         fri{
@@ -1619,8 +1662,26 @@ ka{
                 }
             }
         }
+        weekOfMonth{
+            dn{"თვის კვირა"}
+        }
+        weekOfMonth-narrow{
+            dn{"თვ. კვირა"}
+        }
+        weekOfMonth-short{
+            dn{"თვ. კვირა"}
+        }
         weekday{
             dn{"კვირის დღე"}
+        }
+        weekdayOfMonth{
+            dn{"კვირის დღე თვეში"}
+        }
+        weekdayOfMonth-narrow{
+            dn{"კვ. დღე თვეში"}
+        }
+        weekdayOfMonth-short{
+            dn{"კვ. დღე თვეში"}
         }
         year{
             dn{"წელი"}
@@ -1679,8 +1740,20 @@ ka{
         zone{
             dn{"დროის სარტყელი"}
         }
+        zone-narrow{
+            dn{"დროის სარტყ."}
+        }
+        zone-short{
+            dn{"დროის სარტყ."}
+        }
     }
     listPattern{
+        or{
+            2{"{0} ან {1}"}
+            end{"{0} ან {1}"}
+            middle{"{0}, {1}"}
+            start{"{0}, {1}"}
+        }
         standard{
             2{"{0} და {1}"}
             end{"{0} და {1}"}

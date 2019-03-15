@@ -8,19 +8,22 @@
 # NS_FormatCodeAddress(), which on Mac often lack a file name and a line
 # number.
 
-import subprocess
-import sys
-import re
+import json
 import os
 import pty
+import re
+import subprocess
+import sys
 import termios
+
 
 class unbufferedLineConverter:
     """
     Wrap a child process that responds to each line of input with one line of
     output.  Uses pty to trick the child into providing unbuffered output.
     """
-    def __init__(self, command, args = []):
+
+    def __init__(self, command, args=[]):
         pid, fd = pty.fork()
         if pid == 0:
             # We're the child.  Transfer control to command.
@@ -33,21 +36,27 @@ class unbufferedLineConverter:
             # Set up a file()-like interface to the child process
             self.r = os.fdopen(fd, "r", 1)
             self.w = os.fdopen(os.dup(fd), "w", 1)
+
     def convert(self, line):
         self.w.write(line + "\n")
         return self.r.readline().rstrip("\r\n")
+
     @staticmethod
     def test():
         assert unbufferedLineConverter("rev").convert("123") == "321"
         assert unbufferedLineConverter("cut", ["-c3"]).convert("abcde") == "c"
         print "Pass"
 
+
 def separate_debug_file_for(file):
     return None
 
+
 address_adjustments = {}
+
+
 def address_adjustment(file):
-    if not file in address_adjustments:
+    if file not in address_adjustments:
         result = None
         otool = subprocess.Popen(["otool", "-l", file], stdout=subprocess.PIPE)
         while True:
@@ -69,18 +78,25 @@ def address_adjustment(file):
 
     return address_adjustments[file]
 
+
 atoses = {}
+
+
 def addressToSymbol(file, address):
     converter = None
-    if not file in atoses:
+    if file not in atoses:
         debug_file = separate_debug_file_for(file) or file
-        converter = unbufferedLineConverter('/usr/bin/xcrun', ['atos', '-arch', 'x86_64', '-o', debug_file])
+        converter = unbufferedLineConverter(
+            '/usr/bin/xcrun', ['atos', '-arch', 'x86_64', '-o', debug_file])
         atoses[file] = converter
     else:
         converter = atoses[file]
     return converter.convert("0x%X" % address)
 
+
 cxxfilt_proc = None
+
+
 def cxxfilt(sym):
     if cxxfilt_proc is None:
         # --no-strip-underscores because atos already stripped the underscore
@@ -92,11 +108,13 @@ def cxxfilt(sym):
     cxxfilt_proc.stdin.write(sym + "\n")
     return cxxfilt_proc.stdout.readline().rstrip("\n")
 
+
 # Matches lines produced by NS_FormatCodeAddress().
 line_re = re.compile("^(.*#\d+: )(.+)\[(.+) \+(0x[0-9A-Fa-f]+)\](.*)$")
 atos_name_re = re.compile("^(.+) \(in ([^)]+)\) \((.+)\)$")
 
-def fixSymbols(line):
+
+def fixSymbols(line, jsonEscape=False):
     result = line_re.match(line)
     if result is not None:
         (before, fn, file, address, after) = result.groups()
@@ -120,6 +138,9 @@ def fixSymbols(line):
                     name = cxxfilt(name)
                 info = "%s (%s, in %s)" % (name, fileline, library)
 
+            if jsonEscape:
+                info = json.dumps(info)[1:-1]   # [1:-1] strips the quotes
+
             nl = '\n' if line[-1] == '\n' else ''
             return before + info + after + nl
         else:
@@ -127,6 +148,7 @@ def fixSymbols(line):
             return line
     else:
         return line
+
 
 if __name__ == "__main__":
     for line in sys.stdin:

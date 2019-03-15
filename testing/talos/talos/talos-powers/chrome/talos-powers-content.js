@@ -3,27 +3,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // This file is loaded as a framescript
+/* global docShell */
+// eslint-env mozilla/frame-script
 
-var { interfaces: Ci, utils: Cu } = Components;
-
-/**
- * Content that wants to quit the whole session should
- * fire the TalosQuitApplication custom event. This will
- * attempt to force-quit the browser.
- */
-addEventListener("TalosQuitApplication", event => {
-  // If we're loaded in a low-priority background process, like
-  // the background page thumbnailer, then we shouldn't be allowed
-  // to quit the whole application. This is a workaround until
-  // bug 1164459 is fixed.
-  let priority = docShell.QueryInterface(Ci.nsIDocumentLoader)
-                         .loadGroup
-                         .QueryInterface(Ci.nsISupportsPriority)
-                         .priority;
-  if (priority != Ci.nsISupportsPriority.PRIORITY_LOWEST) {
-    sendAsyncMessage("Talos:ForceQuit", event.detail);
-  }
-});
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 addEventListener("TalosContentProfilerCommand", (e) => {
   let name = e.detail.name;
@@ -38,8 +21,8 @@ addMessageListener("TalosContentProfiler:Response", (msg) => {
   let event = Cu.cloneInto({
     bubbles: true,
     detail: {
-      name: name,
-      data: data,
+      name,
+      data,
     },
   }, content);
   content.dispatchEvent(
@@ -83,6 +66,25 @@ addEventListener("TalosPowersContentGetStartupInfo", (e) => {
   });
 });
 
+/**
+ * Content that wants to quit the whole session should
+ * fire the TalosPowersGoQuitApplication custom event. This will
+ * attempt to force-quit the browser.
+ */
+addEventListener("TalosPowersGoQuitApplication", (e) => {
+  // If we're loaded in a low-priority background process, like
+  // the background page thumbnailer, then we shouldn't be allowed
+  // to quit the whole application. This is a workaround until
+  // bug 1164459 is fixed.
+  let priority = docShell.QueryInterface(Ci.nsIDocumentLoader)
+                         .loadGroup
+                         .QueryInterface(Ci.nsISupportsPriority)
+                         .priority;
+  if (priority != Ci.nsISupportsPriority.PRIORITY_LOWEST) {
+    sendAsyncMessage("Talos:ForceQuit", e.detail);
+  }
+});
+
 /* *
  * Mediator for the generic ParentExec mechanism.
  * Listens for a query event from the content, forwards it as a query message
@@ -91,14 +93,14 @@ addEventListener("TalosPowersContentGetStartupInfo", (e) => {
  * The consumer API for this mechanism is at content/TalosPowersContent.js
  * and the callees are at ParentExecServices at components/TalosPowersService.js
  */
-addEventListener("TalosPowers:ParentExec:QueryEvent", function (e) {
+addEventListener("TalosPowers:ParentExec:QueryEvent", function(e) {
   if (content.location.protocol != "file:" &&
       content.location.hostname != "localhost" &&
       content.location.hostname != "127.0.0.1") {
     throw new Error("TalosPowers:ParentExec may only be used with local content");
   }
   let uniqueMessageId = "TalosPowers:ParentExec:"
-                      + content.document.documentURI + Date.now() + Math.random();
+                      + content.document.documentURI + Date.now() + Math.random(); // eslint-disable-line mozilla/avoid-Date-timing
 
   // Listener for the reply from the parent process
   addMessageListener("TalosPowers:ParentExec:ReplyMsg", function done(reply) {
@@ -110,7 +112,7 @@ addEventListener("TalosPowers:ParentExec:QueryEvent", function (e) {
     // reply to content via an event
     let contentEvent = Cu.cloneInto({
       bubbles: true,
-      detail: reply.data.result
+      detail: reply.data.result,
     }, content);
     content.dispatchEvent(new content.CustomEvent(e.detail.listeningTo, contentEvent));
   });
@@ -118,6 +120,6 @@ addEventListener("TalosPowers:ParentExec:QueryEvent", function (e) {
   // Send the query to the parent process
   sendAsyncMessage("TalosPowers:ParentExec:QueryMsg", {
     command: e.detail.command,
-    id: uniqueMessageId
+    id: uniqueMessageId,
   });
-}, false, true);  // wantsUntrusted since we're exposing to unprivileged
+}, false, true); // wantsUntrusted since we're exposing to unprivileged

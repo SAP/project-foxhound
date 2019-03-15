@@ -6,15 +6,18 @@
 
 package org.mozilla.gecko.telemetry;
 
+import android.accessibilityservice.AccessibilityServiceInfo;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.support.annotation.Nullable;
 import android.support.annotation.WorkerThread;
 import android.util.Log;
+import android.view.accessibility.AccessibilityManager;
 import org.mozilla.gecko.BrowserApp;
 import org.mozilla.gecko.GeckoApp;
 import org.mozilla.gecko.GeckoProfile;
 import org.mozilla.gecko.GeckoSharedPrefs;
+import org.mozilla.gecko.GeckoThread;
 import org.mozilla.gecko.Telemetry;
 import org.mozilla.gecko.TelemetryContract;
 import org.mozilla.gecko.adjust.AttributionHelperListener;
@@ -30,6 +33,7 @@ import org.mozilla.gecko.util.StringUtils;
 import org.mozilla.gecko.util.ThreadUtils;
 
 import java.io.IOException;
+import java.util.List;
 
 /**
  * An activity-lifecycle delegate for uploading the core ping.
@@ -39,13 +43,16 @@ public class TelemetryCorePingDelegate extends BrowserAppDelegateWithReference
     private static final String LOGTAG = StringUtils.safeSubstring(
             "Gecko" + TelemetryCorePingDelegate.class.getSimpleName(), 0, 23);
 
+    private static final String TELEMETRY_EXTRA_ONRESUME_ALREADY_CALLED = "onResumeAlreadyCalled";
+    private static final String TELEMETRY_EXTRA_ONPAUSE_CALLED_BEFORE_ONRESUME = "onPauseCalledBeforeOnResume";
+
     private boolean isOnResumeCalled = false;
     private TelemetryDispatcher telemetryDispatcher; // lazy
     private final SessionMeasurements sessionMeasurements = new SessionMeasurements();
 
     @Override
     public void onStart(final BrowserApp browserApp) {
-        TelemetryPreferences.initPreferenceObserver(browserApp, browserApp.getProfile().getName());
+        TelemetryPreferences.initPreferenceObserver(browserApp, GeckoThread.getActiveProfile().getName());
 
         // We don't upload in onCreate because that's only called when the Activity needs to be instantiated
         // and it's possible the system will never free the Activity from memory.
@@ -85,6 +92,10 @@ public class TelemetryCorePingDelegate extends BrowserAppDelegateWithReference
 
     @Override
     public void onResume(BrowserApp browserApp) {
+        if (isOnResumeCalled) {
+            Telemetry.sendUIEvent(TelemetryContract.Event.ACTION, TelemetryContract.Method.SYSTEM, TELEMETRY_EXTRA_ONRESUME_ALREADY_CALLED);
+            return;
+        }
         isOnResumeCalled = true;
         sessionMeasurements.recordSessionStart();
     }
@@ -92,7 +103,7 @@ public class TelemetryCorePingDelegate extends BrowserAppDelegateWithReference
     @Override
     public void onPause(BrowserApp browserApp) {
         if (!isOnResumeCalled) {
-            Telemetry.sendUIEvent(TelemetryContract.Event.ACTION, TelemetryContract.Method.SYSTEM, "onPauseCalledBeforeOnResume");
+            Telemetry.sendUIEvent(TelemetryContract.Event.ACTION, TelemetryContract.Method.SYSTEM, TELEMETRY_EXTRA_ONPAUSE_CALLED_BEFORE_ONRESUME);
             return;
         }
         isOnResumeCalled = false;
@@ -104,7 +115,7 @@ public class TelemetryCorePingDelegate extends BrowserAppDelegateWithReference
     @WorkerThread // via constructor
     private TelemetryDispatcher getTelemetryDispatcher(final BrowserApp browserApp) {
         if (telemetryDispatcher == null) {
-            final GeckoProfile profile = browserApp.getProfile();
+            final GeckoProfile profile = GeckoThread.getActiveProfile();
             final String profilePath = profile.getDir().getAbsolutePath();
             final String profileName = profile.getName();
             telemetryDispatcher = new TelemetryDispatcher(profilePath, profileName);
@@ -113,7 +124,7 @@ public class TelemetryCorePingDelegate extends BrowserAppDelegateWithReference
     }
 
     private SharedPreferences getSharedPreferences(final BrowserApp activity) {
-        return GeckoSharedPrefs.forProfileName(activity, activity.getProfile().getName());
+        return GeckoSharedPrefs.forProfileName(activity, GeckoThread.getActiveProfile().getName());
     }
 
     // via SearchEngineCallback - may be called from any thread.
@@ -137,17 +148,19 @@ public class TelemetryCorePingDelegate extends BrowserAppDelegateWithReference
                     return;
                 }
 
-                final GeckoProfile profile = activity.getProfile();
+                final GeckoProfile profile = GeckoThread.getActiveProfile();
                 if (!TelemetryUploadService.isUploadEnabledByProfileConfig(activity, profile)) {
                     Log.d(LOGTAG, "Core ping upload disabled by profile config. Returning.");
                     return;
                 }
 
                 final String clientID;
+                final boolean hadCanaryClientId;
                 try {
                     clientID = profile.getClientId();
+                    hadCanaryClientId = profile.getIfHadCanaryClientId();
                 } catch (final IOException e) {
-                    Log.w(LOGTAG, "Unable to get client ID to generate core ping: " + e);
+                    Log.w(LOGTAG, "Unable to get client ID properties to generate core ping: " + e);
                     return;
                 }
 
@@ -157,6 +170,7 @@ public class TelemetryCorePingDelegate extends BrowserAppDelegateWithReference
                         sessionMeasurements.getAndResetSessionMeasurements(activity);
                 final TelemetryCorePingBuilder pingBuilder = new TelemetryCorePingBuilder(activity)
                         .setClientID(clientID)
+                        .setHadCanaryClientId(hadCanaryClientId)
                         .setDefaultSearchEngine(TelemetryCorePingBuilder.getEngineIdentifier(engine))
                         .setProfileCreationDate(TelemetryCorePingBuilder.getProfileCreationDate(activity, profile))
                         .setSequenceNumber(TelemetryCorePingBuilder.getAndIncrementSequenceNumber(sharedPrefs))
@@ -184,6 +198,16 @@ public class TelemetryCorePingDelegate extends BrowserAppDelegateWithReference
         final String campaignId = CampaignIdMeasurements.getCampaignIdFromPrefs(context);
         if (campaignId != null) {
             pingBuilder.setOptCampaignId(campaignId);
+        }
+
+        final AccessibilityManager accessibilityManager = (AccessibilityManager)
+            context.getSystemService(Context.ACCESSIBILITY_SERVICE);
+        if (accessibilityManager != null) {
+            final List<AccessibilityServiceInfo> enabledServices =
+                accessibilityManager.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK);
+            if (enabledServices.size() > 0) {
+                pingBuilder.setOptAccessibility(enabledServices);
+            }
         }
     }
 

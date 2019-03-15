@@ -2,31 +2,35 @@
 <html>
 <head>
   <title>WebExtension test</title>
-  <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/SpawnTask.js"></script>
-  <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/ExtensionTestUtils.js"></script>
-  <script type="text/javascript" src="chrome_head.js"></script>
+  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="text/javascript" src="/tests/SimpleTest/AddTask.js"></script>
+  <script type="text/javascript" src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
   <script type="text/javascript" src="head.js"></script>
   <script type="text/javascript" src="head_cookies.js"></script>
-  <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
 
 <script type="text/javascript">
 "use strict";
 
-add_task(function* init() {
+add_task(async function init() {
   // We need to trigger a cookie eviction in order to test our batch delete
   // observer.
+
+  // Set quotaPerHost to maxPerHost - 1, so there is only one cookie
+  // will be evicted everytime.
+  SpecialPowers.setIntPref("network.cookie.quotaPerHost", 2);
   SpecialPowers.setIntPref("network.cookie.maxPerHost", 3);
   SimpleTest.registerCleanupFunction(() => {
+    SpecialPowers.clearUserPref("network.cookie.quotaPerHost");
     SpecialPowers.clearUserPref("network.cookie.maxPerHost");
   });
 });
 
-add_task(function* test_bad_cookie_permissions() {
+add_task(async function test_bad_cookie_permissions() {
   info("Test non-matching, non-secure domain with non-secure cookie");
-  yield testCookies({
+  await testCookies({
     permissions: ["http://example.com/", "cookies"],
     url: "http://example.net/",
     domain: "example.net",
@@ -36,7 +40,7 @@ add_task(function* test_bad_cookie_permissions() {
   });
 
   info("Test non-matching, secure domain with non-secure cookie");
-  yield testCookies({
+  await testCookies({
     permissions: ["https://example.com/", "cookies"],
     url: "https://example.net/",
     domain: "example.net",
@@ -46,7 +50,7 @@ add_task(function* test_bad_cookie_permissions() {
   });
 
   info("Test non-matching, secure domain with secure cookie");
-  yield testCookies({
+  await testCookies({
     permissions: ["https://example.com/", "cookies"],
     url: "https://example.net/",
     domain: "example.net",
@@ -56,7 +60,7 @@ add_task(function* test_bad_cookie_permissions() {
   });
 
   info("Test matching subdomain with superdomain privileges, secure cookie (http)");
-  yield testCookies({
+  await testCookies({
     permissions: ["http://foo.bar.example.com/", "cookies"],
     url: "http://foo.bar.example.com/",
     domain: ".example.com",
@@ -66,7 +70,7 @@ add_task(function* test_bad_cookie_permissions() {
   });
 
   info("Test matching, non-secure domain with secure cookie");
-  yield testCookies({
+  await testCookies({
     permissions: ["http://example.com/", "cookies"],
     url: "http://example.com/",
     domain: "example.com",
@@ -76,7 +80,7 @@ add_task(function* test_bad_cookie_permissions() {
   });
 
   info("Test matching, non-secure host, secure URL");
-  yield testCookies({
+  await testCookies({
     permissions: ["http://example.com/", "cookies"],
     url: "https://example.com/",
     domain: "example.com",
@@ -86,7 +90,7 @@ add_task(function* test_bad_cookie_permissions() {
   });
 
   info("Test non-matching domain");
-  yield testCookies({
+  await testCookies({
     permissions: ["http://example.com/", "cookies"],
     url: "http://example.com/",
     domain: "example.net",
@@ -96,7 +100,7 @@ add_task(function* test_bad_cookie_permissions() {
   });
 
   info("Test invalid scheme");
-  yield testCookies({
+  await testCookies({
     permissions: ["ftp://example.com/", "cookies"],
     url: "ftp://example.com/",
     domain: "example.com",

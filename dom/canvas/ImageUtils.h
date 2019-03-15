@@ -32,19 +32,14 @@ typedef nsTArray<ChannelPixelLayout> ImagePixelLayout;
  * (1) GetFormat() converts the image's format into ImageBitmapFormat enum.
  * (2) GetBufferLength() returns the number of bytes that are used to store
  *     the image's underlying raw data.
- * (3) MapDataInto() writes the image's underlying raw data into a given
- *     ArrayBuffer in the given format. (If the given format is different from
- *     the existing format, the ImageUtils uses the ImageBitmapFormatUtils to
- *     performa color conversion.)
  *
  * In theory, the functionalities of this class could be merged into the
  * interface of layers::Image. However, this is designed as a isolated wrapper
  * because we don't want to pollute the layers::Image's interface with methods
  * that are only meaningful to the ImageBitmap.
  */
-class ImageUtils
-{
-public:
+class ImageUtils {
+ public:
   class Impl;
   ImageUtils() = delete;
   ImageUtils(const ImageUtils&) = delete;
@@ -59,15 +54,11 @@ public:
 
   uint32_t GetBufferLength() const;
 
-  UniquePtr<ImagePixelLayout>
-  MapDataInto(uint8_t* aBuffer, uint32_t aOffset, uint32_t aBufferLength,
-              ImageBitmapFormat aFormat, ErrorResult& aRv) const;
-
-protected:
+ protected:
   Impl* mImpl;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif /* mozilla_dom_ImageBitmapFormatUtils_h */

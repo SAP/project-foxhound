@@ -10,7 +10,8 @@
 
 "use strict";
 
-const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
+ChromeUtils.defineModuleGetter(this, "AppConstants",
+                               "resource://gre/modules/AppConstants.jsm");
 
 // The old XPInstall error codes
 const EXECUTION_ERROR   = -203;
@@ -33,24 +34,24 @@ const MSG_ADDON_EVENT      = "WebAPIAddonEvent";
 
 const CHILD_SCRIPT = "resource://gre/modules/addons/Content.js";
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var gSingleton = null;
 
 function amManager() {
-  Cu.import("resource://gre/modules/AddonManager.jsm");
+  ChromeUtils.import("resource://gre/modules/AddonManager.jsm");
   /* globals AddonManagerPrivate*/
 
-  Services.mm.loadFrameScript(CHILD_SCRIPT, true);
+  Services.mm.loadFrameScript(CHILD_SCRIPT, true, true);
   Services.mm.addMessageListener(MSG_INSTALL_ENABLED, this);
   Services.mm.addMessageListener(MSG_INSTALL_ADDON, this);
   Services.mm.addMessageListener(MSG_PROMISE_REQUEST, this);
   Services.mm.addMessageListener(MSG_INSTALL_CLEANUP, this);
   Services.mm.addMessageListener(MSG_ADDON_EVENT_REQ, this);
 
-  Services.obs.addObserver(this, "message-manager-close", false);
-  Services.obs.addObserver(this, "message-manager-disconnect", false);
+  Services.obs.addObserver(this, "message-manager-close");
+  Services.obs.addObserver(this, "message-manager-disconnect");
 
   AddonManager.webAPI.setEventHandler(this.sendEvent);
 
@@ -72,61 +73,71 @@ amManager.prototype = {
     }
   },
 
-  /**
-   * @see amIAddonManager.idl
-   */
-  mapURIToAddonID(uri, id) {
-    id.value = AddonManager.mapURIToAddonID(uri);
-    return !!id.value;
-  },
-
-  installAddonFromWebpage(aMimetype, aBrowser, aInstallingPrincipal,
-                                    aUri, aHash, aName, aIcon, aCallback) {
+  installAddonFromWebpage(aPayload, aBrowser, aCallback) {
     let retval = true;
-    if (!AddonManager.isInstallAllowed(aMimetype, aInstallingPrincipal)) {
+
+    const {
+      mimetype,
+      triggeringPrincipal,
+      hash,
+      icon,
+      name,
+      uri,
+    } = aPayload;
+
+    if (!AddonManager.isInstallAllowed(mimetype, triggeringPrincipal)) {
       aCallback = null;
       retval = false;
     }
 
-    AddonManager.getInstallForURL(aUri, function(aInstall) {
-      function callCallback(uri, status) {
+    let installTelemetryInfo = {
+      source: AddonManager.getInstallSourceFromHost(aPayload.sourceHost),
+    };
+
+    if ("method" in aPayload) {
+      installTelemetryInfo.method = aPayload.method;
+    }
+
+    AddonManager.getInstallForURL(uri, mimetype, hash, name, icon, null, aBrowser,
+                                  installTelemetryInfo).then(aInstall => {
+      function callCallback(status) {
         try {
           aCallback.onInstallEnded(uri, status);
         } catch (e) {
-          Components.utils.reportError(e);
+          Cu.reportError(e);
         }
       }
 
       if (!aInstall) {
-        aCallback.onInstallEnded(aUri, UNSUPPORTED_TYPE);
+        aCallback.onInstallEnded(uri, UNSUPPORTED_TYPE);
         return;
       }
 
       if (aCallback) {
         aInstall.addListener({
           onDownloadCancelled(aInstall) {
-            callCallback(aUri, USER_CANCELLED);
+            callCallback(USER_CANCELLED);
           },
 
           onDownloadFailed(aInstall) {
             if (aInstall.error == AddonManager.ERROR_CORRUPT_FILE)
-              callCallback(aUri, CANT_READ_ARCHIVE);
+              callCallback(CANT_READ_ARCHIVE);
             else
-              callCallback(aUri, DOWNLOAD_ERROR);
+              callCallback(DOWNLOAD_ERROR);
           },
 
           onInstallFailed(aInstall) {
-            callCallback(aUri, EXECUTION_ERROR);
+            callCallback(EXECUTION_ERROR);
           },
 
           onInstallEnded(aInstall, aStatus) {
-            callCallback(aUri, SUCCESS);
-          }
+            callCallback(SUCCESS);
+          },
         });
       }
 
-      AddonManager.installAddonFromWebpage(aMimetype, aBrowser, aInstallingPrincipal, aInstall);
-    }, aMimetype, aHash, aName, aIcon, null, aBrowser);
+      AddonManager.installAddonFromWebpage(mimetype, aBrowser, triggeringPrincipal, aInstall);
+    });
 
     return retval;
   },
@@ -189,15 +200,13 @@ amManager.prototype = {
               mm.sendAsyncMessage(MSG_INSTALL_CALLBACK, {
                 callbackID: payload.callbackID,
                 url,
-                status
+                status,
               });
             },
           };
         }
 
-        return this.installAddonFromWebpage(payload.mimetype,
-          aMessage.target, payload.triggeringPrincipal, payload.uri,
-          payload.hash, payload.name, payload.icon, callback);
+        return this.installAddonFromWebpage(payload, aMessage.target, callback);
       }
 
       case MSG_PROMISE_REQUEST: {
@@ -205,15 +214,15 @@ amManager.prototype = {
         let resolve = (value) => {
           mm.sendAsyncMessage(MSG_PROMISE_RESULT, {
             callbackID: payload.callbackID,
-            resolve: value
+            resolve: value,
           });
-        }
+        };
         let reject = (value) => {
           mm.sendAsyncMessage(MSG_PROMISE_RESULT, {
             callbackID: payload.callbackID,
-            reject: value
+            reject: value,
           });
-        }
+        };
 
         let API = AddonManager.webAPI;
         if (payload.type in API) {
@@ -260,12 +269,61 @@ amManager.prototype = {
       if (!gSingleton)
         gSingleton = new amManager();
       return gSingleton.QueryInterface(aIid);
-    }
+    },
   },
-  QueryInterface: XPCOMUtils.generateQI([Ci.amIAddonManager,
-                                         Ci.nsITimerCallback,
-                                         Ci.nsIObserver,
-                                         Ci.nsIMessageListener])
+  QueryInterface: ChromeUtils.generateQI([Ci.amIAddonManager,
+                                          Ci.nsITimerCallback,
+                                          Ci.nsIObserver]),
 };
 
-this.NSGetFactory = XPCOMUtils.generateNSGetFactory([amManager]);
+const BLOCKLIST_JSM = "resource://gre/modules/Blocklist.jsm";
+ChromeUtils.defineModuleGetter(this, "Blocklist", BLOCKLIST_JSM);
+
+function BlocklistService() {
+  this.wrappedJSObject = this;
+  this.pluginQueries = [];
+}
+
+BlocklistService.prototype = {
+  STATE_NOT_BLOCKED: Ci.nsIBlocklistService.STATE_NOT_BLOCKED,
+  STATE_SOFTBLOCKED: Ci.nsIBlocklistService.STATE_SOFTBLOCKED,
+  STATE_BLOCKED: Ci.nsIBlocklistService.STATE_BLOCKED,
+  STATE_OUTDATED: Ci.nsIBlocklistService.STATE_OUTDATED,
+  STATE_VULNERABLE_UPDATE_AVAILABLE: Ci.nsIBlocklistService.STATE_VULNERABLE_UPDATE_AVAILABLE,
+  STATE_VULNERABLE_NO_UPDATE: Ci.nsIBlocklistService.STATE_VULNERABLE_NO_UPDATE,
+
+  get isLoaded() {
+    return Cu.isModuleLoaded(BLOCKLIST_JSM) && Blocklist.isLoaded;
+  },
+
+  async getPluginBlocklistState(plugin, appVersion, toolkitVersion) {
+    if (AppConstants.platform == "android") {
+      return Ci.nsIBlocklistService.STATE_NOT_BLOCKED;
+    }
+    if (Cu.isModuleLoaded(BLOCKLIST_JSM)) {
+      return Blocklist.getPluginBlocklistState(plugin, appVersion, toolkitVersion);
+    }
+
+    // Blocklist module isn't loaded yet. Queue the query until it is.
+    let request = {plugin, appVersion, toolkitVersion};
+    let promise = new Promise(resolve => { request.resolve = resolve; });
+
+    this.pluginQueries.push(request);
+    return promise;
+  },
+
+  observe(...args) {
+    return Blocklist.observe(...args);
+  },
+
+  notify() {
+    Blocklist.notify();
+  },
+
+  classID: Components.ID("{66354bc9-7ed1-4692-ae1d-8da97d6b205e}"),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver,
+                                          Ci.nsIBlocklistService,
+                                          Ci.nsITimerCallback]),
+};
+
+this.NSGetFactory = XPCOMUtils.generateNSGetFactory([amManager, BlocklistService]);

@@ -9,15 +9,11 @@ const ALWAYS_DOWNLOAD_DIR_PREF = "browser.download.useDownloadDir";
 const UCT_URI = "chrome://mozapps/content/downloads/unknownContentType.xul";
 
 /* import-globals-from ../../../../../toolkit/content/tests/browser/common/mockTransfer.js */
-Cc["@mozilla.org/moz/jssubscript-loader;1"]
-  .getService(Ci.mozIJSSubScriptLoader)
-  .loadSubScript("chrome://mochitests/content/browser/toolkit/content/tests/browser/common/mockTransfer.js",
+Services.scriptloader.loadSubScript("chrome://mochitests/content/browser/toolkit/content/tests/browser/common/mockTransfer.js",
                  this);
 
 function createTemporarySaveDirectory() {
-  var saveDir = Cc["@mozilla.org/file/directory_service;1"]
-                  .getService(Ci.nsIProperties)
-                  .get("TmpD", Ci.nsIFile);
+  var saveDir = Services.dirsvc.get("TmpD", Ci.nsIFile);
   saveDir.append("testsavedir");
   if (!saveDir.exists()) {
     info("create testsavedir!");
@@ -33,7 +29,7 @@ function triggerSave(aWindow, aCallback) {
   let testBrowser = aWindow.gBrowser.selectedBrowser;
   let testURI = "http://mochi.test:8888/browser/browser/base/content/test/general/navigating_window_with_download.html";
   windowObserver.setCallback(onUCTDialog);
-  testBrowser.loadURI(testURI);
+  BrowserTestUtils.loadURI(testBrowser, testURI);
 
   // Create the folder the link will be saved into.
   var destDir = createTemporarySaveDirectory();
@@ -58,7 +54,7 @@ function triggerSave(aWindow, aCallback) {
     ok(!destFile.exists(), "Destination file should be removed");
     mockTransferCallback = null;
     info("done mockTransferCallback");
-  }
+  };
 
   function onUCTDialog(dialog) {
     function doLoad() {
@@ -69,9 +65,7 @@ function triggerSave(aWindow, aCallback) {
   }
 
   function continueDownloading() {
-    let windows = Services.wm.getEnumerator("");
-    while (windows.hasMoreElements()) {
-      let win = windows.getNext();
+    for (let win of Services.wm.getEnumerator("")) {
       if (win.location && win.location.href == UCT_URI) {
         win.document.documentElement._fireButtonEvent("accept");
         win.close();
@@ -102,7 +96,7 @@ var windowObserver = {
       return;
     }
 
-    let win = aSubject.QueryInterface(Ci.nsIDOMEventTarget);
+    let win = aSubject;
 
     win.addEventListener("load", function(event) {
       if (win.location == UCT_URI) {
@@ -116,7 +110,7 @@ var windowObserver = {
         });
       }
     }, {once: true});
-  }
+  },
 };
 
 Services.ww.registerNotification(windowObserver);
@@ -140,7 +134,7 @@ function test() {
         executeSoon(aCallback);
         info("whenDelayedStartupFinished found our window");
       }
-    }, "browser-delayed-startup-finished", false);
+    }, "browser-delayed-startup-finished");
   }
 
   mockTransferRegisterer.register();
@@ -157,7 +151,7 @@ function test() {
 
   Services.prefs.setBoolPref(ALWAYS_DOWNLOAD_DIR_PREF, false);
   testOnWindow(undefined, function(win) {
-    let windowGonePromise = promiseWindowWillBeClosed(win);
+    let windowGonePromise = BrowserTestUtils.domWindowClosed(win);
     Services.prefs.setBoolPref(SAVE_PER_SITE_PREF, true);
     triggerSave(win, function() {
       windowGonePromise.then(function() {

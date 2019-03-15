@@ -41,16 +41,14 @@
       // which is the URL displayed in the location bar, i.e.
       // the URI that the user attempted to load.
 
-      function getErrorCode()
-      {
+      function getErrorCode() {
         var url = document.documentURI;
         var error = url.search(/e\=/);
         var duffUrl = url.search(/\&u\=/);
         return decodeURIComponent(url.slice(error + 2, duffUrl));
       }
 
-      function getCSSClass()
-      {
+      function getCSSClass() {
         var url = document.documentURI;
         var matches = url.match(/s\=([^&]+)\&/);
         // s is optional, if no match just return nothing
@@ -61,8 +59,7 @@
         return decodeURIComponent(matches[1]);
       }
 
-      function getDescription()
-      {
+      function getDescription() {
         var url = document.documentURI;
         var desc = url.search(/d\=/);
 
@@ -74,8 +71,7 @@
         return decodeURIComponent(url.slice(desc + 2));
       }
 
-      function retryThis(buttonEl)
-      {
+      function retryThis(buttonEl) {
         // Note: The application may wish to handle switching off "offline mode"
         // before this event handler runs, but using a capturing event handler.
 
@@ -90,35 +86,27 @@
         }
       }
 
-      function initPage()
-      {
+      function initPage() {
         var err = getErrorCode();
 
         // if it's an unknown error or there's no title or description
         // defined, get the generic message
         var errTitle = document.getElementById("et_" + err);
         var errDesc  = document.getElementById("ed_" + err);
-        if (!errTitle || !errDesc)
-        {
+        if (!errTitle || !errDesc) {
           errTitle = document.getElementById("et_generic");
           errDesc  = document.getElementById("ed_generic");
         }
 
         var title = document.getElementsByClassName("errorTitleText")[0];
-        if (title)
-        {
+        if (title) {
           title.parentNode.replaceChild(errTitle, title);
           // change id to the replaced child's id so styling works
           errTitle.classList.add("errorTitleText");
         }
 
-        var sd = document.getElementById("errorShortDescText");
-        if (sd)
-          sd.textContent = getDescription();
-
         var ld = document.getElementById("errorLongDesc");
-        if (ld)
-        {
+        if (ld) {
           ld.parentNode.replaceChild(errDesc, ld);
           // change id to the replaced child's id so styling works
           errDesc.id = "errorLongDesc";
@@ -165,12 +153,18 @@
           // almost certainly useless.
           document.getElementById("errorTryAgain").style.display = "none";
           document.getElementById("errorPage").setAttribute("class", "certerror");
-        }
-        else {
+        } else {
           // Remove the override block for non-certificate errors.  CSS-hiding
           // isn't good enough here, because of bug 39098
           var secOverride = document.getElementById("securityOverrideDiv");
           secOverride.remove();
+        }
+
+        if (err != "nssBadCert" && err != "nssFailure2") {
+          var sd = document.getElementById("errorShortDescText");
+          if (sd) {
+            sd.textContent = getDescription();
+          }
         }
 
         if (err == "inadequateSecurityError") {
@@ -184,101 +178,14 @@
           }
         }
 
-        addDomainErrorLinks();
+        var event = new CustomEvent("AboutNetErrorLoad", {bubbles: true});
+        document.dispatchEvent(event);
       }
 
       function showSecuritySection() {
         // Swap link out, content in
-        document.getElementById('securityOverrideContent').style.display = '';
-        document.getElementById('securityOverrideLink').style.display = 'none';
-      }
-
-      /* Try to preserve the links contained in the error description, like
-         the error code.
-
-         Also, in the case of SSL error pages about domain mismatch, see if
-         we can hyperlink the user to the correct site.  We don't want
-         to do this generically since it allows MitM attacks to redirect
-         users to a site under attacker control, but in certain cases
-         it is safe (and helpful!) to do so.  Bug 402210
-      */
-      function addDomainErrorLinks() {
-        // Rather than textContent, we need to treat description as HTML
-        var sd = document.getElementById("errorShortDescText");
-        if (sd) {
-          var desc = getDescription();
-
-          // sanitize description text - see bug 441169
-
-          // First, find the index of the <a> tags we care about, being
-          // careful not to use an over-greedy regex.
-          var codeRe = /<a id="errorCode" title="([^"]+)">/;
-          var codeResult = codeRe.exec(desc);
-          var domainRe = /<a id="cert_domain_link" title="([^"]+)">/;
-          var domainResult = domainRe.exec(desc);
-
-          // The order of these links in the description is fixed in
-          // TransportSecurityInfo.cpp:formatOverridableCertErrorMessage.
-          var firstResult = domainResult;
-          if(!domainResult)
-            firstResult = codeResult;
-          if (!firstResult)
-            return;
-          // Remove sd's existing children
-          sd.textContent = "";
-
-          // Everything up to the first link should be text content.
-          sd.appendChild(document.createTextNode(desc.slice(0, firstResult.index)));
-
-          // Now create the actual links.
-          if (domainResult) {
-            createLink(sd, "cert_domain_link", domainResult[1])
-            // Append text for anything between the two links.
-            sd.appendChild(document.createTextNode(desc.slice(desc.indexOf("</a>") + "</a>".length, codeResult.index)));
-          }
-          createLink(sd, "errorCode", codeResult[1])
-
-          // Finally, append text for anything after the last closing </a>.
-          sd.appendChild(document.createTextNode(desc.slice(desc.lastIndexOf("</a>") + "</a>".length)));
-        }
-
-        // Initialize the cert domain link.
-        var link = document.getElementById('cert_domain_link');
-        if (!link)
-          return;
-
-        var okHost = link.getAttribute("title");
-        var thisHost = document.location.hostname;
-        var proto = document.location.protocol;
-
-        // If okHost is a wildcard domain ("*.example.com") let's
-        // use "www" instead.  "*.example.com" isn't going to
-        // get anyone anywhere useful. bug 432491
-        okHost = okHost.replace(/^\*\./, "www.");
-
-        /* case #1:
-         * example.com uses an invalid security certificate.
-         *
-         * The certificate is only valid for www.example.com
-         *
-         * Make sure to include the "." ahead of thisHost so that
-         * a MitM attack on paypal.com doesn't hyperlink to "notpaypal.com"
-         *
-         * We'd normally just use a RegExp here except that we lack a
-         * library function to escape them properly (bug 248062), and
-         * domain names are famous for having '.' characters in them,
-         * which would allow spurious and possibly hostile matches.
-         */
-        if (okHost.endsWith("." + thisHost))
-          link.href = proto + okHost;
-
-        /* case #2:
-         * browser.garage.maemo.org uses an invalid security certificate.
-         *
-         * The certificate is only valid for garage.maemo.org
-         */
-        if (thisHost.endsWith("." + okHost))
-          link.href = proto + okHost;
+        document.getElementById("securityOverrideContent").style.display = "";
+        document.getElementById("securityOverrideLink").style.display = "none";
       }
 
       function createLink(el, id, text) {
@@ -327,6 +234,7 @@
         <h1 id="et_sslv3Used">&sslv3Used.title;</h1>
         <h1 id="et_weakCryptoUsed">&weakCryptoUsed.title;</h1>
         <h1 id="et_inadequateSecurityError">&inadequateSecurityError.title;</h1>
+        <h1 id="et_networkProtocolError">&networkProtocolError.title;</h1>
       </div>
       <div id="errorDescriptionsContainer">
         <div id="ed_generic">&generic.longDesc;</div>
@@ -360,6 +268,7 @@
         <div id="ed_sslv3Used">&sslv3Used.longDesc;</div>
         <div id="ed_weakCryptoUsed">&weakCryptoUsed.longDesc;</div>
         <div id="ed_inadequateSecurityError">&inadequateSecurityError.longDesc;</div>
+        <div id="ed_networkProtocolError">&networkProtocolError.longDesc;</div>
       </div>
     </div>
 

@@ -10,9 +10,7 @@
 
 const EXPORTED_SYMBOLS = ["BrowserWindows"];
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
-
-Cu.import("resource://services-sync/main.js");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var BrowserWindows = {
   /**
@@ -24,12 +22,12 @@ var BrowserWindows = {
    * @return nothing
    */
   Add(aPrivate, fn) {
-    let wm = Cc["@mozilla.org/appshell/window-mediator;1"]
-               .getService(Ci.nsIWindowMediator);
-    let mainWindow = wm.getMostRecentWindow("navigator:browser");
-    let win = mainWindow.OpenBrowserWindow({private: aPrivate});
-    win.addEventListener("load", function() {
-      fn.call(win);
-    }, {once: true});
-  }
+    return new Promise(resolve => {
+      let mainWindow = Services.wm.getMostRecentWindow("navigator:browser");
+      let win = mainWindow.OpenBrowserWindow({private: aPrivate});
+      win.addEventListener("load", function() {
+        resolve(win);
+      }, {once: true});
+    });
+  },
 };

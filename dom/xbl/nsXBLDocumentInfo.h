@@ -8,23 +8,22 @@
 #define nsXBLDocumentInfo_h__
 
 #include "mozilla/Attributes.h"
+#include "mozilla/MemoryReporting.h"
 #include "nsCOMPtr.h"
 #include "nsAutoPtr.h"
 #include "nsWeakReference.h"
-#include "nsIDocument.h"
+#include "mozilla/dom/Document.h"
 #include "nsCycleCollectionParticipant.h"
 
 class nsXBLPrototypeBinding;
 
-class nsXBLDocumentInfo final : public nsSupportsWeakReference
-{
-public:
+class nsXBLDocumentInfo final : public nsSupportsWeakReference {
+ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 
-  explicit nsXBLDocumentInfo(nsIDocument* aDocument);
+  explicit nsXBLDocumentInfo(mozilla::dom::Document* aDocument);
 
-  already_AddRefed<nsIDocument> GetDocument()
-    { nsCOMPtr<nsIDocument> copy = mDocument; return copy.forget(); }
+  mozilla::dom::Document* GetDocument() const { return mDocument; }
 
   bool GetScriptAccess() const { return mScriptAccess; }
 
@@ -47,18 +46,23 @@ public:
 
   void MarkInCCGeneration(uint32_t aGeneration);
 
-  static nsresult ReadPrototypeBindings(nsIURI* aURI, nsXBLDocumentInfo** aDocInfo);
+  static nsresult ReadPrototypeBindings(nsIURI* aURI,
+                                        nsXBLDocumentInfo** aDocInfo,
+                                        mozilla::dom::Document* aBoundDocument);
+
+  size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
 
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(nsXBLDocumentInfo)
 
-private:
+ private:
   virtual ~nsXBLDocumentInfo();
 
-  nsCOMPtr<nsIDocument> mDocument;
+  RefPtr<mozilla::dom::Document> mDocument;
   bool mScriptAccess;
   bool mIsChrome;
   // the binding table owns each nsXBLPrototypeBinding
-  nsAutoPtr<nsClassHashtable<nsCStringHashKey, nsXBLPrototypeBinding>> mBindingTable;
+  nsAutoPtr<nsClassHashtable<nsCStringHashKey, nsXBLPrototypeBinding>>
+      mBindingTable;
 
   // non-owning pointer to the first binding in the table
   nsXBLPrototypeBinding* mFirstBinding;

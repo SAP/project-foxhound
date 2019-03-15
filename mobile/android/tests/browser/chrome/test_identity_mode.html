@@ -7,7 +7,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1099088
   <meta charset="utf-8">
   <title>Test for getIdentityMode</title>
   <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SpawnTask.js"></script>
+  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/AddTask.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://global/skin"/>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
   <script type="application/javascript" src="head.js"></script>
@@ -15,15 +15,13 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1099088
 
   "use strict";
 
-  const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
-
-  Cu.import("resource://gre/modules/Services.jsm");
+  ChromeUtils.import("resource://gre/modules/Services.jsm");
 
   let chromeWin = Services.wm.getMostRecentWindow("navigator:browser");
   let IdentityHandler = chromeWin.IdentityHandler;
 
-  ok(IdentityHandler.getIdentityMode(0, Services.io.newURI("about:")) == IdentityHandler.IDENTITY_MODE_CHROMEUI,
-     "'about:' is a verified internal page");
+  ok(IdentityHandler.getIdentityMode(0, Services.io.newURI("about:firefox")) == IdentityHandler.IDENTITY_MODE_CHROMEUI,
+     "'about:firefox' is a verified internal page");
   ok(IdentityHandler.getIdentityMode(0, Services.io.newURI("about:config")) == IdentityHandler.IDENTITY_MODE_CHROMEUI,
      "'about:config' is a verified internal page");
   ok(IdentityHandler.getIdentityMode(0, Services.io.newURI("about:accounts")) == IdentityHandler.IDENTITY_MODE_CHROMEUI,

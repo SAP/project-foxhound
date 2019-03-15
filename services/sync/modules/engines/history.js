@@ -2,37 +2,38 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-this.EXPORTED_SYMBOLS = ["HistoryEngine", "HistoryRec"];
+var EXPORTED_SYMBOLS = ["HistoryEngine", "HistoryRec"];
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cu = Components.utils;
-var Cr = Components.results;
+const HISTORY_TTL = 5184000; // 60 days in milliseconds
+const THIRTY_DAYS_IN_MS = 2592000000; // 30 days in milliseconds
 
-const HISTORY_TTL = 5184000; // 60 days
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://services-common/async.js");
+ChromeUtils.import("resource://services-common/utils.js");
+ChromeUtils.import("resource://services-sync/constants.js");
+ChromeUtils.import("resource://services-sync/engines.js");
+ChromeUtils.import("resource://services-sync/record.js");
+ChromeUtils.import("resource://services-sync/util.js");
 
-Cu.import("resource://gre/modules/PlacesUtils.jsm", this);
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://services-common/async.js");
-Cu.import("resource://gre/modules/Log.jsm");
-Cu.import("resource://services-sync/constants.js");
-Cu.import("resource://services-sync/engines.js");
-Cu.import("resource://services-sync/record.js");
-Cu.import("resource://services-sync/util.js");
+ChromeUtils.defineModuleGetter(this, "PlacesUtils",
+                               "resource://gre/modules/PlacesUtils.jsm");
 
-this.HistoryRec = function HistoryRec(collection, id) {
+ChromeUtils.defineModuleGetter(this, "PlacesSyncUtils",
+                               "resource://gre/modules/PlacesSyncUtils.jsm");
+
+function HistoryRec(collection, id) {
   CryptoWrapper.call(this, collection, id);
 }
 HistoryRec.prototype = {
   __proto__: CryptoWrapper.prototype,
   _logName: "Sync.Record.History",
-  ttl: HISTORY_TTL
+  ttl: HISTORY_TTL,
 };
 
 Utils.deferGetSet(HistoryRec, "cleartext", ["histUri", "title", "visits"]);
 
 
-this.HistoryEngine = function HistoryEngine(service) {
+function HistoryEngine(service) {
   SyncEngine.call(this, "History", service);
 }
 HistoryEngine.prototype = {
@@ -41,304 +42,314 @@ HistoryEngine.prototype = {
   _storeObj: HistoryStore,
   _trackerObj: HistoryTracker,
   downloadLimit: MAX_HISTORY_DOWNLOAD,
-  applyIncomingBatchSize: HISTORY_STORE_BATCH_SIZE,
 
   syncPriority: 7,
 
-  _processIncoming(newitems) {
-    // We want to notify history observers that a batch operation is underway
-    // so they don't do lots of work for each incoming record.
-    let observers = PlacesUtils.history.getObservers();
-    function notifyHistoryObservers(notification) {
-      for (let observer of observers) {
-        try {
-          observer[notification]();
-        } catch (ex) { }
-      }
-    }
-    notifyHistoryObservers("onBeginUpdateBatch");
-    try {
-      return SyncEngine.prototype._processIncoming.call(this, newitems);
-    } finally {
-      notifyHistoryObservers("onEndUpdateBatch");
-    }
+  async getSyncID() {
+    return PlacesSyncUtils.history.getSyncId();
   },
 
-  pullNewChanges() {
-    let modifiedGUIDs = Object.keys(this._tracker.changedIDs);
+  async ensureCurrentSyncID(newSyncID) {
+    this._log.debug("Checking if server sync ID ${newSyncID} matches existing",
+                    { newSyncID });
+    await PlacesSyncUtils.history.ensureCurrentSyncId(newSyncID);
+    await super.ensureCurrentSyncID(newSyncID); // Remove in bug 1443021.
+    return newSyncID;
+  },
+
+  async resetSyncID() {
+    // First, delete the collection on the server. It's fine if we're
+    // interrupted here: on the next sync, we'll detect that our old sync ID is
+    // now stale, and start over as a first sync.
+    await this._deleteServerCollection();
+    // Then, reset our local sync ID.
+    return this.resetLocalSyncID();
+  },
+
+  async resetLocalSyncID() {
+    let newSyncID = await PlacesSyncUtils.history.resetSyncId();
+    this._log.debug("Assigned new sync ID ${newSyncID}", { newSyncID });
+    await super.ensureCurrentSyncID(newSyncID); // Remove in bug 1443021.
+    return newSyncID;
+  },
+
+  async getLastSync() {
+    let lastSync = await PlacesSyncUtils.history.getLastSync();
+    return lastSync;
+  },
+
+  async setLastSync(lastSync) {
+    await PlacesSyncUtils.history.setLastSync(lastSync);
+    await super.setLastSync(lastSync); // Remove in bug 1443021.
+  },
+
+  shouldSyncURL(url) {
+    return !url.startsWith("file:");
+  },
+
+  async pullNewChanges() {
+    const changedIDs = await this._tracker.getChangedIDs();
+    let modifiedGUIDs = Object.keys(changedIDs);
     if (!modifiedGUIDs.length) {
       return {};
     }
 
-    let db = PlacesUtils.history.QueryInterface(Ci.nsPIPlacesDatabase)
-                        .DBConnection;
+    let guidsToRemove = await PlacesSyncUtils.history.determineNonSyncableGuids(modifiedGUIDs);
+    await this._tracker.removeChangedID(...guidsToRemove);
+    return changedIDs;
+  },
 
-    // Filter out hidden pages and `TRANSITION_FRAMED_LINK` visits. These are
-    // excluded when rendering the history menu, so we use the same constraints
-    // for Sync. We also don't want to sync `TRANSITION_EMBED` visits, but those
-    // aren't stored in the database.
-    for (let startIndex = 0;
-         startIndex < modifiedGUIDs.length;
-         startIndex += SQLITE_MAX_VARIABLE_NUMBER) {
-
-      let chunkLength = Math.min(SQLITE_MAX_VARIABLE_NUMBER,
-                                 modifiedGUIDs.length - startIndex);
-
-      let query = `
-        SELECT DISTINCT p.guid FROM moz_places p
-        JOIN moz_historyvisits v ON p.id = v.place_id
-        WHERE p.guid IN (${new Array(chunkLength).fill("?").join(",")}) AND
-              (p.hidden = 1 OR v.visit_type IN (0,
-                ${PlacesUtils.history.TRANSITION_FRAMED_LINK}))
-      `;
-
-      let statement = db.createAsyncStatement(query);
-      try {
-        for (let i = 0; i < chunkLength; i++) {
-          statement.bindByIndex(i, modifiedGUIDs[startIndex + i]);
-        }
-        let results = Async.querySpinningly(statement, ["guid"]);
-        let guids = results.map(result => result.guid);
-        this._tracker.removeChangedID(...guids);
-      } finally {
-        statement.finalize();
-      }
-    }
-
-    return this._tracker.changedIDs;
+  async _resetClient() {
+    await super._resetClient();
+    await PlacesSyncUtils.history.reset();
   },
 };
 
 function HistoryStore(name, engine) {
   Store.call(this, name, engine);
-
-  // Explicitly nullify our references to our cached services so we don't leak
-  Svc.Obs.add("places-shutdown", function() {
-    for (let query in this._stmts) {
-      let stmt = this._stmts[query];
-      stmt.finalize();
-    }
-    this._stmts = {};
-  }, this);
 }
+
 HistoryStore.prototype = {
   __proto__: Store.prototype,
 
-  __asyncHistory: null,
-  get _asyncHistory() {
-    if (!this.__asyncHistory) {
-      this.__asyncHistory = Cc["@mozilla.org/browser/history;1"]
-                              .getService(Ci.mozIAsyncHistory);
-    }
-    return this.__asyncHistory;
-  },
-
-  _stmts: {},
-  _getStmt(query) {
-    if (query in this._stmts) {
-      return this._stmts[query];
-    }
-
-    this._log.trace("Creating SQL statement: " + query);
-    let db = PlacesUtils.history.QueryInterface(Ci.nsPIPlacesDatabase)
-                        .DBConnection;
-    return this._stmts[query] = db.createAsyncStatement(query);
-  },
-
-  get _setGUIDStm() {
-    return this._getStmt(
-      "UPDATE moz_places " +
-      "SET guid = :guid " +
-      "WHERE url_hash = hash(:page_url) AND url = :page_url");
-  },
+  // We try and only update this many visits at one time.
+  MAX_VISITS_PER_INSERT: 500,
 
   // Some helper functions to handle GUIDs
-  setGUID: function setGUID(uri, guid) {
-    uri = uri.spec ? uri.spec : uri;
+  async setGUID(uri, guid) {
 
     if (!guid) {
       guid = Utils.makeGUID();
     }
 
-    let stmt = this._setGUIDStm;
-    stmt.params.guid = guid;
-    stmt.params.page_url = uri;
-    Async.querySpinningly(stmt);
+    try {
+      await PlacesSyncUtils.history.changeGuid(uri, guid);
+    } catch (e) {
+      this._log.error("Error setting GUID ${guid} for URI ${uri}", guid, uri);
+    }
+
     return guid;
   },
 
-  get _guidStm() {
-    return this._getStmt(
-      "SELECT guid " +
-      "FROM moz_places " +
-      "WHERE url_hash = hash(:page_url) AND url = :page_url");
-  },
-  _guidCols: ["guid"],
-
-  GUIDForUri: function GUIDForUri(uri, create) {
-    let stm = this._guidStm;
-    stm.params.page_url = uri.spec ? uri.spec : uri;
+  async GUIDForUri(uri, create) {
 
     // Use the existing GUID if it exists
-    let result = Async.querySpinningly(stm, this._guidCols)[0];
-    if (result && result.guid)
-      return result.guid;
+    let guid;
+    try {
+      guid = await PlacesSyncUtils.history.fetchGuidForURL(uri);
+    } catch (e) {
+      this._log.error("Error fetching GUID for URL ${uri}", uri);
+    }
 
-    // Give the uri a GUID if it doesn't have one
-    if (create)
+    // If the URI has an existing GUID, return it.
+    if (guid) {
+      return guid;
+    }
+
+    // If the URI doesn't have a GUID and we were indicated to create one.
+    if (create) {
       return this.setGUID(uri);
+    }
+
+    // If the URI doesn't have a GUID and we didn't create one for it.
+    return null;
   },
 
-  get _visitStm() {
-    return this._getStmt(`/* do not warn (bug 599936) */
-      SELECT visit_type type, visit_date date
-      FROM moz_historyvisits
-      JOIN moz_places h ON h.id = place_id
-      WHERE url_hash = hash(:url) AND url = :url
-      ORDER BY date DESC LIMIT 20`);
-  },
-  _visitCols: ["date", "type"],
-
-  get _urlStm() {
-    return this._getStmt(
-      "SELECT url, title, frecency " +
-      "FROM moz_places " +
-      "WHERE guid = :guid");
-  },
-  _urlCols: ["url", "title", "frecency"],
-
-  get _allUrlStm() {
-    // Filter out hidden pages and framed link visits. See `pullNewChanges`
-    // for more info.
-    return this._getStmt(`
-      SELECT DISTINCT p.url
-      FROM moz_places p
-      JOIN moz_historyvisits v ON p.id = v.place_id
-      WHERE p.last_visit_date > :cutoff_date AND
-            p.hidden = 0 AND
-            v.visit_type NOT IN (0,
-              ${PlacesUtils.history.TRANSITION_FRAMED_LINK})
-      ORDER BY frecency DESC
-      LIMIT :max_results`);
-  },
-  _allUrlCols: ["url"],
-
-  // See bug 320831 for why we use SQL here
-  _getVisits: function HistStore__getVisits(uri) {
-    this._visitStm.params.url = uri;
-    return Async.querySpinningly(this._visitStm, this._visitCols);
+  async changeItemID(oldID, newID) {
+    let info = await PlacesSyncUtils.history.fetchURLInfoForGuid(oldID);
+    if (!info) {
+      throw new Error(`Can't change ID for nonexistent history entry ${oldID}`);
+    }
+    this.setGUID(info.url, newID);
   },
 
-  // See bug 468732 for why we use SQL here
-  _findURLByGUID: function HistStore__findURLByGUID(guid) {
-    this._urlStm.params.guid = guid;
-    return Async.querySpinningly(this._urlStm, this._urlCols)[0];
+  async getAllIDs() {
+    let urls = await PlacesSyncUtils.history.getAllURLs({ since: new Date((Date.now() - THIRTY_DAYS_IN_MS)), limit: MAX_HISTORY_UPLOAD });
+
+    let urlsByGUID = {};
+    for (let url of urls) {
+      if (!this.engine.shouldSyncURL(url)) {
+        continue;
+      }
+      let guid = await this.GUIDForUri(url, true);
+      urlsByGUID[guid] = url;
+    }
+    return urlsByGUID;
   },
 
-  changeItemID: function HStore_changeItemID(oldID, newID) {
-    this.setGUID(this._findURLByGUID(oldID).url, newID);
-  },
-
-
-  getAllIDs: function HistStore_getAllIDs() {
-    // Only get places visited within the last 30 days (30*24*60*60*1000ms)
-    this._allUrlStm.params.cutoff_date = (Date.now() - 2592000000) * 1000;
-    this._allUrlStm.params.max_results = MAX_HISTORY_UPLOAD;
-
-    let urls = Async.querySpinningly(this._allUrlStm, this._allUrlCols);
-    let self = this;
-    return urls.reduce(function(ids, item) {
-      ids[self.GUIDForUri(item.url, true)] = item.url;
-      return ids;
-    }, {});
-  },
-
-  applyIncomingBatch: function applyIncomingBatch(records) {
+  async applyIncomingBatch(records) {
+    // Convert incoming records to mozIPlaceInfo objects which are applied as
+    // either history additions or removals.
     let failed = [];
-
-    // Convert incoming records to mozIPlaceInfo objects. Some records can be
-    // ignored or handled directly, so we're rewriting the array in-place.
-    let i, k;
-    for (i = 0, k = 0; i < records.length; i++) {
-      let record = records[k] = records[i];
-      let shouldApply;
-
-      // This is still synchronous I/O for now.
+    let toAdd = [];
+    let toRemove = [];
+    for await (let record of Async.yieldingIterator(records)) {
+      if (record.deleted) {
+        toRemove.push(record);
+      } else {
+        try {
+          let pageInfo = await this._recordToPlaceInfo(record);
+          if (pageInfo) {
+            toAdd.push(pageInfo);
+          }
+        } catch (ex) {
+          if (Async.isShutdownException(ex)) {
+            throw ex;
+          }
+          this._log.error("Failed to create a place info", ex);
+          this._log.trace("The record that failed", record);
+          failed.push(record.id);
+        }
+      }
+    }
+    if (toAdd.length || toRemove.length) {
+      // We want to notify history observers that a batch operation is underway
+      // so they don't do lots of work for each incoming record.
+      let observers = PlacesUtils.history.getObservers();
+      const notifyHistoryObservers = (notification) => {
+        for (let observer of observers) {
+          try {
+            observer[notification]();
+          } catch (ex) {
+            // don't log an error - it's not our code that failed and we don't
+            // want an error log written just for this.
+            this._log.info("history observer failed", ex);
+          }
+        }
+      };
+      notifyHistoryObservers("onBeginUpdateBatch");
       try {
-        if (record.deleted) {
-          // Consider using nsIBrowserHistory::removePages() here.
-          this.remove(record);
-          // No further processing needed. Remove it from the list.
-          shouldApply = false;
-        } else {
-          shouldApply = this._recordToPlaceInfo(record);
+        if (toRemove.length) {
+          // PlacesUtils.history.remove takes an array of visits to remove,
+          // but the error semantics are tricky - a single "bad" entry will cause
+          // an exception before anything is removed. So we do remove them one at
+          // a time.
+          for await (let record of Async.yieldingIterator(toRemove)) {
+            try {
+              await this.remove(record);
+            } catch (ex) {
+              if (Async.isShutdownException(ex)) {
+                throw ex;
+              }
+              this._log.error("Failed to delete a place info", ex);
+              this._log.trace("The record that failed", record);
+              failed.push(record.id);
+            }
+          }
         }
-      } catch (ex) {
-        if (Async.isShutdownException(ex)) {
-          throw ex;
+        for (let chunk of this._generateChunks(toAdd)) {
+          // Per bug 1415560, we ignore any exceptions returned by insertMany
+          // as they are likely to be spurious. We do supply an onError handler
+          // and log the exceptions seen there as they are likely to be
+          // informative, but we still never abort the sync based on them.
+          try {
+            await PlacesUtils.history.insertMany(chunk, null, failedVisit => {
+              this._log.info("Failed to insert a history record", failedVisit.guid);
+              this._log.trace("The record that failed", failedVisit);
+              failed.push(failedVisit.guid);
+            });
+          } catch (ex) {
+            this._log.info("Failed to insert history records", ex);
+          }
         }
-        failed.push(record.id);
-        shouldApply = false;
-      }
-
-      if (shouldApply) {
-        k += 1;
+      } finally {
+        notifyHistoryObservers("onEndUpdateBatch");
       }
     }
-    records.length = k; // truncate array
 
-    // Nothing to do.
-    if (!records.length) {
-      return failed;
-    }
-
-    let updatePlacesCallback = {
-      handleResult: function handleResult() {},
-      handleError: function handleError(resultCode, placeInfo) {
-        failed.push(placeInfo.guid);
-      },
-      handleCompletion: Async.makeSyncCallback()
-    };
-    this._asyncHistory.updatePlaces(records, updatePlacesCallback);
-    Async.waitForSyncCallback(updatePlacesCallback.handleCompletion);
     return failed;
+  },
+
+  /**
+   * Returns a generator that splits records into sanely sized chunks suitable
+   * for passing to places to prevent places doing bad things at shutdown.
+   */
+  * _generateChunks(records) {
+    // We chunk based on the number of *visits* inside each record. However,
+    // we do not split a single record into multiple records, because at some
+    // time in the future, we intend to ensure these records are ordered by
+    // lastModified, and advance the engine's timestamp as we process them,
+    // meaning we can resume exactly where we left off next sync - although
+    // currently that's not done, so we will retry the entire batch next sync
+    // if interrupted.
+    // ie, this means that if a single record has more than MAX_VISITS_PER_INSERT
+    // visits, we will call insertMany() with exactly 1 record, but with
+    // more than MAX_VISITS_PER_INSERT visits.
+    let curIndex = 0;
+    this._log.debug(`adding ${records.length} records to history`);
+    while (curIndex < records.length) {
+      Async.checkAppReady(); // may throw if we are shutting down.
+      let toAdd = []; // what we are going to insert.
+      let count = 0; // a counter which tells us when toAdd is full.
+      do {
+        let record = records[curIndex];
+        curIndex += 1;
+        toAdd.push(record);
+        count += record.visits.length;
+      } while (curIndex < records.length &&
+               count + records[curIndex].visits.length <= this.MAX_VISITS_PER_INSERT);
+      this._log.trace(`adding ${toAdd.length} items in this chunk`);
+      yield toAdd;
+    }
+  },
+
+  /* An internal helper to determine if we can add an entry to places.
+     Exists primarily so tests can override it.
+   */
+  _canAddURI(uri) {
+    return PlacesUtils.history.canAddURI(uri);
   },
 
   /**
    * Converts a Sync history record to a mozIPlaceInfo.
    *
    * Throws if an invalid record is encountered (invalid URI, etc.),
-   * returns true if the record is to be applied, false otherwise
-   * (no visits to add, etc.),
+   * returns a new PageInfo object if the record is to be applied, null
+   * otherwise (no visits to add, etc.),
    */
-  _recordToPlaceInfo: function _recordToPlaceInfo(record) {
+  async _recordToPlaceInfo(record) {
     // Sort out invalid URIs and ones Places just simply doesn't want.
-    record.uri = Utils.makeURI(record.histUri);
-    if (!record.uri) {
-      this._log.warn("Attempted to process invalid URI, skipping.");
-      throw "Invalid URI in record";
-    }
+    record.url = PlacesUtils.normalizeToURLOrGUID(record.histUri);
+    record.uri = CommonUtils.makeURI(record.histUri);
 
     if (!Utils.checkGUID(record.id)) {
       this._log.warn("Encountered record with invalid GUID: " + record.id);
-      return false;
+      return null;
     }
     record.guid = record.id;
 
-    if (!PlacesUtils.history.canAddURI(record.uri)) {
+    if (!this._canAddURI(record.uri) ||
+        !this.engine.shouldSyncURL(record.uri.spec)) {
       this._log.trace("Ignoring record " + record.id + " with URI "
                       + record.uri.spec + ": can't add this URI.");
-      return false;
+      return null;
     }
 
     // We dupe visits by date and type. So an incoming visit that has
     // the same timestamp and type as a local one won't get applied.
     // To avoid creating new objects, we rewrite the query result so we
     // can simply check for containment below.
-    let curVisits = this._getVisits(record.histUri);
+    let curVisitsAsArray = [];
+    let curVisits = new Set();
+    try {
+      curVisitsAsArray = await PlacesSyncUtils.history.fetchVisitsForURL(record.histUri);
+    } catch (e) {
+      this._log.error("Error while fetching visits for URL ${record.histUri}", record.histUri);
+    }
+    let oldestAllowed = PlacesSyncUtils.bookmarks.EARLIEST_BOOKMARK_TIMESTAMP;
+    if (curVisitsAsArray.length == 20) {
+      let oldestVisit = curVisitsAsArray[curVisitsAsArray.length - 1];
+      oldestAllowed = PlacesSyncUtils.history.clampVisitDate(
+        PlacesUtils.toDate(oldestVisit.date).getTime());
+    }
+
     let i, k;
-    for (i = 0; i < curVisits.length; i++) {
-      curVisits[i] = curVisits[i].date + "," + curVisits[i].type;
+    for (i = 0; i < curVisitsAsArray.length; i++) {
+      // Same logic as used in the loop below to generate visitKey.
+      let {date, type} = curVisitsAsArray[i];
+      let dateObj = PlacesUtils.toDate(date);
+      let millis = PlacesSyncUtils.history.clampVisitDate(dateObj).getTime();
+      curVisits.add(`${millis},${type}`);
     }
 
     // Walk through the visits, make sure we have sound data, and eliminate
@@ -346,7 +357,7 @@ HistoryStore.prototype = {
     for (i = 0, k = 0; i < record.visits.length; i++) {
       let visit = record.visits[k] = record.visits[i];
 
-      if (!visit.date || typeof visit.date != "number") {
+      if (!visit.date || typeof visit.date != "number" || !Number.isInteger(visit.date)) {
         this._log.warn("Encountered record with invalid visit date: "
                        + visit.date);
         continue;
@@ -359,58 +370,82 @@ HistoryStore.prototype = {
         continue;
       }
 
-      // Dates need to be integers.
-      visit.date = Math.round(visit.date);
+      // Dates need to be integers. Future and far past dates are clamped to the
+      // current date and earliest sensible date, respectively.
+      let originalVisitDate = PlacesUtils.toDate(Math.round(visit.date));
+      visit.date = PlacesSyncUtils.history.clampVisitDate(originalVisitDate);
 
-      if (curVisits.indexOf(visit.date + "," + visit.type) != -1) {
+      if (visit.date.getTime() < oldestAllowed) {
+        // Visit is older than the oldest visit we have, and we have so many
+        // visits for this uri that we hit our limit when inserting.
+        continue;
+      }
+      let visitKey = `${visit.date.getTime()},${visit.type}`;
+      if (curVisits.has(visitKey)) {
         // Visit is a dupe, don't increment 'k' so the element will be
         // overwritten.
         continue;
       }
 
-      visit.visitDate = visit.date;
-      visit.transitionType = visit.type;
+      // Note the visit key, so that we don't add duplicate visits with
+      // clamped timestamps.
+      curVisits.add(visitKey);
+
+      visit.transition = visit.type;
       k += 1;
     }
     record.visits.length = k; // truncate array
 
     // No update if there aren't any visits to apply.
-    // mozIAsyncHistory::updatePlaces() wants at least one visit.
+    // History wants at least one visit.
     // In any case, the only thing we could change would be the title
     // and that shouldn't change without a visit.
     if (!record.visits.length) {
       this._log.trace("Ignoring record " + record.id + " with URI "
                       + record.uri.spec + ": no visits to add.");
-      return false;
+      return null;
     }
 
-    return true;
+    // PageInfo is validated using validateItemProperties which does a shallow
+    // copy of the properties. Since record uses getters some of the properties
+    // are not copied over. Thus we create and return a new object.
+    let pageInfo = {
+      title: record.title,
+      url: record.url,
+      guid: record.guid,
+      visits: record.visits,
+    };
+
+    return pageInfo;
   },
 
-  remove: function HistStore_remove(record) {
-    let page = this._findURLByGUID(record.id);
-    if (page == null) {
+  async remove(record) {
+    this._log.trace("Removing page: " + record.id);
+    let removed = await PlacesUtils.history.remove(record.id);
+    if (removed) {
+      this._log.trace("Removed page: " + record.id);
+    } else {
       this._log.debug("Page already removed: " + record.id);
-      return;
     }
-
-    let uri = Utils.makeURI(page.url);
-    PlacesUtils.history.removePage(uri);
-    this._log.trace("Removed page: " + [record.id, page.url, page.title]);
   },
 
-  itemExists: function HistStore_itemExists(id) {
-    return !!this._findURLByGUID(id);
+  async itemExists(id) {
+    return !!(await PlacesSyncUtils.history.fetchURLInfoForGuid(id));
   },
 
-  createRecord: function createRecord(id, collection) {
-    let foo = this._findURLByGUID(id);
+  async createRecord(id, collection) {
+    let foo = await PlacesSyncUtils.history.fetchURLInfoForGuid(id);
     let record = new HistoryRec(collection, id);
     if (foo) {
       record.histUri = foo.url;
       record.title = foo.title;
       record.sortindex = foo.frecency;
-      record.visits = this._getVisits(record.histUri);
+      try {
+        record.visits = await PlacesSyncUtils.history.fetchVisitsForURL(record.histUri);
+      } catch (e) {
+        this._log.error("Error while fetching visits for URL ${record.histUri}", record.histUri);
+        record.visits = [];
+      }
     } else {
       record.deleted = true;
     }
@@ -418,11 +453,9 @@ HistoryStore.prototype = {
     return record;
   },
 
-  wipe: function HistStore_wipe() {
-    let cb = Async.makeSyncCallback();
-    PlacesUtils.history.clear().then(result => { cb(null, result) }, err => { cb(err) });
-    return Async.waitForSyncCallback(cb);
-  }
+  async wipe() {
+    return PlacesSyncUtils.history.wipe();
+  },
 };
 
 function HistoryTracker(name, engine) {
@@ -431,48 +464,66 @@ function HistoryTracker(name, engine) {
 HistoryTracker.prototype = {
   __proto__: Tracker.prototype,
 
-  startTracking() {
+  onStart() {
     this._log.info("Adding Places observer.");
     PlacesUtils.history.addObserver(this, true);
+    this._placesObserver =
+      new PlacesWeakCallbackWrapper(this.handlePlacesEvents.bind(this));
+    PlacesObservers.addListener(["page-visited"], this._placesObserver);
   },
 
-  stopTracking() {
+  onStop() {
     this._log.info("Removing Places observer.");
     PlacesUtils.history.removeObserver(this);
+    if (this._placesObserver) {
+      PlacesObservers.removeListener(["page-visited"], this._placesObserver);
+    }
   },
 
-  QueryInterface: XPCOMUtils.generateQI([
+  QueryInterface: ChromeUtils.generateQI([
     Ci.nsINavHistoryObserver,
-    Ci.nsISupportsWeakReference
+    Ci.nsISupportsWeakReference,
   ]),
 
-  onDeleteAffectsGUID(uri, guid, reason, source, increment) {
+  async onDeleteAffectsGUID(uri, guid, reason, source, increment) {
     if (this.ignoreAll || reason == Ci.nsINavHistoryObserver.REASON_EXPIRED) {
       return;
     }
     this._log.trace(source + ": " + uri.spec + ", reason " + reason);
-    if (this.addChangedID(guid)) {
+    const added = await this.addChangedID(guid);
+    if (added) {
       this.score += increment;
     }
   },
 
-  onDeleteVisits(uri, visitTime, guid, reason) {
-    this.onDeleteAffectsGUID(uri, guid, reason, "onDeleteVisits", SCORE_INCREMENT_SMALL);
+  onDeleteVisits(uri, partialRemoval, guid, reason) {
+    this.asyncObserver.enqueueCall(() =>
+      this.onDeleteAffectsGUID(uri, guid, reason, "onDeleteVisits", SCORE_INCREMENT_SMALL)
+    );
   },
 
   onDeleteURI(uri, guid, reason) {
-    this.onDeleteAffectsGUID(uri, guid, reason, "onDeleteURI", SCORE_INCREMENT_XLARGE);
+    this.asyncObserver.enqueueCall(() =>
+      this.onDeleteAffectsGUID(uri, guid, reason, "onDeleteURI", SCORE_INCREMENT_XLARGE)
+    );
   },
 
-  onVisit(uri, vid, time, session, referrer, trans, guid) {
+  handlePlacesEvents(aEvents) {
+    this.asyncObserver.enqueueCall(() => this._handlePlacesEvents(aEvents));
+  },
+
+  async _handlePlacesEvents(aEvents) {
     if (this.ignoreAll) {
-      this._log.trace("ignoreAll: ignoring visit for " + guid);
+      this._log.trace("ignoreAll: ignoring visits [" +
+                      aEvents.map(v => v.guid).join(",") + "]");
       return;
     }
-
-    this._log.trace("onVisit: " + uri.spec);
-    if (this.addChangedID(guid)) {
-      this.score += SCORE_INCREMENT_SMALL;
+    for (let event of aEvents) {
+      this._log.trace("'page-visited': " + event.url);
+      if (this.engine.shouldSyncURL(event.url) &&
+          await this.addChangedID(event.pageGuid)) {
+        this.score += SCORE_INCREMENT_SMALL;
+      }
     }
   },
 

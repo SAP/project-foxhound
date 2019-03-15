@@ -17,28 +17,30 @@ const TAB_STATE = {entries: [TAB_SHENTRY], formdata: TAB_FORMDATA};
 const FRAME_SCRIPT = "data:," +
                      "content.document.getElementById('errorTryAgain').click()";
 
-add_task(function* () {
+add_task(async function() {
   // Prepare a blank tab.
-  let tab = gBrowser.addTab("about:blank");
+  let tab = BrowserTestUtils.addTab(gBrowser, "about:blank");
   let browser = tab.linkedBrowser;
-  yield promiseBrowserLoaded(browser);
+  await promiseBrowserLoaded(browser);
 
   // Fake a post-crash tab.
   ss.setTabState(tab, JSON.stringify(TAB_STATE));
-  yield promiseTabRestored(tab);
+  await promiseTabRestored(tab);
 
   ok(gBrowser.tabs.length > 1, "we have more than one tab");
 
-  let view = browser.contentDocument.getElementById("tabList").view;
+  let tree = browser.contentDocument.getElementById("tabList");
+  let view = tree.view;
   ok(view.isContainer(0), "first entry is the window");
-  is(view.getCellProperties(1, { id: "title" }), "icon",
+  let titleColumn = tree.columns.title;
+  is(view.getCellProperties(1, titleColumn), "icon",
     "second entry is the tab and has a favicon");
 
   browser.messageManager.loadFrameScript(FRAME_SCRIPT, true);
 
   // Wait until the new window was restored.
-  let win = yield waitForNewWindow();
-  yield BrowserTestUtils.closeWindow(win);
+  let win = await waitForNewWindow();
+  await BrowserTestUtils.closeWindow(win);
 
   let [{tabs: [{entries: [{url}]}]}] = JSON.parse(ss.getClosedWindowData());
   is(url, CRASH_URL, "session was restored correctly");
@@ -50,6 +52,6 @@ function waitForNewWindow() {
     Services.obs.addObserver(function observe(win, topic) {
       Services.obs.removeObserver(observe, topic);
       resolve(win);
-    }, "browser-delayed-startup-finished", false);
+    }, "browser-delayed-startup-finished");
   });
 }

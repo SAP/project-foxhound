@@ -4,7 +4,7 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
- 
+
 #ifndef SKSL_SYMBOL
 #define SKSL_SYMBOL
 
@@ -24,13 +24,15 @@ struct Symbol : public IRNode {
         kField_Kind
     };
 
-    Symbol(Position position, Kind kind, std::string name)
-    : INHERITED(position)
+    Symbol(int offset, Kind kind, StringFragment name)
+    : INHERITED(offset)
     , fKind(kind)
-    , fName(std::move(name)) {}
+    , fName(name) {}
 
-    const Kind fKind;
-    const std::string fName;
+    virtual ~Symbol() {}
+
+    Kind fKind;
+    StringFragment fName;
 
     typedef IRNode INHERITED;
 };

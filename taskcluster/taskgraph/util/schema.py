@@ -4,10 +4,14 @@
 
 from __future__ import absolute_import, print_function, unicode_literals
 
-import copy
+import re
 import pprint
+import collections
 import voluptuous
 
+import taskgraph
+
+from mozbuild import schedules
 from .attributes import keymatch
 
 
@@ -16,9 +20,10 @@ def validate_schema(schema, obj, msg_prefix):
     Validate that object satisfies schema.  If not, generate a useful exception
     beginning with msg_prefix.
     """
+    if taskgraph.fast:
+        return
     try:
-        # deep copy the result since it may include mutable defaults
-        return copy.deepcopy(schema(obj))
+        schema(obj)
     except voluptuous.MultipleInvalid as exc:
         msg = [msg_prefix]
         for error in exc.errors:
@@ -70,7 +75,7 @@ def resolve_keyed_by(item, field, item_name, **extra_values):
                     win.*: 6
                     default: 12
 
-    a call to `resolve_keyed_by(item, 'job.chunks', item['thing-name'])
+    a call to `resolve_keyed_by(item, 'job.chunks', item['thing-name'])`
     would mutate item in-place to::
 
         job:
@@ -110,8 +115,26 @@ def resolve_keyed_by(item, field, item_name, **extra_values):
             return item
 
         keyed_by = value.keys()[0][3:]  # strip off 'by-' prefix
-        key = extra_values.get(keyed_by) if keyed_by in extra_values else item[keyed_by]
+        key = extra_values[keyed_by] if keyed_by in extra_values else item.get(keyed_by)
         alternatives = value.values()[0]
+
+        if len(alternatives) == 1 and 'default' in alternatives:
+            # Error out when only 'default' is specified as only alternatives,
+            # because we don't need to by-{keyed_by} there.
+            raise Exception(
+                "Keyed-by '{}' unnecessary with only value 'default' "
+                "found, when determining item '{}' in '{}'".format(
+                    keyed_by, field, item_name))
+
+        if key is None:
+            if 'default' in alternatives:
+                value = container[subfield] = alternatives['default']
+                continue
+            else:
+                raise Exception(
+                    "No attribute {} and no value for 'default' found "
+                    "while determining item {} in {}".format(
+                        keyed_by, field, item_name))
 
         matches = keymatch(alternatives, key)
         if len(matches) > 1:
@@ -126,3 +149,92 @@ def resolve_keyed_by(item, field, item_name, **extra_values):
         raise Exception(
             "No {} matching {!r} nor 'default' found while determining item {} in {}".format(
                 keyed_by, key, field, item_name))
+
+
+# Schemas for YAML files should use dashed identifiers by default.  If there are
+# components of the schema for which there is a good reason to use another format,
+# they can be whitelisted here.
+WHITELISTED_SCHEMA_IDENTIFIERS = [
+    # upstream-artifacts are handed directly to scriptWorker, which expects interCaps
+    lambda path: "[u'upstream-artifacts']" in path,
+]
+
+
+def check_schema(schema):
+    identifier_re = re.compile('^[a-z][a-z0-9-]*$')
+
+    def whitelisted(path):
+        return any(f(path) for f in WHITELISTED_SCHEMA_IDENTIFIERS)
+
+    def iter(path, sch):
+        def check_identifier(path, k):
+            if k in (basestring, voluptuous.Extra):
+                pass
+            elif isinstance(k, basestring):
+                if not identifier_re.match(k) and not whitelisted(path):
+                    raise RuntimeError(
+                        'YAML schemas should use dashed lower-case identifiers, '
+                        'not {!r} @ {}'.format(k, path))
+            elif isinstance(k, (voluptuous.Optional, voluptuous.Required)):
+                check_identifier(path, k.schema)
+            elif isinstance(k, voluptuous.Any):
+                for v in k.validators:
+                    check_identifier(path, v)
+            elif not whitelisted(path):
+                raise RuntimeError(
+                    'Unexpected type in YAML schema: {} @ {}'.format(
+                        type(k).__name__, path))
+
+        if isinstance(sch, collections.Mapping):
+            for k, v in sch.iteritems():
+                child = "{}[{!r}]".format(path, k)
+                check_identifier(child, k)
+                iter(child, v)
+        elif isinstance(sch, (list, tuple)):
+            for i, v in enumerate(sch):
+                iter("{}[{}]".format(path, i), v)
+        elif isinstance(sch, voluptuous.Any):
+            for v in sch.validators:
+                iter(path, v)
+    iter('schema', schema.schema)
+
+
+class Schema(voluptuous.Schema):
+    """
+    Operates identically to voluptuous.Schema, but applying some taskgraph-specific checks
+    in the process.
+    """
+    def __init__(self, *args, **kwargs):
+        super(Schema, self).__init__(*args, **kwargs)
+        check_schema(self)
+
+    def extend(self, *args, **kwargs):
+        schema = super(Schema, self).extend(*args, **kwargs)
+        check_schema(schema)
+        # We want twice extend schema to be checked too.
+        schema.__class__ = Schema
+        return schema
+
+
+OptimizationSchema = voluptuous.Any(
+    # always run this task (default)
+    None,
+    # search the index for the given index namespaces, and replace this task if found
+    # the search occurs in order, with the first match winning
+    {'index-search': [basestring]},
+    # consult SETA and skip this task if it is low-value
+    {'seta': None},
+    # skip this task if none of the given file patterns match
+    {'skip-unless-changed': [basestring]},
+    # skip this task if unless the change files' SCHEDULES contains any of these components
+    {'skip-unless-schedules': list(schedules.ALL_COMPONENTS)},
+    # skip if SETA or skip-unless-schedules says to
+    {'skip-unless-schedules-or-seta': list(schedules.ALL_COMPONENTS)},
+)
+
+# shortcut for a string where task references are allowed
+taskref_or_string = voluptuous.Any(
+    basestring,
+    {voluptuous.Required('task-reference'): basestring},
+    {voluptuous.Required('artifact-reference'): basestring},
+)

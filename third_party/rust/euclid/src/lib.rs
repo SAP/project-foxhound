@@ -7,12 +7,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![cfg_attr(feature = "unstable", feature(asm, repr_simd, test))]
+#![cfg_attr(feature = "unstable", feature(fn_must_use))]
+#![cfg_attr(not(test), no_std)]
 
 //! A collection of strongly typed math tools for computer graphics with an inclination
 //! towards 2d graphics and layout.
 //!
-//! All types are generic over the the scalar type of their component (f32, i32, etc.),
+//! All types are generic over the scalar type of their component (`f32`, `i32`, etc.),
 //! and tagged with a generic Unit parameter which is useful to prevent mixing
 //! values from different spaces. For example it should not be legal to translate
 //! a screen-space position by a world-space vector and this can be expressed using
@@ -24,9 +25,6 @@
 //! Client code typically creates a set of aliases for each type and doesn't need
 //! to deal with the specifics of typed units further. For example:
 //!
-//! All euclid types are marked #[repr(C)] in order to facilitate exposing them to
-//! foreign function interfaces (provided the underlying scalar type is also repr(C)).
-//!
 //! ```rust
 //! use euclid::*;
 //! pub struct ScreenSpace;
@@ -34,9 +32,12 @@
 //! pub type ScreenSize = TypedSize2D<f32, ScreenSpace>;
 //! pub struct WorldSpace;
 //! pub type WorldPoint = TypedPoint3D<f32, WorldSpace>;
-//! pub type ProjectionMatrix = TypedMatrix4D<f32, WorldSpace, ScreenSpace>;
+//! pub type ProjectionMatrix = TypedTransform3D<f32, WorldSpace, ScreenSpace>;
 //! // etc...
 //! ```
+//!
+//! All euclid types are marked `#[repr(C)]` in order to facilitate exposing them to
+//! foreign function interfaces (provided the underlying scalar type is also `repr(C)`).
 //!
 //! Components are accessed in their scalar form by default for convenience, and most
 //! types additionally implement strongly typed accessors which return typed ```Length``` wrappers.
@@ -55,59 +56,79 @@
 //! assert_eq!(p.x, p.x_typed().get());
 //! ```
 
-extern crate heapsize;
-
-#[cfg_attr(test, macro_use)]
-extern crate log;
-extern crate rustc_serialize;
+#[cfg(feature = "serde")]
+#[macro_use]
 extern crate serde;
 
+#[cfg(feature = "mint")]
+pub extern crate mint;
+#[macro_use]
+extern crate euclid_macros;
+extern crate num_traits;
 #[cfg(test)]
 extern crate rand;
-#[cfg(feature = "unstable")]
-extern crate test;
-extern crate num_traits;
+#[cfg(test)]
+use std as core;
 
 pub use length::Length;
-pub use scale_factor::ScaleFactor;
-pub use matrix2d::{Matrix2D, TypedMatrix2D};
-pub use matrix4d::{Matrix4D, TypedMatrix4D};
-pub use point::{
-    Point2D, TypedPoint2D,
-    Point3D, TypedPoint3D,
-    Point4D, TypedPoint4D,
-};
-pub use rect::{Rect, TypedRect};
-pub use side_offsets::{SideOffsets2D, TypedSideOffsets2D};
-#[cfg(feature = "unstable")] pub use side_offsets::SideOffsets2DSimdI32;
-pub use size::{Size2D, TypedSize2D};
+pub use scale::TypedScale;
+pub use transform2d::{Transform2D, TypedTransform2D};
+pub use transform3d::{Transform3D, TypedTransform3D};
+pub use point::{Point2D, Point3D, TypedPoint2D, TypedPoint3D, point2, point3};
+pub use vector::{TypedVector2D, TypedVector3D, Vector2D, Vector3D, vec2, vec3};
+pub use vector::{BoolVector2D, BoolVector3D, bvec2, bvec3};
+pub use homogen::HomogeneousVector;
 
-pub mod approxeq;
-pub mod length;
+pub use rect::{rect, Rect, TypedRect};
+pub use translation::{TypedTranslation2D, TypedTranslation3D};
+pub use rotation::{Angle, Rotation2D, Rotation3D, TypedRotation2D, TypedRotation3D};
+pub use side_offsets::{SideOffsets2D, TypedSideOffsets2D};
+pub use size::{Size2D, TypedSize2D, size2};
+pub use trig::Trig;
+
 #[macro_use]
 mod macros;
-pub mod matrix2d;
-pub mod matrix4d;
+
+pub mod approxeq;
+mod homogen;
 pub mod num;
-pub mod point;
-pub mod rect;
-pub mod scale_factor;
-pub mod side_offsets;
-pub mod size;
+mod length;
+mod point;
+mod rect;
+mod rotation;
+mod scale;
+mod side_offsets;
+mod size;
+mod transform2d;
+mod transform3d;
+mod translation;
 mod trig;
+mod vector;
 
 /// The default unit.
-#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy)]
 pub struct UnknownUnit;
 
-/// Unit for angles in radians.
-pub struct Rad;
+/// Temporary alias to facilitate the transition to the new naming scheme
+#[deprecated]
+pub type Matrix2D<T> = Transform2D<T>;
 
-/// Unit for angles in degrees.
-pub struct Deg;
+/// Temporary alias to facilitate the transition to the new naming scheme
+#[deprecated]
+pub type TypedMatrix2D<T, Src, Dst> = TypedTransform2D<T, Src, Dst>;
 
-/// A value in radians.
-pub type Radians<T> = Length<T, Rad>;
+/// Temporary alias to facilitate the transition to the new naming scheme
+#[deprecated]
+pub type Matrix4D<T> = Transform3D<T>;
 
-/// A value in Degrees.
-pub type Degrees<T> = Length<T, Deg>;
+/// Temporary alias to facilitate the transition to the new naming scheme
+#[deprecated]
+pub type TypedMatrix4D<T, Src, Dst> = TypedTransform3D<T, Src, Dst>;
+
+/// Temporary alias to facilitate the transition to the new naming scheme
+#[deprecated]
+pub type ScaleFactor<T, Src, Dst> = TypedScale<T, Src, Dst>;
+
+/// Temporary alias to facilitate the transition to the new naming scheme
+#[deprecated]
+pub use Angle as Radians;

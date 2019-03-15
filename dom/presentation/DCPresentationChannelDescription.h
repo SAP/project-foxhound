@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,24 +14,22 @@ namespace mozilla {
 namespace dom {
 
 // PresentationChannelDescription for Data Channel
-class DCPresentationChannelDescription final : public nsIPresentationChannelDescription
-{
-public:
+class DCPresentationChannelDescription final
+    : public nsIPresentationChannelDescription {
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIPRESENTATIONCHANNELDESCRIPTION
 
   explicit DCPresentationChannelDescription(const nsAString& aSDP)
-    : mSDP(aSDP)
-  {
-  }
+      : mSDP(aSDP) {}
 
-private:
+ private:
   virtual ~DCPresentationChannelDescription() = default;
 
   nsString mSDP;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_DCPresentationChannelDescription_h
+#endif  // mozilla_dom_DCPresentationChannelDescription_h

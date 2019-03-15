@@ -6,6 +6,8 @@
  * The origin of this IDL file is
  * http://www.whatwg.org/specs/web-apps/current-work/#the-iframe-element
  * http://www.whatwg.org/specs/web-apps/current-work/#other-elements,-attributes-and-apis
+ * https://wicg.github.io/feature-policy/#policy
+ *
  * © Copyright 2004-2011 Apple Computer, Inc., Mozilla Foundation, and
  * Opera Software ASA. You are granted a license to use, reproduce
  * and create derivative works of this document.
@@ -13,21 +15,23 @@
 
 [HTMLConstructor]
 interface HTMLIFrameElement : HTMLElement {
-  [SetterThrows, Pure]
+  [CEReactions, SetterNeedsSubjectPrincipal=NonSystem, SetterThrows, Pure]
            attribute DOMString src;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString srcdoc;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString name;
   [PutForwards=value] readonly attribute DOMTokenList sandbox;
            // attribute boolean seamless;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute boolean allowFullscreen;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
+           attribute boolean allowPaymentRequest;
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString width;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString height;
-  [SetterThrows, Pure, Pref="network.http.enablePerElementReferrer"]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString referrerPolicy;
   [NeedsSubjectPrincipal]
   readonly attribute Document? contentDocument;
@@ -36,17 +40,19 @@ interface HTMLIFrameElement : HTMLElement {
 
 // http://www.whatwg.org/specs/web-apps/current-work/#other-elements,-attributes-and-apis
 partial interface HTMLIFrameElement {
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString align;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString scrolling;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString frameBorder;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString longDesc;
 
-  [TreatNullAs=EmptyString,SetterThrows,Pure] attribute DOMString marginHeight;
-  [TreatNullAs=EmptyString,SetterThrows,Pure] attribute DOMString marginWidth;
+  [CEReactions, TreatNullAs=EmptyString, SetterThrows, Pure]
+           attribute DOMString marginHeight;
+  [CEReactions, TreatNullAs=EmptyString, SetterThrows, Pure]
+           attribute DOMString marginWidth;
 };
 
 partial interface HTMLIFrameElement {
@@ -63,3 +69,12 @@ partial interface HTMLIFrameElement {
 
 HTMLIFrameElement implements MozFrameLoaderOwner;
 HTMLIFrameElement implements BrowserElement;
+
+// https://wicg.github.io/feature-policy/#policy
+partial interface HTMLIFrameElement {
+  [SameObject, Pref="dom.security.featurePolicy.webidl.enabled"]
+  readonly attribute Policy policy;
+
+  [CEReactions, SetterThrows, Pure, Pref="dom.security.featurePolicy.enabled"]
+           attribute DOMString allow;
+};

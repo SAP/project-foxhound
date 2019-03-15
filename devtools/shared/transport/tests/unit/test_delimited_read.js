@@ -8,11 +8,11 @@ const StringInputStream = CC("@mozilla.org/io/string-input-stream;1",
                              "nsIStringInputStream", "setData");
 
 function run_test() {
-  add_task(function* () {
-    yield test_delimited_read("0123:", "0123:");
-    yield test_delimited_read("0123:4567:", "0123:");
-    yield test_delimited_read("012345678901:", "0123456789");
-    yield test_delimited_read("0123/0123", "0123/0123");
+  add_task(async function() {
+    await test_delimited_read("0123:", "0123:");
+    await test_delimited_read("0123:4567:", "0123:");
+    await test_delimited_read("012345678901:", "0123456789");
+    await test_delimited_read("0123/0123", "0123/0123");
   });
 
   run_next_test();
@@ -22,6 +22,6 @@ function run_test() {
 
 function test_delimited_read(input, expected) {
   input = new StringInputStream(input, input.length);
-  let result = StreamUtils.delimitedRead(input, ":", 10);
-  do_check_eq(result, expected);
+  const result = StreamUtils.delimitedRead(input, ":", 10);
+  Assert.equal(result, expected);
 }

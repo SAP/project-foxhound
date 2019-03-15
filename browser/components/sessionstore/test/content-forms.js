@@ -2,9 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-"use strict";
+/* eslint-env mozilla/frame-script */
 
-var {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
+"use strict";
 
 /**
  * This frame script is only loaded for sessionstore mochitests. It contains
@@ -29,7 +29,7 @@ function queryElement(data) {
   }
 
   if (data.hasOwnProperty("xpath")) {
-    let xptype = Ci.nsIDOMXPathResult.FIRST_ORDERED_NODE_TYPE;
+    let xptype = doc.defaultView.XPathResult.FIRST_ORDERED_NODE_TYPE;
     return doc.evaluate(data.xpath, doc, null, xptype, null).singleNodeValue;
   }
 
@@ -43,89 +43,72 @@ function dispatchUIEvent(input, type) {
 }
 
 function defineListener(type, cb) {
-  addMessageListener("ss-test:" + type, function ({data}) {
+  addMessageListener("ss-test:" + type, function({data}) {
     sendAsyncMessage("ss-test:" + type, cb(data));
   });
 }
 
-defineListener("sendKeyEvent", function (data) {
-  let frame = content;
-  if (data.hasOwnProperty("frame")) {
-    frame = content.frames[data.frame];
-  }
-
-  let ifreq = frame.QueryInterface(Ci.nsIInterfaceRequestor);
-  let utils = ifreq.getInterface(Ci.nsIDOMWindowUtils);
-
-  let keyCode = data.key.charCodeAt(0);
-  let charCode = Ci.nsIDOMKeyEvent.DOM_VK_A + keyCode - "a".charCodeAt(0);
-
-  utils.sendKeyEvent("keydown", keyCode, charCode, null);
-  utils.sendKeyEvent("keypress", keyCode, charCode, null);
-  utils.sendKeyEvent("keyup", keyCode, charCode, null);
-});
-
-defineListener("getInnerHTML", function (data) {
+defineListener("getInnerHTML", function(data) {
   return queryElement(data).innerHTML;
 });
 
-defineListener("getTextContent", function (data) {
+defineListener("getTextContent", function(data) {
   return queryElement(data).textContent;
 });
 
-defineListener("getInputValue", function (data) {
+defineListener("getInputValue", function(data) {
   return queryElement(data).value;
 });
 
-defineListener("setInputValue", function (data) {
+defineListener("setInputValue", function(data) {
   let input = queryElement(data);
   input.value = data.value;
   dispatchUIEvent(input, "input");
 });
 
-defineListener("getInputChecked", function (data) {
+defineListener("getInputChecked", function(data) {
   return queryElement(data).checked;
 });
 
-defineListener("setInputChecked", function (data) {
+defineListener("setInputChecked", function(data) {
   let input = queryElement(data);
   input.checked = data.checked;
-  dispatchUIEvent(input, "change");
+  dispatchUIEvent(input, "input");
 });
 
-defineListener("getSelectedIndex", function (data) {
+defineListener("getSelectedIndex", function(data) {
   return queryElement(data).selectedIndex;
 });
 
-defineListener("setSelectedIndex", function (data) {
+defineListener("setSelectedIndex", function(data) {
   let input = queryElement(data);
   input.selectedIndex = data.index;
-  dispatchUIEvent(input, "change");
+  dispatchUIEvent(input, "input");
 });
 
-defineListener("getMultipleSelected", function (data) {
+defineListener("getMultipleSelected", function(data) {
   let input = queryElement(data);
   return Array.map(input.options, (opt, idx) => idx)
               .filter(idx => input.options[idx].selected);
 });
 
-defineListener("setMultipleSelected", function (data) {
+defineListener("setMultipleSelected", function(data) {
   let input = queryElement(data);
   Array.forEach(input.options, (opt, idx) => opt.selected = data.indices.indexOf(idx) > -1);
-  dispatchUIEvent(input, "change");
+  dispatchUIEvent(input, "input");
 });
 
-defineListener("getFileNameArray", function (data) {
+defineListener("getFileNameArray", function(data) {
   return queryElement(data).mozGetFileNameArray();
 });
 
-defineListener("setFileNameArray", function (data) {
+defineListener("setFileNameArray", function(data) {
   let input = queryElement(data);
   input.mozSetFileNameArray(data.names, data.names.length);
   dispatchUIEvent(input, "input");
 });
 
-defineListener("setFormElementValues", function (data) {
+defineListener("setFormElementValues", function(data) {
   for (let elem of content.document.forms[0].elements) {
     elem.value = data.value;
     dispatchUIEvent(elem, "input");

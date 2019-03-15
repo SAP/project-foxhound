@@ -8,14 +8,12 @@ with Files("**"):
     BUG_COMPONENT = ("Core", "Internationalization")
 
 EXPORTS.mozilla.dom += [
-    'EncodingUtils.h',
     'FallbackEncoding.h',
     'TextDecoder.h',
     'TextEncoder.h',
 ]
 
 UNIFIED_SOURCES += [
-    'EncodingUtils.cpp',
     'FallbackEncoding.cpp',
     'TextDecoder.cpp',
     'TextEncoder.cpp',
@@ -26,13 +24,11 @@ LOCAL_INCLUDES += [
     '/intl/locale',
 ]
 
-props2arrays = '/intl/locale/props2arrays.py'
+props2arrays = 'encodings2arrays.py'
 prefixes = (
     'domainsfallbacks',
-    'encodingsgroups',
     'labelsencodings',
     'localesfallbacks',
-    'nonparticipatingdomains',
 )
 
 for prefix in prefixes:
@@ -43,8 +39,19 @@ for prefix in prefixes:
     props.script = props2arrays
     props.inputs = [input_file]
 
+input_file = 'nonparticipatingdomains.properties'
+header = input_file + '.h'
+GENERATED_FILES += [header]
+props = GENERATED_FILES[header]
+props.script = '../../intl/locale/props2arrays.py'
+props.inputs = [input_file]
+
 MOCHITEST_MANIFESTS += [
     'test/mochitest.ini',
 ]
 MOCHITEST_CHROME_MANIFESTS += ['test/chrome.ini']
 XPCSHELL_TESTS_MANIFESTS += ['test/unit/xpcshell.ini']
+
+if (not CONFIG['HAVE_64BIT_BUILD'] and
+    CONFIG['ENABLE_CLANG_PLUGIN'] and CONFIG['CC_TYPE'] == 'clang-cl'):
+    AllowCompilerWarnings()  # workaround for bug 1090497

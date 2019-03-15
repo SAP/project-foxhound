@@ -6,7 +6,6 @@
 // Unfortunately, browser tests cannot load that script as it is too reliant on
 // being loaded in the content process.
 
-Cu.import("resource://gre/modules/Task.jsm");
 
 let dbService = Cc["@mozilla.org/url-classifier/dbservice;1"]
                 .getService(Ci.nsIUrlClassifierDBService);
@@ -15,15 +14,15 @@ if (typeof(classifierHelper) == "undefined") {
   var classifierHelper = {};
 }
 
-const ADD_CHUNKNUM = 524;
-const SUB_CHUNKNUM = 523;
 const HASHLEN = 32;
 
 const PREFS = {
-  PROVIDER_LISTS : "browser.safebrowsing.provider.mozilla.lists",
-  DISALLOW_COMPLETIONS : "urlclassifier.disallow_completions",
-  PROVIDER_GETHASHURL : "browser.safebrowsing.provider.mozilla.gethashURL"
+  PROVIDER_LISTS: "browser.safebrowsing.provider.mozilla.lists",
+  DISALLOW_COMPLETIONS: "urlclassifier.disallow_completions",
+  PROVIDER_GETHASHURL: "browser.safebrowsing.provider.mozilla.gethashURL",
 };
+
+classifierHelper._curAddChunkNum = 1;
 
 // Keep urls added to database, those urls should be automatically
 // removed after test complete.
@@ -35,35 +34,21 @@ classifierHelper._updatesToCleanup = [];
 // after the event had already been notified, we lookup entries to see if
 // they are already added to database.
 classifierHelper.waitForInit = function() {
-  let observerService = Cc["@mozilla.org/observer-service;1"]
-                        .getService(Ci.nsIObserverService);
-  let secMan = Cc["@mozilla.org/scriptsecuritymanager;1"]
-               .getService(Ci.nsIScriptSecurityManager);
-  let iosvc = Cc["@mozilla.org/network/io-service;1"]
-              .getService(Ci.nsIIOService);
-
   // This url must sync with the table, url in SafeBrowsing.jsm addMozEntries
   const table = "test-phish-simple";
   const url = "http://itisatrap.org/firefox/its-a-trap.html";
-  let principal = secMan.createCodebasePrincipal(
-    iosvc.newURI(url, null, null), {});
+  let principal = Services.scriptSecurityManager.createCodebasePrincipal(
+    Services.io.newURI(url), {});
 
   return new Promise(function(resolve, reject) {
-    observerService.addObserver(function() {
+    Services.obs.addObserver(function() {
       resolve();
-    }, "mozentries-update-finished", false);
+    }, "mozentries-update-finished");
 
     let listener = {
-      QueryInterface: function(iid)
-      {
-        if (iid.equals(Ci.nsISupports) ||
-          iid.equals(Ci.nsIUrlClassifierUpdateObserver))
-          return this;
-        throw Cr.NS_ERROR_NO_INTERFACE;
-      },
+      QueryInterface: ChromeUtils.generateQI(["nsIUrlClassifierUpdateObserver"]),
 
-      handleEvent: function(value)
-      {
+      handleEvent(value) {
         if (value === table) {
           resolve();
         }
@@ -71,7 +56,7 @@ classifierHelper.waitForInit = function() {
     };
     dbService.lookup(principal, table, listener);
   });
-}
+};
 
 // This function is used to allow completion for specific "list",
 // some lists like "test-malware-simple" is default disabled to ask for complete.
@@ -92,7 +77,7 @@ classifierHelper.allowCompletion = function(lists, url) {
 
   // Set get hash url
   Services.prefs.setCharPref(PREFS.PROVIDER_GETHASHURL, url);
-}
+};
 
 // Pass { url: ..., db: ... } to add url to database,
 // Returns a Promise.
@@ -104,57 +89,31 @@ classifierHelper.addUrlToDB = function(updateData) {
     let CHUNKLEN = CHUNKDATA.length;
     let HASHLEN = update.len ? update.len : 32;
 
+    update.addChunk = classifierHelper._curAddChunkNum;
+    classifierHelper._curAddChunkNum += 1;
+
     classifierHelper._updatesToCleanup.push(update);
     testUpdate +=
       "n:1000\n" +
       "i:" + LISTNAME + "\n" +
       "ad:1\n" +
-      "a:" + ADD_CHUNKNUM + ":" + HASHLEN + ":" + CHUNKLEN + "\n" +
+      "a:" + update.addChunk + ":" + HASHLEN + ":" + CHUNKLEN + "\n" +
       CHUNKDATA;
   }
-
-  return classifierHelper._update(testUpdate);
-}
-
-// Pass { url: ..., db: ... } to remove url from database,
-// Returns a Promise.
-classifierHelper.removeUrlFromDB = function(updateData) {
-  var testUpdate = "";
-  for (var update of updateData) {
-    var LISTNAME = update.db;
-    var CHUNKDATA = ADD_CHUNKNUM + ":" + update.url;
-    var CHUNKLEN = CHUNKDATA.length;
-    var HASHLEN = update.len ? update.len : 32;
-
-    testUpdate +=
-      "n:1000\n" +
-      "i:" + LISTNAME + "\n" +
-      "s:" + SUB_CHUNKNUM + ":" + HASHLEN + ":" + CHUNKLEN + "\n" +
-      CHUNKDATA;
-  }
-
-  classifierHelper._updatesToCleanup =
-    classifierHelper._updatesToCleanup.filter((v) => {
-      return updateData.indexOf(v) == -1;
-    });
 
   return classifierHelper._update(testUpdate);
 };
 
 // This API is used to expire all add/sub chunks we have updated
-// by using addUrlToDB and removeUrlFromDB.
+// by using addUrlToDB.
 // Returns a Promise.
-classifierHelper.resetDB = function() {
+classifierHelper.resetDatabase = function() {
   var testUpdate = "";
   for (var update of classifierHelper._updatesToCleanup) {
-    if (testUpdate.includes(update.db))
-      continue;
-
     testUpdate +=
       "n:1000\n" +
       "i:" + update.db + "\n" +
-      "ad:" + ADD_CHUNKNUM + "\n" +
-      "sd:" + SUB_CHUNKNUM + "\n"
+      "ad:" + update.addChunk + "\n";
   }
 
   return classifierHelper._update(testUpdate);
@@ -162,33 +121,26 @@ classifierHelper.resetDB = function() {
 
 classifierHelper.reloadDatabase = function() {
   dbService.reloadDatabase();
-}
+};
 
 classifierHelper._update = function(update) {
-  return Task.spawn(function* () {
+  return (async function() {
     // beginUpdate may fail if there's an existing update in progress
     // retry until success or testcase timeout.
     let success = false;
     while (!success) {
       try {
-        yield new Promise((resolve, reject) => {
+        await new Promise((resolve, reject) => {
           let listener = {
-            QueryInterface: function(iid)
-            {
-              if (iid.equals(Ci.nsISupports) ||
-                  iid.equals(Ci.nsIUrlClassifierUpdateObserver))
-                return this;
-
-              throw Cr.NS_ERROR_NO_INTERFACE;
-            },
-            updateUrlRequested: function(url) { },
-            streamFinished: function(status) { },
-            updateError: function(errorCode) {
+            QueryInterface: ChromeUtils.generateQI(["nsIUrlClassifierUpdateObserver"]),
+            updateUrlRequested(url) { },
+            streamFinished(status) { },
+            updateError(errorCode) {
               reject(errorCode);
             },
-            updateSuccess: function(requestedTimeout) {
+            updateSuccess(requestedTimeout) {
               resolve();
-            }
+            },
           };
           dbService.beginUpdate(listener, "", "");
           dbService.beginStream("", "");
@@ -197,12 +149,12 @@ classifierHelper._update = function(update) {
           dbService.finishUpdate();
         });
         success = true;
-      } catch(e) {
+      } catch (e) {
         // Wait 1 second before trying again.
-        yield new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
-  });
+  })();
 };
 
 classifierHelper._cleanup = function() {
@@ -215,7 +167,7 @@ classifierHelper._cleanup = function() {
     return Promise.resolve();
   }
 
-  return classifierHelper.resetDB();
+  return classifierHelper.resetDatabase();
 };
 // Cleanup will be called at end of each testcase to remove all the urls added to database.
 registerCleanupFunction(classifierHelper._cleanup);

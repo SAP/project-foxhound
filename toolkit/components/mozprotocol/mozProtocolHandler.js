@@ -3,11 +3,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 function mozProtocolHandler() {
   XPCOMUtils.defineLazyPreferenceGetter(this, "urlToLoad", "toolkit.mozprotocol.url",
@@ -20,29 +18,31 @@ mozProtocolHandler.prototype = {
   protocolFlags: Ci.nsIProtocolHandler.URI_DANGEROUS_TO_LOAD,
 
   newURI(spec, charset, base) {
-    let uri = Cc["@mozilla.org/network/simple-uri;1"].createInstance(Ci.nsIURI);
+    let mutator = Cc["@mozilla.org/network/simple-uri-mutator;1"]
+                    .createInstance(Ci.nsIURIMutator);
     if (base) {
-      uri.spec = base.resolve(spec);
+      mutator.setSpec(base.resolve(spec));
     } else {
-      uri.spec = spec;
+      mutator.setSpec(spec);
     }
-    return uri;
+    return mutator.finalize();
   },
 
   newChannel2(uri, loadInfo) {
-    let realURL = NetUtil.newURI(this.urlToLoad);
-    let channel = Services.io.newChannelFromURIWithLoadInfo(realURL, loadInfo)
-    channel.loadFlags |= Ci.nsIChannel.LOAD_REPLACE;
+    const kCanada = "https://www.mozilla.org/contact/communities/canada/";
+    let realURL = NetUtil.newURI((uri && uri.spec == "moz://eh") ? kCanada : this.urlToLoad);
+    let channel = Services.io.newChannelFromURIWithLoadInfo(realURL, loadInfo);
+    loadInfo.resultPrincipalURI = realURL;
     return channel;
   },
 
   newChannel(uri) {
-    return this.newChannel(uri, null);
+    return this.newChannel2(uri, null);
   },
 
   classID: Components.ID("{47a45e5f-691e-4799-8686-14f8d3fc0f8c}"),
 
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIProtocolHandler]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIProtocolHandler]),
 };
 
 this.NSGetFactory = XPCOMUtils.generateNSGetFactory([mozProtocolHandler]);

@@ -6,42 +6,36 @@
 #include "mozilla/Bootstrap.h"
 #include "nsXPCOM.h"
 
+#include "AutoSQLiteLifetime.h"
+
 namespace mozilla {
 
-class BootstrapImpl final : public Bootstrap
-{
-protected:
-  virtual void Dispose() override
-  {
-    delete this;
-  }
+class BootstrapImpl final : public Bootstrap {
+ protected:
+  AutoSQLiteLifetime mSQLLT;
 
-public:
-  BootstrapImpl()
-  {
-  }
+  virtual void Dispose() override { delete this; }
 
-  ~BootstrapImpl()
-  {
-  }
+ public:
+  BootstrapImpl() {}
 
-  virtual void NS_LogInit() override {
-    ::NS_LogInit();
-  }
+  ~BootstrapImpl() {}
 
-  virtual void NS_LogTerm() override {
-    ::NS_LogTerm();
-  }
+  virtual void NS_LogInit() override { ::NS_LogInit(); }
+
+  virtual void NS_LogTerm() override { ::NS_LogTerm(); }
 
   virtual void XRE_TelemetryAccumulate(int aID, uint32_t aSample) override {
     ::XRE_TelemetryAccumulate(aID, aSample);
   }
 
-  virtual void XRE_StartupTimelineRecord(int aEvent, mozilla::TimeStamp aWhen) override {
+  virtual void XRE_StartupTimelineRecord(int aEvent,
+                                         mozilla::TimeStamp aWhen) override {
     ::XRE_StartupTimelineRecord(aEvent, aWhen);
   }
 
-  virtual int XRE_main(int argc, char* argv[], const BootstrapConfig& aConfig) override {
+  virtual int XRE_main(int argc, char* argv[],
+                       const BootstrapConfig& aConfig) override {
     return ::XRE_main(argc, argv, aConfig);
   }
 
@@ -49,7 +43,8 @@ public:
     ::XRE_StopLateWriteChecks();
   }
 
-  virtual int XRE_XPCShellMain(int argc, char** argv, char** envp, const XREShellData* aShellData) override {
+  virtual int XRE_XPCShellMain(int argc, char** argv, char** envp,
+                               const XREShellData* aShellData) override {
     return ::XRE_XPCShellMain(argc, argv, envp, aShellData);
   }
 
@@ -61,7 +56,8 @@ public:
     ::XRE_SetProcessType(aProcessTypeString);
   }
 
-  virtual nsresult XRE_InitChildProcess(int argc, char* argv[], const XREChildData* aChildData) override {
+  virtual nsresult XRE_InitChildProcess(
+      int argc, char* argv[], const XREChildData* aChildData) override {
     return ::XRE_InitChildProcess(argc, argv, aChildData);
   }
 
@@ -70,12 +66,14 @@ public:
   }
 
 #ifdef MOZ_WIDGET_ANDROID
-  virtual void GeckoStart(JNIEnv* aEnv, char** argv, int argc, const StaticXREAppData& aAppData) override {
+  virtual void GeckoStart(JNIEnv* aEnv, char** argv, int argc,
+                          const StaticXREAppData& aAppData) override {
     ::GeckoStart(aEnv, argv, argc, aAppData);
   }
 
-  virtual void XRE_SetAndroidChildFds(int aCrashFd, int aIPCFd) override {
-    ::XRE_SetAndroidChildFds(aCrashFd, aIPCFd);
+  virtual void XRE_SetAndroidChildFds(
+      JNIEnv* aEnv, const XRE_AndroidChildFds& aFds) override {
+    ::XRE_SetAndroidChildFds(aEnv, aFds);
   }
 #endif
 
@@ -86,15 +84,14 @@ public:
 #endif
 
 #ifdef MOZ_IPDL_TESTS
-  virtual int XRE_RunIPDLTest(int argc, char **argv) override {
+  virtual int XRE_RunIPDLTest(int argc, char** argv) override {
     return ::XRE_RunIPDLTest(argc, argv);
   }
 #endif
 };
 
 extern "C" NS_EXPORT void NS_FROZENCALL
-XRE_GetBootstrap(Bootstrap::UniquePtr& b)
-{
+XRE_GetBootstrap(Bootstrap::UniquePtr& b) {
   static bool sBootstrapInitialized = false;
   MOZ_RELEASE_ASSERT(!sBootstrapInitialized);
 
@@ -102,4 +99,4 @@ XRE_GetBootstrap(Bootstrap::UniquePtr& b)
   b.reset(new BootstrapImpl());
 }
 
-} // namespace mozilla
+}  // namespace mozilla

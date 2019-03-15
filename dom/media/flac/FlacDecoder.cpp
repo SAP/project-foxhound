@@ -5,50 +5,40 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FlacDecoder.h"
-#include "FlacDemuxer.h"
 #include "MediaContainerType.h"
-#include "MediaDecoderStateMachine.h"
-#include "MediaFormatReader.h"
-#include "MediaPrefs.h"
+#include "mozilla/StaticPrefs.h"
 
 namespace mozilla {
 
-MediaDecoder*
-FlacDecoder::Clone(MediaDecoderOwner* aOwner)
-{
-  if (!IsEnabled()) {
-    return nullptr;
-  }
-
-  return new FlacDecoder(aOwner);
-}
-
-MediaDecoderStateMachine*
-FlacDecoder::CreateStateMachine()
-{
-  RefPtr<MediaDecoderReader> reader =
-      new MediaFormatReader(this, new FlacDemuxer(GetResource()));
-  return new MediaDecoderStateMachine(this, reader);
-}
-
-/* static */ bool
-FlacDecoder::IsEnabled()
-{
+/* static */ bool FlacDecoder::IsEnabled() {
 #ifdef MOZ_FFVPX
-  return MediaPrefs::FlacEnabled();
+  return StaticPrefs::MediaFlacEnabled();
 #else
   // Until bug 1295886 is fixed.
   return false;
 #endif
 }
 
-/* static */ bool
-FlacDecoder::IsSupportedType(const MediaContainerType& aContainerType)
-{
-  return IsEnabled()
-         && (aContainerType.Type() == MEDIAMIMETYPE("audio/flac")
-             || aContainerType.Type() == MEDIAMIMETYPE("audio/x-flac")
-             || aContainerType.Type() == MEDIAMIMETYPE("application/x-flac"));
+/* static */ bool FlacDecoder::IsSupportedType(
+    const MediaContainerType& aContainerType) {
+  return IsEnabled() &&
+         (aContainerType.Type() == MEDIAMIMETYPE("audio/flac") ||
+          aContainerType.Type() == MEDIAMIMETYPE("audio/x-flac") ||
+          aContainerType.Type() == MEDIAMIMETYPE("application/x-flac"));
 }
 
-} // namespace mozilla
+/* static */ nsTArray<UniquePtr<TrackInfo>> FlacDecoder::GetTracksInfo(
+    const MediaContainerType& aType) {
+  nsTArray<UniquePtr<TrackInfo>> tracks;
+  if (!IsSupportedType(aType)) {
+    return tracks;
+  }
+
+  tracks.AppendElement(
+      CreateTrackInfoWithMIMETypeAndContainerTypeExtraParameters(
+          NS_LITERAL_CSTRING("audio/flac"), aType));
+
+  return tracks;
+}
+
+}  // namespace mozilla

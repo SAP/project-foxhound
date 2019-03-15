@@ -1,33 +1,31 @@
-let { Services } = Cu.import("resource://gre/modules/Services.jsm", {});
+let { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm", {});
 
-add_task(function* test_windowlessBrowserTroubleshootCrash() {
+add_task(async function test_windowlessBrowserTroubleshootCrash() {
   let webNav = Services.appShell.createWindowlessBrowser(false);
 
   let onLoaded = new Promise((resolve, reject) => {
-    let docShell = webNav.QueryInterface(Ci.nsIInterfaceRequestor)
-                         .getInterface(Ci.nsIDocShell);
+    let docShell = webNav.docShell;
     let listener = {
       observe(contentWindow, topic, data) {
-        let observedDocShell = contentWindow.QueryInterface(Ci.nsIInterfaceRequestor)
-                                            .getInterface(Ci.nsIWebNavigation)
-                                            .QueryInterface(Ci.nsIDocShellTreeItem)
+        let observedDocShell = contentWindow.docShell
                                             .sameTypeRootTreeItem
                                             .QueryInterface(Ci.nsIDocShell);
           if (docShell === observedDocShell) {
             Services.obs.removeObserver(listener, "content-document-global-created");
             resolve();
           }
-        }
-    }
-    Services.obs.addObserver(listener, "content-document-global-created", false);
+        },
+    };
+    Services.obs.addObserver(listener, "content-document-global-created");
   });
-  webNav.loadURI("about:blank", 0, null, null, null);
+  let loadURIOptions = {
+    triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal({}),
+  };
+  webNav.loadURI("about:blank", loadURIOptions);
 
-  yield onLoaded;
+  await onLoaded;
 
-  let winUtils = webNav.document.defaultView.
-                        QueryInterface(Ci.nsIInterfaceRequestor).
-                        getInterface(Ci.nsIDOMWindowUtils);
+  let winUtils = webNav.document.defaultView.windowUtils;
   try {
     is(winUtils.layerManagerType, "Basic", "windowless browser's layerManagerType should be 'Basic'");
   } catch (e) {
@@ -36,8 +34,8 @@ add_task(function* test_windowlessBrowserTroubleshootCrash() {
   }
   ok(true, "not crashed");
 
-  var Troubleshoot = Cu.import("resource://gre/modules/Troubleshoot.jsm", {}).Troubleshoot;
-  var data = yield new Promise((resolve, reject) => {
+  var Troubleshoot = ChromeUtils.import("resource://gre/modules/Troubleshoot.jsm", {}).Troubleshoot;
+  var data = await new Promise((resolve, reject) => {
     Troubleshoot.snapshot((data) => {
       resolve(data);
     });

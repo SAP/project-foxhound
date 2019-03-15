@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,20 +14,16 @@ namespace mozilla {
 
 using namespace gfx;
 
-struct BestDashLength
-{
+struct BestDashLength {
   typedef mozilla::gfx::Float Float;
 
   Float dashLength;
   size_t count;
 
-  BestDashLength()
-   : dashLength(0.0f), count(0)
-  {}
+  BestDashLength() : dashLength(0.0f), count(0) {}
 
   BestDashLength(Float aDashLength, size_t aCount)
-   : dashLength(aDashLength), count(aCount)
-  {}
+      : dashLength(aDashLength), count(aCount) {}
 };
 
 static const size_t DashedCornerCacheSize = 256;
@@ -36,16 +33,19 @@ DashedCornerFinder::DashedCornerFinder(const Bezier& aOuterBezier,
                                        const Bezier& aInnerBezier,
                                        Float aBorderWidthH, Float aBorderWidthV,
                                        const Size& aCornerDim)
- : mOuterBezier(aOuterBezier),
-   mInnerBezier(aInnerBezier),
-   mLastOuterP(aOuterBezier.mPoints[0]), mLastInnerP(aInnerBezier.mPoints[0]),
-   mLastOuterT(0.0f), mLastInnerT(0.0f),
-   mBestDashLength(DOT_LENGTH * DASH_LENGTH),
-   mHasZeroBorderWidth(false), mHasMore(true),
-   mMaxCount(aCornerDim.width + aCornerDim.height),
-   mType(OTHER),
-   mI(0), mCount(0)
-{
+    : mOuterBezier(aOuterBezier),
+      mInnerBezier(aInnerBezier),
+      mLastOuterP(aOuterBezier.mPoints[0]),
+      mLastInnerP(aInnerBezier.mPoints[0]),
+      mLastOuterT(0.0f),
+      mLastInnerT(0.0f),
+      mBestDashLength(DOT_LENGTH * DASH_LENGTH),
+      mHasZeroBorderWidth(false),
+      mHasMore(true),
+      mMaxCount(aCornerDim.width + aCornerDim.height),
+      mType(OTHER),
+      mI(0),
+      mCount(0) {
   NS_ASSERTION(aBorderWidthH > 0.0f || aBorderWidthV > 0.0f,
                "At least one side should have non-zero width.");
 
@@ -54,9 +54,8 @@ DashedCornerFinder::DashedCornerFinder(const Bezier& aOuterBezier,
   Reset();
 }
 
-void
-DashedCornerFinder::DetermineType(Float aBorderWidthH, Float aBorderWidthV)
-{
+void DashedCornerFinder::DetermineType(Float aBorderWidthH,
+                                       Float aBorderWidthV) {
   if (aBorderWidthH < aBorderWidthV) {
     // Always draw from wider side to thinner side.
     Swap(mInnerBezier.mPoints[0], mInnerBezier.mPoints[3]);
@@ -69,12 +68,11 @@ DashedCornerFinder::DetermineType(Float aBorderWidthH, Float aBorderWidthV)
 
   // See the comment at mType declaration for each condition.
 
-  Float borderRadiusA = fabs(mOuterBezier.mPoints[0].x -
-                             mOuterBezier.mPoints[3].x);
-  Float borderRadiusB = fabs(mOuterBezier.mPoints[0].y -
-                             mOuterBezier.mPoints[3].y);
-  if (aBorderWidthH == aBorderWidthV &&
-      borderRadiusA == borderRadiusB &&
+  Float borderRadiusA =
+      fabs(mOuterBezier.mPoints[0].x - mOuterBezier.mPoints[3].x);
+  Float borderRadiusB =
+      fabs(mOuterBezier.mPoints[0].y - mOuterBezier.mPoints[3].y);
+  if (aBorderWidthH == aBorderWidthV && borderRadiusA == borderRadiusB &&
       borderRadiusA > aBorderWidthH * 2.0f) {
     Float curveHeight = borderRadiusA - aBorderWidthH / 2.0;
 
@@ -100,14 +98,12 @@ DashedCornerFinder::DetermineType(Float aBorderWidthH, Float aBorderWidthV)
     Float maxBorderRadius = std::max(borderRadiusA, borderRadiusB);
     Float maxBorderWidth = std::max(aBorderWidthH, aBorderWidthV);
 
-    FindBestDashLength(minBorderWidth, maxBorderWidth,
-                       minBorderRadius, maxBorderRadius);
+    FindBestDashLength(minBorderWidth, maxBorderWidth, minBorderRadius,
+                       maxBorderRadius);
   }
 }
 
-bool
-DashedCornerFinder::HasMore(void) const
-{
+bool DashedCornerFinder::HasMore(void) const {
   if (mHasZeroBorderWidth) {
     return mI < mMaxCount && mHasMore;
   }
@@ -115,9 +111,7 @@ DashedCornerFinder::HasMore(void) const
   return mI < mCount;
 }
 
-DashedCornerFinder::Result
-DashedCornerFinder::Next(void)
-{
+DashedCornerFinder::Result DashedCornerFinder::Next(void) {
   Float lastOuterT, lastInnerT, outerT, innerT;
 
   if (mI == 0) {
@@ -188,9 +182,7 @@ DashedCornerFinder::Next(void)
   return DashedCornerFinder::Result(outerSectionBezier, innerSectionBezier);
 }
 
-void
-DashedCornerFinder::Reset(void)
-{
+void DashedCornerFinder::Reset(void) {
   mLastOuterP = mOuterBezier.mPoints[0];
   mLastInnerP = mInnerBezier.mPoints[0];
   mLastOuterT = 0.0f;
@@ -198,9 +190,7 @@ DashedCornerFinder::Reset(void)
   mHasMore = true;
 }
 
-Float
-DashedCornerFinder::FindNext(Float dashLength)
-{
+Float DashedCornerFinder::FindNext(Float dashLength) {
   Float upper = 1.0f;
   Float lower = mLastOuterT;
 
@@ -287,18 +277,16 @@ DashedCornerFinder::FindNext(Float dashLength)
   return L / W;
 }
 
-void
-DashedCornerFinder::FindBestDashLength(Float aMinBorderWidth,
-                                       Float aMaxBorderWidth,
-                                       Float aMinBorderRadius,
-                                       Float aMaxBorderRadius)
-{
+void DashedCornerFinder::FindBestDashLength(Float aMinBorderWidth,
+                                            Float aMaxBorderWidth,
+                                            Float aMinBorderRadius,
+                                            Float aMaxBorderRadius) {
   // If dashLength is not calculateable, find it with binary search,
   // such that there exists i that OuterP_i == OuterP_n and
   // InnerP_i == InnerP_n with given dashLength.
 
-  FourFloats key(aMinBorderWidth, aMaxBorderWidth,
-                 aMinBorderRadius, aMaxBorderRadius);
+  FourFloats key(aMinBorderWidth, aMaxBorderWidth, aMinBorderRadius,
+                 aMaxBorderRadius);
   BestDashLength best;
   if (DashedCornerCache.Get(key, &best)) {
     mCount = best.count;
@@ -402,11 +390,9 @@ DashedCornerFinder::FindBestDashLength(Float aMinBorderWidth,
   DashedCornerCache.Put(key, BestDashLength(mBestDashLength, mCount));
 }
 
-bool
-DashedCornerFinder::GetCountAndLastDashLength(Float aDashLength,
-                                              size_t* aCount,
-                                              Float* aActualDashLength)
-{
+bool DashedCornerFinder::GetCountAndLastDashLength(Float aDashLength,
+                                                   size_t* aCount,
+                                                   Float* aActualDashLength) {
   // Return the number of segments and the last segment's dashLength for
   // the given dashLength.
 
@@ -424,4 +410,4 @@ DashedCornerFinder::GetCountAndLastDashLength(Float aDashLength,
   return false;
 }
 
-} // namespace mozilla
+}  // namespace mozilla

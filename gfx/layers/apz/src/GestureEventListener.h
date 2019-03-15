@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,12 +7,12 @@
 #ifndef mozilla_layers_GestureEventListener_h
 #define mozilla_layers_GestureEventListener_h
 
-#include "InputData.h"                  // for MultiTouchInput, etc
+#include "InputData.h"  // for MultiTouchInput, etc
 #include "Units.h"
-#include "mozilla/EventForwards.h"      // for nsEventStatus
-#include "mozilla/RefPtr.h"             // for RefPtr
+#include "mozilla/EventForwards.h"  // for nsEventStatus
+#include "mozilla/RefPtr.h"         // for RefPtr
 #include "nsISupportsImpl.h"
-#include "nsTArray.h"                   // for nsTArray
+#include "nsTArray.h"  // for nsTArray
 
 namespace mozilla {
 
@@ -33,15 +33,13 @@ class AsyncPanZoomController;
  * the screen. Instead, we generate a PinchGestureInput and send that. If the
  * touch event is not part of a gesture, we just return nsEventStatus_eIgnore
  * and AsyncPanZoomController is expected to handle it.
- *
- * Android doesn't use this class because it has its own built-in gesture event
- * listeners that should generally be preferred.
  */
 class GestureEventListener final {
-public:
+ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GestureEventListener)
 
-  explicit GestureEventListener(AsyncPanZoomController* aAsyncPanZoomController);
+  explicit GestureEventListener(
+      AsyncPanZoomController* aAsyncPanZoomController);
 
   // --------------------------------------------------------------------------
   // These methods must only be called on the controller/UI thread.
@@ -69,7 +67,7 @@ public:
    */
   static void SetLongTapEnabled(bool aLongTapEnabled);
 
-private:
+ private:
   // Private destructor, to discourage deletion outside of Release():
   ~GestureEventListener();
 
@@ -80,14 +78,16 @@ private:
     // This is the initial and final state of any gesture.
     // In this state there's no gesture going on, and we don't think we're
     // about to enter one.
-    // Allowed next states: GESTURE_FIRST_SINGLE_TOUCH_DOWN, GESTURE_MULTI_TOUCH_DOWN.
+    // Allowed next states: GESTURE_FIRST_SINGLE_TOUCH_DOWN,
+    // GESTURE_MULTI_TOUCH_DOWN.
     GESTURE_NONE,
 
     // A touch start with a single touch point has just happened.
     // After having gotten into this state we start timers for MAX_TAP_TIME and
     // gfxPrefs::UiClickHoldContextMenusDelay().
     // Allowed next states: GESTURE_MULTI_TOUCH_DOWN, GESTURE_NONE,
-    //                      GESTURE_FIRST_SINGLE_TOUCH_UP, GESTURE_LONG_TOUCH_DOWN,
+    //                      GESTURE_FIRST_SINGLE_TOUCH_UP,
+    //                      GESTURE_LONG_TOUCH_DOWN,
     //                      GESTURE_FIRST_SINGLE_TOUCH_MAX_TAP_DOWN.
     GESTURE_FIRST_SINGLE_TOUCH_DOWN,
 
@@ -108,7 +108,8 @@ private:
     // A user put down her finger again right after a single tap thus the
     // gesture can't be a single tap, but rather a double tap. But we're
     // still not sure about that until the user lifts her finger again.
-    // Allowed next states: GESTURE_MULTI_TOUCH_DOWN, GESTURE_NONE.
+    // Allowed next states: GESTURE_MULTI_TOUCH_DOWN, GESTURE_ONE_TOUCH_PINCH,
+    //                      GESTURE_NONE.
     GESTURE_SECOND_SINGLE_TOUCH_DOWN,
 
     // A long touch has happened, but the user still keeps her finger down.
@@ -125,7 +126,12 @@ private:
     // There are two or more fingers on the screen, and the user has already
     // pinched enough for us to start zooming the screen.
     // Allowed next states: GESTURE_NONE
-    GESTURE_PINCH
+    GESTURE_PINCH,
+
+    // The user has double tapped, but not lifted her finger, and moved her
+    // finger more than PINCH_START_THRESHOLD.
+    // Allowed next states: GESTURE_NONE.
+    GESTURE_ONE_TOUCH_PINCH
   };
 
   /**
@@ -142,7 +148,15 @@ private:
 
   void TriggerSingleTapConfirmedEvent();
 
-  bool MoveDistanceIsLarge();
+  bool MoveDistanceExceeds(ScreenCoord aThreshold) const;
+  bool MoveDistanceIsLarge() const;
+  bool SecondTapIsFar() const;
+
+  /**
+   * Returns current vertical span, counting from the where the gesture first
+   * began (after a brief delay detecting the gesture from first touch).
+   */
+  ParentLayerCoord GetYSpanFromGestureStartPoint();
 
   /**
    * Do actual state transition and reset substates.
@@ -198,6 +212,16 @@ private:
   MultiTouchInput mLastTapInput;
 
   /**
+   * Position of the last touch that exceeds the GetTouchStartTolerance when
+   * performing a one-touch-pinch gesture; using the mTouchStartPosition is
+   * slightly inaccurate because by the time the touch position has passed
+   * the threshold for the gesture, there is already a span that the zoom
+   * is calculated from, instead of starting at 1.0 when the threshold gets
+   * passed.
+   */
+  ParentLayerPoint mOneTouchPinchStartPosition;
+
+  /**
    * Position of the last touch starting. This is only valid during an attempt
    * to determine if a touch is a tap. If a touch point moves away from
    * mTouchStartPosition to the distance greater than
@@ -239,14 +263,14 @@ private:
   /**
    * Tracks whether the single-tap event was already sent to content. This is
    * needed because it affects how the double-tap gesture, if detected, is
-   * handled. The value is only valid in states GESTURE_FIRST_SINGLE_TOUCH_UP and
-   * GESTURE_SECOND_SINGLE_TOUCH_DOWN; to more easily catch violations it is
+   * handled. The value is only valid in states GESTURE_FIRST_SINGLE_TOUCH_UP
+   * and GESTURE_SECOND_SINGLE_TOUCH_DOWN; to more easily catch violations it is
    * stored in a Maybe which is set to Nothing() at all other times.
    */
   Maybe<bool> mSingleTapSent;
 };
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla
 
 #endif

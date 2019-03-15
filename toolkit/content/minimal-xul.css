@@ -19,7 +19,6 @@
  */
 
 @namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"); /* set default namespace to XUL */
-@namespace html url("http://www.w3.org/1999/xhtml"); /* namespace for HTML elements */
 
 * {
   -moz-user-focus: ignore;
@@ -30,7 +29,6 @@
 
 :root {
   text-rendering: optimizeLegibility;
-  -moz-binding: url("chrome://global/content/bindings/general.xml#root-element");
   -moz-control-character-visibility: visible;
 }
 
@@ -49,35 +47,61 @@
   visibility: collapse;
 }
 
-/********** label **********/
-
-description {
-  -moz-binding: url("chrome://global/content/bindings/text.xml#text-base");
-}
-
-label {
-  -moz-binding: url("chrome://global/content/bindings/text.xml#text-label");
-}
-
-label.text-link, label[onclick] {
-  -moz-binding: url("chrome://global/content/bindings/text.xml#text-link");
-  -moz-user-focus: normal;
-}
-
-label[control], label.radio-label, label.checkbox-label, label.toolbarbutton-multiline-text {
-  -moz-binding: url("chrome://global/content/bindings/text.xml#label-control");
-}
-
-html|span.accesskey {
-  text-decoration: underline;
-}
-
 /********** resizer **********/
 
 resizer {
-  -moz-binding: url("chrome://global/content/bindings/resizer.xml#resizer");
   position: relative;
   z-index: 2147483647;
+  /* Widget gets decide on its own whether or not the native theme should apply,
+     based on the context/OS theme. If it does not, SVG background will kick in. */
+  -moz-appearance: resizer;
+
+  /* native resizer should never flip on its own;
+     we will flip it (or the SVG background) with CSS transform below. */
+  direction: ltr;
+  writing-mode: initial;
+
+  background: url("chrome://global/skin/icons/resizer.svg") no-repeat;
+  background-size: 100% 100%;
+  cursor: se-resize;
+  width: 15px;
+  height: 15px;
+}
+
+/* bottomstart/bottomend is supported in XUL window only */
+resizer[dir="bottom"][flip],
+resizer[dir="bottomleft"],
+resizer[dir="bottomstart"]:-moz-locale-dir(ltr),
+resizer[dir="bottomend"]:-moz-locale-dir(rtl) {
+  transform: scaleX(-1);
+}
+
+resizer[dir="bottomleft"],
+resizer[dir="bottomstart"]:-moz-locale-dir(ltr),
+resizer[dir="bottomend"]:-moz-locale-dir(rtl) {
+  cursor: sw-resize;
+}
+
+resizer[dir="top"],
+resizer[dir="bottom"] {
+  cursor: ns-resize;
+}
+
+resizer[dir="left"] {
+  transform: scaleX(-1);
+}
+
+resizer[dir="left"],
+resizer[dir="right"] {
+  cursor: ew-resize;
+}
+
+resizer[dir="topleft"] {
+  cursor: nw-resize;
+}
+
+resizer[dir="topright"] {
+  cursor: ne-resize;
 }
 
 /********** scrollbar **********/
@@ -88,15 +112,15 @@ scrollbar[orient="horizontal"] {
 }
 
 thumb {
-  -moz-binding: url(chrome://global/content/bindings/scrollbar.xml#thumb);
   display: -moz-box !important;
 }
 
-.scale-thumb {
-  -moz-binding: url(chrome://global/content/bindings/scale.xml#scalethumb);
+/* Don't collapse thumb when scrollbar is disabled. */
+thumb[collapsed="true"] {
+  visibility: hidden;
 }
 
-scrollbar, scrollbarbutton, scrollcorner, slider, thumb, scale {
+scrollbar, scrollbarbutton, scrollcorner, slider, thumb {
   -moz-user-select: none;
 }
 
@@ -112,22 +136,32 @@ scrollbar[value="hidden"] {
   visibility: hidden;
 }
 
-scale {
-  -moz-binding: url(chrome://global/content/bindings/scale.xml#scale);
+@media (-moz-scrollbar-start-backward: 0) {
+  scrollbarbutton[sbattr="scrollbar-up-top"] {
+    display: none;
+  }
 }
 
-.scale-slider {
-  -moz-binding: url(chrome://global/content/bindings/scale.xml#scaleslider);
-  -moz-user-focus: normal;
+@media (-moz-scrollbar-start-forward: 0) {
+  scrollbarbutton[sbattr="scrollbar-down-top"] {
+    display: none;
+  }
 }
 
-scrollbarbutton[sbattr="scrollbar-up-top"]:not(:-moz-system-metric(scrollbar-start-backward)),
-scrollbarbutton[sbattr="scrollbar-down-top"]:not(:-moz-system-metric(scrollbar-start-forward)),
-scrollbarbutton[sbattr="scrollbar-up-bottom"]:not(:-moz-system-metric(scrollbar-end-backward)),
-scrollbarbutton[sbattr="scrollbar-down-bottom"]:not(:-moz-system-metric(scrollbar-end-forward)) {
-  display: none;
+@media (-moz-scrollbar-end-backward: 0) {
+  scrollbarbutton[sbattr="scrollbar-up-bottom"] {
+    display: none;
+  }
 }
 
-thumb[sbattr="scrollbar-thumb"]:-moz-system-metric(scrollbar-thumb-proportional) {
-  -moz-box-flex: 1;
+@media (-moz-scrollbar-end-forward: 0) {
+  scrollbarbutton[sbattr="scrollbar-down-bottom"] {
+    display: none;
+  }
+}
+
+@media (-moz-scrollbar-thumb-proportional) {
+  thumb[sbattr="scrollbar-thumb"] {
+    -moz-box-flex: 1;
+  }
 }

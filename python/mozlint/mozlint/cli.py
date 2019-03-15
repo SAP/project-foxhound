@@ -2,11 +2,13 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import print_function, unicode_literals
+from __future__ import absolute_import, print_function, unicode_literals
 
 import os
 import sys
 from argparse import REMAINDER, ArgumentParser
+
+from mozlint.formatters import all_formatters
 
 SEARCH_PATHS = []
 
@@ -27,9 +29,22 @@ class MozlintParser(ArgumentParser):
           'help': "Linters to run, e.g 'eslint'. By default all linters "
                   "are run for all the appropriate files.",
           }],
+        [['--list'],
+         {'dest': 'list_linters',
+          'default': False,
+          'action': 'store_true',
+          'help': "List all available linters and exit.",
+          }],
+        [['-W', '--warnings'],
+         {'dest': 'show_warnings',
+          'default': False,
+          'action': 'store_true',
+          'help': "Display and fail on warnings in addition to errors.",
+          }],
         [['-f', '--format'],
          {'dest': 'fmt',
           'default': 'stylish',
+          'choices': all_formatters.keys(),
           'help': "Formatter to use. Defaults to 'stylish'.",
           }],
         [['-n', '--no-filter'],
@@ -40,23 +55,39 @@ class MozlintParser(ArgumentParser):
                   "testing a directory that otherwise wouldn't be run, "
                   "without needing to modify the config file.",
           }],
-        [['-r', '--rev'],
-         {'default': None,
-          'help': "Lint files touched by the given revision(s). Works with "
-                  "mercurial or git."
-          }],
         [['-o', '--outgoing'],
          {'const': 'default',
           'nargs': '?',
-          'help': "Lint files touched by commits that are not on the remote repository."
-                  "If you are using git please specify which remote you want to compare to."
-                  "Works with mercurial or git."
+          'help': "Lint files touched by commits that are not on the remote repository. "
+                  "Without arguments, finds the default remote that would be pushed to. "
+                  "The remote branch can also be specified manually. Works with "
+                  "mercurial or git."
           }],
         [['-w', '--workdir'],
-         {'default': False,
-          'action': 'store_true',
+         {'const': 'all',
+          'nargs': '?',
+          'choices': ['staged', 'all'],
           'help': "Lint files touched by changes in the working directory "
-                  "(i.e haven't been committed yet). Works with mercurial or git.",
+                  "(i.e haven't been committed yet). On git, --workdir=staged "
+                  "can be used to only consider staged files. Works with "
+                  "mercurial or git.",
+          }],
+        [['--fix'],
+         {'action': 'store_true',
+          'default': False,
+          'help': "Fix lint errors if possible. Any errors that could not be fixed "
+                  "will be printed as normal."
+          }],
+        [['--edit'],
+         {'action': 'store_true',
+          'default': False,
+          'help': "Each file containing lint errors will be opened in $EDITOR one after "
+                  "the other."
+          }],
+        [['--setup'],
+         {'action': 'store_true',
+          'default': False,
+          'help': "Bootstrap linter dependencies without running any of the linters."
           }],
         [['extra_args'],
          {'nargs': REMAINDER,
@@ -71,11 +102,29 @@ class MozlintParser(ArgumentParser):
             self.add_argument(*cli, **args)
 
     def parse_known_args(self, *args, **kwargs):
+        # Allow '-wo' or '-ow' as shorthand for both --workdir and --outgoing.
+        for token in ('-wo', '-ow'):
+            if token in args[0]:
+                i = args[0].index(token)
+                args[0].pop(i)
+                args[0][i:i] = [token[:2], '-' + token[2]]
+
         # This is here so the eslint mach command doesn't lose 'extra_args'
         # when using mach's dispatch functionality.
         args, extra = ArgumentParser.parse_known_args(self, *args, **kwargs)
         args.extra_args = extra
+
+        self.validate(args)
         return args, extra
+
+    def validate(self, args):
+        if args.edit and not os.environ.get('EDITOR'):
+            self.error("must set the $EDITOR environment variable to use --edit")
+
+        if args.paths:
+            invalid = [p for p in args.paths if not os.path.exists(p)]
+            if invalid:
+                self.error("the following paths do not exist:\n{}".format("\n".join(invalid)))
 
 
 def find_linters(linters=None):
@@ -84,11 +133,15 @@ def find_linters(linters=None):
         if not os.path.isdir(search_path):
             continue
 
+        sys.path.insert(0, search_path)
         files = os.listdir(search_path)
         for f in files:
-            name, ext = os.path.splitext(f)
-            if ext != '.lint':
+            name = os.path.basename(f)
+
+            if not name.endswith('.yml'):
                 continue
+
+            name = name.rsplit('.', 1)[0]
 
             if linters and name not in linters:
                 continue
@@ -97,23 +150,41 @@ def find_linters(linters=None):
     return lints
 
 
-def run(paths, linters, fmt, rev, outgoing, workdir, **lintargs):
+def run(paths, linters, fmt, outgoing, workdir, edit,
+        setup=False, list_linters=False, **lintargs):
     from mozlint import LintRoller, formatters
+    from mozlint.editor import edit_issues
+
+    if list_linters:
+        lint_paths = find_linters(linters)
+        print("Available linters: {}".format(
+            [os.path.splitext(os.path.basename(l))[0] for l in lint_paths]
+        ))
+        return 0
 
     lint = LintRoller(**lintargs)
     lint.read(find_linters(linters))
 
+    # Always run bootstrapping, but return early if --setup was passed in.
+    ret = lint.setup()
+    if setup:
+        return ret
+
     # run all linters
-    results = lint.roll(paths, rev=rev, outgoing=outgoing,
-                        workdir=workdir)
+    result = lint.roll(paths, outgoing=outgoing, workdir=workdir)
+
+    if edit and result.issues:
+        edit_issues(result)
+        result = lint.roll(result.issues.keys())
 
     formatter = formatters.get(fmt)
 
     # Encode output with 'replace' to avoid UnicodeEncodeErrors on
     # environments that aren't using utf-8.
-    print(formatter(results, failed=lint.failed).encode(
-        sys.stdout.encoding or 'ascii', 'replace'))
-    return 1 if results or lint.failed else 0
+    out = formatter(result).encode(sys.stdout.encoding or 'ascii', 'replace')
+    if out:
+        print(out)
+    return result.returncode
 
 
 if __name__ == '__main__':

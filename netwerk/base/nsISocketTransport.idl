@@ -13,6 +13,7 @@ interface nsINetAddr;
 namespace mozilla {
 namespace net {
 union NetAddr;
+class TCPFastOpen;
 }
 }
 %}
@@ -20,6 +21,7 @@ native NetAddr(mozilla::net::NetAddr);
 [ptr] native NetAddrPtr(mozilla::net::NetAddr);
 native OriginAttributes(mozilla::OriginAttributes);
 [ref] native const_OriginAttributesRef(const mozilla::OriginAttributes);
+[ptr] native TCPFastOpenPtr(mozilla::net::TCPFastOpen);
 
 /**
  * nsISocketTransport
@@ -62,13 +64,6 @@ interface nsISocketTransport : nsITransport
 
     [noscript, nostdcall, binaryname(SetOriginAttributes)]
     void binarySetOriginAttributes(in const_OriginAttributesRef aOriginAttrs);
-
-    /**
-     * The platform-specific network interface id that this socket
-     * associated with. Note that this attribute can be only accessed
-     * in the socket thread.
-     */
-    attribute ACString networkInterfaceId;
 
     /**
      * Returns the IP address of the socket connection peer. This
@@ -130,6 +125,13 @@ interface nsISocketTransport : nsITransport
     void          setTimeout(in unsigned long aType, in unsigned long aValue);
 
     /**
+     * Sets the SO_LINGER option with the specified values for the l_onoff and
+     * l_linger parameters. This applies PR_SockOpt_Linger before PR_Close and
+     * can be used with a timeout of zero to send an RST packet when closing.
+     */
+    void setLinger(in boolean aPolarity, in short aTimeout);
+
+    /**
      * True to set addr and port reuse socket options.
      */
     void setReuseAddrPort(in bool reuseAddrPort);
@@ -167,6 +169,8 @@ interface nsISocketTransport : nsITransport
     const unsigned long STATUS_SENDING_TO     = 0x804b0005;
     const unsigned long STATUS_WAITING_FOR    = 0x804b000a;
     const unsigned long STATUS_RECEIVING_FROM = 0x804b0006;
+    const unsigned long STATUS_TLS_HANDSHAKE_STARTING = 0x804b000c;
+    const unsigned long STATUS_TLS_HANDSHAKE_ENDED    = 0x804b000d;
 
     /**
      * connectionFlags is a bitmask that can be used to modify underlying 
@@ -234,6 +238,41 @@ interface nsISocketTransport : nsITransport
     const unsigned long BE_CONSERVATIVE = (1 << 7);
 
     /**
+     * If set, do not use TRR for resolving the host name. Intended only for
+     * retries or other scenarios when TRR is deemed likely to have returned a
+     * wrong adddress.
+     */
+    const unsigned long DISABLE_TRR = (1 << 8);
+
+    /**
+     * Values for the connectionFlags
+     *
+     * When using BYPASS_CACHE, setting this bit will invalidate the existing
+     * cached entry immediately while the new resolve is being done to avoid
+     * other users from using stale content in the mean time.
+     */
+    const unsigned long REFRESH_CACHE = (1 << 9);
+
+    /**
+     * If this flag is set then it means that if connecting the preferred ip
+     * family has failed, retry with the oppsite one once more.
+     */
+    const unsigned long RETRY_WITH_DIFFERENT_IP_FAMILY = (1 << 10);
+
+    /**
+     * If we know that a server speaks only tls <1.3 there is no need to try
+     * to use esni and query dns for esni keys.
+     */
+    const unsigned long DONT_TRY_ESNI = (1 << 11);
+
+    /**
+     * An opaque flags for non-standard behavior of the TLS system.
+     * It is unlikely this will need to be set outside of telemetry studies
+     * relating to the TLS implementation.
+     */
+    attribute unsigned long tlsFlags;
+
+    /**
      * Socket QoS/ToS markings. Valid values are IPTOS_DSCP_AFxx or
      * IPTOS_CLASS_CSx (or IPTOS_DSCP_EF, but currently no supported
      * services require expedited-forwarding).
@@ -258,4 +297,21 @@ interface nsISocketTransport : nsITransport
     attribute boolean keepaliveEnabled;
     void setKeepaliveVals(in long keepaliveIdleTime,
                           in long keepaliveRetryInterval);
+
+    [noscript] void setFastOpenCallback(in TCPFastOpenPtr aFastOpen);
+
+    readonly attribute nsresult firstRetryError;
+
+    /**
+     * If true, this socket transport has found out the prefered family
+     * according it's connection flags could not be used to establish
+     * connections any more.  Hence, the preference should be reset.
+     */
+    readonly attribute boolean resetIPFamilyPreference;
+
+    /**
+     * This attribute holds information whether esni has been used.
+     * The value is set after PR_Connect is called.
+     */
+   readonly attribute boolean esniUsed;
 };

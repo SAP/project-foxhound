@@ -21,6 +21,7 @@
 #include "mozilla/XREAppData.h"
 
 #include "mozilla/Services.h"
+#include "mozilla/Unused.h"
 #include "prtime.h"
 
 using namespace mozilla;
@@ -28,29 +29,33 @@ using namespace mozilla;
 extern const XREAppData* gAppData;
 
 static const char kProfileProperties[] =
-  "chrome://mozapps/locale/profile/profileSelection.properties";
+    "chrome://mozapps/locale/profile/profileSelection.properties";
 
 /**
  * Creates a new profile with a timestamp in the name to use for profile reset.
  */
-nsresult
-CreateResetProfile(nsIToolkitProfileService* aProfileSvc, const nsACString& aOldProfileName, nsIToolkitProfile* *aNewProfile)
-{
+nsresult CreateResetProfile(nsIToolkitProfileService* aProfileSvc,
+                            nsIToolkitProfile* aOldProfile,
+                            nsIToolkitProfile** aNewProfile) {
   MOZ_ASSERT(aProfileSvc, "NULL profile service");
 
+  nsAutoCString oldProfileName;
+  aOldProfile->GetName(oldProfileName);
+
   nsCOMPtr<nsIToolkitProfile> newProfile;
-  // Make the new profile the old profile (or "default-") + the time in seconds since epoch for uniqueness.
+  // Make the new profile the old profile (or "default-") + the time in seconds
+  // since epoch for uniqueness.
   nsAutoCString newProfileName;
-  if (!aOldProfileName.IsEmpty()) {
-    newProfileName.Assign(aOldProfileName);
+  if (!oldProfileName.IsEmpty()) {
+    newProfileName.Assign(oldProfileName);
     newProfileName.Append("-");
   } else {
-    newProfileName.Assign("default-");
+    newProfileName.AssignLiteral("default-");
   }
   newProfileName.Append(nsPrintfCString("%" PRId64, PR_Now() / 1000));
-  nsresult rv = aProfileSvc->CreateProfile(nullptr, // choose a default dir for us
-                                           newProfileName,
-                                           getter_AddRefs(newProfile));
+  nsresult rv =
+      aProfileSvc->CreateProfile(nullptr,  // choose a default dir for us
+                                 newProfileName, getter_AddRefs(newProfile));
   if (NS_FAILED(rv)) return rv;
 
   rv = aProfileSvc->Flush();
@@ -62,11 +67,10 @@ CreateResetProfile(nsIToolkitProfileService* aProfileSvc, const nsACString& aOld
 }
 
 /**
- * Delete the profile directory being reset after a backup and delete the local profile directory.
+ * Delete the profile directory being reset after a backup and delete the local
+ * profile directory.
  */
-nsresult
-ProfileResetCleanup(nsIToolkitProfile* aOldProfile)
-{
+nsresult ProfileResetCleanup(nsIToolkitProfile* aOldProfile) {
   nsresult rv;
   nsCOMPtr<nsIFile> profileDir;
   rv = aOldProfile->GetRootDir(getter_AddRefs(profileDir));
@@ -77,21 +81,23 @@ ProfileResetCleanup(nsIToolkitProfile* aOldProfile)
   if (NS_FAILED(rv)) return rv;
 
   // Get the friendly name for the backup directory.
-  nsCOMPtr<nsIStringBundleService> sbs = mozilla::services::GetStringBundleService();
+  nsCOMPtr<nsIStringBundleService> sbs =
+      mozilla::services::GetStringBundleService();
   if (!sbs) return NS_ERROR_FAILURE;
 
   nsCOMPtr<nsIStringBundle> sb;
-  rv = sbs->CreateBundle(kProfileProperties, getter_AddRefs(sb));
+  Unused << sbs->CreateBundle(kProfileProperties, getter_AddRefs(sb));
   if (!sb) return NS_ERROR_FAILURE;
 
   NS_ConvertUTF8toUTF16 appName(gAppData->name);
   const char16_t* params[] = {appName.get(), appName.get()};
 
-  nsXPIDLString resetBackupDirectoryName;
+  nsAutoString resetBackupDirectoryName;
 
-  static const char16_t* kResetBackupDirectory = u"resetBackupDirectory";
+  static const char* kResetBackupDirectory = "resetBackupDirectory";
   rv = sb->FormatStringFromName(kResetBackupDirectory, params, 2,
-                                getter_Copies(resetBackupDirectoryName));
+                                resetBackupDirectoryName);
+  if (NS_FAILED(rv)) return rv;
 
   // Get info to copy the old root profile dir to the desktop as a backup.
   nsCOMPtr<nsIFile> backupDest, containerDest, profileDest;
@@ -136,19 +142,18 @@ ProfileResetCleanup(nsIToolkitProfile* aOldProfile)
   rv = profileDest->Remove(false);
   if (NS_FAILED(rv)) return rv;
 
-  // Show a progress window while the cleanup happens since the disk I/O can take time.
-  nsCOMPtr<nsIWindowWatcher> windowWatcher(do_GetService(NS_WINDOWWATCHER_CONTRACTID));
+  // Show a progress window while the cleanup happens since the disk I/O can
+  // take time.
+  nsCOMPtr<nsIWindowWatcher> windowWatcher(
+      do_GetService(NS_WINDOWWATCHER_CONTRACTID));
   if (!windowWatcher) return NS_ERROR_FAILURE;
 
   nsCOMPtr<nsIAppStartup> appStartup(do_GetService(NS_APPSTARTUP_CONTRACTID));
   if (!appStartup) return NS_ERROR_FAILURE;
 
   nsCOMPtr<mozIDOMWindowProxy> progressWindow;
-  rv = windowWatcher->OpenWindow(nullptr,
-                                 kResetProgressURL,
-                                 "_blank",
-                                 "centerscreen,chrome,titlebar",
-                                 nullptr,
+  rv = windowWatcher->OpenWindow(nullptr, kResetProgressURL, "_blank",
+                                 "centerscreen,chrome,titlebar", nullptr,
                                  getter_AddRefs(progressWindow));
   if (NS_FAILED(rv)) return rv;
 
@@ -157,16 +162,13 @@ ProfileResetCleanup(nsIToolkitProfile* aOldProfile)
   nsCOMPtr<nsIThread> cleanupThread;
   rv = tm->NewThread(0, 0, getter_AddRefs(cleanupThread));
   if (NS_SUCCEEDED(rv)) {
-    nsCOMPtr<nsIRunnable> runnable = new ProfileResetCleanupAsyncTask(profileDir, profileLocalDir,
-                                                                      containerDest, leafName);
+    nsCOMPtr<nsIRunnable> runnable = new ProfileResetCleanupAsyncTask(
+        profileDir, profileLocalDir, containerDest, leafName);
     cleanupThread->Dispatch(runnable, nsIThread::DISPATCH_NORMAL);
     // The result callback will shut down the worker thread.
 
-    nsIThread *thread = NS_GetCurrentThread();
     // Wait for the cleanup thread to complete.
-    while(!gProfileResetCleanupCompleted) {
-      NS_ProcessNextEvent(thread);
-    }
+    SpinEventLoopUntil([&]() { return gProfileResetCleanupCompleted; });
   } else {
     gProfileResetCleanupCompleted = true;
     NS_WARNING("Cleanup thread creation failed");
@@ -176,7 +178,8 @@ ProfileResetCleanup(nsIToolkitProfile* aOldProfile)
   auto* piWindow = nsPIDOMWindowOuter::From(progressWindow);
   piWindow->Close();
 
-  // Delete the old profile from profiles.ini. The folder was already deleted by the thread above.
+  // Delete the old profile from profiles.ini. The folder was already deleted by
+  // the thread above.
   rv = aOldProfile->Remove(false);
   if (NS_FAILED(rv)) NS_WARNING("Could not remove the profile");
 

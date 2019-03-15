@@ -13,32 +13,36 @@ Bug 1067491 - Test forcing a gc.
 <pre id="test">
 <script src="memory-helpers.js" type="application/javascript"></script>
 <script>
+"use strict";
+
 window.onload = function() {
   SimpleTest.waitForExplicitFinish();
 
-  Task.spawn(function* () {
-    var { memory, client } = yield startServerAndGetSelectedTabMemory();
+  (async function() {
+    const { memory, target } = await startServerAndGetSelectedTabMemory();
+
+    let beforeGC, afterGC;
 
     do {
-      var objects = [];
-      for (var i = 0; i < 1000; i++) {
-        var o = {};
+      let objects = [];
+      for (let i = 0; i < 1000; i++) {
+        const o = {};
         o[Math.random()] = 1;
         objects.push(o);
       }
-
       objects = null;
 
-      var { total: beforeGC } = yield memory.measure();
+      beforeGC = (await memory.measure()).total;
 
-      yield memory.forceGarbageCollection();
-      var { total: afterGC } = yield memory.measure();
-    } while(beforeGC < afterGC);
+      await memory.forceGarbageCollection();
+
+      afterGC = (await memory.measure()).total;
+    } while (beforeGC < afterGC);
 
     ok(true, "The amount of memory after GC should eventually decrease");
 
-    destroyServerAndFinish(client);
-  });
+    destroyServerAndFinish(target);
+  })();
 };
 </script>
 </pre>

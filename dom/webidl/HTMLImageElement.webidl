@@ -19,24 +19,26 @@ interface nsIStreamListener;
 [HTMLConstructor,
  NamedConstructor=Image(optional unsigned long width, optional unsigned long height)]
 interface HTMLImageElement : HTMLElement {
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute DOMString alt;
-           [SetterThrows]
+           [CEReactions, SetterNeedsSubjectPrincipal=NonSystem, SetterThrows]
            attribute DOMString src;
-           [SetterThrows]
+           [CEReactions, SetterNeedsSubjectPrincipal=NonSystem, SetterThrows]
            attribute DOMString srcset;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute DOMString? crossOrigin;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute DOMString useMap;
-           [SetterThrows, Pref="network.http.enablePerElementReferrer"]
+           [CEReactions, SetterThrows]
            attribute DOMString referrerPolicy;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute boolean isMap;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute unsigned long width;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute unsigned long height;
+           [CEReactions, SetterThrows]
+           attribute DOMString decoding;
   readonly attribute unsigned long naturalWidth;
   readonly attribute unsigned long naturalHeight;
   readonly attribute boolean complete;
@@ -44,30 +46,31 @@ interface HTMLImageElement : HTMLElement {
 
 // http://www.whatwg.org/specs/web-apps/current-work/#other-elements,-attributes-and-apis
 partial interface HTMLImageElement {
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute DOMString name;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute DOMString align;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute unsigned long hspace;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute unsigned long vspace;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute DOMString longDesc;
 
-  [TreatNullAs=EmptyString,SetterThrows] attribute DOMString border;
+  [CEReactions, TreatNullAs=EmptyString,SetterThrows] attribute DOMString border;
 };
 
 // [Update me: not in whatwg spec yet]
 // http://picture.responsiveimages.org/#the-img-element
 partial interface HTMLImageElement {
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute DOMString sizes;
   readonly attribute DOMString currentSrc;
 };
 
 // Mozilla extensions.
 partial interface HTMLImageElement {
+           [CEReactions, SetterThrows]
            attribute DOMString lowsrc;
 
   // These attributes are offsets from the closest view (to mimic
@@ -91,8 +94,16 @@ interface MozImageLoadingContent {
   attribute boolean loadingEnabled;
   [ChromeOnly]
   readonly attribute short imageBlockingStatus;
+  /**
+   * Same as addNativeObserver but intended for scripted observers or observers
+   * from another or without a document.
+   */
   [ChromeOnly]
   void addObserver(imgINotificationObserver aObserver);
+  /**
+   * Same as removeNativeObserver but intended for scripted observers or
+   * observers from another or without a document.
+   */
   [ChromeOnly]
   void removeObserver(imgINotificationObserver aObserver);
   [ChromeOnly,Throws]
@@ -101,8 +112,18 @@ interface MozImageLoadingContent {
   long getRequestType(imgIRequest aRequest);
   [ChromeOnly,Throws]
   readonly attribute URI? currentURI;
+  // Gets the final URI of the current request, if available.
+  // Otherwise, returns null.
+  [ChromeOnly]
+  readonly attribute URI? currentRequestFinalURI;
+  /**
+   * forceReload forces reloading of the image pointed to by currentURI
+   *
+   * @param aNotify request should notify
+   * @throws NS_ERROR_NOT_AVAILABLE if there is no current URI to reload
+   */
   [ChromeOnly,Throws]
-  void forceReload(optional boolean aNotify);
+  void forceReload(optional boolean aNotify = true);
   [ChromeOnly]
   void forceImageState(boolean aForce, unsigned long long aState);
 };

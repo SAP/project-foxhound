@@ -2,19 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* globals registerCleanupFunction, add_task, is, isnot */
-
 "use strict";
 
 registerCleanupFunction(teardown);
 
-add_task(function* testVoiceselectDropdownAutoclose() {
+add_task(async function testVoiceselectDropdownAutoclose() {
   setup();
 
-  yield spawnInNewReaderTab(TEST_ARTICLE, function* () {
+  await spawnInNewReaderTab(TEST_ARTICLE, async function() {
     let $ = content.document.querySelector.bind(content.document);
 
-    yield NarrateTestUtils.waitForNarrateToggle(content);
+    await NarrateTestUtils.waitForNarrateToggle(content);
 
     $(NarrateTestUtils.TOGGLE).click();
     ok(NarrateTestUtils.isVisible($(NarrateTestUtils.POPUP)),
@@ -43,19 +41,19 @@ add_task(function* testVoiceselectDropdownAutoclose() {
   });
 });
 
-add_task(function* testVoiceselectLabelChange() {
+add_task(async function testVoiceselectLabelChange() {
   setup();
 
-  yield spawnInNewReaderTab(TEST_ARTICLE, function* () {
+  await spawnInNewReaderTab(TEST_ARTICLE, async function() {
     let $ = content.document.querySelector.bind(content.document);
 
-    yield NarrateTestUtils.waitForNarrateToggle(content);
+    await NarrateTestUtils.waitForNarrateToggle(content);
 
     $(NarrateTestUtils.TOGGLE).click();
     ok(NarrateTestUtils.isVisible($(NarrateTestUtils.POPUP)),
       "popup is toggled");
 
-    ok(NarrateTestUtils.selectVoice(content, "urn:moz-tts:fake-direct:lenny"),
+    ok(NarrateTestUtils.selectVoice(content, "urn:moz-tts:fake:lenny"),
       "voice selected");
 
     let selectedOption = $(NarrateTestUtils.VOICE_SELECTED);
@@ -66,13 +64,13 @@ add_task(function* testVoiceselectLabelChange() {
   });
 });
 
-add_task(function* testVoiceselectKeyboard() {
+add_task(async function testVoiceselectKeyboard() {
   setup();
 
-  yield spawnInNewReaderTab(TEST_ARTICLE, function* () {
+  await spawnInNewReaderTab(TEST_ARTICLE, async function() {
     let $ = content.document.querySelector.bind(content.document);
 
-    yield NarrateTestUtils.waitForNarrateToggle(content);
+    await NarrateTestUtils.waitForNarrateToggle(content);
 
     $(NarrateTestUtils.TOGGLE).click();
     ok(NarrateTestUtils.isVisible($(NarrateTestUtils.POPUP)),
@@ -87,26 +85,26 @@ add_task(function* testVoiceselectKeyboard() {
 
     $(NarrateTestUtils.VOICE_SELECT).focus();
 
-    eventUtils.sendKey("DOWN", content);
+    eventUtils.synthesizeKey("KEY_ArrowDown", {}, content);
 
-    yield ContentTaskUtils.waitForCondition(
+    await ContentTaskUtils.waitForCondition(
       () => $(NarrateTestUtils.VOICE_SELECTED).dataset.value != firstValue,
-      "value changed after pressing DOWN key");
+      "value changed after pressing ArrowDown key");
 
-    eventUtils.sendKey("RETURN", content);
+    eventUtils.synthesizeKey("KEY_Enter", {}, content);
 
     ok(NarrateTestUtils.isVisible($(NarrateTestUtils.VOICE_OPTIONS)),
-      "voice options showing after pressing RETURN");
+      "voice options showing after pressing Enter");
 
-    eventUtils.sendKey("UP", content);
+    eventUtils.synthesizeKey("KEY_ArrowUp", {}, content);
 
-    eventUtils.sendKey("RETURN", content);
+    eventUtils.synthesizeKey("KEY_Enter", {}, content);
 
     ok(!NarrateTestUtils.isVisible($(NarrateTestUtils.VOICE_OPTIONS)),
-      "voice options hidden after pressing RETURN");
+      "voice options hidden after pressing Enter");
 
-    yield ContentTaskUtils.waitForCondition(
+    await ContentTaskUtils.waitForCondition(
       () => $(NarrateTestUtils.VOICE_SELECTED).dataset.value == firstValue,
-      "value changed back to original after pressing RETURN");
+      "value changed back to original after pressing Enter");
   });
 });

@@ -1,56 +1,26 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-var target;
+add_task(async function() {
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
+  await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
 
-function test()
-{
-  waitForExplicitFinish();
-
-  gBrowser.selectedTab = gBrowser.addTab();
-  BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser).then(onLoad);
-}
-
-function onLoad() {
-  target = TargetFactory.forTab(gBrowser.selectedTab);
-
+  const target = await TargetFactory.forTab(gBrowser.selectedTab);
+  await target.attach();
   is(target.tab, gBrowser.selectedTab, "Target linked to the right tab.");
 
-  target.once("hidden", onHidden);
-  gBrowser.selectedTab = gBrowser.addTab();
-}
-
-function onHidden() {
-  ok(true, "Hidden event received");
-  target.once("visible", onVisible);
-  gBrowser.removeCurrentTab();
-}
-
-function onVisible() {
-  ok(true, "Visible event received");
-  target.once("will-navigate", onWillNavigate);
-  let mm = getFrameScript();
-  mm.sendAsyncMessage("devtools:test:navigate", { location: "data:text/html,<meta charset='utf8'/>test navigation" });
-}
-
-function onWillNavigate(event, request) {
+  const willNavigate = once(target, "will-navigate");
+  const navigate = once(target, "navigate");
+  ContentTask.spawn(gBrowser.selectedBrowser, null, () => {
+    content.location = "data:text/html,<meta charset='utf8'/>test navigation";
+  });
+  await willNavigate;
   ok(true, "will-navigate event received");
-  // Wait for navigation handling to complete before removing the tab, in order
-  // to avoid triggering assertions.
-  target.once("navigate", executeSoon.bind(null, onNavigate));
-}
-
-function onNavigate() {
+  await navigate;
   ok(true, "navigate event received");
-  target.once("close", onClose);
+
+  const close = once(target, "close");
   gBrowser.removeCurrentTab();
-}
-
-function onClose() {
+  await close;
   ok(true, "close event received");
-
-  target = null;
-  finish();
-}
+});

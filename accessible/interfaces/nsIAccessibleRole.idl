@@ -8,7 +8,7 @@
 /**
  * Defines cross platform (Gecko) roles.
  */
-[scriptable, builtinclass, uuid(05a9f33f-dcfd-4e7b-b825-138ba784c1f5)]
+[scriptable, builtinclass, uuid(ad7f32a5-6d5f-4154-a5b8-0fa7aed48936)]
 interface nsIAccessibleRole : nsISupports
 {
   /**
@@ -104,7 +104,7 @@ interface nsIAccessibleRole : nsISupports
 
   /**
    * Represents a document window. A document window is always contained within
-   * an application window. It is used for role="document".
+   * an application window. For role="document", see NON_NATIVE_DOCUMENT.
    */
   const unsigned long ROLE_DOCUMENT = 15;
 
@@ -194,8 +194,8 @@ interface nsIAccessibleRole : nsISupports
   const unsigned long ROLE_ROW = 28;
 
   /**
-   * Represents a cell within a table. It is used for html:td,
-   * xul:tree cell and xul:listcell. Also, see ROLE_TABLE.
+   * Represents a cell within a table. It is used for html:td and xul:tree cell.
+   * Also, see ROLE_TABLE.
    */
   const unsigned long ROLE_CELL = 29;
 
@@ -299,9 +299,9 @@ interface nsIAccessibleRole : nsISupports
   const unsigned long ROLE_RADIOBUTTON = 45;
 
   /**
-   * Represents a combo box; an edit control with an associated list box that
-   * provides a set of predefined choices. It is used for html:select,
-   * xul:menulist, role="combobox".
+   * Represents a combo box; a popup button with an associated list box that
+   * provides a set of predefined choices. It is used for html:select with a
+   * size of 1 and xul:menulist. See also ROLE_EDITCOMBOBOX.
    */
   const unsigned long ROLE_COMBOBOX = 46;
 
@@ -312,7 +312,7 @@ interface nsIAccessibleRole : nsISupports
 
   /**
    * Represents a progress bar, dynamically showing the user the percent
-   * complete of an operation in progress. It is used for xul:progressmeter,
+   * complete of an operation in progress. It is used for html:progress,
    * role="progressbar".
    */
   const unsigned long ROLE_PROGRESSBAR = 48;
@@ -338,7 +338,7 @@ interface nsIAccessibleRole : nsISupports
   /**
    * Represents a spin box, which is a control that allows the user to increment
    * or decrement the value displayed in a separate "buddy" control associated
-   * with the spin box. It is used for xul:spinbuttons.
+   * with the spin box. It is used for input[type=number] spin buttons.
    */
   const unsigned long ROLE_SPINBUTTON = 52;
 
@@ -637,13 +637,12 @@ interface nsIAccessibleRole : nsISupports
   const unsigned long ROLE_CAPTION = 103;
 
   /**
-   * A visual frame or container which contains a view of document content.
-   * Document frames may occur within another Document instance, in which case
-   * the second document may be said to be embedded in the containing instance.
-   * HTML frames are often ROLE_DOCUMENT_FRAME. Either this object, or a
-   * singleton descendant, should implement the Document interface.
+   * An element containing content that assistive technology users may want to
+   * browse in a reading mode, rather than a focus/interactive/application mode.
+   * This role is used for role="document". For the container which holds the
+   * content of a web page, see ROLE_DOCUMENT.
    */
-  const unsigned long ROLE_DOCUMENT_FRAME = 104;
+  const unsigned long ROLE_NON_NATIVE_DOCUMENT = 104;
 
   /**
    * Heading.
@@ -977,4 +976,67 @@ interface nsIAccessibleRole : nsISupports
    * SUMMARY role.
    */
   const unsigned long ROLE_SUMMARY = 168;
+
+  /**
+   * An ARIA landmark. See related NAVIGATION role.
+   */
+  const unsigned long ROLE_LANDMARK = 169;
+
+  /**
+   * A specific type of ARIA landmark. The ability to distinguish navigation
+   * landmarks from other types of landmarks is needed because macOS has a
+   * specific AXSubrole and AXRoleDescription for navigation landmarks.
+   */
+  const unsigned long ROLE_NAVIGATION = 170;
+
+  /**
+   * An object that contains the text of a footnote.
+   */
+  const unsigned long ROLE_FOOTNOTE = 171;
+
+  /**
+   * A complete or self-contained composition in a document, page, application,
+   * or site and that is, in principle, independently distributable or reusable,
+   * e.g. in syndication.
+   */
+  const unsigned long ROLE_ARTICLE = 172;
+
+  /**
+   * A perceivable section containing content that is relevant to a specific,
+   * author-specified purpose and sufficiently important that users will likely
+   * want to be able to navigate to the section easily and to have it listed in
+   * a summary of the page.
+   */
+  const unsigned long ROLE_REGION = 173;
+
+  /**
+   * Represents a control with a text input and a popup with a set of predefined
+   * choices. It is used for ARIA's combobox role. See also ROLE_COMBOBOX.
+   */
+  const unsigned long ROLE_EDITCOMBOBOX = 174;
+
+  /**
+   * A section of content that is quoted from another source.
+   */
+  const unsigned long ROLE_BLOCKQUOTE = 175;
+
+  /**
+   * Content previously deleted or proposed for deletion, e.g. in revision
+   * history or a content view providing suggestions from reviewers.
+   */
+  const unsigned long ROLE_CONTENT_DELETION = 176;
+
+  /**
+   * Content previously inserted or proposed for insertion, e.g. in revision
+   * history or a content view providing suggestions from reviewers.
+   */
+  const unsigned long ROLE_CONTENT_INSERTION = 177;
+
+  /**
+   * An html:form element with a label provided by WAI-ARIA.
+   * This may also be used if role="form" with a label should be exposed
+   * differently in the future.
+   */
+  const unsigned long ROLE_FORM_LANDMARK = 178;
+
 };

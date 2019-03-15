@@ -15,29 +15,27 @@ const TEST_URI = `
   <span id="matches" class="matches">Some styled text</span>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openComputedView();
-  yield selectNode("#matches", inspector);
-  yield testToggleDefaultStyles(inspector, view);
-  yield testAddTextInFilter(inspector, view);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, view} = await openComputedView();
+  await selectNode("#matches", inspector);
+  await testToggleDefaultStyles(inspector, view);
+  await testAddTextInFilter(inspector, view);
 });
 
-function* testToggleDefaultStyles(inspector, computedView) {
+async function testToggleDefaultStyles(inspector, computedView) {
   info("checking \"Browser styles\" checkbox");
-  let checkbox = computedView.includeBrowserStylesCheckbox;
-  let onRefreshed = inspector.once("computed-view-refreshed");
+  const checkbox = computedView.includeBrowserStylesCheckbox;
+  const onRefreshed = inspector.once("computed-view-refreshed");
   checkbox.click();
-  yield onRefreshed;
+  await onRefreshed;
 }
 
-function* testAddTextInFilter(inspector, computedView) {
+async function testAddTextInFilter(inspector, computedView) {
   info("setting filter text to \"color\"");
-  let doc = computedView.styleDocument;
-  let boxModelWrapper = doc.getElementById("boxmodel-wrapper");
-  let searchField = computedView.searchField;
-  let onRefreshed = inspector.once("computed-view-refreshed");
-  let win = computedView.styleWindow;
+  const searchField = computedView.searchField;
+  const onRefreshed = inspector.once("computed-view-refreshed");
+  const win = computedView.styleWindow;
 
   // First check to make sure that accel + F doesn't focus search if the
   // container isn't focused
@@ -51,15 +49,13 @@ function* testAddTextInFilter(inspector, computedView) {
   is(inspector.panelDoc.activeElement, searchField, "Search field is focused");
 
   synthesizeKeys("color", win);
-  yield onRefreshed;
-
-  ok(boxModelWrapper.hidden, "Box model is hidden");
+  await onRefreshed;
 
   info("check that the correct properties are visible");
 
-  let propertyViews = computedView.propertyViews;
+  const propertyViews = computedView.propertyViews;
   propertyViews.forEach(propView => {
-    let name = propView.name;
+    const name = propView.name;
     is(propView.visible, name.indexOf("color") > -1,
       "span " + name + " property visibility check");
   });

@@ -13,11 +13,11 @@
 
 using namespace mozilla;
 
-class WebMOpusTrackEncoder : public OpusTrackEncoder
-{
-public:
-  bool TestOpusCreation(int aChannels, int aSamplingRate)
-  {
+class WebMOpusTrackEncoder : public OpusTrackEncoder {
+ public:
+  explicit WebMOpusTrackEncoder(TrackRate aTrackRate)
+      : OpusTrackEncoder(aTrackRate) {}
+  bool TestOpusCreation(int aChannels, int aSamplingRate) {
     if (NS_SUCCEEDED(Init(aChannels, aSamplingRate))) {
       return true;
     }
@@ -25,15 +25,13 @@ public:
   }
 };
 
-class WebMVP8TrackEncoder: public VP8TrackEncoder
-{
-public:
+class WebMVP8TrackEncoder : public VP8TrackEncoder {
+ public:
   explicit WebMVP8TrackEncoder(TrackRate aTrackRate = 90000)
-    : VP8TrackEncoder(aTrackRate) {}
+      : VP8TrackEncoder(aTrackRate, FrameDroppingMode::DISALLOW) {}
 
   bool TestVP8Creation(int32_t aWidth, int32_t aHeight, int32_t aDisplayWidth,
-                       int32_t aDisplayHeight)
-  {
+                       int32_t aDisplayHeight) {
     if (NS_SUCCEEDED(Init(aWidth, aHeight, aDisplayWidth, aDisplayHeight))) {
       return true;
     }
@@ -44,22 +42,19 @@ public:
 const uint64_t FIXED_DURATION = 1000000;
 const uint32_t FIXED_FRAMESIZE = 500;
 
-class TestWebMWriter: public WebMWriter
-{
-public:
+class TestWebMWriter : public WebMWriter {
+ public:
   explicit TestWebMWriter(int aTrackTypes)
-  : WebMWriter(aTrackTypes),
-    mTimestamp(0)
-  {}
+      : WebMWriter(aTrackTypes), mTimestamp(0) {}
 
-  void SetOpusMetadata(int aChannels, int aSampleRate) {
-    WebMOpusTrackEncoder opusEncoder;
+  void SetOpusMetadata(int aChannels, int aSampleRate, TrackRate aTrackRate) {
+    WebMOpusTrackEncoder opusEncoder(aTrackRate);
     EXPECT_TRUE(opusEncoder.TestOpusCreation(aChannels, aSampleRate));
     RefPtr<TrackMetadataBase> opusMeta = opusEncoder.GetMetadata();
     SetMetadata(opusMeta);
   }
   void SetVP8Metadata(int32_t aWidth, int32_t aHeight, int32_t aDisplayWidth,
-                      int32_t aDisplayHeight,TrackRate aTrackRate) {
+                      int32_t aDisplayHeight, TrackRate aTrackRate) {
     WebMVP8TrackEncoder vp8Encoder;
     EXPECT_TRUE(vp8Encoder.TestVP8Creation(aWidth, aHeight, aDisplayWidth,
                                            aDisplayHeight));
@@ -98,8 +93,7 @@ public:
   uint64_t mTimestamp;
 };
 
-TEST(WebMWriter, Metadata)
-{
+TEST(WebMWriter, Metadata) {
   TestWebMWriter writer(ContainerWriter::CREATE_AUDIO_TRACK |
                         ContainerWriter::CREATE_VIDEO_TRACK);
 
@@ -113,7 +107,8 @@ TEST(WebMWriter, Metadata)
   // Set opus metadata.
   int channel = 1;
   int sampleRate = 44100;
-  writer.SetOpusMetadata(channel, sampleRate);
+  TrackRate aTrackRate = 90000;
+  writer.SetOpusMetadata(channel, sampleRate, aTrackRate);
 
   // No output data since we didn't set both audio/video
   // metadata in writer.
@@ -127,30 +122,26 @@ TEST(WebMWriter, Metadata)
   int32_t height = 480;
   int32_t displayWidth = 640;
   int32_t displayHeight = 480;
-  TrackRate aTrackRate = 90000;
-  writer.SetVP8Metadata(width, height, displayWidth,
-                        displayHeight, aTrackRate);
+  writer.SetVP8Metadata(width, height, displayWidth, displayHeight, aTrackRate);
 
   writer.GetContainerData(&encodedBuf, ContainerWriter::GET_HEADER);
   EXPECT_TRUE(encodedBuf.Length() > 0);
 }
 
-TEST(WebMWriter, Cluster)
-{
+TEST(WebMWriter, Cluster) {
   TestWebMWriter writer(ContainerWriter::CREATE_AUDIO_TRACK |
                         ContainerWriter::CREATE_VIDEO_TRACK);
   // Set opus metadata.
   int channel = 1;
   int sampleRate = 48000;
-  writer.SetOpusMetadata(channel, sampleRate);
+  TrackRate aTrackRate = 90000;
+  writer.SetOpusMetadata(channel, sampleRate, aTrackRate);
   // Set vp8 metadata
   int32_t width = 320;
   int32_t height = 240;
   int32_t displayWidth = 320;
   int32_t displayHeight = 240;
-  TrackRate aTrackRate = 90000;
-  writer.SetVP8Metadata(width, height, displayWidth,
-                        displayHeight, aTrackRate);
+  writer.SetVP8Metadata(width, height, displayWidth, displayHeight, aTrackRate);
 
   nsTArray<nsTArray<uint8_t> > encodedBuf;
   writer.GetContainerData(&encodedBuf, ContainerWriter::GET_HEADER);
@@ -178,22 +169,20 @@ TEST(WebMWriter, Cluster)
   EXPECT_TRUE(writer.HaveValidCluster());
 }
 
-TEST(WebMWriter, FLUSH_NEEDED)
-{
+TEST(WebMWriter, FLUSH_NEEDED) {
   TestWebMWriter writer(ContainerWriter::CREATE_AUDIO_TRACK |
                         ContainerWriter::CREATE_VIDEO_TRACK);
   // Set opus metadata.
   int channel = 2;
   int sampleRate = 44100;
-  writer.SetOpusMetadata(channel, sampleRate);
+  TrackRate aTrackRate = 100000;
+  writer.SetOpusMetadata(channel, sampleRate, aTrackRate);
   // Set vp8 metadata
   int32_t width = 176;
   int32_t height = 352;
   int32_t displayWidth = 176;
   int32_t displayHeight = 352;
-  TrackRate aTrackRate = 100000;
-  writer.SetVP8Metadata(width, height, displayWidth,
-                        displayHeight, aTrackRate);
+  writer.SetVP8Metadata(width, height, displayWidth, displayHeight, aTrackRate);
 
   // write the first I-Frame.
   writer.AppendDummyFrame(EncodedFrame::VP8_I_FRAME, FIXED_DURATION);
@@ -235,8 +224,7 @@ struct WebMioData {
   CheckedInt<size_t> offset;
 };
 
-static int webm_read(void* aBuffer, size_t aLength, void* aUserData)
-{
+static int webm_read(void* aBuffer, size_t aLength, void* aUserData) {
   NS_ASSERTION(aUserData, "aUserData must point to a valid WebMioData");
   WebMioData* ioData = static_cast<WebMioData*>(aUserData);
 
@@ -256,12 +244,11 @@ static int webm_read(void* aBuffer, size_t aLength, void* aUserData)
       (ioData->offset.value() > ioData->data.Length())) {
     return -1;
   }
-  memcpy(aBuffer, ioData->data.Elements()+oldOffset, aLength);
+  memcpy(aBuffer, ioData->data.Elements() + oldOffset, aLength);
   return 1;
 }
 
-static int webm_seek(int64_t aOffset, int aWhence, void* aUserData)
-{
+static int webm_seek(int64_t aOffset, int aWhence, void* aUserData) {
   NS_ASSERTION(aUserData, "aUserData must point to a valid WebMioData");
   WebMioData* ioData = static_cast<WebMioData*>(aUserData);
 
@@ -271,8 +258,7 @@ static int webm_seek(int64_t aOffset, int aWhence, void* aUserData)
   }
 
   switch (aWhence) {
-    case NESTEGG_SEEK_END:
-    {
+    case NESTEGG_SEEK_END: {
       CheckedInt<size_t> tempOffset = ioData->data.Length();
       ioData->offset = tempOffset + aOffset;
       break;
@@ -296,29 +282,26 @@ static int webm_seek(int64_t aOffset, int aWhence, void* aUserData)
   return 0;
 }
 
-static int64_t webm_tell(void* aUserData)
-{
+static int64_t webm_tell(void* aUserData) {
   NS_ASSERTION(aUserData, "aUserData must point to a valid WebMioData");
   WebMioData* ioData = static_cast<WebMioData*>(aUserData);
   return ioData->offset.isValid() ? ioData->offset.value() : -1;
 }
 
-TEST(WebMWriter, bug970774_aspect_ratio)
-{
+TEST(WebMWriter, bug970774_aspect_ratio) {
   TestWebMWriter writer(ContainerWriter::CREATE_AUDIO_TRACK |
                         ContainerWriter::CREATE_VIDEO_TRACK);
   // Set opus metadata.
   int channel = 1;
   int sampleRate = 44100;
-  writer.SetOpusMetadata(channel, sampleRate);
+  TrackRate aTrackRate = 90000;
+  writer.SetOpusMetadata(channel, sampleRate, aTrackRate);
   // Set vp8 metadata
   int32_t width = 640;
   int32_t height = 480;
   int32_t displayWidth = 1280;
   int32_t displayHeight = 960;
-  TrackRate aTrackRate = 90000;
-  writer.SetVP8Metadata(width, height, displayWidth,
-                        displayHeight, aTrackRate);
+  writer.SetVP8Metadata(width, height, displayWidth, displayHeight, aTrackRate);
 
   // write the first I-Frame.
   writer.AppendDummyFrame(EncodedFrame::VP8_I_FRAME, FIXED_DURATION);
@@ -332,7 +315,7 @@ TEST(WebMWriter, bug970774_aspect_ratio)
   // Flatten the encodedBuf.
   WebMioData ioData;
   ioData.offset = 0;
-  for(uint32_t i = 0 ; i < encodedBuf.Length(); ++i) {
+  for (uint32_t i = 0; i < encodedBuf.Length(); ++i) {
     ioData.data.AppendElements(encodedBuf[i]);
   }
 
@@ -373,4 +356,3 @@ TEST(WebMWriter, bug970774_aspect_ratio)
     nestegg_destroy(context);
   }
 }
-

@@ -33,11 +33,11 @@ WalkerIndex.prototype = {
   /**
    * Destroy this instance, releasing all data and references
    */
-  destroy: function () {
+  destroy: function() {
     this.walker.off("any-mutation", this.clearIndex);
   },
 
-  clearIndex: function () {
+  clearIndex: function() {
     if (!this.currentlyIndexing) {
       this._data = null;
     }
@@ -66,9 +66,9 @@ WalkerIndex.prototype = {
     return this._data;
   },
 
-  _addToIndex: function (type, node, value) {
+  _addToIndex: function(type, node, value) {
     // Add an entry for this value if there isn't one
-    let entry = this._data.get(value);
+    const entry = this._data.get(value);
     if (!entry) {
       this._data.set(value, []);
     }
@@ -76,23 +76,23 @@ WalkerIndex.prototype = {
     // Add the type/node to the list
     this._data.get(value).push({
       type: type,
-      node: node
+      node: node,
     });
   },
 
-  index: function () {
+  index: function() {
     // Handle case where iterating nextNode() with the deepTreeWalker triggers
     // a mutation (Bug 1222558)
     this.currentlyIndexing = true;
 
-    let documentWalker = this.walker.getDocumentWalker(this.doc);
+    const documentWalker = this.walker.getDocumentWalker(this.doc);
     while (documentWalker.nextNode()) {
-      let node = documentWalker.currentNode;
+      const node = documentWalker.currentNode;
 
       if (node.nodeType === 1) {
         // For each element node, we get the tagname and all attributes names
         // and values
-        let localName = node.localName;
+        const localName = node.localName;
         if (localName === "_moz_generated_content_before") {
           this._addToIndex("tag", node, "::before");
           this._addToIndex("text", node, node.textContent.trim());
@@ -103,7 +103,7 @@ WalkerIndex.prototype = {
           this._addToIndex("tag", node, node.localName);
         }
 
-        for (let {name, value} of node.attributes) {
+        for (const {name, value} of node.attributes) {
           this._addToIndex("attributeName", node, name);
           this._addToIndex("attributeValue", node, value);
         }
@@ -114,7 +114,7 @@ WalkerIndex.prototype = {
     }
 
     this.currentlyIndexing = false;
-  }
+  },
 };
 
 exports.WalkerIndex = WalkerIndex;
@@ -142,21 +142,21 @@ function WalkerSearch(walker) {
 }
 
 WalkerSearch.prototype = {
-  destroy: function () {
+  destroy: function() {
     this.index.destroy();
     this.walker = null;
   },
 
-  _addResult: function (node, type, results) {
+  _addResult: function(node, type, results) {
     if (!results.has(node)) {
       results.set(node, []);
     }
 
-    let matches = results.get(node);
+    const matches = results.get(node);
 
     // Do not add if the exact same result is already in the list
     let isKnown = false;
-    for (let match of matches) {
+    for (const match of matches) {
       if (match.type === type) {
         isKnown = true;
         break;
@@ -168,31 +168,31 @@ WalkerSearch.prototype = {
     }
   },
 
-  _searchIndex: function (query, options, results) {
-    for (let [matched, res] of this.index.data) {
+  _searchIndex: function(query, options, results) {
+    for (const [matched, res] of this.index.data) {
       if (!options.searchMethod(query, matched)) {
         continue;
       }
 
       // Add any relevant results (skipping non-requested options).
       res.filter(entry => {
-        return options.types.indexOf(entry.type) !== -1;
+        return options.types.includes(entry.type);
       }).forEach(({node, type}) => {
         this._addResult(node, type, results);
       });
     }
   },
 
-  _searchSelectors: function (query, options, results) {
+  _searchSelectors: function(query, options, results) {
     // If the query is just one "word", no need to search because _searchIndex
     // will lead the same results since it has access to tagnames anyway
-    let isSelector = query && query.match(/[ >~.#\[\]]/);
-    if (options.types.indexOf("selector") === -1 || !isSelector) {
+    const isSelector = query && query.match(/[ >~.#\[\]]/);
+    if (!options.types.includes("selector") || !isSelector) {
       return;
     }
 
-    let nodes = this.walker._multiFrameQuerySelectorAll(query);
-    for (let node of nodes) {
+    const nodes = this.walker._multiFrameQuerySelectorAll(query);
+    for (const node of nodes) {
       this._addResult(node, "selector", results);
     }
   },
@@ -212,7 +212,7 @@ WalkerSearch.prototype = {
    *   type: <the type of match: one of WalkerSearch.ALL_RESULTS_TYPES>
    * }
    */
-  search: function (query, options = {}) {
+  search: function(query, options = {}) {
     options.searchMethod = options.searchMethod || WalkerSearch.SEARCH_METHOD_CONTAINS;
     options.types = options.types || WalkerSearch.ALL_RESULTS_TYPES;
 
@@ -222,7 +222,7 @@ WalkerSearch.prototype = {
     }
 
     // Store results in a map indexed by nodes to avoid duplicate results
-    let results = new Map();
+    const results = new Map();
 
     // Search through the indexed data
     this._searchIndex(query, options, results);
@@ -231,9 +231,9 @@ WalkerSearch.prototype = {
     this._searchSelectors(query, options, results);
 
     // Concatenate all results into an Array to return
-    let resultList = [];
-    for (let [node, matches] of results) {
-      for (let {type} of matches) {
+    const resultList = [];
+    for (const [node, matches] of results) {
+      for (const {type} of matches) {
         resultList.push({
           node: node,
           type: type,
@@ -246,15 +246,15 @@ WalkerSearch.prototype = {
       }
     }
 
-    let documents = this.walker.tabActor.windows.map(win=>win.document);
+    const documents = this.walker.targetActor.windows.map(win=>win.document);
 
     // Sort the resulting nodes by order of appearance in the DOM
     resultList.sort((a, b) => {
       // Disconnected nodes won't get good results from compareDocumentPosition
       // so check the order of their document instead.
       if (a.node.ownerDocument != b.node.ownerDocument) {
-        let indA = documents.indexOf(a.node.ownerDocument);
-        let indB = documents.indexOf(b.node.ownerDocument);
+        const indA = documents.indexOf(a.node.ownerDocument);
+        const indB = documents.indexOf(b.node.ownerDocument);
         return indA - indB;
       }
       // If the same document, then sort on DOCUMENT_POSITION_FOLLOWING (4)
@@ -263,11 +263,11 @@ WalkerSearch.prototype = {
     });
 
     return resultList;
-  }
+  },
 };
 
 WalkerSearch.SEARCH_METHOD_CONTAINS = (query, candidate) => {
-  return query && candidate.toLowerCase().indexOf(query.toLowerCase()) !== -1;
+  return query && candidate.toLowerCase().includes(query.toLowerCase());
 };
 
 WalkerSearch.ALL_RESULTS_TYPES = ["tag", "text", "attributeName",

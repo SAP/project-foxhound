@@ -4,10 +4,14 @@
 
 package org.mozilla.gecko.sync.repositories.domain;
 
+import android.support.annotation.Nullable;
+
 import java.io.UnsupportedEncodingException;
 
+import org.json.simple.JSONObject;
 import org.mozilla.gecko.sync.CryptoRecord;
 import org.mozilla.gecko.sync.ExtendedJSONObject;
+import org.mozilla.gecko.util.StringUtils;
 
 /**
  * Record is the abstract base class for all entries that Sync processes:
@@ -70,6 +74,12 @@ public abstract class Record {
   public long lastModified;
   public boolean deleted;
   public long androidID;
+
+  // Not all record types support versioning. See Bug 1383894.
+  @Nullable public Integer localVersion;
+  @Nullable public Integer syncVersion;
+  public boolean modifiedBySync = false;
+
   /**
    * An integer indicating the relative importance of this item in the collection.
    * <p>
@@ -244,13 +254,13 @@ public abstract class Record {
     throw new RuntimeException("Cannot JSONify non-CryptoRecord Records.");
   }
 
-  public byte[] toJSONBytes() {
-    try {
-      return this.toJSONString().getBytes("UTF-8");
-    } catch (UnsupportedEncodingException e) {
-      // Can't happen.
-      return null;
-    }
+  @SuppressWarnings("static-method")
+  public JSONObject toJSONObject() {
+    throw new RuntimeException("Cannot JSONify non-CryptoRecord Records.");
+  }
+
+  public static byte[] stringToJSONBytes(String in) {
+    return in.getBytes(StringUtils.UTF_8);
   }
 
   /**

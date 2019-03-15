@@ -5,26 +5,20 @@
 
 "use strict";
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cu = Components.utils;
-const Cr = Components.results;
+const {PushDB} = ChromeUtils.import("resource://gre/modules/PushDB.jsm");
+const {PushRecord} = ChromeUtils.import("resource://gre/modules/PushRecord.jsm");
+const {PushCrypto} = ChromeUtils.import("resource://gre/modules/PushCrypto.jsm");
+ChromeUtils.import("resource://gre/modules/Messaging.jsm"); /*global: EventDispatcher */
+ChromeUtils.import("resource://gre/modules/Services.jsm"); /*global: Services */
+ChromeUtils.import("resource://gre/modules/Preferences.jsm"); /*global: Preferences */
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm"); /*global: XPCOMUtils */
 
-const {PushDB} = Cu.import("resource://gre/modules/PushDB.jsm");
-const {PushRecord} = Cu.import("resource://gre/modules/PushRecord.jsm");
-const {PushCrypto} = Cu.import("resource://gre/modules/PushCrypto.jsm");
-Cu.import("resource://gre/modules/Messaging.jsm"); /*global: EventDispatcher */
-Cu.import("resource://gre/modules/Services.jsm"); /*global: Services */
-Cu.import("resource://gre/modules/Preferences.jsm"); /*global: Preferences */
-Cu.import("resource://gre/modules/Promise.jsm"); /*global: Promise */
-Cu.import("resource://gre/modules/XPCOMUtils.jsm"); /*global: XPCOMUtils */
+const Log = ChromeUtils.import("resource://gre/modules/AndroidLog.jsm", {}).AndroidLog.bind("Push");
 
-const Log = Cu.import("resource://gre/modules/AndroidLog.jsm", {}).AndroidLog.bind("Push");
-
-this.EXPORTED_SYMBOLS = ["PushServiceAndroidGCM"];
+var EXPORTED_SYMBOLS = ["PushServiceAndroidGCM"];
 
 XPCOMUtils.defineLazyGetter(this, "console", () => {
-  let {ConsoleAPI} = Cu.import("resource://gre/modules/Console.jsm", {});
+  let {ConsoleAPI} = ChromeUtils.import("resource://gre/modules/Console.jsm", {});
   return new ConsoleAPI({
     dump: Log.i,
     maxLogLevelPref: "dom.push.loglevel",
@@ -44,7 +38,7 @@ const prefs = new Preferences("dom.push.");
  * The implementation of WebPush push backed by Android's GCM
  * delivery.
  */
-this.PushServiceAndroidGCM = {
+var PushServiceAndroidGCM = {
   _mainPushService: null,
   _serverURI: null,
 
@@ -119,19 +113,26 @@ this.PushServiceAndroidGCM = {
     let message = null;
     let headers = null;
 
-    if (data.message && data.enc && (data.enckey || data.cryptokey)) {
-      headers = {
-        encryption_key: data.enckey,
-        crypto_key: data.cryptokey,
-        encryption: data.enc,
-        encoding: data.con,
-      };
+    if (data.message) {
+      if (data.enc && (data.enckey || data.cryptokey)) {
+        headers = {
+          encryption_key: data.enckey,
+          crypto_key: data.cryptokey,
+          encryption: data.enc,
+          encoding: data.con,
+        };
+      } else if (data.con == 'aes128gcm') {
+        headers = {
+          encoding: data.con,
+        };
+      }
       // Ciphertext is (urlsafe) Base 64 encoded.
       message = ChromeUtils.base64URLDecode(data.message, {
         // The Push server may append padding.
         padding: "ignore",
       });
     }
+
     return { headers, message };
   },
 
@@ -149,7 +150,7 @@ this.PushServiceAndroidGCM = {
     this._serverURI = serverURL;
 
     prefs.observe("debug", this);
-    Services.obs.addObserver(this, "PushServiceAndroidGCM:ReceivedPushMessage", false);
+    Services.obs.addObserver(this, "PushServiceAndroidGCM:ReceivedPushMessage");
 
     return this._configure(serverURL, !!prefs.get("debug")).then(() => {
       EventDispatcher.instance.sendRequestForResult({
@@ -173,7 +174,7 @@ this.PushServiceAndroidGCM = {
     // No action required.
   },
 
-  connect: function(records) {
+  connect: function(records, broadcastListeners) {
     console.debug("connect:", records);
     // It's possible for the registration or subscriptions backing the
     // PushService to not be registered with the underlying AndroidPushService.
@@ -198,6 +199,10 @@ this.PushServiceAndroidGCM = {
           });
       }));
     });
+  },
+
+  sendSubscribeBroadcast: async function(serviceId, version) {
+    // Not implemented yet
   },
 
   isConnected: function() {

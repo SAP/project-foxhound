@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +8,7 @@
 
 #include "gfxPrefs.h"
 #ifdef GFX_DECL_PREF
-#error "This is not supposed to be defined outside of gfxPrefs.h"
+#  error "This is not supposed to be defined outside of gfxPrefs.h"
 #endif
 
 // If the default values for any of these preferences change,
@@ -80,27 +81,26 @@ TEST(GfxPrefs, Set) {
   ASSERT_TRUE(gfxPrefs::APZMaxVelocity() == -1.0f);
 }
 
-#ifdef MOZ_CRASHREPORTER
 // Randomly test the function we use in nsExceptionHandler.cpp here:
 extern bool SimpleNoCLibDtoA(double aValue, char* aBuffer, int aBufferLength);
-TEST(GfxPrefs, StringUtility)
-{
+TEST(GfxPrefs, StringUtility) {
   char testBuffer[64];
-  double testVal[] = {13.4,
-                      3324243.42,
-                      0.332424342,
-                      864.0,
-                      86400 * 100000000.0 * 10000000000.0 * 10000000000.0 * 100.0,
-                      86400.0 * 366.0 * 100.0 + 14243.44332};
-  for (size_t i=0; i<mozilla::ArrayLength(testVal); i++) {
+  double testVal[] = {
+      13.4,
+      3324243.42,
+      0.332424342,
+      864.0,
+      86400 * 100000000.0 * 10000000000.0 * 10000000000.0 * 100.0,
+      86400.0 * 366.0 * 100.0 + 14243.44332};
+  for (size_t i = 0; i < mozilla::ArrayLength(testVal); i++) {
     ASSERT_TRUE(SimpleNoCLibDtoA(testVal[i], testBuffer, sizeof(testBuffer)));
-    ASSERT_TRUE(fabs(1.0 - atof(testBuffer)/testVal[i]) < 0.0001);
+    ASSERT_TRUE(fabs(1.0 - atof(testBuffer) / testVal[i]) < 0.0001);
   }
 
   // We do not like negative numbers (random limitation)
   ASSERT_FALSE(SimpleNoCLibDtoA(-864.0, testBuffer, sizeof(testBuffer)));
 
   // It won't fit into 32:
-  ASSERT_FALSE(SimpleNoCLibDtoA(testVal[4], testBuffer, sizeof(testBuffer)/2));
+  ASSERT_FALSE(
+      SimpleNoCLibDtoA(testVal[4], testBuffer, sizeof(testBuffer) / 2));
 }
-#endif

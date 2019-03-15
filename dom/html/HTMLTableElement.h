@@ -14,26 +14,22 @@
 namespace mozilla {
 namespace dom {
 
-#define TABLE_ATTRS_DIRTY ((nsMappedAttributes*)0x1)
-
 class TableRowsCollection;
 
-class HTMLTableElement final : public nsGenericHTMLElement
-{
-public:
-  explicit HTMLTableElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+class HTMLTableElement final : public nsGenericHTMLElement {
+ public:
+  explicit HTMLTableElement(
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
-  NS_IMPL_FROMCONTENT_HTML_WITH_TAG(HTMLTableElement, table)
+  NS_IMPL_FROMNODE_HTML_WITH_TAG(HTMLTableElement, table)
 
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
 
-  HTMLTableCaptionElement* GetCaption() const
-  {
+  HTMLTableCaptionElement* GetCaption() const {
     return static_cast<HTMLTableCaptionElement*>(GetChild(nsGkAtoms::caption));
   }
-  void SetCaption(HTMLTableCaptionElement* aCaption, ErrorResult& aError)
-  {
+  void SetCaption(HTMLTableCaptionElement* aCaption, ErrorResult& aError) {
     DeleteCaption();
     if (aCaption) {
       nsCOMPtr<nsINode> firstChild = nsINode::GetFirstChild();
@@ -47,12 +43,10 @@ public:
 
   void DeleteCaption();
 
-  HTMLTableSectionElement* GetTHead() const
-  {
+  HTMLTableSectionElement* GetTHead() const {
     return static_cast<HTMLTableSectionElement*>(GetChild(nsGkAtoms::thead));
   }
-  void SetTHead(HTMLTableSectionElement* aTHead, ErrorResult& aError)
-  {
+  void SetTHead(HTMLTableSectionElement* aTHead, ErrorResult& aError) {
     if (aTHead && !aTHead->IsHTMLElement(nsGkAtoms::thead)) {
       aError.Throw(NS_ERROR_DOM_HIERARCHY_REQUEST_ERR);
       return;
@@ -60,10 +54,8 @@ public:
 
     DeleteTHead();
     if (aTHead) {
-
       nsCOMPtr<nsIContent> refNode = nullptr;
-      for (refNode = nsINode::GetFirstChild();
-           refNode;
+      for (refNode = nsINode::GetFirstChild(); refNode;
            refNode = refNode->GetNextSibling()) {
         if (refNode->IsHTMLElement() &&
             !refNode->IsHTMLElement(nsGkAtoms::caption) &&
@@ -79,12 +71,10 @@ public:
 
   void DeleteTHead();
 
-  HTMLTableSectionElement* GetTFoot() const
-  {
+  HTMLTableSectionElement* GetTFoot() const {
     return static_cast<HTMLTableSectionElement*>(GetChild(nsGkAtoms::tfoot));
   }
-  void SetTFoot(HTMLTableSectionElement* aTFoot, ErrorResult& aError)
-  {
+  void SetTFoot(HTMLTableSectionElement* aTFoot, ErrorResult& aError) {
     if (aTFoot && !aTFoot->IsHTMLElement(nsGkAtoms::tfoot)) {
       aError.Throw(NS_ERROR_DOM_HIERARCHY_REQUEST_ERR);
       return;
@@ -107,120 +97,96 @@ public:
                                                    ErrorResult& aError);
   void DeleteRow(int32_t aIndex, ErrorResult& aError);
 
-  void GetAlign(DOMString& aAlign)
-  {
-    GetHTMLAttr(nsGkAtoms::align, aAlign);
-  }
-  void SetAlign(const nsAString& aAlign, ErrorResult& aError)
-  {
+  void GetAlign(DOMString& aAlign) { GetHTMLAttr(nsGkAtoms::align, aAlign); }
+  void SetAlign(const nsAString& aAlign, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::align, aAlign, aError);
   }
-  void GetBorder(DOMString& aBorder)
-  {
+  void GetBorder(DOMString& aBorder) {
     GetHTMLAttr(nsGkAtoms::border, aBorder);
   }
-  void SetBorder(const nsAString& aBorder, ErrorResult& aError)
-  {
+  void SetBorder(const nsAString& aBorder, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::border, aBorder, aError);
   }
-  void GetFrame(DOMString& aFrame)
-  {
-    GetHTMLAttr(nsGkAtoms::frame, aFrame);
-  }
-  void SetFrame(const nsAString& aFrame, ErrorResult& aError)
-  {
+  void GetFrame(DOMString& aFrame) { GetHTMLAttr(nsGkAtoms::frame, aFrame); }
+  void SetFrame(const nsAString& aFrame, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::frame, aFrame, aError);
   }
-  void GetRules(DOMString& aRules)
-  {
-    GetHTMLAttr(nsGkAtoms::rules, aRules);
-  }
-  void SetRules(const nsAString& aRules, ErrorResult& aError)
-  {
+  void GetRules(DOMString& aRules) { GetHTMLAttr(nsGkAtoms::rules, aRules); }
+  void SetRules(const nsAString& aRules, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::rules, aRules, aError);
   }
-  void GetSummary(nsString& aSummary)
-  {
+  void GetSummary(nsString& aSummary) {
     GetHTMLAttr(nsGkAtoms::summary, aSummary);
   }
-  void GetSummary(DOMString& aSummary)
-  {
+  void GetSummary(DOMString& aSummary) {
     GetHTMLAttr(nsGkAtoms::summary, aSummary);
   }
-  void SetSummary(const nsAString& aSummary, ErrorResult& aError)
-  {
+  void SetSummary(const nsAString& aSummary, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::summary, aSummary, aError);
   }
-  void GetWidth(DOMString& aWidth)
-  {
-    GetHTMLAttr(nsGkAtoms::width, aWidth);
-  }
-  void SetWidth(const nsAString& aWidth, ErrorResult& aError)
-  {
+  void GetWidth(DOMString& aWidth) { GetHTMLAttr(nsGkAtoms::width, aWidth); }
+  void SetWidth(const nsAString& aWidth, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::width, aWidth, aError);
   }
-  void GetBgColor(DOMString& aBgColor)
-  {
+  void GetBgColor(DOMString& aBgColor) {
     GetHTMLAttr(nsGkAtoms::bgcolor, aBgColor);
   }
-  void SetBgColor(const nsAString& aBgColor, ErrorResult& aError)
-  {
+  void SetBgColor(const nsAString& aBgColor, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::bgcolor, aBgColor, aError);
   }
-  void GetCellPadding(DOMString& aCellPadding)
-  {
+  void GetCellPadding(DOMString& aCellPadding) {
     GetHTMLAttr(nsGkAtoms::cellpadding, aCellPadding);
   }
-  void SetCellPadding(const nsAString& aCellPadding, ErrorResult& aError)
-  {
+  void SetCellPadding(const nsAString& aCellPadding, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::cellpadding, aCellPadding, aError);
   }
-  void GetCellSpacing(DOMString& aCellSpacing)
-  {
+  void GetCellSpacing(DOMString& aCellSpacing) {
     GetHTMLAttr(nsGkAtoms::cellspacing, aCellSpacing);
   }
-  void SetCellSpacing(const nsAString& aCellSpacing, ErrorResult& aError)
-  {
+  void SetCellSpacing(const nsAString& aCellSpacing, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::cellspacing, aCellSpacing, aError);
   }
 
-  virtual bool ParseAttribute(int32_t aNamespaceID,
-                                nsIAtom* aAttribute,
-                                const nsAString& aValue,
-                                nsAttrValue& aResult) override;
-  virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction() const override;
-  NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const override;
+  virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                              const nsAString& aValue,
+                              nsIPrincipal* aMaybeScriptedPrincipal,
+                              nsAttrValue& aResult) override;
+  virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction()
+      const override;
+  NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
-  virtual nsresult BindToTree(nsIDocument* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent,
-                              bool aCompileEventHandlers) override;
+  virtual nsresult BindToTree(Document* aDocument, nsIContent* aParent,
+                              nsIContent* aBindingParent) override;
   virtual void UnbindFromTree(bool aDeep = true,
                               bool aNullParent = true) override;
   /**
    * Called when an attribute is about to be changed
    */
-  virtual nsresult BeforeSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
-                                 nsAttrValueOrString* aValue,
+  virtual nsresult BeforeSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                                 const nsAttrValueOrString* aValue,
                                  bool aNotify) override;
   /**
    * Called when an attribute has just been changed
    */
-  virtual nsresult AfterSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
-                                const nsAttrValue* aValue, bool aNotify) override;
+  virtual nsresult AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                                const nsAttrValue* aValue,
+                                const nsAttrValue* aOldValue,
+                                nsIPrincipal* aSubjectPrincipal,
+                                bool aNotify) override;
 
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(HTMLTableElement,
                                            nsGenericHTMLElement)
   nsMappedAttributes* GetAttributesMappedForCell();
 
-protected:
+ protected:
   virtual ~HTMLTableElement();
 
-  virtual JSObject* WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapNode(JSContext* aCx,
+                             JS::Handle<JSObject*> aGivenProto) override;
 
-  nsIContent* GetChild(nsIAtom *aTag) const
-  {
+  nsIContent* GetChild(nsAtom* aTag) const {
     for (nsIContent* cur = nsINode::GetFirstChild(); cur;
          cur = cur->GetNextSibling()) {
       if (cur->IsHTMLElement(aTag)) {
@@ -232,18 +198,16 @@ protected:
 
   RefPtr<nsContentList> mTBodies;
   RefPtr<TableRowsCollection> mRows;
-  // Sentinel value of TABLE_ATTRS_DIRTY indicates that this is dirty and needs
-  // to be recalculated.
-  nsMappedAttributes *mTableInheritedAttributes;
+  nsMappedAttributes* mTableInheritedAttributes;
   void BuildInheritedAttributes();
   void ReleaseInheritedAttributes();
 
-private:
+ private:
   static void MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
-                                    GenericSpecifiedValues* aGenericData);
+                                    MappedDeclarations&);
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif /* mozilla_dom_HTMLTableElement_h */

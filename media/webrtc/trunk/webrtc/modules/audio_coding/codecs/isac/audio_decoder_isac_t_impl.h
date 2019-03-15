@@ -8,22 +8,26 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_AUDIO_DECODER_ISAC_T_IMPL_H_
-#define WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_AUDIO_DECODER_ISAC_T_IMPL_H_
+#ifndef MODULES_AUDIO_CODING_CODECS_ISAC_AUDIO_DECODER_ISAC_T_IMPL_H_
+#define MODULES_AUDIO_CODING_CODECS_ISAC_AUDIO_DECODER_ISAC_T_IMPL_H_
 
-#include "webrtc/modules/audio_coding/codecs/isac/main/include/audio_decoder_isac.h"
+#include "modules/audio_coding/codecs/isac/main/include/audio_decoder_isac.h"
 
-#include "webrtc/base/checks.h"
+#include "rtc_base/checks.h"
 
 namespace webrtc {
 
 template <typename T>
-AudioDecoderIsacT<T>::AudioDecoderIsacT()
-    : AudioDecoderIsacT(nullptr) {}
+AudioDecoderIsacT<T>::AudioDecoderIsacT(int sample_rate_hz)
+    : AudioDecoderIsacT(sample_rate_hz, nullptr) {}
 
 template <typename T>
-AudioDecoderIsacT<T>::AudioDecoderIsacT(LockedIsacBandwidthInfo* bwinfo)
-    : bwinfo_(bwinfo), decoder_sample_rate_hz_(-1) {
+AudioDecoderIsacT<T>::AudioDecoderIsacT(
+    int sample_rate_hz,
+    const rtc::scoped_refptr<LockedIsacBandwidthInfo>& bwinfo)
+    : sample_rate_hz_(sample_rate_hz), bwinfo_(bwinfo) {
+  RTC_CHECK(sample_rate_hz == 16000 || sample_rate_hz == 32000)
+      << "Unsupported sample rate " << sample_rate_hz;
   RTC_CHECK_EQ(0, T::Create(&isac_state_));
   T::DecoderInit(isac_state_);
   if (bwinfo_) {
@@ -31,6 +35,7 @@ AudioDecoderIsacT<T>::AudioDecoderIsacT(LockedIsacBandwidthInfo* bwinfo)
     T::GetBandwidthInfo(isac_state_, &bi);
     bwinfo_->Set(bi);
   }
+  RTC_CHECK_EQ(0, T::SetDecSampRate(isac_state_, sample_rate_hz_));
 }
 
 template <typename T>
@@ -44,12 +49,7 @@ int AudioDecoderIsacT<T>::DecodeInternal(const uint8_t* encoded,
                                          int sample_rate_hz,
                                          int16_t* decoded,
                                          SpeechType* speech_type) {
-  RTC_CHECK(sample_rate_hz == 16000 || sample_rate_hz == 32000)
-      << "Unsupported sample rate " << sample_rate_hz;
-  if (sample_rate_hz != decoder_sample_rate_hz_) {
-    RTC_CHECK_EQ(0, T::SetDecSampRate(isac_state_, sample_rate_hz));
-    decoder_sample_rate_hz_ = sample_rate_hz;
-  }
+  RTC_CHECK_EQ(sample_rate_hz_, sample_rate_hz);
   int16_t temp_type = 1;  // Default is speech.
   int ret =
       T::DecodeInternal(isac_state_, encoded, encoded_len, decoded, &temp_type);
@@ -95,10 +95,15 @@ int AudioDecoderIsacT<T>::ErrorCode() {
 }
 
 template <typename T>
+int AudioDecoderIsacT<T>::SampleRateHz() const {
+  return sample_rate_hz_;
+}
+
+template <typename T>
 size_t AudioDecoderIsacT<T>::Channels() const {
   return 1;
 }
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_AUDIO_DECODER_ISAC_T_IMPL_H_
+#endif  // MODULES_AUDIO_CODING_CODECS_ISAC_AUDIO_DECODER_ISAC_T_IMPL_H_

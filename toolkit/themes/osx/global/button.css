@@ -31,9 +31,9 @@ button[default="true"]:not(:hover):active {
 }
 
 .button-text {
-  margin: 1px 0 !important;
-  margin-inline-start: 3px !important;
-  margin-inline-end: 2px !important;
+  margin: 1px 0;
+  margin-inline-start: 3px;
+  margin-inline-end: 2px;
   text-align: center;
 }
 
@@ -51,23 +51,11 @@ button[disabled="true"] {
   color: GrayText;
 }
 
-/* ::::: menu/menu-button buttons ::::: */
-
-button[type="menu-button"] {
-  margin: 0;
-  border: none;
-}
-
-.button-menu-dropmarker,
-.button-menubutton-dropmarker {
-  -moz-appearance: none !important;
-  border: none;
-  background-color: transparent !important;
-  margin: 1px;
-}
+/* ::::: menu buttons ::::: */
 
 .button-menu-dropmarker {
   display: none;
+  -moz-appearance: none;
 }
 
 /* ::::: plain buttons ::::: */

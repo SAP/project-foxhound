@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,7 +17,7 @@ class VsyncObserver;
 
 namespace ipc {
 class BackgroundChildImpl;
-} // namespace ipc
+}  // namespace ipc
 
 namespace layout {
 
@@ -24,13 +25,12 @@ namespace layout {
 // delivers it to the child process. Currently this is restricted to the main
 // thread only. The actor will stay alive until the process dies or its
 // PVsyncParent actor dies.
-class VsyncChild final : public PVsyncChild
-{
+class VsyncChild final : public PVsyncChild {
   NS_INLINE_DECL_REFCOUNTING(VsyncChild)
 
   friend class mozilla::ipc::BackgroundChildImpl;
 
-public:
+ public:
   // Hide the SendObserve/SendUnobserve in PVsyncChild. We add an flag
   // mObservingVsync to handle the race problem of unobserving vsync event.
   bool SendObserve();
@@ -48,12 +48,13 @@ public:
   // GetVsyncRate.
   TimeDuration VsyncRate();
 
-private:
+ private:
   VsyncChild();
   virtual ~VsyncChild();
 
-  virtual mozilla::ipc::IPCResult RecvNotify(const TimeStamp& aVsyncTimestamp) override;
-  virtual mozilla::ipc::IPCResult RecvVsyncRate(const float& aVsyncRate) override;
+  virtual mozilla::ipc::IPCResult RecvNotify(const VsyncEvent& aVsync) override;
+  virtual mozilla::ipc::IPCResult RecvVsyncRate(
+      const float& aVsyncRate) override;
   virtual void ActorDestroy(ActorDestroyReason aActorDestroyReason) override;
 
   bool mObservingVsync;
@@ -64,7 +65,7 @@ private:
   TimeDuration mVsyncRate;
 };
 
-} // namespace layout
-} // namespace mozilla
+}  // namespace layout
+}  // namespace mozilla
 
 #endif  // mozilla_layout_ipc_VsyncChild_h

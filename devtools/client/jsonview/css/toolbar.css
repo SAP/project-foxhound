@@ -9,7 +9,6 @@
 .toolbar {
   display: flex;
   height: 22px;
-  font: message-box;
   padding: 1px;
   padding-inline-start: 2px;
   background: var(--theme-toolbar-background);
@@ -20,7 +19,7 @@
   margin-inline-start: 5px;
   color: var(--theme-body-color);
   background: var(--toolbarbutton-background);
-  border: var(--toolbarbutton-border);
+  border: none;
   text-decoration: none;
   display: inline-block;
   text-align: center;
@@ -28,16 +27,14 @@
   vertical-align: middle;
   cursor: pointer;
   -moz-user-select: none;
-  padding: 0 2px;
+  padding: 0 3px;
   border-radius: 2px;
 }
 
 .toolbar .btn:hover {
   background: var(--toolbarbutton-hover-background);
-  border: var(--toolbarbutton-hover-border);
 }
 
 .toolbar .btn:not([disabled]):hover:active {
-  background-color: var(--theme-selection-background-semitransparent);
+  background-color: var(--theme-selection-background-hover);
 }
-

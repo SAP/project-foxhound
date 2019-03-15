@@ -17,6 +17,7 @@
 #include "VariableLengthPrefixSet.h"
 #include "mozilla/Logging.h"
 #include "mozilla/TypedEnumBits.h"
+#include "nsIUrlClassifierInfo.h"
 
 namespace mozilla {
 namespace safebrowsing {
@@ -24,31 +25,16 @@ namespace safebrowsing {
 #define MAX_HOST_COMPONENTS 5
 #define MAX_PATH_COMPONENTS 4
 
-enum class MatchResult : uint8_t
-{
-  eNoMatch           = 0x00,
-  eV2Prefix          = 0x01,
-  eV4Prefix          = 0x02,
-  eV2Completion      = 0x04,
-  eV4Completion      = 0x08,
-  eTelemetryDisabled = 0x10,
-
-  eBothPrefix      = eV2Prefix     | eV4Prefix,
-  eBothCompletion  = eV2Completion | eV4Completion,
-  eV2PreAndCom     = eV2Prefix     | eV2Completion,
-  eV4PreAndCom     = eV4Prefix     | eV4Completion,
-  eBothPreAndV2Com = eBothPrefix   | eV2Completion,
-  eBothPreAndV4Com = eBothPrefix   | eV4Completion,
-  eAll             = eBothPrefix   | eBothCompletion,
-};
-MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(MatchResult)
-
 class LookupResult {
-public:
-  LookupResult() : mNoise(false), mProtocolConfirmed(false),
-                   mPartialHashLength(0), mConfirmed(false),
-                   mProtocolV2(true),
-                   mMatchResult(MatchResult::eTelemetryDisabled) {}
+ public:
+  LookupResult()
+      : mNoise(false),
+        mProtocolConfirmed(false),
+        mPartialHashLength(0),
+        mConfirmed(false),
+        mProtocolV2(true) {}
+
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(LookupResult);
 
   // The fragment that matched in the LookupCache
   union {
@@ -56,17 +42,24 @@ public:
     Completion complete;
   } hash;
 
-  const Completion &CompleteHash() {
+  const Completion& CompleteHash() const {
     MOZ_ASSERT(!mNoise);
     return hash.complete;
   }
 
-  nsCString PartialHash() {
+  nsCString PartialHash() const {
     MOZ_ASSERT(mPartialHashLength <= COMPLETE_SIZE);
-    return nsCString(reinterpret_cast<char*>(hash.complete.buf), mPartialHashLength);
+    if (mNoise) {
+      return nsCString(
+          reinterpret_cast<const char*>(hash.fixedLengthPrefix.buf),
+          PREFIX_SIZE);
+    } else {
+      return nsCString(reinterpret_cast<const char*>(hash.complete.buf),
+                       mPartialHashLength);
+    }
   }
 
-  nsCString PartialHashHex() {
+  nsAutoCString PartialHashHex() const {
     nsAutoCString hex;
     for (size_t i = 0; i < mPartialHashLength; i++) {
       hex.AppendPrintf("%.2X", hash.complete.buf[i]);
@@ -97,27 +90,90 @@ public:
 
   bool mProtocolV2;
 
-  // This is only used by telemetry to record the match result.
-  MatchResult mMatchResult;
+ private:
+  ~LookupResult() {}
 };
 
-typedef nsTArray<LookupResult> LookupResultArray;
+typedef nsTArray<RefPtr<LookupResult>> LookupResultArray;
 
-struct CacheResult {
-  AddComplete entry;
+class CacheResult {
+ public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(CacheResult);
+
+  enum { V2, V4 };
+
+  virtual int Ver() const = 0;
+  virtual bool findCompletion(const Completion& aCompletion) const = 0;
+
+  template <typename T>
+  static const T* Cast(const CacheResult* aThat) {
+    return ((aThat && T::VER == aThat->Ver())
+                ? reinterpret_cast<const T*>(aThat)
+                : nullptr);
+  }
+
   nsCString table;
+  Prefix prefix;
 
-  bool operator==(const CacheResult& aOther) const {
-    if (entry != aOther.entry) {
+ protected:
+  virtual ~CacheResult() {}
+};
+
+class CacheResultV2 final : public CacheResult {
+ public:
+  static const int VER;
+
+  // True when 'prefix' in CacheResult indicates a prefix that
+  // cannot be completed.
+  bool miss = false;
+
+  // 'completion' and 'addChunk' are used when 'miss' field is false.
+  Completion completion;
+  uint32_t addChunk;
+
+  bool operator==(const CacheResultV2& aOther) const {
+    if (table != aOther.table || prefix != aOther.prefix ||
+        miss != aOther.miss) {
       return false;
     }
-    return table == aOther.table;
+
+    if (miss) {
+      return true;
+    }
+    return completion == aOther.completion && addChunk == aOther.addChunk;
   }
+
+  bool findCompletion(const Completion& aCompletion) const override {
+    return completion == aCompletion;
+  }
+
+  virtual int Ver() const override { return VER; }
 };
-typedef nsTArray<CacheResult> CacheResultArray;
+
+class CacheResultV4 final : public CacheResult {
+ public:
+  static const int VER;
+
+  CachedFullHashResponse response;
+
+  bool operator==(const CacheResultV4& aOther) const {
+    return table == aOther.table && prefix == aOther.prefix &&
+           response == aOther.response;
+  }
+
+  bool findCompletion(const Completion& aCompletion) const override {
+    nsDependentCSubstring completion(
+        reinterpret_cast<const char*>(aCompletion.buf), COMPLETE_SIZE);
+    return response.fullHashes.Contains(completion);
+  }
+
+  virtual int Ver() const override { return VER; }
+};
+
+typedef nsTArray<RefPtr<const CacheResult>> ConstCacheResultArray;
 
 class LookupCache {
-public:
+ public:
   // Check for a canonicalized IP address.
   static bool IsCanonicalizedIP(const nsACString& aHost);
 
@@ -134,120 +190,137 @@ public:
   static nsresult GetHostKeys(const nsACString& aSpec,
                               nsTArray<nsCString>* aHostKeys);
 
-  LookupCache(const nsACString& aTableName,
-              const nsACString& aProvider,
-              nsIFile* aStoreFile);
-  virtual ~LookupCache() {}
+  LookupCache(const nsACString& aTableName, const nsACString& aProvider,
+              nsCOMPtr<nsIFile>& aStoreFile);
 
-  const nsCString &TableName() const { return mTableName; }
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(LookupCache);
+
+  const nsCString& TableName() const { return mTableName; }
 
   // The directory handle where we operate will
   // be moved away when a backup is made.
-  nsresult UpdateRootDirHandle(nsIFile* aRootStoreDirectory);
-
-  // This will Clear() the passed arrays when done.
-  nsresult AddCompletionsToCache(AddCompleteArray& aAddCompletes);
+  nsresult UpdateRootDirHandle(nsCOMPtr<nsIFile>& aRootStoreDirectory);
 
   // Write data stored in lookup cache to disk.
   nsresult WriteFile();
 
-  // Clear completions retrieved from gethash request.
-  void ClearCache();
-
   bool IsPrimed() const { return mPrimed; };
 
+  // Called when update to clear expired entries.
+  void InvalidateExpiredCacheEntries();
+
+  // Copy fullhash cache from another LookupCache.
+  void CopyFullHashCache(const LookupCache* aSource);
+
+  // Clear fullhash cache from fullhash/gethash response.
+  void ClearCache();
+
+  // Check if completions can be found in cache.
+  // Currently this is only used by testcase.
+  bool IsInCache(uint32_t key) const { return mFullHashCache.Get(key); };
+
 #if DEBUG
-  void DumpCache();
+  void DumpCache() const;
 #endif
+
+  void GetCacheInfo(nsIUrlClassifierCacheInfo** aCache) const;
 
   virtual nsresult Open();
   virtual nsresult Init() = 0;
   virtual nsresult ClearPrefixes() = 0;
-  virtual nsresult Has(const Completion& aCompletion,
-                       bool* aHas, uint32_t* aMatchLength,
-                       bool* aFromCache) = 0;
+  virtual nsresult Has(const Completion& aCompletion, bool* aHas,
+                       uint32_t* aMatchLength, bool* aConfirmed) = 0;
 
-  virtual void IsHashEntryConfirmed(const Completion& aEntry,
-                                    const TableFreshnessMap& aTableFreshness,
-                                    uint32_t aFreshnessGuarantee,
-                                    bool* aConfirmed) = 0;
-
-  virtual bool IsEmpty() = 0;
+  virtual bool IsEmpty() const = 0;
 
   virtual void ClearAll();
 
-  template<typename T>
+  template <typename T>
   static T* Cast(LookupCache* aThat) {
-    return ((aThat && T::VER == aThat->Ver()) ? reinterpret_cast<T*>(aThat) : nullptr);
+    return ((aThat && T::VER == aThat->Ver()) ? reinterpret_cast<T*>(aThat)
+                                              : nullptr);
+  }
+  template <typename T>
+  static const T* Cast(const LookupCache* aThat) {
+    return ((aThat && T::VER == aThat->Ver())
+                ? reinterpret_cast<const T*>(aThat)
+                : nullptr);
   }
 
-private:
-  nsresult Reset();
+ private:
   nsresult LoadPrefixSet();
 
-  virtual nsresult StoreToFile(nsIFile* aFile) = 0;
-  virtual nsresult LoadFromFile(nsIFile* aFile) = 0;
-  virtual size_t SizeOfPrefixSet() = 0;
+  virtual nsresult StoreToFile(nsCOMPtr<nsIFile>& aFile) = 0;
+  virtual nsresult LoadFromFile(nsCOMPtr<nsIFile>& aFile) = 0;
+  virtual size_t SizeOfPrefixSet() const = 0;
 
   virtual int Ver() const = 0;
 
-protected:
-  bool mPrimed;
-  nsCString mTableName;
-  nsCString mProvider;
+ protected:
+  virtual ~LookupCache() {}
+
+  // Check completions in positive cache and prefix in negative cache.
+  // 'aHas' and 'aConfirmed' are output parameters.
+  nsresult CheckCache(const Completion& aCompletion, bool* aHas,
+                      bool* aConfirmed);
+
+  bool mPrimed;  // true when the PrefixSet has been loaded (or constructed)
+  const nsCString mTableName;
+  const nsCString mProvider;
   nsCOMPtr<nsIFile> mRootStoreDirectory;
   nsCOMPtr<nsIFile> mStoreDirectory;
 
-  // Full length hashes obtained in gethash request
-  CompletionArray mGetHashCache;
-
   // For gtest to inspect private members.
   friend class PerProviderDirectoryTestUtils;
+
+  // Cache stores fullhash response(V4)/gethash response(V2)
+  FullHashResponseMap mFullHashCache;
 };
 
-class LookupCacheV2 final : public LookupCache
-{
-public:
+typedef nsTArray<RefPtr<LookupCache>> LookupCacheArray;
+
+class LookupCacheV2 final : public LookupCache {
+ public:
   explicit LookupCacheV2(const nsACString& aTableName,
                          const nsACString& aProvider,
-                         nsIFile* aStoreFile)
-    : LookupCache(aTableName, aProvider, aStoreFile) {}
-  ~LookupCacheV2() {}
+                         nsCOMPtr<nsIFile>& aStoreFile)
+      : LookupCache(aTableName, aProvider, aStoreFile) {}
 
   virtual nsresult Init() override;
   virtual nsresult Open() override;
   virtual void ClearAll() override;
-  virtual nsresult Has(const Completion& aCompletion,
-                       bool* aHas, uint32_t* aMatchLength,
-                       bool* aFromCache) override;
+  virtual nsresult Has(const Completion& aCompletion, bool* aHas,
+                       uint32_t* aMatchLength, bool* aConfirmed) override;
 
-  virtual void IsHashEntryConfirmed(const Completion& aEntry,
-                                    const TableFreshnessMap& aTableFreshness,
-                                    uint32_t aFreshnessGuarantee,
-                                    bool* aConfirmed) override;
+  virtual bool IsEmpty() const override;
 
-  virtual bool IsEmpty() override;
-
-  nsresult Build(AddPrefixArray& aAddPrefixes,
-                 AddCompleteArray& aAddCompletes);
+  nsresult Build(AddPrefixArray& aAddPrefixes, AddCompleteArray& aAddCompletes);
 
   nsresult GetPrefixes(FallibleTArray<uint32_t>& aAddPrefixes);
 
+  // This will Clear() the passed arrays when done.
+  // 'aExpirySec' is used by testcase to config an expired time.
+  void AddGethashResultToCache(const AddCompleteArray& aAddCompletes,
+                               const MissPrefixArray& aMissPrefixes,
+                               int64_t aExpirySec = 0);
+
 #if DEBUG
-  void DumpCompletions();
+  void DumpCompletions() const;
 #endif
 
   static const int VER;
 
-protected:
+ protected:
   nsresult ReadCompletions();
 
   virtual nsresult ClearPrefixes() override;
-  virtual nsresult StoreToFile(nsIFile* aFile) override;
-  virtual nsresult LoadFromFile(nsIFile* aFile) override;
-  virtual size_t SizeOfPrefixSet() override;
+  virtual nsresult StoreToFile(nsCOMPtr<nsIFile>& aFile) override;
+  virtual nsresult LoadFromFile(nsCOMPtr<nsIFile>& aFile) override;
+  virtual size_t SizeOfPrefixSet() const override;
 
-private:
+ private:
+  ~LookupCacheV2() {}
+
   virtual int Ver() const override { return VER; }
 
   // Construct a Prefix Set with known prefixes.
@@ -261,7 +334,7 @@ private:
   RefPtr<nsUrlClassifierPrefixSet> mPrefixSet;
 };
 
-} // namespace safebrowsing
-} // namespace mozilla
+}  // namespace safebrowsing
+}  // namespace mozilla
 
 #endif

@@ -10,9 +10,10 @@ info: |
   7. Let argArray be CreateArrayFromList(argumentsList).
   8. Let newObj be ? Call(trap, handler, « target, argArray, newTarget »).
   [...]
+features: [cross-realm]
 ---*/
 
-var C = $.createRealm().global.eval(
+var C = $262.createRealm().global.eval(
   'new Proxy(function() {}, { construct: function(_, args) { return args; } })'
 );
 

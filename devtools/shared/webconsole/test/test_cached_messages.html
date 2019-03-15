@@ -12,6 +12,7 @@
 <p>Test for cached messages</p>
 
 <script class="testbody" type="application/javascript">
+window.docShell.cssErrorReportingEnabled = true;
 var ConsoleAPIStorage = Cc["@mozilla.org/consoleAPI-storage;1"]
                           .getService(Ci.nsIConsoleAPIStorage);
 let expectedConsoleCalls = [];
@@ -96,8 +97,10 @@ function doConsoleCalls() {
 
 <script class="testbody" type="text/javascript">
 SimpleTest.waitForExplicitFinish();
-var {ConsoleServiceListener, ConsoleAPIListener} =
-  require("devtools/server/actors/utils/webconsole-listeners");
+var {ConsoleServiceListener} =
+  require("devtools/server/actors/webconsole/listeners/console-service");
+var {ConsoleAPIListener} =
+  require("devtools/server/actors/webconsole/listeners/console-api");
 
 let consoleAPIListener, consoleServiceListener;
 let consoleAPICalls = 0;
@@ -150,8 +153,8 @@ function checkConsoleAPICache() {
 }
 
 function onAttach1(state, response) {
-  state.client.getCachedMessages(["ConsoleAPI"],
-                                  onCachedConsoleAPI.bind(null, state));
+  state.client.getCachedMessages(["ConsoleAPI"])
+    .then(onCachedConsoleAPI.bind(null, state));
 }
 
 function onCachedConsoleAPI(state, response) {
@@ -188,8 +191,8 @@ function testPageErrors() {
 }
 
 function onAttach2(state, response) {
-  state.client.getCachedMessages(["PageError"],
-                                  onCachedPageErrors.bind(null, state));
+  state.client.getCachedMessages(["PageError"])
+    .then(onCachedPageErrors.bind(null, state));
 }
 
 function onCachedPageErrors(state, response) {

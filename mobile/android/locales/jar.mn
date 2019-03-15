@@ -3,6 +3,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+# Note: This file should only contain locale entries. All
+# override and resource entries should go to mobile/android/chrome/jar.mn to avoid
+# having to create the same entry for each locale.
 
 @AB_CD@.jar:
 % locale browser @AB_CD@ %locale/@AB_CD@/browser/
@@ -17,45 +20,32 @@
   locale/@AB_CD@/browser/aboutHome.dtd            (%chrome/aboutHome.dtd)
   locale/@AB_CD@/browser/aboutHome.properties     (%chrome/aboutHome.properties)
   locale/@AB_CD@/browser/aboutPrivateBrowsing.dtd (%chrome/aboutPrivateBrowsing.dtd)
-#ifdef MOZ_SERVICES_HEALTHREPORT
-  locale/@AB_CD@/browser/aboutHealthReport.dtd    (%chrome/aboutHealthReport.dtd)
-#endif
   locale/@AB_CD@/browser/browser.properties       (%chrome/browser.properties)
   locale/@AB_CD@/browser/config.dtd               (%chrome/config.dtd)
   locale/@AB_CD@/browser/config.properties        (%chrome/config.properties)
-  locale/@AB_CD@/browser/checkbox.dtd             (%chrome/checkbox.dtd)
   locale/@AB_CD@/browser/devicePrompt.properties  (%chrome/devicePrompt.properties)
   locale/@AB_CD@/browser/pippki.properties        (%chrome/pippki.properties)
   locale/@AB_CD@/browser/sync.properties          (%chrome/sync.properties)
   locale/@AB_CD@/browser/phishing.dtd             (%chrome/phishing.dtd)
-  locale/@AB_CD@/browser/handling.properties      (%chrome/handling.properties)
   locale/@AB_CD@/browser/aboutLogins.dtd          (%chrome/aboutLogins.dtd)
   locale/@AB_CD@/browser/aboutLogins.properties  (%chrome/aboutLogins.properties)
-#ifndef RELEASE_OR_BETA
+  locale/@AB_CD@/browser/passwordmgr.properties   (%chrome/passwordmgr.properties)
+#if MOZ_UPDATE_CHANNEL != release && MOZ_UPDATE_CHANNEL != esr
   locale/@AB_CD@/browser/webcompatReporter.properties (%chrome/webcompatReporter.properties)
 #endif
-% resource search-plugins chrome://browser/locale/searchplugins/
 
 # overrides for toolkit l10n, also for en-US
+# keep this file list in sync with l10n.toml and filter.py
 relativesrcdir toolkit/locales:
-  locale/@AB_CD@/browser/overrides/about.dtd                       (%chrome/global/about.dtd)
-  locale/@AB_CD@/browser/overrides/aboutAbout.dtd                  (%chrome/global/aboutAbout.dtd)
   locale/@AB_CD@/browser/overrides/aboutReader.properties          (%chrome/global/aboutReader.properties)
   locale/@AB_CD@/browser/overrides/aboutRights.dtd                 (%chrome/global/aboutRights.dtd)
   locale/@AB_CD@/browser/overrides/charsetMenu.properties          (%chrome/global/charsetMenu.properties)
   locale/@AB_CD@/browser/overrides/commonDialogs.properties        (%chrome/global/commonDialogs.properties)
   locale/@AB_CD@/browser/overrides/intl.properties                 (%chrome/global/intl.properties)
   locale/@AB_CD@/browser/overrides/intl.css                        (%chrome/global/intl.css)
-  locale/@AB_CD@/browser/overrides/passwordmgr.properties          (%chrome/passwordmgr/passwordmgr.properties)
   locale/@AB_CD@/browser/overrides/search/search.properties        (%chrome/search/search.properties)
 # plugins
   locale/@AB_CD@/browser/overrides/plugins/pluginproblem.dtd       (%chrome/pluginproblem/pluginproblem.dtd)
-# about:support
-  locale/@AB_CD@/browser/overrides/global/aboutSupport.dtd         (%chrome/global/aboutSupport.dtd)
-  locale/@AB_CD@/browser/overrides/global/aboutSupport.properties  (%chrome/global/aboutSupport.properties)
-#about:crashes
-  locale/@AB_CD@/browser/overrides/crashreporter/crashes.dtd         (%crashreporter/crashes.dtd)
-  locale/@AB_CD@/browser/overrides/crashreporter/crashes.properties  (%crashreporter/crashes.properties)
 #about:mozilla
   locale/@AB_CD@/browser/overrides/global/mozilla.dtd                (%chrome/global/mozilla.dtd)
 #about:telemetry
@@ -64,28 +54,8 @@ relativesrcdir toolkit/locales:
 #about:webrtc
   locale/@AB_CD@/browser/overrides/global/aboutWebrtc.properties  (%chrome/global/aboutWebrtc.properties)
 
-% override chrome://global/locale/about.dtd chrome://browser/locale/overrides/about.dtd
-% override chrome://global/locale/aboutAbout.dtd chrome://browser/locale/overrides/aboutAbout.dtd
-% override chrome://global/locale/aboutReader.properties chrome://browser/locale/overrides/aboutReader.properties
-% override chrome://global/locale/aboutRights.dtd chrome://browser/locale/overrides/aboutRights.dtd
-% override chrome://global/locale/charsetMenu.properties chrome://browser/locale/overrides/charsetMenu.properties
-% override chrome://global/locale/commonDialogs.properties chrome://browser/locale/overrides/commonDialogs.properties
-% override chrome://mozapps/locale/handling/handling.properties chrome://browser/locale/handling.properties
-% override chrome://global/locale/intl.properties chrome://browser/locale/overrides/intl.properties
-% override chrome://global/locale/intl.css chrome://browser/locale/overrides/intl.css
-% override chrome://passwordmgr/locale/passwordmgr.properties chrome://browser/locale/overrides/passwordmgr/passwordmgr.properties
-% override chrome://global/locale/search/search.properties chrome://browser/locale/overrides/search/search.properties
-% override chrome://pluginproblem/locale/pluginproblem.dtd chrome://browser/locale/overrides/plugins/pluginproblem.dtd
-% override chrome://global/locale/aboutSupport.dtd chrome://browser/locale/overrides/global/aboutSupport.dtd
-% override chrome://global/locale/aboutSupport.properties chrome://browser/locale/overrides/global/aboutSupport.properties
-% override chrome://global/locale/crashes.dtd chrome://browser/locale/overrides/crashreporter/crashes.dtd
-% override chrome://global/locale/crashes.properties chrome://browser/locale/overrides/crashreporter/crashes.properties
-% override chrome://global/locale/mozilla.dtd chrome://browser/locale/overrides/global/mozilla.dtd
-% override chrome://global/locale/aboutTelemetry.dtd chrome://browser/locale/overrides/global/aboutTelemetry.dtd
-% override chrome://global/locale/aboutTelemetry.properties chrome://browser/locale/overrides/global/aboutTelemetry.properties
-% override chrome://global/locale/aboutWebrtc.properties chrome://browser/locale/overrides/global/aboutWebrtc.properties
-
 # overrides for dom l10n, also for en-US
+# keep this file list in sync with filter.py
 relativesrcdir dom/locales:
   locale/@AB_CD@/browser/overrides/global.dtd                  (%chrome/global.dtd)
   locale/@AB_CD@/browser/overrides/AccessFu.properties         (%chrome/accessibility/AccessFu.properties)
@@ -93,7 +63,24 @@ relativesrcdir dom/locales:
 #about:plugins
   locale/@AB_CD@/browser/overrides/plugins.properties          (%chrome/plugins.properties)
 
-% override chrome://global/locale/global.dtd chrome://browser/locale/overrides/global.dtd
-% override chrome://global/locale/AccessFu.properties chrome://browser/locale/overrides/AccessFu.properties
-% override chrome://global/locale/dom/dom.properties chrome://browser/locale/overrides/dom/dom.properties
-% override chrome://global/locale/plugins.properties chrome://browser/locale/overrides/plugins.properties
+# Fluent files
+# Note: All rules must be wildcards, as localized files are optional
+# Only run this if we're not en-US, as en-US is already built
+# by toolkit/locales/jar.mn.
+# If you're including files from a subdirectory, ensure that you're
+# putting them into the corresponding subdirectory in the target.
+# The wildcard ** does that for us in toolkit.
+
+#define EN_US en-US
+#if AB_CD != EN_US
+[localization] @AB_CD@.jar:
+relativesrcdir toolkit/locales:
+#about:crashes
+  crashreporter                                    (%crashreporter/**/*.ftl)
+#about:about
+  toolkit/about                                    (%toolkit/about/*About.ftl)
+#about:support
+  toolkit/about                                    (%toolkit/about/*Support.ftl)
+#endif
+# Do not add files below the endif. Reviewers, expand more context above
+# for comments.

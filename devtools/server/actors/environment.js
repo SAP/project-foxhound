@@ -8,7 +8,7 @@
 /* global Debugger */
 
 const { ActorClassWithSpec } = require("devtools/shared/protocol");
-const { createValueGrip } = require("devtools/server/actors/object");
+const { createValueGrip } = require("devtools/server/actors/object/utils");
 const { environmentSpec } = require("devtools/shared/specs/environment");
 
 /**
@@ -21,17 +21,26 @@ const { environmentSpec } = require("devtools/shared/specs/environment");
  * @param ThreadActor aThreadActor
  *        The parent thread actor that contains this environment.
  */
-let EnvironmentActor = ActorClassWithSpec(environmentSpec, {
-  initialize: function (environment, threadActor) {
+const EnvironmentActor = ActorClassWithSpec(environmentSpec, {
+  initialize: function(environment, threadActor) {
     this.obj = environment;
     this.threadActor = threadActor;
   },
 
   /**
+   * When the Environment Actor is destroyed it removes the
+   * Debugger.Environment.actor field so that environment does not
+   * reference a destroyed actor.
+   */
+  destroy: function() {
+    this.obj.actor = null;
+  },
+
+  /**
    * Return an environment form for use in a protocol message.
    */
-  form: function () {
-    let form = { actor: this.actorID };
+  form: function() {
+    const form = { actor: this.actorID };
 
     // What is this environment's type?
     if (this.obj.type == "declarative") {
@@ -77,7 +86,7 @@ let EnvironmentActor = ActorClassWithSpec(environmentSpec, {
    * @param any value
    *        The value to be assigned.
    */
-  assign: function (name, value) {
+  assign: function(name, value) {
     // TODO: enable the commented-out part when getVariableDescriptor lands
     // (bug 725815).
     /* let desc = this.obj.getVariableDescriptor(name);
@@ -94,7 +103,7 @@ let EnvironmentActor = ActorClassWithSpec(environmentSpec, {
       if (e instanceof Debugger.DebuggeeWouldRun) {
         const errorObject = {
           error: "threadWouldRun",
-          message: "Assigning a value would cause the debuggee to run"
+          message: "Assigning a value would cause the debuggee to run",
         };
         throw errorObject;
       } else {
@@ -108,8 +117,8 @@ let EnvironmentActor = ActorClassWithSpec(environmentSpec, {
    * Handle a protocol request to fully enumerate the bindings introduced by the
    * lexical environment.
    */
-  bindings: function () {
-    let bindings = { arguments: [], variables: {} };
+  bindings: function() {
+    const bindings = { arguments: [], variables: {} };
 
     // TODO: this part should be removed in favor of the commented-out part
     // below when getVariableDescriptor lands (bug 725815).
@@ -124,23 +133,23 @@ let EnvironmentActor = ActorClassWithSpec(environmentSpec, {
     } else {
       parameterNames = [];
     }
-    for (let name of parameterNames) {
-      let arg = {};
-      let value = this.obj.getVariable(name);
+    for (const name of parameterNames) {
+      const arg = {};
+      const value = this.obj.getVariable(name);
 
       // TODO: this part should be removed in favor of the commented-out part
       // below when getVariableDescriptor lands (bug 725815).
-      let desc = {
+      const desc = {
         value: value,
         configurable: false,
         writable: !(value && value.optimizedOut),
-        enumerable: true
+        enumerable: true,
       };
 
       // let desc = this.obj.getVariableDescriptor(name);
-      let descForm = {
+      const descForm = {
         enumerable: true,
-        configurable: desc.configurable
+        configurable: desc.configurable,
       };
       if ("value" in desc) {
         descForm.value = createValueGrip(desc.value,
@@ -156,31 +165,31 @@ let EnvironmentActor = ActorClassWithSpec(environmentSpec, {
       bindings.arguments.push(arg);
     }
 
-    for (let name of this.obj.names()) {
+    for (const name of this.obj.names()) {
       if (bindings.arguments.some(function exists(element) {
         return !!element[name];
       })) {
         continue;
       }
 
-      let value = this.obj.getVariable(name);
+      const value = this.obj.getVariable(name);
 
       // TODO: this part should be removed in favor of the commented-out part
       // below when getVariableDescriptor lands.
-      let desc = {
+      const desc = {
         value: value,
         configurable: false,
         writable: !(value &&
                     (value.optimizedOut ||
                      value.uninitialized ||
                      value.missingArguments)),
-        enumerable: true
+        enumerable: true,
       };
 
       // let desc = this.obj.getVariableDescriptor(name);
-      let descForm = {
+      const descForm = {
         enumerable: true,
-        configurable: desc.configurable
+        configurable: desc.configurable,
       };
       if ("value" in desc) {
         descForm.value = createValueGrip(desc.value,
@@ -196,7 +205,7 @@ let EnvironmentActor = ActorClassWithSpec(environmentSpec, {
     }
 
     return bindings;
-  }
+  },
 });
 
 exports.EnvironmentActor = EnvironmentActor;

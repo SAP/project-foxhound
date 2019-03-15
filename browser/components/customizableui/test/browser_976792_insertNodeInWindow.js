@@ -13,7 +13,7 @@ Tries to replicate the situation of having a placement list like this:
 
 exists-1,trying-to-insert-this,doesn't-exist,exists-2
 */
-add_task(function*() {
+add_task(async function() {
   let testWidgetExists = [true, false, false, true];
   let widgetIds = [];
   for (let i = 0; i < testWidgetExists.length; i++) {
@@ -34,13 +34,13 @@ add_task(function*() {
 
   is(btn.parentNode.id, kToolbarName, "New XUL widget should be placed inside new toolbar");
 
-  is(btn.previousSibling.id, toolbarNode.firstChild.id,
+  is(btn.previousElementSibling.id, toolbarNode.firstElementChild.id,
      "insertNodeInWindow should have placed new XUL widget in correct place in DOM according to placements");
 
   widgetIds.forEach(id => CustomizableUI.destroyWidget(id));
   btn.remove();
   removeCustomToolbars();
-  yield resetCustomization();
+  await resetCustomization();
 });
 
 
@@ -50,7 +50,7 @@ situation similar to:
 
 exists-1,exists-2,overflow-1,trying-to-insert-this,overflow-2
 */
-add_task(function*() {
+add_task(async function() {
   let navbar = document.getElementById(CustomizableUI.AREA_NAVBAR);
 
   let widgetIds = [];
@@ -67,8 +67,8 @@ add_task(function*() {
   }
 
   let originalWindowWidth = window.outerWidth;
-  window.resizeTo(400, window.outerHeight);
-  yield waitForCondition(() => navbar.hasAttribute("overflowing"));
+  window.resizeTo(kForceOverflowWidthPx, window.outerHeight);
+  await waitForCondition(() => navbar.hasAttribute("overflowing") && !navbar.querySelector("#" + widgetIds[0]));
 
   let testWidgetId = kTestWidgetPrefix + 3;
 
@@ -78,9 +78,9 @@ add_task(function*() {
   CustomizableUI.ensureWidgetPlacedInWindow(testWidgetId, window);
 
   is(btn.parentNode.id, navbar.overflowable._list.id, "New XUL widget should be placed inside overflow of toolbar");
-  is(btn.previousSibling.id, kTestWidgetPrefix + 2,
+  is(btn.previousElementSibling.id, kTestWidgetPrefix + 2,
      "insertNodeInWindow should have placed new XUL widget in correct place in DOM according to placements");
-  is(btn.nextSibling.id, kTestWidgetPrefix + 4,
+  is(btn.nextElementSibling.id, kTestWidgetPrefix + 4,
      "insertNodeInWindow should have placed new XUL widget in correct place in DOM according to placements");
 
   window.resizeTo(originalWindowWidth, window.outerHeight);
@@ -88,8 +88,8 @@ add_task(function*() {
   widgetIds.forEach(id => CustomizableUI.destroyWidget(id));
   CustomizableUI.removeWidgetFromArea(btn.id, kToolbarName);
   btn.remove();
-  yield resetCustomization();
-  yield waitForCondition(() => !navbar.hasAttribute("overflowing"));
+  await resetCustomization();
+  await waitForCondition(() => !navbar.hasAttribute("overflowing"));
 });
 
 
@@ -99,7 +99,7 @@ placements situation similar to:
 
 exists-1,exists-2,overflow-1,doesn't-exist,trying-to-insert-this,overflow-2
 */
-add_task(function*() {
+add_task(async function() {
   let navbar = document.getElementById(CustomizableUI.AREA_NAVBAR);
 
   let widgetIds = [];
@@ -116,8 +116,8 @@ add_task(function*() {
   }
 
   let originalWindowWidth = window.outerWidth;
-  window.resizeTo(400, window.outerHeight);
-  yield waitForCondition(() => navbar.hasAttribute("overflowing"));
+  window.resizeTo(kForceOverflowWidthPx, window.outerHeight);
+  await waitForCondition(() => navbar.hasAttribute("overflowing") && !navbar.querySelector("#" + widgetIds[0]));
 
   let testWidgetId = kTestWidgetPrefix + 3;
 
@@ -128,9 +128,9 @@ add_task(function*() {
   CustomizableUI.ensureWidgetPlacedInWindow(testWidgetId, window);
 
   is(btn.parentNode.id, navbar.overflowable._list.id, "New XUL widget should be placed inside overflow of toolbar");
-  is(btn.previousSibling.id, kTestWidgetPrefix + 1,
+  is(btn.previousElementSibling.id, kTestWidgetPrefix + 1,
      "insertNodeInWindow should have placed new XUL widget in correct place in DOM according to placements");
-  is(btn.nextSibling.id, kTestWidgetPrefix + 4,
+  is(btn.nextElementSibling.id, kTestWidgetPrefix + 4,
      "insertNodeInWindow should have placed new XUL widget in correct place in DOM according to placements");
 
   window.resizeTo(originalWindowWidth, window.outerHeight);
@@ -138,8 +138,8 @@ add_task(function*() {
   widgetIds.forEach(id => CustomizableUI.destroyWidget(id));
   CustomizableUI.removeWidgetFromArea(btn.id, kToolbarName);
   btn.remove();
-  yield resetCustomization();
-  yield waitForCondition(() => !navbar.hasAttribute("overflowing"));
+  await resetCustomization();
+  await waitForCondition(() => !navbar.hasAttribute("overflowing"));
 });
 
 
@@ -149,7 +149,7 @@ placements situation similar to:
 
 exists-1,exists-2,overflow-1,doesn't-exist,trying-to-insert-this,doesn't-exist
 */
-add_task(function*() {
+add_task(async function() {
   let navbar = document.getElementById(CustomizableUI.AREA_NAVBAR);
 
   let widgetIds = [];
@@ -166,8 +166,8 @@ add_task(function*() {
   }
 
   let originalWindowWidth = window.outerWidth;
-  window.resizeTo(400, window.outerHeight);
-  yield waitForCondition(() => navbar.hasAttribute("overflowing"));
+  window.resizeTo(kForceOverflowWidthPx, window.outerHeight);
+  await waitForCondition(() => navbar.hasAttribute("overflowing") && !navbar.querySelector("#" + widgetIds[0]));
 
   let testWidgetId = kTestWidgetPrefix + 3;
 
@@ -179,9 +179,9 @@ add_task(function*() {
   CustomizableUI.ensureWidgetPlacedInWindow(testWidgetId, window);
 
   is(btn.parentNode.id, navbar.overflowable._list.id, "New XUL widget should be placed inside overflow of toolbar");
-  is(btn.previousSibling.id, kTestWidgetPrefix + 1,
+  is(btn.previousElementSibling.id, kTestWidgetPrefix + 1,
      "insertNodeInWindow should have placed new XUL widget in correct place in DOM according to placements");
-  is(btn.nextSibling, null,
+  is(btn.nextElementSibling, null,
      "insertNodeInWindow should have placed new XUL widget in correct place in DOM according to placements");
 
   window.resizeTo(originalWindowWidth, window.outerHeight);
@@ -189,8 +189,8 @@ add_task(function*() {
   widgetIds.forEach(id => CustomizableUI.destroyWidget(id));
   CustomizableUI.removeWidgetFromArea(btn.id, kToolbarName);
   btn.remove();
-  yield resetCustomization();
-  yield waitForCondition(() => !navbar.hasAttribute("overflowing"));
+  await resetCustomization();
+  await waitForCondition(() => !navbar.hasAttribute("overflowing"));
 });
 
 
@@ -200,7 +200,7 @@ placements situation similar to:
 
 exists-1,exists-2,overflow-1,can't-overflow,trying-to-insert-this,overflow-2
 */
-add_task(function*() {
+add_task(async function() {
   let navbar = document.getElementById(CustomizableUI.AREA_NAVBAR);
 
   let widgetIds = [];
@@ -225,11 +225,18 @@ add_task(function*() {
   }
 
   let originalWindowWidth = window.outerWidth;
-  window.resizeTo(400, window.outerHeight);
-  yield waitForCondition(() => navbar.hasAttribute("overflowing"));
+  window.resizeTo(kForceOverflowWidthPx, window.outerHeight);
+  // Wait for all the widgets to overflow. We can't just wait for the
+  // `overflowing` attribute because we leave time for layout flushes
+  // inbetween, so it's possible for the timeout to run before the
+  // navbar has "settled"
+  await waitForCondition(() => {
+    return navbar.hasAttribute("overflowing") &&
+      CustomizableUI.getCustomizationTarget(navbar).lastElementChild.getAttribute("overflows") == "false";
+  });
 
   // Find last widget that doesn't allow overflowing
-  let nonOverflowing = navbar.customizationTarget.lastChild;
+  let nonOverflowing = CustomizableUI.getCustomizationTarget(navbar).lastElementChild;
   is(nonOverflowing.getAttribute("overflows"), "false", "Last child is expected to not allow overflowing");
   isnot(nonOverflowing.getAttribute("skipintoolbarset"), "true", "Last child is expected to not be skipintoolbarset");
 
@@ -240,7 +247,7 @@ add_task(function*() {
   CustomizableUI.ensureWidgetPlacedInWindow(testWidgetId, window);
 
   is(btn.parentNode.id, navbar.overflowable._list.id, "New XUL widget should be placed inside overflow of toolbar");
-  is(btn.nextSibling.id, kTestWidgetPrefix + 11,
+  is(btn.nextElementSibling.id, kTestWidgetPrefix + 11,
      "insertNodeInWindow should have placed new XUL widget in correct place in DOM according to placements");
 
   window.resizeTo(originalWindowWidth, window.outerHeight);
@@ -248,8 +255,8 @@ add_task(function*() {
   widgetIds.forEach(id => CustomizableUI.destroyWidget(id));
   CustomizableUI.removeWidgetFromArea(btn.id, kToolbarName);
   btn.remove();
-  yield resetCustomization();
-  yield waitForCondition(() => !navbar.hasAttribute("overflowing"));
+  await resetCustomization();
+  await waitForCondition(() => !navbar.hasAttribute("overflowing"));
 });
 
 
@@ -259,7 +266,7 @@ placements situation similar to:
 
 exists-1,exists-2,overflow-1,trying-to-insert-this,can't-overflow,overflow-2
 */
-add_task(function*() {
+add_task(async function() {
   let widgetIds = [];
   let missingId = 2;
   let nonOverflowableId = 3;
@@ -286,8 +293,8 @@ add_task(function*() {
   ok(!toolbarNode.hasAttribute("overflowing"), "Toolbar shouldn't overflow to start with.");
 
   let originalWindowWidth = window.outerWidth;
-  window.resizeTo(400, window.outerHeight);
-  yield waitForCondition(() => toolbarNode.hasAttribute("overflowing"));
+  window.resizeTo(kForceOverflowWidthPx, window.outerHeight);
+  await waitForCondition(() => toolbarNode.hasAttribute("overflowing") && !toolbarNode.querySelector("#" + widgetIds[1]));
   ok(toolbarNode.hasAttribute("overflowing"), "Should have an overflowing toolbar.");
 
   let btnId = kTestWidgetPrefix + missingId;
@@ -295,18 +302,18 @@ add_task(function*() {
   CustomizableUI.ensureWidgetPlacedInWindow(btnId, window);
 
   is(btn.parentNode.id, kToolbarName + "-overflow-list", "New XUL widget should be placed inside new toolbar's overflow");
-  is(btn.previousSibling.id, kTestWidgetPrefix + 1,
+  is(btn.previousElementSibling.id, kTestWidgetPrefix + 1,
      "insertNodeInWindow should have placed new XUL widget in correct place in DOM according to placements");
-  is(btn.nextSibling.id, kTestWidgetPrefix + 4,
+  is(btn.nextElementSibling.id, kTestWidgetPrefix + 4,
      "insertNodeInWindow should have placed new XUL widget in correct place in DOM according to placements");
 
   window.resizeTo(originalWindowWidth, window.outerHeight);
-  yield waitForCondition(() => !toolbarNode.hasAttribute("overflowing"));
+  await waitForCondition(() => !toolbarNode.hasAttribute("overflowing"));
 
   btn.remove();
   widgetIds.forEach(id => CustomizableUI.destroyWidget(id));
   removeCustomToolbars();
-  yield resetCustomization();
+  await resetCustomization();
 });
 
 
@@ -316,7 +323,7 @@ plcements situation similar to:
 
 exists-1,trying-to-insert-this,exists-2,overflowed-1
 */
-add_task(function*() {
+add_task(async function() {
   let widgetIds = [];
   let missingId = 1;
   for (let i = 0; i < 5; i++) {
@@ -337,8 +344,8 @@ add_task(function*() {
   ok(!toolbarNode.hasAttribute("overflowing"), "Toolbar shouldn't overflow to start with.");
 
   let originalWindowWidth = window.outerWidth;
-  window.resizeTo(400, window.outerHeight);
-  yield waitForCondition(() => toolbarNode.hasAttribute("overflowing"));
+  window.resizeTo(kForceOverflowWidthPx, window.outerHeight);
+  await waitForCondition(() => toolbarNode.hasAttribute("overflowing"));
   ok(toolbarNode.hasAttribute("overflowing"), "Should have an overflowing toolbar.");
 
   let btnId = kTestWidgetPrefix + missingId;
@@ -348,12 +355,12 @@ add_task(function*() {
   is(btn.parentNode.id, kToolbarName + "-target", "New XUL widget should be placed inside new toolbar");
 
   window.resizeTo(originalWindowWidth, window.outerHeight);
-  yield waitForCondition(() => !toolbarNode.hasAttribute("overflowing"));
+  await waitForCondition(() => !toolbarNode.hasAttribute("overflowing"));
 
   btn.remove();
   widgetIds.forEach(id => CustomizableUI.destroyWidget(id));
   removeCustomToolbars();
-  yield resetCustomization();
+  await resetCustomization();
 });
 
 
@@ -365,7 +372,7 @@ exists-1,exists-2,overflows-1,trying-to-insert-this
 
 Where trying-to-insert-this has overflows=false
 */
-add_task(function*() {
+add_task(async function() {
   let widgetIds = [];
   let missingId = 3;
   for (let i = 0; i < 5; i++) {
@@ -386,8 +393,8 @@ add_task(function*() {
   ok(!toolbarNode.hasAttribute("overflowing"), "Toolbar shouldn't overflow to start with.");
 
   let originalWindowWidth = window.outerWidth;
-  window.resizeTo(400, window.outerHeight);
-  yield waitForCondition(() => toolbarNode.hasAttribute("overflowing"));
+  window.resizeTo(kForceOverflowWidthPx, window.outerHeight);
+  await waitForCondition(() => toolbarNode.hasAttribute("overflowing"));
   ok(toolbarNode.hasAttribute("overflowing"), "Should have an overflowing toolbar.");
 
   let btnId = kTestWidgetPrefix + missingId;
@@ -396,19 +403,19 @@ add_task(function*() {
   CustomizableUI.ensureWidgetPlacedInWindow(btnId, window);
 
   is(btn.parentNode.id, kToolbarName + "-target", "New XUL widget should be placed inside new toolbar");
-  is(btn.nextSibling, null,
+  is(btn.nextElementSibling, null,
      "insertNodeInWindow should have placed new XUL widget in correct place in DOM according to placements");
 
   window.resizeTo(originalWindowWidth, window.outerHeight);
-  yield waitForCondition(() => !toolbarNode.hasAttribute("overflowing"));
+  await waitForCondition(() => !toolbarNode.hasAttribute("overflowing"));
 
   btn.remove();
   widgetIds.forEach(id => CustomizableUI.destroyWidget(id));
   removeCustomToolbars();
-  yield resetCustomization();
+  await resetCustomization();
 });
 
 
-add_task(function* asyncCleanUp() {
-  yield resetCustomization();
+add_task(async function asyncCleanUp() {
+  await resetCustomization();
 });

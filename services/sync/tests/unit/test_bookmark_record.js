@@ -1,13 +1,12 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Cu.import("resource://gre/modules/Log.jsm");
-Cu.import("resource://services-sync/engines/bookmarks.js");
-Cu.import("resource://services-sync/keys.js");
-Cu.import("resource://services-sync/record.js");
-Cu.import("resource://services-sync/service.js");
-Cu.import("resource://services-sync/util.js");
-Cu.import("resource://testing-common/services/sync/utils.js");
+ChromeUtils.import("resource://gre/modules/Log.jsm");
+ChromeUtils.import("resource://services-sync/engines/bookmarks.js");
+ChromeUtils.import("resource://services-sync/keys.js");
+ChromeUtils.import("resource://services-sync/record.js");
+ChromeUtils.import("resource://services-sync/service.js");
+ChromeUtils.import("resource://services-sync/util.js");
 
 function prepareBookmarkItem(collection, id) {
   let b = new Bookmark(collection, id);
@@ -18,29 +17,45 @@ function prepareBookmarkItem(collection, id) {
 add_task(async function test_bookmark_record() {
   await configureIdentity();
 
-  generateNewKeys(Service.collectionKeys);
+  await generateNewKeys(Service.collectionKeys);
   let keyBundle = Service.identity.syncKeyBundle;
 
-  let log = Log.repository.getLogger("Test");
-  Log.repository.rootLogger.addAppender(new Log.DumpAppender());
-
-  log.info("Creating a record");
+  _("Creating a record");
 
   let placesItem = new PlacesItem("bookmarks", "foo", "bookmark");
   let bookmarkItem = prepareBookmarkItem("bookmarks", "foo");
 
-  log.info("Checking getTypeObject");
-  do_check_eq(placesItem.getTypeObject(placesItem.type), Bookmark);
-  do_check_eq(bookmarkItem.getTypeObject(bookmarkItem.type), Bookmark);
+  _("Checking getTypeObject");
+  Assert.equal(placesItem.getTypeObject(placesItem.type), Bookmark);
+  Assert.equal(bookmarkItem.getTypeObject(bookmarkItem.type), Bookmark);
 
-  bookmarkItem.encrypt(keyBundle);
-  log.info("Ciphertext is " + bookmarkItem.ciphertext);
-  do_check_true(bookmarkItem.ciphertext != null);
+  await bookmarkItem.encrypt(keyBundle);
+  _("Ciphertext is " + bookmarkItem.ciphertext);
+  Assert.ok(bookmarkItem.ciphertext != null);
 
-  log.info("Decrypting the record");
+  _("Decrypting the record");
 
-  let payload = bookmarkItem.decrypt(keyBundle);
-  do_check_eq(payload.stuff, "my payload here");
-  do_check_eq(bookmarkItem.getTypeObject(bookmarkItem.type), Bookmark);
-  do_check_neq(payload, bookmarkItem.payload); // wrap.data.payload is the encrypted one
+  let payload = await bookmarkItem.decrypt(keyBundle);
+  Assert.equal(payload.stuff, "my payload here");
+  Assert.equal(bookmarkItem.getTypeObject(bookmarkItem.type), Bookmark);
+  Assert.notEqual(payload, bookmarkItem.payload); // wrap.data.payload is the encrypted one
+});
+
+add_task(async function test_query_foldername() {
+  // Bug 1443388
+  let checks = [
+    ["foo", "foo"],
+    ["", undefined],
+  ];
+  for (let [inVal, outVal] of checks) {
+    let bmk1 = new BookmarkQuery("bookmarks", Utils.makeGUID());
+    bmk1.fromSyncBookmark({url: Services.io.newURI("https://example.com"), folder: inVal});
+    Assert.strictEqual(bmk1.folderName, outVal);
+
+    // other direction
+    let bmk2 = new BookmarkQuery("bookmarks", Utils.makeGUID());
+    bmk2.folderName = inVal;
+    let record = bmk2.toSyncBookmark();
+    Assert.strictEqual(record.folder, outVal);
+  }
 });

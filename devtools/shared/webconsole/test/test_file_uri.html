@@ -14,8 +14,8 @@
 <script class="testbody" type="text/javascript">
 SimpleTest.waitForExplicitFinish();
 
-Cu.import("resource://gre/modules/NetUtil.jsm");
-Cu.import("resource://gre/modules/FileUtils.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
 
 let gState;
 let gTmpFile;
@@ -82,7 +82,10 @@ function testEnd()
       try {
         gTmpFile.remove(false);
       }
-      catch (ex if (ex.name == "NS_ERROR_FILE_IS_LOCKED")) {
+      catch (ex) {
+        if (ex.name != "NS_ERROR_FILE_IS_LOCKED") {
+          throw ex;
+        }
         // Sometimes remove() throws because the file is not unlocked soon
         // enough.
       }

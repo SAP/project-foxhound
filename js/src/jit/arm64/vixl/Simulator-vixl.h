@@ -33,8 +33,6 @@
 
 #include "mozilla/Vector.h"
 
-#include "jsalloc.h"
-
 #include "jit/arm64/vixl/Assembler-vixl.h"
 #include "jit/arm64/vixl/Disasm-vixl.h"
 #include "jit/arm64/vixl/Globals-vixl.h"
@@ -43,8 +41,10 @@
 #include "jit/arm64/vixl/Simulator-Constants-vixl.h"
 #include "jit/arm64/vixl/Utils-vixl.h"
 #include "jit/IonTypes.h"
+#include "js/AllocPolicy.h"
 #include "vm/MutexIDs.h"
 #include "vm/PosixNSPR.h"
+#include "wasm/WasmSignalHandlers.h"
 
 namespace vixl {
 
@@ -703,7 +703,7 @@ class Simulator : public DecoderVisitor {
   // Moz changes.
   void init(Decoder* decoder, FILE* stream);
   static Simulator* Current();
-  static Simulator* Create(JSContext* cx);
+  static Simulator* Create();
   static void Destroy(Simulator* sim);
   uintptr_t stackLimit() const;
   uintptr_t* addressOfStackLimit();
@@ -716,9 +716,15 @@ class Simulator : public DecoderVisitor {
   void setFP32Result(float result);
   void setFP64Result(double result);
   void VisitCallRedirection(const Instruction* instr);
-  static inline uintptr_t StackLimit() {
+  static uintptr_t StackLimit() {
     return Simulator::Current()->stackLimit();
   }
+  static bool supportsAtomics() {
+    return true;
+  }
+  template<typename T> T Read(uintptr_t address);
+  template <typename T> void Write(uintptr_t address_, T value);
+  JS::ProfilingFrameIterator::RegisterState registerState();
 
   void ResetState();
 
@@ -729,6 +735,9 @@ class Simulator : public DecoderVisitor {
   // Simulation helpers.
   const Instruction* pc() const { return pc_; }
   const Instruction* get_pc() const { return pc_; }
+  int64_t get_sp() const { return xreg(31, Reg31IsStackPointer); }
+  int64_t get_lr() const { return xreg(30); }
+  int64_t get_fp() const { return xreg(29); }
 
   template <typename T>
   T get_pc_as() const { return reinterpret_cast<T>(const_cast<Instruction*>(pc())); }
@@ -738,7 +747,21 @@ class Simulator : public DecoderVisitor {
     pc_modified_ = true;
   }
 
-  void set_resume_pc(void* new_resume_pc);
+  // Handle any wasm faults, returning true if the fault was handled.
+  // This method is rather hot so inline the normal (no-wasm) case.
+  bool MOZ_ALWAYS_INLINE handle_wasm_seg_fault(uintptr_t addr, unsigned numBytes) {
+    if (MOZ_LIKELY(!js::wasm::CodeExists)) {
+      return false;
+    }
+
+    uint8_t* newPC;
+    if (!js::wasm::MemoryAccessTraps(registerState(), (uint8_t*)addr, numBytes, &newPC)) {
+      return false;
+    }
+
+    set_pc((Instruction*)newPC);
+    return true;
+  }
 
   void increment_pc() {
     if (!pc_modified_) {
@@ -751,7 +774,7 @@ class Simulator : public DecoderVisitor {
   void ExecuteInstruction();
 
   // Declare all Visitor functions.
-  #define DECLARE(A) virtual void Visit##A(const Instruction* instr);
+  #define DECLARE(A) virtual void Visit##A(const Instruction* instr) override;
   VISITOR_LIST_THAT_RETURN(DECLARE)
   VISITOR_LIST_THAT_DONT_RETURN(DECLARE)
   #undef DECLARE
@@ -2561,7 +2584,7 @@ class Simulator : public DecoderVisitor {
 
   // Stack
   byte* stack_;
-  static const int stack_protection_size_ = 128 * KBytes;
+  static const int stack_protection_size_ = 512 * KBytes;
   static const int stack_size_ = (2 * MBytes) + (2 * stack_protection_size_);
   byte* stack_limit_;
 
@@ -2570,7 +2593,6 @@ class Simulator : public DecoderVisitor {
   // automatically incremented.
   bool pc_modified_;
   const Instruction* pc_;
-  const Instruction* resume_pc_;
 
   static const char* xreg_names[];
   static const char* wreg_names[];

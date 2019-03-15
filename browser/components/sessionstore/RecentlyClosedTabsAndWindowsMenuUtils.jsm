@@ -2,27 +2,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-this.EXPORTED_SYMBOLS = ["RecentlyClosedTabsAndWindowsMenuUtils"];
+var EXPORTED_SYMBOLS = ["RecentlyClosedTabsAndWindowsMenuUtils"];
 
-const kNSXUL = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-var Ci = Components.interfaces;
-var Cc = Components.classes;
-var Cr = Components.results;
-var Cu = Components.utils;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/PlacesUtils.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "PluralForm",
-                                  "resource://gre/modules/PluralForm.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "SessionStore",
-                                  "resource:///modules/sessionstore/SessionStore.jsm");
+ChromeUtils.defineModuleGetter(this, "PluralForm",
+                               "resource://gre/modules/PluralForm.jsm");
+ChromeUtils.defineModuleGetter(this, "SessionStore",
+                               "resource:///modules/sessionstore/SessionStore.jsm");
 
 var navigatorBundle = Services.strings.createBundle("chrome://browser/locale/browser.properties");
 
-this.RecentlyClosedTabsAndWindowsMenuUtils = {
+var RecentlyClosedTabsAndWindowsMenuUtils = {
 
   /**
   * Builds up a document fragment of UI items for the recently closed tabs.
@@ -37,8 +28,8 @@ this.RecentlyClosedTabsAndWindowsMenuUtils = {
   *          Which localizable string to use for the 'restore all tabs' item.
   * @returns A document fragment with UI items for each recently closed tab.
   */
-  getTabsFragment: function(aWindow, aTagName, aPrefixRestoreAll=false,
-                            aRestoreAllLabel="menuRestoreAllTabs.label") {
+  getTabsFragment(aWindow, aTagName, aPrefixRestoreAll = false,
+                  aRestoreAllLabel = "menuRestoreAllTabs.label") {
     let doc = aWindow.document;
     let fragment = doc.createDocumentFragment();
     if (SessionStore.getClosedTabCount(aWindow) != 0) {
@@ -49,7 +40,7 @@ this.RecentlyClosedTabsAndWindowsMenuUtils = {
       }
 
     createRestoreAllEntry(doc, fragment, aPrefixRestoreAll, false,
-                          aRestoreAllLabel, closedTabs.length, aTagName)
+                          aRestoreAllLabel, closedTabs.length, aTagName);
     }
     return fragment;
   },
@@ -67,8 +58,8 @@ this.RecentlyClosedTabsAndWindowsMenuUtils = {
   *          Which localizable string to use for the 'restore all windows' item.
   * @returns A document fragment with UI items for each recently closed window.
   */
-  getWindowsFragment: function(aWindow, aTagName, aPrefixRestoreAll=false,
-                            aRestoreAllLabel="menuRestoreAllWindows.label") {
+  getWindowsFragment(aWindow, aTagName, aPrefixRestoreAll = false,
+                     aRestoreAllLabel = "menuRestoreAllWindows.label") {
     let closedWindowData = SessionStore.getClosedWindowData(false);
     let doc = aWindow.document;
     let fragment = doc.createDocumentFragment();
@@ -104,12 +95,16 @@ this.RecentlyClosedTabsAndWindowsMenuUtils = {
     * @param aEvent
     *        The event when the user clicks the menu item
     */
-  _undoCloseMiddleClick: function(aEvent) {
+  _undoCloseMiddleClick(aEvent) {
     if (aEvent.button != 1)
       return;
 
     aEvent.view.undoCloseTab(aEvent.originalTarget.getAttribute("value"));
     aEvent.view.gBrowser.moveTabToEnd();
+    let ancestorPanel = aEvent.target.closest("panel");
+    if (ancestorPanel) {
+      ancestorPanel.hidePopup();
+    }
   },
 };
 
@@ -141,7 +136,7 @@ function setImage(aItem, aElement) {
  */
 function createEntry(aTagName, aIsWindowsFragment, aIndex, aClosedTab,
                      aDocument, aMenuLabel, aFragment) {
-  let element = aDocument.createElementNS(kNSXUL, aTagName);
+  let element = aDocument.createXULElement(aTagName);
 
   element.setAttribute("label", aMenuLabel);
   if (aClosedTab.image) {
@@ -172,7 +167,7 @@ function createEntry(aTagName, aIsWindowsFragment, aIndex, aClosedTab,
     element.addEventListener("click", RecentlyClosedTabsAndWindowsMenuUtils._undoCloseMiddleClick);
   }
   if (aIndex == 0) {
-    element.setAttribute("key", "key_undoClose" + (aIsWindowsFragment? "Window" : "Tab"));
+    element.setAttribute("key", "key_undoClose" + (aIsWindowsFragment ? "Window" : "Tab"));
   }
 
   aFragment.appendChild(element);
@@ -199,16 +194,16 @@ function createEntry(aTagName, aIsWindowsFragment, aIndex, aClosedTab,
 function createRestoreAllEntry(aDocument, aFragment, aPrefixRestoreAll,
                                 aIsWindowsFragment, aRestoreAllLabel,
                                 aEntryCount, aTagName) {
-  let restoreAllElements = aDocument.createElementNS(kNSXUL, aTagName);
+  let restoreAllElements = aDocument.createXULElement(aTagName);
   restoreAllElements.classList.add("restoreallitem");
   restoreAllElements.setAttribute("label", navigatorBundle.GetStringFromName(aRestoreAllLabel));
   restoreAllElements.setAttribute("oncommand",
                                   "for (var i = 0; i < " + aEntryCount + "; i++) undoClose" +
-                                    (aIsWindowsFragment? "Window" : "Tab") + "();");
+                                    (aIsWindowsFragment ? "Window" : "Tab") + "();");
   if (aPrefixRestoreAll) {
     aFragment.insertBefore(restoreAllElements, aFragment.firstChild);
   } else {
-    aFragment.appendChild(aDocument.createElementNS(kNSXUL, "menuseparator"));
+    aFragment.appendChild(aDocument.createXULElement("menuseparator"));
     aFragment.appendChild(restoreAllElements);
   }
 }

@@ -12,37 +12,37 @@
 #include "nscore.h"
 
 #include "mozilla/Attributes.h"
+#include "mozilla/HashFunctions.h"
 
 /**
  * hashkey wrapper using T* KeyType
  *
  * @see nsTHashtable::EntryType for specification
  */
-template<class T>
-class nsPtrHashKey : public PLDHashEntryHdr
-{
-public:
+template <class T>
+class nsPtrHashKey : public PLDHashEntryHdr {
+ public:
   typedef T* KeyType;
   typedef const T* KeyTypePointer;
 
   explicit nsPtrHashKey(const T* aKey) : mKey(const_cast<T*>(aKey)) {}
-  nsPtrHashKey(const nsPtrHashKey<T>& aToCopy) : mKey(aToCopy.mKey) {}
+  nsPtrHashKey(nsPtrHashKey<T>&& aToMove)
+      : PLDHashEntryHdr(std::move(aToMove)), mKey(std::move(aToMove.mKey)) {}
   ~nsPtrHashKey() {}
 
   KeyType GetKey() const { return mKey; }
   bool KeyEquals(KeyTypePointer aKey) const { return aKey == mKey; }
 
   static KeyTypePointer KeyToPointer(KeyType aKey) { return aKey; }
-  static PLDHashNumber HashKey(KeyTypePointer aKey)
-  {
-    return NS_PTR_TO_UINT32(aKey) >> 2;
+  static PLDHashNumber HashKey(KeyTypePointer aKey) {
+    return mozilla::HashGeneric(aKey);
   }
   enum { ALLOW_MEMMOVE = true };
 
-protected:
+ protected:
   T* MOZ_NON_OWNING_REF mKey;
 };
 
 typedef nsPtrHashKey<const void> nsVoidPtrHashKey;
 
-#endif // nsPointerHashKeys_h
+#endif  // nsPointerHashKeys_h

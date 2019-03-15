@@ -6,8 +6,8 @@
 // Test that depending where the user last clicked in the inspector, the right search
 // field is focused when ctrl+F is pressed.
 
-add_task(function* () {
-  let {inspector} = yield openInspectorForURL("data:text/html;charset=utf-8,Search!");
+add_task(async function() {
+  const {inspector} = await openInspectorForURL("data:text/html;charset=utf-8,Search!");
 
   info("Check that by default, the inspector search field gets focused");
   pressCtrlF();
@@ -21,7 +21,7 @@ add_task(function* () {
   isInRuleViewSearchBox(inspector);
 
   info("Click in the inspector again");
-  yield clickContainer("head", inspector);
+  await clickContainer("head", inspector);
 
   info("Check that now we're back in the inspector, its search field gets focused");
   pressCtrlF();
@@ -36,7 +36,7 @@ add_task(function* () {
   isInComputedViewSearchBox(inspector);
 
   info("Click in the inspector yet again");
-  yield clickContainer("body", inspector);
+  await clickContainer("body", inspector);
 
   info("We're back in the inspector again, check the inspector search field focuses");
   pressCtrlF();
@@ -48,12 +48,12 @@ function pressCtrlF() {
 }
 
 function clickInRuleView(inspector) {
-  let el = inspector.panelDoc.querySelector("#sidebar-panel-ruleview");
+  const el = inspector.panelDoc.querySelector("#sidebar-panel-ruleview");
   EventUtils.synthesizeMouseAtCenter(el, {}, inspector.panelDoc.defaultView);
 }
 
 function clickInComputedView(inspector) {
-  let el = inspector.panelDoc.querySelector("#sidebar-panel-computedview");
+  const el = inspector.panelDoc.querySelector("#sidebar-panel-computedview");
   EventUtils.synthesizeMouseAtCenter(el, {}, inspector.panelDoc.defaultView);
 }
 
@@ -64,11 +64,12 @@ function isInInspectorSearchBox(inspector) {
 }
 
 function isInRuleViewSearchBox(inspector) {
-  is(inspector.panelDoc.activeElement, inspector.ruleview.view.searchField,
+  is(inspector.panelDoc.activeElement, inspector.getPanel("ruleview").view.searchField,
      "The rule-view search field is focused when ctrl+F is pressed");
 }
 
 function isInComputedViewSearchBox(inspector) {
-  is(inspector.panelDoc.activeElement, inspector.computedview.computedView.searchField,
+  is(inspector.panelDoc.activeElement,
+     inspector.getPanel("computedview").computedView.searchField,
      "The computed-view search field is focused when ctrl+F is pressed");
 }

@@ -1,7 +1,7 @@
 // Test the plaintext-or-binary sniffer
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 // List of Content-Type headers to test.  For each header we have an array.
 // The first element in the array is the Content-Type header string.  The
@@ -78,10 +78,10 @@ function makeChan(headerIdx, bodyIdx) {
     uri: "http://localhost:" + httpserv.identity.primaryPort +
          "/" + headerIdx + "/" + bodyIdx,
     loadUsingSystemPrincipal: true
-  }).QueryInterface(Components.interfaces.nsIHttpChannel);
+  }).QueryInterface(Ci.nsIHttpChannel);
 
   chan.loadFlags |=
-    Components.interfaces.nsIChannel.LOAD_CALL_CONTENT_SNIFFERS;
+    Ci.nsIChannel.LOAD_CALL_CONTENT_SNIFFERS;
 
   return chan;
 }
@@ -90,9 +90,9 @@ function makeListener(headerIdx, bodyIdx) {
   var listener = {
     onStartRequest : function test_onStartR(request, ctx) {
       try {
-        var chan = request.QueryInterface(Components.interfaces.nsIChannel);
+        var chan = request.QueryInterface(Ci.nsIChannel);
 
-        do_check_eq(chan.status, Components.results.NS_OK);
+        Assert.equal(chan.status, Cr.NS_OK);
         
         var type = chan.contentType;
 
@@ -110,12 +110,12 @@ function makeListener(headerIdx, bodyIdx) {
                      bodyList[bodyIdx][1] +
                    "].");
         }
-        do_check_eq(expectedType, type);
+        Assert.equal(expectedType, type);
       } catch (e) {
         do_throw("Unexpected exception: " + e);
       }
 
-      throw Components.results.NS_ERROR_ABORT;
+      throw Cr.NS_ERROR_ABORT;
     },
 
     onDataAvailable: function test_ODA() {

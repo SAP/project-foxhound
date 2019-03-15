@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 from marionette_driver.by import By
 from marionette_driver.errors import (
     MarionetteException,
@@ -17,6 +19,10 @@ class TestTimeouts(MarionetteTestCase):
     def tearDown(self):
         self.marionette.timeout.reset()
         MarionetteTestCase.tearDown(self)
+
+    def test_get_timeout_fraction(self):
+        self.marionette.timeout.script = 0.5
+        self.assertEqual(self.marionette.timeout.script, 0.5)
 
     def test_page_timeout_notdefinetimeout_pass(self):
         test_html = self.marionette.absolute_url("test.html")
@@ -96,26 +102,3 @@ class TestTimeouts(MarionetteTestCase):
              var callback = arguments[arguments.length - 1];
              setTimeout(function() { callback(true); }, 500);
              """))
-
-    def test_compat_input_types(self):
-        # When using the spec-incompatible input format which we have
-        # for backwards compatibility, it should be possible to send ms
-        # as a string type and have the server parseInt it to an integer.
-        body = {"type": "script", "ms": "30000"}
-        self.marionette._send_message("setTimeouts", body)
-
-    def test_deprecated_set_timeouts_command(self):
-        body = {"implicit": 3000}
-        self.marionette._send_message("timeouts", body)
-
-    def test_deprecated_set_search_timeout(self):
-        self.marionette.set_search_timeout(1000)
-        self.assertEqual(1, self.marionette.timeout.implicit)
-
-    def test_deprecated_set_script_timeout(self):
-        self.marionette.set_script_timeout(2000)
-        self.assertEqual(2, self.marionette.timeout.script)
-
-    def test_deprecated_set_page_load_timeout(self):
-        self.marionette.set_page_load_timeout(3000)
-        self.assertEqual(3, self.marionette.timeout.page_load)

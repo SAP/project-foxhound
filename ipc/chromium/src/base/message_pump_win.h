@@ -11,7 +11,6 @@
 
 #include <list>
 
-#include "base/lock.h"
 #include "base/message_pump.h"
 #include "base/observer_list.h"
 #include "base/scoped_handle.h"
@@ -171,7 +170,7 @@ class MessagePumpForUI : public MessagePumpWin {
   // queue can provide, up to some fixed number (to avoid any infinite loops).
   void PumpOutPendingPaintMessages();
 
-protected:
+ protected:
   virtual void DoRunLoop();
 
   bool ProcessNextWindowsMessage();
@@ -186,8 +185,8 @@ protected:
   HWND message_hwnd_;
 
  private:
-  static LRESULT CALLBACK WndProcThunk(
-      HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam);
+  static LRESULT CALLBACK WndProcThunk(HWND hwnd, UINT message, WPARAM wparam,
+                                       LPARAM lparam);
 };
 
 //-----------------------------------------------------------------------------

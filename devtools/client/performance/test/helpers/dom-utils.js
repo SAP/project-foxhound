@@ -17,11 +17,11 @@ exports.isVisible = (element) => {
  * mode, will also wait for MozAfterPaint to make sure the tab is rendered.
  * Should be reviewed if Bug 1240509 lands.
  */
-exports.appendAndWaitForPaint = function (parent, element) {
-  let isE10s = Services.appinfo.browserTabsRemoteAutostart;
+exports.appendAndWaitForPaint = function(parent, element) {
+  const isE10s = Services.appinfo.browserTabsRemoteAutostart;
   if (isE10s) {
-    let win = parent.ownerDocument.defaultView;
-    let onMozAfterPaint = waitForMozAfterPaint(win);
+    const win = parent.ownerDocument.defaultView;
+    const onMozAfterPaint = waitForMozAfterPaint(win);
     parent.appendChild(element);
     return onMozAfterPaint;
   }

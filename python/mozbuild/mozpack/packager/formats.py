@@ -6,27 +6,22 @@ from __future__ import absolute_import
 
 from mozpack.chrome.manifest import (
     Manifest,
+    ManifestEntryWithRelPath,
     ManifestInterfaces,
     ManifestChrome,
     ManifestBinaryComponent,
     ManifestResource,
+    ManifestMultiContent,
 )
+from mozpack.errors import errors
 from urlparse import urlparse
 import mozpack.path as mozpath
-from mozpack.files import (
-    ManifestFile,
-    XPTFile,
-)
+from mozpack.files import ManifestFile
 from mozpack.copier import (
     FileRegistry,
     FileRegistrySubtree,
     Jarrer,
 )
-
-STARTUP_CACHE_PATHS = [
-    'jsloader',
-    'jssubloader',
-]
 
 '''
 Formatters are classes receiving packaging instructions and creating the
@@ -52,8 +47,8 @@ The base interface provides the following methods:
     - add(path, content)
         Add the given content (BaseFile instance) at the given virtual path
     - add_interfaces(path, content)
-        Add the given content (BaseFile instance) and link it to other
-        interfaces in the parent directory of the given virtual path.
+        Add the given content (BaseFile instance) as an interface. Equivalent
+        to add(path, content) with the right add_manifest().
     - add_manifest(entry)
         Add a ManifestEntry.
     - contains(path)
@@ -133,6 +128,7 @@ class FlatSubFormatter(object):
     def __init__(self, copier):
         assert isinstance(copier, (FileRegistry, FileRegistrySubtree))
         self.copier = copier
+        self._chrome_db = {}
 
     def add(self, path, content):
         self.copier.add(path, content)
@@ -156,18 +152,31 @@ class FlatSubFormatter(object):
                                             mozpath.basename(path))
                 self.add_manifest(Manifest(parent, relpath))
             self.copier.add(path, ManifestFile(entry.base))
+
+        if isinstance(entry, ManifestChrome):
+            data = self._chrome_db.setdefault(entry.name, {})
+            if isinstance(entry, ManifestMultiContent):
+                entries = data.setdefault(entry.type, {}) \
+                              .setdefault(entry.id, [])
+            else:
+                entries = data.setdefault(entry.type, [])
+            for e in entries:
+                # Ideally, we'd actually check whether entry.flags are more
+                # specific than e.flags, but in practice the following test
+                # is enough for now.
+                if entry == e:
+                    errors.warn('"%s" is duplicated. Skipping.' % entry)
+                    return
+                if not entry.flags or e.flags and entry.flags == e.flags:
+                    errors.fatal('"%s" overrides "%s"' % (entry, e))
+            entries.append(entry)
+
         self.copier[path].add(entry)
 
     def add_interfaces(self, path, content):
-        # Interfaces in the same directory are all linked together in an
-        # interfaces.xpt file.
-        interfaces_path = mozpath.join(mozpath.dirname(path),
-                                       'interfaces.xpt')
-        if not self.copier.contains(interfaces_path):
-            self.add_manifest(ManifestInterfaces(mozpath.dirname(path),
-                                                 'interfaces.xpt'))
-            self.copier.add(interfaces_path, XPTFile())
-        self.copier[interfaces_path].add(content)
+        self.copier.add(path, content)
+        self.add_manifest(ManifestInterfaces(mozpath.dirname(path),
+                                             mozpath.basename(path)))
 
     def contains(self, path):
         assert '*' not in path
@@ -311,14 +320,20 @@ class OmniJarSubFormatter(PiecemealFormatter):
             return path[-1].endswith(('.js', '.xpt'))
         if path[0] == 'res':
             return len(path) == 1 or \
-                (path[1] != 'cursors' and path[1] != 'MainMenu.nib')
+                (path[1] != 'cursors' and \
+                 path[1] != 'touchbar' and \
+                 path[1] != 'MainMenu.nib')
         if path[0] == 'defaults':
             return len(path) != 3 or \
                 not (path[2] == 'channel-prefs.js' and
                      path[1] in ['pref', 'preferences'])
         return path[0] in [
             'modules',
+            'actors',
+            'dictionaries',
             'greprefs.js',
             'hyphenation',
+            'localization',
             'update.locale',
-        ] or path[0] in STARTUP_CACHE_PATHS
+            'contentaccessible',
+        ]

@@ -4,11 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-Components.utils.import("resource://gre/modules/AppConstants.jsm");
-Components.utils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-const C = Components.classes;
-const I = Components.interfaces;
+const C = Cc;
+const I = Ci;
 
 const ToolkitProfileService = "@mozilla.org/toolkit/profile-service;1";
 
@@ -31,16 +31,12 @@ function startup() {
 
     var profilesElement = document.getElementById("profiles");
 
-    var profileList = gProfileService.profiles;
-    while (profileList.hasMoreElements()) {
-      var profile = profileList.getNext().QueryInterface(I.nsIToolkitProfile);
-
+    for (let profile of gProfileService.profiles.entries(I.nsIToolkitProfile)) {
       var listitem = profilesElement.appendItem(profile.name, "");
 
       var tooltiptext =
         gProfileManagerBundle.getFormattedString("profileTooltip", [profile.name, profile.rootDir.path]);
       listitem.setAttribute("tooltiptext", tooltiptext);
-      listitem.setAttribute("class", "listitem-iconic");
       listitem.profile = profile;
       try {
         if (profile === gProfileService.selectedProfile) {
@@ -95,13 +91,15 @@ function acceptDialog() {
 
     return false;
   }
-  gDialogParams.objects.insertElementAt(profileLock.nsIProfileLock, 0, false);
+  gDialogParams.objects.insertElementAt(profileLock.nsIProfileLock, 0);
 
   gProfileService.selectedProfile = selectedProfile.profile;
   gProfileService.defaultProfile = selectedProfile.profile;
   updateStartupPrefs();
 
   gDialogParams.SetInt(0, 1);
+  /* Bug 257777 */
+  gDialogParams.SetInt(1, document.getElementById("offlineState").checked ? 1 : 0);
 
   gDialogParams.SetString(0, selectedProfile.profile.name);
 
@@ -117,9 +115,6 @@ function exitDialog() {
 function updateStartupPrefs() {
   var autoSelectLastProfile = document.getElementById("autoSelectLastProfile");
   gProfileService.startWithLastProfile = autoSelectLastProfile.checked;
-
-  /* Bug 257777 */
-  gProfileService.startOffline = document.getElementById("offlineState").checked;
 }
 
 // handle key event on listboxes
@@ -138,7 +133,7 @@ function onProfilesKey(aEvent) {
 }
 
 function onProfilesDblClick(aEvent) {
-  if (aEvent.target.localName == "listitem")
+  if (aEvent.target.closest("richlistitem"))
     document.documentElement.acceptDialog();
 }
 
@@ -159,7 +154,6 @@ function CreateProfile(aProfile) {
   var tooltiptext =
     gProfileManagerBundle.getFormattedString("profileTooltip", [aProfile.name, aProfile.rootDir.path]);
   listitem.setAttribute("tooltiptext", tooltiptext);
-  listitem.setAttribute("class", "listitem-iconic");
   listitem.profile = aProfile;
 
   profilesElement.ensureElementIsVisible(listitem);
@@ -183,7 +177,7 @@ function RenameProfile() {
   var msg =
     gProfileManagerBundle.getFormattedString("renameProfilePrompt", [oldName]);
 
-  if (Services.prompt.prompt(window, dialogTitle, msg, newName, null, {value:0})) {
+  if (Services.prompt.prompt(window, dialogTitle, msg, newName, null, {value: 0})) {
     newName = newName.value;
 
     // User hasn't changed the profile name. Treat as if cancel was pressed.
@@ -199,7 +193,7 @@ function RenameProfile() {
       return false;
     }
 
-    selectedItem.label = newName;
+    selectedItem.firstChild.setAttribute("value", newName);
     var tiptext = gProfileManagerBundle.
                   getFormattedString("profileTooltip",
                                      [newName, selectedProfile.rootDir.path]);
@@ -235,7 +229,7 @@ function ConfirmDelete() {
                           gProfileManagerBundle.getString("dontDeleteFiles"),
                           null,
                           gProfileManagerBundle.getString("deleteFiles"),
-                          null, {value:0});
+                          null, {value: 0});
     if (buttonPressed == 1)
       return false;
 
@@ -243,7 +237,16 @@ function ConfirmDelete() {
       deleteFiles = true;
   }
 
-  selectedProfile.remove(deleteFiles);
+  try {
+    selectedProfile.remove(deleteFiles);
+  } catch (e) {
+    let title = gProfileManagerBundle.getString("profileDeletionFailedTitle");
+    let msg = gProfileManagerBundle.getString("profileDeletionFailed");
+    Services.prompt.alert(window, title, msg);
+
+    return true;
+  }
+
   profileList.removeChild(selectedItem);
   if (profileList.firstChild != undefined) {
     profileList.selectItem(profileList.firstChild);

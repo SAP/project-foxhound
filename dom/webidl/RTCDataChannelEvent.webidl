@@ -7,14 +7,12 @@
  * http://dev.w3.org/2011/webrtc/editor/webrtc.html#idl-def-RTCDataChannelEvent
  */
 
-interface RTCDataChannel;
-
 dictionary RTCDataChannelEventInit : EventInit {
-    RTCDataChannel? channel = null;
+    required RTCDataChannel channel;
 };
 
 [Pref="media.peerconnection.enabled",
- Constructor(DOMString type, optional RTCDataChannelEventInit eventInitDict)]
+ Constructor(DOMString type, RTCDataChannelEventInit eventInitDict)]
 interface RTCDataChannelEvent : Event {
-  readonly attribute RTCDataChannel? channel;
+  readonly attribute RTCDataChannel channel;
 };

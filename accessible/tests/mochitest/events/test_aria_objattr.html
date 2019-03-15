@@ -22,8 +22,7 @@
      * Do tests.
      */
     var gQueue = null;
-    function updateAttribute(aID, aAttr, aValue)
-    {
+    function updateAttribute(aID, aAttr, aValue) {
       this.node = getNode(aID);
       this.accessible = getAccessible(this.node);
 
@@ -31,44 +30,18 @@
         new objAttrChangedChecker(aID, aAttr),
       ];
 
-      this.invoke = function updateAttribute_invoke()
-      {
+      this.invoke = function updateAttribute_invoke() {
         this.node.setAttribute(aAttr, aValue);
       };
 
-      this.getID = function updateAttribute_getID()
-      {
+      this.getID = function updateAttribute_getID() {
         return aAttr + " for " + aID + " " + aValue;
       };
     }
 
-    function updateARIAHidden(aID, aIsDefined, aChildId)
-    {
-      this.__proto__ = new updateAttribute(aID, "aria-hidden",
-                                           aIsDefined ? "true" : "false");
-
-      this.finalCheck = function updateARIAHidden()
-      {
-        if (aIsDefined) {
-          testAttrs(aID, {"hidden" : "true"}, true);
-          testAttrs(aChildId, {"hidden" : "true"}, true);
-        } else {
-          testAbsentAttrs(aID, { "hidden": "true"});
-          testAbsentAttrs(aChildId, { "hidden": "true"});
-        }
-      }
-    }
-
-    // Debug stuff.
-    // gA11yEventDumpID = "eventdump";
-    //gA11yEventDumpToConsole = true;
-
-    function doTests()
-    {
+    // gA11yEventDumpToConsole = true;
+    function doTests() {
       gQueue = new eventQueue();
-
-      gQueue.push(new updateARIAHidden("hideable", true, "hideable_child"));
-      gQueue.push(new updateARIAHidden("hideable", false, "hideable_child"));
 
       gQueue.push(new updateAttribute("sortable", "aria-sort", "ascending"));
 
@@ -84,32 +57,10 @@
 </head>
 
 <body>
-
-  <a target="_blank"
-     href="https://bugzilla.mozilla.org/show_bug.cgi?id=581096"
-     title="Add support for aria-hidden">
-    Mozilla Bug 581096
-  </a>
-
-  <a target="_blank"
-     href="https://bugzilla.mozilla.org/show_bug.cgi?id=640707"
-     title="Add event support for aria-sort">
-    Mozilla Bug 640707
-  </a>
-
-  <a target="_blank"
-     href="https://bugzilla.mozilla.org/show_bug.cgi?id=640707"
-     title="Expand support for aria attribute change events">
-    Mozilla Bug 563862
-  </a>
-
   <p id="display"></p>
   <div id="content" style="display: none"></div>
   <pre id="test">
   </pre>
-  <div id="eventdump"></div>
-
-  <div id="hideable"><div id="hideable_child">Hi</div><div>there</div></div>
 
   <div id="sortable" role="columnheader" aria-sort="none">aria-sort</div>
 

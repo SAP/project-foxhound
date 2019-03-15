@@ -15,7 +15,8 @@
 [Global=(Worker,ServiceWorker),
  Exposed=ServiceWorker]
 interface ServiceWorkerGlobalScope : WorkerGlobalScope {
-  [SameObject] readonly attribute Clients clients;
+  [SameObject, BinaryName="GetClients"]
+  readonly attribute Clients clients;
   [SameObject] readonly attribute ServiceWorkerRegistration registration;
 
   [Throws, NewObject]
@@ -28,6 +29,7 @@ interface ServiceWorkerGlobalScope : WorkerGlobalScope {
 
   // The event.source of these MessageEvents are instances of Client
   attribute EventHandler onmessage;
+  attribute EventHandler onmessageerror;
 };
 
 // These are from w3c.github.io/push-api/

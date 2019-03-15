@@ -7,28 +7,25 @@
 #ifndef AudioDestinationNode_h_
 #define AudioDestinationNode_h_
 
-#include "mozilla/dom/AudioChannelBinding.h"
+#include "AudioChannelService.h"
 #include "AudioNode.h"
 #include "nsIAudioChannelAgent.h"
+#include "mozilla/TimeStamp.h"
 
 namespace mozilla {
 namespace dom {
 
 class AudioContext;
 
-class AudioDestinationNode final : public AudioNode
-                                 , public nsIAudioChannelAgentCallback
-                                 , public MainThreadMediaStreamListener
-{
-public:
+class AudioDestinationNode final : public AudioNode,
+                                   public nsIAudioChannelAgentCallback,
+                                   public MainThreadMediaStreamListener {
+ public:
   // This node type knows what MediaStreamGraph to use based on
   // whether it's in offline mode.
-  AudioDestinationNode(AudioContext* aContext,
-                       bool aIsOffline,
-                       AudioChannel aChannel = AudioChannel::Normal,
-                       uint32_t aNumberOfChannels = 0,
-                       uint32_t aLength = 0,
-                       float aSampleRate = 0.0f);
+  AudioDestinationNode(AudioContext* aContext, bool aIsOffline,
+                       bool aAllowedToStart, uint32_t aNumberOfChannels,
+                       uint32_t aLength);
 
   void DestroyMediaStream() override;
 
@@ -36,19 +33,16 @@ public:
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(AudioDestinationNode, AudioNode)
   NS_DECL_NSIAUDIOCHANNELAGENTCALLBACK
 
-  JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
-  uint16_t NumberOfOutputs() const final override
-  {
-    return 0;
-  }
+  uint16_t NumberOfOutputs() const final { return 0; }
 
   uint32_t MaxChannelCount() const;
-  void SetChannelCount(uint32_t aChannelCount,
-                       ErrorResult& aRv) override;
+  void SetChannelCount(uint32_t aChannelCount, ErrorResult& aRv) override;
 
   // Returns the stream or null after unlink.
-  AudioNodeStream* Stream() { return mStream; }
+  AudioNodeStream* Stream();
 
   void Mute();
   void Unmute();
@@ -60,38 +54,29 @@ public:
 
   void OfflineShutdown();
 
-  AudioChannel MozAudioChannelType() const;
-
   void NotifyMainThreadStreamFinished() override;
   void FireOfflineCompletionEvent();
 
   nsresult CreateAudioChannelAgent();
   void DestroyAudioChannelAgent();
 
-  const char* NodeType() const override
-  {
-    return "AudioDestinationNode";
-  }
+  const char* NodeType() const override { return "AudioDestinationNode"; }
 
   size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const override;
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const override;
 
-  void InputMuted(bool aInputMuted);
+  void NotifyAudibleStateChanged(bool aAudible);
   void ResolvePromise(AudioBuffer* aRenderedBuffer);
 
-  unsigned long Length()
-  {
+  unsigned long Length() {
     MOZ_ASSERT(mIsOffline);
     return mFramesToProduce;
   }
 
-protected:
+ protected:
   virtual ~AudioDestinationNode();
 
-private:
-  void SetMozAudioChannelType(AudioChannel aValue, ErrorResult& aRv);
-  bool CheckAudioChannelPermissions(AudioChannel aValue);
-
+ private:
   SelfReference<AudioDestinationNode> mOfflineRenderingRef;
   uint32_t mFramesToProduce;
 
@@ -100,16 +85,19 @@ private:
 
   RefPtr<Promise> mOfflineRenderingPromise;
 
-  // Audio Channel Type.
-  AudioChannel mAudioChannel;
   bool mIsOffline;
   bool mAudioChannelSuspended;
 
   bool mCaptured;
+  AudioChannelService::AudibleState mAudible;
+
+  // These varaibles are used to know how long AudioContext would become audible
+  // since it was created.
+  TimeStamp mCreatedTime;
+  TimeDuration mDurationBeforeFirstTimeAudible;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif
-

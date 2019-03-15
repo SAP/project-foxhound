@@ -1,39 +1,41 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Cu.import("resource://services-sync/engines.js");
-Cu.import("resource://services-sync/service.js");
-Cu.import("resource://services-sync/util.js");
-Cu.import("resource://testing-common/services/sync/rotaryengine.js");
-Cu.import("resource://testing-common/services/sync/utils.js");
+ChromeUtils.import("resource://services-sync/engines.js");
+ChromeUtils.import("resource://services-sync/service.js");
+ChromeUtils.import("resource://services-sync/util.js");
+ChromeUtils.import("resource://testing-common/services/sync/rotaryengine.js");
 
 // Track HMAC error counts.
 var hmacErrorCount = 0;
 (function() {
   let hHE = Service.handleHMACEvent;
-  Service.handleHMACEvent = function() {
+  Service.handleHMACEvent = async function() {
     hmacErrorCount++;
     return hHE.call(Service);
   };
 })();
 
-function shared_setup() {
+async function shared_setup() {
   enableValidationPrefs();
+  syncTestLogging();
 
   hmacErrorCount = 0;
 
+  let clientsEngine = Service.clientsEngine;
+  let clientsSyncID = await clientsEngine.resetLocalSyncID();
+
   // Make sure RotaryEngine is the only one we sync.
-  let { engine, tracker } = registerRotaryEngine();
-  engine.lastSync = 123; // Needs to be non-zero so that tracker is queried.
+  let { engine, syncID, tracker } = await registerRotaryEngine();
+  await engine.setLastSync(123); // Needs to be non-zero so that tracker is queried.
   engine._store.items = {flying: "LNER Class A3 4472",
                          scotsman: "Flying Scotsman"};
-  tracker.addChangedID("scotsman", 0);
-  do_check_eq(1, Service.engineManager.getEnabled().length);
+  await tracker.addChangedID("scotsman", 0);
+  Assert.equal(1, Service.engineManager.getEnabled().length);
 
-  let engines = {rotary:  {version: engine.version,
-                           syncID:  engine.syncID},
-                 clients: {version: Service.clientsEngine.version,
-                           syncID:  Service.clientsEngine.syncID}};
+  let engines = {rotary:  {version: engine.version, syncID},
+                 clients: {version: clientsEngine.version,
+                           syncID:  clientsSyncID}};
 
   // Common server objects.
   let global      = new ServerWBO("global", {engines});
@@ -46,7 +48,7 @@ function shared_setup() {
 
 add_task(async function hmac_error_during_404() {
   _("Attempt to replicate the HMAC error setup.");
-  let [engine, rotaryColl, clientsColl, keysWBO, global, tracker] = shared_setup();
+  let [engine, rotaryColl, clientsColl, keysWBO, global, tracker] = await shared_setup();
 
   // Hand out 404s for crypto/keys.
   let keysHandler    = keysWBO.handler();
@@ -69,13 +71,13 @@ add_task(async function hmac_error_during_404() {
     "/1.1/foo/storage/meta/global": upd("meta", global.handler()),
     "/1.1/foo/storage/crypto/keys": upd("crypto", keys404Handler),
     "/1.1/foo/storage/clients": upd("clients", clientsColl.handler()),
-    "/1.1/foo/storage/rotary": upd("rotary", rotaryColl.handler())
+    "/1.1/foo/storage/rotary": upd("rotary", rotaryColl.handler()),
   };
 
   let server = sync_httpd_setup(handlers);
   // Do not instantiate SyncTestingInfrastructure; we need real crypto.
   await configureIdentity({ username: "foo" }, server);
-  Service.login();
+  await Service.login();
 
   try {
     _("Syncing.");
@@ -83,17 +85,17 @@ add_task(async function hmac_error_during_404() {
 
     _("Partially resetting client, as if after a restart, and forcing redownload.");
     Service.collectionKeys.clear();
-    engine.lastSync = 0;        // So that we redownload records.
+    await engine.setLastSync(0); // So that we redownload records.
     key404Counter = 1;
     _("---------------------------");
     await sync_and_validate_telem();
     _("---------------------------");
 
     // Two rotary items, one client record... no errors.
-    do_check_eq(hmacErrorCount, 0)
+    Assert.equal(hmacErrorCount, 0);
   } finally {
-    tracker.clearChangedIDs();
-    Service.engineManager.unregister(engine);
+    await tracker.clearChangedIDs();
+    await Service.engineManager.unregister(engine);
     Svc.Prefs.resetBranch("");
     Service.recordManager.clearCache();
     await promiseStopServer(server);
@@ -102,7 +104,7 @@ add_task(async function hmac_error_during_404() {
 
 add_task(async function hmac_error_during_node_reassignment() {
   _("Attempt to replicate an HMAC error during node reassignment.");
-  let [engine, rotaryColl, clientsColl, keysWBO, global, tracker] = shared_setup();
+  let [engine, rotaryColl, clientsColl, keysWBO, global, tracker] = await shared_setup();
 
   let collectionsHelper = track_collections_helper();
   let upd = collectionsHelper.with_updated_collection;
@@ -141,7 +143,7 @@ add_task(async function hmac_error_during_node_reassignment() {
     "/1.1/foo/storage/meta/global": upd("meta", global.handler()),
     "/1.1/foo/storage/crypto/keys": upd("crypto", keysWBO.handler()),
     "/1.1/foo/storage/clients":     upd401("clients", clientsColl.handler()),
-    "/1.1/foo/storage/rotary":      upd("rotary", rotaryColl.handler())
+    "/1.1/foo/storage/rotary":      upd("rotary", rotaryColl.handler()),
   };
 
   let server = sync_httpd_setup(handlers);
@@ -159,7 +161,7 @@ add_task(async function hmac_error_during_node_reassignment() {
   function onSyncError() {
     do_throw("Should not get a sync error!");
   }
-  let onSyncFinished = function() {}
+  let onSyncFinished = function() {};
   let obs = {
     observe: function observe(subject, topic, data) {
       switch (topic) {
@@ -170,7 +172,7 @@ add_task(async function hmac_error_during_node_reassignment() {
           onSyncFinished();
           break;
       }
-    }
+    },
   };
 
   Svc.Obs.add("weave:service:sync:finish", obs);
@@ -178,22 +180,22 @@ add_task(async function hmac_error_during_node_reassignment() {
 
   // This kicks off the actual test. Split into a function here to allow this
   // source file to broadly follow actual execution order.
-  function onwards() {
+  async function onwards() {
     _("== Invoking first sync.");
-    Service.sync();
+    await Service.sync();
     _("We should not simultaneously have data but no keys on the server.");
     let hasData = rotaryColl.wbo("flying") ||
                   rotaryColl.wbo("scotsman");
     let hasKeys = keysWBO.modified;
 
     _("We correctly handle 401s by aborting the sync and starting again.");
-    do_check_true(!hasData == !hasKeys);
+    Assert.ok(!hasData == !hasKeys);
 
     _("Be prepared for the second (automatic) sync...");
   }
 
   _("Make sure that syncing again causes recovery.");
-  await new Promise(resolve => {
+  let callbacksPromise = new Promise(resolve => {
     onSyncFinished = function() {
       _("== First sync done.");
       _("---------------------------");
@@ -202,42 +204,37 @@ add_task(async function hmac_error_during_node_reassignment() {
         let hasData = rotaryColl.wbo("flying") ||
                       rotaryColl.wbo("scotsman");
         let hasKeys = keysWBO.modified;
-        do_check_true(!hasData == !hasKeys);
+        Assert.ok(!hasData == !hasKeys);
 
         // Kick off another sync. Can't just call it, because we're inside the
         // lock...
-        Utils.nextTick(function() {
+        (async () => {
+          await Async.promiseYield();
           _("Now a fresh sync will get no HMAC errors.");
           _("Partially resetting client, as if after a restart, and forcing redownload.");
           Service.collectionKeys.clear();
-          engine.lastSync = 0;
+          await engine.setLastSync(0);
           hmacErrorCount = 0;
 
-          onSyncFinished = function() {
+          onSyncFinished = async function() {
             // Two rotary items, one client record... no errors.
-            do_check_eq(hmacErrorCount, 0)
+            Assert.equal(hmacErrorCount, 0);
 
             Svc.Obs.remove("weave:service:sync:finish", obs);
             Svc.Obs.remove("weave:service:sync:error", obs);
 
-            tracker.clearChangedIDs();
-            Service.engineManager.unregister(engine);
+            await tracker.clearChangedIDs();
+            await Service.engineManager.unregister(engine);
             Svc.Prefs.resetBranch("");
             Service.recordManager.clearCache();
             server.stop(resolve);
           };
 
           Service.sync();
-        },
-        this);
+        })().catch(Cu.reportError);
       };
     };
-
-    onwards();
   });
+  await onwards();
+  await callbacksPromise;
 });
-
-function run_test() {
-  initTestLogging("Trace");
-  run_next_test();
-}

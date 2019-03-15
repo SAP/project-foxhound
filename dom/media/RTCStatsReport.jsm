@@ -4,7 +4,7 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["convertToRTCStatsReport"];
+var EXPORTED_SYMBOLS = ["convertToRTCStatsReport"];
 
 function convertToRTCStatsReport(dict) {
   function appendStats(stats, report) {
@@ -15,6 +15,7 @@ function convertToRTCStatsReport(dict) {
   let report = {};
   appendStats(dict.inboundRTPStreamStats, report);
   appendStats(dict.outboundRTPStreamStats, report);
+  appendStats(dict.rtpContributingSourceStats, report);
   appendStats(dict.mediaStreamTrackStats, report);
   appendStats(dict.mediaStreamStats, report);
   appendStats(dict.transportStats, report);
@@ -25,4 +26,3 @@ function convertToRTCStatsReport(dict) {
   return report;
 }
 
-this.convertToRTCStatsReport = convertToRTCStatsReport;

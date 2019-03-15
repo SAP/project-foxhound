@@ -20,14 +20,6 @@
   --row-hover-background-color: rgba(76,158,217,0.2);
 }
 
-.theme-firebug {
-  --cell-border-color: rgba(0,0,0,0.15);
-  --cell-border-color-light: rgba(0,0,0,0.1);
-  --focus-cell-border-color: rgba(0,0,0,0.3);
-  --row-alt-background-color: rgba(76,158,217,0.1);
-  --row-hover-background-color: rgba(76,158,217,0.2);
-}
-
 /*
  * DE-XUL: Set a sidebar width because inline XUL components will cause the flex
  * to overflow if dynamically sized.
@@ -73,17 +65,17 @@
 /* Details panel buttons */
 
 #select-waterfall-view {
-  list-style-image: url(images/performance-icons.svg#details-waterfall);
+  list-style-image: url(images/performance-details-waterfall.svg);
 }
 
 #select-js-calltree-view,
 #select-memory-calltree-view {
-  list-style-image: url(images/performance-icons.svg#details-call-tree);
+  list-style-image: url(images/performance-details-call-tree.svg);
 }
 
 #select-js-flamegraph-view,
 #select-memory-flamegraph-view {
-  list-style-image: url(images/performance-icons.svg#details-flamegraph);
+  list-style-image: url(images/performance-details-flamegraph.svg);
 }
 
 #select-optimizations-view {
@@ -93,7 +85,7 @@
 /* Recording buttons */
 
 #clear-button::before {
-  background-image: var(--clear-icon-url);
+  background-image: url("chrome://devtools/skin/images/clear.svg");
 }
 
 #main-record-button::before {
@@ -247,13 +239,11 @@
   margin: 3px 2px;
 }
 
-.realtime-disabled-message,
 .realtime-disabled-on-e10s-message {
   display: none;
 }
 
-#performance-view[e10s="disabled"] .realtime-disabled-on-e10s-message,
-#performance-view[e10s="unsupported"] .realtime-disabled-message {
+#performance-view[e10s="disabled"] .realtime-disabled-on-e10s-message {
   display: initial;
   opacity: 0.5;
 }
@@ -450,14 +440,14 @@
  */
 
 #waterfall-tree {
-  /* DE-XUL: convert this to display: flex once performance.xul is converted to HTML */
+  /* DE-XUL: convert this to display: flex once index.xul is converted to HTML */
   display: -moz-box;
   -moz-box-orient: vertical;
   -moz-box-flex: 1;
 }
 
 .waterfall-markers {
-  /* DE-XUL: convert this to display: flex once performance.xul is converted to HTML */
+  /* DE-XUL: convert this to display: flex once index.xul is converted to HTML */
   display: -moz-box;
   -moz-box-orient: vertical;
   -moz-box-flex: 1;
@@ -503,7 +493,7 @@
  */
 
 .waterfall-markers .tree {
-  /* DE-XUL: convert this to display: flex once performance.xul is converted to HTML */
+  /* DE-XUL: convert this to display: flex once index.xul is converted to HTML */
   display: -moz-box;
   -moz-box-orient: vertical;
   -moz-box-flex: 1;
@@ -771,19 +761,17 @@ menuitem.marker-color-graphs-grey .menu-iconic-left::after,
  */
 menuitem.experimental-option::before {
   content: "";
-  background-image: url(chrome://devtools/skin/images/webconsole.svg);
-  background-repeat: no-repeat;
-  background-size: 72px 60px;
+  display: inline-block;
   width: 12px;
   height: 12px;
-  display: inline-block;
-
-  background-position: -24px -24px;
-  margin: 2px 5px 0 0;
   max-height: 12px;
-}
-.theme-light menuitem.experimental-option::before {
-  background-image: url(chrome://devtools/skin/images/webconsole.svg#light-icons);
+  margin-top: 2px;
+  margin-inline-end: 5px;
+  background-image: url(chrome://devtools/skin/images/alert.svg);
+  background-repeat: no-repeat;
+  background-size: contain;
+  -moz-context-properties: fill;
+  fill: currentColor;
 }
 
 #performance-options-menupopup:not(.experimental-enabled) .experimental-option,

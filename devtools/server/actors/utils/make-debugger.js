@@ -8,6 +8,7 @@
 
 const EventEmitter = require("devtools/shared/event-emitter");
 const Debugger = require("Debugger");
+const ReplayDebugger = require("../replay/debugger");
 
 const { reportException } = require("devtools/shared/DevToolsUtils");
 
@@ -39,12 +40,6 @@ const { reportException } = require("devtools/shared/DevToolsUtils");
  *          Returns a |Debugger| instance that can manage its set of debuggee
  *          globals itself and is decorated with the |EventEmitter| class.
  *
- *          Events emitted by the returned |Debugger| instance:
- *
- *            - "newGlobal": Emitted when a new global has been added as a
- *               debuggee. Passes the |Debugger.Object| wrapping the new
- *               debuggee global to listeners.
- *
  *          Existing |Debugger| properties set on the returned |Debugger|
  *          instance:
  *
@@ -63,20 +58,25 @@ const { reportException } = require("devtools/shared/DevToolsUtils");
  *              |findDebuggees|) to the |Debugger| instance.
  */
 module.exports = function makeDebugger({ findDebuggees, shouldAddNewGlobalAsDebuggee }) {
-  const dbg = new Debugger();
+  let dbg;
+  if (Debugger.recordReplayProcessKind() == "Middleman") {
+    dbg = new ReplayDebugger();
+  } else {
+    dbg = new Debugger();
+  }
   EventEmitter.decorate(dbg);
 
   dbg.allowUnobservedAsmJS = true;
   dbg.uncaughtExceptionHook = reportDebuggerHookException;
 
-  dbg.onNewGlobalObject = function (global) {
+  dbg.onNewGlobalObject = function(global) {
     if (shouldAddNewGlobalAsDebuggee(global)) {
       safeAddDebuggee(this, global);
     }
   };
 
-  dbg.addDebuggees = function () {
-    for (let global of findDebuggees(this)) {
+  dbg.addDebuggees = function() {
+    for (const global of findDebuggees(this)) {
       safeAddDebuggee(this, global);
     }
   };
@@ -91,10 +91,7 @@ const reportDebuggerHookException = e => reportException("Debugger Hook", e);
  */
 function safeAddDebuggee(dbg, global) {
   try {
-    let wrappedGlobal = dbg.addDebuggee(global);
-    if (wrappedGlobal) {
-      dbg.emit("newGlobal", wrappedGlobal);
-    }
+    dbg.addDebuggee(global);
   } catch (e) {
     // Ignoring attempt to add the debugger's compartment as a debuggee.
   }

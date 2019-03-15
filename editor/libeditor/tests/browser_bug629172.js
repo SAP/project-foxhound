@@ -1,12 +1,12 @@
-add_task(function*() {
-  yield new Promise(resolve => waitForFocus(resolve, window));
+add_task(async function() {
+  await new Promise(resolve => waitForFocus(resolve, window));
 
   const kPageURL = "http://example.org/browser/editor/libeditor/tests/bug629172.html";
-  yield BrowserTestUtils.withNewTab({
+  await BrowserTestUtils.withNewTab({
     gBrowser,
-    url: kPageURL
-  }, function*(aBrowser) {
-    yield ContentTask.spawn(aBrowser, {}, function*() {
+    url: kPageURL,
+  }, async function(browser) {
+    await ContentTask.spawn(browser, {}, async function() {
       var window = content.window.wrappedJSObject;
       var document = window.document;
 
@@ -43,16 +43,15 @@ add_task(function*() {
       // but in non-e10s it is handled by the browser UI code and hence won't
       // reach the web page.  As a result, we need to observe the event in
       // the content process only in e10s mode.
-      var waitForKeypressContent = BrowserTestUtils.waitForContentEvent(aBrowser, "keypress");
-      EventUtils.synthesizeKey("x", {accelKey: true, shiftKey: true});
       if (gMultiProcessBrowser) {
-        return waitForKeypressContent;
+        return EventUtils.synthesizeAndWaitKey("x", {accelKey: true, shiftKey: true});
       }
+      EventUtils.synthesizeKey("x", {accelKey: true, shiftKey: true});
       return Promise.resolve();
     }
 
-    function* testDirection(initialDir, aBrowser) {
-      yield ContentTask.spawn(aBrowser, {initialDir}, function({initialDir}) {
+    async function testDirection(initDir, aBrowser) {
+      await ContentTask.spawn(aBrowser, {initialDir: initDir}, function({initialDir}) {
         var window = content.window.wrappedJSObject;
         var document = window.document;
 
@@ -74,10 +73,10 @@ add_task(function*() {
         t.focus();
         is(window.inputEventCount, 0, "input event count must be 0 before");
       });
-      yield simulateCtrlShiftX(aBrowser);
-      yield ContentTask.spawn(aBrowser, {initialDir}, function({initialDir}) {
+      await simulateCtrlShiftX(aBrowser);
+      await ContentTask.spawn(aBrowser, {initialDir: initDir}, function({initialDir}) {
         var window = content.window.wrappedJSObject;
-        var expectedDir = initialDir == "ltr" ? "rtl" : "ltr"
+        var expectedDir = initialDir == "ltr" ? "rtl" : "ltr";
         is(window.t.getAttribute("dir"), expectedDir,
            "The dir attribute must be correctly updated");
         is(window.inputEventCount, 1, "input event count must be 1 after");
@@ -93,8 +92,8 @@ add_task(function*() {
         window.t.focus();
         is(window.inputEventCount, 1, "input event count must be 1 before");
       });
-      yield simulateCtrlShiftX(aBrowser);
-      yield ContentTask.spawn(aBrowser, {initialDir}, function({initialDir}) {
+      await simulateCtrlShiftX(aBrowser);
+      await ContentTask.spawn(aBrowser, {initialDir: initDir}, function({initialDir}) {
         var window = content.window.wrappedJSObject;
 
         is(window.inputEventCount, 2, "input event count must be 2 after");
@@ -112,7 +111,7 @@ add_task(function*() {
       });
     }
 
-    yield testDirection("ltr", aBrowser);
-    yield testDirection("rtl", aBrowser);
+    await testDirection("ltr", browser);
+    await testDirection("rtl", browser);
   });
 });

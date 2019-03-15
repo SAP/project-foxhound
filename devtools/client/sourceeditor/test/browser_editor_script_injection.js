@@ -6,19 +6,19 @@
 
 "use strict";
 
-add_task(function* () {
-  yield runTest();
+add_task(async function() {
+  await runTest();
 });
 
-function* runTest() {
+async function runTest() {
   const baseURL =
     "chrome://mochitests/content/browser/devtools/client/sourceeditor/test";
   const injectedText = "Script successfully injected!";
 
-  let {ed, win} = yield setup(null, {
+  const {ed, win} = await setup({
     mode: "ruby",
     externalScripts: [`${baseURL}/cm_script_injection_test.js`,
-                      `${baseURL}/cm_mode_ruby.js`]
+                      `${baseURL}/cm_mode_ruby.js`],
   });
 
   is(ed.getText(), injectedText, "The text has been injected");

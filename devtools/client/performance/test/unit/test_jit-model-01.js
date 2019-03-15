@@ -8,14 +8,10 @@
  * FrameNode, and the returning of that data is as expected.
  */
 
-function run_test() {
-  run_next_test();
-}
-
 add_task(function test() {
-  let { JITOptimizations } = require("devtools/client/performance/modules/logic/jit");
+  const { JITOptimizations } = require("devtools/client/performance/modules/logic/jit");
 
-  let rawSites = [];
+  const rawSites = [];
   rawSites.push(gRawSite2);
   rawSites.push(gRawSite2);
   rawSites.push(gRawSite1);
@@ -23,10 +19,10 @@ add_task(function test() {
   rawSites.push(gRawSite2);
   rawSites.push(gRawSite3);
 
-  let jit = new JITOptimizations(rawSites, gStringTable.stringTable);
-  let sites = jit.optimizationSites;
+  const jit = new JITOptimizations(rawSites, gStringTable.stringTable);
+  const sites = jit.optimizationSites;
 
-  let [first, second, third] = sites;
+  const [first, second, third] = sites;
 
   equal(first.id, 0, "site id is array index");
   equal(first.samples, 3, "first OptimizationSiteProfile has correct sample count");
@@ -54,42 +50,42 @@ var gRawSite1 = {
     typeset: [{
       keyedBy: uniqStr("constructor"),
       name: uniqStr("Foo"),
-      location: uniqStr("A (http://foo/bar/baz:12)")
+      location: uniqStr("A (http://foo/bar/baz:12)"),
     }, {
       keyedBy: uniqStr("primitive"),
-      location: uniqStr("self-hosted")
-    }]
+      location: uniqStr("self-hosted"),
+    }],
   }],
   attempts: {
     schema: {
       outcome: 0,
-      strategy: 1
+      strategy: 1,
     },
     data: [
       [uniqStr("Failure1"), uniqStr("SomeGetter1")],
       [uniqStr("Failure2"), uniqStr("SomeGetter2")],
-      [uniqStr("Inlined"), uniqStr("SomeGetter3")]
-    ]
-  }
+      [uniqStr("Inlined"), uniqStr("SomeGetter3")],
+    ],
+  },
 };
 
 var gRawSite2 = {
   line: 34,
   types: [{
     mirType: uniqStr("Int32"),
-    site: uniqStr("Receiver")
+    site: uniqStr("Receiver"),
   }],
   attempts: {
     schema: {
       outcome: 0,
-      strategy: 1
+      strategy: 1,
     },
     data: [
       [uniqStr("Failure1"), uniqStr("SomeGetter1")],
       [uniqStr("Failure2"), uniqStr("SomeGetter2")],
-      [uniqStr("Failure3"), uniqStr("SomeGetter3")]
-    ]
-  }
+      [uniqStr("Failure3"), uniqStr("SomeGetter3")],
+    ],
+  },
 };
 
 var gRawSite3 = {
@@ -100,21 +96,21 @@ var gRawSite3 = {
     typeset: [{
       keyedBy: uniqStr("constructor"),
       name: uniqStr("Foo"),
-      location: uniqStr("A (http://foo/bar/baz:12)")
+      location: uniqStr("A (http://foo/bar/baz:12)"),
     }, {
       keyedBy: uniqStr("primitive"),
-      location: uniqStr("self-hosted")
-    }]
+      location: uniqStr("self-hosted"),
+    }],
   }],
   attempts: {
     schema: {
       outcome: 0,
-      strategy: 1
+      strategy: 1,
     },
     data: [
       [uniqStr("Failure1"), uniqStr("SomeGetter1")],
       [uniqStr("Failure2"), uniqStr("SomeGetter2")],
-      [uniqStr("GenericSuccess"), uniqStr("SomeGetter3")]
-    ]
-  }
+      [uniqStr("GenericSuccess"), uniqStr("SomeGetter3")],
+    ],
+  },
 };

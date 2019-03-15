@@ -9,21 +9,29 @@ const {
   TAKE_SCREENSHOT_START,
 } = require("../actions/index");
 
-const INITIAL_SCREENSHOT = { isCapturing: false };
+const INITIAL_SCREENSHOT = {
+  isCapturing: false,
+};
 
-let reducers = {
+const reducers = {
 
   [TAKE_SCREENSHOT_END](screenshot, action) {
-    return Object.assign({}, screenshot, { isCapturing: false });
+    return {
+      ...screenshot,
+      isCapturing: false,
+    };
   },
 
   [TAKE_SCREENSHOT_START](screenshot, action) {
-    return Object.assign({}, screenshot, { isCapturing: true });
+    return {
+      ...screenshot,
+      isCapturing: true,
+    };
   },
 };
 
-module.exports = function (screenshot = INITIAL_SCREENSHOT, action) {
-  let reducer = reducers[action.type];
+module.exports = function(screenshot = INITIAL_SCREENSHOT, action) {
+  const reducer = reducers[action.type];
   if (!reducer) {
     return screenshot;
   }

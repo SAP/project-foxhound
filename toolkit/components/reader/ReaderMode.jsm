@@ -4,9 +4,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["ReaderMode"];
-
-const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
+var EXPORTED_SYMBOLS = ["ReaderMode"];
 
 // Constants for telemetry.
 const DOWNLOAD_SUCCESS = 0;
@@ -18,77 +16,40 @@ const PARSE_ERROR_TOO_MANY_ELEMENTS = 1;
 const PARSE_ERROR_WORKER = 2;
 const PARSE_ERROR_NO_ARTICLE = 3;
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+// Class names to preserve in the readerized output. We preserve these class
+// names so that rules in aboutReader.css can match them.
+const CLASSES_TO_PRESERVE = [
+  "caption",
+  "emoji",
+  "hidden",
+  "invisble",
+  "sr-only",
+  "visually-hidden",
+  "visuallyhidden",
+  "wp-caption",
+  "wp-caption-text",
+  "wp-smiley",
+];
 
-Cu.importGlobalProperties(["XMLHttpRequest"]);
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "CommonUtils", "resource://services-common/utils.js");
-XPCOMUtils.defineLazyModuleGetter(this, "EventDispatcher", "resource://gre/modules/Messaging.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "ReaderWorker", "resource://gre/modules/reader/ReaderWorker.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Task", "resource://gre/modules/Task.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "TelemetryStopwatch", "resource://gre/modules/TelemetryStopwatch.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "LanguageDetector", "resource:///modules/translation/LanguageDetector.jsm");
+XPCOMUtils.defineLazyGlobalGetters(this, ["XMLHttpRequest", "XMLSerializer"]);
 
-XPCOMUtils.defineLazyGetter(this, "Readability", function() {
-  let scope = {};
-  scope.dump = this.dump;
-  Services.scriptloader.loadSubScript("resource://gre/modules/reader/Readability.js", scope);
-  return scope["Readability"];
-});
+ChromeUtils.defineModuleGetter(this, "CommonUtils", "resource://services-common/utils.js");
+ChromeUtils.defineModuleGetter(this, "EventDispatcher", "resource://gre/modules/Messaging.jsm");
+ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
+ChromeUtils.defineModuleGetter(this, "ReaderWorker", "resource://gre/modules/reader/ReaderWorker.jsm");
+ChromeUtils.defineModuleGetter(this, "LanguageDetector", "resource:///modules/translation/LanguageDetector.jsm");
+ChromeUtils.defineModuleGetter(this, "Readerable", "resource://gre/modules/Readerable.jsm");
 
 const gIsFirefoxDesktop = Services.appinfo.ID == "{ec8030f7-c20a-464f-9b0e-13a3a9e97384}";
 
-this.ReaderMode = {
+var ReaderMode = {
   // Version of the cache schema.
   CACHE_VERSION: 1,
 
   DEBUG: 0,
-
-  // Don't try to parse the page if it has too many elements (for memory and
-  // performance reasons)
-  get maxElemsToParse() {
-    delete this.parseNodeLimit;
-
-    Services.prefs.addObserver("reader.parse-node-limit", this, false);
-    return this.parseNodeLimit = Services.prefs.getIntPref("reader.parse-node-limit");
-  },
-
-  get isEnabledForParseOnLoad() {
-    delete this.isEnabledForParseOnLoad;
-
-    // Listen for future pref changes.
-    Services.prefs.addObserver("reader.parse-on-load.", this, false);
-
-    return this.isEnabledForParseOnLoad = this._getStateForParseOnLoad();
-  },
-
-  get isOnLowMemoryPlatform() {
-    let memory = Cc["@mozilla.org/xpcom/memory-service;1"].getService(Ci.nsIMemory);
-    delete this.isOnLowMemoryPlatform;
-    return this.isOnLowMemoryPlatform = memory.isLowMemoryPlatform();
-  },
-
-  _getStateForParseOnLoad() {
-    let isEnabled = Services.prefs.getBoolPref("reader.parse-on-load.enabled");
-    let isForceEnabled = Services.prefs.getBoolPref("reader.parse-on-load.force-enabled");
-    // For low-memory devices, don't allow reader mode since it takes up a lot of memory.
-    // See https://bugzilla.mozilla.org/show_bug.cgi?id=792603 for details.
-    return isForceEnabled || (isEnabled && !this.isOnLowMemoryPlatform);
-  },
-
-  observe(aMessage, aTopic, aData) {
-    switch (aTopic) {
-      case "nsPref:changed":
-        if (aData.startsWith("reader.parse-on-load.")) {
-          this.isEnabledForParseOnLoad = this._getStateForParseOnLoad();
-        } else if (aData === "reader.parse-node-limit") {
-          this.parseNodeLimit = Services.prefs.getIntPref(aData);
-        }
-        break;
-    }
-  },
 
   /**
    * Enter the reader mode by going forward one step in history if applicable,
@@ -100,7 +61,7 @@ this.ReaderMode = {
     let webNav = docShell.QueryInterface(Ci.nsIWebNavigation);
     let sh = webNav.sessionHistory;
     if (webNav.canGoForward) {
-      let forwardEntry = sh.getEntryAtIndex(sh.index + 1, false);
+      let forwardEntry = sh.legacySHistory.getEntryAtIndex(sh.index + 1);
       let forwardURL = forwardEntry.URI.spec;
       if (forwardURL && (forwardURL == readerURL || !readerURL)) {
         webNav.goForward();
@@ -121,7 +82,7 @@ this.ReaderMode = {
     let webNav = docShell.QueryInterface(Ci.nsIWebNavigation);
     let sh = webNav.sessionHistory;
     if (webNav.canGoBack) {
-      let prevEntry = sh.getEntryAtIndex(sh.index - 1, false);
+      let prevEntry = sh.legacySHistory.getEntryAtIndex(sh.index - 1);
       let prevURL = prevEntry.URI.spec;
       if (prevURL && (prevURL == originalURL || !originalURL)) {
         webNav.goBack();
@@ -129,7 +90,22 @@ this.ReaderMode = {
       }
     }
 
-    win.document.location = originalURL;
+    let referrerURI, principal;
+    try {
+      referrerURI = Services.io.newURI(url);
+      principal = Services.scriptSecurityManager.createCodebasePrincipal(
+        referrerURI, win.document.nodePrincipal.originAttributes);
+    } catch (e) {
+      Cu.reportError(e);
+      return;
+    }
+    let flags = webNav.LOAD_FLAGS_DISALLOW_INHERIT_PRINCIPAL;
+    let loadURIOptions = {
+      triggeringPrincipal: principal,
+      loadFlags: flags,
+      referrerURI,
+    };
+    webNav.loadURI(originalURL, loadURIOptions);
   },
 
   /**
@@ -185,39 +161,6 @@ this.ReaderMode = {
   },
 
   /**
-   * Decides whether or not a document is reader-able without parsing the whole thing.
-   *
-   * @param doc A document to parse.
-   * @return boolean Whether or not we should show the reader mode button.
-   */
-  isProbablyReaderable(doc) {
-    // Only care about 'real' HTML documents:
-    if (doc.mozSyntheticDocument || !(doc instanceof doc.defaultView.HTMLDocument)) {
-      return false;
-    }
-
-    let uri = Services.io.newURI(doc.location.href);
-    if (!this._shouldCheckUri(uri)) {
-      return false;
-    }
-
-    let utils = this.getUtilsForWin(doc.defaultView);
-    // We pass in a helper function to determine if a node is visible, because
-    // it uses gecko APIs that the engine-agnostic readability code can't rely
-    // upon.
-    return new Readability(uri, doc).isProbablyReaderable(this.isNodeVisible.bind(this, utils));
-  },
-
-  isNodeVisible(utils, node) {
-    let bounds = utils.getBoundsWithoutFlushing(node);
-    return bounds.height > 0 && bounds.width > 0;
-  },
-
-  getUtilsForWin(win) {
-    return win.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils);
-  },
-
-  /**
    * Gets an article from a loaded browser's document. This method will not attempt
    * to parse certain URIs (e.g. about: URIs).
    *
@@ -225,14 +168,15 @@ this.ReaderMode = {
    * @return {Promise}
    * @resolves JS object representing the article, or null if no article is found.
    */
-  parseDocument: Task.async(function* (doc) {
-    if (!this._shouldCheckUri(doc.documentURIObject) || !this._shouldCheckUri(doc.baseURIObject, true)) {
+  parseDocument(doc) {
+    if (!Readerable.shouldCheckUri(doc.documentURIObject) ||
+        !Readerable.shouldCheckUri(doc.baseURIObject, true)) {
       this.log("Reader mode disabled for URI");
       return null;
     }
 
-    return yield this._readerParse(doc);
-  }),
+    return this._readerParse(doc);
+  },
 
   /**
    * Downloads and parses a document from a URL.
@@ -241,17 +185,29 @@ this.ReaderMode = {
    * @return {Promise}
    * @resolves JS object representing the article, or null if no article is found.
    */
-  downloadAndParseDocument: Task.async(function* (url) {
-    let doc = yield this._downloadDocument(url);
-    if (!this._shouldCheckUri(doc.documentURIObject) || !this._shouldCheckUri(doc.baseURIObject, true)) {
+  async downloadAndParseDocument(url) {
+    let doc = await this._downloadDocument(url);
+    if (!doc) {
+      return null;
+    }
+    if (!Readerable.shouldCheckUri(doc.documentURIObject) ||
+        !Readerable.shouldCheckUri(doc.baseURIObject, true)) {
       this.log("Reader mode disabled for URI");
       return null;
     }
 
-    return yield this._readerParse(doc);
-  }),
+    return this._readerParse(doc);
+  },
 
   _downloadDocument(url) {
+    try {
+      if (!Readerable.shouldCheckUri(Services.io.newURI(url))) {
+        return null;
+      }
+    } catch (ex) {
+      Cu.reportError(new Error(`Couldn't create URI from ${url} to download: ${ex}`));
+      return null;
+    }
     let histogram = Services.telemetry.getHistogramById("READER_MODE_DOWNLOAD_RESULT");
     return new Promise((resolve, reject) => {
       let xhr = new XMLHttpRequest();
@@ -336,17 +292,17 @@ this.ReaderMode = {
    * @resolves JS object representing the article, or null if no article is found.
    * @rejects OS.File.Error
    */
-  getArticleFromCache: Task.async(function* (url) {
+  async getArticleFromCache(url) {
     let path = this._toHashedPath(url);
     try {
-      let array = yield OS.File.read(path);
+      let array = await OS.File.read(path);
       return JSON.parse(new TextDecoder().decode(array));
     } catch (e) {
       if (!(e instanceof OS.File.Error) || !e.becauseNoSuchFile)
         throw e;
       return null;
     }
-  }),
+  },
 
   /**
    * Stores an article in the cache.
@@ -356,10 +312,10 @@ this.ReaderMode = {
    * @resolves When the article is stored.
    * @rejects OS.File.Error
    */
-  storeArticleInCache: Task.async(function* (article) {
+  async storeArticleInCache(article) {
     let array = new TextEncoder().encode(JSON.stringify(article));
     let path = this._toHashedPath(article.url);
-    yield this._ensureCacheDir();
+    await this._ensureCacheDir();
     return OS.File.writeAtomic(path, array, { tmpPath: path + ".tmp" })
       .then(success => {
         OS.File.stat(path).then(info => {
@@ -371,7 +327,7 @@ this.ReaderMode = {
           });
         });
       });
-  }),
+  },
 
   /**
    * Removes an article from the cache given an article URI.
@@ -381,50 +337,14 @@ this.ReaderMode = {
    * @resolves When the article is removed.
    * @rejects OS.File.Error
    */
-  removeArticleFromCache: Task.async(function* (url) {
+  async removeArticleFromCache(url) {
     let path = this._toHashedPath(url);
-    yield OS.File.remove(path);
-  }),
+    await OS.File.remove(path);
+  },
 
   log(msg) {
     if (this.DEBUG)
       dump("Reader: " + msg);
-  },
-
-  _blockedHosts: [
-    "amazon.com",
-    "github.com",
-    "mail.google.com",
-    "pinterest.com",
-    "reddit.com",
-    "twitter.com",
-    "youtube.com",
-  ],
-
-  _shouldCheckUri(uri, isBaseUri = false) {
-    if (!(uri.schemeIs("http") || uri.schemeIs("https"))) {
-      this.log("Not parsing URI scheme: " + uri.scheme);
-      return false;
-    }
-
-    try {
-      uri.QueryInterface(Ci.nsIURL);
-    } catch (ex) {
-      // If this doesn't work, presumably the URL is not well-formed or something
-      return false;
-    }
-    // Sadly, some high-profile pages have false positives, so bail early for those:
-    let asciiHost = uri.asciiHost;
-    if (!isBaseUri && this._blockedHosts.some(blockedHost => asciiHost.endsWith(blockedHost))) {
-      return false;
-    }
-
-    if (!isBaseUri && (!uri.filePath || uri.filePath == "/")) {
-      this.log("Not parsing home page: " + uri.spec);
-      return false;
-    }
-
-    return true;
   },
 
   /**
@@ -435,7 +355,7 @@ this.ReaderMode = {
    * @return {Promise}
    * @resolves JS object representing the article, or null if no article is found.
    */
-  _readerParse: Task.async(function* (doc) {
+  async _readerParse(doc) {
     let histogram = Services.telemetry.getHistogramById("READER_MODE_PARSE_RESULT");
     if (this.parseNodeLimit) {
       let numTags = doc.getElementsByTagName("*").length;
@@ -455,16 +375,19 @@ this.ReaderMode = {
       host: doc.baseURIObject.host,
       prePath: doc.baseURIObject.prePath,
       scheme: doc.baseURIObject.scheme,
-      pathBase: Services.io.newURI(".", null, doc.baseURIObject).spec
+      pathBase: Services.io.newURI(".", null, doc.baseURIObject).spec,
     };
 
-    let serializer = Cc["@mozilla.org/xmlextras/xmlserializer;1"].
-                     createInstance(Ci.nsIDOMSerializer);
+    let serializer = new XMLSerializer();
     let serializedDoc = serializer.serializeToString(doc);
+
+    let options = {
+      classesToPreserve: CLASSES_TO_PRESERVE,
+    };
 
     let article = null;
     try {
-      article = yield ReaderWorker.post("parseDocument", [uriParam, serializedDoc]);
+      article = await ReaderWorker.post("parseDocument", [uriParam, serializedDoc, options]);
     } catch (e) {
       Cu.reportError("Error in ReaderWorker: " + e);
       histogram.add(PARSE_ERROR_WORKER);
@@ -490,7 +413,7 @@ this.ReaderMode = {
     article.title = Cc["@mozilla.org/parserutils;1"].getService(Ci.nsIParserUtils)
                                                     .convertToPlainText(article.title, flags, 0);
     if (gIsFirefoxDesktop) {
-      yield this._assignLanguage(article);
+      await this._assignLanguage(article);
       this._maybeAssignTextDirection(article);
     }
 
@@ -498,7 +421,7 @@ this.ReaderMode = {
 
     histogram.add(PARSE_SUCCESS);
     return article;
-  }),
+  },
 
   get _cryptoHash() {
     delete this._cryptoHash;
@@ -614,3 +537,6 @@ this.ReaderMode = {
     return readingSpeed.get(lang) || readingSpeed.get("en");
   },
 };
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  ReaderMode, "maxElemsToParse", "reader.parse-node-limit", 0);

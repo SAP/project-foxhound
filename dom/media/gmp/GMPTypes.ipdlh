@@ -3,18 +3,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+include "GMPMessageUtils.h";
+
 using GMPBufferType from "gmp-video-codec.h";
-using GMPMediaKeyStatus from "gmp-decryption.h";
+using GMPEncryptionScheme from "gmp-video-codec.h";
 
 namespace mozilla {
 namespace gmp {
 
-struct GMPDecryptionData {
-  uint8_t[] mKeyId;
-  uint8_t[] mIV;
-  uint16_t[] mClearBytes;
-  uint32_t[] mCipherBytes;
-  nsCString[] mSessionIds;
+struct NodeIdData {
+  nsString mOrigin;
+  nsString mTopLevelOrigin;
+  nsString mGMPName;
 };
 
 struct GMPVideoEncodedFrameData
@@ -28,7 +28,6 @@ struct GMPVideoEncodedFrameData
   GMPBufferType mBufferType;
   Shmem mBuffer;
   bool mCompleteFrame;
-  GMPDecryptionData mDecryptionData;
 };
 
 struct GMPPlaneData
@@ -49,9 +48,49 @@ struct GMPVideoi420FrameData
   uint64_t mDuration; // microseconds
 };
 
-struct GMPKeyInformation {
-  uint8_t[] keyId;
-  GMPMediaKeyStatus status;
+struct CDMInputBuffer {
+  Shmem mData;
+  uint8_t[] mKeyId;
+  uint8_t[] mIV;
+  int64_t mTimestamp;
+  int64_t mDuration;
+  uint16_t[] mClearBytes;
+  uint32_t[] mCipherBytes;
+  uint8_t mCryptByteBlock;
+  uint8_t mSkipByteBlock;
+  GMPEncryptionScheme mEncryptionScheme;
+};
+
+struct CDMVideoDecoderConfig {
+  uint32_t mCodec;
+  uint32_t mProfile;
+  uint32_t mFormat;
+  int32_t mImageWidth;
+  int32_t mImageHeight;
+  uint8_t[] mExtraData;
+  GMPEncryptionScheme mEncryptionScheme;
+};
+
+struct CDMKeyInformation {
+  uint8_t[] mKeyId;
+  uint32_t mStatus;
+  uint32_t mSystemCode;
+};
+
+struct CDMVideoPlane {
+  uint32_t mPlaneOffset;
+  uint32_t mStride;
+};
+
+struct CDMVideoFrame {
+  uint32_t mFormat;
+  int32_t mImageWidth;
+  int32_t mImageHeight;
+  CDMVideoPlane mYPlane;
+  CDMVideoPlane mUPlane;
+  CDMVideoPlane mVPlane;
+  int64_t mTimestamp;
+  int64_t mDuration;
 };
 
 }

@@ -23,34 +23,29 @@
 #include "nsIInterfaceRequestor.h"
 
 #ifdef XP_WIN
-#include "win_wifiScanner.h"
+#  include "win_wifiScanner.h"
 #endif
 
 extern mozilla::LazyLogModule gWifiMonitorLog;
-#define LOG(args)     MOZ_LOG(gWifiMonitorLog, mozilla::LogLevel::Debug, args)
+#define LOG(args) MOZ_LOG(gWifiMonitorLog, mozilla::LogLevel::Debug, args)
 
 class nsWifiAccessPoint;
 
 #define kDefaultWifiScanInterval 5 /* seconds */
 
-class nsWifiListener
-{
+class nsWifiListener {
  public:
-
-  explicit nsWifiListener(nsMainThreadPtrHolder<nsIWifiListener>* aListener)
-  {
+  explicit nsWifiListener(nsMainThreadPtrHolder<nsIWifiListener>* aListener) {
     mListener = aListener;
     mHasSentData = false;
   }
-  ~nsWifiListener() {}
+  ~nsWifiListener() = default;
 
   nsMainThreadPtrHandle<nsIWifiListener> mListener;
   bool mHasSentData;
 };
 
-#ifndef MOZ_WIDGET_GONK
-class nsWifiMonitor final : nsIRunnable, nsIWifiMonitor, nsIObserver
-{
+class nsWifiMonitor final : nsIRunnable, nsIWifiMonitor, nsIObserver {
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIWIFIMONITOR
@@ -60,11 +55,11 @@ class nsWifiMonitor final : nsIRunnable, nsIWifiMonitor, nsIObserver
   nsWifiMonitor();
 
  private:
-  ~nsWifiMonitor();
+  ~nsWifiMonitor() = default;
 
   nsresult DoScan();
 
-  nsresult CallWifiListeners(const nsCOMArray<nsWifiAccessPoint> &aAccessPoints,
+  nsresult CallWifiListeners(const nsCOMArray<nsWifiAccessPoint>& aAccessPoints,
                              bool aAccessPointsChanged);
 
   mozilla::Atomic<bool> mKeepGoing;
@@ -79,32 +74,5 @@ class nsWifiMonitor final : nsIRunnable, nsIWifiMonitor, nsIObserver
   nsAutoPtr<WinWifiScanner> mWinWifiScanner;
 #endif
 };
-#else
-#include "nsIWifi.h"
-class nsWifiMonitor final : nsIWifiMonitor, nsIWifiScanResultsReady, nsIObserver
-{
- public:
-  NS_DECL_ISUPPORTS
-  NS_DECL_NSIWIFIMONITOR
-  NS_DECL_NSIOBSERVER
-  NS_DECL_NSIWIFISCANRESULTSREADY
-
-  nsWifiMonitor();
-
- private:
-  ~nsWifiMonitor();
-
-  void ClearTimer() {
-    if (mTimer) {
-      mTimer->Cancel();
-      mTimer = nullptr;
-    }
-  }
-  void StartScan();
-  nsCOMArray<nsWifiAccessPoint> mLastAccessPoints;
-  nsTArray<nsWifiListener> mListeners;
-  nsCOMPtr<nsITimer> mTimer;
-};
-#endif
 
 #endif

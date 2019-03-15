@@ -3,18 +3,11 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* jshint esnext:true, globalstrict:true, moz:true, undef:true, unused:true */
-/* globals Components, dump */
 "use strict";
 
-const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
-
-// globals XPCOMUtils
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-// globals Services
-Cu.import("resource://gre/modules/Services.jsm");
-// globals EventDispatcher
-Cu.import("resource://gre/modules/Messaging.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Messaging.jsm");
 
 function log(str) {
   // dump("-*- AndroidCastDeviceProvider -*-: " + str + "\n");
@@ -24,7 +17,7 @@ function log(str) {
 function descriptionToString(aDescription) {
   let json = {};
   json.type = aDescription.type;
-  switch(aDescription.type) {
+  switch (aDescription.type) {
     case Ci.nsIPresentationChannelDescription.TYPE_TCP:
       let addresses = aDescription.tcpAddress.QueryInterface(Ci.nsIArray);
       json.tcpAddress = [];
@@ -262,7 +255,7 @@ LocalControlChannel.prototype = {
   },
 
   classID: Components.ID("{c9be9450-e5c7-4294-a287-376971b017fd}"),
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIPresentationControlChannel]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIPresentationControlChannel]),
 };
 
 function ChromecastRemoteDisplayDevice(aProvider, aId, aName, aRole) {
@@ -303,7 +296,7 @@ ChromecastRemoteDisplayDevice.prototype = {
       // Launch Chromecast service in Android.
       EventDispatcher.instance.sendRequestForResult({
         type: TOPIC_ANDROID_CAST_DEVICE_START,
-        id:   this.id
+        id:   this.id,
       }).then(result => {
         log("Chromecast is connected.");
       }).catch(error => {
@@ -325,14 +318,12 @@ ChromecastRemoteDisplayDevice.prototype = {
     // Disconnect from Chromecast.
     EventDispatcher.instance.sendRequestForResult({
       type: TOPIC_ANDROID_CAST_DEVICE_STOP,
-      id:   this.id
+      id:   this.id,
     });
   },
 
   isRequestedUrlSupported: function CRDD_isRequestedUrlSupported(aUrl) {
-    let url = Cc["@mozilla.org/network/io-service;1"]
-                .getService(Ci.nsIIOService)
-                .newURI(aUrl);
+    let url = Services.io.newURI(aUrl);
     return url.scheme == "http" || url.scheme == "https";
   },
 
@@ -351,19 +342,18 @@ ChromecastRemoteDisplayDevice.prototype = {
     }
   },
 
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIPresentationDevice,
-                                         Ci.nsIPresentationLocalDevice,
-                                         Ci.nsISupportsWeakReference,
-                                         Ci.nsIObserver]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIPresentationDevice,
+                                          Ci.nsIPresentationLocalDevice,
+                                          Ci.nsISupportsWeakReference,
+                                          Ci.nsIObserver]),
 };
 
 function AndroidCastDeviceProvider() {
+  this._listener = null;
+  this._deviceList = new Map();
 }
 
 AndroidCastDeviceProvider.prototype = {
-  _listener: null,
-  _deviceList: new Map(),
-
   onSessionRequest: function APDP_onSessionRequest(aDeviceId,
                                                    aUrl,
                                                    aPresentationId,
@@ -403,18 +393,23 @@ AndroidCastDeviceProvider.prototype = {
     // When unload this provider.
     if (!this._listener) {
       // remove observer
-      Services.obs.removeObserver(this, TOPIC_ANDROID_CAST_DEVICE_ADDED);
-      Services.obs.removeObserver(this, TOPIC_ANDROID_CAST_DEVICE_CHANGED);
-      Services.obs.removeObserver(this, TOPIC_ANDROID_CAST_DEVICE_REMOVED);
+      EventDispatcher.instance.unregisterListener(this, [
+        TOPIC_ANDROID_CAST_DEVICE_ADDED,
+        TOPIC_ANDROID_CAST_DEVICE_CHANGED,
+        TOPIC_ANDROID_CAST_DEVICE_REMOVED,
+      ]);
       return;
     }
 
+    // Observer registration
+    EventDispatcher.instance.registerListener(this, [
+      TOPIC_ANDROID_CAST_DEVICE_ADDED,
+      TOPIC_ANDROID_CAST_DEVICE_CHANGED,
+      TOPIC_ANDROID_CAST_DEVICE_REMOVED,
+    ]);
+
     // Sync all device already found by Android.
     EventDispatcher.instance.sendRequest({ type: TOPIC_ANDROID_CAST_DEVICE_SYNCDEVICE });
-    // Observer registration
-    Services.obs.addObserver(this, TOPIC_ANDROID_CAST_DEVICE_ADDED, false);
-    Services.obs.addObserver(this, TOPIC_ANDROID_CAST_DEVICE_CHANGED, false);
-    Services.obs.addObserver(this, TOPIC_ANDROID_CAST_DEVICE_REMOVED, false);
   },
 
   get listener() {
@@ -425,13 +420,11 @@ AndroidCastDeviceProvider.prototype = {
     // There is no API to do force discovery in Android SDK.
   },
 
-  // nsIObserver
-  observe: function APDP_observe(aSubject, aTopic, aData) {
-    log('observe ' + aTopic + ': ' + aData);
-    switch (aTopic) {
+  onEvent: function APDP_onEvent(event, data, callback) {
+    switch (event) {
       case TOPIC_ANDROID_CAST_DEVICE_ADDED:
       case TOPIC_ANDROID_CAST_DEVICE_CHANGED: {
-        let deviceInfo = JSON.parse(aData);
+        let deviceInfo = data;
         let deviceId   = deviceInfo.uuid;
 
         if (!this._deviceList.has(deviceId)) {
@@ -449,7 +442,7 @@ AndroidCastDeviceProvider.prototype = {
         break;
       }
       case TOPIC_ANDROID_CAST_DEVICE_REMOVED: {
-        let deviceId = aData;
+        let deviceId = data.id;
         if (!this._deviceList.has(deviceId)) {
           break;
         }
@@ -463,8 +456,8 @@ AndroidCastDeviceProvider.prototype = {
   },
 
   classID: Components.ID("{7394f24c-dbc3-48c8-8a47-cd10169b7c6b}"),
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIObserver,
-                                         Ci.nsIPresentationDeviceProvider]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver,
+                                          Ci.nsIPresentationDeviceProvider]),
 };
 
 this.NSGetFactory = XPCOMUtils.generateNSGetFactory([AndroidCastDeviceProvider]);

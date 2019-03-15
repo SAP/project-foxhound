@@ -6,6 +6,7 @@
 package org.mozilla.gecko.tabs;
 
 import org.mozilla.gecko.R;
+import org.mozilla.gecko.Tabs;
 import org.mozilla.gecko.animation.PropertyAnimator;
 import org.mozilla.gecko.util.ThreadUtils;
 
@@ -31,8 +32,9 @@ public class TabsListLayout extends TabsLayout {
 
         setLayoutManager(new LinearLayoutManager(context));
 
-        // A TouchHelper handler for swipe to close.
-        final TabsTouchHelperCallback callback = new TabsTouchHelperCallback(this) {
+        final int dragDirections = ItemTouchHelper.UP | ItemTouchHelper.DOWN;
+        // A TouchHelper handler for drag and drop and swipe to close.
+        final TabsTouchHelperCallback callback = new TabsTouchHelperCallback(this, dragDirections, this) {
             @Override
             protected float alphaForItemSwipeDx(float dX, int distanceToAlphaMin) {
                 return Math.max(0.1f,
@@ -46,7 +48,7 @@ public class TabsListLayout extends TabsLayout {
     }
 
     @Override
-    public void closeAll() {
+    public void onCloseAll() {
         final int childCount = getChildCount();
 
         // Just close the panel if there are no tabs to close.
@@ -93,7 +95,12 @@ public class TabsListLayout extends TabsLayout {
                     TabsListLayout.this.setEnabled(true);
 
                     // Then actually close all the tabs.
-                    closeAllTabs();
+                    if (isNormal()) {
+                        Tabs.getInstance().closeAllTabs();
+                    } else {
+                        Tabs.getInstance().closeAllPrivateTabs();
+                    }
+
                 }
             });
 

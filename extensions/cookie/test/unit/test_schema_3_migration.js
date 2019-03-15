@@ -12,7 +12,7 @@ function run_test() {
 }
 
 function finish_test() {
-  do_execute_soon(function() {
+  executeSoon(function() {
     test_generator.return();
     do_test_finished();
   });
@@ -21,6 +21,17 @@ function finish_test() {
 function* do_run_test() {
   // Set up a profile.
   let profile = do_get_profile();
+
+  // Start the cookieservice, to force creation of a database.
+  // Get the sessionEnumerator to join the initialization in cookie thread
+  Services.cookiemgr.sessionEnumerator;
+
+  // Close the profile.
+  do_close_profile(test_generator);
+  yield;
+
+  // Remove the cookie file in order to create another database file.
+  do_get_cookie_file(profile).remove(false);
 
   // Create a schema 3 database.
   let schema3db = new CookieDatabaseConnection(do_get_cookie_file(profile), 3);
@@ -79,18 +90,20 @@ function* do_run_test() {
 
   // Load the database, forcing migration to the current schema version. Then
   // test the expected set of cookies:
+  do_load_profile();
+
   // 1) All unexpired, unique cookies exist.
-  do_check_eq(Services.cookiemgr.countCookiesFromHost("foo.com"), 20);
+  Assert.equal(Services.cookiemgr.countCookiesFromHost("foo.com"), 20);
 
   // 2) All expired, unique cookies exist.
-  do_check_eq(Services.cookiemgr.countCookiesFromHost("bar.com"), 20);
+  Assert.equal(Services.cookiemgr.countCookiesFromHost("bar.com"), 20);
 
   // 3) Only one cookie remains, and it's the one with the highest expiration
   // time.
-  do_check_eq(Services.cookiemgr.countCookiesFromHost("baz.com"), 1);
+  Assert.equal(Services.cookiemgr.countCookiesFromHost("baz.com"), 1);
   let enumerator = Services.cookiemgr.getCookiesFromHost("baz.com", {});
   let cookie = enumerator.getNext().QueryInterface(Ci.nsICookie2);
-  do_check_eq(cookie.expiry, futureExpiry + 44);
+  Assert.equal(cookie.expiry, futureExpiry + 44);
 
   do_close_profile(test_generator);
   yield;
@@ -115,10 +128,10 @@ function* do_run_test() {
   do_load_profile();
 
   // Test the expected set of cookies.
-  do_check_eq(Services.cookiemgr.countCookiesFromHost("cat.com"), 20);
+  Assert.equal(Services.cookiemgr.countCookiesFromHost("cat.com"), 20);
   enumerator = Services.cookiemgr.getCookiesFromHost("cat.com", {});
   cookie = enumerator.getNext().QueryInterface(Ci.nsICookie2);
-  do_check_eq(cookie.creationTime, 0);
+  Assert.equal(cookie.creationTime, 0);
 
   finish_test();
 }

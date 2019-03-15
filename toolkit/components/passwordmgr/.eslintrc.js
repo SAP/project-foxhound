@@ -1,36 +1,33 @@
 "use strict";
 
-module.exports = { // eslint-disable-line no-undef
-  "extends": "../../.eslintrc.js",
+module.exports = {
   "rules": {
-    // Require spacing around =>
-    "arrow-spacing": "error",
+    "brace-style": ["error", "1tbs", {"allowSingleLine": false}],
 
-    // No newline before open brace for a block
-    "brace-style": ["error", "1tbs", {"allowSingleLine": true}],
+    // XXX Bug 1358949 - This should be reduced down - probably to 20 or to
+    // be removed & synced with the mozilla/recommended value.
+    "complexity": ["error", 56],
 
-    // No space before always a space after a comma
-    "comma-spacing": ["error", {"before": false, "after": true}],
+    "indent": ["error", 2, {
+      ignoredNodes: ["ConditionalExpression"],
+      ArrayExpression: "first",
+      SwitchCase: 1,
+      CallExpression: {
+        arguments: "first",
+      },
+      FunctionExpression: {
+        parameters: "first",
+      },
+      FunctionDeclaration: {
+        parameters: "first",
+      },
+      MemberExpression: "off",
+      ObjectExpression: "first",
+      outerIIFEBody: 0,
+    }],
 
-    // Commas at the end of the line not the start
-    "comma-style": "error",
-
-    // Use [] instead of Array()
-    "no-array-constructor": "error",
-
-    // Use {} instead of new Object()
-    "no-new-object": "error",
-
-    // No using undeclared variables
-    "no-undef": "error",
-
-    // Don't allow unused local variables unless they match the pattern
+    "curly": ["error", "all"],
     "no-unused-vars": ["error", {"args": "none", "vars": "local", "varsIgnorePattern": "^(ids|ignored|unused)$"}],
-
-    // Always require semicolon at end of statement
-    "semi": ["error", "always"],
-
-    // Require spaces around operators
-    "space-infix-ops": "error",
+    "space-in-parens": ["error"],
   }
 };

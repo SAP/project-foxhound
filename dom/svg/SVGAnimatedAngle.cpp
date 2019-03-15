@@ -5,7 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SVGAnimatedAngle.h"
-#include "nsSVGAngle.h"
+#include "SVGAngle.h"
 #include "mozilla/dom/SVGAnimatedAngleBinding.h"
 
 using namespace mozilla;
@@ -16,21 +16,15 @@ NS_SVG_VAL_IMPL_CYCLE_COLLECTION_WRAPPERCACHED(SVGAnimatedAngle, mSVGElement)
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(SVGAnimatedAngle, AddRef)
 NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(SVGAnimatedAngle, Release)
 
-JSObject*
-SVGAnimatedAngle::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return SVGAnimatedAngleBinding::Wrap(aCx, this, aGivenProto);
+JSObject* SVGAnimatedAngle::WrapObject(JSContext* aCx,
+                                       JS::Handle<JSObject*> aGivenProto) {
+  return SVGAnimatedAngle_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-already_AddRefed<SVGAngle>
-SVGAnimatedAngle::BaseVal()
-{
+already_AddRefed<DOMSVGAngle> SVGAnimatedAngle::BaseVal() {
   return mVal->ToDOMBaseVal(mSVGElement);
 }
 
-already_AddRefed<SVGAngle>
-SVGAnimatedAngle::AnimVal()
-{
+already_AddRefed<DOMSVGAngle> SVGAnimatedAngle::AnimVal() {
   return mVal->ToDOMAnimVal(mSVGElement);
 }
-

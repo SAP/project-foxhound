@@ -8,7 +8,7 @@
 var gManagerWindow;
 var gProvider;
 
-function test() {
+async function test() {
   waitForExplicitFinish();
 
   gProvider = new MockProvider();
@@ -22,14 +22,12 @@ function test() {
     name: "Test add-on",
     description: "foo",
     updateDate: new Date(2010, 4, 2, 0, 0, 0),
-    size: 1,
     pendingOperations: AddonManager.PENDING_NONE,
   }, {
     id: "test2@tests.mozilla.org",
     name: "a first add-on",
     description: "foo",
     updateDate: new Date(2010, 4, 1, 23, 59, 59),
-    size: 265,
     pendingOperations: AddonManager.PENDING_UPGRADE,
     isActive: true,
     isCompatible: false,
@@ -38,7 +36,6 @@ function test() {
     name: "\u010Cesk\u00FD slovn\u00EDk", // Český slovník
     description: "foo",
     updateDate: new Date(2010, 4, 2, 0, 0, 1),
-    size: 12,
     pendingOperations: AddonManager.PENDING_INSTALL,
     isActive: false,
   }, {
@@ -52,7 +49,6 @@ function test() {
     name: "croatian dictionary",
     description: "foo",
     updateDate: new Date(2012, 12, 12, 0, 0, 0),
-    size: 5,
     pendingOperations: AddonManager.PENDING_ENABLE,
     isActive: false,
   }, {
@@ -62,7 +58,6 @@ function test() {
     name: "orange Add-on",
     description: "foo",
     updateDate: new Date(2010, 4, 2, 0, 0, 0),
-    size: 142,
     isCompatible: false,
     isActive: true,
     pendingOperations: AddonManager.PENDING_DISABLE,
@@ -71,7 +66,6 @@ function test() {
     name: "Blue Add-on",
     description: "foo",
     updateDate: new Date(2010, 4, 1, 23, 59, 59),
-    size: 65,
     isActive: true,
     pendingOperations: AddonManager.PENDING_DISABLE,
   }, {
@@ -79,7 +73,6 @@ function test() {
     name: "Green Add-on",
     description: "foo",
     updateDate: new Date(2010, 4, 3, 0, 0, 1),
-    size: 125,
     pendingOperations: AddonManager.PENDING_DISABLE,
   }, {
     id: "test9@tests.mozilla.org",
@@ -93,7 +86,6 @@ function test() {
     name: "Purple Add-on",
     description: "foo",
     updateDate: new Date(2012, 12, 12, 0, 0, 0),
-    size: 56,
     isCompatible: false,
     pendingOperations: AddonManager.PENDING_DISABLE,
   }, {
@@ -103,7 +95,6 @@ function test() {
     name: "amber Add-on",
     description: "foo",
     updateDate: new Date(1978, 4, 2, 0, 0, 0),
-    size: 142,
     isActive: false,
     appDisabled: true,
     pendingOperations: AddonManager.PENDING_UNINSTALL,
@@ -112,7 +103,6 @@ function test() {
     name: "Salmon Add-on - pending disable",
     description: "foo",
     updateDate: new Date(2054, 4, 1, 23, 59, 59),
-    size: 65,
     isActive: true,
     pendingOperations: AddonManager.PENDING_UNINSTALL,
   }, {
@@ -120,7 +110,6 @@ function test() {
     name: "rose Add-on",
     description: "foo",
     updateDate: new Date(2010, 4, 2, 0, 0, 1),
-    size: 125,
     isActive: false,
     userDisabled: true,
     pendingOperations: AddonManager.PENDING_UNINSTALL,
@@ -137,7 +126,6 @@ function test() {
     name: "white Add-on",
     description: "foo",
     updateDate: new Date(2010, 4, 12, 0, 0, 0),
-    size: 56,
     isActive: false,
     userDisabled: true,
     pendingOperations: AddonManager.PENDING_UNINSTALL,
@@ -150,7 +138,6 @@ function test() {
     name: "grimsby Add-on",
     description: "foo",
     updateDate: new Date(2010, 4, 1, 0, 0, 0),
-    size: 142,
     isActive: false,
     appDisabled: true,
   }, {
@@ -158,7 +145,6 @@ function test() {
     name: "beamsville Add-on",
     description: "foo",
     updateDate: new Date(2010, 4, 8, 23, 59, 59),
-    size: 65,
     isActive: false,
     userDisabled: true,
   }, {
@@ -166,7 +152,6 @@ function test() {
     name: "smithville Add-on",
     description: "foo",
     updateDate: new Date(2010, 4, 3, 0, 0, 1),
-    size: 125,
     isActive: false,
     userDisabled: true,
     blocklistState: Ci.nsIBlocklistService.STATE_OUTDATED,
@@ -184,23 +169,20 @@ function test() {
     name: "silverdale Add-on",
     description: "foo",
     updateDate: new Date(2010, 4, 12, 0, 0, 0),
-    size: 56,
     isActive: false,
     appDisabled: true,
     blocklistState: Ci.nsIBlocklistService.STATE_BLOCKED,
   }]);
 
 
-  open_manager("addons://list/extension", function(aWindow) {
-    gManagerWindow = aWindow;
-    run_next_test();
-  });
+  let aWindow = await open_manager("addons://list/extension");
+  gManagerWindow = aWindow;
+  run_next_test();
 }
 
-function end_test() {
-  close_manager(gManagerWindow, function() {
-    finish();
-  });
+async function end_test() {
+  await close_manager(gManagerWindow);
+  finish();
 }
 
 function set_order(aSortBy, aAscending) {

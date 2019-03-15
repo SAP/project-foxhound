@@ -14,8 +14,9 @@ var supportedProps = [
   "onLine",
   "language",
   "languages",
+  "mediaCapabilities",
   "hardwareConcurrency",
-  { name: "storage", nightly: true },
+  { name: "storage", isSecureContext: true },
   "connection",
 ];
 
@@ -39,7 +40,8 @@ function startTest(channelData) {
     }
 
     if (prop.nightly === !channelData.isNightly ||
-        prop.release === !channelData.isRelease) {
+        prop.release === !channelData.isRelease ||
+        prop.isSecureContext === !isSecureContext) {
       interfaceMap[prop.name] = false;
       continue;
     }

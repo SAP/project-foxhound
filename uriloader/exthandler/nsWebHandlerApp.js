@@ -5,13 +5,9 @@
 ////////////////////////////////////////////////////////////////////////////////
 //// Constants
 
-const Ci = Components.interfaces;
-const Cr = Components.results;
-const Cc = Components.classes;
-const Cu = Components.utils;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import('resource://gre/modules/Services.jsm');
 
 ////////////////////////////////////////////////////////////////////////////////
 //// nsWebHandler class
@@ -143,7 +139,8 @@ nsWebHandlerApp.prototype = {
     browserDOMWin.openURI(uriToSend,
                           null, // no window.opener
                           Ci.nsIBrowserDOMWindow.OPEN_DEFAULTWINDOW,
-                          Ci.nsIBrowserDOMWindow.OPEN_NEW);
+                          Ci.nsIBrowserDOMWindow.OPEN_NEW,
+                          Services.scriptSecurityManager.getSystemPrincipal());
       
     return;
   },
@@ -162,7 +159,7 @@ nsWebHandlerApp.prototype = {
   //////////////////////////////////////////////////////////////////////////////
   //// nsISupports
 
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIWebHandlerApp, Ci.nsIHandlerApp])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIWebHandlerApp, Ci.nsIHandlerApp])
 };
 
 ////////////////////////////////////////////////////////////////////////////////

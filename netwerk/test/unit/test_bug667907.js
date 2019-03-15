@@ -1,5 +1,5 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = null;
 var simplePath = "/simple";
@@ -20,15 +20,15 @@ function make_channel(url) {
 
 var listener_proto = {
   QueryInterface: function(iid) {
-    if (iid.equals(Components.interfaces.nsIStreamListener) ||
-        iid.equals(Components.interfaces.nsIRequestObserver) ||
-        iid.equals(Components.interfaces.nsISupports))
+    if (iid.equals(Ci.nsIStreamListener) ||
+        iid.equals(Ci.nsIRequestObserver) ||
+        iid.equals(Ci.nsISupports))
       return this;
-    throw Components.results.NS_ERROR_NO_INTERFACE;
+    throw Cr.NS_ERROR_NO_INTERFACE;
   },
 
   onStartRequest: function(request, context) {
-    do_check_eq(request.QueryInterface(Ci.nsIChannel).contentType,
+    Assert.equal(request.QueryInterface(Ci.nsIChannel).contentType,
 		this.contentType);
     request.cancel(Cr.NS_BINDING_ABORTED);
   },
@@ -38,7 +38,7 @@ var listener_proto = {
   },
 
   onStopRequest: function(request, context, status) {
-    do_check_eq(status, Cr.NS_BINDING_ABORTED);
+    Assert.equal(status, Cr.NS_BINDING_ABORTED);
     this.termination_func();
   }  
 };

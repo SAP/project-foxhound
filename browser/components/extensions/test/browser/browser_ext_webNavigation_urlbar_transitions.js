@@ -2,41 +2,39 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
-                                  "resource://gre/modules/PlacesUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PlacesTestUtils",
-                                  "resource://testing-common/PlacesTestUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "PlacesUtils",
+                               "resource://gre/modules/PlacesUtils.jsm");
 
 const SUGGEST_URLBAR_PREF = "browser.urlbar.suggest.searches";
 const TEST_ENGINE_BASENAME = "searchSuggestionEngine.xml";
 
-function* promiseAutocompleteResultPopup(inputText) {
+async function promiseAutocompleteResultPopup(inputText) {
   gURLBar.focus();
   gURLBar.value = inputText;
   gURLBar.controller.startSearch(inputText);
-  yield promisePopupShown(gURLBar.popup);
-  yield BrowserTestUtils.waitForCondition(() => {
+  await promisePopupShown(gURLBar.popup);
+  await BrowserTestUtils.waitForCondition(() => {
     return gURLBar.controller.searchStatus >=
       Ci.nsIAutoCompleteController.STATUS_COMPLETE_NO_MATCH;
   });
 }
 
-function* addBookmark(bookmark) {
+async function addBookmark(bookmark) {
   if (bookmark.keyword) {
-    yield PlacesUtils.keywords.insert({
+    await PlacesUtils.keywords.insert({
       keyword: bookmark.keyword,
       url: bookmark.url,
     });
   }
 
-  yield PlacesUtils.bookmarks.insert({
+  await PlacesUtils.bookmarks.insert({
     parentGuid: PlacesUtils.bookmarks.unfiledGuid,
     url: bookmark.url,
     title: bookmark.title,
   });
 
-  registerCleanupFunction(function* () {
-    yield PlacesUtils.bookmarks.eraseEverything();
+  registerCleanupFunction(async function() {
+    await PlacesUtils.bookmarks.eraseEverything();
   });
 }
 
@@ -44,7 +42,7 @@ function addSearchEngine(basename) {
   return new Promise((resolve, reject) => {
     info("Waiting for engine to be added: " + basename);
     let url = getRootDirectory(gTestPath) + basename;
-    Services.search.addEngine(url, null, "", false, {
+    Services.search.addEngine(url, "", false, {
       onSuccess: (engine) => {
         info(`Search engine added: ${basename}`);
         registerCleanupFunction(() => Services.search.removeEngine(engine));
@@ -58,15 +56,16 @@ function addSearchEngine(basename) {
   });
 }
 
-function* prepareSearchEngine() {
-  let oldCurrentEngine = Services.search.currentEngine;
+async function prepareSearchEngine() {
+  let oldCurrentEngine = Services.search.defaultEngine;
+  let suggestionsEnabled = Services.prefs.getBoolPref(SUGGEST_URLBAR_PREF);
   Services.prefs.setBoolPref(SUGGEST_URLBAR_PREF, true);
-  let engine = yield addSearchEngine(TEST_ENGINE_BASENAME);
-  Services.search.currentEngine = engine;
+  let engine = await addSearchEngine(TEST_ENGINE_BASENAME);
+  Services.search.defaultEngine = engine;
 
-  registerCleanupFunction(function* () {
-    Services.prefs.clearUserPref(SUGGEST_URLBAR_PREF);
-    Services.search.currentEngine = oldCurrentEngine;
+  registerCleanupFunction(async function() {
+    Services.prefs.setBoolPref(SUGGEST_URLBAR_PREF, suggestionsEnabled);
+    Services.search.defaultEngine = oldCurrentEngine;
 
     // Make sure the popup is closed for the next test.
     gURLBar.blur();
@@ -76,11 +75,11 @@ function* prepareSearchEngine() {
 
     // Clicking suggestions causes visits to search results pages, so clear that
     // history now.
-    yield PlacesTestUtils.clearHistory();
+    await PlacesUtils.history.clear();
   });
 }
 
-add_task(function* test_webnavigation_urlbar_typed_transitions() {
+add_task(async function test_webnavigation_urlbar_typed_transitions() {
   function backgroundScript() {
     browser.webNavigation.onCommitted.addListener((msg) => {
       browser.test.assertEq("http://example.com/?q=typed", msg.url,
@@ -104,23 +103,24 @@ add_task(function* test_webnavigation_urlbar_typed_transitions() {
     },
   });
 
-  yield extension.startup();
-  yield SimpleTest.promiseFocus(window);
+  await extension.startup();
+  await SimpleTest.promiseFocus(window);
 
-  yield extension.awaitMessage("ready");
+  await extension.awaitMessage("ready");
 
   gURLBar.focus();
-  gURLBar.textValue = "http://example.com/?q=typed";
-
+  const inputValue = "http://example.com/?q=typed";
+  gURLBar.inputField.value = inputValue.slice(0, -1);
+  EventUtils.sendString(inputValue.slice(-1));
   EventUtils.synthesizeKey("VK_RETURN", {altKey: true});
 
-  yield extension.awaitFinish("webNavigation.from_address_bar.typed");
+  await extension.awaitFinish("webNavigation.from_address_bar.typed");
 
-  yield extension.unload();
+  await extension.unload();
   info("extension unloaded");
 });
 
-add_task(function* test_webnavigation_urlbar_bookmark_transitions() {
+add_task(async function test_webnavigation_urlbar_bookmark_transitions() {
   function backgroundScript() {
     browser.webNavigation.onCommitted.addListener((msg) => {
       browser.test.assertEq("http://example.com/?q=bookmark", msg.url,
@@ -145,27 +145,27 @@ add_task(function* test_webnavigation_urlbar_bookmark_transitions() {
     },
   });
 
-  yield addBookmark({
+  await addBookmark({
     title: "Bookmark To Click",
     url: "http://example.com/?q=bookmark",
   });
 
-  yield extension.startup();
-  yield SimpleTest.promiseFocus(window);
+  await extension.startup();
+  await SimpleTest.promiseFocus(window);
 
-  yield extension.awaitMessage("ready");
+  await extension.awaitMessage("ready");
 
-  yield promiseAutocompleteResultPopup("Bookmark To Click");
+  await promiseAutocompleteResultPopup("Bookmark To Click");
 
   let item = gURLBar.popup.richlistbox.getItemAtIndex(1);
   item.click();
-  yield extension.awaitFinish("webNavigation.from_address_bar.auto_bookmark");
+  await extension.awaitFinish("webNavigation.from_address_bar.auto_bookmark");
 
-  yield extension.unload();
+  await extension.unload();
   info("extension unloaded");
 });
 
-add_task(function* test_webnavigation_urlbar_keyword_transition() {
+add_task(async function test_webnavigation_urlbar_keyword_transition() {
   function backgroundScript() {
     browser.webNavigation.onCommitted.addListener((msg) => {
       browser.test.assertEq(`http://example.com/?q=search`, msg.url,
@@ -190,29 +190,29 @@ add_task(function* test_webnavigation_urlbar_keyword_transition() {
     },
   });
 
-  yield addBookmark({
+  await addBookmark({
     title: "Test Keyword",
     url: "http://example.com/?q=%s",
     keyword: "testkw",
   });
 
-  yield extension.startup();
-  yield SimpleTest.promiseFocus(window);
+  await extension.startup();
+  await SimpleTest.promiseFocus(window);
 
-  yield extension.awaitMessage("ready");
+  await extension.awaitMessage("ready");
 
-  yield promiseAutocompleteResultPopup("testkw search");
+  await promiseAutocompleteResultPopup("testkw search");
 
   let item = gURLBar.popup.richlistbox.getItemAtIndex(0);
   item.click();
 
-  yield extension.awaitFinish("webNavigation.from_address_bar.keyword");
+  await extension.awaitFinish("webNavigation.from_address_bar.keyword");
 
-  yield extension.unload();
+  await extension.unload();
   info("extension unloaded");
 });
 
-add_task(function* test_webnavigation_urlbar_search_transitions() {
+add_task(async function test_webnavigation_urlbar_search_transitions() {
   function backgroundScript() {
     browser.webNavigation.onCommitted.addListener((msg) => {
       browser.test.assertEq("http://mochi.test:8888/", msg.url,
@@ -237,19 +237,19 @@ add_task(function* test_webnavigation_urlbar_search_transitions() {
     },
   });
 
-  yield extension.startup();
-  yield SimpleTest.promiseFocus(window);
+  await extension.startup();
+  await SimpleTest.promiseFocus(window);
 
-  yield extension.awaitMessage("ready");
+  await extension.awaitMessage("ready");
 
-  yield prepareSearchEngine();
-  yield promiseAutocompleteResultPopup("foo");
+  await prepareSearchEngine();
+  await promiseAutocompleteResultPopup("foo");
 
   let item = gURLBar.popup.richlistbox.getItemAtIndex(0);
   item.click();
 
-  yield extension.awaitFinish("webNavigation.from_address_bar.generated");
+  await extension.awaitFinish("webNavigation.from_address_bar.generated");
 
-  yield extension.unload();
+  await extension.unload();
   info("extension unloaded");
 });

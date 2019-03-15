@@ -28,59 +28,59 @@ const testData = [
     value: "red",
     commitKey: "VK_ESCAPE",
     modifiers: {},
-    expected: "#00F"
+    expected: "#00F",
   },
   {
     value: "red",
     commitKey: "VK_RETURN",
     modifiers: {},
-    expected: "red"
+    expected: "red",
   },
   {
     value: "invalid",
     commitKey: "VK_RETURN",
     modifiers: {},
-    expected: "invalid"
+    expected: "invalid",
   },
   {
     value: "blue",
     commitKey: "VK_TAB", modifiers: {shiftKey: true},
-    expected: "blue"
-  }
+    expected: "blue",
+  },
 ];
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
-  yield selectNode("#testid", inspector);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, view} = await openRuleView();
+  await selectNode("#testid", inspector);
 
-  for (let data of testData) {
-    yield runTestData(view, data);
+  for (const data of testData) {
+    await runTestData(view, data);
   }
 });
 
-function* runTestData(view, {value, commitKey, modifiers, expected}) {
-  let idRuleEditor = getRuleViewRuleEditor(view, 1);
-  let propEditor = idRuleEditor.rule.textProps[0].editor;
+async function runTestData(view, {value, commitKey, modifiers, expected}) {
+  const idRuleEditor = getRuleViewRuleEditor(view, 1);
+  const propEditor = idRuleEditor.rule.textProps[0].editor;
 
   info("Focusing the inplace editor field");
 
-  let editor = yield focusEditableField(view, propEditor.valueSpan);
+  const editor = await focusEditableField(view, propEditor.valueSpan);
   is(inplaceEditor(propEditor.valueSpan), editor,
     "Focused editor should be the value span.");
 
   info("Entering test data " + value);
   let onRuleViewChanged = view.once("ruleview-changed");
   EventUtils.sendString(value, view.styleWindow);
-  view.throttle.flush();
-  yield onRuleViewChanged;
+  view.debounce.flush();
+  await onRuleViewChanged;
 
   info("Entering the commit key " + commitKey + " " + modifiers);
   onRuleViewChanged = view.once("ruleview-changed");
-  let onBlur = once(editor.input, "blur");
+  const onBlur = once(editor.input, "blur");
   EventUtils.synthesizeKey(commitKey, modifiers);
-  yield onBlur;
-  yield onRuleViewChanged;
+  await onBlur;
+  await onRuleViewChanged;
 
   if (commitKey === "VK_ESCAPE") {
     is(propEditor.valueSpan.textContent, expected,

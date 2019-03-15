@@ -13,12 +13,15 @@
 #include "SkYUVSizeInfo.h"
 
 class GrContext;
+struct GrSurfaceDesc;
 class GrTexture;
+class GrTextureProxy;
+class SkCachedData;
 
 /**
  *  There are at least 2 different ways to extract/retrieve YUV planar data...
  *  - SkPixelRef
- *  - SkImageGeneartor
+ *  - SkImageGenerator
  *
  *  To share common functionality around using the planar data, we use this abstract base-class
  *  to represent accessing that data.
@@ -28,16 +31,22 @@ public:
     virtual ~GrYUVProvider() {}
 
     /**
-     *  On success, this returns a texture that has converted the YUV data from the provider
-     *  into a form that is supported by the GPU (typically transformed into RGB). If useCache
-     *  is true, then the texture will automatically have a key added, so it can be retrieved
-     *  from the cache (assuming it is requested by a provider w/ the same genID).
+     *  On success, this returns a texture proxy that has converted the YUV data from the provider
+     *  into a form that is supported by the GPU (typically transformed into RGB). The texture will
+     *  automatically have a key added, so it can be retrieved from the cache (assuming it is
+     *  requested by a provider w/ the same genID). If srcColorSpace and dstColorSpace are
+     *  specified, then a color conversion from src to dst will be applied to the pixels.
      *
      *  On failure (e.g. the provider had no data), this returns NULL.
      */
-    sk_sp<GrTexture> refAsTexture(GrContext*, const GrSurfaceDesc&, bool useCache);
+    sk_sp<GrTextureProxy> refAsTextureProxy(GrContext*, const GrSurfaceDesc&,
+                                            SkColorSpace* srcColorSpace,
+                                            SkColorSpace* dstColorSpace);
 
-    virtual uint32_t onGetID() = 0;
+    sk_sp<SkCachedData> getPlanes(SkYUVSizeInfo*, SkYUVColorSpace*, const void* planes[3]);
+
+private:
+    virtual uint32_t onGetID() const = 0;
 
     // These are not meant to be called by a client, only by the implementation
 
@@ -62,6 +71,11 @@ public:
      *  @param planes     Memory for each of the Y, U, and V planes.
      */
     virtual bool onGetYUV8Planes(const SkYUVSizeInfo& sizeInfo, void* planes[3]) = 0;
+
+    // This is used as release callback for the YUV data that we capture in an SkImage when
+    // uploading to a gpu. When the upload is complete and we release the SkImage this callback will
+    // release the underlying data.
+    static void YUVGen_DataReleaseProc(const void*, void* data);
 };
 
 #endif

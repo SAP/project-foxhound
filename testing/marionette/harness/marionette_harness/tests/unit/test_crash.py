@@ -2,14 +2,23 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 import glob
+import os
 import shutil
 
-from marionette_driver.errors import MarionetteException
-# Import runner module to monkey patch mozcrash module
-from mozrunner.base import runner
+from marionette_driver import Wait
+from marionette_driver.errors import (
+    InvalidSessionIdException,
+    NoSuchWindowException,
+    TimeoutException
+)
 
 from marionette_harness import MarionetteTestCase, expectedFailure, run_if_e10s
+
+# Import runner module to monkey patch mozcrash module
+from mozrunner.base import runner
 
 
 class MockMozCrash(object):
@@ -20,20 +29,25 @@ class MockMozCrash(object):
 
         with self.marionette.using_context('chrome'):
             self.crash_reporter_enabled = self.marionette.execute_script("""
-                try {
-                  Components.classes["@mozilla.org/toolkit/crash-reporter;1"].
-                    getService(Components.interfaces.nsICrashReporter);
-                  return true;
-                } catch (exc) {
-                  return false;
-                }
+                Cu.import("resource://gre/modules/AppConstants.jsm");
+                return AppConstants.MOZ_CRASHREPORTER;
             """)
 
     def check_for_crashes(self, dump_directory, *args, **kwargs):
-        minidump_files = glob.glob('{}/*.dmp'.format(dump_directory))
-        shutil.rmtree(dump_directory, ignore_errors=True)
-
         if self.crash_reporter_enabled:
+            # Workaround until bug 1376795 has been fixed
+            # Wait at maximum 5s for the minidump files being created
+            # minidump_files = glob.glob('{}/*.dmp'.format(dump_directory))
+            try:
+                minidump_files = Wait(None, timeout=5).until(
+                    lambda _: glob.glob('{}/*.dmp'.format(dump_directory))
+                )
+            except TimeoutException:
+                minidump_files = []
+
+            if os.path.isdir(dump_directory):
+                shutil.rmtree(dump_directory)
+
             return len(minidump_files)
         else:
             return len(minidump_files) == 0
@@ -50,71 +64,78 @@ class BaseCrashTestCase(MarionetteTestCase):
     def setUp(self):
         super(BaseCrashTestCase, self).setUp()
 
-        self.mozcrash_mock = MockMozCrash(self.marionette)
+        # Monkey patch mozcrash to avoid crash info output only for our triggered crashes.
+        mozcrash_mock = MockMozCrash(self.marionette)
+        if not mozcrash_mock.crash_reporter_enabled:
+            self.skipTest('Crash reporter disabled')
+            return
+
+        self.mozcrash = runner.mozcrash
+        runner.mozcrash = mozcrash_mock
+
         self.crash_count = self.marionette.crashed
         self.pid = self.marionette.process_id
-        self.remote_uri = self.marionette.absolute_url("javascriptPage.html")
 
     def tearDown(self):
+        # Replace mockup with original mozcrash instance
+        runner.mozcrash = self.mozcrash
+
         self.marionette.crashed = self.crash_count
 
         super(BaseCrashTestCase, self).tearDown()
 
-    def crash(self, chrome=True):
-        context = 'chrome' if chrome else 'content'
-        sandbox = None if chrome else 'system'
-
-        # Monkey patch mozcrash to avoid crash info output only for our triggered crashes.
-        mozcrash = runner.mozcrash
-        runner.mozcrash = self.mozcrash_mock
-
+    def crash(self, parent=True):
         socket_timeout = self.marionette.client.socket_timeout
+        self.marionette.client.socket_timeout = self.socket_timeout
 
-        self.marionette.set_context(context)
+        self.marionette.set_context("content")
         try:
-            self.marionette.client.socket_timeout = self.socket_timeout
-            self.marionette.execute_script("""
-              // Copied from crash me simple
-              Components.utils.import("resource://gre/modules/ctypes.jsm");
-
-              // ctypes checks for NULL pointer derefs, so just go near-NULL.
-              var zero = new ctypes.intptr_t(8);
-              var badptr = ctypes.cast(zero, ctypes.PointerType(ctypes.int32_t));
-              var crash = badptr.contents;
-            """, sandbox=sandbox)
+            self.marionette.navigate("about:crash{}".format("parent" if parent else "content"))
         finally:
-            runner.mozcrash = mozcrash
             self.marionette.client.socket_timeout = socket_timeout
 
 
 class TestCrash(BaseCrashTestCase):
 
     def test_crash_chrome_process(self):
-        self.assertRaisesRegexp(IOError, 'Process crashed',
-                                self.crash, chrome=True)
+        self.assertRaisesRegexp(IOError, "Process crashed",
+                                self.crash, parent=True)
+
+        # A crash results in a non zero exit code
+        self.assertNotIn(self.marionette.instance.runner.returncode, (None, 0))
+
         self.assertEqual(self.marionette.crashed, 1)
         self.assertIsNone(self.marionette.session)
-        self.assertRaisesRegexp(MarionetteException, 'Please start a session',
-                                self.marionette.get_url)
+        with self.assertRaisesRegexp(InvalidSessionIdException, 'Please start a session'):
+            self.marionette.get_url()
 
         self.marionette.start_session()
         self.assertNotEqual(self.marionette.process_id, self.pid)
 
-        # TODO: Bug 1314594 - Causes a hang for the communication between the
-        # chrome and frame script.
-        # self.marionette.get_url()
+        self.marionette.get_url()
 
     @run_if_e10s("Content crashes only exist in e10s mode")
     def test_crash_content_process(self):
-        # If e10s is disabled the chrome process crashes
-        self.marionette.navigate(self.remote_uri)
+        # For a content process crash and MOZ_CRASHREPORTER_SHUTDOWN set the top
+        # browsing context will be gone first. As such the raised NoSuchWindowException
+        # has to be ignored. To check for the IOError, further commands have to
+        # be executed until the process is gone.
+        with self.assertRaisesRegexp(IOError, "Content process crashed"):
+            self.crash(parent=False)
+            Wait(self.marionette, timeout=self.socket_timeout,
+                 ignored_exceptions=NoSuchWindowException).until(
+                lambda _: self.marionette.get_url(),
+                message="Expected IOError exception for content crash not raised."
+            )
 
-        self.assertRaisesRegexp(IOError, 'Content process crashed',
-                                self.crash, chrome=False)
+        # In the case of a content crash Firefox will be closed and its
+        # returncode will report 0 (this will change with 1370520).
+        self.assertEqual(self.marionette.instance.runner.returncode, 0)
+
         self.assertEqual(self.marionette.crashed, 1)
         self.assertIsNone(self.marionette.session)
-        self.assertRaisesRegexp(MarionetteException, 'Please start a session',
-                                self.marionette.get_url)
+        with self.assertRaisesRegexp(InvalidSessionIdException, 'Please start a session'):
+            self.marionette.get_url()
 
         self.marionette.start_session()
         self.assertNotEqual(self.marionette.process_id, self.pid)
@@ -122,7 +143,7 @@ class TestCrash(BaseCrashTestCase):
 
     @expectedFailure
     def test_unexpected_crash(self):
-        self.crash(chrome=True)
+        self.crash(parent=True)
 
 
 class TestCrashInSetUp(BaseCrashTestCase):
@@ -130,8 +151,12 @@ class TestCrashInSetUp(BaseCrashTestCase):
     def setUp(self):
         super(TestCrashInSetUp, self).setUp()
 
-        self.assertRaisesRegexp(IOError, 'Process crashed',
-                                self.crash, chrome=True)
+        self.assertRaisesRegexp(IOError, "Process crashed",
+                                self.crash, parent=True)
+
+        # A crash results in a non zero exit code
+        self.assertNotIn(self.marionette.instance.runner.returncode, (None, 0))
+
         self.assertEqual(self.marionette.crashed, 1)
         self.assertIsNone(self.marionette.session)
 
@@ -144,11 +169,16 @@ class TestCrashInTearDown(BaseCrashTestCase):
 
     def tearDown(self):
         try:
-            self.assertRaisesRegexp(IOError, 'Process crashed',
-                                    self.crash, chrome=True)
-        finally:
+            self.assertRaisesRegexp(IOError, "Process crashed",
+                                    self.crash, parent=True)
+
+            # A crash results in a non zero exit code
+            self.assertNotIn(self.marionette.instance.runner.returncode, (None, 0))
+
             self.assertEqual(self.marionette.crashed, 1)
             self.assertIsNone(self.marionette.session)
+
+        finally:
             super(TestCrashInTearDown, self).tearDown()
 
     def test_crash_in_teardown(self):

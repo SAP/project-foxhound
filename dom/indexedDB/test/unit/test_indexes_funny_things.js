@@ -34,7 +34,7 @@ function* testSteps()
 
   const indexData = [
     { name: "type", keyPath: "type", options: { } },
-    { name: "length", keyPath: "length", options: { unique: true } }
+    { name: "length", keyPath: "length", options: { unique: true } },
   ];
 
   const objectStoreDataTypeSort = [
@@ -67,7 +67,7 @@ function* testSteps()
       if (++addedData == objectStoreData.length) {
         testGenerator.next(event);
       }
-    }
+    };
   }
   event = yield undefined;
   // Now create the indexes.
@@ -95,8 +95,7 @@ function* testSteps()
     is(index.name, indexData[i].name, "Correct name");
     is(index.objectStore.name, objectStore.name, "Correct store name");
     is(index.keyPath, indexData[i].keyPath, "Correct keyPath");
-    is(index.unique, indexData[i].options.unique ? true : false,
-       "Correct unique value");
+    is(index.unique, !!indexData[i].options.unique, "Correct unique value");
   }
 
   ok(true, "Test group 1");
@@ -105,7 +104,7 @@ function* testSteps()
 
   request = objectStore.index("type").openKeyCursor();
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataTypeSort[keyIndex].value.type,
@@ -127,7 +126,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, objectStoreDataTypeSort.length, "Saw all the expected keys");
@@ -138,7 +137,7 @@ function* testSteps()
 
   request = objectStore.index("length").openKeyCursor(null, "next");
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataLengthSort[keyIndex].value.length,
@@ -158,7 +157,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, objectStoreDataLengthSort.length, "Saw all the expected keys");

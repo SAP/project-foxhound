@@ -50,24 +50,12 @@ AutoCompleteInput.prototype = {
     invalidate() {},
 
     // nsISupports implementation
-    QueryInterface(iid) {
-      if (iid.equals(Ci.nsISupports) ||
-          iid.equals(Ci.nsIAutoCompletePopup))
-        return this;
-
-      throw Components.results.NS_ERROR_NO_INTERFACE;
-    }
+    QueryInterface: ChromeUtils.generateQI(["nsIAutoCompletePopup"]),
   },
 
   // nsISupports implementation
-  QueryInterface(iid) {
-    if (iid.equals(Ci.nsISupports) ||
-        iid.equals(Ci.nsIAutoCompleteInput))
-      return this;
-
-    throw Components.results.NS_ERROR_NO_INTERFACE;
-  }
-}
+  QueryInterface: ChromeUtils.generateQI(["nsIAutoCompleteInput"]),
+};
 
 
 
@@ -81,7 +69,7 @@ function AutoCompleteResult(aValues, aComments, aStyles) {
   if (this._values.length > 0) {
     this.searchResult = Ci.nsIAutoCompleteResult.RESULT_SUCCESS;
   } else {
-    this.searchResult = Ci.nsIAutoCompleteResult.NOMATCH;
+    this.searchResult = Ci.nsIAutoCompleteResult.RESULT_NOMATCH;
   }
 }
 AutoCompleteResult.prototype = {
@@ -128,14 +116,8 @@ AutoCompleteResult.prototype = {
   removeValueAt(aRowIndex, aRemoveFromDb) {},
 
   // nsISupports implementation
-  QueryInterface(iid) {
-    if (iid.equals(Ci.nsISupports) ||
-        iid.equals(Ci.nsIAutoCompleteResult))
-      return this;
-
-    throw Components.results.NS_ERROR_NO_INTERFACE;
-  }
-}
+  QueryInterface: ChromeUtils.generateQI(["nsIAutoCompleteResult"]),
+};
 
 
 /**
@@ -172,20 +154,13 @@ AutoCompleteSearch.prototype = {
   stopSearch() {},
 
   // nsISupports implementation
-  QueryInterface(iid) {
-    if (iid.equals(Ci.nsISupports) ||
-        iid.equals(Ci.nsIFactory) ||
-        iid.equals(Ci.nsIAutoCompleteSearch))
-      return this;
-
-    throw Components.results.NS_ERROR_NO_INTERFACE;
-  },
+  QueryInterface: ChromeUtils.generateQI(["nsIFactory", "nsIAutoCompleteSearch"]),
 
   // nsIFactory implementation
   createInstance(outer, iid) {
     return this.QueryInterface(iid);
-  }
-}
+  },
+};
 
 
 /**
@@ -234,8 +209,8 @@ function run_test() {
   registerAutoCompleteSearch(search1);
   registerAutoCompleteSearch(search2);
 
-  var controller = Components.classes["@mozilla.org/autocomplete/controller;1"].
-                   getService(Components.interfaces.nsIAutoCompleteController);
+  var controller = Cc["@mozilla.org/autocomplete/controller;1"].
+                   getService(Ci.nsIAutoCompleteController);
 
   // Make an AutoCompleteInput that uses our search
   // and confirms results on search complete
@@ -248,20 +223,20 @@ function run_test() {
   };
 
   input.onSearchComplete = function() {
-    do_check_eq(controller.searchStatus,
-                Ci.nsIAutoCompleteController.STATUS_COMPLETE_MATCH);
-    do_check_eq(controller.matchCount, 2);
+    Assert.equal(controller.searchStatus,
+                 Ci.nsIAutoCompleteController.STATUS_COMPLETE_MATCH);
+    Assert.equal(controller.matchCount, 2);
 
     if (numSearchesStarted == 1) {
-      do_check_eq(search1._previousResult, null);
-      do_check_eq(search2._previousResult, null);
+      Assert.equal(search1._previousResult, null);
+      Assert.equal(search2._previousResult, null);
 
       // Now start it again
       controller.startSearch("test");
       return;
     }
-    do_check_neq(search1._previousResult, null);
-    do_check_neq(search2._previousResult, null);
+    Assert.notEqual(search1._previousResult, null);
+    Assert.notEqual(search2._previousResult, null);
 
     // Unregister searches
     unregisterAutoCompleteSearch(search1);

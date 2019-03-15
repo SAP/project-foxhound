@@ -17,16 +17,15 @@ import org.mozilla.gecko.telemetry.TelemetryUploadService;
 public class TelemetryUploadAllPingsImmediatelyScheduler implements TelemetryUploadScheduler {
 
     @Override
-    public boolean isReadyToUpload(final TelemetryPingStore store) {
+    public boolean isReadyToUpload(final Context applicationContext, final TelemetryPingStore store) {
         // We're ready since we don't have any conditions to wait on (e.g. on wifi, accumulated X pings).
         return true;
     }
 
     @Override
     public void scheduleUpload(final Context applicationContext, final TelemetryPingStore store) {
-        final Intent i = new Intent(TelemetryUploadService.ACTION_UPLOAD);
-        i.setClass(applicationContext, TelemetryUploadService.class);
-        i.putExtra(TelemetryUploadService.EXTRA_STORE, store);
-        applicationContext.startService(i);
+        final Intent intent = new Intent(TelemetryUploadService.ACTION_UPLOAD);
+        intent.putExtra(TelemetryUploadService.EXTRA_STORE, store);
+        TelemetryUploadService.enqueueWork(applicationContext, intent);
     }
 }

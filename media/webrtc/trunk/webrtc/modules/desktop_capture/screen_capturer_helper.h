@@ -8,13 +8,15 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_DESKTOP_CAPTURE_SCREEN_CAPTURER_HELPER_H_
-#define WEBRTC_MODULES_DESKTOP_CAPTURE_SCREEN_CAPTURER_HELPER_H_
+#ifndef MODULES_DESKTOP_CAPTURE_SCREEN_CAPTURER_HELPER_H_
+#define MODULES_DESKTOP_CAPTURE_SCREEN_CAPTURER_HELPER_H_
 
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/modules/desktop_capture/desktop_geometry.h"
-#include "webrtc/modules/desktop_capture/desktop_region.h"
-#include "webrtc/system_wrappers/include/rw_lock_wrapper.h"
+#include <memory>
+
+#include "modules/desktop_capture/desktop_geometry.h"
+#include "modules/desktop_capture/desktop_region.h"
+#include "rtc_base/constructormagic.h"
+#include "system_wrappers/include/rw_lock_wrapper.h"
 
 namespace webrtc {
 
@@ -70,7 +72,7 @@ class ScreenCapturerHelper {
   DesktopRegion invalid_region_;
 
   // A lock protecting |invalid_region_| across threads.
-  rtc::scoped_ptr<RWLockWrapper> invalid_region_lock_;
+  std::unique_ptr<RWLockWrapper> invalid_region_lock_;
 
   // The size of the most recently captured screen.
   DesktopSize size_most_recent_;
@@ -85,4 +87,4 @@ class ScreenCapturerHelper {
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_DESKTOP_CAPTURE_SCREEN_CAPTURER_HELPER_H_
+#endif  // MODULES_DESKTOP_CAPTURE_SCREEN_CAPTURER_HELPER_H_

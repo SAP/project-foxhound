@@ -8,7 +8,6 @@
 
 using namespace mozilla;
 
-
 NS_IMPL_ISUPPORTS(nsAndroidHandlerApp, nsIHandlerApp, nsISharingHandlerApp)
 
 nsAndroidHandlerApp::nsAndroidHandlerApp(const nsAString& aName,
@@ -16,76 +15,73 @@ nsAndroidHandlerApp::nsAndroidHandlerApp(const nsAString& aName,
                                          const nsAString& aPackageName,
                                          const nsAString& aClassName,
                                          const nsACString& aMimeType,
-                                         const nsAString& aAction) :
-mName(aName), mDescription(aDescription), mPackageName(aPackageName),
-  mClassName(aClassName), mMimeType(aMimeType), mAction(aAction)
-{
-}
+                                         const nsAString& aAction)
+    : mName(aName),
+      mDescription(aDescription),
+      mPackageName(aPackageName),
+      mClassName(aClassName),
+      mMimeType(aMimeType),
+      mAction(aAction) {}
 
-nsAndroidHandlerApp::~nsAndroidHandlerApp()
-{
-}
+nsAndroidHandlerApp::~nsAndroidHandlerApp() {}
 
 NS_IMETHODIMP
-nsAndroidHandlerApp::GetName(nsAString & aName)
-{
+nsAndroidHandlerApp::GetName(nsAString& aName) {
   aName.Assign(mName);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsAndroidHandlerApp::SetName(const nsAString & aName)
-{
+nsAndroidHandlerApp::SetName(const nsAString& aName) {
   mName.Assign(aName);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsAndroidHandlerApp::GetDetailedDescription(nsAString & aDescription)
-{
+nsAndroidHandlerApp::GetDetailedDescription(nsAString& aDescription) {
   aDescription.Assign(mDescription);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsAndroidHandlerApp::SetDetailedDescription(const nsAString & aDescription)
-{
+nsAndroidHandlerApp::SetDetailedDescription(const nsAString& aDescription) {
   mDescription.Assign(aDescription);
 
   return NS_OK;
 }
 
-// XXX Workaround for bug 986975 to maintain the existing broken semantics
-template<>
-struct nsISharingHandlerApp::COMTypeInfo<nsAndroidHandlerApp, void> {
-  static const nsIID kIID;
-};
-const nsIID nsISharingHandlerApp::COMTypeInfo<nsAndroidHandlerApp, void>::kIID = NS_IHANDLERAPP_IID;
-
 NS_IMETHODIMP
-nsAndroidHandlerApp::Equals(nsIHandlerApp *aHandlerApp, bool *aRetval)
-{
-  nsCOMPtr<nsAndroidHandlerApp> aApp = do_QueryInterface(aHandlerApp);
-  *aRetval = aApp && aApp->mName.Equals(mName) &&
-    aApp->mDescription.Equals(mDescription);
+nsAndroidHandlerApp::Equals(nsIHandlerApp* aHandlerApp, bool* aRetval) {
+  *aRetval = false;
+  if (!aHandlerApp) {
+    return NS_OK;
+  }
+
+  nsAutoString name;
+  nsAutoString detailedDescription;
+  aHandlerApp->GetName(name);
+  aHandlerApp->GetDetailedDescription(detailedDescription);
+
+  *aRetval = name.Equals(mName) && detailedDescription.Equals(mDescription);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsAndroidHandlerApp::LaunchWithURI(nsIURI *aURI, nsIInterfaceRequestor *aWindowContext)
-{
+nsAndroidHandlerApp::LaunchWithURI(nsIURI* aURI,
+                                   nsIInterfaceRequestor* aWindowContext) {
   nsCString uriSpec;
   aURI->GetSpec(uriSpec);
-  return java::GeckoAppShell::OpenUriExternal(
-          uriSpec, mMimeType, mPackageName, mClassName,
-          mAction, EmptyString()) ? NS_OK : NS_ERROR_FAILURE;
+  return java::GeckoAppShell::OpenUriExternal(uriSpec, mMimeType, mPackageName,
+                                              mClassName, mAction,
+                                              EmptyString())
+             ? NS_OK
+             : NS_ERROR_FAILURE;
 }
 
 NS_IMETHODIMP
-nsAndroidHandlerApp::Share(const nsAString & data, const nsAString & title)
-{
+nsAndroidHandlerApp::Share(const nsAString& data, const nsAString& title) {
   return java::GeckoAppShell::OpenUriExternal(
-          data, mMimeType, mPackageName, mClassName,
-          mAction, EmptyString()) ? NS_OK : NS_ERROR_FAILURE;
+             data, mMimeType, mPackageName, mClassName, mAction, EmptyString())
+             ? NS_OK
+             : NS_ERROR_FAILURE;
 }
-

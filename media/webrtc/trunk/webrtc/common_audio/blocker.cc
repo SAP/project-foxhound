@@ -8,11 +8,11 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/common_audio/blocker.h"
+#include "common_audio/blocker.h"
 
 #include <string.h>
 
-#include "webrtc/base/checks.h"
+#include "rtc_base/checks.h"
 
 namespace {
 
@@ -124,6 +124,8 @@ Blocker::Blocker(size_t chunk_size,
   memcpy(window_.get(), window, block_size_ * sizeof(*window_.get()));
   input_buffer_.MoveReadPositionBackward(initial_delay_);
 }
+
+Blocker::~Blocker() = default;
 
 // When block_size < chunk_size the input and output buffers look like this:
 //

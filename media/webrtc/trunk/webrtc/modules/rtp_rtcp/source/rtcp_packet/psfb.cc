@@ -8,13 +8,14 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/psfb.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/psfb.h"
 
-#include "webrtc/modules/rtp_rtcp/source/byte_io.h"
+#include "modules/rtp_rtcp/source/byte_io.h"
 
 namespace webrtc {
 namespace rtcp {
-
+constexpr uint8_t Psfb::kPacketType;
+constexpr size_t Psfb::kCommonFeedbackLength;
 // RFC 4585: Feedback format.
 //
 // Common packet format:

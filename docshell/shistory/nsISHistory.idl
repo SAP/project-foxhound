@@ -1,14 +1,21 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsISupports.idl"
 
+interface nsIBFCacheEntry;
+interface nsIDocShell;
 interface nsISHEntry;
 interface nsISHistoryListener;
-interface nsISimpleEnumerator;
-interface nsIPartialSHistoryListener;
+interface nsIURI;
+
+%{C++
+#include "nsTArrayForwardDeclare.h"
+%}
+
+[ref] native nsDocshellIDArray(nsTArray<nsID>);
 
 /**
  * An interface to the primary properties of the Session History
@@ -20,71 +27,22 @@ interface nsIPartialSHistoryListener;
  * it in the nsIWebNavigation object.
  * This interface is accessible from javascript.
  */
- 
 
-%{C++
-#define NS_SHISTORY_CID \
-{0x7b807041, 0xe60a, 0x4384, {0x93, 0x5f, 0xaf, 0x30, 0x61, 0xd8, 0xb8, 0x15}}
-
-#define NS_SHISTORY_CONTRACTID "@mozilla.org/browser/shistory;1"
-%}
-
-[scriptable, uuid(7b807041-e60a-4384-935f-af3061d8b815)]
+[builtinclass, scriptable, uuid(7b807041-e60a-4384-935f-af3061d8b815)]
 interface nsISHistory: nsISupports
 {
   /**
-   * The size of the window of SHEntries which can have alive viewers in the
-   * bfcache around the currently active SHEntry.
-   *
-   * We try to keep viewers for SHEntries between index - VIEWER_WINDOW and
-   * index + VIEWER_WINDOW alive.
-   */
-  const long VIEWER_WINDOW = 3;
-
-  /**
-   * An attribute denoting whether the nsISHistory is associated to a grouped
-   * session history.
-   *
-   * The abstraction of grouped session history is implemented at
-   * nsIWebNavigation level, so those canGoBack / canGoForward / gotoIndex
-   * functions work transparently;
-   *
-   * On the other hand, nsISHistory works on partial session history directly.
-   * Unless otherwise specified, count / index attributes and parameters all
-   * indicate local count / index, so we won't mess up docshell.
-   */
-   readonly attribute bool isPartial;
-
-  /**
-   * A readonly property of the interface that returns 
+   * A readonly property of the interface that returns
    * the number of toplevel documents currently available
    * in session history.
    */
-   readonly attribute long count;
+  [infallible] readonly attribute long count;
 
   /**
-   * If isPartial, globalCount denotes the total number of entries in the
-   * grouped session history; Otherwise it has the same value as count.
+   * The index of the current document in session history. Not infallible
+   * because setting can fail if the assigned value is out of range.
    */
-   readonly attribute long globalCount;
-
-  /**
-   * A readonly property which represents the difference between global indices
-   * of grouped session history and local indices of this particular session
-   * history object.
-   */
-   readonly attribute long globalIndexOffset;
-
-  /**
-   * A readonly property of the interface that returns
-   * the index of the current document in session history.
-   */
-   readonly attribute long index;
-
-  /**
-   * A readonly property which equals index + globalIndexOffset.
-   */
-   readonly attribute long globalIndex;
+  attribute long index;
 
   /**
    * A readonly property of the interface that returns
@@ -92,119 +50,73 @@ interface nsISHistory: nsISupports
    * didn't finished yet. When document finishes the loading
    * value -1 is returned.
    */
-   readonly attribute long requestedIndex;
+  [infallible] readonly attribute long requestedIndex;
 
   /**
-   * A read/write property of the interface, used to Get/Set
-   * the maximum number of toplevel documents, session history 
-   * can hold for each instance. 
-   */
-   attribute long maxLength;
-
-  /**
-   * Called to obtain handle to the history entry at a
-   * given index.
+   * Get the history entry at a given index. Returns non-null on success.
    *
    * @param index             The index value whose entry is requested.
    *                          The oldest entry is located at index == 0.
-   * @param modifyIndex       A boolean flag that indicates if the current
-   *                          index of session history should be modified 
-   *                          to the parameter index.
-   *
-   * @return                  <code>NS_OK</code> history entry for 
-   *                          the index is obtained successfully.
-   *                          <code>NS_ERROR_FAILURE</code> Error in obtaining
-   *                          history entry for the given index.
+   * @return                  The found entry; never null.
    */
-   nsISHEntry getEntryAtIndex(in long index, in boolean modifyIndex);
-
-  /**
-   * Load the entry at given index to root docshell directly in order to
-   * restore to an entry in grouped session history navigation or session
-   * restore case. This function will not notify nsISHistoryListener, as it's
-   * not considered a normal history navigation.
-   */
-   void restoreToEntryAtIndex(in long index);
+  nsISHEntry getEntryAtIndex(in long aIndex);
 
   /**
    * Called to purge older documents from history.
-   * Documents can be removed from session history for various 
-   * reasons. For example to  control memory usage of the browser, to 
+   * Documents can be removed from session history for various
+   * reasons. For example to  control memory usage of the browser, to
    * prevent users from loading documents from history, to erase evidence of
    * prior page loads etc...
    *
    * @param numEntries        The number of toplevel documents to be
    *                          purged from history. During purge operation,
-   *                          the latest documents are maintained and older 
+   *                          the latest documents are maintained and older
    *                          'numEntries' documents are removed from history.
-   * @throws                  <code>NS_SUCCESS_LOSS_OF_INSIGNIFICANT_DATA</code> Purge was vetod.
+   * @throws                  <code>NS_SUCCESS_LOSS_OF_INSIGNIFICANT_DATA</code>
+   *                          Purge was vetod.
    * @throws                  <code>NS_ERROR_FAILURE</code> numEntries is
    *                          invalid or out of bounds with the size of history.
-   *                          
    */
-   void PurgeHistory(in long numEntries);
+  void PurgeHistory(in long aNumEntries);
 
   /**
    * Called to register a listener for the session history component.
    * Listeners are notified when pages are loaded or purged from history.
-   * 
+   *
    * @param aListener         Listener object to be notified for all
    *                          page loads that initiate in session history.
    *
-   * @note                    A listener object must implement 
+   * @note                    A listener object must implement
    *                          nsISHistoryListener and nsSupportsWeakReference
    *
    * @see nsISHistoryListener
    * @see nsSupportsWeakReference
    */
-   void addSHistoryListener(in nsISHistoryListener aListener);
+  void addSHistoryListener(in nsISHistoryListener aListener);
 
   /**
    * Called to remove a listener for the session history component.
    * Listeners are notified when pages are loaded from history.
-   * 
-   * @param aListener         Listener object to be removed from 
+   *
+   * @param aListener         Listener object to be removed from
    *                          session history.
    *
-   * @note                    A listener object must implement 
+   * @note                    A listener object must implement
    *                          nsISHistoryListener and nsSupportsWeakReference
    * @see nsISHistoryListener
    * @see nsSupportsWeakReference
-   */ 
-   void removeSHistoryListener(in nsISHistoryListener aListener);
+   */
+  void removeSHistoryListener(in nsISHistoryListener aListener);
+
+  void reloadCurrentEntry();
 
   /**
-   * Set the listener to handle cross nsISHistory navigation when it works
-   * in "partial" mode.
+   * Load the entry at the particular index.
    */
-   void setPartialSHistoryListener(in nsIPartialSHistoryListener aListener);
+  [noscript]
+  void gotoIndex(in long aIndex);
 
   /**
-   * Called to obtain a enumerator for all the  documents stored in
-   * session history. The enumerator object thus returned by this method
-   * can be traversed using nsISimpleEnumerator. 
-   *
-   * @note  To access individual history entries of the enumerator, perform the
-   *        following steps:
-   *        1) Call nsISHistory->GetSHistoryEnumerator() to obtain handle 
-   *           the nsISimpleEnumerator object.
-   *        2) Use nsISimpleEnumerator->GetNext() on the object returned
-   *           by step #1 to obtain handle to the next object in the list. 
-   *           The object returned by this step is of type nsISupports.
-   *        3) Perform a QueryInterface on the object returned by step #2 
-   *           to nsISHEntry.
-   *        4) Use nsISHEntry to access properties of each history entry. 
-   *
-   * @see nsISimpleEnumerator
-   * @see nsISHEntry
-   * @see QueryInterface()
-   * @see do_QueryInterface()
-   */
-   readonly attribute nsISimpleEnumerator SHistoryEnumerator;
-
-   void reloadCurrentEntry();
-
-   /**
    * Called to obtain the index to a given history entry.
    *
    * @param aEntry            The entry to obtain the index of.
@@ -214,29 +126,123 @@ interface nsISHistory: nsISupports
    *                          <code>NS_ERROR_FAILURE</code> Error in obtaining
    *                          index for the given history entry.
    */
-   long getIndexOfEntry(in nsISHEntry aEntry);
+  [noscript, notxpcom]
+  long getIndexOfEntry(in nsISHEntry aEntry);
 
   /**
-   * Called when this nsISHistory has became the active history of a grouped
-   * session history.
+   * Add a new Entry to the History List.
    *
-   * @param globalLength      The up to date number of entries in the grouped
-   *                          session history.
-   * @param targetIndex       The local index to navigate to.
+   * @param aEntry            The entry to add.
+   * @param aPersist          If true this specifies that the entry should
+   *                          persist in the list. If false, this means that
+   *                          when new entries are added this element will not
+   *                          appear in the session history list.
    */
-   void onPartialSHistoryActive(in long globalLength, in long targetIndex);
+  void addEntry(in nsISHEntry aEntry, in boolean aPersist);
 
   /**
-   * Called when this nsISHistory has became inactive history of a grouped
-   * session history.
+   * Sets the toplevel docshell object to which this SHistory object belongs to.
    */
-   void onPartialSHistoryDeactive();
+  [noscript, notxpcom]
+  void setRootDocShell(in nsIDocShell rootDocShell);
 
   /**
-   * Called when it's attached to a nsIGroupedSHistory instance.
+   * Update the index maintained by sessionHistory
+   */
+  void updateIndex();
+
+  /**
+   * Replace the nsISHEntry at a particular index
    *
-   * @param offset            The number of entries in the grouped session
-   *                          history before this session history object.
+   * @param aIndex            The index at which the entry should be replaced.
+   * @param aReplaceEntry     The replacement entry for the index.
    */
-   void onAttachGroupedSHistory(in long offset);
+  void replaceEntry(in long aIndex, in nsISHEntry aReplaceEntry);
+
+  /**
+   * Notifies all registered session history listeners about an impending
+   * reload.
+   *
+   * @param aReloadURI        The URI of the document to be reloaded.
+   * @param aReloadFlags      Flags that indicate how the document is to be
+   *                          refreshed. See constants on the nsIWebNavigation
+   *                          interface.
+   *
+   * @return                  Whether the operation can proceed.
+   */
+  boolean notifyOnHistoryReload(in nsIURI aReloadURI,
+                                in unsigned long aReloadFlags);
+
+  /**
+   * Evict content viewers which don't lie in the "safe" range around aIndex.
+   * In practice, this should leave us with no more than gHistoryMaxViewers
+   * viewers associated with this SHistory object.
+   *
+   * Also make sure that the total number of content viewers in all windows is
+   * not greater than our global max; if it is, evict viewers as appropriate.
+   *
+   * @param aIndex           The index around which the "safe" range is
+   *                         centered.  In general, if you just navigated the
+   *                         history, aIndex should be the index history was
+   *                         navigated to.
+   */
+  void evictOutOfRangeContentViewers(in long aIndex);
+
+  /**
+   * Evict the content viewer associated with a bfcache entry that has timed
+   * out.
+   */
+  void evictExpiredContentViewerForEntry(in nsIBFCacheEntry aEntry);
+
+  /**
+   * Evict all the content viewers in this session history
+   */
+  void evictAllContentViewers();
+
+  /**
+   * Add a BFCache entry to expiration tracker so it gets evicted on
+   * expiration.
+   */
+  [noscript, notxpcom]
+  void addToExpirationTracker(in nsIBFCacheEntry aEntry);
+
+  /**
+   * Remove a BFCache entry from expiration tracker.
+   */
+  [noscript, notxpcom]
+  void removeFromExpirationTracker(in nsIBFCacheEntry aEntry);
+
+  /**
+   * Remove dynamic entries found at given index.
+   *
+   * @param aIndex           Index to remove dynamic entries from. It will be
+   *                         passed to RemoveEntries as aStartIndex.
+   * @param aEntry (optional)  The entry to start looking in for dynamic
+   *                         entries. Only the dynamic descendants of the
+   *                         entry will be removed. If not given, all dynamic
+   *                         entries at the index will be removed.
+   */
+  [noscript, notxpcom]
+  void RemoveDynEntries(in long aIndex, in nsISHEntry aEntry);
+
+  /**
+   * Similar to RemoveDynEntries, but instead of specifying an index, use the
+   * given BFCacheEntry to find the index and remove dynamic entries from the
+   * index.
+   *
+   * The method takes no effect if the bfcache entry is not or no longer hold
+   * by the SHistory instance.
+   *
+   * @param aEntry           The bfcache entry to look up for index to remove
+   *                         dynamic entries from.
+   */
+  [noscript, notxpcom]
+  void RemoveDynEntriesForBFCacheEntry(in nsIBFCacheEntry aEntry);
+
+  /**
+   * Removes entries from the history if their docshellID is in
+   * aIDs array.
+   */
+  [noscript, notxpcom]
+  void RemoveEntries(in nsDocshellIDArray aIDs, in long aStartIndex);
 };

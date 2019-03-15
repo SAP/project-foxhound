@@ -4,7 +4,7 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
- 
+
 #ifndef SKSL_PROGRAMELEMENT
 #define SKSL_PROGRAMELEMENT
 
@@ -17,17 +17,22 @@ namespace SkSL {
  */
 struct ProgramElement : public IRNode {
     enum Kind {
-        kVar_Kind,
+        kEnum_Kind,
+        kExtension_Kind,
         kFunction_Kind,
         kInterfaceBlock_Kind,
-        kExtension_Kind
+        kModifiers_Kind,
+        kSection_Kind,
+        kVar_Kind
     };
 
-    ProgramElement(Position position, Kind kind)
-    : INHERITED(position)
+    ProgramElement(int offset, Kind kind)
+    : INHERITED(offset)
     , fKind(kind) {}
 
     Kind fKind;
+
+    virtual std::unique_ptr<ProgramElement> clone() const = 0;
 
     typedef IRNode INHERITED;
 };

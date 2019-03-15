@@ -8,9 +8,8 @@
 
 var keygenThread;
 
-function onLoad()
-{
-  keygenThread = window.arguments[0].QueryInterface(Components.interfaces.nsIKeygenThread);
+function onLoad() {
+  keygenThread = window.arguments[0].QueryInterface(Ci.nsIKeygenThread);
 
   if (!keygenThread) {
     window.close();
@@ -24,14 +23,13 @@ function onLoad()
       if (topic == "keygen-finished") {
         window.close();
       }
-    }
+    },
   };
 
   keygenThread.startKeyGeneration(obs);
 }
 
-function onClose()
-{
+function onClose() {
   window.setCursor("auto");
 
   var alreadyClosed = {};

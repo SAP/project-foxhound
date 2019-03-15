@@ -2,8 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var Cu = Components.utils;
-Cu.import("resource://gre/modules/DownloadUtils.jsm");
+ChromeUtils.import("resource://gre/modules/DownloadUtils.jsm");
 
 const gDecimalSymbol = Number(5.4).toLocaleString().match(/\D/);
 function _(str) {
@@ -12,13 +11,13 @@ function _(str) {
 
 function testConvertByteUnits(aBytes, aValue, aUnit) {
   let [value, unit] = DownloadUtils.convertByteUnits(aBytes);
-  do_check_eq(value, aValue);
-  do_check_eq(unit, aUnit);
+  Assert.equal(value, aValue);
+  Assert.equal(unit, aUnit);
 }
 
 function testTransferTotal(aCurrBytes, aMaxBytes, aTransfer) {
   let transfer = DownloadUtils.getTransferTotal(aCurrBytes, aMaxBytes);
-  do_check_eq(transfer, aTransfer);
+  Assert.equal(transfer, aTransfer);
 }
 
 // Get the em-dash character because typing it directly here doesn't work :(
@@ -40,13 +39,13 @@ function testStatus(aFunc, aCurr, aMore, aRate, aTest) {
   }
 
   // Make sure the status text matches
-  do_check_eq(status, _(aTest[0].replace(/--/, gDash)));
+  Assert.equal(status, _(aTest[0].replace(/--/, gDash)));
 
   // Make sure the lastSeconds matches
   if (last == Infinity)
-    do_check_eq(last, aTest[1]);
+    Assert.equal(last, aTest[1]);
   else
-    do_check_true(Math.abs(last - aTest[1]) < .1);
+    Assert.ok(Math.abs(last - aTest[1]) < .1);
 }
 
 function testURI(aURI, aDisp, aHost) {
@@ -55,8 +54,8 @@ function testURI(aURI, aDisp, aHost) {
   let [disp, host] = DownloadUtils.getURIHost(aURI);
 
   // Make sure we have the right display host and full host
-  do_check_eq(disp, aDisp);
-  do_check_eq(host, aHost);
+  Assert.equal(disp, aDisp);
+  Assert.equal(host, aHost);
 }
 
 
@@ -64,7 +63,7 @@ function testGetReadableDates(aDate, aCompactValue) {
   const now = new Date(2000, 11, 31, 11, 59, 59);
 
   let [dateCompact] = DownloadUtils.getReadableDates(aDate, now);
-  do_check_eq(dateCompact, aCompactValue);
+  Assert.equal(dateCompact, aCompactValue);
 }
 
 function testAllGetReadableDates() {
@@ -78,40 +77,27 @@ function testAllGetReadableDates() {
   const sixdaysago      = new Date(2000, 11, 25, 11, 30, 15);
   const sevendaysago    = new Date(2000, 11, 24, 11, 30, 15);
 
-  // TODO: Remove Intl fallback when no longer needed (bug 1344543).
-  const locale = typeof Intl === "undefined"
-                 ? undefined
-                 : Components.classes["@mozilla.org/chrome/chrome-registry;1"]
-                                     .getService(Components.interfaces.nsIXULChromeRegistry)
-                                     .getSelectedLocale("global", true);
+  let cDtf = Services.intl.DateTimeFormat;
 
-  let dts = Components.classes["@mozilla.org/intl/scriptabledateformat;1"].
-            getService(Components.interfaces.nsIScriptableDateFormat);
+  testGetReadableDates(today_11_30,
+                       (new cDtf(undefined, {timeStyle: "short"})).format(today_11_30));
+  testGetReadableDates(today_12_30,
+                       (new cDtf(undefined, {timeStyle: "short"})).format(today_12_30));
 
-  testGetReadableDates(today_11_30, dts.FormatTime("", dts.timeFormatNoSeconds,
-                                                   11, 30, 0));
-  testGetReadableDates(today_12_30, dts.FormatTime("", dts.timeFormatNoSeconds,
-                                                   12, 30, 0));
   testGetReadableDates(yesterday_11_30, "Yesterday");
   testGetReadableDates(yesterday_12_30, "Yesterday");
   testGetReadableDates(twodaysago,
-                       typeof Intl === "undefined"
-                       ? twodaysago.toLocaleFormat("%A")
-                       : twodaysago.toLocaleDateString(locale, { weekday: "long" }));
+                       twodaysago.toLocaleDateString(undefined, { weekday: "long" }));
   testGetReadableDates(sixdaysago,
-                       typeof Intl === "undefined"
-                       ? sixdaysago.toLocaleFormat("%A")
-                       : sixdaysago.toLocaleDateString(locale, { weekday: "long" }));
+                       sixdaysago.toLocaleDateString(undefined, { weekday: "long" }));
   testGetReadableDates(sevendaysago,
-                       (typeof Intl === "undefined"
-                        ? sevendaysago.toLocaleFormat("%B")
-                        : sevendaysago.toLocaleDateString(locale, { month: "long" })) + " " +
+                       sevendaysago.toLocaleDateString(undefined, { month: "long" }) + " " +
                        sevendaysago.getDate().toString().padStart(2, "0"));
 
   let [, dateTimeFull] = DownloadUtils.getReadableDates(today_11_30);
-  do_check_eq(dateTimeFull, dts.FormatDateTime("", dts.dateFormatLong,
-                                                   dts.timeFormatNoSeconds,
-                                                   2000, 12, 31, 11, 30, 0));
+
+  const dtOptions = { dateStyle: "long", timeStyle: "short" };
+  Assert.equal(dateTimeFull, (new cDtf(undefined, dtOptions)).format(today_11_30));
 }
 
 function run_test() {
@@ -169,7 +155,7 @@ function run_test() {
   testStatus(statusFunc, 6, 9, 1, ["1d 13h left -- 1.4 KB of 12.9 MB (100 bytes/sec)", 134981.320]);
   testStatus(statusFunc, 3, 8, 3, ["2d 1h left -- 54.3 KB of 9.2 GB (54.3 KB/sec)", 178596.872]);
   testStatus(statusFunc, 1, 8, 6, ["77d 11h left -- 100 bytes of 9.2 GB (1.4 KB/sec)", 6694972.470]);
-  testStatus(statusFunc, 6, 8, 7, ["1979d 22h left -- 1.4 KB of 9.2 GB (58 bytes/sec)", 171068089.672]);
+  testStatus(statusFunc, 6, 8, 7, ["1,979d 22h left -- 1.4 KB of 9.2 GB (58 bytes/sec)", 171068089.672]);
 
   testStatus(statusFunc, 0, 0, 5, ["Unknown time left -- 0 of 0 bytes (22.1 MB/sec)", Infinity]);
   testStatus(statusFunc, 0, 6, 0, ["Unknown time left -- 0 bytes of 1.4 KB (0 bytes/sec)", Infinity]);
@@ -206,7 +192,7 @@ function run_test() {
   testStatus(statusFunc, 6, 9, 1, ["1d 13h left -- 1.4 KB of 12.9 MB", 134981.320]);
   testStatus(statusFunc, 3, 8, 3, ["2d 1h left -- 54.3 KB of 9.2 GB", 178596.872]);
   testStatus(statusFunc, 1, 8, 6, ["77d 11h left -- 100 bytes of 9.2 GB", 6694972.470]);
-  testStatus(statusFunc, 6, 8, 7, ["1979d 22h left -- 1.4 KB of 9.2 GB", 171068089.672]);
+  testStatus(statusFunc, 6, 8, 7, ["1,979d 22h left -- 1.4 KB of 9.2 GB", 171068089.672]);
 
   testStatus(statusFunc, 0, 0, 5, ["Unknown time left -- 0 of 0 bytes", Infinity]);
   testStatus(statusFunc, 0, 6, 0, ["Unknown time left -- 0 bytes of 1.4 KB", Infinity]);
@@ -219,7 +205,7 @@ function run_test() {
   testURI("jar:http://www.mozilla.com/file!/magic", "mozilla.com", "www.mozilla.com");
   testURI("file:///C:/Cool/Stuff/", "local file", "local file");
   // Don't test for moz-icon if we don't have a protocol handler for it (e.g. b2g):
-  if ("@mozilla.org/network/protocol;1?name=moz-icon" in Components.classes) {
+  if ("@mozilla.org/network/protocol;1?name=moz-icon" in Cc) {
     testURI("moz-icon:file:///test.extension", "local file", "local file");
     testURI("moz-icon://.extension", "moz-icon resource", "moz-icon resource");
   }

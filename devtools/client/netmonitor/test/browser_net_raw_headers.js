@@ -7,54 +7,82 @@
  * Tests if showing raw headers works.
  */
 
-add_task(function* () {
-  let { tab, monitor } = yield initNetMonitor(POST_DATA_URL);
+add_task(async function() {
+  const { tab, monitor } = await initNetMonitor(POST_DATA_URL);
   info("Starting test... ");
 
-  let { document, gStore, windowRequire } = monitor.panelWin;
-  let Actions = windowRequire("devtools/client/netmonitor/actions/index");
-  let { getSortedRequests } = windowRequire("devtools/client/netmonitor/selectors/index");
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
+  const {
+    getSortedRequests,
+  } = windowRequire("devtools/client/netmonitor/src/selectors/index");
 
-  gStore.dispatch(Actions.batchEnable(false));
+  store.dispatch(Actions.batchEnable(false));
 
-  let wait = waitForNetworkEvents(monitor, 0, 2);
-  yield ContentTask.spawn(tab.linkedBrowser, {}, function* () {
-    content.wrappedJSObject.performRequests();
-  });
-  yield wait;
+  // Execute requests.
+  await performRequests(monitor, tab, 2);
 
-  wait = waitForDOM(document, ".headers-overview");
+  wait = waitForDOM(document, "#headers-panel .tree-section", 2);
   EventUtils.sendMouseEvent({ type: "mousedown" },
     document.querySelectorAll(".request-list-item")[0]);
-  yield wait;
+  await wait;
 
-  wait = waitForDOM(document, ".raw-headers-container textarea", 2);
-  EventUtils.sendMouseEvent({ type: "click" },
-    document.querySelectorAll(".headers-summary .devtools-button")[1]);
-  yield wait;
+  wait = waitForDOM(document, "textarea.raw-headers", 2);
+  EventUtils.sendMouseEvent({ type: "click" }, getRawHeadersToggle("RESPONSE"));
+  EventUtils.sendMouseEvent({ type: "click" }, getRawHeadersToggle("REQUEST"));
+  await wait;
 
-  testShowRawHeaders(getSortedRequests(gStore.getState()).get(0));
+  testRawHeaderToggleStyle(true);
 
-  EventUtils.sendMouseEvent({ type: "click" },
-    document.querySelectorAll(".headers-summary .devtools-button")[1]);
+  testShowRawHeaders(getSortedRequests(store.getState()).get(0));
+
+  EventUtils.sendMouseEvent({ type: "click" }, getRawHeadersToggle("RESPONSE"));
+  EventUtils.sendMouseEvent({ type: "click" }, getRawHeadersToggle("REQUEST"));
+
+  testRawHeaderToggleStyle(false);
 
   testHideRawHeaders(document);
 
   return teardown(monitor);
 
+  /**
+   * Tests that checked is applied correctly
+   *
+   * @param checked
+   *        flag indicating whether toggle is checked or not
+   */
+  function testRawHeaderToggleStyle(checked) {
+    const rawHeadersRequestToggle = getRawHeadersToggle("REQUEST");
+    const rawHeadersResponseToggle = getRawHeadersToggle("RESPONSE");
+
+    if (checked) {
+      is(rawHeadersRequestToggle.checked, true,
+        "The 'Raw Request Headers' toggle should be 'checked'");
+      is(rawHeadersResponseToggle.checked, true,
+        "The 'Raw Response Headers' toggle should be 'checked'");
+    } else {
+      is(rawHeadersRequestToggle.checked, false,
+        "The 'Raw Request Headers' toggle should NOT be 'checked'");
+      is(rawHeadersResponseToggle.checked, false,
+        "The 'Raw Response Headers' toggle should NOT be 'checked'");
+    }
+  }
+
   /*
    * Tests that raw headers were displayed correctly
    */
   function testShowRawHeaders(data) {
-    let requestHeaders = document
-      .querySelectorAll(".raw-headers-container textarea")[0].value;
-    for (let header of data.requestHeaders.headers) {
+    // Request headers are rendered first, so it is element with index 1
+    const requestHeaders = document
+      .querySelectorAll("textarea.raw-headers")[1].value;
+    for (const header of data.requestHeaders.headers) {
       ok(requestHeaders.includes(header.name + ": " + header.value),
         "textarea contains request headers");
     }
-    let responseHeaders = document
-      .querySelectorAll(".raw-headers-container textarea")[1].value;
-    for (let header of data.responseHeaders.headers) {
+    // Response headers are rendered first, so it is element with index 0
+    const responseHeaders = document
+      .querySelectorAll("textarea.raw-headers")[0].value;
+    for (const header of data.responseHeaders.headers) {
       ok(responseHeaders.includes(header.name + ": " + header.value),
         "textarea contains response headers");
     }
@@ -66,5 +94,16 @@ add_task(function* () {
   function testHideRawHeaders() {
     ok(!document.querySelector(".raw-headers-container"),
       "raw request headers textarea is empty");
+  }
+
+  /**
+   * Returns the 'Raw Headers' button
+   */
+  function getRawHeadersToggle(rawHeaderType) {
+    if (rawHeaderType === "RESPONSE") {
+      // Response header is first displayed
+      return document.querySelectorAll(".devtools-checkbox-toggle")[0];
+    }
+    return document.querySelectorAll(".devtools-checkbox-toggle")[1];
   }
 });

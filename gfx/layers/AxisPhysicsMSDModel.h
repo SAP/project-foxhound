@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,7 +17,7 @@ namespace layers {
  * model.  A unit mass is assumed.
  */
 class AxisPhysicsMSDModel : public AxisPhysicsModel {
-public:
+ public:
   AxisPhysicsMSDModel(double aInitialPosition, double aInitialDestination,
                       double aInitialVelocity, double aSpringConstant,
                       double aDampingRatio);
@@ -40,11 +40,10 @@ public:
    */
   bool IsFinished(double aSmallestVisibleIncrement);
 
-protected:
-  virtual double Acceleration(const State &aState);
+ protected:
+  virtual double Acceleration(const State &aState) override;
 
-private:
-
+ private:
   /**
    * mDestination represents the target position and the resting position of
    * the simulated spring.
@@ -76,11 +75,9 @@ private:
    * - Reaches destination (exponentially decays) without oscillating.
    */
   double mDampingRatio;
-
 };
 
-
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla
 
 #endif

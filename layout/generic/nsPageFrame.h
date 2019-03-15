@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,33 +15,22 @@ class nsSharedPageData;
 
 // Page frame class used by the simple page sequence frame
 class nsPageFrame final : public nsContainerFrame {
-
-public:
-  NS_DECL_QUERYFRAME_TARGET(nsPageFrame)
+ public:
   NS_DECL_QUERYFRAME
-  NS_DECL_FRAMEARENA_HELPERS
+  NS_DECL_FRAMEARENA_HELPERS(nsPageFrame)
 
   friend nsPageFrame* NS_NewPageFrame(nsIPresShell* aPresShell,
-                                      nsStyleContext* aContext);
+                                      ComputedStyle* aStyle);
 
-  virtual void Reflow(nsPresContext*      aPresContext,
-                      ReflowOutput& aDesiredSize,
-                      const ReflowInput& aMaxSize,
-                      nsReflowStatus&      aStatus) override;
+  virtual void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
+                      const ReflowInput& aReflowInput,
+                      nsReflowStatus& aStatus) override;
 
-  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                                const nsRect&           aDirtyRect,
+  virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                 const nsDisplayListSet& aLists) override;
 
-  /**
-   * Get the "type" of the frame
-   *
-   * @see nsGkAtoms::pageFrame
-   */
-  virtual nsIAtom* GetType() const override;
-
 #ifdef DEBUG_FRAME_DUMP
-  virtual nsresult  GetFrameName(nsAString& aResult) const override;
+  virtual nsresult GetFrameName(nsAString& aResult) const override;
 #endif
 
   //////////////////
@@ -48,7 +38,7 @@ public:
   //////////////////
 
   // Tell the page which page number it is out of how many
-  virtual void  SetPageNumInfo(int32_t aPageNumber, int32_t aTotalPages);
+  virtual void SetPageNumInfo(int32_t aPageNumber, int32_t aTotalPages);
 
   virtual void SetSharedPageData(nsSharedPageData* aPD);
 
@@ -56,81 +46,68 @@ public:
   // user's settings
   virtual bool HonorPrintBackgroundSettings() override { return false; }
 
-  void PaintHeaderFooter(nsRenderingContext& aRenderingContext,
-                         nsPoint aPt, bool aSubpixelAA);
+  void PaintHeaderFooter(gfxContext& aRenderingContext, nsPoint aPt,
+                         bool aSubpixelAA);
 
-protected:
-  explicit nsPageFrame(nsStyleContext* aContext);
+  /**
+   * Return our page content frame.
+   */
+  void AppendDirectlyOwnedAnonBoxes(nsTArray<OwnedAnonBox>& aResult) override;
+
+ protected:
+  explicit nsPageFrame(ComputedStyle* aStyle);
   virtual ~nsPageFrame();
 
-  typedef enum {
-    eHeader,
-    eFooter
-  } nsHeaderFooterEnum;
+  typedef enum { eHeader, eFooter } nsHeaderFooterEnum;
 
-  nscoord GetXPosition(nsRenderingContext& aRenderingContext,
-                       nsFontMetrics&       aFontMetrics,
-                       const nsRect&        aRect, 
-                       int32_t              aJust,
-                       const nsString&      aStr);
+  nscoord GetXPosition(gfxContext& aRenderingContext,
+                       nsFontMetrics& aFontMetrics, const nsRect& aRect,
+                       int32_t aJust, const nsString& aStr);
 
-  void DrawHeaderFooter(nsRenderingContext& aRenderingContext,
-                        nsFontMetrics&       aFontMetrics,
-                        nsHeaderFooterEnum   aHeaderFooter,
-                        int32_t              aJust,
-                        const nsString&      sStr,
-                        const nsRect&        aRect,
-                        nscoord              aHeight,
-                        nscoord              aAscent,
-                        nscoord              aWidth);
+  void DrawHeaderFooter(gfxContext& aRenderingContext,
+                        nsFontMetrics& aFontMetrics,
+                        nsHeaderFooterEnum aHeaderFooter, int32_t aJust,
+                        const nsString& sStr, const nsRect& aRect,
+                        nscoord aHeight, nscoord aAscent, nscoord aWidth);
 
-  void DrawHeaderFooter(nsRenderingContext& aRenderingContext,
-                        nsFontMetrics&       aFontMetrics,
-                        nsHeaderFooterEnum   aHeaderFooter,
-                        const nsString&      aStrLeft,
-                        const nsString&      aStrRight,
-                        const nsString&      aStrCenter,
-                        const nsRect&        aRect,
-                        nscoord              aAscent,
-                        nscoord              aHeight);
+  void DrawHeaderFooter(gfxContext& aRenderingContext,
+                        nsFontMetrics& aFontMetrics,
+                        nsHeaderFooterEnum aHeaderFooter,
+                        const nsString& aStrLeft, const nsString& aStrRight,
+                        const nsString& aStrCenter, const nsRect& aRect,
+                        nscoord aAscent, nscoord aHeight);
 
   void ProcessSpecialCodes(const nsString& aStr, nsString& aNewStr);
 
-  int32_t     mPageNum;
-  int32_t     mTotNumPages;
+  int32_t mPageNum;
+  int32_t mTotNumPages;
 
   nsSharedPageData* mPD;
   nsMargin mPageContentMargin;
 };
 
+class nsPageBreakFrame final : public nsLeafFrame {
+  NS_DECL_FRAMEARENA_HELPERS(nsPageBreakFrame)
 
-class nsPageBreakFrame : public nsLeafFrame
-{
-  NS_DECL_FRAMEARENA_HELPERS
-
-  explicit nsPageBreakFrame(nsStyleContext* aContext);
+  explicit nsPageBreakFrame(ComputedStyle* aStyle);
   ~nsPageBreakFrame();
 
-  virtual void Reflow(nsPresContext*          aPresContext,
-                          ReflowOutput&     aDesiredSize,
-                          const ReflowInput& aReflowInput,
-                          nsReflowStatus&          aStatus) override;
-
-  virtual nsIAtom* GetType() const override;
+  virtual void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
+                      const ReflowInput& aReflowInput,
+                      nsReflowStatus& aStatus) override;
 
 #ifdef DEBUG_FRAME_DUMP
-  virtual nsresult  GetFrameName(nsAString& aResult) const override;
+  virtual nsresult GetFrameName(nsAString& aResult) const override;
 #endif
 
-protected:
-
+ protected:
   virtual nscoord GetIntrinsicISize() override;
   virtual nscoord GetIntrinsicBSize() override;
 
-    bool mHaveReflowed;
+  bool mHaveReflowed;
 
-    friend nsIFrame* NS_NewPageBreakFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
+  friend nsIFrame* NS_NewPageBreakFrame(nsIPresShell* aPresShell,
+                                        ComputedStyle* aStyle);
 };
 
 #endif /* nsPageFrame_h___ */
-

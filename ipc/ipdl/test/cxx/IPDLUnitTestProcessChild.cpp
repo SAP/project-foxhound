@@ -15,18 +15,12 @@ using mozilla::ipc::IOThreadChild;
 namespace mozilla {
 namespace _ipdltest {
 
-bool
-IPDLUnitTestProcessChild::Init(int aArgc, char* aArgv[])
-{
-    IPDLUnitTestChildInit(IOThreadChild::channel(),
-                          ParentPid(),
-                          IOThreadChild::message_loop());
+bool IPDLUnitTestProcessChild::Init(int aArgc, char* aArgv[]) {
+  IPDLUnitTestChildInit(IOThreadChild::channel(), ParentPid(),
+                        IOThreadChild::message_loop());
 
-    if (NS_FAILED(nsRegion::InitStatic()))
-      return false;
-
-    return true;
+  return true;
 }
 
-} // namespace _ipdltest
-} // namespace mozilla
+}  // namespace _ipdltest
+}  // namespace mozilla

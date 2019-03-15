@@ -2,8 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "base/basictypes.h"
 #include "GetUserMediaRequest.h"
+
+#include "base/basictypes.h"
 #include "mozilla/dom/MediaStreamBinding.h"
 #include "mozilla/dom/GetUserMediaRequestBinding.h"
 #include "nsIScriptGlobalObject.h"
@@ -13,25 +14,25 @@ namespace mozilla {
 namespace dom {
 
 GetUserMediaRequest::GetUserMediaRequest(
-    nsPIDOMWindowInner* aInnerWindow,
-    const nsAString& aCallID,
-    const MediaStreamConstraints& aConstraints,
-    bool aIsSecure)
-  : mInnerWindowID(aInnerWindow->WindowID())
-  , mOuterWindowID(aInnerWindow->GetOuterWindow()->WindowID())
-  , mCallID(aCallID)
-  , mConstraints(new MediaStreamConstraints(aConstraints))
-  , mIsSecure(aIsSecure)
-{
-}
+    nsPIDOMWindowInner* aInnerWindow, const nsAString& aCallID,
+    const MediaStreamConstraints& aConstraints, bool aIsSecure,
+    bool aIsHandlingUserInput)
+    : mInnerWindowID(aInnerWindow->WindowID()),
+      mOuterWindowID(aInnerWindow->GetOuterWindow()->WindowID()),
+      mCallID(aCallID),
+      mConstraints(new MediaStreamConstraints(aConstraints)),
+      mIsSecure(aIsSecure),
+      mIsHandlingUserInput(aIsHandlingUserInput) {}
 
-GetUserMediaRequest::GetUserMediaRequest(
-    nsPIDOMWindowInner* aInnerWindow,
-    const nsAString& aRawId,
-    const nsAString& aMediaSource)
-  : mRawID(aRawId)
-  , mMediaSource(aMediaSource)
-{
+GetUserMediaRequest::GetUserMediaRequest(nsPIDOMWindowInner* aInnerWindow,
+                                         const nsAString& aRawId,
+                                         const nsAString& aMediaSource)
+    : mInnerWindowID(0),
+      mOuterWindowID(0),
+      mRawID(aRawId),
+      mMediaSource(aMediaSource),
+      mIsSecure(false),
+      mIsHandlingUserInput(false) {
   if (aInnerWindow && aInnerWindow->GetOuterWindow()) {
     mOuterWindowID = aInnerWindow->GetOuterWindow()->WindowID();
   }
@@ -45,52 +46,34 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(GetUserMediaRequest)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
-JSObject*
-GetUserMediaRequest::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return GetUserMediaRequestBinding::Wrap(aCx, this, aGivenProto);
+JSObject* GetUserMediaRequest::WrapObject(JSContext* aCx,
+                                          JS::Handle<JSObject*> aGivenProto) {
+  return GetUserMediaRequest_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-nsISupports* GetUserMediaRequest::GetParentObject()
-{
-  return nullptr;
-}
+nsISupports* GetUserMediaRequest::GetParentObject() { return nullptr; }
 
-void GetUserMediaRequest::GetCallID(nsString& retval)
-{
-  retval = mCallID;
-}
+void GetUserMediaRequest::GetCallID(nsString& retval) { retval = mCallID; }
 
-void GetUserMediaRequest::GetRawID(nsString& retval)
-{
-  retval = mRawID;
-}
+void GetUserMediaRequest::GetRawID(nsString& retval) { retval = mRawID; }
 
-void GetUserMediaRequest::GetMediaSource(nsString& retval)
-{
+void GetUserMediaRequest::GetMediaSource(nsString& retval) {
   retval = mMediaSource;
 }
 
-uint64_t GetUserMediaRequest::WindowID()
-{
-  return mOuterWindowID;
+uint64_t GetUserMediaRequest::WindowID() { return mOuterWindowID; }
+
+uint64_t GetUserMediaRequest::InnerWindowID() { return mInnerWindowID; }
+
+bool GetUserMediaRequest::IsSecure() { return mIsSecure; }
+
+bool GetUserMediaRequest::IsHandlingUserInput() const {
+  return mIsHandlingUserInput;
 }
 
-uint64_t GetUserMediaRequest::InnerWindowID()
-{
-  return mInnerWindowID;
-}
-
-bool GetUserMediaRequest::IsSecure()
-{
-  return mIsSecure;
-}
-
-void
-GetUserMediaRequest::GetConstraints(MediaStreamConstraints &result)
-{
+void GetUserMediaRequest::GetConstraints(MediaStreamConstraints& result) {
   result = *mConstraints;
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

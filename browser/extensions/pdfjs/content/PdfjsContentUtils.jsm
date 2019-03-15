@@ -12,50 +12,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/* globals Components, Services, XPCOMUtils */
 
 "use strict";
 
 var EXPORTED_SYMBOLS = ["PdfjsContentUtils"];
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cr = Components.results;
-const Cu = Components.utils;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var PdfjsContentUtils = {
-  _mm: null,
+  _mm: Services.cpmm,
 
   /*
    * Public API
    */
-
-  get isRemote() {
-    return (Services.appinfo.processType ===
-            Services.appinfo.PROCESS_TYPE_CONTENT);
-  },
-
-  init() {
-    // child *process* mm, or when loaded into the parent for in-content
-    // support the psuedo child process mm 'child PPMM'.
-    if (!this._mm) {
-      this._mm = Cc["@mozilla.org/childprocessmessagemanager;1"].
-        getService(Ci.nsISyncMessageSender);
-      this._mm.addMessageListener("PDFJS:Child:refreshSettings", this);
-      Services.obs.addObserver(this, "quit-application", false);
-    }
-  },
-
-  uninit() {
-    if (this._mm) {
-      this._mm.removeMessageListener("PDFJS:Child:refreshSettings", this);
-      Services.obs.removeObserver(this, "quit-application");
-    }
-    this._mm = null;
-  },
 
   /*
    * prefs utilities - the child does not have write access to prefs.
@@ -65,44 +34,36 @@ var PdfjsContentUtils = {
 
   clearUserPref(aPrefName) {
     this._mm.sendSyncMessage("PDFJS:Parent:clearUserPref", {
-      name: aPrefName
+      name: aPrefName,
     });
   },
 
   setIntPref(aPrefName, aPrefValue) {
     this._mm.sendSyncMessage("PDFJS:Parent:setIntPref", {
       name: aPrefName,
-      value: aPrefValue
+      value: aPrefValue,
     });
   },
 
   setBoolPref(aPrefName, aPrefValue) {
     this._mm.sendSyncMessage("PDFJS:Parent:setBoolPref", {
       name: aPrefName,
-      value: aPrefValue
+      value: aPrefValue,
     });
   },
 
   setCharPref(aPrefName, aPrefValue) {
     this._mm.sendSyncMessage("PDFJS:Parent:setCharPref", {
       name: aPrefName,
-      value: aPrefValue
+      value: aPrefValue,
     });
   },
 
   setStringPref(aPrefName, aPrefValue) {
     this._mm.sendSyncMessage("PDFJS:Parent:setStringPref", {
       name: aPrefName,
-      value: aPrefValue
+      value: aPrefValue,
     });
-  },
-
-  /*
-   * Forwards default app query to the parent where we check various
-   * handler app settings only available in the parent process.
-   */
-  isDefaultHandlerApp() {
-    return this._mm.sendSyncMessage("PDFJS:Parent:isDefaultHandlerApp")[0];
   },
 
   /*
@@ -111,39 +72,12 @@ var PdfjsContentUtils = {
    */
   displayWarning(aWindow, aMessage, aLabel, aAccessKey) {
     // the child's dom frame mm associated with the window.
-    let winmm = aWindow.QueryInterface(Ci.nsIInterfaceRequestor)
-                       .getInterface(Ci.nsIDocShell)
-                       .QueryInterface(Ci.nsIInterfaceRequestor)
-                       .getInterface(Ci.nsIContentFrameMessageManager);
+    let winmm = aWindow.docShell.messageManager;
     winmm.sendAsyncMessage("PDFJS:Parent:displayWarning", {
       message: aMessage,
       label: aLabel,
       accessKey: aAccessKey,
     });
   },
-
-  /*
-   * Events
-   */
-
-  observe(aSubject, aTopic, aData) {
-    if (aTopic === "quit-application") {
-      this.uninit();
-    }
-  },
-
-  receiveMessage(aMsg) {
-    switch (aMsg.name) {
-      case "PDFJS:Child:refreshSettings":
-        // Only react to this if we are remote.
-        if (Services.appinfo.processType ===
-            Services.appinfo.PROCESS_TYPE_CONTENT) {
-          let jsm = "resource://pdf.js/PdfJs.jsm";
-          let pdfjs = Components.utils.import(jsm, {}).PdfJs;
-          pdfjs.updateRegistration();
-        }
-        break;
-    }
-  }
 };
 

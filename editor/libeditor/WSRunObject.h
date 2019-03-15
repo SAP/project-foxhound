@@ -6,20 +6,14 @@
 #ifndef WSRunObject_h
 #define WSRunObject_h
 
-#include "nsCOMPtr.h"
-#include "nsIEditor.h" // for EDirection
-#include "nsINode.h"
-#include "nscore.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/Text.h"
-
-class nsIDOMNode;
+#include "mozilla/EditorBase.h"
+#include "mozilla/EditorDOMPoint.h"  // for EditorDOMPoint
 
 namespace mozilla {
 
 class HTMLEditor;
 class HTMLEditRules;
-struct EditorDOMPoint;
 
 // class WSRunObject represents the entire whitespace situation
 // around a given point.  It collects up a list of nodes that contain
@@ -31,13 +25,14 @@ struct EditorDOMPoint;
 // is before a block.  Or it could be significant because it is
 // surrounded by text, or starts and ends with nbsps, etc.
 
-// Throughout I refer to LeadingWS, NormalWS, TrailingWS.  LeadingWS & TrailingWS
-// are runs of ascii ws that are insignificant (do not render) because they
-// are adjacent to block boundaries, or after a break.  NormalWS is ws that
-// does cause soem rendering.  Note that not all the ws in a NormalWS run need
-// render.  For example, two ascii spaces surrounded by text on both sides
-// will only render as one space (in non-preformatted stlye html), yet both
-// spaces count as NormalWS.  Together, they render as the one visible space.
+// Throughout I refer to LeadingWS, NormalWS, TrailingWS.  LeadingWS &
+// TrailingWS are runs of ascii ws that are insignificant (do not render)
+// because they are adjacent to block boundaries, or after a break.  NormalWS is
+// ws that does cause soem rendering.  Note that not all the ws in a NormalWS
+// run need render.  For example, two ascii spaces surrounded by text on both
+// sides will only render as one space (in non-preformatted stlye html), yet
+// both spaces count as NormalWS.  Together, they render as the one visible
+// space.
 
 /**
  * A type-safe bitfield indicating various types of whitespace or other things.
@@ -46,21 +41,19 @@ struct EditorDOMPoint;
  * XXX: If this idea is useful in other places, we should generalize it using a
  * template.
  */
-class WSType
-{
-public:
-  enum Enum
-  {
-    none       = 0,
-    leadingWS  = 1,      // leading insignificant ws, ie, after block or br
-    trailingWS = 1 << 1, // trailing insignificant ws, ie, before block
-    normalWS   = 1 << 2, // normal significant ws, ie, after text, image, ...
-    text       = 1 << 3, // indicates regular (non-ws) text
-    special    = 1 << 4, // indicates an inline non-container, like image
-    br         = 1 << 5, // indicates a br node
-    otherBlock = 1 << 6, // indicates a block other than one ws run is in
-    thisBlock  = 1 << 7, // indicates the block ws run is in
-    block      = otherBlock | thisBlock // block found
+class WSType {
+ public:
+  enum Enum {
+    none = 0,
+    leadingWS = 1,        // leading insignificant ws, ie, after block or br
+    trailingWS = 1 << 1,  // trailing insignificant ws, ie, before block
+    normalWS = 1 << 2,    // normal significant ws, ie, after text, image, ...
+    text = 1 << 3,        // indicates regular (non-ws) text
+    special = 1 << 4,     // indicates an inline non-container, like image
+    br = 1 << 5,          // indicates a br node
+    otherBlock = 1 << 6,  // indicates a block other than one ws run is in
+    thisBlock = 1 << 7,   // indicates the block ws run is in
+    block = otherBlock | thisBlock  // block found
   };
 
   /**
@@ -68,40 +61,34 @@ public:
    * themselves, and are only a separate type because there's no other obvious
    * way to name specific WSType values.
    */
-  MOZ_IMPLICIT WSType(const Enum& aEnum = none)
-    : mEnum(aEnum)
-  {}
+  MOZ_IMPLICIT WSType(const Enum& aEnum = none) : mEnum(aEnum) {}
 
   // operator==, &, and | need to access mEnum
   friend bool operator==(const WSType& aLeft, const WSType& aRight);
   friend const WSType operator&(const WSType& aLeft, const WSType& aRight);
   friend const WSType operator|(const WSType& aLeft, const WSType& aRight);
-  WSType& operator=(const WSType& aOther)
-  {
+  WSType& operator=(const WSType& aOther) {
     // This handles self-assignment fine
     mEnum = aOther.mEnum;
     return *this;
   }
-  WSType& operator&=(const WSType& aOther)
-  {
+  WSType& operator&=(const WSType& aOther) {
     mEnum &= aOther.mEnum;
     return *this;
   }
-  WSType& operator|=(const WSType& aOther)
-  {
+  WSType& operator|=(const WSType& aOther) {
     mEnum |= aOther.mEnum;
     return *this;
   }
 
-private:
+ private:
   uint16_t mEnum;
   void bool_conversion_helper() {}
 
-public:
+ public:
   // Allow boolean conversion with no numeric conversion
   typedef void (WSType::*bool_type)();
-  operator bool_type() const
-  {
+  operator bool_type() const {
     return mEnum ? &WSType::bool_conversion_helper : nullptr;
   }
 };
@@ -110,25 +97,21 @@ public:
  * These are declared as global functions so "WSType::Enum == WSType" et al.
  * will work using the implicit constructor.
  */
-inline bool operator==(const WSType& aLeft, const WSType& aRight)
-{
+inline bool operator==(const WSType& aLeft, const WSType& aRight) {
   return aLeft.mEnum == aRight.mEnum;
 }
 
-inline bool operator!=(const WSType& aLeft, const WSType& aRight)
-{
+inline bool operator!=(const WSType& aLeft, const WSType& aRight) {
   return !(aLeft == aRight);
 }
 
-inline const WSType operator&(const WSType& aLeft, const WSType& aRight)
-{
+inline const WSType operator&(const WSType& aLeft, const WSType& aRight) {
   WSType ret;
   ret.mEnum = aLeft.mEnum & aRight.mEnum;
   return ret;
 }
 
-inline const WSType operator|(const WSType& aLeft, const WSType& aRight)
-{
+inline const WSType operator|(const WSType& aLeft, const WSType& aRight) {
   WSType ret;
   ret.mEnum = aLeft.mEnum | aRight.mEnum;
   return ret;
@@ -139,41 +122,37 @@ inline const WSType operator|(const WSType& aLeft, const WSType& aRight)
  * because operators between WSType and int shouldn't work
  */
 inline const WSType operator&(const WSType::Enum& aLeft,
-                              const WSType::Enum& aRight)
-{
+                              const WSType::Enum& aRight) {
   return WSType(aLeft) & WSType(aRight);
 }
 
 inline const WSType operator|(const WSType::Enum& aLeft,
-                              const WSType::Enum& aRight)
-{
+                              const WSType::Enum& aRight) {
   return WSType(aLeft) | WSType(aRight);
 }
 
-class MOZ_STACK_CLASS WSRunObject final
-{
-public:
-  enum BlockBoundary
-  {
-    kBeforeBlock,
-    kBlockStart,
-    kBlockEnd,
-    kAfterBlock
-  };
+class MOZ_STACK_CLASS WSRunObject final {
+ protected:
+  typedef EditorBase::AutoTransactionsConserveSelection
+      AutoTransactionsConserveSelection;
 
-  enum {eBefore = 1};
-  enum {eAfter  = 1 << 1};
-  enum {eBoth   = eBefore | eAfter};
+ public:
+  enum BlockBoundary { kBeforeBlock, kBlockStart, kBlockEnd, kAfterBlock };
 
+  enum { eBefore = 1 };
+  enum { eAfter = 1 << 1 };
+  enum { eBoth = eBefore | eAfter };
+
+  template <typename PT, typename CT>
+  WSRunObject(HTMLEditor* aHTMLEditor,
+              const EditorDOMPointBase<PT, CT>& aPoint);
   WSRunObject(HTMLEditor* aHTMLEditor, nsINode* aNode, int32_t aOffset);
-  WSRunObject(HTMLEditor* aHTMLEditor, nsIDOMNode* aNode, int32_t aOffset);
   ~WSRunObject();
 
   // ScrubBlockBoundary removes any non-visible whitespace at the specified
   // location relative to a block node.
   static nsresult ScrubBlockBoundary(HTMLEditor* aHTMLEditor,
-                                     BlockBoundary aBoundary,
-                                     nsINode* aBlock,
+                                     BlockBoundary aBoundary, nsINode* aBlock,
                                      int32_t aOffset = -1);
 
   // PrepareToJoinBlocks fixes up ws at the end of aLeftBlock and the
@@ -211,21 +190,56 @@ public:
                                              nsCOMPtr<nsINode>* aSplitNode,
                                              int32_t* aSplitOffset);
 
-  // InsertBreak inserts a br node at {aInOutParent,aInOutOffset}
-  // and makes any needed adjustments to ws around that point.
-  // example of fixup: normalws after {aInOutParent,aInOutOffset}
-  //                   needs to begin with nbsp.
-  already_AddRefed<dom::Element> InsertBreak(nsCOMPtr<nsINode>* aInOutParent,
-                                             int32_t* aInOutOffset,
-                                             nsIEditor::EDirection aSelect);
+  /**
+   * InsertBreak() inserts a <br> node at (before) aPointToInsert and delete
+   * unnecessary whitespaces around there and/or replaces whitespaces with
+   * non-breaking spaces.  Note that if the point is in a text node, the
+   * text node will be split and insert new <br> node between the left node
+   * and the right node.
+   *
+   * @param aSelection      The selection for the editor.
+   * @param aPointToInsert  The point to insert new <br> element.  Note that
+   *                        it'll be inserted before this point.  I.e., the
+   *                        point will be the point of new <br>.
+   * @param aSelect         If eNone, this won't change selection.
+   *                        If eNext, selection will be collapsed after the
+   *                        <br> element.
+   *                        If ePrevious, selection will be collapsed at the
+   *                        <br> element.
+   * @return                The new <br> node.  If failed to create new <br>
+   *                        node, returns nullptr.
+   */
+  template <typename PT, typename CT>
+  already_AddRefed<dom::Element> InsertBreak(
+      Selection& aSelection, const EditorDOMPointBase<PT, CT>& aPointToInsert,
+      nsIEditor::EDirection aSelect);
 
-  // InsertText inserts a string at {aInOutParent,aInOutOffset} and makes any
-  // needed adjustments to ws around that point.  Example of fixup:
-  // trailingws before {aInOutParent,aInOutOffset} needs to be removed.
-  nsresult InsertText(const nsAString& aStringToInsert,
-                      nsCOMPtr<nsINode>* aInOutNode,
-                      int32_t* aInOutOffset,
-                      nsIDocument* aDoc);
+  /**
+   * InsertText() inserts aStringToInsert to aPointToInsert and makes any
+   * needed adjustments to white spaces around that point. E.g., trailing white
+   * spaces before aPointToInsert needs to be removed.
+   * This calls EditorBase::InsertTextWithTransaction() after adjusting white
+   * spaces.  So, please refer the method's explanation to know what this
+   * method exactly does.
+   *
+   * @param aDocument       The document of this editor.
+   * @param aStringToInsert The string to insert.
+   * @param aPointToInser   The point to insert aStringToInsert.
+   *                        Must be valid DOM point.
+   * @param aPointAfterInsertedString
+   *                        The point after inserted aStringToInsert.
+   *                        So, when this method actually inserts string,
+   *                        this is set to a point in the text node.
+   *                        Otherwise, this may be set to aPointToInsert.
+   * @return                When this succeeds to insert the string or
+   *                        does nothing during composition, returns NS_OK.
+   *                        Otherwise, an error code.
+   */
+  template <typename PT, typename CT>
+  nsresult InsertText(dom::Document& aDocument,
+                      const nsAString& aStringToInsert,
+                      const EditorDOMPointBase<PT, CT>& aPointToInsert,
+                      EditorRawDOMPoint* aPointAfterInsertedString = nullptr);
 
   // DeleteWSBackward deletes a single visible piece of ws before the ws
   // point (the point to create the wsRunObject, passed to its constructor).
@@ -238,36 +252,49 @@ public:
   // makes any needed conversion to adjacent ws to retain its significance.
   nsresult DeleteWSForward();
 
-  // PriorVisibleNode returns the first piece of visible thing before
-  // {aNode,aOffset}.  If there is no visible ws qualifying it returns what
-  // is before the ws run.  Note that {outVisNode,outVisOffset} is set to
-  // just AFTER the visible object.
-  void PriorVisibleNode(nsINode* aNode,
-                        int32_t aOffset,
-                        nsCOMPtr<nsINode>* outVisNode,
-                        int32_t* outVisOffset,
-                        WSType* outType);
+  // PriorVisibleNode() returns the first piece of visible thing before aPoint.
+  // If there is no visible ws qualifying it returns what is before the ws run.
+  // If outVisNode and/or outvisOffset is unused, callers can use nullptr.
+  // Note that {outVisNode,outVisOffset} is set to just AFTER the visible
+  // object. Also outVisOffset might be invalid offset unless outVisNode is
+  // start reason node.
+  template <typename PT, typename CT>
+  void PriorVisibleNode(const EditorDOMPointBase<PT, CT>& aPoint,
+                        nsCOMPtr<nsINode>* outVisNode, int32_t* outVisOffset,
+                        WSType* outType) const;
 
-  // NextVisibleNode returns the first piece of visible thing after
-  // {aNode,aOffset}.  If there is no visible ws qualifying it returns what
-  // is after the ws run.  Note that {outVisNode,outVisOffset} is set to just
-  // BEFORE the visible object.
-  void NextVisibleNode(nsINode* aNode,
-                       int32_t aOffset,
-                       nsCOMPtr<nsINode>* outVisNode,
-                       int32_t* outVisOffset,
-                       WSType* outType);
+  template <typename PT, typename CT>
+  void PriorVisibleNode(const EditorDOMPointBase<PT, CT>& aPoint,
+                        WSType* outType) const {
+    PriorVisibleNode(aPoint, nullptr, nullptr, outType);
+  }
+
+  // NextVisibleNode() returns the first piece of visible thing after aPoint.
+  // If there is no visible ws qualifying it returns what is after the ws run.
+  // If outVisNode and/or outvisOffset is unused, callers can use nullptr.
+  // Note that {outVisNode,outVisOffset} is set to just BEFORE the visible
+  // object. Also outVisOffset might be invalid offset unless outVisNode is
+  // end reason node.
+  template <typename PT, typename CT>
+  void NextVisibleNode(const EditorDOMPointBase<PT, CT>& aPoint,
+                       nsCOMPtr<nsINode>* outVisNode, int32_t* outVisOffset,
+                       WSType* outType) const;
+
+  template <typename PT, typename CT>
+  void NextVisibleNode(const EditorDOMPointBase<PT, CT>& aPoint,
+                       WSType* outType) const {
+    NextVisibleNode(aPoint, nullptr, nullptr, outType);
+  }
 
   // AdjustWhitespace examines the ws object for nbsp's that can
   // be safely converted to regular ascii space and converts them.
   nsresult AdjustWhitespace();
 
-protected:
+ protected:
   // WSFragment represents a single run of ws (all leadingws, or all normalws,
   // or all trailingws, or all leading+trailingws).  Note that this single run
   // may still span multiple nodes.
-  struct WSFragment final
-  {
+  struct WSFragment final {
     nsCOMPtr<nsINode> mStartNode;  // node where ws run starts
     nsCOMPtr<nsINode> mEndNode;    // node where ws run ends
     int32_t mStartOffset;          // offset where ws run starts
@@ -278,39 +305,29 @@ protected:
     WSFragment *mLeft, *mRight;
 
     WSFragment()
-      : mStartOffset(0)
-      , mEndOffset(0)
-      , mLeft(nullptr)
-      , mRight(nullptr)
-    {}
+        : mStartOffset(0), mEndOffset(0), mLeft(nullptr), mRight(nullptr) {}
+
+    EditorRawDOMPoint StartPoint() const {
+      return EditorRawDOMPoint(mStartNode, mStartOffset);
+    }
+    EditorRawDOMPoint EndPoint() const {
+      return EditorRawDOMPoint(mEndNode, mEndOffset);
+    }
   };
 
   // A WSPoint struct represents a unique location within the ws run.  It is
   // always within a textnode that is one of the nodes stored in the list
   // in the wsRunObject.  For convenience, the character at that point is also
   // stored in the struct.
-  struct MOZ_STACK_CLASS WSPoint final
-  {
+  struct MOZ_STACK_CLASS WSPoint final {
     RefPtr<dom::Text> mTextNode;
     uint32_t mOffset;
     char16_t mChar;
 
-    WSPoint()
-      : mTextNode(nullptr)
-      , mOffset(0)
-      , mChar(0)
-    {}
+    WSPoint() : mTextNode(nullptr), mOffset(0), mChar(0) {}
 
     WSPoint(dom::Text* aTextNode, int32_t aOffset, char16_t aChar)
-      : mTextNode(aTextNode)
-      , mOffset(aOffset)
-      , mChar(aChar)
-    {}
-  };
-
-  enum AreaRestriction
-  {
-    eAnywhere, eOutsideUserSelectAll
+        : mTextNode(aTextNode), mOffset(aOffset), mChar(aChar) {}
   };
 
   /**
@@ -326,42 +343,150 @@ protected:
   void MakeSingleWSRun(WSType aType);
   nsIContent* GetPreviousWSNodeInner(nsINode* aStartNode,
                                      nsINode* aBlockParent);
-  nsIContent* GetPreviousWSNode(EditorDOMPoint aPoint, nsINode* aBlockParent);
+  nsIContent* GetPreviousWSNode(const EditorDOMPoint& aPoint,
+                                nsINode* aBlockParent);
   nsIContent* GetNextWSNodeInner(nsINode* aStartNode, nsINode* aBlockParent);
-  nsIContent* GetNextWSNode(EditorDOMPoint aPoint, nsINode* aBlockParent);
+  nsIContent* GetNextWSNode(const EditorDOMPoint& aPoint,
+                            nsINode* aBlockParent);
   nsresult PrepareToDeleteRangePriv(WSRunObject* aEndObject);
   nsresult PrepareToSplitAcrossBlocksPriv();
-  nsresult DeleteChars(nsINode* aStartNode, int32_t aStartOffset,
-                       nsINode* aEndNode, int32_t aEndOffset,
-                       AreaRestriction aAR = eAnywhere);
-  WSPoint GetCharAfter(nsINode* aNode, int32_t aOffset);
-  WSPoint GetCharBefore(nsINode* aNode, int32_t aOffset);
-  WSPoint GetCharAfter(const WSPoint& aPoint);
-  WSPoint GetCharBefore(const WSPoint& aPoint);
-  nsresult ConvertToNBSP(WSPoint aPoint,
-                         AreaRestriction aAR = eAnywhere);
-  void GetAsciiWSBounds(int16_t aDir, nsINode* aNode, int32_t aOffset,
-                        dom::Text** outStartNode, int32_t* outStartOffset,
-                        dom::Text** outEndNode, int32_t* outEndOffset);
-  void FindRun(nsINode* aNode, int32_t aOffset, WSFragment** outRun,
-               bool after);
-  char16_t GetCharAt(dom::Text* aTextNode, int32_t aOffset);
-  WSPoint GetWSPointAfter(nsINode* aNode, int32_t aOffset);
-  WSPoint GetWSPointBefore(nsINode* aNode, int32_t aOffset);
-  nsresult CheckTrailingNBSPOfRun(WSFragment *aRun);
-  nsresult CheckTrailingNBSP(WSFragment* aRun, nsINode* aNode,
-                             int32_t aOffset);
-  nsresult CheckLeadingNBSP(WSFragment* aRun, nsINode* aNode,
-                            int32_t aOffset);
+
+  /**
+   * DeleteRange() removes the range between aStartPoint and aEndPoint.
+   * When aStartPoint and aEndPoint are same point, does nothing.
+   * When aStartPoint and aEndPoint are in same text node, removes characters
+   * between them.
+   * When aStartPoint is in a text node, removes the text data after the point.
+   * When aEndPoint is in a text node, removes the text data before the point.
+   * Removes any nodes between them.
+   */
+  template <typename PT1, typename CT1, typename PT2, typename CT2>
+  nsresult DeleteRange(const EditorDOMPointBase<PT1, CT1>& aStartPoint,
+                       const EditorDOMPointBase<PT2, CT2>& aEndPoint);
+
+  /**
+   * GetNextCharPoint() returns next character's point of aPoint.  If there is
+   * no character after aPoint, mTextNode is set to nullptr.
+   */
+  template <typename PT, typename CT>
+  WSPoint GetNextCharPoint(const EditorDOMPointBase<PT, CT>& aPoint) const;
+  WSPoint GetNextCharPoint(const WSPoint& aPoint) const;
+
+  /**
+   * GetPreviousCharPoint() returns previous character's point of of aPoint.
+   * If there is no character before aPoint, mTextNode is set to nullptr.
+   */
+  template <typename PT, typename CT>
+  WSPoint GetPreviousCharPoint(const EditorDOMPointBase<PT, CT>& aPoint) const;
+  WSPoint GetPreviousCharPoint(const WSPoint& aPoint) const;
+
+  /**
+   * GetNextCharPointInternal() and GetPreviousCharPointInternal() are
+   * helper methods of GetNextCharPoint(const EditorRawDOMPoint&) and
+   * GetPreviousCharPoint(const EditorRawDOMPoint&).  When the container
+   * isn't in mNodeArray, they call one of these methods.  Then, these
+   * methods look for nearest text node in mNodeArray from aPoint.
+   * Then, will call GetNextCharPoint(const WSPoint&) or
+   * GetPreviousCharPoint(const WSPoint&) and returns its result.
+   */
+  template <typename PT, typename CT>
+  WSPoint GetNextCharPointInternal(
+      const EditorDOMPointBase<PT, CT>& aPoint) const;
+  template <typename PT, typename CT>
+  WSPoint GetPreviousCharPointInternal(
+      const EditorDOMPointBase<PT, CT>& aPoint) const;
+
+  /**
+   * InsertNBSPAndRemoveFollowingASCIIWhitespaces() inserts an NBSP first.
+   * Then, if following characters are ASCII whitespaces, will remove them.
+   */
+  nsresult InsertNBSPAndRemoveFollowingASCIIWhitespaces(WSPoint aPoint);
+
+  /**
+   * GetASCIIWhitespacesBounds() retrieves whitespaces before and/or after the
+   * point specified by aNode and aOffset.
+   *
+   * @param aDir            Specify eBefore if you want to scan text backward.
+   *                        Specify eAfter if you want to scan text forward.
+   *                        Specify eBoth if you want to scan text to both
+   *                        direction.
+   * @param aNode           The container node where you want to start to scan
+   *                        whitespaces from.
+   * @param aOffset         The offset in aNode where you want to start to scan
+   *                        whitespaces from.
+   * @param outStartNode    [out] The container of first ASCII whitespace.
+   *                              If there is no whitespaces, returns nullptr.
+   * @param outStartOffset  [out] The offset of first ASCII whitespace in
+   *                              outStartNode.
+   * @param outEndNode      [out] The container of last ASCII whitespace.
+   *                              If there is no whitespaces, returns nullptr.
+   * @param outEndOffset    [out] The offset of last ASCII whitespace in
+   *                              outEndNode.
+   */
+  void GetASCIIWhitespacesBounds(int16_t aDir, nsINode* aNode, int32_t aOffset,
+                                 dom::Text** outStartNode,
+                                 int32_t* outStartOffset,
+                                 dom::Text** outEndNode, int32_t* outEndOffset);
+
+  /**
+   * FindNearestRun() looks for a WSFragment which is closest to specified
+   * direction from aPoint.
+   *
+   * @param aPoint      The point to start to look for.
+   * @param aForward    true if caller needs to look for a WSFragment after the
+   *                    point in the DOM tree.  Otherwise, i.e., before the
+   *                    point, false.
+   * @return            Found WSFragment instance.
+   *                    If aForward is true and:
+   *                      if aPoint is end of a run, returns next run.
+   *                      if aPoint is start of a run, returns the run.
+   *                      if aPoint is before the first run, returns the first
+   *                      run.
+   *                      If aPoint is after the last run, returns nullptr.
+   *                    If aForward is false and:
+   *                      if aPoint is end of a run, returns the run.
+   *                      if aPoint is start of a run, returns its next run.
+   *                      if aPoint is before the first run, returns nullptr.
+   *                      if aPoint is after the last run, returns the last run.
+   */
+  template <typename PT, typename CT>
+  WSFragment* FindNearestRun(const EditorDOMPointBase<PT, CT>& aPoint,
+                             bool aForward) const;
+
+  char16_t GetCharAt(dom::Text* aTextNode, int32_t aOffset) const;
+  nsresult CheckTrailingNBSPOfRun(WSFragment* aRun);
+
+  /**
+   * ReplacePreviousNBSPIfUnncessary() replaces previous character of aPoint
+   * if it's a NBSP and it's unnecessary.
+   *
+   * @param aRun        Current text run.  aPoint must be in this run.
+   * @param aPoint      Current insertion point.  Its previous character is
+   *                    unnecessary NBSP will be checked.
+   */
+  template <typename PT, typename CT>
+  nsresult ReplacePreviousNBSPIfUnncessary(
+      WSFragment* aRun, const EditorDOMPointBase<PT, CT>& aPoint);
+
+  nsresult CheckLeadingNBSP(WSFragment* aRun, nsINode* aNode, int32_t aOffset);
 
   nsresult Scrub();
   bool IsBlockNode(nsINode* aNode);
+
+  EditorRawDOMPoint Point() const { return EditorRawDOMPoint(mNode, mOffset); }
+  EditorRawDOMPoint StartPoint() const {
+    return EditorRawDOMPoint(mStartNode, mStartOffset);
+  }
+  EditorRawDOMPoint EndPoint() const {
+    return EditorRawDOMPoint(mEndNode, mEndOffset);
+  }
 
   // The node passed to our constructor.
   nsCOMPtr<nsINode> mNode;
   // The offset passed to our contructor.
   int32_t mOffset;
-  // Together, the above represent the point at which we are building up ws info.
+  // Together, the above represent the point at which we are building up ws
+  // info.
 
   // true if we are in preformatted whitespace context.
   bool mPRE;
@@ -406,6 +531,6 @@ protected:
   friend class HTMLEditor;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // #ifndef WSRunObject_h
+#endif  // #ifndef WSRunObject_h

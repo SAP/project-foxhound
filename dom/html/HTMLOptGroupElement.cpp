@@ -8,7 +8,7 @@
 #include "mozilla/EventStates.h"
 #include "mozilla/dom/HTMLOptGroupElement.h"
 #include "mozilla/dom/HTMLOptGroupElementBinding.h"
-#include "mozilla/dom/HTMLSelectElement.h" // SafeOptionListMutation
+#include "mozilla/dom/HTMLSelectElement.h"  // SafeOptionListMutation
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
 #include "nsIFrame.h"
@@ -23,55 +23,32 @@ namespace dom {
  * The implementation of &lt;optgroup&gt;
  */
 
-
-
-HTMLOptGroupElement::HTMLOptGroupElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-  : nsGenericHTMLElement(aNodeInfo)
-{
+HTMLOptGroupElement::HTMLOptGroupElement(
+    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : nsGenericHTMLElement(std::move(aNodeInfo)) {
   // We start off enabled
   AddStatesSilently(NS_EVENT_STATE_ENABLED);
 }
 
-HTMLOptGroupElement::~HTMLOptGroupElement()
-{
-}
-
-
-NS_IMPL_ISUPPORTS_INHERITED(HTMLOptGroupElement, nsGenericHTMLElement,
-                            nsIDOMHTMLOptGroupElement)
+HTMLOptGroupElement::~HTMLOptGroupElement() {}
 
 NS_IMPL_ELEMENT_CLONE(HTMLOptGroupElement)
 
-
-NS_IMPL_BOOL_ATTR(HTMLOptGroupElement, Disabled, disabled)
-NS_IMPL_STRING_ATTR(HTMLOptGroupElement, Label, label)
-
-
-nsresult
-HTMLOptGroupElement::GetEventTargetParent(EventChainPreVisitor& aVisitor)
-{
+void HTMLOptGroupElement::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
   aVisitor.mCanHandle = false;
-  // Do not process any DOM events if the element is disabled
-  // XXXsmaug This is not the right thing to do. But what is?
-  if (HasAttr(kNameSpaceID_None, nsGkAtoms::disabled)) {
-    return NS_OK;
-  }
 
-  nsIFrame* frame = GetPrimaryFrame();
-  if (frame) {
-    const nsStyleUserInterface* uiStyle = frame->StyleUserInterface();
-    if (uiStyle->mUserInput == StyleUserInput::None ||
-        uiStyle->mUserInput == StyleUserInput::Disabled) {
-      return NS_OK;
+  if (nsIFrame* frame = GetPrimaryFrame()) {
+    // FIXME(emilio): This poking at the style of the frame is broken unless we
+    // flush before every event handling, which we don't really want to.
+    if (frame->StyleUI()->mUserInput == StyleUserInput::None) {
+      return;
     }
   }
 
-  return nsGenericHTMLElement::GetEventTargetParent(aVisitor);
+  nsGenericHTMLElement::GetEventTargetParent(aVisitor);
 }
 
-Element*
-HTMLOptGroupElement::GetSelect()
-{
+Element* HTMLOptGroupElement::GetSelect() {
   Element* parent = nsINode::GetParentElement();
   if (!parent || !parent->IsHTMLElement(nsGkAtoms::select)) {
     return nullptr;
@@ -79,68 +56,63 @@ HTMLOptGroupElement::GetSelect()
   return parent;
 }
 
-nsresult
-HTMLOptGroupElement::InsertChildAt(nsIContent* aKid,
-                                   uint32_t aIndex,
-                                   bool aNotify)
-{
-  SafeOptionListMutation safeMutation(GetSelect(), this, aKid, aIndex, aNotify);
-  nsresult rv = nsGenericHTMLElement::InsertChildAt(aKid, aIndex, aNotify);
+nsresult HTMLOptGroupElement::InsertChildBefore(nsIContent* aKid,
+                                                nsIContent* aBeforeThis,
+                                                bool aNotify) {
+  int32_t index = aBeforeThis ? ComputeIndexOf(aBeforeThis) : GetChildCount();
+  SafeOptionListMutation safeMutation(GetSelect(), this, aKid, index, aNotify);
+  nsresult rv =
+      nsGenericHTMLElement::InsertChildBefore(aKid, aBeforeThis, aNotify);
   if (NS_FAILED(rv)) {
     safeMutation.MutationFailed();
   }
   return rv;
 }
 
-void
-HTMLOptGroupElement::RemoveChildAt(uint32_t aIndex, bool aNotify)
-{
-  SafeOptionListMutation safeMutation(GetSelect(), this, nullptr, aIndex,
-                                      aNotify);
-  nsGenericHTMLElement::RemoveChildAt(aIndex, aNotify);
+void HTMLOptGroupElement::RemoveChildNode(nsIContent* aKid, bool aNotify) {
+  SafeOptionListMutation safeMutation(GetSelect(), this, nullptr,
+                                      ComputeIndexOf(aKid), aNotify);
+  nsGenericHTMLElement::RemoveChildNode(aKid, aNotify);
 }
 
-nsresult
-HTMLOptGroupElement::AfterSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
-                                  const nsAttrValue* aValue, bool aNotify)
-{
+nsresult HTMLOptGroupElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                                           const nsAttrValue* aValue,
+                                           const nsAttrValue* aOldValue,
+                                           nsIPrincipal* aSubjectPrincipal,
+                                           bool aNotify) {
   if (aNameSpaceID == kNameSpaceID_None && aName == nsGkAtoms::disabled) {
-    // All our children <option> have their :disabled state depending on our
-    // disabled attribute. We should make sure their state is updated.
-    for (nsIContent* child = nsINode::GetFirstChild(); child;
-         child = child->GetNextSibling()) {
-      if (child->IsHTMLElement(nsGkAtoms::option)) {
-        // No need to call |IsElement()| because it's an HTML element.
-        child->AsElement()->UpdateState(true);
+    EventStates disabledStates;
+    if (aValue) {
+      disabledStates |= NS_EVENT_STATE_DISABLED;
+    } else {
+      disabledStates |= NS_EVENT_STATE_ENABLED;
+    }
+
+    EventStates oldDisabledStates = State() & DISABLED_STATES;
+    EventStates changedStates = disabledStates ^ oldDisabledStates;
+
+    if (!changedStates.IsEmpty()) {
+      ToggleStates(changedStates, aNotify);
+
+      // All our children <option> have their :disabled state depending on our
+      // disabled attribute. We should make sure their state is updated.
+      for (nsIContent* child = nsINode::GetFirstChild(); child;
+           child = child->GetNextSibling()) {
+        if (auto optElement = HTMLOptionElement::FromNode(child)) {
+          optElement->OptGroupDisabledChanged(true);
+        }
       }
     }
   }
 
-  return nsGenericHTMLElement::AfterSetAttr(aNameSpaceID, aName, aValue,
-                                            aNotify);
+  return nsGenericHTMLElement::AfterSetAttr(
+      aNameSpaceID, aName, aValue, aOldValue, aSubjectPrincipal, aNotify);
 }
 
-EventStates
-HTMLOptGroupElement::IntrinsicState() const
-{
-  EventStates state = nsGenericHTMLElement::IntrinsicState();
-
-  if (HasAttr(kNameSpaceID_None, nsGkAtoms::disabled)) {
-    state |= NS_EVENT_STATE_DISABLED;
-    state &= ~NS_EVENT_STATE_ENABLED;
-  } else {
-    state &= ~NS_EVENT_STATE_DISABLED;
-    state |= NS_EVENT_STATE_ENABLED;
-  }
-
-  return state;
+JSObject* HTMLOptGroupElement::WrapNode(JSContext* aCx,
+                                        JS::Handle<JSObject*> aGivenProto) {
+  return HTMLOptGroupElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-JSObject*
-HTMLOptGroupElement::WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return HTMLOptGroupElementBinding::Wrap(aCx, this, aGivenProto);
-}
-
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

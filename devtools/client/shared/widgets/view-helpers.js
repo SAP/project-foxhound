@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
+const {Cu} = require("chrome");
 const {KeyCodes} = require("devtools/client/shared/keycodes");
 
 const PANE_APPEARANCE_DELAY = 50;
@@ -12,29 +13,6 @@ const PAGE_SIZE_ITEM_COUNT_RATIO = 5;
 const WIDGET_FOCUSABLE_NODES = new Set(["vbox", "hbox"]);
 
 var namedTimeoutsStore = new Map();
-
-/**
- * Inheritance helpers from the addon SDK's core/heritage.
- * Remove these when all devtools are loadered.
- */
-exports.Heritage = {
-  /**
-   * @see extend in sdk/core/heritage.
-   */
-  extend: function (prototype, properties = {}) {
-    return Object.create(prototype, this.getOwnPropertyDescriptors(properties));
-  },
-
-  /**
-   * @see getOwnPropertyDescriptors in sdk/core/heritage.
-   */
-  getOwnPropertyDescriptors: function (object) {
-    return Object.getOwnPropertyNames(object).reduce((descriptor, name) => {
-      descriptor[name] = Object.getOwnPropertyDescriptor(object, name);
-      return descriptor;
-    }, {});
-  }
-};
 
 /**
  * Helper for draining a rapid succession of events and invoking a callback
@@ -117,7 +95,7 @@ const ViewHelpers = exports.ViewHelpers = {
   /**
    * Convenience method, dispatching a custom event.
    *
-   * @param nsIDOMNode target
+   * @param Node target
    *        A custom target element to dispatch the event from.
    * @param string type
    *        The name of the event.
@@ -127,15 +105,15 @@ const ViewHelpers = exports.ViewHelpers = {
    *         True if the event was cancelled or a registered handler
    *         called preventDefault.
    */
-  dispatchEvent: function (target, type, detail) {
+  dispatchEvent: function(target, type, detail) {
     if (!(target instanceof Node)) {
       // Event cancelled.
       return true;
     }
-    let document = target.ownerDocument || target;
-    let dispatcher = target.ownerDocument ? target : document.documentElement;
+    const document = target.ownerDocument || target;
+    const dispatcher = target.ownerDocument ? target : document.documentElement;
 
-    let event = document.createEvent("CustomEvent");
+    const event = document.createEvent("CustomEvent");
     event.initCustomEvent(type, true, true, detail);
     return dispatcher.dispatchEvent(event);
   },
@@ -145,10 +123,10 @@ const ViewHelpers = exports.ViewHelpers = {
    *
    * @param object widget
    *        The widget to assign the methods to.
-   * @param nsIDOMNode node
+   * @param Node node
    *        A node to delegate the methods to.
    */
-  delegateWidgetAttributeMethods: function (widget, node) {
+  delegateWidgetAttributeMethods: function(widget, node) {
     widget.getAttribute =
       widget.getAttribute || node.getAttribute.bind(node);
     widget.setAttribute =
@@ -162,10 +140,10 @@ const ViewHelpers = exports.ViewHelpers = {
    *
    * @param object widget
    *        The widget to assign the methods to.
-   * @param nsIDOMNode node
+   * @param Node node
    *        A node to delegate the methods to.
    */
-  delegateWidgetEventMethods: function (widget, node) {
+  delegateWidgetEventMethods: function(widget, node) {
     widget.addEventListener =
       widget.addEventListener || node.addEventListener.bind(node);
     widget.removeEventListener =
@@ -179,7 +157,7 @@ const ViewHelpers = exports.ViewHelpers = {
    * @return boolean
    *         True if it looks, walks and quacks like an event emitter.
    */
-  isEventEmitter: function (object) {
+  isEventEmitter: function(object) {
     return object && object.on && object.off && object.once && object.emit;
   },
 
@@ -189,10 +167,10 @@ const ViewHelpers = exports.ViewHelpers = {
    * @return boolean
    *         True if it's a node, false otherwise.
    */
-  isNode: function (object) {
+  isNode: function(object) {
     return object instanceof Node ||
            object instanceof Element ||
-           object instanceof DocumentFragment;
+           Cu.getClassName(object) == "DocumentFragment";
   },
 
   /**
@@ -201,7 +179,7 @@ const ViewHelpers = exports.ViewHelpers = {
    * @param Event e
    *        The event to be prevented.
    */
-  preventScrolling: function (e) {
+  preventScrolling: function(e) {
     switch (e.keyCode) {
       case KeyCodes.DOM_VK_UP:
       case KeyCodes.DOM_VK_DOWN:
@@ -220,9 +198,9 @@ const ViewHelpers = exports.ViewHelpers = {
    * Check if the enter key or space was pressed
    *
    * @param event event
-   *        The event triggered by a keypress on an element
+   *        The event triggered by a keydown or keypress on an element
    */
-  isSpaceOrReturn: function (event) {
+  isSpaceOrReturn: function(event) {
     return event.keyCode === KeyCodes.DOM_VK_SPACE ||
           event.keyCode === KeyCodes.DOM_VK_RETURN;
   },
@@ -237,10 +215,10 @@ const ViewHelpers = exports.ViewHelpers = {
    *        - animated: true to display an animation on toggle
    *        - delayed: true to wait a few cycles before toggle
    *        - callback: a function to invoke when the toggle finishes
-   * @param nsIDOMNode pane
+   * @param Node pane
    *        The element representing the pane to toggle.
    */
-  togglePane: function (flags, pane) {
+  togglePane: function(flags, pane) {
     // Make sure a pane is actually available first.
     if (!pane) {
       return;
@@ -273,7 +251,7 @@ const ViewHelpers = exports.ViewHelpers = {
     }
 
     // Computes and sets the pane margins in order to hide or show it.
-    let doToggle = () => {
+    const doToggle = () => {
       // Negative margins are applied to "right" and "left" to support RTL and
       // LTR directions, as well as to "bottom" to support vertical layouts.
       // Unnecessary negative margins are forced to 0 via CSS in widgets.css.
@@ -283,8 +261,8 @@ const ViewHelpers = exports.ViewHelpers = {
         pane.style.marginBottom = "0";
         pane.classList.remove("pane-collapsed");
       } else {
-        let width = Math.floor(pane.getAttribute("width")) + 1;
-        let height = Math.floor(pane.getAttribute("height")) + 1;
+        const width = Math.floor(pane.getAttribute("width")) + 1;
+        const height = Math.floor(pane.getAttribute("height")) + 1;
         pane.style.marginLeft = -width + "px";
         pane.style.marginRight = -width + "px";
         pane.style.marginBottom = -height + "px";
@@ -292,9 +270,9 @@ const ViewHelpers = exports.ViewHelpers = {
 
       // Wait for the animation to end before calling afterToggle()
       if (flags.animated) {
-        let options = {
+        const options = {
           useCapture: false,
-          once: true
+          once: true,
         };
 
         pane.addEventListener("transitionend", () => {
@@ -329,13 +307,13 @@ const ViewHelpers = exports.ViewHelpers = {
     } else {
       doToggle();
     }
-  }
+  },
 };
 
 /**
  * A generic Item is used to describe children present in a Widget.
  *
- * This is basically a very thin wrapper around an nsIDOMNode, with a few
+ * This is basically a very thin wrapper around a Node, with a few
  * characteristics, like a `value` and an `attachment`.
  *
  * The characteristics are optional, and their meaning is entirely up to you.
@@ -346,7 +324,7 @@ const ViewHelpers = exports.ViewHelpers = {
  *
  * @param object ownerView
  *        The owner view creating this item.
- * @param nsIDOMNode element
+ * @param Node element
  *        A prebuilt node to be wrapped.
  * @param string value
  *        A string identifying the node.
@@ -375,8 +353,8 @@ Item.prototype = {
   /**
    * Immediately appends a child item to this item.
    *
-   * @param nsIDOMNode element
-   *        An nsIDOMNode representing the child element to append.
+   * @param Node element
+   *        A Node representing the child element to append.
    * @param object options [optional]
    *        Additional options or flags supported by this operation:
    *          - attachment: some attached primitive/object for the item
@@ -385,8 +363,8 @@ Item.prototype = {
    * @return Item
    *         The item associated with the displayed element.
    */
-  append: function (element, options = {}) {
-    let item = new Item(this, element, "", options.attachment);
+  append: function(element, options = {}) {
+    const item = new Item(this, element, "", options.attachment);
 
     // Entangle the item with the newly inserted child node.
     // Make sure this is done with the value returned by appendChild(),
@@ -411,7 +389,7 @@ Item.prototype = {
    * @param Item item
    *        The item associated with the element to remove.
    */
-  remove: function (item) {
+  remove: function(item) {
     if (!item) {
       return;
     }
@@ -424,10 +402,10 @@ Item.prototype = {
    *
    * @param Item item
    *        The item describing a target element.
-   * @param nsIDOMNode element
+   * @param Node element
    *        The element displaying the item.
    */
-  _entangleItem: function (item, element) {
+  _entangleItem: function(item, element) {
     this._itemsByElement.set(element, item);
     item._target = element;
   },
@@ -438,11 +416,11 @@ Item.prototype = {
    * @param Item item
    *        The item describing a target element.
    */
-  _untangleItem: function (item) {
+  _untangleItem: function(item) {
     if (item.finalize) {
       item.finalize(item);
     }
-    for (let childItem of item) {
+    for (const childItem of item) {
       item.remove(childItem);
     }
 
@@ -456,7 +434,7 @@ Item.prototype = {
    * @param Item item
    *        The item describing a target element.
    */
-  _unlinkItem: function (item) {
+  _unlinkItem: function(item) {
     this._itemsByElement.delete(item._target);
   },
 
@@ -465,12 +443,12 @@ Item.prototype = {
    * Avoid using `toString` to avoid accidental JSONification.
    * @return string
    */
-  stringify: function () {
+  stringify: function() {
     return JSON.stringify({
       value: this._value,
       target: this._target + "",
       prebuiltNode: this._prebuiltNode + "",
-      attachment: this.attachment
+      attachment: this.attachment,
     }, null, 2);
   },
 
@@ -478,7 +456,7 @@ Item.prototype = {
   _target: null,
   _prebuiltNode: null,
   finalize: null,
-  attachment: null
+  attachment: null,
 };
 
 /**
@@ -490,7 +468,7 @@ Item.prototype = {
  *     this.widget = new MyWidget(document.querySelector(".my-node"));
  *   }
  *
- *   MyView.prototype = Heritage.extend(WidgetMethods, {
+ *   MyView.prototype = extend(WidgetMethods, {
  *     myMethod: function() {},
  *     ...
  *   });
@@ -501,17 +479,17 @@ Item.prototype = {
  *
  * Language:
  *   - An "item" is an instance of an Item.
- *   - An "element" or "node" is a nsIDOMNode.
+ *   - An "element" or "node" is a Node.
  *
  * The supplied widget can be any object implementing the following
  * methods:
- *   - function:nsIDOMNode insertItemAt(aIndex:number, aNode:nsIDOMNode,
+ *   - function:Node insertItemAt(aIndex:number, aNode:Node,
  *                                      aValue:string)
- *   - function:nsIDOMNode getItemAtIndex(aIndex:number)
- *   - function removeChild(aChild:nsIDOMNode)
+ *   - function:Node getItemAtIndex(aIndex:number)
+ *   - function removeChild(aChild:Node)
  *   - function removeAllItems()
- *   - get:nsIDOMNode selectedItem()
- *   - set selectedItem(aChild:nsIDOMNode)
+ *   - get:Node selectedItem()
+ *   - set selectedItem(aChild:Node)
  *   - function getAttribute(aName:string)
  *   - function setAttribute(aName:string, aValue:string)
  *   - function removeAttribute(aName:string)
@@ -521,7 +499,7 @@ Item.prototype = {
  *                                  aBubbleFlag:boolean)
  *
  * Optional methods that can be implemented by the widget:
- *   - function ensureElementIsVisible(aChild:nsIDOMNode)
+ *   - function ensureElementIsVisible(aChild:Node)
  *
  * Optional attributes that may be handled (when calling
  * get/set/removeAttribute):
@@ -530,13 +508,13 @@ Item.prototype = {
  *
  * For automagical keyboard and mouse accessibility, the widget should be an
  * event emitter with the following events:
- *   - "keyPress" -> (aName:string, aEvent:KeyboardEvent)
+ *   - "keyDown" -> (aName:string, aEvent:KeyboardEvent)
  *   - "mousePress" -> (aName:string, aEvent:MouseEvent)
  */
 const WidgetMethods = exports.WidgetMethods = {
   /**
    * Sets the element node or widget associated with this container.
-   * @param nsIDOMNode | object widget
+   * @param Node | object widget
    */
   set widget(widget) {
     this._widget = widget;
@@ -549,14 +527,14 @@ const WidgetMethods = exports.WidgetMethods = {
 
     // Handle internal events emitted by the widget if necessary.
     if (ViewHelpers.isEventEmitter(widget)) {
-      widget.on("keyPress", this._onWidgetKeyPress.bind(this));
+      widget.on("keyDown", this._onWidgetKeyDown.bind(this));
       widget.on("mousePress", this._onWidgetMousePress.bind(this));
     }
   },
 
   /**
    * Gets the element node or widget associated with this container.
-   * @return nsIDOMNode | object
+   * @return Node | object
    */
   get widget() {
     return this._widget;
@@ -577,7 +555,7 @@ const WidgetMethods = exports.WidgetMethods = {
    * "index" flags are mutually exclusive, meaning that all staged items
    * will always be appended.
    *
-   * @param nsIDOMNode element
+   * @param Node element
    *        A prebuilt node to be wrapped.
    * @param string value
    *        A string identifying the node.
@@ -592,8 +570,8 @@ const WidgetMethods = exports.WidgetMethods = {
    *         The item associated with the displayed element if an unstaged push,
    *         undefined if the item was staged for a later commit.
    */
-  push: function ([element, value], options = {}) {
-    let item = new Item(this, element, value, options.attachment);
+  push: function([element, value], options = {}) {
+    const item = new Item(this, element, value, options.attachment);
 
     // Batch the item to be added later.
     if (options.staged) {
@@ -620,15 +598,15 @@ const WidgetMethods = exports.WidgetMethods = {
    *        Additional options or flags supported by this operation:
    *          - sorted: true to sort all the items before adding them
    */
-  commit: function (options = {}) {
-    let stagedItems = this._stagedItems;
+  commit: function(options = {}) {
+    const stagedItems = this._stagedItems;
 
     // Sort the items before adding them to this container, if preferred.
     if (options.sorted) {
       stagedItems.sort((a, b) => this._currentSortPredicate(a.item, b.item));
     }
     // Append the prepared items to this container.
-    for (let { item, opt } of stagedItems) {
+    for (const { item, opt } of stagedItems) {
       this._insertItemAt(-1, item, opt);
     }
     // Recreate the temporary items list for ulterior pushes.
@@ -641,7 +619,7 @@ const WidgetMethods = exports.WidgetMethods = {
    * @param Item item
    *        The item associated with the element to remove.
    */
-  remove: function (item) {
+  remove: function(item) {
     if (!item) {
       return;
     }
@@ -661,14 +639,14 @@ const WidgetMethods = exports.WidgetMethods = {
    * @param number index
    *        The index of the item to remove.
    */
-  removeAt: function (index) {
+  removeAt: function(index) {
     this.remove(this.getItemAtIndex(index));
   },
 
   /**
    * Removes the items in this container based on a predicate.
    */
-  removeForPredicate: function (predicate) {
+  removeForPredicate: function(predicate) {
     let item;
     while ((item = this.getItemForPredicate(predicate))) {
       this.remove(item);
@@ -678,13 +656,13 @@ const WidgetMethods = exports.WidgetMethods = {
   /**
    * Removes all items from this container.
    */
-  empty: function () {
+  empty: function() {
     this._preferredValue = this.selectedValue;
     this._widget.selectedItem = null;
     this._widget.removeAllItems();
     this._widget.setAttribute("emptyText", this._emptyText);
 
-    for (let [, item] of this._itemsByElement) {
+    for (const [, item] of this._itemsByElement) {
       this._untangleItem(item);
     }
 
@@ -699,7 +677,7 @@ const WidgetMethods = exports.WidgetMethods = {
    * @param Item item
    *        The item to bring into view.
    */
-  ensureItemIsVisible: function (item) {
+  ensureItemIsVisible: function(item) {
     this._widget.ensureElementIsVisible(item._target);
   },
 
@@ -709,14 +687,14 @@ const WidgetMethods = exports.WidgetMethods = {
    * @param number index
    *        The index of the item to bring into view.
    */
-  ensureIndexIsVisible: function (index) {
+  ensureIndexIsVisible: function(index) {
     this.ensureItemIsVisible(this.getItemAtIndex(index));
   },
 
   /**
    * Sugar for ensuring the selected item is visible in this container.
    */
-  ensureSelectedItemIsVisible: function () {
+  ensureSelectedItemIsVisible: function() {
     this.ensureItemIsVisible(this.selectedItem);
   },
 
@@ -752,8 +730,8 @@ const WidgetMethods = exports.WidgetMethods = {
    * @param boolean visibleFlag
    *        Specifies the intended visibility.
    */
-  toggleContents: function (visibleFlag) {
-    for (let [element] of this._itemsByElement) {
+  toggleContents: function(visibleFlag) {
+    for (const [element] of this._itemsByElement) {
       element.hidden = !visibleFlag;
     }
   },
@@ -767,10 +745,10 @@ const WidgetMethods = exports.WidgetMethods = {
    *        container.
    *        If unspecified, all items will be toggled visible.
    */
-  filterContents: function (predicate = this._currentFilterPredicate) {
+  filterContents: function(predicate = this._currentFilterPredicate) {
     this._currentFilterPredicate = predicate;
 
-    for (let [element, item] of this._itemsByElement) {
+    for (const [element, item] of this._itemsByElement) {
       element.hidden = !predicate(item);
     }
   },
@@ -783,8 +761,8 @@ const WidgetMethods = exports.WidgetMethods = {
    *        which will become the new default sorting predicate in this
    *        container. If unspecified, all items will be sorted by their value.
    */
-  sortContents: function (predicate = this._currentSortPredicate) {
-    let sortedItems = this.items.sort(this._currentSortPredicate = predicate);
+  sortContents: function(predicate = this._currentSortPredicate) {
+    const sortedItems = this.items.sort(this._currentSortPredicate = predicate);
 
     for (let i = 0, len = sortedItems.length; i < len; i++) {
       this.swapItems(this.getItemAtIndex(i), sortedItems[i]);
@@ -799,34 +777,34 @@ const WidgetMethods = exports.WidgetMethods = {
    * @param Item second
    *        The second item to be swapped.
    */
-  swapItems: function (first, second) {
+  swapItems: function(first, second) {
     if (first == second) {
       // We're just dandy, thank you.
       return;
     }
-    let { _prebuiltNode: firstPrebuiltTarget, _target: firstTarget } = first;
-    let { _prebuiltNode: secondPrebuiltTarget, _target: secondTarget } = second;
+    const { _prebuiltNode: firstPrebuiltTarget, _target: firstTarget } = first;
+    const { _prebuiltNode: secondPrebuiltTarget, _target: secondTarget } = second;
 
     // If the two items were constructed with prebuilt nodes as
     // DocumentFragments, then those DocumentFragments are now
     // empty and need to be reassembled.
-    if (firstPrebuiltTarget instanceof DocumentFragment) {
-      for (let node of firstTarget.childNodes) {
+    if (Cu.getClassName(firstPrebuiltTarget) == "DocumentFragment") {
+      for (const node of firstTarget.childNodes) {
         firstPrebuiltTarget.appendChild(node.cloneNode(true));
       }
     }
-    if (secondPrebuiltTarget instanceof DocumentFragment) {
-      for (let node of secondTarget.childNodes) {
+    if (Cu.getClassName(secondPrebuiltTarget) == "DocumentFragment") {
+      for (const node of secondTarget.childNodes) {
         secondPrebuiltTarget.appendChild(node.cloneNode(true));
       }
     }
 
     // 1. Get the indices of the two items to swap.
-    let i = this._indexOfElement(firstTarget);
-    let j = this._indexOfElement(secondTarget);
+    const i = this._indexOfElement(firstTarget);
+    const j = this._indexOfElement(secondTarget);
 
     // 2. Remeber the selection index, to reselect an item, if necessary.
-    let selectedTarget = this._widget.selectedItem;
+    const selectedTarget = this._widget.selectedItem;
     let selectedIndex = -1;
     if (selectedTarget == firstTarget) {
       selectedIndex = i;
@@ -863,7 +841,7 @@ const WidgetMethods = exports.WidgetMethods = {
    * @param number second
    *        The index of the second item to be swapped.
    */
-  swapItemsAtIndices: function (first, second) {
+  swapItemsAtIndices: function(first, second) {
     this.swapItems(this.getItemAtIndex(first), this.getItemAtIndex(second));
   },
 
@@ -876,7 +854,7 @@ const WidgetMethods = exports.WidgetMethods = {
    * @return boolean
    *         True if the value is known, false otherwise.
    */
-  containsValue: function (value) {
+  containsValue: function(value) {
     return this._itemsByValue.has(value) ||
            this._stagedItems.some(({ item }) => item._value == value);
   },
@@ -895,7 +873,7 @@ const WidgetMethods = exports.WidgetMethods = {
    * @return Item | null
    */
   get selectedItem() {
-    let selectedElement = this._widget.selectedItem;
+    const selectedElement = this._widget.selectedItem;
     if (selectedElement) {
       return this._itemsByElement.get(selectedElement);
     }
@@ -907,7 +885,7 @@ const WidgetMethods = exports.WidgetMethods = {
    * @return number
    */
   get selectedIndex() {
-    let selectedElement = this._widget.selectedItem;
+    const selectedElement = this._widget.selectedItem;
     if (selectedElement) {
       return this._indexOfElement(selectedElement);
     }
@@ -919,7 +897,7 @@ const WidgetMethods = exports.WidgetMethods = {
    * @return string
    */
   get selectedValue() {
-    let selectedElement = this._widget.selectedItem;
+    const selectedElement = this._widget.selectedItem;
     if (selectedElement) {
       return this._itemsByElement.get(selectedElement)._value;
     }
@@ -931,17 +909,17 @@ const WidgetMethods = exports.WidgetMethods = {
    * @return object | null
    */
   get selectedAttachment() {
-    let selectedElement = this._widget.selectedItem;
+    const selectedElement = this._widget.selectedItem;
     if (selectedElement) {
       return this._itemsByElement.get(selectedElement).attachment;
     }
     return null;
   },
 
-  _selectItem: function (item) {
+  _selectItem: function(item) {
     // A falsy item is allowed to invalidate the current selection.
-    let targetElement = item ? item._target : null;
-    let prevElement = this._widget.selectedItem;
+    const targetElement = item ? item._target : null;
+    const prevElement = this._widget.selectedItem;
 
     // Make sure the selected item's target element is focused and visible.
     if (this.autoFocusOnSelection && targetElement) {
@@ -964,8 +942,8 @@ const WidgetMethods = exports.WidgetMethods = {
       item = this.getItemForPredicate(item);
     }
 
-    let targetElement = item ? item._target : null;
-    let prevElement = this._widget.selectedItem;
+    const targetElement = item ? item._target : null;
+    const prevElement = this._widget.selectedItem;
 
     if (this.maintainSelectionVisible && targetElement) {
       // Some methods are optional. See the WidgetMethods object documentation
@@ -980,8 +958,8 @@ const WidgetMethods = exports.WidgetMethods = {
     // Prevent selecting the same item again and avoid dispatching
     // a redundant selection event, so return early.
     if (targetElement != prevElement) {
-      let dispTarget = targetElement || prevElement;
-      let dispName = this.suppressSelectionEvents ? "suppressed-select"
+      const dispTarget = targetElement || prevElement;
+      const dispName = this.suppressSelectionEvents ? "suppressed-select"
                                                   : "select";
       ViewHelpers.dispatchEvent(dispTarget, dispName, item);
     }
@@ -992,7 +970,7 @@ const WidgetMethods = exports.WidgetMethods = {
    * @param number index
    */
   set selectedIndex(index) {
-    let targetElement = this._widget.getItemAtIndex(index);
+    const targetElement = this._widget.getItemAtIndex(index);
     if (targetElement) {
       this.selectedItem = this._itemsByElement.get(targetElement);
       return;
@@ -1017,7 +995,7 @@ const WidgetMethods = exports.WidgetMethods = {
    * @param Item | function item
    * @see `set selectedItem`
    */
-  forceSelect: function (item) {
+  forceSelect: function(item) {
     this.selectedItem = null;
     this.selectedItem = item;
   },
@@ -1082,28 +1060,28 @@ const WidgetMethods = exports.WidgetMethods = {
   /**
    * Focuses the first visible item in this container.
    */
-  focusFirstVisibleItem: function () {
+  focusFirstVisibleItem: function() {
     this.focusItemAtDelta(-this.itemCount);
   },
 
   /**
    * Focuses the last visible item in this container.
    */
-  focusLastVisibleItem: function () {
+  focusLastVisibleItem: function() {
     this.focusItemAtDelta(+this.itemCount);
   },
 
   /**
    * Focuses the next item in this container.
    */
-  focusNextItem: function () {
+  focusNextItem: function() {
     this.focusItemAtDelta(+1);
   },
 
   /**
    * Focuses the previous item in this container.
    */
-  focusPrevItem: function () {
+  focusPrevItem: function() {
     this.focusItemAtDelta(-1);
   },
 
@@ -1114,12 +1092,12 @@ const WidgetMethods = exports.WidgetMethods = {
    * @param number delta
    *        A scalar specifying by how many items should the selection change.
    */
-  focusItemAtDelta: function (delta) {
+  focusItemAtDelta: function(delta) {
     // Make sure the currently selected item is also focused, so that the
     // command dispatcher mechanism has a relative node to work with.
     // If there's no selection, just select an item at a corresponding index
     // (e.g. the first item in this container if delta <= 1).
-    let selectedElement = this._widget.selectedItem;
+    const selectedElement = this._widget.selectedItem;
     if (selectedElement) {
       selectedElement.focus();
     } else {
@@ -1127,7 +1105,7 @@ const WidgetMethods = exports.WidgetMethods = {
       return;
     }
 
-    let direction = delta > 0 ? "advanceFocus" : "rewindFocus";
+    const direction = delta > 0 ? "advanceFocus" : "rewindFocus";
     let distance = Math.abs(Math[delta > 0 ? "ceil" : "floor"](delta));
     while (distance--) {
       if (!this._focusChange(direction)) {
@@ -1149,13 +1127,12 @@ const WidgetMethods = exports.WidgetMethods = {
    *         False if the focus went out of bounds and the first or last item
    *         in this container was focused instead.
    */
-  _focusChange: function (direction) {
-    let commandDispatcher = this._commandDispatcher;
-    let prevFocusedElement = commandDispatcher.focusedElement;
+  _focusChange: function(direction) {
+    const commandDispatcher = this._commandDispatcher;
+    const prevFocusedElement = commandDispatcher.focusedElement;
     let currFocusedElement;
 
     do {
-      commandDispatcher.suppressFocusScroll = true;
       commandDispatcher[direction]();
       currFocusedElement = commandDispatcher.focusedElement;
 
@@ -1180,9 +1157,9 @@ const WidgetMethods = exports.WidgetMethods = {
     if (this._cachedCommandDispatcher) {
       return this._cachedCommandDispatcher;
     }
-    let someElement = this._widget.getItemAtIndex(0);
+    const someElement = this._widget.getItemAtIndex(0);
     if (someElement) {
-      let commandDispatcher = someElement.ownerDocument.commandDispatcher;
+      const commandDispatcher = someElement.ownerDocument.commandDispatcher;
       this._cachedCommandDispatcher = commandDispatcher;
       return commandDispatcher;
     }
@@ -1192,11 +1169,11 @@ const WidgetMethods = exports.WidgetMethods = {
   /**
    * Gets the currently focused element in this container.
    *
-   * @return nsIDOMNode
+   * @return Node
    *         The focused element, or null if nothing is found.
    */
   get _focusedElement() {
-    let commandDispatcher = this._commandDispatcher;
+    const commandDispatcher = this._commandDispatcher;
     if (commandDispatcher) {
       return commandDispatcher.focusedElement;
     }
@@ -1211,7 +1188,7 @@ const WidgetMethods = exports.WidgetMethods = {
    * @return Item
    *         The matched item, or null if nothing is found.
    */
-  getItemAtIndex: function (index) {
+  getItemAtIndex: function(index) {
     return this.getItemForElement(this._widget.getItemAtIndex(index));
   },
 
@@ -1223,14 +1200,14 @@ const WidgetMethods = exports.WidgetMethods = {
    * @return Item
    *         The matched item, or null if nothing is found.
    */
-  getItemByValue: function (value) {
+  getItemByValue: function(value) {
     return this._itemsByValue.get(value);
   },
 
   /**
    * Gets the item in the container associated with the specified element.
    *
-   * @param nsIDOMNode element
+   * @param Node element
    *        The element used to identify the item.
    * @param object flags [optional]
    *        Additional options for showing the source. Supported options:
@@ -1239,7 +1216,7 @@ const WidgetMethods = exports.WidgetMethods = {
    * @return Item
    *         The matched item, or null if nothing is found.
    */
-  getItemForElement: function (element, flags = {}) {
+  getItemForElement: function(element, flags = {}) {
     while (element) {
       let item = this._itemsByElement.get(element);
 
@@ -1265,9 +1242,9 @@ const WidgetMethods = exports.WidgetMethods = {
    * @return Item
    *         The matched item, or null if nothing is found.
    */
-  getItemForPredicate: function (predicate, owner = this) {
+  getItemForPredicate: function(predicate, owner = this) {
     // Recursively check the items in this widget for a predicate match.
-    for (let [element, item] of owner._itemsByElement) {
+    for (const [element, item] of owner._itemsByElement) {
       let match;
       if (predicate(item) && !element.hidden) {
         match = item;
@@ -1280,7 +1257,7 @@ const WidgetMethods = exports.WidgetMethods = {
     }
     // Also check the staged items. No need to do this recursively since
     // they're not even appended to the view yet.
-    for (let { item } of this._stagedItems) {
+    for (const { item } of this._stagedItems) {
       if (predicate(item)) {
         return item;
       }
@@ -1292,7 +1269,7 @@ const WidgetMethods = exports.WidgetMethods = {
    * Shortcut function for getItemForPredicate which works on item attachments.
    * @see getItemForPredicate
    */
-  getItemForAttachment: function (predicate, owner = this) {
+  getItemForAttachment: function(predicate, owner = this) {
     return this.getItemForPredicate(e => predicate(e.attachment));
   },
 
@@ -1304,19 +1281,19 @@ const WidgetMethods = exports.WidgetMethods = {
    * @return number
    *         The index of the matched item, or -1 if nothing is found.
    */
-  indexOfItem: function (item) {
+  indexOfItem: function(item) {
     return this._indexOfElement(item._target);
   },
 
   /**
    * Finds the index of an element in the container.
    *
-   * @param nsIDOMNode element
+   * @param Node element
    *        The element get the index for.
    * @return number
    *         The index of the matched element, or -1 if nothing is found.
    */
-  _indexOfElement: function (element) {
+  _indexOfElement: function(element) {
     for (let i = 0; i < this._itemsByElement.size; i++) {
       if (this._widget.getItemAtIndex(i) == element) {
         return i;
@@ -1338,8 +1315,8 @@ const WidgetMethods = exports.WidgetMethods = {
    * @return array
    */
   get items() {
-    let store = [];
-    let itemCount = this.itemCount;
+    const store = [];
+    const itemCount = this.itemCount;
     for (let i = 0; i < itemCount; i++) {
       store.push(this.getItemAtIndex(i));
     }
@@ -1380,8 +1357,8 @@ const WidgetMethods = exports.WidgetMethods = {
    * @return boolean
    *         True if the item is unique, false otherwise.
    */
-  isUnique: function (item) {
-    let value = item._value;
+  isUnique: function(item) {
+    const value = item._value;
     if (value == "" || value == "undefined" || value == "null") {
       return true;
     }
@@ -1397,7 +1374,7 @@ const WidgetMethods = exports.WidgetMethods = {
    * @return boolean
    *         True if the item is eligible, false otherwise.
    */
-  isEligible: function (item) {
+  isEligible: function(item) {
     return this.isUnique(item) && item._prebuiltNode;
   },
 
@@ -1410,8 +1387,8 @@ const WidgetMethods = exports.WidgetMethods = {
    * @return number
    *         The expected item index.
    */
-  _findExpectedIndexFor: function (item) {
-    let itemCount = this.itemCount;
+  _findExpectedIndexFor: function(item) {
+    const itemCount = this.itemCount;
     for (let i = 0; i < itemCount; i++) {
       if (this._currentSortPredicate(this.getItemAtIndex(i), item) > 0) {
         return i;
@@ -1434,7 +1411,7 @@ const WidgetMethods = exports.WidgetMethods = {
    * @return Item
    *         The item associated with the displayed element, null if rejected.
    */
-  _insertItemAt: function (index, item, options = {}) {
+  _insertItemAt: function(index, item, options = {}) {
     if (!this.isEligible(item)) {
       return null;
     }
@@ -1442,8 +1419,8 @@ const WidgetMethods = exports.WidgetMethods = {
     // Entangle the item with the newly inserted node.
     // Make sure this is done with the value returned by insertItemAt(),
     // to avoid storing a potential DocumentFragment.
-    let node = item._prebuiltNode;
-    let attachment = item.attachment;
+    const node = item._prebuiltNode;
+    const attachment = item.attachment;
     this._entangleItem(item,
                        this._widget.insertItemAt(index, node, attachment));
 
@@ -1473,10 +1450,10 @@ const WidgetMethods = exports.WidgetMethods = {
    *
    * @param Item item
    *        The item describing a target element.
-   * @param nsIDOMNode element
+   * @param Node element
    *        The element displaying the item.
    */
-  _entangleItem: function (item, element) {
+  _entangleItem: function(item, element) {
     this._itemsByValue.set(item._value, item);
     this._itemsByElement.set(element, item);
     item._target = element;
@@ -1488,11 +1465,11 @@ const WidgetMethods = exports.WidgetMethods = {
    * @param Item item
    *        The item describing a target element.
    */
-  _untangleItem: function (item) {
+  _untangleItem: function(item) {
     if (item.finalize) {
       item.finalize(item);
     }
-    for (let childItem of item) {
+    for (const childItem of item) {
       item.remove(childItem);
     }
 
@@ -1506,17 +1483,17 @@ const WidgetMethods = exports.WidgetMethods = {
    * @param Item item
    *        The item describing a target element.
    */
-  _unlinkItem: function (item) {
+  _unlinkItem: function(item) {
     this._itemsByValue.delete(item._value);
     this._itemsByElement.delete(item._target);
   },
 
   /**
-   * The keyPress event listener for this container.
+   * The keyDown event listener for this container.
    * @param string name
    * @param KeyboardEvent event
    */
-  _onWidgetKeyPress: function (name, event) {
+  _onWidgetKeyDown: function(event) {
     // Prevent scrolling when pressing navigation keys.
     ViewHelpers.preventScrolling(event);
 
@@ -1551,13 +1528,13 @@ const WidgetMethods = exports.WidgetMethods = {
    * @param string name
    * @param MouseEvent event
    */
-  _onWidgetMousePress: function (name, event) {
+  _onWidgetMousePress: function(event) {
     if (event.button != 0 && !this.allowFocusOnRightClick) {
       // Only allow left-click to trigger this event.
       return;
     }
 
-    let item = this.getItemForElement(event.target);
+    const item = this.getItemForElement(event.target);
     if (item) {
       // The container is not empty and we clicked on an actual item.
       this.selectedItem = item;
@@ -1575,7 +1552,7 @@ const WidgetMethods = exports.WidgetMethods = {
    * @return boolean
    *         True if the item should be visible, false otherwise.
    */
-  _currentFilterPredicate: function (item) {
+  _currentFilterPredicate: function(item) {
     return true;
   },
 
@@ -1592,7 +1569,7 @@ const WidgetMethods = exports.WidgetMethods = {
    *          0 to leave first and second unchanged with respect to each other
    *          1 to sort second to a lower index than first
    */
-  _currentSortPredicate: function (first, second) {
+  _currentSortPredicate: function(first, second) {
     return +(first._value.toLowerCase() > second._value.toLowerCase());
   },
 
@@ -1605,7 +1582,7 @@ const WidgetMethods = exports.WidgetMethods = {
    * @param args
    *        Optional. Any arguments you want to pass through to the method.
    */
-  callMethod: function (methodName, ...args) {
+  callMethod: function(methodName, ...args) {
     return this._widget[methodName].apply(this._widget, args);
   },
 
@@ -1613,7 +1590,7 @@ const WidgetMethods = exports.WidgetMethods = {
   _emptyText: "",
   _headerText: "",
   _preferredValue: "",
-  _cachedCommandDispatcher: null
+  _cachedCommandDispatcher: null,
 };
 
 /**

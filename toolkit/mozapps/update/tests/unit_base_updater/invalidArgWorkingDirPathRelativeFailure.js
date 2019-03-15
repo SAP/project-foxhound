@@ -5,9 +5,14 @@
 
 /* Relative working directory path failure test */
 
-const STATE_AFTER_RUNUPDATE =
-  IS_SERVICE_TEST ? STATE_FAILED_SERVICE_INVALID_WORKING_DIR_PATH_ERROR
-                  : STATE_FAILED_INVALID_WORKING_DIR_PATH_ERROR;
+/* The service cannot safely write update.status for this failure because the
+ * check is done before validating the installed updater. */
+const STATE_AFTER_RUNUPDATE_BASE = STATE_FAILED_INVALID_WORKING_DIR_PATH_ERROR;
+const STATE_AFTER_RUNUPDATE_SERVICE = AppConstants.EARLY_BETA_OR_EARLIER
+    ? STATE_PENDING_SVC
+    : STATE_FAILED_SERVICE_INVALID_WORKING_DIR_PATH_ERROR;
+const STATE_AFTER_RUNUPDATE = IS_SERVICE_TEST ? STATE_AFTER_RUNUPDATE_SERVICE
+                                              : STATE_AFTER_RUNUPDATE_BASE;
 
 function run_test() {
   if (!setupTestCommon()) {
@@ -33,5 +38,24 @@ function runUpdateFinished() {
   standardInit();
   checkPostUpdateRunningFile(false);
   checkFilesAfterUpdateFailure(getApplyDirFile);
+  executeSoon(waitForUpdateXMLFiles);
+}
+
+/**
+ * Called after the call to waitForUpdateXMLFiles finishes.
+ */
+function waitForUpdateXMLFilesFinished() {
+  if (IS_SERVICE_TEST) {
+    if (AppConstants.EARLY_BETA_OR_EARLIER) {
+      checkUpdateManager(STATE_NONE, false, STATE_PENDING_SVC, 0, 1);
+    } else {
+      checkUpdateManager(STATE_NONE, false, STATE_FAILED,
+                         SERVICE_INVALID_WORKING_DIR_PATH_ERROR, 1);
+    }
+  } else {
+    checkUpdateManager(STATE_NONE, false, STATE_FAILED,
+                       INVALID_WORKING_DIR_PATH_ERROR, 1);
+  }
+
   waitForFilesInUse();
 }

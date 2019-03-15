@@ -32,10 +32,6 @@ DEFINE_KEYNAME_INTERNAL(PrintableKey, "MozPrintableKey")
 DEFINE_KEYNAME_INTERNAL(SoftLeft, "MozSoftLeft")
 DEFINE_KEYNAME_INTERNAL(SoftRight, "MozSoftRight")
 
-#ifdef MOZ_B2G
-DEFINE_KEYNAME_INTERNAL(HomeScreen, "MozHomeScreen")
-#endif // #ifdef MOZ_B2G
-
 /******************************************************************************
  * Modifier Keys
  *****************************************************************************/
@@ -48,7 +44,7 @@ DEFINE_KEYNAME_WITH_SAME_NAME(FnLock)
 DEFINE_KEYNAME_WITH_SAME_NAME(Hyper)
 DEFINE_KEYNAME_WITH_SAME_NAME(Meta)
 DEFINE_KEYNAME_WITH_SAME_NAME(NumLock)
-DEFINE_KEYNAME_WITH_SAME_NAME(OS) // Dropped from the latest draft, bug 1232918
+DEFINE_KEYNAME_WITH_SAME_NAME(OS)  // Dropped from the latest draft, bug 1232918
 DEFINE_KEYNAME_WITH_SAME_NAME(ScrollLock)
 DEFINE_KEYNAME_WITH_SAME_NAME(Shift)
 DEFINE_KEYNAME_WITH_SAME_NAME(Super)

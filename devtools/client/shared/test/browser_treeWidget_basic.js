@@ -10,12 +10,12 @@ const TEST_URI = "data:text/html;charset=utf-8,<head>" +
   "ets.css'></head><body><div></div><span></span></body>";
 const {TreeWidget} = require("devtools/client/shared/widgets/TreeWidget");
 
-add_task(function* () {
-  yield addTab("about:blank");
-  let [host,, doc] = yield createHost("bottom", TEST_URI);
+add_task(async function() {
+  await addTab("about:blank");
+  const [host,, doc] = await createHost("bottom", TEST_URI);
 
-  let tree = new TreeWidget(doc.querySelector("div"), {
-    defaultType: "store"
+  const tree = new TreeWidget(doc.querySelector("div"), {
+    defaultType: "store",
   });
 
   populateTree(tree, doc);
@@ -32,40 +32,40 @@ add_task(function* () {
 function populateTree(tree, doc) {
   tree.add([{
     id: "level1",
-    label: "Level 1"
+    label: "Level 1",
   }, {
     id: "level2-1",
-    label: "Level 2"
+    label: "Level 2",
   }, {
     id: "level3-1",
     label: "Level 3 - Child 1",
-    type: "dir"
+    type: "dir",
   }]);
   tree.add(["level1", "level2-1", {
     id: "level3-2",
-    label: "Level 3 - Child 2"
+    label: "Level 3 - Child 2",
   }]);
   tree.add(["level1", "level2-1", {
     id: "level3-3",
-    label: "Level 3 - Child 3"
+    label: "Level 3 - Child 3",
   }]);
   tree.add(["level1", {
     id: "level2-2",
-    label: "Level 2.1"
+    label: "Level 2.1",
   }, {
     id: "level3-1",
-    label: "Level 3.1"
+    label: "Level 3.1",
   }]);
   tree.add([{
     id: "level1",
-    label: "Level 1"
+    label: "Level 1",
   }, {
     id: "level2",
-    label: "Level 2"
+    label: "Level 2",
   }, {
     id: "level3",
     label: "Level 3",
-    type: "js"
+    type: "js",
   }]);
   tree.add(["level1.1", "level2", {id: "level3", type: "url"}]);
 }
@@ -96,15 +96,15 @@ function testTreeItemInsertedCorrectly(tree, doc) {
      "Text content of second top level element matches");
 
   // Adding a new non text item in the tree.
-  let node = doc.createElement("div");
+  const node = doc.createElement("div");
   node.textContent = "Foo Bar";
   node.className = "foo bar";
   tree.add([{
     id: "level1.2",
     node: node,
     attachment: {
-      foo: "bar"
-    }
+      foo: "bar",
+    },
   }]);
 
   is(tree.root.children.children.length, 3,
@@ -163,13 +163,13 @@ function testAPI(tree, doc) {
   // Nothing should be selected beforehand
   ok(!doc.querySelector(".theme-selected"), "Nothing is selected");
   tree.selectItem(["level1"]);
-  let node = doc.querySelector(".theme-selected");
+  const node = doc.querySelector(".theme-selected");
   ok(!!node, "Something got selected");
   is(node.parentNode.dataset.id, JSON.stringify(["level1"]),
      "Correct node selected");
 
   tree.selectItem(["level1", "level2"]);
-  let node2 = doc.querySelector(".theme-selected");
+  const node2 = doc.querySelector(".theme-selected");
   ok(!!node2, "Something is still selected");
   isnot(node, node2, "Newly selected node is different from previous");
   is(node2.parentNode.dataset.id, JSON.stringify(["level1", "level2"]),
@@ -184,7 +184,7 @@ function testAPI(tree, doc) {
   ok(tree.isSelected(["level1", "level2"]), "isSelected works");
 
   tree.selectedItem = ["level1"];
-  let node3 = doc.querySelector(".theme-selected");
+  const node3 = doc.querySelector(".theme-selected");
   ok(!!node3, "Something is still selected");
   isnot(node2, node3, "Newly selected node is different from previous");
   is(node3, node, "First and third selected nodes should be same");
@@ -241,21 +241,21 @@ function testAPI(tree, doc) {
   ok(!doc.querySelector("[data-id='" +
        JSON.stringify(["level1", "level2", "level3"]) + "']"),
      "level1-level2-level3 item does not exist after removing");
-  let level2item = doc.querySelector("[data-id='" +
+  const level2item = doc.querySelector("[data-id='" +
        JSON.stringify(["level1", "level2"]) + "'] > .tree-widget-item");
   ok(level2item.hasAttribute("empty"),
      "level1-level2 item is marked as empty after removing");
 
   tree.add([{
     id: "level1",
-    label: "Level 1"
+    label: "Level 1",
   }, {
     id: "level2",
-    label: "Level 2"
+    label: "Level 2",
   }, {
     id: "level3",
     label: "Level 3",
-    type: "js"
+    type: "js",
   }]);
 
   // test if clearing the tree works

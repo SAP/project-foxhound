@@ -47,18 +47,6 @@ function runTest()
   var formSubmitted = [ false, false ];
   var invalidHandled = false;
 
-  var os = SpecialPowers.Cc['@mozilla.org/observer-service;1']
-                        .getService(SpecialPowers.Ci.nsIObserverService);
-  var observers = os.enumerateObservers("invalidformsubmit");
-
-  // The following test should not be done if there is no observer for
-  // "invalidformsubmit" because the form submission will not be canceled in that
-  // case.
-  if (!observers.hasMoreElements()) {
-    SimpleTest.finish();
-    return;
-  }
-
   // Initialize
   document.forms[0].addEventListener('submit', function(aEvent) {
     formSubmitted[0] = true;
@@ -101,7 +89,7 @@ function runTest()
   document.getElementById('b').click();
   var c = document.getElementById('c');
   c.focus();
-  synthesizeKey("KEY_Enter", { code: "Enter" });
+  synthesizeKey("KEY_Enter");
   document.getElementById('s2').click();
 }
 

@@ -4,10 +4,6 @@
 
 %include ../../shared/controlcenter/panel.inc.css
 
-.identity-popup-expander:-moz-focusring {
-  padding: 1px;
-}
-
-.identity-popup-expander:-moz-focusring > .button-box {
-  outline: 1px -moz-dialogtext dotted;
+.tracking-protection-button > .button-box > .button-icon {
+  margin-inline-end: 5px;
 }

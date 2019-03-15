@@ -7,20 +7,20 @@
 
 const LineGraphWidget = require("devtools/client/shared/widgets/LineGraphWidget");
 
-add_task(function* () {
-  yield addTab("about:blank");
-  yield performTest();
+add_task(async function() {
+  await addTab("about:blank");
+  await performTest();
   gBrowser.removeCurrentTab();
 });
 
-function* performTest() {
-  let [host,, doc] = yield createHost();
-  let graph = new LineGraphWidget(doc.body, "fps");
-  yield graph.once("ready");
+async function performTest() {
+  const [host,, doc] = await createHost();
+  const graph = new LineGraphWidget(doc.body, "fps");
+  await graph.once("ready");
 
   testGraph(graph);
 
-  yield graph.destroy();
+  await graph.destroy();
   host.destroy();
 }
 

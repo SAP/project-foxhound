@@ -1,219 +1,292 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! Gecko-specific bits for selector-parsing.
 
-use cssparser::ToCss;
-use element_state::ElementState;
-use gecko_bindings::structs::CSSPseudoClassType;
-use selector_parser::{SelectorParser, PseudoElementCascadeType};
-use selector_parser::{attr_equals_selector_is_shareable, attr_exists_selector_is_shareable};
-use selectors::parser::AttrSelector;
-use std::borrow::Cow;
+use crate::element_state::{DocumentState, ElementState};
+use crate::gecko_bindings::structs::RawServoSelectorList;
+use crate::gecko_bindings::sugar::ownership::{HasBoxFFI, HasFFI, HasSimpleFFI};
+use crate::invalidation::element::document_state::InvalidationMatchingData;
+use crate::selector_parser::{Direction, SelectorParser};
+use crate::str::starts_with_ignore_ascii_case;
+use crate::string_cache::{Atom, Namespace, WeakAtom, WeakNamespace};
+use crate::values::serialize_atom_identifier;
+use cssparser::{BasicParseError, BasicParseErrorKind, Parser};
+use cssparser::{CowRcStr, SourceLocation, ToCss, Token};
+use selectors::parser::{self as selector_parser, Selector};
+use selectors::parser::{SelectorParseErrorKind, Visit};
+use selectors::visitor::SelectorVisitor;
+use selectors::SelectorList;
 use std::fmt;
-use string_cache::{Atom, Namespace, WeakAtom, WeakNamespace};
+use style_traits::{CssWriter, ParseError, StyleParseErrorKind, ToCss as ToCss_};
+use thin_slice::ThinBoxedSlice;
 
-/// A representation of a CSS pseudo-element.
-///
-/// In Gecko, we represent pseudo-elements as plain `Atom`s.
-///
-/// The boolean field represents whether this element is an anonymous box. This
-/// is just for convenience, instead of recomputing it.
-///
-/// Also, note that the `Atom` member is always a static atom, so if space is a
-/// concern, we can use the raw pointer and use the lower bit to represent it
-/// without space overhead.
-///
-/// FIXME(emilio): we know all these atoms are static. Patches are starting to
-/// pile up, but a further potential optimisation is generating bindings without
-/// `-no-gen-bitfield-methods` (that was removed to compile on stable, but it no
-/// longer depends on it), and using the raw *mut nsIAtom (properly asserting
-/// we're a static atom).
-///
-/// This should allow us to avoid random FFI overhead when cloning/dropping
-/// pseudos.
-///
-/// Also, we can further optimize PartialEq and hash comparing/hashing only the
-/// atoms.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct PseudoElement(Atom, bool);
-
-impl PseudoElement {
-    /// Get the pseudo-element as an atom.
-    #[inline]
-    pub fn as_atom(&self) -> &Atom {
-        &self.0
-    }
-
-    /// Whether this pseudo-element is an anonymous box.
-    #[inline]
-    fn is_anon_box(&self) -> bool {
-        self.1
-    }
-
-    /// Construct a pseudo-element from an `Atom`, receiving whether it is also
-    /// an anonymous box, and don't check it on release builds.
-    ///
-    /// On debug builds we assert it's the result we expect.
-    #[inline]
-    pub fn from_atom_unchecked(atom: Atom, is_anon_box: bool) -> Self {
-        if cfg!(debug_assertions) {
-            // Do the check on debug regardless.
-            match Self::from_atom(&*atom, true) {
-                Some(pseudo) => {
-                    assert_eq!(pseudo.is_anon_box(), is_anon_box);
-                    return pseudo;
-                }
-                None => panic!("Unknown pseudo: {:?}", atom),
-            }
-        }
-
-        PseudoElement(atom, is_anon_box)
-    }
-
-    #[inline]
-    fn from_atom(atom: &WeakAtom, _in_ua: bool) -> Option<Self> {
-        macro_rules! pseudo_element {
-            ($pseudo_str_with_colon:expr, $atom:expr, $is_anon_box:expr) => {{
-                if atom == &*$atom {
-                    return Some(PseudoElement($atom, $is_anon_box));
-                }
-            }}
-        }
-
-        include!("generated/gecko_pseudo_element_helper.rs");
-
-        None
-    }
-
-    /// Constructs an atom from a string of text, and whether we're in a
-    /// user-agent stylesheet.
-    ///
-    /// If we're not in a user-agent stylesheet, we will never parse anonymous
-    /// box pseudo-elements.
-    ///
-    /// Returns `None` if the pseudo-element is not recognised.
-    #[inline]
-    fn from_slice(s: &str, in_ua_stylesheet: bool) -> Option<Self> {
-        use std::ascii::AsciiExt;
-        macro_rules! pseudo_element {
-            ($pseudo_str_with_colon:expr, $atom:expr, $is_anon_box:expr) => {{
-                if !$is_anon_box || in_ua_stylesheet {
-                    if s.eq_ignore_ascii_case(&$pseudo_str_with_colon[1..]) {
-                        return Some(PseudoElement($atom, $is_anon_box))
-                    }
-                }
-            }}
-        }
-
-        include!("generated/gecko_pseudo_element_helper.rs");
-
-        None
-    }
-}
-
-impl ToCss for PseudoElement {
-    fn to_css<W>(&self, dest: &mut W) -> fmt::Result where W: fmt::Write {
-        // FIXME: why does the atom contain one colon? Pseudo-element has two
-        debug_assert!(self.0.as_slice().starts_with(&[b':' as u16]) &&
-                      !self.0.as_slice().starts_with(&[b':' as u16, b':' as u16]));
-        try!(dest.write_char(':'));
-        write!(dest, "{}", self.0)
-    }
-}
+pub use crate::gecko::pseudo_element::{
+    PseudoElement, EAGER_PSEUDOS, EAGER_PSEUDO_COUNT, PSEUDO_COUNT,
+};
+pub use crate::gecko::snapshot::SnapshotMap;
 
 bitflags! {
-    flags NonTSPseudoClassFlag: u8 {
-        // See NonTSPseudoClass::is_internal()
-        const PSEUDO_CLASS_INTERNAL = 0x01,
+    // See NonTSPseudoClass::is_enabled_in()
+    struct NonTSPseudoClassFlag: u8 {
+        const PSEUDO_CLASS_ENABLED_IN_UA_SHEETS = 1 << 0;
+        const PSEUDO_CLASS_ENABLED_IN_CHROME = 1 << 1;
+        const PSEUDO_CLASS_ENABLED_IN_UA_SHEETS_AND_CHROME =
+            NonTSPseudoClassFlag::PSEUDO_CLASS_ENABLED_IN_UA_SHEETS.bits |
+            NonTSPseudoClassFlag::PSEUDO_CLASS_ENABLED_IN_CHROME.bits;
     }
 }
 
-macro_rules! pseudo_class_list {
-    ($(($css:expr, $name:ident, $_gecko_type:tt, $_state:tt, $_flags:tt),)*) => {
-        #[doc = "Our representation of a non tree-structural pseudo-class."]
-        #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+/// The type used to store the language argument to the `:lang` pseudo-class.
+pub type Lang = Atom;
+
+macro_rules! pseudo_class_name {
+    ([$(($css:expr, $name:ident, $gecko_type:tt, $state:tt, $flags:tt),)*]) => {
+        /// Our representation of a non tree-structural pseudo-class.
+        #[derive(Clone, Debug, Eq, MallocSizeOf, PartialEq)]
         pub enum NonTSPseudoClass {
             $(
                 #[doc = $css]
                 $name,
             )*
+            /// The `:lang` pseudo-class.
+            Lang(Lang),
+            /// The `:dir` pseudo-class.
+            Dir(Direction),
+            /// The non-standard `:-moz-any` pseudo-class.
+            ///
+            /// TODO(emilio): We disallow combinators and pseudos here, so we
+            /// should use SimpleSelector instead
+            MozAny(ThinBoxedSlice<Selector<SelectorImpl>>),
+            /// The non-standard `:-moz-locale-dir` pseudo-class.
+            MozLocaleDir(Direction),
         }
     }
 }
-include!("non_ts_pseudo_class_list.rs");
+apply_non_ts_list!(pseudo_class_name);
 
 impl ToCss for NonTSPseudoClass {
-    fn to_css<W>(&self, dest: &mut W) -> fmt::Result where W: fmt::Write {
-        macro_rules! pseudo_class_list {
-            ($(($css:expr, $name:ident, $_gecko_type:tt, $_state:tt, $_flags:tt),)*) => {
+    fn to_css<W>(&self, dest: &mut W) -> fmt::Result
+    where
+        W: fmt::Write,
+    {
+        macro_rules! pseudo_class_serialize {
+            ([$(($css:expr, $name:ident, $gecko_type:tt, $state:tt, $flags:tt),)*]) => {
                 match *self {
                     $(NonTSPseudoClass::$name => concat!(":", $css),)*
+                    NonTSPseudoClass::Lang(ref s) => {
+                        dest.write_str(":lang(")?;
+                        serialize_atom_identifier(s, dest)?;
+                        return dest.write_char(')');
+                    },
+                    NonTSPseudoClass::MozLocaleDir(ref dir) => {
+                        dest.write_str(":-moz-locale-dir(")?;
+                        dir.to_css(&mut CssWriter::new(dest))?;
+                        return dest.write_char(')')
+                    },
+                    NonTSPseudoClass::Dir(ref dir) => {
+                        dest.write_str(":dir(")?;
+                        dir.to_css(&mut CssWriter::new(dest))?;
+                        return dest.write_char(')')
+                    },
+                    NonTSPseudoClass::MozAny(ref selectors) => {
+                        dest.write_str(":-moz-any(")?;
+                        let mut iter = selectors.iter();
+                        let first = iter.next().expect(":-moz-any must have at least 1 selector");
+                        first.to_css(dest)?;
+                        for selector in iter {
+                            dest.write_str(", ")?;
+                            selector.to_css(dest)?;
+                        }
+                        return dest.write_char(')')
+                    }
                 }
             }
         }
-        dest.write_str(include!("non_ts_pseudo_class_list.rs"))
+        let ser = apply_non_ts_list!(pseudo_class_serialize);
+        dest.write_str(ser)
+    }
+}
+
+impl Visit for NonTSPseudoClass {
+    type Impl = SelectorImpl;
+
+    fn visit<V>(&self, visitor: &mut V) -> bool
+    where
+        V: SelectorVisitor<Impl = Self::Impl>,
+    {
+        if let NonTSPseudoClass::MozAny(ref selectors) = *self {
+            for selector in selectors.iter() {
+                if !selector.visit(visitor) {
+                    return false;
+                }
+            }
+        }
+
+        true
     }
 }
 
 impl NonTSPseudoClass {
-    /// A pseudo-class is internal if it can only be used inside
-    /// user agent style sheets.
-    pub fn is_internal(&self) -> bool {
-        macro_rules! check_flag {
-            (_) => (false);
-            ($flags:expr) => ($flags.contains(PSEUDO_CLASS_INTERNAL));
-        }
-        macro_rules! pseudo_class_list {
-            ($(($_css:expr, $name:ident, $_gecko_type:tt, $_state:tt, $flags:tt),)*) => {
-                match *self {
-                    $(NonTSPseudoClass::$name => check_flag!($flags),)*
+    /// Parses the name and returns a non-ts-pseudo-class if succeeds.
+    /// None otherwise. It doesn't check whether the pseudo-class is enabled
+    /// in a particular state.
+    pub fn parse_non_functional(name: &str) -> Option<Self> {
+        macro_rules! pseudo_class_parse {
+            ([$(($css:expr, $name:ident, $gecko_type:tt, $state:tt, $flags:tt),)*]) => {
+                match_ignore_ascii_case! { &name,
+                    $($css => Some(NonTSPseudoClass::$name),)*
+                    _ => None,
                 }
             }
         }
-        include!("non_ts_pseudo_class_list.rs")
+        apply_non_ts_list!(pseudo_class_parse)
+    }
+
+    /// Returns true if this pseudo-class has any of the given flags set.
+    fn has_any_flag(&self, flags: NonTSPseudoClassFlag) -> bool {
+        macro_rules! check_flag {
+            (_) => {
+                false
+            };
+            ($flags:ident) => {
+                NonTSPseudoClassFlag::$flags.intersects(flags)
+            };
+        }
+        macro_rules! pseudo_class_check_is_enabled_in {
+            ([$(($css:expr, $name:ident, $gecko_type:tt, $state:tt, $flags:tt),)*]) => {
+                match *self {
+                    $(NonTSPseudoClass::$name => check_flag!($flags),)*
+                    NonTSPseudoClass::MozLocaleDir(_) |
+                    NonTSPseudoClass::Lang(_) |
+                    NonTSPseudoClass::Dir(_) |
+                    NonTSPseudoClass::MozAny(_) => false,
+                }
+            }
+        }
+        apply_non_ts_list!(pseudo_class_check_is_enabled_in)
+    }
+
+    /// Returns whether the pseudo-class is enabled in content sheets.
+    fn is_enabled_in_content(&self) -> bool {
+        use crate::gecko_bindings::structs::mozilla;
+        match *self {
+            // For pseudo-classes with pref, the availability in content
+            // depends on the pref.
+            NonTSPseudoClass::Fullscreen => unsafe {
+                mozilla::StaticPrefs_sVarCache_full_screen_api_unprefix_enabled
+            },
+            // Otherwise, a pseudo-class is enabled in content when it
+            // doesn't have any enabled flag.
+            _ => !self
+                .has_any_flag(NonTSPseudoClassFlag::PSEUDO_CLASS_ENABLED_IN_UA_SHEETS_AND_CHROME),
+        }
+    }
+
+    /// <https://drafts.csswg.org/selectors-4/#useraction-pseudos>
+    ///
+    /// We intentionally skip the link-related ones.
+    pub fn is_safe_user_action_state(&self) -> bool {
+        matches!(
+            *self,
+            NonTSPseudoClass::Hover | NonTSPseudoClass::Active | NonTSPseudoClass::Focus
+        )
     }
 
     /// Get the state flag associated with a pseudo-class, if any.
     pub fn state_flag(&self) -> ElementState {
         macro_rules! flag {
-            (_) => (ElementState::empty());
-            ($state:ident) => (::element_state::$state);
+            (_) => {
+                ElementState::empty()
+            };
+            ($state:ident) => {
+                ElementState::$state
+            };
         }
-        macro_rules! pseudo_class_list {
-            ($(($_css:expr, $name:ident, $_gecko_type:tt, $state:tt, $_flags:tt),)*) => {
+        macro_rules! pseudo_class_state {
+            ([$(($css:expr, $name:ident, $gecko_type:tt, $state:tt, $flags:tt),)*]) => {
                 match *self {
                     $(NonTSPseudoClass::$name => flag!($state),)*
+                    NonTSPseudoClass::Dir(..) |
+                    NonTSPseudoClass::MozLocaleDir(..) |
+                    NonTSPseudoClass::Lang(..) |
+                    NonTSPseudoClass::MozAny(..) => ElementState::empty(),
                 }
             }
         }
-        include!("non_ts_pseudo_class_list.rs")
+        apply_non_ts_list!(pseudo_class_state)
     }
 
-    /// Convert NonTSPseudoClass to Gecko's CSSPseudoClassType.
-    pub fn to_gecko_pseudoclasstype(&self) -> Option<CSSPseudoClassType> {
-        macro_rules! gecko_type {
-            (_) => (None);
-            ($gecko_type:ident) =>
-                (Some(::gecko_bindings::structs::CSSPseudoClassType::$gecko_type));
+    /// Get the document state flag associated with a pseudo-class, if any.
+    pub fn document_state_flag(&self) -> DocumentState {
+        match *self {
+            NonTSPseudoClass::MozLocaleDir(..) => DocumentState::NS_DOCUMENT_STATE_RTL_LOCALE,
+            NonTSPseudoClass::MozWindowInactive => DocumentState::NS_DOCUMENT_STATE_WINDOW_INACTIVE,
+            _ => DocumentState::empty(),
         }
-        macro_rules! pseudo_class_list {
-            ($(($_css:expr, $name:ident, $gecko_type:tt, $_state:tt, $_flags:tt),)*) => {
-                match *self {
-                    $(NonTSPseudoClass::$name => gecko_type!($gecko_type),)*
-                }
-            }
-        }
-        include!("non_ts_pseudo_class_list.rs")
+    }
+
+    /// Returns true if the given pseudoclass should trigger style sharing cache
+    /// revalidation.
+    pub fn needs_cache_revalidation(&self) -> bool {
+        self.state_flag().is_empty() &&
+            !matches!(*self,
+                      // :-moz-any is handled by the revalidation visitor walking
+                      // the things inside it; it does not need to cause
+                      // revalidation on its own.
+                      NonTSPseudoClass::MozAny(_) |
+                      // :dir() depends on state only, but doesn't use state_flag
+                      // because its semantics don't quite match.  Nevertheless, it
+                      // doesn't need cache revalidation, because we already compare
+                      // states for elements and candidates.
+                      NonTSPseudoClass::Dir(_) |
+                      // :-moz-is-html only depends on the state of the document and
+                      // the namespace of the element; the former is invariant
+                      // across all the elements involved and the latter is already
+                      // checked for by our caching precondtions.
+                      NonTSPseudoClass::MozIsHTML |
+                      // :-moz-placeholder is parsed but never matches.
+                      NonTSPseudoClass::MozPlaceholder |
+                      // :-moz-locale-dir and :-moz-window-inactive depend only on
+                      // the state of the document, which is invariant across all
+                      // the elements involved in a given style cache.
+                      NonTSPseudoClass::MozLocaleDir(_) |
+                      NonTSPseudoClass::MozWindowInactive |
+                      // Similar for the document themes.
+                      NonTSPseudoClass::MozLWTheme |
+                      NonTSPseudoClass::MozLWThemeBrightText |
+                      NonTSPseudoClass::MozLWThemeDarkText
+            )
+    }
+
+    /// Returns true if the evaluation of the pseudo-class depends on the
+    /// element's attributes.
+    pub fn is_attr_based(&self) -> bool {
+        matches!(
+            *self,
+            NonTSPseudoClass::MozTableBorderNonzero |
+                NonTSPseudoClass::MozBrowserFrame |
+                NonTSPseudoClass::Lang(..)
+        )
+    }
+}
+
+impl ::selectors::parser::NonTSPseudoClass for NonTSPseudoClass {
+    type Impl = SelectorImpl;
+
+    #[inline]
+    fn is_active_or_hover(&self) -> bool {
+        matches!(*self, NonTSPseudoClass::Active | NonTSPseudoClass::Hover)
     }
 }
 
 /// The dummy struct we use to implement our selector parsing.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SelectorImpl;
 
 impl ::selectors::SelectorImpl for SelectorImpl {
+    type ExtraMatchingData = InvalidationMatchingData;
     type AttrValue = Atom;
     type Identifier = Atom;
     type ClassName = Atom;
@@ -225,46 +298,177 @@ impl ::selectors::SelectorImpl for SelectorImpl {
 
     type PseudoElement = PseudoElement;
     type NonTSPseudoClass = NonTSPseudoClass;
+}
 
-    fn attr_exists_selector_is_shareable(attr_selector: &AttrSelector<Self>) -> bool {
-        attr_exists_selector_is_shareable(attr_selector)
+impl<'a> SelectorParser<'a> {
+    fn is_pseudo_class_enabled(&self, pseudo_class: &NonTSPseudoClass) -> bool {
+        if pseudo_class.is_enabled_in_content() {
+            return true;
+        }
+
+        if self.in_user_agent_stylesheet() &&
+            pseudo_class.has_any_flag(NonTSPseudoClassFlag::PSEUDO_CLASS_ENABLED_IN_UA_SHEETS)
+        {
+            return true;
+        }
+
+        if self.chrome_rules_enabled() &&
+            pseudo_class.has_any_flag(NonTSPseudoClassFlag::PSEUDO_CLASS_ENABLED_IN_CHROME)
+        {
+            return true;
+        }
+
+        return false;
     }
 
-    fn attr_equals_selector_is_shareable(attr_selector: &AttrSelector<Self>,
-                                         value: &Self::AttrValue) -> bool {
-        attr_equals_selector_is_shareable(attr_selector, value)
+    fn is_pseudo_element_enabled(&self, pseudo_element: &PseudoElement) -> bool {
+        if pseudo_element.enabled_in_content() {
+            return true;
+        }
+
+        if self.in_user_agent_stylesheet() && pseudo_element.enabled_in_ua_sheets() {
+            return true;
+        }
+
+        if self.chrome_rules_enabled() && pseudo_element.enabled_in_chrome() {
+            return true;
+        }
+
+        return false;
     }
 }
 
-impl<'a> ::selectors::Parser for SelectorParser<'a> {
+impl<'a, 'i> ::selectors::Parser<'i> for SelectorParser<'a> {
     type Impl = SelectorImpl;
+    type Error = StyleParseErrorKind<'i>;
 
-    fn parse_non_ts_pseudo_class(&self, name: Cow<str>) -> Result<NonTSPseudoClass, ()> {
-        macro_rules! pseudo_class_list {
-            ($(($css:expr, $name:ident, $_gecko_type:tt, $_state:tt, $_flags:tt),)*) => {
-                match_ignore_ascii_case! { &name,
-                    $($css => NonTSPseudoClass::$name,)*
-                    _ => return Err(())
+    #[inline]
+    fn parse_slotted(&self) -> bool {
+        true
+    }
+
+    #[inline]
+    fn parse_host(&self) -> bool {
+        self.parse_slotted()
+    }
+
+    fn pseudo_element_allows_single_colon(name: &str) -> bool {
+        // FIXME: -moz-tree check should probably be ascii-case-insensitive.
+        ::selectors::parser::is_css2_pseudo_element(name) || name.starts_with("-moz-tree-")
+    }
+
+    fn parse_non_ts_pseudo_class(
+        &self,
+        location: SourceLocation,
+        name: CowRcStr<'i>,
+    ) -> Result<NonTSPseudoClass, ParseError<'i>> {
+        if let Some(pseudo_class) = NonTSPseudoClass::parse_non_functional(&name) {
+            if self.is_pseudo_class_enabled(&pseudo_class) {
+                return Ok(pseudo_class);
+            }
+        }
+        Err(
+            location.new_custom_error(SelectorParseErrorKind::UnsupportedPseudoClassOrElement(
+                name,
+            )),
+        )
+    }
+
+    fn parse_non_ts_functional_pseudo_class<'t>(
+        &self,
+        name: CowRcStr<'i>,
+        parser: &mut Parser<'i, 't>,
+    ) -> Result<NonTSPseudoClass, ParseError<'i>> {
+        let pseudo_class = match_ignore_ascii_case! { &name,
+            "lang" => {
+                let name = parser.expect_ident_or_string()?;
+                NonTSPseudoClass::Lang(Atom::from(name.as_ref()))
+            },
+            "-moz-locale-dir" => {
+                NonTSPseudoClass::MozLocaleDir(Direction::parse(parser)?)
+            },
+            "dir" => {
+                NonTSPseudoClass::Dir(Direction::parse(parser)?)
+            },
+            "-moz-any" => {
+                NonTSPseudoClass::MozAny(
+                    selector_parser::parse_compound_selector_list(
+                        self,
+                        parser,
+                    )?.into()
+                )
+            }
+            _ => return Err(parser.new_custom_error(
+                SelectorParseErrorKind::UnsupportedPseudoClassOrElement(name.clone())
+            ))
+        };
+        if self.is_pseudo_class_enabled(&pseudo_class) {
+            Ok(pseudo_class)
+        } else {
+            Err(
+                parser.new_custom_error(SelectorParseErrorKind::UnsupportedPseudoClassOrElement(
+                    name,
+                )),
+            )
+        }
+    }
+
+    fn parse_pseudo_element(
+        &self,
+        location: SourceLocation,
+        name: CowRcStr<'i>,
+    ) -> Result<PseudoElement, ParseError<'i>> {
+        if let Some(pseudo) = PseudoElement::from_slice(&name) {
+            if self.is_pseudo_element_enabled(&pseudo) {
+                return Ok(pseudo);
+            }
+        }
+
+        Err(
+            location.new_custom_error(SelectorParseErrorKind::UnsupportedPseudoClassOrElement(
+                name,
+            )),
+        )
+    }
+
+    fn parse_functional_pseudo_element<'t>(
+        &self,
+        name: CowRcStr<'i>,
+        parser: &mut Parser<'i, 't>,
+    ) -> Result<PseudoElement, ParseError<'i>> {
+        if starts_with_ignore_ascii_case(&name, "-moz-tree-") {
+            // Tree pseudo-elements can have zero or more arguments, separated
+            // by either comma or space.
+            let mut args = Vec::new();
+            loop {
+                let location = parser.current_source_location();
+                match parser.next() {
+                    Ok(&Token::Ident(ref ident)) => args.push(Atom::from(ident.as_ref())),
+                    Ok(&Token::Comma) => {},
+                    Ok(t) => return Err(location.new_unexpected_token_error(t.clone())),
+                    Err(BasicParseError {
+                        kind: BasicParseErrorKind::EndOfInput,
+                        ..
+                    }) => break,
+                    _ => unreachable!("Parser::next() shouldn't return any other error"),
+                }
+            }
+            let args = args.into_boxed_slice();
+            if let Some(pseudo) = PseudoElement::tree_pseudo_element(&name, args) {
+                if self.is_pseudo_element_enabled(&pseudo) {
+                    return Ok(pseudo);
                 }
             }
         }
-        let pseudo_class = include!("non_ts_pseudo_class_list.rs");
-        if !pseudo_class.is_internal() || self.in_user_agent_stylesheet() {
-            Ok(pseudo_class)
-        } else {
-            Err(())
-        }
-    }
-
-    fn parse_pseudo_element(&self, name: Cow<str>) -> Result<PseudoElement, ()> {
-        match PseudoElement::from_slice(&name, self.in_user_agent_stylesheet()) {
-            Some(pseudo) => Ok(pseudo),
-            None => Err(()),
-        }
+        Err(
+            parser.new_custom_error(SelectorParseErrorKind::UnsupportedPseudoClassOrElement(
+                name,
+            )),
+        )
     }
 
     fn default_namespace(&self) -> Option<Namespace> {
-        self.namespaces.default.clone()
+        self.namespaces.default.as_ref().map(|ns| ns.clone())
     }
 
     fn namespace_for_prefix(&self, prefix: &Atom) -> Option<Namespace> {
@@ -273,51 +477,21 @@ impl<'a> ::selectors::Parser for SelectorParser<'a> {
 }
 
 impl SelectorImpl {
+    /// A helper to traverse each eagerly cascaded pseudo-element, executing
+    /// `fun` on it.
     #[inline]
-    /// Returns the kind of cascade type that a given pseudo is going to use.
-    ///
-    /// In Gecko we only compute ::before and ::after eagerly. We save the rules
-    /// for anonymous boxes separately, so we resolve them as precomputed
-    /// pseudos.
-    ///
-    /// We resolve the others lazily, see `Servo_ResolvePseudoStyle`.
-    pub fn pseudo_element_cascade_type(pseudo: &PseudoElement) -> PseudoElementCascadeType {
-        if Self::pseudo_is_before_or_after(pseudo) {
-            return PseudoElementCascadeType::Eager
-        }
-
-        if pseudo.is_anon_box() {
-            return PseudoElementCascadeType::Precomputed
-        }
-
-        PseudoElementCascadeType::Lazy
-    }
-
-    #[inline]
-    /// Executes a function for each pseudo-element.
-    pub fn each_pseudo_element<F>(mut fun: F)
-        where F: FnMut(PseudoElement),
+    pub fn each_eagerly_cascaded_pseudo_element<F>(mut fun: F)
+    where
+        F: FnMut(PseudoElement),
     {
-        macro_rules! pseudo_element {
-            ($pseudo_str_with_colon:expr, $atom:expr, $is_anon_box:expr) => {{
-                fun(PseudoElement($atom, $is_anon_box));
-            }}
+        for pseudo in &EAGER_PSEUDOS {
+            fun(pseudo.clone())
         }
-
-        include!("generated/gecko_pseudo_element_helper.rs")
-    }
-
-    #[inline]
-    /// Returns whether the given pseudo-element is `::before` or `::after`.
-    pub fn pseudo_is_before_or_after(pseudo: &PseudoElement) -> bool {
-        *pseudo.as_atom() == atom!(":before") ||
-        *pseudo.as_atom() == atom!(":after")
-    }
-
-    #[inline]
-    /// Returns the relevant state flag for a given non-tree-structural
-    /// pseudo-class.
-    pub fn pseudo_class_state_flag(pc: &NonTSPseudoClass) -> ElementState {
-        pc.state_flag()
     }
 }
+
+unsafe impl HasFFI for SelectorList<SelectorImpl> {
+    type FFIType = RawServoSelectorList;
+}
+unsafe impl HasSimpleFFI for SelectorList<SelectorImpl> {}
+unsafe impl HasBoxFFI for SelectorList<SelectorImpl> {}

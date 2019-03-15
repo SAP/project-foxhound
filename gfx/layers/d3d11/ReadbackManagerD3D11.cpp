@@ -1,5 +1,6 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -31,15 +32,13 @@ struct ReadbackTask {
 
 // This class is created and dispatched from the Readback thread but it must be
 // destroyed by the main thread.
-class ReadbackResultWriterD3D11 final : public nsIRunnable
-{
+class ReadbackResultWriterD3D11 final : public nsIRunnable {
   ~ReadbackResultWriterD3D11() {}
   NS_DECL_THREADSAFE_ISUPPORTS
-public:
+ public:
   explicit ReadbackResultWriterD3D11(ReadbackTask *aTask) : mTask(aTask) {}
 
-  NS_IMETHOD Run() override
-  {
+  NS_IMETHOD Run() override {
     D3D10_TEXTURE2D_DESC desc;
     mTask->mReadbackTexture->GetDesc(&desc);
 
@@ -54,10 +53,9 @@ public:
     }
 
     {
-      RefPtr<DataSourceSurface> surf =
-        Factory::CreateWrappingDataSourceSurface((uint8_t*)mappedTex.pData, mappedTex.RowPitch,
-                                                 IntSize(desc.Width, desc.Height),
-                                                 SurfaceFormat::B8G8R8A8);
+      RefPtr<DataSourceSurface> surf = Factory::CreateWrappingDataSourceSurface(
+          (uint8_t *)mappedTex.pData, mappedTex.RowPitch,
+          IntSize(desc.Width, desc.Height), SurfaceFormat::B8G8R8A8);
 
       mTask->mSink->ProcessReadback(surf);
 
@@ -69,30 +67,26 @@ public:
     return NS_OK;
   }
 
-private:
+ private:
   nsAutoPtr<ReadbackTask> mTask;
 };
 
 NS_IMPL_ISUPPORTS(ReadbackResultWriterD3D11, nsIRunnable)
 
-DWORD WINAPI ReadbackManagerD3D11::StartTaskThread(void *aManager)
-{
-  static_cast<ReadbackManagerD3D11*>(aManager)->ProcessTasks();
+DWORD WINAPI ReadbackManagerD3D11::StartTaskThread(void *aManager) {
+  static_cast<ReadbackManagerD3D11 *>(aManager)->ProcessTasks();
 
   return 0;
 }
 
-ReadbackManagerD3D11::ReadbackManagerD3D11()
-  : mRefCnt(0)
-{
+ReadbackManagerD3D11::ReadbackManagerD3D11() : mRefCnt(0) {
   ::InitializeCriticalSection(&mTaskMutex);
   mShutdownEvent = ::CreateEventA(nullptr, FALSE, FALSE, nullptr);
   mTaskSemaphore = ::CreateSemaphoreA(nullptr, 0, 1000000, nullptr);
   mTaskThread = ::CreateThread(nullptr, 0, StartTaskThread, this, 0, 0);
 }
 
-ReadbackManagerD3D11::~ReadbackManagerD3D11()
-{
+ReadbackManagerD3D11::~ReadbackManagerD3D11() {
   ::SetEvent(mShutdownEvent);
 
   // This shouldn't take longer than 5 seconds, if it does we're going to choose
@@ -104,13 +98,12 @@ ReadbackManagerD3D11::~ReadbackManagerD3D11()
     ::CloseHandle(mTaskSemaphore);
     ::CloseHandle(mTaskThread);
   } else {
-    NS_RUNTIMEABORT("ReadbackManager: Task thread did not shutdown in 5 seconds.");
+    MOZ_CRASH("ReadbackManager: Task thread did not shutdown in 5 seconds.");
   }
 }
 
-void
-ReadbackManagerD3D11::PostTask(ID3D10Texture2D *aTexture, TextureReadbackSink* aSink)
-{
+void ReadbackManagerD3D11::PostTask(ID3D10Texture2D *aTexture,
+                                    TextureReadbackSink *aSink) {
   ReadbackTask *task = new ReadbackTask;
   task->mReadbackTexture = aTexture;
   task->mSink = aSink;
@@ -122,10 +115,8 @@ ReadbackManagerD3D11::PostTask(ID3D10Texture2D *aTexture, TextureReadbackSink* a
   ::ReleaseSemaphore(mTaskSemaphore, 1, nullptr);
 }
 
-void
-ReadbackManagerD3D11::ProcessTasks()
-{
-  HANDLE handles[] = { mTaskSemaphore, mShutdownEvent };
+void ReadbackManagerD3D11::ProcessTasks() {
+  HANDLE handles[] = {mTaskSemaphore, mShutdownEvent};
 
   while (true) {
     DWORD result = ::WaitForMultipleObjects(2, handles, FALSE, INFINITE);
@@ -135,7 +126,7 @@ ReadbackManagerD3D11::ProcessTasks()
 
     ::EnterCriticalSection(&mTaskMutex);
     if (mPendingReadbackTasks.Length() == 0) {
-      NS_RUNTIMEABORT("Trying to read from an empty array, bad bad bad");
+      MOZ_CRASH("Trying to read from an empty array, bad bad bad");
     }
     ReadbackTask *nextReadbackTask = mPendingReadbackTasks[0].forget();
     mPendingReadbackTasks.RemoveElementAt(0);
@@ -156,5 +147,5 @@ ReadbackManagerD3D11::ProcessTasks()
   }
 }
 
-}
-}
+}  // namespace layers
+}  // namespace mozilla

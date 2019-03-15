@@ -8,14 +8,16 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_VIDEO_CAPTURE_MAIN_SOURCE_LINUX_DEVICE_INFO_LINUX_H_
-#define WEBRTC_MODULES_VIDEO_CAPTURE_MAIN_SOURCE_LINUX_DEVICE_INFO_LINUX_H_
+#ifndef MODULES_VIDEO_CAPTURE_MAIN_SOURCE_LINUX_DEVICE_INFO_LINUX_H_
+#define MODULES_VIDEO_CAPTURE_MAIN_SOURCE_LINUX_DEVICE_INFO_LINUX_H_
 
-#include "webrtc/modules/video_capture/device_info_impl.h"
-#include "webrtc/modules/video_capture/video_capture_impl.h"
+#include "modules/video_capture/device_info_impl.h"
+#include "modules/video_capture/video_capture_impl.h"
 #ifdef WEBRTC_LINUX
-#include "webrtc/base/platform_thread.h"
-#include "webrtc/system_wrappers/include/atomic32.h"
+#include <memory>
+
+#include "rtc_base/platform_thread.h"
+#include "system_wrappers/include/atomic32.h"
 #include <sys/inotify.h>
 #endif
 
@@ -26,7 +28,7 @@ namespace videocapturemodule
 class DeviceInfoLinux: public DeviceInfoImpl
 {
 public:
-    DeviceInfoLinux(const int32_t id);
+    DeviceInfoLinux();
     virtual ~DeviceInfoLinux();
     virtual uint32_t NumberOfDevices();
     virtual int32_t GetDeviceName(
@@ -59,7 +61,7 @@ private:
     int EventCheck(int fd);
     int HandleEvents(int fd);
     int ProcessInotifyEvents();
-    rtc::scoped_ptr<rtc::PlatformThread> _inotifyEventThread;
+    std::unique_ptr<rtc::PlatformThread> _inotifyEventThread;
     static bool InotifyEventThread(void*);
     bool InotifyProcess();
     int _fd_v4l, _fd_snd, _fd_dev, _wd_v4l, _wd_snd, _wd_dev; /* accessed on InotifyEventThread thread */
@@ -68,4 +70,4 @@ private:
 };
 }  // namespace videocapturemodule
 }  // namespace webrtc
-#endif // WEBRTC_MODULES_VIDEO_CAPTURE_MAIN_SOURCE_LINUX_DEVICE_INFO_LINUX_H_
+#endif // MODULES_VIDEO_CAPTURE_MAIN_SOURCE_LINUX_DEVICE_INFO_LINUX_H_

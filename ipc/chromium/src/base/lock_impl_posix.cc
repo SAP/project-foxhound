@@ -1,3 +1,5 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -21,9 +23,9 @@ namespace internal {
 // compile but the underlying platform still may not correctly support priority
 // inheritance locks.
 #if defined(OS_NACL) || defined(OS_ANDROID)
-#define PRIORITY_INHERITANCE_LOCKS_POSSIBLE() 0
+#  define PRIORITY_INHERITANCE_LOCKS_POSSIBLE() 0
 #else
-#define PRIORITY_INHERITANCE_LOCKS_POSSIBLE() 1
+#  define PRIORITY_INHERITANCE_LOCKS_POSSIBLE() 1
 #endif
 
 LockImpl::LockImpl() {

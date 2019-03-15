@@ -33,7 +33,7 @@ function run_test() {
 if (isParent) {
   add_test(function setUp() {
     db = PushServiceWebSocket.newPushDB();
-    do_register_cleanup(() => {return db.drop().then(_ => db.close());});
+    registerCleanupFunction(() => {return db.drop().then(_ => db.close());});
     setUpServiceInParent(PushService, db).then(run_next_test, run_next_test);
   });
 }
@@ -227,27 +227,6 @@ add_test(function test_unsubscribe_error() {
       run_next_test();
     }
   );
-});
-
-add_test(function test_subscribe_app_principal() {
-  let principal = Services.scriptSecurityManager.getAppCodebasePrincipal(
-    Services.io.newURI('https://example.net/app/1'),
-    1, /* appId */
-    true /* browserOnly */
-  );
-
-  do_test_pending();
-  PushServiceComponent.subscribe('https://example.net/scope/1', principal, (result, subscription) => {
-    ok(Components.isSuccessCode(result), 'Error creating subscription');
-    ok(subscription.endpoint.startsWith('https://example.org/push'),
-      'Wrong push endpoint in app subscription');
-    ok(!subscription.isSystemSubscription,
-      'Unexpected system subscription for app principal');
-    equal(subscription.quota, 16, 'Wrong quota for app subscription');
-
-    do_test_finished();
-    run_next_test();
-  });
 });
 
 add_test(function test_subscribe_origin_principal() {

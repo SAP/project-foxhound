@@ -9,7 +9,7 @@
 // STS parser tests
 
 let sss = Cc["@mozilla.org/ssservice;1"].getService(Ci.nsISiteSecurityService);
-let sslStatus = new FakeSSLStatus();
+let secInfo = new FakeTransportSecurityInfo();
 
 function testSuccess(header, expectedMaxAge, expectedIncludeSubdomains) {
   let dummyUri = Services.io.newURI("https://foo.com/bar.html");
@@ -17,7 +17,8 @@ function testSuccess(header, expectedMaxAge, expectedIncludeSubdomains) {
   let includeSubdomains = {};
 
   sss.processHeader(Ci.nsISiteSecurityService.HEADER_HSTS, dummyUri, header,
-                    sslStatus, 0, {}, maxAge, includeSubdomains);
+                    secInfo, 0, sss.SOURCE_ORGANIC_REQUEST, {}, maxAge,
+                    includeSubdomains);
 
   equal(maxAge.value, expectedMaxAge, "Did not correctly parse maxAge");
   equal(includeSubdomains.value, expectedIncludeSubdomains,
@@ -31,8 +32,9 @@ function testFailure(header) {
 
   throws(() => {
     sss.processHeader(Ci.nsISiteSecurityService.HEADER_HSTS, dummyUri, header,
-                      sslStatus, 0, {}, maxAge, includeSubdomains);
-  }, "Parsed invalid header: " + header);
+                      secInfo, 0, sss.SOURCE_ORGANIC_REQUEST, {}, maxAge,
+                      includeSubdomains);
+  }, /NS_ERROR_FAILURE/, "Parsed invalid header: " + header);
 }
 
 function run_test() {

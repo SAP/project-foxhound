@@ -7,23 +7,27 @@
 #include "HttpLog.h"
 
 #include "nsHttpBasicAuth.h"
-#include "plbase64.h"
 #include "plstr.h"
 #include "nsString.h"
+#include "mozilla/Base64.h"
+#include "mozilla/ClearOnShutdown.h"
 
 namespace mozilla {
 namespace net {
 
-//-----------------------------------------------------------------------------
-// nsHttpBasicAuth <public>
-//-----------------------------------------------------------------------------
+StaticRefPtr<nsHttpBasicAuth> nsHttpBasicAuth::gSingleton;
 
-nsHttpBasicAuth::nsHttpBasicAuth()
-{
-}
+already_AddRefed<nsIHttpAuthenticator> nsHttpBasicAuth::GetOrCreate() {
+  nsCOMPtr<nsIHttpAuthenticator> authenticator;
+  if (gSingleton) {
+    authenticator = gSingleton;
+  } else {
+    gSingleton = new nsHttpBasicAuth();
+    ClearOnShutdown(&gSingleton);
+    authenticator = gSingleton;
+  }
 
-nsHttpBasicAuth::~nsHttpBasicAuth()
-{
+  return authenticator.forget();
 }
 
 //-----------------------------------------------------------------------------
@@ -38,79 +42,64 @@ NS_IMPL_ISUPPORTS(nsHttpBasicAuth, nsIHttpAuthenticator)
 
 NS_IMETHODIMP
 nsHttpBasicAuth::ChallengeReceived(nsIHttpAuthenticableChannel *authChannel,
-                                   const char *challenge,
-                                   bool isProxyAuth,
+                                   const char *challenge, bool isProxyAuth,
                                    nsISupports **sessionState,
                                    nsISupports **continuationState,
-                                   bool *identityInvalid)
-{
-    // if challenged, then the username:password that was sent must
-    // have been wrong.
-    *identityInvalid = true;
-    return NS_OK;
+                                   bool *identityInvalid) {
+  // if challenged, then the username:password that was sent must
+  // have been wrong.
+  *identityInvalid = true;
+  return NS_OK;
 }
 NS_IMETHODIMP
-nsHttpBasicAuth::GenerateCredentialsAsync(nsIHttpAuthenticableChannel *authChannel,
-                                          nsIHttpAuthenticatorCallback* aCallback,
-                                          const char *challenge,
-                                          bool isProxyAuth,
-                                          const char16_t *domain,
-                                          const char16_t *username,
-                                          const char16_t *password,
-                                          nsISupports *sessionState,
-                                          nsISupports *continuationState,
-                                          nsICancelable **aCancellable)
-{
+nsHttpBasicAuth::GenerateCredentialsAsync(
+    nsIHttpAuthenticableChannel *authChannel,
+    nsIHttpAuthenticatorCallback *aCallback, const char *challenge,
+    bool isProxyAuth, const char16_t *domain, const char16_t *username,
+    const char16_t *password, nsISupports *sessionState,
+    nsISupports *continuationState, nsICancelable **aCancellable) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
-nsHttpBasicAuth::GenerateCredentials(nsIHttpAuthenticableChannel *authChannel,
-                                     const char *challenge,
-                                     bool isProxyAuth,
-                                     const char16_t *domain,
-                                     const char16_t *user,
-                                     const char16_t *password,
-                                     nsISupports **sessionState,
-                                     nsISupports **continuationState,
-                                     uint32_t *aFlags,
-                                     char **creds)
+nsHttpBasicAuth::GenerateCredentials(
+    nsIHttpAuthenticableChannel *authChannel, const char *challenge,
+    bool isProxyAuth, const char16_t *domain, const char16_t *user,
+    const char16_t *password, nsISupports **sessionState,
+    nsISupports **continuationState, uint32_t *aFlags, char **creds)
 
 {
-    LOG(("nsHttpBasicAuth::GenerateCredentials [challenge=%s]\n", challenge));
+  LOG(("nsHttpBasicAuth::GenerateCredentials [challenge=%s]\n", challenge));
 
-    NS_ENSURE_ARG_POINTER(creds);
+  NS_ENSURE_ARG_POINTER(creds);
 
-    *aFlags = 0;
+  *aFlags = 0;
 
-    // we only know how to deal with Basic auth for http.
-    bool isBasicAuth = !PL_strncasecmp(challenge, "basic", 5);
-    NS_ENSURE_TRUE(isBasicAuth, NS_ERROR_UNEXPECTED);
+  // we only know how to deal with Basic auth for http.
+  bool isBasicAuth = !PL_strncasecmp(challenge, "basic", 5);
+  NS_ENSURE_TRUE(isBasicAuth, NS_ERROR_UNEXPECTED);
 
-    // we work with ASCII around here
-    nsAutoCString userpass;
-    LossyCopyUTF16toASCII(user, userpass);
-    userpass.Append(':'); // always send a ':' (see bug 129565)
-    if (password)
-        LossyAppendUTF16toASCII(password, userpass);
+  // we work with UTF-8 around here
+  nsAutoCString userpass;
+  CopyUTF16toUTF8(mozilla::MakeStringSpan(user), userpass);
+  userpass.Append(':');  // always send a ':' (see bug 129565)
+  AppendUTF16toUTF8(mozilla::MakeStringSpan(password), userpass);
 
-    // plbase64.h provides this worst-case output buffer size calculation.
-    // use calloc, since PL_Base64Encode does not null terminate.
-    *creds = (char *) calloc(6 + ((userpass.Length() + 2)/3)*4 + 1, 1);
-    if (!*creds)
-        return NS_ERROR_OUT_OF_MEMORY;
+  nsAutoCString authString;
+  nsresult rv = Base64Encode(userpass, authString);
+  NS_ENSURE_SUCCESS(rv, rv);
 
-    memcpy(*creds, "Basic ", 6);
-    PL_Base64Encode(userpass.get(), userpass.Length(), *creds + 6);
-    return NS_OK;
+  authString.InsertLiteral("Basic ", 0);
+
+  *creds = ToNewCString(authString);
+  return NS_OK;
 }
 
 NS_IMETHODIMP
-nsHttpBasicAuth::GetAuthFlags(uint32_t *flags)
-{
-    *flags = REQUEST_BASED | REUSABLE_CREDENTIALS | REUSABLE_CHALLENGE;
-    return NS_OK;
+nsHttpBasicAuth::GetAuthFlags(uint32_t *flags) {
+  *flags = REQUEST_BASED | REUSABLE_CREDENTIALS | REUSABLE_CHALLENGE;
+  return NS_OK;
 }
 
-} // namespace net
-} // namespace mozilla
+}  // namespace net
+}  // namespace mozilla

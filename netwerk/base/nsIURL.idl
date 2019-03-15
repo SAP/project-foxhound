@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsIURI.idl"
+interface nsIURIMutator;
 
 /**
  * The nsIURL interface provides convenience methods that further
@@ -19,7 +20,7 @@
  *                            |
  *                        filePath
  */
-[scriptable, uuid(86adcd89-0b70-47a2-b0fe-5bb2c5f37e31)]
+[scriptable, builtinclass, uuid(86adcd89-0b70-47a2-b0fe-5bb2c5f37e31)]
 interface nsIURL : nsIURI
 {
     /*************************************************************************
@@ -47,7 +48,7 @@ interface nsIURL : nsIURI
      *
      * Some characters may be escaped.
      */
-    attribute AUTF8String directory;
+    readonly attribute AUTF8String directory;
 
     /**
      * Returns the file name portion of a URL.  If the URL denotes a path to a
@@ -58,8 +59,7 @@ interface nsIURL : nsIURI
      *
      * Some characters may be escaped.
      */
-    attribute AUTF8String fileName;
-
+    readonly attribute AUTF8String fileName;
 
     /*************************************************************************
      * The URL filename is broken down even further:
@@ -70,7 +70,7 @@ interface nsIURL : nsIURI
      *
      * Some characters may be escaped.
      */
-    attribute AUTF8String fileBaseName;
+    readonly attribute AUTF8String fileBaseName;
 
     /**
      * Returns the file extension portion of a filename in a url.  If a file
@@ -78,7 +78,7 @@ interface nsIURL : nsIURI
      *
      * Some characters may be escaped.
      */
-    attribute AUTF8String fileExtension;
+    readonly attribute AUTF8String fileExtension;
 
     /**
      * This method takes a uri and compares the two.  The common uri portion
@@ -119,4 +119,12 @@ interface nsIURL : nsIURI
      */
     AUTF8String getRelativeSpec(in nsIURI aURIToCompare);
 
+};
+
+[scriptable, builtinclass, uuid(25072eb8-f1e6-482f-9ca9-eddd3d65169a)]
+interface nsIURLMutator : nsISupports
+{
+    [must_use] nsIURIMutator setFileName(in AUTF8String aFileName);
+    [must_use] nsIURIMutator setFileBaseName(in AUTF8String aFileBaseName);
+    [must_use] nsIURIMutator setFileExtension(in AUTF8String aFileExtension);
 };

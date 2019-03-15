@@ -1,8 +1,8 @@
 "use strict";
 // https://bugzilla.mozilla.org/show_bug.cgi?id=760955
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpServer = null;
 const testFileName = "test_nsHttpChannel_CacheForOfflineUse-no-store";
@@ -22,8 +22,8 @@ var appCache = null;
 function make_channel_for_offline_use(url, callback, ctx) {
   var chan = NetUtil.newChannel({uri: url, loadUsingSystemPrincipal: true});
 
-  var cacheService = Components.classes["@mozilla.org/network/application-cache-service;1"].
-                     getService(Components.interfaces.nsIApplicationCacheService);
+  var cacheService = Cc["@mozilla.org/network/application-cache-service;1"].
+                     getService(Ci.nsIApplicationCacheService);
   appCache = cacheService.getApplicationCache(cacheClientID);
   
   var appCacheChan = chan.QueryInterface(Ci.nsIApplicationCacheChannel);
@@ -42,13 +42,13 @@ const responseBody = "response body";
 // A HTTP channel for updating the offline cache should normally succeed.
 function normalHandler(metadata, response)
 {
-  do_print("normalHandler");
+  info("normalHandler");
   response.setHeader("Content-Type", "text/plain");
   response.bodyOutputStream.write(responseBody, responseBody.length);
 }
 function checkNormal(request, buffer)
 {
-  do_check_eq(buffer, responseBody);
+  Assert.equal(buffer, responseBody);
   asyncCheckCacheEntryPresence(baseURI + normalEntry, "appcache", true, run_next_test, appCache);
 }
 add_test(function test_normal() {
@@ -60,14 +60,14 @@ add_test(function test_normal() {
 // response with Cache-Control: no-store.
 function noStoreHandler(metadata, response)
 {
-  do_print("noStoreHandler");
+  info("noStoreHandler");
   response.setHeader("Content-Type", "text/plain");
   response.setHeader("Cache-Control", "no-store");
   response.bodyOutputStream.write(responseBody, responseBody.length);
 }
 function checkNoStore(request, buffer)
 {
-  do_check_eq(buffer, "");
+  Assert.equal(buffer, "");
   asyncCheckCacheEntryPresence(baseURI + noStoreEntry, "appcache", false, run_next_test, appCache);
 }
 add_test(function test_noStore() {

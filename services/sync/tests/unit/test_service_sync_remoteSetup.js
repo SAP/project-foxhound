@@ -1,13 +1,12 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Cu.import("resource://gre/modules/Log.jsm");
-Cu.import("resource://services-sync/constants.js");
-Cu.import("resource://services-sync/keys.js");
-Cu.import("resource://services-sync/service.js");
-Cu.import("resource://services-sync/util.js");
-Cu.import("resource://testing-common/services/sync/fakeservices.js");
-Cu.import("resource://testing-common/services/sync/utils.js");
+ChromeUtils.import("resource://gre/modules/Log.jsm");
+ChromeUtils.import("resource://services-sync/constants.js");
+ChromeUtils.import("resource://services-sync/keys.js");
+ChromeUtils.import("resource://services-sync/service.js");
+ChromeUtils.import("resource://services-sync/util.js");
+ChromeUtils.import("resource://testing-common/services/sync/fakeservices.js");
 
 add_task(async function run_test() {
   enableValidationPrefs();
@@ -39,8 +38,8 @@ add_task(async function run_test() {
    * Handle the bulk DELETE request sent by wipeServer.
    */
   function storageHandler(request, response) {
-    do_check_eq("DELETE", request.method);
-    do_check_true(request.hasHeader("X-Confirm-Delete"));
+    Assert.equal("DELETE", request.method);
+    Assert.ok(request.hasHeader("X-Confirm-Delete"));
 
     _("Wiping out all collections.");
     cryptoColl.delete({});
@@ -63,30 +62,30 @@ add_task(async function run_test() {
     "/1.1/johndoe/storage/clients": upd("clients", clients.handler()),
     "/1.1/johndoe/storage/meta": upd("meta", wasCalledHandler(metaColl)),
     "/1.1/johndoe/storage/meta/global": upd("meta", wasCalledHandler(meta_global)),
-    "/1.1/johndoe/info/collections": collectionsHelper.handler
+    "/1.1/johndoe/info/collections": collectionsHelper.handler,
   };
 
   function mockHandler(path, mock) {
     server.registerPathHandler(path, mock(handlers[path]));
     return {
-      restore() { server.registerPathHandler(path, handlers[path]); }
-    }
+      restore() { server.registerPathHandler(path, handlers[path]); },
+    };
   }
 
   let server = httpd_setup(handlers);
 
   try {
     _("Checking Status.sync with no credentials.");
-    Service.verifyAndFetchSymmetricKeys();
-    do_check_eq(Service.status.sync, CREDENTIALS_CHANGED);
-    do_check_eq(Service.status.login, LOGIN_FAILED_NO_PASSPHRASE);
+    await Service.verifyAndFetchSymmetricKeys();
+    Assert.equal(Service.status.sync, CREDENTIALS_CHANGED);
+    Assert.equal(Service.status.login, LOGIN_FAILED_NO_PASSPHRASE);
 
     await configureIdentity({ username: "johndoe" }, server);
 
-    Service.login();
+    await Service.login();
     _("Checking that remoteSetup returns true when credentials have changed.");
-    Service.recordManager.get(Service.metaURL).payload.syncID = "foobar";
-    do_check_true(Service._remoteSetup());
+    (await Service.recordManager.get(Service.metaURL)).payload.syncID = "foobar";
+    Assert.ok((await Service._remoteSetup()));
 
     let returnStatusCode = (method, code) => (oldMethod) => (req, res) => {
       if (req.method === method) {
@@ -99,74 +98,75 @@ add_task(async function run_test() {
     let mock = mockHandler(GLOBAL_PATH, returnStatusCode("GET", 401));
     Service.recordManager.del(Service.metaURL);
     _("Checking that remoteSetup returns false on 401 on first get /meta/global.");
-    do_check_false(Service._remoteSetup());
+    Assert.equal(false, (await Service._remoteSetup()));
     mock.restore();
 
-    Service.login();
+    await Service.login();
     mock = mockHandler(GLOBAL_PATH, returnStatusCode("GET", 503));
     Service.recordManager.del(Service.metaURL);
     _("Checking that remoteSetup returns false on 503 on first get /meta/global.");
-    do_check_false(Service._remoteSetup());
-    do_check_eq(Service.status.sync, METARECORD_DOWNLOAD_FAIL);
+    Assert.equal(false, (await Service._remoteSetup()));
+    Assert.equal(Service.status.sync, METARECORD_DOWNLOAD_FAIL);
     mock.restore();
 
-    Service.login();
+    await Service.login();
     mock = mockHandler(GLOBAL_PATH, returnStatusCode("GET", 404));
     Service.recordManager.del(Service.metaURL);
     _("Checking that remoteSetup recovers on 404 on first get /meta/global.");
-    do_check_true(Service._remoteSetup());
+    Assert.ok((await Service._remoteSetup()));
     mock.restore();
 
-    let makeOutdatedMeta = () => {
+    let makeOutdatedMeta = async () => {
       Service.metaModified = 0;
-      let infoResponse = Service._fetchInfo();
+      let infoResponse = await Service._fetchInfo();
       return {
         status: infoResponse.status,
         obj: {
           crypto: infoResponse.obj.crypto,
           clients: infoResponse.obj.clients,
-          meta: 1
-        }
+          meta: 1,
+        },
       };
-    }
+    };
 
     _("Checking that remoteSetup recovers on 404 on get /meta/global after clear cached one.");
     mock = mockHandler(GLOBAL_PATH, returnStatusCode("GET", 404));
     Service.recordManager.set(Service.metaURL, { isNew: false });
-    do_check_true(Service._remoteSetup(makeOutdatedMeta()));
+    Assert.ok((await Service._remoteSetup((await makeOutdatedMeta()))));
     mock.restore();
 
     _("Checking that remoteSetup returns false on 503 on get /meta/global after clear cached one.");
     mock = mockHandler(GLOBAL_PATH, returnStatusCode("GET", 503));
     Service.status.sync = "";
     Service.recordManager.set(Service.metaURL, { isNew: false });
-    do_check_false(Service._remoteSetup(makeOutdatedMeta()));
-    do_check_eq(Service.status.sync, "");
+    Assert.equal(false, (await Service._remoteSetup((await makeOutdatedMeta()))));
+    Assert.equal(Service.status.sync, "");
     mock.restore();
 
     metaColl.delete({});
 
     _("Do an initial sync.");
-    Service.sync();
+    await Service.sync();
 
     _("Checking that remoteSetup returns true.");
-    do_check_true(Service._remoteSetup());
+    Assert.ok((await Service._remoteSetup()));
 
     _("Verify that the meta record was uploaded.");
-    do_check_eq(meta_global.data.syncID, Service.syncID);
-    do_check_eq(meta_global.data.storageVersion, STORAGE_VERSION);
-    do_check_eq(meta_global.data.engines.clients.version, Service.clientsEngine.version);
-    do_check_eq(meta_global.data.engines.clients.syncID, Service.clientsEngine.syncID);
+    Assert.equal(meta_global.data.syncID, Service.syncID);
+    Assert.equal(meta_global.data.storageVersion, STORAGE_VERSION);
+    Assert.equal(meta_global.data.engines.clients.version, Service.clientsEngine.version);
+    Assert.equal(meta_global.data.engines.clients.syncID, await Service.clientsEngine.getSyncID());
 
     _("Set the collection info hash so that sync() will remember the modified times for future runs.");
-    collections.meta = Service.clientsEngine.lastSync;
-    collections.clients = Service.clientsEngine.lastSync;
-    Service.sync();
+    let lastSync = await Service.clientsEngine.getLastSync();
+    collections.meta = lastSync;
+    collections.clients = lastSync;
+    await Service.sync();
 
     _("Sync again and verify that meta/global wasn't downloaded again");
     meta_global.wasCalled = false;
-    Service.sync();
-    do_check_false(meta_global.wasCalled);
+    await Service.sync();
+    Assert.ok(!meta_global.wasCalled);
 
     _("Fake modified records. This will cause a redownload, but not reupload since it hasn't changed.");
     collections.meta += 42;
@@ -174,9 +174,9 @@ add_task(async function run_test() {
 
     let metaModified = meta_global.modified;
 
-    Service.sync();
-    do_check_true(meta_global.wasCalled);
-    do_check_eq(metaModified, meta_global.modified);
+    await Service.sync();
+    Assert.ok(meta_global.wasCalled);
+    Assert.equal(metaModified, meta_global.modified);
 
     // Try to screw up HMAC calculation.
     // Re-encrypt keys with a new random keybundle, and upload them to the
@@ -184,13 +184,13 @@ add_task(async function run_test() {
     _("Attempting to screw up HMAC by re-encrypting keys.");
     let keys = Service.collectionKeys.asWBO();
     let b = new BulkKeyBundle("hmacerror");
-    b.generateRandom();
-    collections.crypto = keys.modified = 100 + (Date.now() / 1000);  // Future modification time.
-    keys.encrypt(b);
-    keys.upload(Service.resource(Service.cryptoKeysURL));
+    await b.generateRandom();
+    collections.crypto = keys.modified = 100 + (Date.now() / 1000); // Future modification time.
+    await keys.encrypt(b);
+    await keys.upload(Service.resource(Service.cryptoKeysURL));
 
-    do_check_false(Service.verifyAndFetchSymmetricKeys());
-    do_check_eq(Service.status.login, LOGIN_FAILED_INVALID_PASSPHRASE);
+    Assert.equal(false, (await Service.verifyAndFetchSymmetricKeys()));
+    Assert.equal(Service.status.login, LOGIN_FAILED_INVALID_PASSPHRASE);
   } finally {
     Svc.Prefs.resetBranch("");
     server.stop(do_test_finished);

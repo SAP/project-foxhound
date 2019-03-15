@@ -4,19 +4,12 @@
 
 %include ../../../shared/extensions/extensions.inc.css
 
+:root > * {
+  font-size: 1.36em;
+}
+
 .no-auto-hide > .menulist-dropmarker {
   padding-inline-start: 0px !important;
-}
-
-#header-utils-btn {
-  list-style-image: url("chrome://mozapps/skin/extensions/utilities.svg#utilities");
-  margin-inline-end: 18px;
-}
-
-#header-utils-btn > .toolbarbutton-menu-dropmarker {
-  list-style-image: url("chrome://mozapps/skin/extensions/toolbarbutton-dropmarker.png");
-  padding: 0;
-  margin-inline-start: 2px;
 }
 
 .sorter[checkState="1"] {

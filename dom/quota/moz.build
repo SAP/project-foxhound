@@ -4,14 +4,28 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-
 with Files("**"):
     BUG_COMPONENT = ("Core", "DOM: Quota Manager")
+
+MOCHITEST_MANIFESTS += ['test/mochitest.ini']
+
+BROWSER_CHROME_MANIFESTS += ['test/browser.ini']
+
+XPCSHELL_TESTS_MANIFESTS += [
+    'test/unit/xpcshell.ini'
+]
+
+TEST_HARNESS_FILES.xpcshell.dom.quota.test += [
+    'test/head-shared.js',
+]
+
+TEST_DIRS += ['test/gtest']
 
 XPIDL_SOURCES += [
     'nsIQuotaCallbacks.idl',
     'nsIQuotaManagerService.idl',
     'nsIQuotaRequests.idl',
+    'nsIQuotaResults.idl',
 ]
 
 XPIDL_MODULE = 'dom_quota'
@@ -24,6 +38,7 @@ EXPORTS.mozilla.dom.quota += [
     'ActorsParent.h',
     'Client.h',
     'FileStreams.h',
+    'MemoryOutputStream.h',
     'OriginScope.h',
     'PersistenceType.h',
     'QuotaCommon.h',
@@ -38,8 +53,11 @@ UNIFIED_SOURCES += [
     'ActorsChild.cpp',
     'ActorsParent.cpp',
     'FileStreams.cpp',
+    'MemoryOutputStream.cpp',
+    'QuotaCommon.cpp',
     'QuotaManagerService.cpp',
     'QuotaRequests.cpp',
+    'QuotaResults.cpp',
     'StorageManager.cpp',
 ]
 
@@ -52,10 +70,10 @@ IPDL_SOURCES += [
 include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
+
 LOCAL_INCLUDES += [
-    '../workers',
     '/caps',
 ]
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

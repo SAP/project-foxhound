@@ -2,8 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-Components.utils.import("resource://gre/modules/LoadContextInfo.jsm");
-Components.utils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+
+/* import-globals-from ../../../../toolkit/content/globalOverlay.js */
+/* import-globals-from ../../../../toolkit/content/contentAreaUtils.js */
+/* import-globals-from ../../../../toolkit/content/treeUtils.js */
+/* import-globals-from ../utilityOverlay.js */
+/* import-globals-from permissions.js */
+/* import-globals-from security.js */
 
 // define a js object to implement nsITreeView
 function pageInfoTreeView(treeid, copycol) {
@@ -77,7 +83,7 @@ pageInfoTreeView.prototype = {
 
   performActionOnRow(action, row) {
     if (action == "copy") {
-      var data = this.handleCopy(row)
+      var data = this.handleCopy(row);
       this.tree.treeBody.parentNode.setAttribute("copybuffer", data);
     }
   },
@@ -114,23 +120,21 @@ pageInfoTreeView.prototype = {
   isContainer(index) { return false; },
   isContainerOpen(index) { return false; },
   isSeparator(index) { return false; },
-  isSorted() { return this.sortcol > -1 },
+  isSorted() { return this.sortcol > -1; },
   canDrop(index, orientation) { return false; },
   drop(row, orientation) { return false; },
   getParentIndex(index) { return 0; },
   hasNextSibling(index, after) { return false; },
   getLevel(index) { return 0; },
   getImageSrc(row, column) { },
-  getProgressMode(row, column) { },
   getCellValue(row, column) { },
   toggleOpenState(index) { },
   cycleHeader(col) { },
   selectionChanged() { },
   cycleCell(row, column) { },
   isEditable(row, column) { return false; },
-  isSelectable(row, column) { return false; },
   performAction(action) { },
-  performActionOnCell(action, row, column) { }
+  performActionOnCell(action, row, column) { },
 };
 
 // mmm, yummy. global variables.
@@ -225,30 +229,27 @@ var gBundle;
 
 const PERMISSION_CONTRACTID     = "@mozilla.org/permissionmanager;1";
 const PREFERENCES_CONTRACTID    = "@mozilla.org/preferences-service;1";
-const ATOM_CONTRACTID           = "@mozilla.org/atom-service;1";
 
 // a number of services I'll need later
 // the cache services
-const nsICacheStorageService = Components.interfaces.nsICacheStorageService;
-const nsICacheStorage = Components.interfaces.nsICacheStorage;
-const cacheService = Components.classes["@mozilla.org/netwerk/cache-storage-service;1"].getService(nsICacheStorageService);
+const nsICacheStorageService = Ci.nsICacheStorageService;
+const nsICacheStorage = Ci.nsICacheStorage;
+const cacheService = Cc["@mozilla.org/netwerk/cache-storage-service;1"].getService(nsICacheStorageService);
 
-var loadContextInfo = LoadContextInfo.fromLoadContext(
-  window.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
-        .getInterface(Components.interfaces.nsIWebNavigation)
-        .QueryInterface(Components.interfaces.nsILoadContext), false);
+var loadContextInfo = Services.loadContextInfo.fromLoadContext(
+  window.docShell.QueryInterface(Ci.nsILoadContext), false);
 var diskStorage = cacheService.diskCacheStorage(loadContextInfo, false);
 
-const nsICookiePermission  = Components.interfaces.nsICookiePermission;
-const nsIPermissionManager = Components.interfaces.nsIPermissionManager;
+const nsICookiePermission  = Ci.nsICookiePermission;
+const nsIPermissionManager = Ci.nsIPermissionManager;
 
-const nsICertificateDialogs = Components.interfaces.nsICertificateDialogs;
-const CERTIFICATEDIALOGS_CONTRACTID = "@mozilla.org/nsCertificateDialogs;1"
+const nsICertificateDialogs = Ci.nsICertificateDialogs;
+const CERTIFICATEDIALOGS_CONTRACTID = "@mozilla.org/nsCertificateDialogs;1";
 
 // clipboard helper
 function getClipboardHelper() {
     try {
-        return Components.classes["@mozilla.org/widget/clipboardhelper;1"].getService(Components.interfaces.nsIClipboardHelper);
+        return Cc["@mozilla.org/widget/clipboardhelper;1"].getService(Ci.nsIClipboardHelper);
     } catch (e) {
         // do nothing, later code will handle the error
         return null;
@@ -256,15 +257,12 @@ function getClipboardHelper() {
 }
 const gClipboardHelper = getClipboardHelper();
 
-// Interface for image loading content
-const nsIImageLoadingContent = Components.interfaces.nsIImageLoadingContent;
-
 // namespaces, don't need all of these yet...
 const XLinkNS  = "http://www.w3.org/1999/xlink";
 const XULNS    = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
 const XMLNS    = "http://www.w3.org/XML/1998/namespace";
 const XHTMLNS  = "http://www.w3.org/1999/xhtml";
-const XHTML2NS = "http://www.w3.org/2002/06/xhtml2"
+const XHTML2NS = "http://www.w3.org/2002/06/xhtml2";
 
 const XHTMLNSre  = "^http\:\/\/www\.w3\.org\/1999\/xhtml$";
 const XHTML2NSre = "^http\:\/\/www\.w3\.org\/2002\/06\/xhtml2$";
@@ -327,40 +325,31 @@ function onLoadPageInfo() {
 
   /* Select the requested tab, if the name is specified */
   loadTab(args);
-  Components.classes["@mozilla.org/observer-service;1"]
-            .getService(Components.interfaces.nsIObserverService)
-            .notifyObservers(window, "page-info-dialog-loaded", null);
+  Services.obs.notifyObservers(window, "page-info-dialog-loaded");
 }
 
 function loadPageInfo(frameOuterWindowID, imageElement, browser) {
   browser = browser || window.opener.gBrowser.selectedBrowser;
   let mm = browser.messageManager;
 
-  gStrings["application/rss+xml"]  = gBundle.getString("feedRss");
-  gStrings["application/atom+xml"] = gBundle.getString("feedAtom");
-  gStrings["text/xml"]             = gBundle.getString("feedXML");
-  gStrings["application/xml"]      = gBundle.getString("feedXML");
-  gStrings["application/rdf+xml"]  = gBundle.getString("feedXML");
+  let imageInfo = imageElement;
 
   // Look for pageInfoListener in content.js. Sends message to listener with arguments.
-  mm.sendAsyncMessage("PageInfo:getData", {strings: gStrings,
-                      frameOuterWindowID},
-                      { imageElement });
+  mm.sendAsyncMessage("PageInfo:getData", {strings: gStrings, frameOuterWindowID});
 
   let pageInfoData;
 
-  // Get initial pageInfoData needed to display the general, feeds, permission and security tabs.
+  // Get initial pageInfoData needed to display the general, permission and security tabs.
   mm.addMessageListener("PageInfo:data", function onmessage(message) {
     mm.removeMessageListener("PageInfo:data", onmessage);
     pageInfoData = message.data;
     let docInfo = pageInfoData.docInfo;
     let windowInfo = pageInfoData.windowInfo;
-    let uri = makeURI(docInfo.documentURIObject.spec,
-                      docInfo.documentURIObject.originCharset);
+    let uri = Services.io.newURI(docInfo.documentURIObject.spec);
     let principal = docInfo.principal;
     gDocInfo = docInfo;
 
-    gImageElement = pageInfoData.imageInfo;
+    gImageElement = imageInfo;
 
     var titleFormat = windowInfo.isTopWindow ? "pageInfo.page.title"
                                              : "pageInfo.frame.title";
@@ -369,7 +358,6 @@ function loadPageInfo(frameOuterWindowID, imageElement, browser) {
     document.getElementById("main-window").setAttribute("relatedUrl", docInfo.location);
 
     makeGeneralTab(pageInfoData.metaViewRows, docInfo);
-    initFeedTab(pageInfoData.feeds);
     onLoadPermission(uri, principal);
     securityOnLoad(uri, windowInfo);
   });
@@ -407,18 +395,11 @@ function resetPageInfo(args) {
   /* Reset Media tab */
   var mediaTab = document.getElementById("mediaTab");
   if (!mediaTab.hidden) {
-    Components.classes["@mozilla.org/observer-service;1"]
-              .getService(Components.interfaces.nsIObserverService)
-              .removeObserver(imagePermissionObserver, "perm-changed");
+    Services.obs.removeObserver(imagePermissionObserver, "perm-changed");
     mediaTab.hidden = true;
   }
   gImageView.clear();
   gImageHash = {};
-
-  /* Reset Feeds Tab */
-  var feedListbox = document.getElementById("feedListbox");
-  while (feedListbox.firstChild)
-    feedListbox.removeChild(feedListbox.firstChild);
 
   /* Call registered overlay reset functions */
   onResetRegistry.forEach(function(func) { func(); });
@@ -430,9 +411,7 @@ function resetPageInfo(args) {
 function onUnloadPageInfo() {
   // Remove the observer, only if there is at least 1 image.
   if (!document.getElementById("mediaTab").hidden) {
-    Components.classes["@mozilla.org/observer-service;1"]
-              .getService(Components.interfaces.nsIObserverService)
-              .removeObserver(imagePermissionObserver, "perm-changed");
+    Services.obs.removeObserver(imagePermissionObserver, "perm-changed");
   }
 
   /* Call registered overlay unload functions */
@@ -443,9 +422,8 @@ function doHelpButton() {
   const helpTopics = {
     "generalPanel":  "pageinfo_general",
     "mediaPanel":    "pageinfo_media",
-    "feedPanel":     "pageinfo_feed",
     "permPanel":     "pageinfo_permissions",
-    "securityPanel": "pageinfo_security"
+    "securityPanel": "pageinfo_security",
   };
 
   var deck  = document.getElementById("mainDeck");
@@ -477,29 +455,14 @@ function loadTab(args) {
   radioGroup.focus();
 }
 
-function toggleGroupbox(id) {
-  var elt = document.getElementById(id);
-  if (elt.hasAttribute("closed")) {
-    elt.removeAttribute("closed");
-    if (elt.flexWhenOpened)
-      elt.flex = elt.flexWhenOpened;
-  } else {
-    elt.setAttribute("closed", "true");
-    if (elt.flex) {
-      elt.flexWhenOpened = elt.flex;
-      elt.flex = 0;
-    }
-  }
-}
-
 function openCacheEntry(key, cb) {
   var checkCacheListener = {
     onCacheEntryCheck(entry, appCache) {
-      return Components.interfaces.nsICacheEntryOpenCallback.ENTRY_WANTED;
+      return Ci.nsICacheEntryOpenCallback.ENTRY_WANTED;
     },
     onCacheEntryAvailable(entry, isNew, appCache, status) {
       cb(entry);
-    }
+    },
   };
   diskStorage.asyncOpenURI(Services.io.newURI(key), "", nsICacheStorage.OPEN_READONLY, checkCacheListener);
 }
@@ -529,20 +492,20 @@ function makeGeneralTab(metaViewRows, docInfo) {
 
   var metaGroup = document.getElementById("metaTags");
   if (!length)
-    metaGroup.collapsed = true;
+    metaGroup.style.visibility = "hidden";
   else {
     var metaTagsCaption = document.getElementById("metaTagsCaption");
     if (length == 1)
-      metaTagsCaption.label = gBundle.getString("generalMetaTag");
+      metaTagsCaption.value = gBundle.getString("generalMetaTag");
     else
-      metaTagsCaption.label = gBundle.getFormattedString("generalMetaTags", [length]);
+      metaTagsCaption.value = gBundle.getFormattedString("generalMetaTags", [length]);
     var metaTree = document.getElementById("metatree");
     metaTree.view = gMetaView;
 
     // Add the metaViewRows onto the general tab's meta info tree.
     gMetaView.addRows(metaViewRows);
 
-    metaGroup.collapsed = false;
+    metaGroup.style.removeProperty("visibility");
   }
 
   // get the date of last modification
@@ -590,9 +553,7 @@ function addImage(imageViewRow) {
     // Add the observer, only once.
     if (gImageView.data.length == 1) {
       document.getElementById("mediaTab").hidden = false;
-      Components.classes["@mozilla.org/observer-service;1"]
-                .getService(Components.interfaces.nsIObserverService)
-                .addObserver(imagePermissionObserver, "perm-changed", false);
+      Services.obs.addObserver(imagePermissionObserver, "perm-changed");
     }
   } else {
     var i = gImageHash[url][type][alt];
@@ -621,10 +582,11 @@ function onBeginLinkDrag(event, urlField, descField) {
     return;
 
   var tree = event.target;
-  if (!("treeBoxObject" in tree))
+  if (tree.localName != "tree") {
     tree = tree.parentNode;
+  }
 
-  var row = tree.treeBoxObject.getRowAt(event.clientX, event.clientY);
+  var row = tree.getRowAt(event.clientX, event.clientY);
   if (row == -1)
     return;
 
@@ -662,14 +624,14 @@ function getSelectedRow(tree) {
 }
 
 function selectSaveFolder(aCallback) {
-  const nsILocalFile = Components.interfaces.nsILocalFile;
-  const nsIFilePicker = Components.interfaces.nsIFilePicker;
+  const nsIFile = Ci.nsIFile;
+  const nsIFilePicker = Ci.nsIFilePicker;
   let titleText = gBundle.getString("mediaSelectFolder");
-  let fp = Components.classes["@mozilla.org/filepicker;1"].
+  let fp = Cc["@mozilla.org/filepicker;1"].
            createInstance(nsIFilePicker);
   let fpCallback = function fpCallback_done(aResult) {
     if (aResult == nsIFilePicker.returnOK) {
-      aCallback(fp.file.QueryInterface(nsILocalFile));
+      aCallback(fp.file.QueryInterface(nsIFile));
     } else {
       aCallback(null);
     }
@@ -678,9 +640,7 @@ function selectSaveFolder(aCallback) {
   fp.init(window, titleText, nsIFilePicker.modeGetFolder);
   fp.appendFilters(nsIFilePicker.filterAll);
   try {
-    let prefs = Components.classes[PREFERENCES_CONTRACTID].
-                getService(Components.interfaces.nsIPrefBranch);
-    let initialDir = prefs.getComplexValue("browser.download.dir", nsILocalFile);
+    let initialDir = Services.prefs.getComplexValue("browser.download.dir", nsIFile);
     if (initialDir) {
       fp.displayDirectory = initialDir;
     }
@@ -705,8 +665,8 @@ function saveMedia() {
       else if (item instanceof HTMLAudioElement)
         titleKey = "SaveAudioTitle";
 
-      saveURL(url, null, titleKey, false, false, makeURI(item.baseURI),
-              null, gDocInfo.isContentWindowPrivate);
+      saveURL(url, null, titleKey, false, false, Services.io.newURI(item.baseURI),
+              null, gDocInfo.isContentWindowPrivate, gDocInfo.principal);
     }
   } else {
     selectSaveFolder(function(aDirectory) {
@@ -714,7 +674,8 @@ function saveMedia() {
         var saveAnImage = function(aURIString, aChosenData, aBaseURI) {
           uniqueFile(aChosenData.file);
           internalSave(aURIString, null, null, null, null, false, "SaveImageTitle",
-                       aChosenData, aBaseURI, null, false, null, gDocInfo.isContentWindowPrivate);
+                       aChosenData, aBaseURI, null, false, null,
+                       gDocInfo.isContentWindowPrivate, gDocInfo.principal);
         };
 
         for (var i = 0; i < rowArray.length; i++) {
@@ -722,10 +683,10 @@ function saveMedia() {
           let dir = aDirectory.clone();
           let item = gImageView.data[v][COL_IMAGE_NODE];
           let uriString = gImageView.data[v][COL_IMAGE_ADDRESS];
-          let uri = makeURI(uriString);
+          let uri = Services.io.newURI(uriString);
 
           try {
-            uri.QueryInterface(Components.interfaces.nsIURL);
+            uri.QueryInterface(Ci.nsIURL);
             dir.append(decodeURIComponent(uri.fileName));
           } catch (ex) {
             // data:/blob: uris
@@ -735,12 +696,12 @@ function saveMedia() {
           }
 
           if (i == 0) {
-            saveAnImage(uriString, new AutoChosen(dir, uri), makeURI(item.baseURI));
+            saveAnImage(uriString, new AutoChosen(dir, uri), Services.io.newURI(item.baseURI));
           } else {
             // This delay is a hack which prevents the download manager
             // from opening many times. See bug 377339.
             setTimeout(saveAnImage, 200, uriString, new AutoChosen(dir, uri),
-                       makeURI(item.baseURI));
+                       Services.io.newURI(item.baseURI));
           }
         }
       }
@@ -749,11 +710,11 @@ function saveMedia() {
 }
 
 function onBlockImage() {
-  var permissionManager = Components.classes[PERMISSION_CONTRACTID]
-                                    .getService(nsIPermissionManager);
+  var permissionManager = Cc[PERMISSION_CONTRACTID]
+                            .getService(nsIPermissionManager);
 
   var checkbox = document.getElementById("blockImage");
-  var uri = makeURI(document.getElementById("imageurltext").value);
+  var uri = Services.io.newURI(document.getElementById("imageurltext").value);
   if (checkbox.checked)
     permissionManager.add(uri, "image", nsIPermissionManager.DENY_ACTION);
   else
@@ -844,86 +805,107 @@ function makePreview(row) {
     var physWidth = 0, physHeight = 0;
     var width = 0, height = 0;
 
+    let serial = Cc["@mozilla.org/network/serialization-helper;1"]
+                   .getService(Ci.nsISerializationHelper);
+    let triggeringPrinStr = serial.serializeToString(gDocInfo.principal);
     if ((item.HTMLLinkElement || item.HTMLInputElement ||
          item.HTMLImageElement || item.SVGImageElement ||
          (item.HTMLObjectElement && mimeType && mimeType.startsWith("image/")) ||
          isBG) && isProtocolAllowed) {
+      // We need to wait for the image to finish loading before using width & height
+      newImage.addEventListener("loadend", function() {
+        physWidth = newImage.width || 0;
+        physHeight = newImage.height || 0;
+
+        // "width" and "height" attributes must be set to newImage,
+        // even if there is no "width" or "height attribute in item;
+        // otherwise, the preview image cannot be displayed correctly.
+        // Since the image might have been loaded out-of-process, we expect
+        // the item to tell us its width / height dimensions. Failing that
+        // the item should tell us the natural dimensions of the image. Finally
+        // failing that, we'll assume that the image was never loaded in the
+        // other process (this can be true for favicons, for example), and so
+        // we'll assume that we can use the natural dimensions of the newImage
+        // we just created. If the natural dimensions of newImage are not known
+        // then the image is probably broken.
+        if (!isBG) {
+          newImage.width = ("width" in item && item.width) || newImage.naturalWidth;
+          newImage.height = ("height" in item && item.height) || newImage.naturalHeight;
+        } else {
+          // the Width and Height of an HTML tag should not be used for its background image
+          // (for example, "table" can have "width" or "height" attributes)
+          newImage.width = item.naturalWidth || newImage.naturalWidth;
+          newImage.height = item.naturalHeight || newImage.naturalHeight;
+        }
+
+        if (item.SVGImageElement) {
+          newImage.width = item.SVGImageElementWidth;
+          newImage.height = item.SVGImageElementHeight;
+        }
+
+        width = newImage.width;
+        height = newImage.height;
+
+        document.getElementById("theimagecontainer").collapsed = false;
+        document.getElementById("brokenimagecontainer").collapsed = true;
+
+        let imageSize = "";
+        if (url) {
+          if (width != physWidth || height != physHeight) {
+            imageSize = gBundle.getFormattedString("mediaDimensionsScaled",
+                                                   [formatNumber(physWidth),
+                                                    formatNumber(physHeight),
+                                                    formatNumber(width),
+                                                    formatNumber(height)]);
+          } else {
+            imageSize = gBundle.getFormattedString("mediaDimensions",
+                                                   [formatNumber(width),
+                                                    formatNumber(height)]);
+          }
+        }
+        setItemValue("imagedimensiontext", imageSize);
+      }, {once: true});
+
+      newImage.setAttribute("triggeringprincipal", triggeringPrinStr);
       newImage.setAttribute("src", url);
-      physWidth = newImage.width || 0;
-      physHeight = newImage.height || 0;
-
-      // "width" and "height" attributes must be set to newImage,
-      // even if there is no "width" or "height attribute in item;
-      // otherwise, the preview image cannot be displayed correctly.
-      // Since the image might have been loaded out-of-process, we expect
-      // the item to tell us its width / height dimensions. Failing that
-      // the item should tell us the natural dimensions of the image. Finally
-      // failing that, we'll assume that the image was never loaded in the
-      // other process (this can be true for favicons, for example), and so
-      // we'll assume that we can use the natural dimensions of the newImage
-      // we just created. If the natural dimensions of newImage are not known
-      // then the image is probably broken.
-      if (!isBG) {
-        newImage.width = ("width" in item && item.width) || newImage.naturalWidth;
-        newImage.height = ("height" in item && item.height) || newImage.naturalHeight;
-      } else {
-        // the Width and Height of an HTML tag should not be used for its background image
-        // (for example, "table" can have "width" or "height" attributes)
-        newImage.width = item.naturalWidth || newImage.naturalWidth;
-        newImage.height = item.naturalHeight || newImage.naturalHeight;
-      }
-
-      if (item.SVGImageElement) {
-        newImage.width = item.SVGImageElementWidth;
-        newImage.height = item.SVGImageElementHeight;
-      }
-
-      width = newImage.width;
-      height = newImage.height;
-
-      document.getElementById("theimagecontainer").collapsed = false
-      document.getElementById("brokenimagecontainer").collapsed = true;
-    } else if (item.HTMLVideoElement && isProtocolAllowed) {
-      newImage = document.createElementNS("http://www.w3.org/1999/xhtml", "video");
-      newImage.id = "thepreviewimage";
-      newImage.src = url;
-      newImage.controls = true;
-      width = physWidth = item.videoWidth;
-      height = physHeight = item.videoHeight;
-
-      document.getElementById("theimagecontainer").collapsed = false;
-      document.getElementById("brokenimagecontainer").collapsed = true;
-    } else if (item.HTMLAudioElement && isProtocolAllowed) {
-      newImage = new Audio;
-      newImage.id = "thepreviewimage";
-      newImage.src = url;
-      newImage.controls = true;
-      isAudio = true;
-
-      document.getElementById("theimagecontainer").collapsed = false;
-      document.getElementById("brokenimagecontainer").collapsed = true;
     } else {
-      // fallback image for protocols not allowed (e.g., javascript:)
-      // or elements not [yet] handled (e.g., object, embed).
-      document.getElementById("brokenimagecontainer").collapsed = false;
-      document.getElementById("theimagecontainer").collapsed = true;
-    }
+      // Handle the case where newImage is not used for width & height
+      if (item.HTMLVideoElement && isProtocolAllowed) {
+        newImage = document.createElementNS("http://www.w3.org/1999/xhtml", "video");
+        newImage.id = "thepreviewimage";
+        newImage.setAttribute("triggeringprincipal", triggeringPrinStr);
+        newImage.src = url;
+        newImage.controls = true;
+        width = physWidth = item.videoWidth;
+        height = physHeight = item.videoHeight;
 
-    let imageSize = "";
-    if (url && !isAudio) {
-      if (width != physWidth || height != physHeight) {
-        imageSize = gBundle.getFormattedString("mediaDimensionsScaled",
-                                               [formatNumber(physWidth),
-                                                formatNumber(physHeight),
-                                                formatNumber(width),
-                                                formatNumber(height)]);
+        document.getElementById("theimagecontainer").collapsed = false;
+        document.getElementById("brokenimagecontainer").collapsed = true;
+      } else if (item.HTMLAudioElement && isProtocolAllowed) {
+        newImage = new Audio;
+        newImage.id = "thepreviewimage";
+        newImage.setAttribute("triggeringprincipal", triggeringPrinStr);
+        newImage.src = url;
+        newImage.controls = true;
+        isAudio = true;
+
+        document.getElementById("theimagecontainer").collapsed = false;
+        document.getElementById("brokenimagecontainer").collapsed = true;
       } else {
+        // fallback image for protocols not allowed (e.g., javascript:)
+        // or elements not [yet] handled (e.g., object, embed).
+        document.getElementById("brokenimagecontainer").collapsed = false;
+        document.getElementById("theimagecontainer").collapsed = true;
+      }
+
+      let imageSize = "";
+      if (url && !isAudio) {
         imageSize = gBundle.getFormattedString("mediaDimensions",
                                                [formatNumber(width),
                                                 formatNumber(height)]);
       }
+      setItemValue("imagedimensiontext", imageSize);
     }
-    setItemValue("imagedimensiontext", imageSize);
 
     makeBlockImage(url);
 
@@ -933,19 +915,17 @@ function makePreview(row) {
 }
 
 function makeBlockImage(url) {
-  var permissionManager = Components.classes[PERMISSION_CONTRACTID]
-                                    .getService(nsIPermissionManager);
-  var prefs = Components.classes[PREFERENCES_CONTRACTID]
-                        .getService(Components.interfaces.nsIPrefBranch);
+  var permissionManager = Cc[PERMISSION_CONTRACTID]
+                            .getService(nsIPermissionManager);
 
   var checkbox = document.getElementById("blockImage");
-  var imagePref = prefs.getIntPref("permissions.default.image");
+  var imagePref = Services.prefs.getIntPref("permissions.default.image");
   if (!(/^https?:/.test(url)) || imagePref == 2)
     // We can't block the images from this host because either is is not
     // for http(s) or we don't load images at all
     checkbox.hidden = true;
   else {
-    var uri = makeURI(url);
+    var uri = Services.io.newURI(url);
     if (uri.host) {
       checkbox.hidden = false;
       checkbox.label = gBundle.getFormattedString("mediaBlockImage", [uri.host]);
@@ -962,18 +942,18 @@ var imagePermissionObserver = {
       return;
 
     if (aTopic == "perm-changed") {
-      var permission = aSubject.QueryInterface(Components.interfaces.nsIPermission);
+      var permission = aSubject.QueryInterface(Ci.nsIPermission);
       if (permission.type == "image") {
         var imageTree = document.getElementById("imagetree");
         var row = getSelectedRow(imageTree);
         var url = gImageView.data[row][COL_IMAGE_ADDRESS];
-        if (permission.matchesURI(makeURI(url), true)) {
+        if (permission.matchesURI(Services.io.newURI(url), true)) {
           makeBlockImage(url);
         }
       }
     }
-  }
-}
+  },
+};
 
 function getContentTypeFromHeaders(cacheEntryDescriptor) {
   if (!cacheEntryDescriptor)
@@ -994,7 +974,7 @@ function setItemValue(id, value) {
 }
 
 function formatNumber(number) {
-  return (+number).toLocaleString();  // coerce number to a numeric value before calling toLocaleString()
+  return (+number).toLocaleString(); // coerce number to a numeric value before calling toLocaleString()
 }
 
 function formatDate(datestr, unknown) {
@@ -1002,12 +982,10 @@ function formatDate(datestr, unknown) {
   if (!date.valueOf())
     return unknown;
 
-  const locale = Components.classes["@mozilla.org/chrome/chrome-registry;1"]
-                 .getService(Components.interfaces.nsIXULChromeRegistry)
-                 .getSelectedLocale("global", true);
-  const dtOptions = { year: "numeric", month: "long", day: "numeric",
-                      hour: "numeric", minute: "numeric", second: "numeric" };
-  return date.toLocaleString(locale, dtOptions);
+  const dateTimeFormatter = new Services.intl.DateTimeFormat(undefined, {
+    dateStyle: "long", timeStyle: "long",
+  });
+  return dateTimeFormatter.format(date);
 }
 
 function doCopy() {
@@ -1016,7 +994,7 @@ function doCopy() {
 
   var elem = document.commandDispatcher.focusedElement;
 
-  if (elem && "treeBoxObject" in elem) {
+  if (elem && elem.localName == "tree") {
     var view = elem.view;
     var selection = view.selection;
     var text = [], tmp = "";
@@ -1050,8 +1028,9 @@ function doSelectAllMedia() {
 function doSelectAll() {
   var elem = document.commandDispatcher.focusedElement;
 
-  if (elem && "treeBoxObject" in elem)
+  if (elem && elem.localName == "tree") {
     elem.view.selection.selectAll();
+  }
 }
 
 function selectImage() {
@@ -1068,7 +1047,7 @@ function selectImage() {
         gImageElement.height == image.height &&
         gImageElement.imageText == image.imageText) {
       tree.view.selection.select(i);
-      tree.treeBoxObject.ensureRowIsVisible(i);
+      tree.ensureRowIsVisible(i);
       tree.focus();
       return;
     }

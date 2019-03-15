@@ -85,6 +85,18 @@ no such emphasized headings will appear.
 A `Debugger.Script` instance inherits the following accessor properties
 from its prototype:
 
+`isGeneratorFunction`
+:   True if this instance refers to a `JSScript` for a function defined with a
+    `function*` expression or statement. False otherwise.
+
+`isAsyncFunction`
+:   True if this instance refers to a `JSScript` for an async function, defined
+    with an `async function` expression or statement. False otherwise.
+
+`isModule`
+:   True if this instance refers to a `JSScript` that was parsed and loaded
+    as an ECMAScript module. False otherwise.
+
 `displayName`
 :   **If the instance refers to a `JSScript`**, this is the script's display
     name, if it has one. If the script has no display name &mdash; for example,
@@ -125,8 +137,12 @@ from its prototype:
 
 `url`
 :   **If the instance refers to a `JSScript`**, the filename or URL from which
-    this script's code was loaded. If the `source` property is non-`null`,
-    then this is equal to `source.url`.
+    this script's code was loaded. For scripts created by `eval` or the
+    `Function` constructor, this may be a synthesized filename, starting with a
+    valid URL and followed by information tracking how the code was introduced
+    into the system; the entire string is not a valid URL. For
+    `Function.prototype`'s script, this is `null`. If this `Debugger.Script`'s
+    `source` property is non-`null`, then this is equal to `source.url`.
 
     **If the instance refers to WebAssembly code**, throw a `TypeError`.
 
@@ -161,6 +177,12 @@ from its prototype:
 :   **If the instance refers to a `JSScript`**, the length, in characters, of
     this script's code within the [`Debugger.Source`][source] instance given
     by `source`.
+
+    **If the instance refers to WebAssembly code**, throw a `TypeError`.
+
+`mainOffset`
+:   **If the instance refers to a `JSScript`**, the offset of the main
+    entry point of the script, excluding any prologue.
 
     **If the instance refers to WebAssembly code**, throw a `TypeError`.
 
@@ -275,6 +297,18 @@ methods of other kinds of objects.
     * isEntryPoint: true if the offset is a column entry point, as
       would be reported by getAllColumnOffsets(); otherwise false.
 
+<code>getSuccessorOffsets(<i>offset</i>)</code>
+:   **If the instance refers to a `JSScript`**, return an array
+    containing the offsets of all bytecodes in the script which are
+    immediate successors of <i>offset</i> via non-exceptional control
+    flow paths.
+
+<code>getPredecessorOffsets(<i>offset</i>)</code>
+:   **If the instance refers to a `JSScript`**, return an array
+    containing the offsets of all bytecodes in the script for which
+    <i>offset</i> is an immediate successor via non-exceptional
+    control flow paths.
+
 `getOffsetsCoverage()`:
 :   **If the instance refers to a `JSScript`**, return `null` or an array which
     contains informations about the coverage of all opcodes. The elements of
@@ -342,7 +376,7 @@ methods of other kinds of objects.
 
     **If the instance refers to WebAssembly code**, throw a `TypeError`.
 
-<code>clearBreakpoints(handler, [<i>offset</i>])</code>
+<code>clearBreakpoint(handler, [<i>offset</i>])</code>
 :   **If the instance refers to a `JSScript`**, remove all breakpoints set in
     this [`Debugger`][debugger-object] instance that use <i>handler</i> as
     their handler. If <i>offset</i> is given, remove only those breakpoints

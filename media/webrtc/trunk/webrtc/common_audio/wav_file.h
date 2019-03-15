@@ -8,8 +8,8 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_COMMON_AUDIO_WAV_FILE_H_
-#define WEBRTC_COMMON_AUDIO_WAV_FILE_H_
+#ifndef COMMON_AUDIO_WAV_FILE_H_
+#define COMMON_AUDIO_WAV_FILE_H_
 
 #ifdef __cplusplus
 
@@ -17,7 +17,7 @@
 #include <cstddef>
 #include <string>
 
-#include "webrtc/base/constructormagic.h"
+#include "rtc_base/constructormagic.h"
 
 namespace webrtc {
 
@@ -42,7 +42,7 @@ class WavWriter final : public WavFile {
   WavWriter(const std::string& filename, int sample_rate, size_t num_channels);
 
   // Close the WAV file, after writing its header.
-  ~WavWriter();
+  ~WavWriter() override;
 
   // Write additional samples to the file. Each sample is in the range
   // [-32768,32767], and there must be the previously specified number of
@@ -50,9 +50,9 @@ class WavWriter final : public WavFile {
   void WriteSamples(const float* samples, size_t num_samples);
   void WriteSamples(const int16_t* samples, size_t num_samples);
 
-  int sample_rate() const override { return sample_rate_; }
-  size_t num_channels() const override { return num_channels_; }
-  size_t num_samples() const override { return num_samples_; }
+  int sample_rate() const override;
+  size_t num_channels() const override;
+  size_t num_samples() const override;
 
  private:
   void Close();
@@ -71,16 +71,16 @@ class WavReader final : public WavFile {
   explicit WavReader(const std::string& filename);
 
   // Close the WAV file.
-  ~WavReader();
+  ~WavReader() override;
 
   // Returns the number of samples read. If this is less than requested,
   // verifies that the end of the file was reached.
   size_t ReadSamples(size_t num_samples, float* samples);
   size_t ReadSamples(size_t num_samples, int16_t* samples);
 
-  int sample_rate() const override { return sample_rate_; }
-  size_t num_channels() const override { return num_channels_; }
-  size_t num_samples() const override { return num_samples_; }
+  int sample_rate() const override;
+  size_t num_channels() const override;
+  size_t num_samples() const override;
 
  private:
   void Close();
@@ -115,4 +115,4 @@ size_t rtc_WavNumSamples(const rtc_WavWriter* wf);
 }  // extern "C"
 #endif
 
-#endif  // WEBRTC_COMMON_AUDIO_WAV_FILE_H_
+#endif  // COMMON_AUDIO_WAV_FILE_H_

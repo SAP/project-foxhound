@@ -27,10 +27,6 @@ const gCertOverrideService = {
     return true;
   },
 
-  getValidityOverride() {
-    throw Cr.NS_ERROR_NOT_IMPLEMENTED;
-  },
-
   clearValidityOverride() {
     throw Cr.NS_ERROR_NOT_IMPLEMENTED;
   },
@@ -39,7 +35,7 @@ const gCertOverrideService = {
     throw Cr.NS_ERROR_NOT_IMPLEMENTED;
   },
 
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsICertOverrideService])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsICertOverrideService]),
 };
 
 function run_test() {
@@ -47,7 +43,7 @@ function run_test() {
   let certOverrideServiceCID =
     MockRegistrar.register("@mozilla.org/security/certoverride;1",
                            gCertOverrideService);
-  do_register_cleanup(() => {
+  registerCleanupFunction(() => {
     MockRegistrar.unregister(certOverrideServiceCID);
   });
   add_tls_server_setup("BadCertServer", "bad_certs");

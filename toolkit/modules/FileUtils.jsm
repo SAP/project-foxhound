@@ -3,28 +3,24 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-this.EXPORTED_SYMBOLS = [ "FileUtils" ];
+var EXPORTED_SYMBOLS = [ "FileUtils" ];
 
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cr = Components.results;
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyServiceGetter(this, "gDirService",
                                    "@mozilla.org/file/directory_service;1",
                                    "nsIProperties");
 
-this.FileUtils = {
-  MODE_RDONLY   : 0x01,
-  MODE_WRONLY   : 0x02,
-  MODE_RDWR     : 0x04,
-  MODE_CREATE   : 0x08,
-  MODE_APPEND   : 0x10,
-  MODE_TRUNCATE : 0x20,
+var FileUtils = {
+  MODE_RDONLY: 0x01,
+  MODE_WRONLY: 0x02,
+  MODE_RDWR: 0x04,
+  MODE_CREATE: 0x08,
+  MODE_APPEND: 0x10,
+  MODE_TRUNCATE: 0x20,
 
-  PERMS_FILE      : 0o644,
-  PERMS_DIRECTORY : 0o755,
+  PERMS_FILE: 0o644,
+  PERMS_DIRECTORY: 0o755,
 
   /**
    * Gets a file at the specified hierarchy under a nsIDirectoryService key.
@@ -36,10 +32,11 @@ this.FileUtils = {
    *          leaf name of a file.
    * @return  nsIFile object for the file specified. The file is NOT created
    *          if it does not exist, however all required directories along
-   *          the way are.
+   *          the way are if pathArray has more than one item.
    */
   getFile: function FileUtils_getFile(key, pathArray, followLinks) {
-    var file = this.getDir(key, pathArray.slice(0, -1), true, followLinks);
+    var file = this.getDir(key, pathArray.slice(0, -1), pathArray.length > 1,
+                           followLinks);
     file.append(pathArray[pathArray.length - 1]);
     return file;
   },
@@ -170,5 +167,5 @@ this.FileUtils = {
     stream.close();
   },
 
-  File: Components.Constructor("@mozilla.org/file/local;1", Ci.nsILocalFile, "initWithPath")
+  File: Components.Constructor("@mozilla.org/file/local;1", Ci.nsIFile, "initWithPath"),
 };

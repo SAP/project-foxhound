@@ -34,8 +34,10 @@ function Reflect_apply(target, thisArgument, argumentsList) {
         ThrowTypeError(JSMSG_NOT_FUNCTION, DecompileArg(0, target));
 
     // Step 2.
-    if (!IsObject(argumentsList))
-        ThrowTypeError(JSMSG_NOT_NONNULL_OBJECT, DecompileArg(2, argumentsList));
+    if (!IsObject(argumentsList)) {
+        ThrowTypeError(JSMSG_NOT_NONNULL_OBJECT_ARG, "`argumentsList`", "Reflect.apply",
+                       ToSource(argumentsList));
+    }
 
     // Steps 2-4.
     return callFunction(std_Function_apply, target, thisArgument, argumentsList);
@@ -59,8 +61,10 @@ function Reflect_construct(target, argumentsList/*, newTarget*/) {
     }
 
     // Step 4.
-    if (!IsObject(argumentsList))
-        ThrowTypeError(JSMSG_NOT_NONNULL_OBJECT, DecompileArg(1, argumentsList));
+    if (!IsObject(argumentsList)) {
+        ThrowTypeError(JSMSG_NOT_NONNULL_OBJECT_ARG, "`argumentsList`", "Reflect.construct",
+                       ToSource(argumentsList));
+    }
 
     // Fast path when we can avoid calling CreateListFromArrayLikeForArgs().
     var args = (IsPackedArray(argumentsList) && argumentsList.length <= MAX_ARGS_LENGTH)
@@ -100,13 +104,53 @@ function Reflect_construct(target, argumentsList/*, newTarget*/) {
     }
 }
 
-// ES2017 draft rev a785b0832b071f505a694e1946182adeab84c972
-// 26.1.8 Reflect.has ( target, propertyKey )
-function Reflect_has(target, propertyKey) {
+// ES2017 draft rev 6859bb9ccaea9c6ede81d71e5320e3833b92cb3e
+// 26.1.3 Reflect.defineProperty ( target, propertyKey, attributes )
+function Reflect_defineProperty(obj, propertyKey, attributes) {
+    // Steps 1-4.
+    return ObjectOrReflectDefineProperty(obj, propertyKey, attributes, false);
+}
+
+// ES2017 draft rev 6859bb9ccaea9c6ede81d71e5320e3833b92cb3e
+// 26.1.6 Reflect.getOwnPropertyDescriptor ( target, propertyKey )
+function Reflect_getOwnPropertyDescriptor(target, propertyKey) {
     // Step 1.
     if (!IsObject(target))
         ThrowTypeError(JSMSG_NOT_NONNULL_OBJECT, DecompileArg(0, target));
 
+    // Steps 2-3.
+    // The other steps are identical to Object.getOwnPropertyDescriptor().
+    return ObjectGetOwnPropertyDescriptor(target, propertyKey);
+}
+
+// ES2017 draft rev a785b0832b071f505a694e1946182adeab84c972
+// 26.1.8 Reflect.has ( target, propertyKey )
+function Reflect_has(target, propertyKey) {
+    // Step 1.
+    if (!IsObject(target)) {
+        ThrowTypeError(JSMSG_NOT_NONNULL_OBJECT_ARG, "`target`", "Reflect.has",
+                       ToSource(target));
+    }
+
     // Steps 2-3 are identical to the runtime semantics of the "in" operator.
     return propertyKey in target;
+}
+
+// ES2018 draft rev 0525bb33861c7f4e9850f8a222c89642947c4b9c
+// 26.1.5 Reflect.get ( target, propertyKey [ , receiver ] )
+function Reflect_get(target, propertyKey/*, receiver*/) {
+    // Step 1.
+    if (!IsObject(target)) {
+        ThrowTypeError(JSMSG_NOT_NONNULL_OBJECT_ARG, "`target`", "Reflect.get",
+                       ToSource(target));
+    }
+
+    // Step 3 (reordered).
+    if (arguments.length > 2) {
+        // Steps 2, 4.
+        return getPropertySuper(target, propertyKey, arguments[2]);
+    }
+
+    // Steps 2, 4.
+    return target[propertyKey];
 }

@@ -14,11 +14,11 @@
  */
 
 #include "SkBitmapProcState.h"
-#include "SkPerspIter.h"
+#include "SkBitmapProcState_utils.h"
 #include "SkShader.h"
+#include "SkTo.h"
 #include "SkUtils.h"
 #include "SkUtilsArm.h"
-#include "SkBitmapProcState_utils.h"
 
 /*  returns 0...(n-1) given any x (positive or negative).
 
@@ -47,7 +47,7 @@ void decal_filter_scale(uint32_t dst[], SkFixed fx, SkFixed dx, int count);
 ///////////////////////////////////////////////////////////////////////////////
 
 // Compile neon code paths if needed
-#if defined(SK_ARM_HAS_NEON) || defined(SK_ARM_HAS_OPTIONAL_NEON)
+#if defined(SK_ARM_HAS_NEON)
 
 // These are defined in src/opts/SkBitmapProcState_matrixProcs_neon.cpp
 extern const SkBitmapProcState::MatrixProc ClampX_ClampY_Procs_neon[];
@@ -56,12 +56,11 @@ extern const SkBitmapProcState::MatrixProc RepeatX_RepeatY_Procs_neon[];
 #endif // defined(SK_ARM_HAS_NEON)
 
 // Compile non-neon code path if needed
-#if !defined(SK_ARM_HAS_NEON) || defined(SK_ARM_HAS_OPTIONAL_NEON)
-#define MAKENAME(suffix)        ClampX_ClampY ## suffix
-#define TILEX_PROCF(fx, max)    SkClampMax((fx) >> 16, max)
-#define TILEY_PROCF(fy, max)    SkClampMax((fy) >> 16, max)
-#define TILEX_LOW_BITS(fx, max) (((fx) >> 12) & 0xF)
-#define TILEY_LOW_BITS(fy, max) (((fy) >> 12) & 0xF)
+#if !defined(SK_ARM_HAS_NEON)
+#define MAKENAME(suffix)         ClampX_ClampY ## suffix
+#define TILEX_PROCF(fx, max)     SkClampMax((fx) >> 16, max)
+#define TILEY_PROCF(fy, max)     SkClampMax((fy) >> 16, max)
+#define EXTRACT_LOW_BITS(v, max) (((v) >> 12) & 0xF)
 #define CHECK_FOR_DECAL
 #include "SkBitmapProcState_matrix.h"
 
@@ -79,26 +78,17 @@ void ClampX_ClampY_nofilter_scale(const SkBitmapProcState& s, uint32_t xy[],
                                   int count, int x, int y) {
     return NoFilterProc_Scale<ClampTileProcs, true>(s, xy, count, x, y);
 }
-void ClampX_ClampY_nofilter_affine(const SkBitmapProcState& s, uint32_t xy[],
-                                  int count, int x, int y) {
-    return NoFilterProc_Affine<ClampTileProcs>(s, xy, count, x, y);
-}
 
 static SkBitmapProcState::MatrixProc ClampX_ClampY_Procs[] = {
     // only clamp lives in the right coord space to check for decal
     ClampX_ClampY_nofilter_scale,
     ClampX_ClampY_filter_scale,
-    ClampX_ClampY_nofilter_affine,
-    ClampX_ClampY_filter_affine,
-    NoFilterProc_Persp<ClampTileProcs>,
-    ClampX_ClampY_filter_persp
 };
 
-#define MAKENAME(suffix)        RepeatX_RepeatY ## suffix
-#define TILEX_PROCF(fx, max)    SK_USHIFT16((unsigned)((fx) & 0xFFFF) * ((max) + 1))
-#define TILEY_PROCF(fy, max)    SK_USHIFT16((unsigned)((fy) & 0xFFFF) * ((max) + 1))
-#define TILEX_LOW_BITS(fx, max) (((unsigned)((fx) & 0xFFFF) * ((max) + 1) >> 12) & 0xF)
-#define TILEY_LOW_BITS(fy, max) (((unsigned)((fy) & 0xFFFF) * ((max) + 1) >> 12) & 0xF)
+#define MAKENAME(suffix)         RepeatX_RepeatY ## suffix
+#define TILEX_PROCF(fx, max)     SK_USHIFT16((unsigned)((fx) & 0xFFFF) * ((max) + 1))
+#define TILEY_PROCF(fy, max)     SK_USHIFT16((unsigned)((fy) & 0xFFFF) * ((max) + 1))
+#define EXTRACT_LOW_BITS(v, max) (((unsigned)((v) & 0xFFFF) * ((max) + 1) >> 12) & 0xF)
 #include "SkBitmapProcState_matrix.h"
 
 struct RepeatTileProcs {
@@ -115,26 +105,19 @@ struct RepeatTileProcs {
 static SkBitmapProcState::MatrixProc RepeatX_RepeatY_Procs[] = {
     NoFilterProc_Scale<RepeatTileProcs, false>,
     RepeatX_RepeatY_filter_scale,
-    NoFilterProc_Affine<RepeatTileProcs>,
-    RepeatX_RepeatY_filter_affine,
-    NoFilterProc_Persp<RepeatTileProcs>,
-    RepeatX_RepeatY_filter_persp
 };
 #endif
 
 #define MAKENAME(suffix)        GeneralXY ## suffix
 #define PREAMBLE(state)         SkBitmapProcState::FixedTileProc tileProcX = (state).fTileProcX; (void) tileProcX; \
-                                SkBitmapProcState::FixedTileProc tileProcY = (state).fTileProcY; (void) tileProcY; \
-                                SkBitmapProcState::FixedTileLowBitsProc tileLowBitsProcX = (state).fTileLowBitsProcX; (void) tileLowBitsProcX; \
-                                SkBitmapProcState::FixedTileLowBitsProc tileLowBitsProcY = (state).fTileLowBitsProcY; (void) tileLowBitsProcY
-#define PREAMBLE_PARAM_X        , SkBitmapProcState::FixedTileProc tileProcX, SkBitmapProcState::FixedTileLowBitsProc tileLowBitsProcX
-#define PREAMBLE_PARAM_Y        , SkBitmapProcState::FixedTileProc tileProcY, SkBitmapProcState::FixedTileLowBitsProc tileLowBitsProcY
-#define PREAMBLE_ARG_X          , tileProcX, tileLowBitsProcX
-#define PREAMBLE_ARG_Y          , tileProcY, tileLowBitsProcY
+                                SkBitmapProcState::FixedTileProc tileProcY = (state).fTileProcY; (void) tileProcY;
+#define PREAMBLE_PARAM_X        , SkBitmapProcState::FixedTileProc tileProcX
+#define PREAMBLE_PARAM_Y        , SkBitmapProcState::FixedTileProc tileProcY
+#define PREAMBLE_ARG_X          , tileProcX
+#define PREAMBLE_ARG_Y          , tileProcY
 #define TILEX_PROCF(fx, max)    SK_USHIFT16(tileProcX(fx) * ((max) + 1))
 #define TILEY_PROCF(fy, max)    SK_USHIFT16(tileProcY(fy) * ((max) + 1))
-#define TILEX_LOW_BITS(fx, max) tileLowBitsProcX(fx, (max) + 1)
-#define TILEY_LOW_BITS(fy, max) tileLowBitsProcY(fy, (max) + 1)
+#define EXTRACT_LOW_BITS(v, max) (((v * (max + 1)) >> 12) & 0xF)
 #include "SkBitmapProcState_matrix.h"
 
 struct GeneralTileProcs {
@@ -149,10 +132,6 @@ struct GeneralTileProcs {
 static SkBitmapProcState::MatrixProc GeneralXY_Procs[] = {
     NoFilterProc_Scale<GeneralTileProcs, false>,
     GeneralXY_filter_scale,
-    NoFilterProc_Affine<GeneralTileProcs>,
-    GeneralXY_filter_affine,
-    NoFilterProc_Persp<GeneralTileProcs>,
-    GeneralXY_filter_persp
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -186,25 +165,6 @@ static SkBitmapProcState::FixedTileProc choose_tile_proc(unsigned m) {
     }
     SkASSERT(SkShader::kMirror_TileMode == m);
     return fixed_mirror;
-}
-
-static inline U16CPU fixed_clamp_lowbits(SkFixed x, int) {
-    return (x >> 12) & 0xF;
-}
-
-static inline U16CPU fixed_repeat_or_mirrow_lowbits(SkFixed x, int scale) {
-    return ((x * scale) >> 12) & 0xF;
-}
-
-static SkBitmapProcState::FixedTileLowBitsProc choose_tile_lowbits_proc(unsigned m) {
-    if (SkShader::kClamp_TileMode == m) {
-        return fixed_clamp_lowbits;
-    } else {
-        SkASSERT(SkShader::kMirror_TileMode == m ||
-                 SkShader::kRepeat_TileMode == m);
-        // mirror and repeat have the same behavior for the low bits.
-        return fixed_repeat_or_mirrow_lowbits;
-    }
 }
 
 static inline U16CPU int_clamp(int x, int n) {
@@ -473,6 +433,8 @@ static void mirrorx_nofilter_trans(const SkBitmapProcState& s,
 ///////////////////////////////////////////////////////////////////////////////
 
 SkBitmapProcState::MatrixProc SkBitmapProcState::chooseMatrixProc(bool trivial_matrix) {
+    SkASSERT((fInvType & (SkMatrix::kAffine_Mask | SkMatrix::kPerspective_Mask)) == 0);
+
 //    test_int_tileprocs();
     // check for our special case when there is no scale/affine/perspective
     if (trivial_matrix && kNone_SkFilterQuality == fFilterQuality) {
@@ -484,17 +446,15 @@ SkBitmapProcState::MatrixProc SkBitmapProcState::chooseMatrixProc(bool trivial_m
                 return repeatx_nofilter_trans;
             case SkShader::kMirror_TileMode:
                 return mirrorx_nofilter_trans;
+            case SkShader::kDecal_TileMode:
+                SkASSERT(false);    // should never get here, handled by stages
+                return clampx_nofilter_trans;
         }
     }
 
     int index = 0;
     if (fFilterQuality != kNone_SkFilterQuality) {
         index = 1;
-    }
-    if (fInvType & SkMatrix::kPerspective_Mask) {
-        index += 4;
-    } else if (fInvType & SkMatrix::kAffine_Mask) {
-        index += 2;
     }
 
     if (SkShader::kClamp_TileMode == fTileModeX && SkShader::kClamp_TileMode == fTileModeY) {
@@ -514,7 +474,5 @@ SkBitmapProcState::MatrixProc SkBitmapProcState::chooseMatrixProc(bool trivial_m
 
     fTileProcX = choose_tile_proc(fTileModeX);
     fTileProcY = choose_tile_proc(fTileModeY);
-    fTileLowBitsProcX = choose_tile_lowbits_proc(fTileModeX);
-    fTileLowBitsProcY = choose_tile_lowbits_proc(fTileModeY);
     return GeneralXY_Procs[index];
 }

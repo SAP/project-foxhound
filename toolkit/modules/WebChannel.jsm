@@ -7,7 +7,7 @@
  * to create a two-way communication channel between chrome and content code.
  */
 
-this.EXPORTED_SYMBOLS = ["WebChannel", "WebChannelBroker"];
+var EXPORTED_SYMBOLS = ["WebChannel", "WebChannelBroker"];
 
 const ERRNO_MISSING_PRINCIPAL          = 1;
 const ERRNO_NO_SUCH_CHANNEL            = 2;
@@ -15,10 +15,7 @@ const ERRNO_UNKNOWN_ERROR              = 999;
 const ERROR_UNKNOWN                    = "UNKNOWN_ERROR";
 
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 
 /**
@@ -110,7 +107,7 @@ var WebChannelBroker = Object.create({
   /**
    * The global message manager operates on every <browser>
    */
-  _manager: Cc["@mozilla.org/globalmessagemanager;1"].getService(Ci.nsIMessageListenerManager),
+  _manager: Services.mm,
   /**
    * Boolean used to detect if the global message manager event is already attached
    */
@@ -163,7 +160,7 @@ var WebChannelBroker = Object.create({
  *        permission manager.
  * @constructor
  */
-this.WebChannel = function(id, originOrPermission) {
+var WebChannel = function(id, originOrPermission) {
   if (!id || !originOrPermission) {
     throw new Error("WebChannel id and originOrPermission are required.");
   }
@@ -185,7 +182,7 @@ this.WebChannel = function(id, originOrPermission) {
       let perm = Services.perms.testExactPermissionFromPrincipal(requestPrincipal,
                                                                  originOrPermission);
       return perm == Ci.nsIPermissionManager.ALLOW_ACTION;
-    }
+    };
   } else {
     // Accept events from any origin matching the given URI.
     // We deliberately use `originNoSuffix` here because we only want to
@@ -193,7 +190,7 @@ this.WebChannel = function(id, originOrPermission) {
     // such as containers or private browsing.
     this._originCheckCallback = requestPrincipal => {
       return originOrPermission.prePath === requestPrincipal.originNoSuffix;
-    }
+    };
   }
   this._originOrPermission = originOrPermission;
 };
@@ -293,7 +290,7 @@ this.WebChannel.prototype = {
     if (message && browser && browser.messageManager && principal) {
       browser.messageManager.sendAsyncMessage("WebChannelMessageToContent", {
         id: this.id,
-        message
+        message,
       }, { eventTarget }, principal);
     } else if (!message) {
       Cu.reportError("Failed to send a WebChannel message. Message not set.");
@@ -325,7 +322,7 @@ this.WebChannel.prototype = {
       } catch (ex) {
         this.send({
           errno: ERRNO_UNKNOWN_ERROR,
-          error: ex.message ? ex.message : ERROR_UNKNOWN
+          error: ex.message ? ex.message : ERROR_UNKNOWN,
         }, sendingContext);
         Cu.reportError("Failed to execute WebChannel callback:");
         Cu.reportError(ex);
@@ -333,5 +330,5 @@ this.WebChannel.prototype = {
     } else {
       Cu.reportError("No callback set for this channel.");
     }
-  }
+  },
 };

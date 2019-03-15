@@ -1,8 +1,3 @@
-if [ -n "$ENABLE_RELEASE_PROMOTION" ]; then
-  MOZ_AUTOMATION_UPLOAD_SYMBOLS=1
-  MOZ_AUTOMATION_UPDATE_PACKAGING=1
-fi
-
 . "$topsrcdir/browser/config/mozconfigs/macosx64/common-opt"
 
 # Add-on signing is not required for DevEdition
@@ -10,6 +5,8 @@ MOZ_REQUIRE_SIGNING=0
 
 ac_add_options --disable-install-strip
 ac_add_options --enable-verify-mar
+
+ac_add_options --enable-lto
 
 ac_add_options --enable-instruments
 
@@ -24,5 +21,7 @@ fi
 
 ac_add_options --with-branding=browser/branding/aurora
 
+# Enable MOZ_ALLOW_LEGACY_EXTENSIONS
+ac_add_options "MOZ_ALLOW_LEGACY_EXTENSIONS=1"
+
 . "$topsrcdir/build/mozconfig.common.override"
-. "$topsrcdir/build/mozconfig.cache"

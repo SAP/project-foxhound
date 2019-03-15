@@ -14,6 +14,7 @@ import org.mozilla.gecko.Telemetry;
 import org.mozilla.gecko.TelemetryContract;
 import org.mozilla.gecko.animation.PropertyAnimator;
 import org.mozilla.gecko.animation.ViewHelper;
+import org.mozilla.gecko.widget.themed.ThemedImageButton;
 import org.mozilla.gecko.widget.themed.ThemedImageView;
 
 import android.content.Context;
@@ -35,7 +36,7 @@ import android.widget.ImageView;
 abstract class BrowserToolbarPhoneBase extends BrowserToolbar {
 
     protected final ImageView urlBarTranslatingEdge;
-    protected final ThemedImageView editCancel;
+    protected final View editCancel;
 
     private final Path roundCornerShape;
     private final Paint roundCornerPaint;
@@ -51,7 +52,7 @@ abstract class BrowserToolbarPhoneBase extends BrowserToolbar {
         // This will clip the translating edge's image at 60% of its width
         urlBarTranslatingEdge.getDrawable().setLevel(6000);
 
-        editCancel = (ThemedImageView) findViewById(R.id.edit_cancel);
+        editCancel = findViewById(R.id.edit_cancel);
 
         focusOrder.add(this);
         focusOrder.addAll(urlDisplayLayout.getFocusOrder());
@@ -110,7 +111,8 @@ abstract class BrowserToolbarPhoneBase extends BrowserToolbar {
     @Override
     public void setPrivateMode(final boolean isPrivate) {
         super.setPrivateMode(isPrivate);
-        editCancel.setPrivateMode(isPrivate);
+
+        ((ThemedImageButton) editCancel).setPrivateMode(isPrivate);
     }
 
     @Override
@@ -135,19 +137,10 @@ abstract class BrowserToolbarPhoneBase extends BrowserToolbar {
     }
 
     @Override
-    public void draw(final Canvas canvas) {
-        super.draw(canvas);
-
-        if (uiMode == UIMode.DISPLAY) {
-            canvas.drawPath(roundCornerShape, roundCornerPaint);
-        }
-    }
-
-    @Override
     public void triggerTabsPanelTransition(final PropertyAnimator animator, final boolean areTabsShown) {
         if (areTabsShown) {
             ViewHelper.setAlpha(tabsCounter, 0.0f);
-            ViewHelper.setAlpha(menuIcon, 0.0f);
+            ViewHelper.setAlpha(menuButton, 0.0f);
             return;
         }
 
@@ -156,9 +149,11 @@ abstract class BrowserToolbarPhoneBase extends BrowserToolbar {
         buttonsAnimator.attach(tabsCounter,
                                PropertyAnimator.Property.ALPHA,
                                1.0f);
-        buttonsAnimator.attach(menuIcon,
+
+        buttonsAnimator.attach(menuButton,
                                PropertyAnimator.Property.ALPHA,
                                1.0f);
+
         buttonsAnimator.start();
     }
 
@@ -236,12 +231,14 @@ abstract class BrowserToolbarPhoneBase extends BrowserToolbar {
     @Override
     public void onLightweightThemeChanged() {
         super.onLightweightThemeChanged();
-        editCancel.onLightweightThemeChanged();
+
+        ((ThemedImageButton) editCancel).onLightweightThemeChanged();
     }
 
     @Override
     public void onLightweightThemeReset() {
         super.onLightweightThemeReset();
-        editCancel.onLightweightThemeReset();
+
+        ((ThemedImageButton) editCancel).onLightweightThemeReset();
     }
 }

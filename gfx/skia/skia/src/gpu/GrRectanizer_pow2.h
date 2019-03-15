@@ -10,7 +10,8 @@
 
 #include "GrRectanizer.h"
 #include "SkMathPriv.h"
-#include "SkPoint.h"
+#include "SkMalloc.h"
+#include "SkIPoint16.h"
 
 // This Rectanizer quantizes the incoming rects to powers of 2. Each power
 // of two can have, at most, one active row/shelf. Once a row/shelf for
@@ -23,7 +24,7 @@ public:
         this->reset();
     }
 
-    virtual ~GrRectanizerPow2() { }
+    ~GrRectanizerPow2() override {}
 
     void reset() override {
         fNextStripY = 0;

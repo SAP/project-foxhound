@@ -2,88 +2,70 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
-/* globals waitForExplicitFinish, executeSoon, finish, whenNewWindowLoaded, ok */
-/* globals is */
-/* exported test */
 
-function test() {
-  // initialization
-  waitForExplicitFinish();
+let gNewTabService = Cc["@mozilla.org/browser/aboutnewtab-service;1"]
+  .getService(Ci.nsIAboutNewTabService);
 
-  let aboutNewTabService = Components.classes["@mozilla.org/browser/aboutnewtab-service;1"]
-                                     .getService(Components.interfaces.nsIAboutNewTabService);
+async function doTest(isPrivate) {
+  let win = await BrowserTestUtils.openNewBrowserWindow({private: isPrivate});
+  let defaultURL = gNewTabService.newTabURL;
   let newTabURL;
-  let testURL = "http://example.com/";
-  let defaultURL = aboutNewTabService.newTabURL;
   let mode;
-
-  function doTest(aIsPrivateMode, aWindow, aCallback) {
-    openNewTab(aWindow, function() {
-      if (aIsPrivateMode) {
-        mode = "per window private browsing";
-        newTabURL = "about:privatebrowsing";
-      } else {
-        mode = "normal";
-        newTabURL = "about:newtab";
-      }
-
-      // Check the new tab opened while in normal/private mode
-      is(aWindow.gBrowser.selectedBrowser.currentURI.spec, newTabURL,
-        "URL of NewTab should be " + newTabURL + " in " + mode + " mode");
-      // Set the custom newtab url
-      aboutNewTabService.newTabURL = testURL;
-      is(aboutNewTabService.newTabURL, testURL, "Custom newtab url is set");
-
-      // Open a newtab after setting the custom newtab url
-      openNewTab(aWindow, function() {
-        is(aWindow.gBrowser.selectedBrowser.currentURI.spec, testURL,
-           "URL of NewTab should be the custom url");
-
-        // Clear the custom url.
-        aboutNewTabService.resetNewTabURL();
-        is(aboutNewTabService.newTabURL, defaultURL, "No custom newtab url is set");
-
-        aWindow.gBrowser.removeTab(aWindow.gBrowser.selectedTab);
-        aWindow.gBrowser.removeTab(aWindow.gBrowser.selectedTab);
-        aWindow.close();
-        aCallback();
-      });
-    });
+  let testURL = "http://example.com/";
+  if (isPrivate) {
+    mode = "per window private browsing";
+    newTabURL = "about:privatebrowsing";
+  } else {
+    mode = "normal";
+    newTabURL = "about:newtab";
   }
 
-  function testOnWindow(aIsPrivate, aCallback) {
-    whenNewWindowLoaded({private: aIsPrivate}, function(win) {
-      executeSoon(() => aCallback(win));
-    });
-  }
+  await openNewTab(win, newTabURL);
+  // Check the new tab opened while in normal/private mode
+  is(win.gBrowser.selectedBrowser.currentURI.spec, newTabURL,
+    "URL of NewTab should be " + newTabURL + " in " + mode + " mode");
 
-  // check whether any custom new tab url has been configured
-  ok(!aboutNewTabService.overridden, "No custom newtab url is set");
+  // Set the custom newtab url
+  gNewTabService.newTabURL = testURL;
+  is(gNewTabService.newTabURL, testURL, "Custom newtab url is set");
 
-  // test normal mode
-  testOnWindow(false, function(aWindow) {
-    doTest(false, aWindow, function() {
-      // test private mode
-      testOnWindow(true, function(aWindow2) {
-        doTest(true, aWindow2, function() {
-          finish();
-        });
-      });
-    });
-  });
+  // Open a newtab after setting the custom newtab url
+  await openNewTab(win, testURL);
+  is(win.gBrowser.selectedBrowser.currentURI.spec, testURL,
+     "URL of NewTab should be the custom url");
+
+  // Clear the custom url.
+  gNewTabService.resetNewTabURL();
+  is(gNewTabService.newTabURL, defaultURL, "No custom newtab url is set");
+
+  win.gBrowser.removeTab(win.gBrowser.selectedTab);
+  win.gBrowser.removeTab(win.gBrowser.selectedTab);
+  await BrowserTestUtils.closeWindow(win);
 }
 
-function openNewTab(aWindow, aCallback) {
+
+add_task(async function test_newTabService() {
+  // check whether any custom new tab url has been configured
+  ok(!gNewTabService.overridden, "No custom newtab url is set");
+
+  // test normal mode
+  await doTest(false);
+
+  // test private mode
+  await doTest(true);
+});
+
+async function openNewTab(aWindow, aExpectedURL) {
   // Open a new tab
   aWindow.BrowserOpenTab();
 
   let browser = aWindow.gBrowser.selectedBrowser;
-  if (browser.contentDocument.readyState === "complete") {
-    executeSoon(aCallback);
-    return;
+  let loadPromise = BrowserTestUtils.browserLoaded(browser, false, aExpectedURL);
+  let alreadyLoaded = await ContentTask.spawn(browser, aExpectedURL, url => {
+    let doc = content.document;
+    return doc && doc.readyState === "complete" && doc.location.href == url;
+  });
+  if (!alreadyLoaded) {
+    await loadPromise;
   }
-
-  browser.addEventListener("load", function() {
-    executeSoon(aCallback);
-  }, {capture: true, once: true});
 }

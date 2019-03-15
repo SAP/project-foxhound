@@ -37,7 +37,6 @@ LOCAL_INCLUDES += [
     '/dom/filesystem',
     '/dom/geolocation',
     '/dom/html',
-    '/dom/json',
     '/dom/jsurl',
     '/dom/media',
     '/dom/offline',
@@ -49,10 +48,7 @@ LOCAL_INCLUDES += [
     '/dom/xslt/xpath',
     '/dom/xslt/xslt',
     '/dom/xul',
-    '/dom/xul/templates',
     '/editor/composer',
-    '/editor/txmgr',
-    '/editor/txtsvc',
     '/extensions/cookie',
     '/js/xpconnect/loader',
     '/js/xpconnect/src',
@@ -74,10 +70,6 @@ elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
         '/dom/system',
         '/dom/system/android',
     ]
-elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gonk':
-    LOCAL_INCLUDES += [
-        '/dom/system/gonk',
-    ]
 
 if CONFIG['MOZ_WEBSPEECH']:
     LOCAL_INCLUDES += [
@@ -85,18 +77,7 @@ if CONFIG['MOZ_WEBSPEECH']:
         '/dom/media/webspeech/synth',
     ]
 
-if CONFIG['MOZ_WEBSPEECH_POCKETSPHINX']:
-    LOCAL_INCLUDES += [
-        '/media/pocketsphinx',
-        '/media/sphinxbase',
-    ]
-
-if CONFIG['MOZ_SECUREELEMENT']:
-    LOCAL_INCLUDES += [
-        '/dom/secureelement',
-    ]
-
 FINAL_LIBRARY = 'xul'
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

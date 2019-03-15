@@ -24,11 +24,7 @@
  * Google Author(s): Behdad Esfahbod
  */
 
-#include "hb-ot-shape-complex-indic-private.hh"
-
-/* buffer var allocations */
-#define myanmar_category() complex_var_u8_0() /* myanmar_category_t */
-#define myanmar_position() complex_var_u8_1() /* myanmar_position_t */
+#include "hb-ot-shape-complex-myanmar.hh"
 
 
 /*
@@ -40,7 +36,7 @@ basic_features[] =
 {
   /*
    * Basic features.
-   * These features are applied in order, one at a time, after initial_reordering.
+   * These features are applied in order, one at a time, after reordering.
    */
   HB_TAG('r','p','h','f'),
   HB_TAG('p','r','e','f'),
@@ -52,13 +48,20 @@ other_features[] =
 {
   /*
    * Other features.
-   * These features are applied all at once, after final_reordering.
+   * These features are applied all at once, after clearing syllables.
    */
   HB_TAG('p','r','e','s'),
   HB_TAG('a','b','v','s'),
   HB_TAG('b','l','w','s'),
   HB_TAG('p','s','t','s'),
-  /* Positioning features, though we don't care about the types. */
+};
+static const hb_tag_t
+positioning_features[] =
+{
+  /*
+   * Positioning features.
+   * We don't care about the types.
+   */
   HB_TAG('d','i','s','t'),
   /* Pre-release version of Windows 8 Myanmar font had abvm,blwm
    * features.  The released Windows 8 version of the font (as well
@@ -77,13 +80,13 @@ setup_syllables (const hb_ot_shape_plan_t *plan,
 		 hb_font_t *font,
 		 hb_buffer_t *buffer);
 static void
-initial_reordering (const hb_ot_shape_plan_t *plan,
-		    hb_font_t *font,
-		    hb_buffer_t *buffer);
+reorder (const hb_ot_shape_plan_t *plan,
+	 hb_font_t *font,
+	 hb_buffer_t *buffer);
 static void
-final_reordering (const hb_ot_shape_plan_t *plan,
-		  hb_font_t *font,
-		  hb_buffer_t *buffer);
+clear_syllables (const hb_ot_shape_plan_t *plan,
+		 hb_font_t *font,
+		 hb_buffer_t *buffer);
 
 static void
 collect_features_myanmar (hb_ot_shape_planner_t *plan)
@@ -93,27 +96,33 @@ collect_features_myanmar (hb_ot_shape_planner_t *plan)
   /* Do this before any lookups have been applied. */
   map->add_gsub_pause (setup_syllables);
 
-  map->add_global_bool_feature (HB_TAG('l','o','c','l'));
+  map->enable_feature (HB_TAG('l','o','c','l'));
   /* The Indic specs do not require ccmp, but we apply it here since if
    * there is a use of it, it's typically at the beginning. */
-  map->add_global_bool_feature (HB_TAG('c','c','m','p'));
+  map->enable_feature (HB_TAG('c','c','m','p'));
 
 
-  map->add_gsub_pause (initial_reordering);
+  map->add_gsub_pause (reorder);
+
   for (unsigned int i = 0; i < ARRAY_LENGTH (basic_features); i++)
   {
-    map->add_feature (basic_features[i], 1, F_GLOBAL | F_MANUAL_ZWJ);
-    map->add_gsub_pause (NULL);
+    map->enable_feature (basic_features[i], F_MANUAL_ZWJ);
+    map->add_gsub_pause (nullptr);
   }
-  map->add_gsub_pause (final_reordering);
+
+  map->add_gsub_pause (clear_syllables);
+
   for (unsigned int i = 0; i < ARRAY_LENGTH (other_features); i++)
-    map->add_feature (other_features[i], 1, F_GLOBAL | F_MANUAL_ZWJ);
+    map->enable_feature (other_features[i], F_MANUAL_ZWJ);
+
+  for (unsigned int i = 0; i < ARRAY_LENGTH (positioning_features); i++)
+    map->enable_feature (positioning_features[i]);
 }
 
 static void
 override_features_myanmar (hb_ot_shape_planner_t *plan)
 {
-  plan->map.add_feature (HB_TAG('l','i','g','a'), 0, F_GLOBAL);
+  plan->map.disable_feature (HB_TAG('l','i','g','a'));
 }
 
 
@@ -125,153 +134,6 @@ enum syllable_type_t {
 };
 
 #include "hb-ot-shape-complex-myanmar-machine.hh"
-
-
-/* Note: This enum is duplicated in the -machine.rl source file.
- * Not sure how to avoid duplication. */
-enum myanmar_category_t {
-  OT_As  = 18, /* Asat */
-  OT_D   = 19, /* Digits except zero */
-  OT_D0  = 20, /* Digit zero */
-  OT_DB  = OT_N, /* Dot below */
-  OT_GB  = OT_PLACEHOLDER,
-  OT_MH  = 21, /* Various consonant medial types */
-  OT_MR  = 22, /* Various consonant medial types */
-  OT_MW  = 23, /* Various consonant medial types */
-  OT_MY  = 24, /* Various consonant medial types */
-  OT_PT  = 25, /* Pwo and other tones */
-  OT_VAbv = 26,
-  OT_VBlw = 27,
-  OT_VPre = 28,
-  OT_VPst = 29,
-  OT_VS   = 30, /* Variation selectors */
-  OT_P    = 31  /* Punctuation */
-};
-
-
-static inline bool
-is_one_of (const hb_glyph_info_t &info, unsigned int flags)
-{
-  /* If it ligated, all bets are off. */
-  if (_hb_glyph_info_ligated (&info)) return false;
-  return !!(FLAG_SAFE (info.myanmar_category()) & flags);
-}
-
-static inline bool
-is_consonant (const hb_glyph_info_t &info)
-{
-  return is_one_of (info, CONSONANT_FLAGS);
-}
-
-
-static inline void
-set_myanmar_properties (hb_glyph_info_t &info)
-{
-  hb_codepoint_t u = info.codepoint;
-  unsigned int type = hb_indic_get_categories (u);
-  indic_category_t cat = (indic_category_t) (type & 0x7Fu);
-  indic_position_t pos = (indic_position_t) (type >> 8);
-
-  /* Myanmar
-   * http://www.microsoft.com/typography/OpenTypeDev/myanmar/intro.htm#analyze
-   */
-  if (unlikely (hb_in_range (u, 0xFE00u, 0xFE0Fu)))
-    cat = (indic_category_t) OT_VS;
-
-  switch (u)
-  {
-    case 0x104Eu:
-      cat = (indic_category_t) OT_C; /* The spec says C, IndicSyllableCategory doesn't have. */
-      break;
-
-    case 0x002Du: case 0x00A0u: case 0x00D7u: case 0x2012u:
-    case 0x2013u: case 0x2014u: case 0x2015u: case 0x2022u:
-    case 0x25CCu: case 0x25FBu: case 0x25FCu: case 0x25FDu:
-    case 0x25FEu:
-      cat = (indic_category_t) OT_GB;
-      break;
-
-    case 0x1004u: case 0x101Bu: case 0x105Au:
-      cat = (indic_category_t) OT_Ra;
-      break;
-
-    case 0x1032u: case 0x1036u:
-      cat = (indic_category_t) OT_A;
-      break;
-
-    case 0x1039u:
-      cat = (indic_category_t) OT_H;
-      break;
-
-    case 0x103Au:
-      cat = (indic_category_t) OT_As;
-      break;
-
-    case 0x1041u: case 0x1042u: case 0x1043u: case 0x1044u:
-    case 0x1045u: case 0x1046u: case 0x1047u: case 0x1048u:
-    case 0x1049u: case 0x1090u: case 0x1091u: case 0x1092u:
-    case 0x1093u: case 0x1094u: case 0x1095u: case 0x1096u:
-    case 0x1097u: case 0x1098u: case 0x1099u:
-      cat = (indic_category_t) OT_D;
-      break;
-
-    case 0x1040u:
-      cat = (indic_category_t) OT_D; /* XXX The spec says D0, but Uniscribe doesn't seem to do. */
-      break;
-
-    case 0x103Eu: case 0x1060u:
-      cat = (indic_category_t) OT_MH;
-      break;
-
-    case 0x103Cu:
-      cat = (indic_category_t) OT_MR;
-      break;
-
-    case 0x103Du: case 0x1082u:
-      cat = (indic_category_t) OT_MW;
-      break;
-
-    case 0x103Bu: case 0x105Eu: case 0x105Fu:
-      cat = (indic_category_t) OT_MY;
-      break;
-
-    case 0x1063u: case 0x1064u: case 0x1069u: case 0x106Au:
-    case 0x106Bu: case 0x106Cu: case 0x106Du: case 0xAA7Bu:
-      cat = (indic_category_t) OT_PT;
-      break;
-
-    case 0x1038u: case 0x1087u: case 0x1088u: case 0x1089u:
-    case 0x108Au: case 0x108Bu: case 0x108Cu: case 0x108Du:
-    case 0x108Fu: case 0x109Au: case 0x109Bu: case 0x109Cu:
-      cat = (indic_category_t) OT_SM;
-      break;
-
-    case 0x104Au: case 0x104Bu:
-      cat = (indic_category_t) OT_P;
-      break;
-
-    case 0xAA74u: case 0xAA75u: case 0xAA76u:
-      /* https://github.com/roozbehp/unicode-data/issues/3 */
-      cat = (indic_category_t) OT_C;
-      break;
-  }
-
-  if (cat == OT_M)
-  {
-    switch ((int) pos)
-    {
-      case POS_PRE_C:	cat = (indic_category_t) OT_VPre;
-			pos = POS_PRE_M;                  break;
-      case POS_ABOVE_C:	cat = (indic_category_t) OT_VAbv; break;
-      case POS_BELOW_C:	cat = (indic_category_t) OT_VBlw; break;
-      case POS_POST_C:	cat = (indic_category_t) OT_VPst; break;
-    }
-  }
-
-  info.myanmar_category() = (myanmar_category_t) cat;
-  info.myanmar_position() = pos;
-}
-
 
 
 static void
@@ -297,6 +159,8 @@ setup_syllables (const hb_ot_shape_plan_t *plan HB_UNUSED,
 		 hb_buffer_t *buffer)
 {
   find_syllables (buffer);
+  foreach_syllable (buffer, start, end)
+    buffer->unsafe_to_break (start, end);
 }
 
 static int
@@ -310,7 +174,7 @@ compare_myanmar_order (const hb_glyph_info_t *pa, const hb_glyph_info_t *pb)
 
 
 /* Rules from:
- * http://www.microsoft.com/typography/OpenTypeDev/myanmar/intro.htm */
+ * https://docs.microsoft.com/en-us/typography/script-development/myanmar */
 
 static void
 initial_reordering_consonant_syllable (hb_buffer_t *buffer,
@@ -372,6 +236,11 @@ initial_reordering_consonant_syllable (hb_buffer_t *buffer,
       {
 	continue;
       }
+      if (info[i].myanmar_category() == OT_VS)
+      {
+	info[i].myanmar_position() = info[i - 1].myanmar_position();
+	continue;
+      }
 
       if (pos == POS_AFTER_MAIN && info[i].myanmar_category() == OT_VBlw)
       {
@@ -405,8 +274,8 @@ initial_reordering_consonant_syllable (hb_buffer_t *buffer,
 }
 
 static void
-initial_reordering_syllable (const hb_ot_shape_plan_t *plan,
-			     hb_face_t *face,
+initial_reordering_syllable (const hb_ot_shape_plan_t *plan HB_UNUSED,
+			     hb_face_t *face HB_UNUSED,
 			     hb_buffer_t *buffer,
 			     unsigned int start, unsigned int end)
 {
@@ -456,7 +325,7 @@ insert_dotted_circles (const hb_ot_shape_plan_t *plan HB_UNUSED,
 
   buffer->idx = 0;
   unsigned int last_syllable = 0;
-  while (buffer->idx < buffer->len && !buffer->in_error)
+  while (buffer->idx < buffer->len && buffer->successful)
   {
     unsigned int syllable = buffer->cur().syllable();
     syllable_type_t syllable_type = (syllable_type_t) (syllable & 0x0F);
@@ -474,72 +343,71 @@ insert_dotted_circles (const hb_ot_shape_plan_t *plan HB_UNUSED,
     else
       buffer->next_glyph ();
   }
-
   buffer->swap_buffers ();
 }
 
 static void
-initial_reordering (const hb_ot_shape_plan_t *plan,
-		    hb_font_t *font,
-		    hb_buffer_t *buffer)
+reorder (const hb_ot_shape_plan_t *plan,
+	 hb_font_t *font,
+	 hb_buffer_t *buffer)
 {
   insert_dotted_circles (plan, font, buffer);
 
   foreach_syllable (buffer, start, end)
     initial_reordering_syllable (plan, font->face, buffer, start, end);
-}
-
-static void
-final_reordering (const hb_ot_shape_plan_t *plan,
-		  hb_font_t *font HB_UNUSED,
-		  hb_buffer_t *buffer)
-{
-  hb_glyph_info_t *info = buffer->info;
-  unsigned int count = buffer->len;
-
-  /* Zero syllables now... */
-  for (unsigned int i = 0; i < count; i++)
-    info[i].syllable() = 0;
 
   HB_BUFFER_DEALLOCATE_VAR (buffer, myanmar_category);
   HB_BUFFER_DEALLOCATE_VAR (buffer, myanmar_position);
 }
 
-
-/* Uniscribe seems to have a shaper for 'mymr' that is like the
- * generic shaper, except that it zeros mark advances GDEF_LATE. */
-const hb_ot_complex_shaper_t _hb_ot_complex_shaper_myanmar_old =
+static void
+clear_syllables (const hb_ot_shape_plan_t *plan HB_UNUSED,
+		 hb_font_t *font HB_UNUSED,
+		 hb_buffer_t *buffer)
 {
-  "default",
-  NULL, /* collect_features */
-  NULL, /* override_features */
-  NULL, /* data_create */
-  NULL, /* data_destroy */
-  NULL, /* preprocess_text */
-  NULL, /* postprocess_glyphs */
-  HB_OT_SHAPE_NORMALIZATION_MODE_DEFAULT,
-  NULL, /* decompose */
-  NULL, /* compose */
-  NULL, /* setup_masks */
-  NULL, /* disable_otl */
-  HB_OT_SHAPE_ZERO_WIDTH_MARKS_BY_GDEF_LATE,
-  true, /* fallback_position */
-};
+  hb_glyph_info_t *info = buffer->info;
+  unsigned int count = buffer->len;
+  for (unsigned int i = 0; i < count; i++)
+    info[i].syllable() = 0;
+}
+
 
 const hb_ot_complex_shaper_t _hb_ot_complex_shaper_myanmar =
 {
-  "myanmar",
   collect_features_myanmar,
   override_features_myanmar,
-  NULL, /* data_create */
-  NULL, /* data_destroy */
-  NULL, /* preprocess_text */
-  NULL, /* postprocess_glyphs */
+  nullptr, /* data_create */
+  nullptr, /* data_destroy */
+  nullptr, /* preprocess_text */
+  nullptr, /* postprocess_glyphs */
   HB_OT_SHAPE_NORMALIZATION_MODE_COMPOSED_DIACRITICS_NO_SHORT_CIRCUIT,
-  NULL, /* decompose */
-  NULL, /* compose */
+  nullptr, /* decompose */
+  nullptr, /* compose */
   setup_masks_myanmar,
-  NULL, /* disable_otl */
+  HB_TAG_NONE, /* gpos_tag */
+  nullptr, /* reorder_marks */
   HB_OT_SHAPE_ZERO_WIDTH_MARKS_BY_GDEF_EARLY,
+  false, /* fallback_position */
+};
+
+
+/* Ugly Zawgyi encoding.
+ * Disable all auto processing.
+ * https://github.com/harfbuzz/harfbuzz/issues/1162 */
+const hb_ot_complex_shaper_t _hb_ot_complex_shaper_myanmar_zawgyi =
+{
+  nullptr, /* collect_features */
+  nullptr, /* override_features */
+  nullptr, /* data_create */
+  nullptr, /* data_destroy */
+  nullptr, /* preprocess_text */
+  nullptr, /* postprocess_glyphs */
+  HB_OT_SHAPE_NORMALIZATION_MODE_NONE,
+  nullptr, /* decompose */
+  nullptr, /* compose */
+  nullptr, /* setup_masks */
+  HB_TAG_NONE, /* gpos_tag */
+  nullptr, /* reorder_marks */
+  HB_OT_SHAPE_ZERO_WIDTH_MARKS_NONE,
   false, /* fallback_position */
 };

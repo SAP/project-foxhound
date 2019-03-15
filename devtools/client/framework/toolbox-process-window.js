@@ -6,9 +6,8 @@
 
 "use strict";
 
-var { classes: Cc, interfaces: Ci, utils: Cu } = Components;
+var { loader, require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
 
-var { loader, require } = Cu.import("resource://devtools/shared/Loader.jsm", {});
 // Require this module to setup core modules
 loader.require("devtools/client/framework/devtools-browser");
 
@@ -16,49 +15,88 @@ var { gDevTools } = require("devtools/client/framework/devtools");
 var { TargetFactory } = require("devtools/client/framework/target");
 var { Toolbox } = require("devtools/client/framework/toolbox");
 var Services = require("Services");
-var { DebuggerClient } = require("devtools/shared/client/main");
+var { DebuggerClient } = require("devtools/shared/client/debugger-client");
 var { PrefsHelper } = require("devtools/client/shared/prefs");
-var { Task } = require("devtools/shared/task");
+const KeyShortcuts = require("devtools/client/shared/key-shortcuts");
+const { LocalizationHelper } = require("devtools/shared/l10n");
+const L10N = new LocalizationHelper("devtools/client/locales/toolbox.properties");
+
+// Timeout to wait before we assume that a connect() timed out without an error.
+// In milliseconds. (With the Debugger pane open, this has been reported to last
+// more than 10 seconds!)
+const STATUS_REVEAL_TIME = 15000;
 
 /**
  * Shortcuts for accessing various debugger preferences.
  */
 var Prefs = new PrefsHelper("devtools.debugger", {
   chromeDebuggingHost: ["Char", "chrome-debugging-host"],
-  chromeDebuggingPort: ["Int", "chrome-debugging-port"],
   chromeDebuggingWebSocket: ["Bool", "chrome-debugging-websocket"],
 });
 
-var gToolbox, gClient;
+var gToolbox, gClient, gShortcuts;
 
-var connect = Task.async(function*() {
-  window.removeEventListener("load", connect);
+function appendStatusMessage(msg) {
+  const statusMessage = document.getElementById("status-message");
+  statusMessage.textContent += msg + "\n";
+  if (msg.stack) {
+    statusMessage.textContent += msg.stack + "\n";
+  }
+}
+
+function toggleStatusMessage(visible = true) {
+  const statusMessageContainer = document.getElementById("status-message-container");
+  if (visible) {
+    statusMessageContainer.removeAttribute("hidden");
+  } else {
+    statusMessageContainer.setAttribute("hidden", "true");
+  }
+}
+
+function revealStatusMessage() {
+  toggleStatusMessage(true);
+}
+
+function hideStatusMessage() {
+  toggleStatusMessage(false);
+}
+
+var connect = async function() {
   // Initiate the connection
-  let transport = yield DebuggerClient.socketConnect({
-    host: Prefs.chromeDebuggingHost,
-    port: Prefs.chromeDebuggingPort,
-    webSocket: Prefs.chromeDebuggingWebSocket,
+  const env = Cc["@mozilla.org/process/environment;1"]
+    .getService(Ci.nsIEnvironment);
+  const port = env.get("MOZ_BROWSER_TOOLBOX_PORT");
+  const addonID = env.get("MOZ_BROWSER_TOOLBOX_ADDONID");
+
+  // A port needs to be passed in from the environment, for instance:
+  //    MOZ_BROWSER_TOOLBOX_PORT=6080 ./mach run -chrome \
+  //      chrome://devtools/content/framework/toolbox-process-window.html
+  if (!port) {
+    throw new Error("Must pass a port in an env variable with MOZ_BROWSER_TOOLBOX_PORT");
+  }
+
+  const host = Prefs.chromeDebuggingHost;
+  const webSocket = Prefs.chromeDebuggingWebSocket;
+  appendStatusMessage(`Connecting to ${host}:${port}, ws: ${webSocket}`);
+  const transport = await DebuggerClient.socketConnect({
+    host,
+    port,
+    webSocket,
   });
   gClient = new DebuggerClient(transport);
-  yield gClient.connect();
-  let addonID = getParameterByName("addonID");
+  appendStatusMessage("Start protocol client for connection");
+  await gClient.connect();
 
+  appendStatusMessage("Get root form for toolbox");
   if (addonID) {
-    let { addons } = yield gClient.listAddons();
-    let addonActor = addons.filter(addon => addon.id === addonID).pop();
-    openToolbox({
-      form: addonActor,
-      chrome: true,
-      isTabActor: addonActor.isWebExtension ? true : false
-    });
+    const addonFront = await gClient.mainRoot.getAddon({ id: addonID });
+    const addonTargetFront = await addonFront.connect();
+    await openToolbox({activeTab: addonTargetFront, chrome: true});
   } else {
-    let response = yield gClient.getProcess();
-    openToolbox({
-      form: response.form,
-      chrome: true
-    });
+    const front = await gClient.mainRoot.getMainProcess();
+    await openToolbox({activeTab: front, chrome: true});
   }
-});
+};
 
 // Certain options should be toggled since we can assume chrome debugging here
 function setPrefDefaults() {
@@ -66,71 +104,84 @@ function setPrefDefaults() {
   Services.prefs.setBoolPref("devtools.performance.ui.show-platform-data", true);
   Services.prefs.setBoolPref("devtools.inspector.showAllAnonymousContent", true);
   Services.prefs.setBoolPref("browser.dom.window.dump.enabled", true);
+  Services.prefs.setBoolPref("devtools.console.stdout.chrome", true);
   Services.prefs.setBoolPref("devtools.command-button-noautohide.enabled", true);
-  Services.prefs.setBoolPref("devtools.scratchpad.enabled", true);
   // Bug 1225160 - Using source maps with browser debugging can lead to a crash
   Services.prefs.setBoolPref("devtools.debugger.source-maps-enabled", false);
-  Services.prefs.setBoolPref("devtools.debugger.new-debugger-frontend", false);
-  Services.prefs.setBoolPref("devtools.debugger.client-source-maps-enabled", true);
+  Services.prefs.setBoolPref("devtools.preference.new-panel-enabled", false);
+  Services.prefs.setBoolPref("layout.css.emulate-moz-box-with-flex", false);
+
+  Services.prefs.setBoolPref("devtools.performance.enabled", false);
 }
 
-window.addEventListener("load", function() {
-  let cmdClose = document.getElementById("toolbox-cmd-close");
-  cmdClose.addEventListener("command", onCloseCommand);
+window.addEventListener("load", async function() {
+  gShortcuts = new KeyShortcuts({window});
+  gShortcuts.on("CmdOrCtrl+W", onCloseCommand);
+
+  const statusMessageContainer = document.getElementById("status-message-title");
+  statusMessageContainer.textContent = L10N.getStr("browserToolbox.statusMessage");
+
   setPrefDefaults();
-  connect().catch(e => {
-    let errorMessageContainer = document.getElementById("error-message-container");
-    let errorMessage = document.getElementById("error-message");
-    errorMessage.value = e.message || e;
-    errorMessageContainer.hidden = false;
+
+  // Reveal status message if connecting is slow or if an error occurs.
+  const delayedStatusReveal = setTimeout(revealStatusMessage, STATUS_REVEAL_TIME);
+  try {
+    await connect();
+    clearTimeout(delayedStatusReveal);
+    hideStatusMessage();
+  } catch (e) {
+    clearTimeout(delayedStatusReveal);
+    appendStatusMessage(e);
+    revealStatusMessage();
     console.error(e);
-  });
-});
+  }
+}, { once: true });
 
 function onCloseCommand(event) {
   window.close();
 }
 
-function openToolbox({ form, chrome, isTabActor }) {
-  let options = {
-    form: form,
+async function openToolbox({ activeTab, chrome }) {
+  const targetOptions = {
+    activeTab,
     client: gClient,
-    chrome: chrome,
-    isTabActor: isTabActor
+    chrome,
   };
-  TargetFactory.forRemoteTab(options).then(target => {
-    let frame = document.getElementById("toolbox-iframe");
-    let selectedTool = "jsdebugger";
 
-    try {
-      // Remember the last panel that was used inside of this profile.
-      selectedTool = Services.prefs.getCharPref("devtools.toolbox.selectedTool");
-    } catch(e) {}
+  const form = activeTab.targetForm;
+  appendStatusMessage(`Create toolbox target: ${JSON.stringify({form, chrome}, null, 2)}`);
+  const target = await TargetFactory.forRemoteTab(targetOptions);
+  const frame = document.getElementById("toolbox-iframe");
 
-    try {
-      // But if we are testing, then it should always open the debugger panel.
-      selectedTool = Services.prefs.getCharPref("devtools.browsertoolbox.panel");
-    } catch(e) {}
+  // Remember the last panel that was used inside of this profile.
+  // But if we are testing, then it should always open the debugger panel.
+  const selectedTool =
+    Services.prefs.getCharPref("devtools.browsertoolbox.panel",
+      Services.prefs.getCharPref("devtools.toolbox.selectedTool",
+                                  "jsdebugger"));
 
-    let options = { customIframe: frame };
-    gDevTools.showToolbox(target,
-                          selectedTool,
-                          Toolbox.HostType.CUSTOM,
-                          options)
-             .then(onNewToolbox);
-  });
+  const toolboxOptions = { customIframe: frame };
+  appendStatusMessage(`Show toolbox with ${selectedTool} selected`);
+  const toolbox = await gDevTools.showToolbox(
+    target,
+    selectedTool,
+    Toolbox.HostType.CUSTOM,
+    toolboxOptions
+  );
+  onNewToolbox(toolbox);
 }
 
 function onNewToolbox(toolbox) {
   gToolbox = toolbox;
   bindToolboxHandlers();
   raise();
-  let env = Components.classes["@mozilla.org/process/environment;1"].getService(Components.interfaces.nsIEnvironment);
-  let testScript = env.get("MOZ_TOOLBOX_TEST_SCRIPT");
+  const env = Cc["@mozilla.org/process/environment;1"]
+    .getService(Ci.nsIEnvironment);
+  const testScript = env.get("MOZ_TOOLBOX_TEST_SCRIPT");
   if (testScript) {
     // Only allow executing random chrome scripts when a special
     // test-only pref is set
-    let prefName = "devtools.browser-toolbox.allow-unsafe-script";
+    const prefName = "devtools.browser-toolbox.allow-unsafe-script";
     if (Services.prefs.getPrefType(prefName) == Services.prefs.PREF_BOOL &&
         Services.prefs.getBoolPref(prefName) === true) {
       evaluateTestScript(testScript, toolbox);
@@ -139,66 +190,67 @@ function onNewToolbox(toolbox) {
 }
 
 function evaluateTestScript(script, toolbox) {
-  let sandbox = Cu.Sandbox(window);
+  const sandbox = Cu.Sandbox(window);
   sandbox.window = window;
   sandbox.toolbox = toolbox;
+  sandbox.ChromeUtils = ChromeUtils;
   Cu.evalInSandbox(script, sandbox);
 }
 
-function bindToolboxHandlers() {
+async function bindToolboxHandlers() {
   gToolbox.once("destroyed", quitApp);
   window.addEventListener("unload", onUnload);
 
-#ifdef XP_MACOSX
-  // Badge the dock icon to differentiate this process from the main application process.
-  updateBadgeText(false);
+  if (Services.appinfo.OS == "Darwin") {
+    // Badge the dock icon to differentiate this process from the main application
+    // process.
+    updateBadgeText(false);
 
-  // Once the debugger panel opens listen for thread pause / resume.
-  gToolbox.getPanelWhenReady("jsdebugger").then(panel => {
+    // Once the debugger panel opens listen for thread pause / resume.
+    const panel = await gToolbox.getPanelWhenReady("jsdebugger");
     setupThreadListeners(panel);
-  });
-#endif
+  }
 }
 
 function setupThreadListeners(panel) {
-  updateBadgeText(panel._controller.activeThread.state == "paused");
+  updateBadgeText(panel.isPaused());
 
-  let onPaused = updateBadgeText.bind(null, true);
-  let onResumed = updateBadgeText.bind(null, false);
-  panel.target.on("thread-paused", onPaused);
-  panel.target.on("thread-resumed", onResumed);
+  const onPaused = updateBadgeText.bind(null, true);
+  const onResumed = updateBadgeText.bind(null, false);
+  gToolbox.target.on("thread-paused", onPaused);
+  gToolbox.target.on("thread-resumed", onResumed);
 
   panel.once("destroyed", () => {
-    panel.off("thread-paused", onPaused);
-    panel.off("thread-resumed", onResumed);
+    gToolbox.target.off("thread-paused", onPaused);
+    gToolbox.target.off("thread-resumed", onResumed);
   });
 }
 
 function updateBadgeText(paused) {
-  let dockSupport = Cc["@mozilla.org/widget/macdocksupport;1"].getService(Ci.nsIMacDockSupport);
+  const dockSupport = Cc["@mozilla.org/widget/macdocksupport;1"]
+    .getService(Ci.nsIMacDockSupport);
   dockSupport.badgeText = paused ? "▐▐ " : " ▶";
 }
 
 function onUnload() {
   window.removeEventListener("unload", onUnload);
   window.removeEventListener("message", onMessage);
-  let cmdClose = document.getElementById("toolbox-cmd-close");
-  cmdClose.removeEventListener("command", onCloseCommand);
   gToolbox.destroy();
 }
 
 function onMessage(event) {
-  try {
-    let json = JSON.parse(event.data);
-    switch (json.name) {
-      case "toolbox-raise":
-        raise();
-        break;
-      case "toolbox-title":
-        setTitle(json.data.value);
-        break;
-    }
-  } catch(e) { console.error(e); }
+  if (!event.data) {
+    return;
+  }
+  const msg = event.data;
+  switch (msg.name) {
+    case "toolbox-raise":
+      raise();
+      break;
+    case "toolbox-title":
+      setTitle(msg.data.value);
+      break;
+  }
 }
 
 window.addEventListener("message", onMessage);
@@ -212,19 +264,12 @@ function setTitle(title) {
 }
 
 function quitApp() {
-  let quit = Cc["@mozilla.org/supports-PRBool;1"]
+  const quit = Cc["@mozilla.org/supports-PRBool;1"]
              .createInstance(Ci.nsISupportsPRBool);
-  Services.obs.notifyObservers(quit, "quit-application-requested", null);
+  Services.obs.notifyObservers(quit, "quit-application-requested");
 
-  let shouldProceed = !quit.data;
+  const shouldProceed = !quit.data;
   if (shouldProceed) {
     Services.startup.quit(Ci.nsIAppStartup.eForceQuit);
   }
-}
-
-function getParameterByName (name) {
-  name = name.replace(/[\[]/, "\\\[").replace(/[\]]/, "\\\]");
-  let regex = new RegExp("[\\?&]" + name + "=([^&#]*)");
-  let results = regex.exec(window.location.search);
-  return results == null ? "" : decodeURIComponent(results[1].replace(/\+/g, " "));
 }

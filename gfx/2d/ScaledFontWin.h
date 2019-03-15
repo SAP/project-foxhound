@@ -1,5 +1,6 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -12,42 +13,35 @@
 namespace mozilla {
 namespace gfx {
 
-class ScaledFontWin : public ScaledFontBase
-{
-public:
-  MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(ScaledFontWin)
-  ScaledFontWin(const LOGFONT* aFont, Float aSize);
+class ScaledFontWin : public ScaledFontBase {
+ public:
+  MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(ScaledFontWin, override)
+  ScaledFontWin(const LOGFONT* aFont, const RefPtr<UnscaledFont>& aUnscaledFont,
+                Float aSize);
 
-  virtual FontType GetType() const { return FontType::GDI; }
-
-  bool GetFontFileData(FontFileDataOutput aDataCallback, void *aBaton) override;
+  FontType GetType() const override { return FontType::GDI; }
 
   bool GetFontInstanceData(FontInstanceDataOutput aCb, void* aBaton) override;
 
-  virtual bool GetFontDescriptor(FontDescriptorOutput aCb, void* aBaton) override;
-
-  static already_AddRefed<ScaledFont>
-    CreateFromFontDescriptor(const uint8_t* aData, uint32_t aDataLength, Float aSize);
-
-  virtual AntialiasMode GetDefaultAAMode() override;
+  AntialiasMode GetDefaultAAMode() override;
 
 #ifdef USE_SKIA
-  virtual SkTypeface* GetSkTypeface();
+  SkTypeface* CreateSkTypeface() override;
 #endif
 
-protected:
+ protected:
 #ifdef USE_CAIRO_SCALED_FONT
   cairo_font_face_t* GetCairoFontFace() override;
 #endif
 
-private:
+ private:
 #ifdef USE_SKIA
   friend class DrawTargetSkia;
 #endif
   LOGFONT mLogFont;
 };
 
-}
-}
+}  // namespace gfx
+}  // namespace mozilla
 
 #endif /* MOZILLA_GFX_SCALEDFONTWIN_H_ */

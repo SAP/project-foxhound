@@ -4,7 +4,6 @@ import shutil
 import tempfile
 import unittest
 
-import mozharness.base.errors as errors
 import mozharness.base.vcs.mercurial as mercurial
 
 test_string = '''foo
@@ -14,7 +13,8 @@ baz'''
 HG = ['hg'] + mercurial.HG_OPTIONS
 
 # Known default .hgrc
-os.environ['HGRCPATH'] = os.path.abspath(os.path.join(os.path.dirname(__file__), 'helper_files', '.hgrc'))
+os.environ['HGRCPATH'] = os.path.abspath(os.path.join(os.path.dirname(__file__),
+                                                      'helper_files', '.hgrc'))
 
 
 def cleanup():
@@ -39,7 +39,8 @@ def get_mercurial_vcs_obj():
 def get_revisions(dest):
     m = get_mercurial_vcs_obj()
     retval = []
-    for rev in m.get_output_from_command(HG + ['log', '-R', dest, '--template', '{node}\n']).split('\n'):
+    command = HG + ['log', '-R', dest, '--template', '{node}\n']
+    for rev in m.get_output_from_command(command).split('\n'):
         rev = rev.strip()
         if not rev:
             continue
@@ -70,7 +71,9 @@ class TestMakeAbsolute(unittest.TestCase):
 
         def test_relative_file_path(self):
             m = get_mercurial_vcs_obj()
-            self.assertEquals(m._make_absolute("file://foo/bar"), "file://%s/foo/bar" % os.getcwd())
+            self.assertEquals(
+                m._make_absolute("file://foo/bar"),
+                "file://%s/foo/bar" % os.getcwd())
 
 
 class TestHg(unittest.TestCase):
@@ -330,7 +333,7 @@ class TestHg(unittest.TestCase):
         self.failUnless(os.path.exists(os.path.join(self.wc, 'test.txt')))
 
     def test_make_hg_url(self):
-        #construct an hg url specific to revision, branch and filename and try to pull it down
+        # construct an hg url specific to revision, branch and filename and try to pull it down
         file_url = mercurial.make_hg_url(
             "hg.mozilla.org",
             '//build/tools/',
@@ -338,7 +341,10 @@ class TestHg(unittest.TestCase):
             filename="/lib/python/util/hg.py",
             protocol='https',
         )
-        expected_url = "https://hg.mozilla.org/build/tools/raw-file/FIREFOX_3_6_12_RELEASE/lib/python/util/hg.py"
+        expected_url = (
+            "https://hg.mozilla.org/build/tools/raw-file/"
+            "FIREFOX_3_6_12_RELEASE/lib/python/util/hg.py"
+        )
         self.assertEquals(file_url, expected_url)
 
     def test_make_hg_url_no_filename(self):
@@ -369,72 +375,6 @@ class TestHg(unittest.TestCase):
         expected_url = "ssh://hg.mozilla.org/build/tools"
         self.assertEquals(repo_url, expected_url)
 
-    def test_apply_and_push(self):
-        m = get_mercurial_vcs_obj()
-        m.clone(self.repodir, self.wc)
-
-        def c(repo, attempt):
-            m.run_command(HG + ['tag', '-f', 'TEST'], cwd=repo)
-        m.apply_and_push(self.wc, self.repodir, c)
-        self.assertEquals(get_revisions(self.wc), get_revisions(self.repodir))
-
-    def test_apply_and_push_fail(self):
-        m = get_mercurial_vcs_obj()
-        m.clone(self.repodir, self.wc)
-
-        def c(repo, attempt, remote):
-            m.run_command(HG + ['tag', '-f', 'TEST'], cwd=repo)
-            m.run_command(HG + ['tag', '-f', 'CONFLICTING_TAG'], cwd=remote)
-        m.config = {'log_to_console': False}
-        self.assertRaises(errors.VCSException, m.apply_and_push, self.wc,
-                          self.repodir, lambda r, a: c(r, a, self.repodir),
-                          max_attempts=2)
-
-    def test_apply_and_push_with_rebase(self):
-        m = get_mercurial_vcs_obj()
-        m.clone(self.repodir, self.wc)
-        m.config = {'log_to_console': False}
-
-        def c(repo, attempt, remote):
-            m.run_command(HG + ['tag', '-f', 'TEST'], cwd=repo)
-            if attempt == 1:
-                m.run_command(HG + ['rm', 'hello.txt'], cwd=remote)
-                m.run_command(HG + ['commit', '-m', 'test'], cwd=remote)
-        m.apply_and_push(self.wc, self.repodir,
-                         lambda r, a: c(r, a, self.repodir), max_attempts=2)
-        self.assertEquals(get_revisions(self.wc), get_revisions(self.repodir))
-
-    def test_apply_and_push_rebase_fails(self):
-        m = get_mercurial_vcs_obj()
-        m.clone(self.repodir, self.wc)
-        m.config = {'log_to_console': False}
-
-        def c(repo, attempt, remote):
-            m.run_command(HG + ['tag', '-f', 'TEST'], cwd=repo)
-            if attempt in (1, 2):
-                m.run_command(HG + ['tag', '-f', 'CONFLICTING_TAG'], cwd=remote)
-        m.apply_and_push(self.wc, self.repodir,
-                         lambda r, a: c(r, a, self.repodir), max_attempts=4)
-        self.assertEquals(get_revisions(self.wc), get_revisions(self.repodir))
-
-    def test_apply_and_push_on_branch(self):
-        m = get_mercurial_vcs_obj()
-        if m.hg_ver() >= (1, 6, 0):
-            m.clone(self.repodir, self.wc)
-
-            def c(repo, attempt):
-                m.run_command(HG + ['branch', 'branch3'], cwd=repo)
-                m.run_command(HG + ['tag', '-f', 'TEST'], cwd=repo)
-            m.apply_and_push(self.wc, self.repodir, c)
-            self.assertEquals(get_revisions(self.wc), get_revisions(self.repodir))
-
-    def test_apply_and_push_with_no_change(self):
-        m = get_mercurial_vcs_obj()
-        m.clone(self.repodir, self.wc)
-
-        def c(r, a):
-            pass
-        self.assertRaises(errors.VCSException, m.apply_and_push, self.wc, self.repodir, c)
 
 if __name__ == '__main__':
     unittest.main()

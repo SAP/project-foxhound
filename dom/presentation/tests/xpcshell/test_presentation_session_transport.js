@@ -2,15 +2,15 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-'use strict';
+"use strict";
 
-const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr, Constructor: CC } = Components;
+const CC = Components.Constructor;
 const ServerSocket = CC("@mozilla.org/network/server-socket;1",
                         "nsIServerSocket",
                         "init");
 
-Cu.import('resource://gre/modules/XPCOMUtils.jsm');
-Cu.import('resource://gre/modules/Services.jsm');
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var testServer = null;
 var clientTransport = null;
@@ -26,10 +26,10 @@ const address = Cc["@mozilla.org/supports-cstring;1"]
                   .createInstance(Ci.nsISupportsCString);
 address.data = "127.0.0.1";
 const addresses = Cc["@mozilla.org/array;1"].createInstance(Ci.nsIMutableArray);
-addresses.appendElement(address, false);
+addresses.appendElement(address);
 
 const serverChannelDescription = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIPresentationChannelDescription]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIPresentationChannelDescription]),
   type: 1,
   tcpAddress: addresses,
 };
@@ -40,8 +40,8 @@ var isClientClosed = false;
 var isServerClosed = false;
 
 const clientCallback = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIPresentationSessionTransportCallback]),
-  notifyTransportReady: function () {
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIPresentationSessionTransportCallback]),
+  notifyTransportReady() {
     Assert.ok(true, "Client transport ready.");
 
     isClientReady = true;
@@ -49,7 +49,7 @@ const clientCallback = {
       run_next_test();
     }
   },
-  notifyTransportClosed: function (aReason) {
+  notifyTransportClosed(aReason) {
     Assert.ok(true, "Client transport is closed.");
 
     isClientClosed = true;
@@ -57,15 +57,15 @@ const clientCallback = {
       run_next_test();
     }
   },
-  notifyData: function(aData) {
+  notifyData(aData) {
     Assert.equal(aData, serverMessage, "Client transport receives data.");
     run_next_test();
   },
 };
 
 const serverCallback = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIPresentationSessionTransportCallback]),
-  notifyTransportReady: function () {
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIPresentationSessionTransportCallback]),
+  notifyTransportReady() {
     Assert.ok(true, "Server transport ready.");
 
     isServerReady = true;
@@ -73,7 +73,7 @@ const serverCallback = {
       run_next_test();
     }
   },
-  notifyTransportClosed: function (aReason) {
+  notifyTransportClosed(aReason) {
     Assert.ok(true, "Server transport is closed.");
 
     isServerClosed = true;
@@ -81,14 +81,14 @@ const serverCallback = {
       run_next_test();
     }
   },
-  notifyData: function(aData) {
+  notifyData(aData) {
     Assert.equal(aData, clientMessage, "Server transport receives data.");
     run_next_test();
   },
 };
 
 const clientListener = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIPresentationSessionTransportBuilderListener]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIPresentationSessionTransportBuilderListener]),
   onSessionTransport(aTransport) {
     Assert.ok(true, "Client Transport is built.");
     clientTransport = aTransport;
@@ -97,11 +97,11 @@ const clientListener = {
     if (serverTransport) {
       run_next_test();
     }
-  }
-}
+  },
+};
 
 const serverListener = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIPresentationSessionTransportBuilderListener]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIPresentationSessionTransportBuilderListener]),
   onSessionTransport(aTransport) {
     Assert.ok(true, "Server Transport is built.");
     serverTransport = aTransport;
@@ -111,30 +111,30 @@ const serverListener = {
     if (clientTransport) {
       run_next_test();
     }
-  }
-}
+  },
+};
 
 function TestServer() {
   this.serverSocket = ServerSocket(-1, true, -1);
-  this.serverSocket.asyncListen(this)
+  this.serverSocket.asyncListen(this);
 }
 
 TestServer.prototype = {
-  onSocketAccepted: function(aSocket, aTransport) {
+  onSocketAccepted(aSocket, aTransport) {
     print("Test server gets a client connection.");
     serverBuilder = Cc["@mozilla.org/presentation/presentationtcpsessiontransport;1"]
                       .createInstance(Ci.nsIPresentationTCPSessionTransportBuilder);
     serverBuilder.buildTCPSenderTransport(aTransport, serverListener);
   },
-  onStopListening: function(aSocket) {
+  onStopListening(aSocket) {
     print("Test server stops listening.");
   },
-  close: function() {
+  close() {
     if (this.serverSocket) {
       this.serverSocket.close();
       this.serverSocket = null;
     }
-  }
+  },
 };
 
 // Set up the transport connection and ensure |notifyTransportReady| triggered

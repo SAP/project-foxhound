@@ -4,12 +4,10 @@
 <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 <div id="log"></div>
 <script>
-  var c = Components.classes;
-  var Ci = Components.interfaces;
-  var Cu = Components.utils;
+  var c = Cc;
 
-  Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-  Cu.import("resource://gre/modules/Services.jsm");
+  ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+  ChromeUtils.import("resource://gre/modules/Services.jsm");
 
   SimpleTest.waitForExplicitFinish();
   SimpleTest.expectUncaughtException();
@@ -24,7 +22,7 @@
   }
 
   var TestObserver = {
-    QueryInterface: XPCOMUtils.generateQI([Ci.nsIObserver]),
+    QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver]),
 
     observe: function test_observe(aSubject)
     {
@@ -36,14 +34,14 @@
       // Main assertions
       var s = aSubject.stack;
       ok(!!s, "has first frame");
-      ok(s.source.indexOf("test_nsScriptErrorWithStack.html") !== -1, "source is correct");
-      is(s.line, 23, "line is correct");
+      ok(s.source.includes("test_nsScriptErrorWithStack.html"), "source is correct");
+      is(s.line, 21, "line is correct");
       is(s.column, 5, "column is correct");
       is(s.functionDisplayName, "nestedFunction");
       s = s.parent;
       ok(!!s, "has second frame");
-      ok(s.source.indexOf("test_nsScriptErrorWithStack.html") !== -1, "source is correct");
-      is(s.line, 20, "line is correct");
+      ok(s.source.includes("test_nsScriptErrorWithStack.html"), "source is correct");
+      is(s.line, 18, "line is correct");
       is(s.column, 5, "column is correct");
       is(s.functionDisplayName, "failingStack");
       // We shouldn't have any more frame as we used setTimeout

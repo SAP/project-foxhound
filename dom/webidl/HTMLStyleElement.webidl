@@ -12,12 +12,10 @@
 interface HTMLStyleElement : HTMLElement {
            [Pure]
            attribute boolean disabled;
-           [SetterThrows, Pure]
+           [CEReactions, SetterThrows, Pure]
            attribute DOMString media;
-           [SetterThrows, Pure]
+           [CEReactions, SetterThrows, Pure]
            attribute DOMString type;
-           [SetterThrows, Pure]
-           attribute boolean scoped;
 };
 HTMLStyleElement implements LinkStyle;
 

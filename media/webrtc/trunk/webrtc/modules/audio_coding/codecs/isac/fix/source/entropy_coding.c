@@ -26,6 +26,7 @@
 #include "lpc_tables.h"
 #include "settings.h"
 #include "signal_processing_library.h"
+#include "rtc_base/sanitizer.h"
 
 /*
  * Eenumerations for arguments to functions WebRtcIsacfix_MatrixProduct1()
@@ -188,6 +189,22 @@ static void CalcCorrelation(int32_t *PSpecQ12, int32_t *CorrQ7)
   }
 }
 
+// Some arithmetic operations that are allowed to overflow. (It's still
+// undefined behavior, so not a good idea; this just makes UBSan ignore the
+// violations, so that our old code can continue to do what it's always been
+// doing.)
+static inline int32_t RTC_NO_SANITIZE("signed-integer-overflow")
+    OverflowingMulS16S32ToS32(int16_t a, int32_t b) {
+  return a * b;
+}
+static inline int32_t RTC_NO_SANITIZE("signed-integer-overflow")
+    OverflowingAddS32S32ToS32(int32_t a, int32_t b) {
+  return a + b;
+}
+static inline int32_t RTC_NO_SANITIZE("signed-integer-overflow")
+    OverflowingSubS32S32ToS32(int32_t a, int32_t b) {
+  return a - b;
+}
 
 /* compute inverse AR power spectrum */
 static void CalcInvArSpec(const int16_t *ARCoefQ12,
@@ -231,7 +248,10 @@ static void CalcInvArSpec(const int16_t *ARCoefQ12,
 
   for (k = 1; k < AR_ORDER; k += 2) {
     for (n = 0; n < FRAMESAMPLES/8; n++)
-      CurveQ16[n] += (WebRtcIsacfix_kCos[k][n] * CorrQ11[k + 1] + 2) >> 2;
+      CurveQ16[n] +=
+          (OverflowingMulS16S32ToS32(WebRtcIsacfix_kCos[k][n], CorrQ11[k + 1]) +
+           2) >>
+          2;
   }
 
   CS_ptrQ9 = WebRtcIsacfix_kCos[0];
@@ -255,9 +275,10 @@ static void CalcInvArSpec(const int16_t *ARCoefQ12,
   }
 
   for (k=0; k<FRAMESAMPLES/8; k++) {
-    int32_t diff_q16 = diffQ16[k] << shftVal;
-    CurveQ16[FRAMESAMPLES / 4 - 1 - k] = CurveQ16[k] - diff_q16;
-    CurveQ16[k] += diff_q16;
+    int32_t diff_q16 = diffQ16[k] * (1 << shftVal);
+    CurveQ16[FRAMESAMPLES / 4 - 1 - k] =
+        OverflowingSubS32S32ToS32(CurveQ16[k], diff_q16);
+    CurveQ16[k] = OverflowingAddS32S32ToS32(CurveQ16[k], diff_q16);
   }
 }
 
@@ -392,13 +413,13 @@ static void GenerateDitherQ7(int16_t *bufQ7,
       seed = WEBRTC_SPL_UMUL(seed, 196314165) + 907633515;
 
       /* fixed-point dither sample between -64 and 64 (Q7) */
-      dither1_Q7 = (int16_t)(((int32_t)seed + 16777216) >> 25);
+      dither1_Q7 = (int16_t)(((int32_t)(seed + 16777216)) >> 25);
 
       /* new random unsigned int32_t */
       seed = WEBRTC_SPL_UMUL(seed, 196314165) + 907633515;
 
       /* fixed-point dither sample between -64 and 64 */
-      dither2_Q7 = (int16_t)((seed + 16777216) >> 25);
+      dither2_Q7 = (int16_t)(((int32_t)(seed + 16777216)) >> 25);
 
       shft = (int16_t)(WEBRTC_SPL_RSHIFT_U32(seed, 25) & 15);
       if (shft < 5)
@@ -432,7 +453,7 @@ static void GenerateDitherQ7(int16_t *bufQ7,
       seed = WEBRTC_SPL_UMUL(seed, 196314165) + 907633515;
 
       /* fixed-point dither sample between -64 and 64 */
-      dither1_Q7 = (int16_t)(((int32_t)seed + 16777216) >> 25);
+      dither1_Q7 = (int16_t)(((int32_t)(seed + 16777216)) >> 25);
 
       /* dither sample is placed in either even or odd index */
       shft = (int16_t)(WEBRTC_SPL_RSHIFT_U32(seed, 25) & 1);     /* either 0 or 1 */
@@ -864,8 +885,8 @@ void WebRtcIsacfix_MatrixProduct1C(const int16_t matrix0[],
       matrix0_index = matrix0_index_factor1 * (*matrix0_index_factor2);
       matrix1_index = matrix1_index_factor1 * (*matrix1_index_factor2);
       for (n = 0; n < inner_loop_count; n++) {
-        sum32 += (WEBRTC_SPL_MUL_16_32_RSFT16(matrix0[matrix0_index],
-                                              matrix1[matrix1_index] << shift));
+        sum32 += WEBRTC_SPL_MUL_16_32_RSFT16(
+            matrix0[matrix0_index], matrix1[matrix1_index] * (1 << shift));
         matrix0_index += matrix0_index_step;
         matrix1_index += matrix1_index_step;
       }
@@ -1042,7 +1063,8 @@ int WebRtcIsacfix_DecodeLpcCoef(Bitstr_dec *streamdata,
     /* hi band LAR coeffs */
     for (n=0; n<ORDERHI; n++, pos++, poss++) {
       // ((Q13*Q17)>>16)<<3 = Q17, with 1/0.45 = 2.222222222222 ~= 18204 in Q13
-      tmp32 = WEBRTC_SPL_MUL_16_32_RSFT16(18204, tmpcoeffs_sQ17[poss]) << 3;
+      tmp32 =
+          WEBRTC_SPL_MUL_16_32_RSFT16(18204, tmpcoeffs_sQ17[poss]) * (1 << 3);
       tmp32 = tmp32 + WebRtcIsacfix_kMeansShapeQ17[model][poss]; // Q17+Q17 = Q17
       LPCCoefQ17[pos] = tmp32;
     }
@@ -1863,7 +1885,7 @@ const uint16_t kFrameLenCdf[4] = {
   0, 21845, 43690, 65535};
 
 /* pointer to cdf array for frame length indicator */
-const uint16_t *kFrameLenCdfPtr[1] = {kFrameLenCdf};
+const uint16_t * const kFrameLenCdfPtr[1] = {kFrameLenCdf};
 
 /* initial cdf index for decoder of frame length indicator */
 const uint16_t kFrameLenInitIndex[1] = {1};
@@ -1931,7 +1953,7 @@ const uint16_t kBwCdf[25] = {
   62804, 65535};
 
 /* pointer to cdf array for estimated bandwidth */
-const uint16_t *kBwCdfPtr[1] = {kBwCdf};
+const uint16_t * const kBwCdfPtr[1] = {kBwCdf};
 
 /* initial cdf index for decoder of estimated bandwidth*/
 const uint16_t kBwInitIndex[1] = {7};

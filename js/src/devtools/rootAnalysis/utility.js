@@ -2,6 +2,22 @@
 
 "use strict";
 
+loadRelativeToScript('dumpCFG.js');
+
+// Limit inset bits - each call edge may carry a set of 'limit' bits, saying eg
+// that the edge takes place within a scope where GC is suppressed, for
+// example.
+var LIMIT_NONE = 0;
+var LIMIT_CANNOT_GC = 1;
+var LIMIT_ALL = 1;
+
+// The traversal algorithms we run will recurse into children if you change any
+// limit bit to zero. Use all bits set to maximally limited, including
+// additional bits that all just mean "unvisited", so that the first time we
+// see a node with this limit, we're guaranteed to turn at least one bit off
+// and thereby keep going.
+var LIMIT_UNVISITED = 0xffff;
+
 // gcc appends this to mangled function names for "not in charge"
 // constructors/destructors.
 var internalMarker = " *INTERNAL* ";
@@ -49,6 +65,70 @@ function xprint(x, padding)
     } else {
         print(padding + x);
     }
+}
+
+function parse_options(parameters, inArgs = scriptArgs) {
+    const options = {};
+
+    const optional = {};
+    const positional = [];
+    for (const param of parameters) {
+        if (param.name.startsWith("-")) {
+            optional[param.name] = param;
+            param.dest = param.dest || param.name.substring(2).replace("-", "_");
+        } else {
+            positional.push(param);
+            param.dest = param.dest || param.name.replace("-", "_");
+        }
+
+        param.type = param.type || 'bool';
+        if ('default' in param)
+            options[param.dest] = param.default;
+    }
+
+    options.rest = [];
+    const args = [...inArgs];
+    while (args.length > 0) {
+        let param;
+        let pos = -1;
+        if (args[0] in optional)
+            param = optional[args[0]];
+        else {
+            pos = args[0].indexOf("=");
+            if (pos != -1) {
+                param = optional[args[0].substring(0, pos)];
+                pos++;
+            }
+        }
+
+        if (!param) {
+            if (positional.length > 0) {
+                param = positional.shift();
+                options[param.dest] = args.shift();
+            } else {
+                options.rest.push(args.shift());
+            }
+            continue;
+        }
+
+        if (param.type != 'bool') {
+            if (pos != -1) {
+                options[param.dest] = args.shift().substring(pos);
+            } else {
+                args.shift();
+                if (args.length == 0)
+                    throw(new Error(`--${param.name} requires an argument`));
+                options[param.dest] = args.shift();
+            }
+        } else {
+            if (pos != -1)
+                throw(new Error(`--${param.name} does not take an argument`));
+            options[param.dest] = true;
+            args.shift();
+        }
+    }
+
+    return options;
 }
 
 function sameBlockId(id0, id1)
@@ -162,11 +242,13 @@ function xdbLibrary()
 
 function cLibrary()
 {
+    var libPossibilities = ['libc.so.6', 'libc.so', 'libc.dylib'];
     var lib;
-    try {
-        lib = ctypes.open("libc.so.6");
-    } catch(e) {
-        lib = ctypes.open("libc.so");
+    for (const name of libPossibilities) {
+        try {
+            lib = ctypes.open("libc.so.6");
+        } catch(e) {
+        }
     }
 
     return {
@@ -201,11 +283,5 @@ function addToKeyedList(collection, key, entry)
 
 function loadTypeInfo(filename)
 {
-    var info = {};
-    for (var line of readFileLines_gen(filename)) {
-        line = line.replace(/\n/, "");
-        let [property, name] = line.split("$$");
-        addToKeyedList(info, property, name);
-    }
-    return info;
+    return JSON.parse(os.file.readFile(filename));
 }

@@ -1,7 +1,7 @@
 /* vim: set ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
-/* import-globals-from ../../framework/test/shared-head.js */
+/* import-globals-from ../../shared/test/shared-head.js */
 /* exported promiseWaitForFocus, setup, ch, teardown, loadHelperScript,
             limit, ch, read, codemirrorSetStatus */
 
@@ -9,65 +9,47 @@
 
 // shared-head.js handles imports, constants, and utility functions
 Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/devtools/client/framework/test/shared-head.js",
+  "chrome://mochitests/content/browser/devtools/client/shared/test/shared-head.js",
   this);
 
 const { NetUtil } = require("resource://gre/modules/NetUtil.jsm");
 const Editor = require("devtools/client/sourceeditor/editor");
 const {getClientCssProperties} = require("devtools/shared/fronts/css-properties");
 
-flags.testing = true;
-SimpleTest.registerCleanupFunction(() => {
-  flags.testing = false;
-});
-
-function promiseWaitForFocus() {
-  return new Promise(resolve =>
-    waitForFocus(resolve));
+function promiseWaitForFocus(el) {
+  return new Promise(resolve => waitForFocus(resolve, el));
 }
 
-function setup(cb, additionalOpts = {}) {
-  cb = cb || function () {};
-  let def = promise.defer();
-  const opt = "chrome,titlebar,toolbar,centerscreen,resizable,dialog=no";
-  const url = "data:application/vnd.mozilla.xul+xml;charset=UTF-8," +
-    "<?xml version='1.0'?>" +
-    "<?xml-stylesheet href='chrome://global/skin/global.css'?>" +
-    "<window xmlns='http://www.mozilla.org/keymaster/gatekeeper" +
-    "/there.is.only.xul' title='Editor' width='600' height='500'>" +
-    "<box flex='1'/></window>";
+async function setup(additionalOpts = {}) {
+  try {
+    const opt = "chrome,titlebar,toolbar,centerscreen,resizable,dialog=no";
+    const win = Services.ww.openWindow(null, CHROME_URL_ROOT + "head.xul", "_blank", opt,
+                                      null);
+    const opts = {
+      value: "Hello.",
+      lineNumbers: true,
+      foldGutter: true,
+      gutters: ["CodeMirror-linenumbers", "breakpoints", "CodeMirror-foldgutter"],
+      cssProperties: getClientCssProperties(),
+      ...additionalOpts,
+    };
 
-  let win = Services.ww.openWindow(null, url, "_blank", opt, null);
-  let opts = {
-    value: "Hello.",
-    lineNumbers: true,
-    foldGutter: true,
-    gutters: ["CodeMirror-linenumbers", "breakpoints", "CodeMirror-foldgutter"],
-    cssProperties: getClientCssProperties()
-  };
+    await once(win, "load");
+    await promiseWaitForFocus(win);
 
-  for (let o in additionalOpts) {
-    opts[o] = additionalOpts[o];
+    const box = win.document.querySelector("box");
+    const editor = new Editor(opts);
+    await editor.appendTo(box);
+
+    return {
+      ed: editor,
+      win: win,
+      edWin: editor.container.contentWindow.wrappedJSObject,
+    };
+  } catch (o_O) {
+    ok(false, o_O.message);
+    return null;
   }
-
-  win.addEventListener("load", function () {
-    waitForFocus(function () {
-      let box = win.document.querySelector("box");
-      let editor = new Editor(opts);
-
-      editor.appendTo(box)
-        .then(() => {
-          def.resolve({
-            ed: editor,
-            win: win,
-            edWin: editor.container.contentWindow.wrappedJSObject
-          });
-          cb(editor, win);
-        }, err => ok(false, err.message));
-    }, win);
-  }, {once: true});
-
-  return def.promise;
 }
 
 function ch(exp, act, label) {
@@ -94,10 +76,9 @@ function teardown(ed, win) {
  * @param {String} filePath The file path, relative to the current directory.
  *                 Examples:
  *                 - "helper_attributes_test_runner.js"
- *                 - "../../../commandline/test/helpers.js"
  */
 function loadHelperScript(filePath) {
-  let testDir = gTestPath.substr(0, gTestPath.lastIndexOf("/"));
+  const testDir = gTestPath.substr(0, gTestPath.lastIndexOf("/"));
   Services.scriptloader.loadSubScript(testDir + "/" + filePath, this);
 }
 
@@ -107,7 +88,7 @@ function loadHelperScript(filePath) {
  */
 function limit(source, [line, char]) {
   line++;
-  let list = source.split("\n");
+  const list = source.split("\n");
   if (list.length < line) {
     return source;
   }
@@ -118,14 +99,14 @@ function limit(source, [line, char]) {
 }
 
 function read(url) {
-  let scriptableStream = Cc["@mozilla.org/scriptableinputstream;1"]
+  const scriptableStream = Cc["@mozilla.org/scriptableinputstream;1"]
     .getService(Ci.nsIScriptableInputStream);
 
-  let channel = NetUtil.newChannel({
+  const channel = NetUtil.newChannel({
     uri: url,
-    loadUsingSystemPrincipal: true
+    loadUsingSystemPrincipal: true,
   });
-  let input = channel.open2();
+  const input = channel.open2();
   scriptableStream.init(input);
 
   let data = "";

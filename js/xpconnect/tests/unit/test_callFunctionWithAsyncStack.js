@@ -1,8 +1,8 @@
-Components.utils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function run_test() {
   if (!Services.prefs.getBoolPref("javascript.options.asyncstack")) {
-    do_print("Async stacks are disabled.");
+    info("Async stacks are disabled.");
     return;
   }
 
@@ -13,18 +13,18 @@ function run_test() {
   // asyncCause may contain non-ASCII characters.
   let testAsyncCause = "Tes" + String.fromCharCode(355) + "String";
 
-  Components.utils.callFunctionWithAsyncStack(function asyncCallback() {
+  Cu.callFunctionWithAsyncStack(function asyncCallback() {
     let stack = Components.stack;
 
-    do_check_eq(stack.name, "asyncCallback");
-    do_check_eq(stack.caller, null);
-    do_check_eq(stack.asyncCause, null);
+    Assert.equal(stack.name, "asyncCallback");
+    Assert.equal(stack.caller, null);
+    Assert.equal(stack.asyncCause, null);
 
-    do_check_eq(stack.asyncCaller.name, "getAsyncStack");
-    do_check_eq(stack.asyncCaller.asyncCause, testAsyncCause);
-    do_check_eq(stack.asyncCaller.asyncCaller, null);
+    Assert.equal(stack.asyncCaller.name, "getAsyncStack");
+    Assert.equal(stack.asyncCaller.asyncCause, testAsyncCause);
+    Assert.equal(stack.asyncCaller.asyncCaller, null);
 
-    do_check_eq(stack.asyncCaller.caller.name, "run_test");
-    do_check_eq(stack.asyncCaller.caller.asyncCause, null);
+    Assert.equal(stack.asyncCaller.caller.name, "run_test");
+    Assert.equal(stack.asyncCaller.caller.asyncCause, null);
   }, getAsyncStack(), testAsyncCause);
 }

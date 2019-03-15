@@ -2,7 +2,7 @@
  * Test that the doorhanger notification for password saving is populated with
  * the correct values in various password capture cases.
  */
-add_task(function* test_save_change() {
+add_task(async function test_save_change() {
   let testCases = [{
     username: "username",
     password: "password",
@@ -30,24 +30,24 @@ add_task(function* test_save_change() {
       }));
     }
 
-    yield BrowserTestUtils.withNewTab({
+    await BrowserTestUtils.withNewTab({
       gBrowser,
       url: "https://example.com/browser/toolkit/components/" +
            "passwordmgr/test/browser/form_basic.html",
-    }, function* (browser) {
+    }, async function(browser) {
       // Submit the form in the content page with the credentials from the test
       // case. This will cause the doorhanger notification to be displayed.
       let promiseShown = BrowserTestUtils.waitForEvent(PopupNotifications.panel,
                                                        "popupshown",
                                                        (event) => event.target == PopupNotifications.panel);
-      yield ContentTask.spawn(browser, [username, password],
-        function* ([contentUsername, contentPassword]) {
-          let doc = content.document;
-          doc.getElementById("form-basic-username").value = contentUsername;
-          doc.getElementById("form-basic-password").value = contentPassword;
-          doc.getElementById("form-basic").submit();
-        });
-      yield promiseShown;
+      await ContentTask.spawn(browser, [username, password],
+                              async function([contentUsername, contentPassword]) {
+                                let doc = content.document;
+                                doc.getElementById("form-basic-username").value = contentUsername;
+                                doc.getElementById("form-basic-password").value = contentPassword;
+                                doc.getElementById("form-basic").submit();
+                              });
+      await promiseShown;
       let notificationElement = PopupNotifications.panel.childNodes[0];
       // Style flush to make sure binding is attached
       notificationElement.querySelector("#password-notification-password").clientTop;
@@ -63,9 +63,9 @@ add_task(function* test_save_change() {
       // of operation we expect.
       let expectedNotification = oldPassword ? "modifyLogin" : "addLogin";
       let promiseLogin = TestUtils.topicObserved("passwordmgr-storage-changed",
-                         (_, data) => data == expectedNotification);
+                                                 (_, data) => data == expectedNotification);
       notificationElement.button.doCommand();
-      let [result] = yield promiseLogin;
+      let [result] = await promiseLogin;
 
       // Check that the values in the database match the expected values.
       let login = oldPassword ? result.QueryInterface(Ci.nsIArray)

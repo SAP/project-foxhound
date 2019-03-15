@@ -18,43 +18,43 @@ const TEST_URL = "data:text/html;charset=utf-8," + encodeURIComponent(HTML);
 // Note that after each test case, undo is called.
 const TEST_DATA = [{
   selector: "#id",
-  attribute: "class"
+  attribute: "class",
 }, {
   selector: "#id",
-  attribute: "data-id"
+  attribute: "data-id",
 }];
 
-add_task(function* () {
-  let {inspector} = yield openInspectorForURL(TEST_URL);
-  let {walker} = inspector;
+add_task(async function() {
+  const {inspector} = await openInspectorForURL(TEST_URL);
+  const {walker} = inspector;
 
-  for (let {selector, attribute} of TEST_DATA) {
+  for (const {selector, attribute} of TEST_DATA) {
     info("Get the container for node " + selector);
-    let {editor} = yield getContainerForSelector(selector, inspector);
+    const {editor} = await getContainerForSelector(selector, inspector);
 
     info("Focus attribute " + attribute);
-    let attr = editor.attrElements.get(attribute).querySelector(".editable");
+    const attr = editor.attrElements.get(attribute).querySelector(".editable");
     attr.focus();
 
     info("Delete the attribute by pressing delete");
-    let mutated = inspector.once("markupmutation");
+    const mutated = inspector.once("markupmutation");
     EventUtils.sendKey("delete", inspector.panelWin);
-    yield mutated;
+    await mutated;
 
     info("Check that the node is still here");
-    let node = yield walker.querySelector(walker.rootNode, selector);
+    let node = await walker.querySelector(walker.rootNode, selector);
     ok(node, "The node hasn't been deleted");
 
     info("Check that the attribute has been deleted");
-    node = yield walker.querySelector(walker.rootNode,
+    node = await walker.querySelector(walker.rootNode,
                                       selector + "[" + attribute + "]");
     ok(!node, "The attribute does not exist anymore in the DOM");
     ok(!editor.attrElements.get(attribute),
        "The attribute has been removed from the container");
 
     info("Undo the change");
-    yield undoChange(inspector);
-    node = yield walker.querySelector(walker.rootNode,
+    await undoChange(inspector);
+    node = await walker.querySelector(walker.rootNode,
                                       selector + "[" + attribute + "]");
     ok(node, "The attribute is back in the DOM");
     ok(editor.attrElements.get(attribute),

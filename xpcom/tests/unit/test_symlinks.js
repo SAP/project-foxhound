@@ -11,23 +11,23 @@ const DOES_NOT_EXIST = "doesnotexist";
 const DANGLING_LINK  = "dangling_link";
 const LOOP_LINK      = "loop_link";
 
-const nsIFile = Components.interfaces.nsIFile;
+const nsIFile = Ci.nsIFile;
 
 var process;
 function createSymLink(from, to) {
   if (!process) {
-    var ln = Components.classes["@mozilla.org/file/local;1"]
-                       .createInstance(Components.interfaces.nsILocalFile);
+    var ln = Cc["@mozilla.org/file/local;1"]
+               .createInstance(Ci.nsIFile);
     ln.initWithPath("/bin/ln");
 
-    process = Components.classes["@mozilla.org/process/util;1"]
-                        .createInstance(Components.interfaces.nsIProcess);
+    process = Cc["@mozilla.org/process/util;1"]
+                .createInstance(Ci.nsIProcess);
     process.init(ln);
   }
 
   const args = ["-s", from, to];
   process.run(true, args, args.length);
-  do_check_eq(process.exitValue, 0);
+  Assert.equal(process.exitValue, 0);
 }
 
 function makeSymLink(from, toName, relative) {
@@ -36,12 +36,11 @@ function makeSymLink(from, toName, relative) {
 
   if (relative) {
     createSymLink(from.leafName, to.path);
-  }
-  else {
+  } else {
     createSymLink(from.path, to.path);
   }
 
-  do_check_true(to.isSymlink());
+  Assert.ok(to.isSymlink());
 
   print("---");
   print(from.path);
@@ -51,10 +50,9 @@ function makeSymLink(from, toName, relative) {
   if (from.leafName != DOES_NOT_EXIST && from.isSymlink()) {
     // XXXjag wish I could set followLinks to false so we'd just get
     // the symlink's direct target instead of the final target.
-    do_check_eq(from.target, to.target);
-  }
-  else {
-    do_check_eq(from.path, to.target);
+    Assert.equal(from.target, to.target);
+  } else {
+    Assert.equal(from.path, to.target);
   }
 
   return to;
@@ -67,7 +65,7 @@ function setupTestDir(testDir, relative) {
   if (testDir.exists()) {
     testDir.remove(true);
   }
-  do_check_true(!testDir.exists());
+  Assert.ok(!testDir.exists());
 
   testDir.create(nsIFile.DIRECTORY_TYPE, 0o777);
 
@@ -93,9 +91,8 @@ function setupTestDir(testDir, relative) {
 
   try {
     makeSymLink(loop, LOOP_LINK, relative);
-    do_check_true(false);
-  }
-  catch (e) {
+    Assert.ok(false);
+  } catch (e) {
   }
 }
 
@@ -121,13 +118,13 @@ function testSymLinks(testDir, relative) {
   print(spaces + " dir   file  symlink");
   var dirEntries = testDir.directoryEntries;
   while (dirEntries.hasMoreElements()) {
-    const file = dirEntries.getNext().QueryInterface(nsIFile);
+    const file = dirEntries.nextFile;
     const name = file.leafName;
     print(name + spaces.substring(name.length) + bools[file.isDirectory()] +
           bools[file.isFile()] + bools[file.isSymlink()]);
-    do_check_eq(file.isDirectory(), dirs.indexOf(name) != -1);
-    do_check_eq(file.isFile(), files.indexOf(name) != -1);
-    do_check_eq(file.isSymlink(), links.indexOf(name) != -1);
+    Assert.equal(file.isDirectory(), dirs.includes(name));
+    Assert.equal(file.isFile(), files.includes(name));
+    Assert.equal(file.isSymlink(), links.includes(name));
   }
 }
 

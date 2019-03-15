@@ -17,35 +17,35 @@ const EXPECTED_REQUESTS = [
     causeType: "document",
     causeUri: null,
     // The document load has internal privileged JS code on the stack
-    stack: true
+    stack: true,
   },
   {
     method: "GET",
     url: EXAMPLE_URL + "stylesheet_request",
     causeType: "stylesheet",
     causeUri: CAUSE_URL,
-    stack: false
+    stack: false,
   },
   {
     method: "GET",
     url: EXAMPLE_URL + "img_request",
     causeType: "img",
     causeUri: CAUSE_URL,
-    stack: false
+    stack: false,
   },
   {
     method: "GET",
     url: EXAMPLE_URL + "xhr_request",
     causeType: "xhr",
     causeUri: CAUSE_URL,
-    stack: [{ fn: "performXhrRequest", file: CAUSE_FILE_NAME, line: 24 }]
+    stack: [{ fn: "performXhrRequestCallback", file: CAUSE_FILE_NAME, line: 26 }],
   },
   {
     method: "GET",
     url: EXAMPLE_URL + "fetch_request",
     causeType: "fetch",
     causeUri: CAUSE_URL,
-    stack: [{ fn: "performFetchRequest", file: CAUSE_FILE_NAME, line: 28 }]
+    stack: [{ fn: "performFetchRequest", file: CAUSE_FILE_NAME, line: 31 }],
   },
   {
     method: "GET",
@@ -53,9 +53,10 @@ const EXPECTED_REQUESTS = [
     causeType: "fetch",
     causeUri: CAUSE_URL,
     stack: [
-      { fn: "performPromiseFetchRequest", file: CAUSE_FILE_NAME, line: 40 },
-      { fn: null, file: CAUSE_FILE_NAME, line: 39, asyncCause: "promise callback" },
-    ]
+      { fn: "performPromiseFetchRequestCallback", file: CAUSE_FILE_NAME, line: 37 },
+      { fn: "performPromiseFetchRequest", file: CAUSE_FILE_NAME, line: 36,
+        asyncCause: "promise callback" },
+    ],
   },
   {
     method: "GET",
@@ -63,23 +64,23 @@ const EXPECTED_REQUESTS = [
     causeType: "fetch",
     causeUri: CAUSE_URL,
     stack: [
-      { fn: "performTimeoutFetchRequest", file: CAUSE_FILE_NAME, line: 42 },
-      { fn: "performPromiseFetchRequest", file: CAUSE_FILE_NAME, line: 41,
+      { fn: "performTimeoutFetchRequestCallback2", file: CAUSE_FILE_NAME, line: 44 },
+      { fn: "performTimeoutFetchRequestCallback1", file: CAUSE_FILE_NAME, line: 43,
         asyncCause: "setTimeout handler" },
-    ]
+    ],
   },
   {
     method: "POST",
     url: EXAMPLE_URL + "beacon_request",
     causeType: "beacon",
     causeUri: CAUSE_URL,
-    stack: [{ fn: "performBeaconRequest", file: CAUSE_FILE_NAME, line: 32 }]
+    stack: [{ fn: "performBeaconRequest", file: CAUSE_FILE_NAME, line: 50 }],
   },
 ];
 
-add_task(function* () {
+add_task(async function() {
   // Async stacks aren't on by default in all builds
-  yield SpecialPowers.pushPrefEnv({ set: [["javascript.options.asyncstack", true]] });
+  await SpecialPowers.pushPrefEnv({ set: [["javascript.options.asyncstack", true]] });
 
   // the initNetMonitor function clears the network request list after the
   // page is loaded. That's why we first load a bogus page from SIMPLE_URL,
@@ -87,38 +88,43 @@ add_task(function* () {
   // all the requests the page is making, not only the XHRs.
   // We can't use about:blank here, because initNetMonitor checks that the
   // page has actually made at least one request.
-  let { tab, monitor } = yield initNetMonitor(SIMPLE_URL);
+  const { tab, monitor } = await initNetMonitor(SIMPLE_URL);
 
-  let { document, gStore, windowRequire } = monitor.panelWin;
-  let Actions = windowRequire("devtools/client/netmonitor/actions/index");
-  let {
+  const { document, store, windowRequire, connector } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
+  const {
     getDisplayedRequests,
     getSortedRequests,
-  } = windowRequire("devtools/client/netmonitor/selectors/index");
+  } = windowRequire("devtools/client/netmonitor/src/selectors/index");
 
-  gStore.dispatch(Actions.batchEnable(false));
-  let wait = waitForNetworkEvents(monitor, EXPECTED_REQUESTS.length);
-  tab.linkedBrowser.loadURI(CAUSE_URL);
-  yield wait;
+  store.dispatch(Actions.batchEnable(false));
 
-  is(gStore.getState().requests.requests.size, EXPECTED_REQUESTS.length,
+  const wait = waitForNetworkEvents(monitor, EXPECTED_REQUESTS.length);
+  BrowserTestUtils.loadURI(tab.linkedBrowser, CAUSE_URL);
+  await wait;
+
+  const requests = getSortedRequests(store.getState());
+  await Promise.all(requests.map(requestItem =>
+    connector.requestData(requestItem.id, "stackTrace")));
+
+  is(store.getState().requests.requests.size, EXPECTED_REQUESTS.length,
     "All the page events should be recorded.");
 
   EXPECTED_REQUESTS.forEach((spec, i) => {
-    let { method, url, causeType, causeUri, stack } = spec;
+    const { method, url, causeType, causeUri, stack } = spec;
 
-    let requestItem = getSortedRequests(gStore.getState()).get(i);
+    const requestItem = getSortedRequests(store.getState()).get(i);
     verifyRequestItemTarget(
       document,
-      getDisplayedRequests(gStore.getState()),
+      getDisplayedRequests(store.getState()),
       requestItem,
       method,
       url,
       { cause: { type: causeType, loadingDocumentUri: causeUri } }
     );
 
-    let { stacktrace } = requestItem.cause;
-    let stackLen = stacktrace ? stacktrace.length : 0;
+    const stacktrace = requestItem.stacktrace;
+    const stackLen = stacktrace ? stacktrace.length : 0;
 
     if (stack) {
       ok(stacktrace, `Request #${i} has a stacktrace`);
@@ -146,11 +152,11 @@ add_task(function* () {
   // Sort the requests by cause and check the order
   EventUtils.sendMouseEvent({ type: "click" },
     document.querySelector("#requests-list-cause-button"));
-  let expectedOrder = EXPECTED_REQUESTS.map(r => r.causeType).sort();
+  const expectedOrder = EXPECTED_REQUESTS.map(r => r.causeType).sort();
   expectedOrder.forEach((expectedCause, i) => {
-    const cause = getSortedRequests(gStore.getState()).get(i).cause.type;
+    const cause = getSortedRequests(store.getState()).get(i).cause.type;
     is(cause, expectedCause, `The request #${i} has the expected cause after sorting`);
   });
 
-  yield teardown(monitor);
+  await teardown(monitor);
 });

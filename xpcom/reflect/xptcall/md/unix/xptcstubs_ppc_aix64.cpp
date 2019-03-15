@@ -5,13 +5,12 @@
 /* Implement shared vtbl methods. */
 
 #include "xptcprivate.h"
-#include "xptiprivate.h"
 
 #if defined(AIX)
 
 /*
-        For PPC (AIX & MAC), the first 8 integral and the first 13 f.p. parameters 
-        arrive in a separate chunk of data that has been loaded from the registers. 
+        For PPC (AIX & MAC), the first 8 integral and the first 13 f.p. parameters
+        arrive in a separate chunk of data that has been loaded from the registers.
         The args pointer has been set to the start of the parameters BEYOND the ones
         arriving in registers
 */
@@ -20,14 +19,13 @@ PrepareAndDispatch(nsXPTCStubBase* self, uint64_t methodIndex, uint64_t* args, u
 {
 
 #define PARAM_BUFFER_COUNT     16
-#define PARAM_GPR_COUNT         7  
+#define PARAM_GPR_COUNT         7
 
     nsXPTCMiniVariant paramBuffer[PARAM_BUFFER_COUNT];
     nsXPTCMiniVariant* dispatchParams = nullptr;
     const nsXPTMethodInfo* info = nullptr;
     uint8_t paramCount;
     uint8_t i;
-    nsresult result = NS_ERROR_FAILURE;
 
     NS_ASSERTION(self,"no self");
 
@@ -43,6 +41,8 @@ PrepareAndDispatch(nsXPTCStubBase* self, uint64_t methodIndex, uint64_t* args, u
         dispatchParams = paramBuffer;
     NS_ASSERTION(dispatchParams,"no place for params");
 
+    const uint8_t indexOfJSContext = info->IndexOfJSContext();
+
     uint64_t* ap = args;
     uint32_t iCount = 0;
     uint32_t fpCount = 0;
@@ -51,6 +51,13 @@ PrepareAndDispatch(nsXPTCStubBase* self, uint64_t methodIndex, uint64_t* args, u
         const nsXPTParamInfo& param = info->GetParam(i);
         const nsXPTType& type = param.GetType();
         nsXPTCMiniVariant* dp = &dispatchParams[i];
+
+        if (i == indexOfJSContext) {
+            if (iCount < PARAM_GPR_COUNT)
+                iCount++;
+            else
+                ap++;
+        }
 
         if(param.IsOut() || !type.IsArithmetic())
         {
@@ -150,7 +157,8 @@ PrepareAndDispatch(nsXPTCStubBase* self, uint64_t methodIndex, uint64_t* args, u
         }
     }
 
-    result = self->mOuter->CallMethod((uint16_t)methodIndex,info,dispatchParams);
+    nsresult result = self->mOuter->CallMethod((uint16_t)methodIndex, info,
+                                               dispatchParams);
 
     if(dispatchParams != paramBuffer)
         delete [] dispatchParams;

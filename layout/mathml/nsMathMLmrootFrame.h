@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,58 +15,48 @@
 // <msqrt> and <mroot> -- form a radical
 //
 
-class nsMathMLmrootFrame : public nsMathMLContainerFrame {
-public:
-  NS_DECL_FRAMEARENA_HELPERS
+class nsMathMLmrootFrame final : public nsMathMLContainerFrame {
+ public:
+  NS_DECL_FRAMEARENA_HELPERS(nsMathMLmrootFrame)
 
-  friend nsIFrame* NS_NewMathMLmrootFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
+  friend nsIFrame* NS_NewMathMLmrootFrame(nsIPresShell* aPresShell,
+                                          ComputedStyle* aStyle);
 
-  virtual void
-  SetAdditionalStyleContext(int32_t          aIndex, 
-                            nsStyleContext*  aStyleContext) override;
-  virtual nsStyleContext*
-  GetAdditionalStyleContext(int32_t aIndex) const override;
+  virtual void SetAdditionalComputedStyle(
+      int32_t aIndex, ComputedStyle* aComputedStyle) override;
+  virtual ComputedStyle* GetAdditionalComputedStyle(
+      int32_t aIndex) const override;
 
-  virtual void
-  Init(nsIContent*       aContent,
-       nsContainerFrame* aParent,
-       nsIFrame*         aPrevInFlow) override;
+  virtual void Init(nsIContent* aContent, nsContainerFrame* aParent,
+                    nsIFrame* aPrevInFlow) override;
 
   NS_IMETHOD
   TransmitAutomaticData() override;
 
-  virtual void
-  Reflow(nsPresContext*          aPresContext,
-         ReflowOutput&     aDesiredSize,
-         const ReflowInput& aReflowInput,
-         nsReflowStatus&          aStatus) override;
+  virtual void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
+                      const ReflowInput& aReflowInput,
+                      nsReflowStatus& aStatus) override;
 
-  void
-  GetRadicalXOffsets(nscoord aIndexWidth, nscoord aSqrWidth,
-                     nsFontMetrics* aFontMetrics,
-                     nscoord* aIndexOffset,
-                     nscoord* aSqrOffset);
+  void GetRadicalXOffsets(nscoord aIndexWidth, nscoord aSqrWidth,
+                          nsFontMetrics* aFontMetrics, nscoord* aIndexOffset,
+                          nscoord* aSqrOffset);
 
-  virtual void
-  GetIntrinsicISizeMetrics(nsRenderingContext* aRenderingContext,
-                           ReflowOutput& aDesiredSize) override;
+  virtual void GetIntrinsicISizeMetrics(gfxContext* aRenderingContext,
+                                        ReflowOutput& aDesiredSize) override;
 
-  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                                const nsRect&           aDirtyRect,
+  virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                 const nsDisplayListSet& aLists) override;
 
-  uint8_t
-  ScriptIncrement(nsIFrame* aFrame) override
-  {
+  uint8_t ScriptIncrement(nsIFrame* aFrame) override {
     return (aFrame && aFrame == mFrames.LastChild()) ? 2 : 0;
   }
 
-protected:
-  explicit nsMathMLmrootFrame(nsStyleContext* aContext);
+ protected:
+  explicit nsMathMLmrootFrame(ComputedStyle* aStyle);
   virtual ~nsMathMLmrootFrame();
-  
+
   nsMathMLChar mSqrChar;
-  nsRect       mBarRect;
+  nsRect mBarRect;
 };
 
 #endif /* nsMathMLmrootFrame_h___ */

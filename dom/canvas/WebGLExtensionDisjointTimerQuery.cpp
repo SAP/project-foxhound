@@ -16,114 +16,99 @@
 
 namespace mozilla {
 
-WebGLExtensionDisjointTimerQuery::WebGLExtensionDisjointTimerQuery(WebGLContext* webgl)
-  : WebGLExtensionBase(webgl)
-{
-    MOZ_ASSERT(IsSupported(webgl), "Don't construct extension if unsupported.");
+WebGLExtensionDisjointTimerQuery::WebGLExtensionDisjointTimerQuery(
+    WebGLContext* webgl)
+    : WebGLExtensionBase(webgl) {
+  MOZ_ASSERT(IsSupported(webgl), "Don't construct extension if unsupported.");
 }
 
-WebGLExtensionDisjointTimerQuery::~WebGLExtensionDisjointTimerQuery()
-{
+WebGLExtensionDisjointTimerQuery::~WebGLExtensionDisjointTimerQuery() {}
+
+already_AddRefed<WebGLQuery> WebGLExtensionDisjointTimerQuery::CreateQueryEXT()
+    const {
+  if (mIsLost) return nullptr;
+  const WebGLContext::FuncScope funcScope(*mContext, "createQueryEXT");
+  MOZ_ASSERT(!mContext->IsContextLost());
+
+  return mContext->CreateQuery();
 }
 
-already_AddRefed<WebGLQuery>
-WebGLExtensionDisjointTimerQuery::CreateQueryEXT() const
-{
-    const char funcName[] = "createQueryEXT";
-    if (mIsLost)
-        return nullptr;
+void WebGLExtensionDisjointTimerQuery::DeleteQueryEXT(WebGLQuery* query) const {
+  if (mIsLost) return;
+  const WebGLContext::FuncScope funcScope(*mContext, "deleteQueryEXT");
+  MOZ_ASSERT(!mContext->IsContextLost());
 
-    return mContext->CreateQuery(funcName);
+  mContext->DeleteQuery(query);
 }
 
-void
-WebGLExtensionDisjointTimerQuery::DeleteQueryEXT(WebGLQuery* query) const
-{
-    const char funcName[] = "deleteQueryEXT";
-    if (mIsLost)
-        return;
+bool WebGLExtensionDisjointTimerQuery::IsQueryEXT(
+    const WebGLQuery* query) const {
+  if (mIsLost) return false;
+  const WebGLContext::FuncScope funcScope(*mContext, "isQueryEXT");
+  MOZ_ASSERT(!mContext->IsContextLost());
 
-    mContext->DeleteQuery(query, funcName);
+  return mContext->IsQuery(query);
 }
 
-bool
-WebGLExtensionDisjointTimerQuery::IsQueryEXT(const WebGLQuery* query) const
-{
-    const char funcName[] = "isQueryEXT";
-    if (mIsLost)
-        return false;
+void WebGLExtensionDisjointTimerQuery::BeginQueryEXT(GLenum target,
+                                                     WebGLQuery& query) const {
+  if (mIsLost) return;
+  const WebGLContext::FuncScope funcScope(*mContext, "beginQueryEXT");
+  MOZ_ASSERT(!mContext->IsContextLost());
 
-    return mContext->IsQuery(query, funcName);
+  mContext->BeginQuery(target, query);
 }
 
-void
-WebGLExtensionDisjointTimerQuery::BeginQueryEXT(GLenum target, WebGLQuery& query) const
-{
-    const char funcName[] = "beginQueryEXT";
-    if (mIsLost)
-        return;
+void WebGLExtensionDisjointTimerQuery::EndQueryEXT(GLenum target) const {
+  if (mIsLost) return;
+  const WebGLContext::FuncScope funcScope(*mContext, "endQueryEXT");
+  MOZ_ASSERT(!mContext->IsContextLost());
 
-    mContext->BeginQuery(target, query, funcName);
+  mContext->EndQuery(target);
 }
 
-void
-WebGLExtensionDisjointTimerQuery::EndQueryEXT(GLenum target) const
-{
-    const char funcName[] = "endQueryEXT";
-    if (mIsLost)
-        return;
+void WebGLExtensionDisjointTimerQuery::QueryCounterEXT(WebGLQuery& query,
+                                                       GLenum target) const {
+  if (mIsLost) return;
+  const WebGLContext::FuncScope funcScope(*mContext, "queryCounterEXT");
+  MOZ_ASSERT(!mContext->IsContextLost());
 
-    mContext->EndQuery(target, funcName);
+  if (!mContext->ValidateObject("query", query)) return;
+
+  query.QueryCounter(target);
 }
 
-void
-WebGLExtensionDisjointTimerQuery::QueryCounterEXT(WebGLQuery& query, GLenum target) const
-{
-    const char funcName[] = "queryCounterEXT";
-    if (mIsLost)
-        return;
+void WebGLExtensionDisjointTimerQuery::GetQueryEXT(
+    JSContext* cx, GLenum target, GLenum pname,
+    JS::MutableHandleValue retval) const {
+  retval.setNull();
+  if (mIsLost) return;
+  const WebGLContext::FuncScope funcScope(*mContext, "getQueryEXT");
+  MOZ_ASSERT(!mContext->IsContextLost());
 
-    if (!mContext->ValidateObject(funcName, query))
-        return;
-
-    query.QueryCounter(funcName, target);
+  mContext->GetQuery(cx, target, pname, retval);
 }
 
-void
-WebGLExtensionDisjointTimerQuery::GetQueryEXT(JSContext* cx, GLenum target, GLenum pname,
-                                              JS::MutableHandleValue retval) const
-{
-    const char funcName[] = "getQueryEXT";
-    retval.setNull();
-    if (mIsLost)
-        return;
+void WebGLExtensionDisjointTimerQuery::GetQueryObjectEXT(
+    JSContext* cx, const WebGLQuery& query, GLenum pname,
+    JS::MutableHandleValue retval) const {
+  retval.setNull();
+  if (mIsLost) return;
+  const WebGLContext::FuncScope funcScope(*mContext, "getQueryObjectEXT");
+  MOZ_ASSERT(!mContext->IsContextLost());
 
-    mContext->GetQuery(cx, target, pname, retval, funcName);
+  mContext->GetQueryParameter(cx, query, pname, retval);
 }
 
-void
-WebGLExtensionDisjointTimerQuery::GetQueryObjectEXT(JSContext* cx,
-                                                    const WebGLQuery& query, GLenum pname,
-                                                    JS::MutableHandleValue retval) const
-{
-    const char funcName[] = "getQueryObjectEXT";
-    retval.setNull();
-    if (mIsLost)
-        return;
-
-    mContext->GetQueryParameter(cx, query, pname, retval, funcName);
+bool WebGLExtensionDisjointTimerQuery::IsSupported(const WebGLContext* webgl) {
+  gl::GLContext* gl = webgl->GL();
+  return gl->IsSupported(gl::GLFeature::query_objects) &&
+         gl->IsSupported(gl::GLFeature::get_query_object_i64v) &&
+         gl->IsSupported(
+             gl::GLFeature::query_counter);  // provides GL_TIMESTAMP
 }
 
-bool
-WebGLExtensionDisjointTimerQuery::IsSupported(const WebGLContext* webgl)
-{
-    webgl->MakeContextCurrent();
-    gl::GLContext* gl = webgl->GL();
-    return gl->IsSupported(gl::GLFeature::query_objects) &&
-           gl->IsSupported(gl::GLFeature::get_query_object_i64v) &&
-           gl->IsSupported(gl::GLFeature::query_counter); // provides GL_TIMESTAMP
-}
+IMPL_WEBGL_EXTENSION_GOOP(WebGLExtensionDisjointTimerQuery,
+                          EXT_disjoint_timer_query)
 
-IMPL_WEBGL_EXTENSION_GOOP(WebGLExtensionDisjointTimerQuery, EXT_disjoint_timer_query)
-
-} // namespace mozilla
+}  // namespace mozilla

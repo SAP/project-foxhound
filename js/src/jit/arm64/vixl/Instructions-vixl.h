@@ -309,10 +309,13 @@ class Instruction {
   bool IsCBNZ() const;
   bool IsLDR() const;
   bool IsNOP() const;
+  bool IsCSDB() const;
   bool IsADR() const;
   bool IsADRP() const;
+  bool IsMovz() const;
+  bool IsMovk() const;
   bool IsBranchLinkImm() const;
-  bool IsTargetReachable(Instruction* target) const;
+  bool IsTargetReachable(const Instruction* target) const;
   ptrdiff_t ImmPCRawOffset() const;
   void SetImmPCRawOffset(ptrdiff_t offset);
   void SetBits32(int msb, int lsb, unsigned value);

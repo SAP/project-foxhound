@@ -2,22 +2,22 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-Components.utils.import("resource://gre/modules/ForgetAboutSite.jsm");
+let {ForgetAboutSite} = ChromeUtils.import("resource://gre/modules/ForgetAboutSite.jsm", {});
 
-function waitForClearHistory(aCallback) {
-  let observer = {
-    observe: function(aSubject, aTopic, aData) {
-      Services.obs.removeObserver(this, "browser:purge-domain-data");
-      setTimeout(aCallback, 0);
-    }
-  };
-  Services.obs.addObserver(observer, "browser:purge-domain-data", false);
+function promiseClearHistory() {
+  return new Promise(resolve => {
+    let observer = {
+      observe(aSubject, aTopic, aData) {
+        Services.obs.removeObserver(this, "browser:purge-session-history-for-domain");
+        resolve();
+      },
+    };
+    Services.obs.addObserver(observer, "browser:purge-session-history-for-domain");
+  });
 }
 
-function test() {
+add_task(async function() {
   /** Test for Bug 464199 **/
-
-  waitForExplicitFinish();
 
   const REMEMBER = Date.now(), FORGET = Math.random();
   let test_state = { windows: [{ "tabs": [{ "entries": [] }], _closedTabs: [
@@ -32,18 +32,18 @@ function test() {
     { state: { entries: [{ url: "http://www.example.org/frameset",
                            children: [
                              { url: "http://www.example.org/frame" },
-                             { url: "http://www.example.org:8080/frame2" }
+                             { url: "http://www.example.org:8080/frame2" },
                            ] }] }, title: REMEMBER },
     { state: { entries: [{ url: "http://www.example.org/frameset",
                            children: [
                              { url: "http://www.example.org/frame" },
-                             { url: "http://www.example.net/frame" }
+                             { url: "http://www.example.net/frame" },
                            ] }] }, title: FORGET },
     { state: { entries: [{ url: "http://www.example.org/form",
-                           formdata: { id: { "url": "http://www.example.net/" } }
+                           formdata: { id: { "url": "http://www.example.net/" } },
                          }] }, title: REMEMBER },
     { state: { entries: [{ url: "http://www.example.org/form" }],
-               extData: { "setTabValue": "http://example.net:80" } }, title: REMEMBER }
+               extData: { "setCustomTabValue": "http://example.net:80" } }, title: REMEMBER },
   ] }] };
   let remember_count = 5;
 
@@ -53,33 +53,32 @@ function test() {
 
   // open a window and add the above closed tab list
   let newWin = openDialog(location, "", "chrome,all,dialog=no");
-  promiseWindowLoaded(newWin).then(() => {
-    gPrefService.setIntPref("browser.sessionstore.max_tabs_undo",
+  await promiseWindowLoaded(newWin);
+  Services.prefs.setIntPref("browser.sessionstore.max_tabs_undo",
                             test_state.windows[0]._closedTabs.length);
-    ss.setWindowState(newWin, JSON.stringify(test_state), true);
+  ss.setWindowState(newWin, JSON.stringify(test_state), true);
+  await promiseWindowRestored(newWin);
 
-    let closedTabs = JSON.parse(ss.getClosedTabData(newWin));
-    is(closedTabs.length, test_state.windows[0]._closedTabs.length,
-       "Closed tab list has the expected length");
-    is(countByTitle(closedTabs, FORGET),
-       test_state.windows[0]._closedTabs.length - remember_count,
-       "The correct amout of tabs are to be forgotten");
-    is(countByTitle(closedTabs, REMEMBER), remember_count,
-       "Everything is set up.");
+  let closedTabs = JSON.parse(ss.getClosedTabData(newWin));
+  is(closedTabs.length, test_state.windows[0]._closedTabs.length,
+     "Closed tab list has the expected length");
+  is(countByTitle(closedTabs, FORGET),
+     test_state.windows[0]._closedTabs.length - remember_count,
+     "The correct amout of tabs are to be forgotten");
+  is(countByTitle(closedTabs, REMEMBER), remember_count,
+     "Everything is set up.");
 
-    ForgetAboutSite.removeDataFromDomain("example.net");
-    waitForClearHistory(function() {
-        closedTabs = JSON.parse(ss.getClosedTabData(newWin));
-        is(closedTabs.length, remember_count,
-           "The correct amout of tabs was removed");
-        is(countByTitle(closedTabs, FORGET), 0,
-           "All tabs to be forgotten were indeed removed");
-        is(countByTitle(closedTabs, REMEMBER), remember_count,
-           "... and tabs to be remembered weren't.");
-
-        // clean up
-        gPrefService.clearUserPref("browser.sessionstore.max_tabs_undo");
-        BrowserTestUtils.closeWindow(newWin).then(finish);
-    });
-  });
-}
+  let promise = promiseClearHistory();
+  await ForgetAboutSite.removeDataFromDomain("example.net");
+  await promise;
+  closedTabs = JSON.parse(ss.getClosedTabData(newWin));
+  is(closedTabs.length, remember_count,
+     "The correct amout of tabs was removed");
+  is(countByTitle(closedTabs, FORGET), 0,
+     "All tabs to be forgotten were indeed removed");
+  is(countByTitle(closedTabs, REMEMBER), remember_count,
+     "... and tabs to be remembered weren't.");
+  // clean up
+  Services.prefs.clearUserPref("browser.sessionstore.max_tabs_undo");
+  await BrowserTestUtils.closeWindow(newWin);
+});

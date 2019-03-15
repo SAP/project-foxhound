@@ -4,99 +4,45 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef MOZ_THREAD_INFO_H
-#define MOZ_THREAD_INFO_H
+#ifndef ThreadInfo_h
+#define ThreadInfo_h
 
-#include "mozilla/UniquePtrExtensions.h"
+#include "mozilla/TimeStamp.h"
 
-#include "ProfileBuffer.h"
-#include "platform.h"
+#include "nsString.h"
 
-class ThreadInfo {
+// This class contains information about a thread which needs to be stored
+// across restarts of the profiler and which can be useful even after the
+// thread has stopped running.
+// It uses threadsafe refcounting and only contains immutable data.
+class ThreadInfo final {
  public:
-  ThreadInfo(const char* aName, int aThreadId, bool aIsMainThread, PseudoStack* aPseudoStack, void* aStackTop);
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ThreadInfo)
 
-  virtual ~ThreadInfo();
-
-  const char* Name() const { return mName.get(); }
-  int ThreadId() const { return mThreadId; }
-
-  bool IsMainThread() const { return mIsMainThread; }
-  PseudoStack* Stack() const { return mPseudoStack; }
-
-  void SetHasProfile() { mHasProfile = true; }
-
-  PlatformData* GetPlatformData() const { return mPlatformData.get(); }
-  void* StackTop() const { return mStackTop; }
-
-  virtual void SetPendingDelete();
-  bool IsPendingDelete() const { return mPendingDelete; }
-
-  bool CanInvokeJS() const;
-
-  size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
-
- private:
-  mozilla::UniqueFreePtr<char> mName;
-  int mThreadId;
-  const bool mIsMainThread;
-  PseudoStack* mPseudoStack;
-  UniquePlatformData mPlatformData;
-  void* mStackTop;
-
-  // May be null for the main thread if the profiler was started during startup.
-  nsCOMPtr<nsIThread> mThread;
-
-  bool mPendingDelete;
-
-  //
-  // The following code is only used for threads that are being profiled, i.e.
-  // for which SetHasProfile() has been called.
-  //
-
-public:
-  bool HasProfile() { return mHasProfile; }
-
-  mozilla::Mutex& GetMutex();
-  void StreamJSON(ProfileBuffer* aBuffer, SpliceableJSONWriter& aWriter,
-                  const mozilla::TimeStamp& aStartTime, double aSinceTime);
-
-  // Call this method when the JS entries inside the buffer are about to
-  // become invalid, i.e., just before JS shutdown.
-  void FlushSamplesAndMarkers(ProfileBuffer* aBuffer,
-                              const mozilla::TimeStamp& aStartTime);
-
-  ThreadResponsiveness* GetThreadResponsiveness() { return &mRespInfo; }
-
-  void UpdateThreadResponsiveness() {
-    mRespInfo.Update(mIsMainThread, mThread);
+  ThreadInfo(
+      const char* aName, int aThreadId, bool aIsMainThread,
+      const mozilla::TimeStamp& aRegisterTime = mozilla::TimeStamp::Now())
+      : mName(aName),
+        mRegisterTime(aRegisterTime),
+        mThreadId(aThreadId),
+        mIsMainThread(aIsMainThread) {
+    // I don't know if we can assert this. But we should warn.
+    MOZ_ASSERT(aThreadId >= 0, "native thread ID is < 0");
+    MOZ_ASSERT(aThreadId <= INT32_MAX, "native thread ID is > INT32_MAX");
   }
 
-  void StreamSamplesAndMarkers(ProfileBuffer* aBuffer,
-                               SpliceableJSONWriter& aWriter,
-                               const mozilla::TimeStamp& aStartTime,
-                               double aSinceTime,
-                               UniqueStacks& aUniqueStacks);
+  const char* Name() const { return mName.get(); }
+  mozilla::TimeStamp RegisterTime() const { return mRegisterTime; }
+  int ThreadId() const { return mThreadId; }
+  bool IsMainThread() const { return mIsMainThread; }
 
-private:
-  FRIEND_TEST(ThreadProfile, InsertOneTag);
-  FRIEND_TEST(ThreadProfile, InsertOneTagWithTinyBuffer);
-  FRIEND_TEST(ThreadProfile, InsertTagsNoWrap);
-  FRIEND_TEST(ThreadProfile, InsertTagsWrap);
-  FRIEND_TEST(ThreadProfile, MemoryMeasure);
+ private:
+  ~ThreadInfo() {}
 
-  bool mHasProfile;
-
-  // JS frames in the buffer may require a live JSRuntime to stream (e.g.,
-  // stringifying JIT frames). In the case of JSRuntime destruction,
-  // FlushSamplesAndMarkers should be called to save them. These are spliced
-  // into the final stream.
-  mozilla::UniquePtr<char[]> mSavedStreamedSamples;
-  mozilla::UniquePtr<char[]> mSavedStreamedMarkers;
-  mozilla::Maybe<UniqueStacks> mUniqueStacks;
-
-  mozilla::UniquePtr<mozilla::Mutex> mMutex;
-  ThreadResponsiveness mRespInfo;
+  const nsCString mName;
+  const mozilla::TimeStamp mRegisterTime;
+  const int mThreadId;
+  const bool mIsMainThread;
 };
 
-#endif
+#endif  // ThreadInfo_h

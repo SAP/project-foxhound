@@ -28,13 +28,20 @@
 // Assertions and debug printing, defined here instead of in the header above
 // to make `assert` invisible to C++.
 #ifdef DEBUG
-#define assert(b, info) if (!(b)) AssertionFailed(__FILE__ + ":" + __LINE__ + ": " + info)
-#define dbg(msg) DumpMessage(callFunction(std_Array_pop, \
-                                          StringSplitString(__FILE__, '/')) \
-                             + '#' + __LINE__ + ': ' + msg)
+#define assert(b, info) \
+    do { \
+        if (!(b)) \
+            AssertionFailed(__FILE__ + ":" + __LINE__ + ": " + info) \
+    } while (false)
+#define dbg(msg) \
+    do { \
+        DumpMessage(callFunction(std_Array_pop, \
+                                 StringSplitString(__FILE__, '/')) + \
+                    '#' + __LINE__ + ': ' + msg) \
+    } while (false)
 #else
-#define assert(b, info) // Elided assertion.
-#define dbg(msg) // Elided debugging output.
+#define assert(b, info) ; // Elided assertion.
+#define dbg(msg) ; // Elided debugging output.
 #endif
 
 // All C++-implemented standard builtins library functions used in self-hosted
@@ -46,10 +53,6 @@
 //
 // Symbol is a bare constructor without properties or methods.
 var std_Symbol = Symbol;
-// WeakMap is a bare constructor without properties or methods.
-var std_WeakMap = WeakMap;
-// StopIteration is a bare constructor without properties or methods.
-var std_StopIteration = StopIteration;
 
 
 /********** List specification type **********/
@@ -74,12 +77,6 @@ MakeConstructible(Record, {});
 /********** Abstract operations defined in ECMAScript Language Specification **********/
 
 
-/* Spec: ECMAScript Language Specification, 5.1 edition, 8.12.6 and 11.8.7 */
-function HasProperty(o, p) {
-    return p in o;
-}
-
-
 /* Spec: ECMAScript Language Specification, 5.1 edition, 9.2 and 11.4.9 */
 function ToBoolean(v) {
     return !!v;
@@ -100,16 +97,21 @@ function RequireObjectCoercible(v) {
 
 /* Spec: ECMAScript Draft, 6 edition May 22, 2014, 7.1.15 */
 function ToLength(v) {
+    // Step 1.
     v = ToInteger(v);
 
-    if (v <= 0)
-        return 0;
+    // Step 2.
+    // Use max(v, 0) here, because it's easier to optimize in Ion.
+    // This is correct even for -0.
+    v = std_Math_max(v, 0);
 
+    // Step 3.
     // Math.pow(2, 53) - 1 = 0x1fffffffffffff
     return std_Math_min(v, 0x1fffffffffffff);
 }
 
-/* Spec: ECMAScript Draft, 6th edition Oct 14, 2014, 7.2.4 */
+// ES2017 draft rev aebf014403a3e641fb1622aec47c40f051943527
+// 7.2.10 SameValueZero ( x, y )
 function SameValueZero(x, y) {
     return x === y || (x !== x && y !== y);
 }
@@ -140,22 +142,8 @@ function IsPropertyKey(argument) {
     return type === "string" || type === "symbol";
 }
 
-/* Spec: ECMAScript Draft, 6th edition Dec 24, 2014, 7.4.1 */
-function GetIterator(obj, method) {
-    // Steps 1-2.
-    if (arguments.length === 1)
-        method = GetMethod(obj, std_iterator);
-
-    // Steps 3-4.
-    var iterator = callContentFunction(method, obj);
-
-    // Step 5.
-    if (!IsObject(iterator))
-        ThrowTypeError(JSMSG_NOT_ITERATOR, ToString(iterator));
-
-    // Step 6.
-    return iterator;
-}
+#define TO_PROPERTY_KEY(name) \
+(typeof name !== "string" && typeof name !== "number" && typeof name !== "symbol" ? ToPropertyKey(name) : name)
 
 var _builtinCtorsCache = {__proto__: null};
 
@@ -222,9 +210,83 @@ function GetInternalError(msg) {
 // To be used when a function is required but calling it shouldn't do anything.
 function NullFunction() {}
 
+// ES2019 draft rev 4c2df13f4194057f09b920ee88712e5a70b1a556
+// 7.3.23 CopyDataProperties (target, source, excludedItems)
+function CopyDataProperties(target, source, excludedItems) {
+    // Step 1.
+    assert(IsObject(target), "target is an object");
+
+    // Step 2.
+    assert(IsObject(excludedItems), "excludedItems is an object");
+
+    // Steps 3 and 7.
+    if (source === undefined || source === null)
+        return;
+
+    // Step 4.
+    var from = ToObject(source);
+
+    // Step 5.
+    var keys = CopyDataPropertiesOrGetOwnKeys(target, from, excludedItems);
+
+    // Return if we copied all properties in native code.
+    if (keys === null)
+        return;
+
+    // Step 6.
+    for (var index = 0; index < keys.length; index++) {
+        var key = keys[index];
+
+        // We abbreviate this by calling propertyIsEnumerable which is faster
+        // and returns false for not defined properties.
+        if (!hasOwn(key, excludedItems) &&
+            callFunction(std_Object_propertyIsEnumerable, from, key))
+        {
+            _DefineDataProperty(target, key, from[key]);
+        }
+    }
+
+    // Step 7 (Return).
+}
+
+// ES2019 draft rev 4c2df13f4194057f09b920ee88712e5a70b1a556
+// 7.3.23 CopyDataProperties (target, source, excludedItems)
+function CopyDataPropertiesUnfiltered(target, source) {
+    // Step 1.
+    assert(IsObject(target), "target is an object");
+
+    // Step 2 (Not applicable).
+
+    // Steps 3 and 7.
+    if (source === undefined || source === null)
+        return;
+
+    // Step 4.
+    var from = ToObject(source);
+
+    // Step 5.
+    var keys = CopyDataPropertiesOrGetOwnKeys(target, from, null);
+
+    // Return if we copied all properties in native code.
+    if (keys === null)
+        return;
+
+    // Step 6.
+    for (var index = 0; index < keys.length; index++) {
+        var key = keys[index];
+
+        // We abbreviate this by calling propertyIsEnumerable which is faster
+        // and returns false for not defined properties.
+        if (callFunction(std_Object_propertyIsEnumerable, from, key))
+            _DefineDataProperty(target, key, from[key]);
+    }
+
+    // Step 7 (Return).
+}
+
 /*************************************** Testing functions ***************************************/
 function outer() {
     return function inner() {
         return "foo";
-    }
+    };
 }

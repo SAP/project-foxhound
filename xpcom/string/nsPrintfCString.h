@@ -20,23 +20,17 @@
  *
  * See also nsCString::AppendPrintf().
  */
-class nsPrintfCString : public nsFixedCString
-{
+class nsPrintfCString : public nsAutoCStringN<16> {
   typedef nsCString string_type;
 
-public:
-  explicit nsPrintfCString(const char_type* aFormat, ...) MOZ_FORMAT_PRINTF(2, 3)
-    : nsFixedCString(mLocalBuffer, kLocalBufferSize, 0)
-  {
+ public:
+  explicit nsPrintfCString(const char_type* aFormat, ...)
+      MOZ_FORMAT_PRINTF(2, 3) {
     va_list ap;
     va_start(ap, aFormat);
     AppendPrintf(aFormat, ap);
     va_end(ap);
   }
-
-private:
-  static const uint32_t kLocalBufferSize = 16;
-  char_type mLocalBuffer[kLocalBufferSize];
 };
 
-#endif // !defined(nsPrintfCString_h___)
+#endif  // !defined(nsPrintfCString_h___)

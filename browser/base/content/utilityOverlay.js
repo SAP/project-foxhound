@@ -4,27 +4,33 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // Services = object with smart getters for common XPCOM services
-Components.utils.import("resource://gre/modules/AppConstants.jsm");
-Components.utils.import("resource://gre/modules/ContextualIdentityService.jsm");
-Components.utils.import("resource://gre/modules/Services.jsm");
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-Components.utils.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
-Components.utils.import("resource:///modules/RecentWindow.jsm");
+ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "ShellService",
-                                  "resource:///modules/ShellService.jsm");
+ChromeUtils.defineModuleGetter(this, "PrivateBrowsingUtils",
+                               "resource://gre/modules/PrivateBrowsingUtils.jsm");
+
+XPCOMUtils.defineLazyModuleGetters(this, {
+  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
+  ContextualIdentityService: "resource://gre/modules/ContextualIdentityService.jsm",
+  ShellService: "resource:///modules/ShellService.jsm",
+});
 
 XPCOMUtils.defineLazyServiceGetter(this, "aboutNewTabService",
                                    "@mozilla.org/browser/aboutnewtab-service;1",
                                    "nsIAboutNewTabService");
 
-this.__defineGetter__("BROWSER_NEW_TAB_URL", () => {
-  if (PrivateBrowsingUtils.isWindowPrivate(window) &&
-      !PrivateBrowsingUtils.permanentPrivateBrowsing &&
-      !aboutNewTabService.overridden) {
-    return "about:privatebrowsing";
-  }
-  return aboutNewTabService.newTabURL;
+Object.defineProperty(this, "BROWSER_NEW_TAB_URL", {
+  enumerable: true,
+  get() {
+    if (PrivateBrowsingUtils.isWindowPrivate(window) &&
+        !PrivateBrowsingUtils.permanentPrivateBrowsing &&
+        !aboutNewTabService.overridden) {
+      return "about:privatebrowsing";
+    }
+    return aboutNewTabService.newTabURL;
+  },
 });
 
 var TAB_DROP_TYPE = "application/x-moz-tabbrowser-tab";
@@ -35,11 +41,10 @@ var gBidiUI = false;
  * Determines whether the given url is considered a special URL for new tabs.
  */
 function isBlankPageURL(aURL) {
-  return aURL == "about:blank" || aURL == BROWSER_NEW_TAB_URL;
-}
-
-function getBrowserURL() {
-  return "chrome://browser/content/browser.xul";
+  return aURL == "about:blank" ||
+         aURL == "about:home" ||
+         aURL == "about:welcome" ||
+         aURL == BROWSER_NEW_TAB_URL;
 }
 
 function getTopWin(skipPopups) {
@@ -50,28 +55,34 @@ function getTopWin(skipPopups) {
       (!skipPopups || top.toolbar.visible))
     return top;
 
-  let isPrivate = PrivateBrowsingUtils.isWindowPrivate(window);
-  return RecentWindow.getMostRecentBrowserWindow({private: isPrivate,
-                                                  allowPopups: !skipPopups});
+  return BrowserWindowTracker.getTopWindow({
+    private: PrivateBrowsingUtils.isWindowPrivate(window),
+    allowPopups: !skipPopups,
+  });
 }
 
-function openTopWin(url) {
-  /* deprecated */
-  openUILinkIn(url, "current");
+function doGetProtocolFlags(aURI) {
+  let handler = Services.io.getProtocolHandler(aURI.scheme);
+  // see DoGetProtocolFlags in nsIProtocolHandler.idl
+  return handler instanceof Ci.nsIProtocolHandlerWithDynamicFlags ?
+         handler.QueryInterface(Ci.nsIProtocolHandlerWithDynamicFlags).getFlagsForURI(aURI) :
+         handler.protocolFlags;
 }
 
-function getBoolPref(prefname, def) {
-  try {
-    return Services.prefs.getBoolPref(prefname);
-  } catch (er) {
-    return def;
-  }
-}
-
-/* openUILink handles clicks on UI elements that cause URLs to load.
+/**
+ * openUILink handles clicks on UI elements that cause URLs to load.
  *
  * As the third argument, you may pass an object with the same properties as
  * accepted by openUILinkIn, plus "ignoreButton" and "ignoreAlt".
+ *
+ * @param url {string}
+ * @param event {Event | Object} Event or JSON object representing an Event
+ * @param {Boolean | Object} aIgnoreButton
+ * @param {Boolean} aIgnoreButton
+ * @param {Boolean} aIgnoreAlt
+ * @param {Boolean} aAllowThirdPartyFixup
+ * @param {Object} aPostData
+ * @param {nsIURI} aReferrerURI
  */
 function openUILink(url, event, aIgnoreButton, aIgnoreAlt, aAllowThirdPartyFixup,
                     aPostData, aReferrerURI) {
@@ -90,9 +101,13 @@ function openUILink(url, event, aIgnoreButton, aIgnoreAlt, aAllowThirdPartyFixup
       allowThirdPartyFixup: aAllowThirdPartyFixup,
       postData: aPostData,
       referrerURI: aReferrerURI,
-      referrerPolicy: Components.interfaces.nsIHttpChannel.REFERRER_POLICY_UNSET,
+      referrerPolicy: Ci.nsIHttpChannel.REFERRER_POLICY_UNSET,
       initiatingDoc: event ? event.target.ownerDocument : null,
     };
+  }
+
+  if (!params.triggeringPrincipal) {
+    throw new Error("Required argument triggeringPrincipal missing within openUILink");
   }
 
   let where = whereToOpenLink(event, aIgnoreButton, aIgnoreAlt);
@@ -100,7 +115,8 @@ function openUILink(url, event, aIgnoreButton, aIgnoreAlt, aAllowThirdPartyFixup
 }
 
 
-/* whereToOpenLink() looks at an event to decide where to open a link.
+/**
+ * whereToOpenLink() looks at an event to decide where to open a link.
  *
  * The event may be a mouse event (click, double-click, middle-click) or keypress event (enter).
  *
@@ -118,6 +134,11 @@ function openUILink(url, event, aIgnoreButton, aIgnoreAlt, aAllowThirdPartyFixup
  * - Alt is hard to use in context menus, because pressing Alt closes the menu.
  * - Alt can't be used on the bookmarks toolbar because Alt is used for "treat this as something draggable".
  * - The button is ignored for the middle-click-paste-URL feature, since it's always a middle-click.
+ *
+ * @param e {Event|Object} Event or JSON Object
+ * @param ignoreButton {Boolean}
+ * @param ignoreAlt {Boolean}
+ * @returns {"current" | "tabshifted" | "tab" | "save" | "window"}
  */
 function whereToOpenLink(e, ignoreButton, ignoreAlt) {
   // This method must treat a null event like a left click without modifier keys (i.e.
@@ -133,7 +154,7 @@ function whereToOpenLink(e, ignoreButton, ignoreAlt) {
 
   // ignoreButton allows "middle-click paste" to use function without always opening in a new window.
   var middle = !ignoreButton && e.button == 1;
-  var middleUsesTabs = getBoolPref("browser.tabs.opentabfor.middleclick", true);
+  var middleUsesTabs = Services.prefs.getBoolPref("browser.tabs.opentabfor.middleclick", true);
 
   // Don't do anything special with right-mouse clicks.  They're probably clicks on context menu items.
 
@@ -141,13 +162,52 @@ function whereToOpenLink(e, ignoreButton, ignoreAlt) {
   if (metaKey || (middle && middleUsesTabs))
     return shift ? "tabshifted" : "tab";
 
-  if (alt && getBoolPref("browser.altClickSave", false))
+  if (alt && Services.prefs.getBoolPref("browser.altClickSave", false))
     return "save";
 
   if (shift || (middle && !middleUsesTabs))
     return "window";
 
   return "current";
+}
+
+/* openTrustedLinkIn will attempt to open the given URI using the SystemPrincipal
+ * as the trigeringPrincipal, unless a more specific Principal is provided.
+ *
+ * See openUILinkIn for a discussion of parameters
+ */
+function openTrustedLinkIn(url, where, aParams) {
+  var params = aParams;
+
+  if (!params) {
+    params = {};
+  }
+
+  if (!params.triggeringPrincipal) {
+    params.triggeringPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
+  }
+
+  openUILinkIn(url, where, params);
+}
+
+/* openWebLinkIn will attempt to open the given URI using the NullPrincipal
+ * as the triggeringPrincipal, unless a more specific Principal is provided.
+ *
+ * See openUILinkIn for a discussion of parameters
+ */
+function openWebLinkIn(url, where, params) {
+  if (!params) {
+    params = {};
+  }
+
+  if (!params.triggeringPrincipal) {
+    params.triggeringPrincipal = Services.scriptSecurityManager.createNullPrincipal({});
+  }
+  if (Services.scriptSecurityManager.isSystemPrincipal(params.triggeringPrincipal)) {
+    throw new Error("System principal should never be passed into openWebLinkIn()");
+  }
+
+  openUILinkIn(url, where, params);
 }
 
 /* openUILinkIn opens a URL in a place specified by the parameter |where|.
@@ -159,7 +219,17 @@ function whereToOpenLink(e, ignoreButton, ignoreAlt) {
  *  "window"      new window
  *  "save"        save to disk (with no filename hint!)
  *
- * aAllowThirdPartyFixup controls whether third party services such as Google's
+ * DEPRECATION WARNING:
+ * USE        -> openTrustedLinkIn(url, where, aParams) if the source is always
+ *                     a user event on a user- or product-specified URL (as
+ *                     opposed to URLs provided by a webpage)
+ * USE        -> openWebLinkIn(url, where, aParams) if the URI should be loaded
+ *                     with a specific triggeringPrincipal, for instance, if
+ *                     the url was supplied by web content.
+ * DEPRECATED -> openUILinkIn(url, where, AllowThirdPartyFixup, aPostData, ...)
+ *
+ *
+ * allowThirdPartyFixup controls whether third party services such as Google's
  * I Feel Lucky are allowed to interpret this URL. This parameter may be
  * undefined, which is treated as false.
  *
@@ -180,13 +250,9 @@ function openUILinkIn(url, where, aAllowThirdPartyFixup, aPostData, aReferrerURI
 
   if (arguments.length == 3 && typeof arguments[2] == "object") {
     params = aAllowThirdPartyFixup;
-  } else {
-    params = {
-      allowThirdPartyFixup: aAllowThirdPartyFixup,
-      postData: aPostData,
-      referrerURI: aReferrerURI,
-      referrerPolicy: Components.interfaces.nsIHttpChannel.REFERRER_POLICY_UNSET,
-    };
+  }
+  if (!params || !params.triggeringPrincipal) {
+    throw new Error("Required argument triggeringPrincipal missing within openUILinkIn");
   }
 
   params.fromChrome = true;
@@ -194,11 +260,10 @@ function openUILinkIn(url, where, aAllowThirdPartyFixup, aPostData, aReferrerURI
   openLinkIn(url, where, params);
 }
 
+/* eslint-disable complexity */
 function openLinkIn(url, where, params) {
   if (!where || !url)
     return;
-  const Cc = Components.classes;
-  const Ci = Components.interfaces;
 
   var aFromChrome           = params.fromChrome;
   var aAllowThirdPartyFixup = params.allowThirdPartyFixup;
@@ -208,9 +273,10 @@ function openLinkIn(url, where, params) {
   var aReferrerPolicy       = ("referrerPolicy" in params ?
       params.referrerPolicy : Ci.nsIHttpChannel.REFERRER_POLICY_UNSET);
   var aRelatedToCurrent     = params.relatedToCurrent;
+  var aAllowInheritPrincipal = !!params.allowInheritPrincipal;
   var aAllowMixedContent    = params.allowMixedContent;
+  var aForceAllowDataURI    = params.forceAllowDataURI;
   var aInBackground         = params.inBackground;
-  var aDisallowInheritPrincipal = params.disallowInheritPrincipal;
   var aInitiatingDoc        = params.initiatingDoc;
   var aIsPrivate            = params.private;
   var aSkipTabAnimation     = params.skipTabAnimation;
@@ -220,18 +286,25 @@ function openLinkIn(url, where, params) {
   var aUserContextId        = params.userContextId;
   var aIndicateErrorPageLoad = params.indicateErrorPageLoad;
   var aPrincipal            = params.originPrincipal;
+  var aTriggeringPrincipal  = params.triggeringPrincipal;
   var aForceAboutBlankViewerInCurrent =
       params.forceAboutBlankViewerInCurrent;
+  var aResolveOnNewTabCreated = params.resolveOnNewTabCreated;
+
+  if (!aTriggeringPrincipal) {
+    throw new Error("Must load with a triggering Principal");
+  }
 
   if (where == "save") {
     // TODO(1073187): propagate referrerPolicy.
 
     // ContentClick.jsm passes isContentWindowPrivate for saveURL instead of passing a CPOW initiatingDoc
     if ("isContentWindowPrivate" in params) {
-      saveURL(url, null, null, true, true, aNoReferrer ? null : aReferrerURI, null, params.isContentWindowPrivate);
+      saveURL(url, null, null, true, true, aNoReferrer ? null : aReferrerURI,
+              null, params.isContentWindowPrivate, aPrincipal);
     } else {
       if (!aInitiatingDoc) {
-        Components.utils.reportError("openUILink/openLinkIn was called with " +
+        Cu.reportError("openUILink/openLinkIn was called with " +
           "where == 'save' but without initiatingDoc.  See bug 814264.");
         return;
       }
@@ -260,15 +333,28 @@ function openLinkIn(url, where, params) {
   // Please note we do not have to do that for SystemPrincipals and we
   // can not do it for NullPrincipals since NullPrincipals are only
   // identical if they actually are the same object (See Bug: 1346759)
-  if (aPrincipal && aPrincipal.isCodebasePrincipal) {
-    let attrs = {
-      userContextId: aUserContextId,
-      privateBrowsingId: aIsPrivate || (w && PrivateBrowsingUtils.isWindowPrivate(w)),
-    };
-    aPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(aPrincipal.URI, attrs);
+  function useOAForPrincipal(principal) {
+    if (principal && principal.isCodebasePrincipal) {
+      let attrs = {
+        userContextId: aUserContextId,
+        privateBrowsingId: aIsPrivate || (w && PrivateBrowsingUtils.isWindowPrivate(w)),
+      };
+      return Services.scriptSecurityManager.principalWithOA(principal, attrs);
+    }
+    return principal;
   }
+  aPrincipal = useOAForPrincipal(aPrincipal);
+  aTriggeringPrincipal = useOAForPrincipal(aTriggeringPrincipal);
 
   if (!w || where == "window") {
+    let features = "chrome,dialog=no,all";
+    if (aIsPrivate) {
+      features += ",private";
+      // To prevent regular browsing data from leaking to private browsing sites,
+      // strip the referrer when opening a new private window. (See Bug: 1409226)
+      aNoReferrer = true;
+    }
+
     // This propagates to window.arguments.
     var sa = Cc["@mozilla.org/array;1"].
              createInstance(Ci.nsIMutableArray);
@@ -303,23 +389,19 @@ function openLinkIn(url, where, params) {
                                  createInstance(Ci.nsISupportsPRUint32);
     userContextIdSupports.data = aUserContextId;
 
-    sa.appendElement(wuri, /* weak =*/ false);
-    sa.appendElement(charset, /* weak =*/ false);
-    sa.appendElement(referrerURISupports, /* weak =*/ false);
-    sa.appendElement(aPostData, /* weak =*/ false);
-    sa.appendElement(allowThirdPartyFixupSupports, /* weak =*/ false);
-    sa.appendElement(referrerPolicySupports, /* weak =*/ false);
-    sa.appendElement(userContextIdSupports, /* weak =*/ false);
-    sa.appendElement(aPrincipal, /* weak =*/ false);
-
-    let features = "chrome,dialog=no,all";
-    if (aIsPrivate) {
-      features += ",private";
-    }
+    sa.appendElement(wuri);
+    sa.appendElement(charset);
+    sa.appendElement(referrerURISupports);
+    sa.appendElement(aPostData);
+    sa.appendElement(allowThirdPartyFixupSupports);
+    sa.appendElement(referrerPolicySupports);
+    sa.appendElement(userContextIdSupports);
+    sa.appendElement(aPrincipal);
+    sa.appendElement(aTriggeringPrincipal);
 
     const sourceWindow = (w || window);
     let win;
-    if (params.frameOuterWindowID && sourceWindow) {
+    if (params.frameOuterWindowID != undefined && sourceWindow) {
       // Only notify it as a WebExtensions' webNavigation.onCreatedNavigationTarget
       // event if it contains the expected frameOuterWindowID params.
       // (e.g. we should not notify it as a onCreatedNavigationTarget if the user is
@@ -335,12 +417,12 @@ function openLinkIn(url, where, params) {
               sourceTabBrowser,
               sourceFrameOuterWindowID: params.frameOuterWindowID,
             },
-          }, "webNavigation-createdNavigationTarget", null);
+          }, "webNavigation-createdNavigationTarget");
         }
       };
-      Services.obs.addObserver(delayedStartupObserver, "browser-delayed-startup-finished", false);
+      Services.obs.addObserver(delayedStartupObserver, "browser-delayed-startup-finished");
     }
-    win = Services.ww.openWindow(sourceWindow, getBrowserURL(), null, features, sa);
+    win = Services.ww.openWindow(sourceWindow, AppConstants.BROWSER_CHROME_URL, null, features, sa);
     return;
   }
 
@@ -381,9 +463,11 @@ function openLinkIn(url, where, params) {
     loadInBackground = aInBackground;
     if (loadInBackground == null) {
       loadInBackground =
-        aFromChrome ? false : getBoolPref("browser.tabs.loadInBackground");
+        aFromChrome ? false : Services.prefs.getBoolPref("browser.tabs.loadInBackground");
     }
   }
+
+  let focusUrlBar = false;
 
   switch (where) {
   case "current":
@@ -393,12 +477,10 @@ function openLinkIn(url, where, params) {
       flags |= Ci.nsIWebNavigation.LOAD_FLAGS_ALLOW_THIRD_PARTY_FIXUP;
       flags |= Ci.nsIWebNavigation.LOAD_FLAGS_FIXUP_SCHEME_TYPOS;
     }
-
     // LOAD_FLAGS_DISALLOW_INHERIT_PRINCIPAL isn't supported for javascript URIs,
     // i.e. it causes them not to load at all. Callers should strip
-    // "javascript:" from pasted strings to protect users from malicious URIs
-    // (see stripUnsafeProtocolOnPaste).
-    if (aDisallowInheritPrincipal && !(uriObj && uriObj.schemeIs("javascript"))) {
+    // "javascript:" from pasted strings to prevent blank tabs
+    if (!aAllowInheritPrincipal) {
       flags |= Ci.nsIWebNavigation.LOAD_FLAGS_DISALLOW_INHERIT_PRINCIPAL;
     }
 
@@ -408,29 +490,48 @@ function openLinkIn(url, where, params) {
     if (aIndicateErrorPageLoad) {
       flags |= Ci.nsIWebNavigation.LOAD_FLAGS_ERROR_LOAD_CHANGES_RV;
     }
+    if (aForceAllowDataURI) {
+      flags |= Ci.nsIWebNavigation.LOAD_FLAGS_FORCE_ALLOW_DATA_URI;
+    }
 
     let {URI_INHERITS_SECURITY_CONTEXT} = Ci.nsIProtocolHandler;
     if (aForceAboutBlankViewerInCurrent &&
         (!uriObj ||
-         (Services.io.getProtocolFlags(uriObj.scheme) & URI_INHERITS_SECURITY_CONTEXT))) {
+         (doGetProtocolFlags(uriObj) & URI_INHERITS_SECURITY_CONTEXT))) {
       // Unless we know for sure we're not inheriting principals,
       // force the about:blank viewer to have the right principal:
       targetBrowser.createAboutBlankContentViewer(aPrincipal);
     }
 
-    targetBrowser.loadURIWithFlags(url, {
-      triggeringPrincipal: aPrincipal,
+    // When navigating a recording tab, use a new content process in order to
+    // start a new recording.
+    if (targetBrowser.hasAttribute("recordExecution") &&
+        targetBrowser.currentURI.spec != "about:blank") {
+      w.gBrowser.updateBrowserRemoteness(targetBrowser, true,
+                                         { recordExecution: "*", newFrameloader: true });
+    }
+
+    targetBrowser.loadURI(url, {
+      triggeringPrincipal: aTriggeringPrincipal,
       flags,
       referrerURI: aNoReferrer ? null : aReferrerURI,
       referrerPolicy: aReferrerPolicy,
       postData: aPostData,
-      userContextId: aUserContextId
+      userContextId: aUserContextId,
     });
+
+    // Don't focus the content area if focus is in the address bar and we're
+    // loading the New Tab page.
+    focusUrlBar = w.document.activeElement == w.gURLBar.inputField &&
+                  w.isBlankPageURL(url);
     break;
   case "tabshifted":
     loadInBackground = !loadInBackground;
     // fall through
   case "tab":
+    focusUrlBar = !loadInBackground && w.isBlankPageURL(url)
+      && !aboutNewTabService.willNotifyUser;
+
     let tabUsedForLoad = w.gBrowser.loadOneTab(url, {
       referrerURI: aReferrerURI,
       referrerPolicy: aReferrerPolicy,
@@ -444,11 +545,17 @@ function openLinkIn(url, where, params) {
       noReferrer: aNoReferrer,
       userContextId: aUserContextId,
       originPrincipal: aPrincipal,
-      triggeringPrincipal: aPrincipal,
+      triggeringPrincipal: aTriggeringPrincipal,
+      allowInheritPrincipal: aAllowInheritPrincipal,
+      focusUrlBar,
     });
     targetBrowser = tabUsedForLoad.linkedBrowser;
 
-    if (params.frameOuterWindowID && w) {
+    if (aResolveOnNewTabCreated) {
+      aResolveOnNewTabCreated(targetBrowser);
+    }
+
+    if (params.frameOuterWindowID != undefined && w) {
       // Only notify it as a WebExtensions' webNavigation.onCreatedNavigationTarget
       // event if it contains the expected frameOuterWindowID params.
       // (e.g. we should not notify it as a onCreatedNavigationTarget if the user is
@@ -460,18 +567,14 @@ function openLinkIn(url, where, params) {
           sourceTabBrowser: w.gBrowser.selectedBrowser,
           sourceFrameOuterWindowID: params.frameOuterWindowID,
         },
-      }, "webNavigation-createdNavigationTarget", null);
+      }, "webNavigation-createdNavigationTarget");
     }
     break;
   }
 
-  // Focus the content, but only if the browser used for the load is selected.
-  if (targetBrowser == w.gBrowser.selectedBrowser) {
+  if (!focusUrlBar && targetBrowser == w.gBrowser.selectedBrowser) {
+    // Focus the content, but only if the browser used for the load is selected.
     targetBrowser.focus();
-  }
-
-  if (!loadInBackground && w.isBlankPageURL(url)) {
-    w.focusAndSelectUrlBar();
   }
 }
 
@@ -505,21 +608,22 @@ function checkForMiddleClick(node, event) {
 function createUserContextMenu(event, {
                                         isContextMenu = false,
                                         excludeUserContextId = 0,
-                                        useAccessKeys = true
+                                        showDefaultTab = false,
+                                        useAccessKeys = true,
                                       } = {}) {
   while (event.target.hasChildNodes()) {
-    event.target.removeChild(event.target.firstChild);
+    event.target.firstChild.remove();
   }
 
-  let bundle = document.getElementById("bundle_browser");
+  let bundle = Services.strings.createBundle("chrome://browser/locale/browser.properties");
   let docfrag = document.createDocumentFragment();
 
   // If we are excluding a userContextId, we want to add a 'no-container' item.
-  if (excludeUserContextId) {
-    let menuitem = document.createElement("menuitem");
+  if (excludeUserContextId || showDefaultTab) {
+    let menuitem = document.createXULElement("menuitem");
     menuitem.setAttribute("data-usercontextid", "0");
-    menuitem.setAttribute("label", bundle.getString("userContextNone.label"));
-    menuitem.setAttribute("accesskey", bundle.getString("userContextNone.accesskey"));
+    menuitem.setAttribute("label", bundle.GetStringFromName("userContextNone.label"));
+    menuitem.setAttribute("accesskey", bundle.GetStringFromName("userContextNone.accesskey"));
 
     // We don't set an oncommand/command attribute because if we have
     // to exclude a userContextId we are generating the contextMenu and
@@ -527,7 +631,7 @@ function createUserContextMenu(event, {
 
     docfrag.appendChild(menuitem);
 
-    let menuseparator = document.createElement("menuseparator");
+    let menuseparator = document.createXULElement("menuseparator");
     docfrag.appendChild(menuseparator);
   }
 
@@ -536,12 +640,12 @@ function createUserContextMenu(event, {
       return;
     }
 
-    let menuitem = document.createElement("menuitem");
+    let menuitem = document.createXULElement("menuitem");
     menuitem.setAttribute("data-usercontextid", identity.userContextId);
     menuitem.setAttribute("label", ContextualIdentityService.getUserContextLabel(identity.userContextId));
 
     if (identity.accessKey && useAccessKeys) {
-      menuitem.setAttribute("accesskey", bundle.getString(identity.accessKey));
+      menuitem.setAttribute("accesskey", bundle.GetStringFromName(identity.accessKey));
     }
 
     menuitem.classList.add("menuitem-iconic");
@@ -557,14 +661,14 @@ function createUserContextMenu(event, {
   });
 
   if (!isContextMenu) {
-    docfrag.appendChild(document.createElement("menuseparator"));
+    docfrag.appendChild(document.createXULElement("menuseparator"));
 
-    let menuitem = document.createElement("menuitem");
+    let menuitem = document.createXULElement("menuitem");
     menuitem.setAttribute("label",
-                          bundle.getString("userContext.aboutPage.label"));
+                          bundle.GetStringFromName("userContext.aboutPage.label"));
     if (useAccessKeys) {
       menuitem.setAttribute("accesskey",
-                            bundle.getString("userContext.aboutPage.accesskey"));
+                            bundle.GetStringFromName("userContext.aboutPage.accesskey"));
     }
     menuitem.setAttribute("command", "Browser:OpenAboutContainers");
     docfrag.appendChild(menuitem);
@@ -672,43 +776,21 @@ function getShellService() {
 
 function isBidiEnabled() {
   // first check the pref.
-  if (getBoolPref("bidi.browser.ui", false))
+  if (Services.prefs.getBoolPref("bidi.browser.ui", false))
     return true;
 
-  // then check intl.uidirection.<locale>
-  var chromeReg = Components.classes["@mozilla.org/chrome/chrome-registry;1"].
-                  getService(Components.interfaces.nsIXULChromeRegistry);
-  if (chromeReg.isLocaleRTL("global"))
-    return true;
+  // now see if the app locale is an RTL one.
+  const isRTL = Services.locale.isAppLocaleRTL;
 
-  // now see if the system locale is an RTL one.
-  var rv = false;
-
-  try {
-    var localeService = Components.classes["@mozilla.org/intl/nslocaleservice;1"]
-                                  .getService(Components.interfaces.nsILocaleService);
-    var systemLocale = localeService.getSystemLocale().getCategory("NSILOCALE_CTYPE").substr(0, 3);
-
-    switch (systemLocale) {
-      case "ar-":
-      case "he-":
-      case "fa-":
-      case "ug-":
-      case "ur-":
-      case "syr":
-        rv = true;
-        Services.prefs.setBoolPref("bidi.browser.ui", true);
-    }
-  } catch (e) {}
-
-  return rv;
+  if (isRTL) {
+    Services.prefs.setBoolPref("bidi.browser.ui", true);
+  }
+  return isRTL;
 }
 
 function openAboutDialog() {
-  var enumerator = Services.wm.getEnumerator("Browser:About");
-  while (enumerator.hasMoreElements()) {
+  for (let win of Services.wm.getEnumerator("Browser:About")) {
     // Only open one about window (Bug 599573)
-    let win = enumerator.getNext();
     if (win.closed) {
       continue;
     }
@@ -729,11 +811,11 @@ function openAboutDialog() {
 }
 
 function openPreferences(paneID, extraArgs) {
-  function switchToAdvancedSubPane(doc) {
-    if (extraArgs && extraArgs["advancedTab"]) {
-      let advancedPaneTabs = doc.getElementById("advancedPrefs");
-      advancedPaneTabs.selectedTab = doc.getElementById(extraArgs["advancedTab"]);
-    }
+  let histogram = Services.telemetry.getHistogramById("FX_PREFERENCES_OPENED_VIA");
+  if (extraArgs && extraArgs.origin) {
+    histogram.add(extraArgs.origin);
+  } else {
+    histogram.add("other");
   }
 
   // This function is duplicated from preferences.js.
@@ -744,9 +826,9 @@ function openPreferences(paneID, extraArgs) {
   let win = Services.wm.getMostRecentWindow("navigator:browser");
   let friendlyCategoryName = internalPrefCategoryNameToFriendlyName(paneID);
   let params;
-  if (extraArgs && extraArgs["urlParams"]) {
+  if (extraArgs && extraArgs.urlParams) {
     params = new URLSearchParams();
-    let urlParams = extraArgs["urlParams"];
+    let urlParams = extraArgs.urlParams;
     for (let name in urlParams) {
       if (urlParams[name] !== undefined) {
         params.set(name, urlParams[name]);
@@ -754,48 +836,42 @@ function openPreferences(paneID, extraArgs) {
     }
   }
   let preferencesURL = "about:preferences" + (params ? "?" + params : "") +
-                       (friendlyCategoryName ? "#" + friendlyCategoryName : "");
+    (friendlyCategoryName ? "#" + friendlyCategoryName : "");
   let newLoad = true;
   let browser = null;
   if (!win) {
-    const Cc = Components.classes;
-    const Ci = Components.interfaces;
     let windowArguments = Cc["@mozilla.org/array;1"]
-                            .createInstance(Ci.nsIMutableArray);
+      .createInstance(Ci.nsIMutableArray);
     let supportsStringPrefURL = Cc["@mozilla.org/supports-string;1"]
-                                  .createInstance(Ci.nsISupportsString);
+      .createInstance(Ci.nsISupportsString);
     supportsStringPrefURL.data = preferencesURL;
-    windowArguments.appendElement(supportsStringPrefURL, /* weak =*/ false);
+    windowArguments.appendElement(supportsStringPrefURL);
 
-    win = Services.ww.openWindow(null, Services.prefs.getCharPref("browser.chromeURL"),
-                                 "_blank", "chrome,dialog=no,all", windowArguments);
+    win = Services.ww.openWindow(null, AppConstants.BROWSER_CHROME_URL,
+      "_blank", "chrome,dialog=no,all", windowArguments);
   } else {
     let shouldReplaceFragment = friendlyCategoryName ? "whenComparingAndReplace" : "whenComparing";
-    newLoad = !win.switchToTabHavingURI(preferencesURL, true, { ignoreFragment: shouldReplaceFragment, replaceQueryString: true });
+    newLoad = !win.switchToTabHavingURI(preferencesURL, true, {
+      ignoreFragment: shouldReplaceFragment,
+      replaceQueryString: true,
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+    });
     browser = win.gBrowser.selectedBrowser;
   }
 
   if (newLoad) {
-    Services.obs.addObserver(function advancedPaneLoadedObs(prefWin, topic, data) {
+    Services.obs.addObserver(function panesLoadedObs(prefWin, topic, data) {
       if (!browser) {
         browser = win.gBrowser.selectedBrowser;
       }
       if (prefWin != browser.contentWindow) {
         return;
       }
-      Services.obs.removeObserver(advancedPaneLoadedObs, "advanced-pane-loaded");
-      switchToAdvancedSubPane(browser.contentDocument);
-    }, "advanced-pane-loaded", false);
-  } else {
-    if (paneID) {
-      browser.contentWindow.gotoPref(paneID);
-    }
-    switchToAdvancedSubPane(browser.contentDocument);
+      Services.obs.removeObserver(panesLoadedObs, "sync-pane-loaded");
+    }, "sync-pane-loaded");
+  } else if (paneID) {
+    browser.contentWindow.gotoPref(paneID);
   }
-}
-
-function openAdvancedPreferences(tabID) {
-  openPreferences("paneAdvanced", { "advancedTab" : tabID });
 }
 
 /**
@@ -803,34 +879,30 @@ function openAdvancedPreferences(tabID) {
  * of the application.
  */
 function openTroubleshootingPage() {
-  openUILinkIn("about:support", "tab");
-}
-
-/**
- * Opens the troubleshooting information (about:support) page for this version
- * of the application.
- */
-function openHealthReport() {
-  openUILinkIn("about:healthreport", "tab");
+  openTrustedLinkIn("about:support", "tab");
 }
 
 /**
  * Opens the feedback page for this version of the application.
  */
 function openFeedbackPage() {
-  var url = Components.classes["@mozilla.org/toolkit/URLFormatterService;1"]
-                      .getService(Components.interfaces.nsIURLFormatter)
-                      .formatURLPref("app.feedback.baseURL");
-  openUILinkIn(url, "tab");
+  var url = Services.urlFormatter.formatURLPref("app.feedback.baseURL");
+  openTrustedLinkIn(url, "tab");
 }
 
 function openTourPage() {
-  let scope = {}
-  Components.utils.import("resource:///modules/UITour.jsm", scope);
-  openUILinkIn(scope.UITour.url, "tab");
+  let scope = {};
+  ChromeUtils.import("resource:///modules/UITour.jsm", scope);
+  openTrustedLinkIn(scope.UITour.url, "tab");
 }
 
 function buildHelpMenu() {
+  document.getElementById("feedbackPage")
+          .disabled = !Services.policies.isAllowed("feedbackCommands");
+
+  document.getElementById("helpSafeMode")
+          .disabled = !Services.policies.isAllowed("safeMode");
+
   // Enable/disable the "Report Web Forgery" menu item.
   if (typeof gSafeBrowsing != "undefined") {
     gSafeBrowsing.setReportPhishingMenu();
@@ -857,66 +929,37 @@ function makeURLAbsolute(aBase, aUrl) {
  *
  * @param aURL
  *        The URL to open (as a string).
- * @param aDocument
- *        Note this parameter is now ignored. There is no security check & no
- *        referrer header derived from aDocument (null case).
- * @param aPostData
- *        Form POST data, or null.
- * @param aEvent
- *        The triggering event (for the purpose of determining whether to open
- *        in the background), or null.
- * @param aAllowThirdPartyFixup
- *        If true, then we allow the URL text to be sent to third party services
- *        (e.g., Google's I Feel Lucky) for interpretation. This parameter may
- *        be undefined in which case it is treated as false.
- * @param [optional] aReferrer
- *        This will be used as the referrer. There will be no security check.
- * @param [optional] aReferrerPolicy
- *        Referrer policy - Ci.nsIHttpChannel.REFERRER_POLICY_*.
+ * @param aShiftKey
+ *        True if shift key is held.  This value is used for the purpose of
+ *        determining whether to open in the background.
+ * @param aParams
+ *        parameters passed to openLinkIn
  */
-function openNewTabWith(aURL, aDocument, aPostData, aEvent,
-                        aAllowThirdPartyFixup, aReferrer, aReferrerPolicy) {
+function openNewTabWith(aURL, aShiftKey, aParams = {}) {
 
   // As in openNewWindowWith(), we want to pass the charset of the
   // current document over to a new tab.
-  let originCharset = null;
   if (document.documentElement.getAttribute("windowtype") == "navigator:browser")
-    originCharset = gBrowser.selectedBrowser.characterSet;
+    aParams.charset = gBrowser.selectedBrowser.characterSet;
 
-  openLinkIn(aURL, aEvent && aEvent.shiftKey ? "tabshifted" : "tab",
-             { charset: originCharset,
-               postData: aPostData,
-               allowThirdPartyFixup: aAllowThirdPartyFixup,
-               referrerURI: aReferrer,
-               referrerPolicy: aReferrerPolicy,
-             });
+  openLinkIn(aURL, aShiftKey ? "tabshifted" : "tab", aParams);
 }
 
 /**
- * @param aDocument
- *        Note this parameter is ignored. See openNewTabWith()
+ * openNewWindowWith: opens a new window with the given URL.
+ * See openNewTabWith for parameters.
  */
-function openNewWindowWith(aURL, aDocument, aPostData, aAllowThirdPartyFixup,
-                           aReferrer, aReferrerPolicy) {
+function openNewWindowWith(aURL, aParams = {}) {
   // Extract the current charset menu setting from the current document and
   // use it to initialize the new browser window...
-  let originCharset = null;
   if (document.documentElement.getAttribute("windowtype") == "navigator:browser")
-    originCharset = gBrowser.selectedBrowser.characterSet;
+    aParams.charset = gBrowser.selectedBrowser.characterSet;
 
-  openLinkIn(aURL, "window",
-             { charset: originCharset,
-               postData: aPostData,
-               allowThirdPartyFixup: aAllowThirdPartyFixup,
-               referrerURI: aReferrer,
-               referrerPolicy: aReferrerPolicy,
-             });
+  openLinkIn(aURL, "window", aParams);
 }
 
 function getHelpLinkURL(aHelpTopic) {
-  var url = Components.classes["@mozilla.org/toolkit/URLFormatterService;1"]
-                      .getService(Components.interfaces.nsIURLFormatter)
-                      .formatURLPref("app.support.baseURL");
+  var url = Services.urlFormatter.formatURLPref("app.support.baseURL");
   return url + aHelpTopic;
 }
 
@@ -927,16 +970,12 @@ function openHelpLink(aHelpTopic, aCalledFromModal, aWhere) {
   if (!aWhere)
     where = aCalledFromModal ? "window" : "tab";
 
-  openUILinkIn(url, where);
+  openTrustedLinkIn(url, where);
 }
 
-function openPrefsHelp() {
-  // non-instant apply prefwindows are usually modal, so we can't open in the topmost window,
-  // since its probably behind the window.
-  var instantApply = getBoolPref("browser.preferences.instantApply");
-
-  var helpTopic = document.getElementsByTagName("prefwindow")[0].currentPane.helpTopic;
-  openHelpLink(helpTopic, !instantApply);
+function openPrefsHelp(aEvent) {
+  let helpTopic = aEvent.target.getAttribute("helpTopic");
+  openHelpLink(helpTopic);
 }
 
 function trimURL(aURL) {
@@ -957,11 +996,11 @@ function trimURL(aURL) {
   let fixedUpURL, expectedURLSpec;
   try {
     fixedUpURL = Services.uriFixup.createFixupURI(urlWithoutProtocol, flags);
-    expectedURLSpec = makeURI(aURL).spec;
+    expectedURLSpec = makeURI(aURL).displaySpec;
   } catch (ex) {
     return url;
   }
-  if (fixedUpURL.spec == expectedURLSpec) {
+  if (fixedUpURL.displaySpec == expectedURLSpec) {
     return urlWithoutProtocol;
   }
   return url;

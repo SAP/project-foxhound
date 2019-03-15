@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,35 +23,28 @@ namespace mozilla {
 namespace layers {
 
 AsyncCanvasRenderer::AsyncCanvasRenderer()
-  : mHTMLCanvasElement(nullptr)
-  , mContext(nullptr)
-  , mGLContext(nullptr)
-  , mIsAlphaPremultiplied(true)
-  , mWidth(0)
-  , mHeight(0)
-  , mCanvasClient(nullptr)
-  , mMutex("AsyncCanvasRenderer::mMutex")
-{
+    : mHTMLCanvasElement(nullptr),
+      mContext(nullptr),
+      mGLContext(nullptr),
+      mIsAlphaPremultiplied(true),
+      mWidth(0),
+      mHeight(0),
+      mCanvasClient(nullptr),
+      mMutex("AsyncCanvasRenderer::mMutex") {
   MOZ_COUNT_CTOR(AsyncCanvasRenderer);
 }
 
-AsyncCanvasRenderer::~AsyncCanvasRenderer()
-{
+AsyncCanvasRenderer::~AsyncCanvasRenderer() {
   MOZ_COUNT_DTOR(AsyncCanvasRenderer);
 }
 
-void
-AsyncCanvasRenderer::NotifyElementAboutAttributesChanged()
-{
-  class Runnable final : public mozilla::Runnable
-  {
-  public:
+void AsyncCanvasRenderer::NotifyElementAboutAttributesChanged() {
+  class Runnable final : public mozilla::Runnable {
+   public:
     explicit Runnable(AsyncCanvasRenderer* aRenderer)
-      : mRenderer(aRenderer)
-    {}
+        : mozilla::Runnable("Runnable"), mRenderer(aRenderer) {}
 
-    NS_IMETHOD Run() override
-    {
+    NS_IMETHOD Run() override {
       if (mRenderer) {
         dom::HTMLCanvasElement::SetAttrFromAsyncCanvasRenderer(mRenderer);
       }
@@ -59,12 +52,7 @@ AsyncCanvasRenderer::NotifyElementAboutAttributesChanged()
       return NS_OK;
     }
 
-    void Revoke()
-    {
-      mRenderer = nullptr;
-    }
-
-  private:
+   private:
     RefPtr<AsyncCanvasRenderer> mRenderer;
   };
 
@@ -75,18 +63,13 @@ AsyncCanvasRenderer::NotifyElementAboutAttributesChanged()
   }
 }
 
-void
-AsyncCanvasRenderer::NotifyElementAboutInvalidation()
-{
-  class Runnable final : public mozilla::Runnable
-  {
-  public:
+void AsyncCanvasRenderer::NotifyElementAboutInvalidation() {
+  class Runnable final : public mozilla::Runnable {
+   public:
     explicit Runnable(AsyncCanvasRenderer* aRenderer)
-      : mRenderer(aRenderer)
-    {}
+        : mozilla::Runnable("Runnable"), mRenderer(aRenderer) {}
 
-    NS_IMETHOD Run() override
-    {
+    NS_IMETHOD Run() override {
       if (mRenderer) {
         dom::HTMLCanvasElement::InvalidateFromAsyncCanvasRenderer(mRenderer);
       }
@@ -94,12 +77,7 @@ AsyncCanvasRenderer::NotifyElementAboutInvalidation()
       return NS_OK;
     }
 
-    void Revoke()
-    {
-      mRenderer = nullptr;
-    }
-
-  private:
+   private:
     RefPtr<AsyncCanvasRenderer> mRenderer;
   };
 
@@ -110,9 +88,7 @@ AsyncCanvasRenderer::NotifyElementAboutInvalidation()
   }
 }
 
-void
-AsyncCanvasRenderer::SetCanvasClient(CanvasClient* aClient)
-{
+void AsyncCanvasRenderer::SetCanvasClient(CanvasClient* aClient) {
   mCanvasClient = aClient;
   if (aClient) {
     mCanvasClientAsyncHandle = aClient->GetAsyncHandle();
@@ -121,31 +97,24 @@ AsyncCanvasRenderer::SetCanvasClient(CanvasClient* aClient)
   }
 }
 
-void
-AsyncCanvasRenderer::SetActiveThread()
-{
+void AsyncCanvasRenderer::SetActiveEventTarget() {
   MutexAutoLock lock(mMutex);
-  mActiveThread = NS_GetCurrentThread();
+  mActiveEventTarget = GetCurrentThreadSerialEventTarget();
 }
 
-void
-AsyncCanvasRenderer::ResetActiveThread()
-{
+void AsyncCanvasRenderer::ResetActiveEventTarget() {
   MutexAutoLock lock(mMutex);
-  mActiveThread = nullptr;
+  mActiveEventTarget = nullptr;
 }
 
-already_AddRefed<nsIThread>
-AsyncCanvasRenderer::GetActiveThread()
-{
+already_AddRefed<nsISerialEventTarget>
+AsyncCanvasRenderer::GetActiveEventTarget() {
   MutexAutoLock lock(mMutex);
-  nsCOMPtr<nsIThread> result = mActiveThread;
+  nsCOMPtr<nsISerialEventTarget> result = mActiveEventTarget;
   return result.forget();
 }
 
-void
-AsyncCanvasRenderer::CopyFromTextureClient(TextureClient* aTextureClient)
-{
+void AsyncCanvasRenderer::CopyFromTextureClient(TextureClient* aTextureClient) {
   MutexAutoLock lock(mMutex);
 
   if (!aTextureClient) {
@@ -163,12 +132,15 @@ AsyncCanvasRenderer::CopyFromTextureClient(TextureClient* aTextureClient)
   // B8G8R8A8 format here.
   const gfx::SurfaceFormat format = gfx::SurfaceFormat::B8G8R8A8;
   // Avoid to create buffer every time.
-  if (!mSurfaceForBasic ||
-      size != mSurfaceForBasic->GetSize() ||
-      format != mSurfaceForBasic->GetFormat())
-  {
-    uint32_t stride = gfx::GetAlignedStride<8>(size.width, BytesPerPixel(format));
-    mSurfaceForBasic = gfx::Factory::CreateDataSourceSurfaceWithStride(size, format, stride);
+  if (!mSurfaceForBasic || size != mSurfaceForBasic->GetSize() ||
+      format != mSurfaceForBasic->GetFormat()) {
+    uint32_t stride =
+        gfx::GetAlignedStride<8>(size.width, BytesPerPixel(format));
+    mSurfaceForBasic =
+        gfx::Factory::CreateDataSourceSurfaceWithStride(size, format, stride);
+    if (!mSurfaceForBasic) {
+      return;
+    }
   }
 
   MappedTextureData mapped;
@@ -184,7 +156,8 @@ AsyncCanvasRenderer::CopyFromTextureClient(TextureClient* aTextureClient)
   }
 
   MOZ_ASSERT(map.GetStride() == mapped.stride);
-  memcpy(map.GetData(), lockedBytes, map.GetStride() * mSurfaceForBasic->GetSize().height);
+  memcpy(map.GetData(), lockedBytes,
+         map.GetStride() * mSurfaceForBasic->GetSize().height);
 
   if (mSurfaceForBasic->GetFormat() == gfx::SurfaceFormat::R8G8B8A8 ||
       mSurfaceForBasic->GetFormat() == gfx::SurfaceFormat::R8G8B8X8) {
@@ -192,9 +165,7 @@ AsyncCanvasRenderer::CopyFromTextureClient(TextureClient* aTextureClient)
   }
 }
 
-already_AddRefed<gfx::DataSourceSurface>
-AsyncCanvasRenderer::UpdateTarget()
-{
+already_AddRefed<gfx::DataSourceSurface> AsyncCanvasRenderer::UpdateTarget() {
   if (!mGLContext) {
     return nullptr;
   }
@@ -220,8 +191,7 @@ AsyncCanvasRenderer::UpdateTarget()
   const gfx::SurfaceFormat format = gfx::SurfaceFormat::B8G8R8A8;
   uint32_t stride = gfx::GetAlignedStride<8>(size.width, BytesPerPixel(format));
   RefPtr<gfx::DataSourceSurface> surface =
-    gfx::Factory::CreateDataSourceSurfaceWithStride(size, format, stride);
-
+      gfx::Factory::CreateDataSourceSurfaceWithStride(size, format, stride);
 
   if (NS_WARN_IF(!surface)) {
     return nullptr;
@@ -239,28 +209,31 @@ AsyncCanvasRenderer::UpdateTarget()
   return surface.forget();
 }
 
-already_AddRefed<gfx::DataSourceSurface>
-AsyncCanvasRenderer::GetSurface()
-{
+already_AddRefed<gfx::DataSourceSurface> AsyncCanvasRenderer::GetSurface() {
   MOZ_ASSERT(NS_IsMainThread());
   MutexAutoLock lock(mMutex);
   if (mSurfaceForBasic) {
-    // Since SourceSurface isn't thread-safe, we need copy to a new SourceSurface.
+    // Since SourceSurface isn't thread-safe, we need copy to a new
+    // SourceSurface.
+    gfx::DataSourceSurface::ScopedMap srcMap(mSurfaceForBasic,
+                                             gfx::DataSourceSurface::READ);
+
     RefPtr<gfx::DataSourceSurface> result =
-      gfx::Factory::CreateDataSourceSurfaceWithStride(mSurfaceForBasic->GetSize(),
-                                                      mSurfaceForBasic->GetFormat(),
-                                                      mSurfaceForBasic->Stride());
-
-    gfx::DataSourceSurface::ScopedMap srcMap(mSurfaceForBasic, gfx::DataSourceSurface::READ);
-    gfx::DataSourceSurface::ScopedMap dstMap(result, gfx::DataSourceSurface::WRITE);
-
-    if (NS_WARN_IF(!srcMap.IsMapped()) ||
-        NS_WARN_IF(!dstMap.IsMapped())) {
+        gfx::Factory::CreateDataSourceSurfaceWithStride(
+            mSurfaceForBasic->GetSize(), mSurfaceForBasic->GetFormat(),
+            srcMap.GetStride());
+    if (NS_WARN_IF(!result)) {
       return nullptr;
     }
 
-    memcpy(dstMap.GetData(),
-           srcMap.GetData(),
+    gfx::DataSourceSurface::ScopedMap dstMap(result,
+                                             gfx::DataSourceSurface::WRITE);
+
+    if (NS_WARN_IF(!srcMap.IsMapped()) || NS_WARN_IF(!dstMap.IsMapped())) {
+      return nullptr;
+    }
+
+    memcpy(dstMap.GetData(), srcMap.GetData(),
            srcMap.GetStride() * mSurfaceForBasic->GetSize().height);
     return result.forget();
   } else {
@@ -268,22 +241,24 @@ AsyncCanvasRenderer::GetSurface()
   }
 }
 
-nsresult
-AsyncCanvasRenderer::GetInputStream(const char *aMimeType,
-                                    const char16_t *aEncoderOptions,
-                                    nsIInputStream **aStream)
-{
+nsresult AsyncCanvasRenderer::GetInputStream(const char* aMimeType,
+                                             const char16_t* aEncoderOptions,
+                                             nsIInputStream** aStream) {
   MOZ_ASSERT(NS_IsMainThread());
   RefPtr<gfx::DataSourceSurface> surface = GetSurface();
   if (!surface) {
     return NS_ERROR_FAILURE;
   }
 
-  // Handle y flip.
-  RefPtr<gfx::DataSourceSurface> dataSurf = gl::YInvertImageSurface(surface);
+  gfx::DataSourceSurface::ScopedMap map(surface, gfx::DataSourceSurface::READ);
 
-  return gfxUtils::GetInputStream(dataSurf, false, aMimeType, aEncoderOptions, aStream);
+  // Handle y flip.
+  RefPtr<gfx::DataSourceSurface> dataSurf =
+      gl::YInvertImageSurface(surface, map.GetStride());
+
+  return gfxUtils::GetInputStream(dataSurf, false, aMimeType, aEncoderOptions,
+                                  aStream);
 }
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla

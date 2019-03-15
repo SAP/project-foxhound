@@ -22,56 +22,71 @@ const testDevice = {
 // Add the new device to the list
 addDeviceForTest(testDevice);
 
-addRDMTask(TEST_URL, function* ({ ui, manager }) {
-  yield waitStartup(ui);
+addRDMTask(TEST_URL, async function({ ui, manager }) {
+  reloadOnTouchChange(true);
 
-  yield testDefaults(ui);
-  yield testChangingDevice(ui);
-  yield testResizingViewport(ui, true, false);
-  yield testEnableTouchSimulation(ui);
-  yield testResizingViewport(ui, false, true);
+  await waitStartup(ui);
+
+  await testDefaults(ui);
+  await testChangingDevice(ui);
+  await testResizingViewport(ui, true, false);
+  await testEnableTouchSimulation(ui);
+  await testResizingViewport(ui, false, true);
+  await testDisableTouchSimulation(ui);
+
+  reloadOnTouchChange(false);
 });
 
-function* waitStartup(ui) {
-  let { store } = ui.toolWindow;
+async function waitStartup(ui) {
+  const { store } = ui.toolWindow;
 
   // Wait until the viewport has been added and the device list has been loaded
-  yield waitUntilState(store, state => state.viewports.length == 1
-    && state.devices.listState == Types.deviceListState.LOADED);
+  await waitUntilState(store, state => state.viewports.length == 1
+    && state.devices.listState == Types.loadableState.LOADED);
 }
 
-function* testDefaults(ui) {
+async function testDefaults(ui) {
   info("Test Defaults");
 
-  yield testTouchEventsOverride(ui, false);
-  testViewportDeviceSelectLabel(ui, "no device selected");
+  await testTouchEventsOverride(ui, false);
+  testViewportDeviceMenuLabel(ui, "Responsive");
 }
 
-function* testChangingDevice(ui) {
+async function testChangingDevice(ui) {
   info("Test Changing Device");
 
-  yield selectDevice(ui, testDevice.name);
-  yield waitForViewportResizeTo(ui, testDevice.width, testDevice.height);
-  yield testTouchEventsOverride(ui, true);
-  testViewportDeviceSelectLabel(ui, testDevice.name);
+  await selectDevice(ui, testDevice.name);
+  await waitForViewportResizeTo(ui, testDevice.width, testDevice.height);
+  await testTouchEventsOverride(ui, true);
+  testViewportDeviceMenuLabel(ui, testDevice.name);
 }
 
-function* testResizingViewport(ui, device, expected) {
-  info(`Test resizing the viewport, device ${device}, expected ${expected}`);
+async function testResizingViewport(ui, device, touch) {
+  info(`Test resizing the viewport, device ${device}, touch ${touch}`);
 
-  let deviceRemoved = once(ui, "device-removed");
-  yield testViewportResize(ui, ".viewport-vertical-resize-handle",
+  let deviceRemoved;
+  if (device) {
+    deviceRemoved = once(ui, "device-association-removed");
+  }
+  await testViewportResize(ui, ".viewport-vertical-resize-handle",
     [-10, -10], [testDevice.width, testDevice.height - 10], [0, -10], ui);
   if (device) {
-    yield deviceRemoved;
+    await deviceRemoved;
   }
-  yield testTouchEventsOverride(ui, expected);
-  testViewportDeviceSelectLabel(ui, "no device selected");
+  await testTouchEventsOverride(ui, touch);
+  testViewportDeviceMenuLabel(ui, "Responsive");
 }
 
-function* testEnableTouchSimulation(ui) {
+async function testEnableTouchSimulation(ui) {
   info("Test enabling touch simulation via button");
 
-  yield enableTouchSimulation(ui);
-  yield testTouchEventsOverride(ui, true);
+  await toggleTouchSimulation(ui);
+  await testTouchEventsOverride(ui, true);
+}
+
+async function testDisableTouchSimulation(ui) {
+  info("Test disabling touch simulation via button");
+
+  await toggleTouchSimulation(ui);
+  await testTouchEventsOverride(ui, false);
 }

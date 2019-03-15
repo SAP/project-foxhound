@@ -4,15 +4,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-# Any changes that affect Android need to be made in pie/moz.build as well.
-
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
     Program(CONFIG['MOZ_CHILD_PROCESS_NAME'])
     SOURCES += [
         'MozillaRuntimeMainAndroid.cpp',
     ]
-
-    DIRS += ['pie']
 else:
     GeckoProgram(CONFIG['MOZ_CHILD_PROCESS_NAME'], linkage='dependent')
 
@@ -63,7 +59,7 @@ if CONFIG['MOZ_SANDBOX'] and CONFIG['OS_TARGET'] == 'Darwin':
         'mozsandbox',
     ]
 
-if CONFIG['_MSC_VER']:
+if CONFIG['CC_TYPE'] in ('msvc', 'clang-cl'):
     # Always enter a Windows program through wmain, whether or not we're
     # a console application.
     WIN32_EXE_LDFLAGS += ['-ENTRY:wmainCRTStartup']
@@ -76,19 +72,11 @@ if CONFIG['_MSC_VER']:
 # The heap will grow if need be.
 #
 # Set it to 256k.  See bug 127069.
-if CONFIG['OS_ARCH'] == 'WINNT' and not CONFIG['GNU_CC']:
+if CONFIG['OS_ARCH'] == 'WINNT' and CONFIG['CC_TYPE'] not in ('clang', 'gcc'):
     LDFLAGS += ['/HEAP:0x40000']
 
-if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gonk':
-    OS_LIBS += [
-        'binder',
-        'utils',
-    ]
-
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wshadow']
-
-DEFINES['MOZ_PLUGIN_CONTAINER'] = 1;
 
 with Files("**"):
     BUG_COMPONENT = ("Core", "DOM: Content Processes")

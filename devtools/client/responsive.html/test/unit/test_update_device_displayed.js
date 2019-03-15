@@ -11,11 +11,11 @@ const {
   updateDeviceDisplayed,
 } = require("devtools/client/responsive.html/actions/devices");
 
-add_task(function* () {
-  let store = Store();
+add_task(async function() {
+  const store = Store();
   const { getState, dispatch } = store;
 
-  let device = {
+  const device = {
     "name": "Firefox OS Flame",
     "width": 320,
     "height": 570,
@@ -23,7 +23,7 @@ add_task(function* () {
     "userAgent": "Mozilla/5.0 (Mobile; rv:39.0) Gecko/39.0 Firefox/39.0",
     "touch": true,
     "firefoxOS": true,
-    "os": "fxos"
+    "os": "fxos",
   };
 
   dispatch(addDeviceType("phones"));

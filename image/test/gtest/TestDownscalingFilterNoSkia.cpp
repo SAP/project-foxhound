@@ -25,15 +25,15 @@
 
 #ifdef MOZ_ENABLE_SKIA
 
-#undef MOZ_ENABLE_SKIA
-#include "Common.h"
-#include "DownscalingFilter.h"
-#define MOZ_ENABLE_SKIA
+#  undef MOZ_ENABLE_SKIA
+#  include "Common.h"
+#  include "DownscalingFilter.h"
+#  define MOZ_ENABLE_SKIA
 
 #else
 
-#include "Common.h"
-#include "DownscalingFilter.h"
+#  include "Common.h"
+#  include "DownscalingFilter.h"
 
 #endif
 
@@ -43,15 +43,12 @@ using namespace mozilla;
 using namespace mozilla::gfx;
 using namespace mozilla::image;
 
-TEST(ImageDownscalingFilter, NoSkia)
-{
+TEST(ImageDownscalingFilter, NoSkia) {
   RefPtr<Decoder> decoder = CreateTrivialDecoder();
   ASSERT_TRUE(bool(decoder));
 
   // Configuring a DownscalingFilter should fail without Skia.
-  AssertConfiguringPipelineFails(decoder,
-                                 DownscalingConfig { IntSize(100, 100),
-                                                     SurfaceFormat::B8G8R8A8 },
-                                 SurfaceConfig { decoder, 0, IntSize(50, 50),
-                                                 SurfaceFormat::B8G8R8A8, false });
+  AssertConfiguringPipelineFails(
+      decoder, DownscalingConfig{IntSize(100, 100), SurfaceFormat::B8G8R8A8},
+      SurfaceConfig{decoder, IntSize(50, 50), SurfaceFormat::B8G8R8A8, false});
 }

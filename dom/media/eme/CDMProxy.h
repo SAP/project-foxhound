@@ -8,6 +8,7 @@
 #define CDMProxy_h_
 
 #include "mozilla/CDMCaps.h"
+#include "mozilla/DataMutex.h"
 #include "mozilla/MozPromise.h"
 
 #include "mozilla/dom/MediaKeyMessageEvent.h"
@@ -17,42 +18,41 @@
 
 namespace mozilla {
 class MediaRawData;
+class ChromiumCDMProxy;
 
+namespace eme {
 enum DecryptStatus {
   Ok = 0,
   GenericErr = 1,
   NoKeyErr = 2,
   AbortedErr = 3,
 };
+}
+
+using eme::DecryptStatus;
 
 struct DecryptResult {
   DecryptResult(DecryptStatus aStatus, MediaRawData* aSample)
-    : mStatus(aStatus)
-    , mSample(aSample)
-  {}
+      : mStatus(aStatus), mSample(aSample) {}
   DecryptStatus mStatus;
   RefPtr<MediaRawData> mSample;
 };
 
-typedef MozPromise<DecryptResult, DecryptResult, /* IsExclusive = */ true> DecryptPromise;
+typedef MozPromise<DecryptResult, DecryptResult, /* IsExclusive = */ true>
+    DecryptPromise;
 
 class CDMKeyInfo {
-public:
+ public:
   explicit CDMKeyInfo(const nsTArray<uint8_t>& aKeyId)
-    : mKeyId(aKeyId)
-    , mStatus()
-  {}
+      : mKeyId(aKeyId), mStatus() {}
 
   CDMKeyInfo(const nsTArray<uint8_t>& aKeyId,
              const dom::Optional<dom::MediaKeyStatus>& aStatus)
-    : mKeyId(aKeyId)
-    , mStatus(aStatus.Value())
-  {}
+      : mKeyId(aKeyId), mStatus(aStatus.Value()) {}
 
   // The copy-ctor and copy-assignment operator for Optional<T> are declared as
   // delete, so override CDMKeyInfo copy-ctor for nsTArray operations.
-  CDMKeyInfo(const CDMKeyInfo& aKeyInfo)
-  {
+  CDMKeyInfo(const CDMKeyInfo& aKeyInfo) {
     mKeyId = aKeyInfo.mKeyId;
     if (aKeyInfo.mStatus.WasPassed()) {
       mStatus.Construct(aKeyInfo.mStatus.Value());
@@ -63,6 +63,8 @@ public:
   dom::Optional<dom::MediaKeyStatus> mStatus;
 };
 
+// Time is defined as the number of milliseconds since the
+// Epoch (00:00:00 UTC, January 1, 1970).
 typedef int64_t UnixTime;
 
 // Proxies calls CDM, and proxies calls back.
@@ -70,29 +72,28 @@ typedef int64_t UnixTime;
 // passed via IPC to the CDM, which can then signal when to reject or
 // resolve the promise using its PromiseId.
 class CDMProxy {
-protected:
+ protected:
   typedef dom::PromiseId PromiseId;
   typedef dom::MediaKeySessionType MediaKeySessionType;
-public:
 
+ public:
   NS_INLINE_DECL_PURE_VIRTUAL_REFCOUNTING
 
   // Main thread only.
-  CDMProxy(dom::MediaKeys* aKeys,
-           const nsAString& aKeySystem,
-           bool aDistinctiveIdentifierRequired,
-           bool aPersistentStateRequired)
-    : mKeys(aKeys)
-    , mKeySystem(aKeySystem)
-    , mDistinctiveIdentifierRequired(aDistinctiveIdentifierRequired)
-    , mPersistentStateRequired(aPersistentStateRequired)
-  {}
+  CDMProxy(dom::MediaKeys* aKeys, const nsAString& aKeySystem,
+           bool aDistinctiveIdentifierRequired, bool aPersistentStateRequired,
+           nsIEventTarget* aMainThread)
+      : mKeys(aKeys),
+        mKeySystem(aKeySystem),
+        mCapabilites("CDMProxy::mCDMCaps"),
+        mDistinctiveIdentifierRequired(aDistinctiveIdentifierRequired),
+        mPersistentStateRequired(aPersistentStateRequired),
+        mMainThread(aMainThread) {}
 
   // Main thread only.
   // Loads the CDM corresponding to mKeySystem.
   // Calls MediaKeys::OnCDMCreated() when the CDM is created.
-  virtual void Init(PromiseId aPromiseId,
-                    const nsAString& aOrigin,
+  virtual void Init(PromiseId aPromiseId, const nsAString& aOrigin,
                     const nsAString& aTopLevelOrigin,
                     const nsAString& aName) = 0;
 
@@ -101,7 +102,7 @@ public:
   // Main thread only.
   // Uses the CDM to create a key session.
   // Calls MediaKeys::OnSessionActivated() when session is created.
-  // Assumes ownership of (Move()s) aInitData's contents.
+  // Assumes ownership of (std::move()s) aInitData's contents.
   virtual void CreateSession(uint32_t aCreateSessionToken,
                              MediaKeySessionType aSessionType,
                              PromiseId aPromiseId,
@@ -112,13 +113,14 @@ public:
   // Uses the CDM to load a presistent session stored on disk.
   // Calls MediaKeys::OnSessionActivated() when session is loaded.
   virtual void LoadSession(PromiseId aPromiseId,
+                           dom::MediaKeySessionType aSessionType,
                            const nsAString& aSessionId) = 0;
 
   // Main thread only.
   // Sends a new certificate to the CDM.
   // Calls MediaKeys->ResolvePromise(aPromiseId) after the CDM has
   // processed the request.
-  // Assumes ownership of (Move()s) aCert's contents.
+  // Assumes ownership of (std::move()s) aCert's contents.
   virtual void SetServerCertificate(PromiseId aPromiseId,
                                     nsTArray<uint8_t>& aCert) = 0;
 
@@ -126,9 +128,8 @@ public:
   // Sends an update to the CDM.
   // Calls MediaKeys->ResolvePromise(aPromiseId) after the CDM has
   // processed the request.
-  // Assumes ownership of (Move()s) aResponse's contents.
-  virtual void UpdateSession(const nsAString& aSessionId,
-                             PromiseId aPromiseId,
+  // Assumes ownership of (std::move()s) aResponse's contents.
+  virtual void UpdateSession(const nsAString& aSessionId, PromiseId aPromiseId,
                              nsTArray<uint8_t>& aResponse) = 0;
 
   // Main thread only.
@@ -167,7 +168,7 @@ public:
   // Main thread only.
   virtual void OnSessionMessage(const nsAString& aSessionId,
                                 dom::MediaKeyMessageType aMessageType,
-                                nsTArray<uint8_t>& aMessage) = 0;
+                                const nsTArray<uint8_t>& aMessage) = 0;
 
   // Main thread only.
   virtual void OnExpirationChange(const nsAString& aSessionId,
@@ -177,27 +178,22 @@ public:
   virtual void OnSessionClosed(const nsAString& aSessionId) = 0;
 
   // Main thread only.
-  virtual void OnSessionError(const nsAString& aSessionId,
-                              nsresult aException,
-                              uint32_t aSystemCode,
-                              const nsAString& aMsg) = 0;
+  virtual void OnSessionError(const nsAString& aSessionId, nsresult aException,
+                              uint32_t aSystemCode, const nsAString& aMsg) = 0;
 
   // Main thread only.
-  virtual void OnRejectPromise(uint32_t aPromiseId,
-                               nsresult aDOMException,
+  virtual void OnRejectPromise(uint32_t aPromiseId, nsresult aDOMException,
                                const nsCString& aMsg) = 0;
 
   virtual RefPtr<DecryptPromise> Decrypt(MediaRawData* aSample) = 0;
 
   // Owner thread only.
-  virtual void OnDecrypted(uint32_t aId,
-                           DecryptStatus aResult,
+  virtual void OnDecrypted(uint32_t aId, DecryptStatus aResult,
                            const nsTArray<uint8_t>& aDecryptedData) = 0;
 
   // Reject promise with DOMException corresponding to aExceptionCode.
   // Can be called from any thread.
-  virtual void RejectPromise(PromiseId aId,
-                             nsresult aExceptionCode,
+  virtual void RejectPromise(PromiseId aId, nsresult aExceptionCode,
                              const nsCString& aReason) = 0;
 
   // Resolves promise with "undefined".
@@ -207,13 +203,16 @@ public:
   // Threadsafe.
   virtual const nsString& KeySystem() const = 0;
 
-  virtual  CDMCaps& Capabilites() = 0;
+  virtual DataMutex<CDMCaps>& Capabilites() = 0;
 
   // Main thread only.
   virtual void OnKeyStatusesChange(const nsAString& aSessionId) = 0;
 
-  virtual void GetSessionIdsForKeyId(const nsTArray<uint8_t>& aKeyId,
-                                     nsTArray<nsCString>& aSessionIds) = 0;
+  // Main thread only.
+  // Calls MediaKeys->ResolvePromiseWithKeyStatus(aPromiseId, aKeyStatus) after
+  // the CDM has processed the request.
+  virtual void GetStatusForPolicy(PromiseId aPromiseId,
+                                  const nsAString& aMinHdcpVersion) = 0;
 
 #ifdef DEBUG
   virtual bool IsOnOwnerThread() = 0;
@@ -221,16 +220,16 @@ public:
 
   virtual uint32_t GetDecryptorId() { return 0; }
 
-protected:
+  virtual ChromiumCDMProxy* AsChromiumCDMProxy() { return nullptr; }
+
+ protected:
   virtual ~CDMProxy() {}
 
   // Helper to enforce that a raw pointer is only accessed on the main thread.
-  template<class Type>
+  template <class Type>
   class MainThreadOnlyRawPtr {
-  public:
-    explicit MainThreadOnlyRawPtr(Type* aPtr)
-      : mPtr(aPtr)
-    {
+   public:
+    explicit MainThreadOnlyRawPtr(Type* aPtr) : mPtr(aPtr) {
       MOZ_ASSERT(NS_IsMainThread());
     }
 
@@ -248,7 +247,8 @@ protected:
       MOZ_ASSERT(NS_IsMainThread());
       return mPtr;
     }
-  private:
+
+   private:
     Type* mPtr;
   };
 
@@ -260,18 +260,21 @@ protected:
   const nsString mKeySystem;
 
   // Onwer specified thread. e.g. Gecko Media Plugin thread.
-  // All interactions with the out-of-process EME plugin must come from this thread.
+  // All interactions with the out-of-process EME plugin must come from this
+  // thread.
   RefPtr<nsIThread> mOwnerThread;
 
   nsCString mNodeId;
 
-  CDMCaps mCapabilites;
+  DataMutex<CDMCaps> mCapabilites;
 
   const bool mDistinctiveIdentifierRequired;
   const bool mPersistentStateRequired;
+
+  // The main thread associated with the root document.
+  const nsCOMPtr<nsIEventTarget> mMainThread;
 };
 
+}  // namespace mozilla
 
-} // namespace mozilla
-
-#endif // CDMProxy_h_
+#endif  // CDMProxy_h_

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set shiftwidth=2 tabstop=8 autoindent cindent expandtab: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,56 +13,64 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsCOMPtr.h"
 #include "nsTArray.h"
-#include "prclist.h"
+#include "mozilla/LinkedList.h"
 #include "mozilla/Attributes.h"
 #include "nsWrapperCache.h"
+#include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/dom/MediaQueryListBinding.h"
-
-class nsIDocument;
-class nsMediaList;
 
 namespace mozilla {
 namespace dom {
 
-class MediaQueryList final : public nsISupports,
-                             public nsWrapperCache,
-                             public PRCList
-{
-public:
+class MediaList;
+
+class MediaQueryList final : public DOMEventTargetHelper,
+                             public mozilla::LinkedListElement<MediaQueryList> {
+ public:
   // The caller who constructs is responsible for calling Evaluate
   // before calling any other methods.
-  MediaQueryList(nsIDocument *aDocument,
-                 const nsAString &aMediaQueryList);
-private:
+  MediaQueryList(Document* aDocument, const nsAString& aMediaQueryList,
+                 CallerType aCallerType);
+
+ private:
   ~MediaQueryList();
 
-public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(MediaQueryList)
+ public:
+  NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(MediaQueryList, DOMEventTargetHelper)
 
   nsISupports* GetParentObject() const;
 
-  struct HandleChangeData {
-    RefPtr<MediaQueryList> mql;
-    RefPtr<mozilla::dom::MediaQueryListListener> callback;
-  };
+  void MaybeNotify();
 
-  // Appends listeners that need notification to aListenersToNotify
-  void MediumFeaturesChanged(nsTArray<HandleChangeData>& aListenersToNotify);
-
-  bool HasListeners() const { return !mCallbacks.IsEmpty(); }
-
-  void RemoveAllListeners();
-
-  JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
   // WebIDL methods
   void GetMedia(nsAString& aMedia);
   bool Matches();
-  void AddListener(mozilla::dom::MediaQueryListListener& aListener);
-  void RemoveListener(mozilla::dom::MediaQueryListListener& aListener);
+  void AddListener(EventListener* aListener, ErrorResult& aRv);
+  void RemoveListener(EventListener* aListener, ErrorResult& aRv);
 
-private:
+  using DOMEventTargetHelper::EventListenerAdded;
+  void EventListenerAdded(nsAtom* aType) override;
+
+  IMPL_EVENT_HANDLER(change)
+
+  bool HasListeners();
+
+  void Disconnect();
+
+  size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const;
+
+ private:
+  void LastRelease() final {
+    auto listElement = static_cast<LinkedListElement<MediaQueryList>*>(this);
+    if (listElement->isInList()) {
+      listElement->remove();
+    }
+  }
+
   void RecomputeMatches();
 
   // We only need a pointer to the document to support lazy
@@ -79,15 +87,14 @@ private:
   // after cycle collection unlinking.  Having a non-null mDocument
   // is equivalent to being in that document's mDOMMediaQueryLists
   // linked list.
-  nsCOMPtr<nsIDocument> mDocument;
+  RefPtr<Document> mDocument;
 
-  RefPtr<nsMediaList> mMediaList;
+  RefPtr<MediaList> mMediaList;
   bool mMatches;
   bool mMatchesValid;
-  nsTArray<RefPtr<mozilla::dom::MediaQueryListListener>> mCallbacks;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif /* !defined(mozilla_dom_MediaQueryList_h) */

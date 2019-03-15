@@ -9,11 +9,14 @@ mod test {
 
     fn compare<S, S2>(l: S, r: S2) -> bool
         where S: AsRef<str>,
-              S2: AsRef<str> {
+              S2: AsRef<str>
+    {
         let re = Regex::new("\x1b[^m]*m").unwrap();
         // Strip out any mismatching \r character on windows that might sneak in on either side
-        let left = re.replace_all(&l.as_ref().trim().replace("\r", "")[..], "");
-        let right = re.replace_all(&r.as_ref().trim().replace("\r", "")[..], "");
+        let ls = l.as_ref().trim().replace("\r", "");
+        let rs = r.as_ref().trim().replace("\r", "");
+        let left = re.replace_all(&*ls, "");
+        let right = re.replace_all(&*rs, "");
         let b = left == right;
         if !b {
             println!("");
@@ -35,6 +38,16 @@ mod test {
         let left = String::from_utf8(content).unwrap();
         assert_eq!(stderr, err.use_stderr());
         compare(left, right)
+    }
+    pub fn compare_output2(l: App, args: &str, right1: &str, right2: &str, stderr: bool) -> bool {
+        let mut buf = Cursor::new(Vec::with_capacity(50));
+        let res = l.get_matches_from_safe(args.split(' ').collect::<Vec<_>>());
+        let err = res.unwrap_err();
+        err.write_to(&mut buf).unwrap();
+        let content = buf.into_inner();
+        let left = String::from_utf8(content).unwrap();
+        assert_eq!(stderr, err.use_stderr());
+        compare(&*left, right1) || compare(&*left, right2)
     }
 
     // Legacy tests from the pyhton script days
@@ -67,6 +80,7 @@ mod test {
                                     .version("0.1")
                                     .author("Kevin K. <kbknapp@gmail.com>")
                                     .arg_from_usage("-o --option [scoption]... 'tests options'")
+                                    .arg_from_usage("-s --subcmdarg [subcmdarg] 'tests other args'")
                                     .arg_from_usage("[scpositional] 'tests positionals'"))
     }
 }

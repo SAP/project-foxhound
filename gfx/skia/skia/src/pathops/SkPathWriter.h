@@ -23,7 +23,7 @@ public:
     void assemble();
     void conicTo(const SkPoint& pt1, const SkOpPtT* pt2, SkScalar weight);
     void cubicTo(const SkPoint& pt1, const SkPoint& pt2, const SkOpPtT* pt3);
-    void deferredLine(const SkOpPtT* pt);
+    bool deferredLine(const SkOpPtT* pt);
     void deferredMove(const SkOpPtT* pt);
     void finishContour();
     bool hasMove() const { return !fFirstPtT; }
@@ -41,9 +41,9 @@ private:
     void moveTo();
     const SkTArray<SkPath>& partials() const { return fPartials; }
     bool someAssemblyRequired();
-    void update(const SkOpPtT* pt);
+    SkPoint update(const SkOpPtT* pt);
 
-    SkPath fCurrent;  // contour under construction 
+    SkPath fCurrent;  // contour under construction
     SkTArray<SkPath> fPartials;   // contours with mismatched starts and ends
     SkTDArray<const SkOpPtT*> fEndPtTs;  // possible pt values for partial starts and ends
     SkPath* fPathPtr;  // closed contours are written here

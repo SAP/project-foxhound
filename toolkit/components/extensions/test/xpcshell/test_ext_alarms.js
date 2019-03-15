@@ -1,8 +1,11 @@
 /* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* vim: set sts=2 sw=2 et tw=80: */
+/* eslint-disable mozilla/no-arbitrary-setTimeout */
 "use strict";
 
-add_task(function* test_alarm_without_permissions() {
+PromiseTestUtils.whitelistRejectionsGlobally(/Message manager disconnected/);
+
+add_task(async function test_alarm_without_permissions() {
   function backgroundScript() {
     browser.test.assertTrue(!browser.alarms,
                             "alarm API is not available when the alarm permission is not required");
@@ -16,91 +19,16 @@ add_task(function* test_alarm_without_permissions() {
     },
   });
 
-  yield extension.startup();
-  yield extension.awaitFinish("alarms_permission");
-  yield extension.unload();
+  await extension.startup();
+  await extension.awaitFinish("alarms_permission");
+  await extension.unload();
 });
 
-
-add_task(function* test_alarm_fires() {
-  function backgroundScript() {
-    let ALARM_NAME = "test_ext_alarms";
-    let timer;
-
-    browser.alarms.onAlarm.addListener(alarm => {
-      browser.test.assertEq(ALARM_NAME, alarm.name, "alarm has the correct name");
-      clearTimeout(timer);
-      browser.test.notifyPass("alarm-fires");
-    });
-
-    browser.alarms.create(ALARM_NAME, {delayInMinutes: 0.02});
-
-    timer = setTimeout(async () => {
-      browser.test.fail("alarm fired within expected time");
-      let wasCleared = await browser.alarms.clear(ALARM_NAME);
-      browser.test.assertTrue(wasCleared, "alarm was cleared");
-      browser.test.notifyFail("alarm-fires");
-    }, 10000);
-  }
-
-  let extension = ExtensionTestUtils.loadExtension({
-    background: `(${backgroundScript})()`,
-    manifest: {
-      permissions: ["alarms"],
-    },
-  });
-
-  yield extension.startup();
-  yield extension.awaitFinish("alarm-fires");
-
-  // Defer unloading the extension so the asynchronous event listener
-  // reply finishes.
-  yield new Promise(resolve => setTimeout(resolve, 0));
-  yield extension.unload();
-});
-
-add_task(function* test_alarm_fires_with_when() {
-  function backgroundScript() {
-    let ALARM_NAME = "test_ext_alarms";
-    let timer;
-
-    browser.alarms.onAlarm.addListener(alarm => {
-      browser.test.assertEq(ALARM_NAME, alarm.name, "alarm has the expected name");
-      clearTimeout(timer);
-      browser.test.notifyPass("alarm-when");
-    });
-
-    browser.alarms.create(ALARM_NAME, {when: Date.now() + 1000});
-
-    timer = setTimeout(async () => {
-      browser.test.fail("alarm fired within expected time");
-      let wasCleared = await browser.alarms.clear(ALARM_NAME);
-      browser.test.assertTrue(wasCleared, "alarm was cleared");
-      browser.test.notifyFail("alarm-when");
-    }, 10000);
-  }
-
-  let extension = ExtensionTestUtils.loadExtension({
-    background: `(${backgroundScript})()`,
-    manifest: {
-      permissions: ["alarms"],
-    },
-  });
-
-  yield extension.startup();
-  yield extension.awaitFinish("alarm-when");
-
-  // Defer unloading the extension so the asynchronous event listener
-  // reply finishes.
-  yield new Promise(resolve => setTimeout(resolve, 0));
-  yield extension.unload();
-});
-
-add_task(function* test_alarm_clear_non_matching_name() {
+add_task(async function test_alarm_clear_non_matching_name() {
   async function backgroundScript() {
     let ALARM_NAME = "test_ext_alarms";
 
-    browser.alarms.create(ALARM_NAME, {when: Date.now() + 2000});
+    browser.alarms.create(ALARM_NAME, {when: Date.now() + 2000000});
 
     let wasCleared = await browser.alarms.clear(ALARM_NAME + "1");
     browser.test.assertFalse(wasCleared, "alarm was not cleared");
@@ -117,14 +45,14 @@ add_task(function* test_alarm_clear_non_matching_name() {
     },
   });
 
-  yield extension.startup();
-  yield extension.awaitFinish("alarm-clear");
-  yield extension.unload();
+  await extension.startup();
+  await extension.awaitFinish("alarm-clear");
+  await extension.unload();
 });
 
-add_task(function* test_alarm_get_and_clear_single_argument() {
+add_task(async function test_alarm_get_and_clear_single_argument() {
   async function backgroundScript() {
-    browser.alarms.create({when: Date.now() + 2000});
+    browser.alarms.create({when: Date.now() + 2000000});
 
     let alarm = await browser.alarms.get();
     browser.test.assertEq("", alarm.name, "expected alarm returned");
@@ -145,13 +73,13 @@ add_task(function* test_alarm_get_and_clear_single_argument() {
     },
   });
 
-  yield extension.startup();
-  yield extension.awaitFinish("alarm-single-arg");
-  yield extension.unload();
+  await extension.startup();
+  await extension.awaitFinish("alarm-single-arg");
+  await extension.unload();
 });
 
 
-add_task(function* test_get_get_all_clear_all_alarms() {
+add_task(async function test_get_get_all_clear_all_alarms() {
   async function backgroundScript() {
     const ALARM_NAME = "test_alarm";
 
@@ -201,7 +129,7 @@ add_task(function* test_get_get_all_clear_all_alarms() {
     },
   });
 
-  yield Promise.all([
+  await Promise.all([
     extension.startup(),
     extension.awaitMessage("getAll"),
     extension.awaitMessage("get-0"),
@@ -211,5 +139,56 @@ add_task(function* test_get_get_all_clear_all_alarms() {
     extension.awaitMessage("get-invalid"),
     extension.awaitMessage("clearAll"),
   ]);
-  yield extension.unload();
+  await extension.unload();
+});
+
+async function test_alarm_fires_with_options(alarmCreateOptions) {
+  info(`Test alarms.create fires with options: ${JSON.stringify(alarmCreateOptions)}`);
+
+  function backgroundScript(createOptions) {
+    let ALARM_NAME = "test_ext_alarms";
+    let timer;
+
+    browser.alarms.onAlarm.addListener(alarm => {
+      browser.test.assertEq(ALARM_NAME, alarm.name, "alarm has the expected name");
+      clearTimeout(timer);
+      browser.test.notifyPass("alarms-create-with-options");
+    });
+
+    browser.alarms.create(ALARM_NAME, createOptions);
+
+    timer = setTimeout(async () => {
+      browser.test.fail("alarm fired within expected time");
+      let wasCleared = await browser.alarms.clear(ALARM_NAME);
+      browser.test.assertTrue(wasCleared, "alarm was cleared");
+      browser.test.notifyFail("alarms-create-with-options");
+    }, 10000);
+  }
+
+  let extension = ExtensionTestUtils.loadExtension({
+    // Pass the alarms.create options to the background page.
+    background: `(${backgroundScript})(${JSON.stringify(alarmCreateOptions)})`,
+    manifest: {
+      permissions: ["alarms"],
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitFinish("alarms-create-with-options");
+
+  // Defer unloading the extension so the asynchronous event listener
+  // reply finishes.
+  await new Promise(resolve => setTimeout(resolve, 0));
+  await extension.unload();
+}
+
+add_task(async function test_alarm_fires() {
+  Services.prefs.setBoolPref("privacy.resistFingerprinting.reduceTimerPrecision.jitter", false);
+
+  await test_alarm_fires_with_options({delayInMinutes: 0.01});
+  await test_alarm_fires_with_options({when: Date.now() + 1000});
+  await test_alarm_fires_with_options({delayInMinutes: -10});
+  await test_alarm_fires_with_options({when: Date.now() - 1000});
+
+  Services.prefs.clearUserPref("privacy.resistFingerprinting.reduceTimerPrecision.jitter");
 });

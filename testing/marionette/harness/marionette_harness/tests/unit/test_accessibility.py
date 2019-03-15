@@ -2,10 +2,16 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
+import sys
+import unittest
+
 from marionette_driver.by import By
 from marionette_driver.errors import (
     ElementNotAccessibleException,
-    ElementNotInteractableException
+    ElementNotInteractableException,
+    ElementClickInterceptedException,
 )
 
 from marionette_harness import MarionetteTestCase
@@ -47,7 +53,7 @@ class TestAccessibility(MarionetteTestCase):
         # Button5 does not have a correct accessibility role and may not be
         # manipulated via the accessibility API
         "button5",
-        # Button6 is missing an accesible name
+        # Button6 is missing an accessible name
         "button6",
         # Button7 is not currently visible via the accessibility API and may
         # not be manipulated by it
@@ -70,17 +76,29 @@ class TestAccessibility(MarionetteTestCase):
         "button10"
     ]
 
-    displayed_elementIDs = [
-        "button1", "button2", "button3", "button4", "button5", "button6",
-        "button9", "no_accessible_but_displayed"
-    ]
+    displayed_elementIDs = ["button1", "button2", "button4", "button5", "button6"]
 
-    displayed_but_a11y_hidden_elementIDs = ["button7", "button8"]
+    displayed_but_have_no_accessible_elementIDs = [
+        # Button3 does not have an accessible object
+        "button3",
+        # Button 7 is hidden with aria-hidden set to true
+        "button7",
+        # Button 8 is inside an element with aria-hidden set to true
+        "button8",
+        "no_accessible_but_displayed"
+    ]
 
     disabled_elementIDs = ["button11", "no_accessible_but_disabled"]
 
-    # Elements that are enabled but otherwise disabled or not explorable via the accessibility API
-    disabled_accessibility_elementIDs = ["button12", "button15", "button16"]
+    # Elements that are enabled but otherwise disabled or not explorable
+    # via the accessibility API
+    aria_disabled_elementIDs = ["button12"]
+
+    # pointer-events: "none", which will return
+    # ElementClickInterceptedException if clicked
+    # when Marionette switches
+    # to using WebDriver conforming interaction
+    pointer_events_none_elementIDs = ["button15", "button16"]
 
     # Elements that are reporting selected state
     valid_option_elementIDs = ["option1", "option2"]
@@ -92,8 +110,7 @@ class TestAccessibility(MarionetteTestCase):
 
     def setup_accessibility(self, enable_a11y_checks=True, navigate=True):
         self.marionette.delete_session()
-        self.marionette.start_session(
-            {"requiredCapabilities": {"moz:accessibilityChecks": enable_a11y_checks}})
+        self.marionette.start_session({"moz:accessibilityChecks": enable_a11y_checks})
         self.assertEqual(
             self.marionette.session_capabilities["moz:accessibilityChecks"],
             enable_a11y_checks)
@@ -152,7 +169,7 @@ class TestAccessibility(MarionetteTestCase):
     def test_element_visible_but_not_visible_to_accessbility(self):
         self.setup_accessibility()
         # Elements are displayed but hidden from accessibility API
-        self.run_element_test(self.displayed_but_a11y_hidden_elementIDs,
+        self.run_element_test(self.displayed_but_have_no_accessible_elementIDs,
                               lambda element: self.assertRaises(ElementNotAccessibleException,
                                                                 element.is_displayed))
 
@@ -164,21 +181,36 @@ class TestAccessibility(MarionetteTestCase):
     def test_element_is_not_enabled_to_accessbility(self):
         self.setup_accessibility()
         # Buttons are enabled but disabled/not-explorable via the accessibility API
-        self.run_element_test(self.disabled_accessibility_elementIDs,
+        self.run_element_test(self.aria_disabled_elementIDs,
+                              lambda element: self.assertRaises(ElementNotAccessibleException,
+                                                                element.is_enabled))
+        self.run_element_test(self.pointer_events_none_elementIDs,
                               lambda element: self.assertRaises(ElementNotAccessibleException,
                                                                 element.is_enabled))
 
-        # Buttons are enabled but disabled/not-explorable via the accessibility API and thus are not
-        # clickable via the accessibility API
-        self.run_element_test(self.disabled_accessibility_elementIDs,
+        # Buttons are enabled but disabled/not-explorable via
+        # the accessibility API and thus are not clickable via the
+        # accessibility API.
+        self.run_element_test(self.aria_disabled_elementIDs,
                               lambda element: self.assertRaises(ElementNotAccessibleException,
                                                                 element.click))
+        # To be removed with bug 1405967
+        if not self.marionette.session_capabilities["moz:webdriverClick"]:
+            self.run_element_test(self.pointer_events_none_elementIDs,
+                                  lambda element: self.assertRaises(ElementNotAccessibleException,
+                                                                    element.click))
 
         self.setup_accessibility(False, False)
-        self.run_element_test(self.disabled_accessibility_elementIDs,
+        self.run_element_test(self.aria_disabled_elementIDs,
                               lambda element: element.is_enabled())
-        self.run_element_test(self.disabled_accessibility_elementIDs,
+        self.run_element_test(self.pointer_events_none_elementIDs,
+                              lambda element: element.is_enabled())
+        self.run_element_test(self.aria_disabled_elementIDs,
                               lambda element: element.click())
+        # To be removed with bug 1405967
+        if not self.marionette.session_capabilities["moz:webdriverClick"]:
+            self.run_element_test(self.pointer_events_none_elementIDs,
+                                  lambda element: element.click())
 
     def test_element_is_enabled_to_accessibility(self):
         self.setup_accessibility()
@@ -189,18 +221,6 @@ class TestAccessibility(MarionetteTestCase):
         self.setup_accessibility()
         # Sending keys to valid input should not raise any exceptions
         self.run_element_test(['input1'], lambda element: element.send_keys("a"))
-
-        self.setup_accessibility(False, False)
-        # Sending keys to invalid element should not raise any exceptions when raising accessibility
-        # exceptions is disabled
-        self.run_element_test(['button5'], lambda element: element.send_keys("abc"))
-
-    def test_send_keys_raises_element_not_accessible(self):
-        self.setup_accessibility()
-        # Sending keys to invalid element should raise an exception
-        self.run_element_test(['button5'],
-                              lambda element: self.assertRaises(ElementNotAccessibleException,
-                                                                element.send_keys))
 
     def test_is_selected_raises_no_exception(self):
         self.setup_accessibility()

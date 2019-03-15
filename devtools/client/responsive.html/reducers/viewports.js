@@ -4,6 +4,8 @@
 
 "use strict";
 
+const Services = require("Services");
+
 const {
   ADD_VIEWPORT,
   CHANGE_DEVICE,
@@ -13,6 +15,10 @@ const {
   ROTATE_VIEWPORT,
 } = require("../actions/index");
 
+const VIEWPORT_WIDTH_PREF = "devtools.responsive.viewport.width";
+const VIEWPORT_HEIGHT_PREF = "devtools.responsive.viewport.height";
+const VIEWPORT_PIXEL_RATIO_PREF = "devtools.responsive.viewport.pixelRatio";
+
 let nextViewportId = 0;
 
 const INITIAL_VIEWPORTS = [];
@@ -20,21 +26,27 @@ const INITIAL_VIEWPORT = {
   id: nextViewportId++,
   device: "",
   deviceType: "",
-  width: 320,
-  height: 480,
-  pixelRatio: {
-    value: 0,
-  },
+  height: Services.prefs.getIntPref(VIEWPORT_HEIGHT_PREF, 480),
+  width: Services.prefs.getIntPref(VIEWPORT_WIDTH_PREF, 320),
+  pixelRatio: Services.prefs.getIntPref(VIEWPORT_PIXEL_RATIO_PREF, 0),
+  userContextId: 0,
 };
 
-let reducers = {
+const reducers = {
 
-  [ADD_VIEWPORT](viewports) {
+  [ADD_VIEWPORT](viewports, { userContextId }) {
     // For the moment, there can be at most one viewport.
     if (viewports.length === 1) {
       return viewports;
     }
-    return [...viewports, Object.assign({}, INITIAL_VIEWPORT)];
+
+    return [
+      ...viewports,
+      {
+        ...INITIAL_VIEWPORT,
+        userContextId,
+      },
+    ];
   },
 
   [CHANGE_DEVICE](viewports, { id, device, deviceType }) {
@@ -43,10 +55,11 @@ let reducers = {
         return viewport;
       }
 
-      return Object.assign({}, viewport, {
+      return {
+        ...viewport,
         device,
         deviceType,
-      });
+      };
     });
   },
 
@@ -56,11 +69,12 @@ let reducers = {
         return viewport;
       }
 
-      return Object.assign({}, viewport, {
-        pixelRatio: {
-          value: pixelRatio
-        },
-      });
+      Services.prefs.setIntPref(VIEWPORT_PIXEL_RATIO_PREF, pixelRatio);
+
+      return {
+        ...viewport,
+        pixelRatio,
+      };
     });
   },
 
@@ -70,10 +84,11 @@ let reducers = {
         return viewport;
       }
 
-      return Object.assign({}, viewport, {
+      return {
+        ...viewport,
         device: "",
         deviceType: "",
-      });
+      };
     });
   },
 
@@ -83,17 +98,22 @@ let reducers = {
         return viewport;
       }
 
-      if (!width) {
-        width = viewport.width;
-      }
       if (!height) {
         height = viewport.height;
       }
 
-      return Object.assign({}, viewport, {
-        width,
+      if (!width) {
+        width = viewport.width;
+      }
+
+      Services.prefs.setIntPref(VIEWPORT_WIDTH_PREF, width);
+      Services.prefs.setIntPref(VIEWPORT_HEIGHT_PREF, height);
+
+      return {
+        ...viewport,
         height,
-      });
+        width,
+      };
     });
   },
 
@@ -103,17 +123,24 @@ let reducers = {
         return viewport;
       }
 
-      return Object.assign({}, viewport, {
-        width: viewport.height,
-        height: viewport.width,
-      });
+      const height = viewport.width;
+      const width = viewport.height;
+
+      Services.prefs.setIntPref(VIEWPORT_WIDTH_PREF, width);
+      Services.prefs.setIntPref(VIEWPORT_HEIGHT_PREF, height);
+
+      return {
+        ...viewport,
+        height,
+        width,
+      };
     });
   },
 
 };
 
-module.exports = function (viewports = INITIAL_VIEWPORTS, action) {
-  let reducer = reducers[action.type];
+module.exports = function(viewports = INITIAL_VIEWPORTS, action) {
+  const reducer = reducers[action.type];
   if (!reducer) {
     return viewports;
   }

@@ -13,25 +13,19 @@ NS_IMPL_NS_NEW_HTML_ELEMENT(Meter)
 namespace mozilla {
 namespace dom {
 
-const double HTMLMeterElement::kDefaultValue =  0.0;
-const double HTMLMeterElement::kDefaultMin   =  0.0;
-const double HTMLMeterElement::kDefaultMax   =  1.0;
+const double HTMLMeterElement::kDefaultValue = 0.0;
+const double HTMLMeterElement::kDefaultMin = 0.0;
+const double HTMLMeterElement::kDefaultMax = 1.0;
 
+HTMLMeterElement::HTMLMeterElement(
+    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : nsGenericHTMLElement(std::move(aNodeInfo)) {}
 
-HTMLMeterElement::HTMLMeterElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-  : nsGenericHTMLElement(aNodeInfo)
-{
-}
-
-HTMLMeterElement::~HTMLMeterElement()
-{
-}
+HTMLMeterElement::~HTMLMeterElement() {}
 
 NS_IMPL_ELEMENT_CLONE(HTMLMeterElement)
 
-EventStates
-HTMLMeterElement::IntrinsicState() const
-{
+EventStates HTMLMeterElement::IntrinsicState() const {
   EventStates state = nsGenericHTMLElement::IntrinsicState();
 
   state |= GetOptimumState();
@@ -39,20 +33,20 @@ HTMLMeterElement::IntrinsicState() const
   return state;
 }
 
-bool
-HTMLMeterElement::ParseAttribute(int32_t aNamespaceID, nsIAtom* aAttribute,
-                                 const nsAString& aValue, nsAttrValue& aResult)
-{
+bool HTMLMeterElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                                      const nsAString& aValue,
+                                      nsIPrincipal* aMaybeScriptedPrincipal,
+                                      nsAttrValue& aResult) {
   if (aNamespaceID == kNameSpaceID_None) {
     if (aAttribute == nsGkAtoms::value || aAttribute == nsGkAtoms::max ||
-        aAttribute == nsGkAtoms::min   || aAttribute == nsGkAtoms::low ||
-        aAttribute == nsGkAtoms::high  || aAttribute == nsGkAtoms::optimum) {
+        aAttribute == nsGkAtoms::min || aAttribute == nsGkAtoms::low ||
+        aAttribute == nsGkAtoms::high || aAttribute == nsGkAtoms::optimum) {
       return aResult.ParseDoubleValue(aValue);
     }
   }
 
-  return nsGenericHTMLElement::ParseAttribute(aNamespaceID, aAttribute,
-                                                  aValue, aResult);
+  return nsGenericHTMLElement::ParseAttribute(aNamespaceID, aAttribute, aValue,
+                                              aMaybeScriptedPrincipal, aResult);
 }
 
 /*
@@ -60,23 +54,19 @@ HTMLMeterElement::ParseAttribute(int32_t aNamespaceID, nsIAtom* aAttribute,
  * const getters used by XPCOM methods and by IntrinsicState
  */
 
-double
-HTMLMeterElement::Min() const
-{
+double HTMLMeterElement::Min() const {
   /**
    * If the attribute min is defined, the minimum is this value.
    * Otherwise, the minimum is the default value.
    */
-  const nsAttrValue* attrMin = mAttrsAndChildren.GetAttr(nsGkAtoms::min);
+  const nsAttrValue* attrMin = mAttrs.GetAttr(nsGkAtoms::min);
   if (attrMin && attrMin->Type() == nsAttrValue::eDoubleValue) {
     return attrMin->GetDoubleValue();
   }
   return kDefaultMin;
 }
 
-double
-HTMLMeterElement::Max() const
-{
+double HTMLMeterElement::Max() const {
   /**
    * If the attribute max is defined, the maximum is this value.
    * Otherwise, the maximum is the default value.
@@ -85,7 +75,7 @@ HTMLMeterElement::Max() const
    */
   double max;
 
-  const nsAttrValue* attrMax = mAttrsAndChildren.GetAttr(nsGkAtoms::max);
+  const nsAttrValue* attrMax = mAttrs.GetAttr(nsGkAtoms::max);
   if (attrMax && attrMax->Type() == nsAttrValue::eDoubleValue) {
     max = attrMax->GetDoubleValue();
   } else {
@@ -95,9 +85,7 @@ HTMLMeterElement::Max() const
   return std::max(max, Min());
 }
 
-double
-HTMLMeterElement::Value() const
-{
+double HTMLMeterElement::Value() const {
   /**
    * If the attribute value is defined, the actual value is this value.
    * Otherwise, the actual value is the default value.
@@ -108,7 +96,7 @@ HTMLMeterElement::Value() const
    */
   double value;
 
-  const nsAttrValue* attrValue = mAttrsAndChildren.GetAttr(nsGkAtoms::value);
+  const nsAttrValue* attrValue = mAttrs.GetAttr(nsGkAtoms::value);
   if (attrValue && attrValue->Type() == nsAttrValue::eDoubleValue) {
     value = attrValue->GetDoubleValue();
   } else {
@@ -124,9 +112,7 @@ HTMLMeterElement::Value() const
   return std::min(value, Max());
 }
 
-double
-HTMLMeterElement::Low() const
-{
+double HTMLMeterElement::Low() const {
   /**
    * If the low value is defined, the low value is this value.
    * Otherwise, the low value is the minimum value.
@@ -138,7 +124,7 @@ HTMLMeterElement::Low() const
 
   double min = Min();
 
-  const nsAttrValue* attrLow = mAttrsAndChildren.GetAttr(nsGkAtoms::low);
+  const nsAttrValue* attrLow = mAttrs.GetAttr(nsGkAtoms::low);
   if (!attrLow || attrLow->Type() != nsAttrValue::eDoubleValue) {
     return min;
   }
@@ -152,9 +138,7 @@ HTMLMeterElement::Low() const
   return std::min(low, Max());
 }
 
-double
-HTMLMeterElement::High() const
-{
+double HTMLMeterElement::High() const {
   /**
    * If the high value is defined, the high value is this value.
    * Otherwise, the high value is the maximum value.
@@ -166,7 +150,7 @@ HTMLMeterElement::High() const
 
   double max = Max();
 
-  const nsAttrValue* attrHigh = mAttrsAndChildren.GetAttr(nsGkAtoms::high);
+  const nsAttrValue* attrHigh = mAttrs.GetAttr(nsGkAtoms::high);
   if (!attrHigh || attrHigh->Type() != nsAttrValue::eDoubleValue) {
     return max;
   }
@@ -180,9 +164,7 @@ HTMLMeterElement::High() const
   return std::max(high, Low());
 }
 
-double
-HTMLMeterElement::Optimum() const
-{
+double HTMLMeterElement::Optimum() const {
   /**
    * If the optimum value is defined, the optimum value is this value.
    * Otherwise, the optimum value is the midpoint between
@@ -198,8 +180,7 @@ HTMLMeterElement::Optimum() const
 
   double min = Min();
 
-  const nsAttrValue* attrOptimum =
-              mAttrsAndChildren.GetAttr(nsGkAtoms::optimum);
+  const nsAttrValue* attrOptimum = mAttrs.GetAttr(nsGkAtoms::optimum);
   if (!attrOptimum || attrOptimum->Type() != nsAttrValue::eDoubleValue) {
     return (min + max) / 2.0;
   }
@@ -213,9 +194,7 @@ HTMLMeterElement::Optimum() const
   return std::min(optimum, max);
 }
 
-EventStates
-HTMLMeterElement::GetOptimumState() const
-{
+EventStates HTMLMeterElement::GetOptimumState() const {
   /*
    * If the optimum value is in [minimum, low[,
    *     return if the value is in optimal, suboptimal or sub-suboptimal region
@@ -256,11 +235,10 @@ HTMLMeterElement::GetOptimumState() const
   return NS_EVENT_STATE_SUB_OPTIMUM;
 }
 
-JSObject*
-HTMLMeterElement::WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return HTMLMeterElementBinding::Wrap(aCx, this, aGivenProto);
+JSObject* HTMLMeterElement::WrapNode(JSContext* aCx,
+                                     JS::Handle<JSObject*> aGivenProto) {
+  return HTMLMeterElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

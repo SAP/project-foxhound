@@ -1,4 +1,4 @@
-// Copyright (C) 2016 and later: Unicode, Inc. and others.
+// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
 /*
 ******************************************************************************
@@ -8,7 +8,7 @@
 *
 ******************************************************************************
 *   file name:  unames.c
-*   encoding:   US-ASCII
+*   encoding:   UTF-8
 *   tab size:   8 (not used)
 *   indentation:4
 *
@@ -466,7 +466,7 @@ static uint16_t getExtName(uint32_t code, char *buffer, uint16_t bufferLength) {
         buffer[--i] = (v < 10 ? '0' + v : 'A' + v - 10);
     }
     buffer += ndigits;
-    length += ndigits;
+    length += static_cast<uint16_t>(ndigits);
     WRITE_CHAR(buffer, bufferLength, length, '>');
 
     return length;

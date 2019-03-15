@@ -4,15 +4,13 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = [
-  "AUSTLMY"
+var EXPORTED_SYMBOLS = [
+  "AUSTLMY",
 ];
 
-const {classes: Cc, interfaces: Ci, results: Cr, utils: Cu} = Components;
+ChromeUtils.import("resource://gre/modules/Services.jsm", this);
 
-Cu.import("resource://gre/modules/Services.jsm", this);
-
-this.AUSTLMY = {
+var AUSTLMY = {
   // Telemetry for the application update background update check occurs when
   // the background update timer fires after the update interval which is
   // determined by the app.update.interval preference and its telemetry
@@ -38,9 +36,6 @@ this.AUSTLMY = {
   CHK_NO_UPDATE_FOUND: 0,
   // Update will be downloaded in the background (background download)
   CHK_DOWNLOAD_UPDATE: 1,
-  // Showing prompt due to the update.xml specifying showPrompt
-  // (update notification)
-  CHK_SHOWPROMPT_SNIPPET: 2,
   // Showing prompt due to preference (update notification)
   CHK_SHOWPROMPT_PREF: 3,
   // Already has an active update in progress (no notification)
@@ -51,17 +46,14 @@ this.AUSTLMY = {
   CHK_IS_STAGED: 10,
   // An update is already downloaded (no notification)
   CHK_IS_DOWNLOADED: 11,
-  // Background checks disabled by preference (no notification)
-  CHK_PREF_DISABLED: 12,
-  // Update checks disabled by admin locked preference (no notification)
-  CHK_ADMIN_DISABLED: 13,
+  // Note: codes 12-13 were removed along with the |app.update.enabled| pref.
   // Unable to check for updates per hasUpdateMutex() (no notification)
   CHK_NO_MUTEX: 14,
   // Unable to check for updates per gCanCheckForUpdates (no notification). This
   // should be covered by other codes and is recorded just in case.
   CHK_UNABLE_TO_CHECK: 15,
-  // Background checks disabled for the current session (no notification)
-  CHK_DISABLED_FOR_SESSION: 16,
+  // Note: code 16 was removed when the feature for disabling updates for the
+  // session was removed.
   // Unable to perform a background check while offline (no notification)
   CHK_OFFLINE: 17,
   // Note: codes 18 - 21 were removed along with the certificate checking code.
@@ -74,8 +66,6 @@ this.AUSTLMY = {
   CHK_NO_COMPAT_UPDATE_FOUND: 24,
   // Update found for a previous version (no notification)
   CHK_UPDATE_PREVIOUS_VERSION: 25,
-  // Update found for a version with the never preference set (no notification)
-  CHK_UPDATE_NEVER_PREF: 26,
   // Update found without a type attribute (no notification)
   CHK_UPDATE_INVALID_TYPE: 27,
   // The system is no longer supported (system unsupported notification)
@@ -94,6 +84,10 @@ this.AUSTLMY = {
   // User opted out of elevated updates for the available update version, OSX
   // only (no notification)
   CHK_ELEVATION_OPTOUT_FOR_VERSION: 36,
+  // Update checks disabled by enterprise policy
+  CHK_DISABLED_BY_POLICY: 37,
+  // Update check failed due to write error
+  CHK_ERR_WRITE_FAILURE: 38,
 
   /**
    * Submit a telemetry ping for the update check result code or a telemetry
@@ -164,8 +158,8 @@ this.AUSTLMY = {
   PATCH_UNKNOWN: "UNKNOWN",
 
   /**
-   * Values for the UPDATE_DOWNLOAD_CODE_COMPLETE and
-   * UPDATE_DOWNLOAD_CODE_PARTIAL Telemetry histograms.
+   * Values for the UPDATE_DOWNLOAD_CODE_COMPLETE, UPDATE_DOWNLOAD_CODE_PARTIAL,
+   * and UPDATE_DOWNLOAD_CODE_UNKNOWN Telemetry histograms.
    */
   DWNLD_SUCCESS: 0,
   DWNLD_RETRY_OFFLINE: 1,
@@ -174,7 +168,6 @@ this.AUSTLMY = {
   DWNLD_RETRY_NET_RESET: 4,
   DWNLD_ERR_NO_UPDATE: 5,
   DWNLD_ERR_NO_UPDATE_PATCH: 6,
-  DWNLD_ERR_NO_PATCH_FILE: 7,
   DWNLD_ERR_PATCH_SIZE_LARGER: 8,
   DWNLD_ERR_PATCH_SIZE_NOT_EQUAL: 9,
   DWNLD_ERR_BINDING_ABORTED: 10,
@@ -182,7 +175,9 @@ this.AUSTLMY = {
   DWNLD_ERR_DOCUMENT_NOT_CACHED: 12,
   DWNLD_ERR_VERIFY_NO_REQUEST: 13,
   DWNLD_ERR_VERIFY_PATCH_SIZE_NOT_EQUAL: 14,
-  DWNLD_ERR_VERIFY_NO_HASH_MATCH: 15,
+  DWNLD_ERR_WRITE_FAILURE: 15,
+  // Temporary failure code to see if there are failures without an update phase
+  DWNLD_UNKNOWN_PHASE_ERR_WRITE_FAILURE: 40,
 
   /**
    * Submit a telemetry ping for the update download result code.
@@ -194,6 +189,7 @@ this.AUSTLMY = {
    *         the histogram ID out of the following histogram IDs:
    *         UPDATE_DOWNLOAD_CODE_COMPLETE
    *         UPDATE_DOWNLOAD_CODE_PARTIAL
+   *         UPDATE_DOWNLOAD_CODE_UNKNOWN
    * @param  aCode
    *         An integer value as defined by the values that start with DWNLD_ in
    *         the above section.
@@ -213,6 +209,10 @@ this.AUSTLMY = {
       Cu.reportError(e);
     }
   },
+
+  // Previous state codes are defined in pingStateAndStatusCodes() in
+  // nsUpdateService.js
+  STATE_WRITE_FAILURE: 14,
 
   /**
    * Submit a telemetry ping for the update status state code.
@@ -259,6 +259,27 @@ this.AUSTLMY = {
       let id = "UPDATE_STATUS_ERROR_CODE_" + aSuffix;
       // enumerated type histogram
       Services.telemetry.getHistogramById(id).add(aCode);
+    } catch (e) {
+      Cu.reportError(e);
+    }
+  },
+
+  /**
+   * Submit a telemetry ping for a failing binary transparency result.
+   *
+   * @param  aSuffix
+   *         Key to use on the update.binarytransparencyresult collection.
+   *         Must be one of "COMPLETE_STARTUP", "PARTIAL_STARTUP",
+   *         "UNKNOWN_STARTUP", "COMPLETE_STAGE", "PARTIAL_STAGE",
+   *         "UNKNOWN_STAGE".
+   * @param  aCode
+   *         An integer value for the error code from the update.bt file.
+   */
+  pingBinaryTransparencyResult: function UT_pingBinaryTransparencyResult(aSuffix, aCode) {
+    try {
+      let id = "update.binarytransparencyresult";
+      let key = aSuffix.toLowerCase().replace("_", "-");
+      Services.telemetry.keyedScalarSet(id, key, aCode);
     } catch (e) {
       Cu.reportError(e);
     }
@@ -483,6 +504,6 @@ this.AUSTLMY = {
     } catch (e) {
       Cu.reportError(e);
     }
-  }
+  },
 };
 Object.freeze(AUSTLMY);

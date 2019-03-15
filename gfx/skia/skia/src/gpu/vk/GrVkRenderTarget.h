@@ -31,12 +31,9 @@ struct GrVkImageInfo;
 
 class GrVkRenderTarget: public GrRenderTarget, public virtual GrVkImage {
 public:
-    static GrVkRenderTarget* CreateNewRenderTarget(GrVkGpu*, SkBudgeted, const GrSurfaceDesc&,
-                                                   const GrVkImage::ImageDesc&);
-
-    static GrVkRenderTarget* CreateWrappedRenderTarget(GrVkGpu*, const GrSurfaceDesc&,
-                                                       GrWrapOwnership,
-                                                       const GrVkImageInfo*);
+    static sk_sp<GrVkRenderTarget> MakeWrappedRenderTarget(GrVkGpu*, const GrSurfaceDesc&,
+                                                           const GrVkImageInfo&,
+                                                           sk_sp<GrVkImageLayout>);
 
     ~GrVkRenderTarget() override;
 
@@ -48,7 +45,7 @@ public:
         }
         return nullptr;
     }
-    GrVkImage* msaaImage() { return fMSAAImage; }
+    GrVkImage* msaaImage() { return fMSAAImage.get(); }
     const GrVkImageView* resolveAttachmentView() const { return fResolveAttachmentView; }
     const GrVkResource* stencilImageResource() const;
     const GrVkImageView* stencilAttachmentView() const;
@@ -70,7 +67,7 @@ public:
         return true;
     }
 
-    GrBackendObject getRenderTargetHandle() const override;
+    GrBackendRenderTarget getBackendRenderTarget() const override;
 
     void getAttachmentsDescriptor(GrVkRenderPass::AttachmentsDescriptor* desc,
                                   GrVkRenderPass::AttachmentFlags* flags) const;
@@ -81,16 +78,19 @@ protected:
     GrVkRenderTarget(GrVkGpu* gpu,
                      const GrSurfaceDesc& desc,
                      const GrVkImageInfo& info,
+                     sk_sp<GrVkImageLayout> layout,
                      const GrVkImageInfo& msaaInfo,
+                     sk_sp<GrVkImageLayout> msaaLayout,
                      const GrVkImageView* colorAttachmentView,
                      const GrVkImageView* resolveAttachmentView,
-                     GrVkImage::Wrapped wrapped);
+                     GrBackendObjectOwnership);
 
     GrVkRenderTarget(GrVkGpu* gpu,
                      const GrSurfaceDesc& desc,
                      const GrVkImageInfo& info,
+                     sk_sp<GrVkImageLayout> layout,
                      const GrVkImageView* colorAttachmentView,
-                     GrVkImage::Wrapped wrapped);
+                     GrBackendObjectOwnership);
 
     GrVkGpu* getVkGpu() const;
 
@@ -99,38 +99,36 @@ protected:
 
     // This accounts for the texture's memory and any MSAA renderbuffer's memory.
     size_t onGpuMemorySize() const override {
-        SkASSERT(kUnknown_GrPixelConfig != fDesc.fConfig);
-        SkASSERT(!GrPixelConfigIsCompressed(fDesc.fConfig));
-        size_t colorBytes = GrBytesPerPixel(fDesc.fConfig);
-        SkASSERT(colorBytes > 0);
-        return fColorValuesPerPixel * fDesc.fWidth * fDesc.fHeight * colorBytes;
+        int numColorSamples = this->numColorSamples();
+        if (numColorSamples > 1) {
+            // Add one to account for the resolved VkImage.
+            numColorSamples += 1;
+        }
+        return GrSurface::ComputeSize(this->config(), this->width(), this->height(),
+                                      numColorSamples, GrMipMapped::kNo);
     }
 
     void createFramebuffer(GrVkGpu* gpu);
 
     const GrVkImageView*       fColorAttachmentView;
-    GrVkImage*                 fMSAAImage;
+    std::unique_ptr<GrVkImage> fMSAAImage;
     const GrVkImageView*       fResolveAttachmentView;
 
 private:
     GrVkRenderTarget(GrVkGpu* gpu,
-                     SkBudgeted,
                      const GrSurfaceDesc& desc,
                      const GrVkImageInfo& info,
+                     sk_sp<GrVkImageLayout> layout,
                      const GrVkImageInfo& msaaInfo,
+                     sk_sp<GrVkImageLayout> msaaLayout,
                      const GrVkImageView* colorAttachmentView,
-                     const GrVkImageView* resolveAttachmentView,
-                     GrVkImage::Wrapped wrapped);
+                     const GrVkImageView* resolveAttachmentView);
 
     GrVkRenderTarget(GrVkGpu* gpu,
-                     SkBudgeted,
                      const GrSurfaceDesc& desc,
                      const GrVkImageInfo& info,
-                     const GrVkImageView* colorAttachmentView,
-                     GrVkImage::Wrapped wrapped);
-
-    static GrVkRenderTarget* Create(GrVkGpu*, SkBudgeted, const GrSurfaceDesc&,
-                                    const GrVkImageInfo&, GrVkImage::Wrapped wrapped);
+                     sk_sp<GrVkImageLayout> layout,
+                     const GrVkImageView* colorAttachmentView);
 
     bool completeStencilAttachment() override;
 
@@ -138,7 +136,6 @@ private:
     void abandonInternalObjects();
 
     const GrVkFramebuffer*     fFramebuffer;
-    int                        fColorValuesPerPixel;
 
     // This is a cached pointer to a simple render pass. The render target should unref it
     // once it is done with it.

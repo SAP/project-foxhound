@@ -10,8 +10,6 @@
 #include "mozilla/Attributes.h"
 #include "nsGenericHTMLElement.h"
 #include "nsImageLoadingContent.h"
-#include "nsIDOMHTMLImageElement.h"
-#include "imgRequestProxy.h"
 #include "Units.h"
 #include "nsCycleCollectionParticipant.h"
 
@@ -23,20 +21,18 @@ class ImageLoadTask;
 
 class ResponsiveImageSelector;
 class HTMLImageElement final : public nsGenericHTMLElement,
-                               public nsImageLoadingContent,
-                               public nsIDOMHTMLImageElement
-{
+                               public nsImageLoadingContent {
   friend class HTMLSourceElement;
   friend class HTMLPictureElement;
   friend class ImageLoadTask;
-public:
-  explicit HTMLImageElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
 
-  static already_AddRefed<HTMLImageElement>
-    Image(const GlobalObject& aGlobal,
-          const Optional<uint32_t>& aWidth,
-          const Optional<uint32_t>& aHeight,
-          ErrorResult& aError);
+ public:
+  explicit HTMLImageElement(
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+
+  static already_AddRefed<HTMLImageElement> Image(
+      const GlobalObject& aGlobal, const Optional<uint32_t>& aWidth,
+      const Optional<uint32_t>& aHeight, ErrorResult& aError);
 
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(HTMLImageElement,
                                            nsGenericHTMLElement)
@@ -46,179 +42,165 @@ public:
 
   virtual bool Draggable() const override;
 
+  ResponsiveImageSelector* GetResponsiveImageSelector() {
+    return mResponsiveSelector.get();
+  }
+
   // Element
   virtual bool IsInteractiveHTMLContent(bool aIgnoreTabindex) const override;
 
   // EventTarget
   virtual void AsyncEventRunning(AsyncEventDispatcher* aEvent) override;
 
-  // nsIDOMHTMLImageElement
-  NS_DECL_NSIDOMHTMLIMAGEELEMENT
-
-  NS_IMPL_FROMCONTENT_HTML_WITH_TAG(HTMLImageElement, img)
+  NS_IMPL_FROMNODE_HTML_WITH_TAG(HTMLImageElement, img)
 
   // override from nsImageLoadingContent
   CORSMode GetCORSMode() override;
 
   // nsIContent
-  virtual bool ParseAttribute(int32_t aNamespaceID,
-                                nsIAtom* aAttribute,
-                                const nsAString& aValue,
-                                nsAttrValue& aResult) override;
-  virtual nsChangeHint GetAttributeChangeHint(const nsIAtom* aAttribute,
+  virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                              const nsAString& aValue,
+                              nsIPrincipal* aMaybeScriptedPrincipal,
+                              nsAttrValue& aResult) override;
+  virtual nsChangeHint GetAttributeChangeHint(const nsAtom* aAttribute,
                                               int32_t aModType) const override;
-  NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const override;
-  virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction() const override;
+  NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
+  virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction()
+      const override;
 
-  virtual nsresult GetEventTargetParent(
-                     EventChainPreVisitor& aVisitor) override;
+  void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
 
-  bool IsHTMLFocusable(bool aWithMouse, bool *aIsFocusable, int32_t *aTabIndex) override;
+  bool IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
+                       int32_t* aTabIndex) override;
 
-  // SetAttr override.  C++ is stupid, so have to override both
-  // overloaded methods.
-  nsresult SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
-                   const nsAString& aValue, bool aNotify)
-  {
-    return SetAttr(aNameSpaceID, aName, nullptr, aValue, aNotify);
-  }
-  virtual nsresult SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
-                           nsIAtom* aPrefix, const nsAString& aValue,
-                           bool aNotify) override;
-
-  virtual nsresult BindToTree(nsIDocument* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent,
-                              bool aCompileEventHandlers) override;
+  virtual nsresult BindToTree(Document* aDocument, nsIContent* aParent,
+                              nsIContent* aBindingParent) override;
   virtual void UnbindFromTree(bool aDeep, bool aNullParent) override;
 
   virtual EventStates IntrinsicState() const override;
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
-  virtual void NodeInfoChanged() override;
+  virtual void NodeInfoChanged(Document* aOldDoc) override;
 
-  nsresult CopyInnerTo(Element* aDest);
+  nsresult CopyInnerTo(HTMLImageElement* aDest);
 
-  void MaybeLoadImage();
+  void MaybeLoadImage(bool aAlwaysForceLoad);
 
-  bool IsMap()
-  {
-    return GetBoolAttr(nsGkAtoms::ismap);
-  }
-  void SetIsMap(bool aIsMap, ErrorResult& aError)
-  {
+  bool IsMap() { return GetBoolAttr(nsGkAtoms::ismap); }
+  void SetIsMap(bool aIsMap, ErrorResult& aError) {
     SetHTMLBoolAttr(nsGkAtoms::ismap, aIsMap, aError);
   }
-  uint32_t Width()
-  {
+  MOZ_CAN_RUN_SCRIPT uint32_t Width() {
     return GetWidthHeightForImage(mCurrentRequest).width;
   }
-  void SetWidth(uint32_t aWidth, ErrorResult& aError)
-  {
+  void SetWidth(uint32_t aWidth, ErrorResult& aError) {
     SetUnsignedIntAttr(nsGkAtoms::width, aWidth, 0, aError);
   }
-  uint32_t Height()
-  {
+  MOZ_CAN_RUN_SCRIPT uint32_t Height() {
     return GetWidthHeightForImage(mCurrentRequest).height;
   }
-  void SetHeight(uint32_t aHeight, ErrorResult& aError)
-  {
+  void SetHeight(uint32_t aHeight, ErrorResult& aError) {
     SetUnsignedIntAttr(nsGkAtoms::height, aHeight, 0, aError);
   }
   uint32_t NaturalWidth();
   uint32_t NaturalHeight();
   bool Complete();
-  uint32_t Hspace()
-  {
-    return GetUnsignedIntAttr(nsGkAtoms::hspace, 0);
-  }
-  void SetHspace(uint32_t aHspace, ErrorResult& aError)
-  {
+  uint32_t Hspace() { return GetUnsignedIntAttr(nsGkAtoms::hspace, 0); }
+  void SetHspace(uint32_t aHspace, ErrorResult& aError) {
     SetUnsignedIntAttr(nsGkAtoms::hspace, aHspace, 0, aError);
   }
-  uint32_t Vspace()
-  {
-    return GetUnsignedIntAttr(nsGkAtoms::vspace, 0);
-  }
-  void SetVspace(uint32_t aVspace, ErrorResult& aError)
-  {
+  uint32_t Vspace() { return GetUnsignedIntAttr(nsGkAtoms::vspace, 0); }
+  void SetVspace(uint32_t aVspace, ErrorResult& aError) {
     SetUnsignedIntAttr(nsGkAtoms::vspace, aVspace, 0, aError);
   }
 
-  // The XPCOM versions of the following getters work for Web IDL bindings as well
-  void SetAlt(const nsAString& aAlt, ErrorResult& aError)
-  {
+  void GetAlt(nsAString& aAlt) { GetHTMLAttr(nsGkAtoms::alt, aAlt); }
+  void SetAlt(const nsAString& aAlt, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::alt, aAlt, aError);
   }
-  void SetSrc(const nsAString& aSrc, ErrorResult& aError)
-  {
+  void GetSrc(nsAString& aSrc) { GetURIAttr(nsGkAtoms::src, nullptr, aSrc); }
+  void SetSrc(const nsAString& aSrc, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::src, aSrc, aError);
   }
-  void SetSrcset(const nsAString& aSrcset, ErrorResult& aError)
-  {
-    SetHTMLAttr(nsGkAtoms::srcset, aSrcset, aError);
+  void SetSrc(const nsAString& aSrc, nsIPrincipal* aTriggeringPrincipal,
+              ErrorResult& aError) {
+    SetHTMLAttr(nsGkAtoms::src, aSrc, aTriggeringPrincipal, aError);
   }
-  void GetCrossOrigin(nsAString& aResult)
-  {
+  void GetSrcset(nsAString& aSrcset) {
+    GetHTMLAttr(nsGkAtoms::srcset, aSrcset);
+  }
+  void SetSrcset(const nsAString& aSrcset, nsIPrincipal* aTriggeringPrincipal,
+                 ErrorResult& aError) {
+    SetHTMLAttr(nsGkAtoms::srcset, aSrcset, aTriggeringPrincipal, aError);
+  }
+  void GetCrossOrigin(nsAString& aResult) {
     // Null for both missing and invalid defaults is ok, since we
     // always parse to an enum value, so we don't need an invalid
     // default, and we _want_ the missing default to be null.
     GetEnumAttr(nsGkAtoms::crossorigin, nullptr, aResult);
   }
-  void SetCrossOrigin(const nsAString& aCrossOrigin, ErrorResult& aError)
-  {
+  void SetCrossOrigin(const nsAString& aCrossOrigin, ErrorResult& aError) {
     SetOrRemoveNullableStringAttr(nsGkAtoms::crossorigin, aCrossOrigin, aError);
   }
-  void SetUseMap(const nsAString& aUseMap, ErrorResult& aError)
-  {
+  void GetUseMap(nsAString& aUseMap) {
+    GetHTMLAttr(nsGkAtoms::usemap, aUseMap);
+  }
+  void SetUseMap(const nsAString& aUseMap, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::usemap, aUseMap, aError);
   }
-  void SetName(const nsAString& aName, ErrorResult& aError)
-  {
+  void GetName(nsAString& aName) { GetHTMLAttr(nsGkAtoms::name, aName); }
+  void SetName(const nsAString& aName, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::name, aName, aError);
   }
-  void SetAlign(const nsAString& aAlign, ErrorResult& aError)
-  {
+  void GetAlign(nsAString& aAlign) { GetHTMLAttr(nsGkAtoms::align, aAlign); }
+  void SetAlign(const nsAString& aAlign, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::align, aAlign, aError);
   }
-  void SetLongDesc(const nsAString& aLongDesc, ErrorResult& aError)
-  {
+  void GetLongDesc(nsAString& aLongDesc) {
+    GetURIAttr(nsGkAtoms::longdesc, nullptr, aLongDesc);
+  }
+  void SetLongDesc(const nsAString& aLongDesc, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::longdesc, aLongDesc, aError);
   }
-  void SetSizes(const nsAString& aSizes, ErrorResult& aError)
-  {
+  void GetSizes(nsAString& aSizes) { GetHTMLAttr(nsGkAtoms::sizes, aSizes); }
+  void SetSizes(const nsAString& aSizes, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::sizes, aSizes, aError);
   }
-  void SetBorder(const nsAString& aBorder, ErrorResult& aError)
-  {
+  void GetCurrentSrc(nsAString& aValue);
+  void GetBorder(nsAString& aBorder) {
+    GetHTMLAttr(nsGkAtoms::border, aBorder);
+  }
+  void SetBorder(const nsAString& aBorder, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::border, aBorder, aError);
   }
-  void SetReferrerPolicy(const nsAString& aReferrer, ErrorResult& aError)
-  {
+  void SetReferrerPolicy(const nsAString& aReferrer, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::referrerpolicy, aReferrer, aError);
   }
-  void GetReferrerPolicy(nsAString& aReferrer)
-  {
+  void GetReferrerPolicy(nsAString& aReferrer) {
     GetEnumAttr(nsGkAtoms::referrerpolicy, EmptyCString().get(), aReferrer);
   }
+  void SetDecoding(const nsAString& aDecoding, ErrorResult& aError) {
+    SetHTMLAttr(nsGkAtoms::decoding, aDecoding, aError);
+  }
+  void GetDecoding(nsAString& aValue);
 
-  net::ReferrerPolicy
-  GetImageReferrerPolicy() override
-  {
+  net::ReferrerPolicy GetImageReferrerPolicy() override {
     return GetReferrerPolicyAsEnum();
   }
 
-  int32_t X();
-  int32_t Y();
-  // Uses XPCOM GetLowsrc.
-  void SetLowsrc(const nsAString& aLowsrc, ErrorResult& aError)
-  {
+  MOZ_CAN_RUN_SCRIPT int32_t X();
+  MOZ_CAN_RUN_SCRIPT int32_t Y();
+  void GetLowsrc(nsAString& aLowsrc) {
+    GetURIAttr(nsGkAtoms::lowsrc, nullptr, aLowsrc);
+  }
+  void SetLowsrc(const nsAString& aLowsrc, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::lowsrc, aLowsrc, aError);
   }
 
 #ifdef DEBUG
-  nsIDOMHTMLFormElement* GetForm() const;
+  HTMLFormElement* GetForm() const;
 #endif
-  void SetForm(nsIDOMHTMLFormElement* aForm);
+  void SetForm(HTMLFormElement* aForm);
   void ClearForm(bool aRemoveFromForm);
 
   virtual void DestroyContent() override;
@@ -258,15 +240,11 @@ public:
    * no source.  This is distinct from a return of false which implies that
    * further <source> or <img> tags would be considered.
    */
-  static bool
-    SelectSourceForTagWithAttrs(nsIDocument *aDocument,
-                                bool aIsSourceTag,
-                                const nsAString& aSrcAttr,
-                                const nsAString& aSrcsetAttr,
-                                const nsAString& aSizesAttr,
-                                const nsAString& aTypeAttr,
-                                const nsAString& aMediaAttr,
-                                nsAString& aResult);
+  static bool SelectSourceForTagWithAttrs(
+      Document* aDocument, bool aIsSourceTag, const nsAString& aSrcAttr,
+      const nsAString& aSrcsetAttr, const nsAString& aSizesAttr,
+      const nsAString& aTypeAttr, const nsAString& aMediaAttr,
+      nsAString& aResult);
 
   /**
    * If this image's src pointers to an SVG document, flush the SVG document's
@@ -274,7 +252,7 @@ public:
    */
   void FlushUseCounters();
 
-protected:
+ protected:
   virtual ~HTMLImageElement();
 
   // Queues a task to run LoadSelectedImage pending stable state.
@@ -293,8 +271,8 @@ protected:
   // only mode after Bug 1076583
   bool InResponsiveMode();
 
-  // True if the given URL and density equal the last URL and density that was loaded by this element.
-  bool SelectedSourceMatchesLast(nsIURI* aSelectedSource, double aSelectedDensity);
+  // True if the given URL equals the last URL that was loaded by this element.
+  bool SelectedSourceMatchesLast(nsIURI* aSelectedSource);
 
   // Resolve and load the current mResponsiveSelector (responsive mode) or src
   // attr image.
@@ -304,17 +282,17 @@ protected:
   static bool SupportedPictureSourceType(const nsAString& aType);
 
   // Update/create/destroy mResponsiveSelector
-  void PictureSourceSrcsetChanged(nsIContent *aSourceNode,
+  void PictureSourceSrcsetChanged(nsIContent* aSourceNode,
                                   const nsAString& aNewValue, bool aNotify);
-  void PictureSourceSizesChanged(nsIContent *aSourceNode,
+  void PictureSourceSizesChanged(nsIContent* aSourceNode,
                                  const nsAString& aNewValue, bool aNotify);
   // As we re-run the source selection on these mutations regardless,
   // we don't actually care which changed or to what
-  void PictureSourceMediaOrTypeChanged(nsIContent *aSourceNode, bool aNotify);
+  void PictureSourceMediaOrTypeChanged(nsIContent* aSourceNode, bool aNotify);
 
-  void PictureSourceAdded(nsIContent *aSourceNode);
+  void PictureSourceAdded(nsIContent* aSourceNode);
   // This should be called prior to the unbind, such that nextsibling works
-  void PictureSourceRemoved(nsIContent *aSourceNode);
+  void PictureSourceRemoved(nsIContent* aSourceNode);
 
   // Re-evaluates all source nodes (picture <source>,<img>) and finds
   // the best source set for mResponsiveSelector. If a better source
@@ -337,18 +315,28 @@ protected:
   // If the node's srcset/sizes make for an invalid selector, returns
   // false. This does not guarantee the resulting selector matches an image,
   // only that it is valid.
-  bool TryCreateResponsiveSelector(nsIContent *aSourceNode);
+  bool TryCreateResponsiveSelector(Element* aSourceElement);
 
-  CSSIntPoint GetXY();
-  virtual JSObject* WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto) override;
+  MOZ_CAN_RUN_SCRIPT CSSIntPoint GetXY();
+  virtual JSObject* WrapNode(JSContext* aCx,
+                             JS::Handle<JSObject*> aGivenProto) override;
   void UpdateFormOwner();
 
-  virtual nsresult BeforeSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
-                                 nsAttrValueOrString* aValue,
+  virtual nsresult BeforeSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                                 const nsAttrValueOrString* aValue,
                                  bool aNotify) override;
 
-  virtual nsresult AfterSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
-                                const nsAttrValue* aValue, bool aNotify) override;
+  virtual nsresult AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                                const nsAttrValue* aValue,
+                                const nsAttrValue* aOldValue,
+                                nsIPrincipal* aMaybeScriptedPrincipal,
+                                bool aNotify) override;
+  virtual nsresult OnAttrSetButNotChanged(int32_t aNamespaceID, nsAtom* aName,
+                                          const nsAttrValueOrString& aValue,
+                                          bool aNotify) override;
+
+  // Override for nsImageLoadingContent.
+  nsIContent* AsContent() override { return this; }
 
   // This is a weak reference that this element and the HTMLFormElement
   // cooperate in maintaining.
@@ -357,14 +345,37 @@ protected:
   // Created when we're tracking responsive image state
   RefPtr<ResponsiveImageSelector> mResponsiveSelector;
 
-private:
-  bool SourceElementMatches(nsIContent* aSourceNode);
+ private:
+  bool SourceElementMatches(Element* aSourceElement);
 
   static void MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
-                                    GenericSpecifiedValues* aGenericData);
+                                    MappedDeclarations&);
+  /**
+   * This function is called by AfterSetAttr and OnAttrSetButNotChanged.
+   * It will not be called if the value is being unset.
+   *
+   * @param aNamespaceID the namespace of the attr being set
+   * @param aName the localname of the attribute being set
+   * @param aValue the value it's being set to represented as either a string or
+   *        a parsed nsAttrValue.
+   * @param aOldValue the value previously set. Will be null if no value was
+   *        previously set. This value should only be used when
+   *        aValueMaybeChanged is true; when aValueMaybeChanged is false,
+   *        aOldValue should be considered unreliable.
+   * @param aValueMaybeChanged will be false when this function is called from
+   *        OnAttrSetButNotChanged to indicate that the value was not changed.
+   * @param aNotify Whether we plan to notify document observers.
+   */
+  void AfterMaybeChangeAttr(int32_t aNamespaceID, nsAtom* aName,
+                            const nsAttrValueOrString& aValue,
+                            const nsAttrValue* aOldValue,
+                            nsIPrincipal* aMaybeScriptedPrincipal,
+                            bool aValueMaybeChanged, bool aNotify);
 
   bool mInDocResponsiveContent;
   RefPtr<ImageLoadTask> mPendingImageLoadTask;
+  nsCOMPtr<nsIPrincipal> mSrcTriggeringPrincipal;
+  nsCOMPtr<nsIPrincipal> mSrcsetTriggeringPrincipal;
 
   // Last URL that was attempted to load by this element.
   nsCOMPtr<nsIURI> mLastSelectedSource;
@@ -372,7 +383,7 @@ private:
   double mCurrentDensity;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif /* mozilla_dom_HTMLImageElement_h */

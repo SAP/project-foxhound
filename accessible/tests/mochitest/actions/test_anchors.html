@@ -18,27 +18,24 @@
           src="../actions.js"></script>
 
   <script type="application/javascript">
-    ////////////////////////////////////////////////////////////////////////////
+    // //////////////////////////////////////////////////////////////////////////
     // Event checkers
 
-    function scrollingChecker(aAcc)
-    {
+    function scrollingChecker(aAcc) {
       this.type = EVENT_SCROLLING_START;
       this.target = aAcc;
-      this.getID = function scrollingChecker_getID()
-      {
+      this.getID = function scrollingChecker_getID() {
         return "scrolling start handling for " + prettyName(aAcc);
-      }
+      };
     }
 
-    ////////////////////////////////////////////////////////////////////////////
+    // //////////////////////////////////////////////////////////////////////////
     // Test
 
     // gA11yEventDumpID = "debug"; // debug stuff
-    //gA11yEventDumpToConsole = true; // debug stuff
+    // gA11yEventDumpToConsole = true; // debug stuff
 
-    function doTest()
-    {
+    function doTest() {
       var actionsArray = [
         {
           ID: "anchor1",
@@ -46,8 +43,8 @@
           actionIndex: 0,
           events: CLICK_EVENTS,
           eventSeq: [
-            new scrollingChecker(getAccessible("bottom1"))
-          ]
+            new scrollingChecker(getAccessible("bottom1")),
+          ],
         },
         { // jump again (test for bug 437607)
           ID: "anchor1",
@@ -55,8 +52,8 @@
           actionIndex: 0,
           events: CLICK_EVENTS,
           eventSeq: [
-            new scrollingChecker(getAccessible("bottom1"))
-          ]
+            new scrollingChecker(getAccessible("bottom1")),
+          ],
         },
         {
           ID: "anchor2",
@@ -64,9 +61,9 @@
           actionIndex: 0,
           events: CLICK_EVENTS,
           eventSeq: [
-            new scrollingChecker(getAccessible("bottom2"))
-          ]
-        }
+            new scrollingChecker(getAccessible("bottom2")),
+          ],
+        },
       ];
 
       testActions(actionsArray);
@@ -79,17 +76,17 @@
 
 <body>
 
-  <a target="_blank"
+  <a target="_blank" rel="opener"
      href="https://bugzilla.mozilla.org/show_bug.cgi?id=506389"
      title="Some same page links do not fire EVENT_SYSTEM_SCROLLINGSTART">
     Mozilla Bug 506389
   </a><br>
-  <a target="_blank"
+  <a target="_blank" rel="opener"
      href="https://bugzilla.mozilla.org/show_bug.cgi?id=437607"
      title="Clicking the 'Skip to main content' link once works, second time fails to initiate a V cursor jump">
     Mozilla Bug 437607
   </a><br>
-  <a target="_blank"
+  <a target="_blank" rel="opener"
      href="https://bugzilla.mozilla.org/show_bug.cgi?id=519303"
      title="Same page links to targets with content fires scrolling start accessible event on leaf text node">
     Mozilla Bug 519303

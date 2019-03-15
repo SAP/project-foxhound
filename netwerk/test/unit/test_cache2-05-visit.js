@@ -10,12 +10,10 @@ function run_test()
     // by postponing the writes using do_execute_soon. We must do the same here
     // to make sure that all writes are posted to Cache I/O thread before we
     // visit the storage.
-    do_execute_soon(function() {
+    executeSoon(function() {
       syncWithCacheIOThread(function() {
 
-        var expectedConsumption = newCacheBackEndUsed()
-          ? 4096
-          : 48;
+        var expectedConsumption = 4096;
 
         storage.asyncVisitStorage(
           // Test should store 4 entries
@@ -32,7 +30,7 @@ function run_test()
         );
       });
     });
-  }, !newCacheBackEndUsed());
+  });
 
   asyncOpenCacheEntry("http://a/", "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
     new OpenCallback(NEW, "a1m", "a1d", function(entry) {

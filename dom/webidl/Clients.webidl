@@ -15,8 +15,7 @@ interface Clients {
   Promise<any> get(DOMString id);
   [NewObject]
   Promise<sequence<Client>> matchAll(optional ClientQueryOptions options);
-  [NewObject,
-   Func="mozilla::dom::ServiceWorkerGlobalScope::OpenWindowEnabled"]
+  [NewObject]
   Promise<WindowClient?> openWindow(USVString url);
   [NewObject]
   Promise<void> claim();
@@ -31,6 +30,8 @@ enum ClientType {
   "window",
   "worker",
   "sharedworker",
+  // https://github.com/w3c/ServiceWorker/issues/1036
+  "serviceworker",
   "all"
 };
 

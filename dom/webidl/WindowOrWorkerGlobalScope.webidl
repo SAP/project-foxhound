@@ -30,9 +30,9 @@ interface WindowOrWorkerGlobalScope {
   long setTimeout(DOMString handler, optional long timeout = 0, any... unused);
   void clearTimeout(optional long handle = 0);
   [Throws]
-  long setInterval(Function handler, optional long timeout, any... arguments);
+  long setInterval(Function handler, optional long timeout = 0, any... arguments);
   [Throws]
-  long setInterval(DOMString handler, optional long timeout, any... unused);
+  long setInterval(DOMString handler, optional long timeout = 0, any... unused);
   void clearInterval(optional long handle = 0);
 
   // ImageBitmap
@@ -62,21 +62,6 @@ partial interface WindowOrWorkerGlobalScope {
 
 // https://w3c.github.io/ServiceWorker/#self-caches
 partial interface WindowOrWorkerGlobalScope {
-  [Throws, Func="mozilla::dom::cache::CacheStorage::PrefEnabled", SameObject]
+  [Throws, Func="mozilla::dom::DOMPrefs::dom_caches_enabled", SameObject]
   readonly attribute CacheStorage caches;
-};
-
-// Mozilla extensions
-partial interface WindowOrWorkerGlobalScope {
-  // Extensions to ImageBitmap bits.
-  // Bug 1141979 - [FoxEye] Extend ImageBitmap with interfaces to access its
-  // underlying image data
-  //
-  // Note:
-  // Overloaded functions cannot have different "extended attributes",
-  // so I cannot add preference on the extended version of createImageBitmap().
-  // To work around, I will then check the preference at run time and throw if
-  // the preference is set to be false.
-  [Throws]
-  Promise<ImageBitmap> createImageBitmap(ImageBitmapSource aImage, long aOffset, long aLength, ImageBitmapFormat aFormat, ImagePixelLayout aLayout);
 };

@@ -2,12 +2,13 @@
  * Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
+/* eslint-disable mozilla/no-arbitrary-setTimeout */
 
 if (!this.window) {
   this.runTest = function() {
     todo(false, "Test disabled in xpcshell test suite for now");
     finishTest();
-  }
+  };
 }
 
 var testGenerator = testSteps();
@@ -81,7 +82,7 @@ function* testSteps()
           is(event.target.transaction.mode, "readwrite", "Correct mode");
           is(event.target.result, callbackCount,
              "write callback came before later reads");
-        }
+        };
       }
       else if (callbackCount == SYNC_REQUEST_COUNT + 5) {
         continueReading = false;

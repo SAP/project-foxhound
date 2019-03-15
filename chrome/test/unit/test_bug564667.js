@@ -6,24 +6,19 @@
 const UNPACKAGED_ADDON = do_get_file("data/test_bug564667");
 const PACKAGED_ADDON = do_get_file("data/test_bug564667.xpi");
 
-var gIOS = Cc["@mozilla.org/network/io-service;1"].
-           getService(Ci.nsIIOService);
-
 var gCR = Cc["@mozilla.org/chrome/chrome-registry;1"].
-          getService(Ci.nsIChromeRegistry).
-          QueryInterface(Ci.nsIXULOverlayProvider);
+          getService(Ci.nsIChromeRegistry);
 
 /*
  * Checks that a mapping was added
  */
 function test_mapping(chromeURL, target) {
-  var uri = gIOS.newURI(chromeURL);
+  var uri = Services.io.newURI(chromeURL);
 
   try {
     var result = gCR.convertChromeURL(uri);
-    do_check_eq(result.spec, target);
-  }
-  catch (ex) {
+    Assert.equal(result.spec, target);
+  } catch (ex) {
     do_throw(chromeURL + " not Registered");
   }
 }
@@ -32,36 +27,12 @@ function test_mapping(chromeURL, target) {
  * Checks that a mapping was removed
  */
 function test_removed_mapping(chromeURL, target) {
-  var uri = gIOS.newURI(chromeURL);
+  var uri = Services.io.newURI(chromeURL);
   try {
-    var result = gCR.convertChromeURL(uri);
+    gCR.convertChromeURL(uri);
     do_throw(chromeURL + " not removed");
-  }
-  catch (ex) {
+  } catch (ex) {
     // This should throw
-  }
-}
-
-/*
- * Checks if any overlay was added after loading
- * the manifest files
- *
- * @param type The type of overlay: overlay|style
- */
-function test_no_overlays(chromeURL, target, type) {
-  var type = type || "overlay";
-  var uri = gIOS.newURI(chromeURL);
-  var present = false, elem;
-
-  var overlays = (type == "overlay") ?
-      gCR.getXULOverlays(uri) : gCR.getStyleOverlays(uri);
-
-  // We shouldn't be allowed to register overlays nor styles
-  if (overlays.hasMoreElements()) {
-    if (type == "styles")
-      do_throw("Style Registered: " + chromeURL);
-    else
-      do_throw("Overlay Registered: " + chromeURL);
   }
 }
 
@@ -84,16 +55,7 @@ function testManifest(manifestPath, baseURI) {
   test_mapping("chrome://test2/locale", baseURI + "test/test2.dtd");
 
   // Test Adding Override
-  test_mapping("chrome://testOverride/content", 'file:///test1/override')
-
-  // Test Not-Adding Overlays
-  test_no_overlays("chrome://test1/content/overlay.xul",
-                   "chrome://test1/content/test1.xul");
-
-  // Test Not-Adding Styles
-  test_no_overlays("chrome://test1/content/style.xul",
-                   "chrome://test1/content/test1.css", "styles");
-
+  test_mapping("chrome://testOverride/content", "file:///test1/override");
 
   // ------------------  Remove manifest file ------------------------
   Components.manager.removeBootstrappedManifestLocation(manifestPath);
@@ -114,8 +76,8 @@ function testManifest(manifestPath, baseURI) {
 
 function run_test() {
   // Test an unpackaged addon
-  testManifest(UNPACKAGED_ADDON, gIOS.newFileURI(UNPACKAGED_ADDON).spec);
+  testManifest(UNPACKAGED_ADDON, Services.io.newFileURI(UNPACKAGED_ADDON).spec);
 
   // Test a packaged addon
-  testManifest(PACKAGED_ADDON, "jar:" + gIOS.newFileURI(PACKAGED_ADDON).spec + "!/");
+  testManifest(PACKAGED_ADDON, "jar:" + Services.io.newFileURI(PACKAGED_ADDON).spec + "!/");
 }

@@ -11,28 +11,24 @@
 
 #include "nsIDOMEventListener.h"
 
-class nsIDocument;
-
 namespace mozilla {
 namespace a11y {
 
-class RootAccessible : public DocAccessibleWrap,
-                       public nsIDOMEventListener
-{
+class RootAccessible : public DocAccessibleWrap, public nsIDOMEventListener {
   NS_DECL_ISUPPORTS_INHERITED
 
-public:
-  RootAccessible(nsIDocument* aDocument, nsIPresShell* aPresShell);
+ public:
+  RootAccessible(dom::Document* aDocument, nsIPresShell* aPresShell);
 
   // nsIDOMEventListener
-  NS_IMETHOD HandleEvent(nsIDOMEvent* aEvent) override;
+  NS_DECL_NSIDOMEVENTLISTENER
 
   // Accessible
   virtual void Shutdown() override;
-  virtual mozilla::a11y::ENameValueFlag Name(nsString& aName) override;
-  virtual Relation RelationByType(RelationType aType) override;
-  virtual mozilla::a11y::role NativeRole() override;
-  virtual uint64_t NativeState() override;
+  virtual mozilla::a11y::ENameValueFlag Name(nsString& aName) const override;
+  virtual Relation RelationByType(RelationType aType) const override;
+  virtual mozilla::a11y::role NativeRole() const override;
+  virtual uint64_t NativeState() const override;
 
   // RootAccessible
 
@@ -46,7 +42,7 @@ public:
    */
   ProxyAccessible* GetPrimaryRemoteTopLevelContentDoc() const;
 
-protected:
+ protected:
   virtual ~RootAccessible();
 
   /**
@@ -58,7 +54,7 @@ protected:
   /**
    * Process the DOM event.
    */
-  void ProcessDOMEvent(nsIDOMEvent* aEvent);
+  void ProcessDOMEvent(dom::Event* aEvent);
 
   /**
    * Process "popupshown" event. Used by HandleEvent().
@@ -71,22 +67,20 @@ protected:
   void HandlePopupHidingEvent(nsINode* aNode);
 
 #ifdef MOZ_XUL
-    void HandleTreeRowCountChangedEvent(nsIDOMEvent* aEvent,
-                                        XULTreeAccessible* aAccessible);
-    void HandleTreeInvalidatedEvent(nsIDOMEvent* aEvent,
-                                    XULTreeAccessible* aAccessible);
+  void HandleTreeRowCountChangedEvent(dom::Event* aEvent,
+                                      XULTreeAccessible* aAccessible);
+  void HandleTreeInvalidatedEvent(dom::Event* aEvent,
+                                  XULTreeAccessible* aAccessible);
 
-    uint32_t GetChromeFlags();
+  uint32_t GetChromeFlags() const;
 #endif
 };
 
-inline RootAccessible*
-Accessible::AsRoot()
-{
+inline RootAccessible* Accessible::AsRoot() {
   return IsRoot() ? static_cast<mozilla::a11y::RootAccessible*>(this) : nullptr;
 }
 
-} // namespace a11y
-} // namespace mozilla
+}  // namespace a11y
+}  // namespace mozilla
 
 #endif

@@ -3,7 +3,7 @@
 
 'use strict';
 
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const {PushDB, PushService, PushServiceHttp2} = serviceExports;
 
@@ -38,15 +38,15 @@ function run_test() {
   run_next_test();
 }
 
-add_task(function* test_pushUnsubscriptionSuccess() {
+add_task(async function test_pushUnsubscriptionSuccess() {
   let db = PushServiceHttp2.newPushDB();
-  do_register_cleanup(() => {
+  registerCleanupFunction(() => {
     return db.drop().then(_ => db.close());
   });
 
   var serverURL = "https://localhost:" + serverPort;
 
-  yield db.put({
+  await db.put({
     subscriptionUri: serverURL + '/subscriptionUnsubscriptionSuccess',
     pushEndpoint: serverURL + '/pushEndpointUnsubscriptionSuccess',
     pushReceiptEndpoint: serverURL + '/receiptPushEndpointUnsubscriptionSuccess',
@@ -61,17 +61,17 @@ add_task(function* test_pushUnsubscriptionSuccess() {
     db
   });
 
-  yield PushService.unregister({
+  await PushService.unregister({
     scope: 'https://example.com/page/unregister-success',
     originAttributes: ChromeUtils.originAttributesToSuffix(
       { appId: Ci.nsIScriptSecurityManager.NO_APP_ID, inIsolatedMozBrowser: false }),
   });
-  let record = yield db.getByKeyID(serverURL + '/subscriptionUnsubscriptionSuccess');
+  let record = await db.getByKeyID(serverURL + '/subscriptionUnsubscriptionSuccess');
   ok(!record, 'Unregister did not remove record');
 
 });
 
-add_task(function* test_complete() {
+add_task(async function test_complete() {
   prefs.setBoolPref("dom.push.enabled", pushEnabled);
   prefs.setBoolPref("dom.push.connection.enabled", pushConnectionEnabled);
 });

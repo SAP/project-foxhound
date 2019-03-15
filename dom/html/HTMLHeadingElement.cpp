@@ -7,7 +7,7 @@
 #include "mozilla/dom/HTMLHeadingElement.h"
 #include "mozilla/dom/HTMLHeadingElementBinding.h"
 
-#include "mozilla/GenericSpecifiedValuesInlines.h"
+#include "mozilla/MappedDeclarations.h"
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
 #include "nsMappedAttributes.h"
@@ -18,57 +18,46 @@ NS_IMPL_NS_NEW_HTML_ELEMENT(Heading)
 namespace mozilla {
 namespace dom {
 
-HTMLHeadingElement::~HTMLHeadingElement()
-{
-}
+HTMLHeadingElement::~HTMLHeadingElement() {}
 
 NS_IMPL_ELEMENT_CLONE(HTMLHeadingElement)
 
-JSObject*
-HTMLHeadingElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return HTMLHeadingElementBinding::Wrap(aCx, this, aGivenProto);
+JSObject* HTMLHeadingElement::WrapNode(JSContext* aCx,
+                                       JS::Handle<JSObject*> aGivenProto) {
+  return HTMLHeadingElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-bool
-HTMLHeadingElement::ParseAttribute(int32_t aNamespaceID,
-                                   nsIAtom* aAttribute,
-                                   const nsAString& aValue,
-                                   nsAttrValue& aResult)
-{
+bool HTMLHeadingElement::ParseAttribute(int32_t aNamespaceID,
+                                        nsAtom* aAttribute,
+                                        const nsAString& aValue,
+                                        nsIPrincipal* aMaybeScriptedPrincipal,
+                                        nsAttrValue& aResult) {
   if (aAttribute == nsGkAtoms::align && aNamespaceID == kNameSpaceID_None) {
     return ParseDivAlignValue(aValue, aResult);
   }
 
   return nsGenericHTMLElement::ParseAttribute(aNamespaceID, aAttribute, aValue,
-                                              aResult);
+                                              aMaybeScriptedPrincipal, aResult);
 }
 
-void
-HTMLHeadingElement::MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
-                                          GenericSpecifiedValues* aData)
-{
-  nsGenericHTMLElement::MapDivAlignAttributeInto(aAttributes, aData);
-  nsGenericHTMLElement::MapCommonAttributesInto(aAttributes, aData);
+void HTMLHeadingElement::MapAttributesIntoRule(
+    const nsMappedAttributes* aAttributes, MappedDeclarations& aDecls) {
+  nsGenericHTMLElement::MapDivAlignAttributeInto(aAttributes, aDecls);
+  nsGenericHTMLElement::MapCommonAttributesInto(aAttributes, aDecls);
 }
 
 NS_IMETHODIMP_(bool)
-HTMLHeadingElement::IsAttributeMapped(const nsIAtom* aAttribute) const
-{
-  static const MappedAttributeEntry* const map[] = {
-    sDivAlignAttributeMap,
-    sCommonAttributeMap
-  };
+HTMLHeadingElement::IsAttributeMapped(const nsAtom* aAttribute) const {
+  static const MappedAttributeEntry* const map[] = {sDivAlignAttributeMap,
+                                                    sCommonAttributeMap};
 
   return FindAttributeDependence(aAttribute, map);
 }
 
-
-nsMapRuleToAttributesFunc
-HTMLHeadingElement::GetAttributeMappingFunction() const
-{
+nsMapRuleToAttributesFunc HTMLHeadingElement::GetAttributeMappingFunction()
+    const {
   return &MapAttributesIntoRule;
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

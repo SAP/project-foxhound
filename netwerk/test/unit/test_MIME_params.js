@@ -432,6 +432,14 @@ var tests = [
   // Bug 783502 - xpcshell test netwerk/test/unit/test_MIME_params.js fails on AddressSanitizer
   ['attachment; filename="\\b\\a\\', 
    "attachment", "ba\\"], 
+
+  // Bug 1412213 - do continue to parse, behind an empty parameter
+  ['attachment; ; filename=foo',
+   "attachment", "foo"],
+
+  // Bug 1412213 - do continue to parse, behind a parameter w/o =
+  ['attachment; badparameter; filename=foo',
+   "attachment", "foo"],
 ];
 
 var rfc5987paramtests = [
@@ -465,8 +473,8 @@ var rfc5987paramtests = [
 
 function do_tests(whichRFC)
 {
-  var mhp = Components.classes["@mozilla.org/network/mime-hdrparam;1"]
-                      .getService(Components.interfaces.nsIMIMEHeaderParam);
+  var mhp = Cc["@mozilla.org/network/mime-hdrparam;1"]
+              .getService(Ci.nsIMIMEHeaderParam);
 
   var unused = { value : null };
 
@@ -484,14 +492,14 @@ function do_tests(whichRFC)
       else 
         result = mhp.getParameterHTTP(tests[i][0], "", "UTF-8", true, unused);
 
-      do_check_eq(result, expectedDt);
+      Assert.equal(result, expectedDt);
     } 
     catch (e) {
       // Tests can also succeed by expecting to fail with given error code
       if (e.result) {
         // Allow following tests to run by catching exception from do_check_eq()
         try { 
-          do_check_eq(e.result, expectedDt); 
+          Assert.equal(e.result, expectedDt); 
         } catch(e) {}  
       }
       continue;
@@ -508,14 +516,14 @@ function do_tests(whichRFC)
       else 
         result = mhp.getParameterHTTP(tests[i][0], "filename", "UTF-8", true, unused);
 
-      do_check_eq(result, expectedFn);
+      Assert.equal(result, expectedFn);
     } 
     catch (e) {
       // Tests can also succeed by expecting to fail with given error code
       if (e.result) {
         // Allow following tests to run by catching exception from do_check_eq()
         try { 
-          do_check_eq(e.result, expectedFn); 
+          Assert.equal(e.result, expectedFn); 
         } catch(e) {}  
       }
       continue;
@@ -524,8 +532,8 @@ function do_tests(whichRFC)
 }
 
 function test_decode5987Param() {
-  var mhp = Components.classes["@mozilla.org/network/mime-hdrparam;1"]
-                      .getService(Components.interfaces.nsIMIMEHeaderParam);
+  var mhp = Cc["@mozilla.org/network/mime-hdrparam;1"]
+              .getService(Ci.nsIMIMEHeaderParam);
 
   for (var i = 0; i < rfc5987paramtests.length; ++i) {
     dump("Testing #" + i + ": " + rfc5987paramtests[i] + "\n");
@@ -534,15 +542,15 @@ function test_decode5987Param() {
     try {
       var decoded = mhp.decodeRFC5987Param(rfc5987paramtests[i][0], lang);
       if (rfc5987paramtests[i][3] == Cr.NS_OK) {
-        do_check_eq(rfc5987paramtests[i][1], decoded);
-        do_check_eq(rfc5987paramtests[i][2], lang.value);
+        Assert.equal(rfc5987paramtests[i][1], decoded);
+        Assert.equal(rfc5987paramtests[i][2], lang.value);
       }
       else {
-        do_check_eq(rfc5987paramtests[i][3], "instead got: " + decoded);
+        Assert.equal(rfc5987paramtests[i][3], "instead got: " + decoded);
       }
     }
     catch (e) {
-      do_check_eq(rfc5987paramtests[i][3], e.result);
+      Assert.equal(rfc5987paramtests[i][3], e.result);
     }
   }
 }

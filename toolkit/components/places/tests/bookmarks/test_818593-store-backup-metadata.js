@@ -6,50 +6,44 @@
  * To confirm that metadata i.e. bookmark count is set and retrieved for
  * automatic backups.
  */
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* test_saveBookmarksToJSONFile_and_create() {
+add_task(async function test_saveBookmarksToJSONFile_and_create() {
   // Add a bookmark
-  let uri = NetUtil.newURI("http://getfirefox.com/");
-  let bookmarkId =
-    PlacesUtils.bookmarks.insertBookmark(
-      PlacesUtils.unfiledBookmarksFolderId, uri,
-      PlacesUtils.bookmarks.DEFAULT_INDEX, "Get Firefox!");
+  let bookmark = await PlacesUtils.bookmarks.insert({
+    parentGuid: PlacesUtils.bookmarks.unfiledGuid,
+    title: "Get Firefox!",
+    url: "http://getfirefox.com/",
+  });
 
   // Test saveBookmarksToJSONFile()
-  let backupFile = FileUtils.getFile("TmpD", ["bookmarks.json"]);
-  backupFile.create(Ci.nsILocalFile.NORMAL_FILE_TYPE, parseInt("0600", 8));
+  let backupFile = OS.Path.join(OS.Constants.Path.tmpDir, "bookmarks.json");
 
-  let nodeCount = yield PlacesBackups.saveBookmarksToJSONFile(backupFile, true);
-  do_check_true(nodeCount > 0);
-  do_check_true(backupFile.exists());
-  do_check_eq(backupFile.leafName, "bookmarks.json");
+  let nodeCount = await PlacesBackups.saveBookmarksToJSONFile(backupFile, true);
+  Assert.ok(nodeCount > 0);
+  Assert.ok(await OS.File.exists(backupFile));
 
   // Ensure the backup would be copied to our backups folder when the original
   // backup is saved somewhere else.
-  let recentBackup = yield PlacesBackups.getMostRecentBackup();
+  let recentBackup = await PlacesBackups.getMostRecentBackup();
   let matches = OS.Path.basename(recentBackup).match(PlacesBackups.filenamesRegex);
-  do_check_eq(matches[2], nodeCount);
-  do_check_eq(matches[3].length, 24);
+  Assert.equal(matches[2], nodeCount);
+  Assert.equal(matches[3].length, 24);
 
   // Clear all backups in our backups folder.
-  yield PlacesBackups.create(0);
-  do_check_eq((yield PlacesBackups.getBackupFiles()).length, 0);
+  await PlacesBackups.create(0);
+  Assert.equal((await PlacesBackups.getBackupFiles()).length, 0);
 
   // Test create() which saves bookmarks with metadata on the filename.
-  yield PlacesBackups.create();
-  do_check_eq((yield PlacesBackups.getBackupFiles()).length, 1);
+  await PlacesBackups.create();
+  Assert.equal((await PlacesBackups.getBackupFiles()).length, 1);
 
-  let mostRecentBackupFile = yield PlacesBackups.getMostRecentBackup();
-  do_check_neq(mostRecentBackupFile, null);
+  let mostRecentBackupFile = await PlacesBackups.getMostRecentBackup();
+  Assert.notEqual(mostRecentBackupFile, null);
   matches = OS.Path.basename(recentBackup).match(PlacesBackups.filenamesRegex);
-  do_check_eq(matches[2], nodeCount);
-  do_check_eq(matches[3].length, 24);
+  Assert.equal(matches[2], nodeCount);
+  Assert.equal(matches[3].length, 24);
 
   // Cleanup
-  backupFile.remove(false);
-  yield PlacesBackups.create(0);
-  PlacesUtils.bookmarks.removeItem(bookmarkId);
+  await OS.File.remove(backupFile);
+  await PlacesBackups.create(0);
+  await PlacesUtils.bookmarks.remove(bookmark);
 });

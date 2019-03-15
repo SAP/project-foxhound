@@ -11,58 +11,52 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css">
   <script type="application/javascript" src="inspector-helpers.js"></script>
   <script type="application/javascript">
-const inspector = require("devtools/server/actors/inspector");
+"use strict";
+
 const {isCssPropertyKnown} = require("devtools/server/actors/css-properties");
 
 window.onload = function() {
   SimpleTest.waitForExplicitFinish();
   runNextTest();
-}
+};
 
 var gWalker = null;
 var gStyles = null;
-var gClient = null;
+var gInspectee = null;
 
-addAsyncTest(function* setup() {
-  let url = document.getElementById("inspectorContent").href;
-  let inspector;
+addAsyncTest(async function setup() {
+  const url = document.getElementById("inspectorContent").href;
 
-  yield new Promise(resolve => {
-    attachURL(url, function(err, client, tab, doc) {
-      gInspectee = doc;
-      gClient = client;
-      let {InspectorFront} = require("devtools/shared/fronts/inspector");
-      inspector = InspectorFront(client, tab);
-      resolve();
-    });
-  });
+  const { target, doc } = await attachURL(url);
+  const inspector = await target.getInspector();
+  gInspectee = doc;
 
-  gWalker = yield inspector.getWalker();
-  gStyles = yield inspector.getPageStyle();
+  gWalker = inspector.walker;
+  gStyles = await inspector.getPageStyle();
 
   runNextTest();
 });
 
-addAsyncTest(function* modifyProperties() {
-  let localNode = gInspectee.querySelector("#inheritable-rule-inheritable-style");
+addAsyncTest(async function modifyProperties() {
+  const localNode = gInspectee.querySelector("#inheritable-rule-inheritable-style");
 
-  let node = yield gWalker.querySelector(gWalker.rootNode,
+  const node = await gWalker.querySelector(gWalker.rootNode,
     "#inheritable-rule-inheritable-style");
 
-  let applied = yield gStyles.getApplied(node,
+  const applied = await gStyles.getApplied(node,
     { inherited: false, filter: "user" });
 
-  let elementStyle = applied[0].rule;
+  const elementStyle = applied[0].rule;
   is(elementStyle.cssText, localNode.style.cssText, "Got expected css text");
 
   // Change an existing property...
-  yield setProperty(elementStyle, 0, "color", "black");
+  await setProperty(elementStyle, 0, "color", "black");
   // Create a new property
-  yield setProperty(elementStyle, 1, "background-color", "green");
+  await setProperty(elementStyle, 1, "background-color", "green");
 
   // Create a new property and then change it immediately.
-  yield setProperty(elementStyle, 2, "border", "1px solid black");
-  yield setProperty(elementStyle, 2, "border", "2px solid black");
+  await setProperty(elementStyle, 2, "border", "1px solid black");
+  await setProperty(elementStyle, 2, "border", "2px solid black");
 
   is(elementStyle.cssText,
      "color: black; background-color: green; border: 2px solid black;",
@@ -71,9 +65,9 @@ addAsyncTest(function* modifyProperties() {
      "Local node and style front match.");
 
   // Remove all the properties
-  yield removeProperty(elementStyle, 0, "color");
-  yield removeProperty(elementStyle, 0, "background-color");
-  yield removeProperty(elementStyle, 0, "border");
+  await removeProperty(elementStyle, 0, "color");
+  await removeProperty(elementStyle, 0, "background-color");
+  await removeProperty(elementStyle, 0, "border");
 
   is(elementStyle.cssText, "", "Should have expected cssText");
   is(elementStyle.cssText, localNode.style.cssText,
@@ -82,22 +76,22 @@ addAsyncTest(function* modifyProperties() {
   runNextTest();
 });
 
-function* setProperty(rule, index, name, value) {
-  let changes = rule.startModifyingProperties(isCssPropertyKnown);
+async function setProperty(rule, index, name, value) {
+  const changes = rule.startModifyingProperties(isCssPropertyKnown);
   changes.setProperty(index, name, value);
-  yield changes.apply();
+  await changes.apply();
 }
 
-function* removeProperty(rule, index, name) {
-  let changes = rule.startModifyingProperties(isCssPropertyKnown);
+async function removeProperty(rule, index, name) {
+  const changes = rule.startModifyingProperties(isCssPropertyKnown);
   changes.removeProperty(index, name);
-  yield changes.apply();
+  await changes.apply();
 }
 
 addTest(function cleanup() {
-  delete gStyles;
-  delete gWalker;
-  delete gClient;
+  gStyles = null;
+  gWalker = null;
+  gInspectee = null;
   runNextTest();
 });
 

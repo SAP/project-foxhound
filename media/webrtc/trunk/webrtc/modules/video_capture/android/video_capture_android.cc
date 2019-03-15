@@ -8,18 +8,15 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/video_capture/android/video_capture_android.h"
+#include "modules/video_capture/android/video_capture_android.h"
 
-#include "webrtc/base/common.h"
-#include "webrtc/modules/utility/include/helpers_android.h"
-#include "webrtc/modules/video_capture/android/device_info_android.h"
-#include "webrtc/system_wrappers/include/critical_section_wrapper.h"
-#include "webrtc/system_wrappers/include/logcat_trace_context.h"
-#include "webrtc/system_wrappers/include/logging.h"
-#include "webrtc/system_wrappers/include/ref_count.h"
-#include "webrtc/system_wrappers/include/trace.h"
+#include "modules/utility/include/helpers_android.h"
+#include "modules/video_capture/android/device_info_android.h"
+#include "rtc_base/criticalsection.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/refcountedobject.h"
 
-#include "AndroidJNIWrapper.h"
+#include "AndroidBridge.h"
 
 static JavaVM* g_jvm_capture = NULL;
 static jclass g_java_capturer_class = NULL;  // VideoCaptureAndroid.class.
@@ -65,12 +62,15 @@ int32_t SetCaptureAndroidVM(JavaVM* javaVM) {
     g_jvm_capture = javaVM;
     AttachThreadScoped ats(g_jvm_capture);
 
-    g_context = jsjni_GetGlobalContextRef();
+    g_context = mozilla::AndroidBridge::Bridge()->GetGlobalContextRef();
 
     videocapturemodule::DeviceInfoAndroid::Initialize(g_jvm_capture);
 
+    jclass clsRef = mozilla::jni::GetClassRef(
+        ats.env(), "org/webrtc/videoengine/VideoCaptureAndroid");
     g_java_capturer_class =
-      jsjni_GetGlobalClassRef("org/webrtc/videoengine/VideoCaptureAndroid");
+        static_cast<jclass>(ats.env()->NewGlobalRef(clsRef));
+    ats.env()->DeleteLocalRef(clsRef);
     assert(g_java_capturer_class);
 
     JNINativeMethod native_methods[] = {
@@ -100,14 +100,12 @@ int32_t SetCaptureAndroidVM(JavaVM* javaVM) {
 
 namespace videocapturemodule {
 
-VideoCaptureModule* VideoCaptureImpl::Create(
-    const int32_t id,
+rtc::scoped_refptr<VideoCaptureModule> VideoCaptureImpl::Create(
     const char* deviceUniqueIdUTF8) {
-  RefCountImpl<videocapturemodule::VideoCaptureAndroid>* implementation =
-      new RefCountImpl<videocapturemodule::VideoCaptureAndroid>(id);
-  if (implementation->Init(id, deviceUniqueIdUTF8) != 0) {
-    delete implementation;
-    implementation = NULL;
+  rtc::scoped_refptr<VideoCaptureAndroid> implementation(
+      new rtc::RefCountedObject<VideoCaptureAndroid>());
+  if (implementation->Init(deviceUniqueIdUTF8) != 0) {
+    implementation = nullptr;
   }
   return implementation;
 }
@@ -116,8 +114,12 @@ int32_t VideoCaptureAndroid::OnIncomingFrame(uint8_t* videoFrame,
                                              size_t videoFrameLength,
                                              int32_t degrees,
                                              int64_t captureTime) {
-  if (!_captureStarted)
+  // _captureStarted is written on the controlling thread in
+  // StartCapture/StopCapture. This is the camera thread.
+  // CaptureStarted() will access it under a lock.
+  if (!CaptureStarted())
     return 0;
+
   VideoRotation current_rotation =
       (degrees <= 45 || degrees > 315) ? kVideoRotation_0 :
       (degrees > 45 && degrees <= 135) ? kVideoRotation_90 :
@@ -125,7 +127,7 @@ int32_t VideoCaptureAndroid::OnIncomingFrame(uint8_t* videoFrame,
       (degrees > 225 && degrees <= 315) ? kVideoRotation_270 :
       kVideoRotation_0;  // Impossible.
   if (_rotation != current_rotation) {
-    LOG(LS_INFO) << "New camera rotation: " << degrees;
+    RTC_LOG(LS_INFO) << "New camera rotation: " << degrees;
     _rotation = current_rotation;
     int32_t status = VideoCaptureImpl::SetCaptureRotation(_rotation);
     if (status != 0)
@@ -135,21 +137,20 @@ int32_t VideoCaptureAndroid::OnIncomingFrame(uint8_t* videoFrame,
       videoFrame, videoFrameLength, _captureCapability, captureTime);
 }
 
-VideoCaptureAndroid::VideoCaptureAndroid(const int32_t id)
-    : VideoCaptureImpl(id),
-      _deviceInfo(id),
+VideoCaptureAndroid::VideoCaptureAndroid()
+    : VideoCaptureImpl(),
+      _deviceInfo(),
       _jCapturer(NULL),
       _captureStarted(false) {
 }
 
-int32_t VideoCaptureAndroid::Init(const int32_t id,
-                                  const char* deviceUniqueIdUTF8) {
+int32_t VideoCaptureAndroid::Init(const char* deviceUniqueIdUTF8) {
   const int nameLength = strlen(deviceUniqueIdUTF8);
   if (nameLength >= kVideoCaptureUniqueNameLength)
     return -1;
 
   // Store the device name
-  LOG(LS_INFO) << "VideoCaptureAndroid::Init: " << deviceUniqueIdUTF8;
+  RTC_LOG(LS_INFO) << "VideoCaptureAndroid::Init: " << deviceUniqueIdUTF8;
   size_t camera_id = 0;
   if (!_deviceInfo.FindCameraIndex(deviceUniqueIdUTF8, &camera_id))
     return -1;
@@ -185,32 +186,39 @@ VideoCaptureAndroid::~VideoCaptureAndroid() {
 
 int32_t VideoCaptureAndroid::StartCapture(
     const VideoCaptureCapability& capability) {
-  CriticalSectionScoped cs(&_apiCs);
+  _apiCs.Enter();
   AttachThreadScoped ats(g_jvm_capture);
   JNIEnv* env = ats.env();
 
   if (_deviceInfo.GetBestMatchedCapability(
           _deviceUniqueId, capability, _captureCapability) < 0) {
-    WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceVideoCapture, -1,
-                 "%s: GetBestMatchedCapability failed: %dx%d",
-                 __FUNCTION__, capability.width, capability.height);
+    RTC_LOG(LS_ERROR) << __FUNCTION__ <<
+                 "s: GetBestMatchedCapability failed: " <<
+                 capability.width << "x" << capability.height;
+    // Manual exit of critical section
+    _apiCs.Leave();
     return -1;
   }
 
-  _captureDelay = _captureCapability.expectedCaptureDelay;
-
-  jmethodID j_start =
-      env->GetMethodID(g_java_capturer_class, "startCapture", "(IIII)Z");
-  assert(j_start);
+  int width = _captureCapability.width;
+  int height = _captureCapability.height;
   int min_mfps = 0;
   int max_mfps = 0;
   _deviceInfo.GetMFpsRange(_deviceUniqueId, _captureCapability.maxFPS,
                            &min_mfps, &max_mfps);
+
+  // Exit critical section to avoid blocking camera thread inside
+  // onIncomingFrame() call.
+  _apiCs.Leave();
+
+  jmethodID j_start =
+      env->GetMethodID(g_java_capturer_class, "startCapture", "(IIII)Z");
+  assert(j_start);
   bool started = env->CallBooleanMethod(_jCapturer, j_start,
-                                        _captureCapability.width,
-                                        _captureCapability.height,
+                                        width, height,
                                         min_mfps, max_mfps);
   if (started) {
+    rtc::CritScope cs(&_apiCs);
     _requestedCapability = capability;
     _captureStarted = true;
   }
@@ -236,13 +244,13 @@ int32_t VideoCaptureAndroid::StopCapture() {
 }
 
 bool VideoCaptureAndroid::CaptureStarted() {
-  CriticalSectionScoped cs(&_apiCs);
+  rtc::CritScope cs(&_apiCs);
   return _captureStarted;
 }
 
 int32_t VideoCaptureAndroid::CaptureSettings(
     VideoCaptureCapability& settings) {
-  CriticalSectionScoped cs(&_apiCs);
+  rtc::CritScope cs(&_apiCs);
   settings = _requestedCapability;
   return 0;
 }

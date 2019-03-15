@@ -13,6 +13,7 @@
 #include "mozilla/TimeStamp.h"
 #include "nsAutoPtr.h"
 #include "nsNativeCharsetUtils.h"
+#include "nsThreadUtils.h"
 
 /**
  * This code uses NSPR stuff and STL containers because it must be detached
@@ -26,57 +27,56 @@
 
 namespace {
 
-struct ObservationWithStack
-{
-  ObservationWithStack(mozilla::IOInterposeObserver::Observation& aObs,
-                       ProfilerBacktrace* aStack)
-    : mObservation(aObs)
-    , mStack(aStack)
+struct ObservationWithStack {
+  explicit ObservationWithStack(mozilla::IOInterposeObserver::Observation& aObs
+#ifdef MOZ_GECKO_PROFILER
+                                ,
+                                ProfilerBacktrace* aStack
+#endif
+                                )
+      : mObservation(aObs)
+#ifdef MOZ_GECKO_PROFILER
+        ,
+        mStack(aStack)
+#endif
   {
-    const char16_t* filename = aObs.Filename();
-    if (filename) {
-      mFilename = filename;
-    }
+    aObs.Filename(mFilename);
   }
 
   mozilla::IOInterposeObserver::Observation mObservation;
-  ProfilerBacktrace*                        mStack;
-  nsString                                  mFilename;
+#ifdef MOZ_GECKO_PROFILER
+  ProfilerBacktrace* mStack;
+#endif
+  nsString mFilename;
 };
 
-class MainThreadIOLoggerImpl final : public mozilla::IOInterposeObserver
-{
-public:
+class MainThreadIOLoggerImpl final : public mozilla::IOInterposeObserver {
+ public:
   MainThreadIOLoggerImpl();
   ~MainThreadIOLoggerImpl();
 
   bool Init();
 
-  void Observe(Observation& aObservation);
+  void Observe(Observation& aObservation) override;
 
-private:
+ private:
   static void sIOThreadFunc(void* aArg);
   void IOThreadFunc();
 
-  TimeStamp             mLogStartTime;
-  const char*           mFileName;
-  PRThread*             mIOThread;
+  TimeStamp mLogStartTime;
+  const char* mFileName;
+  PRThread* mIOThread;
   IOInterposer::Monitor mMonitor;
-  bool                  mShutdownRequired;
+  bool mShutdownRequired;
   std::vector<ObservationWithStack> mObservations;
 };
 
 static StaticAutoPtr<MainThreadIOLoggerImpl> sImpl;
 
 MainThreadIOLoggerImpl::MainThreadIOLoggerImpl()
-  : mFileName(nullptr)
-  , mIOThread(nullptr)
-  , mShutdownRequired(false)
-{
-}
+    : mFileName(nullptr), mIOThread(nullptr), mShutdownRequired(false) {}
 
-MainThreadIOLoggerImpl::~MainThreadIOLoggerImpl()
-{
+MainThreadIOLoggerImpl::~MainThreadIOLoggerImpl() {
   if (!mIOThread) {
     return;
   }
@@ -90,9 +90,7 @@ MainThreadIOLoggerImpl::~MainThreadIOLoggerImpl()
   mIOThread = nullptr;
 }
 
-bool
-MainThreadIOLoggerImpl::Init()
-{
+bool MainThreadIOLoggerImpl::Init() {
   if (mFileName) {
     // Already initialized
     return true;
@@ -102,27 +100,24 @@ MainThreadIOLoggerImpl::Init()
     // Can't start
     return false;
   }
-  mIOThread = PR_CreateThread(PR_USER_THREAD, &sIOThreadFunc, this,
-                              PR_PRIORITY_LOW, PR_GLOBAL_THREAD,
-                              PR_JOINABLE_THREAD, 0);
+  mIOThread =
+      PR_CreateThread(PR_USER_THREAD, &sIOThreadFunc, this, PR_PRIORITY_LOW,
+                      PR_GLOBAL_THREAD, PR_JOINABLE_THREAD, 0);
   if (!mIOThread) {
     return false;
   }
   return true;
 }
 
-/* static */ void
-MainThreadIOLoggerImpl::sIOThreadFunc(void* aArg)
-{
-  AutoProfilerRegister registerThread("MainThreadIOLogger");
-  PR_SetCurrentThreadName("MainThreadIOLogger");
+/* static */ void MainThreadIOLoggerImpl::sIOThreadFunc(void* aArg) {
+  AUTO_PROFILER_REGISTER_THREAD("MainThreadIOLogger");
+
+  NS_SetCurrentThreadName("MainThreadIOLogger");
   MainThreadIOLoggerImpl* obj = static_cast<MainThreadIOLoggerImpl*>(aArg);
   obj->IOThreadFunc();
 }
 
-void
-MainThreadIOLoggerImpl::IOThreadFunc()
-{
+void MainThreadIOLoggerImpl::IOThreadFunc() {
   PRFileDesc* fd = PR_Open(mFileName, PR_WRONLY | PR_CREATE_FILE | PR_TRUNCATE,
                            PR_IRUSR | PR_IWUSR | PR_IRGRP);
   if (!fd) {
@@ -165,16 +160,21 @@ MainThreadIOLoggerImpl::IOThreadFunc()
             nativeFilename.AssignLiteral("(conversion failed)");
           }
         }
+        // clang-format off
         /**
          * Format:
          * Start Timestamp (Milliseconds), Operation, Duration (Milliseconds), Event Source, Filename
          */
-        if (PR_fprintf(fd, "%f,%s,%f,%s,%s\n",
-                       (i->mObservation.Start() - mLogStartTime).ToMilliseconds(),
-                       i->mObservation.ObservedOperationString(), durationMs,
-                       i->mObservation.Reference(), nativeFilename.get()) > 0) {
+        // clang-format on
+        if (PR_fprintf(
+                fd, "%f,%s,%f,%s,%s\n",
+                (i->mObservation.Start() - mLogStartTime).ToMilliseconds(),
+                i->mObservation.ObservedOperationString(), durationMs,
+                i->mObservation.Reference(), nativeFilename.get()) > 0) {
+#ifdef MOZ_GECKO_PROFILER
           // TODO: Write out the callstack
           i->mStack = nullptr;
+#endif
         }
       }
     }
@@ -182,9 +182,7 @@ MainThreadIOLoggerImpl::IOThreadFunc()
   PR_Close(fd);
 }
 
-void
-MainThreadIOLoggerImpl::Observe(Observation& aObservation)
-{
+void MainThreadIOLoggerImpl::Observe(Observation& aObservation) {
   if (!mFileName || !IsMainThread()) {
     return;
   }
@@ -194,19 +192,22 @@ MainThreadIOLoggerImpl::Observe(Observation& aObservation)
     return;
   }
   // Passing nullptr as aStack parameter for now
-  mObservations.push_back(ObservationWithStack(aObservation, nullptr));
+  mObservations.push_back(ObservationWithStack(aObservation
+#ifdef MOZ_GECKO_PROFILER
+                                               ,
+                                               nullptr
+#endif
+                                               ));
   lock.Notify();
 }
 
-} // namespace
+}  // namespace
 
 namespace mozilla {
 
 namespace MainThreadIOLogger {
 
-bool
-Init()
-{
+bool Init() {
   nsAutoPtr<MainThreadIOLoggerImpl> impl(new MainThreadIOLoggerImpl());
   if (!impl->Init()) {
     return false;
@@ -216,7 +217,6 @@ Init()
   return true;
 }
 
-} // namespace MainThreadIOLogger
+}  // namespace MainThreadIOLogger
 
-} // namespace mozilla
-
+}  // namespace mozilla

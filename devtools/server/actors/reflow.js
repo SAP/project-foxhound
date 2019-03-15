@@ -17,7 +17,7 @@
  *   by any other actor that needs it.
  *
  * - Observable: A utility parent class, meant at being extended by classes that
- *   need a to observe something on the tabActor's windows.
+ *   need a to observe something on the targetActor's windows.
  *
  * - Dedicated observers: There's only one of them for now: ReflowObserver which
  *   listens to reflow events via the docshell,
@@ -25,10 +25,8 @@
  */
 
 const {Ci} = require("chrome");
-const {XPCOMUtils} = require("resource://gre/modules/XPCOMUtils.jsm");
+const ChromeUtils = require("ChromeUtils");
 const protocol = require("devtools/shared/protocol");
-const events = require("sdk/event/core");
-const Heritage = require("sdk/core/heritage");
 const EventEmitter = require("devtools/shared/event-emitter");
 const {reflowSpec} = require("devtools/shared/specs/reflow");
 
@@ -36,20 +34,20 @@ const {reflowSpec} = require("devtools/shared/specs/reflow");
  * The reflow actor tracks reflows and emits events about them.
  */
 exports.ReflowActor = protocol.ActorClassWithSpec(reflowSpec, {
-  initialize: function (conn, tabActor) {
+  initialize: function(conn, targetActor) {
     protocol.Actor.prototype.initialize.call(this, conn);
 
-    this.tabActor = tabActor;
+    this.targetActor = targetActor;
     this._onReflow = this._onReflow.bind(this);
-    this.observer = getLayoutChangesObserver(tabActor);
+    this.observer = getLayoutChangesObserver(targetActor);
     this._isStarted = false;
   },
 
-  destroy: function () {
+  destroy: function() {
     this.stop();
-    releaseLayoutChangesObserver(this.tabActor);
+    releaseLayoutChangesObserver(this.targetActor);
     this.observer = null;
-    this.tabActor = null;
+    this.targetActor = null;
 
     protocol.Actor.prototype.destroy.call(this);
   },
@@ -59,7 +57,7 @@ exports.ReflowActor = protocol.ActorClassWithSpec(reflowSpec, {
    * This is a oneway method, do not expect a response and it won't return a
    * promise.
    */
-  start: function () {
+  start: function() {
     if (!this._isStarted) {
       this.observer.on("reflows", this._onReflow);
       this._isStarted = true;
@@ -71,35 +69,35 @@ exports.ReflowActor = protocol.ActorClassWithSpec(reflowSpec, {
    * This is a oneway method, do not expect a response and it won't return a
    * promise.
    */
-  stop: function () {
+  stop: function() {
     if (this._isStarted) {
       this.observer.off("reflows", this._onReflow);
       this._isStarted = false;
     }
   },
 
-  _onReflow: function (event, reflows) {
+  _onReflow: function(reflows) {
     if (this._isStarted) {
-      events.emit(this, "reflows", reflows);
+      this.emit("reflows", reflows);
     }
-  }
+  },
 });
 
 /**
  * Base class for all sorts of observers that need to listen to events on the
- * tabActor's windows.
- * @param {TabActor} tabActor
+ * targetActor's windows.
+ * @param {BrowsingContextTargetActor} targetActor
  * @param {Function} callback Executed everytime the observer observes something
  */
-function Observable(tabActor, callback) {
-  this.tabActor = tabActor;
+function Observable(targetActor, callback) {
+  this.targetActor = targetActor;
   this.callback = callback;
 
   this._onWindowReady = this._onWindowReady.bind(this);
   this._onWindowDestroyed = this._onWindowDestroyed.bind(this);
 
-  events.on(this.tabActor, "window-ready", this._onWindowReady);
-  events.on(this.tabActor, "window-destroyed", this._onWindowDestroyed);
+  this.targetActor.on("window-ready", this._onWindowReady);
+  this.targetActor.on("window-destroyed", this._onWindowDestroyed);
 }
 
 Observable.prototype = {
@@ -111,7 +109,7 @@ Observable.prototype = {
   /**
    * Stop observing and detroy this observer instance
    */
-  destroy: function () {
+  destroy: function() {
     if (this.isDestroyed) {
       return;
     }
@@ -119,66 +117,66 @@ Observable.prototype = {
 
     this.stop();
 
-    events.off(this.tabActor, "window-ready", this._onWindowReady);
-    events.off(this.tabActor, "window-destroyed", this._onWindowDestroyed);
+    this.targetActor.off("window-ready", this._onWindowReady);
+    this.targetActor.off("window-destroyed", this._onWindowDestroyed);
 
     this.callback = null;
-    this.tabActor = null;
+    this.targetActor = null;
   },
 
   /**
    * Start observing whatever it is this observer is supposed to observe
    */
-  start: function () {
+  start: function() {
     if (this.isObserving) {
       return;
     }
     this.isObserving = true;
 
-    this._startListeners(this.tabActor.windows);
+    this._startListeners(this.targetActor.windows);
   },
 
   /**
    * Stop observing
    */
-  stop: function () {
+  stop: function() {
     if (!this.isObserving) {
       return;
     }
     this.isObserving = false;
 
-    if (this.tabActor.attached && this.tabActor.docShell) {
-      // It's only worth stopping if the tabActor is still attached
-      this._stopListeners(this.tabActor.windows);
+    if (this.targetActor.attached && this.targetActor.docShell) {
+      // It's only worth stopping if the targetActor is still attached
+      this._stopListeners(this.targetActor.windows);
     }
   },
 
-  _onWindowReady: function ({window}) {
+  _onWindowReady: function({window}) {
     if (this.isObserving) {
       this._startListeners([window]);
     }
   },
 
-  _onWindowDestroyed: function ({window}) {
+  _onWindowDestroyed: function({window}) {
     if (this.isObserving) {
       this._stopListeners([window]);
     }
   },
 
-  _startListeners: function (windows) {
+  _startListeners: function(windows) {
     // To be implemented by sub-classes.
   },
 
-  _stopListeners: function (windows) {
+  _stopListeners: function(windows) {
     // To be implemented by sub-classes.
   },
 
   /**
    * To be called by sub-classes when something has been observed
    */
-  notifyCallback: function (...args) {
+  notifyCallback: function(...args) {
     this.isObserving && this.callback && this.callback.apply(null, args);
-  }
+  },
 };
 
 /**
@@ -196,7 +194,7 @@ Observable.prototype = {
  * @param {DOMNode} syncReflowNode The node to use to force a sync reflow
  */
 var gIgnoreLayoutChanges = false;
-exports.setIgnoreLayoutChanges = function (ignore, syncReflowNode) {
+exports.setIgnoreLayoutChanges = function(ignore, syncReflowNode) {
   if (syncReflowNode) {
     let forceSyncReflow = syncReflowNode.offsetWidth; // eslint-disable-line
   }
@@ -210,8 +208,8 @@ exports.setIgnoreLayoutChanges = function (ignore, syncReflowNode) {
  *
  * This class isn't exported on the module because it shouldn't be instantiated
  * to avoid creating several instances per tabs.
- * Use `getLayoutChangesObserver(tabActor)`
- * and `releaseLayoutChangesObserver(tabActor)`
+ * Use `getLayoutChangesObserver(targetActor)`
+ * and `releaseLayoutChangesObserver(targetActor)`
  * which are exported to get and release instances.
  *
  * The observer loops every EVENT_BATCHING_DELAY ms and checks if layout changes
@@ -221,10 +219,10 @@ exports.setIgnoreLayoutChanges = function (ignore, syncReflowNode) {
  * - "reflows", with an array of all the reflows that occured,
  * - "resizes", with an array of all the resizes that occured,
  *
- * @param {TabActor} tabActor
+ * @param {BrowsingContextTargetActor} targetActor
  */
-function LayoutChangesObserver(tabActor) {
-  this.tabActor = tabActor;
+function LayoutChangesObserver(targetActor) {
+  this.targetActor = targetActor;
 
   this._startEventLoop = this._startEventLoop.bind(this);
   this._onReflow = this._onReflow.bind(this);
@@ -233,8 +231,8 @@ function LayoutChangesObserver(tabActor) {
   // Creating the various observers we're going to need
   // For now, just the reflow observer, but later we can add markupMutation,
   // styleSheetChanges and styleRuleChanges
-  this.reflowObserver = new ReflowObserver(this.tabActor, this._onReflow);
-  this.resizeObserver = new WindowResizeObserver(this.tabActor, this._onResize);
+  this.reflowObserver = new ReflowObserver(this.targetActor, this._onReflow);
+  this.resizeObserver = new WindowResizeObserver(this.targetActor, this._onResize);
 
   EventEmitter.decorate(this);
 }
@@ -255,7 +253,7 @@ LayoutChangesObserver.prototype = {
    * Destroying this instance of LayoutChangesObserver will stop the batched
    * events from being sent.
    */
-  destroy: function () {
+  destroy: function() {
     this.isObserving = false;
 
     this.reflowObserver.destroy();
@@ -264,10 +262,10 @@ LayoutChangesObserver.prototype = {
     this.resizeObserver.destroy();
     this.hasResized = false;
 
-    this.tabActor = null;
+    this.targetActor = null;
   },
 
-  start: function () {
+  start: function() {
     if (this.isObserving) {
       return;
     }
@@ -282,7 +280,7 @@ LayoutChangesObserver.prototype = {
     this.resizeObserver.start();
   },
 
-  stop: function () {
+  stop: function() {
     if (!this.isObserving) {
       return;
     }
@@ -302,10 +300,10 @@ LayoutChangesObserver.prototype = {
    * events to be sent as batched events
    * Calls itself in a loop.
    */
-  _startEventLoop: function () {
-    // Avoid emitting events if the tabActor has been detached (may happen
+  _startEventLoop: function() {
+    // Avoid emitting events if the targetActor has been detached (may happen
     // during shutdown)
-    if (!this.tabActor || !this.tabActor.attached) {
+    if (!this.targetActor || !this.targetActor.attached) {
       return;
     }
 
@@ -325,15 +323,15 @@ LayoutChangesObserver.prototype = {
       this.EVENT_BATCHING_DELAY);
   },
 
-  _stopEventLoop: function () {
+  _stopEventLoop: function() {
     this._clearTimeout(this.eventLoopTimer);
   },
 
   // Exposing set/clearTimeout here to let tests override them if needed
-  _setTimeout: function (cb, ms) {
+  _setTimeout: function(cb, ms) {
     return setTimeout(cb, ms);
   },
-  _clearTimeout: function (t) {
+  _clearTimeout: function(t) {
     return clearTimeout(t);
   },
 
@@ -345,7 +343,7 @@ LayoutChangesObserver.prototype = {
    * @param {Number} end When the reflow ended
    * @param {Boolean} isInterruptible
    */
-  _onReflow: function (start, end, isInterruptible) {
+  _onReflow: function(start, end, isInterruptible) {
     if (gIgnoreLayoutChanges) {
       return;
     }
@@ -355,7 +353,7 @@ LayoutChangesObserver.prototype = {
     this.reflows.push({
       start: start,
       end: end,
-      isInterruptible: isInterruptible
+      isInterruptible: isInterruptible,
     });
   },
 
@@ -364,35 +362,35 @@ LayoutChangesObserver.prototype = {
    * resize occured.
    * The EVENT_BATCHING_DELAY loop will take care of it later.
    */
-  _onResize: function () {
+  _onResize: function() {
     if (gIgnoreLayoutChanges) {
       return;
     }
 
     this.hasResized = true;
-  }
+  },
 };
 
 /**
  * Get a LayoutChangesObserver instance for a given window. This function makes
  * sure there is only one instance per window.
- * @param {TabActor} tabActor
+ * @param {BrowsingContextTargetActor} targetActor
  * @return {LayoutChangesObserver}
  */
 var observedWindows = new Map();
-function getLayoutChangesObserver(tabActor) {
-  let observerData = observedWindows.get(tabActor);
+function getLayoutChangesObserver(targetActor) {
+  const observerData = observedWindows.get(targetActor);
   if (observerData) {
-    observerData.refCounting ++;
+    observerData.refCounting++;
     return observerData.observer;
   }
 
-  let obs = new LayoutChangesObserver(tabActor);
-  observedWindows.set(tabActor, {
+  const obs = new LayoutChangesObserver(targetActor);
+  observedWindows.set(targetActor, {
     observer: obs,
-    // counting references allows to stop the observer when no tabActor owns an
+    // counting references allows to stop the observer when no targetActor owns an
     // instance.
-    refCounting: 1
+    refCounting: 1,
   });
   obs.start();
   return obs;
@@ -401,104 +399,110 @@ exports.getLayoutChangesObserver = getLayoutChangesObserver;
 
 /**
  * Release a LayoutChangesObserver instance that was retrieved by
- * getLayoutChangesObserver. This is required to ensure the tabActor reference
+ * getLayoutChangesObserver. This is required to ensure the targetActor reference
  * is removed and the observer is eventually stopped and destroyed.
- * @param {TabActor} tabActor
+ * @param {BrowsingContextTargetActor} targetActor
  */
-function releaseLayoutChangesObserver(tabActor) {
-  let observerData = observedWindows.get(tabActor);
+function releaseLayoutChangesObserver(targetActor) {
+  const observerData = observedWindows.get(targetActor);
   if (!observerData) {
     return;
   }
 
-  observerData.refCounting --;
+  observerData.refCounting--;
   if (!observerData.refCounting) {
     observerData.observer.destroy();
-    observedWindows.delete(tabActor);
+    observedWindows.delete(targetActor);
   }
 }
 exports.releaseLayoutChangesObserver = releaseLayoutChangesObserver;
 
 /**
- * Reports any reflow that occurs in the tabActor's docshells.
+ * Reports any reflow that occurs in the targetActor's docshells.
  * @extends Observable
- * @param {TabActor} tabActor
+ * @param {BrowsingContextTargetActor} targetActor
  * @param {Function} callback Executed everytime a reflow occurs
  */
-function ReflowObserver(tabActor, callback) {
-  Observable.call(this, tabActor, callback);
-}
+class ReflowObserver extends Observable {
+  constructor(targetActor, callback) {
+    super(targetActor, callback);
+  }
 
-ReflowObserver.prototype = Heritage.extend(Observable.prototype, {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIReflowObserver,
-                                         Ci.nsISupportsWeakReference]),
-
-  _startListeners: function (windows) {
-    for (let window of windows) {
-      let docshell = window.QueryInterface(Ci.nsIInterfaceRequestor)
-                     .getInterface(Ci.nsIWebNavigation)
-                     .QueryInterface(Ci.nsIDocShell);
-      docshell.addWeakReflowObserver(this);
+  _startListeners(windows) {
+    for (const window of windows) {
+      window.docShell.addWeakReflowObserver(this);
     }
-  },
+  }
 
-  _stopListeners: function (windows) {
-    for (let window of windows) {
+  _stopListeners(windows) {
+    for (const window of windows) {
       try {
-        let docshell = window.QueryInterface(Ci.nsIInterfaceRequestor)
-                       .getInterface(Ci.nsIWebNavigation)
-                       .QueryInterface(Ci.nsIDocShell);
-        docshell.removeWeakReflowObserver(this);
+        window.docShell.removeWeakReflowObserver(this);
       } catch (e) {
         // Corner cases where a global has already been freed may happen, in
         // which case, no need to remove the observer.
       }
     }
-  },
+  }
 
-  reflow: function (start, end) {
+  reflow(start, end) {
     this.notifyCallback(start, end, false);
-  },
+  }
 
-  reflowInterruptible: function (start, end) {
+  reflowInterruptible(start, end) {
     this.notifyCallback(start, end, true);
   }
-});
-
-/**
- * Reports window resize events on the tabActor's windows.
- * @extends Observable
- * @param {TabActor} tabActor
- * @param {Function} callback Executed everytime a resize occurs
- */
-function WindowResizeObserver(tabActor, callback) {
-  Observable.call(this, tabActor, callback);
-  this.onResize = this.onResize.bind(this);
 }
 
-WindowResizeObserver.prototype = Heritage.extend(Observable.prototype, {
-  _startListeners: function () {
+ReflowObserver.prototype.QueryInterface = ChromeUtils
+  .generateQI([Ci.nsIReflowObserver, Ci.nsISupportsWeakReference]);
+
+/**
+ * Reports window resize events on the targetActor's windows.
+ * @extends Observable
+ * @param {BrowsingContextTargetActor} targetActor
+ * @param {Function} callback Executed everytime a resize occurs
+ */
+class WindowResizeObserver extends Observable {
+  constructor(targetActor, callback) {
+    super(targetActor, callback);
+
+    this.onNavigate = this.onNavigate.bind(this);
+    this.onResize = this.onResize.bind(this);
+
+    this.targetActor.on("navigate", this.onNavigate);
+  }
+
+  _startListeners() {
     this.listenerTarget.addEventListener("resize", this.onResize);
-  },
+  }
 
-  _stopListeners: function () {
+  _stopListeners() {
     this.listenerTarget.removeEventListener("resize", this.onResize);
-  },
+  }
 
-  onResize: function () {
+  onNavigate() {
+    if (this.isObserving) {
+      this._stopListeners();
+      this._startListeners();
+    }
+  }
+
+  onResize() {
     this.notifyCallback();
-  },
+  }
+
+  destroy() {
+    this.targetActor.off("navigate", this.onNavigate);
+  }
 
   get listenerTarget() {
     // For the rootActor, return its window.
-    if (this.tabActor.isRootActor) {
-      return this.tabActor.window;
+    if (this.targetActor.isRootActor) {
+      return this.targetActor.window;
     }
 
-    // Otherwise, get the tabActor's chromeEventHandler.
-    return this.tabActor.window.QueryInterface(Ci.nsIInterfaceRequestor)
-                               .getInterface(Ci.nsIWebNavigation)
-                               .QueryInterface(Ci.nsIDocShell)
-                               .chromeEventHandler;
+    // Otherwise, get the targetActor's chromeEventHandler.
+    return this.targetActor.chromeEventHandler;
   }
-});
+}

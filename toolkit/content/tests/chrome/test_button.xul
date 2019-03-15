@@ -18,8 +18,7 @@
 </hbox>
 <hbox>
   <button id="four" type="menu" label="Four"/>
-  <button id="five" type="panel" label="Five"/>
-  <button id="six" label="Six"/>
+  <button id="five" label="Five"/>
 </hbox>
 
   <!-- test results are displayed in the html:body -->
@@ -39,21 +38,18 @@ function test_button()
   synthesizeMouseExpectEvent($("two"), 2, 2, {}, $("two"), "!command", "button press command when disabled");
   synthesizeMouseExpectEvent($("two"), 2, 2, {}, $("two"), "click", "button press click when disabled");
 
-  if (navigator.platform.indexOf("Mac") == -1) {
+  if (!navigator.platform.includes("Mac")) {
     $("one").focus();
-    synthesizeKey("VK_DOWN", { });
+    synthesizeKey("KEY_ArrowDown");
     is(document.activeElement, $("three"), "key cursor down on button");
 
-    synthesizeKey("VK_RIGHT", { });
+    synthesizeKey("KEY_ArrowRight");
     is(document.activeElement, $("four"), "key cursor right on button");
-    synthesizeKey("VK_DOWN", { });
+    synthesizeKey("KEY_ArrowDown");
     is(document.activeElement, $("four"), "key cursor down on menu button");
-    $("five").focus();
-    synthesizeKey("VK_DOWN", { });
-    is(document.activeElement, $("five"), "key cursor down on panel button");
 
     $("three").focus();
-    synthesizeKey("VK_UP", { });
+    synthesizeKey("KEY_ArrowUp");
     is(document.activeElement, $("one"), "key cursor up on button");
   }
 

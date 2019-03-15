@@ -6,6 +6,7 @@
 
 #include "InterfaceInitFuncs.h"
 
+#include "Accessible-inl.h"
 #include "AccessibleWrap.h"
 #include "nsAccUtils.h"
 #include "nsCoreUtils.h"
@@ -17,25 +18,18 @@ using namespace mozilla::a11y;
 
 extern "C" {
 
-static AtkObject*
-refAccessibleAtPointCB(AtkComponent* aComponent, gint aAccX, gint aAccY,
-                       AtkCoordType aCoordType)
-{
-  return refAccessibleAtPointHelper(ATK_OBJECT(aComponent),
-                                    aAccX, aAccY, aCoordType);
+static AtkObject* refAccessibleAtPointCB(AtkComponent* aComponent, gint aAccX,
+                                         gint aAccY, AtkCoordType aCoordType) {
+  return refAccessibleAtPointHelper(ATK_OBJECT(aComponent), aAccX, aAccY,
+                                    aCoordType);
 }
 
-static void
-getExtentsCB(AtkComponent* aComponent, gint* aX, gint* aY,
-             gint* aWidth, gint* aHeight, AtkCoordType aCoordType)
-{
-  getExtentsHelper(ATK_OBJECT(aComponent),
-                   aX, aY, aWidth, aHeight, aCoordType);
+static void getExtentsCB(AtkComponent* aComponent, gint* aX, gint* aY,
+                         gint* aWidth, gint* aHeight, AtkCoordType aCoordType) {
+  getExtentsHelper(ATK_OBJECT(aComponent), aX, aY, aWidth, aHeight, aCoordType);
 }
 
-static gboolean
-grabFocusCB(AtkComponent* aComponent)
-{
+static gboolean grabFocusCB(AtkComponent* aComponent) {
   AtkObject* atkObject = ATK_OBJECT(aComponent);
   AccessibleWrap* accWrap = GetAccessibleWrap(atkObject);
   if (accWrap) {
@@ -51,12 +45,47 @@ grabFocusCB(AtkComponent* aComponent)
 
   return FALSE;
 }
+
+// ScrollType is compatible
+static gboolean scrollToCB(AtkComponent* aComponent, AtkScrollType type) {
+  AtkObject* atkObject = ATK_OBJECT(aComponent);
+  AccessibleWrap* accWrap = GetAccessibleWrap(atkObject);
+  if (accWrap) {
+    accWrap->ScrollTo(type);
+    return TRUE;
+  }
+
+  ProxyAccessible* proxy = GetProxy(atkObject);
+  if (proxy) {
+    proxy->ScrollTo(type);
+    return TRUE;
+  }
+
+  return FALSE;
 }
 
-AtkObject*
-refAccessibleAtPointHelper(AtkObject* aAtkObj, gint aX, gint aY,
-                           AtkCoordType aCoordType)
-{
+// CoordType is compatible
+static gboolean scrollToPointCB(AtkComponent* aComponent, AtkCoordType coords,
+                                gint x, gint y) {
+  AtkObject* atkObject = ATK_OBJECT(aComponent);
+  AccessibleWrap* accWrap = GetAccessibleWrap(atkObject);
+  if (accWrap) {
+    accWrap->ScrollToPoint(coords, x, y);
+    return TRUE;
+  }
+
+  ProxyAccessible* proxy = GetProxy(atkObject);
+  if (proxy) {
+    proxy->ScrollToPoint(coords, x, y);
+    return TRUE;
+  }
+
+  return FALSE;
+}
+}
+
+AtkObject* refAccessibleAtPointHelper(AtkObject* aAtkObj, gint aX, gint aY,
+                                      AtkCoordType aCoordType) {
   AccessibleWrap* accWrap = GetAccessibleWrap(aAtkObj);
   if (accWrap) {
     if (accWrap->IsDefunct() || nsAccUtils::MustPrune(accWrap)) {
@@ -66,13 +95,13 @@ refAccessibleAtPointHelper(AtkObject* aAtkObj, gint aX, gint aY,
     // Accessible::ChildAtPoint(x,y) is in screen pixels.
     if (aCoordType == ATK_XY_WINDOW) {
       nsIntPoint winCoords =
-        nsCoreUtils::GetScreenCoordsForWindow(accWrap->GetNode());
+          nsCoreUtils::GetScreenCoordsForWindow(accWrap->GetNode());
       aX += winCoords.x;
       aY += winCoords.y;
     }
 
-    Accessible* accAtPoint = accWrap->ChildAtPoint(aX, aY,
-                                                   Accessible::eDirectChild);
+    Accessible* accAtPoint =
+        accWrap->ChildAtPoint(aX, aY, Accessible::eDirectChild);
     if (!accAtPoint) {
       return nullptr;
     }
@@ -87,7 +116,7 @@ refAccessibleAtPointHelper(AtkObject* aAtkObj, gint aX, gint aY,
 
   if (ProxyAccessible* proxy = GetProxy(aAtkObj)) {
     ProxyAccessible* result =
-      proxy->AccessibleAtPoint(aX, aY, aCoordType == ATK_XY_WINDOW);
+        proxy->AccessibleAtPoint(aX, aY, aCoordType == ATK_XY_WINDOW);
     AtkObject* atkObj = result ? GetWrapperFor(result) : nullptr;
     if (atkObj) {
       g_object_ref(atkObj);
@@ -98,11 +127,8 @@ refAccessibleAtPointHelper(AtkObject* aAtkObj, gint aX, gint aY,
   return nullptr;
 }
 
-void
-getExtentsHelper(AtkObject* aAtkObj,
-                 gint* aX, gint* aY, gint* aWidth, gint* aHeight,
-                 AtkCoordType aCoordType)
-{
+void getExtentsHelper(AtkObject* aAtkObj, gint* aX, gint* aY, gint* aWidth,
+                      gint* aHeight, AtkCoordType aCoordType) {
   AccessibleWrap* accWrap = GetAccessibleWrap(aAtkObj);
   *aX = *aY = *aWidth = *aHeight = 0;
 
@@ -112,12 +138,11 @@ getExtentsHelper(AtkObject* aAtkObj,
     }
 
     nsIntRect screenRect = accWrap->Bounds();
-    if (screenRect.IsEmpty())
-      return;
+    if (screenRect.IsEmpty()) return;
 
     if (aCoordType == ATK_XY_WINDOW) {
       nsIntPoint winCoords =
-        nsCoreUtils::GetScreenCoordsForWindow(accWrap->GetNode());
+          nsCoreUtils::GetScreenCoordsForWindow(accWrap->GetNode());
       screenRect.x -= winCoords.x;
       screenRect.y -= winCoords.y;
     }
@@ -134,12 +159,9 @@ getExtentsHelper(AtkObject* aAtkObj,
   }
 }
 
-void
-componentInterfaceInitCB(AtkComponentIface* aIface)
-{
+void componentInterfaceInitCB(AtkComponentIface* aIface) {
   NS_ASSERTION(aIface, "Invalid Interface");
-  if(MOZ_UNLIKELY(!aIface))
-    return;
+  if (MOZ_UNLIKELY(!aIface)) return;
 
   /*
    * Use default implementation in atk for contains, get_position,
@@ -148,4 +170,8 @@ componentInterfaceInitCB(AtkComponentIface* aIface)
   aIface->ref_accessible_at_point = refAccessibleAtPointCB;
   aIface->get_extents = getExtentsCB;
   aIface->grab_focus = grabFocusCB;
+  if (IsAtkVersionAtLeast(2, 30)) {
+    aIface->scroll_to = scrollToCB;
+    aIface->scroll_to_point = scrollToPointCB;
+  }
 }

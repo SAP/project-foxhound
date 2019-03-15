@@ -6,7 +6,7 @@
 
 // https rather than chrome to improve coverage
 const TESTCASE_URI = TEST_BASE_HTTPS + "media-rules-sourcemaps.html";
-const MAP_PREF = "devtools.styleeditor.source-maps-enabled";
+const MAP_PREF = "devtools.source-map.client-service.enabled";
 
 const LABELS = ["screen and (max-width: 320px)",
                 "screen and (min-width: 1200px)"];
@@ -14,28 +14,26 @@ const LINE_NOS = [5, 8];
 
 waitForExplicitFinish();
 
-add_task(function* () {
+add_task(async function() {
   Services.prefs.setBoolPref(MAP_PREF, true);
 
-  let { ui } = yield openStyleEditorForURL(TESTCASE_URI);
-
-  yield listenForMediaChange(ui);
+  const { ui } = await openStyleEditorForURL(TESTCASE_URI);
 
   is(ui.editors.length, 1, "correct number of editors");
 
   // Test editor with @media rules
-  let mediaEditor = ui.editors[0];
-  yield openEditor(mediaEditor);
+  const mediaEditor = ui.editors[0];
+  await openEditor(mediaEditor);
   testMediaEditor(mediaEditor);
 
   Services.prefs.clearUserPref(MAP_PREF);
 });
 
 function testMediaEditor(editor) {
-  let sidebar = editor.details.querySelector(".stylesheet-sidebar");
+  const sidebar = editor.details.querySelector(".stylesheet-sidebar");
   is(sidebar.hidden, false, "sidebar is showing on editor with @media");
 
-  let entries = [...sidebar.querySelectorAll(".media-rule-label")];
+  const entries = [...sidebar.querySelectorAll(".media-rule-label")];
   is(entries.length, 2, "two @media rules displayed in sidebar");
 
   testRule(entries[0], LABELS[0], LINE_NOS[0]);
@@ -43,10 +41,10 @@ function testMediaEditor(editor) {
 }
 
 function testRule(rule, text, lineno) {
-  let cond = rule.querySelector(".media-rule-condition");
+  const cond = rule.querySelector(".media-rule-condition");
   is(cond.textContent, text, "media label is correct for " + text);
 
-  let line = rule.querySelector(".media-rule-line");
+  const line = rule.querySelector(".media-rule-line");
   is(line.textContent, ":" + lineno, "correct line number shown");
 }
 
@@ -56,14 +54,6 @@ function openEditor(editor) {
   getLinkFor(editor).click();
 
   return editor.getSourceEditor();
-}
-
-function listenForMediaChange(UI) {
-  let deferred = defer();
-  UI.once("media-list-changed", () => {
-    deferred.resolve();
-  });
-  return deferred.promise;
 }
 
 function getLinkFor(editor) {

@@ -5,38 +5,28 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsMappedAttributeElement.h"
-#include "nsIDocument.h"
+#include "mozilla/dom/Document.h"
 
-nsresult
-nsMappedAttributeElement::WalkContentStyleRules(nsRuleWalker* aRuleWalker)
-{
-  mAttrsAndChildren.WalkMappedAttributeStyleRules(aRuleWalker);
-  return NS_OK;
-}
-
-bool
-nsMappedAttributeElement::SetMappedAttribute(nsIDocument* aDocument,
-                                             nsIAtom* aName,
-                                             nsAttrValue& aValue,
-                                             nsresult* aRetval)
-{
-  NS_PRECONDITION(aDocument == GetComposedDoc(), "Unexpected document");
-  nsHTMLStyleSheet* sheet = aDocument ?
-    aDocument->GetAttributeStyleSheet() : nullptr;
-
-  *aRetval = mAttrsAndChildren.SetAndTakeMappedAttr(aName, aValue,
-                                                    this, sheet);
+bool nsMappedAttributeElement::SetAndSwapMappedAttribute(nsAtom* aName,
+                                                         nsAttrValue& aValue,
+                                                         bool* aValueWasSet,
+                                                         nsresult* aRetval) {
+  nsHTMLStyleSheet* sheet = OwnerDoc()->GetAttributeStyleSheet();
+  *aRetval =
+      mAttrs.SetAndSwapMappedAttr(aName, aValue, this, sheet, aValueWasSet);
   return true;
 }
 
 nsMapRuleToAttributesFunc
-nsMappedAttributeElement::GetAttributeMappingFunction() const
-{
+nsMappedAttributeElement::GetAttributeMappingFunction() const {
   return &MapNoAttributesInto;
 }
 
-void
-nsMappedAttributeElement::MapNoAttributesInto(const nsMappedAttributes* aAttributes,
-                                              mozilla::GenericSpecifiedValues* aGenericData)
-{
+void nsMappedAttributeElement::MapNoAttributesInto(
+    const nsMappedAttributes*, mozilla::MappedDeclarations&) {}
+
+void nsMappedAttributeElement::NodeInfoChanged(Document* aOldDoc) {
+  nsHTMLStyleSheet* sheet = OwnerDoc()->GetAttributeStyleSheet();
+  mAttrs.SetMappedAttrStyleSheet(sheet);
+  nsMappedAttributeElementBase::NodeInfoChanged(aOldDoc);
 }

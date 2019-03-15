@@ -20,26 +20,35 @@
  *
  * References:
  * - WebAnimation spec:
- *   http://w3c.github.io/web-animations/
+ *   http://drafts.csswg.org/web-animations/
  * - WebAnimation WebIDL files:
  *   /dom/webidl/Animation*.webidl
  */
 
 const {Cu} = require("chrome");
-const promise = require("promise");
 const protocol = require("devtools/shared/protocol");
 const {Actor} = protocol;
 const {animationPlayerSpec, animationsSpec} = require("devtools/shared/specs/animation");
-const events = require("sdk/event/core");
+const {ANIMATION_TYPE_FOR_LONGHANDS} = require("./animation-type-longhand");
 
 // Types of animations.
 const ANIMATION_TYPES = {
   CSS_ANIMATION: "cssanimation",
   CSS_TRANSITION: "csstransition",
   SCRIPT_ANIMATION: "scriptanimation",
-  UNKNOWN: "unknown"
+  UNKNOWN: "unknown",
 };
 exports.ANIMATION_TYPES = ANIMATION_TYPES;
+
+function getAnimationTypeForLonghand(property) {
+  for (const [type, props] of ANIMATION_TYPE_FOR_LONGHANDS) {
+    if (props.has(property)) {
+      return type;
+    }
+  }
+  throw new Error("Unknown longhand property name");
+}
+exports.getAnimationTypeForLonghand = getAnimationTypeForLonghand;
 
 /**
  * The AnimationPlayerActor provides information about a given animation: its
@@ -54,8 +63,9 @@ var AnimationPlayerActor = protocol.ActorClassWithSpec(animationPlayerSpec, {
   /**
    * @param {AnimationsActor} The main AnimationsActor instance
    * @param {AnimationPlayer} The player object returned by getAnimationPlayers
+   * @param {Number} Time which animation created
    */
-  initialize: function (animationsActor, player) {
+  initialize: function(animationsActor, player, createdTime) {
     Actor.prototype.initialize.call(this, animationsActor.conn);
 
     this.onAnimationMutation = this.onAnimationMutation.bind(this);
@@ -76,9 +86,12 @@ var AnimationPlayerActor = protocol.ActorClassWithSpec(animationPlayerSpec, {
     } else {
       this.observer.observe(this.node, {animations: true});
     }
+
+    this.createdTime = createdTime;
+    this.currentTimeAtCreated = player.currentTime;
   },
 
-  destroy: function () {
+  destroy: function() {
     // Only try to disconnect the observer if it's not already dead (i.e. if the
     // container view hasn't navigated since).
     if (this.observer && !Cu.isDeadWrapper(this.observer)) {
@@ -94,51 +107,35 @@ var AnimationPlayerActor = protocol.ActorClassWithSpec(animationPlayerSpec, {
   },
 
   get node() {
-    if (this._node) {
-      return this._node;
+    if (!this.isPseudoElement) {
+      return this.player.effect.target;
     }
 
-    let node = this.player.effect.target;
+    const pseudo = this.player.effect.target;
+    const treeWalker = this.walker.getDocumentWalker(pseudo.parentElement);
+    return pseudo.type === "::before" ? treeWalker.firstChild() : treeWalker.lastChild();
+  },
 
-    if (this.isPseudoElement) {
-      // The target is a CSSPseudoElement object which just has a property that
-      // points to its parent element and a string type (::before or ::after).
-      let treeWalker = this.walker.getDocumentWalker(node.parentElement);
-      while (treeWalker.nextNode()) {
-        let currentNode = treeWalker.currentNode;
-        if ((currentNode.nodeName === "_moz_generated_content_before" &&
-             node.type === "::before") ||
-            (currentNode.nodeName === "_moz_generated_content_after" &&
-             node.type === "::after")) {
-          this._node = currentNode;
-        }
-      }
-    } else {
-      // The target is a DOM node.
-      this._node = node;
-    }
-
-    return this._node;
+  get document() {
+    return this.node.ownerDocument;
   },
 
   get window() {
-    // ownerGlobal doesn't exist in content privileged windows.
-    // eslint-disable-next-line mozilla/use-ownerGlobal
-    return this.node.ownerDocument.defaultView;
+    return this.document.defaultView;
   },
 
   /**
    * Release the actor, when it isn't needed anymore.
    * Protocol.js uses this release method to call the destroy method.
    */
-  release: function () {},
+  release: function() {},
 
-  form: function (detail) {
+  form: function(detail) {
     if (detail === "actorid") {
       return this.actorID;
     }
 
-    let data = this.getCurrentState();
+    const data = this.getCurrentState();
     data.actor = this.actorID;
 
     // If we know the WalkerActor, and if the animated node is known by it, then
@@ -150,22 +147,22 @@ var AnimationPlayerActor = protocol.ActorClassWithSpec(animationPlayerSpec, {
     return data;
   },
 
-  isCssAnimation: function (player = this.player) {
+  isCssAnimation: function(player = this.player) {
     return player instanceof this.window.CSSAnimation;
   },
 
-  isCssTransition: function (player = this.player) {
+  isCssTransition: function(player = this.player) {
     return player instanceof this.window.CSSTransition;
   },
 
-  isScriptAnimation: function (player = this.player) {
+  isScriptAnimation: function(player = this.player) {
     return player instanceof this.window.Animation && !(
       player instanceof this.window.CSSAnimation ||
       player instanceof this.window.CSSTransition
     );
   },
 
-  getType: function () {
+  getType: function() {
     if (this.isCssAnimation()) {
       return ANIMATION_TYPES.CSS_ANIMATION;
     } else if (this.isCssTransition()) {
@@ -183,7 +180,7 @@ var AnimationPlayerActor = protocol.ActorClassWithSpec(animationPlayerSpec, {
    * property.
    * @return {String}
    */
-  getName: function () {
+  getName: function() {
     if (this.player.id) {
       return this.player.id;
     } else if (this.isCssAnimation()) {
@@ -199,7 +196,7 @@ var AnimationPlayerActor = protocol.ActorClassWithSpec(animationPlayerSpec, {
    * Get the animation duration from this player, in milliseconds.
    * @return {Number}
    */
-  getDuration: function () {
+  getDuration: function() {
     return this.player.effect.getComputedTiming().duration;
   },
 
@@ -207,7 +204,7 @@ var AnimationPlayerActor = protocol.ActorClassWithSpec(animationPlayerSpec, {
    * Get the animation delay from this player, in milliseconds.
    * @return {Number}
    */
-  getDelay: function () {
+  getDelay: function() {
     return this.player.effect.getComputedTiming().delay;
   },
 
@@ -215,7 +212,7 @@ var AnimationPlayerActor = protocol.ActorClassWithSpec(animationPlayerSpec, {
    * Get the animation endDelay from this player, in milliseconds.
    * @return {Number}
    */
-  getEndDelay: function () {
+  getEndDelay: function() {
     return this.player.effect.getComputedTiming().endDelay;
   },
 
@@ -225,9 +222,9 @@ var AnimationPlayerActor = protocol.ActorClassWithSpec(animationPlayerSpec, {
    * @return {Number} The number of iterations, or null if the animation repeats
    * infinitely.
    */
-  getIterationCount: function () {
-    let iterations = this.player.effect.getComputedTiming().iterations;
-    return iterations === "Infinity" ? null : iterations;
+  getIterationCount: function() {
+    const iterations = this.player.effect.getComputedTiming().iterations;
+    return iterations === Infinity ? null : iterations;
   },
 
   /**
@@ -235,7 +232,7 @@ var AnimationPlayerActor = protocol.ActorClassWithSpec(animationPlayerSpec, {
    * That is offset of starting position of the animation.
    * @return {Number}
    */
-  getIterationStart: function () {
+  getIterationStart: function() {
     return this.player.effect.getComputedTiming().iterationStart;
   },
 
@@ -243,15 +240,15 @@ var AnimationPlayerActor = protocol.ActorClassWithSpec(animationPlayerSpec, {
    * Get the animation easing from this player.
    * @return {String}
    */
-  getEasing: function () {
-    return this.player.effect.timing.easing;
+  getEasing: function() {
+    return this.player.effect.getComputedTiming().easing;
   },
 
   /**
    * Get the animation fill mode from this player.
    * @return {String}
    */
-  getFill: function () {
+  getFill: function() {
     return this.player.effect.getComputedTiming().fill;
   },
 
@@ -259,17 +256,36 @@ var AnimationPlayerActor = protocol.ActorClassWithSpec(animationPlayerSpec, {
    * Get the animation direction from this player.
    * @return {String}
    */
-  getDirection: function () {
+  getDirection: function() {
     return this.player.effect.getComputedTiming().direction;
   },
 
-  getPropertiesCompositorStatus: function () {
-    let properties = this.player.effect.getProperties();
+  /**
+   * Get animation-timing-function from animated element if CSS Animations.
+   * @return {String}
+   */
+  getAnimationTimingFunction: function() {
+    if (!this.isCssAnimation()) {
+      return null;
+    }
+
+    let pseudo = null;
+    let target = this.player.effect.target;
+    if (target.type) {
+      // Animated element is a pseudo element.
+      pseudo = target.type;
+      target = target.parentElement;
+    }
+    return this.window.getComputedStyle(target, pseudo).animationTimingFunction;
+  },
+
+  getPropertiesCompositorStatus: function() {
+    const properties = this.player.effect.getProperties();
     return properties.map(prop => {
       return {
         property: prop.property,
         runningOnCompositor: prop.runningOnCompositor,
-        warning: prop.warning
+        warning: prop.warning,
       };
     });
   },
@@ -278,16 +294,7 @@ var AnimationPlayerActor = protocol.ActorClassWithSpec(animationPlayerSpec, {
    * Return the current start of the Animation.
    * @return {Object}
    */
-  getState: function () {
-    // Remember the startTime each time getState is called, it may be useful
-    // when animations get paused. As in, when an animation gets paused, its
-    // startTime goes back to null, but the front-end might still be interested
-    // in knowing what the previous startTime was. So everytime it is set,
-    // remember it and send it along with the newState.
-    if (this.player.startTime) {
-      this.previousStartTime = this.player.startTime;
-    }
-
+  getState: function() {
     // Note that if you add a new property to the state object, make sure you
     // add the corresponding property in the AnimationPlayerFront' initialState
     // getter.
@@ -295,7 +302,6 @@ var AnimationPlayerActor = protocol.ActorClassWithSpec(animationPlayerSpec, {
       type: this.getType(),
       // startTime is null whenever the animation is paused or waiting to start.
       startTime: this.player.startTime,
-      previousStartTime: this.previousStartTime,
       currentTime: this.player.currentTime,
       playState: this.player.playState,
       playbackRate: this.player.playbackRate,
@@ -308,6 +314,7 @@ var AnimationPlayerActor = protocol.ActorClassWithSpec(animationPlayerSpec, {
       fill: this.getFill(),
       easing: this.getEasing(),
       direction: this.getDirection(),
+      animationTimingFunction: this.getAnimationTimingFunction(),
       // animation is hitting the fast path or not. Returns false whenever the
       // animation is paused as it is taken off the compositor then.
       isRunningOnCompositor:
@@ -317,7 +324,11 @@ var AnimationPlayerActor = protocol.ActorClassWithSpec(animationPlayerSpec, {
       // The document timeline's currentTime is being sent along too. This is
       // not strictly related to the node's animationPlayer, but is useful to
       // know the current time of the animation with respect to the document's.
-      documentCurrentTime: this.node.ownerDocument.timeline.currentTime
+      documentCurrentTime: this.node.ownerDocument.timeline.currentTime,
+      // The time which this animation created.
+      createdTime: this.createdTime,
+      // The time which an animation's current time when this animation has created.
+      currentTimeAtCreated: this.currentTimeAtCreated,
     };
   },
 
@@ -330,8 +341,8 @@ var AnimationPlayerActor = protocol.ActorClassWithSpec(animationPlayerSpec, {
    * reconstruct those). If you want the full state, use the getState method.
    * @return {Object}
    */
-  getCurrentState: function () {
-    let newState = this.getState();
+  getCurrentState: function() {
+    const newState = this.getState();
 
     // If we've saved a state before, compare and only send what has changed.
     // It's expected of the front to also save old states to re-construct the
@@ -339,7 +350,7 @@ var AnimationPlayerActor = protocol.ActorClassWithSpec(animationPlayerSpec, {
     // This is to minimize protocol traffic.
     let sentState = {};
     if (this.currentState) {
-      for (let key in newState) {
+      for (const key in newState) {
         if (typeof this.currentState[key] === "undefined" ||
             this.currentState[key] !== newState[key]) {
           sentState[key] = newState[key];
@@ -357,12 +368,12 @@ var AnimationPlayerActor = protocol.ActorClassWithSpec(animationPlayerSpec, {
    * Executed when the current animation changes, used to emit the new state
    * the the front.
    */
-  onAnimationMutation: function (mutations) {
-    let isCurrentAnimation = animation => animation === this.player;
-    let hasCurrentAnimation = animations => animations.some(isCurrentAnimation);
+  onAnimationMutation: function(mutations) {
+    const isCurrentAnimation = animation => animation === this.player;
+    const hasCurrentAnimation = animations => animations.some(isCurrentAnimation);
     let hasChanged = false;
 
-    for (let {removedAnimations, changedAnimations} of mutations) {
+    for (const {removedAnimations, changedAnimations} of mutations) {
       if (hasCurrentAnimation(removedAnimations)) {
         // Reset the local copy of the state on removal, since the animation can
         // be kept on the client and re-added, its state needs to be sent in
@@ -371,103 +382,148 @@ var AnimationPlayerActor = protocol.ActorClassWithSpec(animationPlayerSpec, {
       }
 
       if (hasCurrentAnimation(changedAnimations)) {
-        // Only consider the state has having changed if any of delay, duration,
-        // iterationcount or iterationStart has changed (for now at least).
-        let newState = this.getState();
-        let oldState = this.currentState;
+        // Only consider the state has having changed if any of effect timing properties,
+        // animationTimingFunction or playbackRate has changed.
+        const newState = this.getState();
+        const oldState = this.currentState;
         hasChanged = newState.delay !== oldState.delay ||
                      newState.iterationCount !== oldState.iterationCount ||
                      newState.iterationStart !== oldState.iterationStart ||
                      newState.duration !== oldState.duration ||
-                     newState.endDelay !== oldState.endDelay;
+                     newState.endDelay !== oldState.endDelay ||
+                     newState.direction !== oldState.direction ||
+                     newState.easing !== oldState.easing ||
+                     newState.fill !== oldState.fill ||
+                     newState.animationTimingFunction !==
+                       oldState.animationTimingFunction ||
+                     newState.playbackRate !== oldState.playbackRate;
         break;
       }
     }
 
     if (hasChanged) {
-      events.emit(this, "changed", this.getCurrentState());
+      this.emit("changed", this.getCurrentState());
     }
-  },
-
-  /**
-   * Pause the player.
-   */
-  pause: function () {
-    this.player.pause();
-    return this.player.ready;
-  },
-
-  /**
-   * Play the player.
-   * This method only returns when the animation has left its pending state.
-   */
-  play: function () {
-    this.player.play();
-    return this.player.ready;
-  },
-
-  /**
-   * Simply exposes the player ready promise.
-   *
-   * When an animation is created/paused then played, there's a short time
-   * during which its playState is pending, before being set to running.
-   *
-   * If you either created a new animation using the Web Animations API or
-   * paused/played an existing one, and then want to access the playState, you
-   * might be interested to call this method.
-   * This is especially important for tests.
-   */
-  ready: function () {
-    return this.player.ready;
-  },
-
-  /**
-   * Set the current time of the animation player.
-   */
-  setCurrentTime: function (currentTime) {
-    // The spec is that the progress of animation is changed
-    // if the time of setCurrentTime is during the endDelay.
-    // We should prevent the time
-    // to make the same animation behavior as the original.
-    // Likewise, in case the time is less than 0.
-    const timing = this.player.effect.getComputedTiming();
-    if (timing.delay < 0) {
-      currentTime += timing.delay;
-    }
-    if (currentTime < 0) {
-      currentTime = 0;
-    } else if (currentTime * this.player.playbackRate > timing.endTime) {
-      currentTime = timing.endTime;
-    }
-    this.player.currentTime = currentTime * this.player.playbackRate;
-  },
-
-  /**
-   * Set the playback rate of the animation player.
-   */
-  setPlaybackRate: function (playbackRate) {
-    this.player.playbackRate = playbackRate;
-  },
-
-  /**
-   * Get data about the keyframes of this animation player.
-   * @return {Object} Returns a list of frames, each frame containing the list
-   * animated properties as well as the frame's offset.
-   */
-  getFrames: function () {
-    return this.player.effect.getKeyframes();
   },
 
   /**
    * Get data about the animated properties of this animation player.
    * @return {Array} Returns a list of animated properties.
-   * Each property contains a list of values and their offsets
+   * Each property contains a list of values, their offsets and distances.
    */
-  getProperties: function () {
-    return this.player.effect.getProperties().map(property => {
+  getProperties: function() {
+    const properties = this.player.effect.getProperties().map(property => {
       return {name: property.property, values: property.values};
     });
-  }
+
+    const DOMWindowUtils = this.window.windowUtils;
+
+    // Fill missing keyframe with computed value.
+    for (const property of properties) {
+      let underlyingValue = null;
+      // Check only 0% and 100% keyframes.
+      [0, property.values.length - 1].forEach(index => {
+        const values = property.values[index];
+        if (values.value !== undefined) {
+          return;
+        }
+        if (!underlyingValue) {
+          let pseudo = null;
+          let target = this.player.effect.target;
+          if (target.type) {
+            // This target is a pseudo element.
+            pseudo = target.type;
+            target = target.parentElement;
+          }
+          const value =
+            DOMWindowUtils.getUnanimatedComputedStyle(target,
+                                                      pseudo,
+                                                      property.name,
+                                                      DOMWindowUtils.FLUSH_NONE);
+          const animationType = getAnimationTypeForLonghand(property.name);
+          underlyingValue = animationType === "float" ? parseFloat(value, 10) : value;
+        }
+        values.value = underlyingValue;
+      });
+    }
+
+    // Calculate the distance.
+    for (const property of properties) {
+      const propertyName = property.name;
+      const maxObject = { distance: -1 };
+      for (let i = 0; i < property.values.length - 1; i++) {
+        const value1 = property.values[i].value;
+        for (let j = i + 1; j < property.values.length; j++) {
+          const value2 = property.values[j].value;
+          const distance =
+            this.getDistance(this.node, propertyName, value1, value2, DOMWindowUtils);
+          if (maxObject.distance >= distance) {
+            continue;
+          }
+          maxObject.distance = distance;
+          maxObject.value1 = value1;
+          maxObject.value2 = value2;
+        }
+      }
+      if (maxObject.distance === 0) {
+        // Distance is zero means that no values change or can't calculate the distance.
+        // In this case, we use the keyframe offset as the distance.
+        property.values.reduce((previous, current) => {
+          // If the current value is same as previous value, use previous distance.
+          current.distance =
+            current.value === previous.value ? previous.distance : current.offset;
+          return current;
+        }, property.values[0]);
+        continue;
+      }
+      const baseValue =
+        maxObject.value1 < maxObject.value2 ? maxObject.value1 : maxObject.value2;
+      for (const values of property.values) {
+        const value = values.value;
+        const distance =
+          this.getDistance(this.node, propertyName, baseValue, value, DOMWindowUtils);
+        values.distance = distance / maxObject.distance;
+      }
+    }
+    return properties;
+  },
+
+  /**
+   * Get the animation types for a given list of CSS property names.
+   * @param {Array} propertyNames - CSS property names (e.g. background-color)
+   * @return {Object} Returns animation types (e.g. {"background-color": "rgb(0, 0, 0)"}.
+   */
+  getAnimationTypes: function(propertyNames) {
+    const animationTypes = {};
+    for (const propertyName of propertyNames) {
+      animationTypes[propertyName] = getAnimationTypeForLonghand(propertyName);
+    }
+    return animationTypes;
+  },
+
+  /**
+   * Returns the distance of between value1, value2.
+   * @param {Object} target - dom element
+   * @param {String} propertyName - e.g. transform
+   * @param {String} value1 - e.g. translate(0px)
+   * @param {String} value2 - e.g. translate(10px)
+   * @param {Object} DOMWindowUtils
+   * @param {float} distance
+   */
+  getDistance: function(target, propertyName, value1, value2, DOMWindowUtils) {
+    if (value1 === value2) {
+      return 0;
+    }
+    try {
+      const distance =
+        DOMWindowUtils.computeAnimationDistance(target, propertyName, value1, value2);
+      return distance;
+    } catch (e) {
+      // We can't compute the distance such the 'discrete' animation,
+      // 'auto' keyword and so on.
+      return 0;
+    }
+  },
 });
 
 exports.AnimationPlayerActor = AnimationPlayerActor;
@@ -476,26 +532,26 @@ exports.AnimationPlayerActor = AnimationPlayerActor;
  * The Animations actor lists animation players for a given node.
  */
 exports.AnimationsActor = protocol.ActorClassWithSpec(animationsSpec, {
-  initialize: function (conn, tabActor) {
+  initialize: function(conn, targetActor) {
     Actor.prototype.initialize.call(this, conn);
-    this.tabActor = tabActor;
+    this.targetActor = targetActor;
 
     this.onWillNavigate = this.onWillNavigate.bind(this);
     this.onNavigate = this.onNavigate.bind(this);
     this.onAnimationMutation = this.onAnimationMutation.bind(this);
 
     this.allAnimationsPaused = false;
-    events.on(this.tabActor, "will-navigate", this.onWillNavigate);
-    events.on(this.tabActor, "navigate", this.onNavigate);
+    this.targetActor.on("will-navigate", this.onWillNavigate);
+    this.targetActor.on("navigate", this.onNavigate);
   },
 
-  destroy: function () {
+  destroy: function() {
     Actor.prototype.destroy.call(this);
-    events.off(this.tabActor, "will-navigate", this.onWillNavigate);
-    events.off(this.tabActor, "navigate", this.onNavigate);
+    this.targetActor.off("will-navigate", this.onWillNavigate);
+    this.targetActor.off("navigate", this.onNavigate);
 
     this.stopAnimationPlayerUpdates();
-    this.tabActor = this.observer = this.actors = this.walker = null;
+    this.targetActor = this.observer = this.actors = this.walker = null;
   },
 
   /**
@@ -506,7 +562,7 @@ exports.AnimationsActor = protocol.ActorClassWithSpec(animationsSpec, {
    * to the server to get a NodeActor for a particular animation.
    * @param {WalkerActor} walker
    */
-  setWalkerActor: function (walker) {
+  setWalkerActor: function(walker) {
     this.walker = walker;
   },
 
@@ -520,17 +576,21 @@ exports.AnimationsActor = protocol.ActorClassWithSpec(animationsSpec, {
    * @param {NodeActor} nodeActor The NodeActor as defined in
    * /devtools/server/actors/inspector
    */
-  getAnimationPlayersForNode: function (nodeActor) {
-    let animations = nodeActor.rawNode.getAnimations({subtree: true});
+  getAnimationPlayersForNode: function(nodeActor) {
+    const animations = nodeActor.rawNode.getAnimations({subtree: true});
 
     // Destroy previously stored actors
     if (this.actors) {
-      this.actors.forEach(actor => actor.destroy());
+      for (const actor of this.actors) {
+        actor.destroy();
+      }
     }
+
     this.actors = [];
 
-    for (let i = 0; i < animations.length; i++) {
-      let actor = AnimationPlayerActor(this, animations[i]);
+    for (const animation of animations) {
+      const createdTime = this.getCreatedTime(animation);
+      const actor = AnimationPlayerActor(this, animation, createdTime);
       this.actors.push(actor);
     }
 
@@ -541,22 +601,22 @@ exports.AnimationsActor = protocol.ActorClassWithSpec(animationsSpec, {
     this.stopAnimationPlayerUpdates();
     // ownerGlobal doesn't exist in content privileged windows.
     // eslint-disable-next-line mozilla/use-ownerGlobal
-    let win = nodeActor.rawNode.ownerDocument.defaultView;
+    const win = nodeActor.rawNode.ownerDocument.defaultView;
     this.observer = new win.MutationObserver(this.onAnimationMutation);
     this.observer.observe(nodeActor.rawNode, {
       animations: true,
-      subtree: true
+      subtree: true,
     });
 
     return this.actors;
   },
 
-  onAnimationMutation: function (mutations) {
-    let eventData = [];
-    let readyPromises = [];
+  onAnimationMutation: function(mutations) {
+    const eventData = [];
+    const readyPromises = [];
 
-    for (let {addedAnimations, removedAnimations} of mutations) {
-      for (let player of removedAnimations) {
+    for (const {addedAnimations, removedAnimations} of mutations) {
+      for (const player of removedAnimations) {
         // Note that animations are reported as removed either when they are
         // actually removed from the node (e.g. css class removed) or when they
         // are finished and don't have forwards animation-fill-mode.
@@ -567,17 +627,17 @@ exports.AnimationsActor = protocol.ActorClassWithSpec(animationsSpec, {
           continue;
         }
 
-        let index = this.actors.findIndex(a => a.player === player);
+        const index = this.actors.findIndex(a => a.player === player);
         if (index !== -1) {
           eventData.push({
             type: "removed",
-            player: this.actors[index]
+            player: this.actors[index],
           });
           this.actors.splice(index, 1);
         }
       }
 
-      for (let player of addedAnimations) {
+      for (const player of addedAnimations) {
         // If the added player already exists, it means we previously filtered
         // it out when it was reported as removed. So filter it out here too.
         if (this.actors.find(a => a.player === player)) {
@@ -587,29 +647,30 @@ exports.AnimationsActor = protocol.ActorClassWithSpec(animationsSpec, {
         // If the added player has the same name and target node as a player we
         // already have, it means it's a transition that's re-starting. So send
         // a "removed" event for the one we already have.
-        let index = this.actors.findIndex(a => {
-          let isSameType = a.player.constructor === player.constructor;
-          let isSameName = (a.isCssAnimation() &&
+        const index = this.actors.findIndex(a => {
+          const isSameType = a.player.constructor === player.constructor;
+          const isSameName = (a.isCssAnimation() &&
                             a.player.animationName === player.animationName) ||
                            (a.isCssTransition() &&
                             a.player.transitionProperty === player.transitionProperty);
-          let isSameNode = a.player.effect.target === player.effect.target;
+          const isSameNode = a.player.effect.target === player.effect.target;
 
           return isSameType && isSameNode && isSameName;
         });
         if (index !== -1) {
           eventData.push({
             type: "removed",
-            player: this.actors[index]
+            player: this.actors[index],
           });
           this.actors.splice(index, 1);
         }
 
-        let actor = AnimationPlayerActor(this, player);
+        const createdTime = this.getCreatedTime(player);
+        const actor = AnimationPlayerActor(this, player, createdTime);
         this.actors.push(actor);
         eventData.push({
           type: "added",
-          player: actor
+          player: actor,
         });
         readyPromises.push(player.ready);
       }
@@ -619,7 +680,7 @@ exports.AnimationsActor = protocol.ActorClassWithSpec(animationsSpec, {
       // Let's wait for all added animations to be ready before telling the
       // front-end.
       Promise.all(readyPromises).then(() => {
-        events.emit(this, "mutations", eventData);
+        this.emit("mutations", eventData);
       });
     }
   },
@@ -629,7 +690,7 @@ exports.AnimationsActor = protocol.ActorClassWithSpec(animationsSpec, {
    * node, the actor starts sending animation mutations for this node. If the
    * client doesn't want this to happen anymore, it should call this method.
    */
-  stopAnimationPlayerUpdates: function () {
+  stopAnimationPlayerUpdates: function() {
     if (this.observer && !Cu.isDeadWrapper(this.observer)) {
       this.observer.disconnect();
     }
@@ -644,80 +705,54 @@ exports.AnimationsActor = protocol.ActorClassWithSpec(animationsSpec, {
    * frames too.
    * @return {Array} An array of AnimationPlayer objects.
    */
-  getAllAnimations: function (rootNode, traverseFrames) {
+  getAllAnimations: function(rootNode, traverseFrames) {
     if (!traverseFrames) {
       return rootNode.getAnimations({subtree: true});
     }
 
     let animations = [];
-    for (let {document} of this.tabActor.windows) {
+    for (const {document} of this.targetActor.windows) {
       animations = [...animations, ...document.getAnimations({subtree: true})];
     }
     return animations;
   },
 
-  onWillNavigate: function ({isTopLevel}) {
+  onWillNavigate: function({isTopLevel}) {
     if (isTopLevel) {
       this.stopAnimationPlayerUpdates();
     }
   },
 
-  onNavigate: function ({isTopLevel}) {
+  onNavigate: function({isTopLevel}) {
     if (isTopLevel) {
       this.allAnimationsPaused = false;
     }
   },
 
   /**
-   * Pause all animations in the current tabActor's frames.
+   * Pause given animations.
+   *
+   * @param {Array} actors A list of AnimationPlayerActor.
    */
-  pauseAll: function () {
-    let readyPromises = [];
-    // Until the WebAnimations API provides a way to play/pause via the document
-    // timeline, we have to iterate through the whole DOM to find all players.
-    for (let player of
-         this.getAllAnimations(this.tabActor.window.document, true)) {
-      player.pause();
-      readyPromises.push(player.ready);
+  pauseSome: function(actors) {
+    for (const { player } of actors) {
+      this.pauseSync(player);
     }
-    this.allAnimationsPaused = true;
-    return promise.all(readyPromises);
+
+    return this.waitForNextFrame(actors);
   },
 
   /**
-   * Play all animations in the current tabActor's frames.
-   * This method only returns when animations have left their pending states.
+   * Play given animations.
+   *
+   * @param {Array} actors A list of AnimationPlayerActor.
    */
-  playAll: function () {
-    let readyPromises = [];
-    // Until the WebAnimations API provides a way to play/pause via the document
-    // timeline, we have to iterate through the whole DOM to find all players.
-    for (let player of
-         this.getAllAnimations(this.tabActor.window.document, true)) {
-      player.play();
-      readyPromises.push(player.ready);
+  playSome: function(actors) {
+    for (const { player } of actors) {
+      this.playSync(player);
     }
-    this.allAnimationsPaused = false;
-    return promise.all(readyPromises);
-  },
 
-  toggleAll: function () {
-    if (this.allAnimationsPaused) {
-      return this.playAll();
-    }
-    return this.pauseAll();
-  },
-
-  /**
-   * Toggle (play/pause) several animations at the same time.
-   * @param {Array} players A list of AnimationPlayerActor objects.
-   * @param {Boolean} shouldPause If set to true, the players will be paused,
-   * otherwise they will be played.
-   */
-  toggleSeveral: function (players, shouldPause) {
-    return promise.all(players.map(player => {
-      return shouldPause ? player.pause() : player.play();
-    }));
+    return this.waitForNextFrame(actors);
   },
 
   /**
@@ -726,21 +761,92 @@ exports.AnimationsActor = protocol.ActorClassWithSpec(animationsSpec, {
    * @param {Number} time The new currentTime.
    * @param {Boolean} shouldPause Should the players be paused too.
    */
-  setCurrentTimes: function (players, time, shouldPause) {
-    return promise.all(players.map(player => {
-      let pause = shouldPause ? player.pause() : promise.resolve();
-      return pause.then(() => player.setCurrentTime(time));
-    }));
+  setCurrentTimes: function(players, time, shouldPause) {
+    for (const actor of players) {
+      const player = actor.player;
+
+      if (shouldPause) {
+        player.startTime = null;
+      }
+
+      const currentTime =
+        player.playbackRate > 0 ? time - actor.createdTime : actor.createdTime - time;
+      player.currentTime = currentTime * Math.abs(player.playbackRate);
+    }
+
+    return this.waitForNextFrame(players);
   },
 
   /**
    * Set the playback rate of several animations at the same time.
-   * @param {Array} players A list of AnimationPlayerActor.
+   * @param {Array} actors A list of AnimationPlayerActor.
    * @param {Number} rate The new rate.
    */
-  setPlaybackRates: function (players, rate) {
-    for (let player of players) {
-      player.setPlaybackRate(rate);
+  setPlaybackRates: function(players, rate) {
+    return Promise.all(players.map(({ player }) => {
+      player.updatePlaybackRate(rate);
+      return player.ready;
+    }));
+  },
+
+  /**
+   * Pause given player synchronously.
+   *
+   * @param {Object} player
+   */
+  pauseSync(player) {
+    player.startTime = null;
+  },
+
+  /**
+   * Play given player synchronously.
+   *
+   * @param {Object} player
+   */
+  playSync(player) {
+    if (!player.playbackRate) {
+      // We can not play with playbackRate zero.
+      return;
     }
-  }
+
+    // Play animation in a synchronous fashion by setting the start time directly.
+    const currentTime = player.currentTime || 0;
+    player.startTime = player.timeline.currentTime - currentTime / player.playbackRate;
+  },
+
+  /**
+   * Return created fime of given animaiton.
+   *
+   * @param {Object} animation
+   */
+  getCreatedTime(animation) {
+    return animation.startTime ||
+          animation.timeline.currentTime - animation.currentTime / animation.playbackRate;
+  },
+
+  /**
+   * Wait for next animation frame.
+   *
+   * @param {Array} actors
+   * @return {Promise} which waits for next frame
+   */
+  waitForNextFrame(actors) {
+    const promises = actors.map(actor => {
+      const doc = actor.document;
+      const win = actor.window;
+      const timeAtCurrent = doc.timeline.currentTime;
+
+      return new Promise(resolve => {
+        win.requestAnimationFrame(() => {
+          if (timeAtCurrent === doc.timeline.currentTime) {
+            win.requestAnimationFrame(resolve);
+          } else {
+            resolve();
+          }
+        });
+      });
+    });
+
+    return Promise.all(promises);
+  },
 });

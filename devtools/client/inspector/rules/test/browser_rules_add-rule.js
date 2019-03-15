@@ -32,16 +32,16 @@ const TEST_DATA = [
   { node: "p", expected: "p" },
   { node: "h1", expected: ".asd\\@\\@\\@\\@a\\!\\!\\!\\!\\:\\:\\:\\@asd" },
   { node: "h2", expected: "#asd\\@\\@\\@a\\!\\!2a" },
-  { node: "circle", expected: "circle" }
+  { node: "circle", expected: "circle" },
 ];
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, view} = await openRuleView();
 
-  for (let data of TEST_DATA) {
-    let {node, expected} = data;
-    yield selectNode(node, inspector);
-    yield addNewRuleAndDismissEditor(inspector, view, expected, 1);
+  for (const data of TEST_DATA) {
+    const {node, expected} = data;
+    await selectNode(node, inspector);
+    await addNewRuleAndDismissEditor(inspector, view, expected, 1);
   }
 });

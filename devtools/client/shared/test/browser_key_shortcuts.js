@@ -1,32 +1,33 @@
 /* Any copyright is dedicated to the Public Domain.
-   http://creativecommons.org/publicdomain/zero/1.0/ */
+  http://creativecommons.org/publicdomain/zero/1.0/ */
 
 "use strict";
 
 var isOSX = Services.appinfo.OS === "Darwin";
 
-add_task(function* () {
-  let shortcuts = new KeyShortcuts({
-    window
+add_task(async function() {
+  const shortcuts = new KeyShortcuts({
+    window,
   });
 
-  yield testSimple(shortcuts);
-  yield testNonLetterCharacter(shortcuts);
-  yield testPlusCharacter(shortcuts);
-  yield testFunctionKey(shortcuts);
-  yield testMixup(shortcuts);
-  yield testLooseDigits(shortcuts);
-  yield testExactModifiers(shortcuts);
-  yield testLooseShiftModifier(shortcuts);
-  yield testStrictLetterShiftModifier(shortcuts);
-  yield testAltModifier(shortcuts);
-  yield testCommandOrControlModifier(shortcuts);
-  yield testCtrlModifier(shortcuts);
-  yield testInvalidShortcutString(shortcuts);
-  yield testCmdShiftShortcut(shortcuts);
+  await testSimple(shortcuts);
+  await testNonLetterCharacter(shortcuts);
+  await testPlusCharacter(shortcuts);
+  await testFunctionKey(shortcuts);
+  await testMixup(shortcuts);
+  await testLooseDigits(shortcuts);
+  await testExactModifiers(shortcuts);
+  await testLooseShiftModifier(shortcuts);
+  await testStrictLetterShiftModifier(shortcuts);
+  await testAltModifier(shortcuts);
+  await testCommandOrControlModifier(shortcuts);
+  await testCtrlModifier(shortcuts);
+  await testInvalidShortcutString(shortcuts);
+  await testCmdShiftShortcut(shortcuts);
+  await testTabCharacterShortcut(shortcuts);
   shortcuts.destroy();
 
-  yield testTarget();
+  await testTarget();
 });
 
 // Test helper to listen to the next key press for a given key,
@@ -34,22 +35,21 @@ add_task(function* () {
 function once(shortcuts, key, listener) {
   let called = false;
   return new Promise(done => {
-    let onShortcut = (key2, event) => {
+    const onShortcut = event => {
       shortcuts.off(key, onShortcut);
       ok(!called, "once listener called only once (i.e. off() works)");
-      is(key, key2, "listener first argument match the key we listen");
       called = true;
-      listener(key2, event);
+      listener(event);
       done();
     };
     shortcuts.on(key, onShortcut);
   });
 }
 
-function* testSimple(shortcuts) {
+async function testSimple(shortcuts) {
   info("Test simple key shortcuts");
 
-  let onKey = once(shortcuts, "0", (key, event) => {
+  const onKey = once(shortcuts, "0", event => {
     is(event.key, "0");
 
     // Display another key press to ensure that once() correctly stop listening
@@ -57,55 +57,55 @@ function* testSimple(shortcuts) {
   });
 
   EventUtils.synthesizeKey("0", {}, window);
-  yield onKey;
+  await onKey;
 }
 
-function* testNonLetterCharacter(shortcuts) {
+async function testNonLetterCharacter(shortcuts) {
   info("Test non-naive character key shortcuts");
 
-  let onKey = once(shortcuts, "[", (key, event) => {
+  const onKey = once(shortcuts, "[", event => {
     is(event.key, "[");
   });
 
   EventUtils.synthesizeKey("[", {}, window);
-  yield onKey;
+  await onKey;
 }
 
-function* testFunctionKey(shortcuts) {
+async function testFunctionKey(shortcuts) {
   info("Test function key shortcuts");
 
-  let onKey = once(shortcuts, "F12", (key, event) => {
+  const onKey = once(shortcuts, "F12", event => {
     is(event.key, "F12");
   });
 
   EventUtils.synthesizeKey("F12", { keyCode: 123 }, window);
-  yield onKey;
+  await onKey;
 }
 
 // Plus is special. It's keycode is the one for "=". That's because it requires
 // shift to be pressed and is behind "=" key. So it should be considered as a
 // character key
-function* testPlusCharacter(shortcuts) {
+async function testPlusCharacter(shortcuts) {
   info("Test 'Plus' key shortcuts");
 
-  let onKey = once(shortcuts, "Plus", (key, event) => {
+  const onKey = once(shortcuts, "Plus", event => {
     is(event.key, "+");
   });
 
   EventUtils.synthesizeKey("+", { keyCode: 61, shiftKey: true }, window);
-  yield onKey;
+  await onKey;
 }
 
 // Test they listeners are not mixed up between shortcuts
-function* testMixup(shortcuts) {
+async function testMixup(shortcuts) {
   info("Test possible listener mixup");
 
   let hitFirst = false, hitSecond = false;
-  let onFirstKey = once(shortcuts, "0", (key, event) => {
+  const onFirstKey = once(shortcuts, "0", event => {
     is(event.key, "0");
     hitFirst = true;
   });
-  let onSecondKey = once(shortcuts, "Alt+A", (key, event) => {
+  const onSecondKey = once(shortcuts, "Alt+A", event => {
     is(event.key, "a");
     ok(event.altKey);
     hitSecond = true;
@@ -114,27 +114,27 @@ function* testMixup(shortcuts) {
   // Dispatch the first shortcut and expect only this one to be notified
   ok(!hitFirst, "First shortcut isn't notified before firing the key event");
   EventUtils.synthesizeKey("0", {}, window);
-  yield onFirstKey;
+  await onFirstKey;
   ok(hitFirst, "Got the first shortcut notified");
   ok(!hitSecond, "No mixup, second shortcut is still not notified (1/2)");
 
   // Wait an extra time, just to be sure this isn't racy
-  yield new Promise(done => {
+  await new Promise(done => {
     window.setTimeout(done, 0);
   });
   ok(!hitSecond, "No mixup, second shortcut is still not notified (2/2)");
 
   // Finally dispatch the second shortcut
   EventUtils.synthesizeKey("a", { altKey: true }, window);
-  yield onSecondKey;
+  await onSecondKey;
   ok(hitSecond, "Got the second shortcut notified once it is actually fired");
 }
 
 // On azerty keyboard, digits are only available by pressing Shift/Capslock,
 // but we accept them even if we omit doing that.
-function* testLooseDigits(shortcuts) {
+async function testLooseDigits(shortcuts) {
   info("Test Loose digits");
-  let onKey = once(shortcuts, "0", (key, event) => {
+  let onKey = once(shortcuts, "0", event => {
     is(event.key, "à");
     ok(!event.altKey);
     ok(!event.ctrlKey);
@@ -147,9 +147,9 @@ function* testLooseDigits(shortcuts) {
     "à",
     { keyCode: 48 },
     window);
-  yield onKey;
+  await onKey;
 
-  onKey = once(shortcuts, "0", (key, event) => {
+  onKey = once(shortcuts, "0", event => {
     is(event.key, "0");
     ok(!event.altKey);
     ok(!event.ctrlKey);
@@ -161,15 +161,15 @@ function* testLooseDigits(shortcuts) {
     "0",
     { keyCode: 48, shiftKey: true },
     window);
-  yield onKey;
+  await onKey;
 }
 
 // Test that shortcuts is notified only when the modifiers match exactly
-function* testExactModifiers(shortcuts) {
+async function testExactModifiers(shortcuts) {
   info("Test exact modifiers match");
 
   let hit = false;
-  let onKey = once(shortcuts, "Alt+A", (key, event) => {
+  const onKey = once(shortcuts, "Alt+A", event => {
     is(event.key, "a");
     ok(event.altKey);
     ok(!event.ctrlKey);
@@ -197,7 +197,7 @@ function* testExactModifiers(shortcuts) {
     window);
 
   // Wait an extra time to let a chance to call the listener
-  yield new Promise(done => {
+  await new Promise(done => {
     window.setTimeout(done, 0);
   });
   ok(!hit, "Listener isn't called when modifiers aren't exactly matching");
@@ -205,7 +205,7 @@ function* testExactModifiers(shortcuts) {
   // Dispatch the expected modifiers
   EventUtils.synthesizeKey("a", { accelKey: false, altKey: true, shiftKey: false},
                            window);
-  yield onKey;
+  await onKey;
   ok(hit, "Got shortcut notified once it is actually fired");
 }
 
@@ -213,9 +213,9 @@ function* testExactModifiers(shortcuts) {
 // even if the key didn't explicitely requested Shift modifier.
 // For example, `%` on french keyboards is only accessible via Shift.
 // Same thing for `@` on US keybords.
-function* testLooseShiftModifier(shortcuts) {
+async function testLooseShiftModifier(shortcuts) {
   info("Test Loose shift modifier");
-  let onKey = once(shortcuts, "%", (key, event) => {
+  let onKey = once(shortcuts, "%", event => {
     is(event.key, "%");
     ok(!event.altKey);
     ok(!event.ctrlKey);
@@ -226,9 +226,9 @@ function* testLooseShiftModifier(shortcuts) {
     "%",
     { accelKey: false, altKey: false, ctrlKey: false, shiftKey: true},
     window);
-  yield onKey;
+  await onKey;
 
-  onKey = once(shortcuts, "@", (key, event) => {
+  onKey = once(shortcuts, "@", event => {
     is(event.key, "@");
     ok(!event.altKey);
     ok(!event.ctrlKey);
@@ -239,14 +239,14 @@ function* testLooseShiftModifier(shortcuts) {
     "@",
     { accelKey: false, altKey: false, ctrlKey: false, shiftKey: true},
     window);
-  yield onKey;
+  await onKey;
 }
 
 // But Shift modifier is strict on all letter characters (a to Z)
-function* testStrictLetterShiftModifier(shortcuts) {
+async function testStrictLetterShiftModifier(shortcuts) {
   info("Test strict shift modifier on letters");
   let hitFirst = false;
-  let onKey = once(shortcuts, "a", (key, event) => {
+  const onKey = once(shortcuts, "a", event => {
     is(event.key, "a");
     ok(!event.altKey);
     ok(!event.ctrlKey);
@@ -254,7 +254,7 @@ function* testStrictLetterShiftModifier(shortcuts) {
     ok(!event.shiftKey);
     hitFirst = true;
   });
-  let onShiftKey = once(shortcuts, "Shift+a", (key, event) => {
+  const onShiftKey = once(shortcuts, "Shift+a", event => {
     is(event.key, "a");
     ok(!event.altKey);
     ok(!event.ctrlKey);
@@ -265,19 +265,19 @@ function* testStrictLetterShiftModifier(shortcuts) {
     "a",
     { shiftKey: true},
     window);
-  yield onShiftKey;
+  await onShiftKey;
   ok(!hitFirst, "Didn't fire the explicit shift+a");
 
   EventUtils.synthesizeKey(
     "a",
     { shiftKey: false},
     window);
-  yield onKey;
+  await onKey;
 }
 
-function* testAltModifier(shortcuts) {
+async function testAltModifier(shortcuts) {
   info("Test Alt modifier");
-  let onKey = once(shortcuts, "Alt+F1", (key, event) => {
+  const onKey = once(shortcuts, "Alt+F1", event => {
     is(event.keyCode, window.KeyboardEvent.DOM_VK_F1);
     ok(event.altKey);
     ok(!event.ctrlKey);
@@ -288,12 +288,12 @@ function* testAltModifier(shortcuts) {
     "VK_F1",
     { altKey: true },
     window);
-  yield onKey;
+  await onKey;
 }
 
-function* testCommandOrControlModifier(shortcuts) {
+async function testCommandOrControlModifier(shortcuts) {
   info("Test CommandOrControl modifier");
-  let onKey = once(shortcuts, "CommandOrControl+F1", (key, event) => {
+  const onKey = once(shortcuts, "CommandOrControl+F1", event => {
     is(event.keyCode, window.KeyboardEvent.DOM_VK_F1);
     ok(!event.altKey);
     if (isOSX) {
@@ -305,7 +305,7 @@ function* testCommandOrControlModifier(shortcuts) {
     }
     ok(!event.shiftKey);
   });
-  let onKeyAlias = once(shortcuts, "CmdOrCtrl+F1", (key, event) => {
+  const onKeyAlias = once(shortcuts, "CmdOrCtrl+F1", event => {
     is(event.keyCode, window.KeyboardEvent.DOM_VK_F1);
     ok(!event.altKey);
     if (isOSX) {
@@ -328,20 +328,20 @@ function* testCommandOrControlModifier(shortcuts) {
       { ctrlKey: true },
       window);
   }
-  yield onKey;
-  yield onKeyAlias;
+  await onKey;
+  await onKeyAlias;
 }
 
-function* testCtrlModifier(shortcuts) {
+async function testCtrlModifier(shortcuts) {
   info("Test Ctrl modifier");
-  let onKey = once(shortcuts, "Ctrl+F1", (key, event) => {
+  const onKey = once(shortcuts, "Ctrl+F1", event => {
     is(event.keyCode, window.KeyboardEvent.DOM_VK_F1);
     ok(!event.altKey);
     ok(event.ctrlKey);
     ok(!event.metaKey);
     ok(!event.shiftKey);
   });
-  let onKeyAlias = once(shortcuts, "Control+F1", (key, event) => {
+  const onKeyAlias = once(shortcuts, "Control+F1", event => {
     is(event.keyCode, window.KeyboardEvent.DOM_VK_F1);
     ok(!event.altKey);
     ok(event.ctrlKey);
@@ -352,24 +352,24 @@ function* testCtrlModifier(shortcuts) {
     "VK_F1",
     { ctrlKey: true },
     window);
-  yield onKey;
-  yield onKeyAlias;
+  await onKey;
+  await onKeyAlias;
 }
 
-function* testCmdShiftShortcut(shortcuts) {
+async function testCmdShiftShortcut(shortcuts) {
   if (!isOSX) {
     // This test is OSX only (Bug 1300458).
     return;
   }
 
-  let onCmdKey = once(shortcuts, "CmdOrCtrl+[", (key, event) => {
+  const onCmdKey = once(shortcuts, "CmdOrCtrl+[", event => {
     is(event.key, "[");
     ok(!event.altKey);
     ok(!event.ctrlKey);
     ok(event.metaKey);
     ok(!event.shiftKey);
   });
-  let onCmdShiftKey = once(shortcuts, "CmdOrCtrl+Shift+[", (key, event) => {
+  const onCmdShiftKey = once(shortcuts, "CmdOrCtrl+Shift+[", event => {
     is(event.key, "[");
     ok(!event.altKey);
     ok(!event.ctrlKey);
@@ -386,28 +386,28 @@ function* testCmdShiftShortcut(shortcuts) {
     { metaKey: true },
     window);
 
-  yield onCmdKey;
-  yield onCmdShiftKey;
+  await onCmdKey;
+  await onCmdShiftKey;
 }
 
-function* testTarget() {
+async function testTarget() {
   info("Test KeyShortcuts with target argument");
 
-  let target = document.createElementNS("http://www.w3.org/1999/xhtml",
+  const target = document.createElementNS("http://www.w3.org/1999/xhtml",
     "input");
   document.documentElement.appendChild(target);
   target.focus();
 
-  let shortcuts = new KeyShortcuts({
+  const shortcuts = new KeyShortcuts({
     window,
-    target
+    target,
   });
-  let onKey = once(shortcuts, "0", (key, event) => {
+  const onKey = once(shortcuts, "0", event => {
     is(event.key, "0");
     is(event.target, target);
   });
   EventUtils.synthesizeKey("0", {}, window);
-  yield onKey;
+  await onKey;
 
   target.remove();
 
@@ -417,9 +417,46 @@ function* testTarget() {
 function testInvalidShortcutString(shortcuts) {
   info("Test wrong shortcut string");
 
-  let shortcut = KeyShortcuts.parseElectronKey(window, "Cmmd+F");
+  const shortcut = KeyShortcuts.parseElectronKey(window, "Cmmd+F");
   ok(!shortcut, "Passing a invalid shortcut string should return a null object");
 
-  shortcuts.on("Cmmd+F", function () {});
+  shortcuts.on("Cmmd+F", function() {});
   ok(true, "on() shouldn't throw when passing invalid shortcut string");
+}
+
+/**
+ * Shift+Alt+I generates ^ key (`event.key`) on OSX and KeyShortcuts module
+ * must ensure that this doesn't interfere with shortcuts CmdOrCtrl+Alt+Shift+I
+ * for opening the Browser Toolbox and CmdOrCtrl+Alt+I for toggling the Toolbox.
+ */
+async function testTabCharacterShortcut(shortcuts) {
+  if (!isOSX) {
+    return;
+  }
+
+  info("Test tab character shortcut");
+
+  once(shortcuts, "CmdOrCtrl+Alt+I", event => {
+    ok(false, "This handler must not be executed");
+  });
+
+  const onKey = once(shortcuts, "CmdOrCtrl+Alt+Shift+I", event => {
+    info("Test for CmdOrCtrl+Alt+Shift+I");
+    is(event.key, "^");
+    is(event.keyCode, 73);
+  });
+
+  // Simulate `CmdOrCtrl+Alt+Shift+I` shortcut. Note that EventUtils doesn't
+  // generate `^` like real keyboard, so we need to pass it explicitly
+  // and use proper keyCode for `I` character.
+  EventUtils.synthesizeKey("^", {
+    code: "KeyI",
+    key: "^",
+    keyCode: 73,
+    shiftKey: true,
+    altKey: true,
+    metaKey: true,
+  }, window);
+
+  await onKey;
 }

@@ -22,42 +22,47 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1154791
 
 <script class="testbody" type="application/javascript">
 
+let {onSpellCheck} = SpecialPowers.Cu.import("resource://testing-common/AsyncSpellCheckTestHelper.jsm", {});
+
 /** Test for Bug 1154791 **/
 SimpleTest.waitForExplicitFinish();
 SimpleTest.waitForFocus(function() {
   var div = document.getElementById("content");
   div.focus();
-  synthesizeMouseAtCenter(div, {});
-  synthesizeKey("VK_LEFT", {});
-  synthesizeKey("VK_LEFT", {});
+  getSpellChecker().UpdateCurrentDictionary(() => {
+    synthesizeMouseAtCenter(div, {});
+    synthesizeKey("KEY_ArrowLeft");
+    synthesizeKey("KEY_ArrowLeft");
 
-  setTimeout(function() {
-    synthesizeKey("VK_BACK_SPACE", {});
-    setTimeout(function() {
-      synthesizeKey(" ", {});
+    SimpleTest.executeSoon(function() {
+      synthesizeKey("KEY_Backspace");
+      SimpleTest.executeSoon(function() {
+        sendString(" ");
 
-      setTimeout(function() {
-        var sel = getSpellCheckSelection();
-        is(sel.rangeCount, 2, "We should have two misspelled words");
-        is(String(sel.getRangeAt(0)), "thiss", "Correct misspelled word");
-        is(String(sel.getRangeAt(1)), "onee", "Correct misspelled word");
+        onSpellCheck(div, function() {
+          var sel = getSpellCheckSelection();
+          is(sel.rangeCount, 2, "We should have two misspelled words");
+          is(String(sel.getRangeAt(0)), "thiss", "Correct misspelled word");
+          is(String(sel.getRangeAt(1)), "onee", "Correct misspelled word");
 
-        SimpleTest.finish();
-      },0);
-    },0);
-  },0);
-
+          SimpleTest.finish();
+        });
+      });
+    });
+  });
 });
 
+function getEditor() {
+  var editingSession = SpecialPowers.wrap(window).docShell.editingSession;
+  return editingSession.getEditorForWindow(window);
+}
+
+function getSpellChecker() {
+  return getEditor().getInlineSpellChecker(false).spellChecker;
+}
+
 function getSpellCheckSelection() {
-  var Ci = SpecialPowers.Ci;
-  var editingSession = SpecialPowers.wrap(window)
-                             .QueryInterface(Ci.nsIInterfaceRequestor)
-                             .getInterface(Ci.nsIWebNavigation)
-                             .QueryInterface(Ci.nsIInterfaceRequestor)
-                             .getInterface(Ci.nsIEditingSession);
-  var editor = editingSession.getEditorForWindow(window);
-  var selcon = editor.selectionController;
+  var selcon = getEditor().selectionController;
   return selcon.getSelection(selcon.SELECTION_SPELLCHECK);
 }
 

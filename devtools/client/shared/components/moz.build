@@ -5,22 +5,31 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 DIRS += [
+    'menu',
     'reps',
     'splitter',
     'tabs',
-    'tree'
+    'throttling',
+    'tree',
 ]
 
 DevToolsModules(
-    'frame.js',
-    'h-split-box.js',
-    'notification-box.css',
-    'notification-box.js',
-    'search-box.js',
-    'sidebar-toggle.css',
-    'sidebar-toggle.js',
-    'stack-trace.js',
-    'tree.js',
+    'AutoCompletePopup.js',
+    'Frame.js',
+    'HSplitBox.js',
+    'MdnLink.css',
+    'MdnLink.js',
+    'NotificationBox.css',
+    'NotificationBox.js',
+    'SearchBox.js',
+    'Sidebar.js',
+    'SidebarToggle.css',
+    'SidebarToggle.js',
+    'SmartTrace.css',
+    'SmartTrace.js',
+    'StackTrace.js',
+    'VirtualizedTree.js',
+    'VisibilityHandler.js',
 )
 
 MOCHITEST_CHROME_MANIFESTS += ['test/mochitest/chrome.ini']

@@ -8,10 +8,11 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_processing/transient/moving_moments.h"
+#include "modules/audio_processing/transient/moving_moments.h"
 
-#include "testing/gtest/include/gtest/gtest.h"
-#include "webrtc/base/scoped_ptr.h"
+#include <memory>
+
+#include "test/gtest.h"
 
 namespace webrtc {
 
@@ -29,7 +30,7 @@ class MovingMomentsTest : public ::testing::Test {
                                  const float* expected_mean,
                                  const float* expected_mean_squares);
 
-  rtc::scoped_ptr<MovingMoments> moving_moments_;
+  std::unique_ptr<MovingMoments> moving_moments_;
   float output_mean_[kMaxOutputLength];
   float output_mean_squares_[kMaxOutputLength];
 };

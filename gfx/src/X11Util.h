@@ -1,6 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=8 et :
- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,17 +17,15 @@
 #  error Unknown toolkit
 #endif
 
-#include <string.h>                     // for memset
-#include "mozilla/Scoped.h"             // for SCOPED_TEMPLATE
+#include <string.h>          // for memset
+#include "mozilla/Scoped.h"  // for SCOPED_TEMPLATE
 
 namespace mozilla {
 
 /**
  * Return the default X Display created and used by the UI toolkit.
  */
-inline Display*
-DefaultXDisplay()
-{
+inline Display *DefaultXDisplay() {
 #if defined(MOZ_WIDGET_GTK)
   return GDK_DISPLAY_XDISPLAY(gdk_display_get_default());
 #endif
@@ -40,10 +37,8 @@ DefaultXDisplay()
  * to nullptr and 0 respectively.  Both out-parameter pointers are assumed
  * non-nullptr.
  */
-void
-FindVisualAndDepth(Display* aDisplay, VisualID aVisualID,
-                   Visual** aVisual, int* aDepth);
-
+void FindVisualAndDepth(Display *aDisplay, VisualID aVisualID, Visual **aVisual,
+                        int *aDepth);
 
 /**
  * Ensure that all X requests have been processed.
@@ -54,95 +49,91 @@ FindVisualAndDepth(Display* aDisplay, VisualID aVisualID,
  * intermediate requests.
  */
 
-void
-FinishX(Display* aDisplay);
+void FinishX(Display *aDisplay);
 
 /**
  * Invoke XFree() on a pointer to memory allocated by Xlib (if the
  * pointer is nonnull) when this class goes out of scope.
  */
 template <typename T>
-struct ScopedXFreePtrTraits
-{
+struct ScopedXFreePtrTraits {
   typedef T *type;
   static T *empty() { return nullptr; }
-  static void release(T *ptr) { if (ptr != nullptr) XFree(ptr); }
+  static void release(T *ptr) {
+    if (ptr != nullptr) XFree(ptr);
+  }
 };
 SCOPED_TEMPLATE(ScopedXFree, ScopedXFreePtrTraits)
 
 /**
- * On construction, set a graceful X error handler that doesn't crash the application and records X errors.
- * On destruction, restore the X error handler to what it was before construction.
- * 
- * The SyncAndGetError() method allows to know whether a X error occurred, optionally allows to get the full XErrorEvent,
- * and resets the recorded X error state so that a single X error will be reported only once.
+ * On construction, set a graceful X error handler that doesn't crash the
+ * application and records X errors. On destruction, restore the X error handler
+ * to what it was before construction.
  *
- * Nesting is correctly handled: multiple nested ScopedXErrorHandler's don't interfere with each other's state. However,
- * if SyncAndGetError is not called on the nested ScopedXErrorHandler, then any X errors caused by X calls made while the nested
- * ScopedXErrorHandler was in place may then be caught by the other ScopedXErrorHandler. This is just a result of X being
- * asynchronous and us not doing any implicit syncing: the only method in this class what causes syncing is SyncAndGetError().
+ * The SyncAndGetError() method allows to know whether a X error occurred,
+ * optionally allows to get the full XErrorEvent, and resets the recorded X
+ * error state so that a single X error will be reported only once.
  *
- * This class is not thread-safe at all. It is assumed that only one thread is using any ScopedXErrorHandler's. Given that it's
- * not used on Mac, it should be easy to make it thread-safe by using thread-local storage with __thread.
+ * Nesting is correctly handled: multiple nested ScopedXErrorHandler's don't
+ * interfere with each other's state. However, if SyncAndGetError is not called
+ * on the nested ScopedXErrorHandler, then any X errors caused by X calls made
+ * while the nested ScopedXErrorHandler was in place may then be caught by the
+ * other ScopedXErrorHandler. This is just a result of X being asynchronous and
+ * us not doing any implicit syncing: the only method in this class what causes
+ * syncing is SyncAndGetError().
+ *
+ * This class is not thread-safe at all. It is assumed that only one thread is
+ * using any ScopedXErrorHandler's. Given that it's not used on Mac, it should
+ * be easy to make it thread-safe by using thread-local storage with __thread.
  */
-class ScopedXErrorHandler
-{
-public:
-    // trivial wrapper around XErrorEvent, just adding ctor initializing by zero.
-    struct ErrorEvent
-    {
-        XErrorEvent mError;
+class ScopedXErrorHandler {
+ public:
+  // trivial wrapper around XErrorEvent, just adding ctor initializing by zero.
+  struct ErrorEvent {
+    XErrorEvent mError;
 
-        ErrorEvent()
-        {
-            memset(this, 0, sizeof(ErrorEvent));
-        }
-    };
+    ErrorEvent() { memset(this, 0, sizeof(ErrorEvent)); }
+  };
 
-private:
+ private:
+  // this ScopedXErrorHandler's ErrorEvent object
+  ErrorEvent mXError;
 
-    // this ScopedXErrorHandler's ErrorEvent object
-    ErrorEvent mXError;
+  // static pointer for use by the error handler
+  static ErrorEvent *sXErrorPtr;
 
-    // static pointer for use by the error handler
-    static ErrorEvent* sXErrorPtr;
+  // what to restore sXErrorPtr to on destruction
+  ErrorEvent *mOldXErrorPtr;
 
-    // what to restore sXErrorPtr to on destruction
-    ErrorEvent* mOldXErrorPtr;
+  // what to restore the error handler to on destruction
+  int (*mOldErrorHandler)(Display *, XErrorEvent *);
 
-    // what to restore the error handler to on destruction
-    int (*mOldErrorHandler)(Display *, XErrorEvent *);
+ public:
+  static int ErrorHandler(Display *, XErrorEvent *ev);
 
-public:
+  /**
+   * @param aAllowOffMainThread whether to warn if used off main thread
+   */
+  explicit ScopedXErrorHandler(bool aAllowOffMainThread = false);
 
-    static int
-    ErrorHandler(Display *, XErrorEvent *ev);
+  ~ScopedXErrorHandler();
 
-    /**
-     * @param aAllowOffMainThread whether to warn if used off main thread
-     */
-    explicit ScopedXErrorHandler(bool aAllowOffMainThread = false);
-
-    ~ScopedXErrorHandler();
-
-    /** \returns true if a X error occurred since the last time this method was called on this ScopedXErrorHandler object,
-     *           or since the creation of this ScopedXErrorHandler object if this method was never called on it.
-     *
-     * \param ev this optional parameter, if set, will be filled with the XErrorEvent object. If multiple errors occurred,
-     *           the first one will be returned.
-     */
-    bool SyncAndGetError(Display *dpy, XErrorEvent *ev = nullptr);
+  /** \returns true if a X error occurred since the last time this method was
+   * called on this ScopedXErrorHandler object, or since the creation of this
+   * ScopedXErrorHandler object if this method was never called on it.
+   *
+   * \param ev this optional parameter, if set, will be filled with the
+   * XErrorEvent object. If multiple errors occurred, the first one will be
+   * returned.
+   */
+  bool SyncAndGetError(Display *dpy, XErrorEvent *ev = nullptr);
 };
 
-class OffMainThreadScopedXErrorHandler : public ScopedXErrorHandler
-{
-public:
-  OffMainThreadScopedXErrorHandler()
-    : ScopedXErrorHandler(true)
-  {
-  }
+class OffMainThreadScopedXErrorHandler : public ScopedXErrorHandler {
+ public:
+  OffMainThreadScopedXErrorHandler() : ScopedXErrorHandler(true) {}
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif  // mozilla_X11Util_h

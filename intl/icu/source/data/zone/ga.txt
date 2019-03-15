@@ -1,8 +1,19 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html#License
 ga{
-    Version{"2.1.28.79"}
+    Version{"2.1.44.91"}
     zoneStrings{
+        "Etc:UTC"{
+            ls{"Am Uilíoch Lárnach"}
+        }
+        "Europe:Dublin"{
+            ld{"Am Caighdéanach na hÉireann"}
+            sd{"ACÉ"}
+        }
+        "Europe:London"{
+            ld{"Am Samhraidh na Breataine"}
+            sd{"ASB"}
+        }
         "meta:Acre"{
             ld{"Am Samhraidh Acre"}
             lg{"Am Acre"}
@@ -59,6 +70,9 @@ ga{
             ld{"Am Samhraidh an Aigéin Chiúin"}
             lg{"Am an Aigéin Chiúin"}
             ls{"Am Caighdeánach an Aigéin Chiúin"}
+            sd{"ASAC"}
+            sg{"AAC"}
+            ss{"ACAC"}
         }
         "meta:Anadyr"{
             ld{"Am Samhraidh Anadyr"}

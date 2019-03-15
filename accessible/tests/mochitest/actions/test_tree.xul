@@ -49,7 +49,7 @@
     {
       var treeNode = getNode("tree");
 
-      var treeBodyNode = treeNode.boxObject.treeBody;
+      var treeBodyNode = treeNode.treeBody;
 
       var tree = getAccessible(treeNode);
       var expandedTreeItem = tree.getChildAt(2);
@@ -100,7 +100,7 @@
 
   <hbox flex="1" style="overflow: auto;">
     <body xmlns="http://www.w3.org/1999/xhtml">
-      <a target="_blank"
+      <a target="_blank" rel="opener"
          href="https://bugzilla.mozilla.org/show_bug.cgi?id=503727"
          title="Reorganize implementation of XUL tree accessibility">
         Mozilla Bug 503727

@@ -22,16 +22,12 @@ interface Blob {
 
   readonly attribute DOMString type;
 
-  // readonly attribute boolean isClosed; TODO bug 1048321
-
   //slice Blob into byte-ranged chunks
 
   [Throws]
   Blob slice([Clamp] optional long long start,
              [Clamp] optional long long end,
-             optional DOMString contentType = "");
-
-  // void close(); TODO bug 1048325
+             optional DOMString contentType);
 };
 
 enum EndingTypes { "transparent", "native" };
@@ -40,3 +36,10 @@ dictionary BlobPropertyBag {
   DOMString type = "";
   EndingTypes endings = "transparent";
 };
+
+partial interface Blob {
+  // This returns the type of BlobImpl used for this Blob.
+  [ChromeOnly]
+  readonly attribute DOMString blobImplType;
+};
+

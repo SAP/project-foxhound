@@ -1,6 +1,8 @@
 pub type c_long = i32;
 pub type c_ulong = u32;
 pub type nlink_t = u32;
+pub type blksize_t = ::c_long;
+pub type __u64 = ::c_ulonglong;
 
 s! {
     pub struct pthread_attr_t {
@@ -35,6 +37,12 @@ s! {
 pub const __SIZEOF_PTHREAD_RWLOCK_T: usize = 32;
 pub const __SIZEOF_PTHREAD_MUTEX_T: usize = 24;
 
+pub const TIOCINQ: ::c_int = ::FIONREAD;
+
+extern {
+    pub fn ioctl(fd: ::c_int, request: ::c_int, ...) -> ::c_int;
+}
+
 cfg_if! {
     if #[cfg(any(target_arch = "x86"))] {
         mod x86;
@@ -45,11 +53,9 @@ cfg_if! {
     } else if #[cfg(any(target_arch = "arm"))] {
         mod arm;
         pub use self::arm::*;
-    } else if #[cfg(any(target_arch = "asmjs", target_arch = "wasm32"))] {
-        // For the time being asmjs and wasm32 are the same, and both
-        // backed by identical emscripten runtimes
-        mod asmjs;
-        pub use self::asmjs::*;
+    } else if #[cfg(any(target_arch = "powerpc"))] {
+        mod powerpc;
+        pub use self::powerpc::*;
     } else {
         // Unknown target_arch
     }

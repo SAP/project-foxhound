@@ -11,15 +11,15 @@ const { appendAndWaitForPaint } = require("devtools/client/performance/test/help
 const { synthesizeCustomTreeClass } = require("devtools/client/performance/test/helpers/synth-utils");
 const { once } = require("devtools/client/performance/test/helpers/event-utils");
 
-add_task(function* () {
-  let { MyCustomTreeItem, myDataSrc } = synthesizeCustomTreeClass();
+add_task(async function() {
+  const { MyCustomTreeItem, myDataSrc } = synthesizeCustomTreeClass();
 
-  let container = document.createElement("vbox");
-  yield appendAndWaitForPaint(gBrowser.selectedBrowser.parentNode, container);
+  const container = document.createXULElement("vbox");
+  await appendAndWaitForPaint(gBrowser.selectedBrowser.parentNode, container);
 
   // Populate the tree and test the root item...
 
-  let treeRoot = new MyCustomTreeItem(myDataSrc, { parent: null });
+  const treeRoot = new MyCustomTreeItem(myDataSrc, { parent: null });
   treeRoot.attachTo(container);
 
   ok(!treeRoot.expanded,
@@ -51,16 +51,16 @@ add_task(function* () {
   let receivedFocusEvent = once(treeRoot, "focus");
   mousedown(treeRoot.target.querySelector(".arrow"));
 
-  let [, eventItem] = yield receivedExpandEvent;
+  let [eventItem] = await receivedExpandEvent;
   is(eventItem, treeRoot,
     "The 'expand' event target is correct (1).");
 
-  yield receivedFocusEvent;
+  await receivedFocusEvent;
   is(document.commandDispatcher.focusedElement, treeRoot.target,
     "The root node is now focused.");
 
-  let fooItem = treeRoot.getChild(0);
-  let barItem = treeRoot.getChild(1);
+  const fooItem = treeRoot.getChild(0);
+  const barItem = treeRoot.getChild(1);
 
   is(container.childNodes.length, 3,
     "The container node should now have three children available.");
@@ -102,7 +102,7 @@ add_task(function* () {
   receivedFocusEvent = once(treeRoot, "focus", { spreadArgs: true });
   mousedown(fooItem.target);
 
-  [, eventItem] = yield receivedFocusEvent;
+  [eventItem] = await receivedFocusEvent;
   is(eventItem, fooItem,
     "The 'focus' event target is correct (2).");
   is(document.commandDispatcher.focusedElement, fooItem.target,
@@ -114,17 +114,17 @@ add_task(function* () {
   receivedFocusEvent = once(treeRoot, "focus");
   dblclick(barItem.target);
 
-  [, eventItem] = yield receivedExpandEvent;
+  [eventItem] = await receivedExpandEvent;
   is(eventItem, barItem,
     "The 'expand' event target is correct (3).");
 
-  yield receivedFocusEvent;
+  await receivedFocusEvent;
   is(document.commandDispatcher.focusedElement, barItem.target,
     "The 'foo' node is now focused.");
 
   // A child item got expanded, test the descendants...
 
-  let bazItem = barItem.getChild(0);
+  const bazItem = barItem.getChild(0);
 
   is(container.childNodes.length, 4,
     "The container node should now have four children available.");

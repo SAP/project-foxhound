@@ -1,0 +1,10 @@
+[
+  {
+    "algorithm": "sha512",
+    "visibility": "public",
+    "filename": "eslint-plugin-mozilla.tar.gz",
+    "unpack": true,
+    "digest": "fe1e0e5d202bfe93fbcc7bef20ede85b14db4e05e4f30681aff7766cc4a839a65ed3e91fc2f7fc2c2139498b668f2e85ea8d2ea0b37de2b4347321380717287a",
+    "size": 4285163
+  }
+]

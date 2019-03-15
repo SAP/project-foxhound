@@ -3,187 +3,52 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+"use strict";
 
-this.EXPORTED_SYMBOLS = ["OnRefTestLoad", "OnRefTestUnload"];
+var EXPORTED_SYMBOLS = [
+    "OnRefTestLoad",
+    "OnRefTestUnload",
+    "getTestPlugin"
+];
 
-var CC = Components.classes;
-const CI = Components.interfaces;
-const CR = Components.results;
-const CU = Components.utils;
+Cu.import("resource://gre/modules/FileUtils.jsm");
+Cu.import("resource://reftest/globals.jsm", this);
+Cu.import("resource://reftest/httpd.jsm", this);
+Cu.import("resource://reftest/manifest.jsm", this);
+Cu.import("resource://reftest/StructuredLog.jsm", this);
+Cu.import("resource://reftest/PerTestCoverageUtils.jsm", this);
+Cu.import("resource://gre/modules/Services.jsm");
+Cu.import("resource://gre/modules/NetUtil.jsm");
+Cu.import('resource://gre/modules/XPCOMUtils.jsm');
 
-const XHTML_NS = "http://www.w3.org/1999/xhtml";
-const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
+XPCOMUtils.defineLazyGetter(this, "OS", function() {
+    const { OS } = Cu.import("resource://gre/modules/osfile.jsm");
+    return OS;
+});
 
-const NS_LOCAL_FILE_CONTRACTID = "@mozilla.org/file/local;1";
-const NS_GFXINFO_CONTRACTID = "@mozilla.org/gfx/info;1";
-const IO_SERVICE_CONTRACTID = "@mozilla.org/network/io-service;1";
-const DEBUG_CONTRACTID = "@mozilla.org/xpcom/debug;1";
-const NS_LOCALFILEINPUTSTREAM_CONTRACTID =
-          "@mozilla.org/network/file-input-stream;1";
-const NS_SCRIPTSECURITYMANAGER_CONTRACTID =
-          "@mozilla.org/scriptsecuritymanager;1";
-const NS_REFTESTHELPER_CONTRACTID =
-          "@mozilla.org/reftest-helper;1";
-const NS_NETWORK_PROTOCOL_CONTRACTID_PREFIX =
-          "@mozilla.org/network/protocol;1?name=";
-const NS_XREAPPINFO_CONTRACTID =
-          "@mozilla.org/xre/app-info;1";
-const NS_DIRECTORY_SERVICE_CONTRACTID =
-          "@mozilla.org/file/directory_service;1";
-const NS_OBSERVER_SERVICE_CONTRACTID =
-          "@mozilla.org/observer-service;1";
-
-CU.import("resource://gre/modules/FileUtils.jsm");
-CU.import("chrome://reftest/content/httpd.jsm", this);
-CU.import("chrome://reftest/content/StructuredLog.jsm", this);
-CU.import("resource://gre/modules/Services.jsm");
-CU.import("resource://gre/modules/NetUtil.jsm");
-
-var gLoadTimeout = 0;
-var gTimeoutHook = null;
-var gRemote = false;
-var gIgnoreWindowSize = false;
-var gShuffle = false;
-var gRepeat = null;
-var gRunUntilFailure = false;
-var gTotalChunks = 0;
-var gThisChunk = 0;
-var gContainingWindow = null;
-var gURLFilterRegex = {};
-var gContentGfxInfo = null;
-const FOCUS_FILTER_ALL_TESTS = "all";
-const FOCUS_FILTER_NEEDS_FOCUS_TESTS = "needs-focus";
-const FOCUS_FILTER_NON_NEEDS_FOCUS_TESTS = "non-needs-focus";
-var gFocusFilterMode = FOCUS_FILTER_ALL_TESTS;
-var gCompareStyloToGecko = false;
-
-// "<!--CLEAR-->"
-const BLANK_URL_FOR_CLEARING = "data:text/html;charset=UTF-8,%3C%21%2D%2DCLEAR%2D%2D%3E";
-
-var gBrowser;
-// Are we testing web content loaded in a separate process?
-var gBrowserIsRemote;           // bool
-// Are we using <iframe mozbrowser>?
-var gBrowserIsIframe;           // bool
-var gBrowserMessageManager;
-var gCanvas1, gCanvas2;
-// gCurrentCanvas is non-null between InitCurrentCanvasWithSnapshot and the next
-// RecordResult.
-var gCurrentCanvas = null;
-var gURLs;
-var gManifestsLoaded = {};
-// Map from URI spec to the number of times it remains to be used
-var gURIUseCounts;
-// Map from URI spec to the canvas rendered for that URI
-var gURICanvases;
-var gTestResults = {
-  // Successful...
-  Pass: 0,
-  LoadOnly: 0,
-  // Unexpected...
-  Exception: 0,
-  FailedLoad: 0,
-  UnexpectedFail: 0,
-  UnexpectedPass: 0,
-  AssertionUnexpected: 0,
-  AssertionUnexpectedFixed: 0,
-  // Known problems...
-  KnownFail : 0,
-  AssertionKnown: 0,
-  Random : 0,
-  Skip: 0,
-  Slow: 0,
-};
-var gTotalTests = 0;
-var gState;
-var gCurrentURL;
-var gTestLog = [];
-var gLogLevel;
-var gServer;
-var gCount = 0;
-var gAssertionCount = 0;
-
-var gIOService;
-var gDebug;
-var gWindowUtils;
-
-var gSlowestTestTime = 0;
-var gSlowestTestURL;
-var gFailedUseWidgetLayers = false;
-
-var gDrawWindowFlags;
-
-var gExpectingProcessCrash = false;
-var gExpectedCrashDumpFiles = [];
-var gUnexpectedCrashDumpFiles = { };
-var gCrashDumpDir;
-var gFailedNoPaint = false;
-var gFailedOpaqueLayer = false;
-var gFailedOpaqueLayerMessages = [];
-var gFailedAssignedLayer = false;
-var gFailedAssignedLayerMessages = [];
-
-// The enabled-state of the test-plugins, stored so they can be reset later
-var gTestPluginEnabledStates = null;
-
-const TYPE_REFTEST_EQUAL = '==';
-const TYPE_REFTEST_NOTEQUAL = '!=';
-const TYPE_LOAD = 'load';     // test without a reference (just test that it does
-                              // not assert, crash, hang, or leak)
-const TYPE_SCRIPT = 'script'; // test contains individual test results
-
-// The order of these constants matters, since when we have a status
-// listed for a *manifest*, we combine the status with the status for
-// the test by using the *larger*.
-// FIXME: In the future, we may also want to use this rule for combining
-// statuses that are on the same line (rather than making the last one
-// win).
-const EXPECTED_PASS = 0;
-const EXPECTED_FAIL = 1;
-const EXPECTED_RANDOM = 2;
-const EXPECTED_DEATH = 3;  // test must be skipped to avoid e.g. crash/hang
-const EXPECTED_FUZZY = 4;
-
-// types of preference value we might want to set for a specific test
-const PREF_BOOLEAN = 0;
-const PREF_STRING  = 1;
-const PREF_INTEGER = 2;
-
-var gPrefsToRestore = [];
-
-const gProtocolRE = /^\w+:/;
-const gPrefItemRE = /^(|test-|ref-)pref\((.+?),(.*)\)$/;
-
-var gHttpServerPort = -1;
-
-// whether to run slow tests or not
-var gRunSlowTests = true;
-
-// whether we should skip caching canvases
-var gNoCanvasCache = false;
-
-var gRecycledCanvases = new Array();
-
-// Only dump the sandbox once, because it doesn't depend on the
-// manifest URL (yet!).
-var gDumpedConditionSandbox = false;
+XPCOMUtils.defineLazyGetter(this, "PDFJS", function() {
+    const { require } = Cu.import("resource://gre/modules/commonjs/toolkit/require.js", {});
+    return {
+        main: require('resource://pdf.js/build/pdf.js'),
+        worker: require('resource://pdf.js/build/pdf.worker.js')
+    };
+});
 
 function HasUnexpectedResult()
 {
-    return gTestResults.Exception > 0 ||
-           gTestResults.FailedLoad > 0 ||
-           gTestResults.UnexpectedFail > 0 ||
-           gTestResults.UnexpectedPass > 0 ||
-           gTestResults.AssertionUnexpected > 0 ||
-           gTestResults.AssertionUnexpectedFixed > 0;
+    return g.testResults.Exception > 0 ||
+           g.testResults.FailedLoad > 0 ||
+           g.testResults.UnexpectedFail > 0 ||
+           g.testResults.UnexpectedPass > 0 ||
+           g.testResults.AssertionUnexpected > 0 ||
+           g.testResults.AssertionUnexpectedFixed > 0;
 }
 
 // By default we just log to stdout
-var gLogFile = null;
 var gDumpFn = function(line) {
   dump(line);
-  if (gLogFile) {
-    gLogFile.write(line, line.length);
+  if (g.logFile) {
+    g.logFile.write(line, line.length);
   }
 }
 var gDumpRawLog = function(record) {
@@ -191,43 +56,55 @@ var gDumpRawLog = function(record) {
   var line = "\n" + JSON.stringify(record) + "\n";
   dump(line);
 
-  if (gLogFile) {
-    gLogFile.write(line, line.length);
+  if (g.logFile) {
+    g.logFile.write(line, line.length);
   }
 }
-var logger = new StructuredLogger('reftest', gDumpRawLog);
+g.logger = new StructuredLogger('reftest', gDumpRawLog);
+var logger = g.logger;
 
 function TestBuffer(str)
 {
   logger.debug(str);
-  gTestLog.push(str);
+  g.testLog.push(str);
 }
 
 function FlushTestBuffer()
 {
   // In debug mode, we've dumped all these messages already.
-  if (gLogLevel !== 'debug') {
-    for (var i = 0; i < gTestLog.length; ++i) {
-      logger.info("Saved log: " + gTestLog[i]);
+  if (g.logLevel !== 'debug') {
+    for (var i = 0; i < g.testLog.length; ++i) {
+      logger.info("Saved log: " + g.testLog[i]);
     }
   }
-  gTestLog = [];
+  g.testLog = [];
 }
 
 function LogWidgetLayersFailure()
 {
-  logger.error("USE_WIDGET_LAYERS disabled because the screen resolution is too low. This falls back to an alternate rendering path (that may not be representative) and is not implemented with e10s enabled.");
-  logger.error("Consider increasing your screen resolution, or adding '--disable-e10s' to your './mach reftest' command");
+  logger.error(
+    "Screen resolution is too low - USE_WIDGET_LAYERS was disabled. " +
+    (g.browserIsRemote ?
+      "Since E10s is enabled, there is no fallback rendering path!" :
+      "The fallback rendering path is not reliably consistent with on-screen rendering."));
+
+  logger.error(
+    "If you cannot increase your screen resolution you can try reducing " +
+    "gecko's pixel scaling by adding something like '--setpref " +
+    "layout.css.devPixelsPerPx=1.0' to your './mach reftest' command " +
+    "(possibly as an alias in ~/.mozbuild/machrc). Note that this is " +
+    "inconsistent with CI testing, and may interfere with HighDPI/" +
+    "reftest-zoom tests.");
 }
 
 function AllocateCanvas()
 {
-    if (gRecycledCanvases.length > 0) {
-        return gRecycledCanvases.shift();
+    if (g.recycledCanvases.length > 0) {
+        return g.recycledCanvases.shift();
     }
 
-    var canvas = gContainingWindow.document.createElementNS(XHTML_NS, "canvas");
-    var r = gBrowser.getBoundingClientRect();
+    var canvas = g.containingWindow.document.createElementNS(XHTML_NS, "canvas");
+    var r = g.browser.getBoundingClientRect();
     canvas.setAttribute("width", Math.ceil(r.width));
     canvas.setAttribute("height", Math.ceil(r.height));
 
@@ -237,8 +114,8 @@ function AllocateCanvas()
 function ReleaseCanvas(canvas)
 {
     // store a maximum of 2 canvases, if we're not caching
-    if (!gNoCanvasCache || gRecycledCanvases.length < 2) {
-        gRecycledCanvases.push(canvas);
+    if (!g.noCanvasCache || g.recycledCanvases.length < 2) {
+        g.recycledCanvases.push(canvas);
     }
 }
 
@@ -252,7 +129,7 @@ function IDForEventTarget(event)
 }
 
 function getTestPlugin(aName) {
-  var ph = CC["@mozilla.org/plugin/host;1"].getService(CI.nsIPluginHost);
+  var ph = Cc["@mozilla.org/plugin/host;1"].getService(Ci.nsIPluginHost);
   var tags = ph.getPluginTags();
 
   // Find the test plugin
@@ -265,81 +142,73 @@ function getTestPlugin(aName) {
   return null;
 }
 
-this.OnRefTestLoad = function OnRefTestLoad(win)
+function OnRefTestLoad(win)
 {
-    gCrashDumpDir = CC[NS_DIRECTORY_SERVICE_CONTRACTID]
-                    .getService(CI.nsIProperties)
-                    .get("ProfD", CI.nsIFile);
-    gCrashDumpDir.append("minidumps");
+    g.crashDumpDir = Cc[NS_DIRECTORY_SERVICE_CONTRACTID]
+                    .getService(Ci.nsIProperties)
+                    .get("ProfD", Ci.nsIFile);
+    g.crashDumpDir.append("minidumps");
 
-    var env = CC["@mozilla.org/process/environment;1"].
-              getService(CI.nsIEnvironment);
+    g.pendingCrashDumpDir = Cc[NS_DIRECTORY_SERVICE_CONTRACTID]
+                    .getService(Ci.nsIProperties)
+                    .get("UAppData", Ci.nsIFile);
+    g.pendingCrashDumpDir.append("Crash Reports");
+    g.pendingCrashDumpDir.append("pending");
 
-    var prefs = Components.classes["@mozilla.org/preferences-service;1"].
-                getService(Components.interfaces.nsIPrefBranch);
-    try {
-        gBrowserIsRemote = prefs.getBoolPref("browser.tabs.remote.autostart");
-    } catch (e) {
-        gBrowserIsRemote = false;
-    }
+    var env = Cc["@mozilla.org/process/environment;1"].
+              getService(Ci.nsIEnvironment);
 
-    try {
-      gBrowserIsIframe = prefs.getBoolPref("reftest.browser.iframe.enabled");
-    } catch (e) {
-      gBrowserIsIframe = false;
-    }
+    var prefs = Cc["@mozilla.org/preferences-service;1"].
+                getService(Ci.nsIPrefBranch);
+    g.browserIsRemote = prefs.getBoolPref("browser.tabs.remote.autostart", false);
 
-    try {
-      gLogLevel = prefs.getCharPref("reftest.logLevel");
-    } catch (e) {
-      gLogLevel ='info';
-    }
+    g.browserIsIframe = prefs.getBoolPref("reftest.browser.iframe.enabled", false);
+
+    g.logLevel = prefs.getStringPref("reftest.logLevel", "info");
 
     if (win === undefined || win == null) {
       win = window;
     }
-    if (gContainingWindow == null && win != null) {
-      gContainingWindow = win;
+    if (g.containingWindow == null && win != null) {
+      g.containingWindow = win;
     }
 
-    if (gBrowserIsIframe) {
-      gBrowser = gContainingWindow.document.createElementNS(XHTML_NS, "iframe");
-      gBrowser.setAttribute("mozbrowser", "");
+    if (g.browserIsIframe) {
+      g.browser = g.containingWindow.document.createElementNS(XHTML_NS, "iframe");
+      g.browser.setAttribute("mozbrowser", "");
     } else {
-      gBrowser = gContainingWindow.document.createElementNS(XUL_NS, "xul:browser");
-      gBrowser.setAttribute("class", "lightweight");
+      g.browser = g.containingWindow.document.createElementNS(XUL_NS, "xul:browser");
     }
-    gBrowser.setAttribute("id", "browser");
-    gBrowser.setAttribute("type", "content");
-    gBrowser.setAttribute("primary", "true");
-    gBrowser.setAttribute("remote", gBrowserIsRemote ? "true" : "false");
+    g.browser.setAttribute("id", "browser");
+    g.browser.setAttribute("type", "content");
+    g.browser.setAttribute("primary", "true");
+    g.browser.setAttribute("remote", g.browserIsRemote ? "true" : "false");
     // Make sure the browser element is exactly 800x1000, no matter
     // what size our window is
-    gBrowser.setAttribute("style", "padding: 0px; margin: 0px; border:none; min-width: 800px; min-height: 1000px; max-width: 800px; max-height: 1000px");
+    g.browser.setAttribute("style", "padding: 0px; margin: 0px; border:none; min-width: 800px; min-height: 1000px; max-width: 800px; max-height: 1000px");
 
     if (Services.appinfo.OS == "Android") {
-      let doc = gContainingWindow.document.getElementById('main-window');
+      let doc = g.containingWindow.document.getElementById('main-window');
       while (doc.hasChildNodes()) {
-        doc.removeChild(doc.firstChild);
+        doc.firstChild.remove();
       }
-      doc.appendChild(gBrowser);
+      doc.appendChild(g.browser);
     } else {
-      document.getElementById("reftest-window").appendChild(gBrowser);
+      document.getElementById("reftest-window").appendChild(g.browser);
     }
 
     // reftests should have the test plugins enabled, not click-to-play
     let plugin1 = getTestPlugin("Test Plug-in");
     let plugin2 = getTestPlugin("Second Test Plug-in");
     if (plugin1 && plugin2) {
-      gTestPluginEnabledStates = [plugin1.enabledState, plugin2.enabledState];
-      plugin1.enabledState = CI.nsIPluginTag.STATE_ENABLED;
-      plugin2.enabledState = CI.nsIPluginTag.STATE_ENABLED;
+      g.testPluginEnabledStates = [plugin1.enabledState, plugin2.enabledState];
+      plugin1.enabledState = Ci.nsIPluginTag.STATE_ENABLED;
+      plugin2.enabledState = Ci.nsIPluginTag.STATE_ENABLED;
     } else {
       logger.warning("Could not get test plugin tags.");
     }
 
-    gBrowserMessageManager = gBrowser.QueryInterface(CI.nsIFrameLoaderOwner)
-                                     .frameLoader.messageManager;
+    g.browserMessageManager = g.browser.frameLoader.messageManager;
     // The content script waits for the initial onload, then notifies
     // us.
     RegisterMessageListenersAndLoadContentScript();
@@ -349,8 +218,8 @@ function InitAndStartRefTests()
 {
     /* These prefs are optional, so we don't need to spit an error to the log */
     try {
-        var prefs = Components.classes["@mozilla.org/preferences-service;1"].
-                    getService(Components.interfaces.nsIPrefBranch);
+        var prefs = Cc["@mozilla.org/preferences-service;1"].
+                    getService(Ci.nsIPrefBranch);
     } catch(e) {
         logger.error("EXCEPTION: " + e);
     }
@@ -359,92 +228,99 @@ function InitAndStartRefTests()
       prefs.setBoolPref("android.widget_paints_background", false);
     } catch (e) {}
 
-    /* set the gLoadTimeout */
+    /* set the g.loadTimeout */
     try {
-        gLoadTimeout = prefs.getIntPref("reftest.timeout");
+        g.loadTimeout = prefs.getIntPref("reftest.timeout");
     } catch(e) {
-        gLoadTimeout = 5 * 60 * 1000; //5 minutes as per bug 479518
+        g.loadTimeout = 5 * 60 * 1000; //5 minutes as per bug 479518
     }
 
     /* Get the logfile for android tests */
     try {
-        var logFile = prefs.getCharPref("reftest.logFile");
+        var logFile = prefs.getStringPref("reftest.logFile");
         if (logFile) {
             var f = FileUtils.File(logFile);
-            gLogFile = FileUtils.openFileOutputStream(f, FileUtils.MODE_WRONLY | FileUtils.MODE_CREATE);
+            g.logFile = FileUtils.openFileOutputStream(f, FileUtils.MODE_WRONLY | FileUtils.MODE_CREATE);
         }
     } catch(e) {}
 
-    try {
-        gRemote = prefs.getBoolPref("reftest.remote");
-    } catch(e) {
-        gRemote = false;
-    }
+    g.remote = prefs.getBoolPref("reftest.remote", false);
 
-    try {
-        gIgnoreWindowSize = prefs.getBoolPref("reftest.ignoreWindowSize");
-    } catch(e) {
-        gIgnoreWindowSize = false;
-    }
+    g.ignoreWindowSize = prefs.getBoolPref("reftest.ignoreWindowSize", false);
 
     /* Support for running a chunk (subset) of tests.  In separate try as this is optional */
     try {
-        gTotalChunks = prefs.getIntPref("reftest.totalChunks");
-        gThisChunk = prefs.getIntPref("reftest.thisChunk");
+        g.totalChunks = prefs.getIntPref("reftest.totalChunks");
+        g.thisChunk = prefs.getIntPref("reftest.thisChunk");
     }
     catch(e) {
-        gTotalChunks = 0;
-        gThisChunk = 0;
+        g.totalChunks = 0;
+        g.thisChunk = 0;
     }
 
     try {
-        gFocusFilterMode = prefs.getCharPref("reftest.focusFilterMode");
+        g.focusFilterMode = prefs.getStringPref("reftest.focusFilterMode");
     } catch(e) {}
 
-#ifdef MOZ_STYLO
     try {
-        gCompareStyloToGecko = prefs.getBoolPref("reftest.compareStyloToGecko");
-    } catch(e) {}
+        g.compareRetainedDisplayLists = prefs.getBoolPref("reftest.compareRetainedDisplayLists");
+    } catch (e) {}
+
+#ifdef MOZ_ENABLE_SKIA_PDF
+    try {
+        // We have to disable printing via parent or else silent print operations
+        // (the type that we use here) would be treated as non-silent -- in other
+        // words, a print dialog would appear for each print operation, which
+        // would interrupt the test run.
+        // See http://searchfox.org/mozilla-central/rev/bd39b6170f04afeefc751a23bb04e18bbd10352b/layout/printing/nsPrintEngine.cpp#617
+        prefs.setBoolPref("print.print_via_parent", false);
+    } catch (e) {
+        /* uh oh, print reftests may not work... */
+    }
 #endif
 
-    gWindowUtils = gContainingWindow.QueryInterface(CI.nsIInterfaceRequestor).getInterface(CI.nsIDOMWindowUtils);
-    if (!gWindowUtils || !gWindowUtils.compareCanvases)
+    g.windowUtils = g.containingWindow.windowUtils;
+    if (!g.windowUtils || !g.windowUtils.compareCanvases)
         throw "nsIDOMWindowUtils inteface missing";
 
-    gIOService = CC[IO_SERVICE_CONTRACTID].getService(CI.nsIIOService);
-    gDebug = CC[DEBUG_CONTRACTID].getService(CI.nsIDebug2);
+    g.ioService = Cc[IO_SERVICE_CONTRACTID].getService(Ci.nsIIOService);
+    g.debug = Cc[DEBUG_CONTRACTID].getService(Ci.nsIDebug2);
 
     RegisterProcessCrashObservers();
 
-    if (gRemote) {
-        gServer = null;
+    if (g.remote) {
+        g.server = null;
     } else {
-        gServer = new HttpServer();
+        g.server = new HttpServer();
     }
     try {
-        if (gServer)
+        if (g.server)
             StartHTTPServer();
     } catch (ex) {
-        //gBrowser.loadURI('data:text/plain,' + ex);
-        ++gTestResults.Exception;
+        //g.browser.loadURI('data:text/plain,' + ex);
+        ++g.testResults.Exception;
         logger.error("EXCEPTION: " + ex);
         DoneTests();
     }
 
     // Focus the content browser.
-    if (gFocusFilterMode != FOCUS_FILTER_NON_NEEDS_FOCUS_TESTS) {
-        gBrowser.addEventListener("focus", StartTests, true);
-        gBrowser.focus();
+    if (g.focusFilterMode != FOCUS_FILTER_NON_NEEDS_FOCUS_TESTS) {
+        var fm = Cc["@mozilla.org/focus-manager;1"].getService(Ci.nsIFocusManager);
+        if (fm.activeWindow != g.containingWindow) {
+            Focus();
+        }
+        g.browser.addEventListener("focus", ReadTests, true);
+        g.browser.focus();
     } else {
-        StartTests();
+        ReadTests();
     }
 }
 
 function StartHTTPServer()
 {
-    gServer.registerContentType("sjs", "sjs");
-    gServer.start(-1);
-    gHttpServerPort = gServer.identity.primaryPort;
+    g.server.registerContentType("sjs", "sjs");
+    g.server.start(-1);
+    g.httpServerPort = g.server.identity.primaryPort;
 }
 
 // Perform a Fisher-Yates shuffle of the array.
@@ -458,135 +334,200 @@ function Shuffle(array)
     }
 }
 
+function ReadTests() {
+    try {
+        if (g.focusFilterMode != FOCUS_FILTER_NON_NEEDS_FOCUS_TESTS) {
+            g.browser.removeEventListener("focus", ReadTests, true);
+        }
+
+        g.urls = [];
+        var prefs = Cc["@mozilla.org/preferences-service;1"].
+                    getService(Ci.nsIPrefBranch);
+
+        /* There are three modes implemented here:
+         * 1) reftest.manifests
+         * 2) reftest.manifests and reftest.manifests.dumpTests
+         * 3) reftest.tests
+         *
+         * The first will parse the specified manifests, then immediately
+         * run the tests. The second will parse the manifests, save the test
+         * objects to a file and exit. The third will load a file of test
+         * objects and run them.
+         *
+         * The latter two modes are used to pass test data back and forth
+         * with python harness.
+        */
+        let manifests = prefs.getStringPref("reftest.manifests", null);
+        let dumpTests = prefs.getStringPref("reftest.manifests.dumpTests", null);
+        let testList = prefs.getStringPref("reftest.tests", null);
+
+        if ((testList && manifests) || !(testList || manifests)) {
+            logger.error("Exactly one of reftest.manifests or reftest.tests must be specified.");
+            logger.debug("reftest.manifests is: " + manifests);
+            logger.error("reftest.tests is: " + testList);
+            DoneTests();
+        }
+
+        if (testList) {
+            logger.debug("Reading test objects from: " + testList);
+            let promise = OS.File.read(testList).then(function onSuccess(array) {
+                let decoder = new TextDecoder();
+                g.urls = JSON.parse(decoder.decode(array)).map(CreateUrls);
+                StartTests();
+            }).catch(function onFailure(e) {
+                logger.error("Failed to load test objects: " + e);
+                DoneTests();
+            });
+        } else if (manifests) {
+            // Parse reftest manifests
+            logger.debug("Reading " + manifests.length + " manifests");
+            manifests = JSON.parse(manifests);
+            g.urlsFilterRegex = manifests[null];
+
+            var globalFilter = manifests.hasOwnProperty("") ? new RegExp(manifests[""]) : null;
+            delete manifests[""];
+            var manifestURLs = Object.keys(manifests);
+
+            // Ensure we read manifests from higher up the directory tree first so that we
+            // process includes before reading the included manifest again
+            manifestURLs.sort(function(a,b) {return a.length - b.length})
+            manifestURLs.forEach(function(manifestURL) {
+                logger.info("Reading manifest " + manifestURL);
+                var filter = manifests[manifestURL] ? new RegExp(manifests[manifestURL]) : null;
+                ReadTopManifest(manifestURL, [globalFilter, filter, false]);
+            });
+
+            if (dumpTests) {
+                logger.debug("Dumping test objects to file: " + dumpTests);
+                let encoder = new TextEncoder();
+                let tests = encoder.encode(JSON.stringify(g.urls));
+                OS.File.writeAtomic(dumpTests, tests, {flush: true}).then(
+                  function onSuccess() {
+                    DoneTests();
+                  },
+                  function onFailure(reason) {
+                    logger.error("failed to write test data: " + reason);
+                    DoneTests();
+                  }
+                )
+            } else {
+                logger.debug("Running " + g.urls.length + " test objects");
+                g.manageSuite = true;
+                g.urls = g.urls.map(CreateUrls);
+                StartTests();
+            }
+        }
+    } catch(e) {
+        ++g.testResults.Exception;
+        logger.error("EXCEPTION: " + e);
+    }
+}
+
 function StartTests()
 {
-    if (gFocusFilterMode != FOCUS_FILTER_NON_NEEDS_FOCUS_TESTS) {
-        gBrowser.removeEventListener("focus", StartTests, true);
-    }
-
-    var manifests;
     /* These prefs are optional, so we don't need to spit an error to the log */
     try {
-        var prefs = Components.classes["@mozilla.org/preferences-service;1"].
-                    getService(Components.interfaces.nsIPrefBranch);
+        var prefs = Cc["@mozilla.org/preferences-service;1"].
+                    getService(Ci.nsIPrefBranch);
     } catch(e) {
         logger.error("EXCEPTION: " + e);
     }
 
-    try {
-        gNoCanvasCache = prefs.getIntPref("reftest.nocache");
-    } catch(e) {
-        gNoCanvasCache = false;
-    }
+    g.noCanvasCache = prefs.getIntPref("reftest.nocache", false);
 
-    try {
-      gShuffle = prefs.getBoolPref("reftest.shuffle");
-    } catch (e) {
-      gShuffle = false;
-    }
+    g.shuffle = prefs.getBoolPref("reftest.shuffle", false);
 
-    try {
-      gRunUntilFailure = prefs.getBoolPref("reftest.runUntilFailure");
-    } catch (e) {
-      gRunUntilFailure = false;
-    }
+    g.runUntilFailure = prefs.getBoolPref("reftest.runUntilFailure", false);
+
+    g.verify = prefs.getBoolPref("reftest.verify", false);
+
+    g.cleanupPendingCrashes = prefs.getBoolPref("reftest.cleanupPendingCrashes", false);
+
+    // Check if there are any crash dump files from the startup procedure, before
+    // we start running the first test. Otherwise the first test might get
+    // blamed for producing a crash dump file when that was not the case.
+    CleanUpCrashDumpFiles();
 
     // When we repeat this function is called again, so really only want to set
-    // gRepeat once.
-    if (gRepeat == null) {
-      try {
-        gRepeat = prefs.getIntPref("reftest.repeat");
-      } catch (e) {
-        gRepeat = 0;
-      }
+    // g.repeat once.
+    if (g.repeat == null) {
+      g.repeat = prefs.getIntPref("reftest.repeat", 0);
+    }
+
+    g.runSlowTests = prefs.getIntPref("reftest.skipslowtests", false);
+
+    if (g.shuffle) {
+        g.noCanvasCache = true;
     }
 
     try {
-        gRunSlowTests = prefs.getIntPref("reftest.skipslowtests");
-    } catch(e) {
-        gRunSlowTests = false;
-    }
-
-    if (gShuffle) {
-        gNoCanvasCache = true;
-    }
-
-    gURLs = [];
-    gManifestsLoaded = {};
-
-    try {
-        var manifests = JSON.parse(prefs.getCharPref("reftest.manifests"));
-        gURLFilterRegex = manifests[null];
-    } catch(e) {
-        logger.error("Unable to find reftest.manifests pref.  Please ensure your profile is setup properly");
-        DoneTests();
-    }
-
-    try {
-        var globalFilter = manifests.hasOwnProperty("") ? new RegExp(manifests[""]) : null;
-        var manifestURLs = Object.keys(manifests);
-
-        // Ensure we read manifests from higher up the directory tree first so that we
-        // process includes before reading the included manifest again
-        manifestURLs.sort(function(a,b) {return a.length - b.length})
-        manifestURLs.forEach(function(manifestURL) {
-            logger.info("Reading manifest " + manifestURL);
-            var filter = manifests[manifestURL] ? new RegExp(manifests[manifestURL]) : null;
-            ReadTopManifest(manifestURL, [globalFilter, filter, false]);
-        });
         BuildUseCounts();
 
         // Filter tests which will be skipped to get a more even distribution when chunking
         // tURLs is a temporary array containing all active tests
         var tURLs = new Array();
-        var tIDs = new Array();
-        for (var i = 0; i < gURLs.length; ++i) {
-            if (gURLs[i].expected == EXPECTED_DEATH)
+        for (var i = 0; i < g.urls.length; ++i) {
+            if (g.urls[i].expected == EXPECTED_DEATH)
                 continue;
 
-            if (gURLs[i].needsFocus && !Focus())
+            if (g.urls[i].needsFocus && !Focus())
                 continue;
 
-            if (gURLs[i].slow && !gRunSlowTests)
+            if (g.urls[i].slow && !g.runSlowTests)
                 continue;
 
-            tURLs.push(gURLs[i]);
-            tIDs.push(gURLs[i].identifier);
+            tURLs.push(g.urls[i]);
         }
 
-        logger.suiteStart(tIDs, {"skipped": gURLs.length - tURLs.length});
+        var numActiveTests = tURLs.length;
 
-        if (gTotalChunks > 0 && gThisChunk > 0) {
+        if (g.totalChunks > 0 && g.thisChunk > 0) {
             // Calculate start and end indices of this chunk if tURLs array were
             // divided evenly
-            var testsPerChunk = tURLs.length / gTotalChunks;
-            var start = Math.round((gThisChunk-1) * testsPerChunk);
-            var end = Math.round(gThisChunk * testsPerChunk);
+            var testsPerChunk = tURLs.length / g.totalChunks;
+            var start = Math.round((g.thisChunk-1) * testsPerChunk);
+            var end = Math.round(g.thisChunk * testsPerChunk);
+            numActiveTests = end - start;
 
-            // Map these indices onto the gURLs array. This avoids modifying the
-            // gURLs array which prevents skipped tests from showing up in the log
-            start = gThisChunk == 1 ? 0 : gURLs.indexOf(tURLs[start]);
-            end = gThisChunk == gTotalChunks ? gURLs.length : gURLs.indexOf(tURLs[end + 1]) - 1;
-            gURLs = gURLs.slice(start, end);
+            // Map these indices onto the g.urls array. This avoids modifying the
+            // g.urls array which prevents skipped tests from showing up in the log
+            start = g.thisChunk == 1 ? 0 : g.urls.indexOf(tURLs[start]);
+            end = g.thisChunk == g.totalChunks ? g.urls.length : g.urls.indexOf(tURLs[end + 1]) - 1;
 
-            logger.info("Running chunk " + gThisChunk + " out of " + gTotalChunks + " chunks.  " +
-                "tests " + (start+1) + "-" + end + "/" + gURLs.length);
+            logger.info("Running chunk " + g.thisChunk + " out of " + g.totalChunks + " chunks.  " +
+                "tests " + (start+1) + "-" + end + "/" + g.urls.length);
+
+            g.urls = g.urls.slice(start, end);
         }
 
-        if (gShuffle) {
-            Shuffle(gURLs);
+        if (g.manageSuite && !g.suiteStarted) {
+            var ids = g.urls.map(function(obj) {
+                return obj.identifier;
+            });
+            var suite = prefs.getStringPref('reftest.suite', 'reftest');
+            logger.suiteStart(ids, suite, {"skipped": g.urls.length - numActiveTests});
+            g.suiteStarted = true
         }
 
-        gTotalTests = gURLs.length;
+        if (g.shuffle) {
+            Shuffle(g.urls);
+        }
 
-        if (!gTotalTests)
+        g.totalTests = g.urls.length;
+        if (!g.totalTests && !g.verify && !g.repeat)
             throw "No tests to run";
 
-        gURICanvases = {};
-        StartCurrentTest();
+        g.uriCanvases = {};
+
+        PerTestCoverageUtils.beforeTest()
+        .then(StartCurrentTest)
+        .catch(e => {
+            logger.error("EXCEPTION: " + e);
+            DoneTests();
+        });
     } catch (ex) {
-        //gBrowser.loadURI('data:text/plain,' + ex);
-        ++gTestResults.Exception;
+        //g.browser.loadURI('data:text/plain,' + ex);
+        ++g.testResults.Exception;
         logger.error("EXCEPTION: " + ex);
         DoneTests();
     }
@@ -597,589 +538,11 @@ function OnRefTestUnload()
   let plugin1 = getTestPlugin("Test Plug-in");
   let plugin2 = getTestPlugin("Second Test Plug-in");
   if (plugin1 && plugin2) {
-    plugin1.enabledState = gTestPluginEnabledStates[0];
-    plugin2.enabledState = gTestPluginEnabledStates[1];
+    plugin1.enabledState = g.testPluginEnabledStates[0];
+    plugin2.enabledState = g.testPluginEnabledStates[1];
   } else {
     logger.warning("Failed to get test plugin tags.");
   }
-}
-
-// Read all available data from an input stream and return it
-// as a string.
-function getStreamContent(inputStream)
-{
-    var streamBuf = "";
-    var sis = CC["@mozilla.org/scriptableinputstream;1"].
-                  createInstance(CI.nsIScriptableInputStream);
-    sis.init(inputStream);
-
-    var available;
-    while ((available = sis.available()) != 0) {
-        streamBuf += sis.read(available);
-    }
-
-    return streamBuf;
-}
-
-// Build the sandbox for fails-if(), etc., condition evaluation.
-function BuildConditionSandbox(aURL) {
-    var sandbox = new Components.utils.Sandbox(aURL.spec);
-    var xr = CC[NS_XREAPPINFO_CONTRACTID].getService(CI.nsIXULRuntime);
-    var appInfo = CC[NS_XREAPPINFO_CONTRACTID].getService(CI.nsIXULAppInfo);
-    sandbox.isDebugBuild = gDebug.isDebugBuild;
-
-    // xr.XPCOMABI throws exception for configurations without full ABI
-    // support (mobile builds on ARM)
-    var XPCOMABI = "";
-    try {
-        XPCOMABI = xr.XPCOMABI;
-    } catch(e) {}
-
-    sandbox.xulRuntime = CU.cloneInto({widgetToolkit: xr.widgetToolkit, OS: xr.OS, XPCOMABI: XPCOMABI}, sandbox);
-
-    var testRect = gBrowser.getBoundingClientRect();
-    sandbox.smallScreen = false;
-    if (gContainingWindow.innerWidth < 800 || gContainingWindow.innerHeight < 1000) {
-        sandbox.smallScreen = true;
-    }
-
-    var gfxInfo = (NS_GFXINFO_CONTRACTID in CC) && CC[NS_GFXINFO_CONTRACTID].getService(CI.nsIGfxInfo);
-    let readGfxInfo = function (obj, key) {
-      if (gContentGfxInfo && (key in gContentGfxInfo)) {
-        return gContentGfxInfo[key];
-      }
-      return obj[key];
-    }
-
-    try {
-      sandbox.d2d = readGfxInfo(gfxInfo, "D2DEnabled");
-      sandbox.dwrite = readGfxInfo(gfxInfo, "DWriteEnabled");
-    } catch (e) {
-      sandbox.d2d = false;
-      sandbox.dwrite = false;
-    }
-
-    var info = gfxInfo.getInfo();
-    var canvasBackend = readGfxInfo(info, "AzureCanvasBackend");
-    var contentBackend = readGfxInfo(info, "AzureContentBackend");
-    var canvasAccelerated = readGfxInfo(info, "AzureCanvasAccelerated");
-
-    sandbox.gpuProcess = gfxInfo.usingGPUProcess;
-    sandbox.azureCairo = canvasBackend == "cairo";
-    sandbox.azureSkia = canvasBackend == "skia";
-    sandbox.skiaContent = contentBackend == "skia";
-    sandbox.azureSkiaGL = canvasAccelerated; // FIXME: assumes GL right now
-    // true if we are using the same Azure backend for rendering canvas and content
-    sandbox.contentSameGfxBackendAsCanvas = contentBackend == canvasBackend
-                                            || (contentBackend == "none" && canvasBackend == "cairo");
-
-    sandbox.layersGPUAccelerated =
-      gWindowUtils.layerManagerType != "Basic";
-    sandbox.d3d11 =
-      gWindowUtils.layerManagerType == "Direct3D 11";
-    sandbox.d3d9 =
-      gWindowUtils.layerManagerType == "Direct3D 9";
-    sandbox.layersOpenGL =
-      gWindowUtils.layerManagerType == "OpenGL";
-    sandbox.webrender =
-      gWindowUtils.layerManagerType == "WebRender";
-    sandbox.layersOMTC =
-      gWindowUtils.layerManagerRemote == true;
-
-    // Shortcuts for widget toolkits.
-    sandbox.Android = xr.OS == "Android";
-    sandbox.cocoaWidget = xr.widgetToolkit == "cocoa";
-    sandbox.gtkWidget = xr.widgetToolkit == "gtk2"
-                        || xr.widgetToolkit == "gtk3";
-    sandbox.qtWidget = xr.widgetToolkit == "qt";
-    sandbox.winWidget = xr.widgetToolkit == "windows";
-
-    // Scrollbars that are semi-transparent. See bug 1169666.
-    sandbox.transparentScrollbars = xr.widgetToolkit == "gtk3";
-
-    if (sandbox.Android) {
-        var sysInfo = CC["@mozilla.org/system-info;1"].getService(CI.nsIPropertyBag2);
-
-        // This is currently used to distinguish Android 4.0.3 (SDK version 15)
-        // and later from Android 2.x
-        sandbox.AndroidVersion = sysInfo.getPropertyAsInt32("version");
-    }
-
-#if MOZ_ASAN
-    sandbox.AddressSanitizer = true;
-#else
-    sandbox.AddressSanitizer = false;
-#endif
-
-#if MOZ_WEBRTC
-    sandbox.webrtc = true;
-#else
-    sandbox.webrtc = false;
-#endif
-
-#ifdef MOZ_STYLO
-    sandbox.stylo = true;
-#else
-    sandbox.stylo = false;
-#endif
-
-    var hh = CC[NS_NETWORK_PROTOCOL_CONTRACTID_PREFIX + "http"].
-                 getService(CI.nsIHttpProtocolHandler);
-    var httpProps = ["userAgent", "appName", "appVersion", "vendor",
-                     "vendorSub", "product", "productSub", "platform",
-                     "oscpu", "language", "misc"];
-    sandbox.http = new sandbox.Object();
-    httpProps.forEach((x) => sandbox.http[x] = hh[x]);
-
-    // Set OSX to be the Mac OS X version, as an integer, or undefined
-    // for other platforms.  The integer is formed by 100 times the
-    // major version plus the minor version, so 1006 for 10.6, 1010 for
-    // 10.10, etc.
-    var osxmatch = /Mac OS X (\d+).(\d+)$/.exec(hh.oscpu);
-    sandbox.OSX = osxmatch ? parseInt(osxmatch[1]) * 100 + parseInt(osxmatch[2]) : undefined;
-
-    // see if we have the test plugin available,
-    // and set a sandox prop accordingly
-    var navigator = gContainingWindow.navigator;
-    var testPlugin = navigator.plugins["Test Plug-in"];
-    sandbox.haveTestPlugin = !!testPlugin;
-
-    // Set a flag on sandbox if the windows default theme is active
-    sandbox.windowsDefaultTheme = gContainingWindow.matchMedia("(-moz-windows-default-theme)").matches;
-
-    var prefs = CC["@mozilla.org/preferences-service;1"].
-                getService(CI.nsIPrefBranch);
-    try {
-        sandbox.nativeThemePref = !prefs.getBoolPref("mozilla.widget.disable-native-theme");
-    } catch (e) {
-        sandbox.nativeThemePref = true;
-    }
-    try {
-        sandbox.gpuProcessForceEnabled = prefs.getBoolPref("layers.gpu-process.force-enabled");
-    } catch (e) {
-        sandbox.gpuProcessForceEnabled = false;
-    }
-
-    sandbox.prefs = CU.cloneInto({
-        getBoolPref: function(p) { return prefs.getBoolPref(p); },
-        getIntPref:  function(p) { return prefs.getIntPref(p); }
-    }, sandbox, { cloneFunctions: true });
-
-    // Tests shouldn't care about this except for when they need to
-    // crash the content process
-    sandbox.browserIsRemote = gBrowserIsRemote;
-
-    try {
-        sandbox.asyncPan = gContainingWindow.document.docShell.asyncPanZoomEnabled;
-    } catch (e) {
-        sandbox.asyncPan = false;
-    }
-
-    if (!gDumpedConditionSandbox) {
-        logger.info("Dumping JSON representation of sandbox");
-        logger.info(JSON.stringify(CU.waiveXrays(sandbox)));
-        gDumpedConditionSandbox = true;
-    }
-
-    // Graphics features
-    sandbox.usesRepeatResampling = sandbox.d2d;
-    return sandbox;
-}
-
-function AddPrefSettings(aWhere, aPrefName, aPrefValExpression, aSandbox, aTestPrefSettings, aRefPrefSettings)
-{
-    var prefVal = Components.utils.evalInSandbox("(" + aPrefValExpression + ")", aSandbox);
-    var prefType;
-    var valType = typeof(prefVal);
-    if (valType == "boolean") {
-        prefType = PREF_BOOLEAN;
-    } else if (valType == "string") {
-        prefType = PREF_STRING;
-    } else if (valType == "number" && (parseInt(prefVal) == prefVal)) {
-        prefType = PREF_INTEGER;
-    } else {
-        return false;
-    }
-    var setting = { name: aPrefName,
-                    type: prefType,
-                    value: prefVal };
-    if (aWhere != "ref-") {
-        aTestPrefSettings.push(setting);
-    }
-    if (aWhere != "test-") {
-        aRefPrefSettings.push(setting);
-    }
-    return true;
-}
-
-function ReadTopManifest(aFileURL, aFilter)
-{
-    var url = gIOService.newURI(aFileURL);
-    if (!url)
-        throw "Expected a file or http URL for the manifest.";
-    ReadManifest(url, EXPECTED_PASS, aFilter);
-}
-
-function AddTestItem(aTest, aFilter)
-{
-    if (!aFilter)
-        aFilter = [null, [], false];
-
-    globalFilter = aFilter[0];
-    manifestFilter = aFilter[1];
-    invertManifest = aFilter[2];
-    if ((globalFilter && !globalFilter.test(aTest.url1.spec)) ||
-        (manifestFilter &&
-         !(invertManifest ^ manifestFilter.test(aTest.url1.spec))))
-        return;
-    if (gFocusFilterMode == FOCUS_FILTER_NEEDS_FOCUS_TESTS &&
-        !aTest.needsFocus)
-        return;
-    if (gFocusFilterMode == FOCUS_FILTER_NON_NEEDS_FOCUS_TESTS &&
-        aTest.needsFocus)
-        return;
-
-    if (aTest.url2 !== null)
-        aTest.identifier = [aTest.prettyPath, aTest.type, aTest.url2.spec];
-    else
-        aTest.identifier = aTest.prettyPath;
-
-    gURLs.push(aTest);
-}
-
-function AddStyloTestPrefs(aSandbox, aTestPrefSettings, aRefPrefSettings)
-{
-    AddPrefSettings("test-", "layout.css.servo.enabled", "true", aSandbox,
-                    aTestPrefSettings, aRefPrefSettings);
-    AddPrefSettings("ref-", "layout.css.servo.enabled", "false", aSandbox,
-                    aTestPrefSettings, aRefPrefSettings);
-}
-
-// Note: If you materially change the reftest manifest parsing,
-// please keep the parser in print-manifest-dirs.py in sync.
-function ReadManifest(aURL, inherited_status, aFilter)
-{
-    // Ensure each manifest is only read once. This assumes that manifests that are
-    // included with an unusual inherited_status or filters will be read via their
-    // include before they are read directly in the case of a duplicate
-    if (gManifestsLoaded.hasOwnProperty(aURL.spec)) {
-        if (gManifestsLoaded[aURL.spec] === null)
-            return;
-        else
-            aFilter = [aFilter[0], aFilter[1], true];
-    }
-    gManifestsLoaded[aURL.spec] = aFilter[1];
-
-    var secMan = CC[NS_SCRIPTSECURITYMANAGER_CONTRACTID]
-                     .getService(CI.nsIScriptSecurityManager);
-
-    var listURL = aURL;
-    var channel = NetUtil.newChannel({uri: aURL, loadUsingSystemPrincipal: true});
-    var inputStream = channel.open2();
-    if (channel instanceof Components.interfaces.nsIHttpChannel
-        && channel.responseStatus != 200) {
-      logger.error("HTTP ERROR : " + channel.responseStatus);
-    }
-    var streamBuf = getStreamContent(inputStream);
-    inputStream.close();
-    var lines = streamBuf.split(/\n|\r|\r\n/);
-
-    // Build the sandbox for fails-if(), etc., condition evaluation.
-    var sandbox = BuildConditionSandbox(aURL);
-    var lineNo = 0;
-    var urlprefix = "";
-    var defaultTestPrefSettings = [], defaultRefPrefSettings = [];
-    if (gCompareStyloToGecko) {
-        AddStyloTestPrefs(sandbox, defaultTestPrefSettings,
-                          defaultRefPrefSettings);
-    }
-    for (var str of lines) {
-        ++lineNo;
-        if (str.charAt(0) == "#")
-            continue; // entire line was a comment
-        var i = str.search(/\s+#/);
-        if (i >= 0)
-            str = str.substring(0, i);
-        // strip leading and trailing whitespace
-        str = str.replace(/^\s*/, '').replace(/\s*$/, '');
-        if (!str || str == "")
-            continue;
-        var items = str.split(/\s+/); // split on whitespace
-
-        if (items[0] == "url-prefix") {
-            if (items.length != 2)
-                throw "url-prefix requires one url in manifest file " + aURL.spec + " line " + lineNo;
-            urlprefix = items[1];
-            continue;
-        }
-
-        if (items[0] == "default-preferences") {
-            var m;
-            var item;
-            defaultTestPrefSettings = [];
-            defaultRefPrefSettings = [];
-            items.shift();
-            while ((item = items.shift())) {
-                if (!(m = item.match(gPrefItemRE))) {
-                    throw "Unexpected item in default-preferences list in manifest file " + aURL.spec + " line " + lineNo;
-                }
-                if (!AddPrefSettings(m[1], m[2], m[3], sandbox, defaultTestPrefSettings, defaultRefPrefSettings)) {
-                    throw "Error in pref value in manifest file " + aURL.spec + " line " + lineNo;
-                }
-            }
-            if (gCompareStyloToGecko) {
-                AddStyloTestPrefs(sandbox, defaultTestPrefSettings,
-                                  defaultRefPrefSettings);
-            }
-            continue;
-        }
-
-        var expected_status = EXPECTED_PASS;
-        var allow_silent_fail = false;
-        var minAsserts = 0;
-        var maxAsserts = 0;
-        var needs_focus = false;
-        var slow = false;
-        var testPrefSettings = defaultTestPrefSettings.concat();
-        var refPrefSettings = defaultRefPrefSettings.concat();
-        var fuzzy_max_delta = 2;
-        var fuzzy_max_pixels = 1;
-        var chaosMode = false;
-
-        while (items[0].match(/^(fails|needs-focus|random|skip|asserts|slow|require-or|silentfail|pref|test-pref|ref-pref|fuzzy|chaos-mode)/)) {
-            var item = items.shift();
-            var stat;
-            var cond;
-            var m = item.match(/^(fails|random|skip|silentfail)-if(\(.*\))$/);
-            if (m) {
-                stat = m[1];
-                // Note: m[2] contains the parentheses, and we want them.
-                cond = Components.utils.evalInSandbox(m[2], sandbox);
-            } else if (item.match(/^(fails|random|skip)$/)) {
-                stat = item;
-                cond = true;
-            } else if (item == "needs-focus") {
-                needs_focus = true;
-                cond = false;
-            } else if ((m = item.match(/^asserts\((\d+)(-\d+)?\)$/))) {
-                cond = false;
-                minAsserts = Number(m[1]);
-                maxAsserts = (m[2] == undefined) ? minAsserts
-                                                 : Number(m[2].substring(1));
-            } else if ((m = item.match(/^asserts-if\((.*?),(\d+)(-\d+)?\)$/))) {
-                cond = false;
-                if (Components.utils.evalInSandbox("(" + m[1] + ")", sandbox)) {
-                    minAsserts = Number(m[2]);
-                    maxAsserts =
-                      (m[3] == undefined) ? minAsserts
-                                          : Number(m[3].substring(1));
-                }
-            } else if (item == "slow") {
-                cond = false;
-                slow = true;
-            } else if ((m = item.match(/^require-or\((.*?)\)$/))) {
-                var args = m[1].split(/,/);
-                if (args.length != 2) {
-                    throw "Error in manifest file " + aURL.spec + " line " + lineNo + ": wrong number of args to require-or";
-                }
-                var [precondition_str, fallback_action] = args;
-                var preconditions = precondition_str.split(/&&/);
-                cond = false;
-                for (var precondition of preconditions) {
-                    if (precondition === "debugMode") {
-                        // Currently unimplemented. Requires asynchronous
-                        // JSD call + getting an event while no JS is running
-                        stat = fallback_action;
-                        cond = true;
-                        break;
-                    } else if (precondition === "true") {
-                        // For testing
-                    } else {
-                        // Unknown precondition. Assume it is unimplemented.
-                        stat = fallback_action;
-                        cond = true;
-                        break;
-                    }
-                }
-            } else if ((m = item.match(/^slow-if\((.*?)\)$/))) {
-                cond = false;
-                if (Components.utils.evalInSandbox("(" + m[1] + ")", sandbox))
-                    slow = true;
-            } else if (item == "silentfail") {
-                cond = false;
-                allow_silent_fail = true;
-            } else if ((m = item.match(gPrefItemRE))) {
-                cond = false;
-                if (!AddPrefSettings(m[1], m[2], m[3], sandbox, testPrefSettings, refPrefSettings)) {
-                    throw "Error in pref value in manifest file " + aURL.spec + " line " + lineNo;
-                }
-            } else if ((m = item.match(/^fuzzy\((\d+),(\d+)\)$/))) {
-              cond = false;
-              expected_status = EXPECTED_FUZZY;
-              fuzzy_max_delta = Number(m[1]);
-              fuzzy_max_pixels = Number(m[2]);
-            } else if ((m = item.match(/^fuzzy-if\((.*?),(\d+),(\d+)\)$/))) {
-              cond = false;
-              if (Components.utils.evalInSandbox("(" + m[1] + ")", sandbox)) {
-                expected_status = EXPECTED_FUZZY;
-                fuzzy_max_delta = Number(m[2]);
-                fuzzy_max_pixels = Number(m[3]);
-              }
-            } else if (item == "chaos-mode") {
-                cond = false;
-                chaosMode = true;
-            } else {
-                throw "Error in manifest file " + aURL.spec + " line " + lineNo + ": unexpected item " + item;
-            }
-
-            if (cond) {
-                if (stat == "fails") {
-                    expected_status = EXPECTED_FAIL;
-                } else if (stat == "random") {
-                    expected_status = EXPECTED_RANDOM;
-                } else if (stat == "skip") {
-                    expected_status = EXPECTED_DEATH;
-                } else if (stat == "silentfail") {
-                    allow_silent_fail = true;
-                }
-            }
-        }
-
-        expected_status = Math.max(expected_status, inherited_status);
-
-        if (minAsserts > maxAsserts) {
-            throw "Bad range in manifest file " + aURL.spec + " line " + lineNo;
-        }
-
-        var runHttp = false;
-        var httpDepth;
-        if (items[0] == "HTTP") {
-            runHttp = (aURL.scheme == "file"); // We can't yet run the local HTTP server
-                                               // for non-local reftests.
-            httpDepth = 0;
-            items.shift();
-        } else if (items[0].match(/HTTP\(\.\.(\/\.\.)*\)/)) {
-            // Accept HTTP(..), HTTP(../..), HTTP(../../..), etc.
-            runHttp = (aURL.scheme == "file"); // We can't yet run the local HTTP server
-                                               // for non-local reftests.
-            httpDepth = (items[0].length - 5) / 3;
-            items.shift();
-        }
-
-        // do not prefix the url for include commands or urls specifying
-        // a protocol
-        if (urlprefix && items[0] != "include") {
-            if (items.length > 1 && !items[1].match(gProtocolRE)) {
-                items[1] = urlprefix + items[1];
-            }
-            if (items.length > 2 && !items[2].match(gProtocolRE)) {
-                items[2] = urlprefix + items[2];
-            }
-        }
-
-        var principal = secMan.createCodebasePrincipal(aURL, {});
-
-        if (items[0] == "include") {
-            if (items.length != 2)
-                throw "Error in manifest file " + aURL.spec + " line " + lineNo + ": incorrect number of arguments to include";
-            if (runHttp)
-                throw "Error in manifest file " + aURL.spec + " line " + lineNo + ": use of include with http";
-            var incURI = gIOService.newURI(items[1], null, listURL);
-            secMan.checkLoadURIWithPrincipal(principal, incURI,
-                                             CI.nsIScriptSecurityManager.DISALLOW_SCRIPT);
-            ReadManifest(incURI, expected_status, aFilter);
-        } else if (items[0] == TYPE_LOAD) {
-            if (items.length != 2)
-                throw "Error in manifest file " + aURL.spec + " line " + lineNo + ": incorrect number of arguments to load";
-            if (expected_status != EXPECTED_PASS &&
-                expected_status != EXPECTED_DEATH)
-                throw "Error in manifest file " + aURL.spec + " line " + lineNo + ": incorrect known failure type for load test";
-            var [testURI] = runHttp
-                            ? ServeFiles(principal, httpDepth,
-                                         listURL, [items[1]])
-                            : [gIOService.newURI(items[1], null, listURL)];
-            var prettyPath = runHttp
-                           ? gIOService.newURI(items[1], null, listURL).spec
-                           : testURI.spec;
-            secMan.checkLoadURIWithPrincipal(principal, testURI,
-                                             CI.nsIScriptSecurityManager.DISALLOW_SCRIPT);
-            AddTestItem({ type: TYPE_LOAD,
-                          expected: expected_status,
-                          allowSilentFail: allow_silent_fail,
-                          prettyPath: prettyPath,
-                          minAsserts: minAsserts,
-                          maxAsserts: maxAsserts,
-                          needsFocus: needs_focus,
-                          slow: slow,
-                          prefSettings1: testPrefSettings,
-                          prefSettings2: refPrefSettings,
-                          fuzzyMaxDelta: fuzzy_max_delta,
-                          fuzzyMaxPixels: fuzzy_max_pixels,
-                          url1: testURI,
-                          url2: null,
-                          chaosMode: chaosMode }, aFilter);
-        } else if (items[0] == TYPE_SCRIPT) {
-            if (items.length != 2)
-                throw "Error in manifest file " + aURL.spec + " line " + lineNo + ": incorrect number of arguments to script";
-            var [testURI] = runHttp
-                            ? ServeFiles(principal, httpDepth,
-                                         listURL, [items[1]])
-                            : [gIOService.newURI(items[1], null, listURL)];
-            var prettyPath = runHttp
-                           ? gIOService.newURI(items[1], null, listURL).spec
-                           : testURI.spec;
-            secMan.checkLoadURIWithPrincipal(principal, testURI,
-                                             CI.nsIScriptSecurityManager.DISALLOW_SCRIPT);
-            AddTestItem({ type: TYPE_SCRIPT,
-                          expected: expected_status,
-                          allowSilentFail: allow_silent_fail,
-                          prettyPath: prettyPath,
-                          minAsserts: minAsserts,
-                          maxAsserts: maxAsserts,
-                          needsFocus: needs_focus,
-                          slow: slow,
-                          prefSettings1: testPrefSettings,
-                          prefSettings2: refPrefSettings,
-                          fuzzyMaxDelta: fuzzy_max_delta,
-                          fuzzyMaxPixels: fuzzy_max_pixels,
-                          url1: testURI,
-                          url2: null,
-                          chaosMode: chaosMode }, aFilter);
-        } else if (items[0] == TYPE_REFTEST_EQUAL || items[0] == TYPE_REFTEST_NOTEQUAL) {
-            if (items.length != 3)
-                throw "Error in manifest file " + aURL.spec + " line " + lineNo + ": incorrect number of arguments to " + items[0];
-            var [testURI, refURI] = runHttp
-                                  ? ServeFiles(principal, httpDepth,
-                                               listURL, [items[1], items[2]])
-                                  : [gIOService.newURI(items[1], null, listURL),
-                                     gIOService.newURI(items[2], null, listURL)];
-            var prettyPath = runHttp
-                           ? gIOService.newURI(items[1], null, listURL).spec
-                           : testURI.spec;
-            secMan.checkLoadURIWithPrincipal(principal, testURI,
-                                             CI.nsIScriptSecurityManager.DISALLOW_SCRIPT);
-            secMan.checkLoadURIWithPrincipal(principal, refURI,
-                                             CI.nsIScriptSecurityManager.DISALLOW_SCRIPT);
-
-            AddTestItem({ type: items[0],
-                          expected: expected_status,
-                          allowSilentFail: allow_silent_fail,
-                          prettyPath: prettyPath,
-                          minAsserts: minAsserts,
-                          maxAsserts: maxAsserts,
-                          needsFocus: needs_focus,
-                          slow: slow,
-                          prefSettings1: testPrefSettings,
-                          prefSettings2: refPrefSettings,
-                          fuzzyMaxDelta: fuzzy_max_delta,
-                          fuzzyMaxPixels: fuzzy_max_pixels,
-                          url1: testURI,
-                          url2: refURI,
-                          chaosMode: chaosMode }, aFilter);
-        } else {
-            throw "Error in manifest file " + aURL.spec + " line " + lineNo + ": unknown test type " + items[0];
-        }
-    }
 }
 
 function AddURIUseCount(uri)
@@ -1188,86 +551,43 @@ function AddURIUseCount(uri)
         return;
 
     var spec = uri.spec;
-    if (spec in gURIUseCounts) {
-        gURIUseCounts[spec]++;
+    if (spec in g.uriUseCounts) {
+        g.uriUseCounts[spec]++;
     } else {
-        gURIUseCounts[spec] = 1;
+        g.uriUseCounts[spec] = 1;
     }
 }
 
 function BuildUseCounts()
 {
-    if (gNoCanvasCache) {
+    if (g.noCanvasCache) {
         return;
     }
 
-    gURIUseCounts = {};
-    for (var i = 0; i < gURLs.length; ++i) {
-        var url = gURLs[i];
+    g.uriUseCounts = {};
+    for (var i = 0; i < g.urls.length; ++i) {
+        var url = g.urls[i];
         if (url.expected != EXPECTED_DEATH &&
             (url.type == TYPE_REFTEST_EQUAL ||
              url.type == TYPE_REFTEST_NOTEQUAL)) {
             if (url.prefSettings1.length == 0) {
-                AddURIUseCount(gURLs[i].url1);
+                AddURIUseCount(g.urls[i].url1);
             }
             if (url.prefSettings2.length == 0) {
-                AddURIUseCount(gURLs[i].url2);
+                AddURIUseCount(g.urls[i].url2);
             }
         }
     }
 }
 
-function ServeFiles(manifestPrincipal, depth, aURL, files)
-{
-    var listURL = aURL.QueryInterface(CI.nsIFileURL);
-    var directory = listURL.file.parent;
-
-    // Allow serving a tree that's an ancestor of the directory containing
-    // the files so that they can use resources in ../ (etc.).
-    var dirPath = "/";
-    while (depth > 0) {
-        dirPath = "/" + directory.leafName + dirPath;
-        directory = directory.parent;
-        --depth;
-    }
-
-    gCount++;
-    var path = "/" + Date.now() + "/" + gCount;
-    gServer.registerDirectory(path + "/", directory);
-
-    var secMan = CC[NS_SCRIPTSECURITYMANAGER_CONTRACTID]
-                     .getService(CI.nsIScriptSecurityManager);
-
-    var testbase = gIOService.newURI("http://localhost:" + gHttpServerPort +
-                                     path + dirPath);
-
-    // Give the testbase URI access to XUL and XBL
-    Services.perms.add(testbase, "allowXULXBL", Services.perms.ALLOW_ACTION);
-
-    function FileToURI(file)
-    {
-        // Only serve relative URIs via the HTTP server, not absolute
-        // ones like about:blank.
-        var testURI = gIOService.newURI(file, null, testbase);
-
-        // XXX necessary?  manifestURL guaranteed to be file, others always HTTP
-        secMan.checkLoadURIWithPrincipal(manifestPrincipal, testURI,
-                                         CI.nsIScriptSecurityManager.DISALLOW_SCRIPT);
-
-        return testURI;
-    }
-
-    return files.map(FileToURI);
-}
-
 // Return true iff this window is focused when this function returns.
 function Focus()
 {
-    var fm = CC["@mozilla.org/focus-manager;1"].getService(CI.nsIFocusManager);
-    fm.focusedWindow = gContainingWindow;
+    var fm = Cc["@mozilla.org/focus-manager;1"].getService(Ci.nsIFocusManager);
+    fm.focusedWindow = g.containingWindow;
 #ifdef XP_MACOSX
     try {
-        var dock = CC["@mozilla.org/widget/macdocksupport;1"].getService(CI.nsIMacDockSupport);
+        var dock = Cc["@mozilla.org/widget/macdocksupport;1"].getService(Ci.nsIMacDockSupport);
         dock.activateApplication(true);
     } catch(ex) {
     }
@@ -1281,69 +601,73 @@ function Blur()
     // we created to hold focus for non-needs-focus tests.  Buggy tests
     // (ones which require focus but don't request needs-focus) will then
     // fail.
-    gContainingWindow.blur();
+    g.containingWindow.blur();
 }
 
 function StartCurrentTest()
 {
-    gTestLog = [];
+    g.testLog = [];
 
     // make sure we don't run tests that are expected to kill the browser
-    while (gURLs.length > 0) {
-        var test = gURLs[0];
+    while (g.urls.length > 0) {
+        var test = g.urls[0];
         logger.testStart(test.identifier);
         if (test.expected == EXPECTED_DEATH) {
-            ++gTestResults.Skip;
+            ++g.testResults.Skip;
             logger.testEnd(test.identifier, "SKIP");
-            gURLs.shift();
+            g.urls.shift();
         } else if (test.needsFocus && !Focus()) {
             // FIXME: Marking this as a known fail is dangerous!  What
             // if it starts failing all the time?
-            ++gTestResults.Skip;
+            ++g.testResults.Skip;
             logger.testEnd(test.identifier, "SKIP", null, "(COULDN'T GET FOCUS)");
-            gURLs.shift();
-        } else if (test.slow && !gRunSlowTests) {
-            ++gTestResults.Slow;
+            g.urls.shift();
+        } else if (test.slow && !g.runSlowTests) {
+            ++g.testResults.Slow;
             logger.testEnd(test.identifier, "SKIP", null, "(SLOW)");
-            gURLs.shift();
+            g.urls.shift();
         } else {
             break;
         }
     }
 
-    if ((gURLs.length == 0 && gRepeat == 0) ||
-        (gRunUntilFailure && HasUnexpectedResult())) {
+    if ((g.urls.length == 0 && g.repeat == 0) ||
+        (g.runUntilFailure && HasUnexpectedResult())) {
         RestoreChangedPreferences();
         DoneTests();
-    } else if (gURLs.length == 0 && gRepeat > 0) {
+    } else if (g.urls.length == 0 && g.repeat > 0) {
         // Repeat
-        gRepeat--;
-        StartTests();
+        g.repeat--;
+        ReadTests();
     } else {
-        if (gURLs[0].chaosMode) {
-            gWindowUtils.enterChaosMode();
+        if (g.urls[0].chaosMode) {
+            g.windowUtils.enterChaosMode();
         }
-        if (!gURLs[0].needsFocus) {
+        if (!g.urls[0].needsFocus) {
             Blur();
         }
-        var currentTest = gTotalTests - gURLs.length;
-        gContainingWindow.document.title = "reftest: " + currentTest + " / " + gTotalTests +
-            " (" + Math.floor(100 * (currentTest / gTotalTests)) + "%)";
-        StartCurrentURI(1);
+        var currentTest = g.totalTests - g.urls.length;
+        g.containingWindow.document.title = "reftest: " + currentTest + " / " + g.totalTests +
+            " (" + Math.floor(100 * (currentTest / g.totalTests)) + "%)";
+        StartCurrentURI(URL_TARGET_TYPE_TEST);
     }
 }
 
-function StartCurrentURI(aState)
+function StartCurrentURI(aURLTargetType)
 {
-    gState = aState;
-    gCurrentURL = gURLs[0]["url" + aState].spec;
+    const isStartingRef = (aURLTargetType == URL_TARGET_TYPE_REFERENCE);
+
+    g.currentURL = g.urls[0][isStartingRef ? "url2" : "url1"].spec;
+    g.currentURLTargetType = aURLTargetType;
 
     RestoreChangedPreferences();
 
-    var prefs = Components.classes["@mozilla.org/preferences-service;1"].
-        getService(Components.interfaces.nsIPrefBranch);
+    var prefs = Cc["@mozilla.org/preferences-service;1"].
+        getService(Ci.nsIPrefBranch);
 
-    var prefSettings = gURLs[0]["prefSettings" + aState];
+    const prefSettings =
+      g.urls[0][isStartingRef ? "prefSettings2" : "prefSettings1"];
+
     if (prefSettings.length > 0) {
         var badPref = undefined;
         try {
@@ -1358,7 +682,7 @@ function StartCurrentURI(aState)
                     }
                 } else if (ps.type == PREF_STRING) {
                     try {
-                        oldVal = prefs.getCharPref(ps.name);
+                        oldVal = prefs.getStringPref(ps.name);
                     } catch (e) {
                         badPref = "string preference '" + ps.name + "'";
                         throw "bad pref";
@@ -1374,14 +698,14 @@ function StartCurrentURI(aState)
                     throw "internal error - unknown preference type";
                 }
                 if (oldVal != ps.value) {
-                    gPrefsToRestore.push( { name: ps.name,
+                    g.prefsToRestore.push( { name: ps.name,
                                             type: ps.type,
                                             value: oldVal } );
                     var value = ps.value;
                     if (ps.type == PREF_BOOLEAN) {
                         prefs.setBoolPref(ps.name, value);
                     } else if (ps.type == PREF_STRING) {
-                        prefs.setCharPref(ps.name, value);
+                        prefs.setStringPref(ps.name, value);
                         value = '"' + value + '"';
                     } else if (ps.type == PREF_INTEGER) {
                         prefs.setIntPref(ps.name, value);
@@ -1391,19 +715,19 @@ function StartCurrentURI(aState)
             });
         } catch (e) {
             if (e == "bad pref") {
-                var test = gURLs[0];
+                var test = g.urls[0];
                 if (test.expected == EXPECTED_FAIL) {
                     logger.testEnd(test.identifier, "FAIL", "FAIL",
                                    "(SKIPPED; " + badPref + " not known or wrong type)");
-                    ++gTestResults.Skip;
+                    ++g.testResults.Skip;
                 } else {
                     logger.testEnd(test.identifier, "FAIL", "PASS",
                                    badPref + " not known or wrong type");
-                    ++gTestResults.UnexpectedFail;
+                    ++g.testResults.UnexpectedFail;
                 }
 
                 // skip the test that had a bad preference
-                gURLs.shift();
+                g.urls.shift();
                 StartCurrentTest();
                 return;
             } else {
@@ -1413,61 +737,72 @@ function StartCurrentURI(aState)
     }
 
     if (prefSettings.length == 0 &&
-        gURICanvases[gCurrentURL] &&
-        (gURLs[0].type == TYPE_REFTEST_EQUAL ||
-         gURLs[0].type == TYPE_REFTEST_NOTEQUAL) &&
-        gURLs[0].maxAsserts == 0) {
+        g.uriCanvases[g.currentURL] &&
+        (g.urls[0].type == TYPE_REFTEST_EQUAL ||
+         g.urls[0].type == TYPE_REFTEST_NOTEQUAL) &&
+        g.urls[0].maxAsserts == 0) {
         // Pretend the document loaded --- RecordResult will notice
         // there's already a canvas for this URL
-        gContainingWindow.setTimeout(RecordResult, 0);
+        g.containingWindow.setTimeout(RecordResult, 0);
     } else {
-        var currentTest = gTotalTests - gURLs.length;
+        var currentTest = g.totalTests - g.urls.length;
         // Log this to preserve the same overall log format,
         // should be removed if the format is updated
-        gDumpFn("REFTEST TEST-LOAD | " + gCurrentURL + " | " + currentTest + " / " + gTotalTests +
-                " (" + Math.floor(100 * (currentTest / gTotalTests)) + "%)\n");
-        TestBuffer("START " + gCurrentURL);
-        var type = gURLs[0].type
+        gDumpFn("REFTEST TEST-LOAD | " + g.currentURL + " | " + currentTest + " / " + g.totalTests +
+                " (" + Math.floor(100 * (currentTest / g.totalTests)) + "%)\n");
+        TestBuffer("START " + g.currentURL);
+        var type = g.urls[0].type
         if (TYPE_SCRIPT == type) {
-            SendLoadScriptTest(gCurrentURL, gLoadTimeout);
+            SendLoadScriptTest(g.currentURL, g.loadTimeout);
+        } else if (TYPE_PRINT == type) {
+            SendLoadPrintTest(g.currentURL, g.loadTimeout);
         } else {
-            SendLoadTest(type, gCurrentURL, gLoadTimeout);
+            SendLoadTest(type, g.currentURL, g.currentURLTargetType, g.loadTimeout);
         }
     }
 }
 
 function DoneTests()
 {
-    logger.suiteEnd(extra={'results': gTestResults});
-    logger.info("Slowest test took " + gSlowestTestTime + "ms (" + gSlowestTestURL + ")");
-    logger.info("Total canvas count = " + gRecycledCanvases.length);
-    if (gFailedUseWidgetLayers) {
-        LogWidgetLayersFailure();
-    }
+    PerTestCoverageUtils.afterTest()
+    .catch(e => logger.error("EXCEPTION: " + e))
+    .then(() => {
+        if (g.manageSuite) {
+            g.suiteStarted = false
+            logger.suiteEnd({'results': g.testResults});
+        } else {
+            logger._logData('results', {results: g.testResults});
+        }
+        logger.info("Slowest test took " + g.slowestTestTime + "ms (" + g.slowestTestURL + ")");
+        logger.info("Total canvas count = " + g.recycledCanvases.length);
+        if (g.failedUseWidgetLayers) {
+            LogWidgetLayersFailure();
+        }
 
-    function onStopped() {
-        let appStartup = CC["@mozilla.org/toolkit/app-startup;1"].getService(CI.nsIAppStartup);
-        appStartup.quit(CI.nsIAppStartup.eForceQuit);
-    }
-    if (gServer) {
-        gServer.stop(onStopped);
-    }
-    else {
-        onStopped();
-    }
+        function onStopped() {
+            let appStartup = Cc["@mozilla.org/toolkit/app-startup;1"].getService(Ci.nsIAppStartup);
+            appStartup.quit(Ci.nsIAppStartup.eForceQuit);
+        }
+        if (g.server) {
+            g.server.stop(onStopped);
+        }
+        else {
+            onStopped();
+        }
+    });
 }
 
 function UpdateCanvasCache(url, canvas)
 {
     var spec = url.spec;
 
-    --gURIUseCounts[spec];
+    --g.uriUseCounts[spec];
 
-    if (gURIUseCounts[spec] == 0) {
+    if (g.uriUseCounts[spec] == 0) {
         ReleaseCanvas(canvas);
-        delete gURICanvases[spec];
-    } else if (gURIUseCounts[spec] > 0) {
-        gURICanvases[spec] = canvas;
+        delete g.uriCanvases[spec];
+    } else if (g.uriUseCounts[spec] > 0) {
+        g.uriCanvases[spec] = canvas;
     } else {
         throw "Use counts were computed incorrectly";
     }
@@ -1481,24 +816,24 @@ function UpdateCanvasCache(url, canvas)
 function DoDrawWindow(ctx, x, y, w, h)
 {
     var flags = ctx.DRAWWINDOW_DRAW_CARET | ctx.DRAWWINDOW_DRAW_VIEW;
-    var testRect = gBrowser.getBoundingClientRect();
-    if (gIgnoreWindowSize ||
+    var testRect = g.browser.getBoundingClientRect();
+    if (g.ignoreWindowSize ||
         (0 <= testRect.left &&
          0 <= testRect.top &&
-         gContainingWindow.innerWidth >= testRect.right &&
-         gContainingWindow.innerHeight >= testRect.bottom)) {
+         g.containingWindow.innerWidth >= testRect.right &&
+         g.containingWindow.innerHeight >= testRect.bottom)) {
         // We can use the window's retained layer manager
         // because the window is big enough to display the entire
         // browser element
         flags |= ctx.DRAWWINDOW_USE_WIDGET_LAYERS;
-    } else if (gBrowserIsRemote) {
-        logger.error(gCurrentURL + " | can't drawWindow remote content");
-        ++gTestResults.Exception;
+    } else if (g.browserIsRemote) {
+        logger.error(g.currentURL + " | can't drawWindow remote content");
+        ++g.testResults.Exception;
     }
 
-    if (gDrawWindowFlags != flags) {
+    if (g.drawWindowFlags != flags) {
         // Every time the flags change, dump the new state.
-        gDrawWindowFlags = flags;
+        g.drawWindowFlags = flags;
         var flagsStr = "DRAWWINDOW_DRAW_CARET | DRAWWINDOW_DRAW_VIEW";
         if (flags & ctx.DRAWWINDOW_USE_WIDGET_LAYERS) {
             flagsStr += " | DRAWWINDOW_USE_WIDGET_LAYERS";
@@ -1506,33 +841,33 @@ function DoDrawWindow(ctx, x, y, w, h)
             // Output a special warning because we need to be able to detect
             // this whenever it happens.
             LogWidgetLayersFailure();
-            gFailedUseWidgetLayers = true;
+            g.failedUseWidgetLayers = true;
         }
         logger.info("drawWindow flags = " + flagsStr +
-                    "; window size = " + gContainingWindow.innerWidth + "," + gContainingWindow.innerHeight +
+                    "; window size = " + g.containingWindow.innerWidth + "," + g.containingWindow.innerHeight +
                     "; test browser size = " + testRect.width + "," + testRect.height);
     }
 
     TestBuffer("DoDrawWindow " + x + "," + y + "," + w + "," + h);
-    ctx.drawWindow(gContainingWindow, x, y, w, h, "rgb(255,255,255)",
-                   gDrawWindowFlags);
+    ctx.drawWindow(g.containingWindow, x, y, w, h, "rgb(255,255,255)",
+                   g.drawWindowFlags);
 }
 
 function InitCurrentCanvasWithSnapshot()
 {
     TestBuffer("Initializing canvas snapshot");
 
-    if (gURLs[0].type == TYPE_LOAD || gURLs[0].type == TYPE_SCRIPT) {
+    if (g.urls[0].type == TYPE_LOAD || g.urls[0].type == TYPE_SCRIPT || g.urls[0].type == TYPE_PRINT) {
         // We don't want to snapshot this kind of test
         return false;
     }
 
-    if (!gCurrentCanvas) {
-        gCurrentCanvas = AllocateCanvas();
+    if (!g.currentCanvas) {
+        g.currentCanvas = AllocateCanvas();
     }
 
-    var ctx = gCurrentCanvas.getContext("2d");
-    DoDrawWindow(ctx, 0, 0, gCurrentCanvas.width, gCurrentCanvas.height);
+    var ctx = g.currentCanvas.getContext("2d");
+    DoDrawWindow(ctx, 0, 0, g.currentCanvas.width, g.currentCanvas.height);
     return true;
 }
 
@@ -1540,11 +875,11 @@ function UpdateCurrentCanvasForInvalidation(rects)
 {
     TestBuffer("Updating canvas for invalidation");
 
-    if (!gCurrentCanvas) {
+    if (!g.currentCanvas) {
         return;
     }
 
-    var ctx = gCurrentCanvas.getContext("2d");
+    var ctx = g.currentCanvas.getContext("2d");
     for (var i = 0; i < rects.length; ++i) {
         var r = rects[i];
         // Set left/top/right/bottom to pixel boundaries
@@ -1554,10 +889,10 @@ function UpdateCurrentCanvasForInvalidation(rects)
         var bottom = Math.ceil(r.bottom);
 
         // Clamp the values to the canvas size
-        left = Math.max(0, Math.min(left, gCurrentCanvas.width));
-        top = Math.max(0, Math.min(top, gCurrentCanvas.height));
-        right = Math.max(0, Math.min(right, gCurrentCanvas.width));
-        bottom = Math.max(0, Math.min(bottom, gCurrentCanvas.height));
+        left = Math.max(0, Math.min(left, g.currentCanvas.width));
+        top = Math.max(0, Math.min(top, g.currentCanvas.height));
+        right = Math.max(0, Math.min(right, g.currentCanvas.width));
+        bottom = Math.max(0, Math.min(bottom, g.currentCanvas.height));
 
         ctx.save();
         ctx.translate(left, top);
@@ -1570,22 +905,22 @@ function UpdateWholeCurrentCanvasForInvalidation()
 {
     TestBuffer("Updating entire canvas for invalidation");
 
-    if (!gCurrentCanvas) {
+    if (!g.currentCanvas) {
         return;
     }
 
-    var ctx = gCurrentCanvas.getContext("2d");
-    DoDrawWindow(ctx, 0, 0, gCurrentCanvas.width, gCurrentCanvas.height);
+    var ctx = g.currentCanvas.getContext("2d");
+    DoDrawWindow(ctx, 0, 0, g.currentCanvas.width, g.currentCanvas.height);
 }
 
-function RecordResult(testRunTime, errorMsg, scriptResults)
+function RecordResult(testRunTime, errorMsg, typeSpecificResults)
 {
     TestBuffer("RecordResult fired");
 
     // Keep track of which test was slowest, and how long it took.
-    if (testRunTime > gSlowestTestTime) {
-        gSlowestTestTime = testRunTime;
-        gSlowestTestURL  = gCurrentURL;
+    if (testRunTime > g.slowestTestTime) {
+        g.slowestTestTime = testRunTime;
+        g.slowestTestURL  = g.currentURL;
     }
 
     // Not 'const ...' because of 'EXPECTED_*' value dependency.
@@ -1602,29 +937,88 @@ function RecordResult(testRunTime, errorMsg, scriptResults)
         true:  {s: ["PASS", "PASS"], n: "Random"},
         false: {s: ["FAIL", "FAIL"], n: "Random"}
     };
-    outputs[EXPECTED_FUZZY] = outputs[EXPECTED_PASS];
+    // for EXPECTED_FUZZY we need special handling because we can have
+    // Pass, UnexpectedPass, or UnexpectedFail
+
+    if ((g.currentURLTargetType == URL_TARGET_TYPE_TEST && g.urls[0].wrCapture.test) ||
+        (g.currentURLTargetType == URL_TARGET_TYPE_REFERENCE && g.urls[0].wrCapture.ref)) {
+      logger.info("Running webrender capture");
+      g.windowUtils.wrCapture();
+    }
 
     var output;
     var extra;
 
-    if (gURLs[0].type == TYPE_LOAD) {
-        ++gTestResults.LoadOnly;
-        logger.testEnd(gURLs[0].identifier, "PASS", "PASS", "(LOAD ONLY)");
-        gCurrentCanvas = null;
+    if (g.urls[0].type == TYPE_LOAD) {
+        ++g.testResults.LoadOnly;
+        logger.testStatus(g.urls[0].identifier, "(LOAD ONLY)", "PASS", "PASS");
+        g.currentCanvas = null;
         FinishTestItem();
         return;
     }
-    if (gURLs[0].type == TYPE_SCRIPT) {
-        var expected = gURLs[0].expected;
+    if (g.urls[0].type == TYPE_PRINT) {
+        switch (g.currentURLTargetType) {
+        case URL_TARGET_TYPE_TEST:
+            // First document has been loaded.
+            g.testPrintOutput = typeSpecificResults;
+            // Proceed to load the second document.
+            CleanUpCrashDumpFiles();
+            StartCurrentURI(URL_TARGET_TYPE_REFERENCE);
+            break;
+        case URL_TARGET_TYPE_REFERENCE:
+            let pathToTestPdf = g.testPrintOutput;
+            let pathToRefPdf = typeSpecificResults;
+            comparePdfs(pathToTestPdf, pathToRefPdf, function(error, results) {
+                let expected = g.urls[0].expected;
+                // TODO: We should complain here if results is empty!
+                // (If it's empty, we'll spuriously succeed, regardless of
+                // our expectations)
+                if (error) {
+                    output = outputs[expected][false];
+                    extra = { status_msg: output.n };
+                    ++g.testResults[output.n];
+                    logger.testEnd(g.urls[0].identifier, output.s[0], output.s[1],
+                                   error.message, null, extra);
+                } else {
+                    let outputPair = outputs[expected];
+                    if (expected === EXPECTED_FAIL) {
+                       let failureResults = results.filter(function (result) { return !result.passed });
+                       if (failureResults.length > 0) {
+                         // We got an expected failure. Let's get rid of the
+                         // passes from the results so we don't trigger
+                         // TEST_UNEXPECTED_PASS logging for those.
+                         results = failureResults;
+                       }
+                       // (else, we expected a failure but got none!
+                       // Leave results untouched so we can log them.)
+                    }
+                    results.forEach(function(result) {
+                        output = outputPair[result.passed];
+                        let extra = { status_msg: output.n };
+                        ++g.testResults[output.n];
+                        logger.testEnd(g.urls[0].identifier, output.s[0], output.s[1],
+                                       result.description, null, extra);
+                    });
+                }
+                FinishTestItem();
+            });
+            break;
+        default:
+            throw "Unexpected state.";
+        }
+        return;
+    }
+    if (g.urls[0].type == TYPE_SCRIPT) {
+        var expected = g.urls[0].expected;
 
         if (errorMsg) {
             // Force an unexpected failure to alert the test author to fix the test.
             expected = EXPECTED_PASS;
-        } else if (scriptResults.length == 0) {
+        } else if (typeSpecificResults.length == 0) {
              // This failure may be due to a JavaScript Engine bug causing
              // early termination of the test. If we do not allow silent
              // failure, report an error.
-             if (!gURLs[0].allowSilentFail)
+             if (!g.urls[0].allowSilentFail)
                  errorMsg = "No test results reported. (SCRIPT)\n";
              else
                  logger.info("An expected silent failure occurred");
@@ -1633,13 +1027,13 @@ function RecordResult(testRunTime, errorMsg, scriptResults)
         if (errorMsg) {
             output = outputs[expected][false];
             extra = { status_msg: output.n };
-            ++gTestResults[output.n];
-            logger.testEnd(gURLs[0].identifier, output.s[0], output.s[1], errorMsg, null, extra);
+            ++g.testResults[output.n];
+            logger.testStatus(g.urls[0].identifier, errorMsg, output.s[0], output.s[1], null, null, extra);
             FinishTestItem();
             return;
         }
 
-        var anyFailed = scriptResults.some(function(result) { return !result.passed; });
+        var anyFailed = typeSpecificResults.some(function(result) { return !result.passed; });
         var outputPair;
         if (anyFailed && expected == EXPECTED_FAIL) {
             // If we're marked as expected to fail, and some (but not all) tests
@@ -1652,13 +1046,13 @@ function RecordResult(testRunTime, errorMsg, scriptResults)
             outputPair = outputs[expected];
         }
         var index = 0;
-        scriptResults.forEach(function(result) {
+        typeSpecificResults.forEach(function(result) {
                 var output = outputPair[result.passed];
                 var extra = { status_msg: output.n };
 
-                ++gTestResults[output.n];
-                logger.testEnd(gURLs[0].identifier, output.s[0], output.s[1],
-                               result.description + " item " + (++index), null, extra);
+                ++g.testResults[output.n];
+                logger.testStatus(g.urls[0].identifier, result.description + " item " + (++index),
+                                  output.s[0], output.s[1], null, null, extra);
             });
 
         if (anyFailed && expected == EXPECTED_PASS) {
@@ -1669,32 +1063,32 @@ function RecordResult(testRunTime, errorMsg, scriptResults)
         return;
     }
 
-    if (gURLs[0]["prefSettings" + gState].length == 0 &&
-        gURICanvases[gCurrentURL]) {
-        gCurrentCanvas = gURICanvases[gCurrentURL];
+    const isRecordingRef =
+      (g.currentURLTargetType == URL_TARGET_TYPE_REFERENCE);
+    const prefSettings =
+      g.urls[0][isRecordingRef ? "prefSettings2" : "prefSettings1"];
+
+    if (prefSettings.length == 0 && g.uriCanvases[g.currentURL]) {
+        g.currentCanvas = g.uriCanvases[g.currentURL];
     }
-    if (gCurrentCanvas == null) {
-        logger.error(gCurrentURL, "program error managing snapshots");
-        ++gTestResults.Exception;
+    if (g.currentCanvas == null) {
+        logger.error(g.currentURL, "program error managing snapshots");
+        ++g.testResults.Exception;
     }
-    if (gState == 1) {
-        gCanvas1 = gCurrentCanvas;
-    } else {
-        gCanvas2 = gCurrentCanvas;
-    }
-    gCurrentCanvas = null;
+    g[isRecordingRef ? "canvas2" : "canvas1"] = g.currentCanvas;
+    g.currentCanvas = null;
 
     ResetRenderingState();
 
-    switch (gState) {
-        case 1:
+    switch (g.currentURLTargetType) {
+        case URL_TARGET_TYPE_TEST:
             // First document has been loaded.
             // Proceed to load the second document.
 
             CleanUpCrashDumpFiles();
-            StartCurrentURI(2);
+            StartCurrentURI(URL_TARGET_TYPE_REFERENCE);
             break;
-        case 2:
+        case URL_TARGET_TYPE_REFERENCE:
             // Both documents have been loaded. Compare the renderings and see
             // if the comparison result matches the expected result specified
             // in the manifest.
@@ -1704,89 +1098,124 @@ function RecordResult(testRunTime, errorMsg, scriptResults)
             // whether the two renderings match:
             var equal;
             var maxDifference = {};
+            // whether the allowed fuzziness from the annotations is exceeded
+            // by the actual comparison results
+            var fuzz_exceeded = false;
 
-            differences = gWindowUtils.compareCanvases(gCanvas1, gCanvas2, maxDifference);
+            differences = g.windowUtils.compareCanvases(g.canvas1, g.canvas2, maxDifference);
             equal = (differences == 0);
 
-            // what is expected on this platform (PASS, FAIL, or RANDOM)
-            var expected = gURLs[0].expected;
-
-            if (maxDifference.value > 0 && maxDifference.value <= gURLs[0].fuzzyMaxDelta &&
-                differences <= gURLs[0].fuzzyMaxPixels) {
-                if (equal) {
-                    throw "Inconsistent result from compareCanvases.";
-                }
-                equal = expected == EXPECTED_FUZZY;
-                logger.info("REFTEST fuzzy match");
+            if (maxDifference.value > 0 && equal) {
+                throw "Inconsistent result from compareCanvases.";
             }
 
-            var failedExtraCheck = gFailedNoPaint || gFailedOpaqueLayer || gFailedAssignedLayer;
+            // what is expected on this platform (PASS, FAIL, or RANDOM)
+            var expected = g.urls[0].expected;
+
+            if (expected == EXPECTED_FUZZY) {
+                logger.info(`REFTEST fuzzy test ` +
+                            `(${g.urls[0].fuzzyMinDelta}, ${g.urls[0].fuzzyMinPixels}) <= ` +
+                            `(${maxDifference.value}, ${differences}) <= ` +
+                            `(${g.urls[0].fuzzyMaxDelta}, ${g.urls[0].fuzzyMaxPixels})`);
+                fuzz_exceeded = maxDifference.value > g.urls[0].fuzzyMaxDelta ||
+                                differences > g.urls[0].fuzzyMaxPixels;
+                equal = !fuzz_exceeded &&
+                        maxDifference.value >= g.urls[0].fuzzyMinDelta &&
+                        differences >= g.urls[0].fuzzyMinPixels;
+            }
+
+            var failedExtraCheck = g.failedNoPaint || g.failedNoDisplayList || g.failedDisplayList || g.failedOpaqueLayer || g.failedAssignedLayer;
 
             // whether the comparison result matches what is in the manifest
-            var test_passed = (equal == (gURLs[0].type == TYPE_REFTEST_EQUAL)) && !failedExtraCheck;
+            var test_passed = (equal == (g.urls[0].type == TYPE_REFTEST_EQUAL)) && !failedExtraCheck;
 
-            output = outputs[expected][test_passed];
+            if (expected != EXPECTED_FUZZY) {
+                output = outputs[expected][test_passed];
+            } else if (test_passed) {
+                output = {s: ["PASS", "PASS"], n: "Pass"};
+            } else if (g.urls[0].type == TYPE_REFTEST_EQUAL &&
+                       !failedExtraCheck &&
+                       !fuzz_exceeded) {
+                // If we get here, that means we had an '==' type test where
+                // at least one of the actual difference values was below the
+                // allowed range, but nothing else was wrong. So let's produce
+                // UNEXPECTED-PASS in this scenario. Also, if we enter this
+                // branch, 'equal' must be false so let's assert that to guard
+                // against logic errors.
+                if (equal) {
+                    throw "Logic error in reftest.jsm fuzzy test handling!";
+                }
+                output = {s: ["PASS", "FAIL"], n: "UnexpectedPass"};
+            } else {
+                // In all other cases we fail the test
+                output = {s: ["FAIL", "PASS"], n: "UnexpectedFail"};
+            }
             extra = { status_msg: output.n };
 
-            ++gTestResults[output.n];
+            ++g.testResults[output.n];
 
             // It's possible that we failed both an "extra check" and the normal comparison, but we don't
             // have a way to annotate these separately, so just print an error for the extra check failures.
             if (failedExtraCheck) {
                 var failures = [];
-                if (gFailedNoPaint) {
+                if (g.failedNoPaint) {
                     failures.push("failed reftest-no-paint");
                 }
-                // The gFailed*Messages arrays will contain messages from both the test and the reference.
-                if (gFailedOpaqueLayer) {
-                    failures.push("failed reftest-opaque-layer: " + gFailedOpaqueLayerMessages.join(", "));
+                if (g.failedNoDisplayList) {
+                    failures.push("failed reftest-no-display-list");
                 }
-                if (gFailedAssignedLayer) {
-                    failures.push("failed reftest-assigned-layer: " + gFailedAssignedLayerMessages.join(", "));
+                if (g.failedDisplayList) {
+                    failures.push("failed reftest-display-list");
+                }
+                // The g.failed*Messages arrays will contain messages from both the test and the reference.
+                if (g.failedOpaqueLayer) {
+                    failures.push("failed reftest-opaque-layer: " + g.failedOpaqueLayerMessages.join(", "));
+                }
+                if (g.failedAssignedLayer) {
+                    failures.push("failed reftest-assigned-layer: " + g.failedAssignedLayerMessages.join(", "));
                 }
                 var failureString = failures.join(", ");
-                logger.testEnd(gURLs[0].identifier, output.s[0], output.s[1], failureString, null, extra);
+                logger.testStatus(g.urls[0].identifier, failureString, output.s[0], output.s[1], null, null, extra);
             } else {
-                var message = "image comparison";
+                var message = "image comparison, max difference: " + maxDifference.value +
+                              ", number of differing pixels: " + differences;
                 if (!test_passed && expected == EXPECTED_PASS ||
                     !test_passed && expected == EXPECTED_FUZZY ||
                     test_passed && expected == EXPECTED_FAIL) {
                     if (!equal) {
                         extra.max_difference = maxDifference.value;
                         extra.differences = differences;
-                        var image1 = gCanvas1.toDataURL();
-                        var image2 = gCanvas2.toDataURL();
+                        var image1 = g.canvas1.toDataURL();
+                        var image2 = g.canvas2.toDataURL();
                         extra.reftest_screenshots = [
-                            {url:gURLs[0].identifier[0],
+                            {url:g.urls[0].identifier[0],
                              screenshot: image1.slice(image1.indexOf(",") + 1)},
-                            gURLs[0].identifier[1],
-                            {url:gURLs[0].identifier[2],
+                            g.urls[0].identifier[1],
+                            {url:g.urls[0].identifier[2],
                              screenshot: image2.slice(image2.indexOf(",") + 1)}
                         ];
                         extra.image1 = image1;
                         extra.image2 = image2;
-                        message += (", max difference: " + extra.max_difference +
-                                    ", number of differing pixels: " + differences);
                     } else {
-                        var image1 = gCanvas1.toDataURL();
+                        var image1 = g.canvas1.toDataURL();
                         extra.reftest_screenshots = [
-                            {url:gURLs[0].identifier[0],
+                            {url:g.urls[0].identifier[0],
                              screenshot: image1.slice(image1.indexOf(",") + 1)}
                         ];
                         extra.image1 = image1;
                     }
                 }
-                logger.testEnd(gURLs[0].identifier, output.s[0], output.s[1], message, null, extra);
+                logger.testStatus(g.urls[0].identifier, message, output.s[0], output.s[1], null, null, extra);
 
-                if (gNoCanvasCache) {
-                    ReleaseCanvas(gCanvas1);
-                    ReleaseCanvas(gCanvas2);
+                if (g.noCanvasCache) {
+                    ReleaseCanvas(g.canvas1);
+                    ReleaseCanvas(g.canvas2);
                 } else {
-                    if (gURLs[0].prefSettings1.length == 0) {
-                        UpdateCanvasCache(gURLs[0].url1, gCanvas1);
+                    if (g.urls[0].prefSettings1.length == 0) {
+                        UpdateCanvasCache(g.urls[0].url1, g.canvas1);
                     }
-                    if (gURLs[0].prefSettings2.length == 0) {
-                        UpdateCanvasCache(gURLs[0].url2, gCanvas2);
+                    if (g.urls[0].prefSettings2.length == 0) {
+                        UpdateCanvasCache(g.urls[0].url2, g.canvas2);
                     }
                 }
             }
@@ -1805,54 +1234,78 @@ function RecordResult(testRunTime, errorMsg, scriptResults)
 
 function LoadFailed(why)
 {
-    ++gTestResults.FailedLoad;
-    // Once bug 896840 is fixed, this can go away, but for now it will give log
-    // output that is TBPL starable for bug 789751 and bug 720452.
+    ++g.testResults.FailedLoad;
     if (!why) {
-        logger.error("load failed with unknown reason");
+        // reftest-content.js sets an initial reason before it sets the
+        // timeout that will call us with the currently set reason, so we
+        // should never get here.  If we do then there's a logic error
+        // somewhere.  Perhaps tests are somehow running overlapped and the
+        // timeout for one test is not being cleared before the timeout for
+        // another is set?  Maybe there's some sort of race?
+        logger.error("load failed with unknown reason (we should always have a reason!)");
     }
-    logger.testEnd(gURLs[0]["url" + gState].spec, "FAIL", "PASS", "load failed: " + why);
+    logger.testStatus(g.urls[0].identifier, "load failed: " + why, "FAIL", "PASS");
     FlushTestBuffer();
     FinishTestItem();
 }
 
 function RemoveExpectedCrashDumpFiles()
 {
-    if (gExpectingProcessCrash) {
-        for (let crashFilename of gExpectedCrashDumpFiles) {
-            let file = gCrashDumpDir.clone();
+    if (g.expectingProcessCrash) {
+        for (let crashFilename of g.expectedCrashDumpFiles) {
+            let file = g.crashDumpDir.clone();
             file.append(crashFilename);
             if (file.exists()) {
                 file.remove(false);
             }
         }
     }
-    gExpectedCrashDumpFiles.length = 0;
+    g.expectedCrashDumpFiles.length = 0;
 }
 
 function FindUnexpectedCrashDumpFiles()
 {
-    if (!gCrashDumpDir.exists()) {
+    if (!g.crashDumpDir.exists()) {
         return;
     }
 
-    let entries = gCrashDumpDir.directoryEntries;
+    let entries = g.crashDumpDir.directoryEntries;
     if (!entries) {
         return;
     }
 
     let foundCrashDumpFile = false;
     while (entries.hasMoreElements()) {
-        let file = entries.getNext().QueryInterface(CI.nsIFile);
+        let file = entries.nextFile;
         let path = String(file.path);
-        if (path.match(/\.(dmp|extra)$/) && !gUnexpectedCrashDumpFiles[path]) {
+        if (path.match(/\.(dmp|extra)$/) && !g.unexpectedCrashDumpFiles[path]) {
             if (!foundCrashDumpFile) {
-                ++gTestResults.UnexpectedFail;
+                ++g.testResults.UnexpectedFail;
                 foundCrashDumpFile = true;
-                logger.testEnd(gCurrentURL, "FAIL", "PASS", "This test left crash dumps behind, but we weren't expecting it to!");
+                if (g.currentURL) {
+                    logger.testStatus(g.urls[0].identifier, "crash-check", "FAIL", "PASS", "This test left crash dumps behind, but we weren't expecting it to!");
+                } else {
+                    logger.error("Harness startup left crash dumps behind, but we weren't expecting it to!");
+                }
             }
             logger.info("Found unexpected crash dump file " + path);
-            gUnexpectedCrashDumpFiles[path] = true;
+            g.unexpectedCrashDumpFiles[path] = true;
+        }
+    }
+}
+
+function RemovePendingCrashDumpFiles()
+{
+    if (!g.pendingCrashDumpDir.exists()) {
+        return;
+    }
+
+    let entries = g.pendingCrashDumpDir.directoryEntries;
+    while (entries.hasMoreElements()) {
+        let file = entries.nextFile;
+        if (file.isFile()) {
+          file.remove(false);
+          logger.info("This test left pending crash dumps; deleted "+file.path);
         }
     }
 }
@@ -1861,49 +1314,56 @@ function CleanUpCrashDumpFiles()
 {
     RemoveExpectedCrashDumpFiles();
     FindUnexpectedCrashDumpFiles();
-    gExpectingProcessCrash = false;
+    if (g.cleanupPendingCrashes) {
+      RemovePendingCrashDumpFiles();
+    }
+    g.expectingProcessCrash = false;
 }
 
 function FinishTestItem()
 {
+    logger.testEnd(g.urls[0].identifier, "OK");
+
     // Replace document with BLANK_URL_FOR_CLEARING in case there are
     // assertions when unloading.
     logger.debug("Loading a blank page");
     // After clearing, content will notify us of the assertion count
     // and tests will continue.
     SendClear();
-    gFailedNoPaint = false;
-    gFailedOpaqueLayer = false;
-    gFailedOpaqueLayerMessages = [];
-    gFailedAssignedLayer = false;
-    gFailedAssignedLayerMessages = [];
+    g.failedNoPaint = false;
+    g.failedNoDisplayList = false;
+    g.failedDisplayList = false;
+    g.failedOpaqueLayer = false;
+    g.failedOpaqueLayerMessages = [];
+    g.failedAssignedLayer = false;
+    g.failedAssignedLayerMessages = [];
 }
 
 function DoAssertionCheck(numAsserts)
 {
-    if (gDebug.isDebugBuild) {
-        if (gBrowserIsRemote) {
+    if (g.debug.isDebugBuild) {
+        if (g.browserIsRemote) {
             // Count chrome-process asserts too when content is out of
             // process.
-            var newAssertionCount = gDebug.assertionCount;
-            var numLocalAsserts = newAssertionCount - gAssertionCount;
-            gAssertionCount = newAssertionCount;
+            var newAssertionCount = g.debug.assertionCount;
+            var numLocalAsserts = newAssertionCount - g.assertionCount;
+            g.assertionCount = newAssertionCount;
 
             numAsserts += numLocalAsserts;
         }
 
-        var minAsserts = gURLs[0].minAsserts;
-        var maxAsserts = gURLs[0].maxAsserts;
+        var minAsserts = g.urls[0].minAsserts;
+        var maxAsserts = g.urls[0].maxAsserts;
 
-        logger.assertionCount(gCurrentURL, numAsserts, minAsserts, maxAsserts);
+        logger.assertionCount(g.urls[0].identifier, numAsserts, minAsserts, maxAsserts);
     }
 
-    if (gURLs[0].chaosMode) {
-        gWindowUtils.leaveChaosMode();
+    if (g.urls[0].chaosMode) {
+        g.windowUtils.leaveChaosMode();
     }
 
     // And start the next test.
-    gURLs.shift();
+    g.urls.shift();
     StartCurrentTest();
 }
 
@@ -1915,86 +1375,98 @@ function ResetRenderingState()
 
 function RestoreChangedPreferences()
 {
-    if (gPrefsToRestore.length > 0) {
-        var prefs = Components.classes["@mozilla.org/preferences-service;1"].
-                    getService(Components.interfaces.nsIPrefBranch);
-        gPrefsToRestore.reverse();
-        gPrefsToRestore.forEach(function(ps) {
+    if (g.prefsToRestore.length > 0) {
+        var prefs = Cc["@mozilla.org/preferences-service;1"].
+                    getService(Ci.nsIPrefBranch);
+        g.prefsToRestore.reverse();
+        g.prefsToRestore.forEach(function(ps) {
             var value = ps.value;
             if (ps.type == PREF_BOOLEAN) {
                 prefs.setBoolPref(ps.name, value);
             } else if (ps.type == PREF_STRING) {
-                prefs.setCharPref(ps.name, value);
+                prefs.setStringPref(ps.name, value);
                 value = '"' + value + '"';
             } else if (ps.type == PREF_INTEGER) {
                 prefs.setIntPref(ps.name, value);
             }
             logger.info("RESTORE PREFERENCE pref(" + ps.name + "," + value + ")");
         });
-        gPrefsToRestore = [];
+        g.prefsToRestore = [];
     }
 }
 
 function RegisterMessageListenersAndLoadContentScript()
 {
-    gBrowserMessageManager.addMessageListener(
+    g.browserMessageManager.addMessageListener(
         "reftest:AssertionCount",
         function (m) { RecvAssertionCount(m.json.count); }
     );
-    gBrowserMessageManager.addMessageListener(
+    g.browserMessageManager.addMessageListener(
         "reftest:ContentReady",
         function (m) { return RecvContentReady(m.data); }
     );
-    gBrowserMessageManager.addMessageListener(
+    g.browserMessageManager.addMessageListener(
         "reftest:Exception",
         function (m) { RecvException(m.json.what) }
     );
-    gBrowserMessageManager.addMessageListener(
+    g.browserMessageManager.addMessageListener(
         "reftest:FailedLoad",
         function (m) { RecvFailedLoad(m.json.why); }
     );
-    gBrowserMessageManager.addMessageListener(
+    g.browserMessageManager.addMessageListener(
         "reftest:FailedNoPaint",
         function (m) { RecvFailedNoPaint(); }
     );
-    gBrowserMessageManager.addMessageListener(
+    g.browserMessageManager.addMessageListener(
+        "reftest:FailedNoDisplayList",
+        function (m) { RecvFailedNoDisplayList(); }
+    );
+    g.browserMessageManager.addMessageListener(
+        "reftest:FailedDisplayList",
+        function (m) { RecvFailedDisplayList(); }
+    );
+    g.browserMessageManager.addMessageListener(
         "reftest:FailedOpaqueLayer",
         function (m) { RecvFailedOpaqueLayer(m.json.why); }
     );
-    gBrowserMessageManager.addMessageListener(
+    g.browserMessageManager.addMessageListener(
         "reftest:FailedAssignedLayer",
         function (m) { RecvFailedAssignedLayer(m.json.why); }
     );
-    gBrowserMessageManager.addMessageListener(
+    g.browserMessageManager.addMessageListener(
         "reftest:InitCanvasWithSnapshot",
         function (m) { return RecvInitCanvasWithSnapshot(); }
     );
-    gBrowserMessageManager.addMessageListener(
+    g.browserMessageManager.addMessageListener(
         "reftest:Log",
         function (m) { RecvLog(m.json.type, m.json.msg); }
     );
-    gBrowserMessageManager.addMessageListener(
+    g.browserMessageManager.addMessageListener(
         "reftest:ScriptResults",
         function (m) { RecvScriptResults(m.json.runtimeMs, m.json.error, m.json.results); }
     );
-    gBrowserMessageManager.addMessageListener(
+    g.browserMessageManager.addMessageListener(
+        "reftest:PrintResult",
+        function (m) { RecvPrintResult(m.json.runtimeMs, m.json.status, m.json.fileName); }
+    );
+    g.browserMessageManager.addMessageListener(
         "reftest:TestDone",
         function (m) { RecvTestDone(m.json.runtimeMs); }
     );
-    gBrowserMessageManager.addMessageListener(
+    g.browserMessageManager.addMessageListener(
         "reftest:UpdateCanvasForInvalidation",
         function (m) { RecvUpdateCanvasForInvalidation(m.json.rects); }
     );
-    gBrowserMessageManager.addMessageListener(
+    g.browserMessageManager.addMessageListener(
         "reftest:UpdateWholeCanvasForInvalidation",
         function (m) { RecvUpdateWholeCanvasForInvalidation(); }
     );
-    gBrowserMessageManager.addMessageListener(
+    g.browserMessageManager.addMessageListener(
         "reftest:ExpectProcessCrash",
         function (m) { RecvExpectProcessCrash(); }
     );
 
-    gBrowserMessageManager.loadFrameScript("chrome://reftest/content/reftest-content.js", true, true);
+    g.browserMessageManager.loadFrameScript("resource://reftest/reftest-content.js", true, true);
 }
 
 function RecvAssertionCount(count)
@@ -2004,15 +1476,15 @@ function RecvAssertionCount(count)
 
 function RecvContentReady(info)
 {
-    gContentGfxInfo = info.gfx;
+    g.contentGfxInfo = info.gfx;
     InitAndStartRefTests();
-    return { remote: gBrowserIsRemote };
+    return { remote: g.browserIsRemote };
 }
 
 function RecvException(what)
 {
-    logger.error(gCurrentURL + " | " + what);
-    ++gTestResults.Exception;
+    logger.error(g.currentURL + " | " + what);
+    ++g.testResults.Exception;
 }
 
 function RecvFailedLoad(why)
@@ -2022,17 +1494,27 @@ function RecvFailedLoad(why)
 
 function RecvFailedNoPaint()
 {
-    gFailedNoPaint = true;
+    g.failedNoPaint = true;
+}
+
+function RecvFailedNoDisplayList()
+{
+    g.failedNoDisplayList = true;
+}
+
+function RecvFailedDisplayList()
+{
+    g.failedDisplayList = true;
 }
 
 function RecvFailedOpaqueLayer(why) {
-    gFailedOpaqueLayer = true;
-    gFailedOpaqueLayerMessages.push(why);
+    g.failedOpaqueLayer = true;
+    g.failedOpaqueLayerMessages.push(why);
 }
 
 function RecvFailedAssignedLayer(why) {
-    gFailedAssignedLayer = true;
-    gFailedAssignedLayerMessages.push(why);
+    g.failedAssignedLayer = true;
+    g.failedAssignedLayerMessages.push(why);
 }
 
 function RecvInitCanvasWithSnapshot()
@@ -2049,14 +1531,23 @@ function RecvLog(type, msg)
     } else if (type == "warning") {
         logger.warning(msg);
     } else {
-        logger.error("REFTEST TEST-UNEXPECTED-FAIL | " + gCurrentURL + " | unknown log type " + type + "\n");
-        ++gTestResults.Exception;
+        logger.error("REFTEST TEST-UNEXPECTED-FAIL | " + g.currentURL + " | unknown log type " + type + "\n");
+        ++g.testResults.Exception;
     }
 }
 
 function RecvScriptResults(runtimeMs, error, results)
 {
     RecordResult(runtimeMs, error, results);
+}
+
+function RecvPrintResult(runtimeMs, status, fileName)
+{
+    if (!Components.isSuccessCode(status)) {
+      logger.error("REFTEST TEST-UNEXPECTED-FAIL | " + g.currentURL + " | error during printing\n");
+      ++g.testResults.Exception;
+    }
+    RecordResult(runtimeMs, '', fileName);
 }
 
 function RecvTestDone(runtimeMs)
@@ -2077,50 +1568,164 @@ function RecvUpdateWholeCanvasForInvalidation()
 function OnProcessCrashed(subject, topic, data)
 {
     var id;
-    subject = subject.QueryInterface(CI.nsIPropertyBag2);
+    subject = subject.QueryInterface(Ci.nsIPropertyBag2);
     if (topic == "plugin-crashed") {
         id = subject.getPropertyAsAString("pluginDumpID");
     } else if (topic == "ipc:content-shutdown") {
         id = subject.getPropertyAsAString("dumpID");
     }
     if (id) {
-        gExpectedCrashDumpFiles.push(id + ".dmp");
-        gExpectedCrashDumpFiles.push(id + ".extra");
+        g.expectedCrashDumpFiles.push(id + ".dmp");
+        g.expectedCrashDumpFiles.push(id + ".extra");
     }
 }
 
 function RegisterProcessCrashObservers()
 {
-    var os = CC[NS_OBSERVER_SERVICE_CONTRACTID]
-             .getService(CI.nsIObserverService);
-    os.addObserver(OnProcessCrashed, "plugin-crashed", false);
-    os.addObserver(OnProcessCrashed, "ipc:content-shutdown", false);
+    var os = Cc[NS_OBSERVER_SERVICE_CONTRACTID]
+             .getService(Ci.nsIObserverService);
+    os.addObserver(OnProcessCrashed, "plugin-crashed");
+    os.addObserver(OnProcessCrashed, "ipc:content-shutdown");
 }
 
 function RecvExpectProcessCrash()
 {
-    gExpectingProcessCrash = true;
+    g.expectingProcessCrash = true;
 }
 
 function SendClear()
 {
-    gBrowserMessageManager.sendAsyncMessage("reftest:Clear");
+    g.browserMessageManager.sendAsyncMessage("reftest:Clear");
 }
 
 function SendLoadScriptTest(uri, timeout)
 {
-    gBrowserMessageManager.sendAsyncMessage("reftest:LoadScriptTest",
+    g.browserMessageManager.sendAsyncMessage("reftest:LoadScriptTest",
                                             { uri: uri, timeout: timeout });
 }
 
-function SendLoadTest(type, uri, timeout)
+function SendLoadPrintTest(uri, timeout)
 {
-    gBrowserMessageManager.sendAsyncMessage("reftest:LoadTest",
-                                            { type: type, uri: uri, timeout: timeout }
+    g.browserMessageManager.sendAsyncMessage("reftest:LoadPrintTest",
+                                            { uri: uri, timeout: timeout });
+}
+
+function SendLoadTest(type, uri, uriTargetType, timeout)
+{
+    g.browserMessageManager.sendAsyncMessage("reftest:LoadTest",
+                                            { type: type, uri: uri,
+                                              uriTargetType: uriTargetType,
+                                              timeout: timeout }
     );
 }
 
 function SendResetRenderingState()
 {
-    gBrowserMessageManager.sendAsyncMessage("reftest:ResetRenderingState");
+    g.browserMessageManager.sendAsyncMessage("reftest:ResetRenderingState");
+}
+
+function readPdf(path, callback) {
+    OS.File.open(path, { read: true }).then(function (file) {
+        file.flush().then(function() {
+            file.read().then(function (data) {
+                let fakePort = new PDFJS.main.LoopbackPort(true);
+                PDFJS.worker.WorkerMessageHandler.initializeFromPort(fakePort);
+                let myWorker = new PDFJS.main.PDFWorker("worker", fakePort);
+                PDFJS.main.PDFJS.getDocument({
+                    worker: myWorker,
+                    data: data
+                }).then(function (pdf) {
+                    callback(null, pdf);
+                }, function () {
+                    callback(new Error("Couldn't parse " + path));
+                });
+                return;
+            }, function () {
+                callback(new Error("Couldn't read PDF"));
+            });
+        });
+    });
+}
+
+function comparePdfs(pathToTestPdf, pathToRefPdf, callback) {
+    Promise.all([pathToTestPdf, pathToRefPdf].map(function(path) {
+        return new Promise(function(resolve, reject) {
+            readPdf(path, function(error, pdf) {
+                // Resolve or reject outer promise. reject and resolve are
+                // passed to the callback function given as first arguments
+                // to the Promise constructor.
+                if (error) {
+                    reject(error);
+                } else {
+                    resolve(pdf);
+                }
+            });
+        });
+    })).then(function(pdfs) {
+        let numberOfPages = pdfs[1].numPages;
+        let sameNumberOfPages = numberOfPages === pdfs[0].numPages;
+
+        let resultPromises = [Promise.resolve({
+            passed: sameNumberOfPages,
+            description: "Expected number of pages: " + numberOfPages +
+                                             ", got " + pdfs[0].numPages
+        })];
+
+        if (sameNumberOfPages) {
+            for (let i = 0; i < numberOfPages; i++) {
+                let pageNum = i + 1;
+                let testPagePromise = pdfs[0].getPage(pageNum);
+                let refPagePromise = pdfs[1].getPage(pageNum);
+                resultPromises.push(new Promise(function(resolve, reject) {
+                    Promise.all([testPagePromise, refPagePromise]).then(function(pages) {
+                        let testTextPromise = pages[0].getTextContent();
+                        let refTextPromise = pages[1].getTextContent();
+                        Promise.all([testTextPromise, refTextPromise]).then(function(texts) {
+                            let testTextItems = texts[0].items;
+                            let refTextItems = texts[1].items;
+                            let testText;
+                            let refText;
+                            let passed = refTextItems.every(function(o, i) {
+                                refText = o.str;
+                                if (!testTextItems[i]) {
+                                    return false;
+                                }
+                                testText = testTextItems[i].str;
+                                return testText === refText;
+                            });
+                            let description;
+                            if (passed) {
+                                if (testTextItems.length > refTextItems.length) {
+                                    passed = false;
+                                    description = "Page " + pages[0].pageNumber +
+                                        " contains unexpected text like '" +
+                                        testTextItems[refTextItems.length].str + "'";
+                                } else {
+                                    description = "Page " + pages[0].pageNumber +
+                                        " contains same text"
+                                }
+                            } else {
+                                description = "Expected page " + pages[0].pageNumber +
+                                    " to contain text '" + refText;
+                                if (testText) {
+                                    description += "' but found '" + testText +
+                                        "' instead";
+                                }
+                            }
+                            resolve({
+                                passed: passed,
+                                description: description
+                            });
+                        }, reject);
+                    }, reject);
+                }));
+            }
+        }
+
+        Promise.all(resultPromises).then(function (results) {
+            callback(null, results);
+        });
+    }, function(error) {
+        callback(error);
+    });
 }

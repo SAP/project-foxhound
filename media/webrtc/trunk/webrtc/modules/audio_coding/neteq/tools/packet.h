@@ -8,20 +8,19 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_NETEQ_TOOLS_PACKET_H_
-#define WEBRTC_MODULES_AUDIO_CODING_NETEQ_TOOLS_PACKET_H_
+#ifndef MODULES_AUDIO_CODING_NETEQ_TOOLS_PACKET_H_
+#define MODULES_AUDIO_CODING_NETEQ_TOOLS_PACKET_H_
 
 #include <list>
+#include <memory>
 
-#include "webrtc/base/constructormagic.h"
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/common_types.h"
-#include "webrtc/typedefs.h"
+#include "common_types.h"  // NOLINT(build/include)
+#include "rtc_base/constructormagic.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
 class RtpHeaderParser;
-struct WebRtcRTPHeader;
 
 namespace test {
 
@@ -62,7 +61,7 @@ class Packet {
          size_t virtual_packet_length_bytes,
          double time_ms);
 
-  virtual ~Packet() {}
+  virtual ~Packet();
 
   // Parses the first bytes of the RTP payload, interpreting them as RED headers
   // according to RFC 2198. The headers will be inserted into |headers|. The
@@ -90,10 +89,6 @@ class Packet {
 
   const RTPHeader& header() const { return header_; }
 
-  // Copies the packet header information, converting from the native RTPHeader
-  // type to WebRtcRTPHeader.
-  void ConvertHeader(WebRtcRTPHeader* copy_to) const;
-
   void set_time_ms(double time) { time_ms_ = time; }
   double time_ms() const { return time_ms_; }
   bool valid_header() const { return valid_header_; }
@@ -103,7 +98,7 @@ class Packet {
   void CopyToHeader(RTPHeader* destination) const;
 
   RTPHeader header_;
-  rtc::scoped_ptr<uint8_t[]> payload_memory_;
+  std::unique_ptr<uint8_t[]> payload_memory_;
   const uint8_t* payload_;            // First byte after header.
   const size_t packet_length_bytes_;  // Total length of packet.
   size_t payload_length_bytes_;  // Length of the payload, after RTP header.
@@ -119,4 +114,4 @@ class Packet {
 
 }  // namespace test
 }  // namespace webrtc
-#endif  // WEBRTC_MODULES_AUDIO_CODING_NETEQ_TOOLS_PACKET_H_
+#endif  // MODULES_AUDIO_CODING_NETEQ_TOOLS_PACKET_H_

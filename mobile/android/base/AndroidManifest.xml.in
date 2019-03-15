@@ -1,8 +1,9 @@
 #filter substitution
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+      xmlns:tools="http://schemas.android.com/tools"
       package="@ANDROID_PACKAGE_NAME@"
-      android:installLocation="auto"
+      android:installLocation="internalOnly"
       android:versionCode="@ANDROID_VERSION_CODE@"
       android:versionName="@MOZ_APP_VERSION@"
 #ifdef MOZ_ANDROID_SHARED_ID
@@ -13,40 +14,31 @@
 #ifdef MOZ_ANDROID_MAX_SDK_VERSION
               android:maxSdkVersion="@MOZ_ANDROID_MAX_SDK_VERSION@"
 #endif
-              android:targetSdkVersion="23"/>
+              android:targetSdkVersion="@ANDROID_TARGET_SDK@"/>
 
-<!-- The bouncer APK and the main APK should define the same set of
-     <permission>, <uses-permission>, and <uses-feature> elements.  This reduces
-     the likelihood of permission-related surprises when installing the main APK
-     on top of a pre-installed bouncer APK.  Add such shared elements in the
-     fileincluded here, so that they can be referenced by both APKs. -->
+
+<!--
+    The separated permission file is for bouncer.apk. Since it's removed,
+     we can merge the permission declaration back. See Bug 1411809.
+ -->
 #include FennecManifest_permissions.xml.in
 
     <application android:label="@string/moz_app_displayname"
-                 android:icon="@drawable/icon"
+                 android:icon="@mipmap/ic_launcher"
                  android:logo="@drawable/logo"
                  android:name="@MOZ_ANDROID_APPLICATION_CLASS@"
                  android:hardwareAccelerated="true"
                  android:supportsRtl="true"
                  android:allowBackup="false"
-# The preprocessor does not yet support arbitrary parentheses, so this cannot
-# be parenthesized thus to clarify that the logical AND operator has precedence:
-#   !defined(MOZILLA_OFFICIAL) || (defined(NIGHTLY_BUILD) && defined(MOZ_DEBUG))
-#if !defined(MOZILLA_OFFICIAL) || defined(NIGHTLY_BUILD) && defined(MOZ_DEBUG)
-                 android:debuggable="true">
-#else
-                 android:debuggable="false">
-#endif
+                 android:usesCleartextTraffic="true"
+                 >
 
         <meta-data android:name="com.sec.android.support.multiwindow" android:value="true"/>
 
         <meta-data android:name="android.max_aspect" android:value="2.1"/>
 
 #ifdef MOZ_NATIVE_DEVICES
-        <!-- This resources comes from Google Play Services. Required for casting support. -->
-        <meta-data android:name="com.google.android.gms.version" android:value="@integer/google_play_services_version" />
         <service android:name="org.mozilla.gecko.RemotePresentationService" android:exported="false"/>
-
 #endif
 
         <!-- This activity handles all incoming Intents and dispatches them to other activities. -->
@@ -54,6 +46,7 @@
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
             android:relinquishTaskIdentity="true"
             android:taskAffinity=""
+            android:exported="true"
             android:excludeFromRecents="true" />
 
         <!-- Fennec is shipped as the Android package named
@@ -66,6 +59,8 @@
                   android:taskAffinity="@ANDROID_PACKAGE_NAME@.BROWSER"
                   android:alwaysRetainTaskState="true"
                   android:configChanges="keyboard|keyboardHidden|mcc|mnc|orientation|screenSize|locale|layoutDirection|smallestScreenSize|screenLayout"
+                  android:resizeableActivity="true"
+                  android:supportsPictureInPicture="true"
                   android:windowSoftInputMode="stateUnspecified|adjustResize"
                   android:launchMode="singleTask"
                   android:exported="true"
@@ -96,7 +91,7 @@
                 <data android:scheme="http" />
                 <data android:scheme="https" />
                 <data android:scheme="about" />
-                <data android:scheme="javascript" />
+                <data android:scheme="firefox" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
@@ -105,9 +100,11 @@
                 <data android:scheme="file" />
                 <data android:scheme="http" />
                 <data android:scheme="https" />
+                <data android:scheme="content" />
                 <data android:mimeType="text/html"/>
                 <data android:mimeType="text/plain"/>
                 <data android:mimeType="application/xhtml+xml"/>
+                <data android:mimeType="image/svg+xml"/>
             </intent-filter>
 
             <meta-data android:name="com.sec.minimode.icon.portrait.normal"
@@ -130,7 +127,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
 
-            <intent-filter>
+            <intent-filter tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.WEB_SEARCH" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
@@ -139,8 +136,24 @@
                 <data android:scheme="https" />
             </intent-filter>
 
-            <!-- For XPI installs from websites and the download manager. -->
             <intent-filter>
+                <action android:name="android.intent.action.ASSIST"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+
+            <!-- Pre Lollipop devices display a generic search icon, if none is
+                 provided here. To use this we need to set the resource to 0.
+                 For Lollipop and later the search launcher icon ist used.
+                 To retrieve the resource value the Bundle.getInt() method is
+                 used, so we use integer resources instead of drawables, because
+                 setting a drawable referenced to 0 results in errors when used
+                 as a real drawable resource somewhere else. -->
+            <meta-data
+                android:name="com.android.systemui.action_assist_icon"
+                android:resource="@integer/assist_launch_icon_res"/>
+
+            <!-- For XPI installs from websites and the download manager. -->
+            <intent-filter tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:scheme="file" />
@@ -150,7 +163,7 @@
             </intent-filter>
 
             <!-- For XPI installs from file: URLs. -->
-            <intent-filter>
+            <intent-filter tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:host="" />
@@ -174,17 +187,29 @@
             </intent-filter>
         </activity-alias>
 
-        <service android:name="org.mozilla.gecko.GeckoService" />
+        <service
+            android:name="org.mozilla.gecko.GeckoStarterService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE">
+        </service>
+
+        <service
+            android:name="org.mozilla.gecko.GeckoLoadLibsService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE">
+        </service>
+
+        <service
+            android:name="org.mozilla.gecko.GeckoServicesCreatorService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE">
+        </service>
 
         <activity android:name="org.mozilla.gecko.trackingprotection.TrackingProtectionPrompt"
                   android:launchMode="singleTop"
                   android:theme="@style/OverlayActivity" />
 
         <activity android:name="org.mozilla.gecko.promotion.SimpleHelperUI"
-                  android:launchMode="singleTop"
-                  android:theme="@style/OverlayActivity" />
-
-        <activity android:name="org.mozilla.gecko.promotion.HomeScreenPrompt"
                   android:launchMode="singleTop"
                   android:theme="@style/OverlayActivity" />
 
@@ -233,18 +258,15 @@
         </service>
 
         <service android:name="org.mozilla.gecko.media.MediaControlService"
-                 android:exported="false">
+                 android:exported="false"
+                 android:stopWithTask="true">
         </service>
-
-        <receiver android:name="org.mozilla.gecko.AlarmReceiver" >
-        </receiver>
 
         <receiver
             android:name="org.mozilla.gecko.notifications.WhatsNewReceiver"
             android:exported="false">
             <intent-filter>
-                <action android:name="android.intent.action.PACKAGE_REPLACED" />
-                <data android:scheme="package" android:path="org.mozilla.gecko" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
 
@@ -262,22 +284,22 @@
         </receiver>
 
 #include ../services/manifests/FxAccountAndroidManifest_activities.xml.in
-#ifdef MOZ_ANDROID_SEARCH_ACTIVITY
-#include ../search/manifests/SearchAndroidManifest_activities.xml.in
-#endif
 
-#if MOZ_CRASHREPORTER
-  <activity android:name="org.mozilla.gecko.CrashReporter"
-            android:process="@ANDROID_PACKAGE_NAME@.CrashReporter"
-            android:label="@string/crash_reporter_title"
-            android:icon="@drawable/crash_reporter"
-            android:theme="@style/Gecko"
+#ifdef MOZ_CRASHREPORTER
+        <activity android:name="org.mozilla.gecko.CrashReporterActivity"
+                  android:process="@ANDROID_PACKAGE_NAME@.CrashReporter"
+                  android:label="@string/crash_reporter_title"
+                  android:icon="@drawable/crash_reporter"
+                  android:theme="@style/Gecko"
+                  android:exported="false"
+                  android:excludeFromRecents="true">
+        </activity>
+
+        <service
+            android:name="org.mozilla.gecko.CrashHandlerService"
             android:exported="false"
-            android:excludeFromRecents="true">
-          <intent-filter>
-            <action android:name="org.mozilla.gecko.reportCrash" />
-          </intent-filter>
-  </activity>
+            android:process="@ANDROID_PACKAGE_NAME@.CrashHandler">
+        </service>
 #endif
 
         <activity android:name="org.mozilla.gecko.preferences.GeckoPreferences"
@@ -312,10 +334,19 @@
 
         </activity>
 
-#ifdef MOZ_ANDROID_CUSTOM_TABS
         <activity android:name="org.mozilla.gecko.customtabs.CustomTabsActivity"
+                  android:configChanges="keyboard|keyboardHidden|mcc|mnc|orientation|screenSize|locale|layoutDirection|smallestScreenSize|screenLayout"
+                  android:windowSoftInputMode="stateUnspecified|adjustResize"
+                  android:theme="@style/GeckoCustomTabs" />
+
+        <activity android:name="org.mozilla.gecko.webapps.WebAppActivity"
             android:theme="@style/Theme.AppCompat.NoActionBar" />
-#endif
+
+        <!-- Declare a predefined number of WebApp<num> activities. These are
+             used so that each web app can launch in its own activity. -->
+#define FRAGMENT WebAppManifestFragment.xml.frag.in
+#include WebAppFragmentRepeater.inc
+
 
         <!-- Service to handle requests from overlays. -->
         <service android:name="org.mozilla.gecko.overlays.service.OverlayActionService" />
@@ -359,11 +390,47 @@
                   android:authorities="@ANDROID_PACKAGE_NAME@.db.searchhistory"
                   android:exported="false"/>
 
+        <provider android:name="android.support.v4.content.FileProvider"
+                  android:authorities="@ANDROID_PACKAGE_NAME@.fileprovider"
+                  android:exported="false"
+                  android:grantUriPermissions="true">
+                  <meta-data android:name="android.support.FILE_PROVIDER_PATHS"
+                             android:resource="@xml/provider_paths" />
+        </provider>
+
         <service
             android:exported="false"
-            android:name="org.mozilla.gecko.updater.UpdateService"
-            android:process="@MANGLED_ANDROID_PACKAGE_NAME@.UpdateService">
+            android:name="org.mozilla.gecko.updater.UpdatesApplyService"
+            android:permission="android.permission.BIND_JOB_SERVICE" >
         </service>
+
+        <service
+            android:exported="false"
+            android:name="org.mozilla.gecko.updater.UpdatesCheckService"
+            android:permission="android.permission.BIND_JOB_SERVICE" >
+        </service>
+
+        <service
+            android:exported="false"
+            android:name="org.mozilla.gecko.updater.UpdatesDownloadService"
+            android:permission="android.permission.BIND_JOB_SERVICE" >
+         </service>
+
+        <service
+            android:exported="false"
+            android:name="org.mozilla.gecko.updater.UpdatesRegisterService"
+            android:permission="android.permission.BIND_JOB_SERVICE" >
+        </service>
+
+        <receiver
+            android:name="org.mozilla.gecko.updater.UpdateServiceReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="@ANDROID_PACKAGE_NAME@.CHECK_FOR_UPDATE"></action>
+                <action android:name="@ANDROID_PACKAGE_NAME@.APPLY_UPDATE"></action>
+                <action android:name="@ANDROID_PACKAGE_NAME@.DOWNLOAD_UPDATE"></action>
+            </intent-filter>
+        </receiver>
 
         <service
             android:exported="false"
@@ -372,31 +439,34 @@
 
         <service
             android:exported="false"
-            android:name="org.mozilla.gecko.dlc.DownloadContentService">
+            android:name="org.mozilla.gecko.dlc.DlcStudyService"
+            android:permission="android.permission.BIND_JOB_SERVICE" >
         </service>
 
         <service
             android:exported="false"
-            android:name="org.mozilla.gecko.feeds.FeedService">
+            android:name="org.mozilla.gecko.dlc.DlcSyncService"
+            android:permission="android.permission.BIND_JOB_SERVICE" >
+        </service>
+
+        <service
+            android:exported="false"
+            android:name="org.mozilla.gecko.dlc.DlcDownloadService"
+            android:permission="android.permission.BIND_JOB_SERVICE" >
+        </service>
+
+        <service
+            android:exported="false"
+            android:name="org.mozilla.gecko.dlc.DlcCleanupService"
+            android:permission="android.permission.BIND_JOB_SERVICE" >
         </service>
 
         <!-- DON'T EXPORT THIS, please! An attacker could delete arbitrary files. -->
         <service
             android:exported="false"
-            android:name="org.mozilla.gecko.cleanup.FileCleanupService">
+            android:name="org.mozilla.gecko.cleanup.FileCleanupService"
+            android:permission="android.permission.BIND_JOB_SERVICE" >
         </service>
-
-        <receiver
-            android:name="org.mozilla.gecko.feeds.FeedAlarmReceiver"
-            android:exported="false" />
-
-        <receiver
-            android:name="org.mozilla.gecko.BootReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED"></action>
-            </intent-filter>
-        </receiver>
 
         <receiver
             android:name="org.mozilla.gecko.PackageReplacedReceiver"
@@ -408,9 +478,9 @@
 
         <service
           android:name="org.mozilla.gecko.telemetry.TelemetryUploadService"
+          android:permission="android.permission.BIND_JOB_SERVICE"
           android:exported="false"/>
 
-#ifdef MOZ_ANDROID_CUSTOM_TABS
         <service
             android:name="org.mozilla.gecko.customtabs.GeckoCustomTabsService"
             android:exported="true">
@@ -418,18 +488,15 @@
                 <action android:name="android.support.customtabs.action.CustomTabsService" />
             </intent-filter>
         </service>
-#endif
 
 #include ../services/manifests/FxAccountAndroidManifest_services.xml.in
 
         <service
             android:name="org.mozilla.gecko.tabqueue.TabReceivedService"
+            android:permission="android.permission.BIND_JOB_SERVICE"
             android:exported="false" />
 
 
-#ifdef MOZ_ANDROID_SEARCH_ACTIVITY
-#include ../search/manifests/SearchAndroidManifest_services.xml.in
-#endif
 #ifdef MOZ_ANDROID_MLS_STUMBLER
 #include ../stumbler/manifests/StumblerManifest_services.xml.in
 #endif
@@ -448,10 +515,10 @@
 
         <!-- New child services must also be added to the GeckoView AndroidManifest.xml -->
         <service
-            android:name="org.mozilla.gecko.process.GeckoServiceChildProcess$geckomediaplugin"
+            android:name="org.mozilla.gecko.process.GeckoServiceChildProcess$gmplugin"
             android:enabled="true"
             android:exported="false"
-            android:process=":geckomediaplugin"
+            android:process=":gmplugin"
             android:isolatedProcess="false">
         </service>
 
@@ -462,6 +529,22 @@
             android:process=":tab"
             android:isolatedProcess="false">
         </service>
+
+        <service
+            android:name="org.mozilla.gecko.gfx.SurfaceAllocatorService"
+            android:enabled="true"
+            android:exported="false"
+            android:isolatedProcess="false">
+        </service>
+
+#ifdef MOZ_ANDROID_MMA
+#include MmaAndroidManifest_services.xml.in
+#endif
+
+#ifdef MOZ_ANDROID_GOOGLE_PLAY_SERVICES
+        <!-- This resources comes from Google Play Services. Required for casting support. -->
+        <meta-data android:name="com.google.android.gms.version" android:value="@integer/google_play_services_version" />
+#endif
 
     </application>
 </manifest>

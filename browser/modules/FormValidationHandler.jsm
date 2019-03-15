@@ -8,13 +8,7 @@
 
 "use strict";
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cu = Components.utils;
-
-this.EXPORTED_SYMBOLS = [ "FormValidationHandler" ];
-
-Cu.import("resource://gre/modules/Services.jsm");
+var EXPORTED_SYMBOLS = [ "FormValidationHandler" ];
 
 var FormValidationHandler =
 {
@@ -25,16 +19,7 @@ var FormValidationHandler =
    * Public apis
    */
 
-  init() {
-    let mm = Cc["@mozilla.org/globalmessagemanager;1"].getService(Ci.nsIMessageListenerManager);
-    mm.addMessageListener("FormValidation:ShowPopup", this);
-    mm.addMessageListener("FormValidation:HidePopup", this);
-  },
-
   uninit() {
-    let mm = Cc["@mozilla.org/globalmessagemanager;1"].getService(Ci.nsIMessageListenerManager);
-    mm.removeMessageListener("FormValidation:ShowPopup", this);
-    mm.removeMessageListener("FormValidation:HidePopup", this);
     this._panel = null;
     this._anchor = null;
   },
@@ -47,6 +32,7 @@ var FormValidationHandler =
    * Events
    */
 
+  // Listeners are added in nsBrowserGlue.js
   receiveMessage(aMessage) {
     let window = aMessage.target.ownerGlobal;
     let json = aMessage.json;
@@ -90,7 +76,7 @@ var FormValidationHandler =
 
   _onPopupHiding(aEvent) {
     aEvent.originalTarget.removeEventListener("popuphiding", this, true);
-    let tabBrowser = aEvent.originalTarget.ownerDocument.getElementById("content");
+    let tabBrowser = aEvent.originalTarget.ownerGlobal.gBrowser;
     tabBrowser.selectedBrowser.removeEventListener("scroll", this, true);
     tabBrowser.selectedBrowser.removeEventListener("FullZoomChange", this);
     tabBrowser.selectedBrowser.removeEventListener("TextZoomChange", this);
@@ -153,5 +139,5 @@ var FormValidationHandler =
     if (this._panel) {
       this._panel.hidePopup();
     }
-  }
+  },
 };

@@ -18,7 +18,6 @@ import os
 import pprint
 import sys
 import time
-from urlparse import urlparse
 try:
     import simplejson as json
     assert json
@@ -29,10 +28,28 @@ sys.path.insert(1, os.path.dirname(sys.path[0]))
 
 from mozharness.base.errors import HgErrorList
 from mozharness.base.vcs.vcsbase import VCSScript
-from mozharness.base.log import ERROR, FATAL
+from mozharness.base.log import FATAL
 
 
 class L10nBumper(VCSScript):
+    config_options = [[
+        ['--ignore-closed-tree', ],
+        {
+            "action": "store_true",
+            "dest": "ignore_closed_tree",
+            "default": False,
+            "help": "Bump l10n changesets on a closed tree."
+        }
+    ], [
+        ['--build', ],
+        {
+            "action": "store_false",
+            "dest": "dontbuild",
+            "default": True,
+            "help": "Trigger new builds on push."
+        }
+    ]]
+
     def __init__(self, require_config_file=True):
         super(L10nBumper, self).__init__(
             all_actions=[
@@ -47,6 +64,7 @@ class L10nBumper(VCSScript):
                 'push-loop',
             ],
             require_config_file=require_config_file,
+            config_options=self.config_options,
             # Default config options
             config={
                 'treestatus_base_url': 'https://treestatus.mozilla-releng.net',
@@ -81,7 +99,7 @@ class L10nBumper(VCSScript):
         cmd = hg + ['add', path]
         self.run_command(cmd, cwd=repo_path, env=env)
         cmd = hg + ['commit', '-u', user, '-m', message]
-        status = self.run_command(cmd, cwd=repo_path, env=env)
+        self.run_command(cmd, cwd=repo_path, env=env)
 
     def hg_push(self, repo_path):
         hg = self.query_exe('hg', return_type='list')
@@ -89,6 +107,7 @@ class L10nBumper(VCSScript):
                         "ssh -oIdentityFile=%s -l %s" % (
                             self.config["ssh_key"], self.config["ssh_user"],
                         ),
+                        "-r", ".",
                         self.config["gecko_push_url"]]
         status = self.run_command(command, cwd=repo_path,
                                   error_list=HgErrorList)
@@ -123,7 +142,7 @@ class L10nBumper(VCSScript):
         for key in old_contents:
             if key not in new_contents:
                 locale_map[key] = "removed"
-        for k,v in new_contents.items():
+        for k, v in new_contents.items():
             if old_contents.get(k, {}).get('revision') != v['revision']:
                 locale_map[k] = v['revision']
             elif old_contents.get(k, {}).get('platforms') != v['platforms']:
@@ -134,14 +153,22 @@ class L10nBumper(VCSScript):
         dirs = self.query_abs_dirs()
         repo_path = dirs['gecko_local_dir']
         platform_dict = {}
+        ignore_config = bump_config.get('ignore_config', {})
         for platform_config in bump_config['platform_configs']:
             path = os.path.join(repo_path, platform_config['path'])
             self.info("Reading %s for %s locales..." % (path, platform_config['platforms']))
             contents = self.read_from_file(path)
             for locale in contents.splitlines():
-                platforms = platform_dict.get(locale, {}).get('platforms', [])
-                platforms = sorted(list(platform_config['platforms']) + platforms)
-                platform_dict[locale] = {'platforms': platforms}
+                # locale is 1st word in line in shipped-locales
+                if platform_config.get('format') == 'shipped-locales':
+                    locale = locale.split(' ')[0]
+                existing_platforms = set(platform_dict.get(locale, {}).get('platforms', []))
+                platforms = set(platform_config['platforms'])
+                ignore_platforms = set(ignore_config.get(locale, []))
+                platforms = (platforms | existing_platforms) - ignore_platforms
+                platform_dict[locale] = {
+                    'platforms': sorted(list(platforms))
+                }
         self.info("Built platform_dict:\n%s" % pprint.pformat(platform_dict))
         return platform_dict
 
@@ -171,13 +198,15 @@ class L10nBumper(VCSScript):
         return revision_dict
 
     def build_commit_message(self, name, locale_map):
-        revisions = []
         comments = ''
+        approval_str = 'r=release a=l10n-bump'
         for locale, revision in sorted(locale_map.items()):
             comments += "%s -> %s\n" % (locale, revision)
-        message = 'Bumping %s a=l10n-bump\n\n' % (
-            name,
-        )
+        if self.config['dontbuild']:
+            approval_str += " DONTBUILD"
+        if self.config['ignore_closed_tree']:
+            approval_str += " CLOSED TREE"
+        message = 'no bug - Bumping %s %s\n\n' % (name, approval_str)
         message += comments
         message = message.encode("utf-8")
         return message
@@ -193,18 +222,20 @@ class L10nBumper(VCSScript):
             self.mkdir_p(dirs['abs_work_dir'])
         self.rmtree(treestatus_json)
 
-        self.run_command(["curl", "--retry", "4", "-o", treestatus_json, treestatus_url], throw_exception=True)
+        self.run_command(["curl", "--retry", "4", "-o", treestatus_json, treestatus_url],
+                         throw_exception=True)
 
         treestatus = self._read_json(treestatus_json)
         if treestatus['result']['status'] != 'closed':
-            self.info("treestatus is %s - assuming we can land" % repr(treestatus['result']['status']))
+            self.info("treestatus is %s - assuming we can land" %
+                      repr(treestatus['result']['status']))
             return True
 
         return False
 
     # Actions {{{1
     def check_treestatus(self):
-        if not self.query_treestatus():
+        if not self.config['ignore_closed_tree'] and not self.query_treestatus():
             self.info("breaking early since treestatus is closed")
             sys.exit(0)
 
@@ -246,7 +277,10 @@ class L10nBumper(VCSScript):
                 continue
 
             # Write to disk
-            content_string = json.dumps(new_contents, sort_keys=True, indent=4)
+            content_string = json.dumps(
+                new_contents, sort_keys=True, indent=4,
+                separators=(',', ': '),
+            )
             fh = codecs.open(path, encoding='utf-8', mode='w+')
             fh.write(content_string + "\n")
             fh.close()
@@ -269,7 +303,7 @@ class L10nBumper(VCSScript):
         max_retries = 5
         for _ in range(max_retries):
             changed = False
-            if not self.query_treestatus():
+            if not self.config['ignore_closed_tree'] and not self.query_treestatus():
                 # Tree is closed; exit early to avoid a bunch of wasted time
                 self.info("breaking early since treestatus is closed")
                 break
@@ -299,6 +333,11 @@ class L10nBumper(VCSScript):
             time.sleep(60)
         else:
             self.fatal("Didn't complete successfully (hit max_retries)")
+
+        # touch status file for nagios
+        dirs = self.query_abs_dirs()
+        status_path = os.path.join(dirs['base_work_dir'], self.config['status_path'])
+        self._touch_file(status_path)
 
 
 # __main__ {{{1

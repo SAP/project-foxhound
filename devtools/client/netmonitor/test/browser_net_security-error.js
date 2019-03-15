@@ -7,55 +7,31 @@
  * Test that Security details tab shows an error message with broken connections.
  */
 
-add_task(function* () {
-  let { tab, monitor } = yield initNetMonitor(CUSTOM_GET_URL);
-  let { document, gStore, windowRequire } = monitor.panelWin;
-  let Actions = windowRequire("devtools/client/netmonitor/actions/index");
-  let { EVENTS } = windowRequire("devtools/client/netmonitor/constants");
+add_task(async function() {
+  const { tab, monitor } = await initNetMonitor(CUSTOM_GET_URL);
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
 
-  gStore.dispatch(Actions.batchEnable(false));
+  store.dispatch(Actions.batchEnable(false));
 
   info("Requesting a resource that has a certificate problem.");
 
-  let wait = waitForSecurityBrokenNetworkEvent();
-  yield ContentTask.spawn(tab.linkedBrowser, {}, function* () {
+  const requestsDone = waitForNetworkEvents(monitor, 1);
+  await ContentTask.spawn(tab.linkedBrowser, {}, async function() {
     content.wrappedJSObject.performRequests(1, "https://nocert.example.com");
   });
-  yield wait;
+  await requestsDone;
 
-  wait = waitForDOM(document, "#security-panel");
-  EventUtils.sendMouseEvent({ type: "click" },
-    document.querySelector(".network-details-panel-toggle"));
+  const securityInfoLoaded = waitForDOM(document, ".security-info-value");
+  store.dispatch(Actions.toggleNetworkDetails());
+
+  await waitUntil(() => document.querySelector("#security-tab"));
   EventUtils.sendMouseEvent({ type: "click" },
     document.querySelector("#security-tab"));
-  yield wait;
+  await securityInfoLoaded;
 
-  let errormsg = document.querySelector(".security-info-value");
+  const errormsg = document.querySelector(".security-info-value");
   isnot(errormsg.textContent, "", "Error message is not empty.");
 
   return teardown(monitor);
-
-  /**
-   * Returns a promise that's resolved once a request with security issues is
-   * completed.
-   */
-  function waitForSecurityBrokenNetworkEvent() {
-    let awaitedEvents = [
-      "UPDATING_REQUEST_HEADERS",
-      "RECEIVED_REQUEST_HEADERS",
-      "UPDATING_REQUEST_COOKIES",
-      "RECEIVED_REQUEST_COOKIES",
-      "STARTED_RECEIVING_RESPONSE",
-      "UPDATING_RESPONSE_CONTENT",
-      "RECEIVED_RESPONSE_CONTENT",
-      "UPDATING_EVENT_TIMINGS",
-      "RECEIVED_EVENT_TIMINGS",
-    ];
-
-    let promises = awaitedEvents.map((event) => {
-      return monitor.panelWin.once(EVENTS[event]);
-    });
-
-    return Promise.all(promises);
-  }
 });

@@ -8,141 +8,136 @@
 
 /* exported ObjectClient, attachConsole, attachConsoleToTab, attachConsoleToWorker,
    closeDebugger, checkConsoleAPICalls, checkRawHeaders, runTests, nextTest, Ci, Cc,
-   withActiveServiceWorker, Services */
+   withActiveServiceWorker, Services, consoleAPICall */
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
-// This gives logging to stdout for tests
-const {console} = Cu.import("resource://gre/modules/Console.jsm", {});
-const {require} = Cu.import("resource://devtools/shared/Loader.jsm", {});
-const {Task} = require("devtools/shared/task");
+const {require} = ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
 const {DebuggerServer} = require("devtools/server/main");
-const {DebuggerClient, ObjectClient} = require("devtools/shared/client/main");
+const {DebuggerClient} = require("devtools/shared/client/debugger-client");
+const ObjectClient = require("devtools/shared/client/object-client");
 const Services = require("Services");
+const {TargetFactory} = require("devtools/client/framework/target");
 
 function initCommon() {
   // Services.prefs.setBoolPref("devtools.debugger.log", true);
 }
 
 function initDebuggerServer() {
-  if (!DebuggerServer.initialized) {
-    DebuggerServer.init();
-    DebuggerServer.addBrowserActors();
-  }
+  DebuggerServer.init();
+  DebuggerServer.registerAllActors();
   DebuggerServer.allowChromeProcess = true;
 }
 
-function connectToDebugger() {
+async function connectToDebugger() {
   initCommon();
   initDebuggerServer();
 
-  let transport = DebuggerServer.connectPipe();
-  let client = new DebuggerClient(transport);
+  const transport = DebuggerServer.connectPipe();
+  const client = new DebuggerClient(transport);
 
-  let dbgState = { dbgClient: client };
-  return new Promise(resolve => {
-    client.connect().then(response => resolve([dbgState, response]));
-  });
+  await client.connect();
+  return client;
 }
 
-function attachConsole(listeners, callback) {
-  _attachConsole(listeners, callback);
+async function attachConsole(listeners, callback) {
+  const { state, response } = await _attachConsole(listeners);
+  callback(state, response);
 }
-function attachConsoleToTab(listeners, callback) {
-  _attachConsole(listeners, callback, true);
+async function attachConsoleToTab(listeners, callback) {
+  const { state, response } = await _attachConsole(listeners, true);
+  callback(state, response);
 }
-function attachConsoleToWorker(listeners, callback) {
-  _attachConsole(listeners, callback, true, true);
+async function attachConsoleToWorker(listeners, callback) {
+  const { state, response } = await _attachConsole(listeners, true, true);
+  callback(state, response);
 }
 
-var _attachConsole = Task.async(function* (
-  listeners, callback, attachToTab, attachToWorker
+var _attachConsole = async function(
+  listeners, attachToTab, attachToWorker
 ) {
-  function _onAttachConsole(state, response, webConsoleClient) {
-    if (response.error) {
-      console.error("attachConsole failed: " + response.error + " " +
-                    response.message);
+  try {
+    const client = await connectToDebugger();
+
+    function waitForMessage(target) {
+      return new Promise(resolve => {
+        target.addEventListener("message", resolve, { once: true });
+      });
     }
 
-    state.client = webConsoleClient;
+    // Fetch the console actor out of the expected target
+    // ParentProcessTarget / WorkerTarget / FrameTarget
+    let target, worker;
+    if (!attachToTab) {
+      const front = await client.mainRoot.getMainProcess();
+      target = await TargetFactory.forRemoteTab({
+        client,
+        activeTab: front,
+        chrome: true,
+      });
+    } else {
+      const targetFront = await client.mainRoot.getTab();
+      target = await TargetFactory.forRemoteTab({
+        client,
+        activeTab: targetFront,
+      });
+      if (attachToWorker) {
+        const workerName = "console-test-worker.js#" + new Date().getTime();
+        worker = new Worker(workerName);
+        await waitForMessage(worker);
 
-    callback(state, response);
-  }
-
-  function waitForMessage(target) {
-    return new Promise(resolve => {
-      target.addEventListener("message", resolve, { once: true });
-    });
-  }
-
-  let [state, response] = yield connectToDebugger();
-  if (response.error) {
-    console.error("client.connect() failed: " + response.error + " " +
-                  response.message);
-    callback(state, response);
-    return;
-  }
-
-  if (!attachToTab) {
-    response = yield state.dbgClient.getProcess();
-    yield state.dbgClient.attachTab(response.form.actor);
-    let consoleActor = response.form.consoleActor;
-    state.actor = consoleActor;
-    state.dbgClient.attachConsole(consoleActor, listeners,
-                                  _onAttachConsole.bind(null, state));
-    return;
-  }
-  response = yield state.dbgClient.listTabs();
-  if (response.error) {
-    console.error("listTabs failed: " + response.error + " " +
-                  response.message);
-    callback(state, response);
-    return;
-  }
-  let tab = response.tabs[response.selected];
-  let [, tabClient] = yield state.dbgClient.attachTab(tab.actor);
-  if (attachToWorker) {
-    let workerName = "console-test-worker.js#" + new Date().getTime();
-    let worker = new Worker(workerName);
-    // Keep a strong reference to the Worker to avoid it being
-    // GCd during the test (bug 1237492).
-    // eslint-disable-next-line camelcase
-    state._worker_ref = worker;
-    yield waitForMessage(worker);
-
-    let { workers } = yield tabClient.listWorkers();
-    let workerActor = workers.filter(w => w.url == workerName)[0].actor;
-    if (!workerActor) {
-      console.error("listWorkers failed. Unable to find the " +
-                    "worker actor\n");
-      return;
+        const { workers } = await target.activeTab.listWorkers();
+        const workerTargetFront = workers.filter(w => w.url == workerName)[0];
+        if (!workerTargetFront) {
+          console.error("listWorkers failed. Unable to find the worker actor\n");
+          return null;
+        }
+        target = await TargetFactory.forRemoteTab({
+          client,
+          activeTab: workerTargetFront,
+        });
+      }
     }
-    let [workerResponse, workerClient] = yield tabClient.attachWorker(workerActor);
-    if (!workerClient || workerResponse.error) {
-      console.error("attachWorker failed. No worker client or " +
-                    " error: " + workerResponse.error);
-      return;
-    }
-    yield workerClient.attachThread({});
-    state.actor = workerClient.consoleActor;
-    state.dbgClient.attachConsole(workerClient.consoleActor, listeners,
-                                  _onAttachConsole.bind(null, state));
-  } else {
-    state.actor = tab.consoleActor;
-    state.dbgClient.attachConsole(tab.consoleActor, listeners,
-                                   _onAttachConsole.bind(null, state));
+
+    // Attach the Target in order to instantiate the console client
+    await target.attach();
+    const webConsoleClient = target.activeConsole;
+    // By default the console isn't listening for anything,
+    // request listeners from here
+    const response = await webConsoleClient.startListeners(listeners);
+    return {
+      state: {
+        dbgClient: client,
+        client: webConsoleClient,
+        actor: webConsoleClient.actor,
+        // Keep a strong reference to the Worker to avoid it being
+        // GCd during the test (bug 1237492).
+        // eslint-disable-next-line camelcase
+        _worker_ref: worker,
+      },
+      response,
+    };
+  } catch (error) {
+    console.error(`attachConsole failed: ${error.error} ${error.message} - ` +
+                  error.stack);
   }
-});
+  return null;
+};
 
 function closeDebugger(state, callback) {
-  state.dbgClient.close().then(callback);
+  const onClose = state.dbgClient.close();
+
   state.dbgClient = null;
   state.client = null;
+
+  if (typeof callback === "function") {
+    onClose.then(callback);
+  }
+  return onClose;
 }
 
 function checkConsoleAPICalls(consoleCalls, expectedConsoleCalls) {
   is(consoleCalls.length, expectedConsoleCalls.length,
     "received correct number of console calls");
-  expectedConsoleCalls.forEach(function (message, index) {
+  expectedConsoleCalls.forEach(function(message, index) {
     info("checking received console call #" + index);
     checkConsoleAPICall(consoleCalls[index], expectedConsoleCalls[index]);
   });
@@ -158,9 +153,9 @@ function checkConsoleAPICall(call, expected) {
 }
 
 function checkObject(object, expected) {
-  for (let name of Object.keys(expected)) {
-    let expectedValue = expected[name];
-    let value = object[name];
+  for (const name of Object.keys(expected)) {
+    const expectedValue = expected[name];
+    const value = object[name];
     checkValue(name, value, expectedValue);
   }
 }
@@ -187,9 +182,9 @@ function checkValue(name, value, expected) {
 }
 
 function checkHeadersOrCookies(array, expected) {
-  let foundHeaders = {};
+  const foundHeaders = {};
 
-  for (let elem of array) {
+  for (const elem of array) {
     if (!(elem.name in expected)) {
       continue;
     }
@@ -198,7 +193,7 @@ function checkHeadersOrCookies(array, expected) {
     checkValue(elem.name, elem.value, expected[elem.name]);
   }
 
-  for (let header in expected) {
+  for (const header in expected) {
     if (!(header in foundHeaders)) {
       ok(false, header + " was not found");
     }
@@ -206,16 +201,16 @@ function checkHeadersOrCookies(array, expected) {
 }
 
 function checkRawHeaders(text, expected) {
-  let headers = text.split(/\r\n|\n|\r/);
-  let arr = [];
-  for (let header of headers) {
-    let index = header.indexOf(": ");
+  const headers = text.split(/\r\n|\n|\r/);
+  const arr = [];
+  for (const header of headers) {
+    const index = header.indexOf(": ");
     if (index < 0) {
       continue;
     }
     arr.push({
       name: header.substr(0, index),
-      value: header.substr(index + 2)
+      value: header.substr(index + 2),
     });
   }
 
@@ -229,7 +224,7 @@ function runTests(tests, endCallback) {
     let lastResult, sendToNext;
     for (let i = 0; i < tests.length; i++) {
       gTestState.index = i;
-      let fn = tests[i];
+      const fn = tests[i];
       info("will run test #" + i + ": " + fn.name);
       lastResult = fn(sendToNext, lastResult);
       sendToNext = yield lastResult;
@@ -245,7 +240,7 @@ function nextTest(message) {
 }
 
 function withActiveServiceWorker(win, url, scope) {
-  let opts = {};
+  const opts = {};
   if (scope) {
     opts.scope = scope;
   }
@@ -259,7 +254,7 @@ function withActiveServiceWorker(win, url, scope) {
     // then the ready promise will never resolve.  Instead monitor the service
     // workers state change events to determine when its activated.
     return new Promise(resolve => {
-      let sw = swr.waiting || swr.installing;
+      const sw = swr.waiting || swr.installing;
       sw.addEventListener("statechange", function stateHandler(evt) {
         if (sw.state === "activated") {
           sw.removeEventListener("statechange", stateHandler);
@@ -268,4 +263,18 @@ function withActiveServiceWorker(win, url, scope) {
       });
     });
   });
+}
+
+/**
+ *
+ * @param {DebuggerClient} debuggerClient
+ * @param {Function} consoleCall: A function which calls the consoleAPI, e.g. :
+ *                         `() => top.console.log("test")`.
+ * @returns {Promise} A promise that will be resolved with the packet sent by the server
+ *                    in response to the consoleAPI call.
+ */
+function consoleAPICall(debuggerClient, consoleCall) {
+  const onConsoleAPICall = debuggerClient.addOneTimeListener("consoleAPICall");
+  consoleCall();
+  return onConsoleAPICall;
 }

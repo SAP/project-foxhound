@@ -6,7 +6,7 @@
   <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/paint_listener.js"></script>
   <script type="application/javascript" src="plugin-utils.js"></script>
   <script type="application/javascript">
-  Components.utils.import("resource://gre/modules/Services.jsm");
+  ChromeUtils.import("resource://gre/modules/Services.jsm");
   Services.prefs.setBoolPref("plugins.click_to_play", true);
   setTestPluginEnabledState(SpecialPowers.Ci.nsIPluginTag.STATE_CLICKTOPLAY);
   </script>
@@ -19,9 +19,7 @@
 
   SimpleTest.waitForExplicitFinish();
 
-  const Ci = Components.interfaces;
-  const utils = window.QueryInterface(Ci.nsIInterfaceRequestor).
-                                    getInterface(Ci.nsIDOMWindowUtils);
+  const utils = window.windowUtils;
 
   function go() {
     var plugin = document.getElementById('plugin');

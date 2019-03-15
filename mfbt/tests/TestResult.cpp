@@ -7,13 +7,12 @@
 #include <string.h>
 #include "mozilla/Result.h"
 
+using mozilla::Err;
 using mozilla::GenericErrorResult;
-using mozilla::MakeGenericErrorResult;
 using mozilla::Ok;
 using mozilla::Result;
 
-struct Failed
-{
+struct Failed {
   int x;
 };
 
@@ -21,10 +20,12 @@ static_assert(sizeof(Result<Ok, Failed&>) == sizeof(uintptr_t),
               "Result with empty value type should be pointer-sized");
 static_assert(sizeof(Result<int*, Failed&>) == sizeof(uintptr_t),
               "Result with two aligned pointer types should be pointer-sized");
-static_assert(sizeof(Result<char*, Failed*>) > sizeof(char*),
-              "Result with unaligned success type `char*` must not be pointer-sized");
-static_assert(sizeof(Result<int*, char*>) > sizeof(char*),
-              "Result with unaligned error type `char*` must not be pointer-sized");
+static_assert(
+    sizeof(Result<char*, Failed*>) > sizeof(char*),
+    "Result with unaligned success type `char*` must not be pointer-sized");
+static_assert(
+    sizeof(Result<int*, char*>) > sizeof(char*),
+    "Result with unaligned error type `char*` must not be pointer-sized");
 
 enum Foo8 : uint8_t {};
 enum Foo16 : uint16_t {};
@@ -34,7 +35,7 @@ static_assert(sizeof(Result<Ok, Foo8>) <= sizeof(uintptr_t),
 static_assert(sizeof(Result<Ok, Foo16>) <= sizeof(uintptr_t),
               "Result with small types should be pointer-sized");
 static_assert(sizeof(Foo32) >= sizeof(uintptr_t) ||
-              sizeof(Result<Ok, Foo32>) <= sizeof(uintptr_t),
+                  sizeof(Result<Ok, Foo32>) <= sizeof(uintptr_t),
               "Result with small types should be pointer-sized");
 
 static_assert(sizeof(Result<Foo16, Foo8>) <= sizeof(uintptr_t),
@@ -42,47 +43,38 @@ static_assert(sizeof(Result<Foo16, Foo8>) <= sizeof(uintptr_t),
 static_assert(sizeof(Result<Foo8, Foo16>) <= sizeof(uintptr_t),
               "Result with small types should be pointer-sized");
 static_assert(sizeof(Foo32) >= sizeof(uintptr_t) ||
-              sizeof(Result<Foo32, Foo16>) <= sizeof(uintptr_t),
+                  sizeof(Result<Foo32, Foo16>) <= sizeof(uintptr_t),
               "Result with small types should be pointer-sized");
 static_assert(sizeof(Foo32) >= sizeof(uintptr_t) ||
-              sizeof(Result<Foo16, Foo32>) <= sizeof(uintptr_t),
+                  sizeof(Result<Foo16, Foo32>) <= sizeof(uintptr_t),
               "Result with small types should be pointer-sized");
 
-static GenericErrorResult<Failed&>
-Fail()
-{
+static GenericErrorResult<Failed&> Fail() {
   static Failed failed;
-  return MakeGenericErrorResult<Failed&>(failed);
+  return Err<Failed&>(failed);
 }
 
-static Result<Ok, Failed&>
-Task1(bool pass)
-{
+static Result<Ok, Failed&> Task1(bool pass) {
   if (!pass) {
     return Fail();  // implicit conversion from GenericErrorResult to Result
   }
   return Ok();
 }
 
-static Result<int, Failed&>
-Task2(bool pass, int value)
-{
-  MOZ_TRY(Task1(pass)); // converts one type of result to another in the error case
-  return value;  // implicit conversion from T to Result<T, E>
+static Result<int, Failed&> Task2(bool pass, int value) {
+  MOZ_TRY(
+      Task1(pass));  // converts one type of result to another in the error case
+  return value;      // implicit conversion from T to Result<T, E>
 }
 
-static Result<int, Failed&>
-Task3(bool pass1, bool pass2, int value)
-{
+static Result<int, Failed&> Task3(bool pass1, bool pass2, int value) {
   int x, y;
   MOZ_TRY_VAR(x, Task2(pass1, value));
   MOZ_TRY_VAR(y, Task2(pass2, value));
   return x + y;
 }
 
-static void
-BasicTests()
-{
+static void BasicTests() {
   MOZ_RELEASE_ASSERT(Task1(true).isOk());
   MOZ_RELEASE_ASSERT(!Task1(true).isErr());
   MOZ_RELEASE_ASSERT(!Task1(false).isOk());
@@ -91,13 +83,16 @@ BasicTests()
   // MOZ_TRY works.
   MOZ_RELEASE_ASSERT(Task2(true, 3).isOk());
   MOZ_RELEASE_ASSERT(Task2(true, 3).unwrap() == 3);
+  MOZ_RELEASE_ASSERT(Task2(true, 3).unwrapOr(6) == 3);
   MOZ_RELEASE_ASSERT(Task2(false, 3).isErr());
+  MOZ_RELEASE_ASSERT(Task2(false, 3).unwrapOr(6) == 6);
 
   // MOZ_TRY_VAR works.
   MOZ_RELEASE_ASSERT(Task3(true, true, 3).isOk());
   MOZ_RELEASE_ASSERT(Task3(true, true, 3).unwrap() == 6);
   MOZ_RELEASE_ASSERT(Task3(true, false, 3).isErr());
   MOZ_RELEASE_ASSERT(Task3(false, true, 3).isErr());
+  MOZ_RELEASE_ASSERT(Task3(false, true, 3).unwrapOr(6) == 6);
 
   // Lvalues should work too.
   {
@@ -131,41 +126,32 @@ BasicTests()
     MOZ_RELEASE_ASSERT(res.isOk());
     MOZ_RELEASE_ASSERT(*res.unwrap() == 123);
 
-    res = MakeGenericErrorResult(d);
+    res = Err(d);
     MOZ_RELEASE_ASSERT(res.isErr());
     MOZ_RELEASE_ASSERT(&res.unwrapErr() == &d);
     MOZ_RELEASE_ASSERT(res.unwrapErr() == 3.14);
   }
 }
 
-
 /* * */
 
 struct Snafu : Failed {};
 
-static Result<Ok, Snafu*>
-Explode()
-{
+static Result<Ok, Snafu*> Explode() {
   static Snafu snafu;
-  return MakeGenericErrorResult(&snafu);
+  return Err(&snafu);
 }
 
-static Result<Ok, Failed*>
-ErrorGeneralization()
-{
+static Result<Ok, Failed*> ErrorGeneralization() {
   MOZ_TRY(Explode());  // change error type from Snafu* to more general Failed*
   return Ok();
 }
 
-static void
-TypeConversionTests()
-{
+static void TypeConversionTests() {
   MOZ_RELEASE_ASSERT(ErrorGeneralization().isErr());
 }
 
-static void
-EmptyValueTest()
-{
+static void EmptyValueTest() {
   struct Fine {};
   mozilla::Result<Fine, int&> res((Fine()));
   res.unwrap();
@@ -174,22 +160,20 @@ EmptyValueTest()
                 "Result with empty value type should be pointer-sized");
 }
 
-static void
-ReferenceTest()
-{
-  struct MyError { int x = 0; };
+static void ReferenceTest() {
+  struct MyError {
+    int x = 0;
+  };
   MyError merror;
   Result<int, MyError&> res(merror);
   MOZ_RELEASE_ASSERT(&res.unwrapErr() == &merror);
 }
 
-static void
-MapTest()
-{
+static void MapTest() {
   struct MyError {
     int x;
 
-    explicit MyError(int y) : x(y) { }
+    explicit MyError(int y) : x(y) {}
   };
 
   // Mapping over success values.
@@ -222,14 +206,11 @@ MapTest()
   MOZ_RELEASE_ASSERT(res6.unwrap() == 5);
 }
 
-static void
-AndThenTest()
-{
+static void AndThenTest() {
   // `andThen`ing over success results.
   Result<int, const char*> r1(10);
-  Result<int, const char*> r2 = r1.andThen([](int x) {
-    return Result<int, const char*>(x + 1);
-  });
+  Result<int, const char*> r2 =
+      r1.andThen([](int x) { return Result<int, const char*>(x + 1); });
   MOZ_RELEASE_ASSERT(r2.isOk());
   MOZ_RELEASE_ASSERT(r2.unwrap() == 11);
 
@@ -245,8 +226,7 @@ AndThenTest()
 
 /* * */
 
-int main()
-{
+int main() {
   BasicTests();
   TypeConversionTests();
   EmptyValueTest();

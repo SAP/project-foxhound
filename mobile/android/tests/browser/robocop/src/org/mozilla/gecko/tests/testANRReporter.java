@@ -20,7 +20,7 @@ import org.json.JSONObject;
 /**
  * Tests the proper operation of the ANR reporter.
  */
-public class testANRReporter extends BaseTest {
+public class testANRReporter extends OldBaseTest {
 
     private static final String ANR_ACTION = "android.intent.action.ANR";
     private static final String PING_DIR = "saved-telemetry-pings";
@@ -40,9 +40,9 @@ public class testANRReporter extends BaseTest {
         + "  | sysTid=3485 nice=0 sched=0/0 cgrp=apps handle=1074852180\n"
         + "  | state=S schedstat=( 0 0 0 ) utm=1065 stm=152 core=0\n"
         + "  at java.lang.Object.wait(Native Method)\n"
-        + "  - waiting on <0x427ab340> (a org.mozilla.gecko.GeckoEditable$5)\n"
+        + "  - waiting on <0x427ab340> (a org.mozilla.geckoview.GeckoEditable$5)\n"
         + "  at java.lang.Object.wait(Object.java:364)\n"
-        + "  at org.mozilla.gecko.GeckoEditable$5.run(GeckoEditable.java:746)\n"
+        + "  at org.mozilla.geckoview.GeckoEditable$5.run(GeckoEditable.java:746)\n"
         + "  at android.os.Handler.handleCallback(Handler.java:733)\n"
         + "  at android.os.Handler.dispatchMessage(Handler.java:95)\n"
         + "  at android.os.Looper.loop(Looper.java:137)\n"

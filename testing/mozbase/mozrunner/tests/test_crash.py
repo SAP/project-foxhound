@@ -3,39 +3,35 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import mock
+from __future__ import absolute_import
+
+from mock import patch
+
 import mozunit
+import pytest
 
-import mozrunnertest
 
+@pytest.mark.parametrize('logger', [True, False])
+def test_crash_count_with_or_without_logger(runner, logger):
+    if runner.app == 'chrome':
+        pytest.xfail("crash checking not implemented for ChromeRunner")
 
-class MozrunnerCrashTestCase(mozrunnertest.MozrunnerTestCase):
+    if not logger:
+        runner.logger = None
+        fn = 'check_for_crashes'
+    else:
+        fn = 'log_crashes'
 
-    @mock.patch('mozcrash.log_crashes', return_value=2)
-    def test_crash_count_with_logger(self, log_crashes):
-        self.assertEqual(self.runner.crashed, 0)
-        self.assertEqual(self.runner.check_for_crashes(), 2)
-        self.assertEqual(self.runner.crashed, 2)
-        self.assertEqual(self.runner.check_for_crashes(), 2)
-        self.assertEqual(self.runner.crashed, 4)
+    with patch('mozcrash.{}'.format(fn), return_value=2) as mock:
+        assert runner.crashed == 0
+        assert runner.check_for_crashes() == 2
+        assert runner.crashed == 2
+        assert runner.check_for_crashes() == 2
+        assert runner.crashed == 4
 
-        log_crashes.return_value = 0
-        self.assertEqual(self.runner.check_for_crashes(), 0)
-        self.assertEqual(self.runner.crashed, 4)
-
-    @mock.patch('mozcrash.check_for_crashes', return_value=2)
-    def test_crash_count_without_logger(self, check_for_crashes):
-        self.runner.logger = None
-
-        self.assertEqual(self.runner.crashed, 0)
-        self.assertEqual(self.runner.check_for_crashes(), 2)
-        self.assertEqual(self.runner.crashed, 2)
-        self.assertEqual(self.runner.check_for_crashes(), 2)
-        self.assertEqual(self.runner.crashed, 4)
-
-        check_for_crashes.return_value = 0
-        self.assertEqual(self.runner.check_for_crashes(), 0)
-        self.assertEqual(self.runner.crashed, 4)
+        mock.return_value = 0
+        assert runner.check_for_crashes() == 0
+        assert runner.crashed == 4
 
 
 if __name__ == '__main__':

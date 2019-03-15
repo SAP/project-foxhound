@@ -13,6 +13,7 @@ EXPORTS.mozilla.a11y += [
     'AccTypes.h',
     'DocManager.h',
     'FocusManager.h',
+    'IDSet.h',
     'Platform.h',
     'RelationType.h',
     'Role.h',
@@ -103,6 +104,10 @@ elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
     LOCAL_INCLUDES += [
         '/accessible/mac',
     ]
+elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
+    LOCAL_INCLUDES += [
+        '/accessible/android',
+    ]
 else:
     LOCAL_INCLUDES += [
         '/accessible/other',
@@ -112,5 +117,8 @@ FINAL_LIBRARY = 'xul'
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
+
+if CONFIG['CC_TYPE'] == 'clang-cl':
+    AllowCompilerWarnings()  # workaround for bug 1090497

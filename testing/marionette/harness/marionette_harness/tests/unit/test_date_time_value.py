@@ -2,6 +2,10 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
+import urllib
+
 from datetime import datetime
 
 from marionette_driver.by import By
@@ -9,10 +13,13 @@ from marionette_driver.date_time_value import DateTimeValue
 from marionette_harness import MarionetteTestCase
 
 
+def inline(doc):
+    return "data:text/html;charset=utf-8,{}".format(urllib.quote(doc))
+
+
 class TestDateTime(MarionetteTestCase):
     def test_set_date(self):
-        test_html = self.marionette.absolute_url("datetimePage.html")
-        self.marionette.navigate(test_html)
+        self.marionette.navigate(inline("<input id='date-test' type='date'/>"))
 
         element = self.marionette.find_element(By.ID, "date-test")
         dt_value = DateTimeValue(element)
@@ -20,8 +27,7 @@ class TestDateTime(MarionetteTestCase):
         self.assertEqual("1998-06-02", element.get_property("value"))
 
     def test_set_time(self):
-        test_html = self.marionette.absolute_url("datetimePage.html")
-        self.marionette.navigate(test_html)
+        self.marionette.navigate(inline("<input id='time-test' type='time'/>"))
 
         element = self.marionette.find_element(By.ID, "time-test")
         dt_value = DateTimeValue(element)

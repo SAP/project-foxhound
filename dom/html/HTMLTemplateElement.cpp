@@ -7,22 +7,22 @@
 #include "mozilla/dom/HTMLTemplateElement.h"
 #include "mozilla/dom/HTMLTemplateElementBinding.h"
 
-#include "mozilla/GenericSpecifiedValuesInlines.h"
+#include "mozilla/MappedDeclarations.h"
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
-#include "nsIAtom.h"
+#include "nsAtom.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Template)
 
 namespace mozilla {
 namespace dom {
 
-HTMLTemplateElement::HTMLTemplateElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-  : nsGenericHTMLElement(aNodeInfo)
-{
+HTMLTemplateElement::HTMLTemplateElement(
+    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : nsGenericHTMLElement(std::move(aNodeInfo)) {
   SetHasWeirdParserInsertionMode();
 
-  nsIDocument* contentsOwner = OwnerDoc()->GetTemplateContentsOwner();
+  Document* contentsOwner = OwnerDoc()->GetTemplateContentsOwner();
   if (!contentsOwner) {
     MOZ_CRASH("There should always be a template contents owner.");
   }
@@ -31,15 +31,14 @@ HTMLTemplateElement::HTMLTemplateElement(already_AddRefed<mozilla::dom::NodeInfo
   mContent->SetHost(this);
 }
 
-HTMLTemplateElement::~HTMLTemplateElement()
-{
+HTMLTemplateElement::~HTMLTemplateElement() {
   if (mContent) {
     mContent->SetHost(nullptr);
   }
 }
 
-NS_IMPL_ADDREF_INHERITED(HTMLTemplateElement, Element)
-NS_IMPL_RELEASE_INHERITED(HTMLTemplateElement, Element)
+NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(HTMLTemplateElement,
+                                               nsGenericHTMLElement)
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(HTMLTemplateElement)
 
@@ -56,18 +55,12 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(HTMLTemplateElement,
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mContent)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
-// QueryInterface implementation for HTMLTemplateElement
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(HTMLTemplateElement)
-NS_INTERFACE_MAP_END_INHERITING(nsGenericHTMLElement)
-
 NS_IMPL_ELEMENT_CLONE(HTMLTemplateElement)
 
-JSObject*
-HTMLTemplateElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return HTMLTemplateElementBinding::Wrap(aCx, this, aGivenProto);
+JSObject* HTMLTemplateElement::WrapNode(JSContext* aCx,
+                                        JS::Handle<JSObject*> aGivenProto) {
+  return HTMLTemplateElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-} // namespace dom
-} // namespace mozilla
-
+}  // namespace dom
+}  // namespace mozilla

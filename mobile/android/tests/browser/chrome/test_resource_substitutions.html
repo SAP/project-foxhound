@@ -8,16 +8,14 @@ Migrated from Robocop: https://bugzilla.mozilla.org/show_bug.cgi?id=1184186
   <meta charset="utf-8">
   <title>Test for Bug 948465</title>
   <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SpawnTask.js"></script>
+  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/AddTask.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://global/skin"/>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
   <script type="application/javascript">
 
-  const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
-
-  Cu.import("resource://gre/modules/Promise.jsm"); /*global Promise */
-  Cu.import("resource://gre/modules/Services.jsm"); /*global Services */
-  Cu.import("resource://gre/modules/NetUtil.jsm"); /*global NetUtil */
+  ChromeUtils.import("resource://gre/modules/Promise.jsm"); /* global Promise */
+  ChromeUtils.import("resource://gre/modules/Services.jsm"); /* global Services */
+  ChromeUtils.import("resource://gre/modules/NetUtil.jsm"); /* global NetUtil */
 
   function readChannel(url) {
     let deferred = Promise.defer();
@@ -39,7 +37,7 @@ Migrated from Robocop: https://bugzilla.mozilla.org/show_bug.cgi?id=1184186
     return deferred.promise;
   }
 
-  add_task(function* () {
+  add_task(async function() {
     let protocolHandler = Services.io
        .getProtocolHandler("resource")
        .QueryInterface(Ci.nsIResProtocolHandler);
@@ -47,7 +45,7 @@ Migrated from Robocop: https://bugzilla.mozilla.org/show_bug.cgi?id=1184186
     ok(protocolHandler.hasSubstitution("android"));
 
     // This can be any file that we know exists in the root of every APK.
-    let packageName = yield readChannel("resource://android/package-name.txt");
+    let packageName = await readChannel("resource://android/package-name.txt");
     info(packageName);
 
     // It's difficult to fish ANDROID_PACKAGE_NAME from JavaScript, so we test the

@@ -6,13 +6,16 @@
  */
 
 #include "SkMipMap.h"
+
 #include "SkBitmap.h"
-#include "SkColorPriv.h"
+#include "SkColorData.h"
 #include "SkHalf.h"
+#include "SkImageInfoPriv.h"
 #include "SkMathPriv.h"
 #include "SkNx.h"
-#include "SkPM4fPriv.h"
+#include "SkTo.h"
 #include "SkTypes.h"
+#include <new>
 
 //
 // ColorTypeFilter is the "Type" we pass to some downsample template functions.
@@ -23,7 +26,6 @@
 
 struct ColorTypeFilter_8888 {
     typedef uint32_t Type;
-#if defined(SKNX_IS_FAST)
     static Sk4h Expand(uint32_t x) {
         return SkNx_cast<uint16_t>(Sk4b::Load(&x));
     }
@@ -31,24 +33,6 @@ struct ColorTypeFilter_8888 {
         uint32_t r;
         SkNx_cast<uint8_t>(x).store(&r);
         return r;
-    }
-#else
-    static uint64_t Expand(uint32_t x) {
-        return (x & 0xFF00FF) | ((uint64_t)(x & 0xFF00FF00) << 24);
-    }
-    static uint32_t Compact(uint64_t x) {
-        return (uint32_t)((x & 0xFF00FF) | ((x >> 24) & 0xFF00FF00));
-    }
-#endif
-};
-
-struct ColorTypeFilter_S32 {
-    typedef uint32_t Type;
-    static Sk4f Expand(uint32_t x) {
-        return Sk4f_fromS32(x);
-    }
-    static uint32_t Compact(const Sk4f& x) {
-        return Sk4f_toS32(x);
     }
 };
 
@@ -244,18 +228,30 @@ template <typename F> void downsample_3_2(void* dst, const void* src, size_t src
     auto p1 = (const typename F::Type*)((const char*)p0 + srcRB);
     auto d = static_cast<typename F::Type*>(dst);
 
-    auto c02 = F::Expand(p0[0]);
-    auto c12 = F::Expand(p1[0]);
-    for (int i = 0; i < count; ++i) {
-        auto c00 = c02;
-        auto c01 = F::Expand(p0[1]);
-             c02 = F::Expand(p0[2]);
-        auto c10 = c12;
-        auto c11 = F::Expand(p1[1]);
-             c12 = F::Expand(p1[2]);
+    // Given pixels:
+    // a0 b0 c0 d0 e0 ...
+    // a1 b1 c1 d1 e1 ...
+    // We want:
+    // (a0 + 2*b0 + c0 + a1 + 2*b1 + c1) / 8
+    // (c0 + 2*d0 + e0 + c1 + 2*d1 + e1) / 8
+    // ...
 
-        auto c = add_121(c00, c01, c02) + add_121(c10, c11, c12);
-        d[i] = F::Compact(shift_right(c, 3));
+    auto c0 = F::Expand(p0[0]);
+    auto c1 = F::Expand(p1[0]);
+    auto c = c0 + c1;
+    for (int i = 0; i < count; ++i) {
+        auto a = c;
+
+        auto b0 = F::Expand(p0[1]);
+        auto b1 = F::Expand(p1[1]);
+        auto b = b0 + b0 + b1 + b1;
+
+        c0 = F::Expand(p0[2]);
+        c1 = F::Expand(p1[2]);
+        c = c0 + c1;
+
+        auto sum = a + b + c;
+        d[i] = F::Compact(shift_right(sum, 3));
         p0 += 2;
         p1 += 2;
     }
@@ -268,25 +264,34 @@ template <typename F> void downsample_3_3(void* dst, const void* src, size_t src
     auto p2 = (const typename F::Type*)((const char*)p1 + srcRB);
     auto d = static_cast<typename F::Type*>(dst);
 
-    auto c02 = F::Expand(p0[0]);
-    auto c12 = F::Expand(p1[0]);
-    auto c22 = F::Expand(p2[0]);
-    for (int i = 0; i < count; ++i) {
-        auto c00 = c02;
-        auto c01 = F::Expand(p0[1]);
-             c02 = F::Expand(p0[2]);
-        auto c10 = c12;
-        auto c11 = F::Expand(p1[1]);
-             c12 = F::Expand(p1[2]);
-        auto c20 = c22;
-        auto c21 = F::Expand(p2[1]);
-             c22 = F::Expand(p2[2]);
+    // Given pixels:
+    // a0 b0 c0 d0 e0 ...
+    // a1 b1 c1 d1 e1 ...
+    // a2 b2 c2 d2 e2 ...
+    // We want:
+    // (a0 + 2*b0 + c0 + 2*a1 + 4*b1 + 2*c1 + a2 + 2*b2 + c2) / 16
+    // (c0 + 2*d0 + e0 + 2*c1 + 4*d1 + 2*e1 + c2 + 2*d2 + e2) / 16
+    // ...
 
-        auto c =
-            add_121(c00, c01, c02) +
-            shift_left(add_121(c10, c11, c12), 1) +
-            add_121(c20, c21, c22);
-        d[i] = F::Compact(shift_right(c, 4));
+    auto c0 = F::Expand(p0[0]);
+    auto c1 = F::Expand(p1[0]);
+    auto c2 = F::Expand(p2[0]);
+    auto c = add_121(c0, c1, c2);
+    for (int i = 0; i < count; ++i) {
+        auto a = c;
+
+        auto b0 = F::Expand(p0[1]);
+        auto b1 = F::Expand(p1[1]);
+        auto b2 = F::Expand(p2[1]);
+        auto b = shift_left(add_121(b0, b1, b2), 1);
+
+        c0 = F::Expand(p0[2]);
+        c1 = F::Expand(p1[2]);
+        c2 = F::Expand(p2[2]);
+        c = add_121(c0, c1, c2);
+
+        auto sum = a + b + c;
+        d[i] = F::Compact(shift_right(sum, 4));
         p0 += 2;
         p1 += 2;
         p2 += 2;
@@ -300,14 +305,13 @@ size_t SkMipMap::AllocLevelsSize(int levelCount, size_t pixelSize) {
         return 0;
     }
     int64_t size = sk_64_mul(levelCount + 1, sizeof(Level)) + pixelSize;
-    if (!sk_64_isS32(size)) {
+    if (!SkTFitsIn<int32_t>(size)) {
         return 0;
     }
-    return sk_64_asS32(size);
+    return SkTo<int32_t>(size);
 }
 
-SkMipMap* SkMipMap::Build(const SkPixmap& src, SkSourceGammaTreatment treatment,
-                          SkDiscardableFactoryProc fact) {
+SkMipMap* SkMipMap::Build(const SkPixmap& src, SkDiscardableFactoryProc fact) {
     typedef void FilterProc(void*, const void* srcPtr, size_t srcRB, int count);
 
     FilterProc* proc_1_2 = nullptr;
@@ -321,31 +325,18 @@ SkMipMap* SkMipMap::Build(const SkPixmap& src, SkSourceGammaTreatment treatment,
 
     const SkColorType ct = src.colorType();
     const SkAlphaType at = src.alphaType();
-    const bool srgbGamma = (SkSourceGammaTreatment::kRespect == treatment)
-                            && src.info().gammaCloseToSRGB();
 
     switch (ct) {
         case kRGBA_8888_SkColorType:
         case kBGRA_8888_SkColorType:
-            if (srgbGamma) {
-                proc_1_2 = downsample_1_2<ColorTypeFilter_S32>;
-                proc_1_3 = downsample_1_3<ColorTypeFilter_S32>;
-                proc_2_1 = downsample_2_1<ColorTypeFilter_S32>;
-                proc_2_2 = downsample_2_2<ColorTypeFilter_S32>;
-                proc_2_3 = downsample_2_3<ColorTypeFilter_S32>;
-                proc_3_1 = downsample_3_1<ColorTypeFilter_S32>;
-                proc_3_2 = downsample_3_2<ColorTypeFilter_S32>;
-                proc_3_3 = downsample_3_3<ColorTypeFilter_S32>;
-            } else {
-                proc_1_2 = downsample_1_2<ColorTypeFilter_8888>;
-                proc_1_3 = downsample_1_3<ColorTypeFilter_8888>;
-                proc_2_1 = downsample_2_1<ColorTypeFilter_8888>;
-                proc_2_2 = downsample_2_2<ColorTypeFilter_8888>;
-                proc_2_3 = downsample_2_3<ColorTypeFilter_8888>;
-                proc_3_1 = downsample_3_1<ColorTypeFilter_8888>;
-                proc_3_2 = downsample_3_2<ColorTypeFilter_8888>;
-                proc_3_3 = downsample_3_3<ColorTypeFilter_8888>;
-            }
+            proc_1_2 = downsample_1_2<ColorTypeFilter_8888>;
+            proc_1_3 = downsample_1_3<ColorTypeFilter_8888>;
+            proc_2_1 = downsample_2_1<ColorTypeFilter_8888>;
+            proc_2_2 = downsample_2_2<ColorTypeFilter_8888>;
+            proc_2_3 = downsample_2_3<ColorTypeFilter_8888>;
+            proc_3_1 = downsample_3_1<ColorTypeFilter_8888>;
+            proc_3_2 = downsample_3_2<ColorTypeFilter_8888>;
+            proc_3_3 = downsample_3_3<ColorTypeFilter_8888>;
             break;
         case kRGB_565_SkColorType:
             proc_1_2 = downsample_1_2<ColorTypeFilter_565>;
@@ -389,8 +380,6 @@ SkMipMap* SkMipMap::Build(const SkPixmap& src, SkSourceGammaTreatment treatment,
             proc_3_3 = downsample_3_3<ColorTypeFilter_F16>;
             break;
         default:
-            // TODO: We could build miplevels for kIndex8 if the levels were in 8888.
-            //       Means using more ram, but the quality would be fine.
             return nullptr;
     }
 
@@ -601,18 +590,12 @@ bool SkMipMap::extractLevel(const SkSize& scaleSize, Level* levelPtr) const {
 
 // Helper which extracts a pixmap from the src bitmap
 //
-SkMipMap* SkMipMap::Build(const SkBitmap& src, SkSourceGammaTreatment treatment,
-                          SkDiscardableFactoryProc fact) {
-    SkAutoPixmapUnlock srcUnlocker;
-    if (!src.requestLock(&srcUnlocker)) {
+SkMipMap* SkMipMap::Build(const SkBitmap& src, SkDiscardableFactoryProc fact) {
+    SkPixmap srcPixmap;
+    if (!src.peekPixels(&srcPixmap)) {
         return nullptr;
     }
-    const SkPixmap& srcPixmap = srcUnlocker.pixmap();
-    // Try to catch where we might have returned nullptr for src crbug.com/492818
-    if (nullptr == srcPixmap.addr()) {
-        sk_throw();
-    }
-    return Build(srcPixmap, treatment, fact);
+    return Build(srcPixmap, fact);
 }
 
 int SkMipMap::countLevels() const {
@@ -620,7 +603,7 @@ int SkMipMap::countLevels() const {
 }
 
 bool SkMipMap::getLevel(int index, Level* levelPtr) const {
-    if (NULL == fLevels) {
+    if (nullptr == fLevels) {
         return false;
     }
     if (index < 0) {

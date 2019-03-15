@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,32 +23,20 @@ NS_QUERYFRAME_HEAD(DetailsFrame)
   NS_QUERYFRAME_ENTRY(nsIAnonymousContentCreator)
 NS_QUERYFRAME_TAIL_INHERITING(nsBlockFrame)
 
-nsBlockFrame*
-NS_NewDetailsFrame(nsIPresShell* aPresShell, nsStyleContext* aContext)
-{
-  return new (aPresShell) DetailsFrame(aContext);
+nsBlockFrame* NS_NewDetailsFrame(nsIPresShell* aPresShell,
+                                 ComputedStyle* aStyle) {
+  return new (aPresShell) DetailsFrame(aStyle);
 }
 
 namespace mozilla {
 
-DetailsFrame::DetailsFrame(nsStyleContext* aContext)
-  : nsBlockFrame(aContext)
-{
-}
+DetailsFrame::DetailsFrame(ComputedStyle* aStyle)
+    : nsBlockFrame(aStyle, kClassID) {}
 
-DetailsFrame::~DetailsFrame()
-{
-}
+DetailsFrame::~DetailsFrame() {}
 
-nsIAtom*
-DetailsFrame::GetType() const
-{
-  return nsGkAtoms::detailsFrame;
-}
-
-void
-DetailsFrame::SetInitialChildList(ChildListID aListID, nsFrameList& aChildList)
-{
+void DetailsFrame::SetInitialChildList(ChildListID aListID,
+                                       nsFrameList& aChildList) {
 #ifdef DEBUG
   if (aListID == kPrincipalList) {
     CheckValidMainSummary(aChildList);
@@ -58,12 +47,10 @@ DetailsFrame::SetInitialChildList(ChildListID aListID, nsFrameList& aChildList)
 }
 
 #ifdef DEBUG
-bool
-DetailsFrame::CheckValidMainSummary(const nsFrameList& aFrameList) const
-{
+bool DetailsFrame::CheckValidMainSummary(const nsFrameList& aFrameList) const {
   for (nsIFrame* child : aFrameList) {
     HTMLSummaryElement* summary =
-      HTMLSummaryElement::FromContent(child->GetContent());
+        HTMLSummaryElement::FromNode(child->GetContent());
 
     if (child == aFrameList.FirstChild()) {
       if (summary && summary->IsMainSummary()) {
@@ -86,17 +73,15 @@ DetailsFrame::CheckValidMainSummary(const nsFrameList& aFrameList) const
 }
 #endif
 
-void
-DetailsFrame::DestroyFrom(nsIFrame* aDestructRoot)
-{
-  nsContentUtils::DestroyAnonymousContent(&mDefaultSummary);
-  nsBlockFrame::DestroyFrom(aDestructRoot);
+void DetailsFrame::DestroyFrom(nsIFrame* aDestructRoot,
+                               PostDestroyData& aPostDestroyData) {
+  aPostDestroyData.AddAnonymousContent(mDefaultSummary.forget());
+  nsBlockFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
 }
 
-nsresult
-DetailsFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
-{
-  auto* details = HTMLDetailsElement::FromContent(GetContent());
+nsresult DetailsFrame::CreateAnonymousContent(
+    nsTArray<ContentInfo>& aElements) {
+  auto* details = HTMLDetailsElement::FromNode(GetContent());
   if (details->GetFirstSummary()) {
     return NS_OK;
   }
@@ -104,14 +89,13 @@ DetailsFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
   // The <details> element lacks any direct <summary> child. Create a default
   // <summary> element as an anonymous content.
   nsNodeInfoManager* nodeInfoManager =
-    GetContent()->NodeInfo()->NodeInfoManager();
+      GetContent()->NodeInfo()->NodeInfoManager();
 
-  already_AddRefed<NodeInfo> nodeInfo =
-    nodeInfoManager->GetNodeInfo(nsGkAtoms::summary, nullptr, kNameSpaceID_XHTML,
-                                 nsIDOMNode::ELEMENT_NODE);
-  mDefaultSummary = new HTMLSummaryElement(nodeInfo);
+  RefPtr<NodeInfo> nodeInfo = nodeInfoManager->GetNodeInfo(
+      nsGkAtoms::summary, nullptr, kNameSpaceID_XHTML, nsINode::ELEMENT_NODE);
+  mDefaultSummary = new HTMLSummaryElement(nodeInfo.forget());
 
-  nsXPIDLString defaultSummaryText;
+  nsAutoString defaultSummaryText;
   nsContentUtils::GetLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
                                      "DefaultSummary", defaultSummaryText);
   RefPtr<nsTextNode> description = new nsTextNode(nodeInfoManager);
@@ -123,13 +107,31 @@ DetailsFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
   return NS_OK;
 }
 
-void
-DetailsFrame::AppendAnonymousContentTo(nsTArray<nsIContent*>& aElements,
-                                       uint32_t aFilter)
-{
+void DetailsFrame::AppendAnonymousContentTo(nsTArray<nsIContent*>& aElements,
+                                            uint32_t aFilter) {
   if (mDefaultSummary) {
     aElements.AppendElement(mDefaultSummary);
   }
 }
 
-} // namespace mozilla
+bool DetailsFrame::HasMainSummaryFrame(nsIFrame* aSummaryFrame) {
+  const ChildListIDs flowLists = {kPrincipalList, kOverflowList};
+  for (nsIFrame* frag = this; frag; frag = frag->GetNextInFlow()) {
+    for (ChildListIterator lists(frag); !lists.IsDone(); lists.Next()) {
+      if (!flowLists.contains(lists.CurrentID())) {
+        continue;
+      }
+      for (nsIFrame* child : lists.CurrentList()) {
+        child = nsPlaceholderFrame::GetRealFrameFor(child);
+        // We skip any non-primary frames such as a list-style-position:inside
+        // bullet frame for the <details> itself.
+        if (child->IsPrimaryFrame()) {
+          return aSummaryFrame == child;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+}  // namespace mozilla

@@ -28,15 +28,19 @@ extern nsIThread* NS_GetCurrentThread();
 #endif
 
 #ifdef MOZILLA_INTERNAL_API
+bool NS_IsMainThreadTLSInitialized();
 bool NS_IsMainThread();
-#else
-/**
- * Test to see if the current thread is the main thread.
- *
- * @returns true if the current thread is the main thread, and false
- * otherwise.
- */
-extern bool NS_IsMainThread();
+
+namespace mozilla {
+
+#  ifdef DEBUG
+void AssertIsOnMainThread();
+#  else
+inline void AssertIsOnMainThread() {}
+#  endif
+
+}  // namespace mozilla
+
 #endif
 
-#endif // MainThreadUtils_h_
+#endif  // MainThreadUtils_h_

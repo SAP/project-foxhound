@@ -8,14 +8,14 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_processing/ns/noise_suppression.h"
+#include "modules/audio_processing/ns/noise_suppression.h"
 
 #include <stdlib.h>
 #include <string.h>
 
-#include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
-#include "webrtc/modules/audio_processing/ns/defines.h"
-#include "webrtc/modules/audio_processing/ns/ns_core.h"
+#include "common_audio/signal_processing/include/signal_processing_library.h"
+#include "modules/audio_processing/ns/defines.h"
+#include "modules/audio_processing/ns/ns_core.h"
 
 NsHandle* WebRtcNs_Create() {
   NoiseSuppressionC* self = malloc(sizeof(NoiseSuppressionC));
@@ -56,4 +56,16 @@ float WebRtcNs_prior_speech_probability(NsHandle* handle) {
     return -1;
   }
   return self->priorSpeechProb;
+}
+
+const float* WebRtcNs_noise_estimate(const NsHandle* handle) {
+  const NoiseSuppressionC* self = (const NoiseSuppressionC*)handle;
+  if (handle == NULL || self->initFlag == 0) {
+    return NULL;
+  }
+  return self->noise;
+}
+
+size_t WebRtcNs_num_freq() {
+  return HALF_ANAL_BLOCKL;
 }

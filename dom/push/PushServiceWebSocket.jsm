@@ -5,21 +5,15 @@
 
 "use strict";
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cu = Components.utils;
-const Cr = Components.results;
+ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+ChromeUtils.import("resource://gre/modules/Preferences.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Timer.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-Cu.import("resource://gre/modules/AppConstants.jsm");
-Cu.import("resource://gre/modules/Preferences.jsm");
-Cu.import("resource://gre/modules/Promise.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Timer.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-
-const {PushDB} = Cu.import("resource://gre/modules/PushDB.jsm");
-const {PushRecord} = Cu.import("resource://gre/modules/PushRecord.jsm");
-const {PushCrypto} = Cu.import("resource://gre/modules/PushCrypto.jsm");
+const {PushDB} = ChromeUtils.import("resource://gre/modules/PushDB.jsm");
+const {PushRecord} = ChromeUtils.import("resource://gre/modules/PushRecord.jsm");
+const {PushCrypto} = ChromeUtils.import("resource://gre/modules/PushCrypto.jsm");
 
 const kPUSHWSDB_DB_NAME = "pushapi";
 const kPUSHWSDB_DB_VERSION = 5; // Change this if the IndexedDB format changes
@@ -51,10 +45,10 @@ const kDELIVERY_REASON_TO_CODE = {
 
 const prefs = new Preferences("dom.push.");
 
-this.EXPORTED_SYMBOLS = ["PushServiceWebSocket"];
+var EXPORTED_SYMBOLS = ["PushServiceWebSocket"];
 
 XPCOMUtils.defineLazyGetter(this, "console", () => {
-  let {ConsoleAPI} = Cu.import("resource://gre/modules/Console.jsm", {});
+  let {ConsoleAPI} = ChromeUtils.import("resource://gre/modules/Console.jsm", {});
   return new ConsoleAPI({
     maxLogLevelPref: "dom.push.loglevel",
     prefix: "PushServiceWebSocket",
@@ -122,7 +116,7 @@ const STATE_WAITING_FOR_HELLO = 2;
 // Websocket operational, handshake completed, begin protocol messaging.
 const STATE_READY = 3;
 
-this.PushServiceWebSocket = {
+var PushServiceWebSocket = {
   _mainPushService: null,
   _serverURI: null,
 
@@ -320,6 +314,8 @@ this.PushServiceWebSocket = {
 
     this._mainPushService = mainPushService;
     this._serverURI = serverURI;
+    // Filled in at connect() time
+    this._broadcastListeners = null;
 
     // Override the default WebSocket factory function. The returned object
     // must be null or satisfy the nsIWebSocketChannel interface. Used by
@@ -518,12 +514,10 @@ this.PushServiceWebSocket = {
     }
   },
 
-  connect: function(records) {
-    console.debug("connect()");
-    // Check to see if we need to do anything.
-    if (records.length > 0) {
-      this._beginWSSetup();
-    }
+  connect: function(records, broadcastListeners) {
+    console.debug("connect()", broadcastListeners);
+    this._broadcastListeners = broadcastListeners;
+    this._beginWSSetup();
   },
 
   isConnected: function() {
@@ -574,6 +568,13 @@ this.PushServiceWebSocket = {
       this._UAID = reply.uaid;
       this._currentState = STATE_READY;
       prefs.observe("userAgentID", this);
+
+      // Handle broadcasts received in response to the "hello" message.
+      if (reply.broadcasts) {
+        // The reply isn't technically a broadcast message, but it has
+        // the shape of a broadcast message (it has a broadcasts field).
+        this._mainPushService.receivedBroadcastMessage(reply);
+      }
 
       this._dataEnabled = !!reply.use_webpush;
       if (this._dataEnabled) {
@@ -639,7 +640,6 @@ this.PushServiceWebSocket = {
         appServerKey: tmp.record.appServerKey,
         ctime: Date.now(),
       });
-      Services.telemetry.getHistogramById("PUSH_API_SUBSCRIBE_WS_TIME").add(Date.now() - tmp.ctime);
       tmp.resolve(record);
     } else {
       console.error("handleRegisterReply: Unexpected server response", reply);
@@ -755,6 +755,10 @@ this.PushServiceWebSocket = {
         this._receivedUpdate(update.channelID, version);
       }
     }
+  },
+
+  _handleBroadcastReply: function(reply) {
+    this._mainPushService.receivedBroadcastMessage(reply);
   },
 
   reportDeliveryError(messageID, reason) {
@@ -955,6 +959,7 @@ this.PushServiceWebSocket = {
 
     let data = {
       messageType: "hello",
+      broadcasts: this._broadcastListeners,
       use_webpush: true,
     };
 
@@ -1023,14 +1028,14 @@ this.PushServiceWebSocket = {
 
     // A whitelist of protocol handlers. Add to these if new messages are added
     // in the protocol.
-    let handlers = ["Hello", "Register", "Unregister", "Notification"];
+    let handlers = ["Hello", "Register", "Unregister", "Notification", "Broadcast"];
 
     // Build up the handler name to call from messageType.
     // e.g. messageType == "register" -> _handleRegisterReply.
     let handlerName = reply.messageType[0].toUpperCase() +
                       reply.messageType.slice(1).toLowerCase();
 
-    if (handlers.indexOf(handlerName) == -1) {
+    if (!handlers.includes(handlerName)) {
       console.warn("wsOnMessageAvailable: No whitelisted handler", handlerName,
         "for message", reply.messageType);
       return;
@@ -1121,6 +1126,17 @@ this.PushServiceWebSocket = {
       this._requestTimeoutTimer.cancel();
     }
     return request;
+  },
+
+  sendSubscribeBroadcast(serviceId, version) {
+    let data = {
+      messageType: "broadcast_subscribe",
+      broadcasts: {
+        [serviceId]: version
+      },
+    };
+
+    this._queueRequest(data);
   },
 };
 

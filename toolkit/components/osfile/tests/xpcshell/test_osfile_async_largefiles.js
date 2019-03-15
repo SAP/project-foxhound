@@ -3,9 +3,8 @@
 
 "use strict";
 
-Components.utils.import("resource://gre/modules/ctypes.jsm");
-Components.utils.import("resource://gre/modules/osfile.jsm");
-Components.utils.import("resource://gre/modules/Task.jsm");
+ChromeUtils.import("resource://gre/modules/ctypes.jsm");
+ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
 /**
  * A test to check that .getPosition/.setPosition work with large files.
@@ -13,115 +12,96 @@ Components.utils.import("resource://gre/modules/Task.jsm");
  */
 
 // Test setPosition/getPosition.
-function* test_setPosition(forward, current, backward) {
+async function test_setPosition(forward, current, backward) {
   let path = OS.Path.join(OS.Constants.Path.tmpDir,
                           "test_osfile_async_largefiles.tmp");
 
   // Clear any left-over files from previous runs.
-  try {
-    yield OS.File.remove(path);
-  } catch (ex if ex.becauseNoSuchFile) {
-    // ignore
-  }
+  await removeTestFile(path);
 
   try {
-    let file = yield OS.File.open(path, {write:true, append:false});
+    let file = await OS.File.open(path, {write: true, append: false});
     try {
       let pos = 0;
 
       // 1. seek forward from start
-      do_print("Moving forward: " + forward);
-      yield file.setPosition(forward, OS.File.POS_START);
+      info("Moving forward: " + forward);
+      await file.setPosition(forward, OS.File.POS_START);
       pos += forward;
-      do_check_eq((yield file.getPosition()), pos);
+      Assert.equal((await file.getPosition()), pos);
 
       // 2. seek forward from current position
-      do_print("Moving current: " + current);
-      yield file.setPosition(current, OS.File.POS_CURRENT);
+      info("Moving current: " + current);
+      await file.setPosition(current, OS.File.POS_CURRENT);
       pos += current;
-      do_check_eq((yield file.getPosition()), pos);
+      Assert.equal((await file.getPosition()), pos);
 
       // 3. seek backward from current position
-      do_print("Moving current backward: " + backward);
-      yield file.setPosition(-backward, OS.File.POS_CURRENT);
+      info("Moving current backward: " + backward);
+      await file.setPosition(-backward, OS.File.POS_CURRENT);
       pos -= backward;
-      do_check_eq((yield file.getPosition()), pos);
+      Assert.equal((await file.getPosition()), pos);
 
     } finally {
-      yield file.setPosition(0, OS.File.POS_START);
-      yield file.close();
+      await file.setPosition(0, OS.File.POS_START);
+      await file.close();
     }
-  } catch(ex) {
-    try {
-      yield OS.File.remove(path);
-    } catch (ex if ex.becauseNoSuchFile) {
-      // ignore.
-    }
-    do_throw(ex);
+  } catch (ex) {
+    await removeTestFile(path);
   }
 }
 
 // Test setPosition/getPosition expected failures.
-function* test_setPosition_failures() {
+async function test_setPosition_failures() {
   let path = OS.Path.join(OS.Constants.Path.tmpDir,
                           "test_osfile_async_largefiles.tmp");
 
   // Clear any left-over files from previous runs.
-  try {
-    yield OS.File.remove(path);
-  } catch (ex if ex.becauseNoSuchFile) {
-    // ignore
-  }
+  await removeTestFile(path);
 
   try {
-    let file = yield OS.File.open(path, {write:true, append:false});
+    let file = await OS.File.open(path, {write: true, append: false});
     try {
-      let pos = 0;
-
       // 1. Use an invalid position value
       try {
-        yield file.setPosition(0.5, OS.File.POS_START);
+        await file.setPosition(0.5, OS.File.POS_START);
         do_throw("Shouldn't have succeeded");
       } catch (ex) {
-        do_check_true(ex.toString().includes("can't pass"));
+        Assert.ok(ex.toString().includes("can't pass"));
       }
       // Since setPosition should have bailed, it shouldn't have moved the
       // file pointer at all.
-      do_check_eq((yield file.getPosition()), 0);
+      Assert.equal((await file.getPosition()), 0);
 
       // 2. Use an invalid position value
       try {
-        yield file.setPosition(0xffffffff + 0.5, OS.File.POS_START);
+        await file.setPosition(0xffffffff + 0.5, OS.File.POS_START);
         do_throw("Shouldn't have succeeded");
       } catch (ex) {
-        do_check_true(ex.toString().includes("can't pass"));
+        Assert.ok(ex.toString().includes("can't pass"));
       }
       // Since setPosition should have bailed, it shouldn't have moved the
       // file pointer at all.
-      do_check_eq((yield file.getPosition()), 0);
+      Assert.equal((await file.getPosition()), 0);
 
       // 3. Use a position that cannot be represented as a double
       try {
         // Not all numbers after 9007199254740992 can be represented as a
         // double. E.g. in js 9007199254740992 + 1 == 9007199254740992
-        yield file.setPosition(9007199254740992, OS.File.POS_START);
-        yield file.setPosition(1, OS.File.POS_CURRENT);
+        await file.setPosition(9007199254740992, OS.File.POS_START);
+        await file.setPosition(1, OS.File.POS_CURRENT);
         do_throw("Shouldn't have succeeded");
       } catch (ex) {
-        do_print(ex.toString());
-        do_check_true(!!ex);
+        info(ex.toString());
+        Assert.ok(!!ex);
       }
 
     } finally {
-      yield file.setPosition(0, OS.File.POS_START);
-      yield file.close();
-      try {
-        yield OS.File.remove(path);
-      } catch (ex if ex.becauseNoSuchFile) {
-        // ignore.
-      }
+      await file.setPosition(0, OS.File.POS_START);
+      await file.close();
+      await removeTestFile(path);
     }
-  } catch(ex) {
+  } catch (ex) {
     do_throw(ex);
   }
 }
@@ -132,7 +112,7 @@ function run_test() {
   add_task(test_setPosition.bind(null, 1000, 100, 50));
   add_task(test_setPosition.bind(null, 1000, -100, -50));
 
-  if (OS.Constants.Win || ctypes.off_t.size >= 8) {
+  if (OS.Constants.Win || ctypes.off_t.size >= 8) {
     // Now verify stuff still works for large values.
     // 1. Multiple small seeks, which add up to > MAXINT32
     add_task(test_setPosition.bind(null, 0x7fffffff, 0x7fffffff, 0));

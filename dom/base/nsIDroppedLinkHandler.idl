@@ -3,8 +3,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsISupports.idl"
+#include "nsIPrincipal.idl"
 
-interface nsIDOMDragEvent;
+webidl DragEvent;
+webidl DataTransfer;
 
 [scriptable, uuid(69E14F91-2E09-4CA6-A511-A715C99A2804)]
 interface nsIDroppedLinkItem : nsISupports
@@ -12,17 +14,17 @@ interface nsIDroppedLinkItem : nsISupports
   /**
    * Returns the URL of the link.
    */
-  readonly attribute DOMString url;
+  readonly attribute AString url;
 
   /**
    * Returns the link name.
    */
-  readonly attribute DOMString name;
+  readonly attribute AString name;
 
   /**
    * Returns the MIME-Type.
    */
-  readonly attribute DOMString type;
+  readonly attribute AString type;
 };
 
 [scriptable, uuid(21B5C25A-28A9-47BD-8431-FA9116305DED)]
@@ -37,7 +39,7 @@ interface nsIDroppedLinkHandler : nsISupports
    * includes any parent, sibling and child frames in the same content tree.
    * If true, the source is not checked.
    */
-  boolean canDropLink(in nsIDOMDragEvent aEvent, in boolean aAllowSameDocument);
+  boolean canDropLink(in DragEvent aEvent, in boolean aAllowSameDocument);
 
   /**
    * Given a drop event aEvent, determines the link being dragged and returns
@@ -56,7 +58,7 @@ interface nsIDroppedLinkHandler : nsISupports
    * aName is filled in with the link title if it exists, or an empty string
    * otherwise.
    */
-  AString dropLink(in nsIDOMDragEvent aEvent, out AString aName,
+  AString dropLink(in DragEvent aEvent, out AString aName,
                    [optional] in boolean aDisallowInherit);
 
   /**
@@ -73,8 +75,34 @@ interface nsIDroppedLinkHandler : nsISupports
    *  - aDisallowInherit is true, and the URI being dropped would inherit the
    *    current document's security context (URI_INHERITS_SECURITY_CONTEXT).
    */
-  void dropLinks(in nsIDOMDragEvent aEvent,
+  void dropLinks(in DragEvent aEvent,
                  [optional] in boolean aDisallowInherit,
                  [optional] out unsigned long aCount,
                  [retval, array, size_is(aCount)] out nsIDroppedLinkItem aLinks);
+
+  /**
+   * Given a drop event aEvent, validate the extra URIs for the event,
+   * this is used when the caller extracts yet another URIs from the dropped
+   * text, like home button that splits the text with "|".
+   */
+  void validateURIsForDrop(in DragEvent aEvent,
+                           in unsigned long aURIsCount,
+                           [array, size_is(aURIsCount)] in wstring aURIs,
+                           [optional] in boolean aDisallowInherit);
+
+  /**
+   * Given a dataTransfer, allows caller to determine and verify links being
+   * dragged. Since drag/drop performs a roundtrip of parent, child, parent,
+   * it allows the parent to verify that the child did not modify links
+   * being dropped.
+   */
+  void queryLinks(in DataTransfer aDataTransfer,
+                  [optional] out unsigned long aCount,
+                  [retval, array, size_is(aCount)] out nsIDroppedLinkItem aLinks);
+
+  /**
+   * Given a drop event aEvent, determines the triggering principal for the
+   * event and returns it.
+   */
+  nsIPrincipal getTriggeringPrincipal(in DragEvent aEvent);
 };

@@ -30,12 +30,12 @@ import re
 # But for now, let's just import a few sets of tests.
 
 gSubtrees = [
-    os.path.join("css-namespaces-3"),
-    os.path.join("css-conditional-3"),
-    os.path.join("css-values-3"),
-    os.path.join("css-multicol-1"),
-    os.path.join("css-writing-modes-3"),
-    os.path.join("selectors-4"),
+    os.path.join("css-namespaces"),
+    os.path.join("css-conditional"),
+    os.path.join("css-values"),
+    os.path.join("css-multicol"),
+    os.path.join("css-writing-modes"),
+    os.path.join("selectors"),
 ]
 
 gPrefixedProperties = [
@@ -90,11 +90,20 @@ def log_output_of(subprocess):
 def write_log_header():
     global gLog, gSrcPath
     gLog.write("Importing revision: ")
-    log_output_of(Popen(["hg", "parent", "--template={node}"],
+    log_output_of(Popen(["git", "rev-parse", "HEAD"],
                   stdout=PIPE, cwd=gSrcPath))
     gLog.write("\nfrom repository: ")
-    log_output_of(Popen(["hg", "paths", "default"],
-                  stdout=PIPE, cwd=gSrcPath))
+    branches = Popen(["git", "branch", "--format",
+                      "%(HEAD)%(upstream:lstrip=2)"],
+                     stdout=PIPE, cwd=gSrcPath)
+    for branch in branches.stdout:
+        if branch[0] == "*":
+            upstream = branch[1:].split("/")[0]
+            break
+    if len(upstream.strip()) == 0:
+        raise StandardError("No upstream repository found")
+    log_output_of(Popen(["git", "remote", "get-url", upstream],
+                        stdout=PIPE, cwd=gSrcPath))
     gLog.write("\n")
 
 def remove_existing_dirs():
@@ -274,9 +283,9 @@ def read_options():
     global gArgs, gOptions
     op = OptionParser()
     op.usage = \
-    '''%prog <clone of hg repository>
-            Import reftests from a W3C hg repository clone. The location of
-            the local clone of the hg repository must be given on the command
+    '''%prog <clone of git repository>
+            Import CSS reftests from a web-platform-tests git repository clone.
+            The location of the git repository must be given on the command
             line.'''
     (gOptions, gArgs) = op.parse_args()
     if len(gArgs) != 1:
@@ -288,8 +297,12 @@ def setup_paths():
     # (We currently expect the argument to have a trailing slash.)
     gSrcPath = gArgs[0]
     if not os.path.isdir(gSrcPath) or \
-    not os.path.isdir(os.path.join(gSrcPath, ".hg")):
-        raise StandardError("source path does not appear to be a mercurial clone")
+       not os.path.isdir(os.path.join(gSrcPath, ".git")):
+        raise StandardError("source path does not appear to be a git clone")
+    gSrcPath = os.path.join(gSrcPath, "css") + "/"
+    if not os.path.isdir(gSrcPath):
+        raise StandardError("source path does not appear to be " +
+                            "a wpt clone which contains css tests")
 
     gDestPath = os.path.join(os.path.dirname(os.path.realpath(__file__)), "received")
     newSubtrees = []
@@ -313,8 +326,11 @@ def read_fail_list():
             if not line or line.startswith("#"):
                 continue
             items = line.split()
+            refpat = None
+            if items[-1].startswith("ref:"):
+                refpat = re.compile(fnmatch.translate(items.pop()[4:]))
             pat = re.compile(fnmatch.translate(items.pop()))
-            gFailList.append((pat, items))
+            gFailList.append((pat, refpat, items))
 
 def main():
     global gDestPath, gLog, gTestfiles, gTestFlags, gFailList
@@ -351,9 +367,11 @@ def main():
         test[key] = to_unix_path_sep(test[key])
         test[key + 1] = to_unix_path_sep(test[key + 1])
         testKey = test[key]
+        refKey = test[key + 1]
         fail = []
-        for pattern, failureType in gFailList:
-            if pattern.match(testKey):
+        for pattern, refpattern, failureType in gFailList:
+            if (refpattern is None or refpattern.match(refKey)) and \
+               pattern.match(testKey):
                 fail = failureType
         test = fail + test
         listfile.write(" ".join(test) + "\n")

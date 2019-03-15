@@ -13,62 +13,66 @@ Bug 1132764 - Test controlling the maximum allocations log length over the RDP.
 <pre id="test">
 <script src="memory-helpers.js" type="application/javascript"></script>
 <script>
+"use strict";
+
 window.onload = function() {
   SimpleTest.waitForExplicitFinish();
 
-  Task.spawn(function* () {
-    var { memory, client } = yield startServerAndGetSelectedTabMemory();
-    yield memory.attach();
+  (async function() {
+    const { memory, target } = await startServerAndGetSelectedTabMemory();
+    await memory.attach();
 
-    var allocs = [];
-    var eventsFired = 0;
-    var intervalId = null;
-    function onAlloc () {
+    const allocs = [];
+    let eventsFired = 0;
+    let intervalId = null;
+    function onAlloc() {
       eventsFired++;
     }
-    function startAllocating () {
+    function startAllocating() {
       intervalId = setInterval(() => {
-        for (var i = 100000; --i;) {
+        for (let i = 100000; --i;) {
           allocs.push(new Object());
         }
       }, 1);
     }
-    function stopAllocating () {
+    function stopAllocating() {
       clearInterval(intervalId);
     }
 
     memory.on("allocations", onAlloc);
 
-    yield memory.startRecordingAllocations({
-      drainAllocationsTimeout: 10
+    await memory.startRecordingAllocations({
+      drainAllocationsTimeout: 10,
     });
 
-    yield waitUntil(() => eventsFired > 5);
-    ok(eventsFired > 5, "Some allocation events fired without allocating much via auto drain");
-    yield memory.stopRecordingAllocations();
+    await waitUntil(() => eventsFired > 5);
+    ok(eventsFired > 5,
+       "Some allocation events fired without allocating much via auto drain");
+    await memory.stopRecordingAllocations();
 
     // Set a really high auto drain timer so we can test if
     // it fires on GC
     eventsFired = 0;
-    var startTime = performance.now();
-    var drainTimer = 1000000;
-    yield memory.startRecordingAllocations({
-      drainAllocationsTimeout: drainTimer
+    const startTime = performance.now();
+    const drainTimer = 1000000;
+    await memory.startRecordingAllocations({
+      drainAllocationsTimeout: drainTimer,
     });
 
     startAllocating();
-    yield waitUntil(() => {
+    await waitUntil(() => {
       Cu.forceGC();
       return eventsFired > 1;
     });
     stopAllocating();
-    ok(performance.now() - drainTimer < startTime, "Allocation events fired on GC before timer");
-    yield memory.stopRecordingAllocations();
+    ok(performance.now() - drainTimer < startTime,
+       "Allocation events fired on GC before timer");
+    await memory.stopRecordingAllocations();
 
     memory.off("allocations", onAlloc);
-    yield memory.detach();
-    destroyServerAndFinish(client);
-  });
+    await memory.detach();
+    destroyServerAndFinish(target);
+  })();
 };
 </script>
 </pre>

@@ -8,14 +8,19 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_VIDEO_CODING_DECODING_STATE_H_
-#define WEBRTC_MODULES_VIDEO_CODING_DECODING_STATE_H_
+#ifndef MODULES_VIDEO_CODING_DECODING_STATE_H_
+#define MODULES_VIDEO_CODING_DECODING_STATE_H_
 
-#include "webrtc/typedefs.h"
+#include <map>
+#include <set>
+#include <vector>
+
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
 // Forward declarations
+struct NaluInfo;
 class VCMFrameBuffer;
 class VCMPacket;
 
@@ -61,6 +66,7 @@ class VCMDecodingState {
   bool UsingPictureId(const VCMFrameBuffer* frame) const;
   bool UsingFlexibleMode(const VCMFrameBuffer* frame) const;
   bool AheadOfFramesDecodedClearedTo(uint16_t index) const;
+  bool HaveSpsAndPps(const std::vector<NaluInfo>& nalus) const;
 
   // Keep state of last decoded frame.
   // TODO(mikhal/stefan): create designated classes to handle these types.
@@ -75,8 +81,10 @@ class VCMDecodingState {
   // Used to check references in flexible mode.
   bool frame_decoded_[kFrameDecodedLength];
   uint16_t frame_decoded_cleared_to_;
+  std::set<int> received_sps_;
+  std::map<int, int> received_pps_;
 };
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_VIDEO_CODING_DECODING_STATE_H_
+#endif  // MODULES_VIDEO_CODING_DECODING_STATE_H_

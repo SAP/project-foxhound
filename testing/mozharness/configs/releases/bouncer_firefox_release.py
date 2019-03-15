@@ -1,6 +1,7 @@
 # lint_ignore=E501
 config = {
     "shipped-locales-url": "https://hg.mozilla.org/%(repo)s/raw-file/%(revision)s/browser/locales/shipped-locales",
+    "bouncer_prefix": "https://download.mozilla.org/",
     "products": {
         "installer": {
             "product-name": "Firefox-%(version)s",
@@ -34,6 +35,7 @@ config = {
         "installer-ssl": {
             "product-name": "Firefox-%(version)s-SSL",
             "check_uptake": True,
+            "alias": "firefox-latest-ssl",
             "ssl-only": True,
             "add-locales": True,
             "paths": {
@@ -59,6 +61,23 @@ config = {
                 },
             },
         },
+        "msi": {
+            "product-name": "Firefox-%(version)s-msi-SSL",
+            "check_uptake": True,
+            "alias": "firefox-msi-latest-ssl",
+            "ssl-only": True,
+            "add-locales": True,
+            "paths": {
+                "win32": {
+                    "path": "/firefox/releases/%(version)s/win32/:lang/Firefox%%20Setup%%20%(version)s.msi",
+                    "bouncer-platform": "win",
+                },
+                "win64": {
+                    "path": "/firefox/releases/%(version)s/win64/:lang/Firefox%%20Setup%%20%(version)s.msi",
+                    "bouncer-platform": "win64",
+                },
+            },
+        },
         "stub-installer": {
             "product-name": "Firefox-%(version)s-stub",
             "check_uptake": True,
@@ -67,11 +86,11 @@ config = {
             "add-locales": True,
             "paths": {
                 "win32": {
-                    "path": "/firefox/releases/%(version)s/win32/:lang/Firefox%%20Setup%%20Stub%%20%(version)s.exe",
+                    "path": "/firefox/releases/%(version)s/win32/:lang/Firefox%%20Installer.exe",
                     "bouncer-platform": "win",
                 },
                 "win64": {
-                    "path": "/firefox/releases/%(version)s/win32/:lang/Firefox%%20Setup%%20Stub%%20%(version)s.exe",
+                    "path": "/firefox/releases/%(version)s/win32/:lang/Firefox%%20Installer.exe",
                     "bouncer-platform": "win64",
                 },
             },

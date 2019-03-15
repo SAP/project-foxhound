@@ -8,30 +8,85 @@
 #define mozilla_dom_URLClassifierChild_h
 
 #include "mozilla/dom/PURLClassifierChild.h"
+#include "mozilla/dom/PURLClassifierLocalChild.h"
+#include "mozilla/ipc/URIUtils.h"
+#include "mozilla/net/UrlClassifierFeatureResult.h"
 #include "nsIURIClassifier.h"
+#include "nsIUrlClassifierFeature.h"
 
 namespace mozilla {
 namespace dom {
 
-class URLClassifierChild : public PURLClassifierChild
-{
+class URLClassifierChild : public PURLClassifierChild {
  public:
-  URLClassifierChild() = default;
-
-  void SetCallback(nsIURIClassifierCallback* aCallback)
-  {
+  void SetCallback(nsIURIClassifierCallback* aCallback) {
     mCallback = aCallback;
   }
+
   mozilla::ipc::IPCResult Recv__delete__(const MaybeInfo& aInfo,
-                                         const nsresult& aResult) override;
+                                         const nsresult& aResult) override {
+    MOZ_ASSERT(mCallback);
+    if (aInfo.type() == MaybeInfo::TClassifierInfo) {
+      mCallback->OnClassifyComplete(aResult, aInfo.get_ClassifierInfo().list(),
+                                    aInfo.get_ClassifierInfo().provider(),
+                                    aInfo.get_ClassifierInfo().fullhash());
+    }
+    return IPC_OK();
+  }
 
  private:
-  ~URLClassifierChild() = default;
-
   nsCOMPtr<nsIURIClassifierCallback> mCallback;
 };
 
-} // namespace dom
-} // namespace mozilla
+class URLClassifierLocalChild : public PURLClassifierLocalChild {
+ public:
+  void SetFeaturesAndCallback(
+      const nsTArray<RefPtr<nsIUrlClassifierFeature>>& aFeatures,
+      nsIUrlClassifierFeatureCallback* aCallback) {
+    mCallback = aCallback;
+    mFeatures = aFeatures;
+  }
 
-#endif // mozilla_dom_URLClassifierChild_h
+  mozilla::ipc::IPCResult Recv__delete__(
+      nsTArray<URLClassifierLocalResult>&& aResults) override {
+    nsTArray<RefPtr<nsIUrlClassifierFeatureResult>> finalResults;
+
+    nsTArray<URLClassifierLocalResult> results = std::move(aResults);
+    for (URLClassifierLocalResult& result : results) {
+      for (nsIUrlClassifierFeature* feature : mFeatures) {
+        nsAutoCString name;
+        nsresult rv = feature->GetName(name);
+        if (NS_WARN_IF(NS_FAILED(rv))) {
+          continue;
+        }
+
+        if (result.featureName() != name) {
+          continue;
+        }
+
+        RefPtr<nsIURI> uri = result.uri();
+        if (NS_WARN_IF(!uri)) {
+          continue;
+        }
+
+        RefPtr<net::UrlClassifierFeatureResult> r =
+            new net::UrlClassifierFeatureResult(uri, feature,
+                                                result.matchingList());
+        finalResults.AppendElement(r);
+        break;
+      }
+    }
+
+    mCallback->OnClassifyComplete(finalResults);
+    return IPC_OK();
+  }
+
+ private:
+  nsCOMPtr<nsIUrlClassifierFeatureCallback> mCallback;
+  nsTArray<RefPtr<nsIUrlClassifierFeature>> mFeatures;
+};
+
+}  // namespace dom
+}  // namespace mozilla
+
+#endif  // mozilla_dom_URLClassifierChild_h

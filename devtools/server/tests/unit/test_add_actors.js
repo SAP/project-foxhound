@@ -1,8 +1,12 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-var gClient;
-var gActors;
+"use strict";
+
+// Get the object, from the server side, for a given actor ID
+function getActorInstance(connID, actorID) {
+  return DebuggerServer._connections[connID].getActor(actorID);
+}
 
 /**
  * The purpose of these tests is to verify that it's possible to add actors
@@ -11,97 +15,68 @@ var gActors;
  * in order to add actors after initialization but rather can add actors anytime
  * regardless of the object's state.
  */
-function run_test()
-{
-  DebuggerServer.addActors("resource://test/pre_init_global_actors.js");
-  DebuggerServer.addActors("resource://test/pre_init_tab_actors.js");
-
-  DebuggerServer.init();
-  DebuggerServer.addBrowserActors();
-
-  DebuggerServer.addActors("resource://test/post_init_global_actors.js");
-  DebuggerServer.addActors("resource://test/post_init_tab_actors.js");
-
-  add_test(init);
-  add_test(test_pre_init_global_actor);
-  add_test(test_pre_init_tab_actor);
-  add_test(test_post_init_global_actor);
-  add_test(test_post_init_tab_actor);
-  add_test(test_stable_global_actor_instances);
-  add_test(close_client);
-  run_next_test();
-}
-
-function init()
-{
-  gClient = new DebuggerClient(DebuggerServer.connectPipe());
-  gClient.connect()
-    .then(() => gClient.listTabs())
-    .then(aResponse => {
-      gActors = aResponse;
-      run_next_test();
-    });
-}
-
-function test_pre_init_global_actor()
-{
-  gClient.request({ to: gActors.preInitGlobalActor, type: "ping" },
-    function onResponse(aResponse) {
-      do_check_eq(aResponse.message, "pong");
-      run_next_test();
-    }
-  );
-}
-
-function test_pre_init_tab_actor()
-{
-  gClient.request({ to: gActors.preInitTabActor, type: "ping" },
-    function onResponse(aResponse) {
-      do_check_eq(aResponse.message, "pong");
-      run_next_test();
-    }
-  );
-}
-
-function test_post_init_global_actor()
-{
-  gClient.request({ to: gActors.postInitGlobalActor, type: "ping" },
-    function onResponse(aResponse) {
-      do_check_eq(aResponse.message, "pong");
-      run_next_test();
-    }
-  );
-}
-
-function test_post_init_tab_actor()
-{
-  gClient.request({ to: gActors.postInitTabActor, type: "ping" },
-    function onResponse(aResponse) {
-      do_check_eq(aResponse.message, "pong");
-      run_next_test();
-    }
-  );
-}
-
-// Get the object object, from the server side, for a given actor ID
-function getActorInstance(connID, actorID) {
-  return DebuggerServer._connections[connID].getActor(actorID);
-}
-
-function test_stable_global_actor_instances()
-{
-  // Consider that there is only one connection,
-  // and the first one is ours
-  let connID = Object.keys(DebuggerServer._connections)[0];
-  let postInitGlobalActor = getActorInstance(connID, gActors.postInitGlobalActor);
-  let preInitGlobalActor = getActorInstance(connID, gActors.preInitGlobalActor);
-  gClient.listTabs(function onListTabs(aResponse) {
-    do_check_eq(postInitGlobalActor, getActorInstance(connID, aResponse.postInitGlobalActor));
-    do_check_eq(preInitGlobalActor, getActorInstance(connID, aResponse.preInitGlobalActor));
-    run_next_test();
+add_task(async function() {
+  ActorRegistry.registerModule("resource://test/pre_init_global_actors.js", {
+    prefix: "preInitGlobal",
+    constructor: "PreInitGlobalActor",
+    type: { global: true },
   });
-}
+  ActorRegistry.registerModule("resource://test/pre_init_target_scoped_actors.js", {
+    prefix: "preInitTargetScoped",
+    constructor: "PreInitTargetScopedActor",
+    type: { target: true },
+  });
 
-function close_client() {
-  gClient.close().then(() => run_next_test());
-}
+  const client = await startTestDebuggerServer("example tab");
+
+  ActorRegistry.registerModule("resource://test/post_init_global_actors.js", {
+    prefix: "postInitGlobal",
+    constructor: "PostInitGlobalActor",
+    type: { global: true },
+  });
+  ActorRegistry.registerModule("resource://test/post_init_target_scoped_actors.js", {
+    prefix: "postInitTargetScoped",
+    constructor: "PostInitTargetScopedActor",
+    type: { target: true },
+  });
+
+  let actors = await client.mainRoot.rootForm;
+  const tabs = await client.mainRoot.listTabs();
+  Assert.equal(tabs.length, 1);
+
+  let reply = await client.request({
+    to: actors.preInitGlobalActor,
+    type: "ping",
+  });
+  Assert.equal(reply.message, "pong");
+
+  reply = await client.request({
+    to: tabs[0].targetForm.preInitTargetScopedActor,
+    type: "ping",
+  });
+  Assert.equal(reply.message, "pong");
+
+  reply = await client.request({
+    to: actors.postInitGlobalActor,
+    type: "ping",
+  });
+  Assert.equal(reply.message, "pong");
+
+  reply = await client.request({
+    to: tabs[0].targetForm.postInitTargetScopedActor,
+    type: "ping",
+  });
+  Assert.equal(reply.message, "pong");
+
+  // Consider that there is only one connection, and the first one is ours
+  const connID = Object.keys(DebuggerServer._connections)[0];
+  const postInitGlobalActor = getActorInstance(connID, actors.postInitGlobalActor);
+  const preInitGlobalActor = getActorInstance(connID, actors.preInitGlobalActor);
+  actors = await client.mainRoot.getRoot();
+  Assert.equal(postInitGlobalActor,
+    getActorInstance(connID, actors.postInitGlobalActor));
+  Assert.equal(preInitGlobalActor,
+    getActorInstance(connID, actors.preInitGlobalActor));
+
+  await client.close();
+});

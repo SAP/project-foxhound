@@ -20,14 +20,14 @@
 
 "use strict";
 
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
-var ios = Components.classes["@mozilla.org/network/io-service;1"]
-                    .getService(Components.interfaces.nsIIOService);
-var pps = Components.classes["@mozilla.org/network/protocol-proxy-service;1"]
-                    .getService();
-var prefs = Components.classes["@mozilla.org/preferences-service;1"]
-                     .getService(Components.interfaces.nsIPrefBranch);
+var ios = Cc["@mozilla.org/network/io-service;1"]
+            .getService(Ci.nsIIOService);
+var pps = Cc["@mozilla.org/network/protocol-proxy-service;1"]
+            .getService();
+var prefs = Cc["@mozilla.org/preferences-service;1"]
+                     .getService(Ci.nsIPrefBranch);
 
 /**
  * Test nsIProtocolHandler that allows proxying, but doesn't allow HTTP
@@ -37,28 +37,28 @@ function TestProtocolHandler() {
 }
 TestProtocolHandler.prototype = {
   QueryInterface: function(iid) {
-    if (iid.equals(Components.interfaces.nsIProtocolHandler) ||
-        iid.equals(Components.interfaces.nsISupports))
+    if (iid.equals(Ci.nsIProtocolHandler) ||
+        iid.equals(Ci.nsISupports))
       return this;
-    throw Components.results.NS_ERROR_NO_INTERFACE;
+    throw Cr.NS_ERROR_NO_INTERFACE;
   },
   scheme: "moz-test",
   defaultPort: -1,
-  protocolFlags: Components.interfaces.nsIProtocolHandler.URI_NOAUTH |
-                 Components.interfaces.nsIProtocolHandler.URI_NORELATIVE |
-                 Components.interfaces.nsIProtocolHandler.ALLOWS_PROXY |
-                 Components.interfaces.nsIProtocolHandler.URI_DANGEROUS_TO_LOAD,
+  protocolFlags: Ci.nsIProtocolHandler.URI_NOAUTH |
+                 Ci.nsIProtocolHandler.URI_NORELATIVE |
+                 Ci.nsIProtocolHandler.ALLOWS_PROXY |
+                 Ci.nsIProtocolHandler.URI_DANGEROUS_TO_LOAD,
   newURI: function(spec, originCharset, baseURI) {
-    var uri = Components.classes["@mozilla.org/network/simple-uri;1"]
-                        .createInstance(Components.interfaces.nsIURI);
-    uri.spec = spec;
-    return uri;
+    return Cc["@mozilla.org/network/simple-uri-mutator;1"]
+             .createInstance(Ci.nsIURIMutator)
+             .setSpec(spec)
+             .finalize();
   },
   newChannel2: function(uri, aLoadInfo) {
-    throw Components.results.NS_ERROR_NOT_IMPLEMENTED;
+    throw Cr.NS_ERROR_NOT_IMPLEMENTED;
   },
   newChannel: function(uri) {
-    throw Components.results.NS_ERROR_NOT_IMPLEMENTED;
+    throw Cr.NS_ERROR_NOT_IMPLEMENTED;
   },
   allowPort: function(port, scheme) {
     return true;
@@ -77,7 +77,7 @@ TestProtocolHandlerFactory.prototype = {
 
 function register_test_protocol_handler() {
   var reg = Components.manager.QueryInterface(
-      Components.interfaces.nsIComponentRegistrar);
+      Ci.nsIComponentRegistrar);
   reg.registerFactory(Components.ID("{4ea7dd3a-8cae-499c-9f18-e1de773ca25b}"),
                       "TestProtocolHandler",
                       "@mozilla.org/network/protocol;1?name=moz-test",
@@ -85,18 +85,18 @@ function register_test_protocol_handler() {
 }
 
 function check_proxy(pi, type, host, port, flags, timeout, hasNext) {
-  do_check_neq(pi, null);
-  do_check_eq(pi.type, type);
-  do_check_eq(pi.host, host);
-  do_check_eq(pi.port, port);
+  Assert.notEqual(pi, null);
+  Assert.equal(pi.type, type);
+  Assert.equal(pi.host, host);
+  Assert.equal(pi.port, port);
   if (flags != -1)
-    do_check_eq(pi.flags, flags);
+    Assert.equal(pi.flags, flags);
   if (timeout != -1)
-    do_check_eq(pi.failoverTimeout, timeout);
+    Assert.equal(pi.failoverTimeout, timeout);
   if (hasNext)
-    do_check_neq(pi.failoverProxy, null);
+    Assert.notEqual(pi.failoverProxy, null);
   else
-    do_check_eq(pi.failoverProxy, null);
+    Assert.equal(pi.failoverProxy, null);
 }
 
 function TestFilter(type, host, port, flags, timeout) {
@@ -113,47 +113,51 @@ TestFilter.prototype = {
   _flags: 0,
   _timeout: 0,
   QueryInterface: function(iid) {
-    if (iid.equals(Components.interfaces.nsIProtocolProxyFilter) ||
-        iid.equals(Components.interfaces.nsISupports))
+    if (iid.equals(Ci.nsIProtocolProxyFilter) ||
+        iid.equals(Ci.nsISupports))
       return this;
-    throw Components.results.NS_ERROR_NO_INTERFACE;
+    throw Cr.NS_ERROR_NO_INTERFACE;
   },
-  applyFilter: function(pps, uri, pi) {
+  applyFilter: function(pps, uri, pi, cb) {
     var pi_tail = pps.newProxyInfo(this._type, this._host, this._port,
                                    this._flags, this._timeout, null);
     if (pi)
       pi.failoverProxy = pi_tail;
     else
       pi = pi_tail;
-    return pi;
+    cb.onProxyFilterResult(pi);
   }
 };
 
 function BasicFilter() {}
 BasicFilter.prototype = {
   QueryInterface: function(iid) {
-    if (iid.equals(Components.interfaces.nsIProtocolProxyFilter) ||
-        iid.equals(Components.interfaces.nsISupports))
+    if (iid.equals(Ci.nsIProtocolProxyFilter) ||
+        iid.equals(Ci.nsISupports))
       return this;
-    throw Components.results.NS_ERROR_NO_INTERFACE;
+    throw Cr.NS_ERROR_NO_INTERFACE;
   },
-  applyFilter: function(pps, uri, pi) {
-    return pps.newProxyInfo("http", "localhost", 8080, 0, 10,
-           pps.newProxyInfo("direct", "", -1, 0, 0, null));
+  applyFilter: function(pps, uri, pi, cb) {
+    cb.onProxyFilterResult(
+      pps.newProxyInfo("http", "localhost", 8080, 0, 10,
+      pps.newProxyInfo("direct", "", -1, 0, 0, null))
+    );
   }
 };
 
 function BasicChannelFilter() {}
 BasicChannelFilter.prototype = {
   QueryInterface: function(iid) {
-    if (iid.equals(Components.interfaces.nsIProtocolProxyChannelFilter) ||
-        iid.equals(Components.interfaces.nsISupports))
+    if (iid.equals(Ci.nsIProtocolProxyChannelFilter) ||
+        iid.equals(Ci.nsISupports))
       return this;
-    throw Components.results.NS_ERROR_NO_INTERFACE;
+    throw Cr.NS_ERROR_NO_INTERFACE;
   },
-  applyFilter: function(pps, channel, pi) {
-    return pps.newProxyInfo("http", channel.URI.host, 7777, 0, 10,
-           pps.newProxyInfo("direct", "", -1, 0, 0, null));
+  applyFilter: function(pps, channel, pi, cb) {
+    cb.onProxyFilterResult(
+      pps.newProxyInfo("http", channel.URI.host, 7777, 0, 10,
+      pps.newProxyInfo("direct", "", -1, 0, 0, null))
+    );
   }
 };
 
@@ -162,10 +166,10 @@ resolveCallback.prototype = {
   nextFunction: null,
 
   QueryInterface : function (iid) {
-    const interfaces = [Components.interfaces.nsIProtocolProxyCallback,
-                        Components.interfaces.nsISupports];
+    const interfaces = [Ci.nsIProtocolProxyCallback,
+                        Ci.nsISupports];
     if (!interfaces.some( function(v) { return iid.equals(v) } ))
-      throw Components.results.NS_ERROR_NO_INTERFACE;
+      throw Cr.NS_ERROR_NO_INTERFACE;
     return this;
   },
 
@@ -190,7 +194,7 @@ var filter01;
 var filter02;
 
 function filter_test0_1(pi) {
-  do_check_eq(pi, null);
+  Assert.equal(pi, null);
 
   // Push a filter and verify the results
 
@@ -246,7 +250,7 @@ var filter03;
 
 function filter_test0_4(pi)
 {
-  do_check_eq(pi, null);
+  Assert.equal(pi, null);
   filter03 = new BasicChannelFilter();
   pps.registerChannelFilter(filter03, 10);
   var cb = new resolveCallback();
@@ -274,7 +278,7 @@ function run_filter_test_uri() {
 }
 
 function filter_test_uri0_1(pi) {
-  do_check_eq(pi, null);
+  Assert.equal(pi, null);
 
   // Push a filter and verify the results
 
@@ -319,7 +323,7 @@ function filter_test_uri0_3(pi)
 
 function filter_test_uri0_4(pi)
 {
-  do_check_eq(pi, null);
+  Assert.equal(pi, null);
   run_filter_test2();
 }
 
@@ -375,7 +379,7 @@ function filter_test1_2(pi) {
 }
 
 function filter_test1_3(pi) {
-  do_check_eq(pi, null);
+  Assert.equal(pi, null);
   run_filter_test3();
 }
 
@@ -418,7 +422,7 @@ function run_pref_test() {
 
 function pref_test1_1(pi)
 {
-  do_check_eq(pi, null);
+  Assert.equal(pi, null);
 
   // Verify 'manual' setting
   prefs.setIntPref("network.proxy.type", 1);
@@ -435,7 +439,7 @@ function pref_test1_1(pi)
 function pref_test1_2(pi)
 {
   // nothing yet configured
-  do_check_eq(pi, null);
+  Assert.equal(pi, null);
 
   // try HTTP configuration
   prefs.setCharPref("network.proxy.http", "foopy");
@@ -478,7 +482,7 @@ function pref_test1_4(pi)
 
 function protocol_handler_test_1(pi)
 {
-  do_check_eq(pi, null);
+  Assert.equal(pi, null);
   prefs.setCharPref("network.proxy.autoconfig_url", "");
   prefs.setIntPref("network.proxy.type", 0);
 
@@ -492,10 +496,10 @@ function TestResolveCallback(type, nexttest) {
 TestResolveCallback.prototype = {
   QueryInterface:
   function TestResolveCallback_QueryInterface(iid) {
-    if (iid.equals(Components.interfaces.nsIProtocolProxyCallback) ||
-        iid.equals(Components.interfaces.nsISupports))
+    if (iid.equals(Ci.nsIProtocolProxyCallback) ||
+        iid.equals(Ci.nsISupports))
       return this;
-    throw Components.results.NS_ERROR_NO_INTERFACE;
+    throw Cr.NS_ERROR_NO_INTERFACE;
   },
 
   onProxyAvailable:
@@ -503,12 +507,12 @@ TestResolveCallback.prototype = {
     dump("*** channelURI=" + channel.URI.spec + ", status=" + status + "\n");
 
     if (this.type == null) {
-      do_check_eq(pi, null);
+      Assert.equal(pi, null);
     } else {
-      do_check_neq(req, null);
-      do_check_neq(channel, null);
-      do_check_eq(status, 0);
-      do_check_neq(pi, null);
+      Assert.notEqual(req, null);
+      Assert.notEqual(channel, null);
+      Assert.equal(status, 0);
+      Assert.notEqual(pi, null);
       check_proxy(pi, this.type, "foopy", 8080, 0, -1, true);
       check_proxy(pi.failoverProxy, "direct", "", -1, -1, -1, false);
     }
@@ -596,6 +600,56 @@ function run_pac4_test() {
 
   prefs.setIntPref("network.proxy.type", 2);
   prefs.setCharPref("network.proxy.autoconfig_url", pac);
+  var req = pps.asyncResolve(channel, 0, new TestResolveCallback("http", run_utf8_pac_test));
+}
+
+function run_utf8_pac_test() {
+  var pac = 'data:text/plain;charset=UTF-8,' +
+            'function FindProxyForURL(url, host) {' +
+            '  /*' +
+            '   U+00A9 COPYRIGHT SIGN: %C2%A9,' +
+            '   U+0B87 TAMIL LETTER I: %E0%AE%87,' +
+            '   U+10398 UGARITIC LETTER THANNA: %F0%90%8E%98 ' +
+            '  */' +
+            '  var multiBytes = "%C2%A9 %E0%AE%87 %F0%90%8E%98"; ' +
+            '  /* 6 UTF-16 units above if PAC script run as UTF-8; 11 units if run as Latin-1 */ ' +
+            '  return multiBytes.length === 6 ' +
+            '         ? "PROXY foopy:8080; DIRECT" ' +
+            '         : "PROXY epicfail-utf8:12345; DIRECT";' +
+            '}';
+
+  var channel = NetUtil.newChannel({
+    uri: "http://www.mozilla.org/",
+    loadUsingSystemPrincipal: true
+  });
+
+  // Configure PAC
+  prefs.setIntPref("network.proxy.type", 2);
+  prefs.setCharPref("network.proxy.autoconfig_url", pac);
+
+  var req = pps.asyncResolve(channel, 0, new TestResolveCallback("http", run_latin1_pac_test));
+}
+
+function run_latin1_pac_test() {
+  var pac = 'data:text/plain,' +
+            'function FindProxyForURL(url, host) {' +
+            '  /* A too-long encoding of U+0000, so not valid UTF-8 */ ' +
+            '  var multiBytes = "%C0%80"; ' +
+            '  /* 2 UTF-16 units because interpreted as Latin-1 */ ' +
+            '  return multiBytes.length === 2 ' +
+            '         ? "PROXY foopy:8080; DIRECT" ' +
+            '         : "PROXY epicfail-latin1:12345; DIRECT";' +
+            '}';
+
+  var channel = NetUtil.newChannel({
+    uri: "http://www.mozilla.org/",
+    loadUsingSystemPrincipal: true
+  });
+
+  // Configure PAC
+  prefs.setIntPref("network.proxy.type", 2);
+  prefs.setCharPref("network.proxy.autoconfig_url", pac);
+
   var req = pps.asyncResolve(channel, 0, new TestResolveCallback("http", finish_pac_test));
 }
 
@@ -609,20 +663,20 @@ function TestResolveCancelationCallback() {
 TestResolveCancelationCallback.prototype = {
   QueryInterface:
   function TestResolveCallback_QueryInterface(iid) {
-    if (iid.equals(Components.interfaces.nsIProtocolProxyCallback) ||
-        iid.equals(Components.interfaces.nsISupports))
+    if (iid.equals(Ci.nsIProtocolProxyCallback) ||
+        iid.equals(Ci.nsISupports))
       return this;
-    throw Components.results.NS_ERROR_NO_INTERFACE;
+    throw Cr.NS_ERROR_NO_INTERFACE;
   },
 
   onProxyAvailable:
   function TestResolveCancelationCallback_onProxyAvailable(req, channel, pi, status) {
     dump("*** channelURI=" + channel.URI.spec + ", status=" + status + "\n");
 
-    do_check_neq(req, null);
-    do_check_neq(channel, null);
-    do_check_eq(status, Components.results.NS_ERROR_ABORT);
-    do_check_eq(pi, null);
+    Assert.notEqual(req, null);
+    Assert.notEqual(channel, null);
+    Assert.equal(status, Cr.NS_ERROR_ABORT);
+    Assert.equal(pi, null);
 
     prefs.setCharPref("network.proxy.autoconfig_url", "");
     prefs.setIntPref("network.proxy.type", 0);
@@ -645,7 +699,7 @@ function run_pac_cancel_test() {
   prefs.setCharPref("network.proxy.autoconfig_url", pac);
 
   var req = pps.asyncResolve(channel, 0, new TestResolveCancelationCallback());
-  req.cancel(Components.results.NS_ERROR_ABORT);
+  req.cancel(Cr.NS_ERROR_ABORT);
 }
 
 var hostList;
@@ -687,9 +741,9 @@ function check_host_filter(i) {
 function host_filter_cb(proxy)
 {
   if (bShouldBeFiltered) {
-    do_check_eq(proxy, null);
+    Assert.equal(proxy, null);
   } else {
-    do_check_neq(proxy, null);
+    Assert.notEqual(proxy, null);
     // Just to be sure, let's check that the proxy is correct
     // - this should match the proxy setup in the calling function
     check_proxy(proxy, "http", "foopy", 8080, 0, -1, false);
@@ -718,7 +772,7 @@ function run_proxy_host_filters_test() {
   hostFilterList = "www.mozilla.org, www.google.com, www.apple.com, "
                        + ".domain, .domain2.org"
   prefs.setCharPref("network.proxy.no_proxies_on", hostFilterList);
-  do_check_eq(prefs.getCharPref("network.proxy.no_proxies_on"), hostFilterList);
+  Assert.equal(prefs.getCharPref("network.proxy.no_proxies_on"), hostFilterList);
 
   var rv;
   // Check the hosts that should be filtered out
@@ -746,8 +800,8 @@ function host_filters_2()
 {
   // Set no_proxies_on to include local hosts
   prefs.setCharPref("network.proxy.no_proxies_on", hostFilterList + ", <local>");
-  do_check_eq(prefs.getCharPref("network.proxy.no_proxies_on"),
-              hostFilterList + ", <local>");
+  Assert.equal(prefs.getCharPref("network.proxy.no_proxies_on"),
+               hostFilterList + ", <local>");
   // Amend lists - move local domain to filtered list
   uriStrFilterList.push(uriStrUseProxyList.pop());
   check_host_filters(uriStrFilterList, true, host_filters_3);
@@ -762,7 +816,7 @@ function host_filters_4()
 {
   // Cleanup
   prefs.setCharPref("network.proxy.no_proxies_on", "");
-  do_check_eq(prefs.getCharPref("network.proxy.no_proxies_on"), "");
+  Assert.equal(prefs.getCharPref("network.proxy.no_proxies_on"), "");
 
   run_myipaddress_test();
 }
@@ -796,14 +850,14 @@ function run_myipaddress_test()
 
 function myipaddress_callback(pi)
 {
-  do_check_neq(pi, null);
-  do_check_eq(pi.type, "http");
-  do_check_eq(pi.port, 1234);
+  Assert.notEqual(pi, null);
+  Assert.equal(pi.type, "http");
+  Assert.equal(pi.port, 1234);
 
   // make sure we didn't return localhost
-  do_check_neq(pi.host, null);
-  do_check_neq(pi.host, "127.0.0.1");
-  do_check_neq(pi.host, "::1");
+  Assert.notEqual(pi.host, null);
+  Assert.notEqual(pi.host, "127.0.0.1");
+  Assert.notEqual(pi.host, "::1");
 
   run_myipaddress_test_2();
 }
@@ -834,14 +888,14 @@ function run_myipaddress_test_2()
 
 function myipaddress2_callback(pi)
 {
-  do_check_neq(pi, null);
-  do_check_eq(pi.type, "http");
-  do_check_eq(pi.port, 5678);
+  Assert.notEqual(pi, null);
+  Assert.equal(pi.type, "http");
+  Assert.equal(pi.port, 5678);
 
   // make sure we didn't return localhost
-  do_check_neq(pi.host, null);
-  do_check_neq(pi.host, "127.0.0.1");
-  do_check_neq(pi.host, "::1");
+  Assert.notEqual(pi.host, null);
+  Assert.notEqual(pi.host, "127.0.0.1");
+  Assert.notEqual(pi.host, "::1");
 
   run_failed_script_test();
 }
@@ -869,7 +923,7 @@ var directFilter;
 function failed_script_callback(pi)
 {
   // we should go direct
-  do_check_eq(pi, null);
+  Assert.equal(pi, null);
 
   // test that we honor filters when configured to go direct
   prefs.setIntPref("network.proxy.type", 0);
@@ -877,9 +931,9 @@ function failed_script_callback(pi)
   pps.registerFilter(directFilter, 10);
 
   // test that on-modify-request contains the proxy info too
-  var obs = Components.classes["@mozilla.org/observer-service;1"].getService();
-  obs = obs.QueryInterface(Components.interfaces.nsIObserverService);
-  obs.addObserver(directFilterListener, "http-on-modify-request", false);
+  var obs = Cc["@mozilla.org/observer-service;1"].getService();
+  obs = obs.QueryInterface(Ci.nsIObserverService);
+  obs.addObserver(directFilterListener, "http-on-modify-request");
 
   var chan = NetUtil.newChannel({
     uri: "http://127.0.0.1:7247",
@@ -896,14 +950,14 @@ var directFilterListener = {
 
   onStopRequest: function test_onStop(request, ctx, status) {
     // check on the PI from the channel itself
-    request.QueryInterface(Components.interfaces.nsIProxiedChannel);
+    request.QueryInterface(Ci.nsIProxiedChannel);
     check_proxy(request.proxyInfo, "http", "127.0.0.1", 7246, 0, 0, false);
     pps.unregisterFilter(directFilter);
 
     // check on the PI from on-modify-request
-    do_check_true(this.onModifyRequestCalled);
-    var obs = Components.classes["@mozilla.org/observer-service;1"].getService();
-    obs = obs.QueryInterface(Components.interfaces.nsIObserverService);
+    Assert.ok(this.onModifyRequestCalled);
+    var obs = Cc["@mozilla.org/observer-service;1"].getService();
+    obs = obs.QueryInterface(Ci.nsIObserverService);
     obs.removeObserver(this, "http-on-modify-request");
 
     run_isresolvable_test();
@@ -911,8 +965,8 @@ var directFilterListener = {
 
    observe: function(subject, topic, data) {
      if (topic === "http-on-modify-request" &&
-         subject instanceof Components.interfaces.nsIHttpChannel &&
-         subject instanceof Components.interfaces.nsIProxiedChannel) {
+         subject instanceof Ci.nsIHttpChannel &&
+         subject instanceof Ci.nsIProxiedChannel) {
        check_proxy(subject.proxyInfo, "http", "127.0.0.1", 7246, 0, 0, false);
        this.onModifyRequestCalled = true;
      }
@@ -944,14 +998,45 @@ function run_isresolvable_test()
 
 function isresolvable_callback(pi)
 {
-  do_check_neq(pi, null);
-  do_check_eq(pi.type, "http");
-  do_check_eq(pi.port, 1234);
-  do_check_eq(pi.host, "127.0.0.1");
+  Assert.notEqual(pi, null);
+  Assert.equal(pi.type, "http");
+  Assert.equal(pi.port, 1234);
+  Assert.equal(pi.host, "127.0.0.1");
+
+  run_localhost_pac();
+}
+
+function run_localhost_pac()
+{
+  // test localhost in the pac file
+
+  var pac = 'data:text/plain,' +
+            'function FindProxyForURL(url, host) {' +
+            ' return "PROXY totallycrazy:1234";' +
+            '}';
+
+  // Use default filter list string for "no_proxies_on" ("localhost, 127.0.0.1")
+  prefs.clearUserPref("network.proxy.no_proxies_on");
+  var channel = NetUtil.newChannel({
+    uri: "http://localhost/",
+    loadUsingSystemPrincipal: true
+  });
+  prefs.setIntPref("network.proxy.type", 2);
+  prefs.setCharPref("network.proxy.autoconfig_url", pac);
+
+  var cb = new resolveCallback();
+  cb.nextFunction = localhost_callback;
+  var req = pps.asyncResolve(channel, 0, cb);
+}
+
+function localhost_callback(pi)
+{
+  Assert.equal(pi, null); // no proxy!
 
   prefs.setIntPref("network.proxy.type", 0);
   do_test_finished();
 }
+
 
 function run_test() {
   register_test_protocol_handler();

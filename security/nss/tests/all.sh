@@ -37,10 +37,13 @@
 #   memleak.sh   - memory leak testing (optional)
 #   ssl_gtests.sh- Gtest based unit tests for ssl
 #   gtests.sh    - Gtest based unit tests for everything else
+#   policy.sh    - Crypto Policy tests
 #   bogo.sh      - Bogo interop tests (disabled by default)
 #                  https://boringssl.googlesource.com/boringssl/+/master/ssl/test/PORTING.md
 #   interop.sh   - Interoperability tests (disabled by default)
 #                  https://github.com/ekr/tls_interop
+#   tlsfuzzer.sh - tlsfuzzer interop tests (disabled by default)
+#                  https://github.com/tomato42/tlsfuzzer/
 #
 # NSS testing is now devided to 4 cycles:
 # ---------------------------------------
@@ -62,10 +65,6 @@
 # -------------------------------------------------------
 #   BUILT_OPT    - use optimized/debug build
 #   USE_64       - use 64bit/32bit build
-#
-# Optional environment variables to enable specific NSS features:
-# ---------------------------------------------------------------
-#   NSS_DISABLE_ECC             - disable ECC
 #
 # Optional environment variables to select which cycles/suites to test:
 # ---------------------------------------------------------------------
@@ -107,12 +106,16 @@
 #
 ########################################################################
 
+RUN_FIPS=""
+
 ############################## run_tests ###############################
 # run test suites defined in TESTS variable, skip scripts defined in
 # TESTS_SKIP variable
 ########################################################################
 run_tests()
 {
+    echo "Running test cycle: ${TEST_MODE} ----------------------"
+    echo "List of tests that will be executed: ${TESTS}"
     for TEST in ${TESTS}
     do
         # NOTE: the spaces are important. If you don't include
@@ -132,14 +135,20 @@ run_tests()
 }
 
 ########################## run_cycle_standard ##########################
-# run test suites with defaults settings (no PKIX, no sharedb)
+# run test suites with dbm database (no PKIX, no sharedb)
 ########################################################################
 run_cycle_standard()
 {
     TEST_MODE=STANDARD
 
     TESTS="${ALL_TESTS}"
-    TESTS_SKIP=
+    TESTS_SKIP="cipher libpkix sdr ocsp pkits"
+
+    NSS_DEFAULT_DB_TYPE="dbm"
+    export NSS_DEFAULT_DB_TYPE
+
+    NSS_SSL_TESTS=`echo "${NSS_SSL_TESTS}" | sed -e "s/normal//g" -e "s/fips//g" -e "s/_//g"`
+    NSS_SSL_RUN=`echo "${NSS_SSL_RUN}" | sed -e "s/cov//g" -e "s/auth//g"`
 
     run_tests
 }
@@ -164,7 +173,13 @@ run_cycle_pkix()
 
     TESTS="${ALL_TESTS}"
     TESTS_SKIP="cipher dbtests sdr crmf smime merge multinit"
+
     NSS_SSL_TESTS=`echo "${NSS_SSL_TESTS}" | sed -e "s/normal//g" -e "s/fips//g" -e "s/_//g"`
+    export -n NSS_SSL_RUN
+
+    # use the default format. (unset for the shell, export -n for binaries)
+    export -n NSS_DEFAULT_DB_TYPE
+    unset NSS_DEFAULT_DB_TYPE
 
     run_tests
 }
@@ -187,7 +202,7 @@ run_cycle_upgrade_db()
     init_directories
 
     if [ -r "${OLDHOSTDIR}/cert.log" ]; then
-        DIRS="alicedir bobdir CA cert_extensions client clientCA dave eccurves eve ext_client ext_server fips SDR server serverCA stapling tools/copydir cert.log cert.done tests.*"
+        DIRS="alicedir bobdir CA cert_extensions client clientCA dave eccurves eve ext_client ext_server $RUN_FIPS SDR server serverCA stapling tools/copydir cert.log cert.done tests.*"
         for i in $DIRS
         do
             cp -r ${OLDHOSTDIR}/${i} ${HOSTDIR} #2> /dev/null
@@ -233,10 +248,10 @@ run_cycle_shared_db()
 
     # run the tests for native sharedb support
     TESTS="${ALL_TESTS}"
-    TESTS_SKIP="cipher libpkix dbupgrade sdr ocsp pkits"
+    TESTS_SKIP="dbupgrade"
 
-    NSS_SSL_TESTS=`echo "${NSS_SSL_TESTS}" | sed -e "s/normal//g" -e "s/fips//g" -e "s/_//g"`
-    NSS_SSL_RUN=`echo "${NSS_SSL_RUN}" | sed -e "s/cov//g" -e "s/auth//g"`
+    export -n NSS_SSL_TESTS
+    export -n NSS_SSL_RUN
 
     run_tests
 }
@@ -270,20 +285,6 @@ run_cycles()
 
 ############################## main code ###############################
 
-cycles="standard pkix upgradedb sharedb"
-CYCLES=${NSS_CYCLES:-$cycles}
-
-tests="cipher lowhash libpkix cert dbtests tools fips sdr crmf smime ssl ocsp merge pkits chains ec gtests ssl_gtests"
-TESTS=${NSS_TESTS:-$tests}
-
-ALL_TESTS=${TESTS}
-
-nss_ssl_tests="crl fips_normal normal_fips iopr policy"
-NSS_SSL_TESTS="${NSS_SSL_TESTS:-$nss_ssl_tests}"
-
-nss_ssl_run="cov auth stapling stress"
-NSS_SSL_RUN="${NSS_SSL_RUN:-$nss_ssl_run}"
-
 SCRIPTNAME=all.sh
 CLEANUP="${SCRIPTNAME}"
 cd `dirname $0`
@@ -294,12 +295,43 @@ if [ -z "${INIT_SOURCED}" -o "${INIT_SOURCED}" != "TRUE" ]; then
     . ./init.sh
 fi
 
+cycles="standard pkix upgradedb sharedb"
+CYCLES=${NSS_CYCLES:-$cycles}
+
+NO_INIT_SUPPORT=`certutil --build-flags |grep -cw NSS_NO_INIT_SUPPORT`
+if [ $NO_INIT_SUPPORT -eq 0 ]; then
+    RUN_FIPS="fips"
+fi
+
+tests="cipher lowhash libpkix cert dbtests tools $RUN_FIPS sdr crmf smime ssl ocsp merge pkits ec gtests ssl_gtests policy"
+# Don't run chains tests when we have a gyp build.
+if [ "$OBJDIR" != "Debug" -a "$OBJDIR" != "Release" ]; then
+  tests="$tests chains"
+fi
+TESTS=${NSS_TESTS:-$tests}
+
+ALL_TESTS=${TESTS}
+
+nss_ssl_tests="crl iopr policy normal_normal"
+if [ $NO_INIT_SUPPORT -eq 0 ]; then
+    nss_ssl_tests="$nss_ssl_tests fips_normal normal_fips"
+fi
+NSS_SSL_TESTS="${NSS_SSL_TESTS:-$nss_ssl_tests}"
+
+nss_ssl_run="cov auth stapling signed_cert_timestamps stress scheme"
+NSS_SSL_RUN="${NSS_SSL_RUN:-$nss_ssl_run}"
+
 # NOTE:
 # Lists of enabled tests and other settings are stored to ${ENV_BACKUP}
 # file and are are restored after every test cycle.
 
 ENV_BACKUP=${HOSTDIR}/env.sh
 env_backup > ${ENV_BACKUP}
+
+# Print hardware support if we built it.
+if [ -f ${BINDIR}/hw-support ]; then
+    ${BINDIR}/hw-support
+fi
 
 if [ "${O_CRON}" = "ON" ]; then
     run_cycles >> ${LOGFILE}

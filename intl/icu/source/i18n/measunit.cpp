@@ -1,4 +1,4 @@
-// Copyright (C) 2016 and later: Unicode, Inc. and others.
+// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
 /*
 **********************************************************************
@@ -33,28 +33,29 @@ UOBJECT_DEFINE_RTTI_IMPLEMENTATION(MeasureUnit)
 //
 // Start generated code
 
+
 static const int32_t gOffsets[] = {
     0,
     2,
     7,
     16,
-    20,
-    24,
-    28,
-    288,
-    298,
-    309,
-    313,
-    319,
-    323,
-    342,
-    343,
-    354,
-    360,
-    365,
-    369,
-    373,
-    398
+    22,
+    26,
+    325,
+    336,
+    347,
+    351,
+    357,
+    361,
+    381,
+    382,
+    393,
+    396,
+    402,
+    408,
+    412,
+    416,
+    441
 };
 
 static const int32_t gIndexes[] = {
@@ -62,23 +63,23 @@ static const int32_t gIndexes[] = {
     2,
     7,
     16,
-    20,
-    24,
-    28,
-    28,
-    38,
-    49,
-    53,
-    59,
-    63,
+    22,
+    26,
+    26,
+    37,
+    48,
+    52,
+    58,
+    62,
     82,
     83,
     94,
-    100,
-    105,
+    97,
+    103,
     109,
     113,
-    138
+    117,
+    142
 };
 
 // Must be sorted alphabetically.
@@ -88,7 +89,6 @@ static const char * const gTypes[] = {
     "area",
     "concentr",
     "consumption",
-    "coordinate",
     "currency",
     "digital",
     "duration",
@@ -98,6 +98,7 @@ static const char * const gTypes[] = {
     "length",
     "light",
     "mass",
+    "none",
     "power",
     "pressure",
     "speed",
@@ -127,27 +128,28 @@ static const char * const gSubTypes[] = {
     "milligram-per-deciliter",
     "millimole-per-liter",
     "part-per-million",
+    "percent",
+    "permille",
     "liter-per-100kilometers",
     "liter-per-kilometer",
     "mile-per-gallon",
     "mile-per-gallon-imperial",
-    "east",
-    "north",
-    "south",
-    "west",
     "ADP",
     "AED",
     "AFA",
     "AFN",
+    "ALK",
     "ALL",
     "AMD",
     "ANG",
     "AOA",
+    "AOK",
     "AON",
     "AOR",
     "ARA",
     "ARP",
     "ARS",
+    "ARY",
     "ATS",
     "AUD",
     "AWG",
@@ -161,6 +163,8 @@ static const char * const gSubTypes[] = {
     "BEC",
     "BEF",
     "BEL",
+    "BGJ",
+    "BGK",
     "BGL",
     "BGN",
     "BHD",
@@ -168,7 +172,9 @@ static const char * const gSubTypes[] = {
     "BMD",
     "BND",
     "BOB",
+    "BOP",
     "BOV",
+    "BRB",
     "BRC",
     "BRE",
     "BRL",
@@ -176,8 +182,10 @@ static const char * const gSubTypes[] = {
     "BRR",
     "BSD",
     "BTN",
+    "BUK",
     "BWP",
     "BYB",
+    "BYN",
     "BYR",
     "BZD",
     "CAD",
@@ -193,6 +201,7 @@ static const char * const gSubTypes[] = {
     "COU",
     "CRC",
     "CSD",
+    "CSJ",
     "CSK",
     "CUC",
     "CUP",
@@ -227,10 +236,13 @@ static const char * const gSubTypes[] = {
     "GHS",
     "GIP",
     "GMD",
+    "GNE",
     "GNF",
+    "GNS",
     "GQE",
     "GRD",
     "GTQ",
+    "GWE",
     "GWP",
     "GYD",
     "HKD",
@@ -241,10 +253,13 @@ static const char * const gSubTypes[] = {
     "HUF",
     "IDR",
     "IEP",
+    "ILP",
+    "ILR",
     "ILS",
     "INR",
     "IQD",
     "IRR",
+    "ISJ",
     "ISK",
     "ITL",
     "JMD",
@@ -259,11 +274,13 @@ static const char * const gSubTypes[] = {
     "KWD",
     "KYD",
     "KZT",
+    "LAJ",
     "LAK",
     "LBP",
     "LKR",
     "LRD",
     "LSL",
+    "LSM",
     "LTL",
     "LTT",
     "LUC",
@@ -282,17 +299,23 @@ static const char * const gSubTypes[] = {
     "MNT",
     "MOP",
     "MRO",
+    "MRU",
     "MTL",
+    "MTP",
     "MUR",
+    "MVQ",
     "MVR",
     "MWK",
     "MXN",
+    "MXP",
     "MXV",
     "MYR",
+    "MZE",
     "MZM",
     "MZN",
     "NAD",
     "NGN",
+    "NIC",
     "NIO",
     "NLG",
     "NOK",
@@ -300,6 +323,7 @@ static const char * const gSubTypes[] = {
     "NZD",
     "OMR",
     "PAB",
+    "PEH",
     "PEI",
     "PEN",
     "PES",
@@ -311,6 +335,8 @@ static const char * const gSubTypes[] = {
     "PTE",
     "PYG",
     "QAR",
+    "RHD",
+    "ROK",
     "ROL",
     "RON",
     "RSD",
@@ -322,6 +348,7 @@ static const char * const gSubTypes[] = {
     "SCR",
     "SDD",
     "SDG",
+    "SDP",
     "SEK",
     "SGD",
     "SHP",
@@ -333,6 +360,8 @@ static const char * const gSubTypes[] = {
     "SRG",
     "SSP",
     "STD",
+    "STN",
+    "SUR",
     "SVC",
     "SYP",
     "SZL",
@@ -351,15 +380,22 @@ static const char * const gSubTypes[] = {
     "TZS",
     "UAH",
     "UAK",
+    "UGS",
+    "UGW",
     "UGX",
     "USD",
     "USN",
     "USS",
     "UYI",
+    "UYN",
+    "UYP",
     "UYU",
+    "UYW",
     "UZS",
     "VEB",
     "VEF",
+    "VES",
+    "VNC",
     "VND",
     "VUV",
     "WST",
@@ -383,6 +419,7 @@ static const char * const gSubTypes[] = {
     "XXX",
     "YDD",
     "YER",
+    "YUD",
     "YUM",
     "YUN",
     "ZAL",
@@ -391,6 +428,7 @@ static const char * const gSubTypes[] = {
     "ZMW",
     "ZRN",
     "ZRZ",
+    "ZWC",
     "ZWD",
     "ZWL",
     "ZWN",
@@ -403,6 +441,7 @@ static const char * const gSubTypes[] = {
     "kilobyte",
     "megabit",
     "megabyte",
+    "petabyte",
     "terabit",
     "terabyte",
     "century",
@@ -448,6 +487,7 @@ static const char * const gSubTypes[] = {
     "nautical-mile",
     "parsec",
     "picometer",
+    "point",
     "yard",
     "lux",
     "carat",
@@ -461,12 +501,16 @@ static const char * const gSubTypes[] = {
     "pound",
     "stone",
     "ton",
+    "base",
+    "percent",
+    "permille",
     "gigawatt",
     "horsepower",
     "kilowatt",
     "megawatt",
     "milliwatt",
     "watt",
+    "atmosphere",
     "hectopascal",
     "inch-hg",
     "millibar",
@@ -509,15 +553,19 @@ static const char * const gSubTypes[] = {
 
 // Must be sorted by first value and then second value.
 static int32_t unitPerUnitToSingleUnit[][4] = {
-        {330, 300, 17, 0},
-        {332, 306, 17, 2},
-        {334, 300, 17, 3},
-        {334, 387, 4, 2},
-        {334, 388, 4, 3},
-        {348, 385, 3, 1},
-        {351, 11, 16, 4},
-        {390, 330, 4, 1}
+        {368, 338, 17, 0},
+        {370, 344, 17, 2},
+        {372, 338, 17, 3},
+        {372, 430, 4, 2},
+        {372, 431, 4, 3},
+        {387, 428, 3, 1},
+        {390, 11, 16, 5},
+        {433, 368, 4, 1}
 };
+
+// Shortcuts to the base unit in order to make the default constructor fast
+static const int32_t kBaseTypeIdx = 14;
+static const int32_t kBaseSubTypeIdx = 0;
 
 MeasureUnit *MeasureUnit::createGForce(UErrorCode &status) {
     return MeasureUnit::create(0, 0, status);
@@ -599,6 +647,14 @@ MeasureUnit *MeasureUnit::createPartPerMillion(UErrorCode &status) {
     return MeasureUnit::create(3, 3, status);
 }
 
+MeasureUnit *MeasureUnit::createPercent(UErrorCode &status) {
+    return MeasureUnit::create(3, 4, status);
+}
+
+MeasureUnit *MeasureUnit::createPermille(UErrorCode &status) {
+    return MeasureUnit::create(3, 5, status);
+}
+
 MeasureUnit *MeasureUnit::createLiterPer100Kilometers(UErrorCode &status) {
     return MeasureUnit::create(4, 0, status);
 }
@@ -615,284 +671,276 @@ MeasureUnit *MeasureUnit::createMilePerGallonImperial(UErrorCode &status) {
     return MeasureUnit::create(4, 3, status);
 }
 
-MeasureUnit *MeasureUnit::createEast(UErrorCode &status) {
-    return MeasureUnit::create(5, 0, status);
-}
-
-MeasureUnit *MeasureUnit::createNorth(UErrorCode &status) {
-    return MeasureUnit::create(5, 1, status);
-}
-
-MeasureUnit *MeasureUnit::createSouth(UErrorCode &status) {
-    return MeasureUnit::create(5, 2, status);
-}
-
-MeasureUnit *MeasureUnit::createWest(UErrorCode &status) {
-    return MeasureUnit::create(5, 3, status);
-}
-
 MeasureUnit *MeasureUnit::createBit(UErrorCode &status) {
-    return MeasureUnit::create(7, 0, status);
+    return MeasureUnit::create(6, 0, status);
 }
 
 MeasureUnit *MeasureUnit::createByte(UErrorCode &status) {
-    return MeasureUnit::create(7, 1, status);
+    return MeasureUnit::create(6, 1, status);
 }
 
 MeasureUnit *MeasureUnit::createGigabit(UErrorCode &status) {
-    return MeasureUnit::create(7, 2, status);
+    return MeasureUnit::create(6, 2, status);
 }
 
 MeasureUnit *MeasureUnit::createGigabyte(UErrorCode &status) {
-    return MeasureUnit::create(7, 3, status);
+    return MeasureUnit::create(6, 3, status);
 }
 
 MeasureUnit *MeasureUnit::createKilobit(UErrorCode &status) {
-    return MeasureUnit::create(7, 4, status);
+    return MeasureUnit::create(6, 4, status);
 }
 
 MeasureUnit *MeasureUnit::createKilobyte(UErrorCode &status) {
-    return MeasureUnit::create(7, 5, status);
+    return MeasureUnit::create(6, 5, status);
 }
 
 MeasureUnit *MeasureUnit::createMegabit(UErrorCode &status) {
-    return MeasureUnit::create(7, 6, status);
+    return MeasureUnit::create(6, 6, status);
 }
 
 MeasureUnit *MeasureUnit::createMegabyte(UErrorCode &status) {
-    return MeasureUnit::create(7, 7, status);
+    return MeasureUnit::create(6, 7, status);
+}
+
+MeasureUnit *MeasureUnit::createPetabyte(UErrorCode &status) {
+    return MeasureUnit::create(6, 8, status);
 }
 
 MeasureUnit *MeasureUnit::createTerabit(UErrorCode &status) {
-    return MeasureUnit::create(7, 8, status);
+    return MeasureUnit::create(6, 9, status);
 }
 
 MeasureUnit *MeasureUnit::createTerabyte(UErrorCode &status) {
-    return MeasureUnit::create(7, 9, status);
+    return MeasureUnit::create(6, 10, status);
 }
 
 MeasureUnit *MeasureUnit::createCentury(UErrorCode &status) {
-    return MeasureUnit::create(8, 0, status);
+    return MeasureUnit::create(7, 0, status);
 }
 
 MeasureUnit *MeasureUnit::createDay(UErrorCode &status) {
-    return MeasureUnit::create(8, 1, status);
+    return MeasureUnit::create(7, 1, status);
 }
 
 MeasureUnit *MeasureUnit::createHour(UErrorCode &status) {
-    return MeasureUnit::create(8, 2, status);
+    return MeasureUnit::create(7, 2, status);
 }
 
 MeasureUnit *MeasureUnit::createMicrosecond(UErrorCode &status) {
-    return MeasureUnit::create(8, 3, status);
+    return MeasureUnit::create(7, 3, status);
 }
 
 MeasureUnit *MeasureUnit::createMillisecond(UErrorCode &status) {
-    return MeasureUnit::create(8, 4, status);
+    return MeasureUnit::create(7, 4, status);
 }
 
 MeasureUnit *MeasureUnit::createMinute(UErrorCode &status) {
-    return MeasureUnit::create(8, 5, status);
+    return MeasureUnit::create(7, 5, status);
 }
 
 MeasureUnit *MeasureUnit::createMonth(UErrorCode &status) {
-    return MeasureUnit::create(8, 6, status);
+    return MeasureUnit::create(7, 6, status);
 }
 
 MeasureUnit *MeasureUnit::createNanosecond(UErrorCode &status) {
-    return MeasureUnit::create(8, 7, status);
+    return MeasureUnit::create(7, 7, status);
 }
 
 MeasureUnit *MeasureUnit::createSecond(UErrorCode &status) {
-    return MeasureUnit::create(8, 8, status);
+    return MeasureUnit::create(7, 8, status);
 }
 
 MeasureUnit *MeasureUnit::createWeek(UErrorCode &status) {
-    return MeasureUnit::create(8, 9, status);
+    return MeasureUnit::create(7, 9, status);
 }
 
 MeasureUnit *MeasureUnit::createYear(UErrorCode &status) {
-    return MeasureUnit::create(8, 10, status);
+    return MeasureUnit::create(7, 10, status);
 }
 
 MeasureUnit *MeasureUnit::createAmpere(UErrorCode &status) {
-    return MeasureUnit::create(9, 0, status);
+    return MeasureUnit::create(8, 0, status);
 }
 
 MeasureUnit *MeasureUnit::createMilliampere(UErrorCode &status) {
-    return MeasureUnit::create(9, 1, status);
+    return MeasureUnit::create(8, 1, status);
 }
 
 MeasureUnit *MeasureUnit::createOhm(UErrorCode &status) {
-    return MeasureUnit::create(9, 2, status);
+    return MeasureUnit::create(8, 2, status);
 }
 
 MeasureUnit *MeasureUnit::createVolt(UErrorCode &status) {
-    return MeasureUnit::create(9, 3, status);
+    return MeasureUnit::create(8, 3, status);
 }
 
 MeasureUnit *MeasureUnit::createCalorie(UErrorCode &status) {
-    return MeasureUnit::create(10, 0, status);
+    return MeasureUnit::create(9, 0, status);
 }
 
 MeasureUnit *MeasureUnit::createFoodcalorie(UErrorCode &status) {
-    return MeasureUnit::create(10, 1, status);
+    return MeasureUnit::create(9, 1, status);
 }
 
 MeasureUnit *MeasureUnit::createJoule(UErrorCode &status) {
-    return MeasureUnit::create(10, 2, status);
+    return MeasureUnit::create(9, 2, status);
 }
 
 MeasureUnit *MeasureUnit::createKilocalorie(UErrorCode &status) {
-    return MeasureUnit::create(10, 3, status);
+    return MeasureUnit::create(9, 3, status);
 }
 
 MeasureUnit *MeasureUnit::createKilojoule(UErrorCode &status) {
-    return MeasureUnit::create(10, 4, status);
+    return MeasureUnit::create(9, 4, status);
 }
 
 MeasureUnit *MeasureUnit::createKilowattHour(UErrorCode &status) {
-    return MeasureUnit::create(10, 5, status);
+    return MeasureUnit::create(9, 5, status);
 }
 
 MeasureUnit *MeasureUnit::createGigahertz(UErrorCode &status) {
-    return MeasureUnit::create(11, 0, status);
+    return MeasureUnit::create(10, 0, status);
 }
 
 MeasureUnit *MeasureUnit::createHertz(UErrorCode &status) {
-    return MeasureUnit::create(11, 1, status);
+    return MeasureUnit::create(10, 1, status);
 }
 
 MeasureUnit *MeasureUnit::createKilohertz(UErrorCode &status) {
-    return MeasureUnit::create(11, 2, status);
+    return MeasureUnit::create(10, 2, status);
 }
 
 MeasureUnit *MeasureUnit::createMegahertz(UErrorCode &status) {
-    return MeasureUnit::create(11, 3, status);
+    return MeasureUnit::create(10, 3, status);
 }
 
 MeasureUnit *MeasureUnit::createAstronomicalUnit(UErrorCode &status) {
-    return MeasureUnit::create(12, 0, status);
+    return MeasureUnit::create(11, 0, status);
 }
 
 MeasureUnit *MeasureUnit::createCentimeter(UErrorCode &status) {
-    return MeasureUnit::create(12, 1, status);
+    return MeasureUnit::create(11, 1, status);
 }
 
 MeasureUnit *MeasureUnit::createDecimeter(UErrorCode &status) {
-    return MeasureUnit::create(12, 2, status);
+    return MeasureUnit::create(11, 2, status);
 }
 
 MeasureUnit *MeasureUnit::createFathom(UErrorCode &status) {
-    return MeasureUnit::create(12, 3, status);
+    return MeasureUnit::create(11, 3, status);
 }
 
 MeasureUnit *MeasureUnit::createFoot(UErrorCode &status) {
-    return MeasureUnit::create(12, 4, status);
+    return MeasureUnit::create(11, 4, status);
 }
 
 MeasureUnit *MeasureUnit::createFurlong(UErrorCode &status) {
-    return MeasureUnit::create(12, 5, status);
+    return MeasureUnit::create(11, 5, status);
 }
 
 MeasureUnit *MeasureUnit::createInch(UErrorCode &status) {
-    return MeasureUnit::create(12, 6, status);
+    return MeasureUnit::create(11, 6, status);
 }
 
 MeasureUnit *MeasureUnit::createKilometer(UErrorCode &status) {
-    return MeasureUnit::create(12, 7, status);
+    return MeasureUnit::create(11, 7, status);
 }
 
 MeasureUnit *MeasureUnit::createLightYear(UErrorCode &status) {
-    return MeasureUnit::create(12, 8, status);
+    return MeasureUnit::create(11, 8, status);
 }
 
 MeasureUnit *MeasureUnit::createMeter(UErrorCode &status) {
-    return MeasureUnit::create(12, 9, status);
+    return MeasureUnit::create(11, 9, status);
 }
 
 MeasureUnit *MeasureUnit::createMicrometer(UErrorCode &status) {
-    return MeasureUnit::create(12, 10, status);
+    return MeasureUnit::create(11, 10, status);
 }
 
 MeasureUnit *MeasureUnit::createMile(UErrorCode &status) {
-    return MeasureUnit::create(12, 11, status);
+    return MeasureUnit::create(11, 11, status);
 }
 
 MeasureUnit *MeasureUnit::createMileScandinavian(UErrorCode &status) {
-    return MeasureUnit::create(12, 12, status);
+    return MeasureUnit::create(11, 12, status);
 }
 
 MeasureUnit *MeasureUnit::createMillimeter(UErrorCode &status) {
-    return MeasureUnit::create(12, 13, status);
+    return MeasureUnit::create(11, 13, status);
 }
 
 MeasureUnit *MeasureUnit::createNanometer(UErrorCode &status) {
-    return MeasureUnit::create(12, 14, status);
+    return MeasureUnit::create(11, 14, status);
 }
 
 MeasureUnit *MeasureUnit::createNauticalMile(UErrorCode &status) {
-    return MeasureUnit::create(12, 15, status);
+    return MeasureUnit::create(11, 15, status);
 }
 
 MeasureUnit *MeasureUnit::createParsec(UErrorCode &status) {
-    return MeasureUnit::create(12, 16, status);
+    return MeasureUnit::create(11, 16, status);
 }
 
 MeasureUnit *MeasureUnit::createPicometer(UErrorCode &status) {
-    return MeasureUnit::create(12, 17, status);
+    return MeasureUnit::create(11, 17, status);
+}
+
+MeasureUnit *MeasureUnit::createPoint(UErrorCode &status) {
+    return MeasureUnit::create(11, 18, status);
 }
 
 MeasureUnit *MeasureUnit::createYard(UErrorCode &status) {
-    return MeasureUnit::create(12, 18, status);
+    return MeasureUnit::create(11, 19, status);
 }
 
 MeasureUnit *MeasureUnit::createLux(UErrorCode &status) {
-    return MeasureUnit::create(13, 0, status);
+    return MeasureUnit::create(12, 0, status);
 }
 
 MeasureUnit *MeasureUnit::createCarat(UErrorCode &status) {
-    return MeasureUnit::create(14, 0, status);
+    return MeasureUnit::create(13, 0, status);
 }
 
 MeasureUnit *MeasureUnit::createGram(UErrorCode &status) {
-    return MeasureUnit::create(14, 1, status);
+    return MeasureUnit::create(13, 1, status);
 }
 
 MeasureUnit *MeasureUnit::createKilogram(UErrorCode &status) {
-    return MeasureUnit::create(14, 2, status);
+    return MeasureUnit::create(13, 2, status);
 }
 
 MeasureUnit *MeasureUnit::createMetricTon(UErrorCode &status) {
-    return MeasureUnit::create(14, 3, status);
+    return MeasureUnit::create(13, 3, status);
 }
 
 MeasureUnit *MeasureUnit::createMicrogram(UErrorCode &status) {
-    return MeasureUnit::create(14, 4, status);
+    return MeasureUnit::create(13, 4, status);
 }
 
 MeasureUnit *MeasureUnit::createMilligram(UErrorCode &status) {
-    return MeasureUnit::create(14, 5, status);
+    return MeasureUnit::create(13, 5, status);
 }
 
 MeasureUnit *MeasureUnit::createOunce(UErrorCode &status) {
-    return MeasureUnit::create(14, 6, status);
+    return MeasureUnit::create(13, 6, status);
 }
 
 MeasureUnit *MeasureUnit::createOunceTroy(UErrorCode &status) {
-    return MeasureUnit::create(14, 7, status);
+    return MeasureUnit::create(13, 7, status);
 }
 
 MeasureUnit *MeasureUnit::createPound(UErrorCode &status) {
-    return MeasureUnit::create(14, 8, status);
+    return MeasureUnit::create(13, 8, status);
 }
 
 MeasureUnit *MeasureUnit::createStone(UErrorCode &status) {
-    return MeasureUnit::create(14, 9, status);
+    return MeasureUnit::create(13, 9, status);
 }
 
 MeasureUnit *MeasureUnit::createTon(UErrorCode &status) {
-    return MeasureUnit::create(14, 10, status);
+    return MeasureUnit::create(13, 10, status);
 }
 
 MeasureUnit *MeasureUnit::createGigawatt(UErrorCode &status) {
@@ -919,24 +967,28 @@ MeasureUnit *MeasureUnit::createWatt(UErrorCode &status) {
     return MeasureUnit::create(15, 5, status);
 }
 
-MeasureUnit *MeasureUnit::createHectopascal(UErrorCode &status) {
+MeasureUnit *MeasureUnit::createAtmosphere(UErrorCode &status) {
     return MeasureUnit::create(16, 0, status);
 }
 
-MeasureUnit *MeasureUnit::createInchHg(UErrorCode &status) {
+MeasureUnit *MeasureUnit::createHectopascal(UErrorCode &status) {
     return MeasureUnit::create(16, 1, status);
 }
 
-MeasureUnit *MeasureUnit::createMillibar(UErrorCode &status) {
+MeasureUnit *MeasureUnit::createInchHg(UErrorCode &status) {
     return MeasureUnit::create(16, 2, status);
 }
 
-MeasureUnit *MeasureUnit::createMillimeterOfMercury(UErrorCode &status) {
+MeasureUnit *MeasureUnit::createMillibar(UErrorCode &status) {
     return MeasureUnit::create(16, 3, status);
 }
 
-MeasureUnit *MeasureUnit::createPoundPerSquareInch(UErrorCode &status) {
+MeasureUnit *MeasureUnit::createMillimeterOfMercury(UErrorCode &status) {
     return MeasureUnit::create(16, 4, status);
+}
+
+MeasureUnit *MeasureUnit::createPoundPerSquareInch(UErrorCode &status) {
+    return MeasureUnit::create(16, 5, status);
 }
 
 MeasureUnit *MeasureUnit::createKilometerPerHour(UErrorCode &status) {
@@ -1089,7 +1141,13 @@ static int32_t binarySearch(
     }
     return -1;
 }
-    
+
+MeasureUnit::MeasureUnit() {
+    fCurrency[0] = 0;
+    fTypeId = kBaseTypeIdx;
+    fSubTypeId = kBaseSubTypeIdx;
+}
+
 MeasureUnit::MeasureUnit(const MeasureUnit &other)
         : fTypeId(other.fTypeId), fSubTypeId(other.fSubTypeId) {
     uprv_strcpy(fCurrency, other.fCurrency);
@@ -1216,8 +1274,8 @@ int32_t MeasureUnit::internalGetIndexForTypeAndSubtype(const char *type, const c
     return gIndexes[t] + st - gOffsets[t];
 }
 
-MeasureUnit *MeasureUnit::resolveUnitPerUnit(
-        const MeasureUnit &unit, const MeasureUnit &perUnit) {
+MeasureUnit MeasureUnit::resolveUnitPerUnit(
+        const MeasureUnit &unit, const MeasureUnit &perUnit, bool* isResolved) {
     int32_t unitOffset = unit.getOffset();
     int32_t perUnitOffset = perUnit.getOffset();
 
@@ -1238,10 +1296,13 @@ MeasureUnit *MeasureUnit::resolveUnitPerUnit(
         } else {
             // We found a resolution for our unit / per-unit combo
             // return it.
-            return new MeasureUnit(midRow[2], midRow[3]);
+            *isResolved = true;
+            return MeasureUnit(midRow[2], midRow[3]);
         }
     }
-    return NULL;
+
+    *isResolved = false;
+    return MeasureUnit();
 }
 
 MeasureUnit *MeasureUnit::create(int typeId, int subTypeId, UErrorCode &status) {
@@ -1276,6 +1337,15 @@ void MeasureUnit::initCurrency(const char *isoCurrency) {
         uprv_strncpy(fCurrency, isoCurrency, UPRV_LENGTHOF(fCurrency));
         fCurrency[3] = 0;
     }
+}
+
+void MeasureUnit::initNoUnit(const char *subtype) {
+    int32_t result = binarySearch(gTypes, 0, UPRV_LENGTHOF(gTypes), "none");
+    U_ASSERT(result != -1);
+    fTypeId = result;
+    result = binarySearch(gSubTypes, gOffsets[fTypeId], gOffsets[fTypeId + 1], subtype);
+    U_ASSERT(result != -1);
+    fSubTypeId = result - gOffsets[fTypeId];
 }
 
 void MeasureUnit::setTo(int32_t typeId, int32_t subTypeId) {

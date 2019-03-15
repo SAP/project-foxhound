@@ -3,17 +3,17 @@ buildDir "${topobjdir}/gradle/build/mobile/android/thirdparty"
 apply plugin: 'com.android.library'
 
 android {
-    compileSdkVersion 23
-    buildToolsVersion mozconfig.substs.ANDROID_BUILD_TOOLS_VERSION
+    compileSdkVersion project.ext.compileSdkVersion
 
     defaultConfig {
-        targetSdkVersion 23
-        minSdkVersion 15
+        targetSdkVersion project.ext.targetSdkVersion
+        minSdkVersion project.ext.minSdkVersion
+        manifestPlaceholders = project.ext.manifestPlaceholders
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_7
-        targetCompatibility JavaVersion.VERSION_1_7
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
     }
 
     lintOptions {
@@ -30,6 +30,10 @@ android {
                     exclude 'com/adjust/**'
                 }
 
+                if (!mozconfig.substs.MOZ_ANDROID_MMA) {
+                    exclude 'com/leanplum/**'
+                }
+
                 // Exclude LeakCanary: It will be added again via a gradle dependency. This version
                 // here is only the no-op library for mach-based builds.
                 exclude 'com/squareup/leakcanary/**'
@@ -39,7 +43,14 @@ android {
 }
 
 dependencies {
-    compile "com.android.support:support-v4:${mozconfig.substs.ANDROID_SUPPORT_LIBRARY_VERSION}"
+    implementation "com.android.support:support-v4:$support_library_version"
+    if (mozconfig.substs.MOZ_ANDROID_MMA) {
+        implementation "com.android.support:appcompat-v7:$support_library_version"
+        implementation "com.android.support:support-annotations:$support_library_version"
+        implementation "com.google.android.gms:play-services-gcm:$google_play_services_version"
+        implementation "com.google.android.gms:play-services-basement:$google_play_services_version"
+        implementation "com.google.android.gms:play-services-ads-identifier:$google_play_services_version"
+    }
 }
 
 apply plugin: 'idea'
@@ -50,5 +61,12 @@ idea {
         if (!mozconfig.substs.MOZ_INSTALL_TRACKING) {
             excludeDirs += file('com/adjust/sdk')
         }
+        if (!mozconfig.substs.MOZ_ANDROID_MMA) {
+            excludeDirs += file('com/leanplum')
+        }
     }
 }
+
+// Bug 1353055 - Strip 'vars' debugging information to agree with moz.build.
+apply from: "${topsrcdir}/mobile/android/gradle/debug_level.gradle"
+android.libraryVariants.all configureVariantDebugLevel

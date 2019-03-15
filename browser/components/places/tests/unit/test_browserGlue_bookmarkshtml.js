@@ -9,25 +9,21 @@
  * browser.bookmarks.autoExportHTML is set to true.
  */
 
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* () {
+add_task(async function() {
   remove_bookmarks_html();
 
   Services.prefs.setBoolPref("browser.bookmarks.autoExportHTML", true);
-  do_register_cleanup(() => Services.prefs.clearUserPref("browser.bookmarks.autoExportHTML"));
+  registerCleanupFunction(() => Services.prefs.clearUserPref("browser.bookmarks.autoExportHTML"));
 
   // Initialize nsBrowserGlue before Places.
   Cc["@mozilla.org/browser/browserglue;1"].getService(Ci.nsISupports);
 
   // Initialize Places through the History Service.
-  Cc["@mozilla.org/browser/nav-history-service;1"]
-    .getService(Ci.nsINavHistoryService);
+  Assert.equal(PlacesUtils.history.databaseStatus,
+               PlacesUtils.history.DATABASE_STATUS_CREATE);
 
   Services.obs.addObserver(function observer() {
     Services.obs.removeObserver(observer, "profile-before-change");
     check_bookmarks_html();
-  }, "profile-before-change", false);
+  }, "profile-before-change");
 });

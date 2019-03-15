@@ -16,10 +16,10 @@ const value_latin1 = "";
 
 function run_test() {
     var StringBundle = 
-	Components.classes["@mozilla.org/intl/stringbundle;1"]
-	 .getService(Components.interfaces.nsIStringBundleService);
-    var ios = Components.classes["@mozilla.org/network/io-service;1"]
-	 .getService(Components.interfaces.nsIIOService);
+	Cc["@mozilla.org/intl/stringbundle;1"]
+	 .getService(Ci.nsIStringBundleService);
+    var ios = Cc["@mozilla.org/network/io-service;1"]
+	 .getService(Ci.nsIIOService);
     var bundleURI = ios.newFileURI(do_get_file("397093.properties"));
 
     var bundle = StringBundle.createBundle(bundleURI.spec);
@@ -28,16 +28,16 @@ function run_test() {
     try {
 	bundle_ascii = bundle.GetStringFromName(name_ascii);
     } catch(e) {}
-    do_check_eq(bundle_ascii, value_ascii);
+    Assert.equal(bundle_ascii, value_ascii);
 
     try {
 	bundle_utf8 = bundle.GetStringFromName(name_utf8);
     } catch(e) {}
-    do_check_eq(bundle_utf8, value_utf8);
+    Assert.equal(bundle_utf8, value_utf8);
 
     try {
 	bundle_latin1 = bundle.GetStringFromName(name_latin1);
     } catch(e) {}
-    do_check_eq(bundle_latin1, value_latin1);
+    Assert.equal(bundle_latin1, value_latin1);
 }
     

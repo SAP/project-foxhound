@@ -12,9 +12,9 @@
 
 #include "mozilla/mozalloc.h"
 
-#define hnj_malloc(size)      moz_xmalloc(size)
-#define hnj_realloc(p, size)  moz_xrealloc(p, size)
-#define hnj_free(p)           free(p)
+#define hnj_malloc(size) moz_xmalloc(size)
+#define hnj_realloc(p, size) moz_xrealloc(p, size)
+#define hnj_free(p) free(p)
 
 /*
  * To enable us to load hyphenation dictionaries from arbitrary resource URIs,
@@ -28,9 +28,11 @@
 #undef FILE
 #define FILE hnjFile
 
-#define fopen(path,mode)      hnjFopen(path,mode)
-#define fclose(file)          hnjFclose(file)
-#define fgets(buf,count,file) hnjFgets(buf,count,file)
+#define fopen(path, mode) hnjFopen(path, mode)
+#define fclose(file) hnjFclose(file)
+#define fgets(buf, count, file) hnjFgets(buf, count, file)
+#define feof(file) hnjFeof(file)
+#define fgetc(file) hnjFgetc(file)
 
 typedef struct hnjFile_ hnjFile;
 
@@ -44,8 +46,10 @@ int hnjFclose(hnjFile* f);
 
 char* hnjFgets(char* s, int n, hnjFile* f);
 
+int hnjFeof(hnjFile* f);
+
+int hnjFgetc(hnjFile* f);
+
 #ifdef __cplusplus
 }
 #endif
-
-

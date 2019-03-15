@@ -1,11 +1,11 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AxisPhysicsMSDModel.h"
-#include <math.h>                       // for sqrt and fabs
+#include <math.h>  // for sqrt and fabs
 
 namespace mozilla {
 namespace layers {
@@ -32,21 +32,15 @@ AxisPhysicsMSDModel::AxisPhysicsMSDModel(double aInitialPosition,
                                          double aInitialVelocity,
                                          double aSpringConstant,
                                          double aDampingRatio)
-  : AxisPhysicsModel(aInitialPosition, aInitialVelocity)
-  , mDestination(aInitialDestination)
-  , mSpringConstant(aSpringConstant)
-  , mSpringConstantSqrtXTwo(sqrt(mSpringConstant) * 2.0)
-  , mDampingRatio(aDampingRatio)
-{
-}
+    : AxisPhysicsModel(aInitialPosition, aInitialVelocity),
+      mDestination(aInitialDestination),
+      mSpringConstant(aSpringConstant),
+      mSpringConstantSqrtXTwo(sqrt(mSpringConstant) * 2.0),
+      mDampingRatio(aDampingRatio) {}
 
-AxisPhysicsMSDModel::~AxisPhysicsMSDModel()
-{
-}
+AxisPhysicsMSDModel::~AxisPhysicsMSDModel() {}
 
-double
-AxisPhysicsMSDModel::Acceleration(const State &aState)
-{
+double AxisPhysicsMSDModel::Acceleration(const State &aState) {
   // Simulate a Mass-Damper-Spring Model; assume a unit mass
 
   // Hooke’s Law: http://en.wikipedia.org/wiki/Hooke%27s_law
@@ -56,22 +50,13 @@ AxisPhysicsMSDModel::Acceleration(const State &aState)
   return spring_force + damp_force;
 }
 
+double AxisPhysicsMSDModel::GetDestination() const { return mDestination; }
 
-double
-AxisPhysicsMSDModel::GetDestination() const
-{
-  return mDestination;
-}
-
-void
-AxisPhysicsMSDModel::SetDestination(double aDestination)
-{
+void AxisPhysicsMSDModel::SetDestination(double aDestination) {
   mDestination = aDestination;
 }
 
-bool
-AxisPhysicsMSDModel::IsFinished(double aSmallestVisibleIncrement)
-{
+bool AxisPhysicsMSDModel::IsFinished(double aSmallestVisibleIncrement) {
   // In order to satisfy the condition of reaching the destination, the distance
   // between the simulation position and the destination must be less than
   // aSmallestVisibleIncrement while the speed is simultaneously less than
@@ -85,9 +70,9 @@ AxisPhysicsMSDModel::IsFinished(double aSmallestVisibleIncrement)
   // revealed that a critically damped system will terminate within 100ms.
   const double finishVelocity = aSmallestVisibleIncrement * 2;
 
-  return fabs(mDestination - GetPosition ()) < aSmallestVisibleIncrement
-    && fabs(GetVelocity()) <= finishVelocity;
+  return fabs(mDestination - GetPosition()) < aSmallestVisibleIncrement &&
+         fabs(GetVelocity()) <= finishVelocity;
 }
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla

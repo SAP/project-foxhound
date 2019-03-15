@@ -6,26 +6,26 @@
  * like AudioBuffer and Float32Array in properties of AudioNodes.
  */
 
-add_task(function* () {
-  let { target, panel } = yield initWebAudioEditor(BUFFER_AND_ARRAY_URL);
-  let { panelWin } = panel;
-  let { gFront, $, $$, EVENTS, PropertiesView } = panelWin;
-  let gVars = PropertiesView._propsView;
+add_task(async function() {
+  const { target, panel } = await initWebAudioEditor(BUFFER_AND_ARRAY_URL);
+  const { panelWin } = panel;
+  const { gFront, $, $$, EVENTS, PropertiesView } = panelWin;
+  const gVars = PropertiesView._propsView;
 
-  let started = once(gFront, "start-context");
+  const started = once(gFront, "start-context");
 
-  let events = Promise.all([
+  const events = Promise.all([
     getN(gFront, "create-node", 3),
-    waitForGraphRendered(panelWin, 3, 2)
+    waitForGraphRendered(panelWin, 3, 2),
   ]);
   reload(target);
-  let [actors] = yield events;
-  let nodeIds = actors.map(actor => actor.actorID);
+  const [actors] = await events;
+  const nodeIds = actors.map(actor => actor.actorID);
 
   click(panelWin, findGraphNode(panelWin, nodeIds[2]));
-  yield waitForInspectorRender(panelWin, EVENTS);
+  await waitForInspectorRender(panelWin, EVENTS);
   checkVariableView(gVars, 0, {
-    "curve": "Float32Array"
+    "curve": "Float32Array",
   }, "WaveShaper's `curve` is listed as an `Float32Array`.");
 
   let aVar = gVars.getScopeAtIndex(0).get("curve");
@@ -33,14 +33,14 @@ add_task(function* () {
   ok(state, "Float32Array property should not have a dropdown.");
 
   click(panelWin, findGraphNode(panelWin, nodeIds[1]));
-  yield waitForInspectorRender(panelWin, EVENTS);
+  await waitForInspectorRender(panelWin, EVENTS);
   checkVariableView(gVars, 0, {
-    "buffer": "AudioBuffer"
+    "buffer": "AudioBuffer",
   }, "AudioBufferSourceNode's `buffer` is listed as an `AudioBuffer`.");
 
   aVar = gVars.getScopeAtIndex(0).get("buffer");
   state = aVar.target.querySelector(".theme-twisty").hasAttribute("invisible");
   ok(state, "AudioBuffer property should not have a dropdown.");
 
-  yield teardown(target);
+  await teardown(target);
 });

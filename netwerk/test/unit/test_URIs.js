@@ -5,10 +5,10 @@
 
 "use strict";
 
-Components.utils.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
-var gIoService = Components.classes["@mozilla.org/network/io-service;1"]
-                           .getService(Components.interfaces.nsIIOService);
+var gIoService = Cc["@mozilla.org/network/io-service;1"]
+                   .getService(Ci.nsIIOService);
 
 
 // Run by: cd objdir;  make -C netwerk/test/ xpcshell-tests    
@@ -26,82 +26,88 @@ var gTests = [
   { spec:    "about:blank",
     scheme:  "about",
     prePath: "about:",
-    path:    "blank",
+    pathQueryRef: "blank",
     ref:     "",
     nsIURL:  false, nsINestedURI: true, immutable: true },
   { spec:    "about:foobar",
     scheme:  "about",
     prePath: "about:",
-    path:    "foobar",
+    pathQueryRef: "foobar",
     ref:     "",
     nsIURL:  false, nsINestedURI: false, immutable: true },
   { spec:    "chrome://foobar/somedir/somefile.xml",
     scheme:  "chrome",
     prePath: "chrome://foobar",
-    path:    "/somedir/somefile.xml",
+    pathQueryRef: "/somedir/somefile.xml",
     ref:     "",
     nsIURL:  true, nsINestedURI: false, immutable: true },
   { spec:    "data:text/html;charset=utf-8,<html></html>",
     scheme:  "data",
     prePath: "data:",
-    path:    "text/html;charset=utf-8,<html></html>",
+    pathQueryRef: "text/html;charset=utf-8,<html></html>",
     ref:     "",
     nsIURL:  false, nsINestedURI: false },
   { spec:    "data:text/html;charset=utf-8,<html>\r\n\t</html>",
     scheme:  "data",
     prePath: "data:",
-    path:    "text/html;charset=utf-8,<html></html>",
+    pathQueryRef: "text/html;charset=utf-8,<html></html>",
+    ref:     "",
+    nsIURL:  false, nsINestedURI: false },
+  { spec:    "data:text/plain,hello%20world",
+    scheme:  "data",
+    prePath: "data:",
+    pathQueryRef: "text/plain,hello%20world",
     ref:     "",
     nsIURL:  false, nsINestedURI: false },
   { spec:    "data:text/plain,hello world",
     scheme:  "data",
     prePath: "data:",
-    path:    "text/plain,hello%20world",
+    pathQueryRef: "text/plain,hello world",
     ref:     "",
     nsIURL:  false, nsINestedURI: false },
   { spec:    "file:///dir/afile",
     scheme:  "data",
     prePath: "data:",
-    path:    "text/plain,2",
+    pathQueryRef: "text/plain,2",
     ref:     "",
     relativeURI: "data:te\nxt/plain,2",
     nsIURL:  false, nsINestedURI: false },
   { spec:    "file://",
     scheme:  "file",
     prePath: "file://",
-    path:    "/",
+    pathQueryRef: "/",
     ref:     "",
     nsIURL:  true, nsINestedURI: false },
   { spec:    "file:///",
     scheme:  "file",
     prePath: "file://",
-    path:    "/",
+    pathQueryRef: "/",
     ref:     "",
     nsIURL:  true, nsINestedURI: false },
   { spec:    "file:///myFile.html",
     scheme:  "file",
     prePath: "file://",
-    path:    "/myFile.html",
+    pathQueryRef: "/myFile.html",
     ref:     "",
     nsIURL:  true, nsINestedURI: false },
   { spec:    "file:///dir/afile",
     scheme:  "file",
     prePath: "file://",
-    path:    "/dir/data/text/plain,2",
+    pathQueryRef: "/dir/data/text/plain,2",
     ref:     "",
     relativeURI: "data/text/plain,2",
     nsIURL:  true, nsINestedURI: false },
   { spec:    "file:///dir/dir2/",
     scheme:  "file",
     prePath: "file://",
-    path:    "/dir/dir2/data/text/plain,2",
+    pathQueryRef: "/dir/dir2/data/text/plain,2",
     ref:     "",
     relativeURI: "data/text/plain,2",
     nsIURL:  true, nsINestedURI: false },
   { spec:    "ftp://ftp.mozilla.org/pub/mozilla.org/README",
     scheme:  "ftp",
     prePath: "ftp://ftp.mozilla.org",
-    path:    "/pub/mozilla.org/README",
+    pathQueryRef: "/pub/mozilla.org/README",
     ref:     "",
     nsIURL:  true, nsINestedURI: false },
   { spec:    "ftp://foo:bar@ftp.mozilla.org:100/pub/mozilla.org/README",
@@ -110,49 +116,49 @@ var gTests = [
     port:    100,
     username: "foo",
     password: "bar",
-    path:    "/pub/mozilla.org/README",
+    pathQueryRef: "/pub/mozilla.org/README",
     ref:     "",
     nsIURL:  true, nsINestedURI: false },
   { spec:    "ftp://foo:@ftp.mozilla.org:100/pub/mozilla.org/README",
     scheme:  "ftp",
-    prePath: "ftp://foo:@ftp.mozilla.org:100",
+    prePath: "ftp://foo@ftp.mozilla.org:100",
     port:    100,
     username: "foo",
     password: "",
-    path:    "/pub/mozilla.org/README",
+    pathQueryRef: "/pub/mozilla.org/README",
     ref:     "",
     nsIURL:  true, nsINestedURI: false },
   //Bug 706249
   { spec:    "gopher://mozilla.org/",
     scheme:  "gopher",
     prePath: "gopher:",
-    path:    "//mozilla.org/",
+    pathQueryRef: "//mozilla.org/",
     ref:     "",
     nsIURL:  false, nsINestedURI: false },
   { spec:    "http://www.example.com/",
     scheme:  "http",
     prePath: "http://www.example.com",
-    path:    "/",
+    pathQueryRef: "/",
     ref:     "",
     nsIURL:  true, nsINestedURI: false },
   { spec:    "http://www.exa\nmple.com/",
     scheme:  "http",
     prePath: "http://www.example.com",
-    path:    "/",
+    pathQueryRef: "/",
     ref:     "",
     nsIURL:  true, nsINestedURI: false },
   { spec:    "http://10.32.4.239/",
     scheme:  "http",
     prePath: "http://10.32.4.239",
     host:    "10.32.4.239",
-    path:    "/",
+    pathQueryRef: "/",
     ref:     "",
     nsIURL:  true, nsINestedURI: false },
   { spec:    "http://[::192.9.5.5]/ipng",
     scheme:  "http",
-    prePath: "http://[::192.9.5.5]",
-    host:    "::192.9.5.5",
-    path:    "/ipng",
+    prePath: "http://[::c009:505]",
+    host:    "::c009:505",
+    pathQueryRef: "/ipng",
     ref:     "",
     nsIURL:  true, nsINestedURI: false },
   { spec:    "http://[FEDC:BA98:7654:3210:FEDC:BA98:7654:3210]:8888/index.html",
@@ -160,7 +166,7 @@ var gTests = [
     prePath: "http://[fedc:ba98:7654:3210:fedc:ba98:7654:3210]:8888",
     host:    "fedc:ba98:7654:3210:fedc:ba98:7654:3210",
     port:    8888,
-    path:    "/index.html",
+    pathQueryRef: "/index.html",
     ref:     "",
     nsIURL:  true, nsINestedURI: false },
   { spec:    "http://bar:foo@www.mozilla.org:8080/pub/mozilla.org/README.html",
@@ -170,55 +176,55 @@ var gTests = [
     username: "bar",
     password: "foo",
     host:    "www.mozilla.org",
-    path:    "/pub/mozilla.org/README.html",
+    pathQueryRef: "/pub/mozilla.org/README.html",
     ref:     "",
     nsIURL:  true, nsINestedURI: false },
   { spec:    "jar:resource://!/",
     scheme:  "jar",
     prePath: "jar:",
-    path:    "resource:///!/",
+    pathQueryRef: "resource:///!/",
     ref:     "",
     nsIURL:  true, nsINestedURI: true },
   { spec:    "jar:resource://gre/chrome.toolkit.jar!/",
     scheme:  "jar",
     prePath: "jar:",
-    path:    "resource://gre/chrome.toolkit.jar!/",
+    pathQueryRef: "resource://gre/chrome.toolkit.jar!/",
     ref:     "",
     nsIURL:  true, nsINestedURI: true },
   { spec:    "mailto:webmaster@mozilla.com",
     scheme:  "mailto",
     prePath: "mailto:",
-    path:    "webmaster@mozilla.com",
+    pathQueryRef: "webmaster@mozilla.com",
     ref:     "",
     nsIURL:  false, nsINestedURI: false },
   { spec:    "javascript:new Date()",
     scheme:  "javascript",
     prePath: "javascript:",
-    path:    "new%20Date()",
+    pathQueryRef: "new Date()",
     ref:     "",
     nsIURL:  false, nsINestedURI: false },
   { spec:    "blob:123456",
     scheme:  "blob",
     prePath: "blob:",
-    path:    "123456",
+    pathQueryRef: "123456",
     ref:     "",
     nsIURL:  false, nsINestedURI: false, immutable: true },
   { spec:    "place:sort=8&maxResults=10",
     scheme:  "place",
     prePath: "place:",
-    path:    "sort=8&maxResults=10",
+    pathQueryRef: "sort=8&maxResults=10",
     ref:     "",
     nsIURL:  false, nsINestedURI: false },
   { spec:    "resource://gre/",
     scheme:  "resource",
     prePath: "resource://gre",
-    path:    "/",
+    pathQueryRef: "/",
     ref:     "",
     nsIURL:  true, nsINestedURI: false },
   { spec:    "resource://gre/components/",
     scheme:  "resource",
     prePath: "resource://gre",
-    path:    "/components/",
+    pathQueryRef: "/components/",
     ref:     "",
     nsIURL:  true, nsINestedURI: false },
 
@@ -250,12 +256,8 @@ function do_info(text, stack) {
 // when we ignore the ref.
 // 
 // The third argument is optional. If the client passes a third argument
-// (e.g. todo_check_true), we'll use that in lieu of do_check_true.
-function do_check_uri_eq(aURI1, aURI2, aCheckTrueFunc) {
-  if (!aCheckTrueFunc) {
-    aCheckTrueFunc = do_check_true;
-  }
-
+// (e.g. todo_check_true), we'll use that in lieu of ok.
+function do_check_uri_eq(aURI1, aURI2, aCheckTrueFunc = ok) {
   do_info("(uri equals check: '" + aURI1.spec + "' == '" + aURI2.spec + "')");
   aCheckTrueFunc(aURI1.equals(aURI2));
   do_info("(uri equals check: '" + aURI2.spec + "' == '" + aURI1.spec + "')");
@@ -264,7 +266,7 @@ function do_check_uri_eq(aURI1, aURI2, aCheckTrueFunc) {
   // (Only take the extra step of testing 'equalsExceptRef' when we expect the
   // URIs to really be equal.  In 'todo' cases, the URIs may or may not be
   // equal when refs are ignored - there's no way of knowing in general.)
-  if (aCheckTrueFunc == do_check_true) {
+  if (aCheckTrueFunc == ok) {
     do_check_uri_eqExceptRef(aURI1, aURI2, aCheckTrueFunc);
   }
 }
@@ -272,12 +274,8 @@ function do_check_uri_eq(aURI1, aURI2, aCheckTrueFunc) {
 // Checks that the URIs satisfy equalsExceptRef(), in both possible orderings.
 //
 // The third argument is optional. If the client passes a third argument
-// (e.g. todo_check_true), we'll use that in lieu of do_check_true.
-function do_check_uri_eqExceptRef(aURI1, aURI2, aCheckTrueFunc) {
-  if (!aCheckTrueFunc) {
-    aCheckTrueFunc = do_check_true;
-  }
-
+// (e.g. todo_check_true), we'll use that in lieu of ok.
+function do_check_uri_eqExceptRef(aURI1, aURI2, aCheckTrueFunc = ok) {
   do_info("(uri equalsExceptRef check: '" +
           aURI1.spec + "' == '" + aURI2.spec + "')");
   aCheckTrueFunc(aURI1.equalsExceptRef(aURI2));
@@ -298,7 +296,7 @@ function do_check_property(aTest, aURI, aPropertyName, aTestFunctor) {
     do_info("testing " + aPropertyName + " of " +
             (aTestFunctor ? "modified '" : "'" ) + aTest.spec +
             "' is '" + expectedVal + "'");
-    do_check_eq(aURI[aPropertyName], expectedVal);
+    Assert.equal(aURI[aPropertyName], expectedVal);
   }
 }
 
@@ -314,7 +312,7 @@ function do_test_uri_basic(aTest) {
   } catch(e) {
     do_info("Caught error on parse of" + aTest.spec + " Error: " + e.result);
     if (aTest.fail) {
-      do_check_eq(e.result, aTest.result);
+      Assert.equal(e.result, aTest.result);
       return;
     }
     do_throw(e.result);
@@ -328,25 +326,25 @@ function do_test_uri_basic(aTest) {
     } catch (e) {
       do_info("Caught error on Relative parse of " + aTest.spec + " + " + aTest.relativeURI +" Error: " + e.result);
       if (aTest.relativeFail) {
-        do_check_eq(e.result, aTest.relativeFail);
+        Assert.equal(e.result, aTest.relativeFail);
         return;
       }
       do_throw(e.result);
     }
-    do_info("relURI.path = " + relURI.path + ", was " + URI.path);
+    do_info("relURI.pathQueryRef = " + relURI.pathQueryRef + ", was " + URI.pathQueryRef);
     URI = relURI;
-    do_info("URI.path now = " + URI.path);
+    do_info("URI.pathQueryRef now = " + URI.pathQueryRef);
   }
 
   // Sanity-check
   do_info("testing " + aTest.spec + " equals a clone of itself");
-  do_check_uri_eq(URI, URI.clone());
-  do_check_uri_eqExceptRef(URI, URI.cloneIgnoringRef());
+  do_check_uri_eq(URI, URI.mutate().finalize());
+  do_check_uri_eqExceptRef(URI, URI.mutate().setRef("").finalize());
   do_info("testing " + aTest.spec + " instanceof nsIURL");
-  do_check_eq(URI instanceof Ci.nsIURL, aTest.nsIURL);
+  Assert.equal(URI instanceof Ci.nsIURL, aTest.nsIURL);
   do_info("testing " + aTest.spec + " instanceof nsINestedURI");
-  do_check_eq(URI instanceof Ci.nsINestedURI,
-              aTest.nsINestedURI);
+  Assert.equal(URI instanceof Ci.nsINestedURI,
+               aTest.nsINestedURI);
 
   do_info("testing that " + aTest.spec + " throws or returns false " +
           "from equals(null)");
@@ -359,13 +357,14 @@ function do_test_uri_basic(aTest) {
   } catch(e) {
     threw = true;
   }
-  do_check_true(threw || !isEqualToNull);
+  Assert.ok(threw || !isEqualToNull);
 
 
   // Check the various components
   do_check_property(aTest, URI, "scheme");
   do_check_property(aTest, URI, "prePath");
-  do_check_property(aTest, URI, "path");
+  do_check_property(aTest, URI, "pathQueryRef");
+  do_check_property(aTest, URI, "query");
   do_check_property(aTest, URI, "ref");
   do_check_property(aTest, URI, "port");
   do_check_property(aTest, URI, "username");
@@ -374,14 +373,14 @@ function do_test_uri_basic(aTest) {
   do_check_property(aTest, URI, "specIgnoringRef");
   if ("hasRef" in aTest) {
     do_info("testing hasref: " + aTest.hasRef + " vs " + URI.hasRef);
-    do_check_eq(aTest.hasRef, URI.hasRef);
+    Assert.equal(aTest.hasRef, URI.hasRef);
   }
 }
 
 // Test that a given URI parses correctly when we add a given ref to the end
 function do_test_uri_with_hash_suffix(aTest, aSuffix) {
   do_info("making sure caller is using suffix that starts with '#'");
-  do_check_eq(aSuffix[0], "#");
+  Assert.equal(aSuffix[0], "#");
 
   var origURI = NetUtil.newURI(aTest.spec);
   var testURI;
@@ -405,46 +404,48 @@ function do_test_uri_with_hash_suffix(aTest, aSuffix) {
 
   do_info("testing " + aTest.spec + " with '" + aSuffix + "' appended " +
            "equals a clone of itself");
-  do_check_uri_eq(testURI, testURI.clone());
+  do_check_uri_eq(testURI, testURI.mutate().finalize());
 
   do_info("testing " + aTest.spec +
           " doesn't equal self with '" + aSuffix + "' appended");
 
-  do_check_false(origURI.equals(testURI));
+  Assert.ok(!origURI.equals(testURI));
 
   do_info("testing " + aTest.spec +
           " is equalExceptRef to self with '" + aSuffix + "' appended");
   do_check_uri_eqExceptRef(origURI, testURI);
 
-  do_check_eq(testURI.hasRef, true);
+  Assert.equal(testURI.hasRef, true);
 
   if (!origURI.ref) {
     // These tests fail if origURI has a ref
-    do_info("testing cloneIgnoringRef on " + testURI.spec +
+    do_info("testing setRef('') on " + testURI.spec +
             " is equal to no-ref version but not equal to ref version");
-    var cloneNoRef = testURI.cloneIgnoringRef();
+    var cloneNoRef = testURI.mutate().setRef("").finalize(); // we used to clone here.
+    do_info("cloneNoRef: " + cloneNoRef.spec + " hasRef: " + cloneNoRef.hasRef);
+    do_info("testURI: " + testURI.spec + " hasRef: " + testURI.hasRef);
     do_check_uri_eq(cloneNoRef, origURI);
-    do_check_false(cloneNoRef.equals(testURI));
+    Assert.ok(!cloneNoRef.equals(testURI));
 
     do_info("testing cloneWithNewRef on " + testURI.spec +
             " with an empty ref is equal to no-ref version but not equal to ref version");
-    var cloneNewRef = testURI.cloneWithNewRef("");
+    var cloneNewRef = testURI.mutate().setRef("").finalize();
     do_check_uri_eq(cloneNewRef, origURI);
     do_check_uri_eq(cloneNewRef, cloneNoRef);
-    do_check_false(cloneNewRef.equals(testURI));
+    Assert.ok(!cloneNewRef.equals(testURI));
 
     do_info("testing cloneWithNewRef on " + origURI.spec +
             " with the same new ref is equal to ref version and not equal to no-ref version");
-    cloneNewRef = origURI.cloneWithNewRef(aSuffix);
+    cloneNewRef = origURI.mutate().setRef(aSuffix).finalize();
     do_check_uri_eq(cloneNewRef, testURI);
-    do_check_true(cloneNewRef.equals(testURI));
+    Assert.ok(cloneNewRef.equals(testURI));
   }
 
   do_check_property(aTest, testURI, "scheme");
   do_check_property(aTest, testURI, "prePath");
   if (!origURI.ref) {
     // These don't work if it's a ref already because '+' doesn't give the right result
-    do_check_property(aTest, testURI, "path",
+    do_check_property(aTest, testURI, "pathQueryRef",
                       function(aStr) { return aStr + aSuffix; });
     do_check_property(aTest, testURI, "ref",
                       function(aStr) { return aSuffix.substr(1); });
@@ -454,7 +455,7 @@ function do_test_uri_with_hash_suffix(aTest, aSuffix) {
 // Tests various ways of setting & clearing a ref on a URI.
 function do_test_mutate_ref(aTest, aSuffix) {
   do_info("making sure caller is using suffix that starts with '#'");
-  do_check_eq(aSuffix[0], "#");
+  Assert.equal(aSuffix[0], "#");
 
   var refURIWithSuffix    = NetUtil.newURI(aTest.spec + aSuffix);
   var refURIWithoutSuffix = NetUtil.newURI(aTest.spec);
@@ -464,7 +465,7 @@ function do_test_mutate_ref(aTest, aSuffix) {
   // First: Try setting .ref to our suffix
   do_info("testing that setting .ref on " + aTest.spec +
           " to '" + aSuffix + "' does what we expect");
-  testURI.ref = aSuffix;
+  testURI = testURI.mutate().setRef(aSuffix).finalize();
   do_check_uri_eq(testURI, refURIWithSuffix);
   do_check_uri_eqExceptRef(testURI, refURIWithoutSuffix);
 
@@ -473,7 +474,7 @@ function do_test_mutate_ref(aTest, aSuffix) {
   if (suffixLackingHash) { // (skip this our suffix was *just* a #)
     do_info("testing that setting .ref on " + aTest.spec +
             " to '" + suffixLackingHash + "' does what we expect");
-    testURI.ref = suffixLackingHash;
+    testURI = testURI.mutate().setRef(suffixLackingHash).finalize();
     do_check_uri_eq(testURI, refURIWithSuffix);
     do_check_uri_eqExceptRef(testURI, refURIWithoutSuffix);
   }
@@ -481,7 +482,7 @@ function do_test_mutate_ref(aTest, aSuffix) {
   // Now, clear .ref (should get us back the original spec)
   do_info("testing that clearing .ref on " + testURI.spec +
           " does what we expect");
-  testURI.ref = "";
+  testURI = testURI.mutate().setRef("").finalize();
   do_check_uri_eq(testURI, refURIWithoutSuffix);
   do_check_uri_eqExceptRef(testURI, refURIWithSuffix);
 
@@ -492,71 +493,152 @@ function do_test_mutate_ref(aTest, aSuffix) {
     var specWithSuffix = aTest.spec + aSuffix;
     do_info("testing that setting spec to " +
             specWithSuffix + " and then clearing ref does what we expect");
-    testURI.spec = specWithSuffix;
-    testURI.ref = "";
+
+    testURI = testURI.mutate()
+                     .setSpec(specWithSuffix)
+                     .setRef("")
+                     .finalize();
     do_check_uri_eq(testURI, refURIWithoutSuffix);
     do_check_uri_eqExceptRef(testURI, refURIWithSuffix);
 
     // XXX nsIJARURI throws an exception in SetPath(), so skip it for next part.
     if (!(testURI instanceof Ci.nsIJARURI)) {
-      // Now try setting .path directly (including suffix) and then clearing .ref
-      // (same as above, but with now with .path instead of .spec)
+      // Now try setting .pathQueryRef directly (including suffix) and then clearing .ref
+      // (same as above, but with now with .pathQueryRef instead of .spec)
       testURI = NetUtil.newURI(aTest.spec);
 
-      var pathWithSuffix = aTest.path + aSuffix;
+      var pathWithSuffix = aTest.pathQueryRef + aSuffix;
       do_info("testing that setting path to " +
               pathWithSuffix + " and then clearing ref does what we expect");
-      testURI.path = pathWithSuffix;
-      testURI.ref = "";
+      testURI = testURI.mutate()
+                       .setPathQueryRef(pathWithSuffix)
+                       .setRef("")
+                       .finalize();
       do_check_uri_eq(testURI, refURIWithoutSuffix);
       do_check_uri_eqExceptRef(testURI, refURIWithSuffix);
 
-      // Also: make sure that clearing .path also clears .ref
-      testURI.path = pathWithSuffix;
+      // Also: make sure that clearing .pathQueryRef also clears .ref
+      testURI = testURI.mutate().setPathQueryRef(pathWithSuffix).finalize();
       do_info("testing that clearing path from " + 
               pathWithSuffix + " also clears .ref");
-      testURI.path = "";
-      do_check_eq(testURI.ref, "");
+      testURI = testURI.mutate().setPathQueryRef("").finalize();
+      Assert.equal(testURI.ref, "");
     }
   }
 }
 
-// Tests that normally-mutable properties can't be modified on
-// special URIs that are known to be immutable.
-function do_test_immutable(aTest) {
-  do_check_true(aTest.immutable);
+// Check that changing nested/about URIs works correctly.
+function check_nested_mutations()
+{
+  // nsNestedAboutURI
+  let uri1 = gIoService.newURI("about:blank#");
+  let uri2 = gIoService.newURI("about:blank");
+  let uri3 = uri1.mutate().setRef("").finalize();
+  do_check_uri_eq(uri3, uri2);
+  uri3 = uri2.mutate().setRef("#").finalize();
+  do_check_uri_eq(uri3, uri1);
 
-  var URI = NetUtil.newURI(aTest.spec);
-  // All the non-readonly attributes on nsIURI.idl:
-  var propertiesToCheck = ["spec", "scheme", "userPass", "username", "password",
-                           "hostPort", "host", "port", "path", "ref"];
+  uri1 = gIoService.newURI("about:blank?something");
+  uri2 = gIoService.newURI("about:blank");
+  uri3 = uri1.mutate().setQuery("").finalize();
+  do_check_uri_eq(uri3, uri2);
+  uri3 = uri2.mutate().setQuery("something").finalize();
+  do_check_uri_eq(uri3, uri1);
 
-  propertiesToCheck.forEach(function(aProperty) {
-    var threw = false;
-    try {
-      URI[aProperty] = "anothervalue";
-    } catch(e) {
-      threw = true;
-    }
+  uri1 = gIoService.newURI("about:blank?query#ref");
+  uri2 = gIoService.newURI("about:blank");
+  uri3 = uri1.mutate().setPathQueryRef("blank").finalize();
+  do_check_uri_eq(uri3, uri2);
+  uri3 = uri2.mutate().setPathQueryRef("blank?query#ref").finalize();
+  do_check_uri_eq(uri3, uri1);
 
-    do_info("testing that setting '" + aProperty +
-            "' on immutable URI '" + aTest.spec + "' will throw");
-    do_check_true(threw);
-  });
+  // nsSimpleNestedURI
+  uri1 = gIoService.newURI("view-source:http://example.com/path#");
+  uri2 = gIoService.newURI("view-source:http://example.com/path");
+  uri3 = uri1.mutate().setRef("").finalize();
+  do_check_uri_eq(uri3, uri2);
+  uri3 = uri2.mutate().setRef("#").finalize();
+  do_check_uri_eq(uri3, uri1);
+
+  uri1 = gIoService.newURI("view-source:http://example.com/path?something");
+  uri2 = gIoService.newURI("view-source:http://example.com/path");
+  uri3 = uri1.mutate().setQuery("").finalize();
+  do_check_uri_eq(uri3, uri2);
+  uri3 = uri2.mutate().setQuery("something").finalize();
+  do_check_uri_eq(uri3, uri1);
+
+  uri1 = gIoService.newURI("view-source:http://example.com/path?query#ref");
+  uri2 = gIoService.newURI("view-source:http://example.com/path");
+  uri3 = uri1.mutate().setPathQueryRef("path").finalize();
+  do_check_uri_eq(uri3, uri2);
+  uri3 = uri2.mutate().setPathQueryRef("path?query#ref").finalize();
+  do_check_uri_eq(uri3, uri1);
+
+  uri1 = gIoService.newURI("view-source:about:blank#");
+  uri2 = gIoService.newURI("view-source:about:blank");
+  uri3 = uri1.mutate().setRef("").finalize();
+  do_check_uri_eq(uri3, uri2);
+  uri3 = uri2.mutate().setRef("#").finalize();
+  do_check_uri_eq(uri3, uri1);
+
+  uri1 = gIoService.newURI("view-source:about:blank?something");
+  uri2 = gIoService.newURI("view-source:about:blank");
+  uri3 = uri1.mutate().setQuery("").finalize();
+  do_check_uri_eq(uri3, uri2);
+  uri3 = uri2.mutate().setQuery("something").finalize();
+  do_check_uri_eq(uri3, uri1);
+
+  uri1 = gIoService.newURI("view-source:about:blank?query#ref");
+  uri2 = gIoService.newURI("view-source:about:blank");
+  uri3 = uri1.mutate().setPathQueryRef("blank").finalize();
+  do_check_uri_eq(uri3, uri2);
+  uri3 = uri2.mutate().setPathQueryRef("blank?query#ref").finalize();
+  do_check_uri_eq(uri3, uri1);
 }
 
+function check_space_escaping()
+{
+  let uri = gIoService.newURI("data:text/plain,hello%20world#space hash");
+  Assert.equal(uri.spec, "data:text/plain,hello%20world#space%20hash");
+  uri = gIoService.newURI("data:text/plain,hello%20world#space%20hash");
+  Assert.equal(uri.spec, "data:text/plain,hello%20world#space%20hash");
+  uri = gIoService.newURI("data:text/plain,hello world#space%20hash");
+  Assert.equal(uri.spec, "data:text/plain,hello world#space%20hash");
+  uri = gIoService.newURI("data:text/plain,hello world#space hash");
+  Assert.equal(uri.spec, "data:text/plain,hello world#space%20hash");
+  uri = gIoService.newURI("http://example.com/test path#test path");
+  uri = gIoService.newURI("http://example.com/test%20path#test%20path");
+}
+
+function check_schemeIsNull()
+{
+  let uri = gIoService.newURI("data:text/plain,aaa");
+  Assert.ok(!uri.schemeIs(null));
+  uri = gIoService.newURI("http://example.com");
+  Assert.ok(!uri.schemeIs(null));
+  uri = gIoService.newURI("dummyscheme://example.com");
+  Assert.ok(!uri.schemeIs(null));
+  uri = gIoService.newURI("jar:resource://gre/chrome.toolkit.jar!/");
+  Assert.ok(!uri.schemeIs(null));
+  uri = gIoService.newURI("moz-icon://.unknown?size=32");
+  Assert.ok(!uri.schemeIs(null));
+}
 
 // TEST MAIN FUNCTION
 // ------------------
 function run_test()
 {
+  check_nested_mutations();
+  check_space_escaping();
+  check_schemeIsNull();
+
   // UTF-8 check - From bug 622981
   // ASCII
   let base = gIoService.newURI("http://example.org/xenia?");
   let resolved = gIoService.newURI("?x", null, base);
   let expected = gIoService.newURI("http://example.org/xenia?x");
   do_info("Bug 662981: ACSII - comparing " + resolved.spec + " and " + expected.spec);
-  do_check_true(resolved.equals(expected));
+  Assert.ok(resolved.equals(expected));
 
   // UTF-8 character "è"
   // Bug 622981 was triggered by an empty query string
@@ -564,7 +646,7 @@ function run_test()
   resolved = gIoService.newURI("?x", null, base);
   expected = gIoService.newURI("http://example.org/xènia?x");
   do_info("Bug 662981: UTF8 - comparing " + resolved.spec + " and " + expected.spec);
-  do_check_true(resolved.equals(expected));
+  Assert.ok(resolved.equals(expected));
 
   gTests.forEach(function(aTest) {
     // Check basic URI functionality
@@ -582,7 +664,7 @@ function run_test()
       // For URIs that we couldn't mutate above due to them being immutable:
       // Now we check that they're actually immutable.
       if (aTest.immutable) {
-        do_test_immutable(aTest);
+        Assert.ok(aTest.immutable);
       }
     }
   });

@@ -59,14 +59,16 @@
 #include "common/dwarf_cfi_to_module.h"
 #include "common/dwarf_cu_to_module.h"
 #include "common/dwarf_line_to_module.h"
+#include "common/dwarf_range_list_handler.h"
 #include "common/linux/crc32.h"
 #include "common/linux/eintr_wrapper.h"
 #include "common/linux/elfutils.h"
 #include "common/linux/elfutils-inl.h"
 #include "common/linux/elf_symbols_to_module.h"
 #include "common/linux/file_id.h"
-#include "common/memory.h"
+#include "common/memory_allocator.h"
 #include "common/module.h"
+#include "common/path_helper.h"
 #include "common/scoped_ptr.h"
 #ifndef NO_STABS_SUPPORT
 #include "common/stabs_reader.h"
@@ -86,6 +88,7 @@ using google_breakpad::DumpOptions;
 using google_breakpad::DwarfCFIToModule;
 using google_breakpad::DwarfCUToModule;
 using google_breakpad::DwarfLineToModule;
+using google_breakpad::DwarfRangeListHandler;
 using google_breakpad::ElfClass;
 using google_breakpad::ElfClass32;
 using google_breakpad::ElfClass64;
@@ -105,15 +108,6 @@ using google_breakpad::wasteful_vector;
 // Define AARCH64 ELF architecture if host machine does not include this define.
 #ifndef EM_AARCH64
 #define EM_AARCH64      183
-#endif
-
-// Define SHT_ANDROID_REL and SHT_ANDROID_RELA if not defined by the host.
-// Sections with this type contain Android packed relocations.
-#ifndef SHT_ANDROID_REL
-#define SHT_ANDROID_REL  (SHT_LOOS + 1)
-#endif
-#ifndef SHT_ANDROID_RELA
-#define SHT_ANDROID_RELA (SHT_LOOS + 2)
 #endif
 
 //
@@ -221,6 +215,30 @@ bool LoadStabs(const typename ElfClass::Ehdr* elf_header,
 }
 #endif  // NO_STABS_SUPPORT
 
+// A range handler that accepts rangelist data parsed by
+// dwarf2reader::RangeListReader and populates a range vector (typically
+// owned by a function) with the results.
+class DumperRangesHandler : public DwarfCUToModule::RangesHandler {
+ public:
+  DumperRangesHandler(const uint8_t *buffer, uint64 size,
+                      dwarf2reader::ByteReader* reader)
+      : buffer_(buffer), size_(size), reader_(reader) { }
+
+  bool ReadRanges(uint64 offset, Module::Address base_address,
+                  vector<Module::Range>* ranges) {
+    DwarfRangeListHandler handler(base_address, ranges);
+    dwarf2reader::RangeListReader rangelist_reader(buffer_, size_, reader_,
+                                                   &handler);
+
+    return rangelist_reader.ReadRangeList(offset);
+  }
+
+ private:
+  const uint8_t *buffer_;
+  uint64 size_;
+  dwarf2reader::ByteReader* reader_;
+};
+
 // A line-to-module loader that accepts line number info parsed by
 // dwarf2reader::LineInfo and populates a Module and a line vector
 // with the results.
@@ -275,6 +293,18 @@ bool LoadDwarf(const string& dwarf_filename,
     file_context.AddSectionToSectionMap(name, contents, section->sh_size);
   }
 
+  // Optional .debug_ranges reader
+  scoped_ptr<DumperRangesHandler> ranges_handler;
+  dwarf2reader::SectionMap::const_iterator ranges_entry =
+      file_context.section_map().find(".debug_ranges");
+  if (ranges_entry != file_context.section_map().end()) {
+    const std::pair<const uint8_t *, uint64>& ranges_section =
+      ranges_entry->second;
+    ranges_handler.reset(
+      new DumperRangesHandler(ranges_section.first, ranges_section.second,
+                              &byte_reader));
+  }
+
   // Parse all the compilation units in the .debug_info section.
   DumperLineToModule line_to_module(&byte_reader);
   dwarf2reader::SectionMap::const_iterator debug_info_entry =
@@ -290,7 +320,8 @@ bool LoadDwarf(const string& dwarf_filename,
     // Make a handler for the root DIE that populates MODULE with the
     // data that was found.
     DwarfCUToModule::WarningReporter reporter(dwarf_filename, offset);
-    DwarfCUToModule root_handler(&file_context, &line_to_module, &reporter);
+    DwarfCUToModule root_handler(&file_context, &line_to_module,
+                                 ranges_handler.get(), &reporter);
     // Make a Dwarf2Handler that drives the DIEHandler.
     dwarf2reader::DIEDispatcher die_dispatcher(&root_handler);
     // Make a DWARF parser for the compilation unit at OFFSET.
@@ -662,7 +693,6 @@ bool LoadSymbols(const string& obj_file,
   typedef typename ElfClass::Addr Addr;
   typedef typename ElfClass::Phdr Phdr;
   typedef typename ElfClass::Shdr Shdr;
-  typedef typename ElfClass::Word Word;
 
   Addr loading_addr = GetLoadingAddress<ElfClass>(
       GetOffset<ElfClass, Phdr>(elf_header, elf_header->e_phoff),
@@ -670,8 +700,6 @@ bool LoadSymbols(const string& obj_file,
   module->SetLoadAddress(loading_addr);
   info->set_loading_addr(loading_addr, obj_file);
 
-  Word debug_section_type =
-      elf_header->e_machine == EM_MIPS ? SHT_MIPS_DWARF : SHT_PROGBITS;
   const Shdr* sections =
       GetOffset<ElfClass, Shdr>(elf_header, elf_header->e_shoff);
   const Shdr* section_names = sections + elf_header->e_shstrndx;
@@ -680,28 +708,6 @@ bool LoadSymbols(const string& obj_file,
   const char *names_end = names + section_names->sh_size;
   bool found_debug_info_section = false;
   bool found_usable_info = false;
-
-  // Reject files that contain Android packed relocations. The pre-packed
-  // version of the file should be symbolized; the packed version is only
-  // intended for use on the target system.
-  if (FindElfSectionByName<ElfClass>(".rel.dyn", SHT_ANDROID_REL,
-                                     sections, names,
-                                     names_end, elf_header->e_shnum)) {
-    fprintf(stderr, "%s: file contains a \".rel.dyn\" section "
-                    "with type SHT_ANDROID_REL\n", obj_file.c_str());
-    fprintf(stderr, "Files containing Android packed relocations "
-                    "may not be symbolized.\n");
-    return false;
-  }
-  if (FindElfSectionByName<ElfClass>(".rela.dyn", SHT_ANDROID_RELA,
-                                     sections, names,
-                                     names_end, elf_header->e_shnum)) {
-    fprintf(stderr, "%s: file contains a \".rela.dyn\" section "
-                    "with type SHT_ANDROID_RELA\n", obj_file.c_str());
-    fprintf(stderr, "Files containing Android packed relocations "
-                    "may not be symbolized.\n");
-    return false;
-  }
 
   if (options.symbol_data != ONLY_CFI) {
 #ifndef NO_STABS_SUPPORT
@@ -727,9 +733,19 @@ bool LoadSymbols(const string& obj_file,
 
     // Look for DWARF debugging information, and load it if present.
     const Shdr* dwarf_section =
-      FindElfSectionByName<ElfClass>(".debug_info", debug_section_type,
+      FindElfSectionByName<ElfClass>(".debug_info", SHT_PROGBITS,
                                      sections, names, names_end,
                                      elf_header->e_shnum);
+
+    // .debug_info section type is SHT_PROGBITS for mips on pnacl toolchains,
+    // but MIPS_DWARF for regular gnu toolchains, so both need to be checked
+    if (elf_header->e_machine == EM_MIPS && !dwarf_section) {
+      dwarf_section =
+        FindElfSectionByName<ElfClass>(".debug_info", SHT_MIPS_DWARF,
+                                       sections, names, names_end,
+                                       elf_header->e_shnum);
+    }
+
     if (dwarf_section) {
       found_debug_info_section = true;
       found_usable_info = true;
@@ -804,9 +820,19 @@ bool LoadSymbols(const string& obj_file,
     // Dwarf Call Frame Information (CFI) is actually independent from
     // the other DWARF debugging information, and can be used alone.
     const Shdr* dwarf_cfi_section =
-        FindElfSectionByName<ElfClass>(".debug_frame", debug_section_type,
+        FindElfSectionByName<ElfClass>(".debug_frame", SHT_PROGBITS,
                                        sections, names, names_end,
                                        elf_header->e_shnum);
+
+    // .debug_frame section type is SHT_PROGBITS for mips on pnacl toolchains,
+    // but MIPS_DWARF for regular gnu toolchains, so both need to be checked
+    if (elf_header->e_machine == EM_MIPS && !dwarf_cfi_section) {
+      dwarf_cfi_section =
+          FindElfSectionByName<ElfClass>(".debug_frame", SHT_MIPS_DWARF,
+                                        sections, names, names_end,
+                                        elf_header->e_shnum);
+    }
+
     if (dwarf_cfi_section) {
       // Ignore the return value of this function; even without call frame
       // information, the other debugging information could be perfectly
@@ -935,16 +961,6 @@ const char* ElfArchitecture(const typename ElfClass::Ehdr* elf_header) {
   }
 }
 
-// Return the non-directory portion of FILENAME: the portion after the
-// last slash, or the whole filename if there are no slashes.
-string BaseFileName(const string &filename) {
-  // Lots of copies!  basename's behavior is less than ideal.
-  char* c_filename = strdup(filename.c_str());
-  string base = basename(c_filename);
-  free(c_filename);
-  return base;
-}
-
 template<typename ElfClass>
 bool SanitizeDebugFile(const typename ElfClass::Ehdr* debug_elf_header,
                        const string& debuglink_file,
@@ -995,7 +1011,7 @@ bool InitModuleForElfClass(const typename ElfClass::Ehdr* elf_header,
     return false;
   }
 
-  string name = BaseFileName(obj_filename);
+  string name = google_breakpad::BaseName(obj_filename);
   string os = "Linux";
   // Add an extra "0" at the end.  PDB files on Windows have an 'age'
   // number appended to the end of the file identifier; this isn't

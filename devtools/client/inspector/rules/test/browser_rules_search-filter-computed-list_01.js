@@ -30,7 +30,7 @@ const TEST_DATA = [
     isMarginTopHighlighted: true,
     isMarginRightHighlighted: true,
     isMarginBottomHighlighted: true,
-    isMarginLeftHighlighted: true
+    isMarginLeftHighlighted: true,
   },
   {
     desc: "Tests that the search filter works properly in the computed list " +
@@ -42,7 +42,7 @@ const TEST_DATA = [
     isMarginTopHighlighted: false,
     isMarginRightHighlighted: true,
     isMarginBottomHighlighted: false,
-    isMarginLeftHighlighted: true
+    isMarginLeftHighlighted: true,
   },
   {
     desc: "Tests that the search filter works properly in the computed list " +
@@ -54,7 +54,7 @@ const TEST_DATA = [
     isMarginTopHighlighted: true,
     isMarginRightHighlighted: false,
     isMarginBottomHighlighted: false,
-    isMarginLeftHighlighted: false
+    isMarginLeftHighlighted: false,
   },
   {
     desc: "Tests that the search filter works properly in the computed list " +
@@ -66,7 +66,7 @@ const TEST_DATA = [
     isMarginTopHighlighted: true,
     isMarginRightHighlighted: false,
     isMarginBottomHighlighted: false,
-    isMarginLeftHighlighted: false
+    isMarginLeftHighlighted: false,
   },
   {
     desc: "Tests that the search filter works properly in the computed list " +
@@ -78,35 +78,35 @@ const TEST_DATA = [
     isMarginTopHighlighted: true,
     isMarginRightHighlighted: false,
     isMarginBottomHighlighted: true,
-    isMarginLeftHighlighted: false
-  }
+    isMarginLeftHighlighted: false,
+  },
 ];
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
-  yield selectNode("#testid", inspector);
-  yield testAddTextInFilter(inspector, view);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, view} = await openRuleView();
+  await selectNode("#testid", inspector);
+  await testAddTextInFilter(inspector, view);
 });
 
-function* testAddTextInFilter(inspector, view) {
-  for (let data of TEST_DATA) {
+async function testAddTextInFilter(inspector, view) {
+  for (const data of TEST_DATA) {
     info(data.desc);
-    yield setSearchFilter(view, data.search);
-    yield checkRules(view, data);
-    yield clearSearchAndCheckRules(view);
+    await setSearchFilter(view, data.search);
+    await checkRules(view, data);
+    await clearSearchAndCheckRules(view);
   }
 }
 
-function* checkRules(view, data) {
+function checkRules(view, data) {
   info("Check that the correct rules are visible");
   is(view.element.children.length, 2, "Should have 2 rules.");
   is(getRuleViewRuleEditor(view, 0).rule.selectorText, "element",
     "First rule is inline element.");
 
-  let rule = getRuleViewRuleEditor(view, 1).rule;
-  let textPropEditor = rule.textProps[0].editor;
-  let computed = textPropEditor.computed;
+  const rule = getRuleViewRuleEditor(view, 1).rule;
+  const textPropEditor = rule.textProps[0].editor;
+  const computed = textPropEditor.computed;
 
   is(rule.selectorText, "#testid", "Second rule is #testid.");
   is(!!textPropEditor.expander.getAttribute("open"), data.isExpanderOpen,
@@ -131,18 +131,18 @@ function* checkRules(view, data) {
     "Got correct highlight for margin-left computed property.");
 }
 
-function* clearSearchAndCheckRules(view) {
-  let win = view.styleWindow;
-  let searchField = view.searchField;
-  let searchClearButton = view.searchClearButton;
+async function clearSearchAndCheckRules(view) {
+  const win = view.styleWindow;
+  const searchField = view.searchField;
+  const searchClearButton = view.searchClearButton;
 
-  let rule = getRuleViewRuleEditor(view, 1).rule;
-  let textPropEditor = rule.textProps[0].editor;
-  let computed = textPropEditor.computed;
+  const rule = getRuleViewRuleEditor(view, 1).rule;
+  const textPropEditor = rule.textProps[0].editor;
+  const computed = textPropEditor.computed;
 
   info("Clearing the search filter");
   EventUtils.synthesizeMouseAtCenter(searchClearButton, {}, win);
-  yield view.inspector.once("ruleview-filtered");
+  await view.inspector.once("ruleview-filtered");
 
   info("Check the search filter is cleared and no rules are highlighted");
   is(view.element.children.length, 3, "Should have 3 rules.");

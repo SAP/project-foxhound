@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -26,50 +26,56 @@ class nsPIDOMWindowInner;
   platform specific file picker.
 */
 class nsFilePickerProxy : public nsBaseFilePicker,
-                          public mozilla::dom::PFilePickerChild
-{
-public:
-    nsFilePickerProxy();
+                          public mozilla::dom::PFilePickerChild {
+ public:
+  nsFilePickerProxy();
 
-    NS_DECL_ISUPPORTS
+  NS_DECL_ISUPPORTS
 
-    // nsIFilePicker (less what's in nsBaseFilePicker)
-    NS_IMETHOD Init(mozIDOMWindowProxy* aParent, const nsAString& aTitle, int16_t aMode) override;
-    NS_IMETHOD AppendFilter(const nsAString& aTitle, const nsAString& aFilter) override;
-    NS_IMETHOD GetDefaultString(nsAString& aDefaultString) override;
-    NS_IMETHOD SetDefaultString(const nsAString& aDefaultString) override;
-    NS_IMETHOD GetDefaultExtension(nsAString& aDefaultExtension) override;
-    NS_IMETHOD SetDefaultExtension(const nsAString& aDefaultExtension) override;
-    NS_IMETHOD GetFilterIndex(int32_t* aFilterIndex) override;
-    NS_IMETHOD SetFilterIndex(int32_t aFilterIndex) override;
-    NS_IMETHOD GetFile(nsIFile** aFile) override;
-    NS_IMETHOD GetFileURL(nsIURI** aFileURL) override;
-    NS_IMETHOD GetFiles(nsISimpleEnumerator** aFiles) override;
+  // nsIFilePicker (less what's in nsBaseFilePicker)
+  NS_IMETHOD Init(mozIDOMWindowProxy* aParent, const nsAString& aTitle,
+                  int16_t aMode) override;
+  NS_IMETHOD AppendFilter(const nsAString& aTitle,
+                          const nsAString& aFilter) override;
+  NS_IMETHOD GetDefaultString(nsAString& aDefaultString) override;
+  NS_IMETHOD SetDefaultString(const nsAString& aDefaultString) override;
+  NS_IMETHOD GetDefaultExtension(nsAString& aDefaultExtension) override;
+  NS_IMETHOD SetDefaultExtension(const nsAString& aDefaultExtension) override;
+  NS_IMETHOD GetFilterIndex(int32_t* aFilterIndex) override;
+  NS_IMETHOD SetFilterIndex(int32_t aFilterIndex) override;
+  NS_IMETHOD GetFile(nsIFile** aFile) override;
+  NS_IMETHOD GetFileURL(nsIURI** aFileURL) override;
+  NS_IMETHOD GetFiles(nsISimpleEnumerator** aFiles) override;
 
-    NS_IMETHOD GetDomFileOrDirectory(nsISupports** aValue) override;
-    NS_IMETHOD GetDomFileOrDirectoryEnumerator(nsISimpleEnumerator** aValue) override;
+  NS_IMETHOD GetDomFileOrDirectory(nsISupports** aValue) override;
+  NS_IMETHOD GetDomFileOrDirectoryEnumerator(
+      nsISimpleEnumerator** aValue) override;
 
-    NS_IMETHOD Show(int16_t* aReturn) override;
-    NS_IMETHOD Open(nsIFilePickerShownCallback* aCallback) override;
+  NS_IMETHOD Open(nsIFilePickerShownCallback* aCallback) override;
 
-    // PFilePickerChild
-    virtual mozilla::ipc::IPCResult
-    Recv__delete__(const MaybeInputData& aData, const int16_t& aResult) override;
+  // PFilePickerChild
+  virtual mozilla::ipc::IPCResult Recv__delete__(
+      const MaybeInputData& aData, const int16_t& aResult) override;
 
-private:
-    ~nsFilePickerProxy();
-    void InitNative(nsIWidget*, const nsAString&) override;
+ private:
+  ~nsFilePickerProxy();
+  void InitNative(nsIWidget*, const nsAString&) override;
+  nsresult Show(int16_t* aReturn) override;
 
-    nsTArray<mozilla::dom::OwningFileOrDirectory> mFilesOrDirectories;
-    nsCOMPtr<nsIFilePickerShownCallback> mCallback;
+  void ActorDestroy(ActorDestroyReason aWhy) override;
 
-    int16_t   mSelectedType;
-    nsString  mFile;
-    nsString  mDefault;
-    nsString  mDefaultExtension;
+  nsTArray<mozilla::dom::OwningFileOrDirectory> mFilesOrDirectories;
+  nsCOMPtr<nsIFilePickerShownCallback> mCallback;
 
-    InfallibleTArray<nsString> mFilters;
-    InfallibleTArray<nsString> mFilterNames;
+  int16_t mSelectedType;
+  nsString mFile;
+  nsString mDefault;
+  nsString mDefaultExtension;
+
+  bool mIPCActive;
+
+  InfallibleTArray<nsString> mFilters;
+  InfallibleTArray<nsString> mFilterNames;
 };
 
-#endif // NSFILEPICKERPROXY_H
+#endif  // NSFILEPICKERPROXY_H

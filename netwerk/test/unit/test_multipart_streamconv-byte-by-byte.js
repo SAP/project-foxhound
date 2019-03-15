@@ -1,5 +1,5 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = null;
 
@@ -47,8 +47,8 @@ var testData =
 
 function responseHandler(request, buffer)
 {
-  do_check_eq(buffer, testData[testNum].data);
-  do_check_eq(request.QueryInterface(Ci.nsIChannel).contentType,
+  Assert.equal(buffer, testData[testNum].data);
+  Assert.equal(request.QueryInterface(Ci.nsIChannel).contentType,
   testData[testNum].type);
   if (++testNum == numTests)
     httpserver.stop(do_test_finished);
@@ -59,11 +59,11 @@ var multipartListener = {
   _index: 0,
 
   QueryInterface: function(iid) {
-    if (iid.equals(Components.interfaces.nsIStreamListener) ||
-        iid.equals(Components.interfaces.nsIRequestObserver) ||
-        iid.equals(Components.interfaces.nsISupports))
+    if (iid.equals(Ci.nsIStreamListener) ||
+        iid.equals(Ci.nsIRequestObserver) ||
+        iid.equals(Ci.nsISupports))
       return this;
-    throw Components.results.NS_ERROR_NO_INTERFACE;
+    throw Cr.NS_ERROR_NO_INTERFACE;
   },
 
   onStartRequest: function(request, context) {
@@ -82,7 +82,7 @@ var multipartListener = {
   onStopRequest: function(request, context, status) {
     this._index++;
     // Second part should be last part
-    do_check_eq(request.QueryInterface(Ci.nsIMultiPartChannel).isLastPart, this._index == testData.length);
+    Assert.equal(request.QueryInterface(Ci.nsIMultiPartChannel).isLastPart, this._index == testData.length);
     try {
       responseHandler(request, this._buffer);
     } catch (ex) {

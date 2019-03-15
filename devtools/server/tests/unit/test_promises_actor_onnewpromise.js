@@ -8,44 +8,32 @@
 
 "use strict";
 
-const { PromisesFront } = require("devtools/shared/fronts/promises");
-
-var events = require("sdk/event/core");
-
-add_task(function* () {
-  let client = yield startTestDebuggerServer("promises-actor-test");
-  let chromeActors = yield getChromeActors(client);
-
+add_task(async function() {
+  const { promisesFront } = await createMainProcessPromisesFront();
   ok(Promise.toString().includes("native code"), "Expect native DOM Promise");
-
-  // We have to attach the chrome TabActor before playing with the PromiseActor
-  yield attachTab(client, chromeActors);
-  yield testNewPromisesEvent(client, chromeActors,
-    v => new Promise(resolve => resolve(v)));
-
-  let response = yield listTabs(client);
-  let targetTab = findTab(response.tabs, "promises-actor-test");
-  ok(targetTab, "Found our target tab.");
-
-  yield testNewPromisesEvent(client, targetTab, v => {
-    const debuggee = DebuggerServer.getTestGlobal("promises-actor-test");
-    return debuggee.Promise.resolve(v);
+  await testNewPromisesEvent(promisesFront, v => {
+    return new Promise(resolve => resolve(v));
   });
-
-  yield close(client);
 });
 
-function* testNewPromisesEvent(client, form, makePromise) {
-  let front = PromisesFront(client, form);
-  let resolution = "MyLittleSecret" + Math.random();
+add_task(async function() {
+  const { debuggee, promisesFront } = await createTabPromisesFront();
+
+  await testNewPromisesEvent(promisesFront, v => {
+    return debuggee.Promise.resolve(v);
+  });
+});
+
+async function testNewPromisesEvent(front, makePromise) {
+  const resolution = "MyLittleSecret" + Math.random();
   let found = false;
 
-  yield front.attach();
-  yield front.listPromises();
+  await front.attach();
+  await front.listPromises();
 
-  let onNewPromise = new Promise(resolve => {
-    events.on(front, "new-promises", promises => {
-      for (let p of promises) {
+  const onNewPromise = new Promise(resolve => {
+    front.on("new-promises", promises => {
+      for (const p of promises) {
         equal(p.type, "object", "Expect type to be Object");
         equal(p.class, "Promise", "Expect class to be Promise");
         equal(typeof p.promiseState.creationTimestamp, "number",
@@ -62,11 +50,11 @@ function* testNewPromisesEvent(client, form, makePromise) {
     });
   });
 
-  let promise = makePromise(resolution);
+  const promise = makePromise(resolution);
 
-  yield onNewPromise;
+  await onNewPromise;
   ok(found, "Found our new promise");
-  yield front.detach();
+  await front.detach();
   // Appease eslint
   void promise;
 }

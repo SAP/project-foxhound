@@ -21,8 +21,8 @@
 == background-repeat-round-4.html background-repeat-round-4-ref.html
 
 #border-image test cases
-== border-image-repeat-round-1.html border-image-repeat-round-1-ref.html
-== border-image-repeat-round-2.html border-image-repeat-round-2-ref.html
+fuzzy-if(webrender,9-10,572-620) == border-image-repeat-round-1.html border-image-repeat-round-1-ref.html
+fuzzy-if(webrender,7-7,216-232) == border-image-repeat-round-2.html border-image-repeat-round-2-ref.html
 == border-image-repeat-space-1.html border-image-repeat-space-1-ref.html
 == border-image-repeat-space-2.html border-image-repeat-space-2-ref.html
 == border-image-repeat-space-3.html border-image-repeat-space-3-ref.html
@@ -35,4 +35,7 @@
 == border-image-repeat-1.html border-image-repeat-1-ref.html
 
 # background-attachment test cases
-== background-attachment-fixed-inside-transform-1.html background-attachment-fixed-inside-transform-1-ref.html
+fuzzy-if(webrender,0-1,0-10) == background-attachment-fixed-inside-transform-1.html background-attachment-fixed-inside-transform-1-ref.html
+
+# box-shadow with currentcolor test cases
+== box-shadow-currentcolor.html box-shadow-currentcolor-ref.html

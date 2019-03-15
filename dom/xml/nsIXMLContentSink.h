@@ -9,13 +9,20 @@
 #include "nsIContentSink.h"
 #include "nsISupports.h"
 
-class nsIDocument;
 class nsIURI;
 class nsIChannel;
+namespace mozilla {
+namespace dom {
+class Document;
+}
+}  // namespace mozilla
 
-#define NS_IXMLCONTENT_SINK_IID \
- { 0x63fedea0, 0x9b0f, 0x4d64, \
- { 0x9b, 0xa5, 0x37, 0xc6, 0x99, 0x73, 0x29, 0x35 } }
+#define NS_IXMLCONTENT_SINK_IID                      \
+  {                                                  \
+    0x63fedea0, 0x9b0f, 0x4d64, {                    \
+      0x9b, 0xa5, 0x37, 0xc6, 0x99, 0x73, 0x29, 0x35 \
+    }                                                \
+  }
 
 /**
  * This interface represents a content sink for generic XML files.
@@ -32,7 +39,7 @@ class nsIChannel;
  *
  * XXX This interface does not contain a mechanism for the sink to
  * get specific schema/DTD information from the parser. This information
- * may be necessary for entity expansion. It is also necessary for 
+ * may be necessary for entity expansion. It is also necessary for
  * building the DOM portions that relate to the schema.
  *
  * XXX This interface does not deal with the presence of an external
@@ -41,17 +48,14 @@ class nsIChannel;
  */
 
 class nsIXMLContentSink : public nsIContentSink {
-public:
-
+ public:
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_IXMLCONTENT_SINK_IID)
-
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIXMLContentSink, NS_IXMLCONTENT_SINK_IID)
 
-nsresult
-NS_NewXMLContentSink(nsIXMLContentSink** aInstancePtrResult, nsIDocument* aDoc,
-                     nsIURI* aURL, nsISupports* aContainer,
-                     nsIChannel *aChannel);
+nsresult NS_NewXMLContentSink(nsIXMLContentSink** aInstancePtrResult,
+                              mozilla::dom::Document* aDoc, nsIURI* aURL,
+                              nsISupports* aContainer, nsIChannel* aChannel);
 
-#endif // nsIXMLContentSink_h___
+#endif  // nsIXMLContentSink_h___

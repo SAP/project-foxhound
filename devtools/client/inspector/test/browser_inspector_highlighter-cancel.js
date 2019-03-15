@@ -8,30 +8,30 @@
 
 const TEST_URL = URL_ROOT + "doc_inspector_long-divs.html";
 
-add_task(function* () {
-  let {inspector, toolbox, testActor} = yield openInspectorForURL(TEST_URL);
+add_task(async function() {
+  const {inspector, toolbox, testActor} = await openInspectorForURL(TEST_URL);
 
-  yield selectAndHighlightNode("#focus-here", inspector);
-  ok((yield testActor.assertHighlightedNode("#focus-here")),
+  await selectAndHighlightNode("#focus-here", inspector);
+  ok((await testActor.assertHighlightedNode("#focus-here")),
      "The highlighter focuses on div#focus-here");
   ok(isSelectedMarkupNodeInView(),
      "The currently selected node is on the screen.");
 
   // Start the picker but skip focusing manually focusing on the target, let the element
   // picker do the focusing.
-  yield startPicker(toolbox, true);
-  yield moveMouseOver("#zoom-here");
+  await startPicker(toolbox, true);
+  await moveMouseOver("#zoom-here");
   ok(!isSelectedMarkupNodeInView(),
      "The currently selected node is off the screen.");
 
-  yield cancelPickerByShortcut();
+  await cancelPickerByShortcut();
   ok(isSelectedMarkupNodeInView(),
      "The currently selected node is focused back on the screen.");
 
   function cancelPickerByShortcut() {
     info("Key pressed. Waiting for picker to be canceled.");
     testActor.synthesizeKey({key: "VK_ESCAPE", options: {}});
-    return inspector.toolbox.once("picker-canceled");
+    return inspector.inspector.nodePicker.once("picker-node-canceled");
   }
 
   function moveMouseOver(selector) {
@@ -39,7 +39,7 @@ add_task(function* () {
     testActor.synthesizeMouse({
       options: {type: "mousemove"},
       center: true,
-      selector: selector
+      selector: selector,
     });
     return inspector.markup.once("showcontainerhovered");
   }

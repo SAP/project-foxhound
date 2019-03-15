@@ -1,8 +1,3 @@
-
-const StandardURL = Components.Constructor("@mozilla.org/network/standard-url;1",
-                                           "nsIStandardURL",
-                                           "init");
-
  // 1.percent-encoded IDN that contains blacklisted character should be converted
  //   to punycode, not UTF-8 string
  // 2.only hostname-valid percent encoded ASCII characters should be decoded
@@ -32,13 +27,15 @@ let prefData =
   ];
 
  let prefIdnBlackList = {
-      name: "network.IDN.blacklist_chars",
+      name: "network.IDN.extra_blocked_chars",
       minimumList: "\u2215\u0430\u2044",
   };
 
 function stringToURL(str) {
-  return (new StandardURL(Ci.nsIStandardURL.URLTYPE_AUTHORITY, 80,
-			 str, "UTF-8", null))
+  return Cc["@mozilla.org/network/standard-url-mutator;1"]
+         .createInstance(Ci.nsIStandardURLMutator)
+         .init(Ci.nsIStandardURL.URLTYPE_AUTHORITY, 80, str, "UTF-8", null)
+         .finalize()
          .QueryInterface(Ci.nsIURL);
 }
 
@@ -60,7 +57,7 @@ function run_test() {
   } catch (e) {
   }
 
-  do_register_cleanup(function() {
+  registerCleanupFunction(function() {
     for (let pref of prefData) {
       prefs.clearUserPref(pref.name);
     }

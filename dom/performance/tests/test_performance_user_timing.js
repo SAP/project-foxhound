@@ -241,17 +241,12 @@ var steps = [
     function () {
         ok(true, "Running measure name collision test");
         for (n in performance.timing) {
-            try {
-                if (n == "toJSON") {
-                    ok(true, "Skipping toJSON entry in collision test");
-                    continue;
-                }
-                performance.measure(n);
-                ok(false, "Measure name collision test failed for name " + n + ", shouldn't make it here!");
-            } catch (e) {
-                ok(e instanceof DOMException, "DOM exception thrown for measure named " + n);
-                is(e.code, e.SYNTAX_ERR, "DOM exception for name collision is syntax error");
+            if (n == "toJSON") {
+                ok(true, "Skipping toJSON entry in collision test");
+                continue;
             }
+            performance.measure(n);
+            ok(true, "Measure name supports name collisions: " + n);
         };
     },
     // Test measure mark being a reserved name
@@ -266,7 +261,7 @@ var steps = [
                 performance.measure("test", n);
                 ok(true, "Measure created from reserved name as starting time: " + n);
             } catch (e) {
-                ok(["redirectStart", "redirectEnd", "unloadEventStart", "unloadEventEnd", "loadEventEnd"].indexOf(n) >= 0,
+                ok(["redirectStart", "redirectEnd", "unloadEventStart", "unloadEventEnd", "loadEventEnd", "secureConnectionStart"].includes(n),
                    "Measure created from reserved name as starting time: " + n + " and threw expected error");
             }
         };

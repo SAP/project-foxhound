@@ -26,16 +26,16 @@ const TEST_URI = "data:application/xhtml+xml;charset=utf-8," + encodeURI(XHTML);
 const TEST_DATA = [
   { node: "clipPath", expected: "clipPath" },
   { node: "rect", expected: "rect" },
-  { node: "circle", expected: "circle" }
+  { node: "circle", expected: "circle" },
 ];
 
-add_task(function* () {
-  yield addTab(TEST_URI);
-  let {inspector, view} = yield openRuleView();
+add_task(async function() {
+  await addTab(TEST_URI);
+  const {inspector, view} = await openRuleView();
 
-  for (let data of TEST_DATA) {
-    let {node, expected} = data;
-    yield selectNode(node, inspector);
-    yield addNewRuleAndDismissEditor(inspector, view, expected, 1);
+  for (const data of TEST_DATA) {
+    const {node, expected} = data;
+    await selectNode(node, inspector);
+    await addNewRuleAndDismissEditor(inspector, view, expected, 1);
   }
 });

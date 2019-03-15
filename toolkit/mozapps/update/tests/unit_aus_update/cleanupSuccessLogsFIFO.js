@@ -8,10 +8,9 @@ function run_test() {
 
   debugDump("testing update logs are first in first out deleted");
 
-  writeUpdatesToXMLFile(getLocalUpdatesXMLString(""), false);
-  let patches = getLocalPatchString(null, null, null, null, null, null,
-                                    STATE_PENDING);
-  let updates = getLocalUpdateString(patches);
+  let patchProps = {state: STATE_PENDING};
+  let patches = getLocalPatchString(patchProps);
+  let updates = getLocalUpdateString({}, patches);
   writeUpdatesToXMLFile(getLocalUpdatesXMLString(updates), true);
   writeStatusFile(STATE_SUCCEEDED);
 
@@ -26,6 +25,18 @@ function run_test() {
 
   standardInit();
 
+  Assert.ok(!gUpdateManager.activeUpdate,
+            "there should not be an active update");
+  Assert.equal(gUpdateManager.updateCount, 1,
+               "the update manager update count" + MSG_SHOULD_EQUAL);
+  executeSoon(waitForUpdateXMLFiles);
+}
+
+/**
+ * Called after the call to waitForUpdateXMLFiles finishes.
+ */
+function waitForUpdateXMLFilesFinished() {
+  let log = getUpdateLog(FILE_UPDATE_LOG);
   Assert.ok(!log.exists(), MSG_SHOULD_NOT_EXIST);
 
   log = getUpdateLog(FILE_LAST_UPDATE_LOG);

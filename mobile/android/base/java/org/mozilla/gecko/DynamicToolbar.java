@@ -1,9 +1,9 @@
 package org.mozilla.gecko;
 
 import org.mozilla.gecko.PrefsHelper.PrefHandlerBase;
-import org.mozilla.gecko.gfx.DynamicToolbarAnimator.PinReason;
-import org.mozilla.gecko.gfx.LayerView;
+import org.mozilla.geckoview.DynamicToolbarAnimator.PinReason;
 import org.mozilla.gecko.util.ThreadUtils;
+import org.mozilla.geckoview.GeckoView;
 
 import android.os.Build;
 import android.os.Bundle;
@@ -25,7 +25,7 @@ public class DynamicToolbar {
     private final boolean forceDisabled;
 
     private final PrefsHelper.PrefHandler prefObserver;
-    private LayerView layerView;
+    private GeckoView layerView;
     private OnEnabledChangedListener enabledChangedListener;
     private boolean temporarilyVisible;
 
@@ -77,7 +77,7 @@ public class DynamicToolbar {
         PrefsHelper.removeObserver(prefObserver);
     }
 
-    public void setLayerView(LayerView layerView) {
+    public void setLayerView(GeckoView layerView) {
         ThreadUtils.assertOnUiThread();
 
         this.layerView = layerView;
@@ -146,36 +146,6 @@ public class DynamicToolbar {
             layerView.getDynamicToolbarAnimator().showToolbar(isImmediate);
         } else {
             layerView.getDynamicToolbarAnimator().hideToolbar(isImmediate);
-        }
-    }
-
-    public void setTemporarilyVisible(boolean visible, VisibilityTransition transition) {
-        ThreadUtils.assertOnUiThread();
-
-        if (layerView == null) {
-            return;
-        }
-
-        if (visible == temporarilyVisible) {
-            // nothing to do
-            return;
-        }
-
-        temporarilyVisible = visible;
-        final boolean isImmediate = transition == VisibilityTransition.IMMEDIATE;
-        if (visible) {
-            layerView.getDynamicToolbarAnimator().showToolbar(isImmediate);
-        } else {
-            layerView.getDynamicToolbarAnimator().hideToolbar(isImmediate);
-        }
-    }
-
-    public void persistTemporaryVisibility() {
-        ThreadUtils.assertOnUiThread();
-
-        if (temporarilyVisible) {
-            temporarilyVisible = false;
-            setVisible(true, VisibilityTransition.IMMEDIATE);
         }
     }
 

@@ -8,19 +8,20 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_processing/vad/standalone_vad.h"
+#include "modules/audio_processing/vad/standalone_vad.h"
 
 #include <string.h>
 
-#include "testing/gtest/include/gtest/gtest.h"
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/modules/include/module_common_types.h"
-#include "webrtc/test/testsupport/fileutils.h"
+#include <memory>
+
+#include "modules/include/module_common_types.h"
+#include "test/gtest.h"
+#include "test/testsupport/fileutils.h"
 
 namespace webrtc {
 
 TEST(StandaloneVadTest, Api) {
-  rtc::scoped_ptr<StandaloneVad> vad(StandaloneVad::Create());
+  std::unique_ptr<StandaloneVad> vad(StandaloneVad::Create());
   int16_t data[kLength10Ms] = {0};
 
   // Valid frame length (for 32 kHz rate), but not what the VAD is expecting.
@@ -59,7 +60,7 @@ TEST(StandaloneVadTest, DISABLED_ActivityDetection) {
 #else
 TEST(StandaloneVadTest, ActivityDetection) {
 #endif
-  rtc::scoped_ptr<StandaloneVad> vad(StandaloneVad::Create());
+  std::unique_ptr<StandaloneVad> vad(StandaloneVad::Create());
   const size_t kDataLength = kLength10Ms;
   int16_t data[kDataLength] = {0};
 

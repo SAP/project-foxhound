@@ -2,18 +2,15 @@
 
 module.exports = {
   "extends": [
-    "../../../../testing/mochitest/mochitest.eslintrc.js"
+    "plugin:mozilla/mochitest-test"
   ],
 
   globals: {
-    // Globals specific to mozmill
-    "assert": false,
-    "controller": false,
-    "findElement": false,
-    "mozmill": false,
     // Injected into tests via tps.jsm
     "Addons": false,
+    "Addresses": false,
     "Bookmarks": false,
+    "CreditCards": false,
     "EnableEngines": false,
     "EnsureTracking": false,
     "Formdata": false,
@@ -22,7 +19,6 @@ module.exports = {
     "Passwords": false,
     "Phase": false,
     "Prefs": false,
-    "RunMozmillTest": false,
     "STATE_DISABLED": false,
     "STATE_ENABLED": false,
     "Sync": false,
@@ -31,5 +27,15 @@ module.exports = {
     "Tabs": false,
     "Windows": false,
     "WipeServer": false,
-  }
+  },
+  // TPS test files are also hackily parsed by python's JSON parser,
+  // so trailing commas aren't valid.
+  "overrides": [{
+    "files": [
+      "test_*.js",
+    ],
+    "rules": {
+      "comma-dangle": "off",
+    }
+  }]
 };

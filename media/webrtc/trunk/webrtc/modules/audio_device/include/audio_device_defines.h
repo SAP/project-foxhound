@@ -8,12 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_DEVICE_INCLUDE_AUDIO_DEVICE_DEFINES_H_
-#define WEBRTC_MODULES_AUDIO_DEVICE_INCLUDE_AUDIO_DEVICE_DEFINES_H_
+#ifndef MODULES_AUDIO_DEVICE_INCLUDE_AUDIO_DEVICE_DEFINES_H_
+#define MODULES_AUDIO_DEVICE_INCLUDE_AUDIO_DEVICE_DEFINES_H_
 
 #include <stddef.h>
 
-#include "webrtc/typedefs.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -23,22 +23,6 @@ static const int kAdmMaxGuidSize = 128;
 
 static const int kAdmMinPlayoutBufferSizeMs = 10;
 static const int kAdmMaxPlayoutBufferSizeMs = 250;
-
-// ----------------------------------------------------------------------------
-//  AudioDeviceObserver
-// ----------------------------------------------------------------------------
-
-class AudioDeviceObserver {
- public:
-  enum ErrorCode { kRecordingError = 0, kPlayoutError = 1 };
-  enum WarningCode { kRecordingWarning = 0, kPlayoutWarning = 1 };
-
-  virtual void OnErrorIsReported(const ErrorCode error) = 0;
-  virtual void OnWarningIsReported(const WarningCode warning) = 0;
-
- protected:
-  virtual ~AudioDeviceObserver() {}
-};
 
 // ----------------------------------------------------------------------------
 //  AudioTransport
@@ -66,58 +50,16 @@ class AudioTransport {
                                    int64_t* elapsed_time_ms,
                                    int64_t* ntp_time_ms) = 0;
 
-  // Method to pass captured data directly and unmixed to network channels.
-  // |channel_ids| contains a list of VoE channels which are the
-  // sinks to the capture data. |audio_delay_milliseconds| is the sum of
-  // recording delay and playout delay of the hardware. |current_volume| is
-  // in the range of [0, 255], representing the current microphone analog
-  // volume. |key_pressed| is used by the typing detection.
-  // |need_audio_processing| specify if the data needs to be processed by APM.
-  // Currently WebRtc supports only one APM, and Chrome will make sure only
-  // one stream goes through APM. When |need_audio_processing| is false, the
-  // values of |audio_delay_milliseconds|, |current_volume| and |key_pressed|
-  // will be ignored.
-  // The return value is the new microphone volume, in the range of |0, 255].
-  // When the volume does not need to be updated, it returns 0.
-  // TODO(xians): Remove this interface after Chrome and Libjingle switches
-  // to OnData().
-  virtual int OnDataAvailable(const int voe_channels[],
-                              size_t number_of_voe_channels,
-                              const int16_t* audio_data,
-                              int sample_rate,
-                              size_t number_of_channels,
-                              size_t number_of_frames,
-                              int audio_delay_milliseconds,
-                              int current_volume,
-                              bool key_pressed,
-                              bool need_audio_processing) {
-    return 0;
-  }
-
-  // Method to pass the captured audio data to the specific VoE channel.
-  // |voe_channel| is the id of the VoE channel which is the sink to the
-  // capture data.
-  // TODO(xians): Remove this interface after Libjingle switches to
-  // PushCaptureData().
-  virtual void OnData(int voe_channel,
-                      const void* audio_data,
-                      int bits_per_sample,
-                      int sample_rate,
-                      size_t number_of_channels,
-                      size_t number_of_frames) {}
-
   // Method to push the captured audio data to the specific VoE channel.
   // The data will not undergo audio processing.
   // |voe_channel| is the id of the VoE channel which is the sink to the
   // capture data.
-  // TODO(xians): Make the interface pure virtual after Libjingle
-  // has its implementation.
   virtual void PushCaptureData(int voe_channel,
                                const void* audio_data,
                                int bits_per_sample,
                                int sample_rate,
                                size_t number_of_channels,
-                               size_t number_of_frames) {}
+                               size_t number_of_frames) = 0;
 
   // Method to pull mixed render audio data from all active VoE channels.
   // The data will not be passed as reference for audio processing internally.
@@ -129,7 +71,7 @@ class AudioTransport {
                               size_t number_of_frames,
                               void* audio_data,
                               int64_t* elapsed_time_ms,
-                              int64_t* ntp_time_ms) {}
+                              int64_t* ntp_time_ms) = 0;
 
  protected:
   virtual ~AudioTransport() {}
@@ -207,4 +149,4 @@ class AudioParameters {
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_AUDIO_DEVICE_INCLUDE_AUDIO_DEVICE_DEFINES_H_
+#endif  // MODULES_AUDIO_DEVICE_INCLUDE_AUDIO_DEVICE_DEFINES_H_

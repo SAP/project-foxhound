@@ -145,7 +145,7 @@ SBOX_TESTS_COMMAND int CheckForEventHandles(int argc, wchar_t** argv) {
       return SBOX_TEST_SUCCEEDED;
 
     case AFTER_REVERT:
-      for (auto handle : to_check) {
+      for (HANDLE handle : to_check) {
         // Set up buffers for the type info and the name.
         std::vector<BYTE> type_info_buffer(sizeof(OBJECT_TYPE_INFORMATION) +
                                            32 * sizeof(wchar_t));
@@ -289,10 +289,9 @@ TEST(HandleCloserTest, RunThreadPool) {
   TestRunner runner;
   runner.SetTimeout(2000);
   runner.SetTestState(AFTER_REVERT);
-  sandbox::TargetPolicy* policy = runner.GetPolicy();
 
-  // Sever the CSRSS connection by closing ALPC ports inside the sandbox.
-  CHECK_EQ(policy->AddKernelObjectToClose(L"ALPC Port", NULL), SBOX_ALL_OK);
+  // Sandbox policy will determine which platforms to disconnect CSRSS and when
+  // to close the CSRSS handle.
 
   EXPECT_EQ(SBOX_TEST_SUCCEEDED, runner.RunTest(L"RunThreadPool"));
 }

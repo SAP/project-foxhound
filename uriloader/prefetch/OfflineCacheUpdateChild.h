@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,84 +11,79 @@
 
 #include "nsCOMArray.h"
 #include "nsCOMPtr.h"
-#include "nsIDOMDocument.h"
+#include "mozilla/dom/Document.h"
 #include "nsIObserver.h"
 #include "nsIObserverService.h"
 #include "nsIURI.h"
+#include "nsIWeakReference.h"
 #include "nsString.h"
-#include "nsWeakReference.h"
 
 class nsPIDOMWindowInner;
 
 namespace mozilla {
 namespace docshell {
 
-class OfflineCacheUpdateChild : public nsIOfflineCacheUpdate
-                              , public POfflineCacheUpdateChild
-{
-public:
-    NS_DECL_ISUPPORTS
-    NS_DECL_NSIOFFLINECACHEUPDATE
+class OfflineCacheUpdateChild : public nsIOfflineCacheUpdate,
+                                public POfflineCacheUpdateChild {
+ public:
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSIOFFLINECACHEUPDATE
 
-    virtual mozilla::ipc::IPCResult
-    RecvNotifyStateEvent(const uint32_t& stateEvent,
-                         const uint64_t& byteProgress) override;
+  virtual mozilla::ipc::IPCResult RecvNotifyStateEvent(
+      const uint32_t& stateEvent, const uint64_t& byteProgress) override;
 
-    virtual mozilla::ipc::IPCResult
-    RecvAssociateDocuments(
-            const nsCString& cacheGroupId,
-            const nsCString& cacheClientId) override;
+  virtual mozilla::ipc::IPCResult RecvAssociateDocuments(
+      const nsCString& cacheGroupId, const nsCString& cacheClientId) override;
 
-    virtual mozilla::ipc::IPCResult
-    RecvFinish(const bool& succeeded,
-               const bool& isUpgrade) override;
+  virtual mozilla::ipc::IPCResult RecvFinish(const bool& succeeded,
+                                             const bool& isUpgrade) override;
 
-    explicit OfflineCacheUpdateChild(nsPIDOMWindowInner* aWindow);
+  explicit OfflineCacheUpdateChild(nsPIDOMWindowInner* aWindow);
 
-    void SetDocument(nsIDOMDocument *aDocument);
+  void SetDocument(dom::Document* aDocument);
 
-private:
-    ~OfflineCacheUpdateChild();
+ private:
+  ~OfflineCacheUpdateChild();
 
-    nsresult AssociateDocument(nsIDOMDocument *aDocument,
-                               nsIApplicationCache *aApplicationCache);
-    void GatherObservers(nsCOMArray<nsIOfflineCacheUpdateObserver> &aObservers);
-    nsresult Finish();
+  nsresult AssociateDocument(dom::Document* aDocument,
+                             nsIApplicationCache* aApplicationCache);
+  void GatherObservers(nsCOMArray<nsIOfflineCacheUpdateObserver>& aObservers);
+  nsresult Finish();
 
-    enum {
-        STATE_UNINITIALIZED,
-        STATE_INITIALIZED,
-        STATE_CHECKING,
-        STATE_DOWNLOADING,
-        STATE_CANCELLED,
-        STATE_FINISHED
-    } mState;
+  enum {
+    STATE_UNINITIALIZED,
+    STATE_INITIALIZED,
+    STATE_CHECKING,
+    STATE_DOWNLOADING,
+    STATE_CANCELLED,
+    STATE_FINISHED
+  } mState;
 
-    bool mIsUpgrade;
-    bool mSucceeded;
+  bool mIsUpgrade;
+  bool mSucceeded;
 
-    nsCString mUpdateDomain;
-    nsCOMPtr<nsIURI> mManifestURI;
-    nsCOMPtr<nsIURI> mDocumentURI;
-    nsCOMPtr<nsIPrincipal> mLoadingPrincipal;
+  nsCString mUpdateDomain;
+  nsCOMPtr<nsIURI> mManifestURI;
+  nsCOMPtr<nsIURI> mDocumentURI;
+  nsCOMPtr<nsIPrincipal> mLoadingPrincipal;
 
-    nsCOMPtr<nsIObserverService> mObserverService;
+  nsCOMPtr<nsIObserverService> mObserverService;
 
-    /* Clients watching this update for changes */
-    nsCOMArray<nsIWeakReference> mWeakObservers;
-    nsCOMArray<nsIOfflineCacheUpdateObserver> mObservers;
+  /* Clients watching this update for changes */
+  nsCOMArray<nsIWeakReference> mWeakObservers;
+  nsCOMArray<nsIOfflineCacheUpdateObserver> mObservers;
 
-    /* Document that requested this update */
-    nsCOMPtr<nsIDOMDocument> mDocument;
+  /* Document that requested this update */
+  nsCOMPtr<dom::Document> mDocument;
 
-    /* Keep reference to the window that owns this update to call the
-       parent offline cache update construcor */
-    nsCOMPtr<nsPIDOMWindowInner> mWindow;
+  /* Keep reference to the window that owns this update to call the
+     parent offline cache update construcor */
+  nsCOMPtr<nsPIDOMWindowInner> mWindow;
 
-    uint64_t mByteProgress;
+  uint64_t mByteProgress;
 };
 
-} // namespace docshell
-} // namespace mozilla
+}  // namespace docshell
+}  // namespace mozilla
 
 #endif

@@ -4,42 +4,48 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
- 
+
 #ifndef SKSL_MODIFIERS
 #define SKSL_MODIFIERS
 
-#include "../ast/SkSLASTModifiers.h"
 #include "SkSLLayout.h"
 
 namespace SkSL {
 
 /**
- * A set of modifier keywords (in, out, uniform, etc.) appearing before a declaration. 
+ * A set of modifier keywords (in, out, uniform, etc.) appearing before a declaration.
  */
 struct Modifiers {
     enum Flag {
-        kNo_Flag            = ASTModifiers::kNo_Flag,
-        kConst_Flag         = ASTModifiers::kConst_Flag,
-        kIn_Flag            = ASTModifiers::kIn_Flag,
-        kOut_Flag           = ASTModifiers::kOut_Flag,
-        kLowp_Flag          = ASTModifiers::kLowp_Flag,
-        kMediump_Flag       = ASTModifiers::kMediump_Flag,
-        kHighp_Flag         = ASTModifiers::kHighp_Flag,
-        kUniform_Flag       = ASTModifiers::kUniform_Flag,
-        kFlat_Flag          = ASTModifiers::kFlat_Flag,
-        kNoPerspective_Flag = ASTModifiers::kNoPerspective_Flag
+        kNo_Flag             =       0,
+        kConst_Flag          = 1 <<  0,
+        kIn_Flag             = 1 <<  1,
+        kOut_Flag            = 1 <<  2,
+        kLowp_Flag           = 1 <<  3,
+        kMediump_Flag        = 1 <<  4,
+        kHighp_Flag          = 1 <<  5,
+        kUniform_Flag        = 1 <<  6,
+        kFlat_Flag           = 1 <<  7,
+        kNoPerspective_Flag  = 1 <<  8,
+        kReadOnly_Flag       = 1 <<  9,
+        kWriteOnly_Flag      = 1 << 10,
+        kCoherent_Flag       = 1 << 11,
+        kVolatile_Flag       = 1 << 12,
+        kRestrict_Flag       = 1 << 13,
+        kBuffer_Flag         = 1 << 14,
+        kHasSideEffects_Flag = 1 << 15
     };
 
-    Modifiers(const ASTModifiers& modifiers)
-    : fLayout(modifiers.fLayout)
-    , fFlags(modifiers.fFlags) {}
+    Modifiers()
+    : fLayout(Layout())
+    , fFlags(0) {}
 
-    Modifiers(Layout& layout, int flags)
+    Modifiers(const Layout& layout, int flags)
     : fLayout(layout)
     , fFlags(flags) {}
 
-    std::string description() const {
-        std::string result = fLayout.description();
+    String description() const {
+        String result = fLayout.description();
         if (fFlags & kUniform_Flag) {
             result += "uniform ";
         }
@@ -60,6 +66,27 @@ struct Modifiers {
         }
         if (fFlags & kNoPerspective_Flag) {
             result += "noperspective ";
+        }
+        if (fFlags & kReadOnly_Flag) {
+            result += "readonly ";
+        }
+        if (fFlags & kWriteOnly_Flag) {
+            result += "writeonly ";
+        }
+        if (fFlags & kCoherent_Flag) {
+            result += "coherent ";
+        }
+        if (fFlags & kVolatile_Flag) {
+            result += "volatile ";
+        }
+        if (fFlags & kRestrict_Flag) {
+            result += "restrict ";
+        }
+        if (fFlags & kBuffer_Flag) {
+            result += "buffer ";
+        }
+        if (fFlags & kHasSideEffects_Flag) {
+            result += "sk_has_side_effects ";
         }
 
         if ((fFlags & kIn_Flag) && (fFlags & kOut_Flag)) {

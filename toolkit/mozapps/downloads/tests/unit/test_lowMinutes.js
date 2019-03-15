@@ -7,7 +7,7 @@
  * and seconds; but continue to show only minutes when we have plenty.
  */
 
-Components.utils.import("resource://gre/modules/DownloadUtils.jsm");
+ChromeUtils.import("resource://gre/modules/DownloadUtils.jsm");
 
 /**
  * Print some debug message to the console. All arguments will be printed,
@@ -47,7 +47,7 @@ function run_test() {
 
     _("Got status:", status, "last:", last);
     _("Expecting..", expectStatus);
-    do_check_eq(status, expectStatus);
+    Assert.equal(status, expectStatus);
 
     _();
   });

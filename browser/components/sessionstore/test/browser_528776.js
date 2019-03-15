@@ -1,8 +1,7 @@
 function browserWindowsCount(expected) {
   var count = 0;
-  var e = Services.wm.getEnumerator("navigator:browser");
-  while (e.hasMoreElements()) {
-    if (!e.getNext().closed)
+  for (let win of Services.wm.getEnumerator("navigator:browser")) {
+    if (!win.closed)
       ++count;
   }
   is(count, expected,
@@ -11,11 +10,11 @@ function browserWindowsCount(expected) {
      "number of open browser windows according to getBrowserState");
 }
 
-add_task(function*() {
+add_task(async function() {
   browserWindowsCount(1);
 
-  let win = yield BrowserTestUtils.openNewBrowserWindow();
+  let win = await BrowserTestUtils.openNewBrowserWindow();
   browserWindowsCount(2);
-  yield BrowserTestUtils.closeWindow(win);
+  await BrowserTestUtils.closeWindow(win);
   browserWindowsCount(1);
 });

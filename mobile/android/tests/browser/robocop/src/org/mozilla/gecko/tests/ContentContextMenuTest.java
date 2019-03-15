@@ -5,7 +5,7 @@
 package org.mozilla.gecko.tests;
 
 import org.mozilla.gecko.Actions;
-import org.mozilla.gecko.util.Clipboard;
+import org.mozilla.gecko.Clipboard;
 import org.mozilla.gecko.Element;
 import org.mozilla.gecko.R;
 
@@ -81,7 +81,7 @@ abstract class ContentContextMenuTest extends PixelTest {
         boolean correctText = waitForCondition(new Condition() {
             @Override
             public boolean isSatisfied() {
-                final String clipboardText = Clipboard.getText();
+                final String clipboardText = Clipboard.getText(getActivity());
                 mAsserter.dumpLog("Clipboard text = " + clipboardText + " , expected text = " + copiedText);
                 return clipboardText.contains(copiedText);
             }

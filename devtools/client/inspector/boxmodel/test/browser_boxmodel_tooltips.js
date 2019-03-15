@@ -28,93 +28,93 @@ const VALUES_TEST_DATA = [{
   values: [{
     name: "margin-top",
     ruleSelector: "#div1",
-    styleSheetLocation: "inline:1"
+    styleSheetLocation: "inline:1",
   }, {
     name: "margin-right",
     ruleSelector: "#div1",
-    styleSheetLocation: "inline:1"
+    styleSheetLocation: "inline:1",
   }, {
     name: "margin-bottom",
     ruleSelector: "#div1",
-    styleSheetLocation: "inline:1"
+    styleSheetLocation: "inline:1",
   }, {
     name: "margin-left",
     ruleSelector: "#div1",
-    styleSheetLocation: "inline:1"
-  }]
+    styleSheetLocation: "inline:1",
+  }],
 }, {
   selector: "#div2",
   values: [{
     name: "border-bottom-width",
     ruleSelector: "#div2",
-    styleSheetLocation: "inline:2"
-  }]
+    styleSheetLocation: "inline:2",
+  }],
 }, {
   selector: "#div3",
   values: [{
     name: "padding-top",
     ruleSelector: "html, body, #div3",
-    styleSheetLocation: "inline:3"
+    styleSheetLocation: "inline:3",
   }, {
     name: "padding-right",
     ruleSelector: "html, body, #div3",
-    styleSheetLocation: "inline:3"
+    styleSheetLocation: "inline:3",
   }, {
     name: "padding-bottom",
     ruleSelector: "html, body, #div3",
-    styleSheetLocation: "inline:3"
+    styleSheetLocation: "inline:3",
   }, {
     name: "padding-left",
     ruleSelector: "html, body, #div3",
-    styleSheetLocation: "inline:3"
-  }]
+    styleSheetLocation: "inline:3",
+  }],
 }];
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openBoxModelView();
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, boxmodel} = await openLayoutView();
 
   info("Checking the regions tooltips");
 
-  ok(view.document.querySelector(".boxmodel-margins").hasAttribute("title"),
+  ok(boxmodel.document.querySelector(".boxmodel-margins").hasAttribute("title"),
     "The margin region has a tooltip");
-  is(view.document.querySelector(".boxmodel-margins").getAttribute("title"), "margin",
+  is(boxmodel.document.querySelector(".boxmodel-margins").getAttribute("title"), "margin",
     "The margin region has the correct tooltip content");
 
-  ok(view.document.querySelector(".boxmodel-borders").hasAttribute("title"),
+  ok(boxmodel.document.querySelector(".boxmodel-borders").hasAttribute("title"),
     "The border region has a tooltip");
-  is(view.document.querySelector(".boxmodel-borders").getAttribute("title"), "border",
+  is(boxmodel.document.querySelector(".boxmodel-borders").getAttribute("title"), "border",
     "The border region has the correct tooltip content");
 
-  ok(view.document.querySelector(".boxmodel-paddings").hasAttribute("title"),
+  ok(boxmodel.document.querySelector(".boxmodel-paddings").hasAttribute("title"),
     "The padding region has a tooltip");
-  is(view.document.querySelector(".boxmodel-paddings").getAttribute("title"), "padding",
-    "The padding region has the correct tooltip content");
+  is(boxmodel.document.querySelector(".boxmodel-paddings").getAttribute("title"),
+    "padding", "The padding region has the correct tooltip content");
 
-  ok(view.document.querySelector(".boxmodel-content").hasAttribute("title"),
+  ok(boxmodel.document.querySelector(".boxmodel-content").hasAttribute("title"),
     "The content region has a tooltip");
-  is(view.document.querySelector(".boxmodel-content").getAttribute("title"), "content",
-    "The content region has the correct tooltip content");
+  is(boxmodel.document.querySelector(".boxmodel-content").getAttribute("title"),
+    "content", "The content region has the correct tooltip content");
 
-  for (let {selector, values} of VALUES_TEST_DATA) {
+  for (const {selector, values} of VALUES_TEST_DATA) {
     info("Selecting " + selector + " and checking the values tooltips");
-    yield selectNode(selector, inspector);
+    await selectNode(selector, inspector);
 
     info("Iterate over all values");
-    for (let key in view.map) {
+    for (const key in boxmodel.map) {
       if (key === "position") {
         continue;
       }
 
-      let name = view.map[key].property;
-      let expectedTooltipData = values.find(o => o.name === name);
-      let el = view.document.querySelector(view.map[key].selector);
+      const name = boxmodel.map[key].property;
+      const expectedTooltipData = values.find(o => o.name === name);
+      const el = boxmodel.document.querySelector(boxmodel.map[key].selector);
 
       ok(el.hasAttribute("title"), "The " + name + " value has a tooltip");
 
       if (expectedTooltipData) {
         info("The " + name + " value comes from a css rule");
-        let expectedTooltip = name + "\n" + expectedTooltipData.ruleSelector +
+        const expectedTooltip = name + "\n" + expectedTooltipData.ruleSelector +
                               "\n" + expectedTooltipData.styleSheetLocation;
         is(el.getAttribute("title"), expectedTooltip, "The tooltip is correct");
       } else {

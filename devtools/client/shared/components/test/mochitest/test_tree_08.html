@@ -18,12 +18,11 @@ other inputs.
 <pre id="test">
 <script src="head.js" type="application/javascript"></script>
 <script type="application/javascript">
-window.onload = Task.async(function* () {
+window.onload = async function () {
   try {
     const ReactDOM = browserRequire("devtools/client/shared/vendor/react-dom");
-    const React = browserRequire("devtools/client/shared/vendor/react");
-    const { Simulate } = React.addons.TestUtils;
-    const Tree = React.createFactory(browserRequire("devtools/client/shared/components/tree"));
+    const { createFactory } = browserRequire("devtools/client/shared/vendor/react");
+    const Tree = createFactory(browserRequire("devtools/client/shared/components/VirtualizedTree"));
 
     function renderTree(props) {
       const treeProps = Object.assign({},
@@ -42,8 +41,8 @@ window.onload = Task.async(function* () {
     input.focus();
     is(document.activeElement, input, "The text input should be focused.");
 
-    Simulate.click(document.querySelector(".tree-node"));
-    yield forceRender(tree);
+    document.querySelector(".tree-node").click();
+    await forceRender(tree);
 
     isnot(document.activeElement, input,
           "The input should have had it's focus stolen by clicking on a tree item.");
@@ -52,7 +51,7 @@ window.onload = Task.async(function* () {
   } finally {
     SimpleTest.finish();
   }
-});
+};
 </script>
 </pre>
 </body>

@@ -14,7 +14,7 @@ function test() {
     createInstance(SpecialPowers.Ci.nsIWebHandlerApp);
   webHandler.name = "Test Web Handler App";
   webHandler.uriTemplate =
-      "http://mochi.test:8888/tests/uriloader/exthandler/tests/mochitest/" + 
+      "https://example.com/tests/uriloader/exthandler/tests/mochitest/" + 
       "handlerApp.xhtml?uri=%s";
   
   // set up the uri to test with
@@ -24,10 +24,7 @@ function test() {
 
   // create a window, and launch the handler in it
   var newWindow = window.open("", "handlerWindow", "height=300,width=300");
-  var windowContext = 
-    SpecialPowers.wrap(newWindow).QueryInterface(SpecialPowers.Ci.nsIInterfaceRequestor).
-    getInterface(SpecialPowers.Ci.nsIWebNavigation).
-    QueryInterface(SpecialPowers.Ci.nsIDocShell);
+  var windowContext = SpecialPowers.wrap(newWindow).docShell;
  
   webHandler.launchWithURI(uri, windowContext);
 
@@ -54,7 +51,7 @@ function test() {
                getService(SpecialPowers.Ci.nsIDirectoryServiceProvider);
   if (osString == "WINNT") {
     var windowsDir = dirSvc.getFile("WinD", {});
-    var exe = windowsDir.clone().QueryInterface(SpecialPowers.Ci.nsILocalFile);
+    var exe = windowsDir.clone().QueryInterface(SpecialPowers.Ci.nsIFile);
     exe.appendRelativePath("SYSTEM32\\HOSTNAME.EXE");
 
   } else if (osString == "Darwin") { 
@@ -72,13 +69,13 @@ function test() {
 
       // assume a generic UNIX variant
       exe = Cc["@mozilla.org/file/local;1"].
-            createInstance(SpecialPowers.Ci.nsILocalFile);
+            createInstance(SpecialPowers.Ci.nsIFile);
       exe.initWithPath("/bin/echo");
     }
   } else {
     // assume a generic UNIX variant
     exe = Cc["@mozilla.org/file/local;1"].
-          createInstance(SpecialPowers.Ci.nsILocalFile);
+          createInstance(SpecialPowers.Ci.nsIFile);
     exe.initWithPath("/bin/echo");
   }
 
@@ -93,7 +90,7 @@ function test() {
   if (osString == "NOTDarwin") {
 
     var killall = Cc["@mozilla.org/file/local;1"].
-                  createInstance(SpecialPowers.Ci.nsILocalFile);
+                  createInstance(SpecialPowers.Ci.nsIFile);
     killall.initWithPath("/usr/bin/killall");
   
     var process = Cc["@mozilla.org/process/util;1"].

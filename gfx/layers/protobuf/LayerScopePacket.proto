@@ -1,5 +1,7 @@
 /* vim:set ts=2 sw=2 sts=2 et: */
 
+syntax = "proto2";
+
 option optimize_for = LITE_RUNTIME;
 
 package mozilla.layers.layerscope;
@@ -77,8 +79,9 @@ message LayersPacket {
       CanvasLayer = 4;
       ImageLayer = 5;
       ColorLayer = 6;
-      RefLayer = 7;
-      ReadbackLayer = 8;
+      RefLayer = 8;
+      ReadbackLayer = 9;
+      DisplayItemLayer = 10;
     }
     enum ScrollingDirect {
       VERTICAL = 1;

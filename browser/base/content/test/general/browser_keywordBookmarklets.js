@@ -1,35 +1,34 @@
-"use strict"
+/* Any copyright is dedicated to the Public Domain.
+ * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-add_task(function* test_keyword_bookmarklet() {
-  let bm = yield PlacesUtils.bookmarks.insert({ parentGuid: PlacesUtils.bookmarks.unfiledGuid,
-                                                title: "bookmarklet",
-                                                url: "javascript:'1';" });
-  let tab = gBrowser.selectedTab = gBrowser.addTab();
-  registerCleanupFunction(function* () {
-    gBrowser.removeTab(tab);
-    yield PlacesUtils.bookmarks.remove(bm);
+"use strict";
+
+add_task(async function test_keyword_bookmarklet() {
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
+  let bm = await PlacesUtils.bookmarks.insert({
+    parentGuid: PlacesUtils.bookmarks.unfiledGuid,
+    title: "bookmarklet",
+    url: "javascript:'1';",
   });
-  yield promisePageShow();
+
+  registerCleanupFunction(async function() {
+    BrowserTestUtils.removeTab(tab);
+    await PlacesUtils.bookmarks.remove(bm);
+  });
+
   let originalPrincipal = gBrowser.contentPrincipal;
+  let originalPrincipalURI = await getPrincipalURI(tab.linkedBrowser);
 
-  function getPrincipalURI() {
-    return ContentTask.spawn(tab.linkedBrowser, null, function() {
-      return content.document.nodePrincipal.URI.spec;
-    });
-  }
-
-  let originalPrincipalURI = yield getPrincipalURI();
-
-  yield PlacesUtils.keywords.insert({ keyword: "bm", url: "javascript:'1';" })
+  await PlacesUtils.keywords.insert({ keyword: "bm", url: "javascript:'1';" });
 
   // Enter bookmarklet keyword in the URL bar
   gURLBar.value = "bm";
   gURLBar.focus();
-  EventUtils.synthesizeKey("VK_RETURN", {});
+  EventUtils.synthesizeKey("KEY_Enter");
 
-  yield promisePageShow();
+  await BrowserTestUtils.waitForContentEvent(gBrowser.selectedBrowser, "pageshow");
 
-  let newPrincipalURI = yield getPrincipalURI();
+  let newPrincipalURI = await getPrincipalURI(tab.linkedBrowser);
   is(newPrincipalURI, originalPrincipalURI, "content has the same principal");
 
   // In e10s, null principals don't round-trip so the same null principal sent
@@ -44,10 +43,8 @@ add_task(function* test_keyword_bookmarklet() {
   }
 });
 
-function* promisePageShow() {
-  return new Promise(resolve => {
-    gBrowser.selectedBrowser.addEventListener("pageshow", function() {
-      resolve();
-    }, {once: true});
+function getPrincipalURI(browser) {
+  return ContentTask.spawn(browser, null, function() {
+    return content.document.nodePrincipal.URI.spec;
   });
 }

@@ -18,9 +18,6 @@
   <![CDATA[
   "use strict";
 
-  const Cc = Components.classes;
-  const Ci = Components.interfaces;
-
   function onFocus() {
     let frame = document.getElementById("amFrame");
     frame.focus();
@@ -29,7 +26,7 @@
     // is present.
     function checkForFileAndRemove(aFilename) {
       let localFile = Cc["@mozilla.org/file/local;1"]
-                        .createInstance(Ci.nsILocalFile);
+                        .createInstance(Ci.nsIFile);
       localFile.initWithPath(aFilename);
 
       let exists = localFile.exists();

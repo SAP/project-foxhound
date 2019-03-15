@@ -35,7 +35,14 @@
 #include "jit/JitSpewer.h"
 
 #include "jit/shared/Assembler-shared.h"
+#include "jit/shared/Disassembler-shared.h"
 #include "jit/shared/IonAssemblerBufferWithConstantPools.h"
+
+#if defined(_M_ARM64)
+#ifdef mvn
+#undef mvn
+#endif
+#endif
 
 namespace vixl {
 
@@ -43,6 +50,9 @@ using js::jit::BufferOffset;
 using js::jit::Label;
 using js::jit::Address;
 using js::jit::BaseIndex;
+using js::jit::DisassemblerSpew;
+
+using LabelDoc = DisassemblerSpew::LabelDoc;
 
 typedef uint64_t RegList;
 static const int kRegListSizeInBits = sizeof(RegList) * 8;
@@ -261,8 +271,10 @@ class Register : public CPURegister {
   }
 
   js::jit::Register asUnsized() const {
-    if (code_ == kSPRegInternalCode)
-      return js::jit::Register::FromCode((js::jit::Register::Code)kZeroRegCode);
+    // asUnsized() is only ever used on temp registers or on registers that
+    // are known not to be SP, and there should be no risk of it being
+    // applied to SP.  Check anyway.
+    VIXL_ASSERT(code_ != kSPRegInternalCode);
     return js::jit::Register::FromCode((js::jit::Register::Code)code_);
   }
 
@@ -690,19 +702,6 @@ class Operand {
   //       <shift_amount> is uint2_t.
   explicit Operand(Register reg, Extend extend, unsigned shift_amount = 0);
 
-  // FIXME: Temporary constructors for compilation.
-  // FIXME: These should be removed -- Operand should not leak into shared code.
-  // FIXME: Something like an LAllocationUnion for {gpreg, fpreg, Address} is wanted.
-  explicit Operand(js::jit::Register) {
-    MOZ_CRASH("Operand with Register");
-  }
-  explicit Operand(js::jit::FloatRegister) {
-    MOZ_CRASH("Operand with FloatRegister");
-  }
-  explicit Operand(js::jit::Register, int32_t) {
-    MOZ_CRASH("Operand with implicit Address");
-  }
-
   bool IsImmediate() const;
   bool IsShiftedRegister() const;
   bool IsExtendedRegister() const;
@@ -773,7 +772,7 @@ class MemOperand {
   // Adapter constructors using C++11 delegating.
   // TODO: If sp == kSPRegInternalCode, the xzr check isn't necessary.
   explicit MemOperand(js::jit::Address addr)
-    : MemOperand(addr.base.code() == 31 ? sp : Register(addr.base, 64),
+    : MemOperand(IsHiddenSP(addr.base) ? sp : Register(AsRegister(addr.base), 64),
                  (ptrdiff_t)addr.offset) {
   }
 
@@ -942,7 +941,38 @@ class Assembler : public MozBaseAssembler {
   }
 
   static inline DoubleCondition InvertCondition(DoubleCondition cond) {
-    MOZ_CRASH("Not yet implemented: InvertCondition(DoubleCondition)");
+      switch (cond) {
+	case DoubleOrdered:
+	  return DoubleUnordered;
+	case DoubleEqual:
+	  return DoubleNotEqualOrUnordered;
+	case DoubleNotEqual:
+	  return DoubleEqualOrUnordered;
+	case DoubleGreaterThan:
+	  return DoubleLessThanOrEqualOrUnordered;
+	case DoubleGreaterThanOrEqual:
+	  return DoubleLessThanOrUnordered;
+	case DoubleLessThan:
+	  return DoubleGreaterThanOrEqualOrUnordered;
+	case DoubleLessThanOrEqual:
+	  return DoubleGreaterThanOrUnordered;
+	case DoubleUnordered:
+	  return DoubleOrdered;
+	case DoubleEqualOrUnordered:
+	  return DoubleNotEqual;
+	case DoubleNotEqualOrUnordered:
+	  return DoubleEqual;
+	case DoubleGreaterThanOrUnordered:
+	  return DoubleLessThanOrEqual;
+	case DoubleGreaterThanOrEqualOrUnordered:
+	  return DoubleLessThan;
+	case DoubleLessThanOrUnordered:
+	  return DoubleGreaterThanOrEqual;
+	case DoubleLessThanOrEqualOrUnordered:
+	  return DoubleGreaterThan;
+	default:
+	  MOZ_CRASH("Bad condition");
+    }
   }
 
   static inline Condition ConditionFromDoubleCondition(DoubleCondition cond) {
@@ -971,32 +1001,32 @@ class Assembler : public MozBaseAssembler {
   BufferOffset b(Label* label, Condition cond);
 
   // Unconditional branch to PC offset.
-  BufferOffset b(int imm26);
+  BufferOffset b(int imm26, const LabelDoc& doc);
   static void b(Instruction* at, int imm26);
 
   // Conditional branch to PC offset.
-  BufferOffset b(int imm19, Condition cond);
+  BufferOffset b(int imm19, Condition cond, const LabelDoc& doc);
   static void b(Instruction*at, int imm19, Condition cond);
 
   // Branch with link to label.
   void bl(Label* label);
 
   // Branch with link to PC offset.
-  void bl(int imm26);
+  void bl(int imm26, const LabelDoc& doc);
   static void bl(Instruction* at, int imm26);
 
   // Compare and branch to label if zero.
   void cbz(const Register& rt, Label* label);
 
   // Compare and branch to PC offset if zero.
-  void cbz(const Register& rt, int imm19);
+  void cbz(const Register& rt, int imm19, const LabelDoc& doc);
   static void cbz(Instruction* at, const Register& rt, int imm19);
 
   // Compare and branch to label if not zero.
   void cbnz(const Register& rt, Label* label);
 
   // Compare and branch to PC offset if not zero.
-  void cbnz(const Register& rt, int imm19);
+  void cbnz(const Register& rt, int imm19, const LabelDoc& doc);
   static void cbnz(Instruction* at, const Register& rt, int imm19);
 
   // Table lookup from one register.
@@ -1055,14 +1085,14 @@ class Assembler : public MozBaseAssembler {
   void tbz(const Register& rt, unsigned bit_pos, Label* label);
 
   // Test bit and branch to PC offset if zero.
-  void tbz(const Register& rt, unsigned bit_pos, int imm14);
+  void tbz(const Register& rt, unsigned bit_pos, int imm14, const LabelDoc& doc);
   static void tbz(Instruction* at, const Register& rt, unsigned bit_pos, int imm14);
 
   // Test bit and branch to label if not zero.
   void tbnz(const Register& rt, unsigned bit_pos, Label* label);
 
   // Test bit and branch to PC offset if not zero.
-  void tbnz(const Register& rt, unsigned bit_pos, int imm14);
+  void tbnz(const Register& rt, unsigned bit_pos, int imm14, const LabelDoc& doc);
   static void tbnz(Instruction* at, const Register& rt, unsigned bit_pos, int imm14);
 
   // Address calculation instructions.
@@ -1073,14 +1103,14 @@ class Assembler : public MozBaseAssembler {
   void adr(const Register& rd, Label* label);
 
   // Calculate the address of a PC offset.
-  void adr(const Register& rd, int imm21);
+  void adr(const Register& rd, int imm21, const LabelDoc& doc);
   static void adr(Instruction* at, const Register& rd, int imm21);
 
   // Calculate the page address of a label.
   void adrp(const Register& rd, Label* label);
 
   // Calculate the page address of a PC offset.
-  void adrp(const Register& rd, int imm21);
+  void adrp(const Register& rd, int imm21, const LabelDoc& doc);
   static void adrp(Instruction* at, const Register& rd, int imm21);
 
   // Data Processing instructions.
@@ -1777,6 +1807,13 @@ class Assembler : public MozBaseAssembler {
     return hint(NOP);
   }
   static void nop(Instruction* at);
+
+  // Alias for system instructions.
+  // Conditional speculation barrier.
+  BufferOffset csdb() {
+    return hint(CSDB);
+  }
+  static void csdb(Instruction* at);
 
   // FP and NEON instructions.
   // Move double precision immediate to FP register.

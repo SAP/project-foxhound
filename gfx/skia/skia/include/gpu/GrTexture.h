@@ -9,24 +9,22 @@
 #ifndef GrTexture_DEFINED
 #define GrTexture_DEFINED
 
+#include "GrBackendSurface.h"
+#include "GrSamplerState.h"
 #include "GrSurface.h"
+#include "SkImage.h"
 #include "SkPoint.h"
 #include "SkRefCnt.h"
+#include "../private/GrTypesPriv.h"
 
-class GrTextureParams;
 class GrTexturePriv;
 
 class GrTexture : virtual public GrSurface {
 public:
     GrTexture* asTexture() override { return this; }
     const GrTexture* asTexture() const override { return this; }
-    GrSLType samplerType() const { return fSamplerType; }
 
-    /**
-     *  Return the native ID or handle to the texture, depending on the
-     *  platform. e.g. on OpenGL, return the texture ID.
-     */
-    virtual GrBackendObject getTextureHandle() const = 0;
+    virtual GrBackendTexture getBackendTexture() const = 0;
 
     /**
      * This function indicates that the texture parameters (wrap mode, filtering, ...) have been
@@ -34,38 +32,52 @@ public:
      */
     virtual void textureParamsModified() = 0;
 
+    /**
+     * This function steals the backend texture from a uniquely owned GrTexture with no pending
+     * IO, passing it out to the caller. The GrTexture is deleted in the process.
+     *
+     * Note that if the GrTexture is not uniquely owned (no other refs), or has pending IO, this
+     * function will fail.
+     */
+    static bool StealBackendTexture(sk_sp<GrTexture>&&,
+                                    GrBackendTexture*,
+                                    SkImage::BackendTextureReleaseProc*);
+
 #ifdef SK_DEBUG
     void validate() const {
         this->INHERITED::validate();
-        this->validateDesc();
     }
 #endif
+
+    virtual void setRelease(sk_sp<GrReleaseProcHelper> releaseHelper) = 0;
+
+    // These match the definitions in SkImage, from whence they came.
+    // TODO: Either move Chrome over to new api or remove their need to call this on GrTexture
+    typedef void* ReleaseCtx;
+    typedef void (*ReleaseProc)(ReleaseCtx);
+    void setRelease(ReleaseProc proc, ReleaseCtx ctx) {
+        sk_sp<GrReleaseProcHelper> helper(new GrReleaseProcHelper(proc, ctx));
+        this->setRelease(std::move(helper));
+    }
 
     /** Access methods that are only to be used within Skia code. */
     inline GrTexturePriv texturePriv();
     inline const GrTexturePriv texturePriv() const;
 
 protected:
-    GrTexture(GrGpu*, const GrSurfaceDesc&, GrSLType, bool wasMipMapDataProvided);
+    GrTexture(GrGpu*, const GrSurfaceDesc&, GrTextureType, GrMipMapsStatus);
 
-    void validateDesc() const;
+    virtual bool onStealBackendTexture(GrBackendTexture*, SkImage::BackendTextureReleaseProc*) = 0;
 
 private:
     void computeScratchKey(GrScratchKey*) const override;
     size_t onGpuMemorySize() const override;
-    void dirtyMipMaps(bool mipMapsDirty);
+    void markMipMapsDirty();
+    void markMipMapsClean();
 
-    enum MipMapsStatus {
-        kNotAllocated_MipMapsStatus,
-        kAllocated_MipMapsStatus,
-        kValid_MipMapsStatus
-    };
-
-    GrSLType               fSamplerType;
-    MipMapsStatus          fMipMapsStatus;
-    int                    fMaxMipMapLevel;
-    SkSourceGammaTreatment fGammaTreatment;
-
+    GrTextureType                 fTextureType;
+    GrMipMapsStatus               fMipMapsStatus;
+    int                           fMaxMipMapLevel;
     friend class GrTexturePriv;
 
     typedef GrSurface INHERITED;

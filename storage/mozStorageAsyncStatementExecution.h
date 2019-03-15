@@ -29,10 +29,9 @@ class Connection;
 class ResultSet;
 class StatementData;
 
-class AsyncExecuteStatements final : public nsIRunnable
-                                   , public mozIStoragePendingStatement
-{
-public:
+class AsyncExecuteStatements final : public nsIRunnable,
+                                     public mozIStoragePendingStatement {
+ public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIRUNNABLE
   NS_DECL_MOZISTORAGEPENDINGSTATEMENT
@@ -66,8 +65,7 @@ public:
    *        The handle to control the execution of the statements.
    */
   static nsresult execute(StatementDataArray &aStatements,
-                          Connection *aConnection,
-                          sqlite3 *aNativeConnection,
+                          Connection *aConnection, sqlite3 *aNativeConnection,
                           mozIStorageStatementCallback *aCallback,
                           mozIStoragePendingStatement **_stmt);
 
@@ -82,10 +80,17 @@ public:
    */
   bool shouldNotify();
 
-private:
+  /**
+   * Used by notifyComplete(), notifyError() and notifyResults() to notify on
+   * the calling thread.
+   */
+  nsresult notifyCompleteOnCallingThread();
+  nsresult notifyErrorOnCallingThread(mozIStorageError *aError);
+  nsresult notifyResultsOnCallingThread(ResultSet *aResultSet);
+
+ private:
   AsyncExecuteStatements(StatementDataArray &aStatements,
-                         Connection *aConnection,
-                         sqlite3 *aNativeConnection,
+                         Connection *aConnection, sqlite3 *aNativeConnection,
                          mozIStorageStatementCallback *aCallback);
   ~AsyncExecuteStatements();
 
@@ -186,7 +191,10 @@ private:
   RefPtr<Connection> mConnection;
   sqlite3 *mNativeConnection;
   bool mHasTransaction;
-  mozIStorageStatementCallback *mCallback;
+  // Note, this may not be a threadsafe object - never addref/release off
+  // the calling thread.  We take a reference when this is created, and
+  // release it in the CompletionNotifier::Run() call back to this thread.
+  nsCOMPtr<mozIStorageStatementCallback> mCallback;
   nsCOMPtr<nsIThread> mCallingThread;
   RefPtr<ResultSet> mResultSet;
 
@@ -227,7 +235,7 @@ private:
    * about the error message, the user gets reliable error messages.
    */
   SQLiteMutex &mDBMutex;
-  
+
   /**
    * The instant at which the request was started.
    *
@@ -236,7 +244,7 @@ private:
   TimeStamp mRequestStartDate;
 };
 
-} // namespace storage
-} // namespace mozilla
+}  // namespace storage
+}  // namespace mozilla
 
-#endif // mozStorageAsyncStatementExecution_h
+#endif  // mozStorageAsyncStatementExecution_h

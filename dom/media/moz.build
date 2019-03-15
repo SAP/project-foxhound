@@ -3,6 +3,9 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+include('/media/webrtc/webrtc.mozbuild')
+
+FILES_PER_UNIFIED_FILE = 6
 
 with Files('*'):
     BUG_COMPONENT = ('Core', 'Audio/Video')
@@ -29,16 +32,19 @@ with Files('GetUserMedia*'):
     BUG_COMPONENT = component_av
 
 DIRS += [
+    'doctor',
     'eme',
     'encoder',
+    'fake-cdm',
     'flac',
     'gmp',
-    'gmp-plugin',
     'gmp-plugin-openh264',
     'imagecapture',
     'ipc',
+    'mediacapabilities',
     'mediasink',
     'mediasource',
+    'mp3',
     'ogg',
     'platforms',
     'systemservices',
@@ -50,14 +56,11 @@ DIRS += [
     'webvtt',
 ]
 
-if CONFIG['MOZ_DIRECTSHOW']:
-    DIRS += ['directshow']
-
-if CONFIG['MOZ_ANDROID_OMX']:
-    DIRS += ['android']
+if CONFIG['MOZ_ANDROID_HLS_SUPPORT']:
+    DIRS += ['hls']
 
 if CONFIG['MOZ_FMP4']:
-    DIRS += ['fmp4']
+    DIRS += ['mp4']
 
 if CONFIG['MOZ_WEBRTC']:
     DIRS += ['bridge']
@@ -77,6 +80,8 @@ if CONFIG['MOZ_WEBRTC']:
     WEBRTC_SIGNALLING_TEST_MANIFESTS += ['tests/mochitest/steeplechase_long/steeplechase_long.ini']
 
 XPIDL_SOURCES += [
+    'nsIAudioDeviceInfo.idl',
+    'nsIAutoplay.idl',
     'nsIDOMNavigatorUserMedia.idl',
     'nsIMediaManager.idl',
 ]
@@ -84,43 +89,49 @@ XPIDL_SOURCES += [
 XPIDL_MODULE = 'dom_media'
 
 EXPORTS += [
-    'AbstractMediaDecoder.h',
     'ADTSDecoder.h',
     'ADTSDemuxer.h',
+    'AsyncLogger.h',
     'AudioBufferUtils.h',
     'AudioChannelFormat.h',
     'AudioCompactor.h',
+    'AudioConfig.h',
     'AudioConverter.h',
+    'AudioDeviceInfo.h',
     'AudioMixer.h',
     'AudioPacketizer.h',
     'AudioSampleFormat.h',
     'AudioSegment.h',
     'AudioStream.h',
+    'AutoplayPolicy.h',
+    'BackgroundVideoDecodingPermissionObserver.h',
     'Benchmark.h',
+    'BitReader.h',
+    'BitWriter.h',
     'BufferMediaResource.h',
+    'BufferReader.h',
+    'ByteWriter.h',
+    'ChannelMediaDecoder.h',
     'CubebUtils.h',
-    'DecoderDoctorDiagnostics.h',
     'DecoderTraits.h',
     'DOMMediaStream.h',
-    'EncodedBufferCache.h',
     'FileBlockCache.h',
     'FrameStatistics.h',
+    'ImageToI420.h',
     'Intervals.h',
-    'Latency.h',
     'MediaCache.h',
     'MediaContainerType.h',
     'MediaData.h',
     'MediaDataDemuxer.h',
     'MediaDecoder.h',
     'MediaDecoderOwner.h',
-    'MediaDecoderReader.h',
     'MediaDecoderStateMachine.h',
     'MediaEventSource.h',
     'MediaFormatReader.h',
     'MediaInfo.h',
     'MediaMetadataManager.h',
     'MediaMIMETypes.h',
-    'MediaPrefs.h',
+    'MediaPromiseDefs.h',
     'MediaQueue.h',
     'MediaRecorder.h',
     'MediaResource.h',
@@ -131,13 +142,12 @@ EXPORTS += [
     'MediaStatistics.h',
     'MediaStreamGraph.h',
     'MediaStreamListener.h',
+    'MediaStreamTypes.h',
     'MediaStreamVideoSink.h',
     'MediaTimer.h',
     'MediaTrack.h',
     'MediaTrackList.h',
-    'MP3Decoder.h',
-    'MP3Demuxer.h',
-    'MP3FrameParser.h',
+    'MemoryBlockCache.h',
     'nsIDocumentActivity.h',
     'PrincipalChangeObserver.h',
     'QueueObject.h',
@@ -148,6 +158,8 @@ EXPORTS += [
     'StreamTracks.h',
     'ThreadPoolCOMListener.h',
     'TimeUnits.h',
+    'Tracing.h',
+    'TrackID.h',
     'TrackUnionStream.h',
     'VideoFrameContainer.h',
     'VideoLimits.h',
@@ -175,6 +187,7 @@ IPDL_SOURCES += [
 ]
 
 EXPORTS.mozilla.dom += [
+    'AudioDeviceInfo.h',
     'AudioStreamTrack.h',
     'AudioTrack.h',
     'AudioTrackList.h',
@@ -201,28 +214,34 @@ UNIFIED_SOURCES += [
     'AudioCaptureStream.cpp',
     'AudioChannelFormat.cpp',
     'AudioCompactor.cpp',
+    'AudioConfig.cpp',
     'AudioConverter.cpp',
+    'AudioDeviceInfo.cpp',
     'AudioSegment.cpp',
     'AudioStream.cpp',
     'AudioStreamTrack.cpp',
     'AudioTrack.cpp',
     'AudioTrackList.cpp',
+    'AutoplayPolicy.cpp',
+    'BackgroundVideoDecodingPermissionObserver.cpp',
+    'BaseMediaResource.cpp',
     'Benchmark.cpp',
+    'BitReader.cpp',
+    'BitWriter.cpp',
     'CanvasCaptureMediaStream.cpp',
-    'CubebUtils.cpp',
-    'DecoderDoctorDiagnostics.cpp',
+    'ChannelMediaDecoder.cpp',
+    'ChannelMediaResource.cpp',
+    'CloneableWithRangeMediaResource.cpp',
     'DOMMediaStream.cpp',
-    'EncodedBufferCache.cpp',
     'FileBlockCache.cpp',
+    'FileMediaResource.cpp',
     'GetUserMediaRequest.cpp',
     'GraphDriver.cpp',
-    'Latency.cpp',
+    'ImageToI420.cpp',
     'MediaCache.cpp',
     'MediaContainerType.cpp',
     'MediaData.cpp',
     'MediaDecoder.cpp',
-    'MediaDecoderReader.cpp',
-    'MediaDecoderReaderWrapper.cpp',
     'MediaDecoderStateMachine.cpp',
     'MediaDeviceInfo.cpp',
     'MediaDevices.cpp',
@@ -230,7 +249,6 @@ UNIFIED_SOURCES += [
     'MediaInfo.cpp',
     'MediaManager.cpp',
     'MediaMIMETypes.cpp',
-    'MediaPrefs.cpp',
     'MediaRecorder.cpp',
     'MediaResource.cpp',
     'MediaShutdownManager.cpp',
@@ -242,10 +260,9 @@ UNIFIED_SOURCES += [
     'MediaTimer.cpp',
     'MediaTrack.cpp',
     'MediaTrackList.cpp',
-    'MP3Decoder.cpp',
-    'MP3Demuxer.cpp',
-    'MP3FrameParser.cpp',
+    'MemoryBlockCache.cpp',
     'QueueObject.cpp',
+    'ReaderProxy.cpp',
     'SeekJob.cpp',
     'StreamTracks.cpp',
     'TextTrack.cpp',
@@ -253,6 +270,7 @@ UNIFIED_SOURCES += [
     'TextTrackCueList.cpp',
     'TextTrackList.cpp',
     'TextTrackRegion.cpp',
+    'Tracing.cpp',
     'TrackUnionStream.cpp',
     'VideoFrameContainer.cpp',
     'VideoPlaybackQuality.cpp',
@@ -266,16 +284,27 @@ UNIFIED_SOURCES += [
 ]
 
 if CONFIG['OS_TARGET'] == 'WINNT':
-  SOURCES += [ 'ThreadPoolCOMListener.cpp' ]
+  EXPORTS.mozilla.audio += [
+      'AudioNotificationReceiver.h',
+      'AudioNotificationSender.h',
+  ]
+  SOURCES += [
+      'AudioNotificationReceiver.cpp',
+      'AudioNotificationSender.cpp',
+      'ThreadPoolCOMListener.cpp',
+  ]
 
+# CubebUtils.cpp needs to be built separately due to what appears to be some kind
+# of compiler bug on Android 4.2 x86 opt. See bug 1408459.
 # DecoderTraits.cpp needs to be built separately because of Mac OS X headers.
 SOURCES += [
+    'CubebUtils.cpp',
     'DecoderTraits.cpp',
 ]
 
 # Some codec-related code uses multi-character constants, which GCC and clang
 # warn about. Suppress turning this warning into an error.
-if CONFIG['GNU_CC'] or CONFIG['CLANG_CL']:
+if CONFIG['CC_TYPE'] in ('clang', 'clang-cl', 'gcc'):
   SOURCES['DecoderTraits.cpp'].flags += ['-Wno-error=multichar']
 
 EXTRA_COMPONENTS += [
@@ -291,50 +320,36 @@ EXTRA_JS_MODULES.media += [
 
 LOCAL_INCLUDES += [
     '/caps',
+    '/docshell/base',
     '/dom/base',
     '/layout/generic',
     '/layout/xul',
+    '/media/libyuv/libyuv/include',
     '/netwerk/base',
 ]
-
-if CONFIG['MOZ_DIRECTSHOW']:
-    LOCAL_INCLUDES += [
-        '/media/webrtc/trunk/webrtc/modules/video_capture/windows',
-    ]
 
 if CONFIG['MOZ_WEBRTC']:
     LOCAL_INCLUDES += [
         '/media/webrtc/signaling/src/common',
         '/media/webrtc/trunk',
+        '/media/webrtc/trunk/webrtc',
     ]
 
 DEFINES['MOZILLA_INTERNAL_API'] = True
+DEFINES['TRACING'] = True
 
-if CONFIG['OS_TARGET'] == 'WINNT':
-    DEFINES['WEBRTC_WIN'] = True
-else:
-    DEFINES['WEBRTC_POSIX'] = True
-
-if CONFIG['ANDROID_VERSION'] > '15':
-    DEFINES['MOZ_OMX_WEBM_DECODER'] = True
-
-if CONFIG['MOZ_GONK_MEDIACODEC']:
-    DEFINES['MOZ_GONK_MEDIACODEC'] = True
+if CONFIG['MOZ_ANDROID_HLS_SUPPORT']:
+    DEFINES['MOZ_ANDROID_HLS_SUPPORT'] = True
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
 # Suppress some GCC warnings being treated as errors:
 #  - about attributes on forward declarations for types that are already
 #    defined, which complains about an important MOZ_EXPORT for android::AString
-if CONFIG['GNU_CC']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += [
         '-Wno-error=attributes',
         '-Wno-error=shadow',
     ]
-
-if CONFIG['_MSC_VER']:
-    # This is intended as a temporary workaround to unblock compilation
-    # on VS2015 in warnings as errors mode.
-    CXXFLAGS += ['-wd4312']
 
 FINAL_LIBRARY = 'xul'

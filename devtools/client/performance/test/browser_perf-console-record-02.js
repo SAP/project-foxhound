@@ -15,21 +15,21 @@ const { waitUntil } = require("devtools/client/performance/test/helpers/wait-uti
 const { times } = require("devtools/client/performance/test/helpers/event-utils");
 const { getSelectedRecording } = require("devtools/client/performance/test/helpers/recording-utils");
 
-add_task(function* () {
-  let { target, console } = yield initConsoleInNewTab({
+add_task(async function() {
+  const { target, console } = await initConsoleInNewTab({
     url: SIMPLE_URL,
-    win: window
+    win: window,
   });
 
-  yield console.profile("rust");
-  yield console.profile("rust2");
+  await console.profile("rust");
+  await console.profile("rust2");
 
-  let { panel } = yield initPerformanceInTab({ tab: target.tab });
-  let { EVENTS, PerformanceController, OverviewView } = panel.panelWin;
+  const { panel } = await initPerformanceInTab({ tab: target.tab });
+  const { EVENTS, PerformanceController, OverviewView } = panel.panelWin;
 
-  yield waitUntil(() => PerformanceController.getRecordings().length == 2);
+  await waitUntil(() => PerformanceController.getRecordings().length == 2);
 
-  let recordings = PerformanceController.getRecordings();
+  const recordings = PerformanceController.getRecordings();
   is(recordings.length, 2, "Two recordings found in the performance panel.");
   is(recordings[0].isConsole(), true, "Recording came from console.profile (1).");
   is(recordings[0].getLabel(), "rust", "Correct label in the recording model (1).");
@@ -45,16 +45,16 @@ add_task(function* () {
     "The profile label for the first recording is correct.");
 
   // Ensure overview is still rendering.
-  yield times(OverviewView, EVENTS.UI_OVERVIEW_RENDERED, 3, {
-    expectedArgs: { "1": Constants.FRAMERATE_GRAPH_LOW_RES_INTERVAL }
+  await times(OverviewView, EVENTS.UI_OVERVIEW_RENDERED, 3, {
+    expectedArgs: [Constants.FRAMERATE_GRAPH_LOW_RES_INTERVAL],
   });
 
   let stopped = waitForRecordingStoppedEvents(panel, {
     // only emitted for manual recordings
-    skipWaitingForBackendReady: true
+    skipWaitingForBackendReady: true,
   });
-  yield console.profileEnd("rust");
-  yield stopped;
+  await console.profileEnd("rust");
+  await stopped;
 
   stopped = waitForRecordingStoppedEvents(panel, {
     // only emitted for manual recordings
@@ -63,8 +63,8 @@ add_task(function* () {
     skipWaitingForOverview: true,
     skipWaitingForSubview: true,
   });
-  yield console.profileEnd("rust2");
-  yield stopped;
+  await console.profileEnd("rust2");
+  await stopped;
 
-  yield teardownToolboxAndRemoveTab(panel);
+  await teardownToolboxAndRemoveTab(panel);
 });

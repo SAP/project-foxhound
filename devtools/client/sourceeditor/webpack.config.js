@@ -4,6 +4,9 @@
 
 "use strict";
 
+/* global __dirname */
+const path = require("path");
+
 module.exports = [{
   bail: true,
   entry: [
@@ -16,6 +19,7 @@ module.exports = [{
     "./codemirror/mode/javascript/javascript.js",
     "./codemirror/mode/xml/xml.js",
     "./codemirror/mode/css/css.js",
+    "./codemirror/mode/haxe/haxe.js",
     "./codemirror/mode/htmlmixed/htmlmixed.js",
     "./codemirror/mode/jsx/jsx.js",
     "./codemirror/mode/coffeescript/coffeescript.js",
@@ -32,10 +36,12 @@ module.exports = [{
     "./codemirror/addon/fold/comment-fold.js",
     "./codemirror/addon/fold/xml-fold.js",
     "./codemirror/addon/fold/foldgutter.js",
+    "./codemirror/addon/runmode/runmode.js",
     "./codemirror/lib/codemirror.js",
   ],
   output: {
-    filename: "./codemirror/codemirror.bundle.js",
+    path: path.resolve(__dirname, "./codemirror/"),
+    filename: "codemirror.bundle.js",
     libraryTarget: "var",
     library: "CodeMirror",
   },

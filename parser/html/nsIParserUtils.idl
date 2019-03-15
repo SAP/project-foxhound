@@ -4,9 +4,10 @@
 
 #include "nsISupports.idl"
 
-interface nsIDOMElement;
-interface nsIDOMDocumentFragment;
 interface nsIURI;
+
+webidl DocumentFragment;
+webidl Element;
 
 /**
  * Non-Web HTML parser functionality to Firefox extensions and XULRunner apps. 
@@ -57,6 +58,12 @@ interface nsIParserUtils : nsISupports
    * out SVG.
    */
   const unsigned long SanitizerDropMedia = (1 << 5);
+
+  /**
+   * Flag for sanitizer: Log messages to the console for everything that gets
+   * sanitized
+   */
+  const unsigned long SanitizerLogRemovals = (1 << 6);
 
   /**
    * Parses a string into an HTML document, sanitizes the document and 
@@ -114,11 +121,11 @@ interface nsIParserUtils : nsISupports
    * @param baseURI the base URL for this fragment
    * @param element the context node for the fragment parsing algorithm
    */
-  nsIDOMDocumentFragment parseFragment(in AString fragment,
-                                       in unsigned long flags,
-                                       in boolean isXML,
-                                       in nsIURI baseURI,
-                                       in nsIDOMElement element);
+  DocumentFragment parseFragment(in AString fragment,
+				 in unsigned long flags,
+				 in boolean isXML,
+				 in nsIURI baseURI,
+				 in Element element);
 
 };
 

@@ -19,75 +19,58 @@
  */
 class GrGeometryProcessor : public GrPrimitiveProcessor {
 public:
-    GrGeometryProcessor()
-        : fWillUseGeoShader(false)
-        , fLocalCoordsType(kUnused_LocalCoordsType)
+    GrGeometryProcessor(ClassID classID)
+        : INHERITED(classID)
+        , fWillUseGeoShader(false)
         , fSampleShading(0.0) {}
 
-    bool willUseGeoShader() const override { return fWillUseGeoShader; }
-
-    bool hasExplicitLocalCoords() const override {
-        return kHasExplicit_LocalCoordsType == fLocalCoordsType;
-    }
+    bool willUseGeoShader() const final { return fWillUseGeoShader; }
 
     /**
      * Returns the minimum fraction of samples for which the fragment shader will be run. For
      * instance, if sampleShading is 0.5 in MSAA16 mode, the fragment shader will run a minimum of
      * 8 times per pixel. The default value is zero.
      */
-    float getSampleShading() const override {
-        return fSampleShading;
-    }
+    float getSampleShading() const final { return fSampleShading; }
 
 protected:
-    /**
-     * Subclasses call this from their constructor to register vertex attributes.  Attributes
-     * will be padded to the nearest 4 bytes for performance reasons.
-     * TODO After deferred geometry, we should do all of this inline in GenerateGeometry alongside
-     * the struct used to actually populate the attributes.  This is all extremely fragile, vertex
-     * attributes have to be added in the order they will appear in the struct which maps memory.
-     * The processor key should reflect the vertex attributes, or there lack thereof in the
-     * GrGeometryProcessor.
-     */
-    const Attribute& addVertexAttrib(const char* name, GrVertexAttribType type,
-                                     GrSLPrecision precision = kDefault_GrSLPrecision) {
-        fAttribs.emplace_back(name, type, precision);
-        fVertexStride += fAttribs.back().fOffset;
-        return fAttribs.back();
-    }
-
     void setWillUseGeoShader() { fWillUseGeoShader = true; }
-
-    /**
-     * If a GrFragmentProcessor in the GrPipeline needs localCoods, we will provide them in one of
-     * three ways
-     * 1) LocalCoordTransform * Position - in Shader
-     * 2) LocalCoordTransform * ExplicitLocalCoords- in Shader
-     * 3) A transformation on the CPU uploaded via vertex attribute
-     * TODO make this GrBatches responsibility
-     */
-    enum LocalCoordsType {
-        kUnused_LocalCoordsType,
-        kHasExplicit_LocalCoordsType,
-        kHasTransformed_LocalCoordsType
-    };
-
-    void setHasExplicitLocalCoords() {
-        SkASSERT(kUnused_LocalCoordsType == fLocalCoordsType);
-        fLocalCoordsType = kHasExplicit_LocalCoordsType;
-    }
-    void setHasTransformedLocalCoords() {
-        SkASSERT(kUnused_LocalCoordsType == fLocalCoordsType);
-        fLocalCoordsType = kHasTransformed_LocalCoordsType;
-    }
-
     void setSampleShading(float sampleShading) {
         fSampleShading = sampleShading;
     }
 
+    /**
+     * Recursive helpers for implementing onVertexAttribute or onInstanceAttribute.
+     */
+
+    template <typename... Args>
+    static const Attribute& IthAttribute(int i, const Attribute& attr0, const Args&... attrs) {
+        SkASSERT(attr0.isInitialized());
+        return (0 == i) ? attr0 : IthAttribute(i - 1, attrs...);
+    }
+
+    static const Attribute& IthAttribute(int i) {
+        SK_ABORT("Illegal attribute Index");
+        static constexpr Attribute kBogus;
+        return kBogus;
+    }
+
+    template <typename... Args>
+    static const Attribute& IthInitializedAttribute(int i, const Attribute& attr0,
+                                                    const Args&... attrs) {
+        if (attr0.isInitialized()) {
+            if (0 == i) {
+                return attr0;
+            }
+            i -= 1;
+        }
+        return IthInitializedAttribute(i, attrs...);
+    }
+
+    static const Attribute& IthInitializedAttribute(int i) { return IthAttribute(i); }
+
 private:
     bool fWillUseGeoShader;
-    LocalCoordsType fLocalCoordsType;
     float fSampleShading;
 
     typedef GrPrimitiveProcessor INHERITED;

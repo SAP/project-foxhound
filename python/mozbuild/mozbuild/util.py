@@ -152,7 +152,7 @@ def ensureParentDir(path):
     if d and not os.path.exists(path):
         try:
             os.makedirs(d)
-        except OSError, error:
+        except OSError as error:
             if error.errno != errno.EEXIST:
                 raise
 
@@ -219,7 +219,7 @@ class FileAvoidWrite(BytesIO):
         BytesIO.__init__(self)
         self.name = filename
         self._capture_diff = capture_diff
-        self._dry_run = dry_run
+        self._write_to_file = not dry_run
         self.diff = None
         self.mode = mode
 
@@ -227,6 +227,9 @@ class FileAvoidWrite(BytesIO):
         if isinstance(buf, unicode):
             buf = buf.encode('utf-8')
         BytesIO.write(self, buf)
+
+    def avoid_writing_to_file(self):
+        self._write_to_file = False
 
     def close(self):
         """Stop accepting writes, compare file contents, and rewrite if needed.
@@ -259,7 +262,7 @@ class FileAvoidWrite(BytesIO):
             finally:
                 existing.close()
 
-        if not self._dry_run:
+        if self._write_to_file:
             ensureParentDir(self.name)
             # Maintain 'b' if specified.  'U' only applies to modes starting with
             # 'r', so it is dropped.
@@ -484,6 +487,25 @@ class StrictOrderingOnAppendList(ListMixin, StrictOrderingOnAppendListMixin,
     We overload the assignment and append operations to require that incoming
     elements be ordered. This enforces cleaner style in moz.build files.
     """
+
+class ImmutableStrictOrderingOnAppendList(StrictOrderingOnAppendList):
+    """Like StrictOrderingOnAppendList, but not allowing mutations of the value.
+    """
+    def append(self, elt):
+        raise Exception("cannot use append on this type")
+
+    def extend(self, iterable):
+        raise Exception("cannot use extend on this type")
+
+    def __setslice__(self, i, j, iterable):
+        raise Exception("cannot assign to slices on this type")
+
+    def __setitem__(self, i, elt):
+        raise Exception("cannot assign to indexes on this type")
+
+    def __iadd__(self, other):
+        raise Exception("cannot use += on this type")
+
 
 class ListWithActionMixin(object):
     """Mixin to create lists with pre-processing. See ListWithAction."""

@@ -4,37 +4,18 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* CSS Variables specific to the devtools toolbar that aren't defined by the themes */
+:root {
+  --separator-block-margin: 4px;
+  --separator-inline-margin: 1px;
+}
+
 .theme-light {
-  --searchbox-background-color: #ffee99;
-  --searchbox-border-color: #ffbf00;
-  --searcbox-no-match-background-color: #ffe5e5;
-  --searcbox-no-match-border-color: #e52e2e;
-  --magnifying-glass-image: url(chrome://devtools/skin/images/search.svg);
-  --filter-image: url(chrome://devtools/skin/images/filter.svg);
-  --tool-options-image: url(chrome://devtools/skin/images/tool-options.svg);
-  --icon-filter: none;
-  --checked-icon-filter: url(chrome://devtools/skin/images/filters.svg#checked-icon-state);
+  --separator-border-color: rgba(0,0,0,.1);
 }
 
 .theme-dark {
-  --searchbox-background-color: #4d4222;
-  --searchbox-border-color: #d99f2b;
-  --searcbox-no-match-background-color: #402325;
-  --searcbox-no-match-border-color: #cc3d3d;
-  --magnifying-glass-image: url(chrome://devtools/skin/images/search.svg);
-  --filter-image: url(chrome://devtools/skin/images/filter.svg);
-  --tool-options-image: url(chrome://devtools/skin/images/tool-options.svg);
-  --icon-filter: invert(1);
-  --checked-icon-filter: url(chrome://devtools/skin/images/filters.svg#dark-theme-checked-icon-state);
+  --separator-border-color: rgba(100%,100%,100%,.2);
 }
-
-.theme-firebug {
-  --magnifying-glass-image: url(chrome://devtools/skin/images/search.svg);
-  --tool-options-image: url(chrome://devtools/skin/images/firebug/tool-options.svg);
-  --icon-filter: none;
-  --checked-icon-filter: none;
-}
-
 
 /* Toolbars */
 .devtools-toolbar,
@@ -74,13 +55,25 @@
   padding: 0;
 }
 
+.devtools-toolbar-bottom {
+  border-top-width: 1px;
+  border-bottom: none;
+}
+
+/* Expected space around a separator:
+ * -----------------------
+ *            4
+ * [button] 2 | 2 [button]
+ *            4
+ * -----------------------
+ * We're using a 1px horizontal margin, since buttons already have their own
+ * 1px horizontal margin, and margins don't collapse between flex items.
+ * Some separators may be using a bigger, 6px horizontal margin.
+ */
 .devtools-separator {
-  margin: 0 2px;
-  width: 2px;
-  background-image: linear-gradient(transparent 15%, var(--theme-splitter-color) 15%, var(--theme-splitter-color) 85%, transparent 85%);
-  background-size: 1px 100%;
-  background-repeat: no-repeat;
-  background-position: 0, 1px, 2px;
+  border-inline-start: 1px solid var(--separator-border-color);
+  height: calc(100% - 2 * var(--separator-block-margin));
+  margin: var(--separator-block-margin) var(--separator-inline-margin);
 }
 
 /* In-tools sidebar */
@@ -177,19 +170,13 @@
   background: var(--theme-selection-background);
 }
 
-/* Invert the colors of certain light theme images for displaying
- * inside of the dark theme.
+/*
+ * Apply the default fill color to toolbar icons
  */
-.devtools-tab.icon-invertable > img,
-.devtools-toolbarbutton > image,
-.devtools-button::before,
-.scrollbutton-up > .toolbarbutton-icon,
-.scrollbutton-down > .toolbarbutton-icon,
-#black-boxed-message-button .button-icon,
 #canvas-debugging-empty-notice-button .button-icon,
-#toggle-breakpoints[checked] > image,
 .event-tooltip-debugger-icon {
-  filter: var(--icon-filter);
+  -moz-context-properties: fill;
+  fill: var(--theme-icon-color);
 }
 
 .hidden-labels-box:not(.visible) > label,
@@ -202,7 +189,38 @@
   background-color: transparent;
 }
 
-.devtools-horizontal-splitter,
+splitter.devtools-horizontal-splitter,
 .devtools-side-splitter {
   background-color: var(--theme-splitter-color);
+}
+
+/* Dropdown Menu Button */
+.devtools-dropdown-button {
+  background-image: url("chrome://devtools/skin/images/select-arrow.svg") !important;
+  background-position: right center !important;
+  background-repeat: no-repeat !important;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  padding-inline-start: 2px !important;
+  padding-inline-end: 10px !important;
+  fill: var(--theme-icon-color);
+  -moz-context-properties: fill;
+}
+
+html[dir="rtl"] .devtools-dropdown-button {
+  background-position: left center !important;
+}
+
+.devtools-dropdown-button:not(:hover) {
+  background-color: transparent;
+}
+
+/* Style for title holder inside the dropdown menu button */
+.devtools-dropdown-button .title {
+  display: inline-block;
+  overflow: hidden;
+  padding-top: 0.15em;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

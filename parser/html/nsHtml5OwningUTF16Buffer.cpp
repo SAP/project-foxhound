@@ -17,8 +17,7 @@ nsHtml5OwningUTF16Buffer::nsHtml5OwningUTF16Buffer(void* aKey)
     key(aKey)
 {}
 
-nsHtml5OwningUTF16Buffer::~nsHtml5OwningUTF16Buffer()
-{
+nsHtml5OwningUTF16Buffer::~nsHtml5OwningUTF16Buffer() {
   DeleteBuffer();
 
   // This is to avoid dtor recursion on 'next', bug 706932.
@@ -33,14 +32,13 @@ nsHtml5OwningUTF16Buffer::~nsHtml5OwningUTF16Buffer()
 
 // static
 already_AddRefed<nsHtml5OwningUTF16Buffer>
-nsHtml5OwningUTF16Buffer::FalliblyCreate(int32_t aLength)
-{
+nsHtml5OwningUTF16Buffer::FalliblyCreate(int32_t aLength) {
   char16_t* newBuf = new (mozilla::fallible) char16_t[aLength];
   if (!newBuf) {
     return nullptr;
   }
   RefPtr<nsHtml5OwningUTF16Buffer> newObj =
-    new (mozilla::fallible) nsHtml5OwningUTF16Buffer(newBuf);
+      new (mozilla::fallible) nsHtml5OwningUTF16Buffer(newBuf);
   if (!newObj) {
     delete[] newBuf;
     return nullptr;
@@ -48,29 +46,31 @@ nsHtml5OwningUTF16Buffer::FalliblyCreate(int32_t aLength)
   return newObj.forget();
 }
 
-void
-nsHtml5OwningUTF16Buffer::Swap(nsHtml5OwningUTF16Buffer* aOther)
-{
+void nsHtml5OwningUTF16Buffer::Swap(nsHtml5OwningUTF16Buffer* aOther) {
   nsHtml5UTF16Buffer::Swap(aOther);
 }
 
+Span<char16_t> nsHtml5OwningUTF16Buffer::TailAsSpan(int32_t aBufferSize) {
+  MOZ_ASSERT(aBufferSize >= getEnd());
+  return MakeSpan(getBuffer() + getEnd(), aBufferSize - getEnd());
+}
+
+void nsHtml5OwningUTF16Buffer::AdvanceEnd(int32_t aNumberOfCodeUnits) {
+  setEnd(getEnd() + aNumberOfCodeUnits);
+}
 
 // Not using macros for AddRef and Release in order to be able to refcount on
 // and create on different threads.
 
-nsrefcnt
-nsHtml5OwningUTF16Buffer::AddRef()
-{
-  NS_PRECONDITION(int32_t(mRefCnt) >= 0, "Illegal refcount.");
+nsrefcnt nsHtml5OwningUTF16Buffer::AddRef() {
+  MOZ_ASSERT(int32_t(mRefCnt) >= 0, "Illegal refcount.");
   ++mRefCnt;
   NS_LOG_ADDREF(this, mRefCnt, "nsHtml5OwningUTF16Buffer", sizeof(*this));
   return mRefCnt;
 }
 
-nsrefcnt
-nsHtml5OwningUTF16Buffer::Release()
-{
-  NS_PRECONDITION(0 != mRefCnt, "Release without AddRef.");
+nsrefcnt nsHtml5OwningUTF16Buffer::Release() {
+  MOZ_ASSERT(0 != mRefCnt, "Release without AddRef.");
   --mRefCnt;
   NS_LOG_RELEASE(this, mRefCnt, "nsHtml5OwningUTF16Buffer");
   if (mRefCnt == 0) {

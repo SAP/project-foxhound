@@ -1,14 +1,15 @@
 _("Make sure lock prevents calling with a shared lock");
-Cu.import("resource://services-sync/util.js");
+ChromeUtils.import("resource://services-sync/util.js");
 
 // Utility that we only use here.
 
 function do_check_begins(thing, startsWith) {
-  if (!(thing && thing.indexOf && (thing.indexOf(startsWith) == 0)))
+  if (!(thing && thing.indexOf && (thing.indexOf(startsWith) == 0))) {
     do_throw(thing + " doesn't begin with " + startsWith);
+  }
 }
 
-function run_test() {
+add_task(async function run_test() {
   let ret, rightThis, didCall;
   let state, lockState, lockedState, unlockState;
   let obj = {
@@ -29,50 +30,50 @@ function run_test() {
 
     func() {
       return this._lock("Test utils lock",
-                        function() {
-                          rightThis = this == obj;
-                          didCall = true;
-                          return 5;
-                        })();
+                              async function() {
+                                rightThis = this == obj;
+                                didCall = true;
+                                return 5;
+                              })();
     },
 
     throwy() {
       return this._lock("Test utils lock throwy",
-                        function() {
-                          rightThis = this == obj;
-                          didCall = true;
-                          this.throwy();
-                        })();
-    }
+                              async function() {
+                                rightThis = this == obj;
+                                didCall = true;
+                                return this.throwy();
+                              })();
+    },
   };
 
   _("Make sure a normal call will call and return");
   rightThis = didCall = false;
   state = 0;
-  ret = obj.func();
-  do_check_eq(ret, 5);
-  do_check_true(rightThis);
-  do_check_true(didCall);
-  do_check_eq(lockState, 1);
-  do_check_eq(unlockState, 2);
-  do_check_eq(state, 2);
+  ret = await obj.func();
+  Assert.equal(ret, 5);
+  Assert.ok(rightThis);
+  Assert.ok(didCall);
+  Assert.equal(lockState, 1);
+  Assert.equal(unlockState, 2);
+  Assert.equal(state, 2);
 
   _("Make sure code that calls locked code throws");
   ret = null;
   rightThis = didCall = false;
   try {
-    ret = obj.throwy();
+    ret = await obj.throwy();
     do_throw("throwy internal call should have thrown!");
   } catch (ex) {
     // Should throw an Error, not a string.
-    do_check_begins(ex, "Could not acquire lock");
+    do_check_begins(ex.message, "Could not acquire lock");
   }
-  do_check_eq(ret, null);
-  do_check_true(rightThis);
-  do_check_true(didCall);
+  Assert.equal(ret, null);
+  Assert.ok(rightThis);
+  Assert.ok(didCall);
   _("Lock should be called twice so state 3 is skipped");
-  do_check_eq(lockState, 4);
-  do_check_eq(lockedState, 5);
-  do_check_eq(unlockState, 6);
-  do_check_eq(state, 6);
-}
+  Assert.equal(lockState, 4);
+  Assert.equal(lockedState, 5);
+  Assert.equal(unlockState, 6);
+  Assert.equal(state, 6);
+});

@@ -23,10 +23,10 @@ class SpeechDispatcherCallback;
 class SpeechDispatcherVoice;
 
 class SpeechDispatcherService final : public nsIObserver,
-                                      public nsISpeechService
-{
+                                      public nsISpeechService {
   friend class SpeechDispatcherCallback;
-public:
+
+ public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIOBSERVER
   NS_DECL_NSISPEECHSERVICE
@@ -42,11 +42,9 @@ public:
   static SpeechDispatcherService* GetInstance(bool create = true);
   static already_AddRefed<SpeechDispatcherService> GetInstanceForService();
 
-  static void Shutdown();
-
   static StaticRefPtr<SpeechDispatcherService> sSingleton;
 
-private:
+ private:
   virtual ~SpeechDispatcherService();
 
   void RegisterVoices();
@@ -62,6 +60,6 @@ private:
   nsRefPtrHashtable<nsStringHashKey, SpeechDispatcherVoice> mVoices;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 #endif

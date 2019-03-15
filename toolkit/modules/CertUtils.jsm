@@ -2,14 +2,11 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-this.EXPORTED_SYMBOLS = [ "BadCertHandler", "checkCert", "readCertPrefs", "validateCert" ];
+var EXPORTED_SYMBOLS = ["CertUtils"];
 
 const Ce = Components.Exception;
-const Ci = Components.interfaces;
-const Cr = Components.results;
-const Cu = Components.utils;
 
-Components.utils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 /**
  * Reads a set of expected certificate attributes from preferences. The returned
@@ -29,8 +26,7 @@ Components.utils.import("resource://gre/modules/Services.jsm");
  * @return An array of JS objects with names / values corresponding to the
  *         expected certificate's attribute names / values.
  */
-this.readCertPrefs =
-  function readCertPrefs(aPrefBranch) {
+function readCertPrefs(aPrefBranch) {
   if (Services.prefs.getBranch(aPrefBranch).getChildList("").length == 0)
     return null;
 
@@ -69,8 +65,7 @@ this.readCertPrefs =
  *         aCertificate wasn't specified and aCerts is not null or an empty
  *         array.
  */
-this.validateCert =
-  function validateCert(aCertificate, aCerts) {
+function validateCert(aCertificate, aCerts) {
   // If there are no certificate requirements then just exit
   if (!aCerts || aCerts.length == 0)
     return;
@@ -137,8 +132,7 @@ this.validateCert =
  *         from the aCerts  param is different than the expected value.
  *         NS_ERROR_ABORT if the certificate issuer is not built-in.
  */
-this.checkCert =
-  function checkCert(aChannel, aAllowNonBuiltInCerts, aCerts) {
+function checkCert(aChannel, aAllowNonBuiltInCerts, aCerts) {
   if (!aChannel.originalURI.schemeIs("https")) {
     // Require https if there are certificate values to verify
     if (aCerts) {
@@ -148,31 +142,26 @@ this.checkCert =
     return;
   }
 
-  var cert =
-      aChannel.securityInfo.QueryInterface(Ci.nsISSLStatusProvider).
-      SSLStatus.QueryInterface(Ci.nsISSLStatus).serverCert;
+  let secInfo = aChannel.securityInfo.QueryInterface(Ci.nsITransportSecurityInfo);
+  let cert = secInfo.serverCert;
 
   validateCert(cert, aCerts);
 
-  if (aAllowNonBuiltInCerts === true)
+  if (aAllowNonBuiltInCerts === true) {
     return;
+  }
 
-  var issuerCert = cert;
-  while (issuerCert.issuer && !issuerCert.issuer.equals(issuerCert))
-    issuerCert = issuerCert.issuer;
+  let issuerCert = null;
+  for (issuerCert of secInfo.succeededCertChain.getEnumerator());
 
   const certNotBuiltInErr = "Certificate issuer is not built-in.";
-  if (!issuerCert)
+  if (!issuerCert) {
     throw new Ce(certNotBuiltInErr, Cr.NS_ERROR_ABORT);
+  }
 
-  var tokenNames = issuerCert.getAllTokenNames({});
-
-  if (!tokenNames || !tokenNames.some(isBuiltinToken))
+  if (!issuerCert.isBuiltInRoot) {
     throw new Ce(certNotBuiltInErr, Cr.NS_ERROR_ABORT);
-}
-
-function isBuiltinToken(tokenName) {
-  return tokenName == "Builtin Object Token";
+  }
 }
 
 /**
@@ -184,8 +173,7 @@ function isBuiltinToken(tokenName) {
  *         When true certificates that aren't builtin are allowed. When false
  *         or not specified the certificate must be a builtin certificate.
  */
-this.BadCertHandler =
-  function BadCertHandler(aAllowNonBuiltInCerts) {
+function BadCertHandler(aAllowNonBuiltInCerts) {
   this.allowNonBuiltInCerts = aAllowNonBuiltInCerts;
 }
 BadCertHandler.prototype = {
@@ -193,7 +181,7 @@ BadCertHandler.prototype = {
   // nsIChannelEventSink
   asyncOnChannelRedirect(oldChannel, newChannel, flags, callback) {
     if (this.allowNonBuiltInCerts) {
-      callback.onRedirectVerifyCallback(Components.results.NS_OK);
+      callback.onRedirectVerifyCallback(Cr.NS_OK);
       return;
     }
 
@@ -203,7 +191,7 @@ BadCertHandler.prototype = {
     if (!(flags & Ci.nsIChannelEventSink.REDIRECT_INTERNAL))
       checkCert(oldChannel);
 
-    callback.onRedirectVerifyCallback(Components.results.NS_OK);
+    callback.onRedirectVerifyCallback(Cr.NS_OK);
   },
 
   // nsIInterfaceRequestor
@@ -212,11 +200,13 @@ BadCertHandler.prototype = {
   },
 
   // nsISupports
-  QueryInterface(iid) {
-    if (!iid.equals(Ci.nsIChannelEventSink) &&
-        !iid.equals(Ci.nsIInterfaceRequestor) &&
-        !iid.equals(Ci.nsISupports))
-      throw Cr.NS_ERROR_NO_INTERFACE;
-    return this;
-  }
+  QueryInterface: ChromeUtils.generateQI(["nsIChannelEventSink",
+                                          "nsIInterfaceRequestor"]),
+};
+
+var CertUtils = {
+  BadCertHandler,
+  checkCert,
+  readCertPrefs,
+  validateCert,
 };

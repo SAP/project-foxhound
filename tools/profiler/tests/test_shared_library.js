@@ -3,21 +3,23 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 function run_test() {
-  // If we can't get the profiler component then assume gecko was
-  // built without it and pass all the tests
-  var profilerCc = Cc["@mozilla.org/tools/profiler;1"];
-  if (!profilerCc)
+  if (!AppConstants.MOZ_GECKO_PROFILER) {
     return;
+  }
 
-  var profiler = Cc["@mozilla.org/tools/profiler;1"].getService(Ci.nsIProfiler);
-  if (!profiler)
-    return;
+  var libs = Services.profiler.sharedLibraries;
 
-  var sharedStr = profiler.getSharedLibraryInformation();
-  sharedStr = sharedStr.toLowerCase();
-
-  // Let's not hardcode anything too specific
-  // just some sanity checks.
-  do_check_neq(sharedStr, null);
-  do_check_neq(sharedStr, "");
+  Assert.equal(typeof libs, "object");
+  Assert.ok(Array.isArray(libs));
+  Assert.equal(typeof libs, "object");
+  Assert.ok(libs.length >= 1);
+  Assert.equal(typeof libs[0], "object");
+  Assert.equal(typeof libs[0].name, "string");
+  Assert.equal(typeof libs[0].path, "string");
+  Assert.equal(typeof libs[0].debugName, "string");
+  Assert.equal(typeof libs[0].debugPath, "string");
+  Assert.equal(typeof libs[0].arch, "string");
+  Assert.equal(typeof libs[0].start, "number");
+  Assert.equal(typeof libs[0].end, "number");
+  Assert.ok(libs[0].start <= libs[0].end);
 }

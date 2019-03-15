@@ -6,8 +6,7 @@
 package org.mozilla.gecko.activitystream;
 
 import android.database.Cursor;
-
-import org.mozilla.gecko.db.BrowserContract;
+import org.mozilla.gecko.activitystream.ranking.HighlightCandidateCursorIndices;
 
 /**
  * Various util methods and constants that are shared by different parts of Activity Stream.
@@ -15,15 +14,16 @@ import org.mozilla.gecko.db.BrowserContract;
 public class Utils {
     public enum HighlightSource {
         VISITED,
-        BOOKMARKED
+        BOOKMARKED,
+        POCKET
     }
 
-    public static HighlightSource highlightSource(final Cursor cursor) {
-        if (-1 != cursor.getLong(cursor.getColumnIndexOrThrow(BrowserContract.Highlights.BOOKMARK_ID))) {
+    public static HighlightSource highlightSource(final Cursor cursor, final HighlightCandidateCursorIndices cursorIndices) {
+        if (-1 != cursor.getLong(cursorIndices.bookmarkIDColumnIndex)) {
             return HighlightSource.BOOKMARKED;
         }
 
-        if (-1 != cursor.getLong(cursor.getColumnIndexOrThrow(BrowserContract.Highlights.HISTORY_ID))) {
+        if (-1 != cursor.getLong(cursorIndices.historyIDColumnIndex)) {
             return HighlightSource.VISITED;
         }
 

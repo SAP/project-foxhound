@@ -1,14 +1,10 @@
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cr = Components.results;
-var Cu = Components.utils;
-
 /* import-globals-from ../../../common/tests/unit/head_helpers.js */
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 try {
   // In the context of xpcshell tests, there won't be a default AppInfo
+  // eslint-disable-next-line mozilla/use-services
   Cc["@mozilla.org/xre/app-info;1"].getService(Ci.nsIXULAppInfo);
 } catch (ex) {
 
@@ -21,7 +17,7 @@ else if (mozinfo.os == "mac")
 else
   OS = "Linux";
 
-Cu.import("resource://testing-common/AppInfo.jsm", this);
+ChromeUtils.import("resource://testing-common/AppInfo.jsm", this);
 updateAppInfo({
   name: "XPCShell",
   ID: "{3e3ba16c-1675-4e88-b9c8-afef81b3d2ef}",
@@ -56,7 +52,7 @@ function base64UrlDecode(s) {
 
 // Register resource alias. Normally done in SyncComponents.manifest.
 function addResourceAlias() {
-  Cu.import("resource://gre/modules/Services.jsm");
+  ChromeUtils.import("resource://gre/modules/Services.jsm");
   const resProt = Services.io.getProtocolHandler("resource")
                           .QueryInterface(Ci.nsIResProtocolHandler);
   let uri = Services.io.newURI("resource://gre/modules/services-crypto/");

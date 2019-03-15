@@ -7,30 +7,35 @@
 #define ThreadResponsiveness_h
 
 #include "nsISupports.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
 
 class CheckResponsivenessTask;
+class nsIEventTarget;
 
+// This class should only be used for the main thread.
 class ThreadResponsiveness {
-public:
-  explicit ThreadResponsiveness();
+ public:
+  explicit ThreadResponsiveness(nsIEventTarget* aThread, bool aIsMainThread);
 
   ~ThreadResponsiveness();
 
-  void Update(bool aIsMainThread, nsIThread* aThread);
+  void Update();
 
-  mozilla::TimeDuration GetUnresponsiveDuration(const mozilla::TimeStamp& now) const {
-    return now - mLastTracerTime;
+  // The number of milliseconds that elapsed since the last
+  // CheckResponsivenessTask was processed.
+  double GetUnresponsiveDuration(double aStartToNow_ms) const {
+    return aStartToNow_ms - *mStartToPrevTracer_ms;
   }
 
-  bool HasData() const {
-    return !mLastTracerTime.IsNull();
-  }
-private:
+  bool HasData() const { return mStartToPrevTracer_ms.isSome(); }
+
+ private:
   RefPtr<CheckResponsivenessTask> mActiveTracerEvent;
-  mozilla::TimeStamp mLastTracerTime;
+  // The time at which the last CheckResponsivenessTask was processed, in
+  // milliseconds since process start (i.e. what you get from profiler_time()).
+  mozilla::Maybe<double> mStartToPrevTracer_ms;
 };
 
 #endif
-

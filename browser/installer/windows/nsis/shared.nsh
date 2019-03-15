@@ -37,25 +37,19 @@
   ; setup the application model id registration value
   ${InitHashAppModelId} "$INSTDIR" "Software\Mozilla\${AppName}\TaskBarIDs"
 
-  ; Win7 taskbar and start menu link maintenance
-  Call FixShortcutAppModelIDs
-
   ClearErrors
   WriteRegStr HKLM "Software\Mozilla" "${BrandShortName}InstallerTest" "Write Test"
   ${If} ${Errors}
-    StrCpy $TmpVal "HKCU" ; used primarily for logging
+    StrCpy $TmpVal "HKCU"
   ${Else}
     SetShellVarContext all    ; Set SHCTX to all users (e.g. HKLM)
     DeleteRegValue HKLM "Software\Mozilla" "${BrandShortName}InstallerTest"
-    StrCpy $TmpVal "HKLM" ; used primarily for logging
+    StrCpy $TmpVal "HKLM"
     ${RegCleanMain} "Software\Mozilla"
     ${RegCleanUninstall}
     ${UpdateProtocolHandlers}
     ${FixShellIconHandler} "HKLM"
     ${SetAppLSPCategories} ${LSP_CATEGORIES}
-
-    ; Win7 taskbar and start menu link maintenance
-    Call FixShortcutAppModelIDs
 
     ; Add the Firewall entries after an update
     Call AddFirewallEntries
@@ -66,25 +60,42 @@
     ${EndIf}
   ${EndIf}
 
-  ; Migrate the application's Start Menu directory to a single shortcut in the
-  ; root of the Start Menu Programs directory.
-  ${MigrateStartMenuShortcut}
-
-  ; Update lastwritetime of the Start Menu shortcut to clear the tile cache.
-  ${If} ${AtLeastWin8}
-  ${AndIf} ${FileExists} "$SMPROGRAMS\${BrandFullName}.lnk"
-    FileOpen $0 "$SMPROGRAMS\${BrandFullName}.lnk" a
-    FileClose $0
-  ${EndIf}
-
   ; Adds a pinned Task Bar shortcut (see MigrateTaskBarShortcut for details).
   ${MigrateTaskBarShortcut}
 
+  ; Update the name/icon/AppModelID of our shortcuts as needed, then update the
+  ; lastwritetime of the Start Menu shortcut to clear the tile icon cache.
+  ; Do this for both shell contexts in case the user has shortcuts in multiple
+  ; locations, then restore the previous context at the end.
+  SetShellVarContext all
+  ${UpdateShortcutsBranding}
+  ${If} ${AtLeastWin8}
+    ${TouchStartMenuShortcut}
+  ${EndIf}
+  Call FixShortcutAppModelIDs
+  SetShellVarContext current
+  ${UpdateShortcutsBranding}
+  ${If} ${AtLeastWin8}
+    ${TouchStartMenuShortcut}
+  ${EndIf}
+  Call FixShortcutAppModelIDs
+  ${If} $TmpVal == "HKLM"
+    SetShellVarContext all
+  ${ElseIf} $TmpVal == "HKCU"
+    SetShellVarContext current
+  ${EndIf}
+
   ${RemoveDeprecatedKeys}
+  ${Set32to64DidMigrateReg}
 
   ${SetAppKeys}
   ${FixClassKeys}
   ${SetUninstallKeys}
+  ${If} $TmpVal == "HKLM"
+    ${SetStartMenuInternet} HKLM
+  ${ElseIf} $TmpVal == "HKCU"
+    ${SetStartMenuInternet} HKCU
+  ${EndIf}
 
   ; Remove files that may be left behind by the application in the
   ; VirtualStore directory.
@@ -97,6 +108,12 @@
 
   RmDir /r /REBOOTOK "$INSTDIR\${TO_BE_DELETED}"
 
+  ; Register AccessibleHandler.dll with COM (this requires write access to HKLM)
+  ${RegisterAccessibleHandler}
+
+  ; Register AccessibleMarshal.dll with COM (this requires write access to HKLM)
+  ${RegisterAccessibleMarshal}
+
 !ifdef MOZ_MAINTENANCE_SERVICE
   Call IsUserAdmin
   Pop $R0
@@ -107,11 +124,13 @@
     ; Since the Maintenance service can be installed either x86 or x64,
     ; always use the 64-bit registry for checking if an attempt was made.
     ${If} ${RunningX64}
+    ${OrIf} ${IsNativeARM64}
       SetRegView 64
     ${EndIf}
     ReadRegDWORD $5 HKLM "Software\Mozilla\MaintenanceService" "Attempted"
     ClearErrors
     ${If} ${RunningX64}
+    ${OrIf} ${IsNativeARM64}
       SetRegView lastused
     ${EndIf}
 
@@ -139,8 +158,31 @@
     ${EndIf}
   ${EndIf}
 !endif
+
+!ifdef MOZ_LAUNCHER_PROCESS
+!ifdef RELEASE_OR_BETA
+  ${DisableLauncherProcessByDefault}
+!endif
+!endif
+
 !macroend
 !define PostUpdate "!insertmacro PostUpdate"
+
+; Update the last modified time on the Start Menu shortcut, so that its icon
+; gets refreshed. Should be called on Win8+ after UpdateShortcutBranding.
+!macro TouchStartMenuShortcut
+  ${If} ${FileExists} "$SMPROGRAMS\${BrandShortName}.lnk"
+    FileOpen $0 "$SMPROGRAMS\${BrandShortName}.lnk" a
+    ${IfNot} ${Errors}
+      System::Call '*(i, i) p .r1'
+      System::Call 'kernel32::GetSystemTimeAsFileTime(p r1)'
+      System::Call 'kernel32::SetFileTime(p r0, i 0, i 0, p r1) i .r2'
+      System::Free $1
+      FileClose $0
+    ${EndIf}
+  ${EndIf}
+!macroend
+!define TouchStartMenuShortcut "!insertmacro TouchStartMenuShortcut"
 
 !macro SetAsDefaultAppGlobal
   ${RemoveDeprecatedKeys} ; Does not use SHCTX
@@ -170,51 +212,51 @@
   ${EndIf}
 
   SetShellVarContext all  ; Set $DESKTOP to All Users
-  ${Unless} ${FileExists} "$DESKTOP\${BrandFullName}.lnk"
+  ${Unless} ${FileExists} "$DESKTOP\${BrandShortName}.lnk"
     SetShellVarContext current  ; Set $DESKTOP to the current user's desktop
   ${EndUnless}
 
-  ${If} ${FileExists} "$DESKTOP\${BrandFullName}.lnk"
-    ShellLink::GetShortCutArgs "$DESKTOP\${BrandFullName}.lnk"
+  ${If} ${FileExists} "$DESKTOP\${BrandShortName}.lnk"
+    ShellLink::GetShortCutArgs "$DESKTOP\${BrandShortName}.lnk"
     Pop $0
     ${If} "$0" == ""
-      ShellLink::GetShortCutTarget "$DESKTOP\${BrandFullName}.lnk"
+      ShellLink::GetShortCutTarget "$DESKTOP\${BrandShortName}.lnk"
       Pop $0
       ${GetLongPath} "$0" $0
       ${If} "$0" == "$INSTDIR\${FileMainEXE}"
-        Delete "$DESKTOP\${BrandFullName}.lnk"
+        Delete "$DESKTOP\${BrandShortName}.lnk"
       ${EndIf}
     ${EndIf}
   ${EndIf}
 
   SetShellVarContext all  ; Set $SMPROGRAMS to All Users
-  ${Unless} ${FileExists} "$SMPROGRAMS\${BrandFullName}.lnk"
+  ${Unless} ${FileExists} "$SMPROGRAMS\${BrandShortName}.lnk"
     SetShellVarContext current  ; Set $SMPROGRAMS to the current user's Start
                                 ; Menu Programs directory
   ${EndUnless}
 
-  ${If} ${FileExists} "$SMPROGRAMS\${BrandFullName}.lnk"
-    ShellLink::GetShortCutArgs "$SMPROGRAMS\${BrandFullName}.lnk"
+  ${If} ${FileExists} "$SMPROGRAMS\${BrandShortName}.lnk"
+    ShellLink::GetShortCutArgs "$SMPROGRAMS\${BrandShortName}.lnk"
     Pop $0
     ${If} "$0" == ""
-      ShellLink::GetShortCutTarget "$SMPROGRAMS\${BrandFullName}.lnk"
+      ShellLink::GetShortCutTarget "$SMPROGRAMS\${BrandShortName}.lnk"
       Pop $0
       ${GetLongPath} "$0" $0
       ${If} "$0" == "$INSTDIR\${FileMainEXE}"
-        Delete "$SMPROGRAMS\${BrandFullName}.lnk"
+        Delete "$SMPROGRAMS\${BrandShortName}.lnk"
       ${EndIf}
     ${EndIf}
   ${EndIf}
 
-  ${If} ${FileExists} "$QUICKLAUNCH\${BrandFullName}.lnk"
-    ShellLink::GetShortCutArgs "$QUICKLAUNCH\${BrandFullName}.lnk"
+  ${If} ${FileExists} "$QUICKLAUNCH\${BrandShortName}.lnk"
+    ShellLink::GetShortCutArgs "$QUICKLAUNCH\${BrandShortName}.lnk"
     Pop $0
     ${If} "$0" == ""
-      ShellLink::GetShortCutTarget "$QUICKLAUNCH\${BrandFullName}.lnk"
+      ShellLink::GetShortCutTarget "$QUICKLAUNCH\${BrandShortName}.lnk"
       Pop $0
       ${GetLongPath} "$0" $0
       ${If} "$0" == "$INSTDIR\${FileMainEXE}"
-        Delete "$QUICKLAUNCH\${BrandFullName}.lnk"
+        Delete "$QUICKLAUNCH\${BrandShortName}.lnk"
       ${EndIf}
     ${EndIf}
   ${EndIf}
@@ -237,24 +279,24 @@
   ${EndIf}
 
   SetShellVarContext all  ; Set $DESKTOP to All Users
-  ${Unless} ${FileExists} "$DESKTOP\${BrandFullName}.lnk"
-    CreateShortCut "$DESKTOP\${BrandFullName}.lnk" "$INSTDIR\${FileMainEXE}"
-    ${If} ${FileExists} "$DESKTOP\${BrandFullName}.lnk"
-      ShellLink::SetShortCutWorkingDirectory "$DESKTOP\${BrandFullName}.lnk" "$INSTDIR"
+  ${Unless} ${FileExists} "$DESKTOP\${BrandShortName}.lnk"
+    CreateShortCut "$DESKTOP\${BrandShortName}.lnk" "$INSTDIR\${FileMainEXE}"
+    ${If} ${FileExists} "$DESKTOP\${BrandShortName}.lnk"
+      ShellLink::SetShortCutWorkingDirectory "$DESKTOP\${BrandShortName}.lnk" "$INSTDIR"
       ${If} ${AtLeastWin7}
       ${AndIf} "$AppUserModelID" != ""
-        ApplicationID::Set "$DESKTOP\${BrandFullName}.lnk" "$AppUserModelID" "true"
+        ApplicationID::Set "$DESKTOP\${BrandShortName}.lnk" "$AppUserModelID" "true"
       ${EndIf}
     ${Else}
       SetShellVarContext current  ; Set $DESKTOP to the current user's desktop
-      ${Unless} ${FileExists} "$DESKTOP\${BrandFullName}.lnk"
-        CreateShortCut "$DESKTOP\${BrandFullName}.lnk" "$INSTDIR\${FileMainEXE}"
-        ${If} ${FileExists} "$DESKTOP\${BrandFullName}.lnk"
-          ShellLink::SetShortCutWorkingDirectory "$DESKTOP\${BrandFullName}.lnk" \
+      ${Unless} ${FileExists} "$DESKTOP\${BrandShortName}.lnk"
+        CreateShortCut "$DESKTOP\${BrandShortName}.lnk" "$INSTDIR\${FileMainEXE}"
+        ${If} ${FileExists} "$DESKTOP\${BrandShortName}.lnk"
+          ShellLink::SetShortCutWorkingDirectory "$DESKTOP\${BrandShortName}.lnk" \
                                                  "$INSTDIR"
           ${If} ${AtLeastWin7}
           ${AndIf} "$AppUserModelID" != ""
-            ApplicationID::Set "$DESKTOP\${BrandFullName}.lnk" "$AppUserModelID" "true"
+            ApplicationID::Set "$DESKTOP\${BrandShortName}.lnk" "$AppUserModelID" "true"
           ${EndIf}
         ${EndIf}
       ${EndUnless}
@@ -262,26 +304,26 @@
   ${EndUnless}
 
   SetShellVarContext all  ; Set $SMPROGRAMS to All Users
-  ${Unless} ${FileExists} "$SMPROGRAMS\${BrandFullName}.lnk"
-    CreateShortCut "$SMPROGRAMS\${BrandFullName}.lnk" "$INSTDIR\${FileMainEXE}"
-    ${If} ${FileExists} "$SMPROGRAMS\${BrandFullName}.lnk"
-      ShellLink::SetShortCutWorkingDirectory "$SMPROGRAMS\${BrandFullName}.lnk" \
+  ${Unless} ${FileExists} "$SMPROGRAMS\${BrandShortName}.lnk"
+    CreateShortCut "$SMPROGRAMS\${BrandShortName}.lnk" "$INSTDIR\${FileMainEXE}"
+    ${If} ${FileExists} "$SMPROGRAMS\${BrandShortName}.lnk"
+      ShellLink::SetShortCutWorkingDirectory "$SMPROGRAMS\${BrandShortName}.lnk" \
                                              "$INSTDIR"
       ${If} ${AtLeastWin7}
       ${AndIf} "$AppUserModelID" != ""
-        ApplicationID::Set "$SMPROGRAMS\${BrandFullName}.lnk" "$AppUserModelID" "true"
+        ApplicationID::Set "$SMPROGRAMS\${BrandShortName}.lnk" "$AppUserModelID" "true"
       ${EndIf}
     ${Else}
       SetShellVarContext current  ; Set $SMPROGRAMS to the current user's Start
                                   ; Menu Programs directory
-      ${Unless} ${FileExists} "$SMPROGRAMS\${BrandFullName}.lnk"
-        CreateShortCut "$SMPROGRAMS\${BrandFullName}.lnk" "$INSTDIR\${FileMainEXE}"
-        ${If} ${FileExists} "$SMPROGRAMS\${BrandFullName}.lnk"
-          ShellLink::SetShortCutWorkingDirectory "$SMPROGRAMS\${BrandFullName}.lnk" \
+      ${Unless} ${FileExists} "$SMPROGRAMS\${BrandShortName}.lnk"
+        CreateShortCut "$SMPROGRAMS\${BrandShortName}.lnk" "$INSTDIR\${FileMainEXE}"
+        ${If} ${FileExists} "$SMPROGRAMS\${BrandShortName}.lnk"
+          ShellLink::SetShortCutWorkingDirectory "$SMPROGRAMS\${BrandShortName}.lnk" \
                                                  "$INSTDIR"
           ${If} ${AtLeastWin7}
           ${AndIf} "$AppUserModelID" != ""
-            ApplicationID::Set "$SMPROGRAMS\${BrandFullName}.lnk" "$AppUserModelID" "true"
+            ApplicationID::Set "$SMPROGRAMS\${BrandShortName}.lnk" "$AppUserModelID" "true"
           ${EndIf}
         ${EndIf}
       ${EndUnless}
@@ -290,16 +332,61 @@
 
   ; Windows 7 doesn't use the QuickLaunch directory
   ${Unless} ${AtLeastWin7}
-  ${AndUnless} ${FileExists} "$QUICKLAUNCH\${BrandFullName}.lnk"
-    CreateShortCut "$QUICKLAUNCH\${BrandFullName}.lnk" \
+  ${AndUnless} ${FileExists} "$QUICKLAUNCH\${BrandShortName}.lnk"
+    CreateShortCut "$QUICKLAUNCH\${BrandShortName}.lnk" \
                    "$INSTDIR\${FileMainEXE}"
-    ${If} ${FileExists} "$QUICKLAUNCH\${BrandFullName}.lnk"
-      ShellLink::SetShortCutWorkingDirectory "$QUICKLAUNCH\${BrandFullName}.lnk" \
+    ${If} ${FileExists} "$QUICKLAUNCH\${BrandShortName}.lnk"
+      ShellLink::SetShortCutWorkingDirectory "$QUICKLAUNCH\${BrandShortName}.lnk" \
                                              "$INSTDIR"
     ${EndIf}
   ${EndUnless}
 !macroend
 !define ShowShortcuts "!insertmacro ShowShortcuts"
+
+; Update the branding name on all shortcuts our installer created
+; to convert from BrandFullName (which is what we used to name shortcuts)
+; to BrandShortName (which is what we now name shortcuts). We only rename
+; desktop and start menu shortcuts, because touching taskbar pins often
+; (but inconsistently) triggers various broken behaviors in the shell.
+; This assumes SHCTX is set correctly.
+!macro UpdateShortcutsBranding
+  ${UpdateOneShortcutBranding} "STARTMENU" "$SMPROGRAMS"
+  ${UpdateOneShortcutBranding} "DESKTOP" "$DESKTOP"
+!macroend
+!define UpdateShortcutsBranding "!insertmacro UpdateShortcutsBranding"
+
+!macro UpdateOneShortcutBranding LOG_SECTION SHORTCUT_DIR
+  ; Only try to rename the shortcuts found in the shortcuts log, to avoid
+  ; blowing away a name that the user created.
+  ${GetLongPath} "$INSTDIR\uninstall\${SHORTCUTS_LOG}" $R9
+  ${If} ${FileExists} "$R9"
+    ClearErrors
+    ; The shortcuts log contains a numbered list of entries for each section,
+    ; but we never actually create more than one.
+    ReadINIStr $R8 "$R9" "${LOG_SECTION}" "Shortcut0"
+    ${IfNot} ${Errors}
+      ${If} ${FileExists} "${SHORTCUT_DIR}\$R8"
+        ShellLink::GetShortCutTarget "${SHORTCUT_DIR}\$R8"
+        Pop $R7
+        ${GetLongPath} "$R7" $R7
+        ${If} $R7 == "$INSTDIR\${FileMainEXE}"
+        ${AndIf} $R8 != "${BrandShortName}.lnk"
+        ${AndIfNot} ${FileExists} "${SHORTCUT_DIR}\${BrandShortName}.lnk"
+          ClearErrors
+          Rename "${SHORTCUT_DIR}\$R8" "${SHORTCUT_DIR}\${BrandShortName}.lnk"
+          ${IfNot} ${Errors}
+            ; Update the shortcut log manually instead of calling LogShortcut
+            ; because it would add a Shortcut1 entry, and we really do want to
+            ; overwrite the existing entry 0, since we just renamed the file.
+            WriteINIStr "$R9" "${LOG_SECTION}" "Shortcut0" \
+                        "${BrandShortName}.lnk"
+          ${EndIf}
+        ${EndIf}
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+!macroend
+!define UpdateOneShortcutBranding "!insertmacro UpdateOneShortcutBranding"
 
 !macro AddAssociationIfNoneExist FILE_TYPE KEY
   ClearErrors
@@ -404,56 +491,129 @@
   ${GetLongPath} "$INSTDIR\${FileMainEXE}" $8
   ${GetLongPath} "$INSTDIR\uninstall\helper.exe" $7
 
-  ; Avoid writing new keys at the hash-suffixed path if this installation
-  ; already has keys at the old FIREFOX.EXE path. Otherwise we would create a
-  ; second entry in Default Apps for the same installation.
+  ; If we already have keys at the old FIREFOX.EXE path, then just update those.
+  ; We have to be careful to update the existing keys in place so that we don't
+  ; create duplicate keys for the same installation, or cause Windows to think
+  ; something "suspicious" has happened and it should reset the default browser.
   ${StrFilter} "${FileMainEXE}" "+" "" "" $1
   ReadRegStr $0 ${RegKey} "Software\Clients\StartMenuInternet\$1\DefaultIcon" ""
   StrCpy $0 $0 -2
   ${If} $0 != $8
-    StrCpy $0 "Software\Clients\StartMenuInternet\${AppRegName}-$AppUserModelID"
-
-    WriteRegStr ${RegKey} "$0" "" "${BrandFullName}"
-
-    WriteRegStr ${RegKey} "$0\DefaultIcon" "" "$8,0"
-
-    ; The Reinstall Command is defined at
-    ; http://msdn.microsoft.com/library/default.asp?url=/library/en-us/shellcc/platform/shell/programmersguide/shell_adv/registeringapps.asp
-    WriteRegStr ${RegKey} "$0\InstallInfo" "HideIconsCommand" "$\"$7$\" /HideShortcuts"
-    WriteRegStr ${RegKey} "$0\InstallInfo" "ShowIconsCommand" "$\"$7$\" /ShowShortcuts"
-    WriteRegStr ${RegKey} "$0\InstallInfo" "ReinstallCommand" "$\"$7$\" /SetAsDefaultAppGlobal"
-    WriteRegDWORD ${RegKey} "$0\InstallInfo" "IconsVisible" 1
-
-    WriteRegStr ${RegKey} "$0\shell\open\command" "" "$\"$8$\""
-
-    WriteRegStr ${RegKey} "$0\shell\properties" "" "$(CONTEXT_OPTIONS)"
-    WriteRegStr ${RegKey} "$0\shell\properties\command" "" "$\"$8$\" -preferences"
-
-    WriteRegStr ${RegKey} "$0\shell\safemode" "" "$(CONTEXT_SAFE_MODE)"
-    WriteRegStr ${RegKey} "$0\shell\safemode\command" "" "$\"$8$\" -safe-mode"
-
-    ; Capabilities registry keys
-    WriteRegStr ${RegKey} "$0\Capabilities" "ApplicationDescription" "$(REG_APP_DESC)"
-    WriteRegStr ${RegKey} "$0\Capabilities" "ApplicationIcon" "$8,0"
-    WriteRegStr ${RegKey} "$0\Capabilities" "ApplicationName" "${BrandShortName}"
-
-    WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".htm"   "FirefoxHTML-$AppUserModelID"
-    WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".html"  "FirefoxHTML-$AppUserModelID"
-    WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".shtml" "FirefoxHTML-$AppUserModelID"
-    WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".xht"   "FirefoxHTML-$AppUserModelID"
-    WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".xhtml" "FirefoxHTML-$AppUserModelID"
-
-    WriteRegStr ${RegKey} "$0\Capabilities\StartMenu" "StartMenuInternet" "${AppRegName}-$AppUserModelID"
-
-    WriteRegStr ${RegKey} "$0\Capabilities\URLAssociations" "ftp"    "FirefoxURL-$AppUserModelID"
-    WriteRegStr ${RegKey} "$0\Capabilities\URLAssociations" "http"   "FirefoxURL-$AppUserModelID"
-    WriteRegStr ${RegKey} "$0\Capabilities\URLAssociations" "https"  "FirefoxURL-$AppUserModelID"
-
-    ; Registered Application
-    WriteRegStr ${RegKey} "Software\RegisteredApplications" "${AppRegName}-$AppUserModelID" "$0\Capabilities"
+    StrCpy $1 "${AppRegName}-$AppUserModelID"
+    StrCpy $2 "-$AppUserModelID"
+  ${Else}
+    StrCpy $2 ""
   ${EndIf}
+  StrCpy $0 "Software\Clients\StartMenuInternet\$1"
+
+  WriteRegStr ${RegKey} "$0" "" "${BrandFullName}"
+
+  WriteRegStr ${RegKey} "$0\DefaultIcon" "" "$8,0"
+
+  ; The Reinstall Command is defined at
+  ; http://msdn.microsoft.com/library/default.asp?url=/library/en-us/shellcc/platform/shell/programmersguide/shell_adv/registeringapps.asp
+  WriteRegStr ${RegKey} "$0\InstallInfo" "HideIconsCommand" "$\"$7$\" /HideShortcuts"
+  WriteRegStr ${RegKey} "$0\InstallInfo" "ShowIconsCommand" "$\"$7$\" /ShowShortcuts"
+  WriteRegStr ${RegKey} "$0\InstallInfo" "ReinstallCommand" "$\"$7$\" /SetAsDefaultAppGlobal"
+  WriteRegDWORD ${RegKey} "$0\InstallInfo" "IconsVisible" 1
+
+  WriteRegStr ${RegKey} "$0\shell\open\command" "" "$\"$8$\""
+
+  WriteRegStr ${RegKey} "$0\shell\properties" "" "$(CONTEXT_OPTIONS)"
+  WriteRegStr ${RegKey} "$0\shell\properties\command" "" "$\"$8$\" -preferences"
+
+  WriteRegStr ${RegKey} "$0\shell\safemode" "" "$(CONTEXT_SAFE_MODE)"
+  WriteRegStr ${RegKey} "$0\shell\safemode\command" "" "$\"$8$\" -safe-mode"
+
+  ; Capabilities registry keys
+  WriteRegStr ${RegKey} "$0\Capabilities" "ApplicationDescription" "$(REG_APP_DESC)"
+  WriteRegStr ${RegKey} "$0\Capabilities" "ApplicationIcon" "$8,0"
+  WriteRegStr ${RegKey} "$0\Capabilities" "ApplicationName" "${BrandShortName}"
+
+  WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".htm"   "FirefoxHTML$2"
+  WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".html"  "FirefoxHTML$2"
+  WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".shtml" "FirefoxHTML$2"
+  WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".xht"   "FirefoxHTML$2"
+  WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".xhtml" "FirefoxHTML$2"
+
+  WriteRegStr ${RegKey} "$0\Capabilities\StartMenu" "StartMenuInternet" "$1"
+
+  WriteRegStr ${RegKey} "$0\Capabilities\URLAssociations" "ftp"    "FirefoxURL$2"
+  WriteRegStr ${RegKey} "$0\Capabilities\URLAssociations" "http"   "FirefoxURL$2"
+  WriteRegStr ${RegKey} "$0\Capabilities\URLAssociations" "https"  "FirefoxURL$2"
+
+  ; Registered Application
+  WriteRegStr ${RegKey} "Software\RegisteredApplications" "$1" "$0\Capabilities"
 !macroend
 !define SetStartMenuInternet "!insertmacro SetStartMenuInternet"
+
+; Add registry keys to support the Firefox 32 bit to 64 bit migration. These
+; registry entries are not removed on uninstall at this time. After the Firefox
+; 32 bit to 64 bit migration effort is completed these registry entries can be
+; removed during install, post update, and uninstall.
+!macro Set32to64DidMigrateReg
+  ${GetLongPath} "$INSTDIR" $1
+  ; These registry keys are always in the 32 bit hive since they are never
+  ; needed by a Firefox 64 bit install unless it has been updated from Firefox
+  ; 32 bit.
+  SetRegView 32
+
+!ifdef HAVE_64BIT_BUILD
+
+  ; Running Firefox 64 bit on Windows 64 bit
+  ClearErrors
+  ReadRegDWORD $2 HKLM "Software\Mozilla\${AppName}\32to64DidMigrate" "$1"
+  ; If there were no errors then the system was updated from Firefox 32 bit to
+  ; Firefox 64 bit and if the value is already 1 then the registry value has
+  ; already been updated in the HKLM registry.
+  ${IfNot} ${Errors}
+  ${AndIf} $2 != 1
+    ClearErrors
+    WriteRegDWORD HKLM "Software\Mozilla\${AppName}\32to64DidMigrate" "$1" 1
+    ${If} ${Errors}
+      ; There was an error writing to HKLM so just write it to HKCU
+      WriteRegDWORD HKCU "Software\Mozilla\${AppName}\32to64DidMigrate" "$1" 1
+    ${Else}
+      ; This will delete the value from HKCU if it exists
+      DeleteRegValue HKCU "Software\Mozilla\${AppName}\32to64DidMigrate" "$1"
+    ${EndIf}
+  ${EndIf}
+
+  ClearErrors
+  ReadRegDWORD $2 HKCU "Software\Mozilla\${AppName}\32to64DidMigrate" "$1"
+  ; If there were no errors then the system was updated from Firefox 32 bit to
+  ; Firefox 64 bit and if the value is already 1 then the registry value has
+  ; already been updated in the HKCU registry.
+  ${IfNot} ${Errors}
+  ${AndIf} $2 != 1
+    WriteRegDWORD HKCU "Software\Mozilla\${AppName}\32to64DidMigrate" "$1" 1
+  ${EndIf}
+
+!else
+
+  ; Running Firefox 32 bit
+  ${If} ${RunningX64}
+  ${OrIf} ${IsNativeARM64}
+    ; Running Firefox 32 bit on a Windows 64 bit system
+    ClearErrors
+    ReadRegDWORD $2 HKLM "Software\Mozilla\${AppName}\32to64DidMigrate" "$1"
+    ; If there were errors the value doesn't exist yet.
+    ${If} ${Errors}
+      ClearErrors
+      WriteRegDWORD HKLM "Software\Mozilla\${AppName}\32to64DidMigrate" "$1" 0
+      ; If there were errors write the value in HKCU.
+      ${If} ${Errors}
+        WriteRegDWORD HKCU "Software\Mozilla\${AppName}\32to64DidMigrate" "$1" 0
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+
+!endif
+
+  ClearErrors
+  SetRegView lastused
+!macroend
+!define Set32to64DidMigrateReg "!insertmacro Set32to64DidMigrateReg"
 
 ; The IconHandler reference for FirefoxHTML can end up in an inconsistent state
 ; due to changes not being detected by the IconHandler for side by side
@@ -747,6 +907,7 @@
     ; if the binary is replaced with a different certificate.
     ; We always use the 64bit registry for certs.
     ${If} ${RunningX64}
+    ${OrIf} ${IsNativeARM64}
       SetRegView 64
     ${EndIf}
 
@@ -769,6 +930,7 @@
     WriteRegStr HKLM "$R0\1" "name" "${CERTIFICATE_NAME_PREVIOUS}"
     WriteRegStr HKLM "$R0\1" "issuer" "${CERTIFICATE_ISSUER_PREVIOUS}"
     ${If} ${RunningX64}
+    ${OrIf} ${IsNativeARM64}
       SetRegView lastused
     ${EndIf}
     ClearErrors
@@ -778,6 +940,16 @@
 !macroend
 !define AddMaintCertKeys "!insertmacro AddMaintCertKeys"
 !endif
+
+!macro RegisterAccessibleHandler
+  ${RegisterDLL} "$INSTDIR\AccessibleHandler.dll"
+!macroend
+!define RegisterAccessibleHandler "!insertmacro RegisterAccessibleHandler"
+
+!macro RegisterAccessibleMarshal
+  ${RegisterDLL} "$INSTDIR\AccessibleMarshal.dll"
+!macroend
+!define RegisterAccessibleMarshal "!insertmacro RegisterAccessibleMarshal"
 
 ; Removes various registry entries for reasons noted below (does not use SHCTX).
 !macro RemoveDeprecatedKeys
@@ -1033,56 +1205,6 @@
 !macroend
 !define PinToTaskBar "!insertmacro PinToTaskBar"
 
-; Adds a shortcut to the root of the Start Menu Programs directory if the
-; application's Start Menu Programs directory exists with a shortcut pointing to
-; this installation directory. This will also remove the old shortcuts and the
-; application's Start Menu Programs directory by calling the RemoveStartMenuDir
-; macro.
-!macro MigrateStartMenuShortcut
-  ${GetShortcutsLogPath} $0
-  ${If} ${FileExists} "$0"
-    ClearErrors
-    ReadINIStr $5 "$0" "SMPROGRAMS" "RelativePathToDir"
-    ${Unless} ${Errors}
-      ClearErrors
-      ReadINIStr $1 "$0" "STARTMENU" "Shortcut0"
-      ${If} ${Errors}
-        ; The STARTMENU ini section doesn't exist.
-        ${LogStartMenuShortcut} "${BrandFullName}.lnk"
-        ${GetLongPath} "$SMPROGRAMS" $2
-        ${GetLongPath} "$2\$5" $1
-        ${If} "$1" != ""
-          ClearErrors
-          ReadINIStr $3 "$0" "SMPROGRAMS" "Shortcut0"
-          ${Unless} ${Errors}
-            ${If} ${FileExists} "$1\$3"
-              ShellLink::GetShortCutTarget "$1\$3"
-              Pop $4
-              ${If} "$INSTDIR\${FileMainEXE}" == "$4"
-                CreateShortCut "$SMPROGRAMS\${BrandFullName}.lnk" \
-                               "$INSTDIR\${FileMainEXE}"
-                ${If} ${FileExists} "$SMPROGRAMS\${BrandFullName}.lnk"
-                  ShellLink::SetShortCutWorkingDirectory "$SMPROGRAMS\${BrandFullName}.lnk" \
-                                                         "$INSTDIR"
-                  ${If} ${AtLeastWin7}
-                  ${AndIf} "$AppUserModelID" != ""
-                    ApplicationID::Set "$SMPROGRAMS\${BrandFullName}.lnk" \
-                                       "$AppUserModelID" "true"
-                  ${EndIf}
-                ${EndIf}
-              ${EndIf}
-            ${EndIf}
-          ${EndUnless}
-        ${EndIf}
-      ${EndIf}
-      ; Remove the application's Start Menu Programs directory, shortcuts, and
-      ; ini section.
-      ${RemoveStartMenuDir}
-    ${EndUnless}
-  ${EndIf}
-!macroend
-!define MigrateStartMenuShortcut "!insertmacro MigrateStartMenuShortcut"
-
 ; Removes the application's start menu directory along with its shortcuts if
 ; they exist and if they exist creates a start menu shortcut in the root of the
 ; start menu directory (bug 598779). If the application's start menu directory
@@ -1144,9 +1266,9 @@
 !macro CreateShortcutsLog
   ${GetShortcutsLogPath} $0
   ${Unless} ${FileExists} "$0"
-    ${LogStartMenuShortcut} "${BrandFullName}.lnk"
-    ${LogQuickLaunchShortcut} "${BrandFullName}.lnk"
-    ${LogDesktopShortcut} "${BrandFullName}.lnk"
+    ${LogStartMenuShortcut} "${BrandShortName}.lnk"
+    ${LogQuickLaunchShortcut} "${BrandShortName}.lnk"
+    ${LogDesktopShortcut} "${BrandShortName}.lnk"
   ${EndUnless}
 !macroend
 !define CreateShortcutsLog "!insertmacro CreateShortcutsLog"
@@ -1160,6 +1282,7 @@
   ; should be ${FileMainEXE} so if it is in use the CheckForFilesInUse macro
   ; returns after the first check.
   Push "end"
+  Push "AccessibleHandler.dll"
   Push "AccessibleMarshal.dll"
   Push "IA2Marshal.dll"
   Push "freebl3.dll"
@@ -1248,9 +1371,26 @@
 ; easily called from an elevated instance of the binary. Since this can be
 ; called by an elevated instance logging is not performed in this function.
 Function SetAsDefaultAppUserHKCU
-  ; Only set as the user's StartMenuInternet browser if the StartMenuInternet
-  ; registry keys are for this install.
-  StrCpy $R9 "${AppRegName}-$AppUserModelID"
+  ; See if we're using path hash suffixed registry keys for this install
+  ${GetLongPath} "$INSTDIR\${FileMainEXE}" $8
+  ${StrFilter} "${FileMainEXE}" "+" "" "" $R9
+  ClearErrors
+  ReadRegStr $0 HKCU "Software\Clients\StartMenuInternet\$R9\DefaultIcon" ""
+  ${If} ${Errors}
+  ${OrIf} ${AtMostWin2008R2}
+    ClearErrors
+    ReadRegStr $0 HKLM "Software\Clients\StartMenuInternet\$R9\DefaultIcon" ""
+  ${EndIf}
+  StrCpy $0 $0 -2
+  ${If} $0 != $8
+    ${If} $AppUserModelID == ""
+      ${InitHashAppModelId} "$INSTDIR" "Software\Mozilla\${AppName}\TaskBarIDs"
+    ${EndIf}
+    StrCpy $R9 "${AppRegName}-$AppUserModelID"
+  ${EndIf}
+
+  ; Set ourselves as the user's selected StartMenuInternet browser, but only
+  ; if we have StartMenuInternet registry keys that are for this install.
   ClearErrors
   ReadRegStr $0 HKCU "Software\Clients\StartMenuInternet\$R9\DefaultIcon" ""
   ${If} ${Errors}
@@ -1259,30 +1399,30 @@ Function SetAsDefaultAppUserHKCU
     ReadRegStr $0 HKLM "Software\Clients\StartMenuInternet\$R9\DefaultIcon" ""
   ${EndIf}
   ${Unless} ${Errors}
-    WriteRegStr HKCU "Software\Clients\StartMenuInternet" "" "$R9"
-  ${Else}
-    ${StrFilter} "${FileMainEXE}" "+" "" "" $R9
-    ClearErrors
-    ReadRegStr $0 HKCU "Software\Clients\StartMenuInternet\$R9\DefaultIcon" ""
-    ${If} ${Errors}
-    ${OrIf} ${AtMostWin2008R2}
-      ClearErrors
-      ReadRegStr $0 HKLM "Software\Clients\StartMenuInternet\$R9\DefaultIcon" ""
-    ${EndIf}
-    ${Unless} ${Errors}
-      ${GetPathFromString} "$0" $0
-      ${GetParent} "$0" $0
-      ${If} ${FileExists} "$0"
-        ${GetLongPath} "$0" $0
-        ${If} "$0" == "$INSTDIR"
+    ${GetPathFromString} "$0" $0
+    ${GetParent} "$0" $0
+    ${If} ${FileExists} "$0"
+      ${GetLongPath} "$0" $0
+      ${If} "$0" == "$INSTDIR"
+        ; On Windows >= 8, this function cannot do anything to actually set
+        ; the default browser, it can only set up the registry entries to
+        ; allow the user to do so. Getting here means that those entries already
+        ; exist for this installation, we just found them, so there is nothing
+        ; more to be done.
+        ${If} ${AtLeastWin8}
+          Return
+        ${Else}
           WriteRegStr HKCU "Software\Clients\StartMenuInternet" "" "$R9"
         ${EndIf}
       ${EndIf}
-    ${EndUnless}
+    ${EndIf}
   ${EndUnless}
 
   SetShellVarContext current  ; Set SHCTX to the current user (e.g. HKCU)
 
+  ; It's unlikely that we didn't find a StartMenuInternet key above, but it is
+  ; possible; it likely would mean this copy of the application was extracted
+  ; directly from a ZIP file and the installer was never run.
   ${If} ${AtLeastWin8}
     ${SetStartMenuInternet} "HKCU"
     ${FixShellIconHandler} "HKCU"
@@ -1364,11 +1504,11 @@ Function SetAsDefaultAppUser
     ${StrFilter} "${FileMainEXE}" "+" "" "" $R9
     ClearErrors
     ReadRegStr $0 HKCU "Software\Clients\StartMenuInternet\$R9\DefaultIcon" ""
-  ${EndIf}
-  ${If} ${Errors}
-  ${OrIf} ${AtMostWin2008R2}
-    ClearErrors
-    ReadRegStr $0 HKLM "Software\Clients\StartMenuInternet\$R9\DefaultIcon" ""
+    ${If} ${Errors}
+    ${OrIf} ${AtMostWin2008R2}
+      ClearErrors
+      ReadRegStr $0 HKLM "Software\Clients\StartMenuInternet\$R9\DefaultIcon" ""
+    ${EndIf}
   ${EndIf}
 
   ${Unless} ${Errors}
@@ -1418,3 +1558,22 @@ FunctionEnd
 !define SetAsDefaultAppUser "Call SetAsDefaultAppUser"
 
 !endif ; NO_LOG
+
+!ifdef MOZ_LAUNCHER_PROCESS
+!ifdef RELEASE_OR_BETA
+!macro DisableLauncherProcessByDefault
+  ClearErrors
+  ${ReadRegQWORD} $0 HKCU ${MOZ_LAUNCHER_SUBKEY} "$INSTDIR\${FileMainEXE}|Launcher"
+  ${If} ${Errors}
+    ClearErrors
+    ${ReadRegQWORD} $0 HKCU ${MOZ_LAUNCHER_SUBKEY} "$INSTDIR\${FileMainEXE}|Browser"
+    ${If} ${Errors}
+      ClearErrors
+      ; New install that hasn't seen this yet; disable by default
+      ${WriteRegQWORD} HKCU ${MOZ_LAUNCHER_SUBKEY} "$INSTDIR\${FileMainEXE}|Browser" 0
+    ${EndIf}
+  ${EndIf}
+!macroend
+!define DisableLauncherProcessByDefault "!insertmacro DisableLauncherProcessByDefault"
+!endif
+!endif

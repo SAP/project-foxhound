@@ -4,7 +4,7 @@ var checkExpect;
 var chunk1Urls = [
   "test.com/aba",
   "test.com/foo/bar",
-  "foo.bar.com/a/b/c"
+  "foo.bar.com/a/b/c",
 ];
 var chunk1 = chunk1Urls.join("\n");
 
@@ -12,7 +12,7 @@ var chunk2Urls = [
   "blah.com/a",
   "baz.com/",
   "255.255.0.1/",
-  "www.foo.com/test2?param=1"
+  "www.foo.com/test2?param=1",
 ];
 var chunk2 = chunk2Urls.join("\n");
 
@@ -63,32 +63,32 @@ var phishUnexpected = {};
 var malwareExpected = {};
 var unwantedExpected = {};
 var blockedExpected = {};
-for (var i = 0; i < chunk2Urls.length; i++) {
+for (let i = 0; i < chunk2Urls.length; i++) {
   phishExpected[chunk2Urls[i]] = true;
   malwareExpected[chunk2Urls[i]] = true;
 }
-for (var i = 0; i < chunk3Urls.length; i++) {
+for (let i = 0; i < chunk3Urls.length; i++) {
   unwantedExpected[chunk3Urls[i]] = true;
   delete phishExpected[chunk3Urls[i]];
   phishUnexpected[chunk3Urls[i]] = true;
 }
-for (var i = 0; i < chunk1Urls.length; i++) {
+for (let i = 0; i < chunk1Urls.length; i++) {
   // chunk1 urls are expired
   phishUnexpected[chunk1Urls[i]] = true;
 }
-for (var i = 0; i < chunk4Urls.length; i++) {
+for (let i = 0; i < chunk4Urls.length; i++) {
   // chunk4 urls are expired
   phishUnexpected[chunk4Urls[i]] = true;
 }
-for (var i = 0; i < chunk5Urls.length; i++) {
+for (let i = 0; i < chunk5Urls.length; i++) {
   // chunk5 urls are expired
   phishUnexpected[chunk5Urls[i]] = true;
 }
-for (var i = 0; i < chunk6Urls.length; i++) {
+for (let i = 0; i < chunk6Urls.length; i++) {
   // chunk6 urls are expired
   phishUnexpected[chunk6Urls[i]] = true;
 }
-for (var i = 0; i < chunk7Urls.length; i++) {
+for (let i = 0; i < chunk7Urls.length; i++) {
   blockedExpected[chunk7Urls[i]] = true;
   // chunk7 urls are expired
   phishUnexpected[chunk7Urls[i]] = true;
@@ -105,32 +105,31 @@ function testFailure(arg) {
   do_throw(arg);
 }
 
-function checkNoHost()
-{
+function checkNoHost() {
   // Looking up a no-host uri such as a data: uri should throw an exception.
   var exception;
   try {
-    var principal = secMan.createCodebasePrincipal(iosvc.newURI("data:text/html,<b>test</b>"), {});
+    let principal = Services.scriptSecurityManager.createCodebasePrincipal(
+      Services.io.newURI("data:text/html,<b>test</b>"), {});
     dbservice.lookup(principal, allTables);
 
     exception = false;
-  } catch(e) {
+  } catch (e) {
     exception = true;
   }
-  do_check_true(exception);
+  Assert.ok(exception);
 
   do_test_finished();
 }
 
-function tablesCallbackWithoutSub(tables)
-{
+function tablesCallbackWithoutSub(tables) {
   var parts = tables.split("\n");
   parts.sort();
 
   // there's a leading \n here because splitting left an empty string
   // after the trailing newline, which will sort first
-  do_check_eq(parts.join("\n"),
-              "\ntest-block-simple;a:1\ntest-malware-simple;a:1\ntest-phish-simple;a:2\ntest-unwanted-simple;a:1");
+  Assert.equal(parts.join("\n"),
+               "\ntest-block-simple;a:1\ntest-malware-simple;a:1\ntest-phish-simple;a:2\ntest-unwanted-simple;a:1");
 
   checkNoHost();
 }
@@ -140,15 +139,14 @@ function expireSubSuccess(result) {
   dbservice.getTables(tablesCallbackWithoutSub);
 }
 
-function tablesCallbackWithSub(tables)
-{
+function tablesCallbackWithSub(tables) {
   var parts = tables.split("\n");
   parts.sort();
 
   // there's a leading \n here because splitting left an empty string
   // after the trailing newline, which will sort first
-  do_check_eq(parts.join("\n"),
-              "\ntest-block-simple;a:1\ntest-malware-simple;a:1\ntest-phish-simple;a:2:s:3\ntest-unwanted-simple;a:1");
+  Assert.equal(parts.join("\n"),
+               "\ntest-block-simple;a:1\ntest-malware-simple;a:1\ntest-phish-simple;a:2:s:3\ntest-unwanted-simple;a:1");
 
   // verify that expiring a sub chunk removes its name from the list
   var data =
@@ -159,8 +157,7 @@ function tablesCallbackWithSub(tables)
   doSimpleUpdate(data, expireSubSuccess, testFailure);
 }
 
-function checkChunksWithSub()
-{
+function checkChunksWithSub() {
   dbservice.getTables(tablesCallbackWithSub);
 }
 
@@ -172,7 +169,7 @@ function checkDone() {
 function phishExists(result) {
   dumpn("phishExists: " + result);
   try {
-    do_check_true(result.indexOf("test-phish-simple") != -1);
+    Assert.ok(result.includes("test-phish-simple"));
   } finally {
     checkDone();
   }
@@ -181,7 +178,7 @@ function phishExists(result) {
 function phishDoesntExist(result) {
   dumpn("phishDoesntExist: " + result);
   try {
-    do_check_true(result.indexOf("test-phish-simple") == -1);
+    Assert.ok(!result.includes("test-phish-simple"));
   } finally {
     checkDone();
   }
@@ -191,7 +188,7 @@ function malwareExists(result) {
   dumpn("malwareExists: " + result);
 
   try {
-    do_check_true(result.indexOf("test-malware-simple") != -1);
+    Assert.ok(result.includes("test-malware-simple"));
   } finally {
     checkDone();
   }
@@ -201,7 +198,7 @@ function unwantedExists(result) {
   dumpn("unwantedExists: " + result);
 
   try {
-    do_check_true(result.indexOf("test-unwanted-simple") != -1);
+    Assert.ok(result.includes("test-unwanted-simple"));
   } finally {
     checkDone();
   }
@@ -211,51 +208,54 @@ function blockedExists(result) {
   dumpn("blockedExists: " + result);
 
   try {
-    do_check_true(result.indexOf("test-block-simple") != -1);
+    Assert.ok(result.includes("test-block-simple"));
   } finally {
     checkDone();
   }
 }
 
-function checkState()
-{
+function checkState() {
   numExpecting = 0;
 
 
-  for (var key in phishExpected) {
-    var principal = secMan.createCodebasePrincipal(iosvc.newURI("http://" + key), {});
+  for (let key in phishExpected) {
+    let principal = Services.scriptSecurityManager.createCodebasePrincipal(
+      Services.io.newURI("http://" + key), {});
     dbservice.lookup(principal, allTables, phishExists, true);
     numExpecting++;
   }
 
-  for (var key in phishUnexpected) {
-    var principal = secMan.createCodebasePrincipal(iosvc.newURI("http://" + key), {});
+  for (let key in phishUnexpected) {
+    let principal = Services.scriptSecurityManager.createCodebasePrincipal(
+      Services.io.newURI("http://" + key), {});
     dbservice.lookup(principal, allTables, phishDoesntExist, true);
     numExpecting++;
   }
 
-  for (var key in malwareExpected) {
-    var principal = secMan.createCodebasePrincipal(iosvc.newURI("http://" + key), {});
+  for (let key in malwareExpected) {
+    let principal = Services.scriptSecurityManager.createCodebasePrincipal(
+      Services.io.newURI("http://" + key), {});
     dbservice.lookup(principal, allTables, malwareExists, true);
     numExpecting++;
   }
 
-  for (var key in unwantedExpected) {
-    var principal = secMan.createCodebasePrincipal(iosvc.newURI("http://" + key), {});
+  for (let key in unwantedExpected) {
+    let principal = Services.scriptSecurityManager.createCodebasePrincipal(
+      Services.io.newURI("http://" + key), {});
     dbservice.lookup(principal, allTables, unwantedExists, true);
     numExpecting++;
   }
 
-  for (var key in blockedExpected) {
-    var principal = secMan.createCodebasePrincipal(iosvc.newURI("http://" + key), {});
+  for (let key in blockedExpected) {
+    let principal = Services.scriptSecurityManager.createCodebasePrincipal(
+      Services.io.newURI("http://" + key), {});
     dbservice.lookup(principal, allTables, blockedExists, true);
     numExpecting++;
   }
 }
 
-function testSubSuccess(result)
-{
-  do_check_eq(result, "1000");
+function testSubSuccess(result) {
+  Assert.equal(result, "1000");
   checkState();
 }
 
@@ -272,7 +272,7 @@ function do_subs() {
 }
 
 function testAddSuccess(arg) {
-  do_check_eq(arg, "1000");
+  Assert.equal(arg, "1000");
 
   do_subs();
 }

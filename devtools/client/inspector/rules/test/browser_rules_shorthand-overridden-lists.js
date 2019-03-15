@@ -21,21 +21,21 @@ var TEST_URI = `
   <div id="testid">Styled Node</div>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
-  yield selectNode("#testid", inspector);
-  yield testComputedList(inspector, view);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, view} = await openRuleView();
+  await selectNode("#testid", inspector);
+  await testComputedList(inspector, view);
 });
 
-function* testComputedList(inspector, view) {
-  let rule = getRuleViewRuleEditor(view, 2).rule;
-  let propEditor = rule.textProps[0].editor;
-  let expander = propEditor.expander;
-  let overriddenItems = propEditor.shorthandOverridden.children;
-  let propNames = [
+function testComputedList(inspector, view) {
+  const rule = getRuleViewRuleEditor(view, 2).rule;
+  const propEditor = rule.textProps[0].editor;
+  const expander = propEditor.expander;
+  const overriddenItems = propEditor.shorthandOverridden.children;
+  const propNames = [
     "margin-right",
-    "margin-left"
+    "margin-left",
   ];
 
   ok(!expander.hasAttribute("open"), "margin computed list is closed.");
@@ -45,7 +45,7 @@ function* testComputedList(inspector, view) {
   is(overriddenItems.length, propNames.length,
       "There should be 2 overridden shorthand value.");
   for (let i = 0; i < propNames.length; i++) {
-    let overriddenItem = overriddenItems[i].querySelector(".ruleview-propertyname");
+    const overriddenItem = overriddenItems[i].querySelector(".ruleview-propertyname");
     is(overriddenItem.textContent, propNames[i],
         "The overridden item #" + i + " should be " + propNames[i]);
   }
@@ -63,7 +63,7 @@ function* testComputedList(inspector, view) {
       "The shorthandOverridden list should be open.");
 
   for (let i = 0; i < propNames.length; i++) {
-    let overriddenItem = overriddenItems[i].querySelector(".ruleview-propertyname");
+    const overriddenItem = overriddenItems[i].querySelector(".ruleview-propertyname");
     is(overriddenItem.textContent, propNames[i],
         "The overridden item #" + i + " should still be " + propNames[i]);
   }

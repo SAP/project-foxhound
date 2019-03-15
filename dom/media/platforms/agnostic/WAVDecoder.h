@@ -5,16 +5,17 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #if !defined(WaveDecoder_h_)
-#define WaveDecoder_h_
+#  define WaveDecoder_h_
 
-#include "PlatformDecoderModule.h"
-#include "mp4_demuxer/ByteReader.h"
+#  include "PlatformDecoderModule.h"
 
 namespace mozilla {
 
-class WaveDataDecoder : public MediaDataDecoder
-{
-public:
+DDLoggedTypeDeclNameAndBase(WaveDataDecoder, MediaDataDecoder);
+
+class WaveDataDecoder : public MediaDataDecoder,
+                        public DecoderDoctorLifeLogger<WaveDataDecoder> {
+ public:
   explicit WaveDataDecoder(const CreateDecoderParams& aParams);
 
   // Return true if mimetype is Wave
@@ -25,16 +26,15 @@ public:
   RefPtr<DecodePromise> Drain() override;
   RefPtr<FlushPromise> Flush() override;
   RefPtr<ShutdownPromise> Shutdown() override;
-  const char* GetDescriptionName() const override
-  {
-    return "wave audio decoder";
+  nsCString GetDescriptionName() const override {
+    return NS_LITERAL_CSTRING("wave audio decoder");
   }
 
-private:
+ private:
   RefPtr<DecodePromise> ProcessDecode(MediaRawData* aSample);
   const AudioInfo& mInfo;
   const RefPtr<TaskQueue> mTaskQueue;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 #endif

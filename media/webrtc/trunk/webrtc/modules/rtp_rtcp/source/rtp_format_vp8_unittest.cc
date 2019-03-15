@@ -8,15 +8,14 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-/*
- * This file includes unit tests for the VP8 packetizer.
- */
+#include <memory>
 
-#include "testing/gmock/include/gmock/gmock.h"
-#include "testing/gtest/include/gtest/gtest.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_format_vp8.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_format_vp8_test_helper.h"
-#include "webrtc/typedefs.h"
+#include "modules/rtp_rtcp/source/rtp_format_vp8.h"
+#include "modules/rtp_rtcp/source/rtp_format_vp8_test_helper.h"
+#include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
+#include "test/gmock.h"
+#include "test/gtest.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 #define CHECK_ARRAY_SIZE(expected_size, array)                     \
   static_assert(expected_size == sizeof(array) / sizeof(array[0]), \
@@ -24,6 +23,11 @@
 
 namespace webrtc {
 namespace {
+
+using ::testing::ElementsAreArray;
+using ::testing::make_tuple;
+
+constexpr RtpPacketToSend::ExtensionManager* kNoExtensions = nullptr;
 // Payload descriptor
 //       0 1 2 3 4 5 6 7
 //      +-+-+-+-+-+-+-+-+
@@ -96,188 +100,27 @@ class RtpPacketizerVp8Test : public ::testing::Test {
   test::RtpFormatVp8TestHelper* helper_;
 };
 
-TEST_F(RtpPacketizerVp8Test, TestStrictMode) {
-  const size_t kSizeVector[] = {10, 8, 27};
-  const size_t kNumPartitions = GTEST_ARRAY_SIZE_(kSizeVector);
-  ASSERT_TRUE(Init(kSizeVector, kNumPartitions));
-
-  hdr_info_.pictureId = 200;  // > 0x7F should produce 2-byte PictureID.
-  const size_t kMaxSize = 13;
-  RtpPacketizerVp8 packetizer(hdr_info_, kMaxSize, kStrict);
-  packetizer.SetPayloadData(helper_->payload_data(),
-                            helper_->payload_size(),
-                            helper_->fragmentation());
-
-  // The expected sizes are obtained by running a verified good implementation.
-  const size_t kExpectedSizes[] = {9, 9, 12, 11, 11, 11, 10};
-  const int kExpectedPart[] = {0, 0, 1, 2, 2, 2, 2};
-  const bool kExpectedFragStart[] = {true,  false, true, true,
-                                     false, false, false};
-  const size_t kExpectedNum = GTEST_ARRAY_SIZE_(kExpectedSizes);
-  CHECK_ARRAY_SIZE(kExpectedNum, kExpectedPart);
-  CHECK_ARRAY_SIZE(kExpectedNum, kExpectedFragStart);
-
-  helper_->GetAllPacketsAndCheck(&packetizer,
-                                 kExpectedSizes,
-                                 kExpectedPart,
-                                 kExpectedFragStart,
-                                 kExpectedNum);
-}
-
-// Verify that we get a minimal number of packets if the partition plus header
-// size fits exactly in the maximum packet size.
-// Test is disabled: https://code.google.com/p/webrtc/issues/detail?id=4019.
-TEST_F(RtpPacketizerVp8Test, DISABLED_TestStrictEqualTightPartitions) {
-  const size_t kSizeVector[] = {10, 10, 10};
-  const size_t kNumPartitions = GTEST_ARRAY_SIZE_(kSizeVector);
-  ASSERT_TRUE(Init(kSizeVector, kNumPartitions));
-
-  hdr_info_.pictureId = 200;  // > 0x7F should produce 2-byte PictureID.
-  const int kMaxSize = 14;
-  RtpPacketizerVp8 packetizer(hdr_info_, kMaxSize, kStrict);
-  packetizer.SetPayloadData(helper_->payload_data(), helper_->payload_size(),
-                            helper_->fragmentation());
-
-  // The expected sizes are obtained by running a verified good implementation.
-  const size_t kExpectedSizes[] = {14, 14, 14};
-  const int kExpectedPart[] = {0, 1, 2};
-  const bool kExpectedFragStart[] = {true, true, true};
-  const size_t kExpectedNum = GTEST_ARRAY_SIZE_(kExpectedSizes);
-  CHECK_ARRAY_SIZE(kExpectedNum, kExpectedPart);
-  CHECK_ARRAY_SIZE(kExpectedNum, kExpectedFragStart);
-
-  helper_->GetAllPacketsAndCheck(&packetizer, kExpectedSizes, kExpectedPart,
-                                 kExpectedFragStart, kExpectedNum);
-}
-
-TEST_F(RtpPacketizerVp8Test, TestAggregateMode) {
-  const size_t kSizeVector[] = {60, 10, 10};
-  const size_t kNumPartitions = GTEST_ARRAY_SIZE_(kSizeVector);
-  ASSERT_TRUE(Init(kSizeVector, kNumPartitions));
-
-  hdr_info_.pictureId = 20;  // <= 0x7F should produce 1-byte PictureID.
-  const size_t kMaxSize = 25;
-  RtpPacketizerVp8 packetizer(hdr_info_, kMaxSize, kAggregate);
-  packetizer.SetPayloadData(helper_->payload_data(),
-                            helper_->payload_size(),
-                            helper_->fragmentation());
-
-  // The expected sizes are obtained by running a verified good implementation.
-  const size_t kExpectedSizes[] = {23, 23, 23, 23};
-  const int kExpectedPart[] = {0, 0, 0, 1};
-  const bool kExpectedFragStart[] = {true, false, false, true};
-  const size_t kExpectedNum = GTEST_ARRAY_SIZE_(kExpectedSizes);
-  CHECK_ARRAY_SIZE(kExpectedNum, kExpectedPart);
-  CHECK_ARRAY_SIZE(kExpectedNum, kExpectedFragStart);
-
-  helper_->GetAllPacketsAndCheck(&packetizer,
-                                 kExpectedSizes,
-                                 kExpectedPart,
-                                 kExpectedFragStart,
-                                 kExpectedNum);
-}
-
-TEST_F(RtpPacketizerVp8Test, TestAggregateModeManyPartitions1) {
-  const size_t kSizeVector[] = {1600, 200, 200, 200, 200, 200, 200, 200, 200};
-  const size_t kNumPartitions = GTEST_ARRAY_SIZE_(kSizeVector);
-  ASSERT_TRUE(Init(kSizeVector, kNumPartitions));
-
-  hdr_info_.pictureId = 20;  // <= 0x7F should produce 1-byte PictureID.
-  const size_t kMaxSize = 1500;
-  RtpPacketizerVp8 packetizer(hdr_info_, kMaxSize, kAggregate);
-  packetizer.SetPayloadData(helper_->payload_data(),
-                            helper_->payload_size(),
-                            helper_->fragmentation());
-
-  // The expected sizes are obtained by running a verified good implementation.
-  const size_t kExpectedSizes[] = {803, 803, 803, 803};
-  const int kExpectedPart[] = {0, 0, 1, 5};
-  const bool kExpectedFragStart[] = {true, false, true, true};
-  const size_t kExpectedNum = GTEST_ARRAY_SIZE_(kExpectedSizes);
-  CHECK_ARRAY_SIZE(kExpectedNum, kExpectedPart);
-  CHECK_ARRAY_SIZE(kExpectedNum, kExpectedFragStart);
-
-  helper_->GetAllPacketsAndCheck(&packetizer,
-                                 kExpectedSizes,
-                                 kExpectedPart,
-                                 kExpectedFragStart,
-                                 kExpectedNum);
-}
-
-TEST_F(RtpPacketizerVp8Test, TestAggregateModeManyPartitions2) {
-  const size_t kSizeVector[] = {1599, 200, 200, 200, 1600, 200, 200, 200, 200};
-  const size_t kNumPartitions = GTEST_ARRAY_SIZE_(kSizeVector);
-  ASSERT_TRUE(Init(kSizeVector, kNumPartitions));
-
-  hdr_info_.pictureId = 20;  // <= 0x7F should produce 1-byte PictureID.
-  const size_t kMaxSize = 1500;
-  RtpPacketizerVp8 packetizer(hdr_info_, kMaxSize, kAggregate);
-  packetizer.SetPayloadData(helper_->payload_data(),
-                            helper_->payload_size(),
-                            helper_->fragmentation());
-
-  // The expected sizes are obtained by running a verified good implementation.
-  const size_t kExpectedSizes[] = {803, 802, 603, 803, 803, 803};
-  const int kExpectedPart[] = {0, 0, 1, 4, 4, 5};
-  const bool kExpectedFragStart[] = {true, false, true, true, false, true};
-  const size_t kExpectedNum = GTEST_ARRAY_SIZE_(kExpectedSizes);
-  CHECK_ARRAY_SIZE(kExpectedNum, kExpectedPart);
-  CHECK_ARRAY_SIZE(kExpectedNum, kExpectedFragStart);
-
-  helper_->GetAllPacketsAndCheck(&packetizer,
-                                 kExpectedSizes,
-                                 kExpectedPart,
-                                 kExpectedFragStart,
-                                 kExpectedNum);
-}
-
-TEST_F(RtpPacketizerVp8Test, TestAggregateModeTwoLargePartitions) {
-  const size_t kSizeVector[] = {1654, 2268};
-  const size_t kNumPartitions = GTEST_ARRAY_SIZE_(kSizeVector);
-  ASSERT_TRUE(Init(kSizeVector, kNumPartitions));
-
-  hdr_info_.pictureId = 20;  // <= 0x7F should produce 1-byte PictureID.
-  const size_t kMaxSize = 1460;
-  RtpPacketizerVp8 packetizer(hdr_info_, kMaxSize, kAggregate);
-  packetizer.SetPayloadData(helper_->payload_data(),
-                            helper_->payload_size(),
-                            helper_->fragmentation());
-
-  // The expected sizes are obtained by running a verified good implementation.
-  const size_t kExpectedSizes[] = {830, 830, 1137, 1137};
-  const int kExpectedPart[] = {0, 0, 1, 1};
-  const bool kExpectedFragStart[] = {true, false, true, false};
-  const size_t kExpectedNum = GTEST_ARRAY_SIZE_(kExpectedSizes);
-  CHECK_ARRAY_SIZE(kExpectedNum, kExpectedPart);
-  CHECK_ARRAY_SIZE(kExpectedNum, kExpectedFragStart);
-
-  helper_->GetAllPacketsAndCheck(&packetizer,
-                                 kExpectedSizes,
-                                 kExpectedPart,
-                                 kExpectedFragStart,
-                                 kExpectedNum);
-}
-
 // Verify that EqualSize mode is forced if fragmentation info is missing.
 TEST_F(RtpPacketizerVp8Test, TestEqualSizeModeFallback) {
   const size_t kSizeVector[] = {10, 10, 10};
   const size_t kNumPartitions = GTEST_ARRAY_SIZE_(kSizeVector);
   ASSERT_TRUE(Init(kSizeVector, kNumPartitions));
 
-  hdr_info_.pictureId = 200;   // > 0x7F should produce 2-byte PictureID
-  const size_t kMaxSize = 12;  // Small enough to produce 4 packets.
-  RtpPacketizerVp8 packetizer(hdr_info_, kMaxSize);
-  packetizer.SetPayloadData(
-      helper_->payload_data(), helper_->payload_size(), NULL);
+  hdr_info_.pictureId = 200;          // > 0x7F should produce 2-byte PictureID
+  const size_t kMaxPayloadSize = 12;  // Small enough to produce 4 packets.
+  RtpPacketizerVp8 packetizer(hdr_info_, kMaxPayloadSize, 0);
+  size_t num_packets = packetizer.SetPayloadData(
+      helper_->payload_data(), helper_->payload_size(), nullptr);
 
   // Expecting three full packets, and one with the remainder.
-  const size_t kExpectedSizes[] = {12, 11, 12, 11};
+  const size_t kExpectedSizes[] = {11, 11, 12, 12};
   const int kExpectedPart[] = {0, 0, 0, 0};  // Always 0 for equal size mode.
   // Frag start only true for first packet in equal size mode.
   const bool kExpectedFragStart[] = {true, false, false, false};
   const size_t kExpectedNum = GTEST_ARRAY_SIZE_(kExpectedSizes);
   CHECK_ARRAY_SIZE(kExpectedNum, kExpectedPart);
   CHECK_ARRAY_SIZE(kExpectedNum, kExpectedFragStart);
+  ASSERT_EQ(num_packets, kExpectedNum);
 
   helper_->set_sloppy_partitioning(true);
   helper_->GetAllPacketsAndCheck(&packetizer,
@@ -287,6 +130,37 @@ TEST_F(RtpPacketizerVp8Test, TestEqualSizeModeFallback) {
                                  kExpectedNum);
 }
 
+TEST_F(RtpPacketizerVp8Test, TestEqualSizeWithLastPacketReduction) {
+  const size_t kSizeVector[] = {30, 10, 3};
+  const size_t kNumPartitions = GTEST_ARRAY_SIZE_(kSizeVector);
+  ASSERT_TRUE(Init(kSizeVector, kNumPartitions));
+
+  hdr_info_.pictureId = 200;
+  const size_t kMaxPayloadSize = 15;  // Small enough to produce 5 packets.
+  const size_t kLastPacketReduction = 5;
+  RtpPacketizerVp8 packetizer(hdr_info_, kMaxPayloadSize, kLastPacketReduction);
+  size_t num_packets = packetizer.SetPayloadData(
+      helper_->payload_data(), helper_->payload_size(), nullptr);
+
+  // Calculated by hand. VP8 payload descriptors are 4 byte each. 5 packets is
+  // minimum possible to fit 43 payload bytes into packets with capacity of
+  // 15 - 4 = 11 and leave 5 free bytes in the last packet. All packets are
+  // almost equal in size, even last packet if counted with free space (which
+  // will be filled up the stack by extra long RTP header).
+  const size_t kExpectedSizes[] = {13, 13, 14, 14, 9};
+  const int kExpectedPart[] = {0, 0, 0, 0, 0};  // Always 0 for equal size mode.
+  // Frag start only true for first packet in equal size mode.
+  const bool kExpectedFragStart[] = {true, false, false, false, false};
+  const size_t kExpectedNum = GTEST_ARRAY_SIZE_(kExpectedSizes);
+  CHECK_ARRAY_SIZE(kExpectedNum, kExpectedPart);
+  CHECK_ARRAY_SIZE(kExpectedNum, kExpectedFragStart);
+  ASSERT_EQ(num_packets, kExpectedNum);
+
+  helper_->set_sloppy_partitioning(true);
+  helper_->GetAllPacketsAndCheck(&packetizer, kExpectedSizes, kExpectedPart,
+                                 kExpectedFragStart, kExpectedNum);
+}
+
 // Verify that non-reference bit is set. EqualSize mode fallback is expected.
 TEST_F(RtpPacketizerVp8Test, TestNonReferenceBit) {
   const size_t kSizeVector[] = {10, 10, 10};
@@ -294,10 +168,10 @@ TEST_F(RtpPacketizerVp8Test, TestNonReferenceBit) {
   ASSERT_TRUE(Init(kSizeVector, kNumPartitions));
 
   hdr_info_.nonReference = true;
-  const size_t kMaxSize = 25;  // Small enough to produce two packets.
-  RtpPacketizerVp8 packetizer(hdr_info_, kMaxSize);
-  packetizer.SetPayloadData(
-      helper_->payload_data(), helper_->payload_size(), NULL);
+  const size_t kMaxPayloadSize = 25;  // Small enough to produce two packets.
+  RtpPacketizerVp8 packetizer(hdr_info_, kMaxPayloadSize, 0);
+  size_t num_packets = packetizer.SetPayloadData(
+      helper_->payload_data(), helper_->payload_size(), nullptr);
 
   // EqualSize mode => First packet full; other not.
   const size_t kExpectedSizes[] = {16, 16};
@@ -307,6 +181,7 @@ TEST_F(RtpPacketizerVp8Test, TestNonReferenceBit) {
   const size_t kExpectedNum = GTEST_ARRAY_SIZE_(kExpectedSizes);
   CHECK_ARRAY_SIZE(kExpectedNum, kExpectedPart);
   CHECK_ARRAY_SIZE(kExpectedNum, kExpectedFragStart);
+  ASSERT_EQ(num_packets, kExpectedNum);
 
   helper_->set_sloppy_partitioning(true);
   helper_->GetAllPacketsAndCheck(&packetizer,
@@ -325,12 +200,12 @@ TEST_F(RtpPacketizerVp8Test, TestTl0PicIdxAndTID) {
   hdr_info_.tl0PicIdx = 117;
   hdr_info_.temporalIdx = 2;
   hdr_info_.layerSync = true;
-  // kMaxSize is only limited by allocated buffer size.
-  const size_t kMaxSize = helper_->buffer_size();
-  RtpPacketizerVp8 packetizer(hdr_info_, kMaxSize, kAggregate);
-  packetizer.SetPayloadData(helper_->payload_data(),
-                            helper_->payload_size(),
-                            helper_->fragmentation());
+  // kMaxPayloadSize is only limited by allocated buffer size.
+  const size_t kMaxPayloadSize = helper_->buffer_size();
+  RtpPacketizerVp8 packetizer(hdr_info_, kMaxPayloadSize, 0);
+  size_t num_packets = packetizer.SetPayloadData(helper_->payload_data(),
+                                                 helper_->payload_size(),
+                                                 helper_->fragmentation());
 
   // Expect one single packet of payload_size() + 4 bytes header.
   const size_t kExpectedSizes[1] = {helper_->payload_size() + 4};
@@ -339,6 +214,7 @@ TEST_F(RtpPacketizerVp8Test, TestTl0PicIdxAndTID) {
   const size_t kExpectedNum = GTEST_ARRAY_SIZE_(kExpectedSizes);
   CHECK_ARRAY_SIZE(kExpectedNum, kExpectedPart);
   CHECK_ARRAY_SIZE(kExpectedNum, kExpectedFragStart);
+  ASSERT_EQ(num_packets, kExpectedNum);
 
   helper_->GetAllPacketsAndCheck(&packetizer,
                                  kExpectedSizes,
@@ -354,12 +230,12 @@ TEST_F(RtpPacketizerVp8Test, TestKeyIdx) {
   ASSERT_TRUE(Init(kSizeVector, kNumPartitions));
 
   hdr_info_.keyIdx = 17;
-  // kMaxSize is only limited by allocated buffer size.
-  const size_t kMaxSize = helper_->buffer_size();
-  RtpPacketizerVp8 packetizer(hdr_info_, kMaxSize, kAggregate);
-  packetizer.SetPayloadData(helper_->payload_data(),
-                            helper_->payload_size(),
-                            helper_->fragmentation());
+  // kMaxPayloadSize is only limited by allocated buffer size.
+  const size_t kMaxPayloadSize = helper_->buffer_size();
+  RtpPacketizerVp8 packetizer(hdr_info_, kMaxPayloadSize, 0);
+  size_t num_packets = packetizer.SetPayloadData(helper_->payload_data(),
+                                                 helper_->payload_size(),
+                                                 helper_->fragmentation());
 
   // Expect one single packet of payload_size() + 3 bytes header.
   const size_t kExpectedSizes[1] = {helper_->payload_size() + 3};
@@ -368,6 +244,7 @@ TEST_F(RtpPacketizerVp8Test, TestKeyIdx) {
   const size_t kExpectedNum = GTEST_ARRAY_SIZE_(kExpectedSizes);
   CHECK_ARRAY_SIZE(kExpectedNum, kExpectedPart);
   CHECK_ARRAY_SIZE(kExpectedNum, kExpectedFragStart);
+  ASSERT_EQ(num_packets, kExpectedNum);
 
   helper_->GetAllPacketsAndCheck(&packetizer,
                                  kExpectedSizes,
@@ -384,12 +261,12 @@ TEST_F(RtpPacketizerVp8Test, TestTIDAndKeyIdx) {
 
   hdr_info_.temporalIdx = 1;
   hdr_info_.keyIdx = 5;
-  // kMaxSize is only limited by allocated buffer size.
-  const size_t kMaxSize = helper_->buffer_size();
-  RtpPacketizerVp8 packetizer(hdr_info_, kMaxSize, kAggregate);
-  packetizer.SetPayloadData(helper_->payload_data(),
-                            helper_->payload_size(),
-                            helper_->fragmentation());
+  // kMaxPayloadSize is only limited by allocated buffer size.
+  const size_t kMaxPayloadSize = helper_->buffer_size();
+  RtpPacketizerVp8 packetizer(hdr_info_, kMaxPayloadSize, 0);
+  size_t num_packets = packetizer.SetPayloadData(helper_->payload_data(),
+                                                 helper_->payload_size(),
+                                                 helper_->fragmentation());
 
   // Expect one single packet of payload_size() + 3 bytes header.
   const size_t kExpectedSizes[1] = {helper_->payload_size() + 3};
@@ -398,6 +275,7 @@ TEST_F(RtpPacketizerVp8Test, TestTIDAndKeyIdx) {
   const size_t kExpectedNum = GTEST_ARRAY_SIZE_(kExpectedSizes);
   CHECK_ARRAY_SIZE(kExpectedNum, kExpectedPart);
   CHECK_ARRAY_SIZE(kExpectedNum, kExpectedFragStart);
+  ASSERT_EQ(num_packets, kExpectedNum);
 
   helper_->GetAllPacketsAndCheck(&packetizer,
                                  kExpectedSizes,
@@ -421,7 +299,7 @@ class RtpDepacketizerVp8Test : public ::testing::Test {
                 ::testing::ElementsAreArray(data, length));
   }
 
-  rtc::scoped_ptr<RtpDepacketizer> depacketizer_;
+  std::unique_ptr<RtpDepacketizer> depacketizer_;
 };
 
 TEST_F(RtpDepacketizerVp8Test, BasicHeader) {
@@ -434,6 +312,7 @@ TEST_F(RtpDepacketizerVp8Test, BasicHeader) {
   ASSERT_TRUE(depacketizer_->Parse(&payload, packet, sizeof(packet)));
   ExpectPacket(
       &payload, packet + kHeaderLength, sizeof(packet) - kHeaderLength);
+
   EXPECT_EQ(kVideoFrameDelta, payload.frame_type);
   EXPECT_EQ(kRtpVideoVp8, payload.type.Video.codec);
   VerifyBasicHeader(&payload.type, 0, 1, 4);
@@ -566,7 +445,7 @@ TEST_F(RtpDepacketizerVp8Test, TooShortHeader) {
 TEST_F(RtpDepacketizerVp8Test, TestWithPacketizer) {
   const uint8_t kHeaderLength = 5;
   uint8_t data[10] = {0};
-  uint8_t packet[20] = {0};
+  RtpPacketToSend packet(kNoExtensions);
   RTPVideoHeaderVP8 input_header;
   input_header.nonReference = true;
   input_header.pictureId = 300;
@@ -574,17 +453,17 @@ TEST_F(RtpDepacketizerVp8Test, TestWithPacketizer) {
   input_header.layerSync = false;
   input_header.tl0PicIdx = kNoTl0PicIdx;  // Disable.
   input_header.keyIdx = 31;
-  RtpPacketizerVp8 packetizer(input_header, 20);
-  packetizer.SetPayloadData(data, 10, NULL);
-  bool last;
-  size_t send_bytes;
-  ASSERT_TRUE(packetizer.NextPacket(packet, &send_bytes, &last));
-  ASSERT_TRUE(last);
-  RtpDepacketizer::ParsedPayload payload;
+  RtpPacketizerVp8 packetizer(input_header, 20, 0);
+  EXPECT_EQ(packetizer.SetPayloadData(data, 10, NULL), 1u);
+  ASSERT_TRUE(packetizer.NextPacket(&packet));
+  EXPECT_TRUE(packet.Marker());
 
-  ASSERT_TRUE(depacketizer_->Parse(&payload, packet, sizeof(packet)));
-  ExpectPacket(
-      &payload, packet + kHeaderLength, sizeof(packet) - kHeaderLength);
+  auto rtp_payload = packet.payload();
+  RtpDepacketizer::ParsedPayload payload;
+  ASSERT_TRUE(
+      depacketizer_->Parse(&payload, rtp_payload.data(), rtp_payload.size()));
+  auto vp8_payload = rtp_payload.subview(kHeaderLength);
+  ExpectPacket(&payload, vp8_payload.data(), vp8_payload.size());
   EXPECT_EQ(kVideoFrameKey, payload.frame_type);
   EXPECT_EQ(kRtpVideoVp8, payload.type.Video.codec);
   VerifyBasicHeader(&payload.type, 1, 1, 0);

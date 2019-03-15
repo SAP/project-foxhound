@@ -8,26 +8,25 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_NETEQ_MOCK_MOCK_EXTERNAL_DECODER_PCM16B_H_
-#define WEBRTC_MODULES_AUDIO_CODING_NETEQ_MOCK_MOCK_EXTERNAL_DECODER_PCM16B_H_
+#ifndef MODULES_AUDIO_CODING_NETEQ_MOCK_MOCK_EXTERNAL_DECODER_PCM16B_H_
+#define MODULES_AUDIO_CODING_NETEQ_MOCK_MOCK_EXTERNAL_DECODER_PCM16B_H_
 
-#include "webrtc/modules/audio_coding/codecs/audio_decoder.h"
-
-#include "testing/gmock/include/gmock/gmock.h"
-#include "webrtc/base/constructormagic.h"
-#include "webrtc/modules/audio_coding/codecs/pcm16b/pcm16b.h"
-#include "webrtc/typedefs.h"
+#include "api/audio_codecs/audio_decoder.h"
+#include "modules/audio_coding/codecs/pcm16b/pcm16b.h"
+#include "rtc_base/constructormagic.h"
+#include "test/gmock.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
 using ::testing::_;
 using ::testing::Invoke;
 
-// Implement an external version of the PCM16b decoder. This is a copy from
-// audio_decoder_impl.{cc, h}.
+// Implement an external version of the PCM16b decoder.
 class ExternalPcm16B : public AudioDecoder {
  public:
-  ExternalPcm16B() {}
+  explicit ExternalPcm16B(int sample_rate_hz)
+      : sample_rate_hz_(sample_rate_hz) {}
   void Reset() override {}
 
   int DecodeInternal(const uint8_t* encoded,
@@ -35,21 +34,24 @@ class ExternalPcm16B : public AudioDecoder {
                      int sample_rate_hz,
                      int16_t* decoded,
                      SpeechType* speech_type) override {
+    EXPECT_EQ(sample_rate_hz_, sample_rate_hz);
     size_t ret = WebRtcPcm16b_Decode(encoded, encoded_len, decoded);
     *speech_type = ConvertSpeechType(1);
     return static_cast<int>(ret);
   }
+  int SampleRateHz() const override { return sample_rate_hz_; }
   size_t Channels() const override { return 1; }
 
  private:
+  const int sample_rate_hz_;
   RTC_DISALLOW_COPY_AND_ASSIGN(ExternalPcm16B);
 };
 
 // Create a mock of ExternalPcm16B which delegates all calls to the real object.
 // The reason is that we can then track that the correct calls are being made.
-class MockExternalPcm16B : public ExternalPcm16B {
+class MockExternalPcm16B : public AudioDecoder {
  public:
-  MockExternalPcm16B() {
+  explicit MockExternalPcm16B(int sample_rate_hz) : real_(sample_rate_hz) {
     // By default, all calls are delegated to the real object.
     ON_CALL(*this, DecodeInternal(_, _, _, _, _))
         .WillByDefault(Invoke(&real_, &ExternalPcm16B::DecodeInternal));
@@ -85,9 +87,12 @@ class MockExternalPcm16B : public ExternalPcm16B {
   MOCK_METHOD0(ErrorCode,
       int());
 
+  int SampleRateHz() const /* override */ { return real_.SampleRateHz(); }
+  size_t Channels() const /* override */ { return real_.Channels(); }
+
  private:
   ExternalPcm16B real_;
 };
 
 }  // namespace webrtc
-#endif  // WEBRTC_MODULES_AUDIO_CODING_NETEQ_MOCK_MOCK_EXTERNAL_DECODER_PCM16B_H_
+#endif  // MODULES_AUDIO_CODING_NETEQ_MOCK_MOCK_EXTERNAL_DECODER_PCM16B_H_

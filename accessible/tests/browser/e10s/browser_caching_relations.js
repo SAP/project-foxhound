@@ -2,13 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-'use strict';
+"use strict";
 
-/* global RELATION_LABELLED_BY, RELATION_LABEL_FOR, RELATION_DESCRIBED_BY,
-          RELATION_DESCRIPTION_FOR, RELATION_CONTROLLER_FOR,
-          RELATION_CONTROLLED_BY, RELATION_FLOWS_TO, RELATION_FLOWS_FROM */
-
-loadScripts({ name: 'relations.js', dir: MOCHITESTS_DIR });
+/* import-globals-from ../../mochitest/relations.js */
+loadScripts({ name: "relations.js", dir: MOCHITESTS_DIR });
 
 /**
  * A test specification that has the following format:
@@ -19,16 +16,16 @@ loadScripts({ name: 'relations.js', dir: MOCHITESTS_DIR });
  * ]
  */
 const attrRelationsSpec = [
-  ['aria-labelledby', RELATION_LABELLED_BY, RELATION_LABEL_FOR],
-  ['aria-describedby', RELATION_DESCRIBED_BY, RELATION_DESCRIPTION_FOR],
-  ['aria-controls', RELATION_CONTROLLER_FOR, RELATION_CONTROLLED_BY],
-  ['aria-flowto', RELATION_FLOWS_TO, RELATION_FLOWS_FROM]
+  ["aria-labelledby", RELATION_LABELLED_BY, RELATION_LABEL_FOR],
+  ["aria-describedby", RELATION_DESCRIBED_BY, RELATION_DESCRIPTION_FOR],
+  ["aria-controls", RELATION_CONTROLLER_FOR, RELATION_CONTROLLED_BY],
+  ["aria-flowto", RELATION_FLOWS_TO, RELATION_FLOWS_FROM]
 ];
 
-function* testRelated(browser, accDoc, attr, hostRelation, dependantRelation) {
-  let host = findAccessibleChildByID(accDoc, 'host');
-  let dependant1 = findAccessibleChildByID(accDoc, 'dependant1');
-  let dependant2 = findAccessibleChildByID(accDoc, 'dependant2');
+async function testRelated(browser, accDoc, attr, hostRelation, dependantRelation) {
+  let host = findAccessibleChildByID(accDoc, "host");
+  let dependant1 = findAccessibleChildByID(accDoc, "dependant1");
+  let dependant2 = findAccessibleChildByID(accDoc, "dependant2");
 
   /**
    * Test data has the format of:
@@ -40,18 +37,18 @@ function* testRelated(browser, accDoc, attr, hostRelation, dependantRelation) {
    * }
    */
   const tests = [{
-    desc: 'No attribute',
+    desc: "No attribute",
     expected: [ null, null, null ]
   }, {
-    desc: 'Set attribute',
-    attrs: [{ key: attr, value: 'dependant1' }],
+    desc: "Set attribute",
+    attrs: [{ key: attr, value: "dependant1" }],
     expected: [ host, null, dependant1 ]
   }, {
-    desc: 'Change attribute',
-    attrs: [{ key: attr, value: 'dependant2' }],
+    desc: "Change attribute",
+    attrs: [{ key: attr, value: "dependant2" }],
     expected: [ null, host, dependant2 ]
   }, {
-    desc: 'Remove attribute',
+    desc: "Remove attribute",
     attrs: [{ key: attr }],
     expected: [ null, null, null ]
   }];
@@ -61,7 +58,7 @@ function* testRelated(browser, accDoc, attr, hostRelation, dependantRelation) {
 
     if (attrs) {
       for (let { key, value } of attrs) {
-        yield invokeSetAttribute(browser, 'host', key, value);
+        await invokeSetAttribute(browser, "host", key, value);
       }
     }
 
@@ -78,9 +75,9 @@ addAccessibleTask(`
   <div id="dependant1">label</div>
   <div id="dependant2">label2</div>
   <div role="checkbox" id="host"></div>`,
-  function* (browser, accDoc) {
+  async function(browser, accDoc) {
     for (let spec of attrRelationsSpec) {
-      yield testRelated(browser, accDoc, ...spec);
+      await testRelated(browser, accDoc, ...spec);
     }
   }
 );

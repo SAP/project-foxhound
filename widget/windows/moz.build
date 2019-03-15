@@ -4,6 +4,12 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files("**"):
+    BUG_COMPONENT = ("Core", "Widget: Win32")
+
+with Files("*CompositorWidget*"):
+    BUG_COMPONENT = ("Core", "Graphics")
+
 TEST_DIRS += ['tests']
 
 EXPORTS += [
@@ -12,12 +18,18 @@ EXPORTS += [
     'WinUtils.h',
 ]
 
+EXPORTS.mozilla += [
+    'WinHeaderOnlyUtils.h',
+]
+
 EXPORTS.mozilla.widget += [
     'AudioSession.h',
     'CompositorWidgetChild.h',
     'CompositorWidgetParent.h',
     'InProcessWinCompositorWidget.h',
     'WinCompositorWidget.h',
+    'WinCompositorWindowThread.h',
+    'WindowsEMF.h',
     'WinMessages.h',
     'WinModifierKeyState.h',
     'WinNativeEventData.h',
@@ -34,6 +46,7 @@ UNIFIED_SOURCES += [
     'InProcessWinCompositorWidget.cpp',
     'JumpListItem.cpp',
     'KeyboardLayout.cpp',
+    'LSPAnnotator.cpp',
     'nsAppShell.cpp',
     'nsClipboard.cpp',
     'nsColorPicker.cpp',
@@ -41,13 +54,10 @@ UNIFIED_SOURCES += [
     'nsDataObjCollection.cpp',
     'nsDragService.cpp',
     'nsIdleServiceWin.cpp',
-    'nsImageClipboard.cpp',
     'nsLookAndFeel.cpp',
     'nsNativeDragSource.cpp',
     'nsNativeDragTarget.cpp',
     'nsNativeThemeWin.cpp',
-    'nsScreenManagerWin.cpp',
-    'nsScreenWin.cpp',
     'nsSound.cpp',
     'nsToolkit.cpp',
     'nsUXThemeData.cpp',
@@ -56,11 +66,13 @@ UNIFIED_SOURCES += [
     'nsWindowDbg.cpp',
     'nsWindowGfx.cpp',
     'nsWinGesture.cpp',
+    'ScreenHelperWin.cpp',
     'TaskbarPreview.cpp',
     'TaskbarPreviewButton.cpp',
     'TaskbarTabPreview.cpp',
     'TaskbarWindowPreview.cpp',
     'WidgetTraceEvent.cpp',
+    'WinCompositorWindowThread.cpp',
     'WindowHook.cpp',
     'WinIMEHandler.cpp',
     'WinPointerEvents.cpp',
@@ -80,16 +92,23 @@ SOURCES += [
     'WinMouseScrollHandler.cpp',
 ]
 
-if CONFIG['MOZ_CRASHREPORTER']:
-    UNIFIED_SOURCES += [
-        'LSPAnnotator.cpp',
-    ]
+# Needs INITGUID and we don't allow INITGUID in unified sources since bug 970429.
+SOURCES += [
+    'InputDeviceUtils.cpp',
+]
 
 if CONFIG['NS_PRINTING']:
     UNIFIED_SOURCES += [
         'nsDeviceContextSpecWin.cpp',
-        'nsPrintOptionsWin.cpp',
+        'nsPrintDialogUtil.cpp',
+        'nsPrintDialogWin.cpp',
+        'nsPrintSettingsServiceWin.cpp',
         'nsPrintSettingsWin.cpp',
+    ]
+
+if CONFIG['MOZ_ENABLE_SKIA_PDF']:
+    UNIFIED_SOURCES += [
+        'WindowsEMF.cpp',
     ]
 
 if CONFIG['NS_ENABLE_TSF']:
@@ -101,11 +120,20 @@ include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
 
+if CONFIG['MOZ_ENABLE_SKIA_PDF']:
+  LOCAL_INCLUDES += CONFIG['SKIA_INCLUDES']
+  LOCAL_INCLUDES += [
+    '/gfx/skia/skia/include/config',
+    '/gfx/skia/skia/include/core',
+  ]
+
 LOCAL_INCLUDES += [
+    '/layout/forms',
     '/layout/generic',
     '/layout/xul',
     '/toolkit/xre',
     '/widget',
+    '/widget/headless',
     '/xpcom/base',
 ]
 
@@ -122,3 +150,16 @@ CXXFLAGS += CONFIG['MOZ_CAIRO_CFLAGS']
 OS_LIBS += [
     'rpcrt4',
 ]
+
+if CONFIG['CC_TYPE'] in ('msvc', 'clang-cl'):
+    SOURCES += [
+        'ToastNotification.cpp',
+        'ToastNotificationHandler.cpp',
+    ]
+    # C5038: Suppress initializer list order warnings from wrl.h
+    SOURCES['ToastNotification.cpp'].flags += ['-wd5038']
+    SOURCES['ToastNotificationHandler.cpp'].flags += ['-wd5038']
+    SOURCES['WindowsUIUtils.cpp'].flags += ['-wd5038']
+
+if CONFIG['CC_TYPE'] == 'clang-cl':
+    AllowCompilerWarnings()  # workaround for bug 1090497

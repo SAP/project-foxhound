@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,29 +12,41 @@
 
 #include "nsCOMPtr.h"
 #include "nsITimer.h"
+#include "nsString.h"
 
 #define INITAL_REPEAT_DELAY 250
 
 #ifdef XP_MACOSX
-#define REPEAT_DELAY        25
+#  define REPEAT_DELAY 25
 #else
-#define REPEAT_DELAY        50
+#  define REPEAT_DELAY 50
 #endif
 
 class nsITimer;
 
-class nsRepeatService final : public nsITimerCallback
-{
-public:
+namespace mozilla {
+namespace dom {
+class Document;
+}
+}  // namespace mozilla
 
-  typedef void (* Callback)(void* aData);
-    
-  NS_DECL_NSITIMERCALLBACK
+class nsRepeatService final {
+ public:
+  typedef void (*Callback)(void* aData);
+
+  ~nsRepeatService();
 
   // Start dispatching timer events to the callback. There is no memory
   // management of aData here; it is the caller's responsibility to call
   // Stop() before aData's memory is released.
-  void Start(Callback aCallback, void* aData,
+  //
+  // aCallbackName is the label of the callback, used to pass to
+  // InitWithNamedCallbackFunc.
+  //
+  // aDocument is used to get the event target in Start(). We need an event
+  // target to init mRepeatTimer.
+  void Start(Callback aCallback, void* aCallbackData,
+             mozilla::dom::Document* aDocument, const nsACString& aCallbackName,
              uint32_t aInitialDelay = INITAL_REPEAT_DELAY);
   // Stop dispatching timer events to the callback. If the repeat service
   // is not currently configured with the given callback and data, this
@@ -43,18 +56,18 @@ public:
   static nsRepeatService* GetInstance();
   static void Shutdown();
 
-  NS_DECL_ISUPPORTS
-
-protected:
+ protected:
   nsRepeatService();
-  virtual ~nsRepeatService();
 
-private:
-  Callback           mCallback;
-  void*              mCallbackData;
+ private:
+  // helper function to initialize callback function to mRepeatTimer
+  void InitTimerCallback(uint32_t aInitialDelay);
+
+  Callback mCallback;
+  void* mCallbackData;
+  nsCString mCallbackName;
   nsCOMPtr<nsITimer> mRepeatTimer;
-  static nsRepeatService* gInstance;
 
-}; // class nsRepeatService
+};  // class nsRepeatService
 
 #endif

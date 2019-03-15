@@ -8,12 +8,15 @@
 #define MOZ_EMBEDDED_LIBPNG
 
 /* Limit image dimensions (bug #251381, #591822, #967656, and #1283961) */
+#define PNG_USER_LIMITS_SUPPORTED
 #ifndef MOZ_PNG_MAX_WIDTH
 #  define MOZ_PNG_MAX_WIDTH 0x7fffffffL /* Unlimited */
 #endif
 #ifndef MOZ_PNG_MAX_HEIGHT
 #  define MOZ_PNG_MAX_HEIGHT 0x7fffffffL /* Unlimited */
 #endif
+/* but allow nsPNGDecoder to override the limits (bug #1368407) */
+#define PNG_SET_USER_LIMITS_SUPPORTED
 
 #define PNG_API_RULE 0
 #define PNG_COST_SHIFT 3
@@ -66,6 +69,12 @@
 #  define PNG_INTEL_SSE_OPT 0
 #endif
 
+#ifdef MOZ_PNG_USE_POWERPC
+#  undef PNG_POWERPC_VSX_OPT /* Let libpng decide */
+#else
+#  define PNG_POWERPC_VSX_OPT 0 /* Do not use VSX optimization */
+#endif
+
 #define PNG_READ_SUPPORTED
 #define PNG_PROGRESSIVE_READ_SUPPORTED
 #define PNG_READ_APNG_SUPPORTED
@@ -85,27 +94,13 @@
 #define PNG_READ_SCALE_16_TO_8_SUPPORTED
 #define PNG_READ_TRANSFORMS_SUPPORTED
 
-/* necessary for freetype color bitmap support (Android & B2G)
-   and boot animation code (Gonk) */
-#if defined(ANDROID) || defined(FT_CONFIG_OPTION_USE_PNG)
+/* necessary for freetype color bitmap support */
+#if defined(FT_CONFIG_OPTION_USE_PNG)
 #define PNG_READ_PACK_SUPPORTED
 #define PNG_READ_FILLER_SUPPORTED
 #define PNG_READ_STRIP_16_TO_8_SUPPORTED
 #define PNG_READ_USER_TRANSFORM_SUPPORTED
 #define PNG_SEQUENTIAL_READ_SUPPORTED
-#endif
-
-/* necessary for boot animation code (Gonk) */
-#ifdef MOZ_WIDGET_GONK
-#define PNG_bKGD_SUPPORTED
-#define PNG_UNKNOWN_CHUNKS_SUPPORTED
-#define PNG_SET_UNKNOWN_CHUNKS_SUPPORTED
-#define PNG_HANDLE_AS_UNKNOWN_SUPPORTED
-#define PNG_EASY_ACCESS_SUPPORTED
-#define PNG_READ_bKGD_SUPPORTED
-#define PNG_READ_BGR_SUPPORTED
-#define PNG_READ_GRAY_TO_RGB_SUPPORTED
-#define PNG_READ_STRIP_ALPHA_SUPPORTED
 #endif
 
 #define PNG_WRITE_SUPPORTED
@@ -583,6 +578,8 @@
 #define png_have_hwcap                            MOZ_PNG_have_hwcap
 #define png_init_filter_functions                 MOZ_PNG_init_filt_func
 #define png_init_filter_functions_neon            MOZ_PNG_init_filt_func_neon
+#define png_init_filter_functions_sse2            MOZ_PNG_init_filt_func_sse2
+#define png_init_filter_functions_vsx             MOZ_PNG_init_filt_func_vsx
 #define png_init_filter_heuristics                MOZ_PNG_init_filt_heur
 #define png_init_palette_transformations          MOZ_PNG_init_palette_transf
 #define png_init_rgb_transformations              MOZ_PNG_init_rgb_transf
@@ -594,18 +591,35 @@
 #define png_process_data_pause                    MOZ_PNG_process_data_pause
 #define png_process_data_skip                     MOZ_PNG_process_data_skip
 #define png_product2                              MOZ_PNG_product2
+#define png_read_filter_row_sub                   MOZ_PNG_read_filt_row_s
+#define png_read_filter_row_up                    MOZ_PNG_read_filt_row_up
 #define png_read_filter_row_avg                   MOZ_PNG_read_filt_row_a
-#define png_read_filter_row_avg3_neon             MOZ_PNG_read_filt_row_a3_neon
-#define png_read_filter_row_avg4_neon             MOZ_PNG_read_filt_row_a4_neon
 #define png_read_filter_row_paeth_1byte_pixel     MOZ_PNG_read_filt_row_p_1b_px
 #define png_read_filter_row_paeth_multibyte_pixel MOZ_PNG_read_filt_row_p_mb_px
-#define png_read_filter_row_paeth3_neon           MOZ_PNG_read_filt_row_p3_neon
-#define png_read_filter_row_paeth4_neon           MOZ_PNG_read_filt_row_p4_neon
-#define png_read_filter_row_sub                   MOZ_PNG_read_filt_row_s
+
 #define png_read_filter_row_sub3_neon             MOZ_PNG_read_filt_row_s3_neon
 #define png_read_filter_row_sub4_neon             MOZ_PNG_read_filt_row_s4_neon
-#define png_read_filter_row_up                    MOZ_PNG_read_filt_row_up
 #define png_read_filter_row_up_neon               MOZ_PNG_read_filt_row_up_neon
+#define png_read_filter_row_avg3_neon             MOZ_PNG_read_filt_row_a3_neon
+#define png_read_filter_row_avg4_neon             MOZ_PNG_read_filt_row_a4_neon
+#define png_read_filter_row_paeth3_neon           MOZ_PNG_read_filt_row_p3_neon
+#define png_read_filter_row_paeth4_neon           MOZ_PNG_read_filt_row_p4_neon
+
+#define png_read_filter_row_sub3_sse2             MOZ_PNG_read_filt_row_s3_sse2
+#define png_read_filter_row_sub4_sse2             MOZ_PNG_read_filt_row_s4_sse2
+#define png_read_filter_row_avg3_sse2             MOZ_PNG_read_filt_row_a3_sse2
+#define png_read_filter_row_avg4_sse2             MOZ_PNG_read_filt_row_a4_sse2
+#define png_read_filter_row_paeth3_sse2           MOZ_PNG_read_filt_row_p3_sse2
+#define png_read_filter_row_paeth4_sse2           MOZ_PNG_read_filt_row_p4_sse2
+
+#define png_read_filter_row_sub3_vsx              MOZ_PNG_read_filt_row_s3_vsx
+#define png_read_filter_row_sub4_vsx              MOZ_PNG_read_filt_row_s4_vsx
+#define png_read_filter_row_up_vsx                MOZ_PNG_read_filt_row_up_vsx
+#define png_read_filter_row_avg3_vsx              MOZ_PNG_read_filt_row_a3_vsx
+#define png_read_filter_row_avg4_vsx              MOZ_PNG_read_filt_row_a4_vsx
+#define png_read_filter_row_paeth3_vsx            MOZ_PNG_read_filt_row_p3_vsx
+#define png_read_filter_row_paeth4_vsx            MOZ_PNG_read_filt_row_p4_vsx
+
 #define png_reciprocal                            MOZ_PNG_reciprocal
 #define png_reciprocal2                           MOZ_PNG_reciprocal2
 #define png_reset_filter_heuristics               MOZ_PNG_reset_filt_heur

@@ -16,140 +16,6 @@
 #include "mozilla/RefPtr.h"
 
 /**
- * Helper class wrapping z_stream to avoid malloc() calls during
- * inflate. Do not use for deflate.
- * inflateInit allocates two buffers:
- * - one for its internal state, which is "approximately 10K bytes" according
- *   to inflate.h from zlib.
- * - one for the compression window, which depends on the window size passed
- *   to inflateInit2, but is never greater than 32K (1 << MAX_WBITS).
- * Those buffers are created at instantiation time instead of when calling
- * inflateInit2. When inflateInit2 is called, it will call zxx_stream::Alloc
- * to get both these buffers. zxx_stream::Alloc will choose one of the
- * pre-allocated buffers depending on the requested size.
- */
-class zxx_stream: public z_stream
-{
-public:
-  /* Forward declaration */
-  class StaticAllocator;
-
-  explicit zxx_stream(StaticAllocator *allocator_=nullptr)
-  : allocator(allocator_)
-  {
-    memset(this, 0, sizeof(z_stream));
-    zalloc = Alloc;
-    zfree = Free;
-    opaque = this;
-  }
-
-private:
-  static void *Alloc(void *data, uInt items, uInt size)
-  {
-    zxx_stream *zStream = reinterpret_cast<zxx_stream *>(data);
-    if (zStream->allocator) {
-      return zStream->allocator->Alloc(items, size);
-    }
-    size_t buf_size = items * size;
-    return ::operator new(buf_size);
-  }
-
-  static void Free(void *data, void *ptr)
-  {
-    zxx_stream *zStream = reinterpret_cast<zxx_stream *>(data);
-    if (zStream->allocator) {
-      zStream->allocator->Free(ptr);
-    } else {
-      ::operator delete(ptr);
-    }
-  }
-
-  /**
-   * Helper class for each buffer in StaticAllocator.
-   */
-  template <size_t Size>
-  class ZStreamBuf
-  {
-  public:
-    ZStreamBuf() : inUse(false) { }
-
-    bool get(char*& out)
-    {
-      if (!inUse) {
-        inUse = true;
-        out = buf;
-        return true;
-      } else {
-        return false;
-      }
-    }
-
-    void Release()
-    {
-      memset(buf, 0, Size);
-      inUse = false;
-    }
-
-    bool Equals(const void *other) { return other == buf; }
-
-    static const size_t size = Size;
-
-  private:
-    char buf[Size];
-    bool inUse;
-  };
-
-public:
-  /**
-   * Special allocator that uses static buffers to allocate from.
-   */
-  class StaticAllocator
-  {
-  public:
-    void *Alloc(uInt items, uInt size)
-    {
-      if (items == 1 && size <= stateBuf1.size) {
-        char* res = nullptr;
-        if (stateBuf1.get(res) || stateBuf2.get(res)) {
-          return res;
-        }
-        MOZ_CRASH("ZStreamBuf already in use");
-      } else if (items * size == windowBuf1.size) {
-        char* res = nullptr;
-        if (windowBuf1.get(res) || windowBuf2.get(res)) {
-          return res;
-        }
-        MOZ_CRASH("ZStreamBuf already in use");
-      } else {
-        MOZ_CRASH("No ZStreamBuf for allocation");
-      }
-    }
-
-    void Free(void *ptr)
-    {
-      if (stateBuf1.Equals(ptr)) {
-        stateBuf1.Release();
-      } else if (stateBuf2.Equals(ptr)) {
-        stateBuf2.Release();
-      }else if (windowBuf1.Equals(ptr)) {
-        windowBuf1.Release();
-      } else if (windowBuf2.Equals(ptr)) {
-        windowBuf2.Release();
-      } else {
-        MOZ_CRASH("Pointer doesn't match a ZStreamBuf");
-      }
-    }
-
-    // 0x3000 is an arbitrary size above 10K.
-    ZStreamBuf<0x3000> stateBuf1, stateBuf2;
-    ZStreamBuf<1 << MAX_WBITS> windowBuf1, windowBuf2;
-  };
-
-private:
-  StaticAllocator *allocator;
-};
-
-/**
  * Forward declaration
  */
 class ZipCollection;
@@ -163,9 +29,8 @@ class ZipCollection;
  * libraries from Zip archives, there is no interest in making this code
  * safe, since the libraries could contain malicious code anyways.
  */
-class Zip: public mozilla::external::AtomicRefCounted<Zip>
-{
-public:
+class Zip : public mozilla::external::AtomicRefCounted<Zip> {
+ public:
   MOZ_DECLARE_REFCOUNTED_TYPENAME(Zip)
   /**
    * Create a Zip instance for the given file name. Returns nullptr in case
@@ -180,16 +45,16 @@ public:
     return Create(nullptr, buffer, size);
   }
 
-private:
-  static already_AddRefed<Zip> Create(const char *filename,
-                                           void *buffer, size_t size);
+ private:
+  static already_AddRefed<Zip> Create(const char *filename, void *buffer,
+                                      size_t size);
 
   /**
    * Private constructor
    */
   Zip(const char *filename, void *buffer, size_t size);
 
-public:
+ public:
   /**
    * Destructor
    */
@@ -198,23 +63,22 @@ public:
   /**
    * Class used to access Zip archive item streams
    */
-  class Stream
-  {
-  public:
+  class Stream {
+   public:
     /**
      * Stream types
      */
-    enum Type {
-      STORE = 0,
-      DEFLATE = 8
-    };
+    enum Type { STORE = 0, DEFLATE = 8 };
 
     /**
      * Constructor
      */
-    Stream(): compressedBuf(nullptr), compressedSize(0), uncompressedSize(0)
-            , CRC32(0)
-            , type(STORE) { }
+    Stream()
+        : compressedBuf(nullptr),
+          compressedSize(0),
+          uncompressedSize(0),
+          CRC32(0),
+          type(STORE) {}
 
     /**
      * Getters
@@ -226,22 +90,24 @@ public:
     Type GetType() { return type; }
 
     /**
-     * Returns a zxx_stream for use with inflate functions using the given
+     * Returns a z_stream for use with inflate functions using the given
      * buffer as inflate output. The caller is expected to allocate enough
      * memory for the Stream uncompressed size.
      */
-    zxx_stream GetZStream(void *buf)
-    {
-      zxx_stream zStream;
+    z_stream GetZStream(void *buf) {
+      z_stream zStream;
       zStream.avail_in = compressedSize;
-      zStream.next_in = reinterpret_cast<Bytef *>(
-                        const_cast<void *>(compressedBuf));
+      zStream.next_in =
+          reinterpret_cast<Bytef *>(const_cast<void *>(compressedBuf));
       zStream.avail_out = uncompressedSize;
       zStream.next_out = static_cast<Bytef *>(buf);
+      zStream.zalloc = nullptr;
+      zStream.zfree = nullptr;
+      zStream.opaque = nullptr;
       return zStream;
     }
 
-  protected:
+   protected:
     friend class Zip;
     const void *compressedBuf;
     size_t compressedSize;
@@ -258,12 +124,14 @@ public:
   /**
    * Returns the file name of the archive
    */
-  const char *GetName() const
-  {
-    return name;
-  }
+  const char *GetName() const { return name; }
 
-private:
+  /**
+   * Returns whether all files have correct CRC checksum.
+   */
+  bool VerifyCRCs() const;
+
+ private:
   /* File name of the archive */
   char *name;
   /* Address where the Zip archive is mapped */
@@ -275,72 +143,66 @@ private:
    * Strings (file names, comments, etc.) in the Zip headers are NOT zero
    * terminated. This class is a helper around them.
    */
-  class StringBuf
-  {
-  public:
+  class StringBuf {
+   public:
     /**
      * Constructor
      */
-    StringBuf(const char *buf, size_t length): buf(buf), length(length) { }
+    StringBuf(const char *buf, size_t length) : buf(buf), length(length) {}
 
     /**
      * Returns whether the string has the same content as the given zero
      * terminated string.
      */
-    bool Equals(const char *str) const
-    {
+    bool Equals(const char *str) const {
       return (strncmp(str, buf, length) == 0 && str[length] == '\0');
     }
 
-  private:
+   private:
     const char *buf;
     size_t length;
   };
 
 /* All the following types need to be packed */
 #pragma pack(1)
-public:
+ public:
   /**
    * A Zip archive is an aggregate of entities which all start with a
    * signature giving their type. This template is to be used as a base
    * class for these entities.
    */
   template <typename T>
-  class SignedEntity
-  {
-  public:
+  class SignedEntity {
+   public:
     /**
      * Equivalent to reinterpret_cast<const T *>(buf), with an additional
      * check of the signature.
      */
-    static const T *validate(const void *buf)
-    {
+    static const T *validate(const void *buf) {
       const T *ret = static_cast<const T *>(buf);
-      if (ret->signature == T::magic)
-        return ret;
+      if (ret->signature == T::magic) return ret;
       return nullptr;
     }
 
-    SignedEntity(uint32_t magic): signature(magic) { }
-  private:
+    explicit SignedEntity(uint32_t magic) : signature(magic) {}
+
+   private:
     le_uint32 signature;
   };
 
-private:
+ private:
   /**
    * Header used to describe a Local File entry. The header is followed by
    * the file name and an extra field, then by the data stream.
    */
-  struct LocalFile: public SignedEntity<LocalFile>
-  {
+  struct LocalFile : public SignedEntity<LocalFile> {
     /* Signature for a Local File header */
     static const uint32_t magic = 0x04034b50;
 
     /**
      * Returns the file name
      */
-    StringBuf GetName() const
-    {
+    StringBuf GetName() const {
       return StringBuf(reinterpret_cast<const char *>(this) + sizeof(*this),
                        filenameSize);
     }
@@ -348,10 +210,9 @@ private:
     /**
      * Returns a pointer to the data associated with this header
      */
-    const void *GetData() const
-    {
-      return reinterpret_cast<const char *>(this) + sizeof(*this)
-             + filenameSize + extraFieldSize;
+    const void *GetData() const {
+      return reinterpret_cast<const char *>(this) + sizeof(*this) +
+             filenameSize + extraFieldSize;
     }
 
     le_uint16 minVersion;
@@ -372,8 +233,7 @@ private:
    * 3rd bit of the general flag in the Local File header is set, and there
    * is an additional header following the compressed data.
    */
-  struct DataDescriptor: public SignedEntity<DataDescriptor>
-  {
+  struct DataDescriptor : public SignedEntity<DataDescriptor> {
     /* Signature for a Data Descriptor header */
     static const uint32_t magic = 0x08074b50;
 
@@ -386,16 +246,14 @@ private:
    * Header used to describe a Central Directory Entry. The header is
    * followed by the file name, an extra field, and a comment.
    */
-  struct DirectoryEntry: public SignedEntity<DirectoryEntry>
-  {
+  struct DirectoryEntry : public SignedEntity<DirectoryEntry> {
     /* Signature for a Central Directory Entry header */
     static const uint32_t magic = 0x02014b50;
 
     /**
      * Returns the file name
      */
-    StringBuf GetName() const
-    {
+    StringBuf GetName() const {
       return StringBuf(reinterpret_cast<const char *>(this) + sizeof(*this),
                        filenameSize);
     }
@@ -403,10 +261,9 @@ private:
     /**
      * Returns  the Central Directory Entry following this one.
      */
-    const DirectoryEntry *GetNext() const
-    {
-      return validate(reinterpret_cast<const char *>(this) + sizeof(*this)
-                      + filenameSize + extraFieldSize + fileCommentSize);
+    const DirectoryEntry *GetNext() const {
+      return validate(reinterpret_cast<const char *>(this) + sizeof(*this) +
+                      filenameSize + extraFieldSize + fileCommentSize);
     }
 
     le_uint16 creatorVersion;
@@ -430,8 +287,7 @@ private:
   /**
    * Header used to describe the End of Central Directory Record.
    */
-  struct CentralDirectoryEnd: public SignedEntity<CentralDirectoryEnd>
-  {
+  struct CentralDirectoryEnd : public SignedEntity<CentralDirectoryEnd> {
     /* Signature for the End of Central Directory Record */
     static const uint32_t magic = 0x06054b50;
 
@@ -467,9 +323,8 @@ private:
 /**
  * Class for bookkeeping Zip instances
  */
-class ZipCollection
-{
-public:
+class ZipCollection {
+ public:
   static ZipCollection Singleton;
 
   /**
@@ -478,8 +333,11 @@ public:
    */
   static already_AddRefed<Zip> GetZip(const char *path);
 
-protected:
+ protected:
   friend class Zip;
+  friend class mozilla::detail::RefCounted<Zip,
+                                           mozilla::detail::AtomicRefCount>;
+
   /**
    * Register the given Zip instance. This method is meant to be called
    * by Zip::Create.
@@ -490,11 +348,39 @@ protected:
    * Forget about the given Zip instance. This method is meant to be called
    * by the Zip destructor.
    */
-  static void Forget(Zip *zip);
+  static void Forget(const Zip *zip);
 
-private:
+ private:
   /* Zip instances bookkept in this collection */
-  std::vector<Zip *> zips;
+  std::vector<RefPtr<Zip>> zips;
 };
+
+namespace mozilla {
+namespace detail {
+
+template <>
+inline void RefCounted<Zip, AtomicRefCount>::Release() const {
+  MOZ_ASSERT(static_cast<int32_t>(mRefCnt) > 0);
+  const auto count = --mRefCnt;
+  if (count == 1) {
+    // No external references are left, attempt to remove it from the
+    // collection. If it's successfully removed from the collection, Release()
+    // will be called with mRefCnt = 1, which will finally delete this zip.
+    ZipCollection::Forget(static_cast<const Zip *>(this));
+  } else if (count == 0) {
+#ifdef DEBUG
+    mRefCnt = detail::DEAD;
+#endif
+    delete static_cast<const Zip *>(this);
+  }
+}
+
+template <>
+inline RefCounted<Zip, AtomicRefCount>::~RefCounted() {
+  MOZ_ASSERT(mRefCnt == detail::DEAD);
+}
+
+}  // namespace detail
+}  // namespace mozilla
 
 #endif /* Zip_h */

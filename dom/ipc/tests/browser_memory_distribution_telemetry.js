@@ -1,6 +1,6 @@
 "use strict";
 
-var session = Cu.import("resource://gre/modules/TelemetrySession.jsm", {});
+var session = ChromeUtils.import("resource://gre/modules/TelemetrySession.jsm", {});
 
 const DUMMY_PAGE_DATA_URI = `data:text/html,
     <html>
@@ -17,7 +17,7 @@ const DUMMY_PAGE_DATA_URI = `data:text/html,
  * Tests the MEMORY_DISTRIBUTION_AMONG_CONTENT probe by opening a few tabs, then triggering
  * the memory probes and waiting for the "gather-memory-telemetry-finished" notification.
  */
-add_task(function* test_memory_distribution() {
+add_task(async function test_memory_distribution() {
   waitForExplicitFinish();
 
   if (SpecialPowers.getIntPref("dom.ipc.processCount", 1) < 2) {
@@ -26,46 +26,47 @@ add_task(function* test_memory_distribution() {
     return;
   }
 
-  yield SpecialPowers.pushPrefEnv({set: [["toolkit.telemetry.enabled", true]]});
   Services.telemetry.canRecordExtended = true;
 
   let histogram = Services.telemetry.getKeyedHistogramById("MEMORY_DISTRIBUTION_AMONG_CONTENT");
   histogram.clear();
 
-  let tab1 = yield BrowserTestUtils.openNewForegroundTab(gBrowser, DUMMY_PAGE_DATA_URI);
-  let tab2 = yield BrowserTestUtils.openNewForegroundTab(gBrowser, DUMMY_PAGE_DATA_URI);
-  let tab3 = yield BrowserTestUtils.openNewForegroundTab(gBrowser, DUMMY_PAGE_DATA_URI);
+  let tab1 = await BrowserTestUtils.openNewForegroundTab(gBrowser, DUMMY_PAGE_DATA_URI);
+  let tab2 = await BrowserTestUtils.openNewForegroundTab(gBrowser, DUMMY_PAGE_DATA_URI);
+  let tab3 = await BrowserTestUtils.openNewForegroundTab(gBrowser, DUMMY_PAGE_DATA_URI);
 
   let finishedGathering = new Promise(resolve => {
-    let obs = function () {
+    let obs = function() {
       Services.obs.removeObserver(obs, "gather-memory-telemetry-finished");
       resolve();
-    }
+    };
     Services.obs.addObserver(obs, "gather-memory-telemetry-finished");
   });
 
   session.TelemetrySession.getPayload();
 
-  yield finishedGathering;
+  await finishedGathering;
 
   let s = histogram.snapshot();
-  ok("0 - 10 tabs" in s, "We should have some samples by now in this bucket.")
+  ok("0 - 10 tabs" in s, "We should have some samples by now in this bucket.");
   for (var key in s) {
     is(key, "0 - 10 tabs");
     let fewTabsSnapshot = s[key];
     ok(fewTabsSnapshot.sum > 0, "Zero difference between all the content processes is unlikely, what happened?");
     ok(fewTabsSnapshot.sum < 80, "20 percentage difference on average is unlikely, what happened?");
-    let c = fewTabsSnapshot.counts;
-    for (let i = 10; i < c.length; i++) {
-      // If this check fails it means that one of the content processes uses at least 20% more or 20% less than the mean.
-      is(c[i], 0, "All the buckets above 10 should be empty");
+    let values = fewTabsSnapshot.values;
+    for (let [bucket, value] of Object.entries(values)) {
+      if (bucket >= 10) {
+        // If this check fails it means that one of the content processes uses at least 20% more or 20% less than the mean.
+        is(value, 0, "All the buckets above 10 should be empty");
+      }
     }
   }
 
   histogram.clear();
 
-  yield BrowserTestUtils.removeTab(tab3);
-  yield BrowserTestUtils.removeTab(tab2);
-  yield BrowserTestUtils.removeTab(tab1);
+  BrowserTestUtils.removeTab(tab3);
+  BrowserTestUtils.removeTab(tab2);
+  BrowserTestUtils.removeTab(tab1);
   finish();
 });

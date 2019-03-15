@@ -2,7 +2,7 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-add_task(function* sidebar_tab_query_bug_1340739() {
+add_task(async function sidebar_tab_query_bug_1340739() {
   let data = {
     manifest: {
       "permissions": [
@@ -40,13 +40,7 @@ add_task(function* sidebar_tab_query_bug_1340739() {
   };
 
   let extension = ExtensionTestUtils.loadExtension(data);
-  yield extension.startup();
-  yield extension.awaitMessage("sidebar");
-  yield extension.unload();
-
-  // Move toolbar button back to customization.
-  CustomizableUI.removeWidgetFromArea("sidebar-button", CustomizableUI.AREA_NAVBAR);
-  ok(!document.getElementById("sidebar-button"), "sidebar button is not in UI");
-  // This is set on initial sidebar install.
-  Services.prefs.clearUserPref("extensions.sidebar-button.shown");
+  await extension.startup();
+  await extension.awaitMessage("sidebar");
+  await extension.unload();
 });

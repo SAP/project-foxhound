@@ -25,14 +25,24 @@ namespace nss_test {
     if (g_ssl_gtest_verbose) LOG(a); \
   } while (false)
 
-void DummyPrSocket::SetPacketFilter(std::shared_ptr<PacketFilter> filter) {
-  filter_ = filter;
-}
-
 ScopedPRFileDesc DummyPrSocket::CreateFD() {
   static PRDescIdentity test_fd_identity =
       PR_GetUniqueIdentity("testtransportadapter");
   return DummyIOLayerMethods::CreateFD(test_fd_identity, this);
+}
+
+void DummyPrSocket::Reset() {
+  auto p = peer_.lock();
+  peer_.reset();
+  if (p) {
+    p->peer_.reset();
+    p->Reset();
+  }
+  while (!input_.empty()) {
+    input_.pop();
+  }
+  filter_ = nullptr;
+  write_error_ = 0;
 }
 
 void DummyPrSocket::PacketReceived(const DataBuffer &packet) {
@@ -40,10 +50,15 @@ void DummyPrSocket::PacketReceived(const DataBuffer &packet) {
 }
 
 int32_t DummyPrSocket::Read(PRFileDesc *f, void *data, int32_t len) {
-  PR_ASSERT(mode_ == STREAM);
-
-  if (mode_ != STREAM) {
+  PR_ASSERT(variant_ == ssl_variant_stream);
+  if (variant_ != ssl_variant_stream) {
     PR_SetError(PR_INVALID_METHOD_ERROR, 0);
+    return -1;
+  }
+
+  auto dst = peer_.lock();
+  if (!dst) {
+    PR_SetError(PR_NOT_CONNECTED_ERROR, 0);
     return -1;
   }
 
@@ -75,8 +90,14 @@ int32_t DummyPrSocket::Recv(PRFileDesc *f, void *buf, int32_t buflen,
     return -1;
   }
 
-  if (mode() != DGRAM) {
+  if (variant() != ssl_variant_datagram) {
     return Read(f, buf, buflen);
+  }
+
+  auto dst = peer_.lock();
+  if (!dst) {
+    PR_SetError(PR_NOT_CONNECTED_ERROR, 0);
+    return -1;
   }
 
   if (input_.empty()) {
@@ -99,9 +120,14 @@ int32_t DummyPrSocket::Recv(PRFileDesc *f, void *buf, int32_t buflen,
 }
 
 int32_t DummyPrSocket::Write(PRFileDesc *f, const void *buf, int32_t length) {
-  auto peer = peer_.lock();
-  if (!peer || !writeable_) {
-    PR_SetError(PR_IO_ERROR, 0);
+  if (write_error_) {
+    PR_SetError(write_error_, 0);
+    return -1;
+  }
+
+  auto dst = peer_.lock();
+  if (!dst) {
+    PR_SetError(PR_NOT_CONNECTED_ERROR, 0);
     return -1;
   }
 
@@ -110,20 +136,20 @@ int32_t DummyPrSocket::Write(PRFileDesc *f, const void *buf, int32_t length) {
   DataBuffer filtered;
   PacketFilter::Action action = PacketFilter::KEEP;
   if (filter_) {
-    action = filter_->Filter(packet, &filtered);
+    action = filter_->Process(packet, &filtered);
   }
   switch (action) {
     case PacketFilter::CHANGE:
       LOG("Original packet: " << packet);
       LOG("Filtered packet: " << filtered);
-      peer->PacketReceived(filtered);
+      dst->PacketReceived(filtered);
       break;
     case PacketFilter::DROP:
       LOG("Droppped packet: " << packet);
       break;
     case PacketFilter::KEEP:
       LOGV("Packet: " << packet);
-      peer->PacketReceived(packet);
+      dst->PacketReceived(packet);
       break;
   }
   // libssl can't handle it if this reports something other than the length

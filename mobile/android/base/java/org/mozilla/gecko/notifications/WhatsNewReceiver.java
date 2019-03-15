@@ -5,7 +5,6 @@
 
 package org.mozilla.gecko.notifications;
 
-import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
@@ -59,19 +58,24 @@ public class WhatsNewReceiver extends BroadcastReceiver {
         return GeckoSharedPrefs.forApp(context).getBoolean(GeckoPreferences.PREFS_NOTIFICATIONS_WHATS_NEW, true);
     }
 
+    @SuppressWarnings("NewApi")
     private void showWhatsNewNotification(Context context) {
-        final Notification notification = new NotificationCompat.Builder(context)
+        final NotificationCompat.Builder notificationBuilder = new NotificationCompat.Builder(context)
                 .setContentTitle(context.getString(R.string.whatsnew_notification_title))
                 .setContentText(context.getString(R.string.whatsnew_notification_summary))
                 .setSmallIcon(R.drawable.ic_status_logo)
                 .setAutoCancel(true)
                 .setContentIntent(getContentIntent(context))
-                .setDeleteIntent(getDeleteIntent(context))
-                .build();
+                .setDeleteIntent(getDeleteIntent(context));
 
-        final NotificationManager notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (!AppConstants.Versions.preO) {
+            notificationBuilder.setChannelId(NotificationHelper.getInstance(context)
+                    .getNotificationChannel(NotificationHelper.Channel.DEFAULT).getId());
+        }
+
         final int notificationID = EXTRA_WHATSNEW_NOTIFICATION.hashCode();
-        notificationManager.notify(notificationID, notification);
+        final NotificationManager notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        notificationManager.notify(notificationID, notificationBuilder.build());
 
         Telemetry.sendUIEvent(TelemetryContract.Event.SHOW, TelemetryContract.Method.NOTIFICATION, EXTRA_WHATSNEW_NOTIFICATION);
     }

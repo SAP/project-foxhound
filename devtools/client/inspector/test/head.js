@@ -3,25 +3,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 /* eslint no-unused-vars: [2, {"vars": "local"}] */
-/* import-globals-from ../../framework/test/shared-head.js */
-/* import-globals-from ../../shared/test/test-actor-registry.js */
+/* import-globals-from ../../shared/test/shared-head.js */
 /* import-globals-from ../../inspector/test/shared-head.js */
 "use strict";
 
 // Load the shared-head file first.
 Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/devtools/client/framework/test/shared-head.js",
+  "chrome://mochitests/content/browser/devtools/client/shared/test/shared-head.js",
   this);
 
 // Services.prefs.setBoolPref("devtools.debugger.log", true);
 // SimpleTest.registerCleanupFunction(() => {
 //   Services.prefs.clearUserPref("devtools.debugger.log");
 // });
-
-// Import helpers registering the test-actor in remote targets
-Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/devtools/client/shared/test/test-actor-registry.js",
-  this);
 
 // Import helpers for the inspector that are also shared with others
 Services.scriptloader.loadSubScript(
@@ -32,59 +26,105 @@ const {LocalizationHelper} = require("devtools/shared/l10n");
 const INSPECTOR_L10N =
       new LocalizationHelper("devtools/client/locales/inspector.properties");
 
-flags.testing = true;
-registerCleanupFunction(() => {
-  flags.testing = false;
-});
-
 registerCleanupFunction(() => {
   Services.prefs.clearUserPref("devtools.inspector.activeSidebar");
 });
 
-registerCleanupFunction(function* () {
+registerCleanupFunction(function() {
   // Move the mouse outside inspector. If the test happened fake a mouse event
   // somewhere over inspector the pointer is considered to be there when the
   // next test begins. This might cause unexpected events to be emitted when
   // another test moves the mouse.
-  EventUtils.synthesizeMouseAtPoint(1, 1, {type: "mousemove"}, window);
+  // Move the mouse at the top-right corner of the browser, to prevent
+  // the mouse from triggering the tab tooltip to be shown while the tab is
+  // being closed because the test is exiting (See Bug 1378524 for rationale).
+  EventUtils.synthesizeMouseAtPoint(window.innerWidth, 1, {type: "mousemove"}, window);
 });
 
-var navigateTo = Task.async(function* (inspector, url) {
-  let markuploaded = inspector.once("markuploaded");
-  let onNewRoot = inspector.once("new-root");
-  let onUpdated = inspector.once("inspector-updated");
+var navigateTo = async function(inspector, url) {
+  const markuploaded = inspector.once("markuploaded");
+  const onNewRoot = inspector.once("new-root");
+  const onUpdated = inspector.once("inspector-updated");
 
   info("Navigating to: " + url);
-  let activeTab = inspector.toolbox.target.activeTab;
-  yield activeTab.navigateTo(url);
+  const activeTab = inspector.toolbox.target.activeTab;
+  await activeTab.navigateTo({ url });
 
   info("Waiting for markup view to load after navigation.");
-  yield markuploaded;
+  await markuploaded;
 
   info("Waiting for new root.");
-  yield onNewRoot;
+  await onNewRoot;
 
   info("Waiting for inspector to update after new-root event.");
-  yield onUpdated;
-});
+  await onUpdated;
+};
 
 /**
  * Start the element picker and focus the content window.
  * @param {Toolbox} toolbox
  * @param {Boolean} skipFocus - Allow tests to bypass the focus event.
  */
-var startPicker = Task.async(function* (toolbox, skipFocus) {
+var startPicker = async function(toolbox, skipFocus) {
   info("Start the element picker");
   toolbox.win.focus();
-  yield toolbox.highlighterUtils.startPicker();
+  await toolbox.inspector.nodePicker.start();
   if (!skipFocus) {
     // By default make sure the content window is focused since the picker may not focus
     // the content window by default.
-    yield ContentTask.spawn(gBrowser.selectedBrowser, null, function* () {
+    await ContentTask.spawn(gBrowser.selectedBrowser, null, async function() {
       content.focus();
     });
   }
-});
+};
+
+/**
+ * Pick an element from the content page using the element picker.
+ *
+ * @param {Inspector} inspector
+ *        Inspector instance
+ * @param {TestActor} testActor
+ *        TestActor instance
+ * @param {String} selector
+ *        CSS selector to identify the click target
+ * @param {Number} x
+ *        X-offset from the top-left corner of the element matching the provided selector
+ * @param {Number} y
+ *        Y-offset from the top-left corner of the element matching the provided selector
+ * @return {Promise} promise that resolves when the selection is updated with the picked
+ *         node.
+ */
+function pickElement(inspector, testActor, selector, x, y) {
+  info("Waiting for element " + selector + " to be picked");
+  // Use an empty options argument in order trigger the default synthesizeMouse behavior
+  // which will trigger mousedown, then mouseup.
+  const onNewNodeFront = inspector.selection.once("new-node-front");
+  testActor.synthesizeMouse({selector, x, y, options: {}});
+  return onNewNodeFront;
+}
+
+/**
+ * Hover an element from the content page using the element picker.
+ *
+ * @param {Inspector} inspector
+ *        Inspector instance
+ * @param {TestActor} testActor
+ *        TestActor instance
+ * @param {String} selector
+ *        CSS selector to identify the hover target
+ * @param {Number} x
+ *        X-offset from the top-left corner of the element matching the provided selector
+ * @param {Number} y
+ *        Y-offset from the top-left corner of the element matching the provided selector
+ * @return {Promise} promise that resolves when the "picker-node-hovered" event is
+ *         emitted.
+ */
+function hoverElement(inspector, testActor, selector, x, y) {
+  info("Waiting for element " + selector + " to be hovered");
+  const onHovered = inspector.inspector.nodePicker.once("picker-node-hovered");
+  testActor.synthesizeMouse({selector, x, y, options: {type: "mousemove"}});
+  return onHovered;
+}
 
 /**
  * Highlight a node and set the inspector's current selection to the node or
@@ -107,11 +147,11 @@ function selectAndHighlightNode(selector, inspector) {
  * @param {InspectorPanel} inspector The current inspector-panel instance.
  * @return {MarkupContainer}
  */
-function* focusNode(selector, inspector) {
+async function focusNode(selector, inspector) {
   getContainerForNodeFront(inspector.walker.rootNode, inspector).elt.focus();
-  let nodeFront = yield getNodeFront(selector, inspector);
-  let container = getContainerForNodeFront(nodeFront, inspector);
-  yield selectNode(nodeFront, inspector);
+  const nodeFront = await getNodeFront(selector, inspector);
+  const container = getContainerForNodeFront(nodeFront, inspector);
+  await selectNode(nodeFront, inspector);
   EventUtils.sendKey("return", inspector.panelWin);
   return container;
 }
@@ -125,7 +165,7 @@ function* focusNode(selector, inspector) {
  */
 function clearCurrentNodeSelection(inspector) {
   info("Clearing the current selection");
-  let updated = inspector.once("inspector-updated");
+  const updated = inspector.once("inspector-updated");
   inspector.selection.setNodeFront(null);
   return updated;
 }
@@ -135,16 +175,16 @@ function clearCurrentNodeSelection(inspector) {
  * @param {string} url  The URL to open.
  * @param {String} hostType Optional hostType, as defined in Toolbox.HostType
  * @return A promise that is resolved once the tab and inspector have loaded
- *         with an object: { tab, toolbox, inspector }.
+ *         with an object: { tab, toolbox, inspector }.
  */
-var openInspectorForURL = Task.async(function* (url, hostType) {
-  let tab = yield addTab(url);
-  let { inspector, toolbox, testActor } = yield openInspector(hostType);
+var openInspectorForURL = async function(url, hostType) {
+  const tab = await addTab(url);
+  const { inspector, toolbox, testActor } = await openInspector(hostType);
   return { tab, inspector, toolbox, testActor };
-});
+};
 
-function getActiveInspector() {
-  let target = TargetFactory.forTab(gBrowser.selectedTab);
+async function getActiveInspector() {
+  const target = await TargetFactory.forTab(gBrowser.selectedTab);
   return gDevTools.getToolbox(target).getPanel("inspector");
 }
 
@@ -154,30 +194,30 @@ function getActiveInspector() {
  * @param {String} selector The selector for the node to click on in the page.
  * @return {Promise} Resolves to the inspector when it has opened and is updated
  */
-var clickOnInspectMenuItem = Task.async(function* (testActor, selector) {
+var clickOnInspectMenuItem = async function(testActor, selector) {
   info("Showing the contextual menu on node " + selector);
-  let contentAreaContextMenu = document.querySelector(
+  const contentAreaContextMenu = document.querySelector(
     "#contentAreaContextMenu");
-  let contextOpened = once(contentAreaContextMenu, "popupshown");
+  const contextOpened = once(contentAreaContextMenu, "popupshown");
 
-  yield testActor.synthesizeMouse({
+  await testActor.synthesizeMouse({
     selector: selector,
     center: true,
-    options: {type: "contextmenu", button: 2}
+    options: {type: "contextmenu", button: 2},
   });
 
-  yield contextOpened;
+  await contextOpened;
 
   info("Triggering the inspect action");
-  yield gContextMenu.inspectNode();
+  await gContextMenu.inspectNode();
 
   info("Hiding the menu");
-  let contextClosed = once(contentAreaContextMenu, "popuphidden");
+  const contextClosed = once(contentAreaContextMenu, "popuphidden");
   contentAreaContextMenu.hidePopup();
-  yield contextClosed;
+  await contextClosed;
 
   return getActiveInspector();
-});
+};
 
 /**
  * Get the NodeFront for a node that matches a given css selector inside a
@@ -189,28 +229,53 @@ var clickOnInspectMenuItem = Task.async(function* (testActor, selector) {
  * loaded in the toolbox
  * @return {Promise} Resolves when the inspector is updated with the new node
  */
-var getNodeFrontInFrame = Task.async(function* (selector, frameSelector,
+var getNodeFrontInFrame = async function(selector, frameSelector,
                                                 inspector) {
-  let iframe = yield getNodeFront(frameSelector, inspector);
-  let {nodes} = yield inspector.walker.children(iframe);
+  const iframe = await getNodeFront(frameSelector, inspector);
+  const {nodes} = await inspector.walker.children(iframe);
   return inspector.walker.querySelector(nodes[0], selector);
-});
+};
 
-var focusSearchBoxUsingShortcut = Task.async(function* (panelWin, callback) {
+/**
+ * Get the NodeFront for a node that matches a given css selector inside a shadow root.
+ *
+ * @param {String} selector
+ *        CSS selector of the node inside the shadow root.
+ * @param {String|NodeFront} hostSelector
+ *        Selector or front of the element to which the shadow root is attached.
+ * @param {InspectorPanel} inspector
+ *        The instance of InspectorPanel currently loaded in the toolbox
+ * @return {Promise} Resolves the node front when the inspector is updated with the new
+ *         node.
+ */
+var getNodeFrontInShadowDom = async function(selector, hostSelector, inspector) {
+  const hostFront = await getNodeFront(hostSelector, inspector);
+  const {nodes} = await inspector.walker.children(hostFront);
+
+  // Find the shadow root in the children of the host element.
+  const shadowRoot = nodes.filter(node => node.isShadowRoot)[0];
+  if (!shadowRoot) {
+    throw new Error("Could not find a shadow root under selector: " + hostSelector);
+  }
+
+  return inspector.walker.querySelector(shadowRoot, selector);
+};
+
+var focusSearchBoxUsingShortcut = async function(panelWin, callback) {
   info("Focusing search box");
-  let searchBox = panelWin.document.getElementById("inspector-searchbox");
-  let focused = once(searchBox, "focus");
+  const searchBox = panelWin.document.getElementById("inspector-searchbox");
+  const focused = once(searchBox, "focus");
 
   panelWin.focus();
 
   synthesizeKeyShortcut(INSPECTOR_L10N.getStr("inspector.searchHTML.key"));
 
-  yield focused;
+  await focused;
 
   if (callback) {
     callback();
   }
-});
+};
 
 /**
  * Get the MarkupContainer object instance that corresponds to the given
@@ -234,10 +299,10 @@ function getContainerForNodeFront(nodeFront, {markup}) {
  * @return {MarkupContainer}
  */
 var getContainerForSelector =
-Task.async(function* (selector, inspector, expectFailure = false) {
+async function(selector, inspector, expectFailure = false) {
   info("Getting the markup-container for node " + selector);
-  let nodeFront = yield getNodeFront(selector, inspector);
-  let container = getContainerForNodeFront(nodeFront, inspector);
+  const nodeFront = await getNodeFront(selector, inspector);
+  const container = getContainerForNodeFront(nodeFront, inspector);
 
   if (expectFailure) {
     ok(!container, "Shouldn't find markup-container for selector: " + selector);
@@ -246,7 +311,7 @@ Task.async(function* (selector, inspector, expectFailure = false) {
   }
 
   return container;
-});
+};
 
 /**
  * Simulate a mouse-over on the markup-container (a line in the markup-view)
@@ -257,17 +322,17 @@ Task.async(function* (selector, inspector, expectFailure = false) {
  * @return {Promise} Resolves when the container is hovered and the higlighter
  * is shown on the corresponding node
  */
-var hoverContainer = Task.async(function* (selector, inspector) {
+var hoverContainer = async function(selector, inspector) {
   info("Hovering over the markup-container for node " + selector);
 
-  let nodeFront = yield getNodeFront(selector, inspector);
-  let container = getContainerForNodeFront(nodeFront, inspector);
+  const nodeFront = await getNodeFront(selector, inspector);
+  const container = getContainerForNodeFront(nodeFront, inspector);
 
-  let highlit = inspector.toolbox.once("node-highlight");
+  const highlit = inspector.highlighter.once("node-highlight");
   EventUtils.synthesizeMouseAtCenter(container.tagLine, {type: "mousemove"},
     inspector.markup.doc.defaultView);
   return highlit;
-});
+};
 
 /**
  * Simulate a click on the markup-container (a line in the markup-view)
@@ -277,19 +342,19 @@ var hoverContainer = Task.async(function* (selector, inspector) {
  * loaded in the toolbox
  * @return {Promise} Resolves when the node has been selected.
  */
-var clickContainer = Task.async(function* (selector, inspector) {
+var clickContainer = async function(selector, inspector) {
   info("Clicking on the markup-container for node " + selector);
 
-  let nodeFront = yield getNodeFront(selector, inspector);
-  let container = getContainerForNodeFront(nodeFront, inspector);
+  const nodeFront = await getNodeFront(selector, inspector);
+  const container = getContainerForNodeFront(nodeFront, inspector);
 
-  let updated = inspector.once("inspector-updated");
+  const updated = inspector.once("inspector-updated");
   EventUtils.synthesizeMouseAtCenter(container.tagLine, {type: "mousedown"},
     inspector.markup.doc.defaultView);
   EventUtils.synthesizeMouseAtCenter(container.tagLine, {type: "mouseup"},
     inspector.markup.doc.defaultView);
   return updated;
-});
+};
 
 /**
  * Simulate the mouse leaving the markup-view area
@@ -299,23 +364,23 @@ var clickContainer = Task.async(function* (selector, inspector) {
  */
 function mouseLeaveMarkupView(inspector) {
   info("Leaving the markup-view area");
-  let def = defer();
 
   // Find another element to mouseover over in order to leave the markup-view
-  let btn = inspector.toolbox.doc.querySelector("#toolbox-controls");
+  const btn = inspector.toolbox.doc.querySelector("#toolbox-controls");
 
   EventUtils.synthesizeMouseAtCenter(btn, {type: "mousemove"},
     inspector.toolbox.win);
-  executeSoon(def.resolve);
 
-  return def.promise;
+  return new Promise(resolve => {
+    executeSoon(resolve);
+  });
 }
 
 /**
  * Dispatch the copy event on the given element
  */
 function fireCopyEvent(element) {
-  let evt = element.ownerDocument.createEvent("Event");
+  const evt = element.ownerDocument.createEvent("Event");
   evt.initEvent("copy", true, true);
   element.dispatchEvent(evt);
 }
@@ -329,13 +394,13 @@ function fireCopyEvent(element) {
  * rejects if no undo action is possible
  */
 function undoChange(inspector) {
-  let canUndo = inspector.markup.undo.canUndo();
+  const canUndo = inspector.markup.undo.canUndo();
   ok(canUndo, "The last change in the markup-view can be undone");
   if (!canUndo) {
     return promise.reject();
   }
 
-  let mutated = inspector.once("markupmutation");
+  const mutated = inspector.once("markupmutation");
   inspector.markup.undo.undo();
   return mutated;
 }
@@ -349,13 +414,13 @@ function undoChange(inspector) {
  * rejects if no redo action is possible
  */
 function redoChange(inspector) {
-  let canRedo = inspector.markup.undo.canRedo();
+  const canRedo = inspector.markup.undo.canRedo();
   ok(canRedo, "The last change in the markup-view can be redone");
   if (!canRedo) {
     return promise.reject();
   }
 
-  let mutated = inspector.once("markupmutation");
+  const mutated = inspector.once("markupmutation");
   inspector.markup.undo.redo();
   return mutated;
 }
@@ -364,14 +429,14 @@ function redoChange(inspector) {
  * A helper that fetches a front for a node that matches the given selector or
  * doctype node if the selector is falsy.
  */
-function* getNodeFrontForSelector(selector, inspector) {
+async function getNodeFrontForSelector(selector, inspector) {
   if (selector) {
     info("Retrieving front for selector " + selector);
     return getNodeFront(selector, inspector);
   }
 
   info("Retrieving front for doctype node");
-  let {nodes} = yield inspector.walker.children(inspector.walker.rootNode);
+  const {nodes} = await inspector.walker.children(inspector.walker.rootNode);
   return nodes[0];
 }
 
@@ -384,14 +449,14 @@ function* getNodeFrontForSelector(selector, inspector) {
  * @param {Number} timeBetweenAttempts Optional time to wait between each attempt.
  * Defaults to 200ms.
  */
-function* poll(check, desc, attempts = 10, timeBetweenAttempts = 200) {
+async function poll(check, desc, attempts = 10, timeBetweenAttempts = 200) {
   info(desc);
 
   for (let i = 0; i < attempts; i++) {
-    if (yield check()) {
+    if (await check()) {
       return;
     }
-    yield new Promise(resolve => setTimeout(resolve, timeBetweenAttempts));
+    await new Promise(resolve => setTimeout(resolve, timeBetweenAttempts));
   }
 
   throw new Error(`Timeout while: ${desc}`);
@@ -408,123 +473,133 @@ function* poll(check, desc, attempts = 10, timeBetweenAttempts = 200) {
  *    A generator function that takes an object with `inspector` and `testActor`
  *    properties. (see `openInspector`)
  */
-const getHighlighterHelperFor = (type) => Task.async(
-  function* ({inspector, testActor}) {
-    let front = inspector.inspector;
-    let highlighter = yield front.getHighlighterByType(type);
+const getHighlighterHelperFor = (type) => async function({inspector, testActor}) {
+  const front = inspector.inspector;
+  const highlighter = await front.getHighlighterByType(type);
 
-    let prefix = "";
+  let prefix = "";
 
-    // Internals for mouse events
-    let prevX, prevY;
+  // Internals for mouse events
+  let prevX, prevY;
 
-    // Highlighted node
-    let highlightedNode = null;
+  // Highlighted node
+  let highlightedNode = null;
 
-    return {
-      set prefix(value) {
-        prefix = value;
-      },
+  return {
+    set prefix(value) {
+      prefix = value;
+    },
 
-      get highlightedNode() {
-        if (!highlightedNode) {
-          return null;
-        }
-
-        return {
-          getComputedStyle: function* (options = {}) {
-            return yield inspector.pageStyle.getComputed(
-              highlightedNode, options);
-          }
-        };
-      },
-
-      show: function* (selector = ":root", options) {
-        highlightedNode = yield getNodeFront(selector, inspector);
-        return yield highlighter.show(highlightedNode, options);
-      },
-
-      hide: function* () {
-        yield highlighter.hide();
-      },
-
-      isElementHidden: function* (id) {
-        return (yield testActor.getHighlighterNodeAttribute(
-          prefix + id, "hidden", highlighter)) === "true";
-      },
-
-      getElementTextContent: function* (id) {
-        return yield testActor.getHighlighterNodeTextContent(
-          prefix + id, highlighter);
-      },
-
-      getElementAttribute: function* (id, name) {
-        return yield testActor.getHighlighterNodeAttribute(
-          prefix + id, name, highlighter);
-      },
-
-      waitForElementAttributeSet: function* (id, name) {
-        yield poll(function* () {
-          let value = yield testActor.getHighlighterNodeAttribute(
-            prefix + id, name, highlighter);
-          return !!value;
-        }, `Waiting for element ${id} to have attribute ${name} set`);
-      },
-
-      waitForElementAttributeRemoved: function* (id, name) {
-        yield poll(function* () {
-          let value = yield testActor.getHighlighterNodeAttribute(
-            prefix + id, name, highlighter);
-          return !value;
-        }, `Waiting for element ${id} to have attribute ${name} removed`);
-      },
-
-      synthesizeMouse: function* (options) {
-        options = Object.assign({selector: ":root"}, options);
-        yield testActor.synthesizeMouse(options);
-      },
-
-      // This object will synthesize any "mouse" prefixed event to the
-      // `testActor`, using the name of method called as suffix for the
-      // event's name.
-      // If no x, y coords are given, the previous ones are used.
-      //
-      // For example:
-      //   mouse.down(10, 20); // synthesize "mousedown" at 10,20
-      //   mouse.move(20, 30); // synthesize "mousemove" at 20,30
-      //   mouse.up();         // synthesize "mouseup" at 20,30
-      mouse: new Proxy({}, {
-        get: (target, name) =>
-          function* (x = prevX, y = prevY) {
-            prevX = x;
-            prevY = y;
-            yield testActor.synthesizeMouse({
-              selector: ":root", x, y, options: {type: "mouse" + name}});
-          }
-      }),
-
-      reflow: function* () {
-        yield testActor.reflow();
-      },
-
-      finalize: function* () {
-        highlightedNode = null;
-        yield highlighter.finalize();
+    get highlightedNode() {
+      if (!highlightedNode) {
+        return null;
       }
-    };
-  }
-);
+
+      return {
+        getComputedStyle: async function(options = {}) {
+          return inspector.pageStyle.getComputed(
+            highlightedNode, options);
+        },
+      };
+    },
+
+    get actorID() {
+      if (!highlighter) {
+        return null;
+      }
+
+      return highlighter.actorID;
+    },
+
+    show: async function(selector = ":root", options, frameSelector = null) {
+      if (frameSelector) {
+        highlightedNode = await getNodeFrontInFrame(selector, frameSelector, inspector);
+      } else {
+        highlightedNode = await getNodeFront(selector, inspector);
+      }
+      return highlighter.show(highlightedNode, options);
+    },
+
+    hide: async function() {
+      await highlighter.hide();
+    },
+
+    isElementHidden: async function(id) {
+      return (await testActor.getHighlighterNodeAttribute(
+        prefix + id, "hidden", highlighter)) === "true";
+    },
+
+    getElementTextContent: async function(id) {
+      return testActor.getHighlighterNodeTextContent(
+        prefix + id, highlighter);
+    },
+
+    getElementAttribute: async function(id, name) {
+      return testActor.getHighlighterNodeAttribute(
+        prefix + id, name, highlighter);
+    },
+
+    waitForElementAttributeSet: async function(id, name) {
+      await poll(async function() {
+        const value = await testActor.getHighlighterNodeAttribute(
+          prefix + id, name, highlighter);
+        return !!value;
+      }, `Waiting for element ${id} to have attribute ${name} set`);
+    },
+
+    waitForElementAttributeRemoved: async function(id, name) {
+      await poll(async function() {
+        const value = await testActor.getHighlighterNodeAttribute(
+          prefix + id, name, highlighter);
+        return !value;
+      }, `Waiting for element ${id} to have attribute ${name} removed`);
+    },
+
+    synthesizeMouse: async function(options) {
+      options = Object.assign({selector: ":root"}, options);
+      await testActor.synthesizeMouse(options);
+    },
+
+    // This object will synthesize any "mouse" prefixed event to the
+    // `testActor`, using the name of method called as suffix for the
+    // event's name.
+    // If no x, y coords are given, the previous ones are used.
+    //
+    // For example:
+    //   mouse.down(10, 20); // synthesize "mousedown" at 10,20
+    //   mouse.move(20, 30); // synthesize "mousemove" at 20,30
+    //   mouse.up();         // synthesize "mouseup" at 20,30
+    mouse: new Proxy({}, {
+      get: (target, name) =>
+        async function(x = prevX, y = prevY, selector = ":root") {
+          prevX = x;
+          prevY = y;
+          await testActor.synthesizeMouse({
+            selector, x, y, options: {type: "mouse" + name}});
+        },
+    }),
+
+    reflow: async function() {
+      await testActor.reflow();
+    },
+
+    finalize: async function() {
+      highlightedNode = null;
+      await highlighter.finalize();
+    },
+  };
+};
 
 // The expand all operation of the markup-view calls itself recursively and
 // there's not one event we can wait for to know when it's done so use this
 // helper function to wait until all recursive children updates are done.
-function* waitForMultipleChildrenUpdates(inspector) {
+async function waitForMultipleChildrenUpdates(inspector) {
   // As long as child updates are queued up while we wait for an update already
   // wait again
   if (inspector.markup._queuedChildUpdates &&
         inspector.markup._queuedChildUpdates.size) {
-    yield waitForChildrenUpdated(inspector);
-    return yield waitForMultipleChildrenUpdates(inspector);
+    await waitForChildrenUpdated(inspector);
+    return waitForMultipleChildrenUpdates(inspector);
   }
   return null;
 }
@@ -539,11 +614,11 @@ function* waitForMultipleChildrenUpdates(inspector) {
  */
 function waitForChildrenUpdated({markup}) {
   info("Waiting for queued children updates to be handled");
-  let def = defer();
-  markup._waitForChildren().then(() => {
-    executeSoon(def.resolve);
+  return new Promise(resolve => {
+    markup._waitForChildren().then(() => {
+      executeSoon(resolve);
+    });
   });
-  return def.promise;
 }
 
 /**
@@ -558,43 +633,42 @@ function waitForChildrenUpdated({markup}) {
  * ready
  */
 function waitForStyleEditor(toolbox, href) {
-  let def = defer();
-
   info("Waiting for the toolbox to switch to the styleeditor");
-  toolbox.once("styleeditor-selected").then(() => {
-    let panel = toolbox.getCurrentPanel();
-    ok(panel && panel.UI, "Styleeditor panel switched to front");
 
-    // A helper that resolves the promise once it receives an editor that
-    // matches the expected href. Returns false if the editor was not correct.
-    let gotEditor = (event, editor) => {
-      let currentHref = editor.styleSheet.href;
-      if (!href || (href && currentHref.endsWith(href))) {
-        info("Stylesheet editor selected");
-        panel.UI.off("editor-selected", gotEditor);
+  return new Promise(resolve => {
+    toolbox.once("styleeditor-selected").then(() => {
+      const panel = toolbox.getCurrentPanel();
+      ok(panel && panel.UI, "Styleeditor panel switched to front");
 
-        editor.getSourceEditor().then(sourceEditor => {
-          info("Stylesheet editor fully loaded");
-          def.resolve(sourceEditor);
-        });
+      // A helper that resolves the promise once it receives an editor that
+      // matches the expected href. Returns false if the editor was not correct.
+      const gotEditor = editor => {
+        const currentHref = editor.styleSheet.href;
+        if (!href || (href && currentHref.endsWith(href))) {
+          info("Stylesheet editor selected");
+          panel.UI.off("editor-selected", gotEditor);
 
-        return true;
+          editor.getSourceEditor().then(sourceEditor => {
+            info("Stylesheet editor fully loaded");
+            resolve(sourceEditor);
+          });
+
+          return true;
+        }
+
+        info("The editor was incorrect. Waiting for editor-selected event.");
+        return false;
+      };
+
+      // The expected editor may already be selected. Check the if the currently
+      // selected editor is the expected one and if not wait for an
+      // editor-selected event.
+      if (!gotEditor(panel.UI.selectedEditor)) {
+        // The expected editor is not selected (yet). Wait for it.
+        panel.UI.on("editor-selected", gotEditor);
       }
-
-      info("The editor was incorrect. Waiting for editor-selected event.");
-      return false;
-    };
-
-    // The expected editor may already be selected. Check the if the currently
-    // selected editor is the expected one and if not wait for an
-    // editor-selected event.
-    if (!gotEditor("styleeditor-selected", panel.UI.selectedEditor)) {
-      // The expected editor is not selected (yet). Wait for it.
-      panel.UI.on("editor-selected", gotEditor);
-    }
+    });
   });
-
-  return def.promise;
 }
 
 /**
@@ -620,14 +694,14 @@ function containsFocus(doc, container) {
  *
  * @return a promise that resolves to the tab object
  */
-var waitForTab = Task.async(function* () {
+var waitForTab = async function() {
   info("Waiting for a tab to open");
-  yield once(gBrowser.tabContainer, "TabOpen");
-  let tab = gBrowser.selectedTab;
-  yield BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+  await once(gBrowser.tabContainer, "TabOpen");
+  const tab = gBrowser.selectedTab;
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
   info("The tab load completed");
   return tab;
-});
+};
 
 /**
  * Simulate the key input for the given input in the window.
@@ -638,59 +712,103 @@ var waitForTab = Task.async(function* () {
  *        The window containing the panel
  */
 function synthesizeKeys(input, win) {
-  for (let key of input.split("")) {
+  for (const key of input.split("")) {
     EventUtils.synthesizeKey(key, {}, win);
   }
 }
 
 /**
- * Given a tooltip object instance (see Tooltip.js), checks if it is set to
- * toggle and hover and if so, checks if the given target is a valid hover
- * target. This won't actually show the tooltip (the less we interact with XUL
- * panels during test runs, the better).
+ * Make sure window is properly focused before sending a key event.
  *
- * @return a promise that resolves when the answer is known
+ * @param {Window} win
+ *        The window containing the panel
+ * @param {String} key
+ *        The string value to input
  */
-function isHoverTooltipTarget(tooltip, target) {
-  if (!tooltip._toggle._baseNode || !tooltip.panel) {
-    return promise.reject(new Error(
-      "The tooltip passed isn't set to toggle on hover or is not a tooltip"));
-  }
-  return tooltip._toggle.isValidHoverTarget(target);
+function focusAndSendKey(win, key) {
+  win.document.documentElement.focus();
+  EventUtils.sendKey(key, win);
 }
 
 /**
- * Same as isHoverTooltipTarget except that it will fail the test if there is no
- * tooltip defined on hover of the given element
+ * Given a Tooltip instance, fake a mouse event on the `target` DOM Element
+ * and assert that the `tooltip` is correctly displayed.
  *
- * @return a promise
+ * @param {Tooltip} tooltip
+ *        The tooltip instance
+ * @param {DOMElement} target
+ *        The DOM Element on which a tooltip should appear
+ *
+ * @return a promise that resolves with the tooltip object
  */
-function assertHoverTooltipOn(tooltip, element) {
-  return isHoverTooltipTarget(tooltip, element).then(() => {
-    ok(true, "A tooltip is defined on hover of the given element");
-  }, () => {
-    ok(false, "No tooltip is defined on hover of the given element");
+async function assertTooltipShownOnHover(tooltip, target) {
+  const mouseEvent = new target.ownerDocument.defaultView.MouseEvent("mousemove", {
+    bubbles: true,
   });
+  target.dispatchEvent(mouseEvent);
+
+  if (!tooltip.isVisible()) {
+    info("Waiting for tooltip to be shown");
+    await tooltip.once("shown");
+  }
+
+  ok(tooltip.isVisible(), `The tooltip is visible`);
+
+  return tooltip;
 }
 
 /**
- * Open the inspector menu and return all of it's items in a flat array
- * @param {InspectorPanel} inspector
- * @param {Object} options to pass into openMenu
- * @return An array of MenuItems
+ * Given an inspector `view` object, fake a mouse event on the `target` DOM
+ * Element and assert that the preview tooltip  is correctly displayed.
+ *
+ * @param {CssRuleView|ComputedView|...} view
+ *        The instance of an inspector panel
+ * @param {DOMElement} target
+ *        The DOM Element on which a tooltip should appear
+ *
+ * @return a promise that resolves with the tooltip object
  */
-function openContextMenuAndGetAllItems(inspector, options) {
-  let menu = inspector._openMenu(options);
+async function assertShowPreviewTooltip(view, target) {
+  const mouseEvent = new target.ownerDocument.defaultView.MouseEvent("mousemove", {
+    bubbles: true,
+  });
+  target.dispatchEvent(mouseEvent);
 
-  // Flatten all menu items into a single array to make searching through it easier
-  let allItems = [].concat.apply([], menu.items.map(function addItem(item) {
-    if (item.submenu) {
-      return addItem(item.submenu.items);
-    }
-    return item;
-  }));
+  const name = "previewTooltip";
+  ok(view.tooltips._instances.has(name),
+    `Tooltip '${name}' has been instantiated`);
+  const tooltip = view.tooltips.getTooltip(name);
 
-  return allItems;
+  if (!tooltip.isVisible()) {
+    info("Waiting for tooltip to be shown");
+    await tooltip.once("shown");
+  }
+
+  ok(tooltip.isVisible(), `The tooltip '${name}' is visible`);
+
+  return tooltip;
+}
+
+/**
+ * Given a `tooltip` instance, fake a mouse event on `target` DOM element
+ * and check that the tooltip correctly disappear.
+ *
+ * @param {Tooltip} tooltip
+ *        The tooltip instance
+ * @param {DOMElement} target
+ *        The DOM Element on which a tooltip should appear
+ */
+async function assertTooltipHiddenOnMouseOut(tooltip, target) {
+  // The tooltip actually relies on mousemove events to check if it sould be hidden.
+  const mouseEvent = new target.ownerDocument.defaultView.MouseEvent("mousemove", {
+    bubbles: true,
+    relatedTarget: target,
+  });
+  target.parentNode.dispatchEvent(mouseEvent);
+
+  await tooltip.once("hidden");
+
+  ok(!tooltip.isVisible(), "The tooltip is hidden on mouseout");
 }
 
 /**
@@ -718,17 +836,96 @@ function getRuleViewRuleEditor(view, childrenIndex, nodeIndex) {
  * @param {InspectorPanel} inspector
  * @return {String} The text displayed in the markup view
  */
-function* getDisplayedNodeTextContent(selector, inspector) {
+async function getDisplayedNodeTextContent(selector, inspector) {
   // We have to ensure that the textContent is displayed, for that the DOM
   // Element has to be selected in the markup view and to be expanded.
-  yield selectNode(selector, inspector);
+  await selectNode(selector, inspector);
 
-  let container = yield getContainerForSelector(selector, inspector);
-  yield inspector.markup.expandNode(container.node);
-  yield waitForMultipleChildrenUpdates(inspector);
+  const container = await getContainerForSelector(selector, inspector);
+  await inspector.markup.expandNode(container.node);
+  await waitForMultipleChildrenUpdates(inspector);
   if (container) {
-    let textContainer = container.elt.querySelector("pre");
+    const textContainer = container.elt.querySelector("pre");
     return textContainer.textContent;
   }
   return null;
+}
+
+/**
+ * Toggle the shapes highlighter by simulating a click on the toggle
+ * in the rules view with the given selector and property
+ *
+ * @param {CssRuleView} view
+ *        The instance of the rule-view panel
+ * @param {String} selector
+ *        The selector in the rule-view to look for the property in
+ * @param {String} property
+ *        The name of the property
+ * @param {Boolean} show
+ *        If true, the shapes highlighter is being shown. If false, it is being hidden
+ * @param {Options} options
+ *        Config option for the shapes highlighter. Contains:
+ *        - {Boolean} transformMode: whether to show the highlighter in transforms mode
+ */
+async function toggleShapesHighlighter(view, selector, property, show, options = {}) {
+  info(`Toggle shapes highlighter ${show ? "on" : "off"} for ${property} on ${selector}`);
+  const highlighters = view.highlighters;
+  const container = getRuleViewProperty(view, selector, property).valueSpan;
+  const shapesToggle = container.querySelector(".ruleview-shapeswatch");
+
+  const metaKey = options.transformMode;
+  const ctrlKey = options.transformMode;
+
+  if (show) {
+    const onHighlighterShown = highlighters.once("shapes-highlighter-shown");
+    EventUtils.sendMouseEvent({type: "click", metaKey, ctrlKey },
+      shapesToggle, view.styleWindow);
+    await onHighlighterShown;
+  } else {
+    const onHighlighterHidden = highlighters.once("shapes-highlighter-hidden");
+    EventUtils.sendMouseEvent({type: "click", metaKey, ctrlKey },
+      shapesToggle, view.styleWindow);
+    await onHighlighterHidden;
+  }
+}
+
+/**
+ * Expand the provided markup container programatically and  wait for all children to
+ * update.
+ */
+async function expandContainer(inspector, container) {
+  await inspector.markup.expandNode(container.node);
+  await waitForMultipleChildrenUpdates(inspector);
+}
+
+/**
+ * Expand the provided markup container by clicking on the expand arrow and waiting for
+ * inspector and children to update. Similar to expandContainer helper, but this method
+ * uses a click rather than programatically calling expandNode().
+ */
+async function expandContainerByClick(inspector, container) {
+  const onChildren = waitForChildrenUpdated(inspector);
+  const onUpdated = inspector.once("inspector-updated");
+  EventUtils.synthesizeMouseAtCenter(container.expander, {},
+    inspector.markup.doc.defaultView);
+  await onChildren;
+  await onUpdated;
+}
+
+/**
+ * Simulate a color change in a given color picker tooltip.
+ *
+ * @param  {Spectrum} colorPicker
+ *         The color picker widget.
+ * @param  {Array} newRgba
+ *         Array of the new rgba values to be set in the color widget.
+ */
+async function simulateColorPickerChange(colorPicker, newRgba) {
+  info("Getting the spectrum colorpicker object");
+  const spectrum = await colorPicker.spectrum;
+  info("Setting the new color");
+  spectrum.rgb = newRgba;
+  info("Applying the change");
+  spectrum.updateUI();
+  spectrum.onChange();
 }

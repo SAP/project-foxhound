@@ -2,52 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// ES6 draft rev36 2015-03-17 19.1.2.1
-function ObjectStaticAssign(target, firstSource) {
-    // Steps 1-2.
-    var to = ToObject(target);
-
-    // Step 3.
-    if (arguments.length < 2)
-        return to;
-
-    // Steps 4-5.
-    for (var i = 1; i < arguments.length; i++) {
-        // Step 5.a.
-        var nextSource = arguments[i];
-        if (nextSource === null || nextSource === undefined)
-            continue;
-
-        // Steps 5.b.i-ii.
-        var from = ToObject(nextSource);
-
-        // Steps 5.b.iii-iv.
-        var keys = OwnPropertyKeys(from, JSITER_OWNONLY | JSITER_HIDDEN | JSITER_SYMBOLS);
-
-        // Step 5.c.
-        for (var nextIndex = 0, len = keys.length; nextIndex < len; nextIndex++) {
-            var nextKey = keys[nextIndex];
-
-            // Steps 5.c.i-iii. We abbreviate this by calling propertyIsEnumerable
-            // which is faster and returns false for not defined properties.
-            if (callFunction(std_Object_propertyIsEnumerable, from, nextKey)) {
-                // Steps 5.c.iii.1-4.
-                to[nextKey] = from[nextKey];
-            }
-        }
-    }
-
-    // Step 6.
-    return to;
-}
-
 // ES stage 4 proposal
 function ObjectGetOwnPropertyDescriptors(O) {
     // Step 1.
     var obj = ToObject(O);
 
     // Step 2.
-    var keys = OwnPropertyKeys(obj, JSITER_OWNONLY | JSITER_HIDDEN | JSITER_SYMBOLS);
+    var keys = std_Reflect_ownKeys(obj);
 
     // Step 3.
     var descriptors = {};
@@ -57,7 +18,7 @@ function ObjectGetOwnPropertyDescriptors(O) {
         var key = keys[index];
 
         // Steps 4.a-b.
-        var desc = std_Object_getOwnPropertyDescriptor(obj, key);
+        var desc = ObjectGetOwnPropertyDescriptor(obj, key);
 
         // Step 4.c.
         if (typeof desc !== "undefined")
@@ -93,6 +54,13 @@ function Object_valueOf() {
     return ToObject(this);
 }
 
+// ES 2018 draft 19.1.3.2
+function Object_hasOwnProperty(V) {
+    // Implement hasOwnProperty as a pseudo function that becomes a JSOp
+    // to easier add an inline cache for this.
+    return hasOwn(V, this);
+}
+
 // ES7 draft (2016 March 8) B.2.2.3
 function ObjectDefineSetter(name, setter) {
     // Step 1.
@@ -102,19 +70,12 @@ function ObjectDefineSetter(name, setter) {
     if (!IsCallable(setter))
         ThrowTypeError(JSMSG_BAD_GETTER_OR_SETTER, "setter");
 
-    // Step 3.
-    var desc = {
-        __proto__: null,
-        enumerable: true,
-        configurable: true,
-        set: setter
-    };
-
     // Step 4.
-    var key = ToPropertyKey(name);
+    var key = TO_PROPERTY_KEY(name);
 
-    // Step 5.
-    std_Object_defineProperty(object, key, desc);
+    // Steps 3, 5.
+    _DefineProperty(object, key, ACCESSOR_DESCRIPTOR_KIND | ATTR_ENUMERABLE | ATTR_CONFIGURABLE,
+                    null, setter, true);
 
     // Step 6. (implicit)
 }
@@ -128,19 +89,12 @@ function ObjectDefineGetter(name, getter) {
     if (!IsCallable(getter))
         ThrowTypeError(JSMSG_BAD_GETTER_OR_SETTER, "getter");
 
-    // Step 3.
-    var desc = {
-        __proto__: null,
-        enumerable: true,
-        configurable: true,
-        get: getter
-    };
-
     // Step 4.
-    var key = ToPropertyKey(name);
+    var key = TO_PROPERTY_KEY(name);
 
-    // Step 5.
-    std_Object_defineProperty(object, key, desc);
+    // Steps 3, 5.
+    _DefineProperty(object, key, ACCESSOR_DESCRIPTOR_KIND | ATTR_ENUMERABLE | ATTR_CONFIGURABLE,
+                    getter, null, true);
 
     // Step 6. (implicit)
 }
@@ -151,19 +105,19 @@ function ObjectLookupSetter(name) {
     var object = ToObject(this);
 
     // Step 2.
-    var key = ToPropertyKey(name)
+    var key = TO_PROPERTY_KEY(name);
 
     do {
         // Step 3.a.
-        var desc = std_Object_getOwnPropertyDescriptor(object, key);
+        var desc = GetOwnPropertyDescriptorToArray(object, key);
 
         // Step 3.b.
         if (desc) {
             // Step.b.i.
-            if (callFunction(std_Object_hasOwnProperty, desc, "set"))
-                return desc.set;
+            if (desc[PROP_DESC_ATTRS_AND_KIND_INDEX] & ACCESSOR_DESCRIPTOR_KIND)
+                return desc[PROP_DESC_SETTER_INDEX];
 
-            // Step.b.ii.
+            // Step.b.i.
             return undefined;
         }
 
@@ -180,17 +134,17 @@ function ObjectLookupGetter(name) {
     var object = ToObject(this);
 
     // Step 2.
-    var key = ToPropertyKey(name)
+    var key = TO_PROPERTY_KEY(name);
 
     do {
         // Step 3.a.
-        var desc = std_Object_getOwnPropertyDescriptor(object, key);
+        var desc = GetOwnPropertyDescriptorToArray(object, key);
 
         // Step 3.b.
         if (desc) {
             // Step.b.i.
-            if (callFunction(std_Object_hasOwnProperty, desc, "get"))
-                return desc.get;
+            if (desc[PROP_DESC_ATTRS_AND_KIND_INDEX] & ACCESSOR_DESCRIPTOR_KIND)
+                return desc[PROP_DESC_GETTER_INDEX];
 
             // Step.b.ii.
             return undefined;
@@ -202,3 +156,156 @@ function ObjectLookupGetter(name) {
 
     // Step 3.d. (implicit)
 }
+
+// ES2017 draft rev 6859bb9ccaea9c6ede81d71e5320e3833b92cb3e
+// 19.1.2.6 Object.getOwnPropertyDescriptor ( O, P )
+function ObjectGetOwnPropertyDescriptor(obj, propertyKey) {
+    // Steps 1-3.
+    var desc = GetOwnPropertyDescriptorToArray(obj, propertyKey);
+
+    // Step 4 (Call to 6.2.4.4 FromPropertyDescriptor).
+
+    // 6.2.4.4 FromPropertyDescriptor, step 1.
+    if (!desc)
+        return undefined;
+
+    // 6.2.4.4 FromPropertyDescriptor, steps 2-5, 8-11.
+    var attrsAndKind = desc[PROP_DESC_ATTRS_AND_KIND_INDEX];
+    if (attrsAndKind & DATA_DESCRIPTOR_KIND) {
+        return {
+            value: desc[PROP_DESC_VALUE_INDEX],
+            writable: !!(attrsAndKind & ATTR_WRITABLE),
+            enumerable: !!(attrsAndKind & ATTR_ENUMERABLE),
+            configurable: !!(attrsAndKind & ATTR_CONFIGURABLE),
+        };
+    }
+
+    // 6.2.4.4 FromPropertyDescriptor, steps 2-3, 6-11.
+    assert(attrsAndKind & ACCESSOR_DESCRIPTOR_KIND, "expected accessor property descriptor");
+    return {
+        get: desc[PROP_DESC_GETTER_INDEX],
+        set: desc[PROP_DESC_SETTER_INDEX],
+        enumerable: !!(attrsAndKind & ATTR_ENUMERABLE),
+        configurable: !!(attrsAndKind & ATTR_CONFIGURABLE),
+    };
+}
+
+// ES2017 draft rev 6859bb9ccaea9c6ede81d71e5320e3833b92cb3e
+// 19.1.2.4 Object.defineProperty ( O, P, Attributes )
+// 26.1.3 Reflect.defineProperty ( target, propertyKey, attributes )
+function ObjectOrReflectDefineProperty(obj, propertyKey, attributes, strict) {
+    // Step 1.
+    if (!IsObject(obj))
+        ThrowTypeError(JSMSG_NOT_NONNULL_OBJECT, DecompileArg(0, obj));
+
+    // Step 2.
+    propertyKey = TO_PROPERTY_KEY(propertyKey);
+
+    // Step 3 (Call to 6.2.4.5 ToPropertyDescriptor).
+
+    // 6.2.4.5 ToPropertyDescriptor, step 1.
+    if (!IsObject(attributes))
+        ThrowArgTypeNotObject(NOT_OBJECT_KIND_DESCRIPTOR, attributes);
+
+    // 6.2.4.5 ToPropertyDescriptor, step 2.
+    var attrs = 0, hasValue = false;
+    var value, getter = null, setter = null;
+
+    // 6.2.4.5 ToPropertyDescriptor, steps 3-4.
+    if ("enumerable" in attributes)
+        attrs |= attributes.enumerable ? ATTR_ENUMERABLE : ATTR_NONENUMERABLE;
+
+    // 6.2.4.5 ToPropertyDescriptor, steps 5-6.
+    if ("configurable" in attributes)
+        attrs |= attributes.configurable ? ATTR_CONFIGURABLE : ATTR_NONCONFIGURABLE;
+
+    // 6.2.4.5 ToPropertyDescriptor, steps 7-8.
+    if ("value" in attributes) {
+        attrs |= DATA_DESCRIPTOR_KIND;
+        value = attributes.value;
+        hasValue = true;
+    }
+
+    // 6.2.4.5 ToPropertyDescriptor, steps 9-10.
+    if ("writable" in attributes) {
+        attrs |= DATA_DESCRIPTOR_KIND;
+        attrs |= attributes.writable ? ATTR_WRITABLE : ATTR_NONWRITABLE;
+    }
+
+    // 6.2.4.5 ToPropertyDescriptor, steps 11-12.
+    if ("get" in attributes) {
+        attrs |= ACCESSOR_DESCRIPTOR_KIND;
+        getter = attributes.get;
+        if (!IsCallable(getter) && getter !== undefined)
+            ThrowTypeError(JSMSG_BAD_GET_SET_FIELD, "get");
+    }
+
+    // 6.2.4.5 ToPropertyDescriptor, steps 13-14.
+    if ("set" in attributes) {
+        attrs |= ACCESSOR_DESCRIPTOR_KIND;
+        setter = attributes.set;
+        if (!IsCallable(setter) && setter !== undefined)
+            ThrowTypeError(JSMSG_BAD_GET_SET_FIELD, "set");
+    }
+
+    if (attrs & ACCESSOR_DESCRIPTOR_KIND) {
+        // 6.2.4.5 ToPropertyDescriptor, step 15.
+        if (attrs & DATA_DESCRIPTOR_KIND)
+            ThrowTypeError(JSMSG_INVALID_DESCRIPTOR);
+
+        // Step 4 (accessor descriptor property).
+        return _DefineProperty(obj, propertyKey, attrs, getter, setter, strict);
+    }
+
+    // Step 4 (data property descriptor with value).
+    if (hasValue) {
+        // Use the inlinable _DefineDataProperty function when possible.
+        if (strict) {
+            if ((attrs & (ATTR_ENUMERABLE | ATTR_CONFIGURABLE | ATTR_WRITABLE)) ===
+                (ATTR_ENUMERABLE | ATTR_CONFIGURABLE | ATTR_WRITABLE))
+            {
+                _DefineDataProperty(obj, propertyKey, value);
+                return true;
+            }
+        }
+
+        // The fifth argument is set to |null| to mark that |value| is present.
+        return _DefineProperty(obj, propertyKey, attrs, value, null, strict);
+    }
+
+    // Step 4 (generic property descriptor or data property without value).
+    return _DefineProperty(obj, propertyKey, attrs, undefined, undefined, strict);
+}
+
+// ES2017 draft rev 6859bb9ccaea9c6ede81d71e5320e3833b92cb3e
+// 19.1.2.4 Object.defineProperty ( O, P, Attributes )
+function ObjectDefineProperty(obj, propertyKey, attributes) {
+    // Steps 1-4.
+    if (!ObjectOrReflectDefineProperty(obj, propertyKey, attributes, true)) {
+        // Not standardized yet: https://github.com/tc39/ecma262/pull/688
+        return false;
+    }
+
+    // Step 5.
+    return obj;
+}
+
+// Proposal https://tc39.github.io/proposal-object-from-entries/
+// 1. Object.fromEntries ( iterable )
+function ObjectFromEntries(iter) {
+    // We omit the usual step number comments here because they don't help.
+    // This implementation inlines AddEntriesFromIterator and
+    // CreateDataPropertyOnObject, so it looks more like the polyfill
+    // <https://github.com/tc39/proposal-object-from-entries/blob/master/polyfill.js>
+    // than the spec algorithm.
+    const obj = {};
+
+    for (const pair of allowContentIter(iter)) {
+        if (!IsObject(pair))
+            ThrowTypeError(JSMSG_INVALID_MAP_ITERABLE, "Object.fromEntries");
+        _DefineDataProperty(obj, pair[0], pair[1]);
+    }
+
+    return obj;
+}
+

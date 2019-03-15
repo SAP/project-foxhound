@@ -6,8 +6,8 @@
  * result for various combinations of .setPrivate() and nsILoadContexts
  */
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 
 var URIs = [
@@ -15,15 +15,6 @@ var URIs = [
   "https://example.org",
   "ftp://example.org"
   ];
-
-function LoadContext(usePrivateBrowsing) {
-  this.usePrivateBrowsing = usePrivateBrowsing;
-}
-LoadContext.prototype = {
-  originAttributes: {},
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsILoadContext, Ci.nsIInterfaceRequestor]),
-  getInterface: XPCOMUtils.generateQI([Ci.nsILoadContext])
-};
 
 function* getChannels() {
   for (let u of URIs) {
@@ -35,8 +26,8 @@ function* getChannels() {
 }
 
 function checkPrivate(channel, shouldBePrivate) {
-  do_check_eq(channel.QueryInterface(Ci.nsIPrivateBrowsingChannel).isChannelPrivate,
-              shouldBePrivate);
+  Assert.equal(channel.QueryInterface(Ci.nsIPrivateBrowsingChannel).isChannelPrivate,
+               shouldBePrivate);
 }
 
 /**
@@ -76,7 +67,7 @@ add_test(function test_setPrivate_regular() {
  * Load context mandates private mode
  */
 add_test(function test_LoadContextPrivate() {
-  let ctx = new LoadContext(true);
+  let ctx = Cu.createPrivateLoadContext();
   for (let c of getChannels()) {
     c.notificationCallbacks = ctx;
     checkPrivate(c, true);
@@ -88,7 +79,7 @@ add_test(function test_LoadContextPrivate() {
  * Load context mandates regular mode
  */
 add_test(function test_LoadContextRegular() {
-  let ctx = new LoadContext(false);
+  let ctx = Cu.createLoadContext();
   for (let c of getChannels()) {
     c.notificationCallbacks = ctx;
     checkPrivate(c, false);

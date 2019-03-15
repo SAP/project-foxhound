@@ -10,32 +10,39 @@
 #include "mozilla/ArrayUtils.h"
 #include "MockMediaResource.h"
 
+class MockMP3MediaResource;
+class MockMP3StreamMediaResource;
+namespace mozilla {
+DDLoggedTypeNameAndBase(::MockMP3MediaResource, MockMediaResource);
+DDLoggedTypeNameAndBase(::MockMP3StreamMediaResource, MockMP3MediaResource);
+}  // namespace mozilla
+
 using namespace mozilla;
-using namespace mozilla::mp3;
 using media::TimeUnit;
 
-
 // Regular MP3 file mock resource.
-class MockMP3MediaResource : public MockMediaResource {
-public:
+class MockMP3MediaResource
+    : public MockMediaResource,
+      public DecoderDoctorLifeLogger<MockMP3MediaResource> {
+ public:
   explicit MockMP3MediaResource(const char* aFileName)
-    : MockMediaResource(aFileName)
-  {}
+      : MockMediaResource(aFileName) {}
 
-protected:
+ protected:
   virtual ~MockMP3MediaResource() {}
 };
 
 // MP3 stream mock resource.
-class MockMP3StreamMediaResource : public MockMP3MediaResource {
-public:
+class MockMP3StreamMediaResource
+    : public MockMP3MediaResource,
+      public DecoderDoctorLifeLogger<MockMP3StreamMediaResource> {
+ public:
   explicit MockMP3StreamMediaResource(const char* aFileName)
-    : MockMP3MediaResource(aFileName)
-  {}
+      : MockMP3MediaResource(aFileName) {}
 
   int64_t GetLength() override { return -1; }
 
-protected:
+ protected:
   virtual ~MockMP3StreamMediaResource() {}
 };
 
@@ -70,7 +77,7 @@ struct MP3Resource {
 };
 
 class MP3DemuxerTest : public ::testing::Test {
-protected:
+ protected:
   void SetUp() override {
     {
       MP3Resource res;
@@ -93,7 +100,7 @@ protected:
       res.mBitrate = 256000;
       res.mSlotSize = 1;
       res.mPrivate = 0;
-      const int syncs[] = { 2151, 2987, 3823, 4659, 5495, 6331 };
+      const int syncs[] = {2151, 2987, 3823, 4659, 5495, 6331};
       res.mSyncOffsets.insert(res.mSyncOffsets.begin(), syncs, syncs + 6);
 
       // No content length can be estimated for CBR stream resources.
@@ -113,10 +120,11 @@ protected:
 
     {
       MP3Resource res;
-      // This file trips up the MP3 demuxer if ID3v2 tags aren't properly skipped. If skipping is
-      // not properly implemented, depending on the strictness of the MPEG frame parser a false
-      // sync will be detected somewhere within the metadata at or after 112087, or failing
-      // that, at the artificially added extraneous header at 114532.
+      // This file trips up the MP3 demuxer if ID3v2 tags aren't properly
+      // skipped. If skipping is not properly implemented, depending on the
+      // strictness of the MPEG frame parser a false sync will be detected
+      // somewhere within the metadata at or after 112087, or failing that, at
+      // the artificially added extraneous header at 114532.
       res.mFilePath = "id3v2header.mp3";
       res.mIsVBR = false;
       res.mFileSize = 191302;
@@ -126,7 +134,7 @@ protected:
       res.mID3MinorVersion = 0;
       res.mID3Flags = 0;
       res.mID3Size = 115304;
-      res.mDuration = 3160816;
+      res.mDuration = 3166167;
       res.mDurationError = 0.001f;
       res.mSeekError = 0.02f;
       res.mSampleRate = 44100;
@@ -136,7 +144,7 @@ protected:
       res.mBitrate = 192000;
       res.mSlotSize = 1;
       res.mPrivate = 1;
-      const int syncs[] = { 115314, 115941, 116568, 117195, 117822, 118449 };
+      const int syncs[] = {115314, 115941, 116568, 117195, 117822, 118449};
       res.mSyncOffsets.insert(res.mSyncOffsets.begin(), syncs, syncs + 6);
 
       // No content length can be estimated for CBR stream resources.
@@ -175,7 +183,7 @@ protected:
       res.mBitrate = 154000;
       res.mSlotSize = 1;
       res.mPrivate = 0;
-      const int syncs[] = { 2231, 2648, 2752, 3796, 4318, 4735 };
+      const int syncs[] = {2231, 2648, 2752, 3796, 4318, 4735};
       res.mSyncOffsets.insert(res.mSyncOffsets.begin(), syncs, syncs + 6);
 
       // VBR stream resources contain header info on total frames numbers, which
@@ -213,8 +221,8 @@ protected:
       res.mBitrate = 256000;
       res.mSlotSize = 1;
       res.mPrivate = 0;
-      const int syncs[] = { 34, 556, 1078, 1601, 2123, 2646, 3168, 3691, 4213,
-                            4736, 5258, 5781, 6303 };
+      const int syncs[] = {34,   556,  1078, 1601, 2123, 2646, 3168,
+                           3691, 4213, 4736, 5258, 5781, 6303};
       res.mSyncOffsets.insert(res.mSyncOffsets.begin(), syncs, syncs + 13);
 
       // No content length can be estimated for CBR stream resources.
@@ -253,8 +261,8 @@ protected:
       res.mBitrate = 256000;
       res.mSlotSize = 1;
       res.mPrivate = 0;
-      const int syncs[] = { 54, 576, 1098, 1621, 2143, 2666, 3188, 3711, 4233,
-        4756, 5278, 5801, 6323 };
+      const int syncs[] = {54,   576,  1098, 1621, 2143, 2666, 3188,
+                           3711, 4233, 4756, 5278, 5801, 6323};
       res.mSyncOffsets.insert(res.mSyncOffsets.begin(), syncs, syncs + 13);
 
       // No content length can be estimated for CBR stream resources.
@@ -291,8 +299,8 @@ protected:
       res.mBitrate = 256000;
       res.mSlotSize = 1;
       res.mPrivate = 0;
-      const int syncs[] = { 34, 556, 1078, 1601, 2123, 2646, 3168, 3691, 4213,
-                            4736, 5258, 5781, 6303 };
+      const int syncs[] = {34,   556,  1078, 1601, 2123, 2646, 3168,
+                           3691, 4213, 4736, 5258, 5781, 6303};
       res.mSyncOffsets.insert(res.mSyncOffsets.begin(), syncs, syncs + 13);
 
       // No content length can be estimated for CBR stream resources.
@@ -308,8 +316,8 @@ protected:
       mTargets.push_back(streamRes);
     }
 
-    for (auto& target: mTargets) {
-      ASSERT_EQ(NS_OK, target.mResource->Open(nullptr));
+    for (auto& target : mTargets) {
+      ASSERT_EQ(NS_OK, target.mResource->Open());
       ASSERT_TRUE(target.mDemuxer->Init());
     }
   }
@@ -318,7 +326,7 @@ protected:
 };
 
 TEST_F(MP3DemuxerTest, ID3Tags) {
-  for (const auto& target: mTargets) {
+  for (const auto& target : mTargets) {
     RefPtr<MediaRawData> frame(target.mDemuxer->DemuxSample());
     ASSERT_TRUE(frame);
 
@@ -333,7 +341,7 @@ TEST_F(MP3DemuxerTest, ID3Tags) {
 }
 
 TEST_F(MP3DemuxerTest, VBRHeader) {
-  for (const auto& target: mTargets) {
+  for (const auto& target : mTargets) {
     RefPtr<MediaRawData> frame(target.mDemuxer->DemuxSample());
     ASSERT_TRUE(frame);
 
@@ -342,7 +350,8 @@ TEST_F(MP3DemuxerTest, VBRHeader) {
     if (target.mIsVBR) {
       EXPECT_EQ(FrameParser::VBRHeader::XING, vbr.Type());
       // TODO: find reference number which accounts for trailing headers.
-      // EXPECT_EQ(target.mNumSamples / target.mSamplesPerFrame, vbr.NumAudioFrames().value());
+      // EXPECT_EQ(target.mNumSamples / target.mSamplesPerFrame,
+      // vbr.NumAudioFrames().value());
     } else {
       EXPECT_EQ(FrameParser::VBRHeader::NONE, vbr.Type());
       EXPECT_FALSE(vbr.NumAudioFrames());
@@ -351,7 +360,7 @@ TEST_F(MP3DemuxerTest, VBRHeader) {
 }
 
 TEST_F(MP3DemuxerTest, FrameParsing) {
-  for (const auto& target: mTargets) {
+  for (const auto& target : mTargets) {
     RefPtr<MediaRawData> frameData(target.mDemuxer->DemuxSample());
     ASSERT_TRUE(frameData);
     EXPECT_EQ(target.mFileSize, target.mDemuxer->StreamLength());
@@ -413,13 +422,14 @@ TEST_F(MP3DemuxerTest, FrameParsing) {
 }
 
 TEST_F(MP3DemuxerTest, Duration) {
-  for (const auto& target: mTargets) {
+  for (const auto& target : mTargets) {
     RefPtr<MediaRawData> frameData(target.mDemuxer->DemuxSample());
     ASSERT_TRUE(frameData);
     EXPECT_EQ(target.mFileSize, target.mDemuxer->StreamLength());
 
     while (frameData) {
-      EXPECT_NEAR(target.mDuration, target.mDemuxer->Duration().ToMicroseconds(),
+      EXPECT_NEAR(target.mDuration,
+                  target.mDemuxer->Duration().ToMicroseconds(),
                   target.mDurationError * target.mDuration);
 
       frameData = target.mDemuxer->DemuxSample();
@@ -427,7 +437,7 @@ TEST_F(MP3DemuxerTest, Duration) {
   }
 
   // Seek out of range tests.
-  for (const auto& target: mTargets) {
+  for (const auto& target : mTargets) {
     // Skip tests for stream media resources because of lacking duration.
     if (target.mFileSize <= 0) {
       continue;
@@ -437,14 +447,15 @@ TEST_F(MP3DemuxerTest, Duration) {
     RefPtr<MediaRawData> frameData(target.mDemuxer->DemuxSample());
     ASSERT_TRUE(frameData);
 
-    const int64_t duration = target.mDemuxer->Duration().ToMicroseconds();
-    const int64_t pos = duration + 1e6;
+    const auto duration = target.mDemuxer->Duration();
+    const auto pos = duration + TimeUnit::FromMicroseconds(1e6);
 
     // Attempt to seek 1 second past the end of stream.
-    target.mDemuxer->Seek(TimeUnit::FromMicroseconds(pos));
+    target.mDemuxer->Seek(pos);
     // The seek should bring us to the end of the stream.
-    EXPECT_NEAR(duration, target.mDemuxer->SeekPosition().ToMicroseconds(),
-                target.mSeekError * duration);
+    EXPECT_NEAR(duration.ToMicroseconds(),
+                target.mDemuxer->SeekPosition().ToMicroseconds(),
+                target.mSeekError * duration.ToMicroseconds());
 
     // Since we're at the end of the stream, there should be no frames left.
     frameData = target.mDemuxer->DemuxSample();
@@ -453,39 +464,41 @@ TEST_F(MP3DemuxerTest, Duration) {
 }
 
 TEST_F(MP3DemuxerTest, Seek) {
-  for (const auto& target: mTargets) {
+  for (const auto& target : mTargets) {
     RefPtr<MediaRawData> frameData(target.mDemuxer->DemuxSample());
     ASSERT_TRUE(frameData);
 
-    const int64_t seekTime = TimeUnit::FromSeconds(1).ToMicroseconds();
-    int64_t pos = target.mDemuxer->SeekPosition().ToMicroseconds();
+    const auto seekTime = TimeUnit::FromSeconds(1);
+    auto pos = target.mDemuxer->SeekPosition();
 
     while (frameData) {
-      EXPECT_NEAR(pos, target.mDemuxer->SeekPosition().ToMicroseconds(),
-                  target.mSeekError * pos);
+      EXPECT_NEAR(pos.ToMicroseconds(),
+                  target.mDemuxer->SeekPosition().ToMicroseconds(),
+                  target.mSeekError * pos.ToMicroseconds());
 
       pos += seekTime;
-      target.mDemuxer->Seek(TimeUnit::FromMicroseconds(pos));
+      target.mDemuxer->Seek(pos);
       frameData = target.mDemuxer->DemuxSample();
     }
   }
 
   // Seeking should work with in-between resets, too.
-  for (const auto& target: mTargets) {
+  for (const auto& target : mTargets) {
     target.mDemuxer->Reset();
     RefPtr<MediaRawData> frameData(target.mDemuxer->DemuxSample());
     ASSERT_TRUE(frameData);
 
-    const int64_t seekTime = TimeUnit::FromSeconds(1).ToMicroseconds();
-    int64_t pos = target.mDemuxer->SeekPosition().ToMicroseconds();
+    const auto seekTime = TimeUnit::FromSeconds(1);
+    auto pos = target.mDemuxer->SeekPosition();
 
     while (frameData) {
-      EXPECT_NEAR(pos, target.mDemuxer->SeekPosition().ToMicroseconds(),
-                  target.mSeekError * pos);
+      EXPECT_NEAR(pos.ToMicroseconds(),
+                  target.mDemuxer->SeekPosition().ToMicroseconds(),
+                  target.mSeekError * pos.ToMicroseconds());
 
       pos += seekTime;
       target.mDemuxer->Reset();
-      target.mDemuxer->Seek(TimeUnit::FromMicroseconds(pos));
+      target.mDemuxer->Seek(pos);
       frameData = target.mDemuxer->DemuxSample();
     }
   }

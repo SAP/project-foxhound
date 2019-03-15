@@ -4,11 +4,14 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
- 
+
 #ifndef SKSL_PREFIXEXPRESSION
 #define SKSL_PREFIXEXPRESSION
 
 #include "SkSLExpression.h"
+#include "SkSLFloatLiteral.h"
+#include "SkSLIRGenerator.h"
+#include "SkSLLexer.h"
 
 namespace SkSL {
 
@@ -17,15 +20,40 @@ namespace SkSL {
  */
 struct PrefixExpression : public Expression {
     PrefixExpression(Token::Kind op, std::unique_ptr<Expression> operand)
-    : INHERITED(operand->fPosition, kPrefix_Kind, operand->fType)
+    : INHERITED(operand->fOffset, kPrefix_Kind, operand->fType)
     , fOperand(std::move(operand))
     , fOperator(op) {}
 
-    virtual std::string description() const override {
-        return Token::OperatorName(fOperator) + fOperand->description();
+    bool isConstant() const override {
+        return fOperator == Token::MINUS && fOperand->isConstant();
     }
 
-    const std::unique_ptr<Expression> fOperand;
+    bool hasSideEffects() const override {
+        return fOperator == Token::PLUSPLUS || fOperator == Token::MINUSMINUS ||
+               fOperand->hasSideEffects();
+    }
+
+    std::unique_ptr<Expression> constantPropagate(const IRGenerator& irGenerator,
+                                                  const DefinitionMap& definitions) override {
+        if (fOperand->fKind == Expression::kFloatLiteral_Kind) {
+            return std::unique_ptr<Expression>(new FloatLiteral(
+                                                              irGenerator.fContext,
+                                                              fOffset,
+                                                              -((FloatLiteral&) *fOperand).fValue));
+
+        }
+        return nullptr;
+    }
+
+    std::unique_ptr<Expression> clone() const override {
+        return std::unique_ptr<Expression>(new PrefixExpression(fOperator, fOperand->clone()));
+    }
+
+    String description() const override {
+        return Compiler::OperatorName(fOperator) + fOperand->description();
+    }
+
+    std::unique_ptr<Expression> fOperand;
     const Token::Kind fOperator;
 
     typedef Expression INHERITED;

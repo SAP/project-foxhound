@@ -8,9 +8,9 @@ function run_test() {
   run_next_test();
 }
 
-add_task(function* test_startup_error() {
+add_task(async function test_startup_error() {
   let db = PushServiceWebSocket.newPushDB();
-  do_register_cleanup(() => {return db.drop().then(_ => db.close());});
+  registerCleanupFunction(() => {return db.drop().then(_ => db.close());});
 
   PushService.init({
     serverURI: 'wss://push.example.org/',
@@ -31,12 +31,13 @@ add_task(function* test_startup_error() {
     },
   });
 
-  yield rejects(
+  await rejects(
     PushService.register({
       scope: `https://example.net/1`,
       originAttributes: ChromeUtils.originAttributesToSuffix(
         { appId: Ci.nsIScriptSecurityManager.NO_APP_ID, inIsolatedMozBrowser: false }),
     }),
+    /Push service not active/,
     'Should not register if startup failed'
   );
 
@@ -60,12 +61,13 @@ add_task(function* test_startup_error() {
       });
     },
   });
-  yield rejects(
+  await rejects(
     PushService.registration({
       scope: `https://example.net/1`,
       originAttributes: ChromeUtils.originAttributesToSuffix(
         { appId: Ci.nsIScriptSecurityManager.NO_APP_ID, inIsolatedMozBrowser: false }),
     }),
+    /Push service not active/,
     'Should not return registration if connection failed'
   );
 });

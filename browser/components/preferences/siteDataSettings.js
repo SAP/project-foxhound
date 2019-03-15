@@ -2,31 +2,88 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-const { interfaces: Ci, utils: Cu } = Components;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "SiteDataManager",
-                                  "resource:///modules/SiteDataManager.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "DownloadUtils",
-                                  "resource://gre/modules/DownloadUtils.jsm");
 
 "use strict";
 
+ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+
+ChromeUtils.defineModuleGetter(this, "SiteDataManager",
+                               "resource:///modules/SiteDataManager.jsm");
+ChromeUtils.defineModuleGetter(this, "DownloadUtils",
+                               "resource://gre/modules/DownloadUtils.jsm");
+
 let gSiteDataSettings = {
 
-  // Array of meatdata of sites. Each array element is object holding:
+  // Array of metadata of sites. Each array element is object holding:
   // - uri: uri of site; instance of nsIURI
-  // - status: persistent-storage permission status
+  // - baseDomain: base domain of the site
+  // - cookies: array of cookies of that site
   // - usage: disk usage which site uses
   // - userAction: "remove" or "update-permission"; the action user wants to take.
-  //               If not specified, means no action to take
   _sites: null,
 
   _list: null,
   _searchBox: null,
-  _prefStrBundle: null,
+
+  _createSiteListItem(site) {
+    let item = document.createXULElement("richlistitem");
+    item.setAttribute("host", site.host);
+    let container = document.createXULElement("hbox");
+
+    // Creates a new column item with the specified relative width.
+    function addColumnItem(l10n, flexWidth, tooltipText) {
+      let box = document.createXULElement("hbox");
+      box.className = "item-box";
+      box.setAttribute("flex", flexWidth);
+      let label = document.createXULElement("label");
+      label.setAttribute("crop", "end");
+      if (l10n) {
+        if (l10n.hasOwnProperty("raw")) {
+          box.setAttribute("tooltiptext", l10n.raw);
+          label.setAttribute("value", l10n.raw);
+        } else {
+          document.l10n.setAttributes(label, l10n.id, l10n.args);
+        }
+      }
+      if (tooltipText) {
+        box.setAttribute("tooltiptext", tooltipText);
+      }
+      box.appendChild(label);
+      container.appendChild(box);
+    }
+
+    // Add "Host" column.
+    addColumnItem({raw: site.host}, "4");
+
+    // Add "Cookies" column.
+    addColumnItem({raw: site.cookies.length}, "1");
+
+    // Add "Storage" column
+    if (site.usage > 0 || site.persisted) {
+      let [value, unit] = DownloadUtils.convertByteUnits(site.usage);
+      let strName = site.persisted ? "site-usage-persistent" : "site-usage-pattern";
+      addColumnItem({
+        id: strName,
+        args: { value, unit },
+      }, "2");
+    } else {
+      // Pass null to avoid showing "0KB" when there is no site data stored.
+      addColumnItem(null, "2");
+    }
+
+    // Add "Last Used" column.
+    let formattedLastAccessed = site.lastAccessed > 0 ?
+      this._relativeTimeFormat.formatBestUnit(site.lastAccessed) : null;
+    let formattedFullDate = site.lastAccessed > 0 ?
+      this._absoluteTimeFormat.format(site.lastAccessed) : null;
+    addColumnItem(site.lastAccessed > 0 ?
+      { raw: formattedLastAccessed } : null, "2", formattedFullDate);
+
+    item.appendChild(container);
+    return item;
+  },
 
   init() {
     function setEventListener(id, eventType, callback) {
@@ -34,42 +91,43 @@ let gSiteDataSettings = {
               .addEventListener(eventType, callback.bind(gSiteDataSettings));
     }
 
-    this._list = document.getElementById("sitesList");
-    this._searchBox = document.getElementById("searchBox");
-    this._prefStrBundle = document.getElementById("bundlePreferences")
-    SiteDataManager.getSites().then(sites => {
-      this._sites = sites;
-      let sortCol = document.getElementById("hostCol");
-      this._sortSites(this._sites, sortCol);
-      this._buildSitesList(this._sites);
-      Services.obs.notifyObservers(null, "sitedata-settings-init", null);
+    this._absoluteTimeFormat = new Services.intl.DateTimeFormat(undefined, {
+      dateStyle: "short", timeStyle: "short",
     });
 
+    this._relativeTimeFormat = new Services.intl.RelativeTimeFormat(undefined, {});
+
+    this._list = document.getElementById("sitesList");
+    this._searchBox = document.getElementById("searchBox");
+    SiteDataManager.getSites().then(sites => {
+      this._sites = sites;
+      let sortCol = document.querySelector("treecol[data-isCurrentSortCol=true]");
+      this._sortSites(this._sites, sortCol);
+      this._buildSitesList(this._sites);
+      Services.obs.notifyObservers(null, "sitedata-settings-init");
+    });
+
+    setEventListener("sitesList", "select", this.onSelect);
     setEventListener("hostCol", "click", this.onClickTreeCol);
     setEventListener("usageCol", "click", this.onClickTreeCol);
-    setEventListener("statusCol", "click", this.onClickTreeCol);
+    setEventListener("lastAccessedCol", "click", this.onClickTreeCol);
+    setEventListener("cookiesCol", "click", this.onClickTreeCol);
     setEventListener("cancel", "command", this.close);
     setEventListener("save", "command", this.saveChanges);
     setEventListener("searchBox", "command", this.onCommandSearch);
     setEventListener("removeAll", "command", this.onClickRemoveAll);
-    setEventListener("removeSelected", "command", this.onClickRemoveSelected);
+    setEventListener("removeSelected", "command", this.removeSelected);
   },
 
   _updateButtonsState() {
     let items = this._list.getElementsByTagName("richlistitem");
     let removeSelectedBtn = document.getElementById("removeSelected");
     let removeAllBtn = document.getElementById("removeAll");
-    removeSelectedBtn.disabled = items.length == 0;
-    removeAllBtn.disabled = removeSelectedBtn.disabled;
+    removeSelectedBtn.disabled = this._list.selectedItems.length == 0;
+    removeAllBtn.disabled = items.length == 0;
 
-    let removeAllBtnLabelStringID = "removeAllSiteData.label";
-    let removeAllBtnAccesskeyStringID = "removeAllSiteData.accesskey";
-    if (this._searchBox.value) {
-      removeAllBtnLabelStringID = "removeAllSiteDataShown.label";
-      removeAllBtnAccesskeyStringID = "removeAllSiteDataShown.accesskey";
-    }
-    removeAllBtn.setAttribute("label", this._prefStrBundle.getString(removeAllBtnLabelStringID));
-    removeAllBtn.setAttribute("accesskey", this._prefStrBundle.getString(removeAllBtnAccesskeyStringID));
+    let l10nId = this._searchBox.value ? "site-data-remove-shown" : "site-data-remove-all";
+    document.l10n.setAttributes(removeAllBtn, l10nId);
   },
 
   /**
@@ -77,7 +135,7 @@ let gSiteDataSettings = {
    * @param col {XULElement} the <treecol> being sorted on
    */
   _sortSites(sites, col) {
-    let isCurrentSortCol = col.getAttribute("data-isCurrentSortCol")
+    let isCurrentSortCol = col.getAttribute("data-isCurrentSortCol");
     let sortDirection = col.getAttribute("data-last-sortDirection") || "ascending";
     if (isCurrentSortCol) {
       // Sort on the current column, flip the sorting direction
@@ -88,18 +146,22 @@ let gSiteDataSettings = {
     switch (col.id) {
       case "hostCol":
         sortFunc = (a, b) => {
-          let aHost = a.uri.host.toLowerCase();
-          let bHost = b.uri.host.toLowerCase();
+          let aHost = a.baseDomain.toLowerCase();
+          let bHost = b.baseDomain.toLowerCase();
           return aHost.localeCompare(bHost);
-        }
+        };
         break;
 
-      case "statusCol":
-        sortFunc = (a, b) => a.status - b.status;
+      case "cookiesCol":
+        sortFunc = (a, b) => a.cookies.length - b.cookies.length;
         break;
 
       case "usageCol":
         sortFunc = (a, b) => a.usage - b.usage;
+        break;
+
+      case "lastAccessedCol":
+        sortFunc = (a, b) => a.lastAccessed - b.lastAccessed;
         break;
     }
     if (sortDirection === "descending") {
@@ -108,7 +170,7 @@ let gSiteDataSettings = {
       sites.sort(sortFunc);
     }
 
-    let cols = this._list.querySelectorAll("treecol");
+    let cols = this._list.previousElementSibling.querySelectorAll("treecol");
     cols.forEach(c => {
       c.removeAttribute("sortDirection");
       c.removeAttribute("data-isCurrentSortCol");
@@ -129,37 +191,31 @@ let gSiteDataSettings = {
     }
 
     let keyword = this._searchBox.value.toLowerCase().trim();
-    for (let data of sites) {
-      let host = data.uri.host;
+    let fragment = document.createDocumentFragment();
+    for (let site of sites) {
+      let host = site.host;
       if (keyword && !host.includes(keyword)) {
         continue;
       }
 
-      if (data.userAction === "remove") {
+      if (site.userAction === "remove") {
         continue;
       }
 
-      let statusStrId = data.status === Ci.nsIPermissionManager.ALLOW_ACTION ? "important" : "default";
-      let size = DownloadUtils.convertByteUnits(data.usage);
-      let item = document.createElement("richlistitem");
-      item.setAttribute("data-origin", data.uri.spec);
-      item.setAttribute("host", host);
-      item.setAttribute("status", this._prefStrBundle.getString(statusStrId));
-      item.setAttribute("usage", this._prefStrBundle.getFormattedString("siteUsage", size));
-      this._list.appendChild(item);
+      let item = this._createSiteListItem(site);
+      fragment.appendChild(item);
     }
+    this._list.appendChild(fragment);
     this._updateButtonsState();
   },
 
   _removeSiteItems(items) {
     for (let i = items.length - 1; i >= 0; --i) {
       let item = items[i];
-      let origin = item.getAttribute("data-origin");
-      for (let site of this._sites) {
-        if (site.uri.spec === origin) {
-          site.userAction = "remove";
-          break;
-        }
+      let host = item.getAttribute("host");
+      let siteForHost = this._sites.find(site => site.host == host);
+      if (siteForHost) {
+        siteForHost.userAction = "remove";
       }
       item.remove();
     }
@@ -167,94 +223,63 @@ let gSiteDataSettings = {
   },
 
   saveChanges() {
-    let allowed = true;
+    // Tracks whether the user confirmed their decision.
+    let allowed = false;
 
-    // Confirm user really wants to remove site data starts
-    let removals = [];
-    this._sites = this._sites.filter(site => {
-      if (site.userAction === "remove") {
-        removals.push(site.uri);
-        return false;
-      }
-      return true;
-    });
+    let removals = this._sites
+      .filter(site => site.userAction == "remove")
+      .map(site => site.host);
 
     if (removals.length > 0) {
-      if (this._sites.length == 0) {
-        // User selects all sites so equivalent to clearing all data
-        let flags =
-          Services.prompt.BUTTON_TITLE_IS_STRING * Services.prompt.BUTTON_POS_0 +
-          Services.prompt.BUTTON_TITLE_CANCEL * Services.prompt.BUTTON_POS_1 +
-          Services.prompt.BUTTON_POS_0_DEFAULT;
-        let prefStrBundle = document.getElementById("bundlePreferences");
-        let title = prefStrBundle.getString("clearSiteDataPromptTitle");
-        let text = prefStrBundle.getString("clearSiteDataPromptText");
-        let btn0Label = prefStrBundle.getString("clearSiteDataNow");
-        let result = Services.prompt.confirmEx(window, title, text, flags, btn0Label, null, null, null, {});
-        allowed = result == 0;
+      if (this._sites.length == removals.length) {
+        allowed = SiteDataManager.promptSiteDataRemoval(window);
         if (allowed) {
           SiteDataManager.removeAll();
         }
       } else {
-        // User only removes partial sites.
-        // We will remove cookies based on base domain, say, user selects "news.foo.com" to remove.
-        // The cookies under "music.foo.com" will be removed together.
-        // We have to prmopt user about this action.
-        let hostsTable = new Map();
-        // Group removed sites by base domain
-        for (let uri of removals) {
-          let baseDomain = Services.eTLD.getBaseDomain(uri);
-          let hosts = hostsTable.get(baseDomain);
-          if (!hosts) {
-            hosts = [];
-            hostsTable.set(baseDomain, hosts);
-          }
-          hosts.push(uri.host);
-        }
-        // Pick out sites with the same base domain as removed sites
-        for (let site of this._sites) {
-          let baseDomain = Services.eTLD.getBaseDomain(site.uri);
-          let hosts = hostsTable.get(baseDomain);
-          if (hosts) {
-            hosts.push(site.uri.host);
-          }
-        }
-
-        let args = {
-          hostsTable,
-          allowed: false
-        };
-        let features = "centerscreen,chrome,modal,resizable=no";
-        window.openDialog("chrome://browser/content/preferences/siteDataRemoveSelected.xul", "", features, args);
-        allowed = args.allowed;
+        allowed = SiteDataManager.promptSiteDataRemoval(window, removals);
         if (allowed) {
-          SiteDataManager.remove(removals);
+          SiteDataManager.remove(removals).catch(Cu.reportError);
         }
       }
     }
-    // Confirm user really wants to remove site data ends
 
-    this.close();
+    // If the user cancelled the confirm dialog keep the site data window open,
+    // they can still press cancel again to exit.
+    if (allowed) {
+      this.close();
+    }
   },
 
   close() {
     window.close();
   },
 
+  removeSelected() {
+    let lastIndex = this._list.selectedItems.length - 1;
+    let lastSelectedItem = this._list.selectedItems[lastIndex];
+    let lastSelectedItemPosition = this._list.getIndexOfItem(lastSelectedItem);
+    let nextSelectedItem = this._list.getItemAtIndex(lastSelectedItemPosition + 1);
+
+    this._removeSiteItems(this._list.selectedItems);
+    this._list.clearSelection();
+
+    if (nextSelectedItem) {
+      this._list.selectedItem = nextSelectedItem;
+    } else {
+      this._list.selectedIndex = this._list.itemCount - 1;
+    }
+  },
+
   onClickTreeCol(e) {
     this._sortSites(this._sites, e.target);
     this._buildSitesList(this._sites);
+    this._list.clearSelection();
   },
 
   onCommandSearch() {
     this._buildSitesList(this._sites);
-  },
-
-  onClickRemoveSelected() {
-    let selected = this._list.selectedItem;
-    if (selected) {
-      this._removeSiteItems([selected]);
-    }
+    this._list.clearSelection();
   },
 
   onClickRemoveAll() {
@@ -262,5 +287,19 @@ let gSiteDataSettings = {
     if (siteItems.length > 0) {
       this._removeSiteItems(siteItems);
     }
-  }
+  },
+
+  onKeyPress(e) {
+    if (e.keyCode == KeyEvent.DOM_VK_ESCAPE) {
+      this.close();
+    } else if (e.keyCode == KeyEvent.DOM_VK_DELETE ||
+               (AppConstants.platform == "macosx" &&
+                e.keyCode == KeyEvent.DOM_VK_BACK_SPACE)) {
+      this.removeSelected();
+    }
+  },
+
+  onSelect() {
+    this._updateButtonsState();
+  },
 };

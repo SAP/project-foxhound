@@ -8,21 +8,21 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_PROCESSING_TEST_TEST_UTILS_H_
-#define WEBRTC_MODULES_AUDIO_PROCESSING_TEST_TEST_UTILS_H_
+#ifndef MODULES_AUDIO_PROCESSING_TEST_TEST_UTILS_H_
+#define MODULES_AUDIO_PROCESSING_TEST_TEST_UTILS_H_
 
 #include <math.h>
 #include <iterator>
 #include <limits>
+#include <memory>
 #include <string>
 #include <vector>
 
-#include "webrtc/base/constructormagic.h"
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/common_audio/channel_buffer.h"
-#include "webrtc/common_audio/wav_file.h"
-#include "webrtc/modules/audio_processing/include/audio_processing.h"
-#include "webrtc/modules/include/module_common_types.h"
+#include "common_audio/channel_buffer.h"
+#include "common_audio/wav_file.h"
+#include "modules/audio_processing/include/audio_processing.h"
+#include "modules/include/module_common_types.h"
+#include "rtc_base/constructormagic.h"
 
 namespace webrtc {
 
@@ -46,14 +46,15 @@ class RawFile final {
 // Reads ChannelBuffers from a provided WavReader.
 class ChannelBufferWavReader final {
  public:
-  explicit ChannelBufferWavReader(rtc::scoped_ptr<WavReader> file);
+  explicit ChannelBufferWavReader(std::unique_ptr<WavReader> file);
+  ~ChannelBufferWavReader();
 
   // Reads data from the file according to the |buffer| format. Returns false if
   // a full buffer can't be read from the file.
   bool Read(ChannelBuffer<float>* buffer);
 
  private:
-  rtc::scoped_ptr<WavReader> file_;
+  std::unique_ptr<WavReader> file_;
   std::vector<float> interleaved_;
 
   RTC_DISALLOW_COPY_AND_ASSIGN(ChannelBufferWavReader);
@@ -62,11 +63,13 @@ class ChannelBufferWavReader final {
 // Writes ChannelBuffers to a provided WavWriter.
 class ChannelBufferWavWriter final {
  public:
-  explicit ChannelBufferWavWriter(rtc::scoped_ptr<WavWriter> file);
+  explicit ChannelBufferWavWriter(std::unique_ptr<WavWriter> file);
+  ~ChannelBufferWavWriter();
+
   void Write(const ChannelBuffer<float>& buffer);
 
  private:
-  rtc::scoped_ptr<WavWriter> file_;
+  std::unique_ptr<WavWriter> file_;
   std::vector<float> interleaved_;
 
   RTC_DISALLOW_COPY_AND_ASSIGN(ChannelBufferWavWriter);
@@ -95,7 +98,7 @@ template <typename T>
 void SetContainerFormat(int sample_rate_hz,
                         size_t num_channels,
                         AudioFrame* frame,
-                        rtc::scoped_ptr<ChannelBuffer<T> >* cb) {
+                        std::unique_ptr<ChannelBuffer<T> >* cb) {
   SetFrameSampleRate(frame, sample_rate_hz);
   frame->num_channels_ = num_channels;
   cb->reset(new ChannelBuffer<T>(frame->samples_per_channel_, num_channels));
@@ -152,4 +155,4 @@ std::vector<Point> ParseArrayGeometry(const std::string& mic_positions);
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_AUDIO_PROCESSING_TEST_TEST_UTILS_H_
+#endif  // MODULES_AUDIO_PROCESSING_TEST_TEST_UTILS_H_

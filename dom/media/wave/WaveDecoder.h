@@ -4,27 +4,25 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #if !defined(WaveDecoder_h_)
-#define WaveDecoder_h_
+#  define WaveDecoder_h_
 
-#include "MediaDecoder.h"
+#  include "mozilla/UniquePtr.h"
+#  include "nsTArray.h"
 
 namespace mozilla {
 
 class MediaContainerType;
+class TrackInfo;
 
-class WaveDecoder : public MediaDecoder
-{
-public:
-  // MediaDecoder interface.
-  explicit WaveDecoder(MediaDecoderOwner* aOwner) : MediaDecoder(aOwner) {}
-  MediaDecoder* Clone(MediaDecoderOwner* aOwner) override;
-  MediaDecoderStateMachine* CreateStateMachine() override;
-
+class WaveDecoder {
+ public:
   // Returns true if the Wave backend is pref'ed on, and we're running on a
   // platform that is likely to have decoders for the format.
   static bool IsSupportedType(const MediaContainerType& aContainerType);
+  static nsTArray<UniquePtr<TrackInfo>> GetTracksInfo(
+      const MediaContainerType& aType);
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif

@@ -8,16 +8,17 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_NETEQ_DELAY_MANAGER_H_
-#define WEBRTC_MODULES_AUDIO_CODING_NETEQ_DELAY_MANAGER_H_
+#ifndef MODULES_AUDIO_CODING_NETEQ_DELAY_MANAGER_H_
+#define MODULES_AUDIO_CODING_NETEQ_DELAY_MANAGER_H_
 
 #include <string.h>  // Provide access to size_t.
 
+#include <memory>
 #include <vector>
 
-#include "webrtc/base/constructormagic.h"
-#include "webrtc/modules/audio_coding/neteq/audio_decoder_impl.h"
-#include "webrtc/typedefs.h"
+#include "modules/audio_coding/neteq/tick_timer.h"
+#include "rtc_base/constructormagic.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -32,7 +33,9 @@ class DelayManager {
   // buffer can hold no more than |max_packets_in_buffer| packets (i.e., this
   // is the number of packet slots in the buffer). Supply a PeakDetector
   // object to the DelayManager.
-  DelayManager(size_t max_packets_in_buffer, DelayPeakDetector* peak_detector);
+  DelayManager(size_t max_packets_in_buffer,
+               DelayPeakDetector* peak_detector,
+               const TickTimer* tick_timer);
 
   virtual ~DelayManager();
 
@@ -68,16 +71,12 @@ class DelayManager {
   // the nominal frame time, the return value is zero. A positive value
   // corresponds to packet spacing being too large, while a negative value means
   // that the packets arrive with less spacing than expected.
-  virtual int AverageIAT() const;
+  virtual double EstimatedClockDriftPpm() const;
 
   // Returns true if peak-mode is active. That is, delay peaks were observed
   // recently. This method simply asks for the same information from the
   // DelayPeakDetector object.
   virtual bool PeakFound() const;
-
-  // Notifies the counters in DelayManager and DelayPeakDetector that
-  // |elapsed_time_ms| have elapsed.
-  virtual void UpdateCounters(int elapsed_time_ms);
 
   // Reset the inter-arrival time counter to 0.
   virtual void ResetPacketIatCount();
@@ -91,7 +90,21 @@ class DelayManager {
   // includes any extra delay set through the set_extra_delay_ms() method.
   virtual int TargetLevel() const;
 
-  virtual void LastDecoderType(NetEqDecoder decoder_type);
+  // Informs the delay manager whether or not the last decoded packet contained
+  // speech.
+  virtual void LastDecodedWasCngOrDtmf(bool it_was);
+
+  // Notify the delay manager that empty packets have been received. These are
+  // packets that are part of the sequence number series, so that an empty
+  // packet will shift the sequence numbers for the following packets.
+  virtual void RegisterEmptyPacket();
+
+  // Apply compression or stretching to the IAT histogram, for a change in frame
+  // size. This returns an updated histogram. This function is public for
+  // testability.
+  static IATVector ScaleHistogram(const IATVector& histogram,
+                                  int old_packet_length,
+                                  int new_packet_length);
 
   // Accessors and mutators.
   // Assuming |delay| is in valid range.
@@ -135,7 +148,9 @@ class DelayManager {
   const size_t max_packets_in_buffer_;  // Capacity of the packet buffer.
   IATVector iat_vector_;  // Histogram of inter-arrival times.
   int iat_factor_;  // Forgetting factor for updating the IAT histogram (Q15).
-  int packet_iat_count_ms_;  // Milliseconds elapsed since last packet.
+  const TickTimer* tick_timer_;
+  // Time elapsed since last packet.
+  std::unique_ptr<TickTimer::Stopwatch> packet_iat_stopwatch_;
   int base_target_level_;   // Currently preferred buffer level before peak
                             // detection and streaming mode (Q0).
   // TODO(turajs) change the comment according to the implementation of
@@ -153,12 +168,14 @@ class DelayManager {
   int maximum_delay_ms_;  // Externally set maximum allowed delay.
   int iat_cumulative_sum_;  // Cumulative sum of delta inter-arrival times.
   int max_iat_cumulative_sum_;  // Max of |iat_cumulative_sum_|.
-  int max_timer_ms_;  // Time elapsed since maximum was observed.
+  // Time elapsed since maximum was observed.
+  std::unique_ptr<TickTimer::Stopwatch> max_iat_stopwatch_;
   DelayPeakDetector& peak_detector_;
   int last_pack_cng_or_dtmf_;
+  const bool frame_length_change_experiment_;
 
   RTC_DISALLOW_COPY_AND_ASSIGN(DelayManager);
 };
 
 }  // namespace webrtc
-#endif  // WEBRTC_MODULES_AUDIO_CODING_NETEQ_DELAY_MANAGER_H_
+#endif  // MODULES_AUDIO_CODING_NETEQ_DELAY_MANAGER_H_

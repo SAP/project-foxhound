@@ -17,42 +17,49 @@
 class nsPIDOMWindowOuter;
 class nsIWidget;
 
-class nsBaseFilePicker : public nsIFilePicker
-{
-public:
-  nsBaseFilePicker(); 
+class nsBaseFilePicker : public nsIFilePicker {
+  class AsyncShowFilePicker;
+
+ public:
+  nsBaseFilePicker();
   virtual ~nsBaseFilePicker();
 
-  NS_IMETHOD Init(mozIDOMWindowProxy* aParent,
-                  const nsAString& aTitle,
-                  int16_t aMode);
+  NS_IMETHOD Init(mozIDOMWindowProxy* aParent, const nsAString& aTitle,
+                  int16_t aMode) override;
 
-  NS_IMETHOD Open(nsIFilePickerShownCallback *aCallback);
-  NS_IMETHOD AppendFilters(int32_t filterMask);
-  NS_IMETHOD GetFilterIndex(int32_t *aFilterIndex);
-  NS_IMETHOD SetFilterIndex(int32_t aFilterIndex);
-  NS_IMETHOD GetFiles(nsISimpleEnumerator **aFiles);
-  NS_IMETHOD GetDisplayDirectory(nsIFile * *aDisplayDirectory);
-  NS_IMETHOD SetDisplayDirectory(nsIFile * aDisplayDirectory);
-  NS_IMETHOD GetAddToRecentDocs(bool *aFlag);
-  NS_IMETHOD SetAddToRecentDocs(bool aFlag);
-  NS_IMETHOD GetMode(int16_t *aMode);
-  NS_IMETHOD SetOkButtonLabel(const nsAString& aLabel);
-  NS_IMETHOD GetOkButtonLabel(nsAString& aLabel);
+  NS_IMETHOD Open(nsIFilePickerShownCallback* aCallback) override;
+  NS_IMETHOD AppendFilters(int32_t filterMask) override;
+  NS_IMETHOD AppendRawFilter(const nsAString& aFilter) override;
+  NS_IMETHOD GetFilterIndex(int32_t* aFilterIndex) override;
+  NS_IMETHOD SetFilterIndex(int32_t aFilterIndex) override;
+  NS_IMETHOD GetFiles(nsISimpleEnumerator** aFiles) override;
+  NS_IMETHOD GetDisplayDirectory(nsIFile** aDisplayDirectory) override;
+  NS_IMETHOD SetDisplayDirectory(nsIFile* aDisplayDirectory) override;
+  NS_IMETHOD GetDisplaySpecialDirectory(nsAString& aDisplayDirectory) override;
+  NS_IMETHOD SetDisplaySpecialDirectory(
+      const nsAString& aDisplayDirectory) override;
+  NS_IMETHOD GetAddToRecentDocs(bool* aFlag) override;
+  NS_IMETHOD SetAddToRecentDocs(bool aFlag) override;
+  NS_IMETHOD GetMode(int16_t* aMode) override;
+  NS_IMETHOD SetOkButtonLabel(const nsAString& aLabel) override;
+  NS_IMETHOD GetOkButtonLabel(nsAString& aLabel) override;
 
-  NS_IMETHOD GetDomFileOrDirectory(nsISupports** aValue);
-  NS_IMETHOD GetDomFileOrDirectoryEnumerator(nsISimpleEnumerator** aValue);
+  NS_IMETHOD GetDomFileOrDirectory(nsISupports** aValue) override;
+  NS_IMETHOD GetDomFileOrDirectoryEnumerator(
+      nsISimpleEnumerator** aValue) override;
 
-protected:
-
-  virtual void InitNative(nsIWidget *aParent, const nsAString& aTitle) = 0;
+ protected:
+  virtual void InitNative(nsIWidget* aParent, const nsAString& aTitle) = 0;
+  virtual nsresult Show(int16_t* _retval) = 0;
 
   bool mAddToRecentDocs;
   nsCOMPtr<nsIFile> mDisplayDirectory;
+  nsString mDisplaySpecialDirectory;
 
   nsCOMPtr<nsPIDOMWindowOuter> mParent;
   int16_t mMode;
   nsString mOkButtonLabel;
+  InfallibleTArray<nsString> mRawFilters;
 };
 
-#endif // nsBaseFilePicker_h__
+#endif  // nsBaseFilePicker_h__

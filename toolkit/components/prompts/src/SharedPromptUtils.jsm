@@ -1,13 +1,8 @@
-this.EXPORTED_SYMBOLS = [ "PromptUtils", "EnableDelayHelper" ];
+var EXPORTED_SYMBOLS = [ "PromptUtils", "EnableDelayHelper" ];
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cr = Components.results;
-const Cu = Components.utils;
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-Cu.import("resource://gre/modules/Services.jsm");
-
-this.PromptUtils = {
+var PromptUtils = {
     // Fire a dialog open/close event. Used by tabbrowser to focus the
     // tab which is triggering a prompt.
     // For remote dialogs, we pass in a different DOM window and a separate
@@ -23,8 +18,7 @@ this.PromptUtils = {
           eventOptions.detail = detail;
         }
         let event = new domWin.CustomEvent(eventName, eventOptions);
-        let winUtils = domWin.QueryInterface(Ci.nsIInterfaceRequestor)
-                             .getInterface(Ci.nsIDOMWindowUtils);
+        let winUtils = domWin.windowUtils;
         winUtils.dispatchEventToChromeOnly(target, event);
     },
 
@@ -61,7 +55,7 @@ this.PromptUtils = {
  *                       is to be disabled.
  * @param focusTarget    The window used to watch focus/blur events.
  */
-this.EnableDelayHelper = function({enableDialog, disableDialog, focusTarget}) {
+var EnableDelayHelper = function({enableDialog, disableDialog, focusTarget}) {
     this.enableDialog = makeSafe(enableDialog);
     this.disableDialog = makeSafe(disableDialog);
     this.focusTarget = focusTarget;

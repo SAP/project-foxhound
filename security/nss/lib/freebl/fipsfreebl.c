@@ -6,6 +6,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 /* $Id: fipstest.c,v 1.31 2012/06/28 17:55:06 rrelyea%redhat.com Exp $ */
 
+#ifndef NSS_FIPS_DISABLED
 #ifdef FREEBL_NO_DEPEND
 #include "stubs.h"
 #endif
@@ -15,9 +16,7 @@
 #include "secerr.h"
 #include "prtypes.h"
 
-#ifdef NSS_ENABLE_ECC
 #include "ec.h" /* Required for ECDSA */
-#endif
 
 /*
  * different platforms have different ways of calling and initial entry point
@@ -1077,8 +1076,6 @@ rsa_loser:
     return (SECFailure);
 }
 
-#ifdef NSS_ENABLE_ECC
-
 static SECStatus
 freebl_fips_ECDSA_Test(ECParams *ecparams,
                        const PRUint8 *knownSignature,
@@ -1274,8 +1271,6 @@ freebl_fips_ECDSA_PowerUpSelfTest()
 
     return (SECSuccess);
 }
-
-#endif /* NSS_ENABLE_ECC */
 
 static SECStatus
 freebl_fips_DSA_PowerUpSelfTest(void)
@@ -1559,13 +1554,11 @@ freebl_fipsPowerUpSelfTest(unsigned int tests)
         if (rv != SECSuccess)
             return rv;
 
-#ifdef NSS_ENABLE_ECC
         /* ECDSA Power-Up SelfTest(s). */
         rv = freebl_fips_ECDSA_PowerUpSelfTest();
 
         if (rv != SECSuccess)
             return rv;
-#endif
     }
     /* Passed Power-Up SelfTest(s). */
     return (SECSuccess);
@@ -1589,9 +1582,6 @@ static PRBool self_tests_freebl_ran = PR_FALSE;
 static PRBool self_tests_ran = PR_FALSE;
 static PRBool self_tests_freebl_success = PR_FALSE;
 static PRBool self_tests_success = PR_FALSE;
-#if defined(DEBUG)
-static PRBool fips_mode_available = PR_FALSE;
-#endif
 
 /*
  * accessors for freebl
@@ -1644,7 +1634,6 @@ bl_startup_tests(void)
 
     PORT_Assert(self_tests_freebl_ran == PR_FALSE);
     PORT_Assert(self_tests_success == PR_FALSE);
-    PORT_Assert(fips_mode_available == PR_FALSE);
     self_tests_freebl_ran = PR_TRUE;      /* we are running the tests */
     self_tests_success = PR_FALSE;        /* force it just in case */
     self_tests_freebl_success = PR_FALSE; /* force it just in case */
@@ -1707,9 +1696,10 @@ BL_FIPSEntryOK(PRBool freebl_only)
         return SECSuccess;
     }
     /* standalone freebl can initialize */
-    if (freebl_only & self_tests_freebl_success) {
+    if (freebl_only && self_tests_freebl_success) {
         return SECSuccess;
     }
     PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
     return SECFailure;
 }
+#endif

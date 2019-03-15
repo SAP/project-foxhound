@@ -12,60 +12,25 @@
  * WebRTC's wrapper to libyuv.
  */
 
-#ifndef WEBRTC_COMMON_VIDEO_LIBYUV_INCLUDE_WEBRTC_LIBYUV_H_
-#define WEBRTC_COMMON_VIDEO_LIBYUV_INCLUDE_WEBRTC_LIBYUV_H_
+#ifndef COMMON_VIDEO_LIBYUV_INCLUDE_WEBRTC_LIBYUV_H_
+#define COMMON_VIDEO_LIBYUV_INCLUDE_WEBRTC_LIBYUV_H_
 
 #include <stdio.h>
+#include <vector>
 
-#include "webrtc/common_types.h"  // RawVideoTypes.
-#include "webrtc/common_video/rotation.h"
-#include "webrtc/typedefs.h"
-#include "webrtc/video_frame.h"
+#include "api/video/video_frame.h"
+#include "common_types.h"  // NOLINT(build/include)  // VideoTypes.
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
-// Supported video types.
-enum VideoType {
-  kUnknown,
-  kI420,
-  kIYUV,
-  kRGB24,
-  kABGR,
-  kARGB,
-  kARGB4444,
-  kRGB565,
-  kARGB1555,
-  kYUY2,
-  kYV12,
-  kUYVY,
-  kMJPG,
-  kNV21,
-  kNV12,
-  kBGRA,
-};
 
 // This is the max PSNR value our algorithms can return.
 const double kPerfectPSNR = 48.0f;
 
-// Conversion between the RawVideoType and the LibYuv videoType.
-// TODO(wu): Consolidate types into one type throughout WebRtc.
-VideoType RawVideoTypeToCommonVideoVideoType(RawVideoType type);
-
-// Align integer values.
-// Input:
-//   - value     : Input value to be aligned.
-//   - alignment : Alignment basis (power of 2).
-// Return value: An aligned form of the input value.
-int AlignInt(int value, int alignment);
-
-// Align stride values for I420 Video frames.
-// Input:
-//   - width    : Image width.
-//   - stride_y : Pointer to the stride of the y plane.
-//   - stride_uv: Pointer to the stride of the u and v planes (setting identical
-//                values for both).
-// Setting 16 byte alignment.
-void Calc16ByteAlignedStride(int width, int* stride_y, int* stride_uv);
+// TODO(nisse): Some downstream apps call CalcBufferSize with
+// ::webrtc::kI420 as the first argument. Delete after they are updated.
+const VideoType kI420 = VideoType::kI420;
 
 // Calculate the required buffer size.
 // Input:
@@ -84,38 +49,20 @@ size_t CalcBufferSize(VideoType type, int width, int height);
 //                    already open for writing.
 // Return value: 0 if OK, < 0 otherwise.
 int PrintVideoFrame(const VideoFrame& frame, FILE* file);
+int PrintVideoFrame(const I420BufferInterface& frame, FILE* file);
 
-// Extract buffer from VideoFrame (consecutive planes, no stride)
+// Extract buffer from VideoFrame or I420BufferInterface (consecutive
+// planes, no stride)
 // Input:
 //   - frame       : Reference to video frame.
 //   - size        : pointer to the size of the allocated buffer. If size is
 //                   insufficient, an error will be returned.
 //   - buffer      : Pointer to buffer
 // Return value: length of buffer if OK, < 0 otherwise.
+int ExtractBuffer(const rtc::scoped_refptr<I420BufferInterface>& input_frame,
+                  size_t size,
+                  uint8_t* buffer);
 int ExtractBuffer(const VideoFrame& input_frame, size_t size, uint8_t* buffer);
-// Convert To I420
-// Input:
-//   - src_video_type   : Type of input video.
-//   - src_frame        : Pointer to a source frame.
-//   - crop_x/crop_y    : Starting positions for cropping (0 for no crop).
-//   - src_width        : src width in pixels.
-//   - src_height       : src height in pixels.
-//   - sample_size      : Required only for the parsing of MJPG (set to 0 else).
-//   - rotate           : Rotation mode of output image.
-// Output:
-//   - dst_frame        : Reference to a destination frame.
-// Return value: 0 if OK, < 0 otherwise.
-
-int ConvertToI420(VideoType src_video_type,
-                  const uint8_t* src_frame,
-                  int crop_x,
-                  int crop_y,
-                  int src_width,
-                  int src_height,
-                  size_t sample_size,
-                  VideoRotation rotation,
-                  VideoFrame* dst_frame);
-
 // Convert From I420
 // Input:
 //   - src_frame        : Reference to a source frame.
@@ -128,31 +75,52 @@ int ConvertFromI420(const VideoFrame& src_frame,
                     VideoType dst_video_type,
                     int dst_sample_size,
                     uint8_t* dst_frame);
-// ConvertFrom YV12.
-// Interface - same as above.
-int ConvertFromYV12(const VideoFrame& src_frame,
-                    VideoType dst_video_type,
-                    int dst_sample_size,
-                    uint8_t* dst_frame);
-
-// The following list describes designated conversion functions which
-// are not covered by the previous general functions.
-// Input and output descriptions mostly match the above descriptions, and are
-// therefore omitted.
-int ConvertRGB24ToARGB(const uint8_t* src_frame,
-                       uint8_t* dst_frame,
-                       int width, int height,
-                       int dst_stride);
-int ConvertNV12ToRGB565(const uint8_t* src_frame,
-                        uint8_t* dst_frame,
-                        int width, int height);
 
 // Compute PSNR for an I420 frame (all planes).
 // Returns the PSNR in decibel, to a maximum of kInfinitePSNR.
 double I420PSNR(const VideoFrame* ref_frame, const VideoFrame* test_frame);
+double I420PSNR(const I420BufferInterface& ref_buffer,
+                const I420BufferInterface& test_buffer);
+
 // Compute SSIM for an I420 frame (all planes).
 double I420SSIM(const VideoFrame* ref_frame, const VideoFrame* test_frame);
+double I420SSIM(const I420BufferInterface& ref_buffer,
+                const I420BufferInterface& test_buffer);
+
+// Helper function for scaling NV12 to NV12.
+// If the |src_width| and |src_height| matches the |dst_width| and |dst_height|,
+// then |tmp_buffer| is not used. In other cases, the minimum size of
+// |tmp_buffer| should be:
+//   (src_width/2) * (src_height/2) * 2 + (dst_width/2) * (dst_height/2) * 2
+void NV12Scale(uint8_t* tmp_buffer,
+               const uint8_t* src_y, int src_stride_y,
+               const uint8_t* src_uv, int src_stride_uv,
+               int src_width, int src_height,
+               uint8_t* dst_y, int dst_stride_y,
+               uint8_t* dst_uv, int dst_stride_uv,
+               int dst_width, int dst_height);
+
+// Helper class for directly converting and scaling NV12 to I420. The Y-plane
+// will be scaled directly to the I420 destination, which makes this faster
+// than separate NV12->I420 + I420->I420 scaling.
+class NV12ToI420Scaler {
+ public:
+  NV12ToI420Scaler();
+  ~NV12ToI420Scaler();
+  void NV12ToI420Scale(const uint8_t* src_y, int src_stride_y,
+                       const uint8_t* src_uv, int src_stride_uv,
+                       int src_width, int src_height,
+                       uint8_t* dst_y, int dst_stride_y,
+                       uint8_t* dst_u, int dst_stride_u,
+                       uint8_t* dst_v, int dst_stride_v,
+                       int dst_width, int dst_height);
+ private:
+  std::vector<uint8_t> tmp_uv_planes_;
+};
+
+// Convert VideoType to libyuv FourCC type
+int ConvertVideoType(VideoType video_type);
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_COMMON_VIDEO_LIBYUV_INCLUDE_WEBRTC_LIBYUV_H_
+#endif  // COMMON_VIDEO_LIBYUV_INCLUDE_WEBRTC_LIBYUV_H_

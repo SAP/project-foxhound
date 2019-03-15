@@ -2,31 +2,34 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 from marionette_driver.by import By
-from marionette_driver.errors import NoAlertPresentException, ElementNotInteractableException
 from marionette_driver.expected import element_present
+from marionette_driver import errors
 from marionette_driver.marionette import Alert
 from marionette_driver.wait import Wait
 
-from marionette_harness import MarionetteTestCase, skip_if_e10s, WindowManagerMixin
+from marionette_harness import MarionetteTestCase, WindowManagerMixin
 
 
 class BaseAlertTestCase(WindowManagerMixin, MarionetteTestCase):
 
+    @property
     def alert_present(self):
         try:
             Alert(self.marionette).text
             return True
-        except NoAlertPresentException:
+        except errors.NoAlertPresentException:
             return False
 
     def wait_for_alert(self, timeout=None):
         Wait(self.marionette, timeout=timeout).until(
-            lambda _: self.alert_present())
+            lambda _: self.alert_present)
 
     def wait_for_alert_closed(self, timeout=None):
         Wait(self.marionette, timeout=timeout).until(
-            lambda _: not self.alert_present())
+            lambda _: not self.alert_present)
 
 
 class TestTabModalAlerts(BaseAlertTestCase):
@@ -36,11 +39,10 @@ class TestTabModalAlerts(BaseAlertTestCase):
         self.assertTrue(self.marionette.get_pref("prompts.tab_modal.enabled",
                         "Tab modal alerts should be enabled by default."))
 
-        self.marionette.navigate(self.marionette.absolute_url("test_tab_modal_dialogs.html"))
+        self.test_page = self.marionette.absolute_url("test_tab_modal_dialogs.html")
+        self.marionette.navigate(self.test_page)
 
     def tearDown(self):
-        self.marionette.execute_script("window.onbeforeunload = null;")
-
         # Ensure to close a possible remaining tab modal dialog
         try:
             alert = self.marionette.switch_to_alert()
@@ -53,8 +55,10 @@ class TestTabModalAlerts(BaseAlertTestCase):
         super(TestTabModalAlerts, self).tearDown()
 
     def test_no_alert_raises(self):
-        self.assertRaises(NoAlertPresentException, Alert(self.marionette).accept)
-        self.assertRaises(NoAlertPresentException, Alert(self.marionette).dismiss)
+        with self.assertRaises(errors.NoAlertPresentException):
+            Alert(self.marionette).accept()
+        with self.assertRaises(errors.NoAlertPresentException):
+            Alert(self.marionette).dismiss()
 
     def test_alert_accept(self):
         self.marionette.find_element(By.ID, "tab-modal-alert").click()
@@ -112,7 +116,7 @@ class TestTabModalAlerts(BaseAlertTestCase):
         alert.dismiss()
 
     def test_alert_text(self):
-        with self.assertRaises(NoAlertPresentException):
+        with self.assertRaises(errors.NoAlertPresentException):
             alert = self.marionette.switch_to_alert()
             alert.text
         self.marionette.find_element(By.ID, "tab-modal-alert").click()
@@ -122,7 +126,7 @@ class TestTabModalAlerts(BaseAlertTestCase):
         alert.accept()
 
     def test_prompt_text(self):
-        with self.assertRaises(NoAlertPresentException):
+        with self.assertRaises(errors.NoAlertPresentException):
             alert = self.marionette.switch_to_alert()
             alert.text
         self.marionette.find_element(By.ID, "tab-modal-prompt").click()
@@ -132,7 +136,7 @@ class TestTabModalAlerts(BaseAlertTestCase):
         alert.accept()
 
     def test_confirm_text(self):
-        with self.assertRaises(NoAlertPresentException):
+        with self.assertRaises(errors.NoAlertPresentException):
             alert = self.marionette.switch_to_alert()
             alert.text
         self.marionette.find_element(By.ID, "tab-modal-confirm").click()
@@ -142,11 +146,13 @@ class TestTabModalAlerts(BaseAlertTestCase):
         alert.accept()
 
     def test_set_text_throws(self):
-        self.assertRaises(NoAlertPresentException, Alert(self.marionette).send_keys, "Foo")
+        with self.assertRaises(errors.NoAlertPresentException):
+            Alert(self.marionette).send_keys("Foo")
         self.marionette.find_element(By.ID, "tab-modal-alert").click()
         self.wait_for_alert()
         alert = self.marionette.switch_to_alert()
-        self.assertRaises(ElementNotInteractableException, alert.send_keys, "Foo")
+        with self.assertRaises(errors.ElementNotInteractableException):
+            alert.send_keys("Foo")
         alert.accept()
 
     def test_set_text_accept(self):
@@ -167,68 +173,32 @@ class TestTabModalAlerts(BaseAlertTestCase):
         self.wait_for_condition(
             lambda mn: mn.find_element(By.ID, "prompt-result").text == "null")
 
-    def test_onbeforeunload_dismiss(self):
-        start_url = self.marionette.get_url()
-        self.marionette.find_element(By.ID, "onbeforeunload-handler").click()
-        self.wait_for_condition(
-            lambda mn: mn.execute_script("""
-              return window.onbeforeunload !== null;
-            """))
-        self.marionette.navigate("about:blank")
-        self.wait_for_alert()
-        alert = self.marionette.switch_to_alert()
-        self.assertTrue(alert.text.startswith("This page is asking you to confirm"))
-        alert.dismiss()
-        self.assertTrue(self.marionette.get_url().startswith(start_url))
-
-    def test_onbeforeunload_accept(self):
-        self.marionette.find_element(By.ID, "onbeforeunload-handler").click()
-        self.wait_for_condition(
-            lambda mn: mn.execute_script("""
-              return window.onbeforeunload !== null;
-            """))
-        self.marionette.navigate("about:blank")
-        self.wait_for_alert()
-        alert = self.marionette.switch_to_alert()
-        self.assertTrue(alert.text.startswith("This page is asking you to confirm"))
-        alert.accept()
-        self.wait_for_condition(lambda mn: mn.get_url() == "about:blank")
-
-    @skip_if_e10s("Bug 1325044")
     def test_unrelated_command_when_alert_present(self):
-        click_handler = self.marionette.find_element(By.ID, "click-handler")
-        text = self.marionette.find_element(By.ID, "click-result").text
-        self.assertEqual(text, "")
-
         self.marionette.find_element(By.ID, "tab-modal-alert").click()
         self.wait_for_alert()
+        with self.assertRaises(errors.UnexpectedAlertOpen):
+            self.marionette.find_element(By.ID, "click-result")
 
-        # Commands succeed, but because the dialog blocks the event loop,
-        # our actions aren't reflected on the page.
-        text = self.marionette.find_element(By.ID, "click-result").text
-        self.assertEqual(text, "")
-        click_handler.click()
-        text = self.marionette.find_element(By.ID, "click-result").text
-        self.assertEqual(text, "")
+    def test_modal_is_dismissed_after_unexpected_alert(self):
+        self.marionette.find_element(By.ID, "tab-modal-alert").click()
+        self.wait_for_alert()
+        with self.assertRaises(errors.UnexpectedAlertOpen):
+            self.marionette.find_element(By.ID, "click-result")
 
-        alert = self.marionette.switch_to_alert()
-        alert.accept()
-
-        self.wait_for_alert_closed()
-
-        click_handler.click()
-        text = self.marionette.find_element(By.ID, "click-result").text
-        self.assertEqual(text, "result")
+        assert not self.alert_present
 
 
 class TestModalAlerts(BaseAlertTestCase):
 
     def setUp(self):
         super(TestModalAlerts, self).setUp()
+        self.marionette.set_pref("network.auth.non-web-content-triggered-resources-http-auth-allow",
+                                 True)
 
     def tearDown(self):
         # Ensure to close a possible remaining modal dialog
         self.close_all_windows()
+        self.marionette.clear_pref("network.auth.non-web-content-triggered-resources-http-auth-allow")
 
         super(TestModalAlerts, self).tearDown()
 

@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,11 +7,11 @@
 #ifndef nsTreeBodyFrame_h
 #define nsTreeBodyFrame_h
 
+#include "mozilla/AtomArray.h"
 #include "mozilla/Attributes.h"
 
 #include "nsLeafBoxFrame.h"
 #include "nsITreeView.h"
-#include "nsICSSPseudoComparator.h"
 #include "nsIScrollbarMediator.h"
 #include "nsITimer.h"
 #include "nsIReflowCallback.h"
@@ -31,37 +32,33 @@ class nsTreeImageListener;
 namespace mozilla {
 namespace layout {
 class ScrollbarActivity;
-} // namespace layout
-} // namespace mozilla
+}  // namespace layout
+}  // namespace mozilla
 
 // An entry in the tree's image cache
-struct nsTreeImageCacheEntry
-{
-  nsTreeImageCacheEntry() {}
-  nsTreeImageCacheEntry(imgIRequest *aRequest, imgINotificationObserver *aListener)
-    : request(aRequest), listener(aListener) {}
+struct nsTreeImageCacheEntry {
+  nsTreeImageCacheEntry() = default;
+  nsTreeImageCacheEntry(imgIRequest* aRequest,
+                        imgINotificationObserver* aListener)
+      : request(aRequest), listener(aListener) {}
 
   nsCOMPtr<imgIRequest> request;
   nsCOMPtr<imgINotificationObserver> listener;
 };
 
 // The actual frame that paints the cells and rows.
-class nsTreeBodyFrame final
-  : public nsLeafBoxFrame
-  , public nsICSSPseudoComparator
-  , public nsIScrollbarMediator
-  , public nsIReflowCallback
-{
+class nsTreeBodyFrame final : public nsLeafBoxFrame,
+                              public nsIScrollbarMediator,
+                              public nsIReflowCallback {
   typedef mozilla::layout::ScrollbarActivity ScrollbarActivity;
-  typedef mozilla::image::DrawResult DrawResult;
+  typedef mozilla::image::ImgDrawResult ImgDrawResult;
 
-public:
-  explicit nsTreeBodyFrame(nsStyleContext* aContext);
+ public:
+  explicit nsTreeBodyFrame(ComputedStyle* aStyle);
   ~nsTreeBodyFrame();
 
-  NS_DECL_QUERYFRAME_TARGET(nsTreeBodyFrame)
   NS_DECL_QUERYFRAME
-  NS_DECL_FRAMEARENA_HELPERS
+  NS_DECL_FRAMEARENA_HELPERS(nsTreeBodyFrame)
 
   // Callback handler methods for refresh driver based animations.
   // Calls to these functions are forwarded from nsTreeImageListener. These
@@ -69,84 +66,74 @@ public:
   nsresult OnImageIsAnimated(imgIRequest* aRequest);
 
   // non-virtual signatures like nsITreeBodyFrame
-  already_AddRefed<nsTreeColumns> Columns() const
-  {
+  already_AddRefed<nsTreeColumns> Columns() const {
     RefPtr<nsTreeColumns> cols = mColumns;
     return cols.forget();
   }
-  already_AddRefed<nsITreeView> GetExistingView() const
-  {
+  already_AddRefed<nsITreeView> GetExistingView() const {
     nsCOMPtr<nsITreeView> view = mView;
     return view.forget();
   }
-  nsresult GetView(nsITreeView **aView);
-  nsresult SetView(nsITreeView *aView);
+  nsresult GetView(nsITreeView** aView);
+  nsresult SetView(nsITreeView* aView);
   bool GetFocused() const { return mFocused; }
   nsresult SetFocused(bool aFocused);
-  nsresult GetTreeBody(nsIDOMElement **aElement);
+  nsresult GetTreeBody(mozilla::dom::Element** aElement);
   int32_t RowHeight() const;
   int32_t RowWidth();
   int32_t GetHorizontalPosition() const;
-  nsresult GetSelectionRegion(nsIScriptableRegion **aRegion);
+  mozilla::Maybe<mozilla::CSSIntRegion> GetSelectionRegion();
   int32_t FirstVisibleRow() const { return mTopRowIndex; }
   int32_t LastVisibleRow() const { return mTopRowIndex + mPageLength; }
   int32_t PageLength() const { return mPageLength; }
   nsresult EnsureRowIsVisible(int32_t aRow);
-  nsresult EnsureCellIsVisible(int32_t aRow, nsITreeColumn *aCol);
-  nsresult ScrollToRow(int32_t aRow);
-  nsresult ScrollByLines(int32_t aNumLines);
-  nsresult ScrollByPages(int32_t aNumPages);
-  nsresult ScrollToCell(int32_t aRow, nsITreeColumn *aCol);
-  nsresult ScrollToColumn(nsITreeColumn *aCol);
-  nsresult ScrollToHorizontalPosition(int32_t aValue);
+  nsresult EnsureCellIsVisible(int32_t aRow, nsTreeColumn* aCol);
+  void ScrollToRow(int32_t aRow);
+  void ScrollByLines(int32_t aNumLines);
+  void ScrollByPages(int32_t aNumPages);
   nsresult Invalidate();
-  nsresult InvalidateColumn(nsITreeColumn *aCol);
+  nsresult InvalidateColumn(nsTreeColumn* aCol);
   nsresult InvalidateRow(int32_t aRow);
-  nsresult InvalidateCell(int32_t aRow, nsITreeColumn *aCol);
+  nsresult InvalidateCell(int32_t aRow, nsTreeColumn* aCol);
   nsresult InvalidateRange(int32_t aStart, int32_t aEnd);
-  nsresult InvalidateColumnRange(int32_t aStart, int32_t aEnd,
-                                 nsITreeColumn *aCol);
-  nsresult GetRowAt(int32_t aX, int32_t aY, int32_t *aValue);
-  nsresult GetCellAt(int32_t aX, int32_t aY, int32_t *aRow,
-                     nsITreeColumn **aCol, nsACString &aChildElt);
-  nsresult GetCoordsForCellItem(int32_t aRow, nsITreeColumn *aCol,
-                                const nsACString &aElt,
-                                int32_t *aX, int32_t *aY,
-                                int32_t *aWidth, int32_t *aHeight);
-  nsresult IsCellCropped(int32_t aRow, nsITreeColumn *aCol, bool *aResult);
+  int32_t GetRowAt(int32_t aX, int32_t aY);
+  nsresult GetCellAt(int32_t aX, int32_t aY, int32_t* aRow, nsTreeColumn** aCol,
+                     nsACString& aChildElt);
+  nsresult GetCoordsForCellItem(int32_t aRow, nsTreeColumn* aCol,
+                                const nsACString& aElt, int32_t* aX,
+                                int32_t* aY, int32_t* aWidth, int32_t* aHeight);
+  nsresult IsCellCropped(int32_t aRow, nsTreeColumn* aCol, bool* aResult);
   nsresult RowCountChanged(int32_t aIndex, int32_t aCount);
   nsresult BeginUpdateBatch();
   nsresult EndUpdateBatch();
   nsresult ClearStyleAndImageCaches();
+  void RemoveImageCacheEntry(int32_t aRowIndex, nsTreeColumn* aCol);
 
   void CancelImageRequests();
 
   void ManageReflowCallback(const nsRect& aRect, nscoord aHorzWidth);
 
   virtual nsSize GetXULMinSize(nsBoxLayoutState& aBoxLayoutState) override;
-  virtual void SetXULBounds(nsBoxLayoutState& aBoxLayoutState, const nsRect& aRect,
+  virtual void SetXULBounds(nsBoxLayoutState& aBoxLayoutState,
+                            const nsRect& aRect,
                             bool aRemoveOverflowArea = false) override;
 
   // nsIReflowCallback
   virtual bool ReflowFinished() override;
   virtual void ReflowCallbackCanceled() override;
 
-  // nsICSSPseudoComparator
-  virtual bool PseudoMatches(nsCSSSelector* aSelector) override;
-
   // nsIScrollbarMediator
   virtual void ScrollByPage(nsScrollbarFrame* aScrollbar, int32_t aDirection,
-                            nsIScrollbarMediator::ScrollSnapMode aSnap
-                              = nsIScrollbarMediator::DISABLE_SNAP) override;
+                            nsIScrollbarMediator::ScrollSnapMode aSnap =
+                                nsIScrollbarMediator::DISABLE_SNAP) override;
   virtual void ScrollByWhole(nsScrollbarFrame* aScrollbar, int32_t aDirection,
-                             nsIScrollbarMediator::ScrollSnapMode aSnap
-                               = nsIScrollbarMediator::DISABLE_SNAP) override;
+                             nsIScrollbarMediator::ScrollSnapMode aSnap =
+                                 nsIScrollbarMediator::DISABLE_SNAP) override;
   virtual void ScrollByLine(nsScrollbarFrame* aScrollbar, int32_t aDirection,
-                            nsIScrollbarMediator::ScrollSnapMode aSnap
-                              = nsIScrollbarMediator::DISABLE_SNAP) override;
+                            nsIScrollbarMediator::ScrollSnapMode aSnap =
+                                nsIScrollbarMediator::DISABLE_SNAP) override;
   virtual void RepeatButtonScroll(nsScrollbarFrame* aScrollbar) override;
-  virtual void ThumbMoved(nsScrollbarFrame* aScrollbar,
-                          nscoord aOldPos,
+  virtual void ThumbMoved(nsScrollbarFrame* aScrollbar, nscoord aOldPos,
                           nscoord aNewPos) override;
   virtual void ScrollbarReleased(nsScrollbarFrame* aScrollbar) override {}
   virtual void VisibilityChanged(bool aVisible) override { Invalidate(); }
@@ -164,10 +151,10 @@ public:
   }
 
   // Overridden from nsIFrame to cache our pres context.
-  virtual void Init(nsIContent*       aContent,
-                    nsContainerFrame* aParent,
-                    nsIFrame*         aPrevInFlow) override;
-  virtual void DestroyFrom(nsIFrame* aDestructRoot) override;
+  virtual void Init(nsIContent* aContent, nsContainerFrame* aParent,
+                    nsIFrame* aPrevInFlow) override;
+  virtual void DestroyFrom(nsIFrame* aDestructRoot,
+                           PostDestroyData& aPostDestroyData) override;
 
   virtual nsresult GetCursor(const nsPoint& aPoint,
                              nsIFrame::Cursor& aCursor) override;
@@ -176,176 +163,159 @@ public:
                                mozilla::WidgetGUIEvent* aEvent,
                                nsEventStatus* aEventStatus) override;
 
-  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                                const nsRect&           aDirtyRect,
+  virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                 const nsDisplayListSet& aLists) override;
 
-  virtual void DidSetStyleContext(nsStyleContext* aOldStyleContext) override;
+  virtual void DidSetComputedStyle(ComputedStyle* aOldComputedStyle) override;
 
   friend nsIFrame* NS_NewTreeBodyFrame(nsIPresShell* aPresShell);
   friend class nsTreeColumn;
 
   struct ScrollParts {
-    nsScrollbarFrame*    mVScrollbar;
-    nsCOMPtr<nsIContent> mVScrollbarContent;
-    nsScrollbarFrame*    mHScrollbar;
-    nsCOMPtr<nsIContent> mHScrollbarContent;
-    nsIFrame*            mColumnsFrame;
-    nsIScrollableFrame*  mColumnsScrollFrame;
+    nsScrollbarFrame* mVScrollbar;
+    RefPtr<Element> mVScrollbarContent;
+    nsScrollbarFrame* mHScrollbar;
+    RefPtr<Element> mHScrollbarContent;
+    nsIFrame* mColumnsFrame;
+    nsIScrollableFrame* mColumnsScrollFrame;
   };
 
-  DrawResult PaintTreeBody(nsRenderingContext& aRenderingContext,
-                           const nsRect& aDirtyRect, nsPoint aPt);
+  ImgDrawResult PaintTreeBody(gfxContext& aRenderingContext,
+                              const nsRect& aDirtyRect, nsPoint aPt,
+                              nsDisplayListBuilder* aBuilder);
 
-  nsITreeBoxObject* GetTreeBoxObject() const { return mTreeBoxObject; }
-
-  // Get the base element, <tree> or <select>
-  nsIContent* GetBaseElement();
+  // Get the base element, <tree>
+  mozilla::dom::XULTreeElement* GetBaseElement();
 
   bool GetVerticalOverflow() const { return mVerticalOverflow; }
-  bool GetHorizontalOverflow() const {return mHorizontalOverflow; }
+  bool GetHorizontalOverflow() const { return mHorizontalOverflow; }
 
-protected:
+  // This returns the property array where atoms are stored for style during
+  // draw, whether the row currently being drawn is selected, hovered, etc.
+  const mozilla::AtomArray& GetPropertyArrayForCurrentDrawingItem() {
+    return mScratchArray;
+  }
+
+ protected:
   friend class nsOverflowChecker;
 
   // This method paints a specific column background of the tree.
-  DrawResult PaintColumn(nsTreeColumn*        aColumn,
-                         const nsRect&        aColumnRect,
-                         nsPresContext*       aPresContext,
-                         nsRenderingContext&  aRenderingContext,
-                         const nsRect&        aDirtyRect);
+  ImgDrawResult PaintColumn(nsTreeColumn* aColumn, const nsRect& aColumnRect,
+                            nsPresContext* aPresContext,
+                            gfxContext& aRenderingContext,
+                            const nsRect& aDirtyRect);
 
   // This method paints a single row in the tree.
-  DrawResult PaintRow(int32_t              aRowIndex,
-                      const nsRect&        aRowRect,
-                      nsPresContext*       aPresContext,
-                      nsRenderingContext&  aRenderingContext,
-                      const nsRect&        aDirtyRect,
-                      nsPoint              aPt);
+  ImgDrawResult PaintRow(int32_t aRowIndex, const nsRect& aRowRect,
+                         nsPresContext* aPresContext,
+                         gfxContext& aRenderingContext,
+                         const nsRect& aDirtyRect, nsPoint aPt,
+                         nsDisplayListBuilder* aBuilder);
 
   // This method paints a single separator in the tree.
-  DrawResult PaintSeparator(int32_t              aRowIndex,
-                            const nsRect&        aSeparatorRect,
-                            nsPresContext*       aPresContext,
-                            nsRenderingContext&  aRenderingContext,
-                            const nsRect&        aDirtyRect);
+  ImgDrawResult PaintSeparator(int32_t aRowIndex, const nsRect& aSeparatorRect,
+                               nsPresContext* aPresContext,
+                               gfxContext& aRenderingContext,
+                               const nsRect& aDirtyRect);
 
   // This method paints a specific cell in a given row of the tree.
-  DrawResult PaintCell(int32_t              aRowIndex, 
-                       nsTreeColumn*        aColumn,
-                       const nsRect&        aCellRect,
-                       nsPresContext*       aPresContext,
-                       nsRenderingContext&  aRenderingContext,
-                       const nsRect&        aDirtyRect,
-                       nscoord&             aCurrX,
-                       nsPoint              aPt);
+  ImgDrawResult PaintCell(int32_t aRowIndex, nsTreeColumn* aColumn,
+                          const nsRect& aCellRect, nsPresContext* aPresContext,
+                          gfxContext& aRenderingContext,
+                          const nsRect& aDirtyRect, nscoord& aCurrX,
+                          nsPoint aPt, nsDisplayListBuilder* aBuilder);
 
-  // This method paints the twisty inside a cell in the primary column of an tree.
-  DrawResult PaintTwisty(int32_t              aRowIndex,
-                         nsTreeColumn*        aColumn,
-                         const nsRect&        aTwistyRect,
-                         nsPresContext*       aPresContext,
-                         nsRenderingContext&  aRenderingContext,
-                         const nsRect&        aDirtyRect,
-                         nscoord&             aRemainingWidth,
-                         nscoord&             aCurrX);
+  // This method paints the twisty inside a cell in the primary column of an
+  // tree.
+  ImgDrawResult PaintTwisty(int32_t aRowIndex, nsTreeColumn* aColumn,
+                            const nsRect& aTwistyRect,
+                            nsPresContext* aPresContext,
+                            gfxContext& aRenderingContext,
+                            const nsRect& aDirtyRect, nscoord& aRemainingWidth,
+                            nscoord& aCurrX);
 
   // This method paints the image inside the cell of an tree.
-  DrawResult PaintImage(int32_t              aRowIndex,
-                        nsTreeColumn*        aColumn,
-                        const nsRect&        aImageRect,
-                        nsPresContext*       aPresContext,
-                        nsRenderingContext&  aRenderingContext,
-                        const nsRect&        aDirtyRect,
-                        nscoord&             aRemainingWidth,
-                        nscoord&             aCurrX);
+  ImgDrawResult PaintImage(int32_t aRowIndex, nsTreeColumn* aColumn,
+                           const nsRect& aImageRect,
+                           nsPresContext* aPresContext,
+                           gfxContext& aRenderingContext,
+                           const nsRect& aDirtyRect, nscoord& aRemainingWidth,
+                           nscoord& aCurrX, nsDisplayListBuilder* aBuilder);
 
   // This method paints the text string inside a particular cell of the tree.
-  DrawResult PaintText(int32_t             aRowIndex,
-                       nsTreeColumn*       aColumn,
-                       const nsRect&       aTextRect,
-                       nsPresContext*      aPresContext,
-                       nsRenderingContext& aRenderingContext,
-                       const nsRect&       aDirtyRect,
-                       nscoord&            aCurrX);
+  ImgDrawResult PaintText(int32_t aRowIndex, nsTreeColumn* aColumn,
+                          const nsRect& aTextRect, nsPresContext* aPresContext,
+                          gfxContext& aRenderingContext,
+                          const nsRect& aDirtyRect, nscoord& aCurrX);
 
   // This method paints the checkbox inside a particular cell of the tree.
-  DrawResult PaintCheckbox(int32_t              aRowIndex, 
-                           nsTreeColumn*        aColumn,
-                           const nsRect&        aCheckboxRect,
-                           nsPresContext*       aPresContext,
-                           nsRenderingContext&  aRenderingContext,
-                           const nsRect&        aDirtyRect);
-
-  // This method paints the progress meter inside a particular cell of the tree.
-  DrawResult PaintProgressMeter(int32_t              aRowIndex, 
-                                nsTreeColumn*        aColumn,
-                                const nsRect&        aProgressMeterRect,
-                                nsPresContext*       aPresContext,
-                                nsRenderingContext&  aRenderingContext,
-                                const nsRect&        aDirtyRect);
+  ImgDrawResult PaintCheckbox(int32_t aRowIndex, nsTreeColumn* aColumn,
+                              const nsRect& aCheckboxRect,
+                              nsPresContext* aPresContext,
+                              gfxContext& aRenderingContext,
+                              const nsRect& aDirtyRect);
 
   // This method paints a drop feedback of the tree.
-  DrawResult PaintDropFeedback(const nsRect&        aDropFeedbackRect, 
-                               nsPresContext*       aPresContext,
-                               nsRenderingContext&  aRenderingContext,
-                               const nsRect&        aDirtyRect,
-                               nsPoint              aPt);
+  ImgDrawResult PaintDropFeedback(const nsRect& aDropFeedbackRect,
+                                  nsPresContext* aPresContext,
+                                  gfxContext& aRenderingContext,
+                                  const nsRect& aDirtyRect, nsPoint aPt);
 
-  // This method is called with a specific style context and rect to
+  // This method is called with a specific ComputedStyle and rect to
   // paint the background rect as if it were a full-blown frame.
-  DrawResult PaintBackgroundLayer(nsStyleContext*      aStyleContext,
-                                  nsPresContext*       aPresContext, 
-                                  nsRenderingContext&  aRenderingContext, 
-                                  const nsRect&        aRect,
-                                  const nsRect&        aDirtyRect);
-
+  ImgDrawResult PaintBackgroundLayer(ComputedStyle* aComputedStyle,
+                                     nsPresContext* aPresContext,
+                                     gfxContext& aRenderingContext,
+                                     const nsRect& aRect,
+                                     const nsRect& aDirtyRect);
 
   // An internal hit test.  aX and aY are expected to be in twips in the
   // coordinate system of this frame.
-  int32_t GetRowAt(nscoord aX, nscoord aY);
+  int32_t GetRowAtInternal(nscoord aX, nscoord aY);
 
   // Check for bidi characters in the text, and if there are any, ensure
   // that the prescontext is in bidi mode.
   void CheckTextForBidi(nsAutoString& aText);
 
-  void AdjustForCellText(nsAutoString& aText,
-                         int32_t aRowIndex,
-                         nsTreeColumn* aColumn,
-                         nsRenderingContext& aRenderingContext,
-                         nsFontMetrics& aFontMetrics,
-                         nsRect& aTextRect);
+  void AdjustForCellText(nsAutoString& aText, int32_t aRowIndex,
+                         nsTreeColumn* aColumn, gfxContext& aRenderingContext,
+                         nsFontMetrics& aFontMetrics, nsRect& aTextRect);
 
   // A helper used when hit testing.
-  nsIAtom* GetItemWithinCellAt(nscoord aX, const nsRect& aCellRect,
-                               int32_t aRowIndex, nsTreeColumn* aColumn);
+  nsCSSAnonBoxPseudoStaticAtom* GetItemWithinCellAt(nscoord aX,
+                                                    const nsRect& aCellRect,
+                                                    int32_t aRowIndex,
+                                                    nsTreeColumn* aColumn);
 
   // An internal hit test.  aX and aY are expected to be in twips in the
   // coordinate system of this frame.
   void GetCellAt(nscoord aX, nscoord aY, int32_t* aRow, nsTreeColumn** aCol,
-                 nsIAtom** aChildElt);
+                 nsCSSAnonBoxPseudoStaticAtom** aChildElt);
 
   // Retrieve the area for the twisty for a cell.
-  nsITheme* GetTwistyRect(int32_t aRowIndex,
-                          nsTreeColumn* aColumn,
-                          nsRect& aImageRect,
-                          nsRect& aTwistyRect,
+  nsITheme* GetTwistyRect(int32_t aRowIndex, nsTreeColumn* aColumn,
+                          nsRect& aImageRect, nsRect& aTwistyRect,
                           nsPresContext* aPresContext,
-                          nsStyleContext* aTwistyContext);
+                          ComputedStyle* aTwistyContext);
 
   // Fetch an image from the image cache.
   nsresult GetImage(int32_t aRowIndex, nsTreeColumn* aCol, bool aUseContext,
-                    nsStyleContext* aStyleContext, bool& aAllowImageRegions, imgIContainer** aResult);
+                    ComputedStyle* aComputedStyle, bool& aAllowImageRegions,
+                    imgIContainer** aResult);
 
   // Returns the size of a given image.   This size *includes* border and
   // padding.  It does not include margins.
-  nsRect GetImageSize(int32_t aRowIndex, nsTreeColumn* aCol, bool aUseContext, nsStyleContext* aStyleContext);
+  nsRect GetImageSize(int32_t aRowIndex, nsTreeColumn* aCol, bool aUseContext,
+                      ComputedStyle* aComputedStyle);
 
-  // Returns the destination size of the image, not including borders and padding.
-  nsSize GetImageDestSize(nsStyleContext* aStyleContext, bool useImageRegion, imgIContainer* image);
+  // Returns the destination size of the image, not including borders and
+  // padding.
+  nsSize GetImageDestSize(ComputedStyle* aComputedStyle, bool useImageRegion,
+                          imgIContainer* image);
 
   // Returns the source rectangle of the image to be displayed.
-  nsRect GetImageSourceRect(nsStyleContext* aStyleContext, bool useImageRegion, imgIContainer* image);
+  nsRect GetImageSourceRect(ComputedStyle* aComputedStyle, bool useImageRegion,
+                            imgIContainer* image);
 
   // Returns the height of rows in the tree.
   int32_t GetRowHeight();
@@ -359,9 +329,10 @@ protected:
   // Calculate the total width of our scrollable portion
   nscoord CalcHorzWidth(const ScrollParts& aParts);
 
-  // Looks up a style context in the style cache.  On a cache miss we resolve
+  // Looks up a ComputedStyle in the style cache.  On a cache miss we resolve
   // the pseudo-styles passed in and place them into the cache.
-  nsStyleContext* GetPseudoStyleContext(nsIAtom* aPseudoElement);
+  ComputedStyle* GetPseudoComputedStyle(
+      nsCSSAnonBoxPseudoStaticAtom* aPseudoElement);
 
   // Retrieves the scrollbars and scrollview relevant to this treebody. We
   // traverse the frame tree under our base element, in frame order, looking
@@ -374,7 +345,8 @@ protected:
   void UpdateScrollbars(const ScrollParts& aParts);
 
   // Update the maxpos of the scrollbar.
-  void InvalidateScrollbars(const ScrollParts& aParts, AutoWeakFrame& aWeakColumnsFrame);
+  void InvalidateScrollbars(const ScrollParts& aParts,
+                            AutoWeakFrame& aWeakColumnsFrame);
 
   // Check overflow and generate events.
   void CheckOverflow(const ScrollParts& aParts);
@@ -384,28 +356,24 @@ protected:
   // returns true if the frame is still alive after the method call.
   bool FullScrollbarsUpdate(bool aNeedsFullInvalidation);
 
-  // Use to auto-fill some of the common properties without the view having to do it.
-  // Examples include container, open, selected, and focus.
+  // Use to auto-fill some of the common properties without the view having to
+  // do it. Examples include container, open, selected, and focus.
   void PrefillPropertyArray(int32_t aRowIndex, nsTreeColumn* aCol);
 
   // Our internal scroll method, used by all the public scroll methods.
   nsresult ScrollInternal(const ScrollParts& aParts, int32_t aRow);
   nsresult ScrollToRowInternal(const ScrollParts& aParts, int32_t aRow);
-  nsresult ScrollToColumnInternal(const ScrollParts& aParts, nsITreeColumn* aCol);
   nsresult ScrollHorzInternal(const ScrollParts& aParts, int32_t aPosition);
   nsresult EnsureRowIsVisibleInternal(const ScrollParts& aParts, int32_t aRow);
 
   // Convert client pixels into appunits in our coordinate space.
   nsPoint AdjustClientCoordsToBoxCoordSpace(int32_t aX, int32_t aY);
 
-  // Cache the box object
-  void EnsureBoxObject();
-
   void EnsureView();
 
   nsresult GetCellWidth(int32_t aRow, nsTreeColumn* aCol,
-                        nsRenderingContext* aRenderingContext,
-                        nscoord& aDesiredSize, nscoord& aCurrentSize);
+                        gfxContext* aRenderingContext, nscoord& aDesiredSize,
+                        nscoord& aCurrentSize);
   nscoord CalcMaxRowWidth();
 
   // Translate the given rect horizontally from tree coordinates into the
@@ -417,17 +385,13 @@ protected:
 
   bool CanAutoScroll(int32_t aRowIndex);
 
-  // Calc the row and above/below/on status given where the mouse currently is hovering.
-  // Also calc if we're in the region in which we want to auto-scroll the tree.
-  // A positive value of |aScrollLines| means scroll down, a negative value
-  // means scroll up, a zero value means that we aren't in drag scroll region.
-  void ComputeDropPosition(mozilla::WidgetGUIEvent* aEvent,
-                           int32_t* aRow,
-                           int16_t* aOrient,
-                           int16_t* aScrollLines);
-
-  // Mark ourselves dirty if we're a select widget
-  void MarkDirtyIfSelect();
+  // Calc the row and above/below/on status given where the mouse currently is
+  // hovering. Also calc if we're in the region in which we want to auto-scroll
+  // the tree. A positive value of |aScrollLines| means scroll down, a negative
+  // value means scroll up, a zero value means that we aren't in drag scroll
+  // region.
+  void ComputeDropPosition(mozilla::WidgetGUIEvent* aEvent, int32_t* aRow,
+                           int16_t* aOrient, int16_t* aScrollLines);
 
   void InvalidateDropFeedback(int32_t aRow, int16_t aOrientation) {
     InvalidateRow(aRow);
@@ -435,16 +399,7 @@ protected:
       InvalidateRow(aRow + aOrientation);
   }
 
-public:
-  static
-  already_AddRefed<nsTreeColumn> GetColumnImpl(nsITreeColumn* aUnknownCol) {
-    if (!aUnknownCol)
-      return nullptr;
-
-    nsCOMPtr<nsTreeColumn> col = do_QueryInterface(aUnknownCol);
-    return col.forget();
-  }
-
+ public:
   /**
    * Remove an nsITreeImageListener from being tracked by this frame. Only tree
    * image listeners that are created by this frame are tracked.
@@ -454,30 +409,31 @@ public:
    */
   void RemoveTreeImageListener(nsTreeImageListener* aListener);
 
-protected:
-
+ protected:
   // Create a new timer. This method is used to delay various actions like
   // opening/closing folders or tree scrolling.
   // aID is type of the action, aFunc is the function to be called when
   // the timer fires and aType is type of timer - one shot or repeating.
   nsresult CreateTimer(const mozilla::LookAndFeel::IntID aID,
                        nsTimerCallbackFunc aFunc, int32_t aType,
-                       nsITimer** aTimer);
+                       nsITimer** aTimer, const char* aName);
 
-  static void OpenCallback(nsITimer *aTimer, void *aClosure);
+  static void OpenCallback(nsITimer* aTimer, void* aClosure);
 
-  static void CloseCallback(nsITimer *aTimer, void *aClosure);
+  static void CloseCallback(nsITimer* aTimer, void* aClosure);
 
-  static void LazyScrollCallback(nsITimer *aTimer, void *aClosure);
+  static void LazyScrollCallback(nsITimer* aTimer, void* aClosure);
 
-  static void ScrollCallback(nsITimer *aTimer, void *aClosure);
+  static void ScrollCallback(nsITimer* aTimer, void* aClosure);
 
   class ScrollEvent : public mozilla::Runnable {
-  public:
+   public:
     NS_DECL_NSIRUNNABLE
-    explicit ScrollEvent(nsTreeBodyFrame *aInner) : mInner(aInner) {}
+    explicit ScrollEvent(nsTreeBodyFrame* aInner)
+        : mozilla::Runnable("nsTreeBodyFrame::ScrollEvent"), mInner(aInner) {}
     void Revoke() { mInner = nullptr; }
-  private:
+
+   private:
     nsTreeBodyFrame* mInner;
   };
 
@@ -492,9 +448,9 @@ protected:
 
 #ifdef ACCESSIBILITY
   /**
-   * Fires 'treeRowCountChanged' event asynchronously. The event supports
-   * nsIDOMCustomEvent interface that is used to expose the following
-   * information structures.
+   * Fires 'treeRowCountChanged' event asynchronously. The event is a
+   * CustomEvent that is used to expose the following information structures
+   * via a property bag.
    *
    * @param aIndex  the row index rows are added/removed from
    * @param aCount  the number of added/removed rows (the sign points to
@@ -503,61 +459,64 @@ protected:
   void FireRowCountChangedEvent(int32_t aIndex, int32_t aCount);
 
   /**
-   * Fires 'treeInvalidated' event asynchronously. The event supports
-   * nsIDOMCustomEvent interface that is used to expose the information
-   * structures described by method arguments.
+   * Fires 'treeInvalidated' event asynchronously. The event is a CustomEvent
+   * that is used to expose the information structures described by method
+   * arguments via a property bag.
    *
    * @param aStartRow  the start index of invalidated rows, -1 means that
    *                   columns have been invalidated only
    * @param aEndRow    the end index of invalidated rows, -1 means that columns
    *                   have been invalidated only
-   * @param aStartCol  the start invalidated column, nullptr means that only rows
-   *                   have been invalidated
+   * @param aStartCol  the start invalidated column, nullptr means that only
+   *                   rows have been invalidated
    * @param aEndCol    the end invalidated column, nullptr means that rows have
    *                   been invalidated only
    */
   void FireInvalidateEvent(int32_t aStartRow, int32_t aEndRow,
-                           nsITreeColumn *aStartCol, nsITreeColumn *aEndCol);
+                           nsTreeColumn* aStartCol, nsTreeColumn* aEndCol);
 #endif
 
-protected: // Data Members
-
+ protected:  // Data Members
   class Slots {
-    public:
-      Slots() {
-      }
+   public:
+    Slots()
+        : mDropAllowed(false),
+          mIsDragging(false),
+          mDropRow(-1),
+          mDropOrient(-1),
+          mScrollLines(0),
+          mDragAction(0) {}
 
-      ~Slots() {
-        if (mTimer)
-          mTimer->Cancel();
-      }
+    ~Slots() {
+      if (mTimer) mTimer->Cancel();
+    }
 
-      friend class nsTreeBodyFrame;
+    friend class nsTreeBodyFrame;
 
-    protected:
-      // If the drop is actually allowed here or not.
-      bool                     mDropAllowed;
+   protected:
+    // If the drop is actually allowed here or not.
+    bool mDropAllowed;
 
-      // True while dragging over the tree.
-      bool mIsDragging;
+    // True while dragging over the tree.
+    bool mIsDragging;
 
-      // The row the mouse is hovering over during a drop.
-      int32_t                  mDropRow;
+    // The row the mouse is hovering over during a drop.
+    int32_t mDropRow;
 
-      // Where we want to draw feedback (above/on this row/below) if allowed.
-      int16_t                  mDropOrient;
+    // Where we want to draw feedback (above/on this row/below) if allowed.
+    int16_t mDropOrient;
 
-      // Number of lines to be scrolled.
-      int16_t                  mScrollLines;
+    // Number of lines to be scrolled.
+    int16_t mScrollLines;
 
-      // The drag action that was received for this slot
-      uint32_t                 mDragAction;
+    // The drag action that was received for this slot
+    uint32_t mDragAction;
 
-      // Timer for opening/closing spring loaded folders or scrolling the tree.
-      nsCOMPtr<nsITimer>       mTimer;
+    // Timer for opening/closing spring loaded folders or scrolling the tree.
+    nsCOMPtr<nsITimer> mTimer;
 
-      // An array used to keep track of all spring loaded folders.
-      nsTArray<int32_t>        mArray;
+    // An array used to keep track of all spring loaded folders.
+    nsTArray<int32_t> mArray;
   };
 
   Slots* mSlots;
@@ -566,8 +525,8 @@ protected: // Data Members
 
   RefPtr<ScrollbarActivity> mScrollbarActivity;
 
-  // The cached box object parent.
-  nsCOMPtr<nsITreeBoxObject> mTreeBoxObject;
+  // The <tree> element containing this treebody.
+  RefPtr<mozilla::dom::XULTreeElement> mTree;
 
   // Cached column information.
   RefPtr<nsTreeColumns> mColumns;
@@ -576,22 +535,23 @@ protected: // Data Members
   // from the view.
   nsCOMPtr<nsITreeView> mView;
 
-  // A cache of all the style contexts we have seen for rows and cells of the tree.  This is a mapping from
-  // a list of atoms to a corresponding style context.  This cache stores every combination that
-  // occurs in the tree, so for n distinct properties, this cache could have 2 to the n entries
-  // (the power set of all row properties).
+  // A cache of all the ComputedStyles we have seen for rows and cells of the
+  // tree.  This is a mapping from a list of atoms to a corresponding
+  // ComputedStyle.  This cache stores every combination that occurs in the
+  // tree, so for n distinct properties, this cache could have 2 to the n
+  // entries (the power set of all row properties).
   nsTreeStyleCache mStyleCache;
 
   // A hashtable that maps from URLs to image request/listener pairs.  The URL
-  // is provided by the view or by the style context. The style context
+  // is provided by the view or by the ComputedStyle. The ComputedStyle
   // represents a resolved :-moz-tree-cell-image (or twisty) pseudo-element.
   // It maps directly to an imgIRequest.
   nsDataHashtable<nsStringHashKey, nsTreeImageCacheEntry> mImageCache;
 
-  // A scratch array used when looking up cached style contexts.
-  AtomArray mScratchArray;
+  // A scratch array used when looking up cached ComputedStyles.
+  mozilla::AtomArray mScratchArray;
 
-  // The index of the first visible row and the # of rows visible onscreen.  
+  // The index of the first visible row and the # of rows visible onscreen.
   // The tree only examines onscreen rows, starting from
   // this index and going up to index+pageLength.
   int32_t mTopRowIndex;
@@ -614,7 +574,7 @@ protected: // Data Members
   nscoord mAdjustWidth;
 
   // Cached heights and indent info.
-  nsRect mInnerBox; // 4-byte aligned
+  nsRect mInnerBox;  // 4-byte aligned
   int32_t mRowHeight;
   int32_t mIndentation;
   nscoord mStringWidth;
@@ -646,6 +606,6 @@ protected: // Data Members
   // have pointers to us.
   nsTHashtable<nsPtrHashKey<nsTreeImageListener> > mCreatedListeners;
 
-}; // class nsTreeBodyFrame
+};  // class nsTreeBodyFrame
 
 #endif

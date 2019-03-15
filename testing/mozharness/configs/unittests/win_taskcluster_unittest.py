@@ -1,4 +1,5 @@
 import os
+import platform
 import sys
 
 # OS Specifics
@@ -9,16 +10,20 @@ XPCSHELL_NAME = 'xpcshell.exe'
 EXE_SUFFIX = '.exe'
 DISABLE_SCREEN_SAVER = False
 ADJUST_MOUSE_AND_SCREEN = True
+DESKTOP_VISUALFX_THEME = {
+    'Let Windows choose': 0,
+    'Best appearance': 1,
+    'Best performance': 2,
+    'Custom': 3
+}.get('Best appearance')
+TASKBAR_AUTOHIDE_REG_PATH = {
+    'Windows 7': 'HKCU:SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StuckRects2',
+    'Windows 10': 'HKCU:SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3'
+}.get('{} {}'.format(platform.system(), platform.release()))
 #####
 config = {
     "exes": {
         'python': sys.executable,
-        'virtualenv': [
-            sys.executable,
-            os.path.join(os.path.dirname(sys.executable), 'Lib', 'site-packages', 'virtualenv.py')
-        ],
-        'mozinstall': ['build/venv/scripts/python', 'build/venv/scripts/mozinstall-script.py'],
-        'tooltool.py': [sys.executable, os.path.join(os.environ['MOZILLABUILD'], 'tooltool.py')],
         'hg': os.path.join(os.environ['PROGRAMFILES'], 'Mercurial', 'hg')
     },
     ###
@@ -27,13 +32,7 @@ config = {
     "xpcshell_name": XPCSHELL_NAME,
     "virtualenv_modules": ['pypiwin32'],
     "virtualenv_path": 'venv',
-    "virtualenv_python_dll": os.path.join(os.path.dirname(sys.executable), "python27.dll"),
 
-    "proxxy": {},
-    "find_links": [
-        "http://pypi.pub.build.mozilla.org/pub",
-    ],
-    "pip_index": False,
     "exe_suffix": EXE_SUFFIX,
     "run_file_names": {
         "mochitest": "runtests.py",
@@ -42,7 +41,6 @@ config = {
         "cppunittest": "runcppunittests.py",
         "gtest": "rungtests.py",
         "jittest": "jit_test.py",
-        "mozbase": "test.py",
         "mozmill": "runtestlist.py",
     },
     "minimum_tests_zip_dirs": [
@@ -54,17 +52,9 @@ config = {
         "modules/*",
         "mozbase/*",
         "tools/*",
+        "mozpack/*",
+        "mozbuild/*",
     ],
-    "specific_tests_zip_dirs": {
-        "mochitest": ["mochitest/*"],
-        "reftest": ["reftest/*", "jsreftest/*"],
-        "xpcshell": ["xpcshell/*"],
-        "cppunittest": ["cppunittest/*"],
-        "gtest": ["gtest/*"],
-        "jittest": ["jit-test/*"],
-        "mozbase": ["mozbase/*"],
-        "mozmill": ["mozmill/*"],
-    },
     "suite_definitions": {
         "cppunittest": {
             "options": [
@@ -99,17 +89,10 @@ config = {
                 "--log-errorsummary=%(error_summary_file)s",
                 "--screenshot-on-fail",
                 "--cleanup-crashes",
+                "--marionette-startup-timeout=180",
             ],
             "run_filename": "runtests.py",
             "testsdir": "mochitest"
-        },
-        "mozbase": {
-            "options": [
-                "-b",
-                "%(binary_path)s"
-            ],
-            "run_filename": "test.py",
-            "testsdir": "mozbase"
         },
         "mozmill": {
             "options": [
@@ -130,6 +113,8 @@ config = {
                 "--log-raw=%(raw_log_file)s",
                 "--log-errorsummary=%(error_summary_file)s",
                 "--cleanup-crashes",
+                "--marionette-startup-timeout=180",
+                "--sandbox-read-whitelist=%(abs_work_dir)s",
             ],
             "run_filename": "runreftest.py",
             "testsdir": "reftest"
@@ -174,13 +159,14 @@ config = {
         "browser-chrome-chunked": ["--flavor=browser", "--chunk-by-runtime"],
         "browser-chrome-addons": ["--flavor=browser", "--chunk-by-runtime", "--tag=addons"],
         "browser-chrome-screenshots": ["--flavor=browser", "--subsuite=screenshots"],
-        "mochitest-gl": ["--subsuite=webgl"],
+        "browser-chrome-instrumentation": ["--flavor=browser"],
+        "mochitest-webgl1-core": ["--subsuite=webgl1-core"],
+        "mochitest-webgl1-ext": ["--subsuite=webgl1-ext"],
+        "mochitest-webgl2-core": ["--subsuite=webgl2-core"],
+        "mochitest-webgl2-ext": ["--subsuite=webgl2-ext"],
+        "mochitest-webgl2-deqp": ["--subsuite=webgl2-deqp"],
         "mochitest-devtools-chrome": ["--flavor=browser", "--subsuite=devtools"],
         "mochitest-devtools-chrome-chunked": ["--flavor=browser", "--subsuite=devtools", "--chunk-by-runtime"],
-        "mochitest-metro-chrome": ["--flavor=browser", "--metro-immersive"],
-        "jetpack-package": ["--flavor=jetpack-package"],
-        "jetpack-package-clipboard": ["--flavor=jetpack-package", "--subsuite=clipboard"],
-        "jetpack-addon": ["--flavor=jetpack-addon"],
         "a11y": ["--flavor=a11y"],
     },
     # local reftest suites
@@ -190,7 +176,8 @@ config = {
             'tests': ["tests/reftest/tests/testing/crashtest/crashtests.list"]
         },
         "jsreftest": {
-            'options':["--extra-profile-file=tests/jsreftest/tests/user.js"],
+            'options':["--extra-profile-file=tests/jsreftest/tests/user.js",
+                       "--suite=jstestbrowser"],
             'tests': ["tests/jsreftest/tests/jstests.list"]
         },
         "reftest": {
@@ -204,7 +191,6 @@ config = {
         },
         "reftest-no-accel": {
             "options": ["--suite=reftest",
-                        "--setpref=gfx.direct2d.disabled=true",
                         "--setpref=layers.acceleration.disabled=true"],
             "tests": ["tests/reftest/tests/layout/reftests/reftest.list"]
         },
@@ -229,10 +215,8 @@ config = {
         "gtest": []
     },
     "all_jittest_suites": {
-        "jittest": []
-    },
-    "all_mozbase_suites": {
-        "mozbase": []
+        "jittest": [],
+        "jittest-chunked": [],
     },
     "run_cmd_checks_enabled": True,
     "preflight_run_cmd_suites": [
@@ -253,20 +237,59 @@ config = {
                 os.path.join(os.getcwd(),
                     'mozharness', 'external_tools', 'machine-configuration.json')
             ],
-            'architectures': ['32bit'],
+            'architectures': ['32bit', '64bit'],
             'halt_on_failure': True,
             'enabled': ADJUST_MOUSE_AND_SCREEN
-        }
+        },
+        {
+            'name': 'disable windows security and maintenance notifications',
+            'cmd': [
+                'powershell', '-command',
+                '"&{$p=\'HKCU:SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings\Windows.SystemToast.SecurityAndMaintenance\';if(!(Test-Path -Path $p)){&New-Item -Path $p -Force}&Set-ItemProperty -Path $p -Name Enabled -Value 0}"'
+            ],
+            'architectures': ['32bit', '64bit'],
+            'halt_on_failure': True,
+            'enabled': (platform.release() == 10)
+        },
+        {
+            'name': 'set windows VisualFX',
+            'cmd': [
+                'powershell', '-command',
+                '"&{{&Set-ItemProperty -Path \'HKCU:Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects\' -Name VisualFXSetting -Value {}}}"'.format(DESKTOP_VISUALFX_THEME)
+            ],
+            'architectures': ['32bit', '64bit'],
+            'halt_on_failure': True,
+            'enabled': True
+        },
+        {
+            'name': 'hide windows taskbar',
+            'cmd': [
+                'powershell', '-command',
+                '"&{{$p=\'{}\';$v=(Get-ItemProperty -Path $p).Settings;$v[8]=3;&Set-ItemProperty -Path $p -Name Settings -Value $v}}"'.format(TASKBAR_AUTOHIDE_REG_PATH)
+            ],
+            'architectures': ['32bit', '64bit'],
+            'halt_on_failure': True,
+            'enabled': True
+        },
+        {
+            'name': 'restart windows explorer',
+            'cmd': [
+                'powershell', '-command',
+                '"&{&Stop-Process -ProcessName explorer}"'
+            ],
+            'architectures': ['32bit', '64bit'],
+            'halt_on_failure': True,
+            'enabled': True
+        },
     ],
     "vcs_output_timeout": 1000,
     "minidump_save_path": "%(abs_work_dir)s/../minidumps",
-    "buildbot_max_log_size": 52428800,
-    "default_blob_upload_servers": [
-        "https://blobupload.elasticbeanstalk.com",
-    ],
-    "structured_suites": ["reftest"],
-    'blob_uploader_auth_file': 'C:/builds/oauth.txt',
-    "download_minidump_stackwalk": True,
+    "unstructured_flavors": {"xpcshell": [],
+                             "gtest": [],
+                             "mozmill": [],
+                             "cppunittest": [],
+                             "jittest": [],
+                             },
     "minidump_stackwalk_path": "win32-minidump_stackwalk.exe",
     "minidump_tooltool_manifest_path": "config/tooltool-manifests/win32/releng.manifest",
     "download_nodejs": True,

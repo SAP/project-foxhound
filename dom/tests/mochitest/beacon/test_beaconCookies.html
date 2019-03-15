@@ -21,9 +21,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=936340
 SimpleTest.waitForExplicitFinish();
 SpecialPowers.pushPrefEnv({'set': [["beacon.enabled", true]]}, beginTest);
 
-var Ci = Components.interfaces;
-var Cu = Components.utils;
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
 
 var baseURL = "http://mochi.test:8888/chrome/dom/tests/mochitest/beacon/";
 
@@ -33,16 +32,11 @@ function whenDelayedStartupFinished(aWindow, aCallback) {
       Services.obs.removeObserver(observer, aTopic);
       setTimeout(aCallback, 0);
     }
-  }, "browser-delayed-startup-finished", false);
+  }, "browser-delayed-startup-finished");
 }
 
 function testOnWindow(options, callback) {
-  var mainWindow = window.QueryInterface(Ci.nsIInterfaceRequestor)
-                         .getInterface(Ci.nsIWebNavigation)
-                         .QueryInterface(Ci.nsIDocShellTreeItem)
-                         .rootTreeItem
-                         .QueryInterface(Ci.nsIInterfaceRequestor)
-                         .getInterface(Ci.nsIDOMWindow);
+  var mainWindow = window.docShell.rootTreeItem.domWindow;
 
   var win = mainWindow.OpenBrowserWindow(options);
   windowsToClose.push(win);
@@ -60,8 +54,8 @@ function beginTest() {
       Services.obs.removeObserver(waitCookie, "cookie-changed");
       ok(true, "cookie set by beacon request in normal window");
       testOnPrivateWindow();
-    }, "cookie-changed", false);
-    aNormalWindow.gBrowser.selectedBrowser.loadURI(baseURL + "file_beaconCookies.html");
+    }, "cookie-changed");
+    BrowserTestUtils.loadURI(aNormalWindow.gBrowser.selectedBrowser, baseURL + "file_beaconCookies.html");
   });
 }
 
@@ -71,8 +65,8 @@ function testOnPrivateWindow() {
       Services.obs.removeObserver(waitCookie, "private-cookie-changed");
       ok(true, "private cookie set by beacon request in private window");
       cleanup();
-    }, "private-cookie-changed", false);
-    aPrivateWindow.gBrowser.selectedBrowser.loadURI(baseURL + "file_beaconCookies.html");
+    }, "private-cookie-changed");
+    BrowserTestUtils.loadURI(aPrivateWindow.gBrowser.selectedBrowser, baseURL + "file_beaconCookies.html");
   });
 }
 

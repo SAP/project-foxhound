@@ -9,9 +9,12 @@
 
 #define NS_MIXEDCONTENTBLOCKER_CONTRACTID "@mozilla.org/mixedcontentblocker;1"
 /* daf1461b-bf29-4f88-8d0e-4bcdf332c862 */
-#define NS_MIXEDCONTENTBLOCKER_CID \
-{ 0xdaf1461b, 0xbf29, 0x4f88, \
-  { 0x8d, 0x0e, 0x4b, 0xcd, 0xf3, 0x32, 0xc8, 0x62 } }
+#define NS_MIXEDCONTENTBLOCKER_CID                   \
+  {                                                  \
+    0xdaf1461b, 0xbf29, 0x4f88, {                    \
+      0x8d, 0x0e, 0x4b, 0xcd, 0xf3, 0x32, 0xc8, 0x62 \
+    }                                                \
+  }
 
 // This enum defines type of content that is detected when an
 // nsMixedContentEvent fires
@@ -30,20 +33,24 @@ enum MixedContentTypes {
 
 using mozilla::OriginAttributes;
 
-class nsILoadInfo; // forward declaration
+class nsILoadInfo;  // forward declaration
 
 class nsMixedContentBlocker : public nsIContentPolicy,
-                              public nsIChannelEventSink
-{
-private:
+                              public nsIChannelEventSink {
+ private:
   virtual ~nsMixedContentBlocker();
 
-public:
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSICONTENTPOLICY
   NS_DECL_NSICHANNELEVENTSINK
 
   nsMixedContentBlocker();
+
+  // See:
+  // https://w3c.github.io/webappsec-secure-contexts/#is-origin-trustworthy
+  static bool IsPotentiallyTrustworthyLoopbackURL(nsIURI* aURL);
+  static bool IsPotentiallyTrustworthyOnion(nsIURI* aURL);
 
   /* Static version of ShouldLoad() that contains all the Mixed Content Blocker
    * logic.  Called from non-static ShouldLoad().
@@ -55,54 +62,21 @@ public:
    * Remaining parameters are from nsIContentPolicy::ShouldLoad().
    */
   static nsresult ShouldLoad(bool aHadInsecureImageRedirect,
-                             uint32_t aContentType,
-                             nsIURI* aContentLocation,
+                             uint32_t aContentType, nsIURI* aContentLocation,
                              nsIURI* aRequestingLocation,
                              nsISupports* aRequestingContext,
                              const nsACString& aMimeGuess,
-                             nsISupports* aExtra,
                              nsIPrincipal* aRequestPrincipal,
                              int16_t* aDecision);
-  static void AccumulateMixedContentHSTS(nsIURI* aURI,
-                                         bool aActive,
-                                         bool aHasHSTSPriming,
-                                         const OriginAttributes& aOriginAttributes);
-  /* If the document associated with aRequestingContext requires priming for
-   * aURI, propagate that to the LoadInfo so the HttpChannel will find out about
-   * it.
-   *
-   * @param aURI The URI associated with the load
-   * @param aRequestingContext the requesting context passed to ShouldLoad
-   * @param aLoadInfo the LoadInfo for the load
-   */
-  static nsresult MarkLoadInfoForPriming(nsIURI* aURI,
-                                         nsISupports* aRequestingContext,
-                                         nsILoadInfo* aLoadInfo);
+  static void AccumulateMixedContentHSTS(
+      nsIURI* aURI, bool aActive, const OriginAttributes& aOriginAttributes);
 
-  /* Given a context, return whether HSTS was marked on the document associated
-   * with the load for the given URI. This is used by MarkLoadInfoForPriming and
-   * directly by the image loader to determine whether to allow a load to occur
-   * from the cache.
-   *
-   * @param aURI The URI associated with the load
-   * @param aRequestingContext the requesting context passed to ShouldLoad
-   * @param aSendPrimingRequest out true if priming is required on the channel
-   * @param aMixedContentWouldBlock out true if mixed content would block
-   */
-  static nsresult GetHSTSPrimingFromRequestingContext(nsIURI* aURI,
-                                                      nsISupports* aRequestingContext,
-                                                      bool* aSendPrimingRequest,
-                                                      bool* aMixedContentWouldBlock);
-
+  static bool ShouldUpgradeMixedDisplayContent();
 
   static bool sBlockMixedScript;
+  static bool sBlockMixedObjectSubrequest;
   static bool sBlockMixedDisplay;
-  // Do we move HSTS before mixed-content
-  static bool sUseHSTS;
-  // Do we send an HSTS priming request
-  static bool sSendHSTSPriming;
-  // Default HSTS Priming failure timeout in seconds
-  static uint32_t sHSTSPrimingCacheTimeout;
+  static bool sUpgradeMixedDisplay;
 };
 
 #endif /* nsMixedContentBlocker_h___ */

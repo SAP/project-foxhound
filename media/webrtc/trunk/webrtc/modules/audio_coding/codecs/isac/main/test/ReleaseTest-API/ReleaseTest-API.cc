@@ -21,7 +21,7 @@
 /* include API */
 #include "isac.h"
 #include "utility.h"
-#include "webrtc/base/format_macros.h"
+#include "rtc_base/format_macros.h"
 
 /* Defines */
 #define SEED_FILE "randseed.txt" /* Used when running decoder on garbage data */
@@ -33,7 +33,9 @@
 //#define FS 16000 /* sampling frequency (Hz) */
 
 #ifdef WIN32
+#ifndef CLOCKS_PER_SEC
 #define CLOCKS_PER_SEC 1000 /* Runtime statistics */
+#endif
 #endif
 
 using namespace std;
@@ -119,7 +121,7 @@ int main(int argc, char* argv[]) {
     printf("iSAC-swb version %s \n\n", version_number);
 
     printf("Usage:\n\n");
-    printf("./kenny.exe [-I] bottleneck_value infile outfile \n\n");
+    printf("%s [-I] bottleneck_value infile outfile \n\n", argv[0]);
     printf("with:\n");
     printf("[-FS num]       : sampling frequency in kHz, valid values are\n");
     printf("                  16 & 32, with 16 as default.\n");

@@ -6,36 +6,15 @@
 
 /* These styles are intended to mimic XUL trees and the XUL search box. */
 
-html {
-  border: 1px solid ThreeDShadow;
-  background-color: -moz-Field;
-  color: -moz-FieldText;
-  box-sizing: border-box;
-}
-
-.item {
-  padding-inline-end: 0;
-}
-
 .item-title {
   margin: 1px 0 0;
   margin-inline-end: 6px;
 }
 
-
 .search-box {
   -moz-appearance: textfield;
   cursor: text;
-  margin: 2px 4px;
-  border: 2px solid;
-  -moz-border-top-colors: ThreeDShadow ThreeDDarkShadow;
-  -moz-border-right-colors: ThreeDHighlight ThreeDLightShadow;
-  -moz-border-bottom-colors: ThreeDHighlight ThreeDLightShadow;
-  -moz-border-left-colors: ThreeDShadow ThreeDDarkShadow;
-  padding: 2px 2px 3px;
-  padding-inline-start: 4px;
-  background-color: -moz-Field;
-  color: -moz-FieldText;
+  margin: 4px;
 }
 
 .textbox-search-clear {
@@ -45,25 +24,18 @@ html {
   height: 16px;
 }
 
-.textbox-search-icon {
-  background-image: url(moz-icon://stock/gtk-find?size=menu);
+.search-box > .textbox-input-box {
+  background-image: url(chrome://global/skin/icons/search-textbox.svg);
   background-repeat: no-repeat;
-  width: 16px;
-  height: 16px;
-  display: block;
+  background-size: 12px 12px;
+  background-position: left center;
+  padding-inline-start: 14px;
 }
 
-.textbox-search-icon[searchbutton]:not([disabled]) ,
+.search-box > .textbox-input-box:-moz-locale-dir(rtl) {
+  background-position: right center;
+}
+
 .textbox-search-clear:not([disabled]) {
   cursor: pointer;
-}
-
-.item.client .item-twisty-container {
-  -moz-appearance: treetwistyopen;
-  margin-top: 3px;
-  margin-left: 2px;
-}
-
-.item.client.closed .item-twisty-container {
-  -moz-appearance: treetwisty;
 }

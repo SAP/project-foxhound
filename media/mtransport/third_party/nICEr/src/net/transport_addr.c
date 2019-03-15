@@ -30,11 +30,6 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-
-
-static char *RCSSTRING __UNUSED__="$Id: transport_addr.c,v 1.2 2008/04/28 17:59:03 ekr Exp $";
-
-
 #include <csi_platform.h>
 #include <stdio.h>
 #include <memory.h>
@@ -98,23 +93,27 @@ int nr_transport_addr_fmt_addr_string(nr_transport_addr *addr)
 int nr_transport_addr_fmt_ifname_addr_string(const nr_transport_addr *addr, char *buf, int len)
   {
     int _status;
-    char buffer[40];
+    /* leave room for a fully-expanded IPV4-mapped IPV6 address */
+    char buffer[46];
 
     switch(addr->ip_version){
       case NR_IPV4:
         if (!inet_ntop(AF_INET, &addr->u.addr4.sin_addr,buffer,sizeof(buffer))) {
-           strncpy(buffer, "[error]", len);
+           strncpy(buffer, "[error]", sizeof(buffer));
         }
         break;
       case NR_IPV6:
         if (!inet_ntop(AF_INET6, &addr->u.addr6.sin6_addr,buffer,sizeof(buffer))) {
-           strncpy(buffer, "[error]", len);
+           strncpy(buffer, "[error]", sizeof(buffer));
         }
         break;
       default:
         ABORT(R_INTERNAL);
     }
+    buffer[sizeof(buffer) - 1] = '\0';
+
     snprintf(buf,len,"%s:%s",addr->ifname,buffer);
+    buf[len - 1] = '\0';
 
     _status=0;
   abort:
@@ -165,10 +164,26 @@ int nr_sockaddr_to_transport_addr(struct sockaddr *saddr, int protocol, int keep
 
 int nr_transport_addr_copy(nr_transport_addr *to, nr_transport_addr *from)
   {
-    memcpy(to,from,sizeof(nr_transport_addr));
-    to->addr=(struct sockaddr *)((char *)to + ((char *)from->addr - (char *)from));
+    int _status;
 
-    return(0);
+    memcpy(to,from,sizeof(nr_transport_addr));
+
+    // with IPC serialization, we should not assume that the pointer
+    // in from->addr is correct
+    switch (to->ip_version) {
+      case NR_IPV4:
+        to->addr=(struct sockaddr *)&to->u.addr4;
+        break;
+      case NR_IPV6:
+        to->addr=(struct sockaddr *)&to->u.addr6;
+        break;
+      default:
+        ABORT(R_BAD_ARGS);
+    }
+
+    _status=0;
+  abort:
+    return(_status);
   }
 
 int nr_transport_addr_copy_keep_ifname(nr_transport_addr *to, nr_transport_addr *from)
@@ -420,6 +435,64 @@ int nr_transport_addr_is_link_local(nr_transport_addr *addr)
     return(0);
   }
 
+int nr_transport_addr_is_mac_based(nr_transport_addr *addr)
+  {
+    switch(addr->ip_version){
+      case NR_IPV4:
+        // IPv4 has no MAC based self assigned IP addresses
+        return(0);
+      case NR_IPV6:
+        {
+          // RFC 2373, Appendix A: lower 64bit 0x020000FFFE000000
+          // indicates a MAC based IPv6 address
+          UINT4* macCom = (UINT4*)(addr->u.addr6.sin6_addr.s6_addr + 8);
+          UINT4* macExt = (UINT4*)(addr->u.addr6.sin6_addr.s6_addr + 12);
+          if ((*macCom & htonl(0x020000FF)) == htonl(0x020000FF) &&
+              (*macExt & htonl(0xFF000000)) == htonl(0xFE000000)) {
+            return(1);
+          }
+        }
+        break;
+      default:
+        UNIMPLEMENTED;
+    }
+    return(0);
+  }
+
+int nr_transport_addr_is_teredo(nr_transport_addr *addr)
+  {
+    switch(addr->ip_version){
+      case NR_IPV4:
+        return(0);
+      case NR_IPV6:
+        {
+          UINT4* addrTop = (UINT4*)(addr->u.addr6.sin6_addr.s6_addr);
+          if ((*addrTop & htonl(0xFFFFFFFF)) == htonl(0x20010000))
+            return(1);
+        }
+        break;
+      default:
+        UNIMPLEMENTED;
+    }
+
+    return(0);
+  }
+
+int nr_transport_addr_check_compatibility(nr_transport_addr *addr1, nr_transport_addr *addr2)
+  {
+    // first make sure we're comparing the same ip versions and protocols
+    if ((addr1->ip_version != addr2->ip_version) ||
+        (addr1->protocol != addr2->protocol)) {
+      return(1);
+    }
+    // now make sure the link local status matches
+    if (nr_transport_addr_is_link_local(addr1) !=
+        nr_transport_addr_is_link_local(addr2)) {
+      return(1);
+    }
+    return(0);
+  }
+
 int nr_transport_addr_is_wildcard(nr_transport_addr *addr)
   {
     switch(addr->ip_version){
@@ -459,7 +532,7 @@ int nr_transport_addr_get_private_addr_range(nr_transport_addr *addr)
       case NR_IPV4:
         {
           UINT4 ip = ntohl(addr->u.addr4.sin_addr.s_addr);
-          for (int i=0; i<(sizeof(nr_private_ipv4_addrs)/sizeof(nr_transport_addr_mask)); i++) {
+          for (size_t i=0; i<(sizeof(nr_private_ipv4_addrs)/sizeof(nr_transport_addr_mask)); i++) {
             if ((ip & nr_private_ipv4_addrs[i].mask) == nr_private_ipv4_addrs[i].addr)
               return i + 1;
           }

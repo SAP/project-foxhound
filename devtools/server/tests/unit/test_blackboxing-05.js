@@ -1,5 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+/* eslint-disable no-shadow */
+
+"use strict";
 
 /**
  * Test exceptions inside black boxed sources.
@@ -9,21 +12,22 @@ var gDebuggee;
 var gClient;
 var gThreadClient;
 
-function run_test()
-{
+function run_test() {
   initTestDebuggerServer();
   gDebuggee = addTestGlobal("test-black-box");
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
-  gClient.connect().then(function () {
-    attachTestTabAndResume(gClient, "test-black-box", function (aResponse, aTabClient, aThreadClient) {
-      gThreadClient = aThreadClient;
-      // XXX: We have to do an executeSoon so that the error isn't caught and
-      // reported by DebuggerClient.requester (because we are using the local
-      // transport and share a stack) which causes the test to fail.
-      Services.tm.mainThread.dispatch({
-        run: test_black_box
-      }, Ci.nsIThread.DISPATCH_NORMAL);
-    });
+  gClient.connect().then(function() {
+    attachTestTabAndResume(
+      gClient, "test-black-box",
+      function(response, targetFront, threadClient) {
+        gThreadClient = threadClient;
+        // XXX: We have to do an executeSoon so that the error isn't caught and
+        // reported by DebuggerClient.requester (because we are using the local
+        // transport and share a stack) which causes the test to fail.
+        Services.tm.dispatchToMainThread({
+          run: test_black_box,
+        });
+      });
   });
   do_test_pending();
 }
@@ -31,13 +35,13 @@ function run_test()
 const BLACK_BOXED_URL = "http://example.com/blackboxme.js";
 const SOURCE_URL = "http://example.com/source.js";
 
-function test_black_box()
-{
+function test_black_box() {
   gClient.addOneTimeListener("paused", test_black_box_exception);
 
-  Components.utils.evalInSandbox(
+  /* eslint-disable no-multi-spaces, no-unreachable, no-undef */
+  Cu.evalInSandbox(
     "" + function doStuff(k) {                                   // line 1
-      throw new Error("wu tang clan ain't nuthin' ta fuck wit"); // line 2
+      throw new Error("error msg");                              // line 2
       k(100);                                                    // line 3
     },                                                           // line 4
     gDebuggee,
@@ -46,10 +50,10 @@ function test_black_box()
     1
   );
 
-  Components.utils.evalInSandbox(
+  Cu.evalInSandbox(
     "" + function runTest() {                   // line 1
       doStuff(                                  // line 2
-        function (n) {                          // line 3
+        function(n) {                          // line 3
           debugger;                             // line 4
         }                                       // line 5
       );                                        // line 6
@@ -61,24 +65,24 @@ function test_black_box()
     SOURCE_URL,
     1
   );
+  /* eslint-enable no-multi-spaces, no-unreachable, no-undef */
 }
 
 function test_black_box_exception() {
-  gThreadClient.getSources(function ({error, sources}) {
-    do_check_true(!error, "Should not get an error: " + error);
-    let sourceClient = gThreadClient.source(sources.filter(s => s.url == BLACK_BOXED_URL)[0]);
+  gThreadClient.getSources(async function({error, sources}) {
+    Assert.ok(!error, "Should not get an error: " + error);
+    const sourceClient = await getSource(gThreadClient, BLACK_BOXED_URL);
+    await blackBox(sourceClient);
+    gThreadClient.pauseOnExceptions(true);
 
-    sourceClient.blackBox(function ({error}) {
-      do_check_true(!error, "Should not get an error: " + error);
-      gThreadClient.pauseOnExceptions(true);
+    gClient.addOneTimeListener("paused", async function(event, packet) {
+      const source = await getSourceById(gThreadClient, packet.frame.where.actor);
 
-      gClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-        do_check_eq(aPacket.frame.where.source.url, SOURCE_URL,
-                    "We shouldn't pause while in the black boxed source.");
-        finishClient(gClient);
-      });
-
-      gThreadClient.resume();
+      Assert.equal(source.url, SOURCE_URL,
+                   "We shouldn't pause while in the black boxed source.");
+      finishClient(gClient);
     });
+
+    gThreadClient.resume();
   });
 }

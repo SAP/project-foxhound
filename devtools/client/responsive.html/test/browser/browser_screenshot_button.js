@@ -9,45 +9,45 @@ const TEST_URL = "data:text/html;charset=utf-8,";
 
 const { OS } = require("resource://gre/modules/osfile.jsm");
 
-function* waitUntilScreenshot() {
-  return new Promise(Task.async(function* (resolve) {
-    let { Downloads } = require("resource://gre/modules/Downloads.jsm");
-    let list = yield Downloads.getList(Downloads.ALL);
+function waitUntilScreenshot() {
+  return new Promise(async function(resolve) {
+    const { Downloads } = require("resource://gre/modules/Downloads.jsm");
+    const list = await Downloads.getList(Downloads.ALL);
 
-    let view = {
+    const view = {
       onDownloadAdded: download => {
         download.whenSucceeded().then(() => {
           resolve(download.target.path);
           list.removeView(view);
         });
-      }
+      },
     };
 
-    yield list.addView(view);
-  }));
+    await list.addView(view);
+  });
 }
 
-addRDMTask(TEST_URL, function* ({ ui: {toolWindow} }) {
-  let { store, document } = toolWindow;
+addRDMTask(TEST_URL, async function({ ui: {toolWindow} }) {
+  const { store, document } = toolWindow;
 
   // Wait until the viewport has been added
-  yield waitUntilState(store, state => state.viewports.length == 1);
+  await waitUntilState(store, state => state.viewports.length == 1);
 
   info("Click the screenshot button");
-  let screenshotButton = document.getElementById("global-screenshot-button");
+  const screenshotButton = document.getElementById("screenshot-button");
   screenshotButton.click();
 
-  let whenScreenshotSucceeded = waitUntilScreenshot();
+  const whenScreenshotSucceeded = waitUntilScreenshot();
 
-  let filePath = yield whenScreenshotSucceeded;
-  let image = new Image();
+  const filePath = await whenScreenshotSucceeded;
+  const image = new Image();
   image.src = OS.Path.toFileURI(filePath);
 
-  yield once(image, "load");
+  await once(image, "load");
 
   // We have only one viewport at the moment
-  let viewport = store.getState().viewports[0];
-  let ratio = window.devicePixelRatio;
+  const viewport = store.getState().viewports[0];
+  const ratio = window.devicePixelRatio;
 
   is(image.width, viewport.width * ratio,
     "screenshot width has the expected width");
@@ -55,5 +55,5 @@ addRDMTask(TEST_URL, function* ({ ui: {toolWindow} }) {
   is(image.height, viewport.height * ratio,
     "screenshot width has the expected height");
 
-  yield OS.File.remove(filePath);
+  await OS.File.remove(filePath);
 });

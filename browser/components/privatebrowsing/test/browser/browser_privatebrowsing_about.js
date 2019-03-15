@@ -2,28 +2,31 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+const TP_PB_ENABLED_PREF = "privacy.trackingprotection.pbmode.enabled";
+
 /**
  * Opens a new private window and loads "about:privatebrowsing" there.
  */
-function* openAboutPrivateBrowsing() {
-  let win = yield BrowserTestUtils.openNewBrowserWindow({ private: true });
+async function openAboutPrivateBrowsing() {
+  let win = await BrowserTestUtils.openNewBrowserWindow({
+    private: true,
+    waitForTabURL: "about:privatebrowsing",
+  });
   let tab = win.gBrowser.selectedBrowser;
-  tab.loadURI("about:privatebrowsing");
-  yield BrowserTestUtils.browserLoaded(tab);
   return { win, tab };
 }
 
 /**
  * Clicks the given link and checks this opens a new tab with the given URI.
  */
-function* testLinkOpensTab({ win, tab, elementId, expectedUrl }) {
+async function testLinkOpensTab({ win, tab, elementId, expectedUrl }) {
   let newTabPromise = BrowserTestUtils.waitForNewTab(win.gBrowser, expectedUrl);
-  yield ContentTask.spawn(tab, elementId, function* (elemId) {
+  await ContentTask.spawn(tab, elementId, async function(elemId) {
     content.document.getElementById(elemId).click();
   });
-  let newTab = yield newTabPromise;
+  let newTab = await newTabPromise;
   ok(true, `Clicking ${elementId} opened ${expectedUrl} in a new tab.`);
-  yield BrowserTestUtils.removeTab(newTab);
+  BrowserTestUtils.removeTab(newTab);
 }
 
 /**
@@ -31,20 +34,31 @@ function* testLinkOpensTab({ win, tab, elementId, expectedUrl }) {
  *
  * This function does not return to the previous page.
  */
-function* testLinkOpensUrl({ win, tab, elementId, expectedUrl }) {
+async function testLinkOpensUrl({ win, tab, elementId, expectedUrl }) {
   let loadedPromise = BrowserTestUtils.browserLoaded(tab);
-  yield ContentTask.spawn(tab, elementId, function* (elemId) {
+  await ContentTask.spawn(tab, elementId, async function(elemId) {
     content.document.getElementById(elemId).click();
   });
-  yield loadedPromise;
+  await loadedPromise;
   is(tab.currentURI.spec, expectedUrl,
      `Clicking ${elementId} opened ${expectedUrl} in the same tab.`);
 }
 
 /**
+ * Enables the searchUI pref.
+ */
+function enableSearchUI() {
+  Services.prefs.setBoolPref("browser.privatebrowsing.searchUI", true);
+
+  registerCleanupFunction(function() {
+    Services.prefs.clearUserPref("browser.privatebrowsing.searchUI");
+  });
+}
+
+/**
  * Tests the links in "about:privatebrowsing".
  */
-add_task(function* test_links() {
+add_task(async function test_links() {
   // Use full version and change the remote URLs to prevent network access.
   Services.prefs.setCharPref("app.support.baseURL", "https://example.com/");
   Services.prefs.setCharPref("privacy.trackingprotection.introURL",
@@ -54,62 +68,114 @@ add_task(function* test_links() {
     Services.prefs.clearUserPref("app.support.baseURL");
   });
 
-  let { win, tab } = yield openAboutPrivateBrowsing();
+  let { win, tab } = await openAboutPrivateBrowsing();
 
-  yield testLinkOpensTab({ win, tab,
+  await testLinkOpensTab({ win, tab,
     elementId: "learnMore",
     expectedUrl: "https://example.com/private-browsing",
   });
 
-  yield testLinkOpensUrl({ win, tab,
+  await testLinkOpensUrl({ win, tab,
     elementId: "startTour",
-    expectedUrl: "https://example.com/tour",
+    expectedUrl: "https://example.com/tour?variation=1",
   });
 
-  yield BrowserTestUtils.closeWindow(win);
+  await BrowserTestUtils.closeWindow(win);
 });
 
 /**
- * Tests the action to disable and re-enable Tracking Protection in
- * "about:privatebrowsing".
+ * Tests the private-browsing-myths link in "about:privatebrowsing".
  */
-add_task(function* test_toggleTrackingProtection() {
-  // Use tour version but disable Tracking Protection.
-  Services.prefs.setBoolPref("privacy.trackingprotection.pbmode.enabled",
-                             true);
+add_task(async function test_myths_link() {
+  enableSearchUI();
+  Services.prefs.setCharPref("app.support.baseURL", "https://example.com/");
   registerCleanupFunction(function() {
-    Services.prefs.clearUserPref("privacy.trackingprotection.pbmode.enabled");
+    Services.prefs.clearUserPref("app.support.baseURL");
   });
 
-  let { win, tab } = yield openAboutPrivateBrowsing();
+  let { win, tab } = await openAboutPrivateBrowsing();
 
-  // Set up the observer for the preference change before triggering the action.
-  let prefBranch =
-      Services.prefs.getBranch("privacy.trackingprotection.pbmode.");
-  let waitForPrefChanged = () => new Promise(resolve => {
-    let prefObserver = {
-      QueryInterface: XPCOMUtils.generateQI([Ci.nsIObserver]),
-      observe() {
-        prefBranch.removeObserver("enabled", prefObserver);
-        resolve();
-      },
-    };
-    prefBranch.addObserver("enabled", prefObserver, false);
+  await testLinkOpensUrl({ win, tab,
+    elementId: "private-browsing-myths",
+    expectedUrl: "https://example.com/private-browsing-myths",
   });
 
-  let promisePrefChanged = waitForPrefChanged();
-  yield ContentTask.spawn(tab, {}, function* () {
-    content.document.getElementById("tpButton").click();
-  });
-  yield promisePrefChanged;
-  ok(!prefBranch.getBoolPref("enabled"), "Tracking Protection is disabled.");
+  await BrowserTestUtils.closeWindow(win);
+});
 
-  promisePrefChanged = waitForPrefChanged();
-  yield ContentTask.spawn(tab, {}, function* () {
-    content.document.getElementById("tpButton").click();
-  });
-  yield promisePrefChanged;
-  ok(prefBranch.getBoolPref("enabled"), "Tracking Protection is enabled.");
+function urlBarHasHiddenFocus(win) {
+  return win.gURLBar.hasAttribute("focused") && win.gURLBar.classList.contains("hidden-focus");
+}
 
-  yield BrowserTestUtils.closeWindow(win);
+function urlBarHasNormalFocus(win) {
+  return win.gURLBar.hasAttribute("focused") && !win.gURLBar.classList.contains("hidden-focus");
+}
+
+/**
+ * Tests the search hand-off on character keydown in "about:privatebrowsing".
+ */
+add_task(async function test_search_handoff_on_keydown() {
+  enableSearchUI();
+  let { win, tab } = await openAboutPrivateBrowsing();
+
+  await ContentTask.spawn(tab, null, async function() {
+    let btn = content.document.getElementById("search-handoff-button");
+    btn.click();
+    ok(btn.classList.contains("focused"), "in-content search has focus styles");
+  });
+  ok(urlBarHasHiddenFocus(win), "url bar has hidden focused");
+  await new Promise(r => EventUtils.synthesizeKey("f", {}, win, r));
+  await ContentTask.spawn(tab, null, async function() {
+    ok(content.document.getElementById("search-handoff-button").classList.contains("hidden"),
+      "in-content search is hidden");
+  });
+  ok(urlBarHasNormalFocus(win), "url bar has normal focused");
+  is(win.gURLBar.value, "@google f", "url bar has search text");
+
+  // Hitting ESC should reshow the in-content search
+  await new Promise(r => EventUtils.synthesizeKey("KEY_Escape", {}, win, r));
+  await ContentTask.spawn(tab, null, async function() {
+    ok(!content.document.getElementById("search-handoff-button").classList.contains("hidden"),
+      "in-content search is not");
+  });
+
+  await BrowserTestUtils.closeWindow(win);
+});
+
+/**
+ * Tests the search hand-off on composition start in "about:privatebrowsing".
+ */
+add_task(async function test_search_handoff_on_composition_start() {
+  enableSearchUI();
+  let { win, tab } = await openAboutPrivateBrowsing();
+
+  await ContentTask.spawn(tab, null, async function() {
+    content.document.getElementById("search-handoff-button").click();
+  });
+  ok(urlBarHasHiddenFocus(win), "url bar has hidden focused");
+  await new Promise(r => EventUtils.synthesizeComposition({type: "compositionstart"}, win, r));
+  ok(urlBarHasNormalFocus(win), "url bar has normal focused");
+
+  await BrowserTestUtils.closeWindow(win);
+});
+
+/**
+* Tests the search hand-off on paste in "about:privatebrowsing".
+*/
+add_task(async function test_search_handoff_on_paste() {
+  enableSearchUI();
+  let { win, tab } = await openAboutPrivateBrowsing();
+
+  await ContentTask.spawn(tab, null, async function() {
+    content.document.getElementById("search-handoff-button").click();
+  });
+  ok(urlBarHasHiddenFocus(win), "url bar has hidden focused");
+  var helper = SpecialPowers.Cc["@mozilla.org/widget/clipboardhelper;1"]
+     .getService(SpecialPowers.Ci.nsIClipboardHelper);
+  helper.copyString("words");
+  await new Promise(r => EventUtils.synthesizeKey("v", {accelKey: true}, win, r));
+  ok(urlBarHasNormalFocus(win), "url bar has normal focused");
+  is(win.gURLBar.value, "@google words", "url bar has search text");
+
+  await BrowserTestUtils.closeWindow(win);
 });

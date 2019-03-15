@@ -3,7 +3,6 @@
 
 "use strict";
 
-const Services = require("Services");
 const {
   EXPAND_TAB,
   TAB_SIZE,
@@ -42,9 +41,9 @@ const TESTS = [
       "     ",
       "span {",
       "  padding-left: 10px;",
-      "}"
+      "}",
     ],
-    expected: {indentUnit: 2, indentWithTabs: false}
+    expected: {indentUnit: 2, indentWithTabs: false},
   },
   {
     desc: "four spaces",
@@ -70,9 +69,9 @@ const TESTS = [
       "        var result = x - y;",
       "        result %= 2;",
       "    }",
-      "}"
+      "}",
     ],
-    expected: {indentUnit: 4, indentWithTabs: false}
+    expected: {indentUnit: 4, indentWithTabs: false},
   },
   {
     desc: "tabs",
@@ -87,9 +86,9 @@ const TESTS = [
       "",
       "span {",
       "\tpadding-left: 10px;",
-      "}"
+      "}",
     ],
-    expected: {indentUnit: 2, indentWithTabs: true}
+    expected: {indentUnit: 2, indentWithTabs: true},
   },
   {
     desc: "no indent",
@@ -98,9 +97,9 @@ const TESTS = [
       "           // stray thing",
       "var y = 9;",
       "    ",
-      ""
+      "",
     ],
-    expected: {indentUnit: 2, indentWithTabs: false}
+    expected: {indentUnit: 2, indentWithTabs: false},
   },
 ];
 
@@ -109,8 +108,8 @@ function test_indent_detection() {
   Services.prefs.setBoolPref(EXPAND_TAB, true);
   Services.prefs.setBoolPref(DETECT_INDENT, true);
 
-  for (let test of TESTS) {
-    let iterFn = function (start, end, callback) {
+  for (const test of TESTS) {
+    const iterFn = function(start, end, callback) {
       test.input.slice(start, end).forEach(callback);
     };
 
@@ -118,7 +117,7 @@ function test_indent_detection() {
               "test getIndentationFromIteration " + test.desc);
   }
 
-  for (let test of TESTS) {
+  for (const test of TESTS) {
     deepEqual(getIndentationFromString(test.input.join("\n")), test.expected,
               "test getIndentationFromString " + test.desc);
   }

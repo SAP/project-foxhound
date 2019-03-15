@@ -1,6 +1,9 @@
+/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+"use strict";
 
 /**
  * @fileOverview
@@ -17,22 +20,38 @@
  *              values that correspond to the prefs to be set.
  */
 
-"use strict";
+var EXPORTED_SYMBOLS = ["ExtensionPreferencesManager"];
 
-this.EXPORTED_SYMBOLS = ["ExtensionPreferencesManager"];
+const {Management} = ChromeUtils.import("resource://gre/modules/Extension.jsm", {});
 
-const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "ExtensionSettingsStore",
-                                  "resource://gre/modules/ExtensionSettingsStore.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Preferences",
-                                  "resource://gre/modules/Preferences.jsm");
+ChromeUtils.defineModuleGetter(this, "ExtensionSettingsStore",
+                               "resource://gre/modules/ExtensionSettingsStore.jsm");
+ChromeUtils.defineModuleGetter(this, "Preferences",
+                               "resource://gre/modules/Preferences.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "defaultPreferences", function() {
   return new Preferences({defaultBranch: true});
 });
+
+/* eslint-disable mozilla/balanced-listeners */
+Management.on("uninstall", (type, {id}) => {
+  ExtensionPreferencesManager.removeAll(id);
+});
+
+Management.on("shutdown", (type, extension) => {
+  if (extension.shutdownReason == "ADDON_DISABLE") {
+    this.ExtensionPreferencesManager.disableAll(extension.id);
+  }
+});
+
+Management.on("startup", async (type, extension) => {
+  if (extension.startupReason == "ADDON_ENABLE") {
+    this.ExtensionPreferencesManager.enableAll(extension.id);
+  }
+});
+/* eslint-enable mozilla/balanced-listeners */
 
 const STORE_TYPE = "prefs";
 
@@ -57,29 +76,72 @@ function initialValueCallback() {
 }
 
 /**
- * Takes an item returned by the ExtensionSettingsStore and conditionally sets
- * preferences based on the item's contents.
+ * Loops through a set of prefs, either setting or resetting them.
  *
+ * @param {Object} setting
+ *        An object that represents a setting, which will have a setCallback
+ *        property. If a onPrefsChanged function is provided it will be called
+ *        with item when the preferences change.
+ * @param {Object} item
+ *        An object that represents an item handed back from the setting store
+ *        from which the new pref values can be calculated.
+*/
+function setPrefs(setting, item) {
+  let prefs = item.initialValue || setting.setCallback(item.value);
+  let changed = false;
+  for (let pref in prefs) {
+    if (prefs[pref] === undefined) {
+      if (Preferences.isSet(pref)) {
+        changed = true;
+        Preferences.reset(pref);
+      }
+    } else if (Preferences.get(pref) != prefs[pref]) {
+      Preferences.set(pref, prefs[pref]);
+      changed = true;
+    }
+  }
+  if (changed && typeof setting.onPrefsChanged == "function") {
+    setting.onPrefsChanged(item);
+  }
+}
+
+/**
+ * Commits a change to a setting and conditionally sets preferences.
+ *
+ * If the change to the setting causes a different extension to gain
+ * control of the pref (or removes all extensions with control over the pref)
+ * then the prefs should be updated, otherwise they should not be.
+ * In addition, if the current value of any of the prefs does not
+ * match what we expect the value to be (which could be the result of a
+ * user manually changing the pref value), then we do not change any
+ * of the prefs.
+ *
+ * @param {string} id
+ *        The id of the extension for which a setting is being modified.
  * @param {string} name
  *        The name of the setting being processed.
- * @param {Object|null} item
- *        Either null, or an object with a value property which indicates the
- *        value stored for the setting in the settings store.
+ * @param {string} action
+ *        The action that is being performed. Will be one of disable, enable
+ *        or removeSetting.
 
  * @returns {Promise}
- *          Resolves to true if the preferences were changed and to false if
- *          the preferences were not changed.
+ *          Resolves to true if preferences were set as a result and to false
+ *          if preferences were not set.
 */
-async function processItem(name, item) {
+async function processSetting(id, name, action) {
+  await ExtensionSettingsStore.initialize();
+  let expectedItem = ExtensionSettingsStore.getSetting(STORE_TYPE, name);
+  let item = ExtensionSettingsStore[action](id, STORE_TYPE, name);
   if (item) {
-    let prefs = item.initialValue || await settingsMap.get(name).setCallback(item.value);
-    for (let pref in prefs) {
-      if (prefs[pref] === undefined) {
-        Preferences.reset(pref);
-      } else {
-        Preferences.set(pref, prefs[pref]);
-      }
+    let setting = settingsMap.get(name);
+    let expectedPrefs = expectedItem.initialValue
+      || setting.setCallback(expectedItem.value);
+    if (Object.keys(expectedPrefs)
+              .some(pref => (expectedPrefs[pref] &&
+                             Preferences.get(pref) != expectedPrefs[pref]))) {
+      return false;
     }
+    setPrefs(setting, item);
     return true;
   }
   return false;
@@ -116,8 +178,8 @@ this.ExtensionPreferencesManager = {
    * Indicates that an extension would like to change the value of a previously
    * defined setting.
    *
-   * @param {Extension} extension
-   *        The extension for which a setting is being set.
+   * @param {string} id
+   *        The id of the extension for which a setting is being set.
    * @param {string} name
    *        The unique id of the setting.
    * @param {any} value
@@ -128,19 +190,24 @@ this.ExtensionPreferencesManager = {
    *          Resolves to true if the preferences were changed and to false if
    *          the preferences were not changed.
    */
-  async setSetting(extension, name, value) {
+  async setSetting(id, name, value) {
     let setting = settingsMap.get(name);
+    await ExtensionSettingsStore.initialize();
     let item = await ExtensionSettingsStore.addSetting(
-      extension, STORE_TYPE, name, value, initialValueCallback.bind(setting));
-    return await processItem(name, item);
+      id, STORE_TYPE, name, value, initialValueCallback.bind(setting));
+    if (item) {
+      setPrefs(setting, item);
+      return true;
+    }
+    return false;
   },
 
   /**
    * Indicates that this extension wants to temporarily cede control over the
    * given setting.
    *
-   * @param {Extension} extension
-   *        The extension for which a preference setting is being removed.
+   * @param {string} id
+   *        The id of the extension for which a preference setting is being disabled.
    * @param {string} name
    *        The unique id of the setting.
    *
@@ -148,17 +215,15 @@ this.ExtensionPreferencesManager = {
    *          Resolves to true if the preferences were changed and to false if
    *          the preferences were not changed.
    */
-  async disableSetting(extension, name) {
-    let item = await ExtensionSettingsStore.disable(
-      extension, STORE_TYPE, name);
-    return await processItem(name, item);
+  disableSetting(id, name) {
+    return processSetting(id, name, "disable");
   },
 
   /**
    * Enable a setting that has been disabled.
    *
-   * @param {Extension} extension
-   *        The extension for which a setting is being enabled.
+   * @param {string} id
+   *        The id of the extension for which a setting is being enabled.
    * @param {string} name
    *        The unique id of the setting.
    *
@@ -166,16 +231,15 @@ this.ExtensionPreferencesManager = {
    *          Resolves to true if the preferences were changed and to false if
    *          the preferences were not changed.
    */
-  async enableSetting(extension, name) {
-    let item = await ExtensionSettingsStore.enable(extension, STORE_TYPE, name);
-    return await processItem(name, item);
+  enableSetting(id, name) {
+    return processSetting(id, name, "enable");
   },
 
   /**
    * Indicates that this extension no longer wants to set the given setting.
    *
-   * @param {Extension} extension
-   *        The extension for which a preference setting is being removed.
+   * @param {string} id
+   *        The id of the extension for which a preference setting is being removed.
    * @param {string} name
    *        The unique id of the setting.
    *
@@ -183,40 +247,40 @@ this.ExtensionPreferencesManager = {
    *          Resolves to true if the preferences were changed and to false if
    *          the preferences were not changed.
    */
-  async removeSetting(extension, name) {
-    let item = await ExtensionSettingsStore.removeSetting(
-      extension, STORE_TYPE, name);
-    return await processItem(name, item);
+  removeSetting(id, name) {
+    return processSetting(id, name, "removeSetting");
   },
 
   /**
    * Disables all previously set settings for an extension. This can be called when
    * an extension is being disabled, for example.
    *
-   * @param {Extension} extension
-   *        The extension for which all settings are being unset.
+   * @param {string} id
+   *        The id of the extension for which all settings are being unset.
    */
-  async disableAll(extension) {
-    let settings = await ExtensionSettingsStore.getAllForExtension(extension, STORE_TYPE);
+  async disableAll(id) {
+    await ExtensionSettingsStore.initialize();
+    let settings = ExtensionSettingsStore.getAllForExtension(id, STORE_TYPE);
     let disablePromises = [];
     for (let name of settings) {
-      disablePromises.push(this.disableSetting(extension, name));
+      disablePromises.push(this.disableSetting(id, name));
     }
     await Promise.all(disablePromises);
   },
 
   /**
    * Enables all disabled settings for an extension. This can be called when
-   * an extension has finsihed updating or is being re-enabled, for example.
+   * an extension has finished updating or is being re-enabled, for example.
    *
-   * @param {Extension} extension
-   *        The extension for which all settings are being enabled.
+   * @param {string} id
+   *        The id of the extension for which all settings are being enabled.
    */
-  async enableAll(extension) {
-    let settings = await ExtensionSettingsStore.getAllForExtension(extension, STORE_TYPE);
+  async enableAll(id) {
+    await ExtensionSettingsStore.initialize();
+    let settings = ExtensionSettingsStore.getAllForExtension(id, STORE_TYPE);
     let enablePromises = [];
     for (let name of settings) {
-      enablePromises.push(this.enableSetting(extension, name));
+      enablePromises.push(this.enableSetting(id, name));
     }
     await Promise.all(enablePromises);
   },
@@ -225,16 +289,30 @@ this.ExtensionPreferencesManager = {
    * Removes all previously set settings for an extension. This can be called when
    * an extension is being uninstalled, for example.
    *
-   * @param {Extension} extension
-   *        The extension for which all settings are being unset.
+   * @param {string} id
+   *        The id of the extension for which all settings are being unset.
    */
-  async removeAll(extension) {
-    let settings = await ExtensionSettingsStore.getAllForExtension(extension, STORE_TYPE);
+  async removeAll(id) {
+    await ExtensionSettingsStore.initialize();
+    let settings = ExtensionSettingsStore.getAllForExtension(id, STORE_TYPE);
     let removePromises = [];
     for (let name of settings) {
-      removePromises.push(this.removeSetting(extension, name));
+      removePromises.push(this.removeSetting(id, name));
     }
     await Promise.all(removePromises);
+  },
+
+  /**
+   * Return the currently active value for a setting.
+   *
+   * @param {string} name
+   *        The unique id of the setting.
+   *
+   * @returns {Object} The current setting object.
+   */
+  async getSetting(name) {
+    await ExtensionSettingsStore.initialize();
+    return ExtensionSettingsStore.getSetting(STORE_TYPE, name);
   },
 
   /**
@@ -242,20 +320,85 @@ this.ExtensionPreferencesManager = {
    * This queries the levelOfControl from the ExtensionSettingsStore and also
    * takes into account whether any of the setting's preferences are locked.
    *
-   * @param {Extension} extension
-   *        The extension for which levelOfControl is being requested.
+   * @param {string} id
+   *        The id of the extension for which levelOfControl is being requested.
    * @param {string} name
    *        The unique id of the setting.
+   * @param {string} storeType
+   *        The name of the store in ExtensionSettingsStore.
+   *        Defaults to STORE_TYPE.
    *
    * @returns {Promise}
    *          Resolves to the level of control of the extension over the setting.
    */
-  async getLevelOfControl(extension, name) {
-    for (let prefName of settingsMap.get(name).prefNames) {
-      if (Preferences.locked(prefName)) {
+  async getLevelOfControl(id, name, storeType = STORE_TYPE) {
+    // This could be called for a setting that isn't defined to the PreferencesManager,
+    // in which case we simply defer to the SettingsStore.
+    if (storeType === STORE_TYPE) {
+      let setting = settingsMap.get(name);
+      if (!setting) {
         return "not_controllable";
       }
+      for (let prefName of setting.prefNames) {
+        if (Preferences.locked(prefName)) {
+          return "not_controllable";
+        }
+      }
     }
-    return await ExtensionSettingsStore.getLevelOfControl(extension, STORE_TYPE, name);
+    await ExtensionSettingsStore.initialize();
+    return ExtensionSettingsStore.getLevelOfControl(id, storeType, name);
+  },
+
+  /**
+   * Returns an API object with get/set/clear used for a setting.
+   *
+   * @param {string} extensionId
+   * @param {string} name
+   *        The unique id of the setting.
+   * @param {Function} callback
+   *        The function that retreives the current setting from prefs.
+   * @param {string} storeType
+   *        The name of the store in ExtensionSettingsStore.
+   *        Defaults to STORE_TYPE.
+   * @param {boolean} readOnly
+   * @param {Function} validate
+   *        Utility function for any specific validation, such as checking
+   *        for supported platform.  Function should throw an error if necessary.
+   *
+   * @returns {object} API object with get/set/clear methods
+   */
+  getSettingsAPI(extensionId, name, callback, storeType, readOnly = false, validate = () => {}) {
+    return {
+      async get(details) {
+        validate();
+        let levelOfControl = details.incognito ?
+          "not_controllable" :
+          await ExtensionPreferencesManager.getLevelOfControl(
+            extensionId, name, storeType);
+        levelOfControl =
+          (readOnly && levelOfControl === "controllable_by_this_extension") ?
+            "not_controllable" :
+            levelOfControl;
+        return {
+          levelOfControl,
+          value: await callback(),
+        };
+      },
+      set(details) {
+        validate();
+        if (!readOnly) {
+          return ExtensionPreferencesManager.setSetting(
+            extensionId, name, details.value);
+        }
+        return false;
+      },
+      clear(details) {
+        validate();
+        if (!readOnly) {
+          return ExtensionPreferencesManager.removeSetting(extensionId, name);
+        }
+        return false;
+      },
+    };
   },
 };

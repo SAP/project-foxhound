@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sts=4 et sw=4 tw=99:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+ * vim: set ts=8 sts=2 et sw=2 tw=80:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,19 +8,19 @@
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/DebugOnly.h"
-#include "mozilla/IntegerRange.h"
-#include "mozilla/PodOperations.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/TimeStamp.h"
 
 #include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <type_traits>
 
-#include "jsprf.h"
 #include "jsutil.h"
 
+#include "gc/GC.h"
 #include "gc/Memory.h"
+#include "util/Text.h"
 #include "vm/Debugger.h"
 #include "vm/HelperThreads.h"
 #include "vm/Runtime.h"
@@ -31,501 +31,392 @@ using namespace js::gc;
 using namespace js::gcstats;
 
 using mozilla::DebugOnly;
-using mozilla::IntegerRange;
-using mozilla::PodArrayZero;
-using mozilla::PodZero;
-using mozilla::TimeStamp;
+using mozilla::EnumeratedArray;
 using mozilla::TimeDuration;
+using mozilla::TimeStamp;
 
 /*
  * If this fails, then you can either delete this assertion and allow all
  * larger-numbered reasons to pile up in the last telemetry bucket, or switch
  * to GC_REASON_3 and bump the max value.
  */
-JS_STATIC_ASSERT(JS::gcreason::NUM_TELEMETRY_REASONS >= JS::gcreason::NUM_REASONS);
+JS_STATIC_ASSERT(JS::GCReason::NUM_TELEMETRY_REASONS >=
+                 JS::GCReason::NUM_REASONS);
 
-static inline decltype(mozilla::MakeEnumeratedRange(PHASE_FIRST, PHASE_LIMIT))
-AllPhases()
-{
-    return mozilla::MakeEnumeratedRange(PHASE_FIRST, PHASE_LIMIT);
+using PhaseKindRange =
+    decltype(mozilla::MakeEnumeratedRange(PhaseKind::FIRST, PhaseKind::LIMIT));
+
+static inline PhaseKindRange AllPhaseKinds() {
+  return mozilla::MakeEnumeratedRange(PhaseKind::FIRST, PhaseKind::LIMIT);
 }
 
-const char*
-js::gcstats::ExplainInvocationKind(JSGCInvocationKind gckind)
-{
-    MOZ_ASSERT(gckind == GC_NORMAL || gckind == GC_SHRINK);
-    if (gckind == GC_NORMAL)
-         return "Normal";
-    else
-         return "Shrinking";
+static inline PhaseKindRange MajorGCPhaseKinds() {
+  return mozilla::MakeEnumeratedRange(PhaseKind::GC_BEGIN,
+                                      PhaseKind(size_t(PhaseKind::GC_END) + 1));
 }
 
-JS_PUBLIC_API(const char*)
-JS::gcreason::ExplainReason(JS::gcreason::Reason reason)
-{
-    switch (reason) {
-#define SWITCH_REASON(name)                         \
-        case JS::gcreason::name:                    \
-          return #name;
-        GCREASONS(SWITCH_REASON)
+const char* js::gcstats::ExplainInvocationKind(JSGCInvocationKind gckind) {
+  MOZ_ASSERT(gckind == GC_NORMAL || gckind == GC_SHRINK);
+  if (gckind == GC_NORMAL) {
+    return "Normal";
+  } else {
+    return "Shrinking";
+  }
+}
 
-        default:
-          MOZ_CRASH("bad GC reason");
+JS_PUBLIC_API const char* JS::ExplainGCReason(JS::GCReason reason) {
+  switch (reason) {
+#define SWITCH_REASON(name, _) \
+  case JS::GCReason::name:     \
+    return #name;
+    GCREASONS(SWITCH_REASON)
+
+    default:
+      MOZ_CRASH("bad GC reason");
 #undef SWITCH_REASON
-    }
+  }
 }
 
-const char*
-js::gcstats::ExplainAbortReason(gc::AbortReason reason)
-{
-    switch (reason) {
-#define SWITCH_REASON(name)                         \
-        case gc::AbortReason::name:                 \
-          return #name;
-        GC_ABORT_REASONS(SWITCH_REASON)
+const char* js::gcstats::ExplainAbortReason(gc::AbortReason reason) {
+  switch (reason) {
+#define SWITCH_REASON(name, _) \
+  case gc::AbortReason::name:  \
+    return #name;
+    GC_ABORT_REASONS(SWITCH_REASON)
 
-        default:
-          MOZ_CRASH("bad GC abort reason");
+    default:
+      MOZ_CRASH("bad GC abort reason");
 #undef SWITCH_REASON
-    }
+  }
 }
 
-static double
-t(TimeDuration duration)
-{
-    return duration.ToMilliseconds();
+static FILE* MaybeOpenFileFromEnv(const char* env) {
+  FILE* file;
+  const char* value = getenv(env);
+
+  if (!value) {
+    return nullptr;
+  }
+
+  if (strcmp(value, "none") == 0) {
+    file = nullptr;
+  } else if (strcmp(value, "stdout") == 0) {
+    file = stdout;
+  } else if (strcmp(value, "stderr") == 0) {
+    file = stderr;
+  } else {
+    file = fopen(value, "a");
+    if (!file) {
+      MOZ_CRASH("Failed to open log file.");
+    }
+  }
+
+  return file;
 }
 
-struct PhaseInfo
-{
-    Phase index;
-    const char* name;
-    Phase parent;
-    uint8_t telemetryBucket;
+struct PhaseKindInfo {
+  Phase firstPhase;
+  uint8_t telemetryBucket;
 };
 
-// The zeroth entry in the timing arrays is used for phases that have a
-// unique lineage.
-static const size_t PHASE_DAG_NONE = 0;
-
-// These are really just fields of PhaseInfo, but I have to initialize them
-// programmatically, which prevents making phases[] const. (And marking these
-// fields mutable does not work on Windows; the whole thing gets created in
-// read-only memory anyway.)
-struct ExtraPhaseInfo
-{
-    // Depth in the tree of each phase type
-    size_t depth;
-
-    // Index into the set of parallel arrays of timing data, for parents with
-    // at least one multi-parented child
-    size_t dagSlot;
-
-    ExtraPhaseInfo() : depth(0), dagSlot(0) {}
+// PhaseInfo objects form a tree.
+struct PhaseInfo {
+  Phase parent;
+  Phase firstChild;
+  Phase nextSibling;
+  Phase nextWithPhaseKind;
+  PhaseKind phaseKind;
+  uint8_t depth;
+  const char* name;
+  const char* path;
 };
 
-static const Phase PHASE_NO_PARENT = PHASE_LIMIT;
+// A table of PhaseInfo indexed by Phase.
+using PhaseTable = EnumeratedArray<Phase, Phase::LIMIT, PhaseInfo>;
 
-struct DagChildEdge {
-    Phase parent;
-    Phase child;
-} dagChildEdges[] = {
-    { PHASE_MARK, PHASE_MARK_ROOTS },
-    { PHASE_MINOR_GC, PHASE_MARK_ROOTS },
-    { PHASE_TRACE_HEAP, PHASE_MARK_ROOTS },
-    { PHASE_EVICT_NURSERY, PHASE_MARK_ROOTS },
-    { PHASE_COMPACT_UPDATE, PHASE_MARK_ROOTS }
-};
+// A table of PhaseKindInfo indexed by PhaseKind.
+using PhaseKindTable =
+    EnumeratedArray<PhaseKind, PhaseKind::LIMIT, PhaseKindInfo>;
 
-/*
- * Note that PHASE_MUTATOR never has any child phases. If beginPhase is called
- * while PHASE_MUTATOR is active, it will automatically be suspended and
- * resumed when the phase stack is next empty. Timings for these phases are
- * thus exclusive of any other phase.
- */
+#include "gc/StatsPhasesGenerated.cpp"
 
-static const PhaseInfo phases[] = {
-    { PHASE_MUTATOR, "Mutator Running", PHASE_NO_PARENT, 0 },
-    { PHASE_GC_BEGIN, "Begin Callback", PHASE_NO_PARENT, 1 },
-    { PHASE_WAIT_BACKGROUND_THREAD, "Wait Background Thread", PHASE_NO_PARENT, 2 },
-    { PHASE_MARK_DISCARD_CODE, "Mark Discard Code", PHASE_NO_PARENT, 3 },
-    { PHASE_RELAZIFY_FUNCTIONS, "Relazify Functions", PHASE_NO_PARENT, 4 },
-    { PHASE_PURGE, "Purge", PHASE_NO_PARENT, 5 },
-    { PHASE_MARK, "Mark", PHASE_NO_PARENT, 6 },
-        { PHASE_UNMARK, "Unmark", PHASE_MARK, 7 },
-        /* PHASE_MARK_ROOTS */
-        { PHASE_MARK_DELAYED, "Mark Delayed", PHASE_MARK, 8 },
-    { PHASE_SWEEP, "Sweep", PHASE_NO_PARENT, 9 },
-        { PHASE_SWEEP_MARK, "Mark During Sweeping", PHASE_SWEEP, 10 },
-            { PHASE_SWEEP_MARK_TYPES, "Mark Types During Sweeping", PHASE_SWEEP_MARK, 11 },
-            { PHASE_SWEEP_MARK_INCOMING_BLACK, "Mark Incoming Black Pointers", PHASE_SWEEP_MARK, 12 },
-            { PHASE_SWEEP_MARK_WEAK, "Mark Weak", PHASE_SWEEP_MARK, 13 },
-            { PHASE_SWEEP_MARK_INCOMING_GRAY, "Mark Incoming Gray Pointers", PHASE_SWEEP_MARK, 14 },
-            { PHASE_SWEEP_MARK_GRAY, "Mark Gray", PHASE_SWEEP_MARK, 15 },
-            { PHASE_SWEEP_MARK_GRAY_WEAK, "Mark Gray and Weak", PHASE_SWEEP_MARK, 16 },
-        { PHASE_FINALIZE_START, "Finalize Start Callbacks", PHASE_SWEEP, 17 },
-            { PHASE_WEAK_ZONEGROUP_CALLBACK, "Per-Slice Weak Callback", PHASE_FINALIZE_START, 57 },
-            { PHASE_WEAK_COMPARTMENT_CALLBACK, "Per-Compartment Weak Callback", PHASE_FINALIZE_START, 58 },
-        { PHASE_SWEEP_ATOMS, "Sweep Atoms", PHASE_SWEEP, 18 },
-        { PHASE_SWEEP_COMPARTMENTS, "Sweep Compartments", PHASE_SWEEP, 20 },
-            { PHASE_SWEEP_DISCARD_CODE, "Sweep Discard Code", PHASE_SWEEP_COMPARTMENTS, 21 },
-            { PHASE_SWEEP_INNER_VIEWS, "Sweep Inner Views", PHASE_SWEEP_COMPARTMENTS, 22 },
-            { PHASE_SWEEP_CC_WRAPPER, "Sweep Cross Compartment Wrappers", PHASE_SWEEP_COMPARTMENTS, 23 },
-            { PHASE_SWEEP_BASE_SHAPE, "Sweep Base Shapes", PHASE_SWEEP_COMPARTMENTS, 24 },
-            { PHASE_SWEEP_INITIAL_SHAPE, "Sweep Initial Shapes", PHASE_SWEEP_COMPARTMENTS, 25 },
-            { PHASE_SWEEP_TYPE_OBJECT, "Sweep Type Objects", PHASE_SWEEP_COMPARTMENTS, 26 },
-            { PHASE_SWEEP_BREAKPOINT, "Sweep Breakpoints", PHASE_SWEEP_COMPARTMENTS, 27 },
-            { PHASE_SWEEP_REGEXP, "Sweep Regexps", PHASE_SWEEP_COMPARTMENTS, 28 },
-            { PHASE_SWEEP_MISC, "Sweep Miscellaneous", PHASE_SWEEP_COMPARTMENTS, 29 },
-            { PHASE_SWEEP_TYPES, "Sweep type information", PHASE_SWEEP_COMPARTMENTS, 30 },
-                { PHASE_SWEEP_TYPES_BEGIN, "Sweep type tables and compilations", PHASE_SWEEP_TYPES, 31 },
-                { PHASE_SWEEP_TYPES_END, "Free type arena", PHASE_SWEEP_TYPES, 32 },
-        { PHASE_SWEEP_OBJECT, "Sweep Object", PHASE_SWEEP, 33 },
-        { PHASE_SWEEP_STRING, "Sweep String", PHASE_SWEEP, 34 },
-        { PHASE_SWEEP_SCRIPT, "Sweep Script", PHASE_SWEEP, 35 },
-        { PHASE_SWEEP_SCOPE, "Sweep Scope", PHASE_SWEEP, 59 },
-        { PHASE_SWEEP_SHAPE, "Sweep Shape", PHASE_SWEEP, 36 },
-        { PHASE_SWEEP_JITCODE, "Sweep JIT code", PHASE_SWEEP, 37 },
-        { PHASE_FINALIZE_END, "Finalize End Callback", PHASE_SWEEP, 38 },
-        { PHASE_DESTROY, "Deallocate", PHASE_SWEEP, 39 },
-    { PHASE_COMPACT, "Compact", PHASE_NO_PARENT, 40 },
-        { PHASE_COMPACT_MOVE, "Compact Move", PHASE_COMPACT, 41 },
-        { PHASE_COMPACT_UPDATE, "Compact Update", PHASE_COMPACT, 42 },
-            /* PHASE_MARK_ROOTS */
-            { PHASE_COMPACT_UPDATE_CELLS, "Compact Update Cells", PHASE_COMPACT_UPDATE, 43 },
-    { PHASE_GC_END, "End Callback", PHASE_NO_PARENT, 44 },
-    { PHASE_MINOR_GC, "All Minor GCs", PHASE_NO_PARENT, 45 },
-        /* PHASE_MARK_ROOTS */
-    { PHASE_EVICT_NURSERY, "Minor GCs to Evict Nursery", PHASE_NO_PARENT, 46 },
-        /* PHASE_MARK_ROOTS */
-    { PHASE_TRACE_HEAP, "Trace Heap", PHASE_NO_PARENT, 47 },
-        /* PHASE_MARK_ROOTS */
-    { PHASE_BARRIER, "Barriers", PHASE_NO_PARENT, 55 },
-        { PHASE_UNMARK_GRAY, "Unmark gray", PHASE_BARRIER, 56 },
-    { PHASE_MARK_ROOTS, "Mark Roots", PHASE_MULTI_PARENTS, 48 },
-        { PHASE_BUFFER_GRAY_ROOTS, "Buffer Gray Roots", PHASE_MARK_ROOTS, 49 },
-        { PHASE_MARK_CCWS, "Mark Cross Compartment Wrappers", PHASE_MARK_ROOTS, 50 },
-        { PHASE_MARK_STACK, "Mark C and JS stacks", PHASE_MARK_ROOTS, 51 },
-        { PHASE_MARK_RUNTIME_DATA, "Mark Runtime-wide Data", PHASE_MARK_ROOTS, 52 },
-        { PHASE_MARK_EMBEDDING, "Mark Embedding", PHASE_MARK_ROOTS, 53 },
-        { PHASE_MARK_COMPARTMENTS, "Mark Compartments", PHASE_MARK_ROOTS, 54 },
-    { PHASE_PURGE_SHAPE_TABLES, "Purge ShapeTables", PHASE_NO_PARENT, 60 },
+static double t(TimeDuration duration) { return duration.ToMilliseconds(); }
 
-    { PHASE_LIMIT, nullptr, PHASE_NO_PARENT, 60 }
-
-    // Current number of telemetryBuckets is 60. If you insert new phases
-    // somewhere, start at that number and count up. Do not change any existing
-    // numbers.
-};
-
-static mozilla::EnumeratedArray<Phase, PHASE_LIMIT, ExtraPhaseInfo> phaseExtra;
-
-// Mapping from all nodes with a multi-parented child to a Vector of all
-// multi-parented children and their descendants. (Single-parented children will
-// not show up in this list.)
-static mozilla::Vector<Phase, 0, SystemAllocPolicy> dagDescendants[Statistics::NumTimingArrays];
-
-// Preorder iterator over all phases in the expanded tree. Positions are
-// returned as <phase,dagSlot> pairs (dagSlot will be zero aka PHASE_DAG_NONE
-// for the top nodes with a single path from the parent, and 1 or more for
-// nodes in multiparented subtrees).
-struct AllPhaseIterator {
-    // If 'descendants' is empty, the current Phase position.
-    int current;
-
-    // The depth of the current multiparented node that we are processing, or
-    // zero if we are pointing to the top portion of the tree.
-    int baseLevel;
-
-    // When looking at multiparented descendants, the dag slot (index into
-    // PhaseTimeTables) containing the entries for the current parent.
-    size_t activeSlot;
-
-    // When iterating over a multiparented subtree, the list of (remaining)
-    // subtree nodes.
-    mozilla::Vector<Phase, 0, SystemAllocPolicy>::Range descendants;
-
-    explicit AllPhaseIterator()
-      : current(0)
-      , baseLevel(0)
-      , activeSlot(PHASE_DAG_NONE)
-      , descendants(dagDescendants[PHASE_DAG_NONE].all()) /* empty range */
-    {
-    }
-
-    void get(Phase* phase, size_t* dagSlot, size_t* level = nullptr) {
-        MOZ_ASSERT(!done());
-        *dagSlot = activeSlot;
-        *phase = descendants.empty() ? Phase(current) : descendants.front();
-        if (level)
-            *level = phaseExtra[*phase].depth + baseLevel;
-    }
-
-    void advance() {
-        MOZ_ASSERT(!done());
-
-        if (!descendants.empty()) {
-            // Currently iterating over a multiparented subtree.
-            descendants.popFront();
-            if (!descendants.empty())
-                return;
-
-            // Just before leaving the last child, reset the iterator to look
-            // at "main" phases (in PHASE_DAG_NONE) instead of multiparented
-            // subtree phases.
-            ++current;
-            activeSlot = PHASE_DAG_NONE;
-            baseLevel = 0;
-            return;
-        }
-
-        auto phase = Phase(current);
-        if (phaseExtra[phase].dagSlot != PHASE_DAG_NONE) {
-            // The current phase has a shared subtree. Load them up into
-            // 'descendants' and advance to the first child.
-            activeSlot = phaseExtra[phase].dagSlot;
-            descendants = dagDescendants[activeSlot].all();
-            MOZ_ASSERT(!descendants.empty());
-            baseLevel += phaseExtra[phase].depth + 1;
-            return;
-        }
-
-        ++current;
-    }
-
-    bool done() const {
-        return phases[current].parent == PHASE_MULTI_PARENTS;
-    }
-};
-
-void
-Statistics::gcDuration(TimeDuration* total, TimeDuration* maxPause) const
-{
-    *total = *maxPause = 0;
-    for (const SliceData* slice = slices.begin(); slice != slices.end(); slice++) {
-        *total += slice->duration();
-        if (slice->duration() > *maxPause)
-            *maxPause = slice->duration();
-    }
-    if (*maxPause > maxPauseInInterval)
-        maxPauseInInterval = *maxPause;
+inline Phase Statistics::currentPhase() const {
+  return phaseStack.empty() ? Phase::NONE : phaseStack.back();
 }
 
-void
-Statistics::sccDurations(TimeDuration* total, TimeDuration* maxPause)
-{
-    *total = *maxPause = 0;
-    for (size_t i = 0; i < sccTimes.length(); i++) {
-        *total += sccTimes[i];
-        *maxPause = Max(*maxPause, sccTimes[i]);
+PhaseKind Statistics::currentPhaseKind() const {
+  // Public API to get the current phase kind, suppressing the synthetic
+  // PhaseKind::MUTATOR phase.
+
+  Phase phase = currentPhase();
+  MOZ_ASSERT_IF(phase == Phase::MUTATOR, phaseStack.length() == 1);
+  if (phase == Phase::NONE || phase == Phase::MUTATOR) {
+    return PhaseKind::NONE;
+  }
+
+  return phases[phase].phaseKind;
+}
+
+Phase Statistics::lookupChildPhase(PhaseKind phaseKind) const {
+  if (phaseKind == PhaseKind::IMPLICIT_SUSPENSION) {
+    return Phase::IMPLICIT_SUSPENSION;
+  }
+  if (phaseKind == PhaseKind::EXPLICIT_SUSPENSION) {
+    return Phase::EXPLICIT_SUSPENSION;
+  }
+
+  MOZ_ASSERT(phaseKind < PhaseKind::LIMIT);
+
+  // Search all expanded phases that correspond to the required
+  // phase to find the one whose parent is the current expanded phase.
+  Phase phase;
+  for (phase = phaseKinds[phaseKind].firstPhase; phase != Phase::NONE;
+       phase = phases[phase].nextWithPhaseKind) {
+    if (phases[phase].parent == currentPhase()) {
+      break;
     }
+  }
+
+  if (phase == Phase::NONE) {
+    MOZ_CRASH_UNSAFE_PRINTF(
+        "Child phase kind %u not found under current phase kind %u",
+        unsigned(phaseKind), unsigned(currentPhaseKind()));
+  }
+
+  return phase;
+}
+
+inline decltype(mozilla::MakeEnumeratedRange(Phase::FIRST, Phase::LIMIT))
+AllPhases() {
+  return mozilla::MakeEnumeratedRange(Phase::FIRST, Phase::LIMIT);
+}
+
+void Statistics::gcDuration(TimeDuration* total, TimeDuration* maxPause) const {
+  *total = *maxPause = 0;
+  for (auto& slice : slices_) {
+    *total += slice.duration();
+    if (slice.duration() > *maxPause) {
+      *maxPause = slice.duration();
+    }
+  }
+  if (*maxPause > maxPauseInInterval) {
+    maxPauseInInterval = *maxPause;
+  }
+}
+
+void Statistics::sccDurations(TimeDuration* total,
+                              TimeDuration* maxPause) const {
+  *total = *maxPause = 0;
+  for (size_t i = 0; i < sccTimes.length(); i++) {
+    *total += sccTimes[i];
+    *maxPause = Max(*maxPause, sccTimes[i]);
+  }
 }
 
 typedef Vector<UniqueChars, 8, SystemAllocPolicy> FragmentVector;
 
-static UniqueChars
-Join(const FragmentVector& fragments, const char* separator = "") {
-    const size_t separatorLength = strlen(separator);
-    size_t length = 0;
-    for (size_t i = 0; i < fragments.length(); ++i) {
-        length += fragments[i] ? strlen(fragments[i].get()) : 0;
-        if (i < (fragments.length() - 1))
-            length += separatorLength;
+static UniqueChars Join(const FragmentVector& fragments,
+                        const char* separator = "") {
+  const size_t separatorLength = strlen(separator);
+  size_t length = 0;
+  for (size_t i = 0; i < fragments.length(); ++i) {
+    length += fragments[i] ? strlen(fragments[i].get()) : 0;
+    if (i < (fragments.length() - 1)) {
+      length += separatorLength;
     }
+  }
 
-    char* joined = js_pod_malloc<char>(length + 1);
-    joined[length] = '\0';
+  char* joined = js_pod_malloc<char>(length + 1);
+  if (!joined) {
+    return UniqueChars();
+  }
 
-    char* cursor = joined;
-    for (size_t i = 0; i < fragments.length(); ++i) {
-        if (fragments[i])
-            strcpy(cursor, fragments[i].get());
-        cursor += fragments[i] ? strlen(fragments[i].get()) : 0;
-        if (i < (fragments.length() - 1)) {
-            if (separatorLength)
-                strcpy(cursor, separator);
-            cursor += separatorLength;
-        }
+  joined[length] = '\0';
+  char* cursor = joined;
+  for (size_t i = 0; i < fragments.length(); ++i) {
+    if (fragments[i]) {
+      strcpy(cursor, fragments[i].get());
     }
+    cursor += fragments[i] ? strlen(fragments[i].get()) : 0;
+    if (i < (fragments.length() - 1)) {
+      if (separatorLength) {
+        strcpy(cursor, separator);
+      }
+      cursor += separatorLength;
+    }
+  }
 
-    return UniqueChars(joined);
+  return UniqueChars(joined);
 }
 
-static TimeDuration
-SumChildTimes(size_t phaseSlot, Phase phase, const Statistics::PhaseTimeTable& phaseTimes)
-{
-    // Sum the contributions from single-parented children.
-    TimeDuration total = 0;
-    size_t depth = phaseExtra[phase].depth;
-    for (unsigned i = phase + 1; i < PHASE_LIMIT && phaseExtra[Phase(i)].depth > depth; i++) {
-        if (phases[i].parent == phase)
-            total += phaseTimes[phaseSlot][Phase(i)];
-    }
-
-    // Sum the contributions from multi-parented children.
-    size_t dagSlot = phaseExtra[phase].dagSlot;
-    MOZ_ASSERT(dagSlot <= Statistics::MaxMultiparentPhases - 1);
-    if (dagSlot != PHASE_DAG_NONE) {
-        for (auto edge : dagChildEdges) {
-            if (edge.parent == phase)
-                total += phaseTimes[dagSlot][edge.child];
-        }
-    }
-    return total;
+static TimeDuration SumChildTimes(
+    Phase phase, const Statistics::PhaseTimeTable& phaseTimes) {
+  TimeDuration total = 0;
+  for (phase = phases[phase].firstChild; phase != Phase::NONE;
+       phase = phases[phase].nextSibling) {
+    total += phaseTimes[phase];
+  }
+  return total;
 }
 
-UniqueChars
-Statistics::formatCompactSliceMessage() const
-{
-    // Skip if we OOM'ed.
-    if (slices.length() == 0)
-        return UniqueChars(nullptr);
+UniqueChars Statistics::formatCompactSliceMessage() const {
+  // Skip if we OOM'ed.
+  if (slices_.length() == 0) {
+    return UniqueChars(nullptr);
+  }
 
-    const size_t index = slices.length() - 1;
-    const SliceData& slice = slices[index];
+  const size_t index = slices_.length() - 1;
+  const SliceData& slice = slices_.back();
 
-    char budgetDescription[200];
-    slice.budget.describe(budgetDescription, sizeof(budgetDescription) - 1);
+  char budgetDescription[200];
+  slice.budget.describe(budgetDescription, sizeof(budgetDescription) - 1);
 
-    const char* format =
-        "GC Slice %u - Pause: %.3fms of %s budget (@ %.3fms); Reason: %s; Reset: %s%s; Times: ";
-    char buffer[1024];
-    SprintfLiteral(buffer, format, index,
-                   t(slice.duration()), budgetDescription, t(slice.start - slices[0].start),
-                   ExplainReason(slice.reason),
-                   slice.wasReset() ? "yes - " : "no",
-                   slice.wasReset() ? ExplainAbortReason(slice.resetReason) : "");
+  const char* format =
+      "GC Slice %u - Pause: %.3fms of %s budget (@ %.3fms); Reason: %s; Reset: "
+      "%s%s; Times: ";
+  char buffer[1024];
+  SprintfLiteral(buffer, format, index, t(slice.duration()), budgetDescription,
+                 t(slice.start - slices_[0].start),
+                 ExplainGCReason(slice.reason),
+                 slice.wasReset() ? "yes - " : "no",
+                 slice.wasReset() ? ExplainAbortReason(slice.resetReason) : "");
 
-    FragmentVector fragments;
-    if (!fragments.append(DuplicateString(buffer)) ||
-        !fragments.append(formatCompactSlicePhaseTimes(slices[index].phaseTimes)))
-    {
-        return UniqueChars(nullptr);
-    }
-    return Join(fragments);
+  FragmentVector fragments;
+  if (!fragments.append(DuplicateString(buffer)) ||
+      !fragments.append(
+          formatCompactSlicePhaseTimes(slices_[index].phaseTimes))) {
+    return UniqueChars(nullptr);
+  }
+  return Join(fragments);
 }
 
-UniqueChars
-Statistics::formatCompactSummaryMessage() const
-{
-    const double bytesPerMiB = 1024 * 1024;
+UniqueChars Statistics::formatCompactSummaryMessage() const {
+  const double bytesPerMiB = 1024 * 1024;
 
-    FragmentVector fragments;
-    if (!fragments.append(DuplicateString("Summary - ")))
-        return UniqueChars(nullptr);
+  FragmentVector fragments;
+  if (!fragments.append(DuplicateString("Summary - "))) {
+    return UniqueChars(nullptr);
+  }
 
-    TimeDuration total, longest;
-    gcDuration(&total, &longest);
+  TimeDuration total, longest;
+  gcDuration(&total, &longest);
 
-    const double mmu20 = computeMMU(TimeDuration::FromMilliseconds(20));
-    const double mmu50 = computeMMU(TimeDuration::FromMilliseconds(50));
+  const double mmu20 = computeMMU(TimeDuration::FromMilliseconds(20));
+  const double mmu50 = computeMMU(TimeDuration::FromMilliseconds(50));
 
-    char buffer[1024];
-    if (!nonincremental()) {
-        SprintfLiteral(buffer,
-                       "Max Pause: %.3fms; MMU 20ms: %.1f%%; MMU 50ms: %.1f%%; Total: %.3fms; ",
-                       t(longest), mmu20 * 100., mmu50 * 100., t(total));
-    } else {
-        SprintfLiteral(buffer, "Non-Incremental: %.3fms (%s); ",
-                       t(total), ExplainAbortReason(nonincrementalReason_));
-    }
-    if (!fragments.append(DuplicateString(buffer)))
-        return UniqueChars(nullptr);
-
+  char buffer[1024];
+  if (!nonincremental()) {
     SprintfLiteral(buffer,
-                   "Zones: %d of %d (-%d); Compartments: %d of %d (-%d); HeapSize: %.3f MiB; " \
-                   "HeapChange (abs): %+d (%d); ",
-                   zoneStats.collectedZoneCount, zoneStats.zoneCount, zoneStats.sweptZoneCount,
-                   zoneStats.collectedCompartmentCount, zoneStats.compartmentCount,
-                   zoneStats.sweptCompartmentCount,
-                   double(preBytes) / bytesPerMiB,
-                   counts[STAT_NEW_CHUNK] - counts[STAT_DESTROY_CHUNK],
-                   counts[STAT_NEW_CHUNK] + counts[STAT_DESTROY_CHUNK]);
-    if (!fragments.append(DuplicateString(buffer)))
-        return UniqueChars(nullptr);
+                   "Max Pause: %.3fms; MMU 20ms: %.1f%%; MMU 50ms: %.1f%%; "
+                   "Total: %.3fms; ",
+                   t(longest), mmu20 * 100., mmu50 * 100., t(total));
+  } else {
+    SprintfLiteral(buffer, "Non-Incremental: %.3fms (%s); ", t(total),
+                   ExplainAbortReason(nonincrementalReason_));
+  }
+  if (!fragments.append(DuplicateString(buffer))) {
+    return UniqueChars(nullptr);
+  }
 
-    MOZ_ASSERT_IF(counts[STAT_ARENA_RELOCATED], gckind == GC_SHRINK);
-    if (gckind == GC_SHRINK) {
-        SprintfLiteral(buffer,
-                       "Kind: %s; Relocated: %.3f MiB; ",
-                       ExplainInvocationKind(gckind),
-                       double(ArenaSize * counts[STAT_ARENA_RELOCATED]) / bytesPerMiB);
-        if (!fragments.append(DuplicateString(buffer)))
-            return UniqueChars(nullptr);
+  SprintfLiteral(buffer,
+                 "Zones: %d of %d (-%d); Compartments: %d of %d (-%d); "
+                 "HeapSize: %.3f MiB; "
+                 "HeapChange (abs): %+d (%d); ",
+                 zoneStats.collectedZoneCount, zoneStats.zoneCount,
+                 zoneStats.sweptZoneCount, zoneStats.collectedCompartmentCount,
+                 zoneStats.compartmentCount, zoneStats.sweptCompartmentCount,
+                 double(preHeapSize) / bytesPerMiB,
+                 counts[COUNT_NEW_CHUNK] - counts[COUNT_DESTROY_CHUNK],
+                 counts[COUNT_NEW_CHUNK] + counts[COUNT_DESTROY_CHUNK]);
+  if (!fragments.append(DuplicateString(buffer))) {
+    return UniqueChars(nullptr);
+  }
+
+  MOZ_ASSERT_IF(counts[COUNT_ARENA_RELOCATED], gckind == GC_SHRINK);
+  if (gckind == GC_SHRINK) {
+    SprintfLiteral(
+        buffer, "Kind: %s; Relocated: %.3f MiB; ",
+        ExplainInvocationKind(gckind),
+        double(ArenaSize * counts[COUNT_ARENA_RELOCATED]) / bytesPerMiB);
+    if (!fragments.append(DuplicateString(buffer))) {
+      return UniqueChars(nullptr);
     }
+  }
 
-    return Join(fragments);
+  return Join(fragments);
 }
 
-UniqueChars
-Statistics::formatCompactSlicePhaseTimes(const PhaseTimeTable& phaseTimes) const
-{
-    static const TimeDuration MaxUnaccountedTime = TimeDuration::FromMicroseconds(100);
+UniqueChars Statistics::formatCompactSlicePhaseTimes(
+    const PhaseTimeTable& phaseTimes) const {
+  static const TimeDuration MaxUnaccountedTime =
+      TimeDuration::FromMicroseconds(100);
 
-    FragmentVector fragments;
-    char buffer[128];
-    for (AllPhaseIterator iter; !iter.done(); iter.advance()) {
-        Phase phase;
-        size_t dagSlot;
-        size_t level;
-        iter.get(&phase, &dagSlot, &level);
-        MOZ_ASSERT(level < 4);
+  FragmentVector fragments;
+  char buffer[128];
+  for (auto phase : AllPhases()) {
+    DebugOnly<uint8_t> level = phases[phase].depth;
+    MOZ_ASSERT(level < 4);
 
-        TimeDuration ownTime = phaseTimes[dagSlot][phase];
-        TimeDuration childTime = SumChildTimes(dagSlot, phase, phaseTimes);
-        if (ownTime > MaxUnaccountedTime) {
-            SprintfLiteral(buffer, "%s: %.3fms", phases[phase].name, t(ownTime));
-            if (!fragments.append(DuplicateString(buffer)))
-                return UniqueChars(nullptr);
+    TimeDuration ownTime = phaseTimes[phase];
+    TimeDuration childTime = SumChildTimes(phase, phaseTimes);
+    if (ownTime > MaxUnaccountedTime) {
+      SprintfLiteral(buffer, "%s: %.3fms", phases[phase].name, t(ownTime));
+      if (!fragments.append(DuplicateString(buffer))) {
+        return UniqueChars(nullptr);
+      }
 
-            if (childTime && (ownTime - childTime) > MaxUnaccountedTime) {
-                MOZ_ASSERT(level < 3);
-                SprintfLiteral(buffer, "%s: %.3fms", "Other", t(ownTime - childTime));
-                if (!fragments.append(DuplicateString(buffer)))
-                    return UniqueChars(nullptr);
-            }
+      if (childTime && (ownTime - childTime) > MaxUnaccountedTime) {
+        MOZ_ASSERT(level < 3);
+        SprintfLiteral(buffer, "%s: %.3fms", "Other", t(ownTime - childTime));
+        if (!fragments.append(DuplicateString(buffer))) {
+          return UniqueChars(nullptr);
         }
+      }
     }
-    return Join(fragments, ", ");
+  }
+  return Join(fragments, ", ");
 }
 
-UniqueChars
-Statistics::formatDetailedMessage()
-{
-    FragmentVector fragments;
+UniqueChars Statistics::formatDetailedMessage() const {
+  FragmentVector fragments;
 
-    if (!fragments.append(formatDetailedDescription()))
+  if (!fragments.append(formatDetailedDescription())) {
+    return UniqueChars(nullptr);
+  }
+
+  if (!slices_.empty()) {
+    for (unsigned i = 0; i < slices_.length(); i++) {
+      if (!fragments.append(formatDetailedSliceDescription(i, slices_[i]))) {
         return UniqueChars(nullptr);
-
-    if (slices.length() > 1) {
-        for (unsigned i = 0; i < slices.length(); i++) {
-            if (!fragments.append(formatDetailedSliceDescription(i, slices[i])))
-                return UniqueChars(nullptr);
-            if (!fragments.append(formatDetailedPhaseTimes(slices[i].phaseTimes)))
-                return UniqueChars(nullptr);
-        }
+      }
+      if (!fragments.append(formatDetailedPhaseTimes(slices_[i].phaseTimes))) {
+        return UniqueChars(nullptr);
+      }
     }
-    if (!fragments.append(formatDetailedTotals()))
-        return UniqueChars(nullptr);
-    if (!fragments.append(formatDetailedPhaseTimes(phaseTimes)))
-        return UniqueChars(nullptr);
+  }
+  if (!fragments.append(formatDetailedTotals())) {
+    return UniqueChars(nullptr);
+  }
+  if (!fragments.append(formatDetailedPhaseTimes(phaseTimes))) {
+    return UniqueChars(nullptr);
+  }
 
-    return Join(fragments);
+  return Join(fragments);
 }
 
-UniqueChars
-Statistics::formatDetailedDescription()
-{
-    const double bytesPerMiB = 1024 * 1024;
+UniqueChars Statistics::formatDetailedDescription() const {
+  const double bytesPerMiB = 1024 * 1024;
 
-    TimeDuration sccTotal, sccLongest;
-    sccDurations(&sccTotal, &sccLongest);
+  TimeDuration sccTotal, sccLongest;
+  sccDurations(&sccTotal, &sccLongest);
 
-    const double mmu20 = computeMMU(TimeDuration::FromMilliseconds(20));
-    const double mmu50 = computeMMU(TimeDuration::FromMilliseconds(50));
+  const double mmu20 = computeMMU(TimeDuration::FromMilliseconds(20));
+  const double mmu50 = computeMMU(TimeDuration::FromMilliseconds(50));
 
-    const char* format =
-"=================================================================\n\
+  const char* format =
+      "=================================================================\n\
   Invocation Kind: %s\n\
   Reason: %s\n\
   Incremental: %s%s\n\
@@ -538,826 +429,976 @@ Statistics::formatDetailedDescription()
   HeapSize: %.3f MiB\n\
   Chunk Delta (magnitude): %+d  (%d)\n\
   Arenas Relocated: %.3f MiB\n\
+  Trigger: %s\n\
 ";
-    char buffer[1024];
-    SprintfLiteral(buffer, format,
-                   ExplainInvocationKind(gckind),
-                   ExplainReason(slices[0].reason),
-                   nonincremental() ? "no - " : "yes",
-                   nonincremental() ? ExplainAbortReason(nonincrementalReason_) : "",
-                   zoneStats.collectedZoneCount, zoneStats.zoneCount, zoneStats.sweptZoneCount,
-                   zoneStats.collectedCompartmentCount, zoneStats.compartmentCount,
-                   zoneStats.sweptCompartmentCount,
-                   counts[STAT_MINOR_GC],
-                   counts[STAT_STOREBUFFER_OVERFLOW],
-                   mmu20 * 100., mmu50 * 100.,
-                   t(sccTotal), t(sccLongest),
-                   double(preBytes) / bytesPerMiB,
-                   counts[STAT_NEW_CHUNK] - counts[STAT_DESTROY_CHUNK],
-                   counts[STAT_NEW_CHUNK] + counts[STAT_DESTROY_CHUNK],
-                   double(ArenaSize * counts[STAT_ARENA_RELOCATED]) / bytesPerMiB);
-    return DuplicateString(buffer);
+
+  char thresholdBuffer[100] = "n/a";
+  if (thresholdTriggered) {
+    SprintfLiteral(thresholdBuffer, "%.3f MiB of %.3f MiB threshold\n",
+                   triggerAmount / 1024.0 / 1024.0,
+                   triggerThreshold / 1024.0 / 1024.0);
+  }
+
+  char buffer[1024];
+  SprintfLiteral(
+      buffer, format, ExplainInvocationKind(gckind),
+      ExplainGCReason(slices_[0].reason), nonincremental() ? "no - " : "yes",
+      nonincremental() ? ExplainAbortReason(nonincrementalReason_) : "",
+      zoneStats.collectedZoneCount, zoneStats.zoneCount,
+      zoneStats.sweptZoneCount, zoneStats.collectedCompartmentCount,
+      zoneStats.compartmentCount, zoneStats.sweptCompartmentCount,
+      getCount(COUNT_MINOR_GC), getCount(COUNT_STOREBUFFER_OVERFLOW),
+      mmu20 * 100., mmu50 * 100., t(sccTotal), t(sccLongest),
+      double(preHeapSize) / bytesPerMiB,
+      getCount(COUNT_NEW_CHUNK) - getCount(COUNT_DESTROY_CHUNK),
+      getCount(COUNT_NEW_CHUNK) + getCount(COUNT_DESTROY_CHUNK),
+      double(ArenaSize * getCount(COUNT_ARENA_RELOCATED)) / bytesPerMiB,
+      thresholdBuffer);
+
+  return DuplicateString(buffer);
 }
 
-UniqueChars
-Statistics::formatDetailedSliceDescription(unsigned i, const SliceData& slice)
-{
-    char budgetDescription[200];
-    slice.budget.describe(budgetDescription, sizeof(budgetDescription) - 1);
+UniqueChars Statistics::formatDetailedSliceDescription(
+    unsigned i, const SliceData& slice) const {
+  char budgetDescription[200];
+  slice.budget.describe(budgetDescription, sizeof(budgetDescription) - 1);
 
-    const char* format =
-"\
+  const char* format =
+      "\
   ---- Slice %u ----\n\
     Reason: %s\n\
     Reset: %s%s\n\
     State: %s -> %s\n\
-    Page Faults: %ld\n\
+    Page Faults: %" PRIu64
+      "\n\
     Pause: %.3fms of %s budget (@ %.3fms)\n\
 ";
-    char buffer[1024];
-    SprintfLiteral(buffer, format, i, ExplainReason(slice.reason),
-                   slice.wasReset() ? "yes - " : "no",
-                   slice.wasReset() ? ExplainAbortReason(slice.resetReason) : "",
-                   gc::StateName(slice.initialState), gc::StateName(slice.finalState),
-                   uint64_t(slice.endFaults - slice.startFaults),
-                   t(slice.duration()), budgetDescription, t(slice.start - slices[0].start));
-    return DuplicateString(buffer);
+  char buffer[1024];
+  SprintfLiteral(
+      buffer, format, i, ExplainGCReason(slice.reason),
+      slice.wasReset() ? "yes - " : "no",
+      slice.wasReset() ? ExplainAbortReason(slice.resetReason) : "",
+      gc::StateName(slice.initialState), gc::StateName(slice.finalState),
+      uint64_t(slice.endFaults - slice.startFaults), t(slice.duration()),
+      budgetDescription, t(slice.start - slices_[0].start));
+  return DuplicateString(buffer);
 }
 
-UniqueChars
-Statistics::formatDetailedPhaseTimes(const PhaseTimeTable& phaseTimes)
-{
-    static const char* LevelToIndent[] = { "", "  ", "    ", "      " };
-    static const TimeDuration MaxUnaccountedChildTime = TimeDuration::FromMicroseconds(50);
+static bool IncludePhase(TimeDuration duration) {
+  // Don't include durations that will print as "0.000ms".
+  return duration.ToMilliseconds() >= 0.001;
+}
 
-    FragmentVector fragments;
-    char buffer[128];
-    for (AllPhaseIterator iter; !iter.done(); iter.advance()) {
-        Phase phase;
-        size_t dagSlot;
-        size_t level;
-        iter.get(&phase, &dagSlot, &level);
-        MOZ_ASSERT(level < 4);
+UniqueChars Statistics::formatDetailedPhaseTimes(
+    const PhaseTimeTable& phaseTimes) const {
+  static const TimeDuration MaxUnaccountedChildTime =
+      TimeDuration::FromMicroseconds(50);
 
-        TimeDuration ownTime = phaseTimes[dagSlot][phase];
-        TimeDuration childTime = SumChildTimes(dagSlot, phase, phaseTimes);
-        if (!ownTime.IsZero()) {
-            SprintfLiteral(buffer, "      %s%s: %.3fms\n",
-                           LevelToIndent[level], phases[phase].name, t(ownTime));
-            if (!fragments.append(DuplicateString(buffer)))
-                return UniqueChars(nullptr);
+  FragmentVector fragments;
+  char buffer[128];
+  for (auto phase : AllPhases()) {
+    uint8_t level = phases[phase].depth;
+    TimeDuration ownTime = phaseTimes[phase];
+    TimeDuration childTime = SumChildTimes(phase, phaseTimes);
+    if (IncludePhase(ownTime)) {
+      SprintfLiteral(buffer, "      %*s%s: %.3fms\n", level * 2, "",
+                     phases[phase].name, t(ownTime));
+      if (!fragments.append(DuplicateString(buffer))) {
+        return UniqueChars(nullptr);
+      }
 
-            if (childTime && (ownTime - childTime) > MaxUnaccountedChildTime) {
-                MOZ_ASSERT(level < 3);
-                SprintfLiteral(buffer, "      %s%s: %.3fms\n",
-                               LevelToIndent[level + 1], "Other", t(ownTime - childTime));
-                if (!fragments.append(DuplicateString(buffer)))
-                    return UniqueChars(nullptr);
-            }
+      if (childTime && (ownTime - childTime) > MaxUnaccountedChildTime) {
+        SprintfLiteral(buffer, "      %*s%s: %.3fms\n", (level + 1) * 2, "",
+                       "Other", t(ownTime - childTime));
+        if (!fragments.append(DuplicateString(buffer))) {
+          return UniqueChars(nullptr);
         }
+      }
     }
-    return Join(fragments);
+  }
+  return Join(fragments);
 }
 
-UniqueChars
-Statistics::formatDetailedTotals()
-{
-    TimeDuration total, longest;
-    gcDuration(&total, &longest);
+UniqueChars Statistics::formatDetailedTotals() const {
+  TimeDuration total, longest;
+  gcDuration(&total, &longest);
 
-    const char* format =
-"\
+  const char* format =
+      "\
   ---- Totals ----\n\
     Total Time: %.3fms\n\
     Max Pause: %.3fms\n\
 ";
-    char buffer[1024];
-    SprintfLiteral(buffer, format, t(total), t(longest));
-    return DuplicateString(buffer);
+  char buffer[1024];
+  SprintfLiteral(buffer, format, t(total), t(longest));
+  return DuplicateString(buffer);
 }
 
-UniqueChars
-Statistics::formatJsonMessage(uint64_t timestamp)
-{
-    MOZ_ASSERT(!aborted);
+void Statistics::formatJsonSlice(size_t sliceNum, JSONPrinter& json) const {
+  /*
+   * We number each of the slice properties to keep the code in
+   * GCTelemetry.jsm in sync.  See MAX_SLICE_KEYS.
+   */
+  json.beginObject();
+  formatJsonSliceDescription(sliceNum, slices_[sliceNum], json);  // # 1-11
 
-    FragmentVector fragments;
+  json.beginObjectProperty("times");  // # 12
+  formatJsonPhaseTimes(slices_[sliceNum].phaseTimes, json);
+  json.endObject();
 
-    if (!fragments.append(DuplicateString("{")) ||
-        !fragments.append(formatJsonDescription(timestamp)) ||
-        !fragments.append(DuplicateString("\"slices\":[")))
-    {
-        return UniqueChars(nullptr);
+  json.endObject();
+}
+
+UniqueChars Statistics::renderJsonSlice(size_t sliceNum) const {
+  Sprinter printer(nullptr, false);
+  if (!printer.init()) {
+    return UniqueChars(nullptr);
+  }
+  JSONPrinter json(printer);
+
+  formatJsonSlice(sliceNum, json);
+  return printer.release();
+}
+
+UniqueChars Statistics::renderNurseryJson(JSRuntime* rt) const {
+  Sprinter printer(nullptr, false);
+  if (!printer.init()) {
+    return UniqueChars(nullptr);
+  }
+  JSONPrinter json(printer);
+  rt->gc.nursery().renderProfileJSON(json);
+  return printer.release();
+}
+
+#ifdef DEBUG
+void Statistics::writeLogMessage(const char* fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+  if (gcDebugFile) {
+    TimeDuration sinceStart = TimeStamp::Now() - TimeStamp::ProcessCreation();
+    fprintf(gcDebugFile, "%12.3f: ", sinceStart.ToMicroseconds());
+    vfprintf(gcDebugFile, fmt, args);
+    fprintf(gcDebugFile, "\n");
+    fflush(gcDebugFile);
+  }
+  va_end(args);
+}
+#endif
+
+UniqueChars Statistics::renderJsonMessage(uint64_t timestamp,
+                                          Statistics::JSONUse use) const {
+  /*
+   * The format of the JSON message is specified by the GCMajorMarkerPayload
+   * type in perf.html
+   * https://github.com/devtools-html/perf.html/blob/master/src/types/markers.js#L62
+   *
+   * All the properties listed here are created within the timings property
+   * of the GCMajor marker.
+   */
+  if (aborted) {
+    return DuplicateString("{status:\"aborted\"}");  // May return nullptr
+  }
+
+  Sprinter printer(nullptr, false);
+  if (!printer.init()) {
+    return UniqueChars(nullptr);
+  }
+  JSONPrinter json(printer);
+
+  json.beginObject();
+  json.property("status", "completed");         // JSON Key #1
+  formatJsonDescription(timestamp, json, use);  // #2-22
+
+  if (use == Statistics::JSONUse::TELEMETRY) {
+    json.beginListProperty("slices_list");  // #23
+    for (unsigned i = 0; i < slices_.length(); i++) {
+      formatJsonSlice(i, json);
     }
+    json.endList();
+  }
 
-    for (unsigned i = 0; i < slices.length(); i++) {
-        if (!fragments.append(DuplicateString("{")) ||
-            !fragments.append(formatJsonSliceDescription(i, slices[i])) ||
-            !fragments.append(DuplicateString("\"times\":{")) ||
-            !fragments.append(formatJsonPhaseTimes(slices[i].phaseTimes)) ||
-            !fragments.append(DuplicateString("}}")) ||
-            (i < (slices.length() - 1) && !fragments.append(DuplicateString(","))))
-        {
-            return UniqueChars(nullptr);
-        }
+  json.beginObjectProperty("totals");  // #24
+  formatJsonPhaseTimes(phaseTimes, json);
+  json.endObject();
+
+  json.endObject();
+
+  return printer.release();
+}
+
+void Statistics::formatJsonDescription(uint64_t timestamp, JSONPrinter& json,
+                                       JSONUse use) const {
+  // If you change JSON properties here, please update:
+  // Telemetry ping code:
+  //   toolkit/components/telemetry/other/GCTelemetry.jsm
+  // Telemetry documentation:
+  //   toolkit/components/telemetry/docs/data/main-ping.rst
+  // Telemetry tests:
+  //   toolkit/components/telemetry/tests/browser/browser_TelemetryGC.js,
+  //   toolkit/components/telemetry/tests/unit/test_TelemetryGC.js
+  // Perf.html:
+  //   https://github.com/devtools-html/perf.html
+  //
+  // Please also number each property to help correctly maintain the Telemetry
+  // ping code
+
+  json.property("timestamp", timestamp);  // # JSON Key #2
+
+  TimeDuration total, longest;
+  gcDuration(&total, &longest);
+  json.property("max_pause", longest, JSONPrinter::MILLISECONDS);  // #3
+  json.property("total_time", total, JSONPrinter::MILLISECONDS);   // #4
+  // We might be able to omit reason if perf.html was able to retrive it
+  // from the first slice.  But it doesn't do this yet.
+  json.property("reason", ExplainGCReason(slices_[0].reason));      // #5
+  json.property("zones_collected", zoneStats.collectedZoneCount);   // #6
+  json.property("total_zones", zoneStats.zoneCount);                // #7
+  json.property("total_compartments", zoneStats.compartmentCount);  // #8
+  json.property("minor_gcs", getCount(COUNT_MINOR_GC));             // #9
+  uint32_t storebufferOverflows = getCount(COUNT_STOREBUFFER_OVERFLOW);
+  if (storebufferOverflows) {
+    json.property("store_buffer_overflows", storebufferOverflows);  // #10
+  }
+  json.property("slices", slices_.length());  // #11
+
+  const double mmu20 = computeMMU(TimeDuration::FromMilliseconds(20));
+  const double mmu50 = computeMMU(TimeDuration::FromMilliseconds(50));
+  json.property("mmu_20ms", int(mmu20 * 100));  // #12
+  json.property("mmu_50ms", int(mmu50 * 100));  // #13
+
+  TimeDuration sccTotal, sccLongest;
+  sccDurations(&sccTotal, &sccLongest);
+  json.property("scc_sweep_total", sccTotal, JSONPrinter::MILLISECONDS);  // #14
+  json.property("scc_sweep_max_pause", sccLongest,
+                JSONPrinter::MILLISECONDS);  // #15
+
+  if (nonincrementalReason_ != AbortReason::None) {
+    json.property("nonincremental_reason",
+                  ExplainAbortReason(nonincrementalReason_));  // #16
+  }
+  json.property("allocated_bytes", preHeapSize);  // #17
+  if (use == Statistics::JSONUse::PROFILER) {
+    json.property("post_heap_size", postHeapSize);
+  }
+
+  uint32_t addedChunks = getCount(COUNT_NEW_CHUNK);
+  if (addedChunks) {
+    json.property("added_chunks", addedChunks);  // #18
+  }
+  uint32_t removedChunks = getCount(COUNT_DESTROY_CHUNK);
+  if (removedChunks) {
+    json.property("removed_chunks", removedChunks);  // #19
+  }
+  json.property("major_gc_number", startingMajorGCNumber);  // #20
+  json.property("minor_gc_number", startingMinorGCNumber);  // #21
+  json.property("slice_number", startingSliceNumber);       // #22
+}
+
+void Statistics::formatJsonSliceDescription(unsigned i, const SliceData& slice,
+                                            JSONPrinter& json) const {
+  // If you change JSON properties here, please update:
+  // Telemetry ping code:
+  //   toolkit/components/telemetry/other/GCTelemetry.jsm
+  // Telemetry documentation:
+  //   toolkit/components/telemetry/docs/data/main-ping.rst
+  // Telemetry tests:
+  //   toolkit/components/telemetry/tests/browser/browser_TelemetryGC.js,
+  //   toolkit/components/telemetry/tests/unit/test_TelemetryGC.js
+  // Perf.html:
+  //   https://github.com/devtools-html/perf.html
+  //
+  char budgetDescription[200];
+  slice.budget.describe(budgetDescription, sizeof(budgetDescription) - 1);
+  TimeStamp originTime = TimeStamp::ProcessCreation();
+
+  json.property("slice", i);  // JSON Property #1
+  json.property("pause", slice.duration(), JSONPrinter::MILLISECONDS);  // #2
+  json.property("reason", ExplainGCReason(slice.reason));               // #3
+  json.property("initial_state", gc::StateName(slice.initialState));    // #4
+  json.property("final_state", gc::StateName(slice.finalState));        // #5
+  json.property("budget", budgetDescription);                           // #6
+  json.property("major_gc_number", startingMajorGCNumber);              // #7
+  if (thresholdTriggered) {
+    json.floatProperty("trigger_amount", triggerAmount, 0);        // #8
+    json.floatProperty("trigger_threshold", triggerThreshold, 0);  // #9
+  }
+  int64_t numFaults = slice.endFaults - slice.startFaults;
+  if (numFaults != 0) {
+    json.property("page_faults", numFaults);  // #10
+  }
+  json.property("start_timestamp", slice.start - originTime,
+                JSONPrinter::SECONDS);  // #11
+}
+
+void Statistics::formatJsonPhaseTimes(const PhaseTimeTable& phaseTimes,
+                                      JSONPrinter& json) const {
+  for (auto phase : AllPhases()) {
+    TimeDuration ownTime = phaseTimes[phase];
+    if (!ownTime.IsZero()) {
+      json.property(phases[phase].path, ownTime, JSONPrinter::MILLISECONDS);
     }
-
-    if (!fragments.append(DuplicateString("],\"totals\":{")) ||
-        !fragments.append(formatJsonPhaseTimes(phaseTimes)) ||
-        !fragments.append(DuplicateString("}}")))
-    {
-        return UniqueChars(nullptr);
-    }
-
-    return Join(fragments);
-}
-
-// JSON requires decimals to be separated by periods, but the LC_NUMERIC
-// setting may cause printf to use commas in some locales. Split a duration
-// into whole and fractional parts of milliseconds, for use in passing to
-// %llu.%03llu.
-static lldiv_t
-SplitDurationMS(TimeDuration d)
-{
-    return lldiv(static_cast<int64_t>(d.ToMicroseconds()), 1000);
-}
-
-UniqueChars
-Statistics::formatJsonDescription(uint64_t timestamp)
-{
-    TimeDuration total, longest;
-    gcDuration(&total, &longest);
-    lldiv_t totalParts = SplitDurationMS(total);
-    lldiv_t longestParts = SplitDurationMS(longest);
-
-    TimeDuration sccTotal, sccLongest;
-    sccDurations(&sccTotal, &sccLongest);
-    lldiv_t sccTotalParts = SplitDurationMS(sccTotal);
-    lldiv_t sccLongestParts = SplitDurationMS(sccLongest);
-
-    const double mmu20 = computeMMU(TimeDuration::FromMilliseconds(20));
-    const double mmu50 = computeMMU(TimeDuration::FromMilliseconds(50));
-
-    const char *format =
-        "\"timestamp\":%llu,"
-        "\"max_pause\":%llu.%03llu,"
-        "\"total_time\":%llu.%03llu,"
-        "\"zones_collected\":%d,"
-        "\"total_zones\":%d,"
-        "\"total_compartments\":%d,"
-        "\"minor_gcs\":%d,"
-        "\"store_buffer_overflows\":%d,"
-        "\"mmu_20ms\":%d,"
-        "\"mmu_50ms\":%d,"
-        "\"scc_sweep_total\":%llu.%03llu,"
-        "\"scc_sweep_max_pause\":%llu.%03llu,"
-        "\"nonincremental_reason\":\"%s\","
-        "\"allocated\":%u,"
-        "\"added_chunks\":%d,"
-        "\"removed_chunks\":%d,";
-    char buffer[1024];
-    SprintfLiteral(buffer, format,
-                   (unsigned long long)timestamp,
-                   longestParts.quot, longestParts.rem,
-                   totalParts.quot, totalParts.rem,
-                   zoneStats.collectedZoneCount,
-                   zoneStats.zoneCount,
-                   zoneStats.compartmentCount,
-                   counts[STAT_MINOR_GC],
-                   counts[STAT_STOREBUFFER_OVERFLOW],
-                   int(mmu20 * 100),
-                   int(mmu50 * 100),
-                   sccTotalParts.quot, sccTotalParts.rem,
-                   sccLongestParts.quot, sccLongestParts.rem,
-                   ExplainAbortReason(nonincrementalReason_),
-                   unsigned(preBytes / 1024 / 1024),
-                   counts[STAT_NEW_CHUNK],
-                   counts[STAT_DESTROY_CHUNK]);
-    return DuplicateString(buffer);
-}
-
-UniqueChars
-Statistics::formatJsonSliceDescription(unsigned i, const SliceData& slice)
-{
-    TimeDuration duration = slice.duration();
-    lldiv_t durationParts = SplitDurationMS(duration);
-    TimeDuration when = slice.start - slices[0].start;
-    lldiv_t whenParts = SplitDurationMS(when);
-    char budgetDescription[200];
-    slice.budget.describe(budgetDescription, sizeof(budgetDescription) - 1);
-    int64_t pageFaults = slice.endFaults - slice.startFaults;
-    bool ignore;
-    TimeStamp originTime = TimeStamp::ProcessCreation(ignore);
-
-    const char* format =
-        "\"slice\":%d,"
-        "\"pause\":%llu.%03llu,"
-        "\"when\":%llu.%03llu,"
-        "\"reason\":\"%s\","
-        "\"initial_state\":\"%s\","
-        "\"final_state\":\"%s\","
-        "\"budget\":\"%s\","
-        "\"page_faults\":%llu,"
-        "\"start_timestamp\":%llu,"
-        "\"end_timestamp\":%llu,";
-    char buffer[1024];
-    SprintfLiteral(buffer, format,
-                   i,
-                   durationParts.quot, durationParts.rem,
-                   whenParts.quot, whenParts.rem,
-                   ExplainReason(slice.reason),
-                   gc::StateName(slice.initialState),
-                   gc::StateName(slice.finalState),
-                   budgetDescription,
-                   pageFaults,
-                   (slice.start - originTime).ToSeconds(),
-                   (slice.end - originTime).ToSeconds());
-    return DuplicateString(buffer);
-}
-
-UniqueChars
-FilterJsonKey(const char*const buffer)
-{
-    char* mut = strdup(buffer);
-    char* c = mut;
-    while (*c) {
-        if (!isalpha(*c))
-            *c = '_';
-        else if (isupper(*c))
-            *c = tolower(*c);
-        ++c;
-    }
-    return UniqueChars(mut);
-}
-
-UniqueChars
-Statistics::formatJsonPhaseTimes(const PhaseTimeTable& phaseTimes)
-{
-    FragmentVector fragments;
-    char buffer[128];
-    for (AllPhaseIterator iter; !iter.done(); iter.advance()) {
-        Phase phase;
-        size_t dagSlot;
-        iter.get(&phase, &dagSlot);
-
-        UniqueChars name = FilterJsonKey(phases[phase].name);
-        TimeDuration ownTime = phaseTimes[dagSlot][phase];
-        if (!ownTime.IsZero()) {
-            lldiv_t ownParts = SplitDurationMS(ownTime);
-            SprintfLiteral(buffer, "\"%s\":%llu.%03llu",
-                           name.get(), ownParts.quot, ownParts.rem);
-
-            if (!fragments.append(DuplicateString(buffer)))
-                return UniqueChars(nullptr);
-        }
-    }
-    return Join(fragments, ",");
+  }
 }
 
 Statistics::Statistics(JSRuntime* rt)
-  : runtime(rt),
-    fp(nullptr),
-    nonincrementalReason_(gc::AbortReason::None),
-    preBytes(0),
-    maxPauseInInterval(0),
-    phaseNestingDepth(0),
-    activeDagSlot(PHASE_DAG_NONE),
-    suspended(0),
-    sliceCallback(nullptr),
-    nurseryCollectionCallback(nullptr),
-    aborted(false),
-    enableProfiling_(false),
-    sliceCount_(0)
-{
-    for (auto& count : counts)
-        count = 0;
+    : runtime(rt),
+      gcTimerFile(nullptr),
+      gcDebugFile(nullptr),
+      nonincrementalReason_(gc::AbortReason::None),
+      allocsSinceMinorGC({0, 0}),
+      preHeapSize(0),
+      postHeapSize(0),
+      thresholdTriggered(false),
+      triggerAmount(0.0),
+      triggerThreshold(0.0),
+      startingMinorGCNumber(0),
+      startingMajorGCNumber(0),
+      startingSliceNumber(0),
+      maxPauseInInterval(0),
+      sliceCallback(nullptr),
+      nurseryCollectionCallback(nullptr),
+      aborted(false),
+      enableProfiling_(false),
+      sliceCount_(0) {
+  for (auto& count : counts) {
+    count = 0;
+  }
 
-    const char* env = getenv("MOZ_GCTIMER");
-    if (env) {
-        if (strcmp(env, "none") == 0) {
-            fp = nullptr;
-        } else if (strcmp(env, "stdout") == 0) {
-            fp = stdout;
-        } else if (strcmp(env, "stderr") == 0) {
-            fp = stderr;
-        } else {
-            fp = fopen(env, "a");
-            if (!fp)
-                MOZ_CRASH("Failed to open MOZ_GCTIMER log file.");
-        }
-    }
+  for (auto& stat : stats) {
+    stat = 0;
+  }
 
-    env = getenv("JS_GC_PROFILE");
-    if (env) {
-        if (0 == strcmp(env, "help")) {
-            fprintf(stderr, "JS_GC_PROFILE=N\n"
-                    "\tReport major GC's taking more than N milliseconds.\n");
-            exit(0);
-        }
-        enableProfiling_ = true;
-        profileThreshold_ = TimeDuration::FromMilliseconds(atoi(env));
-    }
-
-    PodZero(&totalTimes_);
-}
-
-Statistics::~Statistics()
-{
-    if (fp && fp != stdout && fp != stderr)
-        fclose(fp);
-}
-
-/* static */ bool
-Statistics::initialize()
-{
 #ifdef DEBUG
-    for (auto i : AllPhases()) {
-        MOZ_ASSERT(phases[i].index == i);
-        for (auto j : AllPhases())
-            MOZ_ASSERT_IF(i != j, phases[i].telemetryBucket != phases[j].telemetryBucket);
-    }
+  for (const auto& duration : totalTimes_) {
+#  if defined(XP_WIN) || defined(XP_MACOSX) || \
+      (defined(XP_UNIX) && !defined(__clang__))
+    // build-linux64-asan/debug and static-analysis-linux64-st-an/debug
+    // currently use an STL that lacks std::is_trivially_constructible.
+    // This #ifdef probably isn't as precise as it could be, but given
+    // |totalTimes_| contains |TimeDuration| defined platform-independently
+    // it's not worth the trouble to nail down a more exact condition.
+    using ElementType =
+        typename mozilla::RemoveReference<decltype(duration)>::Type;
+    static_assert(!std::is_trivially_constructible<ElementType>::value,
+                  "Statistics::Statistics will only initialize "
+                  "totalTimes_'s elements if their default constructor is "
+                  "non-trivial");
+#  endif  // mess'o'tests
+    MOZ_ASSERT(duration.IsZero(),
+               "totalTimes_ default-initialization should have "
+               "default-initialized every element of totalTimes_ to zero");
+  }
 #endif
 
-    // Create a static table of descendants for every phase with multiple
-    // children. This assumes that all descendants come linearly in the
-    // list, which is reasonable since full dags are not supported; any
-    // path from the leaf to the root must encounter at most one node with
-    // multiple parents.
-    size_t dagSlot = 0;
-    for (size_t i = 0; i < mozilla::ArrayLength(dagChildEdges); i++) {
-        Phase parent = dagChildEdges[i].parent;
-        if (!phaseExtra[parent].dagSlot)
-            phaseExtra[parent].dagSlot = ++dagSlot;
+  MOZ_ALWAYS_TRUE(phaseStack.reserve(MAX_PHASE_NESTING));
+  MOZ_ALWAYS_TRUE(suspendedPhases.reserve(MAX_SUSPENDED_PHASES));
 
-        Phase child = dagChildEdges[i].child;
-        MOZ_ASSERT(phases[child].parent == PHASE_MULTI_PARENTS);
-        int j = child;
-        do {
-            if (!dagDescendants[phaseExtra[parent].dagSlot].append(Phase(j)))
-                return false;
-            j++;
-        } while (j != PHASE_LIMIT && phases[j].parent != PHASE_MULTI_PARENTS);
+  gcTimerFile = MaybeOpenFileFromEnv("MOZ_GCTIMER");
+  gcDebugFile = MaybeOpenFileFromEnv("JS_GC_DEBUG");
+
+  const char* env = getenv("JS_GC_PROFILE");
+  if (env) {
+    if (0 == strcmp(env, "help")) {
+      fprintf(stderr,
+              "JS_GC_PROFILE=N\n"
+              "\tReport major GC's taking more than N milliseconds.\n");
+      exit(0);
     }
-    MOZ_ASSERT(dagSlot <= MaxMultiparentPhases - 1);
+    enableProfiling_ = true;
+    profileThreshold_ = TimeDuration::FromMilliseconds(atoi(env));
+  }
+}
 
-    // Fill in the depth of each node in the tree. Multi-parented nodes
-    // have depth 0.
-    mozilla::Vector<Phase, 0, SystemAllocPolicy> stack;
-    if (!stack.append(PHASE_LIMIT)) // Dummy entry to avoid special-casing the first node
-        return false;
-    for (auto i : AllPhases()) {
-        if (phases[i].parent == PHASE_NO_PARENT ||
-            phases[i].parent == PHASE_MULTI_PARENTS)
-        {
-            stack.clear();
-        } else {
-            while (stack.back() != phases[i].parent)
-                stack.popBack();
-        }
-        phaseExtra[i].depth = stack.length();
-        if (!stack.append(i))
-            return false;
+Statistics::~Statistics() {
+  if (gcTimerFile && gcTimerFile != stdout && gcTimerFile != stderr) {
+    fclose(gcTimerFile);
+  }
+  if (gcDebugFile && gcDebugFile != stdout && gcDebugFile != stderr) {
+    fclose(gcDebugFile);
+  }
+}
+
+/* static */ bool Statistics::initialize() {
+#ifdef DEBUG
+  // Sanity check generated tables.
+  for (auto i : AllPhases()) {
+    auto parent = phases[i].parent;
+    if (parent != Phase::NONE) {
+      MOZ_ASSERT(phases[i].depth == phases[parent].depth + 1);
     }
+    auto firstChild = phases[i].firstChild;
+    if (firstChild != Phase::NONE) {
+      MOZ_ASSERT(i == phases[firstChild].parent);
+      MOZ_ASSERT(phases[i].depth == phases[firstChild].depth - 1);
+    }
+    auto nextSibling = phases[i].nextSibling;
+    if (nextSibling != Phase::NONE) {
+      MOZ_ASSERT(parent == phases[nextSibling].parent);
+      MOZ_ASSERT(phases[i].depth == phases[nextSibling].depth);
+    }
+    auto nextWithPhaseKind = phases[i].nextWithPhaseKind;
+    if (nextWithPhaseKind != Phase::NONE) {
+      MOZ_ASSERT(phases[i].phaseKind == phases[nextWithPhaseKind].phaseKind);
+      MOZ_ASSERT(parent != phases[nextWithPhaseKind].parent);
+    }
+  }
+  for (auto i : AllPhaseKinds()) {
+    MOZ_ASSERT(phases[phaseKinds[i].firstPhase].phaseKind == i);
+    for (auto j : AllPhaseKinds()) {
+      MOZ_ASSERT_IF(i != j, phaseKinds[i].telemetryBucket !=
+                                phaseKinds[j].telemetryBucket);
+    }
+  }
+#endif
 
-    return true;
+  return true;
 }
 
-JS::GCSliceCallback
-Statistics::setSliceCallback(JS::GCSliceCallback newCallback)
-{
-    JS::GCSliceCallback oldCallback = sliceCallback;
-    sliceCallback = newCallback;
-    return oldCallback;
+JS::GCSliceCallback Statistics::setSliceCallback(
+    JS::GCSliceCallback newCallback) {
+  JS::GCSliceCallback oldCallback = sliceCallback;
+  sliceCallback = newCallback;
+  return oldCallback;
 }
 
-JS::GCNurseryCollectionCallback
-Statistics::setNurseryCollectionCallback(JS::GCNurseryCollectionCallback newCallback)
-{
-    auto oldCallback = nurseryCollectionCallback;
-    nurseryCollectionCallback = newCallback;
-    return oldCallback;
+JS::GCNurseryCollectionCallback Statistics::setNurseryCollectionCallback(
+    JS::GCNurseryCollectionCallback newCallback) {
+  auto oldCallback = nurseryCollectionCallback;
+  nurseryCollectionCallback = newCallback;
+  return oldCallback;
 }
 
-TimeDuration
-Statistics::clearMaxGCPauseAccumulator()
-{
-    TimeDuration prior = maxPauseInInterval;
-    maxPauseInInterval = 0;
-    return prior;
+TimeDuration Statistics::clearMaxGCPauseAccumulator() {
+  TimeDuration prior = maxPauseInInterval;
+  maxPauseInInterval = 0;
+  return prior;
 }
 
-TimeDuration
-Statistics::getMaxGCPauseSinceClear()
-{
-    return maxPauseInInterval;
+TimeDuration Statistics::getMaxGCPauseSinceClear() {
+  return maxPauseInInterval;
 }
 
 // Sum up the time for a phase, including instances of the phase with different
 // parents.
-static TimeDuration
-SumPhase(Phase phase, const Statistics::PhaseTimeTable& times)
-{
-    TimeDuration sum = 0;
-    for (const auto& phaseTimes : times)
-        sum += phaseTimes[phase];
-    return sum;
+static TimeDuration SumPhase(PhaseKind phaseKind,
+                             const Statistics::PhaseTimeTable& times) {
+  TimeDuration sum = 0;
+  for (Phase phase = phaseKinds[phaseKind].firstPhase; phase != Phase::NONE;
+       phase = phases[phase].nextWithPhaseKind) {
+    sum += times[phase];
+  }
+  return sum;
 }
 
-static void
-CheckSelfTime(Phase parent, Phase child, const Statistics::PhaseTimeTable& times, TimeDuration selfTimes[PHASE_LIMIT], TimeDuration childTime)
-{
-    if (selfTimes[parent] < childTime) {
-        fprintf(stderr,
-                "Parent %s time = %.3fms"
-                " with %.3fms remaining, "
-                "child %s time %.3fms\n",
-                phases[parent].name, SumPhase(parent, times).ToMilliseconds(),
-                selfTimes[parent].ToMilliseconds(),
-                phases[child].name, childTime.ToMilliseconds());
+static bool CheckSelfTime(Phase parent, Phase child,
+                          const Statistics::PhaseTimeTable& times,
+                          const Statistics::PhaseTimeTable& selfTimes,
+                          TimeDuration childTime) {
+  if (selfTimes[parent] < childTime) {
+    fprintf(
+        stderr,
+        "Parent %s time = %.3fms with %.3fms remaining, child %s time %.3fms\n",
+        phases[parent].name, times[parent].ToMilliseconds(),
+        selfTimes[parent].ToMilliseconds(), phases[child].name,
+        childTime.ToMilliseconds());
+    fflush(stderr);
+    return false;
+  }
+
+  return true;
+}
+
+static PhaseKind LongestPhaseSelfTimeInMajorGC(
+    const Statistics::PhaseTimeTable& times) {
+  // Start with total times per expanded phase, including children's times.
+  Statistics::PhaseTimeTable selfTimes(times);
+
+  // We have the total time spent in each phase, including descendant times.
+  // Loop over the children and subtract their times from their parent's self
+  // time.
+  for (auto i : AllPhases()) {
+    Phase parent = phases[i].parent;
+    if (parent != Phase::NONE) {
+      bool ok = CheckSelfTime(parent, i, times, selfTimes, times[i]);
+
+      // This happens very occasionally in release builds and frequently
+      // in Windows debug builds. Skip collecting longest phase telemetry
+      // if it does.
+#ifndef XP_WIN
+      MOZ_ASSERT(ok, "Inconsistent time data; see bug 1400153");
+#endif
+      if (!ok) {
+        return PhaseKind::NONE;
+      }
+
+      selfTimes[parent] -= times[i];
     }
+  }
+
+  // Sum expanded phases corresponding to the same phase.
+  EnumeratedArray<PhaseKind, PhaseKind::LIMIT, TimeDuration> phaseTimes;
+  for (auto i : AllPhaseKinds()) {
+    phaseTimes[i] = SumPhase(i, selfTimes);
+  }
+
+  // Loop over this table to find the longest phase.
+  TimeDuration longestTime = 0;
+  PhaseKind longestPhase = PhaseKind::NONE;
+  for (auto i : MajorGCPhaseKinds()) {
+    if (phaseTimes[i] > longestTime) {
+      longestTime = phaseTimes[i];
+      longestPhase = i;
+    }
+  }
+
+  return longestPhase;
 }
 
-static Phase
-LongestPhaseSelfTime(const Statistics::PhaseTimeTable& times)
-{
-    TimeDuration selfTimes[PHASE_LIMIT];
+void Statistics::printStats() {
+  if (aborted) {
+    fprintf(gcTimerFile,
+            "OOM during GC statistics collection. The report is unavailable "
+            "for this GC.\n");
+  } else {
+    UniqueChars msg = formatDetailedMessage();
+    if (msg) {
+      double secSinceStart =
+          (slices_[0].start - TimeStamp::ProcessCreation()).ToSeconds();
+      fprintf(gcTimerFile, "GC(T+%.3fs) %s\n", secSinceStart, msg.get());
+    }
+  }
+  fflush(gcTimerFile);
+}
 
-    // Start with total times, including children's times.
-    for (auto i : AllPhases())
-        selfTimes[i] = SumPhase(i, times);
+void Statistics::beginGC(JSGCInvocationKind kind) {
+  slices_.clearAndFree();
+  sccTimes.clearAndFree();
+  gckind = kind;
+  nonincrementalReason_ = gc::AbortReason::None;
 
-    // Subtract out the children's times.
-    for (auto i : AllPhases()) {
-        Phase parent = phases[i].parent;
-        if (parent == PHASE_MULTI_PARENTS) {
-            // Subtract out only the time for the children specific to this
-            // parent.
-            for (auto edge : dagChildEdges) {
-                if (edge.parent == parent) {
-                    size_t dagSlot = phaseExtra[edge.parent].dagSlot;
-                    MOZ_ASSERT(dagSlot <= Statistics::MaxMultiparentPhases - 1);
-                    CheckSelfTime(parent, edge.child, times, selfTimes, times[dagSlot][edge.child]);
-                    MOZ_ASSERT(selfTimes[parent] >= times[dagSlot][edge.child]);
-                    selfTimes[parent] -= times[dagSlot][edge.child];
-                }
-            }
-        } else if (parent != PHASE_NO_PARENT) {
-            MOZ_ASSERT(selfTimes[parent] >= selfTimes[i]);
-            CheckSelfTime(parent, i, times, selfTimes, selfTimes[i]);
-            selfTimes[parent] -= selfTimes[i];
+  preHeapSize = runtime->gc.heapSize.gcBytes();
+  startingMajorGCNumber = runtime->gc.majorGCCount();
+  startingSliceNumber = runtime->gc.gcNumber();
+}
+
+void Statistics::endGC() {
+  TimeDuration sccTotal, sccLongest;
+  sccDurations(&sccTotal, &sccLongest);
+  postHeapSize = runtime->gc.heapSize.gcBytes();
+
+  runtime->addTelemetry(JS_TELEMETRY_GC_IS_ZONE_GC,
+                        !zoneStats.isFullCollection());
+  TimeDuration markTotal = SumPhase(PhaseKind::MARK, phaseTimes);
+  TimeDuration markRootsTotal = SumPhase(PhaseKind::MARK_ROOTS, phaseTimes);
+  double markTime = t(markTotal);
+  size_t markCount = runtime->gc.marker.getMarkCount();
+  double markRate = markCount / markTime;
+  runtime->addTelemetry(JS_TELEMETRY_GC_MARK_MS, markTime);
+  runtime->addTelemetry(JS_TELEMETRY_GC_MARK_RATE, markRate);
+  runtime->addTelemetry(JS_TELEMETRY_GC_SWEEP_MS, t(phaseTimes[Phase::SWEEP]));
+  if (runtime->gc.isCompactingGc()) {
+    runtime->addTelemetry(JS_TELEMETRY_GC_COMPACT_MS,
+                          t(phaseTimes[Phase::COMPACT]));
+  }
+  runtime->addTelemetry(JS_TELEMETRY_GC_MARK_ROOTS_MS, t(markRootsTotal));
+  runtime->addTelemetry(JS_TELEMETRY_GC_MARK_GRAY_MS,
+                        t(phaseTimes[Phase::SWEEP_MARK_GRAY]));
+  runtime->addTelemetry(JS_TELEMETRY_GC_NON_INCREMENTAL, nonincremental());
+  if (nonincremental()) {
+    runtime->addTelemetry(JS_TELEMETRY_GC_NON_INCREMENTAL_REASON,
+                          uint32_t(nonincrementalReason_));
+  }
+  runtime->addTelemetry(JS_TELEMETRY_GC_INCREMENTAL_DISABLED,
+                        !runtime->gc.isIncrementalGCAllowed());
+  runtime->addTelemetry(JS_TELEMETRY_GC_SCC_SWEEP_TOTAL_MS, t(sccTotal));
+  runtime->addTelemetry(JS_TELEMETRY_GC_SCC_SWEEP_MAX_PAUSE_MS, t(sccLongest));
+
+  TimeDuration total, longest;
+  gcDuration(&total, &longest);
+
+  runtime->addTelemetry(JS_TELEMETRY_GC_MS, t(total));
+  runtime->addTelemetry(JS_TELEMETRY_GC_MAX_PAUSE_MS_2, t(longest));
+
+  const double mmu50 = computeMMU(TimeDuration::FromMilliseconds(50));
+  runtime->addTelemetry(JS_TELEMETRY_GC_MMU_50, mmu50 * 100);
+  thresholdTriggered = false;
+}
+
+void Statistics::beginNurseryCollection(JS::GCReason reason) {
+  count(COUNT_MINOR_GC);
+  startingMinorGCNumber = runtime->gc.minorGCCount();
+  if (nurseryCollectionCallback) {
+    (*nurseryCollectionCallback)(
+        runtime->mainContextFromOwnThread(),
+        JS::GCNurseryProgress::GC_NURSERY_COLLECTION_START, reason);
+  }
+}
+
+void Statistics::endNurseryCollection(JS::GCReason reason) {
+  if (nurseryCollectionCallback) {
+    (*nurseryCollectionCallback)(
+        runtime->mainContextFromOwnThread(),
+        JS::GCNurseryProgress::GC_NURSERY_COLLECTION_END, reason);
+  }
+
+  allocsSinceMinorGC = {0, 0};
+}
+
+void Statistics::beginSlice(const ZoneGCStats& zoneStats,
+                            JSGCInvocationKind gckind, SliceBudget budget,
+                            JS::GCReason reason) {
+  MOZ_ASSERT(phaseStack.empty() ||
+             (phaseStack.length() == 1 && phaseStack[0] == Phase::MUTATOR));
+
+  this->zoneStats = zoneStats;
+
+  bool first = !runtime->gc.isIncrementalGCInProgress();
+  if (first) {
+    beginGC(gckind);
+  }
+
+  if (!slices_.emplaceBack(budget, reason, ReallyNow(), GetPageFaultCount(),
+                           runtime->gc.state())) {
+    // If we are OOM, set a flag to indicate we have missing slice data.
+    aborted = true;
+    return;
+  }
+
+  runtime->addTelemetry(JS_TELEMETRY_GC_REASON, uint32_t(reason));
+
+  // Slice callbacks should only fire for the outermost level.
+  bool wasFullGC = zoneStats.isFullCollection();
+  if (sliceCallback) {
+    JSContext* cx = runtime->mainContextFromOwnThread();
+    JS::GCDescription desc(!wasFullGC, false, gckind, reason);
+    if (first) {
+      (*sliceCallback)(cx, JS::GC_CYCLE_BEGIN, desc);
+    }
+    (*sliceCallback)(cx, JS::GC_SLICE_BEGIN, desc);
+  }
+
+  writeLogMessage("begin slice");
+}
+
+void Statistics::endSlice() {
+  MOZ_ASSERT(phaseStack.empty() ||
+             (phaseStack.length() == 1 && phaseStack[0] == Phase::MUTATOR));
+
+  if (!aborted) {
+    auto& slice = slices_.back();
+    slice.end = ReallyNow();
+    slice.endFaults = GetPageFaultCount();
+    slice.finalState = runtime->gc.state();
+
+    writeLogMessage("end slice");
+    TimeDuration sliceTime = slice.end - slice.start;
+    runtime->addTelemetry(JS_TELEMETRY_GC_SLICE_MS, t(sliceTime));
+    runtime->addTelemetry(JS_TELEMETRY_GC_RESET, slice.wasReset());
+    if (slice.wasReset()) {
+      runtime->addTelemetry(JS_TELEMETRY_GC_RESET_REASON,
+                            uint32_t(slice.resetReason));
+    }
+
+    if (slice.budget.isTimeBudget()) {
+      int64_t budget_ms = slice.budget.timeBudget.budget;
+      runtime->addTelemetry(JS_TELEMETRY_GC_BUDGET_MS, budget_ms);
+      if (budget_ms == runtime->gc.defaultSliceBudget()) {
+        runtime->addTelemetry(JS_TELEMETRY_GC_ANIMATION_MS, t(sliceTime));
+      }
+
+      // Record any phase that goes 1.5 times or 5ms over its budget.
+      double longSliceThreshold = std::min(1.5 * budget_ms, budget_ms + 5.0);
+      if (sliceTime.ToMilliseconds() > longSliceThreshold) {
+        PhaseKind longest = LongestPhaseSelfTimeInMajorGC(slice.phaseTimes);
+        reportLongestPhaseInMajorGC(longest, JS_TELEMETRY_GC_SLOW_PHASE);
+
+        // If the longest phase was waiting for parallel tasks then
+        // record the longest task.
+        if (longest == PhaseKind::JOIN_PARALLEL_TASKS) {
+          PhaseKind longestParallel =
+              LongestPhaseSelfTimeInMajorGC(slice.parallelTimes);
+          reportLongestPhaseInMajorGC(longestParallel,
+                                      JS_TELEMETRY_GC_SLOW_TASK);
         }
+      }
+
+      // Record how long we went over budget.
+      int64_t overrun = sliceTime.ToMicroseconds() - (1000 * budget_ms);
+      if (overrun > 0) {
+        runtime->addTelemetry(JS_TELEMETRY_GC_BUDGET_OVERRUN,
+                              uint32_t(overrun));
+      }
     }
 
-    TimeDuration longestTime = 0;
-    Phase longestPhase = PHASE_NONE;
-    for (auto i : AllPhases()) {
-        if (selfTimes[i] > longestTime) {
-            longestTime = selfTimes[i];
-            longestPhase = i;
-        }
+    sliceCount_++;
+  }
+
+  bool last = !runtime->gc.isIncrementalGCInProgress();
+  if (last) {
+    if (gcTimerFile) {
+      printStats();
     }
-
-    return longestPhase;
-}
-
-void
-Statistics::printStats()
-{
-    if (aborted) {
-        fprintf(fp, "OOM during GC statistics collection. The report is unavailable for this GC.\n");
-    } else {
-        UniqueChars msg = formatDetailedMessage();
-        if (msg) {
-            bool ignoredInconsistency;
-            double secSinceStart =
-                (slices[0].start - TimeStamp::ProcessCreation(ignoredInconsistency)).ToSeconds();
-            fprintf(fp, "GC(T+%.3fs) %s\n", secSinceStart, msg.get());
-        }
-    }
-    fflush(fp);
-}
-
-void
-Statistics::beginGC(JSGCInvocationKind kind)
-{
-    slices.clearAndFree();
-    sccTimes.clearAndFree();
-    gckind = kind;
-    nonincrementalReason_ = gc::AbortReason::None;
-
-    preBytes = runtime->gc.usage.gcBytes();
-}
-
-void
-Statistics::endGC()
-{
-    for (auto j : IntegerRange(NumTimingArrays)) {
-        for (auto i : AllPhases())
-            phaseTotals[j][i] += phaseTimes[j][i];
-    }
-
-    TimeDuration sccTotal, sccLongest;
-    sccDurations(&sccTotal, &sccLongest);
-
-    runtime->addTelemetry(JS_TELEMETRY_GC_IS_ZONE_GC, !zoneStats.isCollectingAllZones());
-    TimeDuration markTotal = SumPhase(PHASE_MARK, phaseTimes);
-    TimeDuration markRootsTotal = SumPhase(PHASE_MARK_ROOTS, phaseTimes);
-    runtime->addTelemetry(JS_TELEMETRY_GC_MARK_MS, t(markTotal));
-    runtime->addTelemetry(JS_TELEMETRY_GC_SWEEP_MS, t(phaseTimes[PHASE_DAG_NONE][PHASE_SWEEP]));
-    if (runtime->gc.isCompactingGc()) {
-        runtime->addTelemetry(JS_TELEMETRY_GC_COMPACT_MS,
-                              t(phaseTimes[PHASE_DAG_NONE][PHASE_COMPACT]));
-    }
-    runtime->addTelemetry(JS_TELEMETRY_GC_MARK_ROOTS_MS, t(markRootsTotal));
-    runtime->addTelemetry(JS_TELEMETRY_GC_MARK_GRAY_MS, t(phaseTimes[PHASE_DAG_NONE][PHASE_SWEEP_MARK_GRAY]));
-    runtime->addTelemetry(JS_TELEMETRY_GC_NON_INCREMENTAL, nonincremental());
-    if (nonincremental())
-        runtime->addTelemetry(JS_TELEMETRY_GC_NON_INCREMENTAL_REASON, uint32_t(nonincrementalReason_));
-    runtime->addTelemetry(JS_TELEMETRY_GC_INCREMENTAL_DISABLED, !runtime->gc.isIncrementalGCAllowed());
-    runtime->addTelemetry(JS_TELEMETRY_GC_SCC_SWEEP_TOTAL_MS, t(sccTotal));
-    runtime->addTelemetry(JS_TELEMETRY_GC_SCC_SWEEP_MAX_PAUSE_MS, t(sccLongest));
 
     if (!aborted) {
-        TimeDuration total, longest;
-        gcDuration(&total, &longest);
+      endGC();
+    }
+  }
 
-        runtime->addTelemetry(JS_TELEMETRY_GC_MS, t(total));
-        runtime->addTelemetry(JS_TELEMETRY_GC_MAX_PAUSE_MS, t(longest));
+  if (enableProfiling_ && !aborted &&
+      slices_.back().duration() >= profileThreshold_) {
+    printSliceProfile();
+  }
 
-        const double mmu50 = computeMMU(TimeDuration::FromMilliseconds(50));
-        runtime->addTelemetry(JS_TELEMETRY_GC_MMU_50, mmu50 * 100);
+  // Slice callbacks should only fire for the outermost level.
+  if (!aborted) {
+    bool wasFullGC = zoneStats.isFullCollection();
+    if (sliceCallback) {
+      JSContext* cx = runtime->mainContextFromOwnThread();
+      JS::GCDescription desc(!wasFullGC, last, gckind, slices_.back().reason);
+      (*sliceCallback)(cx, JS::GC_SLICE_END, desc);
+      if (last) {
+        (*sliceCallback)(cx, JS::GC_CYCLE_END, desc);
+      }
+    }
+  }
+
+  // Do this after the slice callback since it uses these values.
+  if (last) {
+    for (auto& count : counts) {
+      count = 0;
     }
 
-    if (fp)
-        printStats();
+    // Clear the timers at the end of a GC, preserving the data for
+    // PhaseKind::MUTATOR.
+    auto mutatorStartTime = phaseStartTimes[Phase::MUTATOR];
+    auto mutatorTime = phaseTimes[Phase::MUTATOR];
 
-    // Clear the OOM flag.
-    aborted = false;
-}
-
-void
-Statistics::beginNurseryCollection(JS::gcreason::Reason reason)
-{
-    count(STAT_MINOR_GC);
-    if (nurseryCollectionCallback) {
-        (*nurseryCollectionCallback)(TlsContext.get(),
-                                     JS::GCNurseryProgress::GC_NURSERY_COLLECTION_START,
-                                     reason);
+    for (mozilla::TimeStamp& t : phaseStartTimes) {
+      t = TimeStamp();
     }
-}
-
-void
-Statistics::endNurseryCollection(JS::gcreason::Reason reason)
-{
-    if (nurseryCollectionCallback) {
-        (*nurseryCollectionCallback)(TlsContext.get(),
-                                     JS::GCNurseryProgress::GC_NURSERY_COLLECTION_END,
-                                     reason);
+#ifdef DEBUG
+    for (mozilla::TimeStamp& t : phaseEndTimes) {
+      t = TimeStamp();
     }
-}
+#endif
 
-void
-Statistics::beginSlice(const ZoneGCStats& zoneStats, JSGCInvocationKind gckind,
-                       SliceBudget budget, JS::gcreason::Reason reason)
-{
-    this->zoneStats = zoneStats;
-
-    bool first = !runtime->gc.isIncrementalGCInProgress();
-    if (first)
-        beginGC(gckind);
-
-    if (!slices.emplaceBack(budget,
-                            reason,
-                            TimeStamp::Now(),
-                            GetPageFaultCount(),
-                            runtime->gc.state()))
-    {
-        // If we are OOM, set a flag to indicate we have missing slice data.
-        aborted = true;
-        return;
+    for (TimeDuration& duration : phaseTimes) {
+      duration = TimeDuration();
+      MOZ_ASSERT(duration.IsZero());
     }
 
-    runtime->addTelemetry(JS_TELEMETRY_GC_REASON, reason);
+    phaseStartTimes[Phase::MUTATOR] = mutatorStartTime;
+    phaseTimes[Phase::MUTATOR] = mutatorTime;
+  }
 
-    // Slice callbacks should only fire for the outermost level.
-    bool wasFullGC = zoneStats.isCollectingAllZones();
-    if (sliceCallback)
-        (*sliceCallback)(TlsContext.get(),
-                         first ? JS::GC_CYCLE_BEGIN : JS::GC_SLICE_BEGIN,
-                         JS::GCDescription(!wasFullGC, gckind, reason));
+  aborted = false;
 }
 
-void
-Statistics::endSlice()
-{
-    if (!aborted) {
-        slices.back().end = TimeStamp::Now();
-        slices.back().endFaults = GetPageFaultCount();
-        slices.back().finalState = runtime->gc.state();
+void Statistics::reportLongestPhaseInMajorGC(PhaseKind longest,
+                                             int telemetryId) {
+  if (longest != PhaseKind::NONE) {
+    uint8_t bucket = phaseKinds[longest].telemetryBucket;
+    runtime->addTelemetry(telemetryId, bucket);
+  }
+}
 
-        TimeDuration sliceTime = slices.back().end - slices.back().start;
-        runtime->addTelemetry(JS_TELEMETRY_GC_SLICE_MS, t(sliceTime));
-        runtime->addTelemetry(JS_TELEMETRY_GC_RESET, slices.back().wasReset());
-        if (slices.back().wasReset())
-            runtime->addTelemetry(JS_TELEMETRY_GC_RESET_REASON, uint32_t(slices.back().resetReason));
+bool Statistics::startTimingMutator() {
+  if (phaseStack.length() != 0) {
+    // Should only be called from outside of GC.
+    MOZ_ASSERT(phaseStack.length() == 1);
+    MOZ_ASSERT(phaseStack[0] == Phase::MUTATOR);
+    return false;
+  }
 
-        if (slices.back().budget.isTimeBudget()) {
-            int64_t budget_ms = slices.back().budget.timeBudget.budget;
-            runtime->addTelemetry(JS_TELEMETRY_GC_BUDGET_MS, budget_ms);
-            if (budget_ms == runtime->gc.defaultSliceBudget())
-                runtime->addTelemetry(JS_TELEMETRY_GC_ANIMATION_MS, t(sliceTime));
+  MOZ_ASSERT(suspendedPhases.empty());
 
-            // Record any phase that goes more than 2x over its budget.
-            if (sliceTime.ToMilliseconds() > 2 * budget_ms) {
-                Phase longest = LongestPhaseSelfTime(slices.back().phaseTimes);
-                runtime->addTelemetry(JS_TELEMETRY_GC_SLOW_PHASE, phases[longest].telemetryBucket);
-            }
-        }
+  timedGCTime = 0;
+  phaseStartTimes[Phase::MUTATOR] = TimeStamp();
+  phaseTimes[Phase::MUTATOR] = 0;
+  timedGCStart = TimeStamp();
 
-        sliceCount_++;
+  beginPhase(PhaseKind::MUTATOR);
+  return true;
+}
+
+bool Statistics::stopTimingMutator(double& mutator_ms, double& gc_ms) {
+  // This should only be called from outside of GC, while timing the mutator.
+  if (phaseStack.length() != 1 || phaseStack[0] != Phase::MUTATOR) {
+    return false;
+  }
+
+  endPhase(PhaseKind::MUTATOR);
+  mutator_ms = t(phaseTimes[Phase::MUTATOR]);
+  gc_ms = t(timedGCTime);
+
+  return true;
+}
+
+void Statistics::suspendPhases(PhaseKind suspension) {
+  MOZ_ASSERT(suspension == PhaseKind::EXPLICIT_SUSPENSION ||
+             suspension == PhaseKind::IMPLICIT_SUSPENSION);
+  while (!phaseStack.empty()) {
+    MOZ_ASSERT(suspendedPhases.length() < MAX_SUSPENDED_PHASES);
+    Phase parent = phaseStack.back();
+    suspendedPhases.infallibleAppend(parent);
+    recordPhaseEnd(parent);
+  }
+  suspendedPhases.infallibleAppend(lookupChildPhase(suspension));
+}
+
+void Statistics::resumePhases() {
+  MOZ_ASSERT(suspendedPhases.back() == Phase::EXPLICIT_SUSPENSION ||
+             suspendedPhases.back() == Phase::IMPLICIT_SUSPENSION);
+  suspendedPhases.popBack();
+
+  while (!suspendedPhases.empty() &&
+         suspendedPhases.back() != Phase::EXPLICIT_SUSPENSION &&
+         suspendedPhases.back() != Phase::IMPLICIT_SUSPENSION) {
+    Phase resumePhase = suspendedPhases.popCopy();
+    if (resumePhase == Phase::MUTATOR) {
+      timedGCTime += ReallyNow() - timedGCStart;
     }
+    recordPhaseBegin(resumePhase);
+  }
+}
 
-    bool last = !runtime->gc.isIncrementalGCInProgress();
-    if (last)
-        endGC();
+void Statistics::beginPhase(PhaseKind phaseKind) {
+  // No longer timing these phases. We should never see these.
+  MOZ_ASSERT(phaseKind != PhaseKind::GC_BEGIN &&
+             phaseKind != PhaseKind::GC_END);
 
-    if (enableProfiling_ && !aborted && slices.back().duration() >= profileThreshold_)
-        printSliceProfile();
+  // PhaseKind::MUTATOR is suspended while performing GC.
+  if (currentPhase() == Phase::MUTATOR) {
+    suspendPhases(PhaseKind::IMPLICIT_SUSPENSION);
+  }
 
-    // Slice callbacks should only fire for the outermost level.
-    if (!aborted) {
-        bool wasFullGC = zoneStats.isCollectingAllZones();
-        if (sliceCallback)
-            (*sliceCallback)(TlsContext.get(),
-                             last ? JS::GC_CYCLE_END : JS::GC_SLICE_END,
-                             JS::GCDescription(!wasFullGC, gckind, slices.back().reason));
+  recordPhaseBegin(lookupChildPhase(phaseKind));
+}
+
+void Statistics::recordPhaseBegin(Phase phase) {
+  MOZ_ASSERT(CurrentThreadCanAccessRuntime(runtime));
+
+  // Guard against any other re-entry.
+  MOZ_ASSERT(!phaseStartTimes[phase]);
+
+  MOZ_ASSERT(phaseStack.length() < MAX_PHASE_NESTING);
+
+  Phase current = currentPhase();
+  MOZ_ASSERT(phases[phase].parent == current);
+
+  TimeStamp now = ReallyNow();
+
+  if (current != Phase::NONE) {
+    MOZ_ASSERT(now >= phaseStartTimes[currentPhase()],
+               "Inconsistent time data; see bug 1400153");
+    if (now < phaseStartTimes[currentPhase()]) {
+      now = phaseStartTimes[currentPhase()];
+      aborted = true;
     }
+  }
 
-    // Do this after the slice callback since it uses these values.
-    if (last) {
-        for (auto& count : counts)
-            count = 0;
+  phaseStack.infallibleAppend(phase);
+  phaseStartTimes[phase] = now;
+  writeLogMessage("begin: %s", phases[phase].path);
+}
 
-        // Clear the timers at the end of a GC because we accumulate time in
-        // between GCs for some (which come before PHASE_GC_BEGIN in the list.)
-        PodZero(&phaseStartTimes[PHASE_GC_BEGIN], PHASE_LIMIT - PHASE_GC_BEGIN);
-        for (size_t d = PHASE_DAG_NONE; d < NumTimingArrays; d++)
-            PodZero(&phaseTimes[d][PHASE_GC_BEGIN], PHASE_LIMIT - PHASE_GC_BEGIN);
+void Statistics::recordPhaseEnd(Phase phase) {
+  MOZ_ASSERT(CurrentThreadCanAccessRuntime(runtime));
+
+  MOZ_ASSERT(phaseStartTimes[phase]);
+
+  TimeStamp now = ReallyNow();
+
+  // Make sure this phase ends after it starts.
+  MOZ_ASSERT(now >= phaseStartTimes[phase],
+             "Inconsistent time data; see bug 1400153");
+
+#ifdef DEBUG
+  // Make sure this phase ends after all of its children. Note that some
+  // children might not have run in this instance, in which case they will
+  // have run in a previous instance of this parent or not at all.
+  for (Phase kid = phases[phase].firstChild; kid != Phase::NONE;
+       kid = phases[kid].nextSibling) {
+    if (phaseEndTimes[kid].IsNull()) {
+      continue;
     }
-}
-
-bool
-Statistics::startTimingMutator()
-{
-    if (phaseNestingDepth != 0) {
-        // Should only be called from outside of GC.
-        MOZ_ASSERT(phaseNestingDepth == 1);
-        MOZ_ASSERT(phaseNesting[0] == PHASE_MUTATOR);
-        return false;
+    if (phaseEndTimes[kid] > now) {
+      fprintf(stderr,
+              "Parent %s ended at %.3fms, before child %s ended at %.3fms?\n",
+              phases[phase].name, t(now - TimeStamp::ProcessCreation()),
+              phases[kid].name,
+              t(phaseEndTimes[kid] - TimeStamp::ProcessCreation()));
     }
+    MOZ_ASSERT(phaseEndTimes[kid] <= now,
+               "Inconsistent time data; see bug 1400153");
+  }
+#endif
 
-    MOZ_ASSERT(suspended == 0);
+  if (now < phaseStartTimes[phase]) {
+    now = phaseStartTimes[phase];
+    aborted = true;
+  }
 
-    timedGCTime = 0;
-    phaseStartTimes[PHASE_MUTATOR] = TimeStamp();
-    phaseTimes[PHASE_DAG_NONE][PHASE_MUTATOR] = 0;
-    timedGCStart = TimeStamp();
+  if (phase == Phase::MUTATOR) {
+    timedGCStart = now;
+  }
 
-    beginPhase(PHASE_MUTATOR);
-    return true;
+  phaseStack.popBack();
+
+  TimeDuration t = now - phaseStartTimes[phase];
+  if (!slices_.empty()) {
+    slices_.back().phaseTimes[phase] += t;
+  }
+  phaseTimes[phase] += t;
+  phaseStartTimes[phase] = TimeStamp();
+
+#ifdef DEBUG
+  phaseEndTimes[phase] = now;
+  writeLogMessage("end: %s", phases[phase].path);
+#endif
 }
 
-bool
-Statistics::stopTimingMutator(double& mutator_ms, double& gc_ms)
-{
-    // This should only be called from outside of GC, while timing the mutator.
-    if (phaseNestingDepth != 1 || phaseNesting[0] != PHASE_MUTATOR)
-        return false;
+void Statistics::endPhase(PhaseKind phaseKind) {
+  Phase phase = currentPhase();
+  MOZ_ASSERT(phase != Phase::NONE);
+  MOZ_ASSERT(phases[phase].phaseKind == phaseKind);
 
-    endPhase(PHASE_MUTATOR);
-    mutator_ms = t(phaseTimes[PHASE_DAG_NONE][PHASE_MUTATOR]);
-    gc_ms = t(timedGCTime);
+  recordPhaseEnd(phase);
 
-    return true;
+  // When emptying the stack, we may need to return to timing the mutator
+  // (PhaseKind::MUTATOR).
+  if (phaseStack.empty() && !suspendedPhases.empty() &&
+      suspendedPhases.back() == Phase::IMPLICIT_SUSPENSION) {
+    resumePhases();
+  }
 }
 
-void
-Statistics::suspendPhases(Phase suspension)
-{
-    MOZ_ASSERT(suspension == PHASE_EXPLICIT_SUSPENSION || suspension == PHASE_IMPLICIT_SUSPENSION);
-    while (phaseNestingDepth) {
-        MOZ_ASSERT(suspended < mozilla::ArrayLength(suspendedPhases));
-        Phase parent = phaseNesting[phaseNestingDepth - 1];
-        suspendedPhases[suspended++] = parent;
-        recordPhaseEnd(parent);
+void Statistics::recordParallelPhase(PhaseKind phaseKind,
+                                     TimeDuration duration) {
+  MOZ_ASSERT(CurrentThreadCanAccessRuntime(runtime));
+
+  Phase phase = lookupChildPhase(phaseKind);
+
+  // Record the duration for all phases in the tree up to the root. This is
+  // not strictly necessary but makes the invariant that parent phase times
+  // include their children apply to both phaseTimes and parallelTimes.
+  while (phase != Phase::NONE) {
+    if (!slices_.empty()) {
+      slices_.back().parallelTimes[phase] += duration;
     }
-    suspendedPhases[suspended++] = suspension;
+    parallelTimes[phase] += duration;
+    phase = phases[phase].parent;
+  }
 }
 
-void
-Statistics::resumePhases()
-{
-    DebugOnly<Phase> popped = suspendedPhases[--suspended];
-    MOZ_ASSERT(popped == PHASE_EXPLICIT_SUSPENSION || popped == PHASE_IMPLICIT_SUSPENSION);
-    while (suspended &&
-           suspendedPhases[suspended - 1] != PHASE_EXPLICIT_SUSPENSION &&
-           suspendedPhases[suspended - 1] != PHASE_IMPLICIT_SUSPENSION)
-    {
-        Phase resumePhase = suspendedPhases[--suspended];
-        if (resumePhase == PHASE_MUTATOR)
-            timedGCTime += TimeStamp::Now() - timedGCStart;
-        beginPhase(resumePhase);
-    }
-}
+TimeStamp Statistics::beginSCC() { return ReallyNow(); }
 
-void
-Statistics::beginPhase(Phase phase)
-{
-    // No longer timing these phases. We should never see these.
-    MOZ_ASSERT(phase != PHASE_GC_BEGIN && phase != PHASE_GC_END);
+void Statistics::endSCC(unsigned scc, TimeStamp start) {
+  if (scc >= sccTimes.length() && !sccTimes.resize(scc + 1)) {
+    return;
+  }
 
-    Phase parent = phaseNestingDepth ? phaseNesting[phaseNestingDepth - 1] : PHASE_NO_PARENT;
-
-    // PHASE_MUTATOR is suspended while performing GC.
-    if (parent == PHASE_MUTATOR) {
-        suspendPhases(PHASE_IMPLICIT_SUSPENSION);
-        parent = phaseNestingDepth ? phaseNesting[phaseNestingDepth - 1] : PHASE_NO_PARENT;
-    }
-
-    // Guard against any other re-entry.
-    MOZ_ASSERT(!phaseStartTimes[phase]);
-
-    MOZ_ASSERT(phases[phase].index == phase);
-    MOZ_ASSERT(phaseNestingDepth < MAX_NESTING);
-    MOZ_ASSERT(phases[phase].parent == parent || phases[phase].parent == PHASE_MULTI_PARENTS);
-
-    phaseNesting[phaseNestingDepth] = phase;
-    phaseNestingDepth++;
-
-    if (phases[phase].parent == PHASE_MULTI_PARENTS) {
-        MOZ_ASSERT(parent != PHASE_NO_PARENT);
-        activeDagSlot = phaseExtra[parent].dagSlot;
-    }
-    MOZ_ASSERT(activeDagSlot <= MaxMultiparentPhases - 1);
-
-    phaseStartTimes[phase] = TimeStamp::Now();
-}
-
-void
-Statistics::recordPhaseEnd(Phase phase)
-{
-    TimeStamp now = TimeStamp::Now();
-
-    if (phase == PHASE_MUTATOR)
-        timedGCStart = now;
-
-    phaseNestingDepth--;
-
-    TimeDuration t = now - phaseStartTimes[phase];
-    if (!slices.empty())
-        slices.back().phaseTimes[activeDagSlot][phase] += t;
-    phaseTimes[activeDagSlot][phase] += t;
-    phaseStartTimes[phase] = TimeStamp();
-}
-
-void
-Statistics::endPhase(Phase phase)
-{
-    recordPhaseEnd(phase);
-
-    if (phases[phase].parent == PHASE_MULTI_PARENTS)
-        activeDagSlot = PHASE_DAG_NONE;
-
-    // When emptying the stack, we may need to return to timing the mutator
-    // (PHASE_MUTATOR).
-    if (phaseNestingDepth == 0 && suspended > 0 && suspendedPhases[suspended - 1] == PHASE_IMPLICIT_SUSPENSION)
-        resumePhases();
-}
-
-void
-Statistics::endParallelPhase(Phase phase, const GCParallelTask* task)
-{
-    phaseNestingDepth--;
-
-    if (!slices.empty())
-        slices.back().phaseTimes[PHASE_DAG_NONE][phase] += task->duration();
-    phaseTimes[PHASE_DAG_NONE][phase] += task->duration();
-    phaseStartTimes[phase] = TimeStamp();
-}
-
-TimeStamp
-Statistics::beginSCC()
-{
-    return TimeStamp::Now();
-}
-
-void
-Statistics::endSCC(unsigned scc, TimeStamp start)
-{
-    if (scc >= sccTimes.length() && !sccTimes.resize(scc + 1))
-        return;
-
-    sccTimes[scc] += TimeStamp::Now() - start;
+  sccTimes[scc] += ReallyNow() - start;
 }
 
 /*
@@ -1369,103 +1410,110 @@ Statistics::endSCC(unsigned scc, TimeStamp start)
  * the window, or 10ms. The GC can run multiple slices during the 50ms window
  * as long as the total time it spends is at most 10ms.
  */
-double
-Statistics::computeMMU(TimeDuration window) const
-{
-    MOZ_ASSERT(!slices.empty());
+double Statistics::computeMMU(TimeDuration window) const {
+  MOZ_ASSERT(!slices_.empty());
 
-    TimeDuration gc = slices[0].end - slices[0].start;
-    TimeDuration gcMax = gc;
+  TimeDuration gc = slices_[0].end - slices_[0].start;
+  TimeDuration gcMax = gc;
 
-    if (gc >= window)
-        return 0.0;
+  if (gc >= window) {
+    return 0.0;
+  }
 
-    int startIndex = 0;
-    for (size_t endIndex = 1; endIndex < slices.length(); endIndex++) {
-        gc += slices[endIndex].end - slices[endIndex].start;
+  int startIndex = 0;
+  for (size_t endIndex = 1; endIndex < slices_.length(); endIndex++) {
+    auto* startSlice = &slices_[startIndex];
+    auto& endSlice = slices_[endIndex];
+    gc += endSlice.end - endSlice.start;
 
-        while (slices[endIndex].end - slices[startIndex].end >= window) {
-            gc -= slices[startIndex].end - slices[startIndex].start;
-            startIndex++;
-        }
-
-        TimeDuration cur = gc;
-        if (slices[endIndex].end - slices[startIndex].start > window)
-            cur -= (slices[endIndex].end - slices[startIndex].start - window);
-        if (cur > gcMax)
-            gcMax = cur;
+    while (endSlice.end - startSlice->end >= window) {
+      gc -= startSlice->end - startSlice->start;
+      startSlice = &slices_[++startIndex];
     }
 
-    return double((window - gcMax) / window);
-}
-
-void
-Statistics::maybePrintProfileHeaders()
-{
-    static int printedHeader = 0;
-    if ((printedHeader++ % 200) == 0) {
-        printProfileHeader();
-        for (ZoneGroupsIter group(runtime); !group.done(); group.next()) {
-            if (group->nursery().enableProfiling()) {
-                Nursery::printProfileHeader();
-                break;
-            }
-        }
+    TimeDuration cur = gc;
+    if (endSlice.end - startSlice->start > window) {
+      cur -= (endSlice.end - startSlice->start - window);
     }
+    if (cur > gcMax) {
+      gcMax = cur;
+    }
+  }
+
+  return double((window - gcMax) / window);
 }
 
-void
-Statistics::printProfileHeader()
-{
-    if (!enableProfiling_)
-        return;
+void Statistics::maybePrintProfileHeaders() {
+  static int printedHeader = 0;
+  if ((printedHeader++ % 200) == 0) {
+    printProfileHeader();
+    if (runtime->gc.nursery().enableProfiling()) {
+      Nursery::printProfileHeader();
+    }
+  }
+}
 
-    fprintf(stderr, "MajorGC:               Reason States      ");
-    fprintf(stderr, " %6s", "total");
-#define PRINT_PROFILE_HEADER(name, text, phase)                               \
-    fprintf(stderr, " %6s", text);
-FOR_EACH_GC_PROFILE_TIME(PRINT_PROFILE_HEADER)
+void Statistics::printProfileHeader() {
+  if (!enableProfiling_) {
+    return;
+  }
+
+  fprintf(stderr, "MajorGC:               Reason States FSNR ");
+  fprintf(stderr, " %6s", "budget");
+  fprintf(stderr, " %6s", "total");
+#define PRINT_PROFILE_HEADER(name, text, phase) fprintf(stderr, " %6s", text);
+  FOR_EACH_GC_PROFILE_TIME(PRINT_PROFILE_HEADER)
 #undef PRINT_PROFILE_HEADER
-    fprintf(stderr, "\n");
+  fprintf(stderr, "\n");
 }
 
-/* static */ void
-Statistics::printProfileTimes(const ProfileDurations& times)
-{
-    for (auto time : times)
-        fprintf(stderr, " %6" PRIi64, static_cast<int64_t>(time.ToMilliseconds()));
-    fprintf(stderr, "\n");
+/* static */ void Statistics::printProfileTimes(const ProfileDurations& times) {
+  for (auto time : times) {
+    fprintf(stderr, " %6" PRIi64, static_cast<int64_t>(time.ToMilliseconds()));
+  }
+  fprintf(stderr, "\n");
 }
 
-void
-Statistics::printSliceProfile()
-{
-    const SliceData& slice = slices.back();
+void Statistics::printSliceProfile() {
+  const SliceData& slice = slices_.back();
 
-    maybePrintProfileHeaders();
+  maybePrintProfileHeaders();
 
-    fprintf(stderr, "MajorGC: %20s %1d -> %1d      ",
-            ExplainReason(slice.reason), int(slice.initialState), int(slice.finalState));
+  bool shrinking = gckind == GC_SHRINK;
+  bool reset = slice.resetReason != AbortReason::None;
+  bool nonIncremental = nonincrementalReason_ != AbortReason::None;
+  bool full = zoneStats.isFullCollection();
 
-    ProfileDurations times;
-    times[ProfileKey::Total] = slice.duration();
-    totalTimes_[ProfileKey::Total] += times[ProfileKey::Total];
+  fprintf(stderr, "MajorGC: %20s %1d -> %1d %1s%1s%1s%1s ",
+          ExplainGCReason(slice.reason), int(slice.initialState),
+          int(slice.finalState), full ? "F" : "", shrinking ? "S" : "",
+          nonIncremental ? "N" : "", reset ? "R" : "");
 
-#define GET_PROFILE_TIME(name, text, phase)                                   \
-    times[ProfileKey::name] = slice.phaseTimes[PHASE_DAG_NONE][phase];                     \
-    totalTimes_[ProfileKey::name] += times[ProfileKey::name];
-FOR_EACH_GC_PROFILE_TIME(GET_PROFILE_TIME)
+  if (!nonIncremental && !slice.budget.isUnlimited() &&
+      slice.budget.isTimeBudget()) {
+    fprintf(stderr, " %6" PRIi64,
+            static_cast<int64_t>(slice.budget.timeBudget.budget));
+  } else {
+    fprintf(stderr, "       ");
+  }
+
+  ProfileDurations times;
+  times[ProfileKey::Total] = slice.duration();
+  totalTimes_[ProfileKey::Total] += times[ProfileKey::Total];
+
+#define GET_PROFILE_TIME(name, text, phase)                    \
+  times[ProfileKey::name] = SumPhase(phase, slice.phaseTimes); \
+  totalTimes_[ProfileKey::name] += times[ProfileKey::name];
+  FOR_EACH_GC_PROFILE_TIME(GET_PROFILE_TIME)
 #undef GET_PROFILE_TIME
 
-    printProfileTimes(times);
+  printProfileTimes(times);
 }
 
-void
-Statistics::printTotalProfileTimes()
-{
-    if (enableProfiling_) {
-        fprintf(stderr, "MajorGC TOTALS: %7" PRIu64 " slices:           ", sliceCount_);
-        printProfileTimes(totalTimes_);
-    }
+void Statistics::printTotalProfileTimes() {
+  if (enableProfiling_) {
+    fprintf(stderr, "MajorGC TOTALS: %7" PRIu64 " slices:                  ",
+            sliceCount_);
+    printProfileTimes(totalTimes_);
+  }
 }
-

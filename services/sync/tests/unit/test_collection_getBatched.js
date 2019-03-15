@@ -1,21 +1,15 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Cu.import("resource://services-sync/record.js");
-Cu.import("resource://services-sync/service.js");
-
-function run_test() {
-  initTestLogging("Trace");
-  Log.repository.getLogger("Sync.Collection").level = Log.Level.Trace;
-  run_next_test();
-}
+ChromeUtils.import("resource://services-sync/record.js");
+ChromeUtils.import("resource://services-sync/service.js");
 
 function recordRange(lim, offset, total) {
   let res = [];
   for (let i = offset; i < Math.min(lim + offset, total); ++i) {
-    res.push(JSON.stringify({ id: String(i), payload: "test:" + i }));
+    res.push({ id: String(i), payload: "test:" + i });
   }
-  return res.join("\n") + "\n";
+  return res;
 }
 
 function get_test_collection_info({ totalRecords, batchSize, lastModified,
@@ -25,9 +19,7 @@ function get_test_collection_info({ totalRecords, batchSize, lastModified,
   coll.full = true;
   let requests = [];
   let responses = [];
-  let sawRecord = false;
-  coll.get = function() {
-    ok(!sawRecord); // make sure we call record handler after all requests.
+  coll.get = async function() {
     let limit = +this.limit;
     let offset = 0;
     if (this.offset) {
@@ -38,18 +30,17 @@ function get_test_collection_info({ totalRecords, batchSize, lastModified,
       limit,
       offset,
       spec: this.spec,
-      headers: Object.assign({}, this.headers)
+      headers: Object.assign({}, this.headers),
     });
     if (--throwAfter === 0) {
-      throw "Some Network Error";
+      throw new Error("Some Network Error");
     }
     let body = recordRange(limit, offset, totalRecords);
-    this._onProgress.call({ _data: body });
     let response = {
-      body,
+      obj: body,
       success: true,
       status: 200,
-      headers: {}
+      headers: {},
     };
     if (--interruptedAfter === 0) {
       response.success = false;
@@ -64,33 +55,24 @@ function get_test_collection_info({ totalRecords, batchSize, lastModified,
     responses.push(response);
     return response;
   };
-
-  let records = [];
-  coll.recordHandler = function(record) {
-    sawRecord = true;
-    // ensure records are coming in in the right order
-    equal(record.id, String(records.length));
-    equal(record.payload, "test:" + records.length);
-    records.push(record);
-  };
-  return { records, responses, requests, coll };
+  return { responses, requests, coll };
 }
 
-add_test(function test_success() {
+add_task(async function test_success() {
   const totalRecords = 11;
   const batchSize = 2;
   const lastModified = "111111";
-  let { records, responses, requests, coll } = get_test_collection_info({
+  let { responses, requests, coll } = get_test_collection_info({
     totalRecords,
     batchSize,
     lastModified,
   });
-  let response = coll.getBatched(batchSize);
+  let { response, records } = await coll.getBatched(batchSize);
 
   equal(requests.length, Math.ceil(totalRecords / batchSize));
 
-  // records are mostly checked in recordHandler, we just care about the length
   equal(records.length, totalRecords);
+  checkRecordsOrder(records);
 
   // ensure we're returning the last response
   equal(responses[responses.length - 1], response);
@@ -116,23 +98,22 @@ add_test(function test_success() {
   ok(!coll._headers["x-if-unmodified-since"]);
   ok(!coll.offset);
   ok(!coll.limit || (coll.limit == Infinity));
-
-  run_next_test();
 });
 
-add_test(function test_total_limit() {
+add_task(async function test_total_limit() {
   _("getBatched respects the (initial) value of the limit property");
   const totalRecords = 100;
   const recordLimit = 11;
   const batchSize = 2;
   const lastModified = "111111";
-  let { records, requests, coll } = get_test_collection_info({
+  let { requests, coll } = get_test_collection_info({
     totalRecords,
     batchSize,
     lastModified,
   });
   coll.limit = recordLimit;
-  coll.getBatched(batchSize);
+  let { records } = await coll.getBatched(batchSize);
+  checkRecordsOrder(records);
 
   equal(requests.length, Math.ceil(recordLimit / batchSize));
   equal(records.length, recordLimit);
@@ -147,49 +128,52 @@ add_test(function test_total_limit() {
   }
 
   equal(coll._limit, recordLimit);
-
-  run_next_test();
 });
 
-add_test(function test_412() {
+add_task(async function test_412() {
   _("We shouldn't record records if we get a 412 in the middle of a batch");
   const totalRecords = 11;
   const batchSize = 2;
   const lastModified = "111111";
-  let { records, responses, requests, coll } = get_test_collection_info({
+  let { responses, requests, coll } = get_test_collection_info({
     totalRecords,
     batchSize,
     lastModified,
-    interruptedAfter: 3
+    interruptedAfter: 3,
   });
-  let response = coll.getBatched(batchSize);
+  let { response, records } = await coll.getBatched(batchSize);
 
   equal(requests.length, 3);
-  equal(records.length, 0); // record handler shouldn't be called for anything
+  equal(records.length, 0); // we should not get any records
 
   // ensure we're returning the last response
   equal(responses[responses.length - 1], response);
 
   ok(!response.success);
   equal(response.status, 412);
-  run_next_test();
 });
 
-add_test(function test_get_throws() {
-  _("We shouldn't record records if get() throws for some reason");
+add_task(async function test_get_throws() {
+  _("getBatched() should throw if a get() throws");
   const totalRecords = 11;
   const batchSize = 2;
   const lastModified = "111111";
-  let { records, requests, coll } = get_test_collection_info({
+  let { requests, coll } = get_test_collection_info({
     totalRecords,
     batchSize,
     lastModified,
-    throwAfter: 3
+    throwAfter: 3,
   });
 
-  throws(() => coll.getBatched(batchSize), "Some Network Error");
+  await Assert.rejects(coll.getBatched(batchSize), /Some Network Error/);
 
   equal(requests.length, 3);
-  equal(records.length, 0);
-  run_next_test();
 });
+
+function checkRecordsOrder(records) {
+  ok(records.length > 0);
+  for (let i = 0; i < records.length; i++) {
+    equal(records[i].id, String(i));
+    equal(records[i].payload, "test:" + i);
+  }
+}

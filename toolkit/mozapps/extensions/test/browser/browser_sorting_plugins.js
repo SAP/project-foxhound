@@ -9,7 +9,7 @@
 var gManagerWindow;
 var gProvider;
 
-function test() {
+async function test() {
   waitForExplicitFinish();
 
   gProvider = new MockProvider();
@@ -23,47 +23,45 @@ function test() {
     description: "foo",
     type: "plugin",
     isActive: true,
-    userDisabled: AddonManager.STATE_ASK_TO_ACTIVATE
+    userDisabled: AddonManager.STATE_ASK_TO_ACTIVATE,
   }, {
     id: "test2@tests.mozilla.org",
     name: "Quick Time Plug-in",
     description: "foo",
     type: "plugin",
     isActive: true,
-    userDisabled: false
+    userDisabled: false,
   }, {
     id: "test3@tests.mozilla.org",
     name: "Shockwave Flash",
     description: "foo",
     type: "plugin",
     isActive: false,
-    userDisabled: true
+    userDisabled: true,
   }, {
     id: "test4@tests.mozilla.org",
     name: "Adobe Reader Plug-in",
     description: "foo",
     type: "plugin",
     isActive: true,
-    userDisabled: AddonManager.STATE_ASK_TO_ACTIVATE
+    userDisabled: AddonManager.STATE_ASK_TO_ACTIVATE,
   }, {
     id: "test5@tests.mozilla.org",
     name: "3rd Party Plug-in",
     description: "foo",
     type: "plugin",
     isActive: true,
-    userDisabled: false
+    userDisabled: false,
   }]);
 
-  open_manager("addons://list/plugin", function(aWindow) {
-    gManagerWindow = aWindow;
-    run_next_test();
-  });
+  let aWindow = await open_manager("addons://list/plugin");
+  gManagerWindow = aWindow;
+  run_next_test();
 }
 
-function end_test() {
-  close_manager(gManagerWindow, function() {
-    finish();
-  });
+async function end_test() {
+  await close_manager(gManagerWindow);
+  finish();
 }
 
 function check_order(aExpectedOrder) {
@@ -88,7 +86,7 @@ add_test(function() {
     "test2@tests.mozilla.org",
     "test4@tests.mozilla.org",
     "test1@tests.mozilla.org",
-    "test3@tests.mozilla.org"
+    "test3@tests.mozilla.org",
   ]);
 
   run_next_test();

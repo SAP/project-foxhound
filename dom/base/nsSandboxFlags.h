@@ -25,7 +25,7 @@ const unsigned long SANDBOXED_NONE = 0x0;
  * within the code by checking that the overall flags are non-zero.
  * It is only uesd directly when the sandbox flags are initially set up.
  */
-const unsigned long SANDBOXED_NAVIGATION  = 0x1;
+const unsigned long SANDBOXED_NAVIGATION = 0x1;
 
 /**
  * This flag prevents content from creating new auxiliary browsing contexts,
@@ -42,9 +42,8 @@ const unsigned long SANDBOXED_TOPLEVEL_NAVIGATION = 0x4;
 
 /**
  * This flag prevents content from instantiating plugins, whether using the
- * embed element, the object element, the applet element, or through
- * navigation of a nested browsing context, unless those plugins can be
- * secured.
+ * embed element, the object element, or through navigation of a nested browsing
+ * context, unless those plugins can be secured.
  */
 const unsigned long SANDBOXED_PLUGINS = 0x8;
 
@@ -113,5 +112,10 @@ const unsigned long SANDBOXED_ORIENTATION_LOCK = 0x2000;
  */
 const unsigned long SANDBOXED_PRESENTATION = 0x4000;
 
-const unsigned long SANDBOX_ALL_FLAGS = 0x7FFF;
+/**
+ * This flag disables access to the first-party storage area by user activation.
+ */
+const unsigned long SANDBOXED_STORAGE_ACCESS = 0x8000;
+
+const unsigned long SANDBOX_ALL_FLAGS = 0xFFFF;
 #endif

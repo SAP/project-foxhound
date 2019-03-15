@@ -1,9 +1,9 @@
-Cu.import("resource://services-crypto/WeaveCrypto.js");
+ChromeUtils.import("resource://services-crypto/WeaveCrypto.js");
 Cu.importGlobalProperties(["crypto"]);
 
 var cryptoSvc = new WeaveCrypto();
 
-add_task(function* test_key_memoization() {
+add_task(async function test_key_memoization() {
   let cryptoGlobal = cryptoSvc._getCrypto();
   let oldImport = cryptoGlobal.subtle.importKey;
   if (!oldImport) {
@@ -12,59 +12,59 @@ add_task(function* test_key_memoization() {
   }
 
   let iv  = cryptoSvc.generateRandomIV();
-  let key = cryptoSvc.generateRandomKey();
+  let key = await cryptoSvc.generateRandomKey();
   let c   = 0;
   cryptoGlobal.subtle.importKey = function(format, keyData, algo, extractable, usages) {
     c++;
     return oldImport.call(cryptoGlobal.subtle, format, keyData, algo, extractable, usages);
-  }
+  };
 
   // Encryption should cause a single counter increment.
-  do_check_eq(c, 0);
-  let cipherText = cryptoSvc.encrypt("Hello, world.", key, iv);
-  do_check_eq(c, 1);
-  cipherText = cryptoSvc.encrypt("Hello, world.", key, iv);
-  do_check_eq(c, 1);
+  Assert.equal(c, 0);
+  let cipherText = await cryptoSvc.encrypt("Hello, world.", key, iv);
+  Assert.equal(c, 1);
+  cipherText = await cryptoSvc.encrypt("Hello, world.", key, iv);
+  Assert.equal(c, 1);
 
   // ... as should decryption.
-  cryptoSvc.decrypt(cipherText, key, iv);
-  cryptoSvc.decrypt(cipherText, key, iv);
-  cryptoSvc.decrypt(cipherText, key, iv);
-  do_check_eq(c, 2);
+  await cryptoSvc.decrypt(cipherText, key, iv);
+  await cryptoSvc.decrypt(cipherText, key, iv);
+  await cryptoSvc.decrypt(cipherText, key, iv);
+  Assert.equal(c, 2);
 
   // Un-swizzle.
   cryptoGlobal.subtle.importKey = oldImport;
 });
 
 // Just verify that it gets populated with the correct bytes.
-add_task(function* test_makeUint8Array() {
-  Components.utils.import("resource://gre/modules/ctypes.jsm");
+add_task(async function test_makeUint8Array() {
+  ChromeUtils.import("resource://gre/modules/ctypes.jsm");
 
   let item1 = cryptoSvc.makeUint8Array("abcdefghi", false);
-  do_check_true(item1);
+  Assert.ok(item1);
   for (let i = 0; i < 8; ++i)
-    do_check_eq(item1[i], "abcdefghi".charCodeAt(i));
+    Assert.equal(item1[i], "abcdefghi".charCodeAt(i));
 });
 
-add_task(function* test_encrypt_decrypt() {
+add_task(async function test_encrypt_decrypt() {
   // First, do a normal run with expected usage... Generate a random key and
   // iv, encrypt and decrypt a string.
   var iv = cryptoSvc.generateRandomIV();
-  do_check_eq(iv.length, 24);
+  Assert.equal(iv.length, 24);
 
-  var key = cryptoSvc.generateRandomKey();
-  do_check_eq(key.length, 44);
+  var key = await cryptoSvc.generateRandomKey();
+  Assert.equal(key.length, 44);
 
   var mySecret = "bacon is a vegetable";
-  var cipherText = cryptoSvc.encrypt(mySecret, key, iv);
-  do_check_eq(cipherText.length, 44);
+  var cipherText = await cryptoSvc.encrypt(mySecret, key, iv);
+  Assert.equal(cipherText.length, 44);
 
-  var clearText = cryptoSvc.decrypt(cipherText, key, iv);
-  do_check_eq(clearText.length, 20);
+  var clearText = await cryptoSvc.decrypt(cipherText, key, iv);
+  Assert.equal(clearText.length, 20);
 
   // Did the text survive the encryption round-trip?
-  do_check_eq(clearText, mySecret);
-  do_check_neq(cipherText, mySecret); // just to be explicit
+  Assert.equal(clearText, mySecret);
+  Assert.notEqual(cipherText, mySecret); // just to be explicit
 
 
   // Do some more tests with a fixed key/iv, to check for reproducable results.
@@ -76,103 +76,103 @@ add_task(function* test_encrypt_decrypt() {
   let shortiv  = "YWJj";
   let err;
   try {
-    cryptoSvc.encrypt(mySecret, key, shortiv);
+    await cryptoSvc.encrypt(mySecret, key, shortiv);
   } catch (ex) {
     err = ex;
   }
-  do_check_true(!!err);
+  Assert.ok(!!err);
 
   _("Testing long IV.");
   let longiv  = "gsgLRDaxWvIfKt75RjuvFWERt83FFsY2A0TW+0b2iVk=";
   try {
-    cryptoSvc.encrypt(mySecret, key, longiv);
+    await cryptoSvc.encrypt(mySecret, key, longiv);
   } catch (ex) {
     err = ex;
   }
-  do_check_true(!!err);
+  Assert.ok(!!err);
 
   // Test small input sizes
   mySecret = "";
-  cipherText = cryptoSvc.encrypt(mySecret, key, iv);
-  clearText = cryptoSvc.decrypt(cipherText, key, iv);
-  do_check_eq(cipherText, "OGQjp6mK1a3fs9k9Ml4L3w==");
-  do_check_eq(clearText, mySecret);
+  cipherText = await cryptoSvc.encrypt(mySecret, key, iv);
+  clearText = await cryptoSvc.decrypt(cipherText, key, iv);
+  Assert.equal(cipherText, "OGQjp6mK1a3fs9k9Ml4L3w==");
+  Assert.equal(clearText, mySecret);
 
   mySecret = "x";
-  cipherText = cryptoSvc.encrypt(mySecret, key, iv);
-  clearText = cryptoSvc.decrypt(cipherText, key, iv);
-  do_check_eq(cipherText, "96iMl4vhOxFUW/lVHHzVqg==");
-  do_check_eq(clearText, mySecret);
+  cipherText = await cryptoSvc.encrypt(mySecret, key, iv);
+  clearText = await cryptoSvc.decrypt(cipherText, key, iv);
+  Assert.equal(cipherText, "96iMl4vhOxFUW/lVHHzVqg==");
+  Assert.equal(clearText, mySecret);
 
   mySecret = "xx";
-  cipherText = cryptoSvc.encrypt(mySecret, key, iv);
-  clearText = cryptoSvc.decrypt(cipherText, key, iv);
-  do_check_eq(cipherText, "olpPbETRYROCSqFWcH2SWg==");
-  do_check_eq(clearText, mySecret);
+  cipherText = await cryptoSvc.encrypt(mySecret, key, iv);
+  clearText = await cryptoSvc.decrypt(cipherText, key, iv);
+  Assert.equal(cipherText, "olpPbETRYROCSqFWcH2SWg==");
+  Assert.equal(clearText, mySecret);
 
   mySecret = "xxx";
-  cipherText = cryptoSvc.encrypt(mySecret, key, iv);
-  clearText = cryptoSvc.decrypt(cipherText, key, iv);
-  do_check_eq(cipherText, "rRbpHGyVSZizLX/x43Wm+Q==");
-  do_check_eq(clearText, mySecret);
+  cipherText = await cryptoSvc.encrypt(mySecret, key, iv);
+  clearText = await cryptoSvc.decrypt(cipherText, key, iv);
+  Assert.equal(cipherText, "rRbpHGyVSZizLX/x43Wm+Q==");
+  Assert.equal(clearText, mySecret);
 
   mySecret = "xxxx";
-  cipherText = cryptoSvc.encrypt(mySecret, key, iv);
-  clearText = cryptoSvc.decrypt(cipherText, key, iv);
-  do_check_eq(cipherText, "HeC7miVGDcpxae9RmiIKAw==");
-  do_check_eq(clearText, mySecret);
+  cipherText = await cryptoSvc.encrypt(mySecret, key, iv);
+  clearText = await cryptoSvc.decrypt(cipherText, key, iv);
+  Assert.equal(cipherText, "HeC7miVGDcpxae9RmiIKAw==");
+  Assert.equal(clearText, mySecret);
 
   // Test non-ascii input
   // ("testuser1" using similar-looking glyphs)
   mySecret = String.fromCharCode(355, 277, 349, 357, 533, 537, 101, 345, 185);
-  cipherText = cryptoSvc.encrypt(mySecret, key, iv);
-  clearText = cryptoSvc.decrypt(cipherText, key, iv);
-  do_check_eq(cipherText, "Pj4ixByXoH3SU3JkOXaEKPgwRAWplAWFLQZkpJd5Kr4=");
-  do_check_eq(clearText, mySecret);
+  cipherText = await cryptoSvc.encrypt(mySecret, key, iv);
+  clearText = await cryptoSvc.decrypt(cipherText, key, iv);
+  Assert.equal(cipherText, "Pj4ixByXoH3SU3JkOXaEKPgwRAWplAWFLQZkpJd5Kr4=");
+  Assert.equal(clearText, mySecret);
 
   // Tests input spanning a block boundary (AES block size is 16 bytes)
   mySecret = "123456789012345";
-  cipherText = cryptoSvc.encrypt(mySecret, key, iv);
-  clearText = cryptoSvc.decrypt(cipherText, key, iv);
-  do_check_eq(cipherText, "e6c5hwphe45/3VN/M0bMUA==");
-  do_check_eq(clearText, mySecret);
+  cipherText = await cryptoSvc.encrypt(mySecret, key, iv);
+  clearText = await cryptoSvc.decrypt(cipherText, key, iv);
+  Assert.equal(cipherText, "e6c5hwphe45/3VN/M0bMUA==");
+  Assert.equal(clearText, mySecret);
 
   mySecret = "1234567890123456";
-  cipherText = cryptoSvc.encrypt(mySecret, key, iv);
-  clearText = cryptoSvc.decrypt(cipherText, key, iv);
-  do_check_eq(cipherText, "V6aaOZw8pWlYkoIHNkhsP1JOIQF87E2vTUvBUQnyV04=");
-  do_check_eq(clearText, mySecret);
+  cipherText = await cryptoSvc.encrypt(mySecret, key, iv);
+  clearText = await cryptoSvc.decrypt(cipherText, key, iv);
+  Assert.equal(cipherText, "V6aaOZw8pWlYkoIHNkhsP1JOIQF87E2vTUvBUQnyV04=");
+  Assert.equal(clearText, mySecret);
 
   mySecret = "12345678901234567";
-  cipherText = cryptoSvc.encrypt(mySecret, key, iv);
-  clearText = cryptoSvc.decrypt(cipherText, key, iv);
-  do_check_eq(cipherText, "V6aaOZw8pWlYkoIHNkhsP5GvxWJ9+GIAS6lXw+5fHTI=");
-  do_check_eq(clearText, mySecret);
+  cipherText = await cryptoSvc.encrypt(mySecret, key, iv);
+  clearText = await cryptoSvc.decrypt(cipherText, key, iv);
+  Assert.equal(cipherText, "V6aaOZw8pWlYkoIHNkhsP5GvxWJ9+GIAS6lXw+5fHTI=");
+  Assert.equal(clearText, mySecret);
 
 
   key = "iz35tuIMq4/H+IYw2KTgow==";
   iv  = "TJYrvva2KxvkM8hvOIvWp3==";
   mySecret = "i like pie";
 
-  cipherText = cryptoSvc.encrypt(mySecret, key, iv);
-  clearText = cryptoSvc.decrypt(cipherText, key, iv);
-  do_check_eq(cipherText, "DLGx8BWqSCLGG7i/xwvvxg==");
-  do_check_eq(clearText, mySecret);
+  cipherText = await cryptoSvc.encrypt(mySecret, key, iv);
+  clearText = await cryptoSvc.decrypt(cipherText, key, iv);
+  Assert.equal(cipherText, "DLGx8BWqSCLGG7i/xwvvxg==");
+  Assert.equal(clearText, mySecret);
 
   key = "c5hG3YG+NC61FFy8NOHQak1ZhMEWO79bwiAfar2euzI=";
   iv  = "gsgLRDaxWvIfKt75RjuvFW==";
   mySecret = "i like pie";
 
-  cipherText = cryptoSvc.encrypt(mySecret, key, iv);
-  clearText = cryptoSvc.decrypt(cipherText, key, iv);
-  do_check_eq(cipherText, "o+ADtdMd8ubzNWurS6jt0Q==");
-  do_check_eq(clearText, mySecret);
+  cipherText = await cryptoSvc.encrypt(mySecret, key, iv);
+  clearText = await cryptoSvc.decrypt(cipherText, key, iv);
+  Assert.equal(cipherText, "o+ADtdMd8ubzNWurS6jt0Q==");
+  Assert.equal(clearText, mySecret);
 
   key = "St1tFCor7vQEJNug/465dQ==";
   iv  = "oLjkfrLIOnK2bDRvW4kXYA==";
   mySecret = "does thunder read testcases?";
-  cipherText = cryptoSvc.encrypt(mySecret, key, iv);
-  do_check_eq(cipherText, "T6fik9Ros+DB2ablH9zZ8FWZ0xm/szSwJjIHZu7sjPs=");
+  cipherText = await cryptoSvc.encrypt(mySecret, key, iv);
+  Assert.equal(cipherText, "T6fik9Ros+DB2ablH9zZ8FWZ0xm/szSwJjIHZu7sjPs=");
 
   var badkey    = "badkeybadkeybadkeybadk==";
   var badiv     = "badivbadivbadivbadivbad=";
@@ -181,33 +181,33 @@ add_task(function* test_encrypt_decrypt() {
 
   try {
     failure = false;
-    clearText = cryptoSvc.decrypt(cipherText, badkey, iv);
+    clearText = await cryptoSvc.decrypt(cipherText, badkey, iv);
   } catch (e) {
     failure = true;
   }
-  do_check_true(failure);
+  Assert.ok(failure);
 
   try {
     failure = false;
-    clearText = cryptoSvc.decrypt(cipherText, key, badiv);
+    clearText = await cryptoSvc.decrypt(cipherText, key, badiv);
   } catch (e) {
     failure = true;
   }
-  do_check_true(failure);
+  Assert.ok(failure);
 
   try {
     failure = false;
-    clearText = cryptoSvc.decrypt(cipherText, badkey, badiv);
+    clearText = await cryptoSvc.decrypt(cipherText, badkey, badiv);
   } catch (e) {
     failure = true;
   }
-  do_check_true(failure);
+  Assert.ok(failure);
 
   try {
     failure = false;
-    clearText = cryptoSvc.decrypt(badcipher, key, iv);
+    clearText = await cryptoSvc.decrypt(badcipher, key, iv);
   } catch (e) {
     failure = true;
   }
-  do_check_true(failure);
+  Assert.ok(failure);
 });

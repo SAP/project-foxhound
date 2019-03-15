@@ -3,13 +3,13 @@
  */
 
 var tempScope = {};
-Components.utils.import("resource://gre/modules/addons/AddonUpdateChecker.jsm", tempScope);
+ChromeUtils.import("resource://gre/modules/addons/AddonUpdateChecker.jsm", tempScope);
 var AddonUpdateChecker = tempScope.AddonUpdateChecker;
 
-const updaterdf = RELATIVE_DIR + "browser_updatessl.rdf";
+const updatejson = RELATIVE_DIR + "browser_updatessl.json";
 const redirect = RELATIVE_DIR + "redirect.sjs?";
 const SUCCESS = 0;
-const DOWNLOAD_ERROR = AddonUpdateChecker.ERROR_DOWNLOAD_ERROR;
+const DOWNLOAD_ERROR = AddonManager.ERROR_DOWNLOAD_ERROR;
 
 const HTTP = "http://example.com/";
 const HTTPS = "https://example.com/";
@@ -31,7 +31,7 @@ var HTTPObserver = {
 
     dump("*** HTTP Activity 0x" + aType.toString(16) + " 0x" + aSubtype.toString(16) +
          " " + aChannel.URI.spec + "\n");
-  }
+  },
 };
 
 function test() {
@@ -78,17 +78,16 @@ function run_update_tests(callback) {
 
     let [mainURL, redirectURL, expectedStatus] = gTests.shift();
     if (redirectURL) {
-      var url = mainURL + redirect + redirectURL + updaterdf;
+      var url = mainURL + redirect + redirectURL + updatejson;
       var message = "Should have seen the right result for an update check redirected from " +
                     mainURL + " to " + redirectURL;
     } else {
-      url = mainURL + updaterdf;
+      url = mainURL + updatejson;
       message = "Should have seen the right result for an update check from " +
                 mainURL;
     }
 
-    AddonUpdateChecker.checkForUpdates("addon1@tests.mozilla.org",
-                                       null, url, {
+    AddonUpdateChecker.checkForUpdates("addon1@tests.mozilla.org", url, {
       onUpdateCheckComplete(updates) {
         is(updates.length, 1, "Should be the right number of results");
         is(SUCCESS, expectedStatus, message);
@@ -100,7 +99,7 @@ function run_update_tests(callback) {
         is(status, expectedStatus, message);
         info("Update test ran in " + (Date.now() - gLast) + "ms");
         run_next_update_test();
-      }
+      },
     });
   }
 
@@ -117,7 +116,7 @@ function addCertOverrides() {
 
 // Runs tests with built-in certificates required and no certificate exceptions.
 add_test(function() {
-  // Tests that a simple update.rdf retrieval works as expected.
+  // Tests that a simple update.json retrieval works as expected.
   add_update_test(HTTP, null, SUCCESS);
   add_update_test(HTTPS, null, DOWNLOAD_ERROR);
   add_update_test(NOCERT, null, DOWNLOAD_ERROR);
@@ -181,7 +180,7 @@ add_test(function() {
 add_test(function() {
   Services.prefs.setBoolPref(PREF_UPDATE_REQUIREBUILTINCERTS, false);
 
-  // Tests that a simple update.rdf retrieval works as expected.
+  // Tests that a simple update.json retrieval works as expected.
   add_update_test(HTTP, null, SUCCESS);
   add_update_test(HTTPS, null, SUCCESS);
   add_update_test(NOCERT, null, DOWNLOAD_ERROR);
@@ -245,7 +244,7 @@ add_test(function() {
   Services.prefs.clearUserPref(PREF_UPDATE_REQUIREBUILTINCERTS);
   addCertOverrides();
 
-  // Tests that a simple update.rdf retrieval works as expected.
+  // Tests that a simple update.json retrieval works as expected.
   add_update_test(HTTP, null, SUCCESS);
   add_update_test(HTTPS, null, DOWNLOAD_ERROR);
   add_update_test(NOCERT, null, DOWNLOAD_ERROR);
@@ -309,7 +308,7 @@ add_test(function() {
 add_test(function() {
   Services.prefs.setBoolPref(PREF_UPDATE_REQUIREBUILTINCERTS, false);
 
-  // Tests that a simple update.rdf retrieval works as expected.
+  // Tests that a simple update.json retrieval works as expected.
   add_update_test(HTTP, null, SUCCESS);
   add_update_test(HTTPS, null, SUCCESS);
   add_update_test(NOCERT, null, SUCCESS);

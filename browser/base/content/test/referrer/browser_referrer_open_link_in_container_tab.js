@@ -27,9 +27,9 @@ function startNewTabTestCase(aTestNumber) {
     let menupopup = menu.menupopup;
     menu.addEventListener("popupshown", function() {
       is(menupopup.nodeType, Node.ELEMENT_NODE, "We have a menupopup.");
-      ok(menupopup.firstChild, "We have a first container entry.");
+      ok(menupopup.firstElementChild, "We have a first container entry.");
 
-      let firstContext = menupopup.firstChild;
+      let firstContext = menupopup.firstElementChild;
       is(firstContext.nodeType, Node.ELEMENT_NODE, "We have a first container entry.");
       ok(firstContext.hasAttribute("data-usercontextid"), "We have a usercontextid value.");
 
@@ -40,7 +40,7 @@ function startNewTabTestCase(aTestNumber) {
       aContextMenu.hidePopup();
     }, {once: true});
 
-    menupopup.showPopup();
+    menupopup.openPopup();
   });
 }
 
@@ -50,7 +50,7 @@ function test() {
   SpecialPowers.pushPrefEnv(
     {set: [["privacy.userContext.enabled", true]]},
     function() {
-      requestLongerTimeout(10);  // slowwww shutdown on e10s
+      requestLongerTimeout(10); // slowwww shutdown on e10s
       startReferrerTest(startNewTabTestCase);
     });
 }

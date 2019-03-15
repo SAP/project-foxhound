@@ -1,3 +1,111 @@
+## [0.26.1] - 2018-10-10
+
+### Fixed
+- Fixed support for finding libraries in `bin` directories on Windows
+
+## [0.26.0] - 2018-10-07
+
+### Changed
+- Added support for finding libraries with version suffixes on Linux when using runtime linking (e.g., `libclang.so.1`)
+
+## [0.25.0] - 2018-10-06
+
+### Changed
+- Added support for versioned libraries on BSDs
+
+## [0.24.0] - 2018-09-15
+
+### Changed
+- Reworked finding of libraries (see `README.md` for details)
+
+### Added
+- Added support for `clang` 7.0.x
+
+## [0.23.0] - 2018-06-16
+
+### Changed
+- Changed `Clang::find` to skip dynamic libraries for an incorrect architecture on Windows
+
+## [0.22.0] - 2018-03-11
+
+### Added
+- Added support for `clang` 6.0.x
+- Bumped `libc` version to `0.2.39`
+- Bumped `libloading` version to `0.5.0`
+
+## [0.21.2] - 2018-02-17
+
+### Changed
+- Added original errors to error messages
+- Added support for searching for libraries in `LD_LIBRARY_PATH` directories
+
+## [0.21.1] - 2017-11-24
+
+### Changed
+- Improved finding of versioned libraries (e.g., `libclang-3.9.so`)
+
+### Fixed
+* Fixed compilation failures on the beta and nightly channels caused by a [compiler bug](https://github.com/KyleMayes/clang-sys/pull/69)
+
+## [0.21.0] - 2017-10-11
+
+### Changed
+* Replaced `bitflags` usage with constants which avoids crashes on 32-bit Linux platforms
+
+## [0.20.1] - 2017-09-16
+
+### Fixed
+- Fixed static linking
+
+## [0.20.0] - 2017-09-14
+
+### Added
+- Added support for `clang` 5.0.x
+- Added `clang` as a link target of this package
+- Added dummy implementations of `is_loaded` for builds with the `static` Cargo feature enabled
+
+## [0.19.0] - 2017-07-02
+
+### Changed
+- Bumped `bitflags` version to `0.9.1`
+- Added `args` parameter to `Clang::new` function which passes arguments to the Clang executable
+
+## [0.18.0] - 2017-05-16
+
+### Changed
+- Improved finding of versioned libraries (e.g., `libclang.so.3.9`)
+
+## [0.17.0] - 2017-05-08
+
+### Changed
+- Changed storage type of include search paths from `Vec<PathBuf>` to `Option<Vec<PathBuf>>`
+
+## [0.16.0] - 2017-05-02
+
+### Changed
+- Bumped `libloading` version to `0.4.0`
+
+## [0.15.2] - 2017-04-28
+
+### Fixed
+- Fixed finding of `libclang.so.1` on Linux
+
+## [0.15.1] - 2017-03-29
+
+### Fixed
+- Fixed static linking when libraries are in [different directories](https://github.com/KyleMayes/clang-sys/issues/50)
+
+## [0.15.0] - 2017-03-13
+
+### Added
+- Added support for `clang` 4.0.x
+
+### Changed
+- Changed functions in the `Functions` struct to be `unsafe` (`runtime` feature only)
+- Changed `Clang::find` method to ignore directories and non-executable files
+- Changed `Clang::find` to skip dynamic libraries for an incorrect architecture on FreeBSD and Linux
+- Bumped `bitflags` version to `0.7.0`
+
 ## [0.14.0] - 2017-01-30
 
 ### Changed

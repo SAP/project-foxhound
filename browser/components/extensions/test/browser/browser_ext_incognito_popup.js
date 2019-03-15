@@ -2,7 +2,7 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-add_task(function* testIncognitoPopup() {
+add_task(async function testIncognitoPopup() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       "permissions": ["tabs"],
@@ -102,7 +102,36 @@ add_task(function* testIncognitoPopup() {
     clickPageAction(extension, Services.wm.getMostRecentWindow("navigator:browser"));
   });
 
-  yield extension.startup();
-  yield extension.awaitFinish("incognito");
-  yield extension.unload();
+  await extension.startup();
+  await extension.awaitFinish("incognito");
+  await extension.unload();
+});
+
+add_task(async function test_pageAction_incognito_not_allowed() {
+  const URL = "http://example.com/";
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      "permissions": ["*://example.com/*"],
+      "page_action": {
+        "show_matches": ["<all_urls>"],
+        "pinned": true,
+      },
+    },
+    incognitoOverride: "not_allowed",
+  });
+
+  await extension.startup();
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, URL, true, true);
+  let privateWindow = await BrowserTestUtils.openNewBrowserWindow({private: true});
+  await BrowserTestUtils.openNewForegroundTab(privateWindow.gBrowser, URL, true, true);
+
+  let elem = await getPageActionButton(extension, window);
+  ok(elem, "pageAction button state correct in non-PB");
+
+  elem = await getPageActionButton(extension, privateWindow);
+  ok(!elem, "pageAction button state correct in private window");
+
+  BrowserTestUtils.removeTab(tab);
+  await BrowserTestUtils.closeWindow(privateWindow);
+  await extension.unload();
 });

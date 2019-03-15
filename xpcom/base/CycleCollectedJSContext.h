@@ -4,115 +4,48 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_CycleCollectedJSContext_h__
-#define mozilla_CycleCollectedJSContext_h__
+#ifndef mozilla_CycleCollectedJSContext_h
+#define mozilla_CycleCollectedJSContext_h
 
 #include <queue>
 
 #include "mozilla/DeferredFinalize.h"
+#include "mozilla/LinkedList.h"
 #include "mozilla/mozalloc.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/SegmentedVector.h"
+#include "mozilla/dom/AtomList.h"
 #include "jsapi.h"
-#include "jsfriendapi.h"
+#include "js/Promise.h"
 
+#include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsDataHashtable.h"
-#include "nsHashKeys.h"
 #include "nsTArray.h"
-#include "nsTHashtable.h"
 
 class nsCycleCollectionNoteRootCallback;
-class nsIException;
 class nsIRunnable;
 class nsThread;
 class nsWrapperCache;
 
-namespace js {
-struct Class;
-} // namespace js
-
 namespace mozilla {
+class AutoSlowOperation;
 
-class JSGCThingParticipant: public nsCycleCollectionParticipant
-{
-public:
-  constexpr JSGCThingParticipant()
-    : nsCycleCollectionParticipant(false) {}
+class CycleCollectedJSRuntime;
 
-  NS_IMETHOD_(void) Root(void*) override
-  {
-    MOZ_ASSERT(false, "Don't call Root on GC things");
-  }
-
-  NS_IMETHOD_(void) Unlink(void*) override
-  {
-    MOZ_ASSERT(false, "Don't call Unlink on GC things, as they may be dead");
-  }
-
-  NS_IMETHOD_(void) Unroot(void*) override
-  {
-    MOZ_ASSERT(false, "Don't call Unroot on GC things, as they may be dead");
-  }
-
-  NS_IMETHOD_(void) DeleteCycleCollectable(void* aPtr) override
-  {
-    MOZ_ASSERT(false, "Can't directly delete a cycle collectable GC thing");
-  }
-
-  NS_IMETHOD TraverseNative(void* aPtr, nsCycleCollectionTraversalCallback& aCb)
-    override;
-
-  NS_DECL_CYCLE_COLLECTION_CLASS_NAME_METHOD(JSGCThingParticipant)
-};
-
-class JSZoneParticipant : public nsCycleCollectionParticipant
-{
-public:
-  constexpr JSZoneParticipant(): nsCycleCollectionParticipant(false)
-  {
-  }
-
-  NS_IMETHOD_(void) Root(void*) override
-  {
-    MOZ_ASSERT(false, "Don't call Root on GC things");
-  }
-
-  NS_IMETHOD_(void) Unlink(void*) override
-  {
-    MOZ_ASSERT(false, "Don't call Unlink on GC things, as they may be dead");
-  }
-
-  NS_IMETHOD_(void) Unroot(void*) override
-  {
-    MOZ_ASSERT(false, "Don't call Unroot on GC things, as they may be dead");
-  }
-
-  NS_IMETHOD_(void) DeleteCycleCollectable(void*) override
-  {
-    MOZ_ASSERT(false, "Can't directly delete a cycle collectable GC thing");
-  }
-
-  NS_IMETHOD TraverseNative(void* aPtr, nsCycleCollectionTraversalCallback& aCb)
-    override;
-
-  NS_DECL_CYCLE_COLLECTION_CLASS_NAME_METHOD(JSZoneParticipant)
-};
-
-class IncrementalFinalizeRunnable;
+namespace dom {
+class Exception;
+class WorkerJSContext;
+class WorkletJSContext;
+}  // namespace dom
 
 // Contains various stats about the cycle collection.
-struct CycleCollectorResults
-{
-  CycleCollectorResults()
-  {
+struct CycleCollectorResults {
+  CycleCollectorResults() {
     // Initialize here so when we increment mNumSlices the first time we're
     // not using uninitialized memory.
     Init();
   }
 
-  void Init()
-  {
+  void Init() {
     mForcedGC = false;
     mMergedZones = false;
     mAnyManual = false;
@@ -128,7 +61,8 @@ struct CycleCollectorResults
 
   bool mForcedGC;
   bool mMergedZones;
-  bool mAnyManual; // true if any slice of the CC was manually triggered, or at shutdown.
+  // mAnyManual is true if any slice was manually triggered, and at shutdown.
+  bool mAnyManual;
   uint32_t mVisitedRefCounted;
   uint32_t mVisitedGCed;
   uint32_t mFreedRefCounted;
@@ -137,279 +71,147 @@ struct CycleCollectorResults
   uint32_t mNumSlices;
 };
 
+class MicroTaskRunnable {
+ public:
+  MicroTaskRunnable() = default;
+  NS_INLINE_DECL_REFCOUNTING(MicroTaskRunnable)
+  virtual void Run(AutoSlowOperation& aAso) = 0;
+  virtual bool Suppressed() { return false; }
+
+ protected:
+  virtual ~MicroTaskRunnable() = default;
+};
+
 class CycleCollectedJSContext
-{
-  friend class JSGCThingParticipant;
-  friend class JSZoneParticipant;
-  friend class IncrementalFinalizeRunnable;
-protected:
+    : dom::PerThreadAtomCache,
+      public LinkedListElement<CycleCollectedJSContext> {
+  friend class CycleCollectedJSRuntime;
+
+ protected:
   CycleCollectedJSContext();
   virtual ~CycleCollectedJSContext();
 
   MOZ_IS_CLASS_INIT
-  nsresult Initialize(JSRuntime* aParentRuntime,
-                      uint32_t aMaxBytes,
+  nsresult Initialize(JSRuntime* aParentRuntime, uint32_t aMaxBytes,
                       uint32_t aMaxNurseryBytes);
 
+  // See explanation in mIsPrimaryContext.
+  MOZ_IS_CLASS_INIT
+  nsresult InitializeNonPrimary(CycleCollectedJSContext* aPrimaryContext);
+
+  virtual CycleCollectedJSRuntime* CreateRuntime(JSContext* aCx) = 0;
+
   size_t SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
-  void UnmarkSkippableJSHolders();
 
-  virtual void
-  TraverseAdditionalNativeRoots(nsCycleCollectionNoteRootCallback& aCb) {}
-  virtual void TraceAdditionalNativeGrayRoots(JSTracer* aTracer) {}
+ private:
+  MOZ_IS_CLASS_INIT
+  void InitializeCommon();
 
-  virtual void CustomGCCallback(JSGCStatus aStatus) {}
-  virtual void CustomOutOfMemoryCallback() {}
-  virtual void CustomLargeAllocationFailureCallback() {}
-
-  std::queue<nsCOMPtr<nsIRunnable>> mPromiseMicroTaskQueue;
-  std::queue<nsCOMPtr<nsIRunnable>> mDebuggerPromiseMicroTaskQueue;
-
-private:
-  void
-  DescribeGCThing(bool aIsMarked, JS::GCCellPtr aThing,
-                  nsCycleCollectionTraversalCallback& aCb) const;
-
-  virtual bool
-  DescribeCustomObjects(JSObject* aObject, const js::Class* aClasp,
-                        char (&aName)[72]) const
-  {
-    return false; // We did nothing.
-  }
-
-  void
-  NoteGCThingJSChildren(JS::GCCellPtr aThing,
-                        nsCycleCollectionTraversalCallback& aCb) const;
-
-  void
-  NoteGCThingXPCOMChildren(const js::Class* aClasp, JSObject* aObj,
-                           nsCycleCollectionTraversalCallback& aCb) const;
-
-  virtual bool
-  NoteCustomGCThingXPCOMChildren(const js::Class* aClasp, JSObject* aObj,
-                                 nsCycleCollectionTraversalCallback& aCb) const
-  {
-    return false; // We did nothing.
-  }
-
-  enum TraverseSelect {
-    TRAVERSE_CPP,
-    TRAVERSE_FULL
-  };
-
-  void
-  TraverseGCThing(TraverseSelect aTs, JS::GCCellPtr aThing,
-                  nsCycleCollectionTraversalCallback& aCb);
-
-  void
-  TraverseZone(JS::Zone* aZone, nsCycleCollectionTraversalCallback& aCb);
-
-  static void
-  TraverseObjectShim(void* aData, JS::GCCellPtr aThing);
-
-  void TraverseNativeRoots(nsCycleCollectionNoteRootCallback& aCb);
-
-  static void TraceBlackJS(JSTracer* aTracer, void* aData);
-  static void TraceGrayJS(JSTracer* aTracer, void* aData);
-  static void GCCallback(JSContext* aContext, JSGCStatus aStatus, void* aData);
-  static void GCSliceCallback(JSContext* aContext, JS::GCProgress aProgress,
-                              const JS::GCDescription& aDesc);
-  static void GCNurseryCollectionCallback(JSContext* aContext,
-                                          JS::GCNurseryProgress aProgress,
-                                          JS::gcreason::Reason aReason);
-  static void OutOfMemoryCallback(JSContext* aContext, void* aData);
-  static void LargeAllocationFailureCallback(void* aData);
-  /**
-   * Callback for reporting external string memory.
-   */
-  static size_t SizeofExternalStringCallback(JSString* aStr,
-                                             mozilla::MallocSizeOf aMallocSizeOf);
-
-  static bool ContextCallback(JSContext* aCx, unsigned aOperation,
-                              void* aData);
   static JSObject* GetIncumbentGlobalCallback(JSContext* aCx);
   static bool EnqueuePromiseJobCallback(JSContext* aCx,
+                                        JS::HandleObject aPromise,
                                         JS::HandleObject aJob,
                                         JS::HandleObject aAllocationSite,
                                         JS::HandleObject aIncumbentGlobal,
                                         void* aData);
-  static void PromiseRejectionTrackerCallback(JSContext* aCx,
-                                              JS::HandleObject aPromise,
-                                              PromiseRejectionHandlingState state,
-                                              void* aData);
+  static void PromiseRejectionTrackerCallback(
+      JSContext* aCx, JS::HandleObject aPromise,
+      JS::PromiseRejectionHandlingState state, void* aData);
 
-  virtual void TraceNativeBlackRoots(JSTracer* aTracer) { };
-  void TraceNativeGrayRoots(JSTracer* aTracer);
+  void AfterProcessMicrotasks();
 
-  void AfterProcessMicrotask(uint32_t aRecursionDepth);
-public:
+ public:
   void ProcessStableStateQueue();
-private:
-  void ProcessMetastableStateQueue(uint32_t aRecursionDepth);
 
-public:
+ private:
+  void CleanupIDBTransactions(uint32_t aRecursionDepth);
+
+ public:
   enum DeferredFinalizeType {
     FinalizeIncrementally,
     FinalizeNow,
   };
 
-  void FinalizeDeferredThings(DeferredFinalizeType aType);
+  virtual dom::WorkerJSContext* GetAsWorkerJSContext() { return nullptr; }
+  virtual dom::WorkletJSContext* GetAsWorkletJSContext() { return nullptr; }
 
-  // Two conditions, JSOutOfMemory and JSLargeAllocationFailure, are noted in
-  // crash reports. Here are the values that can appear in the reports:
-  enum class OOMState : uint32_t {
-    // The condition has never happened. No entry appears in the crash report.
-    OK,
+  CycleCollectedJSRuntime* Runtime() const {
+    MOZ_ASSERT(mRuntime);
+    return mRuntime;
+  }
 
-    // We are currently reporting the given condition.
-    //
-    // Suppose a crash report contains "JSLargeAllocationFailure:
-    // Reporting". This means we crashed while executing memory-pressure
-    // observers, trying to shake loose some memory. The large allocation in
-    // question did not return null: it is still on the stack. Had we not
-    // crashed, it would have been retried.
-    Reporting,
+  already_AddRefed<dom::Exception> GetPendingException() const;
+  void SetPendingException(dom::Exception* aException);
 
-    // The condition has been reported since the last GC.
-    //
-    // If a crash report contains "JSOutOfMemory: Reported", that means a small
-    // allocation failed, and then we crashed, probably due to buggy
-    // error-handling code that ran after allocation returned null.
-    //
-    // This contrasts with "Reporting" which means that no error-handling code
-    // had executed yet.
-    Reported,
+  std::queue<RefPtr<MicroTaskRunnable>>& GetMicroTaskQueue();
+  std::queue<RefPtr<MicroTaskRunnable>>& GetDebuggerMicroTaskQueue();
 
-    // The condition has happened, but a GC cycle ended since then.
-    //
-    // GC is taken as a proxy for "we've been banging on the heap a good bit
-    // now and haven't crashed; the OOM was probably handled correctly".
-    Recovered
-  };
-
-private:
-  void AnnotateAndSetOutOfMemory(OOMState* aStatePtr, OOMState aNewState);
-  void OnGC(JSGCStatus aStatus);
-  void OnOutOfMemory();
-  void OnLargeAllocationFailure();
-
-public:
-  void AddJSHolder(void* aHolder, nsScriptObjectTracer* aTracer);
-  void RemoveJSHolder(void* aHolder);
-#ifdef DEBUG
-  bool IsJSHolder(void* aHolder);
-  void AssertNoObjectsToTrace(void* aPossibleJSHolder);
-#endif
-
-  already_AddRefed<nsIException> GetPendingException() const;
-  void SetPendingException(nsIException* aException);
-
-  std::queue<nsCOMPtr<nsIRunnable>>& GetPromiseMicroTaskQueue();
-  std::queue<nsCOMPtr<nsIRunnable>>& GetDebuggerPromiseMicroTaskQueue();
-
-  nsCycleCollectionParticipant* GCThingParticipant();
-  nsCycleCollectionParticipant* ZoneParticipant();
-
-  nsresult TraverseRoots(nsCycleCollectionNoteRootCallback& aCb);
-  virtual bool UsefulToMergeZones() const;
-  void FixWeakMappingGrayBits() const;
-  bool AreGCGrayBitsValid() const;
-  void GarbageCollect(uint32_t aReason) const;
-
-  void NurseryWrapperAdded(nsWrapperCache* aCache);
-  void NurseryWrapperPreserved(JSObject* aWrapper);
-  void JSObjectsTenured();
-
-  void DeferredFinalize(DeferredFinalizeAppendFunction aAppendFunc,
-                        DeferredFinalizeFunction aFunc,
-                        void* aThing);
-  void DeferredFinalize(nsISupports* aSupports);
-
-  void DumpJSHeap(FILE* aFile);
-
-  virtual void PrepareForForgetSkippable() = 0;
-  virtual void BeginCycleCollectionCallback() = 0;
-  virtual void EndCycleCollectionCallback(CycleCollectorResults& aResults) = 0;
-  virtual void DispatchDeferredDeletion(bool aContinuation, bool aPurge = false) = 0;
-
-  JSContext* Context() const
-  {
+  JSContext* Context() const {
     MOZ_ASSERT(mJSContext);
     return mJSContext;
   }
 
-  JS::RootingContext* RootingCx() const
-  {
+  JS::RootingContext* RootingCx() const {
     MOZ_ASSERT(mJSContext);
     return JS::RootingContext::get(mJSContext);
   }
 
-  bool MicroTaskCheckpointDisabled() const
-  {
-    return mDisableMicroTaskCheckpoint;
+  void SetTargetedMicroTaskRecursionDepth(uint32_t aDepth) {
+    mTargetedMicroTaskRecursionDepth = aDepth;
   }
 
-  void DisableMicroTaskCheckpoint(bool aDisable)
-  {
-    mDisableMicroTaskCheckpoint = aDisable;
-  }
-
-  class MOZ_RAII AutoDisableMicroTaskCheckpoint
-  {
-    public:
-    AutoDisableMicroTaskCheckpoint()
-    : mCCJSCX(CycleCollectedJSContext::Get())
-    {
-      mOldValue = mCCJSCX->MicroTaskCheckpointDisabled();
-      mCCJSCX->DisableMicroTaskCheckpoint(true);
-    }
-
-    ~AutoDisableMicroTaskCheckpoint()
-    {
-      mCCJSCX->DisableMicroTaskCheckpoint(mOldValue);
-    }
-
-    CycleCollectedJSContext* mCCJSCX;
-    bool mOldValue;
-  };
-
-protected:
+ protected:
   JSContext* MaybeContext() const { return mJSContext; }
 
-public:
+ public:
   // nsThread entrypoints
-  virtual void BeforeProcessTask(bool aMightBlock) { };
+  virtual void BeforeProcessTask(bool aMightBlock);
   virtual void AfterProcessTask(uint32_t aRecursionDepth);
 
-  // microtask processor entry point
-  void AfterProcessMicrotask();
+  // Check whether we need an idle GC task.
+  void IsIdleGCTaskNeeded() const;
 
-  uint32_t RecursionDepth();
+  uint32_t RecursionDepth() const;
 
   // Run in stable state (call through nsContentUtils)
   void RunInStableState(already_AddRefed<nsIRunnable>&& aRunnable);
-  // This isn't in the spec at all yet, but this gets the behavior we want for IDB.
-  // Runs after the current microtask completes.
-  void RunInMetastableState(already_AddRefed<nsIRunnable>&& aRunnable);
+
+  void AddPendingIDBTransaction(already_AddRefed<nsIRunnable>&& aTransaction);
+
+  // Get the CycleCollectedJSContext for a JSContext.
+  // Returns null only if Initialize() has not completed on or during
+  // destruction of the CycleCollectedJSContext.
+  static CycleCollectedJSContext* GetFor(JSContext* aCx);
 
   // Get the current thread's CycleCollectedJSContext.  Returns null if there
   // isn't one.
   static CycleCollectedJSContext* Get();
 
-  // Add aZone to the set of zones waiting for a GC.
-  void AddZoneWaitingForGC(JS::Zone* aZone)
-  {
-    mZonesWaitingForGC.PutEntry(aZone);
+  // Queue an async microtask to the current main or worker thread.
+  virtual void DispatchToMicroTask(
+      already_AddRefed<MicroTaskRunnable> aRunnable);
+
+  // Call EnterMicroTask when you're entering JS execution.
+  // Usually the best way to do this is to use nsAutoMicroTask.
+  void EnterMicroTask() { ++mMicroTaskLevel; }
+
+  void LeaveMicroTask() {
+    if (--mMicroTaskLevel == 0) {
+      PerformMicroTaskCheckPoint();
+    }
   }
 
-  // Prepare any zones for GC that have been passed to AddZoneWaitingForGC()
-  // since the last GC or since the last call to PrepareWaitingZonesForGC(),
-  // whichever was most recent. If there were no such zones, prepare for a
-  // full GC.
-  void PrepareWaitingZonesForGC();
+  bool IsInMicroTask() const { return mMicroTaskLevel != 0; }
 
-  // Queue an async microtask to the current main or worker thread.
-  virtual void DispatchToMicroTask(already_AddRefed<nsIRunnable> aRunnable);
+  uint32_t MicroTaskLevel() const { return mMicroTaskLevel; }
+
+  void SetMicroTaskLevel(uint32_t aLevel) { mMicroTaskLevel = aLevel; }
+
+  bool PerformMicroTaskCheckPoint(bool aForce = false);
+
+  void PerformDebuggerMicroTaskCheckpoint();
+
+  bool IsInStableOrMetaStableState() const { return mDoingStableStates; }
 
   // Storage for watching rejected promises waiting for some client to
   // consume their rejection.
@@ -417,77 +219,71 @@ public:
   // event loop without the rejection being handled.
   // Note that this can contain nullptrs in place of promises removed because
   // they're consumed before it'd be reported.
-  JS::PersistentRooted<JS::GCVector<JSObject*, 0, js::SystemAllocPolicy>> mUncaughtRejections;
+  JS::PersistentRooted<JS::GCVector<JSObject*, 0, js::SystemAllocPolicy>>
+      mUncaughtRejections;
 
   // Promises in this list have previously been reported as rejected
   // (because they were in the above list), but the rejection was handled
   // in the last turn of the event loop.
-  JS::PersistentRooted<JS::GCVector<JSObject*, 0, js::SystemAllocPolicy>> mConsumedRejections;
-  nsTArray<nsCOMPtr<nsISupports /* UncaughtRejectionObserver */ >> mUncaughtRejectionObservers;
+  JS::PersistentRooted<JS::GCVector<JSObject*, 0, js::SystemAllocPolicy>>
+      mConsumedRejections;
+  nsTArray<nsCOMPtr<nsISupports /* UncaughtRejectionObserver */>>
+      mUncaughtRejectionObservers;
 
-private:
-  JSGCThingParticipant mGCThingCycleCollectorGlobal;
+  virtual bool IsSystemCaller() const = 0;
 
-  JSZoneParticipant mJSZoneCycleCollectorGlobal;
+ private:
+  // A primary context owns the mRuntime. Non-main-thread contexts should always
+  // be primary. On the main thread, the primary context should be the first one
+  // created and the last one destroyed. Non-primary contexts are used for
+  // cooperatively scheduled threads.
+  bool mIsPrimaryContext;
+
+  CycleCollectedJSRuntime* mRuntime;
 
   JSContext* mJSContext;
 
-  JS::GCSliceCallback mPrevGCSliceCallback;
-  JS::GCNurseryCollectionCallback mPrevGCNurseryCollectionCallback;
+  nsCOMPtr<dom::Exception> mPendingException;
+  nsThread* mOwningThread;  // Manual refcounting to avoid include hell.
 
-  nsDataHashtable<nsPtrHashKey<void>, nsScriptObjectTracer*> mJSHolders;
-
-  typedef nsDataHashtable<nsFuncPtrHashKey<DeferredFinalizeFunction>, void*>
-    DeferredFinalizerTable;
-  DeferredFinalizerTable mDeferredFinalizerTable;
-
-  RefPtr<IncrementalFinalizeRunnable> mFinalizeRunnable;
-
-  nsCOMPtr<nsIException> mPendingException;
-  nsThread* mOwningThread; // Manual refcounting to avoid include hell.
-
-  struct RunInMetastableStateData
-  {
-    nsCOMPtr<nsIRunnable> mRunnable;
+  struct PendingIDBTransactionData {
+    nsCOMPtr<nsIRunnable> mTransaction;
     uint32_t mRecursionDepth;
   };
 
   nsTArray<nsCOMPtr<nsIRunnable>> mStableStateEvents;
-  nsTArray<RunInMetastableStateData> mMetastableStateEvents;
+  nsTArray<PendingIDBTransactionData> mPendingIDBTransactions;
   uint32_t mBaseRecursionDepth;
   bool mDoingStableStates;
 
-  bool mDisableMicroTaskCheckpoint;
+  // If set to none 0, microtasks will be processed only when recursion depth
+  // is the set value.
+  uint32_t mTargetedMicroTaskRecursionDepth;
 
-  OOMState mOutOfMemoryState;
-  OOMState mLargeAllocationFailureState;
+  uint32_t mMicroTaskLevel;
 
-  static const size_t kSegmentSize = 512;
-  SegmentedVector<nsWrapperCache*, kSegmentSize, InfallibleAllocPolicy>
-    mNurseryObjects;
-  SegmentedVector<JS::PersistentRooted<JSObject*>, kSegmentSize,
-                  InfallibleAllocPolicy>
-    mPreservedNurseryObjects;
+  std::queue<RefPtr<MicroTaskRunnable>> mPendingMicroTaskRunnables;
+  std::queue<RefPtr<MicroTaskRunnable>> mDebuggerMicroTaskQueue;
 
-  nsTHashtable<nsPtrHashKey<JS::Zone>> mZonesWaitingForGC;
-
-  struct EnvironmentPreparer : public js::ScriptEnvironmentPreparer {
-    void invoke(JS::HandleObject scope, Closure& closure) override;
-  };
-  EnvironmentPreparer mEnvironmentPreparer;
+  uint32_t mMicroTaskRecursionDepth;
 };
 
-void TraceScriptHolder(nsISupports* aHolder, JSTracer* aTracer);
+class MOZ_STACK_CLASS nsAutoMicroTask {
+ public:
+  nsAutoMicroTask() {
+    CycleCollectedJSContext* ccjs = CycleCollectedJSContext::Get();
+    if (ccjs) {
+      ccjs->EnterMicroTask();
+    }
+  }
+  ~nsAutoMicroTask() {
+    CycleCollectedJSContext* ccjs = CycleCollectedJSContext::Get();
+    if (ccjs) {
+      ccjs->LeaveMicroTask();
+    }
+  }
+};
 
-// Returns true if the JS::TraceKind is one the cycle collector cares about.
-inline bool AddToCCKind(JS::TraceKind aKind)
-{
-  return aKind == JS::TraceKind::Object || aKind == JS::TraceKind::Script || aKind == JS::TraceKind::Scope;
-}
+}  // namespace mozilla
 
-bool
-GetBuildId(JS::BuildIdCharVector* aBuildID);
-
-} // namespace mozilla
-
-#endif // mozilla_CycleCollectedJSContext_h__
+#endif  // mozilla_CycleCollectedJSContext_h

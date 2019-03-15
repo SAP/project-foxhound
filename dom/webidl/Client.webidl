@@ -13,6 +13,7 @@ interface Client {
   readonly attribute USVString url;
 
   // Remove frameType in bug 1290936
+  [BinaryName="GetFrameType"]
   readonly attribute FrameType frameType;
 
   readonly attribute ClientType type;
@@ -22,11 +23,14 @@ interface Client {
   // readonly attribute boolean reserved;
 
   [Throws]
-  void postMessage(any message, optional sequence<object> transfer = []);
+  void postMessage(any message, sequence<object> transfer);
+  [Throws]
+  void postMessage(any message, optional PostMessageOptions aOptions);
 };
 
 [Exposed=ServiceWorker]
 interface WindowClient : Client {
+  [BinaryName="GetVisibilityState"]
   readonly attribute VisibilityState visibilityState;
   readonly attribute boolean focused;
 

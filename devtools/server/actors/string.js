@@ -6,24 +6,22 @@
 
 var {DebuggerServer} = require("devtools/server/main");
 
-var promise = require("promise");
-
 var protocol = require("devtools/shared/protocol");
 const {longStringSpec} = require("devtools/shared/specs/string");
 
 exports.LongStringActor = protocol.ActorClassWithSpec(longStringSpec, {
-  initialize: function (conn, str) {
+  initialize: function(conn, str) {
     protocol.Actor.prototype.initialize.call(this, conn);
     this.str = str;
     this.short = (this.str.length < DebuggerServer.LONG_STRING_LENGTH);
   },
 
-  destroy: function () {
+  destroy: function() {
     this.str = null;
     protocol.Actor.prototype.destroy.call(this);
   },
 
-  form: function () {
+  form: function() {
     if (this.short) {
       return this.str;
     }
@@ -31,13 +29,13 @@ exports.LongStringActor = protocol.ActorClassWithSpec(longStringSpec, {
       type: "longString",
       actor: this.actorID,
       length: this.str.length,
-      initial: this.str.substring(0, DebuggerServer.LONG_STRING_INITIAL_LENGTH)
+      initial: this.str.substring(0, DebuggerServer.LONG_STRING_INITIAL_LENGTH),
     };
   },
 
-  substring: function (start, end) {
-    return promise.resolve(this.str.substring(start, end));
+  substring: function(start, end) {
+    return Promise.resolve(this.str.substring(start, end));
   },
 
-  release: function () { }
+  release: function() { },
 });

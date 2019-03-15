@@ -38,8 +38,8 @@ const EXPECTED_REQUESTS = [
       status: 200,
       statusText: "OK",
       type: "html",
-      fullMimeType: "text/html; charset=utf-8"
-    }
+      fullMimeType: "text/html; charset=utf-8",
+    },
   },
   {
     method: "GET",
@@ -49,8 +49,8 @@ const EXPECTED_REQUESTS = [
       status: 200,
       statusText: "OK",
       type: "css",
-      fullMimeType: "text/css; charset=utf-8"
-    }
+      fullMimeType: "text/css; charset=utf-8",
+    },
   },
   {
     method: "GET",
@@ -60,8 +60,8 @@ const EXPECTED_REQUESTS = [
       status: 200,
       statusText: "OK",
       type: "js",
-      fullMimeType: "application/javascript; charset=utf-8"
-    }
+      fullMimeType: "application/javascript; charset=utf-8",
+    },
   },
   {
     method: "GET",
@@ -71,8 +71,8 @@ const EXPECTED_REQUESTS = [
       status: 200,
       statusText: "OK",
       type: "woff",
-      fullMimeType: "font/woff"
-    }
+      fullMimeType: "font/woff",
+    },
   },
   {
     method: "GET",
@@ -82,8 +82,8 @@ const EXPECTED_REQUESTS = [
       status: 200,
       statusText: "OK",
       type: "png",
-      fullMimeType: "image/png"
-    }
+      fullMimeType: "image/png",
+    },
   },
   {
     method: "GET",
@@ -93,8 +93,8 @@ const EXPECTED_REQUESTS = [
       status: 200,
       statusText: "OK",
       type: "ogg",
-      fullMimeType: "audio/ogg"
-    }
+      fullMimeType: "audio/ogg",
+    },
   },
   {
     method: "GET",
@@ -104,7 +104,7 @@ const EXPECTED_REQUESTS = [
       status: 200,
       statusText: "OK",
       type: "webm",
-      fullMimeType: "video/webm"
+      fullMimeType: "video/webm",
     },
   },
   {
@@ -115,8 +115,8 @@ const EXPECTED_REQUESTS = [
       status: 200,
       statusText: "OK",
       type: "x-shockwave-flash",
-      fullMimeType: "application/x-shockwave-flash"
-    }
+      fullMimeType: "application/x-shockwave-flash",
+    },
   },
   {
     method: "GET",
@@ -125,78 +125,78 @@ const EXPECTED_REQUESTS = [
       fuzzyUrl: true,
       status: 101,
       statusText: "Switching Protocols",
-    }
-  }
+    },
+  },
 ];
 
-add_task(function* () {
-  let { monitor } = yield initNetMonitor(FILTERING_URL);
+add_task(async function() {
+  const { monitor } = await initNetMonitor(FILTERING_URL);
   info("Starting test... ");
 
   // It seems that this test may be slow on Ubuntu builds running on ec2.
   requestLongerTimeout(2);
 
-  let { document, gStore, windowRequire } = monitor.panelWin;
-  let Actions = windowRequire("devtools/client/netmonitor/actions/index");
-  let {
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
+  const {
     getDisplayedRequests,
     getSelectedRequest,
     getSortedRequests,
-  } = windowRequire("devtools/client/netmonitor/selectors/index");
+  } = windowRequire("devtools/client/netmonitor/src/selectors/index");
 
-  gStore.dispatch(Actions.batchEnable(false));
+  store.dispatch(Actions.batchEnable(false));
 
   let wait = waitForNetworkEvents(monitor, 9);
-  loadCommonFrameScript();
-  yield performRequestsInContent(REQUESTS_WITH_MEDIA_AND_FLASH_AND_WS);
-  yield wait;
+  loadFrameScriptUtils();
+  await performRequestsInContent(REQUESTS_WITH_MEDIA_AND_FLASH_AND_WS);
+  await wait;
 
   EventUtils.sendMouseEvent({ type: "mousedown" },
     document.querySelectorAll(".request-list-item")[0]);
 
-  isnot(getSelectedRequest(gStore.getState()), null,
+  isnot(getSelectedRequest(store.getState()), null,
     "There should be a selected item in the requests menu.");
-  is(getSelectedIndex(gStore.getState()), 0,
+  is(getSelectedIndex(store.getState()), 0,
     "The first item should be selected in the requests menu.");
   is(!!document.querySelector(".network-details-panel"), true,
     "The network details panel should be visible after toggle button was pressed.");
 
   testFilterButtons(monitor, "all");
-  testContents([1, 1, 1, 1, 1, 1, 1, 1, 1]);
+  await testContents([1, 1, 1, 1, 1, 1, 1, 1, 1]);
 
   info("Testing html filtering.");
   EventUtils.sendMouseEvent({ type: "click" },
     document.querySelector(".requests-list-filter-html-button"));
   testFilterButtons(monitor, "html");
-  testContents([1, 0, 0, 0, 0, 0, 0, 0, 0]);
+  await testContents([1, 0, 0, 0, 0, 0, 0, 0, 0]);
 
   info("Performing more requests.");
   wait = waitForNetworkEvents(monitor, 9);
-  yield performRequestsInContent(REQUESTS_WITH_MEDIA_AND_FLASH_AND_WS);
-  yield wait;
+  await performRequestsInContent(REQUESTS_WITH_MEDIA_AND_FLASH_AND_WS);
+  await wait;
 
   info("Testing html filtering again.");
   testFilterButtons(monitor, "html");
-  testContents([1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0]);
+  await testContents([1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0]);
 
   info("Performing more requests.");
   wait = waitForNetworkEvents(monitor, 9);
-  yield performRequestsInContent(REQUESTS_WITH_MEDIA_AND_FLASH_AND_WS);
-  yield wait;
+  await performRequestsInContent(REQUESTS_WITH_MEDIA_AND_FLASH_AND_WS);
+  await wait;
 
   info("Testing html filtering again.");
   testFilterButtons(monitor, "html");
-  testContents([1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,
-                0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0]);
+  await testContents([1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,
+                      0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0]);
 
   info("Resetting filters.");
   EventUtils.sendMouseEvent({ type: "click" },
     document.querySelector(".requests-list-filter-all-button"));
   testFilterButtons(monitor, "all");
-  testContents([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+  await testContents([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
 
-  yield teardown(monitor);
+  await teardown(monitor);
 
   function getSelectedIndex(state) {
     if (!state.requests.selectedId) {
@@ -205,16 +205,24 @@ add_task(function* () {
     return getSortedRequests(state).findIndex(r => r.id === state.requests.selectedId);
   }
 
-  function testContents(visibility) {
-    isnot(getSelectedRequest(gStore.getState()), null,
+  async function testContents(visibility) {
+    const requestItems = document.querySelectorAll(".request-list-item");
+    for (const requestItem of requestItems) {
+      requestItem.scrollIntoView();
+      const requestsListStatus = requestItem.querySelector(".status-code");
+      EventUtils.sendMouseEvent({ type: "mouseover" }, requestsListStatus);
+      await waitUntil(() => requestsListStatus.title);
+    }
+
+    isnot(getSelectedRequest(store.getState()), null,
       "There should still be a selected item after filtering.");
-    is(getSelectedIndex(gStore.getState()), 0,
+    is(getSelectedIndex(store.getState()), 0,
       "The first item should be still selected after filtering.");
     is(!!document.querySelector(".network-details-panel"), true,
       "The network details panel should still be visible after filtering.");
 
-    const items = getSortedRequests(gStore.getState());
-    const visibleItems = getDisplayedRequests(gStore.getState());
+    const items = getSortedRequests(store.getState());
+    const visibleItems = getDisplayedRequests(store.getState());
 
     is(items.size, visibility.length,
       "There should be a specific amount of items in the requests menu.");
@@ -222,21 +230,21 @@ add_task(function* () {
       "There should be a specific amount of visible items in the requests menu.");
 
     for (let i = 0; i < visibility.length; i++) {
-      let itemId = items.get(i).id;
-      let shouldBeVisible = !!visibility[i];
-      let isThere = visibleItems.some(r => r.id == itemId);
+      const itemId = items.get(i).id;
+      const shouldBeVisible = !!visibility[i];
+      const isThere = visibleItems.some(r => r.id == itemId);
       is(isThere, shouldBeVisible,
         `The item at index ${i} has visibility=${shouldBeVisible}`);
     }
 
     for (let i = 0; i < EXPECTED_REQUESTS.length; i++) {
-      let { method, url, data } = EXPECTED_REQUESTS[i];
+      const { method, url, data } = EXPECTED_REQUESTS[i];
       for (let j = i; j < visibility.length; j += EXPECTED_REQUESTS.length) {
         if (visibility[j]) {
           verifyRequestItemTarget(
             document,
-            getDisplayedRequests(gStore.getState()),
-            getSortedRequests(gStore.getState()).get(i),
+            getDisplayedRequests(store.getState()),
+            getSortedRequests(store.getState()).get(i),
             method,
             url,
             data

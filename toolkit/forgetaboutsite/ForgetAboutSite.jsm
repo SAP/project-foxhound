@@ -4,223 +4,38 @@
 
 "use strict";
 
-Components.utils.import("resource://gre/modules/Services.jsm");
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-Components.utils.import("resource://gre/modules/NetUtil.jsm");
-Components.utils.import("resource://gre/modules/Task.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
-                                  "resource://gre/modules/PlacesUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Downloads",
-                                  "resource://gre/modules/Downloads.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-this.EXPORTED_SYMBOLS = ["ForgetAboutSite"];
+var EXPORTED_SYMBOLS = ["ForgetAboutSite"];
 
-/**
- * Returns true if the string passed in is part of the root domain of the
- * current string.  For example, if this is "www.mozilla.org", and we pass in
- * "mozilla.org", this will return true.  It would return false the other way
- * around.
- */
-function hasRootDomain(str, aDomain) {
-  let index = str.indexOf(aDomain);
-  // If aDomain is not found, we know we do not have it as a root domain.
-  if (index == -1)
-    return false;
-
-  // If the strings are the same, we obviously have a match.
-  if (str == aDomain)
-    return true;
-
-  // Otherwise, we have aDomain as our root domain iff the index of aDomain is
-  // aDomain.length subtracted from our length and (since we do not have an
-  // exact match) the character before the index is a dot or slash.
-  let prevChar = str[index - 1];
-  return (index == (str.length - aDomain.length)) &&
-         (prevChar == "." || prevChar == "/");
-}
-
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cu = Components.utils;
-
-this.ForgetAboutSite = {
-  removeDataFromDomain: function CRH_removeDataFromDomain(aDomain) {
-    PlacesUtils.history.removePagesFromHost(aDomain, true);
-
-    // Cache
-    let cs = Cc["@mozilla.org/netwerk/cache-storage-service;1"].
-             getService(Ci.nsICacheStorageService);
-    // NOTE: there is no way to clear just that domain, so we clear out
-    //       everything)
-    try {
-      cs.clear();
-    } catch (ex) {
-      Cu.reportError("Exception thrown while clearing the cache: " +
-        ex.toString());
-    }
-
-    // Image Cache
-    let imageCache = Cc["@mozilla.org/image/tools;1"].
-                     getService(Ci.imgITools).getImgCacheForDocument(null);
-    try {
-      imageCache.clearCache(false); // true=chrome, false=content
-    } catch (ex) {
-      Cu.reportError("Exception thrown while clearing the image cache: " +
-        ex.toString());
-    }
-
-    // Cookies
-    let cm = Cc["@mozilla.org/cookiemanager;1"].
-             getService(Ci.nsICookieManager2);
-    let enumerator = cm.getCookiesWithOriginAttributes(JSON.stringify({}), aDomain);
-    while (enumerator.hasMoreElements()) {
-      let cookie = enumerator.getNext().QueryInterface(Ci.nsICookie);
-      cm.remove(cookie.host, cookie.name, cookie.path, false, cookie.originAttributes);
-    }
-
-    // EME
-    let mps = Cc["@mozilla.org/gecko-media-plugin-service;1"].
-               getService(Ci.mozIGeckoMediaPluginChromeService);
-    mps.forgetThisSite(aDomain, JSON.stringify({}));
-
-    // Plugin data
-    const phInterface = Ci.nsIPluginHost;
-    const FLAG_CLEAR_ALL = phInterface.FLAG_CLEAR_ALL;
-    let ph = Cc["@mozilla.org/plugin/host;1"].getService(phInterface);
-    let tags = ph.getPluginTags();
+var ForgetAboutSite = {
+  async removeDataFromDomain(aDomain) {
     let promises = [];
-    for (let i = 0; i < tags.length; i++) {
-      let promise = new Promise(resolve => {
-        try {
-          ph.clearSiteData(tags[i], aDomain, FLAG_CLEAR_ALL, -1, function(rv) {
-            resolve();
-          });
-        } catch (e) {
-          // Ignore errors from the plugin, but resolve the promise
+    let errorCount = 0;
+
+    ["http://", "https://"].forEach(scheme => {
+      promises.push(new Promise(resolve => {
+        Services.clearData.deleteDataFromHost(aDomain, true /* user request */,
+                                              Ci.nsIClearDataService.CLEAR_FORGET_ABOUT_SITE,
+                                              value => {
+          errorCount += bitCounting(value);
           resolve();
-        }
-      });
-      promises.push(promise);
-    }
-
-    // Downloads
-    Task.spawn(function*() {
-      let list = yield Downloads.getList(Downloads.ALL);
-      list.removeFinished(download => hasRootDomain(
-           NetUtil.newURI(download.source.url).host, aDomain));
-    }).then(null, Cu.reportError);
-
-    // Passwords
-    let lm = Cc["@mozilla.org/login-manager;1"].
-             getService(Ci.nsILoginManager);
-    // Clear all passwords for domain
-    try {
-      let logins = lm.getAllLogins();
-      for (let i = 0; i < logins.length; i++)
-        if (hasRootDomain(logins[i].hostname, aDomain))
-          lm.removeLogin(logins[i]);
-    } catch (ex) {
-      // XXXehsan: is there a better way to do this rather than this
-      // hacky comparison?
-      if (ex.message.indexOf("User canceled Master Password entry") == -1) {
-        throw ex;
-      }
-    }
-
-    // Permissions
-    let pm = Cc["@mozilla.org/permissionmanager;1"].
-             getService(Ci.nsIPermissionManager);
-    // Enumerate all of the permissions, and if one matches, remove it
-    enumerator = pm.enumerator;
-    while (enumerator.hasMoreElements()) {
-      let perm = enumerator.getNext().QueryInterface(Ci.nsIPermission);
-      try {
-        if (hasRootDomain(perm.principal.URI.host, aDomain)) {
-          pm.removePermission(perm);
-        }
-      } catch (e) {
-        /* Ignore entry */
-      }
-    }
-
-    // Offline Storages
-    let qms = Cc["@mozilla.org/dom/quota-manager-service;1"].
-              getService(Ci.nsIQuotaManagerService);
-    // delete data from both HTTP and HTTPS sites
-    let caUtils = {};
-    let scriptLoader = Cc["@mozilla.org/moz/jssubscript-loader;1"].
-                       getService(Ci.mozIJSSubScriptLoader);
-    scriptLoader.loadSubScript("chrome://global/content/contentAreaUtils.js",
-                               caUtils);
-    let httpURI = caUtils.makeURI("http://" + aDomain);
-    let httpsURI = caUtils.makeURI("https://" + aDomain);
-    // Following code section has been reverted to the state before Bug 1238183,
-    // but added a new argument to clearStoragesForPrincipal() for indicating
-    // clear all storages under a given origin.
-    let httpPrincipal = Services.scriptSecurityManager
-                                .createCodebasePrincipal(httpURI, {});
-    let httpsPrincipal = Services.scriptSecurityManager
-                                 .createCodebasePrincipal(httpsURI, {});
-    qms.clearStoragesForPrincipal(httpPrincipal, null, true);
-    qms.clearStoragesForPrincipal(httpsPrincipal, null, true);
-
-
-    function onContentPrefsRemovalFinished() {
-      // Everybody else (including extensions)
-      Services.obs.notifyObservers(null, "browser:purge-domain-data", aDomain);
-    }
-
-    // Content Preferences
-    let cps2 = Cc["@mozilla.org/content-pref/service;1"].
-               getService(Ci.nsIContentPrefService2);
-    cps2.removeBySubdomain(aDomain, null, {
-      handleCompletion: () => onContentPrefsRemovalFinished(),
-      handleError() {}
+        });
+      }));
     });
 
-    // Predictive network data - like cache, no way to clear this per
-    // domain, so just trash it all
-    let np = Cc["@mozilla.org/network/predictor;1"].
-             getService(Ci.nsINetworkPredictor);
-    np.reset();
+    await Promise.all(promises);
 
-    // Push notifications.
-    promises.push(new Promise((resolve, reject) => {
-      var push = Cc["@mozilla.org/push/Service;1"]
-                  .getService(Ci.nsIPushService);
-      push.clearForDomain(aDomain, status => {
-        (Components.isSuccessCode(status) ? resolve : reject)(status);
-      });
-    }).catch(e => {
-      Cu.reportError("Exception thrown while clearing Push notifications: " +
-                     e.toString());
-    }));
-
-    // HSTS and HPKP
-    try {
-      let sss = Cc["@mozilla.org/ssservice;1"].
-                getService(Ci.nsISiteSecurityService);
-      for (let type of [Ci.nsISiteSecurityService.HEADER_HSTS,
-                        Ci.nsISiteSecurityService.HEADER_HPKP]) {
-        // Also remove HSTS/HPKP information for subdomains by enumerating the
-        // information in the site security service.
-        let enumerator = sss.enumerate(type);
-        while (enumerator.hasMoreElements()) {
-          let entry = enumerator.getNext();
-          let hostname = entry.QueryInterface(Ci.nsISiteSecurityState).hostname;
-          // If the hostname is aDomain's subdomain, we remove its state.
-          if (hostname == aDomain || hostname.endsWith("." + aDomain)) {
-            // This uri is used as a key to remove the state.
-            let uri = caUtils.makeURI("https://" + hostname);
-            sss.removeState(type, uri, 0, entry.originAttributes);
-          }
-        }
-      }
-    } catch (e) {
-      Cu.reportError("Exception thrown while clearing HSTS/HPKP: " +
-                     e.toString());
+    if (errorCount !== 0) {
+      throw new Error(`There were a total of ${errorCount} errors during removal`);
     }
-
-    return Promise.all(promises);
-  }
+  },
 };
+
+function bitCounting(value) {
+  // To know more about how to count bits set to 1 in a numeric value, see this
+  // interesting article:
+  // https://blogs.msdn.microsoft.com/jeuge/2005/06/08/bit-fiddling-3/
+  const count = value - ((value >> 1) & 0o33333333333) - ((value >> 2) & 0o11111111111);
+  return ((count + (count >> 3)) & 0o30707070707) % 63;
+}

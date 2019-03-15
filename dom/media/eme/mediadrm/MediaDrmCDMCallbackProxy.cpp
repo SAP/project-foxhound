@@ -18,70 +18,55 @@
 namespace mozilla {
 
 MediaDrmCDMCallbackProxy::MediaDrmCDMCallbackProxy(CDMProxy* aProxy)
-  : mProxy(aProxy)
-{
+    : mProxy(aProxy) {}
 
-}
-
-void
-MediaDrmCDMCallbackProxy::SetSessionId(uint32_t aToken,
-                                       const nsCString& aSessionId)
-{
+void MediaDrmCDMCallbackProxy::SetSessionId(uint32_t aToken,
+                                            const nsCString& aSessionId) {
   MOZ_ASSERT(NS_IsMainThread());
   mProxy->OnSetSessionId(aToken, NS_ConvertUTF8toUTF16(aSessionId));
 }
 
-void
-MediaDrmCDMCallbackProxy::ResolveLoadSessionPromise(uint32_t aPromiseId,
-                                                    bool aSuccess)
-{
+void MediaDrmCDMCallbackProxy::ResolveLoadSessionPromise(uint32_t aPromiseId,
+                                                         bool aSuccess) {
   MOZ_ASSERT(NS_IsMainThread());
   mProxy->OnResolveLoadSessionPromise(aPromiseId, aSuccess);
 }
 
-void
-MediaDrmCDMCallbackProxy::ResolvePromise(uint32_t aPromiseId)
-{
+void MediaDrmCDMCallbackProxy::ResolvePromise(uint32_t aPromiseId) {
   // Note: CDMProxy proxies this from non-main threads to main thread.
   mProxy->ResolvePromise(aPromiseId);
 }
 
-void
-MediaDrmCDMCallbackProxy::RejectPromise(uint32_t aPromiseId,
-                                        nsresult aException,
-                                        const nsCString& aMessage)
-{
+void MediaDrmCDMCallbackProxy::RejectPromise(uint32_t aPromiseId,
+                                             nsresult aException,
+                                             const nsCString& aMessage) {
   MOZ_ASSERT(NS_IsMainThread());
   mProxy->OnRejectPromise(aPromiseId, aException, aMessage);
 }
 
-void
-MediaDrmCDMCallbackProxy::SessionMessage(const nsCString& aSessionId,
-                                         dom::MediaKeyMessageType aMessageType,
-                                         const nsTArray<uint8_t>& aMessage)
-{
+void MediaDrmCDMCallbackProxy::SessionMessage(
+    const nsCString& aSessionId, dom::MediaKeyMessageType aMessageType,
+    const nsTArray<uint8_t>& aMessage) {
   MOZ_ASSERT(NS_IsMainThread());
   // For removing constness
   nsTArray<uint8_t> message(aMessage);
-  mProxy->OnSessionMessage(NS_ConvertUTF8toUTF16(aSessionId), aMessageType, message);
+  mProxy->OnSessionMessage(NS_ConvertUTF8toUTF16(aSessionId), aMessageType,
+                           message);
 }
 
-void
-MediaDrmCDMCallbackProxy::ExpirationChange(const nsCString& aSessionId,
-                                           UnixTime aExpiryTime)
-{
+void MediaDrmCDMCallbackProxy::ExpirationChange(const nsCString& aSessionId,
+                                                UnixTime aExpiryTime) {
   MOZ_ASSERT(NS_IsMainThread());
   mProxy->OnExpirationChange(NS_ConvertUTF8toUTF16(aSessionId), aExpiryTime);
 }
 
-void
-MediaDrmCDMCallbackProxy::SessionClosed(const nsCString& aSessionId)
-{
+void MediaDrmCDMCallbackProxy::SessionClosed(const nsCString& aSessionId) {
   MOZ_ASSERT(NS_IsMainThread());
   bool keyStatusesChange = false;
   {
-    CDMCaps::AutoLock caps(mProxy->Capabilites());
-    keyStatusesChange = caps.RemoveKeysForSession(NS_ConvertUTF8toUTF16(aSessionId));
+    auto caps = mProxy->Capabilites().Lock();
+    keyStatusesChange =
+        caps->RemoveKeysForSession(NS_ConvertUTF8toUTF16(aSessionId));
   }
   if (keyStatusesChange) {
     mProxy->OnKeyStatusesChange(NS_ConvertUTF8toUTF16(aSessionId));
@@ -89,39 +74,30 @@ MediaDrmCDMCallbackProxy::SessionClosed(const nsCString& aSessionId)
   mProxy->OnSessionClosed(NS_ConvertUTF8toUTF16(aSessionId));
 }
 
-void
-MediaDrmCDMCallbackProxy::SessionError(const nsCString& aSessionId,
-                                       nsresult aException,
-                                       uint32_t aSystemCode,
-                                       const nsCString& aMessage)
-{
+void MediaDrmCDMCallbackProxy::SessionError(const nsCString& aSessionId,
+                                            nsresult aException,
+                                            uint32_t aSystemCode,
+                                            const nsCString& aMessage) {
   MOZ_ASSERT(NS_IsMainThread());
-  mProxy->OnSessionError(NS_ConvertUTF8toUTF16(aSessionId),
-                         aException,
-                         aSystemCode,
-                         NS_ConvertUTF8toUTF16(aMessage));
+  mProxy->OnSessionError(NS_ConvertUTF8toUTF16(aSessionId), aException,
+                         aSystemCode, NS_ConvertUTF8toUTF16(aMessage));
 }
 
-void
-MediaDrmCDMCallbackProxy::BatchedKeyStatusChanged(const nsCString& aSessionId,
-                                                  const nsTArray<CDMKeyInfo>& aKeyInfos)
-{
+void MediaDrmCDMCallbackProxy::BatchedKeyStatusChanged(
+    const nsCString& aSessionId, const nsTArray<CDMKeyInfo>& aKeyInfos) {
   MOZ_ASSERT(NS_IsMainThread());
   BatchedKeyStatusChangedInternal(aSessionId, aKeyInfos);
 }
 
-void
-MediaDrmCDMCallbackProxy::BatchedKeyStatusChangedInternal(const nsCString& aSessionId,
-                                                          const nsTArray<CDMKeyInfo>& aKeyInfos)
-{
+void MediaDrmCDMCallbackProxy::BatchedKeyStatusChangedInternal(
+    const nsCString& aSessionId, const nsTArray<CDMKeyInfo>& aKeyInfos) {
   bool keyStatusesChange = false;
   {
-    CDMCaps::AutoLock caps(mProxy->Capabilites());
+    auto caps = mProxy->Capabilites().Lock();
     for (size_t i = 0; i < aKeyInfos.Length(); i++) {
-      keyStatusesChange |=
-        caps.SetKeyStatus(aKeyInfos[i].mKeyId,
-                          NS_ConvertUTF8toUTF16(aSessionId),
-                          aKeyInfos[i].mStatus);
+      keyStatusesChange |= caps->SetKeyStatus(aKeyInfos[i].mKeyId,
+                                              NS_ConvertUTF8toUTF16(aSessionId),
+                                              aKeyInfos[i].mStatus);
     }
   }
   if (keyStatusesChange) {
@@ -129,12 +105,10 @@ MediaDrmCDMCallbackProxy::BatchedKeyStatusChangedInternal(const nsCString& aSess
   }
 }
 
-void
-MediaDrmCDMCallbackProxy::Decrypted(uint32_t aId,
-                                    DecryptStatus aResult,
-                                    const nsTArray<uint8_t>& aDecryptedData)
-{
+void MediaDrmCDMCallbackProxy::Decrypted(
+    uint32_t aId, DecryptStatus aResult,
+    const nsTArray<uint8_t>& aDecryptedData) {
   MOZ_ASSERT_UNREACHABLE("Fennec could not handle decrypted event");
 }
 
-} // namespace mozilla
+}  // namespace mozilla

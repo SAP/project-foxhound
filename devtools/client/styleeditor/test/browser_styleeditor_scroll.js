@@ -20,17 +20,17 @@ const DOCUMENT_WITH_LONG_SHEET = "data:text/html;charset=UTF-8," +
            '  <link rel="stylesheet" type="text/css" href="' + LONG + '">',
            " </head>",
            " <body>Editor scroll test page</body>",
-           "</html>"
+           "</html>",
           ].join("\n"));
 const LINE_TO_SELECT = 201;
 
-add_task(function* () {
-  let { ui } = yield openStyleEditorForURL(DOCUMENT_WITH_LONG_SHEET);
+add_task(async function() {
+  const { ui } = await openStyleEditorForURL(DOCUMENT_WITH_LONG_SHEET);
 
   is(ui.editors.length, 2, "Two editors present.");
 
-  let simpleEditor = ui.editors[0];
-  let longEditor = ui.editors[1];
+  const simpleEditor = ui.editors[0];
+  const longEditor = ui.editors[1];
 
   info(`Selecting doc_long.css and scrolling to line ${LINE_TO_SELECT}`);
 
@@ -38,35 +38,35 @@ add_task(function* () {
   // position as scrolling occurs after selectStyleSheet resolves but before the
   // event is emitted.
   let selectEventPromise = waitForEditorToBeSelected(longEditor, ui);
-  ui.selectStyleSheet(longEditor.styleSheet, LINE_TO_SELECT);
-  yield selectEventPromise;
+  await ui.selectStyleSheet(longEditor.styleSheet, LINE_TO_SELECT);
+  await selectEventPromise;
 
   info("Checking that the correct line is visible after initial load");
 
-  let { from, to } = longEditor.sourceEditor.getViewport();
+  const { from, to } = longEditor.sourceEditor.getViewport();
   info(`Lines ${from}-${to} are visible (expected ${LINE_TO_SELECT}).`);
 
   ok(from <= LINE_TO_SELECT, "The editor scrolled too much.");
   ok(to >= LINE_TO_SELECT, "The editor scrolled too little.");
 
-  let initialScrollTop = longEditor.sourceEditor.getScrollInfo().top;
+  const initialScrollTop = longEditor.sourceEditor.getScrollInfo().top;
   info(`Storing scrollTop = ${initialScrollTop} for later comparison.`);
 
   info("Selecting the first editor (simple.css)");
-  yield ui.selectStyleSheet(simpleEditor.styleSheet);
+  await ui.selectStyleSheet(simpleEditor.styleSheet);
 
   info("Selecting doc_long.css again.");
   selectEventPromise = waitForEditorToBeSelected(longEditor, ui);
 
   // Can't use ui.selectStyleSheet here as it will scroll the editor back to top
   // and we want to check that the previous scroll position is restored.
-  let summary = yield ui.getEditorSummary(longEditor);
+  const summary = await ui.getEditorSummary(longEditor);
   ui._view.activeSummary = summary;
 
   info("Waiting for doc_long.css to be selected.");
-  yield selectEventPromise;
+  await selectEventPromise;
 
-  let scrollTop = longEditor.sourceEditor.getScrollInfo().top;
+  const scrollTop = longEditor.sourceEditor.getScrollInfo().top;
   is(scrollTop, initialScrollTop,
     "Scroll top was restored after the sheet was selected again.");
 });
@@ -79,13 +79,13 @@ add_task(function* () {
  * @param {StyleEditorUI} ui
  *        The StyleEditorUI the editor belongs to.
  */
-var waitForEditorToBeSelected = Task.async(function* (editor, ui) {
+var waitForEditorToBeSelected = async function(editor, ui) {
   info(`Waiting for ${editor.friendlyName} to be selected.`);
-  let selected = yield ui.once("editor-selected");
+  let selected = await ui.once("editor-selected");
   while (selected != editor) {
     info(`Ignored editor-selected for editor ${editor.friendlyName}.`);
-    selected = yield ui.once("editor-selected");
+    selected = await ui.once("editor-selected");
   }
 
   info(`Got editor-selected for ${editor.friendlyName}.`);
-});
+};

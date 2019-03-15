@@ -14,7 +14,7 @@ function run_test() {
       if (aIID.equals(Ci.nsIObserver) ||
           aIID.equals(Ci.nsISupports))
          return this;
-      throw Components.results.NS_NOINTERFACE;
+      throw Cr.NS_NOINTERFACE;
     },
 
     observe: function observe(aSubject, aTopic, aState) {
@@ -23,6 +23,6 @@ function run_test() {
   }
 
   /* Set the same pref twice.  This shouldn't leak. */
-  pb.addObserver("UserPref.nonexistent.setIntPref", observer, false);
-  pb.addObserver("UserPref.nonexistent.setIntPref", observer, false);
+  pb.addObserver("UserPref.nonexistent.setIntPref", observer);
+  pb.addObserver("UserPref.nonexistent.setIntPref", observer);
 }

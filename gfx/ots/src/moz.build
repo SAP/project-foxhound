@@ -10,51 +10,72 @@ EXPORTS += [
 ]
 
 SOURCES += [
-    # don't unify sources that use a (file-specific) DROP_THIS_TABLE macro
-    'gasp.cc',
+    # needs to be separate because gpos.cc also defines kMaxClassDefValue
     'gdef.cc',
-    'gpos.cc',
-    'gsub.cc',
-    'hdmx.cc',
-    'kern.cc',
-    'ltsh.cc',
-    'math.cc',
-    'vdmx.cc',
-    'vorg.cc',
 ]
 
 UNIFIED_SOURCES += [
+    'avar.cc',
     'cff.cc',
     'cff_type2_charstring.cc',
     'cmap.cc',
+    'cvar.cc',
     'cvt.cc',
+    'feat.cc',
     'fpgm.cc',
+    'fvar.cc',
+    'gasp.cc',
+    'glat.cc',
+    'gloc.cc',
     'glyf.cc',
+    'gpos.cc',
+    'gsub.cc',
+    'gvar.cc',
+    'hdmx.cc',
     'head.cc',
     'hhea.cc',
     'hmtx.cc',
+    'hvar.cc',
+    'kern.cc',
     'layout.cc',
     'loca.cc',
+    'ltsh.cc',
+    'math.cc',
     'maxp.cc',
     'metrics.cc',
+    'mvar.cc',
     'name.cc',
     'os2.cc',
     'ots.cc',
     'post.cc',
     'prep.cc',
+    'sile.cc',
+    'silf.cc',
+    'sill.cc',
+    'stat.cc',
+    'variations.cc',
+    'vdmx.cc',
     'vhea.cc',
     'vmtx.cc',
+    'vorg.cc',
+    'vvar.cc',
 ]
 
 # We allow warnings for third-party code that can be updated from upstream.
-ALLOW_COMPILER_WARNINGS = True
+AllowCompilerWarnings()
 
 FINAL_LIBRARY = 'gkmedias'
 
 DEFINES['PACKAGE_VERSION'] = '"moz"'
 DEFINES['PACKAGE_BUGREPORT'] = '"http://bugzilla.mozilla.org/"'
+DEFINES['OTS_GRAPHITE'] = 1
+DEFINES['OTS_VARIATIONS'] = 1
 
 USE_LIBS += [
     'brotli',
     'woff2',
+]
+
+LOCAL_INCLUDES += [
+    '/modules/woff2/src',
 ]

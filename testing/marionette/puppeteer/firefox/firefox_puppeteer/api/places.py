@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 from collections import namedtuple
 from time import sleep
 
@@ -30,8 +32,9 @@ class Places(BaseLib):
         return self.marionette.execute_async_script("""
           Components.utils.import("resource://gre/modules/PlacesUtils.jsm");
 
-          PlacesUtils.bookmarks.fetch({url: arguments[0]}).then(bm => {
-            marionetteScriptFinished(bm != null);
+          let [url, resolve] = arguments;
+          PlacesUtils.bookmarks.fetch({url}).then(bm => {
+            resolve(bm != null);
           });
         """, script_args=[url])
 
@@ -43,16 +46,17 @@ class Places(BaseLib):
         :returns: List of folder ids
         """
         return self.marionette.execute_async_script("""
+          let [url, resolve] = arguments;
           Components.utils.import("resource://gre/modules/PlacesUtils.jsm");
 
-          let folderGuids = []
+          let folderGuids = [];
 
           function onResult(bm) {
             folderGuids.push(bm.parentGuid);
           }
 
-          PlacesUtils.bookmarks.fetch({url: arguments[0]}, onResult).then(() => {
-            marionetteScriptFinished(folderGuids);
+          PlacesUtils.bookmarks.fetch({url}, onResult).then(() => {
+            resolve(folderGuids);
           });
         """, script_args=[url])
 
@@ -70,6 +74,7 @@ class Places(BaseLib):
     def restore_default_bookmarks(self):
         """Restore the default bookmarks for the current profile."""
         retval = self.marionette.execute_async_script("""
+          let [resolve] = arguments;
           Components.utils.import("resource://gre/modules/BookmarkHTMLUtils.jsm");
 
           // Default bookmarks.html file is stored inside omni.jar,
@@ -77,9 +82,9 @@ class Places(BaseLib):
           let defaultBookmarks = 'chrome://browser/locale/bookmarks.html';
 
           // Trigger the import of the default bookmarks
-          BookmarkHTMLUtils.importFromURL(defaultBookmarks, true)
-                           .then(() => marionetteScriptFinished(true))
-                           .catch(() => marionetteScriptFinished(false));
+          BookmarkHTMLUtils.importFromURL(defaultBookmarks, { replace: true })
+                           .then(() => resolve(true))
+                           .catch(() => resolve(false));
         """, script_timeout=10000)
 
         if not retval:
@@ -109,11 +114,12 @@ class Places(BaseLib):
     def remove_all_history(self):
         """Remove all history items."""
         retval = self.marionette.execute_async_script("""
+            let [resolve] = arguments;
             Components.utils.import("resource://gre/modules/PlacesUtils.jsm");
 
             PlacesUtils.history.clear()
-                       .then(() => marionetteScriptFinished(true))
-                       .catch(() => marionetteScriptFinished(false));
+                       .then(() => resolve(true))
+                       .catch(() => resolve(false));
         """, script_timeout=10000)
 
         if not retval:

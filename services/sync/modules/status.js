@@ -2,20 +2,14 @@
 * License, v. 2.0. If a copy of the MPL was not distributed with this
 * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-this.EXPORTED_SYMBOLS = ["Status"];
+var EXPORTED_SYMBOLS = ["Status"];
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cr = Components.results;
-var Cu = Components.utils;
+ChromeUtils.import("resource://services-sync/constants.js");
+ChromeUtils.import("resource://gre/modules/Log.jsm");
+ChromeUtils.import("resource://services-sync/browserid_identity.js");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-Cu.import("resource://services-sync/constants.js");
-Cu.import("resource://gre/modules/Log.jsm");
-Cu.import("resource://services-sync/browserid_identity.js");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://services-common/async.js");
-
-this.Status = {
+var Status = {
   _log: Log.repository.getLogger("Sync.Status"),
   __authManager: null,
   ready: false,
@@ -25,7 +19,6 @@ this.Status = {
       return this.__authManager;
     }
     this.__authManager = new BrowserIDManager();
-    this.__authManager.initialize();
     return this.__authManager;
   },
 
@@ -66,15 +59,6 @@ this.Status = {
     this.service = code == SYNC_SUCCEEDED ? STATUS_OK : SYNC_FAILED;
   },
 
-  get eol() {
-    let modePref = PREFS_BRANCH + "errorhandler.alert.mode";
-    try {
-      return Services.prefs.getCharPref(modePref) == "hard-eol";
-    } catch (ex) {
-      return false;
-    }
-  },
-
   get engines() {
     return this._engines;
   },
@@ -98,13 +82,12 @@ this.Status = {
   },
 
   checkSetup: function checkSetup() {
-    let result = this._authManager.currentAuthState;
-    if (result == STATUS_OK) {
-      Status.service = result;
-      return result;
+    if (!this._authManager.username) {
+      Status.login = LOGIN_FAILED_NO_USERNAME;
+      Status.service = CLIENT_NOT_CONFIGURED;
+    } else if (Status.login == STATUS_OK) {
+      Status.service = STATUS_OK;
     }
-
-    Status.login = result;
     return Status.service;
   },
 
@@ -116,14 +99,7 @@ this.Status = {
 
   resetSync: function resetSync() {
     // Logger setup.
-    let logPref = PREFS_BRANCH + "log.logger.status";
-    let logLevel = "Trace";
-    try {
-      logLevel = Services.prefs.getCharPref(logPref);
-    } catch (ex) {
-      // Use default.
-    }
-    this._log.level = Log.Level[logLevel];
+    this._log.manageLevelFromPref("services.sync.log.logger.status");
 
     this._log.info("Resetting Status.");
     this.service = STATUS_OK;
@@ -131,7 +107,7 @@ this.Status = {
     this._sync = SYNC_SUCCEEDED;
     this._engines = {};
     this.partial = false;
-  }
+  },
 };
 
 // Initialize various status values.

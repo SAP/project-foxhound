@@ -6,8 +6,8 @@
 //       but don't allow it for cross-origin sub-resources
 //   2 - allow the cross-origin authentication as well.
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var prefs = Cc["@mozilla.org/preferences-service;1"].
               getService(Ci.nsIPrefBranch);
@@ -61,10 +61,10 @@ AuthPrompt.prototype = {
   pass: "guest",
 
   QueryInterface: function authprompt_qi(iid) {
-    if (iid.equals(Components.interfaces.nsISupports) ||
-        iid.equals(Components.interfaces.nsIAuthPrompt))
+    if (iid.equals(Ci.nsISupports) ||
+        iid.equals(Ci.nsIAuthPrompt))
       return this;
-    throw Components.results.NS_ERROR_NO_INTERFACE;
+    throw Cr.NS_ERROR_NO_INTERFACE;
   },
 
   prompt: function(title, text, realm, save, defaultText, result) {
@@ -72,8 +72,8 @@ AuthPrompt.prototype = {
   },
 
   promptUsernameAndPassword: function(title, text, realm, savePW, user, pw) {
-    do_check_true(this.promptExpected,
-                  "Not expected the authentication prompt.");
+    Assert.ok(this.promptExpected,
+              "Not expected the authentication prompt.");
 
     user.value = this.user;
     pw.value = this.pass;
@@ -92,19 +92,19 @@ function Requestor(promptExpected) {
 
 Requestor.prototype = {
   QueryInterface: function(iid) {
-    if (iid.equals(Components.interfaces.nsISupports) ||
-        iid.equals(Components.interfaces.nsIInterfaceRequestor))
+    if (iid.equals(Ci.nsISupports) ||
+        iid.equals(Ci.nsIInterfaceRequestor))
       return this;
-    throw Components.results.NS_ERROR_NO_INTERFACE;
+    throw Cr.NS_ERROR_NO_INTERFACE;
   },
 
   getInterface: function(iid) {
-    if (iid.equals(Components.interfaces.nsIAuthPrompt)) {
+    if (iid.equals(Ci.nsIAuthPrompt)) {
       this.prompter = new AuthPrompt(this.promptExpected);
       return this.prompter;
     }
 
-    throw Components.results.NS_ERROR_NO_INTERFACE;
+    throw Cr.NS_ERROR_NO_INTERFACE;
   },
 
   prompter: null
@@ -127,7 +127,7 @@ function makeChan(loadingUrl, url, contentPolicy) {
     loadingPrincipal: principal,
     securityFlags: Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS,
     contentPolicyType: contentPolicy
-  }).QueryInterface(Components.interfaces.nsIHttpChannel);
+  }).QueryInterface(Ci.nsIHttpChannel);
 }
 
 function Test(subresource_http_auth_allow_pref, loadingUri, uri, contentPolicy,
@@ -152,19 +152,19 @@ Test.prototype = {
         do_throw("Channel should have a success code!");
       }
 
-      if (!(request instanceof Components.interfaces.nsIHttpChannel)) {
+      if (!(request instanceof Ci.nsIHttpChannel)) {
         do_throw("Expecting an HTTP channel");
       }
 
-      do_check_eq(request.responseStatus, this._expectedCode);
+      Assert.equal(request.responseStatus, this._expectedCode);
       // The request should be succeeded iff we expect 200
-      do_check_eq(request.requestSucceeded, this._expectedCode == 200);
+      Assert.equal(request.requestSucceeded, this._expectedCode == 200);
 
     } catch (e) {
       do_throw("Unexpected exception: " + e);
     }
 
-    throw Components.results.NS_ERROR_ABORT;
+    throw Cr.NS_ERROR_ABORT;
   },
 
   onDataAvailable: function(request, context, stream, offset, count) {
@@ -172,12 +172,12 @@ Test.prototype = {
   },
 
   onStopRequest: function(request, ctx, status) {
-    do_check_eq(status, Components.results.NS_ERROR_ABORT);
+    Assert.equal(status, Cr.NS_ERROR_ABORT);
 
     // Clear the auth cache.
-    Components.classes["@mozilla.org/network/http-auth-manager;1"]
-              .getService(Components.interfaces.nsIHttpAuthManager)
-              .clearAll();
+    Cc["@mozilla.org/network/http-auth-manager;1"]
+      .getService(Ci.nsIHttpAuthManager)
+      .clearAll();
 
     do_timeout(0, run_next_test);
   },

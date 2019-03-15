@@ -16,20 +16,17 @@
 
 class nsIWidget;
 
-class AsyncColorChooser :
-  public mozilla::Runnable
-{
-public:
-  AsyncColorChooser(COLORREF aInitialColor,
-                    nsIWidget* aParentWidget,
+class AsyncColorChooser : public mozilla::Runnable {
+ public:
+  AsyncColorChooser(COLORREF aInitialColor, nsIWidget* aParentWidget,
                     nsIColorPickerShownCallback* aCallback);
   NS_IMETHOD Run() override;
 
-private:
+ private:
   void Update(COLORREF aColor);
 
-  static UINT_PTR CALLBACK HookProc(HWND aDialog, UINT aMsg,
-                                    WPARAM aWParam, LPARAM aLParam);
+  static UINT_PTR CALLBACK HookProc(HWND aDialog, UINT aMsg, WPARAM aWParam,
+                                    LPARAM aLParam);
 
   COLORREF mInitialColor;
   COLORREF mColor;
@@ -37,23 +34,21 @@ private:
   nsCOMPtr<nsIColorPickerShownCallback> mCallback;
 };
 
-class nsColorPicker :
-  public nsIColorPicker
-{
+class nsColorPicker : public nsIColorPicker {
   virtual ~nsColorPicker();
 
-public:
+ public:
   nsColorPicker();
 
   NS_DECL_ISUPPORTS
 
   NS_IMETHOD Init(mozIDOMWindowProxy* parent, const nsAString& title,
                   const nsAString& aInitialColor);
-  NS_IMETHOD Open(nsIColorPickerShownCallback* aCallback);
+  NS_IMETHOD Open(nsIColorPickerShownCallback* aCallback) override;
 
-private:
+ private:
   COLORREF mInitialColor;
   nsCOMPtr<nsIWidget> mParentWidget;
 };
 
-#endif // nsColorPicker_h__
+#endif  // nsColorPicker_h__

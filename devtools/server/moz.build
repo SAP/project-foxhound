@@ -9,37 +9,19 @@ include('../templates.mozbuild')
 DIRS += [
     'actors',
     'performance',
-    'shims',
+    'socket',
+    'startup',
 ]
 
-BROWSER_CHROME_MANIFESTS += ['tests/browser/browser.ini']
+if CONFIG['MOZ_BUILD_APP'] != 'mobile/android':
+    BROWSER_CHROME_MANIFESTS += ['tests/browser/browser.ini']
+
 MOCHITEST_CHROME_MANIFESTS += ['tests/mochitest/chrome.ini']
 XPCSHELL_TESTS_MANIFESTS += ['tests/unit/xpcshell.ini']
 
-XPIDL_SOURCES += [
-    'nsIJSInspector.idl',
-]
-
-XPIDL_MODULE = 'jsinspector'
-
-SOURCES += [
-    'nsJSInspector.cpp',
-]
-
-FINAL_LIBRARY = 'xul'
-
 DevToolsModules(
-    'child.js',
-    'content-globals.js',
-    'content-server.jsm',
-    'css-logic.js',
-    'event-parsers.js',
     'main.js',
-    'primitive.js',
-    'service-worker-child.js',
-    'websocket-server.js',
-    'worker.js'
 )
 
 with Files('**'):
-    BUG_COMPONENT = ('Firefox', 'Developer Tools')
+    BUG_COMPONENT = ('DevTools', 'General')

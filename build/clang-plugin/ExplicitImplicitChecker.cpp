@@ -5,17 +5,17 @@
 #include "ExplicitImplicitChecker.h"
 #include "CustomMatchers.h"
 
-void ExplicitImplicitChecker::registerMatchers(MatchFinder* AstMatcher) {
-  AstMatcher->addMatcher(cxxConstructorDecl(isInterestingImplicitCtor(),
-                                            ofClass(allOf(isConcreteClass(),
-                                                          decl().bind("class"))),
-                                            unless(isMarkedImplicit()))
-                            .bind("ctor"),
-                        this);
+void ExplicitImplicitChecker::registerMatchers(MatchFinder *AstMatcher) {
+  AstMatcher->addMatcher(
+      cxxConstructorDecl(
+          isInterestingImplicitCtor(),
+          ofClass(allOf(isConcreteClass(), decl().bind("class"))),
+          unless(isMarkedImplicit()))
+          .bind("ctor"),
+      this);
 }
 
-void ExplicitImplicitChecker::check(
-    const MatchFinder::MatchResult &Result) {
+void ExplicitImplicitChecker::check(const MatchFinder::MatchResult &Result) {
   // We've already checked everything in the matcher, so we just have to report
   // the error.
 
@@ -24,8 +24,13 @@ void ExplicitImplicitChecker::check(
   const CXXRecordDecl *Declaration =
       Result.Nodes.getNodeAs<CXXRecordDecl>("class");
 
+  FixItHint FixItHint =
+      FixItHint::CreateInsertion(Ctor->getLocation(), "explicit ");
   diag(Ctor->getLocation(), "bad implicit conversion constructor for %0",
-       DiagnosticIDs::Error) << Declaration->getDeclName();
-  diag(Ctor->getLocation(), "consider adding the explicit keyword to the constructor",
-       DiagnosticIDs::Note);
+       DiagnosticIDs::Error)
+      << Declaration->getDeclName();
+  diag(Ctor->getLocation(),
+       "consider adding the explicit keyword to the constructor",
+       DiagnosticIDs::Note)
+      << FixItHint;
 }

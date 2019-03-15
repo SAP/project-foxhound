@@ -1,8 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Cu.import("resource://gre/modules/TelemetryController.jsm", this);
-Cu.import("resource://gre/modules/AppConstants.jsm", this);
+ChromeUtils.import("resource://gre/modules/TelemetryController.jsm", this);
+ChromeUtils.import("resource://gre/modules/AppConstants.jsm", this);
 
 // We need both in order to capture stacks.
 const ENABLE_TESTS = AppConstants.MOZ_GECKO_PROFILER;
@@ -69,9 +69,9 @@ const TEST_STACK_KEYS = ["TEST-KEY1", "TEST-KEY2"];
  * Ensures that captured stacks appear in pings, if any were captured.
  */
 add_task({
-  skip_if: () => !ENABLE_TESTS
-}, function* test_capturedStacksAppearInPings() {
-  yield TelemetryController.testSetup();
+  skip_if: () => !ENABLE_TESTS,
+}, async function test_capturedStacksAppearInPings() {
+  await TelemetryController.testSetup();
   captureStacks("DOES-NOT-MATTER", false);
 
   let ping = TelemetryController.getCurrentPingData();
@@ -86,8 +86,8 @@ add_task({
  * of captured stacks and adds a new entry to captures.
  */
 add_task({
-  skip_if: () => !ENABLE_TESTS
-}, function* test_CaptureStacksIncreasesNumberOfCapturedStacks() {
+  skip_if: () => !ENABLE_TESTS,
+}, function test_CaptureStacksIncreasesNumberOfCapturedStacks() {
   // Construct a unique key for this test.
   let key = TEST_STACK_KEYS[0] + "-UNIQUE-KEY-1";
 
@@ -114,20 +114,20 @@ add_task({
  * more than once for the key, the length of stacks does not increase.
  */
  add_task({
-   skip_if: () => !ENABLE_TESTS
- }, function* test_CaptureStacksGroupsDuplicateStacks() {
+   skip_if: () => !ENABLE_TESTS,
+ }, function test_CaptureStacksGroupsDuplicateStacks() {
   // Make sure that there are initial captures for TEST_STACK_KEYS[0].
   let stacks = captureStacks(TEST_STACK_KEYS[0], false);
   let original = {
     captures: stacks.captures.find(capture => capture[0] === TEST_STACK_KEYS[0]),
-    stacks: stacks.stacks
+    stacks: stacks.stacks,
   };
 
   // Capture stack and find updated capture stats for TEST_STACK_KEYS[0].
   stacks = captureStacks(TEST_STACK_KEYS[0]);
   let updated = {
     captures: stacks.captures.find(capture => capture[0] === TEST_STACK_KEYS[0]),
-    stacks: stacks.stacks
+    stacks: stacks.stacks,
   };
 
   // The length of captured stacks should remain same.
@@ -145,13 +145,13 @@ add_task({
  * for other keys.
  */
 add_task({
-  skip_if: () => !ENABLE_TESTS
-}, function* test_CaptureStacksSeparatesInformationByKeys() {
+  skip_if: () => !ENABLE_TESTS,
+}, function test_CaptureStacksSeparatesInformationByKeys() {
   // Make sure that there are initial captures for TEST_STACK_KEYS[0].
   let stacks = captureStacks(TEST_STACK_KEYS[0], false);
   let original = {
     captures: stacks.captures.find(capture => capture[0] === TEST_STACK_KEYS[0]),
-    stacks: stacks.stacks
+    stacks: stacks.stacks,
   };
 
   // Capture stack for a new key.
@@ -172,17 +172,16 @@ add_task({
  * Ensure that Telemetry does not allow weird keys.
  */
 add_task({
-  skip_if: () => !ENABLE_TESTS
-}, function* test_CaptureStacksDoesNotAllowBadKey() {
+  skip_if: () => !ENABLE_TESTS,
+}, function test_CaptureStacksDoesNotAllowBadKey() {
   for (let badKey of [null, "KEY-!@\"#$%^&*()_"]) {
     let stacks = captureStacks(badKey);
-    let captureData = stacks.captures.find(capture => capture[0] === badKey)
+    let captureData = stacks.captures.find(capture => capture[0] === badKey);
     Assert.ok(!captureData, `"${badKey}" should not be allowed as a key`);
   }
 });
 
 function run_test() {
   do_get_profile(true);
-  Services.prefs.setBoolPref(PREF_TELEMETRY_ENABLED, true);
   run_next_test();
 }

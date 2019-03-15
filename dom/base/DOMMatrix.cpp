@@ -4,22 +4,27 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/dom/DOMMatrix.h"
+
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/DOMMatrixBinding.h"
+#include "mozilla/dom/DOMPoint.h"
 #include "mozilla/dom/DOMPointBinding.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/ToJSValue.h"
-
-#include "mozilla/dom/DOMPoint.h"
-#include "mozilla/dom/DOMMatrix.h"
-
-#include "SVGTransformListParser.h"
-#include "SVGTransform.h"
+#include "mozilla/ServoCSSParser.h"
+#include "nsGlobalWindowInner.h"
+#include "nsStyleTransformMatrix.h"
+#include "nsGlobalWindowInner.h"
 
 #include <math.h>
 
 namespace mozilla {
 namespace dom {
+
+template <typename T>
+static void SetDataInMatrix(DOMMatrixReadOnly* aMatrix, const T* aData,
+                            int aLength, ErrorResult& aRv);
 
 static const double radPerDegree = 2.0 * M_PI / 360.0;
 
@@ -28,117 +33,123 @@ NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(DOMMatrixReadOnly, mParent)
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(DOMMatrixReadOnly, AddRef)
 NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(DOMMatrixReadOnly, Release)
 
-already_AddRefed<DOMMatrix>
-DOMMatrixReadOnly::Translate(double aTx,
-                             double aTy,
-                             double aTz) const
-{
+JSObject* DOMMatrixReadOnly::WrapObject(JSContext* aCx,
+                                        JS::Handle<JSObject*> aGivenProto) {
+  return DOMMatrixReadOnly_Binding::Wrap(aCx, this, aGivenProto);
+}
+
+already_AddRefed<DOMMatrixReadOnly> DOMMatrixReadOnly::Constructor(
+    const GlobalObject& aGlobal,
+    const Optional<StringOrUnrestrictedDoubleSequence>& aArg,
+    ErrorResult& aRv) {
+  RefPtr<DOMMatrixReadOnly> rval =
+      new DOMMatrixReadOnly(aGlobal.GetAsSupports());
+  if (!aArg.WasPassed()) {
+    return rval.forget();
+  }
+
+  const auto& arg = aArg.Value();
+  if (arg.IsString()) {
+    nsCOMPtr<nsPIDOMWindowInner> win =
+        do_QueryInterface(aGlobal.GetAsSupports());
+    if (!win) {
+      aRv.ThrowTypeError<MSG_ILLEGAL_CONSTRUCTOR>();
+      return nullptr;
+    }
+    rval->SetMatrixValue(arg.GetAsString(), aRv);
+  } else {
+    const auto& sequence = arg.GetAsUnrestrictedDoubleSequence();
+    SetDataInMatrix(rval, sequence.Elements(), sequence.Length(), aRv);
+  }
+
+  return rval.forget();
+}
+
+already_AddRefed<DOMMatrix> DOMMatrixReadOnly::Translate(double aTx, double aTy,
+                                                         double aTz) const {
   RefPtr<DOMMatrix> retval = new DOMMatrix(mParent, *this);
   retval->TranslateSelf(aTx, aTy, aTz);
 
   return retval.forget();
 }
 
-already_AddRefed<DOMMatrix>
-DOMMatrixReadOnly::Scale(double aScale,
-                         double aOriginX,
-                         double aOriginY) const
-{
+already_AddRefed<DOMMatrix> DOMMatrixReadOnly::Scale(double aScale,
+                                                     double aOriginX,
+                                                     double aOriginY) const {
   RefPtr<DOMMatrix> retval = new DOMMatrix(mParent, *this);
   retval->ScaleSelf(aScale, aOriginX, aOriginY);
 
   return retval.forget();
 }
 
-already_AddRefed<DOMMatrix>
-DOMMatrixReadOnly::Scale3d(double aScale,
-                           double aOriginX,
-                           double aOriginY,
-                           double aOriginZ) const
-{
+already_AddRefed<DOMMatrix> DOMMatrixReadOnly::Scale3d(double aScale,
+                                                       double aOriginX,
+                                                       double aOriginY,
+                                                       double aOriginZ) const {
   RefPtr<DOMMatrix> retval = new DOMMatrix(mParent, *this);
   retval->Scale3dSelf(aScale, aOriginX, aOriginY, aOriginZ);
 
   return retval.forget();
 }
 
-already_AddRefed<DOMMatrix>
-DOMMatrixReadOnly::ScaleNonUniform(double aScaleX,
-                                   double aScaleY,
-                                   double aScaleZ,
-                                   double aOriginX,
-                                   double aOriginY,
-                                   double aOriginZ) const
-{
+already_AddRefed<DOMMatrix> DOMMatrixReadOnly::ScaleNonUniform(
+    double aScaleX, double aScaleY, double aScaleZ, double aOriginX,
+    double aOriginY, double aOriginZ) const {
   RefPtr<DOMMatrix> retval = new DOMMatrix(mParent, *this);
-  retval->ScaleNonUniformSelf(aScaleX, aScaleY, aScaleZ, aOriginX, aOriginY, aOriginZ);
+  retval->ScaleNonUniformSelf(aScaleX, aScaleY, aScaleZ, aOriginX, aOriginY,
+                              aOriginZ);
 
   return retval.forget();
 }
 
-already_AddRefed<DOMMatrix>
-DOMMatrixReadOnly::Rotate(double aAngle,
-                          double aOriginX ,
-                          double aOriginY) const
-{
+already_AddRefed<DOMMatrix> DOMMatrixReadOnly::Rotate(double aAngle,
+                                                      double aOriginX,
+                                                      double aOriginY) const {
   RefPtr<DOMMatrix> retval = new DOMMatrix(mParent, *this);
   retval->RotateSelf(aAngle, aOriginX, aOriginY);
 
   return retval.forget();
 }
 
-already_AddRefed<DOMMatrix>
-DOMMatrixReadOnly::RotateFromVector(double x,
-                                    double y) const
-{
+already_AddRefed<DOMMatrix> DOMMatrixReadOnly::RotateFromVector(
+    double x, double y) const {
   RefPtr<DOMMatrix> retval = new DOMMatrix(mParent, *this);
   retval->RotateFromVectorSelf(x, y);
 
   return retval.forget();
 }
 
-already_AddRefed<DOMMatrix>
-DOMMatrixReadOnly::RotateAxisAngle(double aX,
-                                   double aY,
-                                   double aZ,
-                                   double aAngle) const
-{
+already_AddRefed<DOMMatrix> DOMMatrixReadOnly::RotateAxisAngle(
+    double aX, double aY, double aZ, double aAngle) const {
   RefPtr<DOMMatrix> retval = new DOMMatrix(mParent, *this);
   retval->RotateAxisAngleSelf(aX, aY, aZ, aAngle);
 
   return retval.forget();
 }
 
-already_AddRefed<DOMMatrix>
-DOMMatrixReadOnly::SkewX(double aSx) const
-{
+already_AddRefed<DOMMatrix> DOMMatrixReadOnly::SkewX(double aSx) const {
   RefPtr<DOMMatrix> retval = new DOMMatrix(mParent, *this);
   retval->SkewXSelf(aSx);
 
   return retval.forget();
 }
 
-already_AddRefed<DOMMatrix>
-DOMMatrixReadOnly::SkewY(double aSy) const
-{
+already_AddRefed<DOMMatrix> DOMMatrixReadOnly::SkewY(double aSy) const {
   RefPtr<DOMMatrix> retval = new DOMMatrix(mParent, *this);
   retval->SkewYSelf(aSy);
 
   return retval.forget();
 }
 
-already_AddRefed<DOMMatrix>
-DOMMatrixReadOnly::Multiply(const DOMMatrix& other) const
-{
+already_AddRefed<DOMMatrix> DOMMatrixReadOnly::Multiply(
+    const DOMMatrix& other) const {
   RefPtr<DOMMatrix> retval = new DOMMatrix(mParent, *this);
   retval->MultiplySelf(other);
 
   return retval.forget();
 }
 
-already_AddRefed<DOMMatrix>
-DOMMatrixReadOnly::FlipX() const
-{
+already_AddRefed<DOMMatrix> DOMMatrixReadOnly::FlipX() const {
   RefPtr<DOMMatrix> retval = new DOMMatrix(mParent, *this);
   if (mMatrix3D) {
     gfx::Matrix4x4 m;
@@ -153,9 +164,7 @@ DOMMatrixReadOnly::FlipX() const
   return retval.forget();
 }
 
-already_AddRefed<DOMMatrix>
-DOMMatrixReadOnly::FlipY() const
-{
+already_AddRefed<DOMMatrix> DOMMatrixReadOnly::FlipY() const {
   RefPtr<DOMMatrix> retval = new DOMMatrix(mParent, *this);
   if (mMatrix3D) {
     gfx::Matrix4x4 m;
@@ -170,24 +179,16 @@ DOMMatrixReadOnly::FlipY() const
   return retval.forget();
 }
 
-already_AddRefed<DOMMatrix>
-DOMMatrixReadOnly::Inverse() const
-{
+already_AddRefed<DOMMatrix> DOMMatrixReadOnly::Inverse() const {
   RefPtr<DOMMatrix> retval = new DOMMatrix(mParent, *this);
   retval->InvertSelf();
 
   return retval.forget();
 }
 
-bool
-DOMMatrixReadOnly::Is2D() const
-{
-  return !mMatrix3D;
-}
+bool DOMMatrixReadOnly::Is2D() const { return !mMatrix3D; }
 
-bool
-DOMMatrixReadOnly::Identity() const
-{
+bool DOMMatrixReadOnly::IsIdentity() const {
   if (mMatrix3D) {
     return mMatrix3D->IsIdentity();
   }
@@ -195,9 +196,8 @@ DOMMatrixReadOnly::Identity() const
   return mMatrix2D->IsIdentity();
 }
 
-already_AddRefed<DOMPoint>
-DOMMatrixReadOnly::TransformPoint(const DOMPointInit& point) const
-{
+already_AddRefed<DOMPoint> DOMMatrixReadOnly::TransformPoint(
+    const DOMPointInit& point) const {
   RefPtr<DOMPoint> retval = new DOMPoint(mParent);
 
   if (mMatrix3D) {
@@ -243,8 +243,8 @@ DOMMatrixReadOnly::TransformPoint(const DOMPointInit& point) const
   return retval.forget();
 }
 
-template <typename T> void GetDataFromMatrix(const DOMMatrixReadOnly* aMatrix, T* aData)
-{
+template <typename T>
+void GetDataFromMatrix(const DOMMatrixReadOnly* aMatrix, T* aData) {
   aData[0] = static_cast<T>(aMatrix->M11());
   aData[1] = static_cast<T>(aMatrix->M12());
   aData[2] = static_cast<T>(aMatrix->M13());
@@ -263,9 +263,9 @@ template <typename T> void GetDataFromMatrix(const DOMMatrixReadOnly* aMatrix, T
   aData[15] = static_cast<T>(aMatrix->M44());
 }
 
-void
-DOMMatrixReadOnly::ToFloat32Array(JSContext* aCx, JS::MutableHandle<JSObject*> aResult, ErrorResult& aRv) const
-{
+void DOMMatrixReadOnly::ToFloat32Array(JSContext* aCx,
+                                       JS::MutableHandle<JSObject*> aResult,
+                                       ErrorResult& aRv) const {
   AutoTArray<float, 16> arr;
   arr.SetLength(16);
   GetDataFromMatrix(this, arr.Elements());
@@ -277,9 +277,9 @@ DOMMatrixReadOnly::ToFloat32Array(JSContext* aCx, JS::MutableHandle<JSObject*> a
   aResult.set(&value.toObject());
 }
 
-void
-DOMMatrixReadOnly::ToFloat64Array(JSContext* aCx, JS::MutableHandle<JSObject*> aResult, ErrorResult& aRv) const
-{
+void DOMMatrixReadOnly::ToFloat64Array(JSContext* aCx,
+                                       JS::MutableHandle<JSObject*> aResult,
+                                       ErrorResult& aRv) const {
   AutoTArray<double, 16> arr;
   arr.SetLength(16);
   GetDataFromMatrix(this, arr.Elements());
@@ -291,48 +291,95 @@ DOMMatrixReadOnly::ToFloat64Array(JSContext* aCx, JS::MutableHandle<JSObject*> a
   aResult.set(&value.toObject());
 }
 
-void
-DOMMatrixReadOnly::Stringify(nsAString& aResult)
-{
+// Convenient way to append things as floats, not doubles.  We use this because
+// we only want to output about 6 digits of precision for our matrix()
+// functions, to preserve the behavior we used to have when we used
+// AppendPrintf.
+static void AppendFloat(nsAString& aStr, float f) { aStr.AppendFloat(f); }
+
+void DOMMatrixReadOnly::Stringify(nsAString& aResult) {
   nsAutoString matrixStr;
   if (mMatrix3D) {
-    matrixStr.AppendPrintf("matrix3d(%g, %g, %g, %g, %g, %g, %g, %g, %g, %g, %g, %g, %g, %g, %g, %g)",
-      M11(), M12(), M13(), M14(),
-      M21(), M22(), M23(), M24(),
-      M31(), M32(), M33(), M34(),
-      M41(), M42(), M43(), M44());
+    // We can't use AppendPrintf here, because it does locale-specific
+    // formatting of floating-point values.
+    matrixStr.AssignLiteral("matrix3d(");
+    AppendFloat(matrixStr, M11());
+    matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M12());
+    matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M13());
+    matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M14());
+    matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M21());
+    matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M22());
+    matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M23());
+    matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M24());
+    matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M31());
+    matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M32());
+    matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M33());
+    matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M34());
+    matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M41());
+    matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M42());
+    matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M43());
+    matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M44());
+    matrixStr.AppendLiteral(")");
   } else {
-    matrixStr.AppendPrintf("matrix(%g, %g, %g, %g, %g, %g)", A(), B(), C(), D(), E(), F());
+    // We can't use AppendPrintf here, because it does locale-specific
+    // formatting of floating-point values.
+    matrixStr.AssignLiteral("matrix(");
+    AppendFloat(matrixStr, A());
+    matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, B());
+    matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, C());
+    matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, D());
+    matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, E());
+    matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, F());
+    matrixStr.AppendLiteral(")");
   }
 
   aResult = matrixStr;
 }
 
-already_AddRefed<DOMMatrix>
-DOMMatrix::Constructor(const GlobalObject& aGlobal, ErrorResult& aRv)
-{
+already_AddRefed<DOMMatrix> DOMMatrix::Constructor(const GlobalObject& aGlobal,
+                                                   ErrorResult& aRv) {
   RefPtr<DOMMatrix> obj = new DOMMatrix(aGlobal.GetAsSupports());
   return obj.forget();
 }
 
-already_AddRefed<DOMMatrix>
-DOMMatrix::Constructor(const GlobalObject& aGlobal, const nsAString& aTransformList, ErrorResult& aRv)
-{
+already_AddRefed<DOMMatrix> DOMMatrix::Constructor(
+    const GlobalObject& aGlobal, const nsAString& aTransformList,
+    ErrorResult& aRv) {
   RefPtr<DOMMatrix> obj = new DOMMatrix(aGlobal.GetAsSupports());
-
   obj = obj->SetMatrixValue(aTransformList, aRv);
   return obj.forget();
 }
 
-already_AddRefed<DOMMatrix>
-DOMMatrix::Constructor(const GlobalObject& aGlobal, const DOMMatrixReadOnly& aOther, ErrorResult& aRv)
-{
+already_AddRefed<DOMMatrix> DOMMatrix::Constructor(
+    const GlobalObject& aGlobal, const DOMMatrixReadOnly& aOther,
+    ErrorResult& aRv) {
   RefPtr<DOMMatrix> obj = new DOMMatrix(aGlobal.GetAsSupports(), aOther);
   return obj.forget();
 }
 
-template <typename T> void SetDataInMatrix(DOMMatrix* aMatrix, const T* aData, int aLength, ErrorResult& aRv)
-{
+template <typename T>
+static void SetDataInMatrix(DOMMatrixReadOnly* aMatrix, const T* aData,
+                            int aLength, ErrorResult& aRv) {
   if (aLength == 16) {
     aMatrix->SetM11(aData[0]);
     aMatrix->SetM12(aData[1]);
@@ -358,13 +405,15 @@ template <typename T> void SetDataInMatrix(DOMMatrix* aMatrix, const T* aData, i
     aMatrix->SetE(aData[4]);
     aMatrix->SetF(aData[5]);
   } else {
-    aRv.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
+    nsAutoString lengthStr;
+    lengthStr.AppendInt(aLength);
+    aRv.ThrowTypeError<MSG_MATRIX_INIT_LENGTH_WRONG>(lengthStr);
   }
 }
 
-already_AddRefed<DOMMatrix>
-DOMMatrix::Constructor(const GlobalObject& aGlobal, const Float32Array& aArray32, ErrorResult& aRv)
-{
+already_AddRefed<DOMMatrix> DOMMatrix::Constructor(const GlobalObject& aGlobal,
+                                                   const Float32Array& aArray32,
+                                                   ErrorResult& aRv) {
   RefPtr<DOMMatrix> obj = new DOMMatrix(aGlobal.GetAsSupports());
   aArray32.ComputeLengthAndData();
   SetDataInMatrix(obj, aArray32.Data(), aArray32.Length(), aRv);
@@ -372,9 +421,9 @@ DOMMatrix::Constructor(const GlobalObject& aGlobal, const Float32Array& aArray32
   return obj.forget();
 }
 
-already_AddRefed<DOMMatrix>
-DOMMatrix::Constructor(const GlobalObject& aGlobal, const Float64Array& aArray64, ErrorResult& aRv)
-{
+already_AddRefed<DOMMatrix> DOMMatrix::Constructor(const GlobalObject& aGlobal,
+                                                   const Float64Array& aArray64,
+                                                   ErrorResult& aRv) {
   RefPtr<DOMMatrix> obj = new DOMMatrix(aGlobal.GetAsSupports());
   aArray64.ComputeLengthAndData();
   SetDataInMatrix(obj, aArray64.Data(), aArray64.Length(), aRv);
@@ -382,27 +431,25 @@ DOMMatrix::Constructor(const GlobalObject& aGlobal, const Float64Array& aArray64
   return obj.forget();
 }
 
-already_AddRefed<DOMMatrix>
-DOMMatrix::Constructor(const GlobalObject& aGlobal, const Sequence<double>& aNumberSequence, ErrorResult& aRv)
-{
+already_AddRefed<DOMMatrix> DOMMatrix::Constructor(
+    const GlobalObject& aGlobal, const Sequence<double>& aNumberSequence,
+    ErrorResult& aRv) {
   RefPtr<DOMMatrix> obj = new DOMMatrix(aGlobal.GetAsSupports());
-  SetDataInMatrix(obj, aNumberSequence.Elements(), aNumberSequence.Length(), aRv);
+  SetDataInMatrix(obj, aNumberSequence.Elements(), aNumberSequence.Length(),
+                  aRv);
 
   return obj.forget();
 }
 
-void DOMMatrix::Ensure3DMatrix()
-{
+void DOMMatrixReadOnly::Ensure3DMatrix() {
   if (!mMatrix3D) {
     mMatrix3D = new gfx::Matrix4x4(gfx::Matrix4x4::From2D(*mMatrix2D));
     mMatrix2D = nullptr;
   }
 }
 
-DOMMatrix*
-DOMMatrix::MultiplySelf(const DOMMatrix& aOther)
-{
-  if (aOther.Identity()) {
+DOMMatrix* DOMMatrix::MultiplySelf(const DOMMatrix& aOther) {
+  if (aOther.IsIdentity()) {
     return this;
   }
 
@@ -420,10 +467,8 @@ DOMMatrix::MultiplySelf(const DOMMatrix& aOther)
   return this;
 }
 
-DOMMatrix*
-DOMMatrix::PreMultiplySelf(const DOMMatrix& aOther)
-{
-  if (aOther.Identity()) {
+DOMMatrix* DOMMatrix::PreMultiplySelf(const DOMMatrix& aOther) {
+  if (aOther.IsIdentity()) {
     return this;
   }
 
@@ -441,11 +486,7 @@ DOMMatrix::PreMultiplySelf(const DOMMatrix& aOther)
   return this;
 }
 
-DOMMatrix*
-DOMMatrix::TranslateSelf(double aTx,
-                         double aTy,
-                         double aTz)
-{
+DOMMatrix* DOMMatrix::TranslateSelf(double aTx, double aTy, double aTz) {
   if (aTx == 0 && aTy == 0 && aTz == 0) {
     return this;
   }
@@ -460,31 +501,23 @@ DOMMatrix::TranslateSelf(double aTx,
   return this;
 }
 
-DOMMatrix*
-DOMMatrix::ScaleSelf(double aScale, double aOriginX, double aOriginY)
-{
+DOMMatrix* DOMMatrix::ScaleSelf(double aScale, double aOriginX,
+                                double aOriginY) {
   ScaleNonUniformSelf(aScale, aScale, 1.0, aOriginX, aOriginY, 0);
 
   return this;
 }
 
-DOMMatrix*
-DOMMatrix::Scale3dSelf(double aScale, double aOriginX,
-                       double aOriginY, double aOriginZ)
-{
+DOMMatrix* DOMMatrix::Scale3dSelf(double aScale, double aOriginX,
+                                  double aOriginY, double aOriginZ) {
   ScaleNonUniformSelf(aScale, aScale, aScale, aOriginX, aOriginY, aOriginZ);
 
   return this;
 }
 
-DOMMatrix*
-DOMMatrix::ScaleNonUniformSelf(double aScaleX,
-                               double aScaleY,
-                               double aScaleZ,
-                               double aOriginX,
-                               double aOriginY,
-                               double aOriginZ)
-{
+DOMMatrix* DOMMatrix::ScaleNonUniformSelf(double aScaleX, double aScaleY,
+                                          double aScaleZ, double aOriginX,
+                                          double aOriginY, double aOriginZ) {
   if (aScaleX == 1.0 && aScaleY == 1.0 && aScaleZ == 1.0) {
     return this;
   }
@@ -510,9 +543,7 @@ DOMMatrix::ScaleNonUniformSelf(double aScaleX,
   return this;
 }
 
-DOMMatrix*
-DOMMatrix::RotateFromVectorSelf(double aX, double aY)
-{
+DOMMatrix* DOMMatrix::RotateFromVectorSelf(double aX, double aY) {
   if (aX == 0.0 || aY == 0.0) {
     return this;
   }
@@ -522,9 +553,8 @@ DOMMatrix::RotateFromVectorSelf(double aX, double aY)
   return this;
 }
 
-DOMMatrix*
-DOMMatrix::RotateSelf(double aAngle, double aOriginX, double aOriginY)
-{
+DOMMatrix* DOMMatrix::RotateSelf(double aAngle, double aOriginX,
+                                 double aOriginY) {
   if (fmod(aAngle, 360) == 0) {
     return this;
   }
@@ -542,10 +572,8 @@ DOMMatrix::RotateSelf(double aAngle, double aOriginX, double aOriginY)
   return this;
 }
 
-DOMMatrix*
-DOMMatrix::RotateAxisAngleSelf(double aX, double aY,
-                               double aZ, double aAngle)
-{
+DOMMatrix* DOMMatrix::RotateAxisAngleSelf(double aX, double aY, double aZ,
+                                          double aAngle) {
   if (fmod(aAngle, 360) == 0) {
     return this;
   }
@@ -561,9 +589,7 @@ DOMMatrix::RotateAxisAngleSelf(double aX, double aY,
   return this;
 }
 
-DOMMatrix*
-DOMMatrix::SkewXSelf(double aSx)
-{
+DOMMatrix* DOMMatrix::SkewXSelf(double aSx) {
   if (fmod(aSx, 360) == 0) {
     return this;
   }
@@ -581,9 +607,7 @@ DOMMatrix::SkewXSelf(double aSx)
   return this;
 }
 
-DOMMatrix*
-DOMMatrix::SkewYSelf(double aSy)
-{
+DOMMatrix* DOMMatrix::SkewYSelf(double aSy) {
   if (fmod(aSy, 360) == 0) {
     return this;
   }
@@ -601,9 +625,7 @@ DOMMatrix::SkewYSelf(double aSy)
   return this;
 }
 
-DOMMatrix*
-DOMMatrix::InvertSelf()
-{
+DOMMatrix* DOMMatrix::InvertSelf() {
   if (mMatrix3D) {
     if (!mMatrix3D->Invert()) {
       mMatrix3D->SetNAN();
@@ -618,38 +640,49 @@ DOMMatrix::InvertSelf()
   return this;
 }
 
-DOMMatrix*
-DOMMatrix::SetMatrixValue(const nsAString& aTransformList, ErrorResult& aRv)
-{
-  SVGTransformListParser parser(aTransformList);
-  if (!parser.Parse()) {
+DOMMatrixReadOnly* DOMMatrixReadOnly::SetMatrixValue(
+    const nsAString& aTransformList, ErrorResult& aRv) {
+  // An empty string is a no-op.
+  if (aTransformList.IsEmpty()) {
+    return this;
+  }
+
+  gfx::Matrix4x4 transform;
+  bool contains3dTransform = false;
+  if (!ServoCSSParser::ParseTransformIntoMatrix(
+          aTransformList, contains3dTransform, transform.components)) {
     aRv.Throw(NS_ERROR_DOM_SYNTAX_ERR);
-  } else {
+    return nullptr;
+  }
+
+  if (!contains3dTransform) {
     mMatrix3D = nullptr;
     mMatrix2D = new gfx::Matrix();
-    gfxMatrix result;
-    const nsTArray<nsSVGTransform>& mItems = parser.GetTransformList();
 
-    for (uint32_t i = 0; i < mItems.Length(); ++i) {
-      result.PreMultiply(mItems[i].GetMatrix());
-    }
-
-    SetA(result._11);
-    SetB(result._12);
-    SetC(result._21);
-    SetD(result._22);
-    SetE(result._31);
-    SetF(result._32);
+    SetA(transform._11);
+    SetB(transform._12);
+    SetC(transform._21);
+    SetD(transform._22);
+    SetE(transform._41);
+    SetF(transform._42);
+  } else {
+    mMatrix3D = new gfx::Matrix4x4(transform);
+    mMatrix2D = nullptr;
   }
 
   return this;
 }
 
-JSObject*
-DOMMatrix::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return DOMMatrixBinding::Wrap(aCx, this, aGivenProto);
+DOMMatrix* DOMMatrix::SetMatrixValue(const nsAString& aTransformList,
+                                     ErrorResult& aRv) {
+  DOMMatrixReadOnly::SetMatrixValue(aTransformList, aRv);
+  return this;
 }
 
-} // namespace dom
-} // namespace mozilla
+JSObject* DOMMatrix::WrapObject(JSContext* aCx,
+                                JS::Handle<JSObject*> aGivenProto) {
+  return DOMMatrix_Binding::Wrap(aCx, this, aGivenProto);
+}
+
+}  // namespace dom
+}  // namespace mozilla

@@ -15,99 +15,43 @@ NS_IMPL_NS_NEW_HTML_ELEMENT(Div)
 namespace mozilla {
 namespace dom {
 
-HTMLDivElement::~HTMLDivElement()
-{
-}
+HTMLDivElement::~HTMLDivElement() {}
 
 NS_IMPL_ELEMENT_CLONE(HTMLDivElement)
 
-JSObject*
-HTMLDivElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return dom::HTMLDivElementBinding::Wrap(aCx, this, aGivenProto);
+JSObject* HTMLDivElement::WrapNode(JSContext* aCx,
+                                   JS::Handle<JSObject*> aGivenProto) {
+  return dom::HTMLDivElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-bool
-HTMLDivElement::ParseAttribute(int32_t aNamespaceID,
-                               nsIAtom* aAttribute,
-                               const nsAString& aValue,
-                               nsAttrValue& aResult)
-{
-  if (aNamespaceID == kNameSpaceID_None) {
-    if (mNodeInfo->Equals(nsGkAtoms::marquee)) {
-      if ((aAttribute == nsGkAtoms::width) ||
-          (aAttribute == nsGkAtoms::height)) {
-        return aResult.ParseSpecialIntValue(aValue);
-      }
-      if (aAttribute == nsGkAtoms::bgcolor) {
-        return aResult.ParseColor(aValue);
-      }
-      if ((aAttribute == nsGkAtoms::hspace) ||
-          (aAttribute == nsGkAtoms::vspace)) {
-        return aResult.ParseIntWithBounds(aValue, 0);
-      }
-    }
-
-    if (mNodeInfo->Equals(nsGkAtoms::div) &&
-        aAttribute == nsGkAtoms::align) {
-      return ParseDivAlignValue(aValue, aResult);
-    }
+bool HTMLDivElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                                    const nsAString& aValue,
+                                    nsIPrincipal* aMaybeScriptedPrincipal,
+                                    nsAttrValue& aResult) {
+  if (aNamespaceID == kNameSpaceID_None && aAttribute == nsGkAtoms::align) {
+    return ParseDivAlignValue(aValue, aResult);
   }
 
   return nsGenericHTMLElement::ParseAttribute(aNamespaceID, aAttribute, aValue,
-                                              aResult);
+                                              aMaybeScriptedPrincipal, aResult);
 }
 
-void
-HTMLDivElement::MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
-                                      GenericSpecifiedValues* aData)
-{
-  nsGenericHTMLElement::MapDivAlignAttributeInto(aAttributes, aData);
-  nsGenericHTMLElement::MapCommonAttributesInto(aAttributes, aData);
-}
-
-static void
-MapMarqueeAttributesIntoRule(const nsMappedAttributes* aAttributes, GenericSpecifiedValues* aData)
-{
-  nsGenericHTMLElement::MapImageMarginAttributeInto(aAttributes, aData);
-  nsGenericHTMLElement::MapImageSizeAttributesInto(aAttributes, aData);
-  nsGenericHTMLElement::MapCommonAttributesInto(aAttributes, aData);
-  nsGenericHTMLElement::MapBGColorInto(aAttributes, aData);
+void HTMLDivElement::MapAttributesIntoRule(
+    const nsMappedAttributes* aAttributes, MappedDeclarations& aDecls) {
+  nsGenericHTMLElement::MapDivAlignAttributeInto(aAttributes, aDecls);
+  nsGenericHTMLElement::MapCommonAttributesInto(aAttributes, aDecls);
 }
 
 NS_IMETHODIMP_(bool)
-HTMLDivElement::IsAttributeMapped(const nsIAtom* aAttribute) const
-{
-  if (mNodeInfo->Equals(nsGkAtoms::div)) {
-    static const MappedAttributeEntry* const map[] = {
-      sDivAlignAttributeMap,
-      sCommonAttributeMap
-    };
-    return FindAttributeDependence(aAttribute, map);
-  }
-  if (mNodeInfo->Equals(nsGkAtoms::marquee)) {  
-    static const MappedAttributeEntry* const map[] = {
-      sImageMarginSizeAttributeMap,
-      sBackgroundColorAttributeMap,
-      sCommonAttributeMap
-    };
-    return FindAttributeDependence(aAttribute, map);
-  }
-
-  return nsGenericHTMLElement::IsAttributeMapped(aAttribute);
+HTMLDivElement::IsAttributeMapped(const nsAtom* aAttribute) const {
+  static const MappedAttributeEntry* const map[] = {sDivAlignAttributeMap,
+                                                    sCommonAttributeMap};
+  return FindAttributeDependence(aAttribute, map);
 }
 
-nsMapRuleToAttributesFunc
-HTMLDivElement::GetAttributeMappingFunction() const
-{
-  if (mNodeInfo->Equals(nsGkAtoms::div)) {
-    return &MapAttributesIntoRule;
-  }
-  if (mNodeInfo->Equals(nsGkAtoms::marquee)) {
-    return &MapMarqueeAttributesIntoRule;
-  }  
-  return nsGenericHTMLElement::GetAttributeMappingFunction();
+nsMapRuleToAttributesFunc HTMLDivElement::GetAttributeMappingFunction() const {
+  return &MapAttributesIntoRule;
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

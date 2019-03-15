@@ -2,10 +2,8 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-Cu.import("resource://gre/modules/Promise.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "WebChannel",
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.defineModuleGetter(this, "WebChannel",
   "resource://gre/modules/WebChannel.jsm");
 
 const HTTP_PATH = "http://example.com";
@@ -22,7 +20,7 @@ requestLongerTimeout(2); // timeouts in debug builds.
 var gTests = [
   {
     desc: "WebChannel generic message",
-    *run() {
+    run() {
       return new Promise(function(resolve, reject) {
         let tab;
         let channel = new WebChannel("generic", Services.io.newURI(HTTP_PATH));
@@ -34,13 +32,13 @@ var gTests = [
           resolve();
         });
 
-        tab = gBrowser.addTab(HTTP_PATH + HTTP_ENDPOINT + "?generic");
+        tab = BrowserTestUtils.addTab(gBrowser, HTTP_PATH + HTTP_ENDPOINT + "?generic");
       });
-    }
+    },
   },
   {
     desc: "WebChannel generic message in a private window.",
-    *run() {
+    async run() {
       let promiseTestDone = new Promise(function(resolve, reject) {
         let channel = new WebChannel("generic", Services.io.newURI(HTTP_PATH));
         channel.listen(function(id, message, target) {
@@ -52,15 +50,15 @@ var gTests = [
       });
 
       const url = HTTP_PATH + HTTP_ENDPOINT + "?generic";
-      let privateWindow = yield BrowserTestUtils.openNewBrowserWindow({private: true});
-      yield BrowserTestUtils.openNewForegroundTab(privateWindow.gBrowser, url);
-      yield promiseTestDone;
-      yield BrowserTestUtils.closeWindow(privateWindow);
-    }
+      let privateWindow = await BrowserTestUtils.openNewBrowserWindow({private: true});
+      await BrowserTestUtils.openNewForegroundTab(privateWindow.gBrowser, url);
+      await promiseTestDone;
+      await BrowserTestUtils.closeWindow(privateWindow);
+    },
   },
   {
     desc: "WebChannel two way communication",
-    *run() {
+    run() {
       return new Promise(function(resolve, reject) {
         let tab;
         let channel = new WebChannel("twoway", Services.io.newURI(HTTP_PATH));
@@ -81,13 +79,13 @@ var gTests = [
           }
         });
 
-        tab = gBrowser.addTab(HTTP_PATH + HTTP_ENDPOINT + "?twoway");
+        tab = BrowserTestUtils.addTab(gBrowser, HTTP_PATH + HTTP_ENDPOINT + "?twoway");
       });
-    }
+    },
   },
   {
     desc: "WebChannel two way communication in an iframe",
-    *run() {
+    async run() {
       let parentChannel = new WebChannel("echo", Services.io.newURI(HTTP_PATH));
       let iframeChannel = new WebChannel("twoway", Services.io.newURI(HTTP_IFRAME_PATH));
       let promiseTestDone = new Promise(function(resolve, reject) {
@@ -109,19 +107,19 @@ var gTests = [
           }
         });
       });
-      yield BrowserTestUtils.withNewTab({
+      await BrowserTestUtils.withNewTab({
         gBrowser,
-        url: HTTP_PATH + HTTP_ENDPOINT + "?iframe"
-      }, function* () {
-        yield promiseTestDone;
+        url: HTTP_PATH + HTTP_ENDPOINT + "?iframe",
+      }, async function() {
+        await promiseTestDone;
         parentChannel.stopListening();
         iframeChannel.stopListening();
       });
-    }
+    },
   },
   {
     desc: "WebChannel response to a redirected iframe",
-    *run() {
+    async run() {
       /**
        * This test checks that WebChannel responses are only sent
        * to an iframe if the iframe has not redirected to another origin.
@@ -173,19 +171,19 @@ var gTests = [
         });
       });
 
-      yield BrowserTestUtils.withNewTab({
+      await BrowserTestUtils.withNewTab({
         gBrowser,
-        url: HTTP_PATH + HTTP_ENDPOINT + "?iframe_pre_redirect"
-      }, function* () {
-        yield promiseTestDone;
+        url: HTTP_PATH + HTTP_ENDPOINT + "?iframe_pre_redirect",
+      }, async function() {
+        await promiseTestDone;
         preRedirectChannel.stopListening();
         postRedirectChannel.stopListening();
       });
-    }
+    },
   },
   {
     desc: "WebChannel multichannel",
-    *run() {
+    run() {
       return new Promise(function(resolve, reject) {
         let tab;
         let channel = new WebChannel("multichannel", Services.io.newURI(HTTP_PATH));
@@ -196,13 +194,13 @@ var gTests = [
           resolve();
         });
 
-        tab = gBrowser.addTab(HTTP_PATH + HTTP_ENDPOINT + "?multichannel");
+        tab = BrowserTestUtils.addTab(gBrowser, HTTP_PATH + HTTP_ENDPOINT + "?multichannel");
       });
-    }
+    },
   },
   {
     desc: "WebChannel unsolicited send, using system principal",
-    *run() {
+    async run() {
       let channel = new WebChannel("echo", Services.io.newURI(HTTP_PATH));
 
       // an unsolicted message is sent from Chrome->Content which is then
@@ -213,26 +211,26 @@ var gTests = [
           is(id, "echo");
           is(message.command, "unsolicited");
 
-          resolve()
+          resolve();
         });
       });
 
-      yield BrowserTestUtils.withNewTab({
+      await BrowserTestUtils.withNewTab({
         gBrowser,
-        url: HTTP_PATH + HTTP_ENDPOINT + "?unsolicited"
-      }, function* (targetBrowser) {
+        url: HTTP_PATH + HTTP_ENDPOINT + "?unsolicited",
+      }, async function(targetBrowser) {
         channel.send({ command: "unsolicited" }, {
           browser: targetBrowser,
-          principal: Services.scriptSecurityManager.getSystemPrincipal()
+          principal: Services.scriptSecurityManager.getSystemPrincipal(),
         });
-        yield messagePromise;
+        await messagePromise;
         channel.stopListening();
       });
-    }
+    },
   },
   {
     desc: "WebChannel unsolicited send, using target origin's principal",
-    *run() {
+    async run() {
       let targetURI = Services.io.newURI(HTTP_PATH);
       let channel = new WebChannel("echo", targetURI);
 
@@ -248,24 +246,24 @@ var gTests = [
         });
       });
 
-      yield BrowserTestUtils.withNewTab({
+      await BrowserTestUtils.withNewTab({
         gBrowser,
-        url: HTTP_PATH + HTTP_ENDPOINT + "?unsolicited"
-      }, function* (targetBrowser) {
+        url: HTTP_PATH + HTTP_ENDPOINT + "?unsolicited",
+      }, async function(targetBrowser) {
 
         channel.send({ command: "unsolicited" }, {
           browser: targetBrowser,
-          principal: Services.scriptSecurityManager.getNoAppCodebasePrincipal(targetURI)
+          principal: Services.scriptSecurityManager.createCodebasePrincipal(targetURI, {}),
         });
 
-        yield messagePromise;
+        await messagePromise;
         channel.stopListening();
       });
-    }
+    },
   },
   {
     desc: "WebChannel unsolicited send with principal mismatch",
-    *run() {
+    async run() {
       let targetURI = Services.io.newURI(HTTP_PATH);
       let channel = new WebChannel("echo", targetURI);
 
@@ -285,38 +283,38 @@ var gTests = [
         });
       });
 
-      yield BrowserTestUtils.withNewTab({
+      await BrowserTestUtils.withNewTab({
         gBrowser,
-        url: HTTP_PATH + HTTP_ENDPOINT + "?unsolicited"
-      }, function* (targetBrowser) {
+        url: HTTP_PATH + HTTP_ENDPOINT + "?unsolicited",
+      }, async function(targetBrowser) {
 
         let mismatchURI = Services.io.newURI(HTTP_MISMATCH_PATH);
-        let mismatchPrincipal = Services.scriptSecurityManager.getNoAppCodebasePrincipal(mismatchURI);
+        let mismatchPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(mismatchURI, {});
 
         // send a message to the wrong principal. It should not be delivered
         // to content, and should not be echoed back.
         channel.send({ command: "unsolicited_no_response_expected" }, {
           browser: targetBrowser,
-          principal: mismatchPrincipal
+          principal: mismatchPrincipal,
         });
 
-        let targetPrincipal = Services.scriptSecurityManager.getNoAppCodebasePrincipal(targetURI);
+        let targetPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(targetURI, {});
 
         // send the `done` message to the correct principal. It
         // should be echoed back.
         channel.send({ command: "done" }, {
           browser: targetBrowser,
-          principal: targetPrincipal
+          principal: targetPrincipal,
         });
 
-        yield messagePromise;
+        await messagePromise;
         channel.stopListening();
       });
-    }
+    },
   },
   {
     desc: "WebChannel non-window target",
-    *run() {
+    async run() {
       /**
        * This test ensures messages can be received from and responses
        * sent to non-window elements.
@@ -341,18 +339,18 @@ var gTests = [
         });
       });
 
-      yield BrowserTestUtils.withNewTab({
+      await BrowserTestUtils.withNewTab({
         gBrowser,
-        url: HTTP_PATH + HTTP_ENDPOINT + "?bubbles"
-      }, function* () {
-        yield testDonePromise;
+        url: HTTP_PATH + HTTP_ENDPOINT + "?bubbles",
+      }, async function() {
+        await testDonePromise;
         channel.stopListening();
       });
-    }
+    },
   },
   {
     desc: "WebChannel disallows non-string message from non-whitelisted origin",
-    *run() {
+    async run() {
       /**
        * This test ensures that non-string messages can't be sent via WebChannels.
        * We create a page (on a non-whitelisted origin) which should send us two
@@ -368,18 +366,18 @@ var gTests = [
           resolve();
         });
       });
-      yield BrowserTestUtils.withNewTab({
+      await BrowserTestUtils.withNewTab({
         gBrowser,
-        url: HTTP_PATH + HTTP_ENDPOINT + "?object"
-      }, function* () {
-        yield testDonePromise;
+        url: HTTP_PATH + HTTP_ENDPOINT + "?object",
+      }, async function() {
+        await testDonePromise;
         channel.stopListening();
       });
-    }
+    },
   },
   {
     desc: "WebChannel allows both string and non-string message from whitelisted origin",
-    *run() {
+    async run() {
       /**
        * Same process as above, but we whitelist the origin before loading the page,
        * and expect to get *both* messages back (each exactly once).
@@ -398,7 +396,7 @@ var gTests = [
             ok(!sawString);
             sawString = true;
           } else {
-            reject(new Error(`Unknown message type: ${message.type}`))
+            reject(new Error(`Unknown message type: ${message.type}`));
           }
           if (sawObject && sawString) {
             resolve();
@@ -409,19 +407,19 @@ var gTests = [
       let origWhitelist = Services.prefs.getCharPref(webchannelWhitelistPref);
       let newWhitelist = origWhitelist + " " + HTTP_PATH;
       Services.prefs.setCharPref(webchannelWhitelistPref, newWhitelist);
-      yield BrowserTestUtils.withNewTab({
+      await BrowserTestUtils.withNewTab({
         gBrowser,
-        url: HTTP_PATH + HTTP_ENDPOINT + "?object"
-      }, function* () {
-        yield testDonePromise;
+        url: HTTP_PATH + HTTP_ENDPOINT + "?object",
+      }, async function() {
+        await testDonePromise;
         Services.prefs.setCharPref(webchannelWhitelistPref, origWhitelist);
         channel.stopListening();
       });
-    }
+    },
   },
   {
     desc: "WebChannel errors handling the message are delivered back to content",
-    *run() {
+    async run() {
       const ERRNO_UNKNOWN_ERROR              = 999; // WebChannel.jsm doesn't export this.
 
       // The channel where we purposely fail responding to a command.
@@ -445,19 +443,19 @@ var gTests = [
           throw new Error("oh no");
         });
       });
-      yield BrowserTestUtils.withNewTab({
+      await BrowserTestUtils.withNewTab({
         gBrowser,
-        url: HTTP_PATH + HTTP_ENDPOINT + "?error_thrown"
-      }, function* () {
-        yield testDonePromise;
+        url: HTTP_PATH + HTTP_ENDPOINT + "?error_thrown",
+      }, async function() {
+        await testDonePromise;
         channel.stopListening();
         echoChannel.stopListening();
       });
-    }
+    },
   },
   {
     desc: "WebChannel errors due to an invalid channel are delivered back to content",
-    *run() {
+    async run() {
       const ERRNO_NO_SUCH_CHANNEL            = 2; // WebChannel.jsm doesn't export this.
       // The channel where we see the response when the content sees the error
       let echoChannel = new WebChannel("echo", Services.io.newURI(HTTP_PATH));
@@ -471,26 +469,26 @@ var gTests = [
           resolve();
         });
       });
-      yield BrowserTestUtils.withNewTab({
+      await BrowserTestUtils.withNewTab({
         gBrowser,
-        url: HTTP_PATH + HTTP_ENDPOINT + "?error_invalid_channel"
-      }, function* () {
-        yield testDonePromise;
+        url: HTTP_PATH + HTTP_ENDPOINT + "?error_invalid_channel",
+      }, async function() {
+        await testDonePromise;
         echoChannel.stopListening();
       });
-    }
+    },
   },
 ]; // gTests
 
 function test() {
   waitForExplicitFinish();
 
-  Task.spawn(function* () {
+  (async function() {
     for (let testCase of gTests) {
       info("Running: " + testCase.desc);
-      yield testCase.run();
+      await testCase.run();
     }
-  }).then(finish, ex => {
+  })().then(finish, ex => {
     ok(false, "Unexpected Exception: " + ex);
     finish();
   });

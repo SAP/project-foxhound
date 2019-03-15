@@ -5,12 +5,12 @@
  * Helper functions extract values from manifest members
  * and reports conformance violations.
  */
-/*globals Components*/
-'use strict';
-const {
-  classes: Cc,
-  interfaces: Ci
-} = Components;
+/* globals Components*/
+"use strict";
+
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+
+XPCOMUtils.defineLazyGlobalGetters(this, ["InspectorUtils"]);
 
 function ValueExtractor(aConsole, aBundle) {
   this.console = aConsole;
@@ -30,9 +30,9 @@ ValueExtractor.prototype = {
     const value = object[property];
     const isArray = Array.isArray(value);
     // We need to special-case "array", as it's not a JS primitive.
-    const type = (isArray) ? 'array' : typeof value;
+    const type = (isArray) ? "array" : typeof value;
     if (type !== expectedType) {
-      if (type !== 'undefined') {
+      if (type !== "undefined") {
         this.console.warn(this.domBundle.formatStringFromName("ManifestInvalidType",
                                                               [objectName, property, expectedType],
                                                               3));
@@ -40,7 +40,7 @@ ValueExtractor.prototype = {
       return undefined;
     }
     // Trim string and returned undefined if the empty string.
-    const shouldTrim = expectedType === 'string' && value && trim;
+    const shouldTrim = expectedType === "string" && value && trim;
     if (shouldTrim) {
       return value.trim() || undefined;
     }
@@ -48,10 +48,8 @@ ValueExtractor.prototype = {
   },
   extractColorValue(spec) {
     const value = this.extractValue(spec);
-    const DOMUtils = Cc['@mozilla.org/inspector/dom-utils;1']
-      .getService(Ci.inIDOMUtils);
     let color;
-    if (DOMUtils.isValidCSSColor(value)) {
+    if (InspectorUtils.isValidCSSColor(value)) {
       color = value;
     } else if (value) {
       this.console.warn(this.domBundle.formatStringFromName("ManifestInvalidCSSColor",
@@ -59,7 +57,6 @@ ValueExtractor.prototype = {
                                                             2));
     }
     return color;
-  }
+  },
 };
-this.ValueExtractor = ValueExtractor; // jshint ignore:line
-this.EXPORTED_SYMBOLS = ['ValueExtractor']; // jshint ignore:line
+var EXPORTED_SYMBOLS = ["ValueExtractor"]; // jshint ignore:line

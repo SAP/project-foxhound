@@ -1,3 +1,5 @@
+from __future__ import absolute_import
+
 import argparse
 import sys
 
@@ -12,7 +14,7 @@ def get_parser(add_help=True):
                         help="Filename to read from, defaults to stdin")
     parser.add_argument("--output", action="store", default=None,
                         help="Filename to write to, defaults to stdout")
-    parser.add_argument("format", choices=commandline.log_formatters.keys(),
+    parser.add_argument("format", choices=list(commandline.log_formatters.keys()),
                         help="Format to use")
     return parser
 
@@ -34,6 +36,7 @@ def main(**kwargs):
 
     for data in reader.read(input_file):
         handler(data)
+
 
 if __name__ == "__main__":
     parser = get_parser()

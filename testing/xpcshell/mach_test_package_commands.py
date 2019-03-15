@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import unicode_literals
+from __future__ import absolute_import, unicode_literals
 
 import os
 import sys
@@ -22,7 +22,6 @@ from mach.decorators import (
 def run_xpcshell(context, **kwargs):
     args = Namespace(**kwargs)
     args.appPath = args.appPath or os.path.dirname(context.firefox_bin)
-    args.e10s = context.mozharness_config.get('e10s', args.e10s)
     args.utility_path = context.bin_dir
     args.testingModulesDir = context.modules_dir
 

@@ -16,12 +16,17 @@ Test keyboard navigation with the Tree component.
 <pre id="test">
 <script src="head.js" type="application/javascript"></script>
 <script type="application/javascript">
-window.onload = Task.async(function* () {
+
+"use strict";
+
+window.onload = async function () {
   try {
     const ReactDOM = browserRequire("devtools/client/shared/vendor/react-dom");
-    const React = browserRequire("devtools/client/shared/vendor/react");
-    const { Simulate } = React.addons.TestUtils;
-    const Tree = React.createFactory(browserRequire("devtools/client/shared/components/tree"));
+    const { createFactory } = browserRequire("devtools/client/shared/vendor/react");
+    const { Simulate } =
+      browserRequire("devtools/client/shared/vendor/react-dom-test-utils");
+    const Tree =
+      createFactory(browserRequire("devtools/client/shared/components/VirtualizedTree"));
 
     function renderTree(props) {
       const treeProps = Object.assign({},
@@ -34,6 +39,7 @@ window.onload = Task.async(function* () {
 
     const tree = renderTree();
 
+    isAccessibleTree(tree);
     TEST_TREE.expanded = new Set("ABCDEFGHIJKLMNO".split(""));
 
     // UP ----------------------------------------------------------------------
@@ -41,7 +47,7 @@ window.onload = Task.async(function* () {
     info("Up to the previous sibling.");
     renderTree({ focused: "L" });
     Simulate.keyDown(document.querySelector(".tree"), { key: "ArrowUp" });
-    yield forceRender(tree);
+    await forceRender(tree);
 
     isRenderedTree(document.body.textContent, [
       "A:false",
@@ -63,7 +69,7 @@ window.onload = Task.async(function* () {
 
     info("Up to the parent.");
     Simulate.keyDown(document.querySelector(".tree"), { key: "ArrowUp" });
-    yield forceRender(tree);
+    await forceRender(tree);
 
     isRenderedTree(document.body.textContent, [
       "A:false",
@@ -86,7 +92,7 @@ window.onload = Task.async(function* () {
     info("Try and navigate up, past the first item.");
     renderTree({ focused: "A" });
     Simulate.keyDown(document.querySelector(".tree"), { key: "ArrowUp" });
-    yield forceRender(tree);
+    await forceRender(tree);
 
     isRenderedTree(document.body.textContent, [
       "A:true",
@@ -111,7 +117,7 @@ window.onload = Task.async(function* () {
     info("Down to next sibling.");
     renderTree({ focused: "K" });
     Simulate.keyDown(document.querySelector(".tree"), { key: "ArrowDown" });
-    yield forceRender(tree);
+    await forceRender(tree);
 
     isRenderedTree(document.body.textContent, [
       "A:false",
@@ -133,7 +139,7 @@ window.onload = Task.async(function* () {
 
     info("Down to parent's next sibling.");
     Simulate.keyDown(document.querySelector(".tree"), { key: "ArrowDown" });
-    yield forceRender(tree);
+    await forceRender(tree);
 
     isRenderedTree(document.body.textContent, [
       "A:false",
@@ -156,7 +162,7 @@ window.onload = Task.async(function* () {
     info("Try and go down past the last item.");
     renderTree({ focused: "O" });
     Simulate.keyDown(document.querySelector(".tree"), { key: "ArrowDown" });
-    yield forceRender(tree);
+    await forceRender(tree);
 
     isRenderedTree(document.body.textContent, [
       "A:false",
@@ -174,14 +180,15 @@ window.onload = Task.async(function* () {
       "M:false",
       "-N:false",
       "--O:true",
-    ], "After the DOWN, O should still be focused and we shouldn't have overflowed past it.");
+    ], "After the DOWN, O should still be focused " +
+       "and we shouldn't have overflowed past it.");
 
     // LEFT --------------------------------------------------------------------
 
     info("Left to go to parent.");
     renderTree({ focused: "L" });
     Simulate.keyDown(document.querySelector(".tree"), { key: "ArrowLeft" });
-    yield forceRender(tree);
+    await forceRender(tree);
 
     isRenderedTree(document.body.textContent, [
       "A:false",
@@ -203,7 +210,7 @@ window.onload = Task.async(function* () {
 
     info("Left to collapse children.");
     Simulate.keyDown(document.querySelector(".tree"), { key: "ArrowLeft" });
-    yield forceRender(tree);
+    await forceRender(tree);
 
     isRenderedTree(document.body.textContent, [
       "A:false",
@@ -225,7 +232,7 @@ window.onload = Task.async(function* () {
 
     info("Right to expand children.");
     Simulate.keyDown(document.querySelector(".tree"), { key: "ArrowRight" });
-    yield forceRender(tree);
+    await forceRender(tree);
 
     isRenderedTree(document.body.textContent, [
       "A:false",
@@ -245,9 +252,32 @@ window.onload = Task.async(function* () {
       "--O:false",
     ], "After the RIGHT, E's children should be expanded again.");
 
-    info("Right to go to next item.");
+    info("Right on already expanded node.");
     Simulate.keyDown(document.querySelector(".tree"), { key: "ArrowRight" });
-    yield forceRender(tree);
+    await forceRender(tree);
+
+    isRenderedTree(document.body.textContent, [
+      "A:false",
+      "-B:false",
+      "--E:true",
+      "---K:false",
+      "---L:false",
+      "--F:false",
+      "--G:false",
+      "-C:false",
+      "--H:false",
+      "--I:false",
+      "-D:false",
+      "--J:false",
+      "M:false",
+      "-N:false",
+      "--O:false",
+    ], "After the RIGHT on already expanded node, E should remain focused.");
+
+    info("Right when preventNavigationOnArrowRight is unset to go to next item.");
+    renderTree({ focused: "E", preventNavigationOnArrowRight: false });
+    Simulate.keyDown(document.querySelector(".tree"), { key: "ArrowRight" });
+    await forceRender(tree);
 
     isRenderedTree(document.body.textContent, [
       "A:false",
@@ -274,9 +304,11 @@ window.onload = Task.async(function* () {
       { key: "ArrowDown", metaKey: true },
       { key: "ArrowDown", shiftKey: true },
     ];
+    await forceRender(tree);
+
     for (let key of keysWithModifier) {
       Simulate.keyDown(document.querySelector(".tree"), key);
-      yield forceRender(tree);
+      await forceRender(tree);
 
       isRenderedTree(document.body.textContent, [
         "A:false",
@@ -296,12 +328,12 @@ window.onload = Task.async(function* () {
         "--O:false",
       ], "After DOWN + (alt|ctrl|meta|shift), K should remain focused.");
     }
-  } catch(e) {
+  } catch (e) {
     ok(false, "Got an error: " + DevToolsUtils.safeErrorString(e));
   } finally {
     SimpleTest.finish();
   }
-});
+};
 </script>
 </pre>
 </body>

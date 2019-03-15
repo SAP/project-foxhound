@@ -10,14 +10,20 @@
 
 #include "GrVkGpu.h"
 #include "GrVkResource.h"
+#include "GrVkSemaphore.h"
 #include "GrVkUtil.h"
 #include "vk/GrVkDefines.h"
 
+class GrVkBuffer;
 class GrVkFramebuffer;
+class GrVkIndexBuffer;
+class GrVkImage;
 class GrVkPipeline;
+class GrVkPipelineState;
 class GrVkRenderPass;
 class GrVkRenderTarget;
 class GrVkTransferBuffer;
+class GrVkVertexBuffer;
 
 class GrVkCommandBuffer : public GrVkResource {
 public:
@@ -39,43 +45,15 @@ public:
                          BarrierType barrierType,
                          void* barrier) const;
 
-    void bindVertexBuffer(GrVkGpu* gpu, GrVkVertexBuffer* vbuffer) {
-        VkBuffer vkBuffer = vbuffer->buffer();
-        // TODO: once vbuffer->offset() no longer always returns 0, we will need to track the offset
-        // to know if we can skip binding or not.
-        if (!fBoundVertexBufferIsValid || vkBuffer != fBoundVertexBuffer) {
-            VkDeviceSize offset = vbuffer->offset();
-            GR_VK_CALL(gpu->vkInterface(), CmdBindVertexBuffers(fCmdBuffer,
-                                                                0,
-                                                                1,
-                                                                &vkBuffer,
-                                                                &offset));
-            fBoundVertexBufferIsValid = true;
-            fBoundVertexBuffer = vkBuffer;
-            addResource(vbuffer->resource());
-        }
-    }
+    void bindInputBuffer(GrVkGpu* gpu, uint32_t binding, const GrVkVertexBuffer* vbuffer);
 
-    void bindIndexBuffer(GrVkGpu* gpu, GrVkIndexBuffer* ibuffer) {
-        VkBuffer vkBuffer = ibuffer->buffer();
-        // TODO: once ibuffer->offset() no longer always returns 0, we will need to track the offset
-        // to know if we can skip binding or not.
-        if (!fBoundIndexBufferIsValid || vkBuffer != fBoundIndexBuffer) {
-            GR_VK_CALL(gpu->vkInterface(), CmdBindIndexBuffer(fCmdBuffer,
-                                                              vkBuffer,
-                                                              ibuffer->offset(),
-                                                              VK_INDEX_TYPE_UINT16));
-            fBoundIndexBufferIsValid = true;
-            fBoundIndexBuffer = vkBuffer;
-            addResource(ibuffer->resource());
-        }
-    }
+    void bindIndexBuffer(GrVkGpu* gpu, const GrVkIndexBuffer* ibuffer);
 
     void bindPipeline(const GrVkGpu* gpu, const GrVkPipeline* pipeline);
 
     void bindDescriptorSets(const GrVkGpu* gpu,
                             GrVkPipelineState*,
-                            VkPipelineLayout layout,
+                            GrVkPipelineLayout* layout,
                             uint32_t firstSet,
                             uint32_t setCount,
                             const VkDescriptorSet* descriptorSets,
@@ -85,7 +63,7 @@ public:
     void bindDescriptorSets(const GrVkGpu* gpu,
                             const SkTArray<const GrVkRecycledResource*>&,
                             const SkTArray<const GrVkResource*>&,
-                            VkPipelineLayout layout,
+                            GrVkPipelineLayout* layout,
                             uint32_t firstSet,
                             uint32_t setCount,
                             const VkDescriptorSet* descriptorSets,
@@ -124,8 +102,8 @@ public:
               uint32_t firstVertex,
               uint32_t firstInstance) const;
 
-    // Add ref-counted resource that will be tracked and released when this
-    // command buffer finishes execution
+    // Add ref-counted resource that will be tracked and released when this command buffer finishes
+    // execution
     void addResource(const GrVkResource* resource) {
         resource->ref();
         fTrackedResources.append(1, &resource);
@@ -138,6 +116,13 @@ public:
         fTrackedRecycledResources.append(1, &resource);
     }
 
+    // Add ref-counted resource that will be tracked and released when this command buffer finishes
+    // recording.
+    void addRecordingResource(const GrVkResource* resource) {
+        resource->ref();
+        fTrackedRecordingResources.append(1, &resource);
+    }
+
     void reset(GrVkGpu* gpu);
 
 protected:
@@ -145,16 +130,16 @@ protected:
             : fIsActive(false)
             , fActiveRenderPass(rp)
             , fCmdBuffer(cmdBuffer)
-            , fBoundVertexBufferIsValid(false)
-            , fBoundIndexBufferIsValid(false)
             , fNumResets(0) {
             fTrackedResources.setReserve(kInitialTrackedResourcesCount);
             fTrackedRecycledResources.setReserve(kInitialTrackedResourcesCount);
+            fTrackedRecordingResources.setReserve(kInitialTrackedResourcesCount);
             this->invalidateState();
         }
 
         SkTDArray<const GrVkResource*>          fTrackedResources;
         SkTDArray<const GrVkRecycledResource*>  fTrackedRecycledResources;
+        SkTDArray<const GrVkResource*>          fTrackedRecordingResources;
 
         // Tracks whether we are in the middle of a command buffer begin/end calls and thus can add
         // new commands to the buffer;
@@ -172,15 +157,14 @@ private:
 
     void freeGPUData(const GrVkGpu* gpu) const override;
     virtual void onFreeGPUData(const GrVkGpu* gpu) const = 0;
-    void abandonSubResources() const override;
+    void abandonGPUData() const override;
 
     virtual void onReset(GrVkGpu* gpu) {}
 
-    VkBuffer                                fBoundVertexBuffer;
-    bool                                    fBoundVertexBufferIsValid;
+    static constexpr uint32_t kMaxInputBuffers = 2;
 
-    VkBuffer                                fBoundIndexBuffer;
-    bool                                    fBoundIndexBufferIsValid;
+    VkBuffer fBoundInputBuffers[kMaxInputBuffers];
+    VkBuffer fBoundIndexBuffer;
 
     // When resetting the command buffer, we remove the tracked resources from their arrays, and
     // we prefer to not free all the memory every time so usually we just rewind. However, to avoid
@@ -210,8 +194,7 @@ public:
     // in the render pass.
     void beginRenderPass(const GrVkGpu* gpu,
                          const GrVkRenderPass* renderPass,
-                         uint32_t clearCount,
-                         const VkClearValue* clearValues,
+                         const VkClearValue clearValues[],
                          const GrVkRenderTarget& target,
                          const SkIRect& bounds,
                          bool forSecondaryCB);
@@ -260,18 +243,7 @@ public:
                    const GrVkImage& dstImage,
                    uint32_t blitRegionCount,
                    const VkImageBlit* blitRegions,
-                   VkFilter filter) {
-        this->blitImage(gpu,
-                        srcImage.resource(),
-                        srcImage.image(),
-                        srcImage.currentLayout(),
-                        dstImage.resource(),
-                        dstImage.image(),
-                        dstImage.currentLayout(),
-                        blitRegionCount,
-                        blitRegions,
-                        filter);
-    }
+                   VkFilter filter);
 
     void copyImageToBuffer(const GrVkGpu* gpu,
                            GrVkImage* srcImage,
@@ -287,6 +259,12 @@ public:
                            uint32_t copyRegionCount,
                            const VkBufferImageCopy* copyRegions);
 
+    void copyBuffer(GrVkGpu* gpu,
+                    GrVkBuffer* srcBuffer,
+                    GrVkBuffer* dstBuffer,
+                    uint32_t regionCount,
+                    const VkBufferCopy* regions);
+
     void updateBuffer(GrVkGpu* gpu,
                       GrVkBuffer* dstBuffer,
                       VkDeviceSize dstOffset,
@@ -299,7 +277,9 @@ public:
                       uint32_t regionCount,
                       const VkImageResolve* regions);
 
-    void submitToQueue(const GrVkGpu* gpu, VkQueue queue, GrVkGpu::SyncQueue sync);
+    void submitToQueue(const GrVkGpu* gpu, VkQueue queue, GrVkGpu::SyncQueue sync,
+                       SkTArray<GrVkSemaphore::Resource*>& signalSemaphores,
+                       SkTArray<GrVkSemaphore::Resource*>& waitSemaphores);
     bool finished(const GrVkGpu* gpu) const;
 
 #ifdef SK_TRACE_VK_RESOURCES

@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: sw=4 ts=4 et :
+ * vim: sw=2 ts=4 et :
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +10,7 @@
 // duplication.
 
 #include "mozilla/CondVar.h"
+#include "mozilla/RecursiveMutex.h"
 #include "mozilla/ReentrantMonitor.h"
 #include "SQLiteMutex.h"
 
@@ -20,33 +21,23 @@ using namespace mozilla;
 /**
  * Helper class to allocate a sqlite3_mutex for our SQLiteMutex.
  */
-class TestMutex : public mozilla::storage::SQLiteMutex
-{
-public:
-    explicit TestMutex(const char* aName)
-    : mozilla::storage::SQLiteMutex(aName)
-    , mInner(sqlite3_mutex_alloc(SQLITE_MUTEX_FAST))
-    {
-        NS_ASSERTION(mInner, "could not allocate a sqlite3_mutex");
-        initWithMutex(mInner);
-    }
+class TestMutex : public mozilla::storage::SQLiteMutex {
+ public:
+  explicit TestMutex(const char* aName)
+      : mozilla::storage::SQLiteMutex(aName),
+        mInner(sqlite3_mutex_alloc(SQLITE_MUTEX_FAST)) {
+    NS_ASSERTION(mInner, "could not allocate a sqlite3_mutex");
+    initWithMutex(mInner);
+  }
 
-    ~TestMutex()
-    {
-        sqlite3_mutex_free(mInner);
-    }
+  ~TestMutex() { sqlite3_mutex_free(mInner); }
 
-    void Lock()
-    {
-        lock();
-    }
+  void Lock() { lock(); }
 
-    void Unlock()
-    {
-        unlock();
-    }
-private:
-  sqlite3_mutex *mInner;
+  void Unlock() { unlock(); }
+
+ private:
+  sqlite3_mutex* mInner;
 };
 
 // This global variable is defined in toolkit/xre/nsSigHandlers.cpp.
@@ -58,9 +49,14 @@ extern unsigned int _gdb_sleep_duration;
 #define MUTEX TestMutex
 #define TESTNAME(name) storage_##name
 
+// Bug 1473531: the test storage_DeadlockDetectorTest.storage_Sanity5DeathTest
+// times out on macosx ccov builds
+#if defined(XP_MACOSX) && defined(MOZ_CODE_COVERAGE)
+#  define DISABLE_STORAGE_SANITY5_DEATH_TEST
+#endif
+
 // We need to use a namespace to avoid duplicate definitions of some functions
 // within TestDeadlockDetector.cpp.
 namespace storage {
 #include "../../../xpcom/tests/gtest/TestDeadlockDetector.cpp"
 }
-

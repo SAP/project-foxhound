@@ -14,12 +14,12 @@ import android.util.Log;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.mozilla.gecko.util.StringUtils;
 
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -174,19 +174,11 @@ public class DownloadContentCatalog {
     }
 
     public void persistChanges() {
-        new Thread(LOGTAG + "-Persist") {
-            public void run() {
-                writeToDisk();
-            }
-        }.start();
+        writeToDisk();
     }
 
     private void startLoadFromDisk() {
-        new Thread(LOGTAG + "-Load") {
-            public void run() {
-                loadFromDisk();
-            }
-        }.start();
+        loadFromDisk();
     }
 
     private void awaitLoadingCatalogLocked() {
@@ -218,7 +210,7 @@ public class DownloadContentCatalog {
             JSONObject catalog;
 
             synchronized (file) {
-                catalog = new JSONObject(new String(file.readFully(), "UTF-8"));
+                catalog = new JSONObject(new String(file.readFully(), StringUtils.UTF_8));
             }
 
             JSONArray array = catalog.getJSONArray(JSON_KEY_CONTENT);
@@ -227,23 +219,12 @@ public class DownloadContentCatalog {
                 loadedContent.put(currentContent.getId(), currentContent);
             }
         } catch (FileNotFoundException e) {
-            Log.d(LOGTAG, "Catalog file does not exist: Bootstrapping initial catalog");
-            loadedContent = DownloadContentBootstrap.createInitialDownloadContentList();
-        } catch (JSONException e) {
-            Log.w(LOGTAG, "Unable to parse catalog JSON. Re-creating catalog.", e);
-            // Catalog seems to be broken. Re-create catalog:
-            loadedContent = DownloadContentBootstrap.createInitialDownloadContentList();
+            Log.d(LOGTAG, "Catalog file does not exist: Starting with empty catalog.");
+            loadedContent = new ArrayMap<>();
+        } catch (JSONException | NullPointerException e) {
+            Log.w(LOGTAG, "Unable to parse catalog JSON. Re-creating empty catalog.", e);
+            loadedContent = new ArrayMap<>();
             hasCatalogChanged = true; // Indicate that we want to persist the new catalog
-        } catch (NullPointerException e) {
-            // Bad content can produce an NPE in JSON code -- bug 1300139
-            Log.w(LOGTAG, "Unable to parse catalog JSON. Re-creating catalog.", e);
-            // Catalog seems to be broken. Re-create catalog:
-            loadedContent = DownloadContentBootstrap.createInitialDownloadContentList();
-            hasCatalogChanged = true; // Indicate that we want to persist the new catalog
-        } catch (UnsupportedEncodingException e) {
-            AssertionError error = new AssertionError("Should not happen: This device does not speak UTF-8");
-            error.initCause(e);
-            throw error;
         } catch (IOException e) {
             Log.d(LOGTAG, "Can't read catalog due to IOException", e);
         }
@@ -282,15 +263,11 @@ public class DownloadContentCatalog {
                 JSONObject catalog = new JSONObject();
                 catalog.put(JSON_KEY_CONTENT, array);
 
-                outputStream.write(catalog.toString().getBytes("UTF-8"));
+                outputStream.write(catalog.toString().getBytes(StringUtils.UTF_8));
 
                 file.finishWrite(outputStream);
 
                 hasCatalogChanged = false;
-            } catch (UnsupportedEncodingException e) {
-                AssertionError error = new AssertionError("Should not happen: This device does not speak UTF-8");
-                error.initCause(e);
-                throw error;
             } catch (IOException | JSONException e) {
                 Log.e(LOGTAG, "IOException during writing catalog", e);
 

@@ -7,7 +7,7 @@
  *
  * Do not confuse with RTCPeerConnection. This interface is purely for
  * communication between the PeerConnection JS DOM binding and the C++
- * implementation in SIPCC.
+ * implementation.
  *
  * See media/webrtc/signaling/include/PeerConnectionImpl.h
  *
@@ -41,29 +41,49 @@ interface PeerConnectionImpl  {
 
   /* Adds the tracks created by GetUserMedia */
   [Throws]
-  void addTrack(MediaStreamTrack track, MediaStream... streams);
+  TransceiverImpl createTransceiverImpl(DOMString kind,
+                                        MediaStreamTrack? track);
   [Throws]
-  void removeTrack(MediaStreamTrack track);
+  boolean checkNegotiationNeeded();
   [Throws]
-  void insertDTMF(RTCRtpSender sender, DOMString tones,
+  void insertDTMF(TransceiverImpl transceiver, DOMString tones,
                   optional unsigned long duration = 100,
                   optional unsigned long interToneGap = 70);
   [Throws]
   DOMString getDTMFToneBuffer(RTCRtpSender sender);
   [Throws]
-  void replaceTrack(MediaStreamTrack thisTrack, MediaStreamTrack withTrack);
+  sequence<RTCRtpSourceEntry> getRtpSources(MediaStreamTrack track,
+                                            DOMHighResTimeStamp rtpSourceNow);
+  DOMHighResTimeStamp getNowInRtpSourceReferenceTime();
+
   [Throws]
-  void setParameters(MediaStreamTrack track,
-                     optional RTCRtpParameters parameters);
-  [Throws]
-  RTCRtpParameters getParameters(MediaStreamTrack track);
+  void replaceTrackNoRenegotiation(TransceiverImpl transceiverImpl,
+                                   MediaStreamTrack? withTrack);
   [Throws]
   void closeStreams();
 
-  sequence<MediaStream> getLocalStreams();
-  sequence<MediaStream> getRemoteStreams();
+  [Throws]
+  void addRIDExtension(MediaStreamTrack recvTrack, unsigned short extensionId);
+  [Throws]
+  void addRIDFilter(MediaStreamTrack recvTrack, DOMString rid);
 
-  void selectSsrc(MediaStreamTrack recvTrack, unsigned short ssrcIndex);
+  // Inserts CSRC data for the RtpSourceObserver for testing
+  [Throws]
+  void insertAudioLevelForContributingSource(MediaStreamTrack recvTrack,
+                                             unsigned long source,
+                                             DOMHighResTimeStamp timestamp,
+                                             boolean hasLevel,
+                                             byte level);
+
+  [Throws]
+  void enablePacketDump(unsigned long level,
+                        mozPacketDumpType type,
+                        boolean sending);
+
+  [Throws]
+  void disablePacketDump(unsigned long level,
+                         mozPacketDumpType type,
+                         boolean sending);
 
   /* As the ICE candidates roll in this one should be called each time
    * in order to keep the candidate list up-to-date for the next SDP-related
@@ -71,9 +91,10 @@ interface PeerConnectionImpl  {
    * into the SDP.
    */
   [Throws]
-  void addIceCandidate(DOMString candidate, DOMString mid, unsigned short level);
+  void addIceCandidate(DOMString candidate, DOMString mid, unsigned short? level);
 
-  /* Puts the SIPCC engine back to 'kIdle', shuts down threads, deletes state */
+  /* Shuts down threads, deletes state */
+  [Throws]
   void close();
 
   /* Notify DOM window if this plugin crash is ours. */
@@ -88,19 +109,24 @@ interface PeerConnectionImpl  {
   [Constant]
   readonly attribute DOMString fingerprint;
   readonly attribute DOMString localDescription;
+  readonly attribute DOMString currentLocalDescription;
+  readonly attribute DOMString pendingLocalDescription;
   readonly attribute DOMString remoteDescription;
+  readonly attribute DOMString currentRemoteDescription;
+  readonly attribute DOMString pendingRemoteDescription;
 
   readonly attribute PCImplIceConnectionState iceConnectionState;
   readonly attribute PCImplIceGatheringState iceGatheringState;
   readonly attribute PCImplSignalingState signalingState;
   attribute DOMString id;
 
+  [SetterThrows]
   attribute DOMString peerIdentity;
   readonly attribute boolean privacyRequested;
 
   /* Data channels */
   [Throws]
-  DataChannel createDataChannel(DOMString label, DOMString protocol,
+  RTCDataChannel createDataChannel(DOMString label, DOMString protocol,
     unsigned short type, boolean ordered,
     unsigned short maxTime, unsigned short maxNum,
     boolean externalNegotiated, unsigned short stream);

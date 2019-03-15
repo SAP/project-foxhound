@@ -12,15 +12,13 @@
 #include "mozilla/Unused.h"
 #include "mozilla/ipc/Shmem.h"
 
-#ifdef MOZ_CRASHREPORTER
 namespace mozilla {
 namespace ipc {
 
 class CrashReporterMetadataShmem;
 
-class CrashReporterClient
-{
-public:
+class CrashReporterClient {
+ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(CrashReporterClient);
 
   // |aTopLevelProtocol| must be a top-level protocol instance, as sub-actors
@@ -33,6 +31,11 @@ public:
   // crash reporter needs metadata), the shmem should be parsed.
   template <typename T>
   static bool InitSingleton(T* aToplevelProtocol) {
+    // The crash reporter is not enabled in recording/replaying processes.
+    if (recordreplay::IsRecordingOrReplaying()) {
+      return true;
+    }
+
     Shmem shmem;
     if (!AllocShmem(aToplevelProtocol, &shmem)) {
       return false;
@@ -40,8 +43,7 @@ public:
 
     InitSingletonWithShmem(shmem);
     Unused << aToplevelProtocol->SendInitCrashReporter(
-      shmem,
-      CrashReporter::CurrentThreadId());
+        shmem, CrashReporter::CurrentThreadId());
     return true;
   }
 
@@ -51,9 +53,7 @@ public:
     static const size_t kShmemSize = 16 * 1024;
 
     return aToplevelProtocol->AllocUnsafeShmem(
-      kShmemSize,
-      SharedMemory::TYPE_BASIC,
-      aOutShmem);
+        kShmemSize, SharedMemory::TYPE_BASIC, aOutShmem);
   }
 
   static void InitSingletonWithShmem(const Shmem& aShmem);
@@ -61,24 +61,23 @@ public:
   static void DestroySingleton();
   static RefPtr<CrashReporterClient> GetSingleton();
 
-  void AnnotateCrashReport(const nsCString& aKey, const nsCString& aData);
+  void AnnotateCrashReport(CrashReporter::Annotation aKey,
+                           const nsCString& aData);
   void AppendAppNotes(const nsCString& aData);
 
-private:
+ private:
   explicit CrashReporterClient(const Shmem& aShmem);
   ~CrashReporterClient();
 
-private:
+ private:
   static StaticMutex sLock;
   static StaticRefPtr<CrashReporterClient> sClientSingleton;
 
-private:
+ private:
   UniquePtr<CrashReporterMetadataShmem> mMetadata;
 };
 
-} // namespace ipc
-} // namespace mozilla
-#endif // MOZ_CRASHREPORTER
+}  // namespace ipc
+}  // namespace mozilla
 
-#endif // mozilla_ipc_CrashReporterClient_h
-
+#endif  // mozilla_ipc_CrashReporterClient_h

@@ -10,6 +10,7 @@
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIQuotaRequests.h"
+#include "nsIVariant.h"
 
 class nsIPrincipal;
 class nsIQuotaCallback;
@@ -22,123 +23,98 @@ namespace quota {
 
 class QuotaUsageRequestChild;
 
-class RequestBase
-  : public nsIQuotaRequestBase
-{
-protected:
-#ifdef DEBUG
-  PRThread* mOwningThread;
-#endif
-
+class RequestBase : public nsIQuotaRequestBase {
+ protected:
   nsCOMPtr<nsIPrincipal> mPrincipal;
 
   nsresult mResultCode;
   bool mHaveResultOrErrorCode;
 
-public:
-  void
-  AssertIsOnOwningThread() const
+ public:
+  void AssertIsOnOwningThread() const
 #ifdef DEBUG
-  ;
+      ;
 #else
-  { }
+  {
+  }
 #endif
 
-  void
-  SetError(nsresult aRv);
+  void SetError(nsresult aRv);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_NSIQUOTAREQUESTBASE
   NS_DECL_CYCLE_COLLECTION_CLASS(RequestBase)
 
-protected:
+ protected:
   RequestBase();
 
   RequestBase(nsIPrincipal* aPrincipal);
 
-  virtual ~RequestBase()
-  {
-    AssertIsOnOwningThread();
-  }
+  virtual ~RequestBase() { AssertIsOnOwningThread(); }
 
-  virtual void
-  FireCallback() = 0;
+  virtual void FireCallback() = 0;
 };
 
-class UsageRequest final
-  : public RequestBase
-  , public nsIQuotaUsageRequest
-{
+class UsageRequest final : public RequestBase, public nsIQuotaUsageRequest {
   nsCOMPtr<nsIQuotaUsageCallback> mCallback;
 
-  uint64_t mUsage;
-  uint64_t mFileUsage;
-
-  // Group Limit.
-  uint64_t mLimit;
+  nsCOMPtr<nsIVariant> mResult;
 
   QuotaUsageRequestChild* mBackgroundActor;
 
   bool mCanceled;
 
-public:
-  UsageRequest(nsIPrincipal* aPrincipal,
-               nsIQuotaUsageCallback* aCallback);
+ public:
+  explicit UsageRequest(nsIQuotaUsageCallback* aCallback);
 
-  void
-  SetBackgroundActor(QuotaUsageRequestChild* aBackgroundActor);
+  UsageRequest(nsIPrincipal* aPrincipal, nsIQuotaUsageCallback* aCallback);
 
-  void
-  ClearBackgroundActor()
-  {
+  void SetBackgroundActor(QuotaUsageRequestChild* aBackgroundActor);
+
+  void ClearBackgroundActor() {
     AssertIsOnOwningThread();
 
     mBackgroundActor = nullptr;
   }
 
-  void
-  SetResult(uint64_t aUsage, uint64_t aFileUsage, uint64_t aLimit);
+  void SetResult(nsIVariant* aResult);
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_FORWARD_NSIQUOTAREQUESTBASE(RequestBase::)
   NS_DECL_NSIQUOTAUSAGEREQUEST
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(UsageRequest, RequestBase)
 
-private:
+ private:
   ~UsageRequest();
 
-  virtual void
-  FireCallback() override;
+  virtual void FireCallback() override;
 };
 
-class Request final
-  : public RequestBase
-  , public nsIQuotaRequest
-{
+class Request final : public RequestBase, public nsIQuotaRequest {
   nsCOMPtr<nsIQuotaCallback> mCallback;
 
-public:
+  nsCOMPtr<nsIVariant> mResult;
+
+ public:
   Request();
 
   explicit Request(nsIPrincipal* aPrincipal);
 
-  void
-  SetResult();
+  void SetResult(nsIVariant* aResult);
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_FORWARD_NSIQUOTAREQUESTBASE(RequestBase::)
   NS_DECL_NSIQUOTAREQUEST
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(Request, RequestBase)
 
-private:
+ private:
   ~Request();
 
-  virtual void
-  FireCallback() override;
+  virtual void FireCallback() override;
 };
 
-} // namespace quota
-} // namespace dom
-} // namespace mozilla
+}  // namespace quota
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_quota_UsageRequest_h
+#endif  // mozilla_dom_quota_UsageRequest_h

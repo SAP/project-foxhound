@@ -7,7 +7,7 @@
 
 function run_test() {
   let ns = {};
-  Components.utils.import("resource://testing-common/Assert.jsm", ns);
+  ChromeUtils.import("resource://testing-common/Assert.jsm", ns);
   let assert = new ns.Assert();
 
   function makeBlock(f, ...args) {
@@ -18,7 +18,7 @@ function run_test() {
 
   function protoCtrChain(o) {
     let result = [];
-    while (o = o.__proto__) {
+    while ((o = o.__proto__)) {
       result.push(o.constructor);
     }
     return result.join();
@@ -31,7 +31,7 @@ function run_test() {
     let clsChain = protoCtrChain(cls.prototype);
     let objChain = protoCtrChain(obj);
     return objChain.slice(-clsChain.length) === clsChain;
-  };
+  }
 
   assert.ok(indirectInstanceOf(ns.Assert.AssertionError.prototype, Error),
             "Assert.AssertionError instanceof Error");
@@ -81,15 +81,15 @@ function run_test() {
   assert.deepEqual(/a/i, /a/i);
   assert.deepEqual(/a/m, /a/m);
   assert.deepEqual(/a/igm, /a/igm);
-  assert.throws(makeBlock(assert.deepEqual, /ab/, /a/));
-  assert.throws(makeBlock(assert.deepEqual, /a/g, /a/));
-  assert.throws(makeBlock(assert.deepEqual, /a/i, /a/));
-  assert.throws(makeBlock(assert.deepEqual, /a/m, /a/));
-  assert.throws(makeBlock(assert.deepEqual, /a/igm, /a/im));
+  assert.throws(makeBlock(assert.deepEqual, /ab/, /a/), ns.Assert.AssertionError);
+  assert.throws(makeBlock(assert.deepEqual, /a/g, /a/), ns.Assert.AssertionError);
+  assert.throws(makeBlock(assert.deepEqual, /a/i, /a/), ns.Assert.AssertionError);
+  assert.throws(makeBlock(assert.deepEqual, /a/m, /a/), ns.Assert.AssertionError);
+  assert.throws(makeBlock(assert.deepEqual, /a/igm, /a/im), ns.Assert.AssertionError);
 
   let re1 = /a/;
   re1.lastIndex = 3;
-  assert.throws(makeBlock(assert.deepEqual, re1, /a/));
+  assert.throws(makeBlock(assert.deepEqual, re1, /a/), ns.Assert.AssertionError);
 
   // 7.4
   assert.deepEqual(4, "4", "deepEqual == check");
@@ -118,7 +118,7 @@ function run_test() {
   assert.deepEqual(a1, a2);
 
   let nbRoot = {
-    toString: function() { return this.first + " " + this.last; }
+    toString() { return this.first + " " + this.last; },
   };
 
   function nameBuilder(first, last) {
@@ -151,17 +151,17 @@ function run_test() {
   function thrower(errorConstructor) {
     throw new errorConstructor("test");
   }
-  let aethrow = makeBlock(thrower, ns.Assert.AssertionError);
-  aethrow = makeBlock(thrower, ns.Assert.AssertionError);
+  makeBlock(thrower, ns.Assert.AssertionError);
+  makeBlock(thrower, ns.Assert.AssertionError);
 
   // the basic calls work
   assert.throws(makeBlock(thrower, ns.Assert.AssertionError),
                 ns.Assert.AssertionError, "message");
   assert.throws(makeBlock(thrower, ns.Assert.AssertionError), ns.Assert.AssertionError);
-  assert.throws(makeBlock(thrower, ns.Assert.AssertionError));
+  assert.throws(makeBlock(thrower, ns.Assert.AssertionError), ns.Assert.AssertionError);
 
   // if not passing an error, catch all.
-  assert.throws(makeBlock(thrower, TypeError));
+  assert.throws(makeBlock(thrower, TypeError), TypeError);
 
   // when passing a type, only catch errors of the appropriate type
   let threw = false;
@@ -183,7 +183,7 @@ function run_test() {
   }
   assert.throws(function() {
     ifError(new Error("test error"));
-  });
+  }, /test error/);
 
   // make sure that validating using constructor really works
   threw = false;
@@ -207,12 +207,14 @@ function run_test() {
     if ((err instanceof TypeError) && /test/.test(err)) {
       return true;
     }
+    return false;
   });
   // do the same with an arrow function
   assert.throws(makeBlock(thrower, TypeError), err => {
     if ((err instanceof TypeError) && /test/.test(err)) {
       return true;
     }
+    return false;
   });
 
   function testAssertionMessage(actual, expected) {
@@ -246,12 +248,12 @@ function run_test() {
 
   // https://github.com/joyent/node/issues/2893
   try {
-    assert.throws(function () {
+    assert.throws(function() {
       ifError(null);
     });
   } catch (e) {
     threw = true;
-    assert.equal(e.message, "Missing expected exception..");
+    assert.equal(e.message, "Error: The 'expected' argument was not supplied to Assert.throws() - false == true");
   }
   assert.ok(threw);
 
@@ -259,13 +261,25 @@ function run_test() {
   try {
     assert.equal(1, 2);
   } catch (e) {
-    assert.equal(e.toString().split("\n")[0], "AssertionError: 1 == 2")
+    assert.equal(e.toString().split("\n")[0], "AssertionError: 1 == 2");
   }
 
   try {
     assert.equal(1, 2, "oh no");
   } catch (e) {
-    assert.equal(e.toString().split("\n")[0], "AssertionError: oh no - 1 == 2")
+    assert.equal(e.toString().split("\n")[0], "AssertionError: oh no - 1 == 2");
+  }
+
+  // Need to JSON.stringify so that their length is > 128 characters.
+  let longArray0 = Array.from(Array(50), (v, i) => i);
+  let longArray1 = longArray0.concat([51]);
+  try {
+    assert.deepEqual(longArray0, longArray1);
+  } catch (e) {
+    let message = e.toString();
+    // Just check that they're both entirely present in the message
+    assert.ok(message.includes(JSON.stringify(longArray0)));
+    assert.ok(message.includes(JSON.stringify(longArray1)));
   }
 
   // Test XPCShell-test integration:
@@ -278,19 +292,19 @@ function run_test() {
   // Test robustness of reporting:
   equal(new ns.Assert.AssertionError({
     actual: {
-      toJSON: function() {
+      toJSON() {
         throw "bam!";
-      }
+      },
     },
     expected: "foo",
-    operator: "="
+    operator: "=",
   }).message, "[object Object] = \"foo\"");
 
   let message;
   assert.greater(3, 2);
   try {
     assert.greater(2, 2);
-  } catch(e) {
+  } catch (e) {
     message = e.toString().split("\n")[0];
   }
   assert.equal(message, "AssertionError: 2 > 2");
@@ -298,7 +312,7 @@ function run_test() {
   assert.greaterOrEqual(2, 2);
   try {
     assert.greaterOrEqual(1, 2);
-  } catch(e) {
+  } catch (e) {
     message = e.toString().split("\n")[0];
   }
   assert.equal(message, "AssertionError: 1 >= 2");
@@ -306,7 +320,7 @@ function run_test() {
   assert.less(1, 2);
   try {
     assert.less(2, 2);
-  } catch(e) {
+  } catch (e) {
     message = e.toString().split("\n")[0];
   }
   assert.equal(message, "AssertionError: 2 < 2");
@@ -314,7 +328,7 @@ function run_test() {
   assert.lessOrEqual(2, 2);
   try {
     assert.lessOrEqual(2, 1);
-  } catch(e) {
+  } catch (e) {
     message = e.toString().split("\n")[0];
   }
   assert.equal(message, "AssertionError: 2 <= 1");
@@ -322,17 +336,17 @@ function run_test() {
   run_next_test();
 }
 
-add_task(function* test_rejects() {
+add_task(async function test_rejects() {
   let ns = {};
-  Components.utils.import("resource://testing-common/Assert.jsm", ns);
+  ChromeUtils.import("resource://testing-common/Assert.jsm", ns);
   let assert = new ns.Assert();
 
   // A helper function to test failures.
-  function* checkRejectsFails(err, expected) {
+  async function checkRejectsFails(err, expected) {
     try {
-      yield assert.rejects(Promise.reject(err), expected);
+      await assert.rejects(Promise.reject(err), expected);
       ok(false, "should have thrown");
-    } catch(ex) {
+    } catch (ex) {
       deepEqual(ex, err, "Assert.rejects threw the original unexpected error");
     }
   }
@@ -341,24 +355,21 @@ add_task(function* test_rejects() {
   let SomeErrorLikeThing = function() {};
 
   // The actual tests...
-  // No "expected" or "message" values supplied.
-  yield assert.rejects(Promise.reject(new Error("oh no")));
-  yield assert.rejects(Promise.reject("oh no"));
 
   // An explicit error object:
   // An instance to check against.
-  yield assert.rejects(Promise.reject(new Error("oh no")), Error, "rejected");
+  await assert.rejects(Promise.reject(new Error("oh no")), Error, "rejected");
   // A regex to match against the message.
-  yield assert.rejects(Promise.reject(new Error("oh no")), /oh no/, "rejected");
+  await assert.rejects(Promise.reject(new Error("oh no")), /oh no/, "rejected");
 
   // Failure cases:
   // An instance to check against that doesn't match.
-  yield checkRejectsFails(new Error("something else"), SomeErrorLikeThing);
+  await checkRejectsFails(new Error("something else"), SomeErrorLikeThing);
   // A regex that doesn't match.
-  yield checkRejectsFails(new Error("something else"), /oh no/);
+  await checkRejectsFails(new Error("something else"), /oh no/);
 
   // Check simple string messages.
-  yield assert.rejects(Promise.reject("oh no"), /oh no/, "rejected");
+  await assert.rejects(Promise.reject("oh no"), /oh no/, "rejected");
   // Wrong message.
-  yield checkRejectsFails("something else", /oh no/);
+  await checkRejectsFails("something else", /oh no/);
 });

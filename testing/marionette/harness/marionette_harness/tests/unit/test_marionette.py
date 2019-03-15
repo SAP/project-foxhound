@@ -2,11 +2,13 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import itertools
+from __future__ import absolute_import
+
+import socket
 import time
 
 from marionette_driver import errors
-
+from marionette_driver.marionette import Marionette
 from marionette_harness import MarionetteTestCase, run_if_manage_instance, skip_if_mobile
 
 
@@ -20,48 +22,84 @@ class TestMarionette(MarionetteTestCase):
             func=self.test_correct_test_name.__name__,
         )
 
-        self.assertEqual(self.marionette.test_name, expected_test_name)
+        self.assertIn(expected_test_name, self.marionette.test_name)
 
     @run_if_manage_instance("Only runnable if Marionette manages the instance")
     @skip_if_mobile("Bug 1322993 - Missing temporary folder")
-    def test_wait_for_port_non_existing_process(self):
-        """Test that wait_for_port doesn't run into a timeout if instance is not running."""
+    def test_raise_for_port_non_existing_process(self):
+        """Test that raise_for_port doesn't run into a timeout if instance is not running."""
         self.marionette.quit()
         self.assertIsNotNone(self.marionette.instance.runner.returncode)
         start_time = time.time()
-        self.assertFalse(self.marionette.wait_for_port(timeout=5))
+        self.assertRaises(socket.timeout, self.marionette.raise_for_port, timeout=5)
         self.assertLess(time.time() - start_time, 5)
 
+    def test_disable_enable_new_connections(self):
+        # Do not re-create socket if it already exists
+        self.marionette._send_message("Marionette:AcceptConnections", {"value": True})
 
-class TestProtocol2Errors(MarionetteTestCase):
+        try:
+            # Disabling new connections does not affect existing ones...
+            self.marionette._send_message("Marionette:AcceptConnections", {"value": False})
+            self.assertEqual(1, self.marionette.execute_script("return 1"))
+
+            # but only new connection attempts
+            marionette = Marionette(host=self.marionette.host, port=self.marionette.port)
+            self.assertRaises(socket.timeout, marionette.raise_for_port, timeout=1.0)
+
+            self.marionette._send_message("Marionette:AcceptConnections", {"value": True})
+            marionette.raise_for_port(timeout=10.0)
+
+        finally:
+            self.marionette._send_message("Marionette:AcceptConnections", {"value": True})
+
+    def test_client_socket_uses_expected_socket_timeout(self):
+        current_socket_timeout = self.marionette.socket_timeout
+
+        self.assertEqual(current_socket_timeout,
+                         self.marionette.client.socket_timeout)
+        self.assertEqual(current_socket_timeout,
+                         self.marionette.client._sock.gettimeout())
+
+    @skip_if_mobile("No application update service available on Android")
+    def test_application_update_disabled(self):
+        # Updates of the application should always be disabled by default
+        with self.marionette.using_context("chrome"):
+            update_allowed = self.marionette.execute_script("""
+              let aus = Cc['@mozilla.org/updates/update-service;1']
+                        .getService(Ci.nsIApplicationUpdateService);
+              return aus.canCheckForUpdates;
+            """)
+
+        self.assertFalse(update_allowed)
+
+
+class TestContext(MarionetteTestCase):
+
     def setUp(self):
         MarionetteTestCase.setUp(self)
-        self.op = self.marionette.protocol
-        self.marionette.protocol = 2
+        self.marionette.set_context(self.marionette.CONTEXT_CONTENT)
 
-    def tearDown(self):
-        self.marionette.protocol = self.op
-        MarionetteTestCase.tearDown(self)
+    def get_context(self):
+        return self.marionette._send_message("Marionette:GetContext", key="value")
 
-    def test_malformed_packet(self):
-        req = ["error", "message", "stacktrace"]
-        ps = []
-        for p in [p for i in range(0, len(req) + 1) for p in itertools.permutations(req, i)]:
-            ps.append(dict((x, None) for x in p))
+    def set_context(self, value):
+        return self.marionette._send_message("Marionette:SetContext", {"value": value})
 
-        for p in filter(lambda p: len(p) < 3, ps):
-            self.assertRaises(KeyError, self.marionette._handle_error, p)
+    def test_set_context(self):
+        self.assertEqual(self.set_context("content"), {"value": None})
+        self.assertEqual(self.set_context("chrome"), {"value": None})
 
-    def test_known_error_status(self):
-        with self.assertRaises(errors.NoSuchElementException):
-            self.marionette._handle_error(
-                {"error": errors.NoSuchElementException.status,
-                 "message": None,
-                 "stacktrace": None})
+        for typ in [True, 42, [], {}, None]:
+            with self.assertRaises(errors.InvalidArgumentException):
+                self.set_context(typ)
 
-    def test_unknown_error_status(self):
         with self.assertRaises(errors.MarionetteException):
-            self.marionette._handle_error(
-                {"error": "barbera",
-                 "message": None,
-                 "stacktrace": None})
+            self.set_context("foo")
+
+    def test_get_context(self):
+        self.assertEqual(self.get_context(), "content")
+        self.set_context("chrome")
+        self.assertEqual(self.get_context(), "chrome")
+        self.set_context("content")
+        self.assertEqual(self.get_context(), "content")

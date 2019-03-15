@@ -6,21 +6,32 @@
 
 UNIFIED_SOURCES += [
     'Helpers.cpp',
-    'TestArray.cpp',
+    'TestArenaAllocator.cpp',
     'TestAtoms.cpp',
     'TestAutoPtr.cpp',
     'TestAutoRef.cpp',
+    'TestAutoRefCnt.cpp',
     'TestBase64.cpp',
     'TestCallTemplates.cpp',
     'TestCloneInputStream.cpp',
     'TestCOMPtrEq.cpp',
     'TestCRT.cpp',
+    'TestDafsa.cpp',
     'TestEncoding.cpp',
-    'TestEscapeURL.cpp',
+    'TestEscape.cpp',
+    'TestEventPriorities.cpp',
+    'TestEventTargetQI.cpp',
     'TestExpirationTracker.cpp',
     'TestFile.cpp',
     'TestGCPostBarriers.cpp',
     'TestID.cpp',
+    'TestInputStreamLengthHelper.cpp',
+    'TestLogCommandLineHandler.cpp',
+    'TestMoveString.cpp',
+    'TestMozPromise.cpp',
+    'TestMruCache.cpp',
+    'TestMultiplexInputStream.cpp',
+    'TestNonBlockingAsyncInputStream.cpp',
     'TestNsDeque.cpp',
     'TestNSPRLogModulesParser.cpp',
     'TestObserverArray.cpp',
@@ -29,6 +40,8 @@ UNIFIED_SOURCES += [
     'TestPLDHash.cpp',
     'TestPriorityQueue.cpp',
     'TestRacingServiceManager.cpp',
+    'TestRecursiveMutex.cpp',
+    'TestRWLock.cpp',
     'TestSlicedInputStream.cpp',
     'TestSnappyStreams.cpp',
     'TestStateWatching.cpp',
@@ -38,16 +51,19 @@ UNIFIED_SOURCES += [
     'TestSynchronization.cpp',
     'TestTArray.cpp',
     'TestTArray2.cpp',
+    'TestTaskQueue.cpp',
     'TestTextFormatter.cpp',
+    'TestThreadManager.cpp',
+    'TestThreadMetrics.cpp',
     'TestThreadPool.cpp',
     'TestThreadPoolListener.cpp',
     'TestThreads.cpp',
     'TestThreadUtils.cpp',
+    'TestThrottledEventQueue.cpp',
     'TestTimers.cpp',
     'TestTimeStamp.cpp',
     'TestTokenizer.cpp',
     'TestUTF.cpp',
-    'TestXPIDLString.cpp',
 ]
 
 if CONFIG['MOZ_DEBUG'] and CONFIG['OS_ARCH'] not in ('WINNT') and CONFIG['OS_TARGET'] != 'Android':
@@ -58,7 +74,17 @@ if CONFIG['MOZ_DEBUG'] and CONFIG['OS_ARCH'] not in ('WINNT') and CONFIG['OS_TAR
         'TestDeadlockDetectorScalability.cpp',
     ]
 
-if CONFIG['WRAP_STL_INCLUDES'] and not CONFIG['CLANG_CL']:
+if CONFIG['OS_TARGET'] == 'WINNT':
+    UNIFIED_SOURCES += [
+        'TestFilePreferencesWin.cpp',
+    ]
+else:
+    UNIFIED_SOURCES += [
+        'TestFilePreferencesUnix.cpp',
+    ]
+
+
+if CONFIG['WRAP_STL_INCLUDES'] and CONFIG['CC_TYPE'] != 'clang-cl':
     UNIFIED_SOURCES += [
         'TestSTLWrappers.cpp',
     ]
@@ -77,4 +103,25 @@ LOCAL_INCLUDES += [
     '../../base',
 ]
 
+GENERATED_FILES = [
+    'dafsa_test_1.inc',
+]
+dafsa_data = GENERATED_FILES['dafsa_test_1.inc']
+dafsa_data.script = '../../ds/tools/make_dafsa.py'
+dafsa_data.inputs = ['dafsa_test_1.dat']
+
+TEST_HARNESS_FILES.gtest += [
+    'wikipedia/ar.txt',
+    'wikipedia/de-edit.txt',
+    'wikipedia/de.txt',
+    'wikipedia/ja.txt',
+    'wikipedia/ko.txt',
+    'wikipedia/ru.txt',
+    'wikipedia/th.txt',
+    'wikipedia/tr.txt',
+    'wikipedia/vi.txt',
+]
+
 FINAL_LIBRARY = 'xul-gtest'
+
+include('/ipc/chromium/chromium-config.mozbuild')

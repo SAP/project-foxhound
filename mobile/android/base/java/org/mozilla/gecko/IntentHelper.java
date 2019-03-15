@@ -5,33 +5,43 @@
 
 package org.mozilla.gecko;
 
+import org.mozilla.gecko.db.BrowserContract;
 import org.mozilla.gecko.overlays.ui.ShareDialog;
+import org.mozilla.gecko.preferences.GeckoPreferences;
 import org.mozilla.gecko.util.ActivityResultHandler;
 import org.mozilla.gecko.util.BundleEventListener;
 import org.mozilla.gecko.util.EventCallback;
+import org.mozilla.gecko.util.FileUtils;
 import org.mozilla.gecko.util.GeckoBundle;
+import org.mozilla.gecko.util.IntentUtils;
+import org.mozilla.gecko.util.StrictModeContext;
 import org.mozilla.gecko.widget.ExternalIntentDuringPrivateBrowsingPromptFragment;
 
-import android.annotation.TargetApi;
+import android.app.Activity;
+import android.content.ClipData;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.net.Uri;
 import android.provider.Browser;
+import android.provider.MediaStore;
 import android.support.annotation.Nullable;
 import android.support.v4.app.FragmentActivity;
+import android.support.v4.content.FileProvider;
 import android.text.TextUtils;
 import android.util.Log;
 import android.webkit.MimeTypeMap;
 
-import java.io.UnsupportedEncodingException;
+import java.io.File;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.net.URLEncoder;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+
+import static org.mozilla.gecko.Tabs.INTENT_EXTRA_SESSION_UUID;
+import static org.mozilla.gecko.Tabs.INTENT_EXTRA_TAB_ID;
+import static org.mozilla.gecko.util.FileUtils.resolveContentUri;
 
 public final class IntentHelper implements BundleEventListener {
 
@@ -47,25 +57,26 @@ public final class IntentHelper implements BundleEventListener {
     };
 
     // via http://developer.android.com/distribute/tools/promote/linking.html
-    private static String MARKET_INTENT_URI_PACKAGE_PREFIX = "market://details?id=";
-    private static String EXTRA_BROWSER_FALLBACK_URL = "browser_fallback_url";
+    private static final String MARKET_INTENT_URI_PACKAGE_PREFIX = "market://details?id=";
+    private static final String EXTRA_BROWSER_FALLBACK_URL = "browser_fallback_url";
 
-    /** A partial URI to an error page - the encoded error URI should be appended before loading. */
-    private static String UNKNOWN_PROTOCOL_URI_PREFIX = "about:neterror?e=unknownProtocolFound&u=";
+    // In theory we can send up to 1 MB via an intent, which with UTF-16 strings would mean around
+    // 500k chars. In practice those 1 MB need to be shared with anything else we're doing that uses
+    // Binder transactions at the same time, plus sending a share intent can incur considerable
+    // overhead - for ACTION_SEND intents for example the whole EXTRA_TEXT will be duplicated into
+    // the intent's ClipData.
+    private static final int MAX_INTENT_STRING_DATA_LENGTH = 80000;
 
     private static IntentHelper instance;
 
-    private final FragmentActivity activity;
-
-    private IntentHelper(final FragmentActivity activity) {
-        this.activity = activity;
+    private IntentHelper() {
         EventDispatcher.getInstance().registerGeckoThreadListener(this, GECKO_EVENTS);
         EventDispatcher.getInstance().registerUiThreadListener(this, UI_EVENTS);
     }
 
-    public static IntentHelper init(final FragmentActivity activity) {
+    public static IntentHelper init() {
         if (instance == null) {
-            instance = new IntentHelper(activity);
+            instance = new IntentHelper();
         } else {
             Log.w(LOGTAG, "IntentHelper.init() called twice, ignoring.");
         }
@@ -73,12 +84,17 @@ public final class IntentHelper implements BundleEventListener {
         return instance;
     }
 
-    public static void destroy() {
-        if (instance != null) {
-            EventDispatcher.getInstance().unregisterGeckoThreadListener(instance, GECKO_EVENTS);
-            EventDispatcher.getInstance().unregisterUiThreadListener(instance, UI_EVENTS);
-            instance = null;
+    private static FragmentActivity getActivity() {
+        final Activity activity = GeckoActivityMonitor.getInstance().getCurrentActivity();
+        if (activity instanceof FragmentActivity) {
+            return (FragmentActivity) activity;
         }
+        return null;
+    }
+
+    private static Context getContext() {
+        final Activity activity = GeckoActivityMonitor.getInstance().getCurrentActivity();
+        return (activity != null) ? activity : GeckoAppShell.getApplicationContext();
     }
 
     /**
@@ -108,9 +124,7 @@ public final class IntentHelper implements BundleEventListener {
                                           String action,
                                           String title,
                                           final boolean showPromptInPrivateBrowsing) {
-        final GeckoAppShell.GeckoInterface gi = GeckoAppShell.getGeckoInterface();
-        final Context activityContext = gi != null ? gi.getActivity() : null;
-        final Context context = activityContext != null ? activityContext : GeckoAppShell.getApplicationContext();
+        final Context context = getContext();
         final Intent intent = getOpenURIIntent(context, targetURI,
                                                mimeType, action, title);
 
@@ -127,8 +141,9 @@ public final class IntentHelper implements BundleEventListener {
             }
         }
 
-        if (!showPromptInPrivateBrowsing || activityContext == null) {
-            if (activityContext == null) {
+        final FragmentActivity activity = getActivity();
+        if (!showPromptInPrivateBrowsing || activity == null) {
+            if (activity == null) {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             }
             return ActivityHandlerHelper.startIntentAndCatch(LOGTAG, context, intent);
@@ -136,9 +151,8 @@ public final class IntentHelper implements BundleEventListener {
             // Ideally we retrieve the Activity from the calling args, rather than
             // statically, but since this method is called from Gecko and I'm
             // unfamiliar with that code, this is a simpler solution.
-            final FragmentActivity fragmentActivity = (FragmentActivity) activityContext;
             return ExternalIntentDuringPrivateBrowsingPromptFragment.showDialogOrAndroidChooser(
-                    context, fragmentActivity.getSupportFragmentManager(), intent);
+                    context, activity.getSupportFragmentManager(), intent);
         }
     }
 
@@ -196,9 +210,14 @@ public final class IntentHelper implements BundleEventListener {
      *         produced.
      */
     public static Intent getShareIntent(final Context context,
-                                        final String targetURI,
+                                        String targetURI,
                                         final String mimeType,
                                         final String title) {
+        if (!TextUtils.isEmpty(targetURI) && targetURI.length() > MAX_INTENT_STRING_DATA_LENGTH) {
+            final String ellipsis = context.getString(R.string.ellipsis);
+            targetURI = targetURI.substring(0, MAX_INTENT_STRING_DATA_LENGTH) + ellipsis;
+        }
+
         Intent shareIntent = getIntentForActionString(Intent.ACTION_SEND);
         shareIntent.putExtra(Intent.EXTRA_TEXT, targetURI);
         shareIntent.putExtra(Intent.EXTRA_SUBJECT, title);
@@ -214,6 +233,49 @@ public final class IntentHelper implements BundleEventListener {
         }
 
         return shareIntent;
+    }
+
+    public static Intent getTabSwitchIntent(final int tabId) {
+        final Intent intent = new Intent(GeckoApp.ACTION_SWITCH_TAB);
+        intent.setClassName(AppConstants.ANDROID_PACKAGE_NAME, AppConstants.MOZ_ANDROID_BROWSER_INTENT_CLASS);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        intent.putExtra(BrowserContract.SKIP_TAB_QUEUE_FLAG, true);
+        intent.putExtra(INTENT_EXTRA_TAB_ID, tabId);
+        intent.putExtra(INTENT_EXTRA_SESSION_UUID, GeckoApplication.getSessionUUID());
+        return intent;
+    }
+
+    public static Intent getPrivacySettingsIntent() {
+        final Intent intent = new Intent(GeckoApp.ACTION_LAUNCH_SETTINGS);
+        intent.setClassName(AppConstants.ANDROID_PACKAGE_NAME, AppConstants.MOZ_ANDROID_BROWSER_INTENT_CLASS);
+        GeckoPreferences.setResourceToOpen(intent, "preferences_privacy");
+        return intent;
+    }
+
+    public static Intent getAudioCaptureIntent() {
+        return new Intent(MediaStore.Audio.Media.RECORD_SOUND_ACTION);
+    }
+
+    public static Intent getImageCaptureIntent(final Context context, final File destinationFile) {
+        final Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+        Uri destination = FileProvider.getUriForFile(context,
+                AppConstants.MOZ_FILE_PROVIDER_AUTHORITY, destinationFile);
+        intent.putExtra(MediaStore.EXTRA_OUTPUT, destination);
+
+        if (AppConstants.Versions.preLollipop) {
+            // As per https://github.com/commonsguy/cw-omnibus/blob/master/Camera/FileProvider/
+            // app/src/main/java/com/commonsware/android/camcon/MainActivity.java - at least we
+            // don't have to support anything below Jelly Bean.
+            ClipData clip =
+                    ClipData.newUri(context.getContentResolver(), null, destination);
+            intent.setClipData(clip);
+        }
+        intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        return intent;
+    }
+
+    public static Intent getVideoCaptureIntent() {
+        return new Intent(MediaStore.ACTION_VIDEO_CAPTURE);
     }
 
     /**
@@ -259,41 +321,21 @@ public final class IntentHelper implements BundleEventListener {
                                         context.getResources().getString(R.string.share_title));
         }
 
-        Uri uri = normalizeUriScheme(targetURI.indexOf(':') >= 0 ? Uri.parse(targetURI) : new Uri.Builder().scheme(targetURI).build());
+        Uri uri = IntentUtils.normalizeUri(targetURI);
+
         if (!TextUtils.isEmpty(mimeType)) {
             Intent intent = getIntentForActionString(action);
             intent.setDataAndType(uri, mimeType);
             return intent;
         }
 
-        if (!GeckoAppShell.isUriSafeForScheme(uri)) {
+        if (!IntentUtils.isUriSafeForScheme(targetURI)) {
             return null;
         }
 
         final String scheme = uri.getScheme();
         if ("intent".equals(scheme) || "android-app".equals(scheme)) {
-            final Intent intent;
-            try {
-                intent = Intent.parseUri(targetURI, 0);
-            } catch (final URISyntaxException e) {
-                Log.e(LOGTAG, "Unable to parse URI - " + e);
-                return null;
-            }
-
-            final Uri data = intent.getData();
-            if (data != null && "file".equals(data.normalizeScheme().getScheme())) {
-                Log.w(LOGTAG, "Blocked intent with \"file://\" data scheme.");
-                return null;
-            }
-
-            // Only open applications which can accept arbitrary data from a browser.
-            intent.addCategory(Intent.CATEGORY_BROWSABLE);
-
-            // Prevent site from explicitly opening our internal activities, which can leak data.
-            intent.setComponent(null);
-            nullIntentSelector(intent);
-
-            return intent;
+            return IntentUtils.getSafeIntent(uri);
         }
 
         // Compute our most likely intent, then check to see if there are any
@@ -368,31 +410,6 @@ public final class IntentHelper implements BundleEventListener {
         return intent;
     }
 
-    // We create a separate method to better encapsulate the @TargetApi use.
-    @TargetApi(15)
-    private static void nullIntentSelector(final Intent intent) {
-        intent.setSelector(null);
-    }
-
-    /**
-     * Return a <code>Uri</code> instance which is equivalent to <code>u</code>,
-     * but with a guaranteed-lowercase scheme as if the API level 16 method
-     * <code>u.normalizeScheme</code> had been called.
-     *
-     * @param u the <code>Uri</code> to normalize.
-     * @return a <code>Uri</code>, which might be <code>u</code>.
-     */
-    private static Uri normalizeUriScheme(final Uri u) {
-        final String scheme = u.getScheme();
-        final String lower  = scheme.toLowerCase(Locale.US);
-        if (lower.equals(scheme)) {
-            return u;
-        }
-
-        // Otherwise, return a new URI with a normalized scheme.
-        return u.buildUpon().scheme(lower).build();
-    }
-
     @Override // BundleEventHandler
     public void handleMessage(final String event, final GeckoBundle message,
                               final EventCallback callback) {
@@ -411,7 +428,7 @@ public final class IntentHelper implements BundleEventListener {
     }
 
     private void getHandlers(final GeckoBundle message, final EventCallback callback) {
-        final Intent intent = getOpenURIIntent(activity,
+        final Intent intent = getOpenURIIntent(getContext(),
                                                message.getString("url", ""),
                                                message.getString("mime", ""),
                                                message.getString("action", ""),
@@ -419,17 +436,24 @@ public final class IntentHelper implements BundleEventListener {
         callback.sendSuccess(getHandlersForIntent(intent));
     }
 
+    @SuppressWarnings("try")
     private void open(final GeckoBundle message) {
-        openUriExternal(message.getString("url", ""),
-                        message.getString("mime", ""),
-                        message.getString("packageName", ""),
-                        message.getString("className", ""),
-                        message.getString("action", ""),
-                        message.getString("title", ""), false);
+        // Bug 1450449 - this is most likely a document from the publicly accessible storage which
+        // isn't owned exclusively by Firefox, so there's no real benefit to using content:// URIs
+        // here.
+        try (StrictModeContext unused = StrictModeContext.allowAllVmPolicies()) {
+            openUriExternal(message.getString("url", ""),
+                            message.getString("mime", ""),
+                            message.getString("packageName", ""),
+                            message.getString("className", ""),
+                            message.getString("action", ""),
+                            message.getString("title", ""), false);
+        }
     }
 
+    @SuppressWarnings("try")
     private void openForResult(final GeckoBundle message, final EventCallback callback) {
-        Intent intent = getOpenURIIntent(activity,
+        Intent intent = getOpenURIIntent(getContext(),
                                          message.getString("url", ""),
                                          message.getString("mime", ""),
                                          message.getString("action", ""),
@@ -438,8 +462,16 @@ public final class IntentHelper implements BundleEventListener {
                             message.getString("className", ""));
         intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
 
+        final FragmentActivity activity = getActivity();
+        if (activity == null) {
+            callback.sendError(null);
+            return;
+        }
         final ResultHandler handler = new ResultHandler(callback);
-        try {
+        // Bug 1450449 - this is most likely a document from the publicly accessible storage which
+        // isn't owned exclusively by Firefox, so there's no real benefit to using content:// URIs
+        // here.
+        try (StrictModeContext unused = StrictModeContext.allowAllVmPolicies()) {
             ActivityHandlerHelper.startIntentForActivity(activity, intent, handler);
         } catch (SecurityException e) {
             Log.w(LOGTAG, "Forbidden to launch activity.", e);
@@ -458,10 +490,12 @@ public final class IntentHelper implements BundleEventListener {
      */
     private void openNoHandler(final GeckoBundle msg, final EventCallback callback) {
         final String uri = msg.getString("uri");
+        final GeckoBundle errorResponse = new GeckoBundle();
 
         if (TextUtils.isEmpty(uri)) {
             Log.w(LOGTAG, "Received empty URL - loading about:neterror");
-            callback.sendError(getUnknownProtocolErrorPageUri(""));
+            errorResponse.putBoolean("isFallback", false);
+            callback.sendError(errorResponse);
             return;
         }
 
@@ -470,16 +504,20 @@ public final class IntentHelper implements BundleEventListener {
             // TODO (bug 1173626): This will not handle android-app uris on non 5.1 devices.
             intent = Intent.parseUri(uri, 0);
         } catch (final URISyntaxException e) {
-            String errorUri;
-            try {
-                errorUri = getUnknownProtocolErrorPageUri(URLEncoder.encode(uri, "UTF-8"));
-            } catch (final UnsupportedEncodingException encodingE) {
-                errorUri = getUnknownProtocolErrorPageUri("");
-            }
-
             // Don't log the exception to prevent leaking URIs.
             Log.w(LOGTAG, "Unable to parse Intent URI - loading about:neterror");
-            callback.sendError(errorUri);
+            errorResponse.putBoolean("isFallback", false);
+            callback.sendError(errorResponse);
+            return;
+        }
+
+        if (FileUtils.isContentUri(uri)) {
+            final String contentUri = resolveContentUri(getContext(), intent.getData());
+            if (!TextUtils.isEmpty(contentUri)) {
+                errorResponse.putString("uri", contentUri);
+                errorResponse.putBoolean("isFallback", true);
+            }
+            callback.sendError(errorResponse);
             return;
         }
 
@@ -487,9 +525,10 @@ public final class IntentHelper implements BundleEventListener {
         //   https://developer.chrome.com/multidevice/android/intents
         final String fallbackUrl = intent.getStringExtra(EXTRA_BROWSER_FALLBACK_URL);
         if (isFallbackUrlValid(fallbackUrl)) {
+            errorResponse.putString("uri", fallbackUrl);
+            errorResponse.putBoolean("isFallback", true);
             // Opens the page in JS.
-            callback.sendError(fallbackUrl);
-
+            callback.sendError(errorResponse);
         } else if (intent.getPackage() != null) {
             // Note on alternative flows: we could get the intent package from a component, however, for
             // security reasons, components are ignored when opening URIs (bug 1168998) so we should
@@ -506,6 +545,11 @@ public final class IntentHelper implements BundleEventListener {
 
             // (Bug 1192436) We don't know if marketIntent matches any Activities (e.g. non-Play
             // Store devices). If it doesn't, clicking the link will cause no action to occur.
+            final FragmentActivity activity = getActivity();
+            if (activity == null) {
+                callback.sendError(null);
+                return;
+            }
             ExternalIntentDuringPrivateBrowsingPromptFragment.showDialogOrAndroidChooser(
                     activity, activity.getSupportFragmentManager(), marketIntent);
             callback.sendSuccess(null);
@@ -521,7 +565,8 @@ public final class IntentHelper implements BundleEventListener {
             //
             // Don't log the URI to prevent leaking it.
             Log.w(LOGTAG, "Unable to open URI, maybe showing neterror");
-            callback.sendError(getUnknownProtocolErrorPageUri(intent.getData().toString()));
+            errorResponse.putBoolean("isFallback", false);
+            callback.sendError(errorResponse);
         }
     }
 
@@ -543,16 +588,6 @@ public final class IntentHelper implements BundleEventListener {
             Log.w(LOGTAG, "URISyntaxException parsing fallback URI");
         }
         return false;
-    }
-
-    /**
-     * Returns an about:neterror uri with the unknownProtocolFound text as a parameter.
-     * @param encodedUri The encoded uri. While the page does not open correctly without specifying
-     *                   a uri parameter, it happily accepts the empty String so this argument may
-     *                   be the empty String.
-     */
-    private String getUnknownProtocolErrorPageUri(final String encodedUri) {
-        return UNKNOWN_PROTOCOL_URI_PREFIX + encodedUri;
     }
 
     private static class ResultHandler implements ActivityResultHandler {

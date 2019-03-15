@@ -8,19 +8,19 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_REMOTE_BITRATE_ESTIMATOR_TEST_PACKET_SENDER_H_
-#define WEBRTC_MODULES_REMOTE_BITRATE_ESTIMATOR_TEST_PACKET_SENDER_H_
+#ifndef MODULES_REMOTE_BITRATE_ESTIMATOR_TEST_PACKET_SENDER_H_
+#define MODULES_REMOTE_BITRATE_ESTIMATOR_TEST_PACKET_SENDER_H_
 
 #include <list>
 #include <limits>
+#include <memory>
 #include <set>
 #include <string>
 
-#include "webrtc/base/constructormagic.h"
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/modules/include/module.h"
-#include "webrtc/modules/remote_bitrate_estimator/test/bwe.h"
-#include "webrtc/modules/remote_bitrate_estimator/test/bwe_test_framework.h"
+#include "modules/include/module.h"
+#include "modules/remote_bitrate_estimator/test/bwe.h"
+#include "modules/remote_bitrate_estimator/test/bwe_test_framework.h"
+#include "rtc_base/constructormagic.h"
 
 namespace webrtc {
 namespace testing {
@@ -81,7 +81,6 @@ class VideoSender : public PacketSender, public BitrateObserver {
   void OnNetworkChanged(uint32_t target_bitrate_bps,
                         uint8_t fraction_lost,
                         int64_t rtt) override;
-
   void Pause() override;
   void Resume(int64_t paused_time_ms) override;
 
@@ -91,7 +90,7 @@ class VideoSender : public PacketSender, public BitrateObserver {
                                          Packets* generated);
 
   VideoSource* source_;
-  rtc::scoped_ptr<BweSender> bwe_;
+  std::unique_ptr<BweSender> bwe_;
   int64_t start_of_run_ms_;
   std::list<Module*> modules_;
 
@@ -100,7 +99,7 @@ class VideoSender : public PacketSender, public BitrateObserver {
   RTC_DISALLOW_COPY_AND_ASSIGN(VideoSender);
 };
 
-class PacedVideoSender : public VideoSender, public PacedSender::Callback {
+class PacedVideoSender : public VideoSender, public PacedSender::PacketSender {
  public:
   PacedVideoSender(PacketProcessorListener* listener,
                    VideoSource* source,
@@ -113,20 +112,33 @@ class PacedVideoSender : public VideoSender, public PacedSender::Callback {
   bool TimeToSendPacket(uint32_t ssrc,
                         uint16_t sequence_number,
                         int64_t capture_time_ms,
-                        bool retransmission) override;
-  size_t TimeToSendPadding(size_t bytes) override;
+                        bool retransmission,
+                        const PacedPacketInfo& pacing_info) override;
+  size_t TimeToSendPadding(size_t bytes,
+                           const PacedPacketInfo& pacing_info) override;
 
   // Implements BitrateObserver.
   void OnNetworkChanged(uint32_t target_bitrate_bps,
                         uint8_t fraction_lost,
                         int64_t rtt) override;
 
+  void OnNetworkChanged(uint32_t bitrate_for_encoder_bps,
+                        uint32_t bitrate_for_pacer_bps,
+                        bool in_probe_rtt,
+                        int64_t rtt,
+                        uint64_t congestion_window) override;
+  size_t pacer_queue_size_in_bytes() override {
+    return pacer_queue_size_in_bytes_;
+  }
+  void OnBytesAcked(size_t bytes) override;
+
  private:
   int64_t TimeUntilNextProcess(const std::list<Module*>& modules);
   void CallProcess(const std::list<Module*>& modules);
   void QueuePackets(Packets* batch, int64_t end_of_batch_time_us);
 
-  PacedSender pacer_;
+  size_t pacer_queue_size_in_bytes_ = 0;
+  std::unique_ptr<Pacer> pacer_;
   Packets queue_;
   Packets pacer_queue_;
 
@@ -192,4 +204,4 @@ class TcpSender : public PacketSender {
 }  // namespace bwe
 }  // namespace testing
 }  // namespace webrtc
-#endif  // WEBRTC_MODULES_REMOTE_BITRATE_ESTIMATOR_TEST_PACKET_SENDER_H_
+#endif  // MODULES_REMOTE_BITRATE_ESTIMATOR_TEST_PACKET_SENDER_H_

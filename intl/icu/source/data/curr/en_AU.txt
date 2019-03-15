@@ -31,6 +31,10 @@ en_AU{
             "CAD",
             "Canadian Dollar",
         }
+        CNH{
+            "CNH",
+            "CNH",
+        }
         CNY{
             "CNY",
             "Chinese Yuan",
@@ -126,10 +130,6 @@ en_AU{
         SEK{"Kr"}
         UYU{"$U"}
     }
-    Currencies%variant{
-        GEL{"GEL"}
-        TRY{"TRY"}
-    }
     CurrencyPlurals{
         BAM{
             one{"Bosnia-Herzegovina convertible marka"}
@@ -146,6 +146,10 @@ en_AU{
         BOB{
             one{"boliviano"}
             other{"bolivianos"}
+        }
+        CNH{
+            one{"CNH"}
+            other{"CNH"}
         }
         EUR{
             one{"euro"}
@@ -166,6 +170,9 @@ en_AU{
         LAK{
             one{"Laotian kip"}
             other{"Laotian kip"}
+        }
+        MGA{
+            one{"Malagasy ariary"}
         }
         MKD{
             one{"Macedonian denar"}
@@ -191,6 +198,10 @@ en_AU{
             one{"Uzbekistani som"}
             other{"Uzbekistani soms"}
         }
+        VEF{
+            one{"Venezuelan bolívar"}
+            other{"Venezuelan bolívars"}
+        }
         VND{
             one{"Vietnamese dong"}
             other{"Vietnamese dongs"}
@@ -200,5 +211,5 @@ en_AU{
             other{"Samoan talas"}
         }
     }
-    Version{"2.1.30.50"}
+    Version{"2.1.44.18"}
 }

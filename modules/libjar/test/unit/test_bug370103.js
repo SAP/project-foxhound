@@ -1,7 +1,4 @@
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cu = Components.utils;
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 // Regression test for bug 370103 - crash when passing a null listener to
 // nsIChannel.asyncOpen
@@ -24,5 +21,5 @@ function run_test() {
     exception = true;
   }
 
-  do_check_true(exception); // should throw exception instead of crashing
+  Assert.ok(exception); // should throw exception instead of crashing
 }

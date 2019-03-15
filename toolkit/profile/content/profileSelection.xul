@@ -29,6 +29,9 @@
   buttonlabelaccept="&start.label;"
   buttonlabelcancel="&exit.label;">
 
+  <script type="application/javascript"
+          src="chrome://global/content/customElements.js"/>
+
   <stringbundle id="bundle_profileManager"
                 src="chrome://mozapps/locale/profile/profileSelection.properties"/>
   <stringbundle id="bundle_brand"
@@ -54,10 +57,10 @@
     <separator flex="1"/>
 
     <vbox flex="1">
-      <listbox id="profiles" rows="5" seltype="single"
-               ondblclick="onProfilesDblClick(event)"
-               onkeypress="onProfilesKey(event);">
-      </listbox>
+      <richlistbox id="profiles" class="theme-listbox" seltype="single"
+                   ondblclick="onProfilesDblClick(event)"
+                   onkeypress="onProfilesKey(event);">
+      </richlistbox>
 
       <!-- Bug 257777 -->
       <checkbox id="offlineState" label="&offlineState.label;" accesskey="&offlineState.accesskey;"/>

@@ -1,5 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+"use strict";
 
 /**
  * Test inverting CensusTreeNode with a by alloaction stack breakdown.
@@ -11,8 +12,6 @@ function run_test() {
     then: { by: "count", count: true, bytes: true },
     noStack: { by: "count", count: true, bytes: true },
   };
-
-  let stack1, stack2, stack3, stack4;
 
   function a(n) {
     return b(n);
@@ -69,7 +68,7 @@ function run_test() {
             id: 16,
             parent: 15,
             reportLeafIndex: undefined,
-          }
+          },
         ],
         id: 15,
         parent: 14,
@@ -128,7 +127,7 @@ function run_test() {
                     id: 21,
                     parent: 20,
                     reportLeafIndex: undefined,
-                  }
+                  },
                 ],
                 id: 20,
                 parent: 19,
@@ -151,12 +150,12 @@ function run_test() {
                     id: 24,
                     parent: 23,
                     reportLeafIndex: undefined,
-                  }
+                  },
                 ],
                 id: 23,
                 parent: 19,
                 reportLeafIndex: undefined,
-              }
+              },
             ],
             id: 19,
             parent: 17,
@@ -189,7 +188,7 @@ function run_test() {
         id: 17,
         parent: 14,
         reportLeafIndex: new Set([1, 2, 3, 4, 5]),
-      }
+      },
     ],
     id: 14,
     parent: undefined,

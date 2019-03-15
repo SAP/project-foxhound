@@ -15,8 +15,9 @@
 SimpleTest.waitForExplicitFinish();
 
 // Set cookies behavior to "always reject".
-SpecialPowers.pushPrefEnv({"set": [["network.cookie.cookieBehavior", 2]]},
-                          test1);
+SpecialPowers.pushPrefEnv({"set": [
+  ["network.cookie.cookieBehavior", 2],
+]}, test1);
 
 function test1() {
   try {

@@ -3,9 +3,8 @@
  * should be able to accept form POST.
  */
 
-Components.utils.import("resource://gre/modules/Services.jsm");
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-Components.utils.import("resource://gre/modules/Task.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 const SCHEME = "x-bug1241377";
 
@@ -34,10 +33,10 @@ CustomProtocolHandler.prototype = {
            Ci.nsIProtocolHandler.URI_IS_LOCAL_RESOURCE;
   },
   newURI: function(aSpec, aOriginCharset, aBaseURI) {
-    var uri = Cc["@mozilla.org/network/standard-url;1"].
-              createInstance(Ci.nsIURI);
-    uri.spec = aSpec;
-    return uri;
+    return Cc["@mozilla.org/network/standard-url-mutator;1"]
+             .createInstance(Ci.nsIURIMutator)
+             .setSpec(aSpec)
+             .finalize()
   },
   newChannel2: function(aURI, aLoadInfo) {
     return new CustomChannel(aURI, aLoadInfo);
@@ -59,8 +58,8 @@ CustomProtocolHandler.prototype = {
   lockFactory: function() {},
 
   /** nsISupports */
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIProtocolHandler,
-                                         Ci.nsIFactory]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIProtocolHandler,
+                                          Ci.nsIFactory]),
   classID: Components.ID("{16d594bc-d9d8-47ae-a139-ea714dc0c35c}")
 };
 
@@ -76,7 +75,7 @@ function CustomChannel(aURI, aLoadInfo) {
   } else if (this.uri.spec == UPLOAD_ACTION_URI) {
     interfaces.push(Ci.nsIUploadChannel);
   }
-  this.QueryInterface = XPCOMUtils.generateQI(interfaces);
+  this.QueryInterface = ChromeUtils.generateQI(interfaces);
 }
 CustomChannel.prototype = {
   /** nsIUploadChannel */
@@ -191,7 +190,7 @@ document.getElementById('form').submit();
         } catch(e) {}
       }
     };
-    Services.tm.currentThread.dispatch(runnable, Ci.nsIEventTarget.DISPATCH_NORMAL);
+    Services.tm.dispatchToMainThread(runnable);
   },
   asyncOpen2: function(aListener) {
     this.asyncOpen(aListener, null);
@@ -238,7 +237,7 @@ function frameScript() {
 }
 
 function loadTestTab(uri) {
-  gBrowser.selectedTab = gBrowser.addTab(uri);
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, uri);
   var browser = gBrowser.selectedBrowser;
 
   let manager = browser.messageManager;
@@ -255,7 +254,7 @@ function loadTestTab(uri) {
   });
 }
 
-add_task(function*() {
+add_task(async function() {
   var handler = new CustomProtocolHandler();
   var registrar = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
   registrar.registerFactory(handler.classID, "",
@@ -266,22 +265,22 @@ add_task(function*() {
   });
 });
 
-add_task(function*() {
-  var [hasUploadStream, postData] = yield loadTestTab(NORMAL_FORM_URI);
+add_task(async function() {
+  var [hasUploadStream, postData] = await loadTestTab(NORMAL_FORM_URI);
   is(hasUploadStream, "no", "normal action should not have uploadStream");
 
   gBrowser.removeCurrentTab();
 });
 
-add_task(function*() {
-  var [hasUploadStream, postData] = yield loadTestTab(UPLOAD_FORM_URI);
+add_task(async function() {
+  var [hasUploadStream, postData] = await loadTestTab(UPLOAD_FORM_URI);
   is(hasUploadStream, "no", "upload action should not have uploadStream");
 
   gBrowser.removeCurrentTab();
 });
 
-add_task(function*() {
-  var [hasUploadStream, postData, headers] = yield loadTestTab(POST_FORM_URI);
+add_task(async function() {
+  var [hasUploadStream, postData, headers] = await loadTestTab(POST_FORM_URI);
 
   is(hasUploadStream, "yes", "post action should have uploadStream");
   is(postData, "foo=bar\r\n",

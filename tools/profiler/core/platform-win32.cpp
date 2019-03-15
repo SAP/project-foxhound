@@ -32,8 +32,39 @@
 #include <mmsystem.h>
 #include <process.h>
 
-// Memory profile
-#include "nsMemoryReporterManager.h"
+#include "nsWindowsDllInterceptor.h"
+#include "mozilla/StackWalk_windows.h"
+#include "mozilla/WindowsVersion.h"
+
+/* static */ int Thread::GetCurrentId() {
+  DWORD threadId = GetCurrentThreadId();
+  MOZ_ASSERT(threadId <= INT32_MAX, "native thread ID is > INT32_MAX");
+  return int(threadId);
+}
+
+void* GetStackTop(void* aGuess) {
+  PNT_TIB pTib = reinterpret_cast<PNT_TIB>(NtCurrentTeb());
+  return reinterpret_cast<void*>(pTib->StackBase);
+}
+
+static void PopulateRegsFromContext(Registers& aRegs, CONTEXT* aContext) {
+#if defined(GP_ARCH_amd64)
+  aRegs.mPC = reinterpret_cast<Address>(aContext->Rip);
+  aRegs.mSP = reinterpret_cast<Address>(aContext->Rsp);
+  aRegs.mFP = reinterpret_cast<Address>(aContext->Rbp);
+#elif defined(GP_ARCH_x86)
+  aRegs.mPC = reinterpret_cast<Address>(aContext->Eip);
+  aRegs.mSP = reinterpret_cast<Address>(aContext->Esp);
+  aRegs.mFP = reinterpret_cast<Address>(aContext->Ebp);
+#elif defined(GP_ARCH_arm64)
+  aRegs.mPC = reinterpret_cast<Address>(aContext->Pc);
+  aRegs.mSP = reinterpret_cast<Address>(aContext->Sp);
+  aRegs.mFP = reinterpret_cast<Address>(aContext->Fp);
+#else
+#  error "bad arch"
+#endif
+  aRegs.mLR = 0;
+}
 
 class PlatformData {
  public:
@@ -42,268 +73,235 @@ class PlatformData {
   // going to use it in the sampler thread. Using GetThreadHandle() will
   // not work in this case. We're using OpenThread because DuplicateHandle
   // for some reason doesn't work in Chrome's sandbox.
-  explicit PlatformData(int aThreadId) : profiled_thread_(OpenThread(
-                                               THREAD_GET_CONTEXT |
-                                               THREAD_SUSPEND_RESUME |
-                                               THREAD_QUERY_INFORMATION,
-                                               false,
-                                               aThreadId)) {}
-
-  ~PlatformData() {
-    if (profiled_thread_ != nullptr) {
-      CloseHandle(profiled_thread_);
-      profiled_thread_ = nullptr;
-    }
+  explicit PlatformData(int aThreadId)
+      : mProfiledThread(OpenThread(THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME |
+                                       THREAD_QUERY_INFORMATION,
+                                   false, aThreadId)) {
+    MOZ_COUNT_CTOR(PlatformData);
   }
 
-  HANDLE profiled_thread() { return profiled_thread_; }
+  ~PlatformData() {
+    if (mProfiledThread != nullptr) {
+      CloseHandle(mProfiledThread);
+      mProfiledThread = nullptr;
+    }
+    MOZ_COUNT_DTOR(PlatformData);
+  }
+
+  HANDLE ProfiledThread() { return mProfiledThread; }
 
  private:
-  HANDLE profiled_thread_;
+  HANDLE mProfiledThread;
 };
 
-UniquePlatformData
-AllocPlatformData(int aThreadId)
-{
-  return UniquePlatformData(new PlatformData(aThreadId));
-}
-
-void
-PlatformDataDestructor::operator()(PlatformData* aData)
-{
-  delete aData;
-}
-
-uintptr_t
-GetThreadHandle(PlatformData* aData)
-{
-  return (uintptr_t) aData->profiled_thread();
-}
+HANDLE
+GetThreadHandle(PlatformData* aData) { return aData->ProfiledThread(); }
 
 static const HANDLE kNoThread = INVALID_HANDLE_VALUE;
 
-// The sampler thread controls sampling and runs whenever the profiler is
-// active. It periodically runs through all registered threads, finds those
-// that should be sampled, then pauses and samples them.
-class SamplerThread
-{
-private:
-  static unsigned int __stdcall ThreadEntry(void* aArg) {
-    auto thread = static_cast<SamplerThread*>(aArg);
-    thread->Run();
-    return 0;
+////////////////////////////////////////////////////////////////////////
+// BEGIN Sampler target specifics
+
+Sampler::Sampler(PSLockRef aLock) {}
+
+void Sampler::Disable(PSLockRef aLock) {}
+
+template <typename Func>
+void Sampler::SuspendAndSampleAndResumeThread(
+    PSLockRef aLock, const RegisteredThread& aRegisteredThread,
+    const Func& aProcessRegs) {
+  HANDLE profiled_thread =
+      aRegisteredThread.GetPlatformData()->ProfiledThread();
+  if (profiled_thread == nullptr) {
+    return;
   }
 
-public:
-  explicit SamplerThread(double aInterval)
-    : mInterval(std::max(1, int(floor(aInterval + 0.5))))
-  {
-    // Create a new thread. It is important to use _beginthreadex() instead of
-    // the Win32 function CreateThread(), because the CreateThread() does not
-    // initialize thread-specific structures in the C runtime library.
-    mThread = reinterpret_cast<HANDLE>(
-        _beginthreadex(nullptr,
-                       /* stack_size */ 0,
-                       ThreadEntry,
-                       this,
-                       /* initflag */ 0,
-                       (unsigned int*) &mThreadId));
-    if (mThread == 0) {
-      MOZ_CRASH("_beginthreadex failed");
-    }
+  // Context used for sampling the register state of the profiled thread.
+  CONTEXT context;
+  memset(&context, 0, sizeof(context));
+
+  //----------------------------------------------------------------//
+  // Suspend the samplee thread and get its context.
+
+  static const DWORD kSuspendFailed = static_cast<DWORD>(-1);
+  if (SuspendThread(profiled_thread) == kSuspendFailed) {
+    return;
   }
 
-  ~SamplerThread() {
-    // Close our own handle for the thread.
-    if (mThread != kNoThread) {
-      CloseHandle(mThread);
-    }
-  }
+  // SuspendThread is asynchronous, so the thread may still be running.
+  // Call GetThreadContext first to ensure the thread is really suspended.
+  // See https://blogs.msdn.microsoft.com/oldnewthing/20150205-00/?p=44743.
 
-  void Join() {
-    if (mThreadId != Thread::GetCurrentId()) {
-      WaitForSingleObject(mThread, INFINITE);
-    }
-  }
-
-  static void StartSampler(double aInterval) {
-    MOZ_RELEASE_ASSERT(NS_IsMainThread());
-    MOZ_RELEASE_ASSERT(!sInstance);
-
-    sInstance = new SamplerThread(aInterval);
-  }
-
-  static void StopSampler() {
-    MOZ_RELEASE_ASSERT(NS_IsMainThread());
-
-    sInstance->Join();
-    delete sInstance;
-    sInstance = nullptr;
-  }
-
-  void Run() {
-    // This function runs on the sampler thread.
-
-    // By default we'll not adjust the timer resolution which tends to be around
-    // 16ms. However, if the requested interval is sufficiently low we'll try to
-    // adjust the resolution to match.
-    if (mInterval < 10)
-        ::timeBeginPeriod(mInterval);
-
-    while (gIsActive) {
-      gBuffer->deleteExpiredStoredMarkers();
-
-      if (!gIsPaused) {
-        mozilla::StaticMutexAutoLock lock(gRegisteredThreadsMutex);
-
-        bool isFirstProfiledThread = true;
-        for (uint32_t i = 0; i < gRegisteredThreads->size(); i++) {
-          ThreadInfo* info = (*gRegisteredThreads)[i];
-
-          // This will be null if we're not interested in profiling this thread.
-          if (!info->HasProfile() || info->IsPendingDelete()) {
-            continue;
-          }
-
-          if (info->Stack()->CanDuplicateLastSampleDueToSleep() &&
-              gBuffer->DuplicateLastSample(info->ThreadId(), gStartTime)) {
-            continue;
-          }
-
-          info->UpdateThreadResponsiveness();
-
-          SampleContext(info, isFirstProfiledThread);
-          isFirstProfiledThread = false;
-        }
-      }
-      ::Sleep(mInterval);
-    }
-
-    // disable any timer resolution changes we've made
-    if (mInterval < 10)
-        ::timeEndPeriod(mInterval);
-  }
-
-  void SampleContext(ThreadInfo* aThreadInfo, bool isFirstProfiledThread)
-  {
-    uintptr_t thread = GetThreadHandle(aThreadInfo->GetPlatformData());
-    HANDLE profiled_thread = reinterpret_cast<HANDLE>(thread);
-    if (profiled_thread == nullptr)
-      return;
-
-    // Context used for sampling the register state of the profiled thread.
-    CONTEXT context;
-    memset(&context, 0, sizeof(context));
-
-    TickSample sample;
-
-    // Grab the timestamp before pausing the thread, to avoid deadlocks.
-    sample.timestamp = mozilla::TimeStamp::Now();
-    sample.threadInfo = aThreadInfo;
-
-    if (isFirstProfiledThread && gProfileMemory) {
-      sample.rssMemory = nsMemoryReporterManager::ResidentFast();
-    } else {
-      sample.rssMemory = 0;
-    }
-
-    // Unique Set Size is not supported on Windows.
-    sample.ussMemory = 0;
-
-    static const DWORD kSuspendFailed = static_cast<DWORD>(-1);
-    if (SuspendThread(profiled_thread) == kSuspendFailed)
-      return;
-
-    // SuspendThread is asynchronous, so the thread may still be running.
-    // Call GetThreadContext first to ensure the thread is really suspended.
-    // See https://blogs.msdn.microsoft.com/oldnewthing/20150205-00/?p=44743.
-
-    // Using only CONTEXT_CONTROL is faster but on 64-bit it causes crashes in
-    // RtlVirtualUnwind (see bug 1120126) so we set all the flags.
+  // Using only CONTEXT_CONTROL is faster but on 64-bit it causes crashes in
+  // RtlVirtualUnwind (see bug 1120126) so we set all the flags.
 #if defined(GP_ARCH_amd64)
-    context.ContextFlags = CONTEXT_FULL;
+  context.ContextFlags = CONTEXT_FULL;
 #else
-    context.ContextFlags = CONTEXT_CONTROL;
+  context.ContextFlags = CONTEXT_CONTROL;
 #endif
-    if (!GetThreadContext(profiled_thread, &context)) {
-      ResumeThread(profiled_thread);
-      return;
-    }
-
-#if defined(GP_ARCH_amd64)
-    sample.pc = reinterpret_cast<Address>(context.Rip);
-    sample.sp = reinterpret_cast<Address>(context.Rsp);
-    sample.fp = reinterpret_cast<Address>(context.Rbp);
-#else
-    sample.pc = reinterpret_cast<Address>(context.Eip);
-    sample.sp = reinterpret_cast<Address>(context.Esp);
-    sample.fp = reinterpret_cast<Address>(context.Ebp);
-#endif
-
-    sample.context = &context;
-
-    Tick(gBuffer, &sample);
-
+  if (!GetThreadContext(profiled_thread, &context)) {
     ResumeThread(profiled_thread);
+    return;
   }
 
-private:
-  HANDLE mThread;
-  Thread::tid_t mThreadId;
+  //----------------------------------------------------------------//
+  // Sample the target thread.
 
-  // The interval between samples, measured in milliseconds.
-  const int mInterval;
+  // WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING
+  //
+  // The profiler's "critical section" begins here.  We must be very careful
+  // what we do here, or risk deadlock.  See the corresponding comment in
+  // platform-linux-android.cpp for details.
 
-  static SamplerThread* sInstance;
+  Registers regs;
+  PopulateRegsFromContext(regs, &context);
+  aProcessRegs(regs);
 
-  SamplerThread(const SamplerThread&) = delete;
-  void operator=(const SamplerThread&) = delete;
-};
+  //----------------------------------------------------------------//
+  // Resume the target thread.
 
-SamplerThread* SamplerThread::sInstance = nullptr;
+  ResumeThread(profiled_thread);
 
-static void
-PlatformInit()
-{
+  // The profiler's critical section ends here.
+  //
+  // WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING
 }
 
-static void
-PlatformStart(double aInterval)
-{
-  MOZ_RELEASE_ASSERT(NS_IsMainThread());
+// END Sampler target specifics
+////////////////////////////////////////////////////////////////////////
 
-  SamplerThread::StartSampler(aInterval);
+////////////////////////////////////////////////////////////////////////
+// BEGIN SamplerThread target specifics
+
+static unsigned int __stdcall ThreadEntry(void* aArg) {
+  auto thread = static_cast<SamplerThread*>(aArg);
+  thread->Run();
+  return 0;
 }
 
-static void
-PlatformStop()
-{
-  MOZ_RELEASE_ASSERT(NS_IsMainThread());
+SamplerThread::SamplerThread(PSLockRef aLock, uint32_t aActivityGeneration,
+                             double aIntervalMilliseconds)
+    : Sampler(aLock),
+      mActivityGeneration(aActivityGeneration),
+      mIntervalMicroseconds(
+          std::max(1, int(floor(aIntervalMilliseconds * 1000 + 0.5)))) {
+  // By default we'll not adjust the timer resolution which tends to be
+  // around 16ms. However, if the requested interval is sufficiently low
+  // we'll try to adjust the resolution to match.
+  if (mIntervalMicroseconds < 10 * 1000) {
+    ::timeBeginPeriod(mIntervalMicroseconds / 1000);
+  }
 
-  SamplerThread::StopSampler();
+  // Create a new thread. It is important to use _beginthreadex() instead of
+  // the Win32 function CreateThread(), because the CreateThread() does not
+  // initialize thread-specific structures in the C runtime library.
+  mThread = reinterpret_cast<HANDLE>(_beginthreadex(nullptr,
+                                                    /* stack_size */ 0,
+                                                    ThreadEntry, this,
+                                                    /* initflag */ 0, nullptr));
+  if (mThread == 0) {
+    MOZ_CRASH("_beginthreadex failed");
+  }
 }
 
-/* static */ Thread::tid_t
-Thread::GetCurrentId()
-{
-  return GetCurrentThreadId();
+SamplerThread::~SamplerThread() {
+  WaitForSingleObject(mThread, INFINITE);
+
+  // Close our own handle for the thread.
+  if (mThread != kNoThread) {
+    CloseHandle(mThread);
+  }
 }
 
-void TickSample::PopulateContext(void* aContext)
-{
-  MOZ_ASSERT(aContext);
-  CONTEXT* pContext = reinterpret_cast<CONTEXT*>(aContext);
-  context = pContext;
-  RtlCaptureContext(pContext);
+void SamplerThread::SleepMicro(uint32_t aMicroseconds) {
+  // For now, keep the old behaviour of minimum Sleep(1), even for
+  // smaller-than-usual sleeps after an overshoot, unless the user has
+  // explicitly opted into a sub-millisecond profiler interval.
+  if (mIntervalMicroseconds >= 1000) {
+    ::Sleep(std::max(1u, aMicroseconds / 1000));
+  } else {
+    TimeStamp start = TimeStamp::Now();
+    TimeStamp end = start + TimeDuration::FromMicroseconds(aMicroseconds);
 
-#if defined(GP_ARCH_amd64)
-  pc = reinterpret_cast<Address>(pContext->Rip);
-  sp = reinterpret_cast<Address>(pContext->Rsp);
-  fp = reinterpret_cast<Address>(pContext->Rbp);
-#elif defined(GP_ARCH_x86)
-  pc = reinterpret_cast<Address>(pContext->Eip);
-  sp = reinterpret_cast<Address>(pContext->Esp);
-  fp = reinterpret_cast<Address>(pContext->Ebp);
+    // First, sleep for as many whole milliseconds as possible.
+    if (aMicroseconds >= 1000) {
+      ::Sleep(aMicroseconds / 1000);
+    }
+
+    // Then, spin until enough time has passed.
+    while (TimeStamp::Now() < end) {
+      YieldProcessor();
+    }
+  }
+}
+
+void SamplerThread::Stop(PSLockRef aLock) {
+  // Disable any timer resolution changes we've made. Do it now while
+  // gPSMutex is locked, i.e. before any other SamplerThread can be created
+  // and call ::timeBeginPeriod().
+  //
+  // It's safe to do this now even though this SamplerThread is still alive,
+  // because the next time the main loop of Run() iterates it won't get past
+  // the mActivityGeneration check, and so it won't make any more ::Sleep()
+  // calls.
+  if (mIntervalMicroseconds < 10 * 1000) {
+    ::timeEndPeriod(mIntervalMicroseconds / 1000);
+  }
+
+  Sampler::Disable(aLock);
+}
+
+// END SamplerThread target specifics
+////////////////////////////////////////////////////////////////////////
+
+static void PlatformInit(PSLockRef aLock) {}
+
+#if defined(HAVE_NATIVE_UNWIND)
+void Registers::SyncPopulate() {
+  CONTEXT context;
+  RtlCaptureContext(&context);
+  PopulateRegsFromContext(*this, &context);
+}
 #endif
+
+#if defined(GP_PLAT_amd64_windows)
+static WindowsDllInterceptor NtDllIntercept;
+
+typedef NTSTATUS(NTAPI* LdrUnloadDll_func)(HMODULE module);
+static WindowsDllInterceptor::FuncHookType<LdrUnloadDll_func> stub_LdrUnloadDll;
+
+static NTSTATUS NTAPI patched_LdrUnloadDll(HMODULE module) {
+  // Prevent the stack walker from suspending this thread when LdrUnloadDll
+  // holds the RtlLookupFunctionEntry lock.
+  AutoSuppressStackWalking suppress;
+  return stub_LdrUnloadDll(module);
 }
 
+// These pointers are disguised as PVOID to avoid pulling in obscure headers
+typedef PVOID(WINAPI* LdrResolveDelayLoadedAPI_func)(
+    PVOID ParentModuleBase, PVOID DelayloadDescriptor, PVOID FailureDllHook,
+    PVOID FailureSystemHook, PVOID ThunkAddress, ULONG Flags);
+static WindowsDllInterceptor::FuncHookType<LdrResolveDelayLoadedAPI_func>
+    stub_LdrResolveDelayLoadedAPI;
+
+static PVOID WINAPI patched_LdrResolveDelayLoadedAPI(
+    PVOID ParentModuleBase, PVOID DelayloadDescriptor, PVOID FailureDllHook,
+    PVOID FailureSystemHook, PVOID ThunkAddress, ULONG Flags) {
+  // Prevent the stack walker from suspending this thread when
+  // LdrResolveDelayLoadAPI holds the RtlLookupFunctionEntry lock.
+  AutoSuppressStackWalking suppress;
+  return stub_LdrResolveDelayLoadedAPI(ParentModuleBase, DelayloadDescriptor,
+                                       FailureDllHook, FailureSystemHook,
+                                       ThunkAddress, Flags);
+}
+
+void InitializeWin64ProfilerHooks() {
+  NtDllIntercept.Init("ntdll.dll");
+  stub_LdrUnloadDll.Set(NtDllIntercept, "LdrUnloadDll", &patched_LdrUnloadDll);
+  if (IsWin8OrLater()) {  // LdrResolveDelayLoadedAPI was introduced in Win8
+    stub_LdrResolveDelayLoadedAPI.Set(NtDllIntercept,
+                                      "LdrResolveDelayLoadedAPI",
+                                      &patched_LdrResolveDelayLoadedAPI);
+  }
+}
+#endif  // defined(GP_PLAT_amd64_windows)

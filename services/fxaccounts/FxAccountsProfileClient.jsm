@@ -5,20 +5,16 @@
 /**
  * A client to fetch profile information for a Firefox Account.
  */
- "use strict;"
+ "use strict;";
 
-this.EXPORTED_SYMBOLS = ["FxAccountsProfileClient", "FxAccountsProfileClientError"];
+var EXPORTED_SYMBOLS = ["FxAccountsProfileClient", "FxAccountsProfileClientError"];
 
-const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
+ChromeUtils.import("resource://gre/modules/FxAccountsCommon.js");
+ChromeUtils.import("resource://gre/modules/FxAccounts.jsm");
+ChromeUtils.import("resource://services-common/rest.js");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-Cu.import("resource://gre/modules/Promise.jsm");
-Cu.import("resource://gre/modules/Log.jsm");
-Cu.import("resource://gre/modules/FxAccountsCommon.js");
-Cu.import("resource://gre/modules/FxAccounts.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
-Cu.import("resource://services-common/rest.js");
-
-Cu.importGlobalProperties(["URL"]);
+XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
 
 /**
  * Create a new FxAccountsProfileClient to be able to fetch Firefox Account profile information.
@@ -31,7 +27,7 @@ Cu.importGlobalProperties(["URL"]);
  *   The bearer token to access the profile server
  * @constructor
  */
-this.FxAccountsProfileClient = function(options) {
+var FxAccountsProfileClient = function(options) {
   if (!options || !options.serverURL) {
     throw new Error("Missing 'serverURL' configuration option");
   }
@@ -82,14 +78,14 @@ this.FxAccountsProfileClient.prototype = {
    *         Rejects: {FxAccountsProfileClientError} Profile client error.
    * @private
    */
-  _createRequest: Task.async(function* (path, method = "GET", etag = null) {
+  async _createRequest(path, method = "GET", etag = null) {
     let token = this.token;
     if (!token) {
       // tokens are cached, so getting them each request is cheap.
-      token = yield this.fxa.getOAuthToken(this.oauthOptions);
+      token = await this.fxa.getOAuthToken(this.oauthOptions);
     }
     try {
-      return (yield this._rawRequest(path, method, token, etag));
+      return (await this._rawRequest(path, method, token, etag));
     } catch (ex) {
       if (!(ex instanceof FxAccountsProfileClientError) || ex.code != 401) {
         throw ex;
@@ -100,22 +96,22 @@ this.FxAccountsProfileClient.prototype = {
       }
       // it's an auth error - assume our token expired and retry.
       log.info("Fetching the profile returned a 401 - revoking our token and retrying");
-      yield this.fxa.removeCachedOAuthToken({token});
-      token = yield this.fxa.getOAuthToken(this.oauthOptions);
+      await this.fxa.removeCachedOAuthToken({token});
+      token = await this.fxa.getOAuthToken(this.oauthOptions);
       // and try with the new token - if that also fails then we fail after
       // revoking the token.
       try {
-        return (yield this._rawRequest(path, method, token, etag));
+        return (await this._rawRequest(path, method, token, etag));
       } catch (ex) {
         if (!(ex instanceof FxAccountsProfileClientError) || ex.code != 401) {
           throw ex;
         }
         log.info("Retry fetching the profile still returned a 401 - revoking our token and failing");
-        yield this.fxa.removeCachedOAuthToken({token});
+        await this.fxa.removeCachedOAuthToken({token});
         throw ex;
       }
     }
-  }),
+  },
 
   /**
    * Remote "raw" request helper - doesn't handle auth errors and tokens.
@@ -132,73 +128,65 @@ this.FxAccountsProfileClient.prototype = {
    *         Rejects: {FxAccountsProfileClientError} Profile client error.
    * @private
    */
-  _rawRequest(path, method, token, etag) {
-    return new Promise((resolve, reject) => {
-      let profileDataUrl = this.serverURL + path;
-      let request = new this._Request(profileDataUrl);
-      method = method.toUpperCase();
+  async _rawRequest(path, method, token, etag) {
+    let profileDataUrl = this.serverURL + path;
+    let request = new this._Request(profileDataUrl);
+    method = method.toUpperCase();
 
-      request.setHeader("Authorization", "Bearer " + token);
-      request.setHeader("Accept", "application/json");
-      if (etag) {
-        request.setHeader("If-None-Match", etag);
+    request.setHeader("Authorization", "Bearer " + token);
+    request.setHeader("Accept", "application/json");
+    if (etag) {
+      request.setHeader("If-None-Match", etag);
+    }
+
+    if (method != "GET") {
+      // method not supported
+      throw new FxAccountsProfileClientError({
+        error: ERROR_NETWORK,
+        errno: ERRNO_NETWORK,
+        code: ERROR_CODE_METHOD_NOT_ALLOWED,
+        message: ERROR_MSG_METHOD_NOT_ALLOWED,
+      });
+    }
+
+    try {
+      await request.get();
+    } catch (error) {
+      throw new FxAccountsProfileClientError({
+        error: ERROR_NETWORK,
+        errno: ERRNO_NETWORK,
+        message: error.toString(),
+      });
+    }
+
+    let body = null;
+    try {
+      if (request.response.status == 304) {
+        return null;
       }
+      body = JSON.parse(request.response.body);
+    } catch (e) {
+      throw new FxAccountsProfileClientError({
+        error: ERROR_PARSE,
+        errno: ERRNO_PARSE,
+        code: request.response.status,
+        message: request.response.body,
+      });
+    }
 
-      request.onComplete = function(error) {
-        if (error) {
-          reject(new FxAccountsProfileClientError({
-            error: ERROR_NETWORK,
-            errno: ERRNO_NETWORK,
-            message: error.toString(),
-          }));
-          return;
-        }
-
-        let body = null;
-        try {
-          if (request.response.status == 304) {
-            resolve(null);
-            return;
-          }
-          body = JSON.parse(request.response.body);
-        } catch (e) {
-          reject(new FxAccountsProfileClientError({
-            error: ERROR_PARSE,
-            errno: ERRNO_PARSE,
-            code: request.response.status,
-            message: request.response.body,
-          }));
-          return;
-        }
-
-        // "response.success" means status code is 200
-        if (request.response.success) {
-          resolve({
-            body,
-            etag: request.response.headers["etag"]
-          });
-          return;
-        }
-        reject(new FxAccountsProfileClientError({
-          error: body.error || ERROR_UNKNOWN,
-          errno: body.errno || ERRNO_UNKNOWN_ERROR,
-          code: request.response.status,
-          message: body.message || body,
-        }));
-      };
-
-      if (method === "GET") {
-        request.get();
-      } else {
-        // method not supported
-        reject(new FxAccountsProfileClientError({
-          error: ERROR_NETWORK,
-          errno: ERRNO_NETWORK,
-          code: ERROR_CODE_METHOD_NOT_ALLOWED,
-          message: ERROR_MSG_METHOD_NOT_ALLOWED,
-        }));
-      }
-    });
+    // "response.success" means status code is 200
+    if (!request.response.success) {
+      throw new FxAccountsProfileClientError({
+        error: body.error || ERROR_UNKNOWN,
+        errno: body.errno || ERRNO_UNKNOWN_ERROR,
+        code: request.response.status,
+        message: body.message || body,
+      });
+    }
+    return {
+      body,
+      etag: request.response.headers.etag,
+    };
   },
 
   /**
@@ -213,7 +201,7 @@ this.FxAccountsProfileClient.prototype = {
   fetchProfile(etag) {
     log.debug("FxAccountsProfileClient: Requested profile");
     return this._createRequest("/profile", "GET", etag);
-  }
+  },
 };
 
 /**
@@ -230,7 +218,7 @@ this.FxAccountsProfileClient.prototype = {
  *          Error message
  * @constructor
  */
-this.FxAccountsProfileClientError = function(details) {
+var FxAccountsProfileClientError = function(details) {
   details = details || {};
 
   this.name = "FxAccountsProfileClientError";

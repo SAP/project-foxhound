@@ -7,10 +7,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1022869
   <meta charset="utf-8">
   <title>Test for Bug 1022869</title>
   <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/SpawnTask.js"></script>
+  <script type="application/javascript" src="/tests/SimpleTest/AddTask.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <iframe src="about:blank"></iframe>
-  <script type="text/javascript; version=1.8">
+  <script type="text/javascript">
 
   var f = document.getElementsByTagName("iframe")[0];
 
@@ -27,8 +27,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1022869
         "http://example.org/tests/dom/tests/mochitest/bugs/file_prime_cookie.html";
     waitForLoad().then(function() {
         // Cookies are set up, disallow third-party cookies and start the test.
-        SpecialPowers.pushPrefEnv({ set: [[ 'network.cookie.cookieBehavior', 1 ]] },
-                                  () => { spawn_task(continueTest); });
+        SpecialPowers.pushPrefEnv({ set: [
+            ["network.cookie.cookieBehavior", 1],
+          ]}, () => { continueTest(); });
     }).catch((e) => { ok(false, `Got exception: ${e}`) });
   }
 
@@ -41,7 +42,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1022869
     });
   }
 
-  function* continueTest() {
+  async function continueTest() {
     var sameOrigin = "http://mochi.test:8888";
     var thirdParty = "http://example.org";
     var page = "tests/dom/tests/mochitest/bugs/file_cookieOutputter.html"
@@ -55,22 +56,22 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1022869
 
     // Same origin to same origin.
     f.contentWindow.location = createRedirect(sameOrigin, sameOrigin);
-    let cookie = yield waitForLoad();
+    let cookie = await waitForLoad();
     is(cookie, "a=b", "got the cookie");
 
     // Cross origin to cross origin.
     f.contentWindow.location = createRedirect(thirdParty, thirdParty);
-    cookie = yield waitForLoad();
+    cookie = await waitForLoad();
     is(cookie, "", "no third-party cookies");
 
     // Same origin to cross origin.
     f.contentWindow.location = createRedirect(sameOrigin, thirdParty);
-    cookie = yield waitForLoad();
+    cookie = await waitForLoad();
     is(cookie, "", "no third-party cookies");
 
     // Cross origin to same origin
     f.contentWindow.location = createRedirect(thirdParty, sameOrigin);
-    cookie = yield waitForLoad();
+    cookie = await waitForLoad();
     is(cookie, "a=b", "got the cookie");
 
     SimpleTest.finish();

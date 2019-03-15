@@ -4,17 +4,39 @@
 
 @import "chrome://global/skin/";
 
-/* View buttons */
-@import "chrome://global/skin/viewbuttons.css";
+%include ../../../toolkit/themes/osx/global/shared.inc
 
-/* Extensions will provide icons because the view buttons have icons
-   on the windows and linux themes. We don't want to display them */
-.viewButtonIcon {
-  display: none;
+#topBar {
+  -moz-appearance: toolbar;
+  -moz-window-dragging: drag;
+  -moz-box-align: center;
+  -moz-box-pack: center;
 }
 
-deck {
-  padding: 10px 10px 10px 10px;
+#viewGroup {
+  margin: 4px 0 9px;
+}
+
+#viewGroup > radio,
+#viewGroup > toolbarbutton {
+  -moz-box-orient: vertical;
+  -moz-box-align: center;
+  -moz-appearance: toolbarbutton;
+  font: menu;
+  text-shadow: @loweredShadow@;
+  margin: 0;
+  padding: 0 6px;
+  height: 22px;
+}
+
+#viewGroup > radio[selected=true],
+#viewGroup > toolbarbutton[checked=true] {
+  color: #FFF !important;
+  text-shadow: rgba(0, 0, 0, 0.4) 0 1px;
+}
+
+#mainDeck {
+  padding: 10px;
 }
 
 /* Misc */
@@ -29,7 +51,7 @@ tree {
 textbox {
   background: transparent !important;
   border: none;
-  padding: 0px;
+  padding: 0;
   margin-top: 1px;
   -moz-appearance: none;
 }
@@ -38,14 +60,11 @@ textbox.header {
   margin-inline-start: 0;
 }
 
-.iframe {
+#imagecontainerbox {
   margin: .5em;
   background: white;
   overflow: auto;
-}
-
-.fixedsize {
-  height: 8.5em;
+  border: 1px solid ThreeDLightShadow;
 }
 
 textbox[disabled] {
@@ -53,27 +72,6 @@ textbox[disabled] {
 }
 
 /* General Tab */
-groupbox.collapsable caption .caption-icon {
-  width: 11px;
-  height: 11px;
-  background-repeat: no-repeat;
-  background-position: center;
-  margin-inline-end: 2px;
-  background-image: url("chrome://global/skin/arrow/arrow-dn.gif");
-}
-
-groupbox.collapsable[closed="true"] caption .caption-icon {
-  background-image: url("chrome://global/skin/arrow/arrow-rit.gif");
-}
-
-groupbox tree {
-  margin: 0;
-  border: none;
-}
-
-groupbox.treebox .groupbox-body {
-  padding: 0;
-}
 
 #securityBox description {
   margin-inline-start: 10px;
@@ -111,56 +109,18 @@ treechildren::-moz-tree-cell-text(broken) {
   color: graytext;
 }
 
-/* Feeds Tab */
-#feedtree {
-  margin-bottom: 0px;
-}
-
-#feedListbox richlistitem {
-  padding-top: 6px;
-  padding-bottom: 6px;
-  padding-inline-start: 7px;
-  padding-inline-end: 7px;
-  min-height: 25px;
-  border-bottom: 1px dotted #C0C0C0;
-}
-
-#feedListbox richlistitem[selected="true"] {
-  background-color: -moz-Dialog;
-  color: -moz-DialogText;
-}
-
-#feedListbox {
-  border: 2px solid;
-  -moz-border-top-colors: ThreeDShadow ThreeDDarkShadow;
-  -moz-border-right-colors: ThreeDHighlight ThreeDLightShadow;
-  -moz-border-bottom-colors: ThreeDHighlight ThreeDLightShadow;
-  -moz-border-left-colors: ThreeDShadow ThreeDDarkShadow;
-}
-
-.feedTitle {
-  font-weight: bold;
-}
-
 /* Permissions Tab */
 #permList {
-  margin-top: .5em;
+  margin: .5em;
   overflow: auto;
-  border: 2px solid;
-  -moz-border-top-colors: ThreeDShadow ThreeDDarkShadow;
-  -moz-border-right-colors: ThreeDHighlight ThreeDLightShadow;
-  -moz-border-bottom-colors: ThreeDHighlight ThreeDLightShadow;
-  -moz-border-left-colors: ThreeDShadow ThreeDDarkShadow;
-  background-color: -moz-field;
+  -moz-appearance: listbox;
+  color: -moz-fieldtext;
 }
 
 .permission {
-  padding-top: 6px;
-  padding-bottom: 6px;
-  padding-inline-start: 7px;
-  padding-inline-end: 7px;
+  padding: 6px 7px;
   min-height: 25px;
-  border-bottom: 1px dotted #C0C0C0;
+  border-bottom: 1px dotted ThreeDShadow;
 }
 
 .permissionLabel {
@@ -169,24 +129,13 @@ treechildren::-moz-tree-cell-text(broken) {
 
 .permission:hover {
   background-color: -moz-dialog;
+  color: -moz-DialogText;
 }
 
 /* Security Tab */
-#securityPanel .caption-icon {
-  display: none;
-}
 
-#securityPanel .header {
-  font-size: 120%;
-}
-
-#securityPanel .fieldLabel {
-  margin: 2px 10px 3px;
-}
-
-#securityPanel .fieldValue {
-  font-weight: bold;
-  margin: 2px 10px 3px;
+#securityPanel grid {
+  margin-bottom: 1em;
 }
 
 #securityPanel row {

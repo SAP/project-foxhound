@@ -1,5 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+"use strict";
 
 // Test filtering CensusTreeNode trees with an `allocationStack` breakdown.
 
@@ -12,7 +13,7 @@ function run_test() {
     noStack: countBreakdown,
   };
 
-  let stack1, stack2, stack3, stack4, stack5;
+  let stack1, stack2, stack3, stack4;
 
   (function foo() {
     (function bar() {
@@ -27,7 +28,7 @@ function run_test() {
     stack4 = saveStack(2);
   }());
 
-  stack5 = saveStack(1);
+  const stack5 = saveStack(1);
 
   const REPORT = new Map([
     [stack1, { bytes: 10, count: 1 }],
@@ -80,7 +81,7 @@ function run_test() {
                 id: 16,
                 parent: 14,
                 reportLeafIndex: 2,
-              }
+              },
             ],
             id: 14,
             parent: 13,
@@ -103,17 +104,17 @@ function run_test() {
                 id: 18,
                 parent: 17,
                 reportLeafIndex: 1,
-              }
+              },
             ],
             id: 17,
             parent: 13,
             reportLeafIndex: undefined,
-          }
+          },
         ],
         id: 13,
         parent: 12,
         reportLeafIndex: undefined,
-      }
+      },
     ],
     id: 12,
     parent: undefined,

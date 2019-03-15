@@ -6,8 +6,8 @@
   -->
 <window title="Tree" onload="init()"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>  
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>  
+  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
 
 <script src="tree_shared.js"/>
 
@@ -33,9 +33,7 @@ var view =
   isContainerEmpty: function(row) { return false; },
   isSeparator: function(row) { return false; },
   isSorted: function(row) { return false; },
-  isSelectable: function(row, column) { return true; },
   isEditable: function(row, column) { return row != 2 || column.index != 1; },
-  getProgressMode: function(row, column) { return Components.interfaces.nsITreeView.PROGRESS_NORMAL; },
   getParentIndex: function(row, column) { return -1; },
   getLevel: function(row) { return 0; },
   hasNextSibling: function(row, column) { return row != this.rowCount - 1; },
@@ -65,8 +63,7 @@ function getCustomTreeViewCellInfo()
                       properties: "",
                       editable: row != 2 || column.index != 1,
                       selectable: true,
-                      image: "",
-                      mode: Components.interfaces.nsITreeView.PROGRESS_NORMAL });
+                      image: "" });
     }
 
     obj.rows.push({ cells: cellInfo,
@@ -85,8 +82,8 @@ function init()
 {
   var tree = document.getElementById("tree-view");
   tree.view = view;
-  tree.treeBoxObject.ensureRowIsVisible(0);
-  is(tree.treeBoxObject.getFirstVisibleRow(), 0, "first visible after ensureRowIsVisible on load");
+  tree.ensureRowIsVisible(0);
+  is(tree.getFirstVisibleRow(), 0, "first visible after ensureRowIsVisible on load");
   tree.setAttribute("rows", "4");
 
   setTimeout(testtag_tree, 0, "tree-view", "treechildren-view", "multiple", "simple", "tree view");
@@ -115,4 +112,3 @@ SimpleTest.waitForExplicitFinish();
 </script>
 
 </window>
-

@@ -2,20 +2,16 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-Components.utils.import("resource://gre/modules/Services.jsm");
-Components.utils.import("resource://gre/modules/NetUtil.jsm");
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cr = Components.results;
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyServiceGetter(Services, "cookies",
                                    "@mozilla.org/cookieService;1",
                                    "nsICookieService");
 XPCOMUtils.defineLazyServiceGetter(Services, "cookiemgr",
                                    "@mozilla.org/cookiemanager;1",
-                                   "nsICookieManager2");
+                                   "nsICookieManager");
 
 XPCOMUtils.defineLazyServiceGetter(Services, "etld",
                                    "@mozilla.org/network/effective-tld-service;1",
@@ -49,14 +45,14 @@ function do_run_generator(generator)
 // Helper to finish a generator function test.
 function do_finish_generator_test(generator)
 {
-  do_execute_soon(function() {
+  executeSoon(function() {
     generator.return();
     do_test_finished();
   });
 }
 
 function _observer(generator, topic) {
-  Services.obs.addObserver(this, topic, false);
+  Services.obs.addObserver(this, topic);
 
   this.generator = generator;
   this.topic = topic;
@@ -64,7 +60,7 @@ function _observer(generator, topic) {
 
 _observer.prototype = {
   observe: function (subject, topic, data) {
-    do_check_eq(this.topic, topic);
+    Assert.equal(this.topic, topic);
 
     Services.obs.removeObserver(this, this.topic);
 
@@ -103,7 +99,7 @@ function do_load_profile(generator) {
 // against 'expected'
 function do_set_single_http_cookie(uri, channel, expected) {
   Services.cookies.setCookieStringFromHttp(uri, null, null, "foo=bar", null, channel);
-  do_check_eq(Services.cookiemgr.countCookiesFromHost(uri.host), expected);
+  Assert.equal(Services.cookiemgr.countCookiesFromHost(uri.host), expected);
 }
 
 // Set four cookies; with & without channel, http and non-http; and test
@@ -113,22 +109,22 @@ function do_set_cookies(uri, channel, session, expected) {
 
   // without channel
   Services.cookies.setCookieString(uri, null, "oh=hai" + suffix, null);
-  do_check_eq(Services.cookiemgr.countCookiesFromHost(uri.host), expected[0]);
+  Assert.equal(Services.cookiemgr.countCookiesFromHost(uri.host), expected[0]);
   // with channel
   Services.cookies.setCookieString(uri, null, "can=has" + suffix, channel);
-  do_check_eq(Services.cookiemgr.countCookiesFromHost(uri.host), expected[1]);
+  Assert.equal(Services.cookiemgr.countCookiesFromHost(uri.host), expected[1]);
   // without channel, from http
   Services.cookies.setCookieStringFromHttp(uri, null, null, "cheez=burger" + suffix, null, null);
-  do_check_eq(Services.cookiemgr.countCookiesFromHost(uri.host), expected[2]);
+  Assert.equal(Services.cookiemgr.countCookiesFromHost(uri.host), expected[2]);
   // with channel, from http
   Services.cookies.setCookieStringFromHttp(uri, null, null, "hot=dog" + suffix, null, channel);
-  do_check_eq(Services.cookiemgr.countCookiesFromHost(uri.host), expected[3]);
+  Assert.equal(Services.cookiemgr.countCookiesFromHost(uri.host), expected[3]);
 }
 
 function do_count_enumerator(enumerator) {
   let i = 0;
-  while (enumerator.hasMoreElements()) {
-    enumerator.getNext();
+  for (let cookie of enumerator) {
+    void cookie;
     ++i;
   }
   return i;

@@ -4,16 +4,9 @@
 
 "use strict";
 
-const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
+ChromeUtils.import("resource://gre/modules/Messaging.jsm");
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Messaging.jsm");
-
-this.EXPORTED_SYMBOLS = ["Notifications"];
-
-function log(msg) {
-  // Services.console.logStringMessage(msg);
-}
+var EXPORTED_SYMBOLS = ["Notifications"];
 
 var _notificationsMap = {};
 var _handlersMap = {};
@@ -127,8 +120,8 @@ Notification.prototype = {
         let button = this._buttons[buttonName];
         let obj = {
           buttonId: button.buttonId,
-          title : button.title,
-          icon : button.icon
+          title: button.title,
+          icon: button.icon,
         };
         msg.actions.push(obj);
       }
@@ -151,8 +144,8 @@ Notification.prototype = {
       cookie: JSON.stringify(this._cookie),
     };
     EventDispatcher.instance.dispatch("Notification:Hide", msg);
-  }
-}
+  },
+};
 
 var Notifications = {
   get idService() {
@@ -202,10 +195,7 @@ var Notifications = {
       notification.cancel();
   },
 
-  observe: function notif_observe(aSubject, aTopic, aData) {
-    Services.console.logStringMessage(aTopic + " " + aData);
-
-    let data = JSON.parse(aData);
+  onEvent: function notif_onEvent(event, data, callback) {
     let id = data.id;
     let handlerKey = data.handlerKey;
     let cookie = data.cookie ? JSON.parse(data.cookie) : undefined;
@@ -246,13 +236,8 @@ var Notifications = {
     }
   },
 
-  QueryInterface: function (aIID) {
-    if (!aIID.equals(Ci.nsISupports) &&
-        !aIID.equals(Ci.nsIObserver) &&
-        !aIID.equals(Ci.nsISupportsWeakReference))
-      throw Components.results.NS_ERROR_NO_INTERFACE;
-    return this;
-  }
+  QueryInterface: ChromeUtils.generateQI(["nsIObserver",
+                                          "nsISupportsWeakReference"]),
 };
 
-Services.obs.addObserver(Notifications, "Notification:Event", false);
+EventDispatcher.instance.registerListener(Notifications, "Notification:Event");

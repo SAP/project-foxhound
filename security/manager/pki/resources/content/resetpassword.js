@@ -4,23 +4,20 @@
 /* import-globals-from pippki.js */
 "use strict";
 
-function resetPassword()
-{
-  var pk11db = Components.classes["@mozilla.org/security/pk11tokendb;1"]
-                                 .getService(Components.interfaces.nsIPK11TokenDB);
+function resetPassword() {
+  var pk11db = Cc["@mozilla.org/security/pk11tokendb;1"]
+                 .getService(Ci.nsIPK11TokenDB);
   var token = pk11db.getInternalKeyToken();
   token.reset();
 
   try {
-    var loginManager = Components.classes["@mozilla.org/login-manager;1"].
-                       getService(Components.interfaces.nsILoginManager);
-    loginManager.removeAllLogins();
+    Services.logins.removeAllLogins();
   } catch (e) {
   }
 
   var bundle = document.getElementById("pippki_bundle");
-  var promptService = Components.classes["@mozilla.org/embedcomp/prompt-service;1"].getService();
-  promptService = promptService.QueryInterface(Components.interfaces.nsIPromptService);
+  var promptService = Cc["@mozilla.org/embedcomp/prompt-service;1"].getService();
+  promptService = promptService.QueryInterface(Ci.nsIPromptService);
   if (promptService && bundle) {
     promptService.alert(window,
                         bundle.getString("resetPasswordConfirmationTitle"),

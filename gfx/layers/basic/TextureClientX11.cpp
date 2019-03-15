@@ -1,5 +1,6 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
-//  * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "mozilla/layers/TextureClientX11.h"
@@ -24,32 +25,23 @@ namespace layers {
 X11TextureData::X11TextureData(gfx::IntSize aSize, gfx::SurfaceFormat aFormat,
                                bool aClientDeallocation, bool aIsCrossProcess,
                                gfxXlibSurface* aSurface)
-: mSize(aSize)
-, mFormat(aFormat)
-, mSurface(aSurface)
-, mClientDeallocation(aClientDeallocation)
-, mIsCrossProcess(aIsCrossProcess)
-{
+    : mSize(aSize),
+      mFormat(aFormat),
+      mSurface(aSurface),
+      mClientDeallocation(aClientDeallocation),
+      mIsCrossProcess(aIsCrossProcess) {
   MOZ_ASSERT(mSurface);
 }
 
-bool
-X11TextureData::Lock(OpenMode aMode)
-{
-  return true;
-}
+bool X11TextureData::Lock(OpenMode aMode) { return true; }
 
-void
-X11TextureData::Unlock()
-{
+void X11TextureData::Unlock() {
   if (mSurface && mIsCrossProcess) {
     FinishX(DefaultXDisplay());
   }
 }
 
-void
-X11TextureData::FillInfo(TextureData::Info& aInfo) const
-{
+void X11TextureData::FillInfo(TextureData::Info& aInfo) const {
   aInfo.size = mSize;
   aInfo.format = mFormat;
   aInfo.supportsMoz2D = true;
@@ -58,18 +50,16 @@ X11TextureData::FillInfo(TextureData::Info& aInfo) const
   aInfo.canExposeMappedData = false;
 }
 
-bool
-X11TextureData::Serialize(SurfaceDescriptor& aOutDescriptor)
-{
+bool X11TextureData::Serialize(SurfaceDescriptor& aOutDescriptor) {
   MOZ_ASSERT(mSurface);
   if (!mSurface) {
     return false;
   }
 
   if (!mClientDeallocation) {
-    // Pass to the host the responsibility of freeing the pixmap. ReleasePixmap means
-    // the underlying pixmap will not be deallocated in mSurface's destructor.
-    // ToSurfaceDescriptor is at most called once per TextureClient.
+    // Pass to the host the responsibility of freeing the pixmap. ReleasePixmap
+    // means the underlying pixmap will not be deallocated in mSurface's
+    // destructor. ToSurfaceDescriptor is at most called once per TextureClient.
     mSurface->ReleasePixmap();
   }
 
@@ -77,62 +67,55 @@ X11TextureData::Serialize(SurfaceDescriptor& aOutDescriptor)
   return true;
 }
 
-already_AddRefed<gfx::DrawTarget>
-X11TextureData::BorrowDrawTarget()
-{
+already_AddRefed<gfx::DrawTarget> X11TextureData::BorrowDrawTarget() {
   MOZ_ASSERT(mSurface);
   if (!mSurface) {
     return nullptr;
   }
 
   IntSize size = mSurface->GetSize();
-  RefPtr<gfx::DrawTarget> dt = Factory::CreateDrawTargetForCairoSurface(mSurface->CairoSurface(), size);
+  RefPtr<gfx::DrawTarget> dt =
+      Factory::CreateDrawTargetForCairoSurface(mSurface->CairoSurface(), size);
 
   return dt.forget();
 }
 
-bool
-X11TextureData::UpdateFromSurface(gfx::SourceSurface* aSurface)
-{
+bool X11TextureData::UpdateFromSurface(gfx::SourceSurface* aSurface) {
   RefPtr<DrawTarget> dt = BorrowDrawTarget();
 
   if (!dt) {
     return false;
   }
 
-  dt->CopySurface(aSurface, IntRect(IntPoint(), aSurface->GetSize()), IntPoint());
+  dt->CopySurface(aSurface, IntRect(IntPoint(), aSurface->GetSize()),
+                  IntPoint());
 
   return true;
 }
 
-void
-X11TextureData::Deallocate(LayersIPCChannel*)
-{
-  mSurface = nullptr;
-}
+void X11TextureData::Deallocate(LayersIPCChannel*) { mSurface = nullptr; }
 
-TextureData*
-X11TextureData::CreateSimilar(LayersIPCChannel* aAllocator,
-                              LayersBackend aLayersBackend,
-                              TextureFlags aFlags,
-                              TextureAllocationFlags aAllocFlags) const
-{
+TextureData* X11TextureData::CreateSimilar(
+    LayersIPCChannel* aAllocator, LayersBackend aLayersBackend,
+    TextureFlags aFlags, TextureAllocationFlags aAllocFlags) const {
   return X11TextureData::Create(mSize, mFormat, aFlags, aAllocator);
 }
 
-X11TextureData*
-X11TextureData::Create(gfx::IntSize aSize, gfx::SurfaceFormat aFormat,
-                       TextureFlags aFlags, LayersIPCChannel* aAllocator)
-{
+X11TextureData* X11TextureData::Create(gfx::IntSize aSize,
+                                       gfx::SurfaceFormat aFormat,
+                                       TextureFlags aFlags,
+                                       LayersIPCChannel* aAllocator) {
   MOZ_ASSERT(aSize.width >= 0 && aSize.height >= 0);
   if (aSize.width <= 0 || aSize.height <= 0 ||
       aSize.width > XLIB_IMAGE_SIDE_SIZE_LIMIT ||
       aSize.height > XLIB_IMAGE_SIDE_SIZE_LIMIT) {
-    gfxDebug() << "Asking for X11 surface of invalid size " << aSize.width << "x" << aSize.height;
+    gfxDebug() << "Asking for X11 surface of invalid size " << aSize.width
+               << "x" << aSize.height;
     return nullptr;
   }
   gfxImageFormat imageFormat = SurfaceFormatToImageFormat(aFormat);
-  RefPtr<gfxASurface> surface = gfxPlatform::GetPlatform()->CreateOffscreenSurface(aSize, imageFormat);
+  RefPtr<gfxASurface> surface =
+      gfxPlatform::GetPlatform()->CreateOffscreenSurface(aSize, imageFormat);
   if (!surface || surface->GetType() != gfxSurfaceType::Xlib) {
     NS_ERROR("creating Xlib surface failed!");
     return nullptr;
@@ -141,10 +124,9 @@ X11TextureData::Create(gfx::IntSize aSize, gfx::SurfaceFormat aFormat,
   gfxXlibSurface* xlibSurface = static_cast<gfxXlibSurface*>(surface.get());
 
   bool crossProcess = !aAllocator->IsSameProcess();
-  X11TextureData* texture = new X11TextureData(aSize, aFormat,
-                                               !!(aFlags & TextureFlags::DEALLOCATE_CLIENT),
-                                               crossProcess,
-                                               xlibSurface);
+  X11TextureData* texture = new X11TextureData(
+      aSize, aFormat, !!(aFlags & TextureFlags::DEALLOCATE_CLIENT),
+      crossProcess, xlibSurface);
   if (crossProcess) {
     FinishX(DefaultXDisplay());
   }
@@ -152,5 +134,5 @@ X11TextureData::Create(gfx::IntSize aSize, gfx::SurfaceFormat aFormat,
   return texture;
 }
 
-} // namespace
-} // namespace
+}  // namespace layers
+}  // namespace mozilla

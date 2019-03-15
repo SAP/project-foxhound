@@ -8,89 +8,161 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_VIDEO_VIDEO_RECEIVE_STREAM_H_
-#define WEBRTC_VIDEO_VIDEO_RECEIVE_STREAM_H_
+#ifndef VIDEO_VIDEO_RECEIVE_STREAM_H_
+#define VIDEO_VIDEO_RECEIVE_STREAM_H_
 
+#include <memory>
 #include <vector>
 
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/call.h"
-#include "webrtc/call/transport_adapter.h"
-#include "webrtc/common_video/include/incoming_video_stream.h"
-#include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
-#include "webrtc/modules/video_render/video_render_defines.h"
-#include "webrtc/system_wrappers/include/clock.h"
-#include "webrtc/video/encoded_frame_callback_adapter.h"
-#include "webrtc/video/receive_statistics_proxy.h"
-#include "webrtc/video/vie_channel.h"
-#include "webrtc/video/vie_encoder.h"
-#include "webrtc/video_encoder.h"
-#include "webrtc/video_receive_stream.h"
+#include "call/rtp_packet_sink_interface.h"
+#include "call/syncable.h"
+#include "call/video_receive_stream.h"
+#include "common_video/include/incoming_video_stream.h"
+#include "common_video/libyuv/include/webrtc_libyuv.h"
+#include "modules/rtp_rtcp/include/flexfec_receiver.h"
+#include "modules/video_coding/frame_buffer2.h"
+#include "modules/video_coding/video_coding_impl.h"
+#include "rtc_base/sequenced_task_checker.h"
+#include "system_wrappers/include/clock.h"
+#include "video/receive_statistics_proxy.h"
+#include "video/rtp_streams_synchronizer.h"
+#include "video/rtp_video_stream_receiver.h"
+#include "video/transport_adapter.h"
+#include "video/video_stream_decoder.h"
 
 namespace webrtc {
 
 class CallStats;
-class CongestionController;
-class VoiceEngine;
+class IvfFileWriter;
+class ProcessThread;
+class RTPFragmentationHeader;
+class RtpStreamReceiverInterface;
+class RtpStreamReceiverControllerInterface;
+class RtxReceiveStream;
+class VCMTiming;
+class VCMJitterEstimator;
 
 namespace internal {
 
 class VideoReceiveStream : public webrtc::VideoReceiveStream,
-                           public I420FrameCallback,
-                           public VideoRenderCallback,
-                           public EncodedImageCallback {
+                           public rtc::VideoSinkInterface<VideoFrame>,
+                           public EncodedImageCallback,
+                           public NackSender,
+                           public KeyFrameRequestSender,
+                           public video_coding::OnCompleteFrameCallback,
+                           public Syncable,
+                           public CallStatsObserver {
  public:
-  VideoReceiveStream(int num_cpu_cores,
-                     CongestionController* congestion_controller,
-                     const VideoReceiveStream::Config& config,
-                     webrtc::VoiceEngine* voice_engine,
+  VideoReceiveStream(RtpStreamReceiverControllerInterface* receiver_controller,
+                     int num_cpu_cores,
+                     PacketRouter* packet_router,
+                     VideoReceiveStream::Config config,
                      ProcessThread* process_thread,
                      CallStats* call_stats);
   ~VideoReceiveStream() override;
 
-  // webrtc::ReceiveStream implementation.
-  void Start() override;
-  void Stop() override;
-  void SignalNetworkState(NetworkState state) override;
-  bool DeliverRtcp(const uint8_t* packet, size_t length) override;
-  bool DeliverRtp(const uint8_t* packet,
-                  size_t length,
-                  const PacketTime& packet_time) override;
-
-  // webrtc::VideoReceiveStream implementation.
-  webrtc::VideoReceiveStream::Stats GetStats() const override;
-
-  // Overrides I420FrameCallback.
-  void FrameCallback(VideoFrame* video_frame) override;
-
-  // Overrides VideoRenderCallback.
-  int RenderFrame(const uint32_t /*stream_id*/,
-                  const VideoFrame& video_frame) override;
-
-  // Overrides EncodedImageCallback.
-  int32_t Encoded(const EncodedImage& encoded_image,
-                  const CodecSpecificInfo* codec_specific_info,
-                  const RTPFragmentationHeader* fragmentation) override;
-
   const Config& config() const { return config_; }
 
-  void SetSyncChannel(VoiceEngine* voice_engine, int audio_channel_id) override;
-  int64_t GetRtt() const override;
-  bool GetRemoteRTCPSenderInfo(RTCPSenderInfo* sender_info) const override;
+  void SignalNetworkState(NetworkState state);
+  bool DeliverRtcp(const uint8_t* packet, size_t length);
+
+  void SetSync(Syncable* audio_syncable);
+
+  // Implements webrtc::VideoReceiveStream.
+  void Start() override;
+  void Stop() override;
+
+  webrtc::VideoReceiveStream::Stats GetStats() const override;
+
+  // Takes ownership of the file, is responsible for closing it later.
+  // Calling this method will close and finalize any current log.
+  // Giving rtc::kInvalidPlatformFileValue disables logging.
+  // If a frame to be written would make the log too large the write fails and
+  // the log is closed and finalized. A |byte_limit| of 0 means no limit.
+  void EnableEncodedFrameRecording(rtc::PlatformFile file,
+                                   size_t byte_limit) override;
+
+  void AddSecondarySink(RtpPacketSinkInterface* sink) override;
+  void RemoveSecondarySink(const RtpPacketSinkInterface* sink) override;
+
+  // Implements rtc::VideoSinkInterface<VideoFrame>.
+  void OnFrame(const VideoFrame& video_frame) override;
+
+  // Implements EncodedImageCallback.
+  EncodedImageCallback::Result OnEncodedImage(
+      const EncodedImage& encoded_image,
+      const CodecSpecificInfo* codec_specific_info,
+      const RTPFragmentationHeader* fragmentation) override;
+
+  // Implements NackSender.
+  void SendNack(const std::vector<uint16_t>& sequence_numbers) override;
+
+  // Implements KeyFrameRequestSender.
+  void RequestKeyFrame() override;
+
+  // Implements video_coding::OnCompleteFrameCallback.
+  void OnCompleteFrame(
+      std::unique_ptr<video_coding::FrameObject> frame) override;
+
+  // Implements CallStatsObserver::OnRttUpdate
+  void OnRttUpdate(int64_t avg_rtt_ms, int64_t max_rtt_ms) override;
+
+  // Implements Syncable.
+  int id() const override;
+  rtc::Optional<Syncable::Info> GetInfo() const override;
+  uint32_t GetPlayoutTimestamp() const override;
+  void SetMinimumPlayoutDelay(int delay_ms) override;
+
  private:
+  static void DecodeThreadFunction(void* ptr);
+  bool Decode();
+
+  rtc::SequencedTaskChecker worker_sequence_checker_;
+  rtc::SequencedTaskChecker module_process_sequence_checker_;
+
   TransportAdapter transport_adapter_;
-  EncodedFrameCallbackAdapter encoded_frame_proxy_;
   const VideoReceiveStream::Config config_;
+  const int num_cpu_cores_;
+  ProcessThread* const process_thread_;
   Clock* const clock_;
 
-  CongestionController* const congestion_controller_;
+  rtc::PlatformThread decode_thread_;
+
   CallStats* const call_stats_;
 
-  rtc::scoped_ptr<IncomingVideoStream> incoming_video_stream_;
-  rtc::scoped_ptr<ReceiveStatisticsProxy> stats_proxy_;
-  rtc::scoped_ptr<ViEChannel> vie_channel_;
+  // Shared by media and rtx stream receivers, since the latter has no RtpRtcp
+  // module of its own.
+  const std::unique_ptr<ReceiveStatistics> rtp_receive_statistics_;
+
+  std::unique_ptr<VCMTiming> timing_;  // Jitter buffer experiment.
+  vcm::VideoReceiver video_receiver_;
+  std::unique_ptr<rtc::VideoSinkInterface<VideoFrame>> incoming_video_stream_;
+  ReceiveStatisticsProxy stats_proxy_;
+  RtpVideoStreamReceiver rtp_video_stream_receiver_;
+  std::unique_ptr<VideoStreamDecoder> video_stream_decoder_;
+  RtpStreamsSynchronizer rtp_stream_sync_;
+
+  rtc::CriticalSection ivf_writer_lock_;
+  std::unique_ptr<IvfFileWriter> ivf_writer_ RTC_GUARDED_BY(ivf_writer_lock_);
+
+  // Members for the new jitter buffer experiment.
+  std::unique_ptr<VCMJitterEstimator> jitter_estimator_;
+  std::unique_ptr<video_coding::FrameBuffer> frame_buffer_;
+
+  std::unique_ptr<RtpStreamReceiverInterface> media_receiver_;
+  std::unique_ptr<RtxReceiveStream> rtx_receive_stream_;
+  std::unique_ptr<RtpStreamReceiverInterface> rtx_receiver_;
+
+  // Whenever we are in an undecodable state (stream has just started or due to
+  // a decoding error) we require a keyframe to restart the stream.
+  bool keyframe_required_ = true;
+
+  // If we have successfully decoded any frame.
+  bool frame_decoded_ = false;
+
+  int64_t last_keyframe_request_ms_ = 0;
 };
 }  // namespace internal
 }  // namespace webrtc
 
-#endif  // WEBRTC_VIDEO_VIDEO_RECEIVE_STREAM_H_
+#endif  // VIDEO_VIDEO_RECEIVE_STREAM_H_

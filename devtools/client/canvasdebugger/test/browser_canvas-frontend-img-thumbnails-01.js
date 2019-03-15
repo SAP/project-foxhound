@@ -5,22 +5,22 @@
  * Tests if thumbnails are properly displayed in the UI.
  */
 
-function* ifTestingSupported() {
-  let { target, panel } = yield initCanvasDebuggerFrontend(SIMPLE_CANVAS_URL);
-  let { window, $, $all, EVENTS, SnapshotsListView } = panel.panelWin;
+async function ifTestingSupported() {
+  const { target, panel } = await initCanvasDebuggerFrontend(SIMPLE_CANVAS_URL);
+  const { window, $, $all, EVENTS, SnapshotsListView } = panel.panelWin;
 
-  yield reload(target);
+  await reload(target);
 
-  let recordingFinished = once(window, EVENTS.SNAPSHOT_RECORDING_FINISHED);
-  let callListPopulated = once(window, EVENTS.CALL_LIST_POPULATED);
-  let thumbnailsDisplayed = once(window, EVENTS.THUMBNAILS_DISPLAYED);
+  const recordingFinished = once(window, EVENTS.SNAPSHOT_RECORDING_FINISHED);
+  const callListPopulated = once(window, EVENTS.CALL_LIST_POPULATED);
+  const thumbnailsDisplayed = once(window, EVENTS.THUMBNAILS_DISPLAYED);
   SnapshotsListView._onRecordButtonClick();
-  yield promise.all([recordingFinished, callListPopulated, thumbnailsDisplayed]);
+  await Promise.all([recordingFinished, callListPopulated, thumbnailsDisplayed]);
 
   is($all(".filmstrip-thumbnail").length, 4,
     "There should be 4 thumbnails displayed in the UI.");
 
-  let firstThumbnail = $(".filmstrip-thumbnail[index='0']");
+  const firstThumbnail = $(".filmstrip-thumbnail[index='0']");
   ok(firstThumbnail,
     "The first thumbnail element should be for the function call at index 0.");
   is(firstThumbnail.width, 50,
@@ -30,7 +30,7 @@ function* ifTestingSupported() {
   is(firstThumbnail.getAttribute("flipped"), "false",
     "The first thumbnail should not be flipped vertically.");
 
-  let secondThumbnail = $(".filmstrip-thumbnail[index='2']");
+  const secondThumbnail = $(".filmstrip-thumbnail[index='2']");
   ok(secondThumbnail,
     "The second thumbnail element should be for the function call at index 2.");
   is(secondThumbnail.width, 50,
@@ -40,7 +40,7 @@ function* ifTestingSupported() {
   is(secondThumbnail.getAttribute("flipped"), "false",
     "The second thumbnail should not be flipped vertically.");
 
-  let thirdThumbnail = $(".filmstrip-thumbnail[index='4']");
+  const thirdThumbnail = $(".filmstrip-thumbnail[index='4']");
   ok(thirdThumbnail,
     "The third thumbnail element should be for the function call at index 4.");
   is(thirdThumbnail.width, 50,
@@ -50,7 +50,7 @@ function* ifTestingSupported() {
   is(thirdThumbnail.getAttribute("flipped"), "false",
     "The third thumbnail should not be flipped vertically.");
 
-  let fourthThumbnail = $(".filmstrip-thumbnail[index='6']");
+  const fourthThumbnail = $(".filmstrip-thumbnail[index='6']");
   ok(fourthThumbnail,
     "The fourth thumbnail element should be for the function call at index 6.");
   is(fourthThumbnail.width, 50,
@@ -60,6 +60,6 @@ function* ifTestingSupported() {
   is(fourthThumbnail.getAttribute("flipped"), "false",
     "The fourth thumbnail should not be flipped vertically.");
 
-  yield teardown(panel);
+  await teardown(panel);
   finish();
 }

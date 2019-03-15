@@ -1,7 +1,4 @@
-const Ci = SpecialPowers.Ci;
-const Cc = SpecialPowers.Cc;
-ok(Ci != null, "Access Ci");
-ok(Cc != null, "Access Cc");
+const { Cc, Ci } = SpecialPowers;
 
 function hasTabModalPrompts() {
   var prefName = "prompts.tab_modal.enabled";
@@ -27,18 +24,31 @@ function onloadPromiseFor(id) {
   });
 }
 
-function handlePrompt(state, action) {
+/**
+ * Take an action on the next prompt that appears without checking the state in advance.
+ * This is useful when the action doesn't depend on which prompt is shown and you
+ * are expecting multiple prompts at once in an indeterminate order.
+ * If you know the state of the prompt you expect you should use `handlePrompt` instead.
+ * @param {object} action defining how to handle the prompt
+ * @returns {Promise} resolving with the prompt state.
+*/
+function handlePromptWithoutChecks(action) {
   return new Promise(resolve => {
     gChromeScript.addMessageListener("promptHandled", function handled(msg) {
       gChromeScript.removeMessageListener("promptHandled", handled);
-      checkPromptState(msg.promptState, state);
-      resolve(true);
+      resolve(msg.promptState);
     });
     gChromeScript.sendAsyncMessage("handlePrompt", { action, isTabModal});
   });
 }
 
+async function handlePrompt(state, action) {
+  let actualState = await handlePromptWithoutChecks(action);
+  checkPromptState(actualState, state);
+}
+
 function checkPromptState(promptState, expectedState) {
+    info(`checkPromptState: Expected: ${expectedState.msg}`);
     // XXX check title? OS X has title in content
     is(promptState.msg, expectedState.msg, "Checking expected message");
     if (isOSX && !isTabModal)

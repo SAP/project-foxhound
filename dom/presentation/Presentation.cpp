@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,9 +25,8 @@
 namespace mozilla {
 namespace dom {
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(Presentation,
-                                      mWindow,
-                                      mDefaultRequest, mReceiver)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(Presentation, mWindow, mDefaultRequest,
+                                      mReceiver)
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(Presentation)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(Presentation)
@@ -37,33 +36,27 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(Presentation)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
-/* static */ already_AddRefed<Presentation>
-Presentation::Create(nsPIDOMWindowInner* aWindow)
-{
+/* static */ already_AddRefed<Presentation> Presentation::Create(
+    nsPIDOMWindowInner* aWindow) {
   RefPtr<Presentation> presentation = new Presentation(aWindow);
   return presentation.forget();
 }
 
-Presentation::Presentation(nsPIDOMWindowInner* aWindow)
-  : mWindow(aWindow)
-{
+Presentation::Presentation(nsPIDOMWindowInner* aWindow) : mWindow(aWindow) {}
+
+Presentation::~Presentation() {}
+
+/* virtual */ JSObject* Presentation::WrapObject(
+    JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
+  return Presentation_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-Presentation::~Presentation()
-{
-}
+void Presentation::SetDefaultRequest(PresentationRequest* aRequest) {
+  if (nsContentUtils::ShouldResistFingerprinting()) {
+    return;
+  }
 
-/* virtual */ JSObject*
-Presentation::WrapObject(JSContext* aCx,
-                         JS::Handle<JSObject*> aGivenProto)
-{
-  return PresentationBinding::Wrap(aCx, this, aGivenProto);
-}
-
-void
-Presentation::SetDefaultRequest(PresentationRequest* aRequest)
-{
-  nsCOMPtr<nsIDocument> doc = mWindow ? mWindow->GetExtantDoc() : nullptr;
+  nsCOMPtr<Document> doc = mWindow ? mWindow->GetExtantDoc() : nullptr;
   if (NS_WARN_IF(!doc)) {
     return;
   }
@@ -75,16 +68,20 @@ Presentation::SetDefaultRequest(PresentationRequest* aRequest)
   mDefaultRequest = aRequest;
 }
 
-already_AddRefed<PresentationRequest>
-Presentation::GetDefaultRequest() const
-{
+already_AddRefed<PresentationRequest> Presentation::GetDefaultRequest() const {
+  if (nsContentUtils::ShouldResistFingerprinting()) {
+    return nullptr;
+  }
+
   RefPtr<PresentationRequest> request = mDefaultRequest;
   return request.forget();
 }
 
-already_AddRefed<PresentationReceiver>
-Presentation::GetReceiver()
-{
+already_AddRefed<PresentationReceiver> Presentation::GetReceiver() {
+  if (nsContentUtils::ShouldResistFingerprinting()) {
+    return nullptr;
+  }
+
   // return the same receiver if already created
   if (mReceiver) {
     RefPtr<PresentationReceiver> receiver = mReceiver;
@@ -105,21 +102,15 @@ Presentation::GetReceiver()
   return receiver.forget();
 }
 
-void
-Presentation::SetStartSessionUnsettled(bool aIsUnsettled)
-{
+void Presentation::SetStartSessionUnsettled(bool aIsUnsettled) {
   mStartSessionUnsettled = aIsUnsettled;
 }
 
-bool
-Presentation::IsStartSessionUnsettled() const
-{
+bool Presentation::IsStartSessionUnsettled() const {
   return mStartSessionUnsettled;
 }
 
-bool
-Presentation::HasReceiverSupport() const
-{
+bool Presentation::HasReceiverSupport() const {
   if (!mWindow) {
     return false;
   }
@@ -145,7 +136,7 @@ Presentation::HasReceiverSupport() const
   }
 
   nsCOMPtr<nsIScriptSecurityManager> securityManager =
-    nsContentUtils::GetSecurityManager();
+      nsContentUtils::GetSecurityManager();
   if (!securityManager) {
     return false;
   }
@@ -156,15 +147,19 @@ Presentation::HasReceiverSupport() const
     return false;
   }
 
+  bool isPrivateWin = false;
+  nsCOMPtr<Document> doc = mWindow->GetExtantDoc();
+  if (doc) {
+    isPrivateWin =
+        doc->NodePrincipal()->OriginAttributesRef().mPrivateBrowsingId > 0;
+  }
+
   nsCOMPtr<nsIURI> docURI = mWindow->GetDocumentURI();
-  return NS_SUCCEEDED(securityManager->CheckSameOriginURI(presentationURI,
-                                                          docURI,
-                                                          false));
+  return NS_SUCCEEDED(securityManager->CheckSameOriginURI(
+      presentationURI, docURI, false, isPrivateWin));
 }
 
-bool
-Presentation::IsInPresentedContent() const
-{
+bool Presentation::IsInPresentedContent() const {
   if (!mWindow) {
     return false;
   }
@@ -178,5 +173,5 @@ Presentation::IsInPresentedContent() const
   return !presentationURL.IsEmpty();
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

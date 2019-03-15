@@ -4,7 +4,7 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
- 
+
 #ifndef SKSL_UNRESOLVEDFUNCTION
 #define SKSL_UNRESOLVEDFUNCTION
 
@@ -17,16 +17,16 @@ namespace SkSL {
  */
 struct UnresolvedFunction : public Symbol {
     UnresolvedFunction(std::vector<const FunctionDeclaration*> funcs)
-    : INHERITED(Position(), kUnresolvedFunction_Kind, funcs[0]->fName)
+    : INHERITED(-1, kUnresolvedFunction_Kind, funcs[0]->fName)
     , fFunctions(std::move(funcs)) {
 #ifdef DEBUG
         for (auto func : funcs) {
-            ASSERT(func->fName == fName);
+            SkASSERT(func->fName == fName);
         }
 #endif
     }
 
-    virtual std::string description() const override {
+    String description() const override {
         return fName;
     }
 

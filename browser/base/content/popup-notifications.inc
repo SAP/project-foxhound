@@ -63,7 +63,7 @@
 
     <popupnotification id="addon-progress-notification" hidden="true">
       <popupnotificationcontent orient="vertical">
-        <progressmeter id="addon-progress-notification-progressmeter"/>
+        <html:progress id="addon-progress-notification-progressmeter" max="100"/>
         <label id="addon-progress-notification-progresstext" crop="end"/>
       </popupnotificationcontent>
     </popupnotification>
@@ -73,17 +73,48 @@
     </popupnotification>
 
     <popupnotification id="addon-webext-permissions-notification" hidden="true">
-      <popupnotificationcontent orient="vertical">
-        <description id="addon-webext-perm-header" class="addon-webext-perm-header"/>
+      <popupnotificationcontent class="addon-webext-perm-notification-content" orient="vertical">
         <description id="addon-webext-perm-text" class="addon-webext-perm-text"/>
         <label id="addon-webext-perm-intro" class="addon-webext-perm-text"/>
         <html:ul id="addon-webext-perm-list" class="addon-webext-perm-list"/>
       </popupnotificationcontent>
     </popupnotification>
 
-    <popupnotification id="addon-installed-notification" hidden="true">
-      <popupnotificationcontent orient="vertical">
-        <description id="addon-installed-notification-header"/>
-        <description id="addon-installed-notification-message"/>
+    <popupnotification id="contextual-feature-recommendation-notification" hidden="true">
+      <popupnotificationheader id="cfr-notification-header">
+        <stack id="cfr-notification-header-stack">
+          <description id="cfr-notification-header-label"></description>
+          <label id="cfr-notification-header-link" class="text-link">
+            <xul:image id="cfr-notification-header-image"/>
+          </label>
+        </stack>
+      </popupnotificationheader>
+      <popupnotificationcontent>
+        <description id="cfr-notification-author"></description>
+      </popupnotificationcontent>
+      <popupnotificationfooter id="cfr-notification-footer" orient="vertical">
+        <description id="cfr-notification-footer-text"/>
+        <hbox id="cfr-notification-footer-addon-info">
+          <hbox id="cfr-notification-footer-filled-stars"/>
+          <hbox id="cfr-notification-footer-empty-stars"/>
+          <label id="cfr-notification-footer-users"/>
+          <spacer id="cfr-notification-footer-spacer" hidden="true"/>
+          <label id="cfr-notification-footer-learn-more-link" class="text-link"/>
+        </hbox>
+      </popupnotificationfooter>
+    </popupnotification>
+
+    <popupnotification id="storage-access-notification" hidden="true">
+      <popupnotificationcontent class="storage-access-notification-content">
+        <xul:vbox flex="1">
+          <!-- These need to be on the same line to avoid creating
+               whitespace between them (whitespace is added in the
+               localization file, if necessary). -->
+          <xul:description class="storage-access-perm-text"><html:span
+            id="storage-access-perm-label"/><html:a id="storage-access-perm-learnmore"
+            onclick="openTrustedLinkIn(this.href, 'tab'); return false;"
+            class="text-link popup-notification-learnmore-link"/><html:span
+            id="storage-access-perm-endlabel"/></xul:description>
+        </xul:vbox>
       </popupnotificationcontent>
     </popupnotification>

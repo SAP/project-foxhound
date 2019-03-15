@@ -4,27 +4,25 @@
 
 "use strict";
 
-const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-
-Cu.import("resource:///modules/syncedtabs/SyncedTabsDeckStore.js");
-Cu.import("resource:///modules/syncedtabs/SyncedTabsDeckView.js");
-Cu.import("resource:///modules/syncedtabs/SyncedTabsListStore.js");
-Cu.import("resource:///modules/syncedtabs/TabListComponent.js");
-Cu.import("resource:///modules/syncedtabs/TabListView.js");
-let { getChromeWindow } = Cu.import("resource:///modules/syncedtabs/util.js", {});
+ChromeUtils.import("resource:///modules/syncedtabs/SyncedTabsDeckStore.js");
+ChromeUtils.import("resource:///modules/syncedtabs/SyncedTabsDeckView.js");
+ChromeUtils.import("resource:///modules/syncedtabs/SyncedTabsListStore.js");
+ChromeUtils.import("resource:///modules/syncedtabs/TabListComponent.js");
+ChromeUtils.import("resource:///modules/syncedtabs/TabListView.js");
+let { getChromeWindow } = ChromeUtils.import("resource:///modules/syncedtabs/util.js", {});
 
 XPCOMUtils.defineLazyGetter(this, "FxAccountsCommon", function() {
-  return Components.utils.import("resource://gre/modules/FxAccountsCommon.js", {});
+  return ChromeUtils.import("resource://gre/modules/FxAccountsCommon.js", {});
 });
 
-let log = Cu.import("resource://gre/modules/Log.jsm", {})
+let log = ChromeUtils.import("resource://gre/modules/Log.jsm", {})
             .Log.repository.getLogger("Sync.RemoteTabs");
 
-this.EXPORTED_SYMBOLS = [
-  "SyncedTabsDeckComponent"
+var EXPORTED_SYMBOLS = [
+  "SyncedTabsDeckComponent",
 ];
 
 /* SyncedTabsDeckComponent
@@ -60,9 +58,11 @@ SyncedTabsDeckComponent.prototype = {
   PANELS: {
     TABS_CONTAINER: "tabs-container",
     TABS_FETCHING: "tabs-fetching",
+    LOGIN_FAILED: "reauth",
     NOT_AUTHED_INFO: "notAuthedInfo",
     SINGLE_DEVICE_INFO: "singleDeviceInfo",
     TABS_DISABLED: "tabs-disabled",
+    UNVERIFIED: "unverified",
   },
 
   get container() {
@@ -70,18 +70,27 @@ SyncedTabsDeckComponent.prototype = {
   },
 
   init() {
-    Services.obs.addObserver(this, this._SyncedTabs.TOPIC_TABS_CHANGED, false);
-    Services.obs.addObserver(this, FxAccountsCommon.ONLOGIN_NOTIFICATION, false);
-    Services.obs.addObserver(this, "weave:service:login:change", false);
+    Services.obs.addObserver(this, this._SyncedTabs.TOPIC_TABS_CHANGED);
+    Services.obs.addObserver(this, FxAccountsCommon.ONLOGIN_NOTIFICATION);
+    Services.obs.addObserver(this, "weave:service:login:change");
+    // If the Sync service is not ready, in init() > updatePanel() we will
+    // show a blank screen. If tab syncing is disabled, we will not get any other
+    // ui-refreshing notifications! We listen to :ready in order to check again
+    // if this engine is disabled and refresh the UI one last time.
+    Services.obs.addObserver(this, "weave:service:ready");
+
+    // Add app locale change support for HTML sidebar
+    Services.obs.addObserver(this, "intl:app-locales-changed");
+    Services.prefs.addObserver("intl.uidirection", this);
+    this.updateDir();
 
     // Go ahead and trigger sync
     this._SyncedTabs.syncTabs()
                     .catch(Cu.reportError);
 
     this._deckView = new this._DeckView(this._window, this.tabListComponent, {
-      onAndroidClick: event => this.openAndroidLink(event),
-      oniOSClick: event => this.openiOSLink(event),
-      onSyncPrefClick: event => this.openSyncPrefs(event)
+      onConnectDeviceClick: event => this.openConnectDevice(event),
+      onSyncPrefClick: event => this.openSyncPrefs(event),
     });
 
     this._deckStore.on("change", state => this._deckView.render(state));
@@ -96,6 +105,9 @@ SyncedTabsDeckComponent.prototype = {
     Services.obs.removeObserver(this, this._SyncedTabs.TOPIC_TABS_CHANGED);
     Services.obs.removeObserver(this, FxAccountsCommon.ONLOGIN_NOTIFICATION);
     Services.obs.removeObserver(this, "weave:service:login:change");
+    Services.obs.removeObserver(this, "weave:service:ready");
+    Services.obs.removeObserver(this, "intl:app-locales-changed");
+    Services.prefs.removeObserver("intl.uidirection", this);
     this._deckView.destroy();
   },
 
@@ -105,9 +117,20 @@ SyncedTabsDeckComponent.prototype = {
         this._syncedTabsListStore.getData();
         this.updatePanel();
         break;
+      case "weave:service:ready":
+        Services.obs.removeObserver(this, "weave:service:ready");
+        // Intended fallthrough.
       case FxAccountsCommon.ONLOGIN_NOTIFICATION:
       case "weave:service:login:change":
         this.updatePanel();
+        break;
+      case "intl:app-locales-changed":
+        this.updateDir();
+        break;
+      case "nsPref:changed":
+        if (data == "intl.uidirection") {
+          this.updateDir();
+        }
         break;
       default:
         break;
@@ -116,14 +139,20 @@ SyncedTabsDeckComponent.prototype = {
 
   // There's no good way to mock fxAccounts in browser tests where it's already
   // been instantiated, so we have this method for stubbing.
-  _accountStatus() {
-    return this._fxAccounts.accountStatus();
+  _getSignedInUser() {
+    return this._fxAccounts.getSignedInUser();
   },
 
   getPanelStatus() {
-    return this._accountStatus().then(exists => {
-      if (!exists || this._getChromeWindow(this._window).gSyncUI.loginFailed()) {
+    return this._getSignedInUser().then(user => {
+      if (!user) {
         return this.PANELS.NOT_AUTHED_INFO;
+      }
+      if (this._SyncedTabs.loginFailed) {
+        return this.PANELS.LOGIN_FAILED;
+      }
+      if (!user.verified) {
+        return this.PANELS.UNVERIFIED;
       }
       if (!this._SyncedTabs.isConfiguredToSyncTabs) {
         return this.PANELS.TABS_DISABLED;
@@ -144,6 +173,17 @@ SyncedTabsDeckComponent.prototype = {
     });
   },
 
+  updateDir() {
+    // If the HTML document doesn't exist, we can't update the window
+    if (!this._window.document) return;
+
+    if (Services.locale.isAppLocaleRTL) {
+      this._window.document.body.dir = "rtl";
+    } else {
+      this._window.document.body.dir = "ltr";
+    }
+  },
+
   updatePanel() {
     // return promise for tests
     return this.getPanelStatus()
@@ -151,22 +191,12 @@ SyncedTabsDeckComponent.prototype = {
       .catch(Cu.reportError);
   },
 
-  openAndroidLink(event) {
-    let href = Services.prefs.getCharPref("identity.mobilepromo.android") + "synced-tabs-sidebar";
-    this._openUrl(href, event);
-  },
-
-  openiOSLink(event) {
-    let href = Services.prefs.getCharPref("identity.mobilepromo.ios") + "synced-tabs-sidebar";
-    this._openUrl(href, event);
-  },
-
-  _openUrl(url, event) {
-    this._window.openUILink(url, event);
-  },
-
   openSyncPrefs() {
-    this._getChromeWindow(this._window).gSyncUI.openPrefs("tabs-sidebar");
-  }
+    this._getChromeWindow(this._window).gSync.openPrefs("tabs-sidebar");
+  },
+
+  openConnectDevice() {
+    this._getChromeWindow(this._window).gSync.openConnectAnotherDevice("tabs-sidebar");
+  },
 };
 

@@ -6,6 +6,7 @@
 # AppAssocReg    http://nsis.sourceforge.net/Application_Association_Registration_plug-in
 # ApplicationID  http://nsis.sourceforge.net/ApplicationID_plug-in
 # CityHash       http://dxr.mozilla.org/mozilla-central/source/other-licenses/nsis/Contrib/CityHash
+# nsJSON         http://nsis.sourceforge.net/NsJSON_plug-in
 # ShellLink      http://nsis.sourceforge.net/ShellLink_plug-in
 # UAC            http://nsis.sourceforge.net/UAC_plug-in
 # ServicesHelper Mozilla specific plugin that is located in /other-licenses/nsis
@@ -34,8 +35,22 @@ Var AddTaskbarSC
 Var AddQuickLaunchSC
 Var AddDesktopSC
 Var InstallMaintenanceService
+Var InstallOptionalExtensions
+Var ExtensionRecommender
 Var PageName
 Var PreventRebootRequired
+
+; Telemetry ping fields
+Var SetAsDefault
+Var HadOldInstall
+Var DefaultInstDir
+Var IntroPhaseStart
+Var OptionsPhaseStart
+Var InstallPhaseStart
+Var FinishPhaseStart
+Var FinishPhaseEnd
+Var InstallResult
+Var LaunchedNewApp
 
 ; By defining NO_STARTMENU_DIR an installer that doesn't provide an option for
 ; an application's Start Menu PROGRAMS directory and doesn't define the
@@ -82,6 +97,7 @@ VIAddVersionKey "OriginalFilename" "setup.exe"
 !insertmacro CleanUpdateDirectories
 !insertmacro CopyFilesFromDir
 !insertmacro CreateRegKey
+!insertmacro GetFirstInstallPath
 !insertmacro GetLongPath
 !insertmacro GetPathFromString
 !insertmacro GetParent
@@ -169,6 +185,11 @@ Page custom preComponents leaveComponents
 ; Custom Shortcuts Page
 Page custom preShortcuts leaveShortcuts
 
+; Custom Extensions Page
+!ifdef MOZ_OPTIONAL_EXTENSIONS
+Page custom preExtensions leaveExtensions
+!endif
+
 ; Custom Summary Page
 Page custom preSummary leaveSummary
 
@@ -181,6 +202,7 @@ Page custom preSummary leaveSummary
 !define MUI_FINISHPAGE_RUN_FUNCTION LaunchApp
 !define MUI_FINISHPAGE_RUN_TEXT $(LAUNCH_TEXT)
 !define MUI_PAGE_CUSTOMFUNCTION_PRE preFinish
+!define MUI_PAGE_CUSTOMFUNCTION_LEAVE postFinish
 !insertmacro MUI_PAGE_FINISH
 
 ; Use the default dialog for IDD_VERIFY for a simple Banner
@@ -191,6 +213,9 @@ ChangeUI IDD_VERIFY "${NSISDIR}\Contrib\UIs\default.exe"
 
 ; Cleanup operations to perform at the start of the installation.
 Section "-InstallStartCleanup"
+  System::Call "kernel32::GetTickCount()l .s"
+  Pop $InstallPhaseStart
+
   SetDetailsPrint both
   DetailPrint $(STATUS_CLEANUP)
   SetDetailsPrint none
@@ -213,6 +238,16 @@ Section "-InstallStartCleanup"
     ${EndIf}
   ${EndUnless}
 
+  ${GetParameters} $R8
+  ${InstallGetOption} $R8 "RemoveDistributionDir" $R9
+  ${If} $R9 == "0"
+    StrCpy $R9 "false"
+  ${EndIf}
+  ${InstallGetOption} $R8 "PreventRebootRequired" $PreventRebootRequired
+  ${If} $PreventRebootRequired == "1"
+    StrCpy $PreventRebootRequired "true"
+  ${EndIf}
+
   ; Remove directories and files we always control before parsing the uninstall
   ; log so empty directories can be removed.
   ${If} ${FileExists} "$INSTDIR\updates"
@@ -224,9 +259,6 @@ Section "-InstallStartCleanup"
   ${If} ${FileExists} "$INSTDIR\defaults\shortcuts"
     RmDir /r "$INSTDIR\defaults\shortcuts"
   ${EndIf}
-  ; Only remove the distribution directory if it exists and if the installer
-  ; isn't launched with an ini file that has RemoveDistributionDir=false in the
-  ; install section.
   ${If} ${FileExists} "$INSTDIR\distribution"
   ${AndIf} $R9 != "false"
     RmDir /r "$INSTDIR\distribution"
@@ -307,6 +339,16 @@ Section "-Application" APP_IDX
 
   ClearErrors
 
+  ${RegisterDLL} "$INSTDIR\AccessibleHandler.dll"
+  ${If} ${Errors}
+    ${LogMsg} "** ERROR Registering: $INSTDIR\AccessibleHandler.dll **"
+  ${Else}
+    ${LogUninstall} "DLLReg: \AccessibleHandler.dll"
+    ${LogMsg} "Registered: $INSTDIR\AccessibleHandler.dll"
+  ${EndIf}
+
+  ClearErrors
+
   ; Default for creating Start Menu shortcut
   ; (1 = create, 0 = don't create)
   ${If} $AddStartMenuSC == ""
@@ -326,6 +368,12 @@ Section "-Application" APP_IDX
   ; Default for creating Desktop shortcut (1 = create, 0 = don't create)
   ${If} $AddDesktopSC == ""
     StrCpy $AddDesktopSC "1"
+  ${EndIf}
+
+  ${CreateUpdateDir} "Mozilla"
+  ${If} ${Errors}
+    Pop $0
+    ${LogMsg} "** ERROR Failed to create update directory: $0"
   ${EndIf}
 
   ${LogHeader} "Adding Registry Entries"
@@ -353,6 +401,7 @@ Section "-Application" APP_IDX
   ${EndIf}
 
   ${RemoveDeprecatedKeys}
+  ${Set32to64DidMigrateReg}
 
   ; The previous installer adds several regsitry values to both HKLM and HKCU.
   ; We now try to add to HKLM and if that fails to HKCU
@@ -440,6 +489,12 @@ Section "-Application" APP_IDX
     ${SetAppLSPCategories} ${LSP_CATEGORIES}
   ${EndIf}
 
+!ifdef MOZ_LAUNCHER_PROCESS
+!ifdef RELEASE_OR_BETA
+  ${DisableLauncherProcessByDefault}
+!endif
+!endif
+
   ; Create shortcuts
   ${LogHeader} "Adding Shortcuts"
 
@@ -452,9 +507,9 @@ Section "-Application" APP_IDX
   ; Always add the application's shortcuts to the shortcuts log ini file. The
   ; DeleteShortcuts macro will do the right thing on uninstall if the
   ; shortcuts don't exist.
-  ${LogStartMenuShortcut} "${BrandFullName}.lnk"
-  ${LogQuickLaunchShortcut} "${BrandFullName}.lnk"
-  ${LogDesktopShortcut} "${BrandFullName}.lnk"
+  ${LogStartMenuShortcut} "${BrandShortName}.lnk"
+  ${LogQuickLaunchShortcut} "${BrandShortName}.lnk"
+  ${LogDesktopShortcut} "${BrandShortName}.lnk"
 
   ; Best effort to update the Win7 taskbar and start menu shortcut app model
   ; id's. The possible contexts are current user / system and the user that
@@ -484,39 +539,76 @@ Section "-Application" APP_IDX
   ; since this will either add it for the user if unelevated or All Users if
   ; elevated.
   ${If} $AddStartMenuSC == 1
-    CreateShortCut "$SMPROGRAMS\${BrandFullName}.lnk" "$INSTDIR\${FileMainEXE}"
+    ; See if there's an existing shortcut for this installation using the old
+    ; name that we should just rename, instead of creating a new shortcut.
+    ; We could do this renaming even when $AddStartMenuSC is false; the idea
+    ; behind not doing that is to interpret "false" as "don't do anything
+    ; involving start menu shortcuts at all." We could also try to do this for
+    ; both shell contexts, but that won't typically accomplish anything.
     ${If} ${FileExists} "$SMPROGRAMS\${BrandFullName}.lnk"
-      ShellLink::SetShortCutWorkingDirectory "$SMPROGRAMS\${BrandFullName}.lnk" \
-                                           "$INSTDIR"
-      ${If} ${AtLeastWin7}
-      ${AndIf} "$AppUserModelID" != ""
-        ApplicationID::Set "$SMPROGRAMS\${BrandFullName}.lnk" "$AppUserModelID" "true"
+      ShellLink::GetShortCutTarget "$SMPROGRAMS\${BrandFullName}.lnk"
+      Pop $0
+      ${GetLongPath} "$0" $0
+      ${If} $0 == "$INSTDIR\${FileMainEXE}"
+      ${AndIfNot} ${FileExists} "$SMPROGRAMS\${BrandShortName}.lnk"
+        Rename "$SMPROGRAMS\${BrandFullName}.lnk" \
+               "$SMPROGRAMS\${BrandShortName}.lnk"
+        ${LogMsg} "Renamed existing shortcut to $SMPROGRAMS\${BrandShortName}.lnk"
       ${EndIf}
-      ${LogMsg} "Added Shortcut: $SMPROGRAMS\${BrandFullName}.lnk"
     ${Else}
-      ${LogMsg} "** ERROR Adding Shortcut: $SMPROGRAMS\${BrandFullName}.lnk"
+      CreateShortCut "$SMPROGRAMS\${BrandShortName}.lnk" "$INSTDIR\${FileMainEXE}"
+      ${If} ${FileExists} "$SMPROGRAMS\${BrandShortName}.lnk"
+        ShellLink::SetShortCutWorkingDirectory "$SMPROGRAMS\${BrandShortName}.lnk" \
+                                               "$INSTDIR"
+        ${If} "$AppUserModelID" != ""
+          ApplicationID::Set "$SMPROGRAMS\${BrandShortName}.lnk" \
+                             "$AppUserModelID" "true"
+        ${EndIf}
+        ${LogMsg} "Added Shortcut: $SMPROGRAMS\${BrandShortName}.lnk"
+      ${Else}
+        ${LogMsg} "** ERROR Adding Shortcut: $SMPROGRAMS\${BrandShortName}.lnk"
+      ${EndIf}
     ${EndIf}
   ${EndIf}
 
   ; Update lastwritetime of the Start Menu shortcut to clear the tile cache.
+  ; Do this for both shell contexts in case the user has shortcuts in multiple
+  ; locations, then restore the previous context at the end.
   ${If} ${AtLeastWin8}
-  ${AndIf} ${FileExists} "$SMPROGRAMS\${BrandFullName}.lnk"
-    FileOpen $0 "$SMPROGRAMS\${BrandFullName}.lnk" a
-    FileClose $0
+    SetShellVarContext all
+    ${TouchStartMenuShortcut}
+    SetShellVarContext current
+    ${TouchStartMenuShortcut}
+    ${If} $TmpVal == "HKLM"
+      SetShellVarContext all
+    ${ElseIf} $TmpVal == "HKCU"
+      SetShellVarContext current
+    ${EndIf}
   ${EndIf}
 
   ${If} $AddDesktopSC == 1
-    CreateShortCut "$DESKTOP\${BrandFullName}.lnk" "$INSTDIR\${FileMainEXE}"
     ${If} ${FileExists} "$DESKTOP\${BrandFullName}.lnk"
-      ShellLink::SetShortCutWorkingDirectory "$DESKTOP\${BrandFullName}.lnk" \
-                                             "$INSTDIR"
-      ${If} ${AtLeastWin7}
-      ${AndIf} "$AppUserModelID" != ""
-        ApplicationID::Set "$DESKTOP\${BrandFullName}.lnk" "$AppUserModelID"  "true"
+      ShellLink::GetShortCutTarget "$DESKTOP\${BrandFullName}.lnk"
+      Pop $0
+      ${GetLongPath} "$0" $0
+      ${If} $0 == "$INSTDIR\${FileMainEXE}"
+      ${AndIfNot} ${FileExists} "$DESKTOP\${BrandShortName}.lnk"
+        Rename "$DESKTOP\${BrandFullName}.lnk" "$DESKTOP\${BrandShortName}.lnk"
+        ${LogMsg} "Renamed existing shortcut to $DESKTOP\${BrandShortName}.lnk"
       ${EndIf}
-      ${LogMsg} "Added Shortcut: $DESKTOP\${BrandFullName}.lnk"
     ${Else}
-      ${LogMsg} "** ERROR Adding Shortcut: $DESKTOP\${BrandFullName}.lnk"
+      CreateShortCut "$DESKTOP\${BrandShortName}.lnk" "$INSTDIR\${FileMainEXE}"
+      ${If} ${FileExists} "$DESKTOP\${BrandShortName}.lnk"
+        ShellLink::SetShortCutWorkingDirectory "$DESKTOP\${BrandShortName}.lnk" \
+                                               "$INSTDIR"
+        ${If} "$AppUserModelID" != ""
+          ApplicationID::Set "$DESKTOP\${BrandShortName}.lnk" \
+                             "$AppUserModelID" "true"
+        ${EndIf}
+        ${LogMsg} "Added Shortcut: $DESKTOP\${BrandShortName}.lnk"
+      ${Else}
+        ${LogMsg} "** ERROR Adding Shortcut: $DESKTOP\${BrandShortName}.lnk"
+      ${EndIf}
     ${EndIf}
   ${EndIf}
 
@@ -529,17 +621,53 @@ Section "-Application" APP_IDX
       ${GetOptions} "$0" "/UAC:" $0
       ${If} ${Errors}
         Call AddQuickLaunchShortcut
-        ${LogMsg} "Added Shortcut: $QUICKLAUNCH\${BrandFullName}.lnk"
+        ${LogMsg} "Added Shortcut: $QUICKLAUNCH\${BrandShortName}.lnk"
       ${Else}
         ; It is not possible to add a log entry from the unelevated process so
         ; add the log entry without the path since there is no simple way to
         ; know the correct full path.
-        ${LogMsg} "Added Quick Launch Shortcut: ${BrandFullName}.lnk"
+        ${LogMsg} "Added Quick Launch Shortcut: ${BrandShortName}.lnk"
         GetFunctionAddress $0 AddQuickLaunchShortcut
         UAC::ExecCodeSegment $0
       ${EndIf}
     ${EndUnless}
   ${EndIf}
+
+!ifdef MOZ_OPTIONAL_EXTENSIONS
+  ${If} ${FileExists} "$INSTDIR\distribution\optional-extensions"
+    ${LogHeader} "Installing optional extensions if requested"
+
+    ${If} $InstallOptionalExtensions != "0"
+    ${AndIf} ${FileExists} "$INSTDIR\distribution\setup.ini"
+      ${Unless} ${FileExists} "$INSTDIR\distribution\extensions"
+        CreateDirectory "$INSTDIR\distribution\extensions"
+      ${EndUnless}
+
+      StrCpy $0 0
+      ${Do}
+        ClearErrors
+        ReadINIStr $1 "$INSTDIR\distribution\setup.ini" "OptionalExtensions" \
+                                                        "extension.$0.id"
+        ${If} ${Errors}
+          ${ExitDo}
+        ${EndIf}
+
+        ReadINIStr $2 "$INSTDIR\distribution\setup.ini" "OptionalExtensions" \
+                                                        "extension.$0.checked"
+        ${If} $2 != ${BST_UNCHECKED}
+          ${LogMsg} "Installing optional extension: $1"
+          CopyFiles /SILENT "$INSTDIR\distribution\optional-extensions\$1.xpi" \
+                            "$INSTDIR\distribution\extensions"
+        ${EndIf}
+
+        IntOp $0 $0 + 1
+      ${Loop}
+    ${EndIf}
+
+    ${LogMsg} "Removing the optional-extensions directory"
+    RMDir /r /REBOOTOK "$INSTDIR\distribution\optional-extensions"
+  ${EndIf}
+!endif
 
 !ifdef MOZ_MAINTENANCE_SERVICE
   ${If} $TmpVal == "HKLM"
@@ -559,7 +687,7 @@ Section "-InstallEndCleanup"
     ClearErrors
     ${MUI_INSTALLOPTIONS_READ} $0 "summary.ini" "Field 4" "State"
     ${If} "$0" == "1"
-      ; NB: this code is duplicated in stub.nsi. Please keep in sync.
+      StrCpy $SetAsDefault true
       ; For data migration in the app, we want to know what the default browser
       ; value was before we changed it. To do so, we read it here and store it
       ; in our own registry key.
@@ -594,6 +722,7 @@ Section "-InstallEndCleanup"
         UAC::ExecCodeSegment $0
       ${EndIf}
     ${ElseIfNot} ${Errors}
+      StrCpy $SetAsDefault false
       ${LogHeader} "Writing default-browser opt-out"
       ClearErrors
       WriteRegStr HKCU "Software\Mozilla\Firefox" "DefaultBrowserOptOut" "True"
@@ -651,6 +780,14 @@ Section "-InstallEndCleanup"
         Rename "$INSTDIR\helper.exe" "$INSTDIR\${FileMainEXE}"
       ${EndUnless}
     ${EndIf}
+  ${EndIf}
+
+  StrCpy $InstallResult "success"
+
+  ; When we're using the GUI, .onGUIEnd sends the ping, but of course that isn't
+  ; invoked when we're running silently.
+  ${If} ${Silent}
+    Call SendPing
   ${EndIf}
 SectionEnd
 
@@ -725,9 +862,9 @@ FunctionEnd
 # Helper Functions
 
 Function AddQuickLaunchShortcut
-  CreateShortCut "$QUICKLAUNCH\${BrandFullName}.lnk" "$INSTDIR\${FileMainEXE}"
-  ${If} ${FileExists} "$QUICKLAUNCH\${BrandFullName}.lnk"
-    ShellLink::SetShortCutWorkingDirectory "$QUICKLAUNCH\${BrandFullName}.lnk" \
+  CreateShortCut "$QUICKLAUNCH\${BrandShortName}.lnk" "$INSTDIR\${FileMainEXE}"
+  ${If} ${FileExists} "$QUICKLAUNCH\${BrandShortName}.lnk"
+    ShellLink::SetShortCutWorkingDirectory "$QUICKLAUNCH\${BrandShortName}.lnk" \
                                            "$INSTDIR"
   ${EndIf}
 FunctionEnd
@@ -795,18 +932,184 @@ Function LaunchApp
   ${GetParameters} $0
   ${GetOptions} "$0" "/UAC:" $1
   ${If} ${Errors}
-    Exec "$\"$INSTDIR\${FileMainEXE}$\""
+    ${ExecAndWaitForInputIdle} "$\"$INSTDIR\${FileMainEXE}$\""
   ${Else}
     GetFunctionAddress $0 LaunchAppFromElevatedProcess
     UAC::ExecCodeSegment $0
   ${EndIf}
+
+  StrCpy $LaunchedNewApp true
 FunctionEnd
 
 Function LaunchAppFromElevatedProcess
   ; Set our current working directory to the application's install directory
   ; otherwise the 7-Zip temp directory will be in use and won't be deleted.
   SetOutPath "$INSTDIR"
-  Exec "$\"$INSTDIR\${FileMainEXE}$\""
+  ${ExecAndWaitForInputIdle} "$\"$INSTDIR\${FileMainEXE}$\""
+FunctionEnd
+
+Function SendPing
+  ${GetParameters} $0
+  ${GetOptions} $0 "/LaunchedFromStub" $0
+  ${IfNot} ${Errors}
+    Return
+  ${EndIf}
+
+  ; Create a GUID to use as the unique document ID.
+  System::Call "rpcrt4::UuidCreate(g . r0)i"
+  ; StringFromGUID2 (which is what System::Call uses internally to stringify
+  ; GUIDs) includes braces in its output, and we don't want those.
+  StrCpy $0 $0 -1 1
+
+  ; Configure the HTTP request for the ping
+  nsJSON::Set /tree ping /value "{}"
+  nsJSON::Set /tree ping "Url" /value \
+    '"${TELEMETRY_BASE_URL}/${TELEMETRY_NAMESPACE}/${TELEMETRY_INSTALL_PING_DOCTYPE}/${TELEMETRY_INSTALL_PING_VERSION}/$0"'
+  nsJSON::Set /tree ping "Verb" /value '"POST"'
+  nsJSON::Set /tree ping "DataType" /value '"JSON"'
+  nsJSON::Set /tree ping "AccessType" /value '"PreConfig"'
+
+  ; Fill in the ping payload
+  nsJSON::Set /tree ping "Data" /value "{}"
+  nsJSON::Set /tree ping "Data" "installer_type" /value '"full"'
+  nsJSON::Set /tree ping "Data" "installer_version" /value '"${AppVersion}"'
+  nsJSON::Set /tree ping "Data" "build_channel" /value '"${Channel}"'
+  nsJSON::Set /tree ping "Data" "update_channel" /value '"${UpdateChannel}"'
+  nsJSON::Set /tree ping "Data" "locale" /value '"${AB_CD}"'
+
+  ReadINIStr $0 "$INSTDIR\application.ini" "App" "Version"
+  nsJSON::Set /tree ping "Data" "version" /value '"$0"'
+  ReadINIStr $0 "$INSTDIR\application.ini" "App" "BuildID"
+  nsJSON::Set /tree ping "Data" "build_id" /value '"$0"'
+
+  ${GetParameters} $0
+  ${GetOptions} $0 "/LaunchedFromMSI" $0
+  ${IfNot} ${Errors}
+    nsJSON::Set /tree ping "Data" "from_msi" /value true
+  ${EndIf}
+
+  !ifdef HAVE_64BIT_BUILD
+    nsJSON::Set /tree ping "Data" "64bit_build" /value true
+  !else
+    nsJSON::Set /tree ping "Data" "64bit_build" /value false
+  !endif
+
+  ${If} ${RunningX64}
+    nsJSON::Set /tree ping "Data" "64bit_os" /value true
+  ${Else}
+    nsJSON::Set /tree ping "Data" "64bit_os" /value false
+  ${EndIf}
+
+  ; Though these values are sometimes incorrect due to bug 444664 it happens
+  ; so rarely it isn't worth working around it by reading the registry values.
+  ${WinVerGetMajor} $0
+  ${WinVerGetMinor} $1
+  ${WinVerGetBuild} $2
+  nsJSON::Set /tree ping "Data" "os_version" /value '"$0.$1.$2"'
+  ${If} ${IsServerOS}
+    nsJSON::Set /tree ping "Data" "server_os" /value true
+  ${Else}
+    nsJSON::Set /tree ping "Data" "server_os" /value false
+  ${EndIf}
+
+  ClearErrors
+  WriteRegStr HKLM "Software\Mozilla" "${BrandShortName}InstallerTest" \
+                   "Write Test"
+  ${If} ${Errors}
+    nsJSON::Set /tree ping "Data" "admin_user" /value false
+  ${Else}
+    DeleteRegValue HKLM "Software\Mozilla" "${BrandShortName}InstallerTest"
+    nsJSON::Set /tree ping "Data" "admin_user" /value true
+  ${EndIf}
+
+  ${If} $DefaultInstDir == $INSTDIR
+    nsJSON::Set /tree ping "Data" "default_path" /value true
+  ${Else}
+    nsJSON::Set /tree ping "Data" "default_path" /value false
+  ${EndIf}
+
+  nsJSON::Set /tree ping "Data" "set_default" /value "$SetAsDefault"
+
+  nsJSON::Set /tree ping "Data" "new_default" /value false
+  nsJSON::Set /tree ping "Data" "old_default" /value false
+
+  AppAssocReg::QueryCurrentDefault "http" "protocol" "effective"
+  Pop $0
+  ReadRegStr $0 HKCR "$0\shell\open\command" ""
+  ${If} $0 != ""
+    ${GetPathFromString} "$0" $0
+    ${GetParent} "$0" $1
+    ${GetLongPath} "$1" $1
+    ${If} $1 == $INSTDIR
+      nsJSON::Set /tree ping "Data" "new_default" /value true
+    ${Else}
+      StrCpy $0 "$0" "" -11 # 11 == length of "firefox.exe"
+      ${If} "$0" == "${FileMainEXE}"
+        nsJSON::Set /tree ping "Data" "old_default" /value true
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+
+  nsJSON::Set /tree ping "Data" "had_old_install" /value "$HadOldInstall"
+
+  ${If} ${Silent}
+    ; In silent mode, only the install phase is executed, and the GUI events
+    ; that initialize most of the phase times are never called; only
+    ; $InstallPhaseStart and $FinishPhaseStart have usable values.
+    ${GetSecondsElapsed} $InstallPhaseStart $FinishPhaseStart $0
+
+    nsJSON::Set /tree ping "Data" "intro_time" /value 0
+    nsJSON::Set /tree ping "Data" "options_time" /value 0
+    nsJSON::Set /tree ping "Data" "install_time" /value "$0"
+    nsJSON::Set /tree ping "Data" "finish_time" /value 0
+  ${Else}
+    ; In GUI mode, all we can be certain of is that the intro phase has started;
+    ; the user could have canceled at any time and phases after that won't
+    ; have run at all. So we have to be prepared for anything after
+    ; $IntroPhaseStart to be uninitialized. For anything that isn't filled in
+    ; yet we'll use the current tick count. That means that any phases that
+    ; weren't entered at all will get 0 for their times because the start and
+    ; end tick counts will be the same.
+    System::Call "kernel32::GetTickCount()l .s"
+    Pop $0
+
+    ${If} $OptionsPhaseStart == 0
+      StrCpy $OptionsPhaseStart $0
+    ${EndIf}
+    ${GetSecondsElapsed} $IntroPhaseStart $OptionsPhaseStart $1
+    nsJSON::Set /tree ping "Data" "intro_time" /value "$1"
+
+    ${If} $InstallPhaseStart == 0
+      StrCpy $InstallPhaseStart $0
+    ${EndIf}
+    ${GetSecondsElapsed} $OptionsPhaseStart $InstallPhaseStart $1
+    nsJSON::Set /tree ping "Data" "options_time" /value "$1"
+
+    ${If} $FinishPhaseStart == 0
+      StrCpy $FinishPhaseStart $0
+    ${EndIf}
+    ${GetSecondsElapsed} $InstallPhaseStart $FinishPhaseStart $1
+    nsJSON::Set /tree ping "Data" "install_time" /value "$1"
+
+    ${If} $FinishPhaseEnd == 0
+      StrCpy $FinishPhaseEnd $0
+    ${EndIf}
+    ${GetSecondsElapsed} $FinishPhaseStart $FinishPhaseEnd $1
+    nsJSON::Set /tree ping "Data" "finish_time" /value "$1"
+  ${EndIf}
+
+  nsJSON::Set /tree ping "Data" "new_launched" /value "$LaunchedNewApp"
+
+  nsJSON::Set /tree ping "Data" "succeeded" /value false
+  ${If} $InstallResult == "cancel"
+    nsJSON::Set /tree ping "Data" "user_cancelled" /value true
+  ${ElseIf} $InstallResult == "success"
+    nsJSON::Set /tree ping "Data" "succeeded" /value true
+  ${EndIf}
+
+  ; Send the ping request. This call will block until a response is received,
+  ; but we shouldn't have any windows still open, so we won't jank anything.
+  nsJSON::Set /http ping
 FunctionEnd
 
 ################################################################################
@@ -817,6 +1120,9 @@ FunctionEnd
 !verbose 3
 !include "overrideLocale.nsh"
 !include "customLocale.nsh"
+!ifdef MOZ_OPTIONAL_EXTENSIONS
+!include "extensionsLocale.nsh"
+!endif
 !verbose pop
 
 ; Set this after the locale files to override it if it is in the locale
@@ -832,9 +1138,15 @@ Function preWelcome
     Delete "$PLUGINSDIR\modern-wizard.bmp"
     CopyFiles /SILENT "$EXEDIR\core\distribution\modern-wizard.bmp" "$PLUGINSDIR\modern-wizard.bmp"
   ${EndIf}
+
+  System::Call "kernel32::GetTickCount()l .s"
+  Pop $IntroPhaseStart
 FunctionEnd
 
 Function preOptions
+  System::Call "kernel32::GetTickCount()l .s"
+  Pop $OptionsPhaseStart
+
   StrCpy $PageName "Options"
   ${If} ${FileExists} "$EXEDIR\core\distribution\modern-header.bmp"
   ${AndIf} $hHeaderBitmap == ""
@@ -868,6 +1180,8 @@ FunctionEnd
 Function preDirectory
   StrCpy $PageName "Directory"
   ${PreDirectoryCommon}
+
+  StrCpy $DefaultInstDir $INSTDIR
 FunctionEnd
 
 Function leaveDirectory
@@ -945,6 +1259,119 @@ Function leaveComponents
   ${MUI_INSTALLOPTIONS_READ} $InstallMaintenanceService "components.ini" "Field 2" "State"
   ${If} $InstallType == ${INSTALLTYPE_CUSTOM}
     Call CheckExistingInstall
+  ${EndIf}
+FunctionEnd
+!endif
+
+!ifdef MOZ_OPTIONAL_EXTENSIONS
+Function preExtensions
+  StrCpy $PageName "Extensions"
+  ${CheckCustomCommon}
+
+  ; Abort if no optional extensions configured in distribution/setup.ini
+  ${If} ${FileExists} "$EXEDIR\core\distribution\setup.ini"
+    ClearErrors
+    ReadINIStr $ExtensionRecommender "$EXEDIR\core\distribution\setup.ini" \
+      "OptionalExtensions" "Recommender.${AB_CD}"
+    ${If} ${Errors}
+      ClearErrors
+      ReadINIStr $ExtensionRecommender "$EXEDIR\core\distribution\setup.ini" \
+        "OptionalExtensions" "Recommender"
+    ${EndIf}
+
+    ${If} ${Errors}
+      ClearErrors
+      Abort
+    ${EndIf}
+  ${Else}
+    Abort
+  ${EndIf}
+
+  !insertmacro MUI_HEADER_TEXT "$(EXTENSIONS_PAGE_TITLE)" "$(EXTENSIONS_PAGE_SUBTITLE)"
+  !insertmacro MUI_INSTALLOPTIONS_DISPLAY "extensions.ini"
+FunctionEnd
+
+Function leaveExtensions
+  ${MUI_INSTALLOPTIONS_READ} $0 "extensions.ini" "Settings" "NumFields"
+  ${MUI_INSTALLOPTIONS_READ} $1 "extensions.ini" "Settings" "State"
+
+  ; $0 is count of checkboxes
+  IntOp $0 $0 - 1
+
+  ${If} $1 > $0
+    Abort
+  ${ElseIf} $1 == 0
+    ; $1 is count of selected optional extension(s)
+    StrCpy $1 0
+
+    StrCpy $2 2
+    ${Do}
+      ${MUI_INSTALLOPTIONS_READ} $3 "extensions.ini" "Field $2" "State"
+      ${If} $3 == ${BST_CHECKED}
+        IntOp $1 $1 + 1
+      ${EndIf}
+
+      IntOp $4 $2 - 2
+      WriteINIStr "$EXEDIR\core\distribution\setup.ini" \
+        "OptionalExtensions" "extension.$4.checked" "$3"
+
+      ${If} $0 == $2
+        ${ExitDo}
+      ${Else}
+        IntOp $2 $2 + 1
+      ${EndIf}
+    ${Loop}
+
+    ; Different from state of field 1, "0" means no optional extensions selected
+    ${If} $1 > 0
+      StrCpy $InstallOptionalExtensions "1"
+    ${Else}
+      StrCpy $InstallOptionalExtensions "0"
+    ${EndIf}
+
+    ${If} $InstallType == ${INSTALLTYPE_CUSTOM}
+      Call CheckExistingInstall
+    ${EndIf}
+  ${ElseIf} $1 == 1
+    ; Check/uncheck all optional extensions with field 1
+    ${MUI_INSTALLOPTIONS_READ} $1 "extensions.ini" "Field 1" "State"
+
+    StrCpy $2 2
+    ${Do}
+      ${MUI_INSTALLOPTIONS_READ} $3 "extensions.ini" "Field $2" "HWND"
+      SendMessage $3 ${BM_SETCHECK} $1 0
+
+      ${If} $0 == $2
+        ${ExitDo}
+      ${Else}
+        IntOp $2 $2 + 1
+      ${EndIf}
+    ${Loop}
+
+    Abort
+  ${ElseIf} $1 > 1
+    StrCpy $1 ${BST_CHECKED}
+
+    StrCpy $2 2
+    ${Do}
+      ${MUI_INSTALLOPTIONS_READ} $3 "extensions.ini" "Field $2" "State"
+      ${If} $3 == ${BST_UNCHECKED}
+        StrCpy $1 ${BST_UNCHECKED}
+        ${ExitDo}
+      ${EndIf}
+
+      ${If} $0 == $2
+        ${ExitDo}
+      ${Else}
+        IntOp $2 $2 + 1
+      ${EndIf}
+    ${Loop}
+
+    ; Check field 1 only if all optional extensions are selected
+    ${MUI_INSTALLOPTIONS_READ} $3 "extensions.ini" "Field 1" "HWND"
+    SendMessage $3 ${BM_SETCHECK} $1 0
+
+    Abort
   ${EndIf}
 FunctionEnd
 !endif
@@ -1068,9 +1495,17 @@ FunctionEnd
 ; When we add an optional action to the finish page the cancel button is
 ; enabled. This disables it and leaves the finish button as the only choice.
 Function preFinish
+  System::Call "kernel32::GetTickCount()l .s"
+  Pop $FinishPhaseStart
+
   StrCpy $PageName ""
   ${EndInstallLog} "${BrandFullName}"
   !insertmacro MUI_INSTALLOPTIONS_WRITE "ioSpecial.ini" "settings" "cancelenabled" "0"
+FunctionEnd
+
+Function postFinish
+  System::Call "kernel32::GetTickCount()l .s"
+  Pop $FinishPhaseEnd
 FunctionEnd
 
 ################################################################################
@@ -1080,6 +1515,18 @@ Function .onInit
   ; Remove the current exe directory from the search order.
   ; This only effects LoadLibrary calls and not implicitly loaded DLLs.
   System::Call 'kernel32::SetDllDirectoryW(w "")'
+
+  ; Initialize the variables used for telemetry
+  StrCpy $SetAsDefault true
+  StrCpy $HadOldInstall false
+  StrCpy $DefaultInstDir $INSTDIR
+  StrCpy $IntroPhaseStart 0
+  StrCpy $OptionsPhaseStart 0
+  StrCpy $InstallPhaseStart 0
+  StrCpy $FinishPhaseStart 0
+  StrCpy $FinishPhaseEnd 0
+  StrCpy $InstallResult "cancel"
+  StrCpy $LaunchedNewApp false
 
   StrCpy $PageName ""
   StrCpy $LANGUAGE 0
@@ -1110,19 +1557,41 @@ Function .onInit
   ${EndIf}
 
 !ifdef HAVE_64BIT_BUILD
-  ${Unless} ${RunningX64}
+  ${If} "${ARCH}" == "AArch64"
+    ${IfNot} ${IsNativeARM64}
+    ${OrIfNot} ${AtLeastWin10}
+      MessageBox MB_OKCANCEL|MB_ICONSTOP "$(WARN_MIN_SUPPORTED_OSVER_MSG)" IDCANCEL +2
+      ExecShell "open" "${URLSystemRequirements}"
+      Quit
+    ${EndIf}
+  ${ElseIfNot} ${RunningX64}
     MessageBox MB_OKCANCEL|MB_ICONSTOP "$(WARN_MIN_SUPPORTED_OSVER_MSG)" IDCANCEL +2
     ExecShell "open" "${URLSystemRequirements}"
     Quit
-  ${EndUnless}
+  ${EndIf}
   SetRegView 64
 !endif
+
+  SetShellVarContext all
+  ${GetFirstInstallPath} "Software\Mozilla\${BrandFullNameInternal}" $0
+  ${If} "$0" == "false"
+    SetShellVarContext current
+    ${GetFirstInstallPath} "Software\Mozilla\${BrandFullNameInternal}" $0
+    ${If} "$0" == "false"
+      StrCpy $HadOldInstall false
+    ${Else}
+      StrCpy $HadOldInstall true
+    ${EndIf}
+  ${Else}
+    StrCpy $HadOldInstall true
+  ${EndIf}
 
   ${InstallOnInitCommon} "$(WARN_MIN_SUPPORTED_OSVER_CPU_MSG)"
 
   !insertmacro InitInstallOptionsFile "options.ini"
   !insertmacro InitInstallOptionsFile "shortcuts.ini"
   !insertmacro InitInstallOptionsFile "components.ini"
+  !insertmacro InitInstallOptionsFile "extensions.ini"
   !insertmacro InitInstallOptionsFile "summary.ini"
 
   WriteINIStr "$PLUGINSDIR\options.ini" "Settings" NumFields "5"
@@ -1227,6 +1696,74 @@ Function .onInit
   WriteINIStr "$PLUGINSDIR\components.ini" "Field 2" State  "1"
   WriteINIStr "$PLUGINSDIR\components.ini" "Field 2" Flags  "GROUP"
 
+  ; Setup the extensions.ini file for the Custom Extensions Page
+  StrCpy $R9 0
+  StrCpy $R8 ${BST_CHECKED}
+
+  ${If} ${FileExists} "$EXEDIR\core\distribution\setup.ini"
+    ${Do}
+      IntOp $R7 $R9 + 2
+
+      ClearErrors
+      ReadINIStr $R6 "$EXEDIR\core\distribution\setup.ini" \
+        "OptionalExtensions" "extension.$R9.name.${AB_CD}"
+      ${If} ${Errors}
+        ClearErrors
+        ReadINIStr $R6 "$EXEDIR\core\distribution\setup.ini" \
+          "OptionalExtensions" "extension.$R9.name"
+      ${EndIf}
+
+      ${If} ${Errors}
+        ${ExitDo}
+      ${EndIf}
+
+      ; Each row moves down by 13 DLUs
+      IntOp $R2 $R9 * 13
+      IntOp $R2 $R2 + 21
+      IntOp $R1 $R2 + 10
+
+      ClearErrors
+      ReadINIStr $R0 "$EXEDIR\core\distribution\setup.ini" \
+        "OptionalExtensions" "extension.$R9.checked"
+      ${If} ${Errors}
+        StrCpy $R0 ${BST_CHECKED}
+      ${ElseIf} $R0 == "0"
+        StrCpy $R8 ${BST_UNCHECKED}
+      ${EndIf}
+
+      WriteINIStr "$PLUGINSDIR\extensions.ini" "Field $R7" Type   "checkbox"
+      WriteINIStr "$PLUGINSDIR\extensions.ini" "Field $R7" Text   "$R6"
+      WriteINIStr "$PLUGINSDIR\extensions.ini" "Field $R7" Left   "11"
+      WriteINIStr "$PLUGINSDIR\extensions.ini" "Field $R7" Right  "-1"
+      WriteINIStr "$PLUGINSDIR\extensions.ini" "Field $R7" Top    "$R2"
+      WriteINIStr "$PLUGINSDIR\extensions.ini" "Field $R7" Bottom "$R1"
+      WriteINIStr "$PLUGINSDIR\extensions.ini" "Field $R7" State  "$R0"
+      WriteINIStr "$PLUGINSDIR\extensions.ini" "Field $R7" Flags  "NOTIFY"
+
+      IntOp $R9 $R9 + 1
+    ${Loop}
+  ${EndIf}
+
+  IntOp $R9 $R9 + 2
+
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Settings" NumFields "$R9"
+
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Field 1" Type   "checkbox"
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Field 1" Text   "$(OPTIONAL_EXTENSIONS_CHECKBOX_DESC)"
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Field 1" Left   "0"
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Field 1" Right  "-1"
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Field 1" Top    "5"
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Field 1" Bottom "15"
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Field 1" State  "$R8"
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Field 1" Flags  "GROUP|NOTIFY"
+
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Field $R9" Type   "label"
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Field $R9" Text   "$(OPTIONAL_EXTENSIONS_DESC)"
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Field $R9" Left   "0"
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Field $R9" Right  "-1"
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Field $R9" Top    "-23"
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Field $R9" Bottom "-5"
+
   ; There must always be a core directory.
   ${GetSize} "$EXEDIR\core\" "/S=0K" $R5 $R7 $R8
   SectionSetSize ${APP_IDX} $R5
@@ -1238,4 +1775,5 @@ FunctionEnd
 
 Function .onGUIEnd
   ${OnEndCommon}
+  Call SendPing
 FunctionEnd

@@ -6,198 +6,260 @@
 // install.rdf
 
 
-// Always compatible
-var addon1 = {
-  id: "addon1@tests.mozilla.org",
-  version: "1.0",
-  name: "Test 1",
-  targetApplications: [{
-    id: "xpcshell@tests.mozilla.org",
-    minVersion: "1",
-    maxVersion: "1"
-  }]
-};
+// The `compatbile` array defines which of the tests below the add-on
+// should be compatible in. It's pretty gross.
+const ADDONS = [
+  // Always compatible
+  {
+    manifest: {
+      id: "addon1@tests.mozilla.org",
+      targetApplications: [{
+        id: "xpcshell@tests.mozilla.org",
+        minVersion: "1",
+        maxVersion: "1",
+      }],
+    },
+    compatible: {
+      nonStrict: true,
+      strict: true,
+    },
+  },
 
-// Incompatible in strict compatibility mode
-var addon2 = {
-  id: "addon2@tests.mozilla.org",
-  version: "1.0",
-  name: "Test 2",
-  targetApplications: [{
-    id: "xpcshell@tests.mozilla.org",
-    minVersion: "0.7",
-    maxVersion: "0.8"
-  }]
-};
+  // Incompatible in strict compatibility mode
+  {
+    manifest: {
+      id: "addon2@tests.mozilla.org",
+      targetApplications: [{
+        id: "xpcshell@tests.mozilla.org",
+        minVersion: "0.7",
+        maxVersion: "0.8",
+      }],
+    },
+    compatible: {
+      nonStrict: true,
+      strict: false,
+    },
+  },
 
-// Theme - always uses strict compatibility, so is always incompatible
-var addon3 = {
-  id: "addon3@tests.mozilla.org",
-  version: "1.0",
-  name: "Test 3",
-  internalName: "test-theme-3",
-  targetApplications: [{
-    id: "xpcshell@tests.mozilla.org",
-    minVersion: "0.8",
-    maxVersion: "0.9"
-  }]
-};
+  // Opt-in to strict compatibility - always incompatible
+  {
+    manifest: {
+      id: "addon3@tests.mozilla.org",
+      strictCompatibility: true,
+      targetApplications: [{
+        id: "xpcshell@tests.mozilla.org",
+        minVersion: "0.8",
+        maxVersion: "0.9",
+      }],
+    },
+    compatible: {
+      nonStrict: false,
+      strict: false,
+    },
+  },
 
-// Opt-in to strict compatibility - always incompatible
-var addon4 = {
-  id: "addon4@tests.mozilla.org",
-  version: "1.0",
-  name: "Test 4",
-  strictCompatibility: true,
-  targetApplications: [{
-    id: "xpcshell@tests.mozilla.org",
-    minVersion: "0.8",
-    maxVersion: "0.9"
-  }]
-};
+  // Addon from the future - would be marked as compatibile-by-default,
+  // but minVersion is higher than the app version
+  {
+    manifest: {
+      id: "addon4@tests.mozilla.org",
+      targetApplications: [{
+        id: "xpcshell@tests.mozilla.org",
+        minVersion: "3",
+        maxVersion: "5",
+      }],
+    },
+    compatible: {
+      nonStrict: false,
+      strict: false,
+    },
+  },
 
-// Addon from the future - would be marked as compatibile-by-default,
-// but minVersion is higher than the app version
-var addon5 = {
-  id: "addon5@tests.mozilla.org",
-  version: "1.0",
-  name: "Test 5",
-  targetApplications: [{
-    id: "xpcshell@tests.mozilla.org",
-    minVersion: "3",
-    maxVersion: "5"
-  }]
-};
+  // Dictionary - compatible even in strict compatibility mode
+  {
+    manifest: {
+      id: "addon5@tests.mozilla.org",
+      type: "dictionary",
+      targetApplications: [{
+        id: "xpcshell@tests.mozilla.org",
+        minVersion: "0.8",
+        maxVersion: "0.9",
+      }],
+    },
+    compatible: {
+      nonStrict: true,
+      strict: true,
+    },
+  },
+];
 
-// Extremely old addon - maxVersion is less than the mimimum compat version
-// set in extensions.minCompatibleVersion
-var addon6 = {
-  id: "addon6@tests.mozilla.org",
-  version: "1.0",
-  name: "Test 6",
-  targetApplications: [{
-    id: "xpcshell@tests.mozilla.org",
-    minVersion: "0.1",
-    maxVersion: "0.2"
-  }]
-};
+async function checkCompatStatus(strict, index) {
+  info(`Checking compat status for test ${index}\n`);
 
-// Dictionary - incompatible in strict compatibility mode
-var addon7 = {
-  id: "addon7@tests.mozilla.org",
-  version: "1.0",
-  name: "Test 7",
-  type: "64",
-  targetApplications: [{
-    id: "xpcshell@tests.mozilla.org",
-    minVersion: "0.8",
-    maxVersion: "0.9"
-  }]
-};
+  equal(AddonManager.strictCompatibility, strict);
 
-
-
-const profileDir = gProfD.clone();
-profileDir.append("extensions");
-
-
-function do_check_compat_status(aStrict, aAddonCompat, aCallback) {
-  do_check_eq(AddonManager.strictCompatibility, aStrict);
-  AddonManager.getAddonsByIDs(["addon1@tests.mozilla.org",
-                               "addon2@tests.mozilla.org",
-                               "addon3@tests.mozilla.org",
-                               "addon4@tests.mozilla.org",
-                               "addon5@tests.mozilla.org",
-                               "addon6@tests.mozilla.org",
-                               "addon7@tests.mozilla.org"],
-                              function([a1, a2, a3, a4, a5, a6, a7]) {
-    do_check_neq(a1, null);
-    do_check_eq(a1.isCompatible, aAddonCompat[0]);
-    do_check_eq(a1.appDisabled, !aAddonCompat[0]);
-    do_check_false(a1.strictCompatibility);
-
-    do_check_neq(a2, null);
-    do_check_eq(a2.isCompatible, aAddonCompat[1]);
-    do_check_eq(a2.appDisabled, !aAddonCompat[1]);
-    do_check_false(a2.strictCompatibility);
-
-    do_check_neq(a3, null);
-    do_check_eq(a3.isCompatible, aAddonCompat[2]);
-    do_check_eq(a3.appDisabled, !aAddonCompat[2]);
-    do_check_true(a3.strictCompatibility);
-
-    do_check_neq(a4, null);
-    do_check_eq(a4.isCompatible, aAddonCompat[3]);
-    do_check_eq(a4.appDisabled, !aAddonCompat[3]);
-    do_check_true(a4.strictCompatibility);
-
-    do_check_neq(a5, null);
-    do_check_eq(a5.isCompatible, aAddonCompat[4]);
-    do_check_eq(a5.appDisabled, !aAddonCompat[4]);
-    do_check_false(a5.strictCompatibility);
-
-    do_check_neq(a6, null);
-    do_check_eq(a6.isCompatible, aAddonCompat[5]);
-    do_check_eq(a6.appDisabled, !aAddonCompat[5]);
-    do_check_false(a6.strictCompatibility);
-
-    do_check_neq(a7, null);
-    do_check_eq(a7.isCompatible, aAddonCompat[6]);
-    do_check_eq(a7.appDisabled, !aAddonCompat[6]);
-    do_check_false(a7.strictCompatibility);
-
-    do_execute_soon(aCallback);
-  });
+  for (let test of ADDONS) {
+    let {id} = test.manifest;
+    let addon = await promiseAddonByID(id);
+    checkAddon(id, addon, {
+      isCompatible: test.compatible[index],
+      appDisabled: !test.compatible[index],
+    });
+  }
 }
 
-
-function run_test() {
-  do_test_pending();
+add_task(async function setup() {
   createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9.2");
 
-  writeInstallRDFForExtension(addon1, profileDir);
-  writeInstallRDFForExtension(addon2, profileDir);
-  writeInstallRDFForExtension(addon3, profileDir);
-  writeInstallRDFForExtension(addon4, profileDir);
-  writeInstallRDFForExtension(addon5, profileDir);
-  writeInstallRDFForExtension(addon6, profileDir);
-  writeInstallRDFForExtension(addon7, profileDir);
+  for (let addon of ADDONS) {
+    let xpi = await createAddon(addon.manifest);
+    await manuallyInstall(xpi, AddonTestUtils.profileExtensions, addon.manifest.id);
+  }
 
-  Services.prefs.setCharPref(PREF_EM_MIN_COMPAT_APP_VERSION, "0.1");
+  await promiseStartupManager();
+});
 
-  startupManager();
-
-  // Should default to enabling strict compat.
-  do_check_compat_status(true, [true, false, false, false, false, false, false], run_test_1);
-}
-
-function run_test_1() {
-  do_print("Test 1");
+add_task(async function test_1() {
+  info("Test 1");
   Services.prefs.setBoolPref(PREF_EM_STRICT_COMPATIBILITY, false);
-  do_check_compat_status(false, [true, true, false, false, false, true, true], run_test_2);
-}
+  await checkCompatStatus(false, "nonStrict");
+  await promiseRestartManager();
+  await checkCompatStatus(false, "nonStrict");
+});
 
-function run_test_2() {
-  do_print("Test 2");
-  restartManager();
-  do_check_compat_status(false, [true, true, false, false, false, true, true], run_test_3);
-}
-
-function run_test_3() {
-  do_print("Test 3");
+add_task(async function test_2() {
+  info("Test 2");
   Services.prefs.setBoolPref(PREF_EM_STRICT_COMPATIBILITY, true);
-  do_check_compat_status(true, [true, false, false, false, false, false, false], run_test_4);
+  await checkCompatStatus(true, "strict");
+  await promiseRestartManager();
+  await checkCompatStatus(true, "strict");
+});
+
+const CHECK_COMPAT_ADDONS = [
+  // Cannot be enabled as it has no target app info for the applciation
+  {
+    manifest: {
+      id: "cc-addon1@tests.mozilla.org",
+      targetApplications: [{
+        id: "unknown@tests.mozilla.org",
+        minVersion: "1",
+        maxVersion: "1",
+      }],
+    },
+    compatible: false,
+    canOverride: false,
+  },
+
+
+  // Always appears incompatible but can be enabled if compatibility checking is
+  // disabled
+  {
+    manifest: {
+      id: "cc-addon2@tests.mozilla.org",
+      targetApplications: [{
+        id: "toolkit@mozilla.org",
+        minVersion: "1",
+        maxVersion: "1",
+      }],
+    },
+    compatible: false,
+    canOverride: true,
+  },
+
+  // Always compatible and enabled
+  {
+    manifest: {
+      id: "cc-addon3@tests.mozilla.org",
+      targetApplications: [{
+        id: "toolkit@mozilla.org",
+        minVersion: "1",
+        maxVersion: "2",
+      }],
+    },
+    compatible: true,
+  },
+
+  // Always compatible and enabled
+  {
+    manifest: {
+      id: "cc-addon4@tests.mozilla.org",
+      targetApplications: [{
+        id: "xpcshell@tests.mozilla.org",
+        minVersion: "1",
+        maxVersion: "3",
+      }],
+    },
+    compatible: true,
+  },
+];
+
+async function checkCompatOverrides(overridden) {
+  for (let test of CHECK_COMPAT_ADDONS) {
+    let {id} = test.manifest;
+    let addon = await promiseAddonByID(id);
+    checkAddon(id, addon, {
+      isCompatible: test.compatible,
+      isActive: test.compatible || (overridden && test.canOverride),
+    });
+  }
 }
 
-function run_test_4() {
-  do_print("Test 4");
-  restartManager();
-  do_check_compat_status(true, [true, false, false, false, false, false, false], run_test_5);
-}
+var gIsNightly;
 
-function run_test_5() {
-  do_print("Test 5");
-  Services.prefs.setBoolPref(PREF_EM_STRICT_COMPATIBILITY, false);
-  Services.prefs.setCharPref(PREF_EM_MIN_COMPAT_APP_VERSION, "0.4");
-  do_check_compat_status(false, [true, true, false, false, false, false, true], do_test_finished);
-}
+add_task(async function setupCheckCompat() {
+  gIsNightly = isNightlyChannel();
+
+  Services.prefs.setBoolPref(PREF_EM_STRICT_COMPATIBILITY, true);
+
+  Object.assign(AddonTestUtils.appInfo,
+                {version: "2.2.3", platformVersion: "2"});
+
+  for (let addon of CHECK_COMPAT_ADDONS) {
+    let {manifest} = addon;
+    let xpi = await createAddon(manifest);
+    await manuallyInstall(xpi, AddonTestUtils.profileExtensions, manifest.id);
+  }
+  await promiseRestartManager("2.2.3");
+});
+
+// Tests that with compatibility checking enabled we see the incompatible
+// add-ons disabled
+add_task(async function test_compat_overrides_1() {
+  await checkCompatOverrides(false);
+});
+
+// Tests that with compatibility checking disabled we see the incompatible
+// add-ons enabled
+add_task(async function test_compat_overrides_2() {
+  if (gIsNightly)
+    Services.prefs.setBoolPref("extensions.checkCompatibility.nightly", false);
+  else
+    Services.prefs.setBoolPref("extensions.checkCompatibility.2.2", false);
+
+  await promiseRestartManager();
+
+  await checkCompatOverrides(true);
+});
+
+// Tests that with compatibility checking disabled we see the incompatible
+// add-ons enabled.
+add_task(async function test_compat_overrides_3() {
+  if (!gIsNightly)
+    Services.prefs.setBoolPref("extensions.checkCompatibility.2.1a", false);
+  await promiseRestartManager("2.1a4");
+
+  await checkCompatOverrides(true);
+});
+
+// Tests that with compatibility checking enabled we see the incompatible
+// add-ons disabled.
+add_task(async function test_compat_overrides_4() {
+  if (gIsNightly)
+    Services.prefs.setBoolPref("extensions.checkCompatibility.nightly", true);
+  else
+    Services.prefs.setBoolPref("extensions.checkCompatibility.2.1a", true);
+  await promiseRestartManager();
+
+  await checkCompatOverrides(false);
+});
+

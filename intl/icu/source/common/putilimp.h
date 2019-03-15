@@ -1,4 +1,4 @@
-// Copyright (C) 2016 and later: Unicode, Inc. and others.
+// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
 /*
 ******************************************************************************
@@ -72,22 +72,13 @@
 typedef size_t uintptr_t;
 #endif
 
-/**
- * \def U_HAVE_MSVC_2003_OR_EARLIER
- * Flag for workaround of MSVC 2003 optimization bugs
- * @internal
- */
-#if !defined(U_HAVE_MSVC_2003_OR_EARLIER) && defined(_MSC_VER) && (_MSC_VER < 1400)
-#define U_HAVE_MSVC_2003_OR_EARLIER
-#endif
-
 /*===========================================================================*/
 /** @{ Information about POSIX support                                       */
 /*===========================================================================*/
 
 #ifdef U_HAVE_NL_LANGINFO_CODESET
     /* Use the predefined value. */
-#elif U_PLATFORM_HAS_WIN32_API || U_PLATFORM == U_PF_ANDROID || U_PLATFORM == U_PF_QNX
+#elif U_PLATFORM_USES_ONLY_WIN32_API || U_PLATFORM == U_PF_ANDROID || U_PLATFORM == U_PF_QNX
 #   define U_HAVE_NL_LANGINFO_CODESET 0
 #else
 #   define U_HAVE_NL_LANGINFO_CODESET 1
@@ -103,10 +94,13 @@ typedef size_t uintptr_t;
 #   define U_NL_LANGINFO_CODESET CODESET
 #endif
 
-#ifdef U_TZSET
+#if defined(U_TZSET) || defined(U_HAVE_TZSET)
     /* Use the predefined value. */
 #elif U_PLATFORM_USES_ONLY_WIN32_API
+    // UWP doesn't support tzset or environment variables for tz
+#if U_PLATFORM_HAS_WINUWP_API == 0
 #   define U_TZSET _tzset
+#endif
 #elif U_PLATFORM == U_PF_OS400
    /* not defined */
 #else
@@ -117,15 +111,15 @@ typedef size_t uintptr_t;
     /* Use the predefined value. */
 #elif U_PLATFORM == U_PF_ANDROID
 #   define U_TIMEZONE timezone
+#elif defined(__UCLIBC__)
+    // uClibc does not have __timezone or _timezone.
+#elif defined(_NEWLIB_VERSION)
+#   define U_TIMEZONE _timezone
+#elif defined(__GLIBC__)
+    // glibc
+#   define U_TIMEZONE __timezone
 #elif U_PLATFORM_IS_LINUX_BASED
-#   if defined(__UCLIBC__)
-       /* uClibc does not have __timezone or _timezone. */
-#   elif defined(_NEWLIB_VERSION)
-#      define U_TIMEZONE      _timezone
-#   elif defined(__GLIBC__)
-       /* glibc */
-#      define U_TIMEZONE      __timezone
-#   endif
+    // not defined
 #elif U_PLATFORM_USES_ONLY_WIN32_API
 #   define U_TIMEZONE _timezone
 #elif U_PLATFORM == U_PF_BSD && !defined(__NetBSD__)
@@ -138,10 +132,13 @@ typedef size_t uintptr_t;
 #   define U_TIMEZONE timezone
 #endif
 
-#ifdef U_TZNAME
+#if defined(U_TZNAME) || defined(U_HAVE_TZNAME)
     /* Use the predefined value. */
 #elif U_PLATFORM_USES_ONLY_WIN32_API
+    /* not usable on all windows platforms */
+#if U_PLATFORM_HAS_WINUWP_API == 0
 #   define U_TZNAME _tzname
+#endif
 #elif U_PLATFORM == U_PF_OS400
    /* not defined */
 #else
@@ -207,33 +204,21 @@ typedef size_t uintptr_t;
 
 /**
  * \def U_HAVE_STD_ATOMICS
- * Defines whether the standard C++11 <atomic> is available.
- * ICU will use this when avialable,
- * otherwise will fall back to compiler or platform specific alternatives.
+ * Defines whether to use the standard C++11 <atomic> functions
+ * If false, ICU will fall back to compiler or platform specific alternatives.
+ * Note: support for these fall back options for atomics will be removed in a future version
+ *       of ICU, and the use of C++ 11 atomics will be required.
  * @internal
  */
 #ifdef U_HAVE_STD_ATOMICS
     /* Use the predefined value. */
-#elif U_CPLUSPLUS_VERSION < 11
-    /* Not C++11, disable use of atomics */
-#   define U_HAVE_STD_ATOMICS 0
-#elif __clang__ && __clang_major__==3 && __clang_minor__<=1
-    /* Clang 3.1, has atomic variable initializer bug. */
-#   define U_HAVE_STD_ATOMICS 0
-#else 
-    /* U_HAVE_ATOMIC is typically set by an autoconf test of #include <atomic>  */
-    /*   Can be set manually, or left undefined, on platforms without autoconf. */
-#   if defined(U_HAVE_ATOMIC) &&  U_HAVE_ATOMIC 
-#      define U_HAVE_STD_ATOMICS 1
-#   else
-#      define U_HAVE_STD_ATOMICS 0
-#   endif
+#else
+#    define U_HAVE_STD_ATOMICS 1
 #endif
-
 
 /**
  *  \def U_HAVE_CLANG_ATOMICS
- *  Defines whether Clang c11 style built-in atomics are avaialable.
+ *  Defines whether Clang c11 style built-in atomics are available.
  *  These are used in preference to gcc atomics when both are available.
  */
 #ifdef U_HAVE_CLANG_ATOMICS
@@ -271,7 +256,7 @@ typedef size_t uintptr_t;
 
 /**
  * Platform utilities isolates the platform dependencies of the
- * libarary.  For each platform which this code is ported to, these
+ * library.  For each platform which this code is ported to, these
  * functions may have to be re-implemented.
  */
 
@@ -394,6 +379,32 @@ U_INTERNAL double  U_EXPORT2 uprv_log(double d);
  */
 U_INTERNAL double  U_EXPORT2 uprv_round(double x);
 
+/**
+ * Adds the signed integers a and b, storing the result in res.
+ * Checks for signed integer overflow.
+ * Similar to the GCC/Clang extension __builtin_add_overflow
+ *
+ * @param a The first operand.
+ * @param b The second operand.
+ * @param res a + b
+ * @return true if overflow occurred; false if no overflow occurred.
+ * @internal
+ */
+U_INTERNAL UBool U_EXPORT2 uprv_add32_overflow(int32_t a, int32_t b, int32_t* res);
+
+/**
+ * Multiplies the signed integers a and b, storing the result in res.
+ * Checks for signed integer overflow.
+ * Similar to the GCC/Clang extension __builtin_mul_overflow
+ *
+ * @param a The first multiplicand.
+ * @param b The second multiplicand.
+ * @param res a * b
+ * @return true if overflow occurred; false if no overflow occurred.
+ * @internal
+ */
+U_INTERNAL UBool U_EXPORT2 uprv_mul32_overflow(int32_t a, int32_t b, int32_t* res);
+
 #if 0
 /**
  * Returns the number of digits after the decimal point in a double number x.
@@ -419,7 +430,7 @@ U_INTERNAL const char*  U_EXPORT2 uprv_getDefaultCodepage(void);
 
 /**
  * Please use uloc_getDefault() instead.
- * Return the default locale ID string by querying ths system, or
+ * Return the default locale ID string by querying the system, or
  *     zero if one cannot be found. 
  * This function can call setlocale() on Unix platforms. Please read the
  * platform documentation on setlocale() before calling this function.
@@ -562,6 +573,49 @@ U_INTERNAL void * U_EXPORT2 uprv_maximumPtr(void *base);
         : (uintptr_t)-1))
 #  endif
 #endif
+
+
+#ifdef __cplusplus
+/**
+ * Pin a buffer capacity such that doing pointer arithmetic
+ * on the destination pointer and capacity cannot overflow.
+ *
+ * The pinned capacity must fulfill the following conditions (for positive capacities):
+ *   - dest + capacity is a valid pointer according to the machine arcitecture (AS/400, 64-bit, etc.)
+ *   - (dest + capacity) >= dest
+ *   - The size (in bytes) of T[capacity] does not exceed 0x7fffffff
+ *
+ * @param dest the destination buffer pointer.
+ * @param capacity the requested buffer capacity, in units of type T.
+ * @return the pinned capacity.
+ * @internal
+ */
+template <typename T>
+inline int32_t pinCapacity(T *dest, int32_t capacity) {
+    if (capacity <= 0) { return capacity; }
+
+    uintptr_t destInt = (uintptr_t)dest;
+    uintptr_t maxInt;
+
+#  if U_PLATFORM == U_PF_OS390 && !defined(_LP64)
+    // We have 31-bit pointers.
+    maxInt = 0x7fffffff;
+#  elif U_PLATFORM == U_PF_OS400
+    maxInt = (uintptr_t)uprv_maximumPtr((void *)dest);
+#  else
+    maxInt = destInt + 0x7fffffffu;
+    if (maxInt < destInt) {
+        // Less than 2GB to the end of the address space.
+        // Pin to that to prevent address overflow.
+        maxInt = (uintptr_t)-1;
+    }
+#  endif
+
+    uintptr_t maxBytes = maxInt - destInt;  // max. 2GB
+    int32_t maxCapacity = (int32_t)(maxBytes / sizeof(T));
+    return capacity <= maxCapacity ? capacity : maxCapacity;
+}
+#endif   // __cplusplus
 
 /*  Dynamic Library Functions */
 

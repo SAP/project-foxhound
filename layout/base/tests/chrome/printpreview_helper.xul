@@ -18,14 +18,13 @@ var ctx1;
 var ctx2;
 var counter = 0;
 
-var file = Components.classes["@mozilla.org/file/directory_service;1"]
-             .getService(Components.interfaces.nsIProperties)
-             .get("TmpD", Components.interfaces.nsILocalFile);
+var file = Cc["@mozilla.org/file/directory_service;1"]
+             .getService(Ci.nsIProperties)
+             .get("TmpD", Ci.nsIFile);
 filePath = file.path;
 
-function printpreview() {
-  gWbp = window.frames[1].QueryInterface(Components.interfaces.nsIInterfaceRequestor)
-             .getInterface(Components.interfaces.nsIWebBrowserPrint);
+function printpreview(hasMozPrintCallback) {
+  gWbp = window.frames[1].docShell.printPreview;
   var listener = {
     onLocationChange: function(webProgress, request, location, flags) { },
     onProgressChange: function(webProgress, request, curSelfProgress, 
@@ -34,15 +33,16 @@ function printpreview() {
     onSecurityChange: function(webProgress, request, state) { },
     onStateChange: function(webProgress, request, stateFlags, status) { },
     onStatusChange: function(webProgress, request, status, message) { },
+    onContentBlockingEvent: function(webProgress, request, event) { },
     QueryInterface: function(iid) {
-      if (iid.equals(Components.interfaces.nsIWebProgressListener) ||
-          iid.equals(Components.interfaces.nsISupportsWeakReference))
+      if (iid.equals(Ci.nsIWebProgressListener) ||
+          iid.equals(Ci.nsISupportsWeakReference))
             return this;
-      throw Components.results.NS_NOINTERFACE;
+      throw Cr.NS_NOINTERFACE;
     }
   }
-  var prefs = Components.classes["@mozilla.org/preferences-service;1"]
-                            .getService(Components.interfaces.nsIPrefBranch);
+  var prefs = Cc["@mozilla.org/preferences-service;1"]
+                .getService(Ci.nsIPrefBranch);
   prefs.setBoolPref('print.show_print_progress', false);
   //XXX I would have thought this would work, instead I'm forced to use prefs service
   gWbp.globalPrintSettings.showPrintProgress = false;
@@ -54,15 +54,18 @@ function printpreview() {
   window.frames[0].addEventListener("afterprint", afterprint, true);
   gWbp.printPreview(gWbp.globalPrintSettings, window.frames[0], listener);
   is(before, 1, "Should have called beforeprint listener!");
-  is(after, 1, "Should have called afterprint listener!");
+  if (!hasMozPrintCallback) {
+    // If there's a mozPrintCallback the after print event won't fire until
+    // later.
+    is(after, 1, "Should have called afterprint listener!");
+  }
   window.frames[0].removeEventListener("beforeprint", beforeprint, true);
   window.frames[0].removeEventListener("afterprint", afterprint, true);
   prefs.clearUserPref('print.show_print_progress');
 }
 
 function exitprintpreview() {
-  window.frames[1].QueryInterface(Components.interfaces.nsIInterfaceRequestor)
-   .getInterface(Components.interfaces.nsIWebBrowserPrint).exitPrintPreview(); 
+  window.frames[1].docShell.printPreview.exitPrintPreview();
 }
 
 function finish() {
@@ -72,12 +75,12 @@ function finish() {
 
 function runTests()
 {
-  var printService = Components.classes["@mozilla.org/gfx/printsettings-service;1"]
-                               .getService(Components.interfaces.nsIPrintSettingsService);
+  var printService = Cc["@mozilla.org/gfx/printsettings-service;1"]
+                       .getService(Ci.nsIPrintSettingsService);
 
   try {
-    Components.classes["@mozilla.org/gfx/printerenumerator;1"]
-              .getService(Components.interfaces.nsIPrinterEnumerator);
+    Cc["@mozilla.org/gfx/printerenumerator;1"]
+      .getService(Ci.nsIPrinterEnumerator);
   } catch(e) {
     todo(false, "Test skipped on MacOSX, as the print preview code doesn't work there");
     finish();
@@ -93,8 +96,7 @@ function runTests()
 }
 
 function compareCanvases() {
-  return window.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
-               .getInterface(Components.interfaces.nsIDOMWindowUtils)
+  return window.windowUtils
                .compareCanvases(document.getElementsByTagName("canvas")[0],
                                 document.getElementsByTagName("canvas")[1],
                                 {}) == 0;
@@ -260,6 +262,130 @@ function runTest6() {
 function runTest6end() {
   printpreview();
   exitprintpreview();
+
+  requestAnimationFrame(function() { setTimeout(runTest7); } );
+}
+
+function runTest7() {
+  var contentText = "<a href='#'>mozilla</a><input>test<select><option>option1</option></select>";
+  // Create normal content
+  window.frames[0].document.body.innerHTML =
+    "<div>" + contentText + "</div>";
+  window.frames[0].document.body.firstChild.value =
+    window.frames[0].document.body.firstChild.getAttribute('value');
+  printpreview();
+  ctx1.drawWindow(window.frames[1], 0, 0, 400, 400, "rgb(255,255,255)");
+  exitprintpreview();
+
+  window.frames[0].document.body.innerHTML = "<div></div>";
+  var sr = window.frames[0].document.body.firstChild.attachShadow({mode: "open"});
+  sr.innerHTML = contentText;
+  printpreview();
+  ctx2.drawWindow(window.frames[1], 0, 0, 400, 400, "rgb(255,255,255)");
+  exitprintpreview();
+  ok(compareCanvases(), "Printing light DOM and shadow DOM should create same output");
+
+  requestAnimationFrame(function() { setTimeout(runTest8); } );
+}
+
+async function runTest8() {
+  // Test that fonts loaded with CSS and JS are printed the same.
+  const iframeElement = document.getElementsByTagName("iframe")[0];
+
+  // First, snapshot the page with font defined in CSS.
+  await new Promise((resolve) => {
+    iframeElement.addEventListener("load", resolve, { capture: true, once: true });
+    iframeElement.setAttribute("src", "printpreview_font_api_ref.html");
+  });
+  printpreview();
+  ctx1.drawWindow(window.frames[1], 0, 0, 400, 400, "rgb(255,255,255)");
+  exitprintpreview();
+
+  // Second, snapshot the page with font loaded in JS.
+  await new Promise((resolve) => {
+    iframeElement.addEventListener("message", resolve, { capture: true, once: true });
+    iframeElement.setAttribute("src", "printpreview_font_api.html");
+  });
+  printpreview();
+  ctx2.drawWindow(window.frames[1], 0, 0, 400, 400, "rgb(255,255,255)");
+  exitprintpreview();
+  ok(compareCanvases(), "Printing pages with fonts loaded from CSS and JS should be the same.");
+
+  requestAnimationFrame(function() { setTimeout(runTest9); } );
+}
+
+// Test for bug 1487649
+async function runTest9() {
+  window.frames[0].document.body.innerHTML = `
+    <svg width="100" height="100">
+      <rect width='100' height='100' fill='lime'/>
+    </svg>
+  `;
+
+  printpreview();
+  ctx1.drawWindow(window.frames[1], 0, 0, 400, 400, "rgb(255,255,255)");
+  exitprintpreview();
+
+  window.frames[0].document.body.innerHTML = `
+    <svg width="100" height="100">
+      <defs>
+        <g id="useme">
+          <rect width='100' height='100' fill='lime'/>
+        </g>
+      </defs>
+      <use />
+    </svg>
+  `;
+
+  // Set the attribute explicitly because this is a chrome document, and the
+  // href attribute would get sanitized.
+  window.frames[0].document.querySelector("use").setAttribute("href", "#useme");
+
+  // Ensure the <use> shadow tree is created so we test what we want to test.
+  window.frames[0].document.body.offsetTop;
+
+  printpreview();
+  ctx2.drawWindow(window.frames[1], 0, 0, 400, 400, "rgb(255,255,255)");
+  exitprintpreview();
+  ok(compareCanvases(), "Printing <use> subtrees should create same output");
+
+  requestAnimationFrame(function() { setTimeout(runTest10); } );
+}
+
+// Test for bug 1524640
+async function runTest10() {
+  // Test that fonts loaded during mozprint callback are loaded into the cloned
+  // document.
+  const iframeElement = document.getElementsByTagName("iframe")[0];
+
+  // First, snapshot the page with font defined in CSS.
+  await new Promise((resolve) => {
+    iframeElement.addEventListener("load", resolve, { capture: true, once: true });
+    iframeElement.setAttribute("src", "printpreview_font_mozprintcallback_ref.html");
+  });
+  let mozPrintCallbackDone = new Promise((resolve) => {
+    iframeElement.addEventListener("message", resolve, { capture: true, once: true });
+  });
+  printpreview(true);
+  await mozPrintCallbackDone;
+  ctx1.drawWindow(window.frames[1], 0, 0, 400, 400, "rgb(255,255,255)");
+  exitprintpreview();
+
+  // Second, snapshot the page with font loaded in JS.
+  await new Promise((resolve) => {
+    iframeElement.addEventListener("load", resolve, { capture: true, once: true });
+    iframeElement.setAttribute("src", "printpreview_font_mozprintcallback.html");
+  });
+  mozPrintCallbackDone = new Promise((resolve) => {
+    iframeElement.addEventListener("message", resolve, { capture: true, once: true });
+  });
+  printpreview(true);
+  // Wait for the mozprintcallback to finish.
+  await mozPrintCallbackDone;
+  ctx2.drawWindow(window.frames[1], 0, 0, 400, 400, "rgb(255,255,255)");
+
+  exitprintpreview();
+  ok(compareCanvases(), "Printing pages with fonts loaded from a mozPrintCallback should be the same.");
 
   finish();
 }

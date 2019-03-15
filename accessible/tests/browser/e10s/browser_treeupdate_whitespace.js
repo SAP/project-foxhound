@@ -2,15 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-'use strict';
+"use strict";
 
-/* global EVENT_REORDER */
+/* import-globals-from ../../mochitest/role.js */
+loadScripts({ name: "role.js", dir: MOCHITESTS_DIR });
 
-loadScripts({ name: 'role.js', dir: MOCHITESTS_DIR });
-
-addAccessibleTask('doc_treeupdate_whitespace.html', function*(browser, accDoc) {
-  let container1 = findAccessibleChildByID(accDoc, 'container1');
-  let container2Parent = findAccessibleChildByID(accDoc, 'container2-parent');
+addAccessibleTask("doc_treeupdate_whitespace.html", async function(browser, accDoc) {
+  let container1 = findAccessibleChildByID(accDoc, "container1");
+  let container2Parent = findAccessibleChildByID(accDoc, "container2-parent");
 
   let tree = {
     SECTION: [
@@ -23,14 +22,14 @@ addAccessibleTask('doc_treeupdate_whitespace.html', function*(browser, accDoc) {
   };
   testAccessibleTree(container1, tree);
 
-  let onReorder = waitForEvent(EVENT_REORDER, 'container1');
+  let onReorder = waitForEvent(EVENT_REORDER, "container1");
   // Remove img1 from container1
-  yield ContentTask.spawn(browser, {}, () => {
+  await ContentTask.spawn(browser, {}, () => {
     let doc = content.document;
-    doc.getElementById('container1').removeChild(
-      doc.getElementById('img1'));
+    doc.getElementById("container1").removeChild(
+      doc.getElementById("img1"));
   });
-  yield onReorder;
+  await onReorder;
 
   tree = {
     SECTION: [
@@ -49,16 +48,16 @@ addAccessibleTask('doc_treeupdate_whitespace.html', function*(browser, accDoc) {
   };
   testAccessibleTree(container2Parent, tree);
 
-  onReorder = waitForEvent(EVENT_REORDER, 'container2-parent');
+  onReorder = waitForEvent(EVENT_REORDER, "container2-parent");
   // Append an img with valid src to container2
-  yield ContentTask.spawn(browser, {}, () => {
+  await ContentTask.spawn(browser, {}, () => {
     let doc = content.document;
-    let img = doc.createElement('img');
-    img.setAttribute('src',
-      'http://example.com/a11y/accessible/tests/mochitest/moz.png');
-    doc.getElementById('container2').appendChild(img);
+    let img = doc.createElement("img");
+    img.setAttribute("src",
+      "http://example.com/a11y/accessible/tests/mochitest/moz.png");
+    doc.getElementById("container2").appendChild(img);
   });
-  yield onReorder;
+  await onReorder;
 
   tree = {
     SECTION: [

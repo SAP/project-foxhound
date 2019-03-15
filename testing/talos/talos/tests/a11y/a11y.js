@@ -1,85 +1,56 @@
+/* globals gAccService:true, nsIAccessible:true */
 gAccService = 0;
 
 // Make sure not to touch Components before potentially invoking enablePrivilege,
 // because otherwise it won't be there.
 netscape.security.PrivilegeManager.enablePrivilege("UniversalXPConnect");
-nsIAccessible = Components.interfaces.nsIAccessible;
-nsIDOMNode = Components.interfaces.nsIDOMNode;
+nsIAccessible = Ci.nsIAccessible;
 
-function initAccessibility()
-{
+function initAccessibility() {
   netscape.security.PrivilegeManager.enablePrivilege("UniversalXPConnect");
   if (!gAccService) {
-    var service = Components.classes["@mozilla.org/accessibilityService;1"];
+    var service = Cc["@mozilla.org/accessibilityService;1"];
     if (service) { // fails if build lacks accessibility module
       gAccService =
-      Components.classes["@mozilla.org/accessibilityService;1"]
-                .getService(Components.interfaces.nsIAccessibilityService);
+      Cc["@mozilla.org/accessibilityService;1"]
+        .getService(Ci.nsIAccessibilityService);
     }
   }
   return gAccService;
 }
 
-function getAccessible(aAccOrElmOrID, aInterfaces)
-{
-  if (!aAccOrElmOrID) {
-    return null;
-  }
-
-  var elm = null;
-
-  if (aAccOrElmOrID instanceof nsIAccessible) {
-    elm = aAccOrElmOrID.DOMNode;
-
-  } else if (aAccOrElmOrID instanceof nsIDOMNode) {
-    elm = aAccOrElmOrID;
-
-  } else {
-    elm = document.getElementById(aAccOrElmOrID);
-  }
-
-  var acc = (aAccOrElmOrID instanceof nsIAccessible) ? aAccOrElmOrID : null;
-  if (!acc) {
-    try {
-      acc = gAccService.getAccessibleFor(elm);
-    } catch (e) {
-    }
-  }
-
-  if (!aInterfaces) {
-    return acc;
-  }
-
-  if (aInterfaces instanceof Array) {
-    for (var index = 0; index < aInterfaces.length; index++) {
-      try {
-        acc.QueryInterface(aInterfaces[index]);
-      } catch (e) {
-      }
-    }
-    return acc;
-  }
-  
+function getAccessible(aNode) {
   try {
-    acc.QueryInterface(aInterfaces);
+    return gAccService.getAccessibleFor(aNode);
   } catch (e) {
   }
-  
-  return acc;
+
+  return null;
 }
 
-// Walk accessible tree of the given identifier to ensure tree creation
-function ensureAccessibleTree(aAccOrElmOrID)
-{
-  acc = getAccessible(aAccOrElmOrID);
+function ensureAccessibleTreeForNode(aNode) {
+  var acc = getAccessible(aNode);
 
-  var child = acc.firstChild;
+  ensureAccessibleTreeForAccessible(acc);
+}
+
+function ensureAccessibleTreeForAccessible(aAccessible) {
+  var child = aAccessible.firstChild;
   while (child) {
-    ensureAccessibleTree(child);
+    ensureAccessibleTreeForAccessible(child);
     try {
       child = child.nextSibling;
     } catch (e) {
       child = null;
     }
   }
+}
+
+// Walk accessible tree of the given identifier to ensure tree creation
+function ensureAccessibleTreeForId(aID) {
+  var node = document.getElementById(aID);
+  if (!node) {
+    return;
+  }
+  ensureAccessibleTreeForNode(node);
 }

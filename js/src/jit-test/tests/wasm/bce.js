@@ -1,5 +1,3 @@
-// |jit-test| test-also-wasm-check-bce
-
 mem='\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f'+
     '\xf0\xf1\xf2\xf3\xf4\xf5\xf6\xf7\xf8\xf9\xfa\xfb\xfc\xfd\xfe\xff'+
     '\x00'.repeat(65488) +
@@ -134,10 +132,7 @@ function testOOB(mod, args) {
 }
 
 function testOk(mod, args, expected, expectedType) {
-    if (expectedType === 'i64')
-        assertEqI64(mod(...args), createI64(expected));
-    else
-        assertEq(mod(...args), expected);
+    assertEq(mod(...args), expected);
 }
 
 // TODO: It would be nice to verify how many BCs are eliminated on positive tests.

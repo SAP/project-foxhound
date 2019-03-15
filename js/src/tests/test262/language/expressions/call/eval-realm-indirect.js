@@ -11,13 +11,14 @@ info: |
        a. If SameValue(func, %eval%) is true, then
           [...]
 flags: [noStrict]
+features: [cross-realm]
 ---*/
 
 var x = 'outside';
 var result;
 
 (function() {
-  var eval = $.createRealm().global.eval;
+  var eval = $262.createRealm().global.eval;
 
   eval('var x = "inside";');
 

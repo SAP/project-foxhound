@@ -15,8 +15,6 @@
 #include "ec.h"
 #include "ecl.h"
 
-#ifndef NSS_DISABLE_ECC
-
 static const ECMethod kMethods[] = {
     { ECCurve25519,
       ec_Curve25519_pt_mul,
@@ -183,7 +181,6 @@ cleanup:
 
     return rv;
 }
-#endif /* NSS_DISABLE_ECC */
 
 /* Generates a new EC key pair. The private key is a supplied
  * value and the public key is the result of performing a scalar
@@ -194,7 +191,6 @@ ec_NewKey(ECParams *ecParams, ECPrivateKey **privKey,
           const unsigned char *privKeyBytes, int privKeyLen)
 {
     SECStatus rv = SECFailure;
-#ifndef NSS_DISABLE_ECC
     PLArenaPool *arena;
     ECPrivateKey *key;
     mp_int k;
@@ -309,9 +305,6 @@ cleanup:
     printf("ec_NewKey returning %s\n",
            (rv == SECSuccess) ? "success" : "failure");
 #endif
-#else
-    PORT_SetError(SEC_ERROR_UNSUPPORTED_KEYALG);
-#endif /* NSS_DISABLE_ECC */
 
     return rv;
 }
@@ -326,15 +319,10 @@ EC_NewKeyFromSeed(ECParams *ecParams, ECPrivateKey **privKey,
                   const unsigned char *seed, int seedlen)
 {
     SECStatus rv = SECFailure;
-#ifndef NSS_DISABLE_ECC
     rv = ec_NewKey(ecParams, privKey, seed, seedlen);
-#else
-    PORT_SetError(SEC_ERROR_UNSUPPORTED_KEYALG);
-#endif /* NSS_DISABLE_ECC */
     return rv;
 }
 
-#ifndef NSS_DISABLE_ECC
 /* Generate a random private key using the algorithm A.4.1 of ANSI X9.62,
  * modified a la FIPS 186-2 Change Notice 1 to eliminate the bias in the
  * random number generator.
@@ -391,7 +379,6 @@ cleanup:
     }
     return privKeyBytes;
 }
-#endif /* NSS_DISABLE_ECC */
 
 /* Generates a new EC key pair. The private key is a random value and
  * the public key is the result of performing a scalar point multiplication
@@ -401,7 +388,6 @@ SECStatus
 EC_NewKey(ECParams *ecParams, ECPrivateKey **privKey)
 {
     SECStatus rv = SECFailure;
-#ifndef NSS_DISABLE_ECC
     int len;
     unsigned char *privKeyBytes = NULL;
 
@@ -425,9 +411,6 @@ cleanup:
     printf("EC_NewKey returning %s\n",
            (rv == SECSuccess) ? "success" : "failure");
 #endif
-#else
-    PORT_SetError(SEC_ERROR_UNSUPPORTED_KEYALG);
-#endif /* NSS_DISABLE_ECC */
 
     return rv;
 }
@@ -441,7 +424,6 @@ cleanup:
 SECStatus
 EC_ValidatePublicKey(ECParams *ecParams, SECItem *publicValue)
 {
-#ifndef NSS_DISABLE_ECC
     mp_int Px, Py;
     ECGroup *group = NULL;
     SECStatus rv = SECFailure;
@@ -525,10 +507,6 @@ cleanup:
         rv = SECFailure;
     }
     return rv;
-#else
-    PORT_SetError(SEC_ERROR_UNSUPPORTED_KEYALG);
-    return SECFailure;
-#endif /* NSS_DISABLE_ECC */
 }
 
 /*
@@ -549,7 +527,6 @@ ECDH_Derive(SECItem *publicValue,
             SECItem *derivedSecret)
 {
     SECStatus rv = SECFailure;
-#ifndef NSS_DISABLE_ECC
     unsigned int len = 0;
     SECItem pointQ = { siBuffer, NULL, 0 };
     mp_int k; /* to hold the private value */
@@ -589,7 +566,11 @@ ECDH_Derive(SECItem *publicValue,
             PORT_SetError(SEC_ERROR_UNSUPPORTED_ELLIPTIC_CURVE);
             return SECFailure;
         }
-        return method->mul(derivedSecret, privateValue, publicValue);
+        rv = method->mul(derivedSecret, privateValue, publicValue);
+        if (rv != SECSuccess) {
+            SECITEM_ZfreeItem(derivedSecret, PR_FALSE);
+        }
+        return rv;
     }
 
     /*
@@ -654,9 +635,6 @@ cleanup:
     if (pointQ.data) {
         PORT_ZFree(pointQ.data, pointQ.len);
     }
-#else
-    PORT_SetError(SEC_ERROR_UNSUPPORTED_KEYALG);
-#endif /* NSS_DISABLE_ECC */
 
     return rv;
 }
@@ -670,12 +648,12 @@ ECDSA_SignDigestWithSeed(ECPrivateKey *key, SECItem *signature,
                          const SECItem *digest, const unsigned char *kb, const int kblen)
 {
     SECStatus rv = SECFailure;
-#ifndef NSS_DISABLE_ECC
     mp_int x1;
     mp_int d, k; /* private key, random integer */
     mp_int r, s; /* tuple (r, s) is the signature */
     mp_int t;    /* holding tmp values */
     mp_int n;
+    mp_int ar; /* blinding value */
     mp_err err = MP_OKAY;
     ECParams *ecParams = NULL;
     SECItem kGpoint = { siBuffer, NULL, 0 };
@@ -697,6 +675,7 @@ ECDSA_SignDigestWithSeed(ECPrivateKey *key, SECItem *signature,
     MP_DIGITS(&s) = 0;
     MP_DIGITS(&n) = 0;
     MP_DIGITS(&t) = 0;
+    MP_DIGITS(&ar) = 0;
 
     /* Check args */
     if (!key || !signature || !digest || !kb || (kblen < 0)) {
@@ -723,6 +702,7 @@ ECDSA_SignDigestWithSeed(ECPrivateKey *key, SECItem *signature,
     CHECK_MPI_OK(mp_init(&s));
     CHECK_MPI_OK(mp_init(&n));
     CHECK_MPI_OK(mp_init(&t));
+    CHECK_MPI_OK(mp_init(&ar));
 
     SECITEM_TO_MPINT(ecParams->order, &n);
     SECITEM_TO_MPINT(key->privateValue, &d);
@@ -838,12 +818,25 @@ ECDSA_SignDigestWithSeed(ECPrivateKey *key, SECItem *signature,
         goto cleanup;
     }
     CHECK_MPI_OK(mp_read_unsigned_octets(&t, t2, 2 * ecParams->order.len)); /* t <-$ Zn */
-    CHECK_MPI_OK(mp_mulmod(&k, &t, &n, &k));                                /* k = k * t mod n */
-    CHECK_MPI_OK(mp_invmod(&k, &n, &k));                                    /* k = k**-1 mod n */
-    CHECK_MPI_OK(mp_mulmod(&k, &t, &n, &k));                                /* k = k * t mod n */
-    CHECK_MPI_OK(mp_mulmod(&d, &r, &n, &d));                                /* d = d * r mod n */
-    CHECK_MPI_OK(mp_addmod(&s, &d, &n, &s));                                /* s = s + d mod n */
-    CHECK_MPI_OK(mp_mulmod(&s, &k, &n, &s));                                /* s = s * k mod n */
+    PORT_Memset(t2, 0, 2 * ecParams->order.len);
+    if (RNG_GenerateGlobalRandomBytes(t2, 2 * ecParams->order.len) != SECSuccess) {
+        PORT_SetError(SEC_ERROR_NEED_RANDOM);
+        rv = SECFailure;
+        goto cleanup;
+    }
+    CHECK_MPI_OK(mp_read_unsigned_octets(&ar, t2, 2 * ecParams->order.len)); /* ar <-$ Zn */
+
+    /* Using mp_invmod on k directly would leak bits from k. */
+    CHECK_MPI_OK(mp_mul(&k, &ar, &k));       /* k = k * ar */
+    CHECK_MPI_OK(mp_mulmod(&k, &t, &n, &k)); /* k = k * t mod n */
+    CHECK_MPI_OK(mp_invmod(&k, &n, &k));     /* k = k**-1 mod n */
+    CHECK_MPI_OK(mp_mulmod(&k, &t, &n, &k)); /* k = k * t mod n */
+    /* To avoid leaking secret bits here the addition is blinded. */
+    CHECK_MPI_OK(mp_mul(&d, &ar, &t));        /* t = d * ar */
+    CHECK_MPI_OK(mp_mulmod(&t, &r, &n, &d));  /* d = t * r mod n */
+    CHECK_MPI_OK(mp_mulmod(&s, &ar, &n, &t)); /* t = s * ar mod n */
+    CHECK_MPI_OK(mp_add(&t, &d, &s));         /* s = t + d */
+    CHECK_MPI_OK(mp_mulmod(&s, &k, &n, &s));  /* s = s * k mod n */
 
 #if EC_DEBUG
     mp_todecimal(&s, mpstr);
@@ -881,6 +874,7 @@ cleanup:
     mp_clear(&s);
     mp_clear(&n);
     mp_clear(&t);
+    mp_clear(&ar);
 
     if (t2) {
         PORT_Free(t2);
@@ -899,9 +893,6 @@ cleanup:
     printf("ECDSA signing with seed %s\n",
            (rv == SECSuccess) ? "succeeded" : "failed");
 #endif
-#else
-    PORT_SetError(SEC_ERROR_UNSUPPORTED_KEYALG);
-#endif /* NSS_DISABLE_ECC */
 
     return rv;
 }
@@ -914,7 +905,6 @@ SECStatus
 ECDSA_SignDigest(ECPrivateKey *key, SECItem *signature, const SECItem *digest)
 {
     SECStatus rv = SECFailure;
-#ifndef NSS_DISABLE_ECC
     int len;
     unsigned char *kBytes = NULL;
 
@@ -941,9 +931,6 @@ cleanup:
     printf("ECDSA signing %s\n",
            (rv == SECSuccess) ? "succeeded" : "failed");
 #endif
-#else
-    PORT_SetError(SEC_ERROR_UNSUPPORTED_KEYALG);
-#endif /* NSS_DISABLE_ECC */
 
     return rv;
 }
@@ -961,7 +948,6 @@ ECDSA_VerifyDigest(ECPublicKey *key, const SECItem *signature,
                    const SECItem *digest)
 {
     SECStatus rv = SECFailure;
-#ifndef NSS_DISABLE_ECC
     mp_int r_, s_;       /* tuple (r', s') is received signature) */
     mp_int c, u1, u2, v; /* intermediate values used in verification */
     mp_int x1;
@@ -1161,9 +1147,6 @@ cleanup:
     printf("ECDSA verification %s\n",
            (rv == SECSuccess) ? "succeeded" : "failed");
 #endif
-#else
-    PORT_SetError(SEC_ERROR_UNSUPPORTED_KEYALG);
-#endif /* NSS_DISABLE_ECC */
 
     return rv;
 }

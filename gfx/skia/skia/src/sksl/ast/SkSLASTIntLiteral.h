@@ -4,7 +4,7 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
- 
+
 #ifndef SKSL_ASTINTLITERAL
 #define SKSL_ASTINTLITERAL
 
@@ -17,11 +17,11 @@ namespace SkSL {
  * appear as a unary minus being applied to an integer literal.
  */
 struct ASTIntLiteral : public ASTExpression {
-    ASTIntLiteral(Position position, uint64_t value)
-    : INHERITED(position, kInt_Kind)
+    ASTIntLiteral(int offset, uint64_t value)
+    : INHERITED(offset, kInt_Kind)
     , fValue(value) {}
 
-    std::string description() const override {
+    String description() const override {
         return to_string(fValue);
     }
 

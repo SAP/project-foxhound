@@ -6,28 +6,28 @@
 // Test stack.js.
 
 function run_test() {
-  let loader = new DevToolsLoader();
-  let require = loader.require;
+  const loader = new DevToolsLoader();
+  const require = loader.require;
 
   const {StackFrameCache} = require("devtools/server/actors/utils/stack");
 
-  let cache = new StackFrameCache();
+  const cache = new StackFrameCache();
   cache.initFrames();
-  let baseFrame = {
+  const baseFrame = {
     line: 23,
     column: 77,
     source: "nowhere",
     functionDisplayName: "nobody",
     parent: null,
     asyncParent: null,
-    asyncCause: null
+    asyncCause: null,
   };
   cache.addFrame(baseFrame);
 
   let event = cache.makeEvent();
-  do_check_eq(event[0], null);
-  do_check_eq(event[1].functionDisplayName, "nobody");
-  do_check_eq(event.length, 2);
+  Assert.equal(event[0], null);
+  Assert.equal(event[1].functionDisplayName, "nobody");
+  Assert.equal(event.length, 2);
 
   cache.addFrame({
     line: 24,
@@ -36,12 +36,12 @@ function run_test() {
     functionDisplayName: "still nobody",
     parent: null,
     asyncParent: baseFrame,
-    asyncCause: "async"
+    asyncCause: "async",
   });
 
   event = cache.makeEvent();
-  do_check_eq(event[0].functionDisplayName, "still nobody");
-  do_check_eq(event[0].parent, 0);
-  do_check_eq(event[0].asyncParent, 1);
-  do_check_eq(event.length, 1);
+  Assert.equal(event[0].functionDisplayName, "still nobody");
+  Assert.equal(event[0].parent, 0);
+  Assert.equal(event[0].asyncParent, 1);
+  Assert.equal(event.length, 1);
 }

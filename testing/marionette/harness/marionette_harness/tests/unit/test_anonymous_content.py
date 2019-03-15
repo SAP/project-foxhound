@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 from marionette_driver.by import By
 from marionette_driver.errors import NoSuchElementException
 from marionette_driver.marionette import HTMLElement
@@ -15,13 +17,8 @@ class TestAnonymousNodes(WindowManagerMixin, MarionetteTestCase):
         super(TestAnonymousNodes, self).setUp()
         self.marionette.set_context("chrome")
 
-        def open_window_with_js():
-            self.marionette.execute_script("""
-              window.open('chrome://marionette/content/test_anonymous_content.xul',
-                          'foo', 'chrome,centerscreen');
-            """)
-
-        new_window = self.open_window(trigger=open_window_with_js)
+        url = "chrome://marionette/content/test_anonymous_content.xul"
+        new_window = self.open_chrome_window(url)
         self.marionette.switch_to_window(new_window)
 
     def tearDown(self):
@@ -82,7 +79,7 @@ class TestAnonymousNodes(WindowManagerMixin, MarionetteTestCase):
 
     def test_find_anonymous_children(self):
         self.assertEquals(HTMLElement, type(self.marionette.find_element(By.ANON, None)))
-        self.assertEquals(2, len(self.marionette.find_elements(By.ANON, None)))
+        self.assertEquals(3, len(self.marionette.find_elements(By.ANON, None)))
 
         frame = self.marionette.find_element(By.ID, "framebox")
         with self.assertRaises(NoSuchElementException):

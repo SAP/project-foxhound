@@ -3,20 +3,33 @@ version: @VERSION@-@BUILD_NUMBER@
 summary: Mozilla Firefox web browser
 description:  Firefox is a powerful, extensible web browser with support for modern web application technologies.
 confinement: strict
+grade: stable
 
 apps:
   firefox:
-    command: desktop-launch firefox
+    command: desktop-launch $SNAP/firefox
+    desktop: distribution/firefox.desktop
+    environment:
+      DISABLE_WAYLAND: 1
+      HOME: "$SNAP_USER_COMMON"
     plugs:
-      - unity7
-      - network
+      - avahi-observe
+      - browser-sandbox
+      - camera
+      - cups-control
+      - desktop
+      - desktop-legacy
+      - gsettings
       - home
-      - x11
+      - network
+      - network-observe
       - opengl
       - pulseaudio
-      - gsettings
-      - camera
-      - browser-sandbox
+      - removable-media
+      - screen-inhibit-control
+      - unity7
+      - upower-observe
+      - x11
 
 plugs:
   browser-sandbox:
@@ -24,6 +37,8 @@ plugs:
     allow-sandbox: true
 
 parts:
+  desktop-gtk3:
+    source-commit: 6a600b00773e8e4624aa12ee1f8e013ba9f2fc03
   firefox:
     plugin: dump
     source: source
@@ -35,4 +50,32 @@ parts:
       - libgl1-mesa-dri
       - libgl1-mesa-glx
       - libmirclient9
+      - desktop-file-utils
+      - ffmpeg
+      - libc-bin
+      - locales-all
+      - libcurl3-gnutls
     after: [desktop-gtk3]
+
+  xdg-open:
+    after: [firefox]
+    plugin: nil
+    source: .
+    install: |
+      set -eux
+      mkdir -p $SNAPCRAFT_PART_INSTALL/usr/share/applications
+      install -m 644 mimeapps.list $SNAPCRAFT_PART_INSTALL/usr/share/applications
+      update-desktop-database -v $SNAPCRAFT_PART_INSTALL/usr/share/applications
+    build-packages:
+      - desktop-file-utils
+    build-attributes: [no-system-libraries]
+
+  shared-mime-info:
+    after: [xdg-open]
+    plugin: nil
+    stage-packages:
+      - shared-mime-info
+    build-attributes: [no-system-libraries]
+    install: |
+      set -eux
+      update-mime-database $SNAPCRAFT_PART_INSTALL/usr/share/mime

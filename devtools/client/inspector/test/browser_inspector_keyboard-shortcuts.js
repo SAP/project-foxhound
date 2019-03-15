@@ -12,36 +12,36 @@ const TEST_URI = "data:text/html;charset=utf-8," +
   " I come in peace.</p></body></html>";
 
 const TEST_DATA = [
-  { key: "VK_LEFT", selectedNode: "p" },
-  { key: "VK_LEFT", selectedNode: "body" },
-  { key: "VK_LEFT", selectedNode: "html" },
-  { key: "VK_RIGHT", selectedNode: "body" },
-  { key: "VK_RIGHT", selectedNode: "p" },
-  { key: "VK_RIGHT", selectedNode: "strong" },
+  { key: "KEY_ArrowLeft", selectedNode: "p" },
+  { key: "KEY_ArrowLeft", selectedNode: "body" },
+  { key: "KEY_ArrowLeft", selectedNode: "html" },
+  { key: "KEY_ArrowRight", selectedNode: "body" },
+  { key: "KEY_ArrowRight", selectedNode: "p" },
+  { key: "KEY_ArrowRight", selectedNode: "strong" },
 ];
 
-add_task(function* () {
-  let { inspector } = yield openInspectorForURL(TEST_URI);
+add_task(async function() {
+  const { inspector } = await openInspectorForURL(TEST_URI);
 
   info("Selecting the deepest element to start with");
-  yield selectNode("strong", inspector);
+  await selectNode("strong", inspector);
 
-  let nodeFront = yield getNodeFront("strong", inspector);
+  const nodeFront = await getNodeFront("strong", inspector);
   is(inspector.selection.nodeFront, nodeFront,
      "<strong> should be selected initially");
 
   info("Focusing the currently active breadcrumb button");
-  let bc = inspector.breadcrumbs;
+  const bc = inspector.breadcrumbs;
   bc.nodeHierarchy[bc.currentIndex].button.focus();
 
-  for (let { key, selectedNode } of TEST_DATA) {
+  for (const { key, selectedNode } of TEST_DATA) {
     info("Pressing " + key + " to select " + selectedNode);
 
-    let updated = inspector.once("inspector-updated");
-    EventUtils.synthesizeKey(key, {});
-    yield updated;
+    const updated = inspector.once("inspector-updated");
+    EventUtils.synthesizeKey(key);
+    await updated;
 
-    let selectedNodeFront = yield getNodeFront(selectedNode, inspector);
+    const selectedNodeFront = await getNodeFront(selectedNode, inspector);
     is(inspector.selection.nodeFront, selectedNodeFront,
       selectedNode + " is selected.");
   }

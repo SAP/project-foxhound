@@ -8,13 +8,19 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/desktop_capture/desktop_and_cursor_composer.h"
+#include "modules/desktop_capture/desktop_and_cursor_composer.h"
 
 #include <string.h>
 
-#include "webrtc/modules/desktop_capture/desktop_capturer.h"
-#include "webrtc/modules/desktop_capture/desktop_frame.h"
-#include "webrtc/modules/desktop_capture/mouse_cursor.h"
+#include <utility>
+
+#include "modules/desktop_capture/desktop_capturer.h"
+#include "modules/desktop_capture/desktop_frame.h"
+#include "modules/desktop_capture/mouse_cursor.h"
+#include "modules/desktop_capture/mouse_cursor_monitor.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/constructormagic.h"
+#include "rtc_base/ptr_util.h"
 
 namespace webrtc {
 
@@ -56,29 +62,30 @@ void AlphaBlend(uint8_t* dest, int dest_stride,
 class DesktopFrameWithCursor : public DesktopFrame {
  public:
   // Takes ownership of |frame|.
-  DesktopFrameWithCursor(DesktopFrame* frame,
+  DesktopFrameWithCursor(std::unique_ptr<DesktopFrame> frame,
                          const MouseCursor& cursor,
                          const DesktopVector& position);
-  virtual ~DesktopFrameWithCursor();
+  ~DesktopFrameWithCursor() override;
 
  private:
-  rtc::scoped_ptr<DesktopFrame> original_frame_;
+  const std::unique_ptr<DesktopFrame> original_frame_;
 
   DesktopVector restore_position_;
-  rtc::scoped_ptr<DesktopFrame> restore_frame_;
+  std::unique_ptr<DesktopFrame> restore_frame_;
 
   RTC_DISALLOW_COPY_AND_ASSIGN(DesktopFrameWithCursor);
 };
 
-DesktopFrameWithCursor::DesktopFrameWithCursor(DesktopFrame* frame,
-                                               const MouseCursor& cursor,
-                                               const DesktopVector& position)
-    : DesktopFrame(frame->size(), frame->stride(),
-                   frame->data(), frame->shared_memory()),
-      original_frame_(frame) {
-  set_dpi(frame->dpi());
-  set_capture_time_ms(frame->capture_time_ms());
-  mutable_updated_region()->Swap(frame->mutable_updated_region());
+DesktopFrameWithCursor::DesktopFrameWithCursor(
+    std::unique_ptr<DesktopFrame> frame,
+    const MouseCursor& cursor,
+    const DesktopVector& position)
+    : DesktopFrame(frame->size(),
+                   frame->stride(),
+                   frame->data(),
+                   frame->shared_memory()),
+      original_frame_(std::move(frame)) {
+  MoveFrameInfoFrom(original_frame_.get());
 
   DesktopVector image_pos = position.subtract(cursor.hotspot());
   DesktopRect target_rect = DesktopRect::MakeSize(cursor.image()->size());
@@ -110,7 +117,7 @@ DesktopFrameWithCursor::DesktopFrameWithCursor(DesktopFrame* frame,
 
 DesktopFrameWithCursor::~DesktopFrameWithCursor() {
   // Restore original content of the frame.
-  if (restore_frame_.get()) {
+  if (restore_frame_) {
     DesktopRect target_rect = DesktopRect::MakeSize(restore_frame_->size());
     target_rect.Translate(restore_position_);
     CopyPixelsFrom(restore_frame_->data(), restore_frame_->stride(),
@@ -123,48 +130,71 @@ DesktopFrameWithCursor::~DesktopFrameWithCursor() {
 DesktopAndCursorComposer::DesktopAndCursorComposer(
     DesktopCapturer* desktop_capturer,
     MouseCursorMonitor* mouse_monitor)
+    : DesktopAndCursorComposer(desktop_capturer, mouse_monitor, false) {}
+
+DesktopAndCursorComposer::DesktopAndCursorComposer(
+    std::unique_ptr<DesktopCapturer> desktop_capturer,
+    const DesktopCaptureOptions& options)
+    : DesktopAndCursorComposer(desktop_capturer.release(),
+                               MouseCursorMonitor::Create(options).release(),
+                               true) {}
+
+DesktopAndCursorComposer::DesktopAndCursorComposer(
+    DesktopCapturer* desktop_capturer,
+    MouseCursorMonitor* mouse_monitor,
+    bool use_desktop_relative_cursor_position)
     : desktop_capturer_(desktop_capturer),
-      mouse_monitor_(mouse_monitor) {
+      mouse_monitor_(mouse_monitor),
+      use_desktop_relative_cursor_position_(
+          use_desktop_relative_cursor_position) {
+  RTC_DCHECK(desktop_capturer_);
 }
 
-DesktopAndCursorComposer::~DesktopAndCursorComposer() {}
+DesktopAndCursorComposer::~DesktopAndCursorComposer() = default;
 
 void DesktopAndCursorComposer::Start(DesktopCapturer::Callback* callback) {
   callback_ = callback;
-  if (mouse_monitor_.get())
-    mouse_monitor_->Start(this, MouseCursorMonitor::SHAPE_AND_POSITION);
+  if (mouse_monitor_)
+    mouse_monitor_->Init(this, MouseCursorMonitor::SHAPE_AND_POSITION);
   desktop_capturer_->Start(this);
 }
 
-void DesktopAndCursorComposer::Stop() {
-  desktop_capturer_->Stop();
-  if (mouse_monitor_.get())
-    mouse_monitor_->Stop();
-  callback_ = NULL;
+void DesktopAndCursorComposer::SetSharedMemoryFactory(
+    std::unique_ptr<SharedMemoryFactory> shared_memory_factory) {
+  desktop_capturer_->SetSharedMemoryFactory(std::move(shared_memory_factory));
 }
 
-void DesktopAndCursorComposer::Capture(const DesktopRegion& region) {
-  if (mouse_monitor_.get())
+void DesktopAndCursorComposer::CaptureFrame() {
+  if (mouse_monitor_)
     mouse_monitor_->Capture();
-  desktop_capturer_->Capture(region);
+  desktop_capturer_->CaptureFrame();
 }
 
 void DesktopAndCursorComposer::SetExcludedWindow(WindowId window) {
   desktop_capturer_->SetExcludedWindow(window);
 }
 
-SharedMemory* DesktopAndCursorComposer::CreateSharedMemory(size_t size) {
-  return callback_->CreateSharedMemory(size);
-}
-
-void DesktopAndCursorComposer::OnCaptureCompleted(DesktopFrame* frame) {
-  if (frame && cursor_.get() && cursor_state_ == MouseCursorMonitor::INSIDE) {
-    DesktopFrameWithCursor* frame_with_cursor =
-        new DesktopFrameWithCursor(frame, *cursor_, cursor_position_);
-    frame = frame_with_cursor;
+void DesktopAndCursorComposer::OnCaptureResult(
+    DesktopCapturer::Result result,
+    std::unique_ptr<DesktopFrame> frame) {
+  if (frame && cursor_) {
+    if (use_desktop_relative_cursor_position_) {
+      if (frame->rect().Contains(cursor_position_) &&
+          !desktop_capturer_->IsOccluded(cursor_position_)) {
+        const DesktopVector relative_position =
+            cursor_position_.subtract(frame->top_left());
+        frame = rtc::MakeUnique<DesktopFrameWithCursor>(
+            std::move(frame), *cursor_, relative_position);
+      }
+    } else {
+      if (cursor_state_ == MouseCursorMonitor::INSIDE) {
+        frame = rtc::MakeUnique<DesktopFrameWithCursor>(
+            std::move(frame), *cursor_, cursor_position_);
+      }
+    }
   }
 
-  callback_->OnCaptureCompleted(frame);
+  callback_->OnCaptureResult(result, std::move(frame));
 }
 
 void DesktopAndCursorComposer::OnMouseCursor(MouseCursor* cursor) {
@@ -174,8 +204,21 @@ void DesktopAndCursorComposer::OnMouseCursor(MouseCursor* cursor) {
 void DesktopAndCursorComposer::OnMouseCursorPosition(
     MouseCursorMonitor::CursorState state,
     const DesktopVector& position) {
-  cursor_state_ = state;
-  cursor_position_ = position;
+  if (!use_desktop_relative_cursor_position_) {
+    cursor_state_ = state;
+    cursor_position_ = position;
+  }
+}
+
+void DesktopAndCursorComposer::OnMouseCursorPosition(
+    const DesktopVector& position) {
+  if (use_desktop_relative_cursor_position_) {
+    cursor_position_ = position;
+  }
+}
+
+bool DesktopAndCursorComposer::FocusOnSelectedSource() {
+  return desktop_capturer_->FocusOnSelectedSource();
 }
 
 }  // namespace webrtc

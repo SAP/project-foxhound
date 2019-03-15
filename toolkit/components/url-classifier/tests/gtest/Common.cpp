@@ -10,21 +10,68 @@
 using namespace mozilla;
 using namespace mozilla::safebrowsing;
 
-template<typename Function>
+#define GTEST_SAFEBROWSING_DIR NS_LITERAL_CSTRING("safebrowsing")
+#define GTEST_TABLE NS_LITERAL_CSTRING("gtest-malware-proto")
+
+template <typename Function>
 void RunTestInNewThread(Function&& aFunction) {
-  nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction(mozilla::Forward<Function>(aFunction));
+  nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction(
+      "RunTestInNewThread", std::forward<Function>(aFunction));
   nsCOMPtr<nsIThread> testingThread;
   nsresult rv =
-    NS_NewNamedThread("Testing Thread", getter_AddRefs(testingThread), r);
+      NS_NewNamedThread("Testing Thread", getter_AddRefs(testingThread), r);
   ASSERT_EQ(rv, NS_OK);
   testingThread->Shutdown();
 }
 
-already_AddRefed<nsIFile>
-GetFile(const nsTArray<nsString>& path)
-{
+nsresult SyncApplyUpdates(RefPtr<Classifier> aClassifier,
+                          TableUpdateArray& aUpdates) {
+  // We need to spin a new thread specifically because the callback
+  // will be on the caller thread. If we call Classifier::AsyncApplyUpdates
+  // and wait on the same thread, this function will never return.
+
+  nsresult ret = NS_ERROR_FAILURE;
+  bool done = false;
+  auto onUpdateComplete = [&done, &ret](nsresult rv) {
+    // We are on the "ApplyUpdate" thread. Post an event to main thread
+    // so that we can avoid busy waiting on the main thread.
+    nsCOMPtr<nsIRunnable> r =
+        NS_NewRunnableFunction("SyncApplyUpdates", [&done, &ret, rv] {
+          ret = rv;
+          done = true;
+        });
+    NS_DispatchToMainThread(r);
+  };
+
+  nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction("SyncApplyUpdates", [&]() {
+    nsresult rv = aClassifier->AsyncApplyUpdates(aUpdates, onUpdateComplete);
+    if (NS_FAILED(rv)) {
+      onUpdateComplete(rv);
+    }
+  });
+
+  nsCOMPtr<nsIThread> testingThread;
+  NS_NewNamedThread("ApplyUpdates", getter_AddRefs(testingThread));
+  if (!testingThread) {
+    return NS_ERROR_FAILURE;
+  }
+
+  testingThread->Dispatch(r, NS_DISPATCH_NORMAL);
+
+  // NS_NewCheckSummedOutputStream in HashStore::WriteFile
+  // will synchronously init NS_CRYPTO_HASH_CONTRACTID on
+  // the main thread. As a result we have to keep processing
+  // pending event until |done| becomes true. If there's no
+  // more pending event, what we only can do is wait.
+  MOZ_ALWAYS_TRUE(SpinEventLoopUntil([&]() { return done; }));
+
+  return ret;
+}
+
+already_AddRefed<nsIFile> GetFile(const nsTArray<nsString>& path) {
   nsCOMPtr<nsIFile> file;
-  nsresult rv = NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR, getter_AddRefs(file));
+  nsresult rv =
+      NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR, getter_AddRefs(file));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return nullptr;
   }
@@ -35,12 +82,11 @@ GetFile(const nsTArray<nsString>& path)
   return file.forget();
 }
 
-void ApplyUpdate(nsTArray<TableUpdate*>& updates)
-{
+void ApplyUpdate(TableUpdateArray& updates) {
   nsCOMPtr<nsIFile> file;
   NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR, getter_AddRefs(file));
 
-  UniquePtr<Classifier> classifier(new Classifier());
+  RefPtr<Classifier> classifier = new Classifier();
   classifier->Open(*file);
 
   {
@@ -49,25 +95,20 @@ void ApplyUpdate(nsTArray<TableUpdate*>& updates)
     // in gtest.
     nsresult rv;
     nsCOMPtr<nsIUrlClassifierUtils> dummy =
-      do_GetService(NS_URLCLASSIFIERUTILS_CONTRACTID, &rv);
-      ASSERT_TRUE(NS_SUCCEEDED(rv));
+        do_GetService(NS_URLCLASSIFIERUTILS_CONTRACTID, &rv);
+    ASSERT_TRUE(NS_SUCCEEDED(rv));
   }
 
-  RunTestInNewThread([&] () -> void {
-    classifier->ApplyUpdates(&updates);
-  });
+  SyncApplyUpdates(classifier, updates);
 }
 
-void ApplyUpdate(TableUpdate* update)
-{
-  nsTArray<TableUpdate*> updates = { update };
+void ApplyUpdate(TableUpdate* update) {
+  TableUpdateArray updates = {update};
   ApplyUpdate(updates);
 }
 
-void
-PrefixArrayToPrefixStringMap(const nsTArray<nsCString>& prefixArray,
-                             PrefixStringMap& out)
-{
+void PrefixArrayToPrefixStringMap(const nsTArray<nsCString>& prefixArray,
+                                  PrefixStringMap& out) {
   out.Clear();
 
   for (uint32_t i = 0; i < prefixArray.Length(); i++) {
@@ -77,20 +118,18 @@ PrefixArrayToPrefixStringMap(const nsTArray<nsCString>& prefixArray,
   }
 }
 
-nsresult
-PrefixArrayToAddPrefixArrayV2(const nsTArray<nsCString>& prefixArray,
-                              AddPrefixArray& out)
-{
+nsresult PrefixArrayToAddPrefixArrayV2(const nsTArray<nsCString>& prefixArray,
+                                       AddPrefixArray& out) {
   out.Clear();
 
   for (size_t i = 0; i < prefixArray.Length(); i++) {
     // Create prefix hash from string
     Prefix hash;
-    static_assert(sizeof(hash.buf) == PREFIX_SIZE, "Prefix must be 4 bytes length");
+    static_assert(sizeof(hash.buf) == PREFIX_SIZE,
+                  "Prefix must be 4 bytes length");
     memcpy(hash.buf, prefixArray[i].BeginReading(), PREFIX_SIZE);
-    MOZ_ASSERT(prefixArray[i].Length() == PREFIX_SIZE);
 
-    AddPrefix *add = out.AppendElement(fallible);
+    AddPrefix* add = out.AppendElement(fallible);
     if (!add) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
@@ -102,15 +141,48 @@ PrefixArrayToAddPrefixArrayV2(const nsTArray<nsCString>& prefixArray,
   return NS_OK;
 }
 
-nsCString
-GeneratePrefix(const nsCString& aFragment, uint8_t aLength)
-{
+nsCString GeneratePrefix(const nsCString& aFragment, uint8_t aLength) {
   Completion complete;
-  nsCOMPtr<nsICryptoHash> cryptoHash = do_CreateInstance(NS_CRYPTO_HASH_CONTRACTID);
-  complete.FromPlaintext(aFragment, cryptoHash);
+  complete.FromPlaintext(aFragment);
 
   nsCString hash;
-  hash.Assign((const char *)complete.buf, aLength);
+  hash.Assign((const char*)complete.buf, aLength);
   return hash;
 }
 
+static nsresult BuildCache(LookupCacheV2* cache,
+                           const _PrefixArray& prefixArray) {
+  AddPrefixArray prefixes;
+  AddCompleteArray completions;
+  nsresult rv = PrefixArrayToAddPrefixArrayV2(prefixArray, prefixes);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  EntrySort(prefixes);
+  return cache->Build(prefixes, completions);
+}
+
+static nsresult BuildCache(LookupCacheV4* cache,
+                           const _PrefixArray& prefixArray) {
+  PrefixStringMap map;
+  PrefixArrayToPrefixStringMap(prefixArray, map);
+  return cache->Build(map);
+}
+
+template <typename T>
+RefPtr<T> SetupLookupCache(const _PrefixArray& prefixArray) {
+  nsCOMPtr<nsIFile> file;
+  NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR, getter_AddRefs(file));
+
+  file->AppendNative(GTEST_SAFEBROWSING_DIR);
+
+  RefPtr<T> cache = new T(GTEST_TABLE, EmptyCString(), file);
+  nsresult rv = cache->Init();
+  EXPECT_EQ(rv, NS_OK);
+
+  rv = BuildCache(cache, prefixArray);
+  EXPECT_EQ(rv, NS_OK);
+
+  return cache;
+}

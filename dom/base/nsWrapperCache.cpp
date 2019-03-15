@@ -8,8 +8,7 @@
 
 #include "js/Class.h"
 #include "js/Proxy.h"
-#include "mozilla/dom/DOMJSProxyHandler.h"
-#include "mozilla/CycleCollectedJSContext.h"
+#include "mozilla/CycleCollectedJSRuntime.h"
 #include "mozilla/HoldDropJSObjects.h"
 #include "nsCycleCollectionTraversalCallback.h"
 #include "nsCycleCollector.h"
@@ -18,45 +17,34 @@ using namespace mozilla;
 using namespace mozilla::dom;
 
 #ifdef DEBUG
-/* static */ bool
-nsWrapperCache::HasJSObjectMovedOp(JSObject* aWrapper)
-{
-    return js::HasObjectMovedOp(aWrapper);
+/* static */ bool nsWrapperCache::HasJSObjectMovedOp(JSObject* aWrapper) {
+  return js::HasObjectMovedOp(aWrapper);
 }
 #endif
 
-void
-nsWrapperCache::HoldJSObjects(void* aScriptObjectHolder,
-                              nsScriptObjectTracer* aTracer)
-{
+void nsWrapperCache::HoldJSObjects(void* aScriptObjectHolder,
+                                   nsScriptObjectTracer* aTracer) {
   cyclecollector::HoldJSObjectsImpl(aScriptObjectHolder, aTracer);
   if (mWrapper && !JS::ObjectIsTenured(mWrapper)) {
-    CycleCollectedJSContext::Get()->NurseryWrapperPreserved(mWrapper);
+    CycleCollectedJSRuntime::Get()->NurseryWrapperPreserved(mWrapper);
   }
 }
 
-void
-nsWrapperCache::SetWrapperJSObject(JSObject* aWrapper)
-{
+void nsWrapperCache::SetWrapperJSObject(JSObject* aWrapper) {
   mWrapper = aWrapper;
-  UnsetWrapperFlags(kWrapperFlagsMask & ~WRAPPER_IS_NOT_DOM_BINDING);
+  UnsetWrapperFlags(kWrapperFlagsMask);
 
   if (aWrapper && !JS::ObjectIsTenured(aWrapper)) {
-    CycleCollectedJSContext::Get()->NurseryWrapperAdded(this);
+    CycleCollectedJSRuntime::Get()->NurseryWrapperAdded(this);
+  }
+
+  if (mozilla::recordreplay::IsReplaying()) {
+    mozilla::recordreplay::SetWeakPointerJSRoot(this, aWrapper);
   }
 }
 
-void
-nsWrapperCache::ReleaseWrapper(void* aScriptObjectHolder)
-{
+void nsWrapperCache::ReleaseWrapper(void* aScriptObjectHolder) {
   if (PreservingWrapper()) {
-    // PreserveWrapper puts new DOM bindings in the JS holders hash, but they
-    // can also be in the DOM expando hash, so we need to try to remove them
-    // from both here.
-    JSObject* obj = GetWrapperPreserveColor();
-    if (IsDOMBinding() && obj && js::IsProxy(obj)) {
-      DOMProxyHandler::ClearExternalRefsForWrapperRelease(obj);
-    }
     SetPreservingWrapper(false);
     cyclecollector::DropJSObjectsImpl(aScriptObjectHolder);
   }
@@ -64,65 +52,56 @@ nsWrapperCache::ReleaseWrapper(void* aScriptObjectHolder)
 
 #ifdef DEBUG
 
-class DebugWrapperTraversalCallback : public nsCycleCollectionTraversalCallback
-{
-public:
+class DebugWrapperTraversalCallback
+    : public nsCycleCollectionTraversalCallback {
+ public:
   explicit DebugWrapperTraversalCallback(JSObject* aWrapper)
-    : mFound(false)
-    , mWrapper(JS::GCCellPtr(aWrapper))
-  {
+      : mFound(false), mWrapper(JS::GCCellPtr(aWrapper)) {
     mFlags = WANT_ALL_TRACES;
   }
 
-  NS_IMETHOD_(void) DescribeRefCountedNode(nsrefcnt aRefCount,
-                                           const char* aObjName)
-  {
-  }
-  NS_IMETHOD_(void) DescribeGCedNode(bool aIsMarked,
-                                     const char* aObjName,
-                                     uint64_t aCompartmentAddress)
-  {
-  }
+  NS_IMETHOD_(void)
+  DescribeRefCountedNode(nsrefcnt aRefCount, const char* aObjName) override {}
+  NS_IMETHOD_(void)
+  DescribeGCedNode(bool aIsMarked, const char* aObjName,
+                   uint64_t aCompartmentAddress) override {}
 
-  NS_IMETHOD_(void) NoteJSChild(const JS::GCCellPtr& aChild)
-  {
+  NS_IMETHOD_(void) NoteJSChild(const JS::GCCellPtr& aChild) override {
     if (aChild == mWrapper) {
       mFound = true;
     }
   }
-  NS_IMETHOD_(void) NoteXPCOMChild(nsISupports* aChild)
-  {
-  }
-  NS_IMETHOD_(void) NoteNativeChild(void* aChild,
-                                    nsCycleCollectionParticipant* aHelper)
-  {
-  }
+  NS_IMETHOD_(void) NoteXPCOMChild(nsISupports* aChild) override {}
+  NS_IMETHOD_(void)
+  NoteNativeChild(void* aChild,
+                  nsCycleCollectionParticipant* aHelper) override {}
 
-  NS_IMETHOD_(void) NoteNextEdgeName(const char* aName)
-  {
-  }
+  NS_IMETHOD_(void) NoteNextEdgeName(const char* aName) override {}
 
   bool mFound;
 
-private:
+ private:
   JS::GCCellPtr mWrapper;
 };
 
-static void
-DebugWrapperTraceCallback(JS::GCCellPtr aPtr, const char* aName, void* aClosure)
-{
+static void DebugWrapperTraceCallback(JS::GCCellPtr aPtr, const char* aName,
+                                      void* aClosure) {
   DebugWrapperTraversalCallback* callback =
-    static_cast<DebugWrapperTraversalCallback*>(aClosure);
+      static_cast<DebugWrapperTraversalCallback*>(aClosure);
   if (aPtr.is<JSObject>()) {
     callback->NoteJSChild(aPtr);
   }
 }
 
-void
-nsWrapperCache::CheckCCWrapperTraversal(void* aScriptObjectHolder,
-                                        nsScriptObjectTracer* aTracer)
-{
-  JSObject* wrapper = GetWrapper();
+void nsWrapperCache::CheckCCWrapperTraversal(void* aScriptObjectHolder,
+                                             nsScriptObjectTracer* aTracer) {
+  // Skip checking if we are recording or replaying, as calling
+  // GetWrapperPreserveColor() can cause the cache's wrapper to be cleared.
+  if (recordreplay::IsRecordingOrReplaying()) {
+    return;
+  }
+
+  JSObject* wrapper = GetWrapperPreserveColor();
   if (!wrapper) {
     return;
   }
@@ -146,4 +125,4 @@ nsWrapperCache::CheckCCWrapperTraversal(void* aScriptObjectHolder,
              "This will probably crash.");
 }
 
-#endif // DEBUG
+#endif  // DEBUG

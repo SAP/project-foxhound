@@ -11,9 +11,11 @@
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/dom/HTMLLabelElementBinding.h"
+#include "mozilla/dom/MouseEventBinding.h"
 #include "nsFocusManager.h"
-#include "nsIDOMMouseEvent.h"
+#include "nsContentUtils.h"
 #include "nsQueryObject.h"
+#include "mozilla/dom/ShadowRoot.h"
 
 // construction, destruction
 
@@ -22,61 +24,18 @@ NS_IMPL_NS_NEW_HTML_ELEMENT(Label)
 namespace mozilla {
 namespace dom {
 
-HTMLLabelElement::~HTMLLabelElement()
-{
+HTMLLabelElement::~HTMLLabelElement() {}
+
+JSObject* HTMLLabelElement::WrapNode(JSContext* aCx,
+                                     JS::Handle<JSObject*> aGivenProto) {
+  return HTMLLabelElement_Binding::Wrap(aCx, this, aGivenProto);
 }
-
-JSObject*
-HTMLLabelElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return HTMLLabelElementBinding::Wrap(aCx, this, aGivenProto);
-}
-
-// nsISupports
-
-NS_IMPL_ISUPPORTS_INHERITED(HTMLLabelElement, nsGenericHTMLElement,
-                            nsIDOMHTMLLabelElement)
 
 // nsIDOMHTMLLabelElement
 
 NS_IMPL_ELEMENT_CLONE(HTMLLabelElement)
 
-NS_IMETHODIMP
-HTMLLabelElement::GetForm(nsIDOMHTMLFormElement** aForm)
-{
-  RefPtr<nsIDOMHTMLFormElement> form = GetForm();
-  form.forget(aForm);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-HTMLLabelElement::GetControl(nsIDOMHTMLElement** aElement)
-{
-  nsCOMPtr<nsIDOMHTMLElement> element = do_QueryObject(GetLabeledElement());
-  element.forget(aElement);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-HTMLLabelElement::SetHtmlFor(const nsAString& aHtmlFor)
-{
-  ErrorResult rv;
-  SetHtmlFor(aHtmlFor, rv);
-  return rv.StealNSResult();
-}
-
-NS_IMETHODIMP
-HTMLLabelElement::GetHtmlFor(nsAString& aHtmlFor)
-{
-  nsString htmlFor;
-  GetHtmlFor(htmlFor);
-  aHtmlFor = htmlFor;
-  return NS_OK;
-}
-
-HTMLFormElement*
-HTMLLabelElement::GetForm() const
-{
+HTMLFormElement* HTMLLabelElement::GetForm() const {
   nsGenericHTMLElement* control = GetControl();
   if (!control) {
     return nullptr;
@@ -91,21 +50,18 @@ HTMLLabelElement::GetForm() const
   return static_cast<HTMLFormElement*>(formControl->GetFormElement());
 }
 
-void
-HTMLLabelElement::Focus(ErrorResult& aError)
-{
+void HTMLLabelElement::Focus(ErrorResult& aError) {
   // retarget the focus method at the for content
   nsIFocusManager* fm = nsFocusManager::GetFocusManager();
   if (fm) {
-    nsCOMPtr<nsIDOMElement> elem = do_QueryObject(GetLabeledElement());
-    if (elem)
+    RefPtr<Element> elem = GetLabeledElement();
+    if (elem) {
       fm->SetFocus(elem, 0);
+    }
   }
 }
 
-static bool
-InInteractiveHTMLContent(nsIContent* aContent, nsIContent* aStop)
-{
+static bool InInteractiveHTMLContent(nsIContent* aContent, nsIContent* aStop) {
   nsIContent* content = aContent;
   while (content && content != aStop) {
     if (content->IsElement() &&
@@ -117,9 +73,7 @@ InInteractiveHTMLContent(nsIContent* aContent, nsIContent* aStop)
   return false;
 }
 
-nsresult
-HTMLLabelElement::PostHandleEvent(EventChainPostVisitor& aVisitor)
-{
+nsresult HTMLLabelElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
   WidgetMouseEvent* mouseEvent = aVisitor.mEvent->AsMouseEvent();
   if (mHandlingEvent ||
       (!(mouseEvent && mouseEvent->IsLeftClickEvent()) &&
@@ -147,7 +101,7 @@ HTMLLabelElement::PostHandleEvent(EventChainPostVisitor& aVisitor)
           // We reset the mouse-down point on every event because there is
           // no guarantee we will reach the eMouseClick code below.
           LayoutDeviceIntPoint* curPoint =
-            new LayoutDeviceIntPoint(mouseEvent->mRefPoint);
+              new LayoutDeviceIntPoint(mouseEvent->mRefPoint);
           SetProperty(nsGkAtoms::labelMouseDownPtProperty,
                       static_cast<void*>(curPoint),
                       nsINode::DeleteProperty<LayoutDeviceIntPoint>);
@@ -157,8 +111,8 @@ HTMLLabelElement::PostHandleEvent(EventChainPostVisitor& aVisitor)
       case eMouseClick:
         if (mouseEvent->IsLeftClickEvent()) {
           LayoutDeviceIntPoint* mouseDownPoint =
-            static_cast<LayoutDeviceIntPoint*>(
-              GetProperty(nsGkAtoms::labelMouseDownPtProperty));
+              static_cast<LayoutDeviceIntPoint*>(
+                  GetProperty(nsGkAtoms::labelMouseDownPtProperty));
 
           bool dragSelect = false;
           if (mouseDownPoint) {
@@ -192,12 +146,14 @@ HTMLLabelElement::PostHandleEvent(EventChainPostVisitor& aVisitor)
               // pass FLAG_BYMOUSE so that we get correct focus ring behavior,
               // but we don't want to pass FLAG_BYMOUSE if this click event was
               // caused by the user pressing an accesskey.
-              nsCOMPtr<nsIDOMElement> elem = do_QueryInterface(content);
-              bool byMouse = (mouseEvent->inputSource != nsIDOMMouseEvent::MOZ_SOURCE_KEYBOARD);
-              bool byTouch = (mouseEvent->inputSource == nsIDOMMouseEvent::MOZ_SOURCE_TOUCH);
-              fm->SetFocus(elem, nsIFocusManager::FLAG_BYMOVEFOCUS |
-                                 (byMouse ? nsIFocusManager::FLAG_BYMOUSE : 0) |
-                                 (byTouch ? nsIFocusManager::FLAG_BYTOUCH : 0));
+              bool byMouse = (mouseEvent->inputSource !=
+                              MouseEvent_Binding::MOZ_SOURCE_KEYBOARD);
+              bool byTouch = (mouseEvent->inputSource ==
+                              MouseEvent_Binding::MOZ_SOURCE_TOUCH);
+              fm->SetFocus(content,
+                           nsIFocusManager::FLAG_BYMOVEFOCUS |
+                               (byMouse ? nsIFocusManager::FLAG_BYMOUSE : 0) |
+                               (byTouch ? nsIFocusManager::FLAG_BYTOUCH : 0));
             }
           }
           // Dispatch a new click event to |content|
@@ -211,8 +167,8 @@ HTMLLabelElement::PostHandleEvent(EventChainPostVisitor& aVisitor)
           // will actually create a new event.
           EventFlags eventFlags;
           eventFlags.mMultipleActionsPrevented = true;
-          DispatchClickEvent(aVisitor.mPresContext, mouseEvent,
-                             content, false, &eventFlags, &status);
+          DispatchClickEvent(aVisitor.mPresContext, mouseEvent, content, false,
+                             &eventFlags, &status);
           // Do we care about the status this returned?  I don't think we do...
           // Don't run another <label> off of this click
           mouseEvent->mFlags.mMultipleActionsPrevented = true;
@@ -227,28 +183,26 @@ HTMLLabelElement::PostHandleEvent(EventChainPostVisitor& aVisitor)
   return NS_OK;
 }
 
-bool
-HTMLLabelElement::PerformAccesskey(bool aKeyCausesActivation,
-                                   bool aIsTrustedEvent)
-{
+bool HTMLLabelElement::PerformAccesskey(bool aKeyCausesActivation,
+                                        bool aIsTrustedEvent) {
   if (!aKeyCausesActivation) {
     RefPtr<Element> element = GetLabeledElement();
     if (element) {
       return element->PerformAccesskey(aKeyCausesActivation, aIsTrustedEvent);
     }
   } else {
-    nsPresContext *presContext = GetPresContext(eForUncomposedDoc);
+    nsPresContext* presContext = GetPresContext(eForUncomposedDoc);
     if (!presContext) {
       return false;
     }
 
     // Click on it if the users prefs indicate to do so.
-    WidgetMouseEvent event(aIsTrustedEvent, eMouseClick,
-                           nullptr, WidgetMouseEvent::eReal);
-    event.inputSource = nsIDOMMouseEvent::MOZ_SOURCE_KEYBOARD;
+    WidgetMouseEvent event(aIsTrustedEvent, eMouseClick, nullptr,
+                           WidgetMouseEvent::eReal);
+    event.inputSource = MouseEvent_Binding::MOZ_SOURCE_KEYBOARD;
 
-    nsAutoPopupStatePusher popupStatePusher(aIsTrustedEvent ?
-                                            openAllowed : openAbused);
+    nsAutoPopupStatePusher popupStatePusher(
+        aIsTrustedEvent ? PopupBlocker::openAllowed : PopupBlocker::openAbused);
 
     EventDispatcher::Dispatch(static_cast<nsIContent*>(this), presContext,
                               &event);
@@ -257,9 +211,7 @@ HTMLLabelElement::PerformAccesskey(bool aKeyCausesActivation,
   return aKeyCausesActivation;
 }
 
-nsGenericHTMLElement*
-HTMLLabelElement::GetLabeledElement() const
-{
+nsGenericHTMLElement* HTMLLabelElement::GetLabeledElement() const {
   nsAutoString elementId;
 
   if (!GetAttr(kNameSpaceID_None, nsGkAtoms::_for, elementId)) {
@@ -268,17 +220,19 @@ HTMLLabelElement::GetLabeledElement() const
     return GetFirstLabelableDescendant();
   }
 
-  // We have a @for. The id has to be linked to an element in the same document
+  // We have a @for. The id has to be linked to an element in the same tree
   // and this element should be a labelable form control.
-  //XXXsmaug It is unclear how this should work in case the element is in
-  //         Shadow DOM.
-  //         See https://www.w3.org/Bugs/Public/show_bug.cgi?id=26365.
-  nsIDocument* doc = GetUncomposedDoc();
-  if (!doc) {
-    return nullptr;
+  Element* element = nullptr;
+
+  if (ShadowRoot* shadowRoot = GetContainingShadow()) {
+    element = shadowRoot->GetElementById(elementId);
+  } else if (Document* doc = GetUncomposedDoc()) {
+    element = doc->GetElementById(elementId);
+  } else {
+    element =
+        nsContentUtils::MatchElementId(SubtreeRoot()->AsContent(), elementId);
   }
 
-  Element* element = doc->GetElementById(elementId);
   if (element && element->IsLabelable()) {
     return static_cast<nsGenericHTMLElement*>(element);
   }
@@ -286,12 +240,10 @@ HTMLLabelElement::GetLabeledElement() const
   return nullptr;
 }
 
-nsGenericHTMLElement*
-HTMLLabelElement::GetFirstLabelableDescendant() const
-{
+nsGenericHTMLElement* HTMLLabelElement::GetFirstLabelableDescendant() const {
   for (nsIContent* cur = nsINode::GetFirstChild(); cur;
        cur = cur->GetNextNode(this)) {
-    Element* element = cur->IsElement() ? cur->AsElement() : nullptr;
+    Element* element = Element::FromNode(cur);
     if (element && element->IsLabelable()) {
       return static_cast<nsGenericHTMLElement*>(element);
     }
@@ -300,5 +252,5 @@ HTMLLabelElement::GetFirstLabelableDescendant() const
   return nullptr;
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

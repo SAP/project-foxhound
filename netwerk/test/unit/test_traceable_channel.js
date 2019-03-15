@@ -3,8 +3,8 @@
 // response. Make sure that body received by original channel's listener
 // is correctly modified.
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = new HttpServer();
 httpserver.start(-1);
@@ -24,17 +24,17 @@ TracingListener.prototype = {
 
     gotOnStartRequest = true;
 
-    request.QueryInterface(Components.interfaces.nsIHttpChannelInternal);
+    request.QueryInterface(Ci.nsIHttpChannelInternal);
 
 // local/remote addresses broken in e10s: disable for now
-    do_check_eq(request.localAddress, "127.0.0.1");
-    do_check_eq(request.localPort > 0, true);
-    do_check_neq(request.localPort, PORT);
-    do_check_eq(request.remoteAddress, "127.0.0.1");
-    do_check_eq(request.remotePort, PORT);
+    Assert.equal(request.localAddress, "127.0.0.1");
+    Assert.equal(request.localPort > 0, true);
+    Assert.notEqual(request.localPort, PORT);
+    Assert.equal(request.remoteAddress, "127.0.0.1");
+    Assert.equal(request.remotePort, PORT);
 
     // Make sure listener can't be replaced after OnStartRequest was called.
-    request.QueryInterface(Components.interfaces.nsITraceableChannel);
+    request.QueryInterface(Ci.nsITraceableChannel);
     try {
       var newListener = new TracingListener();
       newListener.listener = request.setNewListener(newListener);
@@ -48,19 +48,19 @@ TracingListener.prototype = {
   onStopRequest: function(request, context, statusCode) {
     dump("*** tracing listener onStopRequest\n");
     
-    do_check_eq(gotOnStartRequest, true);
+    Assert.equal(gotOnStartRequest, true);
 
     try {
-      var sin = Components.classes["@mozilla.org/scriptableinputstream;1"].
+      var sin = Cc["@mozilla.org/scriptableinputstream;1"].
           createInstance(Ci.nsIScriptableInputStream);
 
       streamSink.close();
       var input = pipe.inputStream;
       sin.init(input);
-      do_check_eq(sin.available(), originalBody.length);
+      Assert.equal(sin.available(), originalBody.length);
     
       var result = sin.read(originalBody.length);
-      do_check_eq(result, originalBody);
+      Assert.equal(result, originalBody);
     
       input.close();
     } catch (e) {
@@ -71,11 +71,11 @@ TracingListener.prototype = {
   },
 
   QueryInterface: function(iid) {
-    if (iid.equals(Components.interfaces.nsIRequestObserver) ||
-        iid.equals(Components.interfaces.nsISupports)
+    if (iid.equals(Ci.nsIRequestObserver) ||
+        iid.equals(Ci.nsISupports)
         )
       return this;
-    throw Components.results.NS_NOINTERFACE;
+    throw Cr.NS_NOINTERFACE;
   },
 
   listener: null
@@ -87,7 +87,7 @@ function HttpResponseExaminer() {}
 HttpResponseExaminer.prototype = {
   register: function() {
     Cc["@mozilla.org/observer-service;1"].
-      getService(Components.interfaces.nsIObserverService).
+      getService(Ci.nsIObserverService).
       addObserver(this, "http-on-examine-response", true);
     dump("Did HttpResponseExaminer.register\n");
   },
@@ -96,7 +96,7 @@ HttpResponseExaminer.prototype = {
   observe: function(subject, topic, data) {
     dump("In HttpResponseExaminer.observe\n");
     try {
-      subject.QueryInterface(Components.interfaces.nsITraceableChannel);
+      subject.QueryInterface(Ci.nsITraceableChannel);
       
       var tee = Cc["@mozilla.org/network/stream-listener-tee;1"].
           createInstance(Ci.nsIStreamListenerTee);
@@ -114,11 +114,11 @@ HttpResponseExaminer.prototype = {
   },
 
   QueryInterface: function(iid) {
-    if (iid.equals(Components.interfaces.nsIObserver) ||
-        iid.equals(Components.interfaces.nsISupportsWeakReference) ||
-        iid.equals(Components.interfaces.nsISupports))
+    if (iid.equals(Ci.nsIObserver) ||
+        iid.equals(Ci.nsISupportsWeakReference) ||
+        iid.equals(Ci.nsISupports))
       return this;
-    throw Components.results.NS_NOINTERFACE;
+    throw Cr.NS_NOINTERFACE;
   }
 }
 
@@ -130,7 +130,7 @@ function test_handler(metadata, response) {
 
 function make_channel(url) {
   return NetUtil.newChannel({uri: url, loadUsingSystemPrincipal: true})
-                .QueryInterface(Components.interfaces.nsIHttpChannel);
+                .QueryInterface(Ci.nsIHttpChannel);
 }
 
 // Check if received body is correctly modified.

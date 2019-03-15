@@ -5,7 +5,7 @@
   <title>Test autocomplete due to multiple matching logins</title>
   <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/SpawnTask.js"></script>
+  <script type="text/javascript" src="/tests/SimpleTest/AddTask.js"></script>
   <script type="text/javascript" src="satchel_common.js"></script>
   <script type="text/javascript" src="pwmgr_common.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
@@ -17,8 +17,7 @@ Login Manager test: autocomplete due to multiple matching logins
 runChecksAfterCommonInit(false);
 
 SpecialPowers.loadChromeScript(function addLogins() {
-  const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
-  Cu.import("resource://gre/modules/Services.jsm");
+  ChromeUtils.import("resource://gre/modules/Services.jsm");
 
   // Create some logins just for this form, since we'll be deleting them.
   var nsLoginInfo = Components.Constructor("@mozilla.org/login-manager/loginInfo;1",
@@ -66,9 +65,9 @@ var pword = $_(1, "pword");
 
 // Restore the form to the default state.
 function restoreForm() {
-    uname.value = "";
-    pword.value = "";
-    uname.focus();
+  uname.value = "";
+  pword.value = "";
+  uname.focus();
 }
 
 // Check for expected username/password in form.
@@ -78,67 +77,67 @@ function checkACForm(expectedUsername, expectedPassword) {
   is(pword.value, expectedPassword, "Checking " + formID + " password");
 }
 
-add_task(function* test_empty_first_entry() {
+add_task(async function test_empty_first_entry() {
   /* test 1 */
   // Make sure initial form is empty.
   checkACForm("", "");
   // Trigger autocomplete popup
   restoreForm();
-  let popupState = yield getPopupState();
+  let popupState = await getPopupState();
   is(popupState.open, false, "Check popup is initially closed");
   let shownPromise = promiseACShown();
-  doKey("down");
-  let results = yield shownPromise;
-  popupState = yield getPopupState();
+  synthesizeKey("KEY_ArrowDown");
+  let results = await shownPromise;
+  popupState = await getPopupState();
   is(popupState.selectedIndex, -1, "Check no entries are selected");
   checkArrayValues(results, ["name", "Name", "USER"], "initial");
 
   // Check first entry
   let index0Promise = notifySelectedIndex(0);
-  doKey("down");
-  yield index0Promise;
+  synthesizeKey("KEY_ArrowDown");
+  await index0Promise;
   checkACForm("", ""); // value shouldn't update
-  doKey("return"); // not "enter"!
-  yield promiseFormsProcessed();
+  synthesizeKey("KEY_Enter");
+  await promiseFormsProcessed();
   checkACForm("name", "pass");
 });
 
-add_task(function* test_empty_second_entry() {
+add_task(async function test_empty_second_entry() {
   restoreForm();
   let shownPromise = promiseACShown();
-  doKey("down"); // open
-  yield shownPromise;
-  doKey("down"); // first
-  doKey("down"); // second
-  doKey("return"); // not "enter"!
-  yield promiseFormsProcessed();
+  synthesizeKey("KEY_ArrowDown"); // open
+  await shownPromise;
+  synthesizeKey("KEY_ArrowDown"); // first
+  synthesizeKey("KEY_ArrowDown"); // second
+  synthesizeKey("KEY_Enter");
+  await promiseFormsProcessed();
   checkACForm("Name", "Pass");
 });
 
-add_task(function* test_empty_third_entry() {
+add_task(async function test_empty_third_entry() {
   restoreForm();
   let shownPromise = promiseACShown();
-  doKey("down"); // open
-  yield shownPromise;
-  doKey("down"); // first
-  doKey("down"); // second
-  doKey("down"); // third
-  doKey("return");
-  yield promiseFormsProcessed();
+  synthesizeKey("KEY_ArrowDown"); // open
+  await shownPromise;
+  synthesizeKey("KEY_ArrowDown"); // first
+  synthesizeKey("KEY_ArrowDown"); // second
+  synthesizeKey("KEY_ArrowDown"); // third
+  synthesizeKey("KEY_Enter");
+  await promiseFormsProcessed();
   checkACForm("USER", "PASS");
 });
 
-add_task(function* test_preserve_matching_username_case() {
+add_task(async function test_preserve_matching_username_case() {
   restoreForm();
   uname.value = "user";
   let shownPromise = promiseACShown();
-  doKey("down"); // open
-  yield shownPromise;
+  synthesizeKey("KEY_ArrowDown"); // open
+  await shownPromise;
 
   // Check that we don't clobber user-entered text when tabbing away
   // (even with no autocomplete entry selected)
-  doKey("tab");
-  yield promiseFormsProcessed();
+  synthesizeKey("KEY_Tab");
+  await promiseFormsProcessed();
   checkACForm("user", "PASS");
 });
 </script>

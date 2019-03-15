@@ -70,23 +70,16 @@
 <!ENTITY cmd.new_separator.label           "New Separator">
 <!ENTITY cmd.new_separator.accesskey       "S">
 
-<!ENTITY cmd.reloadLivebookmark.label      "Reload Live Bookmark">
-<!ENTITY cmd.reloadLivebookmark.accesskey  "R">
-
-<!ENTITY cmd.moveBookmarks.label                  "Move…">
-<!ENTITY cmd.moveBookmarks.accesskey              "M">
-
 <!ENTITY col.name.label          "Name">
 <!ENTITY col.tags.label          "Tags">
 <!ENTITY col.url.label           "Location">
 <!ENTITY col.mostrecentvisit.label "Most Recent Visit">
 <!ENTITY col.visitcount.label    "Visit Count">
-<!ENTITY col.description.label   "Description">
 <!ENTITY col.dateadded.label     "Added">
 <!ENTITY col.lastmodified.label  "Last Modified">
 
-<!ENTITY search.label                              "Search:">
-<!ENTITY search.accesskey                          "S">
+<!ENTITY historySearch.placeholder  "Search history">
+<!ENTITY bookmarksSearch.placeholder  "Search bookmarks">
 
 <!ENTITY cmd.find.key  "f">
 
@@ -98,14 +91,8 @@
 
 <!ENTITY forwardButton.tooltip  "Go forward">
 
-<!ENTITY detailsPane.more.label "More">
-<!ENTITY detailsPane.more.accesskey "e">
-<!ENTITY detailsPane.less.label "Less">
-<!ENTITY detailsPane.less.accesskey "e">
 <!ENTITY detailsPane.selectAnItemText.description "Select an item to view and edit its properties">
 
-<!ENTITY find.label               "Search:">
-<!ENTITY find.accesskey           "S">
 <!ENTITY view.label               "View">
 <!ENTITY view.accesskey           "w">
 <!ENTITY byDate.label             "By Date">

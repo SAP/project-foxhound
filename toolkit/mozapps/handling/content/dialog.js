@@ -28,12 +28,8 @@
  *   The nsIInterfaceRequestor of the parent window; may be null
  */
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cr = Components.results;
-var Cu = Components.utils;
-
-Cu.import("resource://gre/modules/SharedPromptUtils.jsm");
+ChromeUtils.import("resource://gre/modules/SharedPromptUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 
 var dialog = {
@@ -62,12 +58,12 @@ var dialog = {
 
     var description = {
       image: document.getElementById("description-image"),
-      text:  document.getElementById("description-text")
+      text:  document.getElementById("description-text"),
     };
     var options = document.getElementById("item-action-text");
     var checkbox = {
       desc: document.getElementById("remember"),
-      text:  document.getElementById("remember-text")
+      text:  document.getElementById("remember-text"),
     };
 
     // Setting values
@@ -95,7 +91,7 @@ var dialog = {
         this._buttonDisabled = false;
         this.updateOKButton();
       },
-      focusTarget: window
+      focusTarget: window,
     });
   },
 
@@ -106,8 +102,6 @@ var dialog = {
     var items = document.getElementById("items");
     var possibleHandlers = this._handlerInfo.possibleApplicationHandlers;
     var preferredHandler = this._handlerInfo.preferredApplicationHandler;
-    var ios = Cc["@mozilla.org/network/io-service;1"].
-              getService(Ci.nsIIOService);
     for (let i = possibleHandlers.length - 1; i >= 0; --i) {
       let app = possibleHandlers.queryElementAt(i, Ci.nsIHandlerApp);
       let elm = document.createElement("richlistitem");
@@ -117,11 +111,11 @@ var dialog = {
 
       if (app instanceof Ci.nsILocalHandlerApp) {
         // See if we have an nsILocalHandlerApp and set the icon
-        let uri = ios.newFileURI(app.executable);
+        let uri = Services.io.newFileURI(app.executable);
         elm.setAttribute("image", "moz-icon://" + uri.spec + "?size=32");
       } else if (app instanceof Ci.nsIWebHandlerApp) {
-        let uri = ios.newURI(app.uriTemplate);
-        if (/^https?/.test(uri.scheme)) {
+        let uri = Services.io.newURI(app.uriTemplate);
+        if (/^https?$/.test(uri.scheme)) {
           // Unfortunately we can't use the favicon service to get the favicon,
           // because the service looks for a record with the exact URL we give
           // it, and users won't have such records for URLs they don't visit,
@@ -132,9 +126,11 @@ var dialog = {
         }
         elm.setAttribute("description", uri.prePath);
       } else if (app instanceof Ci.nsIDBusHandlerApp) {
-	  elm.setAttribute("description", app.method);
-      } else
+        elm.setAttribute("description", app.method);
+      } else if (!(app instanceof Ci.nsIGIOMimeApp)) {
+        // We support GIO application handler, but no action required there
         throw "unknown handler type";
+      }
 
       items.insertBefore(elm, this._itemChoose);
       if (preferredHandler && app == preferredHandler)
@@ -152,6 +148,37 @@ var dialog = {
           Ci.nsIHandlerInfo.useSystemDefault)
           this.selectedItem = elm;
     }
+
+    // Add gio handlers
+    if (Cc["@mozilla.org/gio-service;1"]) {
+      let gIOSvc = Cc["@mozilla.org/gio-service;1"]
+                     .getService(Ci.nsIGIOService);
+      var gioApps = gIOSvc.getAppsForURIScheme(this._URI.scheme);
+      for (let handler of gioApps.enumerate(Ci.nsIHandlerApp)) {
+        // OS handler share the same name, it's most likely the same app, skipping...
+        if (handler.name == this._handlerInfo.defaultDescription) {
+          continue;
+        }
+        // Check if the handler is already in possibleHandlers
+        let appAlreadyInHandlers = false;
+        for (let i = possibleHandlers.length - 1; i >= 0; --i) {
+          let app = possibleHandlers.queryElementAt(i, Ci.nsIHandlerApp);
+          // nsGIOMimeApp::Equals is able to compare with nsILocalHandlerApp
+          if (handler.equals(app)) {
+            appAlreadyInHandlers = true;
+            break;
+          }
+        }
+        if (!appAlreadyInHandlers) {
+          let elm = document.createElement("richlistitem");
+          elm.setAttribute("type", "handler");
+          elm.setAttribute("name", handler.name);
+          elm.obj = handler;
+          items.insertBefore(elm, this._itemChoose);
+        }
+      }
+    }
+
     items.ensureSelectedElementIsVisible();
   },
 
@@ -168,9 +195,7 @@ var dialog = {
 
     fp.open(rv => {
       if (rv == Ci.nsIFilePicker.returnOK && fp.file) {
-        let uri = Cc["@mozilla.org/network/util;1"].
-                  getService(Ci.nsIIOService).
-                  newFileURI(fp.file);
+        let uri = Services.io.newFileURI(fp.file);
 
         let handlerApp = Cc["@mozilla.org/uriloader/local-handler-app;1"].
                          createInstance(Ci.nsILocalHandlerApp);
@@ -262,6 +287,6 @@ var dialog = {
   },
   set selectedItem(aItem) {
     return document.getElementById("items").selectedItem = aItem;
-  }
+  },
 
 };

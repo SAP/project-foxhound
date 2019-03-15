@@ -7,9 +7,10 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
-#include "webrtc/test/win/d3d_renderer.h"
+#include "test/win/d3d_renderer.h"
 
-#include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
+#include "common_video/libyuv/include/webrtc_libyuv.h"
+#include "rtc_base/checks.h"
 
 namespace webrtc {
 namespace test {
@@ -37,8 +38,8 @@ D3dRenderer::D3dRenderer(size_t width, size_t height)
       d3d_device_(NULL),
       texture_(NULL),
       vertex_buffer_(NULL) {
-  assert(width > 0);
-  assert(height > 0);
+  RTC_DCHECK_GT(width, 0);
+  RTC_DCHECK_GT(height, 0);
 }
 
 D3dRenderer::~D3dRenderer() { Destroy(); }
@@ -61,7 +62,7 @@ void D3dRenderer::Destroy() {
 
   if (hwnd_ != NULL) {
     DestroyWindow(hwnd_);
-    assert(!IsWindow(hwnd_));
+    RTC_DCHECK(!IsWindow(hwnd_));
     hwnd_ = NULL;
   }
 }
@@ -191,8 +192,7 @@ void D3dRenderer::Resize(size_t width, size_t height) {
   vertex_buffer_->Unlock();
 }
 
-void D3dRenderer::RenderFrame(const webrtc::VideoFrame& frame,
-                              int /*render_delay_ms*/) {
+void D3dRenderer::OnFrame(const webrtc::VideoFrame& frame) {
   if (static_cast<size_t>(frame.width()) != width_ ||
       static_cast<size_t>(frame.height()) != height_) {
     Resize(static_cast<size_t>(frame.width()),
@@ -203,7 +203,8 @@ void D3dRenderer::RenderFrame(const webrtc::VideoFrame& frame,
   if (texture_->LockRect(0, &lock_rect, NULL, 0) != D3D_OK)
     return;
 
-  ConvertFromI420(frame, kARGB, 0, static_cast<uint8_t*>(lock_rect.pBits));
+  ConvertFromI420(frame, VideoType::kARGB, 0,
+                  static_cast<uint8_t*>(lock_rect.pBits));
   texture_->UnlockRect(0);
 
   d3d_device_->BeginScene();

@@ -10,7 +10,7 @@ fn gnu_smoke() {
     let test = Test::gnu();
     test.gcc()
         .file("foo.c")
-        .compile("libfoo.a");
+        .compile("foo");
 
     test.cmd(0)
         .must_have("-O2")
@@ -28,7 +28,7 @@ fn gnu_opt_level_1() {
     test.gcc()
         .opt_level(1)
         .file("foo.c")
-        .compile("libfoo.a");
+        .compile("foo");
 
     test.cmd(0)
         .must_have("-O1")
@@ -41,7 +41,7 @@ fn gnu_opt_level_s() {
     test.gcc()
         .opt_level_str("s")
         .file("foo.c")
-        .compile("libfoo.a");
+        .compile("foo");
 
     test.cmd(0)
         .must_have("-Os")
@@ -57,8 +57,31 @@ fn gnu_debug() {
     test.gcc()
         .debug(true)
         .file("foo.c")
-        .compile("libfoo.a");
+        .compile("foo");
     test.cmd(0).must_have("-g");
+}
+
+#[test]
+fn gnu_warnings_into_errors() {
+    let test = Test::gnu();
+    test.gcc()
+        .warnings_into_errors(true)
+        .file("foo.c")
+        .compile("foo");
+
+    test.cmd(0).must_have("-Werror");
+}
+
+#[test]
+fn gnu_warnings() {
+    let test = Test::gnu();
+    test.gcc()
+        .warnings(true)
+        .file("foo.c")
+        .compile("foo");
+
+    test.cmd(0).must_have("-Wall")
+               .must_have("-Wextra");
 }
 
 #[test]
@@ -70,7 +93,7 @@ fn gnu_x86_64() {
             .target(&target)
             .host(&target)
             .file("foo.c")
-            .compile("libfoo.a");
+            .compile("foo");
 
         test.cmd(0)
             .must_have("-fPIC")
@@ -88,7 +111,7 @@ fn gnu_x86_64_no_pic() {
             .target(&target)
             .host(&target)
             .file("foo.c")
-            .compile("libfoo.a");
+            .compile("foo");
 
         test.cmd(0).must_not_have("-fPIC");
     }
@@ -103,10 +126,9 @@ fn gnu_i686() {
             .target(&target)
             .host(&target)
             .file("foo.c")
-            .compile("libfoo.a");
+            .compile("foo");
 
         test.cmd(0)
-            .must_not_have("-fPIC")
             .must_have("-m32");
     }
 }
@@ -121,7 +143,7 @@ fn gnu_i686_pic() {
             .target(&target)
             .host(&target)
             .file("foo.c")
-            .compile("libfoo.a");
+            .compile("foo");
 
         test.cmd(0).must_have("-fPIC");
     }
@@ -133,7 +155,7 @@ fn gnu_set_stdlib() {
     test.gcc()
         .cpp_set_stdlib(Some("foo"))
         .file("foo.c")
-        .compile("libfoo.a");
+        .compile("foo");
 
     test.cmd(0).must_not_have("-stdlib=foo");
 }
@@ -144,7 +166,7 @@ fn gnu_include() {
     test.gcc()
         .include("foo/bar")
         .file("foo.c")
-        .compile("libfoo.a");
+        .compile("foo");
 
     test.cmd(0).must_have("-I").must_have("foo/bar");
 }
@@ -153,10 +175,10 @@ fn gnu_include() {
 fn gnu_define() {
     let test = Test::gnu();
     test.gcc()
-        .define("FOO", Some("bar"))
+        .define("FOO", "bar")
         .define("BAR", None)
         .file("foo.c")
-        .compile("libfoo.a");
+        .compile("foo");
 
     test.cmd(0).must_have("-DFOO=bar").must_have("-DBAR");
 }
@@ -166,8 +188,71 @@ fn gnu_compile_assembly() {
     let test = Test::gnu();
     test.gcc()
         .file("foo.S")
-        .compile("libfoo.a");
+        .compile("foo");
     test.cmd(0).must_have("foo.S");
+}
+
+#[test]
+fn gnu_shared() {
+    let test = Test::gnu();
+    test.gcc()
+        .file("foo.c")
+        .shared_flag(true)
+        .static_flag(false)
+        .compile("foo");
+
+    test.cmd(0)
+        .must_have("-shared")
+        .must_not_have("-static");
+}
+
+#[test]
+fn gnu_flag_if_supported() {
+    if cfg!(windows) {
+        return
+    }
+    let test = Test::gnu();
+    test.gcc()
+        .file("foo.c")
+        .flag_if_supported("-Wall")
+        .flag_if_supported("-Wflag-does-not-exist")
+        .flag_if_supported("-std=c++11")
+        .compile("foo");
+
+    test.cmd(0)
+        .must_have("-Wall")
+        .must_not_have("-Wflag-does-not-exist")
+        .must_not_have("-std=c++11");
+}
+
+#[test]
+fn gnu_flag_if_supported_cpp() {
+    if cfg!(windows) {
+        return
+    }
+    let test = Test::gnu();
+    test.gcc()
+        .cpp(true)
+        .file("foo.cpp")
+        .flag_if_supported("-std=c++11")
+        .compile("foo");
+
+    test.cmd(0)
+        .must_have("-std=c++11");
+}
+
+#[test]
+fn gnu_static() {
+    let test = Test::gnu();
+    test.gcc()
+        .file("foo.c")
+        .shared_flag(false)
+        .static_flag(true)
+        .compile("foo");
+
+    test.cmd(0)
+        .must_have("-static")
+        .must_not_have("-shared");
 }
 
 #[test]
@@ -175,13 +260,14 @@ fn msvc_smoke() {
     let test = Test::msvc();
     test.gcc()
         .file("foo.c")
-        .compile("libfoo.a");
+        .compile("foo");
 
     test.cmd(0)
         .must_have("/O2")
         .must_have("foo.c")
         .must_not_have("/Z7")
-        .must_have("/c");
+        .must_have("/c")
+        .must_have("/MD");
     test.cmd(1).must_have(test.td.path().join("foo.o"));
 }
 
@@ -191,7 +277,7 @@ fn msvc_opt_level_0() {
     test.gcc()
         .opt_level(0)
         .file("foo.c")
-        .compile("libfoo.a");
+        .compile("foo");
 
     test.cmd(0).must_not_have("/O2");
 }
@@ -202,7 +288,7 @@ fn msvc_debug() {
     test.gcc()
         .debug(true)
         .file("foo.c")
-        .compile("libfoo.a");
+        .compile("foo");
     test.cmd(0).must_have("/Z7");
 }
 
@@ -212,7 +298,7 @@ fn msvc_include() {
     test.gcc()
         .include("foo/bar")
         .file("foo.c")
-        .compile("libfoo.a");
+        .compile("foo");
 
     test.cmd(0).must_have("/I").must_have("foo/bar");
 }
@@ -221,10 +307,32 @@ fn msvc_include() {
 fn msvc_define() {
     let test = Test::msvc();
     test.gcc()
-        .define("FOO", Some("bar"))
+        .define("FOO", "bar")
         .define("BAR", None)
         .file("foo.c")
-        .compile("libfoo.a");
+        .compile("foo");
 
     test.cmd(0).must_have("/DFOO=bar").must_have("/DBAR");
+}
+
+#[test]
+fn msvc_static_crt() {
+    let test = Test::msvc();
+    test.gcc()
+        .static_crt(true)
+        .file("foo.c")
+        .compile("foo");
+
+    test.cmd(0).must_have("/MT");
+}
+
+#[test]
+fn msvc_no_static_crt() {
+    let test = Test::msvc();
+    test.gcc()
+        .static_crt(false)
+        .file("foo.c")
+        .compile("foo");
+
+    test.cmd(0).must_have("/MD");
 }

@@ -11,12 +11,12 @@ var gProvider;
 var gInstall;
 var gInstallProperties = [{
   name: "Locale Category Test",
-  type: "locale"
+  type: "locale",
 }];
 
-function test() {
+async function test() {
   try {
-    if (Components.classes["@mozilla.org/gfx/info;1"].getService(Components.interfaces.nsIGfxInfo).D2DEnabled) {
+    if (Cc["@mozilla.org/gfx/info;1"].getService(Ci.nsIGfxInfo).D2DEnabled) {
       requestLongerTimeout(2);
     }
   } catch (e) {}
@@ -24,11 +24,10 @@ function test() {
 
   gProvider = new MockProvider();
 
-  open_manager("addons://list/extension", function(aWindow) {
-    gManagerWindow = aWindow;
-    gCategoryUtilities = new CategoryUtilities(gManagerWindow);
-    run_next_test();
-  });
+  let aWindow = await open_manager("addons://list/extension");
+  gManagerWindow = aWindow;
+  gCategoryUtilities = new CategoryUtilities(gManagerWindow);
+  run_next_test();
 }
 
 function end_test() {
@@ -41,7 +40,7 @@ function install_locale(aCallback) {
     onInstallEnded(aInstall) {
       gInstall.removeTestListener(this);
       executeSoon(aCallback);
-    }
+    },
   });
   gInstall.install();
 }
@@ -51,27 +50,24 @@ function check_hidden(aExpectedHidden) {
   is(hidden, !!aExpectedHidden, "Should have correct hidden state");
 }
 
-function run_open_test(aTestSetup, aLoadHidden, aInitializedHidden, aSelected) {
+async function run_open_test(aTestSetup, aLoadHidden, aInitializedHidden, aSelected) {
   function loadCallback(aManagerWindow) {
     gManagerWindow = aManagerWindow;
     gCategoryUtilities = new CategoryUtilities(gManagerWindow);
     check_hidden(aLoadHidden);
   }
 
-  function run() {
-    open_manager(null, function() {
-      check_hidden(aInitializedHidden);
-      var selected = (gCategoryUtilities.selectedCategory == "locale");
-      is(selected, !!aSelected, "Should have correct selected state");
+  async function run() {
+    await open_manager(null, null, loadCallback);
+    check_hidden(aInitializedHidden);
+    var selected = (gCategoryUtilities.selectedCategory == "locale");
+    is(selected, !!aSelected, "Should have correct selected state");
 
-      run_next_test();
-    }, loadCallback);
+    run_next_test();
   }
 
-  close_manager(gManagerWindow, function() {
-    // Allow for asynchronous functions to run before the manager opens
-    aTestSetup ? aTestSetup(run) : run();
-  });
+  await close_manager(gManagerWindow);
+  aTestSetup ? aTestSetup(run) : run();
 }
 
 
@@ -100,7 +96,7 @@ add_test(function() {
 // causes the locale category to be hidden with an acceptable delay
 add_test(function() {
   gInstall.cancel();
-  run_open_test(null, false, true)
+  run_open_test(null, false, true);
 });
 
 // Tests that the locale category is hidden with no delay when restarting
@@ -117,10 +113,9 @@ add_test(function() {
 });
 
 // Tests that selection of the locale category persists
-add_test(function() {
-  gCategoryUtilities.openType("locale", function() {
-    run_open_test(null, false, false, true);
-  });
+add_test(async function() {
+  await gCategoryUtilities.openType("locale");
+  run_open_test(null, false, false, true);
 });
 
 // Tests that cancelling the locale install and restarting the Add-on Manager

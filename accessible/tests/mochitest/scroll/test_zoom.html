@@ -18,11 +18,10 @@
           src="../layout.js"></script>
 
   <script type="application/javascript">
-    function testScrollToPoint()
-    {
+    function testScrollToPoint() {
       // scrollToPoint relative screen
       var anchor = getAccessible("bottom1");
-      var [x, y] = getPos(anchor);
+      let [x /* y */] = getPos(anchor);
       var [docX, docY] = getPos(document);
 
       anchor.scrollToPoint(COORDTYPE_SCREEN_RELATIVE, docX, docY);
@@ -30,26 +29,26 @@
 
       // scrollToPoint relative window
       anchor = getAccessible("bottom2");
-      var [x, y] = getPos(anchor);
+      [x /* y */] = getPos(anchor);
       var wnd = getRootAccessible().DOMDocument.defaultView;
       var [screenX, screenY] = CSSToDevicePixels(wnd, wnd.screenX, wnd.screenY);
-      var scrollToX = docX - screenX, scrollToY = docY - screenY;
+      let scrollToX = docX - screenX, scrollToY = docY - screenY;
 
       anchor.scrollToPoint(COORDTYPE_WINDOW_RELATIVE, scrollToX, scrollToY);
       testPos(anchor, [x, docY]);
 
       // scrollToPoint relative parent
       anchor = getAccessible("bottom3");
-      var [x, y] = getPos(anchor);
+      [x /* y */] = getPos(anchor);
       var [parentX, parentY] = getPos(anchor.parent);
-      var scrollToX = parentX - docX, scrollToY = parentY - docY;
+      scrollToX = parentX - docX;
+      scrollToY = parentY - docY;
 
       anchor.scrollToPoint(COORDTYPE_PARENT_RELATIVE, scrollToX, scrollToY);
       testPos(anchor, [x, docY]);
     }
 
-    function doTest()
-    {
+    function doTest() {
       testScrollToPoint();
       zoomDocument(document, 2.0);
       testScrollToPoint(); // zoom and test again

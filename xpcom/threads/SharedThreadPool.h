@@ -34,15 +34,14 @@ namespace mozilla {
 // cause some functions to fail. So be careful when using Win32 APIs on a
 // SharedThreadPool, and avoid sharing objects if at all possible.
 //
-// [1] https://dxr.mozilla.org/mozilla-central/search?q=coinitialize&redirect=false
-class SharedThreadPool : public nsIThreadPool
-{
-public:
-
+// [1]
+// https://dxr.mozilla.org/mozilla-central/search?q=coinitialize&redirect=false
+class SharedThreadPool : public nsIThreadPool {
+ public:
   // Gets (possibly creating) the shared thread pool singleton instance with
   // thread pool named aName.
   static already_AddRefed<SharedThreadPool> Get(const nsCString& aName,
-                                            uint32_t aThreadLimit = 4);
+                                                uint32_t aThreadLimit = 4);
 
   // We implement custom threadsafe AddRef/Release pair, that destroys the
   // the shared pool singleton when the refcount drops to 0. The addref/release
@@ -58,24 +57,34 @@ public:
   // Call this when dispatching from an event on the same
   // threadpool that is about to complete. We should not create a new thread
   // in that case since a thread is about to become idle.
-  nsresult DispatchFromEndOfTaskInThisPool(nsIRunnable *event)
-  {
+  nsresult DispatchFromEndOfTaskInThisPool(nsIRunnable* event) {
     return Dispatch(event, NS_DISPATCH_AT_END);
   }
 
-  NS_IMETHOD DispatchFromScript(nsIRunnable *event, uint32_t flags) override {
-      return Dispatch(event, flags);
+  NS_IMETHOD DispatchFromScript(nsIRunnable* event, uint32_t flags) override {
+    return Dispatch(event, flags);
   }
 
-  NS_IMETHOD Dispatch(already_AddRefed<nsIRunnable> event, uint32_t flags) override
-    { return !mEventTarget ? NS_ERROR_NULL_POINTER : mEventTarget->Dispatch(Move(event), flags); }
+  NS_IMETHOD Dispatch(already_AddRefed<nsIRunnable> event,
+                      uint32_t flags = NS_DISPATCH_NORMAL) override {
+    return !mEventTarget ? NS_ERROR_NULL_POINTER
+                         : mEventTarget->Dispatch(std::move(event), flags);
+  }
 
-  NS_IMETHOD DelayedDispatch(already_AddRefed<nsIRunnable>, uint32_t) override
-    { return NS_ERROR_NOT_IMPLEMENTED; }
+  NS_IMETHOD DelayedDispatch(already_AddRefed<nsIRunnable>, uint32_t) override {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
 
   using nsIEventTarget::Dispatch;
 
-  NS_IMETHOD IsOnCurrentThread(bool *_retval) override { return !mEventTarget ? NS_ERROR_NULL_POINTER : mEventTarget->IsOnCurrentThread(_retval); }
+  NS_IMETHOD IsOnCurrentThread(bool* _retval) override {
+    return !mEventTarget ? NS_ERROR_NULL_POINTER
+                         : mEventTarget->IsOnCurrentThread(_retval);
+  }
+
+  NS_IMETHOD_(bool) IsOnCurrentThreadInfallible() override {
+    return mEventTarget && mEventTarget->IsOnCurrentThread();
+  }
 
   // Creates necessary statics. Called once at startup.
   static void InitStatics();
@@ -84,27 +93,14 @@ public:
   // *Must* be called on the main thread.
   static void SpinUntilEmpty();
 
-#if defined(MOZ_ASAN)
-  // Use the system default in ASAN builds, because the default is assumed to be
-  // larger than the size we want to use and is hopefully sufficient for ASAN.
-  static const uint32_t kStackSize = nsIThreadManager::DEFAULT_STACK_SIZE;
-#elif defined(XP_WIN) || defined(XP_MACOSX) || defined(LINUX)
-  static const uint32_t kStackSize = (256 * 1024);
-#else
-  // All other platforms use their system defaults.
-  static const uint32_t kStackSize = nsIThreadManager::DEFAULT_STACK_SIZE;
-#endif
-
-private:
-
+ private:
   // Returns whether there are no pools in existence at the moment.
   static bool IsEmpty();
 
   // Creates a singleton SharedThreadPool wrapper around aPool.
   // aName is the name of the aPool, and is used to lookup the
   // SharedThreadPool in the hash table of all created pools.
-  SharedThreadPool(const nsCString& aName,
-                   nsIThreadPool* aPool);
+  SharedThreadPool(const nsCString& aName, nsIThreadPool* aPool);
   virtual ~SharedThreadPool();
 
   nsresult EnsureThreadLimitIsAtLeast(uint32_t aThreadLimit);
@@ -124,6 +120,6 @@ private:
   nsCOMPtr<nsIEventTarget> mEventTarget;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // SharedThreadPool_h_
+#endif  // SharedThreadPool_h_

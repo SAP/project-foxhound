@@ -6,12 +6,17 @@
 
 #include <windows.h>
 
+#include <memory>
+
 #include "base/file_version_info_win.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/registry.h"
+
+#if !defined(__clang__) && _MSC_FULL_VER < 190024213
+#error VS 2015 Update 3 with Cumulative Servicing Release or higher is required
+#endif
 
 namespace {
 typedef BOOL (WINAPI *GetProductInfoPtr)(DWORD, DWORD, DWORD, DWORD, PDWORD);
@@ -45,8 +50,12 @@ Version MajorMinorBuildToVersion(int major, int minor, int build) {
   } else if (major == 10) {
     if (build < 10586) {
       return VERSION_WIN10;
-    } else {
+    } else if (build < 14393) {
       return VERSION_WIN10_TH2;
+    } else if (build < 15063) {
+      return VERSION_WIN10_RS1;
+    } else {
+      return VERSION_WIN10_RS2;
     }
   } else if (major > 6) {
     NOTREACHED();
@@ -60,7 +69,7 @@ Version MajorMinorBuildToVersion(int major, int minor, int build) {
 // compatibility mode for a down-level version of the OS, the file version of
 // kernel32 will still be the "real" version.
 Version GetVersionFromKernel32() {
-  scoped_ptr<FileVersionInfoWin> file_version_info(
+  std::unique_ptr<FileVersionInfoWin> file_version_info(
       static_cast<FileVersionInfoWin*>(
           FileVersionInfoWin::CreateFileVersionInfo(
               base::FilePath(FILE_PATH_LITERAL("kernel32.dll")))));
@@ -76,6 +85,27 @@ Version GetVersionFromKernel32() {
 
   NOTREACHED();
   return VERSION_WIN_LAST;
+}
+
+// Returns the the "UBR" value from the registry. Introduced in Windows 10,
+// this undocumented value appears to be similar to a patch number.
+// Returns 0 if the value does not exist or it could not be read.
+int GetUBR() {
+  // The values under the CurrentVersion registry hive are mirrored under
+  // the corresponding Wow6432 hive.
+  static constexpr wchar_t kRegKeyWindowsNTCurrentVersion[] =
+      L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion";
+
+  base::win::RegKey key;
+  if (key.Open(HKEY_LOCAL_MACHINE, kRegKeyWindowsNTCurrentVersion,
+               KEY_QUERY_VALUE) != ERROR_SUCCESS) {
+    return 0;
+  }
+
+  DWORD ubr = 0;
+  key.ReadValueDW(L"UBR", &ubr);
+
+  return static_cast<int>(ubr);
 }
 
 }  // namespace
@@ -107,10 +137,12 @@ OSInfo::OSInfo()
   version_number_.major = version_info.dwMajorVersion;
   version_number_.minor = version_info.dwMinorVersion;
   version_number_.build = version_info.dwBuildNumber;
+  version_number_.patch = GetUBR();
   version_ = MajorMinorBuildToVersion(
       version_number_.major, version_number_.minor, version_number_.build);
   service_pack_.major = version_info.wServicePackMajor;
   service_pack_.minor = version_info.wServicePackMinor;
+  service_pack_str_ = base::WideToUTF8(version_info.szCSDVersion);
 
   SYSTEM_INFO system_info = {};
   ::GetNativeSystemInfo(&system_info);
@@ -148,9 +180,24 @@ OSInfo::OSInfo()
         break;
       case PRODUCT_PROFESSIONAL:
       case PRODUCT_ULTIMATE:
-      case PRODUCT_ENTERPRISE:
-      case PRODUCT_BUSINESS:
         version_type_ = SUITE_PROFESSIONAL;
+        break;
+      case PRODUCT_ENTERPRISE:
+      case PRODUCT_ENTERPRISE_E:
+      case PRODUCT_ENTERPRISE_EVALUATION:
+      case PRODUCT_ENTERPRISE_N:
+      case PRODUCT_ENTERPRISE_N_EVALUATION:
+      case PRODUCT_ENTERPRISE_S:
+      case PRODUCT_ENTERPRISE_S_EVALUATION:
+      case PRODUCT_ENTERPRISE_S_N:
+      case PRODUCT_ENTERPRISE_S_N_EVALUATION:
+      case PRODUCT_BUSINESS:
+      case PRODUCT_BUSINESS_N:
+        version_type_ = SUITE_ENTERPRISE;
+        break;
+      case PRODUCT_EDUCATION:
+      case PRODUCT_EDUCATION_N:
+        version_type_ = SUITE_EDUCATION;
         break;
       case PRODUCT_HOME_BASIC:
       case PRODUCT_HOME_PREMIUM:
@@ -164,14 +211,14 @@ OSInfo::OSInfo()
     if (version_info.wProductType == VER_NT_WORKSTATION &&
         system_info.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64) {
       version_type_ = SUITE_PROFESSIONAL;
-    } else if (version_info.wSuiteMask & VER_SUITE_WH_SERVER ) {
+    } else if (version_info.wSuiteMask & VER_SUITE_WH_SERVER) {
       version_type_ = SUITE_HOME;
     } else {
       version_type_ = SUITE_SERVER;
     }
   } else if (version_info.dwMajorVersion == 5 &&
              version_info.dwMinorVersion == 1) {
-    if(version_info.wSuiteMask & VER_SUITE_PERSONAL)
+    if (version_info.wSuiteMask & VER_SUITE_PERSONAL)
       version_type_ = SUITE_HOME;
     else
       version_type_ = SUITE_PROFESSIONAL;

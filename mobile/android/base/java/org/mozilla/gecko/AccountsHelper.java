@@ -19,7 +19,6 @@ import org.json.JSONException;
 import org.mozilla.gecko.background.fxa.FxAccountUtils;
 import org.mozilla.gecko.fxa.FirefoxAccounts;
 import org.mozilla.gecko.fxa.FxAccountConstants;
-import org.mozilla.gecko.fxa.FxAccountDeviceRegistrator;
 import org.mozilla.gecko.fxa.authenticator.AndroidFxAccount;
 import org.mozilla.gecko.fxa.login.Engaged;
 import org.mozilla.gecko.fxa.login.State;
@@ -89,10 +88,6 @@ public class AccountsHelper implements BundleEventListener {
         }
 
         if ("Accounts:CreateFirefoxAccountFromJSON".equals(event)) {
-            // As we are about to create a new account, let's ensure our in-memory accounts cache
-            // is empty so that there are no undesired side-effects.
-            AndroidFxAccount.invalidateCaches();
-
             AndroidFxAccount fxAccount = null;
             try {
                 final GeckoBundle json = message.getBundle("json");
@@ -111,6 +106,7 @@ public class AccountsHelper implements BundleEventListener {
                 // TODO: handle choose what to Sync.
                 State state = new Engaged(email, uid, verified, unwrapkB, sessionToken, keyFetchToken);
                 fxAccount = AndroidFxAccount.addAndroidAccount(mContext,
+                        uid,
                         email,
                         mProfile.getName(),
                         authServerEndpoint,
@@ -154,10 +150,6 @@ public class AccountsHelper implements BundleEventListener {
             }
 
         } else if ("Accounts:UpdateFirefoxAccountFromJSON".equals(event)) {
-            // We might be significantly changing state of the account; let's ensure our in-memory
-            // accounts cache is empty so that there are no undesired side-effects.
-            AndroidFxAccount.invalidateCaches();
-
             final Account account = FirefoxAccounts.getFirefoxAccount(mContext);
             if (account == null) {
                 if (callback != null) {
@@ -200,6 +192,13 @@ public class AccountsHelper implements BundleEventListener {
 
             final AndroidFxAccount fxAccount = new AndroidFxAccount(mContext, account);
             fxAccount.setState(state);
+            fxAccount.updateFirstRunScope(mContext);
+            // This will force a device registration later.
+            fxAccount.resetDeviceRegistrationVersion();
+            fxAccount.setDeviceRegistrationTimestamp(0L);
+            // Trigger a sync to try to update the device registration and
+            // upload a fresh client record.
+            fxAccount.requestImmediateSync(null, null, false);
 
             if (callback != null) {
                 callback.sendSuccess(true);

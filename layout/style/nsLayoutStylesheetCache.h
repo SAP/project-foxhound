@@ -11,8 +11,8 @@
 #include "nsIObserver.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/NotNull.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/StyleBackendType.h"
 #include "mozilla/css/Loader.h"
 
 class nsIFile;
@@ -20,59 +20,34 @@ class nsIURI;
 
 namespace mozilla {
 class CSSStyleSheet;
-} // namespace mozilla
+}  // namespace mozilla
 
 namespace mozilla {
 namespace css {
 
 // Enum defining how error should be handled.
-enum FailureAction {
-  eCrash = 0,
-  eLogToConsole
-};
+enum FailureAction { eCrash = 0, eLogToConsole };
 
-}
-}
+}  // namespace css
+}  // namespace mozilla
 
-class nsLayoutStylesheetCache final
- : public nsIObserver
- , public nsIMemoryReporter
-{
+class nsLayoutStylesheetCache final : public nsIObserver,
+                                      public nsIMemoryReporter {
   NS_DECL_ISUPPORTS
   NS_DECL_NSIOBSERVER
   NS_DECL_NSIMEMORYREPORTER
 
-  /**
-   * Returns the nsLayoutStylesheetCache for the given style backend type.
-   * Callers should pass in a value for aType that matches the style system
-   * backend type for the style set in use.  (A process may call For
-   * and obtain nsLayoutStylesheetCache objects for both backend types,
-   * and a particular UA style sheet might be cached in both, one or neither
-   * nsLayoutStylesheetCache.)
-   */
-  static nsLayoutStylesheetCache* For(mozilla::StyleBackendType aType);
+  static nsLayoutStylesheetCache* Singleton();
 
-  mozilla::StyleSheet* ScrollbarsSheet();
-  mozilla::StyleSheet* FormsSheet();
-  // This function is expected to return nullptr when the dom.forms.number
-  // pref is disabled.
-  mozilla::StyleSheet* NumberControlSheet();
-  mozilla::StyleSheet* UserContentSheet();
-  mozilla::StyleSheet* UserChromeSheet();
-  mozilla::StyleSheet* UASheet();
-  mozilla::StyleSheet* HTMLSheet();
-  mozilla::StyleSheet* MinimalXULSheet();
-  mozilla::StyleSheet* XULSheet();
-  mozilla::StyleSheet* QuirkSheet();
-  mozilla::StyleSheet* SVGSheet();
-  mozilla::StyleSheet* MathMLSheet();
-  mozilla::StyleSheet* CounterStylesSheet();
-  mozilla::StyleSheet* NoScriptSheet();
-  mozilla::StyleSheet* NoFramesSheet();
+#define STYLE_SHEET(identifier_, url_, lazy_) \
+  mozilla::NotNull<mozilla::StyleSheet*> identifier_##Sheet();
+#include "mozilla/UserAgentStyleSheetList.h"
+#undef STYLE_SHEET
+
+  mozilla::StyleSheet* GetUserContentSheet();
+  mozilla::StyleSheet* GetUserChromeSheet();
   mozilla::StyleSheet* ChromePreferenceSheet(nsPresContext* aPresContext);
   mozilla::StyleSheet* ContentPreferenceSheet(nsPresContext* aPresContext);
-  mozilla::StyleSheet* ContentEditableSheet();
-  mozilla::StyleSheet* DesignModeSheet();
 
   static void InvalidatePreferenceSheets();
 
@@ -82,54 +57,37 @@ class nsLayoutStylesheetCache final
 
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
 
-private:
-  explicit nsLayoutStylesheetCache(mozilla::StyleBackendType aImpl);
+ private:
+  nsLayoutStylesheetCache();
   ~nsLayoutStylesheetCache();
 
   void InitFromProfile();
   void InitMemoryReporter();
-  void LoadSheetURL(const char* aURL,
-                    RefPtr<mozilla::StyleSheet>* aSheet,
+  void LoadSheetURL(const char* aURL, RefPtr<mozilla::StyleSheet>* aSheet,
                     mozilla::css::SheetParsingMode aParsingMode,
                     mozilla::css::FailureAction aFailureAction);
-  void LoadSheetFile(nsIFile* aFile,
-                     RefPtr<mozilla::StyleSheet>* aSheet,
+  void LoadSheetFile(nsIFile* aFile, RefPtr<mozilla::StyleSheet>* aSheet,
                      mozilla::css::SheetParsingMode aParsingMode,
                      mozilla::css::FailureAction aFailureAction);
   void LoadSheet(nsIURI* aURI, RefPtr<mozilla::StyleSheet>* aSheet,
                  mozilla::css::SheetParsingMode aParsingMode,
                  mozilla::css::FailureAction aFailureAction);
-  static void InvalidateSheet(RefPtr<mozilla::StyleSheet>* aGeckoSheet,
-                              RefPtr<mozilla::StyleSheet>* aServoSheet);
-  static void DependentPrefChanged(const char* aPref, void* aData);
   void BuildPreferenceSheet(RefPtr<mozilla::StyleSheet>* aSheet,
                             nsPresContext* aPresContext);
 
-  static mozilla::StaticRefPtr<nsLayoutStylesheetCache> gStyleCache_Gecko;
-  static mozilla::StaticRefPtr<nsLayoutStylesheetCache> gStyleCache_Servo;
-  static mozilla::StaticRefPtr<mozilla::css::Loader> gCSSLoader_Gecko;
-  static mozilla::StaticRefPtr<mozilla::css::Loader> gCSSLoader_Servo;
+  static mozilla::StaticRefPtr<nsLayoutStylesheetCache> gStyleCache;
+  static mozilla::StaticRefPtr<mozilla::css::Loader> gCSSLoader;
   static mozilla::StaticRefPtr<nsIURI> gUserContentSheetURL;
-  mozilla::StyleBackendType mBackendType;
+
+#define STYLE_SHEET(identifier_, url_, lazy_) \
+  RefPtr<mozilla::StyleSheet> m##identifier_##Sheet;
+#include "mozilla/UserAgentStyleSheetList.h"
+#undef STYLE_SHEET
+
   RefPtr<mozilla::StyleSheet> mChromePreferenceSheet;
-  RefPtr<mozilla::StyleSheet> mContentEditableSheet;
   RefPtr<mozilla::StyleSheet> mContentPreferenceSheet;
-  RefPtr<mozilla::StyleSheet> mCounterStylesSheet;
-  RefPtr<mozilla::StyleSheet> mDesignModeSheet;
-  RefPtr<mozilla::StyleSheet> mFormsSheet;
-  RefPtr<mozilla::StyleSheet> mHTMLSheet;
-  RefPtr<mozilla::StyleSheet> mMathMLSheet;
-  RefPtr<mozilla::StyleSheet> mMinimalXULSheet;
-  RefPtr<mozilla::StyleSheet> mNoFramesSheet;
-  RefPtr<mozilla::StyleSheet> mNoScriptSheet;
-  RefPtr<mozilla::StyleSheet> mNumberControlSheet;
-  RefPtr<mozilla::StyleSheet> mQuirkSheet;
-  RefPtr<mozilla::StyleSheet> mSVGSheet;
-  RefPtr<mozilla::StyleSheet> mScrollbarsSheet;
-  RefPtr<mozilla::StyleSheet> mUASheet;
   RefPtr<mozilla::StyleSheet> mUserChromeSheet;
   RefPtr<mozilla::StyleSheet> mUserContentSheet;
-  RefPtr<mozilla::StyleSheet> mXULSheet;
 };
 
 #endif

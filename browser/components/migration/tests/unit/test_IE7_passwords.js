@@ -1,12 +1,9 @@
 "use strict";
 
-Cu.import("resource://gre/modules/AppConstants.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "WindowsRegistry",
-                                  "resource://gre/modules/WindowsRegistry.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "OSCrypto",
-                                  "resource://gre/modules/OSCrypto.jsm");
+ChromeUtils.defineModuleGetter(this, "OSCrypto",
+                               "resource://gre/modules/OSCrypto.jsm");
 
 const IE7_FORM_PASSWORDS_MIGRATOR_NAME = "IE7FormPasswords";
 const LOGINS_KEY = "Software\\Microsoft\\Internet Explorer\\IntelliForms\\Storage2";
@@ -116,6 +113,17 @@ const TESTED_WEBSITES = {
     hash: "B644028D1C109A91EC2C4B9D1F145E55A1FAE42065",
     data: [12, 0, 0, 0, 152, 0, 0, 0, 212, 0, 0, 0, 87, 73, 67, 75, 24, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 32, 8, 234, 114, 153, 212, 208, 1, 1, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 97, 93, 131, 116, 153, 212, 208, 1, 3, 0, 0, 0, 14, 0, 0, 0, 97, 93, 131, 116, 153, 212, 208, 1, 16, 0, 0, 0, 48, 0, 0, 0, 88, 150, 78, 174, 153, 212, 208, 1, 4, 0, 0, 0, 58, 0, 0, 0, 88, 150, 78, 174, 153, 212, 208, 1, 29, 0, 0, 0, 118, 0, 0, 0, 79, 102, 137, 34, 154, 212, 208, 1, 15, 0, 0, 0, 150, 0, 0, 0, 79, 102, 137, 34, 154, 212, 208, 1, 30, 0, 0, 0, 97, 0, 0, 0, 0, 0, 252, 140, 173, 138, 146, 48, 0, 0, 66, 0, 105, 0, 116, 0, 116, 0, 101, 0, 32, 0, 98, 0, 101, 0, 115, 0, 116, 0, 228, 0, 116, 0, 105, 0, 103, 0, 101, 0, 110, 0, 0, 0, 205, 145, 110, 127, 198, 91, 1, 120, 0, 0, 31, 4, 48, 4, 64, 4, 62, 4, 59, 4, 76, 4, 32, 0, 67, 4, 65, 4, 63, 4, 53, 4, 72, 4, 61, 4, 62, 4, 32, 0, 65, 4, 49, 4, 64, 4, 62, 4, 72, 4, 53, 4, 61, 4, 46, 0, 32, 0, 18, 4, 62, 4, 57, 4, 66, 4, 56, 4, 0, 0, 40, 6, 51, 6, 69, 6, 32, 0, 39, 6, 68, 6, 68, 6, 71, 6, 32, 0, 39, 6, 68, 6, 49, 6, 45, 6, 69, 6, 70, 6, 0, 0, 118, 0, 101, 0, 117, 0, 105, 0, 108, 0, 108, 0, 101, 0, 122, 0, 32, 0, 108, 0, 101, 0, 32, 0, 118, 0, 233, 0, 114, 0, 105, 0, 102, 0, 105, 0, 101, 0, 114, 0, 32, 0, 224, 0, 32, 0, 110, 0, 111, 0, 117, 0, 118, 0, 101, 0, 97, 0, 117, 0, 0, 0],
     logins: [
+      // This login is present in the data, but should be stripped out
+      // by the validation rules of the importer:
+      // {
+      //   "username": "a",
+      //   "password": "",
+      //   "hostname": "http://www.reddit.com",
+      //   "formSubmitURL": "",
+      //   "httpRealm": null,
+      //   "usernameField": "",
+      //   "passwordField": ""
+      // },
       {
         username: "購読を",
         password: "Bitte bestätigen",
@@ -286,9 +294,10 @@ function makeURI(aURL) {
   return Services.io.newURI(aURL);
 }
 
-add_task(function* setup() {
+add_task(async function setup() {
   if (AppConstants.isPlatformAndVersionAtLeast("win", "6.2")) {
     Assert.throws(() => getFirstResourceOfType(MigrationUtils.resourceTypes.PASSWORDS),
+                  /failed to find/,
                   "The migrator doesn't exist for win8+");
     return;
   }
@@ -305,7 +314,7 @@ add_task(function* setup() {
   }
 });
 
-add_task(function* test_passwordsNotAvailable() {
+add_task(async function test_passwordsNotAvailable() {
   if (AppConstants.isPlatformAndVersionAtLeast("win", "6.2")) {
     return;
   }
@@ -320,14 +329,14 @@ add_task(function* test_passwordsNotAvailable() {
     uris.push(makeURI(url));
      // in this test, there is no IE login data in the registry, so after the migration, the number
      // of logins in the store should be 0
-    migrator._migrateURIs(uris);
+    await migrator._migrateURIs(uris);
     logins = Services.logins.getAllLogins({});
     Assert.equal(logins.length, 0,
                  "There are no logins after doing the migration without adding values to the registry");
   }
 });
 
-add_task(function* test_passwordsAvailable() {
+add_task(async function test_passwordsAvailable() {
   if (AppConstants.isPlatformAndVersionAtLeast("win", "6.2")) {
     return;
   }
@@ -335,7 +344,7 @@ add_task(function* test_passwordsAvailable() {
   let crypto = new OSCrypto();
   let hashes = []; // the hashes of all migrator websites, this is going to be used for the clean up
 
-  do_register_cleanup(() => {
+  registerCleanupFunction(() => {
     Services.logins.removeAllLogins();
     logins = Services.logins.getAllLogins({});
     Assert.equal(logins.length, 0, "There are no logins after the cleanup");
@@ -371,7 +380,7 @@ add_task(function* test_passwordsAvailable() {
     uris.push(website.uri);
     hashes.push(website.hash);
 
-    migrator._migrateURIs(uris);
+    await migrator._migrateURIs(uris);
     logins = Services.logins.getAllLogins({});
     // check that the number of logins in the password manager has increased as expected which means
     // that all the values for the current website were imported

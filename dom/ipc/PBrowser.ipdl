@@ -5,47 +5,56 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-include protocol PBlob;
 include protocol PColorPicker;
 include protocol PContent;
 include protocol PContentBridge;
-include protocol PDatePicker;
 include protocol PDocAccessible;
-include protocol PDocumentRenderer;
 include protocol PFilePicker;
 include protocol PIndexedDBPermissionRequest;
-include protocol PRenderFrame;
 include protocol PPluginWidget;
 include protocol PRemotePrintJob;
+include protocol PChildToParentStream;
+include protocol PParentToChildStream;
+include protocol PFileDescriptorSet;
+include protocol PIPCBlobInputStream;
+include protocol PPaymentRequest;
+include protocol PWindowGlobal;
+
 include DOMTypes;
+include IPCBlob;
+include IPCStream;
 include JavaScriptTypes;
 include URIParams;
 include PPrintingTypes;
 include PTabContext;
 
+include "mozilla/GfxMessageUtils.h";
+include "mozilla/layers/LayersMessageUtils.h";
 
 using class IPC::Principal from "mozilla/dom/PermissionMessageUtils.h";
-using class mozilla::gfx::Matrix from "mozilla/gfx/Matrix.h";
-using struct gfxSize from "gfxPoint.h";
-using CSSRect from "Units.h";
-using CSSSize from "Units.h";
-using mozilla::LayoutDeviceIntRect from "Units.h";
+using moveonly mozilla::gfx::PaintFragment from "mozilla/gfx/CrossProcessPaint.h";
+using mozilla::gfx::Matrix from "mozilla/gfx/Matrix.h";
+using mozilla::gfx::SurfaceFormat from "mozilla/gfx/Types.h";
 using mozilla::LayoutDeviceIntPoint from "Units.h";
 using mozilla::LayoutDevicePoint from "Units.h";
 using mozilla::ScreenIntPoint from "Units.h";
 using ScreenIntSize from "Units.h";
-using struct mozilla::layers::FrameMetrics from "FrameMetrics.h";
-using struct mozilla::layers::ScrollableLayerGuid from "FrameMetrics.h";
-using struct mozilla::layers::ZoomConstraints from "FrameMetrics.h";
-using mozilla::layers::MaybeZoomConstraints from "FrameMetrics.h";
+using struct mozilla::layers::ScrollableLayerGuid from "mozilla/layers/ScrollableLayerGuid.h";
+using struct mozilla::layers::ZoomConstraints from "mozilla/layers/ZoomConstraints.h";
+using mozilla::layers::LayersId from "mozilla/layers/LayersTypes.h";
+using mozilla::layers::LayersObserverEpoch from "mozilla/layers/LayersTypes.h";
+using mozilla::layers::MaybeZoomConstraints from "mozilla/layers/ZoomConstraints.h";
 using mozilla::layers::GeckoContentController::TapType from "mozilla/layers/GeckoContentController.h";
-using FrameMetrics::ViewID from "FrameMetrics.h";
+using ScrollableLayerGuid::ViewID from "mozilla/layers/ScrollableLayerGuid.h";
 using struct mozilla::void_t from "ipc/IPCMessageUtils.h";
 using mozilla::WindowsHandle from "ipc/IPCMessageUtils.h";
 using nscolor from "nsColor.h";
 using class mozilla::WidgetCompositionEvent from "ipc/nsGUIEventIPC.h";
-using struct mozilla::widget::IMENotification from "nsIWidget.h";
-using struct nsIMEUpdatePreference from "nsIWidget.h";
+using struct mozilla::widget::IMENotification from "mozilla/widget/IMEData.h";
+using struct mozilla::widget::IMENotificationRequests from "mozilla/widget/IMEData.h";
+using struct mozilla::widget::IMEState from "mozilla/widget/IMEData.h";
+using struct mozilla::widget::InputContext from "mozilla/widget/IMEData.h";
+using struct mozilla::widget::InputContextAction from "mozilla/widget/IMEData.h";
 using mozilla::gfx::IntSize from "mozilla/gfx/Point.h";
 using mozilla::gfx::IntPoint from "mozilla/gfx/Point.h";
 using mozilla::gfx::IntRect from "mozilla/gfx/Rect.h";
@@ -59,13 +68,13 @@ using class mozilla::WidgetSelectionEvent from "ipc/nsGUIEventIPC.h";
 using class mozilla::WidgetTouchEvent from "ipc/nsGUIEventIPC.h";
 using class mozilla::WidgetPluginEvent from "ipc/nsGUIEventIPC.h";
 using struct mozilla::dom::RemoteDOMEvent from "mozilla/dom/TabMessageUtils.h";
-using mozilla::dom::ScreenOrientationInternal from "mozilla/dom/ScreenOrientation.h";
 using struct mozilla::layers::TextureFactoryIdentifier from "mozilla/layers/CompositorTypes.h";
+using mozilla::layers::CompositorOptions from "mozilla/layers/CompositorOptions.h";
 using mozilla::CSSToScreenScale from "Units.h";
 using mozilla::CommandInt from "mozilla/EventForwards.h";
 using mozilla::WritingMode from "mozilla/WritingModes.h";
-using mozilla::layers::TouchBehaviorFlags from "mozilla/layers/APZUtils.h";
 using nsIWidget::TouchPointerState from "nsIWidget.h";
+using nsCursor from "nsIWidget.h";
 using struct LookAndFeelInt from "mozilla/widget/WidgetMessageUtils.h";
 using class mozilla::dom::MessagePort from "mozilla/dom/MessagePort.h";
 using class mozilla::dom::ipc::StructuredCloneData from "mozilla/dom/ipc/StructuredCloneData.h";
@@ -77,22 +86,11 @@ using mozilla::widget::CandidateWindowPosition from "ipc/nsGUIEventIPC.h";
 using class mozilla::NativeEventData from "ipc/nsGUIEventIPC.h";
 using mozilla::FontRange from "ipc/nsGUIEventIPC.h";
 using mozilla::a11y::IAccessibleHolder from "mozilla/a11y/IPCTypes.h";
+using mozilla::OriginAttributes from "mozilla/ipc/BackgroundUtils.h";
+using mozilla::dom::BrowsingContextId from "mozilla/dom/ipc/IdType.h";
 
 namespace mozilla {
 namespace dom {
-
-struct NativeKeyBinding
-{
-  CommandInt[] singleLineCommands;
-  CommandInt[] multiLineCommands;
-  CommandInt[] richTextCommands;
-};
-
-union MaybeNativeKeyBinding
-{
-  NativeKeyBinding;
-  void_t;
-};
 
 struct ShowInfo
 {
@@ -106,6 +104,27 @@ struct ShowInfo
   double defaultScale;
 };
 
+struct WebProgressData
+{
+  bool isTopLevel;
+  bool isLoadingDocument;
+  uint32_t loadType;
+  uint64_t DOMWindowID;
+};
+
+union OptionalWebProgressData
+{
+  void_t;
+  WebProgressData;
+};
+
+struct RequestData
+{
+  nsIURI requestURI;
+  nsIURI originalRequestURI;
+  nsCString matchedList;
+};
+
 union OptionalShmem
 {
   void_t;
@@ -117,23 +136,16 @@ nested(upto inside_cpow) sync protocol PBrowser
     manager PContent or PContentBridge;
 
     manages PColorPicker;
-    manages PDatePicker;
     manages PDocAccessible;
-    manages PDocumentRenderer;
     manages PFilePicker;
     manages PIndexedDBPermissionRequest;
-    manages PRenderFrame;
     manages PPluginWidget;
+    manages PPaymentRequest;
+    manages PWindowGlobal;
 
 both:
     async AsyncMessage(nsString aMessage, CpowEntry[] aCpows,
                        Principal aPrincipal, ClonedMessageData aData);
-
-    /**
-     * Create a layout frame (encapsulating a remote layer tree) for
-     * the page that is currently loaded in the <browser>.
-     */
-    async PRenderFrame();
 
 parent:
     /**
@@ -154,10 +166,13 @@ parent:
      */
     sync PPluginWidget();
 
+    async PPaymentRequest();
+
     /**
-     * Return native data of root widget
+     * Construct a new WindowGlobal actor for a window global in the given
+     * BrowsingContext and with the given principal.
      */
-    nested(inside_cpow) sync GetWidgetNativeData() returns (WindowsHandle value);
+    async PWindowGlobal(WindowGlobalInit init);
 
     /**
      * Sends an NS_NATIVE_CHILD_OF_SHAREABLE_WINDOW to be adopted by the
@@ -218,11 +233,11 @@ parent:
      *
      *  contentCache Cache of content
      *  notification Whole data of the notification
-     *  preference   Native widget preference for IME updates
+     *  requests     Requests of notification for IME of the native widget
      */
-    nested(inside_cpow) sync NotifyIMEFocus(ContentCache contentCache,
-                                            IMENotification notification)
-      returns (nsIMEUpdatePreference preference);
+    nested(inside_cpow) async NotifyIMEFocus(ContentCache contentCache,
+                                             IMENotification notification)
+      returns (IMENotificationRequests requests);
 
     /**
      * Notifies chrome that there has been a change in text content
@@ -264,7 +279,7 @@ parent:
     /**
      * Notifies IME of mouse button event on a character in focused editor.
      *
-     * Returns true if the mouse button event is consumd by IME.
+     * Returns true if the mouse button event is consumed by IME.
      */
     nested(inside_cpow) sync NotifyIMEMouseButtonEvent(IMENotification notification)
       returns (bool consumedByIME);
@@ -329,6 +344,11 @@ parent:
     async SetCandidateWindowForPlugin(CandidateWindowPosition aPosition);
 
     /**
+     * Enable or Disable IME by windowless plugin if plugin has focus.
+     */
+    async EnableIMEForPlugin(bool aEnable);
+
+    /**
      * Notifies the parent process of native key event data received in a
      * plugin process directly.
      *
@@ -357,52 +377,19 @@ parent:
                                 nsCString[] enabledCommands,
                                 nsCString[] disabledCommands);
 
-    nested(inside_cpow) sync GetInputContext() returns (int32_t IMEEnabled,
-                                                        int32_t IMEOpen);
+    nested(inside_cpow) sync GetInputContext() returns (IMEState state);
 
-    nested(inside_cpow) async SetInputContext(int32_t IMEEnabled,
-                                              int32_t IMEOpen,
-                                              nsString type,
-                                              nsString inputmode,
-                                              nsString actionHint,
-                                              int32_t cause,
-                                              int32_t focusChange);
-
-    sync IsParentWindowMainWidgetVisible() returns (bool visible);
-
-    /**
-     * Gets the DPI of the screen corresponding to this browser.
-     */
-    sync GetDPI() returns (float value);
-
-    /**
-     * Gets the default scaling factor of the screen corresponding to this browser.
-     */
-    sync GetDefaultScale() returns (double value);
-
-    /**
-     * Gets the rounding of coordinates in the widget.
-     */
-    sync GetWidgetRounding() returns (int32_t value);
-
-    /**
-     * Gets maximum of touch points at current device.
-     */
-    sync GetMaxTouchPoints() returns (uint32_t value);
+    nested(inside_cpow) async SetInputContext(InputContext context,
+                                              InputContextAction action);
 
     /**
      * Set the native cursor.
      * @param value
      *   The widget cursor to set.
-     * @param force
-     *   Invalidate any locally cached cursor settings and force an
-     *   update.
-     */
-    async SetCursor(uint32_t value, bool force);
-
-    /**
-     * Set the native cursor using a custom image.
-     * @param cursorData
+     * @param hasCustomCursor
+     *   Whether there's any custom cursor represented by cursorData and
+     *   company.
+     * @param customCursorData
      *   Serialized image data.
      * @param width
      *   Width of the image.
@@ -420,9 +407,12 @@ parent:
      *   Invalidate any locally cached cursor settings and force an
      *   update.
      */
-    async SetCustomCursor(nsCString cursorData, uint32_t width, uint32_t height,
-                          uint32_t stride, uint8_t format,
-                          uint32_t hotspotX, uint32_t hotspotY, bool force);
+    async SetCursor(nsCursor value,
+                    bool hasCustomCursor,
+                    nsCString customCursorData,
+                    uint32_t width, uint32_t height,
+                    uint32_t stride, SurfaceFormat format,
+                    uint32_t hotspotX, uint32_t hotspotY, bool force);
 
     /**
      * Used to set the current text of the status tooltip.
@@ -442,12 +432,6 @@ parent:
      * but don't open it yet.
      */
     async PColorPicker(nsString title, nsString initialColor);
-
-    /**
-     * Create an asynchronous date picker on the parent side,
-     * but don't open it yet.
-     */
-    async PDatePicker(nsString title, nsString initialDate);
 
     async PFilePicker(nsString aTitle, int16_t aMode);
 
@@ -475,11 +459,9 @@ parent:
      *
      * @param opener the PBrowser whose content called window.open.
      */
-    sync BrowserFrameOpenWindow(PBrowser opener, PRenderFrame renderFrame,
-                                nsString aURL, nsString aName, nsString aFeatures)
-      returns (bool windowOpened,
-               TextureFactoryIdentifier textureFactoryIdentifier,
-               uint64_t layersId);
+    async BrowserFrameOpenWindow(PBrowser opener,
+                                 nsString aURL, nsString aName, nsString aFeatures)
+        returns (CreatedWindowInfo window);
 
     /**
      * Tells the containing widget whether the given input block results in a
@@ -511,8 +493,17 @@ parent:
 
     async ReplyKeyEvent(WidgetKeyboardEvent event);
 
-    sync RequestNativeKeyBindings(WidgetKeyboardEvent event)
-        returns (MaybeNativeKeyBinding bindings);
+    /**
+     * Retrieves edit commands for the key combination represented by aEvent.
+     *
+     * @param aType       One of nsIWidget::NativeKeyBindingsType.
+     * @param aEvent      KeyboardEvent which represents a key combination.
+     *                    Note that this must be a trusted event.
+     * @return            Array of edit commands which should be executed in
+     *                    editor of native applications.
+     */
+    sync RequestNativeKeyBindings(uint32_t aType, WidgetKeyboardEvent aEvent)
+        returns (CommandInt[] commands);
 
     async SynthesizeNativeKeyEvent(int32_t aNativeKeyboardLayout,
                                    int32_t aNativeKeyCode,
@@ -545,19 +536,18 @@ parent:
                                    uint64_t aObserverId);
     async ClearNativeTouchSequence(uint64_t aObserverId);
 
-    /**
-     * Returns the number of tabs in the window via the out parameter.
-     * If the number of tabs can't be determined, returns 0.
-     *
-     * @param aValue where to store the tab count
-     */
-    sync GetTabCount() returns (uint32_t value);
-
     async AccessKeyNotHandled(WidgetKeyboardEvent event);
+
+    async SetHasBeforeUnload(bool aHasBeforeUnload);
+
+    async RegisterProtocolHandler(nsString scheme, nsIURI handlerURI, nsString title,
+                                  nsIURI documentURI);
+
+    async OnContentBlockingEvent(OptionalWebProgressData aWebProgressData,
+                                 RequestData aRequestData, uint32_t aEvent);
 
 child:
     async NativeSynthesisResponse(uint64_t aObserverId, nsCString aResponse);
-
 
 parent:
 
@@ -571,9 +561,20 @@ parent:
     async RemotePaintIsReady();
 
     /**
+     * Child informs the parent that a compositor transaction has ocurred.
+     */
+    async NotifyCompositorTransaction();
+
+    /**
+     * Child informs the parent that the content is ready to handle input
+     * events. This is sent when the TabChild is created.
+     */
+    async RemoteIsReadyToHandleInputEvents();
+
+    /**
      * Child informs the parent that the layer tree is already available.
      */
-    async ForcePaintNoOp(uint64_t aLayerObserverEpoch);
+    async PaintWhileInterruptingJSNoOp(LayersObserverEpoch aEpoch);
 
     /**
      * Sent by the child to the parent to inform it that an update to the
@@ -587,37 +588,33 @@ parent:
 
     async InvokeDragSession(IPCDataTransfer[] transfers, uint32_t action,
                             OptionalShmem visualData,
-                            uint32_t stride, uint8_t format,
-                            LayoutDeviceIntRect dragRect);
-
-    async AudioChannelActivityNotification(uint32_t aAudioChannel,
-                                           bool aActive);
+                            uint32_t stride, SurfaceFormat format,
+                            LayoutDeviceIntRect dragRect,
+                            Principal principal);
 
     // After a compositor reset, it is necessary to reconnect each layers ID to
     // the compositor of the widget that will render those layers. Note that
     // this is sync so we can ensure that messages to the window compositor
     // arrive before the TabChild attempts to use its cross-process compositor
     // bridge.
-    sync EnsureLayersConnected();
+    sync EnsureLayersConnected() returns (CompositorOptions compositorOptions);
 
     /**
-     * Notify the parent that the session history state has been updated.
+     * This function is used to notify the parent that it should display a
+     * canvas permission prompt.
      *
-     * @param aCount
-     *        The updated number of entries in child session history
-     * @param aLocalIndex
-     *        The local session history index which is loaded.
+     * @param aFirstPartyURI first party of the tab that is requesting access.
      */
-    async SHistoryUpdate(uint32_t aCount, uint32_t aLocalIndex, bool aTruncate);
+    async ShowCanvasPermissionPrompt(nsCString aFirstPartyURI,
+                                     bool aHideDoorHanger);
 
-    /**
-     * When the session history is across multiple root docshells, this function
-     * is used to notify parent that it needs to navigate to an entry out of
-     * local index of the child.
-     *
-     * @param aGlobalIndex The global index of history entry to navigate to.
-     */
-    async RequestCrossBrowserNavigation(uint32_t aGlobalIndex);
+    sync SetSystemFont(nsCString aFontName);
+    sync GetSystemFont() returns (nsCString retval);
+
+    sync SetPrefersReducedMotionOverrideForTest(bool aValue);
+    sync ResetPrefersReducedMotionOverrideForTest();
+
+    async RootBrowsingContext(BrowsingContextId aId);
 
 child:
     /**
@@ -635,17 +632,17 @@ child:
                nsSizeMode sizeMode);
 
     async InitRendering(TextureFactoryIdentifier textureFactoryIdentifier,
-                        uint64_t layersId,
-                        nullable PRenderFrame renderFrame);
+                        LayersId layersId,
+                        CompositorOptions compositorOptions,
+                        bool layersConnected);
 
     async LoadURL(nsCString uri, ShowInfo info);
 
-    async UpdateDimensions(CSSRect rect, CSSSize size,
-                           ScreenOrientationInternal orientation,
-                           LayoutDeviceIntPoint clientOffset,
-                           LayoutDeviceIntPoint chromeDisp) compressall;
+    async UpdateDimensions(DimensionInfo dimensions) compressall;
 
     async SizeModeChanged(nsSizeMode sizeMode);
+
+    async ParentActivated(bool aActivated);
 
     async SetKeyboardIndicators(UIStateChangeType showAccelerators,
                                 UIStateChangeType showFocusRings);
@@ -655,12 +652,6 @@ child:
      * should stop managing IME state.
      */
     async StopIMEStateManagement();
-
-    /**
-     * MenuKeyboardListenerInstalled() is called when menu keyboard listener
-     * is installed in the parent process.
-     */
-    async MenuKeyboardListenerInstalled(bool aInstalled);
 
     /**
      * @see nsIDOMWindowUtils sendMouseEvent.
@@ -677,7 +668,14 @@ child:
      * When two consecutive mouse move events would be added to the message queue,
      * they are 'compressed' by dumping the oldest one.
      */
-    async RealMouseMoveEvent(WidgetMouseEvent event, ScrollableLayerGuid aGuid, uint64_t aInputBlockId) compress;
+    prio(input) async RealMouseMoveEvent(WidgetMouseEvent event,
+                                         ScrollableLayerGuid aGuid,
+                                         uint64_t aInputBlockId) compress;
+
+    async NormalPriorityRealMouseMoveEvent(WidgetMouseEvent event,
+                                           ScrollableLayerGuid aGuid,
+                                           uint64_t aInputBlockId) compress;
+
     /**
      * Mouse move events with |reason == eSynthesized| are sent via a separate
      * message because they do not generate DOM 'mousemove' events, and the
@@ -685,35 +683,69 @@ child:
      * |reason == eReal| event being dropped in favour of an |eSynthesized|
      * event, and thus a DOM 'mousemove' event to be lost.
      */
-    async SynthMouseMoveEvent(WidgetMouseEvent event, ScrollableLayerGuid aGuid, uint64_t aInputBlockId);
-    async RealMouseButtonEvent(WidgetMouseEvent event, ScrollableLayerGuid aGuid, uint64_t aInputBlockId);
-    async RealKeyEvent(WidgetKeyboardEvent event, MaybeNativeKeyBinding keyBinding);
-    async MouseWheelEvent(WidgetWheelEvent event, ScrollableLayerGuid aGuid, uint64_t aInputBlockId);
-    async RealTouchEvent(WidgetTouchEvent aEvent,
-                         ScrollableLayerGuid aGuid,
-                         uint64_t aInputBlockId,
-                         nsEventStatus aApzResponse);
-    async HandleTap(TapType aType, LayoutDevicePoint point, Modifiers aModifiers,
-                    ScrollableLayerGuid aGuid, uint64_t aInputBlockId);
-    async RealTouchMoveEvent(WidgetTouchEvent aEvent,
-                             ScrollableLayerGuid aGuid,
-                             uint64_t aInputBlockId,
-                             nsEventStatus aApzResponse);
-    async RealDragEvent(WidgetDragEvent aEvent, uint32_t aDragAction, uint32_t aDropEffect);
+    prio(input) async SynthMouseMoveEvent(WidgetMouseEvent event,
+                                          ScrollableLayerGuid aGuid,
+                                          uint64_t aInputBlockId);
+    async NormalPrioritySynthMouseMoveEvent(WidgetMouseEvent event,
+                                            ScrollableLayerGuid aGuid,
+                                            uint64_t aInputBlockId);
+
+    prio(input) async RealMouseButtonEvent(WidgetMouseEvent event,
+                                           ScrollableLayerGuid aGuid,
+                                           uint64_t aInputBlockId);
+    async NormalPriorityRealMouseButtonEvent(WidgetMouseEvent event,
+                                             ScrollableLayerGuid aGuid,
+                                             uint64_t aInputBlockId);
+
+    prio(input) async RealKeyEvent(WidgetKeyboardEvent event);
+    async NormalPriorityRealKeyEvent(WidgetKeyboardEvent event);
+
+    prio(input) async MouseWheelEvent(WidgetWheelEvent event,
+                                      ScrollableLayerGuid aGuid,
+                                      uint64_t aInputBlockId);
+    async NormalPriorityMouseWheelEvent(WidgetWheelEvent event,
+                                        ScrollableLayerGuid aGuid,
+                                        uint64_t aInputBlockId);
+
+    prio(input) async RealTouchEvent(WidgetTouchEvent aEvent,
+                                     ScrollableLayerGuid aGuid,
+                                     uint64_t aInputBlockId,
+                                     nsEventStatus aApzResponse);
+    async NormalPriorityRealTouchEvent(WidgetTouchEvent aEvent,
+                                       ScrollableLayerGuid aGuid,
+                                       uint64_t aInputBlockId,
+                                       nsEventStatus aApzResponse);
+
+    prio(input) async HandleTap(TapType aType, LayoutDevicePoint point,
+                                Modifiers aModifiers, ScrollableLayerGuid aGuid,
+                                uint64_t aInputBlockId);
+    async NormalPriorityHandleTap(TapType aType, LayoutDevicePoint point,
+                                  Modifiers aModifiers, ScrollableLayerGuid aGuid,
+                                  uint64_t aInputBlockId);
+
+    prio(input) async RealTouchMoveEvent(WidgetTouchEvent aEvent,
+                                         ScrollableLayerGuid aGuid,
+                                         uint64_t aInputBlockId,
+                                         nsEventStatus aApzResponse);
+    async NormalPriorityRealTouchMoveEvent(WidgetTouchEvent aEvent,
+                                           ScrollableLayerGuid aGuid,
+                                           uint64_t aInputBlockId,
+                                           nsEventStatus aApzResponse);
+
+    /*
+     * We disable the input event queue when there is an active dnd session. We
+     * don't need support RealDragEvent with input priority.
+     */
+    async RealDragEvent(WidgetDragEvent aEvent, uint32_t aDragAction,
+                        uint32_t aDropEffect, Principal aPrincipal);
+
     async PluginEvent(WidgetPluginEvent aEvent);
 
-    /**
-     * @see nsIDOMWindowUtils sendKeyEvent.
-     */
-    async KeyEvent(nsString aType,
-                   int32_t aKeyCode,
-                   int32_t aCharCode,
-                   int32_t aModifiers,
-                   bool aPreventDefault);
+    prio(input) async CompositionEvent(WidgetCompositionEvent event);
+    async NormalPriorityCompositionEvent(WidgetCompositionEvent event);
 
-    async CompositionEvent(WidgetCompositionEvent event);
-
-    async SelectionEvent(WidgetSelectionEvent event);
+    prio(input) async SelectionEvent(WidgetSelectionEvent event);
+    async NormalPrioritySelectionEvent(WidgetSelectionEvent event);
 
     /**
      * Call PasteTransferable via a controller on the content process
@@ -721,7 +753,8 @@ child:
      */
     async PasteTransferable(IPCDataTransfer aDataTransfer,
                             bool aIsPrivateData,
-                            Principal aRequestingPrincipal);
+                            Principal aRequestingPrincipal,
+                            uint32_t aContentPolicyType);
 
     /**
      * Activate event forwarding from client to parent.
@@ -729,24 +762,6 @@ child:
     async ActivateFrameEvent(nsString aType, bool capture);
 
     async LoadRemoteScript(nsString aURL, bool aRunInGlobalScope);
-
-    /**
-     * Create a asynchronous request to render whatever document is
-     * loaded in the child when this message arrives.  When the
-     * request finishes, PDocumentRenderer:__delete__ is sent back to
-     * this side to notify completion.
-     *
-     * |documentRect| is the area of the remote document to draw,
-     * transformed by |transform|.  The rendered area will have the
-     * default background color |bgcolor|.  |renderFlags| are the
-     * nsIPresShell::RenderDocument() flags to use on the remote side,
-     * and if true, |flushLayout| will do just that before rendering
-     * the document.  The rendered image will be of size |renderSize|.
-     */
-    async PDocumentRenderer(nsRect documentRect, Matrix transform,
-                            nsString bgcolor,
-                            uint32_t renderFlags, bool flushLayout,
-                            IntSize renderSize);
 
     /**
      * Sent by the chrome process when it no longer wants this remote
@@ -763,12 +778,30 @@ child:
      *        Whether to activate or deactivate the docshell.
      * @param aPreserveLayers
      *        Whether layer trees should be preserved for inactive docshells.
-     * @param aLayerObserverEpoch
-     *        The layer observer epoch for this activation. This message should be
-     *        ignored if this epoch has already been observed (via ForcePaint).
      */
-    async SetDocShellIsActive(bool aIsActive, bool aPreserveLayers, uint64_t aLayerObserverEpoch);
+    async SetDocShellIsActive(bool aIsActive);
 
+    /**
+     * If aEnabled is true, tells the child to paint and upload layers to
+     * the compositor. If aEnabled is false, the child stops painting and
+     * clears the layers from the compositor.
+     *
+     * @param aEnabled
+     *        True if the child should render and upload layers, false if the
+     *        child should clear layers.
+     * @param aForceRepaint
+     *        True if the child should force a paint even if it's already
+     *        visible.
+     * @param aEpoch
+     *        The layer observer epoch for this activation. This message should be
+     *        ignored if this epoch has already been observed (via
+     *        PaintWhileInterruptingJS).
+     */
+    async RenderLayers(bool aEnabled, bool aForceRepaint, LayersObserverEpoch aEpoch);
+
+    async RequestRootPaint(IntRect aRect, float aScale, nscolor aBackgroundColor) returns (PaintFragment retval);
+    async RequestSubPaint(float aScale, nscolor aBackgroundColor) returns (PaintFragment retval);
+child:
     /**
      * Notify the child that it shouldn't paint the offscreen displayport.
      * This is useful to speed up interactive operations over async
@@ -822,17 +855,9 @@ child:
      *
      * @param event keyboard event
      * @param isTrusted true if triggered by a trusted key event
-     * @param modifierMask indicates which accesskey modifiers are pressed
      */
     async HandleAccessKey(WidgetKeyboardEvent event,
-                          uint32_t[] charCodes, int32_t modifierMask);
-
-    /**
-     * Propagate a refresh to the child process
-     */
-    async AudioChannelChangeNotification(uint32_t aAudioChannel,
-                                         float aVolume,
-                                         bool aMuted);
+                          uint32_t[] charCodes);
 
     /**
      * Tells the root child docShell whether or not to use
@@ -870,36 +895,45 @@ child:
     async UpdateNativeWindowHandle(uintptr_t aNewHandle);
 
     /**
-     * Called when the session history of this particular PBrowser has been
-     * attached to a grouped session history.
-     *
-     * @param aOffset           The number of entries in the grouped session
-     *                          history before this session history object.
-     */
-    async NotifyAttachGroupedSHistory(uint32_t aOffset);
-
-    /**
-     * Notify that the session history associated to this PBrowser has become
-     * the active history in the grouped session history.
-     *
-     * @param aGlobalLength      The up-to-date number of entries in the grouped
-     *                           session history.
-     * @param aTargetLocalIndex  The target local index to navigate to.
-     */
-    async NotifyPartialSHistoryActive(uint32_t aGlobalLength,
-                                      uint32_t aTargetLocalIndex);
-
-    /**
-     * Notify that the session history asssociates to this PBrowser has become
-     * an inactive history in the grouped session history.
-     */
-    async NotifyPartialSHistoryDeactive();
-
-    /**
      * Tell the TabChild that it should expect a Large-Allocation load to occur.
      * Loads which occur until this flag is cleared will not leave the process.
      */
     async AwaitLargeAlloc();
+
+    /**
+     * Tell the TabChild to set the name of its toplevel docshell to the given name.
+     */
+    async SetWindowName(nsString aName);
+
+    /**
+     * Tell the TabChild to allow scripts in the docshell to close the window.
+     */
+    async AllowScriptsToClose();
+
+    /**
+     * Tell the TabChild what OriginAttributes it should inherit from. This must
+     * be called before the first non-blank document is loaded in the TabChild.
+     */
+    async SetOriginAttributes(OriginAttributes aOriginAttributes);
+
+    /**
+     * Pass the current handle for the current native widget to the content
+     * process, so it can be used by PuppetWidget.
+     */
+    async SetWidgetNativeData(WindowsHandle aHandle);
+
+    /**
+     * Requests the content blocking log, which is sent back in response.
+     */
+    async GetContentBlockingLog() returns(nsCString log, bool success);
+
+parent:
+    /** Records a history visit. */
+    async VisitURI(URIParams aURI, OptionalURIParams aLastVisitedURI,
+                   uint32_t aFlags);
+
+    /** Fetches the visited status for an array of URIs (Android-only). */
+    async QueryVisitedState(URIParams[] aURIs);
 
 /*
  * FIXME: write protocol!

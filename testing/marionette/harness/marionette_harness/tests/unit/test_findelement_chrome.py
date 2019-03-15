@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 from marionette_driver.by import By
 from marionette_driver.errors import NoSuchElementException
 from marionette_driver.marionette import HTMLElement
@@ -16,13 +18,7 @@ class TestElementsChrome(WindowManagerMixin, MarionetteTestCase):
 
         self.marionette.set_context("chrome")
 
-        def open_window_with_js():
-            self.marionette.execute_script("""
-              window.open('chrome://marionette/content/test.xul',
-                          'foo', 'chrome,centerscreen');
-            """)
-
-        win = self.open_window(open_window_with_js)
+        win = self.open_chrome_window("chrome://marionette/content/test.xul")
         self.marionette.switch_to_window(win)
 
     def tearDown(self):

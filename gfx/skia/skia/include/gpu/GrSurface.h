@@ -5,7 +5,6 @@
  * found in the LICENSE file.
  */
 
-
 #ifndef GrSurface_DEFINED
 #define GrSurface_DEFINED
 
@@ -23,22 +22,17 @@ public:
     /**
      * Retrieves the width of the surface.
      */
-    int width() const { return fDesc.fWidth; }
+    int width() const { return fWidth; }
 
     /**
      * Retrieves the height of the surface.
      */
-    int height() const { return fDesc.fHeight; }
+    int height() const { return fHeight; }
 
     /**
      * Helper that gets the width and height of the surface as a bounding rectangle.
      */
     SkRect getBoundsRect() const { return SkRect::MakeIWH(this->width(), this->height()); }
-
-    GrSurfaceOrigin origin() const {
-        SkASSERT(kTopLeft_GrSurfaceOrigin == fDesc.fOrigin || kBottomLeft_GrSurfaceOrigin == fDesc.fOrigin);
-        return fDesc.fOrigin;
-    }
 
     /**
      * Retrieves the pixel config specified when the surface was created.
@@ -46,90 +40,52 @@ public:
      * if client asked us to render to a target that has a pixel
      * config that isn't equivalent with one of our configs.
      */
-    GrPixelConfig config() const { return fDesc.fConfig; }
+    GrPixelConfig config() const { return fConfig; }
 
     /**
-     * Return the descriptor describing the surface
+     * @return the texture associated with the surface, may be null.
      */
-    const GrSurfaceDesc& desc() const { return fDesc; }
+    virtual GrTexture* asTexture() { return nullptr; }
+    virtual const GrTexture* asTexture() const { return nullptr; }
 
     /**
-     * @return the texture associated with the surface, may be NULL.
+     * @return the render target underlying this surface, may be null.
      */
-    virtual GrTexture* asTexture() { return NULL; }
-    virtual const GrTexture* asTexture() const { return NULL; }
-
-    /**
-     * @return the render target underlying this surface, may be NULL.
-     */
-    virtual GrRenderTarget* asRenderTarget() { return NULL; }
-    virtual const GrRenderTarget* asRenderTarget() const { return NULL; }
-
-    /**
-     * Reads a rectangle of pixels from the surface.
-     * @param left          left edge of the rectangle to read (inclusive)
-     * @param top           top edge of the rectangle to read (inclusive)
-     * @param width         width of rectangle to read in pixels.
-     * @param height        height of rectangle to read in pixels.
-     * @param config        the pixel config of the destination buffer
-     * @param buffer        memory to read the rectangle into.
-     * @param rowBytes      number of bytes between consecutive rows. Zero means rows are tightly
-     *                      packed.
-     * @param pixelOpsFlags See the GrContext::PixelOpsFlags enum.
-     *
-     * @return true if the read succeeded, false if not. The read can fail because of an unsupported
-     *              pixel config.
-     */
-    bool readPixels(int left, int top, int width, int height,
-                    GrPixelConfig config,
-                    void* buffer,
-                    size_t rowBytes = 0,
-                    uint32_t pixelOpsFlags = 0);
-
-    /**
-     * Copy the src pixels [buffer, rowbytes, pixelconfig] into the surface at the specified
-     * rectangle.
-     * @param left          left edge of the rectangle to write (inclusive)
-     * @param top           top edge of the rectangle to write (inclusive)
-     * @param width         width of rectangle to write in pixels.
-     * @param height        height of rectangle to write in pixels.
-     * @param config        the pixel config of the source buffer
-     * @param buffer        memory to read the rectangle from.
-     * @param rowBytes      number of bytes between consecutive rows. Zero means rows are tightly
-     *                      packed.
-     * @param pixelOpsFlags See the GrContext::PixelOpsFlags enum.
-     *
-     * @return true if the write succeeded, false if not. The write can fail because of an
-     *              unsupported pixel config.
-     */
-    bool writePixels(int left, int top, int width, int height,
-                     GrPixelConfig config,
-                     const void* buffer,
-                     size_t rowBytes = 0,
-                     uint32_t pixelOpsFlags = 0);
-
-    /**
-     * After this returns any pending writes to the surface will be issued to the backend 3D API.
-     */
-    void flushWrites();
+    virtual GrRenderTarget* asRenderTarget() { return nullptr; }
+    virtual const GrRenderTarget* asRenderTarget() const { return nullptr; }
 
     /** Access methods that are only to be used within Skia code. */
     inline GrSurfacePriv surfacePriv();
     inline const GrSurfacePriv surfacePriv() const;
 
-    typedef void* ReleaseCtx;
-    typedef void (*ReleaseProc)(ReleaseCtx);
-
-    void setRelease(ReleaseProc proc, ReleaseCtx ctx) {
-        fReleaseProc = proc;
-        fReleaseCtx = ctx;
-    }
-
-    static size_t WorstCaseSize(const GrSurfaceDesc& desc);
+    static size_t WorstCaseSize(const GrSurfaceDesc& desc, bool useNextPow2 = false);
+    static size_t ComputeSize(GrPixelConfig config, int width, int height, int colorSamplesPerPixel,
+                              GrMipMapped, bool useNextPow2 = false);
 
 protected:
+    void setHasMixedSamples() {
+        SkASSERT(this->asRenderTarget());
+        fSurfaceFlags |= GrInternalSurfaceFlags::kMixedSampled;
+    }
+    bool hasMixedSamples() const { return fSurfaceFlags & GrInternalSurfaceFlags::kMixedSampled; }
+
+    void setSupportsWindowRects() {
+        SkASSERT(this->asRenderTarget());
+        fSurfaceFlags |= GrInternalSurfaceFlags::kWindowRectsSupport;
+    }
+    bool supportsWindowRects() const {
+        return fSurfaceFlags & GrInternalSurfaceFlags::kWindowRectsSupport;
+    }
+
+    void setGLRTFBOIDIs0() {
+        SkASSERT(this->asRenderTarget());
+        fSurfaceFlags |= GrInternalSurfaceFlags::kGLRTFBOIDIs0;
+    }
+    bool glRTFBOIDis0() const {
+        return fSurfaceFlags & GrInternalSurfaceFlags::kGLRTFBOIDIs0;
+    }
+
     // Methods made available via GrSurfacePriv
-    bool savePixels(const char* filename);
     bool hasPendingRead() const;
     bool hasPendingWrite() const;
     bool hasPendingIO() const;
@@ -138,32 +94,26 @@ protected:
     friend class GrSurfacePriv;
 
     GrSurface(GrGpu* gpu, const GrSurfaceDesc& desc)
-        : INHERITED(gpu)
-        , fDesc(desc)
-        , fReleaseProc(NULL)
-        , fReleaseCtx(NULL)
-    {}
-
-    ~GrSurface() override {
-        // check that invokeReleaseProc has been called (if needed)
-        SkASSERT(NULL == fReleaseProc);
+            : INHERITED(gpu)
+            , fConfig(desc.fConfig)
+            , fWidth(desc.fWidth)
+            , fHeight(desc.fHeight)
+            , fSurfaceFlags(GrInternalSurfaceFlags::kNone) {
     }
 
-    GrSurfaceDesc fDesc;
+    ~GrSurface() override {}
+
 
     void onRelease() override;
     void onAbandon() override;
 
 private:
-    void invokeReleaseProc() {
-        if (fReleaseProc) {
-            fReleaseProc(fReleaseCtx);
-            fReleaseProc = NULL;
-        }
-    }
+    const char* getResourceType() const override { return "Surface"; }
 
-    ReleaseProc fReleaseProc;
-    ReleaseCtx  fReleaseCtx;
+    GrPixelConfig          fConfig;
+    int                    fWidth;
+    int                    fHeight;
+    GrInternalSurfaceFlags fSurfaceFlags;
 
     typedef GrGpuResource INHERITED;
 };

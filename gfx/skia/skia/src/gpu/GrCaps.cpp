@@ -6,108 +6,37 @@
  */
 
 #include "GrCaps.h"
+
+#include "GrBackendSurface.h"
 #include "GrContextOptions.h"
 #include "GrWindowRectangles.h"
-
-GrShaderCaps::GrShaderCaps() {
-    fShaderDerivativeSupport = false;
-    fGeometryShaderSupport = false;
-    fPathRenderingSupport = false;
-    fDstReadInShaderSupport = false;
-    fDualSourceBlendingSupport = false;
-    fIntegerSupport = false;
-    fTexelBufferSupport = false;
-    fShaderPrecisionVaries = false;
-}
-
-static const char* shader_type_to_string(GrShaderType type) {
-    switch (type) {
-    case kVertex_GrShaderType:
-        return "vertex";
-    case kGeometry_GrShaderType:
-        return "geometry";
-    case kFragment_GrShaderType:
-        return "fragment";
-    }
-    return "";
-}
-
-static const char* precision_to_string(GrSLPrecision p) {
-    switch (p) {
-    case kLow_GrSLPrecision:
-        return "low";
-    case kMedium_GrSLPrecision:
-        return "medium";
-    case kHigh_GrSLPrecision:
-        return "high";
-    }
-    return "";
-}
-
-SkString GrShaderCaps::dump() const {
-    SkString r;
-    static const char* gNY[] = { "NO", "YES" };
-    r.appendf("Shader Derivative Support          : %s\n", gNY[fShaderDerivativeSupport]);
-    r.appendf("Geometry Shader Support            : %s\n", gNY[fGeometryShaderSupport]);
-    r.appendf("Path Rendering Support             : %s\n", gNY[fPathRenderingSupport]);
-    r.appendf("Dst Read In Shader Support         : %s\n", gNY[fDstReadInShaderSupport]);
-    r.appendf("Dual Source Blending Support       : %s\n", gNY[fDualSourceBlendingSupport]);
-    r.appendf("Integer Support                    : %s\n", gNY[fIntegerSupport]);
-    r.appendf("Texel Buffer Support               : %s\n", gNY[fTexelBufferSupport]);
-
-    r.appendf("Shader Float Precisions (varies: %s):\n", gNY[fShaderPrecisionVaries]);
-
-    for (int s = 0; s < kGrShaderTypeCount; ++s) {
-        GrShaderType shaderType = static_cast<GrShaderType>(s);
-        r.appendf("\t%s:\n", shader_type_to_string(shaderType));
-        for (int p = 0; p < kGrSLPrecisionCount; ++p) {
-            if (fFloatPrecisions[s][p].supported()) {
-                GrSLPrecision precision = static_cast<GrSLPrecision>(p);
-                r.appendf("\t\t%s: log_low: %d log_high: %d bits: %d\n",
-                    precision_to_string(precision),
-                    fFloatPrecisions[s][p].fLogRangeLow,
-                    fFloatPrecisions[s][p].fLogRangeHigh,
-                    fFloatPrecisions[s][p].fBits);
-            }
-        }
-    }
-
-    return r;
-}
-
-void GrShaderCaps::applyOptionsOverrides(const GrContextOptions& options) {
-    fDualSourceBlendingSupport = fDualSourceBlendingSupport && !options.fSuppressDualSourceBlending;
-    this->onApplyOptionsOverrides(options);
-}
-
-///////////////////////////////////////////////////////////////////////////////
+#include "SkJSONWriter.h"
 
 GrCaps::GrCaps(const GrContextOptions& options) {
     fMipMapSupport = false;
     fNPOTTextureTileSupport = false;
     fSRGBSupport = false;
     fSRGBWriteControl = false;
-    fTwoSidedStencilSupport = false;
-    fStencilWrapOpsSupport = false;
     fDiscardRenderTargetSupport = false;
     fReuseScratchTextures = true;
     fReuseScratchBuffers = true;
     fGpuTracingSupport = false;
-    fCompressedTexSubImageSupport = false;
     fOversizedStencilSupport = false;
     fTextureBarrierSupport = false;
     fSampleLocationsSupport = false;
     fMultisampleDisableSupport = false;
+    fInstanceAttribSupport = false;
     fUsesMixedSamples = false;
+    fUsePrimitiveRestart = false;
     fPreferClientSideDynamicBuffers = false;
-    fFullClearIsFree = false;
+    fPreferFullscreenClears = false;
     fMustClearUploadedBufferData = false;
+    fSupportsAHardwareBufferImages = false;
     fSampleShadingSupport = false;
     fFenceSyncSupport = false;
-
-    fUseDrawInsteadOfClear = false;
-
-    fInstancedSupport = InstancedSupport::kNone;
+    fCrossContextTextureSupport = false;
+    fHalfFloatVertexAttributeSupport = false;
+    fDynamicStateArrayGeometryProcessorTextureSupport = false;
 
     fBlendEquationSupport = kBasic_BlendEquationSupport;
     fAdvBlendEqBlacklist = 0;
@@ -116,36 +45,93 @@ GrCaps::GrCaps(const GrContextOptions& options) {
 
     fMaxVertexAttributes = 0;
     fMaxRenderTargetSize = 1;
+    fMaxPreferredRenderTargetSize = 1;
     fMaxTextureSize = 1;
-    fMaxColorSampleCount = 0;
-    fMaxStencilSampleCount = 0;
     fMaxRasterSamples = 0;
     fMaxWindowRectangles = 0;
 
+    // An default count of 4 was chosen because of the common pattern in Blink of:
+    //   isect RR
+    //   diff  RR
+    //   isect convex_poly
+    //   isect convex_poly
+    // when drawing rounded div borders.
+    fMaxClipAnalyticFPs = 4;
+
     fSuppressPrints = options.fSuppressPrints;
-    fImmediateFlush = options.fImmediateMode;
+#if GR_TEST_UTILS
+    fWireframeMode = options.fWireframeMode;
+#else
+    fWireframeMode = false;
+#endif
     fBufferMapThreshold = options.fBufferMapThreshold;
-    fUseDrawInsteadOfPartialRenderTargetWrite = options.fUseDrawInsteadOfPartialRenderTargetWrite;
-    fUseDrawInsteadOfAllRenderTargetWrites = false;
-    fAvoidInstancedDrawsToFPTargets = false;
+    fBlacklistCoverageCounting = false;
+    fAvoidStencilBuffers = false;
+    fAvoidWritePixelsFastPath = false;
 
     fPreferVRAMUseOverFlushes = true;
+
+    fDriverBugWorkarounds = options.fDriverBugWorkarounds;
 }
 
 void GrCaps::applyOptionsOverrides(const GrContextOptions& options) {
     this->onApplyOptionsOverrides(options);
+    if (options.fDisableDriverCorrectnessWorkarounds) {
+        // We always blacklist coverage counting on Vulkan currently. TODO: Either stop doing that
+        // or disambiguate blacklisting from incomplete implementation.
+        // SkASSERT(!fBlacklistCoverageCounting);
+        SkASSERT(!fAvoidStencilBuffers);
+        SkASSERT(!fAdvBlendEqBlacklist);
+    }
+
     fMaxTextureSize = SkTMin(fMaxTextureSize, options.fMaxTextureSizeOverride);
+    fMaxTileSize = fMaxTextureSize;
+#if GR_TEST_UTILS
     // If the max tile override is zero, it means we should use the max texture size.
-    if (!options.fMaxTileSizeOverride || options.fMaxTileSizeOverride > fMaxTextureSize) {
-        fMaxTileSize = fMaxTextureSize;
-    } else {
+    if (options.fMaxTileSizeOverride && options.fMaxTileSizeOverride < fMaxTextureSize) {
         fMaxTileSize = options.fMaxTileSizeOverride;
     }
+    if (options.fSuppressGeometryShaders) {
+        fShaderCaps->fGeometryShaderSupport = false;
+    }
+#endif
     if (fMaxWindowRectangles > GrWindowRectangles::kMaxWindows) {
         SkDebugf("WARNING: capping window rectangles at %i. HW advertises support for %i.\n",
                  GrWindowRectangles::kMaxWindows, fMaxWindowRectangles);
         fMaxWindowRectangles = GrWindowRectangles::kMaxWindows;
     }
+    fAvoidStencilBuffers = options.fAvoidStencilBuffers;
+
+    fDriverBugWorkarounds.applyOverrides(options.fDriverBugWorkarounds);
+}
+
+
+#ifdef SK_ENABLE_DUMP_GPU
+static const char* pixel_config_name(GrPixelConfig config) {
+    switch (config) {
+        case kUnknown_GrPixelConfig: return "Unknown";
+        case kAlpha_8_GrPixelConfig: return "Alpha8";
+        case kAlpha_8_as_Alpha_GrPixelConfig: return "Alpha8_asAlpha";
+        case kAlpha_8_as_Red_GrPixelConfig: return "Alpha8_asRed";
+        case kGray_8_GrPixelConfig: return "Gray8";
+        case kGray_8_as_Lum_GrPixelConfig: return "Gray8_asLum";
+        case kGray_8_as_Red_GrPixelConfig: return "Gray8_asRed";
+        case kRGB_565_GrPixelConfig: return "RGB565";
+        case kRGBA_4444_GrPixelConfig: return "RGBA444";
+        case kRGBA_8888_GrPixelConfig: return "RGBA8888";
+        case kRGB_888_GrPixelConfig: return "RGB888";
+        case kBGRA_8888_GrPixelConfig: return "BGRA8888";
+        case kSRGBA_8888_GrPixelConfig: return "SRGBA8888";
+        case kSBGRA_8888_GrPixelConfig: return "SBGRA8888";
+        case kRGBA_1010102_GrPixelConfig: return "RGBA1010102";
+        case kRGBA_float_GrPixelConfig: return "RGBAFloat";
+        case kRG_float_GrPixelConfig: return "RGFloat";
+        case kAlpha_half_GrPixelConfig: return "AlphaHalf";
+        case kAlpha_half_as_Red_GrPixelConfig: return "AlphaHalf_asRed";
+        case kRGBA_half_GrPixelConfig: return "RGBAHalf";
+    }
+    SK_ABORT("Invalid pixel config");
+    return "<invalid>";
 }
 
 static SkString map_flags_to_string(uint32_t flags) {
@@ -168,62 +154,51 @@ static SkString map_flags_to_string(uint32_t flags) {
     return str;
 }
 
-SkString GrCaps::dump() const {
-    SkString r;
-    static const char* gNY[] = {"NO", "YES"};
-    r.appendf("MIP Map Support                    : %s\n", gNY[fMipMapSupport]);
-    r.appendf("NPOT Texture Tile Support          : %s\n", gNY[fNPOTTextureTileSupport]);
-    r.appendf("sRGB Support                       : %s\n", gNY[fSRGBSupport]);
-    r.appendf("sRGB Write Control                 : %s\n", gNY[fSRGBWriteControl]);
-    r.appendf("Two Sided Stencil Support          : %s\n", gNY[fTwoSidedStencilSupport]);
-    r.appendf("Stencil Wrap Ops  Support          : %s\n", gNY[fStencilWrapOpsSupport]);
-    r.appendf("Discard Render Target Support      : %s\n", gNY[fDiscardRenderTargetSupport]);
-    r.appendf("Reuse Scratch Textures             : %s\n", gNY[fReuseScratchTextures]);
-    r.appendf("Reuse Scratch Buffers              : %s\n", gNY[fReuseScratchBuffers]);
-    r.appendf("Gpu Tracing Support                : %s\n", gNY[fGpuTracingSupport]);
-    r.appendf("Compressed Update Support          : %s\n", gNY[fCompressedTexSubImageSupport]);
-    r.appendf("Oversized Stencil Support          : %s\n", gNY[fOversizedStencilSupport]);
-    r.appendf("Texture Barrier Support            : %s\n", gNY[fTextureBarrierSupport]);
-    r.appendf("Sample Locations Support           : %s\n", gNY[fSampleLocationsSupport]);
-    r.appendf("Multisample disable support        : %s\n", gNY[fMultisampleDisableSupport]);
-    r.appendf("Uses Mixed Samples                 : %s\n", gNY[fUsesMixedSamples]);
-    r.appendf("Prefer client-side dynamic buffers : %s\n", gNY[fPreferClientSideDynamicBuffers]);
-    r.appendf("Full screen clear is free          : %s\n", gNY[fFullClearIsFree]);
-    r.appendf("Must clear buffer memory           : %s\n", gNY[fMustClearUploadedBufferData]);
-    r.appendf("Sample shading support             : %s\n", gNY[fSampleShadingSupport]);
-    r.appendf("Fence sync support                 : %s\n", gNY[fFenceSyncSupport]);
+void GrCaps::dumpJSON(SkJSONWriter* writer) const {
+    writer->beginObject();
 
-    r.appendf("Draw Instead of Clear [workaround] : %s\n", gNY[fUseDrawInsteadOfClear]);
-    r.appendf("Draw Instead of TexSubImage [workaround] : %s\n",
-              gNY[fUseDrawInsteadOfPartialRenderTargetWrite]);
-    r.appendf("Prefer VRAM Use over flushes [workaround] : %s\n", gNY[fPreferVRAMUseOverFlushes]);
+    writer->appendBool("MIP Map Support", fMipMapSupport);
+    writer->appendBool("NPOT Texture Tile Support", fNPOTTextureTileSupport);
+    writer->appendBool("sRGB Support", fSRGBSupport);
+    writer->appendBool("sRGB Write Control", fSRGBWriteControl);
+    writer->appendBool("Discard Render Target Support", fDiscardRenderTargetSupport);
+    writer->appendBool("Reuse Scratch Textures", fReuseScratchTextures);
+    writer->appendBool("Reuse Scratch Buffers", fReuseScratchBuffers);
+    writer->appendBool("Gpu Tracing Support", fGpuTracingSupport);
+    writer->appendBool("Oversized Stencil Support", fOversizedStencilSupport);
+    writer->appendBool("Texture Barrier Support", fTextureBarrierSupport);
+    writer->appendBool("Sample Locations Support", fSampleLocationsSupport);
+    writer->appendBool("Multisample disable support", fMultisampleDisableSupport);
+    writer->appendBool("Instance Attrib Support", fInstanceAttribSupport);
+    writer->appendBool("Uses Mixed Samples", fUsesMixedSamples);
+    writer->appendBool("Use primitive restart", fUsePrimitiveRestart);
+    writer->appendBool("Prefer client-side dynamic buffers", fPreferClientSideDynamicBuffers);
+    writer->appendBool("Prefer fullscreen clears", fPreferFullscreenClears);
+    writer->appendBool("Must clear buffer memory", fMustClearUploadedBufferData);
+    writer->appendBool("Supports importing AHardwareBuffers", fSupportsAHardwareBufferImages);
+    writer->appendBool("Sample shading support", fSampleShadingSupport);
+    writer->appendBool("Fence sync support", fFenceSyncSupport);
+    writer->appendBool("Cross context texture support", fCrossContextTextureSupport);
+    writer->appendBool("Half float vertex attribute support", fHalfFloatVertexAttributeSupport);
+    writer->appendBool("Specify GeometryProcessor textures as a dynamic state array",
+                       fDynamicStateArrayGeometryProcessorTextureSupport);
+
+    writer->appendBool("Blacklist Coverage Counting Path Renderer [workaround]",
+                       fBlacklistCoverageCounting);
+    writer->appendBool("Prefer VRAM Use over flushes [workaround]", fPreferVRAMUseOverFlushes);
+    writer->appendBool("Avoid stencil buffers [workaround]", fAvoidStencilBuffers);
 
     if (this->advancedBlendEquationSupport()) {
-        r.appendf("Advanced Blend Equation Blacklist  : 0x%x\n", fAdvBlendEqBlacklist);
+        writer->appendHexU32("Advanced Blend Equation Blacklist", fAdvBlendEqBlacklist);
     }
 
-    r.appendf("Max Vertex Attributes              : %d\n", fMaxVertexAttributes);
-    r.appendf("Max Texture Size                   : %d\n", fMaxTextureSize);
-    r.appendf("Max Render Target Size             : %d\n", fMaxRenderTargetSize);
-    r.appendf("Max Color Sample Count             : %d\n", fMaxColorSampleCount);
-    r.appendf("Max Stencil Sample Count           : %d\n", fMaxStencilSampleCount);
-    r.appendf("Max Raster Samples                 : %d\n", fMaxRasterSamples);
-    r.appendf("Max Window Rectangles              : %d\n", fMaxWindowRectangles);
-
-    static const char* kInstancedSupportNames[] = {
-        "None",
-        "Basic",
-        "Multisampled",
-        "Mixed Sampled",
-    };
-    GR_STATIC_ASSERT(0 == (int)InstancedSupport::kNone);
-    GR_STATIC_ASSERT(1 == (int)InstancedSupport::kBasic);
-    GR_STATIC_ASSERT(2 == (int)InstancedSupport::kMultisampled);
-    GR_STATIC_ASSERT(3 == (int)InstancedSupport::kMixedSampled);
-    GR_STATIC_ASSERT(4 == SK_ARRAY_COUNT(kInstancedSupportNames));
-
-    r.appendf("Instanced Support                  : %s\n",
-              kInstancedSupportNames[(int)fInstancedSupport]);
+    writer->appendS32("Max Vertex Attributes", fMaxVertexAttributes);
+    writer->appendS32("Max Texture Size", fMaxTextureSize);
+    writer->appendS32("Max Render Target Size", fMaxRenderTargetSize);
+    writer->appendS32("Max Preferred Render Target Size", fMaxPreferredRenderTargetSize);
+    writer->appendS32("Max Raster Samples", fMaxRasterSamples);
+    writer->appendS32("Max Window Rectangles", fMaxWindowRectangles);
+    writer->appendS32("Max Clip Analytic Fragment Processors", fMaxClipAnalyticFPs);
 
     static const char* kBlendEquationSupportNames[] = {
         "Basic",
@@ -235,66 +210,75 @@ SkString GrCaps::dump() const {
     GR_STATIC_ASSERT(2 == kAdvancedCoherent_BlendEquationSupport);
     GR_STATIC_ASSERT(SK_ARRAY_COUNT(kBlendEquationSupportNames) == kLast_BlendEquationSupport + 1);
 
-    r.appendf("Blend Equation Support             : %s\n",
-              kBlendEquationSupportNames[fBlendEquationSupport]);
-    r.appendf("Map Buffer Support                 : %s\n",
-              map_flags_to_string(fMapBufferFlags).c_str());
+    writer->appendString("Blend Equation Support",
+                         kBlendEquationSupportNames[fBlendEquationSupport]);
+    writer->appendString("Map Buffer Support", map_flags_to_string(fMapBufferFlags).c_str());
 
-    static const char* kConfigNames[] = {
-        "Unknown",  // kUnknown_GrPixelConfig
-        "Alpha8",   // kAlpha_8_GrPixelConfig,
-        "Index8",   // kIndex_8_GrPixelConfig,
-        "RGB565",   // kRGB_565_GrPixelConfig,
-        "RGBA444",  // kRGBA_4444_GrPixelConfig,
-        "RGBA8888", // kRGBA_8888_GrPixelConfig,
-        "BGRA8888", // kBGRA_8888_GrPixelConfig,
-        "SRGBA8888",// kSRGBA_8888_GrPixelConfig,
-        "SBGRA8888",// kSBGRA_8888_GrPixelConfig,
-        "ETC1",     // kETC1_GrPixelConfig,
-        "LATC",     // kLATC_GrPixelConfig,
-        "R11EAC",   // kR11_EAC_GrPixelConfig,
-        "ASTC12x12",// kASTC_12x12_GrPixelConfig,
-        "RGBAFloat",// kRGBA_float_GrPixelConfig
-        "AlphaHalf",// kAlpha_half_GrPixelConfig
-        "RGBAHalf", // kRGBA_half_GrPixelConfig
-    };
-    GR_STATIC_ASSERT(0  == kUnknown_GrPixelConfig);
-    GR_STATIC_ASSERT(1  == kAlpha_8_GrPixelConfig);
-    GR_STATIC_ASSERT(2  == kIndex_8_GrPixelConfig);
-    GR_STATIC_ASSERT(3  == kRGB_565_GrPixelConfig);
-    GR_STATIC_ASSERT(4  == kRGBA_4444_GrPixelConfig);
-    GR_STATIC_ASSERT(5  == kRGBA_8888_GrPixelConfig);
-    GR_STATIC_ASSERT(6  == kBGRA_8888_GrPixelConfig);
-    GR_STATIC_ASSERT(7  == kSRGBA_8888_GrPixelConfig);
-    GR_STATIC_ASSERT(8  == kSBGRA_8888_GrPixelConfig);
-    GR_STATIC_ASSERT(9  == kETC1_GrPixelConfig);
-    GR_STATIC_ASSERT(10  == kLATC_GrPixelConfig);
-    GR_STATIC_ASSERT(11  == kR11_EAC_GrPixelConfig);
-    GR_STATIC_ASSERT(12 == kASTC_12x12_GrPixelConfig);
-    GR_STATIC_ASSERT(13 == kRGBA_float_GrPixelConfig);
-    GR_STATIC_ASSERT(14 == kAlpha_half_GrPixelConfig);
-    GR_STATIC_ASSERT(15 == kRGBA_half_GrPixelConfig);
-    GR_STATIC_ASSERT(SK_ARRAY_COUNT(kConfigNames) == kGrPixelConfigCnt);
-
-    SkASSERT(!this->isConfigRenderable(kUnknown_GrPixelConfig, false));
-    SkASSERT(!this->isConfigRenderable(kUnknown_GrPixelConfig, true));
-
-    for (size_t i = 1; i < SK_ARRAY_COUNT(kConfigNames); ++i)  {
-        GrPixelConfig config = static_cast<GrPixelConfig>(i);
-        r.appendf("%s is renderable: %s, with MSAA: %s\n",
-                  kConfigNames[i],
-                  gNY[this->isConfigRenderable(config, false)],
-                  gNY[this->isConfigRenderable(config, true)]);
-    }
-
+    SkASSERT(!this->isConfigRenderable(kUnknown_GrPixelConfig));
     SkASSERT(!this->isConfigTexturable(kUnknown_GrPixelConfig));
 
-    for (size_t i = 1; i < SK_ARRAY_COUNT(kConfigNames); ++i)  {
+    writer->beginArray("configs");
+
+    for (size_t i = 1; i < kGrPixelConfigCnt; ++i) {
         GrPixelConfig config = static_cast<GrPixelConfig>(i);
-        r.appendf("%s is uploadable to a texture: %s\n",
-                  kConfigNames[i],
-                  gNY[this->isConfigTexturable(config)]);
+        writer->beginObject(nullptr, false);
+        writer->appendString("name", pixel_config_name(config));
+        writer->appendS32("max sample count", this->maxRenderTargetSampleCount(config));
+        writer->appendBool("texturable", this->isConfigTexturable(config));
+        writer->endObject();
     }
 
-    return r;
+    writer->endArray();
+
+    this->onDumpJSON(writer);
+
+    writer->appendName("shaderCaps");
+    this->shaderCaps()->dumpJSON(writer);
+
+    writer->endObject();
+}
+#else
+void GrCaps::dumpJSON(SkJSONWriter* writer) const { }
+#endif
+
+bool GrCaps::validateSurfaceDesc(const GrSurfaceDesc& desc, GrMipMapped mipped) const {
+    if (!this->isConfigTexturable(desc.fConfig)) {
+        return false;
+    }
+
+    if (GrMipMapped::kYes == mipped && !this->mipMapSupport()) {
+        return false;
+    }
+
+    if (desc.fWidth < 1 || desc.fHeight < 1) {
+        return false;
+    }
+
+    if (SkToBool(desc.fFlags & kRenderTarget_GrSurfaceFlag)) {
+        if (0 == this->getRenderTargetSampleCount(desc.fSampleCnt, desc.fConfig)) {
+            return false;
+        }
+        int maxRTSize = this->maxRenderTargetSize();
+        if (desc.fWidth > maxRTSize || desc.fHeight > maxRTSize) {
+            return false;
+        }
+    } else {
+        // We currently do not support multisampled textures
+        if (desc.fSampleCnt > 1) {
+            return false;
+        }
+        int maxSize = this->maxTextureSize();
+        if (desc.fWidth > maxSize || desc.fHeight > maxSize) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+GrBackendFormat GrCaps::createFormatFromBackendTexture(const GrBackendTexture& backendTex) const {
+    if (!backendTex.isValid()) {
+        return GrBackendFormat();
+    }
+    return this->onCreateFormatFromBackendTexture(backendTex);
 }

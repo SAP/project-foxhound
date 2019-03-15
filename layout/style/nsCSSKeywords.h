@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,7 +18,7 @@
    To change the list of keywords, see nsCSSKeywordList.h
 
  */
-#define CSS_KEY(_name,_id) eCSSKeyword_##_id,
+#define CSS_KEY(_name, _id) eCSSKeyword_##_id,
 enum nsCSSKeyword : int16_t {
   eCSSKeyword_UNKNOWN = -1,
 #include "nsCSSKeywordList.h"
@@ -25,9 +26,8 @@ enum nsCSSKeyword : int16_t {
 };
 #undef CSS_KEY
 
-
 class nsCSSKeywords {
-public:
+ public:
   static void AddRefTable(void);
   static void ReleaseTable(void);
 
@@ -36,7 +36,7 @@ public:
   static nsCSSKeyword LookupKeyword(const nsAString& aKeyword);
 
   // Given a keyword enum, get the string value
-  static const nsAFlatCString& GetStringValue(nsCSSKeyword aKeyword);
+  static const nsCString& GetStringValue(nsCSSKeyword aKeyword);
 };
 
 #endif /* nsCSSKeywords_h___ */

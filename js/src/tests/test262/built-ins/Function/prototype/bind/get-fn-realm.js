@@ -13,9 +13,10 @@ info: |
     3. If obj is a Bound Function exotic object, then
        a. Let target be obj's [[BoundTargetFunction]] internal slot.
        b. Return ? GetFunctionRealm(target).
+features: [cross-realm]
 ---*/
 
-var other = $.createRealm().global;
+var other = $262.createRealm().global;
 var C = new other.Function();
 var B = Function.prototype.bind.call(C);
 

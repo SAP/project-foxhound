@@ -18,7 +18,7 @@ registerCleanupFunction(() => {
  * Dispatch the copy event on the given element
  */
 function fireCopyEvent(element) {
-  let evt = element.ownerDocument.createEvent("Event");
+  const evt = element.ownerDocument.createEvent("Event");
   evt.initEvent("copy", true, true);
   element.dispatchEvent(evt);
 }
@@ -35,11 +35,12 @@ function fireCopyEvent(element) {
  */
 function getComputedViewProperty(view, name) {
   let prop;
-  for (let property of view.styleDocument.querySelectorAll(".property-view")) {
-    let nameSpan = property.querySelector(".property-name");
-    let valueSpan = property.querySelector(".property-value");
+  for (const property of view.styleDocument.querySelectorAll(
+      "#computed-container .computed-property-view")) {
+    const nameSpan = property.querySelector(".computed-property-name");
+    const valueSpan = property.querySelector(".computed-property-value");
 
-    if (nameSpan.textContent === name) {
+    if (nameSpan.firstChild.textContent === name) {
       prop = {nameSpan: nameSpan, valueSpan: valueSpan};
       break;
     }
@@ -58,7 +59,7 @@ function getComputedViewProperty(view, name) {
  */
 function getComputedViewPropertyView(view, name) {
   let propView;
-  for (let propertyView of view.propertyViews) {
+  for (const propertyView of view.propertyViews) {
     if (propertyView._propertyInfo.name === name) {
       propView = propertyView;
       break;
@@ -68,11 +69,11 @@ function getComputedViewPropertyView(view, name) {
 }
 
 /**
- * Get a reference to the property-content element for a given property name in
+ * Get a reference to the computed-property-content element for a given property name in
  * the computed-view.
- * A property-content element always follows (nextSibling) the property itself
+ * A computed-property-content element always follows (nextSibling) the property itself
  * and is only shown when the twisty icon is expanded on the property.
- * A property-content element contains matched rules, with selectors,
+ * A computed-property-content element contains matched rules, with selectors,
  * properties, values and stylesheet links
  *
  * @param {CssComputedView} view
@@ -82,13 +83,14 @@ function getComputedViewPropertyView(view, name) {
  * @return {Promise} A promise that resolves to the property matched rules
  * container
  */
-var getComputedViewMatchedRules = Task.async(function* (view, name) {
+var getComputedViewMatchedRules = async function(view, name) {
   let expander;
   let propertyContent;
-  for (let property of view.styleDocument.querySelectorAll(".property-view")) {
-    let nameSpan = property.querySelector(".property-name");
-    if (nameSpan.textContent === name) {
-      expander = property.querySelector(".expandable");
+  for (const property of view.styleDocument.querySelectorAll(
+      "#computed-container .computed-property-view")) {
+    const nameSpan = property.querySelector(".computed-property-name");
+    if (nameSpan.firstChild.textContent === name) {
+      expander = property.querySelector(".computed-expandable");
       propertyContent = property.nextSibling;
       break;
     }
@@ -96,13 +98,13 @@ var getComputedViewMatchedRules = Task.async(function* (view, name) {
 
   if (!expander.hasAttribute("open")) {
     // Need to expand the property
-    let onExpand = view.inspector.once("computed-view-property-expanded");
+    const onExpand = view.inspector.once("computed-view-property-expanded");
     expander.click();
-    yield onExpand;
+    await onExpand;
   }
 
   return propertyContent;
-});
+};
 
 /**
  * Get the text value of the property corresponding to a given name in the
@@ -132,12 +134,12 @@ function getComputedViewPropertyValue(view, name, propertyName) {
  */
 function expandComputedViewPropertyByIndex(view, index) {
   info("Expanding property " + index + " in the computed view");
-  let expandos = view.styleDocument.querySelectorAll("#propertyContainer .expandable");
+  const expandos = view.styleDocument.querySelectorAll(".computed-expandable");
   if (!expandos.length || !expandos[index]) {
     return promise.reject();
   }
 
-  let onExpand = view.inspector.once("computed-view-property-expanded");
+  const onExpand = view.inspector.once("computed-view-property-expanded");
   expandos[index].click();
   return onExpand;
 }
@@ -152,6 +154,99 @@ function expandComputedViewPropertyByIndex(view, index) {
  * @return {DOMNode} The link at the given index, if one exists, null otherwise
  */
 function getComputedViewLinkByIndex(view, index) {
-  let links = view.styleDocument.querySelectorAll(".rule-link .link");
+  const links = view.styleDocument.querySelectorAll(".rule-link .computed-link");
   return links[index];
+}
+
+/**
+ * Trigger the select all action in the computed view.
+ *
+ * @param {CssComputedView} view
+ *        The instance of the computed view panel
+ */
+function selectAllText(view) {
+  info("Selecting all the text");
+  view.contextMenu._onSelectAll();
+}
+
+/**
+ * Select all the text, copy it, and check the content in the clipboard.
+ *
+ * @param {CssComputedView} view
+ *        The instance of the computed view panel
+ * @param {String} expectedPattern
+ *        A regular expression used to check the content of the clipboard
+ */
+async function copyAllAndCheckClipboard(view, expectedPattern) {
+  selectAllText(view);
+  const contentDoc = view.styleDocument;
+  const prop = contentDoc.querySelector("#computed-container .computed-property-view");
+
+  try {
+    info("Trigger a copy event and wait for the clipboard content");
+    await waitForClipboardPromise(() => fireCopyEvent(prop),
+                                  () => checkClipboard(expectedPattern));
+  } catch (e) {
+    failClipboardCheck(expectedPattern);
+  }
+}
+
+/**
+ * Select some text, copy it, and check the content in the clipboard.
+ *
+ * @param {CssComputedView} view
+ *        The instance of the computed view panel
+ * @param {Object} positions
+ *        The start and end positions of the text to be selected. This must be an object
+ *        like this:
+ *        { start: {prop: 1, offset: 0}, end: {prop: 3, offset: 5} }
+ * @param {String} expectedPattern
+ *        A regular expression used to check the content of the clipboard
+ */
+async function copySomeTextAndCheckClipboard(view, positions, expectedPattern) {
+  info("Testing selection copy");
+
+  const contentDocument = view.styleDocument;
+  const props = contentDocument.querySelectorAll(
+    "#computed-container .computed-property-view");
+
+  info("Create the text selection range");
+  const range = contentDocument.createRange();
+  range.setStart(props[positions.start.prop], positions.start.offset);
+  range.setEnd(props[positions.end.prop], positions.end.offset);
+  contentDocument.defaultView.getSelection().addRange(range);
+
+  try {
+    info("Trigger a copy event and wait for the clipboard content");
+    await waitForClipboardPromise(() => fireCopyEvent(props[0]),
+                                  () => checkClipboard(expectedPattern));
+  } catch (e) {
+    failClipboardCheck(expectedPattern);
+  }
+}
+
+function checkClipboard(expectedPattern) {
+  const actual = SpecialPowers.getClipboardData("text/unicode");
+  const expectedRegExp = new RegExp(expectedPattern, "g");
+  return expectedRegExp.test(actual);
+}
+
+function failClipboardCheck(expectedPattern) {
+  // Format expected text for comparison
+  const terminator = Services.appinfo.OS == "WINNT" ? "\r\n" : "\n";
+  expectedPattern = expectedPattern.replace(/\[\\r\\n\][+*]/g, terminator);
+  expectedPattern = expectedPattern.replace(/\\\(/g, "(");
+  expectedPattern = expectedPattern.replace(/\\\)/g, ")");
+
+  let actual = SpecialPowers.getClipboardData("text/unicode");
+
+  // Trim the right hand side of our strings. This is because expectedPattern
+  // accounts for windows sometimes adding a newline to our copied data.
+  expectedPattern = expectedPattern.trimRight();
+  actual = actual.trimRight();
+
+  dump("TEST-UNEXPECTED-FAIL | Clipboard text does not match expected ... " +
+    "results (escaped for accurate comparison):\n");
+  info("Actual: " + escape(actual));
+  info("Expected: " + escape(expectedPattern));
 }

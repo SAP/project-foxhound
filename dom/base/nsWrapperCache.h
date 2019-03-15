@@ -9,24 +9,47 @@
 
 #include "nsCycleCollectionParticipant.h"
 #include "mozilla/Assertions.h"
-#include "js/Id.h"          // must come before js/RootingAPI.h
-#include "js/Value.h"       // must come before js/RootingAPI.h
+#include "js/Id.h"     // must come before js/RootingAPI.h
+#include "js/Value.h"  // must come before js/RootingAPI.h
 #include "js/RootingAPI.h"
 #include "js/TracingAPI.h"
 
 namespace mozilla {
 namespace dom {
-class TabChildGlobal;
-class ProcessGlobal;
-} // namespace dom
-} // namespace mozilla
+class ContentProcessMessageManager;
+class InProcessTabChildMessageManager;
+class TabChildMessageManager;
+}  // namespace dom
+}  // namespace mozilla
 class SandboxPrivate;
-class nsInProcessTabChildGlobal;
 class nsWindowRoot;
 
-#define NS_WRAPPERCACHE_IID \
-{ 0x6f3179a1, 0x36f7, 0x4a5c, \
-  { 0x8c, 0xf1, 0xad, 0xc8, 0x7c, 0xde, 0x3e, 0x87 } }
+#define NS_WRAPPERCACHE_IID                          \
+  {                                                  \
+    0x6f3179a1, 0x36f7, 0x4a5c, {                    \
+      0x8c, 0xf1, 0xad, 0xc8, 0x7c, 0xde, 0x3e, 0x87 \
+    }                                                \
+  }
+
+// There are two sets of flags used by DOM nodes. One comes from reusing the
+// remaining bits of the inherited nsWrapperCache flags (mFlags), and another is
+// exclusive to nsINode (mBoolFlags).
+//
+// Both sets of flags are 32 bits. On 64-bit platforms, this can cause two
+// wasted 32-bit fields due to alignment requirements. Some compilers are
+// smart enough to coalesce the fields if we make mBoolFlags the first member
+// of nsINode, but others (such as MSVC) are not.
+//
+// So we just store mBoolFlags directly on nsWrapperCache on 64-bit platforms.
+// This may waste space for some other nsWrapperCache-derived objects that have
+// a 32-bit field as their first member, but those objects are unlikely to be as
+// numerous or performance-critical as DOM nodes.
+#ifdef HAVE_64BIT_BUILD
+static_assert(sizeof(void*) == 8, "These architectures should be 64-bit");
+#  define BOOL_FLAGS_ON_WRAPPER_CACHE
+#else
+static_assert(sizeof(void*) == 4, "Only support 32-bit and 64-bit");
+#endif
 
 /**
  * Class to store the wrapper for an object. This can only be used with objects
@@ -43,13 +66,8 @@ class nsWindowRoot;
  * collected and we want to preserve this state we actually store the state
  * object in the cache.
  *
- * The cache can store 2 types of objects:
- *
- *  If WRAPPER_IS_NOT_DOM_BINDING is set (IsDOMBinding() returns false):
- *    - the JSObject of an XPCWrappedNative wrapper
- *
- *  If WRAPPER_IS_NOT_DOM_BINDING is not set (IsDOMBinding() returns true):
- *    - a DOM binding object (regular JS object or proxy)
+ * The cache can store 3 types of objects: a DOM binding object (regular JS
+ * object or proxy), an nsOuterWindowProxy or an XPCWrappedNative wrapper.
  *
  * The finalizer for the wrapper clears the cache.
  *
@@ -64,18 +82,30 @@ class nsWindowRoot;
  * A number of the methods are implemented in nsWrapperCacheInlines.h because we
  * have to include some JS headers that don't play nicely with the rest of the
  * codebase. Include nsWrapperCacheInlines.h if you need to call those methods.
+ *
+ * When recording or replaying an execution, wrapper caches are instrumented so
+ * that they behave consistently even if the GC executes at different points
+ * and collects different objects.
  */
 
-class nsWrapperCache
-{
-public:
+class nsWrapperCache {
+ public:
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_WRAPPERCACHE_IID)
 
-  nsWrapperCache() : mWrapper(nullptr), mFlags(0)
+  nsWrapperCache()
+      : mWrapper(nullptr),
+        mFlags(0)
+#ifdef BOOL_FLAGS_ON_WRAPPER_CACHE
+        ,
+        mBoolFlags(0)
+#endif
   {
   }
-  ~nsWrapperCache()
-  {
+  ~nsWrapperCache() {
+    // Clear any JS root associated with this cache while replaying.
+    if (mozilla::recordreplay::IsReplaying()) {
+      mozilla::recordreplay::SetWeakPointerJSRoot(this, nullptr);
+    }
     MOZ_ASSERT(!PreservingWrapper(),
                "Destroying cache with a preserved wrapper!");
   }
@@ -95,40 +125,76 @@ public:
    * object returned is not guaranteed to be kept alive past the next CC.
    *
    * This should only be called if you are certain that the return value won't
-   * be passed into a JS API function and that it won't be stored without being
+   * be passed into a JSAPI function and that it won't be stored without being
    * rooted (or otherwise signaling the stored value to the CC).
    */
-  JSObject* GetWrapperPreserveColor() const
-  {
-    return GetWrapperJSObject();
+  JSObject* GetWrapperPreserveColor() const;
+
+  /**
+   * Get the cached wrapper.
+   *
+   * This getter does not check whether the wrapper is dead and in the process
+   * of being finalized.
+   *
+   * This should only be called if you really need to see the raw contents of
+   * this cache, for example as part of finalization. Don't store the result
+   * anywhere or pass it into JSAPI functions that may cause the value to
+   * escape.
+   */
+  JSObject* GetWrapperMaybeDead() const {
+    // Keep track of accesses on the cache when recording or replaying an
+    // execution. Accesses during a GC (when thread events are disallowed)
+    // fetch the underlying object without making sure the returned value
+    // is consistent between recording and replay.
+    if (mozilla::recordreplay::IsRecordingOrReplaying() &&
+        !mozilla::recordreplay::AreThreadEventsDisallowed() &&
+        !mozilla::recordreplay::HasDivergedFromRecording()) {
+      bool success = mozilla::recordreplay::RecordReplayValue(!!mWrapper);
+      if (mozilla::recordreplay::IsReplaying()) {
+        if (success) {
+          MOZ_RELEASE_ASSERT(mWrapper);
+        } else {
+          const_cast<nsWrapperCache*>(this)->ClearWrapper();
+        }
+      }
+    }
+
+    return mWrapper;
   }
 
 #ifdef DEBUG
-private:
+ private:
   static bool HasJSObjectMovedOp(JSObject* aWrapper);
 
-public:
+ public:
 #endif
 
-  void SetWrapper(JSObject* aWrapper)
-  {
+  void SetWrapper(JSObject* aWrapper) {
     MOZ_ASSERT(!PreservingWrapper(), "Clearing a preserved wrapper!");
     MOZ_ASSERT(aWrapper, "Use ClearWrapper!");
     MOZ_ASSERT(HasJSObjectMovedOp(aWrapper),
-               "Object has not provided the hook to update the wrapper if it is moved");
+               "Object has not provided the hook to update the wrapper if it "
+               "is moved");
 
     SetWrapperJSObject(aWrapper);
   }
 
   /**
-   * Clear the wrapper. This should be called from the finalizer for the
-   * wrapper.
+   * Clear the cache.
    */
-  void ClearWrapper()
-  {
+  void ClearWrapper() {
     MOZ_ASSERT(!PreservingWrapper(), "Clearing a preserved wrapper!");
-
     SetWrapperJSObject(nullptr);
+  }
+
+  /**
+   * Clear the cache if it still contains a specific wrapper object. This should
+   * be called from the finalizer for the wrapper.
+   */
+  void ClearWrapper(JSObject* obj) {
+    if (obj == mWrapper) {
+      ClearWrapper();
+    }
   }
 
   /**
@@ -137,29 +203,23 @@ public:
    * This method must be called from the objectMovedOp class extension hook for
    * any wrapper cached object.
    */
-  void UpdateWrapper(JSObject* aNewObject, const JSObject* aOldObject)
-  {
+  void UpdateWrapper(JSObject* aNewObject, const JSObject* aOldObject) {
     if (mWrapper) {
       MOZ_ASSERT(mWrapper == aOldObject);
       mWrapper = aNewObject;
     }
   }
 
-  bool PreservingWrapper() const
-  {
+  bool PreservingWrapper() const {
     return HasWrapperFlag(WRAPPER_BIT_PRESERVED);
-  }
-
-  bool IsDOMBinding() const
-  {
-    return !HasWrapperFlag(WRAPPER_IS_NOT_DOM_BINDING);
   }
 
   /**
    * Wrap the object corresponding to this wrapper cache. If non-null is
    * returned, the object has already been stored in the wrapper cache.
    */
-  virtual JSObject* WrapObject(JSContext* cx, JS::Handle<JSObject*> aGivenProto) = 0;
+  virtual JSObject* WrapObject(JSContext* cx,
+                               JS::Handle<JSObject*> aGivenProto) = 0;
 
   /**
    * Returns true if the object has a wrapper that is known live from the point
@@ -182,18 +242,15 @@ public:
   void MarkWrapperLive();
 
   // Only meant to be called by code that preserves a wrapper.
-  void SetPreservingWrapper(bool aPreserve)
-  {
-    if(aPreserve) {
+  void SetPreservingWrapper(bool aPreserve) {
+    if (aPreserve) {
       SetWrapperFlags(WRAPPER_BIT_PRESERVED);
-    }
-    else {
+    } else {
       UnsetWrapperFlags(WRAPPER_BIT_PRESERVED);
     }
   }
 
-  void TraceWrapper(const TraceCallbacks& aCallbacks, void* aClosure)
-  {
+  void TraceWrapper(const TraceCallbacks& aCallbacks, void* aClosure) {
     if (PreservingWrapper() && mWrapper) {
       aCallbacks.Trace(&mWrapper, "Preserved wrapper", aClosure);
     }
@@ -206,31 +263,36 @@ public:
 
   typedef uint32_t FlagsType;
 
-  FlagsType GetFlags() const
-  {
-    return mFlags & ~kWrapperFlagsMask;
-  }
+  FlagsType GetFlags() const { return mFlags & ~kWrapperFlagsMask; }
 
-  bool HasFlag(FlagsType aFlag) const
-  {
+  bool HasFlag(FlagsType aFlag) const {
     MOZ_ASSERT((aFlag & kWrapperFlagsMask) == 0, "Bad flag mask");
     return !!(mFlags & aFlag);
   }
 
-  void SetFlags(FlagsType aFlagsToSet)
-  {
+  // Identical to HasFlag, but more explicit about its handling of multiple
+  // flags.
+  bool HasAnyOfFlags(FlagsType aFlags) const {
+    MOZ_ASSERT((aFlags & kWrapperFlagsMask) == 0, "Bad flag mask");
+    return !!(mFlags & aFlags);
+  }
+
+  bool HasAllFlags(FlagsType aFlags) const {
+    MOZ_ASSERT((aFlags & kWrapperFlagsMask) == 0, "Bad flag mask");
+    return (mFlags & aFlags) == aFlags;
+  }
+
+  void SetFlags(FlagsType aFlagsToSet) {
     MOZ_ASSERT((aFlagsToSet & kWrapperFlagsMask) == 0, "Bad flag mask");
     mFlags |= aFlagsToSet;
   }
 
-  void UnsetFlags(FlagsType aFlagsToUnset)
-  {
+  void UnsetFlags(FlagsType aFlagsToUnset) {
     MOZ_ASSERT((aFlagsToUnset & kWrapperFlagsMask) == 0, "Bad flag mask");
     mFlags &= ~aFlagsToUnset;
   }
 
-  void PreserveWrapper(nsISupports* aScriptObjectHolder)
-  {
+  void PreserveWrapper(nsISupports* aScriptObjectHolder) {
     if (PreservingWrapper()) {
       return;
     }
@@ -245,12 +307,13 @@ public:
     PreserveWrapper(ccISupports, participant);
   }
 
-  void PreserveWrapper(void* aScriptObjectHolder, nsScriptObjectTracer* aTracer)
-  {
+  void PreserveWrapper(void* aScriptObjectHolder,
+                       nsScriptObjectTracer* aTracer) {
     if (PreservingWrapper()) {
       return;
     }
 
+    GetWrapper();  // Read barrier for incremental GC.
     HoldJSObjects(aScriptObjectHolder, aTracer);
     SetPreservingWrapper(true);
 #ifdef DEBUG
@@ -261,16 +324,14 @@ public:
 
   void ReleaseWrapper(void* aScriptObjectHolder);
 
-protected:
-  void TraceWrapper(JSTracer* aTrc, const char* name)
-  {
+ protected:
+  void TraceWrapper(JSTracer* aTrc, const char* name) {
     if (mWrapper) {
       js::UnsafeTraceManuallyBarrieredEdge(aTrc, &mWrapper, name);
     }
   }
 
-  void PoisonWrapper()
-  {
+  void PoisonWrapper() {
     if (mWrapper) {
       // Set the pointer to a value that will cause a crash if it is
       // dereferenced.
@@ -278,61 +339,37 @@ protected:
     }
   }
 
-private:
-  // Friend declarations for things that need to be able to call
-  // SetIsNotDOMBinding().  The goal is to get rid of all of these, and
-  // SetIsNotDOMBinding() too.
-  friend class mozilla::dom::TabChildGlobal;
-  friend class mozilla::dom::ProcessGlobal;
-  friend class SandboxPrivate;
-  friend class nsInProcessTabChildGlobal;
-  friend class nsWindowRoot;
-  void SetIsNotDOMBinding()
-  {
-    MOZ_ASSERT(!mWrapper && !(GetWrapperFlags() & ~WRAPPER_IS_NOT_DOM_BINDING),
-               "This flag should be set before creating any wrappers.");
-    SetWrapperFlags(WRAPPER_IS_NOT_DOM_BINDING);
-  }
-
-  JSObject *GetWrapperJSObject() const
-  {
-    return mWrapper;
-  }
-
+ private:
   void SetWrapperJSObject(JSObject* aWrapper);
 
-  FlagsType GetWrapperFlags() const
-  {
-    return mFlags & kWrapperFlagsMask;
-  }
+  FlagsType GetWrapperFlags() const { return mFlags & kWrapperFlagsMask; }
 
-  bool HasWrapperFlag(FlagsType aFlag) const
-  {
+  bool HasWrapperFlag(FlagsType aFlag) const {
     MOZ_ASSERT((aFlag & ~kWrapperFlagsMask) == 0, "Bad wrapper flag bits");
     return !!(mFlags & aFlag);
   }
 
-  void SetWrapperFlags(FlagsType aFlagsToSet)
-  {
-    MOZ_ASSERT((aFlagsToSet & ~kWrapperFlagsMask) == 0, "Bad wrapper flag bits");
+  void SetWrapperFlags(FlagsType aFlagsToSet) {
+    MOZ_ASSERT((aFlagsToSet & ~kWrapperFlagsMask) == 0,
+               "Bad wrapper flag bits");
     mFlags |= aFlagsToSet;
   }
 
-  void UnsetWrapperFlags(FlagsType aFlagsToUnset)
-  {
-    MOZ_ASSERT((aFlagsToUnset & ~kWrapperFlagsMask) == 0, "Bad wrapper flag bits");
+  void UnsetWrapperFlags(FlagsType aFlagsToUnset) {
+    MOZ_ASSERT((aFlagsToUnset & ~kWrapperFlagsMask) == 0,
+               "Bad wrapper flag bits");
     mFlags &= ~aFlagsToUnset;
   }
 
-  void HoldJSObjects(void* aScriptObjectHolder,
-                     nsScriptObjectTracer* aTracer);
+  void HoldJSObjects(void* aScriptObjectHolder, nsScriptObjectTracer* aTracer);
 
 #ifdef DEBUG
-public:
+ public:
   void CheckCCWrapperTraversal(void* aScriptObjectHolder,
                                nsScriptObjectTracer* aTracer);
-private:
-#endif // DEBUG
+
+ private:
+#endif  // DEBUG
 
   /**
    * If this bit is set then we're preserving the wrapper, which in effect ties
@@ -346,32 +383,30 @@ private:
    */
   enum { WRAPPER_BIT_PRESERVED = 1 << 0 };
 
-  /**
-   * If this bit is set then the wrapper for the native object is not a DOM
-   * binding.
-   */
-  enum { WRAPPER_IS_NOT_DOM_BINDING = 1 << 1 };
-
-  enum { kWrapperFlagsMask = (WRAPPER_BIT_PRESERVED | WRAPPER_IS_NOT_DOM_BINDING) };
+  enum { kWrapperFlagsMask = WRAPPER_BIT_PRESERVED };
 
   JSObject* mWrapper;
   FlagsType mFlags;
+
+ protected:
+#ifdef BOOL_FLAGS_ON_WRAPPER_CACHE
+  uint32_t mBoolFlags;
+#endif
 };
 
-enum { WRAPPER_CACHE_FLAGS_BITS_USED = 2 };
+enum { WRAPPER_CACHE_FLAGS_BITS_USED = 1 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsWrapperCache, NS_WRAPPERCACHE_IID)
 
-#define NS_WRAPPERCACHE_INTERFACE_TABLE_ENTRY                                 \
-  if ( aIID.Equals(NS_GET_IID(nsWrapperCache)) ) {                            \
-    *aInstancePtr = static_cast<nsWrapperCache*>(this);                       \
-    return NS_OK;                                                             \
+#define NS_WRAPPERCACHE_INTERFACE_TABLE_ENTRY           \
+  if (aIID.Equals(NS_GET_IID(nsWrapperCache))) {        \
+    *aInstancePtr = static_cast<nsWrapperCache*>(this); \
+    return NS_OK;                                       \
   }
 
-#define NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY                                   \
-  NS_WRAPPERCACHE_INTERFACE_TABLE_ENTRY                                       \
+#define NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY \
+  NS_WRAPPERCACHE_INTERFACE_TABLE_ENTRY     \
   else
-
 
 // Cycle collector macros for wrapper caches.
 
@@ -404,6 +439,19 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsWrapperCache, NS_WRAPPERCACHE_IID)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(_class)          \
     NS_IMPL_CYCLE_COLLECTION_TRAVERSE(__VA_ARGS__)         \
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END                    \
+  NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(_class)
+
+// This is used for wrapper cached classes that inherit from cycle
+// collected non-wrapper cached classes.
+#define NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_INHERITED(_class, _base, ...) \
+  NS_IMPL_CYCLE_COLLECTION_CLASS(_class)                                    \
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(_class, _base)            \
+    NS_IMPL_CYCLE_COLLECTION_UNLINK(__VA_ARGS__)                            \
+    NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER                       \
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_END                                       \
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(_class, _base)          \
+    NS_IMPL_CYCLE_COLLECTION_TRAVERSE(__VA_ARGS__)                          \
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END                                     \
   NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(_class)
 
 #endif /* nsWrapperCache_h___ */

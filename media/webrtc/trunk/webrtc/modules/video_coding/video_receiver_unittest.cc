@@ -8,18 +8,21 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <memory>
 #include <vector>
 
-#include "testing/gtest/include/gtest/gtest.h"
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/modules/video_coding/include/mock/mock_video_codec_interface.h"
-#include "webrtc/modules/video_coding/include/mock/mock_vcm_callbacks.h"
-#include "webrtc/modules/video_coding/include/video_coding.h"
-#include "webrtc/modules/video_coding/video_coding_impl.h"
-#include "webrtc/modules/video_coding/test/test_util.h"
-#include "webrtc/system_wrappers/include/clock.h"
+#include "modules/video_coding/include/mock/mock_vcm_callbacks.h"
+#include "modules/video_coding/include/mock/mock_video_codec_interface.h"
+#include "modules/video_coding/include/video_coding.h"
+#include "modules/video_coding/test/test_util.h"
+#include "modules/video_coding/timing.h"
+#include "modules/video_coding/video_coding_impl.h"
+#include "system_wrappers/include/clock.h"
+#include "test/gtest.h"
+#include "test/video_codec_settings.h"
 
 using ::testing::_;
+using ::testing::AnyNumber;
 using ::testing::NiceMock;
 
 namespace webrtc {
@@ -33,15 +36,24 @@ class TestVideoReceiver : public ::testing::Test {
   TestVideoReceiver() : clock_(0) {}
 
   virtual void SetUp() {
-    receiver_.reset(new VideoReceiver(&clock_, &event_factory_));
+    timing_.reset(new VCMTiming(&clock_));
+    receiver_.reset(
+        new VideoReceiver(&clock_, &event_factory_, nullptr, timing_.get()));
     receiver_->RegisterExternalDecoder(&decoder_, kUnusedPayloadType);
     const size_t kMaxNackListSize = 250;
     const int kMaxPacketAgeToNack = 450;
     receiver_->SetNackSettings(kMaxNackListSize, kMaxPacketAgeToNack, 0);
 
-    VideoCodingModule::Codec(kVideoCodecVP8, &settings_);
+    webrtc::test::CodecSettings(kVideoCodecVP8, &settings_);
     settings_.plType = kUnusedPayloadType;  // Use the mocked encoder.
     EXPECT_EQ(0, receiver_->RegisterReceiveCodec(&settings_, 1, true));
+
+    // Since we call Decode, we need to provide a valid receive callback.
+    // However, for the purposes of these tests, we ignore the callbacks.
+    EXPECT_CALL(receive_callback_, OnIncomingPayloadType(_)).Times(AnyNumber());
+    EXPECT_CALL(receive_callback_, OnDecoderImplementationName(_))
+        .Times(AnyNumber());
+    receiver_->RegisterReceiveCallback(&receive_callback_);
   }
 
   void InsertAndVerifyPaddingFrame(const uint8_t* payload,
@@ -52,7 +64,7 @@ class TestVideoReceiver : public ::testing::Test {
       EXPECT_EQ(0, receiver_->IncomingPacket(payload, 0, *header));
       ++header->header.sequenceNumber;
     }
-    EXPECT_EQ(0, receiver_->Process());
+    receiver_->Process();
     EXPECT_CALL(decoder_, Decode(_, _, _, _, _)).Times(0);
     EXPECT_EQ(VCM_FRAME_NOT_READY, receiver_->Decode(100));
   }
@@ -64,7 +76,7 @@ class TestVideoReceiver : public ::testing::Test {
     EXPECT_EQ(0, receiver_->IncomingPacket(payload, length, *header));
     ++header->header.sequenceNumber;
     EXPECT_CALL(packet_request_callback_, ResendPackets(_, _)).Times(0);
-    EXPECT_EQ(0, receiver_->Process());
+    receiver_->Process();;
     EXPECT_CALL(decoder_, Decode(_, _, _, _, _)).Times(1);
     EXPECT_EQ(0, receiver_->Decode(100));
   }
@@ -75,7 +87,9 @@ class TestVideoReceiver : public ::testing::Test {
   NiceMock<MockVideoDecoder> decoder_;
   NiceMock<MockPacketRequestCallback> packet_request_callback_;
 
-  rtc::scoped_ptr<VideoReceiver> receiver_;
+  std::unique_ptr<VCMTiming> timing_;
+  MockVCMReceiveCallback receive_callback_;
+  std::unique_ptr<VideoReceiver> receiver_;
 };
 
 TEST_F(TestVideoReceiver, PaddingOnlyFrames) {
@@ -119,14 +133,14 @@ TEST_F(TestVideoReceiver, PaddingOnlyFramesWithLosses) {
   header.type.Video.codec = kRtpVideoVp8;
   // Insert one video frame to get one frame decoded.
   header.frameType = kVideoFrameKey;
-  header.type.Video.isFirstPacket = true;
+  header.type.Video.is_first_packet_in_frame = true;
   header.header.markerBit = true;
   InsertAndVerifyDecodableFrame(payload, kFrameSize, &header);
   clock_.AdvanceTimeMilliseconds(33);
   header.header.timestamp += 3000;
 
   header.frameType = kEmptyFrame;
-  header.type.Video.isFirstPacket = false;
+  header.type.Video.is_first_packet_in_frame = false;
   header.header.markerBit = false;
   // Insert padding frames.
   for (int i = 0; i < 10; ++i) {
@@ -162,7 +176,7 @@ TEST_F(TestVideoReceiver, PaddingOnlyAndVideo) {
   WebRtcRTPHeader header;
   memset(&header, 0, sizeof(header));
   header.frameType = kEmptyFrame;
-  header.type.Video.isFirstPacket = false;
+  header.type.Video.is_first_packet_in_frame = false;
   header.header.markerBit = false;
   header.header.paddingLength = kPaddingSize;
   header.header.payloadType = kUnusedPayloadType;
@@ -178,7 +192,7 @@ TEST_F(TestVideoReceiver, PaddingOnlyAndVideo) {
         header.frameType = kVideoFrameKey;
       else
         header.frameType = kVideoFrameDelta;
-      header.type.Video.isFirstPacket = true;
+      header.type.Video.is_first_packet_in_frame = true;
       header.header.markerBit = true;
       InsertAndVerifyDecodableFrame(payload, kFrameSize, &header);
       clock_.AdvanceTimeMilliseconds(33);
@@ -187,7 +201,7 @@ TEST_F(TestVideoReceiver, PaddingOnlyAndVideo) {
 
     // Insert 2 padding only frames.
     header.frameType = kEmptyFrame;
-    header.type.Video.isFirstPacket = false;
+    header.type.Video.is_first_packet_in_frame = false;
     header.header.markerBit = false;
     for (int j = 0; j < 2; ++j) {
       // InsertAndVerifyPaddingFrame(payload, &header);

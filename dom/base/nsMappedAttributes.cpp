@@ -11,34 +11,48 @@
 
 #include "nsMappedAttributes.h"
 #include "nsHTMLStyleSheet.h"
-#include "nsRuleData.h"
-#include "nsRuleWalker.h"
-#include "mozilla/GenericSpecifiedValues.h"
+#include "mozilla/DeclarationBlock.h"
 #include "mozilla/HashFunctions.h"
+#include "mozilla/MappedDeclarations.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/ServoDeclarationBlock.h"
-#include "mozilla/ServoSpecifiedValues.h"
 
 using namespace mozilla;
 
+bool nsMappedAttributes::sShuttingDown = false;
+nsTArray<void*>* nsMappedAttributes::sCachedMappedAttributeAllocations =
+    nullptr;
+
+void nsMappedAttributes::Shutdown() {
+  sShuttingDown = true;
+  if (sCachedMappedAttributeAllocations) {
+    for (uint32_t i = 0; i < sCachedMappedAttributeAllocations->Length(); ++i) {
+      void* cachedValue = (*sCachedMappedAttributeAllocations)[i];
+      ::operator delete(cachedValue);
+    }
+  }
+
+  delete sCachedMappedAttributeAllocations;
+  sCachedMappedAttributeAllocations = nullptr;
+}
+
 nsMappedAttributes::nsMappedAttributes(nsHTMLStyleSheet* aSheet,
                                        nsMapRuleToAttributesFunc aMapRuleFunc)
-  : mAttrCount(0),
-    mSheet(aSheet),
-    mRuleMapper(aMapRuleFunc),
-    mServoStyle(nullptr)
-{
+    : mAttrCount(0),
+      mSheet(aSheet),
+      mRuleMapper(aMapRuleFunc),
+      mServoStyle(nullptr) {
+  MOZ_ASSERT(mRefCnt == 0);  // Ensure caching works as expected.
 }
 
 nsMappedAttributes::nsMappedAttributes(const nsMappedAttributes& aCopy)
-  : mAttrCount(aCopy.mAttrCount),
-    mSheet(aCopy.mSheet),
-    mRuleMapper(aCopy.mRuleMapper),
-    // This is only called by ::Clone, which is used to create independent
-    // nsMappedAttributes objects which should not share a ServoDeclarationBlock
-    mServoStyle(nullptr)
-{
+    : mAttrCount(aCopy.mAttrCount),
+      mSheet(aCopy.mSheet),
+      mRuleMapper(aCopy.mRuleMapper),
+      // This is only called by ::Clone, which is used to create independent
+      // nsMappedAttributes objects which should not share a DeclarationBlock
+      mServoStyle(nullptr) {
   NS_ASSERTION(mBufferSize >= aCopy.mAttrCount, "can't fit attributes");
+  MOZ_ASSERT(mRefCnt == 0);  // Ensure caching works as expected.
 
   uint32_t i;
   for (i = 0; i < mAttrCount; ++i) {
@@ -46,8 +60,7 @@ nsMappedAttributes::nsMappedAttributes(const nsMappedAttributes& aCopy)
   }
 }
 
-nsMappedAttributes::~nsMappedAttributes()
-{
+nsMappedAttributes::~nsMappedAttributes() {
   if (mSheet) {
     mSheet->DropMappedAttributes(this);
   }
@@ -58,44 +71,77 @@ nsMappedAttributes::~nsMappedAttributes()
   }
 }
 
-
-nsMappedAttributes*
-nsMappedAttributes::Clone(bool aWillAddAttr)
-{
+nsMappedAttributes* nsMappedAttributes::Clone(bool aWillAddAttr) {
   uint32_t extra = aWillAddAttr ? 1 : 0;
 
   // This will call the overridden operator new
   return new (mAttrCount + extra) nsMappedAttributes(*this);
 }
 
-void* nsMappedAttributes::operator new(size_t aSize, uint32_t aAttrCount) CPP_THROW_NEW
-{
-  NS_ASSERTION(aAttrCount > 0, "zero-attribute nsMappedAttributes requested");
+void* nsMappedAttributes::operator new(size_t aSize,
+                                       uint32_t aAttrCount) CPP_THROW_NEW {
+  size_t size = aSize + aAttrCount * sizeof(InternalAttr);
 
   // aSize will include the mAttrs buffer so subtract that.
-  void* newAttrs = ::operator new(aSize - sizeof(void*[1]) +
-                                  aAttrCount * sizeof(InternalAttr));
+  // We don't want to under-allocate, however, so do not subtract
+  // if we have zero attributes. The zero attribute case only happens
+  // for <body>'s mapped attributes
+  if (aAttrCount != 0) {
+    size -= sizeof(void * [1]);
+  }
+
+  if (sCachedMappedAttributeAllocations) {
+    void* cached = sCachedMappedAttributeAllocations->SafeElementAt(aAttrCount);
+    if (cached) {
+      (*sCachedMappedAttributeAllocations)[aAttrCount] = nullptr;
+      return cached;
+    }
+  }
+
+  void* newAttrs = ::operator new(size);
 
 #ifdef DEBUG
   static_cast<nsMappedAttributes*>(newAttrs)->mBufferSize = aAttrCount;
 #endif
-
   return newAttrs;
 }
 
-NS_IMPL_ISUPPORTS(nsMappedAttributes,
-                  nsIStyleRule)
+void nsMappedAttributes::LastRelease() {
+  if (!sShuttingDown) {
+    if (!sCachedMappedAttributeAllocations) {
+      sCachedMappedAttributeAllocations = new nsTArray<void*>();
+    }
 
-void
-nsMappedAttributes::SetAndTakeAttr(nsIAtom* aAttrName, nsAttrValue& aValue)
-{
-  NS_PRECONDITION(aAttrName, "null name");
+    // Ensure the cache array is at least mAttrCount + 1 long and
+    // that each item is either null or pointing to a cached item.
+    // The size of the array is capped because mapped attributes are defined
+    // statically in element implementations.
+    sCachedMappedAttributeAllocations->SetCapacity(mAttrCount + 1);
+    for (uint32_t i = sCachedMappedAttributeAllocations->Length();
+         i < (uint32_t(mAttrCount) + 1); ++i) {
+      sCachedMappedAttributeAllocations->AppendElement(nullptr);
+    }
 
+    if (!(*sCachedMappedAttributeAllocations)[mAttrCount]) {
+      void* memoryToCache = this;
+      this->~nsMappedAttributes();
+      (*sCachedMappedAttributeAllocations)[mAttrCount] = memoryToCache;
+      return;
+    }
+  }
+
+  delete this;
+}
+
+void nsMappedAttributes::SetAndSwapAttr(nsAtom* aAttrName, nsAttrValue& aValue,
+                                        bool* aValueWasSet) {
+  MOZ_ASSERT(aAttrName, "null name");
+  *aValueWasSet = false;
   uint32_t i;
   for (i = 0; i < mAttrCount && !Attrs()[i].mName.IsSmaller(aAttrName); ++i) {
     if (Attrs()[i].mName.Equals(aAttrName)) {
-      Attrs()[i].mValue.Reset();
       Attrs()[i].mValue.SwapValueWith(aValue);
+      *aValueWasSet = true;
       return;
     }
   }
@@ -103,7 +149,8 @@ nsMappedAttributes::SetAndTakeAttr(nsIAtom* aAttrName, nsAttrValue& aValue)
   NS_ASSERTION(mBufferSize >= mAttrCount + 1, "can't fit attributes");
 
   if (mAttrCount != i) {
-    memmove(&Attrs()[i + 1], &Attrs()[i], (mAttrCount - i) * sizeof(InternalAttr));
+    memmove(&Attrs()[i + 1], &Attrs()[i],
+            (mAttrCount - i) * sizeof(InternalAttr));
   }
 
   new (&Attrs()[i].mName) nsAttrName(aAttrName);
@@ -112,10 +159,8 @@ nsMappedAttributes::SetAndTakeAttr(nsIAtom* aAttrName, nsAttrValue& aValue)
   ++mAttrCount;
 }
 
-const nsAttrValue*
-nsMappedAttributes::GetAttr(nsIAtom* aAttrName) const
-{
-  NS_PRECONDITION(aAttrName, "null name");
+const nsAttrValue* nsMappedAttributes::GetAttr(const nsAtom* aAttrName) const {
+  MOZ_ASSERT(aAttrName, "null name");
 
   for (uint32_t i = 0; i < mAttrCount; ++i) {
     if (Attrs()[i].mName.Equals(aAttrName)) {
@@ -126,9 +171,8 @@ nsMappedAttributes::GetAttr(nsIAtom* aAttrName) const
   return nullptr;
 }
 
-const nsAttrValue*
-nsMappedAttributes::GetAttr(const nsAString& aAttrName) const
-{
+const nsAttrValue* nsMappedAttributes::GetAttr(
+    const nsAString& aAttrName) const {
   for (uint32_t i = 0; i < mAttrCount; ++i) {
     if (Attrs()[i].mName.Atom()->Equals(aAttrName)) {
       return &Attrs()[i].mValue;
@@ -138,9 +182,7 @@ nsMappedAttributes::GetAttr(const nsAString& aAttrName) const
   return nullptr;
 }
 
-bool
-nsMappedAttributes::Equals(const nsMappedAttributes* aOther) const
-{
+bool nsMappedAttributes::Equals(const nsMappedAttributes* aOther) const {
   if (this == aOther) {
     return true;
   }
@@ -160,82 +202,26 @@ nsMappedAttributes::Equals(const nsMappedAttributes* aOther) const
   return true;
 }
 
-uint32_t
-nsMappedAttributes::HashValue() const
-{
-  uint32_t hash = HashGeneric(mRuleMapper);
+PLDHashNumber nsMappedAttributes::HashValue() const {
+  PLDHashNumber hash = HashGeneric(mRuleMapper);
 
   uint32_t i;
   for (i = 0; i < mAttrCount; ++i) {
-    hash = AddToHash(hash,
-                     Attrs()[i].mName.HashValue(),
+    hash = AddToHash(hash, Attrs()[i].mName.HashValue(),
                      Attrs()[i].mValue.HashValue());
   }
 
   return hash;
 }
 
-void
-nsMappedAttributes::SetStyleSheet(nsHTMLStyleSheet* aSheet)
-{
+void nsMappedAttributes::SetStyleSheet(nsHTMLStyleSheet* aSheet) {
   if (mSheet) {
     mSheet->DropMappedAttributes(this);
   }
   mSheet = aSheet;  // not ref counted
 }
 
-/* virtual */ void
-nsMappedAttributes::MapRuleInfoInto(nsRuleData* aRuleData)
-{
-  if (mRuleMapper) {
-    (*mRuleMapper)(this, aRuleData);
-  }
-}
-
-/* virtual */ bool
-nsMappedAttributes::MightMapInheritedStyleData()
-{
-  // Just assume that we do, rather than adding checks to all of the different
-  // kinds of attribute mapping functions we have.
-  return true;
-}
-
-/* virtual */ bool
-nsMappedAttributes::GetDiscretelyAnimatedCSSValue(nsCSSPropertyID aProperty,
-                                                  nsCSSValue* aValue)
-{
-  MOZ_ASSERT(false, "GetDiscretelyAnimatedCSSValue is not implemented yet");
-  return false;
-}
-
-#ifdef DEBUG
-/* virtual */ void
-nsMappedAttributes::List(FILE* out, int32_t aIndent) const
-{
-  nsAutoCString str;
-  nsAutoString tmp;
-  uint32_t i;
-
-  for (i = 0; i < mAttrCount; ++i) {
-    int32_t indent;
-    for (indent = aIndent; indent > 0; --indent) {
-      str.AppendLiteral("  ");
-    }
-
-    Attrs()[i].mName.GetQualifiedName(tmp);
-    LossyAppendUTF16toASCII(tmp, str);
-
-    Attrs()[i].mValue.ToString(tmp);
-    LossyAppendUTF16toASCII(tmp, str);
-    str.Append('\n');
-    fprintf_stderr(out, "%s", str.get());
-  }
-}
-#endif
-
-void
-nsMappedAttributes::RemoveAttrAt(uint32_t aPos, nsAttrValue& aValue)
-{
+void nsMappedAttributes::RemoveAttrAt(uint32_t aPos, nsAttrValue& aValue) {
   Attrs()[aPos].mValue.SwapValueWith(aValue);
   Attrs()[aPos].~InternalAttr();
   memmove(&Attrs()[aPos], &Attrs()[aPos + 1],
@@ -243,17 +229,15 @@ nsMappedAttributes::RemoveAttrAt(uint32_t aPos, nsAttrValue& aValue)
   mAttrCount--;
 }
 
-const nsAttrName*
-nsMappedAttributes::GetExistingAttrNameFromQName(const nsAString& aName) const
-{
+const nsAttrName* nsMappedAttributes::GetExistingAttrNameFromQName(
+    const nsAString& aName) const {
   uint32_t i;
   for (i = 0; i < mAttrCount; ++i) {
     if (Attrs()[i].mName.IsAtom()) {
       if (Attrs()[i].mName.Atom()->Equals(aName)) {
         return &Attrs()[i].mName;
       }
-    }
-    else {
+    } else {
       if (Attrs()[i].mName.NodeInfo()->QualifiedNameEquals(aName)) {
         return &Attrs()[i].mName;
       }
@@ -263,9 +247,7 @@ nsMappedAttributes::GetExistingAttrNameFromQName(const nsAString& aName) const
   return nullptr;
 }
 
-int32_t
-nsMappedAttributes::IndexOfAttr(nsIAtom* aLocalName) const
-{
+int32_t nsMappedAttributes::IndexOfAttr(const nsAtom* aLocalName) const {
   uint32_t i;
   for (i = 0; i < mAttrCount; ++i) {
     if (Attrs()[i].mName.Equals(aLocalName)) {
@@ -276,9 +258,8 @@ nsMappedAttributes::IndexOfAttr(nsIAtom* aLocalName) const
   return -1;
 }
 
-size_t
-nsMappedAttributes::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const
-{
+size_t nsMappedAttributes::SizeOfIncludingThis(
+    MallocSizeOf aMallocSizeOf) const {
   NS_ASSERTION(mAttrCount == mBufferSize,
                "mBufferSize and mAttrCount are expected to be the same.");
 
@@ -289,15 +270,14 @@ nsMappedAttributes::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const
   return n;
 }
 
-void
-nsMappedAttributes::LazilyResolveServoDeclaration(nsPresContext* aContext)
-{
-
+void nsMappedAttributes::LazilyResolveServoDeclaration(dom::Document* aDoc) {
   MOZ_ASSERT(!mServoStyle,
-             "LazilyResolveServoDeclaration should not be called if mServoStyle is already set");
+             "LazilyResolveServoDeclaration should not be called if "
+             "mServoStyle is already set");
   if (mRuleMapper) {
-    mServoStyle = Servo_DeclarationBlock_CreateEmpty().Consume();
-    ServoSpecifiedValues servo = ServoSpecifiedValues(aContext, mServoStyle.get());
-    (*mRuleMapper)(this, &servo);
+    MappedDeclarations declarations(
+        aDoc, Servo_DeclarationBlock_CreateEmpty().Consume());
+    (*mRuleMapper)(this, declarations);
+    mServoStyle = declarations.TakeDeclarationBlock();
   }
 }

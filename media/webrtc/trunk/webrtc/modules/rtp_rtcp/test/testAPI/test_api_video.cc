@@ -11,16 +11,18 @@
 #include <stdlib.h>
 
 #include <algorithm>
+#include <memory>
 #include <vector>
 
-#include "testing/gtest/include/gtest/gtest.h"
-#include "webrtc/common_types.h"
-#include "webrtc/modules/rtp_rtcp/include/rtp_payload_registry.h"
-#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
-#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
-#include "webrtc/modules/rtp_rtcp/source/byte_io.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_receiver_video.h"
-#include "webrtc/modules/rtp_rtcp/test/testAPI/test_api.h"
+#include "common_types.h"  // NOLINT(build/include)
+#include "modules/rtp_rtcp/include/rtp_payload_registry.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+#include "modules/rtp_rtcp/source/byte_io.h"
+#include "modules/rtp_rtcp/source/rtp_receiver_video.h"
+#include "modules/rtp_rtcp/test/testAPI/test_api.h"
+#include "rtc_base/rate_limiter.h"
+#include "test/gtest.h"
 
 namespace {
 
@@ -33,11 +35,11 @@ namespace webrtc {
 class RtpRtcpVideoTest : public ::testing::Test {
  protected:
   RtpRtcpVideoTest()
-      : rtp_payload_registry_(RTPPayloadStrategy::CreateStrategy(false)),
-        test_ssrc_(3456),
+      : test_ssrc_(3456),
         test_timestamp_(4567),
         test_sequence_number_(2345),
-        fake_clock(123456) {}
+        fake_clock(123456),
+        retransmission_rate_limiter_(&fake_clock, 1000) {}
   ~RtpRtcpVideoTest() {}
 
   virtual void SetUp() {
@@ -48,6 +50,7 @@ class RtpRtcpVideoTest : public ::testing::Test {
     configuration.audio = false;
     configuration.clock = &fake_clock;
     configuration.outgoing_transport = transport_;
+    configuration.retransmission_rate_limiter = &retransmission_rate_limiter_;
 
     video_module_ = RtpRtcp::CreateRtpRtcp(configuration);
     rtp_receiver_.reset(RtpReceiver::CreateVideoReceiver(
@@ -55,7 +58,6 @@ class RtpRtcpVideoTest : public ::testing::Test {
 
     video_module_->SetRTCPStatus(RtcpMode::kCompound);
     video_module_->SetSSRC(test_ssrc_);
-    rtp_receiver_->SetNACKStatus(kNackRtcp);
     video_module_->SetStorePacketsStatus(true, 600);
     EXPECT_EQ(0, video_module_->SetSendingStatus(true));
 
@@ -68,11 +70,7 @@ class RtpRtcpVideoTest : public ::testing::Test {
     memcpy(video_codec.plName, "I420", 5);
 
     EXPECT_EQ(0, video_module_->RegisterSendPayload(video_codec));
-    EXPECT_EQ(0, rtp_receiver_->RegisterReceivePayload(video_codec.plName,
-                                                       video_codec.plType,
-                                                       90000,
-                                                       0,
-                                                       video_codec.maxBitrate));
+    EXPECT_EQ(0, rtp_payload_registry_.RegisterReceivePayload(video_codec));
 
     payload_data_length_ = sizeof(video_frame_);
 
@@ -127,9 +125,9 @@ class RtpRtcpVideoTest : public ::testing::Test {
   }
 
   int test_id_;
-  rtc::scoped_ptr<ReceiveStatistics> receive_statistics_;
+  std::unique_ptr<ReceiveStatistics> receive_statistics_;
   RTPPayloadRegistry rtp_payload_registry_;
-  rtc::scoped_ptr<RtpReceiver> rtp_receiver_;
+  std::unique_ptr<RtpReceiver> rtp_receiver_;
   RtpRtcp* video_module_;
   LoopBackTransport* transport_;
   TestRtpReceiver* receiver_;
@@ -139,15 +137,14 @@ class RtpRtcpVideoTest : public ::testing::Test {
   uint8_t  video_frame_[65000];
   size_t payload_data_length_;
   SimulatedClock fake_clock;
+  RateLimiter retransmission_rate_limiter_;
 };
 
 TEST_F(RtpRtcpVideoTest, BasicVideo) {
   uint32_t timestamp = 3000;
-  EXPECT_EQ(0, video_module_->SendOutgoingData(kVideoFrameDelta, 123,
-                                               timestamp,
-                                               timestamp / 90,
-                                               video_frame_,
-                                               payload_data_length_));
+  EXPECT_TRUE(video_module_->SendOutgoingData(
+      kVideoFrameDelta, 123, timestamp, timestamp / 90, video_frame_,
+      payload_data_length_, nullptr, nullptr, nullptr));
 }
 
 TEST_F(RtpRtcpVideoTest, PaddingOnlyFrames) {
@@ -159,27 +156,22 @@ TEST_F(RtpRtcpVideoTest, PaddingOnlyFrames) {
   codec.codecType = kVideoCodecVP8;
   codec.plType = kPayloadType;
   strncpy(codec.plName, "VP8", 4);
-  EXPECT_EQ(0, rtp_receiver_->RegisterReceivePayload(codec.plName,
-                                                     codec.plType,
-                                                     90000,
-                                                     0,
-                                                     codec.maxBitrate));
+  EXPECT_EQ(0, rtp_payload_registry_.RegisterReceivePayload(codec));
   for (int frame_idx = 0; frame_idx < 10; ++frame_idx) {
     for (int packet_idx = 0; packet_idx < 5; ++packet_idx) {
       size_t packet_size = PaddingPacket(padding_packet, timestamp, seq_num,
                                          kPadSize);
       ++seq_num;
       RTPHeader header;
-      rtc::scoped_ptr<RtpHeaderParser> parser(RtpHeaderParser::Create());
+      std::unique_ptr<RtpHeaderParser> parser(RtpHeaderParser::Create());
       EXPECT_TRUE(parser->Parse(padding_packet, packet_size, &header));
-      PayloadUnion payload_specific;
-      EXPECT_TRUE(rtp_payload_registry_.GetPayloadSpecifics(header.payloadType,
-                                                            &payload_specific));
+      const auto pl =
+          rtp_payload_registry_.PayloadTypeToPayload(header.payloadType);
+      EXPECT_TRUE(pl);
       const uint8_t* payload = padding_packet + header.headerLength;
       const size_t payload_length = packet_size - header.headerLength;
-      EXPECT_TRUE(rtp_receiver_->IncomingRtpPacket(header, payload,
-                                                   payload_length,
-                                                   payload_specific, true));
+      EXPECT_TRUE(rtp_receiver_->IncomingRtpPacket(
+          header, payload, payload_length, pl->typeSpecific));
       EXPECT_EQ(0u, receiver_->payload_size());
       EXPECT_EQ(payload_length, receiver_->rtp_header().header.paddingLength);
     }

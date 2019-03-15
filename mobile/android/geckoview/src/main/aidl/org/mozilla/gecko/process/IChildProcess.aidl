@@ -3,10 +3,21 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 package org.mozilla.gecko.process;
+
+import org.mozilla.gecko.process.IProcessManager;
+
+import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
 
 interface IChildProcess {
-    void stop();
     int getPid();
-    void start(in String[] args, in ParcelFileDescriptor crashReporterPfd, in ParcelFileDescriptor ipcPfd);
+    boolean start(in IProcessManager procMan, in String[] args, in Bundle extras, int flags,
+                  in String crashHandlerService,
+                  in ParcelFileDescriptor prefsPfd,
+                  in ParcelFileDescriptor prefMapPfd,
+                  in ParcelFileDescriptor ipcPfd,
+                  in ParcelFileDescriptor crashReporterPfd,
+                  in ParcelFileDescriptor crashAnnotationPfd);
+
+    void crash();
 }

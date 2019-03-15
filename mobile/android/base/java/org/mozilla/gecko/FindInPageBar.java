@@ -4,10 +4,10 @@
 
 package org.mozilla.gecko;
 
+import org.mozilla.gecko.util.ActivityUtils;
 import org.mozilla.gecko.util.BundleEventListener;
 import org.mozilla.gecko.util.EventCallback;
 import org.mozilla.gecko.util.GeckoBundle;
-import org.mozilla.gecko.util.ThreadUtils;
 
 import android.content.Context;
 import android.text.Editable;
@@ -27,19 +27,20 @@ public class FindInPageBar extends LinearLayout
     private static final String LOGTAG = "GeckoFindInPageBar";
     private static final String REQUEST_ID = "FindInPageBar";
 
-    private final Context mContext;
     /* package */ CustomEditText mFindText;
     private TextView mStatusText;
     private boolean mInflated;
+    private final GeckoApp geckoApp;
 
     public FindInPageBar(Context context, AttributeSet attrs) {
         super(context, attrs);
-        mContext = context;
         setFocusable(true);
+
+        geckoApp = (GeckoApp) ActivityUtils.getActivityFromContext(context);
     }
 
     public void inflateContent() {
-        LayoutInflater inflater = LayoutInflater.from(mContext);
+        LayoutInflater inflater = LayoutInflater.from(getContext());
         View content = inflater.inflate(R.layout.find_in_page_content, this);
 
         content.findViewById(R.id.find_prev).setOnClickListener(this);
@@ -63,6 +64,10 @@ public class FindInPageBar extends LinearLayout
             }
         });
 
+        final Tab tab = Tabs.getInstance().getSelectedTab();
+        final boolean isPrivate = (tab != null && tab.isPrivate());
+        mFindText.setPrivateMode(isPrivate);
+
         mStatusText = (TextView) content.findViewById(R.id.find_status);
 
         mInflated = true;
@@ -70,16 +75,17 @@ public class FindInPageBar extends LinearLayout
             "FindInPage:MatchesCountResult");
     }
 
-    public void show() {
+    public void show(final boolean isPrivateMode) {
         if (!mInflated)
             inflateContent();
 
+        mFindText.setPrivateMode(isPrivateMode);
         setVisibility(VISIBLE);
         mFindText.requestFocus();
 
         // handleMessage() receives response message and determines initial state of softInput
 
-        GeckoApp.getEventDispatcher().dispatch("TextSelection:Get", null, new EventCallback() {
+        geckoApp.getAppEventDispatcher().dispatch("TextSelection:Get", null, new EventCallback() {
             @Override
             public void sendSuccess(final Object result) {
                 onTextSelectionData((String) result);

@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 function test() {
-  let newTab = gBrowser.addTab("http://example.com");
+  let newTab = BrowserTestUtils.addTab(gBrowser, "http://example.com");
   waitForExplicitFinish();
   BrowserTestUtils.browserLoaded(newTab.linkedBrowser).then(mainPart);
 
@@ -11,7 +11,9 @@ function test() {
     gBrowser.pinTab(newTab);
     gBrowser.selectedTab = newTab;
 
-    openUILinkIn("http://example.org/", "current", { inBackground: true });
+    openTrustedLinkIn("http://example.org/", "current", {
+      inBackground: true,
+    });
     isnot(gBrowser.selectedTab, newTab, "shouldn't load in background");
 
     gBrowser.removeTab(newTab);

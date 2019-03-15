@@ -6,43 +6,67 @@
 # in the file PATENTS.  All contributing project authors may
 # be found in the AUTHORS file in the root of the source tree.
 
-import("../../build/webrtc.gni")
+import("../../webrtc.gni")
 
-source_set("utility") {
+rtc_static_library("utility") {
   sources = [
     "include/audio_frame_operations.h",
-    "include/file_player.h",
-    "include/file_recorder.h",
     "include/helpers_android.h",
     "include/jvm_android.h",
     "include/process_thread.h",
-    "source/audio_frame_operations.cc",
-    "source/coder.cc",
-    "source/coder.h",
-    "source/file_player_impl.cc",
-    "source/file_player_impl.h",
-    "source/file_recorder_impl.cc",
-    "source/file_recorder_impl.h",
     "source/helpers_android.cc",
     "source/jvm_android.cc",
     "source/process_thread_impl.cc",
     "source/process_thread_impl.h",
   ]
 
-  configs += [ "../..:common_config" ]
-  public_configs = [ "../..:common_inherited_config" ]
+  if (!build_with_chromium && is_clang) {
+    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
+    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
+  }
 
-  if (is_clang) {
-    # Suppress warnings from Chrome's Clang plugins.
-    # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
-    configs -= [ "//build/config/clang:find_bad_constructs" ]
+  if (is_ios) {
+    libs = [ "AVFoundation.framework" ]
   }
 
   deps = [
+    "..:module_api",
     "../..:webrtc_common",
+    "../../audio/utility:audio_frame_operations",
     "../../common_audio",
+    "../../rtc_base:rtc_base_approved",
+    "../../rtc_base:rtc_task_queue",
     "../../system_wrappers",
-    "../audio_coding",
     "../media_file",
   ]
+}
+
+rtc_source_set("mock_process_thread") {
+  testonly = true
+  sources = [
+    "include/mock/mock_process_thread.h",
+  ]
+  deps = [
+    ":utility",
+    "../../rtc_base:rtc_base_approved",
+    "../../test:test_support",
+  ]
+}
+
+if (rtc_include_tests) {
+  rtc_source_set("utility_unittests") {
+    testonly = true
+
+    sources = [
+      "source/process_thread_impl_unittest.cc",
+    ]
+    deps = [
+      ":utility",
+      "..:module_api",
+      "../../rtc_base:rtc_base_approved",
+      "../../rtc_base:rtc_task_queue",
+      "../../test:test_support",
+      "//testing/gmock",
+    ]
+  }
 }

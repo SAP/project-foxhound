@@ -13,22 +13,26 @@
 #include <vector>
 #include <map>
 
-#include "base/lock.h"
 #include "base/message_pump.h"
 #include "base/observer_list.h"
+
+#include "mozilla/Mutex.h"
 
 #if defined(OS_WIN)
 // We need this to declare base::MessagePumpWin::Dispatcher, which we should
 // really just eliminate.
-#include "base/message_pump_win.h"
+#  include "base/message_pump_win.h"
 #elif defined(OS_POSIX)
-#include "base/message_pump_libevent.h"
+#  include "base/message_pump_libevent.h"
 #endif
 
 #include "nsAutoPtr.h"
+#include "nsCOMPtr.h"
+#include "nsIRunnable.h"
 #include "nsThreadUtils.h"
 
-class nsIThread;
+class nsIEventTarget;
+class nsISerialEventTarget;
 
 namespace mozilla {
 namespace ipc {
@@ -69,10 +73,9 @@ class DoWorkRunnable;
 // are stable and accessible before calling SetNestableTasksAllowed(true).
 //
 class MessageLoop : public base::MessagePump::Delegate {
-
   friend class mozilla::ipc::DoWorkRunnable;
 
-public:
+ public:
   // A DestructionObserver is notified when the current MessageLoop is being
   // destroyed.  These obsevers are notified prior to MessageLoop::current()
   // being changed to return NULL.  This gives interested parties the chance to
@@ -109,15 +112,22 @@ public:
   // The MessageLoop takes ownership of the Task, and deletes it after it has
   // been Run().
   //
+  // New tasks should not be posted after the invocation of a MessageLoop's
+  // Run method. Otherwise, they may fail to actually run. Callers should check
+  // if the MessageLoop is processing tasks if necessary by calling
+  // IsAcceptingTasks().
+  //
   // NOTE: These methods may be called on any thread.  The Task will be invoked
   // on the thread that executes MessageLoop::Run().
 
-  void PostTask(already_AddRefed<mozilla::Runnable> task);
+  bool IsAcceptingTasks() const { return !shutting_down_; }
 
-  void PostDelayedTask(already_AddRefed<mozilla::Runnable> task, int delay_ms);
+  void PostTask(already_AddRefed<nsIRunnable> task);
+
+  void PostDelayedTask(already_AddRefed<nsIRunnable> task, int delay_ms);
 
   // PostIdleTask is not thread safe and should be called on this thread
-  void PostIdleTask(already_AddRefed<mozilla::Runnable> task);
+  void PostIdleTask(already_AddRefed<nsIRunnable> task);
 
   // Run the message loop.
   void Run();
@@ -137,11 +147,15 @@ public:
   // arbitrary MessageLoop to Quit.
   class QuitTask : public mozilla::Runnable {
    public:
+    QuitTask() : mozilla::Runnable("QuitTask") {}
     NS_IMETHOD Run() override {
       MessageLoop::current()->Quit();
       return NS_OK;
     }
   };
+
+  // Return an XPCOM-compatible event target for this thread.
+  nsISerialEventTarget* SerialEventTarget();
 
   // A MessageLoop has a particular type, which indicates the set of
   // asynchronous events it may process in addition to tasks and timers.
@@ -186,7 +200,8 @@ public:
 
   // Normally, it is not necessary to instantiate a MessageLoop.  Instead, it
   // is typical to make use of the current thread's MessageLoop instance.
-  explicit MessageLoop(Type type = TYPE_DEFAULT, nsIThread* aThread = nullptr);
+  explicit MessageLoop(Type type = TYPE_DEFAULT,
+                       nsIEventTarget* aEventTarget = nullptr);
   ~MessageLoop();
 
   // Returns the type passed to the constructor.
@@ -204,6 +219,8 @@ public:
 
   // Returns the MessageLoop object for the current thread, or null if none.
   static MessageLoop* current();
+
+  static void set_current(MessageLoop* loop);
 
   // Enables or disables the recursive task processing. This happens in the case
   // of recursive message loops. Some unwanted message loop may occurs when
@@ -233,13 +250,9 @@ public:
   }
 
 #if defined(OS_WIN)
-  void set_os_modal_loop(bool os_modal_loop) {
-    os_modal_loop_ = os_modal_loop;
-  }
+  void set_os_modal_loop(bool os_modal_loop) { os_modal_loop_ = os_modal_loop; }
 
-  bool & os_modal_loop() {
-    return os_modal_loop_;
-  }
+  bool& os_modal_loop() { return os_modal_loop_; }
 #endif  // OS_WIN
 
   // Set the timeouts for background hang monitoring.
@@ -249,12 +262,8 @@ public:
     transient_hang_timeout_ = transient_timeout_ms;
     permanent_hang_timeout_ = permanent_timeout_ms;
   }
-  uint32_t transient_hang_timeout() const {
-    return transient_hang_timeout_;
-  }
-  uint32_t permanent_hang_timeout() const {
-    return permanent_hang_timeout_;
-  }
+  uint32_t transient_hang_timeout() const { return transient_hang_timeout_; }
+  uint32_t permanent_hang_timeout() const { return permanent_hang_timeout_; }
 
   //----------------------------------------------------------------------------
  protected:
@@ -275,6 +284,7 @@ public:
    public:
     explicit AutoRunState(MessageLoop* loop);
     ~AutoRunState();
+
    private:
     MessageLoop* loop_;
     RunState* previous_state_;
@@ -282,31 +292,27 @@ public:
 
   // This structure is copied around by value.
   struct PendingTask {
-    RefPtr<mozilla::Runnable> task;    // The task to run.
+    nsCOMPtr<nsIRunnable> task;        // The task to run.
     base::TimeTicks delayed_run_time;  // The time when the task should be run.
     int sequence_num;                  // Secondary sort key for run time.
     bool nestable;                     // OK to dispatch from a nested loop.
 
-    PendingTask(already_AddRefed<mozilla::Runnable> aTask, bool aNestable)
-        : task(aTask), sequence_num(0), nestable(aNestable) {
-    }
+    PendingTask(already_AddRefed<nsIRunnable> aTask, bool aNestable)
+        : task(aTask), sequence_num(0), nestable(aNestable) {}
 
     PendingTask(PendingTask&& aOther)
         : task(aOther.task.forget()),
           delayed_run_time(aOther.delayed_run_time),
           sequence_num(aOther.sequence_num),
-          nestable(aOther.nestable) {
-    }
+          nestable(aOther.nestable) {}
 
     // std::priority_queue<T>::top is dumb, so we have to have this.
     PendingTask(const PendingTask& aOther)
         : task(aOther.task),
           delayed_run_time(aOther.delayed_run_time),
           sequence_num(aOther.sequence_num),
-          nestable(aOther.nestable) {
-    }
-    PendingTask& operator=(const PendingTask& aOther)
-    {
+          nestable(aOther.nestable) {}
+    PendingTask& operator=(const PendingTask& aOther) {
       task = aOther.task;
       delayed_run_time = aOther.delayed_run_time;
       sequence_num = aOther.sequence_num;
@@ -355,10 +361,10 @@ public:
   // appended to the list work_queue_.  Such re-entrancy generally happens when
   // an unrequested message pump (typical of a native dialog) is executing in
   // the context of a task.
-  bool QueueOrRunTask(already_AddRefed<mozilla::Runnable> new_task);
+  bool QueueOrRunTask(already_AddRefed<nsIRunnable> new_task);
 
   // Runs the specified task and deletes it.
-  void RunTask(already_AddRefed<mozilla::Runnable> task);
+  void RunTask(already_AddRefed<nsIRunnable> task);
 
   // Calls RunTask or queues the pending_task on the deferred task list if it
   // cannot be run right now.  Returns true if the task was run.
@@ -378,7 +384,7 @@ public:
   bool DeletePendingTasks();
 
   // Post a task to our incomming queue.
-  void PostTask_Helper(already_AddRefed<mozilla::Runnable> task, int delay_ms);
+  void PostTask_Helper(already_AddRefed<nsIRunnable> task, int delay_ms);
 
   // base::MessagePump::Delegate methods:
   virtual bool DoWork() override;
@@ -418,10 +424,11 @@ public:
   // will be handled by the TimerManager.
   TaskQueue incoming_queue_;
   // Protect access to incoming_queue_.
-  Lock incoming_queue_lock_;
+  mozilla::Mutex incoming_queue_lock_;
 
   RunState* state_;
   int run_depth_base_;
+  bool shutting_down_;
 
 #if defined(OS_WIN)
   // Should be set to true before calling Windows APIs like TrackPopupMenu, etc
@@ -436,6 +443,9 @@ public:
   // The next sequence number to use for delayed tasks.
   int next_sequence_num_;
 
+  class EventTarget;
+  RefPtr<EventTarget> mEventTarget;
+
   DISALLOW_COPY_AND_ASSIGN(MessageLoop);
 };
 
@@ -448,14 +458,12 @@ public:
 //
 class MessageLoopForUI : public MessageLoop {
  public:
-  explicit MessageLoopForUI(Type aType=TYPE_UI) : MessageLoop(aType) {
-  }
+  explicit MessageLoopForUI(Type aType = TYPE_UI) : MessageLoop(aType) {}
 
   // Returns the MessageLoopForUI of the current thread.
   static MessageLoopForUI* current() {
     MessageLoop* loop = MessageLoop::current();
-    if (!loop)
-      return NULL;
+    if (!loop) return NULL;
     Type type = loop->type();
     DCHECK(type == MessageLoop::TYPE_UI ||
            type == MessageLoop::TYPE_MOZILLA_PARENT ||
@@ -498,8 +506,7 @@ COMPILE_ASSERT(sizeof(MessageLoop) == sizeof(MessageLoopForUI),
 //
 class MessageLoopForIO : public MessageLoop {
  public:
-  MessageLoopForIO() : MessageLoop(TYPE_IO) {
-  }
+  MessageLoopForIO() : MessageLoop(TYPE_IO) {}
 
   // Returns the MessageLoopForIO of the current thread.
   static MessageLoopForIO* current() {
@@ -535,17 +542,13 @@ class MessageLoopForIO : public MessageLoop {
   };
 
   // Please see MessagePumpLibevent for definition.
-  bool WatchFileDescriptor(int fd,
-                           bool persistent,
-                           Mode mode,
-                           FileDescriptorWatcher *controller,
-                           Watcher *delegate);
+  bool WatchFileDescriptor(int fd, bool persistent, Mode mode,
+                           FileDescriptorWatcher* controller,
+                           Watcher* delegate);
 
   typedef base::MessagePumpLibevent::SignalEvent SignalEvent;
   typedef base::MessagePumpLibevent::SignalWatcher SignalWatcher;
-  bool CatchSignal(int sig,
-                   SignalEvent* sigevent,
-                   SignalWatcher* delegate);
+  bool CatchSignal(int sig, SignalEvent* sigevent, SignalWatcher* delegate);
 
 #endif  // defined(OS_POSIX)
 };

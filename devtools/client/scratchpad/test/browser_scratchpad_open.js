@@ -7,15 +7,13 @@ const expected = 4;
 var count = 0;
 var lastUniqueName = null;
 
-function done()
-{
+function done() {
   if (++count == expected) {
     finish();
   }
 }
 
-function test()
-{
+function test() {
   waitForExplicitFinish();
   testOpen();
   testOpenWithState();
@@ -23,8 +21,7 @@ function test()
   testOpenTestFile();
 }
 
-function testUniqueName(name)
-{
+function testUniqueName(name) {
   ok(name, "Scratchpad has a uniqueName");
 
   if (lastUniqueName === null) {
@@ -36,9 +33,8 @@ function testUniqueName(name)
       "Unique name for this instance differs from the last one.");
 }
 
-function testOpen()
-{
-  openScratchpad(function (win) {
+function testOpen() {
+  openScratchpad(function(win) {
     is(win.Scratchpad.filename, undefined, "Default filename is undefined");
     isnot(win.Scratchpad.getText(), null, "Default text should not be null");
     is(win.Scratchpad.executionContext, win.SCRATCHPAD_CONTEXT_CONTENT,
@@ -50,15 +46,14 @@ function testOpen()
   }, {noFocus: true});
 }
 
-function testOpenWithState()
-{
-  let state = {
+function testOpenWithState() {
+  const state = {
     filename: "testfile",
     executionContext: 2,
-    text: "test text"
+    text: "test text",
   };
 
-  openScratchpad(function (win) {
+  openScratchpad(function(win) {
     is(win.Scratchpad.filename, state.filename, "Filename loaded from state");
     is(win.Scratchpad.executionContext, state.executionContext, "Execution context loaded from state");
     is(win.Scratchpad.getText(), state.text, "Content loaded from state");
@@ -69,28 +64,28 @@ function testOpenWithState()
   }, {state: state, noFocus: true});
 }
 
-function testOpenInvalidState()
-{
-  let win = openScratchpad(null, {state: 7});
+function testOpenInvalidState() {
+  const win = openScratchpad(null, {state: 7});
   ok(!win, "no scratchpad opened if state is not an object");
   done();
 }
 
-function testOpenTestFile()
-{
-  let win = openScratchpad(function (win) {
+function testOpenTestFile() {
+  openScratchpad(function(win) {
     ok(win, "scratchpad opened for file open");
     try {
       win.Scratchpad.importFromFile(
         "http://example.com/browser/devtools/client/scratchpad/test/NS_ERROR_ILLEGAL_INPUT.txt",
         "silent",
-        function (aStatus, content) {
-          let nb = win.document.querySelector("#scratchpad-notificationbox");
-          is(nb.querySelectorAll("notification").length, 1, "There is just one notification");
-          let cn = nb.currentNotification;
+        function(aStatus, content) {
+          const nb = win.Scratchpad.notificationBox;
+          is(nb.allNotifications.length, 1, "There is just one notification");
+          const cn = nb.currentNotification;
           is(cn.priority, nb.PRIORITY_WARNING_HIGH, "notification priority is correct");
-          is(cn.value, "file-import-convert-failed", "notification value is corrent");
-          is(cn.type, "warning", "notification type is correct");
+          is(cn.getAttribute("value"), "file-import-convert-failed",
+             "notification value is corrent");
+          is(cn.getAttribute("type"), "warning",
+             "notification type is correct");
           done();
         });
       ok(true, "importFromFile does not cause exception");

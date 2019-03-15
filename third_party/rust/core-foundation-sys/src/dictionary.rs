@@ -7,20 +7,19 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use libc::{c_void};
+use std::os::raw::c_void;
 
-use base::{CFAllocatorRef, CFIndex, CFTypeID, Boolean};
+use base::{CFAllocatorRef, CFHashCode, CFIndex, CFTypeID, Boolean};
+use string::CFStringRef;
 
-pub type CFDictionaryApplierFunction = extern "C" fn (key: *const c_void,
-                                                      value: *const c_void,
-                                                      context: *mut c_void);
-pub type CFDictionaryCopyDescriptionCallBack = *const u8;
-pub type CFDictionaryEqualCallBack = *const u8;
-pub type CFDictionaryHashCallBack = *const u8;
-pub type CFDictionaryReleaseCallBack = *const u8;
-pub type CFDictionaryRetainCallBack = *const u8;
+pub type CFDictionaryApplierFunction = extern "C" fn(key: *const c_void, value: *const c_void, context: *mut c_void);
 
-#[allow(dead_code)]
+pub type CFDictionaryRetainCallBack = extern "C" fn(allocator: CFAllocatorRef, value: *const c_void) -> *const c_void;
+pub type CFDictionaryReleaseCallBack = extern "C" fn(allocator: CFAllocatorRef, value: *const c_void);
+pub type CFDictionaryCopyDescriptionCallBack = extern "C" fn(value: *const c_void) -> CFStringRef;
+pub type CFDictionaryEqualCallBack = extern "C" fn(value1: *const c_void, value2: *const c_void) -> Boolean;
+pub type CFDictionaryHashCallBack = extern "C" fn(value: *const c_void) -> CFHashCode;
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct CFDictionaryKeyCallBacks {
@@ -32,7 +31,6 @@ pub struct CFDictionaryKeyCallBacks {
     pub hash: CFDictionaryHashCallBack
 }
 
-#[allow(dead_code)]
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct CFDictionaryValueCallBacks {
@@ -47,7 +45,7 @@ pub struct CFDictionaryValueCallBacks {
 pub struct __CFDictionary(c_void);
 
 pub type CFDictionaryRef = *const __CFDictionary;
-pub type CFMutableDictionaryRef = *const __CFDictionary;
+pub type CFMutableDictionaryRef = *mut __CFDictionary;
 
 extern {
     /*
@@ -69,11 +67,25 @@ extern {
     pub fn CFDictionaryApplyFunction(theDict: CFDictionaryRef,
                                      applier: CFDictionaryApplierFunction,
                                      context: *mut c_void);
-    pub fn CFDictionarySetValue(theDict: CFMutableDictionaryRef,
-                                key: *const c_void,
-                                value: *const c_void);
     pub fn CFDictionaryGetKeysAndValues(theDict: CFDictionaryRef,
                                         keys: *mut *const c_void,
                                         values: *mut *const c_void);
 
+    pub fn CFDictionaryCreateMutable(allocator: CFAllocatorRef, capacity: CFIndex,
+                                     keyCallbacks: *const CFDictionaryKeyCallBacks,
+                                     valueCallbacks: *const CFDictionaryValueCallBacks) -> CFMutableDictionaryRef;
+    pub fn CFDictionaryCreateMutableCopy(allocator: CFAllocatorRef, capacity: CFIndex,
+                                         theDict: CFDictionaryRef) -> CFMutableDictionaryRef;
+    pub fn CFDictionaryAddValue(theDict: CFMutableDictionaryRef,
+                                key: *const c_void,
+                                value: *const c_void);
+    pub fn CFDictionarySetValue(theDict: CFMutableDictionaryRef,
+                                key: *const c_void,
+                                value: *const c_void);
+    pub fn CFDictionaryReplaceValue(theDict: CFMutableDictionaryRef,
+                                    key: *const c_void,
+                                    value: *const c_void);
+    pub fn CFDictionaryRemoveValue(theDict: CFMutableDictionaryRef,
+                                   key: *const c_void);
+    pub fn CFDictionaryRemoveAllValues(theDict: CFMutableDictionaryRef);
 }

@@ -6,36 +6,26 @@
 
 "use strict";
 
-const TEST_URI = "data:text/xml;charset=UTF-8,<?xml version='1.0'?>" +
-  "<?xml-stylesheet href='chrome://global/skin/global.css'?>" +
-
-  // Uncomment these lines to help with visual debugging. When uncommented they
-  // dump a couple of thousand errors in the log (bug 1258285)
-  // "<?xml-stylesheet href='chrome://devtools/skin/light-theme.css'?>" +
-  // "<?xml-stylesheet href='chrome://devtools/skin/widgets.css'?>" +
-
-  "<window xmlns='http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul'" +
-  " title='Table Widget' width='600' height='500'>" +
-  "<box flex='1' class='theme-light'/></window>";
+const TEST_URI = CHROME_URL_ROOT + "doc_tableWidget_basic.html";
 
 const {TableWidget} = require("devtools/client/shared/widgets/TableWidget");
 
-add_task(function* () {
-  yield addTab("about:blank");
-  let [host, , doc] = yield createHost("bottom", TEST_URI);
+add_task(async function() {
+  await addTab("about:blank");
+  const [host, , doc] = await createHost("bottom", TEST_URI);
 
-  let table = new TableWidget(doc.querySelector("box"), {
+  const table = new TableWidget(doc.querySelector("box"), {
     initialColumns: {
       col1: "Column 1",
       col2: "Column 2",
       col3: "Column 3",
-      col4: "Column 4"
+      col4: "Column 4",
     },
     uniqueId: "col1",
     emptyText: "This is dummy empty text",
     highlightUpdated: true,
     removableColumns: true,
-    firstColumn: "col4"
+    firstColumn: "col4",
   });
 
   startTests(doc, table);
@@ -62,13 +52,13 @@ function populateTable(doc, table) {
     col1: "id1",
     col2: "value10",
     col3: "value20",
-    col4: "value30"
+    col4: "value30",
   });
   table.push({
     col1: "id2",
     col2: "value14",
     col3: "value29",
-    col4: "value32"
+    col4: "value32",
   });
   table.push({
     col1: "id3",
@@ -76,48 +66,48 @@ function populateTable(doc, table) {
     col3: "value21",
     col4: "value31",
     extraData: "foobar",
-    extraData2: 42
+    extraData2: 42,
   });
   table.push({
     col1: "id4",
     col2: "value12",
     col3: "value26",
-    col4: "value33"
+    col4: "value33",
   });
   table.push({
     col1: "id5",
     col2: "value19",
     col3: "value26",
-    col4: "value37"
+    col4: "value37",
   });
   table.push({
     col1: "id6",
     col2: "value15",
     col3: "value25",
-    col4: "value37"
+    col4: "value37",
   });
   table.push({
     col1: "id7",
     col2: "value18",
     col3: "value21",
     col4: "value36",
-    somethingExtra: "Hello World!"
+    somethingExtra: "Hello World!",
   });
   table.push({
     col1: "id8",
     col2: "value11",
     col3: "value27",
-    col4: "value34"
+    col4: "value34",
   });
 
-  let span = doc.createElement("span");
+  const span = doc.createElement("span");
   span.textContent = "domnode";
 
   table.push({
     col1: "id9",
     col2: "value11",
     col3: "value23",
-    col4: span
+    col4: span,
   });
 }
 
@@ -152,7 +142,7 @@ function testTreeItemInsertedCorrectly(doc, table) {
     col1: "Column 1",
     col2: "Column 2",
     col3: "Column 3",
-    col4: "Column 4"
+    col4: "Column 4",
   });
   populateTable(doc, table);
 
@@ -180,12 +170,12 @@ function testAPI(doc, table) {
   // Nothing should be selected beforehand
   ok(!doc.querySelector(".theme-selected"), "Nothing is selected");
   table.selectRow("id4");
-  let node = doc.querySelector(".theme-selected");
+  const node = doc.querySelector(".theme-selected");
   ok(!!node, "Somthing got selected");
   is(node.getAttribute("data-id"), "id4", "Correct node selected");
 
   table.selectRow("id7");
-  let node2 = doc.querySelector(".theme-selected");
+  const node2 = doc.querySelector(".theme-selected");
   ok(!!node2, "Somthing is still selected");
   isnot(node, node2, "Newly selected node is different from previous");
   is(node2.getAttribute("data-id"), "id7", "Correct node selected");
@@ -200,11 +190,11 @@ function testAPI(doc, table) {
     col2: "value18",
     col3: "value21",
     col4: "value36",
-    somethingExtra: "Hello World!"
+    somethingExtra: "Hello World!",
   }), "isSelected with json works");
 
   table.selectedRow = "id4";
-  let node3 = doc.querySelector(".theme-selected");
+  const node3 = doc.querySelector(".theme-selected");
   ok(!!node3, "Somthing is still selected");
   isnot(node2, node3, "Newly selected node is different from previous");
   is(node3, node, "First and third selected nodes should be same");
@@ -253,7 +243,7 @@ function testAPI(doc, table) {
     col1: "id6",
     col2: "value15",
     col3: "value25",
-    col4: "value37"
+    col4: "value37",
   });
   ok(!doc.querySelector("[data-id='id6']"),
      "id6 row does not exist after removal through json");
@@ -262,13 +252,13 @@ function testAPI(doc, table) {
     col1: "id4",
     col2: "value12",
     col3: "value26",
-    col4: "value33"
+    col4: "value33",
   });
   table.push({
     col1: "id6",
     col2: "value15",
     col3: "value25",
-    col4: "value37"
+    col4: "value37",
   });
 
   // test if selectedIndex getter setter works
@@ -297,22 +287,24 @@ function testAPI(doc, table) {
   // testing if setColumns work
   table.setColumns({
     col1: "Foobar",
-    col2: "Testing"
+    col2: "Testing",
   });
 
   // double because splitters
   is(table.tbody.children.length, 2 * 2,
      "2 columns exist after setColumn call");
-  is(table.tbody.children[0].firstChild.firstChild.value, "Foobar",
+  is(table.tbody.children[0].firstChild.firstChild.getAttribute("value"),
+     "Foobar",
      "Correct column header value for first column");
-  is(table.tbody.children[2].firstChild.firstChild.value, "Testing",
+  is(table.tbody.children[2].firstChild.firstChild.getAttribute("value"),
+     "Testing",
      "Correct column header value for second column");
 
   table.setColumns({
     col1: "Column 1",
     col2: "Column 2",
     col3: "Column 3",
-    col4: "Column 4"
+    col4: "Column 4",
   });
   // double because splitters
   is(table.tbody.children.length, 4 * 2,
@@ -327,7 +319,7 @@ function testAPI(doc, table) {
     col1: "id4",
     col2: "UPDATED",
     col3: "value26",
-    col4: "value33"
+    col4: "value33",
   });
   is(doc.querySelectorAll("[data-id='id4']")[1].value, "UPDATED",
      "Correct value after update");
@@ -372,8 +364,8 @@ function testAPI(doc, table) {
 
 function checkAscendingOrder(cell) {
   while (cell) {
-    let currentCell = cell.value || cell.textContent;
-    let prevCell = cell.previousSibling.value ||
+    const currentCell = cell.value || cell.textContent;
+    const prevCell = cell.previousSibling.value ||
                    cell.previousSibling.textContent;
     ok(currentCell >= prevCell, "Sorting is in ascending order");
     cell = cell.nextSibling;
@@ -382,8 +374,8 @@ function checkAscendingOrder(cell) {
 
 function checkDescendingOrder(cell) {
   while (cell != cell.parentNode.firstChild) {
-    let currentCell = cell.value || cell.textContent;
-    let nextCell = cell.nextSibling.value || cell.nextSibling.textContent;
+    const currentCell = cell.value || cell.textContent;
+    const nextCell = cell.nextSibling.value || cell.nextSibling.textContent;
     ok(currentCell >= nextCell, "Sorting is in descending order");
     cell = cell.previousSibling;
   }

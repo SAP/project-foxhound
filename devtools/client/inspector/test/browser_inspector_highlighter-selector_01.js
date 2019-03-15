@@ -19,7 +19,7 @@ const TEST_URL = "data:text/html;charset=utf-8," +
 
 const TEST_DATA = [{
   selector: "#test-node",
-  containerCount: 1
+  containerCount: 1,
 }, {
   selector: null,
   containerCount: 0,
@@ -28,36 +28,36 @@ const TEST_DATA = [{
   containerCount: 0,
 }, {
   selector: ".invalid-class",
-  containerCount: 0
+  containerCount: 0,
 }, {
   selector: ".item",
-  containerCount: 5
+  containerCount: 5,
 }, {
   selector: "#test-node, ul, .item",
-  containerCount: 7
+  containerCount: 7,
 }];
 
 requestLongerTimeout(5);
 
-add_task(function* () {
-  let {inspector, testActor} = yield openInspectorForURL(TEST_URL);
-  let front = inspector.inspector;
-  let highlighter = yield front.getHighlighterByType("SelectorHighlighter");
+add_task(async function() {
+  const {inspector, testActor} = await openInspectorForURL(TEST_URL);
+  const front = inspector.inspector;
+  const highlighter = await front.getHighlighterByType("SelectorHighlighter");
 
-  let contextNode = yield getNodeFront("body", inspector);
+  const contextNode = await getNodeFront("body", inspector);
 
-  for (let {selector, containerCount} of TEST_DATA) {
+  for (const {selector, containerCount} of TEST_DATA) {
     info("Showing the highlighter on " + selector + ". Expecting " +
       containerCount + " highlighter containers");
 
-    yield highlighter.show(contextNode, {selector});
+    await highlighter.show(contextNode, {selector});
 
-    let nb = yield testActor.getSelectorHighlighterBoxNb(highlighter.actorID);
+    const nb = await testActor.getSelectorHighlighterBoxNb(highlighter.actorID);
     ok(nb !== null, "The number of highlighters was retrieved");
 
     is(nb, containerCount, "The correct number of highlighers were created");
-    yield highlighter.hide();
+    await highlighter.hide();
   }
 
-  yield highlighter.finalize();
+  await highlighter.finalize();
 });

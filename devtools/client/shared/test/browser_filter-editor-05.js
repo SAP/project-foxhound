@@ -17,14 +17,14 @@ const DEFAULT_VALUE_MULTIPLIER = 1;
 const GRAYSCALE_MAX = 100,
   GRAYSCALE_MIN = 0;
 
-const TEST_URI = `data:text/html,<div id="filter-container" />`;
+const TEST_URI = CHROME_URL_ROOT + "doc_filter-editor-01.html";
 
-add_task(function* () {
-  let [,, doc] = yield createHost("bottom", TEST_URI);
+add_task(async function() {
+  const [,, doc] = await createHost("bottom", TEST_URI);
   const cssIsValid = getClientCssProperties().getValidityChecker(doc);
 
   const container = doc.querySelector("#filter-container");
-  let widget = new CSSFilterEditorWidget(
+  const widget = new CSSFilterEditorWidget(
     container, "grayscale(0%) url(test.svg)", cssIsValid
   );
 
@@ -37,13 +37,13 @@ add_task(function* () {
     target: grayscale.querySelector("label"),
     pageX: 0,
     altKey: false,
-    shiftKey: false
+    shiftKey: false,
   });
 
   widget._mouseMove({
     pageX: 12,
     altKey: false,
-    shiftKey: false
+    shiftKey: false,
   });
   let expected = DEFAULT_VALUE_MULTIPLIER * 12;
   is(widget.getValueAt(0),
@@ -55,7 +55,7 @@ add_task(function* () {
     // 20 - 12 = 8
     pageX: 20,
     altKey: true,
-    shiftKey: false
+    shiftKey: false,
   });
 
   expected = expected + SLOW_VALUE_MULTIPLIER * 8;
@@ -68,7 +68,7 @@ add_task(function* () {
     // 25 - 20 = 5
     pageX: 25,
     altKey: false,
-    shiftKey: true
+    shiftKey: true,
   });
 
   expected = expected + FAST_VALUE_MULTIPLIER * 5;
@@ -84,13 +84,13 @@ add_task(function* () {
     target: grayscale.querySelector("label"),
     pageX: 0,
     altKey: false,
-    shiftKey: false
+    shiftKey: false,
   });
 
   widget._mouseMove({
     pageX: 5,
     altKey: false,
-    shiftKey: false
+    shiftKey: false,
   });
 
   expected = expected + DEFAULT_VALUE_MULTIPLIER * 5;
@@ -104,7 +104,7 @@ add_task(function* () {
     // 30 - 25 = 5
     pageX: 30,
     altKey: false,
-    shiftKey: true
+    shiftKey: true,
   });
 
   expected = GRAYSCALE_MAX;
@@ -115,7 +115,7 @@ add_task(function* () {
   widget._mouseMove({
     pageX: -11,
     altKey: false,
-    shiftKey: true
+    shiftKey: true,
   });
 
   expected = GRAYSCALE_MIN;
@@ -130,7 +130,7 @@ add_task(function* () {
     target: url.querySelector("label"),
     pageX: 0,
     altKey: false,
-    shiftKey: false
+    shiftKey: false,
   });
 
   ok(!widget.isDraggingLabel,
@@ -139,7 +139,7 @@ add_task(function* () {
   widget._mouseMove({
     pageX: -11,
     altKey: false,
-    shiftKey: true
+    shiftKey: true,
   });
 
   is(widget.getValueAt(1),

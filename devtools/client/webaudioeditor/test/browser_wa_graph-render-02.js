@@ -5,30 +5,29 @@
  * Tests more edge rendering for complex graphs.
  */
 
-add_task(function* () {
-  let { target, panel } = yield initWebAudioEditor(COMPLEX_CONTEXT_URL);
-  let { panelWin } = panel;
-  let { gFront, $, $$ } = panelWin;
+add_task(async function() {
+  const { target, panel } = await initWebAudioEditor(COMPLEX_CONTEXT_URL);
+  const { panelWin } = panel;
+  const { gFront, $, $$ } = panelWin;
 
-  let started = once(gFront, "start-context");
+  const started = once(gFront, "start-context");
 
-  let events = Promise.all([
+  const events = Promise.all([
     getN(gFront, "create-node", 8),
-    waitForGraphRendered(panelWin, 8, 8)
+    waitForGraphRendered(panelWin, 8, 8),
   ]);
   reload(target);
-  let [actors] = yield events;
-  let nodeIDs = actors.map(actor => actor.actorID);
+  const [actors] = await events;
+  const nodeIDs = actors.map(actor => actor.actorID);
 
-  let types = ["AudioDestinationNode", "OscillatorNode", "GainNode", "ScriptProcessorNode",
-               "OscillatorNode", "GainNode", "AudioBufferSourceNode", "BiquadFilterNode"];
-
+  const types = ["AudioDestinationNode", "OscillatorNode", "GainNode", "ScriptProcessorNode",
+                 "OscillatorNode", "GainNode", "AudioBufferSourceNode", "BiquadFilterNode"];
 
   types.forEach((type, i) => {
     ok(findGraphNode(panelWin, nodeIDs[i]).classList.contains("type-" + type), "found " + type + " with class");
   });
 
-  let edges = [
+  const edges = [
     [1, 2, "osc1 -> gain1"],
     [1, 3, "osc1 -> proc"],
     [2, 0, "gain1 -> dest"],
@@ -44,5 +43,5 @@ add_task(function* () {
       "found edge for " + msg);
   });
 
-  yield teardown(target);
+  await teardown(target);
 });

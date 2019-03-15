@@ -94,7 +94,8 @@ class LogStream {
  public:
   enum Severity {
     SEVERITY_INFO,
-    SEVERITY_ERROR
+    SEVERITY_ERROR,
+    SEVERITY_CRITICAL
   };
 
   // Begin logging a message to the stream identified by |stream|, at the
@@ -146,9 +147,11 @@ int ErrnoString(string *error_string);
 #define BPLOG_INIT(pargc, pargv)
 #endif  // BPLOG_INIT
 
+#ifndef BPLOG_LAZY_STREAM
 #define BPLOG_LAZY_STREAM(stream, condition) \
     !(condition) ? (void) 0 : \
                    google_breakpad::LogMessageVoidify() & (BPLOG_ ## stream)
+#endif
 
 #ifndef BPLOG_MINIMUM_SEVERITY
 #define BPLOG_MINIMUM_SEVERITY SEVERITY_INFO
@@ -180,7 +183,18 @@ int ErrnoString(string *error_string);
                         __FILE__, __LINE__)
 #endif  // BPLOG_ERROR
 
+#ifndef BPLOG_CRITICAL
+#ifndef BPLOG_CRITICAL_STREAM
+#define BPLOG_CRITICAL_STREAM std::cerr
+#endif  // BPLOG_CRITICAL_STREAM
+#define BPLOG_CRITICAL google_breakpad::LogStream(BPLOG_CRITICAL_STREAM, \
+                        google_breakpad::LogStream::SEVERITY_CRITICAL, \
+                        __FILE__, __LINE__)
+#endif  // BPLOG_CRITICAL
+
+#ifndef BPLOG_IF
 #define BPLOG_IF(severity, condition) \
     BPLOG_LAZY_STREAM(severity, ((condition) && BPLOG_LOG_IS_ON(severity)))
+#endif  // BPLOG_IF
 
 #endif  // PROCESSOR_LOGGING_H__

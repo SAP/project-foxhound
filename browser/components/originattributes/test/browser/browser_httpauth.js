@@ -1,5 +1,4 @@
-let Cu = Components.utils;
-let {HttpServer} = Cu.import("resource://testing-common/httpd.js", {});
+let {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js", {});
 
 let server = new HttpServer();
 server.registerPathHandler("/file.html", fileHandler);
@@ -35,7 +34,7 @@ function onCommonDialogLoaded(subject) {
   dialog.ui.button0.click();
 }
 
-Services.obs.addObserver(onCommonDialogLoaded, "common-dialog-loaded", false);
+Services.obs.addObserver(onCommonDialogLoaded, "common-dialog-loaded");
 
 registerCleanupFunction(() => {
   Services.obs.removeObserver(onCommonDialogLoaded, "common-dialog-loaded");

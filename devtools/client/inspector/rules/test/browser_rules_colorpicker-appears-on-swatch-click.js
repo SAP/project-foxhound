@@ -18,34 +18,34 @@ const TEST_URI = `
   Testing the color picker tooltip!
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {view} = yield openRuleView();
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {view} = await openRuleView();
 
-  let propertiesToTest = ["color", "background-color", "border"];
+  const propertiesToTest = ["color", "background-color", "border"];
 
-  for (let property of propertiesToTest) {
+  for (const property of propertiesToTest) {
     info("Testing that the colorpicker appears on swatch click");
-    let value = getRuleViewProperty(view, "body", property).valueSpan;
-    let swatch = value.querySelector(".ruleview-colorswatch");
-    yield testColorPickerAppearsOnColorSwatchClick(view, swatch);
+    const value = getRuleViewProperty(view, "body", property).valueSpan;
+    const swatch = value.querySelector(".ruleview-colorswatch");
+    await testColorPickerAppearsOnColorSwatchClick(view, swatch);
   }
 });
 
-function* testColorPickerAppearsOnColorSwatchClick(view, swatch) {
-  let cPicker = view.tooltips.colorPicker;
+async function testColorPickerAppearsOnColorSwatchClick(view, swatch) {
+  const cPicker = view.tooltips.getTooltip("colorPicker");
   ok(cPicker, "The rule-view has the expected colorPicker property");
 
-  let cPickerPanel = cPicker.tooltip.panel;
+  const cPickerPanel = cPicker.tooltip.panel;
   ok(cPickerPanel, "The XUL panel for the color picker exists");
 
-  let onColorPickerReady = cPicker.once("ready");
+  const onColorPickerReady = cPicker.once("ready");
   swatch.click();
-  yield onColorPickerReady;
+  await onColorPickerReady;
 
   ok(true, "The color picker was shown on click of the color swatch");
   ok(!inplaceEditor(swatch.parentNode),
     "The inplace editor wasn't shown as a result of the color swatch click");
 
-  yield hideTooltipAndWaitForRuleViewChanged(cPicker, view);
+  await hideTooltipAndWaitForRuleViewChanged(cPicker, view);
 }

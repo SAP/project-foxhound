@@ -1,12 +1,19 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+"use strict";
+
 var gDebuggee;
 var gClient;
 var gThreadClient;
 
-function run_test()
-{
+Services.prefs.setBoolPref("security.allow_eval_with_system_principal", true);
+
+registerCleanupFunction(() => {
+  Services.prefs.clearUserPref("security.allow_eval_with_system_principal");
+});
+
+function run_test() {
   initTestDebuggerServer();
   gDebuggee = addTestGlobal("test-grips");
   gDebuggee.eval(function stopMe(arg1) {
@@ -14,41 +21,40 @@ function run_test()
   }.toString());
 
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
-  gClient.connect().then(function () {
+  gClient.connect().then(function() {
     attachTestTabAndResume(
-      gClient, "test-grips", function (aResponse, aTabClient, aThreadClient) {
-        gThreadClient = aThreadClient;
+      gClient, "test-grips", function(response, targetFront, threadClient) {
+        gThreadClient = threadClient;
         test_longstring_grip();
       });
   });
   do_test_pending();
 }
 
-function test_longstring_grip()
-{
+function test_longstring_grip() {
   DebuggerServer.LONG_STRING_LENGTH = 200;
 
-  gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
+  gThreadClient.addOneTimeListener("paused", function(event, packet) {
     try {
-      let fakeLongStringGrip = {
+      const fakeLongStringGrip = {
         type: "longString",
         length: 1000000,
         actor: "123fakeActor123",
-        initial: ""
+        initial: "",
       };
-      let longStringClient = gThreadClient.pauseLongString(fakeLongStringGrip);
-      longStringClient.substring(22, 28, function (aResponse) {
+      const longStringClient = gThreadClient.pauseLongString(fakeLongStringGrip);
+      longStringClient.substring(22, 28, function(response) {
         try {
-          do_check_true(!!aResponse.error,
-                        "We should not get a response, but an error.");
+          Assert.ok(!!response.error,
+                    "We should not get a response, but an error.");
         } finally {
-          gThreadClient.resume(function () {
+          gThreadClient.resume(function() {
             finishClient(gClient);
           });
         }
       });
     } catch (error) {
-      gThreadClient.resume(function () {
+      gThreadClient.resume(function() {
         finishClient(gClient);
         do_throw(error);
       });

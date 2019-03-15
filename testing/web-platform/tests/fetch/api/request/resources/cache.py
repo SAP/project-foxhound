@@ -17,6 +17,9 @@ def main(request, response):
     cache_control = request.headers.get("Cache-Control", None)
     ignore = "ignore" in request.GET
 
+    if tag:
+        tag = '"%s"' % tag
+
     server_state = request.server.stash.take(token)
     if not server_state:
         server_state = []
@@ -34,7 +37,7 @@ def main(request, response):
     request.server.stash.put(token, server_state)
 
     if tag:
-        response.headers.set("ETag", '"%s"' % tag)
+        response.headers.set("ETag", '%s' % tag)
     elif date:
         response.headers.set("Last-Modified", date)
     if expires:
@@ -46,10 +49,10 @@ def main(request, response):
 
     # The only-if-cached redirect tests wants CORS to be okay, the other tests
     # are all same-origin anyways and don't care.
-    response.headers.set("Access-Control-Allow-Origin", "*");
+    response.headers.set("Access-Control-Allow-Origin", "*")
 
     if redirect:
-        response.headers.set("Location", redirect);
+        response.headers.set("Location", redirect)
         response.status = (302, "Redirect")
         return ""
     elif ((inm is not None and inm == tag) or

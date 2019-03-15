@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,30 +16,25 @@ NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(FontFaceSetIterator, Release)
 
 FontFaceSetIterator::FontFaceSetIterator(FontFaceSet* aFontFaceSet,
                                          bool aIsKeyAndValue)
-  : mFontFaceSet(aFontFaceSet)
-  , mNextIndex(0)
-  , mIsKeyAndValue(aIsKeyAndValue)
-{
+    : mFontFaceSet(aFontFaceSet),
+      mNextIndex(0),
+      mIsKeyAndValue(aIsKeyAndValue) {
   MOZ_COUNT_CTOR(FontFaceSetIterator);
 }
 
-FontFaceSetIterator::~FontFaceSetIterator()
-{
+FontFaceSetIterator::~FontFaceSetIterator() {
   MOZ_COUNT_DTOR(FontFaceSetIterator);
 }
 
-bool
-FontFaceSetIterator::WrapObject(JSContext* aCx,
-                                JS::Handle<JSObject*> aGivenProto,
-                                JS::MutableHandle<JSObject*> aReflector)
-{
-  return FontFaceSetIteratorBinding::Wrap(aCx, this, aGivenProto, aReflector);
+bool FontFaceSetIterator::WrapObject(JSContext* aCx,
+                                     JS::Handle<JSObject*> aGivenProto,
+                                     JS::MutableHandle<JSObject*> aReflector) {
+  return FontFaceSetIterator_Binding::Wrap(aCx, this, aGivenProto, aReflector);
 }
 
-void
-FontFaceSetIterator::Next(JSContext* aCx, FontFaceSetIteratorResult& aResult,
-                          ErrorResult& aRv)
-{
+void FontFaceSetIterator::Next(JSContext* aCx,
+                               FontFaceSetIteratorResult& aResult,
+                               ErrorResult& aRv) {
   if (!mFontFaceSet) {
     aResult.mDone = true;
     return;
@@ -76,5 +72,5 @@ FontFaceSetIterator::Next(JSContext* aCx, FontFaceSetIteratorResult& aResult,
   aResult.mDone = false;
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

@@ -17,39 +17,40 @@
 namespace mozilla {
 namespace dom {
 
-NS_IMPL_ISUPPORTS(ExternalHelperAppChild,
-                  nsIStreamListener,
-                  nsIRequestObserver)
+NS_IMPL_ISUPPORTS(ExternalHelperAppChild, nsIStreamListener, nsIRequestObserver)
 
-ExternalHelperAppChild::ExternalHelperAppChild()
-  : mStatus(NS_OK)
-{
-}
+ExternalHelperAppChild::ExternalHelperAppChild() : mStatus(NS_OK) {}
 
-ExternalHelperAppChild::~ExternalHelperAppChild()
-{
-}
+ExternalHelperAppChild::~ExternalHelperAppChild() {}
 
 //-----------------------------------------------------------------------------
 // nsIStreamListener
 //-----------------------------------------------------------------------------
 NS_IMETHODIMP
-ExternalHelperAppChild::OnDataAvailable(nsIRequest *request,
-                                        nsISupports *ctx,
-                                        nsIInputStream *input,
-                                        uint64_t offset,
-                                        uint32_t count)
-{
-  if (NS_FAILED(mStatus))
-    return mStatus;
+ExternalHelperAppChild::OnDataAvailable(nsIRequest *request, nsISupports *ctx,
+                                        nsIInputStream *input, uint64_t offset,
+                                        uint32_t count) {
+  if (NS_FAILED(mStatus)) return mStatus;
+
+  static uint32_t const kCopyChunkSize = 128 * 1024;
+  uint32_t toRead = std::min<uint32_t>(count, kCopyChunkSize);
 
   nsCString data;
-  nsresult rv = NS_ReadInputStreamToString(input, data, count);
-  if (NS_FAILED(rv))
-    return rv;
 
-  if (!SendOnDataAvailable(data, offset, count))
-    return NS_ERROR_UNEXPECTED;
+  while (count) {
+    nsresult rv = NS_ReadInputStreamToString(input, data, toRead);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+
+    if (NS_WARN_IF(!SendOnDataAvailable(data, offset, toRead))) {
+      return NS_ERROR_UNEXPECTED;
+    }
+
+    count -= toRead;
+    offset += toRead;
+    toRead = std::min<uint32_t>(count, kCopyChunkSize);
+  }
 
   return NS_OK;
 }
@@ -59,8 +60,7 @@ ExternalHelperAppChild::OnDataAvailable(nsIRequest *request,
 //////////////////////////////////////////////////////////////////////////////
 
 NS_IMETHODIMP
-ExternalHelperAppChild::OnStartRequest(nsIRequest *request, nsISupports *ctx)
-{
+ExternalHelperAppChild::OnStartRequest(nsIRequest *request, nsISupports *ctx) {
   nsresult rv = mHandler->OnStartRequest(request, ctx);
   NS_ENSURE_SUCCESS(rv, NS_ERROR_UNEXPECTED);
 
@@ -69,8 +69,11 @@ ExternalHelperAppChild::OnStartRequest(nsIRequest *request, nsISupports *ctx)
   // point to the wrong window. Re-send the window context along with either
   // DivertToParent or SendOnStartRequest just in case.
   nsCOMPtr<nsPIDOMWindowOuter> window =
-    do_GetInterface(mHandler->GetDialogParent());
-  TabChild *tabChild = window ? mozilla::dom::TabChild::GetFrom(window) : nullptr;
+      do_GetInterface(mHandler->GetDialogParent());
+  NS_ENSURE_TRUE(window, NS_ERROR_NOT_AVAILABLE);
+
+  TabChild *tabChild = mozilla::dom::TabChild::GetFrom(window);
+  NS_ENSURE_TRUE(tabChild, NS_ERROR_NOT_AVAILABLE);
 
   nsCOMPtr<nsIDivertableChannel> divertable = do_QueryInterface(request);
   if (divertable) {
@@ -87,10 +90,8 @@ ExternalHelperAppChild::OnStartRequest(nsIRequest *request, nsISupports *ctx)
 }
 
 NS_IMETHODIMP
-ExternalHelperAppChild::OnStopRequest(nsIRequest *request,
-                                      nsISupports *ctx,
-                                      nsresult status)
-{
+ExternalHelperAppChild::OnStopRequest(nsIRequest *request, nsISupports *ctx,
+                                      nsresult status) {
   // mHandler can be null if we diverted the request to the parent
   if (mHandler) {
     nsresult rv = mHandler->OnStopRequest(request, ctx, status);
@@ -101,11 +102,8 @@ ExternalHelperAppChild::OnStopRequest(nsIRequest *request,
   return NS_OK;
 }
 
-nsresult
-ExternalHelperAppChild::DivertToParent(nsIDivertableChannel *divertable,
-                                       nsIRequest *request,
-                                       TabChild *tabChild)
-{
+nsresult ExternalHelperAppChild::DivertToParent(
+    nsIDivertableChannel *divertable, nsIRequest *request, TabChild *tabChild) {
   // nsIDivertable must know about content conversions before being diverted.
   MOZ_ASSERT(mHandler);
   mHandler->MaybeApplyDecodingForExtension(request);
@@ -126,12 +124,11 @@ ExternalHelperAppChild::DivertToParent(nsIDivertableChannel *divertable,
   return NS_ERROR_FAILURE;
 }
 
-mozilla::ipc::IPCResult
-ExternalHelperAppChild::RecvCancel(const nsresult& aStatus)
-{
+mozilla::ipc::IPCResult ExternalHelperAppChild::RecvCancel(
+    const nsresult &aStatus) {
   mStatus = aStatus;
   return IPC_OK();
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

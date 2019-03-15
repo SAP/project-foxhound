@@ -5,10 +5,11 @@
 
 #include "nsISupports.idl"
 
-interface nsITreeBoxObject;
 interface nsITreeSelection;
-interface nsITreeColumn;
-interface nsIDOMDataTransfer;
+
+webidl DataTransfer;
+webidl TreeColumn;
+webidl XULTreeElement;
 
 [scriptable, uuid(091116f0-0bdc-4b32-b9c8-c8d5a37cb088)]
 interface nsITreeView : nsISupports
@@ -23,7 +24,7 @@ interface nsITreeView : nsISupports
    */
   attribute nsITreeSelection selection;
 
-  /** 
+  /**
    * A whitespace delimited list of properties.  For each property X the view
    * gives back will cause the pseudoclasses  ::-moz-tree-cell(x),
    * ::-moz-tree-row(x), ::-moz-tree-twisty(x), ::-moz-tree-image(x),
@@ -39,13 +40,13 @@ interface nsITreeView : nsISupports
    *  ::-moz-tree-image(x), ::-moz-tree-cell-text(x). to be matched on the
    *  cell.
    */
-  AString getCellProperties(in long row, in nsITreeColumn col);
-  
+  AString getCellProperties(in long row, in TreeColumn col);
+
   /**
    * Called to get properties to paint a column background.  For shading the sort
    * column, etc.
    */
-  AString getColumnProperties(in nsITreeColumn col);
+  AString getColumnProperties(in TreeColumn col);
 
   /**
    * Methods that can be used to test whether or not a twisty should be drawn,
@@ -54,7 +55,7 @@ interface nsITreeView : nsISupports
   boolean isContainer(in long index);
   boolean isContainerOpen(in long index);
   boolean isContainerEmpty(in long index);
- 
+
   /**
    * isSeparator is used to determine if the row at index is a separator.
    * A value of true will result in the tree drawing a horizontal separator.
@@ -67,7 +68,7 @@ interface nsITreeView : nsISupports
    * to affect drop feedback.
    */
   boolean isSorted();
-  
+
   const short DROP_BEFORE = -1;
   const short DROP_ON = 0;
   const short DROP_AFTER = 1;
@@ -77,13 +78,13 @@ interface nsITreeView : nsISupports
    * items, such as the mailNews folder pane, always return false when
    * the orientation is not DROP_ON.
    */
-  boolean canDrop(in long index, in long orientation, in nsIDOMDataTransfer dataTransfer);
+  boolean canDrop(in long index, in long orientation, in DataTransfer dataTransfer);
 
   /**
    * Called when the user drops something on this view. The |orientation| param
    * specifies before/on/after the given |row|.
    */
-  void drop(in long row, in long orientation, in nsIDOMDataTransfer dataTransfer);
+  void drop(in long row, in long orientation, in DataTransfer dataTransfer);
 
   /**
    * Methods used by the tree to draw thread lines in the tree.
@@ -102,7 +103,7 @@ interface nsITreeView : nsISupports
 
   /**
    * The level is an integer value that represents
-   * the level of indentation.  It is multiplied by the width specified in the 
+   * the level of indentation.  It is multiplied by the width specified in the
    * :moz-tree-indentation pseudoelement to compute the exact indendation.
    */
   long getLevel(in long index);
@@ -112,34 +113,25 @@ interface nsITreeView : nsISupports
    * If the empty string is returned, the :moz-tree-image pseudoelement
    * will be used.
    */
-  AString getImageSrc(in long row, in nsITreeColumn col);
-
-  /**
-   * The progress mode for a given cell. This method is only called for
-   * columns of type |progressmeter|.
-   */
-  const short PROGRESS_NORMAL = 1;
-  const short PROGRESS_UNDETERMINED = 2;
-  const short PROGRESS_NONE = 3;
-  long getProgressMode(in long row, in nsITreeColumn col);
+  AString getImageSrc(in long row, in TreeColumn col);
 
   /**
    * The value for a given cell. This method is only called for columns
    * of type other than |text|.
    */
-  AString getCellValue(in long row, in nsITreeColumn col);
+  AString getCellValue(in long row, in TreeColumn col);
 
   /**
    * The text for a given cell.  If a column consists only of an image, then
-   * the empty string is returned.  
+   * the empty string is returned.
    */
-  AString getCellText(in long row, in nsITreeColumn col);
+  AString getCellText(in long row, in TreeColumn col);
 
   /**
    * Called during initialization to link the view to the front end box object.
    */
-  void setTree(in nsITreeBoxObject tree);
-  
+  void setTree(in XULTreeElement tree);
+
   /**
    * Called on the view when an item is opened or closed.
    */
@@ -148,42 +140,36 @@ interface nsITreeView : nsISupports
   /**
    * Called on the view when a header is clicked.
    */
-  void cycleHeader(in nsITreeColumn col);
+  void cycleHeader(in TreeColumn col);
 
   /**
    * Should be called from a XUL onselect handler whenever the selection changes.
    */
+  [binaryname(SelectionChangedXPCOM)]
   void selectionChanged();
 
   /**
    * Called on the view when a cell in a non-selectable cycling column (e.g., unread/flag/etc.) is clicked.
    */
-  void cycleCell(in long row, in nsITreeColumn col);
-  
-  /**
-   * isEditable is called to ask the view if the cell contents are editable.
-   * A value of true will result in the tree popping up a text field when 
-   * the user tries to inline edit the cell.
-   */
-  boolean isEditable(in long row, in nsITreeColumn col);
+  void cycleCell(in long row, in TreeColumn col);
 
   /**
-   * isSelectable is called to ask the view if the cell is selectable.
-   * This method is only called if the selection style is |cell| or |text|.
-   * XXXvarga shouldn't this be called isCellSelectable?
+   * isEditable is called to ask the view if the cell contents are editable.
+   * A value of true will result in the tree popping up a text field when
+   * the user tries to inline edit the cell.
    */
-  boolean isSelectable(in long row, in nsITreeColumn col);
+  boolean isEditable(in long row, in TreeColumn col);
 
   /**
    * setCellValue is called when the value of the cell has been set by the user.
    * This method is only called for columns of type other than |text|.
    */
-  void setCellValue(in long row, in nsITreeColumn col, in AString value);
+  void setCellValue(in long row, in TreeColumn col, in AString value);
 
   /**
    * setCellText is called when the contents of the cell have been edited by the user.
-   */   
-  void setCellText(in long row, in nsITreeColumn col, in AString value);
+   */
+  void setCellText(in long row, in TreeColumn col, in AString value);
 
   /**
    * A command API that can be used to invoke commands on the selection.  The tree
@@ -200,16 +186,5 @@ interface nsITreeView : nsISupports
   /**
    * A command API that can be used to invoke commands on a specific cell.
    */
-  void performActionOnCell(in wstring action, in long row, in nsITreeColumn col);
-};
-
-/**
- * The following interface is not scriptable and MUST NEVER BE MADE scriptable.
- * Native treeviews implement it, and we use this to check whether a treeview
- * is native (and therefore suitable for use by untrusted content).
- */
-[uuid(46c90265-6553-41ae-8d39-7022e7d09145)]
-interface nsINativeTreeView : nsITreeView
-{
-  [noscript] void ensureNative();
+  void performActionOnCell(in wstring action, in long row, in TreeColumn col);
 };

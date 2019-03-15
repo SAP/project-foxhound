@@ -22,7 +22,7 @@
 #include "nsIProgressEventSink.h"
 #include "nsIInputStream.h"
 #include "nsIStreamConverterService.h"
-#include "nsWeakReference.h"
+#include "nsIWeakReferenceUtils.h"
 #include "nsIHttpChannel.h"
 #include "nsIMultiPartChannel.h"
 #include "netCore.h"
@@ -31,15 +31,15 @@
 #include "nsIDocShellTreeItem.h"
 #include "nsIDocShellTreeOwner.h"
 #include "nsIThreadRetargetableStreamListener.h"
+#include "nsIChildChannel.h"
 
-#include "nsXPIDLString.h"
 #include "nsString.h"
 #include "nsThreadUtils.h"
 #include "nsReadableUtils.h"
 #include "nsError.h"
 
 #include "nsICategoryManager.h"
-#include "nsCExternalHandlerService.h" // contains contractids for the helper app service
+#include "nsCExternalHandlerService.h"  // contains contractids for the helper app service
 
 #include "nsIMIMEHeaderParam.h"
 #include "nsNetCID.h"
@@ -50,16 +50,26 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/Unused.h"
 #include "nsContentUtils.h"
 
 mozilla::LazyLogModule nsURILoader::mLog("URILoader");
 
 #define LOG(args) MOZ_LOG(nsURILoader::mLog, mozilla::LogLevel::Debug, args)
-#define LOG_ERROR(args) MOZ_LOG(nsURILoader::mLog, mozilla::LogLevel::Error, args)
+#define LOG_ERROR(args) \
+  MOZ_LOG(nsURILoader::mLog, mozilla::LogLevel::Error, args)
 #define LOG_ENABLED() MOZ_LOG_TEST(nsURILoader::mLog, mozilla::LogLevel::Debug)
 
 #define NS_PREF_DISABLE_BACKGROUND_HANDLING \
-    "security.exthelperapp.disable_background_handling"
+  "security.exthelperapp.disable_background_handling"
+
+static uint32_t sConvertDataLimit = 20;
+
+static bool InitPreferences() {
+  nsresult rv = mozilla::Preferences::AddUintVarCache(
+      &sConvertDataLimit, "general.document_open_conversion_depth_limit", 20);
+  return NS_SUCCEEDED(rv);
+}
 
 /**
  * The nsDocumentOpenInfo contains the state required when a single
@@ -67,17 +77,12 @@ mozilla::LazyLogModule nsURILoader::mLog("URILoader");
  * Each instance remains alive until its target URL has been loaded
  * (or aborted).
  */
-class nsDocumentOpenInfo final : public nsIStreamListener
-                               , public nsIThreadRetargetableStreamListener
-{
-public:
-  // Needed for nsCOMPtr to work right... Don't call this!
-  nsDocumentOpenInfo();
-
+class nsDocumentOpenInfo final : public nsIStreamListener,
+                                 public nsIThreadRetargetableStreamListener {
+ public:
   // Real constructor
   // aFlags is a combination of the flags on nsIURILoader
-  nsDocumentOpenInfo(nsIInterfaceRequestor* aWindowContext,
-                     uint32_t aFlags,
+  nsDocumentOpenInfo(nsIInterfaceRequestor* aWindowContext, uint32_t aFlags,
                      nsURILoader* aURILoader);
 
   NS_DECL_THREADSAFE_ISUPPORTS
@@ -91,15 +96,14 @@ public:
 
   // Call this (from OnStartRequest) to attempt to find an nsIStreamListener to
   // take the data off our hands.
-  nsresult DispatchContent(nsIRequest *request, nsISupports * aCtxt);
+  nsresult DispatchContent(nsIRequest* request, nsISupports* aCtxt);
 
   // Call this if we need to insert a stream converter from aSrcContentType to
   // aOutContentType into the StreamListener chain.  DO NOT call it if the two
   // types are the same, since no conversion is needed in that case.
-  nsresult ConvertData(nsIRequest *request,
-                       nsIURIContentListener *aListener,
-                       const nsACString & aSrcContentType,
-                       const nsACString & aOutContentType);
+  nsresult ConvertData(nsIRequest* request, nsIURIContentListener* aListener,
+                       const nsACString& aSrcContentType,
+                       const nsACString& aOutContentType);
 
   /**
    * Function to attempt to use aListener to handle the load.  If
@@ -108,7 +112,7 @@ public:
    * tried.
    */
   bool TryContentListener(nsIURIContentListener* aListener,
-                            nsIChannel* aChannel);
+                          nsIChannel* aChannel);
 
   // nsIRequestObserver methods:
   NS_DECL_NSIREQUESTOBSERVER
@@ -118,10 +122,10 @@ public:
 
   // nsIThreadRetargetableStreamListener
   NS_DECL_NSITHREADRETARGETABLESTREAMLISTENER
-protected:
+ protected:
   ~nsDocumentOpenInfo();
 
-protected:
+ protected:
   /**
    * The first content listener to try dispatching data to.  Typically
    * the listener associated with the entity that originated the load.
@@ -158,6 +162,11 @@ protected:
    * nsIURIContentListeners.
    */
   RefPtr<nsURILoader> mURILoader;
+
+  /**
+   * Limit of data conversion depth to prevent infinite conversion loops
+   */
+  uint32_t mDataConversionDepthLimit;
 };
 
 NS_IMPL_ADDREF(nsDocumentOpenInfo)
@@ -168,28 +177,18 @@ NS_INTERFACE_MAP_BEGIN(nsDocumentOpenInfo)
   NS_INTERFACE_MAP_ENTRY(nsIRequestObserver)
   NS_INTERFACE_MAP_ENTRY(nsIStreamListener)
   NS_INTERFACE_MAP_ENTRY(nsIThreadRetargetableStreamListener)
-NS_INTERFACE_MAP_END_THREADSAFE
-
-nsDocumentOpenInfo::nsDocumentOpenInfo()
-{
-  NS_NOTREACHED("This should never be called\n");
-}
+NS_INTERFACE_MAP_END
 
 nsDocumentOpenInfo::nsDocumentOpenInfo(nsIInterfaceRequestor* aWindowContext,
-                                       uint32_t aFlags,
-                                       nsURILoader* aURILoader)
-  : m_originalContext(aWindowContext),
-    mFlags(aFlags),
-    mURILoader(aURILoader)
-{
-}
+                                       uint32_t aFlags, nsURILoader* aURILoader)
+    : m_originalContext(aWindowContext),
+      mFlags(aFlags),
+      mURILoader(aURILoader),
+      mDataConversionDepthLimit(sConvertDataLimit) {}
 
-nsDocumentOpenInfo::~nsDocumentOpenInfo()
-{
-}
+nsDocumentOpenInfo::~nsDocumentOpenInfo() {}
 
-nsresult nsDocumentOpenInfo::Prepare()
-{
+nsresult nsDocumentOpenInfo::Prepare() {
   LOG(("[0x%p] nsDocumentOpenInfo::Prepare", this));
 
   nsresult rv;
@@ -199,8 +198,8 @@ nsresult nsDocumentOpenInfo::Prepare()
   return rv;
 }
 
-NS_IMETHODIMP nsDocumentOpenInfo::OnStartRequest(nsIRequest *request, nsISupports * aCtxt)
-{
+NS_IMETHODIMP nsDocumentOpenInfo::OnStartRequest(nsIRequest* request,
+                                                 nsISupports* aCtxt) {
   LOG(("[0x%p] nsDocumentOpenInfo::OnStartRequest", this));
   MOZ_ASSERT(request);
   if (!request) {
@@ -211,12 +210,12 @@ NS_IMETHODIMP nsDocumentOpenInfo::OnStartRequest(nsIRequest *request, nsISupport
 
   //
   // Deal with "special" HTTP responses:
-  // 
+  //
   // - In the case of a 204 (No Content) or 205 (Reset Content) response, do
   //   not try to find a content handler.  Return NS_BINDING_ABORTED to cancel
   //   the request.  This has the effect of ensuring that the DocLoader does
   //   not try to interpret this as a real request.
-  // 
+  //
   nsCOMPtr<nsIHttpChannel> httpChannel(do_QueryInterface(request, &rv));
 
   if (NS_SUCCEEDED(rv)) {
@@ -226,7 +225,7 @@ NS_IMETHODIMP nsDocumentOpenInfo::OnStartRequest(nsIRequest *request, nsISupport
 
     if (NS_FAILED(rv)) {
       LOG_ERROR(("  Failed to get HTTP response status"));
-      
+
       // behave as in the canceled case
       return NS_OK;
     }
@@ -237,19 +236,41 @@ NS_IMETHODIMP nsDocumentOpenInfo::OnStartRequest(nsIRequest *request, nsISupport
       return NS_BINDING_ABORTED;
     }
 
+    static bool sLargeAllocationTestingAllHttpLoads = false;
     static bool sLargeAllocationHeaderEnabled = false;
     static bool sCachedLargeAllocationPref = false;
     if (!sCachedLargeAllocationPref) {
       sCachedLargeAllocationPref = true;
-      mozilla::Preferences::AddBoolVarCache(&sLargeAllocationHeaderEnabled,
-                                            "dom.largeAllocationHeader.enabled");
+      mozilla::Preferences::AddBoolVarCache(
+          &sLargeAllocationHeaderEnabled, "dom.largeAllocationHeader.enabled");
+      mozilla::Preferences::AddBoolVarCache(
+          &sLargeAllocationTestingAllHttpLoads,
+          "dom.largeAllocation.testing.allHttpLoads");
     }
 
     if (sLargeAllocationHeaderEnabled) {
-      // If we have a Large-Allocation header, let's check if we should perform a process switch.
+      if (sLargeAllocationTestingAllHttpLoads) {
+        nsCOMPtr<nsIURI> uri;
+        rv = httpChannel->GetURI(getter_AddRefs(uri));
+        if (NS_SUCCEEDED(rv) && uri) {
+          bool httpScheme = false;
+          bool httpsScheme = false;
+          uri->SchemeIs("http", &httpScheme);
+          uri->SchemeIs("https", &httpsScheme);
+          if ((httpScheme || httpsScheme) &&
+              nsContentUtils::AttemptLargeAllocationLoad(httpChannel)) {
+            return NS_BINDING_ABORTED;
+          }
+        }
+      }
+
+      // If we have a Large-Allocation header, let's check if we should perform
+      // a process switch.
       nsAutoCString largeAllocationHeader;
-      rv = httpChannel->GetResponseHeader(NS_LITERAL_CSTRING("Large-Allocation"), largeAllocationHeader);
-      if (NS_SUCCEEDED(rv) && nsContentUtils::AttemptLargeAllocationLoad(httpChannel)) {
+      rv = httpChannel->GetResponseHeader(
+          NS_LITERAL_CSTRING("Large-Allocation"), largeAllocationHeader);
+      if (NS_SUCCEEDED(rv) &&
+          nsContentUtils::AttemptLargeAllocationLoad(httpChannel)) {
         return NS_BINDING_ABORTED;
       }
     }
@@ -261,13 +282,14 @@ NS_IMETHODIMP nsDocumentOpenInfo::OnStartRequest(nsIRequest *request, nsISupport
   nsresult status;
 
   rv = request->GetStatus(&status);
-  
+
   NS_ASSERTION(NS_SUCCEEDED(rv), "Unable to get request status!");
   if (NS_FAILED(rv)) return rv;
 
   if (NS_FAILED(status)) {
-    LOG_ERROR(("  Request failed, status: 0x%08" PRIX32, static_cast<uint32_t>(rv)));
-  
+    LOG_ERROR(
+        ("  Request failed, status: 0x%08" PRIX32, static_cast<uint32_t>(rv)));
+
     //
     // The transaction has already reported an error - so it will be torn
     // down. Therefore, it is not necessary to return an error code...
@@ -280,57 +302,58 @@ NS_IMETHODIMP nsDocumentOpenInfo::OnStartRequest(nsIRequest *request, nsISupport
   LOG(("  After dispatch, m_targetStreamListener: 0x%p, rv: 0x%08" PRIX32,
        m_targetStreamListener.get(), static_cast<uint32_t>(rv)));
 
-  NS_ASSERTION(NS_SUCCEEDED(rv) || !m_targetStreamListener,
-               "Must not have an m_targetStreamListener with a failure return!");
+  NS_ASSERTION(
+      NS_SUCCEEDED(rv) || !m_targetStreamListener,
+      "Must not have an m_targetStreamListener with a failure return!");
 
   NS_ENSURE_SUCCESS(rv, rv);
-  
+
   if (m_targetStreamListener)
     rv = m_targetStreamListener->OnStartRequest(request, aCtxt);
 
   LOG(("  OnStartRequest returning: 0x%08" PRIX32, static_cast<uint32_t>(rv)));
-  
+
   return rv;
 }
 
 NS_IMETHODIMP
-nsDocumentOpenInfo::CheckListenerChain()
-{
+nsDocumentOpenInfo::CheckListenerChain() {
   NS_ASSERTION(NS_IsMainThread(), "Should be on the main thread!");
   nsresult rv = NS_OK;
   nsCOMPtr<nsIThreadRetargetableStreamListener> retargetableListener =
-    do_QueryInterface(m_targetStreamListener, &rv);
+      do_QueryInterface(m_targetStreamListener, &rv);
   if (retargetableListener) {
     rv = retargetableListener->CheckListenerChain();
   }
-  LOG(("[0x%p] nsDocumentOpenInfo::CheckListenerChain %s listener %p rv %" PRIx32,
+  LOG(
+      ("[0x%p] nsDocumentOpenInfo::CheckListenerChain %s listener %p rv "
+       "%" PRIx32,
        this, (NS_SUCCEEDED(rv) ? "success" : "failure"),
        (nsIStreamListener*)m_targetStreamListener, static_cast<uint32_t>(rv)));
   return rv;
 }
 
 NS_IMETHODIMP
-nsDocumentOpenInfo::OnDataAvailable(nsIRequest *request, nsISupports * aCtxt,
-                                    nsIInputStream * inStr,
-                                    uint64_t sourceOffset, uint32_t count)
-{
+nsDocumentOpenInfo::OnDataAvailable(nsIRequest* request, nsISupports* aCtxt,
+                                    nsIInputStream* inStr,
+                                    uint64_t sourceOffset, uint32_t count) {
   // if we have retarged to the end stream listener, then forward the call....
   // otherwise, don't do anything
 
   nsresult rv = NS_OK;
-  
+
   if (m_targetStreamListener)
-    rv = m_targetStreamListener->OnDataAvailable(request, aCtxt, inStr, sourceOffset, count);
+    rv = m_targetStreamListener->OnDataAvailable(request, aCtxt, inStr,
+                                                 sourceOffset, count);
   return rv;
 }
 
-NS_IMETHODIMP nsDocumentOpenInfo::OnStopRequest(nsIRequest *request, nsISupports *aCtxt, 
-                                                nsresult aStatus)
-{
+NS_IMETHODIMP nsDocumentOpenInfo::OnStopRequest(nsIRequest* request,
+                                                nsISupports* aCtxt,
+                                                nsresult aStatus) {
   LOG(("[0x%p] nsDocumentOpenInfo::OnStopRequest", this));
-  
-  if ( m_targetStreamListener)
-  {
+
+  if (m_targetStreamListener) {
     nsCOMPtr<nsIStreamListener> listener(m_targetStreamListener);
 
     // If this is a multipart stream, we could get another
@@ -347,13 +370,14 @@ NS_IMETHODIMP nsDocumentOpenInfo::OnStopRequest(nsIRequest *request, nsISupports
   return NS_OK;
 }
 
-nsresult nsDocumentOpenInfo::DispatchContent(nsIRequest *request, nsISupports * aCtxt)
-{
-  LOG(("[0x%p] nsDocumentOpenInfo::DispatchContent for type '%s'", this, mContentType.get()));
+nsresult nsDocumentOpenInfo::DispatchContent(nsIRequest* request,
+                                             nsISupports* aCtxt) {
+  LOG(("[0x%p] nsDocumentOpenInfo::DispatchContent for type '%s'", this,
+       mContentType.get()));
 
-  NS_PRECONDITION(!m_targetStreamListener,
-                  "Why do we already have a target stream listener?");
-  
+  MOZ_ASSERT(!m_targetStreamListener,
+             "Why do we already have a target stream listener?");
+
   nsresult rv;
   nsCOMPtr<nsIChannel> aChannel = do_QueryInterface(request);
   if (!aChannel) {
@@ -369,7 +393,7 @@ nsresult nsDocumentOpenInfo::DispatchContent(nsIRequest *request, nsISupports * 
   }
 
   bool isGuessFromExt =
-    mContentType.LowerCaseEqualsASCII(APPLICATION_GUESS_FROM_EXT);
+      mContentType.LowerCaseEqualsASCII(APPLICATION_GUESS_FROM_EXT);
   if (isGuessFromExt) {
     // Reset to application/octet-stream for now; no one other than the
     // external helper app service should see APPLICATION_GUESS_FROM_EXT.
@@ -385,30 +409,13 @@ nsresult nsDocumentOpenInfo::DispatchContent(nsIRequest *request, nsISupports * 
   uint32_t disposition;
   rv = aChannel->GetContentDisposition(&disposition);
 
-  bool allowContentDispositionToForceExternalHandling = true;
-
-#ifdef MOZ_B2G
-
-  // On B2G, OMA content files should never be handled by an external handler
-  // (even if the server specifies Content-Disposition: attachment) because the
-  // data should never be stored on an unencrypted form.
-  allowContentDispositionToForceExternalHandling =
-    !mContentType.LowerCaseEqualsASCII("application/vnd.oma.drm.message");
-
-#endif
-
-  if (NS_SUCCEEDED(rv) && (disposition == nsIChannel::DISPOSITION_ATTACHMENT) &&
-      allowContentDispositionToForceExternalHandling) {
+  if (NS_SUCCEEDED(rv) && disposition == nsIChannel::DISPOSITION_ATTACHMENT) {
     forceExternalHandling = true;
   }
 
   LOG(("  forceExternalHandling: %s", forceExternalHandling ? "yes" : "no"));
 
-  // The type or data the contentListener wants.
-  nsXPIDLCString desiredContentType;
-
-  if (!forceExternalHandling)
-  {
+  if (!forceExternalHandling) {
     //
     // First step: See whether m_contentListener wants to handle this
     // content type.
@@ -422,7 +429,6 @@ nsresult nsDocumentOpenInfo::DispatchContent(nsIRequest *request, nsISupports * 
     // If we aren't allowed to try other listeners, just skip through to
     // trying to convert the data.
     if (!(mFlags & nsIURILoader::DONT_RETARGET)) {
-
       //
       // Second step: See whether some other registered listener wants
       // to handle this content type.
@@ -449,19 +455,18 @@ nsresult nsDocumentOpenInfo::DispatchContent(nsIRequest *request, nsISupports * 
       // module, but which has registered a contract ID.
       //
       nsCOMPtr<nsICategoryManager> catman =
-        do_GetService(NS_CATEGORYMANAGER_CONTRACTID);
+          do_GetService(NS_CATEGORYMANAGER_CONTRACTID);
       if (catman) {
-        nsXPIDLCString contractidString;
+        nsCString contractidString;
         rv = catman->GetCategoryEntry(NS_CONTENT_LISTENER_CATEGORYMANAGER_ENTRY,
-                                      mContentType.get(),
-                                      getter_Copies(contractidString));
+                                      mContentType, contractidString);
         if (NS_SUCCEEDED(rv) && !contractidString.IsEmpty()) {
-          LOG(("  Listener contractid for '%s' is '%s'",
-               mContentType.get(), contractidString.get()));
+          LOG(("  Listener contractid for '%s' is '%s'", mContentType.get(),
+               contractidString.get()));
 
-          listener = do_CreateInstance(contractidString);
+          listener = do_CreateInstance(contractidString.get());
           LOG(("  Listener from category manager: 0x%p", listener.get()));
-          
+
           if (listener && TryContentListener(listener, aChannel)) {
             LOG(("  Listener from category manager likes this type"));
             return NS_OK;
@@ -472,11 +477,11 @@ nsresult nsDocumentOpenInfo::DispatchContent(nsIRequest *request, nsISupports * 
       //
       // Fourth step: try to find an nsIContentHandler for our type.
       //
-      nsAutoCString handlerContractID (NS_CONTENT_HANDLER_CONTRACTID_PREFIX);
+      nsAutoCString handlerContractID(NS_CONTENT_HANDLER_CONTRACTID_PREFIX);
       handlerContractID += mContentType;
 
       nsCOMPtr<nsIContentHandler> contentHandler =
-        do_CreateInstance(handlerContractID.get());
+          do_CreateInstance(handlerContractID.get());
       if (contentHandler) {
         LOG(("  Content handler found"));
         rv = contentHandler->HandleContent(mContentType.get(),
@@ -489,8 +494,7 @@ nsresult nsDocumentOpenInfo::DispatchContent(nsIRequest *request, nsISupports * 
             // just in case the handler didn't...
             LOG(("  Content handler failed.  Aborting load"));
             request->Cancel(rv);
-          }
-          else {
+          } else {
             LOG(("  Content handler taking over load"));
           }
 
@@ -498,7 +502,8 @@ nsresult nsDocumentOpenInfo::DispatchContent(nsIRequest *request, nsISupports * 
         }
       }
     } else {
-      LOG(("  DONT_RETARGET flag set, so skipped over random other content "
+      LOG(
+          ("  DONT_RETARGET flag set, so skipped over random other content "
            "listeners and content handlers"));
     }
 
@@ -509,15 +514,15 @@ nsresult nsDocumentOpenInfo::DispatchContent(nsIRequest *request, nsISupports * 
     //
     // Don't do this if the server sent us a MIME type of "*/*" because they saw
     // it in our Accept header and got confused.
-    // XXXbz have to be careful here; may end up in some sort of bizarre infinite
-    // decoding loop.
+    // XXXbz have to be careful here; may end up in some sort of bizarre
+    // infinite decoding loop.
     if (mContentType != anyType) {
       rv = ConvertData(request, m_contentListener, mContentType, anyType);
       if (NS_FAILED(rv)) {
         m_targetStreamListener = nullptr;
       } else if (m_targetStreamListener) {
-        // We found a converter for this MIME type.  We'll just pump data into it
-        // and let the downstream nsDocumentOpenInfo handle things.
+        // We found a converter for this MIME type.  We'll just pump data into
+        // it and let the downstream nsDocumentOpenInfo handle things.
         LOG(("  Converter taking over now"));
         return NS_OK;
       }
@@ -526,9 +531,10 @@ nsresult nsDocumentOpenInfo::DispatchContent(nsIRequest *request, nsISupports * 
 
   NS_ASSERTION(!m_targetStreamListener,
                "If we found a listener, why are we not using it?");
-  
+
   if (mFlags & nsIURILoader::DONT_RETARGET) {
-    LOG(("  External handling forced or (listener not interested and no "
+    LOG(
+        ("  External handling forced or (listener not interested and no "
          "stream converter exists), and retargeting disallowed -> aborting"));
     return NS_ERROR_WONT_HANDLE_CONTENT;
   }
@@ -539,13 +545,13 @@ nsresult nsDocumentOpenInfo::DispatchContent(nsIRequest *request, nsISupports * 
   nsCOMPtr<nsIHttpChannel> httpChannel(do_QueryInterface(request));
   if (httpChannel) {
     bool requestSucceeded;
-    httpChannel->GetRequestSucceeded(&requestSucceeded);
-    if (!requestSucceeded) {
+    rv = httpChannel->GetRequestSucceeded(&requestSucceeded);
+    if (NS_FAILED(rv) || !requestSucceeded) {
       // returning error from OnStartRequest will cancel the channel
       return NS_ERROR_FILE_NOT_FOUND;
     }
   }
-  
+
   // Sixth step:
   //
   // All attempts to dispatch this content have failed.  Just pass it off to
@@ -565,7 +571,8 @@ nsresult nsDocumentOpenInfo::DispatchContent(nsIRequest *request, nsISupports * 
     if (!docShell) {
       // If we can't perform our security check we definitely don't want to go
       // any further!
-      LOG(("Failed to get DocShell to ensure it is active before anding off to "
+      LOG(
+          ("Failed to get DocShell to ensure it is active before anding off to "
            "helper app service. Aborting."));
       return NS_ERROR_FAILURE;
     }
@@ -574,14 +581,15 @@ nsresult nsDocumentOpenInfo::DispatchContent(nsIRequest *request, nsISupports * 
     bool isActive = false;
     docShell->GetIsActive(&isActive);
     if (!isActive) {
-      LOG(("  Check for active DocShell returned false. Aborting hand off to "
+      LOG(
+          ("  Check for active DocShell returned false. Aborting hand off to "
            "helper app service."));
       return NS_ERROR_DOM_SECURITY_ERR;
     }
   }
 
   nsCOMPtr<nsIExternalHelperAppService> helperAppService =
-    do_GetService(NS_EXTERNALHELPERAPPSERVICE_CONTRACTID, &rv);
+      do_GetService(NS_EXTERNALHELPERAPPSERVICE_CONTRACTID, &rv);
   if (helperAppService) {
     LOG(("  Passing load off to helper app service"));
 
@@ -589,52 +597,57 @@ nsresult nsDocumentOpenInfo::DispatchContent(nsIRequest *request, nsISupports * 
     // we are not using the original consumer.
     nsLoadFlags loadFlags = 0;
     request->GetLoadFlags(&loadFlags);
-    request->SetLoadFlags(loadFlags | nsIChannel::LOAD_RETARGETED_DOCUMENT_URI
-                                    | nsIChannel::LOAD_TARGETED);
+    request->SetLoadFlags(loadFlags | nsIChannel::LOAD_RETARGETED_DOCUMENT_URI |
+                          nsIChannel::LOAD_TARGETED);
 
     if (isGuessFromExt) {
       mContentType = APPLICATION_GUESS_FROM_EXT;
       aChannel->SetContentType(NS_LITERAL_CSTRING(APPLICATION_GUESS_FROM_EXT));
     }
 
-    rv = helperAppService->DoContent(mContentType,
-                                     request,
-                                     m_originalContext,
-                                     false,
-                                     nullptr,
+    rv = helperAppService->DoContent(mContentType, request, m_originalContext,
+                                     false, nullptr,
                                      getter_AddRefs(m_targetStreamListener));
     if (NS_FAILED(rv)) {
       request->SetLoadFlags(loadFlags);
       m_targetStreamListener = nullptr;
     }
   }
-      
+
   NS_ASSERTION(m_targetStreamListener || NS_FAILED(rv),
-               "There is no way we should be successful at this point without a m_targetStreamListener");
+               "There is no way we should be successful at this point without "
+               "a m_targetStreamListener");
   return rv;
 }
 
-nsresult
-nsDocumentOpenInfo::ConvertData(nsIRequest *request,
-                                nsIURIContentListener* aListener,
-                                const nsACString& aSrcContentType,
-                                const nsACString& aOutContentType)
-{
+nsresult nsDocumentOpenInfo::ConvertData(nsIRequest* request,
+                                         nsIURIContentListener* aListener,
+                                         const nsACString& aSrcContentType,
+                                         const nsACString& aOutContentType) {
   LOG(("[0x%p] nsDocumentOpenInfo::ConvertData from '%s' to '%s'", this,
        PromiseFlatCString(aSrcContentType).get(),
        PromiseFlatCString(aOutContentType).get()));
 
-  NS_PRECONDITION(aSrcContentType != aOutContentType,
-                  "ConvertData called when the two types are the same!");
+  if (mDataConversionDepthLimit == 0) {
+    LOG((
+        "[0x%p] nsDocumentOpenInfo::ConvertData - reached the recursion limit!",
+        this));
+    // This will fall back to external helper app handling.
+    return NS_ERROR_ABORT;
+  }
+
+  MOZ_ASSERT(aSrcContentType != aOutContentType,
+             "ConvertData called when the two types are the same!");
+
   nsresult rv = NS_OK;
 
-  nsCOMPtr<nsIStreamConverterService> StreamConvService = 
-    do_GetService(NS_STREAMCONVERTERSERVICE_CONTRACTID, &rv);
+  nsCOMPtr<nsIStreamConverterService> StreamConvService =
+      do_GetService(NS_STREAMCONVERTERSERVICE_CONTRACTID, &rv);
   if (NS_FAILED(rv)) return rv;
 
   LOG(("  Got converter service"));
-  
-  // When applying stream decoders, it is necessary to "insert" an 
+
+  // When applying stream decoders, it is necessary to "insert" an
   // intermediate nsDocumentOpenInfo instance to handle the targeting of
   // the "final" stream or streams.
   //
@@ -643,10 +656,13 @@ nsDocumentOpenInfo::ConvertData(nsIRequest *request,
   // intermediate instance is used to target these "decoded" streams...
   //
   RefPtr<nsDocumentOpenInfo> nextLink =
-    new nsDocumentOpenInfo(m_originalContext, mFlags, mURILoader);
+      new nsDocumentOpenInfo(m_originalContext, mFlags, mURILoader);
 
   LOG(("  Downstream DocumentOpenInfo would be: 0x%p", nextLink.get()));
-  
+
+  // Decrease the conversion recursion limit by one to prevent infinite loops.
+  nextLink->mDataConversionDepthLimit = mDataConversionDepthLimit - 1;
+
   // Make sure nextLink starts with the contentListener that said it wanted the
   // results of this decode.
   nextLink->m_contentListener = aListener;
@@ -664,29 +680,25 @@ nsDocumentOpenInfo::ConvertData(nsIRequest *request,
   // stream converter and sets the output end of the stream converter to
   // nextLink.  As we pump data into m_targetStreamListener the stream
   // converter will convert it and pass the converted data to nextLink.
-  return StreamConvService->AsyncConvertData(PromiseFlatCString(aSrcContentType).get(), 
-                                             PromiseFlatCString(aOutContentType).get(), 
-                                             nextLink, 
-                                             request,
-                                             getter_AddRefs(m_targetStreamListener));
+  return StreamConvService->AsyncConvertData(
+      PromiseFlatCString(aSrcContentType).get(),
+      PromiseFlatCString(aOutContentType).get(), nextLink, request,
+      getter_AddRefs(m_targetStreamListener));
 }
 
-bool
-nsDocumentOpenInfo::TryContentListener(nsIURIContentListener* aListener,
-                                       nsIChannel* aChannel)
-{
-  LOG(("[0x%p] nsDocumentOpenInfo::TryContentListener; mFlags = 0x%x",
-       this, mFlags));
+bool nsDocumentOpenInfo::TryContentListener(nsIURIContentListener* aListener,
+                                            nsIChannel* aChannel) {
+  LOG(("[0x%p] nsDocumentOpenInfo::TryContentListener; mFlags = 0x%x", this,
+       mFlags));
 
-  NS_PRECONDITION(aListener, "Must have a non-null listener");
-  NS_PRECONDITION(aChannel, "Must have a channel");
-  
+  MOZ_ASSERT(aListener, "Must have a non-null listener");
+  MOZ_ASSERT(aChannel, "Must have a channel");
+
   bool listenerWantsContent = false;
-  nsXPIDLCString typeToUse;
-  
+  nsCString typeToUse;
+
   if (mFlags & nsIURILoader::IS_CONTENT_PREFERRED) {
-    aListener->IsPreferred(mContentType.get(),
-                           getter_Copies(typeToUse),
+    aListener->IsPreferred(mContentType.get(), getter_Copies(typeToUse),
                            &listenerWantsContent);
   } else {
     aListener->CanHandleContent(mContentType.get(), false,
@@ -709,7 +721,7 @@ nsDocumentOpenInfo::TryContentListener(nsIURIContentListener* aListener,
     }
 
     LOG(("  Found conversion: %s", m_targetStreamListener ? "yes" : "no"));
-    
+
     // m_targetStreamListener is now the input end of the converter, and we can
     // just pump the data in there, if it exists.  If it does not, we need to
     // try other nsIURIContentListeners.
@@ -727,23 +739,21 @@ nsDocumentOpenInfo::TryContentListener(nsIURIContentListener* aListener,
   nsLoadFlags newLoadFlags = nsIChannel::LOAD_TARGETED;
 
   nsCOMPtr<nsIURIContentListener> originalListener =
-    do_GetInterface(m_originalContext);
+      do_GetInterface(m_originalContext);
   if (originalListener != aListener) {
     newLoadFlags |= nsIChannel::LOAD_RETARGETED_DOCUMENT_URI;
   }
   aChannel->SetLoadFlags(loadFlags | newLoadFlags);
-  
+
   bool abort = false;
   bool isPreferred = (mFlags & nsIURILoader::IS_CONTENT_PREFERRED) != 0;
-  nsresult rv = aListener->DoContent(mContentType,
-                                     isPreferred,
-                                     aChannel,
-                                     getter_AddRefs(m_targetStreamListener),
-                                     &abort);
-    
+  nsresult rv =
+      aListener->DoContent(mContentType, isPreferred, aChannel,
+                           getter_AddRefs(m_targetStreamListener), &abort);
+
   if (NS_FAILED(rv)) {
     LOG_ERROR(("  DoContent failed"));
-    
+
     // Unset the RETARGETED_DOCUMENT_URI flag if we set it...
     aChannel->SetLoadFlags(loadFlags);
     m_targetStreamListener = nullptr;
@@ -758,60 +768,52 @@ nsDocumentOpenInfo::TryContentListener(nsIURIContentListener* aListener,
     m_targetStreamListener = nullptr;
   }
 
-  NS_ASSERTION(abort || m_targetStreamListener, "DoContent returned no listener?");
+  NS_ASSERTION(abort || m_targetStreamListener,
+               "DoContent returned no listener?");
 
-  // aListener is handling the load from this point on.  
+  // aListener is handling the load from this point on.
   return true;
 }
-
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 // Implementation of nsURILoader
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
-nsURILoader::nsURILoader()
-{
-}
+nsURILoader::nsURILoader() {}
 
-nsURILoader::~nsURILoader()
-{
-}
+nsURILoader::~nsURILoader() {}
 
 NS_IMPL_ADDREF(nsURILoader)
 NS_IMPL_RELEASE(nsURILoader)
 
 NS_INTERFACE_MAP_BEGIN(nsURILoader)
-   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIURILoader)
-   NS_INTERFACE_MAP_ENTRY(nsIURILoader)
+  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIURILoader)
+  NS_INTERFACE_MAP_ENTRY(nsIURILoader)
 NS_INTERFACE_MAP_END
 
-NS_IMETHODIMP nsURILoader::RegisterContentListener(nsIURIContentListener * aContentListener)
-{
+NS_IMETHODIMP nsURILoader::RegisterContentListener(
+    nsIURIContentListener* aContentListener) {
   nsresult rv = NS_OK;
 
   nsWeakPtr weakListener = do_GetWeakReference(aContentListener);
-  NS_ASSERTION(weakListener, "your URIContentListener must support weak refs!\n");
-  
-  if (weakListener)
-    m_listeners.AppendObject(weakListener);
+  NS_ASSERTION(weakListener,
+               "your URIContentListener must support weak refs!\n");
+
+  if (weakListener) m_listeners.AppendObject(weakListener);
 
   return rv;
-} 
-
-NS_IMETHODIMP nsURILoader::UnRegisterContentListener(nsIURIContentListener * aContentListener)
-{
-  nsWeakPtr weakListener = do_GetWeakReference(aContentListener);
-  if (weakListener)
-    m_listeners.RemoveObject(weakListener);
-
-  return NS_OK;
-  
 }
 
-NS_IMETHODIMP nsURILoader::OpenURI(nsIChannel *channel, 
-                                   uint32_t aFlags,
-                                   nsIInterfaceRequestor *aWindowContext)
-{
+NS_IMETHODIMP nsURILoader::UnRegisterContentListener(
+    nsIURIContentListener* aContentListener) {
+  nsWeakPtr weakListener = do_GetWeakReference(aContentListener);
+  if (weakListener) m_listeners.RemoveObject(weakListener);
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP nsURILoader::OpenURI(nsIChannel* channel, uint32_t aFlags,
+                                   nsIInterfaceRequestor* aWindowContext) {
   NS_ENSURE_ARG_POINTER(channel);
 
   if (LOG_ENABLED()) {
@@ -823,17 +825,26 @@ NS_IMETHODIMP nsURILoader::OpenURI(nsIChannel *channel,
   }
 
   nsCOMPtr<nsIStreamListener> loader;
-  nsresult rv = OpenChannel(channel,
-                            aFlags,
-                            aWindowContext,
-                            false,
+  nsresult rv = OpenChannel(channel, aFlags, aWindowContext, false,
                             getter_AddRefs(loader));
 
   if (NS_SUCCEEDED(rv)) {
+    if (aFlags & nsIURILoader::REDIRECTED_CHANNEL) {
+      // Our channel was redirected from another process, so doesn't need to be
+      // opened again. However, it does need its listener hooked up correctly.
+      nsCOMPtr<nsIChildChannel> childChannel = do_QueryInterface(channel);
+      MOZ_ASSERT(childChannel);
+      if (!childChannel) {
+        return NS_ERROR_UNEXPECTED;
+      }
+
+      return childChannel->CompleteRedirectSetup(loader, nullptr);
+    }
+
     // this method is not complete!!! Eventually, we should first go
     // to the content listener and ask them for a protocol handler...
     // if they don't give us one, we need to go to the registry and get
-    // the preferred protocol handler. 
+    // the preferred protocol handler.
 
     // But for now, I'm going to let necko do the work for us....
     rv = channel->AsyncOpen2(loader);
@@ -850,12 +861,10 @@ NS_IMETHODIMP nsURILoader::OpenURI(nsIChannel *channel,
   return rv;
 }
 
-nsresult nsURILoader::OpenChannel(nsIChannel* channel,
-                                  uint32_t aFlags,
+nsresult nsURILoader::OpenChannel(nsIChannel* channel, uint32_t aFlags,
                                   nsIInterfaceRequestor* aWindowContext,
                                   bool aChannelIsOpen,
-                                  nsIStreamListener** aListener)
-{
+                                  nsIStreamListener** aListener) {
   NS_ASSERTION(channel, "Trying to open a null channel!");
   NS_ASSERTION(aWindowContext, "Window context must not be null");
 
@@ -869,7 +878,8 @@ nsresult nsURILoader::OpenChannel(nsIChannel* channel,
 
   // Let the window context's uriListener know that the open is starting.  This
   // gives that window a chance to abort the load process.
-  nsCOMPtr<nsIURIContentListener> winContextListener(do_GetInterface(aWindowContext));
+  nsCOMPtr<nsIURIContentListener> winContextListener(
+      do_GetInterface(aWindowContext));
   if (winContextListener) {
     nsCOMPtr<nsIURI> uri;
     channel->GetURI(getter_AddRefs(uri));
@@ -884,10 +894,13 @@ nsresult nsURILoader::OpenChannel(nsIChannel* channel,
     }
   }
 
+  static bool once = InitPreferences();
+  mozilla::Unused << once;
+
   // we need to create a DocumentOpenInfo object which will go ahead and open
   // the url and discover the content type....
   RefPtr<nsDocumentOpenInfo> loader =
-    new nsDocumentOpenInfo(aWindowContext, aFlags, this);
+      new nsDocumentOpenInfo(aWindowContext, aFlags, this);
 
   // Set the correct loadgroup on the channel
   nsCOMPtr<nsILoadGroup> loadGroup(do_GetInterface(aWindowContext));
@@ -903,11 +916,9 @@ nsresult nsURILoader::OpenChannel(nsIChannel* channel,
       if (!cookie) {
         RefPtr<nsDocLoader> newDocLoader = new nsDocLoader();
         nsresult rv = newDocLoader->Init();
-        if (NS_FAILED(rv))
-          return rv;
+        if (NS_FAILED(rv)) return rv;
         rv = nsDocLoader::AddDocLoaderAsChildOfRoot(newDocLoader);
-        if (NS_FAILED(rv))
-          return rv;
+        if (NS_FAILED(rv)) return rv;
         cookie = nsDocLoader::GetAsSupports(newDocLoader);
         listener->SetLoadCookie(cookie);
       }
@@ -925,7 +936,7 @@ nsresult nsURILoader::OpenChannel(nsIChannel* channel,
     // done as soon as the request is removed.
     loadGroup->AddRequest(channel, nullptr);
 
-   if (oldGroup) {
+    if (oldGroup) {
       oldGroup->RemoveRequest(channel, nullptr, NS_BINDING_RETARGETED);
     }
   }
@@ -934,16 +945,13 @@ nsresult nsURILoader::OpenChannel(nsIChannel* channel,
 
   // prepare the loader for receiving data
   nsresult rv = loader->Prepare();
-  if (NS_SUCCEEDED(rv))
-    NS_ADDREF(*aListener = loader);
+  if (NS_SUCCEEDED(rv)) NS_ADDREF(*aListener = loader);
   return rv;
 }
 
-NS_IMETHODIMP nsURILoader::OpenChannel(nsIChannel* channel,
-                                       uint32_t aFlags,
+NS_IMETHODIMP nsURILoader::OpenChannel(nsIChannel* channel, uint32_t aFlags,
                                        nsIInterfaceRequestor* aWindowContext,
-                                       nsIStreamListener** aListener)
-{
+                                       nsIStreamListener** aListener) {
   bool pending;
   if (NS_FAILED(channel->IsPending(&pending))) {
     pending = false;
@@ -952,8 +960,7 @@ NS_IMETHODIMP nsURILoader::OpenChannel(nsIChannel* channel,
   return OpenChannel(channel, aFlags, aWindowContext, pending, aListener);
 }
 
-NS_IMETHODIMP nsURILoader::Stop(nsISupports* aLoadCookie)
-{
+NS_IMETHODIMP nsURILoader::Stop(nsISupports* aLoadCookie) {
   nsresult rv;
   nsCOMPtr<nsIDocumentLoader> docLoader;
 
@@ -965,4 +972,3 @@ NS_IMETHODIMP nsURILoader::Stop(nsISupports* aLoadCookie)
   }
   return rv;
 }
-

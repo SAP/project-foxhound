@@ -97,7 +97,7 @@ public class SiteIdentityPopup extends AnchoredPopup implements BundleEventListe
         mContentButtonClickListener = new ContentNotificationButtonListener();
     }
 
-    void registerListeners() {
+    public void registerListeners() {
         EventDispatcher.getInstance().registerUiThreadListener(this,
                 "Doorhanger:Logins",
                 "Permissions:CheckResult");
@@ -171,6 +171,12 @@ public class SiteIdentityPopup extends AnchoredPopup implements BundleEventListe
 
         } else if ("Permissions:CheckResult".equals(event)) {
             final boolean hasPermissions = geckoObject.getBoolean("hasPermissions", false);
+
+            // ensure initialization completed, in case of receiving event too early
+            if (!mInflated) {
+                init();
+            }
+
             if (hasPermissions) {
                 mSiteSettingsLink.setOnClickListener(new View.OnClickListener() {
                     @Override
@@ -316,7 +322,7 @@ public class SiteIdentityPopup extends AnchoredPopup implements BundleEventListe
         } else if (!siteIdentity.isSecure()) {
             if (siteIdentity.getMixedModeActive() == MixedMode.LOADED) {
                 // Active Mixed Content loaded because user has disabled blocking.
-                mIcon.setImageResource(R.drawable.lock_disabled);
+                mIcon.setImageResource(R.drawable.ic_lock_disabled);
                 clearSecurityStateIcon();
                 mMixedContentActivity.setVisibility(View.VISIBLE);
                 mMixedContentActivity.setText(R.string.mixed_content_protection_disabled);
@@ -324,8 +330,8 @@ public class SiteIdentityPopup extends AnchoredPopup implements BundleEventListe
                 mLink.setVisibility(View.VISIBLE);
             } else if (siteIdentity.getMixedModeDisplay() == MixedMode.LOADED) {
                 // Passive Mixed Content loaded.
-                mIcon.setImageResource(R.drawable.lock_inactive);
-                setSecurityStateIcon(R.drawable.warning_major, 1);
+                mIcon.setImageResource(R.drawable.ic_lock_inactive);
+                setSecurityStateIcon(R.drawable.ic_warning_major, 1);
                 mMixedContentActivity.setVisibility(View.VISIBLE);
                 if (siteIdentity.getMixedModeActive() == MixedMode.BLOCKED) {
                     mMixedContentActivity.setText(R.string.mixed_content_blocked_some);
@@ -348,14 +354,14 @@ public class SiteIdentityPopup extends AnchoredPopup implements BundleEventListe
 
         } else if (siteIdentity.isSecurityException()) {
 
-            mIcon.setImageResource(R.drawable.lock_inactive);
-            setSecurityStateIcon(R.drawable.warning_major, 1);
+            mIcon.setImageResource(R.drawable.ic_lock_inactive);
+            setSecurityStateIcon(R.drawable.ic_warning_major, 1);
             mSecurityState.setText(R.string.identity_connection_insecure);
             mSecurityState.setTextColor(ContextCompat.getColor(mContext, R.color.placeholder_active_grey));
 
         } else {
             // Connection is secure.
-            mIcon.setImageResource(R.drawable.lock_secure);
+            mIcon.setImageResource(R.drawable.ic_lock);
 
             setSecurityStateIcon(R.drawable.img_check, 2);
             mSecurityState.setTextColor(ContextCompat.getColor(mContext, R.color.affirmative_green));
@@ -414,7 +420,7 @@ public class SiteIdentityPopup extends AnchoredPopup implements BundleEventListe
 
         final DoorhangerConfig config = new DoorhangerConfig(DoorHanger.Type.TRACKING, mContentButtonClickListener);
 
-        final int icon = blocked ? R.drawable.shield_enabled : R.drawable.shield_disabled;
+        final int icon = blocked ? R.drawable.ic_shield_enabled : R.drawable.ic_shield_disabled;
 
         final GeckoBundle options = new GeckoBundle();
         final GeckoBundle tracking = new GeckoBundle();
@@ -452,7 +458,7 @@ public class SiteIdentityPopup extends AnchoredPopup implements BundleEventListe
     /*
      * @param identityData An object that holds the current tab's identity data.
      */
-    void setSiteIdentity(SiteIdentity siteIdentity) {
+    public void setSiteIdentity(SiteIdentity siteIdentity) {
         mSiteIdentity = siteIdentity;
     }
 
@@ -489,7 +495,7 @@ public class SiteIdentityPopup extends AnchoredPopup implements BundleEventListe
             // favicon is the product icon, hence we'd be showing the same icon twice).
             mTitle.setText(R.string.moz_app_displayname);
         } else {
-            mTitle.setText(selectedTab.getBaseDomain());
+            mTitle.setText(mSiteIdentity.getHost());
 
             final Bitmap favicon = selectedTab.getFavicon();
             if (favicon != null) {
@@ -534,7 +540,7 @@ public class SiteIdentityPopup extends AnchoredPopup implements BundleEventListe
     void destroy() {
     }
 
-    void unregisterListeners() {
+    public void unregisterListeners() {
         EventDispatcher.getInstance().unregisterUiThreadListener(this,
                 "Doorhanger:Logins",
                 "Permissions:CheckResult");

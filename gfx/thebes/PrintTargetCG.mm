@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,60 +13,46 @@
 namespace mozilla {
 namespace gfx {
 
-PrintTargetCG::PrintTargetCG(PMPrintSession aPrintSession,
-                             PMPageFormat aPageFormat,
-                             PMPrintSettings aPrintSettings,
-                             const IntSize& aSize)
-  : PrintTarget(/* aCairoSurface */ nullptr, aSize)
-  , mPrintSession(aPrintSession)
-  , mPageFormat(aPageFormat)
-  , mPrintSettings(aPrintSettings)
-{
+PrintTargetCG::PrintTargetCG(PMPrintSession aPrintSession, PMPageFormat aPageFormat,
+                             PMPrintSettings aPrintSettings, const IntSize& aSize)
+    : PrintTarget(/* aCairoSurface */ nullptr, aSize),
+      mPrintSession(aPrintSession),
+      mPageFormat(aPageFormat),
+      mPrintSettings(aPrintSettings) {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
 
   ::PMRetain(mPrintSession);
 
   // TODO: Add memory reporting like gfxQuartzSurface.
-  //RecordMemoryUsed(mSize.height * 4 + sizeof(gfxQuartzSurface));
+  // RecordMemoryUsed(mSize.height * 4 + sizeof(gfxQuartzSurface));
 
   NS_OBJC_END_TRY_ABORT_BLOCK;
 }
 
-PrintTargetCG::~PrintTargetCG()
-{
+PrintTargetCG::~PrintTargetCG() {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
 
-  if (mPrintSession)
-    ::PMRelease(mPrintSession);
+  if (mPrintSession) ::PMRelease(mPrintSession);
 
   NS_OBJC_END_TRY_ABORT_BLOCK;
 }
 
-/* static */ already_AddRefed<PrintTargetCG>
-PrintTargetCG::CreateOrNull(PMPrintSession aPrintSession,
-                            PMPageFormat aPageFormat,
-                            PMPrintSettings aPrintSettings,
-                            const IntSize& aSize)
-{
+/* static */ already_AddRefed<PrintTargetCG> PrintTargetCG::CreateOrNull(
+    PMPrintSession aPrintSession, PMPageFormat aPageFormat, PMPrintSettings aPrintSettings,
+    const IntSize& aSize) {
   if (!Factory::CheckSurfaceSize(aSize)) {
     return nullptr;
   }
 
-  RefPtr<PrintTargetCG> target = new PrintTargetCG(aPrintSession, aPageFormat,
-                                                   aPrintSettings, aSize);
+  RefPtr<PrintTargetCG> target =
+      new PrintTargetCG(aPrintSession, aPageFormat, aPrintSettings, aSize);
 
   return target.forget();
 }
 
-static size_t
-PutBytesNull(void* info, const void* buffer, size_t count)
-{
-  return count;
-}
+static size_t PutBytesNull(void* info, const void* buffer, size_t count) { return count; }
 
-already_AddRefed<DrawTarget>
-PrintTargetCG::GetReferenceDrawTarget(DrawEventRecorder* aRecorder)
-{
+already_AddRefed<DrawTarget> PrintTargetCG::GetReferenceDrawTarget() {
   if (!mRefDT) {
     const IntSize size(1, 1);
 
@@ -76,8 +62,7 @@ PrintTargetCG::GetReferenceDrawTarget(DrawEventRecorder* aRecorder)
     CGDataConsumerRelease(consumer);
 
     cairo_surface_t* similar =
-      cairo_quartz_surface_create_for_cg_context(
-        pdfContext, size.width, size.height);
+        cairo_quartz_surface_create_for_cg_context(pdfContext, size.width, size.height);
 
     CGContextRelease(pdfContext);
 
@@ -85,8 +70,7 @@ PrintTargetCG::GetReferenceDrawTarget(DrawEventRecorder* aRecorder)
       return nullptr;
     }
 
-    RefPtr<DrawTarget> dt =
-      Factory::CreateDrawTargetForCairoSurface(similar, size);
+    RefPtr<DrawTarget> dt = Factory::CreateDrawTargetForCairoSurface(similar, size);
 
     // The DT addrefs the surface, so we need drop our own reference to it:
     cairo_surface_destroy(similar);
@@ -94,25 +78,14 @@ PrintTargetCG::GetReferenceDrawTarget(DrawEventRecorder* aRecorder)
     if (!dt || !dt->IsValid()) {
       return nullptr;
     }
-
-    if (aRecorder) {
-      dt = CreateRecordingDrawTarget(aRecorder, dt);
-      if (!dt || !dt->IsValid()) {
-        return nullptr;
-      }
-    }
-
     mRefDT = dt.forget();
   }
+
   return do_AddRef(mRefDT);
 }
 
-nsresult
-PrintTargetCG::BeginPrinting(const nsAString& aTitle,
-                             const nsAString& aPrintToFileName,
-                             int32_t aStartPage,
-                             int32_t aEndPage)
-{
+nsresult PrintTargetCG::BeginPrinting(const nsAString& aTitle, const nsAString& aPrintToFileName,
+                                      int32_t aStartPage, int32_t aEndPage) {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
   OSStatus status;
@@ -128,9 +101,7 @@ PrintTargetCG::BeginPrinting(const nsAString& aTitle,
   NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
 }
 
-nsresult
-PrintTargetCG::EndPrinting()
-{
+nsresult PrintTargetCG::EndPrinting() {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
   ::PMSessionEndDocumentNoDialog(mPrintSession);
@@ -139,18 +110,14 @@ PrintTargetCG::EndPrinting()
   NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
 }
 
-nsresult
-PrintTargetCG::AbortPrinting()
-{
+nsresult PrintTargetCG::AbortPrinting() {
 #ifdef DEBUG
   mHasActivePage = false;
 #endif
   return EndPrinting();
 }
 
-nsresult
-PrintTargetCG::BeginPage()
-{
+nsresult PrintTargetCG::BeginPage() {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
   PMSessionError(mPrintSession);
@@ -176,8 +143,7 @@ PrintTargetCG::BeginPage()
   CGContextTranslateCTM(context, 0, height);
   CGContextScaleCTM(context, 1.0, -1.0);
 
-  cairo_surface_t* surface =
-    cairo_quartz_surface_create_for_cg_context(context, width, height);
+  cairo_surface_t* surface = cairo_quartz_surface_create_for_cg_context(context, width, height);
 
   if (cairo_surface_status(surface)) {
     return NS_ERROR_FAILURE;
@@ -190,9 +156,7 @@ PrintTargetCG::BeginPage()
   NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
 }
 
-nsresult
-PrintTargetCG::EndPage()
-{
+nsresult PrintTargetCG::EndPage() {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
   cairo_surface_finish(mCairoSurface);
@@ -208,5 +172,5 @@ PrintTargetCG::EndPage()
   NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
 }
 
-} // namespace gfx
-} // namespace mozilla
+}  // namespace gfx
+}  // namespace mozilla

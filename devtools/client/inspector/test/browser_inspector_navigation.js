@@ -13,31 +13,67 @@ const TEST_URL_FILE = "browser/devtools/client/inspector/test/" +
 const TEST_URL_1 = "http://test1.example.org/" + TEST_URL_FILE;
 const TEST_URL_2 = "http://test2.example.org/" + TEST_URL_FILE;
 
-add_task(function* () {
-  let { inspector, testActor } = yield openInspectorForURL(TEST_URL_1);
+// Bug 1340592: "srcset" attribute causes bfcache events (pageshow/pagehide)
+// with buggy "persisted" values.
+const TEST_URL_3 = "data:text/html;charset=utf-8," +
+  encodeURIComponent("<img src=\"foo.png\" srcset=\"foo.png 1.5x\" />");
+const TEST_URL_4 = "data:text/html;charset=utf-8," +
+  encodeURIComponent("<h1>bar</h1>");
 
-  yield selectNode("#i1", inspector);
+add_task(async function() {
+  const { inspector, testActor } = await openInspectorForURL(TEST_URL_1);
+
+  await selectNode("#i1", inspector);
 
   info("Navigating to a different page.");
-  yield navigateTo(inspector, TEST_URL_2);
+  await navigateTo(inspector, TEST_URL_2);
 
   ok(true, "New page loaded");
-  yield selectNode("#i1", inspector);
+  await selectNode("#i1", inspector);
 
-  let markuploaded = inspector.once("markuploaded");
-  let onUpdated = inspector.once("inspector-updated");
+  const markuploaded = inspector.once("markuploaded");
+  const onUpdated = inspector.once("inspector-updated");
 
   info("Going back in history");
-  yield testActor.eval("history.go(-1)");
+  await testActor.eval("history.go(-1)");
 
   info("Waiting for markup view to load after going back in history.");
-  yield markuploaded;
+  await markuploaded;
 
   info("Check that the inspector updates");
-  yield onUpdated;
+  await onUpdated;
 
   ok(true, "Old page loaded");
-  is((yield testActor.eval("location.href;")), TEST_URL_1, "URL is correct.");
+  is((await testActor.eval("location.href;")), TEST_URL_1, "URL is correct.");
 
-  yield selectNode("#i1", inspector);
+  await selectNode("#i1", inspector);
+});
+
+add_task(async function() {
+  const { inspector, testActor } = await openInspectorForURL(TEST_URL_3);
+
+  await selectNode("img", inspector);
+
+  info("Navigating to a different page.");
+  await navigateTo(inspector, TEST_URL_4);
+
+  ok(true, "New page loaded");
+  await selectNode("#h1", inspector);
+
+  const markuploaded = inspector.once("markuploaded");
+  const onUpdated = inspector.once("inspector-updated");
+
+  info("Going back in history");
+  await testActor.eval("history.go(-1)");
+
+  info("Waiting for markup view to load after going back in history.");
+  await markuploaded;
+
+  info("Check that the inspector updates");
+  await onUpdated;
+
+  ok(true, "Old page loaded");
+  is((await testActor.eval("location.href;")), TEST_URL_3, "URL is correct.");
+
+  await selectNode("img", inspector);
 });

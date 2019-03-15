@@ -1,7 +1,8 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
-* This Source Code Form is subject to the terms of the Mozilla Public
-* License, v. 2.0. If a copy of the MPL was not distributed with this
-* file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef MOZILLA_GFX_X11BASICCOMPOSITOR_H
 #define MOZILLA_GFX_X11BASICCOMPOSITOR_H
@@ -16,13 +17,14 @@ namespace mozilla {
 namespace layers {
 
 // TextureSource for Image-backed surfaces.
-class X11DataTextureSourceBasic : public DataTextureSource
-                                , public TextureSourceBasic
-{
-public:
-  X11DataTextureSourceBasic() {};
+class X11DataTextureSourceBasic : public DataTextureSource,
+                                  public TextureSourceBasic {
+ public:
+  X11DataTextureSourceBasic(){};
 
-  virtual const char* Name() const override { return "X11DataTextureSourceBasic"; }
+  virtual const char* Name() const override {
+    return "X11DataTextureSourceBasic";
+  }
 
   virtual bool Update(gfx::DataSourceSurface* aSurface,
                       nsIntRegion* aDestRegion = nullptr,
@@ -38,28 +40,29 @@ public:
 
   virtual gfx::SurfaceFormat GetFormat() const override;
 
-private:
+ private:
   // We are going to buffer layer content on this xlib draw target
   RefPtr<mozilla::gfx::DrawTarget> mBufferDrawTarget;
 };
 
-class X11BasicCompositor : public BasicCompositor
-{
-public:
-  explicit X11BasicCompositor(CompositorBridgeParent* aParent, widget::CompositorWidget* aWidget)
-    : BasicCompositor(aParent, aWidget)
-  {}
+class X11BasicCompositor : public BasicCompositor {
+ public:
+  explicit X11BasicCompositor(CompositorBridgeParent* aParent,
+                              widget::CompositorWidget* aWidget)
+      : BasicCompositor(aParent, aWidget) {}
 
-  virtual already_AddRefed<DataTextureSource>
-  CreateDataTextureSource(TextureFlags aFlags = TextureFlags::NO_FLAGS) override;
+  virtual already_AddRefed<DataTextureSource> CreateDataTextureSource(
+      TextureFlags aFlags = TextureFlags::NO_FLAGS) override;
 
-  virtual already_AddRefed<DataTextureSource>
-  CreateDataTextureSourceAround(gfx::DataSourceSurface* aSurface) override { return nullptr; }
+  virtual already_AddRefed<DataTextureSource> CreateDataTextureSourceAround(
+      gfx::DataSourceSurface* aSurface) override {
+    return nullptr;
+  }
 
   virtual void EndFrame() override;
 };
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla
 
 #endif /* MOZILLA_GFX_X11BASICCOMPOSITOR_H */

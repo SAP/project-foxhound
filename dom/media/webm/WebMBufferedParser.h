@@ -4,40 +4,32 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #if !defined(WebMBufferedParser_h_)
-#define WebMBufferedParser_h_
+#  define WebMBufferedParser_h_
 
-#include "nsISupportsImpl.h"
-#include "nsTArray.h"
-#include "mozilla/ReentrantMonitor.h"
-#include "MediaResource.h"
+#  include "nsISupportsImpl.h"
+#  include "nsTArray.h"
+#  include "mozilla/ReentrantMonitor.h"
+#  include "MediaResource.h"
 
 namespace mozilla {
 
 // Stores a stream byte offset and the scaled timecode of the block at
 // that offset.
-struct WebMTimeDataOffset
-{
+struct WebMTimeDataOffset {
   WebMTimeDataOffset(int64_t aEndOffset, uint64_t aTimecode,
                      int64_t aInitOffset, int64_t aSyncOffset,
                      int64_t aClusterEndOffset)
-    : mEndOffset(aEndOffset)
-    , mInitOffset(aInitOffset)
-    , mSyncOffset(aSyncOffset)
-    , mClusterEndOffset(aClusterEndOffset)
-    , mTimecode(aTimecode)
-  {}
+      : mEndOffset(aEndOffset),
+        mInitOffset(aInitOffset),
+        mSyncOffset(aSyncOffset),
+        mClusterEndOffset(aClusterEndOffset),
+        mTimecode(aTimecode) {}
 
-  bool operator==(int64_t aEndOffset) const {
-    return mEndOffset == aEndOffset;
-  }
+  bool operator==(int64_t aEndOffset) const { return mEndOffset == aEndOffset; }
 
-  bool operator!=(int64_t aEndOffset) const {
-    return mEndOffset != aEndOffset;
-  }
+  bool operator!=(int64_t aEndOffset) const { return mEndOffset != aEndOffset; }
 
-  bool operator<(int64_t aEndOffset) const {
-    return mEndOffset < aEndOffset;
-  }
+  bool operator<(int64_t aEndOffset) const { return mEndOffset < aEndOffset; }
 
   int64_t mEndOffset;
   int64_t mInitOffset;
@@ -52,30 +44,29 @@ struct WebMTimeDataOffset
 // range.  Old parsers are destroyed when their range merges with a later
 // parser or an already parsed range.  The parser may start at any position
 // within the stream.
-struct WebMBufferedParser
-{
+struct WebMBufferedParser {
   explicit WebMBufferedParser(int64_t aOffset)
-    : mStartOffset(aOffset)
-    , mCurrentOffset(aOffset)
-    , mInitEndOffset(-1)
-    , mBlockEndOffset(-1)
-    , mState(READ_ELEMENT_ID)
-    , mNextState(READ_ELEMENT_ID)
-    , mVIntRaw(false)
-    , mLastInitStartOffset(-1)
-    , mClusterSyncPos(0)
-    , mVIntLeft(0)
-    , mBlockSize(0)
-    , mClusterTimecode(0)
-    , mClusterOffset(0)
-    , mClusterEndOffset(-1)
-    , mBlockOffset(0)
-    , mBlockTimecode(0)
-    , mBlockTimecodeLength(0)
-    , mSkipBytes(0)
-    , mTimecodeScale(1000000)
-    , mGotTimecodeScale(false)
-  {
+      : mStartOffset(aOffset),
+        mCurrentOffset(aOffset),
+        mInitEndOffset(-1),
+        mBlockEndOffset(-1),
+        mState(READ_ELEMENT_ID),
+        mNextState(READ_ELEMENT_ID),
+        mVIntRaw(false),
+        mLastInitStartOffset(-1),
+        mClusterSyncPos(0),
+        mVIntLeft(0),
+        mBlockSize(0),
+        mClusterTimecode(0),
+        mClusterOffset(-1),
+        mClusterEndOffset(-1),
+        mBlockOffset(0),
+        mBlockTimecode(0),
+        mBlockTimecodeLength(0),
+        mSkipBytes(0),
+        mTimecodeScale(1000000),
+        mGotTimecodeScale(false),
+        mGotClusterTimecode(false) {
     if (mStartOffset != 0) {
       mState = FIND_CLUSTER_SYNC;
     }
@@ -85,6 +76,9 @@ struct WebMBufferedParser
     MOZ_ASSERT(mGotTimecodeScale);
     return mTimecodeScale;
   }
+
+  // Use this function when we would only feed media segment for the parser.
+  void AppendMediaSegmentOnly() { mGotTimecodeScale = true; }
 
   // If this parser is not expected to parse a segment info, it must be told
   // the appropriate timecode scale to use from elsewhere.
@@ -101,18 +95,18 @@ struct WebMBufferedParser
               nsTArray<WebMTimeDataOffset>& aMapping,
               ReentrantMonitor& aReentrantMonitor);
 
-  bool operator==(int64_t aOffset) const {
-    return mCurrentOffset == aOffset;
-  }
+  bool operator==(int64_t aOffset) const { return mCurrentOffset == aOffset; }
 
-  bool operator<(int64_t aOffset) const {
-    return mCurrentOffset < aOffset;
-  }
+  bool operator<(int64_t aOffset) const { return mCurrentOffset < aOffset; }
 
   // Returns the start offset of the init (EBML) or media segment (Cluster)
-  // following the aOffset position. If none were found, returns mBlockEndOffset.
-  // This allows to determine the end of the interval containg aOffset.
+  // following the aOffset position. If none were found, returns
+  // mBlockEndOffset. This allows to determine the end of the interval containg
+  // aOffset.
   int64_t EndSegmentOffset(int64_t aOffset);
+
+  // Return the Cluster offset, return -1 if we can't find the Cluster.
+  int64_t GetClusterOffset() const;
 
   // The offset at which this parser started parsing.  Used to merge
   // adjacent parsers, in which case the later parser adopts the earlier
@@ -131,7 +125,7 @@ struct WebMBufferedParser
   // Will only be set if a complete block has been parsed.
   int64_t mBlockEndOffset;
 
-private:
+ private:
   enum State {
     // Parser start state.  Expects to begin at a valid EBML element.  Move
     // to READ_VINT with mVIntRaw true, then return to READ_ELEMENT_SIZE.
@@ -231,7 +225,7 @@ private:
 
   // Start offset of the cluster currently being parsed.  Used as the sync
   // point offset for the offset-to-time mapping as each block timecode is
-  // been parsed.
+  // been parsed. -1 if unknown.
   int64_t mClusterOffset;
 
   // End offset of the cluster currently being parsed. -1 if unknown.
@@ -260,21 +254,22 @@ private:
   // True if we read the timecode scale from the segment info or have
   // confirmed that the default value is to be used.
   bool mGotTimecodeScale;
+
+  // True if we've read the cluster time code.
+  bool mGotClusterTimecode;
 };
 
-class WebMBufferedState final
-{
+class WebMBufferedState final {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(WebMBufferedState)
 
-public:
+ public:
   WebMBufferedState()
-    : mReentrantMonitor("WebMBufferedState")
-    , mLastBlockOffset(-1)
-  {
+      : mReentrantMonitor("WebMBufferedState"), mLastBlockOffset(-1) {
     MOZ_COUNT_CTOR(WebMBufferedState);
   }
 
-  void NotifyDataArrived(const unsigned char* aBuffer, uint32_t aLength, int64_t aOffset);
+  void NotifyDataArrived(const unsigned char* aBuffer, uint32_t aLength,
+                         int64_t aOffset);
   void Reset();
   void UpdateIndex(const MediaByteRangeSet& aRanges, MediaResource* aResource);
   bool CalculateBufferedForRange(int64_t aStartOffset, int64_t aEndOffset,
@@ -293,16 +288,14 @@ public:
   int64_t GetLastBlockOffset();
 
   // Returns start time
-  bool GetStartTime(uint64_t *aTime);
+  bool GetStartTime(uint64_t* aTime);
 
   // Returns keyframe for time
   bool GetNextKeyframeTime(uint64_t aTime, uint64_t* aKeyframeTime);
 
-private:
+ private:
   // Private destructor, to discourage deletion outside of Release():
-  ~WebMBufferedState() {
-    MOZ_COUNT_DTOR(WebMBufferedState);
-  }
+  ~WebMBufferedState() { MOZ_COUNT_DTOR(WebMBufferedState); }
 
   // Synchronizes access to the mTimeMapping array and mLastBlockOffset.
   ReentrantMonitor mReentrantMonitor;
@@ -317,6 +310,6 @@ private:
   nsTArray<WebMBufferedParser> mRangeParsers;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif

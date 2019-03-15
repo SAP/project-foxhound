@@ -19,33 +19,24 @@ using namespace mozilla::ipc;
 namespace mozilla {
 namespace net {
 
-NS_IMPL_ISUPPORTS(WebSocketChannelParent,
-                  nsIWebSocketListener,
+NS_IMPL_ISUPPORTS(WebSocketChannelParent, nsIWebSocketListener,
                   nsIInterfaceRequestor)
 
-WebSocketChannelParent::WebSocketChannelParent(nsIAuthPromptProvider* aAuthProvider,
-                                               nsILoadContext* aLoadContext,
-                                               PBOverrideStatus aOverrideStatus,
-                                               uint32_t aSerial)
-  : mAuthProvider(aAuthProvider)
-  , mLoadContext(aLoadContext)
-  , mIPCOpen(true)
-  , mSerial(aSerial)
-{
+WebSocketChannelParent::WebSocketChannelParent(
+    nsIAuthPromptProvider* aAuthProvider, nsILoadContext* aLoadContext,
+    PBOverrideStatus aOverrideStatus, uint32_t aSerial)
+    : mAuthProvider(aAuthProvider),
+      mLoadContext(aLoadContext),
+      mIPCOpen(true),
+      mSerial(aSerial) {
   // Websocket channels can't have a private browsing override
   MOZ_ASSERT_IF(!aLoadContext, aOverrideStatus == kPBOverride_Unset);
-}
-
-WebSocketChannelParent::~WebSocketChannelParent()
-{
 }
 //-----------------------------------------------------------------------------
 // WebSocketChannelParent::PWebSocketChannelParent
 //-----------------------------------------------------------------------------
 
-mozilla::ipc::IPCResult
-WebSocketChannelParent::RecvDeleteSelf()
-{
+mozilla::ipc::IPCResult WebSocketChannelParent::RecvDeleteSelf() {
   LOG(("WebSocketChannelParent::RecvDeleteSelf() %p\n", this));
   mChannel = nullptr;
   mAuthProvider = nullptr;
@@ -56,20 +47,15 @@ WebSocketChannelParent::RecvDeleteSelf()
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult
-WebSocketChannelParent::RecvAsyncOpen(const OptionalURIParams& aURI,
-                                      const nsCString& aOrigin,
-                                      const uint64_t& aInnerWindowID,
-                                      const nsCString& aProtocol,
-                                      const bool& aSecure,
-                                      const uint32_t& aPingInterval,
-                                      const bool& aClientSetPingInterval,
-                                      const uint32_t& aPingTimeout,
-                                      const bool& aClientSetPingTimeout,
-                                      const OptionalLoadInfoArgs& aLoadInfoArgs,
-                                      const OptionalTransportProvider& aTransportProvider,
-                                      const nsCString& aNegotiatedExtensions)
-{
+mozilla::ipc::IPCResult WebSocketChannelParent::RecvAsyncOpen(
+    const OptionalURIParams& aURI, const nsCString& aOrigin,
+    const uint64_t& aInnerWindowID, const nsCString& aProtocol,
+    const bool& aSecure, const uint32_t& aPingInterval,
+    const bool& aClientSetPingInterval, const uint32_t& aPingTimeout,
+    const bool& aClientSetPingTimeout,
+    const OptionalLoadInfoArgs& aLoadInfoArgs,
+    const OptionalTransportProvider& aTransportProvider,
+    const nsCString& aNegotiatedExtensions) {
   LOG(("WebSocketChannelParent::RecvAsyncOpen() %p\n", this));
 
   nsresult rv;
@@ -83,13 +69,12 @@ WebSocketChannelParent::RecvAsyncOpen(const OptionalURIParams& aURI,
 
   if (aSecure) {
     mChannel =
-      do_CreateInstance("@mozilla.org/network/protocol;1?name=wss", &rv);
+        do_CreateInstance("@mozilla.org/network/protocol;1?name=wss", &rv);
   } else {
     mChannel =
-      do_CreateInstance("@mozilla.org/network/protocol;1?name=ws", &rv);
+        do_CreateInstance("@mozilla.org/network/protocol;1?name=ws", &rv);
   }
-  if (NS_FAILED(rv))
-    goto fail;
+  if (NS_FAILED(rv)) goto fail;
 
   rv = mChannel->SetSerial(mSerial);
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -102,17 +87,15 @@ WebSocketChannelParent::RecvAsyncOpen(const OptionalURIParams& aURI,
   }
 
   rv = mChannel->SetNotificationCallbacks(this);
-  if (NS_FAILED(rv))
-    goto fail;
+  if (NS_FAILED(rv)) goto fail;
 
   rv = mChannel->SetProtocol(aProtocol);
-  if (NS_FAILED(rv))
-    goto fail;
+  if (NS_FAILED(rv)) goto fail;
 
   if (aTransportProvider.type() != OptionalTransportProvider::Tvoid_t) {
     RefPtr<TransportProviderParent> provider =
-      static_cast<TransportProviderParent*>(
-        aTransportProvider.get_PTransportProviderParent());
+        static_cast<TransportProviderParent*>(
+            aTransportProvider.get_PTransportProviderParent());
     rv = mChannel->SetServerParameters(provider, aNegotiatedExtensions);
     if (NS_FAILED(rv)) {
       goto fail;
@@ -139,8 +122,7 @@ WebSocketChannelParent::RecvAsyncOpen(const OptionalURIParams& aURI,
   }
 
   rv = mChannel->AsyncOpen(uri, aOrigin, aInnerWindowID, this, nullptr);
-  if (NS_FAILED(rv))
-    goto fail;
+  if (NS_FAILED(rv)) goto fail;
 
   return IPC_OK();
 
@@ -152,9 +134,8 @@ fail:
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult
-WebSocketChannelParent::RecvClose(const uint16_t& code, const nsCString& reason)
-{
+mozilla::ipc::IPCResult WebSocketChannelParent::RecvClose(
+    const uint16_t& code, const nsCString& reason) {
   LOG(("WebSocketChannelParent::RecvClose() %p\n", this));
   if (mChannel) {
     nsresult rv = mChannel->Close(code, reason);
@@ -164,9 +145,8 @@ WebSocketChannelParent::RecvClose(const uint16_t& code, const nsCString& reason)
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult
-WebSocketChannelParent::RecvSendMsg(const nsCString& aMsg)
-{
+mozilla::ipc::IPCResult WebSocketChannelParent::RecvSendMsg(
+    const nsCString& aMsg) {
   LOG(("WebSocketChannelParent::RecvSendMsg() %p\n", this));
   if (mChannel) {
     nsresult rv = mChannel->SendMsg(aMsg);
@@ -175,9 +155,8 @@ WebSocketChannelParent::RecvSendMsg(const nsCString& aMsg)
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult
-WebSocketChannelParent::RecvSendBinaryMsg(const nsCString& aMsg)
-{
+mozilla::ipc::IPCResult WebSocketChannelParent::RecvSendBinaryMsg(
+    const nsCString& aMsg) {
   LOG(("WebSocketChannelParent::RecvSendBinaryMsg() %p\n", this));
   if (mChannel) {
     nsresult rv = mChannel->SendBinaryMsg(aMsg);
@@ -186,14 +165,11 @@ WebSocketChannelParent::RecvSendBinaryMsg(const nsCString& aMsg)
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult
-WebSocketChannelParent::RecvSendBinaryStream(const InputStreamParams& aStream,
-                                             const uint32_t& aLength)
-{
+mozilla::ipc::IPCResult WebSocketChannelParent::RecvSendBinaryStream(
+    const IPCStream& aStream, const uint32_t& aLength) {
   LOG(("WebSocketChannelParent::RecvSendBinaryStream() %p\n", this));
   if (mChannel) {
-    nsTArray<mozilla::ipc::FileDescriptor> fds;
-    nsCOMPtr<nsIInputStream> stream = DeserializeInputStream(aStream, fds);
+    nsCOMPtr<nsIInputStream> stream = DeserializeIPCStream(aStream);
     if (!stream) {
       return IPC_FAIL_NO_REASON(this);
     }
@@ -208,8 +184,7 @@ WebSocketChannelParent::RecvSendBinaryStream(const InputStreamParams& aStream,
 //-----------------------------------------------------------------------------
 
 NS_IMETHODIMP
-WebSocketChannelParent::OnStart(nsISupports *aContext)
-{
+WebSocketChannelParent::OnStart(nsISupports* aContext) {
   LOG(("WebSocketChannelParent::OnStart() %p\n", this));
   nsAutoCString protocol, extensions;
   nsString effectiveURL;
@@ -227,15 +202,15 @@ WebSocketChannelParent::OnStart(nsISupports *aContext)
     channel->GetEffectiveURL(effectiveURL);
     encrypted = channel->IsEncrypted();
   }
-  if (!mIPCOpen || !SendOnStart(protocol, extensions, effectiveURL, encrypted)) {
+  if (!mIPCOpen ||
+      !SendOnStart(protocol, extensions, effectiveURL, encrypted)) {
     return NS_ERROR_FAILURE;
   }
   return NS_OK;
 }
 
 NS_IMETHODIMP
-WebSocketChannelParent::OnStop(nsISupports *aContext, nsresult aStatusCode)
-{
+WebSocketChannelParent::OnStop(nsISupports* aContext, nsresult aStatusCode) {
   LOG(("WebSocketChannelParent::OnStop() %p\n", this));
   if (!mIPCOpen || !SendOnStop(aStatusCode)) {
     return NS_ERROR_FAILURE;
@@ -244,8 +219,8 @@ WebSocketChannelParent::OnStop(nsISupports *aContext, nsresult aStatusCode)
 }
 
 NS_IMETHODIMP
-WebSocketChannelParent::OnMessageAvailable(nsISupports *aContext, const nsACString& aMsg)
-{
+WebSocketChannelParent::OnMessageAvailable(nsISupports* aContext,
+                                           const nsACString& aMsg) {
   LOG(("WebSocketChannelParent::OnMessageAvailable() %p\n", this));
   if (!mIPCOpen || !SendOnMessageAvailable(nsCString(aMsg))) {
     return NS_ERROR_FAILURE;
@@ -254,8 +229,8 @@ WebSocketChannelParent::OnMessageAvailable(nsISupports *aContext, const nsACStri
 }
 
 NS_IMETHODIMP
-WebSocketChannelParent::OnBinaryMessageAvailable(nsISupports *aContext, const nsACString& aMsg)
-{
+WebSocketChannelParent::OnBinaryMessageAvailable(nsISupports* aContext,
+                                                 const nsACString& aMsg) {
   LOG(("WebSocketChannelParent::OnBinaryMessageAvailable() %p\n", this));
   if (!mIPCOpen || !SendOnBinaryMessageAvailable(nsCString(aMsg))) {
     return NS_ERROR_FAILURE;
@@ -264,8 +239,7 @@ WebSocketChannelParent::OnBinaryMessageAvailable(nsISupports *aContext, const ns
 }
 
 NS_IMETHODIMP
-WebSocketChannelParent::OnAcknowledge(nsISupports *aContext, uint32_t aSize)
-{
+WebSocketChannelParent::OnAcknowledge(nsISupports* aContext, uint32_t aSize) {
   LOG(("WebSocketChannelParent::OnAcknowledge() %p\n", this));
   if (!mIPCOpen || !SendOnAcknowledge(aSize)) {
     return NS_ERROR_FAILURE;
@@ -274,9 +248,8 @@ WebSocketChannelParent::OnAcknowledge(nsISupports *aContext, uint32_t aSize)
 }
 
 NS_IMETHODIMP
-WebSocketChannelParent::OnServerClose(nsISupports *aContext,
-                                      uint16_t code, const nsACString & reason)
-{
+WebSocketChannelParent::OnServerClose(nsISupports* aContext, uint16_t code,
+                                      const nsACString& reason) {
   LOG(("WebSocketChannelParent::OnServerClose() %p\n", this));
   if (!mIPCOpen || !SendOnServerClose(code, nsCString(reason))) {
     return NS_ERROR_FAILURE;
@@ -284,10 +257,16 @@ WebSocketChannelParent::OnServerClose(nsISupports *aContext,
   return NS_OK;
 }
 
-void
-WebSocketChannelParent::ActorDestroy(ActorDestroyReason why)
-{
+void WebSocketChannelParent::ActorDestroy(ActorDestroyReason why) {
   LOG(("WebSocketChannelParent::ActorDestroy() %p\n", this));
+
+  // Make sure we close the channel if the content process dies without going
+  // through a clean shutdown.
+  if (mChannel) {
+    Unused << mChannel->Close(nsIWebSocketChannel::CLOSE_GOING_AWAY,
+                              NS_LITERAL_CSTRING("Child was killed"));
+  }
+
   mIPCOpen = false;
 }
 
@@ -296,8 +275,7 @@ WebSocketChannelParent::ActorDestroy(ActorDestroyReason why)
 //-----------------------------------------------------------------------------
 
 NS_IMETHODIMP
-WebSocketChannelParent::GetInterface(const nsIID & iid, void **result)
-{
+WebSocketChannelParent::GetInterface(const nsIID& iid, void** result) {
   LOG(("WebSocketChannelParent::GetInterface() %p\n", this));
   if (mAuthProvider && iid.Equals(NS_GET_IID(nsIAuthPromptProvider)))
     return mAuthProvider->GetAuthPrompt(nsIAuthPromptProvider::PROMPT_NORMAL,
@@ -313,5 +291,5 @@ WebSocketChannelParent::GetInterface(const nsIID & iid, void **result)
   return QueryInterface(iid, result);
 }
 
-} // namespace net
-} // namespace mozilla
+}  // namespace net
+}  // namespace mozilla

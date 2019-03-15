@@ -1,5 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+"use strict";
 
 // Test filtering with no matches.
 
@@ -19,8 +20,12 @@ function run_test() {
       by: "internalType",
       then: { by: "count", count: true, bytes: true },
     },
-    other:{
+    other: {
       by: "internalType",
+      then: { by: "count", count: true, bytes: true },
+    },
+    domNode: {
+      by: "descriptiveType",
       then: { by: "count", count: true, bytes: true },
     },
   };
@@ -40,7 +45,8 @@ function run_test() {
     },
     other: {
       "js::Shape": { bytes: 80, count: 8 },
-    }
+    },
+    domNode: {},
   };
 
   const EXPECTED = {
@@ -50,7 +56,7 @@ function run_test() {
     count: 0,
     totalCount: 62,
     children: undefined,
-    id: 13,
+    id: 14,
     parent: undefined,
     reportLeafIndex: undefined,
   };

@@ -1,418 +1,443 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Cu.import("resource://gre/modules/PlacesUtils.jsm");
-Cu.import("resource://services-sync/engines.js");
-Cu.import("resource://services-sync/engines/bookmarks.js");
-Cu.import("resource://services-sync/service.js");
-Cu.import("resource://services-sync/util.js");
+ChromeUtils.import("resource://services-common/utils.js");
+ChromeUtils.import("resource://services-sync/engines.js");
+ChromeUtils.import("resource://services-sync/engines/bookmarks.js");
+ChromeUtils.import("resource://services-sync/service.js");
+ChromeUtils.import("resource://services-sync/util.js");
 
-const PARENT_ANNO = "sync/parent";
-
-Service.engineManager.register(BookmarksEngine);
-
-var engine = Service.engineManager.get("bookmarks");
-var store = engine._store;
-var tracker = engine._tracker;
-
-// Don't write some persistence files asynchronously.
-tracker.persistChangedIDs = false;
-
-var fxuri = Utils.makeURI("http://getfirefox.com/");
-var tburi = Utils.makeURI("http://getthunderbird.com/");
+const BookmarksToolbarTitle = "toolbar";
 
 add_task(async function test_ignore_specials() {
   _("Ensure that we can't delete bookmark roots.");
 
+  let engine = new BookmarksEngine(Service);
+  let store = engine._store;
+
   // Belt...
   let record = new BookmarkFolder("bookmarks", "toolbar", "folder");
   record.deleted = true;
-  do_check_neq(null, store.idForGUID("toolbar"));
+  Assert.notEqual(null, (await PlacesUtils.promiseItemId(
+    PlacesUtils.bookmarks.toolbarGuid)));
 
-  store.applyIncoming(record);
+  await store.applyIncoming(record);
   await store.deletePending();
 
   // Ensure that the toolbar exists.
-  do_check_neq(null, store.idForGUID("toolbar"));
+  Assert.notEqual(null, (await PlacesUtils.promiseItemId(
+    PlacesUtils.bookmarks.toolbarGuid)));
 
-  // This will fail painfully in getItemType if the deletion worked.
-  engine._buildGUIDMap();
+  // This will fail to build the local tree if the deletion worked.
+  await engine._buildGUIDMap();
 
   // Braces...
-  store.remove(record);
+  await store.remove(record);
   await store.deletePending();
-  do_check_neq(null, store.idForGUID("toolbar"));
-  engine._buildGUIDMap();
+  Assert.notEqual(null, (await PlacesUtils.promiseItemId(
+    PlacesUtils.bookmarks.toolbarGuid)));
+  await engine._buildGUIDMap();
 
-  store.wipe();
+  await store.wipe();
+
+  await engine.finalize();
 });
 
-add_test(function test_bookmark_create() {
+add_task(async function test_bookmark_create() {
+  let engine = new BookmarksEngine(Service);
+  let store = engine._store;
+
   try {
     _("Ensure the record isn't present yet.");
-    let ids = PlacesUtils.bookmarks.getBookmarkIdsForURI(fxuri, {});
-    do_check_eq(ids.length, 0);
+    let item = await PlacesUtils.bookmarks.fetch({
+      url: "http://getfirefox.com/",
+    });
+    Assert.equal(null, item);
 
     _("Let's create a new record.");
     let fxrecord = new Bookmark("bookmarks", "get-firefox1");
-    fxrecord.bmkUri        = fxuri.spec;
-    fxrecord.description   = "Firefox is awesome.";
+    fxrecord.bmkUri        = "http://getfirefox.com/";
     fxrecord.title         = "Get Firefox!";
     fxrecord.tags          = ["firefox", "awesome", "browser"];
     fxrecord.keyword       = "awesome";
-    fxrecord.loadInSidebar = false;
-    fxrecord.parentName    = "Bookmarks Toolbar";
+    fxrecord.parentName    = BookmarksToolbarTitle;
     fxrecord.parentid      = "toolbar";
-    store.applyIncoming(fxrecord);
+    await store.applyIncoming(fxrecord);
 
     _("Verify it has been created correctly.");
-    let id = store.idForGUID(fxrecord.id);
-    do_check_eq(store.GUIDForId(id), fxrecord.id);
-    do_check_eq(PlacesUtils.bookmarks.getItemType(id),
-                PlacesUtils.bookmarks.TYPE_BOOKMARK);
-    do_check_true(PlacesUtils.bookmarks.getBookmarkURI(id).equals(fxuri));
-    do_check_eq(PlacesUtils.bookmarks.getItemTitle(id), fxrecord.title);
-    do_check_eq(PlacesUtils.annotations.getItemAnnotation(id, "bookmarkProperties/description"),
-                fxrecord.description);
-    do_check_eq(PlacesUtils.bookmarks.getFolderIdForItem(id),
-                PlacesUtils.bookmarks.toolbarFolder);
-    do_check_eq(PlacesUtils.bookmarks.getKeywordForBookmark(id), fxrecord.keyword);
+    item = await PlacesUtils.bookmarks.fetch(fxrecord.id);
+    Assert.equal(item.type, PlacesUtils.bookmarks.TYPE_BOOKMARK);
+    Assert.equal(item.url.href, "http://getfirefox.com/");
+    Assert.equal(item.title, fxrecord.title);
+    Assert.equal(item.parentGuid, PlacesUtils.bookmarks.toolbarGuid);
+    let keyword = await PlacesUtils.keywords.fetch(fxrecord.keyword);
+    Assert.equal(keyword.url.href, "http://getfirefox.com/");
 
     _("Have the store create a new record object. Verify that it has the same data.");
-    let newrecord = store.createRecord(fxrecord.id);
-    do_check_true(newrecord instanceof Bookmark);
-    for (let property of ["type", "bmkUri", "description", "title",
+    let newrecord = await store.createRecord(fxrecord.id);
+    Assert.ok(newrecord instanceof Bookmark);
+    for (let property of ["type", "bmkUri", "title",
                           "keyword", "parentName", "parentid"]) {
-      do_check_eq(newrecord[property], fxrecord[property]);
+      Assert.equal(newrecord[property], fxrecord[property]);
     }
-    do_check_true(Utils.deepEquals(newrecord.tags.sort(),
-                                   fxrecord.tags.sort()));
+    Assert.ok(Utils.deepEquals(newrecord.tags.sort(),
+                               fxrecord.tags.sort()));
 
     _("The calculated sort index is based on frecency data.");
-    do_check_true(newrecord.sortindex >= 150);
+    Assert.ok(newrecord.sortindex >= 150);
 
     _("Create a record with some values missing.");
     let tbrecord = new Bookmark("bookmarks", "thunderbird1");
-    tbrecord.bmkUri        = tburi.spec;
-    tbrecord.parentName    = "Bookmarks Toolbar";
+    tbrecord.bmkUri        = "http://getthunderbird.com/";
+    tbrecord.parentName    = BookmarksToolbarTitle;
     tbrecord.parentid      = "toolbar";
-    store.applyIncoming(tbrecord);
+    await store.applyIncoming(tbrecord);
 
     _("Verify it has been created correctly.");
-    id = store.idForGUID(tbrecord.id);
-    do_check_eq(store.GUIDForId(id), tbrecord.id);
-    do_check_eq(PlacesUtils.bookmarks.getItemType(id),
-                PlacesUtils.bookmarks.TYPE_BOOKMARK);
-    do_check_true(PlacesUtils.bookmarks.getBookmarkURI(id).equals(tburi));
-    do_check_eq(PlacesUtils.bookmarks.getItemTitle(id), null);
-    let error;
-    try {
-      PlacesUtils.annotations.getItemAnnotation(id, "bookmarkProperties/description");
-    } catch (ex) {
-      error = ex;
-    }
-    do_check_eq(error.result, Cr.NS_ERROR_NOT_AVAILABLE);
-    do_check_eq(PlacesUtils.bookmarks.getFolderIdForItem(id),
-                PlacesUtils.bookmarks.toolbarFolder);
-    do_check_eq(PlacesUtils.bookmarks.getKeywordForBookmark(id), null);
+    item = await PlacesUtils.bookmarks.fetch(tbrecord.id);
+    Assert.equal(item.type, PlacesUtils.bookmarks.TYPE_BOOKMARK);
+    Assert.equal(item.url.href, "http://getthunderbird.com/");
+    Assert.equal(item.title, "");
+    Assert.equal(item.parentGuid, PlacesUtils.bookmarks.toolbarGuid);
+    keyword = await PlacesUtils.keywords.fetch({
+      url: "http://getthunderbird.com/",
+    });
+    Assert.equal(null, keyword);
   } finally {
     _("Clean up.");
-    store.wipe();
-    run_next_test();
+    await store.wipe();
+    await engine.finalize();
   }
 });
 
-add_test(function test_bookmark_update() {
+add_task(async function test_bookmark_update() {
+  let engine = new BookmarksEngine(Service);
+  let store = engine._store;
+
   try {
     _("Create a bookmark whose values we'll change.");
-    let bmk1_id = PlacesUtils.bookmarks.insertBookmark(
-      PlacesUtils.bookmarks.toolbarFolder, fxuri,
-      PlacesUtils.bookmarks.DEFAULT_INDEX,
-      "Get Firefox!");
-    PlacesUtils.annotations.setItemAnnotation(
-      bmk1_id, "bookmarkProperties/description", "Firefox is awesome.", 0,
-      PlacesUtils.annotations.EXPIRE_NEVER);
-    PlacesUtils.bookmarks.setKeywordForBookmark(bmk1_id, "firefox");
-    let bmk1_guid = store.GUIDForId(bmk1_id);
+    let bmk1 = await PlacesUtils.bookmarks.insert({
+      parentGuid: PlacesUtils.bookmarks.toolbarGuid,
+      url: "http://getfirefox.com/",
+      title: "Get Firefox!",
+    });
+    await PlacesUtils.keywords.insert({
+      url: "http://getfirefox.com/",
+      keyword: "firefox",
+    });
 
     _("Update the record with some null values.");
-    let record = store.createRecord(bmk1_guid);
+    let record = await store.createRecord(bmk1.guid);
     record.title = null;
-    record.description = null;
     record.keyword = null;
     record.tags = null;
-    store.applyIncoming(record);
+    await store.applyIncoming(record);
 
     _("Verify that the values have been cleared.");
-    do_check_throws(function() {
-      PlacesUtils.annotations.getItemAnnotation(
-        bmk1_id, "bookmarkProperties/description");
-    }, Cr.NS_ERROR_NOT_AVAILABLE);
-    do_check_eq(PlacesUtils.bookmarks.getItemTitle(bmk1_id), null);
-    do_check_eq(PlacesUtils.bookmarks.getKeywordForBookmark(bmk1_id), null);
+    let item = await PlacesUtils.bookmarks.fetch(bmk1.guid);
+    Assert.equal(item.title, "");
+    let keyword = await PlacesUtils.keywords.fetch({
+      url: "http://getfirefox.com/",
+    });
+    Assert.equal(null, keyword);
   } finally {
     _("Clean up.");
-    store.wipe();
-    run_next_test();
+    await store.wipe();
+    await engine.finalize();
   }
 });
 
-add_test(function test_bookmark_createRecord() {
+add_task(async function test_bookmark_createRecord() {
+  let engine = Service.engineManager.get("bookmarks");
+  let store = engine._store;
+
   try {
-    _("Create a bookmark without a description or title.");
-    let bmk1_id = PlacesUtils.bookmarks.insertBookmark(
-      PlacesUtils.bookmarks.toolbarFolder, fxuri,
-      PlacesUtils.bookmarks.DEFAULT_INDEX, null);
-    let bmk1_guid = store.GUIDForId(bmk1_id);
+    _("Create a bookmark without a title.");
+    let bmk1 = await PlacesUtils.bookmarks.insert({
+      parentGuid: PlacesUtils.bookmarks.toolbarGuid,
+      url: "http://getfirefox.com/",
+    });
 
     _("Verify that the record is created accordingly.");
-    let record = store.createRecord(bmk1_guid);
-    do_check_eq(record.title, "");
-    do_check_eq(record.description, null);
-    do_check_eq(record.keyword, null);
+    let record = await store.createRecord(bmk1.guid);
+    Assert.equal(record.title, "");
+    Assert.equal(record.keyword, null);
 
   } finally {
     _("Clean up.");
-    store.wipe();
-    run_next_test();
+    await store.wipe();
   }
 });
 
-add_test(function test_folder_create() {
+add_task(async function test_folder_create() {
+  let engine = new BookmarksEngine(Service);
+  let store = engine._store;
+
   try {
     _("Create a folder.");
     let folder = new BookmarkFolder("bookmarks", "testfolder-1");
-    folder.parentName = "Bookmarks Toolbar";
+    folder.parentName = BookmarksToolbarTitle;
     folder.parentid   = "toolbar";
     folder.title      = "Test Folder";
-    store.applyIncoming(folder);
+    await store.applyIncoming(folder);
 
     _("Verify it has been created correctly.");
-    let id = store.idForGUID(folder.id);
-    do_check_eq(PlacesUtils.bookmarks.getItemType(id),
-                PlacesUtils.bookmarks.TYPE_FOLDER);
-    do_check_eq(PlacesUtils.bookmarks.getItemTitle(id), folder.title);
-    do_check_eq(PlacesUtils.bookmarks.getFolderIdForItem(id),
-                PlacesUtils.bookmarks.toolbarFolder);
+    let item = await PlacesUtils.bookmarks.fetch(folder.id);
+    Assert.equal(item.type, PlacesUtils.bookmarks.TYPE_FOLDER);
+    Assert.equal(item.title, folder.title);
+    Assert.equal(item.parentGuid, PlacesUtils.bookmarks.toolbarGuid);
 
     _("Have the store create a new record object. Verify that it has the same data.");
-    let newrecord = store.createRecord(folder.id);
-    do_check_true(newrecord instanceof BookmarkFolder);
-    for (let property of ["title", "parentName", "parentid"])
-      do_check_eq(newrecord[property], folder[property]);
+    let newrecord = await store.createRecord(folder.id);
+    Assert.ok(newrecord instanceof BookmarkFolder);
+    for (let property of ["title", "parentName", "parentid"]) {
+      Assert.equal(newrecord[property], folder[property]);
+    }
 
     _("Folders have high sort index to ensure they're synced first.");
-    do_check_eq(newrecord.sortindex, 1000000);
+    Assert.equal(newrecord.sortindex, 1000000);
   } finally {
     _("Clean up.");
-    store.wipe();
-    run_next_test();
+    await store.wipe();
+    await engine.finalize();
   }
 });
 
-add_test(function test_folder_createRecord() {
+add_task(async function test_folder_createRecord() {
+  let engine = Service.engineManager.get("bookmarks");
+  let store = engine._store;
+
   try {
     _("Create a folder.");
-    let folder1_id = PlacesUtils.bookmarks.createFolder(
-      PlacesUtils.bookmarks.toolbarFolder, "Folder1", 0);
-    let folder1_guid = store.GUIDForId(folder1_id);
+    let folder1 = await PlacesUtils.bookmarks.insert({
+      parentGuid: PlacesUtils.bookmarks.toolbarGuid,
+      type: PlacesUtils.bookmarks.TYPE_FOLDER,
+      title: "Folder1",
+    });
 
     _("Create two bookmarks in that folder without assigning them GUIDs.");
-    let bmk1_id = PlacesUtils.bookmarks.insertBookmark(
-      folder1_id, fxuri, PlacesUtils.bookmarks.DEFAULT_INDEX, "Get Firefox!");
-    let bmk2_id = PlacesUtils.bookmarks.insertBookmark(
-      folder1_id, tburi, PlacesUtils.bookmarks.DEFAULT_INDEX, "Get Thunderbird!");
+    let bmk1 = await PlacesUtils.bookmarks.insert({
+      parentGuid: folder1.guid,
+      url: "http://getfirefox.com/",
+      title: "Get Firefox!",
+    });
+    let bmk2 = await PlacesUtils.bookmarks.insert({
+      parentGuid: folder1.guid,
+      url: "http://getthunderbird.com/",
+      title: "Get Thunderbird!",
+    });
 
     _("Create a record for the folder and verify basic properties.");
-    let record = store.createRecord(folder1_guid);
-    do_check_true(record instanceof BookmarkFolder);
-    do_check_eq(record.title, "Folder1");
-    do_check_eq(record.parentid, "toolbar");
-    do_check_eq(record.parentName, "Bookmarks Toolbar");
+    let record = await store.createRecord(folder1.guid);
+    Assert.ok(record instanceof BookmarkFolder);
+    Assert.equal(record.title, "Folder1");
+    Assert.equal(record.parentid, "toolbar");
+    Assert.equal(record.parentName, BookmarksToolbarTitle);
 
     _("Verify the folder's children. Ensures that the bookmarks were given GUIDs.");
-    let bmk1_guid = store.GUIDForId(bmk1_id);
-    let bmk2_guid = store.GUIDForId(bmk2_id);
-    do_check_eq(record.children.length, 2);
-    do_check_eq(record.children[0], bmk1_guid);
-    do_check_eq(record.children[1], bmk2_guid);
+    Assert.deepEqual(record.children, [bmk1.guid, bmk2.guid]);
 
   } finally {
     _("Clean up.");
-    store.wipe();
-    run_next_test();
+    await store.wipe();
   }
 });
 
 add_task(async function test_deleted() {
+  let engine = new BookmarksEngine(Service);
+  let store = engine._store;
+
   try {
     _("Create a bookmark that will be deleted.");
-    let bmk1_id = PlacesUtils.bookmarks.insertBookmark(
-      PlacesUtils.bookmarks.toolbarFolder, fxuri,
-      PlacesUtils.bookmarks.DEFAULT_INDEX, "Get Firefox!");
-    let bmk1_guid = store.GUIDForId(bmk1_id);
+    let bmk1 = await PlacesUtils.bookmarks.insert({
+      parentGuid: PlacesUtils.bookmarks.toolbarGuid,
+      url: "http://getfirefox.com/",
+      title: "Get Firefox!",
+    });
 
     _("Delete the bookmark through the store.");
-    let record = new PlacesItem("bookmarks", bmk1_guid);
+    let record = new PlacesItem("bookmarks", bmk1.guid);
     record.deleted = true;
-    store.applyIncoming(record);
+    await store.applyIncoming(record);
     await store.deletePending();
     _("Ensure it has been deleted.");
-    let error;
-    try {
-      PlacesUtils.bookmarks.getBookmarkURI(bmk1_id);
-    } catch (ex) {
-      error = ex;
-    }
-    do_check_eq(error.result, Cr.NS_ERROR_ILLEGAL_VALUE);
+    let item = await PlacesUtils.bookmarks.fetch(bmk1.guid);
+    Assert.equal(null, item);
 
-    let newrec = store.createRecord(bmk1_guid);
-    do_check_eq(newrec.deleted, true);
+    let newrec = await store.createRecord(bmk1.guid);
+    Assert.equal(newrec.deleted, true);
 
   } finally {
     _("Clean up.");
-    store.wipe();
+    await store.wipe();
+    await engine.finalize();
   }
 });
 
-add_test(function test_move_folder() {
+add_task(async function test_move_folder() {
+  let engine = new BookmarksEngine(Service);
+  let store = engine._store;
+
   try {
     _("Create two folders and a bookmark in one of them.");
-    let folder1_id = PlacesUtils.bookmarks.createFolder(
-      PlacesUtils.bookmarks.toolbarFolder, "Folder1", 0);
-    let folder1_guid = store.GUIDForId(folder1_id);
-    let folder2_id = PlacesUtils.bookmarks.createFolder(
-      PlacesUtils.bookmarks.toolbarFolder, "Folder2", 0);
-    let folder2_guid = store.GUIDForId(folder2_id);
-    let bmk_id = PlacesUtils.bookmarks.insertBookmark(
-      folder1_id, fxuri, PlacesUtils.bookmarks.DEFAULT_INDEX, "Get Firefox!");
-    let bmk_guid = store.GUIDForId(bmk_id);
+    let folder1 = await PlacesUtils.bookmarks.insert({
+      parentGuid: PlacesUtils.bookmarks.toolbarGuid,
+      type: PlacesUtils.bookmarks.TYPE_FOLDER,
+      title: "Folder1",
+    });
+    let folder2 = await PlacesUtils.bookmarks.insert({
+      parentGuid: PlacesUtils.bookmarks.toolbarGuid,
+      type: PlacesUtils.bookmarks.TYPE_FOLDER,
+      title: "Folder2",
+    });
+    let bmk = await PlacesUtils.bookmarks.insert({
+      parentGuid: folder1.guid,
+      url: "http://getfirefox.com/",
+      title: "Get Firefox!",
+    });
 
     _("Get a record, reparent it and apply it to the store.");
-    let record = store.createRecord(bmk_guid);
-    do_check_eq(record.parentid, folder1_guid);
-    record.parentid = folder2_guid;
-    store.applyIncoming(record);
+    let record = await store.createRecord(bmk.guid);
+    Assert.equal(record.parentid, folder1.guid);
+    record.parentid = folder2.guid;
+    await store.applyIncoming(record);
 
     _("Verify the new parent.");
-    let new_folder_id = PlacesUtils.bookmarks.getFolderIdForItem(bmk_id);
-    do_check_eq(store.GUIDForId(new_folder_id), folder2_guid);
+    let movedBmk = await PlacesUtils.bookmarks.fetch(bmk.guid);
+    Assert.equal(movedBmk.parentGuid, folder2.guid);
   } finally {
     _("Clean up.");
-    store.wipe();
-    run_next_test();
+    await store.wipe();
+    await engine.finalize();
   }
 });
 
-add_test(function test_move_order() {
+add_task(async function test_move_order() {
+  let engine = new BookmarksEngine(Service);
+  let store = engine._store;
+  let tracker = engine._tracker;
+
   // Make sure the tracker is turned on.
-  Svc.Obs.notify("weave:engine:start-tracking");
+  tracker.start();
   try {
     _("Create two bookmarks");
-    let bmk1_id = PlacesUtils.bookmarks.insertBookmark(
-      PlacesUtils.bookmarks.toolbarFolder, fxuri,
-      PlacesUtils.bookmarks.DEFAULT_INDEX, "Get Firefox!");
-    let bmk1_guid = store.GUIDForId(bmk1_id);
-    let bmk2_id = PlacesUtils.bookmarks.insertBookmark(
-      PlacesUtils.bookmarks.toolbarFolder, tburi,
-      PlacesUtils.bookmarks.DEFAULT_INDEX, "Get Thunderbird!");
-    let bmk2_guid = store.GUIDForId(bmk2_id);
+    let bmk1 = await PlacesUtils.bookmarks.insert({
+      parentGuid: PlacesUtils.bookmarks.toolbarGuid,
+      url: "http://getfirefox.com/",
+      title: "Get Firefox!",
+    });
+    let bmk2 = await PlacesUtils.bookmarks.insert({
+      parentGuid: PlacesUtils.bookmarks.toolbarGuid,
+      url: "http://getthunderbird.com/",
+      title: "Get Thunderbird!",
+    });
 
     _("Verify order.");
-    do_check_eq(PlacesUtils.bookmarks.getItemIndex(bmk1_id), 0);
-    do_check_eq(PlacesUtils.bookmarks.getItemIndex(bmk2_id), 1);
-    let toolbar = store.createRecord("toolbar");
-    do_check_eq(toolbar.children.length, 2);
-    do_check_eq(toolbar.children[0], bmk1_guid);
-    do_check_eq(toolbar.children[1], bmk2_guid);
+    let childIds = await PlacesSyncUtils.bookmarks.fetchChildRecordIds(
+      "toolbar");
+    Assert.deepEqual(childIds, [bmk1.guid, bmk2.guid]);
+    let toolbar = await store.createRecord("toolbar");
+    Assert.deepEqual(toolbar.children, [bmk1.guid, bmk2.guid]);
 
     _("Move bookmarks around.");
     store._childrenToOrder = {};
-    toolbar.children = [bmk2_guid, bmk1_guid];
-    store.applyIncoming(toolbar);
+    toolbar.children = [bmk2.guid, bmk1.guid];
+    await store.applyIncoming(toolbar);
     // Bookmarks engine does this at the end of _processIncoming
     tracker.ignoreAll = true;
-    store._orderChildren();
+    await store._orderChildren();
     tracker.ignoreAll = false;
     delete store._childrenToOrder;
 
     _("Verify new order.");
-    do_check_eq(PlacesUtils.bookmarks.getItemIndex(bmk2_id), 0);
-    do_check_eq(PlacesUtils.bookmarks.getItemIndex(bmk1_id), 1);
+    let newChildIds = await PlacesSyncUtils.bookmarks.fetchChildRecordIds(
+      "toolbar");
+    Assert.deepEqual(newChildIds, [bmk2.guid, bmk1.guid]);
 
   } finally {
-    Svc.Obs.notify("weave:engine:stop-tracking");
+    await tracker.stop();
     _("Clean up.");
-    store.wipe();
-    run_next_test();
+    await store.wipe();
+    await engine.finalize();
   }
 });
 
-add_test(function test_orphan() {
+add_task(async function test_orphan() {
+  let engine = new BookmarksEngine(Service);
+  let store = engine._store;
+
   try {
 
     _("Add a new bookmark locally.");
-    let bmk1_id = PlacesUtils.bookmarks.insertBookmark(
-      PlacesUtils.bookmarks.toolbarFolder, fxuri,
-      PlacesUtils.bookmarks.DEFAULT_INDEX, "Get Firefox!");
-    let bmk1_guid = store.GUIDForId(bmk1_id);
-    do_check_eq(PlacesUtils.bookmarks.getFolderIdForItem(bmk1_id),
-                PlacesUtils.bookmarks.toolbarFolder);
-    let error;
-    try {
-      PlacesUtils.annotations.getItemAnnotation(bmk1_id, PARENT_ANNO);
-    } catch (ex) {
-      error = ex;
-    }
-    do_check_eq(error.result, Cr.NS_ERROR_NOT_AVAILABLE);
+    let bmk1 = await PlacesUtils.bookmarks.insert({
+      parentGuid: PlacesUtils.bookmarks.toolbarGuid,
+      url: "http://getfirefox.com/",
+      title: "Get Firefox!",
+    });
+    let bmk1_id = await PlacesUtils.promiseItemId(bmk1.guid);
+    do_check_throws(function() {
+      PlacesUtils.annotations.getItemAnnotation(bmk1_id,
+        PlacesSyncUtils.bookmarks.SYNC_PARENT_ANNO);
+    }, Cr.NS_ERROR_NOT_AVAILABLE);
 
     _("Apply a server record that is the same but refers to non-existent folder.");
-    let record = store.createRecord(bmk1_guid);
+    let record = await store.createRecord(bmk1.guid);
     record.parentid = "non-existent";
-    store.applyIncoming(record);
+    await store.applyIncoming(record);
 
     _("Verify that bookmark has been flagged as orphan, has not moved.");
-    do_check_eq(PlacesUtils.bookmarks.getFolderIdForItem(bmk1_id),
-                PlacesUtils.bookmarks.toolbarFolder);
-    do_check_eq(PlacesUtils.annotations.getItemAnnotation(bmk1_id, PARENT_ANNO),
-                "non-existent");
+    let item = await PlacesUtils.bookmarks.fetch(bmk1.guid);
+    Assert.equal(item.parentGuid, PlacesUtils.bookmarks.toolbarGuid);
+    let orphanAnno = PlacesUtils.annotations.getItemAnnotation(bmk1_id,
+      PlacesSyncUtils.bookmarks.SYNC_PARENT_ANNO);
+    Assert.equal(orphanAnno, "non-existent");
 
   } finally {
     _("Clean up.");
-    store.wipe();
-    run_next_test();
+    await store.wipe();
+    await engine.finalize();
   }
 });
 
-add_test(function test_reparentOrphans() {
+add_task(async function test_reparentOrphans() {
+  let engine = new BookmarksEngine(Service);
+  let store = engine._store;
+
   try {
-    let folder1_id = PlacesUtils.bookmarks.createFolder(
-      PlacesUtils.bookmarks.toolbarFolder, "Folder1", 0);
-    let folder1_guid = store.GUIDForId(folder1_id);
+    let folder1 = await PlacesUtils.bookmarks.insert({
+      parentGuid: PlacesUtils.bookmarks.toolbarGuid,
+      type: PlacesUtils.bookmarks.TYPE_FOLDER,
+      title: "Folder1",
+    });
+    let folder1_id = await PlacesUtils.promiseItemId(folder1.guid);
 
     _("Create a bogus orphan record and write the record back to the store to trigger _reparentOrphans.");
     PlacesUtils.annotations.setItemAnnotation(
-      folder1_id, PARENT_ANNO, folder1_guid, 0,
+      folder1_id, PlacesSyncUtils.bookmarks.SYNC_PARENT_ANNO, folder1.guid, 0,
       PlacesUtils.annotations.EXPIRE_NEVER);
-    let record = store.createRecord(folder1_guid);
+    let record = await store.createRecord(folder1.guid);
     record.title = "New title for Folder 1";
     store._childrenToOrder = {};
-    store.applyIncoming(record);
+    await store.applyIncoming(record);
 
     _("Verify that is has been marked as an orphan even though it couldn't be moved into itself.");
-    do_check_eq(PlacesUtils.annotations.getItemAnnotation(folder1_id, PARENT_ANNO),
-                folder1_guid);
+    let orphanAnno = PlacesUtils.annotations.getItemAnnotation(folder1_id,
+      PlacesSyncUtils.bookmarks.SYNC_PARENT_ANNO);
+    Assert.equal(orphanAnno, folder1.guid);
 
   } finally {
     _("Clean up.");
-    store.wipe();
-    run_next_test();
+    await store.wipe();
+    await engine.finalize();
   }
 });
 
 // Tests Bug 806460, in which query records arrive with empty folder
 // names and missing bookmark URIs.
-add_test(function test_empty_query_doesnt_die() {
+add_task(async function test_empty_query_doesnt_die() {
+  let engine = new BookmarksEngine(Service);
+  let store = engine._store;
+
   let record = new BookmarkQuery("bookmarks", "8xoDGqKrXf1P");
   record.folderName    = "";
   record.queryId       = "";
@@ -420,69 +445,63 @@ add_test(function test_empty_query_doesnt_die() {
   record.parentid      = "toolbar";
 
   // These should not throw.
-  store.applyIncoming(record);
+  await store.applyIncoming(record);
 
   delete record.folderName;
-  store.applyIncoming(record);
+  await store.applyIncoming(record);
 
-  run_next_test();
+  await engine.finalize();
 });
 
-function assertDeleted(id) {
-  let error;
-  try {
-    PlacesUtils.bookmarks.getItemType(id);
-  } catch (e) {
-    error = e;
-  }
-  equal(error.result, Cr.NS_ERROR_ILLEGAL_VALUE)
+async function assertDeleted(guid) {
+  let item = await PlacesUtils.bookmarks.fetch(guid);
+  ok(!item);
 }
 
 add_task(async function test_delete_buffering() {
-  store.wipe();
+  let engine = new BookmarksEngine(Service);
+  let store = engine._store;
+
+  await store.wipe();
   await PlacesTestUtils.markBookmarksAsSynced();
 
   try {
     _("Create a folder with two bookmarks.");
     let folder = new BookmarkFolder("bookmarks", "testfolder-1");
-    folder.parentName = "Bookmarks Toolbar";
+    folder.parentName = BookmarksToolbarTitle;
     folder.parentid = "toolbar";
     folder.title = "Test Folder";
-    store.applyIncoming(folder);
+    await store.applyIncoming(folder);
 
 
     let fxRecord = new Bookmark("bookmarks", "get-firefox1");
-    fxRecord.bmkUri        = fxuri.spec;
+    fxRecord.bmkUri        = "http://getfirefox.com/";
     fxRecord.title         = "Get Firefox!";
     fxRecord.parentName    = "Test Folder";
     fxRecord.parentid      = "testfolder-1";
 
     let tbRecord = new Bookmark("bookmarks", "get-tndrbrd1");
-    tbRecord.bmkUri        = tburi.spec;
+    tbRecord.bmkUri        = "http://getthunderbird.com";
     tbRecord.title         = "Get Thunderbird!";
     tbRecord.parentName    = "Test Folder";
     tbRecord.parentid      = "testfolder-1";
 
-    store.applyIncoming(fxRecord);
-    store.applyIncoming(tbRecord);
-
-    let folderId = store.idForGUID(folder.id);
-    let fxRecordId = store.idForGUID(fxRecord.id);
-    let tbRecordId = store.idForGUID(tbRecord.id);
+    await store.applyIncoming(fxRecord);
+    await store.applyIncoming(tbRecord);
 
     _("Check everything was created correctly.");
 
-    equal(PlacesUtils.bookmarks.getItemType(fxRecordId),
-          PlacesUtils.bookmarks.TYPE_BOOKMARK);
-    equal(PlacesUtils.bookmarks.getItemType(tbRecordId),
-          PlacesUtils.bookmarks.TYPE_BOOKMARK);
-    equal(PlacesUtils.bookmarks.getItemType(folderId),
-          PlacesUtils.bookmarks.TYPE_FOLDER);
+    let folderItem = await PlacesUtils.bookmarks.fetch(folder.id);
+    let fxItem = await PlacesUtils.bookmarks.fetch(fxRecord.id);
+    let tbItem = await PlacesUtils.bookmarks.fetch(tbRecord.id);
 
-    equal(PlacesUtils.bookmarks.getFolderIdForItem(fxRecordId), folderId);
-    equal(PlacesUtils.bookmarks.getFolderIdForItem(tbRecordId), folderId);
-    equal(PlacesUtils.bookmarks.getFolderIdForItem(folderId),
-          PlacesUtils.bookmarks.toolbarFolder);
+    equal(fxItem.type, PlacesUtils.bookmarks.TYPE_BOOKMARK);
+    equal(tbItem.type, PlacesUtils.bookmarks.TYPE_BOOKMARK);
+    equal(folderItem.type, PlacesUtils.bookmarks.TYPE_FOLDER);
+
+    equal(fxItem.parentGuid, folderItem.guid);
+    equal(tbItem.parentGuid, folderItem.guid);
+    equal(folderItem.parentGuid, PlacesUtils.bookmarks.toolbarGuid);
 
     _("Delete the folder and one bookmark.");
 
@@ -492,18 +511,18 @@ add_task(async function test_delete_buffering() {
     let deleteFxRecord = new PlacesItem("bookmarks", "get-firefox1");
     deleteFxRecord.deleted = true;
 
-    store.applyIncoming(deleteFolder);
-    store.applyIncoming(deleteFxRecord);
+    await store.applyIncoming(deleteFolder);
+    await store.applyIncoming(deleteFxRecord);
 
     _("Check that we haven't deleted them yet, but that the deletions are queued");
-    // these will throw if we've deleted them
-    equal(PlacesUtils.bookmarks.getItemType(fxRecordId),
-           PlacesUtils.bookmarks.TYPE_BOOKMARK);
+    // these will return `null` if we've deleted them
+    fxItem = await PlacesUtils.bookmarks.fetch(fxRecord.id);
+    ok(fxItem);
 
-    equal(PlacesUtils.bookmarks.getItemType(folderId),
-           PlacesUtils.bookmarks.TYPE_FOLDER);
+    folderItem = await PlacesUtils.bookmarks.fetch(folder.id);
+    ok(folderItem);
 
-    equal(PlacesUtils.bookmarks.getFolderIdForItem(fxRecordId), folderId);
+    equal(fxItem.parentGuid, folderItem.guid);
 
     ok(store._itemsToDelete.has(folder.id));
     ok(store._itemsToDelete.has(fxRecord.id));
@@ -514,23 +533,18 @@ add_task(async function test_delete_buffering() {
 
     deepEqual(Object.keys(newChangeRecords).sort(), ["get-tndrbrd1", "toolbar"]);
 
-    assertDeleted(fxRecordId);
-    assertDeleted(folderId);
+    await assertDeleted(fxItem.guid);
+    await assertDeleted(folderItem.guid);
 
     ok(!store._itemsToDelete.has(folder.id));
     ok(!store._itemsToDelete.has(fxRecord.id));
 
-    equal(PlacesUtils.bookmarks.getFolderIdForItem(tbRecordId),
-          PlacesUtils.bookmarks.toolbarFolder);
+    tbItem = await PlacesUtils.bookmarks.fetch(tbRecord.id);
+    equal(tbItem.parentGuid, PlacesUtils.bookmarks.toolbarGuid);
 
   } finally {
     _("Clean up.");
-    store.wipe();
+    await store.wipe();
+    await engine.finalize();
   }
 });
-
-
-function run_test() {
-  initTestLogging("Trace");
-  run_next_test();
-}

@@ -1,11 +1,10 @@
-// |reftest| skip-if(!this.hasOwnProperty('Intl')) -- needs Intl
 // Copyright (C) 2015 André Bargull. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
 description: >
     Check if String.prototype.toLocaleLowerCase supports language-sensitive mappings defined in SpecialCasings (Lithuanian)
-info: >
+info: |
     The result must be derived according to the case mappings in the Unicode character database (this explicitly
     includes not only the UnicodeData.txt file, but also the SpecialCasings.txt file that accompanies it).
 es5id: 15.5.4.16

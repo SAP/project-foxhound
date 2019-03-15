@@ -13,9 +13,9 @@ const { MarkerDOMUtils } = require("devtools/client/performance/modules/marker-d
 /**
  * A detailed view for one single marker.
  *
- * @param nsIDOMNode parent
+ * @param Node parent
  *        The parent node holding the view.
- * @param nsIDOMNode splitter
+ * @param Node splitter
  *        The splitter node that the resize event is bound to.
  */
 function MarkerDetails(parent, splitter) {
@@ -73,7 +73,7 @@ MarkerDetails.prototype = {
   /**
    * Clears the marker details from this view.
    */
-  empty: function () {
+  empty: function() {
     this._parent.innerHTML = "";
   },
 
@@ -87,11 +87,11 @@ MarkerDetails.prototype = {
    *          - allocations: Whether or not allocations were enabled for this
    *                         recording. [optional]
    */
-  render: function (options) {
-    let { marker, frames } = options;
+  render: function(options) {
+    const { marker, frames } = options;
     this.empty();
 
-    let elements = [];
+    const elements = [];
     elements.push(MarkerDOMUtils.buildTitle(this._document, marker));
     elements.push(MarkerDOMUtils.buildDuration(this._document, marker));
     MarkerDOMUtils.buildFields(this._document, marker).forEach(f => elements.push(f));
@@ -101,15 +101,15 @@ MarkerDetails.prototype = {
     // Build a stack element -- and use the "startStack" label if
     // we have both a startStack and endStack.
     if (marker.stack) {
-      let type = marker.endStack ? "startStack" : "stack";
+      const type = marker.endStack ? "startStack" : "stack";
       elements.push(MarkerDOMUtils.buildStackTrace(this._document, {
-        frameIndex: marker.stack, frames, type
+        frameIndex: marker.stack, frames, type,
       }));
     }
     if (marker.endStack) {
-      let type = "endStack";
+      const type = "endStack";
       elements.push(MarkerDOMUtils.buildStackTrace(this._document, {
-        frameIndex: marker.endStack, frames, type
+        frameIndex: marker.endStack, frames, type,
       }));
     }
 
@@ -121,8 +121,8 @@ MarkerDetails.prototype = {
    * can handle different actions -- only supporting view source links
    * for the moment.
    */
-  _onClick: function (e) {
-    let data = findActionFromEvent(e.target, this._parent);
+  _onClick: function(e) {
+    const data = findActionFromEvent(e.target, this._parent);
     if (!data) {
       return;
     }
@@ -133,9 +133,9 @@ MarkerDetails.prototype = {
   /**
    * Handles the "mouseup" event on the marker details view splitter.
    */
-  _onSplitterMouseUp: function () {
+  _onSplitterMouseUp: function() {
     this.emit("resize");
-  }
+  },
 };
 
 /**

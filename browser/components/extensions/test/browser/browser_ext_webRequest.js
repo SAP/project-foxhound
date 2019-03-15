@@ -1,13 +1,15 @@
 /* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* vim: set sts=2 sw=2 et tw=80: */
-/* globals makeExtension */
 "use strict";
 
+/* import-globals-from ../../../../../toolkit/components/extensions/test/mochitest/head_webrequest.js */
 Services.scriptloader.loadSubScript(new URL("head_webrequest.js", gTestPath).href,
                                     this);
 
-Cu.import("resource:///modules/HiddenFrame.jsm", this);
+ChromeUtils.import("resource://testing-common/HiddenFrame.jsm", this);
 const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
+
+SimpleTest.requestCompleteLog();
 
 function createHiddenBrowser(url) {
   let frame = new HiddenFrame();
@@ -54,12 +56,21 @@ let headers = {
   },
 };
 
-add_task(function* setup() {
-  extension = makeExtension();
-  yield extension.startup();
+let urls = ["http://mochi.test/browser/*"];
+let events = {
+  "onBeforeRequest":     [{urls}, ["blocking"]],
+  "onBeforeSendHeaders": [{urls}, ["blocking", "requestHeaders"]],
+  "onSendHeaders":       [{urls}, ["requestHeaders"]],
+  "onHeadersReceived":   [{urls}, ["blocking", "responseHeaders"]],
+  "onCompleted":         [{urls}, ["responseHeaders"]],
+};
+
+add_task(async function setup() {
+  extension = makeExtension(events);
+  await extension.startup();
 });
 
-add_task(function* test_newWindow() {
+add_task(async function test_newWindow() {
   let expect = {
     "file_dummy.html": {
       type: "main_frame",
@@ -72,16 +83,16 @@ add_task(function* test_newWindow() {
   // we run, and we never see the request, thus it cannot be handled as part
   // of expect above.
   extension.sendMessage("set-expected", {expect, ignore: ["favicon.ico"]});
-  yield extension.awaitMessage("continue");
+  await extension.awaitMessage("continue");
 
-  let openedWindow = yield BrowserTestUtils.openNewBrowserWindow();
-  yield BrowserTestUtils.openNewForegroundTab(openedWindow.gBrowser, dummy + "?newWindow");
+  let openedWindow = await BrowserTestUtils.openNewBrowserWindow();
+  await BrowserTestUtils.openNewForegroundTab(openedWindow.gBrowser, `${dummy}?newWindow=${Math.random()}`);
 
-  yield extension.awaitMessage("done");
-  yield BrowserTestUtils.closeWindow(openedWindow);
+  await extension.awaitMessage("done");
+  await BrowserTestUtils.closeWindow(openedWindow);
 });
 
-add_task(function* test_newTab() {
+add_task(async function test_newTab() {
   // again, in this window
   let expect = {
     "file_dummy.html": {
@@ -90,14 +101,14 @@ add_task(function* test_newTab() {
     },
   };
   extension.sendMessage("set-expected", {expect, ignore: ["favicon.ico"]});
-  yield extension.awaitMessage("continue");
-  let tab = yield BrowserTestUtils.openNewForegroundTab(window.gBrowser, dummy + "?newTab");
+  await extension.awaitMessage("continue");
+  let tab = await BrowserTestUtils.openNewForegroundTab(window.gBrowser, `${dummy}?newTab=${Math.random()}`);
 
-  yield extension.awaitMessage("done");
-  yield BrowserTestUtils.removeTab(tab);
+  await extension.awaitMessage("done");
+  BrowserTestUtils.removeTab(tab);
 });
 
-add_task(function* test_subframe() {
+add_task(async function test_subframe() {
   let expect = {
     "file_dummy.html": {
       type: "main_frame",
@@ -106,15 +117,18 @@ add_task(function* test_subframe() {
   };
   // test a content subframe attached to hidden window
   extension.sendMessage("set-expected", {expect, ignore: ["favicon.ico"]});
-  yield extension.awaitMessage("continue");
-  let frameInfo = yield createHiddenBrowser(dummy + "?subframe");
-  yield extension.awaitMessage("done");
+  info("*** waiting to continue");
+  await extension.awaitMessage("continue");
+  info("*** creating hidden browser");
+  let frameInfo = await createHiddenBrowser(`${dummy}?subframe=${Math.random()}`);
+  info("*** waiting for finish");
+  await extension.awaitMessage("done");
+  info("*** destroying hidden browser");
   // cleanup
   frameInfo.browser.remove();
   frameInfo.frame.destroy();
 });
 
-add_task(function* teardown() {
-  yield extension.unload();
+add_task(async function teardown() {
+  await extension.unload();
 });
-

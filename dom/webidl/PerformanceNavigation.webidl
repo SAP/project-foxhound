@@ -4,7 +4,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * The origin of this IDL file is
- * http://www.w3.org/TR/hr-time/
+ * https://w3c.github.io/navigation-timing/#the-performancenavigation-interface
  *
  * Copyright © 2012 W3C® (MIT, ERCIM, Keio), All Rights Reserved. W3C
  * liability, trademark and document use rules apply.
@@ -19,5 +19,5 @@ interface PerformanceNavigation {
   readonly attribute unsigned short type;
   readonly attribute unsigned short redirectCount;
 
-  jsonifier;
+  [Default] object toJSON();
 };

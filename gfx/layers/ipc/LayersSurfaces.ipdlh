@@ -9,9 +9,11 @@ using mozilla::StereoMode from "ImageTypes.h";
 using mozilla::YUVColorSpace from "ImageTypes.h";
 using struct mozilla::null_t from "ipc/IPCMessageUtils.h";
 using mozilla::WindowsHandle from "ipc/IPCMessageUtils.h";
+using mozilla::gfx::ColorDepth from "mozilla/gfx/Types.h";
 using mozilla::gfx::SurfaceFormat from "mozilla/gfx/Types.h";
 using mozilla::gfx::IntRect from "mozilla/gfx/Rect.h";
 using mozilla::gfx::IntSize from "mozilla/gfx/Point.h";
+using mozilla::ipc::SharedMemoryBasic::Handle from "mozilla/ipc/SharedMemoryBasic.h";
 using gfxImageFormat from "gfxTypes.h";
 
 namespace mozilla {
@@ -25,11 +27,6 @@ union OverlayHandle {
 struct OverlaySource {
   OverlayHandle handle;
   IntSize size;
-};
-
-struct SurfaceDescriptorD3D9 {
-  // IDirect3DTexture9*
-  uintptr_t texture;
 };
 
 struct SurfaceDescriptorFileMapping {
@@ -56,6 +53,8 @@ struct SurfaceDescriptorDXGIYCbCr {
   IntSize size;
   IntSize sizeY;
   IntSize sizeCbCr;
+  ColorDepth colorDepth;
+  YUVColorSpace yUVColorSpace;
 };
 
 struct SurfaceDescriptorMacIOSurface {
@@ -65,8 +64,11 @@ struct SurfaceDescriptorMacIOSurface {
 };
 
 struct SurfaceTextureDescriptor {
-  uintptr_t surfTex;
+  uint64_t handle;
   IntSize size;
+  SurfaceFormat format;
+  bool continuous;
+  bool ignoreTransform;
 };
 
 struct EGLImageDescriptor {
@@ -84,8 +86,16 @@ struct SurfaceDescriptorSharedGLTexture {
   bool hasAlpha;
 };
 
+
+union GPUVideoSubDescriptor {
+  SurfaceDescriptorD3D10;
+  SurfaceDescriptorDXGIYCbCr;
+  null_t;
+};
+
 struct SurfaceDescriptorGPUVideo {
   uint64_t handle;
+  GPUVideoSubDescriptor subdesc;
 };
 
 struct RGBDescriptor {
@@ -96,11 +106,14 @@ struct RGBDescriptor {
 
 struct YCbCrDescriptor {
   IntSize ySize;
+  uint32_t yStride;
   IntSize cbCrSize;
+  uint32_t cbCrStride;
   uint32_t yOffset;
   uint32_t cbOffset;
   uint32_t crOffset;
   StereoMode stereoMode;
+  ColorDepth colorDepth;
   YUVColorSpace yUVColorSpace;
   bool hasIntermediateBuffer;
 };
@@ -120,9 +133,16 @@ struct SurfaceDescriptorBuffer {
   MemoryOrShmem data;
 };
 
+struct SurfaceDescriptorShared
+{
+  IntSize size;
+  int32_t stride;
+  SurfaceFormat format;
+  Handle handle;
+};
+
 union SurfaceDescriptor {
   SurfaceDescriptorBuffer;
-  SurfaceDescriptorD3D9;
   SurfaceDescriptorDIB;
   SurfaceDescriptorD3D10;
   SurfaceDescriptorFileMapping;

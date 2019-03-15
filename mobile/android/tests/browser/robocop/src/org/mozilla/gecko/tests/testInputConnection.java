@@ -26,9 +26,19 @@ public class testInputConnection extends JavascriptBridgeTest {
     private static final String INITIAL_TEXT = "foo";
 
     private String mEventsLog;
+    private String mKeyLog;
 
     public void testInputConnection() throws InterruptedException {
         GeckoHelper.blockForReady();
+
+        // Spatial navigation interferes with design-mode key event tests.
+        mActions.setPref("snav.enabled", false, /* flush */ false);
+        // Enable "selectionchange" events for input/textarea.
+        mActions.setPref("dom.select_events.enabled", true, /* flush */ false);
+        mActions.setPref("dom.select_events.textcontrols.enabled", true, /* flush */ false);
+        // Enable dummy key synthesis.
+        mActions.setPref("intl.ime.hack.on_any_apps.fire_key_events_for_composition",
+                         true, /* flush */ false);
 
         final String url = mStringHelper.ROBOCOP_INPUT_URL;
         NavigationHelper.enterAndLoadUrl(url);
@@ -79,6 +89,14 @@ public class testInputConnection extends JavascriptBridgeTest {
 
     public String getEventsLog() {
         return mEventsLog;
+    }
+
+    public void setKeyLog(final String log) {
+        mKeyLog = log;
+    }
+
+    public String getKeyLog() {
+        return mKeyLog;
     }
 
     private class BasicInputConnectionTest extends InputConnectionTest {
@@ -182,6 +200,27 @@ public class testInputConnection extends JavascriptBridgeTest {
             ic.deleteSurroundingText(6, 0);
             assertTextAndSelectionAt("Can clear text", ic, "", 0);
 
+            // Test key synthesis.
+            getJS().syncCall("start_key_log");
+            ic.setComposingText("f", 1); // Synthesizes dummy key.
+            assertTextAndSelectionAt("Can compose F key", ic, "f", 1);
+            ic.finishComposingText(); // Does not synthesize key.
+            assertTextAndSelectionAt("Can finish F key", ic, "f", 1);
+            ic.commitText("o", 1); // Synthesizes O key.
+            assertTextAndSelectionAt("Can commit O key", ic, "fo", 2);
+            ic.commitText("of", 1); // Synthesizes dummy key.
+            assertTextAndSelectionAt("Can commit non-key string", ic, "foof", 4);
+
+            getJS().syncCall("end_key_log");
+            fAssertEquals("Can synthesize keys",
+                          "keydown:Process,casm;keyup:Process,casm;" +     // Dummy
+                          "keydown:o,casm;keypress:o,casm;keyup:o,casm;" + // O key
+                          "keydown:Process,casm;keyup:Process,casm;",      // Dummy
+                          getKeyLog());
+
+            ic.deleteSurroundingText(4, 0);
+            assertTextAndSelectionAt("Can clear text", ic, "", 0);
+
             // Bug 1133802, duplication when setting the same composing text more than once.
             ic.setComposingText("foo", 1);
             assertTextAndSelectionAt("Can set the composing text", ic, "foo", 3);
@@ -270,13 +309,13 @@ public class testInputConnection extends JavascriptBridgeTest {
             ic.commitText("b", 1);
             // This test only works for input/textarea,
             if (mType.equals("input") || mType.equals("textarea")) {
-                assertTextAndSelectionAt("Can handle text replacement", ic, "abc", 2);
+                assertTextAndSelectionAt("Can handle text replacement", ic, "abc", 3);
             } else {
                 processGeckoEvents();
                 processInputConnectionEvents();
             }
 
-            ic.deleteSurroundingText(2, 1);
+            ic.deleteSurroundingText(3, 0);
             assertTextAndSelectionAt("Can clear text", ic, "", 0);
 
             // Bug 1307816 - Don't end then start composition when setting
@@ -292,8 +331,13 @@ public class testInputConnection extends JavascriptBridgeTest {
             assertTextAndSelectionAt("Can reuse composition in Java", ic, "foo", 3);
 
             getJS().syncCall("end_events_log");
-            // compositionstart > compositionchange x3
-            fAssertEquals("Can reuse composition in Gecko", "<===", getEventsLog());
+            if (mType.equals("textarea")) {
+                // textarea has a buggy selectionchange behavior.
+                fAssertEquals("Can reuse composition in Gecko", "<=|==", getEventsLog());
+            } else {
+                // compositionstart > (compositionchange > selectionchange) x3
+                fAssertEquals("Can reuse composition in Gecko", "<=|=|=|", getEventsLog());
+            }
 
             ic.deleteSurroundingText(3, 0);
             assertTextAndSelectionAt("Can clear text", ic, "", 0);
@@ -307,11 +351,36 @@ public class testInputConnection extends JavascriptBridgeTest {
             assertTextAndSelectionAt("Can set selection after composition", ic, "foo", 0);
 
             getJS().syncCall("end_events_log");
-            // compositionstart > compositionchange
-            fAssertEquals("Can update composition caret", "<=", getEventsLog());
+            // compositionstart > compositionchange > selectionchange x2
+            fAssertEquals("Can update composition caret", "<=||", getEventsLog());
 
             ic.finishComposingText();
             ic.deleteSurroundingText(0, 3);
+            assertTextAndSelectionAt("Can clear text", ic, "", 0);
+
+            // Bug 1387889 - Latin sharp S (U+00DF) triggers Alt+S shortcut
+            getJS().syncCall("start_key_log");
+            ic.commitText("\u00df", 1); // Synthesizes "Latin sharp S" key without modifiers.
+            assertTextAndSelectionAt("Can commit Latin sharp S key", ic, "\u00df", 1);
+
+            getJS().syncCall("end_key_log");
+            fAssertEquals("Can synthesize sharp S key",
+                          "keydown:\u00df,casm;keypress:\u00df,casm;keyup:\u00df,casm;",
+                          getKeyLog());
+
+            ic.finishComposingText();
+            ic.deleteSurroundingText(1, 0);
+            assertTextAndSelectionAt("Can clear text", ic, "", 0);
+
+            // Bug 1490391 - Committing then setting composition can result in duplicates.
+            ic.commitText("far", 1);
+            ic.setComposingText("bar", 1);
+            assertTextAndSelectionAt("Can commit then set composition", ic, "farbar", 6);
+            ic.setComposingText("baz", 1);
+            assertTextAndSelectionAt("Composition still exists after setting", ic, "farbaz", 6);
+
+            ic.finishComposingText();
+            ic.deleteSurroundingText(6, 0);
             assertTextAndSelectionAt("Can clear text", ic, "", 0);
 
             // Make sure we don't leave behind stale events for the following test.
@@ -396,8 +465,22 @@ public class testInputConnection extends JavascriptBridgeTest {
 
             ic.commitText("!", 1);
             // The '!' key causes the input to hide in robocop_input.html,
-            // and there won't be a text/selection update as a result.
             assertTextAndSelectionAt("Can handle hiding input", ic, "foo", 3);
+
+            // Bug 1401737, Editable does not behave correctly after disconnecting from Gecko.
+            getJS().syncCall("blur_hiding_input");
+            processGeckoEvents();
+            processInputConnectionEvents();
+
+            ic.setComposingRegion(0, 3);
+            ic.commitText("bar", 1);
+            assertTextAndSelectionAt("Can set spans/text after blur", ic, "bar", 3);
+
+            ic.commitText("baz", 1);
+            assertTextAndSelectionAt("Can remove spans after blur", ic, "barbaz", 6);
+
+            ic.setSelection(0, 3);
+            assertTextAndSelection("Can set selection after blur", ic, "barbaz", 0, 3);
 
             // Make sure we don't leave behind stale events for the following test.
             processGeckoEvents();

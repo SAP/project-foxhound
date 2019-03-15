@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 import os
 import sys
 
@@ -79,7 +81,7 @@ def read_ini(fp, variables=None, default='DEFAULT', defaults_only=False,
         # check for a new section
         if len(stripped) > 2 and stripped[0] == '[' and stripped[-1] == ']':
             section = stripped[1:-1].strip()
-            key = value = None
+            key = value = key_indent = None
 
             # deal with DEFAULT section
             if section.lower() == default.lower():
@@ -104,12 +106,20 @@ def read_ini(fp, variables=None, default='DEFAULT', defaults_only=False,
             raise IniParseError(fp, linenum, "Expected a comment or section, "
                                              "instead found '{}'".format(stripped))
 
+        # continuation line ?
+        line_indent = len(line) - len(line.lstrip(' '))
+        if key and line_indent > key_indent:
+            value = '%s%s%s' % (value, os.linesep, stripped)
+            current_section[key] = value
+            continue
+
         # (key, value) pair
         for separator in separators:
             if separator in stripped:
                 key, value = stripped.split(separator, 1)
                 key = key.strip()
                 value = value.strip()
+                key_indent = line_indent
 
                 if strict:
                     # make sure this key isn't already in the section or empty
@@ -120,13 +130,8 @@ def read_ini(fp, variables=None, default='DEFAULT', defaults_only=False,
                 current_section[key] = value
                 break
         else:
-            # continuation line ?
-            if line[0].isspace() and key:
-                value = '%s%s%s' % (value, os.linesep, stripped)
-                current_section[key] = value
-            else:
-                # something bad happened!
-                raise IniParseError(fp, linenum, "Unexpected line '{}'".format(stripped))
+            # something bad happened!
+            raise IniParseError(fp, linenum, "Unexpected line '{}'".format(stripped))
 
     # server-root is a special os path declared relative to the manifest file.
     # inheritance demands we expand it as absolute

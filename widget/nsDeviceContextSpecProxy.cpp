@@ -19,6 +19,7 @@
 #include "nsIPrintSession.h"
 #include "nsIPrintSettings.h"
 #include "nsIUUIDGenerator.h"
+#include "private/pprio.h"
 
 using mozilla::Unused;
 
@@ -30,11 +31,10 @@ NS_IMPL_ISUPPORTS(nsDeviceContextSpecProxy, nsIDeviceContextSpec)
 NS_IMETHODIMP
 nsDeviceContextSpecProxy::Init(nsIWidget* aWidget,
                                nsIPrintSettings* aPrintSettings,
-                               bool aIsPrintPreview)
-{
+                               bool aIsPrintPreview) {
   nsresult rv;
   mRealDeviceContextSpec =
-    do_CreateInstance("@mozilla.org/gfx/devicecontextspec;1", &rv);
+      do_CreateInstance("@mozilla.org/gfx/devicecontextspec;1", &rv);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -59,29 +59,16 @@ nsDeviceContextSpecProxy::Init(nsIWidget* aWidget,
     return NS_ERROR_FAILURE;
   }
 
-  rv = mPrintSession->GetRemotePrintJob(getter_AddRefs(mRemotePrintJob));
-  if (NS_FAILED(rv) || !mRemotePrintJob) {
+  mRemotePrintJob = mPrintSession->GetRemotePrintJob();
+  if (!mRemotePrintJob) {
     NS_WARNING("We can't print via the parent without a RemotePrintJobChild.");
     return NS_ERROR_FAILURE;
-  }
-
-  rv = NS_GetSpecialDirectory(NS_APP_CONTENT_PROCESS_TEMP_DIR,
-                              getter_AddRefs(mRecordingDir));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  mUuidGenerator = do_GetService("@mozilla.org/uuid-generator;1", &rv);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
   }
 
   return NS_OK;
 }
 
-already_AddRefed<PrintTarget>
-nsDeviceContextSpecProxy::MakePrintTarget()
-{
+already_AddRefed<PrintTarget> nsDeviceContextSpecProxy::MakePrintTarget() {
   MOZ_ASSERT(mRealDeviceContextSpec);
 
   double width, height;
@@ -94,22 +81,23 @@ nsDeviceContextSpecProxy::MakePrintTarget()
   width /= TWIPS_PER_POINT_FLOAT;
   height /= TWIPS_PER_POINT_FLOAT;
 
-  RefPtr<gfxASurface> surface = gfxPlatform::GetPlatform()->
-    CreateOffscreenSurface(mozilla::gfx::IntSize::Truncate(width, height),
-                           mozilla::gfx::SurfaceFormat::A8R8G8B8_UINT32);
+  RefPtr<gfxASurface> surface =
+      gfxPlatform::GetPlatform()->CreateOffscreenSurface(
+          mozilla::gfx::IntSize::Truncate(width, height),
+          mozilla::gfx::SurfaceFormat::A8R8G8B8_UINT32);
   if (!surface) {
     return nullptr;
   }
 
   // The type of PrintTarget that we return here shouldn't really matter since
   // our implementation of GetDrawEventRecorder returns an object, which means
-  // the DrawTarget returned by the PrintTarget will be a DrawTargetRecording.
-  // The recording will be serialized and sent over to the parent process where
-  // PrintTranslator::TranslateRecording will call MakePrintTarget (indirectly
-  // via PrintTranslator::CreateDrawTarget) on whatever type of
-  // nsIDeviceContextSpecProxy is created for the platform that we are running
-  // on.  It is that DrawTarget that the recording will be replayed on to
-  // print.
+  // the DrawTarget returned by the PrintTarget will be a
+  // DrawTargetWrapAndRecord. The recording will be serialized and sent over to
+  // the parent process where PrintTranslator::TranslateRecording will call
+  // MakePrintTarget (indirectly via PrintTranslator::CreateDrawTarget) on
+  // whatever type of nsIDeviceContextSpecProxy is created for the platform that
+  // we are running on.  It is that DrawTarget that the recording will be
+  // replayed on to print.
   // XXX(jwatt): The above isn't quite true.  We do want to use a
   // PrintTargetRecording here, but we can't until bug 1280324 is figured out
   // and fixed otherwise we will cause bug 1280181 to happen again.
@@ -119,114 +107,77 @@ nsDeviceContextSpecProxy::MakePrintTarget()
 }
 
 NS_IMETHODIMP
-nsDeviceContextSpecProxy::GetDrawEventRecorder(mozilla::gfx::DrawEventRecorder** aDrawEventRecorder)
-{
+nsDeviceContextSpecProxy::GetDrawEventRecorder(
+    mozilla::gfx::DrawEventRecorder** aDrawEventRecorder) {
   MOZ_ASSERT(aDrawEventRecorder);
   RefPtr<mozilla::gfx::DrawEventRecorder> result = mRecorder;
   result.forget(aDrawEventRecorder);
   return NS_OK;
 }
 
-float
-nsDeviceContextSpecProxy::GetDPI()
-{
+float nsDeviceContextSpecProxy::GetDPI() {
   MOZ_ASSERT(mRealDeviceContextSpec);
 
   return mRealDeviceContextSpec->GetDPI();
 }
 
-float
-nsDeviceContextSpecProxy::GetPrintingScale()
-{
+float nsDeviceContextSpecProxy::GetPrintingScale() {
   MOZ_ASSERT(mRealDeviceContextSpec);
 
   return mRealDeviceContextSpec->GetPrintingScale();
 }
 
-nsresult
-nsDeviceContextSpecProxy::CreateUniqueTempPath(nsACString& aFilePath)
-{
-  MOZ_ASSERT(mRecordingDir);
-  MOZ_ASSERT(mUuidGenerator);
+gfxPoint nsDeviceContextSpecProxy::GetPrintingTranslate() {
+  MOZ_ASSERT(mRealDeviceContextSpec);
 
-  nsID uuid;
-  nsresult rv = mUuidGenerator->GenerateUUIDInPlace(&uuid);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  char uuidChars[NSID_LENGTH];
-  uuid.ToProvidedString(uuidChars);
-  mRecordingFileName.AssignASCII(uuidChars);
-
-  nsCOMPtr<nsIFile> recordingFile;
-  rv = mRecordingDir->Clone(getter_AddRefs(recordingFile));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  rv = recordingFile->AppendNative(mRecordingFileName);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  return recordingFile->GetNativePath(aFilePath);
+  return mRealDeviceContextSpec->GetPrintingTranslate();
 }
 
 NS_IMETHODIMP
 nsDeviceContextSpecProxy::BeginDocument(const nsAString& aTitle,
                                         const nsAString& aPrintToFileName,
-                                        int32_t aStartPage, int32_t aEndPage)
-{
-  nsAutoCString recordingPath;
-  nsresult rv = CreateUniqueTempPath(recordingPath);
+                                        int32_t aStartPage, int32_t aEndPage) {
+  mRecorder = new mozilla::layout::DrawEventRecorderPRFileDesc();
+  nsresult rv = mRemotePrintJob->InitializePrint(
+      nsString(aTitle), nsString(aPrintToFileName), aStartPage, aEndPage);
   if (NS_FAILED(rv)) {
-    return rv;
+    // The parent process will send a 'delete' message to tell this process to
+    // delete our RemotePrintJobChild.  As soon as we return to the event loop
+    // and evaluate that message we will crash if we try to access
+    // mRemotePrintJob.  We must not try to use it again.
+    mRemotePrintJob = nullptr;
   }
-
-  mRecorder = new mozilla::gfx::DrawEventRecorderFile(recordingPath.get());
-  return mRemotePrintJob->InitializePrint(nsString(aTitle),
-                                          nsString(aPrintToFileName),
-                                          aStartPage, aEndPage);
+  return rv;
 }
 
 NS_IMETHODIMP
-nsDeviceContextSpecProxy::EndDocument()
-{
-  Unused << mRemotePrintJob->SendFinalizePrint();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDeviceContextSpecProxy::AbortDocument()
-{
-  Unused << mRemotePrintJob->SendAbortPrint(NS_OK);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDeviceContextSpecProxy::BeginPage()
-{
-  // Reopen the file, if necessary, ready for the next page.
-  if (!mRecorder->IsOpen()) {
-    nsAutoCString recordingPath;
-    nsresult rv = CreateUniqueTempPath(recordingPath);
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
-
-    mRecorder->OpenNew(recordingPath.get());
+nsDeviceContextSpecProxy::EndDocument() {
+  if (mRemotePrintJob) {
+    Unused << mRemotePrintJob->SendFinalizePrint();
   }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDeviceContextSpecProxy::AbortDocument() {
+  if (mRemotePrintJob) {
+    Unused << mRemotePrintJob->SendAbortPrint(NS_OK);
+  }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDeviceContextSpecProxy::BeginPage() {
+  mRecorder->OpenFD(mRemotePrintJob->GetNextPageFD());
 
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsDeviceContextSpecProxy::EndPage()
-{
+nsDeviceContextSpecProxy::EndPage() {
   // Send the page recording to the parent.
   mRecorder->Close();
-  mRemotePrintJob->ProcessPage(mRecordingFileName);
+  mRemotePrintJob->ProcessPage();
 
   return NS_OK;
 }

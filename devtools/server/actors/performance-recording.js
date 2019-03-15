@@ -7,7 +7,6 @@
 const { Actor, ActorClassWithSpec } = require("devtools/shared/protocol");
 const { performanceRecordingSpec } = require("devtools/shared/specs/performance-recording");
 
-loader.lazyRequireGetter(this, "merge", "sdk/util/object", true);
 loader.lazyRequireGetter(this, "RecordingUtils",
   "devtools/shared/performance/recording-utils");
 loader.lazyRequireGetter(this, "PerformanceRecordingCommon",
@@ -19,13 +18,14 @@ loader.lazyRequireGetter(this, "PerformanceRecordingCommon",
  *
  * @see devtools/shared/shared/performance.js for documentation.
  */
-const PerformanceRecordingActor = ActorClassWithSpec(performanceRecordingSpec, merge({
-  form: function (detail) {
+const PerformanceRecordingActor = ActorClassWithSpec(performanceRecordingSpec,
+Object.assign({
+  form: function(detail) {
     if (detail === "actorid") {
       return this.actorID;
     }
 
-    let form = {
+    const form = {
       // actorID is set when this is added to a pool
       actor: this.actorID,
       configuration: this._configuration,
@@ -60,7 +60,7 @@ const PerformanceRecordingActor = ActorClassWithSpec(performanceRecordingSpec, m
    *        A hash of temporary metadata for a recording that is recording
    *        (as opposed to an imported recording).
    */
-  initialize: function (conn, options, meta) {
+  initialize: function(conn, options, meta) {
     Actor.prototype.initialize.call(this, conn);
     this._configuration = {
       withMarkers: options.withMarkers || false,
@@ -70,7 +70,7 @@ const PerformanceRecordingActor = ActorClassWithSpec(performanceRecordingSpec, m
       allocationsSampleProbability: options.allocationsSampleProbability || 0,
       allocationsMaxLogLength: options.allocationsMaxLogLength || 0,
       bufferSize: options.bufferSize || 0,
-      sampleFrequency: options.sampleFrequency || 1
+      sampleFrequency: options.sampleFrequency || 1000,
     };
 
     this._console = !!options.console;
@@ -87,7 +87,7 @@ const PerformanceRecordingActor = ActorClassWithSpec(performanceRecordingSpec, m
       this._startingBufferStatus = {
         position: meta.position,
         totalSize: meta.totalSize,
-        generation: meta.generation
+        generation: meta.generation,
       };
 
       this._recording = true;
@@ -102,7 +102,7 @@ const PerformanceRecordingActor = ActorClassWithSpec(performanceRecordingSpec, m
     }
   },
 
-  destroy: function () {
+  destroy: function() {
     Actor.prototype.destroy.call(this);
   },
 
@@ -113,7 +113,7 @@ const PerformanceRecordingActor = ActorClassWithSpec(performanceRecordingSpec, m
    * @param {string} state
    * @param {object} extraData
    */
-  _setState: function (state, extraData) {
+  _setState: function(state, extraData) {
     switch (state) {
       case "recording-started": {
         this._recording = true;
@@ -142,7 +142,6 @@ const PerformanceRecordingActor = ActorClassWithSpec(performanceRecordingSpec, m
       }
     }
   },
-
 }, PerformanceRecordingCommon));
 
 exports.PerformanceRecordingActor = PerformanceRecordingActor;

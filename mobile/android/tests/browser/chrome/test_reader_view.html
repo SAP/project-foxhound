@@ -8,17 +8,15 @@ Migrated from Robocop: https://bugzilla.mozilla.org/show_bug.cgi?id=1184186
   <meta charset="utf-8">
   <title>Test for Bug 1158885</title>
   <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SpawnTask.js"></script>
+  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/AddTask.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://global/skin"/>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
   <script type="application/javascript" src="head.js"></script>
   <script type="application/javascript">
 
-  const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
+  ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-  Cu.import("resource://gre/modules/Services.jsm");
-
-  add_task(function* test_reader_view_visibility() {
+  add_task(async function test_reader_view_visibility() {
     let gWin = Services.wm.getMostRecentWindow("navigator:browser");
     let BrowserApp = gWin.BrowserApp;
 
@@ -29,14 +27,14 @@ Migrated from Robocop: https://bugzilla.mozilla.org/show_bug.cgi?id=1184186
       BrowserApp.closeTab(BrowserApp.getTabForBrowser(browser));
     });
 
-    yield promiseBrowserEvent(browser, "load");
+    await promiseBrowserEvent(browser, "load");
 
     let doc = browser.contentDocument;
-    let title = doc.getElementById("reader-title");
+    let title = doc.querySelector(".reader-title");
 
     // We need to wait for reader content to appear because AboutReader.jsm
     // asynchronously fetches the content after about:reader loads.
-    yield promiseNotification("AboutReader:Ready");
+    await promiseNotification("AboutReader:Ready");
     is(title.textContent, "Article title", "found expected content");
   });
 

@@ -6,7 +6,7 @@
  * The test has the following components:
  *
  * testViaXHR() checks that internal redirects occur correctly for requests
- * made with nsIXMLHttpRequest objects.
+ * made with XMLHttpRequest objects.
  *
  * testViaAsyncOpen() checks that internal redirects occur correctly when made
  * with nsIHTTPChannel.asyncOpen2().
@@ -23,8 +23,10 @@
  *
  */
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+
+Cu.importGlobalProperties(["XMLHttpRequest"]);
 
 // the topic we observe to use the API.  http-on-opening-request might also
 // work for some purposes.
@@ -136,7 +138,7 @@ Redirector.prototype = {
         iid.equals(Ci.nsISupportsWeakReference) ||
         iid.equals(Ci.nsISupports))
       return this;
-    throw Components.results.NS_NOINTERFACE;
+    throw Cr.NS_NOINTERFACE;
   },
 
   observe: function(subject, topic, data)
@@ -176,8 +178,8 @@ function makeAsyncTest(uri, headerValue, nextTask)
       do_throw(req + " is not an nsIHttpChannel, catastrophe imminent!");
 
     var httpChannel = req.QueryInterface(Ci.nsIHttpChannel);
-    do_check_eq(httpChannel.getResponseHeader(testHeaderName), headerValue);
-    do_check_eq(buffer, redirectedText);
+    Assert.equal(httpChannel.getResponseHeader(testHeaderName), headerValue);
+    Assert.equal(buffer, redirectedText);
     nextTask();
   };
 
@@ -209,13 +211,11 @@ function runXHRTest(uri, headerValue)
 {
   // Check that making an XHR request for uri winds up redirecting to a result with the
   // appropriate headerValue
-  var xhr = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"];
-
-  var req = xhr.createInstance(Ci.nsIXMLHttpRequest);
+  var req = new XMLHttpRequest();
   req.open("GET", uri, false);
   req.send();
-  do_check_eq(req.getResponseHeader(testHeaderName), headerValue);
-  do_check_eq(req.response, redirectedText);
+  Assert.equal(req.getResponseHeader(testHeaderName), headerValue);
+  Assert.equal(req.response, redirectedText);
 }
 
 function done()

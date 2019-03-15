@@ -1,139 +1,207 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+import ConfigParser
 import argparse
+import hashlib
 import imp
 import os
 import sys
-from collections import defaultdict
+
+from mozboot.util import get_state_dir
 
 from mozlog.structured import commandline
-from wptrunner.wptcommandline import get_test_paths, set_from_config
+from wptrunner.wptcommandline import set_from_config
+
+import manifestdownload
+from wptrunner import wptcommandline
 
 manifest = None
 
+
 def do_delayed_imports(wpt_dir):
     global manifest
+    imp.load_source("localpaths",
+                    os.path.join(wpt_dir, "tests", "tools", "localpaths.py"))
     sys.path.insert(0, os.path.join(wpt_dir, "tools", "manifest"))
     import manifest
 
+
 def create_parser():
     p = argparse.ArgumentParser()
-    p.add_argument("--check-clean", action="store_true",
-                   help="Check that updating the manifest doesn't lead to any changes")
+    p.add_argument("--rebuild", action="store_true",
+                   help="Rebuild manifest from scratch")
+    download_group = p.add_mutually_exclusive_group()
+    download_group.add_argument(
+        "--download", dest="download", action="store_true", default=None,
+        help="Always download even if the local manifest is recent")
+    download_group.add_argument(
+        "--no-download", dest="download", action="store_false",
+        help="Don't try to download the manifest")
+    p.add_argument(
+        "--no-update", action="store_false", dest="update",
+        default=True, help="Just download the manifest, don't update")
+    p.add_argument(
+        "--config", action="store", dest="config_path", default=None,
+        help="Path to wptrunner config file")
+    p.add_argument(
+        "--rewrite-config", action="store_true", default=False,
+        help="Force the local configuration to be regenerated")
+    p.add_argument(
+        "--cache-root", action="store", default=os.path.join(get_state_dir()[0], "cache", "wpt"),
+        help="Path to use for the metadata cache")
     commandline.add_logging_group(p)
 
     return p
 
 
-def update(logger, wpt_dir, check_clean=True):
-    localpaths = imp.load_source("localpaths",
-                                 os.path.join(wpt_dir, "tests", "tools", "localpaths.py"))
-    kwargs = {"config": os.path.join(wpt_dir, "wptrunner.ini"),
-              "tests_root": None,
-              "metadata_root": None}
-
-    set_from_config(kwargs)
-    config = kwargs["config"]
-    test_paths = get_test_paths(config)
-
-    do_delayed_imports(wpt_dir)
-
-    if check_clean:
-        return _check_clean(logger, test_paths)
-
-    return _update(logger, test_paths)
+def ensure_kwargs(kwargs):
+    _kwargs = vars(create_parser().parse_args([]))
+    _kwargs.update(kwargs)
+    return _kwargs
 
 
-def _update(logger, test_paths):
+def run(src_root, obj_root, logger=None, **kwargs):
+    kwargs = ensure_kwargs(kwargs)
+
+    if logger is None:
+        from wptrunner import wptlogging
+        logger = wptlogging.setup(kwargs, {"mach": sys.stdout})
+
+    src_wpt_dir = os.path.join(src_root, "testing", "web-platform")
+
+    do_delayed_imports(src_wpt_dir)
+
+    if not kwargs["config_path"]:
+        config_path = generate_config(logger,
+                                      src_root,
+                                      src_wpt_dir,
+                                      os.path.join(obj_root, "_tests", "web-platform"),
+                                      kwargs["rewrite_config"])
+    else:
+        config_path = kwargs["config_path"]
+
+    if not os.path.exists(config_path):
+        logger.critical("Config file %s does not exist" % config_path)
+        return None
+
+    logger.debug("Using config path %s" % config_path)
+
+    test_paths = wptcommandline.get_test_paths(
+        wptcommandline.config.read(config_path))
+
+    for paths in test_paths.itervalues():
+        if "manifest_path" not in paths:
+            paths["manifest_path"] = os.path.join(paths["metadata_path"],
+                                                  "MANIFEST.json")
+
+    ensure_manifest_directories(logger, test_paths)
+
+    local_config = read_local_config(src_wpt_dir)
+    for section in ["manifest:upstream", "manifest:mozilla"]:
+        url_base = local_config.get(section, "url_base")
+        manifest_rel_path = os.path.join(local_config.get(section, "metadata"),
+                                         "MANIFEST.json")
+        test_paths[url_base]["manifest_rel_path"] = manifest_rel_path
+
+    if not kwargs["rebuild"] and kwargs["download"] is not False:
+        force_download = False if kwargs["download"] is None else True
+        manifestdownload.download_from_taskcluster(logger,
+                                                   src_root,
+                                                   test_paths,
+                                                   force=force_download)
+    else:
+        logger.debug("Skipping manifest download")
+
+    if kwargs["update"] or kwargs["rebuild"]:
+        manifests = update(logger, src_wpt_dir, test_paths, rebuild=kwargs["rebuild"],
+                           cache_root=kwargs["cache_root"])
+    else:
+        logger.debug("Skipping manifest update")
+        manifests = load_manifests(test_paths)
+
+    return manifests
+
+
+def ensure_manifest_directories(logger, test_paths):
+    for paths in test_paths.itervalues():
+        manifest_dir = os.path.dirname(paths["manifest_path"])
+        if not os.path.exists(manifest_dir):
+            logger.info("Creating directory %s" % manifest_dir)
+            os.makedirs(manifest_dir)
+        elif not os.path.isdir(manifest_dir):
+            raise IOError("Manifest directory is a file")
+
+
+def read_local_config(wpt_dir):
+    src_config_path = os.path.join(wpt_dir, "wptrunner.ini")
+
+    parser = ConfigParser.SafeConfigParser()
+    success = parser.read(src_config_path)
+    assert src_config_path in success
+    return parser
+
+
+def generate_config(logger, repo_root, wpt_dir, dest_path, force_rewrite=False):
+    """Generate the local wptrunner.ini file to use locally"""
+    if not os.path.exists(dest_path):
+        os.makedirs(dest_path)
+
+    dest_config_path = os.path.join(dest_path, 'wptrunner.local.ini')
+
+    if not force_rewrite and os.path.exists(dest_config_path):
+        logger.debug("Config is up to date, not regenerating")
+        return dest_config_path
+
+    logger.info("Creating config file %s" % dest_config_path)
+
+    parser = read_local_config(wpt_dir)
+
+    for section in ["manifest:upstream", "manifest:mozilla"]:
+        meta_rel_path = parser.get(section, "metadata")
+        tests_rel_path = parser.get(section, "tests")
+
+        parser.set(section, "manifest",
+                   os.path.join(dest_path, meta_rel_path, 'MANIFEST.json'))
+        parser.set(section, "metadata", os.path.join(wpt_dir, meta_rel_path))
+        parser.set(section, "tests", os.path.join(wpt_dir, tests_rel_path))
+
+    parser.set('paths', 'prefs', os.path.abspath(os.path.join(wpt_dir, parser.get("paths", "prefs"))))
+
+    with open(dest_config_path, 'wb') as config_file:
+        parser.write(config_file)
+
+    return dest_config_path
+
+
+def update(logger, wpt_dir, test_paths, rebuild=False, config_dir=None, cache_root=None):
+    rv = {}
+    wptdir_hash = hashlib.sha256(os.path.abspath(wpt_dir)).hexdigest()
     for url_base, paths in test_paths.iteritems():
-        manifest_path = os.path.join(paths["metadata_path"], "MANIFEST.json")
-        m = manifest.manifest.load(paths["tests_path"], manifest_path)
-        manifest.update.update(paths["tests_path"], m, working_copy=True)
-        manifest.manifest.write(m, manifest_path)
-    return 0
-
-
-def _check_clean(logger, test_paths):
-    manifests_by_path = {}
-    rv = 0
-    for url_base, paths in test_paths.iteritems():
-        tests_path = paths["tests_path"]
-        manifest_path = os.path.join(paths["metadata_path"], "MANIFEST.json")
-        old_manifest = manifest.manifest.load(tests_path, manifest_path)
-        new_manifest = manifest.manifest.Manifest.from_json(tests_path,
-                                                            old_manifest.to_json())
-        manifest.update.update(tests_path, new_manifest, working_copy=True)
-        manifests_by_path[manifest_path] = (old_manifest, new_manifest)
-
-    for manifest_path, (old_manifest, new_manifest) in manifests_by_path.iteritems():
-        if not diff_manifests(logger, manifest_path, old_manifest, new_manifest):
-            rv = 1
-    if rv:
-        logger.error("Manifest %s is outdated, use |mach wpt-manifest-update| to fix." % manifest_path)
+        manifest_path = paths["manifest_path"]
+        this_cache_root = os.path.join(cache_root, wptdir_hash, os.path.dirname(paths["manifest_rel_path"]))
+        m = manifest.manifest.load_and_update(paths["tests_path"],
+                                              manifest_path,
+                                              url_base,
+                                              working_copy=True,
+                                              cache_root=this_cache_root)
+        path_data = {"url_base": url_base}
+        path_data.update(paths)
+        rv[m] = path_data
 
     return rv
 
 
-def diff_manifests(logger, manifest_path, old_manifest, new_manifest):
-    """Lint the differences between old and new versions of a
-    manifest. Differences are considered significant (and so produce
-    lint errors) if they produce a meaningful difference in the actual
-    tests run.
+def load_manifests(test_paths):
+    rv = {}
+    for url_base, paths in test_paths.iteritems():
+        m = manifest.manifest.load(paths["tests_path"], manifest_path)
+        path_data = {"url_base": url_base}
+        path_data.update(paths)
+        rv[m] = path_data
+    return rv
 
-    :param logger: mozlog logger to use for output
-    :param manifest_path: Path to the manifest being linted
-    :param old_manifest: Manifest object representing the initial manifest
-    :param new_manifest: Manifest object representing the updated manifest
-    """
-    logger.info("Diffing old and new manifests %s" % manifest_path)
-    old_items, new_items = defaultdict(set), defaultdict(set)
-    for manifest, items in [(old_manifest, old_items),
-                            (new_manifest, new_items)]:
-        for test_type, path, tests in manifest:
-            for test in tests:
-                test_id = [test.id]
-                test_id.extend(tuple(item) if isinstance(item, list) else item
-                               for item in test.meta_key())
-                if hasattr(test, "references"):
-                    test_id.extend(tuple(item) for item in test.references)
-                test_id = tuple(test_id)
-                items[path].add((test_type, test_id))
-
-    old_paths = set(old_items.iterkeys())
-    new_paths = set(new_items.iterkeys())
-
-    added_paths = new_paths - old_paths
-    deleted_paths = old_paths - new_paths
-
-    common_paths = new_paths & old_paths
-
-    clean = True
-
-    for path in added_paths:
-        clean = False
-        log_error(logger, manifest_path, "%s in source but not in manifest." % path)
-    for path in deleted_paths:
-        clean = False
-        log_error(logger, manifest_path, "%s in manifest but removed from source." % path)
-
-    for path in common_paths:
-        old_tests = old_items[path]
-        new_tests = new_items[path]
-        added_tests = new_tests - old_tests
-        removed_tests = old_tests - new_tests
-        if added_tests or removed_tests:
-            clean = False
-            log_error(logger, manifest_path, "%s changed test types or metadata" % path)
-
-    if clean:
-        # Manifest currently has some list vs tuple inconsistencies that break
-        # a simple equality comparison.
-        new_paths = {(key, value[0], value[1])
-                     for (key, value) in new_manifest.to_json()["paths"].iteritems()}
-        old_paths = {(key, value[0], value[1])
-                     for (key, value) in old_manifest.to_json()["paths"].iteritems()}
-        if old_paths != new_paths:
-            logger.warning("Manifest %s contains correct tests but file hashes changed; please update" % manifest_path)
-
-    return clean
 
 def log_error(logger, manifest_path, msg):
     logger.lint_error(path=manifest_path,

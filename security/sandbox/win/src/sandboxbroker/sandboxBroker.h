@@ -10,57 +10,74 @@
 #include <stdint.h>
 #include <windows.h>
 
-#include "base/child_privileges.h"
+#include "build/build_config.h"
+#include "mozilla/ipc/EnvironmentMap.h"
+#include "nsXULAppAPI.h"
 
 namespace sandbox {
-  class BrokerServices;
-  class TargetPolicy;
-}
+class BrokerServices;
+class TargetPolicy;
+}  // namespace sandbox
 
 namespace mozilla {
 
-class SandboxBroker
-{
-public:
+class SandboxBroker {
+ public:
   SandboxBroker();
 
-  static void Initialize(sandbox::BrokerServices* aBrokerServices);
+  static void Initialize(sandbox::BrokerServices *aBrokerServices);
 
-  bool LaunchApp(const wchar_t *aPath,
-                 const wchar_t *aArguments,
-                 const bool aEnableLogging,
+  /**
+   * Do initialization that depends on parts of the Gecko machinery having been
+   * created first.
+   */
+  static void GeckoDependentInitialize();
+
+  bool LaunchApp(const wchar_t *aPath, const wchar_t *aArguments,
+                 base::EnvironmentMap &aEnvironment,
+                 GeckoProcessType aProcessType, const bool aEnableLogging,
                  void **aProcessHandle);
   virtual ~SandboxBroker();
 
   // Security levels for different types of processes
 #if defined(MOZ_CONTENT_SANDBOX)
   void SetSecurityLevelForContentProcess(int32_t aSandboxLevel,
-                                         base::ChildPrivileges aPrivs);
+                                         bool aIsFileProcess);
 #endif
+
+  void SetSecurityLevelForGPUProcess(int32_t aSandboxLevel);
+  bool SetSecurityLevelForRDDProcess();
+
   bool SetSecurityLevelForPluginProcess(int32_t aSandboxLevel);
-  enum SandboxLevel {
-    LockDown,
-    Restricted
-  };
+  enum SandboxLevel { LockDown, Restricted };
   bool SetSecurityLevelForGMPlugin(SandboxLevel aLevel);
 
   // File system permissions
   bool AllowReadFile(wchar_t const *file);
-  bool AllowReadWriteFile(wchar_t const *file);
-  bool AllowDirectory(wchar_t const *dir);
 
-  // Exposes AddTargetPeer from broker services, so that none sandboxed
-  // processes can be added as handle duplication targets.
+  /**
+   * Exposes AddTargetPeer from broker services, so that non-sandboxed
+   * processes can be added as handle duplication targets.
+   */
   bool AddTargetPeer(HANDLE aPeerProcess);
+
+  /**
+   * Share a HANDLE with the child process. The HANDLE will be made available
+   * in the child process at the memory address
+   * |reinterpret_cast<uintptr_t>(aHandle)|. It is the caller's responsibility
+   * to communicate this address to the child.
+   */
+  void AddHandleToShare(HANDLE aHandle);
 
   // Set up dummy interceptions via the broker, so we can log calls.
   void ApplyLoggingPolicy();
 
-private:
+ private:
   static sandbox::BrokerServices *sBrokerService;
+  static bool sRunningFromNetworkDrive;
   sandbox::TargetPolicy *mPolicy;
 };
 
-} // mozilla
+}  // namespace mozilla
 
 #endif

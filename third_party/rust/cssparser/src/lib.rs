@@ -25,7 +25,7 @@ which can be used together with rust-encoding or encoding-rs.
 * Take (at least) a `input: &mut cssparser::Parser` parameter
 * Return `Result<_, ()>`
 * When returning `Ok(_)`,
-  the function must have consume exactly the amount of input that represents the parsed value.
+  the function must have consumed exactly the amount of input that represents the parsed value.
 * When returning `Err(())`, any amount of input may have been consumed.
 
 As a consequence, when calling another parsing function, either:
@@ -68,29 +68,34 @@ fn parse_border_spacing(_context: &ParserContext, input: &mut Parser)
 
 #![recursion_limit="200"]  // For color::parse_color_keyword
 
+extern crate dtoa_short;
+extern crate itoa;
 #[macro_use] extern crate cssparser_macros;
 #[macro_use] extern crate matches;
 #[macro_use] extern crate procedural_masquerade;
 #[doc(hidden)] pub extern crate phf as _internal__phf;
 #[cfg(test)] extern crate encoding_rs;
-#[cfg(test)] extern crate tempdir;
+#[cfg(test)] extern crate difference;
 #[cfg(test)] extern crate rustc_serialize;
 #[cfg(feature = "serde")] extern crate serde;
 #[cfg(feature = "heapsize")] #[macro_use] extern crate heapsize;
+extern crate smallvec;
 
 pub use cssparser_macros::*;
 
-pub use tokenizer::{Token, NumericValue, PercentageValue, SourceLocation};
+pub use tokenizer::{Token, SourcePosition, SourceLocation};
 pub use rules_and_declarations::{parse_important};
 pub use rules_and_declarations::{DeclarationParser, DeclarationListParser, parse_one_declaration};
 pub use rules_and_declarations::{RuleListParser, parse_one_rule};
 pub use rules_and_declarations::{AtRuleType, QualifiedRuleParser, AtRuleParser};
 pub use from_bytes::{stylesheet_encoding, EncodingSupport};
-pub use color::{RGBA, Color, parse_color_keyword};
+pub use color::{RGBA, Color, parse_color_keyword, AngleOrNumber, NumberOrPercentage, ColorComponentParser};
 pub use nth::parse_nth;
-pub use serializer::{ToCss, CssStringWriter, serialize_identifier, serialize_string, TokenSerializationType};
-pub use parser::{Parser, Delimiter, Delimiters, SourcePosition};
+pub use serializer::{ToCss, CssStringWriter, serialize_identifier, serialize_name, serialize_string, TokenSerializationType};
+pub use parser::{Parser, Delimiter, Delimiters, ParserState, ParserInput};
+pub use parser::{ParseError, ParseErrorKind, BasicParseError, BasicParseErrorKind};
 pub use unicode_range::UnicodeRange;
+pub use cow_rc_str::CowRcStr;
 
 // For macros
 #[doc(hidden)] pub use macros::_internal__to_lowercase;
@@ -116,6 +121,7 @@ mod color;
 mod nth;
 mod serializer;
 mod unicode_range;
+mod cow_rc_str;
 
-#[cfg(test)]
-mod tests;
+#[cfg(test)] mod tests;
+#[cfg(test)] mod size_of_tests;

@@ -4,49 +4,55 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <CoreFoundation/CFString.h>
+#include "AppleVTDecoder.h"
 
-#include "AppleCMLinker.h"
 #include "AppleDecoderModule.h"
 #include "AppleUtils.h"
-#include "AppleVTDecoder.h"
-#include "AppleVTLinker.h"
+#include "MacIOSurfaceImage.h"
 #include "MediaData.h"
 #include "mozilla/ArrayUtils.h"
-#include "mp4_demuxer/H264.h"
+#include "H264.h"
 #include "nsAutoPtr.h"
 #include "nsThreadUtils.h"
 #include "mozilla/Logging.h"
-#include "mozilla/SizePrintfMacros.h"
 #include "VideoUtils.h"
 #include "gfxPlatform.h"
+#include "MacIOSurfaceImage.h"
 
-#define LOG(...) MOZ_LOG(sPDMLog, mozilla::LogLevel::Debug, (__VA_ARGS__))
+#define LOG(...) DDMOZ_LOG(sPDMLog, mozilla::LogLevel::Debug, __VA_ARGS__)
+#define LOGEX(_this, ...) \
+  DDMOZ_LOGEX(_this, sPDMLog, mozilla::LogLevel::Debug, __VA_ARGS__)
 
 namespace mozilla {
 
-AppleVTDecoder::AppleVTDecoder(const VideoInfo& aConfig,
-                               TaskQueue* aTaskQueue,
-                               layers::ImageContainer* aImageContainer)
-  : mExtraData(aConfig.mExtraData)
-  , mPictureWidth(aConfig.mImage.width)
-  , mPictureHeight(aConfig.mImage.height)
-  , mDisplayWidth(aConfig.mDisplay.width)
-  , mDisplayHeight(aConfig.mDisplay.height)
-  , mTaskQueue(aTaskQueue)
-  , mMaxRefFrames(mp4_demuxer::H264::ComputeMaxRefFrames(aConfig.mExtraData))
-  , mImageContainer(aImageContainer)
+using namespace layers;
+
+AppleVTDecoder::AppleVTDecoder(const VideoInfo& aConfig, TaskQueue* aTaskQueue,
+                               layers::ImageContainer* aImageContainer,
+                               CreateDecoderParams::OptionSet aOptions)
+    : mExtraData(aConfig.mExtraData),
+      mPictureWidth(aConfig.mImage.width),
+      mPictureHeight(aConfig.mImage.height),
+      mDisplayWidth(aConfig.mDisplay.width),
+      mDisplayHeight(aConfig.mDisplay.height),
+      mTaskQueue(aTaskQueue),
+      mMaxRefFrames(aOptions.contains(CreateDecoderParams::Option::LowLatency)
+                        ? 0
+                        : H264::ComputeMaxRefFrames(aConfig.mExtraData)),
+      mImageContainer(aImageContainer)
 #ifdef MOZ_WIDGET_UIKIT
-  , mUseSoftwareImages(true)
+      ,
+      mUseSoftwareImages(true)
 #else
-  , mUseSoftwareImages(false)
+      ,
+      mUseSoftwareImages(false)
 #endif
-  , mIsFlushing(false)
-  , mMonitor("AppleVTDecoder")
-  , mFormat(nullptr)
-  , mSession(nullptr)
-  , mIsHardwareAccelerated(false)
-{
+      ,
+      mIsFlushing(false),
+      mMonitor("AppleVTDecoder"),
+      mFormat(nullptr),
+      mSession(nullptr),
+      mIsHardwareAccelerated(false) {
   MOZ_COUNT_CTOR(AppleVTDecoder);
   // TODO: Verify aConfig.mime_type.
   LOG("Creating AppleVTDecoder for %dx%d h.264 video", mDisplayWidth,
@@ -56,32 +62,23 @@ AppleVTDecoder::AppleVTDecoder(const VideoInfo& aConfig,
   mPromise.SetMonitor(&mMonitor);
 }
 
-AppleVTDecoder::~AppleVTDecoder()
-{
-  MOZ_COUNT_DTOR(AppleVTDecoder);
-}
+AppleVTDecoder::~AppleVTDecoder() { MOZ_COUNT_DTOR(AppleVTDecoder); }
 
-RefPtr<MediaDataDecoder::InitPromise>
-AppleVTDecoder::Init()
-{
-  nsresult rv = InitializeSession();
+RefPtr<MediaDataDecoder::InitPromise> AppleVTDecoder::Init() {
+  MediaResult rv = InitializeSession();
 
   if (NS_SUCCEEDED(rv)) {
     return InitPromise::CreateAndResolve(TrackType::kVideoTrack, __func__);
   }
 
-  return InitPromise::CreateAndReject(NS_ERROR_DOM_MEDIA_FATAL_ERR, __func__);
+  return InitPromise::CreateAndReject(rv, __func__);
 }
 
-RefPtr<MediaDataDecoder::DecodePromise>
-AppleVTDecoder::Decode(MediaRawData* aSample)
-{
-  LOG("mp4 input sample %p pts %lld duration %lld us%s %" PRIuSIZE " bytes",
-      aSample,
-      aSample->mTime,
-      aSample->mDuration,
-      aSample->mKeyframe ? " keyframe" : "",
-      aSample->Size());
+RefPtr<MediaDataDecoder::DecodePromise> AppleVTDecoder::Decode(
+    MediaRawData* aSample) {
+  LOG("mp4 input sample %p pts %lld duration %lld us%s %zu bytes", aSample,
+      aSample->mTime.ToMicroseconds(), aSample->mDuration.ToMicroseconds(),
+      aSample->mKeyframe ? " keyframe" : "", aSample->Size());
 
   RefPtr<AppleVTDecoder> self = this;
   RefPtr<MediaRawData> sample = aSample;
@@ -96,26 +93,20 @@ AppleVTDecoder::Decode(MediaRawData* aSample)
   });
 }
 
-RefPtr<MediaDataDecoder::FlushPromise>
-AppleVTDecoder::Flush()
-{
+RefPtr<MediaDataDecoder::FlushPromise> AppleVTDecoder::Flush() {
   mIsFlushing = true;
   return InvokeAsync(mTaskQueue, this, __func__, &AppleVTDecoder::ProcessFlush);
 }
 
-RefPtr<MediaDataDecoder::DecodePromise>
-AppleVTDecoder::Drain()
-{
+RefPtr<MediaDataDecoder::DecodePromise> AppleVTDecoder::Drain() {
   return InvokeAsync(mTaskQueue, this, __func__, &AppleVTDecoder::ProcessDrain);
 }
 
-RefPtr<ShutdownPromise>
-AppleVTDecoder::Shutdown()
-{
+RefPtr<ShutdownPromise> AppleVTDecoder::Shutdown() {
   if (mTaskQueue) {
     RefPtr<AppleVTDecoder> self = this;
-    return InvokeAsync(mTaskQueue, __func__, [self, this]() {
-      ProcessShutdown();
+    return InvokeAsync(mTaskQueue, __func__, [self]() {
+      self->ProcessShutdown();
       return ShutdownPromise::CreateAndResolve(true, __func__);
     });
   }
@@ -124,23 +115,20 @@ AppleVTDecoder::Shutdown()
 }
 
 // Helper to fill in a timestamp structure.
-static CMSampleTimingInfo
-TimingInfoFromSample(MediaRawData* aSample)
-{
+static CMSampleTimingInfo TimingInfoFromSample(MediaRawData* aSample) {
   CMSampleTimingInfo timestamp;
 
-  timestamp.duration = CMTimeMake(aSample->mDuration, USECS_PER_S);
+  timestamp.duration =
+      CMTimeMake(aSample->mDuration.ToMicroseconds(), USECS_PER_S);
   timestamp.presentationTimeStamp =
-    CMTimeMake(aSample->mTime, USECS_PER_S);
+      CMTimeMake(aSample->mTime.ToMicroseconds(), USECS_PER_S);
   timestamp.decodeTimeStamp =
-    CMTimeMake(aSample->mTimecode, USECS_PER_S);
+      CMTimeMake(aSample->mTimecode.ToMicroseconds(), USECS_PER_S);
 
   return timestamp;
 }
 
-void
-AppleVTDecoder::ProcessDecode(MediaRawData* aSample)
-{
+void AppleVTDecoder::ProcessDecode(MediaRawData* aSample) {
   AssertOnTaskQueueThread();
 
   if (mIsFlushing) {
@@ -158,27 +146,26 @@ AppleVTDecoder::ProcessDecode(MediaRawData* aSample)
   // a custom block source which reuses the aSample buffer.
   // But note that there may be a problem keeping the samples
   // alive over multiple frames.
-  rv = CMBlockBufferCreateWithMemoryBlock(kCFAllocatorDefault, // Struct allocator.
-                                          const_cast<uint8_t*>(aSample->Data()),
-                                          aSample->Size(),
-                                          kCFAllocatorNull, // Block allocator.
-                                          NULL, // Block source.
-                                          0,    // Data offset.
-                                          aSample->Size(),
-                                          false,
-                                          block.receive());
+  rv = CMBlockBufferCreateWithMemoryBlock(
+      kCFAllocatorDefault,  // Struct allocator.
+      const_cast<uint8_t*>(aSample->Data()), aSample->Size(),
+      kCFAllocatorNull,  // Block allocator.
+      NULL,              // Block source.
+      0,                 // Data offset.
+      aSample->Size(), false, block.receive());
   if (rv != noErr) {
     NS_ERROR("Couldn't create CMBlockBuffer");
     MonitorAutoLock mon(mMonitor);
     mPromise.Reject(
-      MediaResult(NS_ERROR_OUT_OF_MEMORY,
-                  RESULT_DETAIL("CMBlockBufferCreateWithMemoryBlock:%x", rv)),
-      __func__);
+        MediaResult(NS_ERROR_OUT_OF_MEMORY,
+                    RESULT_DETAIL("CMBlockBufferCreateWithMemoryBlock:%x", rv)),
+        __func__);
     return;
   }
 
   CMSampleTimingInfo timestamp = TimingInfoFromSample(aSample);
-  rv = CMSampleBufferCreate(kCFAllocatorDefault, block, true, 0, 0, mFormat, 1, 1, &timestamp, 0, NULL, sample.receive());
+  rv = CMSampleBufferCreate(kCFAllocatorDefault, block, true, 0, 0, mFormat, 1,
+                            1, &timestamp, 0, NULL, sample.receive());
   if (rv != noErr) {
     NS_ERROR("Couldn't create CMSampleBuffer");
     MonitorAutoLock mon(mMonitor);
@@ -189,12 +176,9 @@ AppleVTDecoder::ProcessDecode(MediaRawData* aSample)
   }
 
   VTDecodeFrameFlags decodeFlags =
-    kVTDecodeFrame_EnableAsynchronousDecompression;
-  rv = VTDecompressionSessionDecodeFrame(mSession,
-                                         sample,
-                                         decodeFlags,
-                                         CreateAppleFrameRef(aSample),
-                                         &infoFlags);
+      kVTDecodeFrame_EnableAsynchronousDecompression;
+  rv = VTDecompressionSessionDecodeFrame(
+      mSession, sample, decodeFlags, CreateAppleFrameRef(aSample), &infoFlags);
   if (rv != noErr && !(infoFlags & kVTDecodeInfo_FrameDropped)) {
     LOG("AppleVTDecoder: Error %d VTDecompressionSessionDecodeFrame", rv);
     NS_WARNING("Couldn't pass frame to decoder");
@@ -202,16 +186,14 @@ AppleVTDecoder::ProcessDecode(MediaRawData* aSample)
     // failure. Decoding sometimes actually get processed.
     MonitorAutoLock mon(mMonitor);
     mPromise.RejectIfExists(
-      MediaResult(NS_ERROR_DOM_MEDIA_DECODE_ERR,
-                  RESULT_DETAIL("VTDecompressionSessionDecodeFrame:%x", rv)),
-      __func__);
+        MediaResult(NS_ERROR_DOM_MEDIA_DECODE_ERR,
+                    RESULT_DETAIL("VTDecompressionSessionDecodeFrame:%x", rv)),
+        __func__);
     return;
   }
 }
 
-void
-AppleVTDecoder::ProcessShutdown()
-{
+void AppleVTDecoder::ProcessShutdown() {
   if (mSession) {
     LOG("%s: cleaning up session %p", __func__, mSession);
     VTDecompressionSessionInvalidate(mSession);
@@ -225,9 +207,7 @@ AppleVTDecoder::ProcessShutdown()
   }
 }
 
-RefPtr<MediaDataDecoder::FlushPromise>
-AppleVTDecoder::ProcessFlush()
-{
+RefPtr<MediaDataDecoder::FlushPromise> AppleVTDecoder::ProcessFlush() {
   AssertOnTaskQueueThread();
   nsresult rv = WaitForAsynchronousFrames();
   if (NS_FAILED(rv)) {
@@ -244,9 +224,7 @@ AppleVTDecoder::ProcessFlush()
   return FlushPromise::CreateAndResolve(true, __func__);
 }
 
-RefPtr<MediaDataDecoder::DecodePromise>
-AppleVTDecoder::ProcessDrain()
-{
+RefPtr<MediaDataDecoder::DecodePromise> AppleVTDecoder::ProcessDrain() {
   AssertOnTaskQueueThread();
   nsresult rv = WaitForAsynchronousFrames();
   if (NS_FAILED(rv)) {
@@ -255,23 +233,24 @@ AppleVTDecoder::ProcessDrain()
   MonitorAutoLock mon(mMonitor);
   DecodedData samples;
   while (!mReorderQueue.IsEmpty()) {
-    samples.AppendElement(Move(mReorderQueue.Pop()));
+    samples.AppendElement(mReorderQueue.Pop());
   }
-  return DecodePromise::CreateAndResolve(Move(samples), __func__);
+  return DecodePromise::CreateAndResolve(std::move(samples), __func__);
 }
 
-AppleVTDecoder::AppleFrameRef*
-AppleVTDecoder::CreateAppleFrameRef(const MediaRawData* aSample)
-{
+AppleVTDecoder::AppleFrameRef* AppleVTDecoder::CreateAppleFrameRef(
+    const MediaRawData* aSample) {
   MOZ_ASSERT(aSample);
   return new AppleFrameRef(*aSample);
 }
 
-void
-AppleVTDecoder::SetSeekThreshold(const media::TimeUnit& aTime)
-{
+void AppleVTDecoder::SetSeekThreshold(const media::TimeUnit& aTime) {
   LOG("SetSeekThreshold %lld", aTime.ToMicroseconds());
-  mSeekTargetThreshold = Some(aTime);
+  if (aTime.IsValid()) {
+    mSeekTargetThreshold = Some(aTime);
+  } else {
+    mSeekTargetThreshold.reset();
+  }
 }
 
 //
@@ -282,21 +261,18 @@ AppleVTDecoder::SetSeekThreshold(const media::TimeUnit& aTime)
 // This needs to be static because the API takes a C-style pair of
 // function and userdata pointers. This validates parameters and
 // forwards the decoded image back to an object method.
-static void
-PlatformCallback(void* decompressionOutputRefCon,
-                 void* sourceFrameRefCon,
-                 OSStatus status,
-                 VTDecodeInfoFlags flags,
-                 CVImageBufferRef image,
-                 CMTime presentationTimeStamp,
-                 CMTime presentationDuration)
-{
-  LOG("AppleVideoDecoder %s status %d flags %d", __func__, static_cast<int>(status), flags);
-
+static void PlatformCallback(void* decompressionOutputRefCon,
+                             void* sourceFrameRefCon, OSStatus status,
+                             VTDecodeInfoFlags flags, CVImageBufferRef image,
+                             CMTime presentationTimeStamp,
+                             CMTime presentationDuration) {
   AppleVTDecoder* decoder =
-    static_cast<AppleVTDecoder*>(decompressionOutputRefCon);
+      static_cast<AppleVTDecoder*>(decompressionOutputRefCon);
+  LOGEX(decoder, "AppleVideoDecoder %s status %d flags %d", __func__,
+        static_cast<int>(status), flags);
+
   nsAutoPtr<AppleVTDecoder::AppleFrameRef> frameRef(
-    static_cast<AppleVTDecoder::AppleFrameRef*>(sourceFrameRefCon));
+      static_cast<AppleVTDecoder::AppleFrameRef*>(sourceFrameRefCon));
 
   // Validate our arguments.
   if (status != noErr || !image) {
@@ -306,29 +282,25 @@ PlatformCallback(void* decompressionOutputRefCon,
     NS_WARNING("  ...frame tagged as dropped...");
   } else {
     MOZ_ASSERT(CFGetTypeID(image) == CVPixelBufferGetTypeID(),
-      "VideoToolbox returned an unexpected image type");
+               "VideoToolbox returned an unexpected image type");
   }
 
   decoder->OutputFrame(image, *frameRef);
 }
 
 // Copy and return a decoded frame.
-void
-AppleVTDecoder::OutputFrame(CVPixelBufferRef aImage,
-                            AppleVTDecoder::AppleFrameRef aFrameRef)
-{
+void AppleVTDecoder::OutputFrame(CVPixelBufferRef aImage,
+                                 AppleVTDecoder::AppleFrameRef aFrameRef) {
   if (mIsFlushing) {
     // We are in the process of flushing or shutting down; ignore frame.
     return;
   }
 
   LOG("mp4 output frame %lld dts %lld pts %lld duration %lld us%s",
-      aFrameRef.byte_offset,
-      aFrameRef.decode_timestamp.ToMicroseconds(),
+      aFrameRef.byte_offset, aFrameRef.decode_timestamp.ToMicroseconds(),
       aFrameRef.composition_timestamp.ToMicroseconds(),
       aFrameRef.duration.ToMicroseconds(),
-      aFrameRef.is_sync_point ? " keyframe" : ""
-  );
+      aFrameRef.is_sync_point ? " keyframe" : "");
 
   if (!aImage) {
     // Image was dropped by decoder or none return yet.
@@ -340,7 +312,8 @@ AppleVTDecoder::OutputFrame(CVPixelBufferRef aImage,
 
   bool useNullSample = false;
   if (mSeekTargetThreshold.isSome()) {
-    if ((aFrameRef.composition_timestamp + aFrameRef.duration) < mSeekTargetThreshold.ref()) {
+    if ((aFrameRef.composition_timestamp + aFrameRef.duration) <
+        mSeekTargetThreshold.ref()) {
       useNullSample = true;
     } else {
       mSeekTargetThreshold.reset();
@@ -351,22 +324,22 @@ AppleVTDecoder::OutputFrame(CVPixelBufferRef aImage,
   RefPtr<MediaData> data;
   // Bounds.
   VideoInfo info;
-  info.mDisplay = nsIntSize(mDisplayWidth, mDisplayHeight);
+  info.mDisplay = gfx::IntSize(mDisplayWidth, mDisplayHeight);
 
   if (useNullSample) {
-    data = new NullData(aFrameRef.byte_offset,
-                        aFrameRef.composition_timestamp.ToMicroseconds(),
-                        aFrameRef.duration.ToMicroseconds());
+    data = new NullData(aFrameRef.byte_offset, aFrameRef.composition_timestamp,
+                        aFrameRef.duration);
   } else if (mUseSoftwareImages) {
     size_t width = CVPixelBufferGetWidth(aImage);
     size_t height = CVPixelBufferGetHeight(aImage);
     DebugOnly<size_t> planes = CVPixelBufferGetPlaneCount(aImage);
-    MOZ_ASSERT(planes == 2, "Likely not NV12 format and it must be.");
+    MOZ_ASSERT(planes == 3, "Likely not YUV420 format and it must be.");
 
     VideoData::YCbCrBuffer buffer;
 
     // Lock the returned image data.
-    CVReturn rv = CVPixelBufferLockBaseAddress(aImage, kCVPixelBufferLock_ReadOnly);
+    CVReturn rv =
+        CVPixelBufferLockBaseAddress(aImage, kCVPixelBufferLock_ReadOnly);
     if (rv != kCVReturnSuccess) {
       NS_ERROR("error locking pixel data");
       MonitorAutoLock mon(mMonitor);
@@ -378,7 +351,7 @@ AppleVTDecoder::OutputFrame(CVPixelBufferRef aImage,
     }
     // Y plane.
     buffer.mPlanes[0].mData =
-      static_cast<uint8_t*>(CVPixelBufferGetBaseAddressOfPlane(aImage, 0));
+        static_cast<uint8_t*>(CVPixelBufferGetBaseAddressOfPlane(aImage, 0));
     buffer.mPlanes[0].mStride = CVPixelBufferGetBytesPerRowOfPlane(aImage, 0);
     buffer.mPlanes[0].mWidth = width;
     buffer.mPlanes[0].mHeight = height;
@@ -386,37 +359,28 @@ AppleVTDecoder::OutputFrame(CVPixelBufferRef aImage,
     buffer.mPlanes[0].mSkip = 0;
     // Cb plane.
     buffer.mPlanes[1].mData =
-      static_cast<uint8_t*>(CVPixelBufferGetBaseAddressOfPlane(aImage, 1));
+        static_cast<uint8_t*>(CVPixelBufferGetBaseAddressOfPlane(aImage, 1));
     buffer.mPlanes[1].mStride = CVPixelBufferGetBytesPerRowOfPlane(aImage, 1);
-    buffer.mPlanes[1].mWidth = (width+1) / 2;
-    buffer.mPlanes[1].mHeight = (height+1) / 2;
+    buffer.mPlanes[1].mWidth = (width + 1) / 2;
+    buffer.mPlanes[1].mHeight = (height + 1) / 2;
     buffer.mPlanes[1].mOffset = 0;
-    buffer.mPlanes[1].mSkip = 1;
+    buffer.mPlanes[1].mSkip = 0;
     // Cr plane.
     buffer.mPlanes[2].mData =
-      static_cast<uint8_t*>(CVPixelBufferGetBaseAddressOfPlane(aImage, 1));
-    buffer.mPlanes[2].mStride = CVPixelBufferGetBytesPerRowOfPlane(aImage, 1);
-    buffer.mPlanes[2].mWidth = (width+1) / 2;
-    buffer.mPlanes[2].mHeight = (height+1) / 2;
-    buffer.mPlanes[2].mOffset = 1;
-    buffer.mPlanes[2].mSkip = 1;
+        static_cast<uint8_t*>(CVPixelBufferGetBaseAddressOfPlane(aImage, 2));
+    buffer.mPlanes[2].mStride = CVPixelBufferGetBytesPerRowOfPlane(aImage, 2);
+    buffer.mPlanes[2].mWidth = (width + 1) / 2;
+    buffer.mPlanes[2].mHeight = (height + 1) / 2;
+    buffer.mPlanes[2].mOffset = 0;
+    buffer.mPlanes[2].mSkip = 0;
 
-    gfx::IntRect visible = gfx::IntRect(0,
-                                        0,
-                                        mPictureWidth,
-                                        mPictureHeight);
+    gfx::IntRect visible = gfx::IntRect(0, 0, mPictureWidth, mPictureHeight);
 
     // Copy the image data into our own format.
-    data =
-      VideoData::CreateAndCopyData(info,
-                                   mImageContainer,
-                                   aFrameRef.byte_offset,
-                                   aFrameRef.composition_timestamp.ToMicroseconds(),
-                                   aFrameRef.duration.ToMicroseconds(),
-                                   buffer,
-                                   aFrameRef.is_sync_point,
-                                   aFrameRef.decode_timestamp.ToMicroseconds(),
-                                   visible);
+    data = VideoData::CreateAndCopyData(
+        info, mImageContainer, aFrameRef.byte_offset,
+        aFrameRef.composition_timestamp, aFrameRef.duration, buffer,
+        aFrameRef.is_sync_point, aFrameRef.decode_timestamp, visible);
     // Unlock the returned image data.
     CVPixelBufferUnlockBaseAddress(aImage, kCVPixelBufferLock_ReadOnly);
   } else {
@@ -426,16 +390,12 @@ AppleVTDecoder::OutputFrame(CVPixelBufferRef aImage,
 
     RefPtr<MacIOSurface> macSurface = new MacIOSurface(surface);
 
-    RefPtr<layers::Image> image = new MacIOSurfaceImage(macSurface);
+    RefPtr<layers::Image> image = new layers::MacIOSurfaceImage(macSurface);
 
-    data =
-      VideoData::CreateFromImage(info.mDisplay,
-                                 aFrameRef.byte_offset,
-                                 aFrameRef.composition_timestamp.ToMicroseconds(),
-                                 aFrameRef.duration.ToMicroseconds(),
-                                 image.forget(),
-                                 aFrameRef.is_sync_point,
-                                 aFrameRef.decode_timestamp.ToMicroseconds());
+    data = VideoData::CreateFromImage(
+        info.mDisplay, aFrameRef.byte_offset, aFrameRef.composition_timestamp,
+        aFrameRef.duration, image.forget(), aFrameRef.is_sync_point,
+        aFrameRef.decode_timestamp);
 #else
     MOZ_ASSERT_UNREACHABLE("No MacIOSurface on iOS");
 #endif
@@ -456,15 +416,13 @@ AppleVTDecoder::OutputFrame(CVPixelBufferRef aImage,
   while (mReorderQueue.Length() > mMaxRefFrames) {
     results.AppendElement(mReorderQueue.Pop());
   }
-  mPromise.Resolve(Move(results), __func__);
+  mPromise.Resolve(std::move(results), __func__);
 
   LOG("%llu decoded frames queued",
       static_cast<unsigned long long>(mReorderQueue.Length()));
 }
 
-nsresult
-AppleVTDecoder::WaitForAsynchronousFrames()
-{
+nsresult AppleVTDecoder::WaitForAsynchronousFrames() {
   OSStatus rv = VTDecompressionSessionWaitForAsynchronousFrames(mSession);
   if (rv != noErr) {
     NS_ERROR("AppleVTDecoder: Error waiting for asynchronous frames");
@@ -473,22 +431,17 @@ AppleVTDecoder::WaitForAsynchronousFrames()
   return NS_OK;
 }
 
-nsresult
-AppleVTDecoder::InitializeSession()
-{
+MediaResult AppleVTDecoder::InitializeSession() {
   OSStatus rv;
 
   AutoCFRelease<CFDictionaryRef> extensions = CreateDecoderExtensions();
 
   rv = CMVideoFormatDescriptionCreate(kCFAllocatorDefault,
-                                      kCMVideoCodecType_H264,
-                                      mPictureWidth,
-                                      mPictureHeight,
-                                      extensions,
-                                      &mFormat);
+                                      kCMVideoCodecType_H264, mPictureWidth,
+                                      mPictureHeight, extensions, &mFormat);
   if (rv != noErr) {
-    NS_ERROR("Couldn't create format description!");
-    return NS_ERROR_FAILURE;
+    return MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
+                       RESULT_DETAIL("Couldn't create format description!"));
   }
 
   // Contruct video decoder selection spec.
@@ -496,88 +449,67 @@ AppleVTDecoder::InitializeSession()
 
   // Contruct output configuration.
   AutoCFRelease<CFDictionaryRef> outputConfiguration =
-    CreateOutputConfiguration();
+      CreateOutputConfiguration();
 
-  VTDecompressionOutputCallbackRecord cb = { PlatformCallback, this };
-  rv = VTDecompressionSessionCreate(kCFAllocatorDefault,
-                                    mFormat,
-                                    spec, // Video decoder selection.
-                                    outputConfiguration, // Output video format.
-                                    &cb,
-                                    &mSession);
+  VTDecompressionOutputCallbackRecord cb = {PlatformCallback, this};
+  rv =
+      VTDecompressionSessionCreate(kCFAllocatorDefault, mFormat,
+                                   spec,  // Video decoder selection.
+                                   outputConfiguration,  // Output video format.
+                                   &cb, &mSession);
 
   if (rv != noErr) {
-    NS_ERROR("Couldn't create decompression session!");
-    return NS_ERROR_FAILURE;
+    return MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
+                       RESULT_DETAIL("Couldn't create decompression session!"));
   }
 
-  if (AppleVTLinker::skPropUsingHWAccel) {
-    CFBooleanRef isUsingHW = nullptr;
-    rv = VTSessionCopyProperty(mSession,
-                               AppleVTLinker::skPropUsingHWAccel,
-                               kCFAllocatorDefault,
-                               &isUsingHW);
-    if (rv != noErr) {
-      LOG("AppleVTDecoder: system doesn't support hardware acceleration");
-    }
-    mIsHardwareAccelerated = rv == noErr && isUsingHW == kCFBooleanTrue;
-    LOG("AppleVTDecoder: %s hardware accelerated decoding",
-        mIsHardwareAccelerated ? "using" : "not using");
-  } else {
-    LOG("AppleVTDecoder: couldn't determine hardware acceleration status.");
+  CFBooleanRef isUsingHW = nullptr;
+  rv = VTSessionCopyProperty(
+      mSession,
+      kVTDecompressionPropertyKey_UsingHardwareAcceleratedVideoDecoder,
+      kCFAllocatorDefault, &isUsingHW);
+  if (rv != noErr) {
+    LOG("AppleVTDecoder: system doesn't support hardware acceleration");
   }
+  mIsHardwareAccelerated = rv == noErr && isUsingHW == kCFBooleanTrue;
+  LOG("AppleVTDecoder: %s hardware accelerated decoding",
+      mIsHardwareAccelerated ? "using" : "not using");
+
   return NS_OK;
 }
 
-CFDictionaryRef
-AppleVTDecoder::CreateDecoderExtensions()
-{
-  AutoCFRelease<CFDataRef> avc_data =
-    CFDataCreate(kCFAllocatorDefault,
-                 mExtraData->Elements(),
-                 mExtraData->Length());
+CFDictionaryRef AppleVTDecoder::CreateDecoderExtensions() {
+  AutoCFRelease<CFDataRef> avc_data = CFDataCreate(
+      kCFAllocatorDefault, mExtraData->Elements(), mExtraData->Length());
 
-  const void* atomsKey[] = { CFSTR("avcC") };
-  const void* atomsValue[] = { avc_data };
+  const void* atomsKey[] = {CFSTR("avcC")};
+  const void* atomsValue[] = {avc_data};
   static_assert(ArrayLength(atomsKey) == ArrayLength(atomsValue),
                 "Non matching keys/values array size");
 
-  AutoCFRelease<CFDictionaryRef> atoms =
-    CFDictionaryCreate(kCFAllocatorDefault,
-                       atomsKey,
-                       atomsValue,
-                       ArrayLength(atomsKey),
-                       &kCFTypeDictionaryKeyCallBacks,
-                       &kCFTypeDictionaryValueCallBacks);
+  AutoCFRelease<CFDictionaryRef> atoms = CFDictionaryCreate(
+      kCFAllocatorDefault, atomsKey, atomsValue, ArrayLength(atomsKey),
+      &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
 
-  const void* extensionKeys[] =
-    { kCVImageBufferChromaLocationBottomFieldKey,
+  const void* extensionKeys[] = {
+      kCVImageBufferChromaLocationBottomFieldKey,
       kCVImageBufferChromaLocationTopFieldKey,
-      AppleCMLinker::skPropExtensionAtoms };
+      kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms};
 
-  const void* extensionValues[] =
-    { kCVImageBufferChromaLocation_Left,
-      kCVImageBufferChromaLocation_Left,
-      atoms };
+  const void* extensionValues[] = {kCVImageBufferChromaLocation_Left,
+                                   kCVImageBufferChromaLocation_Left, atoms};
   static_assert(ArrayLength(extensionKeys) == ArrayLength(extensionValues),
                 "Non matching keys/values array size");
 
-  return CFDictionaryCreate(kCFAllocatorDefault,
-                            extensionKeys,
-                            extensionValues,
+  return CFDictionaryCreate(kCFAllocatorDefault, extensionKeys, extensionValues,
                             ArrayLength(extensionKeys),
                             &kCFTypeDictionaryKeyCallBacks,
                             &kCFTypeDictionaryValueCallBacks);
 }
 
-CFDictionaryRef
-AppleVTDecoder::CreateDecoderSpecification()
-{
-  if (!AppleVTLinker::skPropEnableHWAccel) {
-    return nullptr;
-  }
-
-  const void* specKeys[] = { AppleVTLinker::skPropEnableHWAccel };
+CFDictionaryRef AppleVTDecoder::CreateDecoderSpecification() {
+  const void* specKeys[] = {
+      kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder};
   const void* specValues[1];
   if (AppleDecoderModule::sCanUseHardwareVideoDecoder) {
     specValues[0] = kCFBooleanTrue;
@@ -588,78 +520,61 @@ AppleVTDecoder::CreateDecoderSpecification()
   static_assert(ArrayLength(specKeys) == ArrayLength(specValues),
                 "Non matching keys/values array size");
 
-  return CFDictionaryCreate(kCFAllocatorDefault,
-                            specKeys,
-                            specValues,
-                            ArrayLength(specKeys),
-                            &kCFTypeDictionaryKeyCallBacks,
-                            &kCFTypeDictionaryValueCallBacks);
+  return CFDictionaryCreate(
+      kCFAllocatorDefault, specKeys, specValues, ArrayLength(specKeys),
+      &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
 }
 
-CFDictionaryRef
-AppleVTDecoder::CreateOutputConfiguration()
-{
+CFDictionaryRef AppleVTDecoder::CreateOutputConfiguration() {
   if (mUseSoftwareImages) {
     // Output format type:
-    SInt32 PixelFormatTypeValue =
-      kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange;
-    AutoCFRelease<CFNumberRef> PixelFormatTypeNumber =
-      CFNumberCreate(kCFAllocatorDefault,
-                     kCFNumberSInt32Type,
-                     &PixelFormatTypeValue);
-    const void* outputKeys[] = { kCVPixelBufferPixelFormatTypeKey };
-    const void* outputValues[] = { PixelFormatTypeNumber };
+    SInt32 PixelFormatTypeValue = kCVPixelFormatType_420YpCbCr8Planar;
+    AutoCFRelease<CFNumberRef> PixelFormatTypeNumber = CFNumberCreate(
+        kCFAllocatorDefault, kCFNumberSInt32Type, &PixelFormatTypeValue);
+    const void* outputKeys[] = {kCVPixelBufferPixelFormatTypeKey};
+    const void* outputValues[] = {PixelFormatTypeNumber};
     static_assert(ArrayLength(outputKeys) == ArrayLength(outputValues),
                   "Non matching keys/values array size");
 
-    return CFDictionaryCreate(kCFAllocatorDefault,
-                              outputKeys,
-                              outputValues,
-                              ArrayLength(outputKeys),
-                              &kCFTypeDictionaryKeyCallBacks,
-                              &kCFTypeDictionaryValueCallBacks);
+    return CFDictionaryCreate(
+        kCFAllocatorDefault, outputKeys, outputValues, ArrayLength(outputKeys),
+        &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
   }
 
 #ifndef MOZ_WIDGET_UIKIT
   // Output format type:
   SInt32 PixelFormatTypeValue = kCVPixelFormatType_422YpCbCr8;
-  AutoCFRelease<CFNumberRef> PixelFormatTypeNumber =
-    CFNumberCreate(kCFAllocatorDefault,
-                   kCFNumberSInt32Type,
-                   &PixelFormatTypeValue);
+  AutoCFRelease<CFNumberRef> PixelFormatTypeNumber = CFNumberCreate(
+      kCFAllocatorDefault, kCFNumberSInt32Type, &PixelFormatTypeValue);
   // Construct IOSurface Properties
-  const void* IOSurfaceKeys[] = { MacIOSurfaceLib::kPropIsGlobal };
-  const void* IOSurfaceValues[] = { kCFBooleanTrue };
+  const void* IOSurfaceKeys[] = {MacIOSurfaceLib::kPropIsGlobal};
+  const void* IOSurfaceValues[] = {kCFBooleanTrue};
   static_assert(ArrayLength(IOSurfaceKeys) == ArrayLength(IOSurfaceValues),
                 "Non matching keys/values array size");
 
   // Contruct output configuration.
-  AutoCFRelease<CFDictionaryRef> IOSurfaceProperties =
-    CFDictionaryCreate(kCFAllocatorDefault,
-                       IOSurfaceKeys,
-                       IOSurfaceValues,
-                       ArrayLength(IOSurfaceKeys),
-                       &kCFTypeDictionaryKeyCallBacks,
-                       &kCFTypeDictionaryValueCallBacks);
+  AutoCFRelease<CFDictionaryRef> IOSurfaceProperties = CFDictionaryCreate(
+      kCFAllocatorDefault, IOSurfaceKeys, IOSurfaceValues,
+      ArrayLength(IOSurfaceKeys), &kCFTypeDictionaryKeyCallBacks,
+      &kCFTypeDictionaryValueCallBacks);
 
-  const void* outputKeys[] = { kCVPixelBufferIOSurfacePropertiesKey,
-                               kCVPixelBufferPixelFormatTypeKey,
-                               kCVPixelBufferOpenGLCompatibilityKey };
-  const void* outputValues[] = { IOSurfaceProperties,
-                                 PixelFormatTypeNumber,
-                                 kCFBooleanTrue };
+  const void* outputKeys[] = {kCVPixelBufferIOSurfacePropertiesKey,
+                              kCVPixelBufferPixelFormatTypeKey,
+                              kCVPixelBufferOpenGLCompatibilityKey};
+  const void* outputValues[] = {IOSurfaceProperties, PixelFormatTypeNumber,
+                                kCFBooleanTrue};
   static_assert(ArrayLength(outputKeys) == ArrayLength(outputValues),
                 "Non matching keys/values array size");
 
-  return CFDictionaryCreate(kCFAllocatorDefault,
-                            outputKeys,
-                            outputValues,
-                            ArrayLength(outputKeys),
-                            &kCFTypeDictionaryKeyCallBacks,
-                            &kCFTypeDictionaryValueCallBacks);
+  return CFDictionaryCreate(
+      kCFAllocatorDefault, outputKeys, outputValues, ArrayLength(outputKeys),
+      &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
 #else
   MOZ_ASSERT_UNREACHABLE("No MacIOSurface on iOS");
 #endif
 }
 
-} // namespace mozilla
+}  // namespace mozilla
+
+#undef LOG
+#undef LOGEX

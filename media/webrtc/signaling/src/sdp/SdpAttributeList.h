@@ -12,25 +12,19 @@
 
 #include "signaling/src/sdp/SdpAttribute.h"
 
-namespace mozilla
-{
+namespace mozilla {
 
-class SdpAttributeList
-{
-public:
+class SdpAttributeList {
+ public:
   virtual ~SdpAttributeList() {}
   typedef SdpAttribute::AttributeType AttributeType;
 
   // Avoid default params on virtual functions
-  bool
-  HasAttribute(AttributeType type) const
-  {
+  bool HasAttribute(AttributeType type) const {
     return HasAttribute(type, true);
   }
 
-  const SdpAttribute*
-  GetAttribute(AttributeType type) const
-  {
+  const SdpAttribute* GetAttribute(AttributeType type) const {
     return GetAttribute(type, true);
   }
 
@@ -41,6 +35,7 @@ public:
   virtual void SetAttribute(SdpAttribute* attr) = 0;
   virtual void RemoveAttribute(AttributeType type) = 0;
   virtual void Clear() = 0;
+  virtual uint32_t Count() const = 0;
 
   virtual const SdpConnectionAttribute& GetConnection() const = 0;
   virtual const SdpOptionsAttribute& GetIceOptions() const = 0;
@@ -64,9 +59,9 @@ public:
   virtual const SdpRtcpFbAttributeList& GetRtcpFb() const = 0;
   virtual const SdpRtpmapAttributeList& GetRtpmap() const = 0;
   virtual const SdpSctpmapAttributeList& GetSctpmap() const = 0;
-  virtual unsigned int GetSctpPort() const = 0;
+  virtual uint32_t GetSctpPort() const = 0;
+  virtual uint32_t GetMaxMessageSize() const = 0;
   virtual const SdpSsrcAttributeList& GetSsrc() const = 0;
-  virtual const SdpSsrcGroupAttributeList& GetSsrcGroup() const = 0;
 
   // These attributes are effectively simple types, so we'll make life
   // easy by just returning their value.
@@ -84,12 +79,11 @@ public:
   virtual void Serialize(std::ostream&) const = 0;
 };
 
-inline std::ostream& operator<<(std::ostream& os, const SdpAttributeList& al)
-{
+inline std::ostream& operator<<(std::ostream& os, const SdpAttributeList& al) {
   al.Serialize(os);
   return os;
 }
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif

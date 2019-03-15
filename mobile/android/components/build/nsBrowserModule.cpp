@@ -8,40 +8,46 @@
 #include "nsShellService.h"
 
 #ifdef MOZ_ANDROID_HISTORY
-#include "nsDocShellCID.h"
-#include "nsAndroidHistory.h"
-#define NS_ANDROIDHISTORY_CID \
-  {0xCCAA4880, 0x44DD, 0x40A7, {0xA1, 0x3F, 0x61, 0x56, 0xFC, 0x88, 0x2C, 0x0B}}
+#  include "GeckoViewHistory.h"
+#  include "nsDocShellCID.h"
+#  include "nsAndroidHistory.h"
+#  include "mozilla/jni/Utils.h"
 #endif
 
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsShellService)
 NS_DEFINE_NAMED_CID(nsShellService_CID);
 
 #ifdef MOZ_ANDROID_HISTORY
-NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(nsAndroidHistory, nsAndroidHistory::GetSingleton)
+NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(GeckoViewHistory,
+                                         GeckoViewHistory::GetSingleton)
+NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(nsAndroidHistory,
+                                         nsAndroidHistory::GetSingleton)
 NS_DEFINE_NAMED_CID(NS_ANDROIDHISTORY_CID);
+
+nsresult AndroidHistoryConstructor(nsISupports *aOuter, const nsIID &aIID,
+                                   void **aResult) {
+  if (mozilla::jni::IsFennec()) {
+    return nsAndroidHistoryConstructor(aOuter, aIID, aResult);
+  }
+  return GeckoViewHistoryConstructor(aOuter, aIID, aResult);
+}
 #endif
 
 static const mozilla::Module::CIDEntry kBrowserCIDs[] = {
-  { &knsShellService_CID, false, nullptr, nsShellServiceConstructor },
+    {&knsShellService_CID, false, nullptr, nsShellServiceConstructor},
 #ifdef MOZ_ANDROID_HISTORY
-  { &kNS_ANDROIDHISTORY_CID, false, nullptr, nsAndroidHistoryConstructor },
+    {&kNS_ANDROIDHISTORY_CID, false, nullptr, AndroidHistoryConstructor},
 #endif
-  { nullptr }
-};
+    {nullptr}};
 
 static const mozilla::Module::ContractIDEntry kBrowserContracts[] = {
-  { nsShellService_ContractID, &knsShellService_CID },
+    {nsShellService_ContractID, &knsShellService_CID},
 #ifdef MOZ_ANDROID_HISTORY
-  { NS_IHISTORY_CONTRACTID, &kNS_ANDROIDHISTORY_CID },
+    {NS_IHISTORY_CONTRACTID, &kNS_ANDROIDHISTORY_CID},
 #endif
-  { nullptr }
-};
+    {nullptr}};
 
-static const mozilla::Module kBrowserModule = {
-  mozilla::Module::kVersion,
-  kBrowserCIDs,
-  kBrowserContracts
-};
+static const mozilla::Module kBrowserModule = {mozilla::Module::kVersion,
+                                               kBrowserCIDs, kBrowserContracts};
 
 NSMODULE_DEFN(nsBrowserCompsModule) = &kBrowserModule;

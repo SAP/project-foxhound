@@ -7,7 +7,6 @@ MOCHITEST_MANIFESTS += ['test/mochitest.ini']
 
 EXPORTS += [
     'AsyncEventRunner.h',
-    'AutoTaskQueue.h',
     'MediaSourceDecoder.h',
     'MediaSourceDemuxer.h',
     'SourceBufferAttributes.h',
@@ -38,12 +37,9 @@ TEST_DIRS += [
     'gtest',
 ]
 
-if CONFIG['MOZ_GONK_MEDIACODEC']:
-    DEFINES['MOZ_GONK_MEDIACODEC'] = True
-
 include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

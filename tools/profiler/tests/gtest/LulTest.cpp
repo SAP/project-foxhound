@@ -6,7 +6,7 @@
 #include "gtest/gtest.h"
 #include "mozilla/Atomics.h"
 #include "LulMain.h"
-#include "GeckoProfiler.h"       // for TracingMetadata
+#include "GeckoProfiler.h"       // for TracingKind
 #include "platform-linux-lul.h"  // for read_procmaps
 
 // Set this to 0 to make LUL be completely silent during tests.
@@ -15,16 +15,15 @@
 #define DEBUG_LUL_TEST 0
 
 // LUL needs a callback for its logging sink.
-static void
-gtest_logging_sink_for_LulIntegration(const char* str) {
+static void gtest_logging_sink_for_LulIntegration(const char* str) {
   if (DEBUG_LUL_TEST == 0) {
     return;
   }
   // Ignore any trailing \n, since LOG will add one anyway.
   size_t n = strlen(str);
-  if (n > 0 && str[n-1] == '\n') {
+  if (n > 0 && str[n - 1] == '\n') {
     char* tmp = strdup(str);
-    tmp[n-1] = 0;
+    tmp[n - 1] = 0;
     fprintf(stderr, "LUL-in-gtest: %s\n", tmp);
     free(tmp);
   } else {

@@ -1,43 +1,50 @@
 /* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
-   http://creativecommons.org/publicdomain/zero/1.0/ */
+ http://creativecommons.org/publicdomain/zero/1.0/ */
+
 "use strict";
 
-// Test that the inspector toggled panel is visible by default, is hidden after
-// clicking on the toggle button and remains expanded/collapsed when switching
-// hosts.
+// Tests that the 3 pane toggle button can toggle on and off the inspector's 3 pane mode,
+// and the 3 panes rendered are all of equal widths in the BOTTOM host.
 
-add_task(function* () {
-  info("Open the inspector in a side toolbox host");
-  let {toolbox, inspector} = yield openInspectorForURL("about:blank", "side");
+add_task(async function() {
+  info("Switch to 2 pane inspector to test the 3 pane toggle button behavior");
+  await pushPref("devtools.inspector.three-pane-enabled", false);
 
-  let panel = inspector.panelDoc.querySelector("#inspector-splitter-box .controlled");
+  const { inspector } = await openInspectorForURL("about:blank");
+  const { panelDoc: doc } = inspector;
+  const button = doc.querySelector(".sidebar-toggle");
+  const ruleViewSidebar = inspector.sidebarSplitBox.startPanelContainer;
+  const toolboxWidth = doc.getElementById("inspector-splitter-box").clientWidth;
 
-  let button = inspector.panelDoc.querySelector(".sidebar-toggle");
-  ok(!panel.classList.contains("pane-collapsed"), "The panel is in expanded state");
+  ok(button.classList.contains("pane-collapsed"), "The button is in collapsed state");
 
-  info("Listen to the end of the animation on the sidebar panel");
-  let onTransitionEnd = once(panel, "transitionend");
+  info("Click on the toggle button to toggle ON 3 pane inspector");
+  let onRuleViewAdded = inspector.once("ruleview-added");
+  EventUtils.synthesizeMouseAtCenter(button, {}, inspector.panelDoc.defaultView);
+  await onRuleViewAdded;
 
-  info("Click on the toggle button");
-  EventUtils.synthesizeMouseAtCenter(button, {},
-    inspector.panelDoc.defaultView);
+  info("Checking the state of the 3 pane inspector");
+  let sidebarWidth = inspector.splitBox.state.width;
+  const sidebarSplitBoxWidth = inspector.sidebarSplitBox.state.width;
+  ok(!button.classList.contains("pane-collapsed"), "The button is in expanded state");
+  ok(doc.getElementById("ruleview-panel"), "The rule view panel exist");
+  is(inspector.sidebar.getCurrentTabID(), "layoutview",
+    "Layout view is shown in the sidebar");
+  is(ruleViewSidebar.style.display, "block", "The split rule view sidebar is displayed");
+  is(sidebarWidth, toolboxWidth * 2 / 3, "Got correct main split box width");
+  is(sidebarSplitBoxWidth, toolboxWidth / 3, "Got correct sidebar split box width");
 
-  yield onTransitionEnd;
-  ok(panel.classList.contains("pane-collapsed"), "The panel is in collapsed state");
-  ok(!panel.hasAttribute("animated"),
-    "The collapsed panel will not perform unwanted animations");
+  info("Click on the toggle button to toggle OFF the 3 pane inspector");
+  onRuleViewAdded = inspector.once("ruleview-added");
+  EventUtils.synthesizeMouseAtCenter(button, {}, inspector.panelDoc.defaultView);
+  await onRuleViewAdded;
 
-  info("Switch the host to bottom type");
-  yield toolbox.switchHost("bottom");
-  ok(panel.classList.contains("pane-collapsed"), "The panel is in collapsed state");
-
-  info("Click on the toggle button to expand the panel again");
-
-  onTransitionEnd = once(panel, "transitionend");
-  EventUtils.synthesizeMouseAtCenter(button, {},
-    inspector.panelDoc.defaultView);
-  yield onTransitionEnd;
-
-  ok(!panel.classList.contains("pane-collapsed"), "The panel is in expanded state");
+  info("Checking the state of the 2 pane inspector");
+  sidebarWidth = inspector.splitBox.state.width;
+  ok(button.classList.contains("pane-collapsed"), "The button is in collapsed state");
+  is(inspector.sidebar.getCurrentTabID(), "ruleview",
+    "Rule view is shown in the sidebar");
+  is(ruleViewSidebar.style.display, "none", "The split rule view sidebar is hidden");
+  is(sidebarWidth, sidebarSplitBoxWidth, "Got correct sidebar width");
 });

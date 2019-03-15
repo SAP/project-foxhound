@@ -1,8 +1,6 @@
 "use strict";
 
-var { interfaces: Ci, classes: Cc, utils: Cu, results: Cr } = Components;
-
-var {WebRequest} = Cu.import("resource://gre/modules/WebRequest.jsm", {});
+var {WebRequest} = ChromeUtils.import("resource://gre/modules/WebRequest.jsm", {});
 
 const BASE = "http://example.com/browser/toolkit/modules/tests/browser";
 const URL = BASE + "/file_WebRequest_page1.html";
@@ -11,17 +9,17 @@ var expected_browser;
 
 function checkType(details) {
   let expected_type = "???";
-  if (details.url.indexOf("style") != -1) {
+  if (details.url.includes("style")) {
     expected_type = "stylesheet";
-  } else if (details.url.indexOf("image") != -1) {
+  } else if (details.url.includes("image")) {
     expected_type = "image";
-  } else if (details.url.indexOf("script") != -1) {
+  } else if (details.url.includes("script")) {
     expected_type = "script";
-  } else if (details.url.indexOf("page1") != -1) {
+  } else if (details.url.includes("page1")) {
     expected_type = "main_frame";
   } else if (/page2|_redirection\.|dummy_page/.test(details.url)) {
     expected_type = "sub_frame";
-  } else if (details.url.indexOf("xhr") != -1) {
+  } else if (details.url.includes("xhr")) {
     expected_type = "xmlhttprequest";
   }
   is(details.type, expected_type, "resource type is correct");
@@ -40,13 +38,18 @@ function onBeforeRequest(details) {
     checkType(details);
 
     windowIDs.set(details.url, details.windowId);
-    if (details.url.indexOf("page2") != -1) {
+    if (details.url.includes("page2")) {
       let page1id = windowIDs.get(URL);
       ok(details.windowId != page1id, "sub-frame gets its own window ID");
       is(details.parentWindowId, page1id, "parent window id is correct");
+
+      is(details.frameAncestors.length, 1, "correctly has only one ancestor");
+      let ancestor = details.frameAncestors[0];
+      ok(ancestor.url.includes("page1"), "parent window url seems correct");
+      is(ancestor.frameId, page1id, "parent window id is correct");
     }
   }
-  if (details.url.indexOf("_bad.") != -1) {
+  if (details.url.includes("_bad.")) {
     return {cancel: true};
   }
   return undefined;
@@ -65,7 +68,7 @@ function onBeforeSendHeaders(details) {
     let id = windowIDs.get(details.url);
     is(id, details.windowId, "window ID same in onBeforeSendHeaders as onBeforeRequest");
   }
-  if (details.url.indexOf("_redirect.") != -1) {
+  if (details.url.includes("_redirect.")) {
     return {redirectUrl: details.url.replace("_redirect.", "_good.")};
   }
   return undefined;
@@ -82,7 +85,7 @@ function onBeforeRedirect(details) {
     is(details.browser, expected_browser, "correct <browser> element");
     checkType(details);
 
-    let expectedUrl = details.url.replace("_redirect.", "_good.").replace(/\w+_redirection\..*/, "dummy_page.html")
+    let expectedUrl = details.url.replace("_redirect.", "_good.").replace(/\w+_redirection\..*/, "dummy_page.html");
     is(details.redirectUrl, expectedUrl, "Correct redirectUrl value");
   }
   let id = windowIDs.get(details.url);
@@ -165,21 +168,21 @@ function compareLists(list1, list2, kind) {
   is(String(list1), String(list2), `${kind} URLs correct`);
 }
 
-function* test_once() {
+async function test_once() {
   WebRequest.onBeforeRequest.addListener(onBeforeRequest, null, ["blocking"]);
   WebRequest.onBeforeSendHeaders.addListener(onBeforeSendHeaders, null, ["blocking"]);
   WebRequest.onBeforeRedirect.addListener(onBeforeRedirect);
   WebRequest.onResponseStarted.addListener(onResponseStarted);
 
-  yield BrowserTestUtils.withNewTab({ gBrowser, url: "about:blank" },
-    function* (browser) {
+  await BrowserTestUtils.withNewTab({ gBrowser, url: "about:blank" },
+    async function(browser) {
       expected_browser = browser;
       BrowserTestUtils.loadURI(browser, URL);
-      yield BrowserTestUtils.browserLoaded(expected_browser);
+      await BrowserTestUtils.browserLoaded(expected_browser);
 
       expected_browser = null;
 
-      yield ContentTask.spawn(browser, null, function() {
+      await ContentTask.spawn(browser, null, function() {
         let win = content.wrappedJSObject;
         is(win.success, 2, "Good script ran");
         is(win.failure, undefined, "Failure script didn't run");

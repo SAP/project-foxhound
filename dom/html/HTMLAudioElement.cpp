@@ -9,7 +9,7 @@
 #include "nsError.h"
 #include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
-#include "nsIDocument.h"
+#include "mozilla/dom/Document.h"
 #include "jsfriendapi.h"
 #include "nsContentUtils.h"
 #include "nsJSUtils.h"
@@ -27,55 +27,48 @@ namespace dom {
 
 NS_IMPL_ELEMENT_CLONE(HTMLAudioElement)
 
-HTMLAudioElement::HTMLAudioElement(already_AddRefed<NodeInfo>& aNodeInfo)
-  : HTMLMediaElement(aNodeInfo)
-{
+HTMLAudioElement::HTMLAudioElement(already_AddRefed<NodeInfo>&& aNodeInfo)
+    : HTMLMediaElement(std::move(aNodeInfo)) {
+  DecoderDoctorLogger::LogConstruction(this);
 }
 
-HTMLAudioElement::~HTMLAudioElement()
-{
+HTMLAudioElement::~HTMLAudioElement() {
+  DecoderDoctorLogger::LogDestruction(this);
 }
 
-bool
-HTMLAudioElement::IsInteractiveHTMLContent(bool aIgnoreTabindex) const
-{
+bool HTMLAudioElement::IsInteractiveHTMLContent(bool aIgnoreTabindex) const {
   return HasAttr(kNameSpaceID_None, nsGkAtoms::controls) ||
          HTMLMediaElement::IsInteractiveHTMLContent(aIgnoreTabindex);
 }
 
-already_AddRefed<HTMLAudioElement>
-HTMLAudioElement::Audio(const GlobalObject& aGlobal,
-                        const Optional<nsAString>& aSrc,
-                        ErrorResult& aRv)
-{
+already_AddRefed<HTMLAudioElement> HTMLAudioElement::Audio(
+    const GlobalObject& aGlobal, const Optional<nsAString>& aSrc,
+    ErrorResult& aRv) {
   nsCOMPtr<nsPIDOMWindowInner> win = do_QueryInterface(aGlobal.GetAsSupports());
-  nsIDocument* doc;
+  Document* doc;
   if (!win || !(doc = win->GetExtantDoc())) {
     aRv.Throw(NS_ERROR_FAILURE);
     return nullptr;
   }
 
-  already_AddRefed<mozilla::dom::NodeInfo> nodeInfo =
-    doc->NodeInfoManager()->GetNodeInfo(nsGkAtoms::audio, nullptr,
-                                        kNameSpaceID_XHTML,
-                                        nsIDOMNode::ELEMENT_NODE);
+  RefPtr<mozilla::dom::NodeInfo> nodeInfo = doc->NodeInfoManager()->GetNodeInfo(
+      nsGkAtoms::audio, nullptr, kNameSpaceID_XHTML, ELEMENT_NODE);
 
-  RefPtr<HTMLAudioElement> audio = new HTMLAudioElement(nodeInfo);
+  RefPtr<HTMLAudioElement> audio = new HTMLAudioElement(nodeInfo.forget());
   audio->SetHTMLAttr(nsGkAtoms::preload, NS_LITERAL_STRING("auto"), aRv);
   if (aRv.Failed()) {
     return nullptr;
   }
 
   if (aSrc.WasPassed()) {
-    aRv = audio->SetSrc(aSrc.Value());
+    audio->SetSrc(aSrc.Value(), aRv);
   }
 
   return audio.forget();
 }
 
-nsresult HTMLAudioElement::SetAcceptHeader(nsIHttpChannel* aChannel)
-{
-    nsAutoCString value(
+nsresult HTMLAudioElement::SetAcceptHeader(nsIHttpChannel* aChannel) {
+  nsAutoCString value(
       "audio/webm,"
       "audio/ogg,"
       "audio/wav,"
@@ -83,16 +76,13 @@ nsresult HTMLAudioElement::SetAcceptHeader(nsIHttpChannel* aChannel)
       "application/ogg;q=0.7,"
       "video/*;q=0.6,*/*;q=0.5");
 
-    return aChannel->SetRequestHeader(NS_LITERAL_CSTRING("Accept"),
-                                      value,
-                                      false);
+  return aChannel->SetRequestHeader(NS_LITERAL_CSTRING("Accept"), value, false);
 }
 
-JSObject*
-HTMLAudioElement::WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return HTMLAudioElementBinding::Wrap(aCx, this, aGivenProto);
+JSObject* HTMLAudioElement::WrapNode(JSContext* aCx,
+                                     JS::Handle<JSObject*> aGivenProto) {
+  return HTMLAudioElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

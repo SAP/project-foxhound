@@ -3,11 +3,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { FrontClassWithSpec, Front } = require("devtools/shared/protocol");
+loader.lazyRequireGetter(this, "CSS_PROPERTIES_DB",
+  "devtools/shared/css/properties-db", true);
+
+loader.lazyRequireGetter(this, "cssColors",
+  "devtools/shared/css/color-db", true);
+
+const { FrontClassWithSpec, registerFront } = require("devtools/shared/protocol");
 const { cssPropertiesSpec } = require("devtools/shared/specs/css-properties");
-const { Task } = require("devtools/shared/task");
-const { CSS_PROPERTIES_DB } = require("devtools/shared/css/properties-db");
-const { cssColors } = require("devtools/shared/css/color-db");
 
 /**
  * Build up a regular expression that matches a CSS variable token. This is an
@@ -39,12 +42,12 @@ var cachedCssProperties = new WeakMap();
  * interface that provides synchronous methods for finding out what CSS
  * properties the current server supports.
  */
-const CssPropertiesFront = FrontClassWithSpec(cssPropertiesSpec, {
-  initialize: function (client, { cssPropertiesActor }) {
-    Front.prototype.initialize.call(this, client, {actor: cssPropertiesActor});
+class CssPropertiesFront extends FrontClassWithSpec(cssPropertiesSpec) {
+  constructor(client, { cssPropertiesActor }) {
+    super(client, {actor: cssPropertiesActor});
     this.manage(this);
   }
-});
+}
 
 /**
  * Query the feature supporting status in the featureSet.
@@ -100,6 +103,7 @@ CssProperties.prototype = {
    * @return {Boolean}
    */
   isKnown(property) {
+    property = property.toLowerCase();
     return !!this.properties[property] || isCssVariable(property);
   },
 
@@ -149,12 +153,13 @@ CssProperties.prototype = {
    * @return {Boolean}
    */
   isInherited(property) {
-    return this.properties[property] && this.properties[property].isInherited;
+    return (this.properties[property] && this.properties[property].isInherited) ||
+            isCssVariable(property);
   },
 
   /**
    * Checks if the property supports the given CSS type.
-   * CSS types should come from devtools/shared/css/properties-db.js' CSS_TYPES.
+   * CSS types should come from devtools/shared/css/constants.js' CSS_TYPES.
    *
    * @param {String} property The property to be checked.
    * @param {Number} type One of the type values from CSS_TYPES.
@@ -193,6 +198,7 @@ CssProperties.prototype = {
    * @return {Array} An array of subproperty names.
    */
   getSubproperties(name) {
+    name = name.toLowerCase();
     if (this.isKnown(name)) {
       if (this.properties[name] && this.properties[name].subproperties) {
         return this.properties[name].subproperties;
@@ -223,28 +229,20 @@ CssProperties.prototype = {
  * @param {Toolbox} The current toolbox.
  * @returns {Promise} Resolves to {cssProperties, cssPropertiesFront}.
  */
-const initCssProperties = Task.async(function* (toolbox) {
+const initCssProperties = async function(toolbox) {
   const client = toolbox.target.client;
   if (cachedCssProperties.has(client)) {
     return cachedCssProperties.get(client);
   }
 
-  let db, front;
-
   // Get the list dynamically if the cssProperties actor exists.
-  if (toolbox.target.hasActor("cssProperties")) {
-    front = CssPropertiesFront(client, toolbox.target.form);
-    db = yield front.getCSSDatabase();
-  } else {
-    // The target does not support this actor, so require a static list of supported
-    // properties.
-    db = CSS_PROPERTIES_DB;
-  }
+  const front = await toolbox.target.getFront("cssProperties");
+  const db = await front.getCSSDatabase();
 
   const cssProperties = new CssProperties(normalizeCssData(db));
   cachedCssProperties.set(client, {cssProperties, front});
   return {cssProperties, front};
-});
+};
 
 /**
  * Synchronously get a cached and initialized CssProperties.
@@ -279,39 +277,49 @@ function getClientCssProperties() {
  * @return {Object} The normalized CSS database.
  */
 function normalizeCssData(db) {
-  if (db !== CSS_PROPERTIES_DB) {
+  // If there is a `from` attributes, it means that it comes from RDP
+  // and it is not the client CSS_PROPERTIES_DB object.
+  // (prevent comparing to CSS_PROPERTIES_DB to avoid loading client database)
+  if (typeof (db.from) == "string") {
     // Firefox 49's getCSSDatabase() just returned the properties object, but
     // now it returns an object with multiple types of CSS information.
     if (!db.properties) {
       db = { properties: db };
     }
 
-    let missingSupports = !db.properties.color.supports;
-    let missingValues = !db.properties.color.values;
-    let missingSubproperties = !db.properties.background.subproperties;
+    const missingSupports = !db.properties.color.supports;
+    const missingValues = !db.properties.color.values;
+    const missingSubproperties = !db.properties.background.subproperties;
+    const missingIsInherited = !db.properties.font.isInherited;
 
-    for (let name in db.properties) {
-      // Skip the current property if we can't find it in CSS_PROPERTIES_DB.
-      if (typeof CSS_PROPERTIES_DB.properties[name] !== "object") {
-        continue;
-      }
+    const missingSomething = missingSupports || missingValues || missingSubproperties ||
+      missingIsInherited;
 
-      // Add "supports" information to the css properties if it's missing.
-      if (missingSupports) {
-        db.properties[name].supports = CSS_PROPERTIES_DB.properties[name].supports;
-      }
-      // Add "values" information to the css properties if it's missing.
-      if (missingValues) {
-        db.properties[name].values = CSS_PROPERTIES_DB.properties[name].values;
-      }
-      // Add "subproperties" information to the css properties if it's missing.
-      if (missingSubproperties) {
-        db.properties[name].subproperties =
-          CSS_PROPERTIES_DB.properties[name].subproperties;
-      }
-      // Add "isInherited" information to the css properties if it's missing.
-      if (db.properties.font.isInherited) {
-        db.properties[name].isInherited = CSS_PROPERTIES_DB.properties[name].isInherited;
+    if (missingSomething) {
+      for (const name in db.properties) {
+        // Skip the current property if we can't find it in CSS_PROPERTIES_DB.
+        if (typeof CSS_PROPERTIES_DB.properties[name] !== "object") {
+          continue;
+        }
+
+        // Add "supports" information to the css properties if it's missing.
+        if (missingSupports) {
+          db.properties[name].supports = CSS_PROPERTIES_DB.properties[name].supports;
+        }
+        // Add "values" information to the css properties if it's missing.
+        if (missingValues) {
+          db.properties[name].values = CSS_PROPERTIES_DB.properties[name].values;
+        }
+        // Add "subproperties" information to the css properties if it's missing.
+        if (missingSubproperties) {
+          db.properties[name].subproperties =
+            CSS_PROPERTIES_DB.properties[name].subproperties;
+        }
+        // Add "isInherited" information to the css properties if it's missing.
+        if (missingIsInherited) {
+          db.properties[name].isInherited =
+            CSS_PROPERTIES_DB.properties[name].isInherited;
+        }
       }
     }
   }
@@ -334,7 +342,7 @@ function reattachCssColorValues(db) {
   if (db.properties.color.values[0] === "COLOR") {
     const colors = Object.keys(cssColors);
 
-    for (let name in db.properties) {
+    for (const name in db.properties) {
       const property = db.properties[name];
       // "values" can be undefined if {name} was not found in CSS_PROPERTIES_DB.
       if (property.values && property.values[0] === "COLOR") {
@@ -350,5 +358,7 @@ module.exports = {
   CssProperties,
   getCssProperties,
   getClientCssProperties,
-  initCssProperties
+  initCssProperties,
+  isCssVariable,
 };
+registerFront(CssPropertiesFront);

@@ -9,9 +9,9 @@
  * 3. checks presence of index.sql and files in the expected location
  */
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import('resource://gre/modules/Services.jsm');
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import('resource://gre/modules/Services.jsm');
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 
 var httpServer = null;
@@ -55,19 +55,19 @@ function finish_test(customDir)
 
   var indexSqlFile = offlineCacheDir.clone();
   indexSqlFile.append('index.sqlite');
-  do_check_eq(indexSqlFile.exists(), true);
+  Assert.equal(indexSqlFile.exists(), true);
 
   var file1 = offlineCacheDir.clone();
   file1.append("2");
   file1.append("E");
   file1.append("2C99DE6E7289A5-0");
-  do_check_eq(file1.exists(), true);
+  Assert.equal(file1.exists(), true);
 
   var file2 = offlineCacheDir.clone();
   file2.append("8");
   file2.append("6");
   file2.append("0B457F75198B29-0");
-  do_check_eq(file2.exists(), true);
+  Assert.equal(file2.exists(), true);
 
   // This must not throw an exception.  After the update has finished
   // the index file can be freely removed.  This way we check this process
@@ -79,7 +79,7 @@ function finish_test(customDir)
   // may be a solution then.
   try {
     indexSqlFile.remove(false);
-    do_check_true(true);
+    Assert.ok(true);
   }
   catch (ex) {
     do_throw("Could not remove the sqlite.index file, we still keep it open \n" + ex + "\n");
@@ -115,7 +115,7 @@ function run_test()
     .getService(Ci.nsIPrefBranch);
   ps.setBoolPref("browser.cache.offline.enable", true);
   // Set this pref to mimic the default browser behavior.
-  ps.setComplexValue("browser.cache.offline.parent_directory", Ci.nsILocalFile, profileDir);
+  ps.setComplexValue("browser.cache.offline.parent_directory", Ci.nsIFile, profileDir);
 
   var us = Cc["@mozilla.org/offlinecacheupdate-service;1"].
            getService(Ci.nsIOfflineCacheUpdateService);
@@ -136,7 +136,7 @@ function run_test()
   update.addObserver({
     updateStateChanged: function(update, state)
     {
-      do_check_eq(state, expectedStates.shift());
+      Assert.equal(state, expectedStates.shift());
 
       if (state == Ci.nsIOfflineCacheUpdateObserver.STATE_FINISHED)
           finish_test(customDir);
@@ -145,7 +145,7 @@ function run_test()
     applicationCacheAvailable: function(appCache)
     {
     }
-  }, false);
+  });
 
   do_test_pending();
 }

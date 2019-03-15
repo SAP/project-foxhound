@@ -1,6 +1,6 @@
 function frameScript()
 {
-  Components.utils.import("resource://gre/modules/Services.jsm");
+  ChromeUtils.import("resource://gre/modules/Services.jsm");
 
   function eventHandler(e) {
     if (!docShell) {
@@ -10,14 +10,13 @@ function frameScript()
     sendAsyncMessage("Test:Event", [e.type, e.target === content.document, e.eventPhase]);
   }
 
-  let outerID = content.QueryInterface(Components.interfaces.nsIInterfaceRequestor).
-        getInterface(Components.interfaces.nsIDOMWindowUtils).outerWindowID;
+  let outerID = content.windowUtils.outerWindowID;
   function onOuterWindowDestroyed(subject, topic, data) {
     if (docShell) {
       sendAsyncMessage("Test:Fail", "docShell is non-null");
     }
 
-    let id = subject.QueryInterface(Components.interfaces.nsISupportsPRUint64).data;
+    let id = subject.QueryInterface(Ci.nsISupportsPRUint64).data;
     sendAsyncMessage("Test:Event", ["outer-window-destroyed", id == outerID]);
     if (id == outerID) {
       Services.obs.removeObserver(onOuterWindowDestroyed, "outer-window-destroyed");
@@ -36,7 +35,7 @@ function frameScript()
     addEventListener("unload", eventHandler, true);
     addEventListener("pagehide", eventHandler, false);
     addEventListener("pagehide", eventHandler, true);
-    Services.obs.addObserver(onOuterWindowDestroyed, "outer-window-destroyed", false);
+    Services.obs.addObserver(onOuterWindowDestroyed, "outer-window-destroyed");
 
     sendAsyncMessage("Test:Ready");
   }, true);
@@ -66,7 +65,7 @@ const EXPECTED = [
 function test() {
   waitForExplicitFinish();
 
-  var newTab = gBrowser.addTab("about:blank");
+  var newTab = BrowserTestUtils.addTab(gBrowser, "about:blank");
   gBrowser.selectedTab = newTab;
 
   let browser = newTab.linkedBrowser;

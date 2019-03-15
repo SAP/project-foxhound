@@ -8,15 +8,15 @@
 const {FlameGraphUtils} = require("devtools/client/shared/widgets/FlameGraph");
 const {PALLETTE_SIZE} = require("devtools/client/shared/widgets/FlameGraph");
 
-add_task(function* () {
-  yield addTab("about:blank");
-  yield performTest();
+add_task(async function() {
+  await addTab("about:blank");
+  await performTest();
   gBrowser.removeCurrentTab();
 });
 
-function* performTest() {
-  let out = FlameGraphUtils.createFlameGraphDataFromThread(TEST_DATA, {
-    flattenRecursion: true
+function performTest() {
+  const out = FlameGraphUtils.createFlameGraphDataFromThread(TEST_DATA, {
+    flattenRecursion: true,
   });
 
   ok(out, "Some data was outputted properly");
@@ -25,8 +25,8 @@ function* performTest() {
   info("Got flame graph data:\n" + out.toSource() + "\n");
 
   for (let i = 0; i < out.length; i++) {
-    let found = out[i];
-    let expected = EXPECTED_OUTPUT[i];
+    const found = out[i];
+    const expected = EXPECTED_OUTPUT[i];
 
     is(found.blocks.length, expected.blocks.length,
       "The correct number of blocks were found in this bucket.");
@@ -48,25 +48,25 @@ function* performTest() {
 
 var TEST_DATA = synthesizeProfileForTest([{
   frames: [{
-    location: "A"
+    location: "A",
   }, {
-    location: "A"
+    location: "A",
   }, {
-    location: "A"
-  }, {
-    location: "B",
+    location: "A",
   }, {
     location: "B",
   }, {
-    location: "C"
+    location: "B",
+  }, {
+    location: "C",
   }],
   time: 50,
 }]);
 
 var EXPECTED_OUTPUT = [{
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
   blocks: [{
     startTime: 0,
@@ -75,8 +75,8 @@ var EXPECTED_OUTPUT = [{
     y: 0,
     width: 50,
     height: 15,
-    text: "A"
-  }]
+    text: "A",
+  }],
 }, {
   blocks: [{
     startTime: 0,
@@ -85,8 +85,8 @@ var EXPECTED_OUTPUT = [{
     y: 15,
     width: 50,
     height: 15,
-    text: "B"
-  }]
+    text: "B",
+  }],
 }, {
   blocks: [{
     startTime: 0,
@@ -95,36 +95,36 @@ var EXPECTED_OUTPUT = [{
     y: 30,
     width: 50,
     height: 15,
-    text: "C"
-  }]
+    text: "C",
+  }],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }];

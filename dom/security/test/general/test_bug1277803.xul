@@ -16,10 +16,7 @@
 
   <script type="application/javascript"><![CDATA[
     SimpleTest.requestCompleteLog();
-    let Ci = Components.interfaces;
-    let Cc = Components.classes;
-    let Cu = Components.utils;
-    let makeURI = Cu.import("resource://gre/modules/BrowserUtils.jsm", {}).BrowserUtils.makeURI;
+    let makeURI = ChromeUtils.import("resource://gre/modules/BrowserUtils.jsm", {}).BrowserUtils.makeURI;
 
     const BASE_URI = "http://mochi.test:8888/chrome/dom/security/test/general/";
     const FAVICON_URI = BASE_URI + "favicon_bug1277803.ico";
@@ -30,11 +27,6 @@
                           getService(Ci.nsIScriptSecurityManager);
     let expectedPrincipal = securityManager.createCodebasePrincipal(makeURI(LOADING_URI), {});
     let systemPrincipal = Cc["@mozilla.org/systemprincipal;1"].createInstance();
-
-    // We expect 2 favicon loads, one from PlacesUIUtils.loadFavicon and one
-    // from XUL:image loads.
-    let requestXUL = false;
-    let requestPlaces = false;
 
     function runTest() {
       // Register our observer to intercept favicon requests.
@@ -56,32 +48,14 @@
           let triggeringPrincipal = httpChannel.loadInfo.triggeringPrincipal;
           let loadingPrincipal = httpChannel.loadInfo.loadingPrincipal;
 
-          if (loadingPrincipal.equals(systemPrincipal)) {
-            // This is the favicon loading from XUL, which will have the system
-            // principal as its loading principal and have a content principal
-            // as its triggering principal.
-            ok(triggeringPrincipal.equals(expectedPrincipal),
-              "Correct triggeringPrincipal for favicon from XUL.");
-            requestXUL = true;
-          } else if (loadingPrincipal.equals(expectedPrincipal)) {
-            // This is the favicon loading from Places, which will have a
-            // content principal as its loading principal and triggering
-            // principal.
-            ok(triggeringPrincipal.equals(expectedPrincipal),
-              "Correct triggeringPrincipal for favicon from Places.");
-            requestPlaces = true;
-          } else {
-            ok(false, "An unexpected favicon request.")
-          }
+          ok(loadingPrincipal.equals(expectedPrincipal), "Should be loading with the expected principal.");
+          ok(triggeringPrincipal.equals(expectedPrincipal), "Should be triggered with the expected principal.");
 
-          // Cleanup after ourselves...
-          if (requestXUL && requestPlaces) {
-            os.removeObserver(this, "http-on-modify-request");
-            SimpleTest.finish();
-          }
+          os.removeObserver(this, "http-on-modify-request");
+          SimpleTest.finish();
         }
       }
-      os.addObserver(observer, "http-on-modify-request", false);
+      os.addObserver(observer, "http-on-modify-request");
 
       // Now that the observer is set up, trigger a favicon load with navigation
       testWindow = window.open(LOADING_URI);
@@ -95,5 +69,5 @@
     });
   ]]></script>
 
-  <browser type="content-primary" flex="1" id="content" src="about:blank"/>
+  <browser type="content" primary="true" flex="1" id="content" src="about:blank"/>
 </window>

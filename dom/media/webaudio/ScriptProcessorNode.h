@@ -15,26 +15,27 @@ namespace dom {
 class AudioContext;
 class SharedBuffers;
 
-class ScriptProcessorNode final : public AudioNode
-{
-public:
-  ScriptProcessorNode(AudioContext* aContext,
-                      uint32_t aBufferSize,
+class ScriptProcessorNode final : public AudioNode {
+ public:
+  ScriptProcessorNode(AudioContext* aContext, uint32_t aBufferSize,
                       uint32_t aNumberOfInputChannels,
                       uint32_t aNumberOfOutputChannels);
 
-  NS_DECL_ISUPPORTS_INHERITED
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(ScriptProcessorNode, AudioNode)
 
   IMPL_EVENT_HANDLER(audioprocess)
 
-  void EventListenerAdded(nsIAtom* aType) override;
-  void EventListenerRemoved(nsIAtom* aType) override;
+  using EventTarget::EventListenerAdded;
+  void EventListenerAdded(nsAtom* aType) override;
 
-  JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  using EventTarget::EventListenerRemoved;
+  void EventListenerRemoved(nsAtom* aType) override;
 
-  AudioNode* Connect(AudioNode& aDestination, uint32_t aOutput,
-                     uint32_t aInput, ErrorResult& aRv) override
-  {
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
+
+  AudioNode* Connect(AudioNode& aDestination, uint32_t aOutput, uint32_t aInput,
+                     ErrorResult& aRv) override {
     AudioNode* node = AudioNode::Connect(aDestination, aOutput, aInput, aRv);
     if (!aRv.Failed()) {
       UpdateConnectedStatus();
@@ -43,94 +44,73 @@ public:
   }
 
   void Connect(AudioParam& aDestination, uint32_t aOutput,
-               ErrorResult& aRv) override
-  {
+               ErrorResult& aRv) override {
     AudioNode::Connect(aDestination, aOutput, aRv);
     if (!aRv.Failed()) {
       UpdateConnectedStatus();
     }
   }
-  void Disconnect(ErrorResult& aRv) override
-  {
+  void Disconnect(ErrorResult& aRv) override {
     AudioNode::Disconnect(aRv);
     UpdateConnectedStatus();
   }
-  void Disconnect(uint32_t aOutput, ErrorResult& aRv) override
-  {
+  void Disconnect(uint32_t aOutput, ErrorResult& aRv) override {
     AudioNode::Disconnect(aOutput, aRv);
     UpdateConnectedStatus();
   }
-  void NotifyInputsChanged() override
-  {
-    UpdateConnectedStatus();
-  }
-  void NotifyHasPhantomInput() override
-  {
+  void NotifyInputsChanged() override { UpdateConnectedStatus(); }
+  void NotifyHasPhantomInput() override {
     mHasPhantomInput = true;
     // No need to UpdateConnectedStatus() because there was previously an
     // input in InputNodes().
   }
-  void Disconnect(AudioNode& aDestination, ErrorResult& aRv) override
-  {
+  void Disconnect(AudioNode& aDestination, ErrorResult& aRv) override {
     AudioNode::Disconnect(aDestination, aRv);
     UpdateConnectedStatus();
   }
-  void Disconnect(AudioNode& aDestination, uint32_t aOutput, ErrorResult& aRv) override
-  {
+  void Disconnect(AudioNode& aDestination, uint32_t aOutput,
+                  ErrorResult& aRv) override {
     AudioNode::Disconnect(aDestination, aOutput, aRv);
     UpdateConnectedStatus();
   }
-  void Disconnect(AudioNode& aDestination, uint32_t aOutput, uint32_t aInput, ErrorResult& aRv) override
-  {
+  void Disconnect(AudioNode& aDestination, uint32_t aOutput, uint32_t aInput,
+                  ErrorResult& aRv) override {
     AudioNode::Disconnect(aDestination, aOutput, aInput, aRv);
     UpdateConnectedStatus();
   }
-  void Disconnect(AudioParam& aDestination, ErrorResult& aRv) override
-  {
+  void Disconnect(AudioParam& aDestination, ErrorResult& aRv) override {
     AudioNode::Disconnect(aDestination, aRv);
     UpdateConnectedStatus();
   }
-  void Disconnect(AudioParam& aDestination, uint32_t aOutput, ErrorResult& aRv) override
-  {
+  void Disconnect(AudioParam& aDestination, uint32_t aOutput,
+                  ErrorResult& aRv) override {
     AudioNode::Disconnect(aDestination, aOutput, aRv);
     UpdateConnectedStatus();
   }
-  void SetChannelCount(uint32_t aChannelCount, ErrorResult& aRv) override
-  {
+  void SetChannelCount(uint32_t aChannelCount, ErrorResult& aRv) override {
     if (aChannelCount != ChannelCount()) {
       aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
     }
-    return;
   }
-  void SetChannelCountModeValue(ChannelCountMode aMode, ErrorResult& aRv) override
-  {
+  void SetChannelCountModeValue(ChannelCountMode aMode,
+                                ErrorResult& aRv) override {
     if (aMode != ChannelCountMode::Explicit) {
       aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
     }
-    return;
   }
 
-  uint32_t BufferSize() const
-  {
-    return mBufferSize;
-  }
+  uint32_t BufferSize() const { return mBufferSize; }
 
-  uint32_t NumberOfOutputChannels() const
-  {
-    return mNumberOfOutputChannels;
-  }
+  uint32_t NumberOfOutputChannels() const { return mNumberOfOutputChannels; }
 
   using DOMEventTargetHelper::DispatchTrustedEvent;
 
-  const char* NodeType() const override
-  {
-    return "ScriptProcessorNode";
-  }
+  const char* NodeType() const override { return "ScriptProcessorNode"; }
 
   size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const override;
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const override;
 
-private:
+ private:
   virtual ~ScriptProcessorNode();
 
   void UpdateConnectedStatus();
@@ -140,8 +120,7 @@ private:
   bool mHasPhantomInput = false;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif
-

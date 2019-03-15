@@ -12,36 +12,33 @@
 #include "nsIObserver.h"
 #include "nsIRequestContext.h"
 
-class nsIUUIDGenerator;
-
 namespace mozilla {
 namespace net {
 
-class RequestContextService final
-  : public nsIRequestContextService
-  , public nsIObserver
-{
-public:
+class RequestContextService final : public nsIRequestContextService,
+                                    public nsIObserver {
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIREQUESTCONTEXTSERVICE
   NS_DECL_NSIOBSERVER
 
+  static already_AddRefed<nsIRequestContextService> GetOrCreate();
+
+ private:
   RequestContextService();
+  virtual ~RequestContextService();
 
   nsresult Init();
   void Shutdown();
-  static nsresult Create(nsISupports *outer, const nsIID& iid, void **result);
-
-private:
-  virtual ~RequestContextService();
 
   static RequestContextService *sSelf;
 
-  nsInterfaceHashtable<nsIDHashKey, nsIRequestContext> mTable;
-  nsCOMPtr<nsIUUIDGenerator> mUUIDGen;
+  nsInterfaceHashtable<nsUint64HashKey, nsIRequestContext> mTable;
+  uint32_t mRCIDNamespace;
+  uint32_t mNextRCID;
 };
 
-} // ::mozilla::net
-} // ::mozilla
+}  // namespace net
+}  // namespace mozilla
 
-#endif // mozilla__net__RequestContextService_h
+#endif  // mozilla__net__RequestContextService_h

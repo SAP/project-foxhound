@@ -15,8 +15,7 @@
 
   <script type="application/javascript">
 
-    function doTest()
-    {
+    function doTest() {
       // aria-label
 
       // Simple label provided via ARIA
@@ -25,9 +24,9 @@
       // aria-label and aria-labelledby, expect aria-labelledby
       testName("btn_both_aria_labels", "text I am a button, two");
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // aria-labelledby
-      
+    
       // Single relation. The value of 'aria-labelledby' contains the ID of
       // an element. Gets the name from text node of that element.
       testName("btn_labelledby_text", "text");
@@ -36,14 +35,14 @@
       // of elements. Gets the name from text nodes of those elements.
       testName("btn_labelledby_texts", "text1 text2");
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // Name from named accessible
 
       testName("input_labelledby_namedacc", "Data");
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // Name from subtree (single relation labelled_by).
-      
+    
       // Gets the name from text nodes contained by nested elements
       testName("btn_labelledby_mixed", "nomore text");
 
@@ -51,7 +50,7 @@
       // hidden elements (bug 443081).
       testName("btn_labelledby_mixed_hidden_child", "nomore text2");
 
-      // Gets the name from hidden text nodes contained by nested elements, 
+      // Gets the name from hidden text nodes contained by nested elements,
       // (label element is hidden entirely), (bug 443081).
       testName("btn_labelledby_mixed_hidden", "lala more hidden text");
 
@@ -97,7 +96,7 @@
       // Gets the name from @title, ignore whitespace content
       testName("from_label_ignore_ws_subtree", "about");
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // label element
 
       // The label element contains the button. The name is calculated from
@@ -125,7 +124,7 @@
       testName("ctrl_in_label_2", "button");
 
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // name from children
 
       // ARIA role button is presented allowing the name calculation from
@@ -149,26 +148,29 @@
 
       testName("testArticle", "Test article");
 
-      //////////////////////////////////////////////////////////////////////////
+      testName("h1", "heading");
+      testName("aria_heading", "aria_heading");
+
+      // ////////////////////////////////////////////////////////////////////////
       // title attribute
 
       // If nothing is left. Let's try title attribute.
       testName("btn_title", "title");
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // textarea name
 
       // textarea's name should have the value, which initially is specified by
       // a text child.
       testName("textareawithchild", "Story Foo is ended.");
 
-      // new textarea name should reflect the value change. 
+      // new textarea name should reflect the value change.
       var elem = document.getElementById("textareawithchild");
       elem.value = "Bar";
 
       testName("textareawithchild", "Story Bar is ended.");
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // controls having a value used as a part of computed name
 
       testName("ctrlvalue_progressbar:input", "foo 5 baz");
@@ -178,7 +180,7 @@
       testName("ctrlvalue_combobox:input", "foo 5 baz");
 
 
-      /////////////////////////////////////////////////////////////////////////
+      // ///////////////////////////////////////////////////////////////////////
       // label with nested combobox (test for 'f' item of name computation guide)
 
       testName("comboinstart", "One day(s).");
@@ -211,11 +213,11 @@
       testName("ph_text3", "a label");
 
       // Test equation image
-      testName("img_eq", "x^2 + y^2 + z^2")
-      testName("input_img_eq", "x^2 + y^2 + z^2")
-      testName("txt_eq", "x^2 + y^2 + z^2")
+      testName("img_eq", "x^2 + y^2 + z^2");
+      testName("input_img_eq", "x^2 + y^2 + z^2");
+      testName("txt_eq", "x^2 + y^2 + z^2");
 
-      ////////////////////////////////////////////////////////////////////////
+      // //////////////////////////////////////////////////////////////////////
       // tests for duplicate announcement of content
 
       testName("test_note", null);
@@ -424,7 +426,7 @@
   </label>
 
   <!-- no name from subtree because it holds whitespaces only -->
-  <a id="from_label_ignore_ws_subtree" href="about:" title="about">&nbsp;&nbsp;  </a>
+  <a id="from_label_ignore_ws_subtree" href="about:mozilla" title="about">&nbsp;&nbsp;  </a>
 
   <!-- label element, label contains control -->
   <label>text<button id="btn_label_inside">10</button>text</label>
@@ -488,6 +490,9 @@
   <div id="testArticle" role="article" title="Test article">
     <p>This is a paragraph inside the article.</p>
   </div>
+
+  <h1 id="h1" title="oops">heading</h1>
+  <div role="heading" id="aria_heading">aria_heading</div>
 
   <!-- name from title attribute -->
   <span id="btn_title" role="group" title="title">15</span>

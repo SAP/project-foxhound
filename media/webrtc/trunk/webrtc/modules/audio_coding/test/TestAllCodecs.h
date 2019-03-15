@@ -8,18 +8,17 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_TEST_TESTALLCODECS_H_
-#define WEBRTC_MODULES_AUDIO_CODING_TEST_TESTALLCODECS_H_
+#ifndef MODULES_AUDIO_CODING_TEST_TESTALLCODECS_H_
+#define MODULES_AUDIO_CODING_TEST_TESTALLCODECS_H_
 
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/modules/audio_coding/test/ACMTest.h"
-#include "webrtc/modules/audio_coding/test/Channel.h"
-#include "webrtc/modules/audio_coding/test/PCMFile.h"
-#include "webrtc/typedefs.h"
+#include <memory>
+
+#include "modules/audio_coding/test/ACMTest.h"
+#include "modules/audio_coding/test/Channel.h"
+#include "modules/audio_coding/test/PCMFile.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
-
-class Config;
 
 class TestPack : public AudioPacketizationCallback {
  public:
@@ -69,8 +68,8 @@ class TestAllCodecs : public ACMTest {
   void DisplaySendReceiveCodec();
 
   int test_mode_;
-  rtc::scoped_ptr<AudioCodingModule> acm_a_;
-  rtc::scoped_ptr<AudioCodingModule> acm_b_;
+  std::unique_ptr<AudioCodingModule> acm_a_;
+  std::unique_ptr<AudioCodingModule> acm_b_;
   TestPack* channel_a_to_b_;
   PCMFile infile_a_;
   PCMFile outfile_b_;
@@ -81,4 +80,4 @@ class TestAllCodecs : public ACMTest {
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_AUDIO_CODING_TEST_TESTALLCODECS_H_
+#endif  // MODULES_AUDIO_CODING_TEST_TESTALLCODECS_H_

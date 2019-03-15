@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,15 +13,13 @@
 class nsScrollbarFrame;
 class nsIFrame;
 
-class nsIScrollbarMediator : public nsQueryFrame
-{
-public:
+class nsIScrollbarMediator : public nsQueryFrame {
+ public:
   NS_DECL_QUERYFRAME_TARGET(nsIScrollbarMediator)
 
   /**
-   * The aScrollbar argument denotes the scrollbar that's firing the notification.
-   * aScrollbar is never null.
-   * aDirection is either -1, 0, or 1.
+   * The aScrollbar argument denotes the scrollbar that's firing the
+   * notification. aScrollbar is never null. aDirection is either -1, 0, or 1.
    */
 
   /**
@@ -39,25 +38,24 @@ public:
   virtual void ScrollByPage(nsScrollbarFrame* aScrollbar, int32_t aDirection,
                             ScrollSnapMode aSnap = DISABLE_SNAP) = 0;
   virtual void ScrollByWhole(nsScrollbarFrame* aScrollbar, int32_t aDirection,
-                            ScrollSnapMode aSnap = DISABLE_SNAP) = 0;
+                             ScrollSnapMode aSnap = DISABLE_SNAP) = 0;
   virtual void ScrollByLine(nsScrollbarFrame* aScrollbar, int32_t aDirection,
                             ScrollSnapMode aSnap = DISABLE_SNAP) = 0;
   /**
-   * RepeatButtonScroll is called when the scrollbar's button is held down. When the
-   * button is first clicked the increment is set; RepeatButtonScroll adds this
-   * increment to the current position.
+   * RepeatButtonScroll is called when the scrollbar's button is held down. When
+   * the button is first clicked the increment is set; RepeatButtonScroll adds
+   * this increment to the current position.
    * @note This method might destroy the frame, pres shell, and other objects.
    */
   virtual void RepeatButtonScroll(nsScrollbarFrame* aScrollbar) = 0;
   /**
    * aOldPos and aNewPos are scroll positions.
-   * The scroll positions start with zero at the left edge; implementors that want
-   * zero at the right edge for RTL content will need to adjust accordingly.
-   * (See ScrollFrameHelper::ThumbMoved in nsGfxScrollFrame.cpp.)
+   * The scroll positions start with zero at the left edge; implementors that
+   * want zero at the right edge for RTL content will need to adjust
+   * accordingly. (See ScrollFrameHelper::ThumbMoved in nsGfxScrollFrame.cpp.)
    * @note This method might destroy the frame, pres shell, and other objects.
    */
-  virtual void ThumbMoved(nsScrollbarFrame* aScrollbar,
-                          nscoord aOldPos,
+  virtual void ThumbMoved(nsScrollbarFrame* aScrollbar, nscoord aOldPos,
                           nscoord aNewPos) = 0;
   /**
    * Called when the scroll bar thumb, slider, or any other component is
@@ -88,4 +86,3 @@ public:
 };
 
 #endif
-

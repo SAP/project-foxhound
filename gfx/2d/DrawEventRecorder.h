@@ -1,5 +1,6 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -8,31 +9,63 @@
 
 #include "2D.h"
 #include "RecordedEvent.h"
-#include <ostream>
-#include <fstream>
+#include "RecordingTypes.h"
+#include "mozilla/FStream.h"
 
-#if defined(_MSC_VER)
 #include <unordered_set>
-#else
-#include <set>
-#endif
+#include <unordered_map>
+#include <functional>
+
+#include "nsHashKeys.h"
+#include "nsTHashtable.h"
 
 namespace mozilla {
 namespace gfx {
 
 class PathRecording;
 
-class DrawEventRecorderPrivate : public DrawEventRecorder
-{
-public:
-  MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(DrawEventRecorderPrivate)
-  explicit DrawEventRecorderPrivate(std::ostream *aStream);
-  virtual ~DrawEventRecorderPrivate() { }
+class DrawEventRecorderPrivate : public DrawEventRecorder {
+ public:
+  MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(DrawEventRecorderPrivate, override)
 
-  void WriteHeader();
+  DrawEventRecorderPrivate();
+  virtual ~DrawEventRecorderPrivate() {}
+  virtual bool Finish() override {
+    ClearResources();
+    return true;
+  }
+  virtual void FlushItem(IntRect) {}
+  void DetachResources() {
+    // The iteration is a bit awkward here because our iterator will
+    // be invalidated by the removal
+    for (auto font = mStoredFonts.begin(); font != mStoredFonts.end();) {
+      auto oldFont = font++;
+      (*oldFont)->RemoveUserData(reinterpret_cast<UserDataKey*>(this));
+    }
+    for (auto surface = mStoredSurfaces.begin();
+         surface != mStoredSurfaces.end();) {
+      auto oldSurface = surface++;
+      (*oldSurface)->RemoveUserData(reinterpret_cast<UserDataKey*>(this));
+    }
+    mStoredFonts.clear();
+    mStoredSurfaces.clear();
+  }
 
-  void RecordEvent(const RecordedEvent &aEvent);
-  void WritePath(const PathRecording *aPath);
+  void ClearResources() {
+    mStoredObjects.clear();
+    mStoredFontData.clear();
+    mScaledFonts.clear();
+  }
+
+  template <class S>
+  void WriteHeader(S& aStream) {
+    WriteElement(aStream, kMagicInt);
+    WriteElement(aStream, kMajorRevision);
+    WriteElement(aStream, kMinorRevision);
+  }
+
+  virtual void RecordEvent(const RecordedEvent& aEvent) = 0;
+  void WritePath(const PathRecording* aPath);
 
   void AddStoredObject(const ReferencePtr aObject) {
     mStoredObjects.insert(aObject);
@@ -40,6 +73,22 @@ public:
 
   void RemoveStoredObject(const ReferencePtr aObject) {
     mStoredObjects.erase(aObject);
+  }
+
+  void AddScaledFont(ScaledFont* aFont) {
+    if (mStoredFonts.insert(aFont).second && WantsExternalFonts()) {
+      mScaledFonts.push_back(aFont);
+    }
+  }
+
+  void RemoveScaledFont(ScaledFont* aFont) { mStoredFonts.erase(aFont); }
+
+  void AddSourceSurface(SourceSurface* aSurface) {
+    mStoredSurfaces.insert(aSurface);
+  }
+
+  void RemoveSourceSurface(SourceSurface* aSurface) {
+    mStoredSurfaces.erase(aSurface);
   }
 
   bool HasStoredObject(const ReferencePtr aObject) {
@@ -54,29 +103,42 @@ public:
     return mStoredFontData.find(aFontDataKey) != mStoredFontData.end();
   }
 
-protected:
-  std::ostream *mOutputStream;
+  bool WantsExternalFonts() const { return mExternalFonts; }
+
+  void TakeExternalSurfaces(std::vector<RefPtr<SourceSurface>>& aSurfaces) {
+    aSurfaces = std::move(mExternalSurfaces);
+  }
+
+  virtual void StoreSourceSurfaceRecording(SourceSurface* aSurface,
+                                           const char* aReason);
+
+  virtual void AddDependentSurface(uint64_t aDependencyId) {
+    MOZ_CRASH("GFX: AddDependentSurface");
+  }
+
+ protected:
+  void StoreExternalSurfaceRecording(SourceSurface* aSurface, uint64_t aKey);
 
   virtual void Flush() = 0;
 
-#if defined(_MSC_VER)
-  typedef std::unordered_set<const void*> ObjectSet;
-  typedef std::unordered_set<uint64_t> Uint64Set;
-#else
-  typedef std::set<const void*> ObjectSet;
-  typedef std::set<uint64_t> Uint64Set;
-#endif
-
-  ObjectSet mStoredObjects;
-  Uint64Set mStoredFontData;
+  std::unordered_set<const void*> mStoredObjects;
+  std::unordered_set<uint64_t> mStoredFontData;
+  std::unordered_set<ScaledFont*> mStoredFonts;
+  std::vector<RefPtr<ScaledFont>> mScaledFonts;
+  std::unordered_set<SourceSurface*> mStoredSurfaces;
+  std::vector<RefPtr<SourceSurface>> mExternalSurfaces;
+  bool mExternalFonts;
 };
 
-class DrawEventRecorderFile : public DrawEventRecorderPrivate
-{
-public:
-  MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(DrawEventRecorderFile)
-  explicit DrawEventRecorderFile(const char *aFilename);
+class DrawEventRecorderFile : public DrawEventRecorderPrivate {
+  using char_type = filesystem::Path::value_type;
+
+ public:
+  MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(DrawEventRecorderFile, override)
+  explicit DrawEventRecorderFile(const char_type* aFilename);
   ~DrawEventRecorderFile();
+
+  void RecordEvent(const RecordedEvent& aEvent) override;
 
   /**
    * Returns whether a recording file is currently open.
@@ -88,7 +150,7 @@ public:
    * objects it has recorded. This can be used with Close, so that a recording
    * can be processed in chunks. The file must not already be open.
    */
-  void OpenNew(const char *aFilename);
+  void OpenNew(const char_type* aFilename);
 
   /**
    * Closes the file so that it can be processed. The recorder does NOT forget
@@ -97,21 +159,33 @@ public:
    */
   void Close();
 
-private:
-  virtual void Flush();
+ private:
+  void Flush() override;
 
-  std::ofstream mOutputFile;
+  mozilla::OFStream mOutputStream;
 };
 
-class DrawEventRecorderMemory final : public DrawEventRecorderPrivate
-{
-public:
-  MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(DrawEventRecorderMemory)
+typedef std::function<void(MemStream& aStream,
+                           std::vector<RefPtr<ScaledFont>>& aScaledFonts)>
+    SerializeResourcesFn;
+
+// WARNING: This should not be used in its existing state because
+// it is likely to OOM because of large continguous allocations.
+class DrawEventRecorderMemory : public DrawEventRecorderPrivate {
+ public:
+  MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(DrawEventRecorderMemory, override)
 
   /**
    * Constructs a DrawEventRecorder that stores the recording in memory.
    */
   DrawEventRecorderMemory();
+  explicit DrawEventRecorderMemory(const SerializeResourcesFn& aSerialize);
+
+  void RecordEvent(const RecordedEvent& aEvent) override;
+
+  void AddDependentSurface(uint64_t aDependencyId) override;
+
+  nsTHashtable<nsUint64HashKey>&& TakeDependentSurfaces();
 
   /**
    * @return the current size of the recording (in chars).
@@ -119,38 +193,34 @@ public:
   size_t RecordingSize();
 
   /**
-   * Copies at most aBufferLen chars of the recording into aBuffer.
-   *
-   * @param aBuffer buffer to receive the recording chars
-   * @param aBufferLen length of aBuffer
-   * @return true if copied successfully
-   */
-  bool CopyRecording(char* aBuffer, size_t aBufferLen);
-
-  /**
    * Wipes the internal recording buffer, but the recorder does NOT forget which
    * objects it has recorded. This can be used so that a recording can be copied
    * and processed in chunks, releasing memory as it goes.
    */
   void WipeRecording();
+  bool Finish() override;
+  void FlushItem(IntRect) override;
 
-  /**
-   * Gets a readable reference of the underlying stream, reset to the beginning.
+  MemStream mOutputStream;
+  /* The index stream is of the form:
+   * ItemIndex { size_t dataEnd; size_t extraDataEnd; }
+   * It gets concatenated to the end of mOutputStream in Finish()
+   * The last size_t in the stream is offset of the begining of the
+   * index.
    */
-  std::istream& GetInputStream() {
-    mMemoryStream.seekg(0);
-    return mMemoryStream;
-  }
+  MemStream mIndex;
 
-private:
-  ~DrawEventRecorderMemory() {};
+ protected:
+  ~DrawEventRecorderMemory(){};
 
-  void Flush() final;
+ private:
+  SerializeResourcesFn mSerializeCallback;
+  nsTHashtable<nsUint64HashKey> mDependentSurfaces;
 
-  std::stringstream mMemoryStream;
+  void Flush() override;
 };
 
-} // namespace gfx
-} // namespace mozilla
+}  // namespace gfx
+}  // namespace mozilla
 
 #endif /* MOZILLA_GFX_DRAWEVENTRECORDER_H_ */

@@ -17,11 +17,12 @@ function test() {
 }
 
 function tidyUp() {
-  BrowserTestUtils.removeTab(ourTab).then(finish);
+  BrowserTestUtils.removeTab(ourTab);
+  finish();
 }
 
 function testClosePrintPreviewWithAccessKey() {
-  EventUtils.synthesizeKey("c", { altKey: true });
+  EventUtils.synthesizeKey("c", {altKey: true});
   checkPrintPreviewClosed(function(aSucceeded) {
     ok(aSucceeded,
        "print preview mode should be finished by access key");
@@ -30,7 +31,7 @@ function testClosePrintPreviewWithAccessKey() {
 }
 
 function testClosePrintPreviewWithEscKey() {
-  EventUtils.synthesizeKey("VK_ESCAPE", {});
+  EventUtils.synthesizeKey("KEY_Escape");
   checkPrintPreviewClosed(function(aSucceeded) {
     ok(aSucceeded,
        "print preview mode should be finished by Esc key press");
@@ -39,7 +40,7 @@ function testClosePrintPreviewWithEscKey() {
 }
 
 function testClosePrintPreviewWithClosingWindowShortcutKey() {
-  EventUtils.synthesizeKey("w", { accelKey: true });
+  EventUtils.synthesizeKey("w", {accelKey: true});
   checkPrintPreviewClosed(function(aSucceeded) {
     ok(aSucceeded,
        "print preview mode should be finished by closing window shortcut key");
@@ -49,18 +50,18 @@ function testClosePrintPreviewWithClosingWindowShortcutKey() {
 
 function openPrintPreview(aCallback) {
   document.getElementById("cmd_printPreview").doCommand();
-  executeSoon(function() {
+  executeSoon(function waitForPrintPreview() {
     if (gInPrintPreviewMode) {
       executeSoon(aCallback);
       return;
     }
-    executeSoon(arguments.callee);
+    executeSoon(waitForPrintPreview);
   });
 }
 
 function checkPrintPreviewClosed(aCallback) {
   let count = 0;
-  executeSoon(function() {
+  executeSoon(function waitForPrintPreviewClosed() {
     if (!gInPrintPreviewMode) {
       executeSoon(function() { aCallback(count < 1000); });
       return;
@@ -69,6 +70,6 @@ function checkPrintPreviewClosed(aCallback) {
       // The test might fail.
       PrintUtils.exitPrintPreview();
     }
-    executeSoon(arguments.callee);
+    executeSoon(waitForPrintPreviewClosed);
   });
 }

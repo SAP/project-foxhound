@@ -6,29 +6,26 @@
 #include "Utils.h"
 
 CustomTypeAnnotation StackClass =
-    CustomTypeAnnotation("moz_stack_class", "stack");
+    CustomTypeAnnotation(moz_stack_class, "stack");
 CustomTypeAnnotation GlobalClass =
-    CustomTypeAnnotation("moz_global_class", "global");
+    CustomTypeAnnotation(moz_global_class, "global");
 CustomTypeAnnotation NonHeapClass =
-    CustomTypeAnnotation("moz_nonheap_class", "non-heap");
-CustomTypeAnnotation HeapClass =
-    CustomTypeAnnotation("moz_heap_class", "heap");
+    CustomTypeAnnotation(moz_nonheap_class, "non-heap");
+CustomTypeAnnotation HeapClass = CustomTypeAnnotation(moz_heap_class, "heap");
 CustomTypeAnnotation NonTemporaryClass =
-    CustomTypeAnnotation("moz_non_temporary_class", "non-temporary");
-CustomTypeAnnotation NonParam =
-    CustomTypeAnnotation("moz_non_param", "non-param");
+    CustomTypeAnnotation(moz_non_temporary_class, "non-temporary");
+CustomTypeAnnotation TemporaryClass =
+    CustomTypeAnnotation(moz_temporary_class, "temporary");
 
-void CustomTypeAnnotation::dumpAnnotationReason(BaseCheck &Check,
-                                                QualType T,
+void CustomTypeAnnotation::dumpAnnotationReason(BaseCheck &Check, QualType T,
                                                 SourceLocation Loc) {
-  const char* Inherits =
+  const char *Inherits =
       "%1 is a %0 type because it inherits from a %0 type %2";
-  const char* Member =
-      "%1 is a %0 type because member %2 is a %0 type %3";
-  const char* Array =
-      "%1 is a %0 type because it is an array of %0 type %2";
-  const char* Templ =
+  const char *Member = "%1 is a %0 type because member %2 is a %0 type %3";
+  const char *Array = "%1 is a %0 type because it is an array of %0 type %2";
+  const char *Templ =
       "%1 is a %0 type because it has a template argument %0 type %2";
+  const char *Implicit = "%1 is a %0 type because %2";
 
   AnnotationReason Reason = directAnnotationReason(T);
   for (;;) {
@@ -41,7 +38,7 @@ void CustomTypeAnnotation::dumpAnnotationReason(BaseCheck &Check,
       assert(Declaration && "This type should be a C++ class");
 
       Check.diag(Declaration->getLocation(), Inherits, DiagnosticIDs::Note)
-        << Pretty << T << Reason.Type;
+          << Pretty << T << Reason.Type;
       break;
     }
     case RK_Field:
@@ -53,8 +50,16 @@ void CustomTypeAnnotation::dumpAnnotationReason(BaseCheck &Check,
       assert(Declaration && "This type should be a C++ class");
 
       Check.diag(Declaration->getLocation(), Templ, DiagnosticIDs::Note)
-        << Pretty << T << Reason.Type;
+          << Pretty << T << Reason.Type;
       break;
+    }
+    case RK_Implicit: {
+      const TagDecl *Declaration = T->getAsTagDecl();
+      assert(Declaration && "This type should be a TagDecl");
+
+      Check.diag(Declaration->getLocation(), Implicit, DiagnosticIDs::Note)
+          << Pretty << T << Reason.ImplicitReason;
+      return;
     }
     default:
       // FIXME (bug 1203263): note the original annotation.
@@ -66,22 +71,19 @@ void CustomTypeAnnotation::dumpAnnotationReason(BaseCheck &Check,
   }
 }
 
-bool CustomTypeAnnotation::hasLiteralAnnotation(QualType T) const {
-#if CLANG_VERSION_FULL >= 306
-  if (const TagDecl *D = T->getAsTagDecl()) {
-#else
-  if (const CXXRecordDecl *D = T->getAsCXXRecordDecl()) {
-#endif
-    return hasFakeAnnotation(D) || hasCustomAnnotation(D, Spelling);
-  }
-  return false;
-}
-
 CustomTypeAnnotation::AnnotationReason
 CustomTypeAnnotation::directAnnotationReason(QualType T) {
-  if (hasLiteralAnnotation(T)) {
-    AnnotationReason Reason = {T, RK_Direct, nullptr};
-    return Reason;
+  if (const TagDecl *D = T->getAsTagDecl()) {
+    if (hasCustomAttribute(D, Attribute)) {
+      AnnotationReason Reason = {T, RK_Direct, nullptr, ""};
+      return Reason;
+    }
+
+    std::string ImplAnnotReason = getImplicitReason(D);
+    if (!ImplAnnotReason.empty()) {
+      AnnotationReason Reason = {T, RK_Implicit, nullptr, ImplAnnotReason};
+      return Reason;
+    }
   }
 
   // Check if we have a cached answer
@@ -95,7 +97,7 @@ CustomTypeAnnotation::directAnnotationReason(QualType T) {
   if (const clang::ArrayType *Array = T->getAsArrayTypeUnsafe()) {
     if (hasEffectiveAnnotation(Array->getElementType())) {
       AnnotationReason Reason = {Array->getElementType(), RK_ArrayElement,
-                                 nullptr};
+                                 nullptr, ""};
       Cache[Key] = Reason;
       return Reason;
     }
@@ -108,7 +110,7 @@ CustomTypeAnnotation::directAnnotationReason(QualType T) {
 
       for (const CXXBaseSpecifier &Base : Declaration->bases()) {
         if (hasEffectiveAnnotation(Base.getType())) {
-          AnnotationReason Reason = {Base.getType(), RK_BaseClass, nullptr};
+          AnnotationReason Reason = {Base.getType(), RK_BaseClass, nullptr, ""};
           Cache[Key] = Reason;
           return Reason;
         }
@@ -117,7 +119,7 @@ CustomTypeAnnotation::directAnnotationReason(QualType T) {
       // Recurse into members
       for (const FieldDecl *Field : Declaration->fields()) {
         if (hasEffectiveAnnotation(Field->getType())) {
-          AnnotationReason Reason = {Field->getType(), RK_Field, Field};
+          AnnotationReason Reason = {Field->getType(), RK_Field, Field, ""};
           Cache[Key] = Reason;
           return Reason;
         }
@@ -125,8 +127,8 @@ CustomTypeAnnotation::directAnnotationReason(QualType T) {
 
       // Recurse into template arguments if the annotation
       // MOZ_INHERIT_TYPE_ANNOTATIONS_FROM_TEMPLATE_ARGS is present
-      if (hasCustomAnnotation(
-              Declaration, "moz_inherit_type_annotations_from_template_args")) {
+      if (hasCustomAttribute<moz_inherit_type_annotations_from_template_args>(
+              Declaration)) {
         const ClassTemplateSpecializationDecl *Spec =
             dyn_cast<ClassTemplateSpecializationDecl>(Declaration);
         if (Spec) {
@@ -142,7 +144,7 @@ CustomTypeAnnotation::directAnnotationReason(QualType T) {
     }
   }
 
-  AnnotationReason Reason = {QualType(), RK_None, nullptr};
+  AnnotationReason Reason = {QualType(), RK_None, nullptr, ""};
   Cache[Key] = Reason;
   return Reason;
 }
@@ -153,7 +155,7 @@ CustomTypeAnnotation::tmplArgAnnotationReason(ArrayRef<TemplateArgument> Args) {
     if (Arg.getKind() == TemplateArgument::Type) {
       QualType Type = Arg.getAsType();
       if (hasEffectiveAnnotation(Type)) {
-        AnnotationReason Reason = {Type, RK_TemplateInherited, nullptr};
+        AnnotationReason Reason = {Type, RK_TemplateInherited, nullptr, ""};
         return Reason;
       }
     } else if (Arg.getKind() == TemplateArgument::Pack) {
@@ -164,6 +166,6 @@ CustomTypeAnnotation::tmplArgAnnotationReason(ArrayRef<TemplateArgument> Args) {
     }
   }
 
-  AnnotationReason Reason = {QualType(), RK_None, nullptr};
+  AnnotationReason Reason = {QualType(), RK_None, nullptr, ""};
   return Reason;
 }

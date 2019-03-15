@@ -14,54 +14,47 @@ const SCOPE = URL_ROOT + "service-workers/";
 const SERVICE_WORKER = SCOPE + "empty-sw.js";
 const TAB_URL = SCOPE + "empty-sw.html";
 
-add_task(function* () {
-  yield enableServiceWorkerDebugging();
+add_task(async function() {
+  await enableServiceWorkerDebugging();
 
-  let { tab, document } = yield openAboutDebugging("workers");
-
-  // Listen for mutations in the service-workers list.
-  let serviceWorkersElement = getServiceWorkerList(document);
-  let onMutation = waitForMutation(serviceWorkersElement, { childList: true });
+  const { tab, document } = await openAboutDebugging("workers");
 
   // Open a tab that registers an empty service worker.
-  let swTab = yield addTab(TAB_URL);
+  const swTab = await addTab(TAB_URL);
 
-  // Wait for the service workers-list to update.
-  yield onMutation;
+  info("Wait until the service worker appears in about:debugging");
+  await waitUntilServiceWorkerContainer(SERVICE_WORKER, document);
 
-  // Check that the service worker appears in the UI.
-  assertHasTarget(true, document, "service-workers", SERVICE_WORKER);
-
-  yield waitForServiceWorkerActivation(SERVICE_WORKER, document);
+  await waitForServiceWorkerActivation(SERVICE_WORKER, document);
 
   info("Ensure that the registration resolved before trying to interact with " +
     "the service worker.");
-  yield waitForServiceWorkerRegistered(swTab);
+  await waitForServiceWorkerRegistered(swTab);
   ok(true, "Service worker registration resolved");
 
-  let targets = document.querySelectorAll("#service-workers .target");
+  const targets = document.querySelectorAll("#service-workers .target");
   is(targets.length, 1, "One service worker is now displayed.");
 
-  let target = targets[0];
-  let name = target.querySelector(".target-name");
+  const target = targets[0];
+  const name = target.querySelector(".target-name");
   is(name.textContent, SERVICE_WORKER, "Found the service worker in the list");
 
   info("Check the scope displayed scope is correct");
-  let scope = target.querySelector(".service-worker-scope");
+  const scope = target.querySelector(".service-worker-scope");
   is(scope.textContent, SCOPE,
     "The expected scope is displayed in the service worker info.");
 
   info("Unregister the service worker via the unregister link.");
-  let unregisterLink = target.querySelector(".unregister-link");
+  const unregisterLink = target.querySelector(".unregister-link");
   ok(unregisterLink, "Found the unregister link");
 
-  onMutation = waitForMutation(serviceWorkersElement, { childList: true });
   unregisterLink.click();
-  yield onMutation;
 
-  is(document.querySelector("#service-workers .target"), null,
-   "No service worker displayed anymore.");
+  info("Wait until the service worker disappears");
+  await waitUntil(() => {
+    return !document.querySelector("#service-workers .target");
+  });
 
-  yield removeTab(swTab);
-  yield closeAboutDebugging(tab);
+  await removeTab(swTab);
+  await closeAboutDebugging(tab);
 });

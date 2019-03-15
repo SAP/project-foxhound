@@ -9,9 +9,9 @@ function test() {
   Services.prefs.setBoolPref("xpinstall.enabled", false);
 
   var triggers = encodeURIComponent(JSON.stringify({
-    "Unsigned XPI": TESTROOT + "amosigned.xpi"
+    "Unsigned XPI": TESTROOT + "amosigned.xpi",
   }));
-  gBrowser.selectedTab = gBrowser.addTab();
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
 
   ContentTask.spawn(gBrowser.selectedBrowser, TESTROOT + "installtrigger.html?" + triggers, url => {
     return new Promise(resolve => {
@@ -46,7 +46,7 @@ function allow_blocked(installInfo) {
   return false;
 }
 
-function confirm_install(window) {
+function confirm_install(panel) {
   ok(false, "Should never see an install confirmation dialog");
   return false;
 }

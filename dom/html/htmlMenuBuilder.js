@@ -4,10 +4,7 @@
 
 // This component is used to build the menus for the HTML contextmenu attribute.
 
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-
-const Cc = Components.classes;
-const Ci = Components.interfaces;
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 // A global value that is used to identify each menu item. It is
 // incremented with each one that is found.
@@ -33,7 +30,7 @@ function HTMLMenuBuilder() {
 HTMLMenuBuilder.prototype =
 {
   classID:        Components.ID("{51c65f5d-0de5-4edc-9058-60e50cef77f8}"),
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIMenuBuilder]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIMenuBuilder]),
 
   currentNode: null,
   root: null,
@@ -65,6 +62,11 @@ HTMLMenuBuilder.prototype =
   },
 
   addItemFor: function(aElement, aCanLoadIcon) {
+    // Since we no longer type check this at the IDL level, make sure we've got
+    // the right element type here.
+    if (ChromeUtils.getClassName(aElement) !== "HTMLMenuItemElement") {
+      return;
+    }
     if (!("children" in this.currentNode)) {
       return;
     }

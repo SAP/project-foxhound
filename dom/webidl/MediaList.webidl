@@ -5,8 +5,14 @@
 
 // http://dev.w3.org/csswg/cssom/#the-medialist-interface
 
-[ArrayClass]
 interface MediaList {
+  // Bug 824857: no support for stringifier attributes yet.
+  //   [TreatNullAs=EmptyString]
+  // stringifier attribute DOMString        mediaText;
+
+  // Bug 824857 should remove this.
+  stringifier;
+
   [TreatNullAs=EmptyString]
            attribute DOMString        mediaText;
 

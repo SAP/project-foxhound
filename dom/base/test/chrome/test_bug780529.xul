@@ -23,18 +23,14 @@ req.open("GET", "", true);
 // Have to call send() to get the XHR hooked up as the notification callbacks
 req.send();
 var callbacks = req.channel.notificationCallbacks;
-var sink = callbacks.getInterface(Components.interfaces.nsIChannelEventSink);
-ok(sink instanceof Components.interfaces.nsIChannelEventSink,
+var sink = callbacks.getInterface(Ci.nsIChannelEventSink);
+ok(sink instanceof Ci.nsIChannelEventSink,
    "Should be a channel event sink")
 ok("asyncOnChannelRedirect" in sink,
    "Should have the right methods for an event sink");
 
-is(callbacks.getInterface(Components.interfaces.nsIXMLHttpRequest), req,
-   "Should have the right object");
-sinkReq = sink.QueryInterface(Components.interfaces.nsIInterfaceRequestor);
+sinkReq = sink.QueryInterface(Ci.nsIInterfaceRequestor);
 isnot(sinkReq, callbacks, "Sink should not be the XHR object");
-is(sinkReq.getInterface(Components.interfaces.nsIXMLHttpRequest), req,
-   "Should have the XHR object now");
   ]]>
   </script>
 </window>

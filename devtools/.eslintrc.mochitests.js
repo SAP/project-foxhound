@@ -1,18 +1,17 @@
 // Parent config file for all devtools browser mochitest files.
 module.exports = {
   "extends": [
-    "../testing/mochitest/browser.eslintrc.js"
+    "plugin:mozilla/browser-test"
   ],
   // All globals made available in the test environment.
   "globals": {
     "DevToolsUtils": true,
     "gDevTools": true,
-    "getChromeDir": false,
-    "getResolvedURI": false,
     "once": true,
     "synthesizeKeyFromKeyTag": true,
     "TargetFactory": true,
     "waitForTick": true,
+    "waitUntilState": true,
   },
 
   "parserOptions": {
@@ -22,6 +21,8 @@ module.exports = {
   },
 
   "rules": {
+    // Allow non-camelcase so that run_test doesn't produce a warning.
+    "camelcase": "off",
     // Tests can always import anything.
     "mozilla/reject-some-requires": 0,
   },

@@ -1,0 +1,37 @@
+.discovery-stream.ds-layout {
+  $columns: 12;
+  --gridColumnGap: 48px;
+  --gridRowGap: 24px;
+  display: grid;
+  grid-template-columns: repeat($columns, 1fr);
+  grid-column-gap: var(--gridColumnGap);
+  grid-row-gap: var(--gridRowGap);
+  width: 936px;
+  margin: 0 auto;
+
+  @while $columns > 0 {
+    .ds-column-#{$columns} {
+      grid-column-start: auto;
+      grid-column-end: span $columns;
+    }
+
+    $columns: $columns - 1;
+  }
+
+  .ds-column-grid {
+    display: grid;
+    grid-row-gap: var(--gridRowGap);
+  }
+}
+
+.ds-header {
+  color: $grey-50;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  margin: 8px 0;
+
+  .icon {
+    fill: var(--newtab-text-secondary-color);
+  }
+}

@@ -1,6 +1,7 @@
 /* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+/* eslint-disable mozilla/no-arbitrary-setTimeout */
 
 "use strict";
 
@@ -10,28 +11,28 @@
 // See devtools/server/actors/animation.js |getPlayerIndex| for more
 // information.
 
-add_task(function* () {
-  let {client, walker, animations} =
-    yield initAnimationsFrontForUrl(MAIN_DOMAIN + "animation.html");
+add_task(async function() {
+  const {target, walker, animations} =
+    await initAnimationsFrontForUrl(MAIN_DOMAIN + "animation.html");
 
   info("Retrieve a non animated node");
-  let node = yield walker.querySelector(walker.rootNode, ".not-animated");
+  const node = await walker.querySelector(walker.rootNode, ".not-animated");
 
   info("Apply the multiple-animations-2 class to start the animations");
-  yield node.modifyAttributes([
-    {attributeName: "class", newValue: "multiple-animations-2"}
+  await node.modifyAttributes([
+    {attributeName: "class", newValue: "multiple-animations-2"},
   ]);
 
   info("Get the list of players, by the time this executes, the first, " +
        "short, animation should have ended.");
-  let players = yield animations.getAnimationPlayersForNode(node);
+  let players = await animations.getAnimationPlayersForNode(node);
   if (players.length === 3) {
     info("The short animation hasn't ended yet, wait for a bit.");
     // The animation lasts for 500ms, so 1000ms should do it.
-    yield new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
     info("And get the list again");
-    players = yield animations.getAnimationPlayersForNode(node);
+    players = await animations.getAnimationPlayersForNode(node);
   }
 
   is(players.length, 2, "2 animations remain on the node");
@@ -50,6 +51,6 @@ add_task(function* () {
   is(players[1].state.iterationCount, 100,
      "The iterationCount of the second animation is correct");
 
-  yield client.close();
+  await target.destroy();
   gBrowser.removeCurrentTab();
 });

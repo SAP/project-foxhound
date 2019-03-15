@@ -11,21 +11,21 @@ function test() {
     "browser/components/sessionstore/test/browser_461743_sample.html";
 
   let frameCount = 0;
-  let tab = gBrowser.addTab(testURL);
-  tab.linkedBrowser.addEventListener("load", function(aEvent) {
+  let tab = BrowserTestUtils.addTab(gBrowser, testURL);
+  tab.linkedBrowser.addEventListener("load", function loadListener(aEvent) {
     // Wait for all frames to load completely.
     if (frameCount++ < 2)
       return;
-    tab.linkedBrowser.removeEventListener("load", arguments.callee, true);
+    tab.linkedBrowser.removeEventListener("load", loadListener, true);
     let tab2 = gBrowser.duplicateTab(tab);
-    tab2.linkedBrowser.addEventListener("461743", function(aEvent) {
-      tab2.linkedBrowser.removeEventListener("461743", arguments.callee, true);
+    tab2.linkedBrowser.addEventListener("461743", function listener(eventTab2) {
+      tab2.linkedBrowser.removeEventListener("461743", listener, true);
       is(aEvent.data, "done", "XSS injection was attempted");
 
       executeSoon(function() {
         let iframes = tab2.linkedBrowser.contentWindow.frames;
         let innerHTML = iframes[1].document.body.innerHTML;
-        isnot(innerHTML, Components.utils.reportError.toString(),
+        isnot(innerHTML, Cu.reportError.toString(),
               "chrome access denied!");
 
         // Clean up.

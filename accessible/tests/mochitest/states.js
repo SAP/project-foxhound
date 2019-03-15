@@ -1,13 +1,13 @@
-////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////
 // Helper functions for accessible states testing.
 //
 // requires:
 //   common.js
 //   role.js
 //
-////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////
 
-////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////
 // State constants
 
 // const STATE_BUSY is defined in common.js
@@ -37,6 +37,7 @@ const STATE_TRAVERSED = nsIAccessibleStates.STATE_TRAVERSED;
 const STATE_UNAVAILABLE = nsIAccessibleStates.STATE_UNAVAILABLE;
 
 const EXT_STATE_ACTIVE = nsIAccessibleStates.EXT_STATE_ACTIVE;
+const EXT_STATE_CURRENT = nsIAccessibleStates.EXT_STATE_CURRENT;
 const EXT_STATE_DEFUNCT = nsIAccessibleStates.EXT_STATE_DEFUNCT;
 const EXT_STATE_EDITABLE = nsIAccessibleStates.EXT_STATE_EDITABLE;
 const EXT_STATE_ENABLED = nsIAccessibleStates.EXT_STATE_ENABLED;
@@ -55,7 +56,7 @@ const EXT_STATE_VERTICAL = nsIAccessibleStates.EXT_STATE_VERTICAL;
 const kOrdinalState = false;
 const kExtraState = 1;
 
-////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////
 // Test functions
 
 /**
@@ -72,11 +73,10 @@ const kExtraState = 1;
  * @param aTestName          The test name.
  */
 function testStates(aAccOrElmOrID, aState, aExtraState, aAbsentState,
-                    aAbsentExtraState, aTestName)
-{
+                    aAbsentExtraState, aTestName) {
   var [state, extraState] = getStates(aAccOrElmOrID);
   var role = getRole(aAccOrElmOrID);
-  var id = prettyName(aAccOrElmOrID) + (aTestName ? " [" + aTestName + "]": "");
+  var id = prettyName(aAccOrElmOrID) + (aTestName ? " [" + aTestName + "]" : "");
 
   // Primary test.
   if (aState) {
@@ -155,14 +155,14 @@ function testStates(aAccOrElmOrID, aState, aExtraState, aAbsentState,
             "Mixed element cannot be state checked!");
 
   // selected/selectable
-  if (state & STATE_SELECTED) {
+  if ((state & STATE_SELECTED) && !(aAbsentState & STATE_SELECTABLE)) {
     isState(state & STATE_SELECTABLE, STATE_SELECTABLE, false,
             "Selected element must be selectable!");
   }
 }
 
 /**
- * Tests an acessible and its sub tree for the passed in state bits.
+ * Tests an accessible and its sub tree for the passed in state bits.
  * Used to make sure that states are propagated to descendants, for example the
  * STATE_UNAVAILABLE from a container to its children.
  *
@@ -171,8 +171,7 @@ function testStates(aAccOrElmOrID, aState, aExtraState, aAbsentState,
  * @param aExtraState    The extra state bits that are wanted.
  * @param aAbsentState   State bits that are not wanted.
  */
-function testStatesInSubtree(aAccOrElmOrID, aState, aExtraState, aAbsentState)
-{
+function testStatesInSubtree(aAccOrElmOrID, aState, aExtraState, aAbsentState) {
   // test accessible and its subtree for propagated states.
   var acc = getAccessible(aAccOrElmOrID);
   if (!acc)
@@ -187,8 +186,8 @@ function testStatesInSubtree(aAccOrElmOrID, aState, aExtraState, aAbsentState)
   var children = null;
   try {
     children = acc.children;
-  } catch(e) {}
-  ok(children, "Could not get children for " + aAccOrElmOrID +"!");
+  } catch (e) {}
+  ok(children, "Could not get children for " + aAccOrElmOrID + "!");
 
   if (children) {
     for (var i = 0; i < children.length; i++) {
@@ -201,22 +200,19 @@ function testStatesInSubtree(aAccOrElmOrID, aState, aExtraState, aAbsentState)
 /**
  * Fails if no defunct state on the accessible.
  */
-function testIsDefunct(aAccessible, aTestName)
-{
+function testIsDefunct(aAccessible, aTestName) {
   var id = prettyName(aAccessible) + (aTestName ? " [" + aTestName + "]" : "");
-  var [state, extraState] = getStates(aAccessible);
+  var [/* state*/, extraState] = getStates(aAccessible);
   isState(extraState & EXT_STATE_DEFUNCT, EXT_STATE_DEFUNCT, true,
           "no defuct state for " + id + "!");
 }
 
-function getStringStates(aAccOrElmOrID)
-{
+function getStringStates(aAccOrElmOrID) {
   var [state, extraState] = getStates(aAccOrElmOrID);
   return statesToString(state, extraState);
 }
 
-function getStates(aAccOrElmOrID)
-{
+function getStates(aAccOrElmOrID) {
   var acc = getAccessible(aAccOrElmOrID);
   if (!acc)
     return [0, 0];
@@ -230,21 +226,19 @@ function getStates(aAccOrElmOrID)
 /**
  * Return true if the accessible has given states.
  */
-function hasState(aAccOrElmOrID, aState, aExtraState)
-{
+function hasState(aAccOrElmOrID, aState, aExtraState) {
   var [state, exstate] = getStates(aAccOrElmOrID);
   return (aState ? state & aState : true) &&
     (aExtraState ? exstate & aExtraState : true);
 }
 
-////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////
 // Private implementation details
 
 /**
  * Analogy of SimpleTest.is function used to compare states.
  */
-function isState(aState1, aState2, aIsExtraStates, aMsg)
-{
+function isState(aState1, aState2, aIsExtraStates, aMsg) {
   if (aState1 == aState2) {
     ok(true, aMsg);
     return;

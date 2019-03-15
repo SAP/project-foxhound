@@ -13,8 +13,7 @@
 
 [Constructor(DOMString title, optional NotificationOptions options),
  Exposed=(Window,Worker),
- Func="mozilla::dom::Notification::PrefEnabled",
- UnsafeInPrerendering]
+ Func="mozilla::dom::Notification::PrefEnabled"]
 interface Notification : EventTarget {
   [GetterThrows]
   static readonly attribute NotificationPermission permission;
@@ -51,7 +50,7 @@ interface Notification : EventTarget {
   [Pure]
   readonly attribute DOMString? icon;
 
-  [Constant, Func="mozilla::dom::Notification::RequireInteractionEnabled"]
+  [Constant, Func="mozilla::dom::DOMPrefs::dom_webnotifications_requireinteraction_enabled"]
   readonly attribute boolean requireInteraction;
 
   [Constant]

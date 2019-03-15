@@ -33,7 +33,8 @@
     'build_msa': 0,
     'conditions': [
        ['(target_arch == "armv7" or target_arch == "armv7s" or \
-       (target_arch == "arm" and arm_version >= 7) or target_arch == "arm64")\
+       (target_arch == "arm" and arm_version >= 7) or \
+       (OS != "win" and target_arch == "arm64")) \
        and (arm_neon == 1 or arm_neon_optional == 1)', {
          'build_neon': 1,
        }],
@@ -152,7 +153,6 @@
         # Enable the following 3 macros to turn off assembly for specified CPU.
         # 'LIBYUV_DISABLE_X86',
         # 'LIBYUV_DISABLE_NEON',
-        # 'LIBYUV_DISABLE_DSPR2',
         # This disables AVX2 (Haswell) support, overriding compiler checks
         # 'LIBYUV_DISABLE_AVX2',
         # Enable the following macro to build libyuv as a shared library (dll).

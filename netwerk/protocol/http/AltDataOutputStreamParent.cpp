@@ -14,47 +14,45 @@ namespace net {
 NS_IMPL_ISUPPORTS0(AltDataOutputStreamParent)
 
 AltDataOutputStreamParent::AltDataOutputStreamParent(nsIOutputStream* aStream)
-  : mOutputStream(aStream)
-  , mStatus(NS_OK)
-{
+    : mOutputStream(aStream), mStatus(NS_OK), mIPCOpen(true) {
   MOZ_ASSERT(NS_IsMainThread(), "Main thread only");
 }
 
-AltDataOutputStreamParent::~AltDataOutputStreamParent()
-{
+AltDataOutputStreamParent::~AltDataOutputStreamParent() {
   MOZ_ASSERT(NS_IsMainThread(), "Main thread only");
 }
 
-mozilla::ipc::IPCResult
-AltDataOutputStreamParent::RecvWriteData(const nsCString& data)
-{
+mozilla::ipc::IPCResult AltDataOutputStreamParent::RecvWriteData(
+    const nsCString& data) {
   if (NS_FAILED(mStatus)) {
-    Unused << SendError(mStatus);
+    if (mIPCOpen) {
+      Unused << SendError(mStatus);
+    }
     return IPC_OK();
   }
   nsresult rv;
   uint32_t n;
   if (mOutputStream) {
     rv = mOutputStream->Write(data.BeginReading(), data.Length(), &n);
-    MOZ_ASSERT(n == data.Length());
-    if (NS_FAILED(rv)) {
+    MOZ_ASSERT(n == data.Length() || NS_FAILED(rv));
+    if (NS_FAILED(rv) && mIPCOpen) {
       Unused << SendError(rv);
     }
   }
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult
-AltDataOutputStreamParent::RecvClose()
-{
+mozilla::ipc::IPCResult AltDataOutputStreamParent::RecvClose() {
   if (NS_FAILED(mStatus)) {
-    Unused << SendError(mStatus);
+    if (mIPCOpen) {
+      Unused << SendError(mStatus);
+    }
     return IPC_OK();
   }
   nsresult rv;
   if (mOutputStream) {
     rv = mOutputStream->Close();
-    if (NS_FAILED(rv)) {
+    if (NS_FAILED(rv) && mIPCOpen) {
       Unused << SendError(rv);
     }
     mOutputStream = nullptr;
@@ -62,10 +60,15 @@ AltDataOutputStreamParent::RecvClose()
   return IPC_OK();
 }
 
-void
-AltDataOutputStreamParent::ActorDestroy(ActorDestroyReason aWhy)
-{
+void AltDataOutputStreamParent::ActorDestroy(ActorDestroyReason aWhy) {
+  mIPCOpen = false;
 }
 
-} // namespace net
-} // namespace mozilla
+mozilla::ipc::IPCResult AltDataOutputStreamParent::RecvDeleteSelf() {
+  mIPCOpen = false;
+  Unused << SendDeleteSelf();
+  return IPC_OK();
+}
+
+}  // namespace net
+}  // namespace mozilla

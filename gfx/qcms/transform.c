@@ -168,6 +168,9 @@ static struct matrix build_RGB_to_XYZ_transfer_matrix(qcms_CIE_xyY white, qcms_C
 	white_point.v[2] = (1.0-xn-yn)/yn;
 
 	primaries_invert = matrix_invert(primaries);
+	if (primaries_invert.invalid) {
+		return matrix_invalid();
+	}
 
 	coefs = matrix_eval(primaries_invert, white_point);
 
@@ -225,6 +228,9 @@ compute_chromatic_adaption(struct CIE_XYZ source_white_point,
 
 	tmp = chad;
 	chad_inv = matrix_invert(tmp);
+	if (chad_inv.invalid) {
+		return matrix_invalid();
+	}
 
 	cone_source_XYZ.v[0] = source_white_point.X;
 	cone_source_XYZ.v[1] = source_white_point.Y;
@@ -272,12 +278,16 @@ static struct matrix adapt_matrix_to_D50(struct matrix r, qcms_CIE_xyY source_wh
 	struct CIE_XYZ Dn;
 	struct matrix Bradford;
 
-	if (source_white_pt.y == 0.0)
+	if (source_white_pt.y == 0.0) {
 		return matrix_invalid();
+	}
 
 	Dn = xyY2XYZ(source_white_pt);
 
 	Bradford = adaption_matrix(Dn, D50_XYZ);
+	if (Bradford.invalid) {
+		return matrix_invalid();
+	}
 	return matrix_multiply(Bradford, r);
 }
 
@@ -995,6 +1005,10 @@ void qcms_transform_release(qcms_transform *t)
 	free(t->output_gamma_lut_g);
 	free(t->output_gamma_lut_b);
 
+	/* r_clut points to beginning of buffer allocated in qcms_transform_precacheLUT_float */
+	if (t->r_clut)
+		free(t->r_clut);
+
 	transform_free(t);
 }
 
@@ -1191,6 +1205,7 @@ qcms_transform* qcms_transform_precacheLUT_float(qcms_transform *transform, qcms
 
 
 	//XXX: qcms_modular_transform_data may return either the src or dest buffer. If so it must not be free-ed
+	// It will be stored in r_clut, which will be cleaned up in qcms_transform_release.
 	if (src && lut != src) {
 		free(src);
 	}

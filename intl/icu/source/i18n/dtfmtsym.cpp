@@ -1,4 +1,4 @@
-// Copyright (C) 2016 and later: Unicode, Inc. and others.
+// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
 /*
 *******************************************************************************
@@ -1311,7 +1311,7 @@ DateFormatSymbols::initZoneStringsArray(void) {
         UDate now = Calendar::getNow();
         UnicodeString tzDispName;
 
-        while ((tzid = tzids->snext(status))) {
+        while ((tzid = tzids->snext(status)) != 0) {
             if (U_FAILURE(status)) {
                 break;
             }
@@ -1368,7 +1368,7 @@ DateFormatSymbols::setZoneStrings(const UnicodeString* const *strings, int32_t r
 
 //------------------------------------------------------
 
-const UChar * U_EXPORT2
+const char16_t * U_EXPORT2
 DateFormatSymbols::getPatternUChars(void)
 {
     return gPatternChars;
@@ -1630,20 +1630,24 @@ struct CalendarDataSink : public ResourceSink {
                 UnicodeString *aliasArray;
                 Hashtable *aliasMap;
                 if ((aliasArray = (UnicodeString*)arrays.get(*alias)) != NULL) {
-                    // Clone the array
-                    int32_t aliasArraySize = arraySizes.geti(*alias);
-                    LocalArray<UnicodeString> aliasArrayCopy(new UnicodeString[aliasArraySize], errorCode);
-                    if (U_FAILURE(errorCode)) { return; }
-                    uprv_arrayCopy(aliasArray, aliasArrayCopy.getAlias(), aliasArraySize);
-                    // Put the array on the 'arrays' map
                     UnicodeString *path = (UnicodeString*)aliasPathPairs[i + 1];
-                    arrays.put(*path, aliasArrayCopy.orphan(), errorCode);
-                    arraySizes.puti(*path, aliasArraySize, errorCode);
+                    if (arrays.get(*path) == NULL) {
+                        // Clone the array
+                        int32_t aliasArraySize = arraySizes.geti(*alias);
+                        LocalArray<UnicodeString> aliasArrayCopy(new UnicodeString[aliasArraySize], errorCode);
+                        if (U_FAILURE(errorCode)) { return; }
+                        uprv_arrayCopy(aliasArray, aliasArrayCopy.getAlias(), aliasArraySize);
+                        // Put the array on the 'arrays' map
+                        arrays.put(*path, aliasArrayCopy.orphan(), errorCode);
+                        arraySizes.puti(*path, aliasArraySize, errorCode);
+                    }
                     if (U_FAILURE(errorCode)) { return; }
                     mod = true;
                 } else if ((aliasMap = (Hashtable*)maps.get(*alias)) != NULL) {
                     UnicodeString *path = (UnicodeString*)aliasPathPairs[i + 1];
-                    maps.put(*path, aliasMap, errorCode);
+                    if (maps.get(*path) == NULL) {
+                        maps.put(*path, aliasMap, errorCode);
+                    }
                     if (U_FAILURE(errorCode)) { return; }
                     mod = true;
                 }
@@ -2220,8 +2224,8 @@ DateFormatSymbols::initializeData(const Locale& locale, const char *type, UError
                             ++typeMapPtr;
                         }
                         if (typeMapPtr->usageTypeName != NULL && compResult == 0) {
-                            fCapitalization[typeMapPtr->usageTypeEnumValue][0] = intVector[0];
-                            fCapitalization[typeMapPtr->usageTypeEnumValue][1] = intVector[1];
+                            fCapitalization[typeMapPtr->usageTypeEnumValue][0] = static_cast<UBool>(intVector[0]);
+                            fCapitalization[typeMapPtr->usageTypeEnumValue][1] = static_cast<UBool>(intVector[1]);
                         }
                     }
                 }

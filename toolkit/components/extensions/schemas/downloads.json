@@ -3,13 +3,12 @@
     "namespace": "manifest",
     "types": [
       {
-        "$extend": "Permission",
+        "$extend": "OptionalPermission",
         "choices": [{
           "type": "string",
           "enum": [
             "downloads",
-            "downloads.open",
-            "downloads.shelf"
+            "downloads.open"
           ]
         }]
       }
@@ -96,7 +95,8 @@
             "type": "string"
           },
           "referrer": {
-            "type": "string"
+            "type": "string",
+            "optional": true
           },
           "filename": {
             "description": "Absolute local path.",
@@ -112,7 +112,8 @@
           },
           "mime": {
             "description": "The file's MIME type.",
-            "type": "string"
+            "type": "string",
+            "optional": true
           },
           "startTime": {
             "description": "Number of milliseconds between the unix epoch and when this download began.",
@@ -376,12 +377,18 @@
                 "optional": true,
                 "type": "string"
               },
+              "incognito": {
+                "description": "Whether to associate the download with a private browsing session.",
+                "optional": true,
+                "default": false,
+                "type": "boolean"
+              },
               "conflictAction": {
                 "$ref": "FilenameConflictAction",
                 "optional": true
               },
               "saveAs": {
-                "description": "Use a file-chooser to allow the user to select a filename.",
+                "description": "Use a file-chooser to allow the user to select a filename. If the option is not specified, the file chooser will be shown only if the Firefox \"Always ask you where to save files\" option is enabled (i.e. the pref <code>browser.download.useDownloadDir</code> is set to <code>false</code>).",
                 "optional": true,
                 "type": "boolean"
               },
@@ -556,6 +563,7 @@
         "name": "open",
         "type": "function",
         "async": "callback",
+        "requireUserInput": true,
         "description": "Open the downloaded file.",
         "permissions": ["downloads.open"],
         "parameters": [

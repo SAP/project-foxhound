@@ -13,6 +13,8 @@ EXPORTS.mozilla.dom += [
     'Fetch.h',
     'FetchDriver.h',
     'FetchIPCTypes.h',
+    'FetchObserver.h',
+    'FetchStreamReader.h',
     'FetchUtil.h',
     'Headers.h',
     'InternalHeaders.h',
@@ -25,8 +27,13 @@ EXPORTS.mozilla.dom += [
 UNIFIED_SOURCES += [
     'BodyExtractor.cpp',
     'ChannelInfo.cpp',
+    'EmptyBody.cpp',
     'Fetch.cpp',
+    'FetchConsumer.cpp',
     'FetchDriver.cpp',
+    'FetchObserver.cpp',
+    'FetchStream.cpp',
+    'FetchStreamReader.cpp',
     'FetchUtil.cpp',
     'Headers.cpp',
     'InternalHeaders.cpp',
@@ -42,7 +49,8 @@ IPDL_SOURCES += [
 ]
 
 LOCAL_INCLUDES += [
-    '../workers',
+    # For nsDOMSerializer
+    '/dom/base',
     # For HttpBaseChannel.h dependencies
     '/netwerk/base',
     # For nsDataHandler.h
@@ -50,6 +58,8 @@ LOCAL_INCLUDES += [
     # For HttpBaseChannel.h
     '/netwerk/protocol/http',
 ]
+
+BROWSER_CHROME_MANIFESTS += [ 'tests/browser.ini' ]
 
 FINAL_LIBRARY = 'xul'
 

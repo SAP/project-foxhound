@@ -10,7 +10,6 @@
 #define transportflow_h__
 
 #include <deque>
-#include <queue>
 #include <string>
 
 #include "nscore.h"
@@ -49,19 +48,14 @@
 
 namespace mozilla {
 
-class TransportFlow final : public nsISupports,
-                            public sigslot::has_slots<> {
+class TransportFlow final : public nsISupports {
  public:
   TransportFlow()
-    : id_("(anonymous)"),
-      state_(TransportLayer::TS_NONE),
-      layers_(new std::deque<TransportLayer *>) {}
+      : id_("(anonymous)"), layers_(new std::deque<TransportLayer *>) {}
   explicit TransportFlow(const std::string id)
-    : id_(id),
-      state_(TransportLayer::TS_NONE),
-      layers_(new std::deque<TransportLayer *>) {}
+      : id_(id), layers_(new std::deque<TransportLayer *>) {}
 
-  const std::string& id() const { return id_; }
+  const std::string &id() const { return id_; }
 
   // Layer management. Note PushLayer() is not thread protected, so
   // either:
@@ -70,32 +64,9 @@ class TransportFlow final : public nsISupports,
   //
   // The flow takes ownership of the layers after a successful
   // push.
-  nsresult PushLayer(TransportLayer *layer);
+  void PushLayer(TransportLayer *layer);
 
-  // Convenience function to push multiple layers on. Layers
-  // are pushed on in the order that they are in the queue.
-  // Any failures cause the flow to become inoperable and
-  // destroys all the layers including those already pushed.
-  // TODO(ekr@rtfm.com): Change layers to be ref-counted.
-  nsresult PushLayers(nsAutoPtr<std::queue<TransportLayer *> > layers);
-
-  TransportLayer *top() const;
-  TransportLayer *GetLayer(const std::string& id) const;
-
-  // Wrappers for whatever TLayer happens to be the top layer
-  // at the time. This way you don't need to do top()->Foo().
-  TransportLayer::State state(); // Current state
-  TransportResult SendPacket(const unsigned char *data, size_t len);
-
-  // State has changed. Reflects the top flow.
-  sigslot::signal2<TransportFlow *, TransportLayer::State>
-    SignalStateChange;
-
-  // Data received on the flow
-  sigslot::signal3<TransportFlow*, const unsigned char *, size_t>
-    SignalPacketReceived;
-
-  bool Contains(TransportLayer *layer) const;
+  TransportLayer *GetLayer(const std::string &id) const;
 
   NS_DECL_THREADSAFE_ISUPPORTS
 
@@ -106,8 +77,7 @@ class TransportFlow final : public nsISupports,
 
   // Check if we are on the right thread
   void CheckThread() const {
-    if (!CheckThreadInt())
-      MOZ_CRASH();
+    if (!CheckThreadInt()) MOZ_CRASH();
   }
 
   bool CheckThreadInt() const {
@@ -115,29 +85,22 @@ class TransportFlow final : public nsISupports,
 
     if (!target_)  // OK if no thread set.
       return true;
-    if (NS_FAILED(target_->IsOnCurrentThread(&on)))
-      return false;
+    if (NS_FAILED(target_->IsOnCurrentThread(&on))) return false;
 
     return on;
   }
 
   void EnsureSameThread(TransportLayer *layer);
 
-  void StateChange(TransportLayer *layer, TransportLayer::State state);
-  void StateChangeInt(TransportLayer::State state);
-  void PacketReceived(TransportLayer* layer, const unsigned char *data,
-      size_t len);
-  static void DestroyFinal(nsAutoPtr<std::deque<TransportLayer *> > layers);
+  static void DestroyFinal(nsAutoPtr<std::deque<TransportLayer *>> layers);
 
   // Overload needed because we use deque internally and queue externally.
-  static void ClearLayers(std::deque<TransportLayer *>* layers);
-  static void ClearLayers(std::queue<TransportLayer *>* layers);
+  static void ClearLayers(std::deque<TransportLayer *> *layers);
 
   std::string id_;
-  TransportLayer::State state_;
   UniquePtr<std::deque<TransportLayer *>> layers_;
   nsCOMPtr<nsIEventTarget> target_;
 };
 
-}  // close namespace
+}  // namespace mozilla
 #endif

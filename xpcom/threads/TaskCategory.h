@@ -36,9 +36,12 @@ enum class TaskCategory {
   // Most DOM events (postMessage, media, plugins)
   Other,
 
+  // Runnables related to Performance Counting
+  Performance,
+
   Count
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_TaskCategory_h
+#endif  // mozilla_TaskCategory_h

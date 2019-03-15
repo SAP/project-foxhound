@@ -4,23 +4,37 @@
 
 "use strict";
 
-const { utils: Cu, interfaces: Ci, classes: Cc, results: Cr } = Components;
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Preferences.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "AppConstants",
+  "resource://gre/modules/AppConstants.jsm");
 
 const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
 const FRAME_SCRIPT_URL = "chrome://gfxsanity/content/gfxFrameScript.js";
 
-const PAGE_WIDTH = 92;
-const PAGE_HEIGHT = 166;
+const PAGE_WIDTH = 160;
+const PAGE_HEIGHT = 234;
+const LEFT_EDGE = 8;
+const TOP_EDGE = 8;
+const CANVAS_WIDTH = 32;
+const CANVAS_HEIGHT = 64;
+// If those values are ever changed, make sure to update
+// WMFVideoMFTManager::CanUseDXVA accordingly.
+const VIDEO_WIDTH = 132;
+const VIDEO_HEIGHT = 132;
 const DRIVER_PREF = "sanity-test.driver-version";
 const DEVICE_PREF = "sanity-test.device-id";
 const VERSION_PREF = "sanity-test.version";
+const ADVANCED_LAYERS_PREF = "sanity-test.advanced-layers";
 const DISABLE_VIDEO_PREF = "media.hardware-video-decoding.failed";
 const RUNNING_PREF = "sanity-test.running";
+const PERF_ADJUSTMENT_PREF = "performance.adjust_to_machine";
+const LOWEND_DEVICE_PREF = "performance.low_end_machine";
 const TIMEOUT_SEC = 20;
+
+const AL_ENABLED_PREF = "layers.mlgpu.enabled";
+const AL_TEST_FAILED_PREF = "layers.mlgpu.sanity-test-failed";
 
 // GRAPHICS_SANITY_TEST histogram enumeration values
 const TEST_PASSED = 0;
@@ -34,14 +48,7 @@ const REASON_FIRST_RUN = 0;
 const REASON_FIREFOX_CHANGED = 1;
 const REASON_DEVICE_CHANGED = 2;
 const REASON_DRIVER_CHANGED = 3;
-
-// GRAPHICS_SANITY_TEST_OS_SNAPSHOT histogram enumeration values
-const SNAPSHOT_VIDEO_OK = 0;
-const SNAPSHOT_VIDEO_FAIL = 1;
-const SNAPSHOT_ERROR = 2;
-const SNAPSHOT_TIMEOUT = 3;
-const SNAPSHOT_LAYERS_OK = 4;
-const SNAPSHOT_LAYERS_FAIL = 5;
+const REASON_AL_CONFIG_CHANGED = 4;
 
 function testPixel(ctx, x, y, r, g, b, a, fuzz) {
   var data = ctx.getImageData(x, y, 1, 1);
@@ -61,7 +68,7 @@ function reportResult(val) {
     histogram.add(val);
   } catch (e) {}
 
-  Preferences.set(RUNNING_PREF, false);
+  Services.prefs.setBoolPref(RUNNING_PREF, false);
   Services.prefs.savePrefFile(null);
 }
 
@@ -70,12 +77,20 @@ function reportTestReason(val) {
   histogram.add(val);
 }
 
-function annotateCrashReport(value) {
+function annotateCrashReport() {
   try {
-    // "1" if we're annotating the crash report, "" to remove the annotation.
     var crashReporter = Cc["@mozilla.org/toolkit/crash-reporter;1"].
                           getService(Ci.nsICrashReporter);
-    crashReporter.annotateCrashReport("GraphicsSanityTest", value ? "1" : "");
+    crashReporter.annotateCrashReport("GraphicsSanityTest", "1");
+  } catch (e) {
+  }
+}
+
+function removeCrashReportAnnotation(value) {
+  try {
+    var crashReporter = Cc["@mozilla.org/toolkit/crash-reporter;1"].
+                          getService(Ci.nsICrashReporter);
+    crashReporter.removeCrashReportAnnotation("GraphicsSanityTest");
   } catch (e) {
   }
 }
@@ -98,41 +113,55 @@ function takeWindowSnapshot(win, ctx) {
 // render as expected (with a tolerance of 64 to allow for
 // yuv->rgb differences between platforms).
 //
-// The video is 64x64, and is split into quadrants of
-// different colours. The top left of the video is 8,72
-// and we test a pixel 10,10 into each quadrant to avoid
+// The video is VIDEO_WIDTH*VIDEO_HEIGHT, and is split into quadrants of
+// different colours. The top left of the video is LEFT_EDGE,TOP_EDGE+CANVAS_HEIGHT
+// and we test a pixel into the middle of each quadrant to avoid
 // blending differences at the edges.
 //
 // We allow massive amounts of fuzz for the colours since
 // it can depend hugely on the yuv -> rgb conversion, and
 // we don't want to fail unnecessarily.
 function verifyVideoRendering(ctx) {
-  return testPixel(ctx, 18, 82, 255, 255, 255, 255, 64) &&
-    testPixel(ctx, 50, 82, 0, 255, 0, 255, 64) &&
-    testPixel(ctx, 18, 114, 0, 0, 255, 255, 64) &&
-    testPixel(ctx, 50, 114, 255, 0, 0, 255, 64);
+  return testPixel(ctx, LEFT_EDGE + VIDEO_WIDTH / 4, TOP_EDGE + CANVAS_HEIGHT + VIDEO_HEIGHT / 4, 255, 255, 255, 255, 64) &&
+    testPixel(ctx, LEFT_EDGE + 3 * VIDEO_WIDTH / 4, TOP_EDGE + CANVAS_HEIGHT + VIDEO_HEIGHT / 4, 0, 255, 0, 255, 64) &&
+    testPixel(ctx, LEFT_EDGE + VIDEO_WIDTH / 4, TOP_EDGE + CANVAS_HEIGHT + 3 * VIDEO_HEIGHT / 4, 0, 0, 255, 255, 64) &&
+    testPixel(ctx, LEFT_EDGE + 3 * VIDEO_WIDTH / 4, TOP_EDGE + CANVAS_HEIGHT + 3 * VIDEO_HEIGHT / 4, 255, 0, 0, 255, 64);
 }
 
 // Verify that the middle of the layers test is the color we expect.
-// It's a red 64x64 square, test a pixel deep into the 64x64 square
-// to prevent fuzzing.
+// It's a red CANVAS_WIDTHxCANVAS_HEIGHT square, test a pixel deep into the
+// square to prevent fuzzing, and another outside the expected limit of the
+// square to check that scaling occurred properly. The square is drawn LEFT_EDGE
+// pixels from the window's left edge and TOP_EDGE from the window's top edge.
 function verifyLayersRendering(ctx) {
-  return testPixel(ctx, 18, 18, 255, 0, 0, 255, 64);
+  return testPixel(ctx, LEFT_EDGE + CANVAS_WIDTH / 2, TOP_EDGE + CANVAS_HEIGHT / 2, 255, 0, 0, 255, 64) &&
+         testPixel(ctx, LEFT_EDGE + CANVAS_WIDTH, TOP_EDGE + CANVAS_HEIGHT / 2, 255, 255, 255, 255, 64);
 }
 
-function testCompositor(win, ctx) {
+function testCompositor(test, win, ctx) {
   takeWindowSnapshot(win, ctx);
   var testPassed = true;
 
-  if (!verifyVideoRendering(ctx)) {
-    reportResult(TEST_FAILED_VIDEO);
-    Preferences.set(DISABLE_VIDEO_PREF, true);
-    testPassed = false;
-  }
-
   if (!verifyLayersRendering(ctx)) {
+    // Try disabling advanced layers if it was enabled. Also trigger
+    // a device reset so the screen redraws.
+    if (Services.prefs.getBoolPref(AL_ENABLED_PREF, false)) {
+      Services.prefs.setBoolPref(AL_TEST_FAILED_PREF, true);
+      // Do not need to reset device when WebRender is used.
+      // When WebRender is used, advanced layers are not used.
+      if (test.utils.layerManagerType != "WebRender") {
+        test.utils.triggerDeviceReset();
+      }
+    }
     reportResult(TEST_FAILED_RENDER);
     testPassed = false;
+  } else {
+    Services.prefs.setBoolPref(AL_TEST_FAILED_PREF, false);
+    if (!verifyVideoRendering(ctx)) {
+      reportResult(TEST_FAILED_VIDEO);
+      Services.prefs.setBoolPref(DISABLE_VIDEO_PREF, true);
+      testPassed = false;
+    }
   }
 
   if (testPassed) {
@@ -156,8 +185,7 @@ var listener = {
   scheduleTest(win) {
     this.win = win;
     this.win.onload = this.onWindowLoaded.bind(this);
-    this.utils = this.win.QueryInterface(Ci.nsIInterfaceRequestor)
-                         .getInterface(Ci.nsIDOMWindowUtils);
+    this.utils = this.win.windowUtils;
     setTimeout(TIMEOUT_SEC * 1000, () => {
       if (this.win) {
         reportResult(TEST_TIMEOUT);
@@ -174,7 +202,7 @@ var listener = {
 
     // Perform the compositor backbuffer test, which currently we use for
     // actually deciding whether to enable hardware media decoding.
-    testCompositor(this.win, this.ctx);
+    testCompositor(this, this.win, this.ctx);
 
     this.endTest();
   },
@@ -188,8 +216,9 @@ var listener = {
   },
 
   onWindowLoaded() {
-    let browser = this.win.document.createElementNS(XUL_NS, "browser");
+    let browser = this.win.document.createXULElement("browser");
     browser.setAttribute("type", "content");
+    browser.setAttribute("disableglobalhistory", "true");
 
     let remoteBrowser = Services.appinfo.browserTabsRemoteAutostart;
     browser.setAttribute("remote", remoteBrowser);
@@ -230,59 +259,100 @@ var listener = {
 
     // Remove the annotation after we've cleaned everything up, to catch any
     // incidental crashes from having performed the sanity test.
-    annotateCrashReport(false);
-  }
+    removeCrashReportAnnotation();
+  },
 };
 
 function SanityTest() {}
 SanityTest.prototype = {
   classID: Components.ID("{f3a8ca4d-4c83-456b-aee2-6a2cbf11e9bd}"),
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIObserver,
-                                         Ci.nsISupportsWeakReference]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver,
+                                          Ci.nsISupportsWeakReference]),
 
   shouldRunTest() {
     // Only test gfx features if firefox has updated, or if the user has a new
     // gpu or drivers.
     var buildId = Services.appinfo.platformBuildID;
     var gfxinfo = Cc["@mozilla.org/gfx/info;1"].getService(Ci.nsIGfxInfo);
+    var hasAL = Services.prefs.getBoolPref(AL_ENABLED_PREF, false);
 
-    if (Preferences.get(RUNNING_PREF, false)) {
-      Preferences.set(DISABLE_VIDEO_PREF, true);
+    if (Services.prefs.getBoolPref(RUNNING_PREF, false)) {
+      Services.prefs.setBoolPref(DISABLE_VIDEO_PREF, true);
       reportResult(TEST_CRASHED);
       return false;
     }
 
     function checkPref(pref, value, reason) {
-      var prefValue = Preferences.get(pref, undefined);
-      if (prefValue == value) {
-        return true;
+      let prefValue;
+      let prefType = Services.prefs.getPrefType(pref);
+
+      switch (prefType) {
+          case Ci.nsIPrefBranch.PREF_INVALID:
+              reportTestReason(REASON_FIRST_RUN);
+              return false;
+
+          case Ci.nsIPrefBranch.PREF_STRING:
+              prefValue = Services.prefs.getStringPref(pref);
+              break;
+
+          case Ci.nsIPrefBranch.PREF_BOOL:
+              prefValue = Services.prefs.getBoolPref(pref);
+              break;
+
+          case Ci.nsIPrefBranch.PREF_INT:
+              prefValue = Services.prefs.getIntPref(pref);
+              break;
+
+          default:
+              throw new Error("Unexpected preference type.");
       }
-      if (prefValue === undefined) {
-        reportTestReason(REASON_FIRST_RUN);
-      } else {
+
+      if (prefValue != value) {
         reportTestReason(reason);
+        return false;
       }
-      return false;
+
+      return true;
     }
 
     // TODO: Handle dual GPU setups
     if (checkPref(DRIVER_PREF, gfxinfo.adapterDriverVersion, REASON_DRIVER_CHANGED) &&
         checkPref(DEVICE_PREF, gfxinfo.adapterDeviceID, REASON_DEVICE_CHANGED) &&
-        checkPref(VERSION_PREF, buildId, REASON_FIREFOX_CHANGED)) {
+        checkPref(VERSION_PREF, buildId, REASON_FIREFOX_CHANGED) &&
+        checkPref(ADVANCED_LAYERS_PREF, hasAL, REASON_AL_CONFIG_CHANGED)) {
       return false;
     }
 
     // Enable hardware decoding so we can test again
     // and record the driver version to detect if the driver changes.
-    Preferences.set(DISABLE_VIDEO_PREF, false);
-    Preferences.set(DRIVER_PREF, gfxinfo.adapterDriverVersion);
-    Preferences.set(DEVICE_PREF, gfxinfo.adapterDeviceID);
-    Preferences.set(VERSION_PREF, buildId);
+    Services.prefs.setBoolPref(DISABLE_VIDEO_PREF, false);
+    Services.prefs.setStringPref(DRIVER_PREF, gfxinfo.adapterDriverVersion);
+    Services.prefs.setStringPref(DEVICE_PREF, gfxinfo.adapterDeviceID);
+    Services.prefs.setStringPref(VERSION_PREF, buildId);
+    Services.prefs.setBoolPref(ADVANCED_LAYERS_PREF, hasAL);
 
     // Update the prefs so that this test doesn't run again until the next update.
-    Preferences.set(RUNNING_PREF, true);
+    Services.prefs.setBoolPref(RUNNING_PREF, true);
     Services.prefs.savePrefFile(null);
     return true;
+  },
+
+  _updateLowEndState() {
+    // If we want to adjust performance based on the machine characteristics...
+    if (Services.prefs.getBoolPref(PERF_ADJUSTMENT_PREF, AppConstants.EARLY_BETA_OR_EARLIER)) {
+      // ... treat any machines with 1-2 cores and a clock speed under 1.8GHz
+      // as "low-end". This will trigger use of a lower frame-rate to help free
+      // the CPU for other work by reducing the amount of painting/compositing
+      // we do.
+      // The cut-off here is based on a combination of telemetry info, running
+      // performance tests on the 2018 reference hardware, and gut instinct.
+      // Ideally, we should replace it with one that's entirely powered by
+      // data correlations from telemetry - see bug 1475242 for more.
+      let isLowEnd = Services.sysinfo.get("cpucores") <= 2 && Services.sysinfo.get("cpuspeed") < 1800;
+      Services.prefs.setBoolPref(LOWEND_DEVICE_PREF, isLowEnd);
+    } else {
+      Services.prefs.clearUserPref(LOWEND_DEVICE_PREF);
+    }
   },
 
   observe(subject, topic, data) {
@@ -295,18 +365,23 @@ SanityTest.prototype = {
 
     if (!this.shouldRunTest()) return;
 
-    annotateCrashReport(true);
+    annotateCrashReport();
+
+    this._updateLowEndState();
 
     // Open a tiny window to render our test page, and notify us when it's loaded
     var sanityTest = Services.ww.openWindow(null,
         "chrome://gfxsanity/content/sanityparent.html",
         "Test Page",
-        "width=" + PAGE_WIDTH + ",height=" + PAGE_HEIGHT + ",chrome,titlebar=0,scrollbars=0",
+        "width=" + PAGE_WIDTH + ",height=" + PAGE_HEIGHT + ",chrome,titlebar=0,scrollbars=0,popup=1",
         null);
 
     // There's no clean way to have an invisible window and ensure it's always painted.
     // Instead, move the window far offscreen so it doesn't show up during launch.
     sanityTest.moveTo(100000000, 1000000000);
+    // In multi-screens with different dpi setup, the window may have been
+    // incorrectly resized.
+    sanityTest.resizeTo(PAGE_WIDTH, PAGE_HEIGHT);
     tester.scheduleTest(sanityTest);
   },
 };

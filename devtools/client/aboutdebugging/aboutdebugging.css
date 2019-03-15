@@ -20,10 +20,22 @@ button {
 
 /* Category panels */
 
+#categories {
+  display: flex;
+  flex-direction: column;
+}
+
 .category {
+  align-items: center;
+  /* Override a `background-color` set on all buttons by common.inc.css */
+  background-color: transparent;
   display: flex;
   flex-direction: row;
-  align-items: center;
+}
+
+.category.selected {
+  /* Override a `color: inherit !important` forced on all buttons by common.inc.css */
+  color: var(--in-content-category-text-selected) !important;
 }
 
 .category-name {
@@ -63,6 +75,7 @@ button {
 
 .target-icon {
   height: 24px;
+  width: 24px;
   margin-inline-end: 5px;
 }
 
@@ -159,7 +172,10 @@ button {
 }
 
 .addons-install-error {
+  align-items: center;
   background-color: #f3b0b0;
+  display: flex;
+  justify-content: space-between;
 }
 
 .service-worker-multi-process {
@@ -172,34 +188,51 @@ button {
 }
 
 .warning {
-  background-image: url(chrome://devtools/skin/images/alerticon-warning.png);
-  background-size: 13px 12px;
   display: inline-block;
-  width: 13px;
+  width: 12px;
   height: 12px;
-  margin-inline-end: 10px;
-}
-
-@media (min-resolution: 1.1dppx) {
-  .warning {
-    background-image: url(chrome://devtools/skin/images/alerticon-warning@2x.png);
-  }
+  vertical-align: 0;
+  margin-inline-end: 8px;
+  background-image: url(chrome://devtools/skin/images/alert.svg);
+  background-repeat: no-repeat;
+  background-size: contain;
+  -moz-context-properties: fill;
+  fill: #d7b600;
 }
 
 .addons-install-error .warning,
 .service-worker-multi-process .warning {
   /* The warning icon can be hard to see on red / yellow backgrounds, this turns the icon
   to a black icon. */
-  filter: brightness(0%);
+  fill: #0c0c0d;
 }
 
 .addons-options {
   flex: 1;
 }
 
-.addons-debugging-label {
+.service-worker-disabled-label,
+.addons-debugging-label,
+.addons-web-ext-tip {
   display: inline-block;
   margin-inline-end: 1ch;
+}
+
+.addons-tip {
+  display: flex;
+  align-items: center;
+  margin-top: 1em;
+  margin-bottom: 1em;
+  height: 24px;
+}
+
+.addons-tip-icon {
+  width: 24px;
+  height: 24px;
+  background-image: url(chrome://devtools/skin/images/help.svg);
+  background-repeat: no-repeat;
+  flex-shrink: 0;
+  margin-inline-end: 8px;
 }
 
 .error-page {
@@ -213,4 +246,142 @@ button {
 
 .error-page .error-page-details {
   color: gray;
+}
+
+#addons-panel h2 {
+  font-size: 1.5rem;
+  font-weight: bold;
+}
+
+.addon-target-container {
+  list-style-type: none;
+  margin: 16px 0;
+}
+
+.target-card-heading {
+  margin: 0;
+}
+
+.target-card-heading {
+  align-items: center;
+  display: flex;
+  margin: 0;
+  padding: 0 0 16px;
+
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.target-card-heading-icon {
+  height: 24px;
+  width: 24px;
+  margin-inline-end: 16px;
+}
+
+.target-card-actions {
+  border-top: 1px solid rgba(0, 0, 0, 0.2);
+  padding-top: 16px;
+}
+
+.target-card-action-link {
+  background: none;
+  border: none;
+  /* !important overrides the common.css button color */
+  color: var(--in-content-link-color) !important;
+  font-size: 13px;
+  /* Use some negative top margin to account for the padding and keep the
+   * button vertically centred. */
+  margin: -4px 0 0 12px;
+  min-width: auto;
+  padding: 4px;
+}
+
+.target-card-action-link:first-of-type {
+  /* Other action buttons will have 12px of margin to space between each other,
+   * but for the first button subtract the start padding to align with the border. */
+  margin-inline-start: -4px;
+}
+
+.target-card-action-link:active,
+.target-card-action-link:hover,
+.target-card-action-link:enabled:hover:active {
+  background: none;
+}
+
+.target-card-action-link:disabled {
+  color: #999;
+  opacity: 1;
+}
+
+.target-card-action-link:enabled:focus,
+.target-card-action-link:enabled:hover {
+  background: none;
+  color: var(--in-content-link-color-hover) !important;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.target-card-action-link:enabled:hover:active {
+  color: var(--in-content-link-color-active) !important;
+  text-decoration: none;
+}
+
+.addon-target-icon.target-icon {
+  margin-inline-end: 16px;
+}
+
+.addon-target-info {
+  display: grid;
+  grid-template-columns: 128px 1fr;
+}
+
+.addon-target-info-label {
+  padding-inline-end: 8px;
+  padding-bottom: 8px;
+}
+
+.addon-target-info-label:last-of-type {
+  padding-bottom: 16px;
+}
+
+.addon-target-info-content {
+  margin: 0;
+}
+
+.addon-target-info-more {
+  padding-left: 1ch;
+}
+
+.addon-target-messages {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.2);
+  margin-bottom: 16px;
+  padding: 0 0 12px 0;
+}
+
+.addon-target-message {
+  list-style-type: none;
+  padding: 4px 0;
+}
+
+.addon-target-message:first-of-type {
+  padding-top: 0;
+}
+
+.addon-target-warning-message {
+  color: #a47f00;
+}
+
+/* We want the ellipsis on the left-hand-side, so make the parent RTL
+ * with an ellipsis and the child can be LTR. */
+.file-path {
+  direction: rtl;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-path-inner {
+  direction: ltr;
+  unicode-bidi: plaintext;
 }

@@ -7,12 +7,10 @@
 #ifndef mozilla_ipc_backgroundchild_h__
 #define mozilla_ipc_backgroundchild_h__
 
-#include "base/process.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ipc/Transport.h"
 
-class nsIDOMBlob;
-class nsIIPCBackgroundChildCreateCallback;
+class nsIEventTarget;
 
 namespace mozilla {
 namespace dom {
@@ -20,9 +18,14 @@ namespace dom {
 class BlobImpl;
 class ContentChild;
 class ContentParent;
-class PBlobChild;
 
-} // namespace dom
+}  // namespace dom
+
+namespace net {
+
+class SocketProcessImpl;
+
+}  // namespace net
 
 namespace ipc {
 
@@ -35,13 +38,13 @@ class PBackgroundChild;
 // across threads. Each PBackgroundChild is unique and valid as long as its
 // designated thread lives.
 //
-// Creation of PBackground is asynchronous. GetForCurrentThread() will return
-// null until the sequence is complete. GetOrCreateForCurrentThread() will start
-// the creation sequence and will call back via the
-// nsIIPCBackgroundChildCreateCallback interface when completed. Thereafter
-// (assuming success) GetForCurrentThread() will return the same actor every
-// time. SynchronouslyCreateForCurrentThread() will spin the event loop until
-// the BackgroundChild until the creation sequence is complete.
+// Creation of PBackground is synchronous. GetOrCreateForCurrentThread will
+// create the actor if it doesn't exist yet. Thereafter (assuming success)
+// GetForCurrentThread() will return the same actor every time.
+//
+// GetOrCreateSocketActorForCurrentThread, which is like
+// GetOrCreateForCurrentThread, is used to get or create PBackground actor
+// between child process and socket process.
 //
 // CloseForCurrentThread() will close the current PBackground actor.  Subsequent
 // calls to GetForCurrentThread will return null.  CloseForCurrentThread() may
@@ -50,46 +53,34 @@ class PBackgroundChild;
 //
 // The PBackgroundChild actor and all its sub-protocol actors will be
 // automatically destroyed when its designated thread completes.
-class BackgroundChild final
-{
+class BackgroundChild final {
   friend class mozilla::dom::ContentChild;
   friend class mozilla::dom::ContentParent;
+  friend class mozilla::net::SocketProcessImpl;
 
-  typedef base::ProcessId ProcessId;
   typedef mozilla::ipc::Transport Transport;
 
-public:
+ public:
   // See above.
-  static PBackgroundChild*
-  GetForCurrentThread();
-
-  // See above.
-  static bool
-  GetOrCreateForCurrentThread(nsIIPCBackgroundChildCreateCallback* aCallback);
+  static PBackgroundChild* GetForCurrentThread();
 
   // See above.
-  static PBackgroundChild*
-  SynchronouslyCreateForCurrentThread();
-
-  static mozilla::dom::PBlobChild*
-  GetOrCreateActorForBlob(PBackgroundChild* aBackgroundActor,
-                          nsIDOMBlob* aBlob);
-
-  static mozilla::dom::PBlobChild*
-  GetOrCreateActorForBlobImpl(PBackgroundChild* aBackgroundActor,
-                              mozilla::dom::BlobImpl* aBlobImpl);
+  static PBackgroundChild* GetOrCreateForCurrentThread(
+      nsIEventTarget* aMainEventTarget = nullptr);
 
   // See above.
-  static void
-  CloseForCurrentThread();
+  static void CloseForCurrentThread();
 
-private:
+  // See above.
+  static PBackgroundChild* GetOrCreateSocketActorForCurrentThread(
+      nsIEventTarget* aMainEventTarget = nullptr);
+
+ private:
   // Only called by ContentChild or ContentParent.
-  static void
-  Startup();
+  static void Startup();
 };
 
-} // namespace ipc
-} // namespace mozilla
+}  // namespace ipc
+}  // namespace mozilla
 
-#endif // mozilla_ipc_backgroundchild_h__
+#endif  // mozilla_ipc_backgroundchild_h__

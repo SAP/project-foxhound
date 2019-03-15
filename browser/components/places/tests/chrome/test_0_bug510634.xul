@@ -9,8 +9,7 @@
                  type="text/css"?>
 
 <?xml-stylesheet href="chrome://browser/content/places/places.css"?>
-<?xml-stylesheet href="chrome://browser/skin/places/places.css"?>
-<?xul-overlay href="chrome://browser/content/places/placesOverlay.xul"?>
+<?xml-stylesheet href="chrome://browser/skin/places/tree-icons.css"?>
 
 <window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         title="510634: Wrong icons on bookmarks sidebar"
@@ -18,6 +17,7 @@
 
   <script type="application/javascript"
           src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js" />
+  <script type="application/javascript" src="head.js" />
 
   <body xmlns="http://www.w3.org/1999/xhtml" />
 
@@ -37,59 +37,59 @@
      * Bug 510634 -  Wrong icons on bookmarks sidebar
      * https://bugzilla.mozilla.org/show_bug.cgi?id=510634
      *
-     * Ensures that properties for special queries are set on their tree nodes,
-     * even if PlacesUIUtils.leftPaneFolderId was not initialized.
+     * Ensures that properties for special queries are set on their tree nodes.
      */
 
     SimpleTest.waitForExplicitFinish();
 
     function runTest() {
-      // We need to cache and restore this getter in order to simulate
-      // Bug 510634
-      let cachedLeftPaneFolderIdGetter =
-        PlacesUIUtils.__lookupGetter__("leftPaneFolderId");
-      // Must also cache and restore this getter as it is affected by
-      // leftPaneFolderId, from bug 564900.
-      let cachedAllBookmarksFolderIdGetter =
-        PlacesUIUtils.__lookupGetter__("allBookmarksFolderId");
-
-      let leftPaneFolderId = PlacesUIUtils.leftPaneFolderId;
-
-      // restore the getter
-      PlacesUIUtils.__defineGetter__("leftPaneFolderId", cachedLeftPaneFolderIdGetter);
-
       // Setup the places tree contents.
       let tree = document.getElementById("tree");
-      tree.place = "place:queryType=1&folder=" + leftPaneFolderId;
+      tree.place = `place:type=${Ci.nsINavHistoryQueryOptions.RESULTS_AS_LEFT_PANE_QUERY}&excludeItems=1&expandQueries=0`;
 
       // The query-property is set on the title column for each row.
-      let titleColumn = tree.treeBoxObject.columns.getColumnAt(0);
+      let titleColumn = tree.columns.getColumnAt(0);
 
       // Open All Bookmarks
-      tree.selectItems([PlacesUIUtils.leftPaneQueries["AllBookmarks"]]);
+      tree.selectItems([PlacesUtils.virtualAllBookmarksGuid]);
       PlacesUtils.asContainer(tree.selectedNode).containerOpen = true;
-      is(PlacesUIUtils.allBookmarksFolderId, tree.selectedNode.itemId,
+      is(tree.selectedNode.uri,
+         "place:type=" + Ci.nsINavHistoryQueryOptions.RESULTS_AS_ROOTS_QUERY,
          "Opened All Bookmarks");
 
-      ["History", "Downloads", "Tags", "AllBookmarks", "BookmarksToolbar",
-       "BookmarksMenu", "UnfiledBookmarks"].forEach(
-        function(aQueryName, aRow) {
-          let found = false;
-          for (let i = 0; i < tree.view.rowCount && !found; i++) {
-            rowProperties = tree.view.getCellProperties(i, titleColumn).split(" ");
-            found = rowProperties.includes("OrganizerQuery_" + aQueryName);
-          }
-          ok(found, "OrganizerQuery_" + aQueryName + " is set");
+      const topLevelGuids = [
+        PlacesUtils.virtualHistoryGuid,
+        PlacesUtils.virtualDownloadsGuid,
+        PlacesUtils.virtualTagsGuid,
+        PlacesUtils.virtualAllBookmarksGuid
+      ];
+
+      for (let queryName of topLevelGuids) {
+        let found = false;
+        for (let i = 0; i < tree.view.rowCount && !found; i++) {
+          rowProperties = tree.view.getCellProperties(i, titleColumn).split(" ");
+          found = rowProperties.includes("OrganizerQuery_" + queryName);
         }
-      );
+        ok(found, `OrganizerQuery_${queryName} is set`);
+      }
+
+      const folderGuids = [
+        PlacesUtils.bookmarks.toolbarGuid,
+        PlacesUtils.bookmarks.menuGuid,
+        PlacesUtils.bookmarks.unfiledGuid,
+      ];
+
+      for (let guid of folderGuids) {
+        let found = false;
+        for (let i = 0; i < tree.view.rowCount && !found; i++) {
+          rowProperties = tree.view.getCellProperties(i, titleColumn).split(" ");
+          found = rowProperties.includes("queryFolder_" + guid);
+        }
+        ok(found, `queryFolder_${guid} is set`);
+      }
 
       // Close the root node
       tree.result.root.containerOpen = false;
-
-      // Restore the getters for the next test.
-      PlacesUIUtils.__defineGetter__("leftPaneFolderId", cachedLeftPaneFolderIdGetter);
-      PlacesUIUtils.__defineGetter__("allBookmarksFolderId",
-                                     cachedAllBookmarksFolderIdGetter);
 
       SimpleTest.finish();
     }

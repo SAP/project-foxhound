@@ -2,7 +2,7 @@
 // See LICENSE for details.
 
 /*---
-info: >
+info: |
     Promise prototype object exists, is object, not enumerable, writable,
     or configurable
 es6id: S25.4.4.2_A1.1_T1
@@ -11,7 +11,7 @@ description: Promise prototype exists
 ---*/
 
 if (Promise.prototype === undefined) {
-    $ERROR("Expected Promise.prototype to be defined.");
+  $ERROR("Expected Promise.prototype to be defined.");
 }
 
 reportCompare(0, 0);

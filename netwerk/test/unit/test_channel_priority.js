@@ -9,9 +9,9 @@
 'use strict';
 
 /* globals NetUtil*/
-Cu.import('resource://gre/modules/NetUtil.jsm');
+ChromeUtils.import('resource://gre/modules/NetUtil.jsm');
 /* globals HttpServer */
-Cu.import('resource://testing-common/httpd.js');
+ChromeUtils.import('resource://testing-common/httpd.js');
 
 let httpserver;
 let port;
@@ -80,7 +80,7 @@ function run_test() { // jshint ignore:line
   }
 
   startHttpServer();
-  do_register_cleanup(stopHttpServer);
+  registerCleanupFunction(stopHttpServer);
   run_next_test();
 }
 

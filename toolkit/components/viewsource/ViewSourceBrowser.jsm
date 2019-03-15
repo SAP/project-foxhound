@@ -4,20 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { utils: Cu, interfaces: Ci, classes: Cc } = Components;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "Services",
+ChromeUtils.defineModuleGetter(this, "Services",
   "resource://gre/modules/Services.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Deprecated",
-  "resource://gre/modules/Deprecated.jsm");
 
 const BUNDLE_URL = "chrome://global/locale/viewSource.properties";
 
 const FRAME_SCRIPT = "chrome://global/content/viewSource-content.js";
 
-this.EXPORTED_SYMBOLS = ["ViewSourceBrowser"];
+var EXPORTED_SYMBOLS = ["ViewSourceBrowser"];
 
 // Keep a set of browsers we've seen before, so we can load our frame script as
 // needed into any new ones.
@@ -28,15 +22,11 @@ var gKnownBrowsers = new WeakSet();
  * It's companion frame script, viewSource-content.js, needs to be loaded as a
  * frame script into the browser being managed.
  *
- * For a view source window using viewSource.xul, the script viewSource.js in
- * the window extends an instance of this with more window specific functions.
- * The page script takes care of loading the companion frame script.
- *
  * For a view source tab (or some other non-window case), an instance of this is
  * created by viewSourceUtils.js to wrap the <browser>.  The frame script will
  * be loaded by this module at construction time.
  */
-this.ViewSourceBrowser = function ViewSourceBrowser(aBrowser) {
+function ViewSourceBrowser(aBrowser) {
   this._browser = aBrowser;
   this.init();
 }
@@ -79,13 +69,7 @@ ViewSourceBrowser.prototype = {
       this.mm.addMessageListener(msgName, this);
     });
 
-    // If we have a known <browser> already, load the frame script here.  This
-    // is not true for the window case, as the element does not exist until the
-    // XUL document loads.  For that case, the frame script is loaded by
-    // viewSource.js.
-    if (this._browser) {
-      this.loadFrameScript();
-    }
+    this.loadFrameScript();
   },
 
   /**
@@ -102,6 +86,12 @@ ViewSourceBrowser.prototype = {
    * For a new browser we've not seen before, load the frame script.
    */
   loadFrameScript() {
+    // Check for a browser first. There won't be one for the window case
+    // (still used by other applications like Thunderbird), as the element
+    // does not exist until the XUL document loads.
+    if (!this.browser) {
+      return;
+    }
     if (!gKnownBrowsers.has(this.browser)) {
       gKnownBrowsers.add(this.browser);
       this.mm.loadFrameScript(FRAME_SCRIPT, false);
@@ -162,7 +152,6 @@ ViewSourceBrowser.prototype = {
    * Loads the source for a URL while applying some optional features if
    * enabled.
    *
-   * For the viewSource.xul window, this is called by onXULLoaded above.
    * For view source in a specific browser, this is manually called after
    * this object is constructed.
    *
@@ -250,7 +239,7 @@ ViewSourceBrowser.prototype = {
         this.bundle.GetStringFromName("goToLineText"),
         input,
         null,
-        {value:0});
+        {value: 0});
 
     if (!ok)
       return;
@@ -329,6 +318,5 @@ ViewSourceBrowser.prototype = {
  *        String containing the URI
  */
 ViewSourceBrowser.isViewSource = function(uri) {
-  return uri.startsWith("view-source:") ||
-         (uri.startsWith("data:") && uri.includes("MathML"));
+  return uri.startsWith("view-source:");
 };

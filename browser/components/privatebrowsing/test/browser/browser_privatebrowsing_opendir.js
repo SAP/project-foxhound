@@ -23,10 +23,8 @@ registerCleanupFunction(function() {
 function test() {
   // initialization
   waitForExplicitFinish();
-  let ds = Cc["@mozilla.org/file/directory_service;1"].
-           getService(Ci.nsIProperties);
-  let dir1 = ds.get("ProfD", Ci.nsIFile);
-  let dir2 = ds.get("TmpD", Ci.nsIFile);
+  let dir1 = Services.dirsvc.get("ProfD", Ci.nsIFile);
+  let dir2 = Services.dirsvc.get("TmpD", Ci.nsIFile);
   let file = dir2.clone();
   file.append("pbtest.file");
   file.createUnique(Ci.nsIFile.NORMAL_FILE_TYPE, 0o600);
@@ -35,7 +33,7 @@ function test() {
 
   function setupCleanSlate(win) {
     win.gLastOpenDirectory.reset();
-    gPrefService.clearUserPref(kPrefName);
+    Services.prefs.clearUserPref(kPrefName);
   }
 
   setupCleanSlate(window);
@@ -93,7 +91,7 @@ function test() {
       // Test 3: the last open directory is set from a previous session, it should be used
       // in normal mode
 
-      gPrefService.setComplexValue(kPrefName, Ci.nsILocalFile, dir1);
+      Services.prefs.setComplexValue(kPrefName, Ci.nsIFile, dir1);
       is(nonPrivateWindow.gLastOpenDirectory.path.path, dir1.path,
          "The pref set from last session should take effect outside the private browsing mode");
 
@@ -103,7 +101,7 @@ function test() {
       // Test 4: the last open directory is set from a previous session, it should be used
       // in private browsing mode mode
 
-      gPrefService.setComplexValue(kPrefName, Ci.nsILocalFile, dir1);
+      Services.prefs.setComplexValue(kPrefName, Ci.nsIFile, dir1);
       // test the private window
       is(privateWindow.gLastOpenDirectory.path.path, dir1.path,
          "The pref set from last session should take effect inside the private browsing mode");

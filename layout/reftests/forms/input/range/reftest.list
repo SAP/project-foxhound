@@ -5,7 +5,7 @@
 != not-other-type-unthemed-1.html not-other-type-unthemed-1c-notref.html
 
 # dynamic type changes:
-fuzzy-if(skiaContent,1,40) == to-range-from-other-type-unthemed-1.html to-range-from-other-type-unthemed-1-ref.html
+fuzzy-if(skiaContent,0-1,0-40) == to-range-from-other-type-unthemed-1.html to-range-from-other-type-unthemed-1-ref.html
 == from-range-to-other-type-unthemed-1.html from-range-to-other-type-unthemed-1-ref.html
 
 # for different values:
@@ -13,14 +13,14 @@ fuzzy-if(skiaContent,1,40) == to-range-from-other-type-unthemed-1.html to-range-
 == same-fraction-of-range-unthemed-1.html same-fraction-of-range-unthemed-1-ref.html
 
 # dynamic value changes:
-fuzzy-if(skiaContent,1,40) == value-prop-unthemed.html 75pct-unthemed-common-ref.html
-== value-prop.html 75pct-common-ref.html
-fuzzy-if(skiaContent,1,40) == valueAsNumber-prop-unthemed.html 75pct-unthemed-common-ref.html
-== valueAsNumber-prop.html 75pct-common-ref.html
-fuzzy-if(skiaContent,1,40) == stepDown-unthemed.html 75pct-unthemed-common-ref.html
-== stepDown.html 75pct-common-ref.html
-fuzzy-if(skiaContent,1,40) == stepUp-unthemed.html 75pct-unthemed-common-ref.html
-== stepUp.html 75pct-common-ref.html
+fuzzy-if(skiaContent,0-1,0-40) == value-prop-unthemed.html 75pct-unthemed-common-ref.html
+fuzzy-if(webrender&&gtkWidget,79-79,138-138) == value-prop.html 75pct-common-ref.html
+fuzzy-if(skiaContent,0-1,0-40) == valueAsNumber-prop-unthemed.html 75pct-unthemed-common-ref.html
+fuzzy-if(webrender&&gtkWidget,79-79,138-138) == valueAsNumber-prop.html 75pct-common-ref.html
+fuzzy-if(skiaContent,0-1,0-40) == stepDown-unthemed.html 75pct-unthemed-common-ref.html
+fuzzy-if(webrender&&gtkWidget,79-79,138-138) == stepDown.html 75pct-common-ref.html
+fuzzy-if(skiaContent,0-1,0-40) == stepUp-unthemed.html 75pct-unthemed-common-ref.html
+fuzzy-if(webrender&&gtkWidget,79-79,138-138) == stepUp.html 75pct-common-ref.html
 == max-prop.html 100pct-common-ref.html
 == reset-value.html reset-value-ref.html
 
@@ -28,7 +28,7 @@ fuzzy-if(skiaContent,1,40) == stepUp-unthemed.html 75pct-unthemed-common-ref.htm
 == direction-unthemed-1.html direction-unthemed-1-ref.html
 
 # ::-moz-range-progress pseudo-element:
-fails-if(Android) == moz-range-progress-1.html moz-range-progress-1-ref.html
+== moz-range-progress-1.html moz-range-progress-1-ref.html
 == moz-range-progress-2.html moz-range-progress-2-ref.html
 == moz-range-progress-3.html moz-range-progress-3-ref.html
 
@@ -47,3 +47,11 @@ fails-if(Android) == moz-range-progress-1.html moz-range-progress-1-ref.html
 == range-vrl-orient-inline.html range-orient-vertical-rtl.html
 == range-vrl-orient-horizontal.html range-orient-horizontal-rtl.html
 == range-vrl-orient-vertical.html range-orient-vertical-rtl.html
+
+skip-if(Android) == range-border-background.html range-border-background-ref.html # Android doesn't have a native theme for -webkit-appearance:range
+
+# Other range-percent-intrinsic-size-*.html tests lives in
+# testing/web-platform/tests/css/css-sizing/.  Vertical layout with
+# -webkit-appearance:none isn't supported in other UAs so this test
+# is an internal reftest for now.
+== range-percent-intrinsic-size-2b.html range-percent-intrinsic-size-2b-ref.html

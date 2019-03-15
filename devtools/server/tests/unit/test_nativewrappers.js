@@ -1,30 +1,37 @@
-function run_test()
-{
-  Components.utils.import("resource://gre/modules/jsdebugger.jsm");
+/* eslint-disable strict */
+function run_test() {
+  Services.prefs.setBoolPref("security.allow_eval_with_system_principal", true);
+  registerCleanupFunction(() => {
+    Services.prefs.clearUserPref("security.allow_eval_with_system_principal");
+  });
+  ChromeUtils.import("resource://gre/modules/jsdebugger.jsm");
   addDebuggerToGlobal(this);
-  var g = testGlobal("test1");
+  const g = testGlobal("test1");
 
-  var dbg = new Debugger();
+  const dbg = new Debugger();
   dbg.addDebuggee(g);
-  dbg.onDebuggerStatement = function (aFrame) {
-    let args = aFrame.arguments;
+  dbg.onDebuggerStatement = function(frame) {
+    const args = frame.arguments;
     try {
       args[0];
-      do_check_true(true);
+      Assert.ok(true);
     } catch (ex) {
-      do_check_true(false);
+      Assert.ok(false);
     }
   };
 
   g.eval("function stopMe(arg) {debugger;}");
 
-  g2 = testGlobal("test2");
+  const g2 = testGlobal("test2");
   g2.g = g;
-  g2.eval("(" + function createBadEvent() {
-    let parser = Components.classes["@mozilla.org/xmlextras/domparser;1"].createInstance(Components.interfaces.nsIDOMParser);
+  // Not using the "stringify a function" trick because that runs afoul of the
+  // Cu.importGlobalProperties lint and we don't need it here anyway.
+  g2.eval(`(function createBadEvent() {
+    Cu.importGlobalProperties(["DOMParser"]);
+    let parser = new DOMParser();
     let doc = parser.parseFromString("<foo></foo>", "text/xml");
     g.stopMe(doc.createEvent("MouseEvent"));
-  } + ")()");
+  } )()`);
 
   dbg.enabled = false;
 }

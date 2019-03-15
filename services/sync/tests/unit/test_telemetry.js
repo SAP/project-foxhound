@@ -1,24 +1,22 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Cu.import("resource://services-common/observers.js");
-Cu.import("resource://services-sync/telemetry.js");
-Cu.import("resource://services-sync/service.js");
-Cu.import("resource://services-sync/record.js");
-Cu.import("resource://services-sync/resource.js");
-Cu.import("resource://services-sync/constants.js");
-Cu.import("resource://services-sync/engines.js");
-Cu.import("resource://services-sync/engines/bookmarks.js");
-Cu.import("resource://services-sync/engines/clients.js");
-Cu.import("resource://testing-common/services/sync/utils.js");
-Cu.import("resource://testing-common/services/sync/fxa_utils.js");
-Cu.import("resource://testing-common/services/sync/rotaryengine.js");
-Cu.import("resource://gre/modules/osfile.jsm", this);
+ChromeUtils.import("resource://services-common/observers.js");
+ChromeUtils.import("resource://services-common/utils.js");
+ChromeUtils.import("resource://services-sync/telemetry.js");
+ChromeUtils.import("resource://services-sync/service.js");
+ChromeUtils.import("resource://services-sync/record.js");
+ChromeUtils.import("resource://services-sync/resource.js");
+ChromeUtils.import("resource://services-sync/constants.js");
+ChromeUtils.import("resource://services-sync/engines.js");
+ChromeUtils.import("resource://services-sync/engines/bookmarks.js");
+ChromeUtils.import("resource://services-sync/engines/clients.js");
+ChromeUtils.import("resource://testing-common/services/sync/fxa_utils.js");
+ChromeUtils.import("resource://testing-common/services/sync/rotaryengine.js");
+ChromeUtils.import("resource://gre/modules/osfile.jsm", this);
 
-Cu.import("resource://gre/modules/PlacesUtils.jsm");
-Cu.import("resource://services-sync/util.js");
+ChromeUtils.import("resource://services-sync/util.js");
 
-initTestLogging("Trace");
 
 function SteamStore(engine) {
   Store.call(this, "Steam", engine);
@@ -38,37 +36,68 @@ SteamTracker.prototype = {
 };
 
 function SteamEngine(service) {
-  Engine.call(this, "steam", service);
+  SyncEngine.call(this, "steam", service);
 }
 
 SteamEngine.prototype = {
-  __proto__: Engine.prototype,
+  __proto__: SyncEngine.prototype,
   _storeObj: SteamStore,
   _trackerObj: SteamTracker,
   _errToThrow: null,
-  _sync() {
+  problemsToReport: null,
+  async _sync() {
     if (this._errToThrow) {
       throw this._errToThrow;
     }
-  }
+  },
+  getValidator() {
+    return new SteamValidator();
+  },
 };
 
 function BogusEngine(service) {
-  Engine.call(this, "bogus", service);
+  SyncEngine.call(this, "bogus", service);
 }
 
 BogusEngine.prototype = Object.create(SteamEngine.prototype);
 
+class SteamValidator {
+  async canValidate() {
+    return true;
+  }
+
+  async validate(engine) {
+    return {
+      problems: new SteamValidationProblemData(engine.problemsToReport),
+      version: 1,
+      duration: 0,
+      recordCount: 0,
+    };
+  }
+}
+
+class SteamValidationProblemData {
+  constructor(problemsToReport = []) {
+    this.problemsToReport = problemsToReport;
+  }
+
+  getSummary() {
+    return this.problemsToReport;
+  }
+}
+
 async function cleanAndGo(engine, server) {
-  engine._tracker.clearChangedIDs();
+  await engine._tracker.clearChangedIDs();
   Svc.Prefs.resetBranch("");
-  Svc.Prefs.set("log.logger.engine.rotary", "Trace");
+  syncTestLogging();
   Service.recordManager.clearCache();
   await promiseStopServer(server);
 }
 
-// Avoid addon manager complaining about not being initialized
-Service.engineManager.unregister("addons");
+add_task(async function setup() {
+  // Avoid addon manager complaining about not being initialized
+  await Service.engineManager.unregister("addons");
+});
 
 add_task(async function test_basic() {
   enableValidationPrefs();
@@ -79,7 +108,7 @@ add_task(async function test_basic() {
   let handlers = {
     "/1.1/johndoe/info/collections": helper.handler,
     "/1.1/johndoe/storage/crypto/keys": upd("crypto", new ServerWBO("keys").handler()),
-    "/1.1/johndoe/storage/meta/global": upd("meta", new ServerWBO("global").handler())
+    "/1.1/johndoe/storage/meta/global": upd("meta", new ServerWBO("global").handler()),
   };
 
   let collections = ["clients", "bookmarks", "forms", "history", "passwords", "prefs", "tabs"];
@@ -91,7 +120,14 @@ add_task(async function test_basic() {
   let server = httpd_setup(handlers);
   await configureIdentity({ username: "johndoe" }, server);
 
-  await sync_and_validate_telem(true);
+  let ping = await sync_and_validate_telem(true, true);
+
+  // Check the "os" block - we can't really check specific values, but can
+  // check it smells sane.
+  ok(ping.os, "there is an OS block");
+  ok("name" in ping.os, "there is an OS name");
+  ok("version" in ping.os, "there is an OS version");
+  ok("locale" in ping.os, "there is an OS locale");
 
   Svc.Prefs.resetBranch("");
   await promiseStopServer(server);
@@ -99,12 +135,9 @@ add_task(async function test_basic() {
 
 add_task(async function test_processIncoming_error() {
   let engine = new BookmarksEngine(Service);
+  await engine.initialize();
   let store  = engine._store;
-  let server = serverForUsers({"foo": "password"}, {
-    meta: {global: {engines: {bookmarks: {version: engine.version,
-                                           syncID: engine.syncID}}}},
-    bookmarks: {}
-  });
+  let server = await serverForFoo(engine);
   await SyncTestingInfrastructure(server);
   let collection = server.user("foo").collection("bookmarks");
   try {
@@ -113,12 +146,12 @@ add_task(async function test_processIncoming_error() {
     const BOGUS_GUID = "zzzzzzzzzzzz";
     let bogus_record = collection.insert(BOGUS_GUID, "I'm a bogus record!");
     bogus_record.get = function get() {
-      throw "Sync this!";
+      throw new Error("Sync this!");
     };
     // Make the 10 minutes old so it will only be synced in the toFetch phase.
     bogus_record.modified = Date.now() / 1000 - 60 * 10;
-    engine.lastSync = Date.now() / 1000 - 60;
-    engine.toFetch = [BOGUS_GUID];
+    await engine.setLastSync(Date.now() / 1000 - 60);
+    engine.toFetch = new SerializableSet([BOGUS_GUID]);
 
     let error, pingPayload, fullPing;
     try {
@@ -134,38 +167,35 @@ add_task(async function test_processIncoming_error() {
 
     equal(fullPing.uid, "f".repeat(32)); // as setup by SyncTestingInfrastructure
     deepEqual(pingPayload.failureReason, {
-      name: "othererror",
-      error: "error.engine.reason.record_download_fail"
+      name: "httperror",
+      code: 500,
     });
 
     equal(pingPayload.engines.length, 1);
     equal(pingPayload.engines[0].name, "bookmarks");
     deepEqual(pingPayload.engines[0].failureReason, {
-      name: "othererror",
-      error: "error.engine.reason.record_download_fail"
+      name: "httperror",
+      code: 500,
     });
 
   } finally {
-    store.wipe();
+    await store.wipe();
     await cleanAndGo(engine, server);
   }
 });
 
 add_task(async function test_uploading() {
   let engine = new BookmarksEngine(Service);
+  await engine.initialize();
   let store  = engine._store;
-  let server = serverForUsers({"foo": "password"}, {
-    meta: {global: {engines: {bookmarks: {version: engine.version,
-                                           syncID: engine.syncID}}}},
-    bookmarks: {}
-  });
+  let server = await serverForFoo(engine);
   await SyncTestingInfrastructure(server);
 
-  let parent = PlacesUtils.toolbarFolderId;
-  let uri = Utils.makeURI("http://getfirefox.com/");
-
-  let bmk_id = PlacesUtils.bookmarks.insertBookmark(parent, uri,
-    PlacesUtils.bookmarks.DEFAULT_INDEX, "Get Firefox!");
+  let bmk = await PlacesUtils.bookmarks.insert({
+    parentGuid: PlacesUtils.bookmarks.toolbarGuid,
+    url: "http://getfirefox.com/",
+    title: "Get Firefox!",
+  });
 
   try {
     let ping = await sync_engine_and_validate_telem(engine, false);
@@ -173,13 +203,16 @@ add_task(async function test_uploading() {
     equal(ping.engines.length, 1);
     equal(ping.engines[0].name, "bookmarks");
     ok(!!ping.engines[0].outgoing);
-    greater(ping.engines[0].outgoing[0].sent, 0)
+    greater(ping.engines[0].outgoing[0].sent, 0);
     ok(!ping.engines[0].incoming);
 
-    PlacesUtils.bookmarks.setItemTitle(bmk_id, "New Title");
+    await PlacesUtils.bookmarks.update({
+      guid: bmk.guid,
+      title: "New Title",
+    });
 
-    store.wipe();
-    engine.resetClient();
+    await store.wipe();
+    await engine.resetClient();
 
     ping = await sync_engine_and_validate_telem(engine, false);
     equal(ping.engines.length, 1);
@@ -189,7 +222,7 @@ add_task(async function test_uploading() {
 
   } finally {
     // Clean up.
-    store.wipe();
+    await store.wipe();
     await cleanAndGo(engine, server);
   }
 });
@@ -199,44 +232,45 @@ add_task(async function test_upload_failed() {
   collection._wbos.flying = new ServerWBO("flying");
 
   let server = sync_httpd_setup({
-      "/1.1/foo/storage/rotary": collection.handler()
+      "/1.1/foo/storage/rotary": collection.handler(),
   });
 
   await SyncTestingInfrastructure(server);
   await configureIdentity({ username: "foo" }, server);
 
   let engine = new RotaryEngine(Service);
-  engine.lastSync = 123; // needs to be non-zero so that tracker is queried
-  engine.lastSyncLocal = 456;
   engine._store.items = {
     flying: "LNER Class A3 4472",
     scotsman: "Flying Scotsman",
-    peppercorn: "Peppercorn Class"
+    peppercorn: "Peppercorn Class",
   };
   const FLYING_CHANGED = 12345;
   const SCOTSMAN_CHANGED = 23456;
   const PEPPERCORN_CHANGED = 34567;
-  engine._tracker.addChangedID("flying", FLYING_CHANGED);
-  engine._tracker.addChangedID("scotsman", SCOTSMAN_CHANGED);
-  engine._tracker.addChangedID("peppercorn", PEPPERCORN_CHANGED);
+  await engine._tracker.addChangedID("flying", FLYING_CHANGED);
+  await engine._tracker.addChangedID("scotsman", SCOTSMAN_CHANGED);
+  await engine._tracker.addChangedID("peppercorn", PEPPERCORN_CHANGED);
 
+  let syncID = await engine.resetLocalSyncID();
   let meta_global = Service.recordManager.set(engine.metaURL, new WBORecord(engine.metaURL));
-  meta_global.payload.engines = { rotary: { version: engine.version, syncID: engine.syncID } };
+  meta_global.payload.engines = { rotary: { version: engine.version, syncID } };
 
   try {
+    await engine.setLastSync(123); // needs to be non-zero so that tracker is queried
+    let changes = await engine._tracker.getChangedIDs();
     _(`test_upload_failed: Rotary tracker contents at first sync: ${
-      JSON.stringify(engine._tracker.changedIDs)}`);
+      JSON.stringify(changes)}`);
     engine.enabled = true;
     let ping = await sync_engine_and_validate_telem(engine, true);
     ok(!!ping);
     equal(ping.engines.length, 1);
     equal(ping.engines[0].incoming, null);
     deepEqual(ping.engines[0].outgoing, [{ sent: 3, failed: 2 }]);
-    engine.lastSync = 123;
-    engine.lastSyncLocal = 456;
+    await engine.setLastSync(123);
 
+    changes = await engine._tracker.getChangedIDs();
     _(`test_upload_failed: Rotary tracker contents at second sync: ${
-      JSON.stringify(engine._tracker.changedIDs)}`);
+      JSON.stringify(changes)}`);
     ping = await sync_engine_and_validate_telem(engine, true);
     ok(!!ping);
     equal(ping.engines.length, 1);
@@ -252,35 +286,34 @@ add_task(async function test_upload_failed() {
 add_task(async function test_sync_partialUpload() {
   let collection = new ServerCollection();
   let server = sync_httpd_setup({
-      "/1.1/foo/storage/rotary": collection.handler()
+      "/1.1/foo/storage/rotary": collection.handler(),
   });
   await SyncTestingInfrastructure(server);
-  generateNewKeys(Service.collectionKeys);
+  await generateNewKeys(Service.collectionKeys);
 
   let engine = new RotaryEngine(Service);
-  engine.lastSync = 123;
-  engine.lastSyncLocal = 456;
-
+  await engine.setLastSync(123);
 
   // Create a bunch of records (and server side handlers)
   for (let i = 0; i < 234; i++) {
     let id = "record-no-" + i;
     engine._store.items[id] = "Record No. " + i;
-    engine._tracker.addChangedID(id, i);
+    await engine._tracker.addChangedID(id, i);
     // Let two items in the first upload batch fail.
     if (i != 23 && i != 42) {
       collection.insert(id);
     }
   }
 
+  let syncID = await engine.resetLocalSyncID();
   let meta_global = Service.recordManager.set(engine.metaURL,
                                               new WBORecord(engine.metaURL));
-  meta_global.payload.engines = {rotary: {version: engine.version,
-                                          syncID: engine.syncID}};
+  meta_global.payload.engines = {rotary: {version: engine.version, syncID}};
 
   try {
+    let changes = await engine._tracker.getChangedIDs();
     _(`test_sync_partialUpload: Rotary tracker contents at first sync: ${
-      JSON.stringify(engine._tracker.changedIDs)}`);
+      JSON.stringify(changes)}`);
     engine.enabled = true;
     let ping = await sync_engine_and_validate_telem(engine, true);
 
@@ -292,26 +325,26 @@ add_task(async function test_sync_partialUpload() {
     ok(!ping.engines[0].failureReason);
     deepEqual(ping.engines[0].outgoing, [{ sent: 234, failed: 2 }]);
 
-    collection.post = function() { throw "Failure"; }
+    collection.post = function() { throw new Error("Failure"); };
 
     engine._store.items["record-no-1000"] = "Record No. 1000";
-    engine._tracker.addChangedID("record-no-1000", 1000);
+    await engine._tracker.addChangedID("record-no-1000", 1000);
     collection.insert("record-no-1000", 1000);
 
-    engine.lastSync = 123;
-    engine.lastSyncLocal = 456;
+    await engine.setLastSync(123);
     ping = null;
 
+    changes = await engine._tracker.getChangedIDs();
     _(`test_sync_partialUpload: Rotary tracker contents at second sync: ${
-      JSON.stringify(engine._tracker.changedIDs)}`);
+      JSON.stringify(changes)}`);
     try {
       // should throw
       await sync_engine_and_validate_telem(engine, true, errPing => ping = errPing);
     } catch (e) {}
     // It would be nice if we had a more descriptive error for this...
     let uploadFailureError = {
-      name: "othererror",
-      error: "error.engine.reason.record_upload_fail"
+      name: "httperror",
+      code: 500,
     };
 
     ok(!!ping);
@@ -321,7 +354,7 @@ add_task(async function test_sync_partialUpload() {
     deepEqual(ping.engines[0].incoming, {
       failed: 1,
       newFailed: 1,
-      reconciled: 232
+      reconciled: 232,
     });
     ok(!ping.engines[0].outgoing);
     deepEqual(ping.engines[0].failureReason, uploadFailureError);
@@ -335,26 +368,52 @@ add_task(async function test_sync_partialUpload() {
 add_task(async function test_generic_engine_fail() {
   enableValidationPrefs();
 
-  Service.engineManager.register(SteamEngine);
+  await Service.engineManager.register(SteamEngine);
   let engine = Service.engineManager.get("steam");
   engine.enabled = true;
-  let server = serverForUsers({"foo": "password"}, {
-    meta: {global: {engines: {steam: {version: engine.version,
-                                      syncID: engine.syncID}}}},
-    steam: {}
-  });
+  let server = await serverForFoo(engine);
   await SyncTestingInfrastructure(server);
-  let e = new Error("generic failure message")
+  let e = new Error("generic failure message");
   engine._errToThrow = e;
 
   try {
+    const changes = await engine._tracker.getChangedIDs();
     _(`test_generic_engine_fail: Steam tracker contents: ${
-      JSON.stringify(engine._tracker.changedIDs)}`);
+      JSON.stringify(changes)}`);
     let ping = await sync_and_validate_telem(true);
     equal(ping.status.service, SYNC_FAILED_PARTIAL);
     deepEqual(ping.engines.find(err => err.name === "steam").failureReason, {
       name: "unexpectederror",
-      error: String(e)
+      error: String(e),
+    });
+  } finally {
+    await cleanAndGo(engine, server);
+    await Service.engineManager.unregister(engine);
+  }
+});
+
+add_task(async function test_engine_fail_weird_errors() {
+  enableValidationPrefs();
+  await Service.engineManager.register(SteamEngine);
+  let engine = Service.engineManager.get("steam");
+  engine.enabled = true;
+  let server = await serverForFoo(engine);
+  await SyncTestingInfrastructure(server);
+  try {
+    let msg = "Bad things happened!";
+    engine._errToThrow = { message: msg };
+    let ping = await sync_and_validate_telem(true);
+    equal(ping.status.service, SYNC_FAILED_PARTIAL);
+    deepEqual(ping.engines.find(err => err.name === "steam").failureReason, {
+      name: "unexpectederror",
+      error: "Bad things happened!",
+    });
+    let e = { msg };
+    engine._errToThrow = e;
+    ping = await sync_and_validate_telem(true);
+    deepEqual(ping.engines.find(err => err.name === "steam").failureReason, {
+      name: "unexpectederror",
+      error: JSON.stringify(e),
     });
   } finally {
     await cleanAndGo(engine, server);
@@ -362,17 +421,57 @@ add_task(async function test_generic_engine_fail() {
   }
 });
 
+
+add_task(async function test_overrideTelemetryName() {
+  enableValidationPrefs(["steam"]);
+
+  await Service.engineManager.register(SteamEngine);
+  let engine = Service.engineManager.get("steam");
+  engine.overrideTelemetryName = "steam-but-better";
+  engine.enabled = true;
+  let server = await serverForFoo(engine);
+  await SyncTestingInfrastructure(server);
+
+  const problemsToReport = [
+    { name: "someProblem", count: 123 },
+    { name: "anotherProblem", count: 456 },
+  ];
+
+  try {
+    info("Sync with validation problems");
+    engine.problemsToReport = problemsToReport;
+    let ping = await sync_and_validate_telem(true);
+    let enginePing = ping.engines.find(e => e.name === "steam-but-better");
+    ok(enginePing);
+    ok(!ping.engines.find(e => e.name === "steam"));
+
+    deepEqual(enginePing.validation, {
+      version: 1,
+      checked: 0,
+      problems: problemsToReport,
+    }, "Should include validation report with overridden name");
+
+    info("Sync without validation problems");
+    engine.problemsToReport = null;
+    ping = await sync_and_validate_telem(true);
+    enginePing = ping.engines.find(e => e.name === "steam-but-better");
+    ok(enginePing);
+    ok(!ping.engines.find(e => e.name === "steam"));
+    ok(!enginePing.validation,
+      "Should not include validation report when there are no problems");
+  } finally {
+    await cleanAndGo(engine, server);
+    await Service.engineManager.unregister(engine);
+  }
+});
+
 add_task(async function test_engine_fail_ioerror() {
   enableValidationPrefs();
 
-  Service.engineManager.register(SteamEngine);
+  await Service.engineManager.register(SteamEngine);
   let engine = Service.engineManager.get("steam");
   engine.enabled = true;
-  let server = serverForUsers({"foo": "password"}, {
-    meta: {global: {engines: {steam: {version: engine.version,
-                                      syncID: engine.syncID}}}},
-    steam: {}
-  });
+  let server = await serverForFoo(engine);
   await SyncTestingInfrastructure(server);
   // create an IOError to re-throw as part of Sync.
   try {
@@ -386,8 +485,9 @@ add_task(async function test_engine_fail_ioerror() {
   ok(engine._errToThrow, "expecting exception");
 
   try {
+    const changes = await engine._tracker.getChangedIDs();
     _(`test_engine_fail_ioerror: Steam tracker contents: ${
-      JSON.stringify(engine._tracker.changedIDs)}`);
+      JSON.stringify(changes)}`);
     let ping = await sync_and_validate_telem(true);
     equal(ping.status.service, SYNC_FAILED_PARTIAL);
     let failureReason = ping.engines.find(e => e.name === "steam").failureReason;
@@ -397,29 +497,59 @@ add_task(async function test_engine_fail_ioerror() {
     ok(failureReason.error.includes("[profileDir]"), failureReason.error);
   } finally {
     await cleanAndGo(engine, server);
-    Service.engineManager.unregister(engine);
+    await Service.engineManager.unregister(engine);
   }
 });
+
+add_task(async function test_clean_urls() {
+  enableValidationPrefs();
+
+  await Service.engineManager.register(SteamEngine);
+  let engine = Service.engineManager.get("steam");
+  engine.enabled = true;
+  let server = await serverForFoo(engine);
+  await SyncTestingInfrastructure(server);
+  engine._errToThrow = new TypeError("http://www.google .com is not a valid URL.");
+
+  try {
+    const changes = await engine._tracker.getChangedIDs();
+    _(`test_clean_urls: Steam tracker contents: ${
+      JSON.stringify(changes)}`);
+    let ping = await sync_and_validate_telem(true);
+    equal(ping.status.service, SYNC_FAILED_PARTIAL);
+    let failureReason = ping.engines.find(e => e.name === "steam").failureReason;
+    equal(failureReason.name, "unexpectederror");
+    equal(failureReason.error, "<URL> is not a valid URL.");
+    // Handle other errors that include urls.
+    engine._errToThrow = "Other error message that includes some:url/foo/bar/ in it.";
+    ping = await sync_and_validate_telem(true);
+    equal(ping.status.service, SYNC_FAILED_PARTIAL);
+    failureReason = ping.engines.find(e => e.name === "steam").failureReason;
+    equal(failureReason.name, "unexpectederror");
+    equal(failureReason.error, "Other error message that includes <URL> in it.");
+  } finally {
+    await cleanAndGo(engine, server);
+    await Service.engineManager.unregister(engine);
+  }
+});
+
 
 add_task(async function test_initial_sync_engines() {
   enableValidationPrefs();
 
-  Service.engineManager.register(SteamEngine);
+  await Service.engineManager.register(SteamEngine);
   let engine = Service.engineManager.get("steam");
   engine.enabled = true;
-  let engines = {};
   // These are the only ones who actually have things to sync at startup.
   let engineNames = ["clients", "bookmarks", "prefs", "tabs"];
-  let conf = { meta: { global: { engines } } };
-  for (let e of engineNames) {
-    engines[e] = { version: engine.version, syncID: engine.syncID };
-    conf[e] = {};
-  }
-  let server = serverForUsers({"foo": "password"}, conf);
+  let server = await serverForEnginesWithKeys({"foo": "password"}, ["bookmarks", "prefs", "tabs"].map(name =>
+    Service.engineManager.get(name)
+  ));
   await SyncTestingInfrastructure(server);
   try {
+    const changes = await engine._tracker.getChangedIDs();
     _(`test_initial_sync_engines: Steam tracker contents: ${
-      JSON.stringify(engine._tracker.changedIDs)}`);
+      JSON.stringify(changes)}`);
     let ping = await wait_for_ping(() => Service.sync(), true);
 
     equal(ping.engines.find(e => e.name === "clients").outgoing[0].sent, 1);
@@ -431,46 +561,67 @@ add_task(async function test_initial_sync_engines() {
         continue;
       }
       greaterOrEqual(e.took, 1);
-      ok(!!e.outgoing)
+      ok(!!e.outgoing);
       equal(e.outgoing.length, 1);
       notEqual(e.outgoing[0].sent, undefined);
       equal(e.outgoing[0].failed, undefined);
     }
   } finally {
     await cleanAndGo(engine, server);
-    Service.engineManager.unregister(engine);
+    await Service.engineManager.unregister(engine);
   }
 });
 
 add_task(async function test_nserror() {
   enableValidationPrefs();
 
-  Service.engineManager.register(SteamEngine);
+  await Service.engineManager.register(SteamEngine);
   let engine = Service.engineManager.get("steam");
   engine.enabled = true;
-  let server = serverForUsers({"foo": "password"}, {
-    meta: {global: {engines: {steam: {version: engine.version,
-                                      syncID: engine.syncID}}}},
-    steam: {}
-  });
+  let server = await serverForFoo(engine);
   await SyncTestingInfrastructure(server);
   engine._errToThrow = Components.Exception("NS_ERROR_UNKNOWN_HOST", Cr.NS_ERROR_UNKNOWN_HOST);
   try {
+    const changes = await engine._tracker.getChangedIDs();
     _(`test_nserror: Steam tracker contents: ${
-      JSON.stringify(engine._tracker.changedIDs)}`);
+      JSON.stringify(changes)}`);
     let ping = await sync_and_validate_telem(true);
     deepEqual(ping.status, {
       service: SYNC_FAILED_PARTIAL,
-      sync: LOGIN_FAILED_NETWORK_ERROR
+      sync: LOGIN_FAILED_NETWORK_ERROR,
     });
     let enginePing = ping.engines.find(e => e.name === "steam");
     deepEqual(enginePing.failureReason, {
       name: "nserror",
-      code: Cr.NS_ERROR_UNKNOWN_HOST
+      code: Cr.NS_ERROR_UNKNOWN_HOST,
     });
   } finally {
     await cleanAndGo(engine, server);
-    Service.engineManager.unregister(engine);
+    await Service.engineManager.unregister(engine);
+  }
+});
+
+add_task(async function test_sync_why() {
+  enableValidationPrefs();
+
+  await Service.engineManager.register(SteamEngine);
+  let engine = Service.engineManager.get("steam");
+  engine.enabled = true;
+  let server = await serverForFoo(engine);
+  await SyncTestingInfrastructure(server);
+  let e = new Error("generic failure message");
+  engine._errToThrow = e;
+
+  try {
+    const changes = await engine._tracker.getChangedIDs();
+    _(`test_generic_engine_fail: Steam tracker contents: ${
+      JSON.stringify(changes)}`);
+    let ping = await wait_for_ping(() => Service.sync({why: "user"}), true, false);
+    _(JSON.stringify(ping));
+    equal(ping.why, "user");
+  } finally {
+    await cleanAndGo(engine, server);
+    await Service.engineManager.unregister(engine);
   }
 });
 
@@ -490,7 +641,7 @@ add_task(async function test_discarding() {
     let handlers = {
       "/1.1/johndoe/info/collections": helper.handler,
       "/1.1/johndoe/storage/crypto/keys": upd("crypto", new ServerWBO("keys").handler()),
-      "/1.1/johndoe/storage/meta/global": upd("meta", new ServerWBO("global").handler())
+      "/1.1/johndoe/storage/meta/global": upd("meta", new ServerWBO("global").handler()),
     };
 
     let collections = ["clients", "bookmarks", "forms", "history", "passwords", "prefs", "tabs"];
@@ -504,7 +655,7 @@ add_task(async function test_discarding() {
     telem.submit = () => ok(false, "Submitted telemetry ping when we should not have");
 
     for (let i = 0; i < 5; ++i) {
-      Service.sync();
+      await Service.sync();
     }
     telem.submit = oldSubmit;
     telem.submissionInterval = -1;
@@ -519,18 +670,15 @@ add_task(async function test_discarding() {
       await promiseStopServer(server);
     }
   }
-})
+});
 
 add_task(async function test_no_foreign_engines_in_error_ping() {
   enableValidationPrefs();
 
-  Service.engineManager.register(BogusEngine);
+  await Service.engineManager.register(BogusEngine);
   let engine = Service.engineManager.get("bogus");
   engine.enabled = true;
-  let server = serverForUsers({"foo": "password"}, {
-    meta: {global: {engines: {bogus: {version: engine.version, syncID: engine.syncID}}}},
-    steam: {}
-  });
+  let server = await serverForFoo(engine);
   engine._errToThrow = new Error("Oh no!");
   await SyncTestingInfrastructure(server);
   try {
@@ -539,49 +687,17 @@ add_task(async function test_no_foreign_engines_in_error_ping() {
     ok(ping.engines.every(e => e.name !== "bogus"));
   } finally {
     await cleanAndGo(engine, server);
-    Service.engineManager.unregister(engine);
-  }
-});
-
-add_task(async function test_sql_error() {
-  enableValidationPrefs();
-
-  Service.engineManager.register(SteamEngine);
-  let engine = Service.engineManager.get("steam");
-  engine.enabled = true;
-  let server = serverForUsers({"foo": "password"}, {
-    meta: {global: {engines: {steam: {version: engine.version,
-                                      syncID: engine.syncID}}}},
-    steam: {}
-  });
-  await SyncTestingInfrastructure(server);
-  engine._sync = function() {
-    // Just grab a DB connection and issue a bogus SQL statement synchronously.
-    let db = PlacesUtils.history.QueryInterface(Ci.nsPIPlacesDatabase).DBConnection;
-    Async.querySpinningly(db.createAsyncStatement("select bar from foo"));
-  };
-  try {
-    _(`test_sql_error: Steam tracker contents: ${
-      JSON.stringify(engine._tracker.changedIDs)}`);
-    let ping = await sync_and_validate_telem(true);
-    let enginePing = ping.engines.find(e => e.name === "steam");
-    deepEqual(enginePing.failureReason, { name: "sqlerror", code: 1 });
-  } finally {
-    await cleanAndGo(engine, server);
-    Service.engineManager.unregister(engine);
+    await Service.engineManager.unregister(engine);
   }
 });
 
 add_task(async function test_no_foreign_engines_in_success_ping() {
   enableValidationPrefs();
 
-  Service.engineManager.register(BogusEngine);
+  await Service.engineManager.register(BogusEngine);
   let engine = Service.engineManager.get("bogus");
   engine.enabled = true;
-  let server = serverForUsers({"foo": "password"}, {
-    meta: {global: {engines: {bogus: {version: engine.version, syncID: engine.syncID}}}},
-    steam: {}
-  });
+  let server = await serverForFoo(engine);
 
   await SyncTestingInfrastructure(server);
   try {
@@ -589,23 +705,21 @@ add_task(async function test_no_foreign_engines_in_success_ping() {
     ok(ping.engines.every(e => e.name !== "bogus"));
   } finally {
     await cleanAndGo(engine, server);
-    Service.engineManager.unregister(engine);
+    await Service.engineManager.unregister(engine);
   }
 });
 
 add_task(async function test_events() {
   enableValidationPrefs();
 
-  Service.engineManager.register(BogusEngine);
+  await Service.engineManager.register(BogusEngine);
   let engine = Service.engineManager.get("bogus");
   engine.enabled = true;
-  let server = serverForUsers({"foo": "password"}, {
-    meta: {global: {engines: {bogus: {version: engine.version, syncID: engine.syncID}}}},
-    steam: {}
-  });
+  let server = await serverForFoo(engine);
 
   await SyncTestingInfrastructure(server);
   try {
+    let serverTime = Resource.serverTime;
     Service.recordTelemetryEvent("object", "method", "value", { foo: "bar" });
     let ping = await wait_for_ping(() => Service.sync(), true, true);
     equal(ping.events.length, 1);
@@ -615,7 +729,7 @@ add_task(async function test_events() {
     equal(method, "method");
     equal(object, "object");
     equal(value, "value");
-    deepEqual(extra, { foo: "bar" });
+    deepEqual(extra, { foo: "bar", serverTime: String(serverTime) });
     // Test with optional values.
     Service.recordTelemetryEvent("object", "method");
     ping = await wait_for_ping(() => Service.sync(), false, true);
@@ -633,22 +747,49 @@ add_task(async function test_events() {
     equal(ping.events[0].length, 6);
     [timestamp, category, method, object, value, extra] = ping.events[0];
     equal(value, null);
+
+    Service.recordTelemetryEvent("object", "method", undefined, { foo: "bar" });
+    let telem = get_sync_test_telemetry();
+    // Fake a submission due to shutdown.
+    ping = await wait_for_ping(() => telem.finish("shutdown"), false, true);
+    equal(ping.syncs.length, 0);
+    equal(ping.events.length, 1);
+    equal(ping.events[0].length, 6);
   } finally {
     await cleanAndGo(engine, server);
-    Service.engineManager.unregister(engine);
+    await Service.engineManager.unregister(engine);
+  }
+});
+
+add_task(async function test_histograms() {
+  enableValidationPrefs();
+
+  await Service.engineManager.register(BogusEngine);
+  let engine = Service.engineManager.get("bogus");
+  engine.enabled = true;
+  let server = await serverForFoo(engine);
+
+  await SyncTestingInfrastructure(server);
+  try {
+    let histId = "TELEMETRY_TEST_LINEAR";
+    Services.obs.notifyObservers(null, "weave:telemetry:histogram", histId);
+    let ping = await wait_for_ping(() => Service.sync(), true, true);
+    equal(Object.keys(ping.histograms).length, 1);
+    equal(ping.histograms[histId].sum, 0);
+    equal(ping.histograms[histId].histogram_type, 1);
+  } finally {
+    await cleanAndGo(engine, server);
+    await Service.engineManager.unregister(engine);
   }
 });
 
 add_task(async function test_invalid_events() {
   enableValidationPrefs();
 
-  Service.engineManager.register(BogusEngine);
+  await Service.engineManager.register(BogusEngine);
   let engine = Service.engineManager.get("bogus");
   engine.enabled = true;
-  let server = serverForUsers({"foo": "password"}, {
-    meta: {global: {engines: {bogus: {version: engine.version, syncID: engine.syncID}}}},
-    steam: {}
-  });
+  let server = await serverForFoo(engine);
 
   async function checkNotRecorded(...args) {
     Service.recordTelemetryEvent.call(args);
@@ -681,7 +822,7 @@ add_task(async function test_invalid_events() {
     await checkNotRecorded("object", "method", "value", badextra);
   } finally {
     await cleanAndGo(engine, server);
-    Service.engineManager.unregister(engine);
+    await Service.engineManager.unregister(engine);
   }
 });
 
@@ -691,13 +832,10 @@ add_task(async function test_no_ping_for_self_hosters() {
   let telem = get_sync_test_telemetry();
   let oldSubmit = telem.submit;
 
-  Service.engineManager.register(BogusEngine);
+  await Service.engineManager.register(BogusEngine);
   let engine = Service.engineManager.get("bogus");
   engine.enabled = true;
-  let server = serverForUsers({"foo": "password"}, {
-    meta: {global: {engines: {bogus: {version: engine.version, syncID: engine.syncID}}}},
-    steam: {}
-  });
+  let server = await serverForFoo(engine);
 
   await SyncTestingInfrastructure(server);
   try {
@@ -707,7 +845,7 @@ add_task(async function test_no_ping_for_self_hosters() {
         resolve(result);
       };
     });
-    Service.sync();
+    await Service.sync();
     let pingSubmitted = await submitPromise;
     // The Sync testing infrastructure already sets up a custom token server,
     // so we don't need to do anything to simulate a self-hosted user.
@@ -715,6 +853,6 @@ add_task(async function test_no_ping_for_self_hosters() {
   } finally {
     telem.submit = oldSubmit;
     await cleanAndGo(engine, server);
-    Service.engineManager.unregister(engine);
+    await Service.engineManager.unregister(engine);
   }
 });

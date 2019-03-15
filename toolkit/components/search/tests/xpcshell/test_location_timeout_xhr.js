@@ -30,8 +30,6 @@ function verifyProbeSum(probe, sum) {
 }
 
 function run_test() {
-  installTestEngine();
-
   let resolveContinuePromise;
   let continuePromise = new Promise(resolve => {
     resolveContinuePromise = resolve;
@@ -44,7 +42,6 @@ function run_test() {
   Services.prefs.setIntPref("browser.search.geoip.timeout", 10);
   let promiseXHRStarted = waitForSearchNotification("geoip-lookup-xhr-starting");
   Services.search.init(() => {
-    ok(!Services.prefs.prefHasUserValue("browser.search.countryCode"), "should be no countryCode pref");
     ok(!Services.prefs.prefHasUserValue("browser.search.region"), "should be no region pref");
     // should be no result recorded at all.
     checkCountryResultTelemetry(null);
@@ -52,7 +49,7 @@ function run_test() {
     // should have set the flag indicating we saw a timeout.
     let histogram = Services.telemetry.getHistogramById("SEARCH_SERVICE_COUNTRY_TIMEOUT");
     let snapshot = histogram.snapshot();
-    deepEqual(snapshot.counts, [0, 1, 0]);
+    deepEqual(snapshot.values, {0: 0, 1: 1, 2: 0});
 
     // should not have SEARCH_SERVICE_COUNTRY_FETCH_TIME_MS recorded as our
     // test server is still blocked on our promise.
@@ -70,7 +67,6 @@ function run_test() {
         // only record that on success responses.
         verifyProbeSum("SEARCH_SERVICE_COUNTRY_FETCH_TIME_MS", 0);
         // and we still don't know the country code or region.
-        ok(!Services.prefs.prefHasUserValue("browser.search.countryCode"), "should be no countryCode pref");
         ok(!Services.prefs.prefHasUserValue("browser.search.region"), "should be no region pref");
 
         // unblock the server even though nothing is listening.

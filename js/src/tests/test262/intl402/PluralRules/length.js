@@ -1,4 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty('Intl')||!this.hasOwnProperty('addIntlExtras')) -- needs Intl, needs addIntlExtras
 // Copyright 2016 Mozilla Corporation. All rights reserved.
 // This code is governed by the license found in the LICENSE file.
 
@@ -9,10 +8,11 @@ author: Zibi Braniecki
 includes: [propertyHelper.js]
 ---*/
 
-assert.sameValue(Intl.PluralRules.length, 0);
-
-verifyNotEnumerable(Intl.PluralRules, "length");
-verifyNotWritable(Intl.PluralRules, "length");
-verifyConfigurable(Intl.PluralRules, "length");
+verifyProperty(Intl.PluralRules, 'length', {
+  value: 0,
+  writable: false,
+  enumerable: false,
+  configurable: true
+});
 
 reportCompare(0, 0);

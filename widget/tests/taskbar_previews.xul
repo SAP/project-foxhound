@@ -12,10 +12,7 @@
           src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js" />
   <script class="testbody" type="application/javascript">
   <![CDATA[
-    let Cc = Components.classes;
-    let Ci = Components.interfaces;
-    let Cu = Components.utils;
-    Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+    ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
     let taskbar = Cc["@mozilla.org/windows-taskbar;1"].getService(Ci.nsIWinTaskbar);
 
@@ -50,8 +47,6 @@
         width: 400,
         height: 400,
         thumbnailAspectRatio: 1.0,
-        drawThumbnail: function () { return false; },
-        drawPreview: function () { return false; },
         get wrappedJSObject() { return this; }
       }
       // HACK from mconnor:

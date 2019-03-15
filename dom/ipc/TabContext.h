@@ -27,9 +27,8 @@ class IPCTabContext;
  * SetTabContext*() methods (and those methods can only be called once).  See
  * also MutableTabContext.
  */
-class TabContext
-{
-public:
+class TabContext {
+ public:
   TabContext();
 
   /* (The implicit copy-constructor and operator= are fine.) */
@@ -63,6 +62,11 @@ public:
    */
   bool IsMozBrowser() const;
 
+  bool IsJSPlugin() const;
+  int32_t JSPluginId() const;
+
+  uint64_t ChromeOuterWindowID() const;
+
   /**
    * OriginAttributesRef() returns the OriginAttributes of this frame to
    * the caller. This is used to store any attribute associated with the frame's
@@ -79,7 +83,7 @@ public:
   UIStateChangeType ShowAccelerators() const;
   UIStateChangeType ShowFocusRings() const;
 
-protected:
+ protected:
   friend class MaybeInvalidTabContext;
 
   /**
@@ -101,8 +105,7 @@ protected:
    */
   void SetPrivateBrowsingAttributes(bool aIsPrivateBrowsing);
 
-  bool SetTabContext(bool aIsMozBrowserElement,
-                     bool aIsPrerendered,
+  bool SetTabContext(bool aIsMozBrowserElement, uint64_t aChromeOuterWindowID,
                      UIStateChangeType aShowAccelerators,
                      UIStateChangeType aShowFocusRings,
                      const OriginAttributes& aOriginAttributes,
@@ -120,11 +123,16 @@ protected:
   bool UpdateTabContextAfterSwap(const TabContext& aContext);
 
   /**
-   * Whether this TabContext is in prerender mode.
+   * Set this TabContext to be for a JS plugin. aPluginID is the id of the JS
+   * plugin
+   * (@see nsFakePlugin::mId).
+   * As with the other protected mutator methods, this lets you modify a
+   * TabContext once.
+   * (@see TabContext::SetTabContext above for more details).
    */
-  bool mIsPrerendered;
+  bool SetTabContextForJSPluginFrame(int32_t aJSPluginID);
 
-private:
+ private:
   /**
    * Has this TabContext been initialized?  If so, mutator methods will fail.
    */
@@ -137,6 +145,13 @@ private:
    * mozbrowser elements.
    */
   bool mIsMozBrowserElement;
+
+  /**
+   * The outerWindowID of the window hosting the remote frameloader.
+   */
+  uint64_t mChromeOuterWindowID;
+
+  int32_t mJSPluginID;
 
   /**
    * OriginAttributes of the top level tab docShell
@@ -160,28 +175,24 @@ private:
  * methods are public instead of protected.  You can still only call these
  * mutation methods once on a given object.
  */
-class MutableTabContext : public TabContext
-{
-public:
-  bool SetTabContext(const TabContext& aContext)
-  {
+class MutableTabContext : public TabContext {
+ public:
+  bool SetTabContext(const TabContext& aContext) {
     return TabContext::SetTabContext(aContext);
   }
 
-  bool
-  SetTabContext(bool aIsMozBrowserElement,
-                bool aIsPrerendered,
-                UIStateChangeType aShowAccelerators,
-                UIStateChangeType aShowFocusRings,
-                const OriginAttributes& aOriginAttributes,
-                const nsAString& aPresentationURL = EmptyString())
-  {
-    return TabContext::SetTabContext(aIsMozBrowserElement,
-                                     aIsPrerendered,
-                                     aShowAccelerators,
-                                     aShowFocusRings,
-                                     aOriginAttributes,
-                                     aPresentationURL);
+  bool SetTabContext(bool aIsMozBrowserElement, uint64_t aChromeOuterWindowID,
+                     UIStateChangeType aShowAccelerators,
+                     UIStateChangeType aShowFocusRings,
+                     const OriginAttributes& aOriginAttributes,
+                     const nsAString& aPresentationURL = EmptyString()) {
+    return TabContext::SetTabContext(aIsMozBrowserElement, aChromeOuterWindowID,
+                                     aShowAccelerators, aShowFocusRings,
+                                     aOriginAttributes, aPresentationURL);
+  }
+
+  bool SetTabContextForJSPluginFrame(uint32_t aJSPluginID) {
+    return TabContext::SetTabContextForJSPluginFrame(aJSPluginID);
   }
 };
 
@@ -207,9 +218,8 @@ public:
  *     UseTabContext(tc.GetTabContext());
  *   }
  */
-class MaybeInvalidTabContext
-{
-public:
+class MaybeInvalidTabContext {
+ public:
   /**
    * This constructor copies the information in aContext and sets IsValid() as
    * appropriate.
@@ -235,7 +245,7 @@ public:
    */
   const TabContext& GetTabContext();
 
-private:
+ private:
   MaybeInvalidTabContext(const MaybeInvalidTabContext&) = delete;
   MaybeInvalidTabContext& operator=(const MaybeInvalidTabContext&) = delete;
 
@@ -243,7 +253,7 @@ private:
   MutableTabContext mTabContext;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif

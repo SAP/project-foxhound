@@ -15,20 +15,18 @@ static const uint64_t kNsPerSec = 1000000000;
 
 namespace {
 
-
 struct SemaphoreData {
   sem_t mSemaphore;
   mozilla::Atomic<int32_t> mRefCount;
   uint32_t mInitialValue;
 };
 
-} // namespace
+}  // namespace
 
 namespace mozilla {
 
-/* static */ CrossProcessSemaphore*
-CrossProcessSemaphore::Create(const char*, uint32_t aInitialValue)
-{
+/* static */ CrossProcessSemaphore* CrossProcessSemaphore::Create(
+    const char*, uint32_t aInitialValue) {
   RefPtr<ipc::SharedMemoryBasic> sharedBuffer = new ipc::SharedMemoryBasic;
   if (!sharedBuffer->Create(sizeof(SemaphoreData))) {
     return nullptr;
@@ -59,22 +57,23 @@ CrossProcessSemaphore::Create(const char*, uint32_t aInitialValue)
   return sem;
 }
 
-/* static */ CrossProcessSemaphore*
-CrossProcessSemaphore::Create(CrossProcessSemaphoreHandle aHandle)
-{
+/* static */ CrossProcessSemaphore* CrossProcessSemaphore::Create(
+    CrossProcessSemaphoreHandle aHandle) {
   RefPtr<ipc::SharedMemoryBasic> sharedBuffer = new ipc::SharedMemoryBasic;
 
   if (!sharedBuffer->IsHandleValid(aHandle)) {
     return nullptr;
   }
 
-  if (!sharedBuffer->SetHandle(aHandle)) {
+  if (!sharedBuffer->SetHandle(aHandle, ipc::SharedMemory::RightsReadWrite)) {
     return nullptr;
   }
 
   if (!sharedBuffer->Map(sizeof(SemaphoreData))) {
     return nullptr;
   }
+
+  sharedBuffer->CloseHandle();
 
   SemaphoreData* data = static_cast<SemaphoreData*>(sharedBuffer->memory());
 
@@ -99,16 +98,12 @@ CrossProcessSemaphore::Create(CrossProcessSemaphoreHandle aHandle)
   return sem;
 }
 
-
 CrossProcessSemaphore::CrossProcessSemaphore()
-  : mSemaphore(nullptr)
-  , mRefCount(nullptr)
-{
+    : mSemaphore(nullptr), mRefCount(nullptr) {
   MOZ_COUNT_CTOR(CrossProcessSemaphore);
 }
 
-CrossProcessSemaphore::~CrossProcessSemaphore()
-{
+CrossProcessSemaphore::~CrossProcessSemaphore() {
   int32_t oldCount = --(*mRefCount);
 
   if (oldCount == 0) {
@@ -119,10 +114,9 @@ CrossProcessSemaphore::~CrossProcessSemaphore()
   MOZ_COUNT_DTOR(CrossProcessSemaphore);
 }
 
-bool
-CrossProcessSemaphore::Wait(const Maybe<TimeDuration>& aWaitTime)
-{
-  MOZ_ASSERT(*mRefCount > 0, "Attempting to wait on a semaphore with zero ref count");
+bool CrossProcessSemaphore::Wait(const Maybe<TimeDuration>& aWaitTime) {
+  MOZ_ASSERT(*mRefCount > 0,
+             "Attempting to wait on a semaphore with zero ref count");
   int ret;
   if (aWaitTime.isSome()) {
     struct timespec ts;
@@ -135,26 +129,22 @@ CrossProcessSemaphore::Wait(const Maybe<TimeDuration>& aWaitTime)
     ts.tv_nsec %= kNsPerSec;
 
     while ((ret = sem_timedwait(mSemaphore, &ts)) == -1 && errno == EINTR) {
-      continue;
     }
   } else {
     while ((ret = sem_wait(mSemaphore)) == -1 && errno == EINTR) {
-      continue;
     }
   }
   return ret == 0;
 }
 
-void
-CrossProcessSemaphore::Signal()
-{
-  MOZ_ASSERT(*mRefCount > 0, "Attempting to signal a semaphore with zero ref count");
+void CrossProcessSemaphore::Signal() {
+  MOZ_ASSERT(*mRefCount > 0,
+             "Attempting to signal a semaphore with zero ref count");
   sem_post(mSemaphore);
 }
 
-CrossProcessSemaphoreHandle
-CrossProcessSemaphore::ShareToProcess(base::ProcessId aTargetPid)
-{
+CrossProcessSemaphoreHandle CrossProcessSemaphore::ShareToProcess(
+    base::ProcessId aTargetPid) {
   CrossProcessSemaphoreHandle result = ipc::SharedMemoryBasic::NULLHandle();
 
   if (mSharedBuffer && !mSharedBuffer->ShareToProcess(aTargetPid, &result)) {
@@ -164,4 +154,6 @@ CrossProcessSemaphore::ShareToProcess(base::ProcessId aTargetPid)
   return result;
 }
 
-} // namespace mozilla
+void CrossProcessSemaphore::CloseHandle() { mSharedBuffer->CloseHandle(); }
+
+}  // namespace mozilla

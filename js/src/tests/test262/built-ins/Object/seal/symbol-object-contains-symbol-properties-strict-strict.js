@@ -6,6 +6,7 @@ es6id: 19.4
 description: >
     Object.seal(obj) where obj contains symbol properties.
 flags: [onlyStrict]
+features: [Symbol]
 ---*/
 var symA = Symbol("A");
 var symB = Symbol("B");
@@ -23,6 +24,5 @@ assert.throws(TypeError, function() {
 assert.throws(TypeError, function() {
   obj[symB] = 1;
 });
-
 
 reportCompare(0, 0);

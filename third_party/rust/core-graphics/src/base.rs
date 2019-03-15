@@ -28,8 +28,6 @@ pub type CGFloat = libc::c_float;
 
 pub type CGError = libc::int32_t;
 
-pub type CGAffineTransform = ();
-
 pub const kCGImageAlphaNone: u32 = 0;
 pub const kCGImageAlphaPremultipliedLast: u32 = 1;
 pub const kCGImageAlphaPremultipliedFirst: u32 = 2;
@@ -43,6 +41,12 @@ pub const kCGBitmapByteOrder16Little: u32 = (1 << 12);
 pub const kCGBitmapByteOrder32Little: u32 = (2 << 12);
 pub const kCGBitmapByteOrder16Big: u32 = (3 << 12);
 pub const kCGBitmapByteOrder32Big: u32 = (4 << 12);
+
+pub const kCGRenderingIntentDefault: u32 = 0;
+pub const kCGRenderingIntentAbsoluteColorimetric: u32 = 1;
+pub const kCGRenderingIntentRelativeColorimetric: u32 = 2;
+pub const kCGRenderingIntentPerceptual: u32 = 3;
+pub const kCGRenderingIntentSaturation: u32 = 4;
 
 #[cfg(target_endian = "big")]
 pub const kCGBitmapByteOrder16Host: u32 = kCGBitmapByteOrder16Big;

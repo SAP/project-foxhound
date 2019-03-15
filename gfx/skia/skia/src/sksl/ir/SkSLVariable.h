@@ -4,7 +4,7 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
- 
+
 #ifndef SKSL_VARIABLE
 #define SKSL_VARIABLE
 
@@ -14,6 +14,8 @@
 #include "SkSLType.h"
 
 namespace SkSL {
+
+struct Expression;
 
 /**
  * Represents a variable, whether local, global, or a function parameter. This represents the
@@ -27,25 +29,44 @@ struct Variable : public Symbol {
         kParameter_Storage
     };
 
-    Variable(Position position, Modifiers modifiers, std::string name, const Type& type,
-             Storage storage)
-    : INHERITED(position, kVariable_Kind, std::move(name))
+    Variable(int offset, Modifiers modifiers, StringFragment name, const Type& type,
+             Storage storage, Expression* initialValue = nullptr)
+    : INHERITED(offset, kVariable_Kind, name)
     , fModifiers(modifiers)
     , fType(type)
     , fStorage(storage)
-    , fIsReadFrom(false)
-    , fIsWrittenTo(false) {}
+    , fInitialValue(initialValue)
+    , fReadCount(0)
+    , fWriteCount(initialValue ? 1 : 0) {}
 
-    virtual std::string description() const override {
+    ~Variable() override {
+        // can't destroy a variable while there are remaining references to it
+        if (fInitialValue) {
+            --fWriteCount;
+        }
+        SkASSERT(!fReadCount && !fWriteCount);
+    }
+
+    virtual String description() const override {
         return fModifiers.description() + fType.fName + " " + fName;
+    }
+
+    bool dead() const {
+        return !fWriteCount || (!fReadCount && !(fModifiers.fFlags & Modifiers::kOut_Flag));
     }
 
     mutable Modifiers fModifiers;
     const Type& fType;
     const Storage fStorage;
 
-    mutable bool fIsReadFrom;
-    mutable bool fIsWrittenTo;
+    Expression* fInitialValue = nullptr;
+
+    // Tracks how many sites read from the variable. If this is zero for a non-out variable (or
+    // becomes zero during optimization), the variable is dead and may be eliminated.
+    mutable int fReadCount;
+    // Tracks how many sites write to the variable. If this is zero, the variable is dead and may be
+    // eliminated.
+    mutable int fWriteCount;
 
     typedef Symbol INHERITED;
 };

@@ -1,8 +1,7 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
-
-var prefs = Cc["@mozilla.org/preferences-service;1"]
-            .getService(Ci.nsIPrefBranch);
+ /* import-globals-from browser_content_sandbox_utils.js */
+ "use strict";
 
 Services.scriptloader.loadSubScript("chrome://mochitests/content/browser/" +
     "security/sandbox/test/browser_content_sandbox_utils.js", this);
@@ -17,10 +16,23 @@ Services.scriptloader.loadSubScript("chrome://mochitests/content/browser/" +
 // if the file was successfully created, otherwise false. Include imports
 // so this can be safely serialized and run remotely by ContentTask.spawn.
 function createFile(path) {
-  Components.utils.import("resource://gre/modules/osfile.jsm");
+  ChromeUtils.import("resource://gre/modules/osfile.jsm");
   let encoder = new TextEncoder();
-  let array = encoder.encode("WRITING FROM CONTENT PROCESS");
+  let array = encoder.encode("TEST FILE DUMMY DATA");
   return OS.File.writeAtomic(path, array).then(function(value) {
+    return true;
+  }, function(reason) {
+    return false;
+  });
+}
+
+// Creates a symlink at |path| and returns a promise that resolves with true
+// if the symlink was successfully created, otherwise false. Include imports
+// so this can be safely serialized and run remotely by ContentTask.spawn.
+function createSymlink(path) {
+  ChromeUtils.import("resource://gre/modules/osfile.jsm");
+  // source location for the symlink can be anything
+  return OS.File.unixSymLink("/Users", path).then(function(value) {
     return true;
   }, function(reason) {
     return false;
@@ -31,7 +43,7 @@ function createFile(path) {
 // if the file was successfully deleted, otherwise false. Include imports
 // so this can be safely serialized and run remotely by ContentTask.spawn.
 function deleteFile(path) {
-  Components.utils.import("resource://gre/modules/osfile.jsm");
+  ChromeUtils.import("resource://gre/modules/osfile.jsm");
   return OS.File.remove(path, {ignoreAbsent: false}).then(function(value) {
     return true;
   }).catch(function(err) {
@@ -44,16 +56,16 @@ function deleteFile(path) {
 // resolves with an object where .ok indicates success or failure and
 // .numEntries is the number of directory entries found.
 function readDir(path) {
-  Components.utils.import("resource://gre/modules/osfile.jsm");
+  ChromeUtils.import("resource://gre/modules/osfile.jsm");
   let numEntries = 0;
   let iterator = new OS.File.DirectoryIterator(path);
   let promise = iterator.forEach(function (dirEntry) {
     numEntries++;
   }).then(function () {
     iterator.close();
-    return {ok: true, numEntries: numEntries};
+    return {ok: true, numEntries};
   }).catch(function () {
-    return {ok: false, numEntries: numEntries};
+    return {ok: false, numEntries};
   });
   return promise;
 }
@@ -62,8 +74,21 @@ function readDir(path) {
 // reading is completed. Returned object has boolean .ok to indicate
 // success or failure.
 function readFile(path) {
-  Components.utils.import("resource://gre/modules/osfile.jsm");
+  ChromeUtils.import("resource://gre/modules/osfile.jsm");
   let promise = OS.File.read(path).then(function (binaryData) {
+    return {ok: true};
+  }).catch(function (error) {
+    return {ok: false};
+  });
+  return promise;
+}
+
+// Does a stat of |path| and returns a promise that resolves if the
+// stat is successful. Returned object has boolean .ok to indicate
+// success or failure.
+function statPath(path) {
+  ChromeUtils.import("resource://gre/modules/osfile.jsm");
+  let promise = OS.File.stat(path).then(function (stat) {
     return {ok: true};
   }).catch(function (error) {
     return {ok: false};
@@ -108,6 +133,23 @@ function minProfileReadSandboxLevel(level) {
       return 3;
     default:
       Assert.ok(false, "Unknown OS");
+      return 0;
+  }
+}
+
+// Returns the lowest sandbox level where blanket reading of the home
+// directory from the content process should be blocked by the sandbox.
+function minHomeReadSandboxLevel(level) {
+  switch (Services.appinfo.OS) {
+    case "WINNT":
+      return 3;
+    case "Darwin":
+      return 3;
+    case "Linux":
+      return 3;
+    default:
+      Assert.ok(false, "Unknown OS");
+      return 0;
   }
 }
 
@@ -119,14 +161,12 @@ function minProfileReadSandboxLevel(level) {
 // content process--expected to fail.
 //
 // Tests attempting to write to a file in the content temp directory
-// from the content process--expected to succeed. On Mac and Windows,
-// use "ContentTmpD", but on Linux use "TmpD" until Linux uses the
-// content temp dir key.
+// from the content process--expected to succeed. Uses "ContentTmpD".
 //
 // Tests reading various files and directories from file and web
 // content processes.
 //
-add_task(function*() {
+add_task(async function() {
   // This test is only relevant in e10s
   if (!gMultiProcessBrowser) {
     ok(false, "e10s is enabled");
@@ -138,11 +178,9 @@ add_task(function*() {
   let prefExists = true;
 
   // Read the security.sandbox.content.level pref.
-  // If the pref isn't set and we're running on Linux on !isNightly(),
-  // exit without failing. The Linux content sandbox is only enabled
-  // on Nightly at this time.
+  // eslint-disable-next-line mozilla/use-default-preference-values
   try {
-    level = prefs.getIntPref("security.sandbox.content.level");
+    level = Services.prefs.getIntPref("security.sandbox.content.level");
   } catch (e) {
     prefExists = false;
   }
@@ -154,10 +192,6 @@ add_task(function*() {
 
   info(`security.sandbox.content.level=${level}`);
   ok(level > 0, "content sandbox is enabled.");
-  if (level == 0) {
-    info("content sandbox is not enabled, exiting");
-    return;
-  }
 
   let isFileIOSandboxed = isContentFileIOSandboxed(level);
 
@@ -179,58 +213,70 @@ add_task(function*() {
 });
 
 // Test if the content process can create in $HOME, this should fail
-function* createFileInHome() {
+async function createFileInHome() {
   let browser = gBrowser.selectedBrowser;
   let homeFile = fileInHomeDir();
   let path = homeFile.path;
-  let fileCreated = yield ContentTask.spawn(browser, path, createFile);
-  ok(fileCreated == false, "creating a file in home dir is not permitted");
-  if (fileCreated == true) {
+  let fileCreated = await ContentTask.spawn(browser, path, createFile);
+  ok(!fileCreated, "creating a file in home dir is not permitted");
+  if (fileCreated) {
     // content process successfully created the file, now remove it
     homeFile.remove(false);
   }
 }
 
-// Test if the content process can create a temp file, should pass
-function* createTempFile() {
+// Test if the content process can create a temp file, this is disallowed on
+// macOS but allowed everywhere else. Also test that the content process cannot
+// create symlinks or delete files.
+async function createTempFile() {
   let browser = gBrowser.selectedBrowser;
   let path = fileInTempDir().path;
-  let fileCreated = yield ContentTask.spawn(browser, path, createFile);
-  ok(fileCreated == true, "creating a file in content temp is permitted");
+  let fileCreated = await ContentTask.spawn(browser, path, createFile);
+  if (isMac()) {
+    ok(!fileCreated, "creating a file in content temp is not permitted");
+  } else {
+    ok(!!fileCreated, "creating a file in content temp is permitted");
+  }
   // now delete the file
-  let fileDeleted = yield ContentTask.spawn(browser, path, deleteFile);
-  ok(fileDeleted == true, "deleting a file in content temp is permitted");
+  let fileDeleted = await ContentTask.spawn(browser, path, deleteFile);
+  if (isMac()) {
+    // On macOS we do not allow file deletion - it is not needed by the content
+    // process itself, and macOS uses a different permission to control access
+    // so revoking it is easy.
+    ok(!fileDeleted,
+       "deleting a file in content temp is not permitted");
+
+    let path = fileInTempDir().path;
+    let symlinkCreated = await ContentTask.spawn(browser, path, createSymlink);
+    ok(!symlinkCreated,
+       "created a symlink in content temp is not permitted");
+  } else {
+    ok(!!fileDeleted, "deleting a file in content temp is permitted");
+  }
 }
 
 // Test reading files and dirs from web and file content processes.
-function* testFileAccess() {
+async function testFileAccess() {
   // for tests that run in a web content process
   let webBrowser = gBrowser.selectedBrowser;
 
-  // For now, we'll only test file access from the file content process if
-  // the file content process is enabled. Once the file content process is
-  // ready to ride the trains, this test should be changed to always test
-  // file content process access. We use todo() to cause failures
-  // if the file process is enabled on a non-Nightly release so that we'll
-  // know to update this test to always run the tests. i.e., we'll want to
-  // catch bugs that accidentally disable file content process.
+  // Ensure that the file content process is enabled.
   let fileContentProcessEnabled =
-    prefs.getBoolPref("browser.tabs.remote.separateFileUriProcess");
-  if (isNightly()) {
-    ok(fileContentProcessEnabled, "separate file content process is enabled");
-  } else {
-    todo(fileContentProcessEnabled, "separate file content process is enabled");
-  }
+    Services.prefs.getBoolPref("browser.tabs.remote.separateFileUriProcess");
+  ok(fileContentProcessEnabled, "separate file content process is enabled");
 
   // for tests that run in a file content process
   let fileBrowser = undefined;
   if (fileContentProcessEnabled) {
     // open a tab in a file content process
     gBrowser.selectedTab =
-      gBrowser.addTab("about:blank", {preferredRemoteType: "file"});
+      BrowserTestUtils.addTab(gBrowser, "about:blank", {preferredRemoteType: "file"});
     // get the browser for the file content process tab
     fileBrowser = gBrowser.getBrowserForTab(gBrowser.selectedTab);
   }
+
+  // Current level
+  let level = Services.prefs.getIntPref("security.sandbox.content.level");
 
   // Directories/files to test accessing from content processes.
   // For directories, we test whether a directory listing is allowed
@@ -246,6 +292,7 @@ function* testFileAccess() {
     browser:  webBrowser,                   // browser to run test in
     file:     profileDir,                   // nsIFile object
     minLevel: minProfileReadSandboxLevel(), // min level to enable test
+    func:     readDir,
   });
   if (fileContentProcessEnabled) {
     tests.push({
@@ -254,6 +301,227 @@ function* testFileAccess() {
       browser:  fileBrowser,
       file:     profileDir,
       minLevel: 0,
+      func:     readDir,
+    });
+  }
+
+  let homeDir = GetHomeDir();
+  tests.push({
+    desc:     "home dir",
+    ok:       false,
+    browser:  webBrowser,
+    file:     homeDir,
+    minLevel: minHomeReadSandboxLevel(),
+    func:     readDir,
+  });
+  if (fileContentProcessEnabled) {
+    tests.push({
+      desc:     "home dir",
+      ok:       true,
+      browser:  fileBrowser,
+      file:     homeDir,
+      minLevel: 0,
+      func:     readDir,
+    });
+  }
+
+  let sysExtDevDir = GetSystemExtensionsDevDir();
+  tests.push({
+    desc:     "system extensions dev dir",
+    ok:       true,
+    browser:  webBrowser,
+    file:     sysExtDevDir,
+    minLevel: 0,
+    func:     readDir,
+  });
+
+  if (isWin()) {
+    let extDir = GetPerUserExtensionDir();
+    tests.push({
+      desc:       "per-user extensions dir",
+      ok:         true,
+      browser:    webBrowser,
+      file:       extDir,
+      minLevel:   minHomeReadSandboxLevel(),
+      func:       readDir,
+    });
+  }
+
+  if (isMac()) {
+    // If ~/Library/Caches/TemporaryItems exists, when level <= 2 we
+    // make sure it's readable. For level 3, we make sure it isn't.
+    let homeTempDir = GetHomeDir();
+    homeTempDir.appendRelativePath("Library/Caches/TemporaryItems");
+    if (homeTempDir.exists()) {
+      let shouldBeReadable, minLevel;
+      if (level >= minHomeReadSandboxLevel()) {
+        shouldBeReadable = false;
+        minLevel = minHomeReadSandboxLevel();
+      } else {
+        shouldBeReadable = true;
+        minLevel = 0;
+      }
+      tests.push({
+        desc:     "home library cache temp dir",
+        ok:       shouldBeReadable,
+        browser:  webBrowser,
+        file:     homeTempDir,
+        minLevel,
+        func:     readDir,
+      });
+    }
+  }
+
+  if (isMac() || isLinux()) {
+    let varDir = GetDir("/var");
+
+    if (isMac()) {
+      // Mac sandbox rules use /private/var because /var is a symlink
+      // to /private/var on OS X. Make sure that hasn't changed.
+      varDir.normalize();
+      Assert.ok(varDir.path === "/private/var", "/var resolves to /private/var");
+    }
+
+    tests.push({
+      desc:     "/var",
+      ok:       false,
+      browser:  webBrowser,
+      file:     varDir,
+      minLevel: minHomeReadSandboxLevel(),
+      func:     readDir,
+    });
+    if (fileContentProcessEnabled) {
+      tests.push({
+        desc:     "/var",
+        ok:       true,
+        browser:  fileBrowser,
+        file:     varDir,
+        minLevel: 0,
+        func:     readDir,
+      });
+    }
+  }
+
+  if (isMac()) {
+    // Test if we can read from $TMPDIR because we expect it
+    // to be within /private/var. Reading from it should be
+    // prevented in a 'web' process.
+    let macTempDir = GetDirFromEnvVariable("TMPDIR");
+
+    macTempDir.normalize();
+    Assert.ok(macTempDir.path.startsWith("/private/var"),
+      "$TMPDIR is in /private/var");
+
+    tests.push({
+      desc:     `$TMPDIR (${macTempDir.path})`,
+      ok:       false,
+      browser:  webBrowser,
+      file:     macTempDir,
+      minLevel: minHomeReadSandboxLevel(),
+      func:     readDir,
+    });
+    if (fileContentProcessEnabled) {
+      tests.push({
+        desc:     `$TMPDIR (${macTempDir.path})`,
+        ok:       true,
+        browser:  fileBrowser,
+        file:     macTempDir,
+        minLevel: 0,
+        func:     readDir,
+      });
+    }
+
+    // Test that we cannot read from /Volumes at level 3
+    let volumes = GetDir("/Volumes");
+    tests.push({
+      desc:     "/Volumes",
+      ok:       false,
+      browser:  webBrowser,
+      file:     volumes,
+      minLevel: minHomeReadSandboxLevel(),
+      func:     readDir,
+    });
+    // Test that we cannot read from /Network at level 3
+    let network = GetDir("/Network");
+    tests.push({
+      desc:     "/Network",
+      ok:       false,
+      browser:  webBrowser,
+      file:     network,
+      minLevel: minHomeReadSandboxLevel(),
+      func:     readDir,
+    });
+    // Test that we cannot read from /Users at level 3
+    let users = GetDir("/Users");
+    tests.push({
+      desc:     "/Users",
+      ok:       false,
+      browser:  webBrowser,
+      file:     users,
+      minLevel: minHomeReadSandboxLevel(),
+      func:     readDir,
+    });
+
+    // Test that we can stat /Users at level 3
+    tests.push({
+      desc:     "/Users",
+      ok:       true,
+      browser:  webBrowser,
+      file:     users,
+      minLevel: minHomeReadSandboxLevel(),
+      func:     statPath,
+    });
+
+    // Test that we can stat /Library at level 3, but can't
+    // stat something within /Library. This test uses "/Library"
+    // because it's a path that is expected to always be present
+    // and isn't something content processes have read access to
+    // (just read-metadata).
+    let libraryDir = GetDir("/Library");
+    tests.push({
+      desc:     "/Library",
+      ok:       true,
+      browser:  webBrowser,
+      file:     libraryDir,
+      minLevel: minHomeReadSandboxLevel(),
+      func:     statPath,
+    });
+    tests.push({
+      desc:     "/Library",
+      ok:       false,
+      browser:  webBrowser,
+      file:     libraryDir,
+      minLevel: minHomeReadSandboxLevel(),
+      func:     readDir,
+    });
+    let libraryWidgetsDir = GetDir("/Library/Widgets");
+    tests.push({
+      desc:     "/Library/Widgets",
+      ok:       false,
+      browser:  webBrowser,
+      file:     libraryWidgetsDir,
+      minLevel: minHomeReadSandboxLevel(),
+      func:     statPath,
+    });
+
+    // Similarly, test that we can stat /private, but not /private/etc.
+    let privateDir = GetDir("/private");
+    tests.push({
+      desc:     "/private",
+      ok:       true,
+      browser:  webBrowser,
+      file:     privateDir,
+      minLevel: minHomeReadSandboxLevel(),
+      func:     statPath,
+    });
+    let privateEtcDir = GetFile("/private/etc");
+    tests.push({
+      desc:     "/private/etc",
+      ok:       false,
+      browser:  webBrowser,
+      file:     privateEtcDir,
+      minLevel: minHomeReadSandboxLevel(),
+      func:     statPath,
     });
   }
 
@@ -265,6 +533,7 @@ function* testFileAccess() {
       browser:  webBrowser,
       file:     extensionsDir,
       minLevel: 0,
+      func:     readDir,
     });
   } else {
     ok(false, `${extensionsDir.path} is a valid dir`);
@@ -278,6 +547,7 @@ function* testFileAccess() {
       browser:  webBrowser,
       file:     chromeDir,
       minLevel: 0,
+      func:     readDir,
     });
   } else {
     ok(false, `${chromeDir.path} is valid dir`);
@@ -291,22 +561,37 @@ function* testFileAccess() {
       browser:  webBrowser,
       file:     cookiesFile,
       minLevel: minProfileReadSandboxLevel(),
+      func:     readFile,
     });
+    if (fileContentProcessEnabled) {
+      tests.push({
+        desc:     "cookies file",
+        ok:       true,
+        browser:  fileBrowser,
+        file:     cookiesFile,
+        minLevel: 0,
+        func:     readFile,
+      });
+    }
   } else {
     ok(false, `${cookiesFile.path} is a valid file`);
   }
 
   // remove tests not enabled by the current sandbox level
-  let level = prefs.getIntPref("security.sandbox.content.level");
-  tests = tests.filter((test) => { return (test.minLevel <= level); });
+  tests = tests.filter((test) => (test.minLevel <= level));
 
   for (let test of tests) {
-    let testFunc = test.file.isDirectory? readDir : readFile;
-    let okString = test.ok? "allowed" : "blocked";
+    let okString = test.ok ? "allowed" : "blocked";
     let processType = test.browser === webBrowser ? "web" : "file";
 
-    let result = yield ContentTask.spawn(test.browser, test.file.path,
-        testFunc);
+    // ensure the file/dir exists before we ask a content process to stat
+    // it so we know a failure is not due to a nonexistent file/dir
+    if (test.func === statPath) {
+      ok(test.file.exists(), `${test.file.path} exists`);
+    }
+
+    let result = await ContentTask.spawn(test.browser, test.file.path,
+        test.func);
 
     ok(result.ok == test.ok,
         `reading ${test.desc} from a ${processType} process ` +
@@ -314,7 +599,7 @@ function* testFileAccess() {
 
     // if the directory is not expected to be readable,
     // ensure the listing has zero entries
-    if (test.file.isDirectory() && !test.ok) {
+    if (test.func === readDir && !test.ok) {
       ok(result.numEntries == 0, `directory list is empty (${test.file.path})`);
     }
   }

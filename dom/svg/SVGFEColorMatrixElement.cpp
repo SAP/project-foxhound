@@ -4,153 +4,126 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "DOMSVGAnimatedNumberList.h"
 #include "mozilla/dom/SVGFEColorMatrixElement.h"
+
+#include "DOMSVGAnimatedNumberList.h"
 #include "mozilla/dom/SVGFEColorMatrixElementBinding.h"
 #include "nsSVGUtils.h"
 
 #define NUM_ENTRIES_IN_4x5_MATRIX 20
 
-NS_IMPL_NS_NEW_NAMESPACED_SVG_ELEMENT(FEColorMatrix)
+NS_IMPL_NS_NEW_SVG_ELEMENT(FEColorMatrix)
 
 using namespace mozilla::gfx;
 
 namespace mozilla {
 namespace dom {
 
-JSObject*
-SVGFEColorMatrixElement::WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return SVGFEColorMatrixElementBinding::Wrap(aCx, this, aGivenProto);
+JSObject* SVGFEColorMatrixElement::WrapNode(JSContext* aCx,
+                                            JS::Handle<JSObject*> aGivenProto) {
+  return SVGFEColorMatrixElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-nsSVGEnumMapping SVGFEColorMatrixElement::sTypeMap[] = {
-  {&nsGkAtoms::matrix, SVG_FECOLORMATRIX_TYPE_MATRIX},
-  {&nsGkAtoms::saturate, SVG_FECOLORMATRIX_TYPE_SATURATE},
-  {&nsGkAtoms::hueRotate, SVG_FECOLORMATRIX_TYPE_HUE_ROTATE},
-  {&nsGkAtoms::luminanceToAlpha, SVG_FECOLORMATRIX_TYPE_LUMINANCE_TO_ALPHA},
-  {nullptr, 0}
-};
+SVGEnumMapping SVGFEColorMatrixElement::sTypeMap[] = {
+    {nsGkAtoms::matrix, SVG_FECOLORMATRIX_TYPE_MATRIX},
+    {nsGkAtoms::saturate, SVG_FECOLORMATRIX_TYPE_SATURATE},
+    {nsGkAtoms::hueRotate, SVG_FECOLORMATRIX_TYPE_HUE_ROTATE},
+    {nsGkAtoms::luminanceToAlpha, SVG_FECOLORMATRIX_TYPE_LUMINANCE_TO_ALPHA},
+    {nullptr, 0}};
 
-nsSVGElement::EnumInfo SVGFEColorMatrixElement::sEnumInfo[1] =
-{
-  { &nsGkAtoms::type,
-    sTypeMap,
-    SVG_FECOLORMATRIX_TYPE_MATRIX
-  }
-};
+SVGElement::EnumInfo SVGFEColorMatrixElement::sEnumInfo[1] = {
+    {nsGkAtoms::type, sTypeMap, SVG_FECOLORMATRIX_TYPE_MATRIX}};
 
-nsSVGElement::StringInfo SVGFEColorMatrixElement::sStringInfo[2] =
-{
-  { &nsGkAtoms::result, kNameSpaceID_None, true },
-  { &nsGkAtoms::in, kNameSpaceID_None, true }
-};
+SVGElement::StringInfo SVGFEColorMatrixElement::sStringInfo[2] = {
+    {nsGkAtoms::result, kNameSpaceID_None, true},
+    {nsGkAtoms::in, kNameSpaceID_None, true}};
 
-nsSVGElement::NumberListInfo SVGFEColorMatrixElement::sNumberListInfo[1] =
-{
-  { &nsGkAtoms::values }
-};
+SVGElement::NumberListInfo SVGFEColorMatrixElement::sNumberListInfo[1] = {
+    {nsGkAtoms::values}};
 
 //----------------------------------------------------------------------
-// nsIDOMNode methods
-
+// nsINode methods
 
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGFEColorMatrixElement)
 
-
 //----------------------------------------------------------------------
 
-already_AddRefed<SVGAnimatedString>
-SVGFEColorMatrixElement::In1()
-{
+already_AddRefed<SVGAnimatedString> SVGFEColorMatrixElement::In1() {
   return mStringAttributes[IN1].ToDOMAnimatedString(this);
 }
 
-already_AddRefed<SVGAnimatedEnumeration>
-SVGFEColorMatrixElement::Type()
-{
+already_AddRefed<SVGAnimatedEnumeration> SVGFEColorMatrixElement::Type() {
   return mEnumAttributes[TYPE].ToDOMAnimatedEnum(this);
 }
 
-already_AddRefed<DOMSVGAnimatedNumberList>
-SVGFEColorMatrixElement::Values()
-{
+already_AddRefed<DOMSVGAnimatedNumberList> SVGFEColorMatrixElement::Values() {
   return DOMSVGAnimatedNumberList::GetDOMWrapper(&mNumberListAttributes[VALUES],
                                                  this, VALUES);
 }
 
-void
-SVGFEColorMatrixElement::GetSourceImageNames(nsTArray<nsSVGStringInfo>& aSources)
-{
-  aSources.AppendElement(nsSVGStringInfo(&mStringAttributes[IN1], this));
+void SVGFEColorMatrixElement::GetSourceImageNames(
+    nsTArray<SVGStringInfo>& aSources) {
+  aSources.AppendElement(SVGStringInfo(&mStringAttributes[IN1], this));
 }
 
-FilterPrimitiveDescription
-SVGFEColorMatrixElement::GetPrimitiveDescription(nsSVGFilterInstance* aInstance,
-                                                 const IntRect& aFilterSubregion,
-                                                 const nsTArray<bool>& aInputsAreTainted,
-                                                 nsTArray<RefPtr<SourceSurface>>& aInputImages)
-{
+FilterPrimitiveDescription SVGFEColorMatrixElement::GetPrimitiveDescription(
+    nsSVGFilterInstance* aInstance, const IntRect& aFilterSubregion,
+    const nsTArray<bool>& aInputsAreTainted,
+    nsTArray<RefPtr<SourceSurface>>& aInputImages) {
   uint32_t type = mEnumAttributes[TYPE].GetAnimValue();
-  const SVGNumberList &values = mNumberListAttributes[VALUES].GetAnimValue();
+  const SVGNumberList& values = mNumberListAttributes[VALUES].GetAnimValue();
 
-  FilterPrimitiveDescription descr(PrimitiveType::ColorMatrix);
+  ColorMatrixAttributes atts;
   if (!mNumberListAttributes[VALUES].IsExplicitlySet() &&
       (type == SVG_FECOLORMATRIX_TYPE_MATRIX ||
        type == SVG_FECOLORMATRIX_TYPE_SATURATE ||
        type == SVG_FECOLORMATRIX_TYPE_HUE_ROTATE)) {
-    descr.Attributes().Set(eColorMatrixType, (uint32_t)SVG_FECOLORMATRIX_TYPE_MATRIX);
-    static const float identityMatrix[] = 
-      { 1, 0, 0, 0, 0,
+    atts.mType = (uint32_t)SVG_FECOLORMATRIX_TYPE_MATRIX;
+    static const float identityMatrix[] = {
+        // clang-format off
+        1, 0, 0, 0, 0,
         0, 1, 0, 0, 0,
         0, 0, 1, 0, 0,
-        0, 0, 0, 1, 0 };
-    descr.Attributes().Set(eColorMatrixValues, identityMatrix, 20);
+        0, 0, 0, 1, 0
+        // clang-format on
+    };
+    atts.mValues.AppendElements(identityMatrix, 20);
   } else {
-    descr.Attributes().Set(eColorMatrixType, type);
+    atts.mType = type;
     if (values.Length()) {
-      descr.Attributes().Set(eColorMatrixValues, &values[0], values.Length());
-    } else {
-      descr.Attributes().Set(eColorMatrixValues, nullptr, 0);
+      atts.mValues.AppendElements(&values[0], values.Length());
     }
   }
-  return descr;
+
+  return FilterPrimitiveDescription(AsVariant(std::move(atts)));
 }
 
-bool
-SVGFEColorMatrixElement::AttributeAffectsRendering(int32_t aNameSpaceID,
-                                                   nsIAtom* aAttribute) const
-{
-  return SVGFEColorMatrixElementBase::AttributeAffectsRendering(aNameSpaceID, aAttribute) ||
+bool SVGFEColorMatrixElement::AttributeAffectsRendering(
+    int32_t aNameSpaceID, nsAtom* aAttribute) const {
+  return SVGFEColorMatrixElementBase::AttributeAffectsRendering(aNameSpaceID,
+                                                                aAttribute) ||
          (aNameSpaceID == kNameSpaceID_None &&
-          (aAttribute == nsGkAtoms::in ||
-           aAttribute == nsGkAtoms::type ||
+          (aAttribute == nsGkAtoms::in || aAttribute == nsGkAtoms::type ||
            aAttribute == nsGkAtoms::values));
 }
 
 //----------------------------------------------------------------------
-// nsSVGElement methods
+// SVGElement methods
 
-nsSVGElement::EnumAttributesInfo
-SVGFEColorMatrixElement::GetEnumInfo()
-{
-  return EnumAttributesInfo(mEnumAttributes, sEnumInfo,
-                            ArrayLength(sEnumInfo));
+SVGElement::EnumAttributesInfo SVGFEColorMatrixElement::GetEnumInfo() {
+  return EnumAttributesInfo(mEnumAttributes, sEnumInfo, ArrayLength(sEnumInfo));
 }
 
-nsSVGElement::StringAttributesInfo
-SVGFEColorMatrixElement::GetStringInfo()
-{
+SVGElement::StringAttributesInfo SVGFEColorMatrixElement::GetStringInfo() {
   return StringAttributesInfo(mStringAttributes, sStringInfo,
                               ArrayLength(sStringInfo));
 }
 
-nsSVGElement::NumberListAttributesInfo
-SVGFEColorMatrixElement::GetNumberListInfo()
-{
+SVGElement::NumberListAttributesInfo
+SVGFEColorMatrixElement::GetNumberListInfo() {
   return NumberListAttributesInfo(mNumberListAttributes, sNumberListInfo,
                                   ArrayLength(sNumberListInfo));
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

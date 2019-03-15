@@ -290,10 +290,12 @@ MGF1(HASH_HashType hashAlg,
     const SECHashObject *hash;
     void *hashContext;
     unsigned char C[4];
+    SECStatus rv = SECSuccess;
 
     hash = HASH_GetRawHashObject(hashAlg);
-    if (hash == NULL)
+    if (hash == NULL) {
         return SECFailure;
+    }
 
     hashContext = (*hash->create)();
     rounds = (maskLen + hash->length - 1) / hash->length;
@@ -314,14 +316,19 @@ MGF1(HASH_HashType hashAlg,
             (*hash->end)(hashContext, tempHash, &digestLen, hash->length);
         } else { /* we're in the last round and need to cut the hash */
             temp = (unsigned char *)PORT_Alloc(hash->length);
+            if (!temp) {
+                rv = SECFailure;
+                goto done;
+            }
             (*hash->end)(hashContext, temp, &digestLen, hash->length);
             PORT_Memcpy(tempHash, temp, maskLen - counter * hash->length);
             PORT_Free(temp);
         }
     }
-    (*hash->destroy)(hashContext, PR_TRUE);
 
-    return SECSuccess;
+done:
+    (*hash->destroy)(hashContext, PR_TRUE);
+    return rv;
 }
 
 /* XXX Doesn't set error code */
@@ -931,48 +938,56 @@ RSA_DecryptBlock(RSAPrivateKey *key,
                  const unsigned char *input,
                  unsigned int inputLen)
 {
-    SECStatus rv;
+    PRInt8 rv;
     unsigned int modulusLen = rsa_modulusLen(&key->modulus);
     unsigned int i;
-    unsigned char *buffer;
+    unsigned char *buffer = NULL;
+    unsigned int outLen = 0;
+    unsigned int copyOutLen = modulusLen - 11;
 
-    if (inputLen != modulusLen)
-        goto failure;
-
-    buffer = (unsigned char *)PORT_Alloc(modulusLen + 1);
-    if (!buffer)
-        goto failure;
-
-    rv = RSA_PrivateKeyOp(key, buffer, input);
-    if (rv != SECSuccess)
-        goto loser;
-
-    /* XXX(rsleevi): Constant time */
-    if (buffer[0] != RSA_BLOCK_FIRST_OCTET ||
-        buffer[1] != (unsigned char)RSA_BlockPublic) {
-        goto loser;
+    if (inputLen != modulusLen || modulusLen < 10) {
+        return SECFailure;
     }
-    *outputLen = 0;
-    for (i = 2; i < modulusLen; i++) {
-        if (buffer[i] == RSA_BLOCK_AFTER_PAD_OCTET) {
-            *outputLen = modulusLen - i - 1;
-            break;
-        }
-    }
-    if (*outputLen == 0)
-        goto loser;
-    if (*outputLen > maxOutputLen)
-        goto loser;
 
-    PORT_Memcpy(output, buffer + modulusLen - *outputLen, *outputLen);
+    if (copyOutLen > maxOutputLen) {
+        copyOutLen = maxOutputLen;
+    }
+
+    // Allocate enough space to decrypt + copyOutLen to allow copying outLen later.
+    buffer = PORT_ZAlloc(modulusLen + 1 + copyOutLen);
+    if (!buffer) {
+        return SECFailure;
+    }
+
+    // rv is 0 if everything is going well and 1 if an error occurs.
+    rv = RSA_PrivateKeyOp(key, buffer, input) != SECSuccess;
+    rv |= (buffer[0] != RSA_BLOCK_FIRST_OCTET) |
+          (buffer[1] != (unsigned char)RSA_BlockPublic);
+
+    // There have to be at least 8 bytes of padding.
+    for (i = 2; i < 10; i++) {
+        rv |= buffer[i] == RSA_BLOCK_AFTER_PAD_OCTET;
+    }
+
+    for (i = 10; i < modulusLen; i++) {
+        unsigned int newLen = modulusLen - i - 1;
+        unsigned int c = (buffer[i] == RSA_BLOCK_AFTER_PAD_OCTET) & (outLen == 0);
+        outLen = constantTimeCondition(c, newLen, outLen);
+    }
+    rv |= outLen == 0;
+    rv |= outLen > maxOutputLen;
+
+    // Note that output is set even if SECFailure is returned.
+    PORT_Memcpy(output, buffer + modulusLen - outLen, copyOutLen);
+    *outputLen = constantTimeCondition(outLen > maxOutputLen, maxOutputLen,
+                                       outLen);
 
     PORT_Free(buffer);
-    return SECSuccess;
 
-loser:
-    PORT_Free(buffer);
-failure:
-    return SECFailure;
+    for (i = 1; i < sizeof(rv) * 8; i <<= 1) {
+        rv |= rv << i;
+    }
+    return (SECStatus)rv;
 }
 
 /*
@@ -1211,6 +1226,7 @@ RSA_SignPSS(RSAPrivateKey *key,
     if (rv != SECSuccess)
         goto done;
 
+    // This sets error codes upon failure.
     rv = RSA_PrivateKeyOpDoubleChecked(key, output, pssEncoded);
     *outputLen = modulusLen;
 
@@ -1270,7 +1286,6 @@ RSA_CheckSignPSS(RSAPublicKey *key,
     return rv;
 }
 
-/* XXX Doesn't set error code */
 SECStatus
 RSA_Sign(RSAPrivateKey *key,
          unsigned char *output,
@@ -1279,34 +1294,34 @@ RSA_Sign(RSAPrivateKey *key,
          const unsigned char *input,
          unsigned int inputLen)
 {
-    SECStatus rv = SECSuccess;
+    SECStatus rv = SECFailure;
     unsigned int modulusLen = rsa_modulusLen(&key->modulus);
-    SECItem formatted;
-    SECItem unformatted;
+    SECItem formatted = { siBuffer, NULL, 0 };
+    SECItem unformatted = { siBuffer, (unsigned char *)input, inputLen };
 
-    if (maxOutputLen < modulusLen)
-        return SECFailure;
+    if (maxOutputLen < modulusLen) {
+        PORT_SetError(SEC_ERROR_OUTPUT_LEN);
+        goto done;
+    }
 
-    unformatted.len = inputLen;
-    unformatted.data = (unsigned char *)input;
-    formatted.data = NULL;
     rv = rsa_FormatBlock(&formatted, modulusLen, RSA_BlockPrivate,
                          &unformatted);
-    if (rv != SECSuccess)
+    if (rv != SECSuccess) {
+        PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
         goto done;
+    }
 
+    // This sets error codes upon failure.
     rv = RSA_PrivateKeyOpDoubleChecked(key, output, formatted.data);
     *outputLen = modulusLen;
 
-    goto done;
-
 done:
-    if (formatted.data != NULL)
+    if (formatted.data != NULL) {
         PORT_ZFree(formatted.data, modulusLen);
+    }
     return rv;
 }
 
-/* XXX Doesn't set error code */
 SECStatus
 RSA_CheckSign(RSAPublicKey *key,
               const unsigned char *sig,
@@ -1314,60 +1329,71 @@ RSA_CheckSign(RSAPublicKey *key,
               const unsigned char *data,
               unsigned int dataLen)
 {
-    SECStatus rv;
+    SECStatus rv = SECFailure;
     unsigned int modulusLen = rsa_modulusLen(&key->modulus);
     unsigned int i;
-    unsigned char *buffer;
+    unsigned char *buffer = NULL;
 
-    if (sigLen != modulusLen)
-        goto failure;
+    if (sigLen != modulusLen) {
+        PORT_SetError(SEC_ERROR_BAD_SIGNATURE);
+        goto done;
+    }
+
     /*
      * 0x00 || BT || Pad || 0x00 || ActualData
      *
      * The "3" below is the first octet + the second octet + the 0x00
      * octet that always comes just before the ActualData.
      */
-    if (dataLen > modulusLen - (3 + RSA_BLOCK_MIN_PAD_LEN))
-        goto failure;
+    if (dataLen > modulusLen - (3 + RSA_BLOCK_MIN_PAD_LEN)) {
+        PORT_SetError(SEC_ERROR_BAD_DATA);
+        goto done;
+    }
 
     buffer = (unsigned char *)PORT_Alloc(modulusLen + 1);
-    if (!buffer)
-        goto failure;
+    if (!buffer) {
+        PORT_SetError(SEC_ERROR_NO_MEMORY);
+        goto done;
+    }
 
-    rv = RSA_PublicKeyOp(key, buffer, sig);
-    if (rv != SECSuccess)
-        goto loser;
+    if (RSA_PublicKeyOp(key, buffer, sig) != SECSuccess) {
+        PORT_SetError(SEC_ERROR_BAD_SIGNATURE);
+        goto done;
+    }
 
     /*
      * check the padding that was used
      */
     if (buffer[0] != RSA_BLOCK_FIRST_OCTET ||
         buffer[1] != (unsigned char)RSA_BlockPrivate) {
-        goto loser;
+        PORT_SetError(SEC_ERROR_BAD_SIGNATURE);
+        goto done;
     }
     for (i = 2; i < modulusLen - dataLen - 1; i++) {
-        if (buffer[i] != RSA_BLOCK_PRIVATE_PAD_OCTET)
-            goto loser;
+        if (buffer[i] != RSA_BLOCK_PRIVATE_PAD_OCTET) {
+            PORT_SetError(SEC_ERROR_BAD_SIGNATURE);
+            goto done;
+        }
     }
-    if (buffer[i] != RSA_BLOCK_AFTER_PAD_OCTET)
-        goto loser;
+    if (buffer[i] != RSA_BLOCK_AFTER_PAD_OCTET) {
+        PORT_SetError(SEC_ERROR_BAD_SIGNATURE);
+        goto done;
+    }
 
     /*
      * make sure we get the same results
      */
-    if (PORT_Memcmp(buffer + modulusLen - dataLen, data, dataLen) != 0)
-        goto loser;
+    if (PORT_Memcmp(buffer + modulusLen - dataLen, data, dataLen) == 0) {
+        rv = SECSuccess;
+    }
 
-    PORT_Free(buffer);
-    return SECSuccess;
-
-loser:
-    PORT_Free(buffer);
-failure:
-    return SECFailure;
+done:
+    if (buffer) {
+        PORT_Free(buffer);
+    }
+    return rv;
 }
 
-/* XXX Doesn't set error code */
 SECStatus
 RSA_CheckSignRecover(RSAPublicKey *key,
                      unsigned char *output,
@@ -1376,21 +1402,27 @@ RSA_CheckSignRecover(RSAPublicKey *key,
                      const unsigned char *sig,
                      unsigned int sigLen)
 {
-    SECStatus rv;
+    SECStatus rv = SECFailure;
     unsigned int modulusLen = rsa_modulusLen(&key->modulus);
     unsigned int i;
-    unsigned char *buffer;
+    unsigned char *buffer = NULL;
 
-    if (sigLen != modulusLen)
-        goto failure;
+    if (sigLen != modulusLen) {
+        PORT_SetError(SEC_ERROR_BAD_SIGNATURE);
+        goto done;
+    }
 
     buffer = (unsigned char *)PORT_Alloc(modulusLen + 1);
-    if (!buffer)
-        goto failure;
+    if (!buffer) {
+        PORT_SetError(SEC_ERROR_NO_MEMORY);
+        goto done;
+    }
 
-    rv = RSA_PublicKeyOp(key, buffer, sig);
-    if (rv != SECSuccess)
-        goto loser;
+    if (RSA_PublicKeyOp(key, buffer, sig) != SECSuccess) {
+        PORT_SetError(SEC_ERROR_BAD_SIGNATURE);
+        goto done;
+    }
+
     *outputLen = 0;
 
     /*
@@ -1398,28 +1430,34 @@ RSA_CheckSignRecover(RSAPublicKey *key,
      */
     if (buffer[0] != RSA_BLOCK_FIRST_OCTET ||
         buffer[1] != (unsigned char)RSA_BlockPrivate) {
-        goto loser;
+        PORT_SetError(SEC_ERROR_BAD_SIGNATURE);
+        goto done;
     }
     for (i = 2; i < modulusLen; i++) {
         if (buffer[i] == RSA_BLOCK_AFTER_PAD_OCTET) {
             *outputLen = modulusLen - i - 1;
             break;
         }
-        if (buffer[i] != RSA_BLOCK_PRIVATE_PAD_OCTET)
-            goto loser;
+        if (buffer[i] != RSA_BLOCK_PRIVATE_PAD_OCTET) {
+            PORT_SetError(SEC_ERROR_BAD_SIGNATURE);
+            goto done;
+        }
     }
-    if (*outputLen == 0)
-        goto loser;
-    if (*outputLen > maxOutputLen)
-        goto loser;
+    if (*outputLen == 0) {
+        PORT_SetError(SEC_ERROR_BAD_SIGNATURE);
+        goto done;
+    }
+    if (*outputLen > maxOutputLen) {
+        PORT_SetError(SEC_ERROR_OUTPUT_LEN);
+        goto done;
+    }
 
     PORT_Memcpy(output, buffer + modulusLen - *outputLen, *outputLen);
+    rv = SECSuccess;
 
-    PORT_Free(buffer);
-    return SECSuccess;
-
-loser:
-    PORT_Free(buffer);
-failure:
-    return SECFailure;
+done:
+    if (buffer) {
+        PORT_Free(buffer);
+    }
+    return rv;
 }

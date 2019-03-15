@@ -20,26 +20,26 @@ transform highlighter applies those values correctly to the SVG elements
 
 const TEST_URL = URL_ROOT + "doc_inspector_highlighter_csstransform.html";
 
-add_task(function* () {
-  let {inspector, testActor} = yield openInspectorForURL(TEST_URL);
-  let front = inspector.inspector;
+add_task(async function() {
+  const {inspector, testActor} = await openInspectorForURL(TEST_URL);
+  const front = inspector.inspector;
 
-  let highlighter = yield front.getHighlighterByType("CssTransformHighlighter");
+  const highlighter = await front.getHighlighterByType("CssTransformHighlighter");
 
-  let nodeFront = yield getNodeFront("#test-node", inspector);
+  const nodeFront = await getNodeFront("#test-node", inspector);
 
   info("Displaying the transform highlighter on test node");
-  yield highlighter.show(nodeFront);
+  await highlighter.show(nodeFront);
 
-  let data = yield testActor.getAllAdjustedQuads("#test-node");
-  let [expected] = data.border;
+  const data = await testActor.getAllAdjustedQuads("#test-node");
+  const [expected] = data.border;
 
-  let points = yield testActor.getHighlighterNodeAttribute(
+  const points = await testActor.getHighlighterNodeAttribute(
     "css-transform-transformed", "points", highlighter);
-  let polygonPoints = points.split(" ").map(p => {
+  const polygonPoints = points.split(" ").map(p => {
     return {
       x: +p.substring(0, p.indexOf(",")),
-      y: +p.substring(p.indexOf(",") + 1)
+      y: +p.substring(p.indexOf(",") + 1),
     };
   });
 
@@ -51,6 +51,6 @@ add_task(function* () {
   }
 
   info("Hiding the transform highlighter");
-  yield highlighter.hide();
-  yield highlighter.finalize();
+  await highlighter.hide();
+  await highlighter.finalize();
 });

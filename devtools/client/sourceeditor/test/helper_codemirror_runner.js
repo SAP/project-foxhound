@@ -10,7 +10,7 @@
 function runCodeMirrorTest(browser) {
   let mm = browser.messageManager;
   mm.addMessageListener("setStatus", function listener({data}) {
-    let {statusMsg, type, customMsg} = data;
+    const {statusMsg, type, customMsg} = data;
     codemirrorSetStatus(statusMsg, type, customMsg);
   });
   mm.addMessageListener("done", function listener({data}) {
@@ -28,6 +28,7 @@ function runCodeMirrorTest(browser) {
   //     setting a timeout to check again if not.
   /* eslint-disable max-len */
   mm.loadFrameScript("data:," +
+    "ChromeUtils.import('resource://gre/modules/Timer.jsm');" +
     "content.wrappedJSObject.mozilla_setStatus = function(statusMsg, type, customMsg) {" +
     "  sendSyncMessage('setStatus', {statusMsg: statusMsg, type: type, customMsg: customMsg});" +
     "};" +

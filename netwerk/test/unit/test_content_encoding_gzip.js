@@ -1,5 +1,5 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = new HttpServer();
 var index = 0;
@@ -69,7 +69,7 @@ function startIter() {
 
 function completeIter(request, data, ctx) {
     if (!(tests[index].flags & CL_EXPECT_FAILURE)) {
-	do_check_eq(data.length, tests[index].datalen);
+	Assert.equal(data.length, tests[index].datalen);
     }
     if (++index < tests.length) {
 	startIter();
@@ -103,8 +103,8 @@ function handler(metadata, response) {
     response.setHeader("Content-Encoding", tests[index].ce, false);
     response.setHeader("Content-Length", "" + tests[index].body.length, false);
   
-    var bos = Components.classes["@mozilla.org/binaryoutputstream;1"]
-	.createInstance(Components.interfaces.nsIBinaryOutputStream);
+    var bos = Cc["@mozilla.org/binaryoutputstream;1"]
+	.createInstance(Ci.nsIBinaryOutputStream);
     bos.setOutputStream(response.bodyOutputStream);
 
     response.processAsync();

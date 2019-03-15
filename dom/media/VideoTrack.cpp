@@ -13,42 +13,33 @@
 namespace mozilla {
 namespace dom {
 
-VideoTrack::VideoTrack(const nsAString& aId,
-                       const nsAString& aKind,
-                       const nsAString& aLabel,
+VideoTrack::VideoTrack(nsIGlobalObject* aOwnerGlobal, const nsAString& aId,
+                       const nsAString& aKind, const nsAString& aLabel,
                        const nsAString& aLanguage,
                        VideoStreamTrack* aStreamTarck)
-  : MediaTrack(aId, aKind, aLabel, aLanguage)
-  , mSelected(false)
-  , mVideoStreamTrack(aStreamTarck)
-{
-}
+    : MediaTrack(aOwnerGlobal, aId, aKind, aLabel, aLanguage),
+      mSelected(false),
+      mVideoStreamTrack(aStreamTarck) {}
 
-VideoTrack::~VideoTrack()
-{
-}
+VideoTrack::~VideoTrack() {}
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(VideoTrack, MediaTrack, mVideoStreamTrack)
 
 NS_IMPL_ADDREF_INHERITED(VideoTrack, MediaTrack)
 NS_IMPL_RELEASE_INHERITED(VideoTrack, MediaTrack)
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(VideoTrack)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(VideoTrack)
 NS_INTERFACE_MAP_END_INHERITING(MediaTrack)
 
-JSObject*
-VideoTrack::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return VideoTrackBinding::Wrap(aCx, this, aGivenProto);
+JSObject* VideoTrack::WrapObject(JSContext* aCx,
+                                 JS::Handle<JSObject*> aGivenProto) {
+  return VideoTrack_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-void VideoTrack::SetSelected(bool aSelected)
-{
+void VideoTrack::SetSelected(bool aSelected) {
   SetEnabledInternal(aSelected, MediaTrack::DEFAULT);
 }
 
-void
-VideoTrack::SetEnabledInternal(bool aEnabled, int aFlags)
-{
+void VideoTrack::SetEnabledInternal(bool aEnabled, int aFlags) {
   if (aEnabled == mSelected) {
     return;
   }
@@ -99,5 +90,5 @@ VideoTrack::SetEnabledInternal(bool aEnabled, int aFlags)
   }
 }
 
-} // namespace dom
-} //namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

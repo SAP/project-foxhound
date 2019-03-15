@@ -21,37 +21,43 @@
 namespace mozilla {
 namespace a11y {
 
-class ProxyAccessible : public ProxyAccessibleBase<ProxyAccessible>
-{
-public:
+class ProxyAccessible : public ProxyAccessibleBase<ProxyAccessible> {
+ public:
   ProxyAccessible(uint64_t aID, ProxyAccessible* aParent,
                   DocAccessibleParent* aDoc, role aRole, uint32_t aInterfaces)
-    : ProxyAccessibleBase(aID, aParent, aDoc, aRole, aInterfaces)
-  {
+      : ProxyAccessibleBase(aID, aParent, aDoc, aRole, aInterfaces),
+        mSafeToRecurse(true) {
     MOZ_COUNT_CTOR(ProxyAccessible);
   }
 
-  ~ProxyAccessible()
-  {
-    MOZ_COUNT_DTOR(ProxyAccessible);
-  }
+  ~ProxyAccessible() { MOZ_COUNT_DTOR(ProxyAccessible); }
 
 #include "mozilla/a11y/ProxyAccessibleShared.h"
 
   bool GetCOMInterface(void** aOutAccessible) const;
-  void SetCOMInterface(const RefPtr<IAccessible>& aIAccessible)
-  { mCOMProxy = aIAccessible; }
+  void SetCOMInterface(const RefPtr<IAccessible>& aIAccessible) {
+    if (aIAccessible) {
+      mCOMProxy = aIAccessible;
+    } else {
+      // If we were supposed to be receiving an interface (hence the call to
+      // this function), but the interface turns out to be null, then we're
+      // broken for some reason.
+      mSafeToRecurse = false;
+    }
+  }
 
-protected:
+ protected:
   explicit ProxyAccessible(DocAccessibleParent* aThisAsDoc)
-    : ProxyAccessibleBase(aThisAsDoc)
-  { MOZ_COUNT_CTOR(ProxyAccessible); }
+      : ProxyAccessibleBase(aThisAsDoc) {
+    MOZ_COUNT_CTOR(ProxyAccessible);
+  }
 
-private:
+ private:
   RefPtr<IAccessible> mCOMProxy;
+  bool mSafeToRecurse;
 };
 
-}
-}
+}  // namespace a11y
+}  // namespace mozilla
 
 #endif

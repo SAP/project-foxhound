@@ -18,16 +18,12 @@
 do_get_profile();
 
 function checkBasicAttributes(token) {
-  let strBundleSvc = Cc["@mozilla.org/intl/stringbundle;1"]
-                       .getService(Ci.nsIStringBundleService);
   let bundle =
-    strBundleSvc.createBundle("chrome://pipnss/locale/pipnss.properties");
+    Services.strings.createBundle("chrome://pipnss/locale/pipnss.properties");
 
   let expectedTokenName = bundle.GetStringFromName("PrivateTokenDescription");
   equal(token.tokenName, expectedTokenName,
         "Actual and expected name should match");
-  equal(token.tokenLabel, expectedTokenName,
-        "Actual and expected label should match");
   equal(token.tokenManID, bundle.GetStringFromName("ManufacturerID"),
         "Actual and expected manufacturer ID should match");
   equal(token.tokenHWVersion, "0.0",
@@ -54,15 +50,6 @@ function checkPasswordFeaturesAndResetPassword(token, initialPW) {
   ok(token.hasPassword,
      "Token should have a password after setting a password");
 
-  equal(token.minimumPasswordLength, 0,
-        "Actual and expected min password length should match");
-
-  token.setAskPasswordDefaults(10, 20);
-  equal(token.getAskPasswordTimes(), 10,
-        "Actual and expected ask password times should match");
-  equal(token.getAskPasswordTimeout(), 20,
-        "Actual and expected ask password timeout should match");
-
   ok(token.checkPassword(initialPW),
      "checkPassword() should succeed if the correct initial password is given");
   token.changePassword(initialPW, "newPW ÿ 一二三");
@@ -88,6 +75,7 @@ function run_test() {
                   .getService(Ci.nsIPK11TokenDB);
   let token = tokenDB.getInternalKeyToken();
   notEqual(token, null, "The internal token should be present");
+  ok(token.isInternalKeyToken, "The internal token should be represented as such");
 
   checkBasicAttributes(token);
 
@@ -101,7 +89,7 @@ function run_test() {
 
   let initialPW = "foo 1234567890`~!@#$%^&*()-_=+{[}]|\\:;'\",<.>/? 一二三";
   token.initPassword(initialPW);
-  token.login(/*force*/ false);
+  token.login(/* force */ false);
   ok(token.isLoggedIn(), "Token should now be logged into");
 
   checkPasswordFeaturesAndResetPassword(token, initialPW);
@@ -114,10 +102,6 @@ function run_test() {
   ok(!token.isLoggedIn(),
      "Token should be logged out after calling logoutSimple()");
 
-  ok(!token.isHardwareToken(),
-     "The internal token should not be considered a hardware token");
-  ok(token.isFriendly(),
-     "The internal token should always be considered friendly");
   ok(token.needsLogin(),
      "The internal token should always need authentication");
 }

@@ -4,6 +4,9 @@
 
 "use strict";
 
+const Services = require("Services");
+const asyncStorage = require("devtools/shared/async-storage");
+
 const {
   ADD_DEVICE,
   ADD_DEVICE_TYPE,
@@ -14,11 +17,12 @@ const {
   UPDATE_DEVICE_DISPLAYED,
   UPDATE_DEVICE_MODAL,
 } = require("./index");
-const { removeDeviceAssociation } = require("./viewports");
+const { post } = require("../utils/message");
 
 const { addDevice, getDevices, removeDevice } = require("devtools/client/shared/devices");
+const { changeUserAgent, toggleTouchSimulation } = require("./ui");
+const { changeDevice, changePixelRatio } = require("./viewports");
 
-const Services = require("Services");
 const DISPLAYED_DEVICES_PREF = "devtools.responsive.html.displayedDeviceList";
 
 /**
@@ -29,14 +33,14 @@ const DISPLAYED_DEVICES_PREF = "devtools.responsive.html.displayedDeviceList";
  * - removed: Names of the devices that were explicitly removed by the user
  */
 function loadPreferredDevices() {
-  let preferredDevices = {
+  const preferredDevices = {
     "added": new Set(),
     "removed": new Set(),
   };
 
   if (Services.prefs.prefHasUserValue(DISPLAYED_DEVICES_PREF)) {
     try {
-      let savedData = Services.prefs.getCharPref(DISPLAYED_DEVICES_PREF);
+      let savedData = Services.prefs.getStringPref(DISPLAYED_DEVICES_PREF);
       savedData = JSON.parse(savedData);
       if (savedData.added && savedData.removed) {
         preferredDevices.added = new Set(savedData.added);
@@ -63,7 +67,7 @@ function updatePreferredDevices(devices) {
     removed: Array.from(devices.removed),
   };
   devicesToSave = JSON.stringify(devicesToSave);
-  Services.prefs.setCharPref(DISPLAYED_DEVICES_PREF, devicesToSave);
+  Services.prefs.setStringPref(DISPLAYED_DEVICES_PREF, devicesToSave);
 }
 
 module.exports = {
@@ -74,9 +78,9 @@ module.exports = {
   updatePreferredDevices: updatePreferredDevices,
 
   addCustomDevice(device) {
-    return function* (dispatch) {
+    return async function(dispatch) {
       // Add custom device to device storage
-      yield addDevice(device, "custom");
+      await addDevice(device, "custom");
       dispatch({
         type: ADD_DEVICE,
         device,
@@ -101,17 +105,9 @@ module.exports = {
   },
 
   removeCustomDevice(device) {
-    return function* (dispatch, getState) {
-      // Check if the custom device is currently associated with any viewports
-      let { viewports } = getState();
-      for (let viewport of viewports) {
-        if (viewport.device == device.name) {
-          dispatch(removeDeviceAssociation(viewport.id));
-        }
-      }
-
+    return async function(dispatch) {
       // Remove custom device from device storage
-      yield removeDevice(device, "custom");
+      await removeDevice(device, "custom");
       dispatch({
         type: REMOVE_DEVICE,
         device,
@@ -130,27 +126,27 @@ module.exports = {
   },
 
   loadDevices() {
-    return function* (dispatch) {
+    return async function(dispatch) {
       dispatch({ type: LOAD_DEVICE_LIST_START });
-      let preferredDevices = loadPreferredDevices();
+      const preferredDevices = loadPreferredDevices();
       let devices;
 
       try {
-        devices = yield getDevices();
+        devices = await getDevices();
       } catch (e) {
         console.error("Could not load device list: " + e);
         dispatch({ type: LOAD_DEVICE_LIST_ERROR });
         return;
       }
 
-      for (let type of devices.TYPES) {
+      for (const type of devices.TYPES) {
         dispatch(module.exports.addDeviceType(type));
-        for (let device of devices[type]) {
+        for (const device of devices[type]) {
           if (device.os == "fxos") {
             continue;
           }
 
-          let newDevice = Object.assign({}, device, {
+          const newDevice = Object.assign({}, device, {
             displayed: preferredDevices.added.has(device.name) ||
               (device.featured && !(preferredDevices.removed.has(device.name))),
           });
@@ -165,6 +161,39 @@ module.exports = {
       }
 
       dispatch({ type: LOAD_DEVICE_LIST_END });
+    };
+  },
+
+  restoreDeviceState() {
+    return async function(dispatch, getState) {
+      const deviceState = await asyncStorage.getItem("devtools.responsive.deviceState");
+      if (!deviceState) {
+        return;
+      }
+
+      const { id, device: deviceName, deviceType } = deviceState;
+      const devices = getState().devices;
+
+      if (!devices.types.includes(deviceType)) {
+        // Can't find matching device type.
+        return;
+      }
+
+      const device = devices[deviceType].find(d => d.name === deviceName);
+      if (!device) {
+        // Can't find device with the same device name.
+        return;
+      }
+
+      post(window, {
+        type: "change-device",
+        device,
+      });
+
+      dispatch(changeDevice(id, device.name, deviceType));
+      dispatch(changePixelRatio(id, device.pixelRatio));
+      dispatch(changeUserAgent(device.userAgent));
+      dispatch(toggleTouchSimulation(device.touch));
     };
   },
 

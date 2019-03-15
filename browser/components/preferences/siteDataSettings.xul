@@ -9,48 +9,51 @@
 <?xml-stylesheet href="chrome://browser/content/preferences/siteDataSettings.css" type="text/css"?>
 <?xml-stylesheet href="chrome://browser/skin/preferences/in-content/siteDataSettings.css" type="text/css"?>
 
-<!DOCTYPE dialog SYSTEM "chrome://browser/locale/preferences/siteDataSettings.dtd" >
-
 <window id="SiteDataSettingsDialog" windowtype="Browser:SiteDataSettings"
-        class="windowDialog" title="&window.title;"
+        data-l10n-id="site-data-settings-window"
+        data-l10n-attrs="title"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         style="width: 45em;"
         onload="gSiteDataSettings.init();"
+        onkeypress="gSiteDataSettings.onKeyPress(event);"
         persist="screenX screenY width height">
+
+  <linkset>
+    <link rel="localization" href="branding/brand.ftl"/>
+    <link rel="localization" href="browser/preferences/siteDataSettings.ftl"/>
+  </linkset>
 
   <script src="chrome://browser/content/preferences/siteDataSettings.js"/>
 
-  <stringbundle id="bundlePreferences"
-                src="chrome://browser/locale/preferences/preferences.properties"/>
-
   <vbox flex="1">
-    <description>&settings.description;</description>
+    <description id="settingsDescription" data-l10n-id="site-data-settings-description"/>
     <separator class="thin"/>
 
     <hbox id="searchBoxContainer">
       <textbox id="searchBox" type="search" flex="1"
-        placeholder="&searchPlaceHolder;" accesskey="&searchPlaceHolder.accesskey;"/>
+        data-l10n-id="site-data-search-textbox"/>
     </hbox>
     <separator class="thin"/>
 
-    <richlistbox id="sitesList" orient="vertical" flex="1">
-      <listheader>
-        <treecol flex="4" width="50" label="&hostCol.label;" id="hostCol"/>
-        <treecol flex="2" width="50" label="&statusCol.label;" id="statusCol"/>
-        <treecol flex="1" width="50" label="&usageCol.label;" id="usageCol"/>
-      </listheader>
-    </richlistbox>
+    <listheader>
+      <treecol flex="4" width="50" data-l10n-id="site-data-column-host" id="hostCol"/>
+      <treecol flex="1" width="50" data-l10n-id="site-data-column-cookies" id="cookiesCol"/>
+      <!-- Sorted by usage so the user can quickly see which sites use the most data. -->
+      <treecol flex="2" width="50" data-l10n-id="site-data-column-storage" id="usageCol" data-isCurrentSortCol="true"/>
+      <treecol flex="2" width="50" data-l10n-id="site-data-column-last-used" id="lastAccessedCol" />
+    </listheader>
+    <richlistbox seltype="multiple" id="sitesList" orient="vertical" flex="1"/>
   </vbox>
 
   <hbox align="start">
-    <button id="removeSelected" label="&removeSelected.label;" accesskey="&removeSelected.accesskey;"/>
+    <button id="removeSelected" data-l10n-id="site-data-remove-selected"/>
     <button id="removeAll"/>
   </hbox>
 
   <vbox align="end">
     <hbox>
-        <button id="cancel" label="&cancel.label;" accesskey="&cancel.accesskey;"/>
-        <button id="save" label="&save.label;" accesskey="&save.accesskey;"/>
+        <button id="cancel" data-l10n-id="site-data-button-cancel"/>
+        <button id="save" data-l10n-id="site-data-button-save"/>
     </hbox>
   </vbox>
 

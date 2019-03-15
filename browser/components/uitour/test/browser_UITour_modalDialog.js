@@ -1,5 +1,7 @@
 "use strict";
 
+/* eslint-disable mozilla/use-chromeutils-generateqi */
+
 var gTestTab;
 var gContentAPI;
 var gContentWindow;
@@ -26,7 +28,7 @@ var observer = SpecialPowers.wrapCallbackObject({
         const interfaces = [Ci.nsIObserver,
                             Ci.nsISupports, Ci.nsISupportsWeakReference];
 
-        if (!interfaces.some( function(v) { return iid.equals(v) } ))
+        if (!interfaces.some( function(v) { return iid.equals(v); } ))
             throw SpecialPowers.Components.results.NS_ERROR_NO_INTERFACE;
         return this;
     },
@@ -37,33 +39,24 @@ var observer = SpecialPowers.wrapCallbackObject({
             handleDialog(doc);
         else
             startCallbackTimer(); // try again in a bit
-    }
+    },
 });
 
 function getDialogDoc() {
   // Find the <browser> which contains notifyWindow, by looking
   // through all the open windows and all the <browsers> in each.
-  var wm = Cc["@mozilla.org/appshell/window-mediator;1"].
-           getService(Ci.nsIWindowMediator);
+
   // var enumerator = wm.getEnumerator("navigator:browser");
-  var enumerator = wm.getXULWindowEnumerator(null);
-
-  while (enumerator.hasMoreElements()) {
-    var win = enumerator.getNext();
-    var windowDocShell = win.QueryInterface(Ci.nsIXULWindow).docShell;
-
-    var containedDocShells = windowDocShell.getDocShellEnumerator(
-                                      Ci.nsIDocShellTreeItem.typeChrome,
-                                      Ci.nsIDocShell.ENUMERATE_FORWARDS);
-    while (containedDocShells.hasMoreElements()) {
+  for (let {docShell} of Services.wm.getEnumerator(null)) {
+    var containedDocShells = docShell.getDocShellEnumerator(
+                                      docShell.typeChrome,
+                                      docShell.ENUMERATE_FORWARDS);
+    for (let childDocShell of containedDocShells) {
         // Get the corresponding document for this docshell
-        var childDocShell = containedDocShells.getNext();
         // We don't want it if it's not done loading.
         if (childDocShell.busyFlags != Ci.nsIDocShell.BUSY_FLAGS_NONE)
           continue;
-        var childDoc = childDocShell.QueryInterface(Ci.nsIDocShell)
-                                    .contentViewer
-                                    .DOMDocument;
+        var childDoc = childDocShell.contentViewer.DOMDocument;
 
         // ok(true, "Got window: " + childDoc.location.href);
         if (childDoc.location.href == "chrome://global/content/commonDialog.xul")
@@ -80,7 +73,7 @@ function test() {
 
 
 var tests = [
-  taskify(function* test_modal_dialog_while_opening_tooltip() {
+  taskify(async function test_modal_dialog_while_opening_tooltip() {
     let panelShown;
     let popup;
 
@@ -96,9 +89,9 @@ var tests = [
     };
     startCallbackTimer();
     executeSoon(() => alert("test"));
-    yield waitForConditionPromise(() => panelShown, "Timed out waiting for panel promise to be assigned", 100);
-    yield panelShown;
+    await waitForConditionPromise(() => panelShown, "Timed out waiting for panel promise to be assigned", 100);
+    await panelShown;
 
-    yield hideInfoPromise();
-  })
+    await hideInfoPromise();
+  }),
 ];

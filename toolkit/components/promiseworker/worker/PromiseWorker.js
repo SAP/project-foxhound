@@ -166,15 +166,7 @@ AbstractWorker.prototype = {
         message: exn.message,
         fileName: exn.moduleName || exn.fileName,
         lineNumber: exn.lineNumber,
-        stack: exn.moduleStack
-      };
-      this.postMessage({fail: error, id, durationMs});
-    } else if (exn == StopIteration) {
-      // StopIteration is a well-known singleton, and requires a
-      // slightly different treatment.
-      this.log("Sending back StopIteration, id is", id);
-      let error = {
-        exn: "StopIteration"
+        stack: exn.moduleStack,
       };
       this.postMessage({fail: error, id, durationMs});
     } else if ("toMsg" in exn) {
@@ -203,6 +195,6 @@ AbstractWorker.prototype = {
       }
       throw exn;
     }
-  }
+  },
 };
 exports.AbstractWorker = AbstractWorker;

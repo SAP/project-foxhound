@@ -7,16 +7,15 @@
 #ifndef MediaSink_h_
 #define MediaSink_h_
 
-#include "mozilla/RefPtr.h"
-#include "mozilla/MozPromise.h"
-#include "nsISupportsImpl.h"
+#include "AudioDeviceInfo.h"
 #include "MediaInfo.h"
+#include "mozilla/MozPromise.h"
+#include "mozilla/RefPtr.h"
+#include "nsISupportsImpl.h"
 
 namespace mozilla {
 
 class TimeStamp;
-
-namespace media {
 
 /**
  * A consumer of audio/video data which plays audio and video tracks and
@@ -34,16 +33,17 @@ namespace media {
  * machine thread only.
  */
 class MediaSink {
-public:
+ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MediaSink);
   typedef mozilla::TrackInfo::TrackType TrackType;
 
   struct PlaybackParams {
     PlaybackParams()
-      : mVolume(1.0) , mPlaybackRate(1.0) , mPreservesPitch(true) {}
+        : mVolume(1.0), mPlaybackRate(1.0), mPreservesPitch(true) {}
     double mVolume;
     double mPlaybackRate;
     bool mPreservesPitch;
+    RefPtr<AudioDeviceInfo> mSink;
   };
 
   // Return the playback parameters of this sink.
@@ -54,15 +54,19 @@ public:
   // Can be called in any state.
   virtual void SetPlaybackParams(const PlaybackParams& aParams) = 0;
 
+  // EndedPromise needs to be a non-exclusive promise as it is shared between
+  // both the AudioSink and VideoSink.
+  typedef MozPromise<bool, nsresult, /* IsExclusive = */ false> EndedPromise;
+
   // Return a promise which is resolved when the track finishes
   // or null if no such track.
   // Must be called after playback starts.
-  virtual RefPtr<GenericPromise> OnEnded(TrackType aType) = 0;
+  virtual RefPtr<EndedPromise> OnEnded(TrackType aType) = 0;
 
   // Return the end time of the audio/video data that has been consumed
-  // or -1 if no such track.
+  // or 0 if no such track.
   // Must be called after playback starts.
-  virtual int64_t GetEndTime(TrackType aType) const = 0;
+  virtual media::TimeUnit GetEndTime(TrackType aType) const = 0;
 
   // Return playback position of the media.
   // Since A/V sync is always maintained by this sink, there is no need to
@@ -70,7 +74,8 @@ public:
   // aTimeStamp returns the timeStamp corresponding to the returned position
   // which is used by the compositor to derive the render time of video frames.
   // Must be called after playback starts.
-  virtual int64_t GetPosition(TimeStamp* aTimeStamp = nullptr) const = 0;
+  virtual media::TimeUnit GetPosition(
+      TimeStamp* aTimeStamp = nullptr) const = 0;
 
   // Return true if there are data consumed but not played yet.
   // Can be called in any state.
@@ -96,11 +101,12 @@ public:
   // Single frame rendering operation may need to be done before playback
   // started (1st frame) or right after seek completed or playback stopped.
   // Do nothing if this sink has no video track. Can be called in any state.
-  virtual void Redraw(const VideoInfo& aInfo) {};
+  virtual void Redraw(const VideoInfo& aInfo){};
 
   // Begin a playback session with the provided start time and media info.
   // Must be called when playback is stopped.
-  virtual void Start(int64_t aStartTime, const MediaInfo& aInfo) = 0;
+  virtual nsresult Start(const media::TimeUnit& aStartTime,
+                         const MediaInfo& aInfo) = 0;
 
   // Finish a playback session.
   // Must be called after playback starts.
@@ -123,11 +129,10 @@ public:
   // Can be called in any phase.
   virtual nsCString GetDebugInfo() { return nsCString(); }
 
-protected:
-  virtual ~MediaSink() {}
+ protected:
+  virtual ~MediaSink() = default;
 };
 
-} // namespace media
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif //MediaSink_h_
+#endif  // MediaSink_h_

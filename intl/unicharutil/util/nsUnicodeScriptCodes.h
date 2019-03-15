@@ -11,12 +11,12 @@
  */
 
 /*
- * Created on Tue Nov 15 16:39:42 2016 from UCD data files with version info:
+ * Created on Thu Jun 21 20:20:37 2018 from UCD data files with version info:
  *
 
 # Unicode Character Database
-# Date: 2016-06-20, 14:59:00 GMT [KW]
-# © 2016 Unicode®, Inc.
+# Date: 2018-06-04, 17:57:00 GMT [KW]
+# © 2018 Unicode®, Inc.
 # Unicode and the Unicode Logo are registered trademarks of Unicode, Inc. in the U.S. and other countries.
 # For terms of use, see http://www.unicode.org/terms_of_use.html
 #
@@ -25,44 +25,20 @@
 # UAX #38, "Unicode Han Database (Unihan)"
 # UAX #44, "Unicode Character Database."
 #
-# The UAXes can be accessed at http://www.unicode.org/versions/Unicode9.0.0/
+# The UAXes can be accessed at http://www.unicode.org/versions/Unicode11.0.0/
 
 This directory contains the final data files
-for the Unicode Character Database, for Version 9.0.0 of the Unicode Standard.
-
-# Scripts-9.0.0.txt
-# Date: 2016-06-01, 10:34:37 GMT
-
-# BidiMirroring-9.0.0.txt
-# Date: 2016-01-21, 22:00:00 GMT [KW, LI]
-
-# BidiBrackets-9.0.0.txt
-# Date: 2016-06-07, 22:30:00 GMT [AG, LI, KW]
-
-# HangulSyllableType-9.0.0.txt
-# Date: 2016-03-02, 18:55:01 GMT
-
-# LineBreak-9.0.0.txt
-# Date: 2016-05-26, 01:00:00 GMT [KW, LI]
-
-# EastAsianWidth-9.0.0.txt
-# Date: 2016-05-27, 17:00:00 GMT [KW, LI]
-
-# DerivedCoreProperties-9.0.0.txt
-# Date: 2016-06-01, 10:34:24 GMT
+for the Unicode Character Database, for Version 11.0.0 of the Unicode Standard.
 
 # IdentifierStatus.txt
-# Date: 2016-06-16, 13:41:30 GMT
-
-# IdentifierType.txt
-# Date: 2016-06-16, 13:41:30 GMT
+# Date: 2018-05-25, 00:12:52 GMT
 
 #
 # Unihan_Variants.txt
-# Date: 2016-06-01 07:01:48 GMT [JHJ]
+# Date: 2018-05-18 02:15:26 GMT [JHJ]
 
-# VerticalOrientation-16.txt
-# Date: 2016-07-23, 01:00:00 GMT [EM, KI, LI]
+# VerticalOrientation-17.txt
+# Date: 2016-10-20, 07:00:00 GMT [EM, KI, LI]
 
  *
  * * * * * This file contains MACHINE-GENERATED DATA, do not edit! * * * * *
@@ -70,20 +46,6 @@ for the Unicode Character Database, for Version 9.0.0 of the Unicode Standard.
 
 #ifndef NS_UNICODE_SCRIPT_CODES
 #define NS_UNICODE_SCRIPT_CODES
-
-#pragma pack(1)
-
-#if !ENABLE_INTL_API
-
-struct nsCharProps1 {
-  unsigned char mMirrorOffsetIndex:5;
-  unsigned char mHangulType:3;
-  unsigned char mCombiningClass:8;
-};
-
-#endif
-
-#if ENABLE_INTL_API
 
 struct nsCharProps2 {
   // Currently only 4 bits are defined here, so 4 more could be added without
@@ -93,36 +55,9 @@ struct nsCharProps2 {
   unsigned char mIdType:2;
 };
 
-#endif
-
-#if !ENABLE_INTL_API
-
-// This struct currently requires 5 bytes. We try to ensure that whole-byte
-// fields will not straddle byte boundaries, to optimize access to them.
-struct nsCharProps2 {
-  unsigned char mScriptCode:8;
-  // -- byte boundary --
-  unsigned char mPairedBracketType:2;
-  unsigned char mEastAsianWidthFWH:1;
-  unsigned char mCategory:5;
-  // -- byte boundary --
-  unsigned char mIdType:2;
-  unsigned char mDefaultIgnorable:1;
-  unsigned char mBidiCategory:5;
-  // -- byte boundary --
-  unsigned char mVertOrient:2;
-  unsigned char mLineBreak:6;
-  // -- byte boundary --
-  signed char   mNumericValue; // only 5 bits are actually needed here
-};
-
-#endif
-
-#pragma pack()
-
 namespace mozilla {
 namespace unicode {
-enum class Script {
+enum class Script : int16_t {
   COMMON = 0,
   INHERITED = 1,
   ARABIC = 2,
@@ -298,8 +233,18 @@ enum class Script {
   HAN_WITH_BOPOMOFO = 172,
   JAMO = 173,
   SYMBOLS_EMOJI = 174,
+  MASARAM_GONDI = 175,
+  SOYOMBO = 176,
+  ZANABAZAR_SQUARE = 177,
+  DOGRA = 178,
+  GUNJALA_GONDI = 179,
+  MAKASAR = 180,
+  MEDEFAIDRIN = 181,
+  HANIFI_ROHINGYA = 182,
+  SOGDIAN = 183,
+  OLD_SOGDIAN = 184,
 
-  NUM_SCRIPT_CODES = 175,
+  NUM_SCRIPT_CODES = 185,
 
   INVALID = -1
 };

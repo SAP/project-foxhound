@@ -18,18 +18,14 @@
 
 #include "gtest/gtest.h"
 
-static void testResult( nsresult rv ) {
+static void testResult(nsresult rv) {
   EXPECT_TRUE(NS_SUCCEEDED(rv)) << "0x" << std::hex << (int)rv;
 }
 
-class TestObserver final : public nsIObserver,
-  public nsSupportsWeakReference
-{
-public:
-  explicit TestObserver( const nsAString &name )
-    : mName( name )
-    , mObservations( 0 ) {
-    }
+class TestObserver final : public nsIObserver, public nsSupportsWeakReference {
+ public:
+  explicit TestObserver(const nsAString& name)
+      : mName(name), mObservations(0) {}
   NS_DECL_ISUPPORTS
   NS_DECL_NSIOBSERVER
 
@@ -39,18 +35,17 @@ public:
 
   nsString mExpectedData;
 
-private:
+ private:
   ~TestObserver() {}
 };
 
-NS_IMPL_ISUPPORTS( TestObserver, nsIObserver, nsISupportsWeakReference )
+NS_IMPL_ISUPPORTS(TestObserver, nsIObserver, nsISupportsWeakReference)
 
 int TestObserver::sTotalObservations;
 
 NS_IMETHODIMP
-TestObserver::Observe(nsISupports *aSubject,
-    const char *aTopic,
-    const char16_t *someData ) {
+TestObserver::Observe(nsISupports* aSubject, const char* aTopic,
+                      const char16_t* someData) {
   mObservations++;
   sTotalObservations++;
 
@@ -61,16 +56,12 @@ TestObserver::Observe(nsISupports *aSubject,
   return NS_OK;
 }
 
-static nsISupports* ToSupports(TestObserver* aObs)
-{
+static nsISupports* ToSupports(TestObserver* aObs) {
   return static_cast<nsIObserver*>(aObs);
 }
 
-static void TestExpectedCount(
-    nsIObserverService* svc,
-    const char* topic,
-    size_t expected)
-{
+static void TestExpectedCount(nsIObserverService* svc, const char* topic,
+                              size_t expected) {
   nsCOMPtr<nsISimpleEnumerator> e;
   nsresult rv = svc->EnumerateObservers(topic, getter_AddRefs(e));
   testResult(rv);
@@ -102,20 +93,18 @@ static void TestExpectedCount(
   EXPECT_EQ(count, expected);
 }
 
-TEST(ObserverService, Creation)
-{
+TEST(ObserverService, Creation) {
   nsresult rv;
   nsCOMPtr<nsIObserverService> svc =
-    do_CreateInstance("@mozilla.org/observer-service;1", &rv);
+      do_CreateInstance("@mozilla.org/observer-service;1", &rv);
 
   ASSERT_EQ(rv, NS_OK);
   ASSERT_TRUE(svc);
 }
 
-TEST(ObserverService, AddObserver)
-{
+TEST(ObserverService, AddObserver) {
   nsCOMPtr<nsIObserverService> svc =
-    do_CreateInstance("@mozilla.org/observer-service;1");
+      do_CreateInstance("@mozilla.org/observer-service;1");
 
   // Add a strong ref.
   RefPtr<TestObserver> a = new TestObserver(NS_LITERAL_STRING("A"));
@@ -128,10 +117,9 @@ TEST(ObserverService, AddObserver)
   testResult(rv);
 }
 
-TEST(ObserverService, RemoveObserver)
-{
+TEST(ObserverService, RemoveObserver) {
   nsCOMPtr<nsIObserverService> svc =
-    do_CreateInstance("@mozilla.org/observer-service;1");
+      do_CreateInstance("@mozilla.org/observer-service;1");
 
   RefPtr<TestObserver> a = new TestObserver(NS_LITERAL_STRING("A"));
   RefPtr<TestObserver> b = new TestObserver(NS_LITERAL_STRING("B"));
@@ -155,10 +143,9 @@ TEST(ObserverService, RemoveObserver)
   ASSERT_TRUE(NS_FAILED(rv));
 }
 
-TEST(ObserverService, EnumerateEmpty)
-{
+TEST(ObserverService, EnumerateEmpty) {
   nsCOMPtr<nsIObserverService> svc =
-    do_CreateInstance("@mozilla.org/observer-service;1");
+      do_CreateInstance("@mozilla.org/observer-service;1");
 
   // Try with no observers.
   TestExpectedCount(svc, "A", 0);
@@ -170,10 +157,9 @@ TEST(ObserverService, EnumerateEmpty)
   TestExpectedCount(svc, "A", 0);
 }
 
-TEST(ObserverService, Enumerate)
-{
+TEST(ObserverService, Enumerate) {
   nsCOMPtr<nsIObserverService> svc =
-    do_CreateInstance("@mozilla.org/observer-service;1");
+      do_CreateInstance("@mozilla.org/observer-service;1");
 
   const size_t kFooCount = 10;
   for (size_t i = 0; i < kFooCount; i++) {
@@ -194,10 +180,9 @@ TEST(ObserverService, Enumerate)
   TestExpectedCount(svc, "Bar", kBarCount);
 }
 
-TEST(ObserverService, EnumerateWeakRefs)
-{
+TEST(ObserverService, EnumerateWeakRefs) {
   nsCOMPtr<nsIObserverService> svc =
-    do_CreateInstance("@mozilla.org/observer-service;1");
+      do_CreateInstance("@mozilla.org/observer-service;1");
 
   const size_t kFooCount = 10;
   for (size_t i = 0; i < kFooCount; i++) {
@@ -233,16 +218,19 @@ TEST(ObserverService, EnumerateWeakRefs)
   TestExpectedCount(svc, "Foo", kFooCount + 2);
 }
 
-TEST(ObserverService, TestNotify)
-{
-  nsCString topicA; topicA.Assign( "topic-A" );
-  nsCString topicB; topicB.Assign( "topic-B" );
+TEST(ObserverService, TestNotify) {
+  nsCString topicA;
+  topicA.Assign("topic-A");
+  nsCString topicB;
+  topicB.Assign("topic-B");
 
   nsCOMPtr<nsIObserverService> svc =
-    do_CreateInstance("@mozilla.org/observer-service;1");
+      do_CreateInstance("@mozilla.org/observer-service;1");
 
-  RefPtr<TestObserver> aObserver = new TestObserver(NS_LITERAL_STRING("Observer-A"));
-  RefPtr<TestObserver> bObserver = new TestObserver(NS_LITERAL_STRING("Observer-B"));
+  RefPtr<TestObserver> aObserver =
+      new TestObserver(NS_LITERAL_STRING("Observer-A"));
+  RefPtr<TestObserver> bObserver =
+      new TestObserver(NS_LITERAL_STRING("Observer-B"));
 
   // Add two observers for topicA.
   testResult(svc->AddObserver(aObserver, topicA.get(), false));
@@ -252,19 +240,19 @@ TEST(ObserverService, TestNotify)
   testResult(svc->AddObserver(bObserver, topicB.get(), false));
 
   // Notify topicA.
-  NS_NAMED_LITERAL_STRING(dataA, "Testing Notify(observer-A, topic-A)");
+  const char16_t* dataA = u"Testing Notify(observer-A, topic-A)";
   aObserver->mExpectedData = dataA;
   bObserver->mExpectedData = dataA;
   nsresult rv =
-      svc->NotifyObservers(ToSupports(aObserver), topicA.get(), dataA.get());
+      svc->NotifyObservers(ToSupports(aObserver), topicA.get(), dataA);
   testResult(rv);
   ASSERT_EQ(aObserver->mObservations, 1);
   ASSERT_EQ(bObserver->mObservations, 1);
 
   // Notify topicB.
-  NS_NAMED_LITERAL_STRING(dataB, "Testing Notify(observer-B, topic-B)");
+  const char16_t* dataB = u"Testing Notify(observer-B, topic-B)";
   bObserver->mExpectedData = dataB;
-  rv = svc->NotifyObservers(ToSupports(bObserver), topicB.get(), dataB.get());
+  rv = svc->NotifyObservers(ToSupports(bObserver), topicB.get(), dataB);
   testResult(rv);
   ASSERT_EQ(aObserver->mObservations, 1);
   ASSERT_EQ(bObserver->mObservations, 2);
@@ -274,14 +262,14 @@ TEST(ObserverService, TestNotify)
 
   // Notify topicA, only bObserver is expected to be notified.
   bObserver->mExpectedData = dataA;
-  rv = svc->NotifyObservers(ToSupports(aObserver), topicA.get(), dataA.get());
+  rv = svc->NotifyObservers(ToSupports(aObserver), topicA.get(), dataA);
   testResult(rv);
   ASSERT_EQ(aObserver->mObservations, 1);
   ASSERT_EQ(bObserver->mObservations, 3);
 
   // Remove the other topicA observer, make sure none are notified.
   testResult(svc->RemoveObserver(bObserver, topicA.get()));
-  rv = svc->NotifyObservers(ToSupports(aObserver), topicA.get(), dataA.get());
+  rv = svc->NotifyObservers(ToSupports(aObserver), topicA.get(), dataA);
   testResult(rv);
   ASSERT_EQ(aObserver->mObservations, 1);
   ASSERT_EQ(bObserver->mObservations, 3);

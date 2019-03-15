@@ -16,57 +16,57 @@ const TEST_URI = `
   <div id="testid">Styled Node</div>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
-  yield selectNode("#testid", inspector);
-  yield editAndCheck(view);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, view} = await openRuleView();
+  await selectNode("#testid", inspector);
+  await editAndCheck(view);
 });
 
-function* editAndCheck(view) {
-  let idRuleEditor = getRuleViewRuleEditor(view, 1);
-  let prop = idRuleEditor.rule.textProps[0];
-  let propEditor = prop.editor;
-  let newPaddingValue = "20px";
+async function editAndCheck(view) {
+  const idRuleEditor = getRuleViewRuleEditor(view, 1);
+  const prop = idRuleEditor.rule.textProps[0];
+  const propEditor = prop.editor;
+  const newPaddingValue = "20px";
 
   info("Focusing the inplace editor field");
-  let editor = yield focusEditableField(view, propEditor.valueSpan);
+  const editor = await focusEditableField(view, propEditor.valueSpan);
   is(inplaceEditor(propEditor.valueSpan), editor,
     "Focused editor should be the value span.");
 
-  let onPropertyChange = waitForComputedStyleProperty("#testid", null,
+  const onPropertyChange = waitForComputedStyleProperty("#testid", null,
     "padding-top", newPaddingValue);
-  let onRefreshAfterPreview = once(view, "ruleview-changed");
+  const onRefreshAfterPreview = once(view, "ruleview-changed");
 
   info("Entering a new value");
   EventUtils.sendString(newPaddingValue, view.styleWindow);
 
-  info("Waiting for the throttled previewValue to apply the " +
+  info("Waiting for the debounced previewValue to apply the " +
     "changes to document");
 
-  view.throttle.flush();
-  yield onPropertyChange;
+  view.debounce.flush();
+  await onPropertyChange;
 
   info("Waiting for ruleview-refreshed after previewValue was applied.");
-  yield onRefreshAfterPreview;
+  await onRefreshAfterPreview;
 
-  let onBlur = once(editor.input, "blur");
+  const onBlur = once(editor.input, "blur");
 
   info("Entering the commit key and finishing edit");
-  EventUtils.synthesizeKey("VK_RETURN", {});
+  EventUtils.synthesizeKey("KEY_Enter");
 
   info("Waiting for blur on the field");
-  yield onBlur;
+  await onBlur;
 
   info("Waiting for the style changes to be applied");
-  yield once(view, "ruleview-changed");
+  await once(view, "ruleview-changed");
 
-  let computed = prop.computed;
-  let propNames = [
+  const computed = prop.computed;
+  const propNames = [
     "padding-top",
     "padding-right",
     "padding-bottom",
-    "padding-left"
+    "padding-left",
   ];
 
   is(computed.length, propNames.length, "There should be 4 computed values");
@@ -78,7 +78,7 @@ function* editAndCheck(view) {
   });
 
   propEditor.expander.click();
-  let computedDom = propEditor.computed;
+  const computedDom = propEditor.computed;
   is(computedDom.children.length, propNames.length,
     "There should be 4 nodes in the DOM");
   propNames.forEach((propName, i) => {

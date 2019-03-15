@@ -1,10 +1,8 @@
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "Promise",
-  "resource://gre/modules/Promise.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "BrowserTestUtils",
+ChromeUtils.defineModuleGetter(this, "BrowserTestUtils",
   "resource://testing-common/BrowserTestUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "ContentTask",
+ChromeUtils.defineModuleGetter(this, "ContentTask",
   "resource://testing-common/ContentTask.jsm");
 
 const REFERRER_URL_BASE = "/browser/browser/base/content/test/referrer/";
@@ -12,8 +10,6 @@ const REFERRER_POLICYSERVER_URL =
   "test1.example.com" + REFERRER_URL_BASE + "file_referrer_policyserver.sjs";
 const REFERRER_POLICYSERVER_URL_ATTRIBUTE =
   "test1.example.com" + REFERRER_URL_BASE + "file_referrer_policyserver_attr.sjs";
-
-SpecialPowers.pushPrefEnv({"set": [["network.http.enablePerElementReferrer", true]]});
 
 var gTestWindow = null;
 var rounds = 0;
@@ -32,12 +28,12 @@ var _referrerTests = [
   {
     fromScheme: "http://",
     toScheme: "http://",
-    result: "http://test1.example.com/browser"  // full referrer
+    result: "http://test1.example.com/browser",  // full referrer
   },
   {
     fromScheme: "https://",
     toScheme: "http://",
-    result: ""  // no referrer when downgrade
+    result: "",  // no referrer when downgrade
   },
   // 2. Origin referrer policy - we expect an origin referrer,
   //    even on downgrade.  But rel=noreferrer trumps this.
@@ -45,14 +41,14 @@ var _referrerTests = [
     fromScheme: "https://",
     toScheme: "http://",
     policy: "origin",
-    result: "https://test1.example.com/"  // origin, even on downgrade
+    result: "https://test1.example.com/",  // origin, even on downgrade
   },
   {
     fromScheme: "https://",
     toScheme: "http://",
     policy: "origin",
     rel: "noreferrer",
-    result: ""  // rel=noreferrer trumps meta-referrer
+    result: "",  // rel=noreferrer trumps meta-referrer
   },
   // 3. XXX: using no-referrer here until we support all attribute values (bug 1178337)
   //    Origin-when-cross-origin policy - this depends on the triggering
@@ -62,13 +58,13 @@ var _referrerTests = [
     fromScheme: "https://",
     toScheme: "https://",
     policy: "no-referrer",
-    result: ""  // same origin https://test1.example.com/browser
+    result: "",  // same origin https://test1.example.com/browser
   },
   {
     fromScheme: "http://",
     toScheme: "https://",
     policy: "no-referrer",
-    result: ""  // cross origin http://test1.example.com
+    result: "",  // cross origin http://test1.example.com
   },
 ];
 
@@ -79,6 +75,23 @@ var _referrerTests = [
  */
 function getReferrerTest(aTestNumber) {
   return _referrerTests[aTestNumber];
+}
+
+/**
+ * Returns shimmed test object for a given test number.
+ *
+ * @param aTestNumber The test number - 0, 1, 2, ...
+ * @return The test object with result hard-coded to "",
+ *          or undefined if the number is out of range.
+ */
+function getRemovedReferrerTest(aTestNumber) {
+  let testCase = _referrerTests[aTestNumber];
+  if (testCase) {
+    // We want all the referrer tests to fail!
+    testCase.result = "";
+  }
+
+  return testCase;
 }
 
 /**
@@ -129,7 +142,7 @@ function delayedStartupFinished(aWindow) {
         Services.obs.removeObserver(observer, aTopic);
         resolve();
       }
-    }, "browser-delayed-startup-finished", false);
+    }, "browser-delayed-startup-finished");
   });
 }
 
@@ -140,9 +153,7 @@ function delayedStartupFinished(aWindow) {
  * @resolves With the tab once it's loaded.
  */
 function someTabLoaded(aWindow) {
-  return BrowserTestUtils.waitForNewTab(gTestWindow.gBrowser).then((tab) => {
-    return BrowserTestUtils.browserStopped(tab.linkedBrowser).then(() => tab);
-  });
+  return BrowserTestUtils.waitForNewTab(gTestWindow.gBrowser, null, true);
 }
 
 /**
@@ -195,10 +206,11 @@ function referrerTestCaseLoaded(aTestNumber, aParams) {
   let url = test.fromScheme + server +
             "?scheme=" + escape(test.toScheme) +
             "&policy=" + escape(test.policy || "") +
-            "&rel=" + escape(test.rel || "");
+            "&rel=" + escape(test.rel || "") +
+            "&cross=" + escape(test.cross || "");
   let browser = gTestWindow.gBrowser;
   return BrowserTestUtils.openNewForegroundTab(browser, () => {
-    browser.selectedTab = browser.addTab(url, aParams);
+    browser.selectedTab = BrowserTestUtils.addTab(browser, url, aParams);
   }, false, true);
 }
 

@@ -35,12 +35,10 @@ XPIDL_SOURCES += [
     'nsIClassifiedChannel.idl',
     'nsIClassOfService.idl',
     'nsIContentSniffer.idl',
-    'nsICryptoFIPSInfo.idl',
-    'nsICryptoHash.idl',
-    'nsICryptoHMAC.idl',
     'nsIDashboard.idl',
     'nsIDashboardEventNotifier.idl',
     'nsIDeprecationWarner.idl',
+    'nsIDHCPClient.idl',
     'nsIDivertableChannel.idl',
     'nsIDownloader.idl',
     'nsIEncodedChannel.idl',
@@ -56,7 +54,6 @@ XPIDL_SOURCES += [
     'nsIInputStreamChannel.idl',
     'nsIInputStreamPump.idl',
     'nsIIOService.idl',
-    'nsIIOService2.idl',
     'nsILoadContextInfo.idl',
     'nsILoadGroup.idl',
     'nsILoadGroupChild.idl',
@@ -66,13 +63,12 @@ XPIDL_SOURCES += [
     'nsINestedURI.idl',
     'nsINetAddr.idl',
     'nsINetUtil.idl',
+    'nsINetworkConnectivityService.idl',
     'nsINetworkInfoService.idl',
     'nsINetworkInterceptController.idl',
     'nsINetworkLinkService.idl',
     'nsINetworkPredictor.idl',
     'nsINetworkPredictorVerifier.idl',
-    'nsINetworkProperties.idl',
-    'nsINSSErrorsService.idl',
     'nsINullChannel.idl',
     'nsIParentChannel.idl',
     'nsIParentRedirectingChannel.idl',
@@ -91,6 +87,7 @@ XPIDL_SOURCES += [
     'nsIProxyInfo.idl',
     'nsIRandomGenerator.idl',
     'nsIRedirectChannelRegistrar.idl',
+    'nsIRedirectHistoryEntry.idl',
     'nsIRedirectResultListener.idl',
     'nsIRequest.idl',
     'nsIRequestContext.idl',
@@ -100,7 +97,6 @@ XPIDL_SOURCES += [
     'nsISecCheckWrapChannel.idl',
     'nsISecureBrowserUI.idl',
     'nsISecurityEventSink.idl',
-    'nsISecurityInfoProvider.idl',
     'nsISensitiveInfoHiddenURI.idl',
     'nsISerializationHelper.idl',
     'nsIServerSocket.idl',
@@ -110,8 +106,6 @@ XPIDL_SOURCES += [
     'nsISocketTransportService.idl',
     'nsISpeculativeConnect.idl',
     'nsIStandardURL.idl',
-    'nsIStreamingProtocolController.idl',
-    'nsIStreamingProtocolService.idl',
     'nsIStreamListener.idl',
     'nsIStreamListenerTee.idl',
     'nsIStreamLoader.idl',
@@ -121,22 +115,18 @@ XPIDL_SOURCES += [
     'nsIThreadRetargetableRequest.idl',
     'nsIThreadRetargetableStreamListener.idl',
     'nsIThrottledInputChannel.idl',
-    'nsIThrottlingService.idl',
     'nsITimedChannel.idl',
     'nsITLSServerSocket.idl',
     'nsITraceableChannel.idl',
     'nsITransport.idl',
     'nsIUDPSocket.idl',
-    'nsIUnicharStreamLoader.idl',
     'nsIUploadChannel.idl',
     'nsIUploadChannel2.idl',
     'nsIURI.idl',
-    'nsIURIClassifier.idl',
-    'nsIURIWithBlobImpl.idl',
-    'nsIURIWithPrincipal.idl',
+    'nsIURIMutator.idl',
+    'nsIURIWithSpecialOrigin.idl',
     'nsIURL.idl',
     'nsIURLParser.idl',
-    'nsPILoadGroupInternal.idl',
     'nsPISocketTransportService.idl',
 ]
 
@@ -160,16 +150,17 @@ EXPORTS += [
     'nsSimpleNestedURI.h',
     'nsSimpleURI.h',
     'nsStreamListenerWrapper.h',
-    'nsTemporaryFileInputStream.h',
     'nsURIHashKey.h',
     'nsURLHelper.h',
     'nsURLParsers.h',
+    'SimpleChannel.h',
 ]
 
 EXPORTS.mozilla += [
     'LoadContextInfo.h',
     'LoadInfo.h',
     'LoadTainting.h',
+    'nsRedirectHistoryEntry.h',
 ]
 
 EXPORTS.mozilla.net += [
@@ -178,15 +169,17 @@ EXPORTS.mozilla.net += [
     'ChannelDiverterParent.h',
     'Dashboard.h',
     'DashboardTypes.h',
+    'IOActivityMonitor.h',
     'MemoryDownloader.h',
+    'NetworkConnectivityService.h',
+    'PartiallySeekableInputStream.h',
     'Predictor.h',
+    'RedirectChannelRegistrar.h',
     'ReferrerPolicy.h',
+    'RequestContextService.h',
+    'SimpleChannelParent.h',
+    'TCPFastOpen.h',
 ]
-
-if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gonk':
-    EXPORTS += [
-        'NetStatistics.h',
-    ]
 
 UNIFIED_SOURCES += [
     'ArrayBufferInputStream.cpp',
@@ -196,10 +189,11 @@ UNIFIED_SOURCES += [
     'ChannelDiverterParent.cpp',
     'Dashboard.cpp',
     'EventTokenBucket.cpp',
+    'IOActivityMonitor.cpp',
     'LoadContextInfo.cpp',
     'LoadInfo.cpp',
     'MemoryDownloader.cpp',
-    'NetworkActivityMonitor.cpp',
+    'NetworkConnectivityService.cpp',
     'nsAsyncRedirectVerifyHelper.cpp',
     'nsAsyncStreamCopier.cpp',
     'nsAuthInformationHolder.cpp',
@@ -207,7 +201,6 @@ UNIFIED_SOURCES += [
     'nsBaseChannel.cpp',
     'nsBaseContentStream.cpp',
     'nsBufferedStreams.cpp',
-    'nsChannelClassifier.cpp',
     'nsDirectoryIndexStream.cpp',
     'nsDNSPrefetch.cpp',
     'nsDownloader.cpp',
@@ -217,6 +210,7 @@ UNIFIED_SOURCES += [
     'nsInputStreamChannel.cpp',
     'nsInputStreamPump.cpp',
     'nsIOService.cpp',
+    'nsIURIMutatorUtils.cpp',
     'nsLoadGroup.cpp',
     'nsMediaFragmentURIParser.cpp',
     'nsMIMEInputStream.cpp',
@@ -226,6 +220,7 @@ UNIFIED_SOURCES += [
     'nsPreloadedStream.cpp',
     'nsProtocolProxyService.cpp',
     'nsProxyInfo.cpp',
+    'nsRedirectHistoryEntry.cpp',
     'nsRequestObserverProxy.cpp',
     'nsSecCheckWrapChannel.cpp',
     'nsSerializationHelper.cpp',
@@ -241,28 +236,24 @@ UNIFIED_SOURCES += [
     'nsStreamLoader.cpp',
     'nsStreamTransportService.cpp',
     'nsSyncStreamListener.cpp',
-    'nsTemporaryFileInputStream.cpp',
     'nsTransportUtils.cpp',
     'nsUDPSocket.cpp',
-    'nsUnicharStreamLoader.cpp',
     'nsURLHelper.cpp',
     'nsURLParsers.cpp',
+    'PartiallySeekableInputStream.cpp',
     'PollableEvent.cpp',
     'Predictor.cpp',
     'ProxyAutoConfig.cpp',
     'RedirectChannelRegistrar.cpp',
     'RequestContextService.cpp',
     'SimpleBuffer.cpp',
-    'StreamingProtocolService.cpp',
+    'SimpleChannel.cpp',
+    'SimpleChannelParent.cpp',
+    'TCPFastOpenLayer.cpp',
     'ThrottleQueue.cpp',
-    'ThrottlingService.cpp',
     'Tickler.cpp',
     'TLSServerSocket.cpp',
 ]
-
-if CONFIG['MOZ_RUST'] and CONFIG['MOZ_RUST_URLPARSE']:
-    EXPORTS.mozilla.net += [ 'RustURL.h' ]
-    UNIFIED_SOURCES += [ 'RustURL.cpp' ]
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
     SOURCES += [
@@ -299,6 +290,8 @@ EXTRA_JS_MODULES += [
     'NetUtil.jsm',
 ]
 
+DIRS += [ 'mozurl' ]
+
 include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
@@ -308,14 +301,11 @@ LOCAL_INCLUDES += [
     '/dom/base',
     '/netwerk/protocol/http',
     '/netwerk/socket',
-    '/security/pkix/include'
+    '/netwerk/url-classifier',
 ]
 
-if 'rtsp' in CONFIG['NECKO_PROTOCOLS']:
-    LOCAL_INCLUDES += [
-        '/netwerk/protocol/rtsp/controller',
-        '/netwerk/protocol/rtsp/rtsp',
-    ]
-
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
+
+if CONFIG['CC_TYPE'] == 'clang-cl':
+    AllowCompilerWarnings()  # workaround for bug 1090497

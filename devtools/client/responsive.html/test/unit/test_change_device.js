@@ -14,8 +14,8 @@ const {
   changeDevice,
 } = require("devtools/client/responsive.html/actions/viewports");
 
-add_task(function* () {
-  let store = Store();
+add_task(async function() {
+  const store = Store();
   const { getState, dispatch } = store;
 
   dispatch(addDeviceType("phones"));
@@ -27,7 +27,7 @@ add_task(function* () {
     "userAgent": "Mozilla/5.0 (Mobile; rv:39.0) Gecko/39.0 Firefox/39.0",
     "touch": true,
     "firefoxOS": true,
-    "os": "fxos"
+    "os": "fxos",
   }, "phones"));
   dispatch(addViewport());
 

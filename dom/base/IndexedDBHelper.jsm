@@ -12,23 +12,19 @@ if (DEBUG) {
   debug = function (s) {}
 }
 
-const Cu = Components.utils;
-const Cc = Components.classes;
-const Ci = Components.interfaces;
+var EXPORTED_SYMBOLS = ["IndexedDBHelper"];
 
-this.EXPORTED_SYMBOLS = ["IndexedDBHelper"];
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.importGlobalProperties(["indexedDB"]);
 
-XPCOMUtils.defineLazyModuleGetter(this, 'Services',
+ChromeUtils.defineModuleGetter(this, 'Services',
   'resource://gre/modules/Services.jsm');
 
 function getErrorName(err) {
   return err && err.name || "UnknownError";
 }
 
-this.IndexedDBHelper = function IndexedDBHelper() {
+function IndexedDBHelper() {
 }
 
 IndexedDBHelper.prototype = {
@@ -71,8 +67,7 @@ IndexedDBHelper.prototype = {
       req = indexedDB.open(this.dbName, this.dbVersion);
     } catch (e) {
       if (DEBUG) debug("Error opening database: " + self.dbName);
-      Services.tm.currentThread.dispatch(() => invokeCallbacks(getErrorName(e)),
-                                         Ci.nsIThread.DISPATCH_NORMAL);
+      Services.tm.dispatchToMainThread(() => invokeCallbacks(getErrorName(e)));
       return;
     }
     req.onsuccess = function (event) {
@@ -114,8 +109,7 @@ IndexedDBHelper.prototype = {
     if (this._db) {
       if (DEBUG) debug("ensureDB: already have a database, returning early.");
       if (aSuccessCb) {
-        Services.tm.currentThread.dispatch(aSuccessCb,
-                                           Ci.nsIThread.DISPATCH_NORMAL);
+        Services.tm.dispatchToMainThread(aSuccessCb);
       }
       return;
     }
@@ -140,12 +134,12 @@ IndexedDBHelper.prototype = {
    *        be invoked with the transaction and the `store' object store.
    * @param successCb
    *        Success callback to call on a successful transaction commit.
-   *        The result is stored in txn.result.
+   *        The result is stored in txn.result (in the callback function).
    * @param failureCb
    *        Error callback to call when an error is encountered.
    */
   newTxn: function newTxn(txn_type, store_name, callback, successCb, failureCb) {
-    this.ensureDB(function () {
+    this.ensureDB(() => {
       if (DEBUG) debug("Starting new transaction" + txn_type);
       let txn;
       try {
@@ -166,25 +160,39 @@ IndexedDBHelper.prototype = {
         stores = txn.objectStore(store_name);
       }
 
-      txn.oncomplete = function (event) {
+      txn.oncomplete = function () {
         if (DEBUG) debug("Transaction complete. Returning to callback.");
+        /*
+         * txn.result property is not part of the transaction object returned
+         * by this._db.transaction method called above.
+         * The property is expected to be set in the callback function.
+         * However, it can happen that the property is not set for some reason,
+         * so we have to check if the property exists before calling the
+         * success callback.
+         */
         if (successCb) {
-          successCb(txn.result);
+          if ("result" in txn) {
+            successCb(txn.result);
+          } else {
+            successCb();
+          }
         }
       };
 
-      txn.onabort = function (event) {
+      txn.onabort = function () {
         if (DEBUG) debug("Caught error on transaction");
         /*
-         * event.target.error may be null
-         * if txn was aborted by calling txn.abort()
+         * txn.error property is part of the transaction object returned by
+         * this._db.transaction method called above.
+         * The attribute is defined in IDBTranscation WebIDL interface.
+         * It may be null.
          */
         if (failureCb) {
-          failureCb(getErrorName(event.target.error));
+          failureCb(getErrorName(txn.error));
         }
       };
       callback(txn, stores);
-    }.bind(this), failureCb);
+    }, failureCb);
   },
 
   /**

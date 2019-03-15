@@ -1,12 +1,12 @@
 /**
  * Test that the notification bar for crashed GMPs works.
  */
-add_task(function*() {
-  yield BrowserTestUtils.withNewTab({
+add_task(async function() {
+  await BrowserTestUtils.withNewTab({
     gBrowser,
     url: "about:blank",
-  }, function* (browser) {
-    yield ContentTask.spawn(browser, null, function* () {
+  }, async function(browser) {
+    await ContentTask.spawn(browser, null, async function() {
       const GMP_CRASH_EVENT = {
         pluginID: 1,
         pluginName: "GlobalTestPlugin",
@@ -21,13 +21,13 @@ add_task(function*() {
       content.dispatchEvent(crashEvent);
     });
 
-    let notification = yield waitForNotificationBar("plugin-crashed", browser);
+    let notification = await waitForNotificationBar("plugin-crashed", browser);
 
     let notificationBox = gBrowser.getNotificationBox(browser);
     ok(notification, "Infobar was shown.");
     is(notification.priority, notificationBox.PRIORITY_WARNING_MEDIUM,
        "Correct priority.");
-    is(notification.getAttribute("label"),
+    is(notification.messageText.textContent,
        "The GlobalTestPlugin plugin has crashed.",
        "Correct message.");
   });

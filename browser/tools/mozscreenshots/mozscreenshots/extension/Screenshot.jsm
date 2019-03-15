@@ -4,21 +4,18 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["Screenshot"];
+var EXPORTED_SYMBOLS = ["Screenshot"];
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
-
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
-Cu.import("resource://gre/modules/Timer.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/osfile.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Timer.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
 // Create a new instance of the ConsoleAPI so we can control the maxLogLevel with a pref.
 // See LOG_LEVELS in Console.jsm. Common examples: "All", "Info", "Warn", & "Error".
 const PREF_LOG_LEVEL = "extensions.mozscreenshots@mozilla.org.loglevel";
 XPCOMUtils.defineLazyGetter(this, "log", () => {
-  let ConsoleAPI = Cu.import("resource://gre/modules/Console.jsm", {}).ConsoleAPI;
+  let ConsoleAPI = ChromeUtils.import("resource://gre/modules/Console.jsm", {}).ConsoleAPI;
   let consoleOptions = {
     maxLogLevel: "info",
     maxLogLevelPref: PREF_LOG_LEVEL,
@@ -27,7 +24,7 @@ XPCOMUtils.defineLazyGetter(this, "log", () => {
   return new ConsoleAPI(consoleOptions);
 });
 
-this.Screenshot = {
+var Screenshot = {
   _extensionPath: null,
   _path: null,
   _imagePrefix: "",
@@ -65,11 +62,11 @@ this.Screenshot = {
   },
 
   // Capture the whole screen using an external application.
-  captureExternal(filename) {
+  async captureExternal(filename) {
     let imagePath = this._buildImagePath(filename);
-    return this._screenshotFunction(imagePath).then(() => {
-      log.debug("saved screenshot: " + filename);
-    });
+    await this._screenshotFunction(imagePath);
+    log.debug("saved screenshot: " + filename);
+    return imagePath;
   },
 
   // helpers
@@ -91,7 +88,7 @@ this.Screenshot = {
     });
   },
 
-  _screenshotOSX: Task.async(function*(filename) {
+  async _screenshotOSX(filename) {
     let screencapture = (windowID = null) => {
       return new Promise((resolve, reject) => {
         // Get the screencapture executable
@@ -103,12 +100,6 @@ this.Screenshot = {
 
         // Run the process.
         let args = ["-x", "-t", "png"];
-        // Darwin version number for OS X 10.6 is 10.x
-        if (windowID && Services.sysinfo.getProperty("version").indexOf("10.") !== 0) {
-          // Capture only that window on 10.7+
-          args.push("-l");
-          args.push(windowID);
-        }
         args.push(filename);
         process.runAsync(args, args.length, this._processObserver(resolve, reject));
       });
@@ -135,10 +126,10 @@ this.Screenshot = {
       });
     };
 
-    yield promiseWindowID();
-    let windowID = yield readWindowID();
-    yield screencapture(windowID);
-  }),
+    await promiseWindowID();
+    let windowID = await readWindowID();
+    await screencapture(windowID);
+  },
 
   _screenshotLinux(filename) {
     return new Promise((resolve, reject) => {

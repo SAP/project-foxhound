@@ -12,7 +12,7 @@ function* testSteps()
   const objectStoreData = [
     { key: "1", value: "foo" },
     { key: "2", value: "bar" },
-    { key: "3", value: "baz" }
+    { key: "3", value: "baz" },
   ];
 
   let request = indexedDB.open(name, 1);
@@ -35,7 +35,7 @@ function* testSteps()
       if (++addedData == objectStoreData.length) {
         testGenerator.next(event);
       }
-    }
+    };
   }
   event = yield undefined; // testGenerator.send
 
@@ -45,12 +45,12 @@ function* testSteps()
 
   let trans = db.transaction("data", "readwrite");
   objectStore = trans.objectStore("data");
-  index = objectStore.index("set");
+  let index = objectStore.index("set");
 
   request = index.get("bar");
   request.onerror = errorHandler;
   request.onsuccess = grabEventAndContinueHandler;
-  
+
   event = yield undefined;
 
   is(event.target.result, "bar", "Got correct result");
@@ -64,7 +64,7 @@ function* testSteps()
   request = index.get("foopy");
   request.onerror = errorHandler;
   request.onsuccess = grabEventAndContinueHandler;
-  
+
   event = yield undefined;
 
   is(event.target.result, "foopy", "Got correct result");

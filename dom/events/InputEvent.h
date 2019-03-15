@@ -14,41 +14,39 @@
 namespace mozilla {
 namespace dom {
 
-class InputEvent : public UIEvent
-{
-public:
-  InputEvent(EventTarget* aOwner,
-             nsPresContext* aPresContext,
+class InputEvent : public UIEvent {
+ public:
+  InputEvent(EventTarget* aOwner, nsPresContext* aPresContext,
              InternalEditorInputEvent* aEvent);
 
-  NS_DECL_ISUPPORTS_INHERITED
-
-  // Forward to base class
-  NS_FORWARD_TO_UIEVENT
-
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(InputEvent, UIEvent)
 
   static already_AddRefed<InputEvent> Constructor(const GlobalObject& aGlobal,
                                                   const nsAString& aType,
                                                   const InputEventInit& aParam,
                                                   ErrorResult& aRv);
 
-  virtual JSObject* WrapObjectInternal(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override
-  {
-    return InputEventBinding::Wrap(aCx, this, aGivenProto);
+  virtual JSObject* WrapObjectInternal(
+      JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override {
+    return InputEvent_Binding::Wrap(aCx, this, aGivenProto);
   }
 
+  void GetInputType(nsAString& aInputType);
   bool IsComposing();
 
-protected:
+ protected:
   ~InputEvent() {}
+
+  // mInputTypeValue stores inputType attribute value if the instance is
+  // created by script and not initialized with known inputType value.
+  nsString mInputTypeValue;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-already_AddRefed<mozilla::dom::InputEvent>
-NS_NewDOMInputEvent(mozilla::dom::EventTarget* aOwner,
-                    nsPresContext* aPresContext,
-                    mozilla::InternalEditorInputEvent* aEvent);
+already_AddRefed<mozilla::dom::InputEvent> NS_NewDOMInputEvent(
+    mozilla::dom::EventTarget* aOwner, nsPresContext* aPresContext,
+    mozilla::InternalEditorInputEvent* aEvent);
 
-#endif // mozilla_dom_InputEvent_h_
+#endif  // mozilla_dom_InputEvent_h_

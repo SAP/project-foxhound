@@ -15,10 +15,18 @@ typedef int64_t PRTime;
 /*
  * Forward declarations for new string types
  */
-class nsAString;
-class nsACString;
+#include "nsStringFwd.h"
 
-/* 
+/*
+ * Forward declaration of mozilla::dom::Promise
+ */
+namespace mozilla {
+namespace dom {
+class Promise;
+} // namespace dom
+} // namespace mozilla
+
+/*
  * Start commenting out the C++ versions of the below in the output header
  */
 #if 0
@@ -70,10 +78,6 @@ typedef unsigned long       size_t;
 
 [ptr]         native nsQIResult(void);
 
-[ref, domstring] native DOMString(ignored);
-[ref, domstring] native DOMStringRef(ignored);
-[ptr, domstring] native DOMStringPtr(ignored);
-
 [ref, utf8string] native AUTF8String(ignored);
 [ref, utf8string] native AUTF8StringRef(ignored);
 [ptr, utf8string] native AUTF8StringPtr(ignored);
@@ -88,6 +92,8 @@ typedef unsigned long       size_t;
 
 [ref, jsval]  native jsval(jsval);
               native jsid(jsid);
+
+[ptr, promise] native Promise(ignored);
 
 %{C++
 /* 

@@ -5,10 +5,13 @@
  * found in the LICENSE file.
  */
 
-
 #include "SkEdge.h"
+
 #include "SkFDot6.h"
 #include "SkMathPriv.h"
+#include "SkTo.h"
+
+#include <utility>
 
 /*
     In setLine, setQuadratic, setCubic, the first thing we do is to convert
@@ -52,8 +55,9 @@ int SkEdge::setLine(const SkPoint& p0, const SkPoint& p1, const SkIRect* clip,
     int winding = 1;
 
     if (y0 > y1) {
-        SkTSwap(x0, x1);
-        SkTSwap(y0, y1);
+        using std::swap;
+        swap(x0, x1);
+        swap(y0, y1);
         winding = -1;
     }
 
@@ -157,23 +161,28 @@ static inline SkFDot6 cheap_distance(SkFDot6 dx, SkFDot6 dy)
     return dx;
 }
 
-static inline int diff_to_shift(SkFDot6 dx, SkFDot6 dy)
+static inline int diff_to_shift(SkFDot6 dx, SkFDot6 dy, int shiftAA = 2)
 {
     // cheap calc of distance from center of p0-p2 to the center of the curve
     SkFDot6 dist = cheap_distance(dx, dy);
 
     // shift down dist (it is currently in dot6)
-    // down by 5 should give us 1/2 pixel accuracy (assuming our dist is accurate...)
+    // down by 3 should give us 1/8 pixel accuracy (assuming our dist is accurate...)
     // this is chosen by heuristic: make it as big as possible (to minimize segments)
     // ... but small enough so that our curves still look smooth
+    // When shift > 0, we're using AA and everything is scaled up so we can
+    // lower the accuracy.
+#ifdef SK_SUPPORT_LEGACY_QUAD_SHIFT
     dist = (dist + (1 << 4)) >> 5;
+#else
+    dist = (dist + (1 << 4)) >> (3 + shiftAA);
+#endif
 
     // each subdivision (shift value) cuts this dist (error) by 1/4
     return (32 - SkCLZ(dist)) >> 1;
 }
 
-int SkQuadraticEdge::setQuadratic(const SkPoint pts[3], int shift)
-{
+bool SkQuadraticEdge::setQuadraticWithoutUpdate(const SkPoint pts[3], int shift) {
     SkFDot6 x0, y0, x1, y1, x2, y2;
 
     {
@@ -198,8 +207,9 @@ int SkQuadraticEdge::setQuadratic(const SkPoint pts[3], int shift)
     int winding = 1;
     if (y0 > y2)
     {
-        SkTSwap(x0, x2);
-        SkTSwap(y0, y2);
+        using std::swap;
+        swap(x0, x2);
+        swap(y0, y2);
         winding = -1;
     }
     SkASSERT(y0 <= y1 && y1 <= y2);
@@ -215,7 +225,10 @@ int SkQuadraticEdge::setQuadratic(const SkPoint pts[3], int shift)
     {
         SkFDot6 dx = (SkLeftShift(x1, 1) - x0 - x2) >> 2;
         SkFDot6 dy = (SkLeftShift(y1, 1) - y0 - y2) >> 2;
-        shift = diff_to_shift(dx, dy);
+        // This is a little confusing:
+        // before this line, shift is the scale up factor for AA;
+        // after this line, shift is the fCurveShift.
+        shift = diff_to_shift(dx, dy, shift);
         SkASSERT(shift >= 0);
     }
     // need at least 1 subdivision for our bias trick
@@ -266,6 +279,13 @@ int SkQuadraticEdge::setQuadratic(const SkPoint pts[3], int shift)
     fQLastX = SkFDot6ToFixed(x2);
     fQLastY = SkFDot6ToFixed(y2);
 
+    return true;
+}
+
+int SkQuadraticEdge::setQuadratic(const SkPoint pts[3], int shift) {
+    if (!setQuadraticWithoutUpdate(pts, shift)) {
+        return 0;
+    }
     return this->updateQuadratic();
 }
 
@@ -332,7 +352,7 @@ static SkFDot6 cubic_delta_from_line(SkFDot6 a, SkFDot6 b, SkFDot6 c, SkFDot6 d)
     return SkMax32(SkAbs32(oneThird), SkAbs32(twoThird));
 }
 
-int SkCubicEdge::setCubic(const SkPoint pts[4], int shift) {
+bool SkCubicEdge::setCubicWithoutUpdate(const SkPoint pts[4], int shift, bool sortY) {
     SkFDot6 x0, y0, x1, y1, x2, y2, x3, y3;
 
     {
@@ -359,12 +379,13 @@ int SkCubicEdge::setCubic(const SkPoint pts[4], int shift) {
     }
 
     int winding = 1;
-    if (y0 > y3)
+    if (sortY && y0 > y3)
     {
-        SkTSwap(x0, x3);
-        SkTSwap(x1, x2);
-        SkTSwap(y0, y3);
-        SkTSwap(y1, y2);
+        using std::swap;
+        swap(x0, x3);
+        swap(x1, x2);
+        swap(y0, y3);
+        swap(y1, y2);
         winding = -1;
     }
 
@@ -372,7 +393,7 @@ int SkCubicEdge::setCubic(const SkPoint pts[4], int shift) {
     int bot = SkFDot6Round(y3);
 
     // are we a zero-height cubic (line)?
-    if (top == bot)
+    if (sortY && top == bot)
         return 0;
 
     // compute number of steps needed (1 << shift)
@@ -428,6 +449,13 @@ int SkCubicEdge::setCubic(const SkPoint pts[4], int shift) {
     fCLastX = SkFDot6ToFixed(x3);
     fCLastY = SkFDot6ToFixed(y3);
 
+    return true;
+}
+
+int SkCubicEdge::setCubic(const SkPoint pts[4], int shift) {
+    if (!this->setCubicWithoutUpdate(pts, shift)) {
+        return 0;
+    }
     return this->updateCubic();
 }
 

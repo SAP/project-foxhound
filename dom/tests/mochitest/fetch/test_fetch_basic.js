@@ -1,13 +1,8 @@
 function testAboutURL() {
   var p1 = fetch('about:blank').then(function(res) {
-    is(res.status, 200, "about:blank should load a valid Response");
-    is(res.headers.get('content-type'), 'text/html;charset=utf-8',
-       "about:blank content-type should be text/html;charset=utf-8");
-    is(res.headers.has('content-length'), false,
-       "about:blank should not have a content-length header");
-    return res.text().then(function(v) {
-      is(v, "", "about:blank body should be empty");
-    });
+    ok(false, "about:blank should fail");
+  }, function(e) {
+    ok(e instanceof TypeError, "about:blank should fail");
   });
 
   var p2 = fetch('about:config').then(function(res) {
@@ -94,11 +89,41 @@ function testNonGetBlobURL() {
   });
 }
 
+function testMozErrors() {
+  // mozErrors shouldn't be available to content and be ignored.
+  return fetch("http://localhost:4/should/fail", { mozErrors: true }).then(res => {
+    ok(false, "Request should not succeed");
+  }).catch(err => {
+    ok(err instanceof TypeError);
+  });
+}
+
+function testRequestMozErrors() {
+  // mozErrors shouldn't be available to content and be ignored.
+  const r = new Request("http://localhost:4/should/fail", { mozErrors: true });
+  return fetch(r).then(res => {
+    ok(false, "Request should not succeed");
+  }).catch(err => {
+    ok(err instanceof TypeError);
+  });
+}
+
+function testViewSourceURL() {
+  var p2 = fetch('view-source:/').then(function(res) {
+    ok(false, "view-source: URL should fail");
+  }, function(e) {
+    ok(e instanceof TypeError, "view-source: URL should fail");
+  });
+}
+
 function runTest() {
   return Promise.resolve()
     .then(testAboutURL)
     .then(testDataURL)
     .then(testSameOriginBlobURL)
     .then(testNonGetBlobURL)
+    .then(testMozErrors)
+    .then(testRequestMozErrors)
+    .then(testViewSourceURL)
     // Put more promise based tests here.
 }

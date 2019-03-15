@@ -3,17 +3,24 @@
  * Generally it just delegates to EventUtils.js.
  */
 
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+
 // Set up a dummy environment so that EventUtils works. We need to be careful to
 // pass a window object into each EventUtils method we call rather than having
 // it rely on the |window| global.
-var EventUtils = {};
+var EventUtils = {
+  get KeyboardEvent() {
+    return content.KeyboardEvent;
+  },
+  // EventUtils' `sendChar` function relies on the navigator to synthetize events.
+  get navigator() {
+    return content.navigator;
+  },
+};
 EventUtils.window = {};
 EventUtils.parent = EventUtils.window;
-EventUtils._EU_Ci = Components.interfaces;
-EventUtils._EU_Cc = Components.classes;
-// EventUtils' `sendChar` function relies on the navigator to synthetize events.
-EventUtils.navigator = content.document.defaultView.navigator;
-EventUtils.KeyboardEvent = content.document.defaultView.KeyboardEvent;
+EventUtils._EU_Ci = Ci;
+EventUtils._EU_Cc = Cc;
 
 Services.scriptloader.loadSubScript("chrome://mochikit/content/tests/SimpleTest/EventUtils.js", EventUtils);
 
@@ -22,6 +29,13 @@ addMessageListener("Test:SynthesizeMouse", (message) => {
   let target = data.target;
   if (typeof target == "string") {
     target = content.document.querySelector(target);
+  }
+  else if (Array.isArray(target)) {
+    let elem = {contentDocument: content.document};
+    for (let sel of target) {
+      elem = elem.contentDocument.querySelector(sel);
+    }
+    target = elem;
   }
   else if (typeof data.targetFn == "string") {
     let runnablestr = `
@@ -75,6 +89,50 @@ addMessageListener("Test:SynthesizeMouse", (message) => {
     result = EventUtils.synthesizeMouseAtPoint(left, top, data.event, content);
   }
   sendAsyncMessage("Test:SynthesizeMouseDone", { defaultPrevented: result });
+});
+
+addMessageListener("Test:SynthesizeTouch", (message) => {
+  let data = message.data;
+  let target = data.target;
+  if (typeof target == "string") {
+    target = content.document.querySelector(target);
+  }
+  else if (Array.isArray(target)) {
+    let elem = {contentDocument: content.document};
+    for (let sel of target) {
+      elem = elem.contentDocument.querySelector(sel);
+    }
+    target = elem;
+  }
+  else if (typeof data.targetFn == "string") {
+    let runnablestr = `
+      (() => {
+        return (${data.targetFn});
+      })();`
+    target = eval(runnablestr)();
+  }
+  else {
+    target = message.objects.object;
+  }
+
+  if (target) {
+    if (target.ownerDocument !== content.document) {
+      // Account for nodes found in iframes.
+      let cur = target;
+      do {
+        cur = cur.ownerGlobal.frameElement;
+      } while (cur && cur.ownerDocument !== content.document);
+
+      // node must be in this document tree.
+      if (!cur) {
+        sendAsyncMessage("Test:SynthesizeTouchDone",
+                         { error: "target must be in the main document tree"});
+        return;
+      }
+    }
+  }
+  let result = EventUtils.synthesizeTouch(target, data.x, data.y, data.event, content)
+  sendAsyncMessage("Test:SynthesizeTouchDone", { defaultPrevented: result });
 });
 
 addMessageListener("Test:SendChar", message => {

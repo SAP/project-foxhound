@@ -8,21 +8,15 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = [
-  "ObjectUtils"
+var EXPORTED_SYMBOLS = [
+  "ObjectUtils",
 ];
 
-const {classes: Cc, interfaces: Ci, results: Cr, utils: Cu} = Components;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm", this);
-
 // Used only to cause test failures.
-XPCOMUtils.defineLazyModuleGetter(this, "Promise",
-  "resource://gre/modules/Promise.jsm");
 
 var pSlice = Array.prototype.slice;
 
-this.ObjectUtils = {
+var ObjectUtils = {
   /**
    * This tests objects & values for deep equality.
    *
@@ -56,7 +50,27 @@ this.ObjectUtils = {
    */
   strict(obj) {
     return _strict(obj);
-  }
+  },
+
+  /**
+   * Returns `true` if `obj` is an array without elements, an object without
+   * enumerable properties, or a falsy primitive; `false` otherwise.
+   */
+  isEmpty(obj) {
+    if (!obj) {
+      return true;
+    }
+    if (typeof obj != "object") {
+      return false;
+    }
+    if (Array.isArray(obj)) {
+      return !obj.length;
+    }
+    for (let key in obj) {
+      return false;
+    }
+    return true;
+  },
 };
 
 // ... Start of previously MIT-licensed code.
@@ -181,6 +195,6 @@ function _strict(obj) {
       let error = new TypeError(`No such property: "${name}"`);
       Promise.reject(error); // Cause an xpcshell/mochitest failure.
       throw error;
-    }
+    },
   });
 }

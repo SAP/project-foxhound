@@ -6,23 +6,26 @@
 #ifndef CompositionTransaction_h
 #define CompositionTransaction_h
 
-#include "mozilla/EditTransactionBase.h"  // base class
-#include "nsCycleCollectionParticipant.h" // various macros
-#include "nsString.h"                     // mStringToInsert
+#include "mozilla/EditTransactionBase.h"   // base class
+#include "nsCycleCollectionParticipant.h"  // various macros
+#include "nsString.h"                      // mStringToInsert
 
-#define NS_IMETEXTTXN_IID \
-  { 0xb391355d, 0x346c, 0x43d1, \
-    { 0x85, 0xed, 0x9e, 0x65, 0xbe, 0xe7, 0x7e, 0x48 } }
+#define NS_IMETEXTTXN_IID                            \
+  {                                                  \
+    0xb391355d, 0x346c, 0x43d1, {                    \
+      0x85, 0xed, 0x9e, 0x65, 0xbe, 0xe7, 0x7e, 0x48 \
+    }                                                \
+  }
 
 namespace mozilla {
 
 class EditorBase;
-class RangeUpdater;
+class TextComposition;
 class TextRangeArray;
 
 namespace dom {
 class Text;
-} // namespace dom
+}  // namespace dom
 
 /**
  * CompositionTransaction stores all edit for a composition, i.e.,
@@ -30,28 +33,32 @@ class Text;
  * composition string, modifying the composition string or its IME selection
  * ranges and commit or cancel the composition.
  */
-class CompositionTransaction final : public EditTransactionBase
-{
-public:
+class CompositionTransaction final : public EditTransactionBase {
+ protected:
+  CompositionTransaction(EditorBase& aEditorBase,
+                         const nsAString& aStringToInsert, dom::Text& aTextNode,
+                         uint32_t aOffset);
+
+ public:
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_IMETEXTTXN_IID)
 
   /**
-   * @param aTextNode           The start node of text content.
-   * @param aOffset             The location in aTextNode to do the insertion.
-   * @param aReplaceLength      The length of text to replace. 0 means not
-   *                            replacing existing text.
-   * @param aTextRangeArray     Clauses and/or caret information. This may be
-   *                            null.
-   * @param aString             The new text to insert.
-   * @param aEditorBase         Used to get and set the selection.
-   * @param aRangeUpdater       The range updater
+   * Creates a composition transaction.  aEditorBase must not return from
+   * GetComposition() while calling this method.  Note that this method will
+   * update text node information of aEditorBase.mComposition.
+   *
+   * @param aEditorBase         The editor which has composition.
+   * @param aStringToInsert     The new composition string to insert.  This may
+   *                            be different from actual composition string.
+   *                            E.g., password editor can hide the character
+   *                            with a different character.
+   * @param aTextNode           The text node which will have aStringToInsert.
+   * @param aOffset             The offset in aTextNode where aStringToInsert
+   *                            will be inserted.
    */
-  CompositionTransaction(dom::Text& aTextNode,
-                         uint32_t aOffset, uint32_t aReplaceLength,
-                         TextRangeArray* aTextRangeArray,
-                         const nsAString& aString,
-                         EditorBase& aEditorBase,
-                         RangeUpdater* aRangeUpdater);
+  static already_AddRefed<CompositionTransaction> Create(
+      EditorBase& aEditorBase, const nsAString& aStringToInsert,
+      dom::Text& aTextNode, uint32_t aOffset);
 
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(CompositionTransaction,
                                            EditTransactionBase)
@@ -64,13 +71,12 @@ public:
 
   void MarkFixed();
 
-  static nsresult SetIMESelection(EditorBase& aEditorBase,
-                                  dom::Text* aTextNode,
+  static nsresult SetIMESelection(EditorBase& aEditorBase, dom::Text* aTextNode,
                                   uint32_t aOffsetInNode,
                                   uint32_t aLengthOfCompositionString,
                                   const TextRangeArray* aRanges);
 
-private:
+ private:
   ~CompositionTransaction();
 
   nsresult SetSelectionForRanges();
@@ -90,15 +96,13 @@ private:
   nsString mStringToInsert;
 
   // The editor, which is used to get the selection controller.
-  EditorBase& mEditorBase;
-
-  RangeUpdater* mRangeUpdater;
+  RefPtr<EditorBase> mEditorBase;
 
   bool mFixed;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(CompositionTransaction, NS_IMETEXTTXN_IID)
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // #ifndef CompositionTransaction_h
+#endif  // #ifndef CompositionTransaction_h

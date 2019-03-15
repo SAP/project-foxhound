@@ -9,6 +9,13 @@
 TestRunner.logEnabled = true;
 TestRunner.logger = LogController;
 
+if (!("SpecialPowers" in window)) {
+  dump("SimpleTest setup.js found SpecialPowers unavailable: reloading...\n");
+  setTimeout(() => {
+    window.location.reload();
+  }, 1000);
+}
+
 /* Helper function */
 function parseQueryString(encodedString, useArrays) {
   // strip a leading '?' from the encoded string
@@ -105,7 +112,7 @@ if (params.runUntilFailure) {
 
 // closeWhenDone tells us to close the browser when complete
 if (params.closeWhenDone) {
-  TestRunner.onComplete = SpecialPowers.quit;
+  TestRunner.onComplete = SpecialPowers.quit.bind(SpecialPowers);
 }
 
 if (params.failureFile) {
@@ -150,6 +157,10 @@ if (params.jscovDirPrefix) {
 
 if (params.maxTimeouts) {
   TestRunner.maxTimeouts = params.maxTimeouts;
+}
+
+if (params.cleanupCrashes) {
+  TestRunner.cleanupCrashes = true;
 }
 
 // Log things to the console if appropriate.

@@ -21,6 +21,9 @@ This file is originally from: https://bitbucket.org/hpk42/py, specifically:
 https://bitbucket.org/hpk42/py/src/980c8d526463958ee7cae678a7e4e9b054f36b94/py/_xmlgen.py?at=default
 by holger krekel, holger at merlinux eu. 2009
 """
+
+from __future__ import absolute_import
+
 import sys
 import re
 
@@ -79,6 +82,7 @@ class Tag(list):
     def __repr__(self):
         name = self.__class__.__name__
         return "<%r tag object %d>" % (name, id(self))
+
 
 Namespace = NamespaceMetaclass('Namespace', (object, ), {
     '__tagspec__': None,
@@ -279,5 +283,6 @@ class _escape:
         """ xml-escape the given unicode string. """
         ustring = unicode(ustring)
         return self.charef_rex.sub(self._replacer, ustring)
+
 
 escape = _escape()

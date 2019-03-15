@@ -1,14 +1,13 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-const {interfaces: Ci, classes: Cc, utils: Cu, results: Cr} = Components;
-Cu.import("resource:///modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 function TestReturnCodeChild() {}
 TestReturnCodeChild.prototype = {
 
   /* Boilerplate */
-  QueryInterface: XPCOMUtils.generateQI([Ci["nsIXPCTestReturnCodeChild"]]),
+  QueryInterface: ChromeUtils.generateQI([Ci["nsIXPCTestReturnCodeChild"]]),
   contractID: "@mozilla.org/js/xpc/test/js/ReturnCodeChild;1",
   classID: Components.ID("{38dd78aa-467f-4fad-8dcf-4383a743e235}"),
 

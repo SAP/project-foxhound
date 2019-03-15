@@ -8,12 +8,36 @@
 #define BASE_STL_UTIL_H_
 
 #include <algorithm>
+#include <deque>
+#include <forward_list>
 #include <functional>
 #include <iterator>
+#include <list>
+#include <map>
+#include <set>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "base/logging.h"
+
+namespace base {
+
+namespace internal {
+
+// Calls erase on iterators of matching elements.
+template <typename Container, typename Predicate>
+void IterateAndEraseIf(Container& container, Predicate pred) {
+  for (auto it = container.begin(); it != container.end();) {
+    if (pred(*it))
+      it = container.erase(it);
+    else
+      ++it;
+  }
+}
+
+}  // namespace internal
 
 // Clears internal memory of an STL object.
 // STL clear()/reserve(0) does not always free internal memory allocated
@@ -25,69 +49,6 @@ void STLClearObject(T* obj) {
   // Sometimes "T tmp" allocates objects with memory (arena implementation?).
   // Hence using additional reserve(0) even if it doesn't always work.
   obj->reserve(0);
-}
-
-// For a range within a container of pointers, calls delete (non-array version)
-// on these pointers.
-// NOTE: for these three functions, we could just implement a DeleteObject
-// functor and then call for_each() on the range and functor, but this
-// requires us to pull in all of algorithm.h, which seems expensive.
-// For hash_[multi]set, it is important that this deletes behind the iterator
-// because the hash_set may call the hash function on the iterator when it is
-// advanced, which could result in the hash function trying to deference a
-// stale pointer.
-template <class ForwardIterator>
-void STLDeleteContainerPointers(ForwardIterator begin, ForwardIterator end) {
-  while (begin != end) {
-    ForwardIterator temp = begin;
-    ++begin;
-    delete *temp;
-  }
-}
-
-// For a range within a container of pairs, calls delete (non-array version) on
-// BOTH items in the pairs.
-// NOTE: Like STLDeleteContainerPointers, it is important that this deletes
-// behind the iterator because if both the key and value are deleted, the
-// container may call the hash function on the iterator when it is advanced,
-// which could result in the hash function trying to dereference a stale
-// pointer.
-template <class ForwardIterator>
-void STLDeleteContainerPairPointers(ForwardIterator begin,
-                                    ForwardIterator end) {
-  while (begin != end) {
-    ForwardIterator temp = begin;
-    ++begin;
-    delete temp->first;
-    delete temp->second;
-  }
-}
-
-// For a range within a container of pairs, calls delete (non-array version) on
-// the FIRST item in the pairs.
-// NOTE: Like STLDeleteContainerPointers, deleting behind the iterator.
-template <class ForwardIterator>
-void STLDeleteContainerPairFirstPointers(ForwardIterator begin,
-                                         ForwardIterator end) {
-  while (begin != end) {
-    ForwardIterator temp = begin;
-    ++begin;
-    delete temp->first;
-  }
-}
-
-// For a range within a container of pairs, calls delete.
-// NOTE: Like STLDeleteContainerPointers, deleting behind the iterator.
-// Deleting the value does not always invalidate the iterator, but it may
-// do so if the key is a pointer into the value object.
-template <class ForwardIterator>
-void STLDeleteContainerPairSecondPointers(ForwardIterator begin,
-                                          ForwardIterator end) {
-  while (begin != end) {
-    ForwardIterator temp = begin;
-    ++begin;
-    delete temp->second;
-  }
 }
 
 // Counts the number of instances of val in a container.
@@ -115,90 +76,40 @@ inline char* string_as_array(std::string* str) {
   return str->empty() ? NULL : &*str->begin();
 }
 
-// The following functions are useful for cleaning up STL containers whose
-// elements point to allocated memory.
-
-// STLDeleteElements() deletes all the elements in an STL container and clears
-// the container.  This function is suitable for use with a vector, set,
-// hash_set, or any other STL container which defines sensible begin(), end(),
-// and clear() methods.
-//
-// If container is NULL, this function is a no-op.
-//
-// As an alternative to calling STLDeleteElements() directly, consider
-// STLElementDeleter (defined below), which ensures that your container's
-// elements are deleted when the STLElementDeleter goes out of scope.
-template <class T>
-void STLDeleteElements(T* container) {
-  if (!container)
-    return;
-  STLDeleteContainerPointers(container->begin(), container->end());
-  container->clear();
-}
-
-// Given an STL container consisting of (key, value) pairs, STLDeleteValues
-// deletes all the "value" components and clears the container.  Does nothing
-// in the case it's given a NULL pointer.
-template <class T>
-void STLDeleteValues(T* container) {
-  if (!container)
-    return;
-  STLDeleteContainerPairSecondPointers(container->begin(), container->end());
-  container->clear();
-}
-
-
-// The following classes provide a convenient way to delete all elements or
-// values from STL containers when they goes out of scope.  This greatly
-// simplifies code that creates temporary objects and has multiple return
-// statements.  Example:
-//
-// vector<MyProto *> tmp_proto;
-// STLElementDeleter<vector<MyProto *> > d(&tmp_proto);
-// if (...) return false;
-// ...
-// return success;
-
-// Given a pointer to an STL container this class will delete all the element
-// pointers when it goes out of scope.
-template<class T>
-class STLElementDeleter {
- public:
-  STLElementDeleter<T>(T* container) : container_(container) {}
-  ~STLElementDeleter<T>() { STLDeleteElements(container_); }
-
- private:
-  T* container_;
-};
-
-// Given a pointer to an STL container this class will delete all the value
-// pointers when it goes out of scope.
-template<class T>
-class STLValueDeleter {
- public:
-  STLValueDeleter<T>(T* container) : container_(container) {}
-  ~STLValueDeleter<T>() { STLDeleteValues(container_); }
-
- private:
-  T* container_;
-};
-
-// Test to see if a set, map, hash_set or hash_map contains a particular key.
+// Test to see if a set or map contains a particular key.
 // Returns true if the key is in the collection.
 template <typename Collection, typename Key>
 bool ContainsKey(const Collection& collection, const Key& key) {
   return collection.find(key) != collection.end();
 }
 
+namespace internal {
+
+template <typename Collection>
+class HasKeyType {
+  template <typename C>
+  static std::true_type test(typename C::key_type*);
+  template <typename C>
+  static std::false_type test(...);
+
+ public:
+  static constexpr bool value = decltype(test<Collection>(nullptr))::value;
+};
+
+}  // namespace internal
+
 // Test to see if a collection like a vector contains a particular value.
 // Returns true if the value is in the collection.
-template <typename Collection, typename Value>
+// Don't use this on collections such as sets or maps. This is enforced by
+// disabling this method if the collection defines a key_type.
+template <typename Collection,
+          typename Value,
+          typename std::enable_if<!internal::HasKeyType<Collection>::value,
+                                  int>::type = 0>
 bool ContainsValue(const Collection& collection, const Value& value) {
-  return std::find(collection.begin(), collection.end(), value) !=
-      collection.end();
+  return std::find(std::begin(collection), std::end(collection), value) !=
+         std::end(collection);
 }
-
-namespace base {
 
 // Returns true if the container is sorted.
 template <typename Container>
@@ -255,6 +166,145 @@ bool STLIncludes(const Arg1& a1, const Arg2& a2) {
   DCHECK(STLIsSorted(a2));
   return std::includes(a1.begin(), a1.end(),
                        a2.begin(), a2.end());
+}
+
+// Erase/EraseIf are based on library fundamentals ts v2 erase/erase_if
+// http://en.cppreference.com/w/cpp/experimental/lib_extensions_2
+// They provide a generic way to erase elements from a container.
+// The functions here implement these for the standard containers until those
+// functions are available in the C++ standard.
+// For Chromium containers overloads should be defined in their own headers
+// (like standard containers).
+// Note: there is no std::erase for standard associative containers so we don't
+// have it either.
+
+template <typename CharT, typename Traits, typename Allocator, typename Value>
+void Erase(std::basic_string<CharT, Traits, Allocator>& container,
+           const Value& value) {
+  container.erase(std::remove(container.begin(), container.end(), value),
+                  container.end());
+}
+
+template <typename CharT, typename Traits, typename Allocator, class Predicate>
+void EraseIf(std::basic_string<CharT, Traits, Allocator>& container,
+             Predicate pred) {
+  container.erase(std::remove_if(container.begin(), container.end(), pred),
+                  container.end());
+}
+
+template <class T, class Allocator, class Value>
+void Erase(std::deque<T, Allocator>& container, const Value& value) {
+  container.erase(std::remove(container.begin(), container.end(), value),
+                  container.end());
+}
+
+template <class T, class Allocator, class Predicate>
+void EraseIf(std::deque<T, Allocator>& container, Predicate pred) {
+  container.erase(std::remove_if(container.begin(), container.end(), pred),
+                  container.end());
+}
+
+template <class T, class Allocator, class Value>
+void Erase(std::vector<T, Allocator>& container, const Value& value) {
+  container.erase(std::remove(container.begin(), container.end(), value),
+                  container.end());
+}
+
+template <class T, class Allocator, class Predicate>
+void EraseIf(std::vector<T, Allocator>& container, Predicate pred) {
+  container.erase(std::remove_if(container.begin(), container.end(), pred),
+                  container.end());
+}
+
+template <class T, class Allocator, class Value>
+void Erase(std::forward_list<T, Allocator>& container, const Value& value) {
+  // Unlike std::forward_list::remove, this function template accepts
+  // heterogeneous types and does not force a conversion to the container's
+  // value type before invoking the == operator.
+  container.remove_if([&](const T& cur) { return cur == value; });
+}
+
+template <class T, class Allocator, class Predicate>
+void EraseIf(std::forward_list<T, Allocator>& container, Predicate pred) {
+  container.remove_if(pred);
+}
+
+template <class T, class Allocator, class Value>
+void Erase(std::list<T, Allocator>& container, const Value& value) {
+  // Unlike std::list::remove, this function template accepts heterogeneous
+  // types and does not force a conversion to the container's value type before
+  // invoking the == operator.
+  container.remove_if([&](const T& cur) { return cur == value; });
+}
+
+template <class T, class Allocator, class Predicate>
+void EraseIf(std::list<T, Allocator>& container, Predicate pred) {
+  container.remove_if(pred);
+}
+
+template <class Key, class T, class Compare, class Allocator, class Predicate>
+void EraseIf(std::map<Key, T, Compare, Allocator>& container, Predicate pred) {
+  internal::IterateAndEraseIf(container, pred);
+}
+
+template <class Key, class T, class Compare, class Allocator, class Predicate>
+void EraseIf(std::multimap<Key, T, Compare, Allocator>& container,
+             Predicate pred) {
+  internal::IterateAndEraseIf(container, pred);
+}
+
+template <class Key, class Compare, class Allocator, class Predicate>
+void EraseIf(std::set<Key, Compare, Allocator>& container, Predicate pred) {
+  internal::IterateAndEraseIf(container, pred);
+}
+
+template <class Key, class Compare, class Allocator, class Predicate>
+void EraseIf(std::multiset<Key, Compare, Allocator>& container,
+             Predicate pred) {
+  internal::IterateAndEraseIf(container, pred);
+}
+
+template <class Key,
+          class T,
+          class Hash,
+          class KeyEqual,
+          class Allocator,
+          class Predicate>
+void EraseIf(std::unordered_map<Key, T, Hash, KeyEqual, Allocator>& container,
+             Predicate pred) {
+  internal::IterateAndEraseIf(container, pred);
+}
+
+template <class Key,
+          class T,
+          class Hash,
+          class KeyEqual,
+          class Allocator,
+          class Predicate>
+void EraseIf(
+    std::unordered_multimap<Key, T, Hash, KeyEqual, Allocator>& container,
+    Predicate pred) {
+  internal::IterateAndEraseIf(container, pred);
+}
+
+template <class Key,
+          class Hash,
+          class KeyEqual,
+          class Allocator,
+          class Predicate>
+void EraseIf(std::unordered_set<Key, Hash, KeyEqual, Allocator>& container,
+             Predicate pred) {
+  internal::IterateAndEraseIf(container, pred);
+}
+
+template <class Key,
+          class Hash,
+          class KeyEqual,
+          class Allocator,
+          class Predicate>
+void EraseIf(std::unordered_multiset<Key, Hash, KeyEqual, Allocator>& container,
+             Predicate pred) {
+  internal::IterateAndEraseIf(container, pred);
 }
 
 }  // namespace base

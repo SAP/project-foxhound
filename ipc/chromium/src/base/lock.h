@@ -1,3 +1,5 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -13,7 +15,7 @@
 // A convenient wrapper for an OS specific critical section.
 class Lock {
  public:
-   // Optimized wrapper implementation
+  // Optimized wrapper implementation
   Lock() : lock_() {}
   ~Lock() {}
   void Acquire() { lock_.Lock(); }
@@ -41,7 +43,7 @@ class Lock {
     // https://msdn.microsoft.com/library/windows/desktop/ms684831.aspx
     return true;
 #else
-#error Unsupported platform
+#  error Unsupported platform
 #endif
   }
 
@@ -64,9 +66,7 @@ class AutoLock {
  public:
   struct AlreadyAcquired {};
 
-  explicit AutoLock(Lock& lock) : lock_(lock) {
-    lock_.Acquire();
-  }
+  explicit AutoLock(Lock& lock) : lock_(lock) { lock_.Acquire(); }
 
   AutoLock(Lock& lock, const AlreadyAcquired&) : lock_(lock) {
     lock_.AssertAcquired();
@@ -92,9 +92,7 @@ class AutoUnlock {
     lock_.Release();
   }
 
-  ~AutoUnlock() {
-    lock_.Acquire();
-  }
+  ~AutoUnlock() { lock_.Acquire(); }
 
  private:
   Lock& lock_;

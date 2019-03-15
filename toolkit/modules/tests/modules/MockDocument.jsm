@@ -4,24 +4,29 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["MockDocument"]
+var EXPORTED_SYMBOLS = ["MockDocument"];
 
-const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
-
-Cu.importGlobalProperties(["URL"]);
+const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm", {});
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm", {});
 
 const MockDocument = {
   /**
    * Create a document for the given URL containing the given HTML with the ownerDocument of all <form>s having a mocked location.
    */
   createTestDocument(aDocumentURL, aContent = "<form>", aType = "text/html") {
-    let parser = Cc["@mozilla.org/xmlextras/domparser;1"].
-                 createInstance(Ci.nsIDOMParser);
-    parser.init();
+    let parser = new DOMParser();
     let parsedDoc = parser.parseFromString(aContent, aType);
 
-    for (let element of parsedDoc.forms) {
-      this.mockOwnerDocumentProperty(element, parsedDoc, aDocumentURL);
+    // Assign ownerGlobal to documentElement as well for the form-less
+    // inputs treating it as rootElement.
+    this.mockOwnerGlobalProperty(parsedDoc.documentElement);
+
+    for (let form of parsedDoc.forms) {
+      this.mockOwnerDocumentProperty(form, parsedDoc, aDocumentURL);
+      this.mockOwnerGlobalProperty(form);
+      for (let field of form.elements) {
+        this.mockOwnerGlobalProperty(field);
+      }
     }
     return parsedDoc;
   },
@@ -46,5 +51,35 @@ const MockDocument = {
     });
   },
 
-};
+  mockOwnerGlobalProperty(aElement) {
+    Object.defineProperty(aElement, "ownerGlobal", {
+      value: {
+        windowUtils: {
+          addManuallyManagedState() {},
+          removeManuallyManagedState() {},
+        },
+        UIEvent: Event,
+        Event,
+      },
+      configurable: true,
+    });
+  },
 
+  mockNodePrincipalProperty(aElement, aURL) {
+    Object.defineProperty(aElement, "nodePrincipal", {
+      value: Services.scriptSecurityManager.createCodebasePrincipal(
+               Services.io.newURI(aURL), {}),
+    });
+  },
+
+  createTestDocumentFromFile(aDocumentURL, aFile) {
+    let fileStream = Cc["@mozilla.org/network/file-input-stream;1"].
+                     createInstance(Ci.nsIFileInputStream);
+    fileStream.init(aFile, -1, -1, 0);
+
+    let data = NetUtil.readInputStreamToString(fileStream, fileStream.available());
+
+    return this.createTestDocument(aDocumentURL, data);
+  },
+
+};

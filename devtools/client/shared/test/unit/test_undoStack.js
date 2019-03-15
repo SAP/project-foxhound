@@ -5,16 +5,16 @@
 
 "use strict";
 
-const {Loader} = Components.utils.import("resource://gre/modules/commonjs/toolkit/loader.js", {});
+const {Loader, Require} =
+  ChromeUtils.import("resource://devtools/shared/base-loader.js", {});
 
-const loader = new Loader.Loader({
+const loader = new Loader({
   paths: {
-    "": "resource://gre/modules/commonjs/",
     "devtools": "resource://devtools",
   },
   globals: {},
 });
-const require = Loader.Require(loader, { id: "undo-test" });
+const require = Require(loader, { id: "undo-test" });
 
 const {UndoStack} = require("devtools/client/shared/undo");
 
@@ -22,77 +22,77 @@ const MAX_SIZE = 5;
 
 function run_test() {
   let str = "";
-  let stack = new UndoStack(MAX_SIZE);
+  const stack = new UndoStack(MAX_SIZE);
 
   function add(ch) {
-    stack.do(function () {
+    stack.do(function() {
       str += ch;
-    }, function () {
+    }, function() {
       str = str.slice(0, -1);
     });
   }
 
-  do_check_false(stack.canUndo());
-  do_check_false(stack.canRedo());
+  Assert.ok(!stack.canUndo());
+  Assert.ok(!stack.canRedo());
 
   // Check adding up to the limit of the size
   add("a");
-  do_check_true(stack.canUndo());
-  do_check_false(stack.canRedo());
+  Assert.ok(stack.canUndo());
+  Assert.ok(!stack.canRedo());
 
   add("b");
   add("c");
   add("d");
   add("e");
 
-  do_check_eq(str, "abcde");
+  Assert.equal(str, "abcde");
 
   // Check a simple undo+redo
   stack.undo();
 
-  do_check_eq(str, "abcd");
-  do_check_true(stack.canRedo());
+  Assert.equal(str, "abcd");
+  Assert.ok(stack.canRedo());
 
   stack.redo();
-  do_check_eq(str, "abcde");
-  do_check_false(stack.canRedo());
+  Assert.equal(str, "abcde");
+  Assert.ok(!stack.canRedo());
 
   // Check an undo followed by a new action
   stack.undo();
-  do_check_eq(str, "abcd");
+  Assert.equal(str, "abcd");
 
   add("q");
-  do_check_eq(str, "abcdq");
-  do_check_false(stack.canRedo());
+  Assert.equal(str, "abcdq");
+  Assert.ok(!stack.canRedo());
 
   stack.undo();
-  do_check_eq(str, "abcd");
+  Assert.equal(str, "abcd");
   stack.redo();
-  do_check_eq(str, "abcdq");
+  Assert.equal(str, "abcdq");
 
   // Revert back to the beginning of the queue...
   while (stack.canUndo()) {
     stack.undo();
   }
-  do_check_eq(str, "");
+  Assert.equal(str, "");
 
   // Now put it all back....
   while (stack.canRedo()) {
     stack.redo();
   }
-  do_check_eq(str, "abcdq");
+  Assert.equal(str, "abcdq");
 
   // Now go over the undo limit...
   add("1");
   add("2");
   add("3");
 
-  do_check_eq(str, "abcdq123");
+  Assert.equal(str, "abcdq123");
 
   // And now undoing the whole stack should only undo 5 actions.
   while (stack.canUndo()) {
     stack.undo();
   }
 
-  do_check_eq(str, "abc");
+  Assert.equal(str, "abc");
 }

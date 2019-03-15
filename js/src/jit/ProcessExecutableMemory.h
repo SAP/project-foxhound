@@ -9,6 +9,8 @@
 
 #include "mozilla/Attributes.h"
 
+#include "jsutil.h"
+
 namespace js {
 namespace jit {
 
@@ -26,12 +28,13 @@ static const size_t MaxCodeBytesPerProcess = 1 * 1024 * 1024 * 1024;
 static const size_t ExecutableCodePageSize = 64 * 1024;
 
 enum class ProtectionSetting {
-    Protected, // Not readable, writable, or executable.
-    Writable,
-    Executable,
+  Protected,  // Not readable, writable, or executable.
+  Writable,
+  Executable,
 };
 
-extern MOZ_MUST_USE bool ReprotectRegion(void* start, size_t size, ProtectionSetting protection);
+extern MOZ_MUST_USE bool ReprotectRegion(void* start, size_t size,
+                                         ProtectionSetting protection);
 
 // Functions called at process start-up/shutdown to initialize/release the
 // executable memory region.
@@ -39,7 +42,9 @@ extern MOZ_MUST_USE bool InitProcessExecutableMemory();
 extern void ReleaseProcessExecutableMemory();
 
 // Allocate/deallocate executable pages.
-extern void* AllocateExecutableMemory(size_t bytes, ProtectionSetting protection);
+extern void* AllocateExecutableMemory(size_t bytes,
+                                      ProtectionSetting protection,
+                                      MemCheckKind checkKind);
 extern void DeallocateExecutableMemory(void* addr, size_t bytes);
 
 // Returns true if we can allocate a few more MB of executable code without
@@ -50,7 +55,12 @@ extern void DeallocateExecutableMemory(void* addr, size_t bytes);
 // function.
 extern bool CanLikelyAllocateMoreExecutableMemory();
 
-} // namespace jit
-} // namespace js
+// Returns a rough guess of how much executable memory remains available,
+// rounded down to MB limit.  Note this can fluctuate as other threads within
+// the process allocate executable memory.
+extern size_t LikelyAvailableExecutableMemory();
 
-#endif // jit_ProcessExecutableMemory_h
+}  // namespace jit
+}  // namespace js
+
+#endif  // jit_ProcessExecutableMemory_h

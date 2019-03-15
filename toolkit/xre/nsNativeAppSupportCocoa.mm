@@ -15,7 +15,7 @@
 #include "nsIAppShellService.h"
 #include "nsIAppStartup.h"
 #include "nsIBaseWindow.h"
-#include "nsICommandLineRunner.h"
+#include "nsCommandLine.h"
 #include "mozIDOMWindow.h"
 #include "nsIDocShellTreeItem.h"
 #include "nsIDocShellTreeOwner.h"
@@ -29,25 +29,23 @@
 // This must be included last:
 #include "nsObjCExceptions.h"
 
-nsresult
-GetNativeWindowPointerFromDOMWindow(mozIDOMWindowProxy *a_window, NSWindow **a_nativeWindow)
-{
+nsresult GetNativeWindowPointerFromDOMWindow(mozIDOMWindowProxy *a_window,
+                                             NSWindow **a_nativeWindow) {
   *a_nativeWindow = nil;
-  if (!a_window)
-    return NS_ERROR_INVALID_ARG;
+  if (!a_window) return NS_ERROR_INVALID_ARG;
 
   nsCOMPtr<nsIWebNavigation> mruWebNav(do_GetInterface(a_window));
   if (mruWebNav) {
     nsCOMPtr<nsIDocShellTreeItem> mruTreeItem(do_QueryInterface(mruWebNav));
     nsCOMPtr<nsIDocShellTreeOwner> mruTreeOwner = nullptr;
     mruTreeItem->GetTreeOwner(getter_AddRefs(mruTreeOwner));
-    if(mruTreeOwner) {
+    if (mruTreeOwner) {
       nsCOMPtr<nsIBaseWindow> mruBaseWindow(do_QueryInterface(mruTreeOwner));
       if (mruBaseWindow) {
         nsCOMPtr<nsIWidget> mruWidget = nullptr;
         mruBaseWindow->GetMainWidget(getter_AddRefs(mruWidget));
         if (mruWidget) {
-          *a_nativeWindow = (NSWindow*)mruWidget->GetNativeData(NS_NATIVE_WINDOW);
+          *a_nativeWindow = (NSWindow *)mruWidget->GetNativeData(NS_NATIVE_WINDOW);
         }
       }
     }
@@ -56,29 +54,25 @@ GetNativeWindowPointerFromDOMWindow(mozIDOMWindowProxy *a_window, NSWindow **a_n
   return NS_OK;
 }
 
-class nsNativeAppSupportCocoa : public nsNativeAppSupportBase
-{
-public:
-  nsNativeAppSupportCocoa() :
-    mCanShowUI(false) { }
+class nsNativeAppSupportCocoa : public nsNativeAppSupportBase {
+ public:
+  nsNativeAppSupportCocoa() : mCanShowUI(false) {}
 
-  NS_IMETHOD Start(bool* aRetVal);
-  NS_IMETHOD ReOpen();
-  NS_IMETHOD Enable();
+  NS_IMETHOD Start(bool *aRetVal) override;
+  NS_IMETHOD ReOpen() override;
+  NS_IMETHOD Enable() override;
 
-private:
+ private:
   bool mCanShowUI;
 };
 
 NS_IMETHODIMP
-nsNativeAppSupportCocoa::Enable()
-{
+nsNativeAppSupportCocoa::Enable() {
   mCanShowUI = true;
   return NS_OK;
 }
 
-NS_IMETHODIMP nsNativeAppSupportCocoa::Start(bool *_retval)
-{
+NS_IMETHODIMP nsNativeAppSupportCocoa::Start(bool *_retval) {
   int major, minor, bugfix;
   nsCocoaFeatures::GetSystemVersion(major, minor, bugfix);
 
@@ -101,23 +95,19 @@ NS_IMETHODIMP nsNativeAppSupportCocoa::Start(bool *_retval)
 }
 
 NS_IMETHODIMP
-nsNativeAppSupportCocoa::ReOpen()
-{
+nsNativeAppSupportCocoa::ReOpen() {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
-  if (!mCanShowUI)
-    return NS_ERROR_FAILURE;
+  if (!mCanShowUI) return NS_ERROR_FAILURE;
 
   bool haveNonMiniaturized = false;
   bool haveOpenWindows = false;
   bool done = false;
-  
-  nsCOMPtr<nsIWindowMediator> 
-    wm(do_GetService(NS_WINDOWMEDIATOR_CONTRACTID));
+
+  nsCOMPtr<nsIWindowMediator> wm(do_GetService(NS_WINDOWMEDIATOR_CONTRACTID));
   if (!wm) {
     return NS_ERROR_FAILURE;
-  } 
-  else {
+  } else {
     nsCOMPtr<nsISimpleEnumerator> windowList;
     wm->GetXULWindowEnumerator(nullptr, getter_AddRefs(windowList));
     bool more;
@@ -129,8 +119,7 @@ nsNativeAppSupportCocoa::ReOpen()
       if (!baseWindow) {
         windowList->HasMoreElements(&more);
         continue;
-      }
-      else {
+      } else {
         haveOpenWindows = true;
       }
 
@@ -140,13 +129,13 @@ nsNativeAppSupportCocoa::ReOpen()
         windowList->HasMoreElements(&more);
         continue;
       }
-      NSWindow *cocoaWindow = (NSWindow*)widget->GetNativeData(NS_NATIVE_WINDOW);
+      NSWindow *cocoaWindow = (NSWindow *)widget->GetNativeData(NS_NATIVE_WINDOW);
       if (![cocoaWindow isMiniaturized]) {
         haveNonMiniaturized = true;
-        break;  //have un-minimized windows, nothing to do
+        break;  // have un-minimized windows, nothing to do
       }
       windowList->HasMoreElements(&more);
-    } // end while
+    }  // end while
 
     if (!haveNonMiniaturized) {
       // Deminiaturize the most recenty used window
@@ -161,25 +150,22 @@ nsNativeAppSupportCocoa::ReOpen()
           done = true;
         }
       }
-    } // end if have non miniaturized
+    }  // end if have non miniaturized
 
     if (!haveOpenWindows && !done) {
-      char* argv[] = { nullptr };
+      char *argv[] = {nullptr};
 
       // use an empty command line to make the right kind(s) of window open
-      nsCOMPtr<nsICommandLineRunner> cmdLine
-        (do_CreateInstance("@mozilla.org/toolkit/command-line;1"));
-      NS_ENSURE_TRUE(cmdLine, NS_ERROR_FAILURE);
+      nsCOMPtr<nsICommandLineRunner> cmdLine(new nsCommandLine());
 
       nsresult rv;
-      rv = cmdLine->Init(0, argv, nullptr,
-                         nsICommandLine::STATE_REMOTE_EXPLICIT);
+      rv = cmdLine->Init(0, argv, nullptr, nsICommandLine::STATE_REMOTE_EXPLICIT);
       NS_ENSURE_SUCCESS(rv, rv);
 
       return cmdLine->Run();
     }
-    
-  } // got window mediator
+
+  }  // got window mediator
   return NS_OK;
 
   NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
@@ -188,8 +174,7 @@ nsNativeAppSupportCocoa::ReOpen()
 #pragma mark -
 
 // Create and return an instance of class nsNativeAppSupportCocoa.
-nsresult NS_CreateNativeAppSupport(nsINativeAppSupport**aResult)
-{
+nsresult NS_CreateNativeAppSupport(nsINativeAppSupport **aResult) {
   *aResult = new nsNativeAppSupportCocoa;
   if (!*aResult) return NS_ERROR_OUT_OF_MEMORY;
 

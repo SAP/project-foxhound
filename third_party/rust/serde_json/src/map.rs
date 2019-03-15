@@ -1,21 +1,32 @@
+// Copyright 2017 Serde Developers
+//
+// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
+// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 //! A map of String to serde_json::Value.
 //!
-//! By default the map is backed by a BTreeMap. Enable the `preserve_order`
-//! feature of serde_json to use LinkedHashMap instead.
+//! By default the map is backed by a [`BTreeMap`]. Enable the `preserve_order`
+//! feature of serde_json to use [`IndexMap`] instead.
+//!
+//! [`BTreeMap`]: https://doc.rust-lang.org/std/collections/struct.BTreeMap.html
+//! [`IndexMap`]: https://docs.rs/indexmap/*/indexmap/map/struct.IndexMap.html
 
-use serde::{ser, de};
+use serde::{de, ser};
+use std::borrow::Borrow;
 use std::fmt::{self, Debug};
-use value::Value;
 use std::hash::Hash;
 use std::iter::FromIterator;
-use std::borrow::Borrow;
 use std::ops;
+use value::Value;
 
 #[cfg(not(feature = "preserve_order"))]
-use std::collections::{BTreeMap, btree_map};
+use std::collections::{btree_map, BTreeMap};
 
 #[cfg(feature = "preserve_order")]
-use linked_hash_map::{self, LinkedHashMap};
+use indexmap::{self, IndexMap};
 
 /// Represents a JSON key/value type.
 pub struct Map<K, V> {
@@ -25,7 +36,7 @@ pub struct Map<K, V> {
 #[cfg(not(feature = "preserve_order"))]
 type MapImpl<K, V> = BTreeMap<K, V>;
 #[cfg(feature = "preserve_order")]
-type MapImpl<K, V> = LinkedHashMap<K, V>;
+type MapImpl<K, V> = IndexMap<K, V>;
 
 impl Map<String, Value> {
     /// Makes a new empty Map.
@@ -52,7 +63,7 @@ impl Map<String, Value> {
     #[inline]
     pub fn with_capacity(capacity: usize) -> Self {
         Map {
-            map: LinkedHashMap::with_capacity(capacity),
+            map: IndexMap::with_capacity(capacity),
         }
     }
 
@@ -68,8 +79,9 @@ impl Map<String, Value> {
     /// on the borrowed form *must* match the ordering on the key type.
     #[inline]
     pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<&Value>
-        where String: Borrow<Q>,
-              Q: Ord + Eq + Hash
+    where
+        String: Borrow<Q>,
+        Q: Ord + Eq + Hash,
     {
         self.map.get(key)
     }
@@ -80,8 +92,9 @@ impl Map<String, Value> {
     /// on the borrowed form *must* match the ordering on the key type.
     #[inline]
     pub fn contains_key<Q: ?Sized>(&self, key: &Q) -> bool
-        where String: Borrow<Q>,
-              Q: Ord + Eq + Hash
+    where
+        String: Borrow<Q>,
+        Q: Ord + Eq + Hash,
     {
         self.map.contains_key(key)
     }
@@ -92,8 +105,9 @@ impl Map<String, Value> {
     /// on the borrowed form *must* match the ordering on the key type.
     #[inline]
     pub fn get_mut<Q: ?Sized>(&mut self, key: &Q) -> Option<&mut Value>
-        where String: Borrow<Q>,
-              Q: Ord + Eq + Hash
+    where
+        String: Borrow<Q>,
+        Q: Ord + Eq + Hash,
     {
         self.map.get_mut(key)
     }
@@ -103,8 +117,7 @@ impl Map<String, Value> {
     /// If the map did not have this key present, `None` is returned.
     ///
     /// If the map did have this key present, the value is updated, and the old
-    /// value is returned. The key is not updated, though; this matters for
-    /// types that can be `==` without being identical.
+    /// value is returned.
     #[inline]
     pub fn insert(&mut self, k: String, v: Value) -> Option<Value> {
         self.map.insert(k, v)
@@ -117,8 +130,9 @@ impl Map<String, Value> {
     /// on the borrowed form *must* match the ordering on the key type.
     #[inline]
     pub fn remove<Q: ?Sized>(&mut self, key: &Q) -> Option<Value>
-        where String: Borrow<Q>,
-              Q: Ord + Eq + Hash
+    where
+        String: Borrow<Q>,
+        Q: Ord + Eq + Hash,
     {
         self.map.remove(key)
     }
@@ -126,20 +140,17 @@ impl Map<String, Value> {
     /// Gets the given key's corresponding entry in the map for in-place
     /// manipulation.
     pub fn entry<S>(&mut self, key: S) -> Entry
-        where S: Into<String>
+    where
+        S: Into<String>,
     {
+        #[cfg(feature = "preserve_order")]
+        use indexmap::map::Entry as EntryImpl;
         #[cfg(not(feature = "preserve_order"))]
         use std::collections::btree_map::Entry as EntryImpl;
-        #[cfg(feature = "preserve_order")]
-        use linked_hash_map::Entry as EntryImpl;
 
         match self.map.entry(key.into()) {
-            EntryImpl::Vacant(vacant) => {
-                Entry::Vacant(VacantEntry { vacant: vacant })
-            }
-            EntryImpl::Occupied(occupied) => {
-                Entry::Occupied(OccupiedEntry { occupied: occupied })
-            }
+            EntryImpl::Vacant(vacant) => Entry::Vacant(VacantEntry { vacant: vacant }),
+            EntryImpl::Occupied(occupied) => Entry::Occupied(OccupiedEntry { occupied: occupied }),
         }
     }
 
@@ -186,6 +197,14 @@ impl Map<String, Value> {
             iter: self.map.values(),
         }
     }
+
+    /// Gets an iterator over mutable values of the map.
+    #[inline]
+    pub fn values_mut(&mut self) -> ValuesMut {
+        ValuesMut {
+            iter: self.map.values_mut(),
+        }
+    }
 }
 
 impl Default for Map<String, Value> {
@@ -209,7 +228,16 @@ impl Clone for Map<String, Value> {
 impl PartialEq for Map<String, Value> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        self.map.eq(&other.map)
+        if cfg!(feature = "preserve_order") {
+            if self.len() != other.len() {
+                return false;
+            }
+
+            self.iter()
+                .all(|(key, value)| other.get(key).map_or(false, |v| *value == *v))
+        } else {
+            self.map.eq(&other.map)
+        }
     }
 }
 
@@ -218,6 +246,7 @@ impl PartialEq for Map<String, Value> {
 ///
 /// ```rust
 /// # use serde_json::Value;
+/// #
 /// # let val = &Value::String("".to_owned());
 /// # let _ =
 /// match *val {
@@ -229,8 +258,9 @@ impl PartialEq for Map<String, Value> {
 /// # ;
 /// ```
 impl<'a, Q: ?Sized> ops::Index<&'a Q> for Map<String, Value>
-    where String: Borrow<Q>,
-          Q: Ord + Eq + Hash
+where
+    String: Borrow<Q>,
+    Q: Ord + Eq + Hash,
 {
     type Output = Value;
 
@@ -243,16 +273,20 @@ impl<'a, Q: ?Sized> ops::Index<&'a Q> for Map<String, Value>
 /// present in the map.
 ///
 /// ```rust
-/// # #[macro_use] extern crate serde_json;
+/// # #[macro_use]
+/// # extern crate serde_json;
+/// #
 /// # fn main() {
-/// # let mut map = serde_json::Map::new();
-/// # map.insert("key".to_owned(), serde_json::Value::Null);
+/// #     let mut map = serde_json::Map::new();
+/// #     map.insert("key".to_owned(), serde_json::Value::Null);
+/// #
 /// map["key"] = json!("value");
 /// # }
 /// ```
 impl<'a, Q: ?Sized> ops::IndexMut<&'a Q> for Map<String, Value>
-    where String: Borrow<Q>,
-          Q: Ord + Eq + Hash
+where
+    String: Borrow<Q>,
+    Q: Ord + Eq + Hash,
 {
     fn index_mut(&mut self, index: &Q) -> &mut Value {
         self.map.get_mut(index).expect("no entry found for key")
@@ -269,7 +303,8 @@ impl Debug for Map<String, Value> {
 impl ser::Serialize for Map<String, Value> {
     #[inline]
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where S: ser::Serializer
+    where
+        S: ser::Serializer,
     {
         use serde::ser::SerializeMap;
         let mut map = try!(serializer.serialize_map(Some(self.len())));
@@ -281,14 +316,15 @@ impl ser::Serialize for Map<String, Value> {
     }
 }
 
-impl de::Deserialize for Map<String, Value> {
+impl<'de> de::Deserialize<'de> for Map<String, Value> {
     #[inline]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where D: de::Deserializer
+    where
+        D: de::Deserializer<'de>,
     {
         struct Visitor;
 
-        impl de::Visitor for Visitor {
+        impl<'de> de::Visitor<'de> for Visitor {
             type Value = Map<String, Value>;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -297,18 +333,20 @@ impl de::Deserialize for Map<String, Value> {
 
             #[inline]
             fn visit_unit<E>(self) -> Result<Self::Value, E>
-                where E: de::Error
+            where
+                E: de::Error,
             {
                 Ok(Map::new())
             }
 
             #[inline]
             fn visit_map<V>(self, mut visitor: V) -> Result<Self::Value, V::Error>
-                where V: de::MapVisitor
+            where
+                V: de::MapAccess<'de>,
             {
-                let mut values = Map::with_capacity(visitor.size_hint().0);
+                let mut values = Map::new();
 
-                while let Some((key, value)) = try!(visitor.visit()) {
+                while let Some((key, value)) = try!(visitor.next_entry()) {
                     values.insert(key, value);
                 }
 
@@ -321,15 +359,21 @@ impl de::Deserialize for Map<String, Value> {
 }
 
 impl FromIterator<(String, Value)> for Map<String, Value> {
-    fn from_iter<T>(iter: T) -> Self where T: IntoIterator<Item=(String, Value)> {
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = (String, Value)>,
+    {
         Map {
-            map: FromIterator::from_iter(iter)
+            map: FromIterator::from_iter(iter),
         }
     }
 }
 
 impl Extend<(String, Value)> for Map<String, Value> {
-    fn extend<T>(&mut self, iter: T) where T: IntoIterator<Item=(String, Value)> {
+    fn extend<T>(&mut self, iter: T)
+    where
+        T: IntoIterator<Item = (String, Value)>,
+    {
         self.map.extend(iter);
     }
 }
@@ -370,7 +414,7 @@ macro_rules! delegate_iterator {
 /// This enum is constructed from the [`entry`] method on [`Map`].
 ///
 /// [`entry`]: struct.Map.html#method.entry
-/// [`BTreeMap`]: struct.Map.html
+/// [`Map`]: struct.Map.html
 pub enum Entry<'a> {
     /// A vacant Entry.
     Vacant(VacantEntry<'a>),
@@ -395,12 +439,12 @@ pub struct OccupiedEntry<'a> {
 #[cfg(not(feature = "preserve_order"))]
 type VacantEntryImpl<'a> = btree_map::VacantEntry<'a, String, Value>;
 #[cfg(feature = "preserve_order")]
-type VacantEntryImpl<'a> = linked_hash_map::VacantEntry<'a, String, Value>;
+type VacantEntryImpl<'a> = indexmap::map::VacantEntry<'a, String, Value>;
 
 #[cfg(not(feature = "preserve_order"))]
 type OccupiedEntryImpl<'a> = btree_map::OccupiedEntry<'a, String, Value>;
 #[cfg(feature = "preserve_order")]
-type OccupiedEntryImpl<'a> = linked_hash_map::OccupiedEntry<'a, String, Value>;
+type OccupiedEntryImpl<'a> = indexmap::map::OccupiedEntry<'a, String, Value>;
 
 impl<'a> Entry<'a> {
     /// Returns a reference to this entry's key.
@@ -424,7 +468,9 @@ impl<'a> Entry<'a> {
     /// # Examples
     ///
     /// ```rust
-    /// # #[macro_use] extern crate serde_json;
+    /// # #[macro_use]
+    /// # extern crate serde_json;
+    /// #
     /// # fn main() {
     /// let mut map = serde_json::Map::new();
     /// map.entry("serde").or_insert(json!(12));
@@ -434,7 +480,7 @@ impl<'a> Entry<'a> {
     /// ```
     pub fn or_insert(self, default: Value) -> &'a mut Value {
         match self {
-            Entry::Vacant(entry) => entry.insert(default.into()),
+            Entry::Vacant(entry) => entry.insert(default),
             Entry::Occupied(entry) => entry.into_mut(),
         }
     }
@@ -446,7 +492,9 @@ impl<'a> Entry<'a> {
     /// # Examples
     ///
     /// ```rust
-    /// # #[macro_use] extern crate serde_json;
+    /// # #[macro_use]
+    /// # extern crate serde_json;
+    /// #
     /// # fn main() {
     /// let mut map = serde_json::Map::new();
     /// map.entry("serde").or_insert_with(|| json!("hoho"));
@@ -455,7 +503,8 @@ impl<'a> Entry<'a> {
     /// # }
     /// ```
     pub fn or_insert_with<F>(self, default: F) -> &'a mut Value
-        where F: FnOnce() -> Value
+    where
+        F: FnOnce() -> Value,
     {
         match self {
             Entry::Vacant(entry) => entry.insert(default()),
@@ -493,7 +542,9 @@ impl<'a> VacantEntry<'a> {
     /// # Examples
     ///
     /// ```rust
-    /// # #[macro_use] extern crate serde_json;
+    /// # #[macro_use]
+    /// # extern crate serde_json;
+    /// #
     /// # fn main() {
     /// use serde_json::map::Entry;
     ///
@@ -509,7 +560,7 @@ impl<'a> VacantEntry<'a> {
     /// ```
     #[inline]
     pub fn insert(self, value: Value) -> &'a mut Value {
-        self.vacant.insert(value.into())
+        self.vacant.insert(value)
     }
 }
 
@@ -519,7 +570,9 @@ impl<'a> OccupiedEntry<'a> {
     /// # Examples
     ///
     /// ```rust
-    /// # #[macro_use] extern crate serde_json;
+    /// # #[macro_use]
+    /// # extern crate serde_json;
+    /// #
     /// # fn main() {
     /// use serde_json::map::Entry;
     ///
@@ -544,7 +597,9 @@ impl<'a> OccupiedEntry<'a> {
     /// # Examples
     ///
     /// ```rust
-    /// # #[macro_use] extern crate serde_json;
+    /// # #[macro_use]
+    /// # extern crate serde_json;
+    /// #
     /// # fn main() {
     /// use serde_json::map::Entry;
     ///
@@ -569,7 +624,9 @@ impl<'a> OccupiedEntry<'a> {
     /// # Examples
     ///
     /// ```rust
-    /// # #[macro_use] extern crate serde_json;
+    /// # #[macro_use]
+    /// # extern crate serde_json;
+    /// #
     /// # fn main() {
     /// use serde_json::map::Entry;
     ///
@@ -596,7 +653,9 @@ impl<'a> OccupiedEntry<'a> {
     /// # Examples
     ///
     /// ```rust
-    /// # #[macro_use] extern crate serde_json;
+    /// # #[macro_use]
+    /// # extern crate serde_json;
+    /// #
     /// # fn main() {
     /// use serde_json::map::Entry;
     ///
@@ -624,7 +683,9 @@ impl<'a> OccupiedEntry<'a> {
     /// # Examples
     ///
     /// ```rust
-    /// # #[macro_use] extern crate serde_json;
+    /// # #[macro_use]
+    /// # extern crate serde_json;
+    /// #
     /// # fn main() {
     /// use serde_json::map::Entry;
     ///
@@ -642,7 +703,7 @@ impl<'a> OccupiedEntry<'a> {
     /// ```
     #[inline]
     pub fn insert(&mut self, value: Value) -> Value {
-        self.occupied.insert(value.into())
+        self.occupied.insert(value)
     }
 
     /// Takes the value of the entry out of the map, and returns it.
@@ -650,7 +711,9 @@ impl<'a> OccupiedEntry<'a> {
     /// # Examples
     ///
     /// ```rust
-    /// # #[macro_use] extern crate serde_json;
+    /// # #[macro_use]
+    /// # extern crate serde_json;
+    /// #
     /// # fn main() {
     /// use serde_json::map::Entry;
     ///
@@ -692,7 +755,7 @@ pub struct Iter<'a> {
 #[cfg(not(feature = "preserve_order"))]
 type IterImpl<'a> = btree_map::Iter<'a, String, Value>;
 #[cfg(feature = "preserve_order")]
-type IterImpl<'a> = linked_hash_map::Iter<'a, String, Value>;
+type IterImpl<'a> = indexmap::map::Iter<'a, String, Value>;
 
 delegate_iterator!((Iter<'a>) => (&'a String, &'a Value));
 
@@ -717,7 +780,7 @@ pub struct IterMut<'a> {
 #[cfg(not(feature = "preserve_order"))]
 type IterMutImpl<'a> = btree_map::IterMut<'a, String, Value>;
 #[cfg(feature = "preserve_order")]
-type IterMutImpl<'a> = linked_hash_map::IterMut<'a, String, Value>;
+type IterMutImpl<'a> = indexmap::map::IterMut<'a, String, Value>;
 
 delegate_iterator!((IterMut<'a>) => (&'a String, &'a mut Value));
 
@@ -742,7 +805,7 @@ pub struct IntoIter {
 #[cfg(not(feature = "preserve_order"))]
 type IntoIterImpl = btree_map::IntoIter<String, Value>;
 #[cfg(feature = "preserve_order")]
-type IntoIterImpl = linked_hash_map::IntoIter<String, Value>;
+type IntoIterImpl = indexmap::map::IntoIter<String, Value>;
 
 delegate_iterator!((IntoIter) => (String, Value));
 
@@ -756,7 +819,7 @@ pub struct Keys<'a> {
 #[cfg(not(feature = "preserve_order"))]
 type KeysImpl<'a> = btree_map::Keys<'a, String, Value>;
 #[cfg(feature = "preserve_order")]
-type KeysImpl<'a> = linked_hash_map::Keys<'a, String, Value>;
+type KeysImpl<'a> = indexmap::map::Keys<'a, String, Value>;
 
 delegate_iterator!((Keys<'a>) => &'a String);
 
@@ -770,6 +833,20 @@ pub struct Values<'a> {
 #[cfg(not(feature = "preserve_order"))]
 type ValuesImpl<'a> = btree_map::Values<'a, String, Value>;
 #[cfg(feature = "preserve_order")]
-type ValuesImpl<'a> = linked_hash_map::Values<'a, String, Value>;
+type ValuesImpl<'a> = indexmap::map::Values<'a, String, Value>;
 
 delegate_iterator!((Values<'a>) => &'a Value);
+
+//////////////////////////////////////////////////////////////////////////////
+
+/// A mutable iterator over a serde_json::Map's values.
+pub struct ValuesMut<'a> {
+    iter: ValuesMutImpl<'a>,
+}
+
+#[cfg(not(feature = "preserve_order"))]
+type ValuesMutImpl<'a> = btree_map::ValuesMut<'a, String, Value>;
+#[cfg(feature = "preserve_order")]
+type ValuesMutImpl<'a> = indexmap::map::ValuesMut<'a, String, Value>;
+
+delegate_iterator!((ValuesMut<'a>) => &'a mut Value);

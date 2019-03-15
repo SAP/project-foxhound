@@ -1,42 +1,41 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef GFX_BASICCONTAINERLAYER_H
 #define GFX_BASICCONTAINERLAYER_H
 
-#include "BasicImplData.h"              // for BasicImplData
-#include "BasicLayers.h"                // for BasicLayerManager
-#include "Layers.h"                     // for Layer, ContainerLayer
-#include "nsDebug.h"                    // for NS_ASSERTION
-#include "nsISupportsImpl.h"            // for MOZ_COUNT_CTOR
-#include "nsISupportsUtils.h"           // for NS_ADDREF, NS_RELEASE
+#include "BasicImplData.h"     // for BasicImplData
+#include "BasicLayers.h"       // for BasicLayerManager
+#include "Layers.h"            // for Layer, ContainerLayer
+#include "nsDebug.h"           // for NS_ASSERTION
+#include "nsISupportsImpl.h"   // for MOZ_COUNT_CTOR
+#include "nsISupportsUtils.h"  // for NS_ADDREF, NS_RELEASE
 #include "mozilla/gfx/Rect.h"
 
 namespace mozilla {
 namespace layers {
 
 class BasicContainerLayer : public ContainerLayer, public BasicImplData {
-public:
-  explicit BasicContainerLayer(BasicLayerManager* aManager) :
-    ContainerLayer(aManager, static_cast<BasicImplData*>(this))
-  {
+ public:
+  explicit BasicContainerLayer(BasicLayerManager* aManager)
+      : ContainerLayer(aManager, static_cast<BasicImplData*>(this)) {
     MOZ_COUNT_CTOR(BasicContainerLayer);
     mSupportsComponentAlphaChildren = true;
   }
-protected:
+
+ protected:
   virtual ~BasicContainerLayer();
 
-public:
-  virtual void SetVisibleRegion(const LayerIntRegion& aRegion) override
-  {
+ public:
+  virtual void SetVisibleRegion(const LayerIntRegion& aRegion) override {
     NS_ASSERTION(BasicManager()->InConstruction(),
                  "Can only set properties in construction phase");
     ContainerLayer::SetVisibleRegion(aRegion);
   }
-  virtual bool InsertAfter(Layer* aChild, Layer* aAfter) override
-  {
+  virtual bool InsertAfter(Layer* aChild, Layer* aAfter) override {
     if (!BasicManager()->InConstruction()) {
       NS_ERROR("Can only set properties in construction phase");
       return false;
@@ -44,8 +43,7 @@ public:
     return ContainerLayer::InsertAfter(aChild, aAfter);
   }
 
-  virtual bool RemoveChild(Layer* aChild) override
-  { 
+  virtual bool RemoveChild(Layer* aChild) override {
     if (!BasicManager()->InConstruction()) {
       NS_ERROR("Can only set properties in construction phase");
       return false;
@@ -53,8 +51,7 @@ public:
     return ContainerLayer::RemoveChild(aChild);
   }
 
-  virtual bool RepositionChild(Layer* aChild, Layer* aAfter) override
-  {
+  virtual bool RepositionChild(Layer* aChild, Layer* aAfter) override {
     if (!BasicManager()->InConstruction()) {
       NS_ERROR("Can only set properties in construction phase");
       return false;
@@ -62,7 +59,8 @@ public:
     return ContainerLayer::RepositionChild(aChild, aAfter);
   }
 
-  virtual void ComputeEffectiveTransforms(const gfx::Matrix4x4& aTransformToSurface) override;
+  virtual void ComputeEffectiveTransforms(
+      const gfx::Matrix4x4& aTransformToSurface) override;
 
   /**
    * Returns true when:
@@ -70,18 +68,19 @@ public:
    * (aInRect intersected with this layer's visible region).
    * b) the (non-hidden) childrens' visible areas cover
    * (aInRect intersected with this layer's visible region).
-   * c) this layer and all (non-hidden) children have transforms that are translations
-   * by integers.
-   * aInRect is in the root coordinate system.
-   * Child layers with opacity do not contribute to the covered area in check b).
-   * This method can be conservative; it's OK to return false under any
+   * c) this layer and all (non-hidden) children have transforms that are
+   * translations by integers. aInRect is in the root coordinate system. Child
+   * layers with opacity do not contribute to the covered area in check b). This
+   * method can be conservative; it's OK to return false under any
    * circumstances.
    */
   bool ChildrenPartitionVisibleRegion(const gfx::IntRect& aInRect);
 
   void ForceIntermediateSurface() { mUseIntermediateSurface = true; }
 
-  void SetSupportsComponentAlphaChildren(bool aSupports) { mSupportsComponentAlphaChildren = aSupports; }
+  void SetSupportsComponentAlphaChildren(bool aSupports) {
+    mSupportsComponentAlphaChildren = aSupports;
+  }
 
   virtual void Validate(LayerManager::DrawPaintedLayerCallback aCallback,
                         void* aCallbackData,
@@ -93,14 +92,13 @@ public:
    */
   virtual int32_t GetMaxLayerSize() override { return 4096; }
 
-protected:
-  BasicLayerManager* BasicManager()
-  {
+ protected:
+  BasicLayerManager* BasicManager() {
     return static_cast<BasicLayerManager*>(mManager);
   }
 };
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla
 
 #endif

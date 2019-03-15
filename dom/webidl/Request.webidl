@@ -17,8 +17,7 @@ interface Request {
   readonly attribute USVString url;
   [SameObject] readonly attribute Headers headers;
 
-  [Func="mozilla::dom::Request::RequestContextEnabled"]
-  readonly attribute RequestContext context;
+  readonly attribute RequestDestination destination;
   readonly attribute USVString referrer;
   readonly attribute ReferrerPolicy referrerPolicy;
   readonly attribute RequestMode mode;
@@ -26,6 +25,14 @@ interface Request {
   readonly attribute RequestCache cache;
   readonly attribute RequestRedirect redirect;
   readonly attribute DOMString integrity;
+
+  // If a main-thread fetch() promise rejects, the error passed will be a
+  // nsresult code.
+  [ChromeOnly]
+  readonly attribute boolean mozErrors;
+
+  [BinaryName="getOrCreateSignal"]
+  readonly attribute AbortSignal signal;
 
   [Throws,
    NewObject] Request clone();
@@ -47,16 +54,21 @@ dictionary RequestInit {
   RequestCache cache;
   RequestRedirect redirect;
   DOMString integrity;
+
+  [ChromeOnly]
+  boolean mozErrors;
+
+  AbortSignal? signal;
+
+  [Func="mozilla::dom::DOMPrefs::dom_fetchObserver_enabled"]
+  ObserverCallback observe;
 };
 
-// Gecko currently does not ship RequestContext, so please don't use it in IDL
-// that is exposed to script.
-enum RequestContext {
-  "audio", "beacon", "cspreport", "download", "embed", "eventsource", "favicon", "fetch",
-  "font", "form", "frame", "hyperlink", "iframe", "image", "imageset", "import",
-  "internal", "location", "manifest", "object", "ping", "plugin", "prefetch", "script",
-  "sharedworker", "subresource", "style", "track", "video", "worker", "xmlhttprequest",
-  "xslt"
+enum RequestDestination {
+  "",
+  "audio", "audioworklet", "document", "embed", "font", "image", "manifest", "object",
+  "paintworklet", "report", "script", "sharedworker", "style",  "track", "video",
+  "worker", "xslt"
 };
 
 enum RequestMode { "same-origin", "no-cors", "cors", "navigate" };

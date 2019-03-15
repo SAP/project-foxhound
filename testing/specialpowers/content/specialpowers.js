@@ -5,22 +5,32 @@
  * order to be used as a replacement for UniversalXPConnect
  */
 
-function SpecialPowers(window) {
-  this.window = Components.utils.getWeakReference(window);
-  this._windowID = window.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
-                         .getInterface(Components.interfaces.nsIDOMWindowUtils)
-                         .currentInnerWindowID;
+/* globals bindDOMWindowUtils, SpecialPowersAPI */
+
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+
+Services.scriptloader.loadSubScript("resource://specialpowers/MozillaLogger.js", this);
+
+var EXPORTED_SYMBOLS = ["SpecialPowers", "attachSpecialPowersToWindow"];
+
+ChromeUtils.import("resource://specialpowers/specialpowersAPI.js", this);
+
+Cu.forcePermissiveCOWs();
+
+function SpecialPowers(window, mm) {
+  this.mm = mm;
+
+  this.window = Cu.getWeakReference(window);
+  this._windowID = window.windowUtils.currentInnerWindowID;
   this._encounteredCrashDumpFiles = [];
   this._unexpectedCrashDumpFiles = { };
   this._crashDumpDir = null;
+  this._serviceWorkerRegistered = false;
+  this._serviceWorkerCleanUpRequests = new Map();
   this.DOMWindowUtils = bindDOMWindowUtils(window);
-  Object.defineProperty(this, 'Components', {
-      configurable: true, enumerable: true, get: function() {
-          var win = this.window.get();
-          if (!win)
-              return null;
-          return getRawComponents(win);
-      }});
+  Object.defineProperty(this, "Components", {
+      configurable: true, enumerable: true, value: this.getFullComponents(),
+  });
   this._pongHandlers = [];
   this._messageListener = this._messageReceived.bind(this);
   this._grandChildFrameMM = null;
@@ -34,7 +44,8 @@ function SpecialPowers(window) {
                            "SPPrefService",
                            "SPProcessCrashService",
                            "SPSetTestPluginEnabledState",
-                           "SPCleanUpSTSData"];
+                           "SPCleanUpSTSData",
+                           "SPCheckServiceWorkers"];
 
   this.SP_ASYNC_MESSAGES = ["SpecialPowers.Focus",
                             "SpecialPowers.Quit",
@@ -42,27 +53,37 @@ function SpecialPowers(window) {
                             "SpecialPowers.RemoveFiles",
                             "SPPingService",
                             "SPLoadExtension",
+                            "SPProcessCrashManagerWait",
                             "SPStartupExtension",
                             "SPUnloadExtension",
-                            "SPExtensionMessage"];
-  addMessageListener("SPPingService", this._messageListener);
-  addMessageListener("SpecialPowers.FilesCreated", this._messageListener);
-  addMessageListener("SpecialPowers.FilesError", this._messageListener);
+                            "SPExtensionMessage",
+                            "SPRequestDumpCoverageCounters",
+                            "SPRequestResetCoverageCounters",
+                            "SPRemoveAllServiceWorkers",
+                            "SPRemoveServiceWorkerDataForExampleDomain"];
+  mm.addMessageListener("SPPingService", this._messageListener);
+  mm.addMessageListener("SPServiceWorkerRegistered", this._messageListener);
+  mm.addMessageListener("SpecialPowers.FilesCreated", this._messageListener);
+  mm.addMessageListener("SpecialPowers.FilesError", this._messageListener);
+  mm.addMessageListener("SPServiceWorkerCleanupComplete", this._messageListener);
   let self = this;
   Services.obs.addObserver(function onInnerWindowDestroyed(subject, topic, data) {
-    var id = subject.QueryInterface(Components.interfaces.nsISupportsPRUint64).data;
+    var id = subject.QueryInterface(Ci.nsISupportsPRUint64).data;
     if (self._windowID === id) {
       Services.obs.removeObserver(onInnerWindowDestroyed, "inner-window-destroyed");
       try {
-        removeMessageListener("SPPingService", self._messageListener);
-        removeMessageListener("SpecialPowers.FilesCreated", self._messageListener);
-        removeMessageListener("SpecialPowers.FilesError", self._messageListener);
-      } catch (e if e.result == Components.results.NS_ERROR_ILLEGAL_VALUE) {
+        mm.removeMessageListener("SPPingService", self._messageListener);
+        mm.removeMessageListener("SpecialPowers.FilesCreated", self._messageListener);
+        mm.removeMessageListener("SpecialPowers.FilesError", self._messageListener);
+        mm.removeMessageListener("SPServiceWorkerCleanupComplete", self._messageListener);
+      } catch (e) {
         // Ignore the exception which the message manager has been destroyed.
-        ;
+        if (e.result != Cr.NS_ERROR_ILLEGAL_VALUE) {
+          throw e;
+        }
       }
     }
-  }, "inner-window-destroyed", false);
+  }, "inner-window-destroyed");
 }
 
 SpecialPowers.prototype = new SpecialPowersAPI();
@@ -76,36 +97,37 @@ SpecialPowers.prototype.Components = undefined;
 SpecialPowers.prototype.IsInNestedFrame = false;
 
 SpecialPowers.prototype._sendSyncMessage = function(msgname, msg) {
-  if (this.SP_SYNC_MESSAGES.indexOf(msgname) == -1) {
+  if (!this.SP_SYNC_MESSAGES.includes(msgname)) {
     dump("TEST-INFO | specialpowers.js |  Unexpected SP message: " + msgname + "\n");
   }
-  return sendSyncMessage(msgname, msg);
+  let result = this.mm.sendSyncMessage(msgname, msg);
+  return Cu.cloneInto(result, this);
 };
 
 SpecialPowers.prototype._sendAsyncMessage = function(msgname, msg) {
-  if (this.SP_ASYNC_MESSAGES.indexOf(msgname) == -1) {
+  if (!this.SP_ASYNC_MESSAGES.includes(msgname)) {
     dump("TEST-INFO | specialpowers.js |  Unexpected SP message: " + msgname + "\n");
   }
-  sendAsyncMessage(msgname, msg);
+  this.mm.sendAsyncMessage(msgname, msg);
 };
 
 SpecialPowers.prototype._addMessageListener = function(msgname, listener) {
-  addMessageListener(msgname, listener);
-  sendAsyncMessage("SPPAddNestedMessageListener", { name: msgname });
+  this.mm.addMessageListener(msgname, listener);
+  this.mm.sendAsyncMessage("SPPAddNestedMessageListener", { name: msgname });
 };
 
 SpecialPowers.prototype._removeMessageListener = function(msgname, listener) {
-  removeMessageListener(msgname, listener);
+  this.mm.removeMessageListener(msgname, listener);
 };
 
 SpecialPowers.prototype.registerProcessCrashObservers = function() {
-  addMessageListener("SPProcessCrashService", this._messageListener);
-  sendSyncMessage("SPProcessCrashService", { op: "register-observer" });
+  this.mm.addMessageListener("SPProcessCrashService", this._messageListener);
+  this.mm.sendSyncMessage("SPProcessCrashService", { op: "register-observer" });
 };
 
 SpecialPowers.prototype.unregisterProcessCrashObservers = function() {
-  removeMessageListener("SPProcessCrashService", this._messageListener);
-  sendSyncMessage("SPProcessCrashService", { op: "unregister-observer" });
+  this.mm.removeMessageListener("SPProcessCrashService", this._messageListener);
+  this.mm.sendSyncMessage("SPProcessCrashService", { op: "unregister-observer" });
 };
 
 SpecialPowers.prototype._messageReceived = function(aMessage) {
@@ -130,30 +152,46 @@ SpecialPowers.prototype._messageReceived = function(aMessage) {
       }
       break;
 
+    case "SPServiceWorkerRegistered":
+      this._serviceWorkerRegistered = aMessage.data.registered;
+      break;
+
     case "SpecialPowers.FilesCreated":
-      var handler = this._createFilesOnSuccess;
+      var createdHandler = this._createFilesOnSuccess;
       this._createFilesOnSuccess = null;
       this._createFilesOnError = null;
-      if (handler) {
-        handler(aMessage.data);
+      if (createdHandler) {
+        createdHandler(Cu.cloneInto(aMessage.data, this.mm.content));
       }
       break;
 
     case "SpecialPowers.FilesError":
-      var handler = this._createFilesOnError;
+      var errorHandler = this._createFilesOnError;
       this._createFilesOnSuccess = null;
       this._createFilesOnError = null;
-      if (handler) {
-        handler(aMessage.data);
+      if (errorHandler) {
+        errorHandler(aMessage.data);
       }
       break;
+
+    case "SPServiceWorkerCleanupComplete": {
+      let id = aMessage.data.id;
+      // It's possible for us to receive requests for other SpecialPowers
+      // instances, ignore them.
+      if (this._serviceWorkerCleanUpRequests.has(id)) {
+        let resolve = this._serviceWorkerCleanUpRequests.get(id);
+        this._serviceWorkerCleanUpRequests.delete(id);
+        resolve();
+      }
+      break;
+    }
   }
 
   return true;
 };
 
 SpecialPowers.prototype.quit = function() {
-  sendAsyncMessage("SpecialPowers.Quit", {});
+  this.mm.sendAsyncMessage("SpecialPowers.Quit", {});
 };
 
 // fileRequests is an array of file requests. Each file request is an object.
@@ -168,18 +206,18 @@ SpecialPowers.prototype.createFiles = function(fileRequests, onCreation, onError
 
   this._createFilesOnSuccess = onCreation;
   this._createFilesOnError = onError;
-  sendAsyncMessage("SpecialPowers.CreateFiles", fileRequests);
+  this.mm.sendAsyncMessage("SpecialPowers.CreateFiles", fileRequests);
 };
 
 // Remove the files that were created using |SpecialPowers.createFiles()|.
 // This will be automatically called by |SimpleTest.finish()|.
 SpecialPowers.prototype.removeFiles = function() {
-  sendAsyncMessage("SpecialPowers.RemoveFiles", {});
+  this.mm.sendAsyncMessage("SpecialPowers.RemoveFiles", {});
 };
 
 SpecialPowers.prototype.executeAfterFlushingMessageQueue = function(aCallback) {
   this._pongHandlers.push(aCallback);
-  sendAsyncMessage("SPPingService", { op: "ping" });
+  this.mm.sendAsyncMessage("SPPingService", { op: "ping" });
 };
 
 SpecialPowers.prototype.nestedFrameSetup = function() {
@@ -187,22 +225,21 @@ SpecialPowers.prototype.nestedFrameSetup = function() {
   Services.obs.addObserver(function onRemoteBrowserShown(subject, topic, data) {
     let frameLoader = subject;
     // get a ref to the app <iframe>
-    frameLoader.QueryInterface(Components.interfaces.nsIFrameLoader);
     let frame = frameLoader.ownerElement;
-    let frameId = frame.getAttribute('id');
+    let frameId = frame.getAttribute("id");
     if (frameId === "nested-parent-frame") {
       Services.obs.removeObserver(onRemoteBrowserShown, "remote-browser-shown");
 
-      let mm = frame.QueryInterface(Components.interfaces.nsIFrameLoaderOwner).frameLoader.messageManager;
+      let mm = frame.frameLoader.messageManager;
       self._grandChildFrameMM = mm;
 
-      self.SP_SYNC_MESSAGES.forEach(function (msgname) {
-        mm.addMessageListener(msgname, function (msg) {
+      self.SP_SYNC_MESSAGES.forEach(function(msgname) {
+        mm.addMessageListener(msgname, function(msg) {
           return self._sendSyncMessage(msgname, msg.data)[0];
         });
       });
-      self.SP_ASYNC_MESSAGES.forEach(function (msgname) {
-        mm.addMessageListener(msgname, function (msg) {
+      self.SP_ASYNC_MESSAGES.forEach(function(msgname) {
+        mm.addMessageListener(msgname, function(msg) {
           self._sendAsyncMessage(msgname, msg.data);
         });
       });
@@ -212,66 +249,70 @@ SpecialPowers.prototype.nestedFrameSetup = function() {
           });
       });
 
-      mm.loadFrameScript("chrome://specialpowers/content/MozillaLogger.js", false);
-      mm.loadFrameScript("chrome://specialpowers/content/specialpowersAPI.js", false);
-      mm.loadFrameScript("chrome://specialpowers/content/specialpowers.js", false);
+      mm.loadFrameScript("resource://specialpowers/specialpowersFrameScript.js", false);
 
       let frameScript = "SpecialPowers.prototype.IsInNestedFrame=true;";
       mm.loadFrameScript("data:," + frameScript, false);
     }
-  }, "remote-browser-shown", false);
+  }, "remote-browser-shown");
 };
 
 SpecialPowers.prototype.isServiceWorkerRegistered = function() {
-  var swm = Components.classes["@mozilla.org/serviceworkers/manager;1"]
-                      .getService(Components.interfaces.nsIServiceWorkerManager);
-  return swm.getAllRegistrations().length != 0;
+  // For the time being, if parent_intercept is false, we can assume that
+  // ServiceWorkers registered by the current test are all known to the SWM in
+  // this process.
+  if (!Services.prefs.getBoolPref("dom.serviceWorkers.parent_intercept", false)) {
+    let swm = Cc["@mozilla.org/serviceworkers/manager;1"]
+                .getService(Ci.nsIServiceWorkerManager);
+    return swm.getAllRegistrations().length != 0;
+  }
+
+  // Please see the comment in SpecialPowersObserver.jsm above
+  // this._serviceWorkerListener's assignment for what this returns.
+  if (this._serviceWorkerRegistered) {
+    // This test registered at least one service worker. Send a synchronous
+    // call to the parent to make sure that it called unregister on all of its
+    // service workers.
+    return this._sendSyncMessage("SPCheckServiceWorkers")[0].hasWorkers;
+  }
+
+  return false;
+};
+
+SpecialPowers.prototype._removeServiceWorkerData = function(messageName) {
+  return new Promise(resolve => {
+    let id = Cc["@mozilla.org/uuid-generator;1"]
+               .getService(Ci.nsIUUIDGenerator).generateUUID().toString();
+    this._serviceWorkerCleanUpRequests.set(id, resolve);
+    this._sendAsyncMessage(messageName, { id });
+  });
 };
 
 // Attach our API to the window.
-function attachSpecialPowersToWindow(aWindow) {
+function attachSpecialPowersToWindow(aWindow, mm) {
   try {
     if ((aWindow !== null) &&
         (aWindow !== undefined) &&
         (aWindow.wrappedJSObject) &&
         !(aWindow.wrappedJSObject.SpecialPowers)) {
-      let sp = new SpecialPowers(aWindow);
+      let sp = new SpecialPowers(aWindow, mm);
       aWindow.wrappedJSObject.SpecialPowers = sp;
       if (sp.IsInNestedFrame) {
         sp.addPermission("allowXULXBL", true, aWindow.document);
       }
     }
-  } catch(ex) {
+  } catch (ex) {
     dump("TEST-INFO | specialpowers.js |  Failed to attach specialpowers to window exception: " + ex + "\n");
   }
 }
-
-// This is a frame script, so it may be running in a content process.
-// In any event, it is targeted at a specific "tab", so we listen for
-// the DOMWindowCreated event to be notified about content windows
-// being created in this context.
-
-function SpecialPowersManager() {
-  addEventListener("DOMWindowCreated", this, false);
-}
-
-SpecialPowersManager.prototype = {
-  handleEvent: function handleEvent(aEvent) {
-    var window = aEvent.target.defaultView;
-    attachSpecialPowersToWindow(window);
-  }
-};
-
-
-var specialpowersmanager = new SpecialPowersManager();
 
 this.SpecialPowers = SpecialPowers;
 this.attachSpecialPowersToWindow = attachSpecialPowersToWindow;
 
 // In the case of Chrome mochitests that inject specialpowers.js as
 // a regular content script
-if (typeof window != 'undefined') {
-  window.addMessageListener = function() {}
-  window.removeMessageListener = function() {}
-  window.wrappedJSObject.SpecialPowers = new SpecialPowers(window);
+if (typeof window != "undefined") {
+  window.addMessageListener = function() {};
+  window.removeMessageListener = function() {};
+  window.wrappedJSObject.SpecialPowers = new SpecialPowers(window, window);
 }

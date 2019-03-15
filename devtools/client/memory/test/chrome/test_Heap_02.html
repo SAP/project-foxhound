@@ -14,18 +14,18 @@ Test that the currently selected view is rendered.
     <pre id="test">
         <script src="head.js" type="application/javascript"></script>
         <script type="application/javascript">
-         window.onload = Task.async(function* () {
+         "use strict";
+         window.onload = async function() {
            try {
              ok(React, "Should get React");
              ok(Heap, "Should get Heap");
 
-             const errorMessage = "Something went wrong!";
              const container = document.getElementById("container");
 
              // Dominator tree view.
 
-             yield renderComponent(Heap(immutableUpdate(TEST_HEAP_PROPS, {
-               view: { state: viewState.DOMINATOR_TREE, },
+             await renderComponent(Heap(immutableUpdate(TEST_HEAP_PROPS, {
+               view: { state: viewState.DOMINATOR_TREE },
              })), container);
 
              ok(container.querySelector(`[data-state=${dominatorTreeState.LOADED}]`),
@@ -33,8 +33,8 @@ Test that the currently selected view is rendered.
 
              // Census view.
 
-             yield renderComponent(Heap(immutableUpdate(TEST_HEAP_PROPS, {
-               view: { state: viewState.CENSUS, },
+             await renderComponent(Heap(immutableUpdate(TEST_HEAP_PROPS, {
+               view: { state: viewState.CENSUS },
              })), container);
 
              ok(container.querySelector(`[data-state=${censusState.SAVED}]`),
@@ -42,8 +42,8 @@ Test that the currently selected view is rendered.
 
              // Diffing view.
 
-             yield renderComponent(Heap(immutableUpdate(TEST_HEAP_PROPS, {
-               view: { state: viewState.DIFFING, },
+             await renderComponent(Heap(immutableUpdate(TEST_HEAP_PROPS, {
+               view: { state: viewState.DIFFING },
                snapshot: null,
                diffing: {
                  firstSnapshotId: null,
@@ -59,19 +59,19 @@ Test that the currently selected view is rendered.
 
              // Initial view.
 
-             yield renderComponent(Heap(immutableUpdate(TEST_HEAP_PROPS, {
+             await renderComponent(Heap(immutableUpdate(TEST_HEAP_PROPS, {
                snapshot: null,
                diffing: null,
              })), container);
 
              ok(container.querySelector("[data-state=initial]"),
                 "With no snapshot, nor a diffing, should render initial prompt.");
-           } catch(e) {
+           } catch (e) {
              ok(false, "Got an error: " + DevToolsUtils.safeErrorString(e));
            } finally {
              SimpleTest.finish();
            }
-         });
+         };
         </script>
     </pre>
 </body>

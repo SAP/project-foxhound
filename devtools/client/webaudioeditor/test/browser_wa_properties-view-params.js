@@ -6,38 +6,38 @@
  * correctly, with default values and correct types.
  */
 
-add_task(function* () {
-  let { target, panel } = yield initWebAudioEditor(SIMPLE_NODES_URL);
-  let { panelWin } = panel;
-  let { gFront, $, $$, EVENTS, PropertiesView } = panelWin;
-  let gVars = PropertiesView._propsView;
+add_task(async function() {
+  const { target, panel } = await initWebAudioEditor(SIMPLE_NODES_URL);
+  const { panelWin } = panel;
+  const { gFront, $, $$, EVENTS, PropertiesView } = panelWin;
+  const gVars = PropertiesView._propsView;
 
-  let started = once(gFront, "start-context");
+  const started = once(gFront, "start-context");
 
-  yield loadFrameScripts();
+  await loadFrameScriptUtils();
 
-  let events = Promise.all([
+  const events = Promise.all([
     getN(gFront, "create-node", 15),
-    waitForGraphRendered(panelWin, 15, 0)
+    waitForGraphRendered(panelWin, 15, 0),
   ]);
   reload(target);
-  let [actors] = yield events;
-  let nodeIds = actors.map(actor => actor.actorID);
+  const [actors] = await events;
+  const nodeIds = actors.map(actor => actor.actorID);
 
-  let types = [
+  const types = [
     "AudioDestinationNode", "AudioBufferSourceNode", "ScriptProcessorNode",
     "AnalyserNode", "GainNode", "DelayNode", "BiquadFilterNode", "WaveShaperNode",
     "PannerNode", "ConvolverNode", "ChannelSplitterNode", "ChannelMergerNode",
-    "DynamicsCompressorNode", "OscillatorNode"
+    "DynamicsCompressorNode", "OscillatorNode",
   ];
 
-  let defaults = yield Promise.all(types.map(type => nodeDefaultValues(type)));
+  const defaults = await Promise.all(types.map(type => nodeDefaultValues(type)));
 
   for (let i = 0; i < types.length; i++) {
     click(panelWin, findGraphNode(panelWin, nodeIds[i]));
-    yield waitForInspectorRender(panelWin, EVENTS);
+    await waitForInspectorRender(panelWin, EVENTS);
     checkVariableView(gVars, 0, defaults[i], types[i]);
   }
 
-  yield teardown(target);
+  await teardown(target);
 });

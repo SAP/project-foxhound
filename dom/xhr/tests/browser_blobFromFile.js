@@ -1,10 +1,26 @@
-let { classes: Cc, interfaces: Ci } = Components;
+add_task(async function test() {
+  await SpecialPowers.pushPrefEnv(
+    {set: [["browser.tabs.remote.separateFileUriProcess", true]]}
+  );
 
-add_task(function* test() {
+  let fileData = "";
+  for (var i = 0; i < 100; ++i) {
+    fileData += "hello world!";
+  }
+
   let file = Cc["@mozilla.org/file/directory_service;1"]
                .getService(Ci.nsIDirectoryService)
                .QueryInterface(Ci.nsIProperties)
                .get("ProfD", Ci.nsIFile);
+  file.append('file.txt');
+  file.createUnique(Ci.nsIFile.NORMAL_FILE_TYPE, 0o600);
+
+  let outStream = Cc["@mozilla.org/network/file-output-stream;1"]
+                      .createInstance(Ci.nsIFileOutputStream);
+  outStream.init(file, 0x02 | 0x08 | 0x20, // write, create, truncate
+                 0666, 0);
+  outStream.write(fileData, fileData.length);
+  outStream.close();
 
   let fileHandler = Cc["@mozilla.org/network/io-service;1"]
                       .getService(Ci.nsIIOService)
@@ -14,16 +30,16 @@ add_task(function* test() {
   let fileURL = fileHandler.getURLSpecFromFile(file);
 
   info("Opening url: " + fileURL);
-  let tab = gBrowser.addTab(fileURL);
+  let tab = BrowserTestUtils.addTab(gBrowser, fileURL);
 
   let browser = gBrowser.getBrowserForTab(tab);
-  yield BrowserTestUtils.browserLoaded(browser);
+  await BrowserTestUtils.browserLoaded(browser);
 
-  let blob = yield ContentTask.spawn(browser, null, function() {
+  let blob = await ContentTask.spawn(browser, file.leafName, function(fileName) {
     return new content.window.Promise(resolve => {
       let xhr = new content.window.XMLHttpRequest();
       xhr.responseType = "blob";
-      xhr.open("GET", "prefs.js");
+      xhr.open("GET", fileName);
       xhr.send();
       xhr.onload = function() {
         resolve(xhr.response);
@@ -33,9 +49,10 @@ add_task(function* test() {
 
   ok(blob instanceof File, "We have a file");
 
-  file.append("prefs.js");
   is(blob.size, file.fileSize, "The size matches");
-  is(blob.name, "prefs.js", "The name is correct");
+  is(blob.name, file.leafName, "The name is correct");
+
+  file.remove(false);
 
   gBrowser.removeTab(tab);
 });

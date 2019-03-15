@@ -3,13 +3,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 function ChromePowers(window) {
-  this.window = Components.utils.getWeakReference(window);
+  this.window = Cu.getWeakReference(window);
 
-  // In the case of browser-chrome tests, we are running as a [ChromeWindow]
-  // and we have no window.QueryInterface available, content.window is what we need
   if (typeof(window) == "ChromeWindow" && typeof(content.window) == "Window") {
     this.DOMWindowUtils = bindDOMWindowUtils(content.window);
-    this.window = Components.utils.getWeakReference(content.window);
+    this.window = Cu.getWeakReference(content.window);
   } else {
     this.DOMWindowUtils = bindDOMWindowUtils(window);
   }
@@ -103,15 +101,6 @@ ChromePowers.prototype.focus = function(aWindow) {
 ChromePowers.prototype.executeAfterFlushingMessageQueue = function(aCallback) {
   aCallback();
 };
-
-// Expose everything but internal APIs (starting with underscores) to
-// web content.  We cannot use Object.keys to view SpecialPowers.prototype since
-// we are using the functions from SpecialPowersAPI.prototype
-ChromePowers.prototype.__exposedProps__ = {};
-for (var i in ChromePowers.prototype) {
-  if (i.charAt(0) != "_")
-    ChromePowers.prototype.__exposedProps__[i] = "r";
-}
 
 if ((window.parent !== null) &&
     (window.parent !== undefined) &&

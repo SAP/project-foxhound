@@ -6,7 +6,7 @@ var gPort;
 var gExtraListener;
 
 function run_test() {
-  do_print("Starting test at " + new Date().toTimeString());
+  info("Starting test at " + new Date().toTimeString());
   initTestDebuggerServer();
 
   add_task(test_socket_conn);
@@ -16,104 +16,110 @@ function run_test() {
   run_next_test();
 }
 
-function* test_socket_conn() {
-  do_check_eq(DebuggerServer.listeningSockets, 0);
-  let AuthenticatorType = DebuggerServer.Authenticators.get("PROMPT");
-  let authenticator = new AuthenticatorType.Server();
+async function test_socket_conn() {
+  Assert.equal(DebuggerServer.listeningSockets, 0);
+  const AuthenticatorType = DebuggerServer.Authenticators.get("PROMPT");
+  const authenticator = new AuthenticatorType.Server();
   authenticator.allowConnection = () => {
     return DebuggerServer.AuthenticationResult.ALLOW;
   };
-  let listener = DebuggerServer.createListener();
-  do_check_true(listener);
-  listener.portOrPath = -1;
-  listener.authenticator = authenticator;
+  const socketOptions = {
+    authenticator,
+    portOrPath: -1,
+  };
+  const listener = new SocketListener(DebuggerServer, socketOptions);
+  Assert.ok(listener);
   listener.open();
-  do_check_eq(DebuggerServer.listeningSockets, 1);
+  Assert.equal(DebuggerServer.listeningSockets, 1);
   gPort = DebuggerServer._listeners[0].port;
-  do_print("Debugger server port is " + gPort);
+  info("Debugger server port is " + gPort);
   // Open a second, separate listener
-  gExtraListener = DebuggerServer.createListener();
-  gExtraListener.portOrPath = -1;
-  gExtraListener.authenticator = authenticator;
+  gExtraListener = new SocketListener(DebuggerServer, socketOptions);
   gExtraListener.open();
-  do_check_eq(DebuggerServer.listeningSockets, 2);
+  Assert.equal(DebuggerServer.listeningSockets, 2);
+  Assert.ok(!DebuggerServer.hasConnection());
 
-  do_print("Starting long and unicode tests at " + new Date().toTimeString());
-  let unicodeString = "(╯°□°）╯︵ ┻━┻";
-  let transport = yield DebuggerClient.socketConnect({
+  info("Starting long and unicode tests at " + new Date().toTimeString());
+  const unicodeString = "(╯°□°）╯︵ ┻━┻";
+  const transport = await DebuggerClient.socketConnect({
     host: "127.0.0.1",
-    port: gPort
+    port: gPort,
   });
+  Assert.ok(DebuggerServer.hasConnection());
 
   // Assert that connection settings are available on transport object
-  let settings = transport.connectionSettings;
-  do_check_eq(settings.host, "127.0.0.1");
-  do_check_eq(settings.port, gPort);
+  const settings = transport.connectionSettings;
+  Assert.equal(settings.host, "127.0.0.1");
+  Assert.equal(settings.port, gPort);
 
-  let closedDeferred = defer();
-  transport.hooks = {
-    onPacket: function (packet) {
-      this.onPacket = function ({unicode}) {
-        do_check_eq(unicode, unicodeString);
-        transport.close();
-      };
-      // Verify that things work correctly when bigger than the output
-      // transport buffers and when transporting unicode...
-      transport.send({to: "root",
-                      type: "echo",
-                      reallylong: really_long(),
-                      unicode: unicodeString});
-      do_check_eq(packet.from, "root");
-    },
-    onClosed: function (status) {
-      closedDeferred.resolve();
-    },
-  };
-  transport.ready();
-  return closedDeferred.promise;
+  const onDebuggerConnectionClosed = DebuggerServer.once("connectionchange");
+  await new Promise((resolve) => {
+    transport.hooks = {
+      onPacket: function(packet) {
+        this.onPacket = function({unicode}) {
+          Assert.equal(unicode, unicodeString);
+          transport.close();
+        };
+        // Verify that things work correctly when bigger than the output
+        // transport buffers and when transporting unicode...
+        transport.send({to: "root",
+                        type: "echo",
+                        reallylong: really_long(),
+                        unicode: unicodeString});
+        Assert.equal(packet.from, "root");
+      },
+      onClosed: function(status) {
+        resolve();
+      },
+    };
+    transport.ready();
+  });
+  const type = await onDebuggerConnectionClosed;
+  Assert.equal(type, "closed");
+  Assert.ok(!DebuggerServer.hasConnection());
 }
 
-function* test_socket_shutdown() {
-  do_check_eq(DebuggerServer.listeningSockets, 2);
+async function test_socket_shutdown() {
+  Assert.equal(DebuggerServer.listeningSockets, 2);
   gExtraListener.close();
-  do_check_eq(DebuggerServer.listeningSockets, 1);
-  do_check_true(DebuggerServer.closeAllListeners());
-  do_check_eq(DebuggerServer.listeningSockets, 0);
+  Assert.equal(DebuggerServer.listeningSockets, 1);
+  Assert.ok(DebuggerServer.closeAllSocketListeners());
+  Assert.equal(DebuggerServer.listeningSockets, 0);
   // Make sure closing the listener twice does nothing.
-  do_check_false(DebuggerServer.closeAllListeners());
-  do_check_eq(DebuggerServer.listeningSockets, 0);
+  Assert.ok(!DebuggerServer.closeAllSocketListeners());
+  Assert.equal(DebuggerServer.listeningSockets, 0);
 
-  do_print("Connecting to a server socket at " + new Date().toTimeString());
+  info("Connecting to a server socket at " + new Date().toTimeString());
   try {
-    yield DebuggerClient.socketConnect({
+    await DebuggerClient.socketConnect({
       host: "127.0.0.1",
-      port: gPort
+      port: gPort,
     });
   } catch (e) {
     if (e.result == Cr.NS_ERROR_CONNECTION_REFUSED ||
         e.result == Cr.NS_ERROR_NET_TIMEOUT) {
       // The connection should be refused here, but on slow or overloaded
       // machines it may just time out.
-      do_check_true(true);
+      Assert.ok(true);
       return;
     }
     throw e;
   }
 
   // Shouldn't reach this, should never connect.
-  do_check_true(false);
+  Assert.ok(false);
 }
 
 function test_pipe_conn() {
-  let transport = DebuggerServer.connectPipe();
+  const transport = DebuggerServer.connectPipe();
   transport.hooks = {
-    onPacket: function (packet) {
-      do_check_eq(packet.from, "root");
+    onPacket: function(packet) {
+      Assert.equal(packet.from, "root");
       transport.close();
     },
-    onClosed: function (status) {
+    onClosed: function(status) {
       run_next_test();
-    }
+    },
   };
 
   transport.ready();

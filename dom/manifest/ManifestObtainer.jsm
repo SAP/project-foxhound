@@ -23,58 +23,50 @@
  *
  * exported ManifestObtainer
  */
-/*globals Components, Task, PromiseMessage, XPCOMUtils, ManifestProcessor, BrowserUtils*/
+/* globals Components, Task, PromiseMessage, XPCOMUtils, ManifestProcessor, BrowserUtils*/
 "use strict";
-const {
-  utils: Cu,
-  classes: Cc,
-  interfaces: Ci
-} = Components;
-Cu.import("resource://gre/modules/Task.jsm");
-Cu.import("resource://gre/modules/PromiseMessage.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/ManifestProcessor.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "BrowserUtils",  // jshint ignore:line
-  "resource://gre/modules/BrowserUtils.jsm");
 
-this.ManifestObtainer = { // jshint ignore:line
+ChromeUtils.import("resource://gre/modules/PromiseMessage.jsm");
+ChromeUtils.import("resource://gre/modules/ManifestProcessor.jsm");
+
+var ManifestObtainer = { // jshint ignore:line
   /**
   * Public interface for obtaining a web manifest from a XUL browser, to use
   * on the parent process.
   * @param  {XULBrowser} The browser to check for the manifest.
   * @return {Promise<Object>} The processed manifest.
   */
-  browserObtainManifest: Task.async(function* (aBrowser) {
+  async browserObtainManifest(aBrowser) {
     const msgKey = "DOM:ManifestObtainer:Obtain";
     if (!isXULBrowser(aBrowser)) {
       throw new TypeError("Invalid input. Expected XUL browser.");
     }
     const mm = aBrowser.messageManager;
-    const {data: {success, result}} = yield PromiseMessage.send(mm, msgKey);
+    const {data: {success, result}} = await PromiseMessage.send(mm, msgKey);
     if (!success) {
       const error = toError(result);
       throw error;
     }
     return result;
-  }),
+  },
   /**
    * Public interface for obtaining a web manifest from a XUL browser.
    * @param  {Window} The content Window from which to extract the manifest.
    * @return {Promise<Object>} The processed manifest.
    */
-  contentObtainManifest: Task.async(function* (aContent) {
+  async contentObtainManifest(aContent) {
     if (!aContent || isXULBrowser(aContent)) {
       throw new TypeError("Invalid input. Expected a DOM Window.");
     }
     let manifest;
     try {
-      manifest = yield fetchManifest(aContent);
+      manifest = await fetchManifest(aContent);
     } catch (err) {
       throw err;
     }
     return manifest;
-  }
-)};
+  },
+};
 
 function toError(aErrorClone) {
   let error;
@@ -105,29 +97,29 @@ function isXULBrowser(aBrowser) {
  * @param {Window} aContentWindow The content window.
  * @return {Promise<Object>} The processed manifest.
  */
-const processResponse = Task.async(function* (aResp, aContentWindow) {
+const processResponse = async function(aResp, aContentWindow) {
   const badStatus = aResp.status < 200 || aResp.status >= 300;
   if (aResp.type === "error" || badStatus) {
     const msg =
       `Fetch error: ${aResp.status} - ${aResp.statusText} at ${aResp.url}`;
     throw new Error(msg);
   }
-  const text = yield aResp.text();
+  const text = await aResp.text();
   const args = {
     jsonText: text,
     manifestURL: aResp.url,
-    docURL: aContentWindow.location.href
+    docURL: aContentWindow.location.href,
   };
   const manifest = ManifestProcessor.process(args);
   return manifest;
-});
+};
 
 /**
  * Asynchronously fetches a web manifest.
  * @param {Window} a The content Window from where to extract the manifest.
  * @return {Promise<Object>}
  */
-const fetchManifest = Task.async(function* (aWindow) {
+const fetchManifest = async function(aWindow) {
   if (!aWindow || aWindow.top !== aWindow) {
     let msg = "Window must be a top-level browsing context.";
     throw new Error(msg);
@@ -140,7 +132,7 @@ const fetchManifest = Task.async(function* (aWindow) {
   // Throws on malformed URLs
   const manifestURL = new aWindow.URL(elem.href, elem.baseURI);
   const reqInit = {
-    mode: "cors"
+    mode: "cors",
   };
   if (elem.crossOrigin === "use-credentials") {
     reqInit.credentials = "include";
@@ -149,12 +141,12 @@ const fetchManifest = Task.async(function* (aWindow) {
   request.overrideContentPolicyType(Ci.nsIContentPolicy.TYPE_WEB_MANIFEST);
   let response;
   try {
-    response = yield aWindow.fetch(request);
+    response = await aWindow.fetch(request);
   } catch (err) {
     throw err;
   }
-  const manifest = yield processResponse(response, aWindow);
+  const manifest = await processResponse(response, aWindow);
   return manifest;
-});
+};
 
-this.EXPORTED_SYMBOLS = ["ManifestObtainer"]; // jshint ignore:line
+var EXPORTED_SYMBOLS = ["ManifestObtainer"]; // jshint ignore:line

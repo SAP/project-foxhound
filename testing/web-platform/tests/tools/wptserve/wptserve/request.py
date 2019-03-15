@@ -1,9 +1,10 @@
 import base64
 import cgi
-import Cookie
-import StringIO
+from six.moves.http_cookies import BaseCookie
+from six import BytesIO, binary_type, text_type, iteritems, PY3
 import tempfile
-import urlparse
+
+from six.moves.urllib.parse import parse_qsl, urlsplit
 
 from . import stash
 from .utils import HTTPException
@@ -49,9 +50,9 @@ class InputFile(object):
         self._file_position = 0
 
         if length > self.max_buffer_size:
-            self._buf = tempfile.TemporaryFile(mode="rw+b")
+            self._buf = tempfile.TemporaryFile()
         else:
-            self._buf = StringIO.StringIO()
+            self._buf = BytesIO()
 
     @property
     def _buf_position(self):
@@ -67,22 +68,22 @@ class InputFile(object):
         bytes_remaining = min(bytes, self.length - self._buf_position)
 
         if bytes_remaining == 0:
-            return ""
+            return b""
 
         if self._buf_position != self._file_position:
             buf_bytes = min(bytes_remaining, self._file_position - self._buf_position)
             old_data = self._buf.read(buf_bytes)
             bytes_remaining -= buf_bytes
         else:
-            old_data = ""
+            old_data = b""
 
-        assert self._buf_position == self._file_position, (
+        assert bytes_remaining == 0 or self._buf_position == self._file_position, (
             "Before reading buffer position (%i) didn't match file position (%i)" %
             (self._buf_position, self._file_position))
         new_data = self._file.read(bytes_remaining)
         self._buf.write(new_data)
         self._file_position += bytes_remaining
-        assert self._buf_position == self._file_position, (
+        assert bytes_remaining == 0 or self._buf_position == self._file_position, (
             "After reading buffer position (%i) didn't match file position (%i)" %
             (self._buf_position, self._file_position))
 
@@ -105,10 +106,10 @@ class InputFile(object):
 
         if self._buf_position < self._file_position:
             data = self._buf.readline(max_bytes)
-            if data.endswith("\n") or len(data) == max_bytes:
+            if data.endswith(b"\n") or len(data) == max_bytes:
                 return data
         else:
-            data = ""
+            data = b""
 
         assert self._buf_position == self._file_position
 
@@ -120,7 +121,7 @@ class InputFile(object):
             readahead = self.read(min(2, max_bytes))
             max_bytes -= len(readahead)
             for i, c in enumerate(readahead):
-                if c == "\n":
+                if c == b"\n"[0]:
                     buf.append(readahead[:i+1])
                     found = True
                     break
@@ -128,7 +129,7 @@ class InputFile(object):
                 buf.append(readahead)
             if not readahead or not max_bytes:
                 break
-        new_data = "".join(buf)
+        new_data = b"".join(buf)
         data += new_data
         self.seek(initial_position + len(new_data))
         return data
@@ -143,12 +144,14 @@ class InputFile(object):
                 break
         return rv
 
-    def next(self):
+    def __next__(self):
         data = self.readline()
         if data:
             return data
         else:
             raise StopIteration
+
+    next = __next__
 
     def __iter__(self):
         return self
@@ -186,14 +189,6 @@ class Request(object):
 
     Absolute URL for the request.
 
-    .. attribute:: headers
-
-    List of request headers.
-
-    .. attribute:: raw_input
-
-    File-like object representing the body of the request.
-
     .. attribute:: url_parts
 
     Parts of the requested URL as obtained by urlparse.urlsplit(path)
@@ -207,9 +202,17 @@ class Request(object):
     RequestHeaders object providing a dictionary-like representation of
     the request headers.
 
+    .. attribute:: raw_headers.
+
+    Dictionary of non-normalized request headers.
+
     .. attribute:: body
 
     Request body as a string
+
+    .. attribute:: raw_input
+
+    File-like object representing the body of the request.
 
     .. attribute:: GET
 
@@ -265,9 +268,9 @@ class Request(object):
                                       host,
                                       port,
                                       self.request_path)
-        self.url_parts = urlparse.urlsplit(self.url)
+        self.url_parts = urlsplit(self.url)
 
-        self._raw_headers = request_handler.headers
+        self.raw_headers = request_handler.headers
 
         self.request_line = request_handler.raw_requestline
 
@@ -275,6 +278,7 @@ class Request(object):
 
         self.raw_input = InputFile(request_handler.rfile,
                                    int(self.headers.get("Content-Length", 0)))
+
         self._body = None
 
         self._GET = None
@@ -290,7 +294,7 @@ class Request(object):
     @property
     def GET(self):
         if self._GET is None:
-            params = urlparse.parse_qsl(self.url_parts.query, keep_blank_values=True)
+            params = parse_qsl(self.url_parts.query, keep_blank_values=True)
             self._GET = MultiDict()
             for key, value in params:
                 self._GET.add(key, value)
@@ -304,7 +308,7 @@ class Request(object):
             self.raw_input.seek(0)
             fs = cgi.FieldStorage(fp=self.raw_input,
                                   environ={"REQUEST_METHOD": self.method},
-                                  headers=self.headers,
+                                  headers=self.raw_headers,
                                   keep_blank_values=True)
             self._POST = MultiDict.from_field_storage(fs)
             self.raw_input.seek(pos)
@@ -313,11 +317,13 @@ class Request(object):
     @property
     def cookies(self):
         if self._cookies is None:
-            parser = Cookie.BaseCookie()
-            cookie_headers = self.headers.get("cookie", "")
+            parser = BaseCookie()
+            cookie_headers = self.headers.get("cookie", b"")
+            if PY3:
+                cookie_headers = cookie_headers.decode("iso-8859-1")
             parser.load(cookie_headers)
             cookies = Cookies()
-            for key, value in parser.iteritems():
+            for key, value in iteritems(parser):
                 cookies[key] = CookieValue(value)
             self._cookies = cookies
         return self._cookies
@@ -325,7 +331,7 @@ class Request(object):
     @property
     def headers(self):
         if self._headers is None:
-            self._headers = RequestHeaders(self._raw_headers)
+            self._headers = RequestHeaders(self.raw_headers)
         return self._headers
 
     @property
@@ -344,19 +350,61 @@ class Request(object):
         return self._auth
 
 
+class H2Request(Request):
+    def __init__(self, request_handler):
+        self.h2_stream_id = request_handler.h2_stream_id
+        self.frames = []
+        super(H2Request, self).__init__(request_handler)
+
+
+def _maybe_encode(s):
+    """Encodes a text-type string into binary data using iso-8859-1.
+
+    Returns `str` in Python 2 and `bytes` in Python 3. The function is a no-op
+    if the argument already has a binary type.
+    """
+    if isinstance(s, binary_type):
+        return s
+
+    # Python 3 assumes iso-8859-1 when parsing headers, which will garble text
+    # with non ASCII characters. We try to encode the text back to binary.
+    # https://github.com/python/cpython/blob/273fc220b25933e443c82af6888eb1871d032fb8/Lib/http/client.py#L213
+    if isinstance(s, text_type):
+        return s.encode("iso-8859-1")
+
+    raise TypeError("Unexpected value in RequestHeaders: %r" % s)
+
+
 class RequestHeaders(dict):
-    """Dictionary-like API for accessing request headers."""
+    """Read-only dictionary-like API for accessing request headers.
+
+    Unlike BaseHTTPRequestHandler.headers, this class always returns all
+    headers with the same name (separated by commas). And it ensures all keys
+    (i.e. names of headers) and values have binary type.
+    """
     def __init__(self, items):
-        for key, value in zip(items.keys(), items.values()):
-            key = key.lower()
-            if key in self:
-                self[key].append(value)
+        for header in items.keys():
+            key = _maybe_encode(header).lower()
+            # get all headers with the same name
+            values = items.getallmatchingheaders(header)
+            if len(values) > 1:
+                # collect the multiple variations of the current header
+                multiples = []
+                # loop through the values from getallmatchingheaders
+                for value in values:
+                    # getallmatchingheaders returns raw header lines, so
+                    # split to get name, value
+                    multiples.append(_maybe_encode(value).split(b':', 1)[1].strip())
+                headers = multiples
             else:
-                dict.__setitem__(self, key, [value])
+                headers = [_maybe_encode(items[header])]
+            dict.__setitem__(self, key, headers)
+
 
     def __getitem__(self, key):
         """Get all headers of a certain (case-insensitive) name. If there is
         more than one, the values are returned comma separated"""
+        key = _maybe_encode(key)
         values = dict.__getitem__(self, key.lower())
         if len(values) == 1:
             return values[0]
@@ -382,6 +430,7 @@ class RequestHeaders(dict):
     def get_list(self, key, default=missing):
         """Get all the header values for a particular field name as
         a list"""
+        key = _maybe_encode(key)
         try:
             return dict.__getitem__(self, key.lower())
         except KeyError:
@@ -391,6 +440,7 @@ class RequestHeaders(dict):
                 raise
 
     def __contains__(self, key):
+        key = _maybe_encode(key)
         return dict.__contains__(self, key.lower())
 
     def iteritems(self):
@@ -527,7 +577,10 @@ class MultiDict(dict):
 
         :param key: The key to lookup
         """
-        return dict.__getitem__(self, key)
+        if key in self:
+            return dict.__getitem__(self, key)
+        else:
+            return []
 
     @classmethod
     def from_field_storage(cls, fs):
@@ -569,21 +622,28 @@ class Authentication(object):
 
     The password supplied in the HTTP Authorization
     header, or None
+
+    Both attributes are binary strings (`str` in Py2, `bytes` in Py3), since
+    RFC7617 Section 2.1 does not specify the encoding for username & password
+    (as long it's compatible with ASCII). UTF-8 should be a relatively safe
+    choice if callers need to decode them as most browsers use it.
     """
     def __init__(self, headers):
         self.username = None
         self.password = None
 
-        auth_schemes = {"Basic": self.decode_basic}
+        auth_schemes = {b"Basic": self.decode_basic}
 
         if "authorization" in headers:
             header = headers.get("authorization")
-            auth_type, data = header.split(" ", 1)
+            assert isinstance(header, binary_type)
+            auth_type, data = header.split(b" ", 1)
             if auth_type in auth_schemes:
                 self.username, self.password = auth_schemes[auth_type](data)
             else:
                 raise HTTPException(400, "Unsupported authentication scheme %s" % auth_type)
 
     def decode_basic(self, data):
-        decoded_data = base64.decodestring(data)
-        return decoded_data.split(":", 1)
+        assert isinstance(data, binary_type)
+        decoded_data = base64.b64decode(data)
+        return decoded_data.split(b":", 1)

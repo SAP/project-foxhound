@@ -7,18 +7,18 @@
 #define nsDocShellEditorData_h__
 
 #ifndef nsCOMPtr_h___
-#include "nsCOMPtr.h"
+#  include "nsCOMPtr.h"
 #endif
 
+#include "mozilla/HTMLEditor.h"
+#include "mozilla/RefPtr.h"
 #include "nsIHTMLDocument.h"
 
 class nsIDocShell;
 class nsIEditingSession;
-class nsIEditor;
 
-class nsDocShellEditorData
-{
-public:
+class nsDocShellEditorData {
+ public:
   explicit nsDocShellEditorData(nsIDocShell* aOwningDocShell);
   ~nsDocShellEditorData();
 
@@ -26,15 +26,15 @@ public:
   bool GetEditable();
   nsresult CreateEditor();
   nsresult GetEditingSession(nsIEditingSession** aResult);
-  nsresult GetEditor(nsIEditor** aResult);
-  nsresult SetEditor(nsIEditor* aEditor);
+  mozilla::HTMLEditor* GetHTMLEditor() const { return mHTMLEditor; }
+  nsresult SetHTMLEditor(mozilla::HTMLEditor* aHTMLEditor);
   void TearDownEditor();
   nsresult DetachFromWindow();
   nsresult ReattachToWindow(nsIDocShell* aDocShell);
   bool WaitingForLoad() const { return mMakeEditable; }
 
-protected:
-  nsresult EnsureEditingSession();
+ protected:
+  void EnsureEditingSession();
 
   // The doc shell that owns us. Weak ref, since it always outlives us.
   nsIDocShell* mDocShell;
@@ -42,11 +42,15 @@ protected:
   // Only present for the content root docShell. Session is owned here.
   nsCOMPtr<nsIEditingSession> mEditingSession;
 
+  // If this frame is editable, store HTML editor here. It's owned here.
+  RefPtr<mozilla::HTMLEditor> mHTMLEditor;
+
+  // Backup for the corresponding nsIHTMLDocument's  editing state while
+  // the editor is detached.
+  nsIHTMLDocument::EditingState mDetachedEditingState;
+
   // Indicates whether to make an editor after a url load.
   bool mMakeEditable;
-
-  // If this frame is editable, store editor here. Editor is owned here.
-  nsCOMPtr<nsIEditor> mEditor;
 
   // Denotes if the editor is detached from its window. The editor is detached
   // while it's stored in the session history bfcache.
@@ -54,10 +58,6 @@ protected:
 
   // Backup for mMakeEditable while the editor is detached.
   bool mDetachedMakeEditable;
-
-  // Backup for the corresponding nsIHTMLDocument's  editing state while
-  // the editor is detached.
-  nsIHTMLDocument::EditingState mDetachedEditingState;
 };
 
-#endif // nsDocShellEditorData_h__
+#endif  // nsDocShellEditorData_h__

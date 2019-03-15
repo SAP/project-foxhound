@@ -1,3 +1,4 @@
+/* eslint-disable mozilla/no-arbitrary-setTimeout */
 const HOST = "https://example.com";
 const URL = HOST + "/browser/toolkit/components/passwordmgr/test/browser/form_basic.html";
 const TIMEOUT_PREF = "signon.masterPasswordReprompt.timeout_ms";
@@ -9,12 +10,13 @@ function waitForDialog() {
     let dialog = subject.Dialog;
     is(dialog.args.title, "Password Required");
     dialog.ui.button1.click();
+    return BrowserTestUtils.waitForEvent(window, "DOMModalDialogClosed");
   });
 }
 
 // Test that autocomplete does not trigger a master password prompt
 // for a certain time after it was cancelled.
-add_task(function* test_mpAutocompleteTimeout() {
+add_task(async function test_mpAutocompleteTimeout() {
   let login = LoginTestUtils.testData.formLogin({
     hostname: "https://example.com",
     formSubmitURL: "https://example.com",
@@ -31,29 +33,29 @@ add_task(function* test_mpAutocompleteTimeout() {
 
   // Set master password prompt timeout to 3s.
   // If this test goes intermittent, you likely have to increase this value.
-  yield SpecialPowers.pushPrefEnv({set: [[TIMEOUT_PREF, 3000]]});
+  await SpecialPowers.pushPrefEnv({set: [[TIMEOUT_PREF, 3000]]});
 
   // Wait for initial master password dialog after opening the tab.
   let dialogShown = waitForDialog();
 
-  yield BrowserTestUtils.withNewTab(URL, function*(browser) {
-    yield dialogShown;
+  await BrowserTestUtils.withNewTab(URL, async function(browser) {
+    await dialogShown;
 
-    yield ContentTask.spawn(browser, null, function*() {
+    await ContentTask.spawn(browser, null, async function() {
       // Focus the password field to trigger autocompletion.
       content.document.getElementById("form-basic-password").focus();
     });
 
     // Wait 4s, dialog should not have been shown
     // (otherwise the code below will not work).
-    yield new Promise((c) => setTimeout(c, 4000));
+    await new Promise((c) => setTimeout(c, 4000));
 
     dialogShown = waitForDialog();
-    yield ContentTask.spawn(browser, null, function*() {
+    await ContentTask.spawn(browser, null, async function() {
       // Re-focus the password field to trigger autocompletion.
       content.document.getElementById("form-basic-username").focus();
       content.document.getElementById("form-basic-password").focus();
     });
-    yield dialogShown;
+    await dialogShown;
   });
 });

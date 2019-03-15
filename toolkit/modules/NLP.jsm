@@ -4,7 +4,7 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["NLP"];
+var EXPORTED_SYMBOLS = ["NLP"];
 
 /**
  * NLP, which stands for Natural Language Processing, is a module that provides
@@ -13,7 +13,7 @@ this.EXPORTED_SYMBOLS = ["NLP"];
  * At least, that's the goal. Eventually. Right now, the find toolbar only really
  * needs the Levenshtein distance algorithm.
  */
-this.NLP = {
+var NLP = {
   /**
    * Calculate the Levenshtein distance between two words.
    * The implementation of this method was heavily inspired by
@@ -38,8 +38,8 @@ this.NLP = {
     if (!l2)
       return l1 * costDel;
 
-    let p1 = new Array(l2 + 1)
-    let p2 = new Array(l2 + 1)
+    let p1 = new Array(l2 + 1);
+    let p2 = new Array(l2 + 1);
 
     let i1, i2, c0, c1, c2, tmp;
 
@@ -72,5 +72,5 @@ this.NLP = {
     c0 = p1[l2];
 
     return c0;
-  }
+  },
 };

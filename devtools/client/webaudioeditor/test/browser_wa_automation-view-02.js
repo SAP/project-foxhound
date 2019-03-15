@@ -6,24 +6,24 @@
  * switching between AudioParam rerenders the graph.
  */
 
-add_task(function* () {
-  let { target, panel } = yield initWebAudioEditor(AUTOMATION_URL);
-  let { panelWin } = panel;
-  let { gFront, $, $$, EVENTS, AutomationView } = panelWin;
+add_task(async function() {
+  const { target, panel } = await initWebAudioEditor(AUTOMATION_URL);
+  const { panelWin } = panel;
+  const { gFront, $, $$, EVENTS, AutomationView } = panelWin;
 
-  let started = once(gFront, "start-context");
+  const started = once(gFront, "start-context");
 
-  let events = Promise.all([
+  const events = Promise.all([
     get3(gFront, "create-node"),
-    waitForGraphRendered(panelWin, 3, 2)
+    waitForGraphRendered(panelWin, 3, 2),
   ]);
   reload(target);
-  let [actors] = yield events;
-  let nodeIds = actors.map(actor => actor.actorID);
+  const [actors] = await events;
+  const nodeIds = actors.map(actor => actor.actorID);
 
   // Oscillator node
   click(panelWin, findGraphNode(panelWin, nodeIds[1]));
-  yield waitForInspectorRender(panelWin, EVENTS);
+  await waitForInspectorRender(panelWin, EVENTS);
   click(panelWin, $("#automation-tab"));
 
   ok(AutomationView._selectedParamName, "frequency",
@@ -37,7 +37,7 @@ add_task(function* () {
   ok(!isVisible($("#automation-no-events")), "no-events panel should not be visible");
 
   click(panelWin, $(".automation-param-button[data-param='detune']"));
-  yield once(panelWin, EVENTS.UI_AUTOMATION_TAB_RENDERED);
+  await once(panelWin, EVENTS.UI_AUTOMATION_TAB_RENDERED);
 
   ok(true, "automation tab rerendered");
 
@@ -51,5 +51,5 @@ add_task(function* () {
   ok(!isVisible($("#automation-graph-container")), "graph container should not be visible");
   ok(isVisible($("#automation-no-events")), "no-events panel should be visible");
 
-  yield teardown(target);
+  await teardown(target);
 });

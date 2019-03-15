@@ -43,7 +43,7 @@ function senderScript() {
       browser.runtime.connect(...params);
     } catch (e) {
       detected_invalid_connect_params++;
-      browser.test.assertTrue(e.toString().indexOf("Incorrect argument types for runtime.connect.") >= 0, "exception message is correct");
+      browser.test.assertTrue(e.toString().includes("Incorrect argument types for runtime.connect."), "exception message is correct");
     }
   }
   for (let params of invalid_connect_params) {
@@ -62,11 +62,11 @@ let extensionData = {
   },
 };
 
-add_task(function* test_backgroundRuntimeConnectParams() {
+add_task(async function test_backgroundRuntimeConnectParams() {
   let extension = ExtensionTestUtils.loadExtension(extensionData);
-  yield extension.startup();
+  await extension.startup();
 
-  yield extension.awaitFinish("runtime.connect invalid params");
+  await extension.awaitFinish("runtime.connect invalid params");
 
-  yield extension.unload();
+  await extension.unload();
 });

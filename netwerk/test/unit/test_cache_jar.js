@@ -1,7 +1,8 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/NetUtil.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpserv.identity.primaryPort + "/cached";
@@ -59,26 +60,25 @@ async function run_all_tests() {
   if (procType != Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT)
     return;
 
-  let attrs_inBrowser = JSON.stringify({ appId:1, inIsolatedMozBrowser:true });
-  let attrs_notInBrowser = JSON.stringify({ appId:1 });
+  let attrs_inBrowser = { appId:1, inIsolatedMozBrowser:true };
+  let attrs_notInBrowser = { appId:1 };
 
-  Services.obs.notifyObservers(null, "clear-origin-attributes-data", attrs_inBrowser);
+  Services.clearData.deleteDataFromOriginAttributesPattern(attrs_inBrowser);
 
   for (let test of secondTests) {
     handlers_called = 0;
     await test_channel(...test);
   }
 
-  Services.obs.notifyObservers(null, "clear-origin-attributes-data", attrs_notInBrowser);
-  Services.obs.notifyObservers(null, "clear-origin-attributes-data", attrs_inBrowser);
+  Services.clearData.deleteDataFromOriginAttributesPattern(attrs_notInBrowser);
+  Services.clearData.deleteDataFromOriginAttributesPattern(attrs_inBrowser);
 
   for (let test of thirdTests) {
     handlers_called = 0;
     await test_channel(...test);
   }
 
-  let attrs_userContextId = JSON.stringify({ userContextId: 1 });
-  Services.obs.notifyObservers(null, "clear-origin-attributes-data", attrs_userContextId);
+  Services.clearData.deleteDataFromOriginAttributesPattern({ userContextId: 1 });
 
   for (let test of fourthTests) {
     handlers_called = 0;
@@ -88,11 +88,11 @@ async function run_all_tests() {
 
 function run_test() {
   do_get_profile();
-  if (!newCacheBackEndUsed()) {
-    do_check_true(true, "This test checks only cache2 specific behavior.");
-    return;
-  }
+
   do_test_pending();
+
+  Services.prefs.setBoolPref("network.http.rcwn.enabled", false);
+
   httpserv = new HttpServer();
   httpserv.registerPathHandler("/cached", cached_handler);
   httpserv.start(-1);
@@ -116,6 +116,6 @@ function doneFirstLoad(resolve, req, buffer, expected) {
 }
 
 function doneSecondLoad(resolve, req, buffer, expected) {
-  do_check_eq(handlers_called, expected);
+  Assert.equal(handlers_called, expected);
   resolve();
 }

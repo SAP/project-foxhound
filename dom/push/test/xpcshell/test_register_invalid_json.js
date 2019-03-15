@@ -17,7 +17,7 @@ function run_test() {
   run_next_test();
 }
 
-add_task(function* test_register_invalid_json() {
+add_task(async function test_register_invalid_json() {
   let helloDone;
   let helloPromise = new Promise(resolve => helloDone = after(2, resolve));
   let registers = 0;
@@ -44,15 +44,16 @@ add_task(function* test_register_invalid_json() {
     }
   });
 
-  yield rejects(
+  await rejects(
     PushService.register({
       scope: 'https://example.net/page/invalid-json',
       originAttributes: ChromeUtils.originAttributesToSuffix(
         { appId: Ci.nsIScriptSecurityManager.NO_APP_ID, inIsolatedMozBrowser: false }),
     }),
+    /Registration error/,
     'Expected error for invalid JSON response'
   );
 
-  yield helloPromise;
+  await helloPromise;
   equal(registers, 1, 'Wrong register count');
 });

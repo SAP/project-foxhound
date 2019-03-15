@@ -79,24 +79,12 @@ add_task(function() {
                                                    defaultPlacements: [] });
     CustomizableUI.registerArea("area-996899-2", { anchor: "PanelUI-menu-button",
                                                    type: CustomizableUI.TYPE_MENU_PANEL,
-                                                   defaultPlacements: ["feed-button"] });
+                                                   defaultPlacements: ["new-window-button"] });
   } catch (ex) {
     exceptionThrown = ex;
   }
   ok(!exceptionThrown, "Changing defaultPlacements shouldn't throw an exception: " + (exceptionThrown ? exceptionThrown : "[no exception]"));
   CustomizableUI.unregisterArea("area-996899-2", true);
-});
-
-add_task(function() {
-  let exceptionThrown;
-  try {
-    CustomizableUI.registerArea("area-996899-3", { legacy: true });
-    CustomizableUI.registerArea("area-996899-3", { legacy: false });
-  } catch (ex) {
-    exceptionThrown = ex;
-  }
-  ok(exceptionThrown, "Changing 'legacy' should throw an exception: " + (exceptionThrown ? exceptionThrown : "[no exception]"));
-  CustomizableUI.unregisterArea("area-996899-3", true);
 });
 
 add_task(function() {

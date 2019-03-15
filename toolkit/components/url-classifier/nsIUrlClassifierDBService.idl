@@ -7,11 +7,9 @@
 %{C++
 #include "Entries.h"
 #include "LookupCache.h"
-class nsUrlClassifierLookupResult;
+#include "mozilla/UniquePtr.h"
 %}
-[ptr] native ResultArray(nsTArray<mozilla::safebrowsing::LookupResult>);
-[ptr] native CacheCompletionArray(nsTArray<mozilla::safebrowsing::CacheResult>);
-[ptr] native PrefixArray(mozilla::safebrowsing::PrefixArray);
+native ResultArray(mozilla::UniquePtr<mozilla::safebrowsing::LookupResultArray>);
 
 interface nsIUrlClassifierHashCompleter;
 interface nsIPrincipal;
@@ -111,13 +109,6 @@ interface nsIUrlClassifierDBService : nsISupports
                         in nsIUrlClassifierHashCompleter completer);
 
   /**
-   * Set the last update time for the given table. We use this to
-   * remember freshness past restarts. Time is in milliseconds since epoch.
-   */
-  void setLastUpdateTime(in ACString tableName,
-                         in unsigned long long lastUpdateTime);
-
-  /**
    * Forget the results that were used in the last DB update.
    */
   void clearLastResults();
@@ -208,6 +199,11 @@ interface nsIUrlClassifierDBService : nsISupports
    * for use in tests.
    */
   void reloadDatabase();
+
+  /**
+   * Empty all the caches.
+   */
+  void clearCache();
 };
 
 /**

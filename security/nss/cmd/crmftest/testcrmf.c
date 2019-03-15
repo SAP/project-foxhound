@@ -66,7 +66,7 @@
 #include "crmf.h"
 #include "secerr.h"
 #include "pk11func.h"
-#include "key.h"
+#include "keyhi.h"
 #include "cmmf.h"
 #include "plgetopt.h"
 #include "secutil.h"
@@ -577,7 +577,6 @@ Decode(void)
         printf("WARNING: The DER contained %d messages.\n", numMsgs);
     }
     for (i = 0; i < numMsgs; i++) {
-        SECStatus rv;
         printf("crmftest: Processing cert request %d\n", i);
         certReqMsg = CRMF_CertReqMessagesGetCertReqMsgAtIndex(certReqMsgs, i);
         if (certReqMsg == NULL) {
@@ -1261,11 +1260,13 @@ DoChallengeResponse(SECKEYPrivateKey *privKey,
             return 908;
         }
         keyID = PK11_MakeIDFromPubKey(publicValue);
+        SECITEM_FreeItem(publicValue, PR_TRUE);
         if (keyID == NULL) {
             printf("Could not make the keyID from the public value\n");
             return 909;
         }
         foundPrivKey = PK11_FindKeyByKeyID(privKey->pkcs11Slot, keyID, &pwdata);
+        SECITEM_FreeItem(keyID, PR_TRUE);
         if (foundPrivKey == NULL) {
             printf("Could not find the private key corresponding to the public"
                    " value.\n");

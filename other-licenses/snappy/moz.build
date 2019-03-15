@@ -18,13 +18,16 @@ UNIFIED_SOURCES += [
 ]
 
 # We allow warnings for third-party code that can be updated from upstream.
-ALLOW_COMPILER_WARNINGS = True
+AllowCompilerWarnings()
 
 FINAL_LIBRARY = 'xul'
 
 # Suppress warnings in third-party code.
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += [
         '-Wno-sign-compare',
         '-Wno-unused-function'
     ]
+
+if CONFIG['TARGET_ENDIANNESS'] == 'big':
+    DEFINES['IS_BIG_ENDIAN'] = 1

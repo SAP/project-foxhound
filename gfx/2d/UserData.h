@@ -1,5 +1,6 @@
-/* -*- Mode: c++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -18,16 +19,16 @@ struct UserDataKey {
 };
 
 /* this class is basically a clone of the user data concept from cairo */
-class UserData
-{
+class UserData {
   typedef void (*destroyFunc)(void *data);
-public:
+
+ public:
   UserData() : count(0), entries(nullptr) {}
 
-  /* Attaches untyped userData associated with key. destroy is called on destruction */
-  void Add(UserDataKey *key, void *userData, destroyFunc destroy)
-  {
-    for (int i=0; i<count; i++) {
+  /* Attaches untyped userData associated with key. destroy is called on
+   * destruction */
+  void Add(UserDataKey *key, void *userData, destroyFunc destroy) {
+    for (int i = 0; i < count; i++) {
       if (key == entries[i].key) {
         if (entries[i].destroy) {
           entries[i].destroy(entries[i].userData);
@@ -42,29 +43,29 @@ public:
     // but that would propagate an stl dependency out which we'd rather not
     // do (see bug 666609). Plus, the entries array is expect to stay small
     // so doing a realloc everytime we add a new entry shouldn't be too costly
-    entries = static_cast<Entry*>(realloc(entries, sizeof(Entry)*(count+1)));
+    entries =
+        static_cast<Entry *>(realloc(entries, sizeof(Entry) * (count + 1)));
 
     if (!entries) {
       MOZ_CRASH("GFX: UserData::Add");
     }
 
-    entries[count].key      = key;
+    entries[count].key = key;
     entries[count].userData = userData;
-    entries[count].destroy  = destroy;
+    entries[count].destroy = destroy;
 
     count++;
   }
 
   /* Remove and return user data associated with key, without destroying it */
-  void* Remove(UserDataKey *key)
-  {
-    for (int i=0; i<count; i++) {
+  void *Remove(UserDataKey *key) {
+    for (int i = 0; i < count; i++) {
       if (key == entries[i].key) {
         void *userData = entries[i].userData;
         // decrement before looping so entries[i+1] doesn't read past the end:
         --count;
-        for (;i<count; i++) {
-          entries[i] = entries[i+1];
+        for (; i < count; i++) {
+          entries[i] = entries[i + 1];
         }
         return userData;
       }
@@ -72,10 +73,25 @@ public:
     return nullptr;
   }
 
+  /* Remove and destroy a given key */
+  void RemoveAndDestroy(UserDataKey *key) {
+    for (int i = 0; i < count; i++) {
+      if (key == entries[i].key) {
+        if (entries[i].destroy) {
+          entries[i].destroy(entries[i].userData);
+        }
+        // decrement before looping so entries[i+1] doesn't read past the end:
+        --count;
+        for (; i < count; i++) {
+          entries[i] = entries[i + 1];
+        }
+      }
+    }
+  }
+
   /* Retrives the userData for the associated key */
-  void *Get(UserDataKey *key) const
-  {
-    for (int i=0; i<count; i++) {
+  void *Get(UserDataKey *key) const {
+    for (int i = 0; i < count; i++) {
       if (key == entries[i].key) {
         return entries[i].userData;
       }
@@ -83,9 +99,8 @@ public:
     return nullptr;
   }
 
-  bool Has(UserDataKey *key)
-  {
-    for (int i=0; i<count; i++) {
+  bool Has(UserDataKey *key) {
+    for (int i = 0; i < count; i++) {
       if (key == entries[i].key) {
         return true;
       }
@@ -93,9 +108,8 @@ public:
     return false;
   }
 
-  void Destroy()
-  {
-    for (int i=0; i<count; i++) {
+  void Destroy() {
+    for (int i = 0; i < count; i++) {
       if (entries[i].destroy) {
         entries[i].destroy(entries[i].userData);
       }
@@ -105,12 +119,9 @@ public:
     count = 0;
   }
 
-  ~UserData()
-  {
-    Destroy();
-  }
+  ~UserData() { Destroy(); }
 
-private:
+ private:
   struct Entry {
     const UserDataKey *key;
     void *userData;
@@ -119,10 +130,9 @@ private:
 
   int count;
   Entry *entries;
-
 };
 
-} // namespace gfx
-} // namespace mozilla
+}  // namespace gfx
+}  // namespace mozilla
 
 #endif /* MOZILLA_GFX_USERDATA_H_ */

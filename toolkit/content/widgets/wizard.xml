@@ -14,16 +14,7 @@
    xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
    xmlns:xbl="http://www.mozilla.org/xbl">
 
-  <binding id="wizard-base">
-    <resources>
-      <stylesheet src="chrome://global/skin/wizard.css"/>
-    </resources>
-  </binding>
-
-  <binding id="wizard" extends="chrome://global/content/bindings/general.xml#root-element">
-    <resources>
-      <stylesheet src="chrome://global/skin/wizard.css"/>
-    </resources>
+  <binding id="wizard">
     <content>
       <xul:hbox class="wizard-header" anonid="Header"/>
 
@@ -175,9 +166,9 @@
         try {
           // need to create string bundle manually instead of using <xul:stringbundle/>
           // see bug 63370 for details
-          this._bundle = Components.classes["@mozilla.org/intl/stringbundle;1"]
-                                   .getService(Components.interfaces.nsIStringBundleService)
-                                   .createBundle("chrome://global/locale/wizard.properties");
+          this._bundle = Cc["@mozilla.org/intl/stringbundle;1"]
+                           .getService(Ci.nsIStringBundleService)
+                           .createBundle("chrome://global/locale/wizard.properties");
         } catch (e) {
           // This fails in remote XUL, which has to provide titles for all pages
           // see bug 142502
@@ -451,7 +442,7 @@
     </handlers>
   </binding>
 
-  <binding id="wizardpage" extends="chrome://global/content/bindings/wizard.xml#wizard-base">
+  <binding id="wizardpage">
     <implementation>
       <field name="pageIndex">-1</field>
 
@@ -466,7 +457,7 @@
   </binding>
 
 #ifdef XP_MACOSX
-  <binding id="wizard-header" extends="chrome://global/content/bindings/wizard.xml#wizard-base">
+  <binding id="wizard-header">
     <content>
       <xul:stack class="wizard-header-stack" flex="1">
         <xul:vbox class="wizard-header-box-1">
@@ -482,7 +473,7 @@
     </content>
   </binding>
 
-  <binding id="wizard-buttons" extends="chrome://global/content/bindings/wizard.xml#wizard-base">
+  <binding id="wizard-buttons">
     <content>
       <xul:vbox flex="1">
         <xul:hbox class="wizard-buttons-btm">
@@ -513,7 +504,7 @@
 
 #else
 
-  <binding id="wizard-header" extends="chrome://global/content/bindings/wizard.xml#wizard-base">
+  <binding id="wizard-header">
     <content>
       <xul:hbox class="wizard-header-box-1" flex="1">
         <xul:vbox class="wizard-header-box-text" flex="1">
@@ -525,7 +516,7 @@
     </content>
   </binding>
 
-  <binding id="wizard-buttons" extends="chrome://global/content/bindings/wizard.xml#wizard-base">
+  <binding id="wizard-buttons">
     <content>
       <xul:vbox class="wizard-buttons-box-1" flex="1">
         <xul:separator class="wizard-buttons-separator groove"/>
@@ -535,10 +526,10 @@
           <xul:spacer flex="1" anonid="spacer"/>
 #ifdef XP_UNIX
           <xul:button label="&button-cancel-unix.label;" class="wizard-button"
-                      dlgtype="cancel" icon="cancel"/>
+                      dlgtype="cancel"/>
           <xul:spacer style="width: 24px"/>
           <xul:button label="&button-back-unix.label;" accesskey="&button-back-unix.accesskey;"
-                      class="wizard-button" dlgtype="back" icon="go-back"/>
+                      class="wizard-button" dlgtype="back"/>
           <xul:deck class="wizard-next-deck" anonid="WizardButtonDeck">
             <xul:hbox>
               <xul:button label="&button-finish-unix.label;" class="wizard-button"
@@ -546,13 +537,13 @@
             </xul:hbox>
             <xul:hbox>
               <xul:button label="&button-next-unix.label;" accesskey="&button-next-unix.accesskey;"
-                          class="wizard-button" dlgtype="next" icon="go-forward"
+                          class="wizard-button" dlgtype="next" 
                           default="true" flex="1"/>
             </xul:hbox>
           </xul:deck>
 #else
           <xul:button label="&button-back-win.label;" accesskey="&button-back-win.accesskey;"
-                      class="wizard-button" dlgtype="back" icon="go-back"/>
+                      class="wizard-button" dlgtype="back"/>
           <xul:deck class="wizard-next-deck" anonid="WizardButtonDeck">
             <xul:hbox>
               <xul:button label="&button-finish-win.label;" class="wizard-button"
@@ -560,12 +551,12 @@
             </xul:hbox>
             <xul:hbox>
               <xul:button label="&button-next-win.label;" accesskey="&button-next-win.accesskey;"
-                          class="wizard-button" dlgtype="next" icon="go-forward"
+                          class="wizard-button" dlgtype="next" 
                           default="true" flex="1"/>
             </xul:hbox>
           </xul:deck>
           <xul:button label="&button-cancel-win.label;" class="wizard-button"
-                      dlgtype="cancel" icon="cancel"/>
+                      dlgtype="cancel"/>
 #endif
         </xul:hbox>
       </xul:vbox>

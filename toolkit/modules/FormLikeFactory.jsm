@@ -4,9 +4,9 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["FormLikeFactory"];
+var EXPORTED_SYMBOLS = ["FormLikeFactory"];
 
-const { classes: Cc, interfaces: Ci, results: Cr, utils: Cu } = Components;
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 /**
  * A factory to generate FormLike objects that represent a set of related fields
@@ -28,8 +28,8 @@ let FormLikeFactory = {
    * @throws Error if aForm isn't an HTMLFormElement
    */
   createFromForm(aForm) {
-    if (!(aForm instanceof Ci.nsIDOMHTMLFormElement)) {
-      throw new Error("createFromForm: aForm must be a nsIDOMHTMLFormElement");
+    if (ChromeUtils.getClassName(aForm) !== "HTMLFormElement") {
+      throw new Error("createFromForm: aForm must be a HTMLFormElement");
     }
 
     let formLike = {
@@ -47,48 +47,59 @@ let FormLikeFactory = {
   },
 
   /**
-   * Create a FormLike object from an <input> in a document.
+   * Create a FormLike object from an <input>/<select> in a document.
    *
    * If the field is in a <form>, construct the FormLike from the form.
    * Otherwise, create a FormLike with a rootElement (wrapper) according to
-   * heuristics. Currently all <input> not in a <form> are one FormLike but this
-   * shouldn't be relied upon as the heuristics may change to detect multiple
-   * "forms" (e.g. registration and login) on one page with a <form>.
+   * heuristics. Currently all <input>/<select> not in a <form> are one FormLike
+   * but this shouldn't be relied upon as the heuristics may change to detect
+   * multiple "forms" (e.g. registration and login) on one page with a <form>.
    *
    * Note that two FormLikes created from the same field won't return the same FormLike object.
    * Use the `rootElement` property on the FormLike as a key instead.
    *
-   * @param {HTMLInputElement} aField - a field in a document
+   * @param {HTMLInputElement|HTMLSelectElement} aField - an <input> or <select> field in a document
    * @return {FormLike}
    * @throws Error if aField isn't a password or username field in a document
    */
   createFromField(aField) {
-    if (!(aField instanceof Ci.nsIDOMHTMLInputElement) ||
+    if ((ChromeUtils.getClassName(aField) !== "HTMLInputElement" &&
+         ChromeUtils.getClassName(aField) !== "HTMLSelectElement") ||
         !aField.ownerDocument) {
       throw new Error("createFromField requires a field in a document");
     }
 
     let rootElement = this.findRootForField(aField);
-    if (rootElement instanceof Ci.nsIDOMHTMLFormElement) {
+    if (ChromeUtils.getClassName(rootElement) === "HTMLFormElement") {
       return this.createFromForm(rootElement);
     }
 
     let doc = aField.ownerDocument;
-    let elements = [];
-    for (let el of rootElement.querySelectorAll("input")) {
-      // Exclude elements inside the rootElement that are already in a <form> as
-      // they will be handled by their own FormLike.
-      if (!el.form) {
-        elements.push(el);
-      }
-    }
+
     let formLike = {
       action: doc.baseURI,
       autocomplete: "on",
-      elements,
       ownerDocument: doc,
       rootElement,
     };
+
+    // FormLikes can be created when fields are inserted into the DOM. When
+    // many, many fields are inserted one after the other, we create many
+    // FormLikes, and computing the elements list becomes more and more
+    // expensive. Making the elements list lazy means that it'll only
+    // be computed when it's eventually needed (if ever).
+    XPCOMUtils.defineLazyGetter(formLike, "elements", function() {
+      let elements = [];
+      for (let el of this.rootElement.querySelectorAll("input, select")) {
+        // Exclude elements inside the rootElement that are already in a <form> as
+        // they will be handled by their own FormLike.
+        if (!el.form) {
+          elements.push(el);
+        }
+      }
+
+      return elements;
+    });
 
     this._addToJSONProperty(formLike);
     return formLike;
@@ -101,7 +112,7 @@ let FormLikeFactory = {
    * an ancestor Element of the username and password fields which doesn't
    * include any of the checkout fields.
    *
-   * @param {HTMLInputElement} aField - a field in a document
+   * @param {HTMLInputElement|HTMLSelectElement} aField - a field in a document
    * @return {HTMLElement} - the root element surrounding related fields
    */
   findRootForField(aField) {
@@ -160,7 +171,7 @@ let FormLikeFactory = {
           cleansed[key] = cleansedValue;
         }
         return cleansed;
-      }
+      },
     });
   },
 };

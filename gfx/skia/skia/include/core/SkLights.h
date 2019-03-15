@@ -9,14 +9,18 @@
 #ifndef SkLights_DEFINED
 #define SkLights_DEFINED
 
-#include "../private/SkTArray.h"
 #include "SkPoint3.h"
 #include "SkRefCnt.h"
+#include "../private/SkTArray.h"
 
+class SkColorSpaceXformer;
 class SkReadBuffer;
 class SkWriteBuffer;
-class SkImage;
 
+/** \class SkLights
+    SkLights encapsulates a set of directional, point and ambient lights for use with the
+    SkLightingShader.
+*/
 class SK_API SkLights  : public SkRefCnt {
 public:
     class Light {
@@ -27,35 +31,27 @@ public:
         };
 
         Light(const Light& other)
-            : fType(other.fType)
-            , fColor(other.fColor)
-            , fDirOrPos(other.fDirOrPos)
-            , fIntensity(other.fIntensity)
-            , fShadowMap(other.fShadowMap)
-            , fIsRadial(other.fIsRadial) {
-        }
+                : fType(other.fType)
+                , fColor(other.fColor)
+                , fDirOrPos(other.fDirOrPos)
+                , fIntensity(other.fIntensity) {}
 
         Light(Light&& other)
-            : fType(other.fType)
-            , fColor(other.fColor)
-            , fDirOrPos(other.fDirOrPos)
-            , fIntensity(other.fIntensity)
-            , fShadowMap(std::move(other.fShadowMap))
-            , fIsRadial(other.fIsRadial)  {
-        }
+                : fType(other.fType)
+                , fColor(other.fColor)
+                , fDirOrPos(other.fDirOrPos)
+                , fIntensity(other.fIntensity) {}
 
-        static Light MakeDirectional(const SkColor3f& color, const SkVector3& dir,
-                                     bool isRadial = false) {
-            Light light(kDirectional_LightType, color, dir, isRadial);
+        static Light MakeDirectional(const SkColor3f& color, const SkVector3& dir) {
+            Light light(kDirectional_LightType, color, dir, 0.0f);
             if (!light.fDirOrPos.normalize()) {
                 light.fDirOrPos.set(0.0f, 0.0f, 1.0f);
             }
             return light;
         }
 
-        static Light MakePoint(const SkColor3f& color, const SkPoint3& pos, SkScalar intensity,
-                               bool isRadial = false) {
-            return Light(kPoint_LightType, color, pos, intensity, isRadial);
+        static Light MakePoint(const SkColor3f& color, const SkPoint3& pos, SkScalar intensity) {
+            return Light(kPoint_LightType, color, pos, intensity);
         }
 
         LightType type() const { return fType; }
@@ -73,46 +69,37 @@ public:
             return fIntensity;
         }
 
-        void setShadowMap(sk_sp<SkImage> shadowMap) {
-            fShadowMap = std::move(shadowMap);
-        }
-
-        SkImage* getShadowMap() const {
-            return fShadowMap.get();
-        }
-
-        bool isRadial() const { return fIsRadial; }
-
-        Light& operator= (const Light& b) {
-            if (this == &b) {
+        Light& operator=(const Light& other) {
+            if (this == &other) {
                 return *this;
             }
 
-            fColor = b.fColor;
-            fType = b.fType;
-            fDirOrPos = b.fDirOrPos;
-            fIntensity = b.fIntensity;
-            fShadowMap = b.fShadowMap;
-            fIsRadial = b.fIsRadial;
+            fType = other.fType;
+            fColor = other.fColor;
+            fDirOrPos = other.fDirOrPos;
+            fIntensity = other.fIntensity;
             return *this;
         }
 
-        bool operator== (const Light& b) {
-            if (this == &b) {
-                return true;
-            }
-
-            return (fColor     == b.fColor) &&
-                   (fType      == b.fType) &&
-                   (fDirOrPos  == b.fDirOrPos) &&
-                   (fShadowMap == b.fShadowMap) &&
-                   (fIntensity == b.fIntensity) &&
-                   (fIsRadial  == b.fIsRadial);
+        bool operator==(const Light& other) {
+            return (fType      == other.fType) &&
+                   (fColor     == other.fColor) &&
+                   (fDirOrPos  == other.fDirOrPos) &&
+                   (fIntensity == other.fIntensity);
         }
 
-        bool operator!= (const Light& b) { return !(this->operator==(b)); }
+        bool operator!=(const Light& other) { return !(this->operator==(other)); }
 
     private:
+        friend class SkLights;
+
+        Light(LightType type, const SkColor3f& color, const SkVector3& dirOrPos,
+              SkScalar intensity)
+                : fType(type)
+                , fColor(color)
+                , fDirOrPos(dirOrPos)
+                , fIntensity(intensity) {}
+
         LightType   fType;
         SkColor3f   fColor;           // linear (unpremul) color. Range is 0..1 in each channel.
 
@@ -123,18 +110,6 @@ public:
 
         SkScalar    fIntensity;       // For point lights, dictates the light intensity.
                                       // Simply a multiplier to the final light output value.
-        sk_sp<SkImage> fShadowMap;
-        bool        fIsRadial;        // Whether the light is radial or not. Radial lights will
-                                      // cast shadows and lights radially outwards.
-
-        Light(LightType type, const SkColor3f& color, const SkVector3& dirOrPos,
-              SkScalar intensity = 0.0f, bool isRadial = false) {
-            fType = type;
-            fColor = color;
-            fDirOrPos = dirOrPos;
-            fIntensity = intensity;
-            fIsRadial = isRadial;
-        }
     };
 
     class Builder {
@@ -167,32 +142,53 @@ public:
         sk_sp<SkLights> fLights;
     };
 
-    int numLights() const {
-        return fLights.count();
-    }
+    /** Returns number of lights not including the ambient light.
 
-    const Light& light(int index) const {
-        return fLights[index];
-    }
+        @return number of lights not including the ambient light
+    */
+    int numLights() const { return fLights.count(); }
 
-    Light& light(int index) {
-        return fLights[index];
-    }
+    /** Returns the index-th light.
 
+        @param index  the index of the desired light
+        @return       the index-th light
+    */
+    const Light& light(int index) const { return fLights[index]; }
+
+    /** Returns the ambient light.
+
+        @return the ambient light
+    */
     const SkColor3f& ambientLightColor() const {
         return fAmbientLightColor;
     }
 
+    /**
+     *  Recreate an SkLights object that was serialized into a buffer.
+     *
+     *  @param  SkReadBuffer Serialized blob data.
+     *  @return A new SkLights representing the serialized data, or NULL if the buffer is
+     *          invalid.
+     */
     static sk_sp<SkLights> MakeFromBuffer(SkReadBuffer& buf);
 
+    /**
+     *  Serialize to a buffer.
+     *
+     *  @param  buffer the write buffer to write out to
+     */
     void flatten(SkWriteBuffer& buf) const;
 
 private:
-    SkLights() {
-        fAmbientLightColor.set(0.0f, 0.0f, 0.0f);
-    }
+    friend class SkLightingShaderImpl;
+
+    SkLights() : fAmbientLightColor(SkColor3f::Make(0.0f, 0.0f, 0.0f)) {}
+
+    sk_sp<SkLights> makeColorSpace(SkColorSpaceXformer* xformer) const;
+
     SkTArray<Light> fLights;
-    SkColor3f fAmbientLightColor;
+    SkColor3f       fAmbientLightColor;
+
     typedef SkRefCnt INHERITED;
 };
 

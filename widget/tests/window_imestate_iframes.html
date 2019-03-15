@@ -107,12 +107,10 @@ function observeFocusBlur(aNextFocusedNode, aWillFireFocusEvent,
 
 function runTests()
 {
-  var utils =
-    window.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
-          .getInterface(Components.interfaces.nsIDOMWindowUtils);
+  var utils = window.windowUtils;
   var fm =
-    Components.classes["@mozilla.org/focus-manager;1"]
-              .getService(Components.interfaces.nsIFocusManager);
+    Cc["@mozilla.org/focus-manager;1"]
+      .getService(Ci.nsIFocusManager);
 
   var iframe, editor, root, input;
   var prev = document.getElementById("prev");
@@ -182,14 +180,10 @@ function runTests()
   function testOnEditorFlagChange(aDescription, aIsInDesignMode)
   {
     const kReadonly =
-      Components.interfaces.nsIPlaintextEditor.eEditorReadonlyMask;
+      Ci.nsIPlaintextEditor.eEditorReadonlyMask;
     var description = "testOnEditorFlagChange: " + aDescription;
     resetFocusToParentHTML(description);
-    var htmlEditor =
-      iframe.contentWindow.
-        QueryInterface(Components.interfaces.nsIInterfaceRequestor).
-        getInterface(Components.interfaces.nsIWebNavigation).
-        QueryInterface(Components.interfaces.nsIDocShell).editor;
+    var htmlEditor = iframe.contentWindow.docShell.editor;
     var e = aIsInDesignMode ? root : editor;
     e.focus();
     is(fm.focusedElement, e,

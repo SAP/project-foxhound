@@ -39,34 +39,14 @@ AutoCompleteInput.prototype = {
     invalidate() {},
 
     // nsISupports implementation
-    QueryInterface(iid) {
-      if (iid.equals(Ci.nsISupports) ||
-          iid.equals(Ci.nsIAutoCompletePopup))
-        return this;
-
-      throw Components.results.NS_ERROR_NO_INTERFACE;
-    }
+    QueryInterface: ChromeUtils.generateQI(["nsIAutoCompletePopup"]),
   },
 
   // nsISupports implementation
-  QueryInterface(iid) {
-    if (iid.equals(Ci.nsISupports) ||
-        iid.equals(Ci.nsIAutoCompleteInput))
-      return this;
+  QueryInterface: ChromeUtils.generateQI(["nsIAutoCompleteInput"]),
+};
 
-    throw Components.results.NS_ERROR_NO_INTERFACE;
-  }
-}
-
-// Get tagging service
-try {
-  var tagssvc = Cc["@mozilla.org/browser/tagging-service;1"].
-                getService(Ci.nsITaggingService);
-} catch (ex) {
-  do_throw("Could not get tagging service\n");
-}
-
-function ensure_tag_results(results, searchTerm) {
+async function ensure_tag_results(results, searchTerm) {
   var controller = Cc["@mozilla.org/autocomplete/controller;1"].
                    getService(Ci.nsIAutoCompleteController);
 
@@ -76,60 +56,55 @@ function ensure_tag_results(results, searchTerm) {
 
   controller.input = input;
 
-  var numSearchesStarted = 0;
-  input.onSearchBegin = function input_onSearchBegin() {
-    numSearchesStarted++;
-    do_check_eq(numSearchesStarted, 1);
-  };
+  return new Promise(resolve => {
+    var numSearchesStarted = 0;
+    input.onSearchBegin = function input_onSearchBegin() {
+      numSearchesStarted++;
+      Assert.equal(numSearchesStarted, 1);
+    };
 
-  input.onSearchComplete = function input_onSearchComplete() {
-    do_check_eq(numSearchesStarted, 1);
-    if (results.length)
-      do_check_eq(controller.searchStatus,
-                  Ci.nsIAutoCompleteController.STATUS_COMPLETE_MATCH);
-    else
-      do_check_eq(controller.searchStatus,
-                  Ci.nsIAutoCompleteController.STATUS_COMPLETE_NO_MATCH);
+    input.onSearchComplete = function input_onSearchComplete() {
+      Assert.equal(numSearchesStarted, 1);
+      if (results.length)
+        Assert.equal(controller.searchStatus,
+                     Ci.nsIAutoCompleteController.STATUS_COMPLETE_MATCH);
+      else
+        Assert.equal(controller.searchStatus,
+                     Ci.nsIAutoCompleteController.STATUS_COMPLETE_NO_MATCH);
 
-    do_check_eq(controller.matchCount, results.length);
-    for (var i = 0; i < controller.matchCount; i++) {
-      do_check_eq(controller.getValueAt(i), results[i]);
-    }
+      Assert.equal(controller.matchCount, results.length);
+      for (var i = 0; i < controller.matchCount; i++) {
+        Assert.equal(controller.getValueAt(i), results[i]);
+      }
 
-    if (current_test < (tests.length - 1)) {
-      current_test++;
-      tests[current_test]();
-    } else {
-      // finish once all tests have run
-      do_test_finished();
-    }
-  };
+      resolve();
+    };
 
-  controller.startSearch(searchTerm);
+    controller.startSearch(searchTerm);
+  });
 }
 
 var uri1 = uri("http://site.tld/1");
 
 var tests = [
-  function test1() { ensure_tag_results(["bar", "Baz", "boo"], "b"); },
-  function test2() { ensure_tag_results(["bar", "Baz"], "ba"); },
-  function test3() { ensure_tag_results(["bar", "Baz"], "Ba"); },
-  function test4() { ensure_tag_results(["bar"], "bar"); },
-  function test5() { ensure_tag_results(["Baz"], "Baz"); },
-  function test6() { ensure_tag_results([], "barb"); },
-  function test7() { ensure_tag_results([], "foo"); },
-  function test8() { ensure_tag_results(["first tag, bar", "first tag, Baz"], "first tag, ba"); },
-  function test9() { ensure_tag_results(["first tag;  bar", "first tag;  Baz"], "first tag;  ba"); }
+  () => ensure_tag_results(["bar", "Baz", "boo"], "b"),
+  () => ensure_tag_results(["bar", "Baz"], "ba"),
+  () => ensure_tag_results(["bar", "Baz"], "Ba"),
+  () => ensure_tag_results(["bar"], "bar"),
+  () => ensure_tag_results(["Baz"], "Baz"),
+  () => ensure_tag_results([], "barb"),
+  () => ensure_tag_results([], "foo"),
+  () => ensure_tag_results(["first tag, bar", "first tag, Baz"], "first tag, ba"),
+  () => ensure_tag_results(["first tag;  bar", "first tag;  Baz"], "first tag;  ba"),
 ];
 
 /**
  * Test tag autocomplete
  */
-function run_test() {
-  // Search is asynchronous, so don't let the test finish immediately
-  do_test_pending();
+add_task(async function test_tag_autocomplete() {
+  PlacesUtils.tagging.tagURI(uri1, ["bar", "Baz", "boo", "*nix"]);
 
-  tagssvc.tagURI(uri1, ["bar", "Baz", "boo", "*nix"]);
-
-  tests[0]();
-}
+  for (let tagTest of tests) {
+    await tagTest();
+  }
+});

@@ -7,7 +7,6 @@
 #ifndef mozilla_MediaChild_h
 #define mozilla_MediaChild_h
 
-#include "mozilla/dom/ContentChild.h"
 #include "mozilla/media/PMediaChild.h"
 #include "mozilla/media/PMediaParent.h"
 #include "MediaUtils.h"
@@ -19,6 +18,8 @@ class PrincipalInfo;
 }
 
 namespace media {
+
+typedef MozPromise<nsCString, nsresult, false> PrincipalKeyPromise;
 
 // media::Child implements proxying to the chrome process for some media-related
 // functions, for the moment just:
@@ -32,35 +33,28 @@ namespace media {
 // pledges (promise-like objects) with the future value. Use pledge.Then(func)
 // to access.
 
-already_AddRefed<Pledge<nsCString>>
-GetPrincipalKey(const mozilla::ipc::PrincipalInfo& aPrincipalInfo,
-                bool aPersist);
+RefPtr<PrincipalKeyPromise> GetPrincipalKey(
+    const mozilla::ipc::PrincipalInfo& aPrincipalInfo, bool aPersist);
 
-void
-SanitizeOriginKeys(const uint64_t& aSinceWhen, bool aOnlyPrivateBrowsing);
+void SanitizeOriginKeys(const uint64_t& aSinceWhen, bool aOnlyPrivateBrowsing);
 
-class Child : public PMediaChild
-{
-public:
+class Child : public PMediaChild {
+ public:
   static Child* Get();
 
   Child();
 
-  mozilla::ipc::IPCResult
-  RecvGetPrincipalKeyResponse(const uint32_t& aRequestId,
-                              const nsCString& aKey) override;
-
   void ActorDestroy(ActorDestroyReason aWhy) override;
   virtual ~Child();
-private:
 
+ private:
   bool mActorDestroyed;
 };
 
 PMediaChild* AllocPMediaChild();
-bool DeallocPMediaChild(PMediaChild *aActor);
+bool DeallocPMediaChild(PMediaChild* aActor);
 
-} // namespace media
-} // namespace mozilla
+}  // namespace media
+}  // namespace mozilla
 
 #endif  // mozilla_MediaChild_h

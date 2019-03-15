@@ -23,7 +23,8 @@ namespace nss_test {
 // Replaces the client hello with an SSLv2 version once.
 class SSLv2ClientHelloFilter : public PacketFilter {
  public:
-  SSLv2ClientHelloFilter(std::shared_ptr<TlsAgent>& client, uint16_t version)
+  SSLv2ClientHelloFilter(const std::shared_ptr<TlsAgent>& client,
+                         uint16_t version)
       : replaced_(false),
         client_(client),
         version_(version),
@@ -141,22 +142,16 @@ class SSLv2ClientHelloFilter : public PacketFilter {
 
 class SSLv2ClientHelloTestF : public TlsConnectTestBase {
  public:
-  SSLv2ClientHelloTestF() : TlsConnectTestBase(STREAM, 0), filter_(nullptr) {}
+  SSLv2ClientHelloTestF()
+      : TlsConnectTestBase(ssl_variant_stream, 0), filter_(nullptr) {}
 
-  SSLv2ClientHelloTestF(Mode mode, uint16_t version)
-      : TlsConnectTestBase(mode, version), filter_(nullptr) {}
+  SSLv2ClientHelloTestF(SSLProtocolVariant variant, uint16_t version)
+      : TlsConnectTestBase(variant, version), filter_(nullptr) {}
 
-  void SetUp() {
+  void SetUp() override {
     TlsConnectTestBase::SetUp();
-    filter_ = std::make_shared<SSLv2ClientHelloFilter>(client_, version_);
-    client_->SetPacketFilter(filter_);
-  }
-
-  void RequireSafeRenegotiation() {
-    server_->EnsureTlsSetup();
-    SECStatus rv =
-        SSL_OptionSet(server_->ssl_fd(), SSL_REQUIRE_SAFE_NEGOTIATION, PR_TRUE);
-    EXPECT_EQ(rv, SECSuccess);
+    filter_ = MakeTlsFilter<SSLv2ClientHelloFilter>(client_, version_);
+    server_->SetOption(SSL_ENABLE_V2_COMPATIBLE_HELLO, PR_TRUE);
   }
 
   void SetExpectedVersion(uint16_t version) {
@@ -193,13 +188,35 @@ class SSLv2ClientHelloTestF : public TlsConnectTestBase {
 class SSLv2ClientHelloTest : public SSLv2ClientHelloTestF,
                              public ::testing::WithParamInterface<uint16_t> {
  public:
-  SSLv2ClientHelloTest() : SSLv2ClientHelloTestF(STREAM, GetParam()) {}
+  SSLv2ClientHelloTest()
+      : SSLv2ClientHelloTestF(ssl_variant_stream, GetParam()) {}
 };
 
 // Test negotiating TLS 1.0 - 1.2.
 TEST_P(SSLv2ClientHelloTest, Connect) {
   SetAvailableCipherSuite(TLS_DHE_RSA_WITH_AES_128_CBC_SHA);
   Connect();
+}
+
+TEST_P(SSLv2ClientHelloTest, ConnectDisabled) {
+  server_->SetOption(SSL_ENABLE_V2_COMPATIBLE_HELLO, PR_FALSE);
+  SetAvailableCipherSuite(TLS_DHE_RSA_WITH_AES_128_CBC_SHA);
+
+  StartConnect();
+  client_->Handshake();  // Send the modified ClientHello.
+  server_->Handshake();  // Read some.
+  // The problem here is that the v2 ClientHello puts the version where the v3
+  // ClientHello puts a version number.  So the version number (0x0301+) appears
+  // to be a length and server blocks waiting for that much data.
+  EXPECT_EQ(PR_WOULD_BLOCK_ERROR, PORT_GetError());
+
+  // This is usually what happens with v2-compatible: the server hangs.
+  // But to be certain, feed in more data to see if an error comes out.
+  uint8_t zeros[SSL_LIBRARY_VERSION_TLS_1_2] = {0};
+  client_->SendDirect(DataBuffer(zeros, sizeof(zeros)));
+  ExpectAlert(server_, kTlsAlertIllegalParameter);
+  server_->Handshake();
+  client_->Handshake();
 }
 
 // Sending a v2 ClientHello after a no-op v3 record must fail.
@@ -220,7 +237,7 @@ TEST_P(SSLv2ClientHelloTest, ConnectAfterEmptyV3Record) {
   // as the record length.
   SetPadding(255);
 
-  ConnectExpectFail();
+  ConnectExpectAlert(server_, kTlsAlertIllegalParameter);
   EXPECT_EQ(SSL_ERROR_BAD_CLIENT, server_->error_code());
 }
 
@@ -233,7 +250,7 @@ TEST_F(SSLv2ClientHelloTestF, Connect13) {
   std::vector<uint16_t> cipher_suites = {TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256};
   SetAvailableCipherSuites(cipher_suites);
 
-  ConnectExpectFail();
+  ConnectExpectAlert(server_, kTlsAlertIllegalParameter);
   EXPECT_EQ(SSL_ERROR_RX_MALFORMED_CLIENT_HELLO, server_->error_code());
 }
 
@@ -260,7 +277,7 @@ TEST_P(SSLv2ClientHelloTest, SendSecurityEscape) {
   // Set a big padding so that the server fails instead of timing out.
   SetPadding(255);
 
-  ConnectExpectFail();
+  ConnectExpectAlert(server_, kTlsAlertIllegalParameter);
 }
 
 // Invalid SSLv2 client hello padding must fail the handshake.
@@ -270,7 +287,7 @@ TEST_P(SSLv2ClientHelloTest, AddErroneousPadding) {
   // Append 5 bytes of padding but say it's only 4.
   SetPadding(5, 4);
 
-  ConnectExpectFail();
+  ConnectExpectAlert(server_, kTlsAlertIllegalParameter);
   EXPECT_EQ(SSL_ERROR_RX_MALFORMED_CLIENT_HELLO, server_->error_code());
 }
 
@@ -281,7 +298,7 @@ TEST_P(SSLv2ClientHelloTest, AddErroneousPadding2) {
   // Append 5 bytes of padding but say it's 6.
   SetPadding(5, 6);
 
-  ConnectExpectFail();
+  ConnectExpectAlert(server_, kTlsAlertIllegalParameter);
   EXPECT_EQ(SSL_ERROR_RX_MALFORMED_CLIENT_HELLO, server_->error_code());
 }
 
@@ -292,7 +309,7 @@ TEST_P(SSLv2ClientHelloTest, SmallClientRandom) {
   // Send a ClientRandom that's too small.
   SetClientRandomLength(15);
 
-  ConnectExpectFail();
+  ConnectExpectAlert(server_, kTlsAlertIllegalParameter);
   EXPECT_EQ(SSL_ERROR_RX_MALFORMED_CLIENT_HELLO, server_->error_code());
 }
 
@@ -310,27 +327,51 @@ TEST_P(SSLv2ClientHelloTest, BigClientRandom) {
   // Send a ClientRandom that's too big.
   SetClientRandomLength(33);
 
-  ConnectExpectFail();
+  ConnectExpectAlert(server_, kTlsAlertIllegalParameter);
   EXPECT_EQ(SSL_ERROR_RX_MALFORMED_CLIENT_HELLO, server_->error_code());
 }
 
 // Connection must fail if we require safe renegotiation but the client doesn't
 // include TLS_EMPTY_RENEGOTIATION_INFO_SCSV in the list of cipher suites.
 TEST_P(SSLv2ClientHelloTest, RequireSafeRenegotiation) {
-  RequireSafeRenegotiation();
+  server_->SetOption(SSL_REQUIRE_SAFE_NEGOTIATION, PR_TRUE);
   SetAvailableCipherSuite(TLS_DHE_RSA_WITH_AES_128_CBC_SHA);
-  ConnectExpectFail();
+  ConnectExpectAlert(server_, kTlsAlertHandshakeFailure);
   EXPECT_EQ(SSL_ERROR_UNSAFE_NEGOTIATION, server_->error_code());
 }
 
 // Connection must succeed when requiring safe renegotiation and the client
 // includes TLS_EMPTY_RENEGOTIATION_INFO_SCSV in the list of cipher suites.
 TEST_P(SSLv2ClientHelloTest, RequireSafeRenegotiationWithSCSV) {
-  RequireSafeRenegotiation();
+  server_->SetOption(SSL_REQUIRE_SAFE_NEGOTIATION, PR_TRUE);
   std::vector<uint16_t> cipher_suites = {TLS_DHE_RSA_WITH_AES_128_CBC_SHA,
                                          TLS_EMPTY_RENEGOTIATION_INFO_SCSV};
   SetAvailableCipherSuites(cipher_suites);
   Connect();
+}
+
+TEST_P(SSLv2ClientHelloTest, CheckServerRandom) {
+  ConfigureSessionCache(RESUME_NONE, RESUME_NONE);
+  SetAvailableCipherSuite(TLS_DHE_RSA_WITH_AES_128_CBC_SHA);
+
+  static const size_t random_len = 32;
+  uint8_t srandom1[random_len];
+  uint8_t z[random_len] = {0};
+
+  auto sh = MakeTlsFilter<TlsHandshakeRecorder>(server_, ssl_hs_server_hello);
+  Connect();
+  ASSERT_TRUE(sh->buffer().len() > (random_len + 2));
+  memcpy(srandom1, sh->buffer().data() + 2, random_len);
+  EXPECT_NE(0, memcmp(srandom1, z, random_len));
+
+  Reset();
+  sh = MakeTlsFilter<TlsHandshakeRecorder>(server_, ssl_hs_server_hello);
+  Connect();
+  ASSERT_TRUE(sh->buffer().len() > (random_len + 2));
+  const uint8_t* srandom2 = sh->buffer().data() + 2;
+
+  EXPECT_NE(0, memcmp(srandom2, z, random_len));
+  EXPECT_NE(0, memcmp(srandom1, srandom2, random_len));
 }
 
 // Connect to the server with TLS 1.1, signalling that this is a fallback from
@@ -361,7 +402,7 @@ TEST_F(SSLv2ClientHelloTestF, InappropriateFallbackSCSV) {
                                          TLS_FALLBACK_SCSV};
   SetAvailableCipherSuites(cipher_suites);
 
-  ConnectExpectFail();
+  ConnectExpectAlert(server_, kTlsAlertInappropriateFallback);
   EXPECT_EQ(SSL_ERROR_INAPPROPRIATE_FALLBACK_ALERT, server_->error_code());
 }
 

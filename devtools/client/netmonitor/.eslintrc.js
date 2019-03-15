@@ -5,13 +5,6 @@
 "use strict";
 
 module.exports = {
-  "env": {
-    "browser": true,
-  },
-
-  // Extend from the devtools eslintrc.
-  "extends": "../../.eslintrc.js",
-
   "rules": {
     // The netmonitor is being migrated to HTML and cleaned of
     // chrome-privileged code, so this rule disallows requiring chrome

@@ -5,7 +5,6 @@
 description: >
     Functions that throw primitive values do not satisfy the assertion.
 ---*/
-
 var threw = false;
 
 try {

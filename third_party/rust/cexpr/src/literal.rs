@@ -79,40 +79,34 @@ impl Into<Vec<u8>> for CChar {
 	}
 }
 
+/// ensures the child parser consumes the whole input
+#[macro_export]
+macro_rules! full (
+	($i: expr, $submac:ident!( $($args:tt)* )) => (
+		{
+			use ::nom_crate::lib::std::result::Result::*;
+			let res =  $submac!($i, $($args)*);
+			match res {
+				Ok((i, o)) => if i.len() == 0 {
+					Ok((i, o))
+				} else {
+					Err(::nom_crate::Err::Error(error_position!(i, ::nom_crate::ErrorKind::Custom(42))))
+				},
+				r => r,
+			}
+		}
+	);
+	($i:expr, $f:ident) => (
+		full!($i, call!($f));
+	);
+);
+
 // ====================================================
 // ======== macros that shouldn't be necessary ========
 // ====================================================
 
-fn split_off_prefix<'a,T>(full: &'a [T], suffix: &'a [T]) -> &'a [T] {
-	let n=::std::mem::size_of::<T>();
-	let start=full.as_ptr() as usize;
-	let end=start+(full.len()*n);
-	let cur=suffix.as_ptr() as usize;
-	assert!(start<=cur && cur<=end);
-	&full[..(cur-start)/n]
-}
-
-// There is a HORRIBLE BUG in nom's recognize!
-// https://github.com/Geal/nom/issues/278
-#[macro_export]
-macro_rules! my_recognize (
-  ($i:expr, $submac:ident!( $($args:tt)* )) => (
-    {
-      match $submac!($i, $($args)*) {
-        IResult::Done(i,_)     => IResult::Done(i, split_off_prefix($i,i)),
-        IResult::Error(e)      => IResult::Error(e),
-        IResult::Incomplete(i) => IResult::Incomplete(i)
-      }
-    }
-  );
-  ($i:expr, $f:expr) => (
-    my_recognize!($i, call!($f))
-  );
-);
-
-
 macro_rules! force_type (
-	($input:expr,IResult<$i:ty,$o:ty,$e:ty>) => (IResult::Error::<$i,$o,$e>(Err::Position(ErrorKind::Fix,$input)))
+	($input:expr,IResult<$i:ty,$o:ty,$e:ty>) => (Err::<($i,$o),Err<$i,$e>>(::nom_crate::Err::Error(error_position!($input, ErrorKind::Fix))))
 );
 
 
@@ -123,9 +117,9 @@ macro_rules! force_type (
 macro_rules! byte (
 	($i:expr, $($p: pat)|* ) => ({
 		match $i.split_first() {
-			$(Some((&c @ $p,rest)))|* => IResult::Done::<&[_],u8,u32>(rest,c),
-			Some(_) => IResult::Error(Err::Position(ErrorKind::OneOf,$i)),
-			None => IResult::Incomplete(Needed::Size(1)),
+			$(Some((&c @ $p,rest)))|* => Ok::<(&[_],u8),::nom_crate::Err<&[_],u32>>((rest,c)),
+			Some(_) => Err(::nom_crate::Err::Error(error_position!($i, ErrorKind::OneOf))),
+			None => Err(::nom_crate::Err::Incomplete(Needed::Size(1))),
 		}
 	})
 );
@@ -170,9 +164,9 @@ fn c_unicode_escape(n: Vec<u8>) -> Option<CChar> {
 }
 
 named!(escaped_char<CChar>,
-	preceded!(char!('\\'),alt!(
-		map!(one_of!(br#"'"?\"#),CChar::Char) |
-		map!(one_of!(b"abfnrtv"),escape2char) |
+	preceded!(complete!(char!('\\')),alt_complete!(
+		map!(one_of!(r#"'"?\"#),CChar::Char) |
+		map!(one_of!("abfnrtv"),escape2char) |
 		map_opt!(many_m_n!(1,3,octal),|v|c_raw_escape(v,8)) |
 		map_opt!(preceded!(char!('x'),many1!(hexadecimal)),|v|c_raw_escape(v,16)) |
 		map_opt!(preceded!(char!('u'),many_m_n!(4,4,hexadecimal)),c_unicode_escape) |
@@ -200,13 +194,10 @@ named!(c_char<CChar>,
 named!(c_string<Vec<u8> >,
 	delimited!(
 		alt!( preceded!(c_width_prefix,char!('"')) | char!('"') ),
-		chain!(
-			mut vec: value!(vec![]) ~
-			many0!(alt!(
-				map!(tap!(c: escaped_char => { let v: Vec<u8>=c.into(); vec.extend_from_slice(&v) } ),|_|()) |
-				map!(tap!(s: is_not!(b"\"") => vec.extend_from_slice(s) ),|_|())
-			)),
-			||{return vec}
+		fold_many0!(
+			alt!(map!(escaped_char, |c:CChar| c.into()) | map!(complete!(is_not!("\"")), |c: &[u8]| c.into())),
+			Vec::new(),
+			|mut v: Vec<u8>, res:Vec<u8>| { v.extend_from_slice(&res); v }
 		),
 		char!('"')
 	)
@@ -221,14 +212,24 @@ fn c_int_radix(n: Vec<u8>, radix: u32) -> Option<u64> {
 		.and_then(|i|u64::from_str_radix(i,radix).ok())
 }
 
+fn take_ul(input: &[u8]) -> IResult<&[u8], &[u8]> {
+	use ::nom_crate::InputTakeAtPosition;
+
+	let r = input.split_at_position(|c| c != b'u' && c != b'U' && c != b'l' && c != b'L');
+	match r {
+		Err(Err::Incomplete(_)) => Ok((&input[input.len()..], input)),
+		res => res,
+	}
+}
+
 named!(c_int<i64>,
 	map!(terminated!(alt_complete!(
-		map_opt!(preceded!(tag!("0x"),many1!(hexadecimal)),|v|c_int_radix(v,16)) |
-		map_opt!(preceded!(tag!("0b"),many1!(binary)),|v|c_int_radix(v,2)) |
-		map_opt!(preceded!(char!('0'),many1!(octal)),|v|c_int_radix(v,8)) |
-		map_opt!(many1!(decimal),|v|c_int_radix(v,10)) |
+		map_opt!(preceded!(tag!("0x"),many1!(complete!(hexadecimal))),|v|c_int_radix(v,16)) |
+		map_opt!(preceded!(tag!("0b"),many1!(complete!(binary))),|v|c_int_radix(v,2)) |
+		map_opt!(preceded!(char!('0'),many1!(complete!(octal))),|v|c_int_radix(v,8)) |
+		map_opt!(many1!(complete!(decimal)),|v|c_int_radix(v,10)) |
 		force_type!(IResult<_,_,u32>)
-	),is_a!("ulUL")),|i|i as i64)
+	),opt!(take_ul)),|i|i as i64)
 );
 
 // ==============================
@@ -236,15 +237,15 @@ named!(c_int<i64>,
 // ==============================
 
 named!(float_width<u8>,complete!(byte!(b'f' | b'l' | b'F' | b'L')));
-named!(float_exp<(Option<u8>,Vec<u8>)>,preceded!(byte!(b'e'|b'E'),pair!(opt!(byte!(b'-'|b'+')),many1!(decimal))));
+named!(float_exp<(Option<u8>,Vec<u8>)>,preceded!(byte!(b'e'|b'E'),pair!(opt!(byte!(b'-'|b'+')),many1!(complete!(decimal)))));
 
 named!(c_float<f64>,
 	map_opt!(alt!(
-		terminated!(my_recognize!(tuple!(many1!(decimal),byte!(b'.'),many0!(decimal))),opt!(float_width)) |
-		terminated!(my_recognize!(tuple!(many0!(decimal),byte!(b'.'),many1!(decimal))),opt!(float_width)) |
-		terminated!(my_recognize!(tuple!(many0!(decimal),opt!(byte!(b'.')),many1!(decimal),float_exp)),opt!(float_width)) |
-		terminated!(my_recognize!(tuple!(many1!(decimal),opt!(byte!(b'.')),many0!(decimal),float_exp)),opt!(float_width)) |
-		terminated!(my_recognize!(many1!(decimal)),float_width)
+		terminated!(recognize!(tuple!(many1!(complete!(decimal)),byte!(b'.'),many0!(complete!(decimal)))),opt!(float_width)) |
+		terminated!(recognize!(tuple!(many0!(complete!(decimal)),byte!(b'.'),many1!(complete!(decimal)))),opt!(float_width)) |
+		terminated!(recognize!(tuple!(many0!(complete!(decimal)),opt!(byte!(b'.')),many1!(complete!(decimal)),float_exp)),opt!(float_width)) |
+		terminated!(recognize!(tuple!(many1!(complete!(decimal)),opt!(byte!(b'.')),many0!(complete!(decimal)),float_exp)),opt!(float_width)) |
+		terminated!(recognize!(many1!(complete!(decimal))),float_width)
 	),|v|str::from_utf8(v).ok().and_then(|i|f64::from_str(i).ok()))
 );
 
@@ -254,10 +255,10 @@ named!(c_float<f64>,
 
 named!(one_literal<&[u8],EvalResult,::Error>,
 	fix_error!(::Error,alt_complete!(
-		map!(c_char,EvalResult::Char) |
-		map!(c_int,|i|EvalResult::Int(::std::num::Wrapping(i))) |
-		map!(c_float,EvalResult::Float) |
-		map!(c_string,EvalResult::Str)
+		map!(full!(c_char),EvalResult::Char) |
+		map!(full!(c_int),|i|EvalResult::Int(::std::num::Wrapping(i))) |
+		map!(full!(c_float),EvalResult::Float) |
+		map!(full!(c_string),EvalResult::Str)
 	))
 );
 

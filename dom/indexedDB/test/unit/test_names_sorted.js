@@ -31,14 +31,12 @@ function* testSteps()
                       db.createObjectStore(info.name);
 
     // Test index creation, and that it ends up in indexNames.
-    let objectStoreName = info.name;
     for (let j = 0; j < indexInfo.length; j++) {
       let info = indexInfo[j];
-      let count = objectStore.indexNames.length;
-      let index = info.hasOwnProperty("options") ?
-                  objectStore.createIndex(info.name, info.keyPath,
-                                          info.options) :
-                  objectStore.createIndex(info.name, info.keyPath);
+      info.hasOwnProperty("options") ?
+        objectStore.createIndex(info.name, info.keyPath,
+                                info.options) :
+        objectStore.createIndex(info.name, info.keyPath);
     }
   }
 
@@ -47,7 +45,7 @@ function* testSteps()
 
   event = yield undefined;
 
-  let objectStoreNames = []
+  let objectStoreNames = [];
   for (let i = 0; i < objectStoreInfo.length; i++) {
     let info = objectStoreInfo[i];
     objectStoreNames.push(info.name);
@@ -67,7 +65,7 @@ function* testSteps()
   let trans = db.transaction(objectStoreNames);
   for (let i = 0; i < objectStoreInfo.length; i++) {
     let info = objectStoreInfo[i];
-  
+
     is(trans.objectStoreNames[info.location], info.name,
        "Got objectStore name in the right location");
   }
@@ -82,7 +80,7 @@ function* testSteps()
 
   db = event.target.result;
 
-  objectStoreNames = []
+  objectStoreNames = [];
   for (let i = 0; i < objectStoreInfo.length; i++) {
     let info = objectStoreInfo[i];
     objectStoreNames.push(info.name);
@@ -102,7 +100,7 @@ function* testSteps()
   trans = db.transaction(objectStoreNames);
   for (let i = 0; i < objectStoreInfo.length; i++) {
     let info = objectStoreInfo[i];
-  
+
     is(trans.objectStoreNames[info.location], info.name,
        "Got objectStore name in the right location");
   }

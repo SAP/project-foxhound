@@ -1430,7 +1430,7 @@ module.exports = {
       "numberValue": {
         "!type": "number",
         "!url": "https://developer.mozilla.org/en/docs/XPathResult",
-        "!doc": "Refer to nsIDOMXPathResult for more detail."
+        "!doc": "Refer to XPathResult for more detail."
       },
       "resultType": {
         "!type": "number",
@@ -1445,7 +1445,7 @@ module.exports = {
       "snapshotLength": {
         "!type": "number",
         "!url": "https://developer.mozilla.org/en/docs/XPathResult",
-        "!doc": "Refer to nsIDOMXPathResult for more detail."
+        "!doc": "Refer to XPathResult for more detail."
       },
       "stringValue": {
         "!type": "string",
@@ -1473,7 +1473,7 @@ module.exports = {
       "FIRST_ORDERED_NODE_TYPE": "number"
     },
     "!url": "https://developer.mozilla.org/en/docs/XPathResult",
-    "!doc": "Refer to nsIDOMXPathResult for more detail."
+    "!doc": "Refer to XPathResult for more detail."
   },
   "ClientRect": {
     "!type": "fn()",
@@ -1694,7 +1694,7 @@ module.exports = {
     "!type": "fn()",
     "prototype": "Event.prototype",
     "!url": "https://developer.mozilla.org/en/docs/DOM/MouseEvent",
-    "!doc": "The DOM MouseEvent represents events that occur due to the user interacting with a pointing device (such as a mouse). It's represented by the nsINSDOMMouseEvent interface, which extends the nsIDOMMouseEvent interface."
+    "!doc": "The DOM MouseEvent represents events that occur due to the user interacting with a pointing device (such as a mouse)."
   },
   "KeyboardEvent": {
     "!type": "fn()",
@@ -1878,11 +1878,6 @@ module.exports = {
         "!type": "number",
         "!url": "https://developer.mozilla.org/en/docs/DOM/File.fileSize",
         "!doc": "Returns the size of a file in bytes."
-      },
-      "lastModifiedDate": {
-        "!type": "?",
-        "!url": "https://developer.mozilla.org/en/docs/DOM/File.lastModifiedDate",
-        "!doc": "Returns the last modified date of the file. Files without a known last modified date use the current date instead."
       },
       "name": {
         "!type": "string",

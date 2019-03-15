@@ -7,28 +7,35 @@
 #define nsCoreUtils_h_
 
 #include "mozilla/EventForwards.h"
+#include "mozilla/dom/Element.h"
 #include "nsIAccessibleEvent.h"
 #include "nsIContent.h"
-#include "nsIDocument.h" // for GetShell()
+#include "mozilla/dom/Document.h"  // for GetShell()
 #include "nsIPresShell.h"
 
 #include "nsPoint.h"
 #include "nsTArray.h"
 
 class nsRange;
+class nsTreeColumn;
 class nsIBoxObject;
 class nsIFrame;
 class nsIDocShell;
-class nsITreeColumn;
-class nsITreeBoxObject;
 class nsIWidget;
+
+namespace mozilla {
+namespace dom {
+class XULTreeElement;
+}
+}  // namespace mozilla
 
 /**
  * Core utils.
  */
-class nsCoreUtils
-{
-public:
+class nsCoreUtils {
+ public:
+  typedef mozilla::dom::Document Document;
+
   /**
    * Return true if the given node is a label of a control.
    */
@@ -43,15 +50,15 @@ public:
   /**
    * Dispatch click event to XUL tree cell.
    *
-   * @param  aTreeBoxObj  [in] tree box object
+   * @param  aTree        [in] tree
    * @param  aRowIndex    [in] row index
    * @param  aColumn      [in] column object
-   * @param  aPseudoElm   [in] pseudo elemenet inside the cell, see
+   * @param  aPseudoElm   [in] pseudo element inside the cell, see
    *                       nsITreeBoxObject for available values
    */
-  static void DispatchClickEvent(nsITreeBoxObject *aTreeBoxObj,
-                                 int32_t aRowIndex, nsITreeColumn *aColumn,
-                                 const nsAString& aPseudoElt = EmptyString());
+  static void DispatchClickEvent(mozilla::dom::XULTreeElement *aTree,
+                                 int32_t aRowIndex, nsTreeColumn *aColumn,
+                                 const nsAString &aPseudoElt = EmptyString());
 
   /**
    * Send mouse event to the given element.
@@ -64,10 +71,10 @@ public:
    * @param aPresShell   [in] the presshell for the element
    * @param aRootWidget  [in] the root widget of the element
    */
-  static void DispatchMouseEvent(mozilla::EventMessage aMessage,
-                                 int32_t aX, int32_t aY,
-                                 nsIContent *aContent, nsIFrame *aFrame,
-                                 nsIPresShell *aPresShell, nsIWidget *aRootWidget);
+  static void DispatchMouseEvent(mozilla::EventMessage aMessage, int32_t aX,
+                                 int32_t aY, nsIContent *aContent,
+                                 nsIFrame *aFrame, nsIPresShell *aPresShell,
+                                 nsIWidget *aRootWidget);
 
   /**
    * Send a touch event with a single touch point to the given element.
@@ -80,10 +87,10 @@ public:
    * @param aPresShell   [in] the presshell for the element
    * @param aRootWidget  [in] the root widget of the element
    */
-  static void DispatchTouchEvent(mozilla::EventMessage aMessage,
-                                 int32_t aX, int32_t aY,
-                                 nsIContent* aContent, nsIFrame* aFrame,
-                                 nsIPresShell* aPresShell, nsIWidget* aRootWidget);
+  static void DispatchTouchEvent(mozilla::EventMessage aMessage, int32_t aX,
+                                 int32_t aY, nsIContent *aContent,
+                                 nsIFrame *aFrame, nsIPresShell *aPresShell,
+                                 nsIWidget *aRootWidget);
 
   /**
    * Return an accesskey registered on the given element by
@@ -101,7 +108,7 @@ public:
    *
    * @param aNode  [in] the given DOM node
    */
-  static nsIContent* GetDOMElementFor(nsIContent *aContent);
+  static nsIContent *GetDOMElementFor(nsIContent *aContent);
 
   /**
    * Return DOM node for the given DOM point.
@@ -121,9 +128,9 @@ public:
    * @return true                     if aPossibleAncestorNode is an ancestor of
    *                                   aPossibleDescendantNode
    */
-   static bool IsAncestorOf(nsINode *aPossibleAncestorNode,
-                              nsINode *aPossibleDescendantNode,
-                              nsINode *aRootNode = nullptr);
+  static bool IsAncestorOf(nsINode *aPossibleAncestorNode,
+                           nsINode *aPossibleDescendantNode,
+                           nsINode *aRootNode = nullptr);
 
   /**
    * Helper method to scroll range into view, used for implementation of
@@ -133,7 +140,7 @@ public:
    * @param aRange    the range to scroll to
    * @param aScrollType   the place a range should be scrolled to
    */
-  static nsresult ScrollSubstringTo(nsIFrame* aFrame, nsRange* aRange,
+  static nsresult ScrollSubstringTo(nsIFrame *aFrame, nsRange *aRange,
                                     uint32_t aScrollType);
 
   /** Helper method to scroll range into view, used for implementation of
@@ -141,10 +148,12 @@ public:
    *
    * @param aFrame        the frame for accessible the range belongs to.
    * @param aRange    the range to scroll to
-   * @param aVertical     how to align vertically, specified in percents, and when.
-   * @param aHorizontal     how to align horizontally, specified in percents, and when.
+   * @param aVertical     how to align vertically, specified in percents, and
+   * when.
+   * @param aHorizontal     how to align horizontally, specified in percents,
+   * and when.
    */
-  static nsresult ScrollSubstringTo(nsIFrame* aFrame, nsRange* aRange,
+  static nsresult ScrollSubstringTo(nsIFrame *aFrame, nsRange *aRange,
                                     nsIPresShell::ScrollAxis aVertical,
                                     nsIPresShell::ScrollAxis aHorizontal);
 
@@ -156,16 +165,16 @@ public:
    * @param aFrame            the frame to scroll
    * @param aPoint            the point scroll to
    */
-  static void ScrollFrameToPoint(nsIFrame *aScrollableFrame,
-                                 nsIFrame *aFrame, const nsIntPoint& aPoint);
+  static void ScrollFrameToPoint(nsIFrame *aScrollableFrame, nsIFrame *aFrame,
+                                 const nsIntPoint &aPoint);
 
   /**
    * Converts scroll type constant defined in nsIAccessibleScrollType to
    * vertical and horizontal parameters.
    */
-  static void ConvertScrollTypeToPercents(uint32_t aScrollType,
-                                          nsIPresShell::ScrollAxis *aVertical,
-                                          nsIPresShell::ScrollAxis *aHorizontal);
+  static void ConvertScrollTypeToPercents(
+      uint32_t aScrollType, nsIPresShell::ScrollAxis *aVertical,
+      nsIPresShell::ScrollAxis *aHorizontal);
 
   /**
    * Returns coordinates in device pixels relative screen for the top level
@@ -183,45 +192,44 @@ public:
   /**
    * Return true if the given document is root document.
    */
-  static bool IsRootDocument(nsIDocument *aDocument);
+  static bool IsRootDocument(Document *aDocument);
 
   /**
    * Return true if the given document is content document (not chrome).
    */
-  static bool IsContentDocument(nsIDocument *aDocument);
+  static bool IsContentDocument(Document *aDocument);
 
   /**
    * Return true if the given document node is for tab document accessible.
    */
-  static bool IsTabDocument(nsIDocument* aDocumentNode);
+  static bool IsTabDocument(Document *aDocumentNode);
 
   /**
    * Return true if the given document is an error page.
    */
-  static bool IsErrorPage(nsIDocument *aDocument);
+  static bool IsErrorPage(Document *aDocument);
 
   /**
    * Return presShell for the document containing the given DOM node.
    */
-  static nsIPresShell *GetPresShellFor(nsINode *aNode)
-  {
+  static nsIPresShell *GetPresShellFor(nsINode *aNode) {
     return aNode->OwnerDoc()->GetShell();
   }
 
   /**
-   * Get the ID for an element, in some types of XML this may not be the ID attribute
+   * Get the ID for an element, in some types of XML this may not be the ID
+   * attribute
    * @param aContent  Node to get the ID for
    * @param aID       Where to put ID string
    * @return          true if there is an ID set for this node
    */
-  static bool GetID(nsIContent *aContent, nsAString& aID);
+  static bool GetID(nsIContent *aContent, nsAString &aID);
 
   /**
    * Convert attribute value of the given node to positive integer. If no
    * attribute or wrong value then false is returned.
    */
-  static bool GetUIntAttr(nsIContent *aContent, nsIAtom *aAttr,
-                          int32_t* aUInt);
+  static bool GetUIntAttr(nsIContent *aContent, nsAtom *aAttr, int32_t *aUInt);
 
   /**
    * Returns language for the given node.
@@ -231,67 +239,66 @@ public:
    * @param aLanguage    [out] language
    */
   static void GetLanguageFor(nsIContent *aContent, nsIContent *aRootContent,
-                             nsAString& aLanguage);
+                             nsAString &aLanguage);
 
   /**
-   * Return box object for XUL treechildren element by tree box object.
+   * Return box object for XUL treechildren element of the given tree.
    */
-  static already_AddRefed<nsIBoxObject>
-    GetTreeBodyBoxObject(nsITreeBoxObject *aTreeBoxObj);
+  static already_AddRefed<nsIBoxObject> GetTreeBodyBoxObject(
+      mozilla::dom::XULTreeElement *aTree);
 
   /**
-   * Return tree box object from any levels DOMNode under the XUL tree.
+   * Return tree from any levels DOMNode under the XUL tree.
    */
-  static already_AddRefed<nsITreeBoxObject>
-    GetTreeBoxObject(nsIContent* aContent);
+  static mozilla::dom::XULTreeElement *GetTree(nsIContent *aContent);
 
   /**
    * Return first sensible column for the given tree box object.
    */
-  static already_AddRefed<nsITreeColumn>
-    GetFirstSensibleColumn(nsITreeBoxObject *aTree);
+  static already_AddRefed<nsTreeColumn> GetFirstSensibleColumn(
+      mozilla::dom::XULTreeElement *aTree);
 
   /**
    * Return sensible columns count for the given tree box object.
    */
-  static uint32_t GetSensibleColumnCount(nsITreeBoxObject *aTree);
+  static uint32_t GetSensibleColumnCount(mozilla::dom::XULTreeElement *aTree);
 
   /**
    * Return sensible column at the given index for the given tree box object.
    */
-  static already_AddRefed<nsITreeColumn>
-    GetSensibleColumnAt(nsITreeBoxObject *aTree, uint32_t aIndex);
+  static already_AddRefed<nsTreeColumn> GetSensibleColumnAt(
+      mozilla::dom::XULTreeElement *aTree, uint32_t aIndex);
 
   /**
    * Return next sensible column for the given column.
    */
-  static already_AddRefed<nsITreeColumn>
-    GetNextSensibleColumn(nsITreeColumn *aColumn);
+  static already_AddRefed<nsTreeColumn> GetNextSensibleColumn(
+      nsTreeColumn *aColumn);
 
   /**
    * Return previous sensible column for the given column.
    */
-  static already_AddRefed<nsITreeColumn>
-    GetPreviousSensibleColumn(nsITreeColumn *aColumn);
+  static already_AddRefed<nsTreeColumn> GetPreviousSensibleColumn(
+      nsTreeColumn *aColumn);
 
   /**
    * Return true if the given column is hidden (i.e. not sensible).
    */
-  static bool IsColumnHidden(nsITreeColumn *aColumn);
+  static bool IsColumnHidden(nsTreeColumn *aColumn);
 
   /**
    * Scroll content into view.
    */
-  static void ScrollTo(nsIPresShell* aPresShell, nsIContent* aContent,
+  static void ScrollTo(nsIPresShell *aPresShell, nsIContent *aContent,
                        uint32_t aScrollType);
 
   /**
    * Return true if the given node is table header element.
    */
-  static bool IsHTMLTableHeader(nsIContent *aContent)
-  {
+  static bool IsHTMLTableHeader(nsIContent *aContent) {
     return aContent->NodeInfo()->Equals(nsGkAtoms::th) ||
-      aContent->HasAttr(kNameSpaceID_None, nsGkAtoms::scope);
+           (aContent->IsElement() && aContent->AsElement()->HasAttr(
+                                         kNameSpaceID_None, nsGkAtoms::scope));
   }
 
   /**
@@ -299,15 +306,14 @@ public:
    * only. In contrast to nsWhitespaceTokenizer class it takes into account
    * non-breaking space (0xa0).
    */
-  static bool IsWhitespaceString(const nsSubstring& aString);
+  static bool IsWhitespaceString(const nsAString &aString);
 
   /**
    * Returns true if the given character is whitespace symbol.
    */
-  static bool IsWhitespace(char16_t aChar)
-  {
-    return aChar == ' ' || aChar == '\n' ||
-      aChar == '\r' || aChar == '\t' || aChar == 0xa0;
+  static bool IsWhitespace(char16_t aChar) {
+    return aChar == ' ' || aChar == '\n' || aChar == '\r' || aChar == '\t' ||
+           aChar == 0xa0;
   }
 
   /*
@@ -319,11 +325,6 @@ public:
    * Notify accessible event observers of an event.
    */
   static void DispatchAccEvent(RefPtr<nsIAccessibleEvent> aEvent);
-
-  /**
-   * Return a role attribute on XBL bindings of the element.
-   */
-  static void XBLBindingRole(const nsIContent* aEl, nsAString& aRole);
 };
 
 #endif

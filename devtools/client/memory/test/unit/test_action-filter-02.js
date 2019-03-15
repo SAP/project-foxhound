@@ -5,21 +5,17 @@
 
 // Test that changing filter state properly refreshes the selected census.
 
-let { viewState, censusState } = require("devtools/client/memory/constants");
-let { setFilterStringAndRefresh } = require("devtools/client/memory/actions/filter");
-let { takeSnapshotAndCensus, selectSnapshotAndRefresh } = require("devtools/client/memory/actions/snapshot");
-let { changeView } = require("devtools/client/memory/actions/view");
+const { viewState, censusState } = require("devtools/client/memory/constants");
+const { setFilterStringAndRefresh } = require("devtools/client/memory/actions/filter");
+const { takeSnapshotAndCensus, selectSnapshotAndRefresh } = require("devtools/client/memory/actions/snapshot");
+const { changeView } = require("devtools/client/memory/actions/view");
 
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* () {
-  let front = new StubbedMemoryFront();
-  let heapWorker = new HeapAnalysesClient();
-  yield front.attach();
-  let store = Store();
-  let { getState, dispatch } = store;
+add_task(async function() {
+  const front = new StubbedMemoryFront();
+  const heapWorker = new HeapAnalysesClient();
+  await front.attach();
+  const store = Store();
+  const { getState, dispatch } = store;
 
   dispatch(changeView(viewState.CENSUS));
 
@@ -29,18 +25,18 @@ add_task(function* () {
   dispatch(takeSnapshotAndCensus(front, heapWorker));
   dispatch(takeSnapshotAndCensus(front, heapWorker));
 
-  yield waitUntilCensusState(store, snapshot => snapshot.census,
+  await waitUntilCensusState(store, snapshot => snapshot.census,
                              [censusState.SAVED, censusState.SAVED, censusState.SAVED]);
   ok(true, "saved 3 snapshots and took a census of each of them");
 
   dispatch(setFilterStringAndRefresh("str", heapWorker));
-  yield waitUntilCensusState(store, snapshot => snapshot.census,
+  await waitUntilCensusState(store, snapshot => snapshot.census,
                              [censusState.SAVED, censusState.SAVED, censusState.SAVING]);
   ok(true, "setting filter string should recompute the selected snapshot's census");
 
   equal(getState().filter, "str", "now inverted");
 
-  yield waitUntilCensusState(store, snapshot => snapshot.census,
+  await waitUntilCensusState(store, snapshot => snapshot.census,
                              [censusState.SAVED, censusState.SAVED, censusState.SAVED]);
 
   equal(getState().snapshots[0].census.filter, null);
@@ -48,11 +44,11 @@ add_task(function* () {
   equal(getState().snapshots[2].census.filter, "str");
 
   dispatch(selectSnapshotAndRefresh(heapWorker, getState().snapshots[1].id));
-  yield waitUntilCensusState(store, snapshot => snapshot.census,
+  await waitUntilCensusState(store, snapshot => snapshot.census,
                              [censusState.SAVED, censusState.SAVING, censusState.SAVED]);
   ok(true, "selecting non-inverted census should trigger a recompute");
 
-  yield waitUntilCensusState(store, snapshot => snapshot.census,
+  await waitUntilCensusState(store, snapshot => snapshot.census,
                              [censusState.SAVED, censusState.SAVED, censusState.SAVED]);
 
   equal(getState().snapshots[0].census.filter, null);
@@ -60,5 +56,5 @@ add_task(function* () {
   equal(getState().snapshots[2].census.filter, "str");
 
   heapWorker.destroy();
-  yield front.detach();
+  await front.detach();
 });

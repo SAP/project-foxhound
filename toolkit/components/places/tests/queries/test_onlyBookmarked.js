@@ -20,6 +20,7 @@ var testData = [
   // Add a bookmark that should be in the results
   { isBookmark: true,
     uri: "http://bookmarked.com/",
+    title: "",
     parentGuid: PlacesUtils.bookmarks.toolbarGuid,
     index: PlacesUtils.bookmarks.DEFAULT_INDEX,
     isInQuery: true },
@@ -27,6 +28,7 @@ var testData = [
   // Add a bookmark that should not be in the results
   { isBookmark: true,
     uri: "http://bookmarked-elsewhere.com/",
+    title: "",
     parentGuid: PlacesUtils.bookmarks.menuGuid,
     index: PlacesUtils.bookmarks.DEFAULT_INDEX,
     isInQuery: false },
@@ -34,26 +36,18 @@ var testData = [
   // Add an un-bookmarked visit
   { isVisit: true,
     uri: "http://notbookmarked.com/",
-    isInQuery: false }
+    title: "",
+    isInQuery: false },
 ];
 
 
-/**
- * run_test is where the magic happens.  This is automatically run by the test
- * harness.  It is where you do the work of creating the query, running it, and
- * playing with the result set.
- */
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* test_onlyBookmarked() {
+add_task(async function test_onlyBookmarked() {
   // This function in head_queries.js creates our database with the above data
-  yield task_populateDB(testData);
+  await task_populateDB(testData);
 
   // Query
   var query = PlacesUtils.history.getNewQuery();
-  query.setFolders([PlacesUtils.toolbarFolderId], 1);
+  query.setParents([PlacesUtils.bookmarks.toolbarGuid], 1);
   query.onlyBookmarked = true;
 
   // query options
@@ -68,15 +62,16 @@ add_task(function* test_onlyBookmarked() {
   // You can use this to compare the data in the array with the result set,
   // if the array's isInQuery: true items are sorted the same way as the result
   // set.
-  do_print("begin first test");
+  info("begin first test");
   compareArrayToResult(testData, root);
-  do_print("end first test");
+  info("end first test");
 
   // Test live-update
   var liveUpdateTestData = [
     // Add a bookmark that should show up
     { isBookmark: true,
       uri: "http://bookmarked2.com/",
+      title: "",
       parentGuid: PlacesUtils.bookmarks.toolbarGuid,
       index: PlacesUtils.bookmarks.DEFAULT_INDEX,
       isInQuery: true },
@@ -84,43 +79,23 @@ add_task(function* test_onlyBookmarked() {
     // Add a bookmark that should not show up
     { isBookmark: true,
       uri: "http://bookmarked-elsewhere2.com/",
+      title: "",
       parentGuid: PlacesUtils.bookmarks.menuGuid,
       index: PlacesUtils.bookmarks.DEFAULT_INDEX,
-      isInQuery: false }
+      isInQuery: false },
   ];
 
-  yield task_populateDB(liveUpdateTestData); // add to the db
+  await task_populateDB(liveUpdateTestData); // add to the db
 
   // add to the test data
   testData.push(liveUpdateTestData[0]);
   testData.push(liveUpdateTestData[1]);
 
   // re-query and test
-  do_print("begin live-update test");
+  info("begin live-update test");
   compareArrayToResult(testData, root);
-  do_print("end live-update test");
-/*
-  // we are actually not updating during a batch.
-  // see bug 432706 for details.
+  info("end live-update test");
 
-  // Here's a batch update
-  var updateBatch = {
-    runBatched: function (aUserData) {
-      liveUpdateTestData[0].uri = "http://bookmarked3.com";
-      liveUpdateTestData[1].uri = "http://bookmarked-elsewhere3.com";
-      populateDB(liveUpdateTestData);
-      testData.push(liveUpdateTestData[0]);
-      testData.push(liveUpdateTestData[1]);
-    }
-  };
-
-  PlacesUtils.history.runInBatchMode(updateBatch, null);
-
-  // re-query and test
-  do_print("begin batched test");
-  compareArrayToResult(testData, root);
-  do_print("end batched test");
-*/
   // Close the container when finished
   root.containerOpen = false;
 });

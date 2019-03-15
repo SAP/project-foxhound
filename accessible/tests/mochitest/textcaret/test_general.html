@@ -18,31 +18,25 @@
     /**
      * Turn on/off the caret browsing mode.
      */
-    function turnCaretBrowsing(aIsOn)
-    {
-      var prefs = Components.classes["@mozilla.org/preferences-service;1"].
-        getService(Components.interfaces.nsIPrefBranch);
-      prefs.setBoolPref("accessibility.browsewithcaret", aIsOn);
+    function turnCaretBrowsing(aIsOn) {
+      Services.prefs.setBoolPref("accessibility.browsewithcaret", aIsOn);
     }
 
     /**
      * Test caret offset for the given accessible.
      */
-    function testCaretOffset(aID, aCaretOffset)
-    {
+    function testCaretOffset(aID, aCaretOffset) {
       var acc = getAccessible(aID, [nsIAccessibleText]);
       is(acc.caretOffset, aCaretOffset,
          "Wrong caret offset for " + aID);
     }
 
-    function testCaretOffsets(aList)
-    {
+    function testCaretOffsets(aList) {
       for (var i = 0; i < aList.length; i++)
         testCaretOffset(aList[0][0], aList[0][1]);
     }
 
-    function queueTraversalList(aList, aFocusNode)
-    {
+    function queueTraversalList(aList, aFocusNode) {
       for (var i = 0 ; i < aList.length; i++) {
         var node = aList[i].DOMPoint[0];
         var nodeOffset = aList[i].DOMPoint[1];
@@ -53,7 +47,7 @@
         var invoker =
           new moveCaretToDOMPoint(textAcc, node, nodeOffset, textOffset,
                                   ((i == 0) ? aFocusNode : null),
-                                  testCaretOffsets.bind(null, textList))
+                                  testCaretOffsets.bind(null, textList));
         gQueue.push(invoker);
       }
     }
@@ -63,15 +57,14 @@
      */
     var gQueue = null;
 
-    //gA11yEventDumpID = "eventdump"; // debug stuff
-    //gA11yEventDumpToConsole = true;
+    // gA11yEventDumpID = "eventdump"; // debug stuff
+    // gA11yEventDumpToConsole = true;
 
-    function doTests()
-    {
+    function doTests() {
       turnCaretBrowsing(true);
 
       // test caret offsets
-      testCaretOffset(document, 16);
+      testCaretOffset(document, 15);
       testCaretOffset("textbox", -1);
       testCaretOffset("textarea", -1);
       testCaretOffset("p", -1);
@@ -89,46 +82,45 @@
         { // before 'a'
           DOMPoint: [ getNode("p2", p2Doc).firstChild, 0 ],
           point: [ getNode("p2", p2Doc), 0 ],
-          pointList: [ [ p2Doc, 0 ] ]
+          pointList: [ [ p2Doc, 0 ] ],
         },
         { // after 'a' (before anchor)
           DOMPoint: [ getNode("p2", p2Doc).firstChild, 1 ],
           point: [ getNode("p2", p2Doc), 1 ],
-          pointList: [ [ p2Doc, 0 ] ]
+          pointList: [ [ p2Doc, 0 ] ],
         },
         { // before 'b' (inside anchor)
           DOMPoint: [ getNode("p2_a", p2Doc).firstChild, 0 ],
           point: [ getNode("p2_a", p2Doc), 0 ],
           pointList: [
             [ getNode("p2", p2Doc), 1 ],
-            [ p2Doc, 0 ]
-          ]
+            [ p2Doc, 0 ],
+          ],
         },
         { // after 'b' (inside anchor)
           DOMPoint: [ getNode("p2_a", p2Doc).firstChild, 1 ],
           point: [ getNode("p2_a", p2Doc), 1 ],
           pointList: [
-            [ getNode("p2", p2Doc), 1 ] ,
-            [ p2Doc, 0 ]
-          ]
+            [ getNode("p2", p2Doc), 1 ],
+            [ p2Doc, 0 ],
+          ],
         },
         { // before 'c' (after anchor)
           DOMPoint: [ getNode("p2", p2Doc).lastChild, 0 ],
           point: [ getNode("p2", p2Doc), 2 ],
-          pointList: [ [ p2Doc, 0 ] ]
+          pointList: [ [ p2Doc, 0 ] ],
         },
         { // after 'c'
           DOMPoint: [ getNode("p2", p2Doc).lastChild, 1 ],
           point: [ getNode("p2", p2Doc), 3 ],
-          pointList: [ [ p2Doc, 0 ] ]
-        }
+          pointList: [ [ p2Doc, 0 ] ],
+        },
       ];
       queueTraversalList(traversalList, getNode("p2", p2Doc));
 
-      gQueue.onFinish = function()
-      {
+      gQueue.onFinish = function() {
         turnCaretBrowsing(false);
-      }
+      };
 
       gQueue.invoke(); // Will call SimpleTest.finish();
     }
@@ -173,7 +165,7 @@
   <input id="textbox" value="hello"/>
   <textarea id="textarea">text<br>text</textarea>
   <p id="p" contentEditable="true"><span>text</span><br/>text</p>
-  <a id="link" href="about:">about mozilla</a>
+  <a id="link" href="about:mozilla">about mozilla</a>
   <h5 id="heading">heading</h5>
   <iframe id="p2_container"
           src="data:text/html,<p id='p2' contentEditable='true'>a<a id='p2_a' href='mozilla.org'>b</a>c</p>"></iframe>

@@ -6,19 +6,17 @@
 #define BASE_THREADING_THREAD_RESTRICTIONS_H_
 
 #include "base/base_export.h"
+#include "base/logging.h"
 #include "base/macros.h"
-
-// See comment at top of thread_checker.h
-#if (!defined(NDEBUG) || defined(DCHECK_ALWAYS_ON))
-#define ENABLE_THREAD_RESTRICTIONS 1
-#else
-#define ENABLE_THREAD_RESTRICTIONS 0
-#endif
 
 class BrowserProcessImpl;
 class HistogramSynchronizer;
 class NativeBackendKWallet;
-class ScopedAllowWaitForLegacyWebViewApi;
+
+namespace android_webview {
+class AwFormDatabaseService;
+class CookieManager;
+}
 
 namespace cc {
 class CompletionEvent;
@@ -36,15 +34,19 @@ class Predictor;
 namespace content {
 class BrowserGpuChannelHostFactory;
 class BrowserGpuMemoryBufferManager;
+class BrowserMainLoop;
 class BrowserShutdownProfileDumper;
+class BrowserSurfaceViewManager;
 class BrowserTestBase;
-class GpuChannelHost;
+class CategorizedWorkerPool;
 class NestedMessagePumpAndroid;
 class ScopedAllowWaitForAndroidLayoutTests;
 class ScopedAllowWaitForDebugURL;
 class SoftwareOutputDeviceMus;
+class SynchronousCompositor;
+class SynchronousCompositorBrowserFilter;
+class SynchronousCompositorHost;
 class TextInputClientMac;
-class RasterWorkerPool;
 }  // namespace content
 namespace dbus {
 class Bus;
@@ -53,15 +55,17 @@ namespace disk_cache {
 class BackendImpl;
 class InFlightIO;
 }
-namespace gles2 {
-class CommandBufferClientImpl;
+namespace gpu {
+class GpuChannelHost;
 }
 namespace mojo {
-namespace common {
-class MessagePumpMojo;
+class SyncCallRestrictions;
+namespace edk {
+class ScopedIPCSupport;
 }
 }
-namespace mus {
+namespace ui {
+class CommandBufferClientImpl;
 class CommandBufferLocal;
 class GpuState;
 }
@@ -81,7 +85,11 @@ class WindowResizeHelperMac;
 }
 
 namespace views {
-class WindowManagerConnection;
+class ScreenMus;
+}
+
+namespace viz {
+class ServerGpuMemoryBufferManager;
 }
 
 namespace base {
@@ -90,8 +98,13 @@ namespace android {
 class JavaHandlerThread;
 }
 
+namespace internal {
+class TaskTracker;
+}
+
 class SequencedWorkerPool;
 class SimpleThread;
+class StackSamplingProfiler;
 class Thread;
 class ThreadTestHelper;
 
@@ -106,7 +119,8 @@ class ThreadTestHelper;
 // 1) If a thread should not be allowed to make IO calls, mark it:
 //      base::ThreadRestrictions::SetIOAllowed(false);
 //    By default, threads *are* allowed to make IO calls.
-//    In Chrome browser code, IO calls should be proxied to the File thread.
+//    In Chrome browser code, IO calls should be proxied to a TaskRunner with
+//    the base::MayBlock() trait.
 //
 // 2) If a function makes a call that will go out to disk, check whether the
 //    current thread is allowed:
@@ -135,21 +149,7 @@ class BASE_EXPORT ThreadRestrictions {
     DISALLOW_COPY_AND_ASSIGN(ScopedAllowIO);
   };
 
-  // Constructing a ScopedAllowSingleton temporarily allows accessing for the
-  // current thread.  Doing this is almost always incorrect.
-  class BASE_EXPORT ScopedAllowSingleton {
-   public:
-    ScopedAllowSingleton() { previous_value_ = SetSingletonAllowed(true); }
-    ~ScopedAllowSingleton() { SetSingletonAllowed(previous_value_); }
-   private:
-    // Whether singleton use is allowed when the ScopedAllowSingleton was
-    // constructed.
-    bool previous_value_;
-
-    DISALLOW_COPY_AND_ASSIGN(ScopedAllowSingleton);
-  };
-
-#if ENABLE_THREAD_RESTRICTIONS
+#if DCHECK_IS_ON()
   // Set whether the current thread to make IO calls.
   // Threads start out in the *allowed* state.
   // Returns the previous value.
@@ -188,16 +188,24 @@ class BASE_EXPORT ThreadRestrictions {
  private:
   // DO NOT ADD ANY OTHER FRIEND STATEMENTS, talk to jam or brettw first.
   // BEGIN ALLOWED USAGE.
+  friend class android_webview::AwFormDatabaseService;
+  friend class android_webview::CookieManager;
+  friend class base::StackSamplingProfiler;
+  friend class content::BrowserMainLoop;
   friend class content::BrowserShutdownProfileDumper;
+  friend class content::BrowserSurfaceViewManager;
   friend class content::BrowserTestBase;
   friend class content::NestedMessagePumpAndroid;
   friend class content::ScopedAllowWaitForAndroidLayoutTests;
   friend class content::ScopedAllowWaitForDebugURL;
+  friend class content::SynchronousCompositor;
+  friend class content::SynchronousCompositorBrowserFilter;
+  friend class content::SynchronousCompositorHost;
   friend class ::HistogramSynchronizer;
-  friend class ::ScopedAllowWaitForLegacyWebViewApi;
+  friend class internal::TaskTracker;
   friend class cc::CompletionEvent;
   friend class cc::SingleThreadTaskGraphRunner;
-  friend class content::RasterWorkerPool;
+  friend class content::CategorizedWorkerPool;
   friend class remoting::AutoThread;
   friend class ui::WindowResizeHelperMac;
   friend class MessagePumpDefault;
@@ -207,10 +215,11 @@ class BASE_EXPORT ThreadRestrictions {
   friend class ThreadTestHelper;
   friend class PlatformThread;
   friend class android::JavaHandlerThread;
-  friend class gles2::CommandBufferClientImpl;
-  friend class mojo::common::MessagePumpMojo;
-  friend class mus::CommandBufferLocal;
-  friend class mus::GpuState;
+  friend class mojo::SyncCallRestrictions;
+  friend class mojo::edk::ScopedIPCSupport;
+  friend class ui::CommandBufferClientImpl;
+  friend class ui::CommandBufferLocal;
+  friend class ui::GpuState;
 
   // END ALLOWED USAGE.
   // BEGIN USAGE THAT NEEDS TO BE FIXED.
@@ -221,11 +230,11 @@ class BASE_EXPORT ThreadRestrictions {
       content::BrowserGpuChannelHostFactory;      // http://crbug.com/125248
   friend class
       content::BrowserGpuMemoryBufferManager;     // http://crbug.com/420368
-  friend class content::GpuChannelHost;           // http://crbug.com/125264
   friend class content::TextInputClientMac;       // http://crbug.com/121917
   friend class dbus::Bus;                         // http://crbug.com/125222
   friend class disk_cache::BackendImpl;           // http://crbug.com/74623
   friend class disk_cache::InFlightIO;            // http://crbug.com/74623
+  friend class gpu::GpuChannelHost;               // http://crbug.com/125264
   friend class net::internal::AddressTrackerLinux;  // http://crbug.com/125097
   friend class net::NetworkChangeNotifierMac;     // http://crbug.com/125097
   friend class ::BrowserProcessImpl;              // http://crbug.com/125207
@@ -233,10 +242,11 @@ class BASE_EXPORT ThreadRestrictions {
 #if !defined(OFFICIAL_BUILD)
   friend class content::SoftwareOutputDeviceMus;  // Interim non-production code
 #endif
-  friend class views::WindowManagerConnection;
+  friend class views::ScreenMus;
+  friend class viz::ServerGpuMemoryBufferManager;
 // END USAGE THAT NEEDS TO BE FIXED.
 
-#if ENABLE_THREAD_RESTRICTIONS
+#if DCHECK_IS_ON()
   static bool SetWaitAllowed(bool allowed);
 #else
   static bool SetWaitAllowed(bool allowed) { return true; }

@@ -7,22 +7,8 @@ const {
   Arg,
   RetVal,
   generateActorSpec,
-  types
+  types,
 } = require("devtools/shared/protocol");
-
-const originalSourceSpec = generateActorSpec({
-  typeName: "originalsource",
-
-  methods: {
-    getText: {
-      response: {
-        text: RetVal("longstring")
-      }
-    }
-  }
-});
-
-exports.originalSourceSpec = originalSourceSpec;
 
 const mediaRuleSpec = generateActorSpec({
   typeName: "mediarule",
@@ -31,8 +17,8 @@ const mediaRuleSpec = generateActorSpec({
     "matches-change": {
       type: "matchesChange",
       matches: Arg(0, "boolean"),
-    }
-  }
+    },
+  },
 });
 
 exports.mediaRuleSpec = mediaRuleSpec;
@@ -46,58 +32,41 @@ const styleSheetSpec = generateActorSpec({
     "property-change": {
       type: "propertyChange",
       property: Arg(0, "string"),
-      value: Arg(1, "json")
+      value: Arg(1, "json"),
     },
     "style-applied": {
       type: "styleApplied",
       kind: Arg(0, "number"),
-      styleSheet: Arg(1, "stylesheet")
+      styleSheet: Arg(1, "stylesheet"),
     },
     "media-rules-changed": {
       type: "mediaRulesChanged",
-      rules: Arg(0, "array:mediarule")
-    }
+      rules: Arg(0, "array:mediarule"),
+    },
   },
 
   methods: {
     toggleDisabled: {
-      response: { disabled: RetVal("boolean")}
+      response: { disabled: RetVal("boolean")},
     },
     getText: {
       response: {
-        text: RetVal("longstring")
-      }
-    },
-    getOriginalSources: {
-      request: {},
-      response: {
-        originalSources: RetVal("nullable:array:originalsource")
-      }
-    },
-    getOriginalLocation: {
-      request: {
-        line: Arg(0, "number"),
-        column: Arg(1, "number")
+        text: RetVal("longstring"),
       },
-      response: RetVal(types.addDictType("originallocationresponse", {
-        source: "string",
-        line: "number",
-        column: "number"
-      }))
     },
     getMediaRules: {
       request: {},
       response: {
-        mediaRules: RetVal("nullable:array:mediarule")
-      }
+        mediaRules: RetVal("nullable:array:mediarule"),
+      },
     },
     update: {
       request: {
         text: Arg(0, "string"),
-        transition: Arg(1, "boolean")
-      }
-    }
-  }
+        transition: Arg(1, "boolean"),
+      },
+    },
+  },
 });
 
 exports.styleSheetSpec = styleSheetSpec;
@@ -105,16 +74,24 @@ exports.styleSheetSpec = styleSheetSpec;
 const styleSheetsSpec = generateActorSpec({
   typeName: "stylesheets",
 
+  events: {
+    "stylesheet-added": {
+      type: "stylesheetAdded",
+      sheet: Arg(0, "stylesheet"),
+      isNew: Arg(1, "boolean"),
+    },
+  },
+
   methods: {
     getStyleSheets: {
       request: {},
-      response: { styleSheets: RetVal("array:stylesheet") }
+      response: { styleSheets: RetVal("array:stylesheet") },
     },
     addStyleSheet: {
       request: { text: Arg(0, "string") },
-      response: { styleSheet: RetVal("stylesheet") }
-    }
-  }
+      response: { styleSheet: RetVal("stylesheet") },
+    },
+  },
 });
 
 exports.styleSheetsSpec = styleSheetsSpec;

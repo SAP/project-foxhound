@@ -4,9 +4,9 @@
 
 requestLongerTimeout(2);
 
-add_task(function* () {
-  let tab1 = yield BrowserTestUtils.openNewForegroundTab(gBrowser, "about:robots");
-  let tab2 = yield BrowserTestUtils.openNewForegroundTab(gBrowser, "about:config");
+add_task(async function() {
+  let tab1 = await BrowserTestUtils.openNewForegroundTab(gBrowser, "about:robots");
+  let tab2 = await BrowserTestUtils.openNewForegroundTab(gBrowser, "about:config");
 
   gBrowser.selectedTab = tab1;
 
@@ -45,16 +45,16 @@ add_task(function* () {
     },
   });
 
-  yield extension.startup();
-  yield extension.awaitFinish("tabs.query");
-  yield extension.unload();
+  await extension.startup();
+  await extension.awaitFinish("tabs.query");
+  await extension.unload();
 
-  yield BrowserTestUtils.removeTab(tab1);
-  yield BrowserTestUtils.removeTab(tab2);
+  BrowserTestUtils.removeTab(tab1);
+  BrowserTestUtils.removeTab(tab2);
 
-  tab1 = yield BrowserTestUtils.openNewForegroundTab(gBrowser, "http://example.com/");
-  tab2 = yield BrowserTestUtils.openNewForegroundTab(gBrowser, "http://example.net/");
-  let tab3 = yield BrowserTestUtils.openNewForegroundTab(gBrowser, "http://test1.example.org/MochiKit/");
+  tab1 = await BrowserTestUtils.openNewForegroundTab(gBrowser, "http://example.com/");
+  tab2 = await BrowserTestUtils.openNewForegroundTab(gBrowser, "http://example.net/");
+  let tab3 = await BrowserTestUtils.openNewForegroundTab(gBrowser, "http://test1.example.org/MochiKit/");
 
   // test simple queries
   extension = ExtensionTestUtils.loadExtension({
@@ -79,9 +79,9 @@ add_task(function* () {
     },
   });
 
-  yield extension.startup();
-  yield extension.awaitFinish("tabs.query");
-  yield extension.unload();
+  await extension.startup();
+  await extension.awaitFinish("tabs.query");
+  await extension.unload();
 
   // match pattern
   extension = ExtensionTestUtils.loadExtension({
@@ -102,9 +102,9 @@ add_task(function* () {
     },
   });
 
-  yield extension.startup();
-  yield extension.awaitFinish("tabs.query");
-  yield extension.unload();
+  await extension.startup();
+  await extension.awaitFinish("tabs.query");
+  await extension.unload();
 
   // match array of patterns
   extension = ExtensionTestUtils.loadExtension({
@@ -128,9 +128,72 @@ add_task(function* () {
     },
   });
 
-  yield extension.startup();
-  yield extension.awaitFinish("tabs.query");
-  yield extension.unload();
+  await extension.startup();
+  await extension.awaitFinish("tabs.query");
+  await extension.unload();
+
+  // match title pattern
+  extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      "permissions": ["tabs"],
+    },
+
+    async background() {
+      let tabs = await browser.tabs.query({
+        title: "mochitest index /",
+      });
+
+      browser.test.assertEq(tabs.length, 2, "should have two tabs");
+
+      tabs.sort((tab1, tab2) => tab1.index - tab2.index);
+
+      browser.test.assertEq(tabs[0].title, "mochitest index /", "tab 0 title correct");
+      browser.test.assertEq(tabs[1].title, "mochitest index /", "tab 1 title correct");
+
+      tabs = await browser.tabs.query({
+        title: "?ochitest index /*",
+      });
+
+      browser.test.assertEq(tabs.length, 3, "should have three tabs");
+
+      tabs.sort((tab1, tab2) => tab1.index - tab2.index);
+
+      browser.test.assertEq(tabs[0].title, "mochitest index /", "tab 0 title correct");
+      browser.test.assertEq(tabs[1].title, "mochitest index /", "tab 1 title correct");
+      browser.test.assertEq(tabs[2].title, "mochitest index /MochiKit/", "tab 2 title correct");
+
+      browser.test.notifyPass("tabs.query");
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitFinish("tabs.query");
+  await extension.unload();
+
+  // match highlighted
+  extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      "permissions": ["tabs"],
+    },
+
+    background: async function() {
+      let tabs1 = await browser.tabs.query({highlighted: false});
+      browser.test.assertEq(3, tabs1.length, "should have three non-highlighted tabs");
+
+      let tabs2 = await browser.tabs.query({highlighted: true});
+      browser.test.assertEq(1, tabs2.length, "should have one highlighted tab");
+
+      for (let tab of [...tabs1, ...tabs2]) {
+        browser.test.assertEq(tab.active, tab.highlighted, "highlighted and active are equal in tab " + tab.index);
+      }
+
+      browser.test.notifyPass("tabs.query");
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitFinish("tabs.query");
+  await extension.unload();
 
   // test width and height
   extension = ExtensionTestUtils.loadExtension({
@@ -154,7 +217,7 @@ add_task(function* () {
     SpecialPowers.clearUserPref(RESOLUTION_PREF);
   });
 
-  yield Promise.all([extension.startup(), extension.awaitMessage("ready")]);
+  await Promise.all([extension.startup(), extension.awaitMessage("ready")]);
 
   for (let resolution of [2, 1]) {
     SpecialPowers.setCharPref(RESOLUTION_PREF, String(resolution));
@@ -163,20 +226,20 @@ add_task(function* () {
     let {clientHeight, clientWidth} = gBrowser.selectedBrowser;
 
     extension.sendMessage("check-size");
-    let dims = yield extension.awaitMessage("dims");
+    let dims = await extension.awaitMessage("dims");
     is(dims.width, clientWidth, "tab reports expected width");
     is(dims.height, clientHeight, "tab reports expected height");
   }
 
-  yield extension.unload();
+  await extension.unload();
 
-  yield BrowserTestUtils.removeTab(tab1);
-  yield BrowserTestUtils.removeTab(tab2);
-  yield BrowserTestUtils.removeTab(tab3);
+  BrowserTestUtils.removeTab(tab1);
+  BrowserTestUtils.removeTab(tab2);
+  BrowserTestUtils.removeTab(tab3);
   SpecialPowers.clearUserPref(RESOLUTION_PREF);
 });
 
-add_task(function* testQueryPermissions() {
+add_task(async function testQueryPermissions() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       "permissions": [],
@@ -193,14 +256,14 @@ add_task(function* testQueryPermissions() {
     },
   });
 
-  yield extension.startup();
+  await extension.startup();
 
-  yield extension.awaitFinish("queryPermissions");
+  await extension.awaitFinish("queryPermissions");
 
-  yield extension.unload();
+  await extension.unload();
 });
 
-add_task(function* testQueryWithURLPermissions() {
+add_task(async function testQueryWithoutURLOrTitlePermissions() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       "permissions": [],
@@ -209,16 +272,85 @@ add_task(function* testQueryWithURLPermissions() {
     async background() {
       await browser.test.assertRejects(
         browser.tabs.query({"url": "http://www.bbc.com/"}),
-        'The "tabs" permission is required to use the query API with the "url" parameter',
-        "Expected tabs.query with 'url' to fail with permissions error message");
+        'The "tabs" permission is required to use the query API with the "url" or "title" parameters',
+        "Expected tabs.query with 'url' or 'title' to fail with permissions error message");
 
-      browser.test.notifyPass("queryWithURLPermissions");
+      await browser.test.assertRejects(
+        browser.tabs.query({"title": "Foo"}),
+        'The "tabs" permission is required to use the query API with the "url" or "title" parameters',
+        "Expected tabs.query with 'url' or 'title' to fail with permissions error message");
+
+      browser.test.notifyPass("testQueryWithoutURLOrTitlePermissions");
     },
   });
 
-  yield extension.startup();
+  await extension.startup();
 
-  yield extension.awaitFinish("queryWithURLPermissions");
+  await extension.awaitFinish("testQueryWithoutURLOrTitlePermissions");
 
-  yield extension.unload();
+  await extension.unload();
+});
+
+add_task(async function test_query_index() {
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      "permissions": ["tabs"],
+    },
+
+    background: function() {
+      browser.tabs.onCreated.addListener(async function({index, windowId, id}) {
+        browser.test.assertThrows(
+          () => browser.tabs.query({index: -1}),
+          /-1 is too small \(must be at least 0\)/,
+          "tab indices must be non-negative");
+
+        let tabs = await browser.tabs.query({index, windowId});
+        browser.test.assertEq(tabs.length, 1, `Got one tab at index ${index}`);
+        browser.test.assertEq(tabs[0].id, id, "The tab is the right one");
+
+        tabs = await browser.tabs.query({index: 1e5, windowId});
+        browser.test.assertEq(tabs.length, 0, "There is no tab at this index");
+
+        browser.test.notifyPass("tabs.query");
+      });
+    },
+  });
+
+  await extension.startup();
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, "http://example.com/");
+  await extension.awaitFinish("tabs.query");
+  BrowserTestUtils.removeTab(tab);
+  await extension.unload();
+});
+
+add_task(async function test_query_window() {
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      "permissions": ["tabs"],
+    },
+
+    background: async function() {
+      let badWindowId = 0;
+      for (let {id} of await browser.windows.getAll()) {
+        badWindowId = Math.max(badWindowId, id + 1);
+      }
+
+      let tabs = await browser.tabs.query({windowId: badWindowId});
+      browser.test.assertEq(tabs.length, 0, "No tabs because there is no such window ID");
+
+      let {id: currentWindowId} = await browser.windows.getCurrent();
+      tabs = await browser.tabs.query({currentWindow: true});
+      browser.test.assertEq(tabs[0].windowId, currentWindowId, "Got tabs from the current window");
+
+      let {id: lastFocusedWindowId} = await browser.windows.getLastFocused();
+      tabs = await browser.tabs.query({lastFocusedWindow: true});
+      browser.test.assertEq(tabs[0].windowId, lastFocusedWindowId, "Got tabs from the last focused window");
+
+      browser.test.notifyPass("tabs.query");
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitFinish("tabs.query");
+  await extension.unload();
 });

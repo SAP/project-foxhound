@@ -2,7 +2,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from decorators import use_class_as_property
+from __future__ import absolute_import
+
+from .decorators import use_class_as_property
 
 
 class Puppeteer(object):
@@ -49,14 +51,6 @@ class Puppeteer(object):
 
         See the :class:`~api.utils.Utils` reference.
         """
-
-    @property
-    def platform(self):
-        """Returns the lowercased platform name.
-
-        :returns: Platform name
-        """
-        return self.marionette.session_capabilities['platformName']
 
     @use_class_as_property('api.prefs.Preferences')
     def prefs(self):

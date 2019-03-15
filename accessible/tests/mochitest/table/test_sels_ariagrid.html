@@ -21,9 +21,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=410052
           src="../table.js"></script>
 
   <script type="application/javascript">
-    function doTest()
-    {
-      //////////////////////////////////////////////////////////////////////////
+    function doTest() {
+      // ////////////////////////////////////////////////////////////////////////
       // ARIA grid
       var cellsArray =
       [
@@ -31,7 +30,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=410052
         [ true, false, true,  true],
         [ true, false, false, true],
         [ true, true,  true,  true],
-        [ true, true,  true,  true]
+        [ true, true,  true,  true],
       ];
 
       testTableSelection("table", cellsArray);
@@ -40,12 +39,12 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=410052
       testSelectTableColumn("table", 0, cellsArray);
       testSelectTableRow("table", 0, cellsArray);
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // a bit crazy ARIA grid
       cellsArray =
       [
         [ false, false],
-        [ false, false]
+        [ false, false],
       ];
 
       testTableSelection("grid2", cellsArray);
@@ -54,13 +53,13 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=410052
       testUnselectTableColumn("grid2", 0, cellsArray);
       testUnselectTableRow("grid2", 0, cellsArray);
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // ARIA grid (column and row headers)
 
       cellsArray =
       [
         [ undefined, true, false],
-        [ undefined, true, false]
+        [ undefined, true, false],
       ];
 
       testTableSelection("grid3", cellsArray);

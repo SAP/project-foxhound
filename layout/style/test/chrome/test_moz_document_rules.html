@@ -10,14 +10,14 @@
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=398962">Mozilla Bug 398962</a>
 <iframe id="iframe" src="http://mochi.test:8888/tests/layout/style/test/chrome/moz_document_helper.html"></iframe>
 <pre id="test">
-<script type="application/javascript; version=1.8">
+<script type="application/javascript">
 
 var [gStyleSheetService, gIOService] = (function() {
     return [
-            Components.classes["@mozilla.org/content/style-sheet-service;1"]
-                .getService(Components.interfaces.nsIStyleSheetService),
-            Components.classes["@mozilla.org/network/io-service;1"]
-                .getService(Components.interfaces.nsIIOService)
+            Cc["@mozilla.org/content/style-sheet-service;1"]
+                .getService(Ci.nsIStyleSheetService),
+            Cc["@mozilla.org/network/io-service;1"]
+                .getService(Ci.nsIIOService)
            ];
 })();
 function set_user_sheet(sheeturi)

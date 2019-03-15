@@ -73,7 +73,7 @@ struct FontFileInfo {
     int fIndex;
     int fWeight;
     enum class Style { kAuto, kNormal, kItalic } fStyle;
-    SkTArray<SkFontMgr::FontParameters::Axis, true> fAxes;
+    SkTArray<SkFontArguments::VariationPosition::Coordinate, true> fVariationDesignPosition;
 };
 
 /**
@@ -93,7 +93,7 @@ struct FontFamily {
 
     SkTArray<SkString, true> fNames;
     SkTArray<FontFileInfo, true> fFonts;
-    SkLanguage fLanguage;
+    SkTArray<SkLanguage, true> fLanguages;
     FontVariant fVariant;
     int fOrder; // internal to the parser, not useful to users.
     bool fIsFallbackFont;

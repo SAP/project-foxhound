@@ -8,11 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_COMMON_AUDIO_RESAMPLER_INCLUDE_PUSH_RESAMPLER_H_
-#define WEBRTC_COMMON_AUDIO_RESAMPLER_INCLUDE_PUSH_RESAMPLER_H_
+#ifndef COMMON_AUDIO_RESAMPLER_INCLUDE_PUSH_RESAMPLER_H_
+#define COMMON_AUDIO_RESAMPLER_INCLUDE_PUSH_RESAMPLER_H_
 
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/typedefs.h"
+#include <memory>
+
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -36,17 +37,17 @@ class PushResampler {
   int Resample(const T* src, size_t src_length, T* dst, size_t dst_capacity);
 
  private:
-  rtc::scoped_ptr<PushSincResampler> sinc_resampler_;
-  rtc::scoped_ptr<PushSincResampler> sinc_resampler_right_;
+  std::unique_ptr<PushSincResampler> sinc_resampler_;
+  std::unique_ptr<PushSincResampler> sinc_resampler_right_;
   int src_sample_rate_hz_;
   int dst_sample_rate_hz_;
   size_t num_channels_;
-  rtc::scoped_ptr<T[]> src_left_;
-  rtc::scoped_ptr<T[]> src_right_;
-  rtc::scoped_ptr<T[]> dst_left_;
-  rtc::scoped_ptr<T[]> dst_right_;
+  std::unique_ptr<T[]> src_left_;
+  std::unique_ptr<T[]> src_right_;
+  std::unique_ptr<T[]> dst_left_;
+  std::unique_ptr<T[]> dst_right_;
 };
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_COMMON_AUDIO_RESAMPLER_INCLUDE_PUSH_RESAMPLER_H_
+#endif  // COMMON_AUDIO_RESAMPLER_INCLUDE_PUSH_RESAMPLER_H_

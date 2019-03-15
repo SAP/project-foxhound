@@ -5,21 +5,21 @@
 
 "use strict";
 
-add_task(function* () {
-  yield throttleTest(true);
-  yield throttleTest(false);
+add_task(async function() {
+  await throttleTest(true);
+  await throttleTest(false);
 });
 
-function* throttleTest(actuallyThrottle) {
+async function throttleTest(actuallyThrottle) {
   requestLongerTimeout(2);
 
-  let { monitor } = yield initNetMonitor(SIMPLE_URL);
-  let { gStore, windowRequire, NetMonitorController } = monitor.panelWin;
-  let { ACTIVITY_TYPE } = windowRequire("devtools/client/netmonitor/constants");
-  let { EVENTS } = windowRequire("devtools/client/netmonitor/constants");
-  let {
+  const { monitor } = await initNetMonitor(SIMPLE_URL);
+  const { store, windowRequire, connector } = monitor.panelWin;
+  const { ACTIVITY_TYPE } = windowRequire("devtools/client/netmonitor/src/constants");
+  const { setPreferences, triggerActivity } = connector;
+  const {
     getSortedRequests,
-  } = windowRequire("devtools/client/netmonitor/selectors/index");
+  } = windowRequire("devtools/client/netmonitor/src/selectors/index");
 
   info("Starting test... (actuallyThrottle = " + actuallyThrottle + ")");
 
@@ -37,20 +37,17 @@ function* throttleTest(actuallyThrottle) {
       uploadBPSMax: 10000,
     },
   };
-  let client = NetMonitorController.webConsoleClient;
 
   info("sending throttle request");
-  let deferred = promise.defer();
-  client.setPreferences(request, response => {
-    deferred.resolve(response);
-  });
-  yield deferred.promise;
+  await setPreferences(request);
 
-  let eventPromise = monitor.panelWin.once(EVENTS.RECEIVED_EVENT_TIMINGS);
-  yield NetMonitorController.triggerActivity(ACTIVITY_TYPE.RELOAD.WITH_CACHE_DISABLED);
-  yield eventPromise;
+  const wait = waitForNetworkEvents(monitor, 1);
+  await triggerActivity(ACTIVITY_TYPE.RELOAD.WITH_CACHE_DISABLED);
+  await wait;
 
-  let requestItem = getSortedRequests(gStore.getState()).get(0);
+  await waitForRequestData(store, ["eventTimings"]);
+
+  const requestItem = getSortedRequests(store.getState()).get(0);
   const reportedOneSecond = requestItem.eventTimings.timings.receive > 1000;
   if (actuallyThrottle) {
     ok(reportedOneSecond, "download reported as taking more than one second");
@@ -58,5 +55,5 @@ function* throttleTest(actuallyThrottle) {
     ok(!reportedOneSecond, "download reported as taking less than one second");
   }
 
-  yield teardown(monitor);
+  await teardown(monitor);
 }

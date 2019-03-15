@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/desktop_capture/desktop_region.h"
+#include "modules/desktop_capture/desktop_region.h"
 
 #include <assert.h>
 
@@ -19,6 +19,9 @@ namespace webrtc {
 DesktopRegion::RowSpan::RowSpan(int32_t left, int32_t right)
     : left(left), right(right) {
 }
+
+DesktopRegion::Row::Row(const Row&) = default;
+DesktopRegion::Row::Row(Row&&) = default;
 
 DesktopRegion::Row::Row(int32_t top, int32_t bottom)
     : top(top), bottom(bottom) {

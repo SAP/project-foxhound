@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 from marionette_driver import By, Wait
 from marionette_driver.errors import NoSuchElementException
 
@@ -33,7 +35,6 @@ class BrowserWindow(BaseWindow):
 
     properties = [
         'chrome://branding/locale/brand.properties',
-        'chrome://branding/locale/browserconfig.properties',
         'chrome://browser/locale/browser.properties',
         'chrome://browser/locale/preferences/preferences.properties',
         'chrome://global/locale/browser.properties',
@@ -51,8 +52,7 @@ class BrowserWindow(BaseWindow):
 
         :returns: The default homepage for the current locale.
         """
-        return self.marionette.get_pref('browser.startup.homepage',
-                                        value_type='nsIPrefLocalizedString')
+        return self.marionette.get_pref('browser.startup.homepage')
 
     @property
     def is_private(self):
@@ -88,7 +88,7 @@ class BrowserWindow(BaseWindow):
 
         notifications_map = {
             'addon-install-blocked-notification': AddOnInstallBlockedNotification,
-            'addon-install-confirmation-notification': AddOnInstallConfirmationNotification,
+            'addon-webext-permissions-notification': AddOnInstallConfirmationNotification,
             'addon-install-complete-notification': AddOnInstallCompleteNotification,
             'addon-install-failed-notification': AddOnInstallFailedNotification,
             'addon-progress-notification': AddOnProgressNotification,
@@ -244,7 +244,7 @@ class BrowserWindow(BaseWindow):
             elif trigger == 'menu':
                 self.menubar.select_by_id('tools-menu', 'menu_pageInfo')
             elif trigger == 'shortcut':
-                if win.marionette.session_capabilities['platformName'] == 'windows_nt':
+                if win.marionette.session_capabilities['platformName'] == 'windows':
                     raise ValueError('Page info shortcut not available on Windows.')
                 win.send_shortcut(win.localize_entity('pageInfoCmd.commandkey'),
                                   accel=True)

@@ -10,17 +10,19 @@ DIRS += [
 
 BROWSER_CHROME_MANIFESTS += ['test/browser.ini']
 
+TESTING_JS_MODULES += [
+    'test/CustomizableUITestUtils.jsm',
+]
+
 EXTRA_JS_MODULES += [
     'CustomizableUI.jsm',
     'CustomizableWidgets.jsm',
     'CustomizeMode.jsm',
     'DragPositionManager.jsm',
-    'PanelWideWidgetTracker.jsm',
+    'PanelMultiView.jsm',
     'ScrollbarSampler.jsm',
+    'SearchWidgetTracker.jsm',
 ]
-
-if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('windows', 'cocoa'):
-    DEFINES['CAN_DRAW_IN_TITLEBAR'] = 1
 
 with Files('**'):
     BUG_COMPONENT = ('Firefox', 'Toolbars and Customization')

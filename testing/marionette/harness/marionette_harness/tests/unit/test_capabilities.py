@@ -2,8 +2,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from marionette_driver.errors import SessionNotCreatedException
+from __future__ import absolute_import, print_function
 
+from marionette_driver.errors import SessionNotCreatedException
 from marionette_harness import MarionetteTestCase
 
 
@@ -13,12 +14,45 @@ class TestCapabilities(MarionetteTestCase):
         super(TestCapabilities, self).setUp()
         self.caps = self.marionette.session_capabilities
         with self.marionette.using_context("chrome"):
-            self.appinfo = self.marionette.execute_script(
-                "return Services.appinfo")
-            self.os_name = self.marionette.execute_script(
-                "return Services.sysinfo.getProperty('name')").lower()
+            self.appinfo = self.marionette.execute_script("""
+                return {
+                  name: Services.appinfo.name,
+                  version: Services.appinfo.version,
+                  processID: Services.appinfo.processID,
+                }
+                """)
+            self.os_name = self.marionette.execute_script("""
+                let name = Services.sysinfo.getProperty("name");
+                switch (name) {
+                  case "Windows_NT":
+                    return "windows";
+                  case "Darwin":
+                    return "mac";
+                  default:
+                    return name.toLowerCase();
+                }
+                """)
             self.os_version = self.marionette.execute_script(
                 "return Services.sysinfo.getProperty('version')")
+
+    def get_fennec_profile(self):
+        profile = self.marionette.instance.runner.device.app_ctx.remote_profile
+        if self.caps["moz:profile"].lower() != profile.lower():
+            # mozdevice may be using a symlink and readlink is not
+            # universally available (missing from sdk 18).
+            # Attempt to resolve the most common symlink cases by using
+            # ls -l to determine if the root of the path (like /sdcard)
+            # is a symlink.
+            import posixpath
+            import re
+            device = self.marionette.instance.runner.device.app_ctx.device
+            root = posixpath.sep.join(profile.split(posixpath.sep)[0:2])
+            ls_out = device.shell_output("ls -l %s" % root)
+            match = re.match(r'.*->\s(.*)', ls_out)
+            if match:
+                new_root = match.group(1)
+                profile = profile.replace(root, new_root)
+        return profile
 
     def test_mandated_capabilities(self):
         self.assertIn("browserName", self.caps)
@@ -26,17 +60,24 @@ class TestCapabilities(MarionetteTestCase):
         self.assertIn("platformName", self.caps)
         self.assertIn("platformVersion", self.caps)
         self.assertIn("acceptInsecureCerts", self.caps)
+        self.assertIn("setWindowRect", self.caps)
         self.assertIn("timeouts", self.caps)
+        self.assertIn("strictFileInteractability", self.caps)
 
         self.assertEqual(self.caps["browserName"], self.appinfo["name"].lower())
         self.assertEqual(self.caps["browserVersion"], self.appinfo["version"])
         self.assertEqual(self.caps["platformName"], self.os_name)
         self.assertEqual(self.caps["platformVersion"], self.os_version)
         self.assertFalse(self.caps["acceptInsecureCerts"])
+        if self.appinfo["name"] == "Firefox":
+            self.assertTrue(self.caps["setWindowRect"])
+        else:
+            self.assertFalse(self.caps["setWindowRect"])
         self.assertDictEqual(self.caps["timeouts"],
                              {"implicit": 0,
                               "pageLoad": 300000,
                               "script": 30000})
+        self.assertTrue(self.caps["strictFileInteractability"])
 
     def test_supported_features(self):
         self.assertIn("rotatable", self.caps)
@@ -49,50 +90,32 @@ class TestCapabilities(MarionetteTestCase):
         self.assertIn("moz:profile", self.caps)
         if self.marionette.instance is not None:
             if self.caps["browserName"] == "fennec":
-                current_profile = self.marionette.instance.runner.device.app_ctx.remote_profile
+                current_profile = self.get_fennec_profile()
             else:
-                current_profile = self.marionette.instance.runner.profile.profile
-            self.assertEqual(self.caps["moz:profile"], current_profile)
-            self.assertEqual(self.marionette.profile, current_profile)
+                current_profile = self.marionette.profile_path
+            # Bug 1438461 - mozprofile uses lower-case letters even on case-sensitive filesystems
+            self.assertEqual(self.caps["moz:profile"].lower(), current_profile.lower())
 
         self.assertIn("moz:accessibilityChecks", self.caps)
         self.assertFalse(self.caps["moz:accessibilityChecks"])
-        self.assertIn("specificationLevel", self.caps)
-        self.assertEqual(self.caps["specificationLevel"], 0)
 
-    def test_set_specification_level(self):
+        self.assertIn("moz:useNonSpecCompliantPointerOrigin", self.caps)
+        self.assertFalse(self.caps["moz:useNonSpecCompliantPointerOrigin"])
+
+        self.assertIn("moz:webdriverClick", self.caps)
+        self.assertTrue(self.caps["moz:webdriverClick"])
+
+    def test_disable_webdriver_click(self):
         self.marionette.delete_session()
-        self.marionette.start_session({"desiredCapabilities": {"specificationLevel": 2}})
+        self.marionette.start_session({"moz:webdriverClick": False})
         caps = self.marionette.session_capabilities
-        self.assertEqual(2, caps["specificationLevel"])
+        self.assertFalse(caps["moz:webdriverClick"])
 
+    def test_use_non_spec_compliant_pointer_origin(self):
         self.marionette.delete_session()
-        self.marionette.start_session({"requiredCapabilities": {"specificationLevel": 3}})
+        self.marionette.start_session({"moz:useNonSpecCompliantPointerOrigin": True})
         caps = self.marionette.session_capabilities
-        self.assertEqual(3, caps["specificationLevel"])
-
-    def test_we_can_pass_in_required_capabilities_on_session_start(self):
-        self.marionette.delete_session()
-        capabilities = {"requiredCapabilities": {"browserName": self.appinfo["name"].lower()}}
-        self.marionette.start_session(capabilities)
-        caps = self.marionette.session_capabilities
-        self.assertIn("browserName", caps)
-
-        # Start a new session just to make sure we leave the browser in the
-        # same state it was before it started the test
-        self.marionette.start_session()
-
-    def test_capability_types(self):
-        for value in ["", "invalid", True, 42, []]:
-            print("testing value {}".format(value))
-            with self.assertRaises(SessionNotCreatedException):
-                print("  with desiredCapabilities")
-                self.marionette.delete_session()
-                self.marionette.start_session({"desiredCapabilities": value})
-            with self.assertRaises(SessionNotCreatedException):
-                print("  with requiredCapabilities")
-                self.marionette.delete_session()
-                self.marionette.start_session({"requiredCapabilities": value})
+        self.assertTrue(caps["moz:useNonSpecCompliantPointerOrigin"])
 
     def test_we_get_valid_uuid4_when_creating_a_session(self):
         self.assertNotIn("{", self.marionette.session_id,
@@ -101,158 +124,108 @@ class TestCapabilities(MarionetteTestCase):
 
 
 class TestCapabilityMatching(MarionetteTestCase):
-    allowed = [None, "*"]
-    disallowed = ["", 42, True, {}, []]
 
     def setUp(self):
         MarionetteTestCase.setUp(self)
         self.browser_name = self.marionette.session_capabilities["browserName"]
-        self.platform_name = self.marionette.session_capabilities["platformName"]
         self.delete_session()
 
     def delete_session(self):
         if self.marionette.session is not None:
             self.marionette.delete_session()
 
-    def test_browser_name_desired(self):
-        self.marionette.start_session({"desiredCapabilities": {"browserName": self.browser_name}})
-        self.assertEqual(self.marionette.session_capabilities["browserName"], self.browser_name)
-
-    def test_browser_name_required(self):
-        self.marionette.start_session({"requiredCapabilities": {"browserName": self.browser_name}})
-        self.assertEqual(self.marionette.session_capabilities["browserName"], self.browser_name)
-
-    def test_browser_name_desired_allowed_types(self):
-        for typ in self.allowed:
-            self.delete_session()
-            self.marionette.start_session({"desiredCapabilities": {"browserName": typ}})
-            self.assertEqual(self.marionette.session_capabilities["browserName"], self.browser_name)
-
-    def test_browser_name_desired_disallowed_types(self):
-        for typ in self.disallowed:
-            with self.assertRaises(SessionNotCreatedException):
-                self.marionette.start_session({"desiredCapabilities": {"browserName": typ}})
-
-    def test_browser_name_required_allowed_types(self):
-        for typ in self.allowed:
-            self.delete_session()
-            self.marionette.start_session({"requiredCapabilities": {"browserName": typ}})
-            self.assertEqual(self.marionette.session_capabilities["browserName"], self.browser_name)
-
-    def test_browser_name_requried_disallowed_types(self):
-        for typ in self.disallowed:
-            with self.assertRaises(SessionNotCreatedException):
-                self.marionette.start_session({"requiredCapabilities": {"browserName": typ}})
-
-    def test_browser_name_prefers_required(self):
-        caps = {"desiredCapabilities": {"browserName": "invalid"},
-                    "requiredCapabilities": {"browserName": "*"}}
-        self.marionette.start_session(caps)
-
-    def test_browser_name_error_on_invalid_required(self):
-        with self.assertRaises(SessionNotCreatedException):
-            caps = {"desiredCapabilities": {"browserName": "*"},
-                        "requiredCapabilities": {"browserName": "invalid"}}
-            self.marionette.start_session(caps)
-
-    # TODO(ato): browser version comparison not implemented yet
-
-    def test_platform_name_desired(self):
-        self.marionette.start_session({"desiredCapabilities": {"platformName": self.platform_name}})
-        self.assertEqual(self.marionette.session_capabilities["platformName"], self.platform_name)
-
-    def test_platform_name_required(self):
-        self.marionette.start_session({"requiredCapabilities": {"platformName": self.platform_name}})
-        self.assertEqual(self.marionette.session_capabilities["platformName"], self.platform_name)
-
-    def test_platform_name_desired_allowed_types(self):
-        for typ in self.allowed:
-            self.delete_session()
-            self.marionette.start_session({"desiredCapabilities": {"platformName": typ}})
-            self.assertEqual(self.marionette.session_capabilities["platformName"], self.platform_name)
-
-    def test_platform_name_desired_disallowed_types(self):
-        for typ in self.disallowed:
-            with self.assertRaises(SessionNotCreatedException):
-                self.marionette.start_session({"desiredCapabilities": {"platformName": typ}})
-
-    def test_platform_name_required_allowed_types(self):
-        for typ in self.allowed:
-            self.delete_session()
-            self.marionette.start_session({"requiredCapabilities": {"platformName": typ}})
-            self.assertEqual(self.marionette.session_capabilities["platformName"], self.platform_name)
-
-    def test_platform_name_requried_disallowed_types(self):
-        for typ in self.disallowed:
-            with self.assertRaises(SessionNotCreatedException):
-                self.marionette.start_session({"requiredCapabilities": {"platformName": typ}})
-
-    def test_platform_name_prefers_required(self):
-        caps = {"desiredCapabilities": {"platformName": "invalid"},
-                    "requiredCapabilities": {"platformName": "*"}}
-        self.marionette.start_session(caps)
-
-    def test_platform_name_error_on_invalid_required(self):
-        with self.assertRaises(SessionNotCreatedException):
-            caps = {"desiredCapabilities": {"platformName": "*"},
-                        "requiredCapabilities": {"platformName": "invalid"}}
-            self.marionette.start_session(caps)
-
-    # TODO(ato): platform version comparison not imlpemented yet
-
     def test_accept_insecure_certs(self):
-        for capability_type in ["desiredCapabilities", "requiredCapabilities"]:
-            print("testing {}".format(capability_type))
-            for value in ["", 42, {}, []]:
-                print("  type {}".format(type(value)))
-                with self.assertRaises(SessionNotCreatedException):
-                    self.marionette.start_session({capability_type: {"acceptInsecureCerts": value}})
+        for value in ["", 42, {}, []]:
+            print("  type {}".format(type(value)))
+            with self.assertRaises(SessionNotCreatedException):
+                self.marionette.start_session({"acceptInsecureCerts": value})
 
         self.delete_session()
-        self.marionette.start_session({"desiredCapabilities": {"acceptInsecureCerts": True}})
-        self.assertTrue(self.marionette.session_capabilities["acceptInsecureCerts"])
-        self.delete_session()
-        self.marionette.start_session({"requiredCapabilities": {"acceptInsecureCerts": True}})
-
+        self.marionette.start_session({"acceptInsecureCerts": True})
         self.assertTrue(self.marionette.session_capabilities["acceptInsecureCerts"])
 
     def test_page_load_strategy(self):
         for strategy in ["none", "eager", "normal"]:
             print("valid strategy {}".format(strategy))
             self.delete_session()
-            self.marionette.start_session({"desiredCapabilities": {"pageLoadStrategy": strategy}})
+            self.marionette.start_session({"pageLoadStrategy": strategy})
             self.assertEqual(self.marionette.session_capabilities["pageLoadStrategy"], strategy)
 
-        # A null value should be treatend as "normal"
-        self.delete_session()
-        self.marionette.start_session({"desiredCapabilities": {"pageLoadStrategy": None}})
-        self.assertEqual(self.marionette.session_capabilities["pageLoadStrategy"], "normal")
-
-        for value in ["", "EAGER", True, 42, {}, []]:
+        for value in ["", "EAGER", True, 42, {}, [], None]:
             print("invalid strategy {}".format(value))
             with self.assertRaisesRegexp(SessionNotCreatedException, "InvalidArgumentError"):
-                self.marionette.start_session({"desiredCapabilities": {"pageLoadStrategy": value}})
+                self.marionette.start_session({"pageLoadStrategy": value})
 
-    def test_proxy_default(self):
-        self.marionette.start_session()
-        self.assertNotIn("proxy", self.marionette.session_capabilities)
-
-    def test_proxy_desired(self):
-        self.marionette.start_session({"desiredCapabilities": {"proxy": {"proxyType": "manual"}}})
-        self.assertIn("proxy", self.marionette.session_capabilities)
-        self.assertEqual(self.marionette.session_capabilities["proxy"]["proxyType"], "manual")
-        self.assertEqual(self.marionette.get_pref("network.proxy.type"), 1)
-
-    def test_proxy_required(self):
-        self.marionette.start_session({"requiredCapabilities": {"proxy": {"proxyType": "manual"}}})
-        self.assertIn("proxy", self.marionette.session_capabilities)
-        self.assertEqual(self.marionette.session_capabilities["proxy"]["proxyType"], "manual")
-        self.assertEqual(self.marionette.get_pref("network.proxy.type"), 1)
+    def test_set_window_rect(self):
+        if self.browser_name == "firefox":
+            self.marionette.start_session({"setWindowRect": True})
+            self.delete_session()
+            with self.assertRaisesRegexp(SessionNotCreatedException, "InvalidArgumentError"):
+                self.marionette.start_session({"setWindowRect": False})
+        else:
+            self.marionette.start_session({"setWindowRect": False})
+            self.delete_session()
+            with self.assertRaisesRegexp(SessionNotCreatedException, "InvalidArgumentError"):
+                self.marionette.start_session({"setWindowRect": True})
 
     def test_timeouts(self):
-        timeouts = {u"implicit": 123, u"pageLoad": 456, u"script": 789}
-        caps = {"desiredCapabilities": {"timeouts": timeouts}}
-        self.marionette.start_session(caps)
+        for value in ["", 2.5, {}, []]:
+            print("  type {}".format(type(value)))
+            with self.assertRaises(SessionNotCreatedException):
+                self.marionette.start_session({"timeouts": {"pageLoad": value}})
+
+        self.delete_session()
+
+        timeouts = {"implicit": 0, "pageLoad": 2.0, "script": 2**53 - 1}
+        self.marionette.start_session({"timeouts": timeouts})
         self.assertIn("timeouts", self.marionette.session_capabilities)
         self.assertDictEqual(self.marionette.session_capabilities["timeouts"], timeouts)
-        self.assertDictEqual(self.marionette._send_message("getTimeouts"), timeouts)
+        self.assertDictEqual(self.marionette._send_message("WebDriver:GetTimeouts"), timeouts)
+
+    def test_strict_file_interactability(self):
+        for value in ["", 2.5, {}, []]:
+            print("  type {}".format(type(value)))
+            with self.assertRaises(SessionNotCreatedException):
+                self.marionette.start_session({"strictFileInteractability": value})
+
+        self.delete_session()
+
+        self.marionette.start_session({"strictFileInteractability": True})
+        self.assertIn("strictFileInteractability", self.marionette.session_capabilities)
+        self.assertTrue(self.marionette.session_capabilities["strictFileInteractability"])
+
+        self.delete_session()
+
+        self.marionette.start_session({"strictFileInteractability": False})
+        self.assertIn("strictFileInteractability", self.marionette.session_capabilities)
+        self.assertFalse(self.marionette.session_capabilities["strictFileInteractability"])
+
+    def test_unhandled_prompt_behavior(self):
+        behaviors = [
+            "accept",
+            "accept and notify",
+            "dismiss",
+            "dismiss and notify",
+            "ignore"
+        ]
+
+        for behavior in behaviors:
+            print("valid unhandled prompt behavior {}".format(behavior))
+            self.delete_session()
+            self.marionette.start_session({"unhandledPromptBehavior": behavior})
+            self.assertEqual(self.marionette.session_capabilities["unhandledPromptBehavior"],
+                             behavior)
+
+        # Default value
+        self.delete_session()
+        self.marionette.start_session()
+        self.assertEqual(self.marionette.session_capabilities["unhandledPromptBehavior"],
+                         "dismiss and notify")
+
+        # Invalid values
+        self.delete_session()
+        for behavior in [None, "", "ACCEPT", True, 42, {}, []]:
+            print("invalid unhandled prompt behavior {}".format(behavior))
+            with self.assertRaisesRegexp(SessionNotCreatedException, "InvalidArgumentError"):
+                self.marionette.start_session({"unhandledPromptBehavior": behavior})
+

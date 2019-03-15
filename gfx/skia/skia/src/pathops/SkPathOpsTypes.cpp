@@ -4,6 +4,7 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#include "SkArenaAlloc.h"
 #include "SkFloatBits.h"
 #include "SkOpCoincidence.h"
 #include "SkPathOpsTypes.h"
@@ -119,7 +120,10 @@ bool AlmostDequalUlps(float a, float b) {
 }
 
 bool AlmostDequalUlps(double a, double b) {
-    return AlmostDequalUlps(SkDoubleToScalar(a), SkDoubleToScalar(b));
+    if (fabs(a) < SK_ScalarMax && fabs(b) < SK_ScalarMax) {
+        return AlmostDequalUlps(SkDoubleToScalar(a), SkDoubleToScalar(b));
+    }
+    return fabs(a - b) / SkTMax(fabs(a), fabs(b)) < FLT_EPSILON * 16;
 }
 
 bool AlmostEqualUlps(float a, float b) {
@@ -225,7 +229,7 @@ double SkDCubeRoot(double x) {
 }
 
 SkOpGlobalState::SkOpGlobalState(SkOpContourHead* head,
-                                 SkChunkAlloc* allocator
+                                 SkArenaAlloc* allocator
                                  SkDEBUGPARAMS(bool debugSkipAssert)
                                  SkDEBUGPARAMS(const char* testName))
     : fAllocator(allocator)

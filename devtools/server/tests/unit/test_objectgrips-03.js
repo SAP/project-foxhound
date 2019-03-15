@@ -1,73 +1,50 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+/* eslint-disable no-shadow, max-nested-callbacks */
 
-var gDebuggee;
-var gClient;
-var gThreadClient;
-var gCallback;
+"use strict";
 
-function run_test()
-{
-  run_test_with_server(DebuggerServer, function () {
-    run_test_with_server(WorkerDebuggerServer, do_test_finished);
-  });
-  do_test_pending();
-}
+Services.prefs.setBoolPref("security.allow_eval_with_system_principal", true);
+registerCleanupFunction(() => {
+  Services.prefs.clearUserPref("security.allow_eval_with_system_principal");
+});
 
-function run_test_with_server(aServer, aCallback)
-{
-  gCallback = aCallback;
-  initTestDebuggerServer(aServer);
-  gDebuggee = addTestGlobal("test-grips", aServer);
-  gDebuggee.eval(function stopMe(arg1) {
-    debugger;
-  }.toString());
+add_task(threadClientTest(async ({ threadClient, debuggee, client }) => {
+  return new Promise(resolve => {
+    threadClient.addOneTimeListener("paused", function(event, packet) {
+      const args = packet.frame.arguments;
 
-  gClient = new DebuggerClient(aServer.connectPipe());
-  gClient.connect().then(function () {
-    attachTestTabAndResume(gClient, "test-grips", function (aResponse, aTabClient, aThreadClient) {
-      gThreadClient = aThreadClient;
-      test_object_grip();
-    });
-  });
-}
+      Assert.equal(args[0].class, "Object");
 
-function test_object_grip()
-{
-  gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-    let args = aPacket.frame.arguments;
+      const objClient = threadClient.pauseGrip(args[0]);
+      objClient.getProperty("x", function(response) {
+        Assert.equal(response.descriptor.configurable, true);
+        Assert.equal(response.descriptor.enumerable, true);
+        Assert.equal(response.descriptor.writable, true);
+        Assert.equal(response.descriptor.value, 10);
 
-    do_check_eq(args[0].class, "Object");
+        objClient.getProperty("y", function(response) {
+          Assert.equal(response.descriptor.configurable, true);
+          Assert.equal(response.descriptor.enumerable, true);
+          Assert.equal(response.descriptor.writable, true);
+          Assert.equal(response.descriptor.value, "kaiju");
 
-    let objClient = gThreadClient.pauseGrip(args[0]);
-    objClient.getProperty("x", function (aResponse) {
-      do_check_eq(aResponse.descriptor.configurable, true);
-      do_check_eq(aResponse.descriptor.enumerable, true);
-      do_check_eq(aResponse.descriptor.writable, true);
-      do_check_eq(aResponse.descriptor.value, 10);
+          objClient.getProperty("a", function(response) {
+            Assert.equal(response.descriptor.configurable, true);
+            Assert.equal(response.descriptor.enumerable, true);
+            Assert.equal(response.descriptor.get.type, "object");
+            Assert.equal(response.descriptor.get.class, "Function");
+            Assert.equal(response.descriptor.set.type, "undefined");
 
-      objClient.getProperty("y", function (aResponse) {
-        do_check_eq(aResponse.descriptor.configurable, true);
-        do_check_eq(aResponse.descriptor.enumerable, true);
-        do_check_eq(aResponse.descriptor.writable, true);
-        do_check_eq(aResponse.descriptor.value, "kaiju");
-
-        objClient.getProperty("a", function (aResponse) {
-          do_check_eq(aResponse.descriptor.configurable, true);
-          do_check_eq(aResponse.descriptor.enumerable, true);
-          do_check_eq(aResponse.descriptor.get.type, "object");
-          do_check_eq(aResponse.descriptor.get.class, "Function");
-          do_check_eq(aResponse.descriptor.set.type, "undefined");
-
-          gThreadClient.resume(function () {
-            gClient.close().then(gCallback);
+            threadClient.resume(resolve);
           });
         });
       });
     });
 
+    debuggee.eval(function stopMe(arg1) {
+      debugger;
+    }.toString());
+    debuggee.eval("stopMe({ x: 10, y: 'kaiju', get a() { return 42; } })");
   });
-
-  gDebuggee.eval("stopMe({ x: 10, y: 'kaiju', get a() { return 42; } })");
-}
-
+}));

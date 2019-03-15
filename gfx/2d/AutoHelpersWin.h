@@ -1,7 +1,8 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 4 -*-
-* This Source Code Form is subject to the terms of the Mozilla Public
-* License, v. 2.0. If a copy of the MPL was not distributed with this
-* file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef mozilla_gfx_AutoHelpersWin_h
 #define mozilla_gfx_AutoHelpersWin_h
@@ -12,32 +13,22 @@ namespace mozilla {
 namespace gfx {
 
 // Get the global device context, and auto-release it on destruction.
-class AutoDC
-{
-public:
-  AutoDC() {
-    mDC = ::GetDC(nullptr);
-  }
+class AutoDC {
+ public:
+  AutoDC() { mDC = ::GetDC(nullptr); }
 
-  ~AutoDC() {
-    ::ReleaseDC(nullptr, mDC);
-  }
+  ~AutoDC() { ::ReleaseDC(nullptr, mDC); }
 
-  HDC GetDC() {
-    return mDC;
-  }
+  HDC GetDC() { return mDC; }
 
-private:
+ private:
   HDC mDC;
 };
 
 // Select a font into the given DC, and auto-restore.
-class AutoSelectFont
-{
-public:
-  AutoSelectFont(HDC aDC, LOGFONTW *aLogFont)
-    : mOwnsFont(false)
-  {
+class AutoSelectFont {
+ public:
+  AutoSelectFont(HDC aDC, LOGFONTW *aLogFont) : mOwnsFont(false) {
     mFont = ::CreateFontIndirectW(aLogFont);
     if (mFont) {
       mOwnsFont = true;
@@ -48,9 +39,7 @@ public:
     }
   }
 
-  AutoSelectFont(HDC aDC, HFONT aFont)
-    : mOwnsFont(false)
-  {
+  AutoSelectFont(HDC aDC, HFONT aFont) : mOwnsFont(false) {
     mDC = aDC;
     mFont = aFont;
     mOldFont = (HFONT)::SelectObject(aDC, aFont);
@@ -65,22 +54,18 @@ public:
     }
   }
 
-  bool IsValid() const {
-    return mFont != nullptr;
-  }
+  bool IsValid() const { return mFont != nullptr; }
 
-  HFONT GetFont() const {
-    return mFont;
-  }
+  HFONT GetFont() const { return mFont; }
 
-private:
+ private:
   HDC mDC;
   HFONT mFont;
   HFONT mOldFont;
   bool mOwnsFont;
 };
 
-} // gfx
-} // mozilla
+}  // namespace gfx
+}  // namespace mozilla
 
-#endif // mozilla_gfx_AutoHelpersWin_h
+#endif  // mozilla_gfx_AutoHelpersWin_h

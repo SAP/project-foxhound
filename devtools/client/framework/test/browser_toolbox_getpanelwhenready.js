@@ -10,27 +10,27 @@ var toolbox = null;
 
 const URL = "data:text/html;charset=utf8,test for getPanelWhenReady";
 
-add_task(function* () {
-  let tab = yield addTab(URL);
-  let target = TargetFactory.forTab(tab);
-  toolbox = yield gDevTools.showToolbox(target);
+add_task(async function() {
+  const tab = await addTab(URL);
+  const target = await TargetFactory.forTab(tab);
+  toolbox = await gDevTools.showToolbox(target);
 
-  let debuggerPanelPromise = toolbox.getPanelWhenReady("jsdebugger");
-  yield toolbox.selectTool("jsdebugger");
-  let debuggerPanel = yield debuggerPanelPromise;
+  const debuggerPanelPromise = toolbox.getPanelWhenReady("jsdebugger");
+  await toolbox.selectTool("jsdebugger");
+  const debuggerPanel = await debuggerPanelPromise;
 
   is(debuggerPanel, toolbox.getPanel("jsdebugger"),
       "The debugger panel from getPanelWhenReady before loading is the actual panel");
 
-  let debuggerPanel2 = yield toolbox.getPanelWhenReady("jsdebugger");
+  const debuggerPanel2 = await toolbox.getPanelWhenReady("jsdebugger");
   is(debuggerPanel2, toolbox.getPanel("jsdebugger"),
       "The debugger panel from getPanelWhenReady after loading is the actual panel");
 
-  yield cleanup();
+  await cleanup();
 });
 
-function* cleanup() {
-  yield toolbox.destroy();
+async function cleanup() {
+  await toolbox.destroy();
   gBrowser.removeCurrentTab();
   toolbox = null;
 }

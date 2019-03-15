@@ -17,7 +17,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1043106
 var storage;
 
 window.addEventListener("storage", function (event) {
-  ok(event.storageArea, storage, "The storageArea is correct");
+  is(event.storageArea, storage, "The storageArea is correct");
   storage.removeItem("a");
   runTests();
 });
@@ -34,7 +34,7 @@ function runTests() {
   storage = t.storage;
 
   var ifr = document.getElementById("iframe");
-  ifr.src = "data:text/html,<script>" + t.key + ".setItem(\"a\",\"b\");</" + "script>";
+  ifr.srcdoc = "<script>"+ t.key + ".setItem(\"a\",\"b\");</"+"script>";
 }
 
 SimpleTest.waitForExplicitFinish();

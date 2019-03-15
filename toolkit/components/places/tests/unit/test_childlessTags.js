@@ -9,69 +9,56 @@
  * contained in any regular, non-tag folders.  See bug 444849.
  */
 
-// Add your tests here.  Each is an object with a summary string |desc| and a
-// method run() that's called to run the test.
-var tests = [
-  {
-    desc: "Removing a tagged bookmark should cause the tag to be removed.",
-    run() {
-      print("  Make a bookmark.");
-      var bmId = bmsvc.insertBookmark(bmsvc.unfiledBookmarksFolder,
-                                      BOOKMARK_URI,
-                                      bmsvc.DEFAULT_INDEX,
-                                      "test bookmark");
-      do_check_true(bmId > 0);
+ var histsvc = Cc["@mozilla.org/browser/nav-history-service;1"].
+               getService(Ci.nsINavHistoryService);
 
-      print("  Tag it up.");
-      var tags = ["foo", "bar"];
-      tagssvc.tagURI(BOOKMARK_URI, tags);
-      ensureTagsExist(tags);
+ var tagssvc = Cc["@mozilla.org/browser/tagging-service;1"].
+               getService(Ci.nsITaggingService);
 
-      print("  Remove the bookmark.  The tags should no longer exist.");
-      bmsvc.removeItem(bmId);
-      ensureTagsExist([]);
-    }
-  },
+ const BOOKMARK_URI = uri("http://example.com/");
 
-  {
-    desc: "Removing a folder containing a tagged bookmark should cause the " +
-          "tag to be removed.",
-    run() {
-      print("  Make a folder.");
-      var folderId = bmsvc.createFolder(bmsvc.unfiledBookmarksFolder,
-                                        "test folder",
-                                        bmsvc.DEFAULT_INDEX);
-      do_check_true(folderId > 0);
+add_task(async function test_removing_tagged_bookmark_removes_tag() {
+  print("  Make a bookmark.");
+  let bookmark = await PlacesUtils.bookmarks.insert({
+    parentGuid: PlacesUtils.bookmarks.unfiledGuid,
+    url: BOOKMARK_URI,
+    title: "test bookmark",
+  });
 
-      print("  Stick a bookmark in the folder.");
-      var bmId = bmsvc.insertBookmark(folderId,
-                                      BOOKMARK_URI,
-                                      bmsvc.DEFAULT_INDEX,
-                                      "test bookmark");
-      do_check_true(bmId > 0);
+  print("  Tag it up.");
+  let tags = ["foo", "bar"];
+  tagssvc.tagURI(BOOKMARK_URI, tags);
+  ensureTagsExist(tags);
 
-      print("  Tag the bookmark.");
-      var tags = ["foo", "bar"];
-      tagssvc.tagURI(BOOKMARK_URI, tags);
-      ensureTagsExist(tags);
+  print("  Remove the bookmark.  The tags should no longer exist.");
+  await PlacesUtils.bookmarks.remove(bookmark.guid);
+  ensureTagsExist([]);
+});
 
-      print("  Remove the folder.  The tags should no longer exist.");
-      bmsvc.removeItem(folderId);
-      ensureTagsExist([]);
-    }
-  }
-];
+add_task(async function test_removing_folder_containing_tagged_bookmark_removes_tag() {
+  print("  Make a folder.");
+  let folder = await PlacesUtils.bookmarks.insert({
+    parentGuid: PlacesUtils.bookmarks.unfiledGuid,
+    title: "test folder",
+    type: PlacesUtils.bookmarks.TYPE_FOLDER,
+  });
 
-var bmsvc = Cc["@mozilla.org/browser/nav-bookmarks-service;1"].
-            getService(Ci.nsINavBookmarksService);
+  print("  Stick a bookmark in the folder.");
+  var bookmark = await PlacesUtils.bookmarks.insert({
+    parentGuid: folder.guid,
+    url: BOOKMARK_URI,
+    title: "test bookmark",
+  });
 
-var histsvc = Cc["@mozilla.org/browser/nav-history-service;1"].
-              getService(Ci.nsINavHistoryService);
+  print("  Tag the bookmark.");
+  var tags = ["foo", "bar"];
+  tagssvc.tagURI(BOOKMARK_URI, tags);
+  ensureTagsExist(tags);
 
-var tagssvc = Cc["@mozilla.org/browser/tagging-service;1"].
-              getService(Ci.nsITaggingService);
-
-const BOOKMARK_URI = uri("http://example.com/");
+  print("  Remove the folder.  The tags should no longer exist.");
+  await PlacesUtils.bookmarks.remove(bookmark.guid);
+  ensureTagsExist([]);
+});
 
 /**
  * Runs a tag query and ensures that the tags returned are those and only those
@@ -84,7 +71,7 @@ const BOOKMARK_URI = uri("http://example.com/");
 function ensureTagsExist(aTags) {
   var query = histsvc.getNewQuery();
   var opts = histsvc.getNewQueryOptions();
-  opts.resultType = opts.RESULTS_AS_TAG_QUERY;
+  opts.resultType = opts.RESULTS_AS_TAGS_ROOT;
   var resultRoot = histsvc.executeQuery(query, opts).root;
 
   // Dupe aTags.
@@ -94,23 +81,16 @@ function ensureTagsExist(aTags) {
 
   // Ensure that the number of tags returned from the query is the same as the
   // number in |tags|.
-  do_check_eq(resultRoot.childCount, tags.length);
+  Assert.equal(resultRoot.childCount, tags.length);
 
   // For each tag result from the query, ensure that it's contained in |tags|.
   // Remove the tag from |tags| so that we ensure the sets are equal.
   for (let i = 0; i < resultRoot.childCount; i++) {
     var tag = resultRoot.getChild(i).title;
     var indexOfTag = tags.indexOf(tag);
-    do_check_true(indexOfTag >= 0);
+    Assert.ok(indexOfTag >= 0);
     tags.splice(indexOfTag, 1);
   }
 
   resultRoot.containerOpen = false;
-}
-
-function run_test() {
-  tests.forEach(function(test) {
-    print("Running test: " + test.desc);
-    test.run();
-  });
 }

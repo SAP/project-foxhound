@@ -10,6 +10,7 @@ import unittest
 
 from mozunit import main
 
+from mozbuild import schedules
 from mozbuild.frontend.context import BugzillaComponent
 from mozbuild.frontend.reader import (
     BuildReaderError,
@@ -370,8 +371,8 @@ class TestBuildReader(unittest.TestCase):
         v = reader.files_info(['bug_component/simple/moz.build'])
         self.assertEqual(len(v), 1)
         flags = v['bug_component/simple/moz.build']
-        self.assertEqual(flags['BUG_COMPONENT'].product, 'Core')
-        self.assertEqual(flags['BUG_COMPONENT'].component, 'Build Config')
+        self.assertEqual(flags['BUG_COMPONENT'].product, 'Firefox Build System')
+        self.assertEqual(flags['BUG_COMPONENT'].component, 'General')
 
     def test_files_bug_component_different_matchers(self):
         reader = self.reader('files-info')
@@ -402,9 +403,9 @@ class TestBuildReader(unittest.TestCase):
         self.assertEqual(v['bug_component/final/foo']['BUG_COMPONENT'],
             BugzillaComponent('default_product', 'default_component'))
         self.assertEqual(v['bug_component/final/Makefile.in']['BUG_COMPONENT'],
-            BugzillaComponent('Core', 'Build Config'))
+            BugzillaComponent('Firefox Build System', 'General'))
         self.assertEqual(v['bug_component/final/subcomponent/Makefile.in']['BUG_COMPONENT'],
-            BugzillaComponent('Core', 'Build Config'))
+            BugzillaComponent('Firefox Build System', 'General'))
         self.assertEqual(v['bug_component/final/subcomponent/bar']['BUG_COMPONENT'],
             BugzillaComponent('Another', 'Component'))
 
@@ -480,6 +481,43 @@ class TestBuildReader(unittest.TestCase):
         with self.assertRaises(BuildReaderError):
             reader.files_info(['foo.js'])
 
+    def test_schedules(self):
+        reader = self.reader('schedules')
+        info = reader.files_info([
+            'win.and.osx',
+            'somefile',
+            'foo.win',
+            'foo.osx',
+            'subd/aa.py',
+            'subd/yaml.py',
+            'subd/win.js',
+        ])
+        # default: all exclusive, no inclusive
+        self.assertEqual(info['somefile']['SCHEDULES'].inclusive, [])
+        self.assertEqual(info['somefile']['SCHEDULES'].exclusive, schedules.EXCLUSIVE_COMPONENTS)
+        # windows-only
+        self.assertEqual(info['foo.win']['SCHEDULES'].inclusive, [])
+        self.assertEqual(info['foo.win']['SCHEDULES'].exclusive, ['windows'])
+        # osx-only
+        self.assertEqual(info['foo.osx']['SCHEDULES'].inclusive, [])
+        self.assertEqual(info['foo.osx']['SCHEDULES'].exclusive, ['macosx'])
+        # top-level moz.build specifies subd/**.py with an inclusive option
+        self.assertEqual(info['subd/aa.py']['SCHEDULES'].inclusive, ['py-lint'])
+        self.assertEqual(info['subd/aa.py']['SCHEDULES'].exclusive, schedules.EXCLUSIVE_COMPONENTS)
+        # Files('yaml.py') in subd/moz.build combines with Files('subdir/**.py')
+        self.assertEqual(info['subd/yaml.py']['SCHEDULES'].inclusive, ['py-lint', 'yaml-lint'])
+        self.assertEqual(info['subd/yaml.py']['SCHEDULES'].exclusive, schedules.EXCLUSIVE_COMPONENTS)
+        # .. but exlusive does not override inclusive
+        self.assertEqual(info['subd/win.js']['SCHEDULES'].inclusive, ['js-lint'])
+        self.assertEqual(info['subd/win.js']['SCHEDULES'].exclusive, ['windows'])
+
+        self.assertEqual(set(info['subd/yaml.py']['SCHEDULES'].components),
+                         set(schedules.EXCLUSIVE_COMPONENTS + ['py-lint', 'yaml-lint']))
+
+        # win.and.osx is defined explicitly, and matches *.osx, and the two have
+        # conflicting SCHEDULES.exclusive settings, so the later one is used
+        self.assertEqual(set(info['win.and.osx']['SCHEDULES'].exclusive),
+                         set(['macosx', 'windows']))
 
 if __name__ == '__main__':
     main()

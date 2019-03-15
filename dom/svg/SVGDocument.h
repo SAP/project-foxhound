@@ -10,40 +10,40 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/XMLDocument.h"
 
-class nsSVGElement;
-
 namespace mozilla {
+
+class SVGContextPaint;
+
 namespace dom {
 
+class SVGElement;
 class SVGForeignObjectElement;
 
-class SVGDocument final : public XMLDocument
-{
-  friend class SVGForeignObjectElement; // To call EnsureNonSVGUserAgentStyleSheetsLoaded
+class SVGDocument final : public XMLDocument {
+ public:
+  SVGDocument() : XMLDocument("image/svg+xml") { mType = eSVG; }
 
-public:
-  SVGDocument()
-    : XMLDocument("image/svg+xml")
-    , mHasLoadedNonSVGUserAgentStyleSheets(false)
-  {
-    mType = eSVG;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+
+  void SetCurrentContextPaint(const SVGContextPaint* aContextPaint) {
+    mCurrentContextPaint = aContextPaint;
   }
 
-  virtual nsresult InsertChildAt(nsIContent* aKid, uint32_t aIndex,
-                                 bool aNotify) override;
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;
-
-  virtual SVGDocument* AsSVGDocument() override {
-    return this;
+  const SVGContextPaint* GetCurrentContextPaint() const {
+    return mCurrentContextPaint;
   }
 
-private:
-  void EnsureNonSVGUserAgentStyleSheetsLoaded();
-
-  bool mHasLoadedNonSVGUserAgentStyleSheets;
+ private:
+  // This is maintained by AutoSetRestoreSVGContextPaint.
+  const SVGContextPaint* mCurrentContextPaint = nullptr;
 };
 
-} // namespace dom
-} // namespace mozilla
+inline SVGDocument* Document::AsSVGDocument() {
+  MOZ_ASSERT(IsSVGDocument());
+  return static_cast<SVGDocument*>(this);
+}
 
-#endif // mozilla_dom_SVGDocument_h
+}  // namespace dom
+}  // namespace mozilla
+
+#endif  // mozilla_dom_SVGDocument_h

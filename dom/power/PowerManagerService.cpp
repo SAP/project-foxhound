@@ -8,9 +8,8 @@
 #include "mozilla/Hal.h"
 #include "mozilla/HalWakeLock.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/ModuleUtils.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/Services.h"
-#include "jsprf.h"
 #include "nsIDOMWakeLockListener.h"
 #include "nsIDOMWindow.h"
 #include "nsIObserverService.h"
@@ -19,27 +18,9 @@
 
 // For _exit().
 #ifdef XP_WIN
-#include <process.h>
+#  include <process.h>
 #else
-#include <unistd.h>
-#endif
-
-#ifdef ANDROID
-#include <android/log.h>
-extern "C" char* PrintJSStack();
-static void LogFunctionAndJSStack(const char* funcname) {
-  char *jsstack = PrintJSStack();
-  __android_log_print(ANDROID_LOG_INFO, "PowerManagerService", \
-                      "Call to %s. The JS stack is:\n%s\n",
-                      funcname,
-                      jsstack ? jsstack : "<no JS stack>");
-  JS_smprintf_free(jsstack);
-}
-// bug 839452
-#define LOG_FUNCTION_AND_JS_STACK() \
-  LogFunctionAndJSStack(__PRETTY_FUNCTION__);
-#else
-#define LOG_FUNCTION_AND_JS_STACK()
+#  include <unistd.h>
 #endif
 
 namespace mozilla {
@@ -53,8 +34,7 @@ NS_IMPL_ISUPPORTS(PowerManagerService, nsIPowerManagerService)
 /* static */ StaticRefPtr<PowerManagerService> PowerManagerService::sSingleton;
 
 /* static */ already_AddRefed<PowerManagerService>
-PowerManagerService::GetInstance()
-{
+PowerManagerService::GetInstance() {
   if (!sSingleton) {
     sSingleton = new PowerManagerService();
     sSingleton->Init();
@@ -65,45 +45,30 @@ PowerManagerService::GetInstance()
   return service.forget();
 }
 
-void
-PowerManagerService::Init()
-{
-  RegisterWakeLockObserver(this);
+void PowerManagerService::Init() { RegisterWakeLockObserver(this); }
 
-  // NB: default to *enabling* the watchdog even when the pref is
-  // absent, in case the profile might be damaged and we need to
-  // restart to repair it.
-  mWatchdogTimeoutSecs =
-    Preferences::GetInt("shutdown.watchdog.timeoutSecs", 10);
-}
-
-PowerManagerService::~PowerManagerService()
-{
+PowerManagerService::~PowerManagerService() {
   UnregisterWakeLockObserver(this);
 }
 
-void
-PowerManagerService::ComputeWakeLockState(const WakeLockInformation& aWakeLockInfo,
-                                          nsAString &aState)
-{
+void PowerManagerService::ComputeWakeLockState(
+    const WakeLockInformation &aWakeLockInfo, nsAString &aState) {
   WakeLockState state = hal::ComputeWakeLockState(aWakeLockInfo.numLocks(),
                                                   aWakeLockInfo.numHidden());
   switch (state) {
-  case WAKE_LOCK_STATE_UNLOCKED:
-    aState.AssignLiteral("unlocked");
-    break;
-  case WAKE_LOCK_STATE_HIDDEN:
-    aState.AssignLiteral("locked-background");
-    break;
-  case WAKE_LOCK_STATE_VISIBLE:
-    aState.AssignLiteral("locked-foreground");
-    break;
+    case WAKE_LOCK_STATE_UNLOCKED:
+      aState.AssignLiteral("unlocked");
+      break;
+    case WAKE_LOCK_STATE_HIDDEN:
+      aState.AssignLiteral("locked-background");
+      break;
+    case WAKE_LOCK_STATE_VISIBLE:
+      aState.AssignLiteral("locked-foreground");
+      break;
   }
 }
 
-void
-PowerManagerService::Notify(const WakeLockInformation& aWakeLockInfo)
-{
+void PowerManagerService::Notify(const WakeLockInformation &aWakeLockInfo) {
   nsAutoString state;
   ComputeWakeLockState(aWakeLockInfo, state);
 
@@ -112,95 +77,32 @@ PowerManagerService::Notify(const WakeLockInformation& aWakeLockInfo)
    * because the callbacks may install new listeners. We expect no
    * more than one listener per window, so it shouldn't be too long.
    */
-  AutoTArray<nsCOMPtr<nsIDOMMozWakeLockListener>, 2> listeners(mWakeLockListeners);
+  AutoTArray<nsCOMPtr<nsIDOMMozWakeLockListener>, 2> listeners(
+      mWakeLockListeners);
 
   for (uint32_t i = 0; i < listeners.Length(); ++i) {
     listeners[i]->Callback(aWakeLockInfo.topic(), state);
   }
 }
 
-void
-PowerManagerService::SyncProfile()
-{
-  nsCOMPtr<nsIObserverService> obsServ = services::GetObserverService();
-  if (obsServ) {
-    NS_NAMED_LITERAL_STRING(context, "shutdown-persist");
-    obsServ->NotifyObservers(nullptr, "profile-change-net-teardown", context.get());
-    obsServ->NotifyObservers(nullptr, "profile-change-teardown", context.get());
-    obsServ->NotifyObservers(nullptr, "profile-before-change", context.get());
-    obsServ->NotifyObservers(nullptr, "profile-before-change-qm", context.get());
-    obsServ->NotifyObservers(nullptr, "profile-before-change-telemetry", context.get());
-  }
-}
-
 NS_IMETHODIMP
-PowerManagerService::Reboot()
-{
-  LOG_FUNCTION_AND_JS_STACK() // bug 839452
-
-  StartForceQuitWatchdog(eHalShutdownMode_Reboot, mWatchdogTimeoutSecs);
-  // To synchronize any unsaved user data before rebooting.
-  SyncProfile();
-  hal::Reboot();
-  MOZ_CRASH("hal::Reboot() shouldn't return");
-}
-
-NS_IMETHODIMP
-PowerManagerService::PowerOff()
-{
-  LOG_FUNCTION_AND_JS_STACK() // bug 839452
-
-  StartForceQuitWatchdog(eHalShutdownMode_PowerOff, mWatchdogTimeoutSecs);
-  // To synchronize any unsaved user data before powering off.
-  SyncProfile();
-  hal::PowerOff();
-  MOZ_CRASH("hal::PowerOff() shouldn't return");
-}
-
-NS_IMETHODIMP
-PowerManagerService::Restart()
-{
-  LOG_FUNCTION_AND_JS_STACK() // bug 839452
-
-  // FIXME/bug 796826 this implementation is currently gonk-specific,
-  // because it relies on the Gonk to initialize the Gecko processes to
-  // restart B2G. It's better to do it here to have a real "restart".
-  StartForceQuitWatchdog(eHalShutdownMode_Restart, mWatchdogTimeoutSecs);
-  // Ensure all content processes are dead before we continue
-  // restarting.  This code is used to restart to apply updates, and
-  // if we don't join all the subprocesses, race conditions can cause
-  // them to see an inconsistent view of the application directory.
-  ContentParent::JoinAllSubprocesses();
-
-  // To synchronize any unsaved user data before restarting.
-  SyncProfile();
-#ifdef XP_UNIX
-  sync();
-#endif
-  _exit(0);
-  MOZ_CRASH("_exit() shouldn't return");
-}
-
-NS_IMETHODIMP
-PowerManagerService::AddWakeLockListener(nsIDOMMozWakeLockListener *aListener)
-{
-  if (mWakeLockListeners.Contains(aListener))
-    return NS_OK;
+PowerManagerService::AddWakeLockListener(nsIDOMMozWakeLockListener *aListener) {
+  if (mWakeLockListeners.Contains(aListener)) return NS_OK;
 
   mWakeLockListeners.AppendElement(aListener);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-PowerManagerService::RemoveWakeLockListener(nsIDOMMozWakeLockListener *aListener)
-{
+PowerManagerService::RemoveWakeLockListener(
+    nsIDOMMozWakeLockListener *aListener) {
   mWakeLockListeners.RemoveElement(aListener);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-PowerManagerService::GetWakeLockState(const nsAString &aTopic, nsAString &aState)
-{
+PowerManagerService::GetWakeLockState(const nsAString &aTopic,
+                                      nsAString &aState) {
   WakeLockInformation info;
   GetWakeLockInfo(aTopic, &info);
 
@@ -209,11 +111,9 @@ PowerManagerService::GetWakeLockState(const nsAString &aTopic, nsAString &aState
   return NS_OK;
 }
 
-already_AddRefed<WakeLock>
-PowerManagerService::NewWakeLock(const nsAString& aTopic,
-                                 nsPIDOMWindowInner* aWindow,
-                                 mozilla::ErrorResult& aRv)
-{
+already_AddRefed<WakeLock> PowerManagerService::NewWakeLock(
+    const nsAString &aTopic, nsPIDOMWindowInner *aWindow,
+    mozilla::ErrorResult &aRv) {
   RefPtr<WakeLock> wakelock = new WakeLock();
   aRv = wakelock->Init(aTopic, aWindow);
   if (aRv.Failed()) {
@@ -226,30 +126,60 @@ PowerManagerService::NewWakeLock(const nsAString& aTopic,
 NS_IMETHODIMP
 PowerManagerService::NewWakeLock(const nsAString &aTopic,
                                  mozIDOMWindow *aWindow,
-                                 nsISupports **aWakeLock)
-{
+                                 nsIWakeLock **aWakeLock) {
   mozilla::ErrorResult rv;
   RefPtr<WakeLock> wakelock =
-    NewWakeLock(aTopic, nsPIDOMWindowInner::From(aWindow), rv);
+      NewWakeLock(aTopic, nsPIDOMWindowInner::From(aWindow), rv);
   if (rv.Failed()) {
     return rv.StealNSResult();
   }
 
-  nsCOMPtr<nsIDOMEventListener> eventListener = wakelock.get();
-  eventListener.forget(aWakeLock);
+  wakelock.forget(aWakeLock);
   return NS_OK;
 }
 
-already_AddRefed<WakeLock>
-PowerManagerService::NewWakeLockOnBehalfOfProcess(const nsAString& aTopic,
-                                                  ContentParent* aContentParent)
-{
+already_AddRefed<WakeLock> PowerManagerService::NewWakeLockOnBehalfOfProcess(
+    const nsAString &aTopic, ContentParent *aContentParent) {
   RefPtr<WakeLock> wakelock = new WakeLock();
   nsresult rv = wakelock->Init(aTopic, aContentParent);
   NS_ENSURE_SUCCESS(rv, nullptr);
   return wakelock.forget();
 }
 
-} // namespace power
-} // namespace dom
-} // namespace mozilla
+}  // namespace power
+}  // namespace dom
+}  // namespace mozilla
+
+NS_DEFINE_NAMED_CID(NS_POWERMANAGERSERVICE_CID);
+
+NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(
+    nsIPowerManagerService,
+    mozilla::dom::power::PowerManagerService::GetInstance)
+
+static const mozilla::Module::CIDEntry kPowerManagerCIDs[] = {
+    // clang-format off
+  { &kNS_POWERMANAGERSERVICE_CID, false, nullptr, nsIPowerManagerServiceConstructor, mozilla::Module::ALLOW_IN_GPU_AND_SOCKET_PROCESS },
+  { nullptr }
+    // clang-format on
+};
+
+static const mozilla::Module::ContractIDEntry kPowerManagerContracts[] = {
+    // clang-format off
+  { POWERMANAGERSERVICE_CONTRACTID, &kNS_POWERMANAGERSERVICE_CID, mozilla::Module::ALLOW_IN_GPU_AND_SOCKET_PROCESS },
+  { nullptr }
+    // clang-format on
+};
+
+// We mark the power module as being available in the GPU process because the
+// appshell depends on the power manager service.
+static const mozilla::Module kPowerManagerModule = {
+    mozilla::Module::kVersion,
+    kPowerManagerCIDs,
+    kPowerManagerContracts,
+    nullptr,
+    nullptr,
+    nullptr,
+    nullptr,
+    mozilla::Module::ALLOW_IN_GPU_AND_SOCKET_PROCESS};
+
+NSMODULE_DEFN(nsPowerManagerModule) = &kPowerManagerModule;

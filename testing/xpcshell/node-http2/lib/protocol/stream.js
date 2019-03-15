@@ -62,6 +62,7 @@ function Stream(log, connection) {
   this._initializeState();
 
   this.connection = connection;
+  this.sentEndStream = false;
 }
 
 Stream.prototype = Object.create(Duplex.prototype, { constructor: { value: Stream } });
@@ -103,6 +104,16 @@ Stream.prototype.headers = function headers(headers) {
     flags: {},
     stream: this.id,
     headers: headers
+  });
+};
+
+Stream.prototype.trailers = function trailers(trailers) {
+  this.sentEndStream = true;
+  this._pushUpstream({
+    type: 'HEADERS',
+    flags: {'END_STREAM': true},
+    stream: this.id,
+    headers: trailers
   });
 };
 
@@ -253,7 +264,7 @@ Stream.prototype._writeUpstream = function _writeUpstream(frame) {
     this._onPriority(frame);
   } else if (frame.type === 'ALTSVC') {
     // TODO
-  } else if (frame.type === 'BLOCKED') {
+  } else if (frame.type === 'ORIGIN') {
     // TODO
   }
 
@@ -342,6 +353,13 @@ Stream.prototype._finishing = function _finishing() {
     stream: this.id,
     data: emptyBuffer
   };
+
+  if (this.sentEndStream) {
+    this._log.debug('Already sent END_STREAM, not sending again.');
+    return;
+  }
+
+  this.sentEndStream = true;
   var lastFrame = this.upstream.getLastQueuedFrame();
   if (lastFrame && ((lastFrame.type === 'DATA') || (lastFrame.type === 'HEADERS'))) {
     this._log.debug({ frame: lastFrame }, 'Marking last frame with END_STREAM flag.');
@@ -413,7 +431,7 @@ Stream.prototype._transition = function transition(sending, frame) {
   var connectionError;
   var streamError;
 
-  var DATA = false, HEADERS = false, PRIORITY = false, ALTSVC = false, BLOCKED = false;
+  var DATA = false, HEADERS = false, PRIORITY = false, ALTSVC = false, ORIGIN = false;
   var RST_STREAM = false, PUSH_PROMISE = false, WINDOW_UPDATE = false;
   switch(frame.type) {
     case 'DATA'         : DATA          = true; break;
@@ -423,7 +441,7 @@ Stream.prototype._transition = function transition(sending, frame) {
     case 'PUSH_PROMISE' : PUSH_PROMISE  = true; break;
     case 'WINDOW_UPDATE': WINDOW_UPDATE = true; break;
     case 'ALTSVC'       : ALTSVC        = true; break;
-    case 'BLOCKED'      : BLOCKED       = true; break;
+    case 'ORIGIN'       : ORIGIN        = true; break;
   }
 
   var previousState = this.state;
@@ -483,7 +501,7 @@ Stream.prototype._transition = function transition(sending, frame) {
         this._setState('CLOSED');
       } else if (receiving && HEADERS) {
         this._setState('HALF_CLOSED_LOCAL');
-      } else if (BLOCKED || PRIORITY) {
+      } else if (PRIORITY || ORIGIN) {
         /* No state change */
       } else {
         connectionError = 'PROTOCOL_ERROR';
@@ -518,7 +536,7 @@ Stream.prototype._transition = function transition(sending, frame) {
     case 'HALF_CLOSED_LOCAL':
       if (RST_STREAM || (receiving && frame.flags.END_STREAM)) {
         this._setState('CLOSED');
-      } else if (BLOCKED || ALTSVC || receiving || PRIORITY || (sending && WINDOW_UPDATE)) {
+      } else if (ORIGIN || ALTSVC || receiving || PRIORITY || (sending && WINDOW_UPDATE)) {
         /* No state change */
       } else {
         connectionError = 'PROTOCOL_ERROR';
@@ -538,7 +556,7 @@ Stream.prototype._transition = function transition(sending, frame) {
     case 'HALF_CLOSED_REMOTE':
       if (RST_STREAM || (sending && frame.flags.END_STREAM)) {
         this._setState('CLOSED');
-      } else if (BLOCKED || ALTSVC || sending || PRIORITY || (receiving && WINDOW_UPDATE)) {
+      } else if (ORIGIN || ALTSVC || sending || PRIORITY || (receiving && WINDOW_UPDATE)) {
         /* No state change */
       } else {
         connectionError = 'PROTOCOL_ERROR';
@@ -569,7 +587,7 @@ Stream.prototype._transition = function transition(sending, frame) {
       if (PRIORITY || (sending && RST_STREAM) ||
           (receiving && WINDOW_UPDATE) ||
           (receiving && this._closedByUs &&
-           (this._closedWithRst || RST_STREAM || ALTSVC))) {
+           (this._closedWithRst || RST_STREAM || ALTSVC || ORIGIN))) {
         /* No state change */
       } else {
         streamError = 'STREAM_CLOSED';

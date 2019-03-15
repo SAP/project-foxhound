@@ -8,7 +8,7 @@
 
 /* exported init, finish */
 
-Components.utils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var gArgs;
 
@@ -30,7 +30,7 @@ function init() {
   var list = gArgs.list;
   list.sort((a, b) => String(a.name).localeCompare(b.name));
   for (let listItem of list) {
-    let item = document.createElement("richlistitem");
+    let item = document.createXULElement("richlistitem");
     item.setAttribute("name", listItem.name);
     item.setAttribute("version", listItem.version);
     item.setAttribute("icon", listItem.icon);

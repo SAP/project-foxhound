@@ -15,14 +15,10 @@
 
   <script type="application/javascript">
   <![CDATA[
-    const Cc = Components.classes;
-    const Cu = Components.utils;
-    const Ci = Components.interfaces;
-    Cu.import("resource://gre/modules/DOMRequestHelper.jsm");
+    ChromeUtils.import("resource://gre/modules/DOMRequestHelper.jsm");
     let obs = Cc["@mozilla.org/observer-service;1"].
               getService(Ci.nsIObserverService);
-    let ppmm = Cc["@mozilla.org/parentprocessmessagemanager;1"].
-              getService(Ci.nsIMessageBroadcaster);
+    let ppmm = Cc["@mozilla.org/parentprocessmessagemanager;1"].getService();
 
     function DummyHelperSubclass() {
       this.onuninit = null;
@@ -148,7 +144,7 @@
 
       let frame = document.createElement("iframe");
       frame.onload = function() {
-        obs.addObserver(observer, TOPIC, false);
+        obs.addObserver(observer, TOPIC);
         // Create dummy DOMRequestHelper specific to checkWindowDestruction()
         let cwdDummy = new DummyHelperSubclass();
         cwdDummy.onuninit = function() {

@@ -21,26 +21,26 @@ namespace PingSender {
 const char* kUserAgent = "pingsender/1.0";
 const char* kCustomVersionHeader = "X-PingSender-Version: 1.0";
 const char* kContentEncodingHeader = "Content-Encoding: gzip";
+// The maximum time, in milliseconds, we allow for the connection phase
+// to the server.
+const uint32_t kConnectionTimeoutMs = 30 * 1000;
 
 /**
  * This shared function returns a Date header string for use in HTTP requests.
  * See "RFC 7231, section 7.1.1.2: Date" for its specifications.
  */
-std::string
-GenerateDateHeader()
-{
+std::string GenerateDateHeader() {
   char buffer[128];
   std::time_t t = std::time(nullptr);
-  strftime(buffer, sizeof(buffer), "Date: %a, %d %b %Y %H:%M:%S GMT", std::gmtime(&t));
+  strftime(buffer, sizeof(buffer), "Date: %a, %d %b %Y %H:%M:%S GMT",
+           std::gmtime(&t));
   return string(buffer);
 }
 
 /**
  * Read the ping contents from the specified file
  */
-static std::string
-ReadPing(const string& aPingPath)
-{
+static std::string ReadPing(const string& aPingPath) {
   string ping;
   ifstream file;
 
@@ -67,9 +67,7 @@ ReadPing(const string& aPingPath)
   return ping;
 }
 
-std::string
-GzipCompress(const std::string& rawData)
-{
+std::string GzipCompress(const std::string& rawData) {
   z_stream deflater = {};
 
   // Use the maximum window size when compressing: this also tells zlib to
@@ -90,7 +88,8 @@ GzipCompress(const std::string& rawData)
 
   // Let zlib know about the input data.
   deflater.avail_in = rawData.size();
-  deflater.next_in = reinterpret_cast<Bytef*>(const_cast<char*>(rawData.c_str()));
+  deflater.next_in =
+      reinterpret_cast<Bytef*>(const_cast<char*>(rawData.c_str()));
 
   // Compress and append chunk by chunk.
   std::string gzipData;
@@ -103,11 +102,7 @@ GzipCompress(const std::string& rawData)
     // much data to compress. When the buffer is full, we repeadetly
     // flush out.
     while (deflater.avail_out == 0) {
-      size_t bytesToWrite = kBufferSize - deflater.avail_out;
-      if (bytesToWrite == 0) {
-        break;
-      }
-      gzipData.append(reinterpret_cast<const char*>(outputBuffer), bytesToWrite);
+      gzipData.append(reinterpret_cast<const char*>(outputBuffer), kBufferSize);
 
       // Update the state and let the deflater know about it.
       deflater.next_out = outputBuffer;
@@ -139,12 +134,11 @@ GzipCompress(const std::string& rawData)
   return gzipData;
 }
 
-} // namespace PingSender
+}  // namespace PingSender
 
 using namespace PingSender;
 
-int main(int argc, char* argv[])
-{
+int main(int argc, char* argv[]) {
   string url;
   string pingPath;
 
@@ -152,18 +146,19 @@ int main(int argc, char* argv[])
     url = argv[1];
     pingPath = argv[2];
   } else {
-    PINGSENDER_LOG("Usage: pingsender URL PATH\n"
-                   "Send the payload stored in PATH to the specified URL using "
-                   "an HTTP POST message\n"
-                   "then delete the file after a successful send.\n");
-    exit(EXIT_FAILURE);
+    PINGSENDER_LOG(
+        "Usage: pingsender URL PATH\n"
+        "Send the payload stored in PATH to the specified URL using "
+        "an HTTP POST message\n"
+        "then delete the file after a successful send.\n");
+    return EXIT_FAILURE;
   }
 
   string ping(ReadPing(pingPath));
 
   if (ping.empty()) {
     PINGSENDER_LOG("ERROR: Ping payload is empty\n");
-    exit(EXIT_FAILURE);
+    return EXIT_FAILURE;
   }
 
   // Compress the ping using gzip.
@@ -174,18 +169,18 @@ int main(int argc, char* argv[])
   // it compressed.
   if (gzipPing.empty()) {
     PINGSENDER_LOG("ERROR: Ping compression failed\n");
-    exit(EXIT_FAILURE);
+    return EXIT_FAILURE;
   }
 
   if (!Post(url, gzipPing)) {
-    exit(EXIT_FAILURE);
+    return EXIT_FAILURE;
   }
 
   // If the ping was successfully sent, delete the file.
   if (!pingPath.empty() && std::remove(pingPath.c_str())) {
     // We failed to remove the pending ping file.
-    exit(EXIT_FAILURE);
+    return EXIT_FAILURE;
   }
 
-  exit(EXIT_SUCCESS);
+  return EXIT_SUCCESS;
 }

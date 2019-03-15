@@ -14,7 +14,6 @@ interface imgIRequest;
 interface nsIChannel;
 interface nsIStreamListener;
 interface nsIURI;
-interface nsIDocument;
 interface nsIFrame;
 
 [ref] native MaybeOnNonvisible(const mozilla::Maybe<mozilla::OnNonvisible>);
@@ -40,6 +39,9 @@ native Visibility(mozilla::Visibility);
  * interface to mirror this interface when changing it.
  */
 
+// We can't make this interface noscript yet, because there is JS code doing
+// "instanceof Ci.nsIImageLoadingContent" and using the nsIImageLoadingContent
+// constants.
 [scriptable, builtinclass, uuid(0357123d-9224-4d12-a47e-868c32689777)]
 interface nsIImageLoadingContent : imgINotificationObserver
 {
@@ -56,11 +58,11 @@ interface nsIImageLoadingContent : imgINotificationObserver
   const long PENDING_REQUEST = 1;
 
   /**
-   * loadingEnabled is used to enable and disable loading in
+   * setLoadingEnabled is used to enable and disable loading in
    * situations where loading images is unwanted.  Note that enabling
    * loading will *not* automatically trigger an image load.
    */
-  attribute boolean loadingEnabled;
+  [notxpcom, nostdcall] void setLoadingEnabled(in boolean aEnabled);
 
   /**
    * Returns the image blocking status (@see nsIContentPolicy).  This
@@ -68,7 +70,7 @@ interface nsIImageLoadingContent : imgINotificationObserver
    * the image was blocked.  This status always refers to the
    * CURRENT_REQUEST load.
    */
-  readonly attribute short imageBlockingStatus;
+  [notxpcom, nostdcall] readonly attribute short imageBlockingStatus;
 
   /**
    * Used to register an image decoder observer.  Typically, this will
@@ -78,18 +80,16 @@ interface nsIImageLoadingContent : imgINotificationObserver
    * current and pending, will be passed through.
    *
    * @param aObserver the observer to register
-   *
-   * @throws NS_ERROR_OUT_OF_MEMORY
    */
-  void addObserver(in imgINotificationObserver aObserver);
+  [notxpcom, nostdcall] void addNativeObserver(in imgINotificationObserver aObserver);
 
   /**
    * Used to unregister an image decoder observer.
    *
    * @param aObserver the observer to unregister
    */
-  void removeObserver(in imgINotificationObserver aObserver);
-  
+  [notxpcom, nostdcall] void removeNativeObserver(in imgINotificationObserver aObserver);
+
   /**
    * Accessor to get the image requests
    *
@@ -101,12 +101,16 @@ interface nsIImageLoadingContent : imgINotificationObserver
    * @throws NS_ERROR_UNEXPECTED if the request type requested is not
    * known
    */
-  imgIRequest getRequest(in long aRequestType);
+  [noscript] imgIRequest getRequest(in long aRequestType);
 
   /**
-   * @return true if the current request's size is available.
+   * Call this function when the request was blocked by any of the
+   * security policies enforced.
+   *
+   * @param aContentDecision the decision returned from nsIContentPolicy
+   *                         (any of the types REJECT_*)
    */
-  [noscript, notxpcom] boolean currentRequestHasSize();
+  [notxpcom, nostdcall] void setBlockedRequest(in int16_t aContentDecision);
 
   /**
    * Used to notify the image loading content node that a frame has been
@@ -131,14 +135,14 @@ interface nsIImageLoadingContent : imgINotificationObserver
    *
    * @throws NS_ERROR_UNEXPECTED if aRequest is not known
    */
-  long getRequestType(in imgIRequest aRequest);
+  [noscript] long getRequestType(in imgIRequest aRequest);
 
   /**
    * Gets the URI of the current request, if available.
    * Otherwise, returns the last URI that this content tried to load, or
    * null if there haven't been any such attempts.
    */
-  readonly attribute nsIURI currentURI;
+  [noscript] readonly attribute nsIURI currentURI;
 
   /**
    * loadImageWithChannel allows data from an existing channel to be
@@ -152,29 +156,14 @@ interface nsIImageLoadingContent : imgINotificationObserver
    *
    * @throws NS_ERROR_NULL_POINTER if aChannel is null
    */
-  nsIStreamListener loadImageWithChannel(in nsIChannel aChannel);
+  [noscript] nsIStreamListener loadImageWithChannel(in nsIChannel aChannel);
 
   /**
-   * forceReload forces reloading of the image pointed to by currentURI
-   *
-   * @param aNotify [optional] request should notify, defaults to true
-   * @throws NS_ERROR_NOT_AVAILABLE if there is no current URI to reload
-   */
-  [optional_argc] void forceReload([optional] in boolean aNotify /* = true */);
-
-  /**
-   * Enables/disables image state forcing. When |aForce| is PR_TRUE, we force
+   * Enables/disables image state forcing. When |aForce| is true, we force
    * nsImageLoadingContent::ImageState() to return |aState|. Call again with |aForce|
-   * as PR_FALSE to revert ImageState() to its original behaviour.
+   * as false to revert ImageState() to its original behaviour.
    */
-  void forceImageState(in boolean aForce, in unsigned long long aState);
-
-  /**
-   * The intrinsic size and width of this content. May differ from actual image
-   * size due to things like responsive image density.
-   */
-  readonly attribute unsigned long    naturalWidth;
-  readonly attribute unsigned long    naturalHeight;
+  [notxpcom, nostdcall] void forceImageState(in boolean aForce, in unsigned long long aState);
 
   /**
    * Called by layout to announce when the frame associated with this content

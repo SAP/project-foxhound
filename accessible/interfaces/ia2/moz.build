@@ -8,7 +8,7 @@ GeckoSharedLibrary('IA2Marshal', linkage=None)
 
 DEFINES['REGISTER_PROXY_DLL'] = True
 
-DEFFILE = SRCDIR + '/IA2Marshal.def'
+DEFFILE = 'IA2Marshal.def'
 
 OS_LIBS += [
     'uuid',
@@ -84,12 +84,17 @@ GENERATED_FILES += [
     'IA2Typelib.tlb',
 ]
 
+SOURCES += [
+    '!%s' % p for p in GENERATED_FILES if p.endswith('.c')
+]
+
 RCINCLUDE = 'IA2Marshal.rc'
 
-# The Windows MIDL code generator creates things like:
-#
-#   #endif !_MIDL_USE_GUIDDEF_
-#
-# which clang-cl complains about.  MSVC doesn't, so turn this warning off.
-if CONFIG['CLANG_CL']:
-    CXXFLAGS += ['-Wno-extra-tokens']
+# Suppress warnings from the MIDL generated code.
+if CONFIG['CC_TYPE'] == 'clang-cl':
+    CFLAGS += [
+        '-Wno-extern-initializer',
+        '-Wno-incompatible-pointer-types',
+        '-Wno-missing-braces',
+        '-Wno-unused-const-variable',
+    ]

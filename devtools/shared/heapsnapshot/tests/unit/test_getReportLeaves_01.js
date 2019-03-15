@@ -28,6 +28,10 @@ function run_test() {
       by: "internalType",
       then: { by: "count", count: true, bytes: true },
     },
+    domNode: {
+      by: "descriptiveType",
+      then: { by: "count", count: true, bytes: true },
+    },
   };
 
   const REPORT = {
@@ -53,6 +57,7 @@ function run_test() {
       "js::Shape": { count: 7, bytes: 70 },
       "js::BaseShape": { count: 1, bytes: 10 },
     },
+    domNode: { },
   };
 
   const root = censusReportToCensusTreeNode(BREAKDOWN, REPORT);
@@ -63,11 +68,12 @@ function run_test() {
       const [ leaf ] = CensusUtils.getReportLeaves(new Set([node.reportLeafIndex]),
                                                    BREAKDOWN,
                                                    REPORT);
-      ok(leaf, "Should be able to find leaf for a node with a reportLeafIndex = " + node.reportLeafIndex);
+      ok(leaf, "Should be able to find leaf "
+        + "for a node with a reportLeafIndex = " + node.reportLeafIndex);
     }
 
     if (node.children) {
-      for (let child of node.children) {
+      for (const child of node.children) {
         assertEveryNodeCanFindItsLeaf(child);
       }
     }
@@ -81,13 +87,15 @@ function run_test() {
     }
 
     if (node.children) {
-      for (let child of node.children) {
+      for (const child of node.children) {
         const found = find(name, child);
         if (found) {
           return found;
         }
       }
     }
+
+    return undefined;
   }
 
   const arrayNode = find("Array", root);

@@ -1,11 +1,16 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-function PreInitGlobalActor(aConnection) {}
+"use strict";
+
+// Uses the same scope as test_add_actors.js
+/* import-globals-from head_dbg.js */
+
+function PreInitGlobalActor(connection) {}
 
 PreInitGlobalActor.prototype = {
   actorPrefix: "preInitGlobal",
-  onPing: function onPing(aRequest) {
+  onPing(request) {
     return { message: "pong" };
   },
 };
@@ -13,5 +18,4 @@ PreInitGlobalActor.prototype = {
 PreInitGlobalActor.prototype.requestTypes = {
   "ping": PreInitGlobalActor.prototype.onPing,
 };
-
-DebuggerServer.addGlobalActor(PreInitGlobalActor, "preInitGlobalActor");
+exports.PreInitGlobalActor = PreInitGlobalActor;

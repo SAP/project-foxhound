@@ -13,20 +13,19 @@
 
   <script type="text/javascript">
 
-function doTest()
-{
-  // Test table with role=alert. 
+function doTest() {
+  // Test table with role=alert.
   var tableInterfaceExposed = true;
   var accTable3 = getAccessible("table3", [nsIAccessibleTable], null, DONOTFAIL_IF_NO_INTERFACE);
   if (!accTable3)
-    tableInterfaceExposed = false;  
+    tableInterfaceExposed = false;
   ok(tableInterfaceExposed, "table interface is not exposed");
 
   if (tableInterfaceExposed) {
     testRole(accTable3, ROLE_ALERT);
 
-    is(accTable3.getCellAt(0,0).firstChild.name, "cell0", "wrong cell");
-    is(accTable3.getCellAt(0,1).firstChild.name, "cell1", "wrong cell");
+    is(accTable3.getCellAt(0, 0).firstChild.name, "cell0", "wrong cell");
+    is(accTable3.getCellAt(0, 1).firstChild.name, "cell1", "wrong cell");
   }
 
   // Test table with role=log and aria property in tr. We create accessible for
@@ -43,10 +42,10 @@ function doTest()
 
     testRole(accTable4, ROLE_TABLE);
 
-    is(accTable4.getCellAt(0,0).firstChild.name, "cell0", "wrong cell");
-    is(accTable4.getCellAt(0,1).firstChild.name, "cell1", "wrong cell");
-    is(accTable4.getCellAt(1,0).firstChild.name, "cell2", "wrong cell");
-    is(accTable4.getCellAt(1,1).firstChild.name, "cell3", "wrong cell");
+    is(accTable4.getCellAt(0, 0).firstChild.name, "cell0", "wrong cell");
+    is(accTable4.getCellAt(0, 1).firstChild.name, "cell1", "wrong cell");
+    is(accTable4.getCellAt(1, 0).firstChild.name, "cell2", "wrong cell");
+    is(accTable4.getCellAt(1, 1).firstChild.name, "cell3", "wrong cell");
   }
 
   SimpleTest.finish();

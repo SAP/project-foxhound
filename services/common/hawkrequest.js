@@ -4,23 +4,21 @@
 
 "use strict";
 
-var {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
-
-this.EXPORTED_SYMBOLS = [
+var EXPORTED_SYMBOLS = [
   "HAWKAuthenticatedRESTRequest",
-  "deriveHawkCredentials"
+  "deriveHawkCredentials",
 ];
 
-Cu.import("resource://gre/modules/Preferences.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Log.jsm");
-Cu.import("resource://services-common/rest.js");
-Cu.import("resource://services-common/utils.js");
-Cu.import("resource://gre/modules/Credentials.jsm");
+ChromeUtils.import("resource://gre/modules/Preferences.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Log.jsm");
+ChromeUtils.import("resource://services-common/rest.js");
+ChromeUtils.import("resource://services-common/utils.js");
+ChromeUtils.import("resource://gre/modules/Credentials.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "CryptoUtils",
-                                  "resource://services-crypto/utils.js");
+ChromeUtils.defineModuleGetter(this, "CryptoUtils",
+                               "resource://services-crypto/utils.js");
 
 const Prefs = new Preferences("services.common.rest.");
 
@@ -52,7 +50,7 @@ const Prefs = new Preferences("services.common.rest.");
  * milliseconds will be -120000.
  */
 
-this.HAWKAuthenticatedRESTRequest =
+var HAWKAuthenticatedRESTRequest =
  function HawkAuthenticatedRESTRequest(uri, credentials, extra = {}) {
   RESTRequest.call(this, uri);
 
@@ -68,7 +66,7 @@ this.HAWKAuthenticatedRESTRequest =
 HAWKAuthenticatedRESTRequest.prototype = {
   __proto__: RESTRequest.prototype,
 
-  dispatch: function dispatch(method, data, onComplete, onProgress) {
+  async dispatch(method, data) {
     let contentType = "text/plain";
     if (method == "POST" || method == "PUT" || method == "PATCH") {
       contentType = "application/json";
@@ -81,9 +79,8 @@ HAWKAuthenticatedRESTRequest.prototype = {
         payload: data && JSON.stringify(data) || "",
         contentType,
       };
-      let header = CryptoUtils.computeHAWK(this.uri, method, options);
+      let header = await CryptoUtils.computeHAWK(this.uri, method, options);
       this.setHeader("Authorization", header.field);
-      this._log.trace("hawk auth header: " + header.field);
     }
 
     for (let header in this.extraHeaders) {
@@ -94,10 +91,8 @@ HAWKAuthenticatedRESTRequest.prototype = {
 
     this.setHeader("Accept-Language", this._intl.accept_languages);
 
-    return RESTRequest.prototype.dispatch.call(
-      this, method, data, onComplete, onProgress
-    );
-  }
+    return super.dispatch(method, data);
+  },
 };
 
 
@@ -118,23 +113,18 @@ HAWKAuthenticatedRESTRequest.prototype = {
   * @return credentials
   *        Returns an object:
   *        {
-  *          algorithm: sha256
   *          id: the Hawk id (from the first 32 bytes derived)
   *          key: the Hawk key (from bytes 32 to 64)
   *          extra: size - 64 extra bytes (if size > 64)
   *        }
   */
-this.deriveHawkCredentials = function deriveHawkCredentials(tokenHex,
-                                                            context,
-                                                            size = 96,
-                                                            hexKey = false) {
+async function deriveHawkCredentials(tokenHex, context, size = 96) {
   let token = CommonUtils.hexToBytes(tokenHex);
-  let out = CryptoUtils.hkdf(token, undefined, Credentials.keyWord(context), size);
+  let out = await CryptoUtils.hkdfLegacy(token, undefined, Credentials.keyWord(context), size);
 
   let result = {
-    algorithm: "sha256",
-    key: hexKey ? CommonUtils.bytesAsHex(out.slice(32, 64)) : out.slice(32, 64),
-    id: CommonUtils.bytesAsHex(out.slice(0, 32))
+    key: out.slice(32, 64),
+    id: CommonUtils.bytesAsHex(out.slice(0, 32)),
   };
   if (size > 64) {
     result.extra = out.slice(64);
@@ -147,18 +137,18 @@ this.deriveHawkCredentials = function deriveHawkCredentials(tokenHex,
 // To keep the number of times we read this pref at a minimum, maintain the
 // preference in a stateful object that notices and updates itself when the
 // pref is changed.
-this.Intl = function Intl() {
+function Intl() {
   // We won't actually query the pref until the first time we need it
   this._accepted = "";
   this._everRead = false;
-  this._log = Log.repository.getLogger("Services.common.RESTRequest");
+  this._log = Log.repository.getLogger("Services.Common.RESTRequest");
   this._log.level = Log.Level[Prefs.get("log.logger.rest.request")];
   this.init();
-};
+}
 
 this.Intl.prototype = {
   init() {
-    Services.prefs.addObserver("intl.accept_languages", this, false);
+    Services.prefs.addObserver("intl.accept_languages", this);
   },
 
   uninit() {
@@ -195,4 +185,3 @@ function getIntl() {
   }
   return intl;
 }
-

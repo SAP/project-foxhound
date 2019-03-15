@@ -17,7 +17,7 @@ extern "C" {
 }
 
 #include "gtest_utils.h"
-#include "scoped_ptrs.h"
+#include "nss_scoped_ptrs.h"
 #include "tls_connect.h"
 #include "tls_filter.h"
 #include "tls_parser.h"
@@ -29,16 +29,17 @@ TEST_F(TlsConnectTest, DamageSecretHandleClientFinished) {
                            SSL_LIBRARY_VERSION_TLS_1_3);
   server_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
                            SSL_LIBRARY_VERSION_TLS_1_3);
-  server_->StartConnect();
-  client_->StartConnect();
+  StartConnect();
   client_->Handshake();
   server_->Handshake();
-  std::cerr << "Damaging HS secret\n";
+  std::cerr << "Damaging HS secret" << std::endl;
   SSLInt_DamageClientHsTrafficSecret(server_->ssl_fd());
   client_->Handshake();
-  server_->Handshake();
   // The client thinks it has connected.
   EXPECT_EQ(TlsAgent::STATE_CONNECTED, client_->state());
+
+  ExpectAlert(server_, kTlsAlertDecryptError);
+  server_->Handshake();
   server_->CheckErrorCode(SSL_ERROR_BAD_HANDSHAKE_HASH_VALUE);
   client_->Handshake();
   client_->CheckErrorCode(SSL_ERROR_DECRYPT_ERROR_ALERT);
@@ -49,13 +50,54 @@ TEST_F(TlsConnectTest, DamageSecretHandleServerFinished) {
                            SSL_LIBRARY_VERSION_TLS_1_3);
   server_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
                            SSL_LIBRARY_VERSION_TLS_1_3);
-  server_->SetPacketFilter(std::make_shared<AfterRecordN>(
+  MakeTlsFilter<AfterRecordN>(
       server_, client_,
       0,  // ServerHello.
-      [this]() { SSLInt_DamageServerHsTrafficSecret(client_->ssl_fd()); }));
-  ConnectExpectFail();
+      [this]() { SSLInt_DamageServerHsTrafficSecret(client_->ssl_fd()); });
+  ConnectExpectAlert(client_, kTlsAlertDecryptError);
   client_->CheckErrorCode(SSL_ERROR_BAD_HANDSHAKE_HASH_VALUE);
-  server_->CheckErrorCode(SSL_ERROR_BAD_MAC_READ);
 }
 
-}  // namespace nspr_test
+TEST_P(TlsConnectGenericPre13, DamageServerSignature) {
+  EnsureTlsSetup();
+  auto filter = MakeTlsFilter<TlsLastByteDamager>(
+      server_, kTlsHandshakeServerKeyExchange);
+  filter->EnableDecryption();
+  ExpectAlert(client_, kTlsAlertDecryptError);
+  ConnectExpectFail();
+  client_->CheckErrorCode(SEC_ERROR_BAD_SIGNATURE);
+  server_->CheckErrorCode(SSL_ERROR_DECRYPT_ERROR_ALERT);
+}
+
+TEST_P(TlsConnectTls13, DamageServerSignature) {
+  EnsureTlsSetup();
+  auto filter = MakeTlsFilter<TlsLastByteDamager>(
+      server_, kTlsHandshakeCertificateVerify);
+  filter->EnableDecryption();
+  ConnectExpectAlert(client_, kTlsAlertDecryptError);
+  client_->CheckErrorCode(SEC_ERROR_BAD_SIGNATURE);
+}
+
+TEST_P(TlsConnectGeneric, DamageClientSignature) {
+  EnsureTlsSetup();
+  client_->SetupClientAuth();
+  server_->RequestClientAuth(true);
+  auto filter = MakeTlsFilter<TlsLastByteDamager>(
+      client_, kTlsHandshakeCertificateVerify);
+  filter->EnableDecryption();
+  server_->ExpectSendAlert(kTlsAlertDecryptError);
+  // Do these handshakes by hand to avoid race condition on
+  // the client processing the server's alert.
+  StartConnect();
+  client_->Handshake();
+  server_->Handshake();
+  client_->Handshake();
+  server_->Handshake();
+  EXPECT_EQ(version_ >= SSL_LIBRARY_VERSION_TLS_1_3
+                ? TlsAgent::STATE_CONNECTED
+                : TlsAgent::STATE_CONNECTING,
+            client_->state());
+  server_->CheckErrorCode(SEC_ERROR_BAD_SIGNATURE);
+}
+
+}  // namespace nss_test

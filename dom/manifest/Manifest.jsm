@@ -11,21 +11,15 @@
 
 "use strict";
 
-const Ci = Components.interfaces;
-const Cu = Components.utils;
-const Cc = Components.classes;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-
 const { ManifestObtainer } =
-  Cu.import("resource://gre/modules/ManifestObtainer.jsm", {});
+  ChromeUtils.import("resource://gre/modules/ManifestObtainer.jsm", {});
 const { ManifestIcons } =
-  Cu.import("resource://gre/modules/ManifestIcons.jsm", {});
+  ChromeUtils.import("resource://gre/modules/ManifestIcons.jsm", {});
 
-XPCOMUtils.defineLazyModuleGetter(this, "OS",
-                                  "resource://gre/modules/osfile.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "JSONFile",
-                                  "resource://gre/modules/JSONFile.jsm");
+ChromeUtils.defineModuleGetter(this, "OS",
+                               "resource://gre/modules/osfile.jsm");
+ChromeUtils.defineModuleGetter(this, "JSONFile",
+                               "resource://gre/modules/JSONFile.jsm");
 
 /**
  * Generates an hash for the given string.
@@ -75,23 +69,41 @@ class Manifest {
   }
 
   async initialise() {
-    this._store = new JSONFile({path: this._path});
+    this._store = new JSONFile({path: this._path, saveDelayMs: 100});
     await this._store.load();
+  }
+
+  async prefetch(browser) {
+    const manifestData = await ManifestObtainer.browserObtainManifest(browser);
+    const icon = await ManifestIcons.browserFetchIcon(browser, manifestData, 192);
+    const data = {
+      installed: false,
+      manifest: manifestData,
+      cached_icon: icon,
+    };
+    return data;
   }
 
   async install() {
     const manifestData = await ManifestObtainer.browserObtainManifest(this._browser);
     this._store.data = {
       installed: true,
-      manifest: manifestData
+      manifest: manifestData,
     };
     Manifests.manifestInstalled(this);
     this._store.saveSoon();
   }
 
   async icon(expectedSize) {
-    return await ManifestIcons
+    if ("cached_icon" in this._store.data) {
+      return this._store.data.cached_icon;
+    }
+    const icon = await ManifestIcons
       .browserFetchIcon(this._browser, this._store.data.manifest, expectedSize);
+    // Cache the icon so future requests do not go over the network
+    this._store.data.cached_icon = icon;
+    this._store.saveSoon();
+    return icon;
   }
 
   get scope() {
@@ -102,6 +114,7 @@ class Manifest {
 
   get name() {
     return this._store.data.manifest.short_name ||
+      this._store.data.manifest.name ||
       this._store.data.manifest.short_url;
   }
 
@@ -116,6 +129,10 @@ class Manifest {
   get start_url() {
     return this._store.data.manifest.start_url;
   }
+
+  get path() {
+    return this._path;
+  }
 }
 
 /*
@@ -123,13 +140,13 @@ class Manifest {
  */
 var Manifests = {
 
-  async initialise () {
+  async initialise() {
 
     if (this.started) {
       return this.started;
     }
 
-    this.started = (async function() {
+    this.started = (async () => {
 
       // Make sure the manifests have the folder needed to save into
       await OS.File.makeDir(MANIFESTS_DIR, {ignoreExisting: true});
@@ -148,7 +165,7 @@ var Manifests = {
       // and we do not want multiple file handles
       this.manifestObjs = {};
 
-    }).bind(this)();
+    })();
 
     return this.started;
   },
@@ -200,8 +217,8 @@ var Manifests = {
     this.manifestObjs[manifestUrl] = new Manifest(browser, manifestUrl);
     await this.manifestObjs[manifestUrl].initialise();
     return this.manifestObjs[manifestUrl];
-  }
+  },
 
 };
 
-this.EXPORTED_SYMBOLS = ["Manifests"]; // jshint ignore:line
+var EXPORTED_SYMBOLS = ["Manifests"]; // jshint ignore:line

@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 import datetime
 import json
 import socket
@@ -13,6 +15,7 @@ import mozunit
 
 import mozfile
 import mozlog.unstructured as mozlog
+import six
 
 
 class ListHandler(mozlog.Handler):
@@ -81,7 +84,7 @@ class TestStructuredLogging(unittest.TestCase):
         The actual message should contain no fields other than the timestamp
         field and those present in expected."""
 
-        self.assertTrue(isinstance(actual['_time'], (int, long)))
+        self.assertTrue(isinstance(actual['_time'], six.integer_types))
 
         for k, v in expected.items():
             self.assertEqual(v, actual[k])
@@ -233,7 +236,7 @@ class TestLoggingMixin(unittest.TestCase):
         self.assertTrue(not hasattr(loggable, "_logger"))
         loggable.log(mozlog.INFO, "This will instantiate the logger")
         self.assertTrue(hasattr(loggable, "_logger"))
-        self.assertEqual(loggable._logger.name, "__main__.Loggable")
+        self.assertEqual(loggable._logger.name, "test_logger.Loggable")
 
         self.assertRaises(ValueError, loggable.set_logger,
                           "not a logger")
@@ -260,6 +263,7 @@ class TestLoggingMixin(unittest.TestCase):
 
         actual_messages = loggable._logger.handlers[0].messages
         self.assertEqual(expected_messages, actual_messages)
+
 
 if __name__ == '__main__':
     mozunit.main()

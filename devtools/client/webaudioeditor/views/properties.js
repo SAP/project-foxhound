@@ -11,7 +11,7 @@ const GENERIC_VARIABLES_VIEW_SETTINGS = {
   editableNameTooltip: "",
   preventDisableOnChange: true,
   preventDescriptorModifiers: false,
-  eval: () => {}
+  eval: () => {},
 };
 
 /**
@@ -23,7 +23,7 @@ var PropertiesView = {
   /**
    * Initialization function called when the tool starts up.
    */
-  initialize: function () {
+  initialize: function() {
     this._onEval = this._onEval.bind(this);
     this._onNodeSet = this._onNodeSet.bind(this);
 
@@ -35,7 +35,7 @@ var PropertiesView = {
   /**
    * Destruction function called when the tool cleans up.
    */
-  destroy: function () {
+  destroy: function() {
     window.off(EVENTS.UI_INSPECTOR_NODE_SET, this._onNodeSet);
     this._propsView = null;
   },
@@ -43,7 +43,7 @@ var PropertiesView = {
   /**
    * Empties out the props view.
    */
-  resetUI: function () {
+  resetUI: function() {
     this._propsView.empty();
     this._currentNode = null;
   },
@@ -52,7 +52,7 @@ var PropertiesView = {
    * Internally sets the current audio node and rebuilds appropriate
    * views.
    */
-  _setAudioNode: function (node) {
+  _setAudioNode: function(node) {
     this._currentNode = node;
     if (this._currentNode) {
       this._buildPropertiesView();
@@ -63,24 +63,24 @@ var PropertiesView = {
    * Reconstructs the `Properties` tab in the inspector
    * with the `this._currentNode` as it's source.
    */
-  _buildPropertiesView: Task.async(function* () {
-    let propsView = this._propsView;
-    let node = this._currentNode;
+  async _buildPropertiesView() {
+    const propsView = this._propsView;
+    const node = this._currentNode;
     propsView.empty();
 
-    let audioParamsScope = propsView.addScope("AudioParams");
-    let props = yield node.getParams();
+    const audioParamsScope = propsView.addScope("AudioParams");
+    const props = await node.getParams();
 
     // Disable AudioParams VariableView expansion
     // when there are no props i.e. AudioDestinationNode
     this._togglePropertiesView(!!props.length);
 
     props.forEach(({ param, value, flags }) => {
-      let descriptor = {
+      const descriptor = {
         value: value,
         writable: !flags || !flags.readonly,
       };
-      let item = audioParamsScope.addItem(param, descriptor);
+      const item = audioParamsScope.addItem(param, descriptor);
 
       // No items should currently display a dropdown
       item.twisty = false;
@@ -89,15 +89,15 @@ var PropertiesView = {
     audioParamsScope.expanded = true;
 
     window.emit(EVENTS.UI_PROPERTIES_TAB_RENDERED, node.id);
-  }),
+  },
 
   /**
    * Toggles the display of the "empty" properties view when
    * node has no properties to display.
    */
-  _togglePropertiesView: function (show) {
-    let propsView = $("#properties-content");
-    let emptyView = $("#properties-empty");
+  _togglePropertiesView: function(show) {
+    const propsView = $("#properties-content");
+    const emptyView = $("#properties-empty");
     (show ? propsView : emptyView).removeAttribute("hidden");
     (show ? emptyView : propsView).setAttribute("hidden", "true");
   },
@@ -108,7 +108,7 @@ var PropertiesView = {
    *
    * @return Scope
    */
-  _getAudioPropertiesScope: function () {
+  _getAudioPropertiesScope: function() {
     return this._propsView.getScopeAtIndex(0);
   },
 
@@ -119,17 +119,17 @@ var PropertiesView = {
   /**
    * Called when the inspector view determines a node is selected.
    */
-  _onNodeSet: function (_, id) {
+  _onNodeSet: function(id) {
     this._setAudioNode(gAudioNodes.get(id));
   },
 
   /**
    * Executed when an audio prop is changed in the UI.
    */
-  _onEval: Task.async(function* (variable, value) {
-    let ownerScope = variable.ownerView;
-    let node = this._currentNode;
-    let propName = variable.name;
+  async _onEval(variable, value) {
+    const ownerScope = variable.ownerView;
+    const node = this._currentNode;
+    const propName = variable.name;
     let error;
 
     if (!variable._initialDescriptor.writable) {
@@ -137,15 +137,14 @@ var PropertiesView = {
     } else {
       // Cast value to proper type
       try {
-        let number = parseFloat(value);
+        const number = parseFloat(value);
         if (!isNaN(number)) {
           value = number;
         } else {
           value = JSON.parse(value);
         }
-        error = yield node.actor.setParam(propName, value);
-      }
-      catch (e) {
+        error = await node.actor.setParam(propName, value);
+      } catch (e) {
         error = e;
       }
     }
@@ -159,5 +158,5 @@ var PropertiesView = {
     } else {
       window.emit(EVENTS.UI_SET_PARAM_ERROR, node.id, propName, value);
     }
-  })
+  },
 };

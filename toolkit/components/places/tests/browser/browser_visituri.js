@@ -8,11 +8,11 @@ function promiseObserve(name, checkFn) {
         Services.obs.removeObserver(observer, name);
         resolve();
       }
-    }, name, false);
+    }, name);
   });
 }
 
-var conn = PlacesUtils.history.QueryInterface(Ci.nsPIPlacesDatabase).DBConnection;
+var conn = PlacesUtils.history.DBConnection;
 
 /**
  * Gets a single column value from either the places or historyvisits table.
@@ -33,7 +33,7 @@ function getColumn(table, column, fromColumnName, fromColumnValue) {
   }
 }
 
-add_task(function* () {
+add_task(async function() {
   // Make sure places visit chains are saved correctly with a redirect
   // transitions.
 
@@ -43,7 +43,7 @@ add_task(function* () {
     "http://example.com/tests/toolkit/components/places/tests/browser/begin.html",
     "http://example.com/tests/toolkit/components/places/tests/browser/redirect_twice.sjs",
     "http://example.com/tests/toolkit/components/places/tests/browser/redirect_once.sjs",
-    "http://example.com/tests/toolkit/components/places/tests/browser/final.html"
+    "http://example.com/tests/toolkit/components/places/tests/browser/final.html",
   ];
   var currentIndex = 0;
 
@@ -70,13 +70,13 @@ add_task(function* () {
   let visitUriPromise = promiseObserve("uri-visit-saved", checkObserver);
 
   const testUrl = "http://example.com/tests/toolkit/components/places/tests/browser/begin.html";
-  yield BrowserTestUtils.openNewForegroundTab(gBrowser, testUrl);
+  await BrowserTestUtils.openNewForegroundTab(gBrowser, testUrl);
 
   // Load begin page, click link on page to record visits.
-  yield BrowserTestUtils.synthesizeMouseAtCenter("#clickme", { }, gBrowser.selectedBrowser);
-  yield visitUriPromise;
+  await BrowserTestUtils.synthesizeMouseAtCenter("#clickme", { }, gBrowser.selectedBrowser);
+  await visitUriPromise;
 
-  yield PlacesTestUtils.clearHistory();
+  await PlacesUtils.history.clear();
 
   gBrowser.removeCurrentTab();
 });

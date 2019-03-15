@@ -7,13 +7,12 @@ Test swapFrameLoaders with different frame types and remoteness
 -->
 <window title="Mozilla Bug 1242644"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SpawnTask.js"></script>
+  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/AddTask.js"></script>
 
   <script type="application/javascript"><![CDATA[
   ["SimpleTest", "SpecialPowers", "info", "is", "ok"].forEach(key => {
     window[key] = window.opener[key];
   })
-  const { interfaces: Ci } = Components;
 
   const NS = {
     xul: "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul",
@@ -30,10 +29,12 @@ Test swapFrameLoaders with different frame types and remoteness
     ["xul", "html"],
     ["html", "xul"],
     ["html", "html"],
-    ["xul", "xul", "remote"],
-    ["xul", "html", "remote"],
-    ["html", "xul", "remote"],
-    ["html", "html", "remote"],
+    ["xul", "xul", { remote: true }],
+    ["xul", "html", { remote: true }],
+    ["html", "xul", { remote: true }],
+    ["html", "html", { remote: true }],
+    ["xul", "html", { userContextId: 2 }],
+    ["xul", "html", { userContextId: 2, remote: true }],
   ];
 
   const HEIGHTS = [
@@ -70,11 +71,16 @@ Test swapFrameLoaders with different frame types and remoteness
     });
   }
 
-  function* addFrame(type, remote, height) {
+  async function addFrame(type, options, height) {
+    let remote = options && options.remote;
+    let userContextId = options && options.userContextId;
     let frame = document.createElementNS(NS[type], TAG[type]);
     frame.setAttribute("remote", remote);
     if (remote && type == "xul") {
       frame.setAttribute("style", "-moz-binding: none;");
+    }
+    if (userContextId) {
+      frame.setAttribute("usercontextid", userContextId);
     }
     if (type == "html") {
       frame.setAttribute("mozbrowser", "true");
@@ -88,27 +94,26 @@ Test swapFrameLoaders with different frame types and remoteness
     frame.setAttribute("src", src);
     document.documentElement.appendChild(frame);
     let mm = frame.frameLoader.messageManager;
-    yield once(mm, "test:load");
+    await once(mm, "test:load");
     return frame;
   }
 
-  add_task(function*() {
-    yield SpecialPowers.pushPrefEnv(
+  add_task(async function() {
+    await SpecialPowers.pushPrefEnv(
       { "set": [["dom.mozBrowserFramesEnabled", true],
                 ["network.disable.ipc.security", true]] });
   });
 
-  add_task(function*() {
+  add_task(async function() {
     for (let scenario of SCENARIOS) {
-      let [ typeA, typeB, remote ] = scenario;
-      remote = !!remote;
+      let [ typeA, typeB, options ] = scenario;
       let heightA = HEIGHTS[0];
-      info(`Adding frame A, type ${typeA}, remote ${remote}, height ${heightA}`);
-      let frameA = yield addFrame(typeA, remote, heightA);
+      info(`Adding frame A, type ${typeA}, options ${JSON.stringify(options)}, height ${heightA}`);
+      let frameA = await addFrame(typeA, options, heightA);
 
       let heightB = HEIGHTS[1];
-      info(`Adding frame B, type ${typeB}, remote ${remote}, height ${heightB}`);
-      let frameB = yield addFrame(typeB, remote, heightB);
+      info(`Adding frame B, type ${typeB}, options ${JSON.stringify(options)}, height ${heightB}`);
+      let frameB = await addFrame(typeB, options, heightB);
 
       let frameScriptFactory = function(name) {
         return `function() {
@@ -122,6 +127,9 @@ Test swapFrameLoaders with different frame types and remoteness
               running: exists && !this.api._shuttingDown,
             });
           });
+          addEventListener("pagehide", function({ inFrameSwap }) {
+            sendAsyncMessage("pagehide", inFrameSwap);
+          }, {mozSystemGroup: true});
         }`;
       }
 
@@ -144,25 +152,13 @@ Test swapFrameLoaders with different frame types and remoteness
 
         info("Ping message manager for frame A");
         mmA.sendAsyncMessage("ping");
-        let [ { data: pongA } ] = yield inflightA;
+        let [ { data: pongA } ] = await inflightA;
         is(pongA, "A", "Frame A message manager gets reply A before swap");
 
         info("Ping message manager for frame B");
         mmB.sendAsyncMessage("ping");
-        let [ { data: pongB } ] = yield inflightB;
+        let [ { data: pongB } ] = await inflightB;
         is(pongB, "B", "Frame B message manager gets reply B before swap");
-      }
-
-      // Check height before swap
-      {
-        if (frameA.getContentDimensions) {
-          let { height } = yield frameA.getContentDimensions();
-          is(height, heightA, "Frame A's content height is 200px before swap");
-        }
-        if (frameB.getContentDimensions) {
-          let { height } = yield frameB.getContentDimensions();
-          is(height, heightB, "Frame B's content height is 400px before swap");
-        }
       }
 
       // Ping after swap using message managers acquired before
@@ -170,31 +166,39 @@ Test swapFrameLoaders with different frame types and remoteness
         let mmA = frameA.frameLoader.messageManager;
         let mmB = frameB.frameLoader.messageManager;
 
+        let pagehideA = once(mmA, "pagehide");
+        let pagehideB = once(mmB, "pagehide");
+
         info("swapFrameLoaders");
         frameA.swapFrameLoaders(frameB);
+
+        let [ { data: inFrameSwapA } ] = await pagehideA;
+        ok(inFrameSwapA, "Frame A got pagehide with inFrameSwap: true");
+        let [ { data: inFrameSwapB } ] = await pagehideB;
+        ok(inFrameSwapB, "Frame B got pagehide with inFrameSwap: true");
 
         let inflightA = once(mmA, "pong");
         let inflightB = once(mmB, "pong");
 
         info("Ping message manager for frame A");
         mmA.sendAsyncMessage("ping");
-        let [ { data: pongA } ] = yield inflightA;
+        let [ { data: pongA } ] = await inflightA;
         is(pongA, "B", "Frame A message manager acquired before swap gets reply B after swap");
 
         info("Ping message manager for frame B");
         mmB.sendAsyncMessage("ping");
-        let [ { data: pongB } ] = yield inflightB;
+        let [ { data: pongB } ] = await inflightB;
         is(pongB, "A", "Frame B message manager acquired before swap gets reply A after swap");
       }
 
       // Check height after swap
       {
         if (frameA.getContentDimensions) {
-          let { height } = yield frameA.getContentDimensions();
+          let { height } = await frameA.getContentDimensions();
           is(height, heightB, "Frame A's content height is 400px after swap");
         }
         if (frameB.getContentDimensions) {
-          let { height } = yield frameB.getContentDimensions();
+          let { height } = await frameB.getContentDimensions();
           is(height, heightA, "Frame B's content height is 200px after swap");
         }
       }
@@ -209,12 +213,12 @@ Test swapFrameLoaders with different frame types and remoteness
 
         info("Ping message manager for frame A");
         mmA.sendAsyncMessage("ping");
-        let [ { data: pongA } ] = yield inflightA;
+        let [ { data: pongA } ] = await inflightA;
         is(pongA, "B", "Frame A message manager acquired after swap gets reply B after swap");
 
         info("Ping message manager for frame B");
         mmB.sendAsyncMessage("ping");
-        let [ { data: pongB } ] = yield inflightB;
+        let [ { data: pongB } ] = await inflightB;
         is(pongB, "A", "Frame B message manager acquired after swap gets reply A after swap");
       }
 
@@ -228,7 +232,7 @@ Test swapFrameLoaders with different frame types and remoteness
 
         info("Check browser API for frame A");
         mmA.sendAsyncMessage("check-browser-api");
-        let [ { data: apiA } ] = yield inflightA;
+        let [ { data: apiA } ] = await inflightA;
         if (frameA.hasAttribute("mozbrowser")) {
           ok(apiA.exists && apiA.running, "Frame A browser API exists and is running");
         } else {
@@ -237,7 +241,7 @@ Test swapFrameLoaders with different frame types and remoteness
 
         info("Check browser API for frame B");
         mmB.sendAsyncMessage("check-browser-api");
-        let [ { data: apiB } ] = yield inflightB;
+        let [ { data: apiB } ] = await inflightB;
         if (frameB.hasAttribute("mozbrowser")) {
           ok(apiB.exists && apiB.running, "Frame B browser API exists and is running");
         } else {

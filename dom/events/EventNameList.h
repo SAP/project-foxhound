@@ -53,1056 +53,534 @@
  */
 
 #ifdef MESSAGE_TO_EVENT
-#ifdef EVENT
-#error "Don't define EVENT"
-#endif /* EVENT */
-#ifdef WINDOW_ONLY_EVENT
-#error "Don't define WINDOW_ONLY_EVENT"
-#endif /* WINDOW_ONLY_EVENT */
-#ifdef TOUCH_EVENT
-#error "Don't define TOUCH_EVENT"
-#endif /* TOUCH_EVENT */
-#ifdef DOCUMENT_ONLY_EVENT
-#error "Don't define DOCUMENT_ONLY_EVENT"
-#endif /* DOCUMENT_ONLY_EVENT */
-#ifdef NON_IDL_EVENT
-#error "Don't define NON_IDL_EVENT"
-#endif /* NON_IDL_EVENT */
+#  ifdef EVENT
+#    error "Don't define EVENT"
+#  endif /* EVENT */
+#  ifdef WINDOW_ONLY_EVENT
+#    error "Don't define WINDOW_ONLY_EVENT"
+#  endif /* WINDOW_ONLY_EVENT */
+#  ifdef TOUCH_EVENT
+#    error "Don't define TOUCH_EVENT"
+#  endif /* TOUCH_EVENT */
+#  ifdef DOCUMENT_ONLY_EVENT
+#    error "Don't define DOCUMENT_ONLY_EVENT"
+#  endif /* DOCUMENT_ONLY_EVENT */
+#  ifdef NON_IDL_EVENT
+#    error "Don't define NON_IDL_EVENT"
+#  endif /* NON_IDL_EVENT */
 
-#define EVENT MESSAGE_TO_EVENT
-#define WINDOW_ONLY_EVENT MESSAGE_TO_EVENT
-#define TOUCH_EVENT MESSAGE_TO_EVENT
-#define DOCUMENT_ONLY_EVENT MESSAGE_TO_EVENT
-#define NON_IDL_EVENT MESSAGE_TO_EVENT
+#  define EVENT MESSAGE_TO_EVENT
+#  define WINDOW_ONLY_EVENT MESSAGE_TO_EVENT
+#  define TOUCH_EVENT MESSAGE_TO_EVENT
+#  define DOCUMENT_ONLY_EVENT MESSAGE_TO_EVENT
+#  define NON_IDL_EVENT MESSAGE_TO_EVENT
 #endif /* MESSAGE_TO_EVENT */
 
 #ifdef DEFINED_FORWARDED_EVENT
-#error "Don't define DEFINED_FORWARDED_EVENT"
+#  error "Don't define DEFINED_FORWARDED_EVENT"
 #endif /* DEFINED_FORWARDED_EVENT */
 
 #ifndef FORWARDED_EVENT
-#define FORWARDED_EVENT EVENT
-#define DEFINED_FORWARDED_EVENT
+#  define FORWARDED_EVENT EVENT
+#  define DEFINED_FORWARDED_EVENT
 #endif /* FORWARDED_EVENT */
 
 #ifdef DEFINED_WINDOW_ONLY_EVENT
-#error "Don't define DEFINED_WINDOW_ONLY_EVENT"
+#  error "Don't define DEFINED_WINDOW_ONLY_EVENT"
 #endif /* DEFINED_WINDOW_ONLY_EVENT */
 
 #ifndef WINDOW_ONLY_EVENT
-#define WINDOW_ONLY_EVENT(_name, _message, _type, _struct)
-#define DEFINED_WINDOW_ONLY_EVENT
+#  define WINDOW_ONLY_EVENT(_name, _message, _type, _struct)
+#  define DEFINED_WINDOW_ONLY_EVENT
 #endif /* WINDOW_ONLY_EVENT */
 
 #ifdef DEFINED_WINDOW_EVENT
-#error "Don't define DEFINED_WINDOW_EVENT"
+#  error "Don't define DEFINED_WINDOW_EVENT"
 #endif /* DEFINED_WINDOW_EVENT */
 
 #ifndef WINDOW_EVENT
-#define WINDOW_EVENT WINDOW_ONLY_EVENT
-#define DEFINED_WINDOW_EVENT
+#  define WINDOW_EVENT WINDOW_ONLY_EVENT
+#  define DEFINED_WINDOW_EVENT
 #endif /* WINDOW_EVENT */
 
 #ifdef DEFINED_TOUCH_EVENT
-#error "Don't define DEFINED_TOUCH_EVENT"
+#  error "Don't define DEFINED_TOUCH_EVENT"
 #endif /* DEFINED_TOUCH_EVENT */
 
 #ifndef TOUCH_EVENT
-#define TOUCH_EVENT(_name, _message, _type, _struct)
-#define DEFINED_TOUCH_EVENT
+#  define TOUCH_EVENT(_name, _message, _type, _struct)
+#  define DEFINED_TOUCH_EVENT
 #endif /* TOUCH_EVENT */
 
 #ifdef DEFINED_DOCUMENT_ONLY_EVENT
-#error "Don't define DEFINED_DOCUMENT_ONLY_EVENT"
+#  error "Don't define DEFINED_DOCUMENT_ONLY_EVENT"
 #endif /* DEFINED_DOCUMENT_ONLY_EVENT */
 
 #ifndef DOCUMENT_ONLY_EVENT
-#define DOCUMENT_ONLY_EVENT(_name, _message, _type, _struct)
-#define DEFINED_DOCUMENT_ONLY_EVENT
+#  define DOCUMENT_ONLY_EVENT(_name, _message, _type, _struct)
+#  define DEFINED_DOCUMENT_ONLY_EVENT
 #endif /* DOCUMENT_ONLY_EVENT */
 
 #ifdef DEFINED_NON_IDL_EVENT
-#error "Don't define DEFINED_NON_IDL_EVENT"
+#  error "Don't define DEFINED_NON_IDL_EVENT"
 #endif /* DEFINED_NON_IDL_EVENT */
 
 #ifndef NON_IDL_EVENT
-#define NON_IDL_EVENT(_name, _message, _type, _struct)
-#define DEFINED_NON_IDL_EVENT
+#  define NON_IDL_EVENT(_name, _message, _type, _struct)
+#  define DEFINED_NON_IDL_EVENT
 #endif /* NON_IDL_EVENT */
 
 #ifdef DEFINED_ERROR_EVENT
-#error "Don't define DEFINED_ERROR_EVENT"
+#  error "Don't define DEFINED_ERROR_EVENT"
 #endif /* DEFINED_ERROR_EVENT */
 
 #ifndef ERROR_EVENT
-#define ERROR_EVENT FORWARDED_EVENT
-#define DEFINED_ERROR_EVENT
+#  define ERROR_EVENT FORWARDED_EVENT
+#  define DEFINED_ERROR_EVENT
 #endif /* ERROR_EVENT */
 
 #ifdef DEFINED_BEFOREUNLOAD_EVENT
-#error "Don't define DEFINED_BEFOREUNLOAD_EVENT"
+#  error "Don't define DEFINED_BEFOREUNLOAD_EVENT"
 #endif /* DEFINED_BEFOREUNLOAD_EVENT */
 
 #ifndef BEFOREUNLOAD_EVENT
-#define BEFOREUNLOAD_EVENT WINDOW_EVENT
-#define DEFINED_BEFOREUNLOAD_EVENT
+#  define BEFOREUNLOAD_EVENT WINDOW_EVENT
+#  define DEFINED_BEFOREUNLOAD_EVENT
 #endif /* BEFOREUNLOAD_EVENT */
 
-EVENT(abort,
-      eImageAbort,
-      EventNameType_All,
+EVENT(abort, eImageAbort, EventNameType_All, eBasicEventClass)
+EVENT(bounce, eMarqueeBounce, EventNameType_HTMLMarqueeOnly, eBasicEventClass)
+EVENT(canplay, eCanPlay, EventNameType_HTML, eBasicEventClass)
+EVENT(canplaythrough, eCanPlayThrough, EventNameType_HTML, eBasicEventClass)
+EVENT(change, eFormChange, EventNameType_HTMLXUL, eBasicEventClass)
+EVENT(CheckboxStateChange, eFormCheckboxStateChange, EventNameType_None,
       eBasicEventClass)
-EVENT(canplay,
-      eCanPlay,
-      EventNameType_HTML,
+EVENT(RadioStateChange, eFormRadioStateChange, EventNameType_None,
       eBasicEventClass)
-EVENT(canplaythrough,
-      eCanPlayThrough,
-      EventNameType_HTML,
-      eBasicEventClass)
-EVENT(change,
-      eFormChange,
-      EventNameType_HTMLXUL,
-      eBasicEventClass)
-EVENT(auxclick,
-      eMouseAuxClick,
-      EventNameType_All,
-      eMouseEventClass)
-EVENT(click,
-      eMouseClick,
-      EventNameType_All,
-      eMouseEventClass)
-EVENT(close,
-      eClose,
-      EventNameType_HTML,
-      eBasicEventClass)
-EVENT(contextmenu,
-      eContextMenu,
-      EventNameType_HTMLXUL,
-      eMouseEventClass)
-NON_IDL_EVENT(mouselongtap,
-      eMouseLongTap,
-      EventNameType_HTMLXUL,
-      eMouseEventClass)
+EVENT(auxclick, eMouseAuxClick, EventNameType_All, eMouseEventClass)
+EVENT(click, eMouseClick, EventNameType_All, eMouseEventClass)
+EVENT(close, eClose, EventNameType_HTMLXUL, eBasicEventClass)
+EVENT(contextmenu, eContextMenu, EventNameType_HTMLXUL, eMouseEventClass)
+NON_IDL_EVENT(mouselongtap, eMouseLongTap, EventNameType_HTMLXUL,
+              eMouseEventClass)
 // Not supported yet
 // EVENT(cuechange)
-EVENT(dblclick,
-      eMouseDoubleClick,
-      EventNameType_HTMLXUL,
-      eMouseEventClass)
-EVENT(drag,
-      eDrag,
-      EventNameType_HTMLXUL,
-      eDragEventClass)
-EVENT(dragend,
-      eDragEnd,
-      EventNameType_HTMLXUL,
-      eDragEventClass)
-EVENT(dragenter,
-      eDragEnter,
-      EventNameType_HTMLXUL,
-      eDragEventClass)
-EVENT(dragexit,
-      eDragExit,
-      EventNameType_HTMLXUL,
-      eDragEventClass)
-EVENT(dragleave,
-      eDragLeave,
-      EventNameType_HTMLXUL,
-      eDragEventClass)
-EVENT(dragover,
-      eDragOver,
-      EventNameType_HTMLXUL,
-      eDragEventClass)
-EVENT(dragstart,
-      eDragStart,
-      EventNameType_HTMLXUL,
-      eDragEventClass)
-EVENT(drop,
-      eDrop,
-      EventNameType_HTMLXUL,
-      eDragEventClass)
-EVENT(durationchange,
-      eDurationChange,
-      EventNameType_HTML,
-      eBasicEventClass)
-EVENT(emptied,
-      eEmptied,
-      EventNameType_HTML,
-      eBasicEventClass)
-EVENT(ended,
-      eEnded,
-      EventNameType_HTML,
-      eBasicEventClass)
-EVENT(fullscreenchange,
-      eFullscreenChange,
-      EventNameType_HTML,
-      eBasicEventClass)
-EVENT(fullscreenerror,
-      eFullscreenError,
-      EventNameType_HTML,
-      eBasicEventClass)
-EVENT(input,
-      eEditorInput,
-      EventNameType_HTMLXUL,
-      eEditorInputEventClass)
-EVENT(invalid,
-      eFormInvalid,
-      EventNameType_HTMLXUL,
-      eBasicEventClass)
-EVENT(keydown,
-      eKeyDown,
-      EventNameType_HTMLXUL,
+EVENT(dblclick, eMouseDoubleClick, EventNameType_HTMLXUL, eMouseEventClass)
+EVENT(drag, eDrag, EventNameType_HTMLXUL, eDragEventClass)
+EVENT(dragend, eDragEnd, EventNameType_HTMLXUL, eDragEventClass)
+EVENT(dragenter, eDragEnter, EventNameType_HTMLXUL, eDragEventClass)
+EVENT(dragexit, eDragExit, EventNameType_HTMLXUL, eDragEventClass)
+EVENT(dragleave, eDragLeave, EventNameType_HTMLXUL, eDragEventClass)
+EVENT(dragover, eDragOver, EventNameType_HTMLXUL, eDragEventClass)
+EVENT(dragstart, eDragStart, EventNameType_HTMLXUL, eDragEventClass)
+EVENT(drop, eDrop, EventNameType_HTMLXUL, eDragEventClass)
+EVENT(durationchange, eDurationChange, EventNameType_HTML, eBasicEventClass)
+EVENT(emptied, eEmptied, EventNameType_HTML, eBasicEventClass)
+EVENT(ended, eEnded, EventNameType_HTML, eBasicEventClass)
+EVENT(finish, eMarqueeFinish, EventNameType_HTMLMarqueeOnly, eBasicEventClass)
+EVENT(fullscreenchange, eFullscreenChange, EventNameType_HTML, eBasicEventClass)
+EVENT(fullscreenerror, eFullscreenError, EventNameType_HTML, eBasicEventClass)
+EVENT(input, eEditorInput, EventNameType_HTMLXUL, eEditorInputEventClass)
+EVENT(invalid, eFormInvalid, EventNameType_HTMLXUL, eBasicEventClass)
+EVENT(keydown, eKeyDown, EventNameType_HTMLXUL, eKeyboardEventClass)
+EVENT(keypress, eKeyPress, EventNameType_HTMLXUL, eKeyboardEventClass)
+EVENT(keyup, eKeyUp, EventNameType_HTMLXUL, eKeyboardEventClass)
+EVENT(mozkeydownonplugin, eKeyDownOnPlugin, EventNameType_None,
       eKeyboardEventClass)
-EVENT(keypress,
-      eKeyPress,
-      EventNameType_HTMLXUL,
-      eKeyboardEventClass)
-EVENT(keyup,
-      eKeyUp,
-      EventNameType_HTMLXUL,
-      eKeyboardEventClass)
-EVENT(mozkeydownonplugin,
-      eKeyDownOnPlugin,
-      EventNameType_None,
-      eKeyboardEventClass)
-EVENT(mozkeyuponplugin,
-      eKeyUpOnPlugin,
-      EventNameType_None,
-      eKeyboardEventClass)
-NON_IDL_EVENT(mozaccesskeynotfound,
-              eAccessKeyNotFound,
-              EventNameType_None,
+EVENT(mozkeyuponplugin, eKeyUpOnPlugin, EventNameType_None, eKeyboardEventClass)
+NON_IDL_EVENT(mozaccesskeynotfound, eAccessKeyNotFound, EventNameType_None,
               eKeyboardEventClass)
-EVENT(loadeddata,
-      eLoadedData,
-      EventNameType_HTML,
+EVENT(loadeddata, eLoadedData, EventNameType_HTML, eBasicEventClass)
+EVENT(loadedmetadata, eLoadedMetaData, EventNameType_HTML, eBasicEventClass)
+EVENT(loadend, eLoadEnd, EventNameType_HTML, eBasicEventClass)
+EVENT(loadstart, eLoadStart, EventNameType_HTML, eBasicEventClass)
+EVENT(mousedown, eMouseDown, EventNameType_All, eMouseEventClass)
+EVENT(mouseenter, eMouseEnter, EventNameType_All, eMouseEventClass)
+EVENT(mouseleave, eMouseLeave, EventNameType_All, eMouseEventClass)
+EVENT(mousemove, eMouseMove, EventNameType_All, eMouseEventClass)
+EVENT(mouseout, eMouseOut, EventNameType_All, eMouseEventClass)
+EVENT(mouseover, eMouseOver, EventNameType_All, eMouseEventClass)
+EVENT(mouseup, eMouseUp, EventNameType_All, eMouseEventClass)
+EVENT(mozfullscreenchange, eMozFullscreenChange, EventNameType_HTML,
       eBasicEventClass)
-EVENT(loadedmetadata,
-      eLoadedMetaData,
-      EventNameType_HTML,
+EVENT(mozfullscreenerror, eMozFullscreenError, EventNameType_HTML,
       eBasicEventClass)
-EVENT(loadend,
-      eLoadEnd,
-      EventNameType_HTML,
+EVENT(mozpointerlockchange, eMozPointerLockChange, EventNameType_HTML,
       eBasicEventClass)
-EVENT(loadstart,
-      eLoadStart,
-      EventNameType_HTML,
+EVENT(mozpointerlockerror, eMozPointerLockError, EventNameType_HTML,
       eBasicEventClass)
-EVENT(mousedown,
-      eMouseDown,
-      EventNameType_All,
-      eMouseEventClass)
-EVENT(mouseenter,
-      eMouseEnter,
-      EventNameType_All,
-      eMouseEventClass)
-EVENT(mouseleave,
-      eMouseLeave,
-      EventNameType_All,
-      eMouseEventClass)
-EVENT(mousemove,
-      eMouseMove,
-      EventNameType_All,
-      eMouseEventClass)
-EVENT(mouseout,
-      eMouseOut,
-      EventNameType_All,
-      eMouseEventClass)
-EVENT(mouseover,
-      eMouseOver,
-      EventNameType_All,
-      eMouseEventClass)
-EVENT(mouseup,
-      eMouseUp,
-      EventNameType_All,
-      eMouseEventClass)
-EVENT(mozfullscreenchange,
-      eMozFullscreenChange,
-      EventNameType_HTML,
+EVENT(pointerlockchange, ePointerLockChange, EventNameType_HTML,
       eBasicEventClass)
-EVENT(mozfullscreenerror,
-      eMozFullscreenError,
-      EventNameType_HTML,
-      eBasicEventClass)
-EVENT(mozpointerlockchange,
-      eMozPointerLockChange,
-      EventNameType_HTML,
-      eBasicEventClass)
-EVENT(mozpointerlockerror,
-      eMozPointerLockError,
-      EventNameType_HTML,
-      eBasicEventClass)
-EVENT(pointerlockchange,
-      ePointerLockChange,
-      EventNameType_HTML,
-      eBasicEventClass)
-EVENT(pointerlockerror,
-      ePointerLockError,
-      EventNameType_HTML,
-      eBasicEventClass)
-EVENT(pointerdown,
-      ePointerDown,
-      EventNameType_All,
+EVENT(pointerlockerror, ePointerLockError, EventNameType_HTML, eBasicEventClass)
+EVENT(pointerdown, ePointerDown, EventNameType_All, ePointerEventClass)
+EVENT(pointermove, ePointerMove, EventNameType_All, ePointerEventClass)
+EVENT(pointerup, ePointerUp, EventNameType_All, ePointerEventClass)
+EVENT(pointercancel, ePointerCancel, EventNameType_All, ePointerEventClass)
+EVENT(pointerover, ePointerOver, EventNameType_All, ePointerEventClass)
+EVENT(pointerout, ePointerOut, EventNameType_All, ePointerEventClass)
+EVENT(pointerenter, ePointerEnter, EventNameType_All, ePointerEventClass)
+EVENT(pointerleave, ePointerLeave, EventNameType_All, ePointerEventClass)
+EVENT(gotpointercapture, ePointerGotCapture, EventNameType_All,
       ePointerEventClass)
-EVENT(pointermove,
-      ePointerMove,
-      EventNameType_All,
+EVENT(lostpointercapture, ePointerLostCapture, EventNameType_All,
       ePointerEventClass)
-EVENT(pointerup,
-      ePointerUp,
-      EventNameType_All,
-      ePointerEventClass)
-EVENT(pointercancel,
-      ePointerCancel,
-      EventNameType_All,
-      ePointerEventClass)
-EVENT(pointerover,
-      ePointerOver,
-      EventNameType_All,
-      ePointerEventClass)
-EVENT(pointerout,
-      ePointerOut,
-      EventNameType_All,
-      ePointerEventClass)
-EVENT(pointerenter,
-      ePointerEnter,
-      EventNameType_All,
-      ePointerEventClass)
-EVENT(pointerleave,
-      ePointerLeave,
-      EventNameType_All,
-      ePointerEventClass)
-EVENT(gotpointercapture,
-      ePointerGotCapture,
-      EventNameType_All,
-      ePointerEventClass)
-EVENT(lostpointercapture,
-      ePointerLostCapture,
-      EventNameType_All,
-      ePointerEventClass)
-EVENT(selectstart,
-      eSelectStart,
-      EventNameType_HTMLXUL,
-      eBasicEventClass)
+EVENT(selectstart, eSelectStart, EventNameType_HTMLXUL, eBasicEventClass)
 
 // Not supported yet; probably never because "wheel" is a better idea.
 // EVENT(mousewheel)
-EVENT(pause,
-      ePause,
-      EventNameType_HTML,
-      eBasicEventClass)
-EVENT(play,
-      ePlay,
-      EventNameType_HTML,
-      eBasicEventClass)
-EVENT(playing,
-      ePlaying,
-      EventNameType_HTML,
-      eBasicEventClass)
-EVENT(progress,
-      eProgress,
-      EventNameType_HTML,
-      eBasicEventClass)
-EVENT(ratechange,
-      eRateChange,
-      EventNameType_HTML,
-      eBasicEventClass)
-EVENT(reset,
-      eFormReset,
-      EventNameType_HTMLXUL,
-      eBasicEventClass)
-EVENT(seeked,
-      eSeeked,
-      EventNameType_HTML,
-      eBasicEventClass)
-EVENT(seeking,
-      eSeeking,
-      EventNameType_HTML,
-      eBasicEventClass)
-EVENT(select,
-      eFormSelect,
-      EventNameType_HTMLXUL,
-      eBasicEventClass)
-EVENT(show,
-      eShow,
-      EventNameType_HTML,
-      eBasicEventClass)
-EVENT(stalled,
-      eStalled,
-      EventNameType_HTML,
-      eBasicEventClass)
-EVENT(submit,
-      eFormSubmit,
-      EventNameType_HTMLXUL,
-      eBasicEventClass)
-EVENT(suspend,
-      eSuspend,
-      EventNameType_HTML,
-      eBasicEventClass)
-EVENT(timeupdate,
-      eTimeUpdate,
-      EventNameType_HTML,
-      eBasicEventClass)
-EVENT(toggle,
-      eToggle,
-      EventNameType_HTML,
-      eBasicEventClass)
-EVENT(volumechange,
-      eVolumeChange,
-      EventNameType_HTML,
-      eBasicEventClass)
-EVENT(waiting,
-      eWaiting,
-      EventNameType_HTML,
-      eBasicEventClass)
-EVENT(wheel,
-      eWheel,
-      EventNameType_All,
-      eWheelEventClass)
-EVENT(copy,
-      eCopy,
-      EventNameType_HTMLXUL,
-      eClipboardEventClass)
-EVENT(cut,
-      eCut,
-      EventNameType_HTMLXUL,
-      eClipboardEventClass)
-EVENT(paste,
-      ePaste,
-      EventNameType_HTMLXUL,
-      eClipboardEventClass)
+EVENT(pause, ePause, EventNameType_HTML, eBasicEventClass)
+EVENT(play, ePlay, EventNameType_HTML, eBasicEventClass)
+EVENT(playing, ePlaying, EventNameType_HTML, eBasicEventClass)
+EVENT(progress, eProgress, EventNameType_HTML, eBasicEventClass)
+EVENT(ratechange, eRateChange, EventNameType_HTML, eBasicEventClass)
+EVENT(reset, eFormReset, EventNameType_HTMLXUL, eBasicEventClass)
+EVENT(seeked, eSeeked, EventNameType_HTML, eBasicEventClass)
+EVENT(seeking, eSeeking, EventNameType_HTML, eBasicEventClass)
+EVENT(select, eFormSelect, EventNameType_HTMLXUL, eBasicEventClass)
+EVENT(show, eShow, EventNameType_HTML, eBasicEventClass)
+EVENT(stalled, eStalled, EventNameType_HTML, eBasicEventClass)
+EVENT(start, eMarqueeStart, EventNameType_HTMLMarqueeOnly, eBasicEventClass)
+EVENT(submit, eFormSubmit, EventNameType_HTMLXUL, eBasicEventClass)
+EVENT(suspend, eSuspend, EventNameType_HTML, eBasicEventClass)
+EVENT(timeupdate, eTimeUpdate, EventNameType_HTML, eBasicEventClass)
+EVENT(toggle, eToggle, EventNameType_HTML, eBasicEventClass)
+EVENT(volumechange, eVolumeChange, EventNameType_HTML, eBasicEventClass)
+EVENT(waiting, eWaiting, EventNameType_HTML, eBasicEventClass)
+EVENT(wheel, eWheel, EventNameType_All, eWheelEventClass)
+EVENT(copy, eCopy, EventNameType_HTMLXUL, eClipboardEventClass)
+EVENT(cut, eCut, EventNameType_HTMLXUL, eClipboardEventClass)
+EVENT(paste, ePaste, EventNameType_HTMLXUL, eClipboardEventClass)
 // Gecko-specific extensions that apply to elements
-EVENT(beforescriptexecute,
-      eBeforeScriptExecute,
-      EventNameType_HTMLXUL,
+EVENT(beforescriptexecute, eBeforeScriptExecute, EventNameType_HTMLXUL,
       eBasicEventClass)
-EVENT(afterscriptexecute,
-      eAfterScriptExecute,
-      EventNameType_HTMLXUL,
+EVENT(afterscriptexecute, eAfterScriptExecute, EventNameType_HTMLXUL,
       eBasicEventClass)
 
-FORWARDED_EVENT(blur,
-                eBlur,
-                EventNameType_HTMLXUL,
-                eFocusEventClass)
-ERROR_EVENT(error,
-            eLoadError,
-            EventNameType_All,
-            eBasicEventClass)
-FORWARDED_EVENT(focus,
-                eFocus,
-                EventNameType_HTMLXUL,
-                eFocusEventClass)
-FORWARDED_EVENT(focusin,
-                eFocusIn,
-                EventNameType_HTMLXUL,
-                eFocusEventClass)
-FORWARDED_EVENT(focusout,
-                eFocusOut,
-                EventNameType_HTMLXUL,
-                eFocusEventClass)
-FORWARDED_EVENT(load,
-                eLoad,
-                EventNameType_All,
+FORWARDED_EVENT(blur, eBlur, EventNameType_HTMLXUL, eFocusEventClass)
+ERROR_EVENT(error, eLoadError, EventNameType_All, eBasicEventClass)
+FORWARDED_EVENT(focus, eFocus, EventNameType_HTMLXUL, eFocusEventClass)
+FORWARDED_EVENT(focusin, eFocusIn, EventNameType_HTMLXUL, eFocusEventClass)
+FORWARDED_EVENT(focusout, eFocusOut, EventNameType_HTMLXUL, eFocusEventClass)
+FORWARDED_EVENT(load, eLoad, EventNameType_All, eBasicEventClass)
+FORWARDED_EVENT(resize, eResize, EventNameType_All, eBasicEventClass)
+FORWARDED_EVENT(scroll, eScroll, (EventNameType_HTMLXUL | EventNameType_SVGSVG),
                 eBasicEventClass)
-FORWARDED_EVENT(resize,
-                eResize,
-                EventNameType_All,
-                eBasicEventClass)
-FORWARDED_EVENT(scroll,
-                eScroll,
-                (EventNameType_HTMLXUL | EventNameType_SVGSVG),
-                eBasicEventClass)
+NON_IDL_EVENT(mozvisualresize, eMozVisualResize, EventNameType_None,
+              eBasicEventClass)
+NON_IDL_EVENT(mozvisualscroll, eMozVisualScroll, EventNameType_None,
+              eBasicEventClass)
 
-WINDOW_EVENT(afterprint,
-             eAfterPrint,
+WINDOW_EVENT(afterprint, eAfterPrint,
              EventNameType_XUL | EventNameType_HTMLBodyOrFramesetOnly,
              eBasicEventClass)
-WINDOW_EVENT(beforeprint,
-             eBeforePrint,
+WINDOW_EVENT(beforeprint, eBeforePrint,
              EventNameType_XUL | EventNameType_HTMLBodyOrFramesetOnly,
              eBasicEventClass)
-BEFOREUNLOAD_EVENT(beforeunload,
-                   eBeforeUnload,
+BEFOREUNLOAD_EVENT(beforeunload, eBeforeUnload,
                    EventNameType_XUL | EventNameType_HTMLBodyOrFramesetOnly,
                    eBasicEventClass)
-WINDOW_EVENT(hashchange,
-             eHashChange,
+WINDOW_EVENT(hashchange, eHashChange,
              EventNameType_XUL | EventNameType_HTMLBodyOrFramesetOnly,
              eBasicEventClass)
-WINDOW_EVENT(languagechange,
-             eLanguageChange,
-             EventNameType_HTMLBodyOrFramesetOnly,
-             eBasicEventClass)
+WINDOW_EVENT(languagechange, eLanguageChange,
+             EventNameType_HTMLBodyOrFramesetOnly, eBasicEventClass)
 // XXXbz Should the onmessage attribute on <body> really not work?  If so, do we
 // need a different macro to flag things like that (IDL, but not content
 // attributes on body/frameset), or is just using EventNameType_None enough?
-WINDOW_EVENT(message,
-             eMessage,
-             EventNameType_None,
+WINDOW_EVENT(message, eMessage, EventNameType_None, eBasicEventClass)
+WINDOW_EVENT(messageerror, eMessageError, EventNameType_HTMLBodyOrFramesetOnly,
              eBasicEventClass)
-WINDOW_EVENT(offline,
-             eOffline,
+WINDOW_EVENT(offline, eOffline,
              EventNameType_XUL | EventNameType_HTMLBodyOrFramesetOnly,
              eBasicEventClass)
-WINDOW_EVENT(online,
-             eOnline,
+WINDOW_EVENT(online, eOnline,
              EventNameType_XUL | EventNameType_HTMLBodyOrFramesetOnly,
              eBasicEventClass)
-#if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_WIDGET_GONK)
-WINDOW_EVENT(orientationchange,
-             eOrientationChange,
-             EventNameType_HTMLBodyOrFramesetOnly,
-             eBasicEventClass)
+#if defined(MOZ_WIDGET_ANDROID)
+WINDOW_EVENT(orientationchange, eOrientationChange,
+             EventNameType_HTMLBodyOrFramesetOnly, eBasicEventClass)
 #endif
-WINDOW_EVENT(pagehide,
-             ePageHide,
-             EventNameType_HTMLBodyOrFramesetOnly,
+WINDOW_EVENT(pagehide, ePageHide, EventNameType_HTMLBodyOrFramesetOnly,
              eBasicEventClass)
-WINDOW_EVENT(pageshow,
-             ePageShow,
-             EventNameType_HTMLBodyOrFramesetOnly,
+WINDOW_EVENT(pageshow, ePageShow, EventNameType_HTMLBodyOrFramesetOnly,
              eBasicEventClass)
-WINDOW_EVENT(popstate,
-             ePopState,
+WINDOW_EVENT(popstate, ePopState,
              EventNameType_XUL | EventNameType_HTMLBodyOrFramesetOnly,
              eBasicEventClass)
 // Not supported yet
 // WINDOW_EVENT(redo)
-WINDOW_EVENT(storage,
-             eStorage,
-             EventNameType_HTMLBodyOrFramesetOnly,
+WINDOW_EVENT(storage, eStorage, EventNameType_HTMLBodyOrFramesetOnly,
              eBasicEventClass)
 // Not supported yet
 // WINDOW_EVENT(undo)
-WINDOW_EVENT(unload,
-             eUnload,
+WINDOW_EVENT(unload, eUnload,
              (EventNameType_XUL | EventNameType_SVGSVG |
               EventNameType_HTMLBodyOrFramesetOnly),
              eBasicEventClass)
 
-WINDOW_ONLY_EVENT(devicemotion,
-                  eDeviceMotion,
-                  EventNameType_None,
+WINDOW_ONLY_EVENT(devicemotion, eDeviceMotion, EventNameType_None,
                   eBasicEventClass)
-WINDOW_ONLY_EVENT(deviceorientation,
-                  eDeviceOrientation,
-                  EventNameType_None,
+WINDOW_ONLY_EVENT(deviceorientation, eDeviceOrientation, EventNameType_None,
                   eBasicEventClass)
-WINDOW_ONLY_EVENT(absolutedeviceorientation,
-                  eAbsoluteDeviceOrientation,
-                  EventNameType_None,
+WINDOW_ONLY_EVENT(absolutedeviceorientation, eAbsoluteDeviceOrientation,
+                  EventNameType_None, eBasicEventClass)
+WINDOW_ONLY_EVENT(deviceproximity, eDeviceProximity, EventNameType_None,
                   eBasicEventClass)
-WINDOW_ONLY_EVENT(deviceproximity,
-                  eDeviceProximity,
-                  EventNameType_None,
+WINDOW_ONLY_EVENT(userproximity, eUserProximity, EventNameType_None,
                   eBasicEventClass)
-WINDOW_ONLY_EVENT(userproximity,
-                  eUserProximity,
-                  EventNameType_None,
+WINDOW_ONLY_EVENT(devicelight, eDeviceLight, EventNameType_None,
                   eBasicEventClass)
-WINDOW_ONLY_EVENT(devicelight,
-                  eDeviceLight,
-                  EventNameType_None,
+WINDOW_ONLY_EVENT(vrdisplayactivate, eVRDisplayActivate, EventNameType_None,
                   eBasicEventClass)
-WINDOW_ONLY_EVENT(vrdisplayactivate,
-                  eVRDisplayActivate,
-                  EventNameType_None,
+WINDOW_ONLY_EVENT(vrdisplaydeactivate, eVRDisplayDeactivate, EventNameType_None,
                   eBasicEventClass)
-WINDOW_ONLY_EVENT(vrdisplaydeactivate,
-                  eVRDisplayDeactivate,
-                  EventNameType_None,
+WINDOW_ONLY_EVENT(vrdisplayconnect, eVRDisplayConnect, EventNameType_None,
                   eBasicEventClass)
-WINDOW_ONLY_EVENT(vrdisplayconnect,
-                  eVRDisplayConnect,
-                  EventNameType_None,
+WINDOW_ONLY_EVENT(vrdisplaydisconnect, eVRDisplayDisconnect, EventNameType_None,
                   eBasicEventClass)
-WINDOW_ONLY_EVENT(vrdisplaydisconnect,
-                  eVRDisplayDisconnect,
-                  EventNameType_None,
-                  eBasicEventClass)
-WINDOW_ONLY_EVENT(vrdisplaypresentchange,
-                  eVRDisplayPresentChange,
-                  EventNameType_None,
-                  eBasicEventClass)
+WINDOW_ONLY_EVENT(vrdisplaypresentchange, eVRDisplayPresentChange,
+                  EventNameType_None, eBasicEventClass)
 // Install events as per W3C Manifest spec
-WINDOW_ONLY_EVENT(appinstalled,
-                  eAppInstalled,
-                  EventNameType_None,
+WINDOW_ONLY_EVENT(appinstalled, eAppInstalled, EventNameType_None,
                   eBasicEventClass)
 
+TOUCH_EVENT(touchstart, eTouchStart, EventNameType_All, eTouchEventClass)
+TOUCH_EVENT(touchend, eTouchEnd, EventNameType_All, eTouchEventClass)
+TOUCH_EVENT(touchmove, eTouchMove, EventNameType_All, eTouchEventClass)
+TOUCH_EVENT(touchcancel, eTouchCancel, EventNameType_All, eTouchEventClass)
 
-#ifdef MOZ_B2G
-WINDOW_ONLY_EVENT(moztimechange,
-                  eTimeChange,
-                  EventNameType_None,
-                  eBasicEventClass)
-WINDOW_ONLY_EVENT(moznetworkupload,
-                  eNetworkUpload,
-                  EventNameType_None,
-                  eBasicEventClass)
-WINDOW_ONLY_EVENT(moznetworkdownload,
-                  eNetworkDownload,
-                  EventNameType_None,
-                  eBasicEventClass)
-#endif // MOZ_B2G
-
-TOUCH_EVENT(touchstart,
-            eTouchStart,
-            EventNameType_All,
-            eTouchEventClass)
-TOUCH_EVENT(touchend,
-            eTouchEnd,
-            EventNameType_All,
-            eTouchEventClass)
-TOUCH_EVENT(touchmove,
-            eTouchMove,
-            EventNameType_All,
-            eTouchEventClass )
-TOUCH_EVENT(touchcancel,
-            eTouchCancel,
-            EventNameType_All,
-            eTouchEventClass)
-
-DOCUMENT_ONLY_EVENT(readystatechange,
-                    eReadyStateChange,
-                    EventNameType_HTMLXUL,
+DOCUMENT_ONLY_EVENT(readystatechange, eReadyStateChange, EventNameType_HTMLXUL,
                     eBasicEventClass)
-DOCUMENT_ONLY_EVENT(selectionchange,
-                    eSelectionChange,
-                    EventNameType_HTMLXUL,
+DOCUMENT_ONLY_EVENT(selectionchange, eSelectionChange, EventNameType_HTMLXUL,
+                    eBasicEventClass)
+DOCUMENT_ONLY_EVENT(visibilitychange, eVisibilityChange, EventNameType_HTMLXUL,
                     eBasicEventClass)
 
-NON_IDL_EVENT(MozMouseHittest,
-              eMouseHitTest,
-              EventNameType_None,
+NON_IDL_EVENT(MozMouseHittest, eMouseHitTest, EventNameType_None,
               eMouseEventClass)
 
-NON_IDL_EVENT(DOMAttrModified,
-              eLegacyAttrModified,
-              EventNameType_HTMLXUL,
+NON_IDL_EVENT(DOMAttrModified, eLegacyAttrModified, EventNameType_HTMLXUL,
               eMutationEventClass)
-NON_IDL_EVENT(DOMCharacterDataModified,
-              eLegacyCharacterDataModified,
-              EventNameType_HTMLXUL,
+NON_IDL_EVENT(DOMCharacterDataModified, eLegacyCharacterDataModified,
+              EventNameType_HTMLXUL, eMutationEventClass)
+NON_IDL_EVENT(DOMNodeInserted, eLegacyNodeInserted, EventNameType_HTMLXUL,
               eMutationEventClass)
-NON_IDL_EVENT(DOMNodeInserted,
-              eLegacyNodeInserted,
-              EventNameType_HTMLXUL,
+NON_IDL_EVENT(DOMNodeRemoved, eLegacyNodeRemoved, EventNameType_HTMLXUL,
               eMutationEventClass)
-NON_IDL_EVENT(DOMNodeRemoved,
-              eLegacyNodeRemoved,
-              EventNameType_HTMLXUL,
-              eMutationEventClass)
-NON_IDL_EVENT(DOMNodeInsertedIntoDocument,
-              eLegacyNodeInsertedIntoDocument,
-              EventNameType_HTMLXUL,
-              eMutationEventClass)
-NON_IDL_EVENT(DOMNodeRemovedFromDocument,
-              eLegacyNodeRemovedFromDocument,
-              EventNameType_HTMLXUL,
-              eMutationEventClass)
-NON_IDL_EVENT(DOMSubtreeModified,
-              eLegacySubtreeModified,
-              EventNameType_HTMLXUL,
+NON_IDL_EVENT(DOMNodeInsertedIntoDocument, eLegacyNodeInsertedIntoDocument,
+              EventNameType_HTMLXUL, eMutationEventClass)
+NON_IDL_EVENT(DOMNodeRemovedFromDocument, eLegacyNodeRemovedFromDocument,
+              EventNameType_HTMLXUL, eMutationEventClass)
+NON_IDL_EVENT(DOMSubtreeModified, eLegacySubtreeModified, EventNameType_HTMLXUL,
               eMutationEventClass)
 
-NON_IDL_EVENT(DOMActivate,
-              eLegacyDOMActivate,
-              EventNameType_HTMLXUL,
+NON_IDL_EVENT(DOMActivate, eLegacyDOMActivate, EventNameType_HTMLXUL,
               eUIEventClass)
-NON_IDL_EVENT(DOMFocusIn,
-              eLegacyDOMFocusIn,
-              EventNameType_HTMLXUL,
+NON_IDL_EVENT(DOMFocusIn, eLegacyDOMFocusIn, EventNameType_HTMLXUL,
               eUIEventClass)
-NON_IDL_EVENT(DOMFocusOut,
-              eLegacyDOMFocusOut,
-              EventNameType_HTMLXUL,
+NON_IDL_EVENT(DOMFocusOut, eLegacyDOMFocusOut, EventNameType_HTMLXUL,
               eUIEventClass)
 
-NON_IDL_EVENT(DOMMouseScroll,
-              eLegacyMouseLineOrPageScroll,
-              EventNameType_HTMLXUL,
-              eMouseScrollEventClass)
-NON_IDL_EVENT(MozMousePixelScroll,
-              eLegacyMousePixelScroll,
-              EventNameType_HTMLXUL,
-              eMouseScrollEventClass)
+NON_IDL_EVENT(DOMMouseScroll, eLegacyMouseLineOrPageScroll,
+              EventNameType_HTMLXUL, eMouseScrollEventClass)
+NON_IDL_EVENT(MozMousePixelScroll, eLegacyMousePixelScroll,
+              EventNameType_HTMLXUL, eMouseScrollEventClass)
 
-NON_IDL_EVENT(open,
-              eOpen,
-              EventNameType_None,
+NON_IDL_EVENT(open, eOpen, EventNameType_None, eBasicEventClass)
+
+NON_IDL_EVENT(dataavailable, eMediaRecorderDataAvailable, EventNameType_None,
               eBasicEventClass)
 
-NON_IDL_EVENT(dataavailable,
-              eMediaRecorderDataAvailable,
-              EventNameType_None,
-              eBasicEventClass)
+NON_IDL_EVENT(stop, eMediaRecorderStop, EventNameType_None, eBasicEventClass)
 
-NON_IDL_EVENT(stop,
-              eMediaRecorderStop,
-              EventNameType_None,
-              eBasicEventClass)
-
-NON_IDL_EVENT(warning,
-              eMediaRecorderWarning,
-              EventNameType_None,
+NON_IDL_EVENT(warning, eMediaRecorderWarning, EventNameType_None,
               eBasicEventClass)
 
 // Events that only have on* attributes on XUL elements
 
- // "text" event is legacy event for modifying composition string in EditorBase.
- // This shouldn't be used by web/xul apps.  "compositionupdate" should be
- // used instead.
-NON_IDL_EVENT(text,
-              eCompositionChange,
-              EventNameType_XUL,
+// "text" event is legacy event for modifying composition string in EditorBase.
+// This shouldn't be used by web/xul apps.  "compositionupdate" should be
+// used instead.
+NON_IDL_EVENT(text, eCompositionChange, EventNameType_XUL,
               eCompositionEventClass)
-NON_IDL_EVENT(compositionstart,
-              eCompositionStart,
-              EventNameType_XUL,
+NON_IDL_EVENT(compositionstart, eCompositionStart, EventNameType_XUL,
               eCompositionEventClass)
-NON_IDL_EVENT(compositionupdate,
-              eCompositionUpdate,
-              EventNameType_XUL,
+NON_IDL_EVENT(compositionupdate, eCompositionUpdate, EventNameType_XUL,
               eCompositionEventClass)
-NON_IDL_EVENT(compositionend,
-              eCompositionEnd,
-              EventNameType_XUL,
+NON_IDL_EVENT(compositionend, eCompositionEnd, EventNameType_XUL,
               eCompositionEventClass)
-NON_IDL_EVENT(command,
-              eXULCommand,
-              EventNameType_XUL,
-              eInputEventClass)
-NON_IDL_EVENT(close,
-              eWindowClose,
-              EventNameType_XUL,
+NON_IDL_EVENT(command, eXULCommand, EventNameType_XUL, eInputEventClass)
+NON_IDL_EVENT(popupshowing, eXULPopupShowing, EventNameType_XUL,
               eBasicEventClass)
-NON_IDL_EVENT(popupshowing,
-              eXULPopupShowing,
-              EventNameType_XUL,
+NON_IDL_EVENT(popupshown, eXULPopupShown, EventNameType_XUL, eBasicEventClass)
+NON_IDL_EVENT(popuppositioned, eXULPopupPositioned, EventNameType_XUL,
               eBasicEventClass)
-NON_IDL_EVENT(popupshown,
-              eXULPopupShown,
-              EventNameType_XUL,
+NON_IDL_EVENT(popuphiding, eXULPopupHiding, EventNameType_XUL, eBasicEventClass)
+NON_IDL_EVENT(popuphidden, eXULPopupHidden, EventNameType_XUL, eBasicEventClass)
+NON_IDL_EVENT(broadcast, eXULBroadcast, EventNameType_XUL, eBasicEventClass)
+NON_IDL_EVENT(commandupdate, eXULCommandUpdate, EventNameType_XUL,
               eBasicEventClass)
-NON_IDL_EVENT(popuppositioned,
-              eXULPopupPositioned,
-              EventNameType_XUL,
+NON_IDL_EVENT(overflow, eScrollPortOverflow, EventNameType_XUL,
               eBasicEventClass)
-NON_IDL_EVENT(popuphiding,
-              eXULPopupHiding,
-              EventNameType_XUL,
-              eBasicEventClass)
-NON_IDL_EVENT(popuphidden,
-              eXULPopupHidden,
-              EventNameType_XUL,
-              eBasicEventClass)
-NON_IDL_EVENT(broadcast,
-              eXULBroadcast,
-              EventNameType_XUL,
-              eBasicEventClass)
-NON_IDL_EVENT(commandupdate,
-              eXULCommandUpdate,
-              EventNameType_XUL,
-              eBasicEventClass)
-NON_IDL_EVENT(overflow,
-              eScrollPortOverflow,
-              EventNameType_XUL,
-              eBasicEventClass)
-NON_IDL_EVENT(underflow,
-              eScrollPortUnderflow,
-              EventNameType_XUL,
+NON_IDL_EVENT(underflow, eScrollPortUnderflow, EventNameType_XUL,
               eBasicEventClass)
 
 // Various SVG events
-NON_IDL_EVENT(SVGLoad,
-              eSVGLoad,
-              EventNameType_None,
-              eBasicEventClass)
-NON_IDL_EVENT(SVGUnload,
-              eSVGUnload,
-              EventNameType_None,
-              eBasicEventClass)
-NON_IDL_EVENT(SVGResize,
-              eSVGResize,
-              EventNameType_None,
-              eBasicEventClass)
-NON_IDL_EVENT(SVGScroll,
-              eSVGScroll,
-              EventNameType_None,
-              eBasicEventClass)
-
-NON_IDL_EVENT(SVGZoom,
-              eSVGZoom,
-              EventNameType_None,
-              eSVGZoomEventClass)
+NON_IDL_EVENT(SVGLoad, eSVGLoad, EventNameType_None, eBasicEventClass)
+NON_IDL_EVENT(SVGUnload, eSVGUnload, EventNameType_None, eBasicEventClass)
+NON_IDL_EVENT(SVGResize, eSVGResize, EventNameType_None, eBasicEventClass)
+NON_IDL_EVENT(SVGScroll, eSVGScroll, EventNameType_None, eBasicEventClass)
 
 // Only map the ID to the real event name when MESSAGE_TO_EVENT is defined.
 #ifndef MESSAGE_TO_EVENT
-// This is a bit hackish, but SVG's event names are weird.
-NON_IDL_EVENT(zoom,
-              eSVGZoom,
-              EventNameType_SVGSVG,
-              eBasicEventClass)
+NON_IDL_EVENT(begin, eSMILBeginEvent, EventNameType_SMIL, eBasicEventClass)
 #endif
-// Only map the ID to the real event name when MESSAGE_TO_EVENT is defined.
-#ifndef MESSAGE_TO_EVENT
-NON_IDL_EVENT(begin,
-              eSMILBeginEvent,
-              EventNameType_SMIL,
-              eBasicEventClass)
-#endif
-NON_IDL_EVENT(beginEvent,
-              eSMILBeginEvent,
-              EventNameType_None,
+NON_IDL_EVENT(beginEvent, eSMILBeginEvent, EventNameType_None,
               eSMILTimeEventClass)
 // Only map the ID to the real event name when MESSAGE_TO_EVENT is defined.
 #ifndef MESSAGE_TO_EVENT
-NON_IDL_EVENT(end,
-              eSMILEndEvent,
-              EventNameType_SMIL,
-              eBasicEventClass)
+NON_IDL_EVENT(end, eSMILEndEvent, EventNameType_SMIL, eBasicEventClass)
 #endif
-NON_IDL_EVENT(endEvent,
-              eSMILEndEvent,
-              EventNameType_None,
-              eSMILTimeEventClass)
+NON_IDL_EVENT(endEvent, eSMILEndEvent, EventNameType_None, eSMILTimeEventClass)
 // Only map the ID to the real event name when MESSAGE_TO_EVENT is defined.
 #ifndef MESSAGE_TO_EVENT
-NON_IDL_EVENT(repeat,
-              eSMILRepeatEvent,
-              EventNameType_SMIL,
-              eBasicEventClass)
+NON_IDL_EVENT(repeat, eSMILRepeatEvent, EventNameType_SMIL, eBasicEventClass)
 #endif
-NON_IDL_EVENT(repeatEvent,
-              eSMILRepeatEvent,
-              EventNameType_None,
+NON_IDL_EVENT(repeatEvent, eSMILRepeatEvent, EventNameType_None,
               eSMILTimeEventClass)
 
-NON_IDL_EVENT(MozAfterPaint,
-              eAfterPaint,
-              EventNameType_None,
-              eBasicEventClass)
+NON_IDL_EVENT(MozAfterPaint, eAfterPaint, EventNameType_None, eBasicEventClass)
 
-NON_IDL_EVENT(MozScrolledAreaChanged,
-              eScrolledAreaChanged,
-              EventNameType_None,
+NON_IDL_EVENT(MozScrolledAreaChanged, eScrolledAreaChanged, EventNameType_None,
               eScrollAreaEventClass)
 
-NON_IDL_EVENT(gamepadbuttondown,
-              eGamepadButtonDown,
-              EventNameType_None,
+NON_IDL_EVENT(gamepadbuttondown, eGamepadButtonDown, EventNameType_None,
               eBasicEventClass)
-NON_IDL_EVENT(gamepadbuttonup,
-              eGamepadButtonUp,
-              EventNameType_None,
+NON_IDL_EVENT(gamepadbuttonup, eGamepadButtonUp, EventNameType_None,
               eBasicEventClass)
-NON_IDL_EVENT(gamepadaxismove,
-              eGamepadAxisMove,
-              EventNameType_None,
+NON_IDL_EVENT(gamepadaxismove, eGamepadAxisMove, EventNameType_None,
               eBasicEventClass)
-NON_IDL_EVENT(gamepadconnected,
-              eGamepadConnected,
-              EventNameType_None,
+NON_IDL_EVENT(gamepadconnected, eGamepadConnected, EventNameType_None,
               eBasicEventClass)
-NON_IDL_EVENT(gamepaddisconnected,
-              eGamepadDisconnected,
-              EventNameType_None,
+NON_IDL_EVENT(gamepaddisconnected, eGamepadDisconnected, EventNameType_None,
               eBasicEventClass)
 
 // Simple gesture events
-NON_IDL_EVENT(MozSwipeGestureMayStart,
-              eSwipeGestureMayStart,
-              EventNameType_None,
+NON_IDL_EVENT(MozSwipeGestureMayStart, eSwipeGestureMayStart,
+              EventNameType_None, eSimpleGestureEventClass)
+NON_IDL_EVENT(MozSwipeGestureStart, eSwipeGestureStart, EventNameType_None,
               eSimpleGestureEventClass)
-NON_IDL_EVENT(MozSwipeGestureStart,
-              eSwipeGestureStart,
-              EventNameType_None,
+NON_IDL_EVENT(MozSwipeGestureUpdate, eSwipeGestureUpdate, EventNameType_None,
               eSimpleGestureEventClass)
-NON_IDL_EVENT(MozSwipeGestureUpdate,
-              eSwipeGestureUpdate,
-              EventNameType_None,
+NON_IDL_EVENT(MozSwipeGestureEnd, eSwipeGestureEnd, EventNameType_None,
               eSimpleGestureEventClass)
-NON_IDL_EVENT(MozSwipeGestureEnd,
-              eSwipeGestureEnd,
-              EventNameType_None,
+NON_IDL_EVENT(MozSwipeGesture, eSwipeGesture, EventNameType_None,
               eSimpleGestureEventClass)
-NON_IDL_EVENT(MozSwipeGesture,
-              eSwipeGesture,
-              EventNameType_None,
+NON_IDL_EVENT(MozMagnifyGestureStart, eMagnifyGestureStart, EventNameType_None,
               eSimpleGestureEventClass)
-NON_IDL_EVENT(MozMagnifyGestureStart,
-              eMagnifyGestureStart,
-              EventNameType_None,
+NON_IDL_EVENT(MozMagnifyGestureUpdate, eMagnifyGestureUpdate,
+              EventNameType_None, eSimpleGestureEventClass)
+NON_IDL_EVENT(MozMagnifyGesture, eMagnifyGesture, EventNameType_None,
               eSimpleGestureEventClass)
-NON_IDL_EVENT(MozMagnifyGestureUpdate,
-              eMagnifyGestureUpdate,
-              EventNameType_None,
+NON_IDL_EVENT(MozRotateGestureStart, eRotateGestureStart, EventNameType_None,
               eSimpleGestureEventClass)
-NON_IDL_EVENT(MozMagnifyGesture,
-              eMagnifyGesture,
-              EventNameType_None,
+NON_IDL_EVENT(MozRotateGestureUpdate, eRotateGestureUpdate, EventNameType_None,
               eSimpleGestureEventClass)
-NON_IDL_EVENT(MozRotateGestureStart,
-              eRotateGestureStart,
-              EventNameType_None,
+NON_IDL_EVENT(MozRotateGesture, eRotateGesture, EventNameType_None,
               eSimpleGestureEventClass)
-NON_IDL_EVENT(MozRotateGestureUpdate,
-              eRotateGestureUpdate,
-              EventNameType_None,
+NON_IDL_EVENT(MozTapGesture, eTapGesture, EventNameType_None,
               eSimpleGestureEventClass)
-NON_IDL_EVENT(MozRotateGesture,
-              eRotateGesture,
-              EventNameType_None,
+NON_IDL_EVENT(MozPressTapGesture, ePressTapGesture, EventNameType_None,
               eSimpleGestureEventClass)
-NON_IDL_EVENT(MozTapGesture,
-              eTapGesture,
-              EventNameType_None,
+NON_IDL_EVENT(MozEdgeUIStarted, eEdgeUIStarted, EventNameType_None,
               eSimpleGestureEventClass)
-NON_IDL_EVENT(MozPressTapGesture,
-              ePressTapGesture,
-              EventNameType_None,
+NON_IDL_EVENT(MozEdgeUICanceled, eEdgeUICanceled, EventNameType_None,
               eSimpleGestureEventClass)
-NON_IDL_EVENT(MozEdgeUIStarted,
-              eEdgeUIStarted,
-              EventNameType_None,
-              eSimpleGestureEventClass)
-NON_IDL_EVENT(MozEdgeUICanceled,
-              eEdgeUICanceled,
-              EventNameType_None,
-              eSimpleGestureEventClass)
-NON_IDL_EVENT(MozEdgeUICompleted,
-              eEdgeUICompleted,
-              EventNameType_None,
+NON_IDL_EVENT(MozEdgeUICompleted, eEdgeUICompleted, EventNameType_None,
               eSimpleGestureEventClass)
 
 // CSS Transition & Animation events:
-EVENT(transitionstart,
-      eTransitionStart,
-      EventNameType_All,
+EVENT(transitionstart, eTransitionStart, EventNameType_All,
       eTransitionEventClass)
-EVENT(transitionrun,
-      eTransitionRun,
-      EventNameType_All,
+EVENT(transitionrun, eTransitionRun, EventNameType_All, eTransitionEventClass)
+EVENT(transitionend, eTransitionEnd, EventNameType_All, eTransitionEventClass)
+EVENT(transitioncancel, eTransitionCancel, EventNameType_All,
       eTransitionEventClass)
-EVENT(transitionend,
-      eTransitionEnd,
-      EventNameType_All,
-      eTransitionEventClass)
-EVENT(transitioncancel,
-      eTransitionCancel,
-      EventNameType_All,
-      eTransitionEventClass)
-EVENT(animationstart,
-      eAnimationStart,
-      EventNameType_All,
+EVENT(animationstart, eAnimationStart, EventNameType_All, eAnimationEventClass)
+EVENT(animationend, eAnimationEnd, EventNameType_All, eAnimationEventClass)
+EVENT(animationiteration, eAnimationIteration, EventNameType_All,
       eAnimationEventClass)
-EVENT(animationend,
-      eAnimationEnd,
-      EventNameType_All,
-      eAnimationEventClass)
-EVENT(animationiteration,
-      eAnimationIteration,
-      EventNameType_All,
-      eAnimationEventClass)
-EVENT(animationcancel,
-      eAnimationCancel,
-      EventNameType_All,
+EVENT(animationcancel, eAnimationCancel, EventNameType_All,
       eAnimationEventClass)
 
 // Webkit-prefixed versions of Transition & Animation events, for web compat:
-EVENT(webkitAnimationEnd,
-      eWebkitAnimationEnd,
-      EventNameType_All,
+EVENT(webkitAnimationEnd, eWebkitAnimationEnd, EventNameType_All,
       eAnimationEventClass)
-EVENT(webkitAnimationIteration,
-      eWebkitAnimationIteration,
-      EventNameType_All,
+EVENT(webkitAnimationIteration, eWebkitAnimationIteration, EventNameType_All,
       eAnimationEventClass)
-EVENT(webkitAnimationStart,
-      eWebkitAnimationStart,
-      EventNameType_All,
+EVENT(webkitAnimationStart, eWebkitAnimationStart, EventNameType_All,
       eAnimationEventClass)
-EVENT(webkitTransitionEnd,
-      eWebkitTransitionEnd,
-      EventNameType_All,
+EVENT(webkitTransitionEnd, eWebkitTransitionEnd, EventNameType_All,
       eTransitionEventClass)
 #ifndef MESSAGE_TO_EVENT
-EVENT(webkitanimationend,
-      eWebkitAnimationEnd,
-      EventNameType_All,
+EVENT(webkitanimationend, eWebkitAnimationEnd, EventNameType_All,
       eAnimationEventClass)
-EVENT(webkitanimationiteration,
-      eWebkitAnimationIteration,
-      EventNameType_All,
+EVENT(webkitanimationiteration, eWebkitAnimationIteration, EventNameType_All,
       eAnimationEventClass)
-EVENT(webkitanimationstart,
-      eWebkitAnimationStart,
-      EventNameType_All,
+EVENT(webkitanimationstart, eWebkitAnimationStart, EventNameType_All,
       eAnimationEventClass)
-EVENT(webkittransitionend,
-      eWebkitTransitionEnd,
-      EventNameType_All,
+EVENT(webkittransitionend, eWebkitTransitionEnd, EventNameType_All,
       eTransitionEventClass)
 #endif
 
-NON_IDL_EVENT(audioprocess,
-              eAudioProcess,
-              EventNameType_None,
-              eBasicEventClass)
+NON_IDL_EVENT(audioprocess, eAudioProcess, EventNameType_None, eBasicEventClass)
 
-NON_IDL_EVENT(complete,
-              eAudioComplete,
-              EventNameType_None,
-              eBasicEventClass)
+NON_IDL_EVENT(complete, eAudioComplete, EventNameType_None, eBasicEventClass)
 
 #ifdef DEFINED_FORWARDED_EVENT
-#undef DEFINED_FORWARDED_EVENT
-#undef FORWARDED_EVENT
+#  undef DEFINED_FORWARDED_EVENT
+#  undef FORWARDED_EVENT
 #endif /* DEFINED_FORWARDED_EVENT */
 
 #ifdef DEFINED_WINDOW_EVENT
-#undef DEFINED_WINDOW_EVENT
-#undef WINDOW_EVENT
+#  undef DEFINED_WINDOW_EVENT
+#  undef WINDOW_EVENT
 #endif /* DEFINED_WINDOW_EVENT */
 
 #ifdef DEFINED_WINDOW_ONLY_EVENT
-#undef DEFINED_WINDOW_ONLY_EVENT
-#undef WINDOW_ONLY_EVENT
+#  undef DEFINED_WINDOW_ONLY_EVENT
+#  undef WINDOW_ONLY_EVENT
 #endif /* DEFINED_WINDOW_ONLY_EVENT */
 
 #ifdef DEFINED_TOUCH_EVENT
-#undef DEFINED_TOUCH_EVENT
-#undef TOUCH_EVENT
+#  undef DEFINED_TOUCH_EVENT
+#  undef TOUCH_EVENT
 #endif /* DEFINED_TOUCH_EVENT */
 
 #ifdef DEFINED_DOCUMENT_ONLY_EVENT
-#undef DEFINED_DOCUMENT_ONLY_EVENT
-#undef DOCUMENT_ONLY_EVENT
+#  undef DEFINED_DOCUMENT_ONLY_EVENT
+#  undef DOCUMENT_ONLY_EVENT
 #endif /* DEFINED_DOCUMENT_ONLY_EVENT */
 
 #ifdef DEFINED_NON_IDL_EVENT
-#undef DEFINED_NON_IDL_EVENT
-#undef NON_IDL_EVENT
+#  undef DEFINED_NON_IDL_EVENT
+#  undef NON_IDL_EVENT
 #endif /* DEFINED_NON_IDL_EVENT */
 
 #ifdef DEFINED_ERROR_EVENT
-#undef DEFINED_ERROR_EVENT
-#undef ERROR_EVENT
+#  undef DEFINED_ERROR_EVENT
+#  undef ERROR_EVENT
 #endif /* DEFINED_ERROR_EVENT */
 
 #ifdef DEFINED_BEFOREUNLOAD_EVENT
-#undef DEFINED_BEFOREUNLOAD_EVENT
-#undef BEFOREUNLOAD_EVENT
+#  undef DEFINED_BEFOREUNLOAD_EVENT
+#  undef BEFOREUNLOAD_EVENT
 #endif /* BEFOREUNLOAD_EVENT */
 
 #ifdef MESSAGE_TO_EVENT
-#undef EVENT
-#undef WINDOW_ONLY_EVENT
-#undef TOUCH_EVENT
-#undef DOCUMENT_ONLY_EVENT
-#undef NON_IDL_EVENT
+#  undef EVENT
+#  undef WINDOW_ONLY_EVENT
+#  undef TOUCH_EVENT
+#  undef DOCUMENT_ONLY_EVENT
+#  undef NON_IDL_EVENT
 #endif /* MESSAGE_TO_EVENT */

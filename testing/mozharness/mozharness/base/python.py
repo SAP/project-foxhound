@@ -7,10 +7,8 @@
 '''Python usage, esp. virtualenv.
 '''
 
-import distutils.version
 import errno
 import os
-import subprocess
 import sys
 import json
 import socket
@@ -26,12 +24,12 @@ from mozharness.base.script import (
 )
 from mozharness.base.errors import VirtualenvErrorList
 from mozharness.base.log import WARNING, FATAL
-from mozharness.mozilla.proxxy import Proxxy
 
 external_tools_path = os.path.join(
     os.path.abspath(os.path.dirname(os.path.dirname(mozharness.__file__))),
     'external_tools',
 )
+
 
 def get_tlsv1_post():
     # Monkeypatch to work around SSL errors in non-bleeding-edge Python.
@@ -50,6 +48,7 @@ def get_tlsv1_post():
     s.mount('https://', TLSV1Adapter())
     return s.post
 
+
 # Virtualenv {{{1
 virtualenv_config_options = [
     [["--virtualenv-path"], {
@@ -58,26 +57,22 @@ virtualenv_config_options = [
         "default": "venv",
         "help": "Specify the path to the virtualenv top level directory"
     }],
-    [["--virtualenv"], {
-        "action": "store",
-        "dest": "virtualenv",
-        "help": "Specify the virtualenv executable to use"
-    }],
     [["--find-links"], {
         "action": "extend",
         "dest": "find_links",
+        "default": ["https://pypi.pub.build.mozilla.org/pub"],
         "help": "URL to look for packages at"
     }],
     [["--pip-index"], {
         "action": "store_true",
-        "default": True,
+        "default": False,
         "dest": "pip_index",
-        "help": "Use pip indexes (default)"
+        "help": "Use pip indexes"
     }],
     [["--no-pip-index"], {
         "action": "store_false",
         "dest": "pip_index",
-        "help": "Don't use pip indexes"
+        "help": "Don't use pip indexes (default)"
     }],
 ]
 
@@ -140,7 +135,8 @@ class VirtualenvMixin(object):
             if self._is_windows():
                 bin_dir = 'Scripts'
             virtualenv_path = self.query_virtualenv_path()
-            self.python_paths[binary] = os.path.abspath(os.path.join(virtualenv_path, bin_dir, binary))
+            self.python_paths[binary] = os.path.abspath(
+                os.path.join(virtualenv_path, bin_dir, binary))
 
         return self.python_paths[binary]
 
@@ -167,9 +163,12 @@ class VirtualenvMixin(object):
             if not pip:
                 self.log("package_versions: Program pip not in path", level=error_level)
                 return {}
-            pip_freeze_output = self.get_output_from_command([pip, "freeze"], silent=True, ignore_errors=True)
+            pip_freeze_output = self.get_output_from_command(
+                [pip, "freeze"], silent=True, ignore_errors=True)
             if not isinstance(pip_freeze_output, basestring):
-                self.fatal("package_versions: Error encountered running `pip freeze`: %s" % pip_freeze_output)
+                self.fatal(
+                    "package_versions: Error encountered running `pip freeze`: "
+                    + pip_freeze_output)
 
         for line in pip_freeze_output.splitlines():
             # parse the output into package, version
@@ -248,25 +247,13 @@ class VirtualenvMixin(object):
                 # not understood by easy_install.
                 self.install_module(requirements=requirements,
                                     install_method='pip')
-            # Allow easy_install to be overridden by
-            # self.config['exes']['easy_install']
-            default = 'easy_install'
-            if self._is_windows():
-                # Don't invoke `easy_install` directly on windows since
-                # the 'install' in the executable name hits UAC
-                # - http://answers.microsoft.com/en-us/windows/forum/windows_7-security/uac-message-do-you-want-to-allow-the-following/bea30ad8-9ef8-4897-aab4-841a65f7af71
-                # - https://bugzilla.mozilla.org/show_bug.cgi?id=791840
-                default = [self.query_python_path(), self.query_python_path('easy_install-script.py')]
-            command = self.query_exe('easy_install', default=default, return_type="list")
+            command = [self.query_python_path(), '-m', 'easy_install']
         else:
-            self.fatal("install_module() doesn't understand an install_method of %s!" % install_method)
+            self.fatal(
+                "install_module() doesn't understand an install_method of %s!"
+                % install_method)
 
-        # Add --find-links pages to look at. Add --trusted-host automatically if
-        # the host isn't secure. This allows modern versions of pip to connect
-        # without requiring an override.
-        proxxy = Proxxy(self.config, self.log_obj)
-        trusted_hosts = set()
-        for link in proxxy.get_proxies_and_urls(c.get('find_links', [])):
+        for link in c.get('find_links', []):
             parsed = urlparse.urlparse(link)
 
             try:
@@ -277,13 +264,6 @@ class VirtualenvMixin(object):
                 continue
 
             command.extend(["--find-links", link])
-            if parsed.scheme != 'https':
-                trusted_hosts.add(parsed.hostname)
-
-        if (install_method != 'easy_install' and
-                    self.pip_version >= distutils.version.LooseVersion('6.0')):
-            for host in sorted(trusted_hosts):
-                command.extend(['--trusted-host', host])
 
         # module_url can be None if only specifying requirements files
         if module_url:
@@ -291,7 +271,9 @@ class VirtualenvMixin(object):
                 if install_method in (None, 'pip'):
                     command += ['-e']
                 else:
-                    self.fatal("editable installs not supported for install_method %s" % install_method)
+                    self.fatal(
+                        "editable installs not supported for install_method %s"
+                        % install_method)
             command += [module_url]
 
         # If we're only installing a single requirements file, use
@@ -300,7 +282,6 @@ class VirtualenvMixin(object):
         if not module and len(requirements) == 1:
             cwd = os.path.dirname(requirements[0])
 
-        quoted_command = subprocess.list2cmdline(command)
         # Allow for errors while building modules, but require a
         # return status of 0.
         self.retry(
@@ -309,7 +290,9 @@ class VirtualenvMixin(object):
             attempts=1 if optional else None,
             good_statuses=(0,),
             error_level=WARNING if optional else FATAL,
-            error_message='Could not install python package: ' + quoted_command + ' failed after %(attempts)d tries!',
+            error_message=(
+                'Could not install python package: failed all attempts.'
+            ),
             args=[command, ],
             kwargs={
                 'error_list': VirtualenvErrorList,
@@ -326,12 +309,7 @@ class VirtualenvMixin(object):
         """
         Create a python virtualenv.
 
-        The virtualenv exe can be defined in c['virtualenv'] or
-        c['exes']['virtualenv'], as a string (path) or list (path +
-        arguments).
-
-        c['virtualenv_python_dll'] is an optional config item that works
-        around an old windows virtualenv bug.
+        This uses the copy of virtualenv that is vendored in mozharness.
 
         virtualenv_modules can be a list of module names to install, e.g.
 
@@ -373,55 +351,30 @@ class VirtualenvMixin(object):
         venv_path = self.query_virtualenv_path()
         self.info("Creating virtualenv %s" % venv_path)
 
-        # If running from a source checkout, use the virtualenv that is
-        # vendored since that is deterministic.
-        if self.topsrcdir:
-            virtualenv = [
-                sys.executable,
-                os.path.join(self.topsrcdir, 'python', 'virtualenv', 'virtualenv.py')
-            ]
-            virtualenv_options = c.get('virtualenv_options', [])
-            # Don't create symlinks. If we don't do this, permissions issues may
-            # hinder virtualenv creation or operation. Ideally we should do this
-            # below when using the system virtualenv. However, this is a newer
-            # feature and isn't guaranteed to be supported.
+        # Always use the virtualenv that is vendored since that is deterministic.
+        # TODO Bug 1408051 - Use the copy of virtualenv under
+        # third_party/python/virtualenv once everything is off buildbot
+        virtualenv = [
+            sys.executable,
+            os.path.join(external_tools_path, 'virtualenv', 'virtualenv.py'),
+        ]
+        virtualenv_options = c.get('virtualenv_options', [])
+        # Creating symlinks in the virtualenv may cause issues during
+        # virtualenv creation or operation on non-Redhat derived
+        # distros. On Redhat derived distros --always-copy causes
+        # imports to fail. See
+        # https://github.com/pypa/virtualenv/issues/565. Therefore
+        # only use --alway-copy when not using Redhat.
+        if self._is_redhat():
+            self.warning("creating virtualenv without --always-copy "
+                         "due to issues on Redhat derived distros")
+        else:
             virtualenv_options.append('--always-copy')
 
-        # No source checkout. Try to find virtualenv from config options
-        # or search path.
-        else:
-            virtualenv = c.get('virtualenv', self.query_exe('virtualenv'))
-            if isinstance(virtualenv, str):
-                # allow for [python, virtualenv] in config
-                virtualenv = [virtualenv]
-
-            if not os.path.exists(virtualenv[0]) and not self.which(virtualenv[0]):
-                self.add_summary("The executable '%s' is not found; not creating "
-                                 "virtualenv!" % virtualenv[0], level=FATAL)
-                return -1
-
-            # https://bugs.launchpad.net/virtualenv/+bug/352844/comments/3
-            # https://bugzilla.mozilla.org/show_bug.cgi?id=700415#c50
-            if c.get('virtualenv_python_dll'):
-                # We may someday want to copy a differently-named dll, but
-                # let's not think about that right now =\
-                dll_name = os.path.basename(c['virtualenv_python_dll'])
-                target = self.query_python_path(dll_name)
-                scripts_dir = os.path.dirname(target)
-                self.mkdir_p(scripts_dir)
-                self.copyfile(c['virtualenv_python_dll'], target, error_level=WARNING)
-
-            # make this list configurable?
-            for module in ('distribute', 'pip'):
-                if c.get('%s_url' % module):
-                    self.download_file(c['%s_url' % module],
-                                       parent_dir=dirs['abs_work_dir'])
-
-            virtualenv_options = c.get('virtualenv_options',
-                                       ['--no-site-packages', '--distribute'])
-
         if os.path.exists(self.query_python_path()):
-            self.info("Virtualenv %s appears to already exist; skipping virtualenv creation." % self.query_python_path())
+            self.info(
+                "Virtualenv %s appears to already exist; "
+                "skipping virtualenv creation." % self.query_python_path())
         else:
             self.mkdir_p(dirs['abs_work_dir'])
             self.run_command(virtualenv + virtualenv_options + [venv_path],
@@ -429,17 +382,6 @@ class VirtualenvMixin(object):
                              error_list=VirtualenvErrorList,
                              partial_env={'VIRTUALENV_NO_DOWNLOAD': "1"},
                              halt_on_failure=True)
-
-        # Resolve the pip version so we can conditionally do things if we have
-        # a modern pip.
-        pip = self.query_python_path('pip')
-        output = self.get_output_from_command([pip, '--version'],
-                                              halt_on_failure=True)
-        words = output.split()
-        if words[0] != 'pip':
-            self.fatal('pip --version output is weird: %s' % output)
-        pip_version = words[1]
-        self.pip_version = distutils.version.LooseVersion(pip_version)
 
         if not modules:
             modules = c.get('virtualenv_modules', [])
@@ -528,9 +470,6 @@ class PerfherderResourceOptionsMixin(ScriptMixin):
 
             opts.append('buildbot-%s' % instance)
 
-        # Allow configs to specify their own values.
-        opts.extend(self.config.get('perfherder_extra_options', []))
-
         return opts
 
 
@@ -553,7 +492,7 @@ class ResourceMonitoringMixin(PerfherderResourceOptionsMixin):
 
         self.register_virtualenv_module('psutil>=3.1.1', method='pip',
                                         optional=True)
-        self.register_virtualenv_module('mozsystemmonitor==0.3',
+        self.register_virtualenv_module('mozsystemmonitor==0.4',
                                         method='pip', optional=True)
         self.register_virtualenv_module('jsonschema==2.5.1',
                                         method='pip')
@@ -661,7 +600,10 @@ class ResourceMonitoringMixin(PerfherderResourceOptionsMixin):
             # XXX Some test harnesses are complaining about a string being
             # being fed into a 'f' formatter. This will help diagnose the
             # issue.
-            cpu_percent_str = str(round(cpu_percent)) + '%' if cpu_percent else "Can't collect data"
+            if cpu_percent:
+                cpu_percent_str = str(round(cpu_percent)) + '%'
+            else:
+                cpu_percent_str = "Can't collect data"
 
             try:
                 self.info(
@@ -777,7 +719,9 @@ class ResourceMonitoringMixin(PerfherderResourceOptionsMixin):
 
         for attr in cpu_attrs:
             value = getattr(cpu_times, attr)
-            percent = value / cpu_total * 100.0
+            # cpu_total can be 0.0. Guard against division by 0.
+            percent = value / cpu_total * 100.0 if cpu_total else 0.0
+
             if percent > 1.00:
                 self._tinderbox_print('CPU {}<br/>{:,.1f} ({:,.1f}%)'.format(
                                       attr, value, percent))
@@ -794,6 +738,120 @@ class ResourceMonitoringMixin(PerfherderResourceOptionsMixin):
 
     def _tinderbox_print(self, message):
         self.info('TinderboxPrint: %s' % message)
+
+
+# This needs to be inherited only if you have already inherited ScriptMixin
+class Python3Virtualenv(object):
+    ''' Support Python3.5+ virtualenv creation.'''
+    py3_initialized_venv = False
+
+    def py3_venv_configuration(self, python_path, venv_path):
+        '''We don't use __init__ to allow integrating with other mixins.
+
+        python_path - Path to Python 3 binary.
+        venv_path - Path to virtual environment to be created.
+        '''
+        self.py3_initialized_venv = True
+        self.py3_python_path = os.path.abspath(python_path)
+        version = self.get_output_from_command(
+                    [self.py3_python_path, '--version'], env=self.query_env()).split()[-1]
+        # Using -m venv is only used on 3.5+ versions
+        assert version > '3.5.0'
+        self.py3_venv_path = os.path.abspath(venv_path)
+        self.py3_pip_path = os.path.join(self.py3_path_to_executables(), 'pip')
+
+    def py3_path_to_executables(self):
+        platform = self.platform_name()
+        if platform.startswith('win'):
+            return os.path.join(self.py3_venv_path, 'Scripts')
+        else:
+            return os.path.join(self.py3_venv_path, 'bin')
+
+    def py3_venv_initialized(func):
+        def call(self, *args, **kwargs):
+            if not self.py3_initialized_venv:
+                raise Exception('You need to call py3_venv_configuration() '
+                                'before using this method.')
+            func(self, *args, **kwargs)
+        return call
+
+    @py3_venv_initialized
+    def py3_create_venv(self):
+        '''Create Python environment with python3 -m venv /path/to/venv.'''
+        if os.path.exists(self.py3_venv_path):
+            self.info("Virtualenv %s appears to already exist; skipping "
+                      "virtualenv creation." % self.py3_venv_path)
+        else:
+            self.info('Running command...')
+            self.run_command(
+                '%s -m venv %s' % (self.py3_python_path, self.py3_venv_path),
+                error_list=VirtualenvErrorList,
+                halt_on_failure=True,
+                env=self.query_env())
+
+    @py3_venv_initialized
+    def py3_install_modules(self, modules,
+                            use_mozharness_pip_config=True):
+        if not os.path.exists(self.py3_venv_path):
+            raise Exception('You need to call py3_create_venv() first.')
+
+        for m in modules:
+            cmd = [self.py3_pip_path, 'install']
+            if use_mozharness_pip_config:
+                cmd += self._mozharness_pip_args()
+            cmd += [m]
+            self.run_command(cmd, env=self.query_env())
+
+    def _mozharness_pip_args(self):
+        '''We have information in Mozharness configs that apply to pip'''
+        c = self.config
+        pip_args = []
+        # To avoid timeouts with our pypi server, increase default timeout:
+        # https://bugzilla.mozilla.org/show_bug.cgi?id=1007230#c802
+        pip_args += ['--timeout', str(c.get('pip_timeout', 120))]
+
+        if c.get('find_links') and not c["pip_index"]:
+            pip_args += ['--no-index']
+
+        # Add --find-links pages to look at. Add --trusted-host automatically if
+        # the host isn't secure. This allows modern versions of pip to connect
+        # without requiring an override.
+        trusted_hosts = set()
+        for link in c.get('find_links', []):
+            parsed = urlparse.urlparse(link)
+
+            try:
+                socket.gethostbyname(parsed.hostname)
+            except socket.gaierror as e:
+                self.info('error resolving %s (ignoring): %s' %
+                          (parsed.hostname, e.message))
+                continue
+
+            pip_args += ["--find-links", link]
+            if parsed.scheme != 'https':
+                trusted_hosts.add(parsed.hostname)
+
+        for host in sorted(trusted_hosts):
+            pip_args += ['--trusted-host', host]
+
+        return pip_args
+
+    @py3_venv_initialized
+    def py3_install_requirement_files(self, requirements, pip_args=[],
+                                      use_mozharness_pip_config=True):
+        '''
+        requirements - You can specify multiple requirements paths
+        '''
+        cmd = [self.py3_pip_path, 'install']
+        cmd += pip_args
+
+        if use_mozharness_pip_config:
+            cmd += self._mozharness_pip_args()
+
+        for requirement_path in requirements:
+            cmd += ['-r', requirement_path]
+
+        self.run_command(cmd, env=self.query_env())
 
 
 # __main__ {{{1

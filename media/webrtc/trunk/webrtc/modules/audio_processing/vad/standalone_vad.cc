@@ -8,13 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_processing/vad/standalone_vad.h"
+#include "modules/audio_processing/vad/standalone_vad.h"
 
-#include <assert.h>
-
-#include "webrtc/modules/include/module_common_types.h"
-#include "webrtc/modules/utility/include/audio_frame_operations.h"
-#include "webrtc/typedefs.h"
+#include "audio/utility/audio_frame_operations.h"
+#include "modules/include/module_common_types.h"
+#include "rtc_base/checks.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -64,7 +63,7 @@ int StandaloneVad::GetActivity(double* p, size_t length_p) {
   const size_t num_frames = index_ / kLength10Ms;
   if (num_frames > length_p)
     return -1;
-  assert(WebRtcVad_ValidRateAndFrameLength(kSampleRateHz, index_) == 0);
+  RTC_DCHECK_EQ(0, WebRtcVad_ValidRateAndFrameLength(kSampleRateHz, index_));
 
   int activity = WebRtcVad_Process(vad_, kSampleRateHz, buffer_, index_);
   if (activity < 0)

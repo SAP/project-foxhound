@@ -17,55 +17,63 @@
           src="../table.js"></script>
 
   <script type="application/javascript">
-    function doTest()
-    {
-      //////////////////////////////////////////////////////////////////////////
+    function doTest() {
+      // ////////////////////////////////////////////////////////////////////////
       // column headers from thead and tfoot
 
       cellsArray = [
         [kColHeaderCell, kColHeaderCell, kColSpanned],
         [kRowSpanned,    kColHeaderCell, kColHeaderCell],
         [kDataCell,      kDataCell,      kDataCell],
-        [kColHeaderCell, kColHeaderCell, kColHeaderCell]
+        [kColHeaderCell, kColHeaderCell, kColHeaderCell],
       ];
 
       testTableStruct("table1", cellsArray);
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // row and column headers from thead and @scope
 
       var cellsArray = [
         [kColHeaderCell, kColHeaderCell, kColHeaderCell],
         [kRowHeaderCell, kDataCell, kDataCell],
-        [kRowHeaderCell, kDataCell, kDataCell]
+        [kRowHeaderCell, kDataCell, kDataCell],
       ];
 
       testTableStruct("table2", cellsArray);
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // caption and @summary
 
       cellsArray = [
         [kColHeaderCell, kColHeaderCell, kColHeaderCell, kColHeaderCell],
         [kRowHeaderCell, kDataCell,      kDataCell,      kDataCell],
-        [kRowHeaderCell, kDataCell,      kDataCell,      kDataCell]
+        [kRowHeaderCell, kDataCell,      kDataCell,      kDataCell],
       ];
 
       testTableStruct("table3", cellsArray, kNoColumnHeader,
                       "Test Table",
                       "this is a test table for nsIAccessibleTable");
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // row and column spans
 
       cellsArray = [
         [kDataCell, kDataCell,   kDataCell,   kColSpanned, kDataCell, kDataCell,   kDataCell, kDataCell],
         [kDataCell, kDataCell,   kDataCell,   kDataCell,   kDataCell, kDataCell,   kDataCell, kRowSpanned],
         [kDataCell, kDataCell,   kColSpanned, kDataCell,   kDataCell, kDataCell,   kDataCell, kRowSpanned],
-        [kDataCell, kRowSpanned, kSpanned,    kDataCell,   kDataCell, kRowSpanned, kDataCell, kRowSpanned]
+        [kDataCell, kRowSpanned, kSpanned,    kDataCell,   kDataCell, kRowSpanned, kDataCell, kRowSpanned],
       ];
 
       testTableStruct("table4", cellsArray);
+
+      // ////////////////////////////////////////////////////////////////////////
+      // Table with a cell that has display: block; style
+
+      cellsArray = [
+        [kRowHeaderCell, kDataCell],
+      ];
+
+      testTableStruct("table5", cellsArray);
 
       SimpleTest.finish();
     }
@@ -197,6 +205,13 @@
         <td><br></td>
       </tr>
     </tbody>
+  </table>
+
+  <table id="table5">
+    <tr>
+      <th>a</th>
+      <td style="display: block;">b</td>
+    </tr>
   </table>
 
 </body>

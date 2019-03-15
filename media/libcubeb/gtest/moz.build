@@ -7,6 +7,7 @@
 UNIFIED_SOURCES += [
 #  'test_duplex.cpp', # DISABLED: See bug 1314514.
 #  'test_record.cpp', # DISABLED: See bug 1314514.
+#  'test_overload_callback.cpp', # DISABLED: Times out in automation.
   'test_tone.cpp',
   'test_utils.cpp'
 ]
@@ -74,7 +75,7 @@ else:
     OS_LIBS += CONFIG['MOZ_ALSA_LIBS']
     OS_LIBS += CONFIG['MOZ_PULSEAUDIO_LIBS']
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
 
 FINAL_LIBRARY = 'xul-gtest'

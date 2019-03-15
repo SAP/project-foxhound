@@ -25,11 +25,11 @@ invoke_copy_to_stack(uint64_t* d, uint32_t paramCount,
 
     for (uint32_t i = 0; i < paramCount; i++, s++)
     {
-        if (s->IsPtrData()) {
+        if (s->IsIndirect()) {
             if (i < N_ARG_REGS)
-                regs[i] = (uint64_t)s->ptr;
+                regs[i] = (uint64_t) &s->val;
             else
-                *d++ = (uint64_t)s->ptr;
+                *d++ = (uint64_t) &s->val;
             continue;
         }
         switch (s->type) {
@@ -90,6 +90,8 @@ invoke_copy_to_stack(uint64_t* d, uint32_t paramCount,
                 *d++ = s->val.u64;
             break;
         case nsXPTType::T_FLOAT:
+            // the float data formate must not be converted!
+            // Just only copy without conversion.
             if (i < N_ARG_REGS)
                 *(float*)&regs[i] = s->val.f;
             else

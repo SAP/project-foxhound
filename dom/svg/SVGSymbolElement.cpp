@@ -7,103 +7,35 @@
 #include "mozilla/dom/SVGSymbolElement.h"
 #include "mozilla/dom/SVGSymbolElementBinding.h"
 
-NS_IMPL_NS_NEW_NAMESPACED_SVG_ELEMENT(Symbol)
+NS_IMPL_NS_NEW_SVG_ELEMENT(Symbol)
 
 namespace mozilla {
 namespace dom {
 
-JSObject*
-SVGSymbolElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return SVGSymbolElementBinding::Wrap(aCx, this, aGivenProto);
+JSObject* SVGSymbolElement::WrapNode(JSContext* aCx,
+                                     JS::Handle<JSObject*> aGivenProto) {
+  return SVGSymbolElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
 //----------------------------------------------------------------------
 // nsISupports methods
 
 NS_IMPL_ISUPPORTS_INHERITED(SVGSymbolElement, SVGSymbolElementBase,
-                            nsIDOMNode, nsIDOMElement,
-                            nsIDOMSVGElement, mozilla::dom::SVGTests)
+                            mozilla::dom::SVGTests)
 
 //----------------------------------------------------------------------
 // Implementation
 
-SVGSymbolElement::SVGSymbolElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-  : SVGSymbolElementBase(aNodeInfo)
-{
-}
+SVGSymbolElement::SVGSymbolElement(
+    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : SVGSymbolElementBase(std::move(aNodeInfo)) {}
 
-SVGSymbolElement::~SVGSymbolElement()
-{
-}
+SVGSymbolElement::~SVGSymbolElement() {}
 
 //----------------------------------------------------------------------
-// nsIDOMNode methods
+// nsINode methods
 
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGSymbolElement)
 
-//----------------------------------------------------------------------
-
-already_AddRefed<SVGAnimatedRect>
-SVGSymbolElement::ViewBox()
-{
-  return mViewBox.ToSVGAnimatedRect(this);
-}
-
-already_AddRefed<DOMSVGAnimatedPreserveAspectRatio>
-SVGSymbolElement::PreserveAspectRatio()
-{
-  return mPreserveAspectRatio.ToDOMAnimatedPreserveAspectRatio(this);
-}
-
-//----------------------------------------------------------------------
-// nsIContent methods
-
-NS_IMETHODIMP_(bool)
-SVGSymbolElement::IsAttributeMapped(const nsIAtom* name) const
-{
-  static const MappedAttributeEntry* const map[] = {
-    sColorMap,
-    sFEFloodMap,
-    sFillStrokeMap,
-    sFiltersMap,
-    sFontSpecificationMap,
-    sGradientStopMap,
-    sGraphicsMap,
-    sLightingEffectsMap,
-    sMarkersMap,
-    sTextContentElementsMap,
-    sViewportsMap
-   };
-
-  return FindAttributeDependence(name, map) ||
-    SVGSymbolElementBase::IsAttributeMapped(name);
-}
-
-//----------------------------------------------------------------------
-// SVGTests methods
-
-bool
-SVGSymbolElement::IsInChromeDoc() const
-{
-  return nsContentUtils::IsChromeDoc(OwnerDoc());
-}
-
-
-//----------------------------------------------------------------------
-// nsSVGElement methods
-
-nsSVGViewBox *
-SVGSymbolElement::GetViewBox()
-{
-  return &mViewBox;
-}
-
-SVGAnimatedPreserveAspectRatio *
-SVGSymbolElement::GetPreserveAspectRatio()
-{
-  return &mPreserveAspectRatio;
-}
-
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

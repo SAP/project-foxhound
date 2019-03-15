@@ -1,4 +1,4 @@
-// Copyright (C) 2016 and later: Unicode, Inc. and others.
+// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
 /*
  ******************************************************************************
@@ -63,8 +63,10 @@
 
 static icu::Locale* availableLocaleList = NULL;
 static int32_t  availableLocaleListCount;
+#if !UCONFIG_NO_SERVICE
 static icu::ICULocaleService* gService = NULL;
 static icu::UInitOnce gServiceInitOnce = U_INITONCE_INITIALIZER;
+#endif
 static icu::UInitOnce gAvailableLocaleListInitOnce;
 
 /**
@@ -446,6 +448,13 @@ Collator* U_EXPORT2 Collator::createInstance(const Locale& desiredLocale,
 #endif
     {
         coll = makeInstance(desiredLocale, status);
+        // Either returns NULL with U_FAILURE(status), or non-NULL with U_SUCCESS(status)
+    }
+    // The use of *coll in setAttributesFromKeywords can cause the NULL check to be
+    // optimized out of the delete even though setAttributesFromKeywords returns
+    // immediately if U_FAILURE(status), so we add a check here.
+    if (U_FAILURE(status)) {
+        return NULL;
     }
     setAttributesFromKeywords(desiredLocale, *coll, status);
     if (U_FAILURE(status)) {
@@ -984,8 +993,8 @@ Collator::internalCompareUTF8(const char *left, int32_t leftLength,
         return UCOL_EQUAL;
     }
     return compareUTF8(
-            StringPiece(left, (leftLength < 0) ? uprv_strlen(left) : leftLength),
-            StringPiece(right, (rightLength < 0) ? uprv_strlen(right) : rightLength),
+            StringPiece(left, (leftLength < 0) ? static_cast<int32_t>(uprv_strlen(left)) : leftLength),
+            StringPiece(right, (rightLength < 0) ? static_cast<int32_t>(uprv_strlen(right)) : rightLength),
             errorCode);
 }
 

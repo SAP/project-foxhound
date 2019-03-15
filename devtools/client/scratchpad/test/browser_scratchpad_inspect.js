@@ -2,34 +2,31 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-function test()
-{
+function test() {
   waitForExplicitFinish();
 
-  gBrowser.selectedTab = gBrowser.addTab();
-  gBrowser.selectedBrowser.addEventListener("load", function () {
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
+  BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser).then(function() {
     openScratchpad(runTests);
-  }, {capture: true, once: true});
+  });
 
-  content.location = "data:text/html;charset=utf8,<p>test inspect() in Scratchpad</p>";
+  BrowserTestUtils.loadURI(gBrowser, "data:text/html;charset=utf8,<p>test inspect() in Scratchpad</p>");
 }
 
-function runTests()
-{
-  let sp = gScratchpadWindow.Scratchpad;
+function runTests() {
+  const sp = gScratchpadWindow.Scratchpad;
 
   sp.setText("({ a: 'foobarBug636725' })");
 
-  sp.inspect().then(function () {
-    let sidebar = sp.sidebar;
+  sp.inspect().then(function() {
+    const sidebar = sp.sidebar;
     ok(sidebar.visible, "sidebar is open");
-
 
     let found = false;
 
-    outer: for (let scope of sidebar.variablesView) {
-      for (let [, obj] of scope) {
-        for (let [, prop] of obj) {
+    outer: for (const scope of sidebar.variablesView) {
+      for (const [, obj] of scope) {
+        for (const [, prop] of obj) {
           if (prop.name == "a" && prop.value == "foobarBug636725") {
             found = true;
             break outer;
@@ -40,12 +37,12 @@ function runTests()
 
     ok(found, "found the property");
 
-    let tabbox = sidebar._sidebar._tabbox;
+    const tabbox = sidebar._sidebar._tabbox;
     is(tabbox.width, 300, "Scratchpad sidebar width is correct");
     ok(!tabbox.hasAttribute("hidden"), "Scratchpad sidebar visible");
     sidebar.hide();
     ok(tabbox.hasAttribute("hidden"), "Scratchpad sidebar hidden");
-    sp.inspect().then(function () {
+    sp.inspect().then(function() {
       is(tabbox.width, 300, "Scratchpad sidebar width is still correct");
       ok(!tabbox.hasAttribute("hidden"), "Scratchpad sidebar visible again");
       finish();

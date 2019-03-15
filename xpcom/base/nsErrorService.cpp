@@ -7,38 +7,50 @@
 #include "nsErrorService.h"
 #include "nsCRTGlue.h"
 #include "nsAutoPtr.h"
+#include "mozilla/StaticPtr.h"
+#include "mozilla/ClearOnShutdown.h"
+
+namespace {
+
+mozilla::StaticRefPtr<nsErrorService> gSingleton;
+
+}
 
 NS_IMPL_ISUPPORTS(nsErrorService, nsIErrorService)
 
-nsresult
-nsErrorService::Create(nsISupports* aOuter, const nsIID& aIID,
-                       void** aInstancePtr)
-{
-  if (NS_WARN_IF(aOuter)) {
-    return NS_ERROR_NO_AGGREGATION;
+// static
+already_AddRefed<nsIErrorService> nsErrorService::GetOrCreate() {
+  // Be careful to not recreate the service for a second time if GetOrCreate is
+  // called super late during shutdown.
+  static bool serviceCreated = false;
+  RefPtr<nsErrorService> svc;
+  if (gSingleton) {
+    svc = gSingleton;
+  } else if (!serviceCreated) {
+    gSingleton = new nsErrorService();
+    mozilla::ClearOnShutdown(&gSingleton);
+    svc = gSingleton;
+    serviceCreated = true;
   }
-  RefPtr<nsErrorService> serv = new nsErrorService();
-  return serv->QueryInterface(aIID, aInstancePtr);
+
+  return svc.forget();
 }
 
 NS_IMETHODIMP
 nsErrorService::RegisterErrorStringBundle(int16_t aErrorModule,
-                                          const char* aStringBundleURL)
-{
+                                          const char* aStringBundleURL) {
   mErrorStringBundleURLMap.Put(aErrorModule, new nsCString(aStringBundleURL));
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsErrorService::UnregisterErrorStringBundle(int16_t aErrorModule)
-{
+nsErrorService::UnregisterErrorStringBundle(int16_t aErrorModule) {
   mErrorStringBundleURLMap.Remove(aErrorModule);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsErrorService::GetErrorStringBundle(int16_t aErrorModule, char** aResult)
-{
+nsErrorService::GetErrorStringBundle(int16_t aErrorModule, char** aResult) {
   nsCString* bundleURL = mErrorStringBundleURLMap.Get(aErrorModule);
   if (!bundleURL) {
     return NS_ERROR_FAILURE;

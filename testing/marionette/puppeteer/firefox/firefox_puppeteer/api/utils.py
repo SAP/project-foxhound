@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 from marionette_driver.errors import MarionetteException
 
 from firefox_puppeteer.base import BaseLib
@@ -44,57 +46,31 @@ class Utils(BaseLib):
         sanitize():  Clears all user data.
         sanitize({ "sessions": True }): Clears only session user data.
 
-        more: https://dxr.mozilla.org/mozilla-central/source/browser/base/content/sanitize.js
+        more: https://dxr.mozilla.org/mozilla-central/source/browser/modules/Sanitizer.jsm
 
         :param data_type: optional, Information specifying data to be sanitized
         """
 
         with self.marionette.using_context('chrome'):
             result = self.marionette.execute_async_script("""
-              Components.utils.import("resource://gre/modules/Services.jsm");
+              let resolve = arguments[arguments.length - 1];
+              var {Sanitizer} = Components.utils.import("resource:///modules/Sanitizer.jsm", {});
 
               var data_type = arguments[0];
 
-              var data_type = (typeof data_type === "undefined") ? {} : {
-                cache: data_type.cache || false,
-                cookies: data_type.cookies || false,
-                downloads: data_type.downloads || false,
-                formdata: data_type.formdata || false,
-                history: data_type.history || false,
-                offlineApps: data_type.offlineApps || false,
-                passwords: data_type.passwords || false,
-                sessions: data_type.sessions || false,
-                siteSettings: data_type.siteSettings || false
-              };
-
-              // Load the sanitize script
-              var tempScope = {};
-              Components.classes["@mozilla.org/moz/jssubscript-loader;1"]
-              .getService(Components.interfaces.mozIJSSubScriptLoader)
-              .loadSubScript("chrome://browser/content/sanitize.js", tempScope);
-
-              // Instantiate the Sanitizer
-              var s = new tempScope.Sanitizer();
-              s.prefDomain = "privacy.cpd.";
-              var itemPrefs = Services.prefs.getBranch(s.prefDomain);
-
               // Apply options for what to sanitize
-              for (var pref in data_type) {
-                itemPrefs.setBoolPref(pref, data_type[pref]);
+              var itemsToClear = [];
+              for (var pref of Object.keys(data_type)) {
+                if (data_type[pref]) {
+                    itemsToClear.push(pref);
+                }
               };
 
               // Sanitize and wait for the promise to resolve
-              var finished = false;
-              s.sanitize().then(() => {
-                for (let pref in data_type) {
-                  itemPrefs.clearUserPref(pref);
-                };
-                marionetteScriptFinished(true);
+              Sanitizer.sanitize(itemsToClear).then(() => {
+                resolve(true);
               }, aError => {
-                for (let pref in data_type) {
-                  itemPrefs.clearUserPref(pref);
-                };
-                marionetteScriptFinished(false);
+                resolve(false);
               });
             """, script_args=[data_type])
 

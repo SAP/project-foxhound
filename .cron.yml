@@ -2,42 +2,79 @@
 # `taskcluster/taskgraph/cron/schema.py`.  For documentation, see
 # `taskcluster/docs/cron.rst`.
 
+---
+
 jobs:
     - name: nightly-desktop
       job:
           type: decision-task
           treeherder-symbol: Nd
-          triggered-by: nightly
+          target-tasks-method: nightly_desktop
+      run-on-projects:
+          - mozilla-central
+      when:
+          by-project:
+              # Match buildbot starts for now
+              mozilla-central: [{hour: 10, minute: 0}, {hour: 22, minute: 0}]
+              # No default
+
+    - name: nightly-desktop-linux
+      job:
+          type: decision-task
+          treeherder-symbol: Nd-Ln
           target-tasks-method: nightly_linux
       run-on-projects:
           - mozilla-central
-          - mozilla-aurora
-          - date
-      when:
-          by-project:
-            # Match buildbot starts for now
-            date: [{hour: 15, minute: 0}]
-            mozilla-central: [{hour: 10, minute: 0}]
-            mozilla-aurora: [{hour: 7, minute: 45}]  # Buildbot uses minute 40
-            # No default
+      when: []  # never (hook only)
+
+    - name: nightly-desktop-osx
+      job:
+          type: decision-task
+          treeherder-symbol: Nd-OSX
+          target-tasks-method: nightly_macosx
+      run-on-projects:
+          - mozilla-central
+      when: []  # never (hook only)
+
+    - name: nightly-desktop-win32
+      job:
+          type: decision-task
+          treeherder-symbol: Nd-win32
+          target-tasks-method: nightly_win32
+      run-on-projects:
+          - mozilla-central
+      when: []  # never (hook only)
+
+    - name: nightly-desktop-win64
+      job:
+          type: decision-task
+          treeherder-symbol: Nd-win64
+          target-tasks-method: nightly_win64
+      run-on-projects:
+          - mozilla-central
+      when: []  # never (hook only)
+
+    - name: nightly-desktop-win64-aarch64
+      job:
+          type: decision-task
+          treeherder-symbol: Nd-win64-aarch64
+          target-tasks-method: nightly_win64_aarch64
+      run-on-projects:
+          - mozilla-central
+      when: []  # never (hook only)
 
     - name: nightly-android
       job:
           type: decision-task
           treeherder-symbol: Na
-          triggered-by: nightly
           target-tasks-method: nightly_fennec
       run-on-projects:
           - mozilla-central
-          - mozilla-aurora
-          - date
       when:
-        by-project:
-            # Match buildbot starts for now
-            date: [{hour: 15, minute: 0}]
-            mozilla-central: [{hour: 10, minute: 0}]
-            mozilla-aurora: [{hour: 7, minute: 45}]  # Buildbot uses minute 40
-            # No default
+          by-project:
+              # Match buildbot starts for now
+              mozilla-central: [{hour: 10, minute: 0}]
+              # No default
 
     - name: nightly-mochitest-valgrind
       job:
@@ -50,12 +87,86 @@ jobs:
           - {hour: 16, minute: 0}
           - {hour: 4, minute: 0}
 
-    - name: nightly-code-coverage
+    - name: searchfox-index
       job:
           type: decision-task
-          treeherder-symbol: Nc
-          target-tasks-method: nightly_code_coverage
+          treeherder-symbol: Searchfox
+          target-tasks-method: searchfox_index
       run-on-projects:
           - mozilla-central
       when:
-          - {hour: 18, minute: 0}
+          by-project:
+              mozilla-central: [{hour: 10, minute: 0}]
+              # No default
+
+    - name: customv8-update
+      job:
+          type: decision-task
+          treeherder-symbol: customv8
+          target-tasks-method: customv8_update
+          optimize-target-tasks: false
+      run-on-projects:
+          - mozilla-central
+      when:
+          by-project:
+              mozilla-central: [{hour: 10, minute: 30}]
+
+    - name: bouncer-check
+      job:
+          type: decision-task
+          treeherder-symbol: Rel
+          target-tasks-method: cron_bouncer_check
+      run-on-projects:
+          - mozilla-beta
+          - mozilla-release
+      when:
+          by-project:
+              # No default branch
+              mozilla-beta:
+                  - {hour: 7, minute: 0}
+                  - {hour: 19, minute: 0}
+              mozilla-release:
+                  - {hour: 7, minute: 0}
+                  - {hour: 19, minute: 0}
+              mozilla-esr60:
+                  - {hour: 7, minute: 0}
+                  - {hour: 19, minute: 0}
+
+    - name: periodic-update
+      job:
+          type: decision-task
+          treeherder-symbol: Nfile
+          target-tasks-method: file_update
+      run-on-projects:
+          - mozilla-central
+          - mozilla-beta
+          - mozilla-release
+          - mozilla-esr60
+      when:
+          by-project:
+              # No default branch
+              mozilla-central:
+                  - {weekday: 'Monday', hour: 10, minute: 0}
+                  - {weekday: 'Thursday', hour: 10, minute: 0}
+              mozilla-beta:
+                  - {weekday: 'Monday', hour: 10, minute: 0}
+                  - {weekday: 'Thursday', hour: 10, minute: 0}
+              mozilla-release:
+                  - {weekday: 'Monday', hour: 10, minute: 0}
+                  - {weekday: 'Thursday', hour: 10, minute: 0}
+              mozilla-esr60:
+                  - {weekday: 'Monday', hour: 10, minute: 0}
+                  - {weekday: 'Thursday', hour: 10, minute: 0}
+
+    - name: pipfile-update
+      job:
+          type: decision-task
+          treeherder-symbol: Nfile
+          target-tasks-method: pipfile_update
+      run-on-projects:
+          - mozilla-central
+      when:
+          by-project:
+              # No default branch
+              mozilla-central:
+                  - {weekday: 'Monday', hour: 10, minute: 0}

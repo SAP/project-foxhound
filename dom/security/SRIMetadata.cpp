@@ -9,26 +9,24 @@
 #include "hasht.h"
 #include "mozilla/dom/URLSearchParams.h"
 #include "mozilla/Logging.h"
-#include "mozilla/SizePrintfMacros.h"
 #include "nsICryptoHash.h"
 
-static mozilla::LogModule*
-GetSriMetadataLog()
-{
+static mozilla::LogModule* GetSriMetadataLog() {
   static mozilla::LazyLogModule gSriMetadataPRLog("SRIMetadata");
   return gSriMetadataPRLog;
 }
 
-#define SRIMETADATALOG(args) MOZ_LOG(GetSriMetadataLog(), mozilla::LogLevel::Debug, args)
-#define SRIMETADATAERROR(args) MOZ_LOG(GetSriMetadataLog(), mozilla::LogLevel::Error, args)
+#define SRIMETADATALOG(args) \
+  MOZ_LOG(GetSriMetadataLog(), mozilla::LogLevel::Debug, args)
+#define SRIMETADATAERROR(args) \
+  MOZ_LOG(GetSriMetadataLog(), mozilla::LogLevel::Error, args)
 
 namespace mozilla {
 namespace dom {
 
 SRIMetadata::SRIMetadata(const nsACString& aToken)
-  : mAlgorithmType(SRIMetadata::UNKNOWN_ALGORITHM), mEmpty(false)
-{
-  MOZ_ASSERT(!aToken.IsEmpty()); // callers should check this first
+    : mAlgorithmType(SRIMetadata::UNKNOWN_ALGORITHM), mEmpty(false) {
+  MOZ_ASSERT(!aToken.IsEmpty());  // callers should check this first
 
   SRIMETADATALOG(("SRIMetadata::SRIMetadata, aToken='%s'",
                   PromiseFlatCString(aToken).get()));
@@ -36,7 +34,7 @@ SRIMetadata::SRIMetadata(const nsACString& aToken)
   int32_t hyphen = aToken.FindChar('-');
   if (hyphen == -1) {
     SRIMETADATAERROR(("SRIMetadata::SRIMetadata, invalid (no hyphen)"));
-    return; // invalid metadata
+    return;  // invalid metadata
   }
 
   // split the token into its components
@@ -44,20 +42,20 @@ SRIMetadata::SRIMetadata(const nsACString& aToken)
   uint32_t hashStart = hyphen + 1;
   if (hashStart >= aToken.Length()) {
     SRIMETADATAERROR(("SRIMetadata::SRIMetadata, invalid (missing digest)"));
-    return; // invalid metadata
+    return;  // invalid metadata
   }
   int32_t question = aToken.FindChar('?');
   if (question == -1) {
-    mHashes.AppendElement(Substring(aToken, hashStart,
-                                    aToken.Length() - hashStart));
+    mHashes.AppendElement(
+        Substring(aToken, hashStart, aToken.Length() - hashStart));
   } else {
     MOZ_ASSERT(question > 0);
     if (static_cast<uint32_t>(question) <= hashStart) {
-      SRIMETADATAERROR(("SRIMetadata::SRIMetadata, invalid (options w/o digest)"));
-      return; // invalid metadata
+      SRIMETADATAERROR(
+          ("SRIMetadata::SRIMetadata, invalid (options w/o digest)"));
+      return;  // invalid metadata
     }
-    mHashes.AppendElement(Substring(aToken, hashStart,
-                                    question - hashStart));
+    mHashes.AppendElement(Substring(aToken, hashStart, question - hashStart));
   }
 
   if (mAlgorithm.EqualsLiteral("sha256")) {
@@ -72,9 +70,7 @@ SRIMetadata::SRIMetadata(const nsACString& aToken)
                   mHashes[0].get(), mAlgorithm.get()));
 }
 
-bool
-SRIMetadata::operator<(const SRIMetadata& aOther) const
-{
+bool SRIMetadata::operator<(const SRIMetadata& aOther) const {
   static_assert(nsICryptoHash::SHA256 < nsICryptoHash::SHA384,
                 "We rely on the order indicating relative alg strength");
   static_assert(nsICryptoHash::SHA384 < nsICryptoHash::SHA512,
@@ -90,7 +86,7 @@ SRIMetadata::operator<(const SRIMetadata& aOther) const
 
   if (mEmpty) {
     SRIMETADATALOG(("SRIMetadata::operator<, first metadata is empty"));
-    return true; // anything beats the empty metadata (incl. invalid ones)
+    return true;  // anything beats the empty metadata (incl. invalid ones)
   }
 
   SRIMETADATALOG(("SRIMetadata::operator<, alg1='%d'; alg2='%d'",
@@ -98,16 +94,12 @@ SRIMetadata::operator<(const SRIMetadata& aOther) const
   return (mAlgorithmType < aOther.mAlgorithmType);
 }
 
-bool
-SRIMetadata::operator>(const SRIMetadata& aOther) const
-{
+bool SRIMetadata::operator>(const SRIMetadata& aOther) const {
   MOZ_ASSERT(false);
   return false;
 }
 
-SRIMetadata&
-SRIMetadata::operator+=(const SRIMetadata& aOther)
-{
+SRIMetadata& SRIMetadata::operator+=(const SRIMetadata& aOther) {
   MOZ_ASSERT(!aOther.IsEmpty() && !IsEmpty());
   MOZ_ASSERT(aOther.IsValid() && IsValid());
   MOZ_ASSERT(mAlgorithmType == aOther.mAlgorithmType);
@@ -115,8 +107,9 @@ SRIMetadata::operator+=(const SRIMetadata& aOther)
   // We only pull in the first element of the other metadata
   MOZ_ASSERT(aOther.mHashes.Length() == 1);
   if (mHashes.Length() < SRIMetadata::MAX_ALTERNATE_HASHES) {
-    SRIMETADATALOG(("SRIMetadata::operator+=, appending another '%s' hash (new length=%" PRIuSIZE ")",
-                    mAlgorithm.get(), mHashes.Length()));
+    SRIMETADATALOG((
+        "SRIMetadata::operator+=, appending another '%s' hash (new length=%zu)",
+        mAlgorithm.get(), mHashes.Length()));
     mHashes.AppendElement(aOther.mHashes[0]);
   }
 
@@ -125,18 +118,14 @@ SRIMetadata::operator+=(const SRIMetadata& aOther)
   return *this;
 }
 
-bool
-SRIMetadata::operator==(const SRIMetadata& aOther) const
-{
+bool SRIMetadata::operator==(const SRIMetadata& aOther) const {
   if (IsEmpty() || !IsValid()) {
     return false;
   }
   return mAlgorithmType == aOther.mAlgorithmType;
 }
 
-void
-SRIMetadata::GetHash(uint32_t aIndex, nsCString* outHash) const
-{
+void SRIMetadata::GetHash(uint32_t aIndex, nsCString* outHash) const {
   MOZ_ASSERT(aIndex < SRIMetadata::MAX_ALTERNATE_HASHES);
   if (NS_WARN_IF(aIndex >= mHashes.Length())) {
     *outHash = nullptr;
@@ -145,9 +134,7 @@ SRIMetadata::GetHash(uint32_t aIndex, nsCString* outHash) const
   *outHash = mHashes[aIndex];
 }
 
-void
-SRIMetadata::GetHashType(int8_t* outType, uint32_t* outLength) const
-{
+void SRIMetadata::GetHashType(int8_t* outType, uint32_t* outLength) const {
   // these constants are defined in security/nss/lib/util/hasht.h and
   // netwerk/base/public/nsICryptoHash.idl
   switch (mAlgorithmType) {
@@ -166,5 +153,5 @@ SRIMetadata::GetHashType(int8_t* outType, uint32_t* outLength) const
   *outType = mAlgorithmType;
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

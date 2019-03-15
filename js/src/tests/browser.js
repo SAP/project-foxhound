@@ -38,6 +38,7 @@
   var URL = global.URL;
 
   var document = global.document;
+  var documentAll = global.document.all;
   var documentDocumentElement = global.document.documentElement;
   var DocumentCreateElement = global.document.createElement;
 
@@ -194,6 +195,15 @@
 
     global.detachArrayBuffer = detachArrayBuffer;
   }
+
+  var createIsHTMLDDA = global.createIsHTMLDDA;
+  if (typeof createIsHTMLDDA !== "function") {
+    createIsHTMLDDA = function() {
+      return documentAll;
+    };
+
+    global.createIsHTMLDDA = createIsHTMLDDA;
+  }
 })(this);
 
 (function(global) {
@@ -203,23 +213,47 @@
    * CACHED PRIMORDIAL FUNCTIONALITY (before a test might overwrite it) *
    **********************************************************************/
 
+  var undefined; // sigh
+
+  var Error = global.Error;
+  var Number = global.Number;
+  var Object = global.Object;
+  var String = global.String;
+
+  var decodeURIComponent = global.decodeURIComponent;
   var ReflectApply = global.Reflect.apply;
+  var ObjectDefineProperty = Object.defineProperty;
+  var ObjectPrototypeHasOwnProperty = Object.prototype.hasOwnProperty;
+  var ObjectPrototypeIsPrototypeOf = Object.prototype.isPrototypeOf;
 
   // BEWARE: ObjectGetOwnPropertyDescriptor is only safe to use if its result
   //         is inspected using own-property-examining functionality.  Directly
   //         accessing properties on a returned descriptor without first
   //         verifying the property's existence can invoke user-modifiable
   //         behavior.
-  var ObjectGetOwnPropertyDescriptor = global.Object.getOwnPropertyDescriptor;
+  var ObjectGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
 
-  var String = global.String;
-
+  var window = global.window;
   var document = global.document;
-  var DocumentCreateElement = global.document.createElement;
+  var documentDocumentElement = document.documentElement;
+  var DocumentCreateElement = document.createElement;
+  var ElementSetClassName =
+    ObjectGetOwnPropertyDescriptor(global.Element.prototype, "className").set;
   var NodePrototypeAppendChild = global.Node.prototype.appendChild;
   var NodePrototypeTextContentSetter =
     ObjectGetOwnPropertyDescriptor(global.Node.prototype, "textContent").set;
-  var HTMLElementPrototypeSetAttribute = global.Element.prototype.setAttribute;
+  var setTimeout = global.setTimeout;
+
+  // Saved harness functions.
+  var dump = global.dump;
+  var gczeal = global.gczeal;
+  var print = global.print;
+  var reportFailure = global.reportFailure;
+  var TestCase = global.TestCase;
+
+  var SpecialPowers = global.SpecialPowers;
+  var SpecialPowersCu = SpecialPowers.Cu;
+  var SpecialPowersForceGC = SpecialPowers.forceGC;
 
   // Cached DOM nodes used by the test harness itself.  (We assume the test
   // doesn't misbehave in a way that actively interferes with what the test
@@ -233,6 +267,25 @@
    * GENERAL HELPER FUNCTIONS *
    ****************************/
 
+  function ArrayPush(array, value) {
+    ReflectApply(ObjectDefineProperty, null, [
+      array, array.length,
+      {__proto__: null, value, writable: true, enumerable: true, configurable: true}
+    ]);
+  }
+
+  function ArrayPop(array) {
+    if (array.length) {
+      var item = array[array.length - 1];
+      array.length -= 1;
+      return item;
+    }
+  }
+
+  function HasOwnProperty(object, property) {
+    return ReflectApply(ObjectPrototypeHasOwnProperty, object, [property]);
+  }
+
   function AppendChild(elt, kid) {
     ReflectApply(NodePrototypeAppendChild, elt, [kid]);
   }
@@ -241,12 +294,19 @@
     return ReflectApply(DocumentCreateElement, document, [name]);
   }
 
-  function HTMLSetAttribute(element, name, value) {
-    ReflectApply(HTMLElementPrototypeSetAttribute, element, [name, value]);
-  }
-
   function SetTextContent(element, text) {
     ReflectApply(NodePrototypeTextContentSetter, element, [text]);
+  }
+
+  // Object containing the set options.
+  var currentOptions;
+
+  // browser.js version of shell.js' |shellOptionsClear| function.
+  function browserOptionsClear() {
+    for (var optionName in currentOptions) {
+      delete currentOptions[optionName];
+      SpecialPowersCu[optionName] = false;
+    }
   }
 
   // This function is *only* used by shell.js's for-browsers |print()| function!
@@ -277,433 +337,309 @@
   }
   global.writeHeaderToLog = writeHeaderToLog;
 
-  // XXX This function overwrites one in shell.js.  We should define the
-  //     separate versions in a single location.  Also the dependence on
-  //     |global.{PASSED,FAILED}| is very silly.
-  function writeFormattedResult(expect, actual, string, passed) {
-    // XXX remove this?  it's unneeded in the shell version
-    string = String(string);
+  /*************************
+   * GLOBAL ERROR HANDLING *
+   *************************/
 
-    dump(string + "\n");
+  // Possible values:
+  // - "Unknown" if no error is expected,
+  // - "error" if no specific error type is expected,
+  // - otherwise the error name, e.g. "TypeError" or "RangeError".
+  var expectedError;
 
-    var font = CreateElement("font");
-    if (passed) {
-      HTMLSetAttribute(font, "color", "#009900");
-      SetTextContent(font, " \u00A0" + global.PASSED);
-    } else {
-      HTMLSetAttribute(font, "color", "#aa0000");
-      SetTextContent(font, "\u00A0" + global.FAILED + expect);
+  window.onerror = function (msg, page, line, column, error) {
+    // Unset all options even when the test finished with an error.
+    browserOptionsClear();
+
+    if (DESCRIPTION === undefined) {
+      DESCRIPTION = "Unknown";
     }
 
-    var b = CreateElement("b");
-    AppendChild(b, font);
-
-    var tt = CreateElement("tt");
-    SetTextContent(tt, string);
-    AppendChild(tt, b);
-
-    AppendChild(printOutputContainer, tt);
-    AppendChild(printOutputContainer, CreateElement("br"));
-  }
-  global.writeFormattedResult = writeFormattedResult;
-})(this);
-
-
-var gPageCompleted;
-var GLOBAL = this + '';
-
-// Variables local to jstests harness.
-var jstestsOptions;
-
-window.onerror = function (msg, page, line)
-{
-  // Restore options in case a test case used this common variable name.
-  options = jstestsOptions;
-
-  optionsPush();
-
-  if (typeof DESCRIPTION == 'undefined')
-  {
-    DESCRIPTION = 'Unknown';
-  }
-  if (typeof EXPECTED == 'undefined')
-  {
-    EXPECTED = 'Unknown';
-  }
-
-  var testcase = new TestCase("unknown-test-name", DESCRIPTION, EXPECTED, "error");
-
-  if (document.location.href.indexOf('-n.js') != -1)
-  {
-    // negative test
-    testcase.passed = true;
-  }
-
-  testcase.reason = page + ':' + line + ': ' + msg;
-
-  reportFailure(msg);
-
-  optionsReset();
-};
-
-function gc()
-{
-  try
-  {
-    SpecialPowers.forceGC();
-  }
-  catch(ex)
-  {
-    print('gc: ' + ex);
-  }
-}
-
-function options(aOptionName)
-{
-  // return value of options() is a comma delimited list
-  // of the previously set values
-
-  var value = '';
-  for (var optionName in options.currvalues)
-  {
-    value += optionName + ',';
-  }
-  if (value)
-  {
-    value = value.substring(0, value.length-1);
-  }
-
-  if (aOptionName) {
-    if (!(aOptionName in SpecialPowers.Cu)) {
-      // This test is trying to flip an unsupported option, so it's
-      // likely no longer testing what it was supposed to.  Fail it
-      // hard.
-      throw "Unsupported JSContext option '"+ aOptionName +"'";
-    }
-
-    if (options.currvalues.hasOwnProperty(aOptionName))
-      // option is set, toggle it to unset
-      delete options.currvalues[aOptionName];
-    else
-      // option is not set, toggle it to set
-      options.currvalues[aOptionName] = true;
-
-    SpecialPowers.Cu[aOptionName] =
-      options.currvalues.hasOwnProperty(aOptionName);
-  }
-
-  return value;
-}
-
-// Keep a reference to options around so that we can restore it after running
-// a test case, which may have used this common name for one of its own
-// variables.
-jstestsOptions = options;
-
-function optionsInit() {
-
-  // hash containing the set options.
-  options.currvalues = {
-    strict:     true,
-    werror:     true,
-    strict_mode: true
-  };
-
-  // record initial values to support resetting
-  // options to their initial values
-  options.initvalues = {};
-
-  // record values in a stack to support pushing
-  // and popping options
-  options.stackvalues = [];
-
-  for (var optionName in options.currvalues)
-  {
-    var propName = optionName;
-
-    if (!(propName in SpecialPowers.Cu))
-    {
-      throw "options.currvalues is out of sync with Components.utils";
-    }
-    if (!SpecialPowers.Cu[propName])
-    {
-      delete options.currvalues[optionName];
-    }
-    else
-    {
-      options.initvalues[optionName] = true;
-    }
-  }
-}
-
-function jsTestDriverBrowserInit()
-{
-
-  if (typeof dump != 'function')
-  {
-    dump = print;
-  }
-
-  optionsInit();
-  optionsClear();
-
-  if (document.location.search.indexOf('?') != 0)
-  {
-    // not called with a query string
-    return;
-  }
-
-  var properties = {};
-  var fields = document.location.search.slice(1).split(';');
-  for (var ifield = 0; ifield < fields.length; ifield++)
-  {
-    var propertycaptures = /^([^=]+)=(.*)$/.exec(fields[ifield]);
-    if (!propertycaptures)
-    {
-      properties[fields[ifield]] = true;
-    }
-    else
-    {
-      properties[propertycaptures[1]] = decodeURIComponent(propertycaptures[2]);
-      if (propertycaptures[1] == 'language')
-      {
-        // language=(type|language);mimetype
-        properties.mimetype = fields[ifield+1];
+    var actual = "error";
+    var expected = expectedError;
+    if (expected !== "error" && expected !== "Unknown") {
+      // Check the error type when an actual Error object is available.
+      // NB: The |error| parameter of the onerror handler is not required to
+      // be an Error instance.
+      if (ReflectApply(ObjectPrototypeIsPrototypeOf, Error.prototype, [error])) {
+        actual = error.constructor.name;
+      } else {
+        expected = "error";
       }
     }
-  }
 
-  if (properties.language != 'type')
-  {
-    try
-    {
-      properties.version = /javascript([.0-9]+)/.exec(properties.mimetype)[1];
-    }
-    catch(ex)
-    {
-    }
-  }
+    var reason = `${page}:${line}: ${msg}`;
+    new TestCase(DESCRIPTION, expected, actual, reason);
 
-  if (!properties.version && navigator.userAgent.indexOf('Gecko/') != -1)
-  {
-    // If the version is not specified, and the browser is Gecko,
-    // use the default version corresponding to the shell's version(0).
-    // See https://bugzilla.mozilla.org/show_bug.cgi?id=522760#c11
-    // Otherwise adjust the version to match the suite version for 1.6,
-    // and later due to the use of for-each, let, yield, etc.
-    //
-    // The logic to upgrade the JS version in the shell lives in the
-    // corresponding shell.js.
-    //
-    // Note that js1_8, js1_8_1, and js1_8_5 are treated identically in
-    // the browser.
-    if (properties.test.match(/^js1_6/))
-    {
-      properties.version = '1.6';
-    }
-    else if (properties.test.match(/^js1_7/))
-    {
-      properties.version = '1.7';
-    }
-    else if (properties.test.match(/^js1_8/))
-    {
-      properties.version = '1.8';
+    reportFailure(msg);
+  };
+
+  /**********************************************
+   * BROWSER IMPLEMENTATION FOR SHELL FUNCTIONS *
+   **********************************************/
+
+  function gc() {
+    try {
+      SpecialPowersForceGC();
+    } catch (ex) {
+      print("gc: " + ex);
     }
   }
+  global.gc = gc;
 
-  // default to language=type;text/javascript. required for
-  // reftest style manifests.
-  if (!properties.language)
-  {
-    properties.language = 'type';
-    properties.mimetype = 'text/javascript';
-  }
+  function options(aOptionName) {
+    // return value of options() is a comma delimited list
+    // of the previously set values
 
-  gTestPath = properties.test;
-
-  if (properties.gczeal)
-  {
-    gczeal(Number(properties.gczeal));
-  }
-
-  var testpathparts = properties.test.split(/\//);
-
-  if (testpathparts.length < 2)
-  {
-    // must have at least suitepath/testcase.js
-    return;
-  }
-
-  document.write('<title>' + properties.test + '<\/title>');
-
-  // XXX bc - the first document.written script is ignored if the protocol
-  // is file:. insert an empty script tag, to work around it.
-  document.write('<script></script>');
-
-  // Output script tags for shell.js, then browser.js, at each level of the
-  // test path hierarchy.
-  var prepath = "";
-  var i = 0;
-  for (var end = testpathparts.length - 1; i < end; i++) {
-    prepath += testpathparts[i] + "/";
-    outputscripttag(prepath + "shell.js", properties);
-    outputscripttag(prepath + "browser.js", properties);
-  }
-
-  // Output the test script itself.
-  outputscripttag(prepath + testpathparts[i], properties);
-
-  // Finally output the driver-end script to advance to the next test.
-  outputscripttag('js-test-driver-end.js', properties);
-  return;
-}
-
-function outputscripttag(src, properties)
-{
-  if (!src)
-  {
-    return;
-  }
-
-  var s = '<script src="' +  src + '" charset="utf-8" ';
-
-  if (properties.language != 'type')
-  {
-    s += 'language="javascript';
-    if (properties.version)
-    {
-      s += properties.version;
-    }
-  }
-  else
-  {
-    s += 'type="' + properties.mimetype;
-    if (properties.version)
-    {
-      s += ';version=' + properties.version;
-    }
-  }
-  s += '"><\/script>';
-
-  document.write(s);
-}
-
-function jsTestDriverEnd()
-{
-  // gDelayTestDriverEnd is used to
-  // delay collection of the test result and
-  // signal to Spider so that tests can continue
-  // to run after page load has fired. They are
-  // responsible for setting gDelayTestDriverEnd = true
-  // then when completed, setting gDelayTestDriverEnd = false
-  // then calling jsTestDriverEnd()
-
-  if (gDelayTestDriverEnd)
-  {
-    return;
-  }
-
-  window.onerror = null;
-
-  // Restore options in case a test case used this common variable name.
-  options = jstestsOptions;
-
-  try
-  {
-    optionsReset();
-  }
-  catch(ex)
-  {
-    dump('jsTestDriverEnd ' + ex);
-  }
-
-  if (window.opener && window.opener.runNextTest)
-  {
-    if (window.opener.reportCallBack)
-    {
-      window.opener.reportCallBack(window.opener.gWindow);
-    }
-    setTimeout('window.opener.runNextTest()', 250);
-  }
-  else
-  {
-    for (var i = 0; i < gTestcases.length; i++)
-    {
-      gTestcases[i].dump();
+    var value = "";
+    for (var optionName in currentOptions) {
+      if (value)
+        value += ",";
+      value += optionName;
     }
 
-    // tell reftest the test is complete.
-    document.documentElement.className = '';
-    // tell Spider page is complete
-    gPageCompleted = true;
+    if (aOptionName) {
+      if (!HasOwnProperty(SpecialPowersCu, aOptionName)) {
+        // This test is trying to flip an unsupported option, so it's
+        // likely no longer testing what it was supposed to.  Fail it
+        // hard.
+        throw "Unsupported JSContext option '" + aOptionName + "'";
+      }
+
+      if (aOptionName in currentOptions) {
+        // option is set, toggle it to unset
+        delete currentOptions[aOptionName];
+        SpecialPowersCu[aOptionName] = false;
+      } else {
+        // option is not set, toggle it to set
+        currentOptions[aOptionName] = true;
+        SpecialPowersCu[aOptionName] = true;
+      }
+    }
+
+    return value;
   }
-}
+  global.options = options;
 
-// dialog closer from http://bclary.com/projects/spider/spider/chrome/content/spider/dialog-closer.js
+  /****************************************
+   * HARNESS SETUP AND TEARDOWN FUNCTIONS *
+   ****************************************/
 
-var gDialogCloser;
-var gDialogCloserObserver;
+  function jsTestDriverBrowserInit() {
+    // Unset all options before running any test code, cf. the call to
+    // |shellOptionsClear| in shell.js' set-up code.
+    for (var optionName of ["strict", "werror", "strict_mode"]) {
+      if (!HasOwnProperty(SpecialPowersCu, optionName))
+        throw "options is out of sync with Components.utils";
 
-function registerDialogCloser()
-{
-  gDialogCloser = SpecialPowers.
-    Cc['@mozilla.org/embedcomp/window-watcher;1'].
-    getService(SpecialPowers.Ci.nsIWindowWatcher);
+      // Option is set, toggle it to unset. (Reading an option is a cheap
+      // operation, but setting is relatively expensive, so only assign if
+      // necessary.)
+      if (SpecialPowersCu[optionName])
+        SpecialPowersCu[optionName] = false;
+    }
 
-  gDialogCloserObserver = {observe: dialogCloser_observe};
+    // Initialize with an empty set, because we just turned off all options.
+    currentOptions = Object.create(null);
 
-  gDialogCloser.registerNotification(gDialogCloserObserver);
-}
+    if (document.location.search.indexOf("?") !== 0) {
+      // not called with a query string
+      return;
+    }
 
-function unregisterDialogCloser()
-{
-  gczeal(0);
+    var properties = Object.create(null);
+    var fields = document.location.search.slice(1).split(";");
+    for (var i = 0; i < fields.length; i++) {
+      var propertycaptures = /^([^=]+)=(.*)$/.exec(fields[i]);
+      if (propertycaptures === null) {
+        properties[fields[i]] = true;
+      } else {
+        properties[propertycaptures[1]] = decodeURIComponent(propertycaptures[2]);
+      }
+    }
 
-  if (!gDialogCloserObserver || !gDialogCloser)
-  {
-    return;
+    global.gTestPath = properties.test;
+
+    var testpathparts = properties.test.split("/");
+    if (testpathparts.length < 2) {
+      // must have at least suitepath/testcase.js
+      return;
+    }
+
+    var testFileName = testpathparts[testpathparts.length - 1];
+
+    if (testFileName.endsWith("-n.js")) {
+      // Negative test without a specific error type.
+      expectedError = "error";
+    } else if (properties.error) {
+      // Negative test which expects a specific error type.
+      expectedError = properties.error;
+    } else {
+      // No error is expected.
+      expectedError = "Unknown";
+    }
+
+    if (properties.gczeal) {
+      gczeal(Number(properties.gczeal));
+    }
+
+    // Display the test path in the title.
+    document.title = properties.test;
+
+    // Output script tags for shell.js, then browser.js, at each level of the
+    // test path hierarchy.
+    var prepath = "";
+    var scripts = [];
+    for (var i = 0; i < testpathparts.length - 1; i++) {
+      prepath += testpathparts[i] + "/";
+
+      scripts.push({src: prepath + "shell.js", module: false});
+      scripts.push({src: prepath + "browser.js", module: false});
+    }
+
+    // Output the test script itself.
+    var moduleTest = !!properties.module;
+    scripts.push({src: prepath + testFileName, module: moduleTest});
+
+    // Finally output the driver-end script to advance to the next test.
+    scripts.push({src: "js-test-driver-end.js", module: false});
+
+    if (!moduleTest) {
+      for (var i = 0; i < scripts.length; i++) {
+        var src = scripts[i].src;
+        document.write(`<script src="${src}" charset="utf-8"><\/script>`);
+      }
+    } else {
+      // Modules are loaded asynchronously by default, but for the test harness
+      // we need to execute all scripts and modules one after the other.
+
+      // Appends the next script element to the DOM.
+      function appendScript(index) {
+        var script = scriptElements[index];
+        scriptElements[index] = null;
+        if (script !== null) {
+          ReflectApply(NodePrototypeAppendChild, documentDocumentElement, [script]);
+        }
+      }
+
+      // Create all script elements upfront, so we don't need to worry about
+      // modified built-ins.
+      var scriptElements = [];
+      for (var i = 0; i < scripts.length; i++) {
+        var spec = scripts[i];
+
+        var script = document.createElement("script");
+        script.charset = "utf-8";
+        if (spec.module) {
+          script.type = "module";
+        }
+        script.src = spec.src;
+
+        let nextScriptIndex = i + 1;
+        if (nextScriptIndex < scripts.length) {
+          var callNextAppend = () => appendScript(nextScriptIndex);
+          script.addEventListener("afterscriptexecute", callNextAppend, {once: true});
+
+          // Module scripts don't fire the "afterscriptexecute" event when there
+          // was an error, instead the "error" event is emitted. So listen for
+          // both events when creating module scripts.
+          if (spec.module) {
+            script.addEventListener("error", callNextAppend, {once: true});
+          }
+        }
+
+        scriptElements[i] = script;
+      }
+
+      // Append the first script.
+      appendScript(0);
+    }
   }
 
-  gDialogCloser.unregisterNotification(gDialogCloserObserver);
+  function jsTestDriverEnd() {
+    // gDelayTestDriverEnd is used to delay collection of the test result and
+    // signal to Spider so that tests can continue to run after page load has
+    // fired. They are responsible for setting gDelayTestDriverEnd = true then
+    // when completed, setting gDelayTestDriverEnd = false then calling
+    // jsTestDriverEnd()
 
-  gDialogCloserObserver = null;
-  gDialogCloser = null;
-}
+    if (gDelayTestDriverEnd) {
+      return;
+    }
 
-// use an array to handle the case where multiple dialogs
-// appear at one time
-var gDialogCloserSubjects = [];
+    window.onerror = null;
 
-function dialogCloser_observe(subject, topic, data)
-{
-  if (subject instanceof ChromeWindow && topic == 'domwindowopened' )
-  {
-    gDialogCloserSubjects.push(subject);
-    // timeout of 0 needed when running under reftest framework.
-    subject.setTimeout(closeDialog, 0);
+    // Unset all options when the test has finished.
+    browserOptionsClear();
+
+    if (window.opener && window.opener.runNextTest) {
+      if (window.opener.reportCallBack) {
+        window.opener.reportCallBack(window.opener.gWindow);
+      }
+
+      setTimeout("window.opener.runNextTest()", 250);
+    } else {
+      // tell reftest the test is complete.
+      ReflectApply(ElementSetClassName, documentDocumentElement, [""]);
+      // tell Spider page is complete
+      gPageCompleted = true;
+    }
   }
-}
+  global.jsTestDriverEnd = jsTestDriverEnd;
 
-function closeDialog()
-{
-  var subject;
+  /***************************************************************************
+   * DIALOG CLOSER, PRESUMABLY TO CLOSE SLOW SCRIPT DIALOGS AND OTHER POPUPS *
+   ***************************************************************************/
 
-  while ( (subject = gDialogCloserSubjects.pop()) != null)
-  {
-    if (subject.document instanceof XULDocument &&
-        subject.document.documentURI == 'chrome://global/content/commonDialog.xul')
-    {
+  // dialog closer from http://bclary.com/projects/spider/spider/chrome/content/spider/dialog-closer.js
+
+  // Use an array to handle the case where multiple dialogs appear at one time.
+  var dialogCloserSubjects = [];
+  var dialogCloser = SpecialPowers
+                     .Cc["@mozilla.org/embedcomp/window-watcher;1"]
+                     .getService(SpecialPowers.Ci.nsIWindowWatcher);
+  var dialogCloserObserver = {
+    observe(subject, topic, data) {
+      if (topic === "domwindowopened" && subject.isChromeWindow) {
+        ArrayPush(dialogCloserSubjects, subject);
+
+        // Timeout of 0 needed when running under reftest framework.
+        subject.setTimeout(closeDialog, 0);
+      }
+    }
+  };
+
+  function closeDialog() {
+    while (dialogCloserSubjects.length > 0) {
+      var subject = ArrayPop(dialogCloserSubjects);
       subject.close();
     }
-    else
-    {
-      // alerts inside of reftest framework are not XULDocument dialogs.
-      subject.close();
-    }
   }
-}
 
-registerDialogCloser();
-window.addEventListener('unload', unregisterDialogCloser, true);
+  function unregisterDialogCloser() {
+    gczeal(0);
 
-jsTestDriverBrowserInit();
+    if (!dialogCloserObserver || !dialogCloser) {
+      return;
+    }
+
+    dialogCloser.unregisterNotification(dialogCloserObserver);
+
+    dialogCloserObserver = null;
+    dialogCloser = null;
+  }
+
+  dialogCloser.registerNotification(dialogCloserObserver);
+  window.addEventListener("unload", unregisterDialogCloser, true);
+
+  /*******************************************
+   * RUN ONCE CODE TO SETUP ADDITIONAL STATE *
+   *******************************************/
+
+  jsTestDriverBrowserInit();
+
+})(this);
+
+var gDelayTestDriverEnd = false;
+
+var gPageCompleted;

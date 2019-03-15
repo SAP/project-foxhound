@@ -7,34 +7,34 @@
 const { Cu } = require("chrome");
 const EventEmitter = require("devtools/shared/event-emitter");
 const { isNodeValid } = require("./utils/markup");
-const { getAdjustedQuads, getCurrentZoom,
-        getWindowDimensions } = require("devtools/shared/layout/utils");
+const { getAdjustedQuads, getWindowDimensions } = require("devtools/shared/layout/utils");
 
 // Note that the order of items in this array is important because it is used
 // for drawing the BoxModelHighlighter's path elements correctly.
 const BOX_MODEL_REGIONS = ["margin", "border", "padding", "content"];
-const QUADS_PROPS = ["p1", "p2", "p3", "p4", "bounds"];
+const QUADS_PROPS = ["p1", "p2", "p3", "p4"];
 
-function areValuesDifferent(oldValue, newValue, zoom) {
-  let delta = Math.abs(oldValue.toFixed(4) - newValue.toFixed(4));
-  return delta / zoom > 1 / zoom;
+function arePointsDifferent(pointA, pointB) {
+  return (Math.abs(pointA.x - pointB.x) >= .5) ||
+         (Math.abs(pointA.y - pointB.y) >= .5) ||
+         (Math.abs(pointA.w - pointB.w) >= .5);
 }
 
-function areQuadsDifferent(oldQuads, newQuads, zoom) {
-  for (let region of BOX_MODEL_REGIONS) {
-    if (oldQuads[region].length !== newQuads[region].length) {
+function areQuadsDifferent(oldQuads, newQuads) {
+  for (const region of BOX_MODEL_REGIONS) {
+    const { length } = oldQuads[region];
+
+    if (length !== newQuads[region].length) {
       return true;
     }
 
-    for (let i = 0; i < oldQuads[region].length; i++) {
-      for (let prop of QUADS_PROPS) {
-        let oldProp = oldQuads[region][i][prop];
-        let newProp = newQuads[region][i][prop];
+    for (let i = 0; i < length; i++) {
+      for (const prop of QUADS_PROPS) {
+        const oldPoint = oldQuads[region][i][prop];
+        const newPoint = newQuads[region][i][prop];
 
-        for (let key of Object.keys(oldProp)) {
-          if (areValuesDifferent(oldProp[key], newProp[key], zoom)) {
-            return true;
-          }
+        if (arePointsDifferent(oldPoint, newPoint)) {
+          return true;
         }
       }
     }
@@ -78,6 +78,8 @@ function AutoRefreshHighlighter(highlighterEnv) {
 }
 
 AutoRefreshHighlighter.prototype = {
+  _ignoreZoom: false,
+
   /**
    * Window corresponding to the current highlighterEnv
    */
@@ -94,9 +96,9 @@ AutoRefreshHighlighter.prototype = {
    * @param {Object} options
    *        Object used for passing options
    */
-  show: function (node, options = {}) {
-    let isSameNode = node === this.currentNode;
-    let isSameOptions = this._isSameOptions(options);
+  show: function(node, options = {}) {
+    const isSameNode = node === this.currentNode;
+    const isSameOptions = this._isSameOptions(options);
 
     if (!this._isNodeValid(node) || (isSameNode && isSameOptions)) {
       return false;
@@ -109,7 +111,7 @@ AutoRefreshHighlighter.prototype = {
     this._updateAdjustedQuads();
     this._startRefreshLoop();
 
-    let shown = this._show();
+    const shown = this._show();
     if (shown) {
       this.emit("shown");
     }
@@ -119,8 +121,8 @@ AutoRefreshHighlighter.prototype = {
   /**
    * Hide the highlighter
    */
-  hide: function () {
-    if (!this._isNodeValid(this.currentNode)) {
+  hide: function() {
+    if (!this.currentNode || !this.highlighterEnv.window) {
       return;
     }
 
@@ -140,7 +142,7 @@ AutoRefreshHighlighter.prototype = {
    * @param {DOMNode} node
    * @return {Boolean}
    */
-  _isNodeValid: function (node) {
+  _isNodeValid: function(node) {
     return isNodeValid(node);
   },
 
@@ -148,18 +150,18 @@ AutoRefreshHighlighter.prototype = {
    * Are the provided options the same as the currently stored options?
    * Returns false if there are no options stored currently.
    */
-  _isSameOptions: function (options) {
+  _isSameOptions: function(options) {
     if (!this.options) {
       return false;
     }
 
-    let keys = Object.keys(options);
+    const keys = Object.keys(options);
 
     if (keys.length !== Object.keys(this.options).length) {
       return false;
     }
 
-    for (let key of keys) {
+    for (const key of keys) {
       if (this.options[key] !== options[key]) {
         return false;
       }
@@ -171,13 +173,13 @@ AutoRefreshHighlighter.prototype = {
   /**
    * Update the stored box quads by reading the current node's box quads.
    */
-  _updateAdjustedQuads: function () {
+  _updateAdjustedQuads: function() {
     this.currentQuads = {};
 
-    for (let region of BOX_MODEL_REGIONS) {
+    for (const region of BOX_MODEL_REGIONS) {
       this.currentQuads[region] = getAdjustedQuads(
         this.win,
-        this.currentNode, region);
+        this.currentNode, region, {ignoreZoom: this._ignoreZoom});
     }
   },
 
@@ -186,11 +188,11 @@ AutoRefreshHighlighter.prototype = {
    * if any of the points x/y or bounds have change since.
    * @return {Boolean}
    */
-  _hasMoved: function () {
-    let oldQuads = this.currentQuads;
+  _hasMoved: function() {
+    const oldQuads = this.currentQuads;
     this._updateAdjustedQuads();
 
-    return areQuadsDifferent(oldQuads, this.currentQuads, getCurrentZoom(this.win));
+    return areQuadsDifferent(oldQuads, this.currentQuads);
   },
 
   /**
@@ -198,9 +200,13 @@ AutoRefreshHighlighter.prototype = {
    * horizontal and vertical, and return `true` if they have changed since.
    * @return {Boolean}
    */
-  _hasWindowScrolled: function () {
-    let { pageXOffset, pageYOffset } = this.win;
-    let hasChanged = this._scroll.x !== pageXOffset ||
+  _hasWindowScrolled: function() {
+    if (!this.win) {
+      return false;
+    }
+
+    const { pageXOffset, pageYOffset } = this.win;
+    const hasChanged = this._scroll.x !== pageXOffset ||
                      this._scroll.y !== pageYOffset;
 
     this._scroll = { x: pageXOffset, y: pageYOffset };
@@ -213,9 +219,9 @@ AutoRefreshHighlighter.prototype = {
    * if they have changed since.
    * @return {Boolean}
    */
-  _haveWindowDimensionsChanged: function () {
-    let { width, height } = getWindowDimensions(this.win);
-    let haveChanged = (this._winDimensions.width !== width ||
+  _haveWindowDimensionsChanged: function() {
+    const { width, height } = getWindowDimensions(this.win);
+    const haveChanged = (this._winDimensions.width !== width ||
                       this._winDimensions.height !== height);
 
     this._winDimensions = { width, height };
@@ -225,7 +231,7 @@ AutoRefreshHighlighter.prototype = {
   /**
    * Update the highlighter if the node has moved since the last update.
    */
-  update: function () {
+  update: function() {
     if (!this._isNodeValid(this.currentNode) ||
        (!this._hasMoved() && !this._haveWindowDimensionsChanged())) {
       // At this point we're not calling the `_update` method. However, if the window has
@@ -241,14 +247,14 @@ AutoRefreshHighlighter.prototype = {
     this.emit("updated");
   },
 
-  _show: function () {
+  _show: function() {
     // To be implemented by sub classes
     // When called, sub classes should actually show the highlighter for
     // this.currentNode, potentially using options in this.options
     throw new Error("Custom highlighter class had to implement _show method");
   },
 
-  _update: function () {
+  _update: function() {
     // To be implemented by sub classes
     // When called, sub classes should update the highlighter shown for
     // this.currentNode
@@ -256,38 +262,38 @@ AutoRefreshHighlighter.prototype = {
     throw new Error("Custom highlighter class had to implement _update method");
   },
 
-  _scrollUpdate: function () {
+  _scrollUpdate: function() {
     // Can be implemented by sub classes
     // When called, sub classes can upate the highlighter shown for
     // this.currentNode
     // This is called as a result of a page scroll
   },
 
-  _hide: function () {
+  _hide: function() {
     // To be implemented by sub classes
     // When called, sub classes should actually hide the highlighter
     throw new Error("Custom highlighter class had to implement _hide method");
   },
 
-  _startRefreshLoop: function () {
-    let win = this.currentNode.ownerGlobal;
+  _startRefreshLoop: function() {
+    const win = this.currentNode.ownerGlobal;
     this.rafID = win.requestAnimationFrame(this._startRefreshLoop.bind(this));
     this.rafWin = win;
     this.update();
   },
 
-  _stopRefreshLoop: function () {
+  _stopRefreshLoop: function() {
     if (this.rafID && !Cu.isDeadWrapper(this.rafWin)) {
       this.rafWin.cancelAnimationFrame(this.rafID);
     }
     this.rafID = this.rafWin = null;
   },
 
-  destroy: function () {
+  destroy: function() {
     this.hide();
 
     this.highlighterEnv = null;
     this.currentNode = null;
-  }
+  },
 };
 exports.AutoRefreshHighlighter = AutoRefreshHighlighter;

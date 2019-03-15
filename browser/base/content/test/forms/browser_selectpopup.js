@@ -1,5 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+/* eslint-disable mozilla/no-arbitrary-setTimeout */
 
 // This test tests <select> in a child process. This is different than
 // single-process as a <menulist> is used to implement the dropdown list.
@@ -10,8 +11,8 @@ const XHTML_DTD = '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www
 
 const PAGECONTENT =
   "<html xmlns='http://www.w3.org/1999/xhtml'>" +
-  "<body onload='gChangeEvents = 0;gInputEvents = 0; gClickEvents = 0; document.body.firstChild.focus()'>" +
-  "<select oninput='gInputEvents++' onchange='gChangeEvents++' onclick='if (event.target == this) gClickEvents++'>" +
+  "<body onload='gChangeEvents = 0;gInputEvents = 0; gClickEvents = 0; document.getElementById(\"select\").focus();'>" +
+  "<select id='select' oninput='gInputEvents++' onchange='gChangeEvents++' onclick='if (event.target == this) gClickEvents++'>" +
   "  <optgroup label='First Group'>" +
   "    <option value='One'>One</option>" +
   "    <option value='Two'>Two</option>" +
@@ -27,6 +28,17 @@ const PAGECONTENT =
   "    <option value='Eight'>&nbsp;&nbsp;Eight&nbsp;&nbsp;</option>" +
   "  </optgroup></select><input />Text" +
   "</body></html>";
+
+const PAGECONTENT_XSLT =
+  "<?xml-stylesheet type='text/xml' href='#style1'?>" +
+  "<xsl:stylesheet id='style1'" +
+  "                version='1.0'" +
+  "                xmlns:xsl='http://www.w3.org/1999/XSL/Transform'" +
+  "                xmlns:html='http://www.w3.org/1999/xhtml'>" +
+  "<xsl:template match='xsl:stylesheet'>" +
+  PAGECONTENT +
+  "</xsl:template>" +
+  "</xsl:stylesheet>";
 
 const PAGECONTENT_SMALL =
   "<html>" +
@@ -93,7 +105,7 @@ function openSelectPopup(selectPopup, mode = "key", selector = "select", win = w
     return Promise.all([popupShownPromise, mousePromise]);
   }
 
-  EventUtils.synthesizeKey("KEY_ArrowDown", { altKey: true, code: "ArrowDown" }, win);
+  EventUtils.synthesizeKey("KEY_ArrowDown", {altKey: true}, win);
   return popupShownPromise;
 }
 
@@ -115,52 +127,52 @@ function getClickEvents() {
   });
 }
 
-function* doSelectTests(contentType, dtd) {
-  const pageUrl = "data:" + contentType + "," + escape(dtd + "\n" + PAGECONTENT);
-  let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, pageUrl);
+async function doSelectTests(contentType, content) {
+  const pageUrl = "data:" + contentType + "," + encodeURIComponent(content);
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, pageUrl);
 
   let menulist = document.getElementById("ContentSelectDropdown");
   let selectPopup = menulist.menupopup;
 
-  yield openSelectPopup(selectPopup);
+  await openSelectPopup(selectPopup);
 
-  let isWindows = navigator.platform.indexOf("Win") >= 0;
+  let isWindows = navigator.platform.includes("Win");
 
   is(menulist.selectedIndex, 1, "Initial selection");
-  is(selectPopup.firstChild.localName, "menucaption", "optgroup is caption");
-  is(selectPopup.firstChild.getAttribute("label"), "First Group", "optgroup label");
-  is(selectPopup.childNodes[1].localName, "menuitem", "option is menuitem");
-  is(selectPopup.childNodes[1].getAttribute("label"), "One", "option label");
+  is(selectPopup.firstElementChild.localName, "menucaption", "optgroup is caption");
+  is(selectPopup.firstElementChild.getAttribute("label"), "First Group", "optgroup label");
+  is(selectPopup.children[1].localName, "menuitem", "option is menuitem");
+  is(selectPopup.children[1].getAttribute("label"), "One", "option label");
 
-  EventUtils.synthesizeKey("KEY_ArrowDown", { code: "ArrowDown" });
-  is(menulist.menuBoxObject.activeChild, menulist.getItemAtIndex(2), "Select item 2");
+  EventUtils.synthesizeKey("KEY_ArrowDown");
+  is(menulist.activeChild, menulist.getItemAtIndex(2), "Select item 2");
   is(menulist.selectedIndex, isWindows ? 2 : 1, "Select item 2 selectedIndex");
 
-  EventUtils.synthesizeKey("KEY_ArrowDown", { code: "ArrowDown" });
-  is(menulist.menuBoxObject.activeChild, menulist.getItemAtIndex(3), "Select item 3");
+  EventUtils.synthesizeKey("KEY_ArrowDown");
+  is(menulist.activeChild, menulist.getItemAtIndex(3), "Select item 3");
   is(menulist.selectedIndex, isWindows ? 3 : 1, "Select item 3 selectedIndex");
 
-  EventUtils.synthesizeKey("KEY_ArrowDown", { code: "ArrowDown" });
+  EventUtils.synthesizeKey("KEY_ArrowDown");
 
   // On Windows, one can navigate on disabled menuitems
-  is(menulist.menuBoxObject.activeChild, menulist.getItemAtIndex(9),
+  is(menulist.activeChild, menulist.getItemAtIndex(9),
      "Skip optgroup header and disabled items select item 7");
   is(menulist.selectedIndex, isWindows ? 9 : 1, "Select or skip disabled item selectedIndex");
 
   for (let i = 0; i < 10; i++) {
-    is(menulist.getItemAtIndex(i).disabled, i >= 4 && i <= 7, "item " + i + " disabled")
+    is(menulist.getItemAtIndex(i).disabled, i >= 4 && i <= 7, "item " + i + " disabled");
   }
 
-  EventUtils.synthesizeKey("KEY_ArrowUp", { code: "ArrowUp" });
-  is(menulist.menuBoxObject.activeChild, menulist.getItemAtIndex(3), "Select item 3 again");
+  EventUtils.synthesizeKey("KEY_ArrowUp");
+  is(menulist.activeChild, menulist.getItemAtIndex(3), "Select item 3 again");
   is(menulist.selectedIndex, isWindows ? 3 : 1, "Select item 3 selectedIndex");
 
-  is((yield getInputEvents()), 0, "Before closed - number of input events");
-  is((yield getChangeEvents()), 0, "Before closed - number of change events");
-  is((yield getClickEvents()), 0, "Before closed - number of click events");
+  is((await getInputEvents()), 0, "Before closed - number of input events");
+  is((await getChangeEvents()), 0, "Before closed - number of change events");
+  is((await getClickEvents()), 0, "Before closed - number of click events");
 
   EventUtils.synthesizeKey("a", { accelKey: true });
-  yield ContentTask.spawn(gBrowser.selectedBrowser, { isWindows }, function(args) {
+  await ContentTask.spawn(gBrowser.selectedBrowser, { isWindows }, function(args) {
     Assert.equal(String(content.getSelection()), args.isWindows ? "Text" : "",
       "Select all while popup is open");
   });
@@ -168,125 +180,129 @@ function* doSelectTests(contentType, dtd) {
   // Backspace should not go back
   let handleKeyPress = function(event) {
     ok(false, "Should not get keypress event");
-  }
+  };
   window.addEventListener("keypress", handleKeyPress);
-  EventUtils.synthesizeKey("VK_BACK_SPACE", { });
+  EventUtils.synthesizeKey("KEY_Backspace");
   window.removeEventListener("keypress", handleKeyPress);
 
-  yield hideSelectPopup(selectPopup);
+  await hideSelectPopup(selectPopup);
 
   is(menulist.selectedIndex, 3, "Item 3 still selected");
-  is((yield getInputEvents()), 1, "After closed - number of input events");
-  is((yield getChangeEvents()), 1, "After closed - number of change events");
-  is((yield getClickEvents()), 0, "After closed - number of click events");
+  is((await getInputEvents()), 1, "After closed - number of input events");
+  is((await getChangeEvents()), 1, "After closed - number of change events");
+  is((await getClickEvents()), 0, "After closed - number of click events");
 
   // Opening and closing the popup without changing the value should not fire a change event.
-  yield openSelectPopup(selectPopup, "click");
-  yield hideSelectPopup(selectPopup, "escape");
-  is((yield getInputEvents()), 1, "Open and close with no change - number of input events");
-  is((yield getChangeEvents()), 1, "Open and close with no change - number of change events");
-  is((yield getClickEvents()), 1, "Open and close with no change - number of click events");
-  EventUtils.synthesizeKey("VK_TAB", { });
-  EventUtils.synthesizeKey("VK_TAB", { shiftKey: true });
-  is((yield getInputEvents()), 1, "Tab away from select with no change - number of input events");
-  is((yield getChangeEvents()), 1, "Tab away from select with no change - number of change events");
-  is((yield getClickEvents()), 1, "Tab away from select with no change - number of click events");
+  await openSelectPopup(selectPopup, "click");
+  await hideSelectPopup(selectPopup, "escape");
+  is((await getInputEvents()), 1, "Open and close with no change - number of input events");
+  is((await getChangeEvents()), 1, "Open and close with no change - number of change events");
+  is((await getClickEvents()), 1, "Open and close with no change - number of click events");
+  EventUtils.synthesizeKey("KEY_Tab");
+  EventUtils.synthesizeKey("KEY_Tab", {shiftKey: true});
+  is((await getInputEvents()), 1, "Tab away from select with no change - number of input events");
+  is((await getChangeEvents()), 1, "Tab away from select with no change - number of change events");
+  is((await getClickEvents()), 1, "Tab away from select with no change - number of click events");
 
-  yield openSelectPopup(selectPopup, "click");
-  EventUtils.synthesizeKey("KEY_ArrowDown", { code: "ArrowDown" });
-  yield hideSelectPopup(selectPopup, "escape");
-  is((yield getInputEvents()), isWindows ? 2 : 1, "Open and close with change - number of input events");
-  is((yield getChangeEvents()), isWindows ? 2 : 1, "Open and close with change - number of change events");
-  is((yield getClickEvents()), 2, "Open and close with change - number of click events");
-  EventUtils.synthesizeKey("VK_TAB", { });
-  EventUtils.synthesizeKey("VK_TAB", { shiftKey: true });
-  is((yield getInputEvents()), isWindows ? 2 : 1, "Tab away from select with change - number of input events");
-  is((yield getChangeEvents()), isWindows ? 2 : 1, "Tab away from select with change - number of change events");
-  is((yield getClickEvents()), 2, "Tab away from select with change - number of click events");
+  await openSelectPopup(selectPopup, "click");
+  EventUtils.synthesizeKey("KEY_ArrowDown");
+  await hideSelectPopup(selectPopup, "escape");
+  is((await getInputEvents()), isWindows ? 2 : 1, "Open and close with change - number of input events");
+  is((await getChangeEvents()), isWindows ? 2 : 1, "Open and close with change - number of change events");
+  is((await getClickEvents()), 2, "Open and close with change - number of click events");
+  EventUtils.synthesizeKey("KEY_Tab");
+  EventUtils.synthesizeKey("KEY_Tab", {shiftKey: true});
+  is((await getInputEvents()), isWindows ? 2 : 1, "Tab away from select with change - number of input events");
+  is((await getChangeEvents()), isWindows ? 2 : 1, "Tab away from select with change - number of change events");
+  is((await getClickEvents()), 2, "Tab away from select with change - number of click events");
 
-  is(selectPopup.lastChild.previousSibling.label, "Seven", "Spaces collapsed");
-  is(selectPopup.lastChild.label, "\xA0\xA0Eight\xA0\xA0", "Non-breaking spaces not collapsed");
+  is(selectPopup.lastElementChild.previousElementSibling.label, "Seven", "Spaces collapsed");
+  is(selectPopup.lastElementChild.label, "\xA0\xA0Eight\xA0\xA0", "Non-breaking spaces not collapsed");
 
-  yield BrowserTestUtils.removeTab(tab);
+  BrowserTestUtils.removeTab(tab);
 }
 
-add_task(function* setup() {
-  yield SpecialPowers.pushPrefEnv({
+add_task(async function setup() {
+  await SpecialPowers.pushPrefEnv({
     "set": [
       ["dom.select_popup_in_parent.enabled", true],
-      ["dom.forms.select.customstyling", true]
-    ]
+      ["dom.forms.select.customstyling", true],
+    ],
   });
 });
 
-add_task(function*() {
-  yield doSelectTests("text/html", "");
+add_task(async function() {
+  await doSelectTests("text/html", PAGECONTENT);
 });
 
-add_task(function*() {
-  yield doSelectTests("application/xhtml+xml", XHTML_DTD);
+add_task(async function() {
+  await doSelectTests("application/xhtml+xml", XHTML_DTD + "\n" + PAGECONTENT);
+});
+
+add_task(async function() {
+  await doSelectTests("application/xml", XHTML_DTD + "\n" + PAGECONTENT_XSLT);
 });
 
 // This test opens a select popup and removes the content node of a popup while
 // The popup should close if its node is removed.
-add_task(function*() {
+add_task(async function() {
   const pageUrl = "data:text/html," + escape(PAGECONTENT_SMALL);
-  let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, pageUrl);
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, pageUrl);
 
   let menulist = document.getElementById("ContentSelectDropdown");
   let selectPopup = menulist.menupopup;
 
   // First, try it when a different <select> element than the one that is open is removed
-  yield openSelectPopup(selectPopup, "click", "#one");
+  await openSelectPopup(selectPopup, "click", "#one");
 
-  yield ContentTask.spawn(gBrowser.selectedBrowser, {}, function() {
+  await ContentTask.spawn(gBrowser.selectedBrowser, {}, function() {
     content.document.body.removeChild(content.document.getElementById("two"));
   });
 
   // Wait a bit just to make sure the popup won't close.
-  yield new Promise(resolve => setTimeout(resolve, 1000));
+  await new Promise(resolve => setTimeout(resolve, 1000));
 
   is(selectPopup.state, "open", "Different popup did not affect open popup");
 
-  yield hideSelectPopup(selectPopup);
+  await hideSelectPopup(selectPopup);
 
   // Next, try it when the same <select> element than the one that is open is removed
-  yield openSelectPopup(selectPopup, "click", "#three");
+  await openSelectPopup(selectPopup, "click", "#three");
 
   let popupHiddenPromise = BrowserTestUtils.waitForEvent(selectPopup, "popuphidden");
-  yield ContentTask.spawn(gBrowser.selectedBrowser, {}, function() {
+  await ContentTask.spawn(gBrowser.selectedBrowser, {}, function() {
     content.document.body.removeChild(content.document.getElementById("three"));
   });
-  yield popupHiddenPromise;
+  await popupHiddenPromise;
 
   ok(true, "Popup hidden when select is removed");
 
   // Finally, try it when the tab is closed while the select popup is open.
-  yield openSelectPopup(selectPopup, "click", "#one");
+  await openSelectPopup(selectPopup, "click", "#one");
 
   popupHiddenPromise = BrowserTestUtils.waitForEvent(selectPopup, "popuphidden");
-  yield BrowserTestUtils.removeTab(tab);
-  yield popupHiddenPromise;
+  BrowserTestUtils.removeTab(tab);
+  await popupHiddenPromise;
 
   ok(true, "Popup hidden when tab is closed");
 });
 
 // This test opens a select popup that is isn't a frame and has some translations applied.
-add_task(function*() {
+add_task(async function() {
   const pageUrl = "data:text/html," + escape(PAGECONTENT_TRANSLATED);
-  let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, pageUrl);
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, pageUrl);
 
   let menulist = document.getElementById("ContentSelectDropdown");
   let selectPopup = menulist.menupopup;
 
   // First, get the position of the select popup when no translations have been applied.
-  yield openSelectPopup(selectPopup);
+  await openSelectPopup(selectPopup);
 
   let rect = selectPopup.getBoundingClientRect();
   let expectedX = rect.left;
   let expectedY = rect.top;
 
-  yield hideSelectPopup(selectPopup);
+  await hideSelectPopup(selectPopup);
 
   // Iterate through a set of steps which each add more translation to the select's expected position.
   let steps = [
@@ -299,7 +315,7 @@ add_task(function*() {
   for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
     let step = steps[stepIndex];
 
-    yield ContentTask.spawn(gBrowser.selectedBrowser, step, function*(contentStep) {
+    await ContentTask.spawn(gBrowser.selectedBrowser, step, async function(contentStep) {
       return new Promise(resolve => {
         let changedWin = content;
 
@@ -320,7 +336,7 @@ add_task(function*() {
       });
     });
 
-    yield openSelectPopup(selectPopup);
+    await openSelectPopup(selectPopup);
 
     expectedX += step[2];
     expectedY += step[3];
@@ -329,19 +345,19 @@ add_task(function*() {
     is(popupRect.left, expectedX, "step " + (stepIndex + 1) + " x");
     is(popupRect.top, expectedY, "step " + (stepIndex + 1) + " y");
 
-    yield hideSelectPopup(selectPopup);
+    await hideSelectPopup(selectPopup);
   }
 
-  yield BrowserTestUtils.removeTab(tab);
+  BrowserTestUtils.removeTab(tab);
 });
 
 // Test that we get the right events when a select popup is changed.
-add_task(function* test_event_order() {
+add_task(async function test_event_order() {
   const URL = "data:text/html," + escape(PAGECONTENT_SMALL);
-  yield BrowserTestUtils.withNewTab({
+  await BrowserTestUtils.withNewTab({
     gBrowser,
     url: URL,
-  }, function*(browser) {
+  }, async function(browser) {
     let menulist = document.getElementById("ContentSelectDropdown");
     let selectPopup = menulist.menupopup;
 
@@ -391,9 +407,9 @@ add_task(function* test_event_order() {
 
     for (let mode of ["enter", "click"]) {
       let expected = mode == "enter" ? expectedEnter : expectedClick;
-      yield openSelectPopup(selectPopup, "click", mode == "enter" ? "#one" : "#two");
+      await openSelectPopup(selectPopup, "click", mode == "enter" ? "#one" : "#two");
 
-      let eventsPromise = ContentTask.spawn(browser, [mode, expected], function*([contentMode, contentExpected]) {
+      let eventsPromise = ContentTask.spawn(browser, [mode, expected], async function([contentMode, contentExpected]) {
         return new Promise((resolve) => {
           function onEvent(event) {
             select.removeEventListener(event.type, onEvent);
@@ -419,17 +435,17 @@ add_task(function* test_event_order() {
         });
       });
 
-      EventUtils.synthesizeKey("KEY_ArrowDown", { code: "ArrowDown" });
-      yield hideSelectPopup(selectPopup, mode);
-      yield eventsPromise;
+      EventUtils.synthesizeKey("KEY_ArrowDown");
+      await hideSelectPopup(selectPopup, mode);
+      await eventsPromise;
     }
   });
 });
 
-function* performLargePopupTests(win) {
+async function performLargePopupTests(win) {
   let browser = win.gBrowser.selectedBrowser;
 
-  yield ContentTask.spawn(browser, null, function*() {
+  await ContentTask.spawn(browser, null, async function() {
     let doc = content.document;
     let select = doc.getElementById("one");
     for (var i = 0; i < 180; i++) {
@@ -444,65 +460,78 @@ function* performLargePopupTests(win) {
   let browserRect = browser.getBoundingClientRect();
 
   // Check if a drag-select works and scrolls the list.
-  yield openSelectPopup(selectPopup, "mousedown", "select", win);
+  await openSelectPopup(selectPopup, "mousedown", "select", win);
 
-  let scrollPos = selectPopup.scrollBox.scrollTop;
+  let getScrollPos = () => selectPopup.scrollBox.scrollbox.scrollTop;
+  let scrollPos = getScrollPos();
   let popupRect = selectPopup.getBoundingClientRect();
 
   // First, check that scrolling does not occur when the mouse is moved over the
   // anchor button but not the popup yet.
   EventUtils.synthesizeMouseAtPoint(popupRect.left + 5, popupRect.top - 10, { type: "mousemove" }, win);
-  is(selectPopup.scrollBox.scrollTop, scrollPos, "scroll position after mousemove over button should not change");
+  is(getScrollPos(), scrollPos, "scroll position after mousemove over button should not change");
 
   EventUtils.synthesizeMouseAtPoint(popupRect.left + 20, popupRect.top + 10, { type: "mousemove" }, win);
 
   // Dragging above the popup scrolls it up.
+  let scrolledPromise = BrowserTestUtils.waitForEvent(selectPopup, "scroll", false,
+    () => getScrollPos() < scrollPos - 5);
   EventUtils.synthesizeMouseAtPoint(popupRect.left + 20, popupRect.top - 20, { type: "mousemove" }, win);
-  ok(selectPopup.scrollBox.scrollTop < scrollPos - 5, "scroll position at drag up");
+  await scrolledPromise;
+  ok(true, "scroll position at drag up");
 
   // Dragging below the popup scrolls it down.
-  scrollPos = selectPopup.scrollBox.scrollTop;
+  scrollPos = getScrollPos();
+  scrolledPromise = BrowserTestUtils.waitForEvent(selectPopup, "scroll", false,
+    () => getScrollPos() > scrollPos + 5);
   EventUtils.synthesizeMouseAtPoint(popupRect.left + 20, popupRect.bottom + 20, { type: "mousemove" }, win);
-  ok(selectPopup.scrollBox.scrollTop > scrollPos + 5, "scroll position at drag down");
+  await scrolledPromise;
+  ok(true, "scroll position at drag down");
 
   // Releasing the mouse button and moving the mouse does not change the scroll position.
-  scrollPos = selectPopup.scrollBox.scrollTop;
+  scrollPos = getScrollPos();
   EventUtils.synthesizeMouseAtPoint(popupRect.left + 20, popupRect.bottom + 25, { type: "mouseup" }, win);
-  is(selectPopup.scrollBox.scrollTop, scrollPos, "scroll position at mouseup should not change");
+  is(getScrollPos(), scrollPos, "scroll position at mouseup should not change");
 
   EventUtils.synthesizeMouseAtPoint(popupRect.left + 20, popupRect.bottom + 20, { type: "mousemove" }, win);
-  is(selectPopup.scrollBox.scrollTop, scrollPos, "scroll position at mousemove after mouseup should not change");
+  is(getScrollPos(), scrollPos, "scroll position at mousemove after mouseup should not change");
 
   // Now check dragging with a mousedown on an item
-  let menuRect = selectPopup.childNodes[51].getBoundingClientRect();
+  let menuRect = selectPopup.children[51].getBoundingClientRect();
   EventUtils.synthesizeMouseAtPoint(menuRect.left + 5, menuRect.top + 5, { type: "mousedown" }, win);
 
   // Dragging below the popup scrolls it down.
+  scrolledPromise = BrowserTestUtils.waitForEvent(selectPopup, "scroll", false,
+    () => getScrollPos() > scrollPos + 5);
   EventUtils.synthesizeMouseAtPoint(popupRect.left + 20, popupRect.bottom + 20, { type: "mousemove" }, win);
-  ok(selectPopup.scrollBox.scrollTop > scrollPos + 5, "scroll position at drag down from option");
+  await scrolledPromise;
+  ok(true, "scroll position at drag down from option");
 
   // Dragging above the popup scrolls it up.
+  scrolledPromise = BrowserTestUtils.waitForEvent(selectPopup, "scroll", false,
+    () => getScrollPos() < scrollPos - 5);
   EventUtils.synthesizeMouseAtPoint(popupRect.left + 20, popupRect.top - 20, { type: "mousemove" }, win);
-  ok(selectPopup.scrollBox.scrollTop, scrollPos, "scroll position at drag up from option");
+  await scrolledPromise;
+  ok(true, "scroll position at drag up from option");
 
-  scrollPos = selectPopup.scrollBox.scrollTop;
+  scrollPos = getScrollPos();
   EventUtils.synthesizeMouseAtPoint(popupRect.left + 20, popupRect.bottom + 25, { type: "mouseup" }, win);
-  is(selectPopup.scrollBox.scrollTop, scrollPos, "scroll position at mouseup from option should not change");
+  is(getScrollPos(), scrollPos, "scroll position at mouseup from option should not change");
 
   EventUtils.synthesizeMouseAtPoint(popupRect.left + 20, popupRect.bottom + 20, { type: "mousemove" }, win);
-  is(selectPopup.scrollBox.scrollTop, scrollPos, "scroll position at mousemove after mouseup should not change");
+  is(getScrollPos(), scrollPos, "scroll position at mousemove after mouseup should not change");
 
-  yield hideSelectPopup(selectPopup, "escape", win);
+  await hideSelectPopup(selectPopup, "escape", win);
 
   let positions = [
     "margin-top: 300px;",
     "position: fixed; bottom: 200px;",
-    "width: 100%; height: 9999px;"
+    "width: 100%; height: 9999px;",
   ];
 
   let position;
   while (positions.length) {
-    yield openSelectPopup(selectPopup, "key", "select", win);
+    await openSelectPopup(selectPopup, "key", "select", win);
 
     let rect = selectPopup.getBoundingClientRect();
     ok(rect.top >= browserRect.top, "Popup top position in within browser area");
@@ -524,73 +553,79 @@ function* performLargePopupTests(win) {
       // might return floating point values. We don't care about sub-pixel
       // accuracy, and only care about the final pixel value, so we add a
       // fuzz-factor of 1.
-      SimpleTest.isfuzzy(selectPopup.childNodes[selectedOption].getBoundingClientRect().bottom,
+      SimpleTest.isfuzzy(selectPopup.children[selectedOption].getBoundingClientRect().bottom,
                          selectPopup.getBoundingClientRect().bottom - bpBottom,
                          1, "Popup scroll at correct position " + bpBottom);
     }
 
-    yield hideSelectPopup(selectPopup, "enter", win);
+    await hideSelectPopup(selectPopup, "enter", win);
 
     position = positions.shift();
 
     let contentPainted = BrowserTestUtils.contentPainted(browser);
-    yield ContentTask.spawn(browser, position, function*(contentPosition) {
+    await ContentTask.spawn(browser, position, async function(contentPosition) {
       let select = content.document.getElementById("one");
       select.setAttribute("style", contentPosition || "");
       select.getBoundingClientRect();
     });
-    yield contentPainted;
+    await contentPainted;
   }
 
   if (navigator.platform.indexOf("Mac") == 0) {
-    yield ContentTask.spawn(browser, null, function*() {
+    await ContentTask.spawn(browser, null, async function() {
       let doc = content.document;
-      doc.body.style = "padding-top: 400px;"
+      doc.body.style = "padding-top: 400px;";
 
       let select = doc.getElementById("one");
       select.options[41].selected = true;
       select.focus();
     });
 
-    yield openSelectPopup(selectPopup, "key", "select", win);
+    await openSelectPopup(selectPopup, "key", "select", win);
 
     ok(selectPopup.getBoundingClientRect().top > browser.getBoundingClientRect().top,
        "select popup appears over selected item");
 
-    yield hideSelectPopup(selectPopup, "escape", win);
+    await hideSelectPopup(selectPopup, "escape", win);
   }
 }
 
 // This test checks select elements with a large number of options to ensure that
 // the popup appears within the browser area.
-add_task(function* test_large_popup() {
+add_task(async function test_large_popup() {
   const pageUrl = "data:text/html," + escape(PAGECONTENT_SMALL);
-  let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, pageUrl);
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, pageUrl);
 
-  yield* performLargePopupTests(window);
+  await performLargePopupTests(window);
 
-  yield BrowserTestUtils.removeTab(tab);
+  BrowserTestUtils.removeTab(tab);
 });
 
 // This test checks the same as the previous test but in a new smaller window.
-add_task(function* test_large_popup_in_small_window() {
-  let newwin = yield BrowserTestUtils.openNewBrowserWindow({ width: 400, height: 400 });
+add_task(async function test_large_popup_in_small_window() {
+  let newWin = await BrowserTestUtils.openNewBrowserWindow();
+
+  let resizePromise = BrowserTestUtils.waitForEvent(newWin, "resize", false, e => {
+    return newWin.innerHeight <= 400 && newWin.innerWidth <= 400;
+  });
+  newWin.resizeTo(400, 400);
+  await resizePromise;
 
   const pageUrl = "data:text/html," + escape(PAGECONTENT_SMALL);
-  let browserLoadedPromise = BrowserTestUtils.browserLoaded(newwin.gBrowser.selectedBrowser);
-  yield BrowserTestUtils.loadURI(newwin.gBrowser.selectedBrowser, pageUrl);
-  yield browserLoadedPromise;
+  let browserLoadedPromise = BrowserTestUtils.browserLoaded(newWin.gBrowser.selectedBrowser);
+  await BrowserTestUtils.loadURI(newWin.gBrowser.selectedBrowser, pageUrl);
+  await browserLoadedPromise;
 
-  newwin.gBrowser.selectedBrowser.focus();
+  newWin.gBrowser.selectedBrowser.focus();
 
-  yield* performLargePopupTests(newwin);
+  await performLargePopupTests(newWin);
 
-  yield BrowserTestUtils.closeWindow(newwin);
+  await BrowserTestUtils.closeWindow(newWin);
 });
 
-function* performSelectSearchTests(win) {
+async function performSelectSearchTests(win) {
   let browser = win.gBrowser.selectedBrowser;
-  yield ContentTask.spawn(browser, null, function*() {
+  await ContentTask.spawn(browser, null, async function() {
     let doc = content.document;
     let select = doc.getElementById("one");
 
@@ -603,137 +638,137 @@ function* performSelectSearchTests(win) {
   });
 
   let selectPopup = win.document.getElementById("ContentSelectDropdown").menupopup;
-  yield openSelectPopup(selectPopup, false, "select", win);
+  await openSelectPopup(selectPopup, false, "select", win);
 
   let searchElement = selectPopup.querySelector("textbox");
   searchElement.focus();
 
   EventUtils.synthesizeKey("O", {}, win);
-  is(selectPopup.childNodes[2].hidden, false, "First option should be visible");
-  is(selectPopup.childNodes[3].hidden, false, "Second option should be visible");
+  is(selectPopup.children[2].hidden, false, "First option should be visible");
+  is(selectPopup.children[3].hidden, false, "Second option should be visible");
 
   EventUtils.synthesizeKey("3", {}, win);
-  is(selectPopup.childNodes[2].hidden, true, "First option should be hidden");
-  is(selectPopup.childNodes[3].hidden, true, "Second option should be hidden");
-  is(selectPopup.childNodes[4].hidden, false, "Third option should be visible");
+  is(selectPopup.children[2].hidden, true, "First option should be hidden");
+  is(selectPopup.children[3].hidden, true, "Second option should be hidden");
+  is(selectPopup.children[4].hidden, false, "Third option should be visible");
 
   EventUtils.synthesizeKey("Z", {}, win);
-  is(selectPopup.childNodes[4].hidden, true, "Third option should be hidden");
-  is(selectPopup.childNodes[1].hidden, true, "First group header should be hidden");
+  is(selectPopup.children[4].hidden, true, "Third option should be hidden");
+  is(selectPopup.children[1].hidden, true, "First group header should be hidden");
 
-  EventUtils.synthesizeKey("VK_BACK_SPACE", {}, win);
-  is(selectPopup.childNodes[4].hidden, false, "Third option should be visible");
+  EventUtils.synthesizeKey("KEY_Backspace", {}, win);
+  is(selectPopup.children[4].hidden, false, "Third option should be visible");
 
-  EventUtils.synthesizeKey("VK_BACK_SPACE", {}, win);
-  is(selectPopup.childNodes[5].hidden, false, "Second group header should be visible");
+  EventUtils.synthesizeKey("KEY_Backspace", {}, win);
+  is(selectPopup.children[5].hidden, false, "Second group header should be visible");
 
-  EventUtils.synthesizeKey("VK_BACK_SPACE", {}, win);
+  EventUtils.synthesizeKey("KEY_Backspace", {}, win);
   EventUtils.synthesizeKey("O", {}, win);
   EventUtils.synthesizeKey("5", {}, win);
-  is(selectPopup.childNodes[5].hidden, false, "Second group header should be visible");
-  is(selectPopup.childNodes[1].hidden, true, "First group header should be hidden");
+  is(selectPopup.children[5].hidden, false, "Second group header should be visible");
+  is(selectPopup.children[1].hidden, true, "First group header should be hidden");
 
-  EventUtils.synthesizeKey("VK_BACK_SPACE", {}, win);
-  is(selectPopup.childNodes[1].hidden, false, "First group header should be shown");
+  EventUtils.synthesizeKey("KEY_Backspace", {}, win);
+  is(selectPopup.children[1].hidden, false, "First group header should be shown");
 
-  EventUtils.synthesizeKey("VK_BACK_SPACE", {}, win);
-  is(selectPopup.childNodes[8].hidden, true, "Option hidden by content should remain hidden");
+  EventUtils.synthesizeKey("KEY_Backspace", {}, win);
+  is(selectPopup.children[8].hidden, true, "Option hidden by content should remain hidden");
 
-  yield hideSelectPopup(selectPopup, "escape", win);
+  await hideSelectPopup(selectPopup, "escape", win);
 }
 
 // This test checks the functionality of search in select elements with groups
 // and a large number of options.
-add_task(function* test_select_search() {
-  yield SpecialPowers.pushPrefEnv({
+add_task(async function test_select_search() {
+  await SpecialPowers.pushPrefEnv({
     set: [
       ["dom.forms.selectSearch", true],
     ],
   });
   const pageUrl = "data:text/html," + escape(PAGECONTENT_GROUPS);
-  let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, pageUrl);
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, pageUrl);
 
-  yield performSelectSearchTests(window);
+  await performSelectSearchTests(window);
 
-  yield BrowserTestUtils.removeTab(tab);
+  BrowserTestUtils.removeTab(tab);
 
-  yield SpecialPowers.popPrefEnv();
+  await SpecialPowers.popPrefEnv();
 });
 
 // This test checks that a mousemove event is fired correctly at the menu and
 // not at the browser, ensuring that any mouse capture has been cleared.
-add_task(function* test_mousemove_correcttarget() {
+add_task(async function test_mousemove_correcttarget() {
   const pageUrl = "data:text/html," + escape(PAGECONTENT_SMALL);
-  let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, pageUrl);
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, pageUrl);
 
   let selectPopup = document.getElementById("ContentSelectDropdown").menupopup;
 
   let popupShownPromise = BrowserTestUtils.waitForEvent(selectPopup, "popupshown");
-  yield BrowserTestUtils.synthesizeMouseAtCenter("#one", { type: "mousedown" }, gBrowser.selectedBrowser);
-  yield popupShownPromise;
+  await BrowserTestUtils.synthesizeMouseAtCenter("#one", { type: "mousedown" }, gBrowser.selectedBrowser);
+  await popupShownPromise;
 
-  yield new Promise(resolve => {
+  await new Promise(resolve => {
     window.addEventListener("mousemove", function(event) {
       is(event.target.localName.indexOf("menu"), 0, "mouse over menu");
       resolve();
     }, {capture: true, once: true});
 
-    EventUtils.synthesizeMouseAtCenter(selectPopup.firstChild, { type: "mousemove" });
+    EventUtils.synthesizeMouseAtCenter(selectPopup.firstElementChild, { type: "mousemove" });
   });
 
-  yield BrowserTestUtils.synthesizeMouseAtCenter("#one", { type: "mouseup" }, gBrowser.selectedBrowser);
+  await BrowserTestUtils.synthesizeMouseAtCenter("#one", { type: "mouseup" }, gBrowser.selectedBrowser);
 
-  yield hideSelectPopup(selectPopup);
+  await hideSelectPopup(selectPopup);
 
   // The popup should be closed when fullscreen mode is entered or exited.
   for (let steps = 0; steps < 2; steps++) {
-    yield openSelectPopup(selectPopup, "click");
+    await openSelectPopup(selectPopup, "click");
     let popupHiddenPromise = BrowserTestUtils.waitForEvent(selectPopup, "popuphidden");
     let sizeModeChanged = BrowserTestUtils.waitForEvent(window, "sizemodechange");
     BrowserFullScreen();
-    yield sizeModeChanged;
-    yield popupHiddenPromise;
+    await sizeModeChanged;
+    await popupHiddenPromise;
   }
 
-  yield BrowserTestUtils.removeTab(tab);
+  BrowserTestUtils.removeTab(tab);
 });
 
 // This test checks when a <select> element has some options with altered display values.
-add_task(function* test_somehidden() {
+add_task(async function test_somehidden() {
   const pageUrl = "data:text/html," + escape(PAGECONTENT_SOMEHIDDEN);
-  let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, pageUrl);
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, pageUrl);
 
   let selectPopup = document.getElementById("ContentSelectDropdown").menupopup;
 
   let popupShownPromise = BrowserTestUtils.waitForEvent(selectPopup, "popupshown");
-  yield BrowserTestUtils.synthesizeMouseAtCenter("#one", { type: "mousedown" }, gBrowser.selectedBrowser);
-  yield popupShownPromise;
+  await BrowserTestUtils.synthesizeMouseAtCenter("#one", { type: "mousedown" }, gBrowser.selectedBrowser);
+  await popupShownPromise;
 
   // The exact number is not needed; just ensure the height is larger than 4 items to accomodate any popup borders.
-  ok(selectPopup.getBoundingClientRect().height >= selectPopup.lastChild.getBoundingClientRect().height * 4, "Height contains at least 4 items");
-  ok(selectPopup.getBoundingClientRect().height < selectPopup.lastChild.getBoundingClientRect().height * 5, "Height doesn't contain 5 items");
+  ok(selectPopup.getBoundingClientRect().height >= selectPopup.lastElementChild.getBoundingClientRect().height * 4, "Height contains at least 4 items");
+  ok(selectPopup.getBoundingClientRect().height < selectPopup.lastElementChild.getBoundingClientRect().height * 5, "Height doesn't contain 5 items");
 
   // The label contains the substring 'Visible' for items that are visible.
   // Otherwise, it is expected to be display: none.
   is(selectPopup.parentNode.itemCount, 9, "Correct number of items");
-  let child = selectPopup.firstChild;
+  let child = selectPopup.firstElementChild;
   let idx = 1;
   while (child) {
     is(getComputedStyle(child).display, child.label.indexOf("Visible") > 0 ? "-moz-box" : "none",
        "Item " + (idx++) + " is visible");
-    child = child.nextSibling;
+    child = child.nextElementSibling;
   }
 
-  yield hideSelectPopup(selectPopup, "escape");
-  yield BrowserTestUtils.removeTab(tab);
+  await hideSelectPopup(selectPopup, "escape");
+  BrowserTestUtils.removeTab(tab);
 });
 
 // This test checks that the popup is closed when the select element is blurred.
-add_task(function* test_blur_hides_popup() {
+add_task(async function test_blur_hides_popup() {
   const pageUrl = "data:text/html," + escape(PAGECONTENT_SMALL);
-  let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, pageUrl);
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, pageUrl);
 
-  yield ContentTask.spawn(tab.linkedBrowser, null, function*() {
+  await ContentTask.spawn(tab.linkedBrowser, null, async function() {
     content.addEventListener("blur", function(event) {
       event.preventDefault();
       event.stopPropagation();
@@ -745,17 +780,17 @@ add_task(function* test_blur_hides_popup() {
   let menulist = document.getElementById("ContentSelectDropdown");
   let selectPopup = menulist.menupopup;
 
-  yield openSelectPopup(selectPopup);
+  await openSelectPopup(selectPopup);
 
   let popupHiddenPromise = BrowserTestUtils.waitForEvent(selectPopup, "popuphidden");
 
-  yield ContentTask.spawn(tab.linkedBrowser, null, function*() {
+  await ContentTask.spawn(tab.linkedBrowser, null, async function() {
     content.document.getElementById("one").blur();
   });
 
-  yield popupHiddenPromise;
+  await popupHiddenPromise;
 
   ok(true, "Blur closed popup");
 
-  yield BrowserTestUtils.removeTab(tab);
+  BrowserTestUtils.removeTab(tab);
 });

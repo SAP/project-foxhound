@@ -4,63 +4,78 @@
 
 "use strict";
 
-// Services = object with smart getters for common XPCOM services
-Components.utils.import("resource://gre/modules/Services.jsm");
-Components.utils.import("resource://gre/modules/AppConstants.jsm");
+/* import-globals-from aboutDialog-appUpdater.js */
 
-function init(aEvent) {
+// Services = object with smart getters for common XPCOM services
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+
+async function init(aEvent) {
   if (aEvent.target != document)
     return;
 
-  try {
-    var distroId = Services.prefs.getCharPref("distribution.id");
-    if (distroId) {
-      var distroVersion = Services.prefs.getCharPref("distribution.version");
+  var distroId = Services.prefs.getCharPref("distribution.id", "");
+  if (distroId) {
+    var distroString = distroId;
 
-      var distroIdField = document.getElementById("distributionId");
-      distroIdField.value = distroId + " - " + distroVersion;
-      distroIdField.style.display = "block";
-
-      try {
-        // This is in its own try catch due to bug 895473 and bug 900925.
-        var distroAbout = Services.prefs.getComplexValue("distribution.about",
-          Components.interfaces.nsISupportsString);
-        var distroField = document.getElementById("distribution");
-        distroField.value = distroAbout;
-        distroField.style.display = "block";
-      } catch (ex) {
-        // Pref is unset
-        Components.utils.reportError(ex);
-      }
+    var distroVersion = Services.prefs.getCharPref("distribution.version", "");
+    if (distroVersion) {
+      distroString += " - " + distroVersion;
     }
-  } catch (e) {
-    // Pref is unset
+
+    var distroIdField = document.getElementById("distributionId");
+    distroIdField.value = distroString;
+    distroIdField.style.display = "block";
+
+    var distroAbout = Services.prefs.getStringPref("distribution.about", "");
+    if (distroAbout) {
+      var distroField = document.getElementById("distribution");
+      distroField.value = distroAbout;
+      distroField.style.display = "block";
+    }
   }
 
   // Include the build ID and display warning if this is an "a#" (nightly or aurora) build
-  let versionField = document.getElementById("version");
+  let versionId = "aboutDialog-version";
+  let versionAttributes = {
+    version: AppConstants.MOZ_APP_VERSION_DISPLAY,
+    bits: Services.appinfo.is64Bit ? 64 : 32,
+  };
+
   let version = Services.appinfo.version;
   if (/a\d+$/.test(version)) {
+    versionId = "aboutDialog-version-nightly";
     let buildID = Services.appinfo.appBuildID;
     let year = buildID.slice(0, 4);
     let month = buildID.slice(4, 6);
     let day = buildID.slice(6, 8);
-    versionField.textContent += ` (${year}-${month}-${day})`;
+    versionAttributes.isodate = `${year}-${month}-${day}`;
 
     document.getElementById("experimental").hidden = false;
     document.getElementById("communityDesc").hidden = true;
   }
 
-  // Append "(32-bit)" or "(64-bit)" build architecture to the version number:
-  let bundle = Services.strings.createBundle("chrome://browser/locale/browser.properties");
-  let archResource = Services.appinfo.is64Bit
-                     ? "aboutDialog.architecture.sixtyFourBit"
-                     : "aboutDialog.architecture.thirtyTwoBit";
-  let arch = bundle.GetStringFromName(archResource);
-  versionField.textContent += ` (${arch})`;
+  // Use Fluent arguments for append version and the architecture of the build
+  let versionField = document.getElementById("version");
+
+  document.l10n.setAttributes(versionField, versionId, versionAttributes);
+
+  await document.l10n.translateElements([versionField]);
+  window.sizeToContent();
+
+  // Show a release notes link if we have a URL.
+  let relNotesLink = document.getElementById("releasenotes");
+  let relNotesPrefType = Services.prefs.getPrefType("app.releaseNotesURL");
+  if (relNotesPrefType != Services.prefs.PREF_INVALID) {
+    let relNotesURL = Services.urlFormatter.formatURLPref("app.releaseNotesURL");
+    if (relNotesURL != "about:blank") {
+      relNotesLink.href = relNotesURL;
+      relNotesLink.hidden = false;
+    }
+  }
 
   if (AppConstants.MOZ_UPDATER) {
-    gAppUpdater = new appUpdater();
+    gAppUpdater = new appUpdater({ buttonAutoFocus: true });
 
     let channelLabel = document.getElementById("currentChannel");
     let currentChannelText = document.getElementById("currentChannelText");
@@ -69,6 +84,9 @@ function init(aEvent) {
         currentChannelText.hidden = true;
   }
 
+  if (AppConstants.MOZ_APP_VERSION_DISPLAY.endsWith("esr")) {
+    document.getElementById("release").hidden = false;
+  }
   if (AppConstants.platform == "macosx") {
     // it may not be sized at this point, and we need its width to calculate its position
     window.sizeToContent();

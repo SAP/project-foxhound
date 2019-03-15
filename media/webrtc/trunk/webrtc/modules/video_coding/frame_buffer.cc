@@ -8,14 +8,15 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/video_coding/frame_buffer.h"
+#include "modules/video_coding/frame_buffer.h"
 
 #include <assert.h>
 #include <string.h>
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
-#include "webrtc/modules/video_coding/packet.h"
+#include "modules/video_coding/packet.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/trace_event.h"
 
 namespace webrtc {
 
@@ -66,7 +67,12 @@ bool VCMFrameBuffer::NonReference() const {
   return _sessionInfo.NonReference();
 }
 
+std::vector<NaluInfo> VCMFrameBuffer::GetNaluInfos() const {
+  return _sessionInfo.GetNaluInfos();
+}
+
 void VCMFrameBuffer::SetGofInfo(const GofInfoVP9& gof_info, size_t idx) {
+  TRACE_EVENT0("webrtc", "VCMFrameBuffer::SetGofInfo");
   _sessionInfo.SetGofInfo(gof_info, idx);
   // TODO(asapersson): Consider adding hdr->VP9.ref_picture_id for testing.
   _codecSpecificInfo.codecSpecific.VP9.temporal_idx =
@@ -76,6 +82,7 @@ void VCMFrameBuffer::SetGofInfo(const GofInfoVP9& gof_info, size_t idx) {
 }
 
 bool VCMFrameBuffer::IsSessionComplete() const {
+  TRACE_EVENT0("webrtc", "VCMFrameBuffer::IsSessionComplete");
   return _sessionInfo.complete();
 }
 
@@ -85,6 +92,7 @@ VCMFrameBufferEnum VCMFrameBuffer::InsertPacket(
     int64_t timeInMs,
     VCMDecodeErrorMode decode_error_mode,
     const FrameData& frame_data) {
+  TRACE_EVENT0("webrtc", "VCMFrameBuffer::InsertPacket");
   assert(!(NULL == packet.dataPtr && packet.sizeBytes > 0));
   if (packet.dataPtr != NULL) {
     _payloadType = packet.payloadType;
@@ -103,11 +111,13 @@ VCMFrameBufferEnum VCMFrameBuffer::InsertPacket(
     }
   }
 
-    // add safety margin because STAP-A packets can cause it to expand by
-    // ~two bytes per NAL
-  uint32_t requiredSizeBytes = Length() + packet.sizeBytes +
-                   (packet.insertStartCode ? kH264StartCodeLengthBytes : 0) +
-                                 kBufferSafetyMargin;
+  // add safety margin because STAP-A packets can cause it to expand by
+  // ~two bytes per NAL
+  uint32_t requiredSizeBytes =
+      Length() + packet.sizeBytes +
+      (packet.insertStartCode ? kH264StartCodeLengthBytes : 0) +
+      kBufferSafetyMargin +
+      EncodedImage::GetBufferPaddingBytes(packet.codec);
   if (requiredSizeBytes >= _size) {
     const uint8_t* prevBuffer = _buffer;
     const uint32_t increments =
@@ -115,8 +125,8 @@ VCMFrameBufferEnum VCMFrameBuffer::InsertPacket(
         (requiredSizeBytes % kBufferIncStepSizeBytes > 0);
     const uint32_t newSize = _size + increments * kBufferIncStepSizeBytes;
     if (newSize > kMaxJBFrameSizeBytes) {
-      LOG(LS_ERROR) << "Failed to insert packet due to frame being too "
-                       "big.";
+      RTC_LOG(LS_ERROR) << "Failed to insert packet due to frame being too "
+                           "big.";
       return kSizeError;
     }
     VerifyAndAllocate(newSize);
@@ -130,7 +140,7 @@ VCMFrameBufferEnum VCMFrameBuffer::InsertPacket(
 
   // Don't copy payload specific data for empty packets (e.g padding packets).
   if (packet.sizeBytes > 0)
-    CopyCodecSpecific(&packet.codecSpecificHeader);
+    CopyCodecSpecific(&packet.video_header);
 
   int retVal =
       _sessionInfo.InsertPacket(packet, _buffer, decode_error_mode, frame_data);
@@ -154,8 +164,32 @@ VCMFrameBufferEnum VCMFrameBuffer::InsertPacket(
   // (HEVC)).
   if (packet.markerBit) {
     RTC_DCHECK(!_rotation_set);
-    _rotation = packet.codecSpecificHeader.rotation;
+    rotation_ = packet.video_header.rotation;
     _rotation_set = true;
+    content_type_ = packet.video_header.content_type;
+    if (packet.video_header.video_timing.flags != TimingFrameFlags::kInvalid) {
+      timing_.encode_start_ms =
+          ntp_time_ms_ + packet.video_header.video_timing.encode_start_delta_ms;
+      timing_.encode_finish_ms =
+          ntp_time_ms_ +
+          packet.video_header.video_timing.encode_finish_delta_ms;
+      timing_.packetization_finish_ms =
+          ntp_time_ms_ +
+          packet.video_header.video_timing.packetization_finish_delta_ms;
+      timing_.pacer_exit_ms =
+          ntp_time_ms_ + packet.video_header.video_timing.pacer_exit_delta_ms;
+      timing_.network_timestamp_ms =
+          ntp_time_ms_ +
+          packet.video_header.video_timing.network_timestamp_delta_ms;
+      timing_.network2_timestamp_ms =
+          ntp_time_ms_ +
+          packet.video_header.video_timing.network2_timestamp_delta_ms;
+    }
+    timing_.flags = packet.video_header.video_timing.flags;
+  }
+
+  if (packet.is_first_packet_in_frame) {
+    playout_delay_ = packet.video_header.playout_delay;
   }
 
   if (_sessionInfo.complete()) {
@@ -169,30 +203,37 @@ VCMFrameBufferEnum VCMFrameBuffer::InsertPacket(
 }
 
 int64_t VCMFrameBuffer::LatestPacketTimeMs() const {
+  TRACE_EVENT0("webrtc", "VCMFrameBuffer::LatestPacketTimeMs");
   return _latestPacketTimeMs;
 }
 
 void VCMFrameBuffer::IncrementNackCount() {
+  TRACE_EVENT0("webrtc", "VCMFrameBuffer::IncrementNackCount");
   _nackCount++;
 }
 
 int16_t VCMFrameBuffer::GetNackCount() const {
+  TRACE_EVENT0("webrtc", "VCMFrameBuffer::GetNackCount");
   return _nackCount;
 }
 
 bool VCMFrameBuffer::HaveFirstPacket() const {
+  TRACE_EVENT0("webrtc", "VCMFrameBuffer::HaveFirstPacket");
   return _sessionInfo.HaveFirstPacket();
 }
 
 bool VCMFrameBuffer::HaveLastPacket() const {
+  TRACE_EVENT0("webrtc", "VCMFrameBuffer::HaveLastPacket");
   return _sessionInfo.HaveLastPacket();
 }
 
 int VCMFrameBuffer::NumPackets() const {
+  TRACE_EVENT0("webrtc", "VCMFrameBuffer::NumPackets");
   return _sessionInfo.NumPackets();
 }
 
 void VCMFrameBuffer::Reset() {
+  TRACE_EVENT0("webrtc", "VCMFrameBuffer::Reset");
   _length = 0;
   _timeStamp = 0;
   _sessionInfo.Reset();
@@ -205,6 +246,7 @@ void VCMFrameBuffer::Reset() {
 
 // Set state of frame
 void VCMFrameBuffer::SetState(VCMFrameBufferStateEnum state) {
+  TRACE_EVENT0("webrtc", "VCMFrameBuffer::SetState");
   if (_state == state) {
     return;
   }
@@ -241,6 +283,7 @@ VCMFrameBufferStateEnum VCMFrameBuffer::GetState() const {
 
 // Get current state of frame
 VCMFrameBufferStateEnum VCMFrameBuffer::GetState(uint32_t& timeStamp) const {
+  TRACE_EVENT0("webrtc", "VCMFrameBuffer::GetState");
   timeStamp = TimeStamp();
   return GetState();
 }
@@ -250,18 +293,9 @@ bool VCMFrameBuffer::IsRetransmitted() const {
 }
 
 void VCMFrameBuffer::PrepareForDecode(bool continuous) {
-#ifdef INDEPENDENT_PARTITIONS
-  if (_codec == kVideoCodecVP8) {
-    _length = _sessionInfo.BuildVP8FragmentationHeader(_buffer, _length,
-                                                       &_fragmentation);
-  } else {
-    size_t bytes_removed = _sessionInfo.MakeDecodable();
-    _length -= bytes_removed;
-  }
-#else
+  TRACE_EVENT0("webrtc", "VCMFrameBuffer::PrepareForDecode");
   size_t bytes_removed = _sessionInfo.MakeDecodable();
   _length -= bytes_removed;
-#endif
   // Transfer frame information to EncodedFrame and create any codec
   // specific information.
   _frameType = _sessionInfo.FrameType();

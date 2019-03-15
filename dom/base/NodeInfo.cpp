@@ -19,13 +19,14 @@
 #include "nsNodeInfoManager.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"
-#include "nsIAtom.h"
+#include "nsAtom.h"
 #include "nsDOMString.h"
 #include "nsCRT.h"
+#include "nsINode.h"
 #include "nsContentUtils.h"
 #include "nsReadableUtils.h"
 #include "mozilla/Sprintf.h"
-#include "nsIDocument.h"
+#include "mozilla/dom/Document.h"
 #include "nsGkAtoms.h"
 #include "nsCCUncollectableMarker.h"
 #include "nsNameSpaceManager.h"
@@ -33,27 +34,28 @@
 using namespace mozilla;
 using mozilla::dom::NodeInfo;
 
-NodeInfo::~NodeInfo()
-{
+NodeInfo::~NodeInfo() {
   mOwnerManager->RemoveNodeInfo(this);
+
+  // We can't use NS_IF_RELEASE because mName is const.
+  if (mInner.mName) {
+    mInner.mName->Release();
+  }
+  NS_IF_RELEASE(mInner.mPrefix);
+  NS_IF_RELEASE(mInner.mExtraName);
 }
 
-NodeInfo::NodeInfo(nsIAtom *aName, nsIAtom *aPrefix, int32_t aNamespaceID,
-                   uint16_t aNodeType, nsIAtom* aExtraName,
-                   nsNodeInfoManager *aOwnerManager)
-{
+NodeInfo::NodeInfo(nsAtom* aName, nsAtom* aPrefix, int32_t aNamespaceID,
+                   uint16_t aNodeType, nsAtom* aExtraName,
+                   nsNodeInfoManager* aOwnerManager)
+    : mDocument(aOwnerManager->GetDocument()),
+      mInner(aName, aPrefix, aNamespaceID, aNodeType, aExtraName),
+      mOwnerManager(aOwnerManager) {
   CheckValidNodeInfo(aNodeType, aName, aNamespaceID, aExtraName);
-  MOZ_ASSERT(aOwnerManager, "Invalid aOwnerManager");
 
-  // Initialize mInner
-  mInner.mName = aName;
-  mInner.mPrefix = aPrefix;
-  mInner.mNamespaceID = aNamespaceID;
-  mInner.mNodeType = aNodeType;
-  mOwnerManager = aOwnerManager;
-  mInner.mExtraName = aExtraName;
-
-  mDocument = aOwnerManager->GetDocument();
+  NS_IF_ADDREF(mInner.mName);
+  NS_IF_ADDREF(mInner.mPrefix);
+  NS_IF_ADDREF(mInner.mExtraName);
 
   // Now compute our cached members.
 
@@ -67,16 +69,16 @@ NodeInfo::NodeInfo(nsIAtom *aName, nsIAtom *aPrefix, int32_t aNamespaceID,
     mInner.mName->ToString(mQualifiedName);
   }
 
-  MOZ_ASSERT_IF(aNodeType != nsIDOMNode::ELEMENT_NODE &&
-                aNodeType != nsIDOMNode::ATTRIBUTE_NODE &&
-                aNodeType != UINT16_MAX,
+  MOZ_ASSERT_IF(aNodeType != nsINode::ELEMENT_NODE &&
+                    aNodeType != nsINode::ATTRIBUTE_NODE &&
+                    aNodeType != UINT16_MAX,
                 aNamespaceID == kNameSpaceID_None && !aPrefix);
 
   switch (aNodeType) {
-    case nsIDOMNode::ELEMENT_NODE:
-    case nsIDOMNode::ATTRIBUTE_NODE:
+    case nsINode::ELEMENT_NODE:
+    case nsINode::ATTRIBUTE_NODE:
       // Correct the case for HTML
-      if (aNodeType == nsIDOMNode::ELEMENT_NODE &&
+      if (aNodeType == nsINode::ELEMENT_NODE &&
           aNamespaceID == kNameSpaceID_XHTML && GetDocument() &&
           GetDocument()->IsHTMLDocument()) {
         nsContentUtils::ASCIIToUpper(mQualifiedName, mNodeName);
@@ -85,16 +87,16 @@ NodeInfo::NodeInfo(nsIAtom *aName, nsIAtom *aPrefix, int32_t aNamespaceID,
       }
       mInner.mName->ToString(mLocalName);
       break;
-    case nsIDOMNode::TEXT_NODE:
-    case nsIDOMNode::CDATA_SECTION_NODE:
-    case nsIDOMNode::COMMENT_NODE:
-    case nsIDOMNode::DOCUMENT_NODE:
-    case nsIDOMNode::DOCUMENT_FRAGMENT_NODE:
+    case nsINode::TEXT_NODE:
+    case nsINode::CDATA_SECTION_NODE:
+    case nsINode::COMMENT_NODE:
+    case nsINode::DOCUMENT_NODE:
+    case nsINode::DOCUMENT_FRAGMENT_NODE:
       mInner.mName->ToString(mNodeName);
       SetDOMStringToNull(mLocalName);
       break;
-    case nsIDOMNode::PROCESSING_INSTRUCTION_NODE:
-    case nsIDOMNode::DOCUMENT_TYPE_NODE:
+    case nsINode::PROCESSING_INSTRUCTION_NODE:
+    case nsINode::DOCUMENT_TYPE_NODE:
       mInner.mExtraName->ToString(mNodeName);
       SetDOMStringToNull(mLocalName);
       break;
@@ -103,7 +105,6 @@ NodeInfo::NodeInfo(nsIAtom *aName, nsIAtom *aPrefix, int32_t aNamespaceID,
   }
 }
 
-
 // nsISupports
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(NodeInfo)
@@ -111,17 +112,8 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(NodeInfo)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_0(NodeInfo)
 
 static const char* kNodeInfoNSURIs[] = {
-  " ([none])",
-  " (xmlns)",
-  " (xml)",
-  " (xhtml)",
-  " (XLink)",
-  " (XSLT)",
-  " (XBL)",
-  " (MathML)",
-  " (RDF)",
-  " (XUL)"
-};
+    " ([none])", " (xmlns)", " (xml)",    " (xhtml)", " (XLink)",
+    " (XSLT)",   " (XBL)",   " (MathML)", " (RDF)",   " (XUL)"};
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(NodeInfo)
   if (MOZ_UNLIKELY(cb.WantDebugInfo())) {
@@ -131,14 +123,12 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(NodeInfo)
     if (nsid < ArrayLength(kNodeInfoNSURIs)) {
       SprintfLiteral(name, "NodeInfo%s %s", kNodeInfoNSURIs[nsid],
                      localName.get());
-    }
-    else {
+    } else {
       SprintfLiteral(name, "NodeInfo %s", localName.get());
     }
 
     cb.DescribeRefCountedNode(tmp->mRefCnt.get(), name);
-  }
-  else {
+  } else {
     NS_IMPL_CYCLE_COLLECTION_DESCRIBE(NodeInfo, tmp->mRefCnt.get())
   }
 
@@ -157,19 +147,14 @@ NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_THIS_BEGIN(NodeInfo)
   return nsCCUncollectableMarker::sGeneration && tmp->CanSkip();
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_THIS_END
 
-
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(NodeInfo, AddRef)
 NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(NodeInfo, Release)
 
-void
-NodeInfo::GetName(nsAString& aName) const
-{
+void NodeInfo::GetName(nsAString& aName) const {
   mInner.mName->ToString(aName);
 }
 
-void
-NodeInfo::GetPrefix(nsAString& aPrefix) const
-{
+void NodeInfo::GetPrefix(nsAString& aPrefix) const {
   if (mInner.mPrefix) {
     mInner.mPrefix->ToString(aPrefix);
   } else {
@@ -177,13 +162,10 @@ NodeInfo::GetPrefix(nsAString& aPrefix) const
   }
 }
 
-void
-NodeInfo::GetNamespaceURI(nsAString& aNameSpaceURI) const
-{
+void NodeInfo::GetNamespaceURI(nsAString& aNameSpaceURI) const {
   if (mInner.mNamespaceID > 0) {
-    nsresult rv =
-      nsContentUtils::NameSpaceManager()->GetNameSpaceURI(mInner.mNamespaceID,
-                                                          aNameSpaceURI);
+    nsresult rv = nsContentUtils::NameSpaceManager()->GetNameSpaceURI(
+        mInner.mNamespaceID, aNameSpaceURI);
     // How can we possibly end up with a bogus namespace ID here?
     if (NS_FAILED(rv)) {
       MOZ_CRASH();
@@ -193,27 +175,21 @@ NodeInfo::GetNamespaceURI(nsAString& aNameSpaceURI) const
   }
 }
 
-bool
-NodeInfo::NamespaceEquals(const nsAString& aNamespaceURI) const
-{
-  int32_t nsid =
-    nsContentUtils::NameSpaceManager()->GetNameSpaceID(aNamespaceURI,
-      nsContentUtils::IsChromeDoc(mOwnerManager->GetDocument()));
+bool NodeInfo::NamespaceEquals(const nsAString& aNamespaceURI) const {
+  int32_t nsid = nsContentUtils::NameSpaceManager()->GetNameSpaceID(
+      aNamespaceURI, nsContentUtils::IsChromeDoc(mOwnerManager->GetDocument()));
 
   return mozilla::dom::NodeInfo::NamespaceEquals(nsid);
 }
 
-void
-NodeInfo::DeleteCycleCollectable()
-{
+void NodeInfo::DeleteCycleCollectable() {
   RefPtr<nsNodeInfoManager> kungFuDeathGrip = mOwnerManager;
-  mozilla::Unused << kungFuDeathGrip; // Just keeping value alive for longer than this
+  mozilla::Unused
+      << kungFuDeathGrip;  // Just keeping value alive for longer than this
   delete this;
 }
 
-bool
-NodeInfo::CanSkip()
-{
-  return mDocument &&
-    nsCCUncollectableMarker::InGeneration(mDocument->GetMarkedCCGeneration());
+bool NodeInfo::CanSkip() {
+  return mDocument && nsCCUncollectableMarker::InGeneration(
+                          mDocument->GetMarkedCCGeneration());
 }

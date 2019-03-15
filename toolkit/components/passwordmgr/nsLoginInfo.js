@@ -2,36 +2,34 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "LoginHelper",
-                                  "resource://gre/modules/LoginHelper.jsm");
+ChromeUtils.defineModuleGetter(this, "LoginHelper",
+                               "resource://gre/modules/LoginHelper.jsm");
 
 
 function nsLoginInfo() {}
 
 nsLoginInfo.prototype = {
 
-  classID : Components.ID("{0f2f347c-1e4f-40cc-8efd-792dea70a85e}"),
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsILoginInfo, Ci.nsILoginMetaInfo]),
+  classID: Components.ID("{0f2f347c-1e4f-40cc-8efd-792dea70a85e}"),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsILoginInfo, Ci.nsILoginMetaInfo]),
 
   //
   // nsILoginInfo interfaces...
   //
 
-  hostname      : null,
-  formSubmitURL : null,
-  httpRealm     : null,
-  username      : null,
-  password      : null,
-  usernameField : null,
-  passwordField : null,
+  hostname: null,
+  formSubmitURL: null,
+  httpRealm: null,
+  username: null,
+  password: null,
+  usernameField: null,
+  passwordField: null,
 
   init(aHostname, aFormSubmitURL, aHttpRealm,
-                  aUsername, aPassword,
-                  aUsernameField, aPasswordField) {
+       aUsername, aPassword,
+       aUsernameField, aPasswordField) {
     this.hostname      = aHostname;
     this.formSubmitURL = aFormSubmitURL;
     this.httpRealm     = aHttpRealm;
@@ -54,8 +52,9 @@ nsLoginInfo.prototype = {
         this.username != aLogin.username ||
         this.password != aLogin.password ||
         this.usernameField != aLogin.usernameField ||
-        this.passwordField != aLogin.passwordField)
+        this.passwordField != aLogin.passwordField) {
       return false;
+    }
 
     return true;
   },
@@ -82,11 +81,11 @@ nsLoginInfo.prototype = {
   // nsILoginMetaInfo interfaces...
   //
 
-  guid : null,
-  timeCreated : null,
-  timeLastUsed : null,
-  timePasswordChanged : null,
-  timesUsed : null
+  guid: null,
+  timeCreated: null,
+  timeLastUsed: null,
+  timePasswordChanged: null,
+  timesUsed: null,
 
 }; // end of nsLoginInfo implementation
 

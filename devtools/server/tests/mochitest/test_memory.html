@@ -13,12 +13,14 @@ Bug 923275 - Add a memory monitor widget to the developer toolbar
 <pre id="test">
 <script src="memory-helpers.js" type="application/javascript"></script>
 <script>
+"use strict";
+
 window.onload = function() {
   SimpleTest.waitForExplicitFinish();
 
-  Task.spawn(function* () {
-    var { memory, client } = yield startServerAndGetSelectedTabMemory();
-    var measurement = yield memory.measure();
+  (async function() {
+    const { memory, target } = await startServerAndGetSelectedTabMemory();
+    const measurement = await memory.measure();
     ok(measurement.total > 0, "total memory is valid");
     ok(measurement.domSize > 0, "domSize is valid");
     ok(measurement.styleSize > 0, "styleSize is valid");
@@ -28,8 +30,8 @@ window.onload = function() {
     ok(measurement.otherSize > 0, "otherSize is valid");
     ok(measurement.jsMilliseconds, "jsMilliseconds is valid");
     ok(measurement.nonJSMilliseconds, "nonJSMilliseconds is valid");
-    destroyServerAndFinish(client);
-  });
+    await destroyServerAndFinish(target);
+  })();
 };
 </script>
 </pre>

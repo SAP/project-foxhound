@@ -1,6 +1,11 @@
 // Tests referrer on context menu navigation - open link in new private window.
 // Selects "open link in new private window" from the context menu.
 
+// The test runs from a regular browsing window.
+// Output: we have no referrer.
+
+getReferrerTest = getRemovedReferrerTest;
+
 function startNewPrivateWindowTestCase(aTestNumber) {
   info("browser_referrer_open_link_in_private: " +
        getReferrerTestDescription(aTestNumber));
@@ -17,6 +22,6 @@ function startNewPrivateWindowTestCase(aTestNumber) {
 }
 
 function test() {
-  requestLongerTimeout(10);  // slowwww shutdown on e10s
+  requestLongerTimeout(10); // slowwww shutdown on e10s
   startReferrerTest(startNewPrivateWindowTestCase);
 }

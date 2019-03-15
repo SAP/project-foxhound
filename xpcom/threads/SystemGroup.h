@@ -8,7 +8,7 @@
 #define mozilla_SystemGroup_h
 
 #include "mozilla/TaskCategory.h"
-#include "mozilla/Dispatcher.h"
+#include "mozilla/SchedulerGroup.h"
 
 // The SystemGroup should be used for dispatching runnables that don't need to
 // touch web content. Runnables dispatched to the SystemGroup are run in order
@@ -17,16 +17,14 @@
 
 namespace mozilla {
 
-class SystemGroup
-{
+class SystemGroup {
  public:
   // This method is safe to use from any thread.
-  static nsresult Dispatch(const char* aName,
-                           TaskCategory aCategory,
+  static nsresult Dispatch(TaskCategory aCategory,
                            already_AddRefed<nsIRunnable>&& aRunnable);
 
   // This method is safe to use from any thread.
-  static nsIEventTarget* EventTargetFor(TaskCategory aCategory);
+  static nsISerialEventTarget* EventTargetFor(TaskCategory aCategory);
 
   // Must be called on the main thread. The AbstractThread can always be used
   // off the main thread.
@@ -34,9 +32,11 @@ class SystemGroup
 
   static void InitStatic();
   static void Shutdown();
+
+  // Returns true if SystemGroup has been initialized.
+  static bool Initialized();
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_SystemGroup_h
-
+#endif  // mozilla_SystemGroup_h

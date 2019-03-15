@@ -11,8 +11,8 @@
 
 class FrontBufferedStream : public SkStreamRewindable {
 public:
-    // Called by Create.
-    FrontBufferedStream(SkStream*, size_t bufferSize);
+    // Called by Make.
+    FrontBufferedStream(std::unique_ptr<SkStream>, size_t bufferSize);
 
     size_t read(void* buffer, size_t size) override;
 
@@ -26,22 +26,22 @@ public:
 
     size_t getLength() const override { return fLength; }
 
-    SkStreamRewindable* duplicate() const override { return nullptr; }
-
 private:
-    SkAutoTDelete<SkStream> fStream;
-    const bool              fHasLength;
-    const size_t            fLength;
+    SkStreamRewindable* onDuplicate() const override { return nullptr; }
+
+    std::unique_ptr<SkStream> fStream;
+    const bool                fHasLength;
+    const size_t              fLength;
     // Current offset into the stream. Always >= 0.
-    size_t                  fOffset;
+    size_t                    fOffset;
     // Amount that has been buffered by calls to read. Will always be less than
     // fBufferSize.
-    size_t                  fBufferedSoFar;
+    size_t                    fBufferedSoFar;
     // Total size of the buffer.
-    const size_t            fBufferSize;
+    const size_t              fBufferSize;
     // FIXME: SkAutoTMalloc throws on failure. Instead, Create should return a
     // nullptr stream.
-    SkAutoTMalloc<char>     fBuffer;
+    SkAutoTMalloc<char>       fBuffer;
 
     // Read up to size bytes from already buffered data, and copy to
     // dst, if non-nullptr. Updates fOffset. Assumes that fOffset is less
@@ -61,17 +61,19 @@ private:
     typedef SkStream INHERITED;
 };
 
-SkStreamRewindable* SkFrontBufferedStream::Create(SkStream* stream, size_t bufferSize) {
-    if (nullptr == stream) {
+std::unique_ptr<SkStreamRewindable> SkFrontBufferedStream::Make(std::unique_ptr<SkStream> stream,
+                                                                size_t bufferSize) {
+    if (!stream) {
         return nullptr;
     }
-    return new FrontBufferedStream(stream, bufferSize);
+    return std::unique_ptr<SkStreamRewindable>(new FrontBufferedStream(std::move(stream),
+                                                                       bufferSize));
 }
 
-FrontBufferedStream::FrontBufferedStream(SkStream* stream, size_t bufferSize)
-    : fStream(stream)
-    , fHasLength(stream->hasPosition() && stream->hasLength())
-    , fLength(stream->getLength() - stream->getPosition())
+FrontBufferedStream::FrontBufferedStream(std::unique_ptr<SkStream> stream, size_t bufferSize)
+    : fStream(std::move(stream))
+    , fHasLength(fStream->hasPosition() && fStream->hasLength())
+    , fLength(fStream->getLength() - fStream->getPosition())
     , fOffset(0)
     , fBufferedSoFar(0)
     , fBufferSize(bufferSize)

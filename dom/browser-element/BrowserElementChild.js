@@ -4,8 +4,7 @@
 
 "use strict";
 
-var { classes: Cc, interfaces: Ci, results: Cr, utils: Cu }  = Components;
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function debug(msg) {
   //dump("BrowserElementChild - " + msg + "\n");
@@ -42,14 +41,14 @@ if (!BrowserElementIsReady) {
     if(Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_CONTENT) {
       // general content apps
       if (isTopBrowserElement(docShell)) {
-        Services.scriptloader.loadSubScript("chrome://global/content/BrowserElementCopyPaste.js");
+        Services.scriptloader.loadSubScript("chrome://global/content/BrowserElementCopyPaste.js", this);
       }
     } else {
       // rocketbar in system app and other in-process case (ex. B2G desktop client)
-      Services.scriptloader.loadSubScript("chrome://global/content/BrowserElementCopyPaste.js");
+      Services.scriptloader.loadSubScript("chrome://global/content/BrowserElementCopyPaste.js", this);
     }
 
-    Services.scriptloader.loadSubScript("chrome://global/content/BrowserElementChildPreload.js");
+    Services.scriptloader.loadSubScript("chrome://global/content/BrowserElementChildPreload.js", this);
   }
 
   function onDestroy() {

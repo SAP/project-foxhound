@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-this.EXPORTED_SYMBOLS = [ "PluralForm" ];
+var EXPORTED_SYMBOLS = [ "PluralForm" ];
 
 /**
  * This module provides the PluralForm object which contains a method to figure
@@ -13,6 +13,10 @@ this.EXPORTED_SYMBOLS = [ "PluralForm" ];
  * (I.e., the extension hasn't been localized to the browser's locale.)
  *
  * See: http://developer.mozilla.org/en/docs/Localization_and_Plurals
+ *
+ * NOTE: any change to these plural forms need to be reflected in
+ * compare-locales:
+ * https://hg.mozilla.org/l10n/compare-locales/file/default/compare_locales/plurals.py
  *
  * List of methods:
  *
@@ -27,9 +31,6 @@ this.EXPORTED_SYMBOLS = [ "PluralForm" ];
  * Note: Basically, makeGetter returns 2 functions that do "get" and "numForm"
  */
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-
 const kIntlProperties = "chrome://global/locale/intl.properties";
 
 // These are the available plural functions that give the appropriate index
@@ -43,7 +44,7 @@ var gFunctions = [
   // 2: French
   [2, (n) => n>1?1:0],
   // 3: Latvian
-  [3, (n) => n%10==1&&n%100!=11?1:n!=0?2:0],
+  [3, (n) => n%10==1&&n%100!=11?1:n%10==0?0:2],
   // 4: Scottish Gaelic
   [4, (n) => n==1||n==11?0:n==2||n==12?1:n>0&&n<20?2:3],
   // 5: Romanian
@@ -64,15 +65,19 @@ var gFunctions = [
   [6, (n) => n==0?5:n==1?0:n==2?1:n%100>=3&&n%100<=10?2:n%100>=11&&n%100<=99?3:4],
   // 13: Maltese
   [4, (n) => n==1?0:n==0||n%100>0&&n%100<=10?1:n%100>10&&n%100<20?2:3],
-  // 14: Macedonian
+  // 14: Unused
   [3, (n) => n%10==1?0:n%10==2?1:2],
-  // 15: Icelandic
+  // 15: Icelandic, Macedonian
   [2, (n) => n%10==1&&n%100!=11?0:1],
   // 16: Breton
   [5, (n) => n%10==1&&n%100!=11&&n%100!=71&&n%100!=91?0:n%10==2&&n%100!=12&&n%100!=72&&n%100!=92?1:(n%10==3||n%10==4||n%10==9)&&n%100!=13&&n%100!=14&&n%100!=19&&n%100!=73&&n%100!=74&&n%100!=79&&n%100!=93&&n%100!=94&&n%100!=99?2:n%1000000==0&&n!=0?3:4],
+  // 17: Shuar
+  [2, (n) => n!=0?1:0],
+  // 18: Welsh
+  [6, (n) => n==0?0:n==1?1:n==2?2:n==3?3:n==6?4:5],
 ];
 
-this.PluralForm = {
+var PluralForm = {
   /**
    * Get the correct plural form of a word based on the number
    *

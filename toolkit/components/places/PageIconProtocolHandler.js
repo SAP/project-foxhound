@@ -4,23 +4,22 @@
 
 "use strict";
 
-const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
-                                  "resource://gre/modules/PlacesUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
-                                  "resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.defineModuleGetter(this, "PlacesUtils",
+                               "resource://gre/modules/PlacesUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "NetUtil",
+                               "resource://gre/modules/NetUtil.jsm");
 
 function makeDefaultFaviconChannel(uri, loadInfo) {
   let channel = Services.io.newChannelFromURIWithLoadInfo(
     PlacesUtils.favicons.defaultFavicon, loadInfo);
   channel.originalURI = uri;
+  channel.contentType = PlacesUtils.favicons.defaultFaviconMimeType;
   return channel;
 }
 
-function streamDefaultFavicon(uri, loadInfo, outputStream) {
+function streamDefaultFavicon(uri, loadInfo, outputStream, originalChannel) {
   try {
     // Open up a new channel to get that data, and push it to our output stream.
     // Create a listener to hand data to the pipe's output stream.
@@ -31,14 +30,25 @@ function streamDefaultFavicon(uri, loadInfo, outputStream) {
       onStopRequest(request, context, statusCode) {
         // We must close the outputStream regardless.
         outputStream.close();
-      }
+      },
     });
+    originalChannel.contentType = PlacesUtils.favicons.defaultFaviconMimeType;
     let defaultIconChannel = makeDefaultFaviconChannel(uri, loadInfo);
     defaultIconChannel.asyncOpen2(listener);
   } catch (ex) {
     Cu.reportError(ex);
     outputStream.close();
   }
+}
+
+function serveIcon(pipe, data, len) {
+  // Pass the icon data to the output stream.
+  let stream = Cc["@mozilla.org/binaryoutputstream;1"]
+                 .createInstance(Ci.nsIBinaryOutputStream);
+  stream.setOutputStream(pipe.outputStream);
+  stream.writeByteArray(data, len);
+  stream.close();
+  pipe.outputStream.close();
 }
 
 function PageIconProtocolHandler() {
@@ -61,9 +71,10 @@ PageIconProtocolHandler.prototype = {
   },
 
   newURI(spec, originCharset, baseURI) {
-    let uri = Cc["@mozilla.org/network/simple-uri;1"].createInstance(Ci.nsIURI);
-    uri.spec = spec;
-    return uri;
+    return Cc["@mozilla.org/network/simple-uri-mutator;1"]
+             .createInstance(Ci.nsIURIMutator)
+             .setSpec(spec)
+             .finalize();
   },
 
   newChannel2(uri, loadInfo) {
@@ -82,28 +93,21 @@ PageIconProtocolHandler.prototype = {
       channel.contentStream = pipe.inputStream;
       channel.loadInfo = loadInfo;
 
-      let pageURI = NetUtil.newURI(uri.path);
-      PlacesUtils.favicons.getFaviconDataForPage(pageURI, (iconuri, len, data, mime) => {
+      let pageURI = NetUtil.newURI(uri.pathQueryRef.replace(/[&#]size=[^&]+$/, ""));
+      let preferredSize = PlacesUtils.favicons.preferredSizeFromURI(uri);
+      PlacesUtils.favicons.getFaviconDataForPage(pageURI, (iconURI, len, data, mimeType) => {
         if (len == 0) {
-          channel.contentType = "image/png";
-          streamDefaultFavicon(uri, loadInfo, pipe.outputStream);
-          return;
+          streamDefaultFavicon(uri, loadInfo, pipe.outputStream, channel);
+        } else {
+          try {
+            channel.contentType = mimeType;
+            channel.contentLength = len;
+            serveIcon(pipe, data, len);
+          } catch (ex) {
+            streamDefaultFavicon(uri, loadInfo, pipe.outputStream, channel);
+          }
         }
-
-        try {
-          channel.contentType = mime;
-          // Pass the icon data to the output stream.
-          let stream = Cc["@mozilla.org/binaryoutputstream;1"]
-                         .createInstance(Ci.nsIBinaryOutputStream);
-          stream.setOutputStream(pipe.outputStream);
-          stream.writeByteArray(data, len);
-          stream.close();
-          pipe.outputStream.close();
-        } catch (ex) {
-          channel.contentType = "image/png";
-          streamDefaultFavicon(uri, loadInfo, pipe.outputStream);
-        }
-      });
+      }, preferredSize);
 
       return channel;
     } catch (ex) {
@@ -120,9 +124,10 @@ PageIconProtocolHandler.prototype = {
   },
 
   classID: Components.ID("{60a1f7c6-4ff9-4a42-84d3-5a185faa6f32}"),
-  QueryInterface: XPCOMUtils.generateQI([
-    Ci.nsIProtocolHandler
-  ])
+  QueryInterface: ChromeUtils.generateQI([
+    Ci.nsIProtocolHandler,
+    Ci.nsISupportsWeakReference,
+  ]),
 };
 
 this.NSGetFactory = XPCOMUtils.generateNSGetFactory([PageIconProtocolHandler]);

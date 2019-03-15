@@ -1,17 +1,19 @@
 "use strict";
 
-Components.utils.import("resource://gre/modules/addons/ProductAddonChecker.jsm");
-Components.utils.import("resource://testing-common/httpd.js");
-Components.utils.import("resource://gre/modules/osfile.jsm");
+ChromeUtils.import("resource://gre/modules/addons/ProductAddonChecker.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
-const LocalFile = new Components.Constructor("@mozilla.org/file/local;1", AM_Ci.nsIFile, "initWithPath");
+const LocalFile = new Components.Constructor("@mozilla.org/file/local;1", Ci.nsIFile, "initWithPath");
+
+Services.prefs.setBoolPref("media.gmp-manager.updateEnabled", true);
 
 var testserver = new HttpServer();
 testserver.registerDirectory("/data/", do_get_file("data/productaddons"));
 testserver.start();
 var root = testserver.identity.primaryScheme + "://" +
            testserver.identity.primaryHost + ":" +
-           testserver.identity.primaryPort + "/data/"
+           testserver.identity.primaryPort + "/data/";
 
 /**
  * Compares binary data of 2 arrays and returns true if they are the same
@@ -20,11 +22,11 @@ var root = testserver.identity.primaryScheme + "://" +
  * @param arr2 The second array to compare
 */
 function compareBinaryData(arr1, arr2) {
-  do_check_eq(arr1.length, arr2.length);
+  Assert.equal(arr1.length, arr2.length);
   for (let i = 0; i < arr1.length; i++) {
     if (arr1[i] != arr2[i]) {
-      do_print("Data differs at index " + i +
-               ", arr1: " + arr1[i] + ", arr2: " + arr2[i]);
+      info("Data differs at index " + i +
+           ", arr1: " + arr1[i] + ", arr2: " + arr2[i]);
       return false;
     }
   }
@@ -38,13 +40,13 @@ function compareBinaryData(arr1, arr2) {
  * @return array of bytes for the data in the file.
 */
 function getBinaryFileData(file) {
-  let fileStream = AM_Cc["@mozilla.org/network/file-input-stream;1"].
-                   createInstance(AM_Ci.nsIFileInputStream);
+  let fileStream = Cc["@mozilla.org/network/file-input-stream;1"].
+                   createInstance(Ci.nsIFileInputStream);
   // Open as RD_ONLY with default permissions.
   fileStream.init(file, FileUtils.MODE_RDONLY, FileUtils.PERMS_FILE, 0);
 
-  let stream = AM_Cc["@mozilla.org/binaryinputstream;1"].
-               createInstance(AM_Ci.nsIBinaryInputStream);
+  let stream = Cc["@mozilla.org/binaryinputstream;1"].
+               createInstance(Ci.nsIBinaryInputStream);
   stream.setInputStream(fileStream);
   let bytes = stream.readByteArray(stream.available());
   fileStream.close();
@@ -61,179 +63,179 @@ function compareFiles(file1, file2) {
   return compareBinaryData(getBinaryFileData(file1), getBinaryFileData(file2));
 }
 
-add_task(function* test_404() {
-  let res = yield ProductAddonChecker.getProductAddonList(root + "404.xml");
-  do_check_true(res.usedFallback);
+add_task(async function test_404() {
+  let res = await ProductAddonChecker.getProductAddonList(root + "404.xml");
+  Assert.ok(res.usedFallback);
 });
 
-add_task(function* test_not_xml() {
-  let res = yield ProductAddonChecker.getProductAddonList(root + "bad.txt");
-  do_check_true(res.usedFallback);
+add_task(async function test_not_xml() {
+  let res = await ProductAddonChecker.getProductAddonList(root + "bad.txt");
+  Assert.ok(res.usedFallback);
 });
 
-add_task(function* test_invalid_xml() {
-  let res = yield ProductAddonChecker.getProductAddonList(root + "bad.xml");
-  do_check_true(res.usedFallback);
+add_task(async function test_invalid_xml() {
+  let res = await ProductAddonChecker.getProductAddonList(root + "bad.xml");
+  Assert.ok(res.usedFallback);
 });
 
-add_task(function* test_wrong_xml() {
-  let res = yield ProductAddonChecker.getProductAddonList(root + "bad2.xml");
-  do_check_true(res.usedFallback);
+add_task(async function test_wrong_xml() {
+  let res = await ProductAddonChecker.getProductAddonList(root + "bad2.xml");
+  Assert.ok(res.usedFallback);
 });
 
-add_task(function* test_missing() {
-  let addons = yield ProductAddonChecker.getProductAddonList(root + "missing.xml");
-  do_check_eq(addons, null);
+add_task(async function test_missing() {
+  let addons = await ProductAddonChecker.getProductAddonList(root + "missing.xml");
+  Assert.equal(addons, null);
 });
 
-add_task(function* test_empty() {
-  let res = yield ProductAddonChecker.getProductAddonList(root + "empty.xml");
-  do_check_true(Array.isArray(res.gmpAddons));
-  do_check_eq(res.gmpAddons.length, 0);
+add_task(async function test_empty() {
+  let res = await ProductAddonChecker.getProductAddonList(root + "empty.xml");
+  Assert.ok(Array.isArray(res.gmpAddons));
+  Assert.equal(res.gmpAddons.length, 0);
 });
 
-add_task(function* test_good_xml() {
-  let res = yield ProductAddonChecker.getProductAddonList(root + "good.xml");
-  do_check_true(Array.isArray(res.gmpAddons));
+add_task(async function test_good_xml() {
+  let res = await ProductAddonChecker.getProductAddonList(root + "good.xml");
+  Assert.ok(Array.isArray(res.gmpAddons));
 
   // There are three valid entries in the XML
-  do_check_eq(res.gmpAddons.length, 5);
+  Assert.equal(res.gmpAddons.length, 5);
 
   let addon = res.gmpAddons[0];
-  do_check_eq(addon.id, "test1");
-  do_check_eq(addon.URL, "http://example.com/test1.xpi");
-  do_check_eq(addon.hashFunction, undefined);
-  do_check_eq(addon.hashValue, undefined);
-  do_check_eq(addon.version, undefined);
-  do_check_eq(addon.size, undefined);
+  Assert.equal(addon.id, "test1");
+  Assert.equal(addon.URL, "http://example.com/test1.xpi");
+  Assert.equal(addon.hashFunction, undefined);
+  Assert.equal(addon.hashValue, undefined);
+  Assert.equal(addon.version, undefined);
+  Assert.equal(addon.size, undefined);
 
   addon = res.gmpAddons[1];
-  do_check_eq(addon.id, "test2");
-  do_check_eq(addon.URL, "http://example.com/test2.xpi");
-  do_check_eq(addon.hashFunction, "md5");
-  do_check_eq(addon.hashValue, "djhfgsjdhf");
-  do_check_eq(addon.version, undefined);
-  do_check_eq(addon.size, undefined);
+  Assert.equal(addon.id, "test2");
+  Assert.equal(addon.URL, "http://example.com/test2.xpi");
+  Assert.equal(addon.hashFunction, "md5");
+  Assert.equal(addon.hashValue, "djhfgsjdhf");
+  Assert.equal(addon.version, undefined);
+  Assert.equal(addon.size, undefined);
 
   addon = res.gmpAddons[2];
-  do_check_eq(addon.id, "test3");
-  do_check_eq(addon.URL, "http://example.com/test3.xpi");
-  do_check_eq(addon.hashFunction, undefined);
-  do_check_eq(addon.hashValue, undefined);
-  do_check_eq(addon.version, "1.0");
-  do_check_eq(addon.size, 45);
+  Assert.equal(addon.id, "test3");
+  Assert.equal(addon.URL, "http://example.com/test3.xpi");
+  Assert.equal(addon.hashFunction, undefined);
+  Assert.equal(addon.hashValue, undefined);
+  Assert.equal(addon.version, "1.0");
+  Assert.equal(addon.size, 45);
 
   addon = res.gmpAddons[3];
-  do_check_eq(addon.id, "test4");
-  do_check_eq(addon.URL, undefined);
-  do_check_eq(addon.hashFunction, undefined);
-  do_check_eq(addon.hashValue, undefined);
-  do_check_eq(addon.version, undefined);
-  do_check_eq(addon.size, undefined);
+  Assert.equal(addon.id, "test4");
+  Assert.equal(addon.URL, undefined);
+  Assert.equal(addon.hashFunction, undefined);
+  Assert.equal(addon.hashValue, undefined);
+  Assert.equal(addon.version, undefined);
+  Assert.equal(addon.size, undefined);
 
   addon = res.gmpAddons[4];
-  do_check_eq(addon.id, undefined);
-  do_check_eq(addon.URL, "http://example.com/test5.xpi");
-  do_check_eq(addon.hashFunction, undefined);
-  do_check_eq(addon.hashValue, undefined);
-  do_check_eq(addon.version, undefined);
-  do_check_eq(addon.size, undefined);
+  Assert.equal(addon.id, undefined);
+  Assert.equal(addon.URL, "http://example.com/test5.xpi");
+  Assert.equal(addon.hashFunction, undefined);
+  Assert.equal(addon.hashValue, undefined);
+  Assert.equal(addon.version, undefined);
+  Assert.equal(addon.size, undefined);
 });
 
-add_task(function* test_download_nourl() {
+add_task(async function test_download_nourl() {
   try {
-    let path = yield ProductAddonChecker.downloadAddon({});
+    let path = await ProductAddonChecker.downloadAddon({});
 
-    yield OS.File.remove(path);
+    await OS.File.remove(path);
     do_throw("Should not have downloaded a file with a missing url");
   } catch (e) {
-    do_check_true(true, "Should have thrown when downloading a file with a missing url.");
+    Assert.ok(true, "Should have thrown when downloading a file with a missing url.");
   }
 });
 
-add_task(function* test_download_missing() {
+add_task(async function test_download_missing() {
   try {
-    let path = yield ProductAddonChecker.downloadAddon({
+    let path = await ProductAddonChecker.downloadAddon({
       URL: root + "nofile.xpi",
     });
 
-    yield OS.File.remove(path);
+    await OS.File.remove(path);
     do_throw("Should not have downloaded a missing file");
   } catch (e) {
-    do_check_true(true, "Should have thrown when downloading a missing file.");
+    Assert.ok(true, "Should have thrown when downloading a missing file.");
   }
 });
 
-add_task(function* test_download_noverify() {
-  let path = yield ProductAddonChecker.downloadAddon({
+add_task(async function test_download_noverify() {
+  let path = await ProductAddonChecker.downloadAddon({
     URL: root + "unsigned.xpi",
   });
 
-  let stat = yield OS.File.stat(path);
-  do_check_false(stat.isDir);
-  do_check_eq(stat.size, 452)
+  let stat = await OS.File.stat(path);
+  Assert.ok(!stat.isDir);
+  Assert.equal(stat.size, 452);
 
-  do_check_true(compareFiles(do_get_file("data/productaddons/unsigned.xpi"), new LocalFile(path)));
+  Assert.ok(compareFiles(do_get_file("data/productaddons/unsigned.xpi"), new LocalFile(path)));
 
-  yield OS.File.remove(path);
+  await OS.File.remove(path);
 });
 
-add_task(function* test_download_badsize() {
+add_task(async function test_download_badsize() {
   try {
-    let path = yield ProductAddonChecker.downloadAddon({
+    let path = await ProductAddonChecker.downloadAddon({
       URL: root + "unsigned.xpi",
       size: 400,
     });
 
-    yield OS.File.remove(path);
+    await OS.File.remove(path);
     do_throw("Should not have downloaded a file with a bad size");
   } catch (e) {
-    do_check_true(true, "Should have thrown when downloading a file with a bad size.");
+    Assert.ok(true, "Should have thrown when downloading a file with a bad size.");
   }
 });
 
-add_task(function* test_download_badhashfn() {
+add_task(async function test_download_badhashfn() {
   try {
-    let path = yield ProductAddonChecker.downloadAddon({
+    let path = await ProductAddonChecker.downloadAddon({
       URL: root + "unsigned.xpi",
       hashFunction: "sha2567",
       hashValue: "9b9abf7ddfc1a6d7ffc7e0247481dcc202363e4445ad3494fb22036f1698c7f3",
     });
 
-    yield OS.File.remove(path);
+    await OS.File.remove(path);
     do_throw("Should not have downloaded a file with a bad hash function");
   } catch (e) {
-    do_check_true(true, "Should have thrown when downloading a file with a bad hash function.");
+    Assert.ok(true, "Should have thrown when downloading a file with a bad hash function.");
   }
 });
 
-add_task(function* test_download_badhash() {
+add_task(async function test_download_badhash() {
   try {
-    let path = yield ProductAddonChecker.downloadAddon({
+    let path = await ProductAddonChecker.downloadAddon({
       URL: root + "unsigned.xpi",
       hashFunction: "sha256",
       hashValue: "8b9abf7ddfc1a6d7ffc7e0247481dcc202363e4445ad3494fb22036f1698c7f3",
     });
 
-    yield OS.File.remove(path);
+    await OS.File.remove(path);
     do_throw("Should not have downloaded a file with a bad hash");
   } catch (e) {
-    do_check_true(true, "Should have thrown when downloading a file with a bad hash.");
+    Assert.ok(true, "Should have thrown when downloading a file with a bad hash.");
   }
 });
 
-add_task(function* test_download_works() {
-  let path = yield ProductAddonChecker.downloadAddon({
+add_task(async function test_download_works() {
+  let path = await ProductAddonChecker.downloadAddon({
     URL: root + "unsigned.xpi",
     size: 452,
     hashFunction: "sha256",
     hashValue: "9b9abf7ddfc1a6d7ffc7e0247481dcc202363e4445ad3494fb22036f1698c7f3",
   });
 
-  let stat = yield OS.File.stat(path);
-  do_check_false(stat.isDir);
+  let stat = await OS.File.stat(path);
+  Assert.ok(!stat.isDir);
 
-  do_check_true(compareFiles(do_get_file("data/productaddons/unsigned.xpi"), new LocalFile(path)));
+  Assert.ok(compareFiles(do_get_file("data/productaddons/unsigned.xpi"), new LocalFile(path)));
 
-  yield OS.File.remove(path);
+  await OS.File.remove(path);
 });

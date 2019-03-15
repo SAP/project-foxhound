@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 import re
 
 from firefox_puppeteer.base import BaseLib
@@ -24,9 +26,7 @@ class Security(BaseLib):
 
         :returns: Address details as dictionary
         """
-        regex = re.compile('.*?L=(?P<city>.+?),ST=(?P<state>.+?),C=(?P<country>.+?)'
-                           ',postalCode=(?P<postal_code>.+?),STREET=(?P<street>.+?)'
-                           ',serial')
+        regex = re.compile('.*?L=(?P<city>.+?),ST=(?P<state>.+?),C=(?P<country>.+?),')
         results = regex.search(certificate['subjectName'])
 
         return results.groupdict() if results else results
@@ -39,11 +39,9 @@ class Security(BaseLib):
         :returns: Certificate details as JSON object.
         """
         cert = self.marionette.execute_script("""
-          var securityUI = arguments[0].linkedBrowser.securityUI;
-          var status = securityUI.QueryInterface(Components.interfaces.nsISSLStatusProvider)
-                                 .SSLStatus;
+          var secInfo = arguments[0].linkedBrowser.securityUI.secInfo;
 
-          return status ? status.serverCert : null;
+          return secInfo ? secInfo.serverCert : null;
         """, script_args=[tab_element])
 
         uri = self.marionette.execute_script("""

@@ -2,8 +2,9 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-add_task(function* () {
-  let tab1 = yield BrowserTestUtils.openNewForegroundTab(gBrowser,
+add_task(async function() {
+  let tab1 = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
     "http://mochi.test:8888/browser/browser/components/extensions/test/browser/context.html");
 
   let extension = ExtensionTestUtils.loadExtension({
@@ -52,8 +53,14 @@ add_task(function* () {
       // Test menu items using documentUrlPatterns.
       browser.contextMenus.create({
         title: "documentUrlPatterns-patternMatches-contextAll",
-        documentUrlPatterns: ["*://*/*context.html"],
+        documentUrlPatterns: ["*://*/*context*.html"],
         contexts: ["all"],
+      });
+
+      browser.contextMenus.create({
+        title: "documentUrlPatterns-patternMatches-contextFrame",
+        documentUrlPatterns: ["*://*/*context_frame.html"],
+        contexts: ["frame"],
       });
 
       browser.contextMenus.create({
@@ -96,7 +103,7 @@ add_task(function* () {
 
       browser.contextMenus.create({
         title: "documentUrlPatterns-patternDoesNotMatch-targetUrlPatterns-patternMatches-contextAll",
-        documentUrlPatterns: ["*://does-not-match"],
+        documentUrlPatterns: ["*://*/does-not-match"],
         targetUrlPatterns: ["*://*/*ctxmenu-image.png"],
         contexts: ["all"],
       });
@@ -104,14 +111,14 @@ add_task(function* () {
       browser.contextMenus.create({
         title: "documentUrlPatterns-patternMatches-targetUrlPatterns-patternDoesNotMatch-contextAll",
         documentUrlPatterns: ["*://*/*context.html"],
-        targetUrlPatterns: ["*://does-not-match"],
+        targetUrlPatterns: ["*://*/does-not-match"],
         contexts: ["all"],
       });
 
       browser.contextMenus.create({
         title: "documentUrlPatterns-patternDoesNotMatch-targetUrlPatterns-patternDoesNotMatch-contextAll",
-        documentUrlPatterns: ["*://does-not-match"],
-        targetUrlPatterns: ["*://does-not-match"],
+        documentUrlPatterns: ["*://*/does-not-match"],
+        targetUrlPatterns: ["*://*/does-not-match"],
         contexts: ["all"],
       });
 
@@ -124,7 +131,7 @@ add_task(function* () {
 
       browser.contextMenus.create({
         title: "documentUrlPatterns-patternDoesNotMatch-targetUrlPatterns-patternMatches-contextImage",
-        documentUrlPatterns: ["*://does-not-match"],
+        documentUrlPatterns: ["*://*/does-not-match"],
         targetUrlPatterns: ["*://*/*ctxmenu-image.png"],
         contexts: ["image"],
       });
@@ -132,14 +139,14 @@ add_task(function* () {
       browser.contextMenus.create({
         title: "documentUrlPatterns-patternMatches-targetUrlPatterns-patternDoesNotMatch-contextImage",
         documentUrlPatterns: ["*://*/*context.html"],
-        targetUrlPatterns: ["*://does-not-match"],
+        targetUrlPatterns: ["*://*/does-not-match"],
         contexts: ["image"],
       });
 
       browser.contextMenus.create({
         title: "documentUrlPatterns-patternDoesNotMatch-targetUrlPatterns-patternDoesNotMatch-contextImage",
-        documentUrlPatterns: ["*://does-not-match"],
-        targetUrlPatterns: ["*://does-not-match"],
+        documentUrlPatterns: ["*://*/does-not-match/"],
+        targetUrlPatterns: ["*://*/does-not-match"],
         contexts: ["image"],
       });
 
@@ -147,7 +154,7 @@ add_task(function* () {
     },
   });
 
-  function* confirmContextMenuItems(menu, expected) {
+  function confirmContextMenuItems(menu, expected) {
     for (let [label, shouldShow] of expected) {
       let items = menu.getElementsByAttribute("label", label);
       if (shouldShow) {
@@ -158,10 +165,10 @@ add_task(function* () {
     }
   }
 
-  yield extension.startup();
-  yield extension.awaitFinish("contextmenus-urlPatterns");
+  await extension.startup();
+  await extension.awaitFinish("contextmenus-urlPatterns");
 
-  let extensionContextMenu = yield openExtensionContextMenu("#img1");
+  let extensionContextMenu = await openExtensionContextMenu("#img1");
   let expected = [
     ["targetUrlPatterns-patternMatches-contextAll", true],
     ["targetUrlPatterns-patternMatches-contextImage", true],
@@ -184,10 +191,10 @@ add_task(function* () {
     ["documentUrlPatterns-patternMatches-targetUrlPatterns-patternDoesNotMatch-contextImage", false],
     ["documentUrlPatterns-patternDoesNotMatch-targetUrlPatterns-patternDoesNotMatch-contextImage", false],
   ];
-  yield confirmContextMenuItems(extensionContextMenu, expected);
-  yield closeContextMenu();
+  await confirmContextMenuItems(extensionContextMenu, expected);
+  await closeContextMenu();
 
-  let contextMenu = yield openContextMenu("body");
+  let contextMenu = await openContextMenu("body");
   expected = [
     ["targetUrlPatterns-patternMatches-contextAll", false],
     ["targetUrlPatterns-patternMatches-contextImage", false],
@@ -210,10 +217,10 @@ add_task(function* () {
     ["documentUrlPatterns-patternMatches-targetUrlPatterns-patternDoesNotMatch-contextImage", false],
     ["documentUrlPatterns-patternDoesNotMatch-targetUrlPatterns-patternDoesNotMatch-contextImage", false],
   ];
-  yield confirmContextMenuItems(contextMenu, expected);
-  yield closeContextMenu();
+  await confirmContextMenuItems(contextMenu, expected);
+  await closeContextMenu();
 
-  contextMenu = yield openContextMenu("#link1");
+  contextMenu = await openContextMenu("#link1");
   expected = [
     ["targetUrlPatterns-patternMatches-contextAll", true],
     ["targetUrlPatterns-patternMatches-contextImage", false],
@@ -228,10 +235,10 @@ add_task(function* () {
     ["documentUrlPatterns-patternDoesNotMatch-contextImage", false],
     ["documentUrlPatterns-patternDoesNotMatch-contextLink", false],
   ];
-  yield confirmContextMenuItems(contextMenu, expected);
-  yield closeContextMenu();
+  await confirmContextMenuItems(contextMenu, expected);
+  await closeContextMenu();
 
-  contextMenu = yield openContextMenu("#img-wrapped-in-link");
+  contextMenu = await openContextMenu("#img-wrapped-in-link");
   expected = [
     ["targetUrlPatterns-patternMatches-contextAll", true],
     ["targetUrlPatterns-patternMatches-contextImage", true],
@@ -246,9 +253,17 @@ add_task(function* () {
     ["documentUrlPatterns-patternDoesNotMatch-contextImage", false],
     ["documentUrlPatterns-patternDoesNotMatch-contextLink", false],
   ];
-  yield confirmContextMenuItems(contextMenu, expected);
-  yield closeContextMenu();
+  await confirmContextMenuItems(contextMenu, expected);
+  await closeContextMenu();
 
-  yield extension.unload();
-  yield BrowserTestUtils.removeTab(tab1);
+  contextMenu = await openContextMenuInFrame("#frame");
+  expected = [
+    ["documentUrlPatterns-patternMatches-contextAll", true],
+    ["documentUrlPatterns-patternMatches-contextFrame", true],
+  ];
+  await confirmContextMenuItems(contextMenu, expected);
+  await closeContextMenu();
+
+  await extension.unload();
+  BrowserTestUtils.removeTab(tab1);
 });

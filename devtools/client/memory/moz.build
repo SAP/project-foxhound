@@ -4,7 +4,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 with Files('**'):
-    BUG_COMPONENT = ('Firefox', 'Developer Tools: Memory')
+    BUG_COMPONENT = ('DevTools', 'Memory')
 
 DIRS += [
     'actions',
@@ -16,11 +16,11 @@ DevToolsModules(
     'app.js',
     'constants.js',
     'dominator-tree-lazy-children.js',
+    'initializer.js',
     'models.js',
     'panel.js',
     'reducers.js',
     'store.js',
-    'telemetry.js',
     'utils.js',
 )
 

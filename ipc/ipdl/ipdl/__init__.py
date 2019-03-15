@@ -2,21 +2,25 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-__all__ = [ 'gencxx', 'genipdl', 'parse', 'typecheck', 'writeifmodified', 'checkSyncMessage' ]
+from __future__ import print_function
 
-import os, sys
+__all__ = ['gencxx', 'genipdl', 'parse', 'typecheck', 'writeifmodified',
+           'checkSyncMessage', 'checkFixedSyncMessages']
+
+import os
+import sys
 from cStringIO import StringIO
 
 from ipdl.cgen import IPDLCodeGen
 from ipdl.lower import LowerToCxx, msgenums
 from ipdl.parser import Parser, ParseError
 from ipdl.type import TypeCheck
-from ipdl.checker import checkSyncMessage
+from ipdl.checker import checkSyncMessage, checkFixedSyncMessages
 
 from ipdl.cxx.cgen import CxxCodeGen
 
 
-def parse(specstring, filename='/stdin', includedirs=[ ], errout=sys.stderr):
+def parse(specstring, filename='/stdin', includedirs=[], errout=sys.stderr):
     '''Return an IPDL AST if parsing was successful.  Print errors to |errout|
     if it is not.'''
     # The file type and name are later enforced by the type checker.
@@ -31,8 +35,9 @@ def parse(specstring, filename='/stdin', includedirs=[ ], errout=sys.stderr):
     try:
         return Parser(type, name).parse(specstring, os.path.abspath(filename), includedirs)
     except ParseError as p:
-        print >>errout, p
+        print(p, file=errout)
         return None
+
 
 def typecheck(ast, errout=sys.stderr):
     '''Return True iff |ast| is well typed.  Print errors to |errout| if
@@ -40,8 +45,8 @@ def typecheck(ast, errout=sys.stderr):
     return TypeCheck().check(ast, errout)
 
 
-def gencxx(ipdlfilename, ast, outheadersdir, outcppdir):
-    headers, cpps = LowerToCxx().lower(ast)
+def gencxx(ipdlfilename, ast, outheadersdir, outcppdir, segmentcapacitydict):
+    headers, cpps = LowerToCxx().lower(ast, segmentcapacitydict)
 
     def resolveHeader(hdr):
         return [
@@ -50,11 +55,12 @@ def gencxx(ipdlfilename, ast, outheadersdir, outcppdir):
                 outheadersdir,
                 *([ns.name for ns in ast.namespaces] + [hdr.name]))
         ]
-    def resolveCpp(cpp):
-        return [ cpp, os.path.join(outcppdir, cpp.name) ]
 
-    for ast, filename in ([ resolveHeader(hdr) for hdr in headers ]
-                          + [ resolveCpp(cpp) for cpp in cpps ]):
+    def resolveCpp(cpp):
+        return [cpp, os.path.join(outcppdir, cpp.name)]
+
+    for ast, filename in ([resolveHeader(hdr) for hdr in headers]
+                          + [resolveCpp(cpp) for cpp in cpps]):
         tempfile = StringIO()
         CxxCodeGen(tempfile).cgen(ast)
         writeifmodified(tempfile.getvalue(), filename)
@@ -66,6 +72,7 @@ def genipdl(ast, outdir):
 
 def genmsgenum(ast):
     return msgenums(ast.protocol, pretty=True)
+
 
 def writeifmodified(contents, file):
     dir = os.path.dirname(file)

@@ -9,29 +9,27 @@
 // starting a TLS server that requires the advanced features and then ensuring
 // that a client that is set to be conservative will fail when connecting.
 
-const { Services } = Cu.import("resource://gre/modules/Services.jsm", {});
-const { NetUtil } = Cu.import("resource://gre/modules/NetUtil.jsm", {});
-const { Promise: promise } =
-  Cu.import("resource://gre/modules/Promise.jsm", {});
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm", {});
+const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm", {});
 
 // Get a profile directory and ensure PSM initializes NSS.
 do_get_profile();
 Cc["@mozilla.org/psm;1"].getService(Ci.nsISupports);
 
 function getCert() {
-  let deferred = promise.defer();
-  let certService = Cc["@mozilla.org/security/local-cert-service;1"]
-                      .getService(Ci.nsILocalCertService);
-  certService.getOrCreateCert("beConservative-test", {
-    handleCert: function(c, rv) {
-      if (rv) {
-        deferred.reject(rv);
-        return;
+  return new Promise((resolve, reject) => {
+    let certService = Cc["@mozilla.org/security/local-cert-service;1"]
+                        .getService(Ci.nsILocalCertService);
+    certService.getOrCreateCert("beConservative-test", {
+      handleCert: function(c, rv) {
+        if (rv) {
+          reject(rv);
+          return;
+        }
+        resolve(c);
       }
-      deferred.resolve(c);
-    }
+    });
   });
-  return deferred.promise;
 }
 
 class InputStreamCallback {
@@ -41,9 +39,9 @@ class InputStreamCallback {
   }
 
   onInputStreamReady(stream) {
-    do_print("input stream ready");
+    info("input stream ready");
     if (this.stopped) {
-      do_print("input stream callback stopped - bailing");
+      info("input stream callback stopped - bailing");
       return;
     }
     let available = 0;
@@ -68,11 +66,12 @@ class InputStreamCallback {
             "should have been able to write entire response");
     }
     this.output.close();
-    do_print("done with input stream ready");
+    info("done with input stream ready");
   }
 
   stop() {
     this.stopped = true;
+    this.output.close();
   }
 }
 
@@ -85,13 +84,11 @@ class TLSServerSecurityObserver {
   }
 
   onHandshakeDone(socket, status) {
-    do_print("TLS handshake done");
-    do_print(`TLS version used: ${status.tlsVersionUsed}`);
+    info("TLS handshake done");
+    info(`TLS version used: ${status.tlsVersionUsed}`);
 
     if (this.stopped) {
-      do_print("handshake done callback stopped - closing streams and bailing");
-      this.input.close();
-      this.output.close();
+      info("handshake done callback stopped - bailing");
       return;
     }
 
@@ -102,6 +99,8 @@ class TLSServerSecurityObserver {
 
   stop() {
     this.stopped = true;
+    this.input.close();
+    this.output.close();
     this.callbacks.forEach((callback) => {
       callback.stop();
     });
@@ -114,7 +113,7 @@ class ServerSocketListener {
   }
 
   onSocketAccepted(socket, transport) {
-    do_print("accepted TLS client connection");
+    info("accepted TLS client connection");
     let connectionInfo = transport.securityInfo
                          .QueryInterface(Ci.nsITLSServerConnectionInfo);
     let input = transport.openInputStream(0, 0, 0);
@@ -127,7 +126,7 @@ class ServerSocketListener {
   // For some reason we get input stream callback events after we've stopped
   // listening, so this ensures we just drop those events.
   onStopListening() {
-    do_print("onStopListening");
+    info("onStopListening");
     this.securityObservers.forEach((observer) => {
       observer.stop();
     });
@@ -140,7 +139,6 @@ function startServer(cert, minServerVersion, maxServerVersion) {
   tlsServer.init(-1, true, -1);
   tlsServer.serverCert = cert;
   tlsServer.setVersionRange(minServerVersion, maxServerVersion);
-  tlsServer.setSessionCache(false);
   tlsServer.setSessionTickets(false);
   tlsServer.asyncListen(new ServerSocketListener());
   return tlsServer;
@@ -162,34 +160,34 @@ function startClient(port, beConservative, expectSuccess) {
   req.open("GET", `https://${hostname}:${port}`);
   let internalChannel = req.channel.QueryInterface(Ci.nsIHttpChannelInternal);
   internalChannel.beConservative = beConservative;
-  let deferred = promise.defer();
-  req.onload = () => {
-    ok(expectSuccess,
-       `should ${expectSuccess ? "" : "not "}have gotten load event`);
-    equal(req.responseText, "OK", "response text should be 'OK'");
-    deferred.resolve();
-  };
-  req.onerror = () => {
-    ok(!expectSuccess,
-       `should ${!expectSuccess ? "" : "not "}have gotten an error`);
-    deferred.resolve();
-  };
+  return new Promise((resolve, reject) => {
+    req.onload = () => {
+      ok(expectSuccess,
+         `should ${expectSuccess ? "" : "not "}have gotten load event`);
+      equal(req.responseText, "OK", "response text should be 'OK'");
+      resolve();
+    };
+    req.onerror = () => {
+      ok(!expectSuccess,
+         `should ${!expectSuccess ? "" : "not "}have gotten an error`);
+      resolve();
+    };
 
-  req.send();
-  return deferred.promise;
+    req.send();
+  });
 }
 
-add_task(function*() {
+add_task(async function() {
   Services.prefs.setIntPref("security.tls.version.max", 4);
   Services.prefs.setCharPref("network.dns.localDomains", hostname);
-  let cert = yield getCert();
+  let cert = await getCert();
 
   // First run a server that accepts TLS 1.2 and 1.3. A conservative client
   // should succeed in connecting.
   let server = startServer(cert, Ci.nsITLSClientStatus.TLS_VERSION_1_2,
                            Ci.nsITLSClientStatus.TLS_VERSION_1_3);
   storeCertOverride(server.port, cert);
-  yield startClient(server.port, true /*be conservative*/,
+  await startClient(server.port, true /*be conservative*/,
                     true /*should succeed*/);
   server.close();
 
@@ -198,16 +196,16 @@ add_task(function*() {
   server = startServer(cert, Ci.nsITLSClientStatus.TLS_VERSION_1_3,
                        Ci.nsITLSClientStatus.TLS_VERSION_1_3);
   storeCertOverride(server.port, cert);
-  yield startClient(server.port, true /*be conservative*/,
+  await startClient(server.port, true /*be conservative*/,
                     false /*should fail*/);
 
   // However, a non-conservative client should succeed.
-  yield startClient(server.port, false /*don't be conservative*/,
+  await startClient(server.port, false /*don't be conservative*/,
                     true /*should succeed*/);
   server.close();
 });
 
-do_register_cleanup(function() {
+registerCleanupFunction(function() {
   Services.prefs.clearUserPref("security.tls.version.max");
   Services.prefs.clearUserPref("network.dns.localDomains");
 });

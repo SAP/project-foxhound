@@ -5,32 +5,46 @@
 
 #include "SplitNodeTransaction.h"
 
-#include "mozilla/EditorBase.h"         // for EditorBase
+#include "mozilla/EditorBase.h"      // for EditorBase
+#include "mozilla/EditorDOMPoint.h"  // for RangeBoundary, EditorRawDOMPoint
 #include "mozilla/dom/Selection.h"
 #include "nsAString.h"
-#include "nsDebug.h"                    // for NS_ASSERTION, etc.
-#include "nsError.h"                    // for NS_ERROR_NOT_INITIALIZED, etc.
-#include "nsIContent.h"                 // for nsIContent
+#include "nsDebug.h"     // for NS_ASSERTION, etc.
+#include "nsError.h"     // for NS_ERROR_NOT_INITIALIZED, etc.
+#include "nsIContent.h"  // for nsIContent
 
 namespace mozilla {
 
 using namespace dom;
 
-SplitNodeTransaction::SplitNodeTransaction(EditorBase& aEditorBase,
-                                           nsIContent& aNode,
-                                           int32_t aOffset)
-  : mEditorBase(aEditorBase)
-  , mExistingRightNode(&aNode)
-  , mOffset(aOffset)
-{
+template already_AddRefed<SplitNodeTransaction> SplitNodeTransaction::Create(
+    EditorBase& aEditorBase, const EditorDOMPoint& aStartOfRightNode);
+template already_AddRefed<SplitNodeTransaction> SplitNodeTransaction::Create(
+    EditorBase& aEditorBase, const EditorRawDOMPoint& aStartOfRightNode);
+
+// static
+template <typename PT, typename CT>
+already_AddRefed<SplitNodeTransaction> SplitNodeTransaction::Create(
+    EditorBase& aEditorBase,
+    const EditorDOMPointBase<PT, CT>& aStartOfRightNode) {
+  RefPtr<SplitNodeTransaction> transaction =
+      new SplitNodeTransaction(aEditorBase, aStartOfRightNode);
+  return transaction.forget();
 }
 
-SplitNodeTransaction::~SplitNodeTransaction()
-{
+template <typename PT, typename CT>
+SplitNodeTransaction::SplitNodeTransaction(
+    EditorBase& aEditorBase,
+    const EditorDOMPointBase<PT, CT>& aStartOfRightNode)
+    : mEditorBase(&aEditorBase), mStartOfRightNode(aStartOfRightNode) {
+  MOZ_DIAGNOSTIC_ASSERT(aStartOfRightNode.IsSet());
+  MOZ_DIAGNOSTIC_ASSERT(aStartOfRightNode.GetContainerAsContent());
 }
+
+SplitNodeTransaction::~SplitNodeTransaction() {}
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(SplitNodeTransaction, EditTransactionBase,
-                                   mParent,
+                                   mEditorBase, mStartOfRightNode, mParent,
                                    mNewLeftNode)
 
 NS_IMPL_ADDREF_INHERITED(SplitNodeTransaction, EditTransactionBase)
@@ -39,38 +53,80 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(SplitNodeTransaction)
 NS_INTERFACE_MAP_END_INHERITING(EditTransactionBase)
 
 NS_IMETHODIMP
-SplitNodeTransaction::DoTransaction()
-{
+SplitNodeTransaction::DoTransaction() {
+  if (NS_WARN_IF(!mEditorBase) || NS_WARN_IF(!mStartOfRightNode.IsSet())) {
+    return NS_ERROR_NOT_INITIALIZED;
+  }
+  MOZ_ASSERT(mStartOfRightNode.IsSetAndValid());
+
   // Create a new node
-  ErrorResult rv;
+  ErrorResult error;
   // Don't use .downcast directly because AsContent has an assertion we want
-  nsCOMPtr<nsINode> clone = mExistingRightNode->CloneNode(false, rv);
-  NS_ASSERTION(!rv.Failed() && clone, "Could not create clone");
-  NS_ENSURE_TRUE(!rv.Failed() && clone, rv.StealNSResult());
+  nsCOMPtr<nsINode> clone =
+      mStartOfRightNode.GetContainer()->CloneNode(false, error);
+  if (NS_WARN_IF(error.Failed())) {
+    return error.StealNSResult();
+  }
+  if (NS_WARN_IF(!clone)) {
+    return NS_ERROR_UNEXPECTED;
+  }
   mNewLeftNode = dont_AddRef(clone.forget().take()->AsContent());
-  mEditorBase.MarkNodeDirty(mExistingRightNode->AsDOMNode());
+  mEditorBase->MarkNodeDirty(mStartOfRightNode.GetContainer());
 
   // Get the parent node
-  mParent = mExistingRightNode->GetParentNode();
-  NS_ENSURE_TRUE(mParent, NS_ERROR_NULL_POINTER);
+  mParent = mStartOfRightNode.GetContainer()->GetParentNode();
+  if (NS_WARN_IF(!mParent)) {
+    return NS_ERROR_FAILURE;
+  }
 
   // Insert the new node
-  rv = mEditorBase.SplitNodeImpl(*mExistingRightNode, mOffset, *mNewLeftNode);
-  if (mEditorBase.GetShouldTxnSetSelection()) {
-    RefPtr<Selection> selection = mEditorBase.GetSelection();
-    NS_ENSURE_TRUE(selection, NS_ERROR_NULL_POINTER);
-    rv = selection->Collapse(mNewLeftNode, mOffset);
+  mEditorBase->DoSplitNode(EditorDOMPoint(mStartOfRightNode), *mNewLeftNode,
+                           error);
+
+  if (!mEditorBase->AllowsTransactionsToChangeSelection()) {
+    if (NS_WARN_IF(error.Failed())) {
+      return error.StealNSResult();
+    }
+    return NS_OK;
   }
-  return rv.StealNSResult();
+
+  // XXX Really odd.  The result of DoSplitNode() is respected only when
+  //     we shouldn't set selection.  Otherwise, it's overridden by the
+  //     result of Selection.Collapse().
+  NS_WARNING_ASSERTION(
+      !mEditorBase->Destroyed(),
+      "The editor has gone but SplitNodeTransaction keeps trying to modify "
+      "Selection");
+  RefPtr<Selection> selection = mEditorBase->GetSelection();
+  if (NS_WARN_IF(!selection)) {
+    return NS_ERROR_FAILURE;
+  }
+  if (NS_WARN_IF(error.Failed())) {
+    // XXX This must be a bug.
+    error.SuppressException();
+  }
+  MOZ_ASSERT(mStartOfRightNode.Offset() == mNewLeftNode->Length());
+  EditorRawDOMPoint atEndOfLeftNode;
+  atEndOfLeftNode.SetToEndOf(mNewLeftNode);
+  selection->Collapse(atEndOfLeftNode, error);
+  if (NS_WARN_IF(error.Failed())) {
+    return error.StealNSResult();
+  }
+  return NS_OK;
 }
 
 NS_IMETHODIMP
-SplitNodeTransaction::UndoTransaction()
-{
-  MOZ_ASSERT(mNewLeftNode && mParent);
+SplitNodeTransaction::UndoTransaction() {
+  if (NS_WARN_IF(!mEditorBase) || NS_WARN_IF(!mNewLeftNode) ||
+      NS_WARN_IF(!mParent) || NS_WARN_IF(!mStartOfRightNode.IsSet())) {
+    return NS_ERROR_NOT_INITIALIZED;
+  }
 
   // This assumes Do inserted the new node in front of the prior existing node
-  return mEditorBase.JoinNodesImpl(mExistingRightNode, mNewLeftNode, mParent);
+  // XXX Perhaps, we should reset mStartOfRightNode with current first child
+  //     of the right node.
+  return mEditorBase->DoJoinNodes(mStartOfRightNode.GetContainer(),
+                                  mNewLeftNode, mParent);
 }
 
 /* Redo cannot simply resplit the right node, because subsequent transactions
@@ -78,51 +134,56 @@ SplitNodeTransaction::UndoTransaction()
  * state.
  */
 NS_IMETHODIMP
-SplitNodeTransaction::RedoTransaction()
-{
-  MOZ_ASSERT(mNewLeftNode && mParent);
+SplitNodeTransaction::RedoTransaction() {
+  if (NS_WARN_IF(!mNewLeftNode) || NS_WARN_IF(!mParent) ||
+      NS_WARN_IF(!mStartOfRightNode.IsSet())) {
+    return NS_ERROR_NOT_INITIALIZED;
+  }
 
-  ErrorResult rv;
   // First, massage the existing node so it is in its post-split state
-  if (mExistingRightNode->GetAsText()) {
-    rv = mExistingRightNode->GetAsText()->DeleteData(0, mOffset);
-    NS_ENSURE_TRUE(!rv.Failed(), rv.StealNSResult());
+  if (mStartOfRightNode.IsInTextNode()) {
+    Text* rightNodeAsText = mStartOfRightNode.GetContainerAsText();
+    MOZ_DIAGNOSTIC_ASSERT(rightNodeAsText);
+    ErrorResult rv;
+    rightNodeAsText->DeleteData(0, mStartOfRightNode.Offset(), rv);
+    if (NS_WARN_IF(rv.Failed())) {
+      return rv.StealNSResult();
+    }
   } else {
-    nsCOMPtr<nsIContent> child = mExistingRightNode->GetFirstChild();
+    nsCOMPtr<nsIContent> child =
+        mStartOfRightNode.GetContainer()->GetFirstChild();
     nsCOMPtr<nsIContent> nextSibling;
-    for (int32_t i=0; i < mOffset; i++) {
-      if (rv.Failed()) {
-        return rv.StealNSResult();
-      }
-      if (!child) {
+    for (uint32_t i = 0; i < mStartOfRightNode.Offset(); i++) {
+      // XXX This must be bad behavior.  Perhaps, we should work with
+      //     mStartOfRightNode::GetChild().  Even if some children
+      //     before the right node have been inserted or removed, we should
+      //     move all children before the right node because user must focus
+      //     on the right node, so, it must be the expected behavior.
+      if (NS_WARN_IF(!child)) {
         return NS_ERROR_NULL_POINTER;
       }
       nextSibling = child->GetNextSibling();
-      mExistingRightNode->RemoveChild(*child, rv);
-      if (!rv.Failed()) {
-        mNewLeftNode->AppendChild(*child, rv);
+      ErrorResult error;
+      mStartOfRightNode.GetContainer()->RemoveChild(*child, error);
+      if (NS_WARN_IF(error.Failed())) {
+        return error.StealNSResult();
+      }
+      mNewLeftNode->AppendChild(*child, error);
+      if (NS_WARN_IF(error.Failed())) {
+        return error.StealNSResult();
       }
       child = nextSibling;
     }
   }
   // Second, re-insert the left node into the tree
-  nsCOMPtr<nsIContent> refNode = mExistingRightNode;
-  mParent->InsertBefore(*mNewLeftNode, refNode, rv);
-  return rv.StealNSResult();
-}
-
-
-NS_IMETHODIMP
-SplitNodeTransaction::GetTxnDescription(nsAString& aString)
-{
-  aString.AssignLiteral("SplitNodeTransaction");
+  ErrorResult error;
+  mParent->InsertBefore(*mNewLeftNode, mStartOfRightNode.GetContainer(), error);
+  if (NS_WARN_IF(error.Failed())) {
+    return error.StealNSResult();
+  }
   return NS_OK;
 }
 
-nsIContent*
-SplitNodeTransaction::GetNewNode()
-{
-  return mNewLeftNode;
-}
+nsIContent* SplitNodeTransaction::GetNewNode() { return mNewLeftNode; }
 
-} // namespace mozilla
+}  // namespace mozilla

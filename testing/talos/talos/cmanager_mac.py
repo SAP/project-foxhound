@@ -3,10 +3,12 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 """CounterManager for Mac OSX"""
+from __future__ import absolute_import, print_function
 
 import subprocess
-from cmanager import CounterManager
 import sys
+
+from talos.cmanager_base import CounterManager
 
 
 def GetProcessData(pid):
@@ -19,7 +21,7 @@ def GetProcessData(pid):
                                   universal_newlines=True, shell=True)
         handle.wait()
         data = handle.stdout.readlines()
-    except:
+    except Exception:
         print("Unexpected error executing '%s': %s", (command, sys.exc_info()))
         raise
 

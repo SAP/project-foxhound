@@ -6,21 +6,20 @@ package org.mozilla.gecko.sync.middleware;
 
 import java.util.concurrent.ExecutorService;
 
-import org.mozilla.gecko.background.common.log.Logger;
+import org.mozilla.gecko.sync.SyncException;
 import org.mozilla.gecko.sync.repositories.InactiveSessionException;
 import org.mozilla.gecko.sync.repositories.InvalidSessionTransitionException;
+import org.mozilla.gecko.sync.repositories.Repository;
 import org.mozilla.gecko.sync.repositories.RepositorySession;
 import org.mozilla.gecko.sync.repositories.RepositorySessionBundle;
-import org.mozilla.gecko.sync.repositories.delegates.RepositorySessionBeginDelegate;
 import org.mozilla.gecko.sync.repositories.delegates.RepositorySessionFinishDelegate;
-import org.mozilla.gecko.sync.repositories.delegates.RepositorySessionGuidsSinceDelegate;
 import org.mozilla.gecko.sync.repositories.delegates.RepositorySessionWipeDelegate;
 
 public abstract class MiddlewareRepositorySession extends RepositorySession {
   private static final String LOG_TAG = "MiddlewareSession";
   protected final RepositorySession inner;
 
-  public MiddlewareRepositorySession(RepositorySession innerSession, MiddlewareRepository repository) {
+  /* package-private */ MiddlewareRepositorySession(RepositorySession innerSession, Repository repository) {
     super(repository);
     this.inner = innerSession;
   }
@@ -30,61 +29,16 @@ public abstract class MiddlewareRepositorySession extends RepositorySession {
     inner.wipe(delegate);
   }
 
-  public class MiddlewareRepositorySessionBeginDelegate implements RepositorySessionBeginDelegate {
-
-    private final MiddlewareRepositorySession outerSession;
-    private final RepositorySessionBeginDelegate next;
-
-    public MiddlewareRepositorySessionBeginDelegate(MiddlewareRepositorySession outerSession, RepositorySessionBeginDelegate next) {
-      this.outerSession = outerSession;
-      this.next = next;
-    }
-
-    @Override
-    public void onBeginFailed(Exception ex) {
-      next.onBeginFailed(ex);
-    }
-
-    @Override
-    public void onBeginSucceeded(RepositorySession session) {
-      next.onBeginSucceeded(outerSession);
-    }
-
-    @Override
-    public RepositorySessionBeginDelegate deferredBeginDelegate(ExecutorService executor) {
-      final RepositorySessionBeginDelegate deferred = next.deferredBeginDelegate(executor);
-      return new RepositorySessionBeginDelegate() {
-        @Override
-        public void onBeginSucceeded(RepositorySession session) {
-          if (inner != session) {
-            Logger.warn(LOG_TAG, "Got onBeginSucceeded for session " + session + ", not our inner session!");
-          }
-          deferred.onBeginSucceeded(outerSession);
-        }
-
-        @Override
-        public void onBeginFailed(Exception ex) {
-          deferred.onBeginFailed(ex);
-        }
-
-        @Override
-        public RepositorySessionBeginDelegate deferredBeginDelegate(ExecutorService executor) {
-          return this;
-        }
-      };
-    }
-  }
-
   @Override
-  public void begin(RepositorySessionBeginDelegate delegate) throws InvalidSessionTransitionException {
-    inner.begin(new MiddlewareRepositorySessionBeginDelegate(this, delegate));
+  public void begin() throws SyncException {
+    inner.begin();
   }
 
-  public class MiddlewareRepositorySessionFinishDelegate implements RepositorySessionFinishDelegate {
+  public static final class MiddlewareRepositorySessionFinishDelegate implements RepositorySessionFinishDelegate {
     private final MiddlewareRepositorySession outerSession;
     private final RepositorySessionFinishDelegate next;
 
-    public MiddlewareRepositorySessionFinishDelegate(MiddlewareRepositorySession outerSession, RepositorySessionFinishDelegate next) {
+    /* package-private */ MiddlewareRepositorySessionFinishDelegate(MiddlewareRepositorySession outerSession, RepositorySessionFinishDelegate next) {
       this.outerSession = outerSession;
       this.next = next;
     }
@@ -148,12 +102,6 @@ public abstract class MiddlewareRepositorySession extends RepositorySession {
   }
 
   @Override
-  public void guidsSince(long timestamp, RepositorySessionGuidsSinceDelegate delegate) {
-    // TODO: need to do anything here?
-    inner.guidsSince(timestamp, delegate);
-  }
-
-  @Override
   public void storeIncomplete() {
     inner.storeIncomplete();
   }
@@ -181,5 +129,15 @@ public abstract class MiddlewareRepositorySession extends RepositorySession {
   @Override
   public long getLastSyncTimestamp() {
     return inner.getLastSyncTimestamp();
+  }
+
+  @Override
+  public long getLastFetchTimestamp() {
+    return inner.getLastFetchTimestamp();
+  }
+
+  @Override
+  public long getLastStoreTimestamp() {
+    return inner.getLastStoreTimestamp();
   }
 }

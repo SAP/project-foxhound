@@ -5,18 +5,19 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #if !defined(OmxDataDecoder_h_)
-#define OmxDataDecoder_h_
+#  define OmxDataDecoder_h_
 
-#include "mozilla/Monitor.h"
+#  include "mozilla/Monitor.h"
+#  include "mozilla/StateWatching.h"
 
-#include "AudioCompactor.h"
-#include "ImageContainer.h"
-#include "MediaInfo.h"
-#include "PlatformDecoderModule.h"
+#  include "AudioCompactor.h"
+#  include "ImageContainer.h"
+#  include "MediaInfo.h"
+#  include "PlatformDecoderModule.h"
 
-#include "OMX_Component.h"
+#  include "OMX_Component.h"
 
-#include "OmxPromiseLayer.h"
+#  include "OmxPromiseLayer.h"
 
 namespace mozilla {
 
@@ -28,6 +29,8 @@ typedef OmxPromiseLayer::OmxBufferFailureHolder OmxBufferFailureHolder;
 typedef OmxPromiseLayer::OmxCommandFailureHolder OmxCommandFailureHolder;
 typedef OmxPromiseLayer::BufferData BufferData;
 typedef OmxPromiseLayer::BUFFERLIST BUFFERLIST;
+
+DDLoggedTypeDeclNameAndBase(OmxDataDecoder, MediaDataDecoder);
 
 /* OmxDataDecoder is the major class which performs followings:
  *   1. Translate PDM function into OMX commands.
@@ -55,12 +58,13 @@ typedef OmxPromiseLayer::BUFFERLIST BUFFERLIST;
  *
  *   OmxPlatformLayer acts as the OpenMAX IL core.
  */
-class OmxDataDecoder : public MediaDataDecoder {
-protected:
+class OmxDataDecoder : public MediaDataDecoder,
+                       public DecoderDoctorLifeLogger<OmxDataDecoder> {
+ protected:
   virtual ~OmxDataDecoder();
 
-public:
-  OmxDataDecoder(const TrackInfo& aTrackInfo,
+ public:
+  OmxDataDecoder(const TrackInfo& aTrackInfo, TaskQueue* aTaskQueue,
                  layers::ImageContainer* aImageContainer);
 
   RefPtr<InitPromise> Init() override;
@@ -69,20 +73,18 @@ public:
   RefPtr<FlushPromise> Flush() override;
   RefPtr<ShutdownPromise> Shutdown() override;
 
-  const char* GetDescriptionName() const override
-  {
-    return "omx decoder";
+  nsCString GetDescriptionName() const override {
+    return NS_LITERAL_CSTRING("omx decoder");
   }
 
-  ConversionRequired NeedsConversion() const override
-  {
+  ConversionRequired NeedsConversion() const override {
     return ConversionRequired::kNeedAnnexB;
   }
 
   // Return true if event is handled.
   bool Event(OMX_EVENTTYPE aEvent, OMX_U32 aData1, OMX_U32 aData2);
 
-protected:
+ protected:
   void InitializationTask();
 
   void ResolveInitPromise(const char* aMethodName);
@@ -101,9 +103,9 @@ protected:
 
   void EmptyBufferFailure(OmxBufferFailureHolder aFailureHolder);
 
-  void NotifyError(OMX_ERRORTYPE aOmxError,
-                   const char* aLine,
-                   const MediaResult& aError = MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR));
+  void NotifyError(
+      OMX_ERRORTYPE aOmxError, const char* aLine,
+      const MediaResult& aError = MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR));
 
   // Configure audio/video codec.
   // Some codec may just ignore this and rely on codec specific data in
@@ -154,6 +156,8 @@ protected:
   // The Omx TaskQueue.
   RefPtr<TaskQueue> mOmxTaskQueue;
 
+  RefPtr<TaskQueue> mTaskQueue;
+
   RefPtr<layers::ImageContainer> mImageContainer;
 
   WatchManager<OmxDataDecoder> mWatchManager;
@@ -203,14 +207,13 @@ protected:
   RefPtr<MediaDataHelper> mMediaDataHelper;
 };
 
-template<class T>
-void InitOmxParameter(T* aParam)
-{
+template <class T>
+void InitOmxParameter(T* aParam) {
   PodZero(aParam);
   aParam->nSize = sizeof(T);
   aParam->nVersion.s.nVersionMajor = 1;
 }
 
-}
+}  // namespace mozilla
 
 #endif /* OmxDataDecoder_h_ */

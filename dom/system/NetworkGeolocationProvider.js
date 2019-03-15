@@ -4,14 +4,13 @@
 
 "use strict";
 
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-Components.utils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-const Ci = Components.interfaces;
-const Cc = Components.classes;
-const Cu = Components.utils;
+XPCOMUtils.defineLazyGlobalGetters(this, ["XMLHttpRequest"]);
 
-const POSITION_UNAVAILABLE = Ci.nsIDOMGeoPositionError.POSITION_UNAVAILABLE;
+// PositionError has no interface object, so we can't use that here.
+const POSITION_UNAVAILABLE = 2;
 
 var gLoggingEnabled = false;
 
@@ -33,7 +32,7 @@ var gWifiScanningEnabled = true;
 function LOG(aMsg) {
   if (gLoggingEnabled) {
     aMsg = "*** WIFI GEO: " + aMsg + "\n";
-    Cc["@mozilla.org/consoleservice;1"].getService(Ci.nsIConsoleService).logStringMessage(aMsg);
+    Services.console.logStringMessage(aMsg);
     dump(aMsg);
   }
 }
@@ -135,8 +134,7 @@ var gDebugCacheReasoning = ""; // for logging the caching logic
 // If there is more source info than the cached request had, return false
 // In other cases, MLS is known to produce better/worse accuracy based on the
 // inputs, so base the decision on that.
-function isCachedRequestMoreAccurateThanServerRequest(newCell, newWifiList)
-{
+function isCachedRequestMoreAccurateThanServerRequest(newCell, newWifiList) {
   gDebugCacheReasoning = "";
   let isNetworkRequestCacheEnabled = true;
   try {
@@ -189,14 +187,13 @@ function isCachedRequestMoreAccurateThanServerRequest(newCell, newWifiList)
       return true;
     }
   } else if (gCachedRequest.isWifiOnly() && hasEqualWifis) {
-    gDebugCacheReasoning +=", Wifi only."
+    gDebugCacheReasoning += ", Wifi only.";
     return true;
   } else if (gCachedRequest.isCellAndWifi()) {
      gDebugCacheReasoning += ", Cache has Cell+Wifi.";
     if ((hasEqualCells && hasEqualWifis) ||
         (!newWifiList && hasEqualCells) ||
-        (!newCell && hasEqualWifis))
-    {
+        (!newCell && hasEqualWifis)) {
      return true;
     }
   }
@@ -204,40 +201,38 @@ function isCachedRequestMoreAccurateThanServerRequest(newCell, newWifiList)
   return false;
 }
 
-function WifiGeoCoordsObject(lat, lon, acc, alt, altacc) {
+function WifiGeoCoordsObject(lat, lon, acc) {
   this.latitude = lat;
   this.longitude = lon;
   this.accuracy = acc;
-  this.altitude = alt;
-  this.altitudeAccuracy = altacc;
+
+  // Neither GLS nor MLS return the following properties, so set them to NaN
+  // here. nsGeoPositionCoords will convert NaNs to null for optional properties
+  // of the JavaScript Coordinates object.
+  this.altitude = NaN;
+  this.altitudeAccuracy = NaN;
+  this.heading = NaN;
+  this.speed = NaN;
 }
 
 WifiGeoCoordsObject.prototype = {
-  QueryInterface:  XPCOMUtils.generateQI([Ci.nsIDOMGeoPositionCoords])
+  QueryInterface:  ChromeUtils.generateQI([Ci.nsIDOMGeoPositionCoords]),
 };
 
 function WifiGeoPositionObject(lat, lng, acc) {
-  this.coords = new WifiGeoCoordsObject(lat, lng, acc, 0, 0);
+  this.coords = new WifiGeoCoordsObject(lat, lng, acc);
   this.address = null;
   this.timestamp = Date.now();
 }
 
 WifiGeoPositionObject.prototype = {
-  QueryInterface:   XPCOMUtils.generateQI([Ci.nsIDOMGeoPosition])
+  QueryInterface:   ChromeUtils.generateQI([Ci.nsIDOMGeoPosition]),
 };
 
 function WifiGeoPositionProvider() {
-  try {
-    gLoggingEnabled = Services.prefs.getBoolPref("geo.wifi.logging.enabled");
-  } catch (e) {}
-
-  try {
-    gLocationRequestTimeout = Services.prefs.getIntPref("geo.wifi.timeToWaitBeforeSending");
-  } catch (e) {}
-
-  try {
-    gWifiScanningEnabled = Services.prefs.getBoolPref("geo.wifi.scan");
-  } catch (e) {}
+  gLoggingEnabled = Services.prefs.getBoolPref("geo.wifi.logging.enabled", false);
+  gLocationRequestTimeout = Services.prefs.getIntPref("geo.wifi.timeToWaitBeforeSending", 5000);
+  gWifiScanningEnabled = Services.prefs.getBoolPref("geo.wifi.scan", true);
 
   this.wifiService = null;
   this.timer = null;
@@ -246,13 +241,13 @@ function WifiGeoPositionProvider() {
 
 WifiGeoPositionProvider.prototype = {
   classID:          Components.ID("{77DA64D3-7458-4920-9491-86CC9914F904}"),
-  QueryInterface:   XPCOMUtils.generateQI([Ci.nsIGeolocationProvider,
-                                           Ci.nsIWifiListener,
-                                           Ci.nsITimerCallback,
-                                           Ci.nsIObserver]),
+  QueryInterface:   ChromeUtils.generateQI([Ci.nsIGeolocationProvider,
+                                            Ci.nsIWifiListener,
+                                            Ci.nsITimerCallback,
+                                            Ci.nsIObserver]),
   listener: null,
 
-  resetTimer: function() {
+  resetTimer() {
     if (this.timer) {
       this.timer.cancel();
       this.timer = null;
@@ -264,12 +259,11 @@ WifiGeoPositionProvider.prototype = {
                                 this.timer.TYPE_REPEATING_SLACK);
   },
 
-  startup:  function() {
+  startup() {
     if (this.started)
       return;
 
     this.started = true;
-    let self = this;
 
     if (gWifiScanningEnabled && Cc["@mozilla.org/wifi/monitor;1"]) {
       if (this.wifiService) {
@@ -283,13 +277,13 @@ WifiGeoPositionProvider.prototype = {
     LOG("startup called.");
   },
 
-  watch: function(c) {
+  watch(c) {
     this.listener = c;
   },
 
-  shutdown: function() {
+  shutdown() {
     LOG("shutdown called");
-    if (this.started == false) {
+    if (!this.started) {
       return;
     }
 
@@ -302,7 +296,7 @@ WifiGeoPositionProvider.prototype = {
       this.timer = null;
     }
 
-    if(this.wifiService) {
+    if (this.wifiService) {
       this.wifiService.stopWatching(this);
       this.wifiService = null;
     }
@@ -311,31 +305,31 @@ WifiGeoPositionProvider.prototype = {
     this.started = false;
   },
 
-  setHighAccuracy: function(enable) {
+  setHighAccuracy(enable) {
   },
 
-  onChange: function(accessPoints) {
+  onChange(accessPoints) {
 
     // we got some wifi data, rearm the timer.
     this.resetTimer();
 
     function isPublic(ap) {
-      let mask = "_nomap"
+      let mask = "_nomap";
       let result = ap.ssid.indexOf(mask, ap.ssid.length - mask.length);
       if (result != -1) {
         LOG("Filtering out " + ap.ssid + " " + result);
         return false;
       }
       return true;
-    };
+    }
 
     function sort(a, b) {
       return b.signal - a.signal;
-    };
+    }
 
     function encode(ap) {
-      return { 'macAddress': ap.mac, 'signalStrength': ap.signal };
-    };
+      return { "macAddress": ap.mac, "signalStrength": ap.signal };
+    }
 
     let wifiData = null;
     if (accessPoints) {
@@ -344,16 +338,16 @@ WifiGeoPositionProvider.prototype = {
     this.sendLocationRequest(wifiData);
   },
 
-  onError: function (code) {
+  onError(code) {
     LOG("wifi error: " + code);
     this.sendLocationRequest(null);
   },
 
-  notify: function (timer) {
+  notify(timer) {
     this.sendLocationRequest(null);
   },
 
-  sendLocationRequest: function (wifiData) {
+  sendLocationRequest(wifiData) {
     let data = { cellTowers: undefined, wifiAccessPoints: undefined };
     if (wifiData && wifiData.length >= 2) {
       data.wifiAccessPoints = wifiData;
@@ -366,7 +360,9 @@ WifiGeoPositionProvider.prototype = {
 
     if (useCached) {
       gCachedRequest.location.timestamp = Date.now();
-      this.notifyListener("update", [gCachedRequest.location]);
+      if (this.listener) {
+        this.listener.update(gCachedRequest.location);
+      }
       return;
     }
 
@@ -374,38 +370,30 @@ WifiGeoPositionProvider.prototype = {
     let url = Services.urlFormatter.formatURLPref("geo.wifi.uri");
     LOG("Sending request");
 
-    let xhr = Components.classes["@mozilla.org/xmlextras/xmlhttprequest;1"]
-                        .createInstance(Ci.nsIXMLHttpRequest);
-
-    this.notifyListener("locationUpdatePending");
-
+    let xhr = new XMLHttpRequest();
     try {
       xhr.open("POST", url, true);
       xhr.channel.loadFlags = Ci.nsIChannel.LOAD_ANONYMOUS;
     } catch (e) {
-      this.notifyListener("notifyError",
-                          [POSITION_UNAVAILABLE]);
+      notifyPositionUnavailable(this.listener);
       return;
     }
     xhr.setRequestHeader("Content-Type", "application/json; charset=UTF-8");
     xhr.responseType = "json";
     xhr.mozBackgroundRequest = true;
     xhr.timeout = Services.prefs.getIntPref("geo.wifi.xhr.timeout");
-    xhr.ontimeout = (function() {
-      LOG("Location request XHR timed out.")
-      this.notifyListener("notifyError",
-                          [POSITION_UNAVAILABLE]);
-    }).bind(this);
-    xhr.onerror = (function() {
-      this.notifyListener("notifyError",
-                          [POSITION_UNAVAILABLE]);
-    }).bind(this);
-    xhr.onload = (function() {
-      LOG("server returned status: " + xhr.status + " --> " +  JSON.stringify(xhr.response));
+    xhr.ontimeout = () => {
+      LOG("Location request XHR timed out.");
+      notifyPositionUnavailable(this.listener);
+    };
+    xhr.onerror = () => {
+      notifyPositionUnavailable(this.listener);
+    };
+    xhr.onload = () => {
+      LOG("server returned status: " + xhr.status + " --> " + JSON.stringify(xhr.response));
       if ((xhr.channel instanceof Ci.nsIHttpChannel && xhr.status != 200) ||
           !xhr.response || !xhr.response.location) {
-        this.notifyListener("notifyError",
-                            [POSITION_UNAVAILABLE]);
+        notifyPositionUnavailable(this.listener);
         return;
       }
 
@@ -413,23 +401,22 @@ WifiGeoPositionProvider.prototype = {
                                                   xhr.response.location.lng,
                                                   xhr.response.accuracy);
 
-      this.notifyListener("update", [newLocation]);
+      if (this.listener) {
+        this.listener.update(newLocation);
+      }
       gCachedRequest = new CachedRequest(newLocation, data.cellTowers, data.wifiAccessPoints);
-    }).bind(this);
+    };
 
     var requestData = JSON.stringify(data);
     LOG("sending " + requestData);
     xhr.send(requestData);
-  },
 
-  notifyListener: function(listenerFunc, args) {
-    args = args || [];
-    try {
-      this.listener[listenerFunc].apply(this.listener, args);
-    } catch(e) {
-      Cu.reportError(e);
+    function notifyPositionUnavailable(listener) {
+      if (listener) {
+        listener.notifyError(POSITION_UNAVAILABLE);
+      }
     }
-  }
+  },
 };
 
 this.NSGetFactory = XPCOMUtils.generateNSGetFactory([WifiGeoPositionProvider]);

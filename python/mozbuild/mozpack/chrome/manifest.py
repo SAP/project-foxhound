@@ -6,7 +6,12 @@ from __future__ import absolute_import
 
 import re
 import os
-from urlparse import urlparse
+
+try:
+    from urlparse import urlparse
+except ImportError:
+    from urllib.parse import urlparse
+
 import mozpack.path as mozpath
 from mozpack.chrome.flags import Flags
 from mozpack.errors import errors
@@ -38,6 +43,7 @@ class ManifestEntry(object):
         'xpcnativewrappers',
         'tablet',
         'process',
+        'contentaccessible',
     ]
 
     def __init__(self, base, *flags):
@@ -196,12 +202,6 @@ class ManifestOverload(ManifestEntry):
     def __str__(self):
         return self.serialize(self.overloaded, self.overload)
 
-    @property
-    def localized(self):
-        u = urlparse(self.overload)
-        return u.scheme == 'chrome' and \
-               u.path.split('/')[0:2] == ['', 'locale']
-
 
 class ManifestOverlay(ManifestOverload):
     '''
@@ -215,7 +215,7 @@ class ManifestOverlay(ManifestOverload):
 class ManifestStyle(ManifestOverload):
     '''
     Class for 'style' entries.
-        style chrome://global/content/customizeToolbar.xul \
+        style chrome://global/content/viewSource.xul \
             chrome://browser/skin/
     '''
     type = 'style'

@@ -2,25 +2,26 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-this.EXPORTED_SYMBOLS = ["PrefsEngine", "PrefRec"];
-
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cu = Components.utils;
+var EXPORTED_SYMBOLS = ["PrefsEngine", "PrefRec"];
 
 const PREF_SYNC_PREFS_PREFIX = "services.sync.prefs.sync.";
 
-Cu.import("resource://services-sync/engines.js");
-Cu.import("resource://services-sync/record.js");
-Cu.import("resource://services-sync/util.js");
-Cu.import("resource://services-sync/constants.js");
-Cu.import("resource://services-common/utils.js");
-Cu.import("resource://gre/modules/LightweightThemeManager.jsm");
-Cu.import("resource://gre/modules/Preferences.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Preferences.jsm");
+ChromeUtils.import("resource://services-sync/engines.js");
+ChromeUtils.import("resource://services-sync/record.js");
+ChromeUtils.import("resource://services-sync/util.js");
+ChromeUtils.import("resource://services-sync/constants.js");
+ChromeUtils.import("resource://services-common/utils.js");
 
-const PREFS_GUID = CommonUtils.encodeBase64URL(Services.appinfo.ID);
+ChromeUtils.defineModuleGetter(this, "LightweightThemeManager",
+                          "resource://gre/modules/LightweightThemeManager.jsm");
 
-this.PrefRec = function PrefRec(collection, id) {
+XPCOMUtils.defineLazyGetter(this, "PREFS_GUID",
+                            () => CommonUtils.encodeBase64URL(Services.appinfo.ID));
+
+function PrefRec(collection, id) {
   CryptoWrapper.call(this, collection, id);
 }
 PrefRec.prototype = {
@@ -31,7 +32,7 @@ PrefRec.prototype = {
 Utils.deferGetSet(PrefRec, "cleartext", ["value"]);
 
 
-this.PrefsEngine = function PrefsEngine(service) {
+function PrefsEngine(service) {
   SyncEngine.call(this, "Prefs", service);
 }
 PrefsEngine.prototype = {
@@ -44,29 +45,42 @@ PrefsEngine.prototype = {
   syncPriority: 1,
   allowSkippedRecord: false,
 
-  getChangedIDs() {
+  async getChangedIDs() {
     // No need for a proper timestamp (no conflict resolution needed).
     let changedIDs = {};
-    if (this._tracker.modified)
+    if (this._tracker.modified) {
       changedIDs[PREFS_GUID] = 0;
+    }
     return changedIDs;
   },
 
-  _wipeClient() {
-    SyncEngine.prototype._wipeClient.call(this);
+  async _wipeClient() {
+    await SyncEngine.prototype._wipeClient.call(this);
     this.justWiped = true;
   },
 
-  _reconcile(item) {
+  async _reconcile(item) {
     // Apply the incoming item if we don't care about the local data
     if (this.justWiped) {
       this.justWiped = false;
       return true;
     }
     return SyncEngine.prototype._reconcile.call(this, item);
-  }
+  },
 };
 
+// We don't use services.sync.engine.tabs.filteredUrls since it includes
+// about: pages and the like, which we want to be syncable in preferences.
+// Blob and moz-extension uris are never safe to sync, so we limit our check
+// to those.
+const UNSYNCABLE_URL_REGEXP = /^(moz-extension|blob):/i;
+function isUnsyncableURLPref(prefName) {
+  if (Services.prefs.getPrefType(prefName) != Ci.nsIPrefBranch.PREF_STRING) {
+    return false;
+  }
+  const prefValue = Services.prefs.getStringPref(prefName, "");
+  return UNSYNCABLE_URL_REGEXP.test(prefValue);
+}
 
 function PrefStore(name, engine) {
   Store.call(this, name, engine);
@@ -86,10 +100,9 @@ PrefStore.prototype = {
   },
 
   _getSyncPrefs() {
-    let syncPrefs = Cc["@mozilla.org/preferences-service;1"]
-                      .getService(Ci.nsIPrefService)
-                      .getBranch(PREF_SYNC_PREFS_PREFIX)
-                      .getChildList("", {});
+    let syncPrefs = Services.prefs.getBranch(PREF_SYNC_PREFS_PREFIX)
+                                  .getChildList("", {})
+                                  .filter(pref => !isUnsyncableURLPref(pref));
     // Also sync preferences that determine which prefs get synced.
     let controlPrefs = syncPrefs.map(pref => PREF_SYNC_PREFS_PREFIX + pref);
     return controlPrefs.concat(syncPrefs);
@@ -103,7 +116,10 @@ PrefStore.prototype = {
   _getAllPrefs() {
     let values = {};
     for (let pref of this._getSyncPrefs()) {
-      if (this._isSynced(pref)) {
+      // Note: _isSynced doesn't call isUnsyncableURLPref since it would cause
+      // us not to apply (syncable) changes to preferences that are set locally
+      // which have unsyncable urls.
+      if (this._isSynced(pref) && !isUnsyncableURLPref(pref)) {
         // Missing and default prefs get the null value.
         values[pref] = this._prefs.isSet(pref) ? this._prefs.get(pref, null) : null;
       }
@@ -133,6 +149,10 @@ PrefStore.prototype = {
       }
 
       let value = values[pref];
+      if (typeof value == "string" && UNSYNCABLE_URL_REGEXP.test(value)) {
+        this._log.trace(`Skipping incoming unsyncable url for pref: ${pref}`);
+        continue;
+      }
 
       switch (pref) {
         // Some special prefs we don't want to set directly.
@@ -149,7 +169,7 @@ PrefStore.prototype = {
             try {
               this._prefs.set(pref, value);
             } catch (ex) {
-              this._log.trace("Failed to set pref: " + pref + ": " + ex);
+              this._log.trace(`Failed to set pref: ${pref}`, ex);
             }
           }
       }
@@ -161,22 +181,22 @@ PrefStore.prototype = {
     }
   },
 
-  getAllIDs() {
+  async getAllIDs() {
     /* We store all prefs in just one WBO, with just one GUID */
     let allprefs = {};
     allprefs[PREFS_GUID] = true;
     return allprefs;
   },
 
-  changeItemID(oldID, newID) {
+  async changeItemID(oldID, newID) {
     this._log.trace("PrefStore GUID is constant!");
   },
 
-  itemExists(id) {
+  async itemExists(id) {
     return (id === PREFS_GUID);
   },
 
-  createRecord(id, collection) {
+  async createRecord(id, collection) {
     let record = new PrefRec(collection, id);
 
     if (id == PREFS_GUID) {
@@ -188,33 +208,32 @@ PrefStore.prototype = {
     return record;
   },
 
-  create(record) {
+  async create(record) {
     this._log.trace("Ignoring create request");
   },
 
-  remove(record) {
+  async remove(record) {
     this._log.trace("Ignoring remove request");
   },
 
-  update(record) {
+  async update(record) {
     // Silently ignore pref updates that are for other apps.
-    if (record.id != PREFS_GUID)
+    if (record.id != PREFS_GUID) {
       return;
+    }
 
     this._log.trace("Received pref updates, applying...");
     this._setAllPrefs(record.value);
   },
 
-  wipe() {
+  async wipe() {
     this._log.trace("Ignoring wipe request");
-  }
+  },
 };
 
 function PrefTracker(name, engine) {
   Tracker.call(this, name, engine);
-  Svc.Obs.add("profile-before-change", this);
-  Svc.Obs.add("weave:engine:start-tracking", this);
-  Svc.Obs.add("weave:engine:stop-tracking", this);
+  Svc.Obs.add("profile-before-change", this.asyncObserver);
 }
 PrefTracker.prototype = {
   __proto__: Tracker.prototype,
@@ -238,23 +257,24 @@ PrefTracker.prototype = {
     return this.__prefs;
   },
 
-  startTracking() {
-    Services.prefs.addObserver("", this, false);
+  onStart() {
+    Services.prefs.addObserver("", this.asyncObserver);
   },
 
-  stopTracking() {
+  onStop() {
     this.__prefs = null;
-    Services.prefs.removeObserver("", this);
+    Services.prefs.removeObserver("", this.asyncObserver);
   },
 
-  observe(subject, topic, data) {
-    Tracker.prototype.observe.call(this, subject, topic, data);
-
+  async observe(subject, topic, data) {
     switch (topic) {
       case "profile-before-change":
-        this.stopTracking();
+        await this.stop();
         break;
       case "nsPref:changed":
+        if (this.ignoreAll) {
+          break;
+        }
         // Trigger a sync for MULTI-DEVICE for a change that determines
         // which prefs are synced or a regular pref change.
         if (data.indexOf(PREF_SYNC_PREFS_PREFIX) == 0 ||
@@ -265,5 +285,5 @@ PrefTracker.prototype = {
         }
         break;
     }
-  }
+  },
 };

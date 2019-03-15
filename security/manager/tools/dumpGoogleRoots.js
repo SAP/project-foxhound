@@ -13,17 +13,16 @@
 // 4. [paste the output into the appropriate section in
 //     security/manager/tools/PreloadedHPKPins.json]
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+
+XPCOMUtils.defineLazyGlobalGetters(this, ["XMLHttpRequest"]);
 
 function downloadRoots() {
-  let req = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"]
-              .createInstance(Ci.nsIXMLHttpRequest);
+  let req = new XMLHttpRequest();
   req.open("GET", "https://pki.google.com/roots.pem", false);
   try {
     req.send();
-  }
-  catch (e) {
+  } catch (e) {
     throw new Error("ERROR: problem downloading Google Root PEMs: " + e);
   }
 

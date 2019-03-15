@@ -8,10 +8,12 @@
 #define mozilla_dom_FetchDriver_h
 
 #include "nsIChannelEventSink.h"
+#include "nsICacheInfoChannel.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIStreamListener.h"
 #include "nsIThreadRetargetableStreamListener.h"
 #include "mozilla/ConsoleReportCollector.h"
+#include "mozilla/dom/AbortSignal.h"
 #include "mozilla/dom/SRIMetadata.h"
 #include "mozilla/RefPtr.h"
 
@@ -19,7 +21,8 @@
 #include "mozilla/net/ReferrerPolicy.h"
 
 class nsIConsoleReportCollector;
-class nsIDocument;
+class nsICSPEventListener;
+class nsIEventTarget;
 class nsIOutputStream;
 class nsILoadGroup;
 class nsIPrincipal;
@@ -27,110 +30,155 @@ class nsIPrincipal;
 namespace mozilla {
 namespace dom {
 
+class Document;
 class InternalRequest;
 class InternalResponse;
+class PerformanceStorage;
 
 /**
  * Provides callbacks to be called when response is available or on error.
  * Implemenations usually resolve or reject the promise returned from fetch().
- * The callbacks can be called synchronously or asynchronously from FetchDriver::Fetch.
+ * The callbacks can be called synchronously or asynchronously from
+ * FetchDriver::Fetch.
  */
-class FetchDriverObserver
-{
-public:
-  FetchDriverObserver() : mReporter(new ConsoleReportCollector())
-                        , mGotResponseAvailable(false)
-  { }
+class FetchDriverObserver {
+ public:
+  FetchDriverObserver()
+      : mReporter(new ConsoleReportCollector()), mGotResponseAvailable(false) {}
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(FetchDriverObserver);
-  void OnResponseAvailable(InternalResponse* aResponse)
-  {
+  void OnResponseAvailable(InternalResponse* aResponse) {
     MOZ_ASSERT(!mGotResponseAvailable);
     mGotResponseAvailable = true;
     OnResponseAvailableInternal(aResponse);
   }
-  virtual void OnResponseEnd()
-  { };
 
-  nsIConsoleReportCollector* GetReporter() const
-  {
-    return mReporter;
-  }
+  enum EndReason {
+    eAborted,
+    eByNetworking,
+  };
+
+  virtual void OnResponseEnd(EndReason aReason){};
+
+  nsIConsoleReportCollector* GetReporter() const { return mReporter; }
 
   virtual void FlushConsoleReport() = 0;
-protected:
-  virtual ~FetchDriverObserver()
-  { };
+
+  // Called in OnStartRequest() to determine if the OnDataAvailable() method
+  // needs to be called.  Invoking that method may generate additional main
+  // thread runnables.
+  virtual bool NeedOnDataAvailable() = 0;
+
+  // Called once when the first byte of data is received iff
+  // NeedOnDataAvailable() returned true when called in OnStartRequest().
+  virtual void OnDataAvailable() = 0;
+
+ protected:
+  virtual ~FetchDriverObserver(){};
 
   virtual void OnResponseAvailableInternal(InternalResponse* aResponse) = 0;
 
   nsCOMPtr<nsIConsoleReportCollector> mReporter;
-private:
+
+ private:
   bool mGotResponseAvailable;
 };
+
+class AlternativeDataStreamListener;
 
 class FetchDriver final : public nsIStreamListener,
                           public nsIChannelEventSink,
                           public nsIInterfaceRequestor,
-                          public nsIThreadRetargetableStreamListener
-{
-public:
-  NS_DECL_ISUPPORTS
+                          public nsIThreadRetargetableStreamListener,
+                          public AbortFollower {
+ public:
+  NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIREQUESTOBSERVER
   NS_DECL_NSISTREAMLISTENER
   NS_DECL_NSICHANNELEVENTSINK
   NS_DECL_NSIINTERFACEREQUESTOR
   NS_DECL_NSITHREADRETARGETABLESTREAMLISTENER
 
-  explicit FetchDriver(InternalRequest* aRequest, nsIPrincipal* aPrincipal,
-                       nsILoadGroup* aLoadGroup);
-  NS_IMETHOD Fetch(FetchDriverObserver* aObserver);
+  FetchDriver(InternalRequest* aRequest, nsIPrincipal* aPrincipal,
+              nsILoadGroup* aLoadGroup, nsIEventTarget* aMainThreadEventTarget,
+              PerformanceStorage* aPerformanceStorage, bool aIsTrackingFetch);
 
-  void
-  SetDocument(nsIDocument* aDocument);
+  nsresult Fetch(AbortSignalImpl* aSignalImpl, FetchDriverObserver* aObserver);
 
-  void
-  SetWorkerScript(const nsACString& aWorkerScirpt)
-  {
+  void SetDocument(Document* aDocument);
+
+  void SetCSPEventListener(nsICSPEventListener* aCSPEventListener);
+
+  void SetClientInfo(const ClientInfo& aClientInfo);
+
+  void SetController(const Maybe<ServiceWorkerDescriptor>& aController);
+
+  void SetWorkerScript(const nsACString& aWorkerScirpt) {
     MOZ_ASSERT(!aWorkerScirpt.IsEmpty());
     mWorkerScript = aWorkerScirpt;
   }
 
-private:
+  // AbortFollower
+  void Abort() override;
+
+ private:
   nsCOMPtr<nsIPrincipal> mPrincipal;
   nsCOMPtr<nsILoadGroup> mLoadGroup;
   RefPtr<InternalRequest> mRequest;
   RefPtr<InternalResponse> mResponse;
   nsCOMPtr<nsIOutputStream> mPipeOutputStream;
   RefPtr<FetchDriverObserver> mObserver;
-  nsCOMPtr<nsIDocument> mDocument;
+  RefPtr<Document> mDocument;
+  nsCOMPtr<nsICSPEventListener> mCSPEventListener;
+  Maybe<ClientInfo> mClientInfo;
+  Maybe<ServiceWorkerDescriptor> mController;
+  nsCOMPtr<nsIChannel> mChannel;
   nsAutoPtr<SRICheckDataVerifier> mSRIDataVerifier;
+  nsCOMPtr<nsIEventTarget> mMainThreadEventTarget;
+
+  // This is set only when Fetch is used in workers.
+  RefPtr<PerformanceStorage> mPerformanceStorage;
+
   SRIMetadata mSRIMetadata;
   nsCString mWorkerScript;
+
+  // This is written once in OnStartRequest on the main thread and then
+  // written/read in OnDataAvailable() on any thread.  Necko guarantees
+  // that these do not overlap.
+  bool mNeedToObserveOnDataAvailable;
+
+  bool mIsTrackingFetch;
+
+  RefPtr<AlternativeDataStreamListener> mAltDataListener;
+  bool mOnStopRequestCalled;
 
 #ifdef DEBUG
   bool mResponseAvailableCalled;
   bool mFetchCalled;
 #endif
 
+  friend class AlternativeDataStreamListener;
+
   FetchDriver() = delete;
   FetchDriver(const FetchDriver&) = delete;
   FetchDriver& operator=(const FetchDriver&) = delete;
   ~FetchDriver();
 
-  nsresult HttpFetch();
+  nsresult HttpFetch(
+      const nsACString& aPreferredAlternativeDataType = EmptyCString());
   // Returns the filtered response sent to the observer.
-  already_AddRefed<InternalResponse>
-  BeginAndGetFilteredResponse(InternalResponse* aResponse,
-                              bool aFoundOpaqueRedirect);
+  already_AddRefed<InternalResponse> BeginAndGetFilteredResponse(
+      InternalResponse* aResponse, bool aFoundOpaqueRedirect);
   // Utility since not all cases need to do any post processing of the filtered
   // response.
-  void FailWithNetworkError();
+  void FailWithNetworkError(nsresult rv);
 
   void SetRequestHeaders(nsIHttpChannel* aChannel) const;
+
+  nsresult FinishOnStopRequest(AlternativeDataStreamListener* aAltDataListener);
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_FetchDriver_h
+#endif  // mozilla_dom_FetchDriver_h

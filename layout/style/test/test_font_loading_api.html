@@ -61,7 +61,7 @@ var invalidValues = {
 
 // Invalid font family names.
 var invalidFontFamilyNames = [
-  "", "\"\"", "sans-serif", "A, B", "inherit", "a 1"
+  "", "sans-serif", "A, B", "inherit", "a 1"
 ];
 
 // Font family list where at least one is likely to be available on
@@ -163,7 +163,7 @@ function awaitRefresh() {
 }
 
 function flushStyles() {
-  getComputedStyle(document.body).color;
+  getComputedStyle(document.body).width;
 }
 
 function runTest() {
@@ -224,12 +224,12 @@ function runTest() {
 
   }).then(function() {
 
-    // (TEST 3) Test that document.fonts.ready starts out resolved with the
-    // FontFaceSet.
+    // (TEST 3) Test that document.fonts.ready is resolved with the
+    // document.fonts FontFaceSet.
     var p = Promise.resolve();
     sourceDocuments.forEach(function({ doc, what }) {
-      p = p.then(function() {
-        return is_resolved_with(doc.fonts.ready, doc.fonts, "initial value of document.fonts", "(TEST 3) (" + what + ")");
+      p = p.then(_ => { return doc.fonts.ready }).then(function() {
+        return is_resolved_with(doc.fonts.ready, doc.fonts, "document.fonts.ready resolves with document.fonts.", "(TEST 3) (" + what + ")");
       });
     });
     return p;
@@ -405,9 +405,6 @@ function runTest() {
     return p;
 
   }).then(function() {
-
-    // XXX Disabled this sub-test due to intermittent failures (bug 1076803).
-    return;
 
     // (TEST 18) Test passing valid url() source strings to the FontFace
     // constructor.
@@ -1002,7 +999,7 @@ function runTest() {
     is(all.length, 1, "document.fonts should contain one FontFace (TEST 33)");
 
     var face = all[0];
-    is(face.family, "\"something\"", "FontFace should have correct family value (TEST 33)");
+    is(face.family, "something", "FontFace should have correct family value (TEST 33)");
     Object.keys(nonDefaultValues).forEach(function(aDesc) {
       var ok_todo = aDesc == "variant" ? todo : ok;
       ok_todo(face[aDesc] == nonDefaultValues[aDesc][1], "FontFace should have correct " + aDesc + " value (TEST 33)");

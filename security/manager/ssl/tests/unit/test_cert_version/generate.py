@@ -43,6 +43,7 @@ basicConstraintsTypes = {
     'BC-cA': 'extension:basicConstraints:cA,'
 }
 
+
 def writeCertspec(issuer, subject, fields):
     filename = '%s_%s.pem.certspec' % (subject, issuer)
     if issuer == subject:
@@ -53,6 +54,7 @@ def writeCertspec(issuer, subject, fields):
         for field in fields:
             if len(field) > 0:
                 f.write('%s\n' % field)
+
 
 keyUsage = 'extension:keyUsage:keyCertSign,cRLSign'
 basicConstraintsCA = 'extension:basicConstraints:cA,'

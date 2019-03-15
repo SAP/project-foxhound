@@ -10,11 +10,21 @@ interface mozIDOMWindow;
 interface nsPIDOMWindowInner;
 interface mozIDOMWindowProxy;
 interface nsIArray;
-interface nsIDocument;
 interface nsIInterceptedChannel;
 interface nsIPrincipal;
 interface nsIRunnable;
 interface nsIURI;
+%{C++
+namespace mozilla {
+namespace dom {
+class ClientInfo;
+class ServiceWorkerDescriptor;
+} // namespace dom
+} // namespace mozilla
+%}
+
+[ref] native const_ClientInfoRef(const mozilla::dom::ClientInfo);
+[ref] native const_ServiceWorkerDescriptorRef(const mozilla::dom::ServiceWorkerDescriptor);
 
 [scriptable, uuid(52ee2c9d-ee87-4caf-9588-23ae77ff8798)]
 interface nsIServiceWorkerUnregisterCallback : nsISupports
@@ -31,21 +41,26 @@ interface nsIWorkerDebugger;
 interface nsIServiceWorkerInfo : nsISupports
 {
   // State values below should match the ServiceWorkerState enumeration.
-  const unsigned short STATE_INSTALLING = 0;
-  const unsigned short STATE_INSTALLED = 1;
-  const unsigned short STATE_ACTIVATING = 2;
-  const unsigned short STATE_ACTIVATED = 3;
-  const unsigned short STATE_REDUNDANT = 4;
-  const unsigned short STATE_UNKNOWN = 5;
+  const unsigned short STATE_PARSED = 0;
+  const unsigned short STATE_INSTALLING = 1;
+  const unsigned short STATE_INSTALLED = 2;
+  const unsigned short STATE_ACTIVATING = 3;
+  const unsigned short STATE_ACTIVATED = 4;
+  const unsigned short STATE_REDUNDANT = 5;
+  const unsigned short STATE_UNKNOWN = 6;
 
-  readonly attribute DOMString scriptSpec;
-  readonly attribute DOMString cacheName;
+  readonly attribute AString scriptSpec;
+  readonly attribute AString cacheName;
 
   readonly attribute unsigned short state;
 
   readonly attribute nsIWorkerDebugger debugger;
 
   readonly attribute bool handlesFetchEvents;
+
+  readonly attribute PRTime installedTime;
+  readonly attribute PRTime activatedTime;
+  readonly attribute PRTime redundantTime;
 
   void attachDebugger();
 
@@ -61,10 +76,18 @@ interface nsIServiceWorkerRegistrationInfoListener : nsISupports
 [scriptable, builtinclass, uuid(ddbc1fd4-2f2e-4fca-a395-6e010bbedfe3)]
 interface nsIServiceWorkerRegistrationInfo : nsISupports
 {
+  // State values below should match the ServiceWorkerUpdateViaCache enumeration.
+  const unsigned short UPDATE_VIA_CACHE_IMPORTS = 0;
+  const unsigned short UPDATE_VIA_CACHE_ALL = 1;
+  const unsigned short UPDATE_VIA_CACHE_NONE = 2;
+
   readonly attribute nsIPrincipal principal;
 
-  readonly attribute DOMString scope;
-  readonly attribute DOMString scriptSpec;
+  readonly attribute AString scope;
+  readonly attribute AString scriptSpec;
+  readonly attribute unsigned short updateViaCache;
+
+  readonly attribute PRTime lastUpdateTime;
 
   readonly attribute nsIServiceWorkerInfo installingWorker;
   readonly attribute nsIServiceWorkerInfo waitingWorker;
@@ -94,101 +117,34 @@ interface nsIServiceWorkerManagerListener : nsISupports
 interface nsIServiceWorkerManager : nsISupports
 {
   /**
-   * Registers a ServiceWorker with script loaded from `aScriptURI` to act as
-   * the ServiceWorker for aScope.  Requires a valid entry settings object on
-   * the stack. This means you must call this from content code 'within'
-   * a window.
-   *
-   * Returns a Promise.
-   */
-  nsISupports register(in mozIDOMWindow aWindow,
-                       in nsIURI aScope,
-                       in nsIURI aScriptURI,
-                       in nsLoadFlags aLoadFlags);
-
-  /**
    * Unregister an existing ServiceWorker registration for `aScope`.
    * It keeps aCallback alive until the operation is concluded.
    */
   void unregister(in nsIPrincipal aPrincipal,
                   in nsIServiceWorkerUnregisterCallback aCallback,
-                  in DOMString aScope);
-
-  // Returns a Promise
-  nsISupports getRegistrations(in mozIDOMWindow aWindow);
-
-  // Returns a Promise
-  nsISupports getRegistration(in mozIDOMWindow aWindow, in DOMString aScope);
-
-  // Returns a Promise
-  nsISupports getReadyPromise(in mozIDOMWindow aWindow);
-
-  // Remove ready pending Promise
-  void removeReadyPromise(in mozIDOMWindow aWindow);
+                  in AString aScope);
 
   nsIServiceWorkerRegistrationInfo getRegistrationByPrincipal(in nsIPrincipal aPrincipal,
-                                                              in DOMString aScope);
+                                                              in AString aScope);
 
-  /**
-   * Call this to request that document `aDoc` be controlled by a ServiceWorker
-   * if a registration exists for it's scope.
-   *
-   * This MUST only be called once per document!
-   */
-  [notxpcom,nostdcall] void MaybeStartControlling(in nsIDocument aDoc, in DOMString aDocumentId);
-
-  /**
-   * Documents that have called MaybeStartControlling() should call this when
-   * they are destroyed. This function may be called multiple times, and is
-   * idempotent.
-   */
-  [notxpcom,nostdcall] void MaybeStopControlling(in nsIDocument aDoc);
-
-  /*
-   * Returns a ServiceWorker.
-   * window is the window of the caller. scope is the registration's scope and must be
-   * a valid entry that window is allowed to load, otherwise this will return nullptr.
-   * These are only meant to be called from ServiceWorkerRegistration instances.
-   */
-  [noscript] nsISupports GetInstalling(in nsPIDOMWindowInner aWindow, in DOMString aScope);
-  [noscript] nsISupports GetWaiting(in nsPIDOMWindowInner aWindow, in DOMString aScope);
-  [noscript] nsISupports GetActive(in nsPIDOMWindowInner aWindow, in DOMString aScope);
-
-  /*
-   * Returns a ServiceWorker object representing the active worker controlling this
-   * window.
-   */
-  [noscript] nsISupports GetDocumentController(in nsPIDOMWindowInner aWindow);
-
-  /*
-   * Clears ServiceWorker registrations from memory and disk for the specified
-   * host.
-   * - All ServiceWorker instances change their state to redundant.
-   * - Existing ServiceWorker instances handling fetches will keep running.
-   * - All documents will immediately stop being controlled.
-   * - Unregister jobs will be queued for all registrations.
-   *   This eventually results in the registration being deleted from disk too.
-   */
-  void removeAndPropagate(in AUTF8String aHost);
+  [notxpcom, nostdcall] bool StartControlling(in const_ClientInfoRef aClientInfo,
+                                              in const_ServiceWorkerDescriptorRef aServiceWorker);
 
   // Testing
-  DOMString getScopeForUrl(in nsIPrincipal aPrincipal, in DOMString aPath);
+  AString getScopeForUrl(in nsIPrincipal aPrincipal, in AString aPath);
 
-  // Note: This is meant to be used only by about:serviceworkers.
   // It returns an array of nsIServiceWorkerRegistrationInfos.
   nsIArray getAllRegistrations();
 
-  // Note: This is meant to be used only by about:serviceworkers.
   // It calls softUpdate() for each child process.
   [implicit_jscontext] void propagateSoftUpdate(in jsval aOriginAttributes,
-                                                in DOMString aScope);
+                                                in AString aScope);
 
-  // Note: This is meant to be used only by about:serviceworkers.
   // It calls unregister() in each child process. The callback is used to
   // inform when unregister() is completed on the current process.
   void propagateUnregister(in nsIPrincipal aPrincipal,
                            in nsIServiceWorkerUnregisterCallback aCallback,
-                           in DOMString aScope);
+                           in AString aScope);
 
   void sendNotificationClickEvent(in ACString aOriginSuffix,
                                   in ACString scope,
@@ -224,8 +180,6 @@ interface nsIServiceWorkerManager : nsISupports
   void addListener(in nsIServiceWorkerManagerListener aListener);
 
   void removeListener(in nsIServiceWorkerManagerListener aListener);
-
-  bool shouldReportToWindow(in mozIDOMWindowProxy aWindow, in ACString aScope);
 };
 
 %{ C++

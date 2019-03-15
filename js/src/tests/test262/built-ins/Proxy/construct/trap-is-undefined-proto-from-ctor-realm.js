@@ -6,7 +6,7 @@ es6id: 9.5.14
 description: >
     If trap is undefined, propagate the construct to the target object,
     honoring the Realm of the newTarget value
-info: >
+info: |
     [[Construct]] ( argumentsList, newTarget)
 
     7. If trap is undefined, then
@@ -20,17 +20,16 @@ info: >
        a. Let realm be ? GetFunctionRealm(constructor).
        b. Let proto be realm's intrinsic object named intrinsicDefaultProto.
     [...]
-features: [Reflect]
+features: [cross-realm, Proxy, Reflect, Reflect.construct]
 ---*/
 
-var other = $.createRealm().global;
+var other = $262.createRealm().global;
 var C = new other.Function();
-C.prototype = null;
 
 var P = new Proxy(function() {}, {});
 
 var p = Reflect.construct(P, [], C);
 
-assert.sameValue(Object.getPrototypeOf(p), other.Object.prototype);
+assert.sameValue(Object.getPrototypeOf(Object.getPrototypeOf(p)), other.Object.prototype);
 
 reportCompare(0, 0);

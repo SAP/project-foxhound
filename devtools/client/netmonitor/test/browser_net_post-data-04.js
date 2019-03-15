@@ -8,32 +8,28 @@
  * for JSON payloads.
  */
 
-add_task(function* () {
-  let { L10N } = require("devtools/client/netmonitor/utils/l10n");
+add_task(async function() {
+  const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
 
-  let { tab, monitor } = yield initNetMonitor(POST_JSON_URL);
+  const { tab, monitor } = await initNetMonitor(POST_JSON_URL);
   info("Starting test... ");
 
-  let { document, gStore, windowRequire } = monitor.panelWin;
-  let Actions = windowRequire("devtools/client/netmonitor/actions/index");
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
 
-  gStore.dispatch(Actions.batchEnable(false));
+  store.dispatch(Actions.batchEnable(false));
 
-  let wait = waitForNetworkEvents(monitor, 0, 1);
-  yield ContentTask.spawn(tab.linkedBrowser, {}, function* () {
-    content.wrappedJSObject.performRequests();
-  });
-  yield wait;
+  // Execute requests.
+  await performRequests(monitor, tab, 1);
 
   // Wait for all tree view updated by react
   wait = waitForDOM(document, "#params-panel .tree-section");
-  EventUtils.sendMouseEvent({ type: "click" },
-    document.querySelector(".network-details-panel-toggle"));
+  store.dispatch(Actions.toggleNetworkDetails());
   EventUtils.sendMouseEvent({ type: "click" },
     document.querySelector("#params-tab"));
-  yield wait;
+  await wait;
 
-  let tabpanel = document.querySelector("#params-panel");
+  const tabpanel = document.querySelector("#params-panel");
 
   ok(tabpanel.querySelector(".treeTable"),
     "The request params doesn't have the indended visibility.");
@@ -49,9 +45,9 @@ add_task(function* () {
     L10N.getStr("jsonScopeName"),
     "The JSON section doesn't have the correct title.");
 
-  let labels = tabpanel
+  const labels = tabpanel
     .querySelectorAll("tr:not(.tree-section) .treeLabelCell .treeLabel");
-  let values = tabpanel
+  const values = tabpanel
     .querySelectorAll("tr:not(.tree-section) .treeValueCell .objectBox");
 
   is(labels[0].textContent, "a", "The JSON var name was incorrect.");

@@ -5,32 +5,31 @@
 
 "use strict";
 
-var { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
-
-var { require } = Cu.import("resource://devtools/shared/Loader.jsm", {});
+var { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
 var { Assert } = require("resource://testing-common/Assert.jsm");
 var { gDevTools } = require("devtools/client/framework/devtools");
-var { BrowserLoader } = Cu.import("resource://devtools/client/shared/browser-loader.js", {});
+var { BrowserLoader } = ChromeUtils.import("resource://devtools/client/shared/browser-loader.js", {});
 var promise = require("promise");
 var defer = require("devtools/shared/defer");
 var Services = require("Services");
 var { DebuggerServer } = require("devtools/server/main");
-var { DebuggerClient } = require("devtools/shared/client/main");
+var { DebuggerClient } = require("devtools/shared/client/debugger-client");
 var DevToolsUtils = require("devtools/shared/DevToolsUtils");
-var flags = require("devtools/shared/flags");
-var { Task } = require("devtools/shared/task");
 var { TargetFactory } = require("devtools/client/framework/target");
 var { Toolbox } = require("devtools/client/framework/toolbox");
 
-flags.testing = true;
 var { require: browserRequire } = BrowserLoader({
   baseURI: "resource://devtools/client/shared/",
-  window
+  window,
 });
 
-let ReactDOM = browserRequire("devtools/client/shared/vendor/react-dom");
-let React = browserRequire("devtools/client/shared/vendor/react");
-var TestUtils = React.addons.TestUtils;
+const React = browserRequire("devtools/client/shared/vendor/react");
+const ReactDOM = browserRequire("devtools/client/shared/vendor/react-dom");
+const dom = browserRequire("devtools/client/shared/vendor/react-dom-factories");
+const TestUtils = browserRequire("devtools/client/shared/vendor/react-dom-test-utils");
+
+const ShallowRenderer =
+  browserRequire("devtools/client/shared/vendor/react-test-renderer-shallow");
 
 var EXAMPLE_URL = "http://example.com/browser/browser/devtools/shared/test/";
 
@@ -81,6 +80,25 @@ function isRenderedTree(actual, expectedDescription, msg) {
   is(actual, expected, msg);
 }
 
+function isAccessibleTree(tree, options = {}) {
+  const treeNode = tree.refs.tree;
+  is(treeNode.getAttribute("tabindex"), "0", "Tab index is set");
+  is(treeNode.getAttribute("role"), "tree", "Tree semantics is present");
+  if (options.hasActiveDescendant) {
+    ok(treeNode.hasAttribute("aria-activedescendant"),
+       "Tree has an active descendant set");
+  }
+
+  const treeNodes = [...treeNode.querySelectorAll(".tree-node")];
+  for (const node of treeNodes) {
+    ok(node.id, "TreeNode has an id");
+    is(node.getAttribute("role"), "treeitem", "Tree item semantics is present");
+    is(parseInt(node.getAttribute("aria-level"), 10),
+       parseInt(node.getAttribute("data-depth"), 10) + 1,
+       "Aria level attribute is set correctly");
+  }
+}
+
 // Encoding of the following tree/forest:
 //
 // A
@@ -114,7 +132,7 @@ var TEST_TREE = {
     L: [],
     M: ["N"],
     N: ["O"],
-    O: []
+    O: [],
   },
   parent: {
     A: null,
@@ -131,7 +149,7 @@ var TEST_TREE = {
     L: "E",
     M: null,
     N: "M",
-    O: "N"
+    O: "N",
   },
   expanded: new Set(),
 };
@@ -140,15 +158,15 @@ var TEST_TREE = {
  * Frame
  */
 function checkFrameString({
-  el, file, line, column, source, functionName, shouldLink, tooltip
+  el, file, line, column, source, functionName, shouldLink, tooltip,
 }) {
-  let $ = selector => el.querySelector(selector);
+  const $ = selector => el.querySelector(selector);
 
-  let $func = $(".frame-link-function-display-name");
-  let $source = $(".frame-link-source");
-  let $sourceInner = $(".frame-link-source-inner");
-  let $filename = $(".frame-link-filename");
-  let $line = $(".frame-link-line");
+  const $func = $(".frame-link-function-display-name");
+  const $source = $(".frame-link-source");
+  const $sourceInner = $(".frame-link-source-inner");
+  const $filename = $(".frame-link-filename");
+  const $line = $(".frame-link-line");
 
   is($filename.textContent, file, "Correct filename");
   is(el.getAttribute("data-line"), line ? `${line}` : null, "Expected `data-line` found");
@@ -178,19 +196,66 @@ function checkFrameString({
   }
 }
 
+function checkSmartFrameString({ el, location, functionName, tooltip }) {
+  const $ = selector => el.querySelector(selector);
+
+  const $func = $(".title");
+  const $location = $(".location");
+
+  is($location.textContent, location, "Correct filename");
+  is(el.getAttribute("title"), tooltip, "Correct tooltip");
+  if (functionName != null) {
+    is($func.textContent, functionName, "Correct function name");
+  } else {
+    ok(!$func, "Should not have an element for `functionName`");
+  }
+}
+
 function renderComponent(component, props) {
   const el = React.createElement(component, props, {});
   // By default, renderIntoDocument() won't work for stateless components, but
   // it will work if the stateless component is wrapped in a stateful one.
   // See https://github.com/facebook/react/issues/4839
-  const wrappedEl = React.DOM.span({}, [el]);
+  const wrappedEl = dom.span({}, [el]);
   const renderedComponent = TestUtils.renderIntoDocument(wrappedEl);
   return ReactDOM.findDOMNode(renderedComponent).children[0];
 }
 
 function shallowRenderComponent(component, props) {
   const el = React.createElement(component, props);
-  const renderer = TestUtils.createRenderer();
+  const renderer = new ShallowRenderer();
   renderer.render(el, {});
   return renderer.getRenderOutput();
+}
+
+/**
+ * Creates a React Component for testing
+ *
+ * @param {string} factory - factory object of the component to be created
+ * @param {object} props - React props for the component
+ * @returns {object} - container Node, Object with React component
+ * and querySelector function with $ as name.
+ */
+async function createComponentTest(factory, props) {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+
+  const component = ReactDOM.render(factory(props), container);
+  await forceRender(component);
+
+  return {
+    container,
+    component,
+    $: (s) => container.querySelector(s),
+  };
+}
+
+async function waitFor(condition = () => true, delay = 50) {
+  do {
+    const res = condition();
+    if (res) {
+      return res;
+    }
+    await new Promise(resolve => setTimeout(resolve, delay));
+  } while (true);
 }

@@ -32,49 +32,49 @@ const TESTS = [
     activedescendant: "div.tagLine",
     key: "VK_DOWN",
     options: { },
-    waitFor: "inspector-updated"
+    waitFor: "inspector-updated",
   },
   {
     desc: "Focus on header tag",
     focused: "div.focusableElms.0",
     activedescendant: "div.tagLine",
     key: "VK_RETURN",
-    options: { }
+    options: { },
   },
   {
     desc: "Activate header tag editor",
     focused: "div.editor.tag.inplaceEditor.input",
     activedescendant: "div.tagLine",
     key: "VK_RETURN",
-    options: { }
+    options: { },
   },
   {
     desc: "Activate header id attribute editor",
     focused: "div.editor.attrList.children.0.children.1.inplaceEditor.input",
     activedescendant: "div.tagLine",
     key: "VK_TAB",
-    options: { }
+    options: { },
   },
   {
     desc: "Deselect text in header id attribute editor",
     focused: "div.editor.attrList.children.0.children.1.inplaceEditor.input",
     activedescendant: "div.tagLine",
     key: "VK_TAB",
-    options: { }
+    options: { },
   },
   {
     desc: "Move the cursor to the left",
     focused: "div.editor.attrList.children.0.children.1.inplaceEditor.input",
     activedescendant: "div.tagLine",
     key: "VK_LEFT",
-    options: { }
+    options: { },
   },
   {
     desc: "Modify the attribute",
     focused: "div.editor.attrList.children.0.children.1.inplaceEditor.input",
     activedescendant: "div.tagLine",
     key: "A",
-    options: { }
+    options: { },
   },
   {
     desc: "Commit the attribute change",
@@ -82,34 +82,34 @@ const TESTS = [
     activedescendant: "div.tagLine",
     key: "VK_RETURN",
     options: { },
-    waitFor: "inspector-updated"
+    waitFor: "inspector-updated",
   },
   {
     desc: "Tab and focus on header class attribute",
     focused: "div.focusableElms.2",
     activedescendant: "div.tagLine",
     key: "VK_TAB",
-    options: { }
+    options: { },
   },
   {
     desc: "Tab and focus on header new attribute node",
     focused: "div.focusableElms.3",
     activedescendant: "div.tagLine",
     key: "VK_TAB",
-    options: { }
+    options: { },
   },
 ];
 
 let elms = {};
 
-add_task(function* () {
-  let url = `data:text/html;charset=utf-8,${TEST_URI}`;
-  let { inspector } = yield openInspectorForURL(url);
+add_task(async function() {
+  const url = `data:text/html;charset=utf-8,${TEST_URI}`;
+  const { inspector } = await openInspectorForURL(url);
 
   elms.docBody = inspector.markup.doc.body;
   elms.root = inspector.markup.getContainer(inspector.markup._rootNode);
-  elms.div = yield getContainerForSelector("div", inspector);
-  elms.body = yield getContainerForSelector("body", inspector);
+  elms.div = await getContainerForSelector("div", inspector);
+  elms.body = await getContainerForSelector("body", inspector);
 
   // Initial focus is on root element and active descendant should be set on
   // body tag line.
@@ -118,8 +118,8 @@ add_task(function* () {
   // Focus on the tree element.
   elms.root.elt.focus();
 
-  for (let testData of TESTS) {
-    yield runAccessibilityNavigationTest(inspector, elms, testData);
+  for (const testData of TESTS) {
+    await runAccessibilityNavigationTest(inspector, elms, testData);
   }
 
   elms = null;

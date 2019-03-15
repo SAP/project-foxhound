@@ -11,17 +11,17 @@ const EXPECTED_SHEETS = [
     sheetIndex: 0,
     name: /^simple.css$/,
     rules: 1,
-    active: true
+    active: true,
   }, {
     sheetIndex: 1,
     name: /^<.*>$/,
     rules: 3,
-    active: false
-  }
+    active: false,
+  },
 ];
 
-add_task(function* () {
-  let { ui } = yield openStyleEditorForURL(TESTCASE_URI);
+add_task(async function() {
+  const { ui } = await openStyleEditorForURL(TESTCASE_URI);
 
   is(ui.editors.length, 2, "The UI contains two style sheets.");
   checkSheet(ui.editors[0], EXPECTED_SHEETS[0]);
@@ -32,12 +32,12 @@ function checkSheet(editor, expected) {
   is(editor.styleSheet.styleSheetIndex, expected.sheetIndex,
     "Style sheet has correct index.");
 
-  let summary = editor.summary;
-  let name = summary.querySelector(".stylesheet-name > label")
+  const summary = editor.summary;
+  const name = summary.querySelector(".stylesheet-name > label")
                     .getAttribute("value");
   ok(expected.name.test(name), "The name '" + name + "' is correct.");
 
-  let ruleCount = summary.querySelector(".stylesheet-rule-count").textContent;
+  const ruleCount = summary.querySelector(".stylesheet-rule-count").textContent;
   is(parseInt(ruleCount, 10), expected.rules, "the rule count is correct");
 
   is(summary.classList.contains("splitview-active"), expected.active,

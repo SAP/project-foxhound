@@ -18,43 +18,42 @@ function getZoomValue() {
   return parseFloat(Services.prefs.getCharPref("devtools.toolbox.zoomValue"));
 }
 
-add_task(function* () {
+add_task(async function() {
   info("Create a test tab and open the toolbox");
-  let tab = yield addTab(URL);
-  let target = TargetFactory.forTab(tab);
-  let toolbox = yield gDevTools.showToolbox(target, "webconsole");
+  const tab = await addTab(URL);
+  const target = await TargetFactory.forTab(tab);
+  const toolbox = await gDevTools.showToolbox(target, "webconsole");
 
-  let {SIDE, BOTTOM} = Toolbox.HostType;
-  for (let type of [SIDE, BOTTOM, SIDE]) {
+  const {RIGHT, BOTTOM} = Toolbox.HostType;
+  for (const type of [RIGHT, BOTTOM, RIGHT]) {
     info("Switch to host type " + type);
-    yield toolbox.switchHost(type);
+    await toolbox.switchHost(type);
 
     info("Try to use the toolbox shortcuts");
-    yield checkKeyBindings(toolbox);
+    await checkKeyBindings(toolbox);
   }
 
   Services.prefs.clearUserPref("devtools.toolbox.zoomValue");
   Services.prefs.setCharPref("devtools.toolbox.host", BOTTOM);
-  yield toolbox.destroy();
+  await toolbox.destroy();
   gBrowser.removeCurrentTab();
 });
 
 function zoomWithKey(toolbox, key) {
-  let shortcut = L10N.getStr(key);
+  const shortcut = L10N.getStr(key);
   if (!shortcut) {
     info("Key was empty, skipping zoomWithKey");
     return;
   }
   info("Zooming with key: " + key);
-  let currentZoom = getZoomValue();
+  const currentZoom = getZoomValue();
   synthesizeKeyShortcut(shortcut, toolbox.win);
   isnot(getZoomValue(), currentZoom, "The zoom level was changed in the toolbox");
 }
 
-function* checkKeyBindings(toolbox) {
+function checkKeyBindings(toolbox) {
   zoomWithKey(toolbox, "toolbox.zoomIn.key");
   zoomWithKey(toolbox, "toolbox.zoomIn2.key");
-  zoomWithKey(toolbox, "toolbox.zoomIn3.key");
 
   zoomWithKey(toolbox, "toolbox.zoomReset.key");
 

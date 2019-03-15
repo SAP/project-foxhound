@@ -12,31 +12,31 @@ const { initPerformanceInNewTab, teardownToolboxAndRemoveTab } = require("devtoo
 const { startRecording, stopRecording } = require("devtools/client/performance/test/helpers/actions");
 const { once } = require("devtools/client/performance/test/helpers/event-utils");
 
-add_task(function* () {
-  let { panel } = yield initPerformanceInNewTab({
+add_task(async function() {
+  const { panel } = await initPerformanceInNewTab({
     url: SIMPLE_URL,
-    win: window
+    win: window,
   });
 
-  let {
+  const {
     EVENTS,
     PerformanceController,
     DetailsView,
     JsFlameGraphView,
-    FlameGraphUtils
+    FlameGraphUtils,
   } = panel.panelWin;
 
   Services.prefs.setBoolPref(UI_FLATTEN_RECURSION_PREF, true);
 
-  yield startRecording(panel);
-  yield stopRecording(panel);
+  await startRecording(panel);
+  await stopRecording(panel);
 
   let rendered = once(JsFlameGraphView, EVENTS.UI_JS_FLAMEGRAPH_RENDERED);
-  yield DetailsView.selectView("js-flamegraph");
-  yield rendered;
+  await DetailsView.selectView("js-flamegraph");
+  await rendered;
 
-  let thread1 = PerformanceController.getCurrentRecording().getProfile().threads[0];
-  let rendering1 = FlameGraphUtils._cache.get(thread1);
+  const thread1 = PerformanceController.getCurrentRecording().getProfile().threads[0];
+  const rendering1 = FlameGraphUtils._cache.get(thread1);
 
   ok(thread1,
     "The samples were retrieved from the controller.");
@@ -45,11 +45,11 @@ add_task(function* () {
 
   rendered = once(JsFlameGraphView, EVENTS.UI_JS_FLAMEGRAPH_RENDERED);
   Services.prefs.setBoolPref(UI_FLATTEN_RECURSION_PREF, false);
-  yield rendered;
+  await rendered;
   ok(true, "JsFlameGraphView rerendered when toggling flatten-tree-recursion.");
 
-  let thread2 = PerformanceController.getCurrentRecording().getProfile().threads[0];
-  let rendering2 = FlameGraphUtils._cache.get(thread2);
+  const thread2 = PerformanceController.getCurrentRecording().getProfile().threads[0];
+  const rendering2 = FlameGraphUtils._cache.get(thread2);
 
   is(thread1, thread2,
     "The same samples data should be retrieved from the controller (1).");
@@ -58,16 +58,16 @@ add_task(function* () {
 
   rendered = once(JsFlameGraphView, EVENTS.UI_JS_FLAMEGRAPH_RENDERED);
   Services.prefs.setBoolPref(UI_FLATTEN_RECURSION_PREF, true);
-  yield rendered;
+  await rendered;
   ok(true, "JsFlameGraphView rerendered when toggling back flatten-tree-recursion.");
 
-  let thread3 = PerformanceController.getCurrentRecording().getProfile().threads[0];
-  let rendering3 = FlameGraphUtils._cache.get(thread3);
+  const thread3 = PerformanceController.getCurrentRecording().getProfile().threads[0];
+  const rendering3 = FlameGraphUtils._cache.get(thread3);
 
   is(thread2, thread3,
     "The same samples data should be retrieved from the controller (2).");
   isnot(rendering2, rendering3,
     "The rendering data should be different because other options were used (2).");
 
-  yield teardownToolboxAndRemoveTab(panel);
+  await teardownToolboxAndRemoveTab(panel);
 });

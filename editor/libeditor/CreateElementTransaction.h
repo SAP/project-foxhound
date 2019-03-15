@@ -6,12 +6,13 @@
 #ifndef CreateElementTransaction_h
 #define CreateElementTransaction_h
 
+#include "mozilla/EditorDOMPoint.h"
 #include "mozilla/EditTransactionBase.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsISupportsImpl.h"
 
-class nsIAtom;
+class nsAtom;
 class nsIContent;
 class nsINode;
 
@@ -23,25 +24,30 @@ namespace mozilla {
 class EditorBase;
 namespace dom {
 class Element;
-} // namespace dom
+}  // namespace dom
 
-class CreateElementTransaction final : public EditTransactionBase
-{
-public:
+class CreateElementTransaction final : public EditTransactionBase {
+ protected:
+  template <typename PT, typename CT>
+  CreateElementTransaction(EditorBase& aEditorBase, nsAtom& aTag,
+                           const EditorDOMPointBase<PT, CT>& aPointToInsert);
+
+ public:
   /**
-   * Initialize the transaction.
-   * @param aEditorBase     The provider of basic editing functionality.
+   * Create a transaction for creating a new child node of the container of
+   * aPointToInsert of type aTag.
+   *
+   * @param aEditorBase     The editor which manages the transaction.
    * @param aTag            The tag (P, HR, TABLE, etc.) for the new element.
-   * @param aParent         The node into which the new element will be
-   *                        inserted.
-   * @param aOffsetInParent The location in aParent to insert the new element.
-   *                        If eAppend, the new element is appended as the last
-   *                        child.
+   * @param aPointToInsert  The new node will be inserted before the child at
+   *                        aPointToInsert.  If this refers end of the container
+   *                        or after, the new node will be appended to the
+   *                        container.
    */
-  CreateElementTransaction(EditorBase& aEditorBase,
-                           nsIAtom& aTag,
-                           nsINode& aParent,
-                           int32_t aOffsetInParent);
+  template <typename PT, typename CT>
+  static already_AddRefed<CreateElementTransaction> Create(
+      EditorBase& aEditorBase, nsAtom& aTag,
+      const EditorDOMPointBase<PT, CT>& aPointToInsert);
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(CreateElementTransaction,
@@ -53,28 +59,27 @@ public:
 
   already_AddRefed<dom::Element> GetNewNode();
 
-protected:
+ protected:
   virtual ~CreateElementTransaction();
 
+  /**
+   * InsertNewNode() inserts mNewNode before the child node at mPointToInsert.
+   */
+  void InsertNewNode(ErrorResult& aError);
+
   // The document into which the new node will be inserted.
-  EditorBase* mEditorBase;
+  RefPtr<EditorBase> mEditorBase;
 
   // The tag (mapping to object type) for the new element.
-  nsCOMPtr<nsIAtom> mTag;
+  RefPtr<nsAtom> mTag;
 
-  // The node into which the new node will be inserted.
-  nsCOMPtr<nsINode> mParent;
-
-  // The index in mParent for the new node.
-  int32_t mOffsetInParent;
+  // The DOM point we will insert mNewNode.
+  EditorDOMPoint mPointToInsert;
 
   // The new node to insert.
   nsCOMPtr<dom::Element> mNewNode;
-
-  // The node we will insert mNewNode before.  We compute this ourselves.
-  nsCOMPtr<nsIContent> mRefNode;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // #ifndef CreateElementTransaction_h
+#endif  // #ifndef CreateElementTransaction_h

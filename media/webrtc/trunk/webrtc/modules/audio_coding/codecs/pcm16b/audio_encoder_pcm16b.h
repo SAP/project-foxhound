@@ -8,11 +8,11 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_CODECS_PCM16B_AUDIO_ENCODER_PCM16B_H_
-#define WEBRTC_MODULES_AUDIO_CODING_CODECS_PCM16B_AUDIO_ENCODER_PCM16B_H_
+#ifndef MODULES_AUDIO_CODING_CODECS_PCM16B_AUDIO_ENCODER_PCM16B_H_
+#define MODULES_AUDIO_CODING_CODECS_PCM16B_AUDIO_ENCODER_PCM16B_H_
 
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/modules/audio_coding/codecs/g711/audio_encoder_pcm.h"
+#include "modules/audio_coding/codecs/g711/audio_encoder_pcm.h"
+#include "rtc_base/constructormagic.h"
 
 namespace webrtc {
 
@@ -39,10 +39,12 @@ class AudioEncoderPcm16B final : public AudioEncoderPcm {
 
   size_t BytesPerSample() const override;
 
+  AudioEncoder::CodecType GetCodecType() const override;
+
  private:
   RTC_DISALLOW_COPY_AND_ASSIGN(AudioEncoderPcm16B);
 };
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_AUDIO_CODING_CODECS_PCM16B_AUDIO_ENCODER_PCM16B_H_
+#endif  // MODULES_AUDIO_CODING_CODECS_PCM16B_AUDIO_ENCODER_PCM16B_H_

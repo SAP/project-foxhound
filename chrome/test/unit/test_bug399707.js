@@ -4,12 +4,12 @@
  */
 
 var MANIFESTS = [
-  do_get_file("data/test_bug399707.manifest")
+  do_get_file("data/test_bug399707.manifest"),
 ];
 
 registerManifests(MANIFESTS);
 
-Components.utils.import("resource://testing-common/AppInfo.jsm", this);
+ChromeUtils.import("resource://testing-common/AppInfo.jsm", this);
 updateAppInfo({
   name: "XPCShell",
   ID: "{39885e5f-f6b4-4e2a-87e5-6259ecf79011}",
@@ -17,40 +17,33 @@ updateAppInfo({
   platformVersion: "1.9",
 });
 
-var gIOS = Cc["@mozilla.org/network/io-service;1"]
-            .getService(Ci.nsIIOService);
 var chromeReg = Cc["@mozilla.org/chrome/chrome-registry;1"]
                  .getService(Ci.nsIChromeRegistry);
 chromeReg.checkForNewChrome();
 
-var target = gIOS.newFileURI(do_get_file("data"));
+var target = Services.io.newFileURI(do_get_file("data"));
 target = target.spec + "test/test.xul";
 
-function test_succeeded_mapping(namespace)
-{
-  var uri = gIOS.newURI("chrome://" + namespace + "/content/test.xul");
+function test_succeeded_mapping(namespace) {
+  var uri = Services.io.newURI("chrome://" + namespace + "/content/test.xul");
   try {
     var result = chromeReg.convertChromeURL(uri);
-    do_check_eq(result.spec, target);
-  }
-  catch (ex) {
+    Assert.equal(result.spec, target);
+  } catch (ex) {
     do_throw(namespace);
   }
 }
 
-function test_failed_mapping(namespace)
-{
-  var uri = gIOS.newURI("chrome://" + namespace + "/content/test.xul");
+function test_failed_mapping(namespace) {
+  var uri = Services.io.newURI("chrome://" + namespace + "/content/test.xul");
   try {
-    var result = chromeReg.convertChromeURL(uri);
+    chromeReg.convertChromeURL(uri);
     do_throw(namespace);
-  }
-  catch (ex) {
+  } catch (ex) {
   }
 }
 
-function run_test()
-{
+function run_test() {
   test_succeeded_mapping("test1");
   test_succeeded_mapping("test2");
   test_succeeded_mapping("test3");

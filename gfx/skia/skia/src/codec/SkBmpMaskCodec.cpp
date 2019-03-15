@@ -7,18 +7,18 @@
 
 #include "SkBmpMaskCodec.h"
 #include "SkCodecPriv.h"
-#include "SkColorPriv.h"
+#include "SkColorData.h"
 
 /*
  * Creates an instance of the decoder
  */
-SkBmpMaskCodec::SkBmpMaskCodec(int width, int height, const SkEncodedInfo& info, SkStream* stream,
+SkBmpMaskCodec::SkBmpMaskCodec(SkEncodedInfo&& info,
+                               std::unique_ptr<SkStream> stream,
                                uint16_t bitsPerPixel, SkMasks* masks,
                                SkCodec::SkScanlineOrder rowOrder)
-    : INHERITED(width, height, info, stream, bitsPerPixel, rowOrder)
+    : INHERITED(std::move(info), std::move(stream), bitsPerPixel, rowOrder)
     , fMasks(masks)
     , fMaskSwizzler(nullptr)
-    , fSrcBuffer(new uint8_t [this->srcRowBytes()])
 {}
 
 /*
@@ -27,24 +27,17 @@ SkBmpMaskCodec::SkBmpMaskCodec(int width, int height, const SkEncodedInfo& info,
 SkCodec::Result SkBmpMaskCodec::onGetPixels(const SkImageInfo& dstInfo,
                                             void* dst, size_t dstRowBytes,
                                             const Options& opts,
-                                            SkPMColor* inputColorPtr,
-                                            int* inputColorCount,
                                             int* rowsDecoded) {
     if (opts.fSubset) {
         // Subsets are not supported.
         return kUnimplemented;
     }
-    if (dstInfo.dimensions() != this->getInfo().dimensions()) {
+    if (dstInfo.dimensions() != this->dimensions()) {
         SkCodecPrintf("Error: scaling not supported.\n");
         return kInvalidScale;
     }
 
-    if (!conversion_possible_ignore_color_space(dstInfo, this->getInfo())) {
-        SkCodecPrintf("Error: cannot convert input type to output type.\n");
-        return kInvalidConversion;
-    }
-
-    Result result = this->prepareToDecode(dstInfo, opts, inputColorPtr, inputColorCount);
+    Result result = this->prepareToDecode(dstInfo, opts);
     if (kSuccess != result) {
         return result;
     }
@@ -57,11 +50,23 @@ SkCodec::Result SkBmpMaskCodec::onGetPixels(const SkImageInfo& dstInfo,
     return kSuccess;
 }
 
-SkCodec::Result SkBmpMaskCodec::prepareToDecode(const SkImageInfo& dstInfo,
-        const SkCodec::Options& options, SkPMColor inputColorPtr[], int* inputColorCount) {
-    // Initialize the mask swizzler
-    fMaskSwizzler.reset(SkMaskSwizzler::CreateMaskSwizzler(dstInfo, this->getInfo(), fMasks,
-            this->bitsPerPixel(), options));
+SkCodec::Result SkBmpMaskCodec::onPrepareToDecode(const SkImageInfo& dstInfo,
+        const SkCodec::Options& options) {
+    if (this->colorXform()) {
+        this->resetXformBuffer(dstInfo.width());
+    }
+
+    SkImageInfo swizzlerInfo = dstInfo;
+    if (this->colorXform()) {
+        swizzlerInfo = swizzlerInfo.makeColorType(kXformSrcColorType);
+        if (kPremul_SkAlphaType == dstInfo.alphaType()) {
+            swizzlerInfo = swizzlerInfo.makeAlphaType(kUnpremul_SkAlphaType);
+        }
+    }
+
+    bool srcIsOpaque = this->getEncodedInfo().opaque();
+    fMaskSwizzler.reset(SkMaskSwizzler::CreateMaskSwizzler(swizzlerInfo, srcIsOpaque,
+            fMasks.get(), this->bitsPerPixel(), options));
     SkASSERT(fMaskSwizzler);
 
     return SkCodec::kSuccess;
@@ -74,7 +79,7 @@ int SkBmpMaskCodec::decodeRows(const SkImageInfo& dstInfo,
                                            void* dst, size_t dstRowBytes,
                                            const Options& opts) {
     // Iterate over rows of the image
-    uint8_t* srcRow = fSrcBuffer.get();
+    uint8_t* srcRow = this->srcBuffer();
     const int height = dstInfo.height();
     for (int y = 0; y < height; y++) {
         // Read a row of the input
@@ -86,7 +91,13 @@ int SkBmpMaskCodec::decodeRows(const SkImageInfo& dstInfo,
         // Decode the row in destination format
         uint32_t row = this->getDstRow(y, height);
         void* dstRow = SkTAddOffset<void>(dst, row * dstRowBytes);
-        fMaskSwizzler->swizzle(dstRow, srcRow);
+
+        if (this->colorXform()) {
+            fMaskSwizzler->swizzle(this->xformBuffer(), srcRow);
+            this->applyColorXform(dstRow, this->xformBuffer(), fMaskSwizzler->swizzleWidth());
+        } else {
+            fMaskSwizzler->swizzle(dstRow, srcRow);
+        }
     }
 
     // Finished decoding the entire image

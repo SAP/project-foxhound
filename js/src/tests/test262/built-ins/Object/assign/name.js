@@ -3,7 +3,7 @@
 /*---
 es6id: 19.1.2.1
 description: '`name` property'
-info: >
+info: |
     ES6 Section 17:
 
     Every built-in Function object, including constructors, that is not
@@ -28,6 +28,5 @@ assert.sameValue(
 verifyNotEnumerable(Object.assign, 'name');
 verifyNotWritable(Object.assign, 'name');
 verifyConfigurable(Object.assign, 'name');
-
 
 reportCompare(0, 0);

@@ -5,12 +5,10 @@
 
 "use strict";
 
-var { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
-
 var { InlineSpellChecker, SpellCheckHelper } =
-  Cu.import("resource://gre/modules/InlineSpellChecker.jsm", {});
+  ChromeUtils.import("resource://gre/modules/InlineSpellChecker.jsm", {});
 
-this.EXPORTED_SYMBOLS = [ "InlineSpellCheckerContent" ]
+var EXPORTED_SYMBOLS = [ "InlineSpellCheckerContent" ];
 
 var InlineSpellCheckerContent = {
   _spellChecker: null,
@@ -23,19 +21,16 @@ var InlineSpellCheckerContent = {
     if (!(editFlags & (SpellCheckHelper.TEXTAREA | SpellCheckHelper.INPUT))) {
       // Get the editor off the window.
       let win = event.target.ownerGlobal;
-      let editingSession = win.QueryInterface(Ci.nsIInterfaceRequestor)
-                              .getInterface(Ci.nsIWebNavigation)
-                              .QueryInterface(Ci.nsIInterfaceRequestor)
-                              .getInterface(Ci.nsIEditingSession);
+      let editingSession = win.docShell.editingSession;
       spellChecker = this._spellChecker =
         new InlineSpellChecker(editingSession.getEditorForWindow(win));
     } else {
       // Use the element's editor.
       spellChecker = this._spellChecker =
-        new InlineSpellChecker(event.target.QueryInterface(Ci.nsIDOMNSEditableElement).editor);
+        new InlineSpellChecker(event.target.editor);
     }
 
-    this._spellChecker.initFromEvent(event.rangeParent, event.rangeOffset)
+    this._spellChecker.initFromEvent(event.rangeParent, event.rangeOffset);
 
     this._addMessageListeners();
 
@@ -51,16 +46,15 @@ var InlineSpellCheckerContent = {
                enableRealTimeSpell: false };
     }
 
+    if (spellChecker.initialSpellCheckPending) {
+      return { canSpellCheck: true,
+               initialSpellCheckPending: true,
+               enableRealTimeSpell: true };
+    }
+
     let dictionaryList = {};
     let realSpellChecker = spellChecker.mInlineSpellChecker.spellChecker;
     realSpellChecker.GetDictionaryList(dictionaryList, {});
-
-    // The original list we get is in random order. We need our list to be
-    // sorted by display names.
-    dictionaryList = spellChecker.sortDictionaryList(dictionaryList.value).map((obj) => {
-      return obj.id;
-    });
-    spellChecker.mDictionaryNames = dictionaryList;
 
     return { canSpellCheck: spellChecker.canSpellCheck,
              initialSpellCheckPending: spellChecker.initialSpellCheckPending,
@@ -69,7 +63,7 @@ var InlineSpellCheckerContent = {
              misspelling: spellChecker.mMisspelling,
              spellSuggestions: this._generateSpellSuggestions(),
              currentDictionary: spellChecker.mInlineSpellChecker.spellChecker.GetCurrentDictionary(),
-             dictionaryList };
+             dictionaryList: dictionaryList.value };
   },
 
   uninitContextMenu() {
@@ -108,7 +102,7 @@ var InlineSpellCheckerContent = {
 
       "InlineSpellChecker:recheck",
 
-      "InlineSpellChecker:uninit"
+      "InlineSpellChecker:uninit",
     ],
 
   _addMessageListeners() {
@@ -119,7 +113,7 @@ var InlineSpellCheckerContent = {
   receiveMessage(msg) {
     switch (msg.name) {
       case "InlineSpellChecker:selectDictionary":
-        this._spellChecker.selectDictionary(msg.data.index);
+        this._spellChecker.selectDictionary(msg.data.localeCode);
         break;
 
       case "InlineSpellChecker:replaceMisspelling":
@@ -138,5 +132,5 @@ var InlineSpellCheckerContent = {
         this.uninitContextMenu();
         break;
     }
-  }
+  },
 };

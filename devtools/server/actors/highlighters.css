@@ -7,9 +7,6 @@
   from impacting web content. Indeed, this pseudo-class is only available to chrome code.
   This stylesheet is loaded as a ua stylesheet via the addon sdk, so having this
   pseudo-class is important.
-  Having bug 1086532 fixed would make it possible to load this stylesheet in a
-  <style scoped> node instead, directly in the native anonymous container
-  element.
 
   A specific selector should still be specified to avoid impacting non-devtools
   chrome content.
@@ -25,6 +22,8 @@
   letter-spacing: initial;
   word-spacing: initial;
   color: initial;
+  direction: initial;
+  writing-mode: initial;
 }
 
 :-moz-native-anonymous .highlighter-container {
@@ -34,6 +33,12 @@
   --highlighter-bubble-background-color: hsl(214, 13%, 24%);
   --highlighter-bubble-border-color: rgba(255, 255, 255, 0.2);
   --highlighter-bubble-arrow-size: 8px;
+  --highlighter-font-family: message-box;
+  --highlighter-font-size: 11px;
+  --highlighter-infobar-color: hsl(210, 30%, 85%);
+  --highlighter-marker-color: #000;
+
+  --grey-40: #b1b1b3;
 }
 
 /**
@@ -62,6 +67,12 @@
   z-index: 1;
 }
 
+:-moz-native-anonymous .highlighter-container.flexbox {
+  /* Make the flexbox highlighter have a z-index greater than the box-model so
+     it always sits above it. */
+  z-index: 2;
+}
+
 :-moz-native-anonymous .highlighter-container [hidden] {
   display: none;
 }
@@ -74,6 +85,10 @@
 
 :-moz-native-anonymous .box-model-regions {
   opacity: 0.6;
+}
+
+:-moz-native-anonymous .box-model-regions [half-faded] {
+  opacity: 0.5;
 }
 
 /* Box model regions can be faded (see the onlyRegionArea option in
@@ -120,8 +135,8 @@
   position: absolute;
   max-width: 95%;
 
-  font: message-box;
-  font-size: 11px;
+  font: var(--highlighter-font-family);
+  font-size: var(--highlighter-font-size);
 }
 
 :-moz-native-anonymous [class$=infobar] {
@@ -140,6 +155,9 @@
   text-shadow: none;
 
   border: 1px solid var(--highlighter-bubble-border-color);
+
+  /* The infobar should always be above every other highlighter when it is visible */
+  z-index: 2147483647;
 }
 
 /* Arrows */
@@ -187,10 +205,11 @@
   direction: ltr;
   padding-bottom: 1px;
   display: flex;
+  justify-content: center;
 }
 
 :-moz-native-anonymous .box-model-infobar-tagname {
-  color: hsl(285,100%, 75%);
+  color: hsl(285, 100%, 75%);
 }
 
 :-moz-native-anonymous .box-model-infobar-id {
@@ -207,7 +226,7 @@
 }
 
 :-moz-native-anonymous [class$=infobar-dimensions] {
-  color: hsl(210, 30%, 85%);
+  color: var(--highlighter-infobar-color);
   border-inline-start: 1px solid #5a6169;
   margin-inline-start: 6px;
   padding-inline-start: 6px;
@@ -229,13 +248,21 @@
 
 :-moz-native-anonymous .css-grid-areas,
 :-moz-native-anonymous .css-grid-cells {
-  fill: #CEC0ED;
+  opacity: 0.5;
   stroke: none;
 }
 
 :-moz-native-anonymous .css-grid-area-infobar-name,
-:-moz-native-anonymous .css-grid-cell-infobar-position {
+:-moz-native-anonymous .css-grid-cell-infobar-position,
+:-moz-native-anonymous .css-grid-line-infobar-number {
   color: hsl(285, 100%, 75%);
+}
+
+:-moz-native-anonymous .css-grid-line-infobar-names:not(:empty) {
+  color: var(--highlighter-infobar-color);
+  border-inline-start: 1px solid #5a6169;
+  margin-inline-start: 6px;
+  padding-inline-start: 6px;
 }
 
 /* CSS Transform Highlighter */
@@ -256,14 +283,6 @@
   stroke: var(--highlighter-guide-color);
   stroke-dasharray: 5 3;
   stroke-width: 2;
-}
-
-/* Rect Highlighter */
-
-:-moz-native-anonymous .highlighted-rect {
-  position: absolute;
-  background: var(--highlighter-content-color);
-  opacity: 0.8;
 }
 
 /* Element Geometry Highlighter */
@@ -330,7 +349,7 @@
 
 :-moz-native-anonymous .geometry-editor-label-text {
   fill: var(--highlighter-bubble-text-color);
-  font: message-box;
+  font: var(--highlighter-font-family);
   font-size: 10px;
   text-anchor: middle;
   dominant-baseline: middle;
@@ -366,7 +385,7 @@
 :-moz-native-anonymous .rulers-highlighter-vertical-labels > text {
   stroke: none;
   fill: #202020;
-  font: message-box;
+  font: var(--highlighter-font-family);
   font-size: 9px;
   dominant-baseline: hanging;
 }
@@ -378,6 +397,17 @@
 :-moz-native-anonymous .rulers-highlighter-vertical-labels > text {
   transform: rotate(-90deg);
   text-anchor: end;
+}
+
+:-moz-native-anonymous .rulers-highlighter-viewport-infobar-container {
+  shape-rendering: crispEdges;
+  background-color: rgba(255, 255, 255, 0.7);
+  font: var(--highlighter-font-family);
+  position: fixed;
+  top: 30px;
+  right: 0px;
+  font-size: 12px;
+  padding: 4px;
 }
 
 /* Measuring Tool Highlighter */
@@ -416,7 +446,7 @@
   border-radius: 4px;
   padding: 4px;
   white-space: pre-line;
-  font: message-box;
+  font: var(--highlighter-font-family);
   font-size: 10px;
   pointer-events: none;
   -moz-user-select: none;
@@ -532,16 +562,183 @@
   width: 16px;
   height: 16px;
   position: absolute;
-  offset-inline-start: 3px;
-  offset-block-start: 3px;
+  inset-inline-start: 3px;
+  inset-block-start: 3px;
   box-shadow: 0px 0px 0px black;
   border: solid 1px #fff;
 }
 
 :-moz-native-anonymous .eye-dropper-color-value {
   text-shadow: 1px 1px 1px #fff;
-  font: message-box;
-  font-size: 11px;
+  font: var(--highlighter-font-family);
+  font-size: var(--highlighter-font-size);
   text-align: center;
   padding: 4px 0;
+}
+
+/* Paused Debugger Overlay */
+
+:-moz-native-anonymous .paused-dbg-root {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+
+  /* We don't have access to DevTools themes here, but some of these colors come from the
+     themes. Theme variable names are given in comments. */
+  --text-color: #585959; /* --theme-body-color-alt */
+  --toolbar-background: #fcfcfc; /* --theme-toolbar-background */;
+  --toolbar-border: #dde1e4; /* --theme-splitter-color */
+  --toolbar-box-shadow: 0 4px 4px 0 rgba(155, 155, 155, 0.26); /* --rdm-box-shadow */
+  --overlay-background: #dde1e4a8;
+}
+
+:-moz-native-anonymous .paused-dbg-root[overlay] {
+  background-color: var(--overlay-background);
+  pointer-events: auto;
+}
+
+:-moz-native-anonymous .paused-dbg-toolbar {
+  margin-top: 15px;
+  padding: 4px 5px;
+  display: inline-flex;
+  -moz-user-select: none;
+  pointer-events: auto;
+
+  color: var(--text-color);
+  border-radius: 2px;
+  box-shadow: var(--toolbar-box-shadow);
+  background-color: var(--toolbar-background);
+  border: 1px solid var(--toolbar-border);
+
+  font: var(--highlighter-font-family);
+  font-size: var(--highlighter-font-size);
+}
+
+/* Shapes highlighter */
+
+:-moz-native-anonymous .shapes-root {
+  pointer-events: none;
+}
+
+:-moz-native-anonymous .shapes-shape-container {
+  position: absolute;
+  overflow: visible;
+}
+
+:-moz-native-anonymous .shapes-polygon,
+:-moz-native-anonymous .shapes-ellipse,
+:-moz-native-anonymous .shapes-rect,
+:-moz-native-anonymous .shapes-bounding-box,
+:-moz-native-anonymous .shapes-rotate-line,
+:-moz-native-anonymous .shapes-quad {
+  fill: transparent;
+  stroke: var(--highlighter-guide-color);
+  shape-rendering: geometricPrecision;
+  vector-effect: non-scaling-stroke;
+}
+
+:-moz-native-anonymous .shapes-markers {
+  fill: #fff;
+}
+
+:-moz-native-anonymous .shapes-markers-outline {
+  fill: var(--highlighter-guide-color);
+}
+
+:-moz-native-anonymous .shapes-marker-hover {
+  fill: var(--highlighter-guide-color);
+}
+
+/* Accessible highlighter */
+
+:-moz-native-anonymous .accessible-infobar {
+  min-width: unset;
+}
+
+:-moz-native-anonymous .accessible-infobar-text {
+  display: grid;
+  grid-template-areas:
+    "role name"
+    "audit audit";
+  grid-template-columns: min-content 1fr;
+}
+
+:-moz-native-anonymous .accessible-infobar-role {
+  grid-area: role;
+  color: #9CDCFE;
+}
+
+:-moz-native-anonymous .accessible-infobar-name {
+  grid-area: name;
+}
+
+:-moz-native-anonymous .accessible-infobar-audit {
+  grid-area: audit;
+  padding-top: 5px;
+  padding-bottom: 2px;
+}
+
+:-moz-native-anonymous .accessible-bounds {
+  opacity: 0.6;
+  fill: #6a5acd;
+}
+
+:-moz-native-anonymous .accessible-infobar-name,
+:-moz-native-anonymous .accessible-infobar-audit {
+  color: var(--highlighter-infobar-color);
+}
+
+:-moz-native-anonymous .accessible-infobar-audit .accessible-contrast-ratio:not(:empty):before {
+  content: "";
+  height: 8px;
+  width: 8px;
+  display: inline-flex;
+  background-color: var(--accessibility-highlighter-contrast-ratio-color);
+  box-shadow: 0 0 0 1px var(--grey-40), 4px 3px var(--accessibility-highlighter-contrast-ratio-bg), 4px 3px 0 1px var(--grey-40);
+  margin-inline-start: 3px;
+  margin-inline-end: 9px;
+}
+
+:-moz-native-anonymous .accessible-infobar-audit .accessible-contrast-ratio:not(:empty):after {
+  margin-inline-start: 2px;
+}
+
+:-moz-native-anonymous .accessible-infobar-audit .accessible-contrast-ratio:not(:empty).AA:after,
+:-moz-native-anonymous .accessible-infobar-audit .accessible-contrast-ratio:not(:empty).AAA:after {
+  color: #90E274;
+}
+
+:-moz-native-anonymous .accessible-infobar-audit .accessible-contrast-ratio:not(:empty).fail:after {
+  color: #E57180;
+  content: "⚠️";
+}
+
+:-moz-native-anonymous .accessible-infobar-audit .accessible-contrast-ratio:not(:empty).AA:after {
+  content: "AA\2713";
+}
+
+:-moz-native-anonymous .accessible-infobar-audit .accessible-contrast-ratio:not(:empty).AAA:after {
+  content: "AAA\2713";
+}
+
+:-moz-native-anonymous .accessible-infobar-audit .accessible-contrast-ratio-label,
+:-moz-native-anonymous .accessible-infobar-audit .accessible-contrast-ratio-separator:before {
+  margin-inline-end: 3px;
+}
+
+:-moz-native-anonymous .accessible-infobar-audit .accessible-contrast-ratio-separator:before {
+  content: "-";
+  margin-inline-start: 3px;
+}
+
+:-moz-native-anonymous .accessible-infobar-name:not(:empty) {
+  border-inline-start: 1px solid #5a6169;
+  margin-inline-start: 6px;
+  padding-inline-start: 6px;
 }

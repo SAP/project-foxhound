@@ -8,11 +8,11 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_coding/codecs/isac/fix/include/isacfix.h"
-#include "webrtc/modules/audio_coding/codecs/isac/fix/source/settings.h"
-#include "webrtc/modules/audio_coding/codecs/tools/audio_codec_speed_test.h"
+#include "modules/audio_coding/codecs/isac/fix/include/isacfix.h"
+#include "modules/audio_coding/codecs/isac/fix/source/settings.h"
+#include "modules/audio_coding/codecs/tools/audio_codec_speed_test.h"
 
-using ::std::string;
+using std::string;
 
 namespace webrtc {
 
@@ -25,10 +25,10 @@ class IsacSpeedTest : public AudioCodecSpeedTest {
   IsacSpeedTest();
   void SetUp() override;
   void TearDown() override;
-  virtual float EncodeABlock(int16_t* in_data, uint8_t* bit_stream,
-                             size_t max_bytes, size_t* encoded_bytes);
-  virtual float DecodeABlock(const uint8_t* bit_stream, size_t encoded_bytes,
-                             int16_t* out_data);
+  float EncodeABlock(int16_t* in_data, uint8_t* bit_stream,
+                     size_t max_bytes, size_t* encoded_bytes) override;
+  float DecodeABlock(const uint8_t* bit_stream, size_t encoded_bytes,
+                     int16_t* out_data) override;
   ISACFIX_MainStruct *ISACFIX_main_inst_;
 };
 
@@ -101,9 +101,12 @@ TEST_P(IsacSpeedTest, IsacEncodeDecodeTest) {
   EncodeDecode(kDurationSec);
 }
 
-const coding_param param_set[] =
-    {::std::tr1::make_tuple(1, 32000, string("audio_coding/speech_mono_16kHz"),
-                            string("pcm"), true)};
+const coding_param param_set[] = {
+    std::make_tuple(1,
+                    32000,
+                    string("audio_coding/speech_mono_16kHz"),
+                    string("pcm"),
+                    true)};
 
 INSTANTIATE_TEST_CASE_P(AllTest, IsacSpeedTest,
                         ::testing::ValuesIn(param_set));

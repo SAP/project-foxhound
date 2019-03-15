@@ -5,7 +5,10 @@
  * found in the LICENSE file.
  */
 
-#include "SkBmpCodec.h"
+#ifndef SkBmpMaskCodec_DEFINED
+#define SkBmpMaskCodec_DEFINED
+
+#include "SkBmpBaseCodec.h"
 #include "SkImageInfo.h"
 #include "SkMaskSwizzler.h"
 #include "SkTypes.h"
@@ -13,13 +16,13 @@
 /*
  * This class implements the decoding for bmp images using bit masks
  */
-class SkBmpMaskCodec : public SkBmpCodec {
+class SkBmpMaskCodec : public SkBmpBaseCodec {
 public:
 
     /*
      * Creates an instance of the decoder
      *
-     * Called only by SkBmpCodec::NewFromStream
+     * Called only by SkBmpCodec::MakeFromStream
      * There should be no other callers despite this being public
      *
      * @param info contains properties of the encoded data
@@ -28,33 +31,32 @@ public:
      * @param masks color masks for certain bmp formats
      * @param rowOrder indicates whether rows are ordered top-down or bottom-up
      */
-    SkBmpMaskCodec(int width, int height, const SkEncodedInfo& info, SkStream* stream,
+    SkBmpMaskCodec(SkEncodedInfo&& info, std::unique_ptr<SkStream>,
             uint16_t bitsPerPixel, SkMasks* masks,
             SkCodec::SkScanlineOrder rowOrder);
 
 protected:
 
     Result onGetPixels(const SkImageInfo& dstInfo, void* dst,
-                       size_t dstRowBytes, const Options&, SkPMColor*,
-                       int*, int*) override;
+                       size_t dstRowBytes, const Options&,
+                       int*) override;
 
-    SkCodec::Result prepareToDecode(const SkImageInfo& dstInfo,
-            const SkCodec::Options& options, SkPMColor inputColorPtr[],
-            int* inputColorCount) override;
+    SkCodec::Result onPrepareToDecode(const SkImageInfo& dstInfo,
+            const SkCodec::Options& options) override;
 
 private:
 
     SkSampler* getSampler(bool createIfNecessary) override {
         SkASSERT(fMaskSwizzler);
-        return fMaskSwizzler;
+        return fMaskSwizzler.get();
     }
 
     int decodeRows(const SkImageInfo& dstInfo, void* dst, size_t dstRowBytes,
             const Options& opts) override;
 
-    SkAutoTDelete<SkMasks>              fMasks;        // owned
-    SkAutoTDelete<SkMaskSwizzler>       fMaskSwizzler;
-    SkAutoTDeleteArray<uint8_t>         fSrcBuffer;
+    std::unique_ptr<SkMasks>        fMasks;
+    std::unique_ptr<SkMaskSwizzler> fMaskSwizzler;
 
-    typedef SkBmpCodec INHERITED;
+    typedef SkBmpBaseCodec INHERITED;
 };
+#endif  // SkBmpMaskCodec_DEFINED

@@ -1,6 +1,4 @@
-#!/usr/bin/env python
-# coding=utf8
-
+#!/usr/bin/env python2
 
 ################################################################################
 # TUTORIAL
@@ -22,18 +20,23 @@
 ################################################################################
 
 # includes
+from __future__ import print_function
 import os
 import sys
 import xml.etree.ElementTree
 
+assert len(sys.argv) == 3, (
+       'Usage: ./GLParseRegistryXML.py path/to/OpenGL-Registry path/to/EGL-Registry')
+
+(_, GL_REGISTRY_PATH, EGL_REGISTRY_PATH) = sys.argv
 
 ################################################################################
 # export management
 
+
 class GLConstHeader:
     def __init__(self, f):
         self.f = f
-
 
     def write(self, arg):
         if isinstance(arg, list):
@@ -42,7 +45,6 @@ class GLConstHeader:
             self.f.write('\n' * arg)
         else:
             self.f.write(str(arg) + '\n')
-
 
     def formatFileBegin(self):
         self.write([
@@ -63,11 +65,9 @@ class GLConstHeader:
             ''
         ])
 
-
     def formatLibBegin(self, lib):
         # lib would be 'GL', 'EGL', 'GLX' or 'WGL'
         self.write('// ' + lib)
-
 
     def formatLibConstant(self, lib, name, value):
         # lib would be 'GL', 'EGL', 'GLX' or 'WGL'
@@ -76,23 +76,21 @@ class GLConstHeader:
 
         define = '#define LOCAL_' + lib + '_' + name
         whitespace = 60 - len(define)
-        
+
         if whitespace < 0:
             whitespace = whitespace % 8
-        
-        self.write(define + ' ' * whitespace + ' ' + value)
 
+        self.write(define + ' ' * whitespace + ' ' + value)
 
     def formatLibEnd(self, lib):
         # lib would be 'GL', 'EGL', 'GLX' or 'WGL'
         self.write(2)
 
-
     def formatFileEnd(self):
         self.write([
-                    '',
-                    '#endif // GLCONSTS_H_'
-                   ])
+            '',
+            '#endif // GLCONSTS_H_'
+        ])
 
 
 ################################################################################
@@ -100,17 +98,6 @@ class GLConstHeader:
 
 def getScriptDir():
     return os.path.dirname(__file__) + '/'
-
-
-def getXMLDir():
-    if len(sys.argv) == 1:
-        return './'
-
-    dirPath = sys.argv[1]
-    if dirPath[-1] != '/':
-        dirPath += '/'
-
-    return dirPath
 
 
 class GLConst:
@@ -132,12 +119,9 @@ class GLDatabase:
         # there is no vendor="EXT" and vendor="ATI" in gl.xml,
         # so we manualy declare them
 
-
-    def loadXML(self, path):
-        xmlPath = getXMLDir() + path
-
+    def loadXML(self, xmlPath):
         if not os.path.isfile(xmlPath):
-            print 'missing file "' + xmlPath + '"'
+            print('missing file "' + xmlPath + '"')
             return False
 
         tree = xml.etree.ElementTree.parse(xmlPath)
@@ -179,9 +163,8 @@ class GLDatabase:
 
         return True
 
-
     def exportConsts(self, path):
-        with open(getScriptDir() + path,'w') as f:
+        with open(getScriptDir() + path, 'wb') as f:
 
             headerFile = GLConstHeader(f)
             headerFile.formatFileBegin()
@@ -207,10 +190,10 @@ class GLDatabase:
 
 glDatabase = GLDatabase()
 
-success = glDatabase.loadXML('gl.xml')
-success = success and glDatabase.loadXML('egl.xml')
-success = success and glDatabase.loadXML('glx.xml')
-success = success and glDatabase.loadXML('wgl.xml')
+success = glDatabase.loadXML(GL_REGISTRY_PATH + '/xml/gl.xml')
+success = success and glDatabase.loadXML(GL_REGISTRY_PATH + '/xml/glx.xml')
+success = success and glDatabase.loadXML(GL_REGISTRY_PATH + '/xml/wgl.xml')
+success = success and glDatabase.loadXML(EGL_REGISTRY_PATH + '/api/egl.xml')
 
 if success:
     glDatabase.exportConsts('GLConsts.h')

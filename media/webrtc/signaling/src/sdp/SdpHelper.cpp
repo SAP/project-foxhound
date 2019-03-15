@@ -18,19 +18,17 @@
 namespace mozilla {
 MOZ_MTLOG_MODULE("sdp")
 
-#define SDP_SET_ERROR(error)                                                   \
-  do {                                                                         \
-    std::ostringstream os;                                                     \
-    os << error;                                                               \
-    mLastError = os.str();                                                     \
-    MOZ_MTLOG(ML_ERROR, mLastError);                                           \
+#define SDP_SET_ERROR(error)         \
+  do {                               \
+    std::ostringstream os;           \
+    os << error;                     \
+    mLastError = os.str();           \
+    MOZ_MTLOG(ML_ERROR, mLastError); \
   } while (0);
 
-nsresult
-SdpHelper::CopyTransportParams(size_t numComponents,
-                               const SdpMediaSection& oldLocal,
-                               SdpMediaSection* newLocal)
-{
+nsresult SdpHelper::CopyTransportParams(size_t numComponents,
+                                        const SdpMediaSection& oldLocal,
+                                        SdpMediaSection* newLocal) {
   // Copy over m-section details
   newLocal->SetPort(oldLocal.GetPort());
   newLocal->GetConnection() = oldLocal.GetConnection();
@@ -42,7 +40,7 @@ SdpHelper::CopyTransportParams(size_t numComponents,
   if (oldLocalAttrs.HasAttribute(SdpAttribute::kCandidateAttribute) &&
       numComponents) {
     UniquePtr<SdpMultiStringAttribute> candidateAttrs(
-      new SdpMultiStringAttribute(SdpAttribute::kCandidateAttribute));
+        new SdpMultiStringAttribute(SdpAttribute::kCandidateAttribute));
     for (const std::string& candidate : oldLocalAttrs.GetCandidate()) {
       size_t component;
       nsresult rv = GetComponent(candidate, &component);
@@ -51,7 +49,7 @@ SdpHelper::CopyTransportParams(size_t numComponents,
         candidateAttrs->mValues.push_back(candidate);
       }
     }
-    if (candidateAttrs->mValues.size()) {
+    if (!candidateAttrs->mValues.empty()) {
       newLocalAttrs.SetAttribute(candidateAttrs.release());
     }
   }
@@ -65,12 +63,9 @@ SdpHelper::CopyTransportParams(size_t numComponents,
   return NS_OK;
 }
 
-bool
-SdpHelper::AreOldTransportParamsValid(const Sdp& oldAnswer,
-                                      const Sdp& offerersPreviousSdp,
-                                      const Sdp& newOffer,
-                                      size_t level)
-{
+bool SdpHelper::AreOldTransportParamsValid(const Sdp& oldAnswer,
+                                           const Sdp& offerersPreviousSdp,
+                                           const Sdp& newOffer, size_t level) {
   if (MsectionIsDisabled(oldAnswer.GetMediaSection(level)) ||
       MsectionIsDisabled(newOffer.GetMediaSection(level))) {
     // Obvious
@@ -84,7 +79,7 @@ SdpHelper::AreOldTransportParamsValid(const Sdp& oldAnswer,
   }
 
   if (newOffer.GetMediaSection(level).GetAttributeList().HasAttribute(
-        SdpAttribute::kBundleOnlyAttribute) &&
+          SdpAttribute::kBundleOnlyAttribute) &&
       IsBundleSlave(newOffer, level)) {
     // It never makes sense to put transport attributes in a bundle-only
     // m-section
@@ -99,10 +94,8 @@ SdpHelper::AreOldTransportParamsValid(const Sdp& oldAnswer,
   return true;
 }
 
-bool
-SdpHelper::IceCredentialsDiffer(const SdpMediaSection& msection1,
-                                const SdpMediaSection& msection2)
-{
+bool SdpHelper::IceCredentialsDiffer(const SdpMediaSection& msection1,
+                                     const SdpMediaSection& msection2) {
   const SdpAttributeList& attrs1(msection1.GetAttributeList());
   const SdpAttributeList& attrs2(msection2.GetAttributeList());
 
@@ -114,9 +107,8 @@ SdpHelper::IceCredentialsDiffer(const SdpMediaSection& msection1,
   return false;
 }
 
-nsresult
-SdpHelper::GetComponent(const std::string& candidate, size_t* component)
-{
+nsresult SdpHelper::GetComponent(const std::string& candidate,
+                                 size_t* component) {
   unsigned int temp;
   int32_t result = PR_sscanf(candidate.c_str(), "%*s %u", &temp);
   if (result == 1) {
@@ -127,23 +119,20 @@ SdpHelper::GetComponent(const std::string& candidate, size_t* component)
   return NS_ERROR_INVALID_ARG;
 }
 
-bool
-SdpHelper::MsectionIsDisabled(const SdpMediaSection& msection) const
-{
-  return !msection.GetPort() &&
-         !msection.GetAttributeList().HasAttribute(
-             SdpAttribute::kBundleOnlyAttribute);
+bool SdpHelper::MsectionIsDisabled(const SdpMediaSection& msection) const {
+  return !msection.GetPort() && !msection.GetAttributeList().HasAttribute(
+                                    SdpAttribute::kBundleOnlyAttribute);
 }
 
-void
-SdpHelper::DisableMsection(Sdp* sdp, SdpMediaSection* msection)
-{
+void SdpHelper::DisableMsection(Sdp* sdp, SdpMediaSection* msection) {
+  std::string mid;
+
   // Make sure to remove the mid from any group attributes
   if (msection->GetAttributeList().HasAttribute(SdpAttribute::kMidAttribute)) {
-    std::string mid = msection->GetAttributeList().GetMid();
+    mid = msection->GetAttributeList().GetMid();
     if (sdp->GetAttributeList().HasAttribute(SdpAttribute::kGroupAttribute)) {
-      UniquePtr<SdpGroupAttributeList> newGroupAttr(new SdpGroupAttributeList(
-            sdp->GetAttributeList().GetGroup()));
+      UniquePtr<SdpGroupAttributeList> newGroupAttr(
+          new SdpGroupAttributeList(sdp->GetAttributeList().GetGroup()));
       newGroupAttr->RemoveMid(mid);
       sdp->GetAttributeList().SetAttribute(newGroupAttr.release());
     }
@@ -152,10 +141,15 @@ SdpHelper::DisableMsection(Sdp* sdp, SdpMediaSection* msection)
   // Clear out attributes.
   msection->GetAttributeList().Clear();
 
-  auto* direction =
-    new SdpDirectionAttribute(SdpDirectionAttribute::kInactive);
+  auto* direction = new SdpDirectionAttribute(SdpDirectionAttribute::kInactive);
   msection->GetAttributeList().SetAttribute(direction);
   msection->SetPort(0);
+
+  // maintain the mid for easier identification on other side
+  if (!mid.empty()) {
+    msection->GetAttributeList().SetAttribute(
+        new SdpStringAttribute(SdpAttribute::kMidAttribute, mid));
+  }
 
   msection->ClearCodecs();
 
@@ -168,7 +162,7 @@ SdpHelper::DisableMsection(Sdp* sdp, SdpMediaSection* msection)
       msection->AddCodec("120", "VP8", 90000, 1);
       break;
     case SdpMediaSection::kApplication:
-      msection->AddDataChannel("rejected", 0, 0);
+      msection->AddDataChannel("webrtc-datachannel", 0, 0, 0);
       break;
     default:
       // We need to have something here to fit the grammar, this seems safe
@@ -177,11 +171,9 @@ SdpHelper::DisableMsection(Sdp* sdp, SdpMediaSection* msection)
   }
 }
 
-void
-SdpHelper::GetBundleGroups(
+void SdpHelper::GetBundleGroups(
     const Sdp& sdp,
-    std::vector<SdpGroupAttributeList::Group>* bundleGroups) const
-{
+    std::vector<SdpGroupAttributeList::Group>* bundleGroups) const {
   if (sdp.GetAttributeList().HasAttribute(SdpAttribute::kGroupAttribute)) {
     for (auto& group : sdp.GetAttributeList().GetGroup().mGroups) {
       if (group.semantics == SdpGroupAttributeList::kBundle) {
@@ -191,37 +183,39 @@ SdpHelper::GetBundleGroups(
   }
 }
 
-nsresult
-SdpHelper::GetBundledMids(const Sdp& sdp, BundledMids* bundledMids)
-{
+nsresult SdpHelper::GetBundledMids(const Sdp& sdp, BundledMids* bundledMids) {
   std::vector<SdpGroupAttributeList::Group> bundleGroups;
   GetBundleGroups(sdp, &bundleGroups);
 
   for (SdpGroupAttributeList::Group& group : bundleGroups) {
     if (group.tags.empty()) {
-      SDP_SET_ERROR("Empty BUNDLE group");
-      return NS_ERROR_INVALID_ARG;
+      continue;
     }
 
     const SdpMediaSection* masterBundleMsection(
         FindMsectionByMid(sdp, group.tags[0]));
 
     if (!masterBundleMsection) {
-      SDP_SET_ERROR("mid specified for bundle transport in group attribute"
-          " does not exist in the SDP. (mid=" << group.tags[0] << ")");
+      SDP_SET_ERROR(
+          "mid specified for bundle transport in group attribute"
+          " does not exist in the SDP. (mid="
+          << group.tags[0] << ")");
       return NS_ERROR_INVALID_ARG;
     }
 
     if (MsectionIsDisabled(*masterBundleMsection)) {
-      SDP_SET_ERROR("mid specified for bundle transport in group attribute"
-          " points at a disabled m-section. (mid=" << group.tags[0] << ")");
+      SDP_SET_ERROR(
+          "mid specified for bundle transport in group attribute"
+          " points at a disabled m-section. (mid="
+          << group.tags[0] << ")");
       return NS_ERROR_INVALID_ARG;
     }
 
     for (const std::string& mid : group.tags) {
       if (bundledMids->count(mid)) {
-        SDP_SET_ERROR("mid \'" << mid << "\' appears more than once in a "
-                       "BUNDLE group");
+        SDP_SET_ERROR("mid \'" << mid
+                               << "\' appears more than once in a "
+                                  "BUNDLE group");
         return NS_ERROR_INVALID_ARG;
       }
 
@@ -232,9 +226,7 @@ SdpHelper::GetBundledMids(const Sdp& sdp, BundledMids* bundledMids)
   return NS_OK;
 }
 
-bool
-SdpHelper::IsBundleSlave(const Sdp& sdp, uint16_t level)
-{
+bool SdpHelper::IsBundleSlave(const Sdp& sdp, uint16_t level) {
   auto& msection = sdp.GetMediaSection(level);
 
   if (!msection.GetAttributeList().HasAttribute(SdpAttribute::kMidAttribute)) {
@@ -259,11 +251,8 @@ SdpHelper::IsBundleSlave(const Sdp& sdp, uint16_t level)
   return false;
 }
 
-nsresult
-SdpHelper::GetMidFromLevel(const Sdp& sdp,
-                           uint16_t level,
-                           std::string* mid)
-{
+nsresult SdpHelper::GetMidFromLevel(const Sdp& sdp, uint16_t level,
+                                    std::string* mid) {
   if (level >= sdp.GetMediaSectionCount()) {
     SDP_SET_ERROR("Index " << level << " out of range");
     return NS_ERROR_INVALID_ARG;
@@ -280,13 +269,9 @@ SdpHelper::GetMidFromLevel(const Sdp& sdp,
   return NS_OK;
 }
 
-nsresult
-SdpHelper::AddCandidateToSdp(Sdp* sdp,
-                             const std::string& candidateUntrimmed,
-                             const std::string& mid,
-                             uint16_t level)
-{
-
+nsresult SdpHelper::AddCandidateToSdp(Sdp* sdp,
+                                      const std::string& candidateUntrimmed,
+                                      uint16_t level) {
   if (level >= sdp->GetMediaSectionCount()) {
     SDP_SET_ERROR("Index " << level << " out of range");
     return NS_ERROR_INVALID_ARG;
@@ -302,35 +287,9 @@ SdpHelper::AddCandidateToSdp(Sdp* sdp,
 
   std::string candidate = candidateUntrimmed.substr(begin);
 
-  // https://tools.ietf.org/html/draft-ietf-rtcweb-jsep-11#section-3.4.2.1
-  // Implementations receiving an ICE Candidate object MUST use the MID if
-  // present, or the m= line index, if not (as it could have come from a
-  // non-JSEP endpoint). (bug 1095793)
-  SdpMediaSection* msection = 0;
-  if (!mid.empty()) {
-    // FindMsectionByMid could return nullptr
-    msection = FindMsectionByMid(*sdp, mid);
+  SdpMediaSection& msection = sdp->GetMediaSection(level);
 
-    // Check to make sure mid matches what we'd get by
-    // looking up the m= line using the level. (mjf)
-    std::string checkMid;
-    nsresult rv = GetMidFromLevel(*sdp, level, &checkMid);
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
-    if (mid != checkMid) {
-      SDP_SET_ERROR("Mismatch between mid and level - \"" << mid
-                     << "\" is not the mid for level " << level
-                     << "; \"" << checkMid << "\" is");
-      return NS_ERROR_INVALID_ARG;
-    }
-  }
-  if (!msection) {
-    msection = &(sdp->GetMediaSection(level));
-  }
-
-  SdpAttributeList& attrList = msection->GetAttributeList();
-
+  SdpAttributeList& attrList = msection.GetAttributeList();
   UniquePtr<SdpMultiStringAttribute> candidates;
   if (!attrList.HasAttribute(SdpAttribute::kCandidateAttribute)) {
     // Create new
@@ -348,19 +307,8 @@ SdpHelper::AddCandidateToSdp(Sdp* sdp,
   return NS_OK;
 }
 
-void
-SdpHelper::SetIceGatheringComplete(Sdp* sdp,
-                                   uint16_t level,
-                                   BundledMids bundledMids)
-{
+void SdpHelper::SetIceGatheringComplete(Sdp* sdp, uint16_t level) {
   SdpMediaSection& msection = sdp->GetMediaSection(level);
-
-  if (kSlaveBundle == GetMsectionBundleType(*sdp,
-                                            level,
-                                            bundledMids,
-                                            nullptr)) {
-    return; // Slave bundle m-section. Skip.
-  }
 
   SdpAttributeList& attrs = msection.GetAttributeList();
   attrs.SetAttribute(
@@ -369,84 +317,32 @@ SdpHelper::SetIceGatheringComplete(Sdp* sdp,
   attrs.RemoveAttribute(SdpAttribute::kIceOptionsAttribute);
 }
 
-void
-SdpHelper::SetDefaultAddresses(const std::string& defaultCandidateAddr,
-                               uint16_t defaultCandidatePort,
-                               const std::string& defaultRtcpCandidateAddr,
-                               uint16_t defaultRtcpCandidatePort,
-                               Sdp* sdp,
-                               uint16_t level,
-                               BundledMids bundledMids)
-{
-  SdpMediaSection& msection = sdp->GetMediaSection(level);
-  std::string masterMid;
+void SdpHelper::SetDefaultAddresses(const std::string& defaultCandidateAddr,
+                                    uint16_t defaultCandidatePort,
+                                    const std::string& defaultRtcpCandidateAddr,
+                                    uint16_t defaultRtcpCandidatePort,
+                                    SdpMediaSection* msection) {
+  SdpAttributeList& attrList = msection->GetAttributeList();
 
-  MsectionBundleType bundleType = GetMsectionBundleType(*sdp,
-                                                        level,
-                                                        bundledMids,
-                                                        &masterMid);
-  if (kSlaveBundle == bundleType) {
-    return; // Slave bundle m-section. Skip.
-  }
-  if (kMasterBundle == bundleType) {
-    // Master bundle m-section. Set defaultCandidateAddr and
-    // defaultCandidatePort on all bundled m-sections.
-    const SdpMediaSection* masterBundleMsection(bundledMids[masterMid]);
-    for (auto i = bundledMids.begin(); i != bundledMids.end(); ++i) {
-      if (i->second != masterBundleMsection) {
-        continue;
-      }
-      SdpMediaSection* bundledMsection = FindMsectionByMid(*sdp, i->first);
-      if (!bundledMsection) {
-        MOZ_ASSERT(false);
-        continue;
-      }
-      SetDefaultAddresses(defaultCandidateAddr,
-                          defaultCandidatePort,
-                          defaultRtcpCandidateAddr,
-                          defaultRtcpCandidatePort,
-                          bundledMsection);
-    }
-  }
-
-  SetDefaultAddresses(defaultCandidateAddr,
-                      defaultCandidatePort,
-                      defaultRtcpCandidateAddr,
-                      defaultRtcpCandidatePort,
-                      &msection);
-}
-
-void
-SdpHelper::SetDefaultAddresses(const std::string& defaultCandidateAddr,
-                               uint16_t defaultCandidatePort,
-                               const std::string& defaultRtcpCandidateAddr,
-                               uint16_t defaultRtcpCandidatePort,
-                               SdpMediaSection* msection)
-{
   msection->GetConnection().SetAddress(defaultCandidateAddr);
   msection->SetPort(defaultCandidatePort);
-
   if (!defaultRtcpCandidateAddr.empty()) {
     sdp::AddrType ipVersion = sdp::kIPv4;
     if (defaultRtcpCandidateAddr.find(':') != std::string::npos) {
       ipVersion = sdp::kIPv6;
     }
-    msection->GetAttributeList().SetAttribute(new SdpRtcpAttribute(
-          defaultRtcpCandidatePort,
-          sdp::kInternet,
-          ipVersion,
-          defaultRtcpCandidateAddr));
+    attrList.SetAttribute(new SdpRtcpAttribute(defaultRtcpCandidatePort,
+                                               sdp::kInternet, ipVersion,
+                                               defaultRtcpCandidateAddr));
   }
 }
 
-nsresult
-SdpHelper::GetIdsFromMsid(const Sdp& sdp,
-                                const SdpMediaSection& msection,
-                                std::string* streamId,
-                                std::string* trackId)
-{
+nsresult SdpHelper::GetIdsFromMsid(const Sdp& sdp,
+                                   const SdpMediaSection& msection,
+                                   std::vector<std::string>* streamIds,
+                                   std::string* trackId) {
   if (!sdp.GetAttributeList().HasAttribute(
-        SdpAttribute::kMsidSemanticAttribute)) {
+          SdpAttribute::kMsidSemanticAttribute)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
@@ -475,20 +371,20 @@ SdpHelper::GetIdsFromMsid(const Sdp& sdp,
 
   for (auto i = allMsids.begin(); i != allMsids.end(); ++i) {
     if (allMsidsAreWebrtc || webrtcMsids.count(i->identifier)) {
-      if (i->appdata.empty()) {
-        SDP_SET_ERROR("Invalid webrtc msid at level " << msection.GetLevel()
-                       << ": Missing track id.");
+      if (!found) {
+        *trackId = i->appdata;
+        streamIds->clear();
+        found = true;
+      } else if ((*trackId != i->appdata)) {
+        SDP_SET_ERROR("Found multiple different webrtc track ids in m-section "
+                      << msection.GetLevel()
+                      << ". The behavior here is "
+                         "undefined.");
         return NS_ERROR_INVALID_ARG;
       }
-      if (!found) {
-        *streamId = i->identifier;
-        *trackId = i->appdata;
-        found = true;
-      } else if ((*streamId != i->identifier) || (*trackId != i->appdata)) {
-        SDP_SET_ERROR("Found multiple different webrtc msids in m-section "
-                       << msection.GetLevel() << ". The behavior here is "
-                       "undefined.");
-        return NS_ERROR_INVALID_ARG;
+      // "-" means no stream, see draft-ietf-mmusic-msid
+      if (i->identifier != "-") {
+        streamIds->push_back(i->identifier);
       }
     }
   }
@@ -500,10 +396,8 @@ SdpHelper::GetIdsFromMsid(const Sdp& sdp,
   return NS_OK;
 }
 
-nsresult
-SdpHelper::GetMsids(const SdpMediaSection& msection,
-                    std::vector<SdpMsidAttributeList::Msid>* msids)
-{
+nsresult SdpHelper::GetMsids(const SdpMediaSection& msection,
+                             std::vector<SdpMsidAttributeList::Msid>* msids) {
   if (msection.GetAttributeList().HasAttribute(SdpAttribute::kMsidAttribute)) {
     *msids = msection.GetAttributeList().GetMsid().mMsids;
   }
@@ -527,11 +421,8 @@ SdpHelper::GetMsids(const SdpMediaSection& msection,
   return NS_OK;
 }
 
-nsresult
-SdpHelper::ParseMsid(const std::string& msidAttribute,
-                     std::string* streamId,
-                     std::string* trackId)
-{
+nsresult SdpHelper::ParseMsid(const std::string& msidAttribute,
+                              std::string* streamId, std::string* trackId) {
   // Would be nice if SdpSsrcAttributeList could parse out the contained
   // attribute, but at least the parse here is simple.
   // We are being very forgiving here wrt whitespace; tabs are not actually
@@ -540,8 +431,7 @@ SdpHelper::ParseMsid(const std::string& msidAttribute,
   // We do not assume the appdata token is here, since this is not
   // necessarily a webrtc msid
   if (streamIdStart == std::string::npos) {
-    SDP_SET_ERROR("Malformed source-level msid attribute: "
-        << msidAttribute);
+    SDP_SET_ERROR("Malformed source-level msid attribute: " << msidAttribute);
     return NS_ERROR_INVALID_ARG;
   }
 
@@ -550,8 +440,7 @@ SdpHelper::ParseMsid(const std::string& msidAttribute,
     streamIdEnd = msidAttribute.size();
   }
 
-  size_t trackIdStart =
-    msidAttribute.find_first_not_of(" \t", streamIdEnd);
+  size_t trackIdStart = msidAttribute.find_first_not_of(" \t", streamIdEnd);
   if (trackIdStart == std::string::npos) {
     trackIdStart = msidAttribute.size();
   }
@@ -569,10 +458,8 @@ SdpHelper::ParseMsid(const std::string& msidAttribute,
   return NS_OK;
 }
 
-void
-SdpHelper::SetupMsidSemantic(const std::vector<std::string>& msids,
-                             Sdp* sdp) const
-{
+void SdpHelper::SetupMsidSemantic(const std::vector<std::string>& msids,
+                                  Sdp* sdp) const {
   if (!msids.empty()) {
     UniquePtr<SdpMsidSemanticAttributeList> msidSemantics(
         new SdpMsidSemanticAttributeList);
@@ -581,9 +468,7 @@ SdpHelper::SetupMsidSemantic(const std::vector<std::string>& msids,
   }
 }
 
-std::string
-SdpHelper::GetCNAME(const SdpMediaSection& msection) const
-{
+std::string SdpHelper::GetCNAME(const SdpMediaSection& msection) const {
   if (msection.GetAttributeList().HasAttribute(SdpAttribute::kSsrcAttribute)) {
     auto& ssrcs = msection.GetAttributeList().GetSsrc().mSsrcs;
     for (auto i = ssrcs.begin(); i != ssrcs.end(); ++i) {
@@ -595,10 +480,8 @@ SdpHelper::GetCNAME(const SdpMediaSection& msection) const
   return "";
 }
 
-const SdpMediaSection*
-SdpHelper::FindMsectionByMid(const Sdp& sdp,
-                             const std::string& mid) const
-{
+const SdpMediaSection* SdpHelper::FindMsectionByMid(
+    const Sdp& sdp, const std::string& mid) const {
   for (size_t i = 0; i < sdp.GetMediaSectionCount(); ++i) {
     auto& attrs = sdp.GetMediaSection(i).GetAttributeList();
     if (attrs.HasAttribute(SdpAttribute::kMidAttribute) &&
@@ -609,10 +492,8 @@ SdpHelper::FindMsectionByMid(const Sdp& sdp,
   return nullptr;
 }
 
-SdpMediaSection*
-SdpHelper::FindMsectionByMid(Sdp& sdp,
-                             const std::string& mid) const
-{
+SdpMediaSection* SdpHelper::FindMsectionByMid(Sdp& sdp,
+                                              const std::string& mid) const {
   for (size_t i = 0; i < sdp.GetMediaSectionCount(); ++i) {
     auto& attrs = sdp.GetMediaSection(i).GetAttributeList();
     if (attrs.HasAttribute(SdpAttribute::kMidAttribute) &&
@@ -623,10 +504,8 @@ SdpHelper::FindMsectionByMid(Sdp& sdp,
   return nullptr;
 }
 
-nsresult
-SdpHelper::CopyStickyParams(const SdpMediaSection& source,
-                            SdpMediaSection* dest)
-{
+nsresult SdpHelper::CopyStickyParams(const SdpMediaSection& source,
+                                     SdpMediaSection* dest) {
   auto& sourceAttrs = source.GetAttributeList();
   auto& destAttrs = dest->GetAttributeList();
 
@@ -638,17 +517,14 @@ SdpHelper::CopyStickyParams(const SdpMediaSection& source,
 
   // mid should stay the same
   if (sourceAttrs.HasAttribute(SdpAttribute::kMidAttribute)) {
-    destAttrs.SetAttribute(
-        new SdpStringAttribute(SdpAttribute::kMidAttribute,
-          sourceAttrs.GetMid()));
+    destAttrs.SetAttribute(new SdpStringAttribute(SdpAttribute::kMidAttribute,
+                                                  sourceAttrs.GetMid()));
   }
 
   return NS_OK;
 }
 
-bool
-SdpHelper::HasRtcp(SdpMediaSection::Protocol proto) const
-{
+bool SdpHelper::HasRtcp(SdpMediaSection::Protocol proto) const {
   switch (proto) {
     case SdpMediaSection::kRtpAvpf:
     case SdpMediaSection::kDccpRtpAvpf:
@@ -656,6 +532,7 @@ SdpHelper::HasRtcp(SdpMediaSection::Protocol proto) const
     case SdpMediaSection::kRtpSavpf:
     case SdpMediaSection::kUdpTlsRtpSavpf:
     case SdpMediaSection::kTcpTlsRtpSavpf:
+    case SdpMediaSection::kTcpDtlsRtpSavpf:
     case SdpMediaSection::kDccpTlsRtpSavpf:
       return true;
     case SdpMediaSection::kRtpAvp:
@@ -696,23 +573,18 @@ SdpHelper::HasRtcp(SdpMediaSection::Protocol proto) const
   MOZ_CRASH("Unknown protocol, probably corruption.");
 }
 
-SdpMediaSection::Protocol
-SdpHelper::GetProtocolForMediaType(SdpMediaSection::MediaType type)
-{
+SdpMediaSection::Protocol SdpHelper::GetProtocolForMediaType(
+    SdpMediaSection::MediaType type) {
   if (type == SdpMediaSection::kApplication) {
-    return SdpMediaSection::kDtlsSctp;
-    // TODO switch to offer the new SCTP SDP (Bug 1335206)
-    //return SdpMediaSection::kUdpDtlsSctp;
+    return SdpMediaSection::kUdpDtlsSctp;
   }
 
   return SdpMediaSection::kUdpTlsRtpSavpf;
 }
 
-void
-SdpHelper::appendSdpParseErrors(
+void SdpHelper::appendSdpParseErrors(
     const std::vector<std::pair<size_t, std::string> >& aErrors,
-    std::string* aErrorString)
-{
+    std::string* aErrorString) {
   std::ostringstream os;
   for (auto i = aErrors.begin(); i != aErrors.end(); ++i) {
     os << "SDP Parse Error on line " << i->first << ": " + i->second
@@ -721,9 +593,8 @@ SdpHelper::appendSdpParseErrors(
   *aErrorString += os.str();
 }
 
-/* static */ bool
-SdpHelper::GetPtAsInt(const std::string& ptString, uint16_t* ptOutparam)
-{
+/* static */ bool SdpHelper::GetPtAsInt(const std::string& ptString,
+                                        uint16_t* ptOutparam) {
   char* end;
   unsigned long pt = strtoul(ptString.c_str(), &end, 10);
   size_t length = static_cast<size_t>(end - ptString.c_str());
@@ -734,48 +605,40 @@ SdpHelper::GetPtAsInt(const std::string& ptString, uint16_t* ptOutparam)
   return true;
 }
 
-void
-SdpHelper::AddCommonExtmaps(
+void SdpHelper::AddCommonExtmaps(
     const SdpMediaSection& remoteMsection,
     const std::vector<SdpExtmapAttributeList::Extmap>& localExtensions,
-    SdpMediaSection* localMsection)
-{
+    SdpMediaSection* localMsection) {
   if (!remoteMsection.GetAttributeList().HasAttribute(
-        SdpAttribute::kExtmapAttribute)) {
+          SdpAttribute::kExtmapAttribute)) {
     return;
   }
 
   UniquePtr<SdpExtmapAttributeList> localExtmap(new SdpExtmapAttributeList);
   auto& theirExtmap = remoteMsection.GetAttributeList().GetExtmap().mExtmaps;
-  for (auto i = theirExtmap.begin(); i != theirExtmap.end(); ++i) {
-    for (auto j = localExtensions.begin(); j != localExtensions.end(); ++j) {
-      // verify we have a valid combination of directions.  For kInactive
-      // we'll just not add the response
-      if (i->extensionname == j->extensionname &&
-          (((i->direction == SdpDirectionAttribute::Direction::kSendrecv ||
-             i->direction == SdpDirectionAttribute::Direction::kSendonly) &&
-            (j->direction == SdpDirectionAttribute::Direction::kSendrecv ||
-             j->direction == SdpDirectionAttribute::Direction::kRecvonly)) ||
-
-           ((i->direction == SdpDirectionAttribute::Direction::kSendrecv ||
-             i->direction == SdpDirectionAttribute::Direction::kRecvonly) &&
-            (j->direction == SdpDirectionAttribute::Direction::kSendrecv ||
-             j->direction == SdpDirectionAttribute::Direction::kSendonly)))) {
-        auto k = *i; // we need to modify it
-        if (j->direction == SdpDirectionAttribute::Direction::kSendonly) {
-          k.direction = SdpDirectionAttribute::Direction::kRecvonly;
-        } else if (j->direction == SdpDirectionAttribute::Direction::kRecvonly) {
-          k.direction = SdpDirectionAttribute::Direction::kSendonly;
-        }
-        localExtmap->mExtmaps.push_back(k);
-
-        // RFC 5285 says that ids >= 4096 can be used by the offerer to
-        // force the answerer to pick, otherwise the value in the offer is
-        // used.
-        if (localExtmap->mExtmaps.back().entry >= 4096) {
-          localExtmap->mExtmaps.back().entry = j->entry;
-        }
+  for (const auto& theirExt : theirExtmap) {
+    for (const auto& ourExt : localExtensions) {
+      if (theirExt.extensionname != ourExt.extensionname) {
+        continue;
       }
+
+      auto negotiatedExt = theirExt;
+
+      negotiatedExt.direction =
+          reverse(negotiatedExt.direction) & ourExt.direction;
+      if (negotiatedExt.direction ==
+          SdpDirectionAttribute::Direction::kInactive) {
+        continue;
+      }
+
+      // RFC 5285 says that ids >= 4096 can be used by the offerer to
+      // force the answerer to pick, otherwise the value in the offer is
+      // used.
+      if (negotiatedExt.entry >= 4096) {
+        negotiatedExt.entry = ourExt.entry;
+      }
+
+      localExtmap->mExtmaps.push_back(negotiatedExt);
     }
   }
 
@@ -784,12 +647,9 @@ SdpHelper::AddCommonExtmaps(
   }
 }
 
-SdpHelper::MsectionBundleType
-SdpHelper::GetMsectionBundleType(const Sdp& sdp,
-                                 uint16_t level,
-                                 BundledMids& bundledMids,
-                                 std::string* masterMid) const
-{
+SdpHelper::MsectionBundleType SdpHelper::GetMsectionBundleType(
+    const Sdp& sdp, uint16_t level, BundledMids& bundledMids,
+    std::string* masterMid) const {
   const SdpMediaSection& msection = sdp.GetMediaSection(level);
   if (msection.GetAttributeList().HasAttribute(SdpAttribute::kMidAttribute)) {
     std::string mid(msection.GetAttributeList().GetMid());
@@ -809,6 +669,60 @@ SdpHelper::GetMsectionBundleType(const Sdp& sdp,
   return kNoBundle;
 }
 
-} // namespace mozilla
+static bool AttributeListMatch(const SdpAttributeList& list1,
+                               const SdpAttributeList& list2) {
+  // TODO: Consider adding telemetry in this function to record which
+  // attributes don't match. See Bug 1432955.
+  for (int i = SdpAttribute::kFirstAttribute; i <= SdpAttribute::kLastAttribute;
+       i++) {
+    auto attributeType = static_cast<SdpAttribute::AttributeType>(i);
+    // TODO: We should do more thorough checking here, e.g. serialize and
+    // compare strings. See Bug 1439690.
+    if (list1.HasAttribute(attributeType, false) !=
+        list2.HasAttribute(attributeType, false)) {
+      return false;
+    }
+  }
+  return true;
+}
 
+static bool MediaSectionMatch(const SdpMediaSection& mediaSection1,
+                              const SdpMediaSection& mediaSection2) {
+  // TODO: We should do more thorough checking in this function.
+  // See Bug 1439690.
+  if (!AttributeListMatch(mediaSection1.GetAttributeList(),
+                          mediaSection2.GetAttributeList())) {
+    return false;
+  }
+  if (mediaSection1.GetPort() != mediaSection2.GetPort()) {
+    return false;
+  }
+  const std::vector<std::string>& formats1 = mediaSection1.GetFormats();
+  const std::vector<std::string>& formats2 = mediaSection2.GetFormats();
+  auto formats1Set = std::set<std::string>(formats1.begin(), formats1.end());
+  auto formats2Set = std::set<std::string>(formats2.begin(), formats2.end());
+  if (formats1Set != formats2Set) {
+    return false;
+  }
+  return true;
+}
 
+bool SdpHelper::SdpMatch(const Sdp& sdp1, const Sdp& sdp2) {
+  if (sdp1.GetMediaSectionCount() != sdp2.GetMediaSectionCount()) {
+    return false;
+  }
+  if (!AttributeListMatch(sdp1.GetAttributeList(), sdp2.GetAttributeList())) {
+    return false;
+  }
+  for (size_t i = 0; i < sdp1.GetMediaSectionCount(); i++) {
+    const SdpMediaSection& mediaSection1 = sdp1.GetMediaSection(i);
+    const SdpMediaSection& mediaSection2 = sdp2.GetMediaSection(i);
+    if (!MediaSectionMatch(mediaSection1, mediaSection2)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+}  // namespace mozilla

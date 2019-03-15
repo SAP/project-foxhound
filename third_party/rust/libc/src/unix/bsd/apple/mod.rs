@@ -2,6 +2,7 @@
 //!
 //! This covers *-apple-* triples currently
 
+pub type c_char = i8;
 pub type clock_t = c_ulong;
 pub type time_t = c_long;
 pub type suseconds_t = i32;
@@ -14,6 +15,7 @@ pub type rlim_t = u64;
 pub type mach_timebase_info_data_t = mach_timebase_info;
 pub type pthread_key_t = c_ulong;
 pub type sigset_t = u32;
+pub type clockid_t = ::c_uint;
 pub type fsblkcnt_t = ::c_uint;
 pub type fsfilcnt_t = ::c_uint;
 pub type speed_t = ::c_ulong;
@@ -22,6 +24,14 @@ pub type nl_item = ::c_int;
 pub type id_t = ::c_uint;
 pub type sem_t = ::c_int;
 pub type idtype_t = ::c_uint;
+pub type integer_t = ::c_int;
+pub type cpu_type_t = integer_t;
+pub type cpu_subtype_t = integer_t;
+pub type vm_prot_t = ::c_int;
+pub type posix_spawnattr_t = *mut ::c_void;
+pub type posix_spawn_file_actions_t = *mut ::c_void;
+pub type key_t = ::c_int;
+pub type shmatt_t = ::c_ushort;
 
 pub enum timezone {}
 
@@ -146,6 +156,11 @@ s! {
         __opaque: [u8; __PTHREAD_RWLOCK_SIZE__],
     }
 
+    pub struct pthread_rwlockattr_t {
+        __sig: ::c_long,
+        __opaque: [u8; __PTHREAD_RWLOCKATTR_SIZE__],
+    }
+
     pub struct siginfo_t {
         pub si_signo: ::c_int,
         pub si_errno: ::c_int,
@@ -230,7 +245,7 @@ s! {
         pub f_reserved: [::uint32_t; 8],
     }
 
-    // FIXME: this should have align 4 but it's got align 8 on 64-bit
+    #[cfg_attr(feature = "stdbuild", repr(packed(4)))]
     pub struct kevent {
         pub ident: ::uintptr_t,
         pub filter: ::int16_t,
@@ -261,6 +276,16 @@ s! {
         pub dqb_itime: ::uint32_t,
         pub dqb_id: ::uint32_t,
         pub dqb_spare: [::uint32_t; 4],
+    }
+
+    pub struct if_msghdr {
+        pub ifm_msglen: ::c_ushort,
+        pub ifm_version: ::c_uchar,
+        pub ifm_type: ::c_uchar,
+        pub ifm_addrs: ::c_int,
+        pub ifm_flags: ::c_int,
+        pub ifm_index: ::c_ushort,
+        pub ifm_data: if_data,
     }
 
     pub struct termios {
@@ -321,6 +346,216 @@ s! {
         pub sigev_value: ::sigval,
         __unused1: *mut ::c_void,       //actually a function pointer
         pub sigev_notify_attributes: *mut ::pthread_attr_t
+    }
+
+    pub struct proc_taskinfo {
+        pub pti_virtual_size: u64,
+        pub pti_resident_size: u64,
+        pub pti_total_user: u64,
+        pub pti_total_system: u64,
+        pub pti_threads_user: u64,
+        pub pti_threads_system: u64,
+        pub pti_policy: i32,
+        pub pti_faults: i32,
+        pub pti_pageins: i32,
+        pub pti_cow_faults: i32,
+        pub pti_messages_sent: i32,
+        pub pti_messages_received: i32,
+        pub pti_syscalls_mach: i32,
+        pub pti_syscalls_unix: i32,
+        pub pti_csw: i32,
+        pub pti_threadnum: i32,
+        pub pti_numrunning: i32,
+        pub pti_priority: i32,
+    }
+
+    pub struct proc_bsdinfo {
+        pub pbi_flags: u32,
+        pub pbi_status: u32,
+        pub pbi_xstatus: u32,
+        pub pbi_pid: u32,
+        pub pbi_ppid: u32,
+        pub pbi_uid: ::uid_t,
+        pub pbi_gid: ::gid_t,
+        pub pbi_ruid: ::uid_t,
+        pub pbi_rgid: ::gid_t,
+        pub pbi_svuid: ::uid_t,
+        pub pbi_svgid: ::gid_t,
+        pub rfu_1: u32,
+        pub pbi_comm: [::c_char; MAXCOMLEN],
+        pub pbi_name: [::c_char; 32], // MAXCOMLEN * 2, but macro isn't happy...
+        pub pbi_nfiles: u32,
+        pub pbi_pgid: u32,
+        pub pbi_pjobc: u32,
+        pub e_tdev: u32,
+        pub e_tpgid: u32,
+        pub pbi_nice: i32,
+        pub pbi_start_tvsec: u64,
+        pub pbi_start_tvusec: u64,
+    }
+
+    pub struct proc_taskallinfo {
+        pub pbsd: proc_bsdinfo,
+        pub ptinfo: proc_taskinfo,
+    }
+
+    pub struct proc_threadinfo {
+        pub pth_user_time: u64,
+        pub pth_system_time: u64,
+        pub pth_cpu_usage: i32,
+        pub pth_policy: i32,
+        pub pth_run_state: i32,
+        pub pth_flags: i32,
+        pub pth_sleep_time: i32,
+        pub pth_curpri: i32,
+        pub pth_priority: i32,
+        pub pth_maxpriority: i32,
+        pub pth_name: [::c_char; MAXTHREADNAMESIZE],
+    }
+
+    pub struct xsw_usage {
+        pub xsu_total: u64,
+        pub xsu_avail: u64,
+        pub xsu_used: u64,
+        pub xsu_pagesize: u32,
+        pub xsu_encrypted: ::boolean_t,
+    }
+
+    pub struct xucred {
+        pub cr_version: ::c_uint,
+        pub cr_uid: ::uid_t,
+        pub cr_ngroups: ::c_short,
+        pub cr_groups: [::gid_t;16]
+    }
+
+    pub struct mach_header {
+        pub magic: u32,
+        pub cputype: cpu_type_t,
+        pub cpusubtype: cpu_subtype_t,
+        pub filetype: u32,
+        pub ncmds: u32,
+        pub sizeofcmds: u32,
+        pub flags: u32,
+    }
+
+    pub struct mach_header_64 {
+        pub magic: u32,
+        pub cputype: cpu_type_t,
+        pub cpusubtype: cpu_subtype_t,
+        pub filetype: u32,
+        pub ncmds: u32,
+        pub sizeofcmds: u32,
+        pub flags: u32,
+        pub reserved: u32,
+    }
+
+    pub struct segment_command {
+        pub cmd: u32,
+        pub cmdsize: u32,
+        pub segname: [::c_char; 16],
+        pub vmaddr: u32,
+        pub vmsize: u32,
+        pub fileoff: u32,
+        pub filesize: u32,
+        pub maxprot: vm_prot_t,
+        pub initprot: vm_prot_t,
+        pub nsects: u32,
+        pub flags: u32,
+    }
+
+    pub struct segment_command_64 {
+        pub cmd: u32,
+        pub cmdsize: u32,
+        pub segname: [::c_char; 16],
+        pub vmaddr: u64,
+        pub vmsize: u64,
+        pub fileoff: u64,
+        pub filesize: u64,
+        pub maxprot: vm_prot_t,
+        pub initprot: vm_prot_t,
+        pub nsects: u32,
+        pub flags: u32,
+    }
+
+    pub struct load_command {
+        pub cmd: u32,
+        pub cmdsize: u32,
+    }
+
+    pub struct sockaddr_dl {
+        pub sdl_len: ::c_uchar,
+        pub sdl_family: ::c_uchar,
+        pub sdl_index: ::c_ushort,
+        pub sdl_type: ::c_uchar,
+        pub sdl_nlen: ::c_uchar,
+        pub sdl_alen: ::c_uchar,
+        pub sdl_slen: ::c_uchar,
+        pub sdl_data: [::c_char; 12],
+    }
+
+    pub struct sockaddr_inarp {
+        pub sin_len: ::c_uchar,
+        pub sin_family: ::c_uchar,
+        pub sin_port: ::c_ushort,
+        pub sin_addr: ::in_addr,
+        pub sin_srcaddr: ::in_addr,
+        pub sin_tos: ::c_ushort,
+        pub sin_other: ::c_ushort,
+    }
+
+    pub struct sockaddr_ctl {
+        pub sc_len: ::c_uchar,
+        pub sc_family: ::c_uchar,
+        pub ss_sysaddr: ::uint16_t,
+        pub sc_id: ::uint32_t,
+        pub sc_unit: ::uint32_t,
+        pub sc_reserved: [::uint32_t; 5],
+    }
+
+    pub struct in_pktinfo {
+        pub ipi_ifindex: ::c_uint,
+        pub ipi_spec_dst: ::in_addr,
+        pub ipi_addr: ::in_addr,
+    }
+
+    pub struct in6_pktinfo {
+        pub ipi6_addr: ::in6_addr,
+        pub ipi6_ifindex: ::c_uint,
+    }
+
+    // sys/ipc.h:
+
+    pub struct ipc_perm {
+        pub uid: ::uid_t,
+        pub gid: ::gid_t,
+        pub cuid: ::uid_t,
+        pub cgid: ::gid_t,
+        pub mode: ::mode_t,
+        pub _seq: ::c_ushort,
+        pub _key: ::key_t,
+    }
+
+    #[cfg_attr(feature = "stdbuild", repr(packed(4)))]
+    pub struct shmid_ds {
+        pub shm_perm: ipc_perm,
+        pub shm_segsz: ::size_t,
+        pub shm_lpid: ::pid_t,
+        pub shm_cpid: ::pid_t,
+        pub shm_nattch: ::shmatt_t,
+        pub shm_atime: ::time_t,  // FIXME: 64-bit wrong align => wrong offset
+        pub shm_dtime: ::time_t,  // FIXME: 64-bit wrong align => wrong offset
+        pub shm_ctime: ::time_t,  // FIXME: 64-bit wrong align => wrong offset
+        // FIXME: 64-bit wrong align => wrong offset:
+        pub shm_internal: *mut ::c_void,
+
+    }
+
+    pub struct arphdr {
+        pub ar_hrd: u16,
+        pub ar_pro: u16,
+        pub ar_hln: u8,
+        pub ar_pln: u8,
+        pub ar_op: u16,
     }
 }
 
@@ -405,6 +640,11 @@ pub const ABMON_10: ::nl_item = 42;
 pub const ABMON_11: ::nl_item = 43;
 pub const ABMON_12: ::nl_item = 44;
 
+pub const CLOCK_REALTIME: ::clockid_t = 0;
+pub const CLOCK_MONOTONIC: ::clockid_t = 6;
+pub const CLOCK_PROCESS_CPUTIME_ID: ::clockid_t = 12;
+pub const CLOCK_THREAD_CPUTIME_ID: ::clockid_t = 16;
+
 pub const ERA: ::nl_item = 45;
 pub const ERA_D_FMT: ::nl_item = 46;
 pub const ERA_D_T_FMT: ::nl_item = 47;
@@ -448,14 +688,8 @@ pub const _PC_PIPE_BUF: ::c_int = 6;
 pub const _PC_CHOWN_RESTRICTED: ::c_int = 7;
 pub const _PC_NO_TRUNC: ::c_int = 8;
 pub const _PC_VDISABLE: ::c_int = 9;
-pub const O_RDONLY: ::c_int = 0;
-pub const O_WRONLY: ::c_int = 1;
-pub const O_RDWR: ::c_int = 2;
-pub const O_APPEND: ::c_int = 8;
-pub const O_CREAT: ::c_int = 512;
-pub const O_EXCL: ::c_int = 2048;
-pub const O_NOCTTY: ::c_int = 131072;
-pub const O_TRUNC: ::c_int = 1024;
+pub const O_DSYNC: ::c_int = 0x400000;
+pub const O_NOCTTY: ::c_int = 0x20000;
 pub const O_CLOEXEC: ::c_int = 0x1000000;
 pub const O_DIRECTORY: ::c_int = 0x100000;
 pub const S_IFIFO: mode_t = 4096;
@@ -518,6 +752,104 @@ pub const MAP_SHARED: ::c_int = 0x0001;
 pub const MAP_PRIVATE: ::c_int = 0x0002;
 pub const MAP_FIXED: ::c_int = 0x0010;
 pub const MAP_ANON: ::c_int = 0x1000;
+
+pub const VM_FLAGS_FIXED: ::c_int = 0x0000;
+pub const VM_FLAGS_ANYWHERE: ::c_int = 0x0001;
+pub const VM_FLAGS_PURGABLE: ::c_int = 0x0002;
+pub const VM_FLAGS_RANDOM_ADDR: ::c_int = 0x0008;
+pub const VM_FLAGS_NO_CACHE: ::c_int = 0x0010;
+pub const VM_FLAGS_RESILIENT_CODESIGN: ::c_int = 0x0020;
+pub const VM_FLAGS_RESILIENT_MEDIA: ::c_int = 0x0040;
+pub const VM_FLAGS_OVERWRITE: ::c_int = 0x4000;
+pub const VM_FLAGS_SUPERPAGE_MASK: ::c_int = 0x70000;
+pub const VM_FLAGS_RETURN_DATA_ADDR: ::c_int = 0x100000;
+pub const VM_FLAGS_RETURN_4K_DATA_ADDR: ::c_int = 0x800000;
+pub const VM_FLAGS_ALIAS_MASK: ::c_int = 0xFF000000;
+pub const VM_FLAGS_USER_ALLOCATE: ::c_int = 0xff07401b;
+pub const VM_FLAGS_USER_MAP: ::c_int = 0xff97401b;
+pub const VM_FLAGS_USER_REMAP: ::c_int = VM_FLAGS_FIXED | VM_FLAGS_ANYWHERE |
+                                        VM_FLAGS_RANDOM_ADDR |
+                                        VM_FLAGS_OVERWRITE |
+                                        VM_FLAGS_RETURN_DATA_ADDR |
+                                        VM_FLAGS_RESILIENT_CODESIGN;
+
+pub const VM_FLAGS_SUPERPAGE_SHIFT: ::c_int = 16;
+pub const SUPERPAGE_NONE: ::c_int = 0;
+pub const SUPERPAGE_SIZE_ANY: ::c_int = 1;
+pub const VM_FLAGS_SUPERPAGE_NONE: ::c_int = SUPERPAGE_NONE <<
+                                             VM_FLAGS_SUPERPAGE_SHIFT;
+pub const VM_FLAGS_SUPERPAGE_SIZE_ANY: ::c_int = SUPERPAGE_SIZE_ANY <<
+                                                 VM_FLAGS_SUPERPAGE_SHIFT;
+pub const SUPERPAGE_SIZE_2MB: ::c_int = 2;
+pub const VM_FLAGS_SUPERPAGE_SIZE_2MB: ::c_int = SUPERPAGE_SIZE_2MB <<
+                                                 VM_FLAGS_SUPERPAGE_SHIFT;
+
+pub const VM_MEMORY_MALLOC: ::c_int = 1;
+pub const VM_MEMORY_MALLOC_SMALL: ::c_int = 2;
+pub const VM_MEMORY_MALLOC_LARGE: ::c_int = 3;
+pub const VM_MEMORY_MALLOC_HUGE: ::c_int = 4;
+pub const VM_MEMORY_SBRK: ::c_int = 5;
+pub const VM_MEMORY_REALLOC: ::c_int = 6;
+pub const VM_MEMORY_MALLOC_TINY: ::c_int = 7;
+pub const VM_MEMORY_MALLOC_LARGE_REUSABLE: ::c_int = 8;
+pub const VM_MEMORY_MALLOC_LARGE_REUSED: ::c_int = 9;
+pub const VM_MEMORY_ANALYSIS_TOOL: ::c_int = 10;
+pub const VM_MEMORY_MALLOC_NANO: ::c_int = 11;
+pub const VM_MEMORY_MACH_MSG: ::c_int = 20;
+pub const VM_MEMORY_IOKIT: ::c_int = 21;
+pub const VM_MEMORY_STACK: ::c_int = 30;
+pub const VM_MEMORY_GUARD: ::c_int = 31;
+pub const VM_MEMORY_SHARED_PMAP: ::c_int = 32;
+pub const VM_MEMORY_DYLIB: ::c_int = 33;
+pub const VM_MEMORY_OBJC_DISPATCHERS: ::c_int = 34;
+pub const VM_MEMORY_UNSHARED_PMAP: ::c_int = 35;
+pub const VM_MEMORY_APPKIT: ::c_int = 40;
+pub const VM_MEMORY_FOUNDATION: ::c_int = 41;
+pub const VM_MEMORY_COREGRAPHICS: ::c_int = 42;
+pub const VM_MEMORY_CORESERVICES: ::c_int = 43;
+pub const VM_MEMORY_CARBON: ::c_int = VM_MEMORY_CORESERVICES;
+pub const VM_MEMORY_JAVA: ::c_int = 44;
+pub const VM_MEMORY_COREDATA: ::c_int = 45;
+pub const VM_MEMORY_COREDATA_OBJECTIDS: ::c_int = 46;
+pub const VM_MEMORY_ATS: ::c_int = 50;
+pub const VM_MEMORY_LAYERKIT: ::c_int = 51;
+pub const VM_MEMORY_CGIMAGE: ::c_int = 52;
+pub const VM_MEMORY_TCMALLOC: ::c_int = 53;
+pub const VM_MEMORY_COREGRAPHICS_DATA: ::c_int = 54;
+pub const VM_MEMORY_COREGRAPHICS_SHARED: ::c_int = 55;
+pub const VM_MEMORY_COREGRAPHICS_FRAMEBUFFERS: ::c_int = 56;
+pub const VM_MEMORY_COREGRAPHICS_BACKINGSTORES: ::c_int = 57;
+pub const VM_MEMORY_COREGRAPHICS_XALLOC: ::c_int = 58;
+pub const VM_MEMORY_COREGRAPHICS_MISC: ::c_int = VM_MEMORY_COREGRAPHICS;
+pub const VM_MEMORY_DYLD: ::c_int = 60;
+pub const VM_MEMORY_DYLD_MALLOC: ::c_int = 61;
+pub const VM_MEMORY_SQLITE: ::c_int = 62;
+pub const VM_MEMORY_JAVASCRIPT_CORE: ::c_int = 63;
+pub const VM_MEMORY_JAVASCRIPT_JIT_EXECUTABLE_ALLOCATOR: ::c_int = 64;
+pub const VM_MEMORY_JAVASCRIPT_JIT_REGISTER_FILE: ::c_int = 65;
+pub const VM_MEMORY_GLSL: ::c_int = 66;
+pub const VM_MEMORY_OPENCL: ::c_int = 67;
+pub const VM_MEMORY_COREIMAGE: ::c_int = 68;
+pub const VM_MEMORY_WEBCORE_PURGEABLE_BUFFERS: ::c_int = 69;
+pub const VM_MEMORY_IMAGEIO: ::c_int = 70;
+pub const VM_MEMORY_COREPROFILE: ::c_int = 71;
+pub const VM_MEMORY_ASSETSD: ::c_int = 72;
+pub const VM_MEMORY_OS_ALLOC_ONCE: ::c_int = 73;
+pub const VM_MEMORY_LIBDISPATCH: ::c_int = 74;
+pub const VM_MEMORY_ACCELERATE: ::c_int = 75;
+pub const VM_MEMORY_COREUI: ::c_int = 76;
+pub const VM_MEMORY_COREUIFILE: ::c_int = 77;
+pub const VM_MEMORY_GENEALOGY: ::c_int = 78;
+pub const VM_MEMORY_RAWCAMERA: ::c_int = 79;
+pub const VM_MEMORY_CORPSEINFO: ::c_int = 80;
+pub const VM_MEMORY_ASL: ::c_int = 81;
+pub const VM_MEMORY_SWIFT_RUNTIME: ::c_int = 82;
+pub const VM_MEMORY_SWIFT_METADATA: ::c_int = 83;
+pub const VM_MEMORY_DHMM: ::c_int = 84;
+pub const VM_MEMORY_SCENEKIT: ::c_int = 86;
+pub const VM_MEMORY_SKYWALK: ::c_int = 87;
+pub const VM_MEMORY_APPLICATION_SPECIFIC_1: ::c_int = 240;
+pub const VM_MEMORY_APPLICATION_SPECIFIC_16: ::c_int = 255;
 
 pub const MAP_FAILED: *mut ::c_void = !0 as *mut ::c_void;
 
@@ -640,7 +972,17 @@ pub const EOWNERDEAD: ::c_int = 105;
 pub const EQFULL: ::c_int = 106;
 pub const ELAST: ::c_int = 106;
 
+pub const EAI_AGAIN: ::c_int = 2;
+pub const EAI_BADFLAGS: ::c_int = 3;
+pub const EAI_FAIL: ::c_int = 4;
+pub const EAI_FAMILY: ::c_int = 5;
+pub const EAI_MEMORY: ::c_int = 6;
+pub const EAI_NODATA: ::c_int = 7;
+pub const EAI_NONAME: ::c_int = 8;
+pub const EAI_SERVICE: ::c_int = 9;
+pub const EAI_SOCKTYPE: ::c_int = 10;
 pub const EAI_SYSTEM: ::c_int = 11;
+pub const EAI_OVERFLOW: ::c_int = 14;
 
 pub const F_DUPFD: ::c_int = 0;
 pub const F_DUPFD_CLOEXEC: ::c_int = 67;
@@ -665,7 +1007,11 @@ pub const F_ALLOCATEALL: ::c_uint = 0x04;
 pub const F_PEOFPOSMODE: ::c_int = 3;
 pub const F_VOLPOSMODE: ::c_int = 4;
 
-pub const O_ACCMODE: ::c_int = 3;
+pub const AT_FDCWD: ::c_int = -2;
+pub const AT_EACCESS: ::c_int = 0x0010;
+pub const AT_SYMLINK_NOFOLLOW: ::c_int = 0x0020;
+pub const AT_SYMLINK_FOLLOW: ::c_int = 0x0040;
+pub const AT_REMOVEDIR: ::c_int = 0x0080;
 
 pub const TIOCMODG: ::c_ulong = 0x40047403;
 pub const TIOCMODS: ::c_ulong = 0x80047404;
@@ -731,6 +1077,39 @@ pub const TIOCPTYGRANT: ::c_uint = 0x20007454;
 pub const TIOCPTYGNAME: ::c_uint = 0x40807453;
 pub const TIOCPTYUNLK: ::c_uint = 0x20007452;
 
+pub const FIONCLEX: ::c_uint = 0x20006602;
+pub const FIONREAD: ::c_ulong = 0x4004667f;
+pub const FIOASYNC: ::c_ulong = 0x8004667d;
+pub const FIOSETOWN: ::c_ulong = 0x8004667c;
+pub const FIOGETOWN: ::c_ulong = 0x4004667b;
+pub const FIODTYPE: ::c_ulong = 0x4004667a;
+
+pub const B0: speed_t = 0;
+pub const B50: speed_t = 50;
+pub const B75: speed_t = 75;
+pub const B110: speed_t = 110;
+pub const B134: speed_t = 134;
+pub const B150: speed_t = 150;
+pub const B200: speed_t = 200;
+pub const B300: speed_t = 300;
+pub const B600: speed_t = 600;
+pub const B1200: speed_t = 1200;
+pub const B1800: speed_t = 1800;
+pub const B2400: speed_t = 2400;
+pub const B4800: speed_t = 4800;
+pub const B9600: speed_t = 9600;
+pub const B19200: speed_t = 19200;
+pub const B38400: speed_t = 38400;
+pub const B7200: speed_t = 7200;
+pub const B14400: speed_t = 14400;
+pub const B28800: speed_t = 28800;
+pub const B57600: speed_t = 57600;
+pub const B76800: speed_t = 76800;
+pub const B115200: speed_t = 115200;
+pub const B230400: speed_t = 230400;
+pub const EXTA: speed_t = 19200;
+pub const EXTB: speed_t = 38400;
+
 pub const SIGTRAP: ::c_int = 5;
 
 pub const GLOB_APPEND  : ::c_int = 0x0001;
@@ -779,7 +1158,10 @@ pub const _SC_XOPEN_SHM: ::c_int = 113;
 pub const _SC_XOPEN_UNIX: ::c_int = 115;
 pub const _SC_XOPEN_VERSION: ::c_int = 116;
 pub const _SC_XOPEN_XCU_VERSION: ::c_int = 121;
+pub const _SC_PHYS_PAGES: ::c_int = 200;
 
+pub const PTHREAD_PROCESS_PRIVATE: ::c_int = 2;
+pub const PTHREAD_PROCESS_SHARED: ::c_int = 1;
 pub const PTHREAD_CREATE_JOINABLE: ::c_int = 1;
 pub const PTHREAD_CREATE_DETACHED: ::c_int = 2;
 pub const PTHREAD_STACK_MIN: ::size_t = 8192;
@@ -819,27 +1201,344 @@ pub const MINCORE_MODIFIED: ::c_int = 0x4;
 pub const MINCORE_REFERENCED_OTHER: ::c_int = 0x8;
 pub const MINCORE_MODIFIED_OTHER: ::c_int = 0x10;
 
-pub const AF_UNIX: ::c_int = 1;
+//
+// sys/netinet/in.h
+// Protocols (RFC 1700)
+// NOTE: These are in addition to the constants defined in src/unix/mod.rs
+
+// IPPROTO_IP defined in src/unix/mod.rs
+/// IP6 hop-by-hop options
+pub const IPPROTO_HOPOPTS: ::c_int = 0;
+// IPPROTO_ICMP defined in src/unix/mod.rs
+/// group mgmt protocol
+pub const IPPROTO_IGMP: ::c_int = 2;
+/// gateway<sup>2</sup> (deprecated)
+pub const IPPROTO_GGP: ::c_int = 3;
+/// for compatibility
+pub const IPPROTO_IPIP: ::c_int = 4;
+// IPPROTO_TCP defined in src/unix/mod.rs
+/// Stream protocol II.
+pub const IPPROTO_ST: ::c_int = 7;
+/// exterior gateway protocol
+pub const IPPROTO_EGP: ::c_int = 8;
+/// private interior gateway
+pub const IPPROTO_PIGP: ::c_int = 9;
+/// BBN RCC Monitoring
+pub const IPPROTO_RCCMON: ::c_int = 10;
+/// network voice protocol
+pub const IPPROTO_NVPII: ::c_int = 11;
+/// pup
+pub const IPPROTO_PUP: ::c_int = 12;
+/// Argus
+pub const IPPROTO_ARGUS: ::c_int = 13;
+/// EMCON
+pub const IPPROTO_EMCON: ::c_int = 14;
+/// Cross Net Debugger
+pub const IPPROTO_XNET: ::c_int = 15;
+/// Chaos
+pub const IPPROTO_CHAOS: ::c_int = 16;
+// IPPROTO_UDP defined in src/unix/mod.rs
+/// Multiplexing
+pub const IPPROTO_MUX: ::c_int = 18;
+/// DCN Measurement Subsystems
+pub const IPPROTO_MEAS: ::c_int = 19;
+/// Host Monitoring
+pub const IPPROTO_HMP: ::c_int = 20;
+/// Packet Radio Measurement
+pub const IPPROTO_PRM: ::c_int = 21;
+/// xns idp
+pub const IPPROTO_IDP: ::c_int = 22;
+/// Trunk-1
+pub const IPPROTO_TRUNK1: ::c_int = 23;
+/// Trunk-2
+pub const IPPROTO_TRUNK2: ::c_int = 24;
+/// Leaf-1
+pub const IPPROTO_LEAF1: ::c_int = 25;
+/// Leaf-2
+pub const IPPROTO_LEAF2: ::c_int = 26;
+/// Reliable Data
+pub const IPPROTO_RDP: ::c_int = 27;
+/// Reliable Transaction
+pub const IPPROTO_IRTP: ::c_int = 28;
+/// tp-4 w/ class negotiation
+pub const IPPROTO_TP: ::c_int = 29;
+/// Bulk Data Transfer
+pub const IPPROTO_BLT: ::c_int = 30;
+/// Network Services
+pub const IPPROTO_NSP: ::c_int = 31;
+/// Merit Internodal
+pub const IPPROTO_INP: ::c_int = 32;
+/// Sequential Exchange
+pub const IPPROTO_SEP: ::c_int = 33;
+/// Third Party Connect
+pub const IPPROTO_3PC: ::c_int = 34;
+/// InterDomain Policy Routing
+pub const IPPROTO_IDPR: ::c_int = 35;
+/// XTP
+pub const IPPROTO_XTP: ::c_int = 36;
+/// Datagram Delivery
+pub const IPPROTO_DDP: ::c_int = 37;
+/// Control Message Transport
+pub const IPPROTO_CMTP: ::c_int = 38;
+/// TP++ Transport
+pub const IPPROTO_TPXX: ::c_int = 39;
+/// IL transport protocol
+pub const IPPROTO_IL: ::c_int = 40;
+// IPPROTO_IPV6 defined in src/unix/mod.rs
+/// Source Demand Routing
+pub const IPPROTO_SDRP: ::c_int = 42;
+/// IP6 routing header
+pub const IPPROTO_ROUTING: ::c_int = 43;
+/// IP6 fragmentation header
+pub const IPPROTO_FRAGMENT: ::c_int = 44;
+/// InterDomain Routing
+pub const IPPROTO_IDRP: ::c_int = 45;
+/// resource reservation
+pub const IPPROTO_RSVP: ::c_int = 46;
+/// General Routing Encap.
+pub const IPPROTO_GRE: ::c_int = 47;
+/// Mobile Host Routing
+pub const IPPROTO_MHRP: ::c_int = 48;
+/// BHA
+pub const IPPROTO_BHA: ::c_int = 49;
+/// IP6 Encap Sec. Payload
+pub const IPPROTO_ESP: ::c_int = 50;
+/// IP6 Auth Header
+pub const IPPROTO_AH: ::c_int = 51;
+/// Integ. Net Layer Security
+pub const IPPROTO_INLSP: ::c_int = 52;
+/// IP with encryption
+pub const IPPROTO_SWIPE: ::c_int = 53;
+/// Next Hop Resolution
+pub const IPPROTO_NHRP: ::c_int = 54;
+/* 55-57: Unassigned */
+// IPPROTO_ICMPV6 defined in src/unix/mod.rs
+/// IP6 no next header
+pub const IPPROTO_NONE: ::c_int = 59;
+/// IP6 destination option
+pub const IPPROTO_DSTOPTS: ::c_int = 60;
+/// any host internal protocol
+pub const IPPROTO_AHIP: ::c_int = 61;
+/// CFTP
+pub const IPPROTO_CFTP: ::c_int = 62;
+/// "hello" routing protocol
+pub const IPPROTO_HELLO: ::c_int = 63;
+/// SATNET/Backroom EXPAK
+pub const IPPROTO_SATEXPAK: ::c_int = 64;
+/// Kryptolan
+pub const IPPROTO_KRYPTOLAN: ::c_int = 65;
+/// Remote Virtual Disk
+pub const IPPROTO_RVD: ::c_int = 66;
+/// Pluribus Packet Core
+pub const IPPROTO_IPPC: ::c_int = 67;
+/// Any distributed FS
+pub const IPPROTO_ADFS: ::c_int = 68;
+/// Satnet Monitoring
+pub const IPPROTO_SATMON: ::c_int = 69;
+/// VISA Protocol
+pub const IPPROTO_VISA: ::c_int = 70;
+/// Packet Core Utility
+pub const IPPROTO_IPCV: ::c_int = 71;
+/// Comp. Prot. Net. Executive
+pub const IPPROTO_CPNX: ::c_int = 72;
+/// Comp. Prot. HeartBeat
+pub const IPPROTO_CPHB: ::c_int = 73;
+/// Wang Span Network
+pub const IPPROTO_WSN: ::c_int = 74;
+/// Packet Video Protocol
+pub const IPPROTO_PVP: ::c_int = 75;
+/// BackRoom SATNET Monitoring
+pub const IPPROTO_BRSATMON: ::c_int = 76;
+/// Sun net disk proto (temp.)
+pub const IPPROTO_ND: ::c_int = 77;
+/// WIDEBAND Monitoring
+pub const IPPROTO_WBMON: ::c_int = 78;
+/// WIDEBAND EXPAK
+pub const IPPROTO_WBEXPAK: ::c_int = 79;
+/// ISO cnlp
+pub const IPPROTO_EON: ::c_int = 80;
+/// VMTP
+pub const IPPROTO_VMTP: ::c_int = 81;
+/// Secure VMTP
+pub const IPPROTO_SVMTP: ::c_int = 82;
+/// Banyon VINES
+pub const IPPROTO_VINES: ::c_int = 83;
+/// TTP
+pub const IPPROTO_TTP: ::c_int = 84;
+/// NSFNET-IGP
+pub const IPPROTO_IGP: ::c_int = 85;
+/// dissimilar gateway prot.
+pub const IPPROTO_DGP: ::c_int = 86;
+/// TCF
+pub const IPPROTO_TCF: ::c_int = 87;
+/// Cisco/GXS IGRP
+pub const IPPROTO_IGRP: ::c_int = 88;
+/// OSPFIGP
+pub const IPPROTO_OSPFIGP: ::c_int = 89;
+/// Strite RPC protocol
+pub const IPPROTO_SRPC: ::c_int = 90;
+/// Locus Address Resoloution
+pub const IPPROTO_LARP: ::c_int = 91;
+/// Multicast Transport
+pub const IPPROTO_MTP: ::c_int = 92;
+/// AX.25 Frames
+pub const IPPROTO_AX25: ::c_int = 93;
+/// IP encapsulated in IP
+pub const IPPROTO_IPEIP: ::c_int = 94;
+/// Mobile Int.ing control
+pub const IPPROTO_MICP: ::c_int = 95;
+/// Semaphore Comm. security
+pub const IPPROTO_SCCSP: ::c_int = 96;
+/// Ethernet IP encapsulation
+pub const IPPROTO_ETHERIP: ::c_int = 97;
+/// encapsulation header
+pub const IPPROTO_ENCAP: ::c_int = 98;
+/// any private encr. scheme
+pub const IPPROTO_APES: ::c_int = 99;
+/// GMTP
+pub const IPPROTO_GMTP: ::c_int = 100;
+
+/* 101-254: Partly Unassigned */
+/// Protocol Independent Mcast
+pub const IPPROTO_PIM: ::c_int = 103;
+/// payload compression (IPComp)
+pub const IPPROTO_IPCOMP: ::c_int = 108;
+/// PGM
+pub const IPPROTO_PGM: ::c_int = 113;
+/// SCTP
+pub const IPPROTO_SCTP: ::c_int = 132;
+
+/* 255: Reserved */
+/* BSD Private, local use, namespace incursion */
+/// divert pseudo-protocol
+pub const IPPROTO_DIVERT: ::c_int = 254;
+/// raw IP packet
+pub const IPPROTO_RAW: ::c_int = 255;
+pub const IPPROTO_MAX: ::c_int = 256;
+/// last return value of *_input(), meaning "all job for this pkt is done".
+pub const IPPROTO_DONE: ::c_int = 257;
+
+pub const AF_UNSPEC: ::c_int = 0;
+pub const AF_LOCAL: ::c_int = 1;
+pub const AF_UNIX: ::c_int = AF_LOCAL;
 pub const AF_INET: ::c_int = 2;
+pub const AF_IMPLINK: ::c_int = 3;
+pub const AF_PUP: ::c_int = 4;
+pub const AF_CHAOS: ::c_int = 5;
+pub const AF_NS: ::c_int = 6;
+pub const AF_ISO: ::c_int = 7;
+pub const AF_OSI: ::c_int = AF_ISO;
+pub const AF_ECMA: ::c_int = 8;
+pub const AF_DATAKIT: ::c_int = 9;
+pub const AF_CCITT: ::c_int = 10;
+pub const AF_SNA: ::c_int = 11;
+pub const AF_DECnet: ::c_int = 12;
+pub const AF_DLI: ::c_int = 13;
+pub const AF_LAT: ::c_int = 14;
+pub const AF_HYLINK: ::c_int = 15;
+pub const AF_APPLETALK: ::c_int = 16;
+pub const AF_ROUTE: ::c_int = 17;
+pub const AF_LINK: ::c_int = 18;
+pub const pseudo_AF_XTP: ::c_int = 19;
+pub const AF_COIP: ::c_int = 20;
+pub const AF_CNT: ::c_int = 21;
+pub const pseudo_AF_RTIP: ::c_int = 22;
+pub const AF_IPX: ::c_int = 23;
+pub const AF_SIP: ::c_int = 24;
+pub const pseudo_AF_PIP: ::c_int = 25;
+pub const AF_ISDN: ::c_int = 28;
+pub const AF_E164: ::c_int = AF_ISDN;
+pub const pseudo_AF_KEY: ::c_int = 29;
 pub const AF_INET6: ::c_int = 30;
+pub const AF_NATM: ::c_int = 31;
+pub const AF_SYSTEM: ::c_int = 32;
+pub const AF_NETBIOS: ::c_int = 33;
+pub const AF_PPP: ::c_int = 34;
+pub const pseudo_AF_HDRCMPLT: ::c_int = 35;
+#[doc(hidden)]
+pub const AF_MAX: ::c_int = 40;
+pub const AF_SYS_CONTROL: ::c_int = 2;
+
+pub const SYSPROTO_EVENT: ::c_int = 1;
+pub const SYSPROTO_CONTROL: ::c_int = 2;
+
+pub const PF_UNSPEC: ::c_int = AF_UNSPEC;
+pub const PF_LOCAL: ::c_int = AF_LOCAL;
+pub const PF_UNIX: ::c_int =  PF_LOCAL;
+pub const PF_INET: ::c_int =  AF_INET;
+pub const PF_IMPLINK: ::c_int = AF_IMPLINK;
+pub const PF_PUP: ::c_int =  AF_PUP;
+pub const PF_CHAOS: ::c_int = AF_CHAOS;
+pub const PF_NS: ::c_int =  AF_NS;
+pub const PF_ISO: ::c_int =  AF_ISO;
+pub const PF_OSI: ::c_int =  AF_ISO;
+pub const PF_ECMA: ::c_int =  AF_ECMA;
+pub const PF_DATAKIT: ::c_int = AF_DATAKIT;
+pub const PF_CCITT: ::c_int = AF_CCITT;
+pub const PF_SNA: ::c_int =  AF_SNA;
+pub const PF_DECnet: ::c_int = AF_DECnet;
+pub const PF_DLI: ::c_int =  AF_DLI;
+pub const PF_LAT: ::c_int =  AF_LAT;
+pub const PF_HYLINK: ::c_int = AF_HYLINK;
+pub const PF_APPLETALK: ::c_int = AF_APPLETALK;
+pub const PF_ROUTE: ::c_int = AF_ROUTE;
+pub const PF_LINK: ::c_int =  AF_LINK;
+pub const PF_XTP: ::c_int =  pseudo_AF_XTP;
+pub const PF_COIP: ::c_int =  AF_COIP;
+pub const PF_CNT: ::c_int =  AF_CNT;
+pub const PF_SIP: ::c_int =  AF_SIP;
+pub const PF_IPX: ::c_int =  AF_IPX;
+pub const PF_RTIP: ::c_int =  pseudo_AF_RTIP;
+pub const PF_PIP: ::c_int =  pseudo_AF_PIP;
+pub const PF_ISDN: ::c_int =  AF_ISDN;
+pub const PF_KEY: ::c_int =  pseudo_AF_KEY;
+pub const PF_INET6: ::c_int = AF_INET6;
+pub const PF_NATM: ::c_int =  AF_NATM;
+pub const PF_SYSTEM: ::c_int = AF_SYSTEM;
+pub const PF_NETBIOS: ::c_int = AF_NETBIOS;
+pub const PF_PPP: ::c_int =  AF_PPP;
+#[doc(hidden)]
+pub const PF_MAX: ::c_int =  AF_MAX;
+
+#[doc(hidden)]
+pub const NET_MAXID: ::c_int = AF_MAX;
+
+pub const NET_RT_DUMP: ::c_int = 1;
+pub const NET_RT_FLAGS: ::c_int = 2;
+pub const NET_RT_IFLIST: ::c_int = 3;
+#[doc(hidden)]
+pub const NET_RT_MAXID: ::c_int = 10;
+
+pub const SOMAXCONN: ::c_int = 128;
+
+pub const SOCK_MAXADDRLEN: ::c_int = 255;
+
 pub const SOCK_STREAM: ::c_int = 1;
 pub const SOCK_DGRAM: ::c_int = 2;
 pub const SOCK_RAW: ::c_int = 3;
+pub const SOCK_RDM: ::c_int = 4;
 pub const SOCK_SEQPACKET: ::c_int = 5;
-pub const IPPROTO_TCP: ::c_int = 6;
-pub const IPPROTO_IP: ::c_int = 0;
-pub const IPPROTO_IPV6: ::c_int = 41;
-pub const IP_MULTICAST_TTL: ::c_int = 10;
-pub const IP_MULTICAST_LOOP: ::c_int = 11;
 pub const IP_TTL: ::c_int = 4;
 pub const IP_HDRINCL: ::c_int = 2;
 pub const IP_ADD_MEMBERSHIP: ::c_int = 12;
 pub const IP_DROP_MEMBERSHIP: ::c_int = 13;
+pub const IP_PKTINFO: ::c_int = 26;
 pub const IPV6_JOIN_GROUP: ::c_int = 12;
 pub const IPV6_LEAVE_GROUP: ::c_int = 13;
+pub const IPV6_PKTINFO: ::c_int = 46;
+pub const IPV6_RECVPKTINFO: ::c_int = 61;
 
 pub const TCP_NODELAY: ::c_int = 0x01;
 pub const TCP_KEEPALIVE: ::c_int = 0x10;
+
+pub const SOL_LOCAL: ::c_int = 0;
+
+pub const LOCAL_PEERCRED: ::c_int = 0x001;
+pub const LOCAL_PEERPID: ::c_int = 0x002;
+pub const LOCAL_PEEREPID: ::c_int = 0x003;
+pub const LOCAL_PEERUUID: ::c_int = 0x004;
+pub const LOCAL_PEEREUUID: ::c_int = 0x005;
+
 pub const SOL_SOCKET: ::c_int = 0xffff;
 
 pub const SO_DEBUG: ::c_int = 0x01;
@@ -852,6 +1551,11 @@ pub const SO_USELOOPBACK: ::c_int = 0x0040;
 pub const SO_LINGER: ::c_int = 0x0080;
 pub const SO_OOBINLINE: ::c_int = 0x0100;
 pub const SO_REUSEPORT: ::c_int = 0x0200;
+pub const SO_TIMESTAMP: ::c_int = 0x0400;
+pub const SO_TIMESTAMP_MONOTONIC: ::c_int = 0x0800;
+pub const SO_DONTTRUNC: ::c_int = 0x2000;
+pub const SO_WANTMORE: ::c_int = 0x4000;
+pub const SO_WANTOOBFLAG: ::c_int = 0x8000;
 pub const SO_SNDBUF: ::c_int = 0x1001;
 pub const SO_RCVBUF: ::c_int = 0x1002;
 pub const SO_SNDLOWAT: ::c_int = 0x1003;
@@ -860,10 +1564,55 @@ pub const SO_SNDTIMEO: ::c_int = 0x1005;
 pub const SO_RCVTIMEO: ::c_int = 0x1006;
 pub const SO_ERROR: ::c_int = 0x1007;
 pub const SO_TYPE: ::c_int = 0x1008;
+pub const SO_LABEL: ::c_int = 0x1010;
+pub const SO_PEERLABEL: ::c_int = 0x1011;
+pub const SO_NREAD: ::c_int = 0x1020;
+pub const SO_NKE: ::c_int = 0x1021;
+pub const SO_NOSIGPIPE: ::c_int = 0x1022;
+pub const SO_NOADDRERR: ::c_int = 0x1023;
+pub const SO_NWRITE: ::c_int = 0x1024;
+pub const SO_REUSESHAREUID: ::c_int = 0x1025;
+pub const SO_NOTIFYCONFLICT: ::c_int = 0x1026;
+pub const SO_RANDOMPORT: ::c_int = 0x1082;
+pub const SO_NP_EXTENSIONS: ::c_int = 0x1083;
 
+pub const MSG_OOB: ::c_int =  0x1;
 pub const MSG_PEEK: ::c_int = 0x2;
+pub const MSG_DONTROUTE: ::c_int = 0x4;
+pub const MSG_EOR: ::c_int =  0x8;
+pub const MSG_TRUNC: ::c_int = 0x10;
+pub const MSG_CTRUNC: ::c_int = 0x20;
+pub const MSG_WAITALL: ::c_int = 0x40;
+pub const MSG_DONTWAIT: ::c_int = 0x80;
+pub const MSG_EOF: ::c_int =  0x100;
+pub const MSG_FLUSH: ::c_int = 0x400;
+pub const MSG_HOLD: ::c_int = 0x800;
+pub const MSG_SEND: ::c_int = 0x1000;
+pub const MSG_HAVEMORE: ::c_int = 0x2000;
+pub const MSG_RCVMORE: ::c_int = 0x4000;
+// pub const MSG_COMPAT: ::c_int = 0x8000;
 
-pub const IFF_LOOPBACK: ::c_int = 0x8;
+pub const SCM_TIMESTAMP: ::c_int = 0x02;
+pub const SCM_CREDS: ::c_int = 0x03;
+
+// https://github.com/aosm/xnu/blob/master/bsd/net/if.h#L140-L156
+pub const IFF_UP: ::c_int          = 0x1;  // interface is up
+pub const IFF_BROADCAST: ::c_int   = 0x2;  // broadcast address valid
+pub const IFF_DEBUG: ::c_int       = 0x4;  // turn on debugging
+pub const IFF_LOOPBACK: ::c_int    = 0x8;  // is a loopback net
+pub const IFF_POINTOPOINT: ::c_int = 0x10; // interface is point-to-point link
+pub const IFF_NOTRAILERS: ::c_int  = 0x20; // obsolete: avoid use of trailers
+pub const IFF_RUNNING: ::c_int     = 0x40; // resources allocated
+pub const IFF_NOARP: ::c_int       = 0x80; // no address resolution protocol
+pub const IFF_PROMISC: ::c_int     = 0x100;// receive all packets
+pub const IFF_ALLMULTI: ::c_int    = 0x200;// receive all multicast packets
+pub const IFF_OACTIVE: ::c_int     = 0x400;// transmission in progress
+pub const IFF_SIMPLEX: ::c_int     = 0x800;// can't hear own transmissions
+pub const IFF_LINK0: ::c_int       = 0x1000;// per link layer defined bit
+pub const IFF_LINK1: ::c_int   = 0x2000;// per link layer defined bit
+pub const IFF_LINK2: ::c_int   = 0x4000;// per link layer defined bit
+pub const IFF_ALTPHYS: ::c_int = IFF_LINK2;// use alternate physical connection
+pub const IFF_MULTICAST: ::c_int = 0x8000;// supports multicast
 
 pub const SHUT_RD: ::c_int = 0;
 pub const SHUT_WR: ::c_int = 1;
@@ -874,10 +1623,6 @@ pub const LOCK_EX: ::c_int = 2;
 pub const LOCK_NB: ::c_int = 4;
 pub const LOCK_UN: ::c_int = 8;
 
-pub const O_DSYNC: ::c_int = 4194304;
-pub const O_SYNC: ::c_int = 128;
-pub const O_NONBLOCK: ::c_int = 4;
-
 pub const MAP_COPY: ::c_int = 0x0002;
 pub const MAP_RENAME: ::c_int = 0x0020;
 pub const MAP_NORESERVE: ::c_int = 0x0040;
@@ -885,17 +1630,6 @@ pub const MAP_NOEXTEND: ::c_int = 0x0100;
 pub const MAP_HASSEMAPHORE: ::c_int = 0x0200;
 pub const MAP_NOCACHE: ::c_int = 0x0400;
 pub const MAP_JIT: ::c_int = 0x0800;
-
-pub const IPPROTO_RAW: ::c_int = 255;
-
-pub const SO_NREAD: ::c_int = 0x1020;
-pub const SO_NKE: ::c_int = 0x1021;
-pub const SO_NOSIGPIPE: ::c_int = 0x1022;
-pub const SO_NOADDRERR: ::c_int = 0x1023;
-pub const SO_NWRITE: ::c_int = 0x1024;
-pub const SO_DONTTRUNC: ::c_int = 0x2000;
-pub const SO_WANTMORE: ::c_int = 0x4000;
-pub const SO_WANTOOBFLAG: ::c_int = 0x8000;
 
 pub const _SC_ARG_MAX: ::c_int = 1;
 pub const _SC_CHILD_MAX: ::c_int = 2;
@@ -1097,6 +1831,18 @@ pub const NOTE_TRACK: ::uint32_t = 0x00000001;
 pub const NOTE_TRACKERR: ::uint32_t = 0x00000002;
 pub const NOTE_CHILD: ::uint32_t = 0x00000004;
 
+pub const OCRNL: ::c_int = 0x00000010;
+pub const ONOCR: ::c_int = 0x00000020;
+pub const ONLRET: ::c_int = 0x00000040;
+pub const OFILL: ::c_int = 0x00000080;
+pub const NLDLY: ::c_int = 0x00000300;
+pub const TABDLY: ::c_int = 0x00000c04;
+pub const CRDLY: ::c_int = 0x00003000;
+pub const FFDLY: ::c_int = 0x00004000;
+pub const BSDLY: ::c_int = 0x00008000;
+pub const VTDLY: ::c_int = 0x00010000;
+pub const OFDEL: ::c_int = 0x00020000;
+
 pub const NL0: ::c_int  = 0x00000000;
 pub const NL1: ::c_int  = 0x00000100;
 pub const TAB0: ::c_int = 0x00000000;
@@ -1120,6 +1866,9 @@ pub const NI_MAXHOST: ::socklen_t = 1025;
 
 pub const Q_GETQUOTA: ::c_int = 0x300;
 pub const Q_SETQUOTA: ::c_int = 0x400;
+
+pub const RENAME_SWAP: ::c_uint = 0x00000002;
+pub const RENAME_EXCL: ::c_uint = 0x00000004;
 
 pub const RTLD_LOCAL: ::c_int = 0x4;
 pub const RTLD_FIRST: ::c_int = 0x100;
@@ -1340,11 +2089,6 @@ pub const CTL_DEBUG_NAME: ::c_int = 0;
 pub const CTL_DEBUG_VALUE: ::c_int = 1;
 pub const CTL_DEBUG_MAXID: ::c_int = 20;
 
-pub const POLLRDNORM: ::c_short = 0x040;
-pub const POLLWRNORM: ::c_short = 0x004;
-pub const POLLRDBAND: ::c_short = 0x080;
-pub const POLLWRBAND: ::c_short = 0x100;
-
 pub const PRIO_DARWIN_THREAD: ::c_int = 3;
 pub const PRIO_DARWIN_PROCESS: ::c_int = 4;
 pub const PRIO_DARWIN_BG: ::c_int = 0x1000;
@@ -1374,6 +2118,169 @@ pub const WNOWAIT: ::c_int = 0x00000020;
 pub const P_ALL: idtype_t = 0;
 pub const P_PID: idtype_t = 1;
 pub const P_PGID: idtype_t = 2;
+
+pub const XATTR_NOFOLLOW: ::c_int = 0x0001;
+pub const XATTR_CREATE: ::c_int = 0x0002;
+pub const XATTR_REPLACE: ::c_int = 0x0004;
+pub const XATTR_NOSECURITY: ::c_int = 0x0008;
+pub const XATTR_NODEFAULT: ::c_int = 0x0010;
+pub const XATTR_SHOWCOMPRESSION: ::c_int = 0x0020;
+
+pub const NET_RT_IFLIST2: ::c_int = 0x0006;
+
+// net/route.h
+pub const RTF_UP: ::c_int = 0x1;
+pub const RTF_GATEWAY: ::c_int = 0x2;
+pub const RTF_HOST: ::c_int = 0x4;
+pub const RTF_REJECT: ::c_int = 0x8;
+pub const RTF_DYNAMIC: ::c_int = 0x10;
+pub const RTF_MODIFIED: ::c_int = 0x20;
+pub const RTF_DONE: ::c_int = 0x40;
+pub const RTF_DELCLONE: ::c_int = 0x80;
+pub const RTF_CLONING: ::c_int = 0x100;
+pub const RTF_XRESOLVE: ::c_int = 0x200;
+pub const RTF_LLINFO: ::c_int = 0x400;
+pub const RTF_STATIC: ::c_int = 0x800;
+pub const RTF_BLACKHOLE: ::c_int = 0x1000;
+pub const RTF_NOIFREF: ::c_int = 0x2000;
+pub const RTF_PROTO2: ::c_int = 0x4000;
+pub const RTF_PROTO1: ::c_int = 0x8000;
+pub const RTF_PRCLONING: ::c_int = 0x10000;
+pub const RTF_WASCLONED: ::c_int = 0x20000;
+pub const RTF_PROTO3: ::c_int = 0x40000;
+pub const RTF_PINNED: ::c_int = 0x100000;
+pub const RTF_LOCAL: ::c_int = 0x200000;
+pub const RTF_BROADCAST: ::c_int = 0x400000;
+pub const RTF_MULTICAST: ::c_int = 0x800000;
+pub const RTF_IFSCOPE: ::c_int = 0x1000000;
+pub const RTF_CONDEMNED: ::c_int = 0x2000000;
+pub const RTF_IFREF: ::c_int = 0x4000000;
+pub const RTF_PROXY: ::c_int = 0x8000000;
+pub const RTF_ROUTER: ::c_int = 0x10000000;
+
+pub const RTM_VERSION: ::c_int = 5;
+
+// Message types
+pub const RTM_ADD: ::c_int = 0x1;
+pub const RTM_DELETE: ::c_int = 0x2;
+pub const RTM_CHANGE: ::c_int = 0x3;
+pub const RTM_GET: ::c_int = 0x4;
+pub const RTM_LOSING: ::c_int = 0x5;
+pub const RTM_REDIRECT: ::c_int = 0x6;
+pub const RTM_MISS: ::c_int = 0x7;
+pub const RTM_LOCK: ::c_int = 0x8;
+pub const RTM_OLDADD: ::c_int = 0x9;
+pub const RTM_OLDDEL: ::c_int = 0xa;
+pub const RTM_RESOLVE: ::c_int = 0xb;
+pub const RTM_NEWADDR: ::c_int = 0xc;
+pub const RTM_DELADDR: ::c_int = 0xd;
+pub const RTM_IFINFO: ::c_int = 0xe;
+pub const RTM_NEWMADDR: ::c_int = 0xf;
+pub const RTM_DELMADDR: ::c_int = 0x10;
+pub const RTM_IFINFO2: ::c_int = 0x12;
+pub const RTM_NEWMADDR2: ::c_int = 0x13;
+pub const RTM_GET2: ::c_int = 0x14;
+
+// Bitmask values for rtm_inits and rmx_locks.
+pub const RTV_MTU: ::c_int = 0x1;
+pub const RTV_HOPCOUNT: ::c_int = 0x2;
+pub const RTV_EXPIRE: ::c_int = 0x4;
+pub const RTV_RPIPE: ::c_int = 0x8;
+pub const RTV_SPIPE: ::c_int = 0x10;
+pub const RTV_SSTHRESH: ::c_int = 0x20;
+pub const RTV_RTT: ::c_int = 0x40;
+pub const RTV_RTTVAR: ::c_int = 0x80;
+
+// Bitmask values for rtm_addrs.
+pub const RTA_DST: ::c_int = 0x1;
+pub const RTA_GATEWAY: ::c_int = 0x2;
+pub const RTA_NETMASK: ::c_int = 0x4;
+pub const RTA_GENMASK: ::c_int = 0x8;
+pub const RTA_IFP: ::c_int = 0x10;
+pub const RTA_IFA: ::c_int = 0x20;
+pub const RTA_AUTHOR: ::c_int = 0x40;
+pub const RTA_BRD: ::c_int = 0x80;
+
+// Index offsets for sockaddr array for alternate internal encoding.
+pub const RTAX_DST: ::c_int = 0;
+pub const RTAX_GATEWAY: ::c_int = 1;
+pub const RTAX_NETMASK: ::c_int = 2;
+pub const RTAX_GENMASK: ::c_int = 3;
+pub const RTAX_IFP: ::c_int = 4;
+pub const RTAX_IFA: ::c_int = 5;
+pub const RTAX_AUTHOR: ::c_int = 6;
+pub const RTAX_BRD: ::c_int = 7;
+pub const RTAX_MAX: ::c_int = 8;
+
+pub const KERN_PROCARGS2: ::c_int = 49;
+
+pub const PROC_PIDTASKALLINFO: ::c_int = 2;
+pub const PROC_PIDTASKINFO: ::c_int = 4;
+pub const PROC_PIDTHREADINFO: ::c_int = 5;
+pub const MAXCOMLEN: usize = 16;
+pub const MAXTHREADNAMESIZE: usize = 64;
+
+pub const XUCRED_VERSION: ::c_uint = 0;
+
+pub const LC_SEGMENT: u32 = 0x1;
+pub const LC_SEGMENT_64: u32 = 0x19;
+
+pub const MH_MAGIC: u32 = 0xfeedface;
+pub const MH_MAGIC_64: u32 = 0xfeedfacf;
+
+// net/if_utun.h
+pub const UTUN_OPT_FLAGS: ::c_int = 1;
+pub const UTUN_OPT_IFNAME: ::c_int = 2;
+
+// net/bpf.h
+pub const DLT_NULL: ::c_uint = 0;         // no link-layer encapsulation
+pub const DLT_EN10MB: ::c_uint = 1;       // Ethernet (10Mb)
+pub const DLT_EN3MB: ::c_uint = 2;        // Experimental Ethernet (3Mb)
+pub const DLT_AX25: ::c_uint = 3;         // Amateur Radio AX.25
+pub const DLT_PRONET: ::c_uint = 4;       // Proteon ProNET Token Ring
+pub const DLT_CHAOS: ::c_uint = 5;        // Chaos
+pub const DLT_IEEE802: ::c_uint = 6;      // IEEE 802 Networks
+pub const DLT_ARCNET: ::c_uint = 7;       // ARCNET
+pub const DLT_SLIP: ::c_uint = 8;         // Serial Line IP
+pub const DLT_PPP: ::c_uint = 9;          // Point-to-point Protocol
+pub const DLT_FDDI: ::c_uint = 10;        // FDDI
+pub const DLT_ATM_RFC1483: ::c_uint = 11; // LLC/SNAP encapsulated atm
+pub const DLT_RAW: ::c_uint = 12;         // raw IP
+pub const DLT_LOOP: ::c_uint = 108;
+
+// https://github.com/apple/darwin-xnu/blob/master/bsd/net/bpf.h#L100
+// sizeof(int32_t)
+pub const BPF_ALIGNMENT: ::c_int = 4;
+
+// sys/spawn.h:
+pub const POSIX_SPAWN_RESETIDS: ::c_int = 0x01;
+pub const POSIX_SPAWN_SETPGROUP: ::c_int = 0x02;
+pub const POSIX_SPAWN_SETSIGDEF: ::c_int = 0x04;
+pub const POSIX_SPAWN_SETSIGMASK: ::c_int = 0x08;
+pub const POSIX_SPAWN_SETEXEC: ::c_int = 0x40;
+pub const POSIX_SPAWN_START_SUSPENDED: ::c_int = 0x80;
+pub const POSIX_SPAWN_CLOEXEC_DEFAULT: ::c_int = 0x4000;
+
+// sys/ipc.h:
+pub const IPC_CREAT: ::c_int = 0x200;
+pub const IPC_EXCL: ::c_int = 0x400;
+pub const IPC_NOWAIT: ::c_int = 0x800;
+pub const IPC_PRIVATE: key_t = 0;
+
+pub const IPC_RMID: ::c_int = 0;
+pub const IPC_SET: ::c_int = 1;
+pub const IPC_STAT: ::c_int = 2;
+
+pub const IPC_R: ::c_int = 0x100;
+pub const IPC_W: ::c_int = 0x80;
+pub const IPC_M: ::c_int = 0x1000;
+
+// sys/shm.h
+pub const SHM_RDONLY: ::c_int = 0x1000;
+pub const SHM_RND: ::c_int = 0x2000;
+pub const SHMLBA: ::c_int = 4096;
+pub const SHM_R: ::c_int = IPC_R;
+pub const SHM_W: ::c_int = IPC_W;
 
 f! {
     pub fn WSTOPSIG(status: ::c_int) -> ::c_int {
@@ -1408,8 +2315,12 @@ extern {
     pub fn aio_suspend(aiocb_list: *const *const aiocb, nitems: ::c_int,
                        timeout: *const ::timespec) -> ::c_int;
     pub fn aio_cancel(fd: ::c_int, aiocbp: *mut aiocb) -> ::c_int;
+    pub fn clock_getres(clk_id: ::clockid_t, tp: *mut ::timespec) -> ::c_int;
+    pub fn clock_gettime(clk_id: ::clockid_t, tp: *mut ::timespec) -> ::c_int;
     pub fn lio_listio(mode: ::c_int, aiocb_list: *const *mut aiocb,
                       nitems: ::c_int, sevp: *mut sigevent) -> ::c_int;
+
+    pub fn dirfd(dirp: *mut ::DIR) -> ::c_int;
 
     pub fn lutimes(file: *const ::c_char, times: *const ::timeval) -> ::c_int;
 
@@ -1439,6 +2350,14 @@ extern {
     pub fn mprotect(addr: *mut ::c_void, len: ::size_t, prot: ::c_int)
                     -> ::c_int;
     pub fn shm_open(name: *const ::c_char, oflag: ::c_int, ...) -> ::c_int;
+    pub fn shmat(shmid: ::c_int, shmaddr: *const ::c_void,
+                 shmflg: ::c_int) -> *mut ::c_void;
+    pub fn shmdt(shmaddr: *const ::c_void) -> ::c_int;
+    #[cfg_attr(all(target_os = "macos", target_arch = "x86"),
+               link_name = "shmctl$UNIX2003")]
+    pub fn shmctl(shmid: ::c_int, cmd: ::c_int,
+                  buf: *mut ::shmid_ds) -> ::c_int;
+    pub fn shmget(key: key_t, size: ::size_t, shmflg: ::c_int) -> ::c_int;
     pub fn sysctl(name: *mut ::c_int,
                   namelen: ::c_uint,
                   oldp: *mut ::c_void,
@@ -1457,6 +2376,18 @@ extern {
     pub fn pthread_setname_np(name: *const ::c_char) -> ::c_int;
     pub fn pthread_get_stackaddr_np(thread: ::pthread_t) -> *mut ::c_void;
     pub fn pthread_get_stacksize_np(thread: ::pthread_t) -> ::size_t;
+    pub fn pthread_condattr_setpshared(attr: *mut pthread_condattr_t,
+                                       pshared: ::c_int) -> ::c_int;
+    pub fn pthread_condattr_getpshared(attr: *const pthread_condattr_t,
+                                       pshared: *mut ::c_int) -> ::c_int;
+    pub fn pthread_mutexattr_setpshared(attr: *mut pthread_mutexattr_t,
+                                        pshared: ::c_int) -> ::c_int;
+    pub fn pthread_mutexattr_getpshared(attr: *const pthread_mutexattr_t,
+                                        pshared: *mut ::c_int) -> ::c_int;
+    pub fn pthread_rwlockattr_getpshared(attr: *const pthread_rwlockattr_t,
+                                         val: *mut ::c_int) -> ::c_int;
+    pub fn pthread_rwlockattr_setpshared(attr: *mut pthread_rwlockattr_t,
+                                         val: ::c_int) -> ::c_int;
     pub fn __error() -> *mut ::c_int;
     pub fn backtrace(buf: *mut *mut ::c_void,
                      sz: ::c_int) -> ::c_int;
@@ -1481,7 +2412,7 @@ extern {
                  target: *const ::c_char,
                  flags: ::c_int,
                  data: *mut ::c_void) -> ::c_int;
-    pub fn ptrace(requeset: ::c_int,
+    pub fn ptrace(request: ::c_int,
                   pid: ::pid_t,
                   addr: *mut ::c_char,
                   data: ::c_int) -> ::c_int;
@@ -1515,41 +2446,105 @@ extern {
     pub fn querylocale(mask: ::c_int, loc: ::locale_t) -> *const ::c_char;
     pub fn getpriority(which: ::c_int, who: ::id_t) -> ::c_int;
     pub fn setpriority(which: ::c_int, who: ::id_t, prio: ::c_int) -> ::c_int;
-
-    pub fn openat(dirfd: ::c_int, pathname: *const ::c_char,
-                  flags: ::c_int, ...) -> ::c_int;
-    pub fn faccessat(dirfd: ::c_int, pathname: *const ::c_char,
-                     mode: ::c_int, flags: ::c_int) -> ::c_int;
-    pub fn fchmodat(dirfd: ::c_int, pathname: *const ::c_char,
-                    mode: ::mode_t, flags: ::c_int) -> ::c_int;
-    pub fn fchownat(dirfd: ::c_int, pathname: *const ::c_char,
-                    owner: ::uid_t, group: ::gid_t,
+    pub fn getdomainname(name: *mut ::c_char, len: ::c_int) -> ::c_int;
+    pub fn setdomainname(name: *const ::c_char, len: ::c_int) -> ::c_int;
+    pub fn getxattr(path: *const ::c_char, name: *const ::c_char,
+                    value: *mut ::c_void, size: ::size_t, position: u32,
+                    flags: ::c_int) -> ::ssize_t;
+    pub fn fgetxattr(filedes: ::c_int, name: *const ::c_char,
+                     value: *mut ::c_void, size: ::size_t, position: u32,
+                     flags: ::c_int) -> ::ssize_t;
+    pub fn setxattr(path: *const ::c_char, name: *const ::c_char,
+                    value: *const ::c_void, size: ::size_t, position: u32,
                     flags: ::c_int) -> ::c_int;
-    #[cfg_attr(target_os = "macos", link_name = "fstatat$INODE64")]
-    pub fn fstatat(dirfd: ::c_int, pathname: *const ::c_char,
-                   buf: *mut stat, flags: ::c_int) -> ::c_int;
-    pub fn linkat(olddirfd: ::c_int, oldpath: *const ::c_char,
-                  newdirfd: ::c_int, newpath: *const ::c_char,
-                  flags: ::c_int) -> ::c_int;
-   pub fn mkdirat(dirfd: ::c_int, pathname: *const ::c_char,
-                  mode: ::mode_t) -> ::c_int;
-   pub fn readlinkat(dirfd: ::c_int, pathname: *const ::c_char,
-                     buf: *mut ::c_char, bufsiz: ::size_t) -> ::ssize_t;
-   pub fn renameat(olddirfd: ::c_int, oldpath: *const ::c_char,
-                   newdirfd: ::c_int, newpath: *const ::c_char)
-                   -> ::c_int;
-   pub fn symlinkat(target: *const ::c_char, newdirfd: ::c_int,
-                    linkpath: *const ::c_char) -> ::c_int;
-   pub fn unlinkat(dirfd: ::c_int, pathname: *const ::c_char,
-                   flags: ::c_int) -> ::c_int;
+    pub fn fsetxattr(filedes: ::c_int, name: *const ::c_char,
+                     value: *const ::c_void, size: ::size_t, position: u32,
+                     flags: ::c_int) -> ::c_int;
+    pub fn listxattr(path: *const ::c_char, list: *mut ::c_char,
+                     size: ::size_t, flags: ::c_int) -> ::ssize_t;
+    pub fn flistxattr(filedes: ::c_int, list: *mut ::c_char,
+                      size: ::size_t, flags: ::c_int) -> ::ssize_t;
+    pub fn removexattr(path: *const ::c_char, name: *const ::c_char,
+                       flags: ::c_int) -> ::c_int;
+    pub fn renamex_np(from: *const ::c_char, to: *const ::c_char,
+                      flags: ::c_uint) -> ::c_int;
+    pub fn renameatx_np(fromfd: ::c_int, from: *const ::c_char,
+                        tofd: ::c_int, to: *const ::c_char,
+                        flags: ::c_uint) -> ::c_int;
+    pub fn fremovexattr(filedes: ::c_int, name: *const ::c_char,
+                        flags: ::c_int) -> ::c_int;
 
+    pub fn getgrouplist(name: *const ::c_char,
+                        basegid: ::c_int,
+                        groups: *mut ::c_int,
+                        ngroups: *mut ::c_int) -> ::c_int;
     pub fn initgroups(user: *const ::c_char, basegroup: ::c_int) -> ::c_int;
 
     #[cfg_attr(all(target_os = "macos", target_arch = "x86"),
                link_name = "waitid$UNIX2003")]
     pub fn waitid(idtype: idtype_t, id: id_t, infop: *mut ::siginfo_t,
                   options: ::c_int) -> ::c_int;
+    pub fn brk(addr: *const ::c_void) -> *mut ::c_void;
+    pub fn sbrk(increment: ::c_int) -> *mut ::c_void;
+    pub fn settimeofday(tv: *const ::timeval, tz: *const ::timezone) -> ::c_int;
+    pub fn _dyld_image_count() -> u32;
+    pub fn _dyld_get_image_header(image_index: u32) -> *const mach_header;
+    pub fn _dyld_get_image_vmaddr_slide(image_index: u32) -> ::intptr_t;
+    pub fn _dyld_get_image_name(image_index: u32) -> *const ::c_char;
 
+    pub fn posix_spawn(pid: *mut ::pid_t,
+                       path: *const ::c_char,
+                       file_actions: *const ::posix_spawn_file_actions_t,
+                       attrp: *const ::posix_spawnattr_t,
+                       argv: *const *mut ::c_char,
+                       envp: *const *mut ::c_char) -> ::c_int;
+    pub fn posix_spawnp(pid: *mut ::pid_t,
+                       file: *const ::c_char,
+                        file_actions: *const ::posix_spawn_file_actions_t,
+                        attrp: *const ::posix_spawnattr_t,
+                        argv: *const *mut ::c_char,
+                        envp: *const *mut ::c_char) -> ::c_int;
+    pub fn posix_spawnattr_init(attr: *mut posix_spawnattr_t) -> ::c_int;
+    pub fn posix_spawnattr_destroy(attr: *mut posix_spawnattr_t) -> ::c_int;
+    pub fn posix_spawnattr_getsigdefault(attr: *const posix_spawnattr_t,
+                                         default: *mut ::sigset_t) -> ::c_int;
+    pub fn posix_spawnattr_setsigdefault(attr: *mut posix_spawnattr_t,
+                                         default: *const ::sigset_t) -> ::c_int;
+    pub fn posix_spawnattr_getsigmask(attr: *const posix_spawnattr_t,
+                                      default: *mut ::sigset_t) -> ::c_int;
+    pub fn posix_spawnattr_setsigmask(attr: *mut posix_spawnattr_t,
+                                      default: *const ::sigset_t) -> ::c_int;
+    pub fn posix_spawnattr_getflags(attr: *const posix_spawnattr_t,
+                                    flags: *mut ::c_short) -> ::c_int;
+    pub fn posix_spawnattr_setflags(attr: *mut posix_spawnattr_t,
+                                    flags: ::c_short) -> ::c_int;
+    pub fn posix_spawnattr_getpgroup(attr: *const posix_spawnattr_t,
+                                     flags: *mut ::pid_t) -> ::c_int;
+    pub fn posix_spawnattr_setpgroup(attr: *mut posix_spawnattr_t,
+                                     flags: ::pid_t) -> ::c_int;
+
+    pub fn posix_spawn_file_actions_init(
+        actions: *mut posix_spawn_file_actions_t,
+    ) -> ::c_int;
+    pub fn posix_spawn_file_actions_destroy(
+        actions: *mut posix_spawn_file_actions_t,
+    ) -> ::c_int;
+    pub fn posix_spawn_file_actions_addopen(
+        actions: *mut posix_spawn_file_actions_t,
+        fd: ::c_int,
+        path: *const ::c_char,
+        oflag: ::c_int,
+        mode: ::mode_t,
+    ) -> ::c_int;
+    pub fn posix_spawn_file_actions_addclose(
+        actions: *mut posix_spawn_file_actions_t,
+        fd: ::c_int,
+    ) -> ::c_int;
+    pub fn posix_spawn_file_actions_adddup2(
+        actions: *mut posix_spawn_file_actions_t,
+        fd: ::c_int,
+        newfd: ::c_int,
+    ) -> ::c_int;
 }
 
 cfg_if! {

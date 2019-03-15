@@ -7,15 +7,11 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = [
+var EXPORTED_SYMBOLS = [
   "TestIntegration",
 ];
 
-const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
-
-Cu.import("resource://gre/modules/Task.jsm");
-
-this.TestIntegration = {
+var TestIntegration = {
   value: "value",
 
   get valueFromThis() {
@@ -35,8 +31,8 @@ this.TestIntegration = {
     return "method" + argument;
   },
 
-  asyncMethod: Task.async(function* (argument) {
+  async asyncMethod(argument) {
     this.asyncMethodArgument = argument;
     return "asyncMethod" + argument;
-  }),
+  },
 };

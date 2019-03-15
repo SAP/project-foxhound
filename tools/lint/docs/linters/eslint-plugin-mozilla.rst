@@ -8,6 +8,8 @@ Environments
 These environments are available by specifying a comment at the top of the file,
 e.g.
 
+.. code-block:: js
+
    /* eslint-env mozilla/chrome-worker */
 
 There are also built-in ESLint environments available as well:
@@ -17,12 +19,6 @@ browser-window
 --------------
 
 Defines the environment for scripts that are in the main browser.xul scope.
-
-places-overlay
---------------
-
-Defines the environment for scripts that are in a scope where placesOverlay.xul
-is included.
 
 chrome-worker
 -------------
@@ -35,8 +31,29 @@ frame-script
 
 Defines the environment for frame scripts.
 
+jsm
+---
+
+Defines the environment for jsm files (javascript modules).
+
 Rules
 =====
+
+avoid-Date-timing
+-----------------
+
+Rejects grabbing the current time via Date.now() or new Date() for timing
+purposes when the less problematic performance.now() can be used instead.
+
+The performance.now() function returns milliseconds since page load. To
+convert that to milliseconds since the epoch, use:
+
+.. code-block:: js
+
+    performance.timing.navigationStart + performance.now()
+
+Often timing relative to the page load is adequate and that conversion may not
+be necessary.
 
 avoid-removeChild
 -----------------
@@ -47,9 +64,29 @@ can be used instead.
 balanced-listeners
 ------------------
 
-Checks that for every occurence of 'addEventListener' or 'on' there is an
-occurence of 'removeEventListener' or 'off' with the same event name.
+Checks that for every occurrence of 'addEventListener' or 'on' there is an
+occurrence of 'removeEventListener' or 'off' with the same event name.
 
+import-browser-window-globals
+-----------------------------
+
+For scripts included in browser-window, this will automatically inject the
+browser-window global scopes into the file.
+
+import-content-task-globals
+---------------------------
+
+For files containing ContentTask.spawn calls, this will automatically declare
+the frame script variables in the global scope. ContentTask is only available
+to test files, so by default the configs only specify it for the mochitest based
+configurations.
+
+This saves setting the file as a mozilla/frame-script environment.
+
+Note: due to the way ESLint works, it appears it is only easy to declare these
+variables on a file global scope, rather than function global. This may mean that
+they are incorrectly allowed, but given they are test files, this should be
+detected during testing.
 
 import-globals
 --------------
@@ -119,27 +156,26 @@ Checks that function argument names don't start with lowercase 'a' followed by
 a capital letter. This is to prevent the use of Hungarian notation whereby the
 first letter is a prefix that indicates the type or intended use of a variable.
 
+no-compare-against-boolean-literals
+-----------------------------------
 
-no-cpows-in-tests
------------------
+Checks that boolean expressions do not compare against literal values
+of `true` or `false`. This is to prevent overly verbose code such as
+`if (isEnabled == true)` when `if (isEnabled)` would suffice.
 
-This rule checks if the file is a browser mochitest and, if so, checks for
-possible CPOW usage by checking for the following strings:
+no-define-cc-etc
+----------------
 
-- "gBrowser.contentWindow"
-- "gBrowser.contentDocument"
-- "gBrowser.selectedBrowser.contentWindow"
-- "browser.contentDocument"
-- "window.content"
-- "content"
-- "content."
+This disallows statements such as:
 
-Note: These are string matches so we will miss situations where the parent
-object is assigned to another variable e.g.::
+.. code-block:: js
 
-   var b = gBrowser;
-   b.content // Would not be detected as a CPOW.
+   var Cc = Components.classes;
+   var Ci = Components.interfaces;
+   var {Ci: interfaces, Cc: classes, Cu: utils} = Components;
 
+These used to be necessary but have now been defined globally for all chrome
+contexts.
 
 no-single-arg-cu-import
 -----------------------
@@ -152,9 +188,11 @@ no-import-into-var-and-global
 -----------------------------
 
 Reject use of ``Cu.import`` (or ``Components.utils.import``) where it attempts to
-import into a var and into the global scope at the same time, e.g.
+import into a var and into the global scope at the same time, e.g.:
 
-``var foo = Cu.import("path.jsm", this);``
+.. code-block:: js
+
+    var foo = Cu.import("path.jsm", this);
 
 This is considered bad practice as it is confusing as to what is actually being
 imported.
@@ -166,10 +204,19 @@ Reject common XPCOM methods called with useless optional parameters (eg.
 ``Services.io.newURI(url, null, null)``, or non-existent parameters (eg.
 ``Services.obs.removeObserver(name, observer, false)``).
 
+This option can be autofixed (``--fix``).
+
 no-useless-removeEventListener
 ------------------------------
 
 Reject calls to removeEventListener where {once: true} could be used instead.
+
+no-useless-run-test
+-------------------
+
+Designed for xpcshell-tests. Rejects definitions of ``run_test()`` where the
+function only contains a single call to ``run_next_test()``. xpcshell's head.js
+already defines a utility function so there is no need for duplication.
 
 reject-importGlobalProperties
 -----------------------------
@@ -192,16 +239,53 @@ this-top-level-scope
 Treats top-level assignments like ``this.mumble = value`` as declaring a global.
 
 Note: These are string matches so we will miss situations where the parent
-object is assigned to another variable e.g.::
+object is assigned to another variable e.g.:
+
+.. code-block:: js
 
    var b = gBrowser;
    b.content // Would not be detected as a CPOW.
+
+use-cc-etc
+----------
+
+This requires using ``Cc`` rather than ``Components.classes``, and the same for
+``Components.interfaces``, ``Components.results`` and ``Components.utils``. This has
+a slight performance advantage by avoiding the use of the dot.
+
+use-chromeutils-import
+----------------------
+
+Require use of ``ChromeUtils.import`` and ``ChromeUtils.defineModuleGetter``
+rather than ``Components.utils.import`` and
+``XPCOMUtils.defineLazyModuleGetter``.
+
+use-default-preference-values
+---------------
+
+Require providing a second parameter to get*Pref methods instead of
+using a try/catch block.
 
 use-ownerGlobal
 ---------------
 
 Require .ownerGlobal instead of .ownerDocument.defaultView.
 
+use-includes-instead-of-indexOf
+-------------------------------
+
+Use .includes instead of .indexOf to check if something is in an array or string.
+
+use-returnValue
+---------------
+
+Warn when idempotent methods are called and their return value is unused.
+
+use-services
+------------
+
+Requires the use of Services.jsm rather than Cc[].getService() where a service
+is already defined in Services.jsm.
 
 var-only-at-top-level
 ---------------------
@@ -224,26 +308,43 @@ Example
 | 2     | Error                 |
 +-------+-----------------------+
 
-Example configuration::
+Example configuration:
+
+.. code-block:: js
 
    "rules": {
      "mozilla/balanced-listeners": 2,
-     "mozilla/components-imports": 1,
-     "mozilla/import-globals-from": 1,
-     "mozilla/import-headjs-globals": 1,
      "mozilla/mark-test-function-used": 1,
      "mozilla/var-only-at-top-level": 1,
-     "mozilla/no-cpows-in-tests": 1,
    }
 
+Tests
+=====
+
+The tests for eslint-plugin-mozilla are run via `mochajs`_ on top of node. Most
+of the tests use the `ESLint Rule Unit Test framework`_.
+
+.. _mochajs: https://mochajs.org/
+.. _ESLint Rule Unit Test Framework: http://eslint.org/docs/developer-guide/working-with-rules#rule-unit-tests
+
 Running Tests
-=============
+-------------
 
-The rules have some self tests (see bug 1219152), these can be run via:
+The rules have some self tests, these can be run via:
 
-```
-cd tools/lint/eslint/eslint-plugin-mozilla
-npm run test
-```
+.. code-block:: shell
 
-(assuming `./mach eslint --setup` has already been run).
+   $ cd tools/lint/eslint/eslint-plugin-mozilla
+   $ npm install
+   $ npm run test
+
+Disabling tests
+---------------
+
+In the unlikely event of needing to disable a test, currently the only way is
+by commenting-out. Please file a bug if you have to do this.
+
+Filing Bugs
+===========
+
+Bugs should be filed in the Testing product under Lint.

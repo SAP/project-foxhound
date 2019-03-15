@@ -20,11 +20,11 @@ var DetailsView = {
     "waterfall": {
       id: "waterfall-view",
       view: WaterfallView,
-      features: ["withMarkers"]
+      features: ["withMarkers"],
     },
     "js-calltree": {
       id: "js-profile-view",
-      view: JsCallTreeView
+      view: JsCallTreeView,
     },
     "js-flamegraph": {
       id: "js-flamegraph-view",
@@ -33,7 +33,7 @@ var DetailsView = {
     "memory-calltree": {
       id: "memory-calltree-view",
       view: MemoryCallTreeView,
-      features: ["withAllocations"]
+      features: ["withAllocations"],
     },
     "memory-flamegraph": {
       id: "memory-flamegraph-view",
@@ -46,7 +46,7 @@ var DetailsView = {
   /**
    * Sets up the view with event binding, initializes subviews.
    */
-  initialize: Task.async(function* () {
+  async initialize() {
     this.el = $("#details-pane");
     this.toolbar = $("#performance-toolbar-controls-detail-views");
 
@@ -54,29 +54,29 @@ var DetailsView = {
     this._onRecordingStoppedOrSelected = this._onRecordingStoppedOrSelected.bind(this);
     this.setAvailableViews = this.setAvailableViews.bind(this);
 
-    for (let button of $$("toolbarbutton[data-view]", this.toolbar)) {
+    for (const button of $$("toolbarbutton[data-view]", this.toolbar)) {
       button.addEventListener("command", this._onViewToggle);
     }
 
-    yield this.setAvailableViews();
+    await this.setAvailableViews();
 
     PerformanceController.on(EVENTS.RECORDING_STATE_CHANGE,
                              this._onRecordingStoppedOrSelected);
     PerformanceController.on(EVENTS.RECORDING_SELECTED,
                              this._onRecordingStoppedOrSelected);
     PerformanceController.on(EVENTS.PREF_CHANGED, this.setAvailableViews);
-  }),
+  },
 
   /**
    * Unbinds events, destroys subviews.
    */
-  destroy: Task.async(function* () {
-    for (let button of $$("toolbarbutton[data-view]", this.toolbar)) {
+  async destroy() {
+    for (const button of $$("toolbarbutton[data-view]", this.toolbar)) {
       button.removeEventListener("command", this._onViewToggle);
     }
 
-    for (let component of Object.values(this.components)) {
-      component.initialized && (yield component.view.destroy());
+    for (const component of Object.values(this.components)) {
+      component.initialized && (await component.view.destroy());
     }
 
     PerformanceController.off(EVENTS.RECORDING_STATE_CHANGE,
@@ -84,7 +84,7 @@ var DetailsView = {
     PerformanceController.off(EVENTS.RECORDING_SELECTED,
                               this._onRecordingStoppedOrSelected);
     PerformanceController.off(EVENTS.PREF_CHANGED, this.setAvailableViews);
-  }),
+  },
 
   /**
    * Sets the possible views based off of recording features and server actor support
@@ -92,13 +92,13 @@ var DetailsView = {
    * if currently selected. Called when a preference changes in
    * `devtools.performance.ui.`.
    */
-  setAvailableViews: Task.async(function* () {
-    let recording = PerformanceController.getCurrentRecording();
-    let isCompleted = recording && recording.isCompleted();
+  async setAvailableViews() {
+    const recording = PerformanceController.getCurrentRecording();
+    const isCompleted = recording && recording.isCompleted();
     let invalidCurrentView = false;
 
-    for (let [name, { view }] of Object.entries(this.components)) {
-      let isSupported = this._isViewSupported(name);
+    for (const [name, { view }] of Object.entries(this.components)) {
+      const isSupported = this._isViewSupported(name);
 
       $(`toolbarbutton[data-view=${name}]`).hidden = !isSupported;
 
@@ -119,9 +119,9 @@ var DetailsView = {
     // use a default now that we have the recording configurations
     if ((this._initialized && isCompleted && invalidCurrentView) ||
         (!this._initialized && isCompleted && recording)) {
-      yield this.selectDefaultView();
+      await this.selectDefaultView();
     }
-  }),
+  },
 
   /**
    * Takes a view name and determines if the current recording
@@ -130,15 +130,15 @@ var DetailsView = {
    * @param {string} viewName
    * @return {boolean}
    */
-  _isViewSupported: function (viewName) {
-    let { features, prefs } = this.components[viewName];
-    let recording = PerformanceController.getCurrentRecording();
+  _isViewSupported: function(viewName) {
+    const { features, prefs } = this.components[viewName];
+    const recording = PerformanceController.getCurrentRecording();
 
     if (!recording || !recording.isCompleted()) {
       return false;
     }
 
-    let prefSupported = (prefs && prefs.length) ?
+    const prefSupported = (prefs && prefs.length) ?
                         prefs.every(p => PerformanceController.getPref(p)) :
                         true;
     return PerformanceController.isFeatureSupported(features) && prefSupported;
@@ -151,13 +151,13 @@ var DetailsView = {
    * @param String viewName
    *        Name of the view to be shown.
    */
-  selectView: Task.async(function* (viewName) {
-    let component = this.components[viewName];
+  async selectView(viewName) {
+    const component = this.components[viewName];
     this.el.selectedPanel = $("#" + component.id);
 
-    yield this._whenViewInitialized(component);
+    await this._whenViewInitialized(component);
 
-    for (let button of $$("toolbarbutton[data-view]", this.toolbar)) {
+    for (const button of $$("toolbarbutton[data-view]", this.toolbar)) {
       if (button.getAttribute("data-view") === viewName) {
         button.setAttribute("checked", true);
       } else {
@@ -170,13 +170,13 @@ var DetailsView = {
     this._initialized = true;
 
     this.emit(EVENTS.UI_DETAILS_VIEW_SELECTED, viewName);
-  }),
+  },
 
   /**
    * Selects a default view based off of protocol support
    * and preferences enabled.
    */
-  selectDefaultView: function () {
+  selectDefaultView: function() {
     // We want the waterfall to be default view in almost all cases, except when
     // timeline actor isn't supported, or we have markers disabled (which should only
     // occur temporarily via bug 1156499
@@ -194,17 +194,17 @@ var DetailsView = {
    * @param object viewObject
    * @return boolean
    */
-  isViewSelected: function (viewObject) {
+  isViewSelected: function(viewObject) {
     // If not initialized, and we have no recordings,
     // no views are selected (even though there's a selected panel)
     if (!this._initialized) {
       return false;
     }
 
-    let selectedPanel = this.el.selectedPanel;
-    let selectedId = selectedPanel.id;
+    const selectedPanel = this.el.selectedPanel;
+    const selectedId = selectedPanel.id;
 
-    for (let { id, view } of Object.values(this.components)) {
+    for (const { id, view } of Object.values(this.components)) {
       if (id == selectedId && view == viewObject) {
         return true;
       }
@@ -220,27 +220,27 @@ var DetailsView = {
    * @param object component
    *        A component descriptor from DetailsView.components
    */
-  _whenViewInitialized: Task.async(function* (component) {
+  async _whenViewInitialized(component) {
     if (component.initialized) {
       return;
     }
     component.initialized = true;
-    yield component.view.initialize();
+    await component.view.initialize();
 
     // If this view is initialized *after* a recording is shown, it won't display
     // any data. Make sure it's populated by setting `shouldUpdateWhenShown`.
     // All detail views require a recording to be complete, so do not
     // attempt to render if recording is in progress or does not exist.
-    let recording = PerformanceController.getCurrentRecording();
+    const recording = PerformanceController.getCurrentRecording();
     if (recording && recording.isCompleted()) {
       component.view.shouldUpdateWhenShown = true;
     }
-  }),
+  },
 
   /**
    * Called when recording stops or is selected.
    */
-  _onRecordingStoppedOrSelected: function (_, state, recording) {
+  _onRecordingStoppedOrSelected: function(state, recording) {
     if (typeof state === "string" && state !== "recording-stopped") {
       return;
     }
@@ -250,11 +250,11 @@ var DetailsView = {
   /**
    * Called when a view button is clicked.
    */
-  _onViewToggle: function (e) {
+  _onViewToggle: function(e) {
     this.selectView(e.target.getAttribute("data-view"));
   },
 
-  toString: () => "[object DetailsView]"
+  toString: () => "[object DetailsView]",
 };
 
 /**

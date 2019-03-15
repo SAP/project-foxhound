@@ -4,34 +4,39 @@
 /**
  * This test makes sure that we correctly preserve tab attributes when storing
  * and restoring tabs. It also ensures that we skip special attributes like
- * 'image', 'muted' and 'pending' that need to be handled differently or internally.
+ * 'image', 'muted', and 'pending' that need to be
+ * handled differently or internally.
  */
 
 const PREF = "browser.sessionstore.restore_on_demand";
 
-add_task(function* test() {
-  Services.prefs.setBoolPref(PREF, true)
+add_task(async function test() {
+  Services.prefs.setBoolPref(PREF, true);
   registerCleanupFunction(() => Services.prefs.clearUserPref(PREF));
 
   // Add a new tab with a nice icon.
-  let tab = gBrowser.addTab("about:robots");
-  yield promiseBrowserLoaded(tab.linkedBrowser);
+  let tab = BrowserTestUtils.addTab(gBrowser, "about:robots");
+  await promiseBrowserLoaded(tab.linkedBrowser);
 
-  // Check that the tab has 'image' and 'iconLoadingPrincipal' attributes.
+  // Because there is debounce logic in ContentLinkHandler.jsm to reduce the
+  // favicon loads, we have to wait some time before checking that icon was
+  // stored properly.
+  await BrowserTestUtils.waitForCondition(() => {
+    return gBrowser.getIcon(tab) != null;
+  }, "wait for favicon load to finish", 100, 5);
+
+  // Check that the tab has an 'image' attribute.
   ok(tab.hasAttribute("image"), "tab.image exists");
-  ok(tab.hasAttribute("iconLoadingPrincipal"), "tab.iconLoadingPrincipal exists");
 
   tab.toggleMuteAudio();
   // Check that the tab has a 'muted' attribute.
   ok(tab.hasAttribute("muted"), "tab.muted exists");
 
-  // Make sure we do not persist 'image' or 'muted' attributes.
+  // Make sure we do not persist 'image' and 'muted' attributes.
   ss.persistTabAttribute("image");
   ss.persistTabAttribute("muted");
-  ss.persistTabAttribute("iconLoadingPrincipal");
   let {attributes} = JSON.parse(ss.getTabState(tab));
   ok(!("image" in attributes), "'image' attribute not saved");
-  ok(!("iconLoadingPrincipal" in attributes), "'iconLoadingPrincipal' attribute not saved");
   ok(!("muted" in attributes), "'muted' attribute not saved");
   ok(!("custom" in attributes), "'custom' attribute not saved");
 
@@ -46,13 +51,13 @@ add_task(function* test() {
   let state = {
     entries: [{url: "about:mozilla", triggeringPrincipal_base64 }],
     attributes: {custom: "foobaz"},
-    image: gBrowser.getIcon(tab)
+    image: gBrowser.getIcon(tab),
   };
 
   // Prepare a pending tab waiting to be restored.
   let promise = promiseTabRestoring(tab);
   ss.setTabState(tab, JSON.stringify(state));
-  yield promise;
+  await promise;
 
   ok(tab.hasAttribute("pending"), "tab is pending");
   is(gBrowser.getIcon(tab), state.image, "tab has correct icon");
@@ -60,7 +65,7 @@ add_task(function* test() {
 
   // Let the pending tab load.
   gBrowser.selectedTab = tab;
-  yield promiseTabRestored(tab);
+  await promiseTabRestored(tab);
 
   // Ensure no 'image' or 'pending' attributes are stored.
   ({attributes} = JSON.parse(ss.getTabState(tab)));

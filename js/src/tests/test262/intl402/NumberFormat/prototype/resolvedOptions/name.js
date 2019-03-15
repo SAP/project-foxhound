@@ -1,4 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty('Intl')) -- needs Intl
 // Copyright (C) 2016 André Bargull. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -6,7 +5,7 @@
 esid: sec-Intl.NumberFormat.prototype.resolvedOptions
 description: >
   Intl.NumberFormat.prototype.resolvedOptions.name is "resolvedOptions".
-info: >
+info: |
   11.4.4 Intl.NumberFormat.prototype.resolvedOptions ()
 
   17 ECMAScript Standard Built-in Objects:

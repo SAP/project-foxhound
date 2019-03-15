@@ -65,7 +65,7 @@ module.exports = DominatorTreeNode;
  * @param {DominatorTreeNode} parent
  * @param {DominatorTreeNode} child
  */
-DominatorTreeNode.addChild = function (parent, child) {
+DominatorTreeNode.addChild = function(parent, child) {
   if (parent.children === undefined) {
     parent.children = [];
   }
@@ -98,7 +98,7 @@ LabelAndShallowSizeVisitor.prototype = Object.create(Visitor);
 /**
  * @overrides Visitor.prototype.enter
  */
-LabelAndShallowSizeVisitor.prototype.enter = function (breakdown, report, edge) {
+LabelAndShallowSizeVisitor.prototype.enter = function(breakdown, report, edge) {
   if (this._labelPieces && edge) {
     this._labelPieces.push(edge);
   }
@@ -107,7 +107,7 @@ LabelAndShallowSizeVisitor.prototype.enter = function (breakdown, report, edge) 
 /**
  * @overrides Visitor.prototype.exit
  */
-LabelAndShallowSizeVisitor.prototype.exit = function (breakdown, report, edge) {
+LabelAndShallowSizeVisitor.prototype.exit = function(breakdown, report, edge) {
   if (this._labelPieces && edge) {
     this._labelPieces.pop();
   }
@@ -116,7 +116,7 @@ LabelAndShallowSizeVisitor.prototype.exit = function (breakdown, report, edge) {
 /**
  * @overrides Visitor.prototype.count
  */
-LabelAndShallowSizeVisitor.prototype.count = function (breakdown, report, edge) {
+LabelAndShallowSizeVisitor.prototype.count = function(breakdown, report, edge) {
   if (report.count === 0) {
     return;
   }
@@ -132,7 +132,7 @@ LabelAndShallowSizeVisitor.prototype.count = function (breakdown, report, edge) 
  *
  * @returns {Object}
  */
-LabelAndShallowSizeVisitor.prototype.label = function () {
+LabelAndShallowSizeVisitor.prototype.label = function() {
   return this._label;
 };
 
@@ -141,7 +141,7 @@ LabelAndShallowSizeVisitor.prototype.label = function () {
  *
  * @returns {Number}
  */
-LabelAndShallowSizeVisitor.prototype.shallowSize = function () {
+LabelAndShallowSizeVisitor.prototype.shallowSize = function() {
   return this._shallowSize;
 };
 
@@ -163,7 +163,7 @@ LabelAndShallowSizeVisitor.prototype.shallowSize = function () {
  *          - {Number} shallowSize
  *          - {Object} label
  */
-DominatorTreeNode.getLabelAndShallowSize = function (nodeId,
+DominatorTreeNode.getLabelAndShallowSize = function(nodeId,
                                                      snapshot,
                                                      breakdown) {
   const description = snapshot.describeNode(breakdown, nodeId);
@@ -194,7 +194,7 @@ DominatorTreeNode.getLabelAndShallowSize = function (nodeId,
  *
  * @returns {DominatorTreeNode}
  */
-DominatorTreeNode.partialTraversal = function (dominatorTree,
+DominatorTreeNode.partialTraversal = function(dominatorTree,
                                                snapshot,
                                                breakdown,
                                                maxDepth = DEFAULT_MAX_DEPTH,
@@ -237,7 +237,7 @@ DominatorTreeNode.partialTraversal = function (dominatorTree,
  *
  * @returns {DominatorTreeNode}
  */
-DominatorTreeNode.insert = function (tree, path, newChildren, moreChildrenAvailable) {
+DominatorTreeNode.insert = function(nodeTree, path, newChildren, moreChildrenAvailable) {
   function insert(tree, i) {
     if (tree.nodeId !== path[i]) {
       return tree;
@@ -252,12 +252,12 @@ DominatorTreeNode.insert = function (tree, path, newChildren, moreChildrenAvaila
 
     return tree.children
       ? immutableUpdate(tree, {
-        children: tree.children.map(c => insert(c, i + 1))
+        children: tree.children.map(c => insert(c, i + 1)),
       })
       : tree;
   }
 
-  return insert(tree, 0);
+  return insert(nodeTree, 0);
 };
 
 /**
@@ -275,7 +275,7 @@ DominatorTreeNode.insert = function (tree, path, newChildren, moreChildrenAvaila
  *
  * @returns {DominatorTreeNode|null}
  */
-DominatorTreeNode.getNodeByIdAlongPath = function (id, tree, path) {
+DominatorTreeNode.getNodeByIdAlongPath = function(id, tree, path) {
   function find(node, i) {
     if (!node || node.nodeId !== path[i]) {
       return null;
@@ -306,14 +306,14 @@ DominatorTreeNode.getNodeByIdAlongPath = function (id, tree, path) {
  * @param {Array<DominatorTreeNode>} treeNodes
  * @param {Number} maxNumPaths
  */
-DominatorTreeNode.attachShortestPaths = function (snapshot,
+DominatorTreeNode.attachShortestPaths = function(snapshot,
                                                   breakdown,
                                                   start,
                                                   treeNodes,
                                                   maxNumPaths = DEFAULT_MAX_NUM_PATHS) {
   const idToTreeNode = new Map();
   const targets = [];
-  for (let node of treeNodes) {
+  for (const node of treeNodes) {
     const id = node.nodeId;
     idToTreeNode.set(id, node);
     targets.push(id);
@@ -323,7 +323,7 @@ DominatorTreeNode.attachShortestPaths = function (snapshot,
                                                       targets,
                                                       maxNumPaths);
 
-  for (let [target, paths] of shortestPaths) {
+  for (const [target, paths] of shortestPaths) {
     const deduped = deduplicatePaths(target, paths);
     deduped.nodes = deduped.nodes.map(id => {
       const { label } =

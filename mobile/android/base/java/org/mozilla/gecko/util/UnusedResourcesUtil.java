@@ -44,22 +44,19 @@ final class UnusedResourcesUtil {
             R.drawable.casting_active,
             R.drawable.close,
             R.drawable.homepage_banner_firstrun,
+            R.drawable.ic_readermode,
+            R.drawable.ic_readermode_on,
             R.drawable.icon_openinapp,
             R.drawable.pause,
             R.drawable.phone,
             R.drawable.play,
-            R.drawable.reader,
-            R.drawable.reader_active,
-            R.drawable.sync_promo,
             R.drawable.undo_button_icon,
     };
 
     public static final int[] USED_IN_MANIFEST = {
-            R.drawable.search_launcher,
             R.string.crash_reporter_title,
             R.xml.fxaccount_authenticator,
             R.xml.fxaccount_syncadapter,
-            R.xml.search_widget_info,
             R.xml.searchable,
     };
 
@@ -98,5 +95,13 @@ final class UnusedResourcesUtil {
     // not needed while Activity Stream is part of the HomePager
     public static final int[] TEMPORARY_UNUSED_ACTIVITY_STREAM = {
             R.string.activity_stream_topsites
+    };
+
+    public static final int[] USED_IN_PAGE_ACTION = {
+            R.drawable.add_to_homescreen
+    };
+
+    public static final int[] USED_IN_LEANPLUM_EXPANDABLE_LIST_ACTIVITY = {
+            R.style.Widget_ExpandableListView,
     };
 }

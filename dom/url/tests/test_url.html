@@ -227,6 +227,37 @@
       hash: '#yeah',
       skip_setters: false,
     },
+
+    { url: 'http://sub2.xn--lt-uia.mochi.test:8888/foo',
+      base: undefined,
+      error: false,
+      href: 'http://sub2.xn--lt-uia.mochi.test:8888/foo',
+      origin: 'http://sub2.xn--lt-uia.mochi.test:8888',
+      protocol: 'http:',
+      username: '',
+      password: '',
+      host: 'sub2.xn--lt-uia.mochi.test:8888',
+      hostname: 'sub2.xn--lt-uia.mochi.test',
+      port: '8888',
+      pathname: '/foo',
+      search: '',
+      hash: ''
+    },
+    { url: 'http://sub2.ält.mochi.test:8888/foo',
+      base: undefined,
+      error: false,
+      href: 'http://sub2.xn--lt-uia.mochi.test:8888/foo',
+      origin: 'http://sub2.xn--lt-uia.mochi.test:8888',
+      protocol: 'http:',
+      username: '',
+      password: '',
+      host: 'sub2.xn--lt-uia.mochi.test:8888',
+      hostname: 'sub2.xn--lt-uia.mochi.test',
+      port: '8888',
+      pathname: '/foo',
+      search: '',
+      hash: ''
+    },
   ];
 
   while(tests.length) {
@@ -323,8 +354,8 @@
     is(url.href, "http://[2001::1]/");
 
     url.hostname = "[::192.9.5.5]";
-    is(url.hostname, "[::192.9.5.5]", "IPv6 hostname");
-    is(url.href, "http://[::192.9.5.5]/");
+    is(url.hostname, "[::c009:505]", "IPv6 hostname");
+    is(url.href, "http://[::c009:505]/");
 
     url = new URL("http://localhost/");
     url.hostname = "[::]";
@@ -347,7 +378,7 @@
     var url = URL.createObjectURL(blob);
 
     var u = new URL(url);
-    ok(u.origin, 'http://mochi.test:8888', "The URL generated from a blob URI has an origin");
+    is(u.origin, 'http://mochi.test:8888', "The URL generated from a blob URI has an origin");
   </script>
 
   <script>
@@ -356,7 +387,7 @@
 
     var a = document.createElement('A');
     a.href = url;
-    ok(a.origin, 'http://mochi.test:8888', "The 'a' element has the correct origin");
+    is(a.origin, 'http://mochi.test:8888', "The 'a' element has the correct origin");
   </script>
 
   <script>
@@ -448,12 +479,12 @@
     // we don't implement a spec-compliant parser yet.
     // make sure we are bug compatible with existing implementations.
     url = new URL("data:text/html,<a href=\"http://example.org/?q\">Link</a>");
-    is(url.href, "data:text/html,<a%20href=\"http://example.org/?q\">Link</a>");
+    is(url.href, "data:text/html,<a href=\"http://example.org/?q\">Link</a>");
   </script>
 
   <script>
     var u = new URL('http://www.example.org');
-    ok(u.toJSON(), 'http://www.example.org', "URL.toJSON()");
+    is(u.toJSON(), 'http://www.example.org/', "URL.toJSON()");
     is(JSON.stringify(u), "\"http://www.example.org/\"", "JSON.stringify(u) works");
   </script>
 </body>

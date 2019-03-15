@@ -13,7 +13,7 @@ add_task(function testAddbrokenViewWidget() {
     viewId: "idontexist",
     /* Empty handler so we try to attach it maybe? */
     onViewShowing() {
-    }
+    },
   };
 
   let noError = true;
@@ -36,6 +36,6 @@ add_task(function testAddbrokenViewWidget() {
   ok(noError, "Should not throw an exception trying to remove the broken view widget.");
 });
 
-add_task(function* asyncCleanup() {
-  yield resetCustomization();
+add_task(async function asyncCleanup() {
+  await resetCustomization();
 });

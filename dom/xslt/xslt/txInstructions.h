@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,373 +16,333 @@
 #include "txXSLTNumber.h"
 #include "nsTArray.h"
 
-class nsIAtom;
+class nsAtom;
 class txExecutionState;
 
-class txInstruction : public txObject
-{
-public:
-    txInstruction()
-    {
-        MOZ_COUNT_CTOR(txInstruction);
-    }
+class txInstruction : public txObject {
+ public:
+  txInstruction() { MOZ_COUNT_CTOR(txInstruction); }
 
-    virtual ~txInstruction()
-    {
-        MOZ_COUNT_DTOR(txInstruction);
-    }
+  virtual ~txInstruction() { MOZ_COUNT_DTOR(txInstruction); }
 
-    virtual nsresult execute(txExecutionState& aEs) = 0;
+  virtual nsresult execute(txExecutionState& aEs) = 0;
 
-    nsAutoPtr<txInstruction> mNext;
+  nsAutoPtr<txInstruction> mNext;
 };
 
-#define TX_DECL_TXINSTRUCTION  \
-    virtual nsresult execute(txExecutionState& aEs);
+#define TX_DECL_TXINSTRUCTION \
+  virtual nsresult execute(txExecutionState& aEs) override;
 
-
-class txApplyDefaultElementTemplate : public txInstruction
-{
-public:
-    TX_DECL_TXINSTRUCTION
+class txApplyDefaultElementTemplate : public txInstruction {
+ public:
+  TX_DECL_TXINSTRUCTION
 };
 
-class txApplyImports : public txInstruction
-{
-public:
-    TX_DECL_TXINSTRUCTION
+class txApplyImportsEnd : public txInstruction {
+ public:
+  TX_DECL_TXINSTRUCTION
 };
 
-class txApplyTemplates : public txInstruction
-{
-public:
-    explicit txApplyTemplates(const txExpandedName& aMode);
-
-    TX_DECL_TXINSTRUCTION
-    
-    txExpandedName mMode;
+class txApplyImportsStart : public txInstruction {
+ public:
+  TX_DECL_TXINSTRUCTION
 };
 
-class txAttribute : public txInstruction
-{
-public:
-    txAttribute(nsAutoPtr<Expr>&& aName, nsAutoPtr<Expr>&& aNamespace,
-                txNamespaceMap* aMappings);
+class txApplyTemplates : public txInstruction {
+ public:
+  explicit txApplyTemplates(const txExpandedName& aMode);
 
-    TX_DECL_TXINSTRUCTION
+  TX_DECL_TXINSTRUCTION
 
-    nsAutoPtr<Expr> mName;
-    nsAutoPtr<Expr> mNamespace;
-    RefPtr<txNamespaceMap> mMappings;
+  txExpandedName mMode;
 };
 
-class txCallTemplate : public txInstruction
-{
-public:
-    explicit txCallTemplate(const txExpandedName& aName);
+class txAttribute : public txInstruction {
+ public:
+  txAttribute(nsAutoPtr<Expr>&& aName, nsAutoPtr<Expr>&& aNamespace,
+              txNamespaceMap* aMappings);
 
-    TX_DECL_TXINSTRUCTION
+  TX_DECL_TXINSTRUCTION
 
-    txExpandedName mName;
+  nsAutoPtr<Expr> mName;
+  nsAutoPtr<Expr> mNamespace;
+  RefPtr<txNamespaceMap> mMappings;
 };
 
-class txCheckParam : public txInstruction
-{
-public:
-    explicit txCheckParam(const txExpandedName& aName);
+class txCallTemplate : public txInstruction {
+ public:
+  explicit txCallTemplate(const txExpandedName& aName);
 
-    TX_DECL_TXINSTRUCTION
+  TX_DECL_TXINSTRUCTION
 
-    txExpandedName mName;
-    txInstruction* mBailTarget;
+  txExpandedName mName;
 };
 
-class txConditionalGoto : public txInstruction
-{
-public:
-    txConditionalGoto(nsAutoPtr<Expr>&& aCondition, txInstruction* aTarget);
+class txCheckParam : public txInstruction {
+ public:
+  explicit txCheckParam(const txExpandedName& aName);
 
-    TX_DECL_TXINSTRUCTION
-    
-    nsAutoPtr<Expr> mCondition;
-    txInstruction* mTarget;
+  TX_DECL_TXINSTRUCTION
+
+  txExpandedName mName;
+  txInstruction* mBailTarget;
 };
 
-class txComment : public txInstruction
-{
-public:
-    TX_DECL_TXINSTRUCTION
+class txConditionalGoto : public txInstruction {
+ public:
+  txConditionalGoto(nsAutoPtr<Expr>&& aCondition, txInstruction* aTarget);
+
+  TX_DECL_TXINSTRUCTION
+
+  nsAutoPtr<Expr> mCondition;
+  txInstruction* mTarget;
 };
 
-class txCopyBase : public txInstruction
-{
-protected:
-    nsresult copyNode(const txXPathNode& aNode, txExecutionState& aEs);
+class txComment : public txInstruction {
+ public:
+  TX_DECL_TXINSTRUCTION
 };
 
-class txCopy : public txCopyBase
-{
-public:
-    txCopy();
-
-    TX_DECL_TXINSTRUCTION
-    
-    txInstruction* mBailTarget;
+class txCopyBase : public txInstruction {
+ protected:
+  nsresult copyNode(const txXPathNode& aNode, txExecutionState& aEs);
 };
 
-class txCopyOf : public txCopyBase
-{
-public:
-    explicit txCopyOf(nsAutoPtr<Expr>&& aSelect);
+class txCopy : public txCopyBase {
+ public:
+  txCopy();
 
-    TX_DECL_TXINSTRUCTION
-    
-    nsAutoPtr<Expr> mSelect;
+  TX_DECL_TXINSTRUCTION
+
+  txInstruction* mBailTarget;
 };
 
-class txEndElement : public txInstruction
-{
-public:
-    TX_DECL_TXINSTRUCTION
+class txCopyOf : public txCopyBase {
+ public:
+  explicit txCopyOf(nsAutoPtr<Expr>&& aSelect);
+
+  TX_DECL_TXINSTRUCTION
+
+  nsAutoPtr<Expr> mSelect;
 };
 
-class txErrorInstruction : public txInstruction
-{
-public:
-    TX_DECL_TXINSTRUCTION
+class txEndElement : public txInstruction {
+ public:
+  TX_DECL_TXINSTRUCTION
 };
 
-class txGoTo : public txInstruction
-{
-public:
-    explicit txGoTo(txInstruction* aTarget);
-
-    TX_DECL_TXINSTRUCTION
-    
-    txInstruction* mTarget;
+class txErrorInstruction : public txInstruction {
+ public:
+  TX_DECL_TXINSTRUCTION
 };
 
-class txInsertAttrSet : public txInstruction
-{
-public:
-    explicit txInsertAttrSet(const txExpandedName& aName);
+class txGoTo : public txInstruction {
+ public:
+  explicit txGoTo(txInstruction* aTarget);
 
-    TX_DECL_TXINSTRUCTION
+  TX_DECL_TXINSTRUCTION
 
-    txExpandedName mName;
+  txInstruction* mTarget;
 };
 
-class txLoopNodeSet : public txInstruction
-{
-public:
-    explicit txLoopNodeSet(txInstruction* aTarget);
+class txInsertAttrSet : public txInstruction {
+ public:
+  explicit txInsertAttrSet(const txExpandedName& aName);
 
-    TX_DECL_TXINSTRUCTION
-    
-    txInstruction* mTarget;
+  TX_DECL_TXINSTRUCTION
+
+  txExpandedName mName;
 };
 
-class txLREAttribute : public txInstruction
-{
-public:
-    txLREAttribute(int32_t aNamespaceID, nsIAtom* aLocalName,
-                   nsIAtom* aPrefix, nsAutoPtr<Expr>&& aValue);
+class txLoopNodeSet : public txInstruction {
+ public:
+  explicit txLoopNodeSet(txInstruction* aTarget);
 
-    TX_DECL_TXINSTRUCTION
+  TX_DECL_TXINSTRUCTION
 
-    int32_t mNamespaceID;
-    nsCOMPtr<nsIAtom> mLocalName;
-    nsCOMPtr<nsIAtom> mLowercaseLocalName;
-    nsCOMPtr<nsIAtom> mPrefix;
-    nsAutoPtr<Expr> mValue;
+  txInstruction* mTarget;
 };
 
-class txMessage : public txInstruction
-{
-public:
-    explicit txMessage(bool aTerminate);
+class txLREAttribute : public txInstruction {
+ public:
+  txLREAttribute(int32_t aNamespaceID, nsAtom* aLocalName, nsAtom* aPrefix,
+                 nsAutoPtr<Expr>&& aValue);
 
-    TX_DECL_TXINSTRUCTION
+  TX_DECL_TXINSTRUCTION
 
-    bool mTerminate;
+  int32_t mNamespaceID;
+  RefPtr<nsAtom> mLocalName;
+  RefPtr<nsAtom> mLowercaseLocalName;
+  RefPtr<nsAtom> mPrefix;
+  nsAutoPtr<Expr> mValue;
 };
 
-class txNumber : public txInstruction
-{
-public:
-    txNumber(txXSLTNumber::LevelType aLevel, nsAutoPtr<txPattern>&& aCount,
-             nsAutoPtr<txPattern>&& aFrom, nsAutoPtr<Expr>&& aValue,
-             nsAutoPtr<Expr>&& aFormat, nsAutoPtr<Expr>&& aGroupingSeparator,
-             nsAutoPtr<Expr>&& aGroupingSize);
+class txMessage : public txInstruction {
+ public:
+  explicit txMessage(bool aTerminate);
 
-    TX_DECL_TXINSTRUCTION
+  TX_DECL_TXINSTRUCTION
 
-    txXSLTNumber::LevelType mLevel;
-    nsAutoPtr<txPattern> mCount;
-    nsAutoPtr<txPattern> mFrom;
-    nsAutoPtr<Expr> mValue;
-    nsAutoPtr<Expr> mFormat;
-    nsAutoPtr<Expr> mGroupingSeparator;
-    nsAutoPtr<Expr> mGroupingSize;
+  bool mTerminate;
 };
 
-class txPopParams : public txInstruction
-{
-public:
-    TX_DECL_TXINSTRUCTION
+class txNumber : public txInstruction {
+ public:
+  txNumber(txXSLTNumber::LevelType aLevel, nsAutoPtr<txPattern>&& aCount,
+           nsAutoPtr<txPattern>&& aFrom, nsAutoPtr<Expr>&& aValue,
+           nsAutoPtr<Expr>&& aFormat, nsAutoPtr<Expr>&& aGroupingSeparator,
+           nsAutoPtr<Expr>&& aGroupingSize);
+
+  TX_DECL_TXINSTRUCTION
+
+  txXSLTNumber::LevelType mLevel;
+  nsAutoPtr<txPattern> mCount;
+  nsAutoPtr<txPattern> mFrom;
+  nsAutoPtr<Expr> mValue;
+  nsAutoPtr<Expr> mFormat;
+  nsAutoPtr<Expr> mGroupingSeparator;
+  nsAutoPtr<Expr> mGroupingSize;
 };
 
-class txProcessingInstruction : public txInstruction
-{
-public:
-    explicit txProcessingInstruction(nsAutoPtr<Expr>&& aName);
-
-    TX_DECL_TXINSTRUCTION
-
-    nsAutoPtr<Expr> mName;
+class txPopParams : public txInstruction {
+ public:
+  TX_DECL_TXINSTRUCTION
 };
 
-class txPushNewContext : public txInstruction
-{
-public:
-    explicit txPushNewContext(nsAutoPtr<Expr>&& aSelect);
-    ~txPushNewContext();
+class txProcessingInstruction : public txInstruction {
+ public:
+  explicit txProcessingInstruction(nsAutoPtr<Expr>&& aName);
 
-    TX_DECL_TXINSTRUCTION
-    
-    
-    nsresult addSort(nsAutoPtr<Expr>&& aSelectExpr,
-                     nsAutoPtr<Expr>&& aLangExpr,
-                     nsAutoPtr<Expr>&& aDataTypeExpr,
-                     nsAutoPtr<Expr>&& aOrderExpr,
-                     nsAutoPtr<Expr>&& aCaseOrderExpr);
+  TX_DECL_TXINSTRUCTION
 
-    struct SortKey {
-        nsAutoPtr<Expr> mSelectExpr;
-        nsAutoPtr<Expr> mLangExpr;
-        nsAutoPtr<Expr> mDataTypeExpr;
-        nsAutoPtr<Expr> mOrderExpr;
-        nsAutoPtr<Expr> mCaseOrderExpr;
-    };
-    
-    nsTArray<SortKey> mSortKeys;
-    nsAutoPtr<Expr> mSelect;
-    txInstruction* mBailTarget;
+  nsAutoPtr<Expr> mName;
 };
 
-class txPushNullTemplateRule : public txInstruction
-{
-public:
-    TX_DECL_TXINSTRUCTION
+class txPushNewContext : public txInstruction {
+ public:
+  explicit txPushNewContext(nsAutoPtr<Expr>&& aSelect);
+  ~txPushNewContext();
+
+  TX_DECL_TXINSTRUCTION
+
+  nsresult addSort(nsAutoPtr<Expr>&& aSelectExpr, nsAutoPtr<Expr>&& aLangExpr,
+                   nsAutoPtr<Expr>&& aDataTypeExpr,
+                   nsAutoPtr<Expr>&& aOrderExpr,
+                   nsAutoPtr<Expr>&& aCaseOrderExpr);
+
+  struct SortKey {
+    nsAutoPtr<Expr> mSelectExpr;
+    nsAutoPtr<Expr> mLangExpr;
+    nsAutoPtr<Expr> mDataTypeExpr;
+    nsAutoPtr<Expr> mOrderExpr;
+    nsAutoPtr<Expr> mCaseOrderExpr;
+  };
+
+  nsTArray<SortKey> mSortKeys;
+  nsAutoPtr<Expr> mSelect;
+  txInstruction* mBailTarget;
 };
 
-class txPushParams : public txInstruction
-{
-public:
-    TX_DECL_TXINSTRUCTION
+class txPushNullTemplateRule : public txInstruction {
+ public:
+  TX_DECL_TXINSTRUCTION
 };
 
-class txPushRTFHandler : public txInstruction
-{
-public:
-    TX_DECL_TXINSTRUCTION
+class txPushParams : public txInstruction {
+ public:
+  TX_DECL_TXINSTRUCTION
 };
 
-class txPushStringHandler : public txInstruction
-{
-public:
-    explicit txPushStringHandler(bool aOnlyText);
-
-    TX_DECL_TXINSTRUCTION
-
-    bool mOnlyText;
+class txPushRTFHandler : public txInstruction {
+ public:
+  TX_DECL_TXINSTRUCTION
 };
 
-class txRemoveVariable : public txInstruction
-{
-public:
-    explicit txRemoveVariable(const txExpandedName& aName);
+class txPushStringHandler : public txInstruction {
+ public:
+  explicit txPushStringHandler(bool aOnlyText);
 
-    TX_DECL_TXINSTRUCTION
+  TX_DECL_TXINSTRUCTION
 
-    txExpandedName mName;
+  bool mOnlyText;
 };
 
-class txReturn : public txInstruction
-{
-public:
-    TX_DECL_TXINSTRUCTION
+class txRemoveVariable : public txInstruction {
+ public:
+  explicit txRemoveVariable(const txExpandedName& aName);
+
+  TX_DECL_TXINSTRUCTION
+
+  txExpandedName mName;
 };
 
-class txSetParam : public txInstruction
-{
-public:
-    txSetParam(const txExpandedName& aName, nsAutoPtr<Expr>&& aValue);
-
-    TX_DECL_TXINSTRUCTION
-
-    txExpandedName mName;
-    nsAutoPtr<Expr> mValue;
+class txReturn : public txInstruction {
+ public:
+  TX_DECL_TXINSTRUCTION
 };
 
-class txSetVariable : public txInstruction
-{
-public:
-    txSetVariable(const txExpandedName& aName, nsAutoPtr<Expr>&& aValue);
+class txSetParam : public txInstruction {
+ public:
+  txSetParam(const txExpandedName& aName, nsAutoPtr<Expr>&& aValue);
 
-    TX_DECL_TXINSTRUCTION
+  TX_DECL_TXINSTRUCTION
 
-    txExpandedName mName;
-    nsAutoPtr<Expr> mValue;
+  txExpandedName mName;
+  nsAutoPtr<Expr> mValue;
 };
 
-class txStartElement : public txInstruction
-{
-public:
-    txStartElement(nsAutoPtr<Expr>&& aName, nsAutoPtr<Expr>&& aNamespace,
-                   txNamespaceMap* aMappings);
+class txSetVariable : public txInstruction {
+ public:
+  txSetVariable(const txExpandedName& aName, nsAutoPtr<Expr>&& aValue);
 
-    TX_DECL_TXINSTRUCTION
+  TX_DECL_TXINSTRUCTION
 
-    nsAutoPtr<Expr> mName;
-    nsAutoPtr<Expr> mNamespace;
-    RefPtr<txNamespaceMap> mMappings;
+  txExpandedName mName;
+  nsAutoPtr<Expr> mValue;
 };
 
-class txStartLREElement : public txInstruction
-{
-public:
-    txStartLREElement(int32_t aNamespaceID, nsIAtom* aLocalName,
-                      nsIAtom* aPrefix);
+class txStartElement : public txInstruction {
+ public:
+  txStartElement(nsAutoPtr<Expr>&& aName, nsAutoPtr<Expr>&& aNamespace,
+                 txNamespaceMap* aMappings);
 
-    TX_DECL_TXINSTRUCTION
+  TX_DECL_TXINSTRUCTION
 
-    int32_t mNamespaceID;
-    nsCOMPtr<nsIAtom> mLocalName;
-    nsCOMPtr<nsIAtom> mLowercaseLocalName;
-    nsCOMPtr<nsIAtom> mPrefix;
+  nsAutoPtr<Expr> mName;
+  nsAutoPtr<Expr> mNamespace;
+  RefPtr<txNamespaceMap> mMappings;
 };
 
-class txText : public txInstruction
-{
-public:
-    txText(const nsAString& aStr, bool aDOE);
+class txStartLREElement : public txInstruction {
+ public:
+  txStartLREElement(int32_t aNamespaceID, nsAtom* aLocalName, nsAtom* aPrefix);
 
-    TX_DECL_TXINSTRUCTION
+  TX_DECL_TXINSTRUCTION
 
-    nsString mStr;
-    bool mDOE;
+  int32_t mNamespaceID;
+  RefPtr<nsAtom> mLocalName;
+  RefPtr<nsAtom> mLowercaseLocalName;
+  RefPtr<nsAtom> mPrefix;
 };
 
-class txValueOf : public txInstruction
-{
-public:
-    txValueOf(nsAutoPtr<Expr>&& aExpr, bool aDOE);
+class txText : public txInstruction {
+ public:
+  txText(const nsAString& aStr, bool aDOE);
 
-    TX_DECL_TXINSTRUCTION
+  TX_DECL_TXINSTRUCTION
 
-    nsAutoPtr<Expr> mExpr;
-    bool mDOE;
+  nsString mStr;
+  bool mDOE;
 };
 
-#endif //TRANSFRMX_TXINSTRUCTIONS_H
+class txValueOf : public txInstruction {
+ public:
+  txValueOf(nsAutoPtr<Expr>&& aExpr, bool aDOE);
+
+  TX_DECL_TXINSTRUCTION
+
+  nsAutoPtr<Expr> mExpr;
+  bool mDOE;
+};
+
+#endif  // TRANSFRMX_TXINSTRUCTIONS_H

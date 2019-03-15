@@ -4,7 +4,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * The origin of this IDL file is
- * http://www.w3.org/TR/hr-time/
+ * https://w3c.github.io/navigation-timing/#the-performancetiming-interface
  *
  * Copyright © 2012 W3C® (MIT, ERCIM, Keio), All Rights Reserved. W3C
  * liability, trademark and document use rules apply.
@@ -21,8 +21,7 @@ interface PerformanceTiming {
   readonly attribute unsigned long long domainLookupEnd;
   readonly attribute unsigned long long connectStart;
   readonly attribute unsigned long long connectEnd;
-  // secureConnectionStart will be implemneted in bug 772589
-  // readonly attribute unsigned long long secureConnectionStart;
+  readonly attribute unsigned long long secureConnectionStart;
   readonly attribute unsigned long long requestStart;
   readonly attribute unsigned long long responseStart;
   readonly attribute unsigned long long responseEnd;
@@ -34,5 +33,27 @@ interface PerformanceTiming {
   readonly attribute unsigned long long loadEventStart;
   readonly attribute unsigned long long loadEventEnd;
 
-  jsonifier;
+  // This is a Chrome proprietary extension and not part of the
+  // performance/navigation timing specification.
+  // Returns 0 if a non-blank paint has not happened.
+  [Pref="dom.performance.time_to_non_blank_paint.enabled"]
+  readonly attribute unsigned long long timeToNonBlankPaint;
+
+  // Returns 0 if a contentful paint has not happened.
+  [Pref="dom.performance.time_to_contentful_paint.enabled"]
+  readonly attribute unsigned long long timeToContentfulPaint;
+
+  // This is a Mozilla proprietary extension and not part of the
+  // performance/navigation timing specification. It marks the
+  // completion of the first presentation flush after DOMContentLoaded.
+  [Pref="dom.performance.time_to_dom_content_flushed.enabled"]
+  readonly attribute unsigned long long timeToDOMContentFlushed;
+
+  // This is a Chrome proprietary extension and not part of the
+  // performance/navigation timing specification.
+  // Returns 0 if a time-to-interactive measurement has not happened.
+  [Pref="dom.performance.time_to_first_interactive.enabled"]
+  readonly attribute unsigned long long timeToFirstInteractive;
+
+  [Default] object toJSON();
 };

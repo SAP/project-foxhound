@@ -4,59 +4,40 @@
 
 "use strict";
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Log.jsm");
+const {ElementNotAccessibleError} = ChromeUtils.import("chrome://marionette/content/error.js", {});
+const {Log} = ChromeUtils.import("chrome://marionette/content/log.js", {});
 
-const logger = Log.repository.getLogger("Marionette");
-
-Cu.import("chrome://marionette/content/error.js");
-
-XPCOMUtils.defineLazyModuleGetter(
-    this, "setInterval", "resource://gre/modules/Timer.jsm");
-XPCOMUtils.defineLazyModuleGetter(
-    this, "clearInterval", "resource://gre/modules/Timer.jsm");
+XPCOMUtils.defineLazyGetter(this, "logger", Log.get);
 
 XPCOMUtils.defineLazyGetter(this, "service", () => {
-  let service;
   try {
-    service = Cc["@mozilla.org/accessibilityService;1"].getService(
-      Ci.nsIAccessibilityService);
+    return Cc["@mozilla.org/accessibilityService;1"]
+        .getService(Ci.nsIAccessibilityService);
   } catch (e) {
     logger.warn("Accessibility module is not present");
-  } finally {
-    return service;
+    return undefined;
   }
 });
 
 this.EXPORTED_SYMBOLS = ["accessibility"];
 
-/**
- * Number of attempts to get an accessible object for an element.
- * We attempt more than once because accessible tree can be out of sync
- * with the DOM tree for a short period of time.
- */
-const GET_ACCESSIBLE_ATTEMPTS = 100;
-
-/**
- * An interval between attempts to retrieve an accessible object for an
- * element.
- */
-const GET_ACCESSIBLE_ATTEMPT_INTERVAL = 10;
-
+/** @namespace */
 this.accessibility = {
   get service() {
     return service;
-  }
+  },
 };
 
 /**
  * Accessible states used to check element"s state from the accessiblity API
  * perspective.
- * Note: if gecko is built with --disable-accessibility, the interfaces are not
- * defined. This is why we use getters instead to be able to use these
- * statically.
+ *
+ * Note: if gecko is built with --disable-accessibility, the interfaces
+ * are not defined. This is why we use getters instead to be able to use
+ * these statically.
  */
 accessibility.State = {
   get Unavailable() {
@@ -70,7 +51,7 @@ accessibility.State = {
   },
   get Selected() {
     return Ci.nsIAccessibleStates.STATE_SELECTED;
-  }
+  },
 };
 
 /**
@@ -105,7 +86,7 @@ accessibility.ActionableRoles = new Set([
  * Factory function that constructs a new {@code accessibility.Checks}
  * object with enforced strictness or not.
  */
-accessibility.get = function (strict = false) {
+accessibility.get = function(strict = false) {
   return new accessibility.Checks(!!strict);
 };
 
@@ -136,7 +117,7 @@ accessibility.Checks = class {
    *     Flag indicating that the element must have an accessible object.
    *     Defaults to not require this.
    *
-   * @return {Promise: nsIAccessible}
+   * @return {Promise.<nsIAccessible>}
    *     Promise with an accessibility object for the given element.
    */
   getAccessible(element, mustHaveAccessible = false) {
@@ -150,31 +131,53 @@ accessibility.Checks = class {
         return;
       }
 
-      let acc = accessibility.service.getAccessibleFor(element);
-      if (acc || !mustHaveAccessible) {
-        // if accessible object is found, return it;
-        // if it is not required, also resolve
-        resolve(acc);
-      } else {
-        // if we require an accessible object, we need to poll for it
-        // because accessible tree might be
-        // out of sync with DOM tree for a short time
-        let attempts = GET_ACCESSIBLE_ATTEMPTS;
-        let intervalId = setInterval(() => {
-          let acc = accessibility.service.getAccessibleFor(element);
-          if (acc || --attempts <= 0) {
-            clearInterval(intervalId);
-            if (acc) {
-              resolve(acc);
-            } else {
-              reject();
-            }
-          }
-        }, GET_ACCESSIBLE_ATTEMPT_INTERVAL);
+      // First, check if accessibility is ready.
+      let docAcc = accessibility.service
+          .getAccessibleFor(element.ownerDocument);
+      let state = {};
+      docAcc.getState(state, {});
+      if ((state.value & Ci.nsIAccessibleStates.STATE_BUSY) == 0) {
+        // Accessibility is ready, resolve immediately.
+        let acc = accessibility.service.getAccessibleFor(element);
+        if (mustHaveAccessible && !acc) {
+          reject();
+        } else {
+          resolve(acc);
+        }
+        return;
       }
+      // Accessibility for the doc is busy, so wait for the state to change.
+      let eventObserver = {
+        observe(subject, topic) {
+          if (topic !== "accessible-event") {
+            return;
+          }
+
+          // If event type does not match expected type, skip the event.
+          let event = subject.QueryInterface(Ci.nsIAccessibleEvent);
+          if (event.eventType !== Ci.nsIAccessibleEvent.EVENT_STATE_CHANGE) {
+            return;
+          }
+
+          // If event's accessible does not match expected accessible,
+          // skip the event.
+          if (event.accessible !== docAcc) {
+            return;
+          }
+
+          Services.obs.removeObserver(this, "accessible-event");
+          let acc = accessibility.service.getAccessibleFor(element);
+          if (mustHaveAccessible && !acc) {
+            reject();
+          } else {
+            resolve(acc);
+          }
+        },
+      };
+      Services.obs.addObserver(eventObserver, "accessible-event");
     }).catch(() => this.error(
         "Element does not have an accessible object", element));
-  };
+  }
 
   /**
    * Test if the accessible has a role that supports some arbitrary
@@ -227,17 +230,16 @@ accessibility.Checks = class {
    *     Accessible object.
    *
    * @return {boolean}
-   *     True if the accesible object has a {@code hidden} attribute,
+   *     True if the accessible object has a {@code hidden} attribute,
    *     false otherwise.
    */
   hasHiddenAttribute(accessible) {
     let hidden = false;
     try {
       hidden = accessible.attributes.getStringProperty("hidden");
-    } finally {
-      // if the property is missing, error will be thrown
-      return hidden && hidden === "true";
-    }
+    } catch (e) {}
+    // if the property is missing, error will be thrown
+    return hidden && hidden === "true";
   }
 
   /**
@@ -268,6 +270,10 @@ accessibility.Checks = class {
    *     True if element is hidden from user, false otherwise.
    */
   isHidden(accessible) {
+    if (!accessible) {
+      return true;
+    }
+
     while (accessible) {
       if (this.hasHiddenAttribute(accessible)) {
         return true;
@@ -293,10 +299,6 @@ accessibility.Checks = class {
    *     |accessible|'s.
    */
   assertVisible(accessible, element, visible) {
-    if (!accessible) {
-      return;
-    }
-
     let hiddenAccessibility = this.isHidden(accessible);
 
     let message;
@@ -404,7 +406,8 @@ accessibility.Checks = class {
       return;
     }
 
-    let selectedAccessibility = this.matchState(accessible, accessibility.State.Selected);
+    let selectedAccessibility =
+        this.matchState(accessible, accessibility.State.Selected);
 
     let message;
     if (selected && !selectedAccessibility) {

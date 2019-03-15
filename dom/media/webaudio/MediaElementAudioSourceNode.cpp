@@ -6,26 +6,21 @@
 
 #include "MediaElementAudioSourceNode.h"
 #include "mozilla/dom/MediaElementAudioSourceNodeBinding.h"
+#include "AudioDestinationNode.h"
+#include "nsIScriptError.h"
+#include "AudioNodeStream.h"
 
 namespace mozilla {
 namespace dom {
 
 MediaElementAudioSourceNode::MediaElementAudioSourceNode(AudioContext* aContext)
-  : MediaStreamAudioSourceNode(aContext)
-{
-}
+    : MediaStreamAudioSourceNode(aContext) {}
 
 /* static */ already_AddRefed<MediaElementAudioSourceNode>
-MediaElementAudioSourceNode::Create(AudioContext& aAudioContext,
-                                    const MediaElementAudioSourceOptions& aOptions,
-                                    ErrorResult& aRv)
-{
+MediaElementAudioSourceNode::Create(
+    AudioContext& aAudioContext, const MediaElementAudioSourceOptions& aOptions,
+    ErrorResult& aRv) {
   if (aAudioContext.IsOffline()) {
-    aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-    return nullptr;
-  }
-
-  if (aOptions.mMediaElement->ContainsRestrictedContent()) {
     aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
     return nullptr;
   }
@@ -35,10 +30,10 @@ MediaElementAudioSourceNode::Create(AudioContext& aAudioContext,
   }
 
   RefPtr<MediaElementAudioSourceNode> node =
-    new MediaElementAudioSourceNode(&aAudioContext);
+      new MediaElementAudioSourceNode(&aAudioContext);
 
-  RefPtr<DOMMediaStream> stream =
-    aOptions.mMediaElement->CaptureAudio(aRv, aAudioContext.Destination()->Stream()->Graph());
+  RefPtr<DOMMediaStream> stream = aOptions.mMediaElement->CaptureAudio(
+      aRv, aAudioContext.Destination()->Stream()->Graph());
   if (aRv.Failed()) {
     return nullptr;
   }
@@ -48,14 +43,35 @@ MediaElementAudioSourceNode::Create(AudioContext& aAudioContext,
     return nullptr;
   }
 
+  node->ListenForAllowedToPlay(aOptions);
   return node.forget();
 }
 
-JSObject*
-MediaElementAudioSourceNode::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return MediaElementAudioSourceNodeBinding::Wrap(aCx, this, aGivenProto);
+JSObject* MediaElementAudioSourceNode::WrapObject(
+    JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
+  return MediaElementAudioSourceNode_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-} // namespace dom
-} // namespace mozilla
+void MediaElementAudioSourceNode::ListenForAllowedToPlay(
+    const MediaElementAudioSourceOptions& aOptions) {
+  aOptions.mMediaElement->GetAllowedToPlayPromise()
+      ->Then(
+          AbstractMainThread(), __func__,
+          // Capture by reference to bypass the mozilla-refcounted-inside-lambda
+          // static analysis. We capture a non-owning reference so as to allow
+          // cycle collection of the node. The reference is cleared via
+          // DisconnectIfExists() from Destroy() when the node is collected.
+          [& self = *this]() {
+            self.Context()->StartBlockedAudioContextIfAllowed();
+            self.mAllowedToPlayRequest.Complete();
+          })
+      ->Track(mAllowedToPlayRequest);
+}
+
+void MediaElementAudioSourceNode::Destroy() {
+  mAllowedToPlayRequest.DisconnectIfExists();
+  MediaStreamAudioSourceNode::Destroy();
+}
+
+}  // namespace dom
+}  // namespace mozilla

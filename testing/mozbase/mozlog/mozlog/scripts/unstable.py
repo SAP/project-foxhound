@@ -1,8 +1,11 @@
+from __future__ import absolute_import, print_function
+
 import argparse
 from collections import defaultdict
 import json
 
 from mozlog import reader
+import six
 
 
 class StatusHandler(reader.LogHandler):
@@ -13,7 +16,7 @@ class StatusHandler(reader.LogHandler):
             lambda: defaultdict(lambda: defaultdict(int))))
 
     def test_id(self, test):
-        if type(test) in (str, unicode):
+        if type(test) in (str, six.text_type):
             return test
         else:
             return tuple(test)
@@ -46,14 +49,15 @@ def _filter(results_cmp):
     def inner(statuses):
         rv = defaultdict(lambda: defaultdict(dict))
 
-        for run_info, tests in statuses.iteritems():
-            for test, subtests in tests.iteritems():
-                for name, results in subtests.iteritems():
+        for run_info, tests in six.iteritems(statuses):
+            for test, subtests in six.iteritems(tests):
+                for name, results in six.iteritems(subtests):
                     if results_cmp(results):
                         rv[run_info][test][name] = results
 
         return rv
     return inner
+
 
 filter_unstable = _filter(lambda x: len(x) > 1)
 filter_stable = _filter(lambda x: len(x) == 1)
@@ -62,29 +66,29 @@ filter_stable = _filter(lambda x: len(x) == 1)
 def group_results(data):
     rv = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
 
-    for run_info, tests in data.iteritems():
-        for test, subtests in tests.iteritems():
-            for name, results in subtests.iteritems():
-                for status, number in results.iteritems():
+    for run_info, tests in six.iteritems(data):
+        for test, subtests in six.iteritems(tests):
+            for name, results in six.iteritems(subtests):
+                for status, number in six.iteritems(results):
                     rv[test][name][status] += number
     return rv
 
 
 def print_results(data):
-    for run_info, tests in data.iteritems():
+    for run_info, tests in six.iteritems(data):
         run_str = " ".join("%s:%s" % (k, v) for k, v in run_info) if run_info else "No Run Info"
-        print run_str
-        print "=" * len(run_str)
+        print(run_str)
+        print("=" * len(run_str))
         print_run(tests)
 
 
 def print_run(tests):
     for test, subtests in sorted(tests.items()):
-        print "\n" + str(test)
-        print "-" * len(test)
-        for name, results in subtests.iteritems():
-            print "[%s]: %s" % (name if name is not None else "",
-                                " ".join("%s (%i)" % (k, v) for k, v in results.iteritems()))
+        print("\n" + str(test))
+        print("-" * len(test))
+        for name, results in six.iteritems(subtests):
+            print("[%s]: %s" % (name if name is not None else "",
+                                " ".join("%s (%i)" % (k, v) for k, v in six.iteritems(results))))
 
 
 def get_parser(add_help=True):
@@ -106,12 +110,13 @@ def main(**kwargs):
         unstable = group_results(unstable)
 
     if kwargs["json"]:
-        print json.dumps(unstable)
+        print(json.dumps(unstable))
     else:
         if not kwargs["group"]:
             print_results(unstable)
         else:
             print_run(unstable)
+
 
 if __name__ == "__main__":
     parser = get_parser()

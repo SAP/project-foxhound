@@ -8,42 +8,39 @@
  * (including Unicode)
  */
 
-add_task(function* () {
-  let { tab, monitor } = yield initNetMonitor(API_CALLS_URL);
+add_task(async function() {
+  const { tab, monitor } = await initNetMonitor(API_CALLS_URL);
   info("Starting test... ");
 
-  let { document, gStore, windowRequire } = monitor.panelWin;
-  let Actions = windowRequire("devtools/client/netmonitor/actions/index");
-  let {
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
+  const {
     getDisplayedRequests,
     getSortedRequests,
-  } = windowRequire("devtools/client/netmonitor/selectors/index");
+  } = windowRequire("devtools/client/netmonitor/src/selectors/index");
 
-  gStore.dispatch(Actions.batchEnable(false));
+  store.dispatch(Actions.batchEnable(false));
 
   const REQUEST_URIS = [
     "http://example.com/api/fileName.xml",
     "http://example.com/api/file%E2%98%A2.xml",
     "http://example.com/api/ascii/get/",
     "http://example.com/api/unicode/%E2%98%A2/",
-    "http://example.com/api/search/?q=search%E2%98%A2"
+    "http://example.com/api/search/?q=search%E2%98%A2",
   ];
 
-  let wait = waitForNetworkEvents(monitor, 5);
-  yield ContentTask.spawn(tab.linkedBrowser, {}, function* () {
-    content.wrappedJSObject.performRequests();
-  });
-  yield wait;
+  // Execute requests.
+  await performRequests(monitor, tab, 5);
 
-  REQUEST_URIS.forEach(function (uri, index) {
+  REQUEST_URIS.forEach(function(uri, index) {
     verifyRequestItemTarget(
       document,
-      getDisplayedRequests(gStore.getState()),
-      getSortedRequests(gStore.getState()).get(index),
+      getDisplayedRequests(store.getState()),
+      getSortedRequests(store.getState()).get(index),
       "GET",
       uri
      );
   });
 
-  yield teardown(monitor);
+  await teardown(monitor);
 });

@@ -16,9 +16,9 @@ from mozharness.base.transfer import TransferMixin
 try_config_options = [
     [["--try-message"],
      {"action": "store",
-     "dest": "try_message",
-     "default": None,
-     "help": "try syntax string to select tests to run",
+      "dest": "try_message",
+      "default": None,
+      "help": "try syntax string to select tests to run",
       }],
 ]
 
@@ -27,7 +27,7 @@ test_flavors = {
     'chrome': {},
     'devtools-chrome': {},
     'mochitest': {},
-    'xpcshell' :{},
+    'xpcshell': {},
     'reftest': {
         "path": lambda x: os.path.join("tests", "reftest", "tests", x)
     },
@@ -36,8 +36,15 @@ test_flavors = {
     },
     'web-platform-tests': {
         "path": lambda x: os.path.join("tests", x.split("testing" + os.path.sep)[1])
-    }
+    },
+    'web-platform-tests-reftests': {
+        "path": lambda x: os.path.join("tests", x.split("testing" + os.path.sep)[1])
+    },
+    'web-platform-tests-wdspec': {
+        "path": lambda x: os.path.join("tests", x.split("testing" + os.path.sep)[1])
+    },
 }
+
 
 class TryToolsMixin(TransferMixin):
     """Utility functions for an interface between try syntax and out test harnesses.
@@ -76,47 +83,11 @@ class TryToolsMixin(TransferMixin):
 
     def _extract_try_message(self):
         msg = None
-        buildbot_config = self.buildbot_config or {}
         if "try_message" in self.config and self.config["try_message"]:
             msg = self.config["try_message"]
         elif 'TRY_COMMIT_MSG' in os.environ:
             msg = os.environ['TRY_COMMIT_MSG']
-        elif self._is_try():
-            if 'sourcestamp' in buildbot_config and buildbot_config['sourcestamp'].get('changes'):
-                msg = buildbot_config['sourcestamp']['changes'][-1].get('comments')
 
-            if msg is None or len(msg) == 1024:
-                # This commit message was potentially truncated or not available in
-                # buildbot_config (e.g. if running in TaskCluster), get the full message
-                # from hg.
-                props = buildbot_config.get('properties', {})
-                repo_url = 'https://hg.mozilla.org/%s/'
-                if 'revision' in props and 'repo_path' in props:
-                    rev = props['revision']
-                    repo_path = props['repo_path']
-                else:
-                    # In TaskCluster we have no buildbot props, rely on env vars instead
-                    rev = os.environ.get('GECKO_HEAD_REV')
-                    repo_path = self.config.get('branch')
-                if repo_path:
-                    repo_url = repo_url % repo_path
-                else:
-                    repo_url = os.environ.get('GECKO_HEAD_REPOSITORY',
-                                              repo_url % 'try')
-                if not repo_url.endswith('/'):
-                    repo_url += '/'
-
-                url = '{}json-pushes?changeset={}&full=1'.format(repo_url, rev)
-
-                pushinfo = self.load_json_from_url(url)
-                for k, v in pushinfo.items():
-                    if isinstance(v, dict) and 'changesets' in v:
-                        msg = v['changesets'][-1]['desc']
-
-            if not msg and 'try_syntax' in buildbot_config.get('properties', {}):
-                # If we don't find try syntax in the usual place, check for it in an
-                # alternate property available to tools using self-serve.
-                msg = buildbot_config['properties']['try_syntax']
         if not msg:
             self.warning('Try message not found.')
         return msg
@@ -137,7 +108,7 @@ class TryToolsMixin(TransferMixin):
                 all_try_args = re.findall(r'(?:\[.*?\]|\S)+', try_message[1])
                 break
         if not all_try_args:
-            self.warning('Try syntax not found in: %s.' % msg )
+            self.warning('Try syntax not found in: %s.' % msg)
         return all_try_args
 
     def try_message_has_flag(self, flag, message=None):
@@ -155,10 +126,14 @@ class TryToolsMixin(TransferMixin):
 
     def _is_try(self):
         repo_path = None
-        if self.buildbot_config and 'properties' in self.buildbot_config:
-            repo_path = self.buildbot_config['properties'].get('branch')
-        return (self.config.get('branch', repo_path) == 'try' or
-                'TRY_COMMIT_MSG' in os.environ)
+        get_branch = self.config.get('branch', repo_path)
+        if get_branch is not None:
+            on_try = ('try' in get_branch or 'Try' in get_branch)
+        elif os.environ is not None:
+            on_try = ('TRY_COMMIT_MSG' in os.environ)
+        else:
+            on_try = False
+        return on_try
 
     @PostScriptAction('download-and-extract')
     def set_extra_try_arguments(self, action, success=None):
@@ -183,6 +158,7 @@ class TryToolsMixin(TransferMixin):
                          ' and forward them to the underlying test harness command.'))
 
         label_dict = {}
+
         def label_from_val(val):
             if val in label_dict:
                 return label_dict[val]
@@ -245,8 +221,8 @@ class TryToolsMixin(TransferMixin):
                       'files: %s.' % ','.join(self.try_test_paths[flavor]))
             args.extend(['--this-chunk=1', '--total-chunks=1'])
 
-            path_func = test_flavors[flavor].get("path", lambda x:x)
-            tests = [path_func(item) for item in self.try_test_paths[flavor]]
+            path_func = test_flavors[flavor].get("path", lambda x: x)
+            tests = [path_func(os.path.normpath(item)) for item in self.try_test_paths[flavor]]
         else:
             tests = []
 

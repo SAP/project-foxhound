@@ -2,19 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { Cu } = require("chrome");
-
 const { TargetFactory } = require("devtools/client/framework/target");
 const EventEmitter = require("devtools/shared/event-emitter");
 const { Connection } = require("devtools/shared/client/connection-manager");
-const promise = require("promise");
-const { Task } = require("devtools/shared/task");
 
 const _knownTabStores = new WeakMap();
 
 var TabStore;
 
-module.exports = TabStore = function (connection) {
+module.exports = TabStore = function(connection) {
   // If we already know about this connection,
   // let's re-use the existing store.
   if (_knownTabStores.has(connection)) {
@@ -41,7 +37,7 @@ module.exports = TabStore = function (connection) {
 
 TabStore.prototype = {
 
-  destroy: function () {
+  destroy: function() {
     if (this._connection) {
       // While this.destroy is bound using .once() above, that event may not
       // have occurred when the TabStore client calls destroy, so we
@@ -53,38 +49,33 @@ TabStore.prototype = {
     }
   },
 
-  _resetStore: function () {
-    this.response = null;
+  _resetStore: function() {
     this.tabs = [];
     this._selectedTab = null;
     this._selectedTabTargetPromise = null;
   },
 
-  _onStatusChanged: function () {
+  _onStatusChanged: function() {
     if (this._connection.status == Connection.Status.CONNECTED) {
       // Watch for changes to remote browser tabs
-      this._connection.client.addListener("tabListChanged",
+      this._connection.client.mainRoot.on("tabListChanged",
                                           this._onTabListChanged);
-      this._connection.client.addListener("tabNavigated",
-                                          this._onTabNavigated);
       this.listTabs();
     } else {
       if (this._connection.client) {
-        this._connection.client.removeListener("tabListChanged",
-                                               this._onTabListChanged);
-        this._connection.client.removeListener("tabNavigated",
-                                               this._onTabNavigated);
+        this._connection.client.mainRoot.off("tabListChanged",
+                                             this._onTabListChanged);
       }
       this._resetStore();
     }
   },
 
-  _onTabListChanged: function () {
+  _onTabListChanged: function() {
     this.listTabs().then(() => this.emit("tab-list"))
                    .catch(console.error);
   },
 
-  _onTabNavigated: function (e, { from, title, url }) {
+  _onTabNavigated: function(e, { from, title, url }) {
     if (!this._selectedTab || from !== this._selectedTab.actor) {
       return;
     }
@@ -93,27 +84,28 @@ TabStore.prototype = {
     this.emit("navigate");
   },
 
-  listTabs: function () {
+  listTabs: function() {
     if (!this._connection || !this._connection.client) {
-      return promise.reject(new Error("Can't listTabs, not connected."));
+      return Promise.reject(new Error("Can't listTabs, not connected."));
     }
-    let deferred = promise.defer();
-    this._connection.client.listTabs(response => {
-      if (response.error) {
+
+    return new Promise((resolve, reject) => {
+      this._connection.client.mainRoot.listTabs().then(tabs => {
+        // To avoid refactoring WebIDE while switching from form to Target Front for
+        // listTabs. Convert front to form list here.
+        tabs = tabs.map(tab => tab.targetForm);
+        const tabsChanged = JSON.stringify(this.tabs) !== JSON.stringify(tabs);
+        this.tabs = tabs;
+        this._checkSelectedTab();
+        if (tabsChanged) {
+          this.emit("tab-list");
+        }
+        resolve(tabs);
+      }, error => {
         this._connection.disconnect();
-        deferred.reject(response.error);
-        return;
-      }
-      let tabsChanged = JSON.stringify(this.tabs) !== JSON.stringify(response.tabs);
-      this.response = response;
-      this.tabs = response.tabs;
-      this._checkSelectedTab();
-      if (tabsChanged) {
-        this.emit("tab-list");
-      }
-      deferred.resolve(response);
+        reject(error);
+      });
     });
-    return deferred.promise;
   },
 
   // TODO: Tab "selection" should really take place by creating a TabProject
@@ -136,11 +128,11 @@ TabStore.prototype = {
     }
   },
 
-  _checkSelectedTab: function () {
+  _checkSelectedTab: function() {
     if (!this._selectedTab) {
       return;
     }
-    let alive = this.tabs.some(tab => {
+    const alive = this.tabs.some(tab => {
       return tab.actor === this._selectedTab.actor;
     });
     if (!alive) {
@@ -150,23 +142,26 @@ TabStore.prototype = {
     }
   },
 
-  getTargetForTab: function () {
+  getTargetForTab: function() {
     if (this._selectedTabTargetPromise) {
       return this._selectedTabTargetPromise;
     }
-    let store = this;
-    this._selectedTabTargetPromise = Task.spawn(function* () {
+    const store = this;
+    this._selectedTabTargetPromise = (async function() {
       // If you connect to a tab, then detach from it, the root actor may have
       // de-listed the actors that belong to the tab.  This breaks the toolbox
       // if you try to connect to the same tab again.  To work around this
       // issue, we force a "listTabs" request before connecting to a tab.
-      yield store.listTabs();
+      await store.listTabs();
+
+      const { outerWindowID } = store._selectedTab;
+      const activeTabFront = await store._connection.client.mainRoot.getTab({ outerWindowID });
       return TargetFactory.forRemoteTab({
-        form: store._selectedTab,
+        activeTab: activeTabFront,
         client: store._connection.client,
-        chrome: false
+        chrome: false,
       });
-    });
+    })();
     this._selectedTabTargetPromise.then(target => {
       target.once("close", () => {
         this._selectedTabTargetPromise = null;

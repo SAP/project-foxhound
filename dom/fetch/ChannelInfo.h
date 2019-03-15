@@ -11,16 +11,17 @@
 #include "nsCOMPtr.h"
 
 class nsIChannel;
-class nsIDocument;
 class nsIGlobalObject;
 class nsIURI;
 
 namespace mozilla {
 namespace ipc {
 class IPCChannelInfo;
-} // namespace ipc
+}  // namespace ipc
 
 namespace dom {
+
+class Document;
 
 // This class represents the information related to a Response that we
 // retrieve from the corresponding channel that is used to perform the fetch.
@@ -39,31 +40,22 @@ namespace dom {
 // ResurrectInfoOnChannel().  This object cannot be initialized twice, and
 // ResurrectInfoOnChannel() cannot be called on it before it has been
 // initialized.  There are assertions ensuring these invariants.
-class ChannelInfo final
-{
-public:
+class ChannelInfo final {
+ public:
   typedef mozilla::ipc::IPCChannelInfo IPCChannelInfo;
 
-  ChannelInfo()
-    : mInited(false)
-  {
-  }
+  ChannelInfo() : mInited(false) {}
 
   ChannelInfo(const ChannelInfo& aRHS)
-    : mSecurityInfo(aRHS.mSecurityInfo)
-    , mInited(aRHS.mInited)
-  {
-  }
+      : mSecurityInfo(aRHS.mSecurityInfo), mInited(aRHS.mInited) {}
 
-  ChannelInfo&
-  operator=(const ChannelInfo& aRHS)
-  {
+  ChannelInfo& operator=(const ChannelInfo& aRHS) {
     mSecurityInfo = aRHS.mSecurityInfo;
     mInited = aRHS.mInited;
     return *this;
   }
 
-  void InitFromDocument(nsIDocument* aDoc);
+  void InitFromDocument(Document* aDoc);
   void InitFromChannel(nsIChannel* aChannel);
   void InitFromChromeGlobal(nsIGlobalObject* aGlobal);
   void InitFromIPCChannelInfo(const IPCChannelInfo& aChannelInfo);
@@ -72,22 +64,19 @@ public:
   // object on a new one.
   nsresult ResurrectInfoOnChannel(nsIChannel* aChannel);
 
-  bool IsInitialized() const
-  {
-    return mInited;
-  }
+  bool IsInitialized() const { return mInited; }
 
   IPCChannelInfo AsIPCChannelInfo() const;
 
-private:
+ private:
   void SetSecurityInfo(nsISupports* aSecurityInfo);
 
-private:
+ private:
   nsCString mSecurityInfo;
   bool mInited;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_ChannelInfo_h
+#endif  // mozilla_dom_ChannelInfo_h

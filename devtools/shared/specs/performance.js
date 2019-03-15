@@ -4,7 +4,6 @@
 "use strict";
 
 const { Arg, RetVal, generateActorSpec } = require("devtools/shared/protocol");
-require("devtools/shared/specs/performance-recording");
 
 const performanceSpec = generateActorSpec({
   typeName: "performance",
@@ -37,12 +36,12 @@ const performanceSpec = generateActorSpec({
   methods: {
     connect: {
       request: { options: Arg(0, "nullable:json") },
-      response: RetVal("json")
+      response: RetVal("json"),
     },
 
     canCurrentlyRecord: {
       request: {},
-      response: { value: RetVal("json") }
+      response: { value: RetVal("json") },
     },
 
     startRecording: {
@@ -50,8 +49,8 @@ const performanceSpec = generateActorSpec({
         options: Arg(0, "nullable:json"),
       },
       response: {
-        recording: RetVal("nullable:performance-recording")
-      }
+        recording: RetVal("nullable:performance-recording"),
+      },
     },
 
     stopRecording: {
@@ -59,30 +58,30 @@ const performanceSpec = generateActorSpec({
         options: Arg(0, "performance-recording"),
       },
       response: {
-        recording: RetVal("performance-recording")
-      }
+        recording: RetVal("performance-recording"),
+      },
     },
 
     isRecording: {
       request: {},
-      response: { isRecording: RetVal("boolean") }
+      response: { isRecording: RetVal("boolean") },
     },
 
     getRecordings: {
       request: {},
-      response: { recordings: RetVal("array:performance-recording") }
+      response: { recordings: RetVal("array:performance-recording") },
     },
 
     getConfiguration: {
       request: {},
-      response: { config: RetVal("json") }
+      response: { config: RetVal("json") },
     },
 
     setProfilerStatusInterval: {
       request: { interval: Arg(0, "number") },
-      response: { oneway: true }
+      oneway: true,
     },
-  }
+  },
 });
 
 exports.performanceSpec = performanceSpec;

@@ -18,9 +18,9 @@ function run_test() {
   run_next_test();
 }
 
-add_task(function* test_register_rollback() {
+add_task(async function test_register_rollback() {
   let db = PushServiceWebSocket.newPushDB();
-  do_register_cleanup(() => {return db.drop().then(_ => db.close());});
+  registerCleanupFunction(() => {return db.drop().then(_ => db.close());});
 
   let handshakes = 0;
   let registers = 0;
@@ -71,17 +71,18 @@ add_task(function* test_register_rollback() {
   });
 
   // Should return a rejected promise if storage fails.
-  yield rejects(
+  await rejects(
     PushService.register({
       scope: 'https://example.com/storage-error',
       originAttributes: ChromeUtils.originAttributesToSuffix(
         { appId: Ci.nsIScriptSecurityManager.NO_APP_ID, inIsolatedMozBrowser: false }),
     }),
+    /universe has imploded/,
     'Expected error for unregister database failure'
   );
 
   // Should send an out-of-band unregister request.
-  yield unregisterPromise;
+  await unregisterPromise;
   equal(handshakes, 1, 'Wrong handshake count');
   equal(registers, 1, 'Wrong register count');
 });

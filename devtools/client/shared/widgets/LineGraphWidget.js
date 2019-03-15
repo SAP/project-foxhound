@@ -1,7 +1,6 @@
 "use strict";
 
-const { Task } = require("devtools/shared/task");
-const { Heritage } = require("devtools/client/shared/widgets/view-helpers");
+const { extend } = require("devtools/shared/extend");
 const { AbstractCanvasGraph, CanvasGraphUtils } = require("devtools/client/shared/widgets/Graphs");
 const { LocalizationHelper } = require("devtools/shared/l10n");
 
@@ -11,17 +10,14 @@ const L10N = new LocalizationHelper("devtools/client/locales/graphs.properties")
 // Line graph constants.
 
 const GRAPH_DAMPEN_VALUES_FACTOR = 0.85;
-// px
-const GRAPH_TOOLTIP_SAFE_BOUNDS = 8;
-const GRAPH_MIN_MAX_TOOLTIP_DISTANCE = 14;
+const GRAPH_TOOLTIP_SAFE_BOUNDS = 8; // px
+const GRAPH_MIN_MAX_TOOLTIP_DISTANCE = 14; // px
 
 const GRAPH_BACKGROUND_COLOR = "#0088cc";
-// px
-const GRAPH_STROKE_WIDTH = 1;
+const GRAPH_STROKE_WIDTH = 1; // px
 const GRAPH_STROKE_COLOR = "rgba(255,255,255,0.9)";
-// px
-const GRAPH_HELPER_LINES_DASH = [5];
-const GRAPH_HELPER_LINES_WIDTH = 1;
+const GRAPH_HELPER_LINES_DASH = [5]; // px
+const GRAPH_HELPER_LINES_WIDTH = 1; // px
 const GRAPH_MAXIMUM_LINE_COLOR = "rgba(255,255,255,0.4)";
 const GRAPH_AVERAGE_LINE_COLOR = "rgba(255,255,255,0.7)";
 const GRAPH_MINIMUM_LINE_COLOR = "rgba(255,255,255,0.9)";
@@ -56,7 +52,7 @@ const GRAPH_REGION_STRIPES_COLOR = "rgba(237,38,85,0.2)";
  *   ]
  * where each item in the array represents a point in the graph.
  *
- * @param nsIDOMNode parent
+ * @param Node parent
  *        The parent node holding the graph.
  * @param object options [optional]
  *  `metric`: The metric displayed in the graph, e.g. "fps" or "bananas".
@@ -64,8 +60,8 @@ const GRAPH_REGION_STRIPES_COLOR = "rgba(237,38,85,0.2)";
  *  `max`: Boolean whether to show the max tooltip/gutter/line (default: true)
  *  `avg`: Boolean whether to show the avg tooltip/gutter/line (default: true)
  */
-this.LineGraphWidget = function (parent, options = {}, ...args) {
-  let { metric, min, max, avg } = options;
+this.LineGraphWidget = function(parent, options = {}, ...args) {
+  const { metric, min, max, avg } = options;
 
   this._showMin = min !== false;
   this._showMax = max !== false;
@@ -92,7 +88,7 @@ this.LineGraphWidget = function (parent, options = {}, ...args) {
   });
 };
 
-LineGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
+LineGraphWidget.prototype = extend(AbstractCanvasGraph.prototype, {
   backgroundColor: GRAPH_BACKGROUND_COLOR,
   backgroundGradientStart: GRAPH_BACKGROUND_GRADIENT_START,
   backgroundGradientEnd: GRAPH_BACKGROUND_GRADIENT_END,
@@ -149,30 +145,30 @@ LineGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
    * @param number duration
    *        The duration of the recording in milliseconds.
    */
-  setDataFromTimestamps: Task.async(function* (timestamps, interval, duration) {
-    let {
+  async setDataFromTimestamps(timestamps, interval, duration) {
+    const {
       plottedData,
-      plottedMinMaxSum
-    } = yield CanvasGraphUtils._performTaskInWorker("plotTimestampsGraph", {
-      timestamps, interval, duration
+      plottedMinMaxSum,
+    } = await CanvasGraphUtils._performTaskInWorker("plotTimestampsGraph", {
+      timestamps, interval, duration,
     });
 
     this._tempMinMaxSum = plottedMinMaxSum;
     this.setData(plottedData);
-  }),
+  },
 
   /**
    * Renders the graph's data source.
    * @see AbstractCanvasGraph.prototype.buildGraphImage
    */
-  buildGraphImage: function () {
-    let { canvas, ctx } = this._getNamedCanvas("line-graph-data");
-    let width = this._width;
-    let height = this._height;
+  buildGraphImage: function() {
+    const { canvas, ctx } = this._getNamedCanvas("line-graph-data");
+    const width = this._width;
+    const height = this._height;
 
-    let totalTicks = this._data.length;
-    let firstTick = totalTicks ? this._data[0].delta : 0;
-    let lastTick = totalTicks ? this._data[totalTicks - 1].delta : 0;
+    const totalTicks = this._data.length;
+    const firstTick = totalTicks ? this._data[0].delta : 0;
+    const lastTick = totalTicks ? this._data[totalTicks - 1].delta : 0;
     let maxValue = Number.MIN_SAFE_INTEGER;
     let minValue = Number.MAX_SAFE_INTEGER;
     let avgValue = 0;
@@ -183,7 +179,7 @@ LineGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
       avgValue = this._tempMinMaxSum.avgValue;
     } else {
       let sumValues = 0;
-      for (let { value } of this._data) {
+      for (const { value } of this._data) {
         maxValue = Math.max(value, maxValue);
         minValue = Math.min(value, minValue);
         sumValues += value;
@@ -191,9 +187,9 @@ LineGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
       avgValue = sumValues / totalTicks;
     }
 
-    let duration = this.dataDuration || lastTick;
-    let dataScaleX = this.dataScaleX = width / (duration - this.dataOffsetX);
-    let dataScaleY =
+    const duration = this.dataDuration || lastTick;
+    const dataScaleX = this.dataScaleX = width / (duration - this.dataOffsetX);
+    const dataScaleY =
       this.dataScaleY = height / maxValue * this.dampenValuesFactor;
 
     // Draw the background.
@@ -203,7 +199,7 @@ LineGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
 
     // Draw the graph.
 
-    let gradient = ctx.createLinearGradient(0, height / 2, 0, height);
+    const gradient = ctx.createLinearGradient(0, height / 2, 0, height);
     gradient.addColorStop(0, this.backgroundGradientStart);
     gradient.addColorStop(1, this.backgroundGradientEnd);
     ctx.fillStyle = gradient;
@@ -211,9 +207,9 @@ LineGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
     ctx.lineWidth = this.strokeWidth * this._pixelRatio;
     ctx.beginPath();
 
-    for (let { delta, value } of this._data) {
-      let currX = (delta - this.dataOffsetX) * dataScaleX;
-      let currY = height - value * dataScaleY;
+    for (const { delta, value } of this._data) {
+      const currX = (delta - this.dataOffsetX) * dataScaleX;
+      const currY = height - value * dataScaleY;
 
       if (delta == firstTick) {
         ctx.moveTo(-GRAPH_STROKE_WIDTH, height);
@@ -246,10 +242,10 @@ LineGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
    * @param number avgValue
    * @param number dataScaleY
    */
-  _drawOverlays: function (ctx, minValue, maxValue, avgValue, dataScaleY) {
-    let width = this._width;
-    let height = this._height;
-    let totalTicks = this._data.length;
+  _drawOverlays: function(ctx, minValue, maxValue, avgValue, dataScaleY) {
+    const width = this._width;
+    const height = this._height;
+    const totalTicks = this._data.length;
 
     // Draw the maximum value horizontal line.
     if (this._showMax) {
@@ -257,7 +253,7 @@ LineGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
       ctx.lineWidth = GRAPH_HELPER_LINES_WIDTH;
       ctx.setLineDash(GRAPH_HELPER_LINES_DASH);
       ctx.beginPath();
-      let maximumY = height - maxValue * dataScaleY;
+      const maximumY = height - maxValue * dataScaleY;
       ctx.moveTo(0, maximumY);
       ctx.lineTo(width, maximumY);
       ctx.stroke();
@@ -269,7 +265,7 @@ LineGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
       ctx.lineWidth = GRAPH_HELPER_LINES_WIDTH;
       ctx.setLineDash(GRAPH_HELPER_LINES_DASH);
       ctx.beginPath();
-      let averageY = height - avgValue * dataScaleY;
+      const averageY = height - avgValue * dataScaleY;
       ctx.moveTo(0, averageY);
       ctx.lineTo(width, averageY);
       ctx.stroke();
@@ -281,7 +277,7 @@ LineGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
       ctx.lineWidth = GRAPH_HELPER_LINES_WIDTH;
       ctx.setLineDash(GRAPH_HELPER_LINES_DASH);
       ctx.beginPath();
-      let minimumY = height - minValue * dataScaleY;
+      const minimumY = height - minValue * dataScaleY;
       ctx.moveTo(0, minimumY);
       ctx.lineTo(width, minimumY);
       ctx.stroke();
@@ -296,22 +292,22 @@ LineGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
     this._minTooltip.querySelector("[text=value]").textContent =
       L10N.numberWithDecimals(minValue, 2);
 
-    let bottom = height / this._pixelRatio;
-    let maxPosY = CanvasGraphUtils.map(maxValue * this.dampenValuesFactor, 0,
+    const bottom = height / this._pixelRatio;
+    const maxPosY = CanvasGraphUtils.map(maxValue * this.dampenValuesFactor, 0,
                                        maxValue, bottom, 0);
-    let avgPosY = CanvasGraphUtils.map(avgValue * this.dampenValuesFactor, 0,
+    const avgPosY = CanvasGraphUtils.map(avgValue * this.dampenValuesFactor, 0,
                                        maxValue, bottom, 0);
-    let minPosY = CanvasGraphUtils.map(minValue * this.dampenValuesFactor, 0,
+    const minPosY = CanvasGraphUtils.map(minValue * this.dampenValuesFactor, 0,
                                        maxValue, bottom, 0);
 
-    let safeTop = GRAPH_TOOLTIP_SAFE_BOUNDS;
-    let safeBottom = bottom - GRAPH_TOOLTIP_SAFE_BOUNDS;
+    const safeTop = GRAPH_TOOLTIP_SAFE_BOUNDS;
+    const safeBottom = bottom - GRAPH_TOOLTIP_SAFE_BOUNDS;
 
-    let maxTooltipTop = (this.withFixedTooltipPositions
+    const maxTooltipTop = (this.withFixedTooltipPositions
       ? safeTop : CanvasGraphUtils.clamp(maxPosY, safeTop, safeBottom));
-    let avgTooltipTop = (this.withFixedTooltipPositions
+    const avgTooltipTop = (this.withFixedTooltipPositions
       ? safeTop : CanvasGraphUtils.clamp(avgPosY, safeTop, safeBottom));
-    let minTooltipTop = (this.withFixedTooltipPositions
+    const minTooltipTop = (this.withFixedTooltipPositions
       ? safeBottom : CanvasGraphUtils.clamp(minPosY, safeTop, safeBottom));
 
     this._maxTooltip.style.top = maxTooltipTop + "px";
@@ -326,7 +322,7 @@ LineGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
     this._avgTooltip.setAttribute("with-arrows", this.withTooltipArrows);
     this._minTooltip.setAttribute("with-arrows", this.withTooltipArrows);
 
-    let distanceMinMax = Math.abs(maxTooltipTop - minTooltipTop);
+    const distanceMinMax = Math.abs(maxTooltipTop - minTooltipTop);
     this._maxTooltip.hidden = this._showMax === false
                             || !totalTicks
                             || distanceMinMax < GRAPH_MIN_MAX_TOOLTIP_DISTANCE;
@@ -343,10 +339,10 @@ LineGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
 
   /**
    * Creates the gutter node when constructing this graph.
-   * @return nsIDOMNode
+   * @return Node
    */
-  _createGutter: function () {
-    let gutter = this._document.createElementNS(HTML_NS, "div");
+  _createGutter: function() {
+    const gutter = this._document.createElementNS(HTML_NS, "div");
     gutter.className = "line-graph-widget-gutter";
     gutter.setAttribute("hidden", true);
     this._container.appendChild(gutter);
@@ -356,10 +352,10 @@ LineGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
 
   /**
    * Creates the gutter line nodes when constructing this graph.
-   * @return nsIDOMNode
+   * @return Node
    */
-  _createGutterLine: function (type) {
-    let line = this._document.createElementNS(HTML_NS, "div");
+  _createGutterLine: function(type) {
+    const line = this._document.createElementNS(HTML_NS, "div");
     line.className = "line-graph-widget-gutter-line";
     line.setAttribute("type", type);
     this._gutter.appendChild(line);
@@ -369,24 +365,24 @@ LineGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
 
   /**
    * Creates the tooltip nodes when constructing this graph.
-   * @return nsIDOMNode
+   * @return Node
    */
-  _createTooltip: function (type, arrow, info, metric) {
-    let tooltip = this._document.createElementNS(HTML_NS, "div");
+  _createTooltip: function(type, arrow, info, metric) {
+    const tooltip = this._document.createElementNS(HTML_NS, "div");
     tooltip.className = "line-graph-widget-tooltip";
     tooltip.setAttribute("type", type);
     tooltip.setAttribute("arrow", arrow);
     tooltip.setAttribute("hidden", true);
 
-    let infoNode = this._document.createElementNS(HTML_NS, "span");
+    const infoNode = this._document.createElementNS(HTML_NS, "span");
     infoNode.textContent = info;
     infoNode.setAttribute("text", "info");
 
-    let valueNode = this._document.createElementNS(HTML_NS, "span");
+    const valueNode = this._document.createElementNS(HTML_NS, "span");
     valueNode.textContent = 0;
     valueNode.setAttribute("text", "value");
 
-    let metricNode = this._document.createElementNS(HTML_NS, "span");
+    const metricNode = this._document.createElementNS(HTML_NS, "span");
     metricNode.textContent = metric;
     metricNode.setAttribute("text", "metric");
 
@@ -396,7 +392,7 @@ LineGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
     this._container.appendChild(tooltip);
 
     return tooltip;
-  }
+  },
 });
 
 module.exports = LineGraphWidget;

@@ -6,37 +6,41 @@
 
 const isOSX = (Services.appinfo.OS === "Darwin");
 
-add_task(function*() {
-  yield BrowserTestUtils.withNewTab({
+add_task(async function() {
+  CustomizableUI.addWidgetToArea("print-button", CustomizableUI.AREA_FIXED_OVERFLOW_PANEL);
+  registerCleanupFunction(() => CustomizableUI.reset());
+  await BrowserTestUtils.withNewTab({
     gBrowser,
     url: "http://example.com/",
-  }, function* () {
+  }, async function() {
     info("Check print button existence and functionality");
 
-    yield PanelUI.show();
+    await waitForOverflowButtonShown();
+
+    await document.getElementById("nav-bar").overflowable.show();
     info("Menu panel was opened");
 
-    yield waitForCondition(() => document.getElementById("print-button") != null);
+    await waitForCondition(() => document.getElementById("print-button") != null);
 
     let printButton = document.getElementById("print-button");
     ok(printButton, "Print button exists in Panel Menu");
 
     if (isOSX) {
-      let panelHiddenPromise = promisePanelHidden(window);
-      PanelUI.hide();
-      yield panelHiddenPromise;
+      let panelHiddenPromise = promiseOverflowHidden(window);
+      document.getElementById("widget-overflow").hidePopup();
+      await panelHiddenPromise;
       info("Menu panel was closed");
     } else {
       printButton.click();
-      yield waitForCondition(() => gInPrintPreviewMode);
+      await waitForCondition(() => gInPrintPreviewMode);
 
       ok(gInPrintPreviewMode, "Entered print preview mode");
 
       // close print preview
       if (gInPrintPreviewMode) {
         PrintUtils.exitPrintPreview();
-        yield waitForCondition(() => !window.gInPrintPreviewMode);
-        info("Exited print preview")
+        await waitForCondition(() => !window.gInPrintPreviewMode);
+        info("Exited print preview");
       }
     }
   });

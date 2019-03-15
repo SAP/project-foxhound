@@ -1,12 +1,12 @@
 'use strict';
 
-const {PushRecord} = Cu.import('resource://gre/modules/PushRecord.jsm', {});
+const {PushRecord} = ChromeUtils.import('resource://gre/modules/PushRecord.jsm', {});
 
 function run_test() {
   run_next_test();
 }
 
-add_task(function* test_updateQuota() {
+add_task(async function test_updateQuota() {
   let record = new PushRecord({
     quota: 8,
     lastPush: Date.now() - 1 * MS_IN_ONE_DAY,
@@ -36,7 +36,7 @@ add_task(function* test_updateQuota() {
   strictEqual(record.quota, 0, 'Quota should never be negative');
 });
 
-add_task(function* test_systemRecord_updateQuota() {
+add_task(async function test_systemRecord_updateQuota() {
   let systemRecord = new PushRecord({
     quota: Infinity,
     systemRecord: true,
@@ -75,16 +75,16 @@ function testPermissionCheck(props) {
   }
 }
 
-add_task(function* test_principal_permissions() {
+add_task(async function test_principal_permissions() {
   let testProps = [{
     scope: 'https://example.com/',
   }, {
     scope: 'https://example.com/',
     originAttributes: '^userContextId=1',
   }, {
-    scope: 'https://блог.фанфрог.рф/',
+    scope: 'https://xn--90aexm.xn--80ag3aejvc.xn--p1ai/',
   }, {
-    scope: 'https://блог.фанфрог.рф/',
+    scope: 'https://xn--90aexm.xn--80ag3aejvc.xn--p1ai/',
     originAttributes: '^userContextId=1',
   }];
   for (let props of testProps) {

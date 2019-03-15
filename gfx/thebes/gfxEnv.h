@@ -15,17 +15,17 @@
 //   DECL_GFX_ENV("MOZ_DISABLE_CONTEXT_SHARING_GLX",DisableContextSharingGLX);
 // means that you can call
 //   bool var = gfxEnv::DisableContextSharingGLX();
-// and that the value will be checked only once, first time we call it, then cached.
+// and that the value will be checked only once, first time we call it, then
+// cached.
 
-#define DECL_GFX_ENV(Env, Name)  \
-  static bool Name() {                \
-    static bool isSet = IsEnvSet(Env);\
-    return isSet;                     \
+#define DECL_GFX_ENV(Env, Name)        \
+  static bool Name() {                 \
+    static bool isSet = IsEnvSet(Env); \
+    return isSet;                      \
   }
 
-class gfxEnv final
-{
-public:
+class gfxEnv final {
+ public:
   // This is where DECL_GFX_ENV for each of the environment variables should go.
   // We will keep these in an alphabetical order by the environment variable,
   // to make it easier to see if a method accessing an entry already exists.
@@ -33,6 +33,9 @@ public:
 
   // Debugging inside of ContainerLayerComposite
   DECL_GFX_ENV("DUMP_DEBUG", DumpDebug);
+
+  // Use WR recording
+  DECL_GFX_ENV("ENABLE_WR_RECORDING", EnableWebRenderRecording);
 
   // OpenGL shader debugging in OGLShaderProgram, in DEBUG only
   DECL_GFX_ENV("MOZ_DEBUG_SHADERS", DebugShaders);
@@ -83,7 +86,7 @@ public:
   // Count GL extensions
   DECL_GFX_ENV("MOZ_GL_DUMP_EXTS", GlDumpExtensions);
 
-  // Very noisy GLContext and GLContextProviderELG
+  // Very noisy GLContext and GLContextProviderEGL
   DECL_GFX_ENV("MOZ_GL_SPEW", GlSpew);
 
   // Do extra work before and after each GLX call in GLContextProviderGLX
@@ -98,6 +101,12 @@ public:
   // Offscreen GL context for main layer manager
   DECL_GFX_ENV("MOZ_LAYERS_PREFER_OFFSCREEN", LayersPreferOffscreen);
 
+  // Skip final window composition
+  DECL_GFX_ENV("MOZ_SKIPCOMPOSITION", SkipComposition);
+
+  // Skip rasterizing painted layer contents
+  DECL_GFX_ENV("MOZ_SKIPRASTERIZATION", SkipRasterization);
+
   // Stop the VR rendering
   DECL_GFX_ENV("NO_VR_RENDERING", NoVRRendering);
 
@@ -105,15 +114,15 @@ public:
   // Please make sure that you've added your new envvar to the list above in
   // alphabetical order. Please do not just append it to the end of the list.
 
-private:
+ private:
   // Helper function, can be re-used in the other macros
   static bool IsEnvSet(const char* aName) {
     const char* val = PR_GetEnv(aName);
     return (val != 0 && *val != '\0');
   }
 
-  gfxEnv() {};
-  ~gfxEnv() {};
+  gfxEnv(){};
+  ~gfxEnv(){};
   gfxEnv(const gfxEnv&) = delete;
   gfxEnv& operator=(const gfxEnv&) = delete;
 };

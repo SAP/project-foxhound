@@ -6,34 +6,32 @@
 
 //#define __INCREMENTAL 1
 
+#include "nsScanner.h"
+
 #include "mozilla/Attributes.h"
 #include "mozilla/DebugOnly.h"
-
-#include "nsScanner.h"
+#include "mozilla/Encoding.h"
 #include "nsDebug.h"
 #include "nsReadableUtils.h"
 #include "nsIInputStream.h"
 #include "nsIFile.h"
-#include "nsUTF8Utils.h" // for LossyConvertEncoding
+#include "nsUTF8Utils.h"  // for LossyConvertEncoding
 #include "nsCRT.h"
 #include "nsParser.h"
 #include "nsCharsetSource.h"
 
-#include "mozilla/dom/EncodingUtils.h"
-
-using mozilla::dom::EncodingUtils;
-
-nsReadEndCondition::nsReadEndCondition(const char16_t* aTerminateChars) :
-  mChars(aTerminateChars), mFilter(char16_t(~0)) // All bits set
+nsReadEndCondition::nsReadEndCondition(const char16_t* aTerminateChars)
+    : mChars(aTerminateChars),
+      mFilter(char16_t(~0))  // All bits set
 {
   // Build filter that will be used to filter out characters with
   // bits that none of the terminal chars have. This works very well
   // because terminal chars often have only the last 4-6 bits set and
   // normal ascii letters have bit 7 set. Other letters have even higher
   // bits set.
-  
+
   // Calculate filter
-  const char16_t *current = aTerminateChars;
+  const char16_t* current = aTerminateChars;
   char16_t terminalChar = *current;
   while (terminalChar) {
     mFilter &= ~terminalChar;
@@ -43,16 +41,15 @@ nsReadEndCondition::nsReadEndCondition(const char16_t* aTerminateChars) :
 }
 
 /**
- *  Use this constructor if you want i/o to be based on 
+ *  Use this constructor if you want i/o to be based on
  *  a single string you hand in during construction.
  *  This short cut was added for Javascript.
  *
  *  @update  gess 5/12/98
  *  @param   aMode represents the parser mode (nav, other)
- *  @return  
+ *  @return
  */
-nsScanner::nsScanner(const nsAString& anHTMLString)
-{
+nsScanner::nsScanner(const nsAString& anHTMLString) {
   MOZ_COUNT_CTOR(nsScanner);
 
   mSlidingBuffer = nullptr;
@@ -70,13 +67,12 @@ nsScanner::nsScanner(const nsAString& anHTMLString)
 }
 
 /**
- *  Use this constructor if you want i/o to be based on strings 
+ *  Use this constructor if you want i/o to be based on strings
  *  the scanner receives. If you pass a null filename, you
  *  can still provide data to the scanner via append.
  */
 nsScanner::nsScanner(nsString& aFilename, bool aCreateStream)
-  : mFilename(aFilename)
-{
+    : mFilename(aFilename) {
   MOZ_COUNT_CTOR(nsScanner);
   NS_ASSERTION(!aCreateStream, "This is always true.");
 
@@ -96,66 +92,58 @@ nsScanner::nsScanner(nsString& aFilename, bool aCreateStream)
   mUnicodeDecoder = nullptr;
   mCharsetSource = kCharsetUninitialized;
   // XML defaults to UTF-8 and about:blank is UTF-8, too.
-  SetDocumentCharset(NS_LITERAL_CSTRING("UTF-8"), kCharsetFromDocTypeDefault);
+  SetDocumentCharset(UTF_8_ENCODING, kCharsetFromDocTypeDefault);
 }
 
-nsresult nsScanner::SetDocumentCharset(const nsACString& aCharset , int32_t aSource)
-{
-  if (aSource < mCharsetSource) // priority is lower than the current one
+nsresult nsScanner::SetDocumentCharset(NotNull<const Encoding*> aEncoding,
+                                       int32_t aSource) {
+  if (aSource < mCharsetSource)  // priority is lower than the current one
     return NS_OK;
 
   mCharsetSource = aSource;
-
   nsCString charsetName;
-  mozilla::DebugOnly<bool> valid =
-      EncodingUtils::FindEncodingForLabel(aCharset, charsetName);
-  MOZ_ASSERT(valid, "Should never call with a bogus aCharset.");
-
+  aEncoding->Name(charsetName);
   if (!mCharset.IsEmpty() && charsetName.Equals(mCharset)) {
-    return NS_OK; // no difference, don't change it
+    return NS_OK;  // no difference, don't change it
   }
 
   // different, need to change it
 
   mCharset.Assign(charsetName);
 
-  mUnicodeDecoder = EncodingUtils::DecoderForEncoding(mCharset);
-  mUnicodeDecoder->SetInputErrorBehavior(nsIUnicodeDecoder::kOnError_Signal);
+  mUnicodeDecoder = aEncoding->NewDecoderWithBOMRemoval();
 
   return NS_OK;
 }
 
-
 /**
  *  default destructor
- *  
+ *
  *  @update  gess 3/25/98
- *  @param   
- *  @return  
+ *  @param
+ *  @return
  */
 nsScanner::~nsScanner() {
-
   delete mSlidingBuffer;
 
   MOZ_COUNT_DTOR(nsScanner);
 }
 
 /**
- *  Resets current offset position of input stream to marked position. 
- *  This allows us to back up to this point if the need should arise, 
+ *  Resets current offset position of input stream to marked position.
+ *  This allows us to back up to this point if the need should arise,
  *  such as when tokenization gets interrupted.
  *  NOTE: IT IS REALLY BAD FORM TO CALL RELEASE WITHOUT CALLING MARK FIRST!
  *
  *  @update  gess 5/12/98
- *  @param   
- *  @return  
+ *  @param
+ *  @return
  */
-void nsScanner::RewindToMark(void){
+void nsScanner::RewindToMark(void) {
   if (mSlidingBuffer) {
     mCurrentPosition = mMarkPosition;
   }
 }
-
 
 /**
  *  Records current offset position in input stream. This allows us
@@ -163,8 +151,8 @@ void nsScanner::RewindToMark(void){
  *  tokenization gets interrupted.
  *
  *  @update  gess 7/29/98
- *  @param   
- *  @return  
+ *  @param
+ *  @return
  */
 int32_t nsScanner::Mark() {
   int32_t distance = 0;
@@ -182,112 +170,87 @@ int32_t nsScanner::Mark() {
   return distance;
 }
 
-/** 
+/**
  * Insert data to our underlying input buffer as
  * if it were read from an input stream.
  *
  * @update  harishd 01/12/99
- * @return  error code 
+ * @return  error code
  */
 bool nsScanner::UngetReadable(const nsAString& aBuffer) {
   if (!mSlidingBuffer) {
     return false;
   }
 
-  mSlidingBuffer->UngetReadable(aBuffer,mCurrentPosition);
-  mSlidingBuffer->BeginReading(mCurrentPosition); // Insertion invalidated our iterators
+  mSlidingBuffer->UngetReadable(aBuffer, mCurrentPosition);
+  mSlidingBuffer->BeginReading(
+      mCurrentPosition);  // Insertion invalidated our iterators
   mSlidingBuffer->EndReading(mEndPosition);
- 
+
   return true;
 }
 
-/** 
+/**
  * Append data to our underlying input buffer as
  * if it were read from an input stream.
  *
  * @update  gess4/3/98
- * @return  error code 
+ * @return  error code
  */
 nsresult nsScanner::Append(const nsAString& aBuffer) {
-  if (!AppendToBuffer(aBuffer))
-    return NS_ERROR_OUT_OF_MEMORY;
+  if (!AppendToBuffer(aBuffer)) return NS_ERROR_OUT_OF_MEMORY;
   return NS_OK;
 }
 
 /**
- *  
- *  
+ *
+ *
  *  @update  gess 5/21/98
- *  @param   
- *  @return  
+ *  @param
+ *  @return
  */
-nsresult nsScanner::Append(const char* aBuffer, uint32_t aLen)
-{
+nsresult nsScanner::Append(const char* aBuffer, uint32_t aLen) {
   nsresult res = NS_OK;
   if (mUnicodeDecoder) {
-    int32_t unicharBufLen = 0;
-
-    nsresult rv = mUnicodeDecoder->GetMaxLength(aBuffer, aLen, &unicharBufLen);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+    CheckedInt<size_t> needed = mUnicodeDecoder->MaxUTF16BufferLength(aLen);
+    if (!needed.isValid()) {
+      return NS_ERROR_OUT_OF_MEMORY;
     }
+    CheckedInt<uint32_t> allocLen(1);  // null terminator due to legacy sadness
+    allocLen += needed.value();
+    if (!allocLen.isValid()) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+    nsScannerString::Buffer* buffer =
+        nsScannerString::AllocBuffer(allocLen.value());
+    NS_ENSURE_TRUE(buffer, NS_ERROR_OUT_OF_MEMORY);
+    char16_t* unichars = buffer->DataStart();
 
-    nsScannerString::Buffer* buffer = nsScannerString::AllocBuffer(unicharBufLen + 1);
-    NS_ENSURE_TRUE(buffer,NS_ERROR_OUT_OF_MEMORY);
-    char16_t *unichars = buffer->DataStart();
-
-    int32_t totalChars = 0;
-    int32_t unicharLength = unicharBufLen;
-
-    do {
-      int32_t srcLength = aLen;
-      res = mUnicodeDecoder->Convert(aBuffer, &srcLength, unichars, &unicharLength);
-
-      totalChars += unicharLength;
-      // Continuation of failure case
-      if(NS_FAILED(res)) {
-        // if we failed, we consume one byte, replace it with the replacement
-        // character and try the conversion again.
-
-        // This is only needed because some decoders don't follow the
-        // nsIUnicodeDecoder contract: they return a failure when *aDestLength
-        // is 0 rather than the correct NS_OK_UDEC_MOREOUTPUT.  See bug 244177
-        if ((unichars + unicharLength) >= buffer->DataEnd()) {
-          NS_ERROR("Unexpected end of destination buffer");
-          break;
-        }
-
-        // Since about:blank is empty, this line runs only for XML. Use a
-        // character that's illegal in XML instead of U+FFFD in order to make
-        // expat flag the error.
-        unichars[unicharLength++] = 0xFFFF;
-
-        unichars = unichars + unicharLength;
-        unicharLength = unicharBufLen - (++totalChars);
-
-        mUnicodeDecoder->Reset();
-
-        if(((uint32_t) (srcLength + 1)) > aLen) {
-          srcLength = aLen;
-        }
-        else {
-          ++srcLength;
-        }
-
-        aBuffer += srcLength;
-        aLen -= srcLength;
-      }
-    } while (NS_FAILED(res) && (aLen > 0));
-
-    buffer->SetDataLength(totalChars);
+    uint32_t result;
+    size_t read;
+    size_t written;
+    Tie(result, read, written) =
+        mUnicodeDecoder->DecodeToUTF16WithoutReplacement(
+            AsBytes(MakeSpan(aBuffer, aLen)),
+            MakeSpan(unichars, needed.value()),
+            false);  // Retain bug about failure to handle EOF
+    MOZ_ASSERT(result != kOutputFull);
+    MOZ_ASSERT(read <= aLen);
+    MOZ_ASSERT(written <= needed.value());
+    if (result != kInputEmpty) {
+      // Since about:blank is empty, this line runs only for XML. Use a
+      // character that's illegal in XML instead of U+FFFD in order to make
+      // expat flag the error. There is no need to loop and convert more, since
+      // expat will stop here anyway.
+      unichars[written++] = 0xFFFF;
+    }
+    buffer->SetDataLength(written);
     // Don't propagate return code of unicode decoder
     // since it doesn't reflect on our success or failure
     // - Ref. bug 87110
-    res = NS_OK; 
-    if (!AppendToBuffer(buffer))
-      res = NS_ERROR_OUT_OF_MEMORY;
-  }
-  else {
+    res = NS_OK;
+    if (!AppendToBuffer(buffer)) res = NS_ERROR_OUT_OF_MEMORY;
+  } else {
     NS_WARNING("No decoder found.");
     res = NS_ERROR_FAILURE;
   }
@@ -297,9 +260,9 @@ nsresult nsScanner::Append(const char* aBuffer, uint32_t aLen)
 
 /**
  *  retrieve next char from scanners internal input stream
- *  
+ *
  *  @update  gess 3/25/98
- *  @param   
+ *  @param
  *  @return  error code reflecting read status
  */
 nsresult nsScanner::GetChar(char16_t& aChar) {
@@ -313,23 +276,21 @@ nsresult nsScanner::GetChar(char16_t& aChar) {
   return NS_OK;
 }
 
-void nsScanner::BindSubstring(nsScannerSubstring& aSubstring, const nsScannerIterator& aStart, const nsScannerIterator& aEnd)
-{
+void nsScanner::BindSubstring(nsScannerSubstring& aSubstring,
+                              const nsScannerIterator& aStart,
+                              const nsScannerIterator& aEnd) {
   aSubstring.Rebind(*mSlidingBuffer, aStart, aEnd);
 }
 
-void nsScanner::CurrentPosition(nsScannerIterator& aPosition)
-{
+void nsScanner::CurrentPosition(nsScannerIterator& aPosition) {
   aPosition = mCurrentPosition;
 }
 
-void nsScanner::EndReading(nsScannerIterator& aPosition)
-{
+void nsScanner::EndReading(nsScannerIterator& aPosition) {
   aPosition = mEndPosition;
 }
- 
-void nsScanner::SetPosition(nsScannerIterator& aPosition, bool aTerminate)
-{
+
+void nsScanner::SetPosition(nsScannerIterator& aPosition, bool aTerminate) {
   if (mSlidingBuffer) {
     mCurrentPosition = aPosition;
     if (aTerminate && (mCurrentPosition == mEndPosition)) {
@@ -339,17 +300,14 @@ void nsScanner::SetPosition(nsScannerIterator& aPosition, bool aTerminate)
   }
 }
 
-bool nsScanner::AppendToBuffer(nsScannerString::Buffer* aBuf)
-{
+bool nsScanner::AppendToBuffer(nsScannerString::Buffer* aBuf) {
   if (!mSlidingBuffer) {
     mSlidingBuffer = new nsScannerString(aBuf);
-    if (!mSlidingBuffer)
-      return false;
+    if (!mSlidingBuffer) return false;
     mSlidingBuffer->BeginReading(mCurrentPosition);
     mMarkPosition = mCurrentPosition;
     mSlidingBuffer->EndReading(mEndPosition);
-  }
-  else {
+  } else {
     mSlidingBuffer->AppendBuffer(aBuf);
     if (mCurrentPosition == mEndPosition) {
       mSlidingBuffer->BeginReading(mCurrentPosition);
@@ -363,7 +321,7 @@ bool nsScanner::AppendToBuffer(nsScannerString::Buffer* aBuf)
 /**
  *  call this to copy bytes out of the scanner that have not yet been consumed
  *  by the tokenization process.
- *  
+ *
  *  @update  gess 5/12/98
  *  @param   aCopyBuffer is where the scanner buffer will be copied to
  *  @return  true if OK or false on OOM
@@ -385,21 +343,19 @@ bool nsScanner::CopyUnusedData(nsString& aCopyBuffer) {
  *  Retrieve the name of the file that the scanner is reading from.
  *  In some cases, it's just a given name, because the scanner isn't
  *  really reading from a file.
- *  
+ *
  *  @update  gess 5/12/98
- *  @return  
+ *  @return
  */
-nsString& nsScanner::GetFilename(void) {
-  return mFilename;
-}
+nsString& nsScanner::GetFilename(void) { return mFilename; }
 
 /**
  *  Conduct self test. Actually, selftesting for this class
  *  occurs in the parser selftest.
- *  
+ *
  *  @update  gess 3/25/98
- *  @param   
- *  @return  
+ *  @param
+ *  @return
  */
 
 void nsScanner::SelfTest(void) {

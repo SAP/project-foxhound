@@ -6,7 +6,6 @@
 
 #include "mozilla/dom/HTMLLegendElement.h"
 #include "mozilla/dom/HTMLLegendElementBinding.h"
-#include "nsIDOMHTMLFormElement.h"
 #include "nsFocusManager.h"
 #include "nsIFrame.h"
 
@@ -15,16 +14,11 @@ NS_IMPL_NS_NEW_HTML_ELEMENT(Legend)
 namespace mozilla {
 namespace dom {
 
-
-HTMLLegendElement::~HTMLLegendElement()
-{
-}
+HTMLLegendElement::~HTMLLegendElement() {}
 
 NS_IMPL_ELEMENT_CLONE(HTMLLegendElement)
 
-nsIContent*
-HTMLLegendElement::GetFieldSet() const
-{
+nsIContent* HTMLLegendElement::GetFieldSet() const {
   nsIContent* parent = GetParent();
 
   if (parent && parent->IsHTMLElement(nsGkAtoms::fieldset)) {
@@ -34,34 +28,29 @@ HTMLLegendElement::GetFieldSet() const
   return nullptr;
 }
 
-bool
-HTMLLegendElement::ParseAttribute(int32_t aNamespaceID,
-                                  nsIAtom* aAttribute,
-                                  const nsAString& aValue,
-                                  nsAttrValue& aResult)
-{
+bool HTMLLegendElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                                       const nsAString& aValue,
+                                       nsIPrincipal* aMaybeScriptedPrincipal,
+                                       nsAttrValue& aResult) {
   // this contains center, because IE4 does
   static const nsAttrValue::EnumTable kAlignTable[] = {
-    { "left", NS_STYLE_TEXT_ALIGN_LEFT },
-    { "right", NS_STYLE_TEXT_ALIGN_RIGHT },
-    { "center", NS_STYLE_TEXT_ALIGN_CENTER },
-    { "bottom", NS_STYLE_VERTICAL_ALIGN_BOTTOM },
-    { "top", NS_STYLE_VERTICAL_ALIGN_TOP },
-    { nullptr, 0 }
-  };
+      {"left", NS_STYLE_TEXT_ALIGN_LEFT},
+      {"right", NS_STYLE_TEXT_ALIGN_RIGHT},
+      {"center", NS_STYLE_TEXT_ALIGN_CENTER},
+      {"bottom", NS_STYLE_VERTICAL_ALIGN_BOTTOM},
+      {"top", NS_STYLE_VERTICAL_ALIGN_TOP},
+      {nullptr, 0}};
 
   if (aAttribute == nsGkAtoms::align && aNamespaceID == kNameSpaceID_None) {
     return aResult.ParseEnumValue(aValue, kAlignTable, false);
   }
 
   return nsGenericHTMLElement::ParseAttribute(aNamespaceID, aAttribute, aValue,
-                                              aResult);
+                                              aMaybeScriptedPrincipal, aResult);
 }
 
-nsChangeHint
-HTMLLegendElement::GetAttributeChangeHint(const nsIAtom* aAttribute,
-                                          int32_t aModType) const
-{
+nsChangeHint HTMLLegendElement::GetAttributeChangeHint(const nsAtom* aAttribute,
+                                                       int32_t aModType) const {
   nsChangeHint retval =
       nsGenericHTMLElement::GetAttributeChangeHint(aAttribute, aModType);
   if (aAttribute == nsGkAtoms::align) {
@@ -70,40 +59,16 @@ HTMLLegendElement::GetAttributeChangeHint(const nsIAtom* aAttribute,
   return retval;
 }
 
-nsresult
-HTMLLegendElement::SetAttr(int32_t aNameSpaceID, nsIAtom* aAttribute,
-                           nsIAtom* aPrefix, const nsAString& aValue,
-                           bool aNotify)
-{
-  return nsGenericHTMLElement::SetAttr(aNameSpaceID, aAttribute,
-                                       aPrefix, aValue, aNotify);
-}
-nsresult
-HTMLLegendElement::UnsetAttr(int32_t aNameSpaceID, nsIAtom* aAttribute,
-                             bool aNotify)
-{
-  return nsGenericHTMLElement::UnsetAttr(aNameSpaceID, aAttribute, aNotify);
+nsresult HTMLLegendElement::BindToTree(Document* aDocument, nsIContent* aParent,
+                                       nsIContent* aBindingParent) {
+  return nsGenericHTMLElement::BindToTree(aDocument, aParent, aBindingParent);
 }
 
-nsresult
-HTMLLegendElement::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent,
-                              bool aCompileEventHandlers)
-{
-  return nsGenericHTMLElement::BindToTree(aDocument, aParent,
-                                          aBindingParent,
-                                          aCompileEventHandlers);
-}
-
-void
-HTMLLegendElement::UnbindFromTree(bool aDeep, bool aNullParent)
-{
+void HTMLLegendElement::UnbindFromTree(bool aDeep, bool aNullParent) {
   nsGenericHTMLElement::UnbindFromTree(aDeep, aNullParent);
 }
 
-void
-HTMLLegendElement::Focus(ErrorResult& aError)
-{
+void HTMLLegendElement::Focus(ErrorResult& aError) {
   nsIFrame* frame = GetPrimaryFrame();
   if (!frame) {
     return;
@@ -122,36 +87,31 @@ HTMLLegendElement::Focus(ErrorResult& aError)
     return;
   }
 
-  nsCOMPtr<nsIDOMElement> result;
+  RefPtr<Element> result;
   aError = fm->MoveFocus(nullptr, this, nsIFocusManager::MOVEFOCUS_FORWARD,
                          nsIFocusManager::FLAG_NOPARENTFRAME,
                          getter_AddRefs(result));
 }
 
-bool
-HTMLLegendElement::PerformAccesskey(bool aKeyCausesActivation,
-                                    bool aIsTrustedEvent)
-{
+bool HTMLLegendElement::PerformAccesskey(bool aKeyCausesActivation,
+                                         bool aIsTrustedEvent) {
   // just use the same behaviour as the focus method
   ErrorResult rv;
   Focus(rv);
   return NS_SUCCEEDED(rv.StealNSResult());
 }
 
-already_AddRefed<HTMLFormElement>
-HTMLLegendElement::GetForm()
-{
+already_AddRefed<HTMLFormElement> HTMLLegendElement::GetForm() {
   Element* form = GetFormElement();
   MOZ_ASSERT_IF(form, form->IsHTMLElement(nsGkAtoms::form));
   RefPtr<HTMLFormElement> ret = static_cast<HTMLFormElement*>(form);
   return ret.forget();
 }
 
-JSObject*
-HTMLLegendElement::WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return HTMLLegendElementBinding::Wrap(aCx, this, aGivenProto);
+JSObject* HTMLLegendElement::WrapNode(JSContext* aCx,
+                                      JS::Handle<JSObject*> aGivenProto) {
+  return HTMLLegendElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

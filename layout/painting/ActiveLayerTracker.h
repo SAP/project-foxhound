@@ -1,3 +1,5 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,14 +23,15 @@ namespace mozilla {
  * heuristics.
  */
 class ActiveLayerTracker {
-public:
+ public:
   static void Shutdown();
 
   /*
    * We track style changes to selected styles:
    *   eCSSProperty_transform
    *   eCSSProperty_opacity
-   *   eCSSProperty_left, eCSSProperty_top, eCSSProperty_right, eCSSProperty_bottom
+   *   eCSSProperty_left, eCSSProperty_top,
+   *   eCSSProperty_right, eCSSProperty_bottom
    * and use that information to guess whether style changes are animated.
    */
 
@@ -58,7 +61,8 @@ public:
    * Notify aFrame as being known to have an animation of aProperty through an
    * inline style modification during aScrollFrame's scroll event handler.
    */
-  static void NotifyAnimatedFromScrollHandler(nsIFrame* aFrame, nsCSSPropertyID aProperty,
+  static void NotifyAnimatedFromScrollHandler(nsIFrame* aFrame,
+                                              nsCSSPropertyID aProperty,
                                               nsIFrame* aScrollFrame);
   /**
    * Notify that a property in the inline style rule of aFrame's element
@@ -68,17 +72,25 @@ public:
    * aNewValue and aDOMCSSDecl are used to determine whether the property's
    * value has changed.
    */
-  static void NotifyInlineStyleRuleModified(nsIFrame* aFrame, nsCSSPropertyID aProperty,
+  static void NotifyInlineStyleRuleModified(nsIFrame* aFrame,
+                                            nsCSSPropertyID aProperty,
                                             const nsAString& aNewValue,
                                             nsDOMCSSDeclaration* aDOMCSSDecl);
   /**
-   * Return true if aFrame's aProperty style should be considered as being animated
-   * for pre-rendering.
+   * Notify that a frame needs to be repainted. This is important for layering
+   * decisions where, say, aFrame's transform is updated from JS, but we need
+   * to repaint aFrame anyway, so we get no benefit from giving it its own
+   * layer.
+   */
+  static void NotifyNeedsRepaint(nsIFrame* aFrame);
+  /**
+   * Return true if aFrame's aProperty style should be considered as being
+   * animated for pre-rendering.
    */
   static bool IsStyleMaybeAnimated(nsIFrame* aFrame, nsCSSPropertyID aProperty);
   /**
-   * Return true if aFrame's aProperty style should be considered as being animated
-   * for constructing active layers.
+   * Return true if aFrame's aProperty style should be considered as being
+   * animated for constructing active layers.
    */
   static bool IsStyleAnimated(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
                               nsCSSPropertyID aProperty);
@@ -86,7 +98,7 @@ public:
    * Return true if any of aFrame's offset property styles should be considered
    * as being animated for constructing active layers.
    */
-  static bool IsOffsetOrMarginStyleAnimated(nsIFrame* aFrame);
+  static bool IsOffsetStyleAnimated(nsIFrame* aFrame);
   /**
    * Return true if aFrame's background-position-x or background-position-y
    * property is animated.
@@ -114,8 +126,8 @@ public:
   static void TransferActivityToFrame(nsIContent* aContent, nsIFrame* aFrame);
 
   /*
-   * We track modifications to the content of certain frames (i.e. canvas frames)
-   * and use that to make layering decisions.
+   * We track modifications to the content of certain frames (i.e. canvas
+   * frames) and use that to make layering decisions.
    */
 
   /**
@@ -136,6 +148,6 @@ public:
   static void SetCurrentScrollHandlerFrame(nsIFrame* aFrame);
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif /* ACTIVELAYERTRACKER_H_ */

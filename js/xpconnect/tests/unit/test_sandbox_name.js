@@ -1,7 +1,5 @@
 "use strict";
 
-const { utils: Cu, interfaces: Ci, classes: Cc } = Components;
-
 /**
  * Test that the name of a sandbox contains the name of all principals.
  */
@@ -19,7 +17,7 @@ function test_sandbox_name() {
   );
 
   for (let name of names) {
-    Assert.ok(fileName.indexOf(name) != -1, `Name ${name} appears in ${fileName}`);
+    Assert.ok(fileName.includes(name), `Name ${name} appears in ${fileName}`);
   }
 };
 

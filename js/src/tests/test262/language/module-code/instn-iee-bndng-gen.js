@@ -1,4 +1,4 @@
-// |reftest| skip -- jstests don't yet support module tests
+// |reftest| module
 // Copyright (C) 2016 the V8 project authors. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 /*---
@@ -39,6 +39,7 @@ info: |
        and N2 as its target binding and record that the binding is initialized.
     6. Return NormalCompletion(empty).
 flags: [module]
+features: [generators]
 ---*/
 
 assert.sameValue(

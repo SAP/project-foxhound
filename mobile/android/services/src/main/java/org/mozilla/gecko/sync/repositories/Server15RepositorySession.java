@@ -8,7 +8,6 @@ import android.net.Uri;
 
 import org.mozilla.gecko.background.common.log.Logger;
 import org.mozilla.gecko.sync.repositories.delegates.RepositorySessionFetchRecordsDelegate;
-import org.mozilla.gecko.sync.repositories.delegates.RepositorySessionGuidsSinceDelegate;
 import org.mozilla.gecko.sync.repositories.delegates.RepositorySessionStoreDelegate;
 import org.mozilla.gecko.sync.repositories.delegates.RepositorySessionWipeDelegate;
 import org.mozilla.gecko.sync.repositories.domain.Record;
@@ -27,6 +26,7 @@ public class Server15RepositorySession extends RepositorySession {
     super(repository);
     this.serverRepository = (Server15Repository) repository;
     this.downloader = new BatchingDownloader(
+            this.fetchWorkQueue,
             this.serverRepository.authHeaderProvider,
             Uri.parse(this.serverRepository.collectionURI().toString()),
             this.serverRepository.getSyncDeadline(),
@@ -44,27 +44,23 @@ public class Server15RepositorySession extends RepositorySession {
     this.uploader = new BatchingUploader(
             this, storeWorkQueue, storeDelegate, Uri.parse(serverRepository.collectionURI.toString()),
             serverRepository.getCollectionLastModified(), serverRepository.getInfoConfiguration(),
-            serverRepository.authHeaderProvider);
+            serverRepository.authHeaderProvider, serverRepository.getAbortOnStoreFailure());
   }
 
-  @Override
-  public void guidsSince(long timestamp,
-                         RepositorySessionGuidsSinceDelegate delegate) {
-    // TODO Auto-generated method stub
-
-  }
-
-  @Override
-  public void fetchSince(long sinceTimestamp,
-                         RepositorySessionFetchRecordsDelegate delegate) {
+  private void fetchSince(long timestamp, RepositorySessionFetchRecordsDelegate delegate) {
     BatchingDownloaderController.resumeFetchSinceIfPossible(
             this.downloader,
             this.serverRepository.stateProvider,
             delegate,
-            sinceTimestamp,
+            timestamp,
             serverRepository.getBatchLimit(),
             serverRepository.getSortOrder()
     );
+  }
+
+  @Override
+  public void fetchModified(RepositorySessionFetchRecordsDelegate delegate) {
+    this.fetchSince(getLastSyncTimestamp(), delegate);
   }
 
   @Override
@@ -120,6 +116,10 @@ public class Server15RepositorySession extends RepositorySession {
    */
   @Override
   public long getLastSyncTimestamp() {
+    if (serverRepository.getFullFetchForced()) {
+      return 0;
+    }
+
     if (!serverRepository.getAllowHighWaterMark() || !serverRepository.getSortOrder().equals("oldest")) {
       return super.getLastSyncTimestamp();
     }

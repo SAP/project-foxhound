@@ -8,10 +8,10 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_PROCESSING_AEC_AEC_COMMON_H_
-#define WEBRTC_MODULES_AUDIO_PROCESSING_AEC_AEC_COMMON_H_
+#ifndef MODULES_AUDIO_PROCESSING_AEC_AEC_COMMON_H_
+#define MODULES_AUDIO_PROCESSING_AEC_AEC_COMMON_H_
 
-#include "webrtc/typedefs.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 #ifdef _MSC_VER /* visual c++ */
 #define ALIGN16_BEG __declspec(align(16))
@@ -21,6 +21,10 @@
 #define ALIGN16_END __attribute__((aligned(16)))
 #endif
 
+#ifdef __cplusplus
+namespace webrtc {
+#endif
+
 extern ALIGN16_BEG const float ALIGN16_END WebRtcAec_sqrtHanning[65];
 extern ALIGN16_BEG const float ALIGN16_END WebRtcAec_weightCurve[65];
 extern ALIGN16_BEG const float ALIGN16_END WebRtcAec_overDriveCurve[65];
@@ -28,5 +32,8 @@ extern const float WebRtcAec_kExtendedSmoothingCoefficients[2][2];
 extern const float WebRtcAec_kNormalSmoothingCoefficients[2][2];
 extern const float WebRtcAec_kMinFarendPSD;
 
-#endif  // WEBRTC_MODULES_AUDIO_PROCESSING_AEC_AEC_COMMON_H_
+#ifdef __cplusplus
+}  // namespace webrtc
+#endif
 
+#endif  // MODULES_AUDIO_PROCESSING_AEC_AEC_COMMON_H_

@@ -9,62 +9,56 @@
    xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
    xmlns:xbl="http://www.mozilla.org/xbl">
 
-  <binding id="scrollbox-base" extends="chrome://global/content/bindings/general.xml#basecontrol">
-    <resources>
-      <stylesheet src="chrome://global/skin/scrollbox.css"/>
-    </resources>
-  </binding>
-
-  <binding id="scrollbox" extends="chrome://global/content/bindings/scrollbox.xml#scrollbox-base">
+  <binding id="arrowscrollbox" extends="chrome://global/content/bindings/general.xml#basecontrol">
     <content>
-      <xul:box class="box-inherit scrollbox-innerbox" xbl:inherits="orient,align,pack,dir" flex="1">
-        <children/>
-      </xul:box>
-    </content>
-
-    <implementation>
-      <method name="scrollByIndex">
-        <parameter name="index"/>
-        <body>
-          this.boxObject.scrollByIndex(index);
-        </body>
-      </method>
-    </implementation>
-  </binding>
-
-  <binding id="arrowscrollbox" extends="chrome://global/content/bindings/scrollbox.xml#scrollbox-base">
-    <content>
-      <xul:autorepeatbutton class="autorepeatbutton-up"
-                            anonid="scrollbutton-up"
-                            xbl:inherits="orient,collapsed=notoverflowing,disabled=scrolledtostart"
-                            oncommand="_autorepeatbuttonScroll(event);"/>
+      <xul:toolbarbutton class="scrollbutton-up"
+                         anonid="scrollbutton-up"
+                         xbl:inherits="orient,collapsed=notoverflowing,disabled=scrolledtostart"
+                         onclick="_onButtonClick(event);"
+                         onmousedown="_onButtonMouseDown(event, -1);"
+                         onmouseup="_onButtonMouseUp(event);"
+                         onmouseover="_onButtonMouseOver(-1);"
+                         onmouseout="_onButtonMouseOut();"/>
       <xul:spacer class="arrowscrollbox-overflow-start-indicator"
                   xbl:inherits="collapsed=scrolledtostart"/>
       <xul:scrollbox class="arrowscrollbox-scrollbox"
                      anonid="scrollbox"
                      flex="1"
-                     xbl:inherits="orient,align,pack,dir">
+                     xbl:inherits="orient,align,pack,dir,smoothscroll">
         <children/>
       </xul:scrollbox>
       <xul:spacer class="arrowscrollbox-overflow-end-indicator"
                   xbl:inherits="collapsed=scrolledtoend"/>
-      <xul:autorepeatbutton class="autorepeatbutton-down"
-                            anonid="scrollbutton-down"
-                            xbl:inherits="orient,collapsed=notoverflowing,disabled=scrolledtoend"
-                            oncommand="_autorepeatbuttonScroll(event);"/>
+      <xul:toolbarbutton class="scrollbutton-down"
+                         anonid="scrollbutton-down"
+                         xbl:inherits="orient,collapsed=notoverflowing,disabled=scrolledtoend"
+                         onclick="_onButtonClick(event);"
+                         onmousedown="_onButtonMouseDown(event, 1);"
+                         onmouseup="_onButtonMouseUp(event);"
+                         onmouseover="_onButtonMouseOver(1);"
+                         onmouseout="_onButtonMouseOut();"/>
     </content>
 
     <implementation>
       <constructor><![CDATA[
+        if (!this.hasAttribute("smoothscroll")) {
+          this.smoothScroll = this._prefBranch
+                                  .getBoolPref("toolkit.scrollbox.smoothScroll", true);
+        }
+
         this.setAttribute("notoverflowing", "true");
         this._updateScrollButtonsDisabledState();
       ]]></constructor>
 
       <destructor><![CDATA[
-        this._stopSmoothScroll();
+        // Release timer to avoid reference cycles.
+        if (this._scrollTimer) {
+          this._scrollTimer.cancel();
+          this._scrollTimer = null;
+        }
       ]]></destructor>
 
-      <field name="_scrollbox">
+      <field name="scrollbox">
         document.getAnonymousElementByAttribute(this, "anonid", "scrollbox");
       </field>
       <field name="_scrollButtonUp">
@@ -74,12 +68,55 @@
         document.getAnonymousElementByAttribute(this, "anonid", "scrollbutton-down");
       </field>
 
+      <field name="_scrollIndex">0</field>
+
+      <field name="_arrowScrollAnim"><![CDATA[({
+        scrollbox: this,
+        requestHandle: 0, /* 0 indicates there is no pending request */
+        start: function arrowSmoothScroll_start() {
+          this.lastFrameTime = window.performance.now();
+          if (!this.requestHandle)
+            this.requestHandle = window.requestAnimationFrame(this.sample.bind(this));
+        },
+        stop: function arrowSmoothScroll_stop() {
+          window.cancelAnimationFrame(this.requestHandle);
+          this.requestHandle = 0;
+        },
+        sample: function arrowSmoothScroll_handleEvent(timeStamp) {
+          const scrollIndex = this.scrollbox._scrollIndex;
+          const timePassed = timeStamp - this.lastFrameTime;
+          this.lastFrameTime = timeStamp;
+
+          const scrollDelta = 0.5 * timePassed * scrollIndex;
+          this.scrollbox.scrollByPixels(scrollDelta, true);
+          this.requestHandle = window.requestAnimationFrame(this.sample.bind(this));
+        },
+      })]]></field>
+
+      <property name="_clickToScroll" readonly="true">
+        <getter><![CDATA[
+          return this.hasAttribute("clicktoscroll");
+        ]]></getter>
+      </property>
+
+      <property name="_scrollDelay" readonly="true">
+        <getter><![CDATA[
+          if (this._clickToScroll) {
+            return this._prefBranch.getIntPref(
+                            "toolkit.scrollbox.clickToScroll.scrollDelay", 150);
+          }
+
+          // Use the same REPEAT_DELAY as "nsRepeatService.h".
+          return /Mac/.test(navigator.platform) ? 25 : 50;
+        ]]></getter>
+      </property>
+
       <field name="__prefBranch">null</field>
       <property name="_prefBranch" readonly="true">
         <getter><![CDATA[
           if (this.__prefBranch === null) {
-            this.__prefBranch = Components.classes["@mozilla.org/preferences-service;1"]
-                                          .getService(Components.interfaces.nsIPrefBranch);
+            this.__prefBranch = Cc["@mozilla.org/preferences-service;1"]
+                                  .getService(Ci.nsIPrefBranch);
           }
           return this.__prefBranch;
         ]]></getter>
@@ -89,69 +126,48 @@
       <property name="scrollIncrement" readonly="true">
         <getter><![CDATA[
           if (this._scrollIncrement === null) {
-            try {
-              this._scrollIncrement = this._prefBranch
-                                          .getIntPref("toolkit.scrollbox.scrollIncrement");
-            } catch (ex) {
-              this._scrollIncrement = 20;
-            }
+            this._scrollIncrement = this._prefBranch
+                                        .getIntPref("toolkit.scrollbox.scrollIncrement", 20);
           }
           return this._scrollIncrement;
         ]]></getter>
       </property>
 
-      <field name="_smoothScroll">null</field>
       <property name="smoothScroll">
         <getter><![CDATA[
-          if (this._smoothScroll === null) {
-            if (this.hasAttribute("smoothscroll")) {
-              this._smoothScroll = (this.getAttribute("smoothscroll") == "true");
-            } else {
-              try {
-                this._smoothScroll = this._prefBranch
-                                         .getBoolPref("toolkit.scrollbox.smoothScroll");
-              } catch (ex) {
-                this._smoothScroll = true;
-              }
-            }
-          }
-          return this._smoothScroll;
+          return this.getAttribute("smoothscroll") == "true";
         ]]></getter>
         <setter><![CDATA[
-          this._smoothScroll = val;
+          this.setAttribute("smoothscroll", !!val);
           return val;
         ]]></setter>
       </property>
 
-      <field name="_scrollBoxObject">null</field>
       <property name="scrollBoxObject" readonly="true">
         <getter><![CDATA[
-          if (!this._scrollBoxObject) {
-            this._scrollBoxObject = this._scrollbox.boxObject;
-          }
-          return this._scrollBoxObject;
+          return this.scrollbox.boxObject;
         ]]></getter>
       </property>
 
       <property name="scrollClientRect" readonly="true">
         <getter><![CDATA[
-          return this._scrollbox.getBoundingClientRect();
+          return this.scrollbox.getBoundingClientRect();
         ]]></getter>
       </property>
 
       <property name="scrollClientSize" readonly="true">
         <getter><![CDATA[
           return this.orient == "vertical" ?
-                 this._scrollbox.clientHeight :
-                 this._scrollbox.clientWidth;
+                 this.scrollbox.clientHeight :
+                 this.scrollbox.clientWidth;
         ]]></getter>
       </property>
 
       <property name="scrollSize" readonly="true">
         <getter><![CDATA[
           return this.orient == "vertical" ?
-                 this._scrollbox.scrollHeight :
-                 this._scrollbox.scrollWidth;
+                 this.scrollbox.scrollHeight :
+                 this.scrollbox.scrollWidth;
         ]]></getter>
       </property>
 
@@ -162,281 +178,131 @@
           // However, the elements may have different width or height.  So,
           // for consistent speed, let's use avalage with of the elements.
           var elements = this._getScrollableElements();
-          if (!elements.length) {
-            // Returning 0 shouldn't be problem because if there is no
-            // scrollable elements, it's impossible to scroll anyway.
-            return 0;
-          }
-
-          if (this._isRTLScrollbox)
-            elements.reverse();
-
-          var [start, end] = this._startEndProps;
-          var low = 0;
-          var high = elements.length - 1;
-          // XXX If the total width is 0, do we need something more?
-          var totalWidth =
-            elements[high].getBoundingClientRect()[end] - elements[low].getBoundingClientRect()[start];
-          return totalWidth / elements.length;
+          return elements.length && (this.scrollSize / elements.length);
         ]]></getter>
       </property>
 
-      <property name="scrollPaddingRect" readonly="true">
-        <getter><![CDATA[
-          // This assumes that this._scrollbox doesn't have any border.
-          var outerRect = this.scrollClientRect;
-          var innerRect = {};
-          innerRect.left = outerRect.left - this._scrollbox.scrollLeft;
-          innerRect.top = outerRect.top - this._scrollbox.scrollTop;
-          innerRect.right = innerRect.left + this._scrollbox.scrollWidth;
-          innerRect.bottom = innerRect.top + this._scrollbox.scrollHeight;
-          return innerRect;
-        ]]></getter>
-      </property>
-      <property name="scrollboxPaddingStart" readonly="true">
-        <getter><![CDATA[
-          var ltr = (window.getComputedStyle(this).direction == "ltr");
-          var paddingStartName = ltr ? "padding-left" : "padding-right";
-          var scrollboxStyle = window.getComputedStyle(this._scrollbox);
-          return parseFloat(scrollboxStyle.getPropertyValue(paddingStartName));
-        ]]></getter>
-      </property>
-      <property name="scrollPosition">
+      <property name="scrollPosition" readonly="true">
         <getter><![CDATA[
           return this.orient == "vertical" ?
-                 this._scrollbox.scrollTop :
-                 this._scrollbox.scrollLeft;
+                 this.scrollbox.scrollTop :
+                 this.scrollbox.scrollLeft;
         ]]></getter>
-        <setter><![CDATA[
-          if (this.orient == "vertical")
-            this._scrollbox.scrollTop = val;
-          else
-            this._scrollbox.scrollLeft = val;
-          return val;
-        ]]></setter>
       </property>
 
-      <property name="_startEndProps" readonly="true">
-        <getter><![CDATA[
-          return this.orient == "vertical" ?
-                 ["top", "bottom"] : ["left", "right"];
-        ]]></getter>
-      </property>
+      <field name="_startEndProps"><![CDATA[
+        this.orient == "vertical" ? ["top", "bottom"] : ["left", "right"];
+      ]]></field>
 
       <field name="_isRTLScrollbox"><![CDATA[
         this.orient != "vertical" &&
-        document.defaultView.getComputedStyle(this._scrollbox).direction == "rtl";
+        document.defaultView.getComputedStyle(this.scrollbox).direction == "rtl";
       ]]></field>
 
-      <field name="_scrollTarget">null</field>
+      <method name="_onButtonClick">
+        <parameter name="event"/>
+        <body><![CDATA[
+          if (this._clickToScroll) {
+            this._distanceScroll(event);
+          }
+        ]]></body>
+      </method>
+
+      <method name="_onButtonMouseDown">
+        <parameter name="event"/>
+        <parameter name="index"/>
+        <body><![CDATA[
+          if (this._clickToScroll && event.button == 0) {
+            this._startScroll(index);
+          }
+        ]]></body>
+      </method>
+
+      <method name="_onButtonMouseUp">
+        <parameter name="event"/>
+        <body><![CDATA[
+          if (this._clickToScroll && event.button == 0) {
+            this._stopScroll();
+          }
+        ]]></body>
+      </method>
+
+      <method name="_onButtonMouseOver">
+        <parameter name="index"/>
+        <body><![CDATA[
+          if (this._clickToScroll) {
+            this._continueScroll(index);
+          } else {
+            this._startScroll(index);
+          }
+        ]]></body>
+      </method>
+
+      <method name="_onButtonMouseOut">
+        <parameter name="index"/>
+        <body><![CDATA[
+          if (this._clickToScroll) {
+            this._pauseScroll();
+          } else {
+            this._stopScroll();
+          }
+        ]]></body>
+      </method>
+
+      <method name="_boundsWithoutFlushing">
+        <parameter name="element"/>
+        <body><![CDATA[
+          if (!("_DOMWindowUtils" in this)) {
+            this._DOMWindowUtils = window.windowUtils;
+          }
+
+          return this._DOMWindowUtils ?
+                 this._DOMWindowUtils.getBoundsWithoutFlushing(element) :
+                 element.getBoundingClientRect();
+        ]]></body>
+      </method>
 
       <method name="_canScrollToElement">
         <parameter name="element"/>
         <body><![CDATA[
-          return window.getComputedStyle(element).display != "none";
+          if (element.hidden) {
+            return false;
+          }
+
+          // See if the element is hidden via CSS without the hidden attribute.
+          // If we get only zeros for the client rect, this means the element
+          // is hidden. As a performance optimization, we don't flush layout
+          // here which means that on the fly changes aren't fully supported.
+          let rect = this._boundsWithoutFlushing(element);
+          return !!(rect.top || rect.left || rect.width || rect.height);
         ]]></body>
       </method>
 
+      <field name="_ensureElementIsVisibleAnimationFrame">0</field>
       <method name="ensureElementIsVisible">
         <parameter name="element"/>
-        <parameter name="aSmoothScroll"/>
+        <parameter name="aInstant"/>
         <body><![CDATA[
           if (!this._canScrollToElement(element))
             return;
 
-          var vertical = this.orient == "vertical";
-          var rect = this.scrollClientRect;
-          var containerStart = vertical ? rect.top : rect.left;
-          var containerEnd = vertical ? rect.bottom : rect.right;
-          rect = element.getBoundingClientRect();
-          var elementStart = vertical ? rect.top : rect.left;
-          var elementEnd = vertical ? rect.bottom : rect.right;
-
-          var scrollPaddingRect = this.scrollPaddingRect;
-          let style = window.getComputedStyle(this._scrollbox);
-          var scrollContentRect = {
-            left: scrollPaddingRect.left + parseFloat(style.paddingLeft),
-            top: scrollPaddingRect.top + parseFloat(style.paddingTop),
-            right: scrollPaddingRect.right - parseFloat(style.paddingRight),
-            bottom: scrollPaddingRect.bottom - parseFloat(style.paddingBottom)
-          };
-
-          // Provide an entry point for derived bindings to adjust these values.
-          if (this._adjustElementStartAndEnd) {
-            [elementStart, elementEnd] =
-              this._adjustElementStartAndEnd(element, elementStart, elementEnd);
+          if (this._ensureElementIsVisibleAnimationFrame) {
+            window.cancelAnimationFrame(this._ensureElementIsVisibleAnimationFrame);
           }
-
-          if (elementStart <= (vertical ? scrollContentRect.top : scrollContentRect.left)) {
-            elementStart = vertical ? scrollPaddingRect.top : scrollPaddingRect.left;
-          }
-          if (elementEnd >= (vertical ? scrollContentRect.bottom : scrollContentRect.right)) {
-            elementEnd = vertical ? scrollPaddingRect.bottom : scrollPaddingRect.right;
-          }
-
-          var amountToScroll;
-
-          if (elementStart < containerStart) {
-            amountToScroll = elementStart - containerStart;
-          } else if (containerEnd < elementEnd) {
-            amountToScroll = elementEnd - containerEnd;
-          } else if (this._isScrolling) {
-            // decelerate if a currently-visible element is selected during the scroll
-            const STOP_DISTANCE = 15;
-            if (this._isScrolling == -1 && elementStart - STOP_DISTANCE < containerStart)
-              amountToScroll = elementStart - containerStart;
-            else if (this._isScrolling == 1 && containerEnd - STOP_DISTANCE < elementEnd)
-              amountToScroll = elementEnd - containerEnd;
-            else
-              amountToScroll = this._isScrolling * STOP_DISTANCE;
-          } else {
-            return;
-          }
-
-          this._stopSmoothScroll();
-
-          if (aSmoothScroll != false && this.smoothScroll) {
-            this._smoothScrollByPixels(amountToScroll, element);
-          } else {
-            this.scrollByPixels(amountToScroll);
-          }
+          this._ensureElementIsVisibleAnimationFrame = window.requestAnimationFrame(() => {
+            element.scrollIntoView({ block: "nearest",
+                                     behavior: aInstant ? "instant" : "auto" });
+            this._ensureElementIsVisibleAnimationFrame = 0;
+          });
         ]]></body>
       </method>
-
-      <method name="_smoothScrollByPixels">
-        <parameter name="amountToScroll"/>
-        <parameter name="element"/><!-- optional -->
-        <body><![CDATA[
-          if (amountToScroll == 0)
-            return;
-
-          // Shouldn't forget pending scroll amount if the scroll direction
-          // isn't changed because this may be called high frequency with very
-          // small pixel values.
-          var scrollDirection = 0;
-          if (amountToScroll) {
-            // Positive amountToScroll makes us scroll right (elements fly left),
-            // negative scrolls left.
-            scrollDirection = amountToScroll < 0 ? -1 : 1;
-          }
-
-          // However, if the scroll direction is changed, let's cancel the
-          // pending scroll because user must want to scroll from current
-          // position.
-          if (this._isScrolling && this._isScrolling != scrollDirection)
-            this._stopSmoothScroll();
-
-          this._scrollTarget = element;
-          this._isScrolling = scrollDirection;
-
-          this._scrollAnim.start(amountToScroll, !this._scrollTarget);
-        ]]></body>
-      </method>
-
-      <field name="_scrollAnim"><![CDATA[({
-        scrollbox: this,
-        distance: 0.0,
-        requestHandle: 0, /* 0 indicates there is no pending request */
-
-        // Be aware, |distance| may be dounble. I.e., the absolute value of it can
-        // be less than 1.  Set |isContinuousScroll| to true when the scroll may be
-        // a part of continous scroll, for example, it's caused by turning mosue wheel.
-        start: function scrollAnim_start(distance, isContinuousScroll) {
-          // When it's a continous scroll and the scroll was started, this needs to
-          // respect preceding scroll requests.  For example, 1.5px scroll occurs 2 times,
-          // 3px should be scrolled.  So, fractional values shouldn't be discarded.
-          if (isContinuousScroll && this.distance) {
-            // |this.startPos| is integer due to cache of |.scrollPosition|.  Therefore,
-            // we need to manage actual destination with |this.destination|.
-            var oldDestination = this.destination;
-            this.destination = this._clampPosition(this.destination + distance);
-
-            // If scroll position has already reached the ends, we need to do nothing.
-            if (oldDestination == this.destination)
-              return;
-
-            // If the integer part of the destination isn't changed, we need to do
-            // nothing now, wait next event.
-            if (Math.trunc(this.destination) == Math.trunc(this.destination - distance))
-              return;
-
-            // Let's restart animation from current position to the new destination.
-            if (this.requestHandle) {
-              this.stop();
-              this.startPos = this.scrollbox.scrollPosition;
-              // The call of |.stop()| causes clearing |this.distance| but let's recover it
-              // for keeping continuous scroll.
-              this.distance = this.destination - this.startPos;
-            }
-          } else {
-            this.startPos = this.scrollbox.scrollPosition;
-            this.destination = this._clampPosition(this.startPos + distance);
-            this.distance = this.destination - this.startPos;
-
-            // If absolute value of |this.distance| is less than 1px and this call is
-            // start of a continous scroll, should wait to scroll until accumulated
-            // scroll amount becomes 1px or greater.
-            if (isContinuousScroll && Math.abs(this.distance) < 1)
-              return;
-          }
-          this.duration = Math.min(1000, Math.round(50 * Math.sqrt(Math.abs(distance))));
-          this.startTime = window.performance.now();
-
-          if (!this.requestHandle)
-            this.requestHandle = window.requestAnimationFrame(this.sample.bind(this));
-        },
-
-        stop: function scrollAnim_stop() {
-          window.cancelAnimationFrame(this.requestHandle);
-          this.requestHandle = 0;
-          // Reset continouos scroll transaction at stopping the scroll animation.
-          this.distance = 0;
-        },
-
-        sample: function scrollAnim_handleEvent(timeStamp) {
-          // Note that timeStamp sometimes older than start time.  If we use
-          // native value below, it causes scrolling revese direction.
-          // So, if the timeStamp is older, let's treat it as same as the start time.
-          const timePassed = Math.max(0, timeStamp - this.startTime);
-          const pos = timePassed >= this.duration ? 1 :
-                      1 - Math.pow(1 - timePassed / this.duration, 4);
-
-          this.scrollbox.scrollPosition = this.startPos + (this.distance * pos);
-
-          if (pos == 1)
-            this.scrollbox._stopSmoothScroll();
-          else
-            this.requestHandle = window.requestAnimationFrame(this.sample.bind(this));
-        },
-
-        _clampPosition: function scrollAnim_clampPosition(aScrollPosition) {
-          if (aScrollPosition < 0) {
-            return 0;
-          }
-          var maxPos = this.scrollbox.scrollSize - this.scrollbox.scrollClientSize;
-          if (aScrollPosition > maxPos) {
-            return maxPos;
-          }
-          return aScrollPosition;
-        }
-      })]]></field>
 
       <method name="scrollByIndex">
         <parameter name="index"/>
-        <parameter name="aSmoothScroll"/>
+        <parameter name="aInstant"/>
         <body><![CDATA[
           if (index == 0)
             return;
-
-          // Each scrollByIndex call is expected to scroll the given number of
-          // items. If a previous call is still in progress because of smooth
-          // scrolling, we need to complete it before starting a new one.
-          if (this._scrollTarget) {
-            let elements = this._getScrollableElements();
-            if (this._scrollTarget != elements[0] &&
-                this._scrollTarget != elements[elements.length - 1])
-              this.ensureElementIsVisible(this._scrollTarget, false);
-          }
 
           var rect = this.scrollClientRect;
           var [start, end] = this._startEndProps;
@@ -451,83 +317,29 @@
           while (index < 0 && nextElement) {
             if (this._canScrollToElement(nextElement))
               targetElement = nextElement;
-            nextElement = nextElement.previousSibling;
+            nextElement = nextElement.previousElementSibling;
             index++;
           }
           while (index > 0 && nextElement) {
             if (this._canScrollToElement(nextElement))
               targetElement = nextElement;
-            nextElement = nextElement.nextSibling;
+            nextElement = nextElement.nextElementSibling;
             index--;
           }
           if (!targetElement)
             return;
 
-          this.ensureElementIsVisible(targetElement, aSmoothScroll);
-        ]]></body>
-      </method>
-
-      <method name="scrollByPage">
-        <parameter name="pageDelta"/>
-        <parameter name="aSmoothScroll"/>
-        <body><![CDATA[
-          if (pageDelta == 0)
-            return;
-
-          // If a previous call is still in progress because of smooth
-          // scrolling, we need to complete it before starting a new one.
-          if (this._scrollTarget) {
-            let elements = this._getScrollableElements();
-            if (this._scrollTarget != elements[0] &&
-                this._scrollTarget != elements[elements.length - 1])
-              this.ensureElementIsVisible(this._scrollTarget, false);
-          }
-
-          var [start, end] = this._startEndProps;
-          var rect = this.scrollClientRect;
-          var containerEdge = pageDelta > 0 ? rect[end] + 1 : rect[start] - 1;
-          var pixelDelta = pageDelta * (rect[end] - rect[start]);
-          var destinationPosition = containerEdge + pixelDelta;
-          var nextElement = this._elementFromPoint(containerEdge, pageDelta);
-          if (!nextElement)
-            return;
-
-          // We need to iterate over our elements in the direction of pageDelta.
-          // pageDelta is the physical direction, so in a horizontal scroll box,
-          // positive values scroll to the right no matter if the scrollbox is
-          // LTR or RTL. But RTL changes how we need to advance the iteration
-          // (whether to get the next or the previous sibling of the current
-          // element).
-          var logicalAdvanceDir = pageDelta * (this._isRTLScrollbox ? -1 : 1);
-          var advance = logicalAdvanceDir > 0 ? (e => e.nextSibling) : (e => e.previousSibling);
-
-          var extendsPastTarget = (pageDelta > 0)
-            ? (e => e.getBoundingClientRect()[end] > destinationPosition)
-            : (e => e.getBoundingClientRect()[start] < destinationPosition);
-
-          // We want to scroll to the last element we encounter before we find
-          // an element which extends past destinationPosition.
-          var targetElement;
-          do {
-            if (this._canScrollToElement(nextElement))
-              targetElement = nextElement;
-            nextElement = advance(nextElement);
-          } while (nextElement && !extendsPastTarget(nextElement));
-
-          if (!targetElement)
-            return;
-
-          this.ensureElementIsVisible(targetElement, aSmoothScroll);
+          this.ensureElementIsVisible(targetElement, aInstant);
         ]]></body>
       </method>
 
       <method name="_getScrollableElements">
         <body><![CDATA[
-          var nodes = this.childNodes;
+          var nodes = this.children;
           if (nodes.length == 1 &&
               nodes[0].localName == "children" &&
               nodes[0].namespaceURI == "http://www.mozilla.org/xbl") {
-            nodes = document.getBindingParent(this).childNodes;
+            nodes = document.getBindingParent(this).children;
           }
 
           return Array.filter(nodes, this._canScrollToElement, this);
@@ -581,85 +393,235 @@
         ]]></body>
       </method>
 
-      <method name="_autorepeatbuttonScroll">
-        <parameter name="event"/>
+      <method name="_startScroll">
+        <parameter name="index"/>
         <body><![CDATA[
-          var dir = event.originalTarget == this._scrollButtonUp ? -1 : 1;
-          if (this._isRTLScrollbox)
-            dir *= -1;
+          if (this._isRTLScrollbox) {
+            index *= -1;
+          }
 
-          this.scrollByPixels(this.scrollIncrement * dir);
+          if (this._clickToScroll) {
+            this._scrollIndex = index;
+            this._mousedown = true;
 
-          event.stopPropagation();
+            if (this.smoothScroll) {
+              this._arrowScrollAnim.start();
+              return;
+            }
+          }
+
+          if (!this._scrollTimer) {
+            this._scrollTimer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
+          } else {
+            this._scrollTimer.cancel();
+          }
+
+          let callback;
+          if (this._clickToScroll) {
+            callback = () => {
+              if (!document && this._scrollTimer) {
+                this._scrollTimer.cancel();
+              }
+              this.scrollByIndex(this._scrollIndex);
+            };
+          } else {
+            callback = () => this.scrollByPixels(this.scrollIncrement * index);
+          }
+
+          this._scrollTimer.initWithCallback(callback, this._scrollDelay,
+                                             Ci.nsITimer.TYPE_REPEATING_SLACK);
+
+          callback();
+        ]]>
+        </body>
+      </method>
+
+      <method name="_stopScroll">
+        <body><![CDATA[
+          if (this._scrollTimer)
+            this._scrollTimer.cancel();
+
+          if (this._clickToScroll) {
+            this._mousedown = false;
+            if (!this._scrollIndex || !this.smoothScroll)
+              return;
+
+            this.scrollByIndex(this._scrollIndex);
+            this._scrollIndex = 0;
+
+            this._arrowScrollAnim.stop();
+          }
+        ]]></body>
+      </method>
+
+      <method name="_pauseScroll">
+        <body><![CDATA[
+          if (this._mousedown) {
+            this._stopScroll();
+            this._mousedown = true;
+            document.addEventListener("mouseup", this);
+            document.addEventListener("blur", this, true);
+          }
+        ]]></body>
+      </method>
+
+      <method name="_continueScroll">
+        <parameter name="index"/>
+        <body><![CDATA[
+          if (this._mousedown)
+            this._startScroll(index);
+        ]]></body>
+      </method>
+
+      <method name="_distanceScroll">
+        <parameter name="aEvent"/>
+        <body><![CDATA[
+          if (aEvent.detail < 2 || aEvent.detail > 3)
+            return;
+
+          var scrollBack = (aEvent.originalTarget == this._scrollButtonUp);
+          var scrollLeftOrUp = this._isRTLScrollbox ? !scrollBack : scrollBack;
+          var targetElement;
+
+          if (aEvent.detail == 2) {
+            // scroll by the size of the scrollbox
+            let [start, end] = this._startEndProps;
+            let x;
+            if (scrollLeftOrUp)
+              x = this.scrollClientRect[start] - this.scrollClientSize;
+            else
+              x = this.scrollClientRect[end] + this.scrollClientSize;
+            targetElement = this._elementFromPoint(x, scrollLeftOrUp ? -1 : 1);
+
+            // the next partly-hidden element will become fully visible,
+            // so don't scroll too far
+            if (targetElement)
+              targetElement = scrollBack ?
+                              targetElement.nextElementSibling :
+                              targetElement.previousElementSibling;
+          }
+
+          if (!targetElement) {
+            // scroll to the first resp. last element
+            let elements = this._getScrollableElements();
+            targetElement = scrollBack ?
+                            elements[0] :
+                            elements[elements.length - 1];
+          }
+
+          this.ensureElementIsVisible(targetElement);
+        ]]></body>
+      </method>
+
+      <method name="handleEvent">
+        <parameter name="aEvent"/>
+        <body><![CDATA[
+          if (aEvent.type == "mouseup" ||
+              aEvent.type == "blur" && aEvent.target == document) {
+            this._mousedown = false;
+            document.removeEventListener("mouseup", this);
+            document.removeEventListener("blur", this, true);
+          }
         ]]></body>
       </method>
 
       <method name="scrollByPixels">
-        <parameter name="px"/>
+        <parameter name="aPixels"/>
+        <parameter name="aInstant"/>
         <body><![CDATA[
-          this.scrollPosition += px;
+          let scrollOptions = { behavior: aInstant ? "instant" : "auto" };
+          scrollOptions[this._startEndProps[0]] = aPixels;
+          this.scrollbox.scrollBy(scrollOptions);
         ]]></body>
       </method>
 
-      <!-- 0: idle
-           1: scrolling right
-          -1: scrolling left -->
-      <field name="_isScrolling">0</field>
       <field name="_prevMouseScrolls">[null, null]</field>
 
       <field name="_touchStart">-1</field>
 
-      <method name="_stopSmoothScroll">
-        <body><![CDATA[
-          if (this._isScrolling) {
-            this._scrollAnim.stop();
-            this._isScrolling = 0;
-            this._scrollTarget = null;
-          }
-        ]]></body>
-      </method>
-
+      <field name="_scrollButtonUpdatePending">false</field>
       <method name="_updateScrollButtonsDisabledState">
         <body><![CDATA[
-          var scrolledToStart = false;
-          var scrolledToEnd = false;
-
           if (this.hasAttribute("notoverflowing")) {
-            scrolledToStart = true;
-            scrolledToEnd = true;
-          } else if (this.scrollPosition == 0) {
-            // In the RTL case, this means the _last_ element in the
-            // scrollbox is visible
-            if (this._isRTLScrollbox)
-              scrolledToEnd = true;
-            else
-              scrolledToStart = true;
-          } else if (this.scrollClientSize + this.scrollPosition == this.scrollSize) {
-            // In the RTL case, this means the _first_ element in the
-            // scrollbox is visible
-            if (this._isRTLScrollbox)
-              scrolledToStart = true;
-            else
-              scrolledToEnd = true;
+            this.setAttribute("scrolledtoend", "true");
+            this.setAttribute("scrolledtostart", "true");
+            return;
           }
 
-          if (scrolledToEnd)
-            this.setAttribute("scrolledtoend", "true");
-          else
-            this.removeAttribute("scrolledtoend");
+          if (this._scrollButtonUpdatePending) {
+            return;
+          }
+          this._scrollButtonUpdatePending = true;
 
-          if (scrolledToStart)
-            this.setAttribute("scrolledtostart", "true");
-          else
-            this.removeAttribute("scrolledtostart");
+          // Wait until after the next paint to get current layout data from
+          // getBoundsWithoutFlushing.
+          window.requestAnimationFrame(() => {
+            setTimeout(() => {
+              if (!this._startEndProps) {
+                // We've been destroyed in the meantime.
+                return;
+              }
+
+              this._scrollButtonUpdatePending = false;
+
+              let scrolledToStart = false;
+              let scrolledToEnd = false;
+
+              if (this.hasAttribute("notoverflowing")) {
+                scrolledToStart = true;
+                scrolledToEnd = true;
+              } else {
+                let [leftOrTop, rightOrBottom] = this._startEndProps;
+                let leftOrTopEdge = ele => Math.round(this._boundsWithoutFlushing(ele)[leftOrTop]);
+                let rightOrBottomEdge = ele => Math.round(this._boundsWithoutFlushing(ele)[rightOrBottom]);
+
+                let elements = this._getScrollableElements();
+                let [leftOrTopElement, rightOrBottomElement] = [elements[0], elements[elements.length - 1]];
+                if (this._isRTLScrollbox) {
+                  [leftOrTopElement, rightOrBottomElement] = [rightOrBottomElement, leftOrTopElement];
+                }
+
+                if (leftOrTopElement &&
+                    leftOrTopEdge(leftOrTopElement) >= leftOrTopEdge(this.scrollbox)) {
+                  scrolledToStart = !this._isRTLScrollbox;
+                  scrolledToEnd = this._isRTLScrollbox;
+                } else if (rightOrBottomElement &&
+                           rightOrBottomEdge(rightOrBottomElement) <= rightOrBottomEdge(this.scrollbox)) {
+                  scrolledToStart = this._isRTLScrollbox;
+                  scrolledToEnd = !this._isRTLScrollbox;
+                }
+              }
+
+              if (scrolledToEnd) {
+                this.setAttribute("scrolledtoend", "true");
+              } else {
+                this.removeAttribute("scrolledtoend");
+              }
+
+              if (scrolledToStart) {
+                this.setAttribute("scrolledtostart", "true");
+              } else {
+                this.removeAttribute("scrolledtostart");
+              }
+            }, 0);
+          });
         ]]></body>
       </method>
+
+      <field name="_isScrolling">false</field>
+      <field name="_destination">0</field>
+      <field name="_direction">0</field>
     </implementation>
 
     <handlers>
       <handler event="wheel"><![CDATA[
+        // Don't consume the event if we can't scroll.
+        if (this.hasAttribute("notoverflowing")) {
+          return;
+        }
+
         let doScroll = false;
-        let useSmoothScroll = event.deltaMode != event.DOM_DELTA_PIXEL && this.smoothScroll;
+        let instant;
         let scrollAmount = 0;
         if (this.orient == "vertical") {
           doScroll = true;
@@ -684,12 +646,14 @@
 
           if (this._prevMouseScrolls.every(prev => prev == isVertical)) {
             doScroll = true;
-            if (event.deltaMode == event.DOM_DELTA_PIXEL)
+            if (event.deltaMode == event.DOM_DELTA_PIXEL) {
               scrollAmount = scrollByDelta;
-            else if (event.deltaMode == event.DOM_DELTA_PAGE)
+              instant = true;
+            } else if (event.deltaMode == event.DOM_DELTA_PAGE) {
               scrollAmount = scrollByDelta * this.scrollClientSize;
-            else
+            } else {
               scrollAmount = scrollByDelta * this.lineScrollAmount;
+            }
           }
 
           if (this._prevMouseScrolls.length > 1)
@@ -698,10 +662,18 @@
         }
 
         if (doScroll) {
-          if (useSmoothScroll)
-            this._smoothScrollByPixels(scrollAmount);
-          else
-            this.scrollByPixels(scrollAmount);
+          let direction = scrollAmount < 0 ? -1 : 1;
+          let startPos = this.scrollPosition;
+
+          if (!this._isScrolling || this._direction != direction) {
+            this._destination = startPos + scrollAmount;
+            this._direction = direction;
+          } else {
+            // We were already in the process of scrolling in this direction
+            this._destination = this._destination + scrollAmount;
+            scrollAmount = this._destination - startPos;
+          }
+          this.scrollByPixels(scrollAmount, instant);
         }
 
         event.stopPropagation();
@@ -731,7 +703,7 @@
                 : event.touches[0].screenX);
           var delta = this._touchStart - touchPoint;
           if (Math.abs(delta) > 0) {
-            this.scrollByPixels(delta);
+            this.scrollByPixels(delta, true);
             this._touchStart = touchPoint;
           }
           event.preventDefault();
@@ -743,9 +715,13 @@
       ]]></handler>
 
       <handler event="underflow" phase="capturing"><![CDATA[
-        // filter underflow events which were dispatched on nested scrollboxes
-        if (event.target != this)
+        // Ignore underflow events:
+        // - from nested scrollable elements
+        // - corresponding to an overflow event that we ignored
+        if (event.target != this ||
+            this.hasAttribute("notoverflowing")) {
           return;
+        }
 
         // Ignore events that doesn't match our orientation.
         // Scrollport event orientation:
@@ -761,24 +737,15 @@
         }
 
         this.setAttribute("notoverflowing", "true");
-
-        try {
-          // See bug 341047 and comments in overflow handler as to why
-          // try..catch is needed here
-          this._updateScrollButtonsDisabledState();
-
-          let childNodes = this._getScrollableElements();
-          if (childNodes && childNodes.length)
-            this.ensureElementIsVisible(childNodes[0], false);
-        } catch (e) {
-          this.removeAttribute("notoverflowing");
-        }
+        this._updateScrollButtonsDisabledState();
       ]]></handler>
 
       <handler event="overflow" phase="capturing"><![CDATA[
-        // filter underflow events which were dispatched on nested scrollboxes
-        if (event.target != this)
+        // Ignore overflow events:
+        // - from nested scrollable elements
+        if (event.target != this) {
           return;
+        }
 
         // Ignore events that doesn't match our orientation.
         // Scrollport event orientation:
@@ -794,225 +761,19 @@
         }
 
         this.removeAttribute("notoverflowing");
-
-        try {
-          // See bug 341047, the overflow event is dispatched when the
-          // scrollbox already is mostly destroyed. This causes some code in
-          // _updateScrollButtonsDisabledState() to throw an error. It also
-          // means that the notoverflowing attribute was removed erroneously,
-          // as the whole overflow event should not be happening in that case.
-          this._updateScrollButtonsDisabledState();
-        } catch (e) {
-          this.setAttribute("notoverflowing", "true");
-        }
+        this._updateScrollButtonsDisabledState();
       ]]></handler>
 
-      <handler event="scroll" action="this._updateScrollButtonsDisabledState()"/>
+      <handler event="scroll"><![CDATA[
+        this._isScrolling = true;
+        this._updateScrollButtonsDisabledState();
+      ]]></handler>
+
+      <handler event="scrollend"><![CDATA[
+        this._isScrolling = false;
+        this._destination = 0;
+        this._direction = 0;
+      ]]></handler>
     </handlers>
-  </binding>
-
-  <binding id="autorepeatbutton" extends="chrome://global/content/bindings/scrollbox.xml#scrollbox-base">
-    <content repeat="hover">
-      <xul:image class="autorepeatbutton-icon"/>
-    </content>
-  </binding>
-
-  <binding id="arrowscrollbox-clicktoscroll" extends="chrome://global/content/bindings/scrollbox.xml#arrowscrollbox">
-    <content>
-      <xul:toolbarbutton class="scrollbutton-up"
-                         xbl:inherits="orient,collapsed=notoverflowing,disabled=scrolledtostart"
-                         anonid="scrollbutton-up"
-                         onclick="_distanceScroll(event);"
-                         onmousedown="if (event.button == 0) _startScroll(-1);"
-                         onmouseup="if (event.button == 0) _stopScroll();"
-                         onmouseover="_continueScroll(-1);"
-                         onmouseout="_pauseScroll();"/>
-      <xul:spacer class="arrowscrollbox-overflow-start-indicator"
-                  xbl:inherits="collapsed=scrolledtostart"/>
-      <xul:scrollbox class="arrowscrollbox-scrollbox"
-                     anonid="scrollbox"
-                     flex="1"
-                     xbl:inherits="orient,align,pack,dir">
-        <children/>
-      </xul:scrollbox>
-      <xul:spacer class="arrowscrollbox-overflow-end-indicator"
-                  xbl:inherits="collapsed=scrolledtoend"/>
-      <xul:toolbarbutton class="scrollbutton-down"
-                         xbl:inherits="orient,collapsed=notoverflowing,disabled=scrolledtoend"
-                         anonid="scrollbutton-down"
-                         onclick="_distanceScroll(event);"
-                         onmousedown="if (event.button == 0) _startScroll(1);"
-                         onmouseup="if (event.button == 0) _stopScroll();"
-                         onmouseover="_continueScroll(1);"
-                         onmouseout="_pauseScroll();"/>
-    </content>
-    <implementation implements="nsITimerCallback, nsIDOMEventListener">
-      <constructor><![CDATA[
-        try {
-          this._scrollDelay = this._prefBranch
-                                  .getIntPref("toolkit.scrollbox.clickToScroll.scrollDelay");
-        } catch (ex) {
-        }
-      ]]></constructor>
-
-      <destructor><![CDATA[
-        // Release timer to avoid reference cycles.
-        if (this._scrollTimer) {
-          this._scrollTimer.cancel();
-          this._scrollTimer = null;
-        }
-      ]]></destructor>
-
-      <field name="_scrollIndex">0</field>
-      <field name="_scrollDelay">150</field>
-
-      <method name="notify">
-        <parameter name="aTimer"/>
-        <body>
-        <![CDATA[
-          if (!document)
-            aTimer.cancel();
-
-          this.scrollByIndex(this._scrollIndex);
-        ]]>
-        </body>
-      </method>
-
-      <field name="_arrowScrollAnim"><![CDATA[({
-        scrollbox: this,
-        requestHandle: 0, /* 0 indicates there is no pending request */
-        start: function arrowSmoothScroll_start() {
-          this.lastFrameTime = window.performance.now();
-          if (!this.requestHandle)
-            this.requestHandle = window.requestAnimationFrame(this.sample.bind(this));
-        },
-        stop: function arrowSmoothScroll_stop() {
-          window.cancelAnimationFrame(this.requestHandle);
-          this.requestHandle = 0;
-        },
-        sample: function arrowSmoothScroll_handleEvent(timeStamp) {
-          const scrollIndex = this.scrollbox._scrollIndex;
-          const timePassed = timeStamp - this.lastFrameTime;
-          this.lastFrameTime = timeStamp;
-
-          const scrollDelta = 0.5 * timePassed * scrollIndex;
-          this.scrollbox.scrollPosition += scrollDelta;
-
-          this.requestHandle = window.requestAnimationFrame(this.sample.bind(this));
-        }
-      })]]></field>
-
-      <method name="_startScroll">
-        <parameter name="index"/>
-        <body><![CDATA[
-          if (this._isRTLScrollbox)
-            index *= -1;
-          this._scrollIndex = index;
-          this._mousedown = true;
-          if (this.smoothScroll) {
-            this._arrowScrollAnim.start();
-            return;
-          }
-
-          if (!this._scrollTimer)
-            this._scrollTimer =
-              Components.classes["@mozilla.org/timer;1"]
-                        .createInstance(Components.interfaces.nsITimer);
-          else
-            this._scrollTimer.cancel();
-
-          this._scrollTimer.initWithCallback(this, this._scrollDelay,
-                                             this._scrollTimer.TYPE_REPEATING_SLACK);
-          this.notify(this._scrollTimer);
-        ]]>
-        </body>
-      </method>
-
-      <method name="_stopScroll">
-        <body><![CDATA[
-          if (this._scrollTimer)
-            this._scrollTimer.cancel();
-          this._mousedown = false;
-          if (!this._scrollIndex || !this.smoothScroll)
-            return;
-
-          this.scrollByIndex(this._scrollIndex);
-          this._scrollIndex = 0;
-          this._arrowScrollAnim.stop();
-        ]]></body>
-      </method>
-
-      <method name="_pauseScroll">
-        <body><![CDATA[
-          if (this._mousedown) {
-            this._stopScroll();
-            this._mousedown = true;
-            document.addEventListener("mouseup", this);
-            document.addEventListener("blur", this, true);
-          }
-        ]]></body>
-      </method>
-
-      <method name="_continueScroll">
-        <parameter name="index"/>
-        <body><![CDATA[
-          if (this._mousedown)
-            this._startScroll(index);
-        ]]></body>
-      </method>
-
-      <method name="handleEvent">
-        <parameter name="aEvent"/>
-        <body><![CDATA[
-          if (aEvent.type == "mouseup" ||
-              aEvent.type == "blur" && aEvent.target == document) {
-            this._mousedown = false;
-            document.removeEventListener("mouseup", this);
-            document.removeEventListener("blur", this, true);
-          }
-        ]]></body>
-      </method>
-
-      <method name="_distanceScroll">
-        <parameter name="aEvent"/>
-        <body><![CDATA[
-          if (aEvent.detail < 2 || aEvent.detail > 3)
-            return;
-
-          var scrollBack = (aEvent.originalTarget == this._scrollButtonUp);
-          var scrollLeftOrUp = this._isRTLScrollbox ? !scrollBack : scrollBack;
-          var targetElement;
-
-          if (aEvent.detail == 2) {
-            // scroll by the size of the scrollbox
-            let [start, end] = this._startEndProps;
-            let x;
-            if (scrollLeftOrUp)
-              x = this.scrollClientRect[start] - this.scrollClientSize;
-            else
-              x = this.scrollClientRect[end] + this.scrollClientSize;
-            targetElement = this._elementFromPoint(x, scrollLeftOrUp ? -1 : 1);
-
-            // the next partly-hidden element will become fully visible,
-            // so don't scroll too far
-            if (targetElement)
-              targetElement = scrollBack ?
-                              targetElement.nextSibling :
-                              targetElement.previousSibling;
-          }
-
-          if (!targetElement) {
-            // scroll to the first resp. last element
-            let elements = this._getScrollableElements();
-            targetElement = scrollBack ?
-                            elements[0] :
-                            elements[elements.length - 1];
-          }
-
-          this.ensureElementIsVisible(targetElement);
-        ]]></body>
-      </method>
-
-    </implementation>
   </binding>
 </bindings>

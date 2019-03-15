@@ -15,34 +15,33 @@
 namespace mozilla {
 namespace ipc {
 
-class CrashReporterMetadataShmem
-{
+class CrashReporterMetadataShmem {
   typedef mozilla::ipc::Shmem Shmem;
   typedef CrashReporter::AnnotationTable AnnotationTable;
 
-public:
+ public:
   explicit CrashReporterMetadataShmem(const Shmem& aShmem);
   ~CrashReporterMetadataShmem();
 
   // Metadata writers. These must only be called in child processes.
-  void AnnotateCrashReport(const nsCString& aKey, const nsCString& aData);
+  void AnnotateCrashReport(CrashReporter::Annotation aKey,
+                           const nsCString& aData);
   void AppendAppNotes(const nsCString& aData);
 
-#ifdef MOZ_CRASHREPORTER
-  static void ReadAppNotes(const Shmem& aShmem, CrashReporter::AnnotationTable* aNotes);
-#endif
+  static void ReadAppNotes(const Shmem& aShmem,
+                           CrashReporter::AnnotationTable& aNotes);
 
-private:
+ private:
   void SyncNotesToShmem();
 
-private:
+ private:
   Shmem mShmem;
 
-  AnnotationTable mNotes;
+  AnnotationTable mAnnotations;
   nsCString mAppNotes;
 };
 
-} // namespace ipc
-} // namespace mozilla
+}  // namespace ipc
+}  // namespace mozilla
 
-#endif // mozilla_ipc_CrashReporterMetadataShmem_h
+#endif  // mozilla_ipc_CrashReporterMetadataShmem_h

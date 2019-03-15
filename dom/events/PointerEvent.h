@@ -17,49 +17,58 @@ class nsPresContext;
 namespace mozilla {
 namespace dom {
 
-class PointerEvent : public MouseEvent
-{
-public:
-  PointerEvent(EventTarget* aOwner,
-               nsPresContext* aPresContext,
+struct PointerEventInit;
+
+class PointerEvent : public MouseEvent {
+ public:
+  PointerEvent(EventTarget* aOwner, nsPresContext* aPresContext,
                WidgetPointerEvent* aEvent);
 
-  virtual JSObject* WrapObjectInternal(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override
-  {
-    return PointerEventBinding::Wrap(aCx, this, aGivenProto);
-  }
+  NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(PointerEvent, MouseEvent)
 
-  static already_AddRefed<PointerEvent>
-  Constructor(const GlobalObject& aGlobal,
-              const nsAString& aType,
-              const PointerEventInit& aParam,
-              ErrorResult& aRv);
+  virtual JSObject* WrapObjectInternal(
+      JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
-  static already_AddRefed<PointerEvent>
-  Constructor(EventTarget* aOwner,
-              const nsAString& aType,
-              const PointerEventInit& aParam);
+  static already_AddRefed<PointerEvent> Constructor(
+      const GlobalObject& aGlobal, const nsAString& aType,
+      const PointerEventInit& aParam, ErrorResult& aRv);
 
-  int32_t PointerId();
-  int32_t Width();
-  int32_t Height();
-  float Pressure();
-  float TangentialPressure();
-  int32_t TiltX();
-  int32_t TiltY();
-  int32_t Twist();
+  static already_AddRefed<PointerEvent> Constructor(
+      EventTarget* aOwner, const nsAString& aType,
+      const PointerEventInit& aParam);
+
+  int32_t PointerId(CallerType aCallerType);
+  int32_t Width(CallerType aCallerType);
+  int32_t Height(CallerType aCallerType);
+  float Pressure(CallerType aCallerType);
+  float TangentialPressure(CallerType aCallerType);
+  int32_t TiltX(CallerType aCallerType);
+  int32_t TiltY(CallerType aCallerType);
+  int32_t Twist(CallerType aCallerType);
   bool IsPrimary();
-  void GetPointerType(nsAString& aPointerType);
+  void GetPointerType(nsAString& aPointerType, CallerType aCallerType);
+  void GetCoalescedEvents(nsTArray<RefPtr<PointerEvent>>& aPointerEvents);
+
+ protected:
+  ~PointerEvent() {}
+
+ private:
+  // This method returns the boolean to indicate whether spoofing pointer
+  // event for fingerprinting resistance.
+  bool ShouldResistFingerprinting(CallerType aCallerType);
+
+  nsTArray<RefPtr<PointerEvent>> mCoalescedEvents;
 };
 
-void ConvertPointerTypeToString(uint16_t aPointerTypeSrc, nsAString& aPointerTypeDest);
+void ConvertPointerTypeToString(uint16_t aPointerTypeSrc,
+                                nsAString& aPointerTypeDest);
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-already_AddRefed<mozilla::dom::PointerEvent>
-NS_NewDOMPointerEvent(mozilla::dom::EventTarget* aOwner,
-                      nsPresContext* aPresContext,
-                      mozilla::WidgetPointerEvent* aEvent);
+already_AddRefed<mozilla::dom::PointerEvent> NS_NewDOMPointerEvent(
+    mozilla::dom::EventTarget* aOwner, nsPresContext* aPresContext,
+    mozilla::WidgetPointerEvent* aEvent);
 
-#endif // mozilla_dom_PointerEvent_h_
+#endif  // mozilla_dom_PointerEvent_h_

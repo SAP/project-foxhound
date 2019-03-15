@@ -9,8 +9,7 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/BindingDeclarations.h"
-#include "nsDocument.h"
-#include "nsIDOMXMLDocument.h"
+#include "mozilla/dom/Document.h"
 #include "nsIScriptContext.h"
 
 class nsIURI;
@@ -19,16 +18,14 @@ class nsIChannel;
 namespace mozilla {
 namespace dom {
 
-class XMLDocument : public nsDocument,
-                    public nsIDOMXMLDocument
-{
-public:
+class XMLDocument : public Document {
+ public:
   explicit XMLDocument(const char* aContentType = "application/xml");
 
-  NS_DECL_ISUPPORTS_INHERITED
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(XMLDocument, Document)
 
   virtual void Reset(nsIChannel* aChannel, nsILoadGroup* aLoadGroup) override;
-  virtual void ResetToURI(nsIURI *aURI, nsILoadGroup *aLoadGroup,
+  virtual void ResetToURI(nsIURI* aURI, nsILoadGroup* aLoadGroup,
                           nsIPrincipal* aPrincipal) override;
 
   virtual void SetSuppressParserErrorElement(bool aSuppress) override;
@@ -40,49 +37,36 @@ public:
   virtual nsresult StartDocumentLoad(const char* aCommand, nsIChannel* channel,
                                      nsILoadGroup* aLoadGroup,
                                      nsISupports* aContainer,
-                                     nsIStreamListener **aDocListener,
+                                     nsIStreamListener** aDocListener,
                                      bool aReset = true,
                                      nsIContentSink* aSink = nullptr) override;
 
   virtual void EndLoad() override;
 
-  // nsIDOMXMLDocument
-  NS_DECL_NSIDOMXMLDOCUMENT
-
   virtual nsresult Init() override;
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
-  virtual void DocAddSizeOfExcludingThis(nsWindowSizes* aWindowSizes) const override;
-  // DocAddSizeOfIncludingThis is inherited from nsIDocument.
-
+  virtual void DocAddSizeOfExcludingThis(
+      nsWindowSizes& aWindowSizes) const override;
+  // DocAddSizeOfIncludingThis is inherited from Document.
 
   // WebIDL API
   bool Load(const nsAString& aUrl, CallerType aCallerType, ErrorResult& aRv);
-  bool Async() const
-  {
-    return mAsync;
-  }
-  void SetAsync(bool aAsync)
-  {
-    mAsync = aAsync;
-  }
+  bool Async() const { return mAsync; }
+  void SetAsync(bool aAsync) { mAsync = aAsync; }
 
-  // .location is [Unforgeable], so we have to make it clear that the
-  // nsIDocument version applies to us (it's shadowed by the XPCOM thing on
-  // nsDocument).
-  using nsIDocument::GetLocation;
-  // But then we need to also pull in the nsDocument XPCOM version
-  // because nsXULDocument tries to forward to it.
-  using nsDocument::GetLocation;
+  // .location is [Unforgeable], so we have to make it clear that the Document
+  // version applies to us (it's shadowed by the XPCOM thing on Document).
+  using Document::GetLocation;
 
-protected:
+ protected:
   virtual ~XMLDocument();
 
-  virtual JSObject* WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapNode(JSContext* aCx,
+                             JS::Handle<JSObject*> aGivenProto) override;
 
-  friend nsresult (::NS_NewXMLDocument)(nsIDocument**, bool, bool);
-
+  friend nsresult(::NS_NewXMLDocument)(Document**, bool, bool);
 
   // mChannelIsPending indicates whether we're currently asynchronously loading
   // data from mChannel (via document.load() or normal load).  It's set to true
@@ -105,7 +89,7 @@ protected:
   bool mSuppressParserErrorConsoleMessages;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_XMLDocument_h
+#endif  // mozilla_dom_XMLDocument_h

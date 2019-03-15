@@ -7,22 +7,18 @@
  * markers, as they should ignore any sort of collapsing.
  */
 
-function run_test() {
-  run_next_test();
-}
-
 add_task(function test() {
   const WaterfallUtils = require("devtools/client/performance/modules/logic/waterfall-utils");
 
-  let rootMarkerNode = WaterfallUtils.createParentNode({ name: "(root)" });
+  const rootMarkerNode = WaterfallUtils.createParentNode({ name: "(root)" });
 
   WaterfallUtils.collapseMarkersIntoNode({
     rootNode: rootMarkerNode,
-    markersList: gTestMarkers
+    markersList: gTestMarkers,
   });
 
   function compare(marker, expected) {
-    for (let prop in expected) {
+    for (const prop in expected) {
       if (prop === "submarkers") {
         for (let i = 0; i < expected.submarkers.length; i++) {
           compare(marker.submarkers[i], expected.submarkers[i]);
@@ -61,13 +57,13 @@ const gTestMarkers = [
 const gExpectedOutput = {
   name: "(root)", submarkers: [
     { start: 2, end: 9, name: "Javascript", submarkers: [
-      { start: 3, end: 4, name: "Paint" }
+      { start: 3, end: 4, name: "Paint" },
     ]},
     { start: 5, end: 12, name: "ConsoleTime", causeName: "1" },
 
     { start: 15, end: 21, name: "ConsoleTime", causeName: "2" },
     { start: 18, end: 22, name: "Javascript", submarkers: [
-      { start: 19, end: 20, name: "Paint" }
+      { start: 19, end: 20, name: "Paint" },
     ]},
 
     { start: 30, end: 40, name: "ConsoleTime", causeName: "3" },

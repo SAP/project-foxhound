@@ -8,25 +8,25 @@ const TESTCASE_URI = TEST_BASE_HTTPS + "simple.html";
 
 const NEW_RULE = "body { background-color: purple; }";
 
-add_task(function* () {
-  let { ui } = yield openStyleEditorForURL(TESTCASE_URI);
+add_task(async function() {
+  const { ui } = await openStyleEditorForURL(TESTCASE_URI);
 
   is(ui.editors.length, 2, "correct number of editors");
 
-  let editor = ui.editors[0];
-  yield openEditor(editor);
+  const editor = ui.editors[0];
+  await openEditor(editor);
 
   // Set text twice in a row
-  let styleChanges = listenForStyleChange(editor.styleSheet);
+  const styleChanges = listenForStyleChange(editor.styleSheet);
 
   editor.sourceEditor.setText(NEW_RULE);
   editor.sourceEditor.setText(NEW_RULE + " ");
 
-  yield styleChanges;
+  await styleChanges;
 
-  let rules = yield ContentTask.spawn(gBrowser.selectedBrowser, 0,
-  function* (index) {
-    let sheet = content.document.styleSheets[index];
+  const rules = await ContentTask.spawn(gBrowser.selectedBrowser, 0,
+  async function(index) {
+    const sheet = content.document.styleSheets[index];
     return [...sheet.cssRules].map(rule => rule.cssText);
   });
 
@@ -38,14 +38,14 @@ add_task(function* () {
 /* Helpers */
 
 function openEditor(editor) {
-  let link = editor.summary.querySelector(".stylesheet-name");
+  const link = editor.summary.querySelector(".stylesheet-name");
   link.click();
 
   return editor.getSourceEditor();
 }
 
 function listenForStyleChange(sheet) {
-  let deferred = defer();
-  sheet.on("style-applied", deferred.resolve);
-  return deferred.promise;
+  return new Promise(resolve => {
+    sheet.on("style-applied", resolve);
+  });
 }

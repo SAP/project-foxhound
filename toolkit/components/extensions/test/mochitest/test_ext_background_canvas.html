@@ -3,7 +3,7 @@
 <head>
   <title>Test for background page canvas rendering</title>
   <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/SpawnTask.js"></script>
+  <script type="text/javascript" src="/tests/SimpleTest/AddTask.js"></script>
   <script type="text/javascript" src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
   <script type="text/javascript" src="head.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
@@ -13,7 +13,7 @@
 <script type="text/javascript">
 "use strict";
 
-add_task(function* test_background_canvas() {
+add_task(async function test_background_canvas() {
   function background() {
     try {
       let canvas = document.createElement("canvas");
@@ -37,9 +37,9 @@ add_task(function* test_background_canvas() {
 
   let extension = ExtensionTestUtils.loadExtension(extensionData);
 
-  yield extension.startup();
-  yield extension.awaitFinish("background-canvas");
-  yield extension.unload();
+  await extension.startup();
+  await extension.awaitFinish("background-canvas");
+  await extension.unload();
 });
 </script>
 

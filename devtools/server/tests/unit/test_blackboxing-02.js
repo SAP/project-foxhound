@@ -1,6 +1,10 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+"use strict";
+
+/* eslint-disable no-shadow */
+
 /**
  * Test that we don't hit breakpoints in black boxed sources, and that when we
  * unblack box the source again, the breakpoint hasn't disappeared and we will
@@ -11,16 +15,16 @@ var gDebuggee;
 var gClient;
 var gThreadClient;
 
-function run_test()
-{
+function run_test() {
   initTestDebuggerServer();
   gDebuggee = addTestGlobal("test-black-box");
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
-  gClient.connect().then(function () {
-    attachTestTabAndResume(gClient, "test-black-box", function (aResponse, aTabClient, aThreadClient) {
-      gThreadClient = aThreadClient;
-      test_black_box();
-    });
+  gClient.connect().then(function() {
+    attachTestTabAndResume(gClient, "test-black-box",
+                           function(response, targetFront, threadClient) {
+                             gThreadClient = threadClient;
+                             test_black_box();
+                           });
   });
   do_test_pending();
 }
@@ -28,30 +32,29 @@ function run_test()
 const BLACK_BOXED_URL = "http://example.com/blackboxme.js";
 const SOURCE_URL = "http://example.com/source.js";
 
-function test_black_box()
-{
-  gClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-    gThreadClient.eval(aPacket.frame.actor, "doStuff", function (aResponse) {
-      gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-        let obj = gThreadClient.pauseGrip(aPacket.why.frameFinished.return);
+function test_black_box() {
+  gClient.addOneTimeListener("paused", function(event, packet) {
+    gThreadClient.eval(packet.frame.actor, "doStuff", function(response) {
+      gThreadClient.addOneTimeListener("paused", function(event, packet) {
+        const obj = gThreadClient.pauseGrip(packet.why.frameFinished.return);
         obj.getDefinitionSite(runWithSource);
       });
     });
 
-    function runWithSource(aPacket) {
-      let source = gThreadClient.source(aPacket.source);
+    function runWithSource(packet) {
+      const source = gThreadClient.source(packet.source);
       source.setBreakpoint({
-        line: 2
-      }, function (aResponse) {
-        do_check_true(!aResponse.error, "Should be able to set breakpoint.");
+        line: 2,
+      }).then(function() {
         gThreadClient.resume(test_black_box_breakpoint);
       });
     }
   });
 
-  Components.utils.evalInSandbox(
+  /* eslint-disable no-multi-spaces, no-undef */
+  Cu.evalInSandbox(
     "" + function doStuff(k) { // line 1
-      let arg = 15;            // line 2 - Break here
+      const arg = 15;            // line 2 - Break here
       k(arg);                  // line 3
     },                         // line 4
     gDebuggee,
@@ -60,10 +63,10 @@ function test_black_box()
     1
   );
 
-  Components.utils.evalInSandbox(
+  Cu.evalInSandbox(
     "" + function runTest() { // line 1
       doStuff(                // line 2
-        function (n) {        // line 3
+        function(n) {        // line 3
           debugger;           // line 5
         }                     // line 6
       );                      // line 7
@@ -74,40 +77,42 @@ function test_black_box()
     SOURCE_URL,
     1
   );
+  /* eslint-enable no-multi-spaces, no-undef */
 }
 
 function test_black_box_breakpoint() {
-  gThreadClient.getSources(function ({error, sources}) {
-    do_check_true(!error, "Should not get an error: " + error);
-    let sourceClient = gThreadClient.source(sources.filter(s => s.url == BLACK_BOXED_URL)[0]);
-    sourceClient.blackBox(function ({error}) {
-      do_check_true(!error, "Should not get an error: " + error);
+  gThreadClient.getSources(async function({error, sources}) {
+    Assert.ok(!error, "Should not get an error: " + error);
+    const sourceClient = gThreadClient.source(
+      sources.filter(s => s.url == BLACK_BOXED_URL)[0]
+    );
 
-      gClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-        do_check_eq(aPacket.why.type, "debuggerStatement",
-                    "We should pass over the breakpoint since the source is black boxed.");
-        gThreadClient.resume(test_unblack_box_breakpoint.bind(null, sourceClient));
-      });
-      gDebuggee.runTest();
-    });
-  });
-}
+    await blackBox(sourceClient);
 
-function test_unblack_box_breakpoint(aSourceClient) {
-  aSourceClient.unblackBox(function ({error}) {
-    do_check_true(!error, "Should not get an error: " + error);
-    gClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-      do_check_eq(aPacket.why.type, "breakpoint",
-                  "We should hit the breakpoint again");
-
-      // We will hit the debugger statement on resume, so do this nastiness to skip over it.
-      gClient.addOneTimeListener(
-        "paused",
-        gThreadClient.resume.bind(
-          gThreadClient,
-          finishClient.bind(null, gClient)));
-      gThreadClient.resume();
+    gClient.addOneTimeListener("paused", function(event, packet) {
+      Assert.equal(
+        packet.why.type, "debuggerStatement",
+        "We should pass over the breakpoint since the source is black boxed.");
+      gThreadClient.resume(test_unblack_box_breakpoint.bind(null, sourceClient));
     });
     gDebuggee.runTest();
   });
+}
+
+async function test_unblack_box_breakpoint(sourceClient) {
+  await unBlackBox(sourceClient);
+  gClient.addOneTimeListener("paused", function(event, packet) {
+    Assert.equal(packet.why.type, "breakpoint",
+                 "We should hit the breakpoint again");
+
+    // We will hit the debugger statement on resume, so do this
+    // nastiness to skip over it.
+    gClient.addOneTimeListener(
+      "paused",
+      gThreadClient.resume.bind(
+        gThreadClient,
+        finishClient.bind(null, gClient)));
+    gThreadClient.resume();
+  });
+  gDebuggee.runTest();
 }

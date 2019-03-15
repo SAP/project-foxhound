@@ -1,5 +1,6 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -7,16 +8,13 @@
 
 #include "gfxAlphaRecovery.h"
 #include "mozilla/Likely.h"
-#include "mozilla/Types.h" // for decltype
+#include "mozilla/Types.h"  // for decltype
 
 namespace mozilla {
 namespace gfx {
 
-bool
-SourceSurfaceVolatileData::Init(const IntSize &aSize,
-                                int32_t aStride,
-                                SurfaceFormat aFormat)
-{
+bool SourceSurfaceVolatileData::Init(const IntSize& aSize, int32_t aStride,
+                                     SurfaceFormat aFormat) {
   mSize = aSize;
   mStride = aStride;
   mFormat = aFormat;
@@ -31,22 +29,24 @@ SourceSurfaceVolatileData::Init(const IntSize &aSize,
   return true;
 }
 
-void
-SourceSurfaceVolatileData::GuaranteePersistance()
-{
+void SourceSurfaceVolatileData::GuaranteePersistance() {
   MOZ_ASSERT_UNREACHABLE("Should use SourceSurfaceRawData wrapper!");
 }
 
-void
-SourceSurfaceVolatileData::AddSizeOfExcludingThis(MallocSizeOf aMallocSizeOf,
-                                                  size_t& aHeapSizeOut,
-                                                  size_t& aNonHeapSizeOut) const
-{
+void SourceSurfaceVolatileData::AddSizeOfExcludingThis(
+    MallocSizeOf aMallocSizeOf, size_t& aHeapSizeOut, size_t& aNonHeapSizeOut,
+    size_t& aExtHandlesOut, uint64_t& aExtIdOut) const {
   if (mVBuf) {
     aHeapSizeOut += mVBuf->HeapSizeOfExcludingThis(aMallocSizeOf);
     aNonHeapSizeOut += mVBuf->NonHeapSizeOfExcludingThis();
+#ifdef ANDROID
+    if (!mVBuf->OnHeap()) {
+      // Volatile buffers keep a file handle open on Android.
+      ++aExtHandlesOut;
+    }
+#endif
   }
 }
 
-} // namespace gfx
-} // namespace mozilla
+}  // namespace gfx
+}  // namespace mozilla

@@ -5,18 +5,15 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["MediaPlayerApp"];
+var EXPORTED_SYMBOLS = ["MediaPlayerApp"];
 
-const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
-
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Messaging.jsm");
-var log = Cu.import("resource://gre/modules/AndroidLog.jsm", {}).AndroidLog.d.bind(null, "MediaPlayerApp");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Messaging.jsm");
 
 // Helper function for sending commands to Java.
 function send(type, data, callback) {
   let msg = {
-    type: type
+    type: type,
   };
 
   for (let i in data) {
@@ -59,7 +56,7 @@ MediaPlayerApp.prototype = {
     }
   },
 
-}
+};
 
 /* RemoteMedia provides a proxy to a native media player session.
  */
@@ -68,9 +65,9 @@ function RemoteMedia(id, listener) {
   this._listener = listener;
 
   if ("onRemoteMediaStart" in this._listener) {
-    Services.tm.mainThread.dispatch((function() {
+    Services.tm.dispatchToMainThread(() => {
       this._listener.onRemoteMediaStart(this);
-    }).bind(this), Ci.nsIThread.DISPATCH_NORMAL);
+    });
   }
 }
 
@@ -126,14 +123,14 @@ RemoteMedia.prototype = {
         "MediaPlayer:Paused",
       ]);
       this._status = "started";
-    })
+    });
   },
 
   get status() {
     return this._status;
   },
 
-  onEvent: function (event, message, callback) {
+  onEvent: function(event, message, callback) {
     switch (event) {
       case "MediaPlayer:Playing":
         if (this._status !== "started") {
@@ -157,5 +154,5 @@ RemoteMedia.prototype = {
   _send: function(msg, data, callback) {
     data.id = this._id;
     send(msg, data, callback);
-  }
-}
+  },
+};

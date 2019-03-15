@@ -4,7 +4,7 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
- 
+
 #ifndef SKSL_ASTEXPRESSION
 #define SKSL_ASTEXPRESSION
 
@@ -13,7 +13,7 @@
 namespace SkSL {
 
 /**
- * Abstract supertype of all expressions. 
+ * Abstract supertype of all expressions.
  */
 struct ASTExpression : public ASTPositionNode {
     enum Kind {
@@ -27,8 +27,8 @@ struct ASTExpression : public ASTPositionNode {
         kTernary_Kind
     };
 
-    ASTExpression(Position position, Kind kind)
-    : INHERITED(position)
+    ASTExpression(int offset, Kind kind)
+    : INHERITED(offset)
     , fKind(kind) {}
 
     const Kind fKind;

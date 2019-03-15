@@ -7,9 +7,6 @@
 <Url type="application/x-suggestions+json" method="GET" template="http://suggestqueries.google.com/complete/search?output=firefox&amp;client=firefox&amp;hl={moz:locale}&amp;q={searchTerms}"/>
 <Url type="text/html" method="GET" template="http://www.google.com/search" resultdomain="google.com">
   <Param name="q" value="{searchTerms}"/>
-  <Param name="ie" value="utf-8"/>
-  <Param name="oe" value="utf-8"/>
-  <Param name="aq" value="t"/>
   <!-- Dynamic parameters -->
   <MozParam name="channel" condition="purpose" purpose="contextmenu" value="rcs"/>
   <MozParam name="channel" condition="purpose" purpose="keyword" value="fflb"/>

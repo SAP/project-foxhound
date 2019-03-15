@@ -10,28 +10,20 @@
 
 #include "nsHTMLCSSStyleSheet.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/css/StyleRule.h"
-#include "mozilla/DeclarationBlockInlines.h"
-#include "nsIStyleRuleProcessor.h"
+#include "mozilla/DeclarationBlock.h"
 #include "nsPresContext.h"
-#include "nsRuleWalker.h"
-#include "nsRuleProcessorData.h"
 #include "mozilla/dom/Element.h"
 #include "nsAttrValue.h"
 #include "nsAttrValueInlines.h"
 #include "nsCSSPseudoElements.h"
 #include "mozilla/RestyleManager.h"
-#include "mozilla/RestyleManagerInlines.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
 
-nsHTMLCSSStyleSheet::nsHTMLCSSStyleSheet()
-{
-}
+nsHTMLCSSStyleSheet::nsHTMLCSSStyleSheet() {}
 
-nsHTMLCSSStyleSheet::~nsHTMLCSSStyleSheet()
-{
+nsHTMLCSSStyleSheet::~nsHTMLCSSStyleSheet() {
   // We may go away before all of our cached style attributes do,
   // so clean up any that are left.
   for (auto iter = mCachedStyleAttrs.Iter(); !iter.Done(); iter.Next()) {
@@ -51,157 +43,13 @@ nsHTMLCSSStyleSheet::~nsHTMLCSSStyleSheet()
   }
 }
 
-NS_IMPL_ISUPPORTS(nsHTMLCSSStyleSheet, nsIStyleRuleProcessor)
-
-/* virtual */ void
-nsHTMLCSSStyleSheet::RulesMatching(ElementRuleProcessorData* aData)
-{
-  ElementRulesMatching(aData->mPresContext, aData->mElement,
-                       aData->mRuleWalker);
-}
-
-void
-nsHTMLCSSStyleSheet::ElementRulesMatching(nsPresContext* aPresContext,
-                                          Element* aElement,
-                                          nsRuleWalker* aRuleWalker)
-{
-  // just get the one and only style rule from the content's STYLE attribute
-  DeclarationBlock* declaration = aElement->GetInlineStyleDeclaration();
-  if (declaration) {
-    declaration->SetImmutable();
-    aRuleWalker->Forward(declaration->AsGecko());
-  }
-
-  declaration = aElement->GetSMILOverrideStyleDeclaration();
-  if (declaration) {
-    MOZ_ASSERT(aPresContext->RestyleManager()->IsGecko(),
-               "stylo: ElementRulesMatching must not be called when we have "
-               "a Servo-backed style system");
-    GeckoRestyleManager* restyleManager =
-      aPresContext->RestyleManager()->AsGecko();
-    if (!restyleManager->SkipAnimationRules()) {
-      // Animation restyle (or non-restyle traversal of rules)
-      // Now we can walk SMIL overrride style, without triggering transitions.
-      declaration->SetImmutable();
-      aRuleWalker->Forward(declaration->AsGecko());
-    }
-  }
-}
-
-void
-nsHTMLCSSStyleSheet::PseudoElementRulesMatching(Element* aPseudoElement,
-                                                CSSPseudoElementType
-                                                  aPseudoType,
-                                                nsRuleWalker* aRuleWalker)
-{
-  MOZ_ASSERT(nsCSSPseudoElements::
-               PseudoElementSupportsStyleAttribute(aPseudoType));
-  MOZ_ASSERT(aPseudoElement);
-
-  // just get the one and only style rule from the content's STYLE attribute
-  DeclarationBlock* declaration = aPseudoElement->GetInlineStyleDeclaration();
-  if (declaration) {
-    declaration->SetImmutable();
-    aRuleWalker->Forward(declaration->AsGecko());
-  }
-}
-
-/* virtual */ void
-nsHTMLCSSStyleSheet::RulesMatching(PseudoElementRuleProcessorData* aData)
-{
-  if (nsCSSPseudoElements::PseudoElementSupportsStyleAttribute(aData->mPseudoType) &&
-      aData->mPseudoElement) {
-    PseudoElementRulesMatching(aData->mPseudoElement, aData->mPseudoType,
-                               aData->mRuleWalker);
-  }
-}
-
-/* virtual */ void
-nsHTMLCSSStyleSheet::RulesMatching(AnonBoxRuleProcessorData* aData)
-{
-}
-
-#ifdef MOZ_XUL
-/* virtual */ void
-nsHTMLCSSStyleSheet::RulesMatching(XULTreeRuleProcessorData* aData)
-{
-}
-#endif
-
-// Test if style is dependent on content state
-/* virtual */ nsRestyleHint
-nsHTMLCSSStyleSheet::HasStateDependentStyle(StateRuleProcessorData* aData)
-{
-  return nsRestyleHint(0);
-}
-
-/* virtual */ nsRestyleHint
-nsHTMLCSSStyleSheet::HasStateDependentStyle(PseudoElementStateRuleProcessorData* aData)
-{
-  return nsRestyleHint(0);
-}
-
-/* virtual */ bool
-nsHTMLCSSStyleSheet::HasDocumentStateDependentStyle(StateRuleProcessorData* aData)
-{
-  return false;
-}
-
-// Test if style is dependent on attribute
-/* virtual */ nsRestyleHint
-nsHTMLCSSStyleSheet::HasAttributeDependentStyle(
-    AttributeRuleProcessorData* aData,
-    RestyleHintData& aRestyleHintDataResult)
-{
-  // Perhaps should check that it's XUL, SVG, (or HTML) namespace, but
-  // it doesn't really matter.
-  if (aData->mAttrHasChanged && aData->mAttribute == nsGkAtoms::style) {
-    return eRestyle_StyleAttribute;
-  }
-
-  return nsRestyleHint(0);
-}
-
-/* virtual */ bool
-nsHTMLCSSStyleSheet::MediumFeaturesChanged(nsPresContext* aPresContext)
-{
-  return false;
-}
-
-/* virtual */ size_t
-nsHTMLCSSStyleSheet::SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
-{
-  // The size of mCachedStyleAttrs's mTable member (a PLDHashTable) is
-  // significant in itself, but more significant is the size of the nsString
-  // members of the nsStringHashKeys.
-  size_t n = 0;
-  n += mCachedStyleAttrs.ShallowSizeOfExcludingThis(aMallocSizeOf);
-  for (auto iter = mCachedStyleAttrs.ConstIter(); !iter.Done(); iter.Next()) {
-    // We don't own the MiscContainers (the hash table values) so we don't
-    // count them. We do care about the size of the nsString members in the
-    // keys though.
-    n += iter.Key().SizeOfExcludingThisIfUnshared(aMallocSizeOf);
-  }
-  return n;
-}
-
-/* virtual */ size_t
-nsHTMLCSSStyleSheet::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
-{
-  return aMallocSizeOf(this) + SizeOfExcludingThis(aMallocSizeOf);
-}
-
-void
-nsHTMLCSSStyleSheet::CacheStyleAttr(const nsAString& aSerialized,
-                                    MiscContainer* aValue)
-{
+void nsHTMLCSSStyleSheet::CacheStyleAttr(const nsAString& aSerialized,
+                                         MiscContainer* aValue) {
   mCachedStyleAttrs.Put(aSerialized, aValue);
 }
 
-void
-nsHTMLCSSStyleSheet::EvictStyleAttr(const nsAString& aSerialized,
-                                    MiscContainer* aValue)
-{
+void nsHTMLCSSStyleSheet::EvictStyleAttr(const nsAString& aSerialized,
+                                         MiscContainer* aValue) {
 #ifdef DEBUG
   {
     NS_ASSERTION(aValue == mCachedStyleAttrs.Get(aSerialized),
@@ -211,8 +59,7 @@ nsHTMLCSSStyleSheet::EvictStyleAttr(const nsAString& aSerialized,
   mCachedStyleAttrs.Remove(aSerialized);
 }
 
-MiscContainer*
-nsHTMLCSSStyleSheet::LookupStyleAttr(const nsAString& aSerialized)
-{
+MiscContainer* nsHTMLCSSStyleSheet::LookupStyleAttr(
+    const nsAString& aSerialized) {
   return mCachedStyleAttrs.Get(aSerialized);
 }

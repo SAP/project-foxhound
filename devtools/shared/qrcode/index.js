@@ -9,13 +9,13 @@ const defer = require("devtools/shared/defer");
 
 // Lazily require encoder and decoder in case only one is needed
 Object.defineProperty(this, "Encoder", {
-  get: () => require("./encoder/index").Encoder
+  get: () => require("./encoder/index").Encoder,
 });
 Object.defineProperty(this, "QRRSBlock", {
-  get: () => require("./encoder/index").QRRSBlock
+  get: () => require("./encoder/index").QRRSBlock,
 });
 Object.defineProperty(this, "QRErrorCorrectLevel", {
-  get: () => require("./encoder/index").QRErrorCorrectLevel
+  get: () => require("./encoder/index").QRErrorCorrectLevel,
 });
 Object.defineProperty(this, "decoder", {
   get: () => {
@@ -25,7 +25,7 @@ Object.defineProperty(this, "decoder", {
     } catch (e) {
       return null;
     }
-  }
+  },
 });
 
 /**
@@ -44,11 +44,11 @@ Object.defineProperty(this, "decoder", {
  *        Quality level: L, M, Q, H
  * @return integer
  */
-exports.findMinimumVersion = function (message, quality) {
-  let msgLength = message.length;
-  let qualityLevel = QRErrorCorrectLevel[quality];
+exports.findMinimumVersion = function(message, quality) {
+  const msgLength = message.length;
+  const qualityLevel = QRErrorCorrectLevel[quality];
   for (let version = 1; version <= 10; version++) {
-    let rsBlocks = QRRSBlock.getRSBlocks(version, qualityLevel);
+    const rsBlocks = QRRSBlock.getRSBlocks(version, qualityLevel);
     let maxLength = rsBlocks.reduce((prev, block) => {
       return prev + block.dataCount;
     }, 0);
@@ -74,10 +74,10 @@ exports.findMinimumVersion = function (message, quality) {
  *   * height: image height
  *   * width:  image width
  */
-exports.encodeToDataURI = function (message, quality, version) {
+exports.encodeToDataURI = function(message, quality, version) {
   quality = quality || "H";
   version = version || exports.findMinimumVersion(message, quality);
-  let encoder = new Encoder(version, quality);
+  const encoder = new Encoder(version, quality);
   encoder.addData(message);
   encoder.make();
   return encoder.createImgData();
@@ -91,11 +91,11 @@ exports.encodeToDataURI = function (message, quality, version) {
  *         The promise will be resolved with a string, which is the data inside
  *         the QR code.
  */
-exports.decodeFromURI = function (URI) {
+exports.decodeFromURI = function(URI) {
   if (!decoder) {
     return promise.reject();
   }
-  let deferred = defer();
+  const deferred = defer();
   decoder.decodeFromURI(URI, deferred.resolve, deferred.reject);
   return deferred.promise;
 };
@@ -107,7 +107,7 @@ exports.decodeFromURI = function (URI) {
  * @return string
  *         The data inside the QR code
  */
-exports.decodeFromCanvas = function (canvas) {
+exports.decodeFromCanvas = function(canvas) {
   if (!decoder) {
     throw new Error("Decoder not available");
   }

@@ -15,23 +15,21 @@ XPIDL_MODULE = 'places'
 
 if CONFIG['MOZ_PLACES']:
     XPIDL_SOURCES += [
-        'mozIAsyncFavicons.idl',
         'mozIAsyncHistory.idl',
-        'mozIAsyncLivemarks.idl',
         'mozIColorAnalyzer.idl',
         'mozIPlacesAutoComplete.idl',
         'mozIPlacesPendingOperation.idl',
         'nsIAnnotationService.idl',
-        'nsIBrowserHistory.idl',
         'nsIFaviconService.idl',
         'nsINavBookmarksService.idl',
         'nsITaggingService.idl',
-        'nsPIPlacesDatabase.idl',
     ]
 
     EXPORTS.mozilla.places = [
         'Database.h',
         'History.h',
+        'INativePlacesEventCallback.h',
+        'Shutdown.h',
     ]
 
     UNIFIED_SOURCES += [
@@ -73,11 +71,11 @@ if CONFIG['MOZ_PLACES']:
         'PlacesSyncUtils.jsm',
         'PlacesTransactions.jsm',
         'PlacesUtils.jsm',
+        'SyncedBookmarksMirror.jsm',
     ]
 
     EXTRA_COMPONENTS += [
         'ColorAnalyzer.js',
-        'nsLivemarkService.js',
         'nsPlacesExpiration.js',
         'nsTaggingService.js',
         'PageIconProtocolHandler.js',
@@ -93,7 +91,7 @@ include('/ipc/chromium/chromium-config.mozbuild')
 with Files('**'):
     BUG_COMPONENT = ('Toolkit', 'Places')
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
 
 JAR_MANIFESTS += ['jar.mn']

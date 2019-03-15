@@ -21,9 +21,9 @@ const { breakpointSpec } = require("devtools/shared/specs/breakpoint");
  *        An array of objects of the form `{ script, offsets }`.
  */
 function setBreakpointAtEntryPoints(actor, entryPoints) {
-  for (let { script, offsets } of entryPoints) {
+  for (const { script, offsets } of entryPoints) {
     actor.addScript(script);
-    for (let offset of offsets) {
+    for (const offset of offsets) {
       script.setBreakpoint(offset, actor);
     }
   }
@@ -36,31 +36,31 @@ exports.setBreakpointAtEntryPoints = setBreakpointAtEntryPoints;
  * responsible for deleting breakpoints, handling breakpoint hits and
  * associating breakpoints with scripts.
  */
-let BreakpointActor = ActorClassWithSpec(breakpointSpec, {
+const BreakpointActor = ActorClassWithSpec(breakpointSpec, {
   /**
    * Create a Breakpoint actor.
    *
    * @param ThreadActor threadActor
    *        The parent thread actor that contains this breakpoint.
-   * @param OriginalLocation originalLocation
-   *        The original location of the breakpoint.
+   * @param GeneratedLocation generatedLocation
+   *        The generated location of the breakpoint.
    */
-  initialize: function (threadActor, originalLocation) {
+  initialize: function(threadActor, generatedLocation) {
     // The set of Debugger.Script instances that this breakpoint has been set
     // upon.
     this.scripts = new Set();
 
     this.threadActor = threadActor;
-    this.originalLocation = originalLocation;
+    this.generatedLocation = generatedLocation;
     this.condition = null;
     this.isPending = true;
   },
 
-  destroy: function () {
+  destroy: function() {
     this.removeScripts();
   },
 
-  hasScript: function (script) {
+  hasScript: function(script) {
     return this.scripts.has(script);
   },
 
@@ -71,7 +71,7 @@ let BreakpointActor = ActorClassWithSpec(breakpointSpec, {
    * @param script Debugger.Script
    *        The new source script on which the breakpoint has been set.
    */
-  addScript: function (script) {
+  addScript: function(script) {
     this.scripts.add(script);
     this.isPending = false;
   },
@@ -79,8 +79,8 @@ let BreakpointActor = ActorClassWithSpec(breakpointSpec, {
   /**
    * Remove the breakpoints from associated scripts and clear the script cache.
    */
-  removeScripts: function () {
-    for (let script of this.scripts) {
+  removeScripts: function() {
+    for (const script of this.scripts) {
       script.clearBreakpoint(this);
     }
     this.scripts.clear();
@@ -100,8 +100,8 @@ let BreakpointActor = ActorClassWithSpec(breakpointSpec, {
    *          - message: string
    *            If the condition throws, this is the thrown message.
    */
-  checkCondition: function (frame) {
-    let completion = frame.eval(this.condition);
+  checkCondition: function(frame) {
+    const completion = frame.eval(this.condition);
     if (completion) {
       if (completion.throw) {
         // The evaluation failed and threw
@@ -118,7 +118,7 @@ let BreakpointActor = ActorClassWithSpec(breakpointSpec, {
         }
         return {
           result: true,
-          message: message
+          message: message,
         };
       } else if (completion.yield) {
         assert(false, "Shouldn't ever get yield completions from an eval");
@@ -136,20 +136,32 @@ let BreakpointActor = ActorClassWithSpec(breakpointSpec, {
    * @param frame Debugger.Frame
    *        The stack frame that contained the breakpoint.
    */
-  hit: function (frame) {
+  hit: function(frame) {
     // Don't pause if we are currently stepping (in or over) or the frame is
     // black-boxed.
-    let generatedLocation = this.threadActor.sources.getFrameLocation(frame);
-    let { originalSourceActor } = this.threadActor.unsafeSynchronize(
-      this.threadActor.sources.getOriginalLocation(generatedLocation));
-    let url = originalSourceActor.url;
+    const {
+      generatedSourceActor,
+      generatedLine,
+      generatedColumn,
+    } = this.threadActor.sources.getFrameLocation(frame);
+    const url = generatedSourceActor.url;
 
-    if (this.threadActor.sources.isBlackBoxed(url)
+    if (this.threadActor.sources.isBlackBoxed(url, generatedLine, generatedColumn)
+        || this.threadActor.skipBreakpoints
         || frame.onStep) {
       return undefined;
     }
 
-    let reason = {};
+    // If we're trying to pop this frame, and we see a breakpoint at
+    // the spot at which popping started, ignore it.  See bug 970469.
+    const locationAtFinish = frame.onPop && frame.onPop.generatedLocation;
+    if (locationAtFinish &&
+        locationAtFinish.generatedLine === generatedLine &&
+        locationAtFinish.generatedColumn === generatedColumn) {
+      return undefined;
+    }
+
+    const reason = {};
 
     if (this.threadActor._hiddenBreakpoints.has(this.actorID)) {
       reason.type = "pauseOnDOMEvents";
@@ -158,7 +170,7 @@ let BreakpointActor = ActorClassWithSpec(breakpointSpec, {
       // TODO: add the rest of the breakpoints on that line (bug 676602).
       reason.actors = [ this.actorID ];
     } else {
-      let { result, message } = this.checkCondition(frame);
+      const { result, message } = this.checkCondition(frame);
 
       if (result) {
         if (!message) {
@@ -178,15 +190,15 @@ let BreakpointActor = ActorClassWithSpec(breakpointSpec, {
   /**
    * Handle a protocol request to remove this breakpoint.
    */
-  delete: function () {
+  delete: function() {
     // Remove from the breakpoint store.
-    if (this.originalLocation) {
-      this.threadActor.breakpointActorMap.deleteActor(this.originalLocation);
+    if (this.generatedLocation) {
+      this.threadActor.breakpointActorMap.deleteActor(this.generatedLocation);
     }
     this.threadActor.threadLifetimePool.removeActor(this);
     // Remove the actual breakpoint from the associated scripts.
     this.removeScripts();
-  }
+  },
 });
 
 exports.BreakpointActor = BreakpointActor;

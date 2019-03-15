@@ -8,9 +8,9 @@
 #ifndef SkFixed_DEFINED
 #define SkFixed_DEFINED
 
+#include "SkSafe_math.h"
 #include "SkScalar.h"
-#include "math.h"
-
+#include "SkTo.h"
 #include "SkTypes.h"
 
 /** \file SkFixed.h
@@ -23,6 +23,7 @@
 typedef int32_t             SkFixed;
 #define SK_Fixed1           (1 << 16)
 #define SK_FixedHalf        (1 << 15)
+#define SK_FixedQuarter     (1 << 14)
 #define SK_FixedMax         (0x7FFFFFFF)
 #define SK_FixedMin         (-SK_FixedMax)
 #define SK_FixedPI          (0x3243F)
@@ -30,8 +31,13 @@ typedef int32_t             SkFixed;
 #define SK_FixedTanPIOver8  (0x6A0A)
 #define SK_FixedRoot2Over2  (0xB505)
 
+// NOTE: SkFixedToFloat is exact. SkFloatToFixed seems to lack a rounding step. For all fixed-point
+// values, this version is as accurate as possible for (fixed -> float -> fixed). Rounding reduces
+// accuracy if the intermediate floats are in the range that only holds integers (adding 0.5f to an
+// odd integer then snaps to nearest even). Using double for the rounding math gives maximum
+// accuracy for (float -> fixed -> float), but that's usually overkill.
 #define SkFixedToFloat(x)   ((x) * 1.52587890625e-5f)
-#define SkFloatToFixed(x)   ((SkFixed)((x) * SK_Fixed1))
+#define SkFloatToFixed(x)   sk_float_saturate2int((x) * SK_Fixed1)
 
 #ifdef SK_DEBUG
     static inline SkFixed SkFloatToFixed_Check(float x) {
@@ -69,9 +75,15 @@ typedef int32_t             SkFixed;
 #define SkFixedCeilToInt(x)     (((x) + SK_Fixed1 - 1) >> 16)
 #define SkFixedFloorToInt(x)    ((x) >> 16)
 
-#define SkFixedRoundToFixed(x)  (((x) + SK_FixedHalf) & 0xFFFF0000)
-#define SkFixedCeilToFixed(x)   (((x) + SK_Fixed1 - 1) & 0xFFFF0000)
-#define SkFixedFloorToFixed(x)  ((x) & 0xFFFF0000)
+static inline SkFixed SkFixedRoundToFixed(SkFixed x) {
+    return (x + SK_FixedHalf) & 0xFFFF0000;
+}
+static inline SkFixed SkFixedCeilToFixed(SkFixed x) {
+    return (x + SK_Fixed1 - 1) & 0xFFFF0000;
+}
+static inline SkFixed SkFixedFloorToFixed(SkFixed x) {
+    return x & 0xFFFF0000;
+}
 
 #define SkFixedAbs(x)       SkAbs32(x)
 #define SkFixedAve(a, b)    (((a) + (b)) >> 1)
@@ -80,79 +92,48 @@ typedef int32_t             SkFixed;
 #define SkFixedDiv(numer, denom) \
     SkToS32(SkTPin<int64_t>((SkLeftShift((int64_t)(numer), 16) / (denom)), SK_MinS32, SK_MaxS32))
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////
-// Now look for ASM overrides for our portable versions (should consider putting this in its own file)
-
-inline SkFixed SkFixedMul_longlong(SkFixed a, SkFixed b) {
+static inline SkFixed SkFixedMul(SkFixed a, SkFixed b) {
     return (SkFixed)((int64_t)a * b >> 16);
 }
-#define SkFixedMul(a,b)     SkFixedMul_longlong(a,b)
 
+///////////////////////////////////////////////////////////////////////////////
+// Platform-specific alternatives to our portable versions.
 
-#if defined(SK_CPU_ARM32)
+// The VCVT float-to-fixed instruction is part of the VFPv3 instruction set.
+#if defined(__ARM_VFPV3__)
     /* This guy does not handle NaN or other obscurities, but is faster than
        than (int)(x*65536).  When built on Android with -Os, needs forcing
        to inline or we lose the speed benefit.
     */
     SK_ALWAYS_INLINE SkFixed SkFloatToFixed_arm(float x)
     {
-        int32_t y, z;
-        asm("movs    %1, %3, lsl #1         \n"
-            "mov     %2, #0x8E              \n"
-            "sub     %1, %2, %1, lsr #24    \n"
-            "mov     %2, %3, lsl #8         \n"
-            "orr     %2, %2, #0x80000000    \n"
-            "mov     %1, %2, lsr %1         \n"
-            "it cs                          \n"
-            "rsbcs   %1, %1, #0             \n"
-            : "=r"(x), "=&r"(y), "=&r"(z)
-            : "r"(x)
-            : "cc"
-            );
+        int32_t y;
+        asm("vcvt.s32.f32 %0, %0, #16": "+w"(x));
+        memcpy(&y, &x, sizeof(y));
         return y;
     }
-    inline SkFixed SkFixedMul_arm(SkFixed x, SkFixed y)
-    {
-        int32_t t;
-        asm("smull  %0, %2, %1, %3          \n"
-            "mov    %0, %0, lsr #16         \n"
-            "orr    %0, %0, %2, lsl #16     \n"
-            : "=r"(x), "=&r"(y), "=r"(t)
-            : "r"(x), "1"(y)
-            :
-            );
-        return x;
-    }
-    #undef SkFixedMul
-    #define SkFixedMul(x, y)        SkFixedMul_arm(x, y)
-
     #undef SkFloatToFixed
     #define SkFloatToFixed(x)  SkFloatToFixed_arm(x)
 #endif
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#if SK_SCALAR_IS_FLOAT
-
 #define SkFixedToScalar(x)          SkFixedToFloat(x)
 #define SkScalarToFixed(x)          SkFloatToFixed(x)
-
-#else   // SK_SCALAR_IS_DOUBLE
-
-#define SkFixedToScalar(x)          SkFixedToDouble(x)
-#define SkScalarToFixed(x)          SkDoubleToFixed(x)
-
-#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 
 typedef int64_t SkFixed3232;   // 32.32
 
+#define SkFixed3232Max            SK_MaxS64
+#define SkFixed3232Min            (-SkFixed3232Max)
+
 #define SkIntToFixed3232(x)       (SkLeftShift((SkFixed3232)(x), 32))
 #define SkFixed3232ToInt(x)       ((int)((x) >> 32))
 #define SkFixedToFixed3232(x)     (SkLeftShift((SkFixed3232)(x), 16))
 #define SkFixed3232ToFixed(x)     ((SkFixed)((x) >> 16))
-#define SkFloatToFixed3232(x)     ((SkFixed3232)((x) * (65536.0f * 65536.0f)))
+#define SkFloatToFixed3232(x)     sk_float_saturate2int64((x) * (65536.0f * 65536.0f))
+#define SkFixed3232ToFloat(x)     (x * (1 / (65536.0f * 65536.0f)))
 
 #define SkScalarToFixed3232(x)    SkFloatToFixed3232(x)
 

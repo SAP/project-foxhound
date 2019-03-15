@@ -1,4 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,6 +7,7 @@
 #ifndef mozilla_layers_CheckerboardEvent_h
 #define mozilla_layers_CheckerboardEvent_h
 
+#include "mozilla/DefineEnum.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/TimeStamp.h"
 #include <sstream>
@@ -24,22 +26,22 @@ namespace layers {
  * prioritizing the debugging of some checkerboarding events over others.
  */
 class CheckerboardEvent {
-public:
-  enum RendertraceProperty {
-    Page,
-    PaintedCriticalDisplayPort,
-    PaintedDisplayPort,
-    RequestedDisplayPort,
-    UserVisible,
+ public:
+  // clang-format off
+  MOZ_DEFINE_ENUM_AT_CLASS_SCOPE(
+    RendertraceProperty, (
+      Page,
+      PaintedCriticalDisplayPort,
+      PaintedDisplayPort,
+      RequestedDisplayPort,
+      UserVisible
+  ));
+  // clang-format on
 
-    // sentinel final value
-    MAX_RendertraceProperty
-  };
+  static const char* sDescriptions[sRendertracePropertyCount];
+  static const char* sColors[sRendertracePropertyCount];
 
-  static const char* sDescriptions[MAX_RendertraceProperty];
-  static const char* sColors[MAX_RendertraceProperty];
-
-public:
+ public:
   explicit CheckerboardEvent(bool aRecordTrace);
 
   /**
@@ -89,7 +91,7 @@ public:
    */
   bool RecordFrameInfo(uint32_t aCssPixelsCheckerboarded);
 
-private:
+ private:
   /**
    * Helper method to do stuff when checkeboarding starts.
    */
@@ -103,17 +105,14 @@ private:
    * Helper method to log a rendertrace property and its value to the
    * rendertrace info buffer (mRendertraceInfo).
    */
-  void LogInfo(RendertraceProperty aProperty,
-               const TimeStamp& aTimestamp,
-               const CSSRect& aRect,
-               const std::string& aExtraInfo,
+  void LogInfo(RendertraceProperty aProperty, const TimeStamp& aTimestamp,
+               const CSSRect& aRect, const std::string& aExtraInfo,
                const MonitorAutoLock& aProofOfLock);
 
   /**
    * Helper struct that holds a single rendertrace property value.
    */
-  struct PropertyValue
-  {
+  struct PropertyValue {
     RendertraceProperty mProperty;
     TimeStamp mTimeStamp;
     CSSRect mRect;
@@ -126,9 +125,8 @@ private:
    * A circular buffer that stores the most recent BUFFER_SIZE values of a
    * given property.
    */
-  class PropertyBuffer
-  {
-  public:
+  class PropertyBuffer {
+   public:
     PropertyBuffer();
     /**
      * Add a new value to the buffer, overwriting the oldest one if needed.
@@ -143,7 +141,7 @@ private:
     void Flush(std::vector<PropertyValue>& aOut,
                const MonitorAutoLock& aProofOfLock);
 
-  private:
+   private:
     static const uint32_t BUFFER_SIZE = 5;
 
     /**
@@ -154,7 +152,7 @@ private:
     PropertyValue mValues[BUFFER_SIZE];
   };
 
-private:
+ private:
   /**
    * If true, we should log the various properties during the checkerboard
    * event. If false, we only need to record things we need for telemetry
@@ -207,7 +205,7 @@ private:
    * checkerboarding actually starts, so that we have some data on what
    * was happening before the checkerboarding started.
    */
-  PropertyBuffer mBufferedProperties[MAX_RendertraceProperty];
+  PropertyBuffer mBufferedProperties[sRendertracePropertyCount];
   /**
    * The rendertrace info buffer that gives us info on what was happening
    * during the checkerboard event.
@@ -215,7 +213,7 @@ private:
   std::ostringstream mRendertraceInfo;
 };
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla
 
-#endif // mozilla_layers_CheckerboardEvent_h
+#endif  // mozilla_layers_CheckerboardEvent_h

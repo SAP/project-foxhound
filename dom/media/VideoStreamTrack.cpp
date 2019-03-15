@@ -7,29 +7,26 @@
 
 #include "MediaStreamVideoSink.h"
 #include "MediaStreamGraph.h"
-
-#include "mozilla/dom/VideoStreamTrackBinding.h"
+#include "nsContentUtils.h"
 
 namespace mozilla {
 namespace dom {
 
-JSObject*
-VideoStreamTrack::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return VideoStreamTrackBinding::Wrap(aCx, this, aGivenProto);
-}
-
-void
-VideoStreamTrack::AddVideoOutput(MediaStreamVideoSink* aSink)
-{
+void VideoStreamTrack::AddVideoOutput(MediaStreamVideoSink* aSink) {
   GetOwnedStream()->AddVideoOutput(aSink, mTrackID);
 }
 
-void
-VideoStreamTrack::RemoveVideoOutput(MediaStreamVideoSink* aSink)
-{
+void VideoStreamTrack::RemoveVideoOutput(MediaStreamVideoSink* aSink) {
   GetOwnedStream()->RemoveVideoOutput(aSink, mTrackID);
 }
 
-} // namespace dom
-} // namespace mozilla
+void VideoStreamTrack::GetLabel(nsAString& aLabel, CallerType aCallerType) {
+  if (nsContentUtils::ResistFingerprinting(aCallerType)) {
+    aLabel.AssignLiteral("Internal Camera");
+    return;
+  }
+  MediaStreamTrack::GetLabel(aLabel, aCallerType);
+}
+
+}  // namespace dom
+}  // namespace mozilla

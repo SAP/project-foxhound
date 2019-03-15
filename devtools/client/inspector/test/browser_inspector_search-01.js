@@ -1,7 +1,6 @@
 /* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
-/* eslint no-inline-comments: 0 */
 "use strict";
 
 requestLongerTimeout(2);
@@ -59,32 +58,32 @@ const KEY_STATES = [
   ["VK_RETURN", "p1", false],        // .c1P
 ];
 
-add_task(function* () {
-  let { inspector } = yield openInspectorForURL(TEST_URL);
-  let { searchBox } = inspector;
+add_task(async function() {
+  const { inspector } = await openInspectorForURL(TEST_URL);
+  const { searchBox } = inspector;
 
-  yield selectNode("#b1", inspector);
-  yield focusSearchBoxUsingShortcut(inspector.panelWin);
+  await selectNode("#b1", inspector);
+  await focusSearchBoxUsingShortcut(inspector.panelWin);
 
   let index = 0;
-  for (let [ key, id, isValid ] of KEY_STATES) {
+  for (const [ key, id, isValid ] of KEY_STATES) {
     info(index + ": Pressing key " + key + " to get id " + id + ".");
-    let done = inspector.searchSuggestions.once("processing-done");
+    const done = inspector.searchSuggestions.once("processing-done");
     EventUtils.synthesizeKey(key, {}, inspector.panelWin);
-    yield done;
+    await done;
     info("Got processing-done event");
 
     if (key === "VK_RETURN") {
       info("Waiting for " + (isValid ? "NO " : "") + "results");
-      yield inspector.search.once("search-result");
+      await inspector.search.once("search-result");
     }
 
     info("Waiting for search query to complete");
-    yield inspector.searchSuggestions._lastQuery;
+    await inspector.searchSuggestions._lastQuery;
 
     info(inspector.selection.nodeFront.id + " is selected with text " +
          searchBox.value);
-    let nodeFront = yield getNodeFront("#" + id, inspector);
+    const nodeFront = await getNodeFront("#" + id, inspector);
     is(inspector.selection.nodeFront, nodeFront,
        "Correct node is selected for state " + index);
 

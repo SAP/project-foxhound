@@ -6,49 +6,95 @@ from __future__ import absolute_import, print_function, unicode_literals
 
 import unittest
 
-from ..graph import Graph
-from ..task.docker_image import DockerImageTask
-from ..task.transform import TransformTask
-from ..taskgraph import TaskGraph
+from taskgraph.graph import Graph
+from taskgraph.task import Task
+from taskgraph.taskgraph import TaskGraph
 from mozunit import main
-from taskgraph.util.docker import INDEX_PREFIX
 
 
-class TestTargetTasks(unittest.TestCase):
+class TestTaskGraph(unittest.TestCase):
 
-    def test_from_json(self):
-        task = {
-            "routes": [],
-            "extra": {
-                "imageMeta": {
-                    "contextHash": "<hash>",
-                    "imageName": "<image>",
-                    "level": "1"
-                }
-            }
+    maxDiff = None
+
+    def test_taskgraph_to_json(self):
+        tasks = {
+            'a': Task(kind='test', label='a',
+                      attributes={'attr': 'a-task'},
+                      task={'taskdef': True}),
+            'b': Task(kind='test', label='b',
+                      attributes={},
+                      task={'task': 'def'},
+                      optimization={'seta': None},
+                      # note that this dep is ignored, superseded by that
+                      # from the taskgraph's edges
+                      dependencies={'first': 'a'}),
         }
-        index_paths = ["{}.level-{}.<image>.hash.<hash>".format(INDEX_PREFIX, level)
-                       for level in reversed(range(1, 4))]
+        graph = Graph(nodes=set('ab'), edges={('a', 'b', 'edgelabel')})
+        taskgraph = TaskGraph(tasks, graph)
+
+        res = taskgraph.to_json()
+
+        self.assertEqual(res, {
+            'a': {
+                'kind': 'test',
+                'label': 'a',
+                'attributes': {'attr': 'a-task', 'kind': 'test'},
+                'task': {'taskdef': True},
+                'dependencies': {'edgelabel': 'b'},
+                'optimization': None,
+            },
+            'b': {
+                'kind': 'test',
+                'label': 'b',
+                'attributes': {'kind': 'test'},
+                'task': {'task': 'def'},
+                'dependencies': {},
+                'optimization': {'seta': None},
+            }
+        })
+
+    def test_round_trip(self):
         graph = TaskGraph(tasks={
-            'a': TransformTask(
+            'a': Task(
                 kind='fancy',
-                task={
-                    'label': 'a',
-                    'attributes': {},
-                    'dependencies': {},
-                    'when': {},
-                    'task': {'task': 'def'},
-                }),
-            'b': DockerImageTask(kind='docker-image',
-                                 label='b',
-                                 attributes={},
-                                 task=task,
-                                 index_paths=index_paths),
-        }, graph=Graph(nodes={'a', 'b'}, edges=set()))
+                label='a',
+                attributes={},
+                dependencies={'prereq': 'b'},  # must match edges, below
+                optimization={'seta': None},
+                task={'task': 'def'}),
+            'b': Task(
+                kind='pre',
+                label='b',
+                attributes={},
+                dependencies={},
+                optimization={'seta': None},
+                task={'task': 'def2'}),
+        }, graph=Graph(nodes={'a', 'b'}, edges={('a', 'b', 'prereq')}))
 
         tasks, new_graph = TaskGraph.from_json(graph.to_json())
-        self.assertEqual(graph.tasks['a'], new_graph.tasks['a'])
         self.assertEqual(graph, new_graph)
+
+    simple_graph = TaskGraph(tasks={
+        'a': Task(
+            kind='fancy',
+            label='a',
+            attributes={},
+            dependencies={'prereq': 'b'},  # must match edges, below
+            optimization={'seta': None},
+            task={'task': 'def'}),
+        'b': Task(
+            kind='pre',
+            label='b',
+            attributes={},
+            dependencies={},
+            optimization={'seta': None},
+            task={'task': 'def2'}),
+    }, graph=Graph(nodes={'a', 'b'}, edges={('a', 'b', 'prereq')}))
+
+    def test_contains(self):
+        assert 'a' in self.simple_graph
+        assert 'c' not in self.simple_graph
+
 
 if __name__ == '__main__':
     main()

@@ -2,9 +2,44 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-this.EXPORTED_SYMBOLS = ["PrivateBrowsingUtils"];
+var EXPORTED_SYMBOLS = ["PrivateBrowsingUtils"];
 
-Components.utils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+
+function PrivateBrowsingContentBlockingAllowList() {
+  Services.obs.addObserver(this, "last-pb-context-exited", true);
+}
+
+PrivateBrowsingContentBlockingAllowList.prototype = {
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver, Ci.nsISupportsWeakReference]),
+
+  /**
+   * Add the provided URI to the list of allowed tracking sites.
+   *
+   * @param uri nsIURI
+   *        The URI to add to the list.
+   */
+  addToAllowList(uri) {
+    Services.perms.add(uri, "trackingprotection-pb", Ci.nsIPermissionManager.ALLOW_ACTION,
+                       Ci.nsIPermissionManager.EXPIRE_SESSION);
+  },
+
+  /**
+   * Remove the provided URI from the list of allowed tracking sites.
+   *
+   * @param uri nsIURI
+   *        The URI to remove from the list.
+   */
+  removeFromAllowList(uri) {
+    Services.perms.remove(uri, "trackingprotection-pb");
+  },
+
+  observe(subject, topic, data) {
+    if (topic == "last-pb-context-exited") {
+      Services.perms.removeByType("trackingprotection-pb");
+    }
+  },
+};
 
 const kAutoStartPref = "browser.privatebrowsing.autostart";
 
@@ -12,14 +47,15 @@ const kAutoStartPref = "browser.privatebrowsing.autostart";
 // line for the current session.
 var gTemporaryAutoStartMode = false;
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
+var PrivateBrowsingUtils = {
+  get enabled() {
+    return Services.policies.isAllowed("privatebrowsing");
+  },
 
-this.PrivateBrowsingUtils = {
   // Rather than passing content windows to this function, please use
   // isBrowserPrivate since it works with e10s.
   isWindowPrivate: function pbu_isWindowPrivate(aWindow) {
-    if (!(aWindow instanceof Components.interfaces.nsIDOMChromeWindow)) {
+    if (!aWindow.isChromeWindow) {
       dump("WARNING: content window passed to PrivateBrowsingUtils.isWindowPrivate. " +
            "Use isContentWindowPrivate instead (but only for frame scripts).\n"
            + new Error().stack);
@@ -35,31 +71,32 @@ this.PrivateBrowsingUtils = {
 
   isBrowserPrivate(aBrowser) {
     let chromeWin = aBrowser.ownerGlobal;
-    if (chromeWin.gMultiProcessBrowser) {
+    if (chromeWin.gMultiProcessBrowser || !aBrowser.contentWindow) {
       // In e10s we have to look at the chrome window's private
       // browsing status since the only alternative is to check the
-      // content window, which is in another process.
+      // content window, which is in another process.  If the browser
+      // is lazy or is running in windowless configuration then the
+      // content window doesn't exist.
       return this.isWindowPrivate(chromeWin);
     }
     return this.privacyContextFromWindow(aBrowser.contentWindow).usePrivateBrowsing;
   },
 
   privacyContextFromWindow: function pbu_privacyContextFromWindow(aWindow) {
-    return aWindow.QueryInterface(Ci.nsIInterfaceRequestor)
-                  .getInterface(Ci.nsIWebNavigation)
-                  .QueryInterface(Ci.nsILoadContext);
+    return aWindow.docShell.QueryInterface(Ci.nsILoadContext);
+  },
+
+  get _pbCBAllowList() {
+    delete this._pbCBAllowList;
+    return this._pbCBAllowList = new PrivateBrowsingContentBlockingAllowList();
   },
 
   addToTrackingAllowlist(aURI) {
-    let pbmtpWhitelist = Cc["@mozilla.org/pbm-tp-whitelist;1"]
-                           .getService(Ci.nsIPrivateBrowsingTrackingProtectionWhitelist);
-    pbmtpWhitelist.addToAllowList(aURI);
+    this._pbCBAllowList.addToAllowList(aURI);
   },
 
   removeFromTrackingAllowlist(aURI) {
-    let pbmtpWhitelist = Cc["@mozilla.org/pbm-tp-whitelist;1"]
-                           .getService(Ci.nsIPrivateBrowsingTrackingProtectionWhitelist);
-    pbmtpWhitelist.removeFromAllowList(aURI);
+    this._pbCBAllowList.removeFromAllowList(aURI);
   },
 
   get permanentPrivateBrowsing() {

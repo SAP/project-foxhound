@@ -3,10 +3,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 pref("security.tls.version.min", 1);
-pref("security.tls.version.max", 3);
-pref("security.tls.version.fallback-limit", 3);
+pref("security.tls.version.max", 4);
+pref("security.tls.version.fallback-limit", 4);
 pref("security.tls.insecure_fallback_hosts", "");
 pref("security.tls.enable_0rtt_data", false);
+#ifdef RELEASE_OR_BETA
+pref("security.tls.hello_downgrade_check", false);
+#else
+pref("security.tls.hello_downgrade_check", true);
+#endif
 
 pref("security.ssl.treat_unsafe_negotiation_as_broken", false);
 pref("security.ssl.require_safe_negotiation",  false);
@@ -47,15 +52,37 @@ pref("security.family_safety.mode", 2);
 
 pref("security.enterprise_roots.enabled", false);
 
+// The supported values of this pref are:
+// 0: do not fetch OCSP
+// 1: fetch OCSP for DV and EV certificates
+// 2: fetch OCSP only for EV certificates
 pref("security.OCSP.enabled", 1);
 pref("security.OCSP.require", false);
-pref("security.OCSP.GET.enabled", false);
+#ifdef RELEASE_OR_BETA
+pref("security.OCSP.timeoutMilliseconds.soft", 2000);
+#else
+pref("security.OCSP.timeoutMilliseconds.soft", 1000);
+#endif
+pref("security.OCSP.timeoutMilliseconds.hard", 10000);
 
 pref("security.pki.cert_short_lifetime_in_days", 10);
 // NB: Changes to this pref affect CERT_CHAIN_SHA1_POLICY_STATUS telemetry.
 // See the comment in CertVerifier.cpp.
 // 3 = only allow SHA-1 for certificates issued by an imported root.
 pref("security.pki.sha1_enforcement_level", 3);
+
+// This preference controls what signature algorithms are accepted for signed
+// apps (i.e. add-ons). The number is interpreted as a bit mask with the
+// following semantic:
+// The lowest order bit determines which PKCS#7 algorithms are accepted.
+// xxx_0_: SHA-1 and/or SHA-256 PKCS#7 allowed
+// xxx_1_: SHA-256 PKCS#7 allowed
+// The next two bits determine whether COSE is required and PKCS#7 is allowed
+// x_00_x: COSE disabled, ignore files, PKCS#7 must verify
+// x_01_x: COSE is verified if present, PKCS#7 must verify
+// x_10_x: COSE is required, PKCS#7 must verify if present
+// x_11_x: COSE is required, PKCS#7 disabled (fail when present)
+pref("security.signed_app_signatures.policy", 2);
 
 // security.pki.name_matching_mode controls how the platform matches hostnames
 // to name information in TLS certificates. The possible values are:
@@ -67,11 +94,7 @@ pref("security.pki.sha1_enforcement_level", 3);
 // 2: fall back to the subject common name for certificates valid before 23
 //    August 2015 if necessary
 // 3: only use name information from the subject alternative name extension
-#ifdef RELEASE_OR_BETA
-pref("security.pki.name_matching_mode", 1);
-#else
-pref("security.pki.name_matching_mode", 2);
-#endif
+pref("security.pki.name_matching_mode", 3);
 
 // security.pki.netscape_step_up_policy controls how the platform handles the
 // id-Netscape-stepUp OID in extended key usage extensions of CA certificates.
@@ -90,13 +113,13 @@ pref("security.pki.netscape_step_up_policy", 2);
 // 1: Only collect telemetry. CT qualification checks are not performed.
 pref("security.pki.certificate_transparency.mode", 0);
 
+// Hardware Origin-bound Second Factor Support
 pref("security.webauth.u2f", false);
-pref("security.webauth.u2f_enable_softtoken", false);
-pref("security.webauth.u2f_enable_usbtoken", false);
-
-pref("security.webauth.webauthn", false);
+pref("security.webauth.webauthn", true);
+// Only one of "enable_softtoken" and "enable_usbtoken" can be true
+// at a time.
 pref("security.webauth.webauthn_enable_softtoken", false);
-pref("security.webauth.webauthn_enable_usbtoken", false);
+pref("security.webauth.webauthn_enable_usbtoken", true);
 
 pref("security.ssl.errorReporting.enabled", true);
 pref("security.ssl.errorReporting.url", "https://incoming.telemetry.mozilla.org/submit/sslreports/");
@@ -107,22 +130,32 @@ pref("security.ssl.errorReporting.automatic", false);
 // https://tools.ietf.org/html/rfc7469#section-4.1
 pref("security.cert_pinning.max_max_age_seconds", 5184000);
 
-// HSTS Priming
-// If a request is mixed-content, send an HSTS priming request to attempt to
-// see if it is available over HTTPS.
-#ifdef RELEASE_OR_BETA
-// Don't change the order of evaluation of mixed-content and HSTS upgrades in
-// order to be most compatible with current standards
-pref("security.mixed_content.send_hsts_priming", false);
-pref("security.mixed_content.use_hsts", false);
-#else
-// Change the order of evaluation so HSTS upgrades happen before
-// mixed-content blocking
-pref("security.mixed_content.send_hsts_priming", true);
-pref("security.mixed_content.use_hsts", true);
-#endif
-// Approximately 1 week default cache for HSTS priming failures, in seconds
-pref ("security.mixed_content.hsts_priming_cache_timeout", 604800);
-// Force the channel to timeout in 3 seconds if we have not received
-// expects a time in milliseconds
-pref ("security.mixed_content.hsts_priming_request_timeout", 3000);
+// security.pki.distrust_ca_policy controls what root program distrust policies
+// are enforced at this time:
+// 0: No distrust policies enforced
+// 1: Symantec roots distrusted for certificates issued after cutoff
+// 2: Symantec roots distrusted regardless of date
+// See https://wiki.mozilla.org/CA/Upcoming_Distrust_Actions for more details.
+pref("security.pki.distrust_ca_policy", 2);
+
+// Issuer we use to detect MitM proxies. Set to the issuer of the cert of the
+// Firefox update service. The string format is whatever NSS uses to print a DN.
+// This value is set and cleared automatically.
+pref("security.pki.mitm_canary_issuer", "");
+// Pref to disable the MitM proxy checks.
+pref("security.pki.mitm_canary_issuer.enabled", true);
+
+// It is set to true when a non-built-in root certificate is detected on a
+// Firefox update service's connection.
+// This value is set automatically.
+// The difference between security.pki.mitm_canary_issuer and this pref is that
+// here the root is trusted but not a built-in, whereas for
+// security.pki.mitm_canary_issuer.enabled, the root is not trusted.
+pref("security.pki.mitm_detected", false);
+
+// Intermediate CA Preloading settings
+pref("security.remote_settings.intermediates.enabled", false);
+pref("security.remote_settings.intermediates.bucket", "security-state");
+pref("security.remote_settings.intermediates.collection", "intermediates");
+pref("security.remote_settings.intermediates.checked", 0);
+pref("security.remote_settings.intermediates.signer", "onecrl.content-signature.mozilla.org");

@@ -2,20 +2,12 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-XPCOMUtils.defineLazyGetter(this, "Management", () => {
-  const {Management} = Cu.import("resource://gre/modules/Extension.jsm", {});
-  return Management;
-});
-
-XPCOMUtils.defineLazyModuleGetter(this, "AddonManager",
-                                  "resource://gre/modules/AddonManager.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Preferences",
-                                  "resource://gre/modules/Preferences.jsm");
+ChromeUtils.defineModuleGetter(this, "Preferences",
+                               "resource://gre/modules/Preferences.jsm");
 
 const {
   createAppInfo,
   createTempWebExtensionFile,
-  promiseAddonEvent,
   promiseCompleteAllInstalls,
   promiseFindAddonUpdates,
   promiseShutdownManager,
@@ -27,20 +19,7 @@ AddonTestUtils.init(this);
 // Allow for unsigned addons.
 AddonTestUtils.overrideCertDB();
 
-createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "42");
-
-function awaitEvent(eventName) {
-  return new Promise(resolve => {
-    let listener = (_eventName, ...args) => {
-      if (_eventName === eventName) {
-        Management.off(eventName, listener);
-        resolve(...args);
-      }
-    };
-
-    Management.on(eventName, listener);
-  });
-}
+createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "42", "42");
 
 add_task(async function test_privacy_update() {
   // Create a object to hold the values to which we will initialize the prefs.
@@ -59,7 +38,7 @@ add_task(async function test_privacy_update() {
     Preferences.set(pref, PREFS[pref]);
   }
 
-  do_register_cleanup(() => {
+  registerCleanupFunction(() => {
     // Reset the prefs.
     for (let pref in PREFS) {
       Preferences.reset(pref);
@@ -144,22 +123,16 @@ add_task(async function test_privacy_update() {
   let data = await extension.awaitMessage("privacyData");
   ok(!data.value, "get returns expected value after setting.");
 
-  let addon = await AddonManager.getAddonByID(EXTENSION_ID);
-  equal(addon.version, "1.0", "The installed addon has the expected version.");
+  equal(extension.version, "1.0", "The installed addon has the expected version.");
 
-  let update = await promiseFindAddonUpdates(addon);
+  let update = await promiseFindAddonUpdates(extension.addon);
   let install = update.updateAvailable;
 
-  let promiseInstalled = promiseAddonEvent("onInstalled");
   await promiseCompleteAllInstalls([install]);
 
-  let startupPromise = awaitEvent("ready");
+  await extension.awaitStartup();
 
-  let [updated_addon] = await promiseInstalled;
-  equal(updated_addon.version, "2.0", "The updated addon has the expected version.");
-
-  extension.extension = await startupPromise;
-  extension.attachListeners();
+  equal(extension.version, "2.0", "The updated addon has the expected version.");
 
   extension.sendMessage("get");
   data = await extension.awaitMessage("privacyData");
@@ -173,8 +146,6 @@ add_task(async function test_privacy_update() {
   }
 
   await extension.unload();
-
-  await updated_addon.uninstall();
 
   await promiseShutdownManager();
 });

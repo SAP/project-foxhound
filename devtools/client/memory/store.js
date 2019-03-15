@@ -9,8 +9,8 @@ const createStore = require("../shared/redux/create-store");
 const reducers = require("./reducers");
 const flags = require("devtools/shared/flags");
 
-module.exports = function () {
-  let shouldLog = false;
+module.exports = function() {
+  const shouldLog = false;
   let history;
 
   // If testing, store the action history in an array
@@ -21,9 +21,9 @@ module.exports = function () {
     // shouldLog = true;
   }
 
-  let store = createStore({
+  const store = createStore({
     log: shouldLog,
-    history
+    history,
   })(combineReducers(reducers), {});
 
   if (history) {

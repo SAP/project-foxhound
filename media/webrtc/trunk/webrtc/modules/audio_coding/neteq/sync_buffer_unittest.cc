@@ -8,9 +8,10 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_coding/neteq/sync_buffer.h"
+#include "modules/audio_coding/neteq/sync_buffer.h"
+#include "rtc_base/numerics/safe_conversions.h"
 
-#include "testing/gtest/include/gtest/gtest.h"
+#include "test/gtest.h"
 
 namespace webrtc {
 
@@ -57,7 +58,7 @@ TEST(SyncBuffer, PushBackAndFlush) {
   // Populate |new_data|.
   for (size_t channel = 0; channel < kChannels; ++channel) {
     for (size_t i = 0; i < kNewLen; ++i) {
-      new_data[channel][i] = i;
+      new_data[channel][i] = rtc::checked_cast<int16_t>(i);
     }
   }
   // Push back |new_data| into |sync_buffer|. This operation should pop out
@@ -97,7 +98,7 @@ TEST(SyncBuffer, PushFrontZeros) {
   // Populate |new_data|.
   for (size_t channel = 0; channel < kChannels; ++channel) {
     for (size_t i = 0; i < kNewLen; ++i) {
-      new_data[channel][i] = 1000 + i;
+      new_data[channel][i] = rtc::checked_cast<int16_t>(1000 + i);
     }
   }
   sync_buffer.PushBack(new_data);
@@ -130,7 +131,7 @@ TEST(SyncBuffer, GetNextAudioInterleaved) {
   // Populate |new_data|.
   for (size_t channel = 0; channel < kChannels; ++channel) {
     for (size_t i = 0; i < kNewLen; ++i) {
-      new_data[channel][i] = i;
+      new_data[channel][i] = rtc::checked_cast<int16_t>(i);
     }
   }
   // Push back |new_data| into |sync_buffer|. This operation should pop out
@@ -140,20 +141,29 @@ TEST(SyncBuffer, GetNextAudioInterleaved) {
 
   // Read to interleaved output. Read in two batches, where each read operation
   // should automatically update the |net_index_| in the SyncBuffer.
-  int16_t output[kChannels * kNewLen];
   // Note that |samples_read| is the number of samples read from each channel.
   // That is, the number of samples written to |output| is
   // |samples_read| * |kChannels|.
-  size_t samples_read = sync_buffer.GetNextAudioInterleaved(kNewLen / 2,
-                                                            output);
-  samples_read +=
-      sync_buffer.GetNextAudioInterleaved(kNewLen / 2,
-                                          &output[samples_read * kChannels]);
-  EXPECT_EQ(kNewLen, samples_read);
+  AudioFrame output1;
+  sync_buffer.GetNextAudioInterleaved(kNewLen / 2, &output1);
+  EXPECT_EQ(kChannels, output1.num_channels_);
+  EXPECT_EQ(kNewLen / 2, output1.samples_per_channel_);
+
+  AudioFrame output2;
+  sync_buffer.GetNextAudioInterleaved(kNewLen / 2, &output2);
+  EXPECT_EQ(kChannels, output2.num_channels_);
+  EXPECT_EQ(kNewLen / 2, output2.samples_per_channel_);
 
   // Verify the data.
-  int16_t* output_ptr = output;
-  for (size_t i = 0; i < kNewLen; ++i) {
+  const int16_t* output_ptr = output1.data();
+  for (size_t i = 0; i < kNewLen / 2; ++i) {
+    for (size_t channel = 0; channel < kChannels; ++channel) {
+      EXPECT_EQ(new_data[channel][i], *output_ptr);
+      ++output_ptr;
+    }
+  }
+  output_ptr = output2.data();
+  for (size_t i = kNewLen / 2; i < kNewLen; ++i) {
     for (size_t channel = 0; channel < kChannels; ++channel) {
       EXPECT_EQ(new_data[channel][i], *output_ptr);
       ++output_ptr;

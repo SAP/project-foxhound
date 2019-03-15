@@ -13,33 +13,33 @@ const { startRecording, stopRecording } = require("devtools/client/performance/t
 const { once } = require("devtools/client/performance/test/helpers/event-utils");
 const { setSelectedRecording, getRecordingsCount, getSelectedRecordingIndex } = require("devtools/client/performance/test/helpers/recording-utils");
 
-add_task(function* () {
-  let { panel } = yield initPerformanceInNewTab({
+add_task(async function() {
+  const { panel } = await initPerformanceInNewTab({
     url: SIMPLE_URL,
-    win: window
+    win: window,
   });
 
-  let { EVENTS, PerformanceController } = panel.panelWin;
+  const { EVENTS, PerformanceController } = panel.panelWin;
 
-  yield startRecording(panel);
-  yield stopRecording(panel);
+  await startRecording(panel);
+  await stopRecording(panel);
 
-  yield startRecording(panel);
-  yield stopRecording(panel);
+  await startRecording(panel);
+  await stopRecording(panel);
 
   is(getRecordingsCount(panel), 2,
     "There should be two recordings visible.");
   is(getSelectedRecordingIndex(panel), 1,
     "The second recording item should be selected.");
 
-  let selected = once(PerformanceController, EVENTS.RECORDING_SELECTED);
+  const selected = once(PerformanceController, EVENTS.RECORDING_SELECTED);
   setSelectedRecording(panel, 0);
-  yield selected;
+  await selected;
 
   is(getRecordingsCount(panel), 2,
     "There should still be two recordings visible.");
   is(getSelectedRecordingIndex(panel), 0,
     "The first recording item should be selected.");
 
-  yield teardownToolboxAndRemoveTab(panel);
+  await teardownToolboxAndRemoveTab(panel);
 });

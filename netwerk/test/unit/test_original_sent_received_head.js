@@ -13,8 +13,8 @@
 
 // Note: sets Cc and Ci variables
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpserver.identity.primaryPort;
@@ -39,7 +39,7 @@ add_test(function test_headerChange() {
   if (dbg) { print("============== test_headerChange setup: in"); }
 
   var channel1 = setupChannel(testpath);
-  channel1.loadFlags = Components.interfaces.nsIRequest.LOAD_BYPASS_CACHE;
+  channel1.loadFlags = Ci.nsIRequest.LOAD_BYPASS_CACHE;
 
   // ChannelListener defined in head_channels.js
   channel1.asyncOpen2(new ChannelListener(checkResponse, null));
@@ -51,7 +51,7 @@ add_test(function test_fromCache() {
   if (dbg) { print("============== test_fromCache setup: in"); }
 
   var channel2 = setupChannel(testpath);
-  channel2.loadFlags = Components.interfaces.nsIRequest.LOAD_FROM_CACHE;
+  channel2.loadFlags = Ci.nsIRequest.LOAD_FROM_CACHE;
 
   // ChannelListener defined in head_channels.js
   channel2.asyncOpen2(new ChannelListener(checkResponse, null));
@@ -68,7 +68,7 @@ function setupChannel(path) {
   var chan = NetUtil.newChannel ({
     uri: URL + path,
     loadUsingSystemPrincipal: true
-  }).QueryInterface(Components.interfaces.nsIHttpChannel);
+  }).QueryInterface(Ci.nsIHttpChannel);
   chan.requestMethod = "GET";
   return chan;
 }
@@ -104,52 +104,52 @@ function serverHandler(metadata, response) {
 function checkResponse(request, data, context) {
   if (dbg) { print("============== checkResponse: in"); }
 
-  request.QueryInterface(Components.interfaces.nsIHttpChannel);
-  do_check_eq(request.responseStatus, 200);
-  do_check_eq(request.responseStatusText, "OK");
-  do_check_true(request.requestSucceeded);
+  request.QueryInterface(Ci.nsIHttpChannel);
+  Assert.equal(request.responseStatus, 200);
+  Assert.equal(request.responseStatusText, "OK");
+  Assert.ok(request.requestSucceeded);
 
   // Response header have only one link header.
   var linkHeaderFound = 0;
   var locationHeaderFound = 0;
   request.visitResponseHeaders({
     visitHeader: function visit(aName, aValue) {
-      if (aName == "Link") {
+      if (aName == "link") {
         linkHeaderFound++;
-        do_check_eq(aValue, "value1, value2");
+        Assert.equal(aValue, "value1, value2");
       }
-      if (aName == "Location") {
+      if (aName == "location") {
         locationHeaderFound++;
-        do_check_eq(aValue, "loc");
+        Assert.equal(aValue, "loc");
       }
     }
   });
-  do_check_eq(linkHeaderFound, 1);
-  do_check_eq(locationHeaderFound, 1);
+  Assert.equal(linkHeaderFound, 1);
+  Assert.equal(locationHeaderFound, 1);
 
   // The "original header" still contains 3 link headers.
   var linkOrgHeaderFound = 0;
   var locationOrgHeaderFound = 0;
   request.visitOriginalResponseHeaders({
     visitHeader: function visitOrg(aName, aValue) {
-      if (aName == "Link") {
+      if (aName == "link") {
         if (linkOrgHeaderFound == 0) {
-          do_check_eq(aValue, "");
+          Assert.equal(aValue, "");
         } else if (linkOrgHeaderFound == 1 ) {
-          do_check_eq(aValue, "value1");
+          Assert.equal(aValue, "value1");
         } else {
-          do_check_eq(aValue, "value2");
+          Assert.equal(aValue, "value2");
         }
         linkOrgHeaderFound++;
       }
-      if (aName == "Location") {
+      if (aName == "location") {
           locationOrgHeaderFound++;
-          do_check_eq(aValue, "loc");
+          Assert.equal(aValue, "loc");
       }
     }
   });
-  do_check_eq(linkOrgHeaderFound, 3);
-  do_check_eq(locationOrgHeaderFound, 1);
+  Assert.equal(linkOrgHeaderFound, 3);
+  Assert.equal(locationOrgHeaderFound, 1);
 
   if (dbg) { print("============== Remove headers"); }
   // Remove header.
@@ -168,51 +168,51 @@ function checkResponse(request, data, context) {
       }
     }
   });
-  do_check_false(linkHeaderFound2, "There should be no link header");
-  do_check_false(locationHeaderFound2, "There should be no location headers.");
+  Assert.ok(!linkHeaderFound2, "There should be no link header");
+  Assert.ok(!locationHeaderFound2, "There should be no location headers.");
 
   // The "original header" still contains the empty header.
   var linkOrgHeaderFound2 = 0;
   var locationOrgHeaderFound2 = 0;
   request.visitOriginalResponseHeaders({
     visitHeader: function visitOrg(aName, aValue) {
-      if (aName == "Link") {
+      if (aName == "link") {
         if (linkOrgHeaderFound2 == 0) {
-          do_check_eq(aValue, "");
+          Assert.equal(aValue, "");
         } else if (linkOrgHeaderFound2 == 1 ) {
-          do_check_eq(aValue, "value1");
+          Assert.equal(aValue, "value1");
         } else {
-          do_check_eq(aValue, "value2");
+          Assert.equal(aValue, "value2");
         }
         linkOrgHeaderFound2++;
       }
-      if (aName == "Location") {
+      if (aName == "location") {
         locationOrgHeaderFound2++;
-        do_check_eq(aValue, "loc");
+        Assert.equal(aValue, "loc");
       }
     }
   });
-  do_check_true(linkOrgHeaderFound2 == 3,
-                "Original link header still here.");
-  do_check_true(locationOrgHeaderFound2 == 1,
-                "Original location header still here.");
+  Assert.ok(linkOrgHeaderFound2 == 3,
+            "Original link header still here.");
+  Assert.ok(locationOrgHeaderFound2 == 1,
+            "Original location header still here.");
 
   if (dbg) { print("============== Test GetResponseHeader"); }
   var linkOrgHeaderFound3 = 0;
-  request.getOriginalResponseHeader("Link",{
+  request.getOriginalResponseHeader("link",{
     visitHeader: function visitOrg(aName, aValue) {
       if (linkOrgHeaderFound3 == 0) {
-        do_check_eq(aValue, "");
+        Assert.equal(aValue, "");
       } else if (linkOrgHeaderFound3 == 1 ) {
-        do_check_eq(aValue, "value1");
+        Assert.equal(aValue, "value1");
       } else {
-        do_check_eq(aValue, "value2");
+        Assert.equal(aValue, "value2");
       }
       linkOrgHeaderFound3++;
     }
   });
-  do_check_true(linkOrgHeaderFound2 == 3, 
-                "Original link header still here.");
+  Assert.ok(linkOrgHeaderFound2 == 3, 
+            "Original link header still here.");
 
   if (dbg) { print("============== checkResponse: out"); }
 

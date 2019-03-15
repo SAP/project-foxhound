@@ -14,9 +14,10 @@
  * Pure-virtual common base class for remoting implementations.
  */
 
-class nsRemoteClient
-{
-public:
+class nsRemoteClient {
+ public:
+  virtual ~nsRemoteClient(){};
+
   /**
    * Initializes the client
    */
@@ -50,13 +51,12 @@ public:
    * string functions, so free it with free().
    *
    * @return true if succeeded, false if no running instance was found.
-   * 
+   *
    */
   virtual nsresult SendCommandLine(const char *aProgram, const char *aUsername,
-                                   const char *aProfile,
-                                   int32_t argc, char **argv,
-                                   const char* aDesktopStartupID,
+                                   const char *aProfile, int32_t argc,
+                                   char **argv, const char *aDesktopStartupID,
                                    char **aResponse, bool *aSucceeded) = 0;
 };
 
-#endif // nsRemoteClient_h__
+#endif  // nsRemoteClient_h__

@@ -6,7 +6,7 @@
 
 #include "mozilla/dom/MediaKeyMessageEvent.h"
 #include "mozilla/dom/MediaKeyMessageEventBinding.h"
-#include "js/GCAPI.h"
+#include "js/RootingAPI.h"
 #include "jsfriendapi.h"
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/PrimitiveConversions.h"
@@ -35,38 +35,32 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(MediaKeyMessageEvent, Event)
   mozilla::DropJSObjects(this);
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(MediaKeyMessageEvent)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(MediaKeyMessageEvent)
 NS_INTERFACE_MAP_END_INHERITING(Event)
 
 MediaKeyMessageEvent::MediaKeyMessageEvent(EventTarget* aOwner)
-  : Event(aOwner, nullptr, nullptr)
-{
+    : Event(aOwner, nullptr, nullptr),
+      mMessageType(static_cast<MediaKeyMessageType>(0)) {
   mozilla::HoldJSObjects(this);
 }
 
-MediaKeyMessageEvent::~MediaKeyMessageEvent()
-{
+MediaKeyMessageEvent::~MediaKeyMessageEvent() {
   mMessage = nullptr;
   mozilla::DropJSObjects(this);
 }
 
-MediaKeyMessageEvent*
-MediaKeyMessageEvent::AsMediaKeyMessageEvent()
-{
+MediaKeyMessageEvent* MediaKeyMessageEvent::AsMediaKeyMessageEvent() {
   return this;
 }
 
-JSObject*
-MediaKeyMessageEvent::WrapObjectInternal(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return MediaKeyMessageEventBinding::Wrap(aCx, this, aGivenProto);
+JSObject* MediaKeyMessageEvent::WrapObjectInternal(
+    JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
+  return MediaKeyMessageEvent_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-already_AddRefed<MediaKeyMessageEvent>
-MediaKeyMessageEvent::Constructor(EventTarget* aOwner,
-                                  MediaKeyMessageType aMessageType,
-                                  const nsTArray<uint8_t>& aMessage)
-{
+already_AddRefed<MediaKeyMessageEvent> MediaKeyMessageEvent::Constructor(
+    EventTarget* aOwner, MediaKeyMessageType aMessageType,
+    const nsTArray<uint8_t>& aMessage) {
   RefPtr<MediaKeyMessageEvent> e = new MediaKeyMessageEvent(aOwner);
   e->InitEvent(NS_LITERAL_STRING("message"), false, false);
   e->mMessageType = aMessageType;
@@ -75,20 +69,17 @@ MediaKeyMessageEvent::Constructor(EventTarget* aOwner,
   return e.forget();
 }
 
-already_AddRefed<MediaKeyMessageEvent>
-MediaKeyMessageEvent::Constructor(const GlobalObject& aGlobal,
-                                  const nsAString& aType,
-                                  const MediaKeyMessageEventInit& aEventInitDict,
-                                  ErrorResult& aRv)
-{
+already_AddRefed<MediaKeyMessageEvent> MediaKeyMessageEvent::Constructor(
+    const GlobalObject& aGlobal, const nsAString& aType,
+    const MediaKeyMessageEventInit& aEventInitDict, ErrorResult& aRv) {
   nsCOMPtr<EventTarget> owner = do_QueryInterface(aGlobal.GetAsSupports());
   RefPtr<MediaKeyMessageEvent> e = new MediaKeyMessageEvent(owner);
   bool trusted = e->Init(owner);
   e->InitEvent(aType, aEventInitDict.mBubbles, aEventInitDict.mCancelable);
   aEventInitDict.mMessage.ComputeLengthAndData();
-  e->mMessage = ArrayBuffer::Create(aGlobal.Context(),
-                                    aEventInitDict.mMessage.Length(),
-                                    aEventInitDict.mMessage.Data());
+  e->mMessage =
+      ArrayBuffer::Create(aGlobal.Context(), aEventInitDict.mMessage.Length(),
+                          aEventInitDict.mMessage.Data());
   if (!e->mMessage) {
     aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
     return nullptr;
@@ -99,15 +90,11 @@ MediaKeyMessageEvent::Constructor(const GlobalObject& aGlobal,
   return e.forget();
 }
 
-void
-MediaKeyMessageEvent::GetMessage(JSContext* cx,
-                                 JS::MutableHandle<JSObject*> aMessage,
-                                 ErrorResult& aRv)
-{
+void MediaKeyMessageEvent::GetMessage(JSContext* cx,
+                                      JS::MutableHandle<JSObject*> aMessage,
+                                      ErrorResult& aRv) {
   if (!mMessage) {
-    mMessage = ArrayBuffer::Create(cx,
-                                   this,
-                                   mRawMessage.Length(),
+    mMessage = ArrayBuffer::Create(cx, this, mRawMessage.Length(),
                                    mRawMessage.Elements());
     if (!mMessage) {
       aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
@@ -118,5 +105,5 @@ MediaKeyMessageEvent::GetMessage(JSContext* cx,
   aMessage.set(mMessage);
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

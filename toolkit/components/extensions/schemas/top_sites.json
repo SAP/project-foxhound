@@ -7,7 +7,7 @@
     "namespace": "manifest",
     "types": [
       {
-        "$extend": "Permission",
+        "$extend": "OptionalPermission",
         "choices": [{
           "type": "string",
           "enum": [
@@ -35,6 +35,11 @@
             "type": "string",
             "optional": true,
             "description": "The title of the page."
+          },
+          "favicon": {
+            "type": "string",
+            "optional": true,
+            "description": "Data URL for the favicon, if available."
           }
         }
       }
@@ -46,6 +51,47 @@
         "description": "Gets a list of top sites.",
         "async": "callback",
         "parameters": [
+          {
+            "type": "object",
+            "name": "options",
+            "properties": {
+              "providers": {
+                "type": "array",
+                "items": { "type": "string" },
+                "deprecated": "Please use the other options to tune the results received from topSites.",
+                "default": [],
+                "optional": true
+              },
+              "limit": {
+                "type": "integer",
+                "default": 12,
+                "maximum": 100,
+                "minimum": 1,
+                "optional": true,
+                "description": "The number of top sites to return, defaults to the value used by Firefox"
+              },
+              "onePerDomain": {
+                "type": "boolean",
+                "default": true,
+                "optional": true,
+                "description": "Limit the result to a single top site link per domain"
+              },
+              "includeBlocked": {
+                "type": "boolean",
+                "default": false,
+                "optional": true,
+                "description": "Include sites that the user has blocked from appearing on the Firefox new tab."
+              },
+              "includeFavicon": {
+                "type": "boolean",
+                "default": false,
+                "optional": true,
+                "description": "Include sites favicon if available."
+              }
+            },
+            "default": {},
+            "optional": true
+          },
           {
             "name": "callback",
             "type": "function",

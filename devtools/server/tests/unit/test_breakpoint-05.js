@@ -1,82 +1,62 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+/* eslint-disable no-shadow, max-nested-callbacks */
+
+"use strict";
 
 /**
  * Check that setting a breakpoint in a line without code in a child script
  * will skip forward.
  */
 
-var gDebuggee;
-var gClient;
-var gThreadClient;
-var gCallback;
+add_task(threadClientTest(({ threadClient, debuggee }) => {
+  return new Promise(resolve => {
+    threadClient.addOneTimeListener("paused", async function(event, packet) {
+      const source = await getSourceById(
+        threadClient,
+        packet.frame.where.actor
+      );
+      const location = { line: debuggee.line0 + 3 };
 
-function run_test()
-{
-  run_test_with_server(DebuggerServer, function () {
-    run_test_with_server(WorkerDebuggerServer, do_test_finished);
-  });
-  do_test_pending();
-}
+      source.setBreakpoint(location).then(function([response, bpClient]) {
+        // Check that the breakpoint has properly skipped forward one line.
+        Assert.equal(response.actualLocation.source.actor, source.actor);
+        Assert.equal(response.actualLocation.line, location.line + 1);
 
-function run_test_with_server(aServer, aCallback)
-{
-  gCallback = aCallback;
-  initTestDebuggerServer(aServer);
-  gDebuggee = addTestGlobal("test-stack", aServer);
-  gClient = new DebuggerClient(aServer.connectPipe());
-  gClient.connect().then(function () {
-    attachTestTabAndResume(gClient, "test-stack", function (aResponse, aTabClient, aThreadClient) {
-      gThreadClient = aThreadClient;
-      test_child_skip_breakpoint();
-    });
-  });
-}
+        threadClient.addOneTimeListener("paused", function(event, packet) {
+          // Check the return value.
+          Assert.equal(packet.type, "paused");
+          Assert.equal(packet.frame.where.actor, source.actor);
+          Assert.equal(packet.frame.where.line, location.line + 1);
+          Assert.equal(packet.why.type, "breakpoint");
+          Assert.equal(packet.why.actors[0], bpClient.actor);
+          // Check that the breakpoint worked.
+          Assert.equal(debuggee.a, 1);
+          Assert.equal(debuggee.b, undefined);
 
-function test_child_skip_breakpoint()
-{
-  gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-    let source = gThreadClient.source(aPacket.frame.where.source);
-    let location = { line: gDebuggee.line0 + 3 };
-
-    source.setBreakpoint(location, function (aResponse, bpClient) {
-      // Check that the breakpoint has properly skipped forward one line.
-      do_check_eq(aResponse.actualLocation.source.actor, source.actor);
-      do_check_eq(aResponse.actualLocation.line, location.line + 1);
-
-      gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-        // Check the return value.
-        do_check_eq(aPacket.type, "paused");
-        do_check_eq(aPacket.frame.where.source.actor, source.actor);
-        do_check_eq(aPacket.frame.where.line, location.line + 1);
-        do_check_eq(aPacket.why.type, "breakpoint");
-        do_check_eq(aPacket.why.actors[0], bpClient.actor);
-        // Check that the breakpoint worked.
-        do_check_eq(gDebuggee.a, 1);
-        do_check_eq(gDebuggee.b, undefined);
-
-        // Remove the breakpoint.
-        bpClient.remove(function (aResponse) {
-          gThreadClient.resume(function () {
-            gClient.close().then(gCallback);
+          // Remove the breakpoint.
+          bpClient.remove(function(response) {
+            threadClient.resume(resolve);
           });
         });
+
+        // Continue until the breakpoint is hit.
+        threadClient.resume();
       });
-
-      // Continue until the breakpoint is hit.
-      gThreadClient.resume();
     });
-  });
 
-  Cu.evalInSandbox(
-    "var line0 = Error().lineNumber;\n" +
-    "function foo() {\n" + // line0 + 1
-    "  this.a = 1;\n" +    // line0 + 2
-    "  // A comment.\n" +  // line0 + 3
-    "  this.b = 2;\n" +    // line0 + 4
-    "}\n" +                // line0 + 5
-    "debugger;\n" +        // line0 + 6
-    "foo();\n",            // line0 + 7
-    gDebuggee
-  );
-}
+    /* eslint-disable */
+    Cu.evalInSandbox(
+      "var line0 = Error().lineNumber;\n" +
+      "function foo() {\n" + // line0 + 1
+      "  this.a = 1;\n" +    // line0 + 2
+      "  // A comment.\n" +  // line0 + 3
+      "  this.b = 2;\n" +    // line0 + 4
+      "}\n" +                // line0 + 5
+      "debugger;\n" +        // line0 + 6
+      "foo();\n",            // line0 + 7
+      debuggee
+    );
+    /* eslint-enable */
+  });
+}));

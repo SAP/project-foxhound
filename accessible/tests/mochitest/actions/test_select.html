@@ -21,9 +21,8 @@
           src="../actions.js"></script>
 
   <script type="application/javascript">
-    //gA11yEventDumpToConsole = true; // debugging
-    function doTest()
-    {
+    // gA11yEventDumpToConsole = true; // debugging
+    function doTest() {
       var actionsArray = [
         {
           ID: "lb_apple",
@@ -31,8 +30,8 @@
           actionName: "select",
           events: CLICK_EVENTS,
           eventSeq: [
-            new focusChecker("lb_apple")
-          ]
+            new focusChecker("lb_apple"),
+          ],
         },
         {
           ID: "combobox",
@@ -40,8 +39,8 @@
           actionName: "open",
           events: CLICK_EVENTS,
           eventSeq: [
-            new focusChecker("cb_orange")
-          ]
+            new focusChecker("cb_orange"),
+          ],
         },
         {
           ID: "cb_apple",
@@ -49,8 +48,8 @@
           actionName: "select",
           events: CLICK_EVENTS,
           eventSeq: [
-            new focusChecker("combobox")
-          ]
+            new focusChecker("combobox"),
+          ],
         },
         {
           ID: "combobox",
@@ -58,8 +57,8 @@
           actionName: "open",
           events: CLICK_EVENTS,
           eventSeq: [
-            new focusChecker("cb_apple")
-          ]
+            new focusChecker("cb_apple"),
+          ],
         },
         {
           ID: "combobox",
@@ -67,9 +66,9 @@
           actionName: "close",
           events: CLICK_EVENTS,
           eventSeq: [
-            new focusChecker("combobox")
-          ]
-        }
+            new focusChecker("combobox"),
+          ],
+        },
       ];
 
       testActions(actionsArray);
@@ -82,7 +81,7 @@
 
 <body>
 
-  <a target="_blank"
+  <a target="_blank" rel="opener"
      href="https://bugzilla.mozilla.org/show_bug.cgi?id=673958"
      title="Rework accessible focus handling">
     Mozilla Bug 673958

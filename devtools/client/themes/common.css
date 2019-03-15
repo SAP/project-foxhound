@@ -2,12 +2,37 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-
 @import url("resource://devtools/client/themes/splitters.css");
 @namespace html url("http://www.w3.org/1999/xhtml");
 
 :root {
+  /* Bug 1458224: the initial `font-size` is different on Mac/Windows
+   * (appears fixed to 11px) and Linux (bigger, depends on user settings).
+   * Workaround: specify font-size on root, on form inputs, and whenever
+   * we're using the `font` shorthand. */
   font: message-box;
+  font-size: var(--theme-body-font-size);
+
+  --tab-line-hover-color: rgba(0,0,0,.2);
+  --tab-line-selected-color: var(--blue-50);
+  --toggle-thumb-color: white;
+  --toggle-track-color: var(--grey-30);
+
+  --searchbox-background-color: var(--theme-highlight-yellow);
+  --searchbox-border-color: #ffbf00;
+  --searchbox-no-match-background-color: #ffe5e5;
+  --searchbox-no-match-stroke-color: var(--red-60);
+}
+
+:root.theme-dark {
+  --tab-line-hover-color: rgba(255,255,255,.2);
+  --toggle-thumb-color: var(--grey-40);
+  --toggle-track-color: var(--grey-60);
+
+  --searchbox-background-color: #4d4222;
+  --searchbox-border-color: #d99f2b;
+  --searchbox-no-match-background-color: #402325;
+  --searchbox-no-match-stroke-color: var(--red-50);
 }
 
 :root[platform="mac"] {
@@ -18,36 +43,48 @@
   --monospace-font-family: Consolas, monospace;
 }
 
-:root[platform="linux"],
-:root.theme-firebug {
+:root[platform="linux"] {
   --monospace-font-family: monospace;
 }
 
-:root.theme-firebug {
-  --proportional-font-family: Lucida Grande, Tahoma, sans-serif;
+/**
+ * Customize the dark theme's scrollbar colors to avoid excessive contrast.
+ */
+:root.theme-dark {
+  scrollbar-color: var(--theme-body-color-inactive) var(--theme-splitter-color);
+}
+
+/**
+ * Customize scrollbar colors on Linux + light theme, to avoid visual conflicts
+ * between the light theme and the selected GTK theme (see bug 1471163).
+ * This removes GTK scrollbars and uses a fallback design (see bug 1464723).
+ */
+:root[platform="linux"].theme-light {
+  scrollbar-color: var(--theme-body-color-inactive) var(--grey-20);
 }
 
 .devtools-monospace {
   font-family: var(--monospace-font-family);
+  font-size: var(--theme-code-font-size);
 }
 
-:root[platform="linux"] .devtools-monospace {
-  font-size: 11px;
-}
-
-/* Override wrong system font from forms.css */
-html|button, html|select {
+/**
+ * Override wrong system font from forms.css
+ * Bug 1458224: buttons use a wrong default font-size on Linux
+ */
+html|button, html|select, html|input {
   font: message-box;
+  font-size: var(--theme-body-font-size);
+}
+
+/* Devtools rely on the old Gecko/HTML4 button hit testing */
+html|button > * {
+  pointer-events: none;
 }
 
 /* Autocomplete Popup */
-
 .devtools-autocomplete-popup {
-  box-shadow: 0 1px 0 hsla(209,29%,72%,.25) inset;
-  background-color: transparent;
-  border-radius: 3px;
-  overflow-x: hidden;
-  max-height: 20rem;
+  overflow: hidden;
 
   /* Devtools autocompletes display technical english keywords and should be displayed
      using LTR direction. */
@@ -64,106 +101,98 @@ html|button, html|select {
   margin: 0;
 }
 
-:root[platform="linux"] .devtools-autocomplete-popup {
-  /* Root font size is bigger on Linux, adjust rem-based values. */
-  max-height: 16rem;
-}
-
 .devtools-autocomplete-listbox {
+  --autocomplete-item-padding-inline: 8px;
   -moz-appearance: none !important;
   background-color: transparent;
   border-width: 0px !important;
   margin: 0;
-  padding: 2px;
+  padding: 0;
+  overflow-x: hidden;
+  max-height: 20rem;
+  height: 100%;
+  box-sizing: border-box;
 }
 
 .devtools-autocomplete-listbox .autocomplete-item {
   width: 100%;
   background-color: transparent;
-  border-radius: 4px;
-  padding: 1px 0;
-}
-
-.devtools-autocomplete-listbox .autocomplete-selected {
-  background-color: rgba(0,0,0,0.2);
-}
-
-.devtools-autocomplete-listbox.dark-theme .autocomplete-selected,
-.devtools-autocomplete-listbox.dark-theme .autocomplete-item:hover {
-  background-color: rgba(0,0,0,0.5);
-}
-
-.devtools-autocomplete-listbox.dark-theme .autocomplete-selected > .autocomplete-value,
-.devtools-autocomplete-listbox:focus.dark-theme .autocomplete-selected > .initial-value {
-  color: hsl(208,100%,60%);
-}
-
-.devtools-autocomplete-listbox.dark-theme .autocomplete-selected > span {
-  color: #eee;
-}
-
-.devtools-autocomplete-listbox.dark-theme .autocomplete-item > span {
-  color: #ccc;
+  color: var(--theme-popup-color);
+  padding: 1px var(--autocomplete-item-padding-inline);
+  cursor: default;
+  text-overflow: ellipsis;
+  white-space: pre;
+  overflow: hidden;
 }
 
 .devtools-autocomplete-listbox .autocomplete-item > .initial-value,
 .devtools-autocomplete-listbox .autocomplete-item > .autocomplete-value {
   margin: 0;
   padding: 0;
-  cursor: default;
+  float: left;
+}
+
+.devtools-autocomplete-listbox .autocomplete-item > .autocomplete-postlabel {
+  font-style: italic;
+  float: right;
+  padding-right: 3px;
 }
 
 .devtools-autocomplete-listbox .autocomplete-item > .autocomplete-count {
   text-align: end;
 }
 
+.devtools-autocomplete-listbox .autocomplete-swatch {
+  cursor: pointer;
+  border-radius: 50%;
+  width: 1em;
+  height: 1em;
+  vertical-align: middle;
+  /* align the swatch with its value */
+  margin-top: -1px;
+  margin-inline-end: 5px;
+  display: inline-block;
+  position: relative;
+}
+
+.devtools-autocomplete-listbox .autocomplete-colorswatch::before {
+  content: '';
+  background-color: #eee;
+  background-image: linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%, #ccc),
+                    linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%, #ccc);
+  background-size: 12px 12px;
+  background-position: 0 0, 6px 6px;
+  position: absolute;
+  border-radius: 50%;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: -1;
+}
+
 /* Rest of the dark and light theme */
-
 .devtools-autocomplete-popup,
-.theme-dark .CodeMirror-hints,
-.theme-dark .CodeMirror-Tern-tooltip {
-  border: 1px solid hsl(210,11%,10%);
-  background-image: linear-gradient(to bottom, hsla(209,18%,18%,0.9), hsl(210,11%,16%));
+.tooltip-panel.devtools-autocomplete-popup,
+.CodeMirror-hints,
+.CodeMirror-Tern-tooltip {
+  border: 1px solid var(--theme-popup-border-color);
+  background-color: var(--theme-popup-background);
+  color: var(--theme-popup-color);
 }
 
-.devtools-autocomplete-popup.light-theme,
-.light-theme .CodeMirror-hints,
-.light-theme .CodeMirror-Tern-tooltip {
-  border: 1px solid hsl(210,24%,90%);
-  background-image: linear-gradient(to bottom, hsla(209,18%,100%,0.9), hsl(210,24%,95%));
+.devtools-autocomplete-listbox .autocomplete-item:hover {
+  background-color: var(--theme-popup-dimmed);
 }
 
-.devtools-autocomplete-popup.light-theme {
-  box-shadow: 0 1px 0 hsla(209,29%,90%,.25) inset;
+.devtools-autocomplete-listbox .autocomplete-selected,
+.devtools-autocomplete-listbox .autocomplete-selected:hover {
+  background-color: var(--theme-selection-background);
+  color: var(--theme-selection-color);
 }
 
-.theme-firebug .devtools-autocomplete-popup {
-  border-color: var(--theme-splitter-color);
-  border-radius: 5px;
-  font-size: var(--theme-autompletion-font-size);
-}
-
-.devtools-autocomplete-popup.firebug-theme {
-  background: var(--theme-body-background);
-}
-
-.devtools-autocomplete-listbox.firebug-theme .autocomplete-selected,
-.devtools-autocomplete-listbox.firebug-theme .autocomplete-item:hover,
-.devtools-autocomplete-listbox.light-theme .autocomplete-selected,
-.devtools-autocomplete-listbox.light-theme .autocomplete-item:hover {
-  background-color: rgba(128,128,128,0.3);
-}
-
-.devtools-autocomplete-listbox.firebug-theme .autocomplete-selected > .autocomplete-value,
-.devtools-autocomplete-listbox:focus.firebug-theme .autocomplete-selected > .initial-value,
-.devtools-autocomplete-listbox.light-theme .autocomplete-selected > .autocomplete-value,
-.devtools-autocomplete-listbox:focus.light-theme .autocomplete-selected > .initial-value {
-  color: #222;
-}
-
-.devtools-autocomplete-listbox.firebug-theme .autocomplete-item > span,
-.devtools-autocomplete-listbox.light-theme .autocomplete-item > span {
-  color: #666;
+.devtools-autocomplete-listbox .autocomplete-selected > .initial-value {
+  font-weight: bold;
 }
 
 /* Autocomplete list clone used for accessibility. */
@@ -239,23 +268,35 @@ checkbox:-moz-focusring {
   outline: none;
 }
 
+/* Tab and button of toolbox does not need to display outline */
+
+.devtools-button:-moz-focusring,
+.devtools-tab:-moz-focusring {
+  outline:none;
+}
+
 /* Toolbar buttons */
 .devtools-menulist,
 .devtools-toolbarbutton,
 .devtools-button {
   -moz-appearance: none;
   background: transparent;
-  border: 1px solid var(--toolbarbutton-border-color);
+  border: none;
   border-radius: 2px;
   color: var(--theme-body-color);
-  transition: background 0.05s ease-in-out;
+  transition: background-color 0.05s ease-in-out;
   -moz-box-align: center;
   text-shadow: none;
-  padding: 1px;
+  padding: 2px;
   margin: 1px;
 
   /* Button text should not wrap on multiple lines */
   white-space: nowrap;
+}
+
+/* Remove system form border from devtools-button. */
+.devtools-button::-moz-focus-inner {
+  border: 0;
 }
 
 .devtools-toolbarbutton:not([label]) > .toolbarbutton-icon,
@@ -264,14 +305,24 @@ checkbox:-moz-focusring {
   height: 16px;
   margin: 0 3px;
   transition: opacity 0.05s ease-in-out;
+  -moz-context-properties: fill;
+  fill: currentColor;
+  color: var(--theme-icon-color);
+  direction: ltr;
+  font-size: 11px;
 }
 
 .devtools-button:empty::before {
   content: "";
   display: inline-block;
-  background-size: cover;
   background-repeat: no-repeat;
   vertical-align: middle;
+}
+
+.devtools-toolbarbutton:not([label])[checked=true] > .toolbarbutton-icon,
+.devtools-toolbarbutton:not([label])[open=true] > .toolbarbutton-icon,
+.devtools-button.checked:empty::before {
+  color: var(--theme-icon-checked-color);
 }
 
 /* Standalone buttons */
@@ -293,11 +344,6 @@ checkbox:-moz-focusring {
 }
 
 /* Icon-only buttons */
-.devtools-button:empty::before,
-.devtools-toolbarbutton:not([label]):not([disabled]) > image {
-  opacity: 0.8;
-}
-
 .devtools-button:hover:empty:not(:disabled):before,
 .devtools-button.checked:empty::before,
 .devtools-toolbarbutton:not([label]):not([disabled=true]):hover > image,
@@ -311,14 +357,8 @@ checkbox:-moz-focusring {
   opacity: 0.5 !important;
 }
 
-.devtools-button.checked::before,
-.devtools-toolbarbutton:not([label])[checked=true] > image,
-.devtools-toolbarbutton:not([label])[open=true] > image {
-  filter: var(--checked-icon-filter);
-}
-
 /* Button states */
-.devtools-toolbarbutton[label]:not([type=menu-button]),
+.devtools-toolbarbutton[label],
 .devtools-toolbarbutton[standalone],
 .devtools-button[data-standalone],
 .devtools-button:not(:empty) {
@@ -327,52 +367,66 @@ checkbox:-moz-focusring {
 }
 
 .devtools-toolbarbutton:not([label]):hover,
-.devtools-button:empty:not(:disabled):hover {
+.devtools-button:empty:not(:disabled):not([aria-expanded="true"]):hover {
   background: var(--toolbarbutton-background);
 }
+
+.devtools-button:focus {
+  background-color: var(--theme-toolbar-hover);
+}
+
+/* Selectable button which is unchecked. */
 
 .devtools-button:not(:empty):not(:disabled):not(.checked):hover,
 .devtools-toolbarbutton[label]:not(:-moz-any([checked=true],[disabled])):hover,
 .devtools-button:empty:not(:disabled):-moz-any(:hover:active,.checked),
-.devtools-toolbarbutton:not([label]):-moz-any([checked],[open],:hover:active) {
-  background: var(--toolbarbutton-hover-background);
-  border-color: var(--toolbarbutton-hover-border-color);
+.devtools-toolbarbutton:not([label]):-moz-any([checked],[open],:hover:active),
+.devtools-button[aria-haspopup="menu"][aria-expanded="true"] {
+  background-color: var(--toolbarbutton-hover-background);
 }
 
 .devtools-button:not(:empty):not(.checked):not(:disabled):hover:active,
 .devtools-toolbarbutton:not(:-moz-any([checked=true],[disabled]))[label]:hover:active {
-  background-color: var(--theme-selection-background-semitransparent);
+  background-color: var(--theme-selection-background-hover);
 }
+
+.devtools-button:not(:empty):not(.checked):not(:disabled):focus,
+.devtools-toolbarbutton:not(:-moz-any([checked=true],[disabled]))[label]:focus {
+  background-color: var(--toolbarbutton-focus-background);
+  color: var(--toolbarbutton-focus-color);
+}
+
+/* Selectable button which is checked. */
 
 .devtools-toolbarbutton:not([disabled])[label][checked=true],
 .devtools-toolbarbutton:not([disabled])[label][open],
-.devtools-button:not(:empty).checked,
-.theme-firebug .devtools-toolbarbutton:-moz-any([checked],[open]),
-.theme-firebug .devtools-button.checked:empty {
+.devtools-button:not(:empty).checked {
   background: var(--toolbarbutton-checked-background);
-  border-color: var(--toolbarbutton-checked-border-color);
   color: var(--toolbarbutton-checked-color);
 }
 
-/* Icons */
-:root {
-  --clear-icon-url: url("chrome://devtools/skin/images/clear.svg");
+.devtools-toolbarbutton:not([disabled])[label][checked=true]:focus,
+.devtools-toolbarbutton:not([disabled])[label][open]:focus,
+.devtools-button:not(:empty).checked:focus {
+  background-color: var(--toolbarbutton-checked-focus-background);
 }
 
+/* Icons */
+
 .devtools-button.devtools-clear-icon::before {
-  background-image: var(--clear-icon-url);
+  background-image: url("chrome://devtools/skin/images/clear.svg");
 }
 
 .devtools-button.devtools-filter-icon::before {
-  background-image: var(--filter-image);
+  background-image: url("chrome://devtools/skin/images/filter.svg");
 }
 
 .devtools-toolbarbutton.devtools-clear-icon {
-  list-style-image: var(--clear-icon-url);
+  list-style-image: url("chrome://devtools/skin/images/clear.svg");
 }
 
 .devtools-option-toolbarbutton {
-  list-style-image: var(--tool-options-image);
+  list-style-image: url("chrome://devtools/skin/images/settings.svg");
 }
 
 .devtools-toolbarbutton-group > .devtools-toolbarbutton:last-child {
@@ -381,10 +435,6 @@ checkbox:-moz-focusring {
 
 .devtools-toolbarbutton-group + .devtools-toolbarbutton {
   margin-inline-start: 3px;
-}
-
-.devtools-separator + .devtools-toolbarbutton {
-  margin-inline-start: 1px;
 }
 
 /* Text input */
@@ -399,6 +449,17 @@ checkbox:-moz-focusring {
   padding: 4px 6px;
   border-color: var(--theme-splitter-color);
   font: message-box;
+  font-size: var(--theme-body-font-size);
+  background-color: white;
+  color: var(--grey-90);
+}
+
+.theme-dark .devtools-textinput,
+.theme-dark .devtools-searchinput,
+.theme-dark .devtools-filterinput {
+  /* in between grey-85 and grey-90 */
+  background-color: #141416;
+  color: var(--grey-20);
 }
 
 :root[platform="mac"] .devtools-textinput,
@@ -412,10 +473,12 @@ checkbox:-moz-focusring {
   padding: 0;
   padding-inline-start: 22px;
   padding-inline-end: 4px;
-  background-position: 8px center;
-  background-size: 11px 11px;
+  background-position: 7px center;
+  background-size: 12px;
   background-repeat: no-repeat;
   font-size: inherit;
+  -moz-context-properties: fill;
+  fill: var(--theme-icon-dimmed-color);
 }
 
 /*
@@ -428,23 +491,18 @@ checkbox:-moz-focusring {
 }
 
 .devtools-searchinput {
-  background-image: var(--magnifying-glass-image);
+  background-image: url(chrome://devtools/skin/images/search.svg);
 }
 
 .devtools-filterinput {
-  background-image: url(chrome://devtools/skin/images/filter.svg#filterinput);
+  background-image: url(chrome://devtools/skin/images/filter-small.svg);
 }
 
 .devtools-searchinput:-moz-locale-dir(rtl),
 .devtools-searchinput:dir(rtl),
 .devtools-filterinput:-moz-locale-dir(rtl),
 .devtools-filterinput:dir(rtl) {
-  background-position: calc(100% - 8px) center;
-}
-
-.devtools-searchinput > .textbox-input-box > .textbox-search-icons > .textbox-search-icon,
-.devtools-filterinput > .textbox-input-box > .textbox-search-icons > .textbox-search-icon {
-  visibility: hidden;
+  background-position-x: right 7px;
 }
 
 .devtools-searchinput .textbox-input::placeholder,
@@ -453,12 +511,13 @@ checkbox:-moz-focusring {
 }
 
 .devtools-plaininput {
+  color: var(--grey-90);
   border-color: transparent;
   background-color: transparent;
 }
 
 .theme-dark .devtools-plaininput {
-  color: var(--theme-highlight-gray);
+  color: var(--grey-20);
 }
 
 /* Searchbox is a div container element for a search input element */
@@ -486,6 +545,32 @@ checkbox:-moz-focusring {
   box-shadow: var(--theme-focus-box-shadow-textbox);
   transition: all 0.2s ease-in-out;
   outline: none;
+}
+
+.devtools-searchbox .devtools-autocomplete-popup {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  width: 100%;
+  line-height: initial !important;
+  /* See bug - 1414609. z-index is greater than 1000 so that searchbox's z-index
+  is more than z-index of requests-list-headers-wrapper in netmonitor */
+  z-index: 1001;
+}
+
+/* MDN link within the Searchbox */
+.devtools-searchbox .learn-more-link:before {
+  height: 20px;
+}
+
+.devtools-searchbox .learn-more-link {
+  background: transparent !important;
+  cursor: pointer;
+  display: none;
+}
+
+.devtools-searchbox:hover .learn-more-link {
+  display: block;
 }
 
 /* Don't add 'double spacing' for inputs that are at beginning / end
@@ -518,132 +603,100 @@ checkbox:-moz-focusring {
 }
 
 .devtools-style-searchbox-no-match {
-  background-color: var(--searcbox-no-match-background-color) !important;
-  border-color: var(--searcbox-no-match-border-color) !important;
+  background-color: var(--searchbox-no-match-background-color) !important;
+  border-color: var(--searchbox-no-match-stroke-color) !important;
 }
 
 .devtools-searchinput-clear {
   position: absolute;
-  top: 3.5px;
-  offset-inline-end: 7px;
+  top: calc(50% - 8px);
+  inset-inline-end: 7px;
   padding: 0;
   border: 0;
   width: 16px;
   height: 16px;
-  background-position: 0 0;
-  background-repeat: no-repeat;
   background-color: transparent;
-}
-
-.devtools-searchinput-clear:dir(rtl) {
-  right: unset;
-  left: 7px;
-}
-
-.theme-dark .devtools-searchinput-clear {
-  background-image: url("chrome://devtools/skin/images/search-clear-dark.svg");
-}
-
-.theme-light .devtools-searchinput-clear {
-  background-image: url("chrome://devtools/skin/images/search-clear-light.svg");
+  background-image: url("chrome://devtools/skin/images/search-clear.svg");
+  -moz-context-properties: fill, fill-opacity;
+  fill: var(--theme-icon-color);
+  fill-opacity: 0.8;
 }
 
 .devtools-style-searchbox-no-match + .devtools-searchinput-clear {
-  background-image: url("chrome://devtools/skin/images/search-clear-failed.svg") !important;
+  fill: var(--searchbox-no-match-stroke-color);
 }
 
 .devtools-searchinput-clear:hover {
-  background-position: -16px 0;
-}
-
-.theme-dark .devtools-searchinput > .textbox-input-box > .textbox-search-icons > .textbox-search-clear,
-.theme-dark .devtools-filterinput > .textbox-input-box > .textbox-search-icons > .textbox-search-clear {
-  list-style-image: url("chrome://devtools/skin/images/search-clear-dark.svg");
-  -moz-image-region: rect(0, 16px, 16px, 0);
-}
-
-.theme-light .devtools-searchinput > .textbox-input-box > .textbox-search-icons > .textbox-search-clear,
-.theme-light .devtools-filterinput > .textbox-input-box > .textbox-search-icons > .textbox-search-clear {
-  list-style-image: url("chrome://devtools/skin/images/search-clear-light.svg");
-  -moz-image-region: rect(0, 16px, 16px, 0);
-}
-
-.devtools-searchinput > .textbox-input-box > .textbox-search-icons > .textbox-search-clear,
-.devtools-filterinput > .textbox-input-box > .textbox-search-icons > .textbox-search-clear {
-  margin-bottom: 0;
-}
-
-.devtools-searchinput > .textbox-input-box > .textbox-search-icons > .textbox-search-clear:hover,
-.devtools-filterinput > .textbox-input-box > .textbox-search-icons > .textbox-search-clear:hover {
-  -moz-image-region: rect(0, 32px, 16px, 16px);
+  fill-opacity: 1;
 }
 
 /* Twisty and checkbox controls */
-.theme-twisty, .theme-checkbox {
-  width: 14px;
-  height: 14px;
-  background-repeat: no-repeat;
-  background-image: url("chrome://devtools/skin/images/controls.png");
-  background-size: 56px 28px;
-}
 
 .theme-twisty {
+  width: 14px;
+  height: 14px;
   cursor: pointer;
-  background-position: 0 -14px;
+  background-image: url("chrome://devtools/skin/images/arrow.svg");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 10px;
+  -moz-context-properties: fill;
+  fill: var(--theme-icon-dimmed-color);
+  transform: rotate(-90deg);
 }
 
-.theme-selected ~ .theme-twisty,
-.theme-dark .theme-twisty {
-  background-position: -28px -14px;
+/* Mirror the twisty for rtl direction */
+.theme-twisty:dir(rtl),
+.theme-twisty:-moz-locale-dir(rtl) {
+  transform: rotate(90deg);
+}
+
+.theme-selected ~ .theme-twisty {
+  fill: var(--theme-selection-color);
 }
 
 .theme-twisty:-moz-focusring {
   outline-style: none;
 }
 
-.theme-twisty[open], .theme-twisty.open {
-  background-position: -14px -14px;
-}
-
-.theme-selected ~ .theme-twisty[open],
-.theme-dark .theme-twisty[open], .theme-dark .theme-twisty.open  {
-  background-position: -42px -14px;
+.theme-twisty[open],
+.theme-twisty.open {
+  transform: none;
 }
 
 .theme-twisty[invisible] {
   visibility: hidden;
 }
 
-/* Mirror the twisty for rtl direction */
-.theme-twisty:dir(rtl),
-.theme-twisty:-moz-locale-dir(rtl) {
-  transform: scaleX(-1);
-}
-
 .theme-checkbox {
   display: inline-block;
+  width: 14px;
+  height: 14px;
   border: 0;
   padding: 0;
   outline: none;
-  background-position: 0 0;
+  background-image: url("chrome://devtools/skin/images/checkbox.svg");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 14px 14px;
+  /* Using fill to paint the border, and stroke for the tick */
+  -moz-context-properties: fill, stroke;
+  fill: rgba(0,0,0,.3);
+  stroke: transparent;
 }
 
 .theme-dark .theme-checkbox {
-  background-position: -28px 0;
+  fill: rgba(255,255,255,.4);
 }
 
+.theme-checkbox.checked,
 .theme-checkbox[checked] {
-  background-position: -14px 0;
+  stroke: rgba(0,0,0,.6);
 }
 
+.theme-dark .theme-checkbox.checked,
 .theme-dark .theme-checkbox[checked] {
-  background-position: -42px 0;
-}
-
-@media (min-resolution: 1.1dppx) {
-  .theme-twisty, .theme-checkbox {
-    background-image: url("chrome://devtools/skin/images/controls@2x.png");
-  }
+  stroke: rgba(255,255,255,.8);
 }
 
 /* Throbbers */
@@ -675,14 +728,134 @@ checkbox:-moz-focusring {
   position: absolute;
 
   top: 0;
-  offset-inline-end: 0;
+  inset-inline-end: 0;
   width: 15px;
   height: 100%;
 
+  padding: 0;
+  border: none;
   border-inline-start: 1px solid var(--theme-splitter-color);
 
   background: var(--theme-tab-toolbar-background);
   background-image: url("chrome://devtools/skin/images/dropmarker.svg");
   background-repeat: no-repeat;
   background-position: center;
+  -moz-context-properties: fill;
+  fill: var(--theme-icon-color);
+}
+
+.all-tabs-menu:hover {
+  background-color: var(--theme-toolbar-hover);
+}
+
+.all-tabs-menu:hover:active {
+  background-color: var(--theme-toolbar-hover-active);
+}
+
+.devtools-tab-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: transparent;
+  transition: transform 250ms var(--animation-curve), opacity 250ms var(--animation-curve);
+  opacity: 0;
+  transform: scaleX(0);
+}
+
+.devtools-tab:hover .devtools-tab-line,
+.tabs-menu-item:hover .devtools-tab-line {
+  background: var(--tab-line-hover-color);
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+.devtools-tab.selected .devtools-tab-line,
+.tabs-menu-item.is-active .devtools-tab-line {
+  background: var(--tab-line-selected-color);
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+@media (prefers-reduced-motion) {
+  .devtools-tab-line {
+    transition: none;
+  }
+}
+
+.devtools-tab:not(.selected):focus .devtools-tab-line {
+  background: var(--tab-line-hover-color);
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+/* No result message styles */
+
+.devtools-sidepanel-no-result {
+  font-style: italic;
+  padding: 0.5em 21px;
+  -moz-user-select: none;
+  font-size: 12px;
+}
+
+/* Checkbox Toggle */
+
+.devtools-checkbox-toggle {
+  --x-pos: .15em;
+  /* Reset native checkbox styling. */
+  -moz-appearance: none;
+  background-color: var(--toggle-track-color);
+  cursor: pointer;
+  /* Change font-size to scale. */
+  font-size: 16px;
+  width: 2em;
+  height: 1em;
+  border-radius: 1em;
+  border: 1px solid transparent;
+  box-sizing: content-box;
+  /* Animate the thumb position between states of the checkbox. */
+  transition: background-color .1s ease-out;
+}
+
+.devtools-checkbox-toggle[disabled]{
+  opacity: 0.5;
+}
+
+/* For right-to-left layout, the toggle thumb goes in the opposite direction. */
+html[dir="rtl"] .devtools-checkbox-toggle {
+  --x-pos: -.15em;
+}
+
+.devtools-checkbox-toggle:not(:checked):focus {
+  border-color: var(--blue-55);
+}
+
+.devtools-checkbox-toggle:checked:focus {
+  background-color: var(--blue-40);
+}
+
+.devtools-checkbox-toggle:checked {
+  --x-pos: 1.15em;
+  background-color: var(--blue-55);
+}
+
+html[dir="rtl"] .devtools-checkbox-toggle:checked {
+  --x-pos: -1.15em;
+}
+
+.devtools-checkbox-toggle::before {
+  position: relative;
+  width: calc(1em - .3em);
+  height: calc(1em - .3em);
+  transform: translateY(.15em) translateX(var(--x-pos));
+  border-radius: 100%;
+  display: block;
+  content: "";
+  background-color: var(--toggle-thumb-color);
+  transition: transform .1s ease-out;
+}
+
+.devtools-checkbox-toggle:checked::before {
+  background-color: white;
 }

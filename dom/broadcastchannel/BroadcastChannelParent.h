@@ -14,27 +14,23 @@ namespace mozilla {
 namespace ipc {
 class BackgroundParentImpl;
 class PrincipalInfo;
-} // namespace ipc
+}  // namespace ipc
 
 namespace dom {
 
 class BroadcastChannelService;
 
-class BroadcastChannelParent final : public PBroadcastChannelParent
-{
+class BroadcastChannelParent final : public PBroadcastChannelParent {
   friend class mozilla::ipc::BackgroundParentImpl;
 
   typedef mozilla::ipc::PrincipalInfo PrincipalInfo;
 
-public:
-  void Deliver(const ClonedMessageData& aData);
-
-private:
+ private:
   explicit BroadcastChannelParent(const nsAString& aOriginChannelKey);
   ~BroadcastChannelParent();
 
-  virtual mozilla::ipc::IPCResult
-  RecvPostMessage(const ClonedMessageData& aData) override;
+  virtual mozilla::ipc::IPCResult RecvPostMessage(
+      const ClonedMessageData& aData) override;
 
   virtual mozilla::ipc::IPCResult RecvClose() override;
 
@@ -44,7 +40,7 @@ private:
   const nsString mOriginChannelKey;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_BroadcastChannelParent_h
+#endif  // mozilla_dom_BroadcastChannelParent_h

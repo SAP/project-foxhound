@@ -17,15 +17,15 @@ function reset() {
 }
 
 function check(aHadCharset, aCharset, aCharsetStart, aCharsetEnd) {
-  do_check_eq(aHadCharset, hadCharset);
-  do_check_eq(aCharset, charset.value);
-  do_check_eq(aCharsetStart, charsetStart.value);
-  do_check_eq(aCharsetEnd, charsetEnd.value);
+  Assert.equal(aHadCharset, hadCharset);
+  Assert.equal(aCharset, charset.value);
+  Assert.equal(aCharsetStart, charsetStart.value);
+  Assert.equal(aCharsetEnd, charsetEnd.value);
 }
 
 function run_test() {
-  var netutil = Components.classes["@mozilla.org/network/util;1"]
-                          .getService(Components.interfaces.nsINetUtil);
+  var netutil = Cc["@mozilla.org/network/util;1"]
+                  .getService(Ci.nsINetUtil);
   hadCharset =
     netutil.extractCharsetFromContentType("text/html", charset, charsetStart,
 					  charsetEnd);

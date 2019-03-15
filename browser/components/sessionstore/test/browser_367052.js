@@ -4,11 +4,11 @@
 
 "use strict";
 
-add_task(function* () {
+add_task(async function() {
   // make sure that the next closed tab will increase getClosedTabCount
-  let max_tabs_undo = gPrefService.getIntPref("browser.sessionstore.max_tabs_undo");
-  gPrefService.setIntPref("browser.sessionstore.max_tabs_undo", max_tabs_undo + 1);
-  registerCleanupFunction(() => gPrefService.clearUserPref("browser.sessionstore.max_tabs_undo"));
+  let max_tabs_undo = Services.prefs.getIntPref("browser.sessionstore.max_tabs_undo");
+  Services.prefs.setIntPref("browser.sessionstore.max_tabs_undo", max_tabs_undo + 1);
+  registerCleanupFunction(() => Services.prefs.clearUserPref("browser.sessionstore.max_tabs_undo"));
 
   // Empty the list of closed tabs.
   while (ss.getClosedTabCount(window)) {
@@ -16,26 +16,26 @@ add_task(function* () {
   }
 
   // restore a blank tab
-  let tab = gBrowser.addTab("about:");
-  yield promiseBrowserLoaded(tab.linkedBrowser);
+  let tab = BrowserTestUtils.addTab(gBrowser, "about:mozilla");
+  await promiseBrowserLoaded(tab.linkedBrowser);
 
-  let count = yield promiseSHistoryCount(tab.linkedBrowser);
+  let count = await promiseSHistoryCount(tab.linkedBrowser);
   ok(count >= 1, "the new tab does have at least one history entry");
 
-  yield promiseTabState(tab, {entries: []});
+  await promiseTabState(tab, {entries: []});
 
   // We may have a different sessionHistory object if the tab
   // switched from non-remote to remote.
-  count = yield promiseSHistoryCount(tab.linkedBrowser);
+  count = await promiseSHistoryCount(tab.linkedBrowser);
   is(count, 0, "the tab was restored without any history whatsoever");
 
-  yield promiseRemoveTab(tab);
+  await promiseRemoveTabAndSessionState(tab);
   is(ss.getClosedTabCount(window), 0,
      "The closed blank tab wasn't added to Recently Closed Tabs");
 });
 
 function promiseSHistoryCount(browser) {
-  return ContentTask.spawn(browser, null, function* () {
+  return ContentTask.spawn(browser, null, async function() {
     return docShell.QueryInterface(Ci.nsIWebNavigation).sessionHistory.count;
   });
 }

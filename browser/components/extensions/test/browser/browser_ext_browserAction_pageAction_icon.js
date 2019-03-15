@@ -5,7 +5,7 @@
 // Test that various combinations of icon details specs, for both paths
 // and ImageData objects, result in the correct image being displayed in
 // all display resolutions.
-add_task(function* testDetailsObjects() {
+add_task(async function testDetailsObjects() {
   function background() {
     function getImageData(color) {
       let canvas = document.createElement("canvas");
@@ -28,7 +28,7 @@ add_task(function* testDetailsObjects() {
       green: getImageData("green"),
     };
 
-    /* eslint-disable comma-dangle, indent */
+    /* eslint-disable indent, indent-legacy */
     let iconDetails = [
       // Only paths.
       {details: {"path": "a.png"},
@@ -111,7 +111,6 @@ add_task(function* testDetailsObjects() {
 
       // Various resolutions
       {details: {"path": {"18": "a.png", "36": "a-x2.png"}},
-        legacy: true,
         resolutions: {
           "1": browser.runtime.getURL("data/a.png"),
           "2": browser.runtime.getURL("data/a-x2.png")}},
@@ -139,7 +138,6 @@ add_task(function* testDetailsObjects() {
         "36": "36.png",
         "48": "48.png",
         "128": "128.png"}},
-        legacy: true,
         resolutions: {
           "1": browser.runtime.getURL("data/18.png"),
           "2": browser.runtime.getURL("data/36.png")},
@@ -168,6 +166,7 @@ add_task(function* testDetailsObjects() {
           "1": browser.runtime.getURL("data/32.png"),
           "2": browser.runtime.getURL("data/32.png")}},
     ];
+    /* eslint-enable indent, indent-legacy */
 
     // Allow serializing ImageData objects for logging.
     ImageData.prototype.toJSON = () => "<ImageData>";
@@ -206,7 +205,6 @@ add_task(function* testDetailsObjects() {
     for (let [idx, icon] of iconDetails.entries()) {
       tests.push({
         index: idx,
-        legacy: !!icon.legacy,
         menuResolutions: icon.menuResolutions,
         resolutions: icon.resolutions,
       });
@@ -230,7 +228,7 @@ add_task(function* testDetailsObjects() {
       "page_action": {},
       "background": {
         "page": "data/background.html",
-      }
+      },
     },
 
     files: {
@@ -258,23 +256,30 @@ add_task(function* testDetailsObjects() {
 
   const RESOLUTION_PREF = "layout.css.devPixelsPerPx";
 
-  yield extension.startup();
+  await extension.startup();
 
-  let pageActionId = `${makeWidgetId(extension.id)}-page-action`;
+  let pageActionId = BrowserPageActions.urlbarButtonNodeIDForActionID(makeWidgetId(extension.id));
   let browserActionWidget = getBrowserActionWidget(extension);
 
-  let tests = yield extension.awaitMessage("ready");
+  let tests = await extension.awaitMessage("ready");
+  await promiseAnimationFrame();
+
+  // The initial icon should be the default icon since no icon is in the manifest.
+  const DEFAULT_ICON = "chrome://browser/content/extension.svg";
+  let browserActionButton = browserActionWidget.forWindow(window).node;
+  let pageActionImage = document.getElementById(pageActionId);
+  is(getListStyleImage(browserActionButton), DEFAULT_ICON, `browser action has the correct default image`);
+  is(getListStyleImage(pageActionImage), DEFAULT_ICON, `page action has the correct default image`);
+
   for (let test of tests) {
     extension.sendMessage("setIcon", test);
-    yield extension.awaitMessage("iconSet");
+    await extension.awaitMessage("iconSet");
 
-    let browserActionButton = browserActionWidget.forWindow(window).node;
-    let pageActionImage = document.getElementById(pageActionId);
-
+    await promiseAnimationFrame();
 
     // Test icon sizes in the toolbar/urlbar.
     for (let resolution of Object.keys(test.resolutions)) {
-      yield SpecialPowers.pushPrefEnv({set: [[RESOLUTION_PREF, resolution]]});
+      await SpecialPowers.pushPrefEnv({set: [[RESOLUTION_PREF, resolution]]});
 
       is(window.devicePixelRatio, +resolution, "window has the required resolution");
 
@@ -282,40 +287,85 @@ add_task(function* testDetailsObjects() {
       is(getListStyleImage(browserActionButton), imageURL, `browser action has the correct image at ${resolution}x resolution`);
       is(getListStyleImage(pageActionImage), imageURL, `page action has the correct image at ${resolution}x resolution`);
 
-      let isLegacy = browserActionButton.classList.contains("toolbarbutton-legacy-addon");
-      is(isLegacy, test.legacy, "Legacy class should be present?");
-
-      yield SpecialPowers.popPrefEnv();
+      await SpecialPowers.popPrefEnv();
     }
 
     if (!test.menuResolutions) {
       continue;
     }
-
-
-    // Test icon sizes in the menu panel.
-    CustomizableUI.addWidgetToArea(browserActionWidget.id,
-                                   CustomizableUI.AREA_PANEL);
-
-    yield showBrowserAction(extension);
-    browserActionButton = browserActionWidget.forWindow(window).node;
-
-    for (let resolution of Object.keys(test.menuResolutions)) {
-      yield SpecialPowers.pushPrefEnv({set: [[RESOLUTION_PREF, resolution]]});
-
-      is(window.devicePixelRatio, +resolution, "window has the required resolution");
-
-      let imageURL = test.menuResolutions[resolution];
-      is(getListStyleImage(browserActionButton), imageURL, `browser action has the correct menu image at ${resolution}x resolution`);
-
-      yield SpecialPowers.popPrefEnv();
-    }
-
-    yield closeBrowserAction(extension);
-
-    CustomizableUI.addWidgetToArea(browserActionWidget.id,
-                                   CustomizableUI.AREA_NAVBAR);
   }
 
-  yield extension.unload();
+  await extension.unload();
+});
+
+// NOTE: The current goal of this test is ensuring that Bug 1397196 has been fixed,
+// and so this test extension manifest has a browser action which specify
+// a theme based icon and a pageAction, both the pageAction and the browserAction
+// have a common default_icon.
+//
+// Once Bug 1398156 will be fixed, this test should be converted into testing that
+// the browserAction and pageAction themed icons (as well as any other cached icon,
+// e.g. the sidebar and devtools panel icons) can be specified in the same extension
+// and do not conflict with each other.
+//
+// This test currently fails without the related fix, but only if the browserAction
+// API has been already loaded before the pageAction, otherwise the icons will be cached
+// in the opposite order and the test is not able to reproduce the issue anymore.
+add_task(async function testPageActionIconLoadingOnBrowserActionThemedIcon() {
+  async function background() {
+    const tabs = await browser.tabs.query({active: true});
+    await browser.pageAction.show(tabs[0].id);
+
+    browser.test.sendMessage("ready");
+  }
+
+  const extension = ExtensionTestUtils.loadExtension({
+    background,
+    manifest: {
+      "name": "Foo Extension",
+
+      "browser_action": {
+        "default_icon": "common_cached_icon.png",
+        "default_popup": "default_popup.html",
+        "default_title": "BrowserAction title",
+        "theme_icons": [
+          {
+            "dark": "1.png",
+            "light": "2.png",
+            "size": 16,
+          },
+        ],
+      },
+
+      "page_action": {
+        "default_icon": "common_cached_icon.png",
+        "default_popup": "default_popup.html",
+        "default_title": "PageAction title",
+      },
+
+      "permissions": ["tabs"],
+    },
+
+    "files": {
+      "common_cached_icon.png": imageBuffer,
+      "1.png": imageBuffer,
+      "2.png": imageBuffer,
+      "default_popup.html": "<!DOCTYPE html><html><body>popup</body></html>",
+    },
+  });
+
+  await extension.startup();
+
+  await extension.awaitMessage("ready");
+
+  await promiseAnimationFrame();
+
+  let pageActionId = BrowserPageActions.urlbarButtonNodeIDForActionID(makeWidgetId(extension.id));
+  let pageActionImage = document.getElementById(pageActionId);
+
+  const iconURL = new URL(getListStyleImage(pageActionImage));
+
+  is(iconURL.pathname, "/common_cached_icon.png", "Got the expected pageAction icon url");
+
+  await extension.unload();
 });

@@ -6,44 +6,49 @@
 
 // Test for as-authored styles.
 
-function* createTestContent(style) {
-  let html = `<style type="text/css">
+async function createTestContent(style) {
+  const html = `<style type="text/css">
       ${style}
       </style>
       <div id="testid" class="testclass">Styled Node</div>`;
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(html));
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(html));
 
-  let {inspector, view} = yield openRuleView();
-  yield selectNode("#testid", inspector);
+  const {inspector, view} = await openRuleView();
+  await selectNode("#testid", inspector);
   return view;
 }
 
-add_task(function* () {
-  let view = yield createTestContent("#testid {" +
+add_task(async function() {
+  const view = await createTestContent("#testid {" +
                                      // Invalid property.
                                      "  something: random;" +
                                      // Invalid value.
                                      "  color: orang;" +
                                      // Override.
                                      "  background-color: blue;" +
-                                     "  background-color: #f0c;" +
+                                     "  background-color: #f06;" +
                                      "} ");
 
-  let elementStyle = view._elementStyle;
+  const elementStyle = view._elementStyle;
 
-  let expected = [
-    {name: "something", overridden: true},
-    {name: "color", overridden: true},
-    {name: "background-color", overridden: true},
-    {name: "background-color", overridden: false}
+  const expected = [
+    {name: "something", overridden: true, isNameValid: false, isValid: false},
+    {name: "color", overridden: true, isNameValid: true, isValid: false},
+    {name: "background-color", overridden: true, isNameValid: true, isValid: true},
+    {name: "background-color", overridden: false, isNameValid: true, isValid: true},
   ];
 
-  let rule = elementStyle.rules[1];
+  const rule = elementStyle.rules[1];
 
   for (let i = 0; i < expected.length; ++i) {
-    let prop = rule.textProps[i];
-    is(prop.name, expected[i].name, "test name for prop " + i);
+    const prop = rule.textProps[i];
+    is(prop.name, expected[i].name,
+      "Check name for prop " + i);
     is(prop.overridden, expected[i].overridden,
-       "test overridden for prop " + i);
+      "Check overridden for prop " + i);
+    is(prop.isNameValid(), expected[i].isNameValid,
+      "Check if property name is valid for prop " + i);
+    is(prop.isValid(), expected[i].isValid,
+      "Check if whole declaration is valid for prop " + i);
   }
 });

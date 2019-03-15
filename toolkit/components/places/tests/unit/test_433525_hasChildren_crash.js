@@ -4,23 +4,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* test_execute() {
+add_task(async function test_execute() {
   try {
     var histsvc = Cc["@mozilla.org/browser/nav-history-service;1"].
                   getService(Ci.nsINavHistoryService);
-    var bmsvc = Cc["@mozilla.org/browser/nav-bookmarks-service;1"].
-              getService(Ci.nsINavBookmarksService);
   } catch (ex) {
     do_throw("Unable to initialize Places services");
   }
 
   // add a visit
   var testURI = uri("http://test");
-  yield PlacesTestUtils.addVisits(testURI);
+  await PlacesTestUtils.addVisits(testURI);
 
   // query for the visit
   var options = histsvc.getNewQueryOptions();
@@ -32,23 +26,26 @@ add_task(function* test_execute() {
   var root = result.root;
 
   // check hasChildren while the container is closed
-  do_check_eq(root.hasChildren, true);
+  Assert.equal(root.hasChildren, true);
 
   // now check via the saved search path
-  var queryURI = histsvc.queriesToQueryString([query], 1, options);
-  bmsvc.insertBookmark(bmsvc.toolbarFolder, uri(queryURI),
-                       0 /* first item */, "test query");
+  var queryURI = histsvc.queryToQueryString(query, options);
+  await PlacesUtils.bookmarks.insert({
+    parentGuid: PlacesUtils.bookmarks.toolbarGuid,
+    title: "test query",
+    url: queryURI,
+  });
 
   // query for that query
   options = histsvc.getNewQueryOptions();
   query = histsvc.getNewQuery();
-  query.setFolders([bmsvc.toolbarFolder], 1);
+  query.setParents([PlacesUtils.bookmarks.toolbarGuid], 1);
   result = histsvc.executeQuery(query, options);
   root = result.root;
   root.containerOpen = true;
   var queryNode = root.getChild(0);
-  do_check_eq(queryNode.title, "test query");
+  Assert.equal(queryNode.title, "test query");
   queryNode.QueryInterface(Ci.nsINavHistoryContainerResultNode);
-  do_check_eq(queryNode.hasChildren, true);
+  Assert.equal(queryNode.hasChildren, true);
   root.containerOpen = false;
 });

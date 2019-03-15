@@ -21,7 +21,7 @@ function* testSteps()
     yield undefined;
   }
 
-  getWasmBinary('(module (func (nop)))');
+  getWasmBinary('(module (func $f (result i32) (i32.const 42)) (func (export "run") (result i32) (call $f)))');
   let binary = yield undefined;
 
   wasmData.wasm = getWasmModule(binary);
@@ -31,7 +31,7 @@ function* testSteps()
   clearAllDatabases(continueToNextStepSync);
   yield undefined;
 
-  // The profile was created by an older build (buildId: 20161116145318,
+  // The profile was created with a mythical build (buildId: 20180309213541,
   // cpuId: X64=0x2). It contains one stored wasm module (file id 1 - bytecode
   // and file id 2 - compiled/machine code). The file create_db.js in the
   // package was run locally (specifically it was temporarily added to
@@ -46,13 +46,11 @@ function* testSteps()
 
   info("Reading out contents of compiled blob");
 
+  File.createFromNsIFile(file).then(grabEventAndContinueHandler);
+  let domFile = yield undefined;
+
   let fileReader = new FileReader();
   fileReader.onload = continueToNextStepSync;
-
-  let domFile;
-  File.createFromNsIFile(file).then(file => { domFile = file; }).then(continueToNextStepSync);
-  yield undefined;
-
   fileReader.readAsArrayBuffer(domFile);
 
   yield undefined;
@@ -85,21 +83,20 @@ function* testSteps()
 
   info("Reading out contents of new compiled blob");
 
+  File.createFromNsIFile(file).then(grabEventAndContinueHandler);
+  domFile = yield undefined;
+
   fileReader = new FileReader();
   fileReader.onload = continueToNextStepSync;
-
-  File.createFromNsIFile(file).then(file => { domFile = file; }).then(continueToNextStepSync);
-  yield undefined;
-
   fileReader.readAsArrayBuffer(domFile);
 
   yield undefined;
 
   let newCompiledBuffer = fileReader.result;
 
-  info("Verifying blobs differ");
+  info("Verifying that re-storing of re-compiled code has been disabled");
 
-  ok(!compareBuffers(newCompiledBuffer, compiledBuffer), "Blobs differ");
+  ok(compareBuffers(newCompiledBuffer, compiledBuffer), "Blobs don't differ");
 
   info("Getting wasm again");
 
@@ -113,14 +110,13 @@ function* testSteps()
   verifyWasmModule(request.result, wasmData.wasm);
   yield undefined;
 
-  info("Reading contents of new compiled blob again");
+  info("Reading out contents of new compiled blob again");
+
+  File.createFromNsIFile(file).then(grabEventAndContinueHandler);
+  domFile = yield undefined;
 
   fileReader = new FileReader();
   fileReader.onload = continueToNextStepSync;
-
-  File.createFromNsIFile(file).then(file => { domFile = file; }).then(continueToNextStepSync);
-  yield undefined;
-
   fileReader.readAsArrayBuffer(domFile);
 
   yield undefined;

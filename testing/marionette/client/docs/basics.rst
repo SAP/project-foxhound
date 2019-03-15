@@ -56,7 +56,7 @@ with :func:`start_session() <Marionette.start_session>`:
 .. parsed-literal::
    from marionette_driver.marionette import Marionette
 
-   client = Marionette('localhost', port=2828)
+   client = Marionette('127.0.0.1', port=2828)
    client.start_session()
 
 This returns a session id and an object listing the capabilities of the
@@ -131,7 +131,7 @@ using the :func:`~Marionette.find_element` or :func:`~Marionette.find_elements`
 methods:
 
 .. parsed-literal::
-   from marionette import HTMLElement
+   from marionette_driver.marionette import HTMLElement
    element = client.find_element(By.ID, 'my-id')
    assert type(element) == HTMLElement
    elements = client.find_elements(By.TAG_NAME, 'a')
@@ -168,13 +168,14 @@ running asynchronous JavaScript:
                                   script_args=[2, 3])
    assert result == 5
 
-The async method works the same way, except it won't return until a special
-`marionetteScriptFinished()` function is called:
+The async method works the same way, except it won't return until the
+`resolve()` function is called:
 
 .. parsed-literal::
    result = client.execute_async_script("""
+       let [resolve] = arguments;
        setTimeout(function() {
-         marionetteScriptFinished("all done");
+         resolve("all done");
        }, arguments[0]);
    """, script_args=[1000])
    assert result == "all done"

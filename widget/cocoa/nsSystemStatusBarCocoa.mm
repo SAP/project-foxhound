@@ -9,22 +9,23 @@
 #include "nsSystemStatusBarCocoa.h"
 #include "nsStandaloneNativeMenu.h"
 #include "nsObjCExceptions.h"
-#include "nsIDOMElement.h"
+#include "mozilla/dom/Element.h"
+
+using mozilla::dom::Element;
 
 NS_IMPL_ISUPPORTS(nsSystemStatusBarCocoa, nsISystemStatusBar)
 
 NS_IMETHODIMP
-nsSystemStatusBarCocoa::AddItem(nsIDOMElement* aDOMElement)
-{
+nsSystemStatusBarCocoa::AddItem(Element* aElement) {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
   RefPtr<nsStandaloneNativeMenu> menu = new nsStandaloneNativeMenu();
-  nsresult rv = menu->Init(aDOMElement);
+  nsresult rv = menu->Init(aElement);
   if (NS_FAILED(rv)) {
     return rv;
   }
 
-  nsCOMPtr<nsISupports> keyPtr = aDOMElement;
+  nsCOMPtr<nsISupports> keyPtr = aElement;
   mItems.Put(keyPtr, new StatusItem(menu));
 
   return NS_OK;
@@ -33,26 +34,24 @@ nsSystemStatusBarCocoa::AddItem(nsIDOMElement* aDOMElement)
 }
 
 NS_IMETHODIMP
-nsSystemStatusBarCocoa::RemoveItem(nsIDOMElement* aDOMElement)
-{
+nsSystemStatusBarCocoa::RemoveItem(Element* aElement) {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
-  mItems.Remove(aDOMElement);
+  mItems.Remove(aElement);
 
   return NS_OK;
 
   NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
 }
 
-nsSystemStatusBarCocoa::StatusItem::StatusItem(nsStandaloneNativeMenu* aMenu)
-  : mMenu(aMenu)
-{
+nsSystemStatusBarCocoa::StatusItem::StatusItem(nsStandaloneNativeMenu* aMenu) : mMenu(aMenu) {
   MOZ_COUNT_CTOR(nsSystemStatusBarCocoa::StatusItem);
 
   NSMenu* nativeMenu = nil;
   mMenu->GetNativeMenu(reinterpret_cast<void**>(&nativeMenu));
 
-  mStatusItem = [[[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength] retain];
+  mStatusItem =
+      [[[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength] retain];
   [mStatusItem setMenu:nativeMenu];
   [mStatusItem setHighlightMode:YES];
 
@@ -63,8 +62,7 @@ nsSystemStatusBarCocoa::StatusItem::StatusItem(nsStandaloneNativeMenu* aMenu)
   mMenu->SetContainerStatusBarItem(mStatusItem);
 }
 
-nsSystemStatusBarCocoa::StatusItem::~StatusItem()
-{
+nsSystemStatusBarCocoa::StatusItem::~StatusItem() {
   mMenu->SetContainerStatusBarItem(nil);
   [[NSStatusBar systemStatusBar] removeStatusItem:mStatusItem];
   [mStatusItem release];

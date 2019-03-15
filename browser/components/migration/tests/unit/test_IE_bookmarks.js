@@ -1,9 +1,9 @@
 "use strict";
 
-add_task(function* () {
-  let migrator = MigrationUtils.getMigrator("ie");
+add_task(async function() {
+  let migrator = await MigrationUtils.getMigrator("ie");
   // Sanity check for the source.
-  Assert.ok(migrator.sourceExists);
+  Assert.ok(await migrator.isSourceAvailable());
 
   // Wait for the imported bookmarks.  Check that "From Internet Explorer"
   // folders are created in the menu and on the toolbar.
@@ -14,28 +14,22 @@ add_task(function* () {
                           PlacesUtils.toolbarFolderId ];
 
   let itemCount = 0;
-  let bmObserver = {
-    onItemAdded(aItemId, aParentId, aIndex, aItemType, aURI, aTitle) {
-      if (aTitle != label) {
+  let listener = events => {
+    for (let event of events) {
+      if (event.title != label) {
         itemCount++;
       }
-      if (expectedParents.length > 0 && aTitle == label) {
-        let index = expectedParents.indexOf(aParentId);
+      if (expectedParents.length > 0 && event.title == label) {
+        let index = expectedParents.indexOf(event.parentId);
         Assert.notEqual(index, -1);
         expectedParents.splice(index, 1);
       }
-    },
-    onBeginUpdateBatch() {},
-    onEndUpdateBatch() {},
-    onItemRemoved() {},
-    onItemChanged() {},
-    onItemVisited() {},
-    onItemMoved() {},
+    }
   };
-  PlacesUtils.bookmarks.addObserver(bmObserver, false);
+  PlacesUtils.observers.addListener(["bookmark-added"], listener);
 
-  yield promiseMigration(migrator, MigrationUtils.resourceTypes.BOOKMARKS);
-  PlacesUtils.bookmarks.removeObserver(bmObserver);
+  await promiseMigration(migrator, MigrationUtils.resourceTypes.BOOKMARKS);
+  PlacesUtils.observers.removeListener(["bookmark-added"], listener);
   Assert.equal(MigrationUtils._importQuantities.bookmarks, itemCount,
                "Ensure telemetry matches actual number of imported items.");
 

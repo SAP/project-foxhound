@@ -7,6 +7,8 @@
 #include "mozilla/dom/DOMError.h"
 #include "mozilla/dom/DOMErrorBinding.h"
 #include "mozilla/dom/DOMException.h"
+#include "mozilla/UseCounter.h"
+#include "mozilla/dom/Document.h"
 #include "nsPIDOMWindow.h"
 
 namespace mozilla {
@@ -21,14 +23,10 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DOMError)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
-DOMError::DOMError(nsPIDOMWindowInner* aWindow)
-  : mWindow(aWindow)
-{
-}
+DOMError::DOMError(nsPIDOMWindowInner* aWindow) : mWindow(aWindow) {}
 
 DOMError::DOMError(nsPIDOMWindowInner* aWindow, nsresult aValue)
-  : mWindow(aWindow)
-{
+    : mWindow(aWindow) {
   nsCString name, message;
   NS_GetNameAndMessageForDOMNSResult(aValue, name, message);
 
@@ -37,35 +35,31 @@ DOMError::DOMError(nsPIDOMWindowInner* aWindow, nsresult aValue)
 }
 
 DOMError::DOMError(nsPIDOMWindowInner* aWindow, const nsAString& aName)
-  : mWindow(aWindow)
-  , mName(aName)
-{
-}
+    : mWindow(aWindow), mName(aName) {}
 
 DOMError::DOMError(nsPIDOMWindowInner* aWindow, const nsAString& aName,
                    const nsAString& aMessage)
-  : mWindow(aWindow)
-  , mName(aName)
-  , mMessage(aMessage)
-{
+    : mWindow(aWindow), mName(aName), mMessage(aMessage) {}
+
+DOMError::~DOMError() {}
+
+JSObject* DOMError::WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) {
+  return DOMError_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-DOMError::~DOMError()
-{
-}
+/* static */ already_AddRefed<DOMError> DOMError::Constructor(
+    const GlobalObject& aGlobal, const nsAString& aName,
+    const nsAString& aMessage, ErrorResult& aRv) {
+  nsCOMPtr<nsPIDOMWindowInner> window =
+      do_QueryInterface(aGlobal.GetAsSupports());
 
-JSObject*
-DOMError::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return DOMErrorBinding::Wrap(aCx, this, aGivenProto);
-}
-
-/* static */ already_AddRefed<DOMError>
-DOMError::Constructor(const GlobalObject& aGlobal,
-                      const nsAString& aName, const nsAString& aMessage,
-                      ErrorResult& aRv)
-{
-  nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(aGlobal.GetAsSupports());
+  if (window) {
+    nsCOMPtr<Document> doc = window->GetExtantDoc();
+    if (doc) {
+      doc->SetDocumentAndPageUseCounter(eUseCounter_custom_DOMErrorConstructor);
+    }
+  }
 
   // Window is null for chrome code.
 
@@ -73,5 +67,5 @@ DOMError::Constructor(const GlobalObject& aGlobal,
   return ret.forget();
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

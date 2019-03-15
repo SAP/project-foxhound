@@ -1,4 +1,4 @@
-// |reftest| skip -- jstests don't yet support module tests
+// |reftest| module
 // Copyright (C) 2016 the V8 project authors. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 /*---
@@ -15,6 +15,7 @@ info: |
     1. Let env be a new Lexical Environment.
     [...]
 flags: [module]
+features: [generators]
 ---*/
 
 import './instn-uniq-env-rec-other_FIXTURE.js'

@@ -16,52 +16,40 @@
 
 <script class="testbody" type="text/javascript">
 
-var Cc = SpecialPowers.Cc;
-var Ci = SpecialPowers.Ci;
+var mainWindow = window.docShell.rootTreeItem.domWindow;
+var contentPage = "chrome://mochitests/content/chrome/toolkit/components/url-classifier/tests/mochitest/classifiedAnnotatedPBFrame.html";
 
-var mainWindow = window.QueryInterface(Ci.nsIInterfaceRequestor)
-                    .getInterface(Ci.nsIWebNavigation)
-                    .QueryInterface(Ci.nsIDocShellTreeItem)
-                    .rootTreeItem
-                    .QueryInterface(Ci.nsIInterfaceRequestor)
-                    .getInterface(Ci.nsIDOMWindow);
-var contentPage = "chrome://mochitests/content/chrome/toolkit/components/url-classifier/tests/mochitest/classifiedAnnotatedPBFrame.html"
-
-Components.utils.import("resource://gre/modules/Services.jsm");
-Components.utils.import("resource://testing-common/UrlClassifierTestUtils.jsm");
-
-function whenDelayedStartupFinished(aWindow, aCallback) {
-  Services.obs.addObserver(function observer(aSubject, aTopic) {
-    if (aWindow == aSubject) {
-      Services.obs.removeObserver(observer, aTopic);
-      setTimeout(aCallback, 0);
-    }
-  }, "browser-delayed-startup-finished", false);
-}
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://testing-common/UrlClassifierTestUtils.jsm");
+ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
+ChromeUtils.import("resource://testing-common/TestUtils.jsm");
 
 function testOnWindow(aCallback) {
   var win = mainWindow.OpenBrowserWindow();
   win.addEventListener("load", function() {
-    whenDelayedStartupFinished(win, function() {
+    TestUtils.topicObserved("browser-delayed-startup-finished",
+                            subject => subject == win).then(() => {
       win.addEventListener("DOMContentLoaded", function onInnerLoad() {
         if (win.content.location.href != contentPage) {
-          win.gBrowser.loadURI(contentPage);
+          BrowserTestUtils.loadURI(win.gBrowser, contentPage);
           return;
         }
         win.removeEventListener("DOMContentLoaded", onInnerLoad, true);
 
-        win.content.addEventListener('load', function innerLoad2() {
-          win.content.removeEventListener('load', innerLoad2);
+        win.content.addEventListener("load", function innerLoad2() {
+          win.content.removeEventListener("load", innerLoad2);
           SimpleTest.executeSoon(function() { aCallback(win); });
         }, false, true);
       }, true);
-      SimpleTest.executeSoon(function() { win.gBrowser.loadURI(contentPage); });
+      SimpleTest.executeSoon(function() {
+        BrowserTestUtils.loadURI(win.gBrowser, contentPage);
+      });
     });
   }, {capture: true, once: true});
 }
 
 var badids = [
-  "badscript"
+  "badscript",
 ];
 
 function checkLoads(aWindow, aBlocked) {
@@ -70,11 +58,11 @@ function checkLoads(aWindow, aBlocked) {
 }
 
 SpecialPowers.pushPrefEnv(
-  {"set" : [["urlclassifier.trackingTable", "test-track-simple"],
-            ["privacy.trackingprotection.enabled", true],
-            ["browser.safebrowsing.malware.enabled", false],
-            ["browser.safebrowsing.phishing.enabled", false],
-            ["channelclassifier.allowlist_example", true]]},
+  {"set": [["urlclassifier.trackingTable", "test-track-simple"],
+           ["privacy.trackingprotection.enabled", true],
+           ["browser.safebrowsing.malware.enabled", false],
+           ["browser.safebrowsing.phishing.enabled", false],
+           ["channelclassifier.allowlist_example", true]]},
   test);
 
 function test() {
@@ -87,9 +75,9 @@ function test() {
 
       // Safe Browsing turned ON, tracking protection should still work
       SpecialPowers.setBoolPref("browser.safebrowsing.phishing.enabled", true);
-      testOnWindow(function(aWindow) {
-        checkLoads(aWindow, true);
-        aWindow.close();
+      testOnWindow(function(aWindow1) {
+        checkLoads(aWindow1, true);
+        aWindow1.close();
         SimpleTest.finish();
       });
     });

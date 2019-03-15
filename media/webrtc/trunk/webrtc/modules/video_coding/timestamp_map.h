@@ -8,11 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_VIDEO_CODING_TIMESTAMP_MAP_H_
-#define WEBRTC_MODULES_VIDEO_CODING_TIMESTAMP_MAP_H_
+#ifndef MODULES_VIDEO_CODING_TIMESTAMP_MAP_H_
+#define MODULES_VIDEO_CODING_TIMESTAMP_MAP_H_
 
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/typedefs.h"
+#include <memory>
+
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -36,7 +37,7 @@ class VCMTimestampMap {
   };
   bool IsEmpty() const;
 
-  rtc::scoped_ptr<TimestampDataTuple[]> ring_buffer_;
+  std::unique_ptr<TimestampDataTuple[]> ring_buffer_;
   const size_t capacity_;
   size_t next_add_idx_;
   size_t next_pop_idx_;
@@ -44,4 +45,4 @@ class VCMTimestampMap {
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_VIDEO_CODING_TIMESTAMP_MAP_H_
+#endif  // MODULES_VIDEO_CODING_TIMESTAMP_MAP_H_

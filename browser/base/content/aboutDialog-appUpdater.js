@@ -2,13 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// Note: this file is included in aboutDialog.xul if MOZ_UPDATER is defined.
+// Note: this file is included in aboutDialog.xul and preferences/advanced.xul
+// if MOZ_UPDATER is defined.
 
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-Components.utils.import("resource://gre/modules/DownloadUtils.jsm");
+/* import-globals-from aboutDialog.js */
 
-XPCOMUtils.defineLazyModuleGetter(this, "UpdateUtils",
-                                  "resource://gre/modules/UpdateUtils.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/DownloadUtils.jsm");
+
+ChromeUtils.defineModuleGetter(this, "UpdateUtils",
+                               "resource://gre/modules/UpdateUtils.jsm");
 
 const PREF_APP_UPDATE_CANCELATIONS_OSX = "app.update.cancelations.osx";
 const PREF_APP_UPDATE_ELEVATE_NEVER    = "app.update.elevate.never";
@@ -17,14 +20,14 @@ var gAppUpdater;
 
 function onUnload(aEvent) {
   if (gAppUpdater.isChecking)
-    gAppUpdater.checker.stopChecking(Components.interfaces.nsIUpdateChecker.CURRENT_CHECK);
+    gAppUpdater.checker.stopCurrentCheck();
   // Safe to call even when there isn't a download in progress.
   gAppUpdater.removeDownloadListener();
   gAppUpdater = null;
 }
 
 
-function appUpdater() {
+function appUpdater(options = {}) {
   XPCOMUtils.defineLazyServiceGetter(this, "aus",
                                      "@mozilla.org/updates/update-service;1",
                                      "nsIApplicationUpdateService");
@@ -35,7 +38,9 @@ function appUpdater() {
                                      "@mozilla.org/updates/update-manager;1",
                                      "nsIUpdateManager");
 
+  this.options = options;
   this.updateDeck = document.getElementById("updateDeck");
+  this.promiseAutoUpdateSetting = null;
 
   // Hide the update deck when the update window is already open and it's not
   // already applied, to avoid syncing issues between them. Applied updates
@@ -52,12 +57,12 @@ function appUpdater() {
 
   let manualURL = Services.urlFormatter.formatURLPref("app.update.url.manual");
   let manualLink = document.getElementById("manualLink");
-  manualLink.value = manualURL;
+  manualLink.textContent = manualURL;
   manualLink.href = manualURL;
   document.getElementById("failedLink").href = manualURL;
 
-  if (this.updateDisabledAndLocked) {
-    this.selectPanel("adminDisabled");
+  if (this.updateDisabledByPolicy) {
+    this.selectPanel("policyDisabled");
     return;
   }
 
@@ -77,15 +82,8 @@ function appUpdater() {
     return;
   }
 
-  // Honor the "Never check for updates" option by not only disabling background
-  // update checks, but also in the About dialog, by presenting a
-  // "Check for updates" button.
-  // If updates are found, the user is then asked if he wants to "Update to <version>".
-  if (!this.updateEnabled ||
-      Services.prefs.prefHasUserValue(PREF_APP_UPDATE_ELEVATE_NEVER)) {
-    this.selectPanel("checkForUpdates");
-    return;
-  }
+  // We might need this value later, so start loading it from the disk now.
+  this.promiseAutoUpdateSetting = UpdateUtils.getAppUpdateAutoEnabled();
 
   // That leaves the options
   // "Check for updates, but let me choose whether to install them", and
@@ -131,32 +129,15 @@ appUpdater.prototype =
            this.um.activeUpdate.state == "downloading";
   },
 
-  // true when updating is disabled by an administrator.
-  get updateDisabledAndLocked() {
-    return !this.updateEnabled &&
-           Services.prefs.prefIsLocked("app.update.enabled");
-  },
-
-  // true when updating is enabled.
-  get updateEnabled() {
-    try {
-      return Services.prefs.getBoolPref("app.update.enabled");
-    } catch (e) { }
-    return true; // Firefox default is true
+  // true when updating has been disabled by enterprise policy
+  get updateDisabledByPolicy() {
+    return Services.policies && !Services.policies.isAllowed("appUpdate");
   },
 
   // true when updating in background is enabled.
   get backgroundUpdateEnabled() {
-    return this.updateEnabled &&
+    return !this.updateDisabledByPolicy &&
            gAppUpdater.aus.canStageUpdates;
-  },
-
-  // true when updating is automatic.
-  get updateAuto() {
-    try {
-      return Services.prefs.getBoolPref("app.update.auto");
-    } catch (e) { }
-    return true; // Firefox default is true
   },
 
   /**
@@ -172,14 +153,23 @@ appUpdater.prototype =
     if (button) {
       if (aChildID == "downloadAndInstall") {
         let updateVersion = gAppUpdater.update.displayVersion;
+        // Include the build ID if this is an "a#" (nightly or aurora) build
+        if (/a\d+$/.test(updateVersion)) {
+          let buildID = gAppUpdater.update.buildID;
+          let year = buildID.slice(0, 4);
+          let month = buildID.slice(4, 6);
+          let day = buildID.slice(6, 8);
+          updateVersion += ` (${year}-${month}-${day})`;
+        }
         button.label = this.bundle.formatStringFromName("update.downloadAndInstallButton.label", [updateVersion], 1);
         button.accessKey = this.bundle.GetStringFromName("update.downloadAndInstallButton.accesskey");
       }
       this.updateDeck.selectedPanel = panel;
-      if (!document.commandDispatcher.focusedElement || // don't steal the focus
-          document.commandDispatcher.focusedElement.localName == "button") // except from the other buttons
+      if (this.options.buttonAutoFocus &&
+          (!document.commandDispatcher.focusedElement || // don't steal the focus
+           document.commandDispatcher.focusedElement.localName == "button")) { // except from the other buttons
         button.focus();
-
+      }
     } else {
       this.updateDeck.selectedPanel = panel;
     }
@@ -214,8 +204,8 @@ appUpdater.prototype =
     gAppUpdater.selectPanel("restarting");
 
     // Notify all windows that an application quit has been requested.
-    let cancelQuit = Components.classes["@mozilla.org/supports-PRBool;1"].
-                     createInstance(Components.interfaces.nsISupportsPRBool);
+    let cancelQuit = Cc["@mozilla.org/supports-PRBool;1"].
+                     createInstance(Ci.nsISupportsPRBool);
     Services.obs.notifyObservers(cancelQuit, "quit-application-requested", "restart");
 
     // Something aborted the quit process.
@@ -224,17 +214,14 @@ appUpdater.prototype =
       return;
     }
 
-    let appStartup = Components.classes["@mozilla.org/toolkit/app-startup;1"].
-                     getService(Components.interfaces.nsIAppStartup);
-
     // If already in safe mode restart in safe mode (bug 327119)
     if (Services.appinfo.inSafeMode) {
-      appStartup.restartInSafeMode(Components.interfaces.nsIAppStartup.eAttemptQuit);
+      Services.startup.restartInSafeMode(Ci.nsIAppStartup.eAttemptQuit);
       return;
     }
 
-    appStartup.quit(Components.interfaces.nsIAppStartup.eAttemptQuit |
-                    Components.interfaces.nsIAppStartup.eRestart);
+    Services.startup.quit(Ci.nsIAppStartup.eAttemptQuit |
+                          Ci.nsIAppStartup.eRestart);
   },
 
   /**
@@ -269,10 +256,16 @@ appUpdater.prototype =
         return;
       }
 
-      if (gAppUpdater.updateAuto) // automatically download and install
-        gAppUpdater.startDownload();
-      else // ask
-        gAppUpdater.selectPanel("downloadAndInstall");
+      if (!gAppUpdater.promiseAutoUpdateSetting) {
+        gAppUpdater.promiseAutoUpdateSetting = UpdateUtils.getAppUpdateAutoEnabled();
+      }
+      gAppUpdater.promiseAutoUpdateSetting.then(updateAuto => {
+        if (updateAuto) { // automatically download and install
+          gAppUpdater.startDownload();
+        } else { // ask
+          gAppUpdater.selectPanel("downloadAndInstall");
+        }
+      });
     },
 
     /**
@@ -289,12 +282,7 @@ appUpdater.prototype =
     /**
      * See nsISupports.idl
      */
-    QueryInterface(aIID) {
-      if (!aIID.equals(Components.interfaces.nsIUpdateCheckListener) &&
-          !aIID.equals(Components.interfaces.nsISupports))
-        throw Components.results.NS_ERROR_NO_INTERFACE;
-      return this;
-    }
+    QueryInterface: ChromeUtils.generateQI(["nsIUpdateCheckListener"]),
   },
 
   /**
@@ -303,7 +291,7 @@ appUpdater.prototype =
   startDownload() {
     if (!this.update)
       this.update = this.um.activeUpdate;
-    this.update.QueryInterface(Components.interfaces.nsIWritablePropertyBag);
+    this.update.QueryInterface(Ci.nsIWritablePropertyBag);
     this.update.setProperty("foregroundDownload", "true");
 
     this.aus.pauseDownload();
@@ -321,7 +309,7 @@ appUpdater.prototype =
    */
   setupDownloadingUI() {
     this.downloadStatus = document.getElementById("downloadStatus");
-    this.downloadStatus.value =
+    this.downloadStatus.textContent =
       DownloadUtils.getTransferTotal(0, this.update.selectedPatch.size);
     this.selectPanel("downloading");
     this.aus.addDownloadListener(this);
@@ -344,7 +332,7 @@ appUpdater.prototype =
    */
   onStopRequest(aRequest, aContext, aStatusCode) {
     switch (aStatusCode) {
-    case Components.results.NS_ERROR_UNEXPECTED:
+    case Cr.NS_ERROR_UNEXPECTED:
       if (this.update.selectedPatch.state == "download-failed" &&
           (this.update.isCompleteUpdate || this.update.patchCount != 2)) {
         // Verification error of complete patch, informational text is held in
@@ -356,15 +344,15 @@ appUpdater.prototype =
       // Verification failed for a partial patch, complete patch is now
       // downloading so return early and do NOT remove the download listener!
       break;
-    case Components.results.NS_BINDING_ABORTED:
+    case Cr.NS_BINDING_ABORTED:
       // Do not remove UI listener since the user may resume downloading again.
       break;
-    case Components.results.NS_OK:
+    case Cr.NS_OK:
       this.removeDownloadListener();
       if (this.backgroundUpdateEnabled) {
         this.selectPanel("applying");
         let self = this;
-        Services.obs.addObserver(function(aSubject, aTopic, aData) {
+        Services.obs.addObserver(function observer(aSubject, aTopic, aData) {
           // Update the UI when the background updater is finished
           let status = aData;
           if (status == "applied" || status == "applied-service" ||
@@ -385,8 +373,8 @@ appUpdater.prototype =
             self.setupDownloadingUI();
             return;
           }
-          Services.obs.removeObserver(arguments.callee, "update-staged");
-        }, "update-staged", false);
+          Services.obs.removeObserver(observer, "update-staged");
+        }, "update-staged");
       } else {
         this.selectPanel("apply");
       }
@@ -408,18 +396,12 @@ appUpdater.prototype =
    * See nsIProgressEventSink.idl
    */
   onProgress(aRequest, aContext, aProgress, aProgressMax) {
-    this.downloadStatus.value =
+    this.downloadStatus.textContent =
       DownloadUtils.getTransferTotal(aProgress, aProgressMax);
   },
 
   /**
    * See nsISupports.idl
    */
-  QueryInterface(aIID) {
-    if (!aIID.equals(Components.interfaces.nsIProgressEventSink) &&
-        !aIID.equals(Components.interfaces.nsIRequestObserver) &&
-        !aIID.equals(Components.interfaces.nsISupports))
-      throw Components.results.NS_ERROR_NO_INTERFACE;
-    return this;
-  }
+  QueryInterface: ChromeUtils.generateQI(["nsIProgressEventSink", "nsIRequestObserver"]),
 };

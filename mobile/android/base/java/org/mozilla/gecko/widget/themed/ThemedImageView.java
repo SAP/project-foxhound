@@ -70,7 +70,7 @@ public class ThemedImageView extends android.widget.ImageView
     }
 
     @Override
-    public void onAttachedToWindow() {
+    protected void onAttachedToWindow() {
         super.onAttachedToWindow();
 
         if (autoUpdateTheme)
@@ -78,7 +78,7 @@ public class ThemedImageView extends android.widget.ImageView
     }
 
     @Override
-    public void onDetachedFromWindow() {
+    protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
 
         if (autoUpdateTheme)
@@ -191,6 +191,10 @@ public class ThemedImageView extends android.widget.ImageView
 
     public ColorDrawable getColorDrawable(int id) {
         return new ColorDrawable(ContextCompat.getColor(getContext(), id));
+    }
+
+    public ColorStateList getDrawableColors() {
+        return drawableColors;
     }
 
     protected LightweightTheme getTheme() {

@@ -7,7 +7,6 @@
 
 scrollbar {
   -moz-appearance: scrollbar;
-  -moz-binding: url(chrome://global/content/bindings/scrollbar.xml#scrollbar);
   cursor: default;
   background-color: white;
 }
@@ -41,12 +40,12 @@ slider[orient="vertical"] {
 
 /* ..... thumb ..... */
 
-thumb {
-  -moz-appearance: scrollbarthumb-horizontal;
-}
-
 thumb[orient="vertical"] {
   -moz-appearance: scrollbarthumb-vertical;
+}
+
+thumb[orient="horizontal"] {
+  -moz-appearance: scrollbarthumb-horizontal;
 }
 
 /* ..... increment ..... */
@@ -72,8 +71,7 @@ scrollbar[orient="vertical"] > scrollbarbutton[type="decrement"] {
 /* ::::: square at the corner of two scrollbars ::::: */
 
 scrollcorner {
-  /* XXX -moz-appearance: scrollcorner; */
-  -moz-binding: url(chrome://global/content/bindings/scrollbar.xml#scrollbar-base);
+  -moz-appearance: scrollcorner;
   width: 16px;
   cursor: default;
   background-color: white;
@@ -83,7 +81,7 @@ scrollcorner {
 @media print {
   html|div scrollbar {
     -moz-appearance: scrollbar;
-    -moz-binding: url(chrome://global/content/bindings/scrollbar.xml#scrollbar);
+    -moz-binding: url("chrome://global/content/bindings/general.xml#empty");
     cursor: default;
   }
 }

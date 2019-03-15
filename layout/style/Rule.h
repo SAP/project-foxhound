@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,138 +9,124 @@
 #ifndef mozilla_css_Rule_h___
 #define mozilla_css_Rule_h___
 
-#include "mozilla/StyleSheetInlines.h"
+#include "mozilla/dom/CSSRuleBinding.h"
+#include "mozilla/dom/DocumentOrShadowRoot.h"
+#include "mozilla/StyleSheet.h"
 #include "mozilla/MemoryReporting.h"
 #include "nsISupports.h"
-#include "nsIDOMCSSRule.h"
 #include "nsWrapperCache.h"
 
-class nsIDocument;
 struct nsRuleData;
-template<class T> struct already_AddRefed;
+template <class T>
+struct already_AddRefed;
 class nsHTMLCSSStyleSheet;
 
 namespace mozilla {
 namespace css {
 class GroupRule;
 
-class Rule : public nsIDOMCSSRule
-           , public nsWrapperCache
-{
-protected:
-  Rule(uint32_t aLineNumber, uint32_t aColumnNumber)
-    : mSheet(nullptr),
-      mParentRule(nullptr),
-      mLineNumber(aLineNumber),
-      mColumnNumber(aColumnNumber)
-  {
+class Rule : public nsISupports, public nsWrapperCache {
+ protected:
+  Rule(StyleSheet* aSheet, Rule* aParentRule, uint32_t aLineNumber,
+       uint32_t aColumnNumber)
+      : mSheet(aSheet),
+        mParentRule(aParentRule),
+        mLineNumber(aLineNumber),
+        mColumnNumber(aColumnNumber) {
+#ifdef DEBUG
+    // Would be nice to check that this->Type() is KEYFRAME_RULE when
+    // mParentRule->Tye() is KEYFRAMES_RULE, but we can't call
+    // this->Type() here since it's virtual.
+    if (mParentRule) {
+      int16_t type = mParentRule->Type();
+      MOZ_ASSERT(type == dom::CSSRule_Binding::MEDIA_RULE ||
+                 type == dom::CSSRule_Binding::DOCUMENT_RULE ||
+                 type == dom::CSSRule_Binding::SUPPORTS_RULE ||
+                 type == dom::CSSRule_Binding::KEYFRAMES_RULE);
+    }
+#endif
   }
 
   Rule(const Rule& aCopy)
-    : mSheet(aCopy.mSheet),
-      mParentRule(aCopy.mParentRule),
-      mLineNumber(aCopy.mLineNumber),
-      mColumnNumber(aCopy.mColumnNumber)
-  {
-  }
+      : mSheet(aCopy.mSheet),
+        mParentRule(aCopy.mParentRule),
+        mLineNumber(aCopy.mLineNumber),
+        mColumnNumber(aCopy.mColumnNumber) {}
 
-  virtual ~Rule() {}
+  virtual ~Rule() = default;
 
-public:
-
+ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SKIPPABLE_SCRIPT_HOLDER_CLASS(Rule)
   // Return true if this rule is known to be a cycle collection leaf, in the
   // sense that it doesn't have any outgoing owning edges.
   virtual bool IsCCLeaf() const MOZ_MUST_OVERRIDE;
 
-  // nsIDOMCSSRule interface
-  NS_DECL_NSIDOMCSSRULE
-
 #ifdef DEBUG
   virtual void List(FILE* out = stdout, int32_t aIndent = 0) const = 0;
 #endif
 
-  // The constants in this list must maintain the following invariants:
-  //   If a rule of type N must appear before a rule of type M in stylesheets
-  //   then N < M
-  // Note that CSSStyleSheet::RebuildChildList assumes that no other kinds of
-  // rules can come between two rules of type IMPORT_RULE.
-  enum {
-    UNKNOWN_RULE = 0,
-    CHARSET_RULE,
-    IMPORT_RULE,
-    NAMESPACE_RULE,
-    STYLE_RULE,
-    MEDIA_RULE,
-    FONT_FACE_RULE,
-    PAGE_RULE,
-    KEYFRAME_RULE,
-    KEYFRAMES_RULE,
-    DOCUMENT_RULE,
-    SUPPORTS_RULE,
-    FONT_FEATURE_VALUES_RULE,
-    COUNTER_STYLE_RULE
-  };
-
-  virtual int32_t GetType() const = 0;
-
   StyleSheet* GetStyleSheet() const { return mSheet; }
 
-  // Return the document the rule lives in, if any
-  nsIDocument* GetDocument() const
-  {
-    StyleSheet* sheet = GetStyleSheet();
-    return sheet ? sheet->GetAssociatedDocument() : nullptr;
+  // Return the document the rule applies to, if any.
+  //
+  // Suitable for style updates, and that's about it.
+  dom::Document* GetComposedDoc() const {
+    return mSheet ? mSheet->GetComposedDoc() : nullptr;
   }
 
-  virtual void SetStyleSheet(StyleSheet* aSheet);
+  // Clear the mSheet pointer on this rule and descendants.
+  virtual void DropSheetReference();
 
-  void SetParentRule(GroupRule* aRule) {
-    // We don't reference count this up reference. The group rule
-    // will tell us when it's going away or when we're detached from
-    // it.
-    mParentRule = aRule;
+  // Clear the mParentRule pointer on this rule.
+  void DropParentRuleReference() { mParentRule = nullptr; }
+
+  void DropReferences() {
+    DropSheetReference();
+    DropParentRuleReference();
   }
 
   uint32_t GetLineNumber() const { return mLineNumber; }
   uint32_t GetColumnNumber() const { return mColumnNumber; }
 
-  /**
-   * Clones |this|. Never returns nullptr.
-   */
-  virtual already_AddRefed<Rule> Clone() const = 0;
-
   // This is pure virtual because all of Rule's data members are non-owning and
   // thus measured elsewhere.
-  virtual size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf)
-    const MOZ_MUST_OVERRIDE = 0;
+  virtual size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
+      MOZ_MUST_OVERRIDE = 0;
 
-  // WebIDL interface, aka helpers for nsIDOMCSSRule implementation.
+  // WebIDL interface
   virtual uint16_t Type() const = 0;
-  virtual void GetCssTextImpl(nsAString& aCssText) const = 0;
-  // XPCOM GetCssText is OK, since it never throws.
-  // XPCOM SetCssText is OK, since it never throws.
+  virtual void GetCssText(nsAString& aCssText) const = 0;
+  void SetCssText(const nsAString& aCssText);
   Rule* GetParentRule() const;
   StyleSheet* GetParentStyleSheet() const { return GetStyleSheet(); }
-  nsIDocument* GetParentObject() const { return GetDocument(); }
+  nsINode* GetParentObject() const {
+    if (!mSheet) {
+      return nullptr;
+    }
+    auto* associated = mSheet->GetAssociatedDocumentOrShadowRoot();
+    return associated ? &associated->AsNode() : nullptr;
+  }
 
-protected:
+ protected:
   // True if we're known-live for cycle collection purposes.
   bool IsKnownLive() const;
 
-  // This is sometimes null (e.g., for style attributes).
-  StyleSheet* mSheet;
-  // When the parent GroupRule is destroyed, it will call SetParentRule(nullptr)
-  // on this object. (Through SetParentRuleReference);
-  GroupRule* MOZ_NON_OWNING_REF mParentRule;
+  // mSheet should only ever be null when we create a synthetic CSSFontFaceRule
+  // for an InspectorFontFace.
+  //
+  // mSheet and mParentRule will be cleared when they are detached from the
+  // parent object, either because the rule is removed or the parent is
+  // destroyed.
+  StyleSheet* MOZ_NON_OWNING_REF mSheet;
+  Rule* MOZ_NON_OWNING_REF mParentRule;
 
   // Keep the same type so that MSVC packs them.
-  uint32_t          mLineNumber;
-  uint32_t          mColumnNumber;
+  uint32_t mLineNumber;
+  uint32_t mColumnNumber;
 };
 
-} // namespace css
-} // namespace mozilla
+}  // namespace css
+}  // namespace mozilla
 
 #endif /* mozilla_css_Rule_h___ */

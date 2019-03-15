@@ -9,22 +9,18 @@
  * formatPercent methods.
  */
 
-let utils = require("devtools/client/memory/utils");
-let { snapshotState: states, viewState } = require("devtools/client/memory/constants");
-let { Preferences } = require("resource://gre/modules/Preferences.jsm");
+const utils = require("devtools/client/memory/utils");
+const { snapshotState: states, viewState } = require("devtools/client/memory/constants");
+const { Preferences } = require("resource://gre/modules/Preferences.jsm");
 
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* () {
-  let s1 = utils.createSnapshot({ view: { state: viewState.CENSUS } });
-  let s2 = utils.createSnapshot({ view: { state: viewState.CENSUS } });
+add_task(async function() {
+  const s1 = utils.createSnapshot({ view: { state: viewState.CENSUS } });
+  const s2 = utils.createSnapshot({ view: { state: viewState.CENSUS } });
   equal(s1.state, states.SAVING,
         "utils.createSnapshot() creates snapshot in saving state");
   ok(s1.id !== s2.id, "utils.createSnapshot() creates snapshot with unique ids");
 
-  let custom = { by: "internalType", then: { by: "count", bytes: true }};
+  const custom = { by: "internalType", then: { by: "count", bytes: true }};
   Preferences.set("devtools.memory.custom-census-displays",
                   JSON.stringify({ "My Display": custom }));
 

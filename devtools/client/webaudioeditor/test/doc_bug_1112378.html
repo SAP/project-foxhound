@@ -13,12 +13,12 @@
     <script type="text/javascript">
       "use strict";
 
-      let ctx = new AudioContext();
-      let osc = ctx.createOscillator();
+      const ctx = new AudioContext();
+      const panner = ctx.createStereoPanner();
 
-      function throwError () {
+      function throwError() {
         try {
-          osc.connect({});
+          panner.connect({});
         } catch (e) {
           return {
             lineNumber: e.lineNumber,
@@ -27,14 +27,14 @@
             message: e.message,
             instanceof: e instanceof TypeError,
             stringified: e.toString(),
-            name: e.name
-          }
+            name: e.name,
+          };
         }
       }
 
-      function throwDOMException () {
+      function throwDOMException() {
         try {
-          osc.frequency.setValueAtTime(0, -1);
+          panner.channelCount = 3;
         } catch (e) {
           return {
             lineNumber: e.lineNumber,
@@ -45,11 +45,10 @@
             result: e.result,
             instanceof: e instanceof DOMException,
             stringified: e.toString(),
-            name: e.name
-          }
+            name: e.name,
+          };
         }
       }
-
 
     </script>
   </body>

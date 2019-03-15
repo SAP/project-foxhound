@@ -11,10 +11,10 @@ XPIDL_SOURCES += [
     'nsIContentDispatchChooser.idl',
     'nsIExternalHelperAppService.idl',
     'nsIExternalProtocolService.idl',
-    'nsIExternalSharingAppService.idl',
     'nsIExternalURLHandlerService.idl',
     'nsIHandlerService.idl',
     'nsIHelperAppLauncherDialog.idl',
+    'nsISharingHandlerApp.idl',
 ]
 
 XPIDL_MODULE = 'exthandler'
@@ -24,7 +24,7 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
     LOCAL_INCLUDES += ['win']
 elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
     osdir = 'mac'
-elif CONFIG['MOZ_WIDGET_TOOLKIT'] in ('android', 'gonk', 'uikit'):
+elif CONFIG['MOZ_WIDGET_TOOLKIT'] in ('android', 'uikit'):
     osdir = CONFIG['MOZ_WIDGET_TOOLKIT']
 else:
     osdir = 'unix'
@@ -40,7 +40,6 @@ EXPORTS += [
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
     EXPORTS += [ '%s/%s' % (osdir, f) for f in [
-        'nsExternalSharingAppService.h',
         'nsExternalURLHandlerService.h',
     ]]
 
@@ -77,7 +76,7 @@ else:
     SOURCES += [
         osdir + '/nsOSHelperAppService.cpp',
     ]
-    if CONFIG['GNU_CXX']:
+    if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
         CXXFLAGS += ['-Wno-error=shadow']
 
 if 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
@@ -88,7 +87,6 @@ if 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
 elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
     UNIFIED_SOURCES += [
         'android/nsAndroidHandlerApp.cpp',
-        'android/nsExternalSharingAppService.cpp',
         'android/nsExternalURLHandlerService.cpp',
         'android/nsMIMEInfoAndroid.cpp',
     ]
@@ -101,15 +99,13 @@ if CONFIG['MOZ_ENABLE_DBUS']:
     UNIFIED_SOURCES += [
         'nsDBusHandlerApp.cpp',
     ]
-
-if CONFIG['MOZ_ENABLE_CONTENTACTION']:
-    UNIFIED_SOURCES += [
-        'nsContentHandlerApp.cpp',
+    EXPORTS.mozilla += [
+        'DBusHelpers.h',
     ]
 
 EXTRA_COMPONENTS += [
-    'nsHandlerService.js',
-    'nsHandlerService.manifest',
+    'HandlerService.js',
+    'HandlerService.manifest',
     'nsWebHandlerApp.js',
     'nsWebHandlerApp.manifest',
 ]
@@ -124,6 +120,7 @@ include('/ipc/chromium/chromium-config.mozbuild')
 FINAL_LIBRARY = 'xul'
 
 LOCAL_INCLUDES += [
+    '/docshell/base',
     '/dom/base',
     '/dom/ipc',
     '/netwerk/base',
@@ -134,6 +131,6 @@ if CONFIG['MOZ_ENABLE_DBUS']:
     CXXFLAGS += CONFIG['TK_CFLAGS']
     CXXFLAGS += CONFIG['MOZ_DBUS_CFLAGS']
 
-if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('gtk2', 'gtk3'):
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk3':
     CXXFLAGS += CONFIG['TK_CFLAGS']
     CXXFLAGS += CONFIG['MOZ_DBUS_GLIB_CFLAGS']

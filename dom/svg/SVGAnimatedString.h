@@ -7,36 +7,30 @@
 #ifndef mozilla_dom_SVGAnimatedString_h
 #define mozilla_dom_SVGAnimatedString_h
 
-#include "nsSVGElement.h"
+#include "SVGElement.h"
 
 namespace mozilla {
 namespace dom {
 
-class SVGAnimatedString : public nsISupports,
-                          public nsWrapperCache
-{
-public:
-  explicit SVGAnimatedString(nsSVGElement* aSVGElement)
-    : mSVGElement(aSVGElement)
-  {
-  }
+class SVGAnimatedString : public nsISupports, public nsWrapperCache {
+ public:
+  explicit SVGAnimatedString(SVGElement* aSVGElement)
+      : mSVGElement(aSVGElement) {}
 
-  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override;
 
   // WebIDL
-  nsSVGElement* GetParentObject() const
-  {
-    return mSVGElement;
-  }
+  SVGElement* GetParentObject() const { return mSVGElement; }
 
   virtual void GetBaseVal(nsAString& aResult) = 0;
   virtual void SetBaseVal(const nsAString& aValue) = 0;
   virtual void GetAnimVal(nsAString& aResult) = 0;
 
-  RefPtr<nsSVGElement> mSVGElement;
+  RefPtr<SVGElement> mSVGElement;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_SVGAnimatedString_h
+#endif  // mozilla_dom_SVGAnimatedString_h

@@ -6,57 +6,36 @@
 
   <browser id="thebrowser" type="content" remote="true" />
   <script type="application/javascript"><![CDATA[
-    Components.utils.import("resource://gre/modules/Services.jsm");
+    ChromeUtils.import("resource://gre/modules/Services.jsm");
+    ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
 
     const ok = window.opener.wrappedJSObject.ok;
     const is = window.opener.wrappedJSObject.is;
     const done = window.opener.wrappedJSObject.done;
     const SimpleTest = window.opener.wrappedJSObject.SimpleTest;
 
-    function getMinidumpDirectory() {
-      var dir = Services.dirsvc.get('ProfD', Components.interfaces.nsIFile);
-      dir.append("minidumps");
-      return dir;
-    }
-
-    function removeFile(directory, filename) {
-      var file = directory.clone();
-      file.append(filename);
-      if (file.exists()) {
-        file.remove(false);
-      }
-    }
-
     function crashObserver(subject, topic, data) {
       is(topic, 'ipc:content-shutdown', 'Received correct observer topic.');
-      ok(subject instanceof Components.interfaces.nsIPropertyBag2,
+      ok(subject instanceof Ci.nsIPropertyBag2,
          'Subject implements nsIPropertyBag2.');
 
       var dumpID;
-      if ('nsICrashReporter' in Components.interfaces) {
+      if ('nsICrashReporter' in Ci) {
         dumpID = subject.getPropertyAsAString('dumpID');
         ok(dumpID, "dumpID is present and not an empty string");
       }
 
-      let p = Promise.resolve();
-
-      if (dumpID) {
-        var minidumpDirectory = getMinidumpDirectory();
-        p = Services.crashmanager.ensureCrashIsPresent(dumpID).then(() => {
-          removeFile(minidumpDirectory, dumpID + '.dmp');
-          removeFile(minidumpDirectory, dumpID + '.extra');
-        });
-      }
-
       Services.obs.removeObserver(crashObserver, 'ipc:content-shutdown');
-      p.then(done);
+      done();
     }
-    Services.obs.addObserver(crashObserver, 'ipc:content-shutdown', false);
 
-    document.getElementById('thebrowser')
-            .QueryInterface(Components.interfaces.nsIFrameLoaderOwner)
-            .frameLoader.messageManager
-            .loadFrameScript('chrome://mochitests/content/chrome/dom/ipc/tests/process_error_contentscript.js', true);
+    Services.obs.addObserver(crashObserver, 'ipc:content-shutdown');
+
+    // Allow the browser to get connected before using the messageManager to cause
+    // a crash:
+    addEventListener("DOMContentLoaded", () => {
+      BrowserTestUtils.crashBrowser(document.getElementById('thebrowser'), true, false);
+    });
   ]]></script>
 
 </window>

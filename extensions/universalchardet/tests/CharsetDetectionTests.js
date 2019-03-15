@@ -5,8 +5,6 @@ var gOldPref;
 var gDetectorList;
 var gTestIndex;
 var gLocalDir;
-var Cc = Components.classes;
-var Ci = Components.interfaces;
 
 function CharsetDetectionTests(aTestFile, aExpectedCharset, aDetectorList)
 {
@@ -62,13 +60,16 @@ function InitDetectorTests()
 
 function SetDetectorPref(aPrefValue)
 {
+    var fallback = "";
+    if (aPrefValue == "ja_parallel_state_machine") {
+        fallback = "Shift_JIS";
+    } else if (aPrefValue == "ruprob" || aPrefValue == "ukprob") {
+        fallback = "windows-1251";
+    }
     var prefService = Cc["@mozilla.org/preferences-service;1"]
                       .getService(Ci.nsIPrefBranch);
-    var str = Cc["@mozilla.org/supports-string;1"]
-              .createInstance(Ci.nsISupportsString);
-    str.data = aPrefValue;
-    prefService.setComplexValue("intl.charset.detector",
-                                Ci.nsISupportsString, str);
+    prefService.setStringPref("intl.charset.detector", aPrefValue);
+    prefService.setStringPref("intl.charset.fallback.override", fallback);
     gCurrentDetector = aPrefValue;
 }
 

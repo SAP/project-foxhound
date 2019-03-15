@@ -88,17 +88,16 @@ function testHistogram(histogramId, expectedNonZeroRanges) {
 
   // Compute the actual ranges in the format { range1: value1, range2: value2 }.
   let actualNonZeroRanges = {};
-  for (let [index, range] of snapshot.ranges.entries()) {
-    let value = snapshot.counts[index];
+  for (let [range, value] of Object.entries(snapshot.values)) {
     if (value > 0) {
       actualNonZeroRanges[range] = value;
     }
   }
 
   // These are stringified to visualize the differences between the values.
-  do_print("Testing histogram: " + histogramId);
-  do_check_eq(JSON.stringify(actualNonZeroRanges),
-              JSON.stringify(expectedNonZeroRanges));
+  info("Testing histogram: " + histogramId);
+  Assert.equal(JSON.stringify(actualNonZeroRanges),
+               JSON.stringify(expectedNonZeroRanges));
 }
 
 // Tests
@@ -110,7 +109,7 @@ function testHistogram(histogramId, expectedNonZeroRanges) {
 add_task(function test_initialize() {
   let oldCanRecord = Services.telemetry.canRecordExtended;
   Services.telemetry.canRecordExtended = true;
-  do_register_cleanup(function() {
+  registerCleanupFunction(function() {
     Services.telemetry.canRecordExtended = oldCanRecord;
   });
 
@@ -170,7 +169,7 @@ add_task(function test_disabledHosts_statistics() {
  */
 add_task(function test_settings_statistics() {
   let oldRememberSignons = Services.prefs.getBoolPref("signon.rememberSignons");
-  do_register_cleanup(function() {
+  registerCleanupFunction(function() {
     Services.prefs.setBoolPref("signon.rememberSignons", oldRememberSignons);
   });
 

@@ -11,18 +11,18 @@ function test() {
     "browser/components/sessionstore/test/browser_464620_a.html";
 
   var frameCount = 0;
-  let tab = gBrowser.addTab(testURL);
-  tab.linkedBrowser.addEventListener("load", function(aEvent) {
+  let tab = BrowserTestUtils.addTab(gBrowser, testURL);
+  tab.linkedBrowser.addEventListener("load", function loadListener(aEvent) {
     // wait for all frames to load completely
     if (frameCount++ < 4)
       return;
-    this.removeEventListener("load", arguments.callee, true);
+    this.removeEventListener("load", loadListener, true);
 
     executeSoon(function() {
       frameCount = 0;
       let tab2 = gBrowser.duplicateTab(tab);
-      tab2.linkedBrowser.addEventListener("464620_a", function(aEvent) {
-        tab2.linkedBrowser.removeEventListener("464620_a", arguments.callee, true);
+      tab2.linkedBrowser.addEventListener("464620_a", function listener(eventTab2) {
+        tab2.linkedBrowser.removeEventListener("464620_a", listener, true);
         is(aEvent.data, "done", "XSS injection was attempted");
 
         // let form restoration complete and take into account the

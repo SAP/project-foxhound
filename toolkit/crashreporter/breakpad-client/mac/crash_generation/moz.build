@@ -9,12 +9,13 @@ UNIFIED_SOURCES += [
     'crash_generation_server.cc',
 ]
 
-FINAL_LIBRARY = 'xul'
+FINAL_LIBRARY = 'breakpad_client'
 
 LOCAL_INCLUDES += [
+    '/ipc/chromium/src',
     '/toolkit/crashreporter/breakpad-client',
     '/toolkit/crashreporter/google-breakpad/src',
 ]
 
-if CONFIG['CLANG_CXX']:
+if CONFIG['CC_TYPE'] == 'clang':
     CXXFLAGS += ['-Wno-shadow']

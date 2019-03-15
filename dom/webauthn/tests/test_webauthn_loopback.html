@@ -8,6 +8,7 @@
   <script type="text/javascript" src="pkijs/asn1.js"></script>
   <script type="text/javascript" src="pkijs/x509_schema.js"></script>
   <script type="text/javascript" src="pkijs/x509_simpl.js"></script>
+  <script type="text/javascript" src="cbor.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -23,13 +24,15 @@ SimpleTest.waitForExplicitFinish();
 
 SpecialPowers.pushPrefEnv({"set": [["security.webauth.webauthn", true],
                                    ["security.webauth.webauthn_enable_softtoken", true],
-                                   ["security.webauth.webauthn_enable_usbtoken", false]]},
+                                   ["security.webauth.webauthn_enable_usbtoken", false],
+                                   ["security.webauth.webauthn_testing_allow_direct_attestation", true]]},
 function() {
-  isnot(navigator.authentication, undefined, "WebAuthn API endpoint must exist");
-  isnot(navigator.authentication.makeCredential, undefined, "WebAuthn makeCredential API endpoint must exist");
-  isnot(navigator.authentication.getAssertion, undefined, "WebAuthn getAssertion API endpoint must exist");
+  is(navigator.authentication, undefined, "navigator.authentication does not exist any longer");
+  isnot(navigator.credentials, undefined, "Credential Management API endpoint must exist");
+  isnot(navigator.credentials.create, undefined, "CredentialManagement create API endpoint must exist");
+  isnot(navigator.credentials.get, undefined, "CredentialManagement get API endpoint must exist");
 
-  let authn = navigator.authentication;
+  let credm = navigator.credentials;
 
   let gCredentialChallenge = new Uint8Array(16);
   window.crypto.getRandomValues(gCredentialChallenge);
@@ -38,82 +41,122 @@ function() {
 
   testMakeCredential();
 
-  function checkCredentialValid(aCredInfo) {
-    /* ScopedCredentialInfo
-    - Credential
-    -- ID: Key Handle buffer pulled from U2F Register() Response
-    -- Type: "ScopedCred"
-    - WebAuthnAttestation
-    -- Format: "u2f"
-    -- ClientData: serialized JSON
-    -- AuthenticatorData: RP ID Hash || U2F Sign() Response
-    -- Attestation: U2F Register() Response */
+  function decodeCreatedCredential(aCredInfo) {
+    /* PublicKeyCredential : Credential
+       - rawId: Key Handle buffer pulled from U2F Register() Response
+       - id: Key Handle buffer in base64url form, should == rawId
+       - type: Literal 'public-key'
+       - response : AuthenticatorAttestationResponse : AuthenticatorResponse
+         - attestationObject: CBOR object
+         - clientDataJSON: serialized JSON
+       - clientExtensionResults: (not yet supported)
+    */
 
-    is(aCredInfo.credential.type, "ScopedCred", "Type is correct");
-    ok(aCredInfo.credential.id.length > 0, "Key ID exists");
+    is(aCredInfo.type, "public-key", "Credential type must be public-key")
 
-    is(aCredInfo.attestation.format, "u2f", "Format is correct");
-    is(aCredInfo.attestation.attestation[0], 0x05, "Reserved byte is correct");
-    ok(aCredInfo.attestation.authenticatorData.length > 0, "Authenticator data exists");
-    let clientData = JSON.parse(buffer2string(aCredInfo.attestation.clientData));
+    ok(aCredInfo.rawId.byteLength > 0, "Key ID exists");
+    is(aCredInfo.id, bytesToBase64UrlSafe(aCredInfo.rawId), "Encoded Key ID and Raw Key ID match");
+
+    ok(aCredInfo.rawId === aCredInfo.rawId, "PublicKeyCredential.RawID is SameObject");
+    ok(aCredInfo.response === aCredInfo.response, "PublicKeyCredential.Response is SameObject");
+    ok(aCredInfo.response.clientDataJSON === aCredInfo.response.clientDataJSON, "PublicKeyCredential.Response.ClientDataJSON is SameObject");
+    ok(aCredInfo.response.attestationObject === aCredInfo.response.attestationObject, "PublicKeyCredential.Response.AttestationObject is SameObject");
+
+    let clientData = JSON.parse(buffer2string(aCredInfo.response.clientDataJSON));
     is(clientData.challenge, bytesToBase64UrlSafe(gCredentialChallenge), "Challenge is correct");
     is(clientData.origin, window.location.origin, "Origin is correct");
-    is(clientData.hashAlg, "S256", "Hash algorithm is correct");
+    is(clientData.hashAlgorithm, "SHA-256", "Hash algorithm is correct");
+    is(clientData.type, "webauthn.create", "Type is correct");
 
-    return decodeU2FRegistration(aCredInfo.attestation.attestation)
-    .then(function(u2fObj) {
-      aCredInfo.u2fReg = u2fObj;
+    let extensions = aCredInfo.getClientExtensionResults();
+    is(extensions.appid, undefined, "appid extension wasn't used");
+    is(clientData.clientExtensions.appid, undefined, "appid extension wasn't sent");
+
+    return webAuthnDecodeCBORAttestation(aCredInfo.response.attestationObject)
+    .then(function(aAttestationObj) {
+      // Make sure the RP ID hash matches what we calculate.
+      return crypto.subtle.digest("SHA-256", string2buffer(document.domain))
+      .then(function(calculatedRpIdHash) {
+        let calcHashStr = bytesToBase64UrlSafe(new Uint8Array(calculatedRpIdHash));
+        let providedHashStr = bytesToBase64UrlSafe(new Uint8Array(aAttestationObj.authDataObj.rpIdHash));
+
+        is(calcHashStr, providedHashStr,
+           "Calculated RP ID hash must match what the browser derived.");
+        return Promise.resolve(aAttestationObj);
+      });
+    })
+    .then(function(aAttestationObj) {
+      ok(aAttestationObj.authDataObj.flags == (flag_TUP | flag_AT),
+         "User presence and Attestation Object must be the only flags set");
+
+      aCredInfo.clientDataObj = clientData;
+      aCredInfo.publicKeyHandle = aAttestationObj.authDataObj.publicKeyHandle;
+      aCredInfo.attestationObject = aAttestationObj.authDataObj.attestationAuthData;
       return aCredInfo;
     });
   }
 
   function checkAssertionAndSigValid(aPublicKey, aAssertion) {
-    /* WebAuthnAssertion
-    - Credential
-    -- ID: ID of Credential from AllowList that succeeded
-    -- Type: "ScopedCred"
-    - ClientData: serialized JSON
-    - AuthenticatorData: RP ID Hash || U2F Sign() Response
-    - Signature: U2F Sign() Response */
+    /* PublicKeyCredential : Credential
+       - rawId: ID of Credential from AllowList that succeeded
+       - id: Key Handle buffer in base64url form, should == rawId
+       - type: Literal 'public-key'
+       - response : AuthenticatorAssertionResponse : AuthenticatorResponse
+         - clientDataJSON: serialized JSON
+         - authenticatorData: RP ID Hash || U2F Sign() Response
+         - signature: U2F Sign() Response
+    */
 
-    is(aAssertion.credential.type, "ScopedCred", "Type is correct");
-    ok(aAssertion.credential.id.length > 0, "Key ID exists");
+    is(aAssertion.type, "public-key", "Credential type must be public-key")
 
-    ok(aAssertion.authenticatorData.length > 0, "Authenticator data exists");
-    let clientData = JSON.parse(buffer2string(aAssertion.clientData));
+    ok(aAssertion.rawId.byteLength > 0, "Key ID exists");
+    is(aAssertion.id, bytesToBase64UrlSafe(new Uint8Array(aAssertion.rawId)), "Encoded Key ID and Raw Key ID match");
+
+    ok(aAssertion.response.authenticatorData === aAssertion.response.authenticatorData, "AuthenticatorAssertionResponse.AuthenticatorData is SameObject");
+    ok(aAssertion.response.authenticatorData instanceof ArrayBuffer, "AuthenticatorAssertionResponse.AuthenticatorData is an ArrayBuffer");
+    ok(aAssertion.response.signature === aAssertion.response.signature, "AuthenticatorAssertionResponse.Signature is SameObject");
+    ok(aAssertion.response.signature instanceof ArrayBuffer, "AuthenticatorAssertionResponse.Signature is an ArrayBuffer");
+    ok(aAssertion.response.userHandle === null, "AuthenticatorAssertionResponse.UserHandle is null for u2f authenticators");
+
+    ok(aAssertion.response.authenticatorData.byteLength > 0, "Authenticator data exists");
+    let clientData = JSON.parse(buffer2string(aAssertion.response.clientDataJSON));
     is(clientData.challenge, bytesToBase64UrlSafe(gAssertionChallenge), "Challenge is correct");
     is(clientData.origin, window.location.origin, "Origin is correct");
-    is(clientData.hashAlg, "S256", "Hash algorithm is correct");
+    is(clientData.hashAlgorithm, "SHA-256", "Hash algorithm is correct");
+    is(clientData.type, "webauthn.get", "Type is correct");
 
-    // Parse the signature data
-    if (aAssertion.signature[0] != 0x01) {
-      throw "User presence byte not set";
-    }
-    let presenceAndCounter = aAssertion.signature.slice(0,5);
-    let signatureValue = aAssertion.signature.slice(5);
-
-    let rpIdHash = aAssertion.authenticatorData.slice(0,32);
-
-    // Assemble the signed data and verify the signature
-    return deriveAppAndChallengeParam(clientData.origin, aAssertion.clientData)
+    return webAuthnDecodeAuthDataArray(aAssertion.response.authenticatorData)
+    .then(function(aAttestation) {
+      ok(new Uint8Array(aAttestation.flags) == flag_TUP, "User presence must be the only flag set");
+      is(aAttestation.counter.byteLength, 4, "Counter must be 4 bytes");
+      return deriveAppAndChallengeParam(window.location.host, aAssertion.response.clientDataJSON, aAttestation)
+    })
     .then(function(aParams) {
-      console.log(aParams.appParam, rpIdHash, presenceAndCounter, aParams.challengeParam);
-      console.log("ClientData buffer: ", hexEncode(aAssertion.clientData));
+      console.log(aParams);
+      console.log("ClientData buffer: ", hexEncode(aAssertion.response.clientDataJSON));
       console.log("ClientDataHash: ", hexEncode(aParams.challengeParam));
-      return assembleSignedData(aParams.appParam, presenceAndCounter, aParams.challengeParam);
+      return assembleSignedData(aParams.appParam, aParams.attestation.flags,
+                                aParams.attestation.counter, aParams.challengeParam);
     })
     .then(function(aSignedData) {
-      console.log(aPublicKey, aSignedData, signatureValue);
-      return verifySignature(aPublicKey, aSignedData, signatureValue);
+      console.log(aPublicKey, aSignedData, aAssertion.response.signature);
+      return verifySignature(aPublicKey, aSignedData, aAssertion.response.signature);
     })
   }
 
   function testMakeCredential() {
-    let acct = {rpDisplayName: "none", displayName: "none", id: "none"};
-    let param = {type: "ScopedCred", algorithm: "p-256"};
-
-    authn.makeCredential(acct, [param], gCredentialChallenge)
-    .then(checkCredentialValid)
+    let rp = {id: document.domain, name: "none", icon: "none"};
+    let user = {id: new Uint8Array(), name: "none", icon: "none", displayName: "none"};
+    let param = {type: "public-key", alg: cose_alg_ECDSA_w_SHA256};
+    let makeCredentialOptions = {
+      rp: rp,
+      user: user,
+      challenge: gCredentialChallenge,
+      pubKeyCredParams: [param],
+      attestation: "direct"
+    };
+    credm.create({publicKey: makeCredentialOptions})
+    .then(decodeCreatedCredential)
     .then(testMakeDuplicate)
     .catch(function(aReason) {
       ok(false, aReason);
@@ -122,36 +165,46 @@ function() {
   }
 
   function testMakeDuplicate(aCredInfo) {
-    let acct = {rpDisplayName: "none", displayName: "none", id: "none"};
-    let param = {type: "ScopedCred", algorithm: "p-256"};
-    let options = {rpId: document.origin,
-                   excludeList: [aCredInfo.credential]};
-
-    authn.makeCredential(acct, [param], gCredentialChallenge, options)
+    let rp = {id: document.domain, name: "none", icon: "none"};
+    let user = {id: new Uint8Array(), name: "none", icon: "none", displayName: "none"};
+    let param = {type: "public-key", alg: cose_alg_ECDSA_w_SHA256};
+    let makeCredentialOptions = {
+      rp: rp,
+      user: user,
+      challenge: gCredentialChallenge,
+      pubKeyCredParams: [param],
+      excludeCredentials: [{type: "public-key", id: new Uint8Array(aCredInfo.rawId),
+                     transports: ["usb"]}]
+    };
+    credm.create({publicKey: makeCredentialOptions})
     .then(function() {
       // We should have errored here!
       ok(false, "The excludeList didn't stop a duplicate being created!");
       SimpleTest.finish();
     })
     .catch(function(aReason) {
-      ok(aReason.toString().startsWith("NotAllowedError"), "Expect NotAllowedError, got" + aReason);
+      ok(aReason.toString().startsWith("InvalidStateError"), "Expect InvalidStateError, got " + aReason);
       testAssertion(aCredInfo);
     });
   }
 
   function testAssertion(aCredInfo) {
     let newCredential = {
-      type: aCredInfo.credential.type,
-      id: Uint8Array.from(aCredInfo.credential.id),
-      transports: [ "usb" ],
+      type: "public-key",
+      id: new Uint8Array(aCredInfo.rawId),
+      transports: ["usb"],
     }
 
-    let assertOptions = {rpId: document.origin, timeoutSeconds: 5,
-                         allowList: [ newCredential ]};
-    authn.getAssertion(gAssertionChallenge, assertOptions)
+    let publicKeyCredentialRequestOptions = {
+      challenge: gAssertionChallenge,
+      timeout: 5000, // the minimum timeout is actually 15 seconds
+      rpId: document.domain,
+      allowCredentials: [newCredential]
+    };
+    credm.get({publicKey: publicKeyCredentialRequestOptions})
     .then(function(aAssertion) {
       /* Pass along the pubKey. */
-      return checkAssertionAndSigValid(aCredInfo.u2fReg.publicKey, aAssertion);
+      return checkAssertionAndSigValid(aCredInfo.publicKeyHandle, aAssertion);
     })
     .then(function(aSigVerifyResult) {
       ok(aSigVerifyResult, "Signing signature verified");

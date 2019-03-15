@@ -12,11 +12,14 @@
 #include "prio.h"
 #include "blapi.h"
 #include "seccomon.h"
+#include "secerr.h"
 #include "stdio.h"
 #include "prmem.h"
 #include "hasht.h"
 #include "pqg.h"
 #include "blapii.h"
+
+#ifndef NSS_FIPS_DISABLED
 
 /*
  * Most modern version of Linux support a speed optimization scheme where an
@@ -233,8 +236,12 @@ static char *
 mkCheckFileName(const char *libName)
 {
     int ln_len = PORT_Strlen(libName);
-    char *output = PORT_Alloc(ln_len + sizeof(SGN_SUFFIX));
     int index = ln_len + 1 - sizeof("." SHLIB_SUFFIX);
+    char *output = PORT_Alloc(ln_len + sizeof(SGN_SUFFIX));
+    if (!output) {
+        PORT_SetError(SEC_ERROR_NO_MEMORY);
+        return NULL;
+    }
 
     if ((index > 0) &&
         (PORT_Strncmp(&libName[index],
@@ -532,3 +539,23 @@ BLAPI_VerifySelf(const char *name)
     }
     return blapi_SHVerify(name, (PRFuncPtr)decodeInt, PR_TRUE);
 }
+
+#else /* NSS_FIPS_DISABLED */
+
+PRBool
+BLAPI_SHVerifyFile(const char *shName)
+{
+    return PR_FALSE;
+}
+PRBool
+BLAPI_SHVerify(const char *name, PRFuncPtr addr)
+{
+    return PR_FALSE;
+}
+PRBool
+BLAPI_VerifySelf(const char *name)
+{
+    return PR_FALSE;
+}
+
+#endif /* NSS_FIPS_DISABLED */

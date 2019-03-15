@@ -4,24 +4,20 @@
 "use strict";
 
 const { memorySpec } = require("devtools/shared/specs/memory");
-const { Task } = require("devtools/shared/task");
-const protocol = require("devtools/shared/protocol");
+const { FrontClassWithSpec, registerFront } = require("devtools/shared/protocol");
 
 loader.lazyRequireGetter(this, "FileUtils",
                          "resource://gre/modules/FileUtils.jsm", true);
 loader.lazyRequireGetter(this, "HeapSnapshotFileUtils",
                          "devtools/shared/heapsnapshot/HeapSnapshotFileUtils");
 
-const MemoryFront = protocol.FrontClassWithSpec(memorySpec, {
-  initialize: function (client, form, rootForm = null) {
-    protocol.Front.prototype.initialize.call(this, client, form);
+class MemoryFront extends FrontClassWithSpec(memorySpec) {
+  constructor(client, form) {
+    super(client, { actor: form.memoryActor });
     this._client = client;
-    this.actorID = form.memoryActor;
-    this.heapSnapshotFileActorID = rootForm
-      ? rootForm.heapSnapshotFileActor
-      : null;
+    this.heapSnapshotFileActorID = null;
     this.manage(this);
-  },
+  }
 
   /**
    * Save a heap snapshot, transfer it from the server to the client if the
@@ -37,22 +33,20 @@ const MemoryFront = protocol.FrontClassWithSpec(memorySpec, {
    *
    * @params {Object|undefined} options.boundaries
    *         The boundaries for the heap snapshot. See
-   *         ThreadSafeChromeUtils.webidl for more details.
+   *         ChromeUtils.webidl for more details.
    *
    * @returns Promise<String>
    */
-  saveHeapSnapshot: protocol.custom(Task.async(function* (options = {}) {
-    const snapshotId = yield this._saveHeapSnapshotImpl(options.boundaries);
+  async saveHeapSnapshot(options = {}) {
+    const snapshotId = await super.saveHeapSnapshot(options.boundaries);
 
     if (!options.forceCopy &&
-        (yield HeapSnapshotFileUtils.haveHeapSnapshotTempFile(snapshotId))) {
+        (await HeapSnapshotFileUtils.haveHeapSnapshotTempFile(snapshotId))) {
       return HeapSnapshotFileUtils.getHeapSnapshotTempFilePath(snapshotId);
     }
 
-    return yield this.transferHeapSnapshot(snapshotId);
-  }), {
-    impl: "_saveHeapSnapshotImpl"
-  }),
+    return this.transferHeapSnapshot(snapshotId);
+  }
 
   /**
    * Given that we have taken a heap snapshot with the given id, transfer the
@@ -63,30 +57,47 @@ const MemoryFront = protocol.FrontClassWithSpec(memorySpec, {
    *
    * @returns Promise<String>
    */
-  transferHeapSnapshot: protocol.custom(function (snapshotId) {
+  async transferHeapSnapshot(snapshotId) {
     if (!this.heapSnapshotFileActorID) {
-      throw new Error("MemoryFront initialized without a rootForm");
+      const form = await this._client.mainRoot.rootForm;
+      this.heapSnapshotFileActorID = form.heapSnapshotFileActor;
     }
 
-    const request = this._client.request({
-      to: this.heapSnapshotFileActorID,
-      type: "transferHeapSnapshot",
-      snapshotId
-    });
+    try {
+      const request = this._client.request({
+        to: this.heapSnapshotFileActorID,
+        type: "transferHeapSnapshot",
+        snapshotId,
+      });
 
-    return new Promise((resolve, reject) => {
       const outFilePath =
         HeapSnapshotFileUtils.getNewUniqueHeapSnapshotTempFilePath();
       const outFile = new FileUtils.File(outFilePath);
-
       const outFileStream = FileUtils.openSafeFileOutputStream(outFile);
-      request.on("bulk-reply", Task.async(function* ({ copyTo }) {
-        yield copyTo(outFileStream);
-        FileUtils.closeSafeFileOutputStream(outFileStream);
-        resolve(outFilePath);
-      }));
-    });
-  })
-});
+
+      // This request is a bulk request. That's why the result of the request is
+      // an object with the `copyTo` function that can transfer the data to
+      // another stream.
+      // See devtools/shared/transport/transport.js to know more about this mode.
+      const { copyTo } = await request;
+      await copyTo(outFileStream);
+
+      FileUtils.closeSafeFileOutputStream(outFileStream);
+      return outFilePath;
+    } catch (e) {
+      if (e.error) {
+        // This isn't a real error, rather this is a message coming from the
+        // server. So let's throw a real error instead.
+        throw new Error(
+          `The server's actor threw an error: (${e.error}) ${e.message}`
+        );
+      }
+
+      // Otherwise, rethrow the error
+      throw e;
+    }
+  }
+}
 
 exports.MemoryFront = MemoryFront;
+registerFront(MemoryFront);

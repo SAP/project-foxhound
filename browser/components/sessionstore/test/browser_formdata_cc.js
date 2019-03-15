@@ -10,7 +10,7 @@ requestLongerTimeout(3);
  * collected, while numbers that don't look like credit card numbers will
  * still be collected.
  */
-add_task(function* () {
+add_task(async function() {
   const validCCNumbers = [
     // 15 digits
     "930771457288760", "474915027480942",
@@ -23,7 +23,7 @@ add_task(function* () {
     "0580828863575793", "5015290610002932",
     "9465714503078607", "4302068493801686",
     "2721398408985465", "6160334316984331",
-    "8643619970075142", "0218246069710785"
+    "8643619970075142", "0218246069710785",
   ];
 
   const invalidCCNumbers = [
@@ -38,34 +38,34 @@ add_task(function* () {
     "3095975979578034", "3662215692222536",
     "6723210018630429", "4411962856225025",
     "8276996369036686", "4449796938248871",
-    "3350852696538147", "5011802870046957"
+    "3350852696538147", "5011802870046957",
   ];
 
   // Creates a tab, loads a page with a form field, sets the value of the
   // field, and then removes the tab to trigger data collection.
-  function* createAndRemoveTab(formValue) {
+  async function createAndRemoveTab(formValue) {
     // Create a new tab.
-    let tab = gBrowser.addTab(URL);
+    let tab = BrowserTestUtils.addTab(gBrowser, URL);
     let browser = tab.linkedBrowser;
-    yield promiseBrowserLoaded(browser);
+    await promiseBrowserLoaded(browser);
 
     // Set form value.
-    yield setInputValue(browser, formValue);
+    await setInputValue(browser, formValue);
 
     // Remove the tab.
-    yield promiseRemoveTab(tab);
+    await promiseRemoveTabAndSessionState(tab);
   }
 
   // Test that valid CC numbers are not collected.
   for (let number of validCCNumbers) {
-    yield createAndRemoveTab(number);
+    await createAndRemoveTab(number);
     let [{state}] = JSON.parse(ss.getClosedTabData(window));
     ok(!("formdata" in state), "valid CC numbers are not collected");
   }
 
   // Test that non-CC numbers are still collected.
   for (let number of invalidCCNumbers) {
-    yield createAndRemoveTab(number);
+    await createAndRemoveTab(number);
     let [{state: {formdata}}] = JSON.parse(ss.getClosedTabData(window));
     is(formdata.id.txt, number,
        "numbers that are not valid CC numbers are still collected");
@@ -73,7 +73,7 @@ add_task(function* () {
 });
 
 function setInputValue(browser, formValue) {
-  return ContentTask.spawn(browser, formValue, function* (formValue) {
-    content.document.getElementById("txt").setUserInput(formValue);
+  return ContentTask.spawn(browser, formValue, async function(newValue) {
+    content.document.getElementById("txt").setUserInput(newValue);
   });
 }

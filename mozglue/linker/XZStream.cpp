@@ -1,7 +1,9 @@
 #include "XZStream.h"
 
 #include <algorithm>
+#include <cstring>
 #include "mozilla/Assertions.h"
+#include "mozilla/CheckedInt.h"
 #include "Logging.h"
 
 // LZMA dictionary size, should have a minimum size for the given compression
@@ -12,13 +14,12 @@ static const size_t kFooterSize = 12;
 
 // Parses a variable-length integer (VLI),
 // see http://tukaani.org/xz/xz-file-format.txt for details.
-static size_t
-ParseVarLenInt(const uint8_t* aBuf, size_t aBufSize, uint64_t* aValue)
-{
+static size_t ParseVarLenInt(const uint8_t* aBuf, size_t aBufSize,
+                             uint64_t* aValue) {
   if (!aBufSize) {
     return 0;
   }
-  aBufSize = std::min(9u, aBufSize);
+  aBufSize = std::min(size_t(9), aBufSize);
 
   *aValue = aBuf[0] & 0x7F;
   size_t i = 0;
@@ -32,33 +33,26 @@ ParseVarLenInt(const uint8_t* aBuf, size_t aBufSize, uint64_t* aValue)
   return i;
 }
 
-/* static */ bool
-XZStream::IsXZ(const void* aBuf, size_t aBufSize)
-{
+/* static */ bool XZStream::IsXZ(const void* aBuf, size_t aBufSize) {
   static const uint8_t kXzMagic[] = {0xfd, '7', 'z', 'X', 'Z', 0x0};
   MOZ_ASSERT(aBuf);
   return aBufSize > sizeof(kXzMagic) &&
-         !memcmp(reinterpret_cast<const void*>(kXzMagic), aBuf, sizeof(kXzMagic));
+         !memcmp(reinterpret_cast<const void*>(kXzMagic), aBuf,
+                 sizeof(kXzMagic));
 }
 
 XZStream::XZStream(const void* aInBuf, size_t aInSize)
-  : mInBuf(static_cast<const uint8_t*>(aInBuf))
-  , mUncompSize(0)
-  , mDec(nullptr)
-{
+    : mInBuf(static_cast<const uint8_t*>(aInBuf)),
+      mUncompSize(0),
+      mDec(nullptr) {
   mBuffers.in = mInBuf;
   mBuffers.in_pos = 0;
   mBuffers.in_size = aInSize;
 }
 
-XZStream::~XZStream()
-{
-  xz_dec_end(mDec);
-}
+XZStream::~XZStream() { xz_dec_end(mDec); }
 
-bool
-XZStream::Init()
-{
+bool XZStream::Init() {
 #ifdef XZ_USE_CRC64
   xz_crc64_init();
 #endif
@@ -71,13 +65,14 @@ XZStream::Init()
   }
 
   mUncompSize = ParseUncompressedSize();
+  if (!mUncompSize) {
+    return false;
+  }
 
   return true;
 }
 
-size_t
-XZStream::Decode(void* aOutBuf, size_t aOutSize)
-{
+size_t XZStream::Decode(void* aOutBuf, size_t aOutSize) {
   if (!mDec) {
     return 0;
   }
@@ -134,27 +129,15 @@ XZStream::Decode(void* aOutBuf, size_t aOutSize)
   return mBuffers.out_pos;
 }
 
-size_t
-XZStream::RemainingInput() const
-{
+size_t XZStream::RemainingInput() const {
   return mBuffers.in_size - mBuffers.in_pos;
 }
 
-size_t
-XZStream::Size() const
-{
-  return mBuffers.in_size;
-}
+size_t XZStream::Size() const { return mBuffers.in_size; }
 
-size_t
-XZStream::UncompressedSize() const
-{
-  return mUncompSize;
-}
+size_t XZStream::UncompressedSize() const { return mUncompSize; }
 
-size_t
-XZStream::ParseIndexSize() const
-{
+size_t XZStream::ParseIndexSize() const {
   static const uint8_t kFooterMagic[] = {'Y', 'Z'};
 
   const uint8_t* footer = mInBuf + mBuffers.in_size - kFooterSize;
@@ -163,18 +146,24 @@ XZStream::ParseIndexSize() const
              footer + kFooterSize - sizeof(kFooterMagic),
              sizeof(kFooterMagic))) {
     // Not a valid footer at stream end.
+    ERROR("XZ parsing: Invalid footer at end of stream");
     return 0;
   }
-  // Backward size is a 32 bit LE integer field positioned after the 32 bit CRC32
-  // code. It encodes the index size as a multiple of 4 bytes with a minimum
-  // size of 4 bytes.
-  const uint32_t backwardSize = *(footer + 4);
-  return (backwardSize + 1) * 4;
+  // Backward size is a 32 bit LE integer field positioned after the 32 bit
+  // CRC32 code. It encodes the index size as a multiple of 4 bytes with a
+  // minimum size of 4 bytes.
+  const uint32_t backwardSizeRaw = *(footer + 4);
+  // Check for overflow.
+  mozilla::CheckedInt<size_t> backwardSizeBytes(backwardSizeRaw);
+  backwardSizeBytes = (backwardSizeBytes + 1) * 4;
+  if (!backwardSizeBytes.isValid()) {
+    ERROR("XZ parsing: Cannot parse index size");
+    return 0;
+  }
+  return backwardSizeBytes.value();
 }
 
-size_t
-XZStream::ParseUncompressedSize() const
-{
+size_t XZStream::ParseUncompressedSize() const {
   static const uint8_t kIndexIndicator[] = {0x0};
 
   const size_t indexSize = ParseIndexSize();
@@ -185,29 +174,41 @@ XZStream::ParseUncompressedSize() const
   const uint8_t* end = mInBuf + mBuffers.in_size;
   const uint8_t* index = end - kFooterSize - indexSize;
 
-  // The index consists of a one byte indicator followed by a VLI field for the
-  // number of records (1 expected) followed by a list of records. One record
-  // contains a VLI field for unpadded size followed by a VLI field for
-  // uncompressed size.
-  if (memcmp(reinterpret_cast<const void*>(kIndexIndicator),
-             index, sizeof(kIndexIndicator))) {
-    // Not a valid index.
+  // The xz stream index consists of three concatenated elements:
+  //  (1) 1 byte indicator (always OxOO)
+  //  (2) a Variable Length Integer (VLI) field for the number of records
+  //  (3) a list of records
+  // See https://tukaani.org/xz/xz-file-format-1.0.4.txt
+  // Each record contains a VLI field for unpadded size followed by a var field
+  // for uncompressed size. We only support xz streams with a single record.
+
+  if (memcmp(reinterpret_cast<const void*>(kIndexIndicator), index,
+             sizeof(kIndexIndicator))) {
+    ERROR("XZ parsing: Invalid stream index");
     return 0;
   }
 
   index += sizeof(kIndexIndicator);
   uint64_t numRecords = 0;
   index += ParseVarLenInt(index, end - index, &numRecords);
-  if (!numRecords) {
+  // Only streams with a single record are supported.
+  if (numRecords != 1) {
+    ERROR("XZ parsing: Multiple records not supported");
     return 0;
   }
   uint64_t unpaddedSize = 0;
   index += ParseVarLenInt(index, end - index, &unpaddedSize);
   if (!unpaddedSize) {
+    ERROR("XZ parsing: Unpadded size is 0");
     return 0;
   }
   uint64_t uncompressedSize = 0;
   index += ParseVarLenInt(index, end - index, &uncompressedSize);
+  mozilla::CheckedInt<size_t> checkedSize(uncompressedSize);
+  if (!checkedSize.isValid()) {
+    ERROR("XZ parsing: Uncompressed stream size is too large");
+    return 0;
+  }
 
-  return uncompressedSize;
+  return checkedSize.value();
 }

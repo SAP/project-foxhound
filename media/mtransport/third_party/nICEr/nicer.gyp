@@ -7,7 +7,6 @@
 #
 {
   'variables' : {
-    'build_with_gonk%': 0,
     'have_ethtool_cmd_speed_hi%': 1
   },
   'targets' : [
@@ -18,15 +17,15 @@
           'include_dirs' : [
               ## EXTERNAL
               # nrappkit
-	      '../nrappkit/src/event',
-	      '../nrappkit/src/log',
+              '../nrappkit/src/event',
+              '../nrappkit/src/log',
               '../nrappkit/src/plugin',
-	      '../nrappkit/src/registry',
-	      '../nrappkit/src/share',
-	      '../nrappkit/src/stats',
-	      '../nrappkit/src/util',
-	      '../nrappkit/src/util/libekr',
- 	      '../nrappkit/src/port/generic/include',
+              '../nrappkit/src/registry',
+              '../nrappkit/src/share',
+              '../nrappkit/src/stats',
+              '../nrappkit/src/util',
+              '../nrappkit/src/util/libekr',
+              '../nrappkit/src/port/generic/include',
 
               # INTERNAL
               "./src/crypto",
@@ -68,8 +67,6 @@
                 "./src/net/nr_resolver.h",
                 "./src/net/nr_socket_wrapper.c",
                 "./src/net/nr_socket_wrapper.h",
-                "./src/net/nr_proxy_tunnel.c",
-                "./src/net/nr_proxy_tunnel.h",
                 "./src/net/nr_socket.c",
                 "./src/net/nr_socket.h",
                 #"./src/net/nr_socket_local.c",
@@ -120,8 +117,6 @@
                 "./src/util/cb_args.h",
                 "./src/util/ice_util.c",
                 "./src/util/ice_util.h",
-                "./src/util/mbslen.c",
-                "./src/util/mbslen.h",
 
 
           ],
@@ -136,13 +131,13 @@
               'USE_TURN',
               'NR_SOCKET_IS_VOID_PTR',
               'restrict=',
-	      'R_PLATFORM_INT_TYPES=<stdint.h>',
-	      'R_DEFINED_INT2=int16_t',
-	      'R_DEFINED_UINT2=uint16_t',
-	      'R_DEFINED_INT4=int32_t',
-	      'R_DEFINED_UINT4=uint32_t',
-	      'R_DEFINED_INT8=int64_t',
-	      'R_DEFINED_UINT8=uint64_t',
+              'R_PLATFORM_INT_TYPES=<stdint.h>',
+              'R_DEFINED_INT2=int16_t',
+              'R_DEFINED_UINT2=uint16_t',
+              'R_DEFINED_INT4=int32_t',
+              'R_DEFINED_UINT4=uint32_t',
+              'R_DEFINED_INT8=int64_t',
+              'R_DEFINED_UINT8=uint64_t',
           ],
 
           'conditions' : [
@@ -164,6 +159,7 @@
                     '-Wno-strict-prototypes',
                     '-Wmissing-prototypes',
                     '-Wno-format',
+                    '-Wno-format-security',
                  ],
                  'defines' : [
                      'HAVE_LIBM=1',
@@ -177,18 +173,19 @@
                      '__UNUSED__=__attribute__((unused))',
                  ],
 
-		 'include_dirs': [
-		     '../nrappkit/src/port/darwin/include'
-		 ],
+                 'include_dirs': [
+                     '../nrappkit/src/port/darwin/include'
+                 ],
 
-		 'sources': [
-		 ],
+                 'sources': [
+                 ],
               }],
 
               ## Win
               [ 'OS == "win"', {
                 'defines' : [
                     'WIN32',
+                    '_WINSOCK_DEPRECATED_NO_WARNINGS',
                     'USE_ICE',
                     'USE_TURN',
                     'USE_RFC_3489_BACKWARDS_COMPATIBLE',
@@ -200,18 +197,37 @@
                     'NO_REG_RPC'
                 ],
 
-		 'include_dirs': [
-		     '../nrappkit/src/port/win32/include'
-		 ],
+                 'include_dirs': [
+                     '../nrappkit/src/port/win32/include'
+                 ],
               }],
+
+              # Windows, clang-cl build
+              [ 'clang_cl == 1', {
+                'cflags_mozilla': [
+                    '-Xclang',
+                    '-Wall',
+                    '-Xclang',
+                    '-Wno-parentheses',
+                    '-Wno-pointer-sign',
+                    '-Wno-strict-prototypes',
+                    '-Xclang',
+                    '-Wno-unused-function',
+                    '-Wmissing-prototypes',
+                    '-Wno-format',
+                    '-Wno-format-security',
+                 ],
+              }],
+
               ## Linux/Android
-              [ '(OS == "linux") or (OS=="android")', {
+              [ '(OS == "linux") or (OS == "android")', {
                 'cflags_mozilla': [
                     '-Wall',
                     '-Wno-parentheses',
                     '-Wno-strict-prototypes',
                     '-Wmissing-prototypes',
                     '-Wno-format',
+                    '-Wno-format-security',
                  ],
                  'defines' : [
                      'LINUX',
@@ -226,30 +242,28 @@
                      '__UNUSED__=__attribute__((unused))',
                  ],
 
-		 'include_dirs': [
-		     '../nrappkit/src/port/linux/include'
-		 ],
+                 'include_dirs': [
+                     '../nrappkit/src/port/linux/include'
+                 ],
 
-		 'sources': [
-		 ],
-              }],
-              ['moz_widget_toolkit_gonk==1', {
-                'defines' : [
-                  'WEBRTC_GONK',
-                  'NO_REG_RPC',
-                ],
-             }],
-             # Gonk has its own nr_stun_get_addrs implementation.
-             ['build_with_gonk==1', {
-               'defines': [
-                  "USE_PLATFORM_NR_STUN_GET_ADDRS",
-               ]
+                 'sources': [
+                 ],
              }],
              ['have_ethtool_cmd_speed_hi==0', {
                'defines': [
                   "DONT_HAVE_ETHTOOL_SPEED_HI",
                ]
-             }]
+             }],
+        ['(libfuzzer == 1) and (libfuzzer_fuzzer_no_link_flag == 1)', {
+          'cflags_mozilla': [
+            '-fsanitize=fuzzer-no-link'
+         ],
+        }],
+        ['(libfuzzer == 1) and (libfuzzer_fuzzer_no_link_flag == 0)', {
+          'cflags_mozilla': [
+            '-fsanitize-coverage=trace-pc-guard,trace-cmp'
+         ],
+        }],
           ],
       }]
 }

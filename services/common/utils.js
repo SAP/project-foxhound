@@ -2,17 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
+var EXPORTED_SYMBOLS = ["CommonUtils"];
 
-this.EXPORTED_SYMBOLS = ["CommonUtils"];
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Log.jsm");
+ChromeUtils.defineModuleGetter(this, "OS",
+                               "resource://gre/modules/osfile.jsm");
 
-Cu.import("resource://gre/modules/Promise.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/osfile.jsm")
-Cu.import("resource://gre/modules/Log.jsm");
-
-this.CommonUtils = {
+var CommonUtils = {
   /*
    * Set manipulation methods. These should be lifted into toolkit, or added to
    * `Set` itself.
@@ -132,20 +130,7 @@ this.CommonUtils = {
     if (thisObj) {
       callback = callback.bind(thisObj);
     }
-    Services.tm.currentThread.dispatch(callback, Ci.nsIThread.DISPATCH_NORMAL);
-  },
-
-  /**
-   * Return a promise resolving on some later tick.
-   *
-   * This a wrapper around Promise.resolve() that prevents stack
-   * accumulation and prevents callers from accidentally relying on
-   * same-tick promise resolution.
-   */
-  laterTickResolvingPromise(value, prototype) {
-    let deferred = Promise.defer(prototype);
-    this.nextTick(deferred.resolve.bind(deferred, value));
-    return deferred.promise;
+    Services.tm.dispatchToMainThread(callback);
   },
 
   /**
@@ -155,7 +140,8 @@ this.CommonUtils = {
    */
   namedTimer: function namedTimer(callback, wait, thisObj, name) {
     if (!thisObj || !name) {
-      throw "You must provide both an object and a property name for the timer!";
+      throw new Error(
+          "You must provide both an object and a property name for the timer!");
     }
 
     // Delay an existing timer if it exists
@@ -179,7 +165,7 @@ this.CommonUtils = {
         // Clear out the timer once it's been triggered
         timer.clear();
         callback.call(thisObj, timer);
-      }
+      },
     }, wait, timer.TYPE_ONE_SHOT);
 
     return thisObj[name] = timer;
@@ -211,8 +197,38 @@ this.CommonUtils = {
     return Array.prototype.slice.call(bytesString).map(c => c.charCodeAt(0));
   },
 
+  // A lot of Util methods work with byte strings instead of ArrayBuffers.
+  // A patch should address this problem, but in the meantime let's provide
+  // helpers method to convert byte strings to Uint8Array.
+  byteStringToArrayBuffer(byteString) {
+    if (byteString === undefined) {
+      return new Uint8Array();
+    }
+    const bytes = new Uint8Array(byteString.length);
+    for (let i = 0; i < byteString.length; ++i) {
+      bytes[i] = byteString.charCodeAt(i) & 0xff;
+    }
+    return bytes;
+  },
+
+  arrayBufferToByteString(buffer) {
+    return CommonUtils.byteArrayToString([...buffer]);
+  },
+
+  bufferToHex(buffer) {
+    return Array.prototype.map.call(buffer, (x) => ("00" + x.toString(16)).slice(-2)).join("");
+  },
+
   bytesAsHex: function bytesAsHex(bytes) {
-    return Array.prototype.slice.call(bytes).map(c => ("0" + c.charCodeAt(0).toString(16)).slice(-2)).join("");
+    let s = "";
+    for (let i = 0, len = bytes.length; i < len; i++) {
+      let c = (bytes[i].charCodeAt(0) & 0xff).toString(16);
+      if (c.length == 1) {
+        c = "0" + c;
+      }
+      s += c;
+    }
+    return s;
   },
 
   stringAsHex: function stringAsHex(str) {
@@ -229,6 +245,11 @@ this.CommonUtils = {
       bytes.push(parseInt(str.substr(i, 2), 16));
     }
     return String.fromCharCode.apply(String, bytes);
+  },
+
+  hexToArrayBuffer(str) {
+    const octString = CommonUtils.hexToBytes(str);
+    return CommonUtils.byteStringToArrayBuffer(octString);
   },
 
   hexAsString: function hexAsString(hex) {
@@ -303,10 +324,10 @@ this.CommonUtils = {
       function advance() {
         c  = str[cOffset++];
         if (!c || c == "" || c == "=") // Easier than range checking.
-          throw "Done";                // Will be caught far away.
+          throw new Error("Done"); // Will be caught far away.
         val = key.indexOf(c);
         if (val == -1)
-          throw "Unknown character in base32: " + c;
+          throw new Error(`Unknown character in base32: ${c}`);
       }
 
       // Handle a left shift, restricted to bytes.
@@ -352,7 +373,7 @@ this.CommonUtils = {
         processBlock(ret, cOff, rOff);
       } catch (ex) {
         // Handle the detection of padding.
-        if (ex == "Done")
+        if (ex.message == "Done")
           break;
         throw ex;
       }

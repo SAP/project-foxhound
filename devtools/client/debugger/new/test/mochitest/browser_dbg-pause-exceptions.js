@@ -16,31 +16,38 @@ function caughtException() {
   3. pause on a caught error
   4. skip a caught error
 */
-add_task(function* () {
-  const dbg = yield initDebugger("doc-exceptions.html");
+add_task(async function() {
+  const dbg = await initDebugger("doc-exceptions.html");
 
-  // test skipping an uncaught exception
-  yield togglePauseOnExceptions(dbg, false, false);
-  yield uncaughtException();
+  log("1. test skipping an uncaught exception");
+  await uncaughtException();
   ok(!isPaused(dbg));
 
-  // Test pausing on an uncaught exception
-  yield togglePauseOnExceptions(dbg, true, false);
+  log("2. Test pausing on an uncaught exception");
+  await togglePauseOnExceptions(dbg, true, true);
   uncaughtException();
-  yield waitForPaused(dbg);
-  assertPausedLocation(dbg, "exceptions.js", 2);
-  yield resume(dbg);
+  await waitForPaused(dbg);
+  assertPausedLocation(dbg);
+  await resume(dbg);
+  await waitForActive(dbg);
 
-  // Test pausing on a caught Error
+  log("3. Test pausing on a caught Error");
   caughtException();
-  yield waitForPaused(dbg);
-  assertPausedLocation(dbg, "exceptions.js", 15);
-  yield resume(dbg);
+  await waitForPaused(dbg);
+  assertPausedLocation(dbg);
 
-  // Test skipping a caught error
-  yield togglePauseOnExceptions(dbg, true, true);
+  log("3.b Test pausing in the catch statement");
+  await resume(dbg);
+  await waitForPaused(dbg);
+  assertPausedLocation(dbg);
+  await resume(dbg);
+
+  log("4. Test skipping a caught error");
+  await togglePauseOnExceptions(dbg, true, false);
   caughtException();
-  yield waitForPaused(dbg);
-  assertPausedLocation(dbg, "exceptions.js", 17);
-  yield resume(dbg);
+
+  log("4.b Test pausing in the catch statement");
+  await waitForPaused(dbg);
+  assertPausedLocation(dbg);
+  await resume(dbg);
 });

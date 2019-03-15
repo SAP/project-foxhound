@@ -2,17 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var Ci = Components.interfaces;
-var Cu = Components.utils;
-var Cc = Components.classes;
 var CC = Components.Constructor;
 
 var BinaryOutputStream = CC("@mozilla.org/binaryoutputstream;1",
                             "nsIBinaryOutputStream",
                             "setOutputStream");
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = new HttpServer();
 
@@ -47,14 +44,14 @@ const tests = [
 // A basic listener that reads checks the if we sniffed properly.
 var listener = {
   onStartRequest(request, context) {
-    do_print("Sniffing " + tests[testRan].path);
-    do_check_eq(request.QueryInterface(Ci.nsIChannel).contentType, tests[testRan].expected);
+    info("Sniffing " + tests[testRan].path);
+    Assert.equal(request.QueryInterface(Ci.nsIChannel).contentType, tests[testRan].expected);
   },
 
   onDataAvailable(request, context, stream, offset, count) {
     try {
-      var bis = Components.classes["@mozilla.org/binaryinputstream;1"]
-                          .createInstance(Components.interfaces.nsIBinaryInputStream);
+      var bis = Cc["@mozilla.org/binaryinputstream;1"]
+                  .createInstance(Ci.nsIBinaryInputStream);
       bis.setInputStream(stream);
       bis.readByteArray(bis.available());
     } catch (ex) {
@@ -65,16 +62,16 @@ var listener = {
   onStopRequest(request, context, status) {
     testRan++;
     runNext();
-  }
+  },
 };
 
 function setupChannel(url) {
   var chan = NetUtil.newChannel({
     uri: "http://localhost:" + httpserver.identity.primaryPort + url,
     loadUsingSystemPrincipal: true,
-    contentPolicyType: Ci.nsIContentPolicy.TYPE_MEDIA
+    contentPolicyType: Ci.nsIContentPolicy.TYPE_MEDIA,
   });
-  var httpChan = chan.QueryInterface(Components.interfaces.nsIHttpChannel);
+  var httpChan = chan.QueryInterface(Ci.nsIHttpChannel);
   return httpChan;
 }
 
@@ -91,8 +88,8 @@ function getFileContents(aFile) {
   var fileStream = Cc["@mozilla.org/network/file-input-stream;1"]
                       .createInstance(Ci.nsIFileInputStream);
   fileStream.init(aFile, 1, -1, null);
-  var bis = Components.classes["@mozilla.org/binaryinputstream;1"]
-                      .createInstance(Components.interfaces.nsIBinaryInputStream);
+  var bis = Cc["@mozilla.org/binaryinputstream;1"]
+              .createInstance(Ci.nsIBinaryInputStream);
   bis.setInputStream(fileStream);
 
   var data = bis.readByteArray(bis.available());

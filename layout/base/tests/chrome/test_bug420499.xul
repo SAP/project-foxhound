@@ -60,20 +60,17 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=420499
     SimpleTest.waitForExplicitFinish();
 
     function getSelectionController() {
-      return document.docShell
-        .QueryInterface(Components.interfaces.nsIInterfaceRequestor)
-        .getInterface(Components.interfaces.nsISelectionDisplay)
-        .QueryInterface(Components.interfaces.nsISelectionController);
+      return window.docShell
+        .QueryInterface(Ci.nsIInterfaceRequestor)
+        .getInterface(Ci.nsISelectionDisplay)
+        .QueryInterface(Ci.nsISelectionController);
     }
 
     function isCaretVisible() {
-      window.QueryInterface(Components.interfaces.nsIInterfaceRequestor);
-      var docShell = window.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
-                            .getInterface(Components.interfaces.nsIWebNavigation)
-                            .QueryInterface(Components.interfaces.nsIDocShell);
-      var selCon = docShell.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
-        .getInterface(Components.interfaces.nsISelectionDisplay)
-        .QueryInterface(Components.interfaces.nsISelectionController);
+      var docShell = window.docShell;
+      var selCon = docShell.QueryInterface(Ci.nsIInterfaceRequestor)
+        .getInterface(Ci.nsISelectionDisplay)
+        .QueryInterface(Ci.nsISelectionController);
       return selCon.caretVisible;
     }
     

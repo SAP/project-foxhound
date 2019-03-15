@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 import sys
 
 import mozlog
@@ -96,6 +98,7 @@ def cli(runner_class=MarionetteTestRunner, parser_class=MarionetteArguments,
         logger.error('Failure during harness execution', exc_info=True)
         sys.exit(1)
     sys.exit(0)
+
 
 if __name__ == "__main__":
     cli()

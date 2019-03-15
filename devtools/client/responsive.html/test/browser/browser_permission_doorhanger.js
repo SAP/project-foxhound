@@ -6,11 +6,12 @@
 // Test that permission popups asking for user approval still appear in RDM
 const DUMMY_URL = "http://example.com/";
 const TEST_URL = `${URL_ROOT}geolocation.html`;
+const TEST_SURL = TEST_URL.replace("http://example.com", "https://example.com");
 
 function waitForGeolocationPrompt(win, browser) {
   return new Promise(resolve => {
     win.PopupNotifications.panel.addEventListener("popupshown", function popupShown() {
-      let notification = win.PopupNotifications.getNotification("geolocation", browser);
+      const notification = win.PopupNotifications.getNotification("geolocation", browser);
       if (notification) {
         win.PopupNotifications.panel.removeEventListener("popupshown", popupShown);
         resolve();
@@ -19,34 +20,34 @@ function waitForGeolocationPrompt(win, browser) {
   });
 }
 
-add_task(function* () {
-  let tab = yield addTab(DUMMY_URL);
-  let browser = tab.linkedBrowser;
-  let win = browser.ownerGlobal;
+add_task(async function() {
+  const tab = await addTab(DUMMY_URL);
+  const browser = tab.linkedBrowser;
+  const win = browser.ownerGlobal;
 
   let waitPromptPromise = waitForGeolocationPrompt(win, browser);
 
   // Checks if a geolocation permission doorhanger appears when openning a page
   // requesting geolocation
-  yield load(browser, TEST_URL);
-  yield waitPromptPromise;
+  await load(browser, TEST_SURL);
+  await waitPromptPromise;
 
   ok(true, "Permission doorhanger appeared without RDM enabled");
 
   // Lets switch back to the dummy website and enable RDM
-  yield load(browser, DUMMY_URL);
-  let { ui } = yield openRDM(tab);
-  let newBrowser = ui.getViewportBrowser();
+  await load(browser, DUMMY_URL);
+  const { ui } = await openRDM(tab);
+  const newBrowser = ui.getViewportBrowser();
 
   waitPromptPromise = waitForGeolocationPrompt(win, newBrowser);
 
   // Checks if the doorhanger appeared again when reloading the geolocation
   // page inside RDM
-  yield load(browser, TEST_URL);
-  yield waitPromptPromise;
+  await load(browser, TEST_SURL);
+  await waitPromptPromise;
 
   ok(true, "Permission doorhanger appeared inside RDM");
 
-  yield closeRDM(tab);
-  yield removeTab(tab);
+  await closeRDM(tab);
+  await removeTab(tab);
 });

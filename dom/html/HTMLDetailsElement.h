@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,38 +19,34 @@ namespace dom {
 // controls. Please see the spec for more information.
 // https://html.spec.whatwg.org/multipage/forms.html#the-details-element
 //
-class HTMLDetailsElement final : public nsGenericHTMLElement
-{
-public:
+class HTMLDetailsElement final : public nsGenericHTMLElement {
+ public:
   using NodeInfo = mozilla::dom::NodeInfo;
 
-  explicit HTMLDetailsElement(already_AddRefed<NodeInfo>& aNodeInfo)
-    : nsGenericHTMLElement(aNodeInfo)
-  {
-  }
+  explicit HTMLDetailsElement(already_AddRefed<NodeInfo>&& aNodeInfo)
+      : nsGenericHTMLElement(std::move(aNodeInfo)) {}
 
-  NS_IMPL_FROMCONTENT_HTML_WITH_TAG(HTMLDetailsElement, details)
+  NS_IMPL_FROMNODE_HTML_WITH_TAG(HTMLDetailsElement, details)
 
   nsIContent* GetFirstSummary() const;
 
   nsresult Clone(NodeInfo* aNodeInfo, nsINode** aResult) const override;
 
-  nsChangeHint GetAttributeChangeHint(const nsIAtom* aAttribute,
+  nsChangeHint GetAttributeChangeHint(const nsAtom* aAttribute,
                                       int32_t aModType) const override;
 
-  nsresult BeforeSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
-                         nsAttrValueOrString* aValue, bool aNotify) override;
+  nsresult BeforeSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                         const nsAttrValueOrString* aValue,
+                         bool aNotify) override;
 
   // HTMLDetailsElement WebIDL
   bool Open() const { return GetBoolAttr(nsGkAtoms::open); }
 
-  void SetOpen(bool aOpen, ErrorResult& aError)
-  {
+  void SetOpen(bool aOpen, ErrorResult& aError) {
     SetHTMLBoolAttr(nsGkAtoms::open, aOpen, aError);
   }
 
-  void ToggleOpen()
-  {
+  void ToggleOpen() {
     ErrorResult rv;
     SetOpen(!Open(), rv);
     rv.SuppressException();
@@ -57,7 +54,7 @@ public:
 
   virtual void AsyncEventRunning(AsyncEventDispatcher* aEvent) override;
 
-protected:
+ protected:
   virtual ~HTMLDetailsElement();
 
   JSObject* WrapNode(JSContext* aCx,
@@ -66,7 +63,7 @@ protected:
   RefPtr<AsyncEventDispatcher> mToggleEventDispatcher;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif /* mozilla_dom_HTMLDetailsElement_h */

@@ -12,64 +12,61 @@ const {
   DRAW_CALLS,
   INTERESTING_CALLS,
 } = require("devtools/shared/specs/canvas");
-const protocol = require("devtools/shared/protocol");
+const { FrontClassWithSpec, registerFront } = require("devtools/shared/protocol");
 const promise = require("promise");
 
 /**
  * The corresponding Front object for the FrameSnapshotActor.
  */
-const FrameSnapshotFront = protocol.FrontClassWithSpec(frameSnapshotSpec, {
-  initialize: function (client, form) {
-    protocol.Front.prototype.initialize.call(this, client, form);
+class FrameSnapshotFront extends FrontClassWithSpec(frameSnapshotSpec) {
+  constructor(client, form) {
+    super(client, form);
     this._animationFrameEndScreenshot = null;
     this._cachedScreenshots = new WeakMap();
-  },
+  }
 
   /**
    * This implementation caches the animation frame end screenshot to optimize
    * frontend requests to `generateScreenshotFor`.
    */
-  getOverview: protocol.custom(function () {
-    return this._getOverview().then(data => {
+  getOverview() {
+    return super.getOverview().then(data => {
       this._animationFrameEndScreenshot = data.screenshot;
       return data;
     });
-  }, {
-    impl: "_getOverview"
-  }),
+  }
 
   /**
    * This implementation saves a roundtrip to the backend if the screenshot
    * was already generated and retrieved once.
    */
-  generateScreenshotFor: protocol.custom(function (functionCall) {
+  generateScreenshotFor(functionCall) {
     if (CanvasFront.ANIMATION_GENERATORS.has(functionCall.name) ||
         CanvasFront.LOOP_GENERATORS.has(functionCall.name)) {
       return promise.resolve(this._animationFrameEndScreenshot);
     }
-    let cachedScreenshot = this._cachedScreenshots.get(functionCall);
+    const cachedScreenshot = this._cachedScreenshots.get(functionCall);
     if (cachedScreenshot) {
       return cachedScreenshot;
     }
-    let screenshot = this._generateScreenshotFor(functionCall);
+    const screenshot = super.generateScreenshotFor(functionCall);
     this._cachedScreenshots.set(functionCall, screenshot);
     return screenshot;
-  }, {
-    impl: "_generateScreenshotFor"
-  })
-});
+  }
+}
 
 exports.FrameSnapshotFront = FrameSnapshotFront;
+registerFront(FrameSnapshotFront);
 
 /**
  * The corresponding Front object for the CanvasActor.
  */
-const CanvasFront = protocol.FrontClassWithSpec(canvasSpec, {
-  initialize: function (client, { canvasActor }) {
-    protocol.Front.prototype.initialize.call(this, client, { actor: canvasActor });
+class CanvasFront extends FrontClassWithSpec(canvasSpec) {
+  constructor(client, { canvasActor }) {
+    super(client, { actor: canvasActor });
     this.manage(this);
   }
-});
+}
 
 /**
  * Constants.
@@ -85,7 +82,8 @@ CanvasFront.INVALID_SNAPSHOT_IMAGE = {
   index: -1,
   width: 0,
   height: 0,
-  pixels: []
+  pixels: [],
 };
 
 exports.CanvasFront = CanvasFront;
+registerFront(CanvasFront);

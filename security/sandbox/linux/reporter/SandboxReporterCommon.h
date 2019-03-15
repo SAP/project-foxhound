@@ -31,6 +31,7 @@ struct SandboxReport {
   // user-granted permissions.
   enum class ProcType : uint8_t {
     CONTENT,
+    FILE,
     MEDIA_PLUGIN,
   };
 
@@ -53,10 +54,10 @@ struct SandboxReport {
   ULong mSyscall;
   ULong mArgs[kSandboxSyscallArguments];
 
-  SandboxReport() : mPid(0) { }
+  SandboxReport() : mPid(0) {}
   bool IsValid() const { return mPid > 0; }
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_SandboxReporterCommon_h
+#endif  // mozilla_SandboxReporterCommon_h

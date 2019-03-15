@@ -19,17 +19,17 @@
 
 // These window messages are not defined in dwmapi.h
 #ifndef WM_DWMCOMPOSITIONCHANGED
-#define WM_DWMCOMPOSITIONCHANGED        0x031E
+#  define WM_DWMCOMPOSITIONCHANGED 0x031E
 #endif
 
 // Windows 7 additions
 #ifndef WM_DWMSENDICONICTHUMBNAIL
-#define WM_DWMSENDICONICTHUMBNAIL 0x0323
-#define WM_DWMSENDICONICLIVEPREVIEWBITMAP 0x0326
+#  define WM_DWMSENDICONICTHUMBNAIL 0x0323
+#  define WM_DWMSENDICONICLIVEPREVIEWBITMAP 0x0326
 #endif
 
 #define DWMWA_FORCE_ICONIC_REPRESENTATION 7
-#define DWMWA_HAS_ICONIC_BITMAP           10
+#define DWMWA_HAS_ICONIC_BITMAP 10
 
 enum nsUXThemeClass {
   eUXButton = 0,
@@ -59,37 +59,44 @@ enum nsUXThemeClass {
 // Native windows style constants
 enum WindowsTheme {
   WINTHEME_UNRECOGNIZED = 0,
-  WINTHEME_CLASSIC      = 1, // no theme
-  WINTHEME_AERO         = 2,
-  WINTHEME_LUNA         = 3,
-  WINTHEME_ROYALE       = 4,
-  WINTHEME_ZUNE         = 5,
-  WINTHEME_AERO_LITE    = 6
+  WINTHEME_CLASSIC = 1,  // no theme
+  WINTHEME_AERO = 2,
+  WINTHEME_LUNA = 3,
+  WINTHEME_ROYALE = 4,
+  WINTHEME_ZUNE = 5,
+  WINTHEME_AERO_LITE = 6
 };
 enum WindowsThemeColor {
   WINTHEMECOLOR_UNRECOGNIZED = 0,
-  WINTHEMECOLOR_NORMAL       = 1,
-  WINTHEMECOLOR_HOMESTEAD    = 2,
-  WINTHEMECOLOR_METALLIC     = 3
+  WINTHEMECOLOR_NORMAL = 1,
+  WINTHEMECOLOR_HOMESTEAD = 2,
+  WINTHEMECOLOR_METALLIC = 3
 };
 
-#define CMDBUTTONIDX_MINIMIZE    0
-#define CMDBUTTONIDX_RESTORE     1
-#define CMDBUTTONIDX_CLOSE       2
-#define CMDBUTTONIDX_BUTTONBOX   3
+#define CMDBUTTONIDX_MINIMIZE 0
+#define CMDBUTTONIDX_RESTORE 1
+#define CMDBUTTONIDX_CLOSE 2
+#define CMDBUTTONIDX_BUTTONBOX 3
 
 class nsUXThemeData {
-  static HMODULE sThemeDLL;
   static HANDLE sThemes[eUXNumClasses];
-  
-  static const wchar_t *GetClassName(nsUXThemeClass);
 
-public:
-  static const wchar_t kThemeLibraryName[];
+  // We initialize sCommandButtonBoxMetrics separately as a performance
+  // optimization to avoid fetching dummy values for sCommandButtonMetrics
+  // when we don't need those.
+  static SIZE sCommandButtonMetrics[3];
+  static bool sCommandButtonMetricsInitialized;
+  static SIZE sCommandButtonBoxMetrics;
+  static bool sCommandButtonBoxMetricsInitialized;
+
+  static const wchar_t *GetClassName(nsUXThemeClass);
+  static void EnsureCommandButtonMetrics();
+  static void EnsureCommandButtonBoxMetrics();
+
+ public:
   static bool sFlatMenus;
   static bool sTitlebarInfoPopulatedAero;
   static bool sTitlebarInfoPopulatedThemed;
-  static SIZE sCommandButtons[4];
   static mozilla::LookAndFeel::WindowsTheme sThemeId;
   static bool sIsDefaultWindowsTheme;
   static bool sIsHighContrastOn;
@@ -101,9 +108,16 @@ public:
   static HMODULE GetThemeDLL();
 
   // nsWindow calls this to update desktop settings info
-  static void InitTitlebarInfo();
   static void UpdateTitlebarInfo(HWND aWnd);
 
+  static SIZE GetCommandButtonMetrics(int aMetric) {
+    EnsureCommandButtonMetrics();
+    return sCommandButtonMetrics[aMetric];
+  }
+  static SIZE GetCommandButtonBoxMetrics() {
+    EnsureCommandButtonBoxMetrics();
+    return sCommandButtonBoxMetrics;
+  }
   static void UpdateNativeThemeInfo();
   static mozilla::LookAndFeel::WindowsTheme GetNativeThemeId();
   static bool IsDefaultWindowTheme();
@@ -117,4 +131,4 @@ public:
   // composition transition.
   static bool CheckForCompositor(bool aUpdateCache = false);
 };
-#endif // __UXThemeData_h__
+#endif  // __UXThemeData_h__

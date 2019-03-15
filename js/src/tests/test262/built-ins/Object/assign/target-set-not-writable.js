@@ -3,7 +3,7 @@
 /*---
 es6id: 19.1.2.1
 description: Errors thrown during definition of target object attributes
-info: >
+info: |
     [...]
     5. For each element nextSource of sources, in ascending index order,
     [...]
@@ -21,7 +21,9 @@ Object.defineProperty(target, 'attr', {
 });
 
 assert.throws(TypeError, function() {
-  Object.assign(target, { attr: 1 });
+  Object.assign(target, {
+    attr: 1
+  });
 });
 
 reportCompare(0, 0);

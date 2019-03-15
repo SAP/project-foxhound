@@ -4,9 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #if !defined(XiphExtradata_h)
-#define XiphExtradata_h
+#  define XiphExtradata_h
 
-#include "MediaData.h"
+#  include "MediaData.h"
 
 namespace mozilla {
 
@@ -19,10 +19,9 @@ bool XiphHeadersToExtradata(MediaByteBuffer* aCodecSpecificConfig,
 
 /* This converts a set of extradata back into a list of headers. */
 bool XiphExtradataToHeaders(nsTArray<unsigned char*>& aHeaders,
-                            nsTArray<size_t>& aHeaderLens,
-                            unsigned char* aData,
+                            nsTArray<size_t>& aHeaderLens, unsigned char* aData,
                             size_t aAvailable);
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // XiphExtradata_h
+#endif  // XiphExtradata_h

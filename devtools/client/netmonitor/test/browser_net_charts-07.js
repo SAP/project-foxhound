@@ -7,37 +7,41 @@
  * Makes sure Table Charts correctly handle empty source data.
  */
 
-add_task(function* () {
-  let { L10N } = require("devtools/client/netmonitor/utils/l10n");
+add_task(async function() {
+  const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
 
-  let { monitor } = yield initNetMonitor(SIMPLE_URL);
+  const { monitor, tab } = await initNetMonitor(SIMPLE_URL);
   info("Starting test... ");
 
-  let { document, windowRequire } = monitor.panelWin;
-  let { Chart } = windowRequire("devtools/client/shared/widgets/Chart");
+  const { document, windowRequire } = monitor.panelWin;
+  const { Chart } = windowRequire("devtools/client/shared/widgets/Chart");
 
-  let table = Chart.Table(document, {
+  const wait = waitForNetworkEvents(monitor, 1);
+  BrowserTestUtils.loadURI(tab.linkedBrowser, SIMPLE_URL);
+  await wait;
+
+  const table = Chart.Table(document, {
     data: [],
     totals: {
       label1: value => "Hello " + L10N.numberWithDecimals(value, 2),
-      label2: value => "World " + L10N.numberWithDecimals(value, 2)
+      label2: value => "World " + L10N.numberWithDecimals(value, 2),
     },
     header: {
       label1: "",
-      label2: ""
-    }
+      label2: "",
+    },
   });
 
-  let node = table.node;
-  let grid = node.querySelector(".table-chart-grid");
-  let totals = node.querySelector(".table-chart-totals");
-  let rows = grid.querySelectorAll(".table-chart-row");
-  let sums = node.querySelectorAll(".table-chart-summary-label");
+  const node = table.node;
+  const grid = node.querySelector(".table-chart-grid");
+  const totals = node.querySelector(".table-chart-totals");
+  const rows = grid.querySelectorAll(".table-chart-row");
+  const sums = node.querySelectorAll(".table-chart-summary-label");
 
   is(rows.length, 2, "There should be 1 table chart row and 1 header created.");
 
   ok(rows[1].querySelector(".table-chart-row-box.chart-colored-blob"),
-    "A colored blob exists for the firt row.");
+    "A colored blob exists for the first row.");
   is(rows[1].querySelectorAll("span")[0].getAttribute("name"), "size",
     "The first column of the first row exists.");
   is(rows[1].querySelectorAll("span")[1].getAttribute("name"), "label",
@@ -64,5 +68,5 @@ add_task(function* () {
     "World 0",
     "The second sum's value is correct.");
 
-  yield teardown(monitor);
+  await teardown(monitor);
 });

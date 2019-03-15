@@ -1,4 +1,4 @@
-// Copyright (C) 2016 and later: Unicode, Inc. and others.
+// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
 /*
 ******************************************************************************
@@ -8,7 +8,7 @@
 *
 ******************************************************************************
 *   file name:  ubidiimp.h
-*   encoding:   US-ASCII
+*   encoding:   UTF-8
 *   tab size:   8 (not used)
 *   indentation:4
 *
@@ -253,8 +253,6 @@ struct UBiDi {
      * real value after a successful execution of ubidi_setPara or ubidi_setLine
      */
     const UBiDi * pParaBiDi;
-
-    const UBiDiProps *bdp;
 
     /* alias pointer to the current text */
     const UChar *text;

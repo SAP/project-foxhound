@@ -14,12 +14,10 @@ Migrated from Robocop: https://bugzilla.mozilla.org/show_bug.cgi?id=1184186
 
   "use strict";
 
-  /*globals SimpleServiceDiscovery */
+  /* globals SimpleServiceDiscovery */
 
-  const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
-
-  Cu.import("resource://gre/modules/Services.jsm");
-  Cu.import("resource://gre/modules/SimpleServiceDiscovery.jsm");
+  ChromeUtils.import("resource://gre/modules/Services.jsm");
+  ChromeUtils.import("resource://gre/modules/SimpleServiceDiscovery.jsm");
 
   // The chrome window
   let chromeWin;
@@ -38,9 +36,9 @@ Migrated from Robocop: https://bugzilla.mozilla.org/show_bug.cgi?id=1184186
   var testDevice = {
     id: "test:dummy",
     target: "test:service",
-    factory: function(service) { /* dummy */  },
+    factory: function(service) { },
     types: ["video/mp4", "video/webm"],
-    extensions: ["mp4", "webm"]
+    extensions: ["mp4", "webm"],
   };
 
   function setup_browser() {
@@ -58,7 +56,7 @@ Migrated from Robocop: https://bugzilla.mozilla.org/show_bug.cgi?id=1184186
     // Create a pretend service
     let service = {
       location: "http://mochi.test:8888/chrome/mobile/android/tests/browser/chrome/simpleservice.xml",
-      target: "test:service"
+      target: "test:service",
     };
 
     dump("Force a detailed ping from a pretend service");
@@ -70,7 +68,7 @@ Migrated from Robocop: https://bugzilla.mozilla.org/show_bug.cgi?id=1184186
     let url = "http://mochi.test:8888/chrome/mobile/android/tests/browser/chrome/video_discovery.html";
     browser = BrowserApp.addTab(url, { selected: true, parentId: BrowserApp.selectedTab.id }).browser;
     browser.addEventListener("load", function(event) {
-      Services.tm.mainThread.dispatch(test_video, Ci.nsIThread.DISPATCH_NORMAL);
+      Services.tm.dispatchToMainThread(test_video);
     }, {capture: true, once: true});
   }
 
@@ -84,7 +82,7 @@ Migrated from Robocop: https://bugzilla.mozilla.org/show_bug.cgi?id=1184186
     { id: "with-sources-mimetype-webm", source: "http://mochi.test:8888/simple-video-webm", text: "video with webm mimetype source child" },
     { id: "simple-fetch-pass", source: "http://mochi.test:8888/chrome/mobile/android/tests/browser/chrome/video_discovery.sjs?type=video/mp4", text: "simple video with mp4 mimetype fetched from server" },
     { id: "simple-fetch-fail", pass: false, text: "simple video with non-video mimetype fetched from server" },
-    { id: "video-overlay", source: "http://mochi.test:8888/simple.mp4", text: "div overlay covering a simple video with mp4 src" }
+    { id: "video-overlay", source: "http://mochi.test:8888/simple.mp4", text: "div overlay covering a simple video with mp4 src" },
   ];
 
   let expectedTests = videoDiscoveryTests.length;
@@ -134,7 +132,7 @@ Migrated from Robocop: https://bugzilla.mozilla.org/show_bug.cgi?id=1184186
   // On debug runs, 10 assertions typically observed; 5 each of:
   //  - ASSERTION: cancel with non-failure status code: 'NS_FAILED(status)'
   //  - ASSERTION: OnDataAvailable implementation consumed no data: 'Error'
-  SimpleTest.expectAssertions(0,10);
+  SimpleTest.expectAssertions(0, 10);
   setup_browser();
 
   </script>

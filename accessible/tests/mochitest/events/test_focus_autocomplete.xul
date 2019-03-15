@@ -36,13 +36,6 @@
     // Hacky stuffs
 
     // This is the hacks needed to use a searchbar without browser.js.
-    function getBrowser()
-    {
-      return {
-        mCurrentBrowser: { engines: new Array() }
-      };
-    }
-
     var BrowserSearch = {
       updateOpenSearchBadge: function() {}
     };
@@ -127,8 +120,8 @@
 
       this.invoke = function removeChar_invoke()
       {
-        synthesizeKey("VK_LEFT", { shiftKey: true });
-        synthesizeKey("VK_DELETE", {});
+        synthesizeKey("KEY_ArrowLeft", {shiftKey: true});
+        synthesizeKey("KEY_Delete");
       }
 
       this.getID = function removeChar_getID()
@@ -144,7 +137,7 @@
       this.invoke = function replaceOnChar_invoke()
       {
         this.DOMNode.select();
-        synthesizeKey(aChar, {});
+        sendString(aChar);
       }
 
       this.getID = function replaceOnChar_getID()
@@ -264,9 +257,9 @@
       var popupNode = autocompleteNode.popup;
       if (!popupNode) {
         // HTML form autocomplete
-        var controller = Components.classes["@mozilla.org/autocomplete/controller;1"].
-          getService(Components.interfaces.nsIAutoCompleteController);
-        popupNode = controller.input.popup.QueryInterface(nsIDOMNode);
+        var controller = Cc["@mozilla.org/autocomplete/controller;1"].
+          getService(Ci.nsIAutoCompleteController);
+        popupNode = controller.input.popup;
       }
 
       if (popupNode) {

@@ -10,17 +10,17 @@
 #include "mozilla/dom/PerformanceBinding.h"
 #include "mozilla/dom/PerformanceEntryBinding.h"
 #include "mozilla/dom/PerformanceObserverBinding.h"
+#include "mozilla/dom/WorkerPrivate.h"
+#include "mozilla/dom/WorkerScope.h"
+#include "nsIScriptError.h"
 #include "nsPIDOMWindow.h"
 #include "nsQueryObject.h"
 #include "nsString.h"
 #include "PerformanceEntry.h"
 #include "PerformanceObserverEntryList.h"
-#include "WorkerPrivate.h"
-#include "WorkerScope.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
-using namespace mozilla::dom::workers;
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(PerformanceObserver)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(PerformanceObserver)
@@ -28,12 +28,14 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(PerformanceObserver)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mCallback)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mPerformance)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mOwner)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mQueuedEntries)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(PerformanceObserver)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCallback)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPerformance)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mOwner)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mQueuedEntries)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(PerformanceObserver)
 
@@ -46,46 +48,37 @@ NS_INTERFACE_MAP_END
 
 PerformanceObserver::PerformanceObserver(nsPIDOMWindowInner* aOwner,
                                          PerformanceObserverCallback& aCb)
-  : mOwner(aOwner)
-  , mCallback(&aCb)
-  , mConnected(false)
-{
+    : mOwner(aOwner), mCallback(&aCb), mConnected(false) {
   MOZ_ASSERT(mOwner);
   mPerformance = aOwner->GetPerformance();
 }
 
 PerformanceObserver::PerformanceObserver(WorkerPrivate* aWorkerPrivate,
                                          PerformanceObserverCallback& aCb)
-  : mCallback(&aCb)
-  , mConnected(false)
-{
+    : mCallback(&aCb), mConnected(false) {
   MOZ_ASSERT(aWorkerPrivate);
   mPerformance = aWorkerPrivate->GlobalScope()->GetPerformance();
 }
 
-PerformanceObserver::~PerformanceObserver()
-{
+PerformanceObserver::~PerformanceObserver() {
   Disconnect();
   MOZ_ASSERT(!mConnected);
 }
 
 // static
-already_AddRefed<PerformanceObserver>
-PerformanceObserver::Constructor(const GlobalObject& aGlobal,
-                                 PerformanceObserverCallback& aCb,
-                                 ErrorResult& aRv)
-{
+already_AddRefed<PerformanceObserver> PerformanceObserver::Constructor(
+    const GlobalObject& aGlobal, PerformanceObserverCallback& aCb,
+    ErrorResult& aRv) {
   if (NS_IsMainThread()) {
     nsCOMPtr<nsPIDOMWindowInner> ownerWindow =
-      do_QueryInterface(aGlobal.GetAsSupports());
+        do_QueryInterface(aGlobal.GetAsSupports());
     if (!ownerWindow) {
       aRv.Throw(NS_ERROR_FAILURE);
       return nullptr;
     }
-    MOZ_ASSERT(ownerWindow->IsInnerWindow());
 
     RefPtr<PerformanceObserver> observer =
-      new PerformanceObserver(ownerWindow, aCb);
+        new PerformanceObserver(ownerWindow, aCb);
     return observer.forget();
   }
 
@@ -94,36 +87,32 @@ PerformanceObserver::Constructor(const GlobalObject& aGlobal,
   MOZ_ASSERT(workerPrivate);
 
   RefPtr<PerformanceObserver> observer =
-    new PerformanceObserver(workerPrivate, aCb);
+      new PerformanceObserver(workerPrivate, aCb);
   return observer.forget();
 }
 
-JSObject*
-PerformanceObserver::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return PerformanceObserverBinding::Wrap(aCx, this, aGivenProto);
+JSObject* PerformanceObserver::WrapObject(JSContext* aCx,
+                                          JS::Handle<JSObject*> aGivenProto) {
+  return PerformanceObserver_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-void
-PerformanceObserver::Notify()
-{
+void PerformanceObserver::Notify() {
   if (mQueuedEntries.IsEmpty()) {
     return;
   }
   RefPtr<PerformanceObserverEntryList> list =
-    new PerformanceObserverEntryList(this, mQueuedEntries);
+      new PerformanceObserverEntryList(this, mQueuedEntries);
+
+  mQueuedEntries.Clear();
 
   ErrorResult rv;
   mCallback->Call(this, *list, *this, rv);
   if (NS_WARN_IF(rv.Failed())) {
     rv.SuppressException();
   }
-  mQueuedEntries.Clear();
 }
 
-void
-PerformanceObserver::QueueEntry(PerformanceEntry* aEntry)
-{
+void PerformanceObserver::QueueEntry(PerformanceEntry* aEntry) {
   MOZ_ASSERT(aEntry);
 
   nsAutoString entryType;
@@ -135,19 +124,15 @@ PerformanceObserver::QueueEntry(PerformanceEntry* aEntry)
   mQueuedEntries.AppendElement(aEntry);
 }
 
-static const char16_t *const sValidTypeNames[4] = {
-  u"mark",
-  u"measure",
-  u"resource",
-  u"server"
+static const char16_t* const sValidTypeNames[4] = {
+    u"navigation",
+    u"mark",
+    u"measure",
+    u"resource",
 };
 
-void
-PerformanceObserver::Observe(const PerformanceObserverInit& aOptions,
-                             ErrorResult& aRv)
-{
+void PerformanceObserver::Observe(const PerformanceObserverInit& aOptions) {
   if (aOptions.mEntryTypes.IsEmpty()) {
-    aRv.Throw(NS_ERROR_DOM_TYPE_ERR);
     return;
   }
 
@@ -161,23 +146,66 @@ PerformanceObserver::Observe(const PerformanceObserverInit& aOptions,
     }
   }
 
+  nsAutoString invalidTypesJoined;
+  bool addComma = false;
+  for (const auto& type : aOptions.mEntryTypes) {
+    if (!validEntryTypes.Contains<nsString>(type)) {
+      if (addComma) {
+        invalidTypesJoined.AppendLiteral(", ");
+      }
+      addComma = true;
+      invalidTypesJoined.Append(type);
+    }
+  }
+
+  if (!invalidTypesJoined.IsEmpty()) {
+    if (!NS_IsMainThread()) {
+      nsTArray<nsString> params;
+      params.AppendElement(invalidTypesJoined);
+      WorkerPrivate::ReportErrorToConsole("UnsupportedEntryTypesIgnored",
+                                          params);
+    } else {
+      nsCOMPtr<nsPIDOMWindowInner> ownerWindow = do_QueryInterface(mOwner);
+      Document* document = ownerWindow->GetExtantDoc();
+      const char16_t* params[] = {invalidTypesJoined.get()};
+      nsContentUtils::ReportToConsole(
+          nsIScriptError::warningFlag, NS_LITERAL_CSTRING("DOM"), document,
+          nsContentUtils::eDOM_PROPERTIES, "UnsupportedEntryTypesIgnored",
+          params, 1);
+    }
+  }
+
   if (validEntryTypes.IsEmpty()) {
-    aRv.Throw(NS_ERROR_DOM_TYPE_ERR);
     return;
   }
 
   mEntryTypes.SwapElements(validEntryTypes);
 
   mPerformance->AddObserver(this);
+
+  if (aOptions.mBuffered) {
+    for (auto entryType : mEntryTypes) {
+      nsTArray<RefPtr<PerformanceEntry>> existingEntries;
+      mPerformance->GetEntriesByType(entryType, existingEntries);
+      if (!existingEntries.IsEmpty()) {
+        mQueuedEntries.AppendElements(existingEntries);
+      }
+    }
+  }
+
   mConnected = true;
 }
 
-void
-PerformanceObserver::Disconnect()
-{
+void PerformanceObserver::Disconnect() {
   if (mConnected) {
     MOZ_ASSERT(mPerformance);
     mPerformance->RemoveObserver(this);
     mConnected = false;
   }
+}
+
+void PerformanceObserver::TakeRecords(
+    nsTArray<RefPtr<PerformanceEntry>>& aRetval) {
+  MOZ_ASSERT(aRetval.IsEmpty());
+  aRetval.SwapElements(mQueuedEntries);
 }

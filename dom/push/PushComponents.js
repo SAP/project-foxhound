@@ -9,19 +9,21 @@
  * interact with the Push service.
  */
 
-const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var isParent = Services.appinfo.processType === Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT;
 
 // The default Push service implementation.
 XPCOMUtils.defineLazyGetter(this, "PushService", function() {
-  const {PushService} = Cu.import("resource://gre/modules/PushService.jsm",
-                                  {});
-  PushService.init();
-  return PushService;
+  if (Services.prefs.getBoolPref("dom.push.enabled")) {
+    const {PushService} = ChromeUtils.import("resource://gre/modules/PushService.jsm",
+                                            {});
+    PushService.init();
+    return PushService;
+  }
+
+  throw Cr.NS_ERROR_NOT_AVAILABLE;
 });
 
 // Observer notification topics for push messages and subscription status
@@ -51,7 +53,7 @@ function PushServiceBase() {
 PushServiceBase.prototype = {
   classID: Components.ID("{daaa8d73-677e-4233-8acd-2c404bd01658}"),
   contractID: "@mozilla.org/push/Service;1",
-  QueryInterface: XPCOMUtils.generateQI([
+  QueryInterface: ChromeUtils.generateQI([
     Ci.nsIObserver,
     Ci.nsISupportsWeakReference,
     Ci.nsIPushService,
@@ -119,7 +121,7 @@ function PushServiceParent() {
 PushServiceParent.prototype = Object.create(PushServiceBase.prototype);
 
 XPCOMUtils.defineLazyServiceGetter(PushServiceParent.prototype, "_mm",
-  "@mozilla.org/parentprocessmessagemanager;1", "nsIMessageBroadcaster");
+  "@mozilla.org/parentprocessmessagemanager;1", "nsISupports");
 
 Object.assign(PushServiceParent.prototype, {
   _xpcom_factory: XPCOMUtils.generateSingletonFactory(PushServiceParent),
@@ -214,14 +216,13 @@ Object.assign(PushServiceParent.prototype, {
       this.reportDeliveryError(data.messageId, data.reason);
       return;
     }
-    let sender = target.QueryInterface(Ci.nsIMessageSender);
     return this._handleRequest(name, principal, data).then(result => {
-      sender.sendAsyncMessage(this._getResponseName(name, "OK"), {
+      target.sendAsyncMessage(this._getResponseName(name, "OK"), {
         requestID: data.requestID,
         result: result
       });
     }, error => {
-      sender.sendAsyncMessage(this._getResponseName(name, "KO"), {
+      target.sendAsyncMessage(this._getResponseName(name, "KO"), {
         requestID: data.requestID,
         result: error.result,
       });
@@ -254,7 +255,7 @@ Object.assign(PushServiceParent.prototype, {
     return data;
   },
 
-  _handleRequest(name, principal, data) {
+  async _handleRequest(name, principal, data) {
     if (name == "Push:Clear") {
       return this.service.clear(data);
     }
@@ -322,7 +323,7 @@ PushServiceContent.prototype = Object.create(PushServiceBase.prototype);
 
 XPCOMUtils.defineLazyServiceGetter(PushServiceContent.prototype,
   "_mm", "@mozilla.org/childprocessmessagemanager;1",
-  "nsISyncMessageSender");
+  "nsISupports");
 
 Object.assign(PushServiceContent.prototype, {
   _xpcom_factory: XPCOMUtils.generateSingletonFactory(PushServiceContent),
@@ -462,7 +463,7 @@ function PushSubscription(props) {
 }
 
 PushSubscription.prototype = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIPushSubscription]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIPushSubscription]),
 
   /** The URL for sending messages to this subscription. */
   get endpoint() {

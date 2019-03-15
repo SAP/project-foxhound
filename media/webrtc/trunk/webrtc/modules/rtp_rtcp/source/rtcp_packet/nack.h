@@ -8,56 +8,52 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_RTP_RTCP_SOURCE_RTCP_PACKET_NACK_H_
-#define WEBRTC_MODULES_RTP_RTCP_SOURCE_RTCP_PACKET_NACK_H_
+#ifndef MODULES_RTP_RTCP_SOURCE_RTCP_PACKET_NACK_H_
+#define MODULES_RTP_RTCP_SOURCE_RTCP_PACKET_NACK_H_
 
 #include <vector>
 
-#include "webrtc/base/basictypes.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/rtpfb.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_utility.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/rtpfb.h"
+#include "rtc_base/basictypes.h"
 
 namespace webrtc {
 namespace rtcp {
+class CommonHeader;
 
 class Nack : public Rtpfb {
  public:
-  const uint8_t kFeedbackMessageType = 1;
-  Nack() {}
-
-  virtual ~Nack() {}
+  static constexpr uint8_t kFeedbackMessageType = 1;
+  Nack();
+  ~Nack() override;
 
   // Parse assumes header is already parsed and validated.
-  bool Parse(const RTCPUtility::RtcpCommonHeader& header,
-             const uint8_t* payload);  // Size of the payload is in the header.
+  bool Parse(const CommonHeader& packet);
 
-  void WithList(const uint16_t* nack_list, size_t length);
+  void SetPacketIds(const uint16_t* nack_list, size_t length);
+  void SetPacketIds(std::vector<uint16_t> nack_list);
   const std::vector<uint16_t>& packet_ids() const { return packet_ids_; }
 
- protected:
+  size_t BlockLength() const override;
+
   bool Create(uint8_t* packet,
               size_t* index,
               size_t max_length,
               RtcpPacket::PacketReadyCallback* callback) const override;
 
-  size_t BlockLength() const override;
-
  private:
-  const size_t kNackItemLength = 4;
+  static constexpr size_t kNackItemLength = 4;
   struct PackedNack {
     uint16_t first_pid;
     uint16_t bitmask;
   };
 
-  void Pack();    // Fills packed_ using packed_ids_. (used in WithList).
+  void Pack();    // Fills packed_ using packed_ids_. (used in SetPacketIds).
   void Unpack();  // Fills packet_ids_ using packed_. (used in Parse).
 
   std::vector<PackedNack> packed_;
   std::vector<uint16_t> packet_ids_;
-
-  RTC_DISALLOW_COPY_AND_ASSIGN(Nack);
 };
 
 }  // namespace rtcp
 }  // namespace webrtc
-#endif  // WEBRTC_MODULES_RTP_RTCP_SOURCE_RTCP_PACKET_NACK_H_
+#endif  // MODULES_RTP_RTCP_SOURCE_RTCP_PACKET_NACK_H_

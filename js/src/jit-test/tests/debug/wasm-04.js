@@ -1,11 +1,10 @@
+// |jit-test| skip-if: !wasmDebuggingIsSupported()
+
 // Tests that wasm module scripts throw for everything except text.
 
 load(libdir + "asserts.js");
 
-if (!wasmIsSupported())
-  quit();
-
-var g = newGlobal();
+var g = newGlobal({newCompartment: true});
 var dbg = new Debugger(g);
 
 var s;
@@ -23,7 +22,5 @@ assertThrowsInstanceOf(() => s.sourceLength, Error);
 assertThrowsInstanceOf(() => s.global, Error);
 assertThrowsInstanceOf(() => s.getChildScripts(), Error);
 assertThrowsInstanceOf(() => s.getAllOffsets(), Error);
-assertThrowsInstanceOf(() => s.getAllColumnOffsets(), Error);
 assertThrowsInstanceOf(() => s.getBreakpoint(0), Error);
-assertThrowsInstanceOf(() => s.isInCatchScope(0), Error);
 assertThrowsInstanceOf(() => s.getOffsetsCoverage(), Error);

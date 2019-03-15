@@ -10,6 +10,7 @@ requestLongerTimeout(4);
 // events (React development version 15.4.1) using JSX.
 
 const TEST_LIB = URL_ROOT + "lib_react_dom_15.4.1.js";
+const TEST_LIB_BABEL = URL_ROOT + "lib_babel_6.21.0_min.js";
 const TEST_EXTERNAL_LISTENERS = URL_ROOT + "react_external_listeners.js";
 const TEST_URL = URL_ROOT + "doc_markup_events_react_development_15.4.1_jsx.html";
 
@@ -31,7 +32,7 @@ const TEST_DATA = [
       },
       {
         type: "onClick",
-        filename: TEST_URL + ":10",
+        filename: TEST_LIB_BABEL + ":10",
         attributes: [
           "Bubbling",
           "React"
@@ -95,7 +96,7 @@ const TEST_DATA = [
       },
       {
         type: "onMouseUp",
-        filename: TEST_URL + ":10",
+        filename: TEST_LIB_BABEL + ":10",
         attributes: [
           "Bubbling",
           "React"
@@ -125,8 +126,11 @@ const TEST_DATA = [
     ]
   }
 ];
-/*eslint-enable */
+/* eslint-enable */
 
-add_task(function* () {
-  yield runEventPopupTests(TEST_URL, TEST_DATA);
+add_task(async function() {
+  info("Switch to 2 pane inspector to avoid sidebar width issues with opening events");
+  await pushPref("devtools.inspector.three-pane-enabled", false);
+  await pushPref("devtools.toolsidebar-width.inspector", 350);
+  await runEventPopupTests(TEST_URL, TEST_DATA);
 });

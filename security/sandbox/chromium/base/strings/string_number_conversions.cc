@@ -10,12 +10,11 @@
 #include <wctype.h>
 
 #include <limits>
+#include <type_traits>
 
 #include "base/logging.h"
-#include "base/numerics/safe_conversions.h"
 #include "base/numerics/safe_math.h"
 #include "base/scoped_clear_errno.h"
-#include "base/strings/utf_string_conversions.h"
 #include "base/third_party/dmg_fp/dmg_fp.h"
 
 namespace base {
@@ -37,7 +36,8 @@ struct IntToStringT {
 
     // The ValueOrDie call below can never fail, because UnsignedAbs is valid
     // for all valid inputs.
-    auto res = CheckedNumeric<INT>(value).UnsignedAbs().ValueOrDie();
+    typename std::make_unsigned<INT>::type res =
+        CheckedNumeric<INT>(value).UnsignedAbs().ValueOrDie();
 
     CHR* end = outbuf + kOutputBufSize;
     CHR* i = end;
@@ -146,6 +146,7 @@ class IteratorRangeToNumber {
 
     if (begin != end && *begin == '-') {
       if (!std::numeric_limits<value_type>::is_signed) {
+        *output = 0;
         valid = false;
       } else if (!Negative::Invoke(begin + 1, end, output)) {
         valid = false;

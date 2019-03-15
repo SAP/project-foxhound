@@ -5,20 +5,10 @@
  * found in the LICENSE file.
  */
 
-#include "SkBitmapSourceDeserializer.h"
-#include "SkDashPathEffect.h"
+#include "SkFlattenablePriv.h"
+#include "SkMaskFilter.h"
+#include "../../src/effects/SkDashImpl.h"
 #include "SkGradientShader.h"
-#include "SkImageSource.h"
-#include "SkLayerRasterizer.h"
-
-// Security note:
-//
-// As new subclasses are added here, they should be reviewed by chrome security before they
-// support deserializing cross-process: chrome-security@google.com. SampleFilterFuzz.cpp should
-// also be amended to exercise the new subclass.
-//
-// See SkReadBuffer::isCrossProcess() and SkPicture::PictureIOSecurityPrecautionsEnabled()
-//
 
 /*
  *  None of these are strictly "required" for Skia to operate.
@@ -29,17 +19,12 @@
  *  will automatically be called before any of skia's effects are asked to be deserialized.
  */
 void SkFlattenable::PrivateInitializer::InitEffects() {
-    SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkBitmapSourceDeserializer)
-
-    // Rasterizer
-    SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkLayerRasterizer)
-
     // Shader
     SkGradientShader::InitializeFlattenables();
 
-    // PathEffect
-    SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkDashPathEffect)
+    // Mask filters.
+    SkMaskFilter::InitializeFlattenables();
 
-    // ImageFilter
-    SkImageFilter::InitializeFlattenables();
+    // PathEffect
+    SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkDashImpl)
 }

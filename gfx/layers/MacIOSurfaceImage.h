@@ -1,5 +1,6 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -16,33 +17,29 @@ namespace mozilla {
 namespace layers {
 
 class MacIOSurfaceImage : public Image {
-public:
+ public:
   explicit MacIOSurfaceImage(MacIOSurface* aSurface)
-   : Image(nullptr, ImageFormat::MAC_IOSURFACE),
-     mSurface(aSurface)
-  {}
+      : Image(nullptr, ImageFormat::MAC_IOSURFACE), mSurface(aSurface) {}
 
   MacIOSurface* GetSurface() { return mSurface; }
 
-  gfx::IntSize GetSize() override {
+  gfx::IntSize GetSize() const override {
     return gfx::IntSize::Truncate(mSurface->GetDevicePixelWidth(),
                                   mSurface->GetDevicePixelHeight());
   }
 
-  virtual already_AddRefed<gfx::SourceSurface> GetAsSourceSurface() override;
+  already_AddRefed<gfx::SourceSurface> GetAsSourceSurface() override;
 
-  virtual TextureClient* GetTextureClient(KnowsCompositor* aForwarder) override;
+  TextureClient* GetTextureClient(KnowsCompositor* aForwarder) override;
 
-  virtual MacIOSurfaceImage* AsMacIOSurfaceImage() override {
-    return this;
-  }
+  MacIOSurfaceImage* AsMacIOSurfaceImage() override { return this; }
 
-private:
+ private:
   RefPtr<MacIOSurface> mSurface;
   RefPtr<TextureClient> mTextureClient;
 };
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla
 
-#endif // GFX_SHAREDTEXTUREIMAGE_H
+#endif  // GFX_SHAREDTEXTUREIMAGE_H

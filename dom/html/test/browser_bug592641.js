@@ -9,9 +9,9 @@ function test() {
 
   waitForExplicitFinish();
 
-  ctx.tab1 = gBrowser.addTab(testPath + "bug592641_img.jpg");
+  ctx.tab1 = BrowserTestUtils.addTab(gBrowser, testPath + "bug592641_img.jpg");
   ctx.tab1Browser = gBrowser.getBrowserForTab(ctx.tab1);
-  ctx.tab1Browser.addEventListener("load", load1Soon, true);
+  BrowserTestUtils.browserLoaded(ctx.tab1Browser).then(load1Soon);
 }
 
 function checkTitle(title) {
@@ -22,7 +22,6 @@ function checkTitle(title) {
 }
 
 function load1Soon() {
-  ctx.tab1Browser.removeEventListener("load", load1Soon, true);
   // onload is fired in OnStopDecode, so let's use executeSoon() to make sure
   // that any other OnStopDecode event handlers get the chance to fire first.
   executeSoon(load1Done);
@@ -35,13 +34,12 @@ function load1Done() {
 
   // Try loading the same image in a new tab to make sure things work in
   // the cached case.
-  ctx.tab2 = gBrowser.addTab(testPath + "bug592641_img.jpg");
+  ctx.tab2 = BrowserTestUtils.addTab(gBrowser, testPath + "bug592641_img.jpg");
   ctx.tab2Browser = gBrowser.getBrowserForTab(ctx.tab2);
-  ctx.tab2Browser.addEventListener("load", load2Soon, true);
+  BrowserTestUtils.browserLoaded(ctx.tab2Browser).then(load2Soon);
 }
 
 function load2Soon() {
-  ctx.tab2Browser.removeEventListener("load", load2Soon, true);
   // onload is fired in OnStopDecode, so let's use executeSoon() to make sure
   // that any other OnStopDecode event handlers get the chance to fire first.
   executeSoon(load2Done);

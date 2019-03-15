@@ -5,8 +5,12 @@ const Instance = WebAssembly.Instance;
 const CompileError = WebAssembly.CompileError;
 const RuntimeError = WebAssembly.RuntimeError;
 
-function isWasmFunction(name) {
-    return /^wasm-function\[\d*\]$/.test(name)
+function getWasmFunctionIndex(line) {
+    return Number(line.match(/^wasm-function\[(\d*)\]$/)[1]);
+}
+
+function getWasmBytecode(column) {
+    return parseInt(column.match(/^0x([0-9a-f]*)$/)[1], 16);
 }
 
 function parseStack(stack) {
@@ -14,9 +18,9 @@ function parseStack(stack) {
     assertEq(frames[frames.length-1], "");
     frames.length--;
     return frames.map(frame => {
-        var res = frame.match(/^(.*)@.*:(\d*):(\d*)$/);
+        var res = frame.match(/^(.*)@(.*):(.*):(.*)$/);
         assertEq(res !== null, true);
-        return {name: res[1], line: Number(res[2]), column: Number(res[3])};
+        return {name: res[1], url: res[2], line: res[3], column: res[4]};
     });
 }
 
@@ -27,13 +31,11 @@ function testExn(opcode, binary, type, msg, exn) {
     var stack = parseStack(exn.stack);
     assertEq(stack.length > 1, true);
     var innermost = stack[0];
-    assertEq(isWasmFunction(innermost.name), true);
-    assertEq(innermost.line, exn.lineNumber);
-    assertEq(innermost.column, exn.columnNumber);
-
-    assertEq(exn.lineNumber > 0, true);
+    var funcIndex = getWasmFunctionIndex(innermost.line);
+    var bytecode = getWasmBytecode(innermost.column);
+    assertEq(exn.lineNumber, bytecode);
     assertEq(exn.columnNumber, 1);
-    assertEq(binary[exn.lineNumber], opcode);
+    assertEq(binary[bytecode], opcode);
 
     return {stack, binary};
 }
@@ -79,10 +81,15 @@ function testStore(opcode, optext, consttext, width, type, msg) {
 
 test(UnreachableCode, '(module (func unreachable) (start 0))', RuntimeError, /unreachable executed/);
 test(I32DivSCode, '(module (func (drop (i32.div_s (i32.const 1) (i32.const 0)))) (start 0))', RuntimeError, /integer divide by zero/);
+test(I32DivSCode, '(module (func (drop (i32.div_s (i32.const -2147483648) (i32.const -1)))) (start 0))', RuntimeError, /integer overflow/);
 test(I32DivUCode, '(module (func (drop (i32.div_u (i32.const 1) (i32.const 0)))) (start 0))', RuntimeError, /integer divide by zero/);
 test(I32RemSCode, '(module (func (drop (i32.rem_s (i32.const 1) (i32.const 0)))) (start 0))', RuntimeError, /integer divide by zero/);
 test(I32RemUCode, '(module (func (drop (i32.rem_u (i32.const 1) (i32.const 0)))) (start 0))', RuntimeError, /integer divide by zero/);
-test(I32RemUCode, '(module (func (drop (i32.rem_u (i32.const 1) (i32.const 0)))) (start 0))', RuntimeError, /integer divide by zero/);
+test(I64DivSCode, '(module (func (drop (i64.div_s (i64.const 1) (i64.const 0)))) (start 0))', RuntimeError, /integer divide by zero/);
+test(I64DivSCode, '(module (func (drop (i64.div_s (i64.const -9223372036854775808) (i64.const -1)))) (start 0))', RuntimeError, /integer overflow/);
+test(I64DivUCode, '(module (func (drop (i64.div_u (i64.const 1) (i64.const 0)))) (start 0))', RuntimeError, /integer divide by zero/);
+test(I64RemSCode, '(module (func (drop (i64.rem_s (i64.const 1) (i64.const 0)))) (start 0))', RuntimeError, /integer divide by zero/);
+test(I64RemUCode, '(module (func (drop (i64.rem_u (i64.const 1) (i64.const 0)))) (start 0))', RuntimeError, /integer divide by zero/);
 test(I32TruncSF32Code, '(module (func (drop (i32.trunc_s/f32 (f32.const 1e30)))) (start 0))', RuntimeError, /integer overflow/);
 test(I32TruncSF64Code, '(module (func (drop (i32.trunc_s/f64 (f64.const 1e30)))) (start 0))', RuntimeError, /integer overflow/);
 test(I32TruncUF32Code, '(module (func (drop (i32.trunc_u/f32 (f32.const 1e30)))) (start 0))', RuntimeError, /integer overflow/);
@@ -145,13 +152,13 @@ var {stack, binary} = test(UnreachableCode, `(module
 )`, RuntimeError, /unreachable executed/);
 const N = 5;
 assertEq(stack.length > N, true);
+assertEq(getWasmFunctionIndex(stack[0].line), 0);
 var lastLine = stack[0].line;
 for (var i = 1; i < N; i++) {
-    assertEq(isWasmFunction(stack[i].name), true);
+    assertEq(getWasmFunctionIndex(stack[i].line), i);
     assertEq(stack[i].line > lastLine, true);
     lastLine = stack[i].line;
-    assertEq(binary[stack[i].line], i == 3 ? CallIndirectCode : CallCode);
-    assertEq(stack[i].column, 1);
+    assertEq(binary[getWasmBytecode(stack[i].column)], i == 3 ? CallIndirectCode : CallCode);
 }
 
 function testCompileError(opcode, text) {

@@ -5,77 +5,65 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/TextEncoder.h"
-#include "mozilla/dom/EncodingUtils.h"
+#include "mozilla/CheckedInt.h"
 #include "mozilla/UniquePtrExtensions.h"
-#include "nsContentUtils.h"
+#include "nsReadableUtils.h"
 
 namespace mozilla {
 namespace dom {
 
-void
-TextEncoder::Init()
-{
-  // Create an encoder object for utf-8.
-  mEncoder = EncodingUtils::EncoderForEncoding(NS_LITERAL_CSTRING("UTF-8"));
-}
+void TextEncoder::Init() {}
 
-void
-TextEncoder::Encode(JSContext* aCx,
-                    JS::Handle<JSObject*> aObj,
-                    const nsAString& aString,
-                    JS::MutableHandle<JSObject*> aRetval,
-                    ErrorResult& aRv)
-{
-  // Run the steps of the encoding algorithm.
-  int32_t srcLen = aString.Length();
-  int32_t maxLen;
-  const char16_t* data = aString.BeginReading();
-  nsresult rv = mEncoder->GetMaxLength(data, srcLen, &maxLen);
-  if (NS_FAILED(rv)) {
-    aRv.Throw(rv);
-    return;
-  }
-  // Need a fallible allocator because the caller may be a content
-  // and the content can specify the length of the string.
-  auto buf = MakeUniqueFallible<char[]>(maxLen + 1);
-  if (!buf) {
+void TextEncoder::Encode(JSContext* aCx, JS::Handle<JSObject*> aObj,
+                         const nsAString& aString,
+                         JS::MutableHandle<JSObject*> aRetval,
+                         ErrorResult& aRv) {
+  // Given nsTSubstring<char16_t>::kMaxCapacity, it should be
+  // impossible for the length computation to overflow, but
+  // let's use checked math in case someone changes something
+  // in the future.
+  // Uint8Array::Create takes uint32_t as the length.
+  CheckedInt<uint32_t> bufLen(aString.Length());
+  bufLen *= 3;  // from the contract for ConvertUTF16toUTF8
+  if (!bufLen.isValid()) {
     aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
     return;
   }
 
-  int32_t dstLen = maxLen;
-  rv = mEncoder->Convert(data, &srcLen, buf.get(), &dstLen);
-
-  // Now reset the encoding algorithm state to the default values for encoding.
-  int32_t finishLen = maxLen - dstLen;
-  rv = mEncoder->Finish(&buf[dstLen], &finishLen);
-  if (NS_SUCCEEDED(rv)) {
-    dstLen += finishLen;
+  auto data = mozilla::MakeUniqueFallible<uint8_t[]>(bufLen.value());
+  if (!data) {
+    aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
+    return;
   }
 
-  JSObject* outView = nullptr;
-  if (NS_SUCCEEDED(rv)) {
-    buf[dstLen] = '\0';
-    JSAutoCompartment ac(aCx, aObj);
-    outView = Uint8Array::Create(aCx, dstLen,
-                                 reinterpret_cast<uint8_t*>(buf.get()));
-    if (!outView) {
-      aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
-      return;
-    }
+  size_t utf8Len = ConvertUTF16toUTF8(
+      aString, MakeSpan(reinterpret_cast<char*>(data.get()), bufLen.value()));
+  MOZ_ASSERT(utf8Len <= bufLen.value());
+
+  JSAutoRealm ar(aCx, aObj);
+  JSObject* outView = Uint8Array::Create(aCx, utf8Len, data.get());
+  if (!outView) {
+    aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
+    return;
   }
 
-  if (NS_FAILED(rv)) {
-    aRv.Throw(rv);
-  }
   aRetval.set(outView);
 }
 
-void
-TextEncoder::GetEncoding(nsAString& aEncoding)
-{
+void TextEncoder::EncodeInto(const nsAString& aSrc, const Uint8Array& aDst,
+                             TextEncoderEncodeIntoResult& aResult) {
+  aDst.ComputeLengthAndData();
+  size_t read;
+  size_t written;
+  Tie(read, written) = ConvertUTF16toUTF8Partial(
+      aSrc, MakeSpan(reinterpret_cast<char*>(aDst.Data()), aDst.Length()));
+  aResult.mRead.Construct() = read;
+  aResult.mWritten.Construct() = written;
+}
+
+void TextEncoder::GetEncoding(nsAString& aEncoding) {
   aEncoding.AssignLiteral("utf-8");
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

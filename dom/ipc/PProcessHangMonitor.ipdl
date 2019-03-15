@@ -7,6 +7,7 @@
 
 using base::ProcessId from "base/process.h";
 using mozilla::dom::TabId from "mozilla/dom/ipc/IdType.h";
+using mozilla::layers::LayersObserverEpoch from "mozilla/layers/LayersTypes.h";
 
 namespace mozilla {
 
@@ -14,7 +15,7 @@ struct SlowScriptData
 {
   TabId tabId;
   nsCString filename;
-  uint32_t lineno;
+  nsString addonId;
 };
 
 struct PluginHangData
@@ -36,12 +37,12 @@ parent:
   async ClearHang();
 
 child:
-  async TerminateScript();
+  async TerminateScript(bool aTerminateGlobal);
 
   async BeginStartingDebugger();
   async EndStartingDebugger();
 
-  async ForcePaint(TabId tabId, uint64_t aLayerObserverEpoch);
+  async PaintWhileInterruptingJS(TabId tabId, bool forceRepaint, LayersObserverEpoch aEpoch);
 };
 
 } // namespace mozilla

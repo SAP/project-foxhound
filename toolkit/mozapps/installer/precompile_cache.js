@@ -6,11 +6,7 @@
 
 // see http://mxr.mozilla.org/mozilla-central/source/services/sync/Weave.js#76
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cu = Components.utils;
-
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const rph = Services.io.getProtocolHandler("resource").QueryInterface(Ci.nsIResProtocolHandler);
 
@@ -19,12 +15,7 @@ function endsWith(str, end) {
 }
 
 function jar_entries(jarReader, pattern) {
-  var entries = [];
-  var enumerator = jarReader.findEntries(pattern);
-  while (enumerator.hasMore()) {
-    entries.push(enumerator.getNext());
-  }
-  return entries;
+  return Array.from(jarReader.findEntries(pattern));
 }
 
 function dir_entries(baseDir, subpath, ext) {
@@ -37,7 +28,7 @@ function dir_entries(baseDir, subpath, ext) {
   }
   var entries = [];
   while (enumerator.hasMoreElements()) {
-    var file = enumerator.getNext().QueryInterface(Ci.nsIFile);
+    var file = enumerator.nextFile;
     if (file.isDirectory()) {
       entries = entries.concat(dir_entries(dir, file.leafName, ext).map(p => subpath + "/" + p));
     } else if (endsWith(file.leafName, ext)) {
@@ -72,7 +63,7 @@ function load_modules_under(spec, uri) {
   for (let entry of entries) {
     try {
       dump(spec + entry + "\n");
-      Cu.import(spec + entry, null);
+      ChromeUtils.import(spec + entry, null);
     } catch (e) {}
   }
 }

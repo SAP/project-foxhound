@@ -2,20 +2,21 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-Components.utils.import("resource://gre/modules/ForgetAboutSite.jsm");
+let {ForgetAboutSite} = ChromeUtils.import("resource://gre/modules/ForgetAboutSite.jsm", {});
 
-function waitForClearHistory(aCallback) {
-  let observer = {
-    observe: function(aSubject, aTopic, aData) {
-      Services.obs.removeObserver(this, "browser:purge-domain-data");
-      setTimeout(aCallback, 0);
-    }
-  };
-  Services.obs.addObserver(observer, "browser:purge-domain-data", false);
+function promiseClearHistory() {
+  return new Promise(resolve => {
+    let observer = {
+      observe(aSubject, aTopic, aData) {
+        Services.obs.removeObserver(this, "browser:purge-session-history-for-domain");
+        resolve();
+      },
+    };
+    Services.obs.addObserver(observer, "browser:purge-session-history-for-domain");
+  });
 }
 
-function test() {
-  waitForExplicitFinish();
+add_task(async function() {
   // utility functions
   function countClosedTabsByTitle(aClosedTabList, aTitle) {
     return aClosedTabList.filter(aData => aData.title == aTitle).length;
@@ -35,16 +36,16 @@ function test() {
   const REMEMBER = Date.now(), FORGET = Math.random();
   let testState = {
     windows: [ { tabs: [{ entries: [{ url: "http://example.com/", triggeringPrincipal_base64 }] }], selected: 1 } ],
-    _closedWindows : [
+    _closedWindows: [
       // _closedWindows[0]
       {
         tabs: [
           { entries: [{ url: "http://example.com/", triggeringPrincipal_base64, title: REMEMBER }] },
-          { entries: [{ url: "http://mozilla.org/", triggeringPrincipal_base64, title: FORGET }] }
+          { entries: [{ url: "http://mozilla.org/", triggeringPrincipal_base64, title: FORGET }] },
         ],
         selected: 2,
         title: "mozilla.org",
-        _closedTabs: []
+        _closedTabs: [],
       },
       // _closedWindows[1]
       {
@@ -53,15 +54,15 @@ function test() {
          { entries: [{ url: "http://example.com/", triggeringPrincipal_base64, title: REMEMBER }] },
          { entries: [{ url: "http://example.com/", triggeringPrincipal_base64, title: REMEMBER }] },
          { entries: [{ url: "http://mozilla.org/", triggeringPrincipal_base64, title: FORGET }] },
-         { entries: [{ url: "http://example.com/", triggeringPrincipal_base64, title: REMEMBER }] }
+         { entries: [{ url: "http://example.com/", triggeringPrincipal_base64, title: REMEMBER }] },
         ],
         selected: 5,
-        _closedTabs: []
+        _closedTabs: [],
       },
       // _closedWindows[2]
       {
         tabs: [
-          { entries: [{ url: "http://example.com/", triggeringPrincipal_base64, title: REMEMBER }] }
+          { entries: [{ url: "http://example.com/", triggeringPrincipal_base64, title: REMEMBER }] },
         ],
         selected: 1,
         _closedTabs: [
@@ -69,62 +70,62 @@ function test() {
             state: {
               entries: [
                 { url: "http://mozilla.org/", triggeringPrincipal_base64, title: FORGET },
-                { url: "http://mozilla.org/again", triggeringPrincipal_base64, title: "doesn't matter" }
-              ]
+                { url: "http://mozilla.org/again", triggeringPrincipal_base64, title: "doesn't matter" },
+              ],
             },
             pos: 1,
-            title: FORGET
+            title: FORGET,
           },
           {
             state: {
               entries: [
-                { url: "http://example.com", triggeringPrincipal_base64, title: REMEMBER }
-              ]
+                { url: "http://example.com", triggeringPrincipal_base64, title: REMEMBER },
+              ],
             },
-            title: REMEMBER
-          }
-        ]
-      }
-    ]
+            title: REMEMBER,
+          },
+        ],
+      },
+    ],
   };
 
   // set browser to test state
   ss.setBrowserState(JSON.stringify(testState));
 
   // purge domain & check that we purged correctly for closed windows
-  ForgetAboutSite.removeDataFromDomain("mozilla.org");
-  waitForClearHistory(function() {
-    let closedWindowData = JSON.parse(ss.getClosedWindowData());
+  let clearHistoryPromise = promiseClearHistory();
+  await ForgetAboutSite.removeDataFromDomain("mozilla.org");
+  await clearHistoryPromise;
 
-    // First set of tests for _closedWindows[0] - tests basics
-    let win = closedWindowData[0];
-    is(win.tabs.length, 1, "1 tab was removed");
-    is(countOpenTabsByTitle(win.tabs, FORGET), 0,
-       "The correct tab was removed");
-    is(countOpenTabsByTitle(win.tabs, REMEMBER), 1,
-       "The correct tab was remembered");
-    is(win.selected, 1, "Selected tab has changed");
-    is(win.title, REMEMBER, "The window title was correctly updated");
+  let closedWindowData = JSON.parse(ss.getClosedWindowData());
 
-    // Test more complicated case
-    win = closedWindowData[1];
-    is(win.tabs.length, 3, "2 tabs were removed");
-    is(countOpenTabsByTitle(win.tabs, FORGET), 0,
-       "The correct tabs were removed");
-    is(countOpenTabsByTitle(win.tabs, REMEMBER), 3,
-       "The correct tabs were remembered");
-    is(win.selected, 3, "Selected tab has changed");
-    is(win.title, REMEMBER, "The window title was correctly updated");
+  // First set of tests for _closedWindows[0] - tests basics
+  let win = closedWindowData[0];
+  is(win.tabs.length, 1, "1 tab was removed");
+  is(countOpenTabsByTitle(win.tabs, FORGET), 0,
+     "The correct tab was removed");
+  is(countOpenTabsByTitle(win.tabs, REMEMBER), 1,
+     "The correct tab was remembered");
+  is(win.selected, 1, "Selected tab has changed");
+  is(win.title, REMEMBER, "The window title was correctly updated");
 
-    // Tests handling of _closedTabs
-    win = closedWindowData[2];
-    is(countClosedTabsByTitle(win._closedTabs, REMEMBER), 1,
-       "The correct number of tabs were removed, and the correct ones");
-    is(countClosedTabsByTitle(win._closedTabs, FORGET), 0,
-       "All tabs to be forgotten were indeed removed");
+  // Test more complicated case
+  win = closedWindowData[1];
+  is(win.tabs.length, 3, "2 tabs were removed");
+  is(countOpenTabsByTitle(win.tabs, FORGET), 0,
+     "The correct tabs were removed");
+  is(countOpenTabsByTitle(win.tabs, REMEMBER), 3,
+     "The correct tabs were remembered");
+  is(win.selected, 3, "Selected tab has changed");
+  is(win.title, REMEMBER, "The window title was correctly updated");
 
-    // restore pre-test state
-    ss.setBrowserState(oldState);
-    finish();
-  });
-}
+  // Tests handling of _closedTabs
+  win = closedWindowData[2];
+  is(countClosedTabsByTitle(win._closedTabs, REMEMBER), 1,
+     "The correct number of tabs were removed, and the correct ones");
+  is(countClosedTabsByTitle(win._closedTabs, FORGET), 0,
+     "All tabs to be forgotten were indeed removed");
+
+  // restore pre-test state
+  ss.setBrowserState(oldState);
+});

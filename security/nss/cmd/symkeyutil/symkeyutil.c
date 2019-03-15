@@ -233,6 +233,9 @@ BufToHex(SECItem *outbuf)
     unsigned int i;
 
     string = PORT_Alloc(len);
+    if (!string) {
+        return NULL;
+    }
 
     ptr = string;
     for (i = 0; i < outbuf->len; i++) {
@@ -1031,10 +1034,10 @@ main(int argc, char **argv)
         char *targetName = symKeyUtil.options[opt_TargetToken].arg;
         PK11SymKey *newKey;
         PK11SymKey *symKey = FindKey(slot, name, &keyID, &pwdata);
-        char *keyName = PK11_GetSymKeyNickname(symKey);
+        char *keyName;
 
         if (!symKey) {
-            char *keyName = keyID.data ? BufToHex(&keyID) : PORT_Strdup(name);
+            keyName = keyID.data ? BufToHex(&keyID) : PORT_Strdup(name);
             PR_fprintf(PR_STDERR, "%s: Couldn't find key %s on %s\n",
                        progName, keyName, PK11_GetTokenName(slot));
             PORT_Free(keyName);
@@ -1058,6 +1061,7 @@ main(int argc, char **argv)
             PR_fprintf(PR_STDERR, "%s: Couldn't move the key \n", progName);
             goto shutdown;
         }
+        keyName = PK11_GetSymKeyNickname(symKey);
         if (keyName) {
             rv = PK11_SetSymKeyNickname(newKey, keyName);
             if (rv != SECSuccess) {

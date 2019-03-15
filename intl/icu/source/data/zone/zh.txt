@@ -1,8 +1,17 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html#License
 zh{
-    Version{"2.1.29.84"}
+    Version{"2.1.44.76"}
     zoneStrings{
+        "Etc:UTC"{
+            ls{"协调世界时"}
+        }
+        "Europe:Dublin"{
+            ld{"爱尔兰标准时间"}
+        }
+        "Europe:London"{
+            ld{"英国夏令时间"}
+        }
         "meta:Acre"{
             ld{"阿克里夏令时间"}
             lg{"阿克里时间"}
@@ -18,7 +27,7 @@ zh{
             ls{"东部非洲时间"}
         }
         "meta:Africa_Southern"{
-            ls{"南部非洲时间"}
+            ls{"南非标准时间"}
         }
         "meta:Africa_Western"{
             ld{"西部非洲夏令时间"}

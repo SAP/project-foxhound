@@ -8,6 +8,9 @@ DIRS += ['build', 'decoders', 'encoders']
 if CONFIG['ENABLE_TESTS']:
     DIRS += ['test/gtest']
 
+if CONFIG['FUZZING_INTERFACES']:
+    DIRS += ['test/fuzzing']
+
 with Files('**'):
     BUG_COMPONENT = ('Core', 'ImageLib')
 
@@ -26,7 +29,6 @@ XPIDL_SOURCES += [
     'imgIEncoder.idl',
     'imgILoader.idl',
     'imgINotificationObserver.idl',
-    'imgIOnloadBlocker.idl',
     'imgIRequest.idl',
     'imgIScriptedNotificationObserver.idl',
     'imgITools.idl',
@@ -36,11 +38,13 @@ XPIDL_SOURCES += [
 XPIDL_MODULE = 'imglib2'
 
 EXPORTS += [
-    'DrawResult.h',
+    'FrameTimeout.h',
     'ImageCacheKey.h',
     'ImageLogging.h',
+    'ImageMetadata.h',
     'ImageOps.h',
     'ImageRegion.h',
+    'ImgDrawResult.h',
     'imgLoader.h',
     'imgRequest.h',
     'imgRequestProxy.h',
@@ -49,7 +53,18 @@ EXPORTS += [
     'SurfaceCacheUtils.h',
 ]
 
+EXPORTS.mozilla.image += [
+    'encoders/bmp/nsBMPEncoder.h',
+    'encoders/ico/nsICOEncoder.h',
+    'encoders/jpeg/nsJPEGEncoder.h',
+    'encoders/png/nsPNGEncoder.h',
+    'ICOFileHeaders.h',
+    'ImageMemoryReporter.h',
+    'RecyclingSourceSurface.h',
+]
+
 UNIFIED_SOURCES += [
+    'AnimationFrameBuffer.cpp',
     'AnimationSurfaceProvider.cpp',
     'ClippedImage.cpp',
     'DecodedSurfaceProvider.cpp',
@@ -63,12 +78,18 @@ UNIFIED_SOURCES += [
     'Image.cpp',
     'ImageCacheKey.cpp',
     'ImageFactory.cpp',
+    'ImageMemoryReporter.cpp',
     'ImageOps.cpp',
     'ImageWrapper.cpp',
     'imgFrame.cpp',
+    'imgLoader.cpp',
+    'imgRequest.cpp',
+    'imgRequestProxy.cpp',
     'imgTools.cpp',
     'MultipartImage.cpp',
     'OrientedImage.cpp',
+    'ProgressTracker.cpp',
+    'RasterImage.cpp',
     'ScriptedNotificationObserver.cpp',
     'ShutdownTracker.cpp',
     'SourceBuffer.cpp',
@@ -81,15 +102,6 @@ UNIFIED_SOURCES += [
 if CONFIG['MOZ_ENABLE_SKIA']:
     UNIFIED_SOURCES += [ 'Downscaler.cpp']
 
-# These files can't be unified because of ImageLogging.h #include order issues.
-SOURCES += [
-    'imgLoader.cpp',
-    'imgRequest.cpp',
-    'imgRequestProxy.cpp',
-    'ProgressTracker.cpp',
-    'RasterImage.cpp',
-]
-
 include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
@@ -98,11 +110,9 @@ LOCAL_INCLUDES += [
     # Because SVGDocumentWrapper.cpp includes "mozilla/dom/SVGSVGElement.h"
     '/dom/base',
     '/dom/svg',
-    # Access to Skia headers for Downscaler
-    '/gfx/2d',
     # We need to instantiate the decoders
     '/image/decoders',
-    # Because VectorImage.cpp includes nsSVGUtils.h and nsSVGEffects.h
+    # Because VectorImage.cpp includes nsSVGUtils.h and SVGObserverUtils.h
     '/layout/svg',
     # For URI-related functionality
     '/netwerk/base',
@@ -115,5 +125,8 @@ CXXFLAGS += CONFIG['MOZ_CAIRO_CFLAGS']
 
 LOCAL_INCLUDES += CONFIG['SKIA_INCLUDES']
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
+
+# Add libFuzzer configuration directives
+include('/tools/fuzzing/libfuzzer-config.mozbuild')

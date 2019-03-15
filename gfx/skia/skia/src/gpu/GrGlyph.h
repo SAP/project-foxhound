@@ -8,15 +8,13 @@
 #ifndef GrGlyph_DEFINED
 #define GrGlyph_DEFINED
 
-#include "GrBatchAtlas.h"
+#include "GrDrawOpAtlas.h"
 #include "GrRect.h"
 #include "GrTypes.h"
 
 #include "SkChecksum.h"
 #include "SkFixed.h"
 #include "SkPath.h"
-
-class GrPlot;
 
 /*  Need this to be quad-state:
     - complete w/ image
@@ -32,35 +30,27 @@ struct GrGlyph {
 
     typedef uint32_t PackedID;
 
-    GrBatchAtlas::AtlasID fID;
-    SkPath*               fPath;
+    GrDrawOpAtlas::AtlasID fID;
     PackedID              fPackedID;
     GrMaskFormat          fMaskFormat;
     GrIRect16             fBounds;
     SkIPoint16            fAtlasLocation;
-    bool                  fTooLargeForAtlas;
 
     void init(GrGlyph::PackedID packed, const SkIRect& bounds, GrMaskFormat format) {
-        fID = GrBatchAtlas::kInvalidAtlasID;
-        fPath = nullptr;
+        fID = GrDrawOpAtlas::kInvalidAtlasID;
         fPackedID = packed;
         fBounds.set(bounds);
         fMaskFormat = format;
         fAtlasLocation.set(0, 0);
-        fTooLargeForAtlas = GrBatchAtlas::GlyphTooLargeForAtlas(bounds.width(), bounds.height());
     }
 
-    void reset() {
-        if (fPath) {
-            delete fPath;
-            fPath = nullptr;
-        }
-    }
+    void reset() { }
 
     int width() const { return fBounds.width(); }
     int height() const { return fBounds.height(); }
     bool isEmpty() const { return fBounds.isEmpty(); }
     uint16_t glyphID() const { return UnpackID(fPackedID); }
+    uint32_t pageIndex() const { return GrDrawOpAtlas::GetPageIndexFromID(fID); }
 
     ///////////////////////////////////////////////////////////////////////////
 

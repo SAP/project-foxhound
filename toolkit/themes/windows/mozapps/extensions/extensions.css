@@ -4,15 +4,8 @@
 
 %include ../../../shared/extensions/extensions.inc.css
 
-#header-utils-btn {
-  list-style-image: url("chrome://mozapps/skin/extensions/utilities.svg#utilities");
-  margin-inline-end: 16px;
-}
-
-@media (-moz-windows-default-theme: 0) {
-  #header-utils-btn {
-    list-style-image: url("chrome://mozapps/skin/extensions/utilities.svg#utilities-native");
-  }
+:root > * {
+  font-size: 1.25em;
 }
 
 .sorter[checkState="1"] {
@@ -39,4 +32,8 @@
 
 .meta-rating > .star[on="true"] {
   list-style-image: url("chrome://mozapps/skin/extensions/rating-won.png");
+}
+
+#detail-view .legacy-warning {
+  margin-top: 1rem;
 }

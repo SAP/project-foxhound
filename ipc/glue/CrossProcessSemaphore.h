@@ -12,16 +12,16 @@
 #include "mozilla/Maybe.h"
 
 #if !defined(OS_WIN) && !defined(OS_MACOSX)
-#include <pthread.h>
-#include <semaphore.h>
-#include "SharedMemoryBasic.h"
-#include "mozilla/Atomics.h"
+#  include <pthread.h>
+#  include <semaphore.h>
+#  include "SharedMemoryBasic.h"
+#  include "mozilla/Atomics.h"
 #endif
 
 namespace IPC {
-template<typename T>
+template <typename T>
 struct ParamTraits;
-} // namespace IPC
+}  // namespace IPC
 
 //
 // Provides:
@@ -38,14 +38,14 @@ typedef mozilla::ipc::SharedMemoryBasic::Handle CrossProcessSemaphoreHandle;
 typedef uintptr_t CrossProcessSemaphoreHandle;
 #endif
 
-class CrossProcessSemaphore
-{
-public:
+class CrossProcessSemaphore {
+ public:
   /**
    * CrossProcessSemaphore
    * @param name A name which can reference this lock (currently unused)
    **/
-  static CrossProcessSemaphore* Create(const char* aName, uint32_t aInitialValue);
+  static CrossProcessSemaphore* Create(const char* aName,
+                                       uint32_t aInitialValue);
 
   /**
    * CrossProcessSemaphore
@@ -78,12 +78,14 @@ public:
    */
   CrossProcessSemaphoreHandle ShareToProcess(base::ProcessId aTargetPid);
 
-private:
+  void CloseHandle();
+
+ private:
   friend struct IPC::ParamTraits<CrossProcessSemaphore>;
 
   CrossProcessSemaphore();
   CrossProcessSemaphore(const CrossProcessSemaphore&);
-  CrossProcessSemaphore &operator=(const CrossProcessSemaphore&);
+  CrossProcessSemaphore& operator=(const CrossProcessSemaphore&);
 
 #if defined(OS_WIN)
   explicit CrossProcessSemaphore(HANDLE aSemaphore);
@@ -96,6 +98,6 @@ private:
 #endif
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif

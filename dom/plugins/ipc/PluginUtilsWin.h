@@ -8,16 +8,20 @@
 #define dom_plugins_PluginUtilsWin_h 1
 
 #include "npapi.h"
+#include "nscore.h"
 
 namespace mozilla {
 namespace plugins {
+
+class PluginModuleParent;
+
 namespace PluginUtilsWin {
 
 nsresult RegisterForAudioDeviceChanges(PluginModuleParent* aModuleParent,
                                        bool aShouldRegister);
 
-} // namespace PluginUtilsWin
-} // namespace plugins
-} // namespace mozilla
+}  // namespace PluginUtilsWin
+}  // namespace plugins
+}  // namespace mozilla
 
-#endif //dom_plugins_PluginUtilsWin_h
+#endif  // dom_plugins_PluginUtilsWin_h

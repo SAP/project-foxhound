@@ -11,10 +11,10 @@ var gNavBar = document.getElementById(CustomizableUI.AREA_NAVBAR);
 var gLazyArea;
 
 // Removable nodes shouldn't be moved by buildArea
-add_task(function*() {
+add_task(async function() {
   let dummyBtn = createDummyXULButton(kButtonId, "Dummy");
   dummyBtn.setAttribute("removable", "true");
-  gNavBar.customizationTarget.appendChild(dummyBtn);
+  CustomizableUI.getCustomizationTarget(gNavBar).appendChild(dummyBtn);
   let popupSet = document.getElementById("mainPopupSet");
   gLazyArea = document.createElementNS(kNSXUL, "panel");
   gLazyArea.id = kLazyAreaId;
@@ -22,17 +22,17 @@ add_task(function*() {
   popupSet.appendChild(gLazyArea);
   CustomizableUI.registerArea(kLazyAreaId, {
     type: CustomizableUI.TYPE_MENU_PANEL,
-    defaultPlacements: []
+    defaultPlacements: [],
   });
   CustomizableUI.addWidgetToArea(kButtonId, kLazyAreaId);
   assertAreaPlacements(kLazyAreaId, [kButtonId],
                        "Placements should have changed because widget is removable.");
   let btn = document.getElementById(kButtonId);
   btn.setAttribute("removable", "false");
-  gLazyArea.customizationTarget = gLazyArea;
+  gLazyArea._customizationTarget = gLazyArea;
   CustomizableUI.registerToolbarNode(gLazyArea, []);
   assertAreaPlacements(kLazyAreaId, [], "Placements should no longer include widget.");
-  is(btn.parentNode.id, gNavBar.customizationTarget.id,
+  is(btn.parentNode.id, CustomizableUI.getCustomizationTarget(gNavBar).id,
      "Button shouldn't actually have moved as it's not removable");
   btn = document.getElementById(kButtonId);
   if (btn) btn.remove();
@@ -41,6 +41,6 @@ add_task(function*() {
   gLazyArea.remove();
 });
 
-add_task(function* asyncCleanup() {
-  yield resetCustomization();
+add_task(async function asyncCleanup() {
+  await resetCustomization();
 });

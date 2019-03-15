@@ -8,6 +8,7 @@
 #ifndef GrGLVertexArray_DEFINED
 #define GrGLVertexArray_DEFINED
 
+#include "GrGpuResource.h"
 #include "GrTypesPriv.h"
 #include "gl/GrGLDefines.h"
 #include "gl/GrGLTypes.h"
@@ -28,9 +29,7 @@ public:
 
     void resize(int newCount) {
         fAttribArrayStates.resize_back(newCount);
-        for (int i = 0; i < newCount; ++i) {
-            fAttribArrayStates[i].invalidate();
-        }
+        this->invalidate();
     }
 
     /**
@@ -41,21 +40,24 @@ public:
     void set(GrGLGpu*,
              int attribIndex,
              const GrBuffer* vertexBuffer,
-             GrVertexAttribType type,
+             GrVertexAttribType cpuType,
+             GrSLType gpuType,
              GrGLsizei stride,
-             GrGLvoid* offset);
+             size_t offsetInBytes,
+             int divisor = 0);
 
     /**
-     * This function disables vertex attribs not present in the mask. It is assumed that the
-     * GrGLAttribArrayState is tracking the state of the currently bound vertex array object.
+     * This function enables the first 'enabledCount' vertex arrays and disables the rest.
      */
-    void disableUnusedArrays(const GrGLGpu*, uint64_t usedAttribArrayMask);
+    void enableVertexArrays(const GrGLGpu*, int enabledCount,
+                            GrPrimitiveRestart = GrPrimitiveRestart::kNo);
 
     void invalidate() {
         int count = fAttribArrayStates.count();
         for (int i = 0; i < count; ++i) {
             fAttribArrayStates[i].invalidate();
         }
+        fEnableStateIsValid = false;
     }
 
     /**
@@ -64,29 +66,34 @@ public:
     int count() const { return fAttribArrayStates.count(); }
 
 private:
+    static constexpr int kInvalidDivisor = -1;
+
     /**
      * Tracks the state of glVertexAttribArray for an attribute index.
      */
     struct AttribArrayState {
-            void invalidate() {
-                fEnableIsValid = false;
-                fVertexBufferUniqueID = SK_InvalidUniqueID;
-            }
+        void invalidate() {
+            fVertexBufferUniqueID.makeInvalid();
+            fDivisor = kInvalidDivisor;
+        }
 
-            bool                  fEnableIsValid;
-            bool                  fEnabled;
-            uint32_t              fVertexBufferUniqueID;
-            GrVertexAttribType    fType;
-            GrGLsizei             fStride;
-            GrGLvoid*             fOffset;
+        GrGpuResource::UniqueID   fVertexBufferUniqueID;
+        GrVertexAttribType        fCPUType;
+        GrSLType                  fGPUType;
+        GrGLsizei                 fStride;
+        size_t                    fOffset;
+        int                       fDivisor;
     };
 
     SkSTArray<16, AttribArrayState, true> fAttribArrayStates;
+    int fNumEnabledArrays;
+    GrPrimitiveRestart fPrimitiveRestartEnabled;
+    bool fEnableStateIsValid = false;
 };
 
 /**
  * This class represents an OpenGL vertex array object. It manages the lifetime of the vertex array
- * and is used to track the state of the vertex array to avoid redundant GL calls.
+ * and is used to track the state of the vertex array to avoid redundant GL calls.
  */
 class GrGLVertexArray {
 public:
@@ -110,9 +117,9 @@ public:
     void invalidateCachedState();
 
 private:
-    GrGLuint                fID;
-    GrGLAttribArrayState    fAttribArrays;
-    uint32_t                fIndexBufferUniqueID;
+    GrGLuint                  fID;
+    GrGLAttribArrayState      fAttribArrays;
+    GrGpuResource::UniqueID   fIndexBufferUniqueID;
 };
 
 #endif

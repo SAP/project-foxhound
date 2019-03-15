@@ -7,7 +7,6 @@
 
 <script type="application/javascript">
   var SimpleTest = window.opener.SimpleTest;
-  var Ci = Components.interfaces;
 
   function ok() { window.opener.ok.apply(window.opener, arguments); }
   function done() { window.opener.done.apply(window.opener, arguments); }
@@ -67,11 +66,10 @@
   }
 
   function doTest() {
-    let dwu = window.QueryInterface(Ci.nsIInterfaceRequestor)
-                    .getInterface(Ci.nsIDOMWindowUtils);
+    let dwu = window.windowUtils;
 
-    let os = Components.classes["@mozilla.org/xre/app-info;1"]
-                       .getService(Ci.nsIXULRuntime).OS;
+    let os = Cc["@mozilla.org/xre/app-info;1"]
+               .getService(Ci.nsIXULRuntime).OS;
     let isLinux = (os == "Linux");
     let isMac = (os == "Darwin");
     let isWindows = (os == "WINNT");
@@ -157,8 +155,7 @@
     let frame = document.getElementById("frame1");
     let dwuFrame = frame.contentDocument
                         .defaultView
-                        .QueryInterface(Ci.nsIInterfaceRequestor)
-                        .getInterface(Ci.nsIDOMWindowUtils);
+                        .windowUtils;
 
     frame.contentWindow.scrollTo(0, 0);
 
@@ -267,7 +264,7 @@ body {
 
 <br />
 
-<iframe id="frame1" src="data:text/html,<html><body style='margin: 0; padding: 0; font-family: monospace;' onload='window.parent.onFrameLoad();'><div id='sel2'>ttestselection2 Lorem ipsum dolor sit amet, at duo debet graeci, vivendum vulputate per ut.</div><br/><br/></body></html>"></iframe>
+<iframe id="frame1" src="selectAtPoint-innerframe.html"></iframe>
 
 <br/>
 

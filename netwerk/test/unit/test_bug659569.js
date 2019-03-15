@@ -1,6 +1,6 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = new HttpServer();
 
@@ -14,7 +14,7 @@ function setupChannel(suffix)
 
 function checkValueAndTrigger(request, data, ctx)
 {
-    do_check_eq("Ok", data);
+    Assert.equal("Ok", data);
     httpserver.stop(do_test_finished);
 }
 

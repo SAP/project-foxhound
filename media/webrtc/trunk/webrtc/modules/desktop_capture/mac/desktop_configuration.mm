@@ -8,23 +8,11 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/desktop_capture/mac/desktop_configuration.h"
+#include "modules/desktop_capture/mac/desktop_configuration.h"
 
 #include <math.h>
 #include <algorithm>
 #include <Cocoa/Cocoa.h>
-
-#include "webrtc/system_wrappers/include/logging.h"
-
-#if !defined(MAC_OS_X_VERSION_10_7) || \
-    MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_7
-
-@interface NSScreen (LionAPI)
-- (CGFloat)backingScaleFactor;
-- (NSRect)convertRectToBacking:(NSRect)aRect;
-@end
-
-#endif  // MAC_OS_X_VERSION_10_7
 
 namespace webrtc {
 
@@ -36,15 +24,6 @@ DesktopRect NSRectToDesktopRect(const NSRect& ns_rect) {
       static_cast<int>(floor(ns_rect.origin.y)),
       static_cast<int>(ceil(ns_rect.origin.x + ns_rect.size.width)),
       static_cast<int>(ceil(ns_rect.origin.y + ns_rect.size.height)));
-}
-
-DesktopRect JoinRects(const DesktopRect& a,
-                              const DesktopRect& b) {
-  return DesktopRect::MakeLTRB(
-      std::min(a.left(), b.left()),
-      std::min(a.top(), b.top()),
-      std::max(a.right(), b.right()),
-      std::max(a.bottom(), b.bottom()));
 }
 
 // Inverts the position of |rect| from bottom-up coordinates to top-down,
@@ -85,17 +64,29 @@ MacDisplayConfiguration GetConfigurationForScreen(NSScreen* screen) {
 
 }  // namespace
 
-MacDisplayConfiguration::MacDisplayConfiguration()
-    : id(0),
-      dip_to_pixel_scale(1.0f) {
-}
+MacDisplayConfiguration::MacDisplayConfiguration() = default;
+MacDisplayConfiguration::MacDisplayConfiguration(
+    const MacDisplayConfiguration& other) = default;
+MacDisplayConfiguration::MacDisplayConfiguration(
+    MacDisplayConfiguration&& other) = default;
+MacDisplayConfiguration::~MacDisplayConfiguration() = default;
 
-MacDesktopConfiguration::MacDesktopConfiguration()
-    : dip_to_pixel_scale(1.0f) {
-}
+MacDisplayConfiguration& MacDisplayConfiguration::operator=(
+    const MacDisplayConfiguration& other) = default;
+MacDisplayConfiguration& MacDisplayConfiguration::operator=(
+    MacDisplayConfiguration&& other) = default;
 
-MacDesktopConfiguration::~MacDesktopConfiguration() {
-}
+MacDesktopConfiguration::MacDesktopConfiguration() = default;
+MacDesktopConfiguration::MacDesktopConfiguration(
+    const MacDesktopConfiguration& other) = default;
+MacDesktopConfiguration::MacDesktopConfiguration(
+    MacDesktopConfiguration&& other) = default;
+MacDesktopConfiguration::~MacDesktopConfiguration() = default;
+
+MacDesktopConfiguration& MacDesktopConfiguration::operator=(
+    const MacDesktopConfiguration& other) = default;
+MacDesktopConfiguration& MacDesktopConfiguration::operator=(
+    MacDesktopConfiguration&& other) = default;
 
 // static
 MacDesktopConfiguration MacDesktopConfiguration::GetCurrent(Origin origin) {
@@ -138,10 +129,8 @@ MacDesktopConfiguration MacDesktopConfiguration::GetCurrent(Origin origin) {
     // display uses different DPI settings.
     if (display_config.dip_to_pixel_scale ==
         desktop_config.dip_to_pixel_scale) {
-      desktop_config.bounds =
-          JoinRects(desktop_config.bounds, display_config.bounds);
-      desktop_config.pixel_bounds =
-          JoinRects(desktop_config.pixel_bounds, display_config.pixel_bounds);
+      desktop_config.bounds.UnionWith(display_config.bounds);
+      desktop_config.pixel_bounds.UnionWith(display_config.pixel_bounds);
     }
   }
 

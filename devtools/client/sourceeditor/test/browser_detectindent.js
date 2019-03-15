@@ -14,7 +14,7 @@ const TWO_SPACES_CODE = [
   "     ",
   "span {",
   "  padding-left: 10px;",
-  "}"
+  "}",
 ].join("\n");
 
 const FOUR_SPACES_CODE = [
@@ -39,7 +39,7 @@ const FOUR_SPACES_CODE = [
   "        var result = x - y;",
   "        result %= 2;",
   "    }",
-  "}"
+  "}",
 ].join("\n");
 
 const TABS_CODE = [
@@ -53,7 +53,7 @@ const TABS_CODE = [
   "",
   "span {",
   "\tpadding-left: 10px;",
-  "}"
+  "}",
 ].join("\n");
 
 const NONE_CODE = [
@@ -61,42 +61,31 @@ const NONE_CODE = [
   "           // stray thing",
   "var y = 9;",
   "    ",
-  ""
+  "",
 ].join("\n");
 
-function test() {
+async function test() {
   waitForExplicitFinish();
 
-  setup((ed, win) => {
-    is(ed.getOption("indentUnit"), 2,
-       "2 spaces before code added");
-    is(ed.getOption("indentWithTabs"), false,
-       "spaces is default");
+  const {ed, win} = await setup();
+  is(ed.getOption("indentUnit"), 2, "2 spaces before code added");
+  is(ed.getOption("indentWithTabs"), false, "spaces is default");
 
-    ed.setText(NONE_CODE);
-    is(ed.getOption("indentUnit"), 2,
-       "2 spaces after un-detectable code");
-    is(ed.getOption("indentWithTabs"), false,
-       "spaces still set after un-detectable code");
+  ed.setText(NONE_CODE);
+  is(ed.getOption("indentUnit"), 2, "2 spaces after un-detectable code");
+  is(ed.getOption("indentWithTabs"), false, "spaces still set after un-detectable code");
 
-    ed.setText(FOUR_SPACES_CODE);
-    is(ed.getOption("indentUnit"), 4,
-       "4 spaces detected in 4 space code");
-    is(ed.getOption("indentWithTabs"), false,
-       "spaces detected in 4 space code");
+  ed.setText(FOUR_SPACES_CODE);
+  is(ed.getOption("indentUnit"), 4, "4 spaces detected in 4 space code");
+  is(ed.getOption("indentWithTabs"), false, "spaces detected in 4 space code");
 
-    ed.setText(TWO_SPACES_CODE);
-    is(ed.getOption("indentUnit"), 2,
-       "2 spaces detected in 2 space code");
-    is(ed.getOption("indentWithTabs"), false,
-       "spaces detected in 2 space code");
+  ed.setText(TWO_SPACES_CODE);
+  is(ed.getOption("indentUnit"), 2, "2 spaces detected in 2 space code");
+  is(ed.getOption("indentWithTabs"), false, "spaces detected in 2 space code");
 
-    ed.setText(TABS_CODE);
-    is(ed.getOption("indentUnit"), 2,
-       "2 space indentation unit");
-    is(ed.getOption("indentWithTabs"), true,
-       "tabs detected in majority tabs code");
+  ed.setText(TABS_CODE);
+  is(ed.getOption("indentUnit"), 2, "2 space indentation unit");
+  is(ed.getOption("indentWithTabs"), true, "tabs detected in majority tabs code");
 
-    teardown(ed, win);
-  });
+  teardown(ed, win);
 }

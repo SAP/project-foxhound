@@ -15,27 +15,29 @@ EXPORTS += [
 ]
 
 EXPORTS.mozilla += [
+    '!Services.h',
     'FileLocation.h',
+    'GeckoProcessTypes.h',
     'IOInterposer.h',
     'LateWriteChecks.h',
     'Omnijar.h',
     'PoisonIOInterposer.h',
-    'ServiceList.h',
-    'Services.h',
-    'TlsAllocationTracker.h',
     'XPCOM.h',
     'XREAppData.h',
 ]
 
 if CONFIG['OS_ARCH'] == 'WINNT':
-    EXPORTS += ['nsWindowsDllInterceptor.h']
-    EXPORTS.mozilla += ['perfprobe.h']
-    SOURCES += [
-        'perfprobe.cpp',
-        'PoisonIOInterposerBase.cpp',
-        'PoisonIOInterposerWin.cpp',
-        'TlsAllocationTracker.cpp',
+    EXPORTS.mozilla += [
+        'perfprobe.h',
     ]
+    SOURCES += ['perfprobe.cpp']
+    if CONFIG['CC_TYPE'] not in ('gcc', 'clang'):
+        SOURCES += [
+            'PoisonIOInterposerBase.cpp',
+            'PoisonIOInterposerWin.cpp',
+        ]
+    else:
+        SOURCES += ['PoisonIOInterposerStub.cpp']
 elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
     UNIFIED_SOURCES += [
         'PoisonIOInterposerBase.cpp',
@@ -52,25 +54,30 @@ UNIFIED_SOURCES += xpcom_gluens_src_cppsrcs
 UNIFIED_SOURCES += xpcom_glue_src_cppsrcs
 
 UNIFIED_SOURCES += [
+    'FileLocation.cpp',
     'IOInterposer.cpp',
     'LateWriteChecks.cpp',
     'MainThreadIOLogger.cpp',
-    'nsXPCOMStrings.cpp',
-    'Services.cpp',
+    'Omnijar.cpp',
     'XPCOMInit.cpp',
 ]
+
+SOURCES += ['!Services.cpp']
 
 if CONFIG['OS_ARCH'] != 'WINNT':
     SOURCES += [
         'NSPRInterposer.cpp',
     ]
 
-# FileLocation.cpp and Omnijar.cpp cannot be built in unified mode because they
-# use plarena.h.
-SOURCES += [
-    'FileLocation.cpp',
-    'Omnijar.cpp',
+GENERATED_FILES += [
+    'Services.cpp',
+    'Services.h',
+    'services.rs',
 ]
+
+GENERATED_FILES['Services.cpp'].script = 'Services.py:services_cpp'
+GENERATED_FILES['Services.h'].script = 'Services.py:services_h'
+GENERATED_FILES['services.rs'].script = 'Services.py:services_rs'
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
@@ -78,8 +85,6 @@ FINAL_LIBRARY = 'xul'
 
 DEFINES['_IMPL_NS_STRINGAPI'] = True
 DEFINES['OMNIJAR_NAME'] = CONFIG['OMNIJAR_NAME']
-if CONFIG['MOZ_ICU_DATA_ARCHIVE']:
-    DEFINES['MOZ_ICU_DATA_ARCHIVE'] = True
 
 LOCAL_INCLUDES += [
     '!..',
@@ -88,7 +93,6 @@ LOCAL_INCLUDES += [
     '../ds',
     '../glue',
     '../io',
-    '../reflect/xptinfo',
     '../threads',
     '/chrome',
     '/docshell/base',

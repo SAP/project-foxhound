@@ -3,23 +3,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
+ChromeUtils.defineModuleGetter(this, "Snackbars", "resource://gre/modules/Snackbars.jsm");
+ChromeUtils.defineModuleGetter(this, "EventDispatcher", "resource://gre/modules/Messaging.jsm");
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "Snackbars", "resource://gre/modules/Snackbars.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "EventDispatcher", "resource://gre/modules/Messaging.jsm");
-
-add_task(function* test_snackbar_api() {
+add_task(async function test_snackbar_api() {
   Snackbars.show("This is a Snackbar", Snackbars.LENGTH_INDEFINITE, {
     action: {
       label: "Click me",
-      callback: function () {}
-    }
+      callback: function() {},
+    },
   });
 
-  yield EventDispatcher.instance.sendRequestForResult({
-    type: "Robocop:WaitOnUI"
+  await EventDispatcher.instance.sendRequestForResult({
+    type: "Robocop:WaitOnUI",
   });
 });
 

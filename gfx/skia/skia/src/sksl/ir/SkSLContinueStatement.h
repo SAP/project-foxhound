@@ -4,7 +4,7 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
- 
+
 #ifndef SKSL_CONTINUESTATEMENT
 #define SKSL_CONTINUESTATEMENT
 
@@ -14,14 +14,18 @@
 namespace SkSL {
 
 /**
- * A 'continue' statement. 
+ * A 'continue' statement.
  */
 struct ContinueStatement : public Statement {
-    ContinueStatement(Position position)
-    : INHERITED(position, kContinue_Kind) {}
+    ContinueStatement(int offset)
+    : INHERITED(offset, kContinue_Kind) {}
 
-    std::string description() const override {
-        return "continue;";
+    std::unique_ptr<Statement> clone() const override {
+        return std::unique_ptr<Statement>(new ContinueStatement(fOffset));
+    }
+
+    String description() const override {
+        return String("continue;");
     }
 
     typedef Statement INHERITED;

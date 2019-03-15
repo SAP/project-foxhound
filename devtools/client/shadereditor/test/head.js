@@ -1,26 +1,21 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+
+/* eslint no-unused-vars: [2, {"vars": "local"}] */
+/* import-globals-from ../../shared/test/shared-head.js */
+
 "use strict";
 
-var { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
+// Load the shared-head file first.
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/devtools/client/shared/test/shared-head.js",
+  this);
 
-var { require } = Cu.import("resource://devtools/shared/Loader.jsm", {});
-var { Task } = require("devtools/shared/task");
-
-var Services = require("Services");
-var promise = require("promise");
-var { gDevTools } = require("devtools/client/framework/devtools");
-var { DebuggerClient } = require("devtools/shared/client/main");
+var { DebuggerClient } = require("devtools/shared/client/debugger-client");
 var { DebuggerServer } = require("devtools/server/main");
-var { WebGLFront } = require("devtools/shared/fronts/webgl");
-var DevToolsUtils = require("devtools/shared/DevToolsUtils");
-var flags = require("devtools/shared/flags");
-var { TargetFactory } = require("devtools/client/framework/target");
 var { Toolbox } = require("devtools/client/framework/toolbox");
 var { isWebGLSupported } = require("devtools/client/shared/webgl-utils");
-var mm = null;
 
-const FRAME_SCRIPT_UTILS_URL = "chrome://devtools/content/shared/frame-script-utils.js";
 const EXAMPLE_URL = "http://example.com/browser/devtools/client/shadereditor/test/";
 const SIMPLE_CANVAS_URL = EXAMPLE_URL + "doc_simple-canvas.html";
 const SHADER_ORDER_URL = EXAMPLE_URL + "doc_shader-order.html";
@@ -32,16 +27,9 @@ var gEnableLogging = Services.prefs.getBoolPref("devtools.debugger.log");
 // To enable logging for try runs, just set the pref to true.
 Services.prefs.setBoolPref("devtools.debugger.log", false);
 
-// All tests are asynchronous.
-waitForExplicitFinish();
-
 var gToolEnabled = Services.prefs.getBoolPref("devtools.shadereditor.enabled");
 
-flags.testing = true;
-
 registerCleanupFunction(() => {
-  info("finish() was called, cleaning up...");
-  flags.testing = false;
   Services.prefs.setBoolPref("devtools.debugger.log", gEnableLogging);
   Services.prefs.setBoolPref("devtools.shadereditor.enabled", gToolEnabled);
 
@@ -59,46 +47,9 @@ registerCleanupFunction(() => {
  * frame script attached in the middle of the test.
  */
 function loadFrameScripts() {
-  if (Cu.isCrossProcessWrapper(content)) {
-    mm = gBrowser.selectedBrowser.messageManager;
-    mm.loadFrameScript(FRAME_SCRIPT_UTILS_URL, false);
+  if (!content) {
+    loadFrameScriptUtils();
   }
-}
-
-function addTab(aUrl, aWindow) {
-  info("Adding tab: " + aUrl);
-
-  let deferred = promise.defer();
-  let targetWindow = aWindow || window;
-  let targetBrowser = targetWindow.gBrowser;
-
-  targetWindow.focus();
-  let tab = targetBrowser.selectedTab = targetBrowser.addTab(aUrl);
-  let linkedBrowser = tab.linkedBrowser;
-
-  BrowserTestUtils.browserLoaded(linkedBrowser).then(function () {
-    info("Tab added and finished loading: " + aUrl);
-    deferred.resolve(tab);
-  });
-
-  return deferred.promise;
-}
-
-function removeTab(aTab, aWindow) {
-  info("Removing tab.");
-
-  let deferred = promise.defer();
-  let targetWindow = aWindow || window;
-  let targetBrowser = targetWindow.gBrowser;
-  let tabContainer = targetBrowser.tabContainer;
-
-  tabContainer.addEventListener("TabClose", function (aEvent) {
-    info("Tab removed and finished closing.");
-    deferred.resolve();
-  }, {once: true});
-
-  targetBrowser.removeTab(aTab);
-  return deferred.promise;
 }
 
 function handleError(aError) {
@@ -116,58 +67,27 @@ function ifWebGLUnsupported() {
   finish();
 }
 
-function test() {
-  let generator = isWebGLSupported(document) ? ifWebGLSupported : ifWebGLUnsupported;
-  Task.spawn(generator).then(null, handleError);
+async function test() {
+  const generator = isWebGLSupported(document) ? ifWebGLSupported : ifWebGLUnsupported;
+  try {
+    await generator();
+  } catch (e) {
+    handleError(e);
+  }
 }
 
 function createCanvas() {
   return document.createElementNS("http://www.w3.org/1999/xhtml", "canvas");
 }
 
-function once(aTarget, aEventName, aUseCapture = false) {
-  info("Waiting for event: '" + aEventName + "' on " + aTarget + ".");
-
-  let deferred = promise.defer();
-
-  for (let [add, remove] of [
-    ["on", "off"], // Use event emitter before DOM events for consistency
-    ["addEventListener", "removeEventListener"],
-    ["addListener", "removeListener"]
-  ]) {
-    if ((add in aTarget) && (remove in aTarget)) {
-      aTarget[add](aEventName, function onEvent(...aArgs) {
-        aTarget[remove](aEventName, onEvent, aUseCapture);
-        deferred.resolve(...aArgs);
-      }, aUseCapture);
-      break;
-    }
-  }
-
-  return deferred.promise;
-}
-
-// Hack around `once`, as that only resolves to a single (first) argument
-// and discards the rest. `onceSpread` is similar, except resolves to an
-// array of all of the arguments in the handler. These should be consolidated
-// into the same function, but many tests will need to be changed.
-function onceSpread(aTarget, aEvent) {
-  let deferred = promise.defer();
-  aTarget.once(aEvent, (...args) => deferred.resolve(args));
-  return deferred.promise;
-}
-
 function observe(aNotificationName, aOwnsWeak = false) {
   info("Waiting for observer notification: '" + aNotificationName + ".");
-
-  let deferred = promise.defer();
-
-  Services.obs.addObserver(function onNotification(...aArgs) {
-    Services.obs.removeObserver(onNotification, aNotificationName);
-    deferred.resolve.apply(deferred, aArgs);
-  }, aNotificationName, aOwnsWeak);
-
-  return deferred.promise;
+  return new Promise(resolve =>{
+    Services.obs.addObserver(function onNotification(...aArgs) {
+      Services.obs.removeObserver(onNotification, aNotificationName);
+      resolve.apply(deferred, aArgs);
+    }, aNotificationName, aOwnsWeak);
+  });
 }
 
 function isApprox(aFirst, aSecond, aMargin = 1) {
@@ -182,79 +102,74 @@ function isApproxColor(aFirst, aSecond, aMargin) {
 }
 
 function ensurePixelIs(aFront, aPosition, aColor, aWaitFlag = false, aSelector = "canvas") {
-  return Task.spawn(function* () {
-    let pixel = yield aFront.getPixel({ selector: aSelector, position: aPosition });
+  return (async function() {
+    const pixel = await aFront.getPixel({ selector: aSelector, position: aPosition });
     if (isApproxColor(pixel, aColor)) {
       ok(true, "Expected pixel is shown at: " + aPosition.toSource());
       return;
     }
 
     if (aWaitFlag) {
-      yield aFront.waitForFrame();
-      return ensurePixelIs(aFront, aPosition, aColor, aWaitFlag, aSelector);
+      await aFront.waitForFrame();
+      await ensurePixelIs(aFront, aPosition, aColor, aWaitFlag, aSelector);
+      return;
     }
 
     ok(false, "Expected pixel was not already shown at: " + aPosition.toSource());
     throw new Error("Expected pixel was not already shown at: " + aPosition.toSource());
-  });
+  })();
 }
 
 function navigateInHistory(aTarget, aDirection, aWaitForTargetEvent = "navigate") {
-  if (Cu.isCrossProcessWrapper(content)) {
-    if (!mm) {
-      throw new Error("`loadFrameScripts()` must be called before attempting to navigate in e10s.");
-    }
+  if (!content) {
+    const mm = gBrowser.selectedBrowser.messageManager;
     mm.sendAsyncMessage("devtools:test:history", { direction: aDirection });
-  }
-  else {
+  } else {
     executeSoon(() => content.history[aDirection]());
   }
   return once(aTarget, aWaitForTargetEvent);
 }
 
 function navigate(aTarget, aUrl, aWaitForTargetEvent = "navigate") {
-  executeSoon(() => aTarget.activeTab.navigateTo(aUrl));
+  executeSoon(() => aTarget.activeTab.navigateTo({ url: aUrl }));
   return once(aTarget, aWaitForTargetEvent);
 }
 
-function reload(aTarget, aWaitForTargetEvent = "navigate") {
-  executeSoon(() => aTarget.activeTab.reload());
-  return once(aTarget, aWaitForTargetEvent);
+async function reload(aTarget, aWaitForTargetEvent = "navigate") {
+  const onTargetEvent = once(aTarget, aWaitForTargetEvent);
+  await aTarget.activeTab.reload();
+  return onTargetEvent;
 }
 
 function initBackend(aUrl) {
   info("Initializing a shader editor front.");
 
-  if (!DebuggerServer.initialized) {
-    DebuggerServer.init();
-    DebuggerServer.addBrowserActors();
-  }
+  DebuggerServer.init();
+  DebuggerServer.registerAllActors();
 
-  return Task.spawn(function* () {
-    let tab = yield addTab(aUrl);
-    let target = TargetFactory.forTab(tab);
+  return (async function() {
+    const tab = await addTab(aUrl);
+    const target = await TargetFactory.forTab(tab);
 
-    yield target.makeRemote();
+    await target.attach();
 
-    let front = new WebGLFront(target.client, target.form);
+    const front = await target.getFront("webgl");
     return { target, front };
-  });
+  })();
 }
 
 function initShaderEditor(aUrl) {
   info("Initializing a shader editor pane.");
 
-  return Task.spawn(function* () {
-    let tab = yield addTab(aUrl);
-    let target = TargetFactory.forTab(tab);
-
-    yield target.makeRemote();
+  return (async function() {
+    const tab = await addTab(aUrl);
+    const target = await TargetFactory.forTab(tab);
 
     Services.prefs.setBoolPref("devtools.shadereditor.enabled", true);
-    let toolbox = yield gDevTools.showToolbox(target, "shadereditor");
-    let panel = toolbox.getCurrentPanel();
+    const toolbox = await gDevTools.showToolbox(target, "shadereditor");
+    const panel = toolbox.getCurrentPanel();
     return { target, panel };
-  });
+  })();
 }
 
 function teardown(aPanel) {
@@ -262,7 +177,7 @@ function teardown(aPanel) {
 
   return promise.all([
     once(aPanel, "destroyed"),
-    removeTab(aPanel.target.tab)
+    removeTab(aPanel.target.tab),
   ]);
 }
 
@@ -275,17 +190,19 @@ function teardown(aPanel) {
 // programs that should be listened to and waited on, and an optional
 // `onAdd` function that calls with the entire actors array on program link
 function getPrograms(front, count, onAdd) {
-  let actors = [];
-  let deferred = promise.defer();
-  front.on("program-linked", function onLink(actor) {
-    if (actors.length !== count) {
-      actors.push(actor);
-      if (typeof onAdd === "function") onAdd(actors);
-    }
-    if (actors.length === count) {
-      front.off("program-linked", onLink);
-      deferred.resolve(actors);
-    }
+  return new Promise(resolve => {
+    const actors = [];
+    front.on("program-linked", function onLink(actor) {
+      if (actors.length !== count) {
+        actors.push(actor);
+        if (typeof onAdd === "function") {
+          onAdd(actors);
+        }
+      }
+      if (actors.length === count) {
+        front.off("program-linked", onLink);
+        resolve(actors);
+      }
+    });
   });
-  return deferred.promise;
 }

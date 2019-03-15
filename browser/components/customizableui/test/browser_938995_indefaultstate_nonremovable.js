@@ -7,7 +7,7 @@
 const kWidgetId = "test-non-removable-widget";
 
 // Adding non-removable items to a toolbar or the panel shouldn't change inDefaultState
-add_task(function() {
+add_task(async function() {
   ok(CustomizableUI.inDefaultState, "Should start in default state");
 
   let button = createDummyXULButton(kWidgetId, "Test non-removable inDefaultState handling");
@@ -17,9 +17,11 @@ add_task(function() {
   button.remove();
 
   button = createDummyXULButton(kWidgetId, "Test non-removable inDefaultState handling");
-  CustomizableUI.addWidgetToArea(kWidgetId, CustomizableUI.AREA_PANEL);
+  CustomizableUI.addWidgetToArea(kWidgetId, CustomizableUI.AREA_FIXED_OVERFLOW_PANEL);
   button.setAttribute("removable", "false");
   ok(CustomizableUI.inDefaultState, "Should still be in default state after panel addition");
   button.remove();
   ok(CustomizableUI.inDefaultState, "Should be in default state after destroying both widgets");
+  // reset now that button is gone.
+  CustomizableUI.reset();
 });

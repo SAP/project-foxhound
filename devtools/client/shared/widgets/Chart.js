@@ -23,15 +23,15 @@ const L10N = new LocalizationHelper(NET_STRINGS_URI);
 var Chart = {
   Pie: createPieChart,
   Table: createTableChart,
-  PieTable: createPieTableChart
+  PieTable: createPieTableChart,
 };
 
 /**
  * A simple pie chart proxy for the underlying view.
  * Each item in the `slices` property represents a [data, node] pair containing
- * the data used to create the slice and the nsIDOMNode displaying it.
+ * the data used to create the slice and the Node displaying it.
  *
- * @param nsIDOMNode node
+ * @param Node node
  *        The node representing the view for this chart.
  */
 function PieChart(node) {
@@ -43,9 +43,9 @@ function PieChart(node) {
 /**
  * A simple table chart proxy for the underlying view.
  * Each item in the `rows` property represents a [data, node] pair containing
- * the data used to create the row and the nsIDOMNode displaying it.
+ * the data used to create the row and the Node displaying it.
  *
- * @param nsIDOMNode node
+ * @param Node node
  *        The node representing the view for this chart.
  */
 function TableChart(node) {
@@ -57,7 +57,7 @@ function TableChart(node) {
 /**
  * A simple pie+table chart proxy for the underlying view.
  *
- * @param nsIDOMNode node
+ * @param Node node
  *        The node representing the view for this chart.
  * @param PieChart pie
  *        The pie chart proxy.
@@ -74,7 +74,7 @@ function PieTableChart(node, pie, table) {
 /**
  * Creates the DOM for a pie+table chart.
  *
- * @param nsIDocument document
+ * @param Document document
  *        The document responsible with creating the DOM.
  * @param object
  *        An object containing all or some of the following properties:
@@ -99,12 +99,12 @@ function createPieTableChart(document,
     data = data.slice().sort((a, b) => +(a.size < b.size));
   }
 
-  let pie = Chart.Pie(document, {
+  const pie = Chart.Pie(document, {
     width: diameter,
-    data: data
+    data: data,
   });
 
-  let table = Chart.Table(document, {
+  const table = Chart.Table(document, {
     title: title,
     data: data,
     strings: strings,
@@ -112,44 +112,44 @@ function createPieTableChart(document,
     header: header,
   });
 
-  let container = document.createElement("div");
+  const container = document.createElement("div");
   container.className = "pie-table-chart-container";
   container.appendChild(pie.node);
   container.appendChild(table.node);
 
-  let proxy = new PieTableChart(container, pie, table);
+  const proxy = new PieTableChart(container, pie, table);
 
-  pie.on("click", (event, item) => {
-    proxy.emit(event, item);
+  pie.on("click", (item) => {
+    proxy.emit("click", item);
   });
 
-  table.on("click", (event, item) => {
-    proxy.emit(event, item);
+  table.on("click", (item) => {
+    proxy.emit("click", item);
   });
 
-  pie.on("mouseover", (event, item) => {
-    proxy.emit(event, item);
+  pie.on("mouseover", (item) => {
+    proxy.emit("mouseover", item);
     if (table.rows.has(item)) {
       table.rows.get(item).setAttribute("focused", "");
     }
   });
 
-  pie.on("mouseout", (event, item) => {
-    proxy.emit(event, item);
+  pie.on("mouseout", (item) => {
+    proxy.emit("mouseout", item);
     if (table.rows.has(item)) {
       table.rows.get(item).removeAttribute("focused");
     }
   });
 
-  table.on("mouseover", (event, item) => {
-    proxy.emit(event, item);
+  table.on("mouseover", (item) => {
+    proxy.emit("mouseover", item);
     if (pie.slices.has(item)) {
       pie.slices.get(item).setAttribute("focused", "");
     }
   });
 
-  table.on("mouseout", (event, item) => {
-    proxy.emit(event, item);
+  table.on("mouseout", (item) => {
+    proxy.emit("mouseout", item);
     if (pie.slices.has(item)) {
       pie.slices.get(item).removeAttribute("focused");
     }
@@ -161,7 +161,7 @@ function createPieTableChart(document,
 /**
  * Creates the DOM for a pie chart based on the specified properties.
  *
- * @param nsIDocument document
+ * @param Document document
  *        The document responsible with creating the DOM.
  * @param object
  *        An object containing all or some of the following properties:
@@ -205,7 +205,7 @@ function createPieChart(document, { data, width, height, centerX, centerY, radiu
     isPlaceholder = true;
   }
 
-  let container = document.createElementNS(SVG_NS, "svg");
+  const container = document.createElementNS(SVG_NS, "svg");
   container.setAttribute("class", "generic-chart-container pie-chart-container");
   container.setAttribute("pack", "center");
   container.setAttribute("flex", "1");
@@ -215,23 +215,23 @@ function createPieChart(document, { data, width, height, centerX, centerY, radiu
   container.setAttribute("slices", data.length);
   container.setAttribute("placeholder", isPlaceholder);
 
-  let proxy = new PieChart(container);
+  const proxy = new PieChart(container);
 
-  let total = data.reduce((acc, e) => acc + e.size, 0);
-  let angles = data.map(e => e.size / total * (TAU - EPSILON));
-  let largest = data.reduce((a, b) => a.size > b.size ? a : b);
-  let smallest = data.reduce((a, b) => a.size < b.size ? a : b);
+  const total = data.reduce((acc, e) => acc + e.size, 0);
+  const angles = data.map(e => e.size / total * (TAU - EPSILON));
+  const largest = data.reduce((a, b) => a.size > b.size ? a : b);
+  const smallest = data.reduce((a, b) => a.size < b.size ? a : b);
 
-  let textDistance = radius / NAMED_SLICE_TEXT_DISTANCE_RATIO;
-  let translateDistance = radius / HOVERED_SLICE_TRANSLATE_DISTANCE_RATIO;
+  const textDistance = radius / NAMED_SLICE_TEXT_DISTANCE_RATIO;
+  const translateDistance = radius / HOVERED_SLICE_TRANSLATE_DISTANCE_RATIO;
   let startAngle = TAU;
   let endAngle = 0;
   let midAngle = 0;
   radius -= translateDistance;
 
   for (let i = data.length - 1; i >= 0; i--) {
-    let sliceInfo = data[i];
-    let sliceAngle = angles[i];
+    const sliceInfo = data[i];
+    const sliceAngle = angles[i];
     if (!sliceInfo.size || sliceAngle < EPSILON) {
       continue;
     }
@@ -239,13 +239,13 @@ function createPieChart(document, { data, width, height, centerX, centerY, radiu
     endAngle = startAngle - sliceAngle;
     midAngle = (startAngle + endAngle) / 2;
 
-    let x1 = centerX + radius * Math.sin(startAngle);
-    let y1 = centerY - radius * Math.cos(startAngle);
-    let x2 = centerX + radius * Math.sin(endAngle);
-    let y2 = centerY - radius * Math.cos(endAngle);
-    let largeArcFlag = Math.abs(startAngle - endAngle) > PI ? 1 : 0;
+    const x1 = centerX + radius * Math.sin(startAngle);
+    const y1 = centerY - radius * Math.cos(startAngle);
+    const x2 = centerX + radius * Math.sin(endAngle);
+    const y2 = centerY - radius * Math.cos(endAngle);
+    const largeArcFlag = Math.abs(startAngle - endAngle) > PI ? 1 : 0;
 
-    let pathNode = document.createElementNS(SVG_NS, "path");
+    const pathNode = document.createElementNS(SVG_NS, "path");
     pathNode.setAttribute("class", "pie-chart-slice chart-colored-blob");
     pathNode.setAttribute("name", sliceInfo.label);
     pathNode.setAttribute("d",
@@ -263,9 +263,9 @@ function createPieChart(document, { data, width, height, centerX, centerY, radiu
       pathNode.setAttribute("smallest", "");
     }
 
-    let hoverX = translateDistance * Math.sin(midAngle);
-    let hoverY = -translateDistance * Math.cos(midAngle);
-    let hoverTransform = "transform: translate(" + hoverX + "px, " + hoverY + "px)";
+    const hoverX = translateDistance * Math.sin(midAngle);
+    const hoverY = -translateDistance * Math.cos(midAngle);
+    const hoverTransform = "transform: translate(" + hoverX + "px, " + hoverY + "px)";
     pathNode.setAttribute("style", data.length > 1 ? hoverTransform : "");
 
     proxy.slices.set(sliceInfo, pathNode);
@@ -273,9 +273,9 @@ function createPieChart(document, { data, width, height, centerX, centerY, radiu
     container.appendChild(pathNode);
 
     if (sliceInfo.label && sliceAngle > NAMED_SLICE_MIN_ANGLE) {
-      let textX = centerX + textDistance * Math.sin(midAngle);
-      let textY = centerY - textDistance * Math.cos(midAngle);
-      let label = document.createElementNS(SVG_NS, "text");
+      const textX = centerX + textDistance * Math.sin(midAngle);
+      const textY = centerY - textDistance * Math.cos(midAngle);
+      const label = document.createElementNS(SVG_NS, "text");
       label.appendChild(document.createTextNode(sliceInfo.label));
       label.setAttribute("class", "pie-chart-label");
       label.setAttribute("style", data.length > 1 ? hoverTransform : "");
@@ -293,7 +293,7 @@ function createPieChart(document, { data, width, height, centerX, centerY, radiu
 /**
  * Creates the DOM for a table chart based on the specified properties.
  *
- * @param nsIDocument document
+ * @param Document document
  *        The document responsible with creating the DOM.
  * @param object
  *        An object containing all or some of the following properties:
@@ -322,6 +322,12 @@ function createPieChart(document, { data, width, height, centerX, centerY, radiu
  *                      label1: total => l10n.getFormatStr("...", total),  // 5
  *                      label2: total => l10n.getFormatStr("...", total),  // 9
  *                    }
+ *          - header: an object specifying strings to use for table column
+ *                    headers
+ *                    e.g. {
+ *                      label1: l10n.getStr(...),
+ *                      label2: l10n.getStr(...),
+ *                    }
  * @return TableChart
  *         A table chart proxy instance, which emits the following events:
  *           - "mouseover", when the mouse enters a row
@@ -331,6 +337,7 @@ function createPieChart(document, { data, width, height, centerX, centerY, radiu
 function createTableChart(document, { title, data, strings, totals, header }) {
   strings = strings || {};
   totals = totals || {};
+  header = header || {};
   let isPlaceholder = false;
 
   // If there's no data available, display an empty placeholder.
@@ -343,7 +350,7 @@ function createTableChart(document, { title, data, strings, totals, header }) {
     isPlaceholder = true;
   }
 
-  let container = document.createElement("div");
+  const container = document.createElement("div");
   container.className = "generic-chart-container table-chart-container";
   container.setAttribute("pack", "center");
   container.setAttribute("flex", "1");
@@ -351,14 +358,14 @@ function createTableChart(document, { title, data, strings, totals, header }) {
   container.setAttribute("placeholder", isPlaceholder);
   container.setAttribute("style", "-moz-box-orient: vertical");
 
-  let proxy = new TableChart(container);
+  const proxy = new TableChart(container);
 
-  let titleNode = document.createElement("span");
+  const titleNode = document.createElement("span");
   titleNode.className = "plain table-chart-title";
   titleNode.textContent = title;
   container.appendChild(titleNode);
 
-  let tableNode = document.createElement("div");
+  const tableNode = document.createElement("div");
   tableNode.className = "plain table-chart-grid";
   tableNode.setAttribute("style", "-moz-box-orient: vertical");
   container.appendChild(tableNode);
@@ -370,8 +377,8 @@ function createTableChart(document, { title, data, strings, totals, header }) {
   headerBoxNode.className = "table-chart-row-box";
   headerNode.appendChild(headerBoxNode);
 
-  for (let [key, value] of Object.entries(header)) {
-    let headerLabelNode = document.createElement("span");
+  for (const [key, value] of Object.entries(header)) {
+    const headerLabelNode = document.createElement("span");
     headerLabelNode.className = "plain table-chart-row-label";
     headerLabelNode.setAttribute("name", key);
     headerLabelNode.textContent = value;
@@ -381,20 +388,20 @@ function createTableChart(document, { title, data, strings, totals, header }) {
 
   tableNode.appendChild(headerNode);
 
-  for (let rowInfo of data) {
-    let rowNode = document.createElement("div");
+  for (const rowInfo of data) {
+    const rowNode = document.createElement("div");
     rowNode.className = "table-chart-row";
     rowNode.setAttribute("align", "center");
 
-    let boxNode = document.createElement("div");
+    const boxNode = document.createElement("div");
     boxNode.className = "table-chart-row-box chart-colored-blob";
     boxNode.setAttribute("name", rowInfo.label);
     rowNode.appendChild(boxNode);
 
-    for (let [key, value] of Object.entries(rowInfo)) {
-      let index = data.indexOf(rowInfo);
-      let stringified = strings[key] ? strings[key](value, index) : value;
-      let labelNode = document.createElement("span");
+    for (const [key, value] of Object.entries(rowInfo)) {
+      const index = data.indexOf(rowInfo);
+      const stringified = strings[key] ? strings[key](value, index) : value;
+      const labelNode = document.createElement("span");
       labelNode.className = "plain table-chart-row-label";
       labelNode.setAttribute("name", key);
       labelNode.textContent = stringified;
@@ -406,14 +413,14 @@ function createTableChart(document, { title, data, strings, totals, header }) {
     tableNode.appendChild(rowNode);
   }
 
-  let totalsNode = document.createElement("div");
+  const totalsNode = document.createElement("div");
   totalsNode.className = "table-chart-totals";
   totalsNode.setAttribute("style", "-moz-box-orient: vertical");
 
-  for (let [key, value] of Object.entries(totals)) {
-    let total = data.reduce((acc, e) => acc + e[key], 0);
-    let stringified = value ? value(total || 0) : total;
-    let labelNode = document.createElement("span");
+  for (const [key, value] of Object.entries(totals)) {
+    const total = data.reduce((acc, e) => acc + e[key], 0);
+    const stringified = value ? value(total || 0) : total;
+    const labelNode = document.createElement("span");
     labelNode.className = "plain table-chart-summary-label";
     labelNode.setAttribute("name", key);
     labelNode.textContent = stringified;
@@ -442,19 +449,19 @@ function emptyTableChartData() {
 }
 
 /**
- * Delegates DOM events emitted by an nsIDOMNode to an EventEmitter proxy.
+ * Delegates DOM events emitted by a Node to an EventEmitter proxy.
  *
  * @param EventEmitter emitter
  *        The event emitter proxy instance.
  * @param array events
  *        An array of events, e.g. ["mouseover", "mouseout"].
- * @param nsIDOMNode node
+ * @param Node node
  *        The element firing the DOM events.
  * @param any args
  *        The arguments passed when emitting events through the proxy.
  */
 function delegate(emitter, events, node, args) {
-  for (let event of events) {
+  for (const event of events) {
     node.addEventListener(event, emitter.emit.bind(emitter, event, args));
   }
 }

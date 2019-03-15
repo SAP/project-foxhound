@@ -1,11 +1,12 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+"use strict";
 
 // Test diffing census reports of breakdown by "internalType".
 
 const BREAKDOWN = {
   by: "internalType",
-  then: { by: "count", count: true, bytes: true }
+  then: { by: "count", count: true, bytes: true },
 };
 
 const REPORT1 = {

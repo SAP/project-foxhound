@@ -1,5 +1,6 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -17,26 +18,31 @@ namespace gfx {
 
 class DrawTargetD2D1;
 
-class SourceSurfaceD2D1 : public SourceSurface
-{
-public:
-  MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(SourceSurfaceD2D1)
-  SourceSurfaceD2D1(ID2D1Image* aImage, ID2D1DeviceContext *aDC,
+class SourceSurfaceD2D1 : public SourceSurface {
+ public:
+  MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(SourceSurfaceD2D1, override)
+
+  SourceSurfaceD2D1(ID2D1Image *aImage, ID2D1DeviceContext *aDC,
                     SurfaceFormat aFormat, const IntSize &aSize,
                     DrawTargetD2D1 *aDT = nullptr);
   ~SourceSurfaceD2D1();
 
-  virtual SurfaceType GetType() const { return SurfaceType::D2D1_1_IMAGE; }
-  virtual IntSize GetSize() const { return mSize; }
-  virtual SurfaceFormat GetFormat() const { return mFormat; }
-  virtual bool IsValid() const;
-  virtual already_AddRefed<DataSourceSurface> GetDataSurface();
+  virtual SurfaceType GetType() const override {
+    return SurfaceType::D2D1_1_IMAGE;
+  }
+  virtual IntSize GetSize() const override { return mSize; }
+  virtual SurfaceFormat GetFormat() const override { return mFormat; }
+  virtual bool IsValid() const override;
+  virtual already_AddRefed<DataSourceSurface> GetDataSurface() override;
 
   ID2D1Image *GetImage() { return mImage; }
 
-  void EnsureIndependent() { if (!mDrawTarget) return; DrawTargetWillChange(); }
+  void EnsureIndependent() {
+    if (!mDrawTarget) return;
+    DrawTargetWillChange();
+  }
 
-private:
+ private:
   friend class DrawTargetD2D1;
 
   bool EnsureRealizedBitmap();
@@ -60,36 +66,38 @@ private:
 
   SurfaceFormat mFormat;
   IntSize mSize;
-  DrawTargetD2D1* mDrawTarget;
+  DrawTargetD2D1 *mDrawTarget;
+  std::shared_ptr<Mutex> mSnapshotLock;
 };
 
-class DataSourceSurfaceD2D1 : public DataSourceSurface
-{
-public:
-  MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(DataSourceSurfaceD2D1)
+class DataSourceSurfaceD2D1 : public DataSourceSurface {
+ public:
+  MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(DataSourceSurfaceD2D1, override)
+
   DataSourceSurfaceD2D1(ID2D1Bitmap1 *aMappableBitmap, SurfaceFormat aFormat);
   ~DataSourceSurfaceD2D1();
 
-  virtual SurfaceType GetType() const { return SurfaceType::DATA; }
-  virtual IntSize GetSize() const;
-  virtual SurfaceFormat GetFormat() const { return mFormat; }
-  virtual bool IsValid() const { return !!mBitmap; }
-  virtual uint8_t *GetData();
-  virtual int32_t Stride();
-  virtual bool Map(MapType, MappedSurface *aMappedSurface);
-  virtual void Unmap();
+  virtual SurfaceType GetType() const override { return SurfaceType::DATA; }
+  virtual IntSize GetSize() const override;
+  virtual SurfaceFormat GetFormat() const override { return mFormat; }
+  virtual bool IsValid() const override { return !!mBitmap; }
+  virtual uint8_t *GetData() override;
+  virtual int32_t Stride() override;
+  virtual bool Map(MapType, MappedSurface *aMappedSurface) override;
+  virtual void Unmap() override;
 
-private:
+ private:
   friend class SourceSurfaceD2DTarget;
   void EnsureMapped();
 
   mutable RefPtr<ID2D1Bitmap1> mBitmap;
   SurfaceFormat mFormat;
   D2D1_MAPPED_RECT mMap;
-  bool mMapped;
+  bool mIsMapped;
+  bool mImplicitMapped;
 };
 
-}
-}
+}  // namespace gfx
+}  // namespace mozilla
 
 #endif /* MOZILLA_GFX_SOURCESURFACED2D2TARGET_H_ */

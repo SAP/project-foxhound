@@ -29,36 +29,36 @@ const value_hello = "Hello World"; // tests formatStringFromName with parameter
 
 function run_test() {
     var StringBundle = 
-	Components.classes["@mozilla.org/intl/stringbundle;1"]
-	 .getService(Components.interfaces.nsIStringBundleService);
-    var ios = Components.classes["@mozilla.org/network/io-service;1"]
-	 .getService(Components.interfaces.nsIIOService);
+	Cc["@mozilla.org/intl/stringbundle;1"]
+	 .getService(Ci.nsIStringBundleService);
+    var ios = Cc["@mozilla.org/network/io-service;1"]
+	 .getService(Ci.nsIIOService);
     var bundleURI = ios.newFileURI(do_get_file("strres.properties"));
 
     var bundle = StringBundle.createBundle(bundleURI.spec);
 
     var bundle_file = bundle.GetStringFromName(name_file);
-    do_check_eq(bundle_file, value_file);
+    Assert.equal(bundle_file, value_file);
 
     var bundle_loyal = bundle.GetStringFromName(name_loyal);
-    do_check_eq(bundle_loyal, value_loyal);
+    Assert.equal(bundle_loyal, value_loyal);
 
     var bundle_trout = bundle.GetStringFromName(name_trout);
-    do_check_eq(bundle_trout, value_trout);
+    Assert.equal(bundle_trout, value_trout);
 
     var bundle_edit = bundle.GetStringFromName(name_edit);
-    do_check_eq(bundle_edit, value_edit);
+    Assert.equal(bundle_edit, value_edit);
 
     var bundle_view = bundle.GetStringFromName(name_view);
-    do_check_eq(bundle_view, value_view);
+    Assert.equal(bundle_view, value_view);
 
     var bundle_go = bundle.GetStringFromName(name_go);
-    do_check_eq(bundle_go, value_go);
+    Assert.equal(bundle_go, value_go);
 
     var bundle_message = bundle.GetStringFromName(name_message);
-    do_check_eq(bundle_message, value_message);
+    Assert.equal(bundle_message, value_message);
 
     var bundle_hello = bundle.formatStringFromName(name_hello, [var_hello], 1);
-    do_check_eq(bundle_hello, value_hello);
+    Assert.equal(bundle_hello, value_hello);
 }
     

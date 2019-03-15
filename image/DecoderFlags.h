@@ -18,25 +18,36 @@ namespace image {
  * instead either influence which surfaces are generated at all or the tune the
  * decoder's behavior for a particular scenario.
  */
-enum class DecoderFlags : uint8_t
-{
-  FIRST_FRAME_ONLY               = 1 << 0,
-  IS_REDECODE                    = 1 << 1,
-  IMAGE_IS_TRANSIENT             = 1 << 2,
-  ASYNC_NOTIFY                   = 1 << 3
+enum class DecoderFlags : uint8_t {
+  FIRST_FRAME_ONLY = 1 << 0,
+  IS_REDECODE = 1 << 1,
+  IMAGE_IS_TRANSIENT = 1 << 2,
+  ASYNC_NOTIFY = 1 << 3,
+
+  /**
+   * By default, a surface is considered substitutable. That means callers are
+   * willing to accept a less than ideal match to display. If a caller requires
+   * a specific size and won't accept alternatives, then this flag should be
+   * set.
+   */
+  CANNOT_SUBSTITUTE = 1 << 4,
+
+  /**
+   * By default, an animation decoder will produce partial frames that need to
+   * be combined with the previously displayed/composited frame by FrameAnimator
+   * to produce a complete frame. If this flag is set, the decoder will perform
+   * this blending at decode time, and the frames produced are complete.
+   */
+  BLEND_ANIMATION = 1 << 5
 };
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(DecoderFlags)
 
 /**
  * @return the default set of decode flags.
  */
-inline DecoderFlags
-DefaultDecoderFlags()
-{
-  return DecoderFlags();
-}
+inline DecoderFlags DefaultDecoderFlags() { return DecoderFlags(); }
 
-} // namespace image
-} // namespace mozilla
+}  // namespace image
+}  // namespace mozilla
 
-#endif // mozilla_image_DecoderFlags_h
+#endif  // mozilla_image_DecoderFlags_h

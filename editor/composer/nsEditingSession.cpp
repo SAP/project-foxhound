@@ -4,55 +4,59 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <string.h>                     // for nullptr, strcmp
+#include <string.h>  // for nullptr, strcmp
 
-#include "imgIContainer.h"              // for imgIContainer, etc
-#include "mozilla/FlushType.h"          // for FlushType::Frames
-#include "mozilla/mozalloc.h"           // for operator new
+#include "imgIContainer.h"                    // for imgIContainer, etc
+#include "mozilla/ComposerCommandsUpdater.h"  // for ComposerCommandsUpdater
+#include "mozilla/FlushType.h"                // for FlushType::Frames
+#include "mozilla/HTMLEditor.h"               // for HTMLEditor
+#include "mozilla/mozalloc.h"                 // for operator new
 #include "nsAString.h"
-#include "nsComponentManagerUtils.h"    // for do_CreateInstance
-#include "nsComposerCommandsUpdater.h"  // for nsComposerCommandsUpdater
-#include "nsDebug.h"                    // for NS_ENSURE_SUCCESS, etc
+#include "nsComponentManagerUtils.h"  // for do_CreateInstance
+#include "nsContentUtils.h"
+#include "nsDebug.h"  // for NS_ENSURE_SUCCESS, etc
 #include "nsEditingSession.h"
-#include "nsError.h"                    // for NS_ERROR_FAILURE, NS_OK, etc
-#include "nsIChannel.h"                 // for nsIChannel
-#include "nsICommandManager.h"          // for nsICommandManager
-#include "nsIContentViewer.h"           // for nsIContentViewer
-#include "nsIController.h"              // for nsIController
-#include "nsIControllerContext.h"       // for nsIControllerContext
-#include "nsIControllers.h"             // for nsIControllers
-#include "nsID.h"                       // for NS_GET_IID, etc
-#include "nsIDOMDocument.h"             // for nsIDOMDocument
-#include "nsIDOMHTMLDocument.h"         // for nsIDOMHTMLDocument
-#include "nsIDOMWindow.h"               // for nsIDOMWindow
-#include "nsIDocShell.h"                // for nsIDocShell
-#include "nsIDocument.h"                // for nsIDocument
+#include "nsError.h"               // for NS_ERROR_FAILURE, NS_OK, etc
+#include "nsIChannel.h"            // for nsIChannel
+#include "nsICommandManager.h"     // for nsICommandManager
+#include "nsIContentViewer.h"      // for nsIContentViewer
+#include "nsIController.h"         // for nsIController
+#include "nsIControllerContext.h"  // for nsIControllerContext
+#include "nsIControllers.h"        // for nsIControllers
+#include "nsID.h"                  // for NS_GET_IID, etc
+#include "nsHTMLDocument.h"        // for nsHTMLDocument
+#include "nsIDOMWindow.h"          // for nsIDOMWindow
+#include "nsIDocShell.h"           // for nsIDocShell
+#include "mozilla/dom/Document.h"  // for Document
 #include "nsIDocumentStateListener.h"
-#include "nsIEditor.h"                  // for nsIEditor
-#include "nsIHTMLDocument.h"            // for nsIHTMLDocument, etc
+#include "nsIEditor.h"                   // for nsIEditor
+#include "nsIHTMLDocument.h"             // for nsIHTMLDocument, etc
 #include "nsIInterfaceRequestorUtils.h"  // for do_GetInterface
-#include "nsIPlaintextEditor.h"         // for nsIPlaintextEditor, etc
-#include "nsIPresShell.h"               // for nsIPresShell
-#include "nsIRefreshURI.h"              // for nsIRefreshURI
-#include "nsIRequest.h"                 // for nsIRequest
-#include "nsISelection.h"               // for nsISelection
-#include "nsISelectionPrivate.h"        // for nsISelectionPrivate
-#include "nsITimer.h"                   // for nsITimer, etc
-#include "nsITransactionManager.h"      // for nsITransactionManager
-#include "nsIWeakReference.h"           // for nsISupportsWeakReference, etc
-#include "nsIWebNavigation.h"           // for nsIWebNavigation
-#include "nsIWebProgress.h"             // for nsIWebProgress, etc
-#include "nsLiteralString.h"            // for NS_LITERAL_STRING
-#include "nsPICommandUpdater.h"         // for nsPICommandUpdater
-#include "nsPIDOMWindow.h"              // for nsPIDOMWindow
-#include "nsPresContext.h"              // for nsPresContext
-#include "nsReadableUtils.h"            // for AppendUTF16toUTF8
-#include "nsStringFwd.h"                // for nsAFlatString
-#include "mozilla/dom/Selection.h"      // for AutoHideSelectionChanges
-#include "nsFrameSelection.h"           // for nsFrameSelection
+#include "nsIPlaintextEditor.h"          // for nsIPlaintextEditor, etc
+#include "nsIPresShell.h"                // for nsIPresShell
+#include "nsIRefreshURI.h"               // for nsIRefreshURI
+#include "nsIRequest.h"                  // for nsIRequest
+#include "nsITimer.h"                    // for nsITimer, etc
+#include "nsITransactionManager.h"       // for nsITransactionManager
+#include "nsIWeakReference.h"            // for nsISupportsWeakReference, etc
+#include "nsIWebNavigation.h"            // for nsIWebNavigation
+#include "nsIWebProgress.h"              // for nsIWebProgress, etc
+#include "nsLiteralString.h"             // for NS_LITERAL_STRING
+#include "nsPICommandUpdater.h"          // for nsPICommandUpdater
+#include "nsPIDOMWindow.h"               // for nsPIDOMWindow
+#include "nsPresContext.h"               // for nsPresContext
+#include "nsReadableUtils.h"             // for AppendUTF16toUTF8
+#include "nsStringFwd.h"                 // for nsString
+#include "mozilla/dom/Selection.h"       // for AutoHideSelectionChanges, etc
+#include "nsFrameSelection.h"            // for nsFrameSelection
+#include "nsBaseCommandController.h"     // for nsBaseCommandController
+#include "mozilla/dom/LoadURIOptionsBinding.h"
 
 class nsISupports;
 class nsIURI;
+
+using namespace mozilla;
+using namespace mozilla::dom;
 
 /*---------------------------------------------------------------------------
 
@@ -60,33 +64,29 @@ class nsIURI;
 
 ----------------------------------------------------------------------------*/
 nsEditingSession::nsEditingSession()
-: mDoneSetup(false)
-, mCanCreateEditor(false)
-, mInteractive(false)
-, mMakeWholeDocumentEditable(true)
-, mDisabledJSAndPlugins(false)
-, mScriptsEnabled(true)
-, mPluginsEnabled(true)
-, mProgressListenerRegistered(false)
-, mImageAnimationMode(0)
-, mEditorFlags(0)
-, mEditorStatus(eEditorOK)
-, mBaseCommandControllerId(0)
-, mDocStateControllerId(0)
-, mHTMLCommandControllerId(0)
-{
-}
+    : mDoneSetup(false),
+      mCanCreateEditor(false),
+      mInteractive(false),
+      mMakeWholeDocumentEditable(true),
+      mDisabledJSAndPlugins(false),
+      mScriptsEnabled(true),
+      mPluginsEnabled(true),
+      mProgressListenerRegistered(false),
+      mImageAnimationMode(0),
+      mEditorFlags(0),
+      mEditorStatus(eEditorOK),
+      mBaseCommandControllerId(0),
+      mDocStateControllerId(0),
+      mHTMLCommandControllerId(0) {}
 
 /*---------------------------------------------------------------------------
 
   ~nsEditingSession
 
 ----------------------------------------------------------------------------*/
-nsEditingSession::~nsEditingSession()
-{
+nsEditingSession::~nsEditingSession() {
   // Must cancel previous timer?
-  if (mLoadBlankDocTimer)
-    mLoadBlankDocTimer->Cancel();
+  if (mLoadBlankDocTimer) mLoadBlankDocTimer->Cancel();
 }
 
 NS_IMPL_ISUPPORTS(nsEditingSession, nsIEditingSession, nsIWebProgressListener,
@@ -106,11 +106,10 @@ NS_IMPL_ISUPPORTS(nsEditingSession, nsIEditingSession, nsIWebProgressListener,
 
 NS_IMETHODIMP
 nsEditingSession::MakeWindowEditable(mozIDOMWindowProxy* aWindow,
-                                     const char *aEditorType,
+                                     const char* aEditorType,
                                      bool aDoAfterUriLoad,
                                      bool aMakeWholeDocumentEditable,
-                                     bool aInteractive)
-{
+                                     bool aInteractive) {
   mEditorType.Truncate();
   mEditorFlags = 0;
 
@@ -137,9 +136,8 @@ nsEditingSession::MakeWindowEditable(mozIDOMWindowProxy* aWindow,
   // Tells embedder that startup is in progress
   mEditorStatus = eEditorCreationInProgress;
 
-  //temporary to set editor type here. we will need different classes soon.
-  if (!aEditorType)
-    aEditorType = DEFAULT_EDITOR_TYPE;
+  // temporary to set editor type here. we will need different classes soon.
+  if (!aEditorType) aEditorType = DEFAULT_EDITOR_TYPE;
   mEditorType = aEditorType;
 
   // if all this does is setup listeners and I don't need listeners,
@@ -154,18 +152,16 @@ nsEditingSession::MakeWindowEditable(mozIDOMWindowProxy* aWindow,
   // Setup commands common to plaintext and html editors,
   //  including the document creation observers
   // the first is an editing controller
-  rv = SetupEditorCommandController("@mozilla.org/editor/editingcontroller;1",
-                                    aWindow,
-                                    static_cast<nsIEditingSession*>(this),
-                                    &mBaseCommandControllerId);
+  rv = SetupEditorCommandController(
+      nsBaseCommandController::CreateEditingController, aWindow,
+      static_cast<nsIEditingSession*>(this), &mBaseCommandControllerId);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // The second is a controller to monitor doc state,
   // such as creation and "dirty flag"
-  rv = SetupEditorCommandController("@mozilla.org/editor/editordocstatecontroller;1",
-                                    aWindow,
-                                    static_cast<nsIEditingSession*>(this),
-                                    &mDocStateControllerId);
+  rv = SetupEditorCommandController(
+      nsBaseCommandController::CreateHTMLEditorDocStateController, aWindow,
+      static_cast<nsIEditingSession*>(this), &mDocStateControllerId);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // aDoAfterUriLoad can be false only when making an existing window editable
@@ -183,10 +179,9 @@ nsEditingSession::MakeWindowEditable(mozIDOMWindowProxy* aWindow,
 }
 
 NS_IMETHODIMP
-nsEditingSession::DisableJSAndPlugins(mozIDOMWindowProxy* aWindow)
-{
+nsEditingSession::DisableJSAndPlugins(mozIDOMWindowProxy* aWindow) {
   NS_ENSURE_TRUE(aWindow, NS_ERROR_FAILURE);
-  nsIDocShell *docShell = nsPIDOMWindowOuter::From(aWindow)->GetDocShell();
+  nsIDocShell* docShell = nsPIDOMWindowOuter::From(aWindow)->GetDocShell();
   NS_ENSURE_TRUE(docShell, NS_ERROR_FAILURE);
 
   bool tmp;
@@ -210,8 +205,7 @@ nsEditingSession::DisableJSAndPlugins(mozIDOMWindowProxy* aWindow)
 }
 
 NS_IMETHODIMP
-nsEditingSession::RestoreJSAndPlugins(mozIDOMWindowProxy* aWindow)
-{
+nsEditingSession::RestoreJSAndPlugins(mozIDOMWindowProxy* aWindow) {
   if (!mDisabledJSAndPlugins) {
     return NS_OK;
   }
@@ -219,7 +213,7 @@ nsEditingSession::RestoreJSAndPlugins(mozIDOMWindowProxy* aWindow)
   mDisabledJSAndPlugins = false;
 
   NS_ENSURE_TRUE(aWindow, NS_ERROR_FAILURE);
-  nsIDocShell *docShell = nsPIDOMWindowOuter::From(aWindow)->GetDocShell();
+  nsIDocShell* docShell = nsPIDOMWindowOuter::From(aWindow)->GetDocShell();
   NS_ENSURE_TRUE(docShell, NS_ERROR_FAILURE);
 
   nsresult rv = docShell->SetAllowJavascript(mScriptsEnabled);
@@ -230,8 +224,7 @@ nsEditingSession::RestoreJSAndPlugins(mozIDOMWindowProxy* aWindow)
 }
 
 NS_IMETHODIMP
-nsEditingSession::GetJsAndPluginsDisabled(bool *aResult)
-{
+nsEditingSession::GetJsAndPluginsDisabled(bool* aResult) {
   NS_ENSURE_ARG_POINTER(aResult);
   *aResult = mDisabledJSAndPlugins;
   return NS_OK;
@@ -245,15 +238,14 @@ nsEditingSession::GetJsAndPluginsDisabled(bool *aResult)
 ----------------------------------------------------------------------------*/
 NS_IMETHODIMP
 nsEditingSession::WindowIsEditable(mozIDOMWindowProxy* aWindow,
-                                   bool *outIsEditable)
-{
+                                   bool* outIsEditable) {
   NS_ENSURE_STATE(aWindow);
-  nsCOMPtr<nsIDocShell> docShell = nsPIDOMWindowOuter::From(aWindow)->GetDocShell();
+  nsCOMPtr<nsIDocShell> docShell =
+      nsPIDOMWindowOuter::From(aWindow)->GetDocShell();
   NS_ENSURE_STATE(docShell);
 
   return docShell->GetEditable(outIsEditable);
 }
-
 
 // These are MIME types that are automatically parsed as "text/plain"
 //   and thus we can edit them as plaintext
@@ -261,23 +253,21 @@ nsEditingSession::WindowIsEditable(mozIDOMWindowProxy* aWindow,
 //   the network channel for these and "text/xml" to "text/plain",
 //   but further investigation reveals that strategy doesn't work
 const char* const gSupportedTextTypes[] = {
-  "text/plain",
-  "text/css",
-  "text/rdf",
-  "text/xsl",
-  "text/javascript",           // obsolete type
-  "text/ecmascript",           // obsolete type
-  "application/javascript",
-  "application/ecmascript",
-  "application/x-javascript",  // obsolete type
-  "text/xul",                  // obsolete type
-  "application/vnd.mozilla.xul+xml",
-  nullptr   // IMPORTANT! Null must be at end
+    "text/plain",
+    "text/css",
+    "text/rdf",
+    "text/xsl",
+    "text/javascript",  // obsolete type
+    "text/ecmascript",  // obsolete type
+    "application/javascript",
+    "application/ecmascript",
+    "application/x-javascript",  // obsolete type
+    "text/xul",                  // obsolete type
+    "application/vnd.mozilla.xul+xml",
+    nullptr  // IMPORTANT! Null must be at end
 };
 
-bool
-IsSupportedTextType(const char* aMIMEType)
-{
+bool IsSupportedTextType(const char* aMIMEType) {
   NS_ENSURE_TRUE(aMIMEType, false);
 
   for (size_t i = 0; gSupportedTextTypes[i]; ++i) {
@@ -296,8 +286,7 @@ IsSupportedTextType(const char* aMIMEType)
   nsIEditor setupEditorOnWindow (in nsIDOMWindow aWindow);
 ----------------------------------------------------------------------------*/
 NS_IMETHODIMP
-nsEditingSession::SetupEditorOnWindow(mozIDOMWindowProxy* aWindow)
-{
+nsEditingSession::SetupEditorOnWindow(mozIDOMWindowProxy* aWindow) {
   mDoneSetup = true;
 
   NS_ENSURE_TRUE(aWindow, NS_ERROR_FAILURE);
@@ -305,17 +294,17 @@ nsEditingSession::SetupEditorOnWindow(mozIDOMWindowProxy* aWindow)
 
   nsresult rv;
 
-  //MIME CHECKING
-  //must get the content type
+  // MIME CHECKING
+  // must get the content type
   // Note: the doc gets this from the network channel during StartPageLoad,
   //    so we don't have to get it from there ourselves
   nsAutoCString mimeCType;
 
-  //then lets check the mime type
-  if (nsCOMPtr<nsIDocument> doc = window->GetDoc()) {
+  // then lets check the mime type
+  if (RefPtr<Document> doc = window->GetDoc()) {
     nsAutoString mimeType;
-    if (NS_SUCCEEDED(doc->GetContentType(mimeType)))
-      AppendUTF16toUTF8(mimeType, mimeCType);
+    doc->GetContentType(mimeType);
+    AppendUTF16toUTF8(mimeType, mimeCType);
 
     if (IsSupportedTextType(mimeCType.get())) {
       mEditorType.AssignLiteral("text");
@@ -332,22 +321,18 @@ nsEditingSession::SetupEditorOnWindow(mozIDOMWindowProxy* aWindow)
 
     // Flush out frame construction to make sure that the subframe's
     // presshell is set up if it needs to be.
-    nsCOMPtr<nsIDocument> document = do_QueryInterface(doc);
-    if (document) {
-      document->FlushPendingNotifications(mozilla::FlushType::Frames);
-      if (mMakeWholeDocumentEditable) {
-        document->SetEditableFlag(true);
-        nsCOMPtr<nsIHTMLDocument> htmlDocument = do_QueryInterface(document);
-        if (htmlDocument) {
-          // Enable usage of the execCommand API
-          htmlDocument->SetEditingState(nsIHTMLDocument::eDesignMode);
-        }
+    doc->FlushPendingNotifications(mozilla::FlushType::Frames);
+    if (mMakeWholeDocumentEditable) {
+      doc->SetEditableFlag(true);
+      nsCOMPtr<nsIHTMLDocument> htmlDocument = do_QueryInterface(doc);
+      if (htmlDocument) {
+        // Enable usage of the execCommand API
+        htmlDocument->SetEditingState(nsIHTMLDocument::eDesignMode);
       }
     }
   }
   bool needHTMLController = false;
 
-  const char *classString = "@mozilla.org/editor/htmleditor;1";
   if (mEditorType.EqualsLiteral("textmail")) {
     mEditorFlags = nsIPlaintextEditor::eEditorPlaintextMask |
                    nsIPlaintextEditor::eEditorEnableWrapHackMask |
@@ -374,16 +359,16 @@ nsEditingSession::SetupEditorOnWindow(mozIDOMWindowProxy* aWindow)
   }
 
   // make the UI state maintainer
-  mStateMaintainer = new nsComposerCommandsUpdater();
+  mComposerCommandsUpdater = new ComposerCommandsUpdater();
 
   // now init the state maintainer
   // This allows notification of error state
   //  even if we don't create an editor
-  rv = mStateMaintainer->Init(window);
+  rv = mComposerCommandsUpdater->Init(window);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (mEditorStatus != eEditorCreationInProgress) {
-    mStateMaintainer->NotifyDocumentCreated();
+    mComposerCommandsUpdater->NotifyDocumentCreated();
     return NS_ERROR_FAILURE;
   }
 
@@ -407,33 +392,35 @@ nsEditingSession::SetupEditorOnWindow(mozIDOMWindowProxy* aWindow)
   // from web pages.
   RefPtr<nsFrameSelection> fs = presShell->FrameSelection();
   NS_ENSURE_TRUE(fs, NS_ERROR_FAILURE);
-  mozilla::dom::AutoHideSelectionChanges hideSelectionChanges(fs);
+  AutoHideSelectionChanges hideSelectionChanges(fs);
 
   // create and set editor
   // Try to reuse an existing editor
   nsCOMPtr<nsIEditor> editor = do_QueryReferent(mExistingEditor);
-  if (editor) {
-    editor->PreDestroy(false);
+  RefPtr<HTMLEditor> htmlEditor = editor ? editor->AsHTMLEditor() : nullptr;
+  MOZ_ASSERT(!editor || htmlEditor);
+  if (htmlEditor) {
+    htmlEditor->PreDestroy(false);
   } else {
-    editor = do_CreateInstance(classString, &rv);
-    NS_ENSURE_SUCCESS(rv, rv);
-    mExistingEditor = do_GetWeakReference(editor);
+    htmlEditor = new HTMLEditor();
+    mExistingEditor =
+        do_GetWeakReference(static_cast<nsIEditor*>(htmlEditor.get()));
   }
   // set the editor on the docShell. The docShell now owns it.
-  rv = docShell->SetEditor(editor);
+  rv = docShell->SetHTMLEditor(htmlEditor);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // setup the HTML editor command controller
   if (needHTMLController) {
     // The third controller takes an nsIEditor as the context
-    rv = SetupEditorCommandController("@mozilla.org/editor/htmleditorcontroller;1",
-                                      aWindow, editor,
-                                      &mHTMLCommandControllerId);
+    rv = SetupEditorCommandController(
+        nsBaseCommandController::CreateHTMLEditorController, aWindow,
+        static_cast<nsIEditor*>(htmlEditor), &mHTMLCommandControllerId);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
   // Set mimetype on editor
-  rv = editor->SetContentsMIMEType(mimeCType.get());
+  rv = htmlEditor->SetContentsMIMEType(mimeCType.get());
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIContentViewer> contentViewer;
@@ -441,69 +428,59 @@ nsEditingSession::SetupEditorOnWindow(mozIDOMWindowProxy* aWindow)
   NS_ENSURE_SUCCESS(rv, rv);
   NS_ENSURE_TRUE(contentViewer, NS_ERROR_FAILURE);
 
-  nsCOMPtr<nsIDOMDocument> domDoc;
-  rv = contentViewer->GetDOMDocument(getter_AddRefs(domDoc));
-  NS_ENSURE_SUCCESS(rv, rv);
-  NS_ENSURE_TRUE(domDoc, NS_ERROR_FAILURE);
+  RefPtr<Document> doc = contentViewer->GetDocument();
+  if (NS_WARN_IF(!doc)) {
+    return NS_ERROR_FAILURE;
+  }
 
   // Set up as a doc state listener
   // Important! We must have this to broadcast the "obs_documentCreated" message
-  rv = editor->AddDocumentStateListener(mStateMaintainer);
+  rv = htmlEditor->AddDocumentStateListener(mComposerCommandsUpdater);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = editor->Init(domDoc, nullptr /* root content */,
-                    nullptr, mEditorFlags, EmptyString());
+  rv = htmlEditor->Init(*doc, nullptr /* root content */, nullptr, mEditorFlags,
+                        EmptyString());
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCOMPtr<nsISelection> selection;
-  editor->GetSelection(getter_AddRefs(selection));
-  nsCOMPtr<nsISelectionPrivate> selPriv = do_QueryInterface(selection);
-  NS_ENSURE_TRUE(selPriv, NS_ERROR_FAILURE);
-
-  rv = selPriv->AddSelectionListener(mStateMaintainer);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // and as a transaction listener
-  nsCOMPtr<nsITransactionManager> txnMgr;
-  editor->GetTransactionManager(getter_AddRefs(txnMgr));
-  if (txnMgr) {
-    txnMgr->AddListener(mStateMaintainer);
+  RefPtr<Selection> selection = htmlEditor->GetSelection();
+  if (NS_WARN_IF(!selection)) {
+    return NS_ERROR_FAILURE;
   }
 
+  htmlEditor->SetComposerCommandsUpdater(mComposerCommandsUpdater);
+
+  // and as a transaction listener
+  MOZ_ASSERT(mComposerCommandsUpdater);
+  DebugOnly<bool> addedTransactionListener =
+      htmlEditor->AddTransactionListener(*mComposerCommandsUpdater);
+  NS_WARNING_ASSERTION(addedTransactionListener,
+                       "Failed to add transaction listener to the editor");
+
   // Set context on all controllers to be the editor
-  rv = SetEditorOnControllers(aWindow, editor);
+  rv = SetEditorOnControllers(aWindow, htmlEditor);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Everything went fine!
   mEditorStatus = eEditorOK;
 
   // This will trigger documentCreation notification
-  return editor->PostCreate();
+  return htmlEditor->PostCreate();
 }
 
 // Removes all listeners and controllers from aWindow and aEditor.
-void
-nsEditingSession::RemoveListenersAndControllers(nsPIDOMWindowOuter* aWindow,
-                                                nsIEditor *aEditor)
-{
-  if (!mStateMaintainer || !aEditor) {
+void nsEditingSession::RemoveListenersAndControllers(
+    nsPIDOMWindowOuter* aWindow, HTMLEditor* aHTMLEditor) {
+  if (!mComposerCommandsUpdater || !aHTMLEditor) {
     return;
   }
 
   // Remove all the listeners
-  nsCOMPtr<nsISelection> selection;
-  aEditor->GetSelection(getter_AddRefs(selection));
-  nsCOMPtr<nsISelectionPrivate> selPriv = do_QueryInterface(selection);
-  if (selPriv)
-    selPriv->RemoveSelectionListener(mStateMaintainer);
-
-  aEditor->RemoveDocumentStateListener(mStateMaintainer);
-
-  nsCOMPtr<nsITransactionManager> txnMgr;
-  aEditor->GetTransactionManager(getter_AddRefs(txnMgr));
-  if (txnMgr) {
-    txnMgr->RemoveListener(mStateMaintainer);
-  }
+  aHTMLEditor->SetComposerCommandsUpdater(nullptr);
+  aHTMLEditor->RemoveDocumentStateListener(mComposerCommandsUpdater);
+  DebugOnly<bool> removedTransactionListener =
+      aHTMLEditor->RemoveTransactionListener(*mComposerCommandsUpdater);
+  NS_WARNING_ASSERTION(removedTransactionListener,
+                       "Failed to remove transaction listener from the editor");
 
   // Remove editor controllers from the window now that we're not
   // editing in that window any more.
@@ -517,15 +494,12 @@ nsEditingSession::RemoveListenersAndControllers(nsPIDOMWindowOuter* aWindow,
   void tearDownEditorOnWindow (in nsIDOMWindow aWindow);
 ----------------------------------------------------------------------------*/
 NS_IMETHODIMP
-nsEditingSession::TearDownEditorOnWindow(mozIDOMWindowProxy *aWindow)
-{
+nsEditingSession::TearDownEditorOnWindow(mozIDOMWindowProxy* aWindow) {
   if (!mDoneSetup) {
     return NS_OK;
   }
 
   NS_ENSURE_TRUE(aWindow, NS_ERROR_NULL_POINTER);
-
-  nsresult rv;
 
   // Kill any existing reload timer
   if (mLoadBlankDocTimer) {
@@ -538,7 +512,7 @@ nsEditingSession::TearDownEditorOnWindow(mozIDOMWindowProxy *aWindow)
   // Check if we're turning off editing (from contentEditable or designMode).
   auto* window = nsPIDOMWindowOuter::From(aWindow);
 
-  nsCOMPtr<nsIDocument> doc = window->GetDoc();
+  RefPtr<Document> doc = window->GetDoc();
   nsCOMPtr<nsIHTMLDocument> htmlDoc = do_QueryInterface(doc);
   bool stopEditing = htmlDoc && htmlDoc->IsEditingOn();
   if (stopEditing) {
@@ -548,15 +522,12 @@ nsEditingSession::TearDownEditorOnWindow(mozIDOMWindowProxy *aWindow)
   nsCOMPtr<nsIDocShell> docShell = window->GetDocShell();
   NS_ENSURE_STATE(docShell);
 
-  nsCOMPtr<nsIEditor> editor;
-  rv = docShell->GetEditor(getter_AddRefs(editor));
-  NS_ENSURE_SUCCESS(rv, rv);
-
+  RefPtr<HTMLEditor> htmlEditor = docShell->GetHTMLEditor();
   if (stopEditing) {
-    htmlDoc->TearingDownEditor(editor);
+    htmlDoc->TearingDownEditor();
   }
 
-  if (mStateMaintainer && editor) {
+  if (mComposerCommandsUpdater && htmlEditor) {
     // Null out the editor on the controllers first to prevent their weak
     // references from pointing to a destroyed editor.
     SetEditorOnControllers(aWindow, nullptr);
@@ -566,7 +537,7 @@ nsEditingSession::TearDownEditorOnWindow(mozIDOMWindowProxy *aWindow)
   // needs to happen before document state listeners are removed below.
   docShell->SetEditor(nullptr);
 
-  RemoveListenersAndControllers(window, editor);
+  RemoveListenersAndControllers(window, htmlEditor);
 
   if (stopEditing) {
     // Make things the way they were before we started editing.
@@ -582,7 +553,7 @@ nsEditingSession::TearDownEditorOnWindow(mozIDOMWindowProxy *aWindow)
     }
   }
 
-  return rv;
+  return NS_OK;
 }
 
 /*---------------------------------------------------------------------------
@@ -593,13 +564,13 @@ nsEditingSession::TearDownEditorOnWindow(mozIDOMWindowProxy *aWindow)
 ----------------------------------------------------------------------------*/
 NS_IMETHODIMP
 nsEditingSession::GetEditorForWindow(mozIDOMWindowProxy* aWindow,
-                                     nsIEditor **outEditor)
-{
-  NS_ENSURE_STATE(aWindow);
-  nsCOMPtr<nsIDocShell> docShell = nsPIDOMWindowOuter::From(aWindow)->GetDocShell();
-  NS_ENSURE_STATE(docShell);
-
-  return docShell->GetEditor(outEditor);
+                                     nsIEditor** outEditor) {
+  if (NS_WARN_IF(!aWindow)) {
+    return NS_ERROR_INVALID_ARG;
+  }
+  nsCOMPtr<nsIEditor> editor = GetHTMLEditorForWindow(aWindow);
+  editor.forget(outEditor);
+  return NS_OK;
 }
 
 /*---------------------------------------------------------------------------
@@ -608,11 +579,9 @@ nsEditingSession::GetEditorForWindow(mozIDOMWindowProxy* aWindow,
 
 ----------------------------------------------------------------------------*/
 NS_IMETHODIMP
-nsEditingSession::OnStateChange(nsIWebProgress *aWebProgress,
-                                nsIRequest *aRequest,
-                                uint32_t aStateFlags, nsresult aStatus)
-{
-
+nsEditingSession::OnStateChange(nsIWebProgress* aWebProgress,
+                                nsIRequest* aRequest, uint32_t aStateFlags,
+                                nsresult aStatus) {
 #ifdef NOISY_DOC_LOADING
   nsCOMPtr<nsIChannel> channel(do_QueryInterface(aRequest));
   if (channel) {
@@ -635,10 +604,10 @@ nsEditingSession::OnStateChange(nsIWebProgress *aWebProgress,
         nsCOMPtr<nsIURI> uri;
         channel->GetURI(getter_AddRefs(uri));
         if (uri) {
-          nsXPIDLCString spec;
+          nsCString spec;
           uri->GetSpec(spec);
-          printf(" **** STATE_START: CHANNEL URI=%s, flags=%x\n",
-                 spec.get(), aStateFlags);
+          printf(" **** STATE_START: CHANNEL URI=%s, flags=%x\n", spec.get(),
+                 aStateFlags);
         }
       } else {
         printf("    STATE_START: NO CHANNEL flags=%x\n", aStateFlags);
@@ -662,21 +631,19 @@ nsEditingSession::OnStateChange(nsIWebProgress *aWebProgress,
 #endif
 
       bool progressIsForTargetDocument =
-        IsProgressForTargetDocument(aWebProgress);
+          IsProgressForTargetDocument(aWebProgress);
 
       if (progressIsForTargetDocument) {
         nsCOMPtr<mozIDOMWindowProxy> window;
         aWebProgress->GetDOMWindow(getter_AddRefs(window));
 
         auto* piWindow = nsPIDOMWindowOuter::From(window);
-        nsCOMPtr<nsIDocument> doc = piWindow->GetDoc();
-
-        nsCOMPtr<nsIHTMLDocument> htmlDoc(do_QueryInterface(doc));
-
+        RefPtr<Document> doc = piWindow->GetDoc();
+        nsHTMLDocument* htmlDoc =
+            doc && doc->IsHTMLOrXHTML() ? doc->AsHTMLDocument() : nullptr;
         if (htmlDoc && htmlDoc->IsWriting()) {
-          nsCOMPtr<nsIDOMHTMLDocument> htmlDomDoc = do_QueryInterface(doc);
           nsAutoString designMode;
-          htmlDomDoc->GetDesignMode(designMode);
+          htmlDoc->GetDesignMode(designMode);
 
           if (designMode.EqualsLiteral("on")) {
             // This notification is for data coming in through
@@ -718,10 +685,10 @@ nsEditingSession::OnStateChange(nsIWebProgress *aWebProgress,
         nsCOMPtr<nsIURI> uri;
         channel->GetURI(getter_AddRefs(uri));
         if (uri) {
-          nsXPIDLCString spec;
+          nsCString spec;
           uri->GetSpec(spec);
-          printf(" **** STATE_STOP: CHANNEL URI=%s, flags=%x\n",
-                 spec.get(), aStateFlags);
+          printf(" **** STATE_STOP: CHANNEL URI=%s, flags=%x\n", spec.get(),
+                 aStateFlags);
         }
       } else {
         printf("     STATE_STOP: NO CHANNEL  flags=%x\n", aStateFlags);
@@ -758,15 +725,14 @@ nsEditingSession::OnStateChange(nsIWebProgress *aWebProgress,
 
 ----------------------------------------------------------------------------*/
 NS_IMETHODIMP
-nsEditingSession::OnProgressChange(nsIWebProgress *aWebProgress,
-                                   nsIRequest *aRequest,
+nsEditingSession::OnProgressChange(nsIWebProgress* aWebProgress,
+                                   nsIRequest* aRequest,
                                    int32_t aCurSelfProgress,
                                    int32_t aMaxSelfProgress,
                                    int32_t aCurTotalProgress,
-                                   int32_t aMaxTotalProgress)
-{
-    NS_NOTREACHED("notification excluded in AddProgressListener(...)");
-    return NS_OK;
+                                   int32_t aMaxTotalProgress) {
+  MOZ_ASSERT_UNREACHABLE("notification excluded in AddProgressListener(...)");
+  return NS_OK;
 }
 
 /*---------------------------------------------------------------------------
@@ -775,29 +741,28 @@ nsEditingSession::OnProgressChange(nsIWebProgress *aWebProgress,
 
 ----------------------------------------------------------------------------*/
 NS_IMETHODIMP
-nsEditingSession::OnLocationChange(nsIWebProgress *aWebProgress,
-                                   nsIRequest *aRequest, nsIURI *aURI,
-                                   uint32_t aFlags)
-{
+nsEditingSession::OnLocationChange(nsIWebProgress* aWebProgress,
+                                   nsIRequest* aRequest, nsIURI* aURI,
+                                   uint32_t aFlags) {
   nsCOMPtr<mozIDOMWindowProxy> domWindow;
   nsresult rv = aWebProgress->GetDOMWindow(getter_AddRefs(domWindow));
   NS_ENSURE_SUCCESS(rv, rv);
 
   auto* piWindow = nsPIDOMWindowOuter::From(domWindow);
 
-  nsCOMPtr<nsIDocument> doc = piWindow->GetDoc();
+  RefPtr<Document> doc = piWindow->GetDoc();
   NS_ENSURE_TRUE(doc, NS_ERROR_FAILURE);
 
   doc->SetDocumentURI(aURI);
 
   // Notify the location-changed observer that
   //  the document URL has changed
-  nsIDocShell *docShell = piWindow->GetDocShell();
+  nsIDocShell* docShell = piWindow->GetDocShell();
   NS_ENSURE_TRUE(docShell, NS_ERROR_FAILURE);
 
   nsCOMPtr<nsICommandManager> commandManager = docShell->GetCommandManager();
   nsCOMPtr<nsPICommandUpdater> commandUpdater =
-                                  do_QueryInterface(commandManager);
+      do_QueryInterface(commandManager);
   NS_ENSURE_TRUE(commandUpdater, NS_ERROR_FAILURE);
 
   return commandUpdater->CommandStatusChanged("obs_documentLocationChanged");
@@ -809,13 +774,11 @@ nsEditingSession::OnLocationChange(nsIWebProgress *aWebProgress,
 
 ----------------------------------------------------------------------------*/
 NS_IMETHODIMP
-nsEditingSession::OnStatusChange(nsIWebProgress *aWebProgress,
-                                 nsIRequest *aRequest,
-                                 nsresult aStatus,
-                                 const char16_t *aMessage)
-{
-    NS_NOTREACHED("notification excluded in AddProgressListener(...)");
-    return NS_OK;
+nsEditingSession::OnStatusChange(nsIWebProgress* aWebProgress,
+                                 nsIRequest* aRequest, nsresult aStatus,
+                                 const char16_t* aMessage) {
+  MOZ_ASSERT_UNREACHABLE("notification excluded in AddProgressListener(...)");
+  return NS_OK;
 }
 
 /*---------------------------------------------------------------------------
@@ -824,13 +787,24 @@ nsEditingSession::OnStatusChange(nsIWebProgress *aWebProgress,
 
 ----------------------------------------------------------------------------*/
 NS_IMETHODIMP
-nsEditingSession::OnSecurityChange(nsIWebProgress *aWebProgress,
-                                   nsIRequest *aRequest, uint32_t state)
-{
-    NS_NOTREACHED("notification excluded in AddProgressListener(...)");
-    return NS_OK;
+nsEditingSession::OnSecurityChange(nsIWebProgress* aWebProgress,
+                                   nsIRequest* aRequest, uint32_t aState) {
+  MOZ_ASSERT_UNREACHABLE("notification excluded in AddProgressListener(...)");
+  return NS_OK;
 }
 
+/*---------------------------------------------------------------------------
+
+  OnContentBlockingEvent
+
+----------------------------------------------------------------------------*/
+NS_IMETHODIMP
+nsEditingSession::OnContentBlockingEvent(nsIWebProgress* aWebProgress,
+                                         nsIRequest* aRequest,
+                                         uint32_t aEvent) {
+  MOZ_ASSERT_UNREACHABLE("notification excluded in AddProgressListener(...)");
+  return NS_OK;
+}
 
 /*---------------------------------------------------------------------------
 
@@ -839,13 +813,11 @@ nsEditingSession::OnSecurityChange(nsIWebProgress *aWebProgress,
   Check that this notification is for our document.
 ----------------------------------------------------------------------------*/
 
-bool
-nsEditingSession::IsProgressForTargetDocument(nsIWebProgress *aWebProgress)
-{
+bool nsEditingSession::IsProgressForTargetDocument(
+    nsIWebProgress* aWebProgress) {
   nsCOMPtr<nsIWebProgress> editedWebProgress = do_QueryReferent(mDocShell);
   return editedWebProgress == aWebProgress;
 }
-
 
 /*---------------------------------------------------------------------------
 
@@ -856,8 +828,7 @@ nsEditingSession::IsProgressForTargetDocument(nsIWebProgress *aWebProgress)
   was loaded successfully
 ----------------------------------------------------------------------------*/
 NS_IMETHODIMP
-nsEditingSession::GetEditorStatus(uint32_t *aStatus)
-{
+nsEditingSession::GetEditorStatus(uint32_t* aStatus) {
   NS_ENSURE_ARG_POINTER(aStatus);
   *aStatus = mEditorStatus;
   return NS_OK;
@@ -869,10 +840,8 @@ nsEditingSession::GetEditorStatus(uint32_t *aStatus)
 
   Called on start of load in a single frame
 ----------------------------------------------------------------------------*/
-nsresult
-nsEditingSession::StartDocumentLoad(nsIWebProgress *aWebProgress,
-                                    bool aIsToBeMadeEditable)
-{
+nsresult nsEditingSession::StartDocumentLoad(nsIWebProgress* aWebProgress,
+                                             bool aIsToBeMadeEditable) {
 #ifdef NOISY_DOC_LOADING
   printf("======= StartDocumentLoad ========\n");
 #endif
@@ -892,18 +861,17 @@ nsEditingSession::StartDocumentLoad(nsIWebProgress *aWebProgress,
 
   Called on end of load in a single frame
 ----------------------------------------------------------------------------*/
-nsresult
-nsEditingSession::EndDocumentLoad(nsIWebProgress *aWebProgress,
-                                  nsIChannel* aChannel, nsresult aStatus,
-                                  bool aIsToBeMadeEditable)
-{
+nsresult nsEditingSession::EndDocumentLoad(nsIWebProgress* aWebProgress,
+                                           nsIChannel* aChannel,
+                                           nsresult aStatus,
+                                           bool aIsToBeMadeEditable) {
   NS_ENSURE_ARG_POINTER(aWebProgress);
 
 #ifdef NOISY_DOC_LOADING
   printf("======= EndDocumentLoad ========\n");
   printf("with status %d, ", aStatus);
   nsCOMPtr<nsIURI> uri;
-  nsXPIDLCString spec;
+  nsCString spec;
   if (NS_SUCCEEDED(aChannel->GetURI(getter_AddRefs(uri)))) {
     uri->GetSpec(spec);
     printf(" uri %s\n", spec.get());
@@ -925,8 +893,8 @@ nsEditingSession::EndDocumentLoad(nsIWebProgress *aWebProgress,
     mEditorStatus = eEditorErrorFileNotFound;
   }
 
-  nsIDocShell *docShell = nsPIDOMWindowOuter::From(domWindow)->GetDocShell();
-  NS_ENSURE_TRUE(docShell, NS_ERROR_FAILURE);       // better error handling?
+  nsIDocShell* docShell = nsPIDOMWindowOuter::From(domWindow)->GetDocShell();
+  NS_ENSURE_TRUE(docShell, NS_ERROR_FAILURE);  // better error handling?
 
   // cancel refresh from meta tags
   // we need to make sure that all pages in editor (whether editable or not)
@@ -940,7 +908,7 @@ nsEditingSession::EndDocumentLoad(nsIWebProgress *aWebProgress,
 
   // did someone set the flag to make this shell editable?
   if (aIsToBeMadeEditable && mCanCreateEditor) {
-    bool    makeEditable;
+    bool makeEditable;
     docShell->GetEditable(&makeEditable);
 
     if (makeEditable) {
@@ -951,11 +919,7 @@ nsEditingSession::EndDocumentLoad(nsIWebProgress *aWebProgress,
         needsSetup = true;
       } else {
         // do we already have an editor here?
-        nsCOMPtr<nsIEditor> editor;
-        rv = docShell->GetEditor(getter_AddRefs(editor));
-        NS_ENSURE_SUCCESS(rv, rv);
-
-        needsSetup = !editor;
+        needsSetup = !docShell->GetHTMLEditor();
       }
 
       if (needsSetup) {
@@ -969,14 +933,14 @@ nsEditingSession::EndDocumentLoad(nsIWebProgress *aWebProgress,
             mLoadBlankDocTimer = nullptr;
           }
 
-          mLoadBlankDocTimer = do_CreateInstance("@mozilla.org/timer;1", &rv);
+          rv = NS_NewTimerWithFuncCallback(getter_AddRefs(mLoadBlankDocTimer),
+                                           nsEditingSession::TimerCallback,
+                                           static_cast<void*>(mDocShell.get()),
+                                           10, nsITimer::TYPE_ONE_SHOT,
+                                           "nsEditingSession::EndDocumentLoad");
           NS_ENSURE_SUCCESS(rv, rv);
 
           mEditorStatus = eEditorCreationInProgress;
-          mLoadBlankDocTimer->InitWithFuncCallback(
-                                          nsEditingSession::TimerCallback,
-                                          static_cast<void*> (mDocShell.get()),
-                                          10, nsITimer::TYPE_ONE_SHOT);
         }
       }
     }
@@ -984,15 +948,16 @@ nsEditingSession::EndDocumentLoad(nsIWebProgress *aWebProgress,
   return rv;
 }
 
-
-void
-nsEditingSession::TimerCallback(nsITimer* aTimer, void* aClosure)
-{
-  nsCOMPtr<nsIDocShell> docShell = do_QueryReferent(static_cast<nsIWeakReference*> (aClosure));
+void nsEditingSession::TimerCallback(nsITimer* aTimer, void* aClosure) {
+  nsCOMPtr<nsIDocShell> docShell =
+      do_QueryReferent(static_cast<nsIWeakReference*>(aClosure));
   if (docShell) {
     nsCOMPtr<nsIWebNavigation> webNav(do_QueryInterface(docShell));
     if (webNav) {
-      webNav->LoadURI(u"about:blank", 0, nullptr, nullptr, nullptr);
+      LoadURIOptions loadURIOptions;
+      loadURIOptions.mTriggeringPrincipal =
+          nsContentUtils::GetSystemPrincipal();
+      webNav->LoadURI(NS_LITERAL_STRING("about:blank"), loadURIOptions);
     }
   }
 }
@@ -1003,9 +968,7 @@ nsEditingSession::TimerCallback(nsITimer* aTimer, void* aClosure)
 
   Called on start load of the entire page (incl. subframes)
 ----------------------------------------------------------------------------*/
-nsresult
-nsEditingSession::StartPageLoad(nsIChannel *aChannel)
-{
+nsresult nsEditingSession::StartPageLoad(nsIChannel* aChannel) {
 #ifdef NOISY_DOC_LOADING
   printf("======= StartPageLoad ========\n");
 #endif
@@ -1018,15 +981,13 @@ nsEditingSession::StartPageLoad(nsIChannel *aChannel)
 
   Called on end load of the entire page (incl. subframes)
 ----------------------------------------------------------------------------*/
-nsresult
-nsEditingSession::EndPageLoad(nsIWebProgress *aWebProgress,
-                              nsIChannel* aChannel, nsresult aStatus)
-{
+nsresult nsEditingSession::EndPageLoad(nsIWebProgress* aWebProgress,
+                                       nsIChannel* aChannel, nsresult aStatus) {
 #ifdef NOISY_DOC_LOADING
   printf("======= EndPageLoad ========\n");
   printf("  with status %d, ", aStatus);
   nsCOMPtr<nsIURI> uri;
-  nsXPIDLCString spec;
+  nsCString spec;
   if (NS_SUCCEEDED(aChannel->GetURI(getter_AddRefs(uri)))) {
     uri->GetSpec(spec);
     printf("uri %s\n", spec.get());
@@ -1035,8 +996,8 @@ nsEditingSession::EndPageLoad(nsIWebProgress *aWebProgress,
   nsAutoCString contentType;
   aChannel->GetContentType(contentType);
   if (!contentType.IsEmpty()) {
-    printf("   flags = %d, status = %d, MIMETYPE = %s\n",
-               mEditorFlags, mEditorStatus, contentType.get());
+    printf("   flags = %d, status = %d, MIMETYPE = %s\n", mEditorFlags,
+           mEditorStatus, contentType.get());
   }
 #endif
 
@@ -1049,8 +1010,8 @@ nsEditingSession::EndPageLoad(nsIWebProgress *aWebProgress,
   nsCOMPtr<mozIDOMWindowProxy> domWindow;
   aWebProgress->GetDOMWindow(getter_AddRefs(domWindow));
 
-  nsIDocShell *docShell =
-    domWindow ? nsPIDOMWindowOuter::From(domWindow)->GetDocShell() : nullptr;
+  nsIDocShell* docShell =
+      domWindow ? nsPIDOMWindowOuter::From(domWindow)->GetDocShell() : nullptr;
   NS_ENSURE_TRUE(docShell, NS_ERROR_FAILURE);
 
   // cancel refresh from meta tags
@@ -1075,24 +1036,21 @@ nsEditingSession::EndPageLoad(nsIWebProgress *aWebProgress,
 
   Set up this editing session for one or more editors
 ----------------------------------------------------------------------------*/
-nsresult
-nsEditingSession::PrepareForEditing(nsPIDOMWindowOuter* aWindow)
-{
+nsresult nsEditingSession::PrepareForEditing(nsPIDOMWindowOuter* aWindow) {
   if (mProgressListenerRegistered) {
     return NS_OK;
   }
 
-  nsIDocShell *docShell = aWindow ? aWindow->GetDocShell() : nullptr;
+  nsIDocShell* docShell = aWindow ? aWindow->GetDocShell() : nullptr;
 
   // register callback
   nsCOMPtr<nsIWebProgress> webProgress = do_GetInterface(docShell);
   NS_ENSURE_TRUE(webProgress, NS_ERROR_FAILURE);
 
-  nsresult rv =
-    webProgress->AddProgressListener(this,
-                                     (nsIWebProgress::NOTIFY_STATE_NETWORK  |
-                                      nsIWebProgress::NOTIFY_STATE_DOCUMENT |
-                                      nsIWebProgress::NOTIFY_LOCATION));
+  nsresult rv = webProgress->AddProgressListener(
+      this, (nsIWebProgress::NOTIFY_STATE_NETWORK |
+             nsIWebProgress::NOTIFY_STATE_DOCUMENT |
+             nsIWebProgress::NOTIFY_LOCATION));
 
   mProgressListenerRegistered = NS_SUCCEEDED(rv);
 
@@ -1106,14 +1064,11 @@ nsEditingSession::PrepareForEditing(nsPIDOMWindowOuter* aWindow)
   Create a command controller, append to controllers,
   get and return the controller ID, and set the context
 ----------------------------------------------------------------------------*/
-nsresult
-nsEditingSession::SetupEditorCommandController(
-                                  const char *aControllerClassName,
-                                  mozIDOMWindowProxy *aWindow,
-                                  nsISupports *aContext,
-                                  uint32_t *aControllerId)
-{
-  NS_ENSURE_ARG_POINTER(aControllerClassName);
+nsresult nsEditingSession::SetupEditorCommandController(
+    nsEditingSession::ControllerCreatorFn aControllerCreatorFn,
+    mozIDOMWindowProxy* aWindow, nsISupports* aContext,
+    uint32_t* aControllerId) {
+  NS_ENSURE_ARG_POINTER(aControllerCreatorFn);
   NS_ENSURE_ARG_POINTER(aWindow);
   NS_ENSURE_ARG_POINTER(aContext);
   NS_ENSURE_ARG_POINTER(aControllerId);
@@ -1128,9 +1083,8 @@ nsEditingSession::SetupEditorCommandController(
   // We only have to create each singleton controller once
   // We know this has happened once we have a controllerId value
   if (!*aControllerId) {
-    nsCOMPtr<nsIController> controller;
-    controller = do_CreateInstance(aControllerClassName, &rv);
-    NS_ENSURE_SUCCESS(rv, rv);
+    nsCOMPtr<nsIController> controller = aControllerCreatorFn();
+    NS_ENSURE_TRUE(controller, NS_ERROR_FAILURE);
 
     // We must insert at head of the list to be sure our
     //   controller is found before other implementations
@@ -1155,8 +1109,7 @@ nsEditingSession::SetupEditorCommandController(
 ----------------------------------------------------------------------------*/
 NS_IMETHODIMP
 nsEditingSession::SetEditorOnControllers(mozIDOMWindowProxy* aWindow,
-                                         nsIEditor* aEditor)
-{
+                                         nsIEditor* aEditor) {
   NS_ENSURE_TRUE(aWindow, NS_ERROR_NULL_POINTER);
 
   auto* piWindow = nsPIDOMWindowOuter::From(aWindow);
@@ -1165,7 +1118,7 @@ nsEditingSession::SetEditorOnControllers(mozIDOMWindowProxy* aWindow,
   nsresult rv = piWindow->GetControllers(getter_AddRefs(controllers));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCOMPtr<nsISupports> editorAsISupports = do_QueryInterface(aEditor);
+  nsCOMPtr<nsISupports> editorAsISupports = static_cast<nsISupports*>(aEditor);
   if (mBaseCommandControllerId) {
     rv = SetContextOnControllerById(controllers, editorAsISupports,
                                     mBaseCommandControllerId);
@@ -1186,11 +1139,8 @@ nsEditingSession::SetEditorOnControllers(mozIDOMWindowProxy* aWindow,
   return rv;
 }
 
-nsresult
-nsEditingSession::SetContextOnControllerById(nsIControllers* aControllers,
-                                             nsISupports* aContext,
-                                             uint32_t aID)
-{
+nsresult nsEditingSession::SetContextOnControllerById(
+    nsIControllers* aControllers, nsISupports* aContext, uint32_t aID) {
   NS_ENSURE_ARG_POINTER(aControllers);
 
   // aContext can be null (when destroying editor)
@@ -1199,15 +1149,13 @@ nsEditingSession::SetContextOnControllerById(nsIControllers* aControllers,
 
   // ok with nil controller
   nsCOMPtr<nsIControllerContext> editorController =
-                                       do_QueryInterface(controller);
+      do_QueryInterface(controller);
   NS_ENSURE_TRUE(editorController, NS_ERROR_FAILURE);
 
   return editorController->SetCommandContext(aContext);
 }
 
-void
-nsEditingSession::RemoveEditorControllers(nsPIDOMWindowOuter* aWindow)
-{
+void nsEditingSession::RemoveEditorControllers(nsPIDOMWindowOuter* aWindow) {
   // Remove editor controllers from the aWindow, call when we're
   // tearing down/detaching editor.
 
@@ -1249,10 +1197,8 @@ nsEditingSession::RemoveEditorControllers(nsPIDOMWindowOuter* aWindow)
   mHTMLCommandControllerId = 0;
 }
 
-void
-nsEditingSession::RemoveWebProgressListener(nsPIDOMWindowOuter* aWindow)
-{
-  nsIDocShell *docShell = aWindow ? aWindow->GetDocShell() : nullptr;
+void nsEditingSession::RemoveWebProgressListener(nsPIDOMWindowOuter* aWindow) {
+  nsIDocShell* docShell = aWindow ? aWindow->GetDocShell() : nullptr;
   nsCOMPtr<nsIWebProgress> webProgress = do_GetInterface(docShell);
   if (webProgress) {
     webProgress->RemoveProgressListener(this);
@@ -1260,9 +1206,7 @@ nsEditingSession::RemoveWebProgressListener(nsPIDOMWindowOuter* aWindow)
   }
 }
 
-void
-nsEditingSession::RestoreAnimationMode(nsPIDOMWindowOuter* aWindow)
-{
+void nsEditingSession::RestoreAnimationMode(nsPIDOMWindowOuter* aWindow) {
   if (mInteractive) {
     return;
   }
@@ -1277,12 +1221,11 @@ nsEditingSession::RestoreAnimationMode(nsPIDOMWindowOuter* aWindow)
   presContext->SetImageAnimationMode(mImageAnimationMode);
 }
 
-nsresult
-nsEditingSession::DetachFromWindow(mozIDOMWindowProxy* aWindow)
-{
+nsresult nsEditingSession::DetachFromWindow(mozIDOMWindowProxy* aWindow) {
   NS_ENSURE_TRUE(mDoneSetup, NS_OK);
 
-  NS_ASSERTION(mStateMaintainer, "mStateMaintainer should exist.");
+  NS_ASSERTION(mComposerCommandsUpdater,
+               "mComposerCommandsUpdater should exist.");
 
   // Kill any existing reload timer
   if (mLoadBlankDocTimer) {
@@ -1306,20 +1249,19 @@ nsEditingSession::DetachFromWindow(mozIDOMWindowProxy* aWindow)
   return NS_OK;
 }
 
-nsresult
-nsEditingSession::ReattachToWindow(mozIDOMWindowProxy* aWindow)
-{
+nsresult nsEditingSession::ReattachToWindow(mozIDOMWindowProxy* aWindow) {
   NS_ENSURE_TRUE(mDoneSetup, NS_OK);
   NS_ENSURE_TRUE(aWindow, NS_ERROR_FAILURE);
 
-  NS_ASSERTION(mStateMaintainer, "mStateMaintainer should exist.");
+  NS_ASSERTION(mComposerCommandsUpdater,
+               "mComposerCommandsUpdater should exist.");
 
   // Imitate nsEditorDocShell::MakeEditable() to reattach the
   // old editor ot the window.
   nsresult rv;
 
   auto* window = nsPIDOMWindowOuter::From(aWindow);
-  nsIDocShell *docShell = window->GetDocShell();
+  nsIDocShell* docShell = window->GetDocShell();
   NS_ENSURE_TRUE(docShell, NS_ERROR_FAILURE);
   mDocShell = do_GetWeakReference(docShell);
 
@@ -1337,26 +1279,25 @@ nsEditingSession::ReattachToWindow(mozIDOMWindowProxy* aWindow)
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Setup the command controllers again.
-  rv = SetupEditorCommandController("@mozilla.org/editor/editingcontroller;1",
-                                    aWindow,
-                                    static_cast<nsIEditingSession*>(this),
-                                    &mBaseCommandControllerId);
+  rv = SetupEditorCommandController(
+      nsBaseCommandController::CreateEditingController, aWindow,
+      static_cast<nsIEditingSession*>(this), &mBaseCommandControllerId);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = SetupEditorCommandController("@mozilla.org/editor/editordocstatecontroller;1",
-                                    aWindow,
-                                    static_cast<nsIEditingSession*>(this),
-                                    &mDocStateControllerId);
+  rv = SetupEditorCommandController(
+      nsBaseCommandController::CreateHTMLEditorDocStateController, aWindow,
+      static_cast<nsIEditingSession*>(this), &mDocStateControllerId);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (mStateMaintainer) {
-    mStateMaintainer->Init(window);
+  if (mComposerCommandsUpdater) {
+    mComposerCommandsUpdater->Init(window);
   }
 
   // Get editor
-  nsCOMPtr<nsIEditor> editor;
-  rv = GetEditorForWindow(aWindow, getter_AddRefs(editor));
-  NS_ENSURE_TRUE(editor, NS_ERROR_FAILURE);
+  RefPtr<HTMLEditor> htmlEditor = GetHTMLEditorForWindow(aWindow);
+  if (NS_WARN_IF(!htmlEditor)) {
+    return NS_ERROR_FAILURE;
+  }
 
   if (!mInteractive) {
     // Disable animation of images in this document:
@@ -1370,13 +1311,13 @@ nsEditingSession::ReattachToWindow(mozIDOMWindowProxy* aWindow)
   }
 
   // The third controller takes an nsIEditor as the context
-  rv = SetupEditorCommandController("@mozilla.org/editor/htmleditorcontroller;1",
-                                    aWindow, editor,
-                                    &mHTMLCommandControllerId);
+  rv = SetupEditorCommandController(
+      nsBaseCommandController::CreateHTMLEditorController, aWindow,
+      static_cast<nsIEditor*>(htmlEditor.get()), &mHTMLCommandControllerId);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Set context on all controllers to be the editor
-  rv = SetEditorOnControllers(aWindow, editor);
+  rv = SetEditorOnControllers(aWindow, htmlEditor);
   NS_ENSURE_SUCCESS(rv, rv);
 
 #ifdef DEBUG
@@ -1384,9 +1325,25 @@ nsEditingSession::ReattachToWindow(mozIDOMWindowProxy* aWindow)
     bool isEditable;
     rv = WindowIsEditable(aWindow, &isEditable);
     NS_ENSURE_SUCCESS(rv, rv);
-    NS_ASSERTION(isEditable, "Window is not editable after reattaching editor.");
+    NS_ASSERTION(isEditable,
+                 "Window is not editable after reattaching editor.");
   }
-#endif // DEBUG
+#endif  // DEBUG
 
   return NS_OK;
+}
+
+HTMLEditor* nsIEditingSession::GetHTMLEditorForWindow(
+    mozIDOMWindowProxy* aWindow) {
+  if (NS_WARN_IF(!aWindow)) {
+    return nullptr;
+  }
+
+  nsCOMPtr<nsIDocShell> docShell =
+      nsPIDOMWindowOuter::From(aWindow)->GetDocShell();
+  if (NS_WARN_IF(!docShell)) {
+    return nullptr;
+  }
+
+  return docShell->GetHTMLEditor();
 }

@@ -7,11 +7,11 @@ include protocol PPluginBackgroundDestroyer;
 include protocol PPluginModule;
 include protocol PPluginScriptableObject;
 include protocol PBrowserStream;
-include protocol PPluginStream;
 include protocol PStreamNotify;
 include protocol PPluginSurface;
 
 include "mozilla/GfxMessageUtils.h";
+include "mozilla/layers/LayersMessageUtils.h";
 
 using NPError from "npapi.h";
 using struct mozilla::plugins::NPRemoteWindow from "mozilla/plugins/PluginMessageUtils.h";
@@ -67,7 +67,6 @@ intr protocol PPluginInstance
   manages PPluginBackgroundDestroyer;
   manages PPluginScriptableObject;
   manages PBrowserStream;
-  manages PPluginStream;
   manages PStreamNotify;
   manages PPluginSurface;
 
@@ -247,19 +246,11 @@ parent:
                          nsCString value)
     returns (NPError result);
 
-  intr NPN_GetAuthenticationInfo(nsCString protocol_, nsCString host,
-                                int32_t port, nsCString scheme,
-                                nsCString realm)
-    returns (nsCString username, nsCString password, NPError result);
-
   intr NPN_ConvertPoint(double sourceX, bool ignoreDestX, double sourceY, bool ignoreDestY, NPCoordinateSpace sourceSpace,
                        NPCoordinateSpace destSpace)
     returns (double destX, double destY, bool result);
 
   async RedrawPlugin();
-
-  // Notifies the parent of its NPP_New result code.
-  async AsyncNPP_NewResult(NPError aResult);
 
   // Sends a native window to be adopted by the native window that would be
   // returned by NPN_GetValue_NPNVnetscapeWindow. Only used on Windows.
@@ -272,6 +263,11 @@ parent:
   // @param aPosition  position information of candidate window
   async SetCandidateWindow(CandidateWindowPosition aPosition);
   async RequestCommitOrCancel(bool aCommitted);
+
+  // Control IME can enable or disable
+  //
+  // @param aEanble  whether IME is enabled or disabled
+  async EnableIME(bool aEnable);
 
   // Notifies the parent process of a plugin instance receiving key event
   // directly.
@@ -296,15 +292,6 @@ child:
   intr NPP_NewStream(PBrowserStream actor, nsCString mimeType, bool seekable)
     returns (NPError rv,
              uint16_t stype);
-
-  // Implements the async plugin init version of NPP_NewStream.
-  async AsyncNPP_NewStream(PBrowserStream actor, nsCString mimeType, bool seekable);
-
-parent:
-  /* NPN_NewStream */
-  intr PPluginStream(nsCString mimeType,
-                    nsCString target)
-    returns (NPError result);
 
 parent:
   intr PluginFocusChange(bool gotFocus);

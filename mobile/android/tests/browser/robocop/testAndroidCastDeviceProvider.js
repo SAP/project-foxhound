@@ -8,10 +8,7 @@
 
 "use strict";
 
-const { classes: Cc, interfaces: Ci, results: Cr, utils: Cu  } = Components;
-
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Messaging.jsm");
 
 // event name
 const TOPIC_ANDROID_CAST_DEVICE_ADDED   = "AndroidCastDevice:Added";
@@ -45,14 +42,14 @@ function TestDescription(aType, aTcpAddress, aTcpPort) {
     let wrapper = Cc["@mozilla.org/supports-cstring;1"]
       .createInstance(Ci.nsISupportsCString);
     wrapper.data = address;
-    this.tcpAddress.appendElement(wrapper, false);
+    this.tcpAddress.appendElement(wrapper);
   }
   this.tcpPort = aTcpPort;
 }
 
 TestDescription.prototype = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIPresentationChannelDescription]),
-}
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIPresentationChannelDescription]),
+};
 
 function TestControlChannelListener(aRole) {
   log("TestControlChannelListener of " + aRole + " is created.");
@@ -91,7 +88,7 @@ TestControlChannelListener.prototype = {
   onOffer: function(aOffer) { this._isOnOfferCalledResolve(); },
   onAnswer: function(aAnswer) { this._isOnAnswerCalledResolve(); },
   onIceCandidate: function(aCandidate) { this._isOnIceCandidateCalledResolve(); },
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIPresentationControlChannelListener])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIPresentationControlChannelListener]),
 };
 
 function deviceManagement() {
@@ -118,8 +115,8 @@ function deviceManagement() {
       delete this.devices[aDevice.id];
       this._isRemoveDeviceCalledResolve();
     },
-    QueryInterface: XPCOMUtils.generateQI([Ci.nsIPresentationDeviceListener,
-                                           Ci.nsISupportsWeakReference]),
+    QueryInterface: ChromeUtils.generateQI([Ci.nsIPresentationDeviceListener,
+                                            Ci.nsISupportsWeakReference]),
     count: function() {
       let cnt = 0;
       for (let key in this.devices) {
@@ -143,7 +140,7 @@ function deviceManagement() {
       this.isRemoveDeviceCalled = new Promise((aResolve) => {
         this._isRemoveDeviceCalledResolve = aResolve;
       });
-    }
+    },
   };
   listener.reset();
   // Should be no device.
@@ -153,7 +150,7 @@ function deviceManagement() {
   provider.listener = listener;
   let device = {
     uuid: "chromecast",
-    friendlyName: "chromecast"
+    friendlyName: "chromecast",
   };
 
   // Sync device from Android.
@@ -162,25 +159,25 @@ function deviceManagement() {
       listener.reset();
       ok(listener.count() == 1, "There should be one device in device manager after sync device.");
       // Remove the device.
-      Services.obs.notifyObservers(null, TOPIC_ANDROID_CAST_DEVICE_REMOVED, "existed-chromecast");
+      EventDispatcher.instance.dispatch(TOPIC_ANDROID_CAST_DEVICE_REMOVED, {id: "existed-chromecast"});
       return listener.isRemoveDeviceCalled;
   }).then(() => {
       listener.reset();
       ok(listener.count() == 0, "There should be no any device after the device is removed.");
       // Add the device.
-      Services.obs.notifyObservers(null, TOPIC_ANDROID_CAST_DEVICE_ADDED, JSON.stringify(device));
+      EventDispatcher.instance.dispatch(TOPIC_ANDROID_CAST_DEVICE_ADDED, device);
       return listener.isAddDeviceCalled;
   }).then(() => {
       listener.reset();
       ok(listener.count() == 1, "There should be only one device in device manager.");
       // Add the same device, and it should trigger updateDevice.
-      Services.obs.notifyObservers(null, TOPIC_ANDROID_CAST_DEVICE_ADDED, JSON.stringify(device));
+      EventDispatcher.instance.dispatch(TOPIC_ANDROID_CAST_DEVICE_ADDED, device);
       return listener.isUpdateDeviceCalled;
   }).then(() => {
       listener.reset();
       ok(listener.count() == 1, "There should still only one device in device manager.");
       // Remove the device.
-      Services.obs.notifyObservers(null, TOPIC_ANDROID_CAST_DEVICE_REMOVED, device.uuid);
+      EventDispatcher.instance.dispatch(TOPIC_ANDROID_CAST_DEVICE_REMOVED, {id: device.uuid});
       return listener.isRemoveDeviceCalled;
   }).then(() => {
       listener.reset();
@@ -204,8 +201,8 @@ function presentationLaunchAndTerminate() {
     addDevice: function(aDevice) { this.devices[aDevice.id] = aDevice; },
     updateDevice: function(aDevice) { this.devices[aDevice.id] = aDevice; },
     removeDevice: function(aDevice) { delete this.devices[aDevice.id]; },
-    QueryInterface: XPCOMUtils.generateQI([Ci.nsIPresentationDeviceListener,
-                                           Ci.nsISupportsWeakReference]),
+    QueryInterface: ChromeUtils.generateQI([Ci.nsIPresentationDeviceListener,
+                                            Ci.nsISupportsWeakReference]),
     onSessionRequest: function(aDeviceId, aUrl, aPresentationId, aControlChannel) {
       receiverControlChannel = aControlChannel;
       receiverControlChannel.listener = receiverControlChannelListener;
@@ -214,17 +211,17 @@ function presentationLaunchAndTerminate() {
       receiverControlChannel = aControlChannel;
       receiverControlChannel.listener = receiverControlChannelListener;
     },
-    getDevice: function(aDeviceId) { return this.devices[aDeviceId]; }
+    getDevice: function(aDeviceId) { return this.devices[aDeviceId]; },
   };
   provider.listener = listener;
 
   let device = {
     uuid: "chromecast",
-    friendlyName: "chromecast"
+    friendlyName: "chromecast",
   };
 
   // Add and get the device.
-  Services.obs.notifyObservers(null, TOPIC_ANDROID_CAST_DEVICE_ADDED, JSON.stringify(device));
+  EventDispatcher.instance.dispatch(TOPIC_ANDROID_CAST_DEVICE_ADDED, device);
   let presentationDevice = listener.getDevice(device.uuid).QueryInterface(Ci.nsIPresentationDevice);
   ok(presentationDevice != null, "It should have nsIPresentationDevice interface.");
 
@@ -274,7 +271,7 @@ function presentationLaunchAndTerminate() {
       let candidate = {
         candidate: "1 1 UDP 1 127.0.0.1 34567 type host",
         sdpMid: "helloworld",
-        sdpMLineIndex: 1
+        sdpMLineIndex: 1,
       };
       try {
         controllerControlChannel.sendIceCandidate(JSON.stringify(candidate));
@@ -299,7 +296,7 @@ function presentationLaunchAndTerminate() {
       controllerControlChannelListener = new TestControlChannelListener("controller");
       controllerControlChannel.listener = controllerControlChannelListener;
       // test notifyConnected for controller
-      return controllerControlChannelListener.isNotifyConnectedCalled
+      return controllerControlChannelListener.isNotifyConnectedCalled;
   }).then(() => {
       ok(true, "notifyConnected of controller should be called.");
 

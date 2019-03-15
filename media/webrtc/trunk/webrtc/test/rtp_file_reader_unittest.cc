@@ -9,12 +9,12 @@
  */
 
 #include <map>
+#include <memory>
 
-#include "testing/gtest/include/gtest/gtest.h"
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_utility.h"
-#include "webrtc/test/rtp_file_reader.h"
-#include "webrtc/test/testsupport/fileutils.h"
+#include "modules/rtp_rtcp/source/rtp_utility.h"
+#include "test/gtest.h"
+#include "test/rtp_file_reader.h"
+#include "test/testsupport/fileutils.h"
 
 namespace webrtc {
 
@@ -43,7 +43,7 @@ class TestRtpFileReader : public ::testing::Test {
   }
 
  private:
-  rtc::scoped_ptr<test::RtpFileReader> rtp_packet_source_;
+  std::unique_ptr<test::RtpFileReader> rtp_packet_source_;
   bool headers_only_file_;
 };
 
@@ -94,7 +94,7 @@ class TestPcapFileReader : public ::testing::Test {
   }
 
  private:
-  rtc::scoped_ptr<test::RtpFileReader> rtp_packet_source_;
+  std::unique_ptr<test::RtpFileReader> rtp_packet_source_;
 };
 
 TEST_F(TestPcapFileReader, TestEthernetIIFrame) {

@@ -2,12 +2,17 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-implementation: taskgraph.task.transform:TransformTask
+loader: taskgraph.loader.transform:loader
+
+kind-dependencies:
+    - toolchain
 
 transforms:
-   - taskgraph.transforms.build_attrs:transforms
-   - taskgraph.transforms.job:transforms
-   - taskgraph.transforms.task:transforms
+    - taskgraph.transforms.build_attrs:transforms
+    - taskgraph.transforms.build_lints:transforms
+    - taskgraph.transforms.use_toolchains:transforms
+    - taskgraph.transforms.job:transforms
+    - taskgraph.transforms.task:transforms
 
 jobs:
     linux64-artifact/opt:
@@ -20,20 +25,22 @@ jobs:
             kind: build
             symbol: AB
             tier: 2
+        run-on-projects: ['trunk', 'try']
         worker-type: aws-provisioner-v1/gecko-{level}-b-linux
         worker:
-            implementation: docker-worker
-            docker-image: {in-tree: desktop-build}
-            max-run-time: 36000
+            max-run-time: 3600
+            env:
+                PERFHERDER_EXTRA_OPTIONS: artifact
         run:
             using: mozharness
-            actions: [get-secrets build generate-build-stats]
+            actions: [get-secrets, build]
             config:
+                - builds/releng_base_firefox.py
                 - builds/releng_sub_linux_configs/64_artifact.py
-                - balrog/production.py
             script: "mozharness/scripts/fx_desktop_build.py"
             secrets: true
             tooltool-downloads: public
             need-xvfb: true
             keep-artifacts: false
-
+        toolchains:
+            - linux64-node

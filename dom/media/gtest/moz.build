@@ -4,6 +4,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+include('/media/webrtc/webrtc.mozbuild')
+
+
+LOCAL_INCLUDES += [
+    '/media/webrtc/signaling/src/common',
+    '/media/webrtc/trunk',
+    '/media/webrtc/trunk/webrtc'
+]
+
 UNIFIED_SOURCES += [
     'MockMediaResource.cpp',
     'TestAudioBuffers.cpp',
@@ -11,18 +20,23 @@ UNIFIED_SOURCES += [
     'TestAudioMixer.cpp',
     'TestAudioPacketizer.cpp',
     'TestAudioSegment.cpp',
+    'TestAudioTrackEncoder.cpp',
+    'TestBitWriter.cpp',
+    'TestBlankVideoDataCreator.cpp',
+    'TestCDMStorage.cpp',
+    'TestDataMutex.cpp',
     'TestGMPCrossOrigin.cpp',
     'TestGMPRemoveAndDelete.cpp',
     'TestGMPUtils.cpp',
     'TestIntervalSet.cpp',
     'TestMediaDataDecoder.cpp',
+    'TestMediaDataEncoder.cpp',
     'TestMediaEventSource.cpp',
     'TestMediaMIMETypes.cpp',
-    'TestMozPromise.cpp',
     'TestMP3Demuxer.cpp',
     'TestMP4Demuxer.cpp',
-    # 'TestMP4Reader.cpp', disabled so we can turn check tests back on (bug 1175752)
-    'TestTrackEncoder.cpp',
+    'TestOpusParser.cpp',
+    'TestRust.cpp',
     'TestVideoSegment.cpp',
     'TestVideoUtils.cpp',
     'TestVPXDecoding.cpp',
@@ -35,9 +49,10 @@ if CONFIG['MOZ_WEBM_ENCODER']:
         'TestWebMWriter.cpp',
     ]
 
-if CONFIG['MOZ_RUST']:
-    UNIFIED_SOURCES += ['TestRust.cpp',]
-
+if CONFIG['MOZ_WEBRTC']:
+    UNIFIED_SOURCES += [
+        'TestAudioDeviceEnumerator.cpp',
+    ]
 
 TEST_HARNESS_FILES.gtest += [
     '../test/gizmo-frag.mp4',
@@ -45,7 +60,6 @@ TEST_HARNESS_FILES.gtest += [
     '../test/vp9cake.webm',
     'dash_dashinit.mp4',
     'id3v2header.mp3',
-    'mediasource_test.mp4',
     'negative_duration.mp4',
     'noise.mp3',
     'noise_vbr.mp3',
@@ -60,18 +74,29 @@ TEST_HARNESS_FILES.gtest += [
     'test_case_1224369.vp8.ivf',
 ]
 
+TEST_DIRS += [
+    'mp4_demuxer',
+]
+
 include('/ipc/chromium/chromium-config.mozbuild')
 
 LOCAL_INCLUDES += [
     '/dom/media',
     '/dom/media/encoder',
-    '/dom/media/fmp4',
     '/dom/media/gmp',
+    '/dom/media/mp4',
+    '/dom/media/platforms',
+    '/dom/media/platforms/agnostic',
     '/security/certverifier',
-    '/security/pkix/include',
 ]
 
 FINAL_LIBRARY = 'xul-gtest'
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
+
+if CONFIG['CC_TYPE'] == 'clang':
+    CXXFLAGS += ['-Wno-unused-private-field']
+
+if CONFIG['CC_TYPE'] == 'clang-cl':
+    AllowCompilerWarnings()  # workaround for bug 1090497

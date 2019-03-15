@@ -5,14 +5,15 @@
 #include "ScopeChecker.h"
 #include "CustomMatchers.h"
 
-void ScopeChecker::registerMatchers(MatchFinder* AstMatcher) {
+void ScopeChecker::registerMatchers(MatchFinder *AstMatcher) {
   AstMatcher->addMatcher(varDecl().bind("node"), this);
   AstMatcher->addMatcher(cxxNewExpr().bind("node"), this);
-  AstMatcher->addMatcher(materializeTemporaryExpr().bind("node"), this);
   AstMatcher->addMatcher(
-      callExpr(callee(functionDecl(heapAllocator()))).bind("node"),
-      this);
-  AstMatcher->addMatcher(parmVarDecl().bind("parm_vardecl"), this);
+      materializeTemporaryExpr(
+          unless(hasDescendant(cxxConstructExpr(allowsTemporary())))
+      ).bind("node"), this);
+  AstMatcher->addMatcher(
+      callExpr(callee(functionDecl(heapAllocator()))).bind("node"), this);
 }
 
 // These enum variants determine whether an allocation has occured in the code.
@@ -31,15 +32,14 @@ typedef DenseMap<const MaterializeTemporaryExpr *, const Decl *>
     AutomaticTemporaryMap;
 AutomaticTemporaryMap AutomaticTemporaries;
 
-void ScopeChecker::check(
-    const MatchFinder::MatchResult &Result) {
+void ScopeChecker::check(const MatchFinder::MatchResult &Result) {
   // There are a variety of different reasons why something could be allocated
   AllocationVariety Variety = AV_None;
   SourceLocation Loc;
   QualType T;
 
   if (const ParmVarDecl *D =
-          Result.Nodes.getNodeAs<ParmVarDecl>("parm_vardecl")) {
+          Result.Nodes.getNodeAs<ParmVarDecl>("node")) {
     if (D->hasUnparsedDefaultArg() || D->hasUninstantiatedDefaultArg()) {
       return;
     }
@@ -65,7 +65,7 @@ void ScopeChecker::check(
       Variety = AV_Automatic;
     }
     T = D->getType();
-    Loc = D->getLocStart();
+    Loc = D->getBeginLoc();
   } else if (const CXXNewExpr *E = Result.Nodes.getNodeAs<CXXNewExpr>("node")) {
     // New allocates things on the heap.
     // We don't consider placement new to do anything, as it doesn't actually
@@ -73,7 +73,7 @@ void ScopeChecker::check(
     if (!isPlacementNew(E)) {
       Variety = AV_Heap;
       T = E->getAllocatedType();
-      Loc = E->getLocStart();
+      Loc = E->getBeginLoc();
     }
   } else if (const MaterializeTemporaryExpr *E =
                  Result.Nodes.getNodeAs<MaterializeTemporaryExpr>("node")) {
@@ -108,37 +108,30 @@ void ScopeChecker::check(
       break;
     }
     T = E->getType().getUnqualifiedType();
-    Loc = E->getLocStart();
+    Loc = E->getBeginLoc();
   } else if (const CallExpr *E = Result.Nodes.getNodeAs<CallExpr>("node")) {
     T = E->getType()->getPointeeType();
     if (!T.isNull()) {
       // This will always allocate on the heap, as the heapAllocator() check
       // was made in the matcher
       Variety = AV_Heap;
-      Loc = E->getLocStart();
+      Loc = E->getBeginLoc();
     }
   }
 
   // Error messages for incorrect allocations.
-  const char* Stack =
-      "variable of type %0 only valid on the stack";
-  const char* Global =
-      "variable of type %0 only valid as global";
-  const char* Heap =
-      "variable of type %0 only valid on the heap";
-  const char* NonHeap =
-      "variable of type %0 is not valid on the heap";
-  const char* NonTemporary =
-      "variable of type %0 is not valid in a temporary";
+  const char *Stack = "variable of type %0 only valid on the stack";
+  const char *Global = "variable of type %0 only valid as global";
+  const char *Heap = "variable of type %0 only valid on the heap";
+  const char *NonHeap = "variable of type %0 is not valid on the heap";
+  const char *NonTemporary = "variable of type %0 is not valid in a temporary";
+  const char *Temporary = "variable of type %0 is only valid as a temporary";
 
-  const char* StackNote =
+  const char *StackNote =
       "value incorrectly allocated in an automatic variable";
-  const char* GlobalNote =
-      "value incorrectly allocated in a global variable";
-  const char* HeapNote =
-      "value incorrectly allocated on the heap";
-  const char* TemporaryNote =
-      "value incorrectly allocated in a temporary";
+  const char *GlobalNote = "value incorrectly allocated in a global variable";
+  const char *HeapNote = "value incorrectly allocated on the heap";
+  const char *TemporaryNote = "value incorrectly allocated in a temporary";
 
   // Report errors depending on the annotations on the input types.
   switch (Variety) {
@@ -148,11 +141,13 @@ void ScopeChecker::check(
   case AV_Global:
     StackClass.reportErrorIfPresent(*this, T, Loc, Stack, GlobalNote);
     HeapClass.reportErrorIfPresent(*this, T, Loc, Heap, GlobalNote);
+    TemporaryClass.reportErrorIfPresent(*this, T, Loc, Temporary, GlobalNote);
     break;
 
   case AV_Automatic:
     GlobalClass.reportErrorIfPresent(*this, T, Loc, Global, StackNote);
     HeapClass.reportErrorIfPresent(*this, T, Loc, Heap, StackNote);
+    TemporaryClass.reportErrorIfPresent(*this, T, Loc, Temporary, StackNote);
     break;
 
   case AV_Temporary:
@@ -166,6 +161,7 @@ void ScopeChecker::check(
     GlobalClass.reportErrorIfPresent(*this, T, Loc, Global, HeapNote);
     StackClass.reportErrorIfPresent(*this, T, Loc, Stack, HeapNote);
     NonHeapClass.reportErrorIfPresent(*this, T, Loc, NonHeap, HeapNote);
+    TemporaryClass.reportErrorIfPresent(*this, T, Loc, Temporary, HeapNote);
     break;
   }
 }

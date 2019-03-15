@@ -8,6 +8,10 @@
 <script class="testbody" type="application/javascript">
 
 function runTest() {
+  const headingone = document.getElementById("headingone");
+  const celltwo = document.getElementById("celltwo");
+  const pasteframe = document.getElementById("pasteframe");
+
   // Copy content from table.
   var selection = getSelection();
   var startRange = document.createRange();
@@ -58,7 +62,7 @@ SimpleTest.waitForExplicitFinish();
 </table>
 </div>
 
-<iframe onload="runTest();" id="pasteframe" src="data:text/html,<html><body contenteditable='true'>"></iframe>
+<iframe onload="runTest();" id="pasteframe" srcdoc="<html><body contenteditable='true'>"></iframe>
 
 </body>
 </html>

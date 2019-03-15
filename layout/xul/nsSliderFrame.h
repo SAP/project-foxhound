@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +10,7 @@
 #include "mozilla/Attributes.h"
 #include "nsRepeatService.h"
 #include "nsBoxFrame.h"
-#include "nsIAtom.h"
+#include "nsAtom.h"
 #include "nsCOMPtr.h"
 #include "nsITimer.h"
 #include "nsIDOMEventListener.h"
@@ -17,36 +18,33 @@
 class nsITimer;
 class nsSliderFrame;
 
-nsIFrame* NS_NewSliderFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
+nsIFrame* NS_NewSliderFrame(nsIPresShell* aPresShell,
+                            mozilla::ComputedStyle* aStyle);
 
-class nsSliderMediator final : public nsIDOMEventListener
-{
-public:
-
+class nsSliderMediator final : public nsIDOMEventListener {
+ public:
   NS_DECL_ISUPPORTS
 
   nsSliderFrame* mSlider;
 
-  explicit nsSliderMediator(nsSliderFrame* aSlider) {  mSlider = aSlider; }
+  explicit nsSliderMediator(nsSliderFrame* aSlider) { mSlider = aSlider; }
 
   virtual void SetSlider(nsSliderFrame* aSlider) { mSlider = aSlider; }
 
-  NS_IMETHOD HandleEvent(nsIDOMEvent* aEvent) override;
+  NS_DECL_NSIDOMEVENTLISTENER
 
-protected:
+ protected:
   virtual ~nsSliderMediator() {}
 };
 
-class nsSliderFrame : public nsBoxFrame
-{
-public:
-  NS_DECL_FRAMEARENA_HELPERS
-  NS_DECL_QUERYFRAME_TARGET(nsSliderFrame)
+class nsSliderFrame final : public nsBoxFrame {
+ public:
+  NS_DECL_FRAMEARENA_HELPERS(nsSliderFrame)
   NS_DECL_QUERYFRAME
 
   friend class nsSliderMediator;
 
-  explicit nsSliderFrame(nsStyleContext* aContext);
+  explicit nsSliderFrame(ComputedStyle* aStyle);
   virtual ~nsSliderFrame();
 
 #ifdef DEBUG_FRAME_DUMP
@@ -61,43 +59,35 @@ public:
   NS_IMETHOD DoXULLayout(nsBoxLayoutState& aBoxLayoutState) override;
 
   // nsIFrame overrides
-  virtual void DestroyFrom(nsIFrame* aDestructRoot) override;
+  virtual void DestroyFrom(nsIFrame* aDestructRoot,
+                           PostDestroyData& aPostDestroyData) override;
 
-  virtual void BuildDisplayListForChildren(nsDisplayListBuilder*   aBuilder,
-                                           const nsRect&           aDirtyRect,
-                                           const nsDisplayListSet& aLists) override;
+  virtual void BuildDisplayListForChildren(
+      nsDisplayListBuilder* aBuilder, const nsDisplayListSet& aLists) override;
 
-  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                                const nsRect&           aDirtyRect,
+  virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                 const nsDisplayListSet& aLists) override;
- 
-  virtual nsresult AttributeChanged(int32_t aNameSpaceID,
-                                    nsIAtom* aAttribute,
+
+  virtual nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
                                     int32_t aModType) override;
 
-  virtual void Init(nsIContent*       aContent,
-                    nsContainerFrame* aParent,
-                    nsIFrame*         asPrevInFlow) override;
-
+  virtual void Init(nsIContent* aContent, nsContainerFrame* aParent,
+                    nsIFrame* asPrevInFlow) override;
 
   virtual nsresult HandleEvent(nsPresContext* aPresContext,
                                mozilla::WidgetGUIEvent* aEvent,
                                nsEventStatus* aEventStatus) override;
 
-  virtual nsIAtom* GetType() const override;
-
   // nsContainerFrame overrides
-  virtual void SetInitialChildList(ChildListID     aListID,
-                                   nsFrameList&    aChildList) override;
-  virtual void AppendFrames(ChildListID     aListID,
-                            nsFrameList&    aFrameList) override;
-  virtual void InsertFrames(ChildListID     aListID,
-                            nsIFrame*       aPrevFrame,
-                            nsFrameList&    aFrameList) override;
-  virtual void RemoveFrame(ChildListID     aListID,
-                           nsIFrame*       aOldFrame) override;
+  virtual void SetInitialChildList(ChildListID aListID,
+                                   nsFrameList& aChildList) override;
+  virtual void AppendFrames(ChildListID aListID,
+                            nsFrameList& aFrameList) override;
+  virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                            nsFrameList& aFrameList) override;
+  virtual void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
 
-  nsresult StartDrag(nsIDOMEvent* aEvent);
+  nsresult StartDrag(mozilla::dom::Event* aEvent);
   nsresult StopDrag();
 
   void StartAPZDrag(mozilla::WidgetGUIEvent* aEvent);
@@ -107,7 +97,8 @@ public:
   static int32_t GetMaxPosition(nsIContent* content);
   static int32_t GetIncrement(nsIContent* content);
   static int32_t GetPageIncrement(nsIContent* content);
-  static int32_t GetIntegerAttribute(nsIContent* content, nsIAtom* atom, int32_t defaultValue);
+  static int32_t GetIntegerAttribute(nsIContent* content, nsAtom* atom,
+                                     int32_t defaultValue);
   void EnsureOrient();
 
   NS_IMETHOD HandlePress(nsPresContext* aPresContext,
@@ -117,15 +108,13 @@ public:
   NS_IMETHOD HandleMultiplePress(nsPresContext* aPresContext,
                                  mozilla::WidgetGUIEvent* aEvent,
                                  nsEventStatus* aEventStatus,
-                                 bool aControlHeld) override
-  {
+                                 bool aControlHeld) override {
     return NS_OK;
   }
 
   NS_IMETHOD HandleDrag(nsPresContext* aPresContext,
                         mozilla::WidgetGUIEvent* aEvent,
-                        nsEventStatus* aEventStatus) override
-  {
+                        nsEventStatus* aEventStatus) override {
     return NS_OK;
   }
 
@@ -137,13 +126,22 @@ public:
   // scrolled frame.
   float GetThumbRatio() const;
 
-  // Notify the slider frame than an async scrollbar drag requested in
+  // Notify the slider frame that an async scrollbar drag was started on the
+  // APZ side without consulting the main thread. The block id is the APZ
+  // input block id of the mousedown that started the drag.
+  void AsyncScrollbarDragInitiated(uint64_t aDragBlockId);
+
+  // Notify the slider frame that an async scrollbar drag requested in
   // StartAPZDrag() was rejected by APZ, and the slider frame should
   // fall back to main-thread dragging.
   void AsyncScrollbarDragRejected();
 
-private:
+  bool OnlySystemGroupDispatch(mozilla::EventMessage aMessage) const override;
 
+  // Returns the associated scrollframe that contains this slider if any.
+  nsIScrollableFrame* GetScrollFrame();
+
+ private:
   bool GetScrollToClick();
   nsIFrame* GetScrollbar();
   bool ShouldScrollForEvent(mozilla::WidgetGUIEvent* aEvent);
@@ -151,9 +149,10 @@ private:
   bool IsEventOverThumb(mozilla::WidgetGUIEvent* aEvent);
 
   void PageUpDown(nscoord change);
-  void SetCurrentThumbPosition(nsIContent* aScrollbar, nscoord aNewPos, bool aIsSmooth,
-                               bool aMaySnap);
-  void SetCurrentPosition(nsIContent* aScrollbar, int32_t aNewPos, bool aIsSmooth);
+  void SetCurrentThumbPosition(nsIContent* aScrollbar, nscoord aNewPos,
+                               bool aIsSmooth, bool aMaySnap);
+  void SetCurrentPosition(nsIContent* aScrollbar, int32_t aNewPos,
+                          bool aIsSmooth);
   void SetCurrentPositionInternal(nsIContent* aScrollbar, int32_t pos,
                                   bool aIsSmooth);
   void CurrentPositionChanged();
@@ -161,23 +160,22 @@ private:
   void DragThumb(bool aGrabMouseEvents);
   void AddListener();
   void RemoveListener();
-  bool isDraggingThumb();
+  bool isDraggingThumb() const;
 
   void SuppressDisplayport();
   void UnsuppressDisplayport();
 
   void StartRepeat() {
-    nsRepeatService::GetInstance()->Start(Notify, this);
+    nsRepeatService::GetInstance()->Start(Notify, this, mContent->OwnerDoc(),
+                                          NS_LITERAL_CSTRING("nsSliderFrame"));
   }
-  void StopRepeat() {
-    nsRepeatService::GetInstance()->Stop(Notify, this);
-  }
+  void StopRepeat() { nsRepeatService::GetInstance()->Stop(Notify, this); }
   void Notify();
   static void Notify(void* aData) {
     (static_cast<nsSliderFrame*>(aData))->Notify();
   }
   void PageScroll(nscoord aChange);
- 
+
   nsPoint mDestinationPoint;
   RefPtr<nsSliderMediator> mMediator;
 
@@ -207,8 +205,15 @@ private:
   // scrollbar-dragging behaviour.
   bool mSuppressionActive;
 
+  // If APZ initiated a scrollbar drag without main-thread involvement, it
+  // notifies us and this variable stores the input block id of the APZ input
+  // block that started the drag. This lets us handle the corresponding
+  // mousedown event properly, if it arrives after the scroll position has
+  // been shifted due to async scrollbar drag.
+  Maybe<uint64_t> mAPZDragInitiated;
+
   static bool gMiddlePref;
   static int32_t gSnapMultiplier;
-}; // class nsSliderFrame
+};  // class nsSliderFrame
 
 #endif

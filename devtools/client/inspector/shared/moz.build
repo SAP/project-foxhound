@@ -5,9 +5,10 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 DevToolsModules(
-    'dom-node-preview.js',
     'highlighters-overlay.js',
     'node-types.js',
+    'reflow-tracker.js',
+    'style-change-tracker.js',
     'style-inspector-menu.js',
     'tooltips-overlay.js',
     'utils.js'

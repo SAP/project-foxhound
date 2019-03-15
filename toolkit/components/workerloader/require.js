@@ -68,7 +68,7 @@
     {
       get() {
         return this.stack;
-      }
+      },
     });
     /**
      * A human-readable version of |fileName|.
@@ -83,7 +83,7 @@
           return match[1];
         }
         return "(unknown module)";
-      }
+      },
     });
 
     /**
@@ -93,7 +93,7 @@
      * @return {*} An object containing the properties exported by the module.
      */
     return function require(path) {
-      if (typeof path != "string" || path.indexOf("://") == -1) {
+      if (typeof path != "string" || !path.includes("://")) {
         throw new TypeError("The argument to require() must be a string uri, got " + path);
       }
       // Automatically add ".js" if there is no extension
@@ -111,7 +111,7 @@
       let module = {
         id: path,
         uri,
-        exports
+        exports,
       };
 
       // Make module available immediately
@@ -159,6 +159,6 @@
   Object.defineProperty(exports, "require", {
     value: require,
     enumerable: true,
-    configurable: false
+    configurable: false,
   });
 })(this);

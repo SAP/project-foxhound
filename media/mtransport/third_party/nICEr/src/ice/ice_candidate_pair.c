@@ -30,10 +30,6 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-
-
-static char *RCSSTRING __UNUSED__="$Id: ice_candidate_pair.c,v 1.2 2008/04/28 17:59:01 ekr Exp $";
-
 #include <assert.h>
 #include <string.h>
 #include <nr_api.h>
@@ -154,7 +150,7 @@ int nr_ice_candidate_pair_destroy(nr_ice_cand_pair **pairp)
 
     // record stats back to the ice ctx on destruction
     if (pair->stun_client) {
-      nr_ice_accumulate_count(&(pair->local->ctx->stats.stun_retransmits), pair->stun_client->retransmit_ct);
+      nr_accumulate_count(&(pair->local->ctx->stats.stun_retransmits), pair->stun_client->retransmit_ct);
     }
 
     RFREE(pair->as_string);
@@ -357,6 +353,12 @@ static void nr_ice_candidate_pair_stun_cb(NR_SOCKET s, int how, void *cb_arg)
   done:
     _status=0;
   abort:
+    if (_status) {
+      // cb doesn't return anything, but we should probably log that we aborted
+      // This also quiets the unused variable warnings.
+      r_log(LOG_ICE,LOG_DEBUG,"ICE-PEER(%s)/STREAM(%s)/CAND-PAIR(%s): STUN cb pair addr = %s abort with status: %d",
+        pair->pctx->label,pair->local->stream->label,pair->codeword,pair->as_string, _status);
+    }
     return;
   }
 
@@ -495,7 +497,7 @@ int nr_ice_candidate_pair_do_triggered_check(nr_ice_peer_ctx *pctx, nr_ice_cand_
     return(_status);
   }
 
-int nr_ice_candidate_pair_cancel(nr_ice_peer_ctx *pctx,nr_ice_cand_pair *pair, int move_to_wait_state)
+void nr_ice_candidate_pair_cancel(nr_ice_peer_ctx *pctx,nr_ice_cand_pair *pair, int move_to_wait_state)
   {
     if(pair->state != NR_ICE_PAIR_STATE_FAILED){
       /* If it's already running we need to terminate the stun */
@@ -508,8 +510,6 @@ int nr_ice_candidate_pair_cancel(nr_ice_peer_ctx *pctx,nr_ice_cand_pair *pair, i
       }
       nr_ice_candidate_pair_set_state(pctx,pair,NR_ICE_PAIR_STATE_CANCELLED);
     }
-
-    return(0);
   }
 
 int nr_ice_candidate_pair_select(nr_ice_cand_pair *pair)
@@ -543,10 +543,8 @@ int nr_ice_candidate_pair_select(nr_ice_cand_pair *pair)
     return(_status);
  }
 
-int nr_ice_candidate_pair_set_state(nr_ice_peer_ctx *pctx, nr_ice_cand_pair *pair, int state)
+void nr_ice_candidate_pair_set_state(nr_ice_peer_ctx *pctx, nr_ice_cand_pair *pair, int state)
   {
-    int r,_status;
-
     r_log(LOG_ICE,LOG_INFO,"ICE-PEER(%s)/CAND-PAIR(%s): setting pair to state %s: %s",
       pctx->label,pair->codeword,nr_ice_cand_pair_states[state],pair->as_string);
 
@@ -578,13 +576,8 @@ int nr_ice_candidate_pair_set_state(nr_ice_peer_ctx *pctx, nr_ice_cand_pair *pai
 
     if(pair->state==NR_ICE_PAIR_STATE_FAILED ||
        pair->state==NR_ICE_PAIR_STATE_CANCELLED){
-      if(r=nr_ice_component_failed_pair(pair->remote->component, pair))
-        ABORT(r);
+      nr_ice_component_failed_pair(pair->remote->component, pair);
     }
-
-    _status=0;
-  abort:
-    return(_status);
   }
 
 int nr_ice_candidate_pair_dump_state(nr_ice_cand_pair *pair, FILE *out)
@@ -643,6 +636,12 @@ void nr_ice_candidate_pair_restart_stun_nominated_cb(NR_SOCKET s, int how, void 
 
     _status=0;
   abort:
+    if (_status) {
+      // cb doesn't return anything, but we should probably log that we aborted
+      // This also quiets the unused variable warnings.
+      r_log(LOG_ICE,LOG_DEBUG,"ICE-PEER(%s)/STREAM(%s)/CAND-PAIR(%s)/COMP(%d): STUN nominated cb pair as nominated: %s abort with status: %d",
+        pair->pctx->label,pair->local->stream->label,pair->codeword,pair->remote->component->component_id,pair->as_string, _status);
+    }
     return;
   }
 

@@ -5,30 +5,31 @@
 
 "use strict";
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cu = Components.utils;
+var EXPORTED_SYMBOLS = [ "ContentClick" ];
 
-this.EXPORTED_SYMBOLS = [ "ContentClick" ];
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-Cu.import("resource:///modules/PlacesUIUtils.jsm");
-Cu.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.defineModuleGetter(this, "PlacesUIUtils",
+                               "resource:///modules/PlacesUIUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "PrivateBrowsingUtils",
+                               "resource://gre/modules/PrivateBrowsingUtils.jsm");
 
 var ContentClick = {
-  init() {
-    let mm = Cc["@mozilla.org/globalmessagemanager;1"].getService(Ci.nsIMessageListenerManager);
-    mm.addMessageListener("Content:Click", this);
-  },
-
+  // Listeners are added in nsBrowserGlue.js
   receiveMessage(message) {
     switch (message.name) {
       case "Content:Click":
-        this.contentAreaClick(message.json, message.target)
+        this.contentAreaClick(message.json, message.target);
         break;
     }
   },
 
+  /**
+   * Handles clicks in the content area.
+   *
+   * @param json {Object} JSON object that looks like an Event
+   * @param browser {Element<browser>}
+   */
   contentAreaClick(json, browser) {
     // This is heavily based on contentAreaClick from browser.js (Bug 903016)
     // The json is set up in a way to look like an Event.
@@ -43,23 +44,12 @@ var ContentClick = {
       return;
     }
 
-    if (json.bookmark) {
-      // This is the Opera convention for a special link that, when clicked,
-      // allows to add a sidebar panel.  The link's title attribute contains
-      // the title that should be used for the sidebar panel.
-      PlacesUIUtils.showBookmarkDialog({ action: "add"
-                                       , type: "bookmark"
-                                       , uri: Services.io.newURI(json.href)
-                                       , title: json.title
-                                       , loadBookmarkInSidebar: true
-                                       , hiddenRows: [ "description"
-                                                     , "location"
-                                                     , "keyword" ]
-                                       }, window);
+    // If the browser is not in a place where we can open links, bail out.
+    // This can happen in osx sheets, dialogs, etc. that are not browser
+    // windows.  Specifically the payments UI is in an osx sheet.
+    if (window.openLinkIn === undefined) {
       return;
     }
-
-    // Note: We don't need the sidebar code here.
 
     // Mark the page as a user followed link.  This is done so that history can
     // distinguish automatic embed visits from user activated ones.  For example
@@ -85,6 +75,7 @@ var ContentClick = {
       allowMixedContent: json.allowMixedContent,
       isContentWindowPrivate: json.isContentWindowPrivate,
       originPrincipal: json.originPrincipal,
+      triggeringPrincipal: json.triggeringPrincipal,
       frameOuterWindowID: json.frameOuterWindowID,
     };
 
@@ -93,6 +84,8 @@ var ContentClick = {
       params.userContextId = json.originAttributes.userContextId;
     }
 
+    params.allowInheritPrincipal = true;
+
     window.openLinkIn(json.href, where, params);
-  }
+  },
 };

@@ -39,8 +39,8 @@ const MOVE_EVENTS_DATA = [
     y: 0,
     expected: {
       x: (width, height) => width - 5,
-      y: 0
-    }
+      y: 0,
+    },
   },
   // Right snapping
   {
@@ -49,9 +49,9 @@ const MOVE_EVENTS_DATA = [
     shift: true,
     expected: {
       x: (width, height) => width,
-      y: 0
+      y: 0,
     },
-    desc: "Right snapping to x=max window width available"
+    desc: "Right snapping to x=max window width available",
   },
   // Mouse initialization for bottom snapping
   {
@@ -60,8 +60,8 @@ const MOVE_EVENTS_DATA = [
     y: (width, height) => height - 5,
     expected: {
       x: 0,
-      y: (width, height) => height - 5
-    }
+      y: (width, height) => height - 5,
+    },
   },
   // Bottom snapping
   {
@@ -70,30 +70,30 @@ const MOVE_EVENTS_DATA = [
     shift: true,
     expected: {
       x: 0,
-      y: (width, height) => height
+      y: (width, height) => height,
     },
-    desc: "Bottom snapping to y=max window height available"
+    desc: "Bottom snapping to y=max window height available",
   },
 ];
 
-add_task(function* () {
-  let {inspector, testActor} = yield openInspectorForURL(
+add_task(async function() {
+  const {inspector, testActor} = await openInspectorForURL(
     "data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let helper = yield getHighlighterHelperFor(HIGHLIGHTER_TYPE)({inspector, testActor});
+  const helper = await getHighlighterHelperFor(HIGHLIGHTER_TYPE)({inspector, testActor});
 
   helper.prefix = ID;
 
-  yield helper.show("html");
-  yield respondsToMoveEvents(helper, testActor);
-  yield respondsToReturnAndEscape(helper);
+  await helper.show("html");
+  await respondsToMoveEvents(helper, testActor);
+  await respondsToReturnAndEscape(helper);
 
   helper.finalize();
 });
 
-function* respondsToMoveEvents(helper, testActor) {
+async function respondsToMoveEvents(helper, testActor) {
   info("Checking that the eyedropper responds to events from the mouse and keyboard");
-  let {mouse} = helper;
-  let {width, height} = yield testActor.getBoundingClientRect("html");
+  const {mouse} = helper;
+  const {width, height} = await testActor.getBoundingClientRect("html");
 
   for (let {type, x, y, key, shift, expected, desc} of MOVE_EVENTS_DATA) {
     x = typeof x === "function" ? x(width, height) : x;
@@ -110,32 +110,32 @@ function* respondsToMoveEvents(helper, testActor) {
     }
 
     if (type === "mouse") {
-      yield mouse.move(x, y);
+      await mouse.move(x, y);
     } else if (type === "keyboard") {
-      let options = shift ? {shiftKey: true} : {};
-      yield EventUtils.synthesizeKey(key, options);
+      const options = shift ? {shiftKey: true} : {};
+      await EventUtils.synthesizeAndWaitKey(key, options);
     }
-    yield checkPosition(expected, helper);
+    await checkPosition(expected, helper);
   }
 }
 
-function* checkPosition({x, y}, {getElementAttribute}) {
-  let style = yield getElementAttribute("root", "style");
+async function checkPosition({x, y}, {getElementAttribute}) {
+  const style = await getElementAttribute("root", "style");
   is(style, `top:${y}px;left:${x}px;`,
      `The eyedropper is at the expected ${x} ${y} position`);
 }
 
-function* respondsToReturnAndEscape({isElementHidden, show}) {
+async function respondsToReturnAndEscape({isElementHidden, show}) {
   info("Simulating return to select the color and hide the eyedropper");
 
-  yield EventUtils.synthesizeKey("VK_RETURN", {});
-  let hidden = yield isElementHidden("root");
+  await EventUtils.synthesizeAndWaitKey("VK_RETURN", {});
+  let hidden = await isElementHidden("root");
   ok(hidden, "The eyedropper has been hidden");
 
   info("Showing the eyedropper again and simulating escape to hide it");
 
-  yield show("html");
-  yield EventUtils.synthesizeKey("VK_ESCAPE", {});
-  hidden = yield isElementHidden("root");
+  await show("html");
+  await EventUtils.synthesizeAndWaitKey("VK_ESCAPE", {});
+  hidden = await isElementHidden("root");
   ok(hidden, "The eyedropper has been hidden again");
 }

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,8 +10,6 @@
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/DOMEventTargetHelper.h"
 
-class nsIDocument;
-
 namespace mozilla {
 namespace dom {
 
@@ -19,20 +17,16 @@ class Promise;
 class PresentationAvailability;
 class PresentationConnection;
 
-class PresentationRequest final : public DOMEventTargetHelper
-{
-public:
+class PresentationRequest final : public DOMEventTargetHelper {
+ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   static already_AddRefed<PresentationRequest> Constructor(
-    const GlobalObject& aGlobal,
-    const nsAString& aUrl,
-    ErrorResult& aRv);
+      const GlobalObject& aGlobal, const nsAString& aUrl, ErrorResult& aRv);
 
   static already_AddRefed<PresentationRequest> Constructor(
-    const GlobalObject& aGlobal,
-    const Sequence<nsString>& aUrls,
-    ErrorResult& aRv);
+      const GlobalObject& aGlobal, const Sequence<nsString>& aUrls,
+      ErrorResult& aRv);
 
   virtual JSObject* WrapObject(JSContext* aCx,
                                JS::Handle<JSObject*> aGivenProto) override;
@@ -50,13 +44,13 @@ public:
 
   IMPL_EVENT_HANDLER(connectionavailable);
 
-  nsresult DispatchConnectionAvailableEvent(PresentationConnection* aConnection);
+  nsresult DispatchConnectionAvailableEvent(
+      PresentationConnection* aConnection);
 
   void NotifyPromiseSettled();
 
-private:
-  PresentationRequest(nsPIDOMWindowInner* aWindow,
-                      nsTArray<nsString>&& aUrls);
+ private:
+  PresentationRequest(nsPIDOMWindowInner* aWindow, nsTArray<nsString>&& aUrls);
 
   ~PresentationRequest();
 
@@ -67,10 +61,12 @@ private:
 
   void FindOrCreatePresentationAvailability(RefPtr<Promise>& aPromise);
 
-  // Implement https://w3c.github.io/webappsec-mixed-content/#categorize-settings-object
-  bool IsProhibitMixedSecurityContexts(nsIDocument* aDocument);
+  // Implement
+  // https://w3c.github.io/webappsec-mixed-content/#categorize-settings-object
+  bool IsProhibitMixedSecurityContexts(Document* aDocument);
 
-  // Implement https://w3c.github.io/webappsec-mixed-content/#a-priori-authenticated-url
+  // Implement
+  // https://w3c.github.io/webappsec-mixed-content/#a-priori-authenticated-url
   bool IsPrioriAuthenticatedURL(const nsAString& aUrl);
 
   bool IsAllURLAuthenticated();
@@ -78,7 +74,7 @@ private:
   nsTArray<nsString> mUrls;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_PresentationRequest_h
+#endif  // mozilla_dom_PresentationRequest_h

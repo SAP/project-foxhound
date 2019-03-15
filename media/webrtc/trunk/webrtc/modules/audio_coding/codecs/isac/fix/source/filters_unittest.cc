@@ -7,10 +7,11 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
-#include "testing/gtest/include/gtest/gtest.h"
-#include "webrtc/modules/audio_coding/codecs/isac/fix/source/codec.h"
-#include "webrtc/system_wrappers/include/cpu_features_wrapper.h"
-#include "webrtc/typedefs.h"
+
+#include "modules/audio_coding/codecs/isac/fix/source/codec.h"
+#include "system_wrappers/include/cpu_features_wrapper.h"
+#include "test/gtest.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 class FiltersTest : public testing::Test {
  protected:
@@ -59,11 +60,7 @@ class FiltersTest : public testing::Test {
 
 TEST_F(FiltersTest, AutocorrFixTest) {
   FiltersTester(WebRtcIsacfix_AutocorrC);
-#ifdef WEBRTC_DETECT_NEON
-  if ((WebRtc_GetCPUFeaturesARM() & kCPUFeatureNEON) != 0) {
-    FiltersTester(WebRtcIsacfix_AutocorrNeon);
-  }
-#elif defined(WEBRTC_HAS_NEON)
+#if defined(WEBRTC_HAS_NEON)
   FiltersTester(WebRtcIsacfix_AutocorrNeon);
 #endif
 }

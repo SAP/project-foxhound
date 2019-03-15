@@ -1,0 +1,8 @@
+The source from this directory was copied from the audioipc-2
+git repository using the update.sh script.  The only changes
+made were those applied by update.sh and the addition of
+Makefile.in build files for the Mozilla build system.
+
+The audioipc-2 git repository is: https://github.com/djg/audioipc-2.git
+
+The git commit ID used was 572d6a6a16501cde726dcc09604a0cbc895d93e3 (2018-10-23 16:43:12 +1300)

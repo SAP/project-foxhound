@@ -66,17 +66,17 @@ function checkPostUpdateAppLogFinished() {
   checkAppBundleModTime();
   checkSymLinks();
   standardInit();
-  Assert.equal(readStatusState(), STATE_NONE,
-               "the status file state" + MSG_SHOULD_EQUAL);
-  Assert.ok(!gUpdateManager.activeUpdate,
-            "the active update should not be defined");
-  Assert.equal(gUpdateManager.updateCount, 1,
-               "the update manager updateCount attribute" + MSG_SHOULD_EQUAL);
-  Assert.equal(gUpdateManager.getUpdateAt(0).state, STATE_SUCCEEDED,
-               "the update state" + MSG_SHOULD_EQUAL);
   checkPostUpdateRunningFile(true);
   checkFilesAfterUpdateSuccess(getApplyDirFile);
   checkUpdateLogContents(LOG_REPLACE_SUCCESS, false, true);
+  executeSoon(waitForUpdateXMLFiles);
+}
+
+/**
+ * Called after the call to waitForUpdateXMLFiles finishes.
+ */
+function waitForUpdateXMLFilesFinished() {
+  checkUpdateManager(STATE_NONE, false, STATE_SUCCEEDED, 0, 1);
   checkCallbackLog();
 }
 
@@ -87,7 +87,7 @@ function setupSymLinks() {
   if (IS_UNIX) {
     removeSymlink();
     createSymlink();
-    do_register_cleanup(removeSymlink);
+    registerCleanupFunction(removeSymlink);
     gTestFiles.splice(gTestFiles.length - 3, 0,
       {
         description: "Readable symlink",
@@ -98,7 +98,7 @@ function setupSymLinks() {
         originalFile: null,
         compareFile: null,
         originalPerms: 0o666,
-        comparePerms: 0o666
+        comparePerms: 0o666,
       });
   }
 }

@@ -8,28 +8,29 @@
 #define DecryptJob_h_
 
 #include "mozilla/CDMProxy.h"
+#include "mozilla/Span.h"
 
 namespace mozilla {
 
 class DecryptJob {
-public:
+ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(DecryptJob)
 
   explicit DecryptJob(MediaRawData* aSample);
 
-  void PostResult(DecryptStatus aResult,
-                  const nsTArray<uint8_t>& aDecryptedData);
+  void PostResult(DecryptStatus aResult, Span<const uint8_t> aDecryptedData);
   void PostResult(DecryptStatus aResult);
 
   RefPtr<DecryptPromise> Ensure();
 
   const uint32_t mId;
   RefPtr<MediaRawData> mSample;
-private:
+
+ private:
   ~DecryptJob() {}
   MozPromiseHolder<DecryptPromise> mPromise;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // DecryptJob_h_
+#endif  // DecryptJob_h_

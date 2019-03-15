@@ -8,13 +8,13 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_processing/ns/noise_suppression_x.h"
+#include "modules/audio_processing/ns/noise_suppression_x.h"
 
 #include <stdlib.h>
 
-#include "webrtc/common_audio/signal_processing/include/real_fft.h"
-#include "webrtc/modules/audio_processing/ns/nsx_core.h"
-#include "webrtc/modules/audio_processing/ns/nsx_defines.h"
+#include "common_audio/signal_processing/include/real_fft.h"
+#include "modules/audio_processing/ns/nsx_core.h"
+#include "modules/audio_processing/ns/nsx_defines.h"
 
 NsxHandle* WebRtcNsx_Create() {
   NoiseSuppressionFixedC* self = malloc(sizeof(NoiseSuppressionFixedC));
@@ -43,4 +43,19 @@ void WebRtcNsx_Process(NsxHandle* nsxInst,
                       short* const* outFrame) {
   WebRtcNsx_ProcessCore((NoiseSuppressionFixedC*)nsxInst, speechFrame,
                         num_bands, outFrame);
+}
+
+const uint32_t* WebRtcNsx_noise_estimate(const NsxHandle* nsxInst,
+                                         int* q_noise) {
+  *q_noise = 11;
+  const NoiseSuppressionFixedC* self = (const NoiseSuppressionFixedC*)nsxInst;
+  if (nsxInst == NULL || self->initFlag == 0) {
+    return NULL;
+  }
+  *q_noise += self->prevQNoise;
+  return self->prevNoiseU32;
+}
+
+size_t WebRtcNsx_num_freq() {
+  return HALF_ANAL_BLOCKL;
 }

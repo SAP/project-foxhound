@@ -11,19 +11,15 @@
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseNativeHandler.h"
 #include "mozilla/dom/StructuredCloneHolder.h"
-#include "mozilla/dom/workers/bindings/WorkerHolder.h"
+#include "mozilla/dom/WorkerRunnable.h"
 #include "nsProxyRelease.h"
-
-#include "WorkerRunnable.h"
 
 namespace mozilla {
 namespace dom {
 
 class Promise;
-
-namespace workers {
+class ThreadSafeWorkerRef;
 class WorkerPrivate;
-} // namespace workers
 
 // A proxy to (eventually) mirror a resolved/rejected Promise's result from the
 // main thread to a Promise on the worker thread.
@@ -33,7 +29,8 @@ class WorkerPrivate;
 //   1. Create a Promise on the worker thread and return it to the content
 //      script:
 //
-//        RefPtr<Promise> promise = Promise::Create(workerPrivate->GlobalScope(), aRv);
+//        RefPtr<Promise> promise =
+//          Promise::Create(workerPrivate->GlobalScope(), aRv);
 //        if (aRv.Failed()) {
 //          return nullptr;
 //        }
@@ -83,7 +80,8 @@ class WorkerPrivate;
 //      worker.
 //
 //        RefPtr<FinishTaskWorkerRunnable> runnable =
-//          new FinishTaskWorkerRunnable(proxy->GetWorkerPrivate(), proxy, result);
+//          new FinishTaskWorkerRunnable(proxy->GetWorkerPrivate(), proxy,
+//                                       result);
 //        if (!r->Dispatch()) {
 //          // Worker is alive but not Running any more, so the Promise can't
 //          // be resolved, give up. The proxy will get Release()d at some
@@ -109,39 +107,35 @@ class WorkerPrivate;
 // stay alive till the worker reaches a Canceling state, even if all external
 // references to it are dropped.
 
-class PromiseWorkerProxy : public PromiseNativeHandler
-                         , public StructuredCloneHolderBase
-{
+class PromiseWorkerProxy : public PromiseNativeHandler,
+                           public StructuredCloneHolderBase {
   friend class PromiseWorkerProxyRunnable;
 
   NS_DECL_THREADSAFE_ISUPPORTS
 
-public:
+ public:
   typedef JSObject* (*ReadCallbackOp)(JSContext* aCx,
                                       JSStructuredCloneReader* aReader,
                                       const PromiseWorkerProxy* aProxy,
-                                      uint32_t aTag,
-                                      uint32_t aData);
+                                      uint32_t aTag, uint32_t aData);
   typedef bool (*WriteCallbackOp)(JSContext* aCx,
                                   JSStructuredCloneWriter* aWorker,
                                   PromiseWorkerProxy* aProxy,
                                   JS::HandleObject aObj);
 
-  struct PromiseWorkerProxyStructuredCloneCallbacks
-  {
+  struct PromiseWorkerProxyStructuredCloneCallbacks {
     ReadCallbackOp Read;
     WriteCallbackOp Write;
   };
 
-  static already_AddRefed<PromiseWorkerProxy>
-  Create(workers::WorkerPrivate* aWorkerPrivate,
-         Promise* aWorkerPromise,
-         const PromiseWorkerProxyStructuredCloneCallbacks* aCallbacks = nullptr);
+  static already_AddRefed<PromiseWorkerProxy> Create(
+      WorkerPrivate* aWorkerPrivate, Promise* aWorkerPromise,
+      const PromiseWorkerProxyStructuredCloneCallbacks* aCallbacks = nullptr);
 
-  // Main thread callers must hold Lock() and check CleanUp() before calling this.
-  // Worker thread callers, this will assert that the proxy has not been cleaned
-  // up.
-  workers::WorkerPrivate* GetWorkerPrivate() const;
+  // Main thread callers must hold Lock() and check CleanUp() before calling
+  // this. Worker thread callers, this will assert that the proxy has not been
+  // cleaned up.
+  WorkerPrivate* GetWorkerPrivate() const;
 
   // This should only be used within WorkerRunnable::WorkerRun() running on the
   // worker thread! Do not call this after calling CleanUp().
@@ -153,57 +147,46 @@ public:
   // 2. WorkerPromise() will crash!
   void CleanUp();
 
-  Mutex& Lock()
-  {
-    return mCleanUpLock;
-  }
+  Mutex& Lock() { return mCleanUpLock; }
 
-  bool CleanedUp() const
-  {
+  bool CleanedUp() const {
     mCleanUpLock.AssertCurrentThreadOwns();
     return mCleanedUp;
   }
 
   // StructuredCloneHolderBase
 
-  JSObject* CustomReadHandler(JSContext* aCx,
-                              JSStructuredCloneReader* aReader,
-                              uint32_t aTag,
-                              uint32_t aIndex) override;
+  JSObject* CustomReadHandler(JSContext* aCx, JSStructuredCloneReader* aReader,
+                              uint32_t aTag, uint32_t aIndex) override;
 
-  bool CustomWriteHandler(JSContext* aCx,
-                          JSStructuredCloneWriter* aWriter,
+  bool CustomWriteHandler(JSContext* aCx, JSStructuredCloneWriter* aWriter,
                           JS::Handle<JSObject*> aObj) override;
 
-protected:
+ protected:
   virtual void ResolvedCallback(JSContext* aCx,
                                 JS::Handle<JS::Value> aValue) override;
 
   virtual void RejectedCallback(JSContext* aCx,
                                 JS::Handle<JS::Value> aValue) override;
 
-private:
-  PromiseWorkerProxy(workers::WorkerPrivate* aWorkerPrivate,
-                     Promise* aWorkerPromise,
-                     const PromiseWorkerProxyStructuredCloneCallbacks* aCallbacks = nullptr);
+ private:
+  explicit PromiseWorkerProxy(
+      Promise* aWorkerPromise,
+      const PromiseWorkerProxyStructuredCloneCallbacks* aCallbacks = nullptr);
 
   virtual ~PromiseWorkerProxy();
-
-  bool AddRefObject();
 
   // If not called from Create(), be sure to hold Lock().
   void CleanProperties();
 
   // Function pointer for calling Promise::{ResolveInternal,RejectInternal}.
-  typedef void (Promise::*RunCallbackFunc)(JSContext*,
-                                           JS::Handle<JS::Value>);
+  typedef void (Promise::*RunCallbackFunc)(JSContext*, JS::Handle<JS::Value>);
 
-  void RunCallback(JSContext* aCx,
-                   JS::Handle<JS::Value> aValue,
+  void RunCallback(JSContext* aCx, JS::Handle<JS::Value> aValue,
                    RunCallbackFunc aFunc);
 
   // Any thread with appropriate checks.
-  workers::WorkerPrivate* mWorkerPrivate;
+  RefPtr<ThreadSafeWorkerRef> mWorkerRef;
 
   // Worker thread only.
   RefPtr<Promise> mWorkerPromise;
@@ -211,16 +194,14 @@ private:
   // Modified on the worker thread.
   // It is ok to *read* this without a lock on the worker.
   // Main thread must always acquire a lock.
-  bool mCleanedUp; // To specify if the cleanUp() has been done.
+  bool mCleanedUp;  // To specify if the cleanUp() has been done.
 
   const PromiseWorkerProxyStructuredCloneCallbacks* mCallbacks;
 
   // Ensure the worker and the main thread won't race to access |mCleanedUp|.
   Mutex mCleanUpLock;
-
-  UniquePtr<workers::WorkerHolder> mWorkerHolder;
 };
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_PromiseWorkerProxy_h
+#endif  // mozilla_dom_PromiseWorkerProxy_h

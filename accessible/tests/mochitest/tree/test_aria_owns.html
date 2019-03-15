@@ -16,21 +16,20 @@
           src="../role.js"></script>
 
   <script type="application/javascript">
-    ////////////////////////////////////////////////////////////////////////////
+    // //////////////////////////////////////////////////////////////////////////
     // Tests
-    ////////////////////////////////////////////////////////////////////////////
+    // //////////////////////////////////////////////////////////////////////////
 
-    //enableLogging("tree,verbose"); // debug stuff
+    // enableLogging("tree,verbose"); // debug stuff
 
     var gQueue = null;
 
-    function doTest()
-    {
+    function doTest() {
       var tree =
         { SECTION: [ // t1_1
           { HEADING: [ // t1_2
             // no kids, no loop
-          ] }
+          ] },
         ] };
       testAccessibleTree("t1_1", tree);
 
@@ -39,8 +38,8 @@
           { GROUPING: [ // t2_2
             { HEADING: [ // t2_3
               // no kids, no loop
-            ] }
-          ] }
+            ] },
+          ] },
         ] };
       testAccessibleTree("t2_1", tree);
 
@@ -50,9 +49,9 @@
             { NOTE: [ // t3_2
               { HEADING: [ // DOM child of t3_2
                 // no kids, no loop
-              ] }
-            ] }
-          ] }
+              ] },
+            ] },
+          ] },
         ] };
       testAccessibleTree("t3_3", tree);
 
@@ -60,7 +59,7 @@
         { SECTION: [ // t4_1
           { GROUPING: [ // DOM child of t4_1, aria-owns ignored
             // no kids, no loop
-          ] }
+          ] },
         ] };
       testAccessibleTree("t4_1", tree);
 
@@ -72,11 +71,11 @@
                 { FORM: [ // t5_3
                   { TOOLTIP: [ // DOM child of t5_3
                     // no kids, no loop
-                  ]}
-                ]}
-              ]}
-            ] }
-          ] }
+                  ]},
+                ]},
+              ]},
+            ] },
+          ] },
         ] };
       testAccessibleTree("t5_1", tree);
 
@@ -92,8 +91,8 @@
         { SECTION: [ // ariaowns_container
           { SECTION: [ // ariaowns_self
             { SECTION: [ // ariaowns_uncle
-            ] }
-          ] }
+            ] },
+          ] },
         ] };
       testAccessibleTree("ariaowns_container", tree);
 
@@ -101,22 +100,28 @@
         { TABLE: [
           { ROW: [
             { GRID_CELL: [
-              { TEXT_LEAF: [] }
+              { TEXT_LEAF: [] },
             ] },
             { GRID_CELL: [
-              { TEXT_LEAF: [] }
-            ] }
+              { TEXT_LEAF: [] },
+            ] },
           ] },
           { ROW: [
             { GRID_CELL: [
-              { TEXT_LEAF: [] }
+              { TEXT_LEAF: [] },
             ] },
             { GRID_CELL: [
-              { TEXT_LEAF: [] }
-            ] }
-          ] }
+              { TEXT_LEAF: [] },
+            ] },
+          ] },
         ] };
       testAccessibleTree("grid", tree);
+
+      tree =
+        { SECTION: [ // presentation_owner
+          // Can't own ancestor, so no children.
+        ] };
+      testAccessibleTree("presentation_owner", tree);
 
       SimpleTest.finish();
     }
@@ -181,6 +186,12 @@
   <div role="row" id="grid-row2">
     <div role="gridcell">cell 2,1</div>
     <div role="gridcell">cell 2,2</div>
+  </div>
+
+  <!-- Owned child which is an ancestor of its owner but didn't yet exist when
+       aria-owns relocation was processed (bug 1485097). -->
+  <div id="presentation" role="presentation">
+    <div id="presentation_owner" aria-owns="presentation"></div>
   </div>
 </body>
 

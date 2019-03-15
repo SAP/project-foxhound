@@ -8,34 +8,79 @@
 #define mozilla_dom_URLClassifierParent_h
 
 #include "mozilla/dom/PURLClassifierParent.h"
+#include "mozilla/dom/PURLClassifierLocalParent.h"
 #include "nsIURIClassifier.h"
+#include "nsIUrlClassifierFeature.h"
 
 namespace mozilla {
 namespace dom {
 
-class URLClassifierParent : public nsIURIClassifierCallback,
-                            public PURLClassifierParent
-{
- public:
-  URLClassifierParent() = default;
+//////////////////////////////////////////////////////////////
+// URLClassifierParent
 
+class URLClassifierParent : public nsIURIClassifierCallback,
+                            public PURLClassifierParent {
+ public:
   NS_DECL_THREADSAFE_ISUPPORTS
-  NS_DECL_NSIURICLASSIFIERCALLBACK
 
   mozilla::ipc::IPCResult StartClassify(nsIPrincipal* aPrincipal,
-                                        bool aUseTrackingProtection,
                                         bool* aSuccess);
-  void ActorDestroy(ActorDestroyReason aWhy) override;
 
-  void ClassificationFailed();
+  // nsIURIClassifierCallback.
+  NS_IMETHOD OnClassifyComplete(nsresult aErrorCode, const nsACString& aList,
+                                const nsACString& aProvider,
+                                const nsACString& aFullHash) override {
+    if (mIPCOpen) {
+      ClassifierInfo info = ClassifierInfo(
+          nsCString(aList), nsCString(aProvider), nsCString(aFullHash));
+      Unused << Send__delete__(this, info, aErrorCode);
+    }
+    return NS_OK;
+  }
+
+  // Custom.
+  void ClassificationFailed() {
+    if (mIPCOpen) {
+      Unused << Send__delete__(this, void_t(), NS_ERROR_FAILURE);
+    }
+  }
 
  private:
   ~URLClassifierParent() = default;
 
+  // Override PURLClassifierParent::ActorDestroy. We seem to unable to
+  // override from the base template class.
+  void ActorDestroy(ActorDestroyReason aWhy) override { mIPCOpen = false; }
+
   bool mIPCOpen = true;
 };
 
-} // namespace dom
-} // namespace mozilla
+//////////////////////////////////////////////////////////////
+// URLClassifierLocalParent
 
-#endif // mozilla_dom_URLClassifierParent_h
+class URLClassifierLocalParent : public nsIUrlClassifierFeatureCallback,
+                                 public PURLClassifierLocalParent {
+ public:
+  NS_DECL_THREADSAFE_ISUPPORTS
+
+  mozilla::ipc::IPCResult StartClassify(
+      nsIURI* aURI, const nsTArray<IPCURLClassifierFeature>& aFeatureNames);
+
+  // nsIUrlClassifierFeatureCallback.
+  NS_IMETHOD
+  OnClassifyComplete(
+      const nsTArray<RefPtr<nsIUrlClassifierFeatureResult>>& aResults) override;
+
+ private:
+  ~URLClassifierLocalParent() = default;
+
+  // Override PURLClassifierLocalParent::ActorDestroy.
+  void ActorDestroy(ActorDestroyReason aWhy) override { mIPCOpen = false; }
+
+  bool mIPCOpen = true;
+};
+
+}  // namespace dom
+}  // namespace mozilla
+
+#endif  // mozilla_dom_URLClassifierParent_h

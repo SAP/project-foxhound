@@ -6,68 +6,53 @@
 
 toolkit.jar:
   skin/classic/global/autocomplete.css
-#ifndef MOZ_THEME_FASTSTRIPE
   skin/classic/global/button.css
   skin/classic/global/checkbox.css
   skin/classic/global/dropmarker.css
-  skin/classic/global/groupbox.css
 * skin/classic/global/menu.css
   skin/classic/global/menulist.css
 * skin/classic/global/popup.css
   skin/classic/global/radio.css
   skin/classic/global/tabbox.css
   skin/classic/global/textbox.css
-#endif
-  skin/classic/global/colorpicker.css
   skin/classic/global/commonDialog.css
-  skin/classic/global/findBar.css
+* skin/classic/global/findBar.css
 * skin/classic/global/global.css
-  skin/classic/global/listbox.css
   skin/classic/global/netError.css
-  skin/classic/global/numberbox.css
 * skin/classic/global/notification.css
-  skin/classic/global/preferences.css
   skin/classic/global/printPageSetup.css
-  skin/classic/global/printPreview.css
+  skin/classic/global/richlistbox.css
   skin/classic/global/scrollbox.css
   skin/classic/global/splitter.css
   skin/classic/global/toolbar.css
   skin/classic/global/toolbarbutton.css
+  skin/classic/global/tooltip.css
 * skin/classic/global/tree.css
-  skin/classic/global/alerts/alert.css                     (alerts/alert.css)
-  skin/classic/global/dirListing/remote.png                (dirListing/remote.png)
-  skin/classic/global/icons/autocomplete-search.svg        (icons/autocomplete-search.svg)
-  skin/classic/global/icons/blacklist_favicon.png          (icons/blacklist_favicon.png)
-  skin/classic/global/icons/blacklist_large.png            (icons/blacklist_large.png)
-  skin/classic/global/icons/close-win7.png                 (icons/close-win7.png)
-  skin/classic/global/icons/close-win7@2x.png              (icons/close-win7@2x.png)
-  skin/classic/global/icons/close-inverted-win7.png        (icons/close-inverted-win7.png)
-  skin/classic/global/icons/close-inverted-win7@2x.png     (icons/close-inverted-win7@2x.png)
-  skin/classic/global/icons/resizer.png                    (icons/resizer.png)
+* skin/classic/global/alerts/alert.css                     (alerts/alert.css)
+  skin/classic/global/arrow/arrow-lft.gif                  (arrow/arrow-lft.gif)
+  skin/classic/global/arrow/arrow-lft-dis.gif              (arrow/arrow-lft-dis.gif)
+  skin/classic/global/arrow/arrow-rit.gif                  (arrow/arrow-rit.gif)
+  skin/classic/global/arrow/arrow-rit-dis.gif              (arrow/arrow-rit-dis.gif)
+  skin/classic/global/arrow/arrow-up.gif                   (arrow/arrow-up.gif)
+  skin/classic/global/arrow/arrow-up-dis.gif               (arrow/arrow-up-dis.gif)
+  skin/classic/global/arrow/arrow-dn.gif                   (arrow/arrow-dn.gif)
+  skin/classic/global/arrow/arrow-dn-dis.gif               (arrow/arrow-dn-dis.gif)
+  skin/classic/global/dirListing/folder.png                (dirListing/folder.png)
+  skin/classic/global/dirListing/up.png                    (dirListing/up.png)
+  skin/classic/global/icons/blocklist_favicon.png          (icons/blocklist_favicon.png)
+  skin/classic/global/icons/Error.png                      (icons/Error.png)
+  skin/classic/global/icons/collapse.png                   (icons/collapse.png)
+  skin/classic/global/icons/expand.png                     (icons/expand.png)
+  skin/classic/global/icons/Landscape.png                  (icons/Landscape.png)
+  skin/classic/global/icons/Portrait.png                   (icons/Portrait.png)
+  skin/classic/global/icons/Print-preview.png              (icons/Print-preview.png)
+  skin/classic/global/icons/Search-close.png               (icons/Search-close.png)
   skin/classic/global/icons/sslWarning.png                 (icons/sslWarning.png)
+  skin/classic/global/icons/warning-large.png              (icons/warning-large.png)
+  skin/classic/global/icons/windowControls.png             (icons/windowControls.png)
 * skin/classic/global/in-content/common.css                (in-content/common.css)
 * skin/classic/global/in-content/info-pages.css            (in-content/info-pages.css)
-  skin/classic/global/toolbar/spring.png                   (toolbar/spring.png)
-
-  skin/classic/global/icons/autoscroll.png                       (icons/autoscroll.png)
-  skin/classic/global/tree/twisty.svg                            (tree/twisty.svg)
-  skin/classic/global/tree/twisty-preWin10.svg                   (tree/twisty-preWin10.svg)
-
-#if MOZ_BUILD_APP == browser
-[browser/extensions/{972ce4c6-7e08-4474-a285-3208198ce6fd}] chrome.jar:
-#elif MOZ_SEPARATE_MANIFEST_FOR_THEME_OVERRIDES
-[extensions/{972ce4c6-7e08-4474-a285-3208198ce6fd}] chrome.jar:
-#endif
-% override chrome://global/skin/icons/close.png                   chrome://global/skin/icons/close-win7.png            osversion<=6.1
-% override chrome://global/skin/icons/close@2x.png                chrome://global/skin/icons/close-win7@2x.png         osversion<=6.1
-% override chrome://global/skin/icons/close-inverted.png          chrome://global/skin/icons/close-inverted-win7.png   osversion<=6.1
-% override chrome://global/skin/icons/close-inverted@2x.png       chrome://global/skin/icons/close-inverted-win7@2x.png osversion<=6.1
-
-% override chrome://global/skin/tree/twisty.svg#clsd              chrome://global/skin/tree/twisty-preWin10.svg#clsd           osversion<=6.3
-% override chrome://global/skin/tree/twisty.svg#clsd-rtl          chrome://global/skin/tree/twisty-preWin10.svg#clsd-rtl       osversion<=6.3
-% override chrome://global/skin/tree/twisty.svg#clsd-hover        chrome://global/skin/tree/twisty-preWin10.svg#clsd-hover     osversion<=6.3
-% override chrome://global/skin/tree/twisty.svg#clsd-hover-rtl    chrome://global/skin/tree/twisty-preWin10.svg#clsd-hover-rtl osversion<=6.3
-% override chrome://global/skin/tree/twisty.svg#open              chrome://global/skin/tree/twisty-preWin10.svg#open           osversion<=6.3
-% override chrome://global/skin/tree/twisty.svg#open-rtl          chrome://global/skin/tree/twisty-preWin10.svg#open-rtl       osversion<=6.3
-% override chrome://global/skin/tree/twisty.svg#open-hover        chrome://global/skin/tree/twisty-preWin10.svg#open-hover     osversion<=6.3
-% override chrome://global/skin/tree/twisty.svg#open-hover-rtl    chrome://global/skin/tree/twisty-preWin10.svg#open-hover-rtl osversion<=6.3
+  skin/classic/global/tree/sort-asc.svg                    (tree/sort-asc.svg)
+  skin/classic/global/tree/sort-dsc.svg                    (tree/sort-dsc.svg)
+  skin/classic/global/tree/sort-asc-classic.png            (tree/sort-asc-classic.png)
+  skin/classic/global/tree/sort-dsc-classic.png            (tree/sort-dsc-classic.png)

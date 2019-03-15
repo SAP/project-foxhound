@@ -18,34 +18,32 @@ namespace a11y {
  * XPCOM wrapper around ApplicationAccessible class.
  */
 class xpcAccessibleApplication : public xpcAccessibleGeneric,
-                                 public nsIAccessibleApplication
-{
-public:
-  explicit xpcAccessibleApplication(Accessible* aIntl) :
-    xpcAccessibleGeneric(aIntl) { }
+                                 public nsIAccessibleApplication {
+ public:
+  explicit xpcAccessibleApplication(Accessible* aIntl)
+      : xpcAccessibleGeneric(aIntl) {}
 
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIAccessibleApplication
-  NS_IMETHOD GetAppName(nsAString& aName) final override;
-  NS_IMETHOD GetAppVersion(nsAString& aVersion) final override;
-  NS_IMETHOD GetPlatformName(nsAString& aName) final override;
-  NS_IMETHOD GetPlatformVersion(nsAString& aVersion) final override;
+  NS_IMETHOD GetAppName(nsAString& aName) final;
+  NS_IMETHOD GetAppVersion(nsAString& aVersion) final;
+  NS_IMETHOD GetPlatformName(nsAString& aName) final;
+  NS_IMETHOD GetPlatformVersion(nsAString& aVersion) final;
 
-protected:
-  virtual ~xpcAccessibleApplication()
-  {
-    Shutdown();
+ protected:
+  virtual ~xpcAccessibleApplication() { Shutdown(); }
+
+ private:
+  ApplicationAccessible* Intl() {
+    return mIntl.AsAccessible()->AsApplication();
   }
 
-private:
-  ApplicationAccessible* Intl() { return mIntl.AsAccessible()->AsApplication(); }
-
   xpcAccessibleApplication(const xpcAccessibleApplication&) = delete;
-  xpcAccessibleApplication& operator =(const xpcAccessibleApplication&) = delete;
+  xpcAccessibleApplication& operator=(const xpcAccessibleApplication&) = delete;
 };
 
-} // namespace a11y
-} // namespace mozilla
+}  // namespace a11y
+}  // namespace mozilla
 
 #endif

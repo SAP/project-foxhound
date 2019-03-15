@@ -1,17 +1,14 @@
 "use strict";
 
-const {utils: Cu} = Components;
+ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-Cu.import("resource://gre/modules/AppConstants.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-
-add_task(function*() {
+add_task(async function() {
   let webNav = Services.appShell.createWindowlessBrowser(false);
 
-  let loadContext = webNav.QueryInterface(Ci.nsIInterfaceRequestor)
-                          .getInterface(Ci.nsILoadContext);
+  let docShell = webNav.docShell;
 
-  let docShell = webNav.getInterface(Ci.nsIDocShell);
+  let loadContext = docShell.QueryInterface(Ci.nsILoadContext);
 
   equal(loadContext.usePrivateBrowsing, false, "Should start out in non-private mode");
 
@@ -37,10 +34,13 @@ add_task(function*() {
   equal(loadContext.usePrivateBrowsing, false,
         "Should be able to change origin attributes prior to a document load");
 
-  webNav.loadURI("data:text/html,", webNav.LOAD_FLAGS_NONE, null, null, null);
+  let loadURIOptions = {
+    triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+  };
+  webNav.loadURI("data:text/html,", loadURIOptions);
 
   // Return to the event loop so the load can begin.
-  yield new Promise(do_execute_soon);
+  await new Promise(executeSoon);
 
   // This causes a failed assertion rather than an exception on debug
   // builds.

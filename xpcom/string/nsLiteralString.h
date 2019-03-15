@@ -10,24 +10,16 @@
 #include "nscore.h"
 #include "nsString.h"
 
-// declare nsLiteralString
-#include "string-template-def-unichar.h"
 #include "nsTLiteralString.h"
-#include "string-template-undef.h"
-
-// declare nsLiteralCString
-#include "string-template-def-char.h"
-#include "nsTLiteralString.h"
-#include "string-template-undef.h"
 
 #include "mozilla/Char16.h"
 
-#define NS_LITERAL_STRING(s)                      static_cast<const nsLiteralString&>(nsLiteralString(u"" s))
-#define NS_LITERAL_STRING_INIT(n,s)               n(u"" s)
-#define NS_NAMED_LITERAL_STRING(n,s)              const nsLiteralString n(u"" s)
+#define NS_LITERAL_STRING(s) \
+  static_cast<const nsLiteralString&>(nsLiteralString(u"" s))
+#define NS_NAMED_LITERAL_STRING(n, s) const nsLiteralString n(u"" s)
 
-#define NS_LITERAL_CSTRING(s)                     static_cast<const nsLiteralCString&>(nsLiteralCString("" s))
-#define NS_LITERAL_CSTRING_INIT(n,s)              n("" s)
-#define NS_NAMED_LITERAL_CSTRING(n,s)             const nsLiteralCString n("" s)
+#define NS_LITERAL_CSTRING(s) \
+  static_cast<const nsLiteralCString&>(nsLiteralCString("" s))
+#define NS_NAMED_LITERAL_CSTRING(n, s) const nsLiteralCString n("" s)
 
 #endif /* !defined(nsLiteralString_h___) */

@@ -14,7 +14,6 @@
 // -----------------------------------------------------------------------------
 
 var fs = require("fs");
-var path = require("path");
 var helpers = require("../helpers");
 var globals = require("../globals");
 
@@ -39,11 +38,11 @@ module.exports = function(context) {
   // ---------------------------------------------------------------------------
 
   return {
-    Program: function(node) {
+    Program(node) {
       let heads = helpers.getTestHeadFiles(context);
       for (let head of heads) {
         importHead(head, node);
       }
-    }
+    },
   };
 };

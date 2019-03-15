@@ -3,40 +3,32 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cu = Components.utils;
-var Cr = Components.results;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 const kCID = Components.ID("{1f9f7181-e6c5-4f4c-8f71-08005cec8468}");
 const kContract = "@testing/notxpcomtest";
 
-function run_test()
-{
-  let manifest = do_get_file("xpcomtest.manifest");
+function run_test() {
   let registrar = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
-  registrar.autoRegister(manifest);
 
   ok(Ci.ScriptableWithNotXPCOM);
 
   let method1Called = false;
 
   let testObject = {
-    QueryInterface: XPCOMUtils.generateQI([Ci.ScriptableOK,
-                                           Ci.ScriptableWithNotXPCOM,
-                                           Ci.ScriptableWithNotXPCOMBase]),
+    QueryInterface: ChromeUtils.generateQI([Ci.ScriptableOK,
+                                            Ci.ScriptableWithNotXPCOM,
+                                            Ci.ScriptableWithNotXPCOMBase]),
 
-    method1: function() {
+    method1() {
       method1Called = true;
     },
 
-    method2: function() {
+    method2() {
       ok(false, "method2 should not have been called!");
     },
 
-    method3: function() {
+    method3() {
       ok(false, "mehod3 should not have been called!");
     },
 
@@ -44,9 +36,9 @@ function run_test()
   };
 
   let factory = {
-    QueryInterface: XPCOMUtils.generateQI([Ci.nsIFactory]),
+    QueryInterface: ChromeUtils.generateQI([Ci.nsIFactory]),
 
-    createInstance: function(outer, iid) {
+    createInstance(outer, iid) {
       if (outer) {
         throw Cr.NS_ERROR_NO_AGGREGATION;
       }
@@ -68,8 +60,7 @@ function run_test()
   try {
     xpcomObject.QueryInterface(Ci.ScriptableWithNotXPCOM);
     ok(false, "Should not have implemented ScriptableWithNotXPCOM");
-  }
-  catch(e) {
+  } catch (e) {
     ok(true, "Should not have implemented ScriptableWithNotXPCOM. Correctly threw error: " + e);
   }
   strictEqual(xpcomObject.method2, undefined);
@@ -77,10 +68,8 @@ function run_test()
   try {
     xpcomObject.QueryInterface(Ci.ScriptableWithNotXPCOMBase);
     ok(false, "Should not have implemented ScriptableWithNotXPCOMBase");
-  }
-  catch (e) {
+  } catch (e) {
     ok(true, "Should not have implemented ScriptableWithNotXPCOMBase. Correctly threw error: " + e);
   }
   strictEqual(xpcomObject.method3, undefined);
 }
-

@@ -5,8 +5,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 // IWYU pragma: private, include "nsString.h"
 
+#ifndef nsTSubstringTuple_h
+#define nsTSubstringTuple_h
+
+#include "mozilla/Attributes.h"
+#include "nsTStringRepr.h"
+
 /**
- * nsTSubstringTuple_CharT
+ * nsTSubstringTuple
  *
  * Represents a tuple of string fragments.  Built as a recursive binary tree.
  * It is used to implement the concatenation of two or more string objects.
@@ -14,36 +20,26 @@
  * NOTE: This class is a private implementation detail and should never be
  * referenced outside the string code.
  */
+template <typename T>
+class MOZ_TEMPORARY_CLASS nsTSubstringTuple {
+ public:
+  typedef T char_type;
+  typedef nsCharTraits<char_type> char_traits;
 
-class nsTSubstringTuple_CharT
-{
-public:
+  typedef nsTSubstringTuple<T> self_type;
+  typedef mozilla::detail::nsTStringRepr<char_type> base_string_type;
+  typedef uint32_t size_type;
 
-  typedef CharT                      char_type;
-  typedef nsCharTraits<char_type>    char_traits;
+ public:
+  nsTSubstringTuple(const base_string_type* aStrA,
+                    const base_string_type* aStrB)
+      : mHead(nullptr), mFragA(aStrA), mFragB(aStrB) {}
 
-  typedef nsTSubstringTuple_CharT    self_type;
-  typedef nsTSubstring_CharT         substring_type;
-  typedef nsTSubstring_CharT         base_string_type;
-  typedef uint32_t                   size_type;
-
-public:
-
-  nsTSubstringTuple_CharT(const base_string_type* aStrA,
-                          const base_string_type* aStrB)
-    : mHead(nullptr)
-    , mFragA(aStrA)
-    , mFragB(aStrB)
-  {
-  }
-
-  nsTSubstringTuple_CharT(const self_type& aHead,
-                          const base_string_type* aStrB)
-    : mHead(&aHead)
-    , mFragA(nullptr) // this fragment is ignored when aHead != nullptr
-    , mFragB(aStrB)
-  {
-  }
+  nsTSubstringTuple(const self_type& aHead, const base_string_type* aStrB)
+      : mHead(&aHead),
+        mFragA(nullptr)  // this fragment is ignored when aHead != nullptr
+        ,
+        mFragB(aStrB) {}
 
   // TaintFox: Computes the combined taint information.
   StringTaint Taint() const;
@@ -66,23 +62,24 @@ public:
    */
   bool IsDependentOn(const char_type* aStart, const char_type* aEnd) const;
 
-private:
-
-  const self_type*        mHead;
-  const base_string_type* mFragA;
-  const base_string_type* mFragB;
+ private:
+  const self_type* const mHead;
+  const base_string_type* const mFragA;
+  const base_string_type* const mFragB;
 };
 
-inline const nsTSubstringTuple_CharT
-operator+(const nsTSubstringTuple_CharT::base_string_type& aStrA,
-          const nsTSubstringTuple_CharT::base_string_type& aStrB)
-{
-  return nsTSubstringTuple_CharT(&aStrA, &aStrB);
+template <typename T>
+inline const nsTSubstringTuple<T> operator+(
+    const mozilla::detail::nsTStringRepr<T>& aStrA,
+    const mozilla::detail::nsTStringRepr<T>& aStrB) {
+  return nsTSubstringTuple<T>(&aStrA, &aStrB);
 }
 
-inline const nsTSubstringTuple_CharT
-operator+(const nsTSubstringTuple_CharT& aHead,
-          const nsTSubstringTuple_CharT::base_string_type& aStrB)
-{
-  return nsTSubstringTuple_CharT(aHead, &aStrB);
+template <typename T>
+inline const nsTSubstringTuple<T> operator+(
+    const nsTSubstringTuple<T>& aHead,
+    const mozilla::detail::nsTStringRepr<T>& aStrB) {
+  return nsTSubstringTuple<T>(aHead, &aStrB);
 }
+
+#endif

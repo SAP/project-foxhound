@@ -13,13 +13,13 @@
 
 [HTMLConstructor]
 interface HTMLVideoElement : HTMLMediaElement {
-  [SetterThrows]
+  [CEReactions, SetterThrows]
            attribute unsigned long width;
-  [SetterThrows]
+  [CEReactions, SetterThrows]
            attribute unsigned long height;
   readonly attribute unsigned long videoWidth;
   readonly attribute unsigned long videoHeight;
-  [SetterThrows]
+  [CEReactions, SetterThrows]
            attribute DOMString poster;
 };
 
@@ -46,9 +46,13 @@ partial interface HTMLVideoElement {
   // True if the video has an audio track available.
   readonly attribute boolean mozHasAudio;
 
-  // True if the video should use a screen wake lock.
-  [Pref="dom.wakelock.enabled", Func="Navigator::HasWakeLockSupport"]
-  attribute boolean mozUseScreenWakeLock;
+  // Attributes for builtin video controls to lock screen orientation.
+  // True if video controls should lock orientation when fullscreen.
+  [Pref="media.videocontrols.lock-video-orientation", Func="IsChromeOrXBLOrUAWidget"]
+    readonly attribute boolean mozOrientationLockEnabled;
+  // True if screen orientation is locked by video controls.
+  [Pref="media.videocontrols.lock-video-orientation", Func="IsChromeOrXBLOrUAWidget"]
+    attribute boolean mozIsOrientationLocked;
 };
 
 // https://dvcs.w3.org/hg/html-media/raw-file/default/media-source/media-source.html#idl-def-HTMLVideoElement

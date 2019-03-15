@@ -10,11 +10,11 @@
  */
 function makeTimelineTest(frameScriptName, url) {
   info("in timelineTest");
-  return Task.async(function*() {
+  return async function() {
     info("in in timelineTest");
     waitForExplicitFinish();
 
-    yield timelineTestOpenUrl(url);
+    await timelineTestOpenUrl(url);
 
     const here = "chrome://mochitests/content/browser/docshell/test/browser/";
 
@@ -34,7 +34,7 @@ function makeTimelineTest(frameScriptName, url) {
       gBrowser.removeCurrentTab();
       finish();
     });
-  });
+  };
 }
 
 /* Open a URL for a timeline test.  */
@@ -48,12 +48,11 @@ function timelineTestOpenUrl(url) {
   });
 
   let loadPromise = new Promise(function(resolve, reject) {
-    let tab = window.gBrowser.selectedTab = window.gBrowser.addTab(url);
+    let browser = window.gBrowser;
+    let tab = browser.selectedTab = BrowserTestUtils.addTab(browser, url);
     let linkedBrowser = tab.linkedBrowser;
 
-    linkedBrowser.addEventListener("load", function() {
-      resolve(tab);
-    }, {capture: true, once: true});
+    BrowserTestUtils.browserLoaded(linkedBrowser).then(() => resolve(tab));
   });
 
   return Promise.all([tabSwitchPromise, loadPromise]).then(([_, tab]) => tab);

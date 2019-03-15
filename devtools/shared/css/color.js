@@ -5,12 +5,11 @@
 "use strict";
 
 const Services = require("Services");
-
-const {CSS_ANGLEUNIT} = require("devtools/shared/css/properties-db");
-const {getAngleValueInDegrees} = require("devtools/shared/css/parsing-utils");
-
 const {getCSSLexer} = require("devtools/shared/css/lexer");
 const {cssColors} = require("devtools/shared/css/color-db");
+
+loader.lazyRequireGetter(this, "CSS_ANGLEUNIT", "devtools/shared/css/constants", true);
+loader.lazyRequireGetter(this, "getAngleValueInDegrees", "devtools/shared/css/parsing-utils", true);
 
 const COLOR_UNIT_PREF = "devtools.defaultColorUnit";
 
@@ -19,7 +18,7 @@ const SPECIALVALUES = new Set([
   "initial",
   "inherit",
   "transparent",
-  "unset"
+  "unset",
 ]);
 
 /**
@@ -75,6 +74,9 @@ module.exports.colorUtils = {
   rgbToColorName: rgbToColorName,
   colorToRGBA: colorToRGBA,
   isValidCSSColor: isValidCSSColor,
+  calculateContrastRatio: calculateContrastRatio,
+  calculateLuminance: calculateLuminance,
+  blendColors: blendColors,
 };
 
 /**
@@ -85,7 +87,7 @@ CssColor.COLORUNIT = {
   "hex": "hex",
   "name": "name",
   "rgb": "rgb",
-  "hsl": "hsl"
+  "hsl": "hsl",
 };
 
 CssColor.prototype = {
@@ -100,7 +102,7 @@ CssColor.prototype = {
   // Whether the value should be parsed using css-color-4 rules.
   cssColor4: false,
 
-  _setColorUnitUppercase: function (color) {
+  _setColorUnitUppercase: function(color) {
     // Specifically exclude the case where the color is
     // case-insensitive.  This makes it so that "#000" isn't
     // considered "upper case" for the purposes of color cycling.
@@ -110,7 +112,7 @@ CssColor.prototype = {
 
   get colorUnit() {
     if (this._colorUnit === null) {
-      let defaultUnit = Services.prefs.getCharPref(COLOR_UNIT_PREF);
+      const defaultUnit = Services.prefs.getCharPref(COLOR_UNIT_PREF);
       this._colorUnit = CssColor.COLORUNIT[defaultUnit];
       this._setColorUnitUppercase(this.authored);
     }
@@ -128,7 +130,7 @@ CssColor.prototype = {
    *
    * @param {String} color The color to use
    */
-  setAuthoredUnitFromColor: function (color) {
+  setAuthoredUnitFromColor: function(color) {
     if (Services.prefs.getCharPref(COLOR_UNIT_PREF) ===
         CssColor.COLORUNIT.authored) {
       this._colorUnit = classifyColor(color);
@@ -140,7 +142,7 @@ CssColor.prototype = {
     if (!this.valid) {
       return false;
     }
-    return this._getRGBATuple().a !== 1;
+    return this.getRGBATuple().a !== 1;
   },
 
   get valid() {
@@ -152,7 +154,7 @@ CssColor.prototype = {
    */
   get transparent() {
     try {
-      let tuple = this._getRGBATuple();
+      const tuple = this.getRGBATuple();
       return !(tuple.r || tuple.g || tuple.b || tuple.a);
     } catch (e) {
       return false;
@@ -164,26 +166,22 @@ CssColor.prototype = {
   },
 
   get name() {
-    let invalidOrSpecialValue = this._getInvalidOrSpecialValue();
+    const invalidOrSpecialValue = this._getInvalidOrSpecialValue();
     if (invalidOrSpecialValue !== false) {
       return invalidOrSpecialValue;
     }
 
-    try {
-      let tuple = this._getRGBATuple();
+    const tuple = this.getRGBATuple();
 
-      if (tuple.a !== 1) {
-        return this.hex;
-      }
-      let {r, g, b} = tuple;
-      return rgbToColorName(r, g, b);
-    } catch (e) {
+    if (tuple.a !== 1) {
       return this.hex;
     }
+    const {r, g, b} = tuple;
+    return rgbToColorName(r, g, b) || this.hex;
   },
 
   get hex() {
-    let invalidOrSpecialValue = this._getInvalidOrSpecialValue();
+    const invalidOrSpecialValue = this._getInvalidOrSpecialValue();
     if (invalidOrSpecialValue !== false) {
       return invalidOrSpecialValue;
     }
@@ -201,7 +199,7 @@ CssColor.prototype = {
   },
 
   get alphaHex() {
-    let invalidOrSpecialValue = this._getInvalidOrSpecialValue();
+    const invalidOrSpecialValue = this._getInvalidOrSpecialValue();
     if (invalidOrSpecialValue !== false) {
       return invalidOrSpecialValue;
     }
@@ -218,7 +216,7 @@ CssColor.prototype = {
   },
 
   get longHex() {
-    let invalidOrSpecialValue = this._getInvalidOrSpecialValue();
+    const invalidOrSpecialValue = this._getInvalidOrSpecialValue();
     if (invalidOrSpecialValue !== false) {
       return invalidOrSpecialValue;
     }
@@ -226,25 +224,25 @@ CssColor.prototype = {
       return this.longAlphaHex;
     }
 
-    let tuple = this._getRGBATuple();
+    const tuple = this.getRGBATuple();
     return "#" + ((1 << 24) + (tuple.r << 16) + (tuple.g << 8) +
                   (tuple.b << 0)).toString(16).substr(-6);
   },
 
   get longAlphaHex() {
-    let invalidOrSpecialValue = this._getInvalidOrSpecialValue();
+    const invalidOrSpecialValue = this._getInvalidOrSpecialValue();
     if (invalidOrSpecialValue !== false) {
       return invalidOrSpecialValue;
     }
 
-    let tuple = this._getRGBATuple();
+    const tuple = this.getRGBATuple();
     return "#" + ((1 << 24) + (tuple.r << 16) + (tuple.g << 8) +
                   (tuple.b << 0)).toString(16).substr(-6) +
                   Math.round(tuple.a * 255).toString(16).padEnd(2, "0");
   },
 
   get rgb() {
-    let invalidOrSpecialValue = this._getInvalidOrSpecialValue();
+    const invalidOrSpecialValue = this._getInvalidOrSpecialValue();
     if (invalidOrSpecialValue !== false) {
       return invalidOrSpecialValue;
     }
@@ -253,14 +251,14 @@ CssColor.prototype = {
         // The color is valid and begins with rgb(.
         return this.authored;
       }
-      let tuple = this._getRGBATuple();
+      const tuple = this.getRGBATuple();
       return "rgb(" + tuple.r + ", " + tuple.g + ", " + tuple.b + ")";
     }
     return this.rgba;
   },
 
   get rgba() {
-    let invalidOrSpecialValue = this._getInvalidOrSpecialValue();
+    const invalidOrSpecialValue = this._getInvalidOrSpecialValue();
     if (invalidOrSpecialValue !== false) {
       return invalidOrSpecialValue;
     }
@@ -268,7 +266,7 @@ CssColor.prototype = {
       // The color is valid and begins with rgba(.
       return this.authored;
     }
-    let components = this._getRGBATuple();
+    const components = this.getRGBATuple();
     return "rgba(" + components.r + ", " +
                      components.g + ", " +
                      components.b + ", " +
@@ -276,7 +274,7 @@ CssColor.prototype = {
   },
 
   get hsl() {
-    let invalidOrSpecialValue = this._getInvalidOrSpecialValue();
+    const invalidOrSpecialValue = this._getInvalidOrSpecialValue();
     if (invalidOrSpecialValue !== false) {
       return invalidOrSpecialValue;
     }
@@ -291,7 +289,7 @@ CssColor.prototype = {
   },
 
   get hsla() {
-    let invalidOrSpecialValue = this._getInvalidOrSpecialValue();
+    const invalidOrSpecialValue = this._getInvalidOrSpecialValue();
     if (invalidOrSpecialValue !== false) {
       return invalidOrSpecialValue;
     }
@@ -300,7 +298,7 @@ CssColor.prototype = {
       return this.authored;
     }
     if (this.hasAlpha) {
-      let a = this._getRGBATuple().a;
+      const a = this.getRGBATuple().a;
       return this._hsl(a);
     }
     return this._hsl(1);
@@ -317,7 +315,7 @@ CssColor.prototype = {
    *         - If the color is a regular color e.g. #F06 so we return false
    *           to indicate that the color is neither invalid or special.
    */
-  _getInvalidOrSpecialValue: function () {
+  _getInvalidOrSpecialValue: function() {
     if (this.specialValue) {
       return this.specialValue;
     }
@@ -333,7 +331,7 @@ CssColor.prototype = {
    * @param  {String} color
    *         Any valid color string
    */
-  newColor: function (color) {
+  newColor: function(color) {
     // Store a lower-cased version of the color to help with format
     // testing.  The original text is kept as well so it can be
     // returned when needed.
@@ -343,16 +341,16 @@ CssColor.prototype = {
     return this;
   },
 
-  nextColorUnit: function () {
+  nextColorUnit: function() {
     // Reorder the formats array to have the current format at the
     // front so we can cycle through.
     let formats = ["hex", "hsl", "rgb", "name"];
-    let currentFormat = classifyColor(this.toString());
-    let putOnEnd = formats.splice(0, formats.indexOf(currentFormat));
+    const currentFormat = classifyColor(this.toString());
+    const putOnEnd = formats.splice(0, formats.indexOf(currentFormat));
     formats = formats.concat(putOnEnd);
-    let currentDisplayedColor = this[formats[0]];
+    const currentDisplayedColor = this[formats[0]];
 
-    for (let format of formats) {
+    for (const format of formats) {
       if (this[format].toLowerCase() !== currentDisplayedColor.toLowerCase()) {
         this.colorUnit = CssColor.COLORUNIT[format];
         break;
@@ -365,7 +363,7 @@ CssColor.prototype = {
   /**
    * Return a string representing a color of type defined in COLOR_UNIT_PREF.
    */
-  toString: function () {
+  toString: function() {
     let color;
 
     switch (this.colorUnit) {
@@ -400,10 +398,10 @@ CssColor.prototype = {
    * Returns a RGBA 4-Tuple representation of a color or transparent as
    * appropriate.
    */
-  _getRGBATuple: function () {
-    let tuple = colorToRGBA(this.authored, this.cssColor4);
+  getRGBATuple: function() {
+    const tuple = colorToRGBA(this.authored, this.cssColor4);
 
-    tuple.a = parseFloat(tuple.a.toFixed(1));
+    tuple.a = parseFloat(tuple.a.toFixed(2));
 
     return tuple;
   },
@@ -412,27 +410,27 @@ CssColor.prototype = {
    * Returns a HSLA 4-Tuple representation of a color or transparent as
    * appropriate.
    */
-  _getHSLATuple: function () {
-    let {r, g, b, a} = colorToRGBA(this.authored, this.cssColor4);
+  _getHSLATuple: function() {
+    const {r, g, b, a} = colorToRGBA(this.authored, this.cssColor4);
 
-    let [h, s, l] = rgbToHsl([r, g, b]);
+    const [h, s, l] = rgbToHsl([r, g, b]);
 
     return {
       h,
       s,
       l,
-      a: parseFloat(a.toFixed(1))
+      a: parseFloat(a.toFixed(2)),
     };
   },
 
-  _hsl: function (maybeAlpha) {
+  _hsl: function(maybeAlpha) {
     if (this.lowerCased.startsWith("hsl(") && maybeAlpha === undefined) {
       // We can use it as-is.
       return this.authored;
     }
 
-    let {r, g, b} = this._getRGBATuple();
-    let [h, s, l] = rgbToHsl([r, g, b]);
+    const {r, g, b} = this.getRGBATuple();
+    const [h, s, l] = rgbToHsl([r, g, b]);
     if (maybeAlpha !== undefined) {
       return "hsla(" + h + ", " + s + "%, " + l + "%, " + maybeAlpha + ")";
     }
@@ -442,8 +440,17 @@ CssColor.prototype = {
   /**
    * This method allows comparison of CssColor objects using ===.
    */
-  valueOf: function () {
+  valueOf: function() {
     return this.rgba;
+  },
+
+  /**
+   * Check whether the color is fully transparent (alpha === 0).
+   *
+   * @return {Boolean} True if the color is transparent and valid.
+   */
+  isTransparent: function() {
+    return this.getRGBATuple().a === 0;
   },
 };
 
@@ -460,16 +467,16 @@ function rgbToHsl([r, g, b]) {
   g = g / 255;
   b = b / 255;
 
-  let max = Math.max(r, g, b);
-  let min = Math.min(r, g, b);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
   let h;
   let s;
-  let l = (max + min) / 2;
+  const l = (max + min) / 2;
 
   if (max == min) {
     h = s = 0;
   } else {
-    let d = max - min;
+    const d = max - min;
     s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
 
     switch (max) {
@@ -512,7 +519,7 @@ function roundTo(number, digits) {
  *         Converted color with `alpha` value in rgba form.
  */
 function setAlpha(colorValue, alpha, useCssColor4ColorFunction = false) {
-  let color = new CssColor(colorValue, useCssColor4ColorFunction);
+  const color = new CssColor(colorValue, useCssColor4ColorFunction);
 
   // Throw if the color supplied is not valid.
   if (!color.valid) {
@@ -524,7 +531,7 @@ function setAlpha(colorValue, alpha, useCssColor4ColorFunction = false) {
     alpha = 1;
   }
 
-  let { r, g, b } = color._getRGBATuple();
+  const { r, g, b } = color.getRGBATuple();
   return "rgba(" + r + ", " + g + ", " + b + ", " + alpha + ")";
 }
 
@@ -554,27 +561,23 @@ function classifyColor(value) {
 var cssRGBMap;
 
 /**
- * Given a color, return its name, if it has one.  Throws an exception
- * if the color does not have a name.
+ * Given a color, return its name, if it has one. Otherwise
+ * returns an empty string.
  *
  * @param {Number} r, g, b  The color components.
- * @return {String} the name of the color
+ * @return {String} the name of the color or an empty string
  */
 function rgbToColorName(r, g, b) {
   if (!cssRGBMap) {
     cssRGBMap = {};
-    for (let name in cssColors) {
-      let key = JSON.stringify(cssColors[name]);
+    for (const name in cssColors) {
+      const key = JSON.stringify(cssColors[name]);
       if (!(key in cssRGBMap)) {
         cssRGBMap[key] = name;
       }
     }
   }
-  let value = cssRGBMap[JSON.stringify([r, g, b, 1])];
-  if (!value) {
-    throw new Error("no such color");
-  }
-  return value;
+  return cssRGBMap[JSON.stringify([r, g, b, 1])] || "";
 }
 
 // Translated from nsColor.cpp.
@@ -600,17 +603,16 @@ function _hslValue(m1, m2, h) {
 // Translated from nsColor.cpp.  All three values are expected to be
 // in the range 0-1.
 function hslToRGB([h, s, l]) {
-  let r, g, b;
-  let m1, m2;
+  let m2;
   if (l <= 0.5) {
     m2 = l * (s + 1);
   } else {
     m2 = l + s - l * s;
   }
-  m1 = l * 2 - m2;
-  r = Math.round(255 * _hslValue(m1, m2, h + 1.0 / 3.0));
-  g = Math.round(255 * _hslValue(m1, m2, h));
-  b = Math.round(255 * _hslValue(m1, m2, h - 1.0 / 3.0));
+  const m1 = l * 2 - m2;
+  const r = Math.round(255 * _hslValue(m1, m2, h + 1.0 / 3.0));
+  const g = Math.round(255 * _hslValue(m1, m2, h));
+  const b = Math.round(255 * _hslValue(m1, m2, h - 1.0 / 3.0));
   return [r, g, b];
 }
 
@@ -686,7 +688,7 @@ function getToken(lexer) {
   }
 
   while (true) {
-    let token = lexer.nextToken();
+    const token = lexer.nextToken();
     if (!token || (token.tokenType !== "comment" &&
                    token.tokenType !== "whitespace")) {
       lexer._currentToken = token;
@@ -718,7 +720,7 @@ function unGetToken(lexer) {
  * @return {Boolean} The expect symbol is parsed or not.
  */
 function expectSymbol(lexer, symbol) {
-  let token = getToken(lexer);
+  const token = getToken(lexer);
   if (!token) {
     return false;
   }
@@ -751,7 +753,7 @@ const COLOR_COMPONENT_TYPE = {
  * @return {Boolean} Return false on error.
  */
 function parseColorComponent(lexer, type, separator, colorArray) {
-  let token = getToken(lexer);
+  const token = getToken(lexer);
 
   if (!token) {
     return false;
@@ -817,7 +819,7 @@ function parseColorOpacityAndCloseParen(lexer, separator, colorArray) {
     return false;
   }
 
-  let token = getToken(lexer);
+  const token = getToken(lexer);
   if (!token) {
     return false;
   }
@@ -845,7 +847,7 @@ function parseColorOpacityAndCloseParen(lexer, separator, colorArray) {
  * @return {Boolean} Return false on error.
  */
 function parseHue(lexer, colorArray) {
-  let token = getToken(lexer);
+  const token = getToken(lexer);
 
   if (!token) {
     return false;
@@ -883,8 +885,8 @@ function parseHsl(lexer) {
   // <alpha-value> = <number> | <percentage>
 
   const commaSeparator = ",";
-  let hsl = [];
-  let a = [];
+  const hsl = [];
+  const a = [];
 
   // Parse hue.
   if (!parseHue(lexer, hsl)) {
@@ -893,13 +895,13 @@ function parseHsl(lexer) {
 
   // Look for a comma separator after "hue" component to determine if the
   // expression is comma-less or not.
-  let hasComma = expectSymbol(lexer, commaSeparator);
+  const hasComma = expectSymbol(lexer, commaSeparator);
 
   // Parse saturation, lightness and opacity.
   // The saturation and lightness are <percentage>, so reuse the <percentage>
   // version of parseColorComponent function for them. No need to check the
   // separator after 'lightness'. It will be checked in opacity value parsing.
-  let separatorBeforeAlpha = hasComma ? commaSeparator : "/";
+  const separatorBeforeAlpha = hasComma ? commaSeparator : "/";
   if (parseColorComponent(lexer, COLOR_COMPONENT_TYPE.percentage,
                           hasComma ? commaSeparator : "", hsl) &&
       parseColorComponent(lexer, COLOR_COMPONENT_TYPE.percentage, "", hsl) &&
@@ -927,18 +929,18 @@ function parseOldStyleHsl(lexer, hasAlpha) {
 
   const commaSeparator = ",";
   const closeParen = ")";
-  let hsl = [];
-  let a = [];
+  const hsl = [];
+  const a = [];
 
   // Parse hue.
-  let token = getToken(lexer);
+  const token = getToken(lexer);
   if (!token || token.tokenType !== "number") {
     return null;
   }
   if (!expectSymbol(lexer, commaSeparator)) {
     return null;
   }
-  let val = token.number / 360.0;
+  const val = token.number / 360.0;
   hsl.push(val - Math.floor(val));
 
   // Parse saturation, lightness and opacity.
@@ -980,14 +982,14 @@ function parseRgb(lexer) {
   // <alpa-value> = <number> | <percentage>
 
   const commaSeparator = ",";
-  let rgba = [];
+  const rgba = [];
 
-  let token = getToken(lexer);
+  const token = getToken(lexer);
   if (token.tokenType !== "percentage" && token.tokenType !== "number") {
     return null;
   }
   unGetToken(lexer);
-  let type = (token.tokenType === "percentage") ?
+  const type = (token.tokenType === "percentage") ?
              COLOR_COMPONENT_TYPE.percentage :
              COLOR_COMPONENT_TYPE.number;
 
@@ -995,12 +997,12 @@ function parseRgb(lexer) {
   if (!parseColorComponent(lexer, type, "", rgba)) {
     return null;
   }
-  let hasComma = expectSymbol(lexer, commaSeparator);
+  const hasComma = expectSymbol(lexer, commaSeparator);
 
   // Parse G, B and A.
   // No need to check the separator after 'B'. It will be checked in 'A' values
   // parsing.
-  let separatorBeforeAlpha = hasComma ? commaSeparator : "/";
+  const separatorBeforeAlpha = hasComma ? commaSeparator : "/";
   if (parseColorComponent(lexer, type, hasComma ? commaSeparator : "", rgba) &&
       parseColorComponent(lexer, type, "", rgba) &&
       parseColorOpacityAndCloseParen(lexer, separatorBeforeAlpha, rgba)) {
@@ -1032,15 +1034,15 @@ function parseOldStyleRgb(lexer, hasAlpha) {
 
   const commaSeparator = ",";
   const closeParen = ")";
-  let rgba = [];
+  const rgba = [];
 
-  let token = getToken(lexer);
+  const token = getToken(lexer);
   if (token.tokenType !== "percentage" &&
       (token.tokenType !== "number" || !token.isInteger)) {
     return null;
   }
   unGetToken(lexer);
-  let type = (token.tokenType === "percentage") ?
+  const type = (token.tokenType === "percentage") ?
              COLOR_COMPONENT_TYPE.percentage :
              COLOR_COMPONENT_TYPE.integer;
 
@@ -1084,7 +1086,7 @@ function colorToRGBA(name, useCssColor4ColorFunction = false) {
   name = name.trim().toLowerCase();
 
   if (name in cssColors) {
-    let result = cssColors[name];
+    const result = cssColors[name];
     return {r: result[0], g: result[1], b: result[2], a: result[3]};
   } else if (name === "transparent") {
     return {r: 0, g: 0, b: 0, a: 0};
@@ -1092,9 +1094,9 @@ function colorToRGBA(name, useCssColor4ColorFunction = false) {
     return {r: 0, g: 0, b: 0, a: 1};
   }
 
-  let lexer = getCSSLexer(name);
+  const lexer = getCSSLexer(name);
 
-  let func = getToken(lexer);
+  const func = getToken(lexer);
   if (!func) {
     return null;
   }
@@ -1112,11 +1114,11 @@ function colorToRGBA(name, useCssColor4ColorFunction = false) {
     return null;
   }
 
-  let hsl = func.text === "hsl" || func.text === "hsla";
+  const hsl = func.text === "hsl" || func.text === "hsla";
 
   let vals;
   if (!useCssColor4ColorFunction) {
-    let hasAlpha = (func.text === "rgba" || func.text === "hsla");
+    const hasAlpha = (func.text === "rgba" || func.text === "hsla");
     vals = hsl ? parseOldStyleHsl(lexer, hasAlpha) : parseOldStyleRgb(lexer, hasAlpha);
   } else {
     vals = hsl ? parseHsl(lexer) : parseRgb(lexer);
@@ -1141,4 +1143,70 @@ function colorToRGBA(name, useCssColor4ColorFunction = false) {
  */
 function isValidCSSColor(name, useCssColor4ColorFunction = false) {
   return colorToRGBA(name, useCssColor4ColorFunction) !== null;
+}
+
+/**
+ * Calculates the luminance of a rgba tuple based on the formula given in
+ * https://www.w3.org/TR/2008/REC-WCAG20-20081211/#relativeluminancedef
+ *
+ * @param {Array} rgba An array with [r,g,b,a] values.
+ * @return {Number} The calculated luminance.
+ */
+function calculateLuminance(rgba) {
+  for (let i = 0; i < 3; i++) {
+    rgba[i] /= 255;
+    rgba[i] = (rgba[i] < 0.03928) ? (rgba[i] / 12.92) :
+                                    Math.pow(((rgba[i] + 0.055) / 1.055), 2.4);
+  }
+  return 0.2126 * rgba[0] + 0.7152 * rgba[1] + 0.0722 * rgba[2];
+}
+
+/**
+ * Blend background and foreground colors takign alpha into account.
+ * @param  {Array} foregroundColor
+ *         An array with [r,g,b,a] values containing the foreground color.
+ * @param  {Array} backgroundColor
+ *         An array with [r,g,b,a] values containing the background color. Defaults to
+ *         [ 255, 255, 255, 1 ].
+ * @return {Array}
+ *         An array with combined [r,g,b,a] colors.
+ */
+function blendColors(foregroundColor, backgroundColor = [ 255, 255, 255, 1 ]) {
+  const [ fgR, fgG, fgB, fgA ] = foregroundColor;
+  const [ bgR, bgG, bgB, bgA ] = backgroundColor;
+  if (fgA === 1) {
+    return foregroundColor;
+  }
+
+  return [
+    (1 - fgA) * bgR + fgA * fgR,
+    (1 - fgA) * bgG + fgA * fgG,
+    (1 - fgA) * bgB + fgA * fgB,
+    fgA + bgA * (1 - fgA),
+  ];
+}
+
+/**
+ * Calculates the contrast ratio of 2 rgba tuples based on the formula in
+ * https://www.w3.org/TR/2008/REC-WCAG20-20081211/#visual-audio-contrast7
+ *
+ * @param {Array} backgroundColor An array with [r,g,b,a] values containing
+ * the background color.
+ * @param {Array} textColor An array with [r,g,b,a] values containing
+ * the text color.
+ * @return {Number} The calculated luminance.
+ */
+function calculateContrastRatio(backgroundColor, textColor) {
+  // Do not modify given colors.
+  backgroundColor = Array.from(backgroundColor);
+  textColor = Array.from(textColor);
+
+  backgroundColor = blendColors(backgroundColor);
+  textColor = blendColors(textColor, backgroundColor);
+
+  const backgroundLuminance = calculateLuminance(backgroundColor);
+  const textLuminance = calculateLuminance(textColor);
+  const ratio = (textLuminance + 0.05) / (backgroundLuminance + 0.05);
+
+  return (ratio > 1.0) ? ratio : (1 / ratio);
 }

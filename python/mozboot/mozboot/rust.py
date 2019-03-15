@@ -3,12 +3,9 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 # If we add unicode_literals, Python 2.6.1 (required for OS X 10.6) breaks.
-from __future__ import print_function
+from __future__ import absolute_import, print_function
 
-import errno
 import os
-import stat
-import subprocess
 import sys
 
 # Base url for pulling the rustup installer.
@@ -20,18 +17,18 @@ RUSTUP_URL_BASE = 'https://static-rust-lang-org.s3.amazonaws.com/rustup'
 RUSTUP_MANIFEST = os.path.join(RUSTUP_URL_BASE, 'release-stable.toml')
 
 # We bake in a known version number so we can verify a checksum.
-RUSTUP_VERSION = '1.0.0'
+RUSTUP_VERSION = '1.9.0'
 
 # SHA-256 checksums of the installers, per platform.
 RUSTUP_HASHES = {
     'x86_64-unknown-freebsd':
-        '706c2c8a49498b722baad5e8dadaa16a3505e2a9f46b7ee3f41d4dce56163155',
+        'ef830f79b25f9c3ec9cffba6318740089fc8133c8e760f4a1f780f1547d6cc3c',
     'x86_64-apple-darwin':
-        '2da68a13feb9a691ef3b59d0d6d53af617962ab5ba4673eaf3818778ccd00bec',
+        '8319dbcd09f34f670a2c0aab22070fcce67477dcd620ce762b75a5718c35e335',
     'x86_64-unknown-linux-gnu':
-        '4cda09438c08eab55cfe4a98325a5722c4ec66865d07da07d38ddc6c36893692',
+        '4b7a67cd971d713e0caef48b5754190aca19192d1863927a005c3432512b12dc',
     'x86_64-pc-windows-msvc':
-        'e3bba8fbb24aed412757d1ea07d6ed1e952ca3f6293b3551e44649601dbe830f',
+        '9f48dfec34c71336177e5ca2e275f368867f6519079aeb3b974715db93ad03e7',
 }
 
 NO_PLATFORM = '''
@@ -41,6 +38,7 @@ Please try installing rust for your system from https://rustup.rs/
 or from https://rust-lang.org/ or from your package manager.
 '''
 
+
 def rustup_url(host, version=RUSTUP_VERSION):
     '''Download url for a particular version of the installer.'''
     return '%(base)s/archive/%(version)s/%(host)s/rustup-init%(ext)s' % {
@@ -49,9 +47,11 @@ def rustup_url(host, version=RUSTUP_VERSION):
                 'host': host,
                 'ext': exe_suffix(host)}
 
+
 def rustup_hash(host):
     '''Look up the checksum for the given installer.'''
     return RUSTUP_HASHES.get(host, None)
+
 
 def platform():
     '''Determine the appropriate rust platform string for the current host'''
@@ -67,12 +67,14 @@ def platform():
 
     return None
 
+
 def exe_suffix(host=None):
     if not host:
         host = platform()
     if 'windows' in host:
         return '.exe'
     return ''
+
 
 USAGE = '''
 python rust.py [--update]
@@ -84,9 +86,11 @@ and verifies the current stored checksums against the distribution server,
 but doesn't update the version installed by `mach bootstrap`.
 '''
 
+
 def unquote(s):
     '''Strip outer quotation marks from a string.'''
     return s.strip("'").strip('"')
+
 
 def rustup_latest_version():
     '''Query the latest version of the rustup installer.'''
@@ -111,6 +115,7 @@ def rustup_latest_version():
             return unquote(value)
     return None
 
+
 def http_download_and_hash(url):
     import hashlib
     import requests
@@ -119,6 +124,7 @@ def http_download_and_hash(url):
     for data in r.iter_content(4096):
         h.update(data)
     return h.hexdigest()
+
 
 def make_checksums(version, validate=False):
     hashes = []
@@ -135,6 +141,7 @@ def make_checksums(version, validate=False):
             print('OK')
         hashes.append((platform, checksum))
     return hashes
+
 
 if __name__ == '__main__':
     '''Allow invoking the module as a utility to update checksums.'''

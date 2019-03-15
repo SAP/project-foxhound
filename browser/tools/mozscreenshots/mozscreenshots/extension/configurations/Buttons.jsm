@@ -4,15 +4,12 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["Buttons"];
+var EXPORTED_SYMBOLS = ["Buttons"];
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
+ChromeUtils.import("resource:///modules/CustomizableUI.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-Cu.import("resource:///modules/CustomizableUI.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
-
-this.Buttons = {
+var Buttons = {
 
   init(libDir) {
     createWidget();
@@ -20,42 +17,46 @@ this.Buttons = {
 
   configurations: {
     navBarButtons: {
-      applyConfig: Task.async(() => {
+      selectors: ["#nav-bar"],
+      applyConfig: async () => {
         CustomizableUI.addWidgetToArea("screenshot-widget", CustomizableUI.AREA_NAVBAR);
-      }),
+      },
     },
 
     tabsToolbarButtons: {
-      applyConfig: Task.async(() => {
+      selectors: ["#TabsToolbar"],
+      applyConfig: async () => {
         CustomizableUI.addWidgetToArea("screenshot-widget", CustomizableUI.AREA_TABSTRIP);
-      }),
+      },
     },
 
     menuPanelButtons: {
-      applyConfig: Task.async(() => {
-        CustomizableUI.addWidgetToArea("screenshot-widget", CustomizableUI.AREA_PANEL);
-      }),
+      selectors: ["#widget-overflow"],
+      applyConfig: async () => {
+        CustomizableUI.addWidgetToArea("screenshot-widget", CustomizableUI.AREA_FIXED_OVERFLOW_PANEL);
+      },
 
-      verifyConfig() {
+      async verifyConfig() {
         let browserWindow = Services.wm.getMostRecentWindow("navigator:browser");
         if (browserWindow.PanelUI.panel.state == "closed") {
-          return Promise.reject("The button isn't shown when the panel isn't open.");
+          return "The button isn't shown when the panel isn't open.";
         }
-        return Promise.resolve("menuPanelButtons.verifyConfig");
+        return undefined;
       },
     },
 
     custPaletteButtons: {
-      applyConfig: Task.async(() => {
+      selectors: ["#customization-palette"],
+      applyConfig: async () => {
         CustomizableUI.removeWidgetFromArea("screenshot-widget");
-      }),
+      },
 
-      verifyConfig() {
+      async verifyConfig() {
         let browserWindow = Services.wm.getMostRecentWindow("navigator:browser");
         if (browserWindow.document.documentElement.getAttribute("customizing") != "true") {
-          return Promise.reject("The button isn't shown when we're not in customize mode.");
+          return "The button isn't shown when we're not in customize mode.";
         }
-        return Promise.resolve("custPaletteButtons.verifyConfig");
+        return undefined;
       },
     },
   },

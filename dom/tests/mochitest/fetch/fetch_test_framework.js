@@ -1,4 +1,8 @@
 function testScript(script) {
+  function makeWrapperUrl(wrapper) {
+    return wrapper + "?script=" + script;
+  }
+  let workerWrapperUrl = makeWrapperUrl("worker_wrapper.js");
 
   // The framework runs the entire test in many different configurations.
   // On slow platforms and builds this can make the tests likely to
@@ -14,8 +18,7 @@ function testScript(script) {
   function setupPrefs() {
     return new Promise(function(resolve, reject) {
       SpecialPowers.pushPrefEnv({
-        "set": [["dom.requestcontext.enabled", true],
-                ["dom.serviceWorkers.enabled", true],
+        "set": [["dom.serviceWorkers.enabled", true],
                 ["dom.serviceWorkers.testing.enabled", true],
                 ["dom.serviceWorkers.idle_timeout", 0],
                 ["dom.serviceWorkers.exemptFromPerDomainMax", true]]
@@ -25,7 +28,7 @@ function testScript(script) {
 
   function workerTest() {
     return new Promise(function(resolve, reject) {
-      var worker = new Worker("worker_wrapper.js");
+      var worker = new Worker(workerWrapperUrl);
       worker.onmessage = function(event) {
         if (event.data.context != "Worker") {
           return;
@@ -46,7 +49,7 @@ function testScript(script) {
 
   function nestedWorkerTest() {
     return new Promise(function(resolve, reject) {
-      var worker = new Worker("nested_worker_wrapper.js");
+      var worker = new Worker(makeWrapperUrl("nested_worker_wrapper.js"));
       worker.onmessage = function(event) {
         if (event.data.context != "NestedWorker") {
           return;
@@ -75,8 +78,10 @@ function testScript(script) {
     }
     return new Promise(function(resolve, reject) {
       function setupSW(registration) {
-        var worker = registration.waiting ||
+        var worker = registration.installing ||
+                     registration.waiting ||
                      registration.active;
+        var iframe;
 
         window.addEventListener("message",function onMessage(event) {
           if (event.data.context != "ServiceWorker") {
@@ -84,6 +89,7 @@ function testScript(script) {
           }
           if (event.data.type == 'finish') {
             window.removeEventListener("message", onMessage);
+            iframe.remove();
             registration.unregister()
               .then(resolve)
               .catch(reject);
@@ -94,7 +100,7 @@ function testScript(script) {
 
         worker.onerror = reject;
 
-        var iframe = document.createElement("iframe");
+        iframe = document.createElement("iframe");
         iframe.src = "message_receiver.html";
         iframe.onload = function() {
           worker.postMessage({ script: script });
@@ -102,20 +108,8 @@ function testScript(script) {
         document.body.appendChild(iframe);
       }
 
-      navigator.serviceWorker.register("worker_wrapper.js", {scope: "."})
-        .then(function(registration) {
-          if (registration.installing) {
-            var done = false;
-            registration.installing.onstatechange = function() {
-              if (!done) {
-                done = true;
-                setupSW(registration);
-              }
-            };
-          } else {
-            setupSW(registration);
-          }
-        });
+      navigator.serviceWorker.register(workerWrapperUrl, {scope: "."})
+        .then(setupSW);
     });
   }
 

@@ -5,41 +5,35 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "LayerAnimationUtils.h"
-#include "mozilla/ComputedTimingFunction.h" // For ComputedTimingFunction
-#include "mozilla/layers/LayersMessages.h" // For TimingFunction etc.
+#include "mozilla/ComputedTimingFunction.h"  // For ComputedTimingFunction
+#include "mozilla/layers/LayersMessages.h"   // For TimingFunction etc.
+#include "nsTimingFunction.h"
 
 namespace mozilla {
 namespace layers {
 
 /* static */ Maybe<ComputedTimingFunction>
 AnimationUtils::TimingFunctionToComputedTimingFunction(
-  const TimingFunction& aTimingFunction)
-{
+    const TimingFunction& aTimingFunction) {
   switch (aTimingFunction.type()) {
     case TimingFunction::Tnull_t:
       return Nothing();
     case TimingFunction::TCubicBezierFunction: {
-      ComputedTimingFunction result;
       CubicBezierFunction cbf = aTimingFunction.get_CubicBezierFunction();
-      result.Init(nsTimingFunction(cbf.x1(), cbf.y1(), cbf.x2(), cbf.y2()));
-      return Some(result);
+      return Some(ComputedTimingFunction::CubicBezier(cbf.x1(), cbf.y1(),
+                                                      cbf.x2(), cbf.y2()));
     }
     case TimingFunction::TStepFunction: {
       StepFunction sf = aTimingFunction.get_StepFunction();
-      nsTimingFunction::Type type = sf.type() == 1 ?
-        nsTimingFunction::Type::StepStart :
-        nsTimingFunction::Type::StepEnd;
-      ComputedTimingFunction result;
-      result.Init(nsTimingFunction(type, sf.steps()));
-      return Some(result);
+      StyleStepPosition pos = static_cast<StyleStepPosition>(sf.type());
+      return Some(ComputedTimingFunction::Steps(sf.steps(), pos));
     }
     default:
-      MOZ_ASSERT_UNREACHABLE(
-        "Function must be null, bezier or step");
+      MOZ_ASSERT_UNREACHABLE("Function must be null, bezier, step or frames");
       break;
   }
   return Nothing();
 }
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla

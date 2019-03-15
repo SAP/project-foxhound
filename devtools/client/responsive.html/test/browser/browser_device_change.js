@@ -3,13 +3,10 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 
 "use strict";
 
-// Tests changing viewport device
-const TEST_URL = "data:text/html;charset=utf-8,Device list test";
+// Tests changing viewport device (need HTTP load for proper UA testing)
 
+const TEST_URL = `${URL_ROOT}doc_page_state.html`;
 const DEFAULT_DPPX = window.devicePixelRatio;
-const DEFAULT_UA = Cc["@mozilla.org/network/protocol;1?name=http"]
-  .getService(Ci.nsIHttpProtocolHandler)
-  .userAgent;
 
 const Types = require("devtools/client/responsive.html/types");
 
@@ -28,61 +25,88 @@ const testDevice = {
 // Add the new device to the list
 addDeviceForTest(testDevice);
 
-addRDMTask(TEST_URL, function* ({ ui, manager }) {
-  let { store } = ui.toolWindow;
+addRDMTask(TEST_URL, async function({ ui }) {
+  const { store } = ui.toolWindow;
+
+  reloadOnUAChange(true);
 
   // Wait until the viewport has been added and the device list has been loaded
-  yield waitUntilState(store, state => state.viewports.length == 1
-    && state.devices.listState == Types.deviceListState.LOADED);
+  await waitUntilState(store, state => state.viewports.length == 1
+    && state.devices.listState == Types.loadableState.LOADED);
 
   // Test defaults
   testViewportDimensions(ui, 320, 480);
-  yield testUserAgent(ui, DEFAULT_UA);
-  yield testDevicePixelRatio(ui, DEFAULT_DPPX);
-  yield testTouchEventsOverride(ui, false);
-  testViewportDeviceSelectLabel(ui, "no device selected");
+  info("Should have default UA at the start of the test");
+  await testUserAgent(ui, DEFAULT_UA);
+  await testDevicePixelRatio(ui, DEFAULT_DPPX);
+  await testTouchEventsOverride(ui, false);
+  testViewportDeviceMenuLabel(ui, "Responsive");
 
   // Test device with custom properties
-  yield selectDevice(ui, "Fake Phone RDM Test");
-  yield waitForViewportResizeTo(ui, testDevice.width, testDevice.height);
-  yield testUserAgent(ui, testDevice.userAgent);
-  yield testDevicePixelRatio(ui, testDevice.pixelRatio);
-  yield testTouchEventsOverride(ui, true);
+  let reloaded = waitForViewportLoad(ui);
+  await selectDevice(ui, "Fake Phone RDM Test");
+  await reloaded;
+  await waitForViewportResizeTo(ui, testDevice.width, testDevice.height);
+  info("Should have device UA now that device is applied");
+  await testUserAgent(ui, testDevice.userAgent);
+  await testDevicePixelRatio(ui, testDevice.pixelRatio);
+  await testTouchEventsOverride(ui, true);
 
   // Test resetting device when resizing viewport
-  let deviceRemoved = once(ui, "device-removed");
-  yield testViewportResize(ui, ".viewport-vertical-resize-handle",
+  const deviceRemoved = once(ui, "device-association-removed");
+  reloaded = waitForViewportLoad(ui);
+  await testViewportResize(ui, ".viewport-vertical-resize-handle",
     [-10, -10], [testDevice.width, testDevice.height - 10], [0, -10], ui);
-  yield deviceRemoved;
-  yield testUserAgent(ui, DEFAULT_UA);
-  yield testDevicePixelRatio(ui, DEFAULT_DPPX);
-  yield testTouchEventsOverride(ui, false);
-  testViewportDeviceSelectLabel(ui, "no device selected");
+  await Promise.all([ deviceRemoved, reloaded ]);
+  info("Should have default UA after resizing viewport");
+  await testUserAgent(ui, DEFAULT_UA);
+  await testDevicePixelRatio(ui, DEFAULT_DPPX);
+  await testTouchEventsOverride(ui, false);
+  testViewportDeviceMenuLabel(ui, "Responsive");
 
   // Test device with generic properties
-  yield selectDevice(ui, "Laptop (1366 x 768)");
-  yield waitForViewportResizeTo(ui, 1366, 768);
-  yield testUserAgent(ui, DEFAULT_UA);
-  yield testDevicePixelRatio(ui, 1);
-  yield testTouchEventsOverride(ui, false);
+  await selectDevice(ui, "Laptop (1366 x 768)");
+  await waitForViewportResizeTo(ui, 1366, 768);
+  info("Should have default UA when using device without specific UA");
+  await testUserAgent(ui, DEFAULT_UA);
+  await testDevicePixelRatio(ui, 1);
+  await testTouchEventsOverride(ui, false);
+
+  reloadOnUAChange(false);
 });
 
-function testViewportDimensions(ui, w, h) {
-  let viewport = ui.toolWindow.document.querySelector(".viewport-content");
+add_task(async function() {
+  const tab = await addTab(TEST_URL);
+  const { ui } = await openRDM(tab);
 
-  is(ui.toolWindow.getComputedStyle(viewport).getPropertyValue("width"),
-     `${w}px`, `Viewport should have width of ${w}px`);
-  is(ui.toolWindow.getComputedStyle(viewport).getPropertyValue("height"),
-     `${h}px`, `Viewport should have height of ${h}px`);
-}
+  const { store } = ui.toolWindow;
 
-function* testDevicePixelRatio(ui, expected) {
-  let dppx = yield getViewportDevicePixelRatio(ui);
-  is(dppx, expected, `devicePixelRatio should be set to ${expected}`);
-}
+  reloadOnUAChange(true);
 
-function* getViewportDevicePixelRatio(ui) {
-  return yield ContentTask.spawn(ui.getViewportBrowser(), {}, function* () {
-    return content.devicePixelRatio;
-  });
-}
+  // Wait until the viewport has been added and the device list has been loaded
+  await waitUntilState(store, state =>
+    state.viewports.length == 1 &&
+    state.viewports[0].device === "Laptop (1366 x 768)" &&
+    state.devices.listState == Types.loadableState.LOADED);
+
+  // Select device with custom UA
+  let reloaded = waitForViewportLoad(ui);
+  await selectDevice(ui, "Fake Phone RDM Test");
+  await reloaded;
+  await waitForViewportResizeTo(ui, testDevice.width, testDevice.height);
+  info("Should have device UA now that device is applied");
+  await testUserAgent(ui, testDevice.userAgent);
+
+  // Browser will reload to clear the UA on RDM close
+  reloaded = waitForViewportLoad(ui);
+  await closeRDM(tab);
+  await reloaded;
+
+  // Ensure UA is reset to default after closing RDM
+  info("Should have default UA after closing RDM");
+  await testUserAgentFromBrowser(tab.linkedBrowser, DEFAULT_UA);
+
+  await removeTab(tab);
+
+  reloadOnUAChange(false);
+});

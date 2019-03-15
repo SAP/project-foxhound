@@ -2,17 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-this.EXPORTED_SYMBOLS = [ "InlineSpellChecker",
-                          "SpellCheckHelper" ];
-var gLanguageBundle;
-var gRegionBundle;
+var EXPORTED_SYMBOLS = [ "InlineSpellChecker",
+                         "SpellCheckHelper" ];
 const MAX_UNDO_STACK_DEPTH = 1;
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cu = Components.utils;
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-this.InlineSpellChecker = function InlineSpellChecker(aEditor) {
+function InlineSpellChecker(aEditor) {
   this.init(aEditor);
   this.mAddedWordStack = []; // We init this here to preserve it between init/uninit calls
 }
@@ -57,7 +53,6 @@ InlineSpellChecker.prototype = {
     this.mSpellSuggestions = [];
     this.mSuggestionItems = [];
     this.mDictionaryMenu = null;
-    this.mDictionaryNames = [];
     this.mDictionaryItems = [];
     this.mWordNode = null;
   },
@@ -133,7 +128,7 @@ InlineSpellChecker.prototype = {
     var spellchecker = this.mRemote || this.mInlineSpellChecker.spellChecker;
     try {
       if (!this.mRemote && !spellchecker.CheckCurrentWord(this.mMisspelling))
-        return 0;  // word seems not misspelled after all (?)
+        return 0; // word seems not misspelled after all (?)
     } catch (e) {
         return 0;
     }
@@ -147,13 +142,13 @@ InlineSpellChecker.prototype = {
         break;
       this.mSpellSuggestions.push(suggestion);
 
-      var item = menu.ownerDocument.createElement("menuitem");
+      var item = menu.ownerDocument.createXULElement("menuitem");
       this.mSuggestionItems.push(item);
       item.setAttribute("label", suggestion);
       item.setAttribute("value", suggestion);
       // this function thing is necessary to generate a callback with the
       // correct binding of "val" (the index in this loop).
-      var callback = function(me, val) { return function(evt) { me.replaceMisspelling(val); } };
+      var callback = function(me, val) { return function(evt) { me.replaceMisspelling(val); }; };
       item.addEventListener("command", callback(this, i), true);
       item.setAttribute("class", "spell-suggestion");
       menu.insertBefore(item, insertBefore);
@@ -172,18 +167,13 @@ InlineSpellChecker.prototype = {
 
   sortDictionaryList(list) {
     var sortedList = [];
+    var names = Services.intl.getLocaleDisplayNames(undefined, list);
     for (var i = 0; i < list.length; i++) {
-      sortedList.push({"id": list[i],
-                       "label": this.getDictionaryDisplayName(list[i])});
+      sortedList.push({"localeCode": list[i],
+                       "displayName": names[i]});
     }
-    sortedList.sort(function(a, b) {
-      if (a.label < b.label)
-        return -1;
-      if (a.label > b.label)
-        return 1;
-      return 0;
-    });
-
+    let comparer = (new Services.intl.Collator()).compare;
+    sortedList.sort((a, b) => comparer(a.displayName, b.displayName));
     return sortedList;
   },
 
@@ -191,7 +181,6 @@ InlineSpellChecker.prototype = {
   // does an append to the given menu
   addDictionaryListToMenu(menu, insertBefore) {
     this.mDictionaryMenu = menu;
-    this.mDictionaryNames = [];
     this.mDictionaryItems = [];
 
     if (!this.enabled)
@@ -215,27 +204,29 @@ InlineSpellChecker.prototype = {
     var sortedList = this.sortDictionaryList(list);
 
     for (var i = 0; i < sortedList.length; i++) {
-      this.mDictionaryNames.push(sortedList[i].id);
-      var item = menu.ownerDocument.createElement("menuitem");
-      item.setAttribute("id", "spell-check-dictionary-" + sortedList[i].id);
-      item.setAttribute("label", sortedList[i].label);
+      var item = menu.ownerDocument.createXULElement("menuitem");
+      item.setAttribute("id", "spell-check-dictionary-" + sortedList[i].localeCode);
+      // XXX: Once Fluent has dynamic references, we could also lazily
+      //      inject regionNames/languageNames FTL and localize using
+      //      `l10n-id` here.
+      item.setAttribute("label", sortedList[i].displayName);
       item.setAttribute("type", "radio");
       this.mDictionaryItems.push(item);
-      if (curlang == sortedList[i].id) {
+      if (curlang == sortedList[i].localeCode) {
         item.setAttribute("checked", "true");
       } else {
-        var callback = function(me, val, dictName) {
+        var callback = function(me, localeCode) {
           return function(evt) {
-            me.selectDictionary(val);
+            me.selectDictionary(localeCode);
             // Notify change of dictionary, especially for Thunderbird,
             // which is otherwise not notified any more.
             var view = menu.ownerGlobal;
             var spellcheckChangeEvent = new view.CustomEvent(
-                  "spellcheck-changed", {detail: { dictionary: dictName}});
+                  "spellcheck-changed", {detail: { dictionary: localeCode}});
             menu.ownerDocument.dispatchEvent(spellcheckChangeEvent);
-          }
+          };
         };
-        item.addEventListener("command", callback(this, i, sortedList[i].id), true);
+        item.addEventListener("command", callback(this, sortedList[i].localeCode), true);
       }
       if (insertBefore)
         menu.insertBefore(item, insertBefore);
@@ -243,65 +234,6 @@ InlineSpellChecker.prototype = {
         menu.appendChild(item);
     }
     return list.length;
-  },
-
-  // Formats a valid BCP 47 language tag based on available localized names.
-  getDictionaryDisplayName(dictionaryName) {
-    try {
-      // Get the display name for this dictionary.
-      let languageTagMatch = /^([a-z]{2,3}|[a-z]{4}|[a-z]{5,8})(?:[-_]([a-z]{4}))?(?:[-_]([A-Z]{2}|[0-9]{3}))?((?:[-_](?:[a-z0-9]{5,8}|[0-9][a-z0-9]{3}))*)(?:[-_][a-wy-z0-9](?:[-_][a-z0-9]{2,8})+)*(?:[-_]x(?:[-_][a-z0-9]{1,8})+)?$/i;
-      var [/* languageTag */, languageSubtag, scriptSubtag, regionSubtag, variantSubtags] = dictionaryName.match(languageTagMatch);
-    } catch (e) {
-      // If we weren't given a valid language tag, just use the raw dictionary name.
-      return dictionaryName;
-    }
-
-    if (!gLanguageBundle) {
-      // Create the bundles for language and region names.
-      var bundleService = Components.classes["@mozilla.org/intl/stringbundle;1"]
-                                    .getService(Components.interfaces.nsIStringBundleService);
-      gLanguageBundle = bundleService.createBundle(
-          "chrome://global/locale/languageNames.properties");
-      gRegionBundle = bundleService.createBundle(
-          "chrome://global/locale/regionNames.properties");
-    }
-
-    var displayName = "";
-
-    // Language subtag will normally be 2 or 3 letters, but could be up to 8.
-    try {
-      displayName += gLanguageBundle.GetStringFromName(languageSubtag.toLowerCase());
-    } catch (e) {
-      displayName += languageSubtag.toLowerCase(); // Fall back to raw language subtag.
-    }
-
-    // Region subtag will be 2 letters or 3 digits.
-    if (regionSubtag) {
-      displayName += " (";
-
-      try {
-        displayName += gRegionBundle.GetStringFromName(regionSubtag.toLowerCase());
-      } catch (e) {
-        displayName += regionSubtag.toUpperCase(); // Fall back to raw region subtag.
-      }
-
-      displayName += ")";
-    }
-
-    // Script subtag will be 4 letters.
-    if (scriptSubtag) {
-      displayName += " / ";
-
-      // XXX: See bug 666662 and bug 666731 for full implementation.
-      displayName += scriptSubtag; // Fall back to raw script subtag.
-    }
-
-    // Each variant subtag will be 4 to 8 chars.
-    if (variantSubtags)
-      // XXX: See bug 666662 and bug 666731 for full implementation.
-      displayName += " (" + variantSubtags.substr(1).split(/[-_]/).join(" / ") + ")"; // Collapse multiple variants.
-
-    return displayName;
   },
 
   // undoes the work of addDictionaryListToMenu for the menu
@@ -314,15 +246,15 @@ InlineSpellChecker.prototype = {
   },
 
   // callback for selecting a dictionary
-  selectDictionary(index) {
+  selectDictionary(localeCode) {
     if (this.mRemote) {
-      this.mRemote.selectDictionary(index);
+      this.mRemote.selectDictionary(localeCode);
       return;
     }
-    if (!this.mInlineSpellChecker || index < 0 || index >= this.mDictionaryNames.length)
+    if (!this.mInlineSpellChecker)
       return;
     var spellchecker = this.mInlineSpellChecker.spellChecker;
-    spellchecker.SetCurrentDictionary(this.mDictionaryNames[index]);
+    spellchecker.SetCurrentDictionary(localeCode);
     this.mInlineSpellChecker.spellCheckRange(null); // causes recheck
   },
 
@@ -380,11 +312,12 @@ InlineSpellChecker.prototype = {
       this.mRemote.ignoreWord();
     else
       this.mInlineSpellChecker.ignoreWord(this.mMisspelling);
-  }
+  },
 };
 
 var SpellCheckHelper = {
-  // Set when over a non-read-only <textarea> or editable <input>.
+  // Set when over a non-read-only <textarea> or editable <input>
+  // (that allows text entry of some kind, so not e.g. <input type=checkbox>)
   EDITABLE: 0x1,
 
   // Set when over an <input> element of any type.
@@ -408,6 +341,10 @@ var SpellCheckHelper = {
 
   // Set when over an <input type="password"> field.
   PASSWORD: 0x80,
+
+  // Set when spellcheckable. Replaces `EDITABLE`/`CONTENTEDITABLE` combination
+  // specifically for spellcheck.
+  SPELLCHECKABLE: 0x100,
 
   isTargetAKeywordField(aNode, window) {
     if (!(aNode instanceof window.HTMLInputElement))
@@ -443,9 +380,11 @@ var SpellCheckHelper = {
     var flags = 0;
     if (element instanceof window.HTMLInputElement) {
       flags |= this.INPUT;
-
       if (element.mozIsTextField(false) || element.type == "number") {
         flags |= this.TEXTINPUT;
+        if (!element.readOnly) {
+          flags |= this.EDITABLE;
+        }
 
         if (element.type == "number") {
           flags |= this.NUMERIC;
@@ -454,7 +393,7 @@ var SpellCheckHelper = {
         // Allow spellchecking UI on all text and search inputs.
         if (!element.readOnly &&
             (element.type == "text" || element.type == "search")) {
-          flags |= this.EDITABLE;
+          flags |= this.SPELLCHECKABLE;
         }
         if (this.isTargetAKeywordField(element, window))
           flags |= this.KEYWORD;
@@ -465,29 +404,26 @@ var SpellCheckHelper = {
     } else if (element instanceof window.HTMLTextAreaElement) {
       flags |= this.TEXTINPUT | this.TEXTAREA;
       if (!element.readOnly) {
-        flags |= this.EDITABLE;
+        flags |= this.SPELLCHECKABLE | this.EDITABLE;
       }
     }
 
-    if (!(flags & this.EDITABLE)) {
+    if (!(flags & this.SPELLCHECKABLE)) {
       var win = element.ownerGlobal;
       if (win) {
-        var isEditable = false;
+        var isSpellcheckable = false;
         try {
-          var editingSession = win.QueryInterface(Ci.nsIInterfaceRequestor)
-                                  .getInterface(Ci.nsIWebNavigation)
-                                  .QueryInterface(Ci.nsIInterfaceRequestor)
-                                  .getInterface(Ci.nsIEditingSession);
+          var editingSession = win.docShell.editingSession;
           if (editingSession.windowIsEditable(win) &&
               this.getComputedStyle(element, "-moz-user-modify") == "read-write") {
-            isEditable = true;
+            isSpellcheckable = true;
           }
         } catch (ex) {
           // If someone built with composer disabled, we can't get an editing session.
         }
 
-        if (isEditable)
-          flags |= this.CONTENTEDITABLE;
+        if (isSpellcheckable)
+          flags |= this.CONTENTEDITABLE | this.SPELLCHECKABLE;
       }
     }
 
@@ -508,7 +444,7 @@ RemoteSpellChecker.prototype = {
 
   GetSuggestedWord() {
     if (!this._suggestionGenerator) {
-      this._suggestionGenerator = (function*(spellInfo) {
+      this._suggestionGenerator = (function* (spellInfo) {
         for (let i of spellInfo.spellSuggestions)
           yield i;
       })(this._spellInfo);
@@ -522,12 +458,12 @@ RemoteSpellChecker.prototype = {
     return next.value;
   },
 
-  get currentDictionary() { return this._spellInfo.currentDictionary },
+  get currentDictionary() { return this._spellInfo.currentDictionary; },
   get dictionaryList() { return this._spellInfo.dictionaryList.slice(); },
 
-  selectDictionary(index) {
+  selectDictionary(localeCode) {
     this._spellInfo.target.sendAsyncMessage("InlineSpellChecker:selectDictionary",
-                                            { index });
+                                            { localeCode });
   },
 
   replaceMisspelling(index) {
@@ -547,14 +483,14 @@ RemoteSpellChecker.prototype = {
 
     let dictionary = Cc["@mozilla.org/spellchecker/personaldictionary;1"]
                        .getService(Ci.mozIPersonalDictionary);
-    dictionary.addWord(this._spellInfo.misspelling, "");
+    dictionary.addWord(this._spellInfo.misspelling);
 
     this._spellInfo.target.sendAsyncMessage("InlineSpellChecker:recheck", {});
   },
   undoAddToDictionary(word) {
     let dictionary = Cc["@mozilla.org/spellchecker/personaldictionary;1"]
                        .getService(Ci.mozIPersonalDictionary);
-    dictionary.removeWord(word, "");
+    dictionary.removeWord(word);
 
     this._spellInfo.target.sendAsyncMessage("InlineSpellChecker:recheck", {});
   },
@@ -565,5 +501,5 @@ RemoteSpellChecker.prototype = {
 
     this._spellInfo.target.sendAsyncMessage("InlineSpellChecker:recheck", {});
   },
-  uninit() { this._spellInfo.target.sendAsyncMessage("InlineSpellChecker:uninit", {}); }
+  uninit() { this._spellInfo.target.sendAsyncMessage("InlineSpellChecker:uninit", {}); },
 };

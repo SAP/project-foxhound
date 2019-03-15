@@ -1,4 +1,4 @@
-Components.utils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var modifyObserver = {
   observe: function(subject, topic, data) {
@@ -7,10 +7,10 @@ var modifyObserver = {
       try {
         // We should be able to QI the request to an nsIChannel, then get
         // the notificationCallbacks without throwing an exception.
-        var ir = subject.QueryInterface(Components.interfaces.nsIChannel).notificationCallbacks;
+        var ir = subject.QueryInterface(Ci.nsIChannel).notificationCallbacks;
 
         // The notificationCallbacks should be an nsIInterfaceRequestor.
-        testOk = ir.toString().indexOf(Components.interfaces.nsIInterfaceRequestor) != -1;
+        testOk = ir.toString().includes(Ci.nsIInterfaceRequestor);
       } catch (e) {
       }
       sendAsyncMessage('modify-request-completed', testOk);
@@ -19,4 +19,4 @@ var modifyObserver = {
   }
 };
 
-Services.obs.addObserver(modifyObserver, 'http-on-modify-request', false);
+Services.obs.addObserver(modifyObserver, 'http-on-modify-request');

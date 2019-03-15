@@ -9,7 +9,6 @@
 #ifndef GrGLTextureRenderTarget_DEFINED
 #define GrGLTextureRenderTarget_DEFINED
 
-#include "GrGLGpu.h"
 #include "GrGLTexture.h"
 #include "GrGLRenderTarget.h"
 
@@ -29,20 +28,17 @@ public:
                             SkBudgeted budgeted,
                             const GrSurfaceDesc& desc,
                             const GrGLTexture::IDDesc& texIDDesc,
-                            const GrGLRenderTarget::IDDesc& rtIDDesc)
-        : GrSurface(gpu, desc)
-        , GrGLTexture(gpu, desc, texIDDesc)
-        , GrGLRenderTarget(gpu, desc, rtIDDesc) {
-        this->registerWithCache(budgeted);
-    }
+                            const GrGLRenderTarget::IDDesc& rtIDDesc,
+                            GrMipMapsStatus);
 
     bool canAttemptStencilAttachment() const override;
 
     void dumpMemoryStatistics(SkTraceMemoryDump* traceMemoryDump) const override;
 
-    static GrGLTextureRenderTarget* CreateWrapped(GrGLGpu* gpu, const GrSurfaceDesc& desc,
-                                                  const GrGLTexture::IDDesc& texIDDesc,
-                                                  const GrGLRenderTarget::IDDesc& rtIDDesc);
+    static sk_sp<GrGLTextureRenderTarget> MakeWrapped(GrGLGpu* gpu, const GrSurfaceDesc& desc,
+                                                      const GrGLTexture::IDDesc& texIDDesc,
+                                                      const GrGLRenderTarget::IDDesc& rtIDDesc,
+                                                      GrMipMapsStatus);
 protected:
     void onAbandon() override {
         GrGLRenderTarget::onAbandon();
@@ -59,18 +55,10 @@ private:
     GrGLTextureRenderTarget(GrGLGpu* gpu,
                             const GrSurfaceDesc& desc,
                             const GrGLTexture::IDDesc& texIDDesc,
-                            const GrGLRenderTarget::IDDesc& rtIDDesc)
-        : GrSurface(gpu, desc)
-        , GrGLTexture(gpu, desc, texIDDesc)
-        , GrGLRenderTarget(gpu, desc, rtIDDesc) {
-        this->registerWithCacheWrapped();
-    }
+                            const GrGLRenderTarget::IDDesc& rtIDDesc,
+                            GrMipMapsStatus);
 
-    // GrGLRenderTarget accounts for the texture's memory and any MSAA renderbuffer's memory.
-    size_t onGpuMemorySize() const override {
-        return GrGLRenderTarget::onGpuMemorySize();
-    }
-
+    size_t onGpuMemorySize() const override;
 };
 
 #ifdef SK_BUILD_FOR_WIN

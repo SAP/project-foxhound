@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,16 +8,15 @@
 #include "nsTreeUtils.h"
 #include "ChildIterator.h"
 #include "nsCRT.h"
-#include "nsIAtom.h"
+#include "nsAtom.h"
 #include "nsNameSpaceManager.h"
 #include "nsGkAtoms.h"
 #include "nsIContent.h"
 
 using namespace mozilla;
 
-nsresult
-nsTreeUtils::TokenizeProperties(const nsAString& aProperties, AtomArray & aPropertiesArray)
-{
+nsresult nsTreeUtils::TokenizeProperties(const nsAString& aProperties,
+                                         AtomArray& aPropertiesArray) {
   nsAString::const_iterator end;
   aProperties.EndReading(end);
 
@@ -25,37 +25,33 @@ nsTreeUtils::TokenizeProperties(const nsAString& aProperties, AtomArray & aPrope
 
   do {
     // Skip whitespace
-    while (iter != end && nsCRT::IsAsciiSpace(*iter))
-      ++iter;
+    while (iter != end && nsCRT::IsAsciiSpace(*iter)) ++iter;
 
     // If only whitespace, we're done
-    if (iter == end)
-      break;
+    if (iter == end) break;
 
     // Note the first non-whitespace character
     nsAString::const_iterator first = iter;
 
     // Advance to the next whitespace character
-    while (iter != end && ! nsCRT::IsAsciiSpace(*iter))
-      ++iter;
+    while (iter != end && !nsCRT::IsAsciiSpace(*iter)) ++iter;
 
     // XXX this would be nonsensical
     NS_ASSERTION(iter != first, "eh? something's wrong here");
-    if (iter == first)
-      break;
+    if (iter == first) break;
 
-    nsCOMPtr<nsIAtom> atom = NS_Atomize(Substring(first, iter));
+    RefPtr<nsAtom> atom = NS_Atomize(Substring(first, iter));
     aPropertiesArray.AppendElement(atom);
   } while (iter != end);
 
   return NS_OK;
 }
 
-nsIContent*
-nsTreeUtils::GetImmediateChild(nsIContent* aContainer, nsIAtom* aTag)
-{
+nsIContent* nsTreeUtils::GetImmediateChild(nsIContent* aContainer,
+                                           nsAtom* aTag) {
   dom::FlattenedChildIterator iter(aContainer);
-  for (nsIContent* child = iter.GetNextChild(); child; child = iter.GetNextChild()) {
+  for (nsIContent* child = iter.GetNextChild(); child;
+       child = iter.GetNextChild()) {
     if (child->IsXULElement(aTag)) {
       return child;
     }
@@ -64,11 +60,11 @@ nsTreeUtils::GetImmediateChild(nsIContent* aContainer, nsIAtom* aTag)
   return nullptr;
 }
 
-nsIContent*
-nsTreeUtils::GetDescendantChild(nsIContent* aContainer, nsIAtom* aTag)
-{
+nsIContent* nsTreeUtils::GetDescendantChild(nsIContent* aContainer,
+                                            nsAtom* aTag) {
   dom::FlattenedChildIterator iter(aContainer);
-  for (nsIContent* child = iter.GetNextChild(); child; child = iter.GetNextChild()) {
+  for (nsIContent* child = iter.GetNextChild(); child;
+       child = iter.GetNextChild()) {
     if (child->IsXULElement(aTag)) {
       return child;
     }
@@ -82,29 +78,26 @@ nsTreeUtils::GetDescendantChild(nsIContent* aContainer, nsIAtom* aTag)
   return nullptr;
 }
 
-nsresult
-nsTreeUtils::UpdateSortIndicators(nsIContent* aColumn, const nsAString& aDirection)
-{
-  aColumn->SetAttr(kNameSpaceID_None, nsGkAtoms::sortDirection, aDirection, true);
-  aColumn->SetAttr(kNameSpaceID_None, nsGkAtoms::sortActive, NS_LITERAL_STRING("true"), true);
+nsresult nsTreeUtils::UpdateSortIndicators(Element* aColumn,
+                                           const nsAString& aDirection) {
+  aColumn->SetAttr(kNameSpaceID_None, nsGkAtoms::sortDirection, aDirection,
+                   true);
+  aColumn->SetAttr(kNameSpaceID_None, nsGkAtoms::sortActive,
+                   NS_LITERAL_STRING("true"), true);
 
   // Unset sort attribute(s) on the other columns
   nsCOMPtr<nsIContent> parentContent = aColumn->GetParent();
-  if (parentContent &&
-      parentContent->NodeInfo()->Equals(nsGkAtoms::treecols,
-                                        kNameSpaceID_XUL)) {
-    uint32_t i, numChildren = parentContent->GetChildCount();
-    for (i = 0; i < numChildren; ++i) {
-      nsCOMPtr<nsIContent> childContent = parentContent->GetChildAt(i);
-
-      if (childContent &&
-          childContent != aColumn &&
+  if (parentContent && parentContent->NodeInfo()->Equals(nsGkAtoms::treecols,
+                                                         kNameSpaceID_XUL)) {
+    for (nsINode* childContent = parentContent->GetFirstChild(); childContent;
+         childContent = childContent->GetNextSibling()) {
+      if (childContent != aColumn &&
           childContent->NodeInfo()->Equals(nsGkAtoms::treecol,
                                            kNameSpaceID_XUL)) {
-        childContent->UnsetAttr(kNameSpaceID_None,
-                                nsGkAtoms::sortDirection, true);
-        childContent->UnsetAttr(kNameSpaceID_None,
-                                nsGkAtoms::sortActive, true);
+        childContent->AsElement()->UnsetAttr(kNameSpaceID_None,
+                                             nsGkAtoms::sortDirection, true);
+        childContent->AsElement()->UnsetAttr(kNameSpaceID_None,
+                                             nsGkAtoms::sortActive, true);
       }
     }
   }
@@ -112,19 +105,15 @@ nsTreeUtils::UpdateSortIndicators(nsIContent* aColumn, const nsAString& aDirecti
   return NS_OK;
 }
 
-nsresult
-nsTreeUtils::GetColumnIndex(nsIContent* aColumn, int32_t* aResult)
-{
+nsresult nsTreeUtils::GetColumnIndex(Element* aColumn, int32_t* aResult) {
   nsIContent* parentContent = aColumn->GetParent();
-  if (parentContent &&
-      parentContent->NodeInfo()->Equals(nsGkAtoms::treecols,
-                                        kNameSpaceID_XUL)) {
-    uint32_t i, numChildren = parentContent->GetChildCount();
+  if (parentContent && parentContent->NodeInfo()->Equals(nsGkAtoms::treecols,
+                                                         kNameSpaceID_XUL)) {
     int32_t colIndex = 0;
-    for (i = 0; i < numChildren; ++i) {
-      nsIContent *childContent = parentContent->GetChildAt(i);
-      if (childContent &&
-          childContent->NodeInfo()->Equals(nsGkAtoms::treecol,
+
+    for (nsINode* childContent = parentContent->GetFirstChild(); childContent;
+         childContent = childContent->GetNextSibling()) {
+      if (childContent->NodeInfo()->Equals(nsGkAtoms::treecol,
                                            kNameSpaceID_XUL)) {
         if (childContent == aColumn) {
           *aResult = colIndex;

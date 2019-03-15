@@ -4,34 +4,53 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
- 
+
 #ifndef SKSL_BINARYEXPRESSION
 #define SKSL_BINARYEXPRESSION
 
 #include "SkSLExpression.h"
-#include "../SkSLToken.h"
+#include "SkSLExpression.h"
+#include "../SkSLIRGenerator.h"
+#include "../SkSLLexer.h"
 
 namespace SkSL {
 
 /**
- * A binary operation. 
+ * A binary operation.
  */
 struct BinaryExpression : public Expression {
-    BinaryExpression(Position position, std::unique_ptr<Expression> left, Token::Kind op,
+    BinaryExpression(int offset, std::unique_ptr<Expression> left, Token::Kind op,
                      std::unique_ptr<Expression> right, const Type& type)
-    : INHERITED(position, kBinary_Kind, type)
+    : INHERITED(offset, kBinary_Kind, type)
     , fLeft(std::move(left))
     , fOperator(op)
     , fRight(std::move(right)) {}
 
-    virtual std::string description() const override {
-        return "(" + fLeft->description() + " " + Token::OperatorName(fOperator) + " " +
+    std::unique_ptr<Expression> constantPropagate(const IRGenerator& irGenerator,
+                                                  const DefinitionMap& definitions) override {
+        return irGenerator.constantFold(*fLeft,
+                                        fOperator,
+                                        *fRight);
+    }
+
+    bool hasSideEffects() const override {
+        return Compiler::IsAssignment(fOperator) || fLeft->hasSideEffects() ||
+               fRight->hasSideEffects();
+    }
+
+    std::unique_ptr<Expression> clone() const override {
+        return std::unique_ptr<Expression>(new BinaryExpression(fOffset, fLeft->clone(), fOperator,
+                                                                fRight->clone(), fType));
+    }
+
+    String description() const override {
+        return "(" + fLeft->description() + " " + Compiler::OperatorName(fOperator) + " " +
                fRight->description() + ")";
     }
 
-    const std::unique_ptr<Expression> fLeft;
+    std::unique_ptr<Expression> fLeft;
     const Token::Kind fOperator;
-    const std::unique_ptr<Expression> fRight;
+    std::unique_ptr<Expression> fRight;
 
     typedef Expression INHERITED;
 };

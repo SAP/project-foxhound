@@ -2,75 +2,44 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "LookupCacheV4.h"
 #include "Common.h"
 
-#define GTEST_SAFEBROWSING_DIR NS_LITERAL_CSTRING("safebrowsing")
-#define GTEST_TABLE NS_LITERAL_CSTRING("gtest-malware-proto")
+void TestHasPrefix(const _Fragment& aFragment, bool aExpectedHas,
+                   bool aExpectedComplete) {
+  _PrefixArray array = {GeneratePrefix(_Fragment("bravo.com/"), 32),
+                        GeneratePrefix(_Fragment("browsing.com/"), 8),
+                        GeneratePrefix(_Fragment("gound.com/"), 5),
+                        GeneratePrefix(_Fragment("small.com/"), 4)};
 
-typedef nsCString _Fragment;
-typedef nsTArray<nsCString> _PrefixArray;
-
-static UniquePtr<LookupCacheV4>
-SetupLookupCacheV4(const _PrefixArray& prefixArray)
-{
-  nsCOMPtr<nsIFile> file;
-  NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR, getter_AddRefs(file));
-
-  file->AppendNative(GTEST_SAFEBROWSING_DIR);
-
-  UniquePtr<LookupCacheV4> cache = MakeUnique<LookupCacheV4>(GTEST_TABLE, EmptyCString(), file);
-  nsresult rv = cache->Init();
-  EXPECT_EQ(rv, NS_OK);
-
-  PrefixStringMap map;
-  PrefixArrayToPrefixStringMap(prefixArray, map);
-  rv = cache->Build(map);
-  EXPECT_EQ(rv, NS_OK);
-
-  return Move(cache);
-}
-
-void
-TestHasPrefix(const _Fragment& aFragment, bool aExpectedHas, bool aExpectedComplete)
-{
-  _PrefixArray array = { GeneratePrefix(_Fragment("bravo.com/"), 32),
-                         GeneratePrefix(_Fragment("browsing.com/"), 8),
-                         GeneratePrefix(_Fragment("gound.com/"), 5),
-                         GeneratePrefix(_Fragment("small.com/"), 4)
-                       };
-
-  RunTestInNewThread([&] () -> void {
-    UniquePtr<LookupCache> cache = SetupLookupCacheV4(array);
+  RunTestInNewThread([&]() -> void {
+    RefPtr<LookupCache> cache = SetupLookupCache<LookupCacheV4>(array);
 
     Completion lookupHash;
-    nsCOMPtr<nsICryptoHash> cryptoHash = do_CreateInstance(NS_CRYPTO_HASH_CONTRACTID);
-    lookupHash.FromPlaintext(aFragment, cryptoHash);
+    lookupHash.FromPlaintext(aFragment);
 
-    bool has, fromCache;
+    bool has, confirmed;
     uint32_t matchLength;
-    nsresult rv = cache->Has(lookupHash, &has, &matchLength, &fromCache);
+    // Freshness is not used in V4 so we just put dummy values here.
+    TableFreshnessMap dummy;
+    nsresult rv = cache->Has(lookupHash, &has, &matchLength, &confirmed);
 
     EXPECT_EQ(rv, NS_OK);
     EXPECT_EQ(has, aExpectedHas);
     EXPECT_EQ(matchLength == COMPLETE_SIZE, aExpectedComplete);
+    EXPECT_EQ(confirmed, false);
 
     cache->ClearAll();
   });
-
 }
 
-TEST(LookupCacheV4, HasComplete)
-{
+TEST(UrlClassifierLookupCacheV4, HasComplete) {
   TestHasPrefix(_Fragment("bravo.com/"), true, true);
 }
 
-TEST(LookupCacheV4, HasPrefix)
-{
+TEST(UrlClassifierLookupCacheV4, HasPrefix) {
   TestHasPrefix(_Fragment("browsing.com/"), true, false);
 }
 
-TEST(LookupCacheV4, Nomatch)
-{
+TEST(UrlClassifierLookupCacheV4, Nomatch) {
   TestHasPrefix(_Fragment("nomatch.com/"), false, false);
 }

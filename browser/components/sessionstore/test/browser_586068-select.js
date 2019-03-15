@@ -4,9 +4,9 @@
 
 const PREF_RESTORE_ON_DEMAND = "browser.sessionstore.restore_on_demand";
 
-add_task(function* test() {
+add_task(async function test() {
   Services.prefs.setBoolPref(PREF_RESTORE_ON_DEMAND, true);
-  registerCleanupFunction(function () {
+  registerCleanupFunction(function() {
     Services.prefs.clearUserPref(PREF_RESTORE_ON_DEMAND);
   });
 
@@ -16,7 +16,7 @@ add_task(function* test() {
     { entries: [{ url: "http://example.org", triggeringPrincipal_base64 }], extData: { "uniq": r() } },
     { entries: [{ url: "http://example.org", triggeringPrincipal_base64 }], extData: { "uniq": r() } },
     { entries: [{ url: "http://example.org", triggeringPrincipal_base64 }], extData: { "uniq": r() } },
-    { entries: [{ url: "http://example.org", triggeringPrincipal_base64 }], extData: { "uniq": r() } }
+    { entries: [{ url: "http://example.org", triggeringPrincipal_base64 }], extData: { "uniq": r() } },
   ], selected: 1 }] };
 
   let expectedCounts = [
@@ -25,13 +25,13 @@ add_task(function* test() {
     [3, 1, 2],
     [2, 1, 3],
     [1, 1, 4],
-    [0, 1, 5]
+    [0, 1, 5],
   ];
   let tabOrder = [0, 5, 1, 4, 3, 2];
 
   let loadCount = 0;
   let promiseRestoringTabs = new Promise(resolve => {
-    gProgressListener.setCallback(function (aBrowser, aNeedRestore, aRestoring, aRestored) {
+    gProgressListener.setCallback(function(aBrowser, aNeedRestore, aRestoring, aRestored) {
       loadCount++;
       let expected = expectedCounts[loadCount - 1];
 
@@ -48,7 +48,7 @@ add_task(function* test() {
             tab = window.gBrowser.tabs[i];
         }
 
-        is(ss.getTabValue(tab, "uniq"), expectedData,
+        is(ss.getCustomTabValue(tab, "uniq"), expectedData,
           "load " + loadCount + " - correct tab was restored");
 
         // select the next tab
@@ -62,8 +62,8 @@ add_task(function* test() {
 
   let backupState = ss.getBrowserState();
   ss.setBrowserState(JSON.stringify(state));
-  yield promiseRestoringTabs;
+  await promiseRestoringTabs;
 
   // Cleanup.
-  yield promiseBrowserState(backupState);
+  await promiseBrowserState(backupState);
 });

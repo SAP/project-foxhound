@@ -9,24 +9,20 @@
  * action for that.
  */
 
-let { censusDisplays, censusState, viewState } = require("devtools/client/memory/constants");
-let { setCensusDisplay } = require("devtools/client/memory/actions/census-display");
-let { takeSnapshotAndCensus } = require("devtools/client/memory/actions/snapshot");
+const { censusDisplays, censusState, viewState } = require("devtools/client/memory/constants");
+const { setCensusDisplay } = require("devtools/client/memory/actions/census-display");
+const { takeSnapshotAndCensus } = require("devtools/client/memory/actions/snapshot");
 const { changeView } = require("devtools/client/memory/actions/view");
-
-function run_test() {
-  run_next_test();
-}
 
 // We test setting an invalid display, which triggers an assertion failure.
 EXPECTED_DTU_ASSERT_FAILURE_COUNT = 1;
 
-add_task(function* () {
-  let front = new StubbedMemoryFront();
-  let heapWorker = new HeapAnalysesClient();
-  yield front.attach();
-  let store = Store();
-  let { getState, dispatch } = store;
+add_task(async function() {
+  const front = new StubbedMemoryFront();
+  const heapWorker = new HeapAnalysesClient();
+  await front.attach();
+  const store = Store();
+  const { getState, dispatch } = store;
 
   dispatch(changeView(viewState.CENSUS));
 
@@ -50,7 +46,7 @@ add_task(function* () {
 
   // Test new snapshots
   dispatch(takeSnapshotAndCensus(front, heapWorker));
-  yield waitUntilCensusState(store, s => s.census, [censusState.SAVED]);
+  await waitUntilCensusState(store, s => s.census, [censusState.SAVED]);
   equal(getState().snapshots[0].census.display, censusDisplays.allocationStack,
         "New snapshots use the current, non-default display");
 });

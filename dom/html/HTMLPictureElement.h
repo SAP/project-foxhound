@@ -8,35 +8,32 @@
 #define mozilla_dom_HTMLPictureElement_h
 
 #include "mozilla/Attributes.h"
-#include "nsIDOMHTMLPictureElement.h"
 #include "nsGenericHTMLElement.h"
 
 namespace mozilla {
 namespace dom {
 
-class HTMLPictureElement final : public nsGenericHTMLElement,
-                                 public nsIDOMHTMLPictureElement
-{
-public:
-  explicit HTMLPictureElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+class HTMLPictureElement final : public nsGenericHTMLElement {
+ public:
+  explicit HTMLPictureElement(
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
   // nsISupports
-  NS_DECL_ISUPPORTS_INHERITED
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(HTMLPictureElement, nsGenericHTMLElement)
 
-  // nsIDOMHTMLPictureElement
-  NS_DECL_NSIDOMHTMLPICTUREELEMENT
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+  virtual void RemoveChildNode(nsIContent* aKid, bool aNotify) override;
+  virtual nsresult InsertChildBefore(nsIContent* aKid, nsIContent* aBeforeThis,
+                                     bool aNotify) override;
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo* aNodeInfo, nsINode** aResult) const override;
-  virtual void RemoveChildAt(uint32_t aIndex, bool aNotify) override;
-  virtual nsresult InsertChildAt(nsIContent* aKid, uint32_t aIndex, bool aNotify) override;
-
-protected:
+ protected:
   virtual ~HTMLPictureElement();
 
-  virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapNode(JSContext* aCx,
+                             JS::Handle<JSObject*> aGivenProto) override;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_HTMLPictureElement_h
+#endif  // mozilla_dom_HTMLPictureElement_h

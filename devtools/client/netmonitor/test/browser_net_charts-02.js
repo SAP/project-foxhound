@@ -8,24 +8,28 @@
  * initialized with empty data.
  */
 
-add_task(function* () {
-  let { L10N } = require("devtools/client/netmonitor/utils/l10n");
+add_task(async function() {
+  const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
 
-  let { monitor } = yield initNetMonitor(SIMPLE_URL);
+  const { monitor, tab } = await initNetMonitor(SIMPLE_URL);
   info("Starting test... ");
 
-  let { document, windowRequire } = monitor.panelWin;
-  let { Chart } = windowRequire("devtools/client/shared/widgets/Chart");
+  const { document, windowRequire } = monitor.panelWin;
+  const { Chart } = windowRequire("devtools/client/shared/widgets/Chart");
 
-  let pie = Chart.Pie(document, {
+  const wait = waitForNetworkEvents(monitor, 1);
+  BrowserTestUtils.loadURI(tab.linkedBrowser, SIMPLE_URL);
+  await wait;
+
+  const pie = Chart.Pie(document, {
     data: null,
     width: 100,
-    height: 100
+    height: 100,
   });
 
-  let node = pie.node;
-  let slices = node.querySelectorAll(".pie-chart-slice.chart-colored-blob");
-  let labels = node.querySelectorAll(".pie-chart-label");
+  const node = pie.node;
+  const slices = node.querySelectorAll(".pie-chart-slice.chart-colored-blob");
+  const labels = node.querySelectorAll(".pie-chart-label");
 
   ok(node.classList.contains("pie-chart-container") &&
      node.classList.contains("generic-chart-container"),
@@ -40,11 +44,11 @@ add_task(function* () {
     "The first slice should be the largest one.");
   ok(slices[0].hasAttribute("smallest"),
     "The first slice should also be the smallest one.");
-  ok(slices[0].getAttribute("name"), L10N.getStr("pieChart.loading"),
+  is(slices[0].getAttribute("name"), L10N.getStr("pieChart.loading"),
     "The first slice's name is correct.");
 
   is(labels.length, 1, "There should be 1 pie chart label created.");
   is(labels[0].textContent, "Loading", "The first label's text is correct.");
 
-  yield teardown(monitor);
+  await teardown(monitor);
 });

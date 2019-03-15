@@ -17,257 +17,99 @@ distroDir.append("distribution");
 distroDir.append("extensions");
 registerDirectory("XREAppDist", distroDir.parent);
 
-var addon1_1 = {
-  id: "addon1@tests.mozilla.org",
-  version: "1.0",
-  name: "Test version 1",
-  targetApplications: [{
-    id: "xpcshell@tests.mozilla.org",
-    minVersion: "1",
-    maxVersion: "5"
-  }]
-};
-
-var addon1_2 = {
-  id: "addon1@tests.mozilla.org",
-  version: "2.0",
-  name: "Test version 2",
-  targetApplications: [{
-    id: "xpcshell@tests.mozilla.org",
-    minVersion: "1",
-    maxVersion: "5"
-  }]
-};
-
-var addon1_3 = {
-  id: "addon1@tests.mozilla.org",
-  version: "3.0",
-  name: "Test version 3",
-  targetApplications: [{
-    id: "xpcshell@tests.mozilla.org",
-    minVersion: "1",
-    maxVersion: "5"
-  }]
-};
-
-function getActiveVersion() {
-  return Services.prefs.getIntPref("bootstraptest.active_version");
-}
-
-function getInstalledVersion() {
-  return Services.prefs.getIntPref("bootstraptest.installed_version");
-}
-
-function setOldModificationTime() {
+async function setOldModificationTime() {
   // Make sure the installed extension has an old modification time so any
   // changes will be detected
-  shutdownManager()
+  await promiseShutdownManager();
   let extension = gProfD.clone();
   extension.append("extensions");
-  if (Services.prefs.getBoolPref("extensions.alwaysUnpack"))
-    extension.append("addon1@tests.mozilla.org");
-  else
-    extension.append("addon1@tests.mozilla.org.xpi");
+  extension.append(`${ID}.xpi`);
   setExtensionModifiedTime(extension, Date.now() - MAKE_FILE_OLD_DIFFERENCE);
-  startupManager(false);
+  await promiseStartupManager();
 }
 
-function run_test() {
-  do_test_pending();
+const ID = "addon@tests.mozilla.org";
 
-  run_test_1();
-}
-
-// Tests that on the first startup the add-on gets installed, with now as the
-// profile modifiedTime.
-function run_test_1() {
-  let extension = writeInstallRDFForExtension(addon1_1, distroDir);
-  setExtensionModifiedTime(extension, Date.now() - MAKE_FILE_OLD_DIFFERENCE);
-
-  startupManager();
-
-  AddonManager.getAddonByID("addon1@tests.mozilla.org", function(a1) {
-    do_check_neq(a1, null);
-    do_check_eq(a1.version, "1.0");
-    do_check_true(a1.isActive);
-    do_check_eq(a1.scope, AddonManager.SCOPE_PROFILE);
-    do_check_false(a1.foreignInstall);
-
-    // Modification time should be updated when the addon is copied to the
-    // profile.
-    let testURI = a1.getResourceURI(TEST_UNPACKED ? "install.rdf" : "");
-    let testFile = testURI.QueryInterface(Components.interfaces.nsIFileURL).file;
-
-    do_check_true(testFile.exists());
-    let difference = testFile.lastModifiedTime - Date.now();
-    do_check_true(Math.abs(difference) < MAX_TIME_DIFFERENCE);
-
-    do_execute_soon(run_test_2);
+async function writeDistroAddon(version) {
+  let xpi = await createTempWebExtensionFile({
+    manifest: {
+      version,
+      applications: {gecko: {id: ID}},
+    },
   });
+  xpi.copyTo(distroDir, `${ID}.xpi`);
 }
+
+// Tests that on the first startup the add-on gets installed
+add_task(async function run_test_1() {
+  await writeDistroAddon("1.0");
+  await promiseStartupManager();
+
+  let a1 = await AddonManager.getAddonByID(ID);
+  Assert.notEqual(a1, null);
+  Assert.equal(a1.version, "1.0");
+  Assert.ok(a1.isActive);
+  Assert.equal(a1.scope, AddonManager.SCOPE_PROFILE);
+  Assert.ok(!a1.foreignInstall);
+});
 
 // Tests that starting with a newer version in the distribution dir doesn't
 // install it yet
-function run_test_2() {
-  setOldModificationTime();
+add_task(async function run_test_2() {
+  await setOldModificationTime();
 
-  writeInstallRDFForExtension(addon1_2, distroDir);
+  await writeDistroAddon("2.0");
+  await promiseRestartManager();
 
-  restartManager();
-
-  AddonManager.getAddonByID("addon1@tests.mozilla.org", function(a1) {
-    do_check_neq(a1, null);
-    do_check_eq(a1.version, "1.0");
-    do_check_true(a1.isActive);
-    do_check_eq(a1.scope, AddonManager.SCOPE_PROFILE);
-
-    do_execute_soon(run_test_3);
-  });
-}
+  let a1 = await AddonManager.getAddonByID(ID);
+  Assert.notEqual(a1, null);
+  Assert.equal(a1.version, "1.0");
+  Assert.ok(a1.isActive);
+  Assert.equal(a1.scope, AddonManager.SCOPE_PROFILE);
+});
 
 // Test that an app upgrade installs the newer version
-function run_test_3() {
-  restartManager("2");
+add_task(async function run_test_3() {
+  await promiseRestartManager("2");
 
-  AddonManager.getAddonByID("addon1@tests.mozilla.org", function(a1) {
-    do_check_neq(a1, null);
-    do_check_eq(a1.version, "2.0");
-    do_check_true(a1.isActive);
-    do_check_eq(a1.scope, AddonManager.SCOPE_PROFILE);
-    do_check_false(a1.foreignInstall);
-
-    do_execute_soon(run_test_4);
-  });
-}
+  let a1 = await AddonManager.getAddonByID(ID);
+  Assert.notEqual(a1, null);
+  Assert.equal(a1.version, "2.0");
+  Assert.ok(a1.isActive);
+  Assert.equal(a1.scope, AddonManager.SCOPE_PROFILE);
+  Assert.ok(!a1.foreignInstall);
+});
 
 // Test that an app upgrade doesn't downgrade the extension
-function run_test_4() {
-  setOldModificationTime();
+add_task(async function run_test_4() {
+  await setOldModificationTime();
 
-  writeInstallRDFForExtension(addon1_1, distroDir);
+  await writeDistroAddon("1.0");
+  await promiseRestartManager("3");
 
-  restartManager("3");
-
-  AddonManager.getAddonByID("addon1@tests.mozilla.org", function(a1) {
-    do_check_neq(a1, null);
-    do_check_eq(a1.version, "2.0");
-    do_check_true(a1.isActive);
-    do_check_eq(a1.scope, AddonManager.SCOPE_PROFILE);
-
-    do_execute_soon(run_test_5);
-  });
-}
+  let a1 = await AddonManager.getAddonByID(ID);
+  Assert.notEqual(a1, null);
+  Assert.equal(a1.version, "2.0");
+  Assert.ok(a1.isActive);
+  Assert.equal(a1.scope, AddonManager.SCOPE_PROFILE);
+});
 
 // Tests that after uninstalling a restart doesn't re-install the extension
-function run_test_5() {
-  AddonManager.getAddonByID("addon1@tests.mozilla.org", callback_soon(function(a1) {
-    a1.uninstall();
+add_task(async function run_test_5() {
+  let a1 = await AddonManager.getAddonByID(ID);
+  await a1.uninstall();
 
-    restartManager();
+  await promiseRestartManager();
 
-    AddonManager.getAddonByID("addon1@tests.mozilla.org", function(a1_2) {
-      do_check_eq(a1_2, null);
-
-      do_execute_soon(run_test_6);
-    });
-  }));
-}
+  let a1_2 = await AddonManager.getAddonByID(ID);
+  Assert.equal(a1_2, null);
+});
 
 // Tests that upgrading the application still doesn't re-install the uninstalled
 // extension
-function run_test_6() {
-  restartManager("4");
+add_task(async function run_test_6() {
+  await promiseRestartManager("4");
 
-  AddonManager.getAddonByID("addon1@tests.mozilla.org", function(a1) {
-    do_check_eq(a1, null);
-
-    do_execute_soon(run_test_7);
-  });
-}
-
-// Tests that a pending install of a newer version of a distributed add-on
-// at app change still gets applied
-function run_test_7() {
-  Services.prefs.clearUserPref("extensions.installedDistroAddon.addon1@tests.mozilla.org");
-
-  installAllFiles([do_get_addon("test_distribution1_2")], function() {
-    restartManager(2);
-
-    AddonManager.getAddonByID("addon1@tests.mozilla.org", function(a1) {
-      do_check_neq(a1, null);
-      do_check_eq(a1.version, "2.0");
-      do_check_true(a1.isActive);
-      do_check_eq(a1.scope, AddonManager.SCOPE_PROFILE);
-
-      a1.uninstall();
-      do_execute_soon(run_test_8);
-    });
-  });
-}
-
-// Tests that a pending install of a older version of a distributed add-on
-// at app change gets replaced by the distributed version
-function run_test_8() {
-  restartManager();
-
-  writeInstallRDFForExtension(addon1_3, distroDir);
-
-  installAllFiles([do_get_addon("test_distribution1_2")], function() {
-    restartManager(3);
-
-    AddonManager.getAddonByID("addon1@tests.mozilla.org", function(a1) {
-      do_check_neq(a1, null);
-      do_check_eq(a1.version, "3.0");
-      do_check_true(a1.isActive);
-      do_check_eq(a1.scope, AddonManager.SCOPE_PROFILE);
-
-      a1.uninstall();
-      do_execute_soon(run_test_9);
-    });
-  });
-}
-
-// Tests that bootstrapped add-ons distributed start up correctly, also that
-// add-ons with multiple directories get copied fully
-function run_test_9() {
-  restartManager();
-
-  // Copy the test add-on to the distro dir
-  let addon = do_get_file("data/test_distribution2_2");
-  addon.copyTo(distroDir, "addon2@tests.mozilla.org");
-
-  restartManager("5");
-
-  AddonManager.getAddonByID("addon2@tests.mozilla.org", function(a2) {
-    do_check_neq(a2, null);
-    do_check_true(a2.isActive);
-
-    do_check_eq(getInstalledVersion(), 2);
-    do_check_eq(getActiveVersion(), 2);
-
-    do_check_true(a2.hasResource("bootstrap.js"));
-    do_check_true(a2.hasResource("subdir/dummy.txt"));
-    do_check_true(a2.hasResource("subdir/subdir2/dummy2.txt"));
-
-    // Currently installs are unpacked if the source is a directory regardless
-    // of the install.rdf property or the global preference
-
-    let addonDir = profileDir.clone();
-    addonDir.append("addon2@tests.mozilla.org");
-    do_check_true(addonDir.exists());
-    do_check_true(addonDir.isDirectory());
-    addonDir.append("subdir");
-    do_check_true(addonDir.exists());
-    do_check_true(addonDir.isDirectory());
-    addonDir.append("subdir2");
-    do_check_true(addonDir.exists());
-    do_check_true(addonDir.isDirectory());
-    addonDir.append("dummy2.txt");
-    do_check_true(addonDir.exists());
-    do_check_true(addonDir.isFile());
-
-    a2.uninstall();
-
-    do_execute_soon(do_test_finished);
-  });
-}
+  let a1 = await AddonManager.getAddonByID(ID);
+  Assert.equal(a1, null);
+});

@@ -6,33 +6,22 @@
 
 const TEST_URI = "http://example.com/browser/dom/tests/browser/browser_frame_elements.html";
 
-function getWindowUtils(window) {
-  return window.
-    QueryInterface(Components.interfaces.nsIInterfaceRequestor).
-    getInterface(Components.interfaces.nsIDOMWindowUtils);
-}
-
-add_task(function* test() {
-  yield BrowserTestUtils.withNewTab({ gBrowser, url: TEST_URI }, function* (browser) {
+add_task(async function test() {
+  await BrowserTestUtils.withNewTab({ gBrowser, url: TEST_URI }, async function(browser) {
     if (!browser.isRemoteBrowser) {
       // Non-e10s, access contentWindow and confirm its container is the browser:
-      let windowUtils = getWindowUtils(browser.contentWindow);
-      is (windowUtils.containerElement, browser,
+      let windowUtils = browser.contentWindow.windowUtils;
+      is(windowUtils.containerElement, browser,
           "Container element for main window is xul:browser");
 
     }
 
-    yield ContentTask.spawn(browser, null, startTests);
-    yield Task.spawn(mozBrowserTests(browser));
+    await ContentTask.spawn(browser, null, startTests);
+    await mozBrowserTests(browser);
   });
 });
 
 function startTests() {
-  function getWindowUtils(window) {
-    return window.
-      QueryInterface(Components.interfaces.nsIInterfaceRequestor).
-      getInterface(Components.interfaces.nsIDOMWindowUtils);
-  }
   info("Frame tests started");
 
   info("Checking top window");
@@ -43,7 +32,7 @@ function startTests() {
   info("Checking about:blank iframe");
   let iframeBlank = gWindow.document.querySelector("#iframe-blank");
   Assert.ok(iframeBlank, "Iframe exists on page");
-  let iframeBlankUtils = getWindowUtils(iframeBlank.contentWindow);
+  let iframeBlankUtils = iframeBlank.contentWindow.windowUtils;
   Assert.equal(iframeBlankUtils.containerElement, iframeBlank, "Container element for iframe window is iframe");
   Assert.equal(iframeBlank.contentWindow.top, gWindow, "gWindow is top");
   Assert.equal(iframeBlank.contentWindow.parent, gWindow, "gWindow is parent");
@@ -51,7 +40,7 @@ function startTests() {
   info("Checking iframe with data url src");
   let iframeDataUrl = gWindow.document.querySelector("#iframe-data-url");
   Assert.ok(iframeDataUrl, "Iframe exists on page");
-  let iframeDataUrlUtils = getWindowUtils(iframeDataUrl.contentWindow);
+  let iframeDataUrlUtils = iframeDataUrl.contentWindow.windowUtils;
   Assert.equal(iframeDataUrlUtils.containerElement, iframeDataUrl, "Container element for iframe window is iframe");
   Assert.equal(iframeDataUrl.contentWindow.top, gWindow, "gWindow is top");
   Assert.equal(iframeDataUrl.contentWindow.parent, gWindow, "gWindow is parent");
@@ -59,19 +48,19 @@ function startTests() {
   info("Checking object with data url data attribute");
   let objectDataUrl = gWindow.document.querySelector("#object-data-url");
   Assert.ok(objectDataUrl, "Object exists on page");
-  let objectDataUrlUtils = getWindowUtils(objectDataUrl.contentWindow);
+  let objectDataUrlUtils = objectDataUrl.contentWindow.windowUtils;
   Assert.equal(objectDataUrlUtils.containerElement, objectDataUrl, "Container element for object window is the object");
   Assert.equal(objectDataUrl.contentWindow.top, gWindow, "gWindow is top");
   Assert.equal(objectDataUrl.contentWindow.parent, gWindow, "gWindow is parent");
 }
 
-function* mozBrowserTests(browser) {
+async function mozBrowserTests(browser) {
   info("Granting special powers for mozbrowser");
   SpecialPowers.addPermission("browser", true, TEST_URI);
-  SpecialPowers.setBoolPref('dom.mozBrowserFramesEnabled', true);
-  SpecialPowers.setBoolPref('network.disable.ipc.security', true);
+  SpecialPowers.setBoolPref("dom.mozBrowserFramesEnabled", true);
+  SpecialPowers.setBoolPref("network.disable.ipc.security", true);
 
-  yield ContentTask.spawn(browser, null, function() {
+  await ContentTask.spawn(browser, null, function() {
     info("Checking mozbrowser iframe");
     let mozBrowserFrame = content.document.createElement("iframe");
     mozBrowserFrame.setAttribute("mozbrowser", "");
@@ -83,7 +72,7 @@ function* mozBrowserTests(browser) {
   });
 
   info("Revoking special powers for mozbrowser");
-  SpecialPowers.clearUserPref('dom.mozBrowserFramesEnabled');
-  SpecialPowers.clearUserPref('network.disable.ipc.security');
+  SpecialPowers.clearUserPref("dom.mozBrowserFramesEnabled");
+  SpecialPowers.clearUserPref("network.disable.ipc.security");
   SpecialPowers.removePermission("browser", TEST_URI);
 }

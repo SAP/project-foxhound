@@ -35,6 +35,8 @@ SimpleTest.waitForFocus(function() {
 const defaultMinimum = "NaN";
 const defaultMaximum = "NaN";
 const defaultStep = 1;
+const kStrictKeyPressEvents =
+  SpecialPowers.getBoolPref("dom.keyboardevent.keypress.dispatch_non_printable_keys_only_system_group_in_content");
 
 // Helpers:
 // For the sake of simplicity, we do not currently support fractional value,
@@ -141,7 +143,7 @@ function expectedValueAfterStepUpOrDown(stepFactor, element) {
 }
 
 function expectedValAfterKeyEvent(key, element) {
-  return expectedValueAfterStepUpOrDown(key == "VK_UP" ? 1 : -1, element);
+  return expectedValueAfterStepUpOrDown(key == "KEY_ArrowUp" ? 1 : -1, element);
 }
 
 function test() {
@@ -154,48 +156,47 @@ function test() {
   var defaultValue = 0;
   var oldVal, expectedVal;
 
-  for (key of ["VK_UP", "VK_DOWN"]) {
+  for (key of ["KEY_ArrowUp", "KEY_ArrowDown"]) {
     // Start at middle:
     oldVal = elem.value = -1;
     expectedVal = expectedValAfterKeyEvent(key, elem);
-    synthesizeKey(key, {});
+    synthesizeKey(key);
     is(elem.value, String(expectedVal), "Test " + key + " for number control with value set between min/max (" + oldVal + ")");
 
     // Same again:
     expectedVal = expectedValAfterKeyEvent(key, elem);
-    synthesizeKey(key, {});
+    synthesizeKey(key);
     is(elem.value, String(expectedVal), "Test repeat of " + key + " for number control");
 
     // Start at maximum:
     oldVal = elem.value = elem.max;
     expectedVal = expectedValAfterKeyEvent(key, elem);
-    synthesizeKey(key, {});
+    synthesizeKey(key);
     is(elem.value, String(expectedVal), "Test " + key + " for number control with value set to the maximum (" + oldVal + ")");
 
     // Same again:
     expectedVal = expectedValAfterKeyEvent(key, elem);
-    synthesizeKey(key, {});
+    synthesizeKey(key);
     is(elem.value, String(expectedVal), "Test repeat of " + key + " for number control");
 
     // Start at minimum:
     oldVal = elem.value = elem.min;
     expectedVal = expectedValAfterKeyEvent(key, elem);
-    synthesizeKey(key, {});
+    synthesizeKey(key);
     is(elem.value, String(expectedVal), "Test " + key + " for number control with value set to the minimum (" + oldVal + ")");
 
     // Same again:
     expectedVal = expectedValAfterKeyEvent(key, elem);
-    synthesizeKey(key, {});
+    synthesizeKey(key);
     is(elem.value, String(expectedVal), "Test repeat of " + key + " for number control");
 
     // Test preventDefault():
-    elem.addEventListener("keypress", function(evt) {
+    elem.addEventListener(kStrictKeyPressEvents ? "keydown" : "keypress", function(evt) {
       evt.preventDefault();
-      elem.removeEventListener("keypress", arguments.callee);
-    });
+    }, {once: true});
     oldVal = elem.value = 0;
     expectedVal = 0;
-    synthesizeKey(key, {});
+    synthesizeKey(key);
     is(elem.value, String(expectedVal), "Test " + key + " for number control where scripted preventDefault() should prevent the value changing");
 
     // Test step="any" behavior:
@@ -203,7 +204,7 @@ function test() {
     elem.step = "any";
     oldVal = elem.value = 0;
     expectedVal = expectedValAfterKeyEvent(key, elem);
-    synthesizeKey(key, {});
+    synthesizeKey(key);
     is(elem.value, String(expectedVal), "Test " + key + " for number control with value set to the midpoint and step='any' (" + oldVal + ")");
     elem.step = oldStep; // restore
 
@@ -211,7 +212,7 @@ function test() {
     oldVal = elem.value = "";
     elem.select();
     sendString("abc");
-    synthesizeKey(key, {});
+    synthesizeKey(key);
     is(elem.value, "", "Test " + key + " does nothing when the input is invalid");
 
     // Test that no value does not block UI initiated stepping:
@@ -219,12 +220,12 @@ function test() {
     elem.setAttribute("required", "required");
     elem.select();
     expectedVal = expectedValAfterKeyEvent(key, elem);
-    synthesizeKey(key, {});
+    synthesizeKey(key);
     is(elem.value, String(expectedVal), "Test " + key + " for number control with value set to the empty string and with the 'required' attribute set");
 
     // Same again:
     expectedVal = expectedValAfterKeyEvent(key, elem);
-    synthesizeKey(key, {});
+    synthesizeKey(key);
     is(elem.value, String(expectedVal), "Test repeat of " + key + " for number control");
 
     // Reset 'required' attribute:

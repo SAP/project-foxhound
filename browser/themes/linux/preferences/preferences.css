@@ -5,11 +5,6 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 */
 
-/* Global Styles */
-.checkbox-check {
-  -moz-appearance: checkbox;
-}
-
 /* General Pane */
 #useFirefoxSync,
 #getStarted {
@@ -27,58 +22,9 @@
 }
 
 /* Modeless Window Dialogs */
-.windowDialog,
-.windowDialog prefpane {
-  padding: 0px;
-}
-
-.contentPane {
-  margin: 9px 8px 5px 8px;
-}
 
 .actionButtons {
-  margin: 0px 3px 6px 3px !important;
-}
-
-/* Cookies Manager */
-#cookiesChildren::-moz-tree-image(domainCol) {
-  width: 16px;
-  height: 16px;
-  margin: 0px 2px;
-  list-style-image: url("chrome://mozapps/skin/places/defaultFavicon.png");
-}
-
-#linksOpenInBox {
-  margin-top: 5px;
-}
-
-#advancedPrefs {
-  margin-left: 0;
-  margin-right: 0;
-}
-
-#cookiesChildren::-moz-tree-image(domainCol, container) {
-  list-style-image: url("moz-icon://stock/gtk-directory?size=menu");
-}
-
-#cookieInfoBox {
-  border: 1px solid ThreeDShadow;
-  border-radius: 0px;
-  margin: 4px;
-  padding: 0px;
-}
-
-/* bottom-most box containing a groupbox in a prefpane. Prevents the bottom
-   of the groupbox from being cutoff */
-.bottomBox {
-  padding-bottom: 4px;
-}
-
-/**
- * Clear Private Data
- */
-#SanitizeDialogPane > groupbox {
-  margin-top: 0;
+  margin: 0px 3px 6px 3px;
 }
 
 /* Sync Pane */

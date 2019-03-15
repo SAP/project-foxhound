@@ -86,7 +86,7 @@ def ps
   end
 end
 
-# Define a "pa" command to display the string value for an nsIAtom
+# Define a "pa" command to display the string value for an nsAtom
 def pa
   set $atom = $arg0
   if (sizeof(*((&*$atom)->mString)) == 2)
@@ -185,6 +185,10 @@ end
 
 def ft
   call $arg0->DumpFrameTree()
+end
+
+def ftl
+  call $arg0->DumpFrameTreeLimited()
 end
 
 source .gdbinit_python

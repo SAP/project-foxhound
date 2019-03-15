@@ -4,9 +4,9 @@
 
 const PREF_RESTORE_ON_DEMAND = "browser.sessionstore.restore_on_demand";
 
-add_task(function* test() {
+add_task(async function test() {
   Services.prefs.setBoolPref(PREF_RESTORE_ON_DEMAND, true);
-  registerCleanupFunction(function () {
+  registerCleanupFunction(function() {
     Services.prefs.clearUserPref(PREF_RESTORE_ON_DEMAND);
   });
 
@@ -32,7 +32,7 @@ add_task(function* test() {
       // double check that this tab was the right one
       is(browser.currentURI.spec, tabData.entries[0].url,
          "load " + loadCount + " - browser loaded correct url");
-      is(ss.getTabValue(tab, "uniq"), tabData.extData.uniq,
+      is(ss.getCustomTabValue(tab, "uniq"), tabData.extData.uniq,
          "load " + loadCount + " - correct tab was restored");
 
       if (loadCount == state.windows[0].tabs.length) {
@@ -47,8 +47,8 @@ add_task(function* test() {
 
   let backupState = ss.getBrowserState();
   ss.setBrowserState(JSON.stringify(state));
-  yield promiseRestoringTabs;
+  await promiseRestoringTabs;
 
   // Cleanup.
-  yield promiseBrowserState(backupState);
+  await promiseBrowserState(backupState);
 });

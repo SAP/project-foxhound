@@ -4,5 +4,6 @@ function test() {
     ok(true, "timeout ran");
     finish();
   }
-  setTimeout(done, 10000);
+  // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+  setTimeout(done, 500);
 }

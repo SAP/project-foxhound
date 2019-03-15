@@ -17,15 +17,14 @@
           src="../actions.js"></script>
 
   <script type="application/javascript">
-    function getAnchorTargetDocumentAcc()
-    {
+    function getAnchorTargetDocumentAcc() {
       var thisTabDocAcc = getTabDocAccessible();
       var thisDocTabPanelAcc = thisTabDocAcc.parent.parent;
       var tabPanelsAcc = thisDocTabPanelAcc.parent;
       var newDocTabPanelAcc = tabPanelsAcc.firstChild;
       var nextAcc = newDocTabPanelAcc;
 
-      while (nextAcc = nextAcc.nextSibling) {
+      while ((nextAcc = nextAcc.nextSibling)) {
         // Find the last accessible for a browser with about:mozilla loaded.
         if (nextAcc.firstChild.DOMNode.currentURI.spec == "about:mozilla") {
           newDocTabPanelAcc = nextAcc;
@@ -35,38 +34,34 @@
       return newDocTabPanelAcc.firstChild.firstChild;
     }
 
-    function linkChecker(aID)
-    {
+    function linkChecker(aID) {
       this.type = EVENT_DOCUMENT_LOAD_COMPLETE;
       this.__defineGetter__("target", getAnchorTargetDocumentAcc);
 
-      this.check = function linkChecker_check()
-      {
+      this.check = function linkChecker_check() {
         var anchorTargetWindow =
           getAccessible(getAnchorTargetDocumentAcc(), [nsIAccessibleDocument]).
           window;
         anchorTargetWindow.close();
-      }
+      };
 
-      this.getID = function linkChecker_getID()
-      {
+      this.getID = function linkChecker_getID() {
         return "link '" + aID + "' states check ";
-      }
+      };
     }
 
-    //gA11yEventDumpToConsole = true;
-    //enableLogging("tree,eventTree,verbose");
+    // gA11yEventDumpToConsole = true;
+    // enableLogging("tree,eventTree,verbose");
 
-    function doTest()
-    {
+    function doTest() {
       var actionsArray = [
         {
           ID: "link1",
           actionName: "jump",
           events: CLICK_EVENTS,
           eventSeq: [
-            new linkChecker("link1")
-          ]
+            new linkChecker("link1"),
+          ],
         },
         {
           ID: "img1",
@@ -74,42 +69,42 @@
           actionName: "jump",
           events: CLICK_EVENTS,
           eventSeq: [
-            new linkChecker("link1")
-          ]
+            new linkChecker("link1"),
+          ],
         },
         {
           ID: "link2",
           actionName: "click",
-          events: CLICK_EVENTS
+          events: CLICK_EVENTS,
         },
         {
           ID: "img2",
           targetID: "link2",
           actionName: "jump",
-          events: CLICK_EVENTS
+          events: CLICK_EVENTS,
         },
         {
           ID: "link3",
           actionName: "click",
-          events: CLICK_EVENTS
+          events: CLICK_EVENTS,
         },
         {
           ID: "img3",
           targetID: "link3",
           actionName: "jump",
-          events: CLICK_EVENTS
+          events: CLICK_EVENTS,
         },
         {
           ID: "link4",
           actionName: "click",
-          events: CLICK_EVENTS
+          events: CLICK_EVENTS,
         },
         {
           ID: "img4",
           targetID: "link4",
           actionName: "jump",
-          events: CLICK_EVENTS
-        }
+          events: CLICK_EVENTS,
+        },
       ];
       testActions(actionsArray);
     }
@@ -121,7 +116,7 @@
 
 <body>
 
-  <a target="_blank"
+  <a target="_blank" rel="opener"
      href="https://bugzilla.mozilla.org/show_bug.cgi?id=423409"
      title="Expose click action if mouseup and mousedown are registered">
     Mozilla Bug 423409
@@ -131,7 +126,7 @@
   <pre id="test">
   </pre>
 
-  <a href="about:mozilla" id="link1" target="_blank">
+  <a href="about:mozilla" id="link1" target="_blank" rel="opener">
     <img src="../moz.png" id="img1">
   </a>
   <a id="link2" onmousedown="">

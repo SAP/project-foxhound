@@ -41,17 +41,13 @@
  * buttons appear on the taskbar, so a magic pref-controlled number determines
  * when this threshold has been crossed.
  */
-this.EXPORTED_SYMBOLS = ["AeroPeek"];
+var EXPORTED_SYMBOLS = ["AeroPeek"];
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cu = Components.utils;
-
-Cu.import("resource://gre/modules/NetUtil.jsm");
-Cu.import("resource://gre/modules/PlacesUtils.jsm");
-Cu.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/PlacesUtils.jsm");
+ChromeUtils.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 // Pref to enable/disable preview-per-tab
 const TOGGLE_PREF_NAME = "browser.taskbar.previews.enable";
@@ -66,15 +62,15 @@ const WINTASKBAR_CONTRACTID = "@mozilla.org/windows-taskbar;1";
 XPCOMUtils.defineLazyServiceGetter(this, "imgTools",
                                    "@mozilla.org/image/tools;1",
                                    "imgITools");
-XPCOMUtils.defineLazyModuleGetter(this, "PageThumbs",
-                                  "resource://gre/modules/PageThumbs.jsm");
+ChromeUtils.defineModuleGetter(this, "PageThumbs",
+                               "resource://gre/modules/PageThumbs.jsm");
 
 // nsIURI -> imgIContainer
 function _imageFromURI(uri, privateMode, callback) {
   let channel = NetUtil.newChannel({
     uri,
     loadUsingSystemPrincipal: true,
-    contentPolicyType: Ci.nsIContentPolicy.TYPE_INTERNAL_IMAGE
+    contentPolicyType: Ci.nsIContentPolicy.TYPE_INTERNAL_IMAGE,
   });
 
   try {
@@ -86,10 +82,27 @@ function _imageFromURI(uri, privateMode, callback) {
   NetUtil.asyncFetch(channel, function(inputStream, resultCode) {
     if (!Components.isSuccessCode(resultCode))
       return;
+
+    const decodeCallback = {
+      onImageReady(image, status) {
+        if (!image) {
+          // We failed, so use the default favicon (only if this wasn't the
+          // default favicon).
+          let defaultURI = PlacesUtils.favicons.defaultFavicon;
+          if (!defaultURI.equals(uri)) {
+            _imageFromURI(defaultURI, privateMode, callback);
+            return;
+          }
+        }
+
+        callback(image);
+      },
+    };
+
     try {
-      let out_img = { value: null };
-      imgTools.decodeImageData(inputStream, channel.contentType, out_img);
-      callback(out_img.value);
+      let threadManager = Cc["@mozilla.org/thread-manager;1"].getService();
+      imgTools.decodeImageAsync(inputStream, channel.contentType,
+                                decodeCallback, threadManager.currentThread);
     } catch (e) {
       // We failed, so use the default favicon (only if this wasn't the default
       // favicon).
@@ -107,19 +120,6 @@ function getFaviconAsImage(iconurl, privateMode, callback) {
   } else {
     _imageFromURI(PlacesUtils.favicons.defaultFavicon, privateMode, callback);
   }
-}
-
-// Snaps the given rectangle to be pixel-aligned at the given scale
-function snapRectAtScale(r, scale) {
-  let x = Math.floor(r.x * scale);
-  let y = Math.floor(r.y * scale);
-  let width = Math.ceil((r.x + r.width) * scale) - x;
-  let height = Math.ceil((r.y + r.height) * scale) - y;
-
-  r.x = x / scale;
-  r.y = y / scale;
-  r.width = width / scale;
-  r.height = height / scale;
 }
 
 // PreviewController
@@ -155,8 +155,7 @@ function PreviewController(win, tab) {
 }
 
 PreviewController.prototype = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsITaskbarPreviewController,
-                                         Ci.nsIDOMEventListener]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsITaskbarPreviewController]),
 
   destroy() {
     this.tab.removeEventListener("TabAttrModified", this);
@@ -196,7 +195,7 @@ PreviewController.prototype = {
 
   get screenPixelsPerCSSPixel() {
     let chromeWin = this.tab.ownerGlobal;
-    let windowUtils = chromeWin.getInterface(Ci.nsIDOMWindowUtils);
+    let windowUtils = chromeWin.windowUtils;
     return windowUtils.screenPixelsPerCSSPixel;
   },
 
@@ -333,24 +332,15 @@ PreviewController.prototype = {
     return true;
   },
 
-  // nsIDOMEventListener
+  // EventListener
   handleEvent(evt) {
     switch (evt.type) {
       case "TabAttrModified":
         this.updateTitleAndTooltip();
         break;
     }
-  }
+  },
 };
-
-XPCOMUtils.defineLazyGetter(PreviewController.prototype, "canvasPreviewFlags",
-  function() {
- let canvasInterface = Ci.nsIDOMCanvasRenderingContext2D;
-                return canvasInterface.DRAWWINDOW_DRAW_VIEW
-                     | canvasInterface.DRAWWINDOW_DRAW_CARET
-                     | canvasInterface.DRAWWINDOW_ASYNC_DECODE_IMAGES
-                     | canvasInterface.DRAWWINDOW_DO_NOT_FLUSH;
-});
 
 // TabWindow
 
@@ -439,15 +429,12 @@ TabWindow.prototype = {
   },
 
   createTabPreview(controller) {
-    let docShell = this.win
-                  .QueryInterface(Ci.nsIInterfaceRequestor)
-                  .getInterface(Ci.nsIWebNavigation)
-                  .QueryInterface(Ci.nsIDocShell);
+    let docShell = this.win.docShell;
     let preview = AeroPeek.taskbar.createTaskbarTabPreview(docShell, controller);
     preview.visible = AeroPeek.enabled;
-    preview.active = this.tabbrowser.selectedTab == controller.tab;
-    this.onLinkIconAvailable(controller.tab.linkedBrowser,
-                             controller.tab.getAttribute("image"));
+    let {tab} = controller;
+    preview.active = this.tabbrowser.selectedTab == tab;
+    this.updateFavicon(tab, tab.getAttribute("image"));
     return preview;
   },
 
@@ -505,7 +492,7 @@ TabWindow.prototype = {
     }
   },
 
-  // nsIDOMEventListener
+  // EventListener
   handleEvent(evt) {
     let tab = evt.originalTarget;
     switch (evt.type) {
@@ -595,9 +582,13 @@ TabWindow.prototype = {
   },
 
   directRequestProtocols: new Set([
-    "file", "chrome", "resource", "about"
+    "file", "chrome", "resource", "about", "data",
   ]),
   onLinkIconAvailable(aBrowser, aIconURL) {
+    let tab = this.win.gBrowser.getTabForBrowser(aBrowser);
+    this.updateFavicon(tab, aIconURL);
+  },
+  updateFavicon(aTab, aIconURL) {
     let requestURL = null;
     if (aIconURL) {
       let shouldRequestFaviconURL = true;
@@ -616,22 +607,27 @@ TabWindow.prototype = {
       requestURL,
       PrivateBrowsingUtils.isWindowPrivate(this.win),
       img => {
-        let index = this.tabbrowser.browsers.indexOf(aBrowser);
-        // Only add it if we've found the index and the URI is still the same.
         // The tab could have closed, and there's no guarantee the icons
         // will have finished fetching 'in order'.
-        if (index != -1) {
-          let tab = this.tabbrowser.tabs[index];
-          let preview = this.previews.get(tab);
-          if (tab.getAttribute("image") == aIconURL ||
-              (!preview.icon && isDefaultFavicon)) {
-            preview.icon = img;
-          }
+        if (this.win.closed || aTab.closing || !aTab.linkedBrowser) {
+          return;
+        }
+        // Note that bizarrely, we can get to updateFavicon via a sync codepath
+        // where the new preview controller hasn't yet been added to the
+        // window's map of previews. So `preview` would be null here - except
+        // getFaviconAsImage is async so that should never happen, as we add
+        // the controller to the preview collection straight after creating it.
+        // However, if any of this code ever tries to access this
+        // synchronously, that won't work.
+        let preview = this.previews.get(aTab);
+        if (aTab.getAttribute("image") == aIconURL ||
+            (!preview.icon && isDefaultFavicon)) {
+          preview.icon = img;
         }
       }
     );
-  }
-}
+  },
+};
 
 // AeroPeek
 
@@ -639,7 +635,7 @@ TabWindow.prototype = {
  * This object acts as global storage and external interface for this feature.
  * It maintains the values of the prefs.
  */
-this.AeroPeek = {
+var AeroPeek = {
   available: false,
   // Does the pref say we're enabled?
   __prefenabled: false,
@@ -733,9 +729,7 @@ this.AeroPeek = {
     // (rather than this code running on startup because the pref was
     // already set to true), we must initialize previews for open windows:
     if (this.initialized) {
-      let browserWindows = Services.wm.getEnumerator("navigator:browser");
-      while (browserWindows.hasMoreElements()) {
-        let win = browserWindows.getNext();
+      for (let win of Services.wm.getEnumerator("navigator:browser")) {
         if (!win.closed) {
           this.onOpenWindow(win);
         }
@@ -826,7 +820,6 @@ this.AeroPeek = {
   /* nsINavHistoryObserver implementation */
   onBeginUpdateBatch() {},
   onEndUpdateBatch() {},
-  onVisit() {},
   onTitleChanged() {},
   onFrecencyChanged() {},
   onManyFrecenciesChanged() {},
@@ -836,19 +829,19 @@ this.AeroPeek = {
   onPageChanged(uri, changedConst, newValue) {
     if (this.enabled && changedConst == Ci.nsINavHistoryObserver.ATTRIBUTE_FAVICON) {
       for (let win of this.windows) {
-        for (let [tab, ] of win.previews) {
+        for (let [tab ] of win.previews) {
           if (tab.getAttribute("image") == newValue) {
-            win.onLinkIconAvailable(tab.linkedBrowser, newValue);
+            win.updateFavicon(tab, newValue);
           }
         }
       }
     }
   },
 
-  QueryInterface: XPCOMUtils.generateQI([
+  QueryInterface: ChromeUtils.generateQI([
     Ci.nsISupportsWeakReference,
     Ci.nsINavHistoryObserver,
-    Ci.nsIObserver
+    Ci.nsIObserver,
   ]),
 };
 

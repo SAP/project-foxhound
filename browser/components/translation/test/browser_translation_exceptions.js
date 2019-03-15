@@ -5,9 +5,8 @@
 // tests the translation infobar, using a fake 'Translation' implementation.
 
 var tmp = {};
-Cu.import("resource:///modules/translation/Translation.jsm", tmp);
-Cu.import("resource://gre/modules/Promise.jsm", tmp);
-var {Translation, Promise} = tmp;
+ChromeUtils.import("resource:///modules/translation/Translation.jsm", tmp);
+var {Translation} = tmp;
 
 const kLanguagesPref = "browser.translation.neverForLanguages";
 const kShowUIPref = "browser.translation.ui.show";
@@ -16,25 +15,25 @@ function test() {
   waitForExplicitFinish();
 
   Services.prefs.setBoolPref(kShowUIPref, true);
-  let tab = gBrowser.addTab();
+  let tab = BrowserTestUtils.addTab(gBrowser);
   gBrowser.selectedTab = tab;
   registerCleanupFunction(function() {
     gBrowser.removeTab(tab);
     Services.prefs.clearUserPref(kShowUIPref);
   });
-  tab.linkedBrowser.addEventListener("load", function() {
-    Task.spawn(function* () {
+  BrowserTestUtils.browserLoaded(tab.linkedBrowser).then(() => {
+    (async function() {
       for (let testCase of gTests) {
         info(testCase.desc);
-        yield testCase.run();
+        await testCase.run();
       }
-    }).then(finish, ex => {
+    })().then(finish, ex => {
      ok(false, "Unexpected Exception: " + ex);
      finish();
     });
-   }, {capture: true, once: true});
+   });
 
-  content.location = "http://example.com/";
+  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "http://example.com/");
 }
 
 function getLanguageExceptions() {
@@ -44,10 +43,7 @@ function getLanguageExceptions() {
 
 function getDomainExceptions() {
   let results = [];
-  let enumerator = Services.perms.enumerator;
-  while (enumerator.hasMoreElements()) {
-    let perm = enumerator.getNext().QueryInterface(Ci.nsIPermission);
-
+  for (let perm of Services.perms.enumerator) {
     if (perm.type == "translate" &&
         perm.capability == Services.perms.DENY_ACTION)
       results.push(perm.principal);
@@ -57,44 +53,44 @@ function getDomainExceptions() {
 }
 
 function getInfoBar() {
-  let deferred = Promise.defer();
-  let infobar =
-    gBrowser.getNotificationBox().getNotificationWithValue("translation");
+  return new Promise(resolve => {
+    let infobar =
+      gBrowser.getNotificationBox().getNotificationWithValue("translation");
 
-  if (!infobar) {
-    deferred.resolve();
-  } else {
-    // Wait for all animations to finish
-    Promise.all(infobar.getAnimations().map(animation => animation.finished))
-      .then(() => deferred.resolve(infobar));
-  }
+    if (!infobar) {
+      resolve();
+    } else {
+      // Wait for all animations to finish
+      Promise.all(infobar.getAnimations().map(animation => animation.finished))
+        .then(() => resolve(infobar));
+    }
 
-  return deferred.promise;
+  });
 }
 
 function openPopup(aPopup) {
-  let deferred = Promise.defer();
+  return new Promise(resolve => {
 
-  aPopup.addEventListener("popupshown", function() {
-    deferred.resolve();
-  }, {once: true});
+    aPopup.addEventListener("popupshown", function() {
+      TestUtils.executeSoon(resolve);
+    }, {once: true});
 
-  aPopup.focus();
-  // One down event to open the popup.
-  EventUtils.synthesizeKey("VK_DOWN",
-                           { altKey: !navigator.platform.includes("Mac") });
+    aPopup.focus();
+    // One down event to open the popup.
+    EventUtils.synthesizeKey("VK_DOWN",
+                             { altKey: !navigator.platform.includes("Mac") });
 
-  return deferred.promise;
+  });
 }
 
 function waitForWindowLoad(aWin) {
-  let deferred = Promise.defer();
+  return new Promise(resolve => {
 
-  aWin.addEventListener("load", function() {
-    deferred.resolve();
-  }, {capture: true, once: true});
+    aWin.addEventListener("load", function() {
+      TestUtils.executeSoon(resolve);
+    }, {capture: true, once: true});
 
-  return deferred.promise;
+  });
 }
 
 
@@ -107,18 +103,18 @@ var gTests = [
        "we start with an empty list of languages to never translate");
     is(getDomainExceptions().length, 0,
        "we start with an empty list of sites to never translate");
-  }
+  },
 },
 
 {
   desc: "never for language",
-  run: function* checkNeverForLanguage() {
+  run: async function checkNeverForLanguage() {
     // Show the infobar for example.com and fr.
     Translation.documentStateReceived(gBrowser.selectedBrowser,
                                       {state: Translation.STATE_OFFER,
                                        originalShown: true,
                                        detectedLanguage: "fr"});
-    let notif = yield getInfoBar();
+    let notif = await getInfoBar();
     ok(notif, "the infobar is visible");
     let ui = gBrowser.selectedBrowser.translationUI;
     let uri = gBrowser.selectedBrowser.currentURI;
@@ -126,7 +122,7 @@ var gTests = [
        "check shouldShowInfoBar initially returns true");
 
     // Open the "options" drop down.
-    yield openPopup(notif._getAnonElt("options"));
+    await openPopup(notif._getAnonElt("options"));
     ok(notif._getAnonElt("options").getAttribute("open"),
        "the options menu is open");
 
@@ -136,7 +132,7 @@ var gTests = [
 
     // Click the 'Never for French' item.
     notif._getAnonElt("neverForLanguage").click();
-    notif = yield getInfoBar();
+    notif = await getInfoBar();
     ok(!notif, "infobar hidden");
 
     // Check this has been saved to the exceptions list.
@@ -148,27 +144,27 @@ var gTests = [
 
     // Reopen the infobar.
     PopupNotifications.getNotification("translate").anchorElement.click();
-    notif = yield getInfoBar();
+    notif = await getInfoBar();
     // Open the "options" drop down.
-    yield openPopup(notif._getAnonElt("options"));
+    await openPopup(notif._getAnonElt("options"));
     ok(notif._getAnonElt("neverForLanguage").disabled,
        "The 'Never translate French' item is disabled");
 
     // Cleanup.
     Services.prefs.setCharPref(kLanguagesPref, "");
     notif.close();
-  }
+  },
 },
 
 {
   desc: "never for site",
-  run: function* checkNeverForSite() {
+  run: async function checkNeverForSite() {
     // Show the infobar for example.com and fr.
     Translation.documentStateReceived(gBrowser.selectedBrowser,
                                       {state: Translation.STATE_OFFER,
                                        originalShown: true,
                                        detectedLanguage: "fr"});
-    let notif = yield getInfoBar();
+    let notif = await getInfoBar();
     ok(notif, "the infobar is visible");
     let ui = gBrowser.selectedBrowser.translationUI;
     let uri = gBrowser.selectedBrowser.currentURI;
@@ -176,7 +172,7 @@ var gTests = [
        "check shouldShowInfoBar initially returns true");
 
     // Open the "options" drop down.
-    yield openPopup(notif._getAnonElt("options"));
+    await openPopup(notif._getAnonElt("options"));
     ok(notif._getAnonElt("options").getAttribute("open"),
        "the options menu is open");
 
@@ -186,7 +182,7 @@ var gTests = [
 
     // Click the 'Never for French' item.
     notif._getAnonElt("neverForSite").click();
-    notif = yield getInfoBar();
+    notif = await getInfoBar();
     ok(!notif, "infobar hidden");
 
     // Check this has been saved to the exceptions list.
@@ -198,21 +194,21 @@ var gTests = [
 
     // Reopen the infobar.
     PopupNotifications.getNotification("translate").anchorElement.click();
-    notif = yield getInfoBar();
+    notif = await getInfoBar();
     // Open the "options" drop down.
-    yield openPopup(notif._getAnonElt("options"));
+    await openPopup(notif._getAnonElt("options"));
     ok(notif._getAnonElt("neverForSite").disabled,
        "The 'Never translate French' item is disabled");
 
     // Cleanup.
     Services.perms.remove(makeURI("http://example.com"), "translate");
     notif.close();
-  }
+  },
 },
 
 {
   desc: "language exception list",
-  run: function* checkLanguageExceptions() {
+  run: async function checkLanguageExceptions() {
     // Put 2 languages in the pref before opening the window to check
     // the list is displayed on load.
     Services.prefs.setCharPref(kLanguagesPref, "fr,de");
@@ -221,7 +217,7 @@ var gTests = [
     let win = openDialog("chrome://browser/content/preferences/translation.xul",
                          "Browser:TranslationExceptions",
                          "", null);
-    yield waitForWindowLoad(win);
+    await waitForWindowLoad(win);
 
     // Check that the list of language exceptions is loaded.
     let getById = win.document.getElementById.bind(win.document);
@@ -261,12 +257,12 @@ var gTests = [
     is(Services.prefs.getCharPref(kLanguagesPref), "", "The pref is empty");
 
     win.close();
-  }
+  },
 },
 
 {
   desc: "domains exception list",
-  run: function* checkDomainExceptions() {
+  run: async function checkDomainExceptions() {
     // Put 2 exceptions before opening the window to check the list is
     // displayed on load.
     let perms = Services.perms;
@@ -277,7 +273,7 @@ var gTests = [
     let win = openDialog("chrome://browser/content/preferences/translation.xul",
                          "Browser:TranslationExceptions",
                          "", null);
-    yield waitForWindowLoad(win);
+    await waitForWindowLoad(win);
 
     // Check that the list of language exceptions is loaded.
     let getById = win.document.getElementById.bind(win.document);
@@ -318,7 +314,7 @@ var gTests = [
     is(getDomainExceptions().length, 0, "No exceptions in the permissions");
 
     win.close();
-  }
-}
+  },
+},
 
 ];

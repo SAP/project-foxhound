@@ -2,9 +2,9 @@
  * http://creativecommons.org/licenses/publicdomain/  */
 
 function run_test() {
-  var nsILocalFile = Components.interfaces.nsILocalFile;
-  var root = Components.classes["@mozilla.org/file/local;1"].
-              createInstance(nsILocalFile);
+  var nsIFile = Ci.nsIFile;
+  var root = Cc["@mozilla.org/file/local;1"].
+              createInstance(nsIFile);
 
   // copied from http://mxr.mozilla.org/mozilla-central/source/image/test/unit/test_imgtools.js#135
   // nsIXULRuntime.OS doesn't seem to be available in xpcshell, so we'll use
@@ -13,12 +13,12 @@ function run_test() {
     root.initWithPath("\\\\.");
   } else {
     return; // XXX disabled, since this causes intermittent failures on Mac (bug 481369).
-    root.initWithPath("/");
+    // root.initWithPath("/");
   }
   var drives = root.directoryEntries;
-  do_check_true(drives.hasMoreElements());
+  Assert.ok(drives.hasMoreElements());
   while (drives.hasMoreElements()) {
-    var newPath = drives.getNext().QueryInterface(nsILocalFile).path;
-    do_check_eq(newPath.indexOf("\0"), -1);
+    var newPath = drives.nextFile.path;
+    Assert.equal(newPath.indexOf("\0"), -1);
   }
 }

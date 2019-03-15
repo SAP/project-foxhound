@@ -4,11 +4,8 @@
 
 "use strict";
 
-const Ci = Components.interfaces;
-const Cc = Components.classes;
-const Cu = Components.utils;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const XHTML_NS = "http://www.w3.org/1999/xhtml";
 const MAXIMUM_PIXELS = Math.pow(144, 2);
@@ -17,9 +14,7 @@ function ColorAnalyzer() {
   // a queue of callbacks for each job we give to the worker
   this.callbacks = [];
 
-  this.hiddenWindowDoc = Cc["@mozilla.org/appshell/appShellService;1"].
-                         getService(Ci.nsIAppShellService).
-                         hiddenDOMWindow.document;
+  this.hiddenWindowDoc = Services.appShell.hiddenDOMWindow.document;
 
   this.worker = new ChromeWorker("resource://gre/modules/ColorAnalyzer_worker.js");
   this.worker.onmessage = this.onWorkerMessage.bind(this);
@@ -84,7 +79,7 @@ ColorAnalyzer.prototype = {
   },
 
   classID: Components.ID("{d056186c-28a0-494e-aacc-9e433772b143}"),
-  QueryInterface: XPCOMUtils.generateQI([Ci.mozIColorAnalyzer])
+  QueryInterface: ChromeUtils.generateQI([Ci.mozIColorAnalyzer]),
 };
 
 this.NSGetFactory = XPCOMUtils.generateNSGetFactory([ColorAnalyzer]);

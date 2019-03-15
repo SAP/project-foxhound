@@ -6,92 +6,74 @@
 
 #include "mozilla/dom/HTMLBRElement.h"
 #include "mozilla/dom/HTMLBRElementBinding.h"
-#include "mozilla/GenericSpecifiedValuesInlines.h"
+#include "mozilla/MappedDeclarations.h"
 #include "nsAttrValueInlines.h"
 #include "nsStyleConsts.h"
 #include "nsMappedAttributes.h"
-
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(BR)
 
 namespace mozilla {
 namespace dom {
 
-HTMLBRElement::HTMLBRElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-  : nsGenericHTMLElement(aNodeInfo)
-{
-}
+HTMLBRElement::HTMLBRElement(
+    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : nsGenericHTMLElement(std::move(aNodeInfo)) {}
 
-HTMLBRElement::~HTMLBRElement()
-{
-}
+HTMLBRElement::~HTMLBRElement() {}
 
 NS_IMPL_ELEMENT_CLONE(HTMLBRElement)
 
 static const nsAttrValue::EnumTable kClearTable[] = {
-  { "left", StyleClear::Left },
-  { "right", StyleClear::Right },
-  { "all", StyleClear::Both },
-  { "both", StyleClear::Both },
-  { nullptr, 0 }
-};
+    {"left", StyleClear::Left},
+    {"right", StyleClear::Right},
+    {"all", StyleClear::Both},
+    {"both", StyleClear::Both},
+    {nullptr, 0}};
 
-bool
-HTMLBRElement::ParseAttribute(int32_t aNamespaceID,
-                              nsIAtom* aAttribute,
-                              const nsAString& aValue,
-                              nsAttrValue& aResult)
-{
+bool HTMLBRElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                                   const nsAString& aValue,
+                                   nsIPrincipal* aMaybeScriptedPrincipal,
+                                   nsAttrValue& aResult) {
   if (aAttribute == nsGkAtoms::clear && aNamespaceID == kNameSpaceID_None) {
     return aResult.ParseEnumValue(aValue, kClearTable, false);
   }
 
   return nsGenericHTMLElement::ParseAttribute(aNamespaceID, aAttribute, aValue,
-                                              aResult);
+                                              aMaybeScriptedPrincipal, aResult);
 }
 
-void
-HTMLBRElement::MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
-                                     GenericSpecifiedValues* aData)
-{
-  if (aData->ShouldComputeStyleStruct(NS_STYLE_INHERIT_BIT(Display))) {
-    if (!aData->PropertyIsSet(eCSSProperty_clear)) {
-      const nsAttrValue* value = aAttributes->GetAttr(nsGkAtoms::clear);
-      if (value && value->Type() == nsAttrValue::eEnum)
-        aData->SetKeywordValue(eCSSProperty_clear, value->GetEnumValue());
-    }
+void HTMLBRElement::MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
+                                          MappedDeclarations& aDecls) {
+  if (!aDecls.PropertyIsSet(eCSSProperty_clear)) {
+    const nsAttrValue* value = aAttributes->GetAttr(nsGkAtoms::clear);
+    if (value && value->Type() == nsAttrValue::eEnum)
+      aDecls.SetKeywordValue(eCSSProperty_clear, value->GetEnumValue());
   }
-
-  nsGenericHTMLElement::MapCommonAttributesInto(aAttributes, aData);
+  nsGenericHTMLElement::MapCommonAttributesInto(aAttributes, aDecls);
 }
 
 NS_IMETHODIMP_(bool)
-HTMLBRElement::IsAttributeMapped(const nsIAtom* aAttribute) const
-{
-  static const MappedAttributeEntry attributes[] = {
-    { &nsGkAtoms::clear },
-    { nullptr }
-  };
+HTMLBRElement::IsAttributeMapped(const nsAtom* aAttribute) const {
+  static const MappedAttributeEntry attributes[] = {{nsGkAtoms::clear},
+                                                    {nullptr}};
 
   static const MappedAttributeEntry* const map[] = {
-    attributes,
-    sCommonAttributeMap,
+      attributes,
+      sCommonAttributeMap,
   };
 
   return FindAttributeDependence(aAttribute, map);
 }
 
-nsMapRuleToAttributesFunc
-HTMLBRElement::GetAttributeMappingFunction() const
-{
+nsMapRuleToAttributesFunc HTMLBRElement::GetAttributeMappingFunction() const {
   return &MapAttributesIntoRule;
 }
 
-JSObject*
-HTMLBRElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return HTMLBRElementBinding::Wrap(aCx, this, aGivenProto);
+JSObject* HTMLBRElement::WrapNode(JSContext* aCx,
+                                  JS::Handle<JSObject*> aGivenProto) {
+  return HTMLBRElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

@@ -6,7 +6,6 @@
 
 srcs = [
     'archivereader.cpp',
-    'bspatch.cpp',
     'updater.cpp',
 ]
 
@@ -22,7 +21,6 @@ if CONFIG['OS_ARCH'] == 'WINNT':
     srcs += [
         'loaddlls.cpp',
         'progressui_win.cpp',
-        'win_dirent.cpp',
     ]
     RCINCLUDE = '%supdater.rc' % updater_rel_path
     DEFINES['UNICODE'] = True
@@ -32,9 +30,6 @@ if CONFIG['OS_ARCH'] == 'WINNT':
     # Pick up nsWindowsRestart.cpp
     LOCAL_INCLUDES += [
         '/toolkit/xre',
-    ]
-    USE_LIBS += [
-        'updatecommon-standalone',
     ]
     OS_LIBS += [
         'comctl32',
@@ -48,24 +43,15 @@ elif CONFIG['OS_ARCH'] == 'Linux' and CONFIG['MOZ_VERIFY_MAR_SIGNATURE']:
     USE_LIBS += [
         'nss',
         'signmar',
-        'updatecommon',
     ]
     OS_LIBS += CONFIG['NSPR_LIBS']
-else:
-    USE_LIBS += [
-        'updatecommon',
-    ]
 
 USE_LIBS += [
+    'bspatch',
     'mar',
+    'updatecommon',
+    'xz-embedded',
 ]
-
-if CONFIG['MOZ_SYSTEM_BZ2']:
-    OS_LIBS += CONFIG['MOZ_BZ2_LIBS']
-else:
-    USE_LIBS += [
-        'bz2',
-    ]
 
 if 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
     have_progressui = 1
@@ -90,17 +76,6 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
     LOCAL_INCLUDES += [
         '/toolkit/xre',
     ]
-elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gonk':
-    have_progressui = 1
-    srcs += [
-        'automounter_gonk.cpp',
-        'progressui_gonk.cpp',
-    ]
-    DISABLE_STL_WRAPPING = True
-    OS_LIBS += [
-        'cutils',
-        'sysutils',
-    ]
 
 if have_progressui == 0:
     srcs += [
@@ -110,7 +85,7 @@ if have_progressui == 0:
 SOURCES += sorted(srcs)
 
 DEFINES['NS_NO_XPCOM'] = True
-DISABLE_STL_WRAPPING = True
+DisableStlWrapping()
 for var in ('MAR_CHANNEL_ID', 'MOZ_APP_VERSION'):
     DEFINES[var] = '"%s"' % CONFIG[var]
 
@@ -126,7 +101,7 @@ DELAYLOAD_DLLS += [
     'wsock32.dll',
 ]
 
-if CONFIG['_MSC_VER']:
+if CONFIG['CC_TYPE'] in ('msvc', 'clang-cl'):
     WIN32_EXE_LDFLAGS += ['-ENTRY:wmainCRTStartup']
 elif CONFIG['OS_ARCH'] == 'WINNT':
     WIN32_EXE_LDFLAGS += ['-municode']
@@ -134,3 +109,9 @@ elif CONFIG['OS_ARCH'] == 'WINNT':
 if 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
     CXXFLAGS += CONFIG['TK_CFLAGS']
     OS_LIBS += CONFIG['TK_LIBS']
+
+if CONFIG['CC_TYPE'] == 'gcc':
+    CXXFLAGS += ['-Wno-format-truncation']
+
+if CONFIG['CC_TYPE'] == 'clang-cl':
+    AllowCompilerWarnings()  # workaround for bug 1090497

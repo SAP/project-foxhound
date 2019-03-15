@@ -12,11 +12,8 @@
   <iframe type="content" id="frame1"/>
   <iframe type="content" id="frame2" onload="doTest()"/>
   <script type="application/javascript"><![CDATA[
-    const Ci = Components.interfaces;
-    const Cu = Components.utils;
-
-    Cu.import("resource://gre/modules/Services.jsm");
-    Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+    ChromeUtils.import("resource://gre/modules/Services.jsm");
+    ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
     SimpleTest.waitForExplicitFinish();
 
@@ -35,8 +32,8 @@
             }
           },
 
-          QueryInterface: XPCOMUtils.generateQI([Ci.nsIWebProgressListener,
-                                                 Ci.nsISupportsWeakReference])
+          QueryInterface: ChromeUtils.generateQI([Ci.nsIWebProgressListener,
+                                                  Ci.nsISupportsWeakReference])
         };
 
         frame.docShell.QueryInterface(Ci.nsIInterfaceRequestor)
@@ -55,7 +52,7 @@
 
       let errorPageReady = waitForErrorPage(frame1);
       frame1.docShell.chromeEventHandler.setAttribute("crashedPageTitle", "pageTitle");
-      frame1.docShell.displayLoadError(Components.results.NS_ERROR_CONTENT_CRASHED, uri1, null);
+      frame1.docShell.displayLoadError(Cr.NS_ERROR_CONTENT_CRASHED, uri1, null);
 
       await errorPageReady;
       frame1.docShell.chromeEventHandler.removeAttribute("crashedPageTitle");
@@ -65,7 +62,7 @@
                     "Correct about:tabcrashed displayed for page with title.");
 
       errorPageReady = waitForErrorPage(frame2);
-      frame2.docShell.displayLoadError(Components.results.NS_ERROR_CONTENT_CRASHED, uri2, null);
+      frame2.docShell.displayLoadError(Cr.NS_ERROR_CONTENT_CRASHED, uri2, null);
 
       await errorPageReady;
 

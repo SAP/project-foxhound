@@ -7,16 +7,16 @@
 #ifndef mozilla_dom_workers_principal_h__
 #define mozilla_dom_workers_principal_h__
 
-#include "Workers.h"
+#include "WorkerCommon.h"
 
-BEGIN_WORKERS_NAMESPACE
+namespace mozilla {
+namespace dom {
 
-JSPrincipals*
-GetWorkerPrincipal();
+JSPrincipals* GetWorkerPrincipal();
 
-void
-DestroyWorkerPrincipals(JSPrincipals* aPrincipals);
+void DestroyWorkerPrincipals(JSPrincipals* aPrincipals);
 
-END_WORKERS_NAMESPACE
+}  // namespace dom
+}  // namespace mozilla
 
 #endif /* mozilla_dom_workers_principal_h__ */

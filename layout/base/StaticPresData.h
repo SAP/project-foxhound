@@ -7,31 +7,34 @@
 #ifndef mozilla_StaticPresData_h
 #define mozilla_StaticPresData_h
 
-#include "nsAutoPtr.h"
+#include "mozilla/UniquePtr.h"
 #include "nsCoord.h"
 #include "nsCOMPtr.h"
 #include "nsFont.h"
-#include "nsIAtom.h"
-#include "nsILanguageAtomService.h"
+#include "nsAtom.h"
+#include "nsLanguageAtomService.h"
 
 namespace mozilla {
 
 struct LangGroupFontPrefs {
   // Font sizes default to zero; they will be set in GetFontPreferences
   LangGroupFontPrefs()
-    : mLangGroup(nullptr)
-    , mMinimumFontSize(0)
-    , mDefaultVariableFont(mozilla::eFamily_serif, 0)
-    , mDefaultFixedFont(mozilla::eFamily_monospace, 0)
-    , mDefaultSerifFont(mozilla::eFamily_serif, 0)
-    , mDefaultSansSerifFont(mozilla::eFamily_sans_serif, 0)
-    , mDefaultMonospaceFont(mozilla::eFamily_monospace, 0)
-    , mDefaultCursiveFont(mozilla::eFamily_cursive, 0)
-    , mDefaultFantasyFont(mozilla::eFamily_fantasy, 0)
-  {}
+      : mLangGroup(nullptr),
+        mMinimumFontSize(0),
+        mDefaultVariableFont(),
+        mDefaultFixedFont(mozilla::eFamily_monospace, 0),
+        mDefaultSerifFont(mozilla::eFamily_serif, 0),
+        mDefaultSansSerifFont(mozilla::eFamily_sans_serif, 0),
+        mDefaultMonospaceFont(mozilla::eFamily_monospace, 0),
+        mDefaultCursiveFont(mozilla::eFamily_cursive, 0),
+        mDefaultFantasyFont(mozilla::eFamily_fantasy, 0) {
+    mDefaultVariableFont.fontlist.SetDefaultFontType(mozilla::eFamily_serif);
+    // We create mDefaultVariableFont.fontlist with defaultType as the
+    // fallback font, and not as part of the font list proper. This way,
+    // it can be overwritten should there be a language change.
+  }
 
-  void Reset()
-  {
+  void Reset() {
     // Throw away any other LangGroupFontPrefs objects:
     mNext = nullptr;
 
@@ -41,7 +44,7 @@ struct LangGroupFontPrefs {
 
   size_t SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const {
     size_t n = 0;
-    LangGroupFontPrefs* curr = mNext;
+    LangGroupFontPrefs* curr = mNext.get();
     while (curr) {
       n += aMallocSizeOf(curr);
 
@@ -50,62 +53,14 @@ struct LangGroupFontPrefs {
       // - mLangGroup
       // - mDefault*Font
 
-      curr = curr->mNext;
+      curr = curr->mNext.get();
     }
     return n;
   }
 
-  nsCOMPtr<nsIAtom> mLangGroup;
-  nscoord mMinimumFontSize;
-  nsFont mDefaultVariableFont;
-  nsFont mDefaultFixedFont;
-  nsFont mDefaultSerifFont;
-  nsFont mDefaultSansSerifFont;
-  nsFont mDefaultMonospaceFont;
-  nsFont mDefaultCursiveFont;
-  nsFont mDefaultFantasyFont;
-  nsAutoPtr<LangGroupFontPrefs> mNext;
-};
+  // Initialize this with the data for a given language
+  void Initialize(nsAtom* aLangGroupAtom);
 
-/**
- * Some functionality that has historically lived on nsPresContext does not
- * actually need to be per-document. This singleton class serves as a host
- * for that functionality. We delegate to it from nsPresContext where
- * appropriate, and use it standalone in some cases as well.
- */
-class StaticPresData
-{
-public:
-  // Initialization and shutdown of the singleton. Called exactly once.
-  static void Init();
-  static void Shutdown();
-
-  // Gets an instance of the singleton. Infallible between the calls to Init
-  // and Shutdown.
-  static StaticPresData* Get();
-
-  /**
-   * This table maps border-width enums 'thin', 'medium', 'thick'
-   * to actual nscoord values.
-   */
-  const nscoord* GetBorderWidthTable() { return mBorderWidthTable; }
-
-  /**
-   * Fetch the user's font preferences for the given aLanguage's
-   * langugage group.
-   *
-   * The original code here is pretty old, and includes an optimization
-   * whereby language-specific prefs are read per-document, and the
-   * results are stored in a linked list, which is assumed to be very short
-   * since most documents only ever use one language.
-   *
-   * Storing this per-session rather than per-document would almost certainly
-   * be fine. But just to be on the safe side, we leave the old mechanism as-is,
-   * with an additional per-session cache that new callers can use if they don't
-   * have a PresContext.
-   */
-  const LangGroupFontPrefs* GetFontPrefsForLangHelper(nsIAtom* aLanguage,
-                                                      const LangGroupFontPrefs* aPrefs) const;
   /**
    * Get the default font for the given language and generic font ID.
    * aLanguage may not be nullptr.
@@ -125,36 +80,114 @@ public:
    * the user's preference for font size for that generic and the
    * given language.
    */
-  const nsFont* GetDefaultFontHelper(uint8_t aFontID,
-                                     nsIAtom* aLanguage,
+  const nsFont* GetDefaultFont(uint8_t aFontID) const {
+    switch (aFontID) {
+      // Special (our default variable width font and fixed width font)
+      case kGenericFont_moz_variable:
+        return &mDefaultVariableFont;
+      case kGenericFont_moz_fixed:
+        return &mDefaultFixedFont;
+      // CSS
+      case kGenericFont_serif:
+        return &mDefaultSerifFont;
+      case kGenericFont_sans_serif:
+        return &mDefaultSansSerifFont;
+      case kGenericFont_monospace:
+        return &mDefaultMonospaceFont;
+      case kGenericFont_cursive:
+        return &mDefaultCursiveFont;
+      case kGenericFont_fantasy:
+        return &mDefaultFantasyFont;
+        break;
+      default:
+        MOZ_ASSERT_UNREACHABLE("invalid font id");
+        return nullptr;
+    }
+  }
+
+  RefPtr<nsAtom> mLangGroup;
+  nscoord mMinimumFontSize;
+  nsFont mDefaultVariableFont;
+  nsFont mDefaultFixedFont;
+  nsFont mDefaultSerifFont;
+  nsFont mDefaultSansSerifFont;
+  nsFont mDefaultMonospaceFont;
+  nsFont mDefaultCursiveFont;
+  nsFont mDefaultFantasyFont;
+  mozilla::UniquePtr<LangGroupFontPrefs> mNext;
+};
+
+/**
+ * Some functionality that has historically lived on nsPresContext does not
+ * actually need to be per-document. This singleton class serves as a host
+ * for that functionality. We delegate to it from nsPresContext where
+ * appropriate, and use it standalone in some cases as well.
+ */
+class StaticPresData {
+ public:
+  // Initialization and shutdown of the singleton. Called exactly once.
+  static void Init();
+  static void Shutdown();
+
+  // Gets an instance of the singleton. Infallible between the calls to Init
+  // and Shutdown.
+  static StaticPresData* Get();
+
+  /**
+   * Given a language, get the language group name, which can
+   * be used as an argument to LangGroupFontPrefs::Initialize()
+   *
+   * aNeedsToCache is used for two things.  If null, it indicates that
+   * the nsLanguageAtomService is safe to cache the result of the
+   * language group lookup, either because we're on the main thread,
+   * or because we're on a style worker thread but the font lock has
+   * been acquired.  If non-null, it indicates that it's not safe to
+   * cache the result of the language group lookup (because we're on
+   * a style worker thread without the lock acquired).  In this case,
+   * GetLanguageGroup will store true in *aNeedsToCache true if we
+   * would have cached the result of a new lookup, and false if we
+   * were able to use an existing cached result.  Thus, callers that
+   * get a true *aNeedsToCache outparam value should make an effort
+   * to re-call GetLanguageGroup when it is safe to cache, to avoid
+   * recomputing the language group again later.
+   */
+  nsAtom* GetLangGroup(nsAtom* aLanguage, bool* aNeedsToCache = nullptr) const;
+
+  /**
+   * Same as GetLangGroup, but will not cache the result
+   *
+   */
+  already_AddRefed<nsAtom> GetUncachedLangGroup(nsAtom* aLanguage) const;
+
+  /**
+   * Fetch the user's font preferences for the given aLanguage's
+   * langugage group.
+   *
+   * The original code here is pretty old, and includes an optimization
+   * whereby language-specific prefs are read per-document, and the
+   * results are stored in a linked list, which is assumed to be very short
+   * since most documents only ever use one language.
+   *
+   * Storing this per-session rather than per-document would almost certainly
+   * be fine. But just to be on the safe side, we leave the old mechanism as-is,
+   * with an additional per-session cache that new callers can use if they don't
+   * have a PresContext.
+   *
+   * See comment on GetLangGroup for the usage of aNeedsToCache.
+   */
+  const LangGroupFontPrefs* GetFontPrefsForLangHelper(
+      nsAtom* aLanguage, const LangGroupFontPrefs* aPrefs,
+      bool* aNeedsToCache = nullptr) const;
+  const nsFont* GetDefaultFontHelper(uint8_t aFontID, nsAtom* aLanguage,
                                      const LangGroupFontPrefs* aPrefs) const;
 
-  /*
-   * These versions operate on the font pref cache on StaticPresData.
-   */
-
-  const nsFont* GetDefaultFont(uint8_t aFontID, nsIAtom* aLanguage) const
-  {
-    MOZ_ASSERT(aLanguage);
-    return GetDefaultFontHelper(aFontID, aLanguage, GetFontPrefsForLang(aLanguage));
-  }
-  const LangGroupFontPrefs* GetFontPrefsForLang(nsIAtom* aLanguage) const
-  {
-    MOZ_ASSERT(aLanguage);
-    return GetFontPrefsForLangHelper(aLanguage, &mStaticLangGroupFontPrefs);
-  }
-
-  void ResetCachedFontPrefs() { mStaticLangGroupFontPrefs.Reset(); }
-
-private:
+ private:
   StaticPresData();
   ~StaticPresData() {}
 
-  nsCOMPtr<nsILanguageAtomService> mLangService;
-  nscoord mBorderWidthTable[3];
-  LangGroupFontPrefs mStaticLangGroupFontPrefs;
+  nsLanguageAtomService* mLangService;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_StaticPresData_h
+#endif  // mozilla_StaticPresData_h

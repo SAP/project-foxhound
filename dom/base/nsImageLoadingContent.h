@@ -14,7 +14,6 @@
 #define nsImageLoadingContent_h__
 
 #include "imgINotificationObserver.h"
-#include "imgIOnloadBlocker.h"
 #include "mozilla/CORSMode.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/TimeStamp.h"
@@ -25,63 +24,65 @@
 #include "nsIContentPolicy.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/net/ReferrerPolicy.h"
+#include "nsAttrValue.h"
 
 class nsIURI;
-class nsIDocument;
 class nsPresContext;
 class nsIContent;
 class imgRequestProxy;
 
 namespace mozilla {
 class AsyncEventDispatcher;
-} // namespace mozilla
+namespace dom {
+class Document;
+class Element;
+}  // namespace dom
+}  // namespace mozilla
 
 #ifdef LoadImage
 // Undefine LoadImage to prevent naming conflict with Windows.
-#undef LoadImage
+#  undef LoadImage
 #endif
 
-class nsImageLoadingContent : public nsIImageLoadingContent,
-                              public imgIOnloadBlocker
-{
-  template <typename T> using Maybe = mozilla::Maybe<T>;
+class nsImageLoadingContent : public nsIImageLoadingContent {
+  template <typename T>
+  using Maybe = mozilla::Maybe<T>;
   using Nothing = mozilla::Nothing;
   using OnNonvisible = mozilla::OnNonvisible;
   using Visibility = mozilla::Visibility;
 
   /* METHODS */
-public:
+ public:
   nsImageLoadingContent();
   virtual ~nsImageLoadingContent();
 
   NS_DECL_IMGINOTIFICATIONOBSERVER
   NS_DECL_NSIIMAGELOADINGCONTENT
-  NS_DECL_IMGIONLOADBLOCKER
 
   // Web IDL binding methods.
-  // Note that the XPCOM SetLoadingEnabled, AddObserver, RemoveObserver,
-  // ForceImageState methods are OK for Web IDL bindings to use as well,
-  // since none of them throw when called via the Web IDL bindings.
+  // Note that the XPCOM SetLoadingEnabled, ForceImageState methods are OK for
+  // Web IDL bindings to use as well, since none of them throw when called via
+  // the Web IDL bindings.
 
   bool LoadingEnabled() const { return mLoadingEnabled; }
-  int16_t ImageBlockingStatus() const
-  {
-    return mImageBlockingStatus;
-  }
-  already_AddRefed<imgIRequest>
-    GetRequest(int32_t aRequestType, mozilla::ErrorResult& aError);
-  int32_t
-    GetRequestType(imgIRequest* aRequest, mozilla::ErrorResult& aError);
+  int16_t ImageBlockingStatus() const { return mImageBlockingStatus; }
+  void AddObserver(imgINotificationObserver* aObserver);
+  void RemoveObserver(imgINotificationObserver* aObserver);
+  already_AddRefed<imgIRequest> GetRequest(int32_t aRequestType,
+                                           mozilla::ErrorResult& aError);
+  int32_t GetRequestType(imgIRequest* aRequest, mozilla::ErrorResult& aError);
   already_AddRefed<nsIURI> GetCurrentURI(mozilla::ErrorResult& aError);
-  void ForceReload(const mozilla::dom::Optional<bool>& aNotify,
-                   mozilla::ErrorResult& aError);
+  already_AddRefed<nsIURI> GetCurrentRequestFinalURI();
+  void ForceReload(bool aNotify, mozilla::ErrorResult& aError);
 
-  // XPCOM [optional] syntax helper
-  nsresult ForceReload(bool aNotify = true) {
-    return ForceReload(aNotify, 1);
-  }
+  mozilla::dom::Element* FindImageMap();
 
-protected:
+  /**
+   * Toggle whether or not to synchronously decode an image on draw.
+   */
+  void SetSyncDecodingHint(bool aHint);
+
+ protected:
   enum ImageLoadType {
     // Most normal image loads
     eImageLoadType_Normal,
@@ -103,9 +104,12 @@ protected:
    * @param aNotify If true, nsIDocumentObserver state change notifications
    *                will be sent as needed.
    * @param aImageLoadType The ImageLoadType for this request
+   * @param aTriggeringPrincipal Optional parameter specifying the triggering
+   *        principal to use for the image load
    */
-  nsresult LoadImage(const nsAString& aNewURI, bool aForce,
-                     bool aNotify, ImageLoadType aImageLoadType);
+  nsresult LoadImage(const nsAString& aNewURI, bool aForce, bool aNotify,
+                     ImageLoadType aImageLoadType,
+                     nsIPrincipal* aTriggeringPrincipal = nullptr);
 
   /**
    * ImageState is called by subclasses that are computing their content state.
@@ -135,11 +139,21 @@ protected:
    *        This is purely a performance optimization.
    * @param aLoadFlags Optional parameter specifying load flags to use for
    *        the image load
+   * @param aTriggeringPrincipal Optional parameter specifying the triggering
+   *        principal to use for the image load
    */
   nsresult LoadImage(nsIURI* aNewURI, bool aForce, bool aNotify,
                      ImageLoadType aImageLoadType, bool aLoadStart = true,
-                     nsIDocument* aDocument = nullptr,
-                     nsLoadFlags aLoadFlags = nsIRequest::LOAD_NORMAL);
+                     mozilla::dom::Document* aDocument = nullptr,
+                     nsLoadFlags aLoadFlags = nsIRequest::LOAD_NORMAL,
+                     nsIPrincipal* aTriggeringPrincipal = nullptr);
+
+  nsresult LoadImage(nsIURI* aNewURI, bool aForce, bool aNotify,
+                     ImageLoadType aImageLoadType,
+                     nsIPrincipal* aTriggeringPrincipal) {
+    return LoadImage(aNewURI, aForce, aNotify, aImageLoadType, true, nullptr,
+                     nsIRequest::LOAD_NORMAL, aTriggeringPrincipal);
+  }
 
   /**
    * helpers to get the document for this content (from the nodeinfo
@@ -148,8 +162,8 @@ protected:
    *
    * @return the document we belong to
    */
-  nsIDocument* GetOurOwnerDoc();
-  nsIDocument* GetOurCurrentDoc();
+  mozilla::dom::Document* GetOurOwnerDoc();
+  mozilla::dom::Document* GetOurCurrentDoc();
 
   /**
    * Helper function to get the frame associated with this content. Not named
@@ -177,15 +191,6 @@ protected:
   void CancelImageRequests(bool aNotify);
 
   /**
-   * UseAsPrimaryRequest is called by subclasses when they have an existing
-   * imgRequestProxy that they want this nsImageLoadingContent to use.  This may
-   * effectively be called instead of LoadImage or LoadImageWithChannel.
-   * If aNotify is true, this method will notify on state changes.
-   */
-  nsresult UseAsPrimaryRequest(imgRequestProxy* aRequest, bool aNotify,
-                               ImageLoadType aImageLoadType);
-
-  /**
    * Derived classes of nsImageLoadingContent MUST call
    * DestroyImageLoadingContent from their destructor, or earlier.  It
    * does things that cannot be done in ~nsImageLoadingContent because
@@ -194,8 +199,6 @@ protected:
    * calling the base class destructors.
    */
   void DestroyImageLoadingContent();
-
-  void ClearBrokenState() { mBroken = false; }
 
   /**
    * Returns the CORS mode that will be used for all future image loads. The
@@ -206,22 +209,39 @@ protected:
   virtual mozilla::net::ReferrerPolicy GetImageReferrerPolicy();
 
   // Subclasses are *required* to call BindToTree/UnbindFromTree.
-  void BindToTree(nsIDocument* aDocument, nsIContent* aParent,
-                  nsIContent* aBindingParent, bool aCompileEventHandlers);
+  void BindToTree(mozilla::dom::Document* aDocument, nsIContent* aParent,
+                  nsIContent* aBindingParent);
   void UnbindFromTree(bool aDeep, bool aNullParent);
 
   nsresult OnLoadComplete(imgIRequest* aRequest, nsresult aStatus);
   void OnUnlockedDraw();
-  nsresult OnImageIsAnimated(imgIRequest *aRequest);
+  nsresult OnImageIsAnimated(imgIRequest* aRequest);
 
   // The nsContentPolicyType we would use for this ImageLoadType
   static nsContentPolicyType PolicyTypeForLoad(ImageLoadType aImageLoadType);
 
   void AsyncEventRunning(mozilla::AsyncEventDispatcher* aEvent);
 
-private:
+  // Get ourselves as an nsIContent*.  Not const because some of the callers
+  // want a non-const nsIContent.
+  virtual nsIContent* AsContent() = 0;
+
+  // Hooks for subclasses to call to get the intrinsic width and height.
+  uint32_t NaturalWidth();
+  uint32_t NaturalHeight();
+
+  enum class ImageDecodingType : uint8_t {
+    Auto,
+    Async,
+    Sync,
+  };
+
+  static const nsAttrValue::EnumTable kDecodingTable[];
+  static const nsAttrValue::EnumTable* kDecodingTableDefault;
+
+ private:
   /**
-   * Struct used to manage the image observers.
+   * Struct used to manage the native image observers.
    */
   struct ImageObserver {
     explicit ImageObserver(imgINotificationObserver* aObserver);
@@ -232,18 +252,34 @@ private:
   };
 
   /**
+   * Struct used to manage the scripted/XPCOM image observers.
+   */
+  class ScriptedImageObserver final {
+   public:
+    NS_INLINE_DECL_REFCOUNTING(ScriptedImageObserver)
+
+    ScriptedImageObserver(imgINotificationObserver* aObserver,
+                          RefPtr<imgRequestProxy>&& aCurrentRequest,
+                          RefPtr<imgRequestProxy>&& aPendingRequest);
+    bool CancelRequests();
+
+    nsCOMPtr<imgINotificationObserver> mObserver;
+    RefPtr<imgRequestProxy> mCurrentRequest;
+    RefPtr<imgRequestProxy> mPendingRequest;
+
+   private:
+    ~ScriptedImageObserver();
+  };
+
+  /**
    * Struct to report state changes
    */
   struct AutoStateChanger {
-    AutoStateChanger(nsImageLoadingContent* aImageContent,
-                     bool aNotify) :
-      mImageContent(aImageContent),
-      mNotify(aNotify)
-    {
+    AutoStateChanger(nsImageLoadingContent* aImageContent, bool aNotify)
+        : mImageContent(aImageContent), mNotify(aNotify) {
       mImageContent->mStateChangerDepth++;
     }
-    ~AutoStateChanger()
-    {
+    ~AutoStateChanger() {
       mImageContent->mStateChangerDepth--;
       mImageContent->UpdateImageState(mNotify);
     }
@@ -277,7 +313,7 @@ private:
 
   RefPtr<mozilla::AsyncEventDispatcher> mPendingEvent;
 
-protected:
+ protected:
   /**
    * Method to create an nsIURI object from the given string (will
    * handle getting the right charset, base, etc).  You MUST pass in a
@@ -287,8 +323,8 @@ protected:
    * @param aDocument the document we belong to
    * @return the URI we want to be loading
    */
-  nsresult StringToURI(const nsAString& aSpec, nsIDocument* aDocument,
-                       nsIURI** aURI);
+  nsresult StringToURI(const nsAString& aSpec,
+                       mozilla::dom::Document* aDocument, nsIURI** aURI);
 
   void CreateStaticImageClone(nsImageLoadingContent* aDest) const;
 
@@ -300,20 +336,13 @@ protected:
    *
    * @param aImageLoadType The ImageLoadType for this request
    */
-   RefPtr<imgRequestProxy>& PrepareNextRequest(ImageLoadType aImageLoadType);
-
-  /**
-   * Called when we would normally call PrepareNextRequest(), but the request was
-   * blocked.
-   */
-  void SetBlockedRequest(nsIURI* aURI, int16_t aContentDecision);
+  RefPtr<imgRequestProxy>& PrepareNextRequest(ImageLoadType aImageLoadType);
 
   /**
    * Returns a COMPtr reference to the current/pending image requests, cleaning
    * up and canceling anything that was there before. Note that if you just want
    * to get rid of one of the requests, you should call
-   * Clear*Request(NS_BINDING_ABORTED) instead, since it passes a more appropriate
-   * aReason than Prepare*Request() does (NS_ERROR_IMAGE_SRC_CHANGED).
+   * Clear*Request(NS_BINDING_ABORTED) instead.
    *
    * @param aImageLoadType The ImageLoadType for this request
    */
@@ -332,10 +361,12 @@ protected:
    * @param aNonvisibleAction An action to take if the image is no longer
    *                          visible as a result; see |UntrackImage|.
    */
-  void ClearCurrentRequest(nsresult aReason,
-                           const Maybe<OnNonvisible>& aNonvisibleAction = Nothing());
-  void ClearPendingRequest(nsresult aReason,
-                           const Maybe<OnNonvisible>& aNonvisibleAction = Nothing());
+  void ClearCurrentRequest(
+      nsresult aReason,
+      const Maybe<OnNonvisible>& aNonvisibleAction = Nothing());
+  void ClearPendingRequest(
+      nsresult aReason,
+      const Maybe<OnNonvisible>& aNonvisibleAction = Nothing());
 
   /**
    * Retrieve a pointer to the 'registered with the refresh driver' flag for
@@ -348,8 +379,9 @@ protected:
   bool* GetRegisteredFlagForRequest(imgIRequest* aRequest);
 
   /**
-   * Reset animation of the current request if |mNewRequestsWillNeedAnimationReset|
-   * was true when the request was prepared.
+   * Reset animation of the current request if
+   * |mNewRequestsWillNeedAnimationReset| was true when the request was
+   * prepared.
    */
   void ResetAnimationIfNeeded();
 
@@ -357,12 +389,17 @@ protected:
    * Static helper method to tell us if we have the size of a request. The
    * image may be null.
    */
-  static bool HaveSize(imgIRequest *aImage);
+  static bool HaveSize(imgIRequest* aImage);
 
   /**
    * Adds/Removes a given imgIRequest from our document's tracker.
    *
    * No-op if aImage is null.
+   *
+   * @param aFrame If called from FrameCreated the frame passed to FrameCreated.
+   *               This is our frame, but at the time of the FrameCreated call
+   *               our primary frame pointer hasn't been set yet, so this is
+   *               only way to get our frame.
    *
    * @param aNonvisibleAction A requested action if the frame has become
    *                          nonvisible. If Nothing(), no action is
@@ -371,7 +408,7 @@ protected:
    *                          associated with to discard their surfaces if
    *                          possible.
    */
-  void TrackImage(imgIRequest* aImage);
+  void TrackImage(imgIRequest* aImage, nsIFrame* aFrame = nullptr);
   void UntrackImage(imgIRequest* aImage,
                     const Maybe<OnNonvisible>& aNonvisibleAction = Nothing());
 
@@ -384,8 +421,6 @@ protected:
   enum {
     // Set if the request needs ResetAnimation called on it.
     REQUEST_NEEDS_ANIMATION_RESET = 0x00000001U,
-    // Set if the request is blocking onload.
-    REQUEST_BLOCKS_ONLOAD = 0x00000002U,
     // Set if the request is currently tracked with the document.
     REQUEST_IS_TRACKED = 0x00000004U,
     // Set if this is an imageset request, such as from <img srcset> or
@@ -397,9 +432,40 @@ protected:
   // still keep track of what the URI was despite not having an imgIRequest.
   // We only maintain this in those situations (in the common case, this is
   // always null).
-  nsCOMPtr<nsIURI>      mCurrentURI;
+  nsCOMPtr<nsIURI> mCurrentURI;
 
-private:
+ private:
+  /**
+   * Clones the given "current" or "pending" request for each scripted observer.
+   */
+  void CloneScriptedRequests(imgRequestProxy* aRequest);
+
+  /**
+   * Cancels and nulls-out the "current" or "pending" requests if they exist
+   * for each scripted observer.
+   */
+  void ClearScriptedRequests(int32_t aRequestType, nsresult aReason);
+
+  /**
+   * Moves the "pending" request into the "current" request for each scripted
+   * observer. If there is an existing "current" request, it will cancel it
+   * first.
+   */
+  void MakePendingScriptedRequestsCurrent();
+
+  /**
+   * Depending on the configured decoding hint, and/or how recently we updated
+   * the image request, force or stop the frame from decoding the image
+   * synchronously when it is drawn.
+   * @param aPrepareNextRequest True if this is when updating the image request.
+   * @param aFrame If called from FrameCreated the frame passed to FrameCreated.
+   *               This is our frame, but at the time of the FrameCreated call
+   *               our primary frame pointer hasn't been set yet, so this is
+   *               only way to get our frame.
+   */
+  void MaybeForceSyncDecoding(bool aPrepareNextRequest,
+                              nsIFrame* aFrame = nullptr);
+
   /**
    * Typically we will have only one observer (our frame in the screen
    * prescontext), so we want to only make space for one and to
@@ -409,6 +475,13 @@ private:
    * to it.
    */
   ImageObserver mObserverList;
+
+  /**
+   * Typically we will have no scripted observers, as this is only used by
+   * chrome, legacy extensions, and some mochitests. An empty array reserves
+   * minimal memory.
+   */
+  nsTArray<RefPtr<ScriptedImageObserver>> mScriptedObservers;
 
   /**
    * When mIsImageStateForced is true, this holds the ImageState that we'll
@@ -435,7 +508,7 @@ private:
   bool mUserDisabled : 1;
   bool mSuppressed : 1;
 
-protected:
+ protected:
   /**
    * A hack to get animations to reset, see bug 594771. On requests
    * that originate from setting .src, we mark them for needing their animation
@@ -446,7 +519,15 @@ protected:
    */
   bool mNewRequestsWillNeedAnimationReset : 1;
 
-private:
+  /**
+   * Flag to indicate whether the channel should be mark as urgent-start.
+   * It should be set in *Element and passed to nsContentUtils::LoadImage.
+   * True if we want to set nsIClassOfService::UrgentStart to the channel to
+   * get the response ASAP for better user responsiveness.
+   */
+  bool mUseUrgentStartForChannel;
+
+ private:
   /* The number of nested AutoStateChangers currently tracking our state. */
   uint8_t mStateChangerDepth;
 
@@ -455,8 +536,20 @@ private:
   bool mCurrentRequestRegistered;
   bool mPendingRequestRegistered;
 
-  // True when FrameCreate has been called but FrameDestroy has not.
-  bool mFrameCreateCalled;
+  // TODO:
+  // Bug 1353685: Should ServiceWorker call SetBlockedRequest?
+  //
+  // This member is used in SetBlockedRequest, if it's true, then this call is
+  // triggered from LoadImage.
+  // If this is false, it means this call is from other places like
+  // ServiceWorker, then we will ignore call to SetBlockedRequest for now.
+  //
+  // Also we use this variable to check if some evil code is reentering
+  // LoadImage.
+  bool mIsStartingImageLoad;
+
+  // If true, force frames to synchronously decode images on draw.
+  bool mSyncDecodingHint;
 };
 
-#endif // nsImageLoadingContent_h__
+#endif  // nsImageLoadingContent_h__

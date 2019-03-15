@@ -37,10 +37,10 @@ info: |
   4. If obj is a Proxy exotic object, then
      a. If the value of the [[ProxyHandler]] internal slot of obj is null,
         throw a TypeError exception.
-features: [Proxy]
+features: [cross-realm, Proxy]
 ---*/
 
-var other = $.createRealm().global;
+var other = $262.createRealm().global;
 // Defer proxy revocation until after the `constructor` property has been
 // accessed
 var handlers = {

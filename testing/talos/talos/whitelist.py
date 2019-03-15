@@ -3,10 +3,12 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+from __future__ import absolute_import, print_function
 
 import json
 import os
-import utils
+import re
+from talos import utils
 
 KEY_XRE = '{xre}'
 DEFAULT_DURATION = 100.0
@@ -17,7 +19,7 @@ class Whitelist:
     PRE_PROFILE = ''
 
     def __init__(self, test_name, paths, path_substitutions,
-                 name_substitutions, init_with=None):
+                 name_substitutions, event_sources=None, init_with=None):
         self.test_name = test_name
         self.listmap = init_with if init_with else {}
         self.dependent_libs = self.load_dependent_libs() \
@@ -25,6 +27,7 @@ class Whitelist:
         self.paths = paths
         self.path_substitutions = path_substitutions
         self.name_substitutions = name_substitutions
+        self.expected_event_sources = event_sources or []
 
     def load(self, filename):
         if not self.load_dependent_libs():
@@ -70,13 +73,16 @@ class Whitelist:
                 filename = "%s%s" % (subst, path.join(parts[1:]))
 
         for old_name, new_name in self.name_substitutions.iteritems():
-            parts = filename.split(old_name)
-            if len(parts) >= 2:
-                filename = "%s%s" % (parts[0], new_name)
+            if isinstance(old_name, re._pattern_type):
+                filename = re.sub(old_name, new_name, filename)
+            else:
+                parts = filename.split(old_name)
+                if len(parts) >= 2:
+                    filename = "%s%s" % (parts[0], new_name)
 
         return filename.strip('/\\\ \t')
 
-    def check(self, test, file_name_index):
+    def check(self, test, file_name_index, event_source_index=None):
         errors = {}
         for row_key in test.iterkeys():
             filename = self.sanitize_filename(row_key[file_name_index])
@@ -86,6 +92,9 @@ class Whitelist:
                         self.listmap[filename]['ignore']:
                     continue
             elif filename in self.dependent_libs:
+                continue
+            elif event_source_index is not None and \
+                    row_key[event_source_index] in self.expected_event_sources:
                 continue
             else:
                 if filename not in errors:

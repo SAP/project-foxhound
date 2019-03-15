@@ -7,47 +7,53 @@ Support for running spidermonkey jobs via dedicated scripts
 
 from __future__ import absolute_import, print_function, unicode_literals
 
-from voluptuous import Schema, Required, Optional, Any
+from taskgraph.util.schema import Schema
+from voluptuous import Required, Any
 
 from taskgraph.transforms.job import run_job_using
 from taskgraph.transforms.job.common import (
-    docker_worker_add_public_artifacts,
-    docker_worker_support_vcs_checkout,
+    docker_worker_add_artifacts,
+    generic_worker_add_artifacts,
+    generic_worker_hg_commands,
+    docker_worker_add_tooltool,
+    support_vcs_checkout,
 )
 
 sm_run_schema = Schema({
-    Required('using'): Any('spidermonkey', 'spidermonkey-package', 'spidermonkey-mozjs-crate'),
+    Required('using'): Any('spidermonkey', 'spidermonkey-package', 'spidermonkey-mozjs-crate',
+                           'spidermonkey-rust-bindings'),
 
     # The SPIDERMONKEY_VARIANT
     Required('spidermonkey-variant'): basestring,
 
-    # The tooltool manifest to use; default from sm-tooltool-config.sh  is used
-    # if omitted
-    Optional('tooltool-manifest'): basestring,
+    # Base work directory used to set up the task.
+    Required('workdir'): basestring,
 })
 
 
-@run_job_using("docker-worker", "spidermonkey")
-@run_job_using("docker-worker", "spidermonkey-package")
-@run_job_using("docker-worker", "spidermonkey-mozjs-crate")
-def docker_worker_spidermonkey(config, job, taskdesc, schema=sm_run_schema):
+@run_job_using("docker-worker", "spidermonkey", schema=sm_run_schema)
+@run_job_using("docker-worker", "spidermonkey-package", schema=sm_run_schema)
+@run_job_using("docker-worker", "spidermonkey-mozjs-crate",
+               schema=sm_run_schema)
+@run_job_using("docker-worker", "spidermonkey-rust-bindings",
+               schema=sm_run_schema)
+def docker_worker_spidermonkey(config, job, taskdesc):
     run = job['run']
 
     worker = taskdesc['worker']
     worker['artifacts'] = []
-    worker['caches'] = []
+    worker.setdefault('caches', []).append({
+        'type': 'persistent',
+        'name': 'level-{}-{}-build-spidermonkey-workspace'.format(
+            config.params['level'], config.params['project']),
+        'mount-point': "{workdir}/workspace".format(**run),
+        'skip-untrusted': True,
+    })
 
-    if int(config.params['level']) > 1:
-        worker['caches'].append({
-            'type': 'persistent',
-            'name': 'level-{}-{}-build-spidermonkey-workspace'.format(
-                config.params['level'], config.params['project']),
-            'mount-point': "/home/worker/workspace",
-        })
+    docker_worker_add_artifacts(config, job, taskdesc)
+    docker_worker_add_tooltool(config, job, taskdesc)
 
-    docker_worker_add_public_artifacts(config, job, taskdesc)
-
-    env = worker['env']
+    env = worker.setdefault('env', {})
     env.update({
         'MOZHARNESS_DISABLE': 'true',
         'SPIDERMONKEY_VARIANT': run['spidermonkey-variant'],
@@ -55,32 +61,75 @@ def docker_worker_spidermonkey(config, job, taskdesc, schema=sm_run_schema):
         'MOZ_SCM_LEVEL': config.params['level'],
     })
 
-    # tooltool downloads; note that this script downloads using the API
-    # endpoiint directly, rather than via relengapi-proxy
-    worker['caches'].append({
-        'type': 'persistent',
-        'name': 'tooltool-cache',
-        'mount-point': '/home/worker/tooltool-cache',
-    })
-    env['TOOLTOOL_CACHE'] = '/home/worker/tooltool-cache'
-    if run.get('tooltool-manifest'):
-        env['TOOLTOOL_MANIFEST'] = run['tooltool-manifest']
-
-    docker_worker_support_vcs_checkout(config, job, taskdesc)
+    support_vcs_checkout(config, job, taskdesc)
 
     script = "build-sm.sh"
     if run['using'] == 'spidermonkey-package':
         script = "build-sm-package.sh"
     elif run['using'] == 'spidermonkey-mozjs-crate':
         script = "build-sm-mozjs-crate.sh"
+    elif run['using'] == 'spidermonkey-rust-bindings':
+        script = "build-sm-rust-bindings.sh"
 
     worker['command'] = [
-        '/home/worker/bin/run-task',
-        '--chown-recursive', '/home/worker/workspace',
-        '--chown-recursive', '/home/worker/tooltool-cache',
-        '--vcs-checkout', '/home/worker/workspace/build/src',
+        '{workdir}/bin/run-task'.format(**run),
+        '--gecko-checkout', '{workdir}/workspace/build/src'.format(**run),
         '--',
         '/bin/bash',
         '-c',
-        'cd /home/worker && workspace/build/src/taskcluster/scripts/builder/%s' % script
+        'cd {workdir} && workspace/build/src/taskcluster/scripts/builder/{script}'.format(
+            workdir=run['workdir'], script=script)
+    ]
+
+
+@run_job_using("generic-worker", "spidermonkey", schema=sm_run_schema)
+def generic_worker_spidermonkey(config, job, taskdesc):
+    assert job['worker']['os'] == 'windows', 'only supports windows right now'
+
+    run = job['run']
+
+    worker = taskdesc['worker']
+
+    generic_worker_add_artifacts(config, job, taskdesc)
+    support_vcs_checkout(config, job, taskdesc)
+
+    env = worker.setdefault('env', {})
+    env.update({
+        'MOZHARNESS_DISABLE': 'true',
+        'SPIDERMONKEY_VARIANT': run['spidermonkey-variant'],
+        'MOZ_BUILD_DATE': config.params['moz_build_date'],
+        'MOZ_SCM_LEVEL': config.params['level'],
+        'SCCACHE_DISABLE': "1",
+        'WORK': ".",  # Override the defaults in build scripts
+        'SRCDIR': "./src",  # with values suiteable for windows generic worker
+        'UPLOAD_DIR': "./public/build"
+    })
+
+    script = "build-sm.sh"
+    if run['using'] == 'spidermonkey-package':
+        script = "build-sm-package.sh"
+        # Don't allow untested configurations yet
+        raise Exception("spidermonkey-package is not a supported configuration")
+    elif run['using'] == 'spidermonkey-mozjs-crate':
+        script = "build-sm-mozjs-crate.sh"
+        # Don't allow untested configurations yet
+        raise Exception("spidermonkey-mozjs-crate is not a supported configuration")
+    elif run['using'] == 'spidermonkey-rust-bindings':
+        script = "build-sm-rust-bindings.sh"
+        # Don't allow untested configurations yet
+        raise Exception("spidermonkey-rust-bindings is not a supported configuration")
+
+    hg_command = generic_worker_hg_commands(
+        'https://hg.mozilla.org/mozilla-unified',
+        env['GECKO_HEAD_REPOSITORY'],
+        env['GECKO_HEAD_REV'],
+        r'.\src',
+    )[0]
+
+    command = ['c:\\mozilla-build\\msys\\bin\\bash.exe '  # string concat
+               '"./src/taskcluster/scripts/builder/%s"' % script]
+
+    worker['command'] = [
+        hg_command,
+        ' '.join(command),
     ]

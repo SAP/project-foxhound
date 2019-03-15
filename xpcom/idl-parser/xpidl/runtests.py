@@ -33,7 +33,8 @@ class TestParser(unittest.TestCase):
         self.assertEqual("foo", i.productions[0].name)
 
     def testAttributes(self):
-        i = self.p.parse("[scriptable, builtinclass, function, deprecated, uuid(abc)] interface foo {};", filename='f')
+        i = self.p.parse(
+            "[scriptable, builtinclass, function, uuid(abc)] interface foo {};", filename='f')
         self.assertTrue(isinstance(i, xpidl.IDL))
         self.assertTrue(isinstance(i.productions[0], xpidl.Interface))
         iface = i.productions[0]
@@ -41,7 +42,6 @@ class TestParser(unittest.TestCase):
         self.assertTrue(iface.attributes.scriptable)
         self.assertTrue(iface.attributes.builtinclass)
         self.assertTrue(iface.attributes.function)
-        self.assertTrue(iface.attributes.deprecated)
 
         i = self.p.parse("[noscript, uuid(abc)] interface foo {};", filename='f')
         self.assertTrue(isinstance(i, xpidl.IDL))
@@ -60,28 +60,28 @@ void bar();
         m = iface.members[0]
         self.assertTrue(isinstance(m, xpidl.Method))
         self.assertEqual("bar", m.name)
-        self.assertEqual("void", m.type)
+        self.assertEqual(xpidl.TypeId("void"), m.type)
 
     def testMethodParams(self):
         i = self.p.parse("""[uuid(abc)] interface foo {
 long bar(in long a, in float b, [array] in long c);
 };""", filename='f')
-        i.resolve([], self.p)
+        i.resolve([], self.p, {})
         self.assertTrue(isinstance(i, xpidl.IDL))
         self.assertTrue(isinstance(i.productions[0], xpidl.Interface))
         iface = i.productions[0]
         m = iface.members[0]
         self.assertTrue(isinstance(m, xpidl.Method))
         self.assertEqual("bar", m.name)
-        self.assertEqual("long", m.type)
+        self.assertEqual(xpidl.TypeId("long"), m.type)
         self.assertEqual(3, len(m.params))
-        self.assertEqual("long", m.params[0].type)
+        self.assertEqual(xpidl.TypeId("long"), m.params[0].type)
         self.assertEqual("in", m.params[0].paramtype)
-        self.assertEqual("float", m.params[1].type)
+        self.assertEqual(xpidl.TypeId("float"), m.params[1].type)
         self.assertEqual("in", m.params[1].paramtype)
-        self.assertEqual("long", m.params[2].type)
+        self.assertEqual(xpidl.TypeId("long"), m.params[2].type)
         self.assertEqual("in", m.params[2].paramtype)
-        self.assertTrue(isinstance(m.params[2].realtype, xpidl.Array))
+        self.assertTrue(isinstance(m.params[2].realtype, xpidl.LegacyArray))
         self.assertEqual("long", m.params[2].realtype.type.name)
 
     def testAttribute(self):
@@ -94,7 +94,7 @@ attribute long bar;
         a = iface.members[0]
         self.assertTrue(isinstance(a, xpidl.Attribute))
         self.assertEqual("bar", a.name)
-        self.assertEqual("long", a.type)
+        self.assertEqual(xpidl.TypeId("long"), a.type)
 
     def testOverloadedVirtual(self):
         i = self.p.parse("""[uuid(abc)] interface foo {
@@ -102,13 +102,17 @@ attribute long bar;
 void getBar();
 };""", filename='f')
         self.assertTrue(isinstance(i, xpidl.IDL))
+        i.resolve([], self.p, {})
+
         class FdMock:
             def write(self, s):
                 pass
         try:
             header.print_header(i, FdMock(), filename='f')
         except Exception as e:
-            self.assertEqual(e.args[0], "Unexpected overloaded virtual method GetBar in interface foo")
+            self.assertEqual(
+                e.args[0], "Unexpected overloaded virtual method GetBar in interface foo")
+
 
 if __name__ == '__main__':
-    mozunit.main()
+    mozunit.main(runwith='unittest')

@@ -27,12 +27,7 @@
  * @property {Boolean} trustForEmail
  *           Set to true if the cert should be trusted for e-mail, false
  *           otherwise. Undefined value if |importConfirmed| is not true.
- * @property {Boolean} trustForObjSign
- *           Set to true if the cert should be trusted for object signing, false
- *           otherwise. Undefined value if |importConfirmed| is not true.
  */
-
-const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
 
 /**
  * The cert to potentially import.
@@ -70,13 +65,11 @@ function viewCert() {
 function onDialogAccept() {
   let checkSSL = document.getElementById("trustSSL");
   let checkEmail = document.getElementById("trustEmail");
-  let checkObjSign = document.getElementById("trustObjSign");
 
   let retVals = window.arguments[1].QueryInterface(Ci.nsIWritablePropertyBag2);
   retVals.setPropertyAsBool("importConfirmed", true);
   retVals.setPropertyAsBool("trustForSSL", checkSSL.checked);
   retVals.setPropertyAsBool("trustForEmail", checkEmail.checked);
-  retVals.setPropertyAsBool("trustForObjSign", checkObjSign.checked);
   return true;
 }
 

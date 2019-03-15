@@ -5,35 +5,48 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifdef DEBUG
-#define ENABLE_STRING_STATS
+#  define ENABLE_STRING_STATS
 #endif
 
 #include "mozilla/Atomics.h"
 #include "mozilla/MemoryReporting.h"
 
 #ifdef ENABLE_STRING_STATS
-#include <stdio.h>
+#  include <stdio.h>
 #endif
 
 #include <stdlib.h>
-#include "nsSubstring.h"
+#include "nsAString.h"
 #include "nsString.h"
 #include "nsStringBuffer.h"
 #include "nsDependentString.h"
+#include "nsPrintfCString.h"
 #include "nsMemory.h"
 #include "prprf.h"
-#include "nsStaticAtom.h"
 #include "nsCOMPtr.h"
 
 #include "mozilla/IntegerPrintfMacros.h"
 #ifdef XP_WIN
-#include <windows.h>
-#include <process.h>
-#define getpid() _getpid()
-#define pthread_self() GetCurrentThreadId()
+#  include <windows.h>
+#  include <process.h>
+#  define getpid() _getpid()
+#  define pthread_self() GetCurrentThreadId()
 #else
-#include <pthread.h>
-#include <unistd.h>
+#  include <pthread.h>
+#  include <unistd.h>
+#endif
+
+#ifdef STRING_BUFFER_CANARY
+#  define CHECK_STRING_BUFFER_CANARY(c)                      \
+    do {                                                     \
+      if ((c) != CANARY_OK) {                                \
+        MOZ_CRASH_UNSAFE_PRINTF("Bad canary value 0x%x", c); \
+      }                                                      \
+    } while (0)
+#else
+#  define CHECK_STRING_BUFFER_CANARY(c) \
+    do {                                \
+    } while (0)
 #endif
 
 using mozilla::Atomic;
@@ -43,26 +56,19 @@ using mozilla::Atomic;
 static const char16_t gNullChar = 0;
 
 char* const nsCharTraits<char>::sEmptyBuffer =
-  (char*)const_cast<char16_t*>(&gNullChar);
+    (char*)const_cast<char16_t*>(&gNullChar);
 char16_t* const nsCharTraits<char16_t>::sEmptyBuffer =
-  const_cast<char16_t*>(&gNullChar);
+    const_cast<char16_t*>(&gNullChar);
 
 // ---------------------------------------------------------------------------
 
 #ifdef ENABLE_STRING_STATS
-class nsStringStats
-{
-public:
+class nsStringStats {
+ public:
   nsStringStats()
-    : mAllocCount(0)
-    , mReallocCount(0)
-    , mFreeCount(0)
-    , mShareCount(0)
-  {
-  }
+      : mAllocCount(0), mReallocCount(0), mFreeCount(0), mShareCount(0) {}
 
-  ~nsStringStats()
-  {
+  ~nsStringStats() {
     // this is a hack to suppress duplicate string stats printing
     // in seamonkey as a result of the string code being linked
     // into seamonkey and libxpcom! :-(
@@ -91,27 +97,29 @@ public:
            uintptr_t(getpid()), uintptr_t(pthread_self()));
   }
 
-  Atomic<int32_t> mAllocCount;
-  Atomic<int32_t> mReallocCount;
-  Atomic<int32_t> mFreeCount;
-  Atomic<int32_t> mShareCount;
-  Atomic<int32_t> mAdoptCount;
-  Atomic<int32_t> mAdoptFreeCount;
+  typedef Atomic<int32_t, mozilla::SequentiallyConsistent,
+                 mozilla::recordreplay::Behavior::DontPreserve>
+      AtomicInt;
+
+  AtomicInt mAllocCount;
+  AtomicInt mReallocCount;
+  AtomicInt mFreeCount;
+  AtomicInt mShareCount;
+  AtomicInt mAdoptCount;
+  AtomicInt mAdoptFreeCount;
 };
 static nsStringStats gStringStats;
-#define STRING_STAT_INCREMENT(_s) (gStringStats.m ## _s ## Count)++
+#  define STRING_STAT_INCREMENT(_s) (gStringStats.m##_s##Count)++
 #else
-#define STRING_STAT_INCREMENT(_s)
+#  define STRING_STAT_INCREMENT(_s)
 #endif
 
 // ---------------------------------------------------------------------------
 
-void
-ReleaseData(void* aData, uint32_t aFlags)
-{
-  if (aFlags & nsSubstring::F_SHARED) {
+void ReleaseData(void* aData, nsAString::DataFlags aFlags) {
+  if (aFlags & nsAString::DataFlags::REFCOUNTED) {
     nsStringBuffer::FromData(aData)->Release();
-  } else if (aFlags & nsSubstring::F_OWNED) {
+  } else if (aFlags & nsAString::DataFlags::OWNED) {
     free(aData);
     STRING_STAT_INCREMENT(AdoptFree);
     // Treat this as destruction of a "StringAdopt" object for leak
@@ -125,82 +133,78 @@ ReleaseData(void* aData, uint32_t aFlags)
 
 // XXX or we could make nsStringBuffer be a friend of nsTAString
 
-class nsAStringAccessor : public nsAString
-{
-private:
-  nsAStringAccessor(); // NOT IMPLEMENTED
+class nsAStringAccessor : public nsAString {
+ private:
+  nsAStringAccessor();  // NOT IMPLEMENTED
 
-public:
-  char_type* data() const
-  {
-    return mData;
-  }
-  size_type length() const
-  {
-    return mLength;
-  }
-  uint32_t flags() const
-  {
-    return mFlags;
-  }
+ public:
+  char_type* data() const { return mData; }
+  size_type length() const { return mLength; }
+  DataFlags flags() const { return mDataFlags; }
 
-  // TaintFox: also set taint information here.
-  void set(char_type* aData, size_type aLen, uint32_t aFlags, const StringTaint& aTaint)
-  {
-    ReleaseData(mData, mFlags);
-    mData = aData;
-    mLength = aLen;
-    mFlags = aFlags;
-    taint_ = aTaint;
+  void set(char_type* aData, size_type aLen, DataFlags aDataFlags, const StringTaint& aTaint) {
+    ReleaseData(mData, mDataFlags);
+    SetData(aData, aLen, aDataFlags, aTaint);
   }
 };
 
-class nsACStringAccessor : public nsACString
-{
-private:
-  nsACStringAccessor(); // NOT IMPLEMENTED
+class nsACStringAccessor : public nsACString {
+ private:
+  nsACStringAccessor();  // NOT IMPLEMENTED
 
-public:
-  char_type* data() const
-  {
-    return mData;
-  }
-  size_type length() const
-  {
-    return mLength;
-  }
-  uint32_t flags() const
-  {
-    return mFlags;
-  }
+ public:
+  char_type* data() const { return mData; }
+  size_type length() const { return mLength; }
+  DataFlags flags() const { return mDataFlags; }
 
-  // TaintFox: also set taint information here.
-  void set(char_type* aData, size_type aLen, uint32_t aFlags, const StringTaint& aTaint)
-  {
-    ReleaseData(mData, mFlags);
-    mData = aData;
-    mLength = aLen;
-    mFlags = aFlags;
-    taint_ = aTaint;
+  void set(char_type* aData, size_type aLen, DataFlags aDataFlags, const StringTaint& aTaint) {
+    ReleaseData(mData, mDataFlags);
+    SetData(aData, aLen, aDataFlags, aTaint);
   }
 };
 
 // ---------------------------------------------------------------------------
 
-void
-nsStringBuffer::AddRef()
-{
-  ++mRefCount;
+void nsStringBuffer::AddRef() {
+  // Memory synchronization is not required when incrementing a
+  // reference count.  The first increment of a reference count on a
+  // thread is not important, since the first use of the object on a
+  // thread can happen before it.  What is important is the transfer
+  // of the pointer to that thread, which may happen prior to the
+  // first increment on that thread.  The necessary memory
+  // synchronization is done by the mechanism that transfers the
+  // pointer between threads.
+#ifdef NS_BUILD_REFCNT_LOGGING
+  uint32_t count =
+#endif
+      mRefCount.fetch_add(1, std::memory_order_relaxed)
+#ifdef NS_BUILD_REFCNT_LOGGING
+      + 1
+#endif
+      ;
   STRING_STAT_INCREMENT(Share);
-  NS_LOG_ADDREF(this, mRefCount, "nsStringBuffer", sizeof(*this));
+  NS_LOG_ADDREF(this, count, "nsStringBuffer", sizeof(*this));
 }
 
-void
-nsStringBuffer::Release()
-{
-  int32_t count = --mRefCount;
+void nsStringBuffer::Release() {
+  CHECK_STRING_BUFFER_CANARY(mCanary);
+
+  // Since this may be the last release on this thread, we need
+  // release semantics so that prior writes on this thread are visible
+  // to the thread that destroys the object when it reads mValue with
+  // acquire semantics.
+  uint32_t count = mRefCount.fetch_sub(1, std::memory_order_release) - 1;
   NS_LOG_RELEASE(this, count, "nsStringBuffer");
   if (count == 0) {
+    // We're going to destroy the object on this thread, so we need
+    // acquire semantics to synchronize with the memory released by
+    // the last release on other threads, that is, to ensure that
+    // writes prior to that release are now visible on this thread.
+    count = mRefCount.load(std::memory_order_acquire);
+#ifdef STRING_BUFFER_CANARY
+    mCanary = CANARY_POISON;
+#endif
+
     STRING_STAT_INCREMENT(Free);
     ClearTaint();       // TaintFox: clear() is guaranteed to free all resources.
     free(this); // we were allocated with |malloc|
@@ -210,35 +214,34 @@ nsStringBuffer::Release()
 /**
  * Alloc returns a pointer to a new string header with set capacity.
  */
-already_AddRefed<nsStringBuffer>
-nsStringBuffer::Alloc(size_t aSize)
-{
+already_AddRefed<nsStringBuffer> nsStringBuffer::Alloc(size_t aSize) {
   NS_ASSERTION(aSize != 0, "zero capacity allocation not allowed");
   NS_ASSERTION(sizeof(nsStringBuffer) + aSize <= size_t(uint32_t(-1)) &&
-               sizeof(nsStringBuffer) + aSize > aSize,
+                   sizeof(nsStringBuffer) + aSize > aSize,
                "mStorageSize will truncate");
 
-  nsStringBuffer* hdr =
-    (nsStringBuffer*)malloc(sizeof(nsStringBuffer) + aSize);
+  nsStringBuffer* hdr = (nsStringBuffer*)malloc(sizeof(nsStringBuffer) + aSize);
   if (hdr) {
     STRING_STAT_INCREMENT(Alloc);
 
     hdr->mRefCount = 1;
     hdr->mStorageSize = aSize;
     hdr->InitTaint();         // TaintFox: initialize taint information.
+#ifdef STRING_BUFFER_CANARY
+    hdr->mCanary = CANARY_OK;
+#endif
     NS_LOG_ADDREF(hdr, 1, "nsStringBuffer", sizeof(*hdr));
   }
   return dont_AddRef(hdr);
 }
 
-nsStringBuffer*
-nsStringBuffer::Realloc(nsStringBuffer* aHdr, size_t aSize)
-{
+nsStringBuffer* nsStringBuffer::Realloc(nsStringBuffer* aHdr, size_t aSize) {
   STRING_STAT_INCREMENT(Realloc);
 
+  CHECK_STRING_BUFFER_CANARY(aHdr->mCanary);
   NS_ASSERTION(aSize != 0, "zero capacity allocation not allowed");
   NS_ASSERTION(sizeof(nsStringBuffer) + aSize <= size_t(uint32_t(-1)) &&
-               sizeof(nsStringBuffer) + aSize > aSize,
+                   sizeof(nsStringBuffer) + aSize > aSize,
                "mStorageSize will truncate");
 
   // no point in trying to save ourselves if we hit this assertion
@@ -258,13 +261,11 @@ nsStringBuffer::Realloc(nsStringBuffer* aHdr, size_t aSize)
   return aHdr;
 }
 
-nsStringBuffer*
-nsStringBuffer::FromString(const nsAString& aStr)
-{
+nsStringBuffer* nsStringBuffer::FromString(const nsAString& aStr) {
   const nsAStringAccessor* accessor =
-    static_cast<const nsAStringAccessor*>(&aStr);
+      static_cast<const nsAStringAccessor*>(&aStr);
 
-  if (!(accessor->flags() & nsSubstring::F_SHARED)) {
+  if (!(accessor->flags() & nsAString::DataFlags::REFCOUNTED)) {
     return nullptr;
   }
 
@@ -277,13 +278,11 @@ nsStringBuffer::FromString(const nsAString& aStr)
   return buf;
 }
 
-nsStringBuffer*
-nsStringBuffer::FromString(const nsACString& aStr)
-{
+nsStringBuffer* nsStringBuffer::FromString(const nsACString& aStr) {
   const nsACStringAccessor* accessor =
-    static_cast<const nsACStringAccessor*>(&aStr);
+      static_cast<const nsACStringAccessor*>(&aStr);
 
-  if (!(accessor->flags() & nsCSubstring::F_SHARED)) {
+  if (!(accessor->flags() & nsACString::DataFlags::REFCOUNTED)) {
     return nullptr;
   }
 
@@ -296,19 +295,16 @@ nsStringBuffer::FromString(const nsACString& aStr)
   return buf;
 }
 
-void
-nsStringBuffer::ToString(uint32_t aLen, nsAString& aStr,
-                         bool aMoveOwnership)
-{
+void nsStringBuffer::ToString(uint32_t aLen, nsAString& aStr,
+                              bool aMoveOwnership) {
   char16_t* data = static_cast<char16_t*>(Data());
 
   nsAStringAccessor* accessor = static_cast<nsAStringAccessor*>(&aStr);
   MOZ_DIAGNOSTIC_ASSERT(data[aLen] == char16_t(0),
                         "data should be null terminated");
 
-  // preserve class flags
-  uint32_t flags = accessor->flags();
-  flags = (flags & 0xFFFF0000) | nsSubstring::F_SHARED | nsSubstring::F_TERMINATED;
+  nsAString::DataFlags flags =
+      nsAString::DataFlags::REFCOUNTED | nsAString::DataFlags::TERMINATED;
 
   if (!aMoveOwnership) {
     AddRef();
@@ -316,19 +312,16 @@ nsStringBuffer::ToString(uint32_t aLen, nsAString& aStr,
   accessor->set(data, aLen, flags, Taint());
 }
 
-void
-nsStringBuffer::ToString(uint32_t aLen, nsACString& aStr,
-                         bool aMoveOwnership)
-{
+void nsStringBuffer::ToString(uint32_t aLen, nsACString& aStr,
+                              bool aMoveOwnership) {
   char* data = static_cast<char*>(Data());
 
   nsACStringAccessor* accessor = static_cast<nsACStringAccessor*>(&aStr);
   MOZ_DIAGNOSTIC_ASSERT(data[aLen] == char(0),
                         "data should be null terminated");
 
-  // preserve class flags
-  uint32_t flags = accessor->flags();
-  flags = (flags & 0xFFFF0000) | nsCSubstring::F_SHARED | nsCSubstring::F_TERMINATED;
+  nsACString::DataFlags flags =
+      nsACString::DataFlags::REFCOUNTED | nsACString::DataFlags::TERMINATED;
 
   if (!aMoveOwnership) {
     AddRef();
@@ -336,39 +329,26 @@ nsStringBuffer::ToString(uint32_t aLen, nsACString& aStr,
   accessor->set(data, aLen, flags, Taint());
 }
 
-size_t
-nsStringBuffer::SizeOfIncludingThisIfUnshared(mozilla::MallocSizeOf aMallocSizeOf) const
-{
+size_t nsStringBuffer::SizeOfIncludingThisIfUnshared(
+    mozilla::MallocSizeOf aMallocSizeOf) const {
   return IsReadonly() ? 0 : aMallocSizeOf(this);
 }
 
-size_t
-nsStringBuffer::SizeOfIncludingThisEvenIfShared(mozilla::MallocSizeOf aMallocSizeOf) const
-{
+size_t nsStringBuffer::SizeOfIncludingThisEvenIfShared(
+    mozilla::MallocSizeOf aMallocSizeOf) const {
   return aMallocSizeOf(this);
 }
 
+#ifdef STRING_BUFFER_CANARY
+void nsStringBuffer::FromDataCanaryCheckFailed() const {
+  MOZ_CRASH_UNSAFE_PRINTF("Bad canary value 0x%x in FromData", mCanary);
+}
+#endif
+
 // ---------------------------------------------------------------------------
 
-
-// define nsSubstring
-#include "string-template-def-unichar.h"
+// define nsAString
 #include "nsTSubstring.cpp"
-#include "string-template-undef.h"
-
-// define nsCSubstring
-#include "string-template-def-char.h"
-#include "nsTSubstring.cpp"
-#include "string-template-undef.h"
-
-// Check that internal and external strings have the same size.
-// See https://bugzilla.mozilla.org/show_bug.cgi?id=430581
-
-#include "mozilla/Logging.h"
-#include "nsXPCOMStrings.h"
-
-static_assert(sizeof(nsStringContainer_base) == sizeof(nsSubstring),
-              "internal and external strings must have the same size");
 
 // Provide rust bindings to the nsA[C]String types
 extern "C" {
@@ -376,50 +356,109 @@ extern "C" {
 // This is a no-op on release, so we ifdef it out such that using it in release
 // results in a linker error.
 #ifdef DEBUG
-void Gecko_IncrementStringAdoptCount(void* aData)
-{
+void Gecko_IncrementStringAdoptCount(void* aData) {
   MOZ_LOG_CTOR(aData, "StringAdopt", 1);
 }
+#elif defined(MOZ_DEBUG_RUST)
+void Gecko_IncrementStringAdoptCount(void* aData) {}
 #endif
 
-void Gecko_FinalizeCString(nsACString* aThis)
-{
-  aThis->~nsACString();
-}
+void Gecko_FinalizeCString(nsACString* aThis) { aThis->~nsACString(); }
 
-void Gecko_AssignCString(nsACString* aThis, const nsACString* aOther)
-{
+void Gecko_AssignCString(nsACString* aThis, const nsACString* aOther) {
   aThis->Assign(*aOther);
 }
 
-void Gecko_AppendCString(nsACString* aThis, const nsACString* aOther)
-{
+void Gecko_TakeFromCString(nsACString* aThis, nsACString* aOther) {
+  aThis->Assign(std::move(*aOther));
+}
+
+void Gecko_AppendCString(nsACString* aThis, const nsACString* aOther) {
   aThis->Append(*aOther);
 }
 
-void Gecko_TruncateCString(nsACString* aThis)
-{
-  aThis->Truncate();
+void Gecko_SetLengthCString(nsACString* aThis, uint32_t aLength) {
+  aThis->SetLength(aLength);
 }
 
-void Gecko_FinalizeString(nsAString* aThis)
-{
-  aThis->~nsAString();
+bool Gecko_FallibleAssignCString(nsACString* aThis, const nsACString* aOther) {
+  return aThis->Assign(*aOther, mozilla::fallible);
 }
 
-void Gecko_AssignString(nsAString* aThis, const nsAString* aOther)
-{
+bool Gecko_FallibleTakeFromCString(nsACString* aThis, nsACString* aOther) {
+  return aThis->Assign(std::move(*aOther), mozilla::fallible);
+}
+
+bool Gecko_FallibleAppendCString(nsACString* aThis, const nsACString* aOther) {
+  return aThis->Append(*aOther, mozilla::fallible);
+}
+
+bool Gecko_FallibleSetLengthCString(nsACString* aThis, uint32_t aLength) {
+  return aThis->SetLength(aLength, mozilla::fallible);
+}
+
+char* Gecko_BeginWritingCString(nsACString* aThis) {
+  return aThis->BeginWriting();
+}
+
+char* Gecko_FallibleBeginWritingCString(nsACString* aThis) {
+  return aThis->BeginWriting(mozilla::fallible);
+}
+
+uint32_t Gecko_StartBulkWriteCString(nsACString* aThis, uint32_t aCapacity,
+                                     uint32_t aUnitsToPreserve,
+                                     bool aAllowShrinking) {
+  return aThis->StartBulkWriteImpl(aCapacity, aUnitsToPreserve, aAllowShrinking)
+      .unwrapOr(UINT32_MAX);
+}
+
+void Gecko_FinalizeString(nsAString* aThis) { aThis->~nsAString(); }
+
+void Gecko_AssignString(nsAString* aThis, const nsAString* aOther) {
   aThis->Assign(*aOther);
 }
 
-void Gecko_AppendString(nsAString* aThis, const nsAString* aOther)
-{
+void Gecko_TakeFromString(nsAString* aThis, nsAString* aOther) {
+  aThis->Assign(std::move(*aOther));
+}
+
+void Gecko_AppendString(nsAString* aThis, const nsAString* aOther) {
   aThis->Append(*aOther);
 }
 
-void Gecko_TruncateString(nsAString* aThis)
-{
-  aThis->Truncate();
+void Gecko_SetLengthString(nsAString* aThis, uint32_t aLength) {
+  aThis->SetLength(aLength);
 }
 
-} // extern "C"
+bool Gecko_FallibleAssignString(nsAString* aThis, const nsAString* aOther) {
+  return aThis->Assign(*aOther, mozilla::fallible);
+}
+
+bool Gecko_FallibleTakeFromString(nsAString* aThis, nsAString* aOther) {
+  return aThis->Assign(std::move(*aOther), mozilla::fallible);
+}
+
+bool Gecko_FallibleAppendString(nsAString* aThis, const nsAString* aOther) {
+  return aThis->Append(*aOther, mozilla::fallible);
+}
+
+bool Gecko_FallibleSetLengthString(nsAString* aThis, uint32_t aLength) {
+  return aThis->SetLength(aLength, mozilla::fallible);
+}
+
+char16_t* Gecko_BeginWritingString(nsAString* aThis) {
+  return aThis->BeginWriting();
+}
+
+char16_t* Gecko_FallibleBeginWritingString(nsAString* aThis) {
+  return aThis->BeginWriting(mozilla::fallible);
+}
+
+uint32_t Gecko_StartBulkWriteString(nsAString* aThis, uint32_t aCapacity,
+                                    uint32_t aUnitsToPreserve,
+                                    bool aAllowShrinking) {
+  return aThis->StartBulkWriteImpl(aCapacity, aUnitsToPreserve, aAllowShrinking)
+      .unwrapOr(UINT32_MAX);
+}
+
+}  // extern "C"

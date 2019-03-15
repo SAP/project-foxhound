@@ -19,41 +19,42 @@
 
 namespace mozilla {
 class DeclarationBlock;
-} // namespace mozilla
+}  // namespace mozilla
 
 // IID for nsStyledElement interface
-#define NS_STYLED_ELEMENT_IID \
-{ 0xacbd9ea6, 0x15aa, 0x4f37, \
- { 0x8c, 0xe0, 0x35, 0x1e, 0xd7, 0x21, 0xca, 0xe9 } }
+#define NS_STYLED_ELEMENT_IID                        \
+  {                                                  \
+    0xacbd9ea6, 0x15aa, 0x4f37, {                    \
+      0x8c, 0xe0, 0x35, 0x1e, 0xd7, 0x21, 0xca, 0xe9 \
+    }                                                \
+  }
 
 typedef mozilla::dom::Element nsStyledElementBase;
 
-class nsStyledElement : public nsStyledElementBase
-{
+class nsStyledElement : public nsStyledElementBase {
+ protected:
+  inline explicit nsStyledElement(
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+      : nsStyledElementBase(std::move(aNodeInfo)) {}
 
-protected:
-
-  inline explicit nsStyledElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-    : nsStyledElementBase(aNodeInfo)
-  {}
-
-public:
+ public:
   // We don't want to implement AddRef/Release because that would add an extra
   // function call for those on pretty much all elements.  But we do need QI, so
   // we can QI to nsStyledElement.
   NS_IMETHOD QueryInterface(REFNSIID aIID, void** aInstancePtr) override;
 
   // Element interface methods
-  virtual nsresult SetInlineStyleDeclaration(mozilla::DeclarationBlock* aDeclaration,
-                                             const nsAString* aSerialized,
-                                             bool aNotify) override;
+  virtual void InlineStyleDeclarationWillChange(
+      mozilla::MutationClosureData& aData) override;
+  virtual nsresult SetInlineStyleDeclaration(
+      mozilla::DeclarationBlock& aDeclaration,
+      mozilla::MutationClosureData& aData) override;
 
   nsICSSDeclaration* Style();
 
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_STYLED_ELEMENT_IID)
 
-protected:
-
+ protected:
   nsICSSDeclaration* GetExistingStyle();
 
   /**
@@ -61,14 +62,19 @@ protected:
    * document, leave it as a string) and return as nsAttrValue.
    *
    * @param aValue the value to parse
+   * @param aMaybeScriptedPrincipal if available, the scripted principal
+   *        responsible for this attribute value, as passed to
+   *        Element::ParseAttribute.
    * @param aResult the resulting HTMLValue [OUT]
    */
   void ParseStyleAttribute(const nsAString& aValue,
-                           nsAttrValue& aResult,
-                           bool aForceInDataDoc);
+                           nsIPrincipal* aMaybeScriptedPrincipal,
+                           nsAttrValue& aResult, bool aForceInDataDoc);
 
-  virtual bool ParseAttribute(int32_t aNamespaceID, nsIAtom* aAttribute,
-                                const nsAString& aValue, nsAttrValue& aResult) override;
+  virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                              const nsAString& aValue,
+                              nsIPrincipal* aMaybeScriptedPrincipal,
+                              nsAttrValue& aResult) override;
 
   friend class mozilla::dom::Element;
 
@@ -76,10 +82,18 @@ protected:
    * Create the style struct from the style attr.  Used when an element is
    * first put into a document.  Only has an effect if the old value is a
    * string.  If aForceInDataDoc is true, will reparse even if we're in a data
-   * document.
+   * document. If aForceIfAlreadyParsed is set, this will always reparse even
+   * if the value has already been parsed.
    */
-  nsresult  ReparseStyleAttribute(bool aForceInDataDoc);
+  nsresult ReparseStyleAttribute(bool aForceInDataDoc,
+                                 bool aForceIfAlreadyParsed);
+
+  virtual void NodeInfoChanged(mozilla::dom::Document* aOldDoc) override;
+
+  virtual nsresult BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                 const nsAttrValueOrString* aValue,
+                                 bool aNotify) override;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsStyledElement, NS_STYLED_ELEMENT_IID)
-#endif // __NS_STYLEDELEMENT_H_
+#endif  // __NS_STYLEDELEMENT_H_

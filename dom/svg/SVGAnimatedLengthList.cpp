@@ -6,18 +6,18 @@
 
 #include "SVGAnimatedLengthList.h"
 
-#include "DOMSVGAnimatedLengthList.h"
 #include "mozilla/Move.h"
-#include "nsSVGElement.h"
-#include "nsSVGAttrTearoffTable.h"
-#include "nsSMILValue.h"
+#include "mozilla/SMILValue.h"
+#include "mozilla/dom/SVGElement.h"
+#include "mozilla/dom/SVGLengthBinding.h"
+#include "DOMSVGAnimatedLengthList.h"
 #include "SVGLengthListSMILType.h"
 
 namespace mozilla {
 
-nsresult
-SVGAnimatedLengthList::SetBaseValueString(const nsAString& aValue)
-{
+using namespace dom;
+
+nsresult SVGAnimatedLengthList::SetBaseValueString(const nsAString &aValue) {
   SVGLengthList newBaseValue;
   nsresult rv = newBaseValue.SetValueFromString(aValue);
   if (NS_FAILED(rv)) {
@@ -25,7 +25,7 @@ SVGAnimatedLengthList::SetBaseValueString(const nsAString& aValue)
   }
 
   DOMSVGAnimatedLengthList *domWrapper =
-    DOMSVGAnimatedLengthList::GetDOMWrapperIfExists(this);
+      DOMSVGAnimatedLengthList::GetDOMWrapperIfExists(this);
   if (domWrapper) {
     // We must send this notification *before* changing mBaseVal! If the length
     // of our baseVal is being reduced, our baseVal's DOM wrapper list may have
@@ -36,7 +36,7 @@ SVGAnimatedLengthList::SetBaseValueString(const nsAString& aValue)
   }
 
   // We don't need to call DidChange* here - we're only called by
-  // nsSVGElement::ParseAttribute under Element::SetAttr,
+  // SVGElement::ParseAttribute under Element::SetAttr,
   // which takes care of notifying.
 
   rv = mBaseVal.CopyFrom(newBaseValue);
@@ -48,11 +48,9 @@ SVGAnimatedLengthList::SetBaseValueString(const nsAString& aValue)
   return rv;
 }
 
-void
-SVGAnimatedLengthList::ClearBaseValue(uint32_t aAttrEnum)
-{
+void SVGAnimatedLengthList::ClearBaseValue(uint32_t aAttrEnum) {
   DOMSVGAnimatedLengthList *domWrapper =
-    DOMSVGAnimatedLengthList::GetDOMWrapperIfExists(this);
+      DOMSVGAnimatedLengthList::GetDOMWrapperIfExists(this);
   if (domWrapper) {
     // We must send this notification *before* changing mBaseVal! (See above.)
     domWrapper->InternalBaseValListWillChangeTo(SVGLengthList());
@@ -61,13 +59,11 @@ SVGAnimatedLengthList::ClearBaseValue(uint32_t aAttrEnum)
   // Caller notifies
 }
 
-nsresult
-SVGAnimatedLengthList::SetAnimValue(const SVGLengthList& aNewAnimValue,
-                                    nsSVGElement *aElement,
-                                    uint32_t aAttrEnum)
-{
+nsresult SVGAnimatedLengthList::SetAnimValue(const SVGLengthList &aNewAnimValue,
+                                             SVGElement *aElement,
+                                             uint32_t aAttrEnum) {
   DOMSVGAnimatedLengthList *domWrapper =
-    DOMSVGAnimatedLengthList::GetDOMWrapperIfExists(this);
+      DOMSVGAnimatedLengthList::GetDOMWrapperIfExists(this);
   if (domWrapper) {
     // A new animation may totally change the number of items in the animVal
     // list, replacing what was essentially a mirror of the baseVal list, or
@@ -101,12 +97,10 @@ SVGAnimatedLengthList::SetAnimValue(const SVGLengthList& aNewAnimValue,
   return NS_OK;
 }
 
-void
-SVGAnimatedLengthList::ClearAnimValue(nsSVGElement *aElement,
-                                      uint32_t aAttrEnum)
-{
+void SVGAnimatedLengthList::ClearAnimValue(SVGElement *aElement,
+                                           uint32_t aAttrEnum) {
   DOMSVGAnimatedLengthList *domWrapper =
-    DOMSVGAnimatedLengthList::GetDOMWrapperIfExists(this);
+      DOMSVGAnimatedLengthList::GetDOMWrapperIfExists(this);
   if (domWrapper) {
     // When all animation ends, animVal simply mirrors baseVal, which may have
     // a different number of items to the last active animated value. We must
@@ -119,28 +113,23 @@ SVGAnimatedLengthList::ClearAnimValue(nsSVGElement *aElement,
   aElement->DidAnimateLengthList(aAttrEnum);
 }
 
-nsISMILAttr*
-SVGAnimatedLengthList::ToSMILAttr(nsSVGElement *aSVGElement,
-                                  uint8_t aAttrEnum,
-                                  uint8_t aAxis,
-                                  bool aCanZeroPadList)
-{
-  return new SMILAnimatedLengthList(this, aSVGElement, aAttrEnum, aAxis, aCanZeroPadList);
+UniquePtr<SMILAttr> SVGAnimatedLengthList::ToSMILAttr(SVGElement *aSVGElement,
+                                                      uint8_t aAttrEnum,
+                                                      uint8_t aAxis,
+                                                      bool aCanZeroPadList) {
+  return MakeUnique<SMILAnimatedLengthList>(this, aSVGElement, aAttrEnum, aAxis,
+                                            aCanZeroPadList);
 }
 
-nsresult
-SVGAnimatedLengthList::
-  SMILAnimatedLengthList::ValueFromString(const nsAString& aStr,
-                               const dom::SVGAnimationElement* /*aSrcElement*/,
-                               nsSMILValue& aValue,
-                               bool& aPreventCachingOfSandwich) const
-{
-  nsSMILValue val(&SVGLengthListSMILType::sSingleton);
-  SVGLengthListAndInfo *llai = static_cast<SVGLengthListAndInfo*>(val.mU.mPtr);
+nsresult SVGAnimatedLengthList::SMILAnimatedLengthList::ValueFromString(
+    const nsAString &aStr, const dom::SVGAnimationElement * /*aSrcElement*/,
+    SMILValue &aValue, bool &aPreventCachingOfSandwich) const {
+  SMILValue val(&SVGLengthListSMILType::sSingleton);
+  SVGLengthListAndInfo *llai = static_cast<SVGLengthListAndInfo *>(val.mU.mPtr);
   nsresult rv = llai->SetValueFromString(aStr);
   if (NS_SUCCEEDED(rv)) {
     llai->SetInfo(mElement, mAxis, mCanZeroPadList);
-    aValue = Move(val);
+    aValue = std::move(val);
 
     // If any of the lengths in the list depend on their context, then we must
     // prevent caching of the entire animation sandwich. This is because the
@@ -159,9 +148,9 @@ SVGAnimatedLengthList::
     aPreventCachingOfSandwich = false;
     for (uint32_t i = 0; i < llai->Length(); ++i) {
       uint8_t unit = (*llai)[i].GetUnit();
-      if (unit == nsIDOMSVGLength::SVG_LENGTHTYPE_PERCENTAGE ||
-          unit == nsIDOMSVGLength::SVG_LENGTHTYPE_EMS ||
-          unit == nsIDOMSVGLength::SVG_LENGTHTYPE_EXS) {
+      if (unit == SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE ||
+          unit == SVGLength_Binding::SVG_LENGTHTYPE_EMS ||
+          unit == SVGLength_Binding::SVG_LENGTHTYPE_EXS) {
         aPreventCachingOfSandwich = true;
         break;
       }
@@ -170,43 +159,37 @@ SVGAnimatedLengthList::
   return rv;
 }
 
-nsSMILValue
-SVGAnimatedLengthList::SMILAnimatedLengthList::GetBaseValue() const
-{
+SMILValue SVGAnimatedLengthList::SMILAnimatedLengthList::GetBaseValue() const {
   // To benefit from Return Value Optimization and avoid copy constructor calls
   // due to our use of return-by-value, we must return the exact same object
   // from ALL return points. This function must only return THIS variable:
-  nsSMILValue val;
+  SMILValue val;
 
-  nsSMILValue tmp(&SVGLengthListSMILType::sSingleton);
-  SVGLengthListAndInfo *llai = static_cast<SVGLengthListAndInfo*>(tmp.mU.mPtr);
+  SMILValue tmp(&SVGLengthListSMILType::sSingleton);
+  SVGLengthListAndInfo *llai = static_cast<SVGLengthListAndInfo *>(tmp.mU.mPtr);
   nsresult rv = llai->CopyFrom(mVal->mBaseVal);
   if (NS_SUCCEEDED(rv)) {
     llai->SetInfo(mElement, mAxis, mCanZeroPadList);
-    val = Move(tmp);
+    val = std::move(tmp);
   }
   return val;
 }
 
-nsresult
-SVGAnimatedLengthList::SMILAnimatedLengthList::SetAnimValue(const nsSMILValue& aValue)
-{
+nsresult SVGAnimatedLengthList::SMILAnimatedLengthList::SetAnimValue(
+    const SMILValue &aValue) {
   NS_ASSERTION(aValue.mType == &SVGLengthListSMILType::sSingleton,
                "Unexpected type to assign animated value");
   if (aValue.mType == &SVGLengthListSMILType::sSingleton) {
-    mVal->SetAnimValue(*static_cast<SVGLengthListAndInfo*>(aValue.mU.mPtr),
-                       mElement,
-                       mAttrEnum);
+    mVal->SetAnimValue(*static_cast<SVGLengthListAndInfo *>(aValue.mU.mPtr),
+                       mElement, mAttrEnum);
   }
   return NS_OK;
 }
 
-void
-SVGAnimatedLengthList::SMILAnimatedLengthList::ClearAnimValue()
-{
+void SVGAnimatedLengthList::SMILAnimatedLengthList::ClearAnimValue() {
   if (mVal->mAnimVal) {
     mVal->ClearAnimValue(mElement, mAttrEnum);
   }
 }
 
-} // namespace mozilla
+}  // namespace mozilla

@@ -10,18 +10,16 @@
 ////////////////////////////////////////////////////////////////////////////////
 //// Globals
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "FileUtils",
-                                  "resource://gre/modules/FileUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
-                                  "resource://gre/modules/NetUtil.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Promise",
-                                  "resource://gre/modules/Promise.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Task",
-                                  "resource://gre/modules/Task.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Services",
-                                  "resource://gre/modules/Services.jsm");
+ChromeUtils.defineModuleGetter(this, "FileUtils",
+                               "resource://gre/modules/FileUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "NetUtil",
+                               "resource://gre/modules/NetUtil.jsm");
+ChromeUtils.defineModuleGetter(this, "Services",
+                               "resource://gre/modules/Services.jsm");
+ChromeUtils.defineModuleGetter(this, "FileTestUtils",
+                               "resource://testing-common/FileTestUtils.jsm");
 
 const BackgroundFileSaverOutputStream = Components.Constructor(
       "@mozilla.org/network/background-file-saver;1?mode=outputstream",
@@ -62,20 +60,14 @@ const gTextDecoder = new TextDecoder();
 const TEST_256_CHARS = new Array(257).join("-");
 const DESIRED_LENGTH = REQUEST_SUSPEND_AT * 2;
 const TEST_DATA_LONG = new Array(1 + DESIRED_LENGTH / 256).join(TEST_256_CHARS);
-do_check_eq(TEST_DATA_LONG.length, DESIRED_LENGTH);
+Assert.equal(TEST_DATA_LONG.length, DESIRED_LENGTH);
 
 /**
- * Returns a reference to a temporary file.  If the file is then created, it
- * will be removed when tests in this file finish.
+ * Returns a reference to a temporary file that is guaranteed not to exist and
+ * is cleaned up later. See FileTestUtils.getTempFile for details.
  */
-function getTempFile(aLeafName) {
-  let file = FileUtils.getFile("TmpD", [aLeafName]);
-  do_register_cleanup(function GTF_cleanup() {
-    if (file.exists()) {
-      file.remove(false);
-    }
-  });
-  return file;
+function getTempFile(leafName) {
+  return FileTestUtils.getTempFile(leafName);
 }
 
 /**
@@ -106,25 +98,25 @@ function toHex(str) {
  * @rejects Never.
  */
 function promiseVerifyContents(aFile, aExpectedContents) {
-  let deferred = Promise.defer();
-  NetUtil.asyncFetch({
-    uri: NetUtil.newURI(aFile),
-    loadUsingSystemPrincipal: true
-  }, function(aInputStream, aStatus) {
-    do_check_true(Components.isSuccessCode(aStatus));
-    let contents = NetUtil.readInputStreamToString(aInputStream,
-                                                   aInputStream.available());
-    if (contents.length <= TEST_DATA_SHORT.length * 2) {
-      do_check_eq(contents, aExpectedContents);
-    } else {
-      // Do not print the entire content string to the test log.
-      do_check_eq(contents.length, aExpectedContents.length);
-      do_check_true(contents == aExpectedContents);
-    }
-    deferred.resolve();
-  });
+  return new Promise(resolve => {
+    NetUtil.asyncFetch({
+      uri: NetUtil.newURI(aFile),
+      loadUsingSystemPrincipal: true
+    }, function(aInputStream, aStatus) {
+      Assert.ok(Components.isSuccessCode(aStatus));
+      let contents = NetUtil.readInputStreamToString(aInputStream,
+                                                     aInputStream.available());
+      if (contents.length <= TEST_DATA_SHORT.length * 2) {
+        Assert.equal(contents, aExpectedContents);
+      } else {
+        // Do not print the entire content string to the test log.
+        Assert.equal(contents.length, aExpectedContents.length);
+        Assert.ok(contents == aExpectedContents);
+      }
+      resolve();
+    });
 
-  return deferred.promise;
+  });
 }
 
 /**
@@ -140,24 +132,24 @@ function promiseVerifyContents(aFile, aExpectedContents) {
  * @rejects With an exception, if onSaveComplete is called with a failure code.
  */
 function promiseSaverComplete(aSaver, aOnTargetChangeFn) {
-  let deferred = Promise.defer();
-  aSaver.observer = {
-    onTargetChange: function BFSO_onSaveComplete(aSaver, aTarget)
-    {
-      if (aOnTargetChangeFn) {
-        aOnTargetChangeFn(aTarget);
-      }
-    },
-    onSaveComplete: function BFSO_onSaveComplete(aSaver, aStatus)
-    {
-      if (Components.isSuccessCode(aStatus)) {
-        deferred.resolve();
-      } else {
-        deferred.reject(new Components.Exception("Saver failed.", aStatus));
-      }
-    },
-  };
-  return deferred.promise;
+  return new Promise((resolve, reject) => {
+    aSaver.observer = {
+      onTargetChange: function BFSO_onSaveComplete(aSaver, aTarget)
+      {
+        if (aOnTargetChangeFn) {
+          aOnTargetChangeFn(aTarget);
+        }
+      },
+      onSaveComplete: function BFSO_onSaveComplete(aSaver, aStatus)
+      {
+        if (Components.isSuccessCode(aStatus)) {
+          resolve();
+        } else {
+          reject(new Components.Exception("Saver failed.", aStatus));
+        }
+      },
+    };
+  });
 }
 
 /**
@@ -175,24 +167,24 @@ function promiseSaverComplete(aSaver, aOnTargetChangeFn) {
  * @rejects With an exception, if the copy fails.
  */
 function promiseCopyToSaver(aSourceString, aSaverOutputStream, aCloseWhenDone) {
-  let deferred = Promise.defer();
-  let inputStream = new StringInputStream(aSourceString, aSourceString.length);
-  let copier = Cc["@mozilla.org/network/async-stream-copier;1"]
-               .createInstance(Ci.nsIAsyncStreamCopier);
-  copier.init(inputStream, aSaverOutputStream, null, false, true, 0x8000, true,
-              aCloseWhenDone);
-  copier.asyncCopy({
-    onStartRequest: function () { },
-    onStopRequest: function (aRequest, aContext, aStatusCode)
-    {
-      if (Components.isSuccessCode(aStatusCode)) {
-        deferred.resolve();
-      } else {
-        deferred.reject(new Components.Exception(aResult));
-      }
-    },
-  }, null);
-  return deferred.promise;
+  return new Promise((resolve, reject) => {
+    let inputStream = new StringInputStream(aSourceString, aSourceString.length);
+    let copier = Cc["@mozilla.org/network/async-stream-copier;1"]
+                 .createInstance(Ci.nsIAsyncStreamCopier);
+    copier.init(inputStream, aSaverOutputStream, null, false, true, 0x8000, true,
+                aCloseWhenDone);
+    copier.asyncCopy({
+      onStartRequest: function () { },
+      onStopRequest: function (aRequest, aContext, aStatusCode)
+      {
+        if (Components.isSuccessCode(aStatusCode)) {
+          resolve();
+        } else {
+          reject(new Components.Exception(aResult));
+        }
+      },
+    }, null);
+  });
 }
 
 /**
@@ -211,35 +203,35 @@ function promiseCopyToSaver(aSourceString, aSaverOutputStream, aCloseWhenDone) {
  */
 function promisePumpToSaver(aSourceString, aSaverStreamListener,
                             aCloseWhenDone) {
-  let deferred = Promise.defer();
-  aSaverStreamListener.QueryInterface(Ci.nsIStreamListener);
-  let inputStream = new StringInputStream(aSourceString, aSourceString.length);
-  let pump = Cc["@mozilla.org/network/input-stream-pump;1"]
-             .createInstance(Ci.nsIInputStreamPump);
-  pump.init(inputStream, -1, -1, 0, 0, true);
-  pump.asyncRead({
-    onStartRequest: function PPTS_onStartRequest(aRequest, aContext)
-    {
-      aSaverStreamListener.onStartRequest(aRequest, aContext);
-    },
-    onStopRequest: function PPTS_onStopRequest(aRequest, aContext, aStatusCode)
-    {
-      aSaverStreamListener.onStopRequest(aRequest, aContext, aStatusCode);
-      if (Components.isSuccessCode(aStatusCode)) {
-        deferred.resolve();
-      } else {
-        deferred.reject(new Components.Exception(aResult));
-      }
-    },
-    onDataAvailable: function PPTS_onDataAvailable(aRequest, aContext,
-                                                   aInputStream, aOffset,
-                                                   aCount)
-    {
-      aSaverStreamListener.onDataAvailable(aRequest, aContext, aInputStream,
-                                           aOffset, aCount);
-    },
-  }, null);
-  return deferred.promise;
+  return new Promise((resolve, reject) => {
+    aSaverStreamListener.QueryInterface(Ci.nsIStreamListener);
+    let inputStream = new StringInputStream(aSourceString, aSourceString.length);
+    let pump = Cc["@mozilla.org/network/input-stream-pump;1"]
+               .createInstance(Ci.nsIInputStreamPump);
+    pump.init(inputStream, 0, 0, true);
+    pump.asyncRead({
+      onStartRequest: function PPTS_onStartRequest(aRequest, aContext)
+      {
+        aSaverStreamListener.onStartRequest(aRequest, aContext);
+      },
+      onStopRequest: function PPTS_onStopRequest(aRequest, aContext, aStatusCode)
+      {
+        aSaverStreamListener.onStopRequest(aRequest, aContext, aStatusCode);
+        if (Components.isSuccessCode(aStatusCode)) {
+          resolve();
+        } else {
+          reject(new Components.Exception(aResult));
+        }
+      },
+      onDataAvailable: function PPTS_onDataAvailable(aRequest, aContext,
+                                                     aInputStream, aOffset,
+                                                     aCount)
+      {
+        aSaverStreamListener.onDataAvailable(aRequest, aContext, aInputStream,
+                                             aOffset, aCount);
+      },
+    }, null);
+  });
 }
 
 var gStillRunning = true;
@@ -262,7 +254,7 @@ add_task(function test_setup()
   })
 });
 
-add_task(function* test_normal()
+add_task(async function test_normal()
 {
   // This test demonstrates the most basic use case.
   let destFile = getTempFile(TEST_FILE_NAME_1);
@@ -273,7 +265,7 @@ add_task(function* test_normal()
   // Set up callbacks for completion and target file name change.
   let receivedOnTargetChange = false;
   function onTargetChange(aTarget) {
-    do_check_true(destFile.equals(aTarget));
+    Assert.ok(destFile.equals(aTarget));
     receivedOnTargetChange = true;
   }
   let completionPromise = promiseSaverComplete(saver, onTargetChange);
@@ -282,21 +274,21 @@ add_task(function* test_normal()
   saver.setTarget(destFile, false);
 
   // Write some data and close the output stream.
-  yield promiseCopyToSaver(TEST_DATA_SHORT, saver, true);
+  await promiseCopyToSaver(TEST_DATA_SHORT, saver, true);
 
   // Indicate that we are ready to finish, and wait for a successful callback.
   saver.finish(Cr.NS_OK);
-  yield completionPromise;
+  await completionPromise;
 
   // Only after we receive the completion notification, we can also be sure that
   // we've received the target file name change notification before it.
-  do_check_true(receivedOnTargetChange);
+  Assert.ok(receivedOnTargetChange);
 
   // Clean up.
   destFile.remove(false);
 });
 
-add_task(function* test_combinations()
+add_task(async function test_combinations()
 {
   let initialFile = getTempFile(TEST_FILE_NAME_1);
   let renamedFile = getTempFile(TEST_FILE_NAME_2);
@@ -305,7 +297,7 @@ add_task(function* test_combinations()
   let currentFile = null;
   function onTargetChange(aTarget) {
     currentFile = null;
-    do_print("Target file changed to: " + aTarget.leafName);
+    info("Target file changed to: " + aTarget.leafName);
     currentFile = aTarget;
   }
 
@@ -319,11 +311,11 @@ add_task(function* test_combinations()
     let useLongData = !!(testFlags & 16);
 
     let startTime = Date.now();
-    do_print("Starting keepPartialOnFailure = " + keepPartialOnFailure +
-                    ", renameAtSomePoint = " + renameAtSomePoint +
-                    ", cancelAtSomePoint = " + cancelAtSomePoint +
-                    ", useStreamListener = " + useStreamListener +
-                    ", useLongData = " + useLongData);
+    info("Starting keepPartialOnFailure = " + keepPartialOnFailure +
+                ", renameAtSomePoint = " + renameAtSomePoint +
+                ", cancelAtSomePoint = " + cancelAtSomePoint +
+                ", useStreamListener = " + useStreamListener +
+                ", useLongData = " + useLongData);
 
     // Create the object and register the observers.
     currentFile = null;
@@ -344,7 +336,7 @@ add_task(function* test_combinations()
     saver.setTarget(initialFile, keepPartialOnFailure);
 
     // Wait for the first chunk of data to be copied.
-    yield feedPromise;
+    await feedPromise;
 
     if (renameAtSomePoint) {
       saver.setTarget(renamedFile, keepPartialOnFailure);
@@ -356,7 +348,7 @@ add_task(function* test_combinations()
 
     // Feed the second chunk of data to the saver.
     if (!useStreamListener) {
-      yield promiseCopyToSaver(testData, saver, true);
+      await promiseCopyToSaver(testData, saver, true);
     }
 
     // Wait for completion, and ensure we succeeded or failed as expected.
@@ -364,29 +356,33 @@ add_task(function* test_combinations()
       saver.finish(Cr.NS_OK);
     }
     try {
-      yield completionPromise;
+      await completionPromise;
       if (cancelAtSomePoint) {
         do_throw("Failure expected.");
       }
-    } catch (ex if cancelAtSomePoint && ex.result == Cr.NS_ERROR_FAILURE) { }
+    } catch (ex) {
+      if (!cancelAtSomePoint || ex.result != Cr.NS_ERROR_FAILURE) {
+        throw ex;
+      }
+    }
 
     if (!cancelAtSomePoint) {
       // In this case, the file must exist.
-      do_check_true(currentFile.exists());
+      Assert.ok(currentFile.exists());
       let expectedContents = testData + testData;
-      yield promiseVerifyContents(currentFile, expectedContents);
-      do_check_eq(EXPECTED_HASHES[expectedContents.length],
-                  toHex(saver.sha256Hash));
+      await promiseVerifyContents(currentFile, expectedContents);
+      Assert.equal(EXPECTED_HASHES[expectedContents.length],
+                   toHex(saver.sha256Hash));
       currentFile.remove(false);
 
       // If the target was really renamed, the old file should not exist.
       if (renamedFile.equals(currentFile)) {
-        do_check_false(initialFile.exists());
+        Assert.ok(!initialFile.exists());
       }
     } else if (!keepPartialOnFailure) {
       // In this case, the file must not exist.
-      do_check_false(initialFile.exists());
-      do_check_false(renamedFile.exists());
+      Assert.ok(!initialFile.exists());
+      Assert.ok(!renamedFile.exists());
     } else {
       // In this case, the file may or may not exist, because canceling can
       // interrupt the asynchronous operation at any point, even before the file
@@ -399,11 +395,11 @@ add_task(function* test_combinations()
       }
     }
 
-    do_print("Test case completed in " + (Date.now() - startTime) + " ms.");
+    info("Test case completed in " + (Date.now() - startTime) + " ms.");
   }
 });
 
-add_task(function* test_setTarget_after_close_stream()
+add_task(async function test_setTarget_after_close_stream()
 {
   // This test checks the case where we close the output stream before we call
   // the setTarget method.  All the data should be buffered and written anyway.
@@ -420,24 +416,24 @@ add_task(function* test_setTarget_after_close_stream()
     // be shorter than the internal component's pipe buffer for the test to
     // succeed, because otherwise the test would block waiting for the write to
     // complete.
-    yield promiseCopyToSaver(TEST_DATA_SHORT, saver, true);
+    await promiseCopyToSaver(TEST_DATA_SHORT, saver, true);
 
     // Set the target file and wait for the output to finish.
     saver.setTarget(destFile, false);
     saver.finish(Cr.NS_OK);
-    yield completionPromise;
+    await completionPromise;
 
     // Verify results.
-    yield promiseVerifyContents(destFile, TEST_DATA_SHORT);
-    do_check_eq(EXPECTED_HASHES[TEST_DATA_SHORT.length],
-                toHex(saver.sha256Hash));
+    await promiseVerifyContents(destFile, TEST_DATA_SHORT);
+    Assert.equal(EXPECTED_HASHES[TEST_DATA_SHORT.length],
+                 toHex(saver.sha256Hash));
   }
 
   // Clean up.
   destFile.remove(false);
 });
 
-add_task(function* test_setTarget_fast()
+add_task(async function test_setTarget_fast()
 {
   // This test checks a fast rename of the target file.
   let destFile1 = getTempFile(TEST_FILE_NAME_1);
@@ -446,21 +442,21 @@ add_task(function* test_setTarget_fast()
   let completionPromise = promiseSaverComplete(saver);
 
   // Set the initial name after the stream is closed, then rename immediately.
-  yield promiseCopyToSaver(TEST_DATA_SHORT, saver, true);
+  await promiseCopyToSaver(TEST_DATA_SHORT, saver, true);
   saver.setTarget(destFile1, false);
   saver.setTarget(destFile2, false);
 
   // Wait for all the operations to complete.
   saver.finish(Cr.NS_OK);
-  yield completionPromise;
+  await completionPromise;
 
   // Verify results and clean up.
-  do_check_false(destFile1.exists());
-  yield promiseVerifyContents(destFile2, TEST_DATA_SHORT);
+  Assert.ok(!destFile1.exists());
+  await promiseVerifyContents(destFile2, TEST_DATA_SHORT);
   destFile2.remove(false);
 });
 
-add_task(function* test_setTarget_multiple()
+add_task(async function test_setTarget_multiple()
 {
   // This test checks multiple renames of the target file.
   let destFile = getTempFile(TEST_FILE_NAME_1);
@@ -470,22 +466,22 @@ add_task(function* test_setTarget_multiple()
   // Rename both before and after the stream is closed.
   saver.setTarget(getTempFile(TEST_FILE_NAME_2), false);
   saver.setTarget(getTempFile(TEST_FILE_NAME_3), false);
-  yield promiseCopyToSaver(TEST_DATA_SHORT, saver, true);
+  await promiseCopyToSaver(TEST_DATA_SHORT, saver, true);
   saver.setTarget(getTempFile(TEST_FILE_NAME_2), false);
   saver.setTarget(destFile, false);
 
   // Wait for all the operations to complete.
   saver.finish(Cr.NS_OK);
-  yield completionPromise;
+  await completionPromise;
 
   // Verify results and clean up.
-  do_check_false(getTempFile(TEST_FILE_NAME_2).exists());
-  do_check_false(getTempFile(TEST_FILE_NAME_3).exists());
-  yield promiseVerifyContents(destFile, TEST_DATA_SHORT);
+  Assert.ok(!getTempFile(TEST_FILE_NAME_2).exists());
+  Assert.ok(!getTempFile(TEST_FILE_NAME_3).exists());
+  await promiseVerifyContents(destFile, TEST_DATA_SHORT);
   destFile.remove(false);
 });
 
-add_task(function* test_enableAppend()
+add_task(async function test_enableAppend()
 {
   // This test checks append mode with hashing disabled.
   let destFile = getTempFile(TEST_FILE_NAME_1);
@@ -498,22 +494,22 @@ add_task(function* test_enableAppend()
     let completionPromise = promiseSaverComplete(saver);
 
     saver.setTarget(destFile, false);
-    yield promiseCopyToSaver(TEST_DATA_LONG, saver, true);
+    await promiseCopyToSaver(TEST_DATA_LONG, saver, true);
 
     saver.finish(Cr.NS_OK);
-    yield completionPromise;
+    await completionPromise;
 
     // Verify results.
     let expectedContents = (i == 0 ? TEST_DATA_LONG
                                    : TEST_DATA_LONG + TEST_DATA_LONG);
-    yield promiseVerifyContents(destFile, expectedContents);
+    await promiseVerifyContents(destFile, expectedContents);
   }
 
   // Clean up.
   destFile.remove(false);
 });
 
-add_task(function* test_enableAppend_setTarget_fast()
+add_task(async function test_enableAppend_setTarget_fast()
 {
   // This test checks a fast rename of the target file in append mode.
   let destFile1 = getTempFile(TEST_FILE_NAME_1);
@@ -526,7 +522,7 @@ add_task(function* test_enableAppend_setTarget_fast()
     saver.enableAppend();
     let completionPromise = promiseSaverComplete(saver);
 
-    yield promiseCopyToSaver(TEST_DATA_SHORT, saver, true);
+    await promiseCopyToSaver(TEST_DATA_SHORT, saver, true);
 
     // The first time, we start appending to the first file and rename to the
     // second file.  The second time, we start appending to the second file,
@@ -537,20 +533,20 @@ add_task(function* test_enableAppend_setTarget_fast()
     saver.setTarget(secondFile, false);
 
     saver.finish(Cr.NS_OK);
-    yield completionPromise;
+    await completionPromise;
 
     // Verify results.
-    do_check_false(firstFile.exists());
+    Assert.ok(!firstFile.exists());
     let expectedContents = (i == 0 ? TEST_DATA_SHORT
                                    : TEST_DATA_SHORT + TEST_DATA_SHORT);
-    yield promiseVerifyContents(secondFile, expectedContents);
+    await promiseVerifyContents(secondFile, expectedContents);
   }
 
   // Clean up.
   destFile1.remove(false);
 });
 
-add_task(function* test_enableAppend_hash()
+add_task(async function test_enableAppend_hash()
 {
   // This test checks append mode, also verifying that the computed hash
   // includes the contents of the existing data.
@@ -565,24 +561,24 @@ add_task(function* test_enableAppend_hash()
     let completionPromise = promiseSaverComplete(saver);
 
     saver.setTarget(destFile, false);
-    yield promiseCopyToSaver(TEST_DATA_LONG, saver, true);
+    await promiseCopyToSaver(TEST_DATA_LONG, saver, true);
 
     saver.finish(Cr.NS_OK);
-    yield completionPromise;
+    await completionPromise;
 
     // Verify results.
     let expectedContents = (i == 0 ? TEST_DATA_LONG
                                    : TEST_DATA_LONG + TEST_DATA_LONG);
-    yield promiseVerifyContents(destFile, expectedContents);
-    do_check_eq(EXPECTED_HASHES[expectedContents.length],
-                toHex(saver.sha256Hash));
+    await promiseVerifyContents(destFile, expectedContents);
+    Assert.equal(EXPECTED_HASHES[expectedContents.length],
+                 toHex(saver.sha256Hash));
   }
 
   // Clean up.
   destFile.remove(false);
 });
 
-add_task(function* test_finish_only()
+add_task(async function test_finish_only()
 {
   // This test checks creating the object and doing nothing.
   let destFile = getTempFile(TEST_FILE_NAME_1);
@@ -592,10 +588,10 @@ add_task(function* test_finish_only()
   }
   let completionPromise = promiseSaverComplete(saver, onTargetChange);
   saver.finish(Cr.NS_OK);
-  yield completionPromise;
+  await completionPromise;
 });
 
-add_task(function* test_empty()
+add_task(async function test_empty()
 {
   // This test checks we still create an empty file when no data is fed.
   let destFile = getTempFile(TEST_FILE_NAME_1);
@@ -604,20 +600,20 @@ add_task(function* test_empty()
   let completionPromise = promiseSaverComplete(saver);
 
   saver.setTarget(destFile, false);
-  yield promiseCopyToSaver("", saver, true);
+  await promiseCopyToSaver("", saver, true);
 
   saver.finish(Cr.NS_OK);
-  yield completionPromise;
+  await completionPromise;
 
   // Verify results.
-  do_check_true(destFile.exists());
-  do_check_eq(destFile.fileSize, 0);
+  Assert.ok(destFile.exists());
+  Assert.equal(destFile.fileSize, 0);
 
   // Clean up.
   destFile.remove(false);
 });
 
-add_task(function* test_empty_hash()
+add_task(async function test_empty_hash()
 {
   // This test checks the hash of an empty file, both in normal and append mode.
   let destFile = getTempFile(TEST_FILE_NAME_1);
@@ -632,21 +628,21 @@ add_task(function* test_empty_hash()
     let completionPromise = promiseSaverComplete(saver);
 
     saver.setTarget(destFile, false);
-    yield promiseCopyToSaver("", saver, true);
+    await promiseCopyToSaver("", saver, true);
 
     saver.finish(Cr.NS_OK);
-    yield completionPromise;
+    await completionPromise;
 
     // Verify results.
-    do_check_eq(destFile.fileSize, 0);
-    do_check_eq(EXPECTED_HASHES[0], toHex(saver.sha256Hash));
+    Assert.equal(destFile.fileSize, 0);
+    Assert.equal(EXPECTED_HASHES[0], toHex(saver.sha256Hash));
   }
 
   // Clean up.
   destFile.remove(false);
 });
 
-add_task(function* test_invalid_hash()
+add_task(async function test_invalid_hash()
 {
   let saver = new BackgroundFileSaverStreamListener();
   let completionPromise = promiseSaverComplete(saver);
@@ -654,7 +650,11 @@ add_task(function* test_invalid_hash()
   try {
     let hash = saver.sha256Hash;
     do_throw("Shouldn't be able to get hash if hashing not enabled");
-  } catch (ex if ex.result == Cr.NS_ERROR_NOT_AVAILABLE) { }
+  } catch (ex) {
+    if (ex.result != Cr.NS_ERROR_NOT_AVAILABLE) {
+      throw e;
+    }
+  }
   // Enable hashing, but don't feed any data to saver
   saver.enableSha256();
   let destFile = getTempFile(TEST_FILE_NAME_1);
@@ -667,16 +667,24 @@ add_task(function* test_invalid_hash()
   try {
     let hash = saver.sha256Hash;
     do_throw("Shouldn't be able to get hash if save did not succeed");
-  } catch (ex if ex.result == Cr.NS_ERROR_NOT_AVAILABLE) { }
+  } catch (ex) {
+    if (ex.result != Cr.NS_ERROR_NOT_AVAILABLE) {
+      throw ex;
+    }
+  }
   // Wait for completion so that the worker thread finishes dealing with the
   // target file. We expect it to fail.
   try {
-    yield completionPromise;
+    await completionPromise;
     do_throw("completionPromise should throw");
-  } catch (ex if ex.result == Cr.NS_ERROR_FAILURE) { }
+  } catch (ex) {
+    if (ex.result != Cr.NS_ERROR_FAILURE) {
+      throw ex;
+    }
+  }
 });
 
-add_task(function* test_signature()
+add_task(async function test_signature()
 {
   // Check that we get a signature if the saver is finished.
   let destFile = getTempFile(TEST_FILE_NAME_1);
@@ -687,24 +695,28 @@ add_task(function* test_signature()
   try {
     let signatureInfo = saver.signatureInfo;
     do_throw("Can't get signature if saver is not complete");
-  } catch (ex if ex.result == Cr.NS_ERROR_NOT_AVAILABLE) { }
+  } catch (ex) {
+    if (ex.result != Cr.NS_ERROR_NOT_AVAILABLE) {
+      throw ex;
+    }
+  }
 
   saver.enableSignatureInfo();
   saver.setTarget(destFile, false);
-  yield promiseCopyToSaver(TEST_DATA_SHORT, saver, true);
+  await promiseCopyToSaver(TEST_DATA_SHORT, saver, true);
 
   saver.finish(Cr.NS_OK);
-  yield completionPromise;
-  yield promiseVerifyContents(destFile, TEST_DATA_SHORT);
+  await completionPromise;
+  await promiseVerifyContents(destFile, TEST_DATA_SHORT);
 
   // signatureInfo is an empty nsIArray
-  do_check_eq(0, saver.signatureInfo.length);
+  Assert.equal(0, saver.signatureInfo.length);
 
   // Clean up.
   destFile.remove(false);
 });
 
-add_task(function* test_signature_not_enabled()
+add_task(async function test_signature_not_enabled()
 {
   // Check that we get a signature if the saver is finished on Windows.
   let destFile = getTempFile(TEST_FILE_NAME_1);
@@ -712,14 +724,18 @@ add_task(function* test_signature_not_enabled()
   let saver = new BackgroundFileSaverOutputStream();
   let completionPromise = promiseSaverComplete(saver);
   saver.setTarget(destFile, false);
-  yield promiseCopyToSaver(TEST_DATA_SHORT, saver, true);
+  await promiseCopyToSaver(TEST_DATA_SHORT, saver, true);
 
   saver.finish(Cr.NS_OK);
-  yield completionPromise;
+  await completionPromise;
   try {
     let signatureInfo = saver.signatureInfo;
     do_throw("Can't get signature if not enabled");
-  } catch (ex if ex.result == Cr.NS_ERROR_NOT_AVAILABLE) { }
+  } catch (ex) {
+    if (ex.result != Cr.NS_ERROR_NOT_AVAILABLE) {
+      throw ex;
+    }
+  }
 
   // Clean up.
   destFile.remove(false);

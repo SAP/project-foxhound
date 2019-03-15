@@ -10,20 +10,26 @@ const TEST_URI = "data:text/html;charset=utf-8," +
 // opened we make use of setTimeout() to create tool active times.
 const TOOL_DELAY = 200;
 
-add_task(function* () {
+add_task(async function() {
   info("Activate the canvasdebugger");
-  let originalPref = Services.prefs.getBoolPref("devtools.canvasdebugger.enabled");
+  const originalPref = Services.prefs.getBoolPref("devtools.canvasdebugger.enabled");
   Services.prefs.setBoolPref("devtools.canvasdebugger.enabled", true);
 
-  yield addTab(TEST_URI);
-  let Telemetry = loadTelemetryAndRecordLogs();
+  await addTab(TEST_URI);
+  startTelemetry();
 
-  yield openAndCloseToolbox(2, TOOL_DELAY, "canvasdebugger");
-  checkTelemetryResults(Telemetry);
+  await openAndCloseToolbox(2, TOOL_DELAY, "canvasdebugger");
+  checkResults();
 
-  stopRecordingTelemetryLogs(Telemetry);
   gBrowser.removeCurrentTab();
 
   info("De-activate the canvasdebugger");
   Services.prefs.setBoolPref("devtools.canvasdebugger.enabled", originalPref);
 });
+
+function checkResults() {
+  // For help generating these tests use generateTelemetryTests("DEVTOOLS_CANVASDEBUGGER")
+  // here.
+  checkTelemetry("DEVTOOLS_CANVASDEBUGGER_OPENED_COUNT", "", {0: 2, 1: 0}, "array");
+  checkTelemetry("DEVTOOLS_CANVASDEBUGGER_TIME_ACTIVE_SECONDS", "", null, "hasentries");
+}

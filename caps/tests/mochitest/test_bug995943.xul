@@ -17,16 +17,13 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=995943
   <!-- test code goes here -->
   <script type="application/javascript">
   <![CDATA[
-  const Cu = Components.utils;
-  const Cc = Components.classes;
-  const Ci = Components.interfaces;
-  Cu.import("resource://gre/modules/Services.jsm");
+  ChromeUtils.import("resource://gre/modules/Services.jsm");
   function debug(msg) { info(msg); }
 
   /** Test for CAPS file:// URI prefs. **/
   SimpleTest.waitForExplicitFinish();
   SimpleTest.requestCompleteLog();
-  if (navigator.userAgent.indexOf("Mac OS X 10.10") != -1)
+  if (navigator.userAgent.includes("Mac OS X 10.10"))
     SimpleTest.expectAssertions(5, 11); // See bug 1067022, 1307988
   else if (Services.appinfo.OS == "WINNT")
     SimpleTest.expectAssertions(0, 1); // See bug 1067022
@@ -74,7 +71,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=995943
 
   var gGoCount = 0;
   function go() {
-    debug("Invoking go for window with id: " + window.getInterface(Ci.nsIDOMWindowUtils).currentInnerWindowID);
+    debug("Invoking go for window with id: " + window.windowUtils.currentInnerWindowID);
     is(++gGoCount, 1, "Should only call go once!");
     checkLoadFileURI('http://example.com', false).then(
       pushPrefs.bind(null, [['capability.policy.policynames', ' somepolicy '],

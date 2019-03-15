@@ -3,29 +3,27 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 /* Bug 714942 */
 
-function test()
-{
+function test() {
   waitForExplicitFinish();
 
-  gBrowser.selectedTab = gBrowser.addTab();
-  gBrowser.selectedBrowser.addEventListener("load", function () {
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
+  BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser).then(function() {
     openScratchpad(runTests);
-  }, {capture: true, once: true});
+  });
 
-  content.location = "data:text/html,<p>test the 'Jump to line' feature in Scratchpad";
+  BrowserTestUtils.loadURI(gBrowser, "data:text/html,<p>test the 'Jump to line' feature in Scratchpad");
 }
 
-function runTests(aWindow, aScratchpad)
-{
-  let editor = aScratchpad.editor;
-  let text = "foobar bug650345\nBug650345 bazbaz\nfoobar omg\ntest";
+function runTests(aWindow, aScratchpad) {
+  const editor = aScratchpad.editor;
+  const text = "foobar bug650345\nBug650345 bazbaz\nfoobar omg\ntest";
   editor.setText(text);
   editor.setCursor({ line: 0, ch: 0 });
 
-  let oldPrompt = editor.openDialog;
+  const oldPrompt = editor.openDialog;
   let desiredValue;
 
-  editor.openDialog = function (text, cb) {
+  editor.openDialog = function(text, cb) {
     cb(desiredValue);
   };
 

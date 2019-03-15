@@ -13,14 +13,13 @@ ADD setup.sh /tmp/setup.sh
 RUN bash /tmp/setup.sh
 
 # Change user.
-USER worker
+# USER worker # See bug 1347473.
 
 # Env variables.
 ENV HOME /home/worker
 ENV SHELL /bin/bash
 ENV USER worker
 ENV LOGNAME worker
-ENV HOSTNAME taskcluster-worker
 ENV LANG en_US.UTF-8
 ENV LC_ALL en_US.UTF-8
 ENV HOST localhost

@@ -15,38 +15,30 @@ import org.mozilla.gecko.BrowserApp;
 import org.mozilla.gecko.R;
 import org.mozilla.gecko.reader.ReaderModeUtils;
 import org.mozilla.gecko.SiteIdentity;
-import org.mozilla.gecko.SiteIdentity.MixedMode;
-import org.mozilla.gecko.SiteIdentity.SecurityMode;
-import org.mozilla.gecko.SiteIdentity.TrackingMode;
 import org.mozilla.gecko.Tab;
 import org.mozilla.gecko.Tabs;
 import org.mozilla.gecko.animation.PropertyAnimator;
 import org.mozilla.gecko.animation.ViewHelper;
-import org.mozilla.gecko.toolbar.BrowserToolbarTabletBase.ForwardButtonAnimation;
-import org.mozilla.gecko.Experiments;
-import org.mozilla.gecko.util.HardwareUtils;
 import org.mozilla.gecko.util.StringUtils;
 import org.mozilla.gecko.util.ViewUtil;
+import org.mozilla.gecko.widget.themed.ThemedImageButton;
 import org.mozilla.gecko.widget.themed.ThemedLinearLayout;
 import org.mozilla.gecko.widget.themed.ThemedTextView;
 
 import android.content.Context;
-import android.os.SystemClock;
 import android.support.annotation.NonNull;
-import android.support.v4.view.ViewCompat;
+import android.text.Editable;
 import android.text.Spannable;
-import android.text.SpannableString;
 import android.text.SpannableStringBuilder;
 import android.text.TextUtils;
+import android.text.TextWatcher;
 import android.text.style.ForegroundColorSpan;
 import android.util.AttributeSet;
-import android.util.Log;
+import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.Button;
-import android.widget.ImageButton;
-
-import org.mozilla.gecko.switchboard.SwitchBoard;
+import android.widget.HorizontalScrollView;
 
 /**
 * {@code ToolbarDisplayLayout} is the UI for when the toolbar is in
@@ -64,8 +56,10 @@ import org.mozilla.gecko.switchboard.SwitchBoard;
 * which is the main event bus for the toolbar subsystem.
 */
 public class ToolbarDisplayLayout extends ThemedLinearLayout {
-
     private static final String LOGTAG = "GeckoToolbarDisplayLayout";
+
+    private static final int MIN_DOMAIN_SCROLL_MARGIN_DP = 10;
+
     private boolean mTrackingProtectionEnabled;
 
     // To be used with updateFromTab() to allow the caller
@@ -103,13 +97,15 @@ public class ToolbarDisplayLayout extends ThemedLinearLayout {
     private boolean mIsAttached;
 
     private final ThemedTextView mTitle;
+    private final ThemedLinearLayout mThemeBackground;
     private final int mTitlePadding;
+    private final HorizontalScrollView mTitleScroll;
+    private final int mMinUrlScrollMargin;
     private ToolbarPrefs mPrefs;
     private OnTitleChangeListener mTitleChangeListener;
 
-    private final ImageButton mSiteSecurity;
-
-    private final ImageButton mStop;
+    private final ThemedImageButton mSiteSecurity;
+    private final ThemedImageButton mStop;
     private OnStopListener mStopListener;
 
     private final PageActionLayout mPageActionLayout;
@@ -117,25 +113,12 @@ public class ToolbarDisplayLayout extends ThemedLinearLayout {
     private final SiteIdentityPopup mSiteIdentityPopup;
     private int mSecurityImageLevel;
 
-    // Security level constants, which map to the icons / levels defined in:
-    // http://dxr.mozilla.org/mozilla-central/source/mobile/android/base/java/org/mozilla/gecko/resources/drawable/site_security_level.xml
-    // Default level (unverified pages) - globe icon:
-    private static final int LEVEL_DEFAULT_GLOBE = 0;
-    // Levels for displaying Mixed Content state icons.
-    private static final int LEVEL_WARNING_MINOR = 3;
-    private static final int LEVEL_LOCK_DISABLED = 4;
-    // Levels for displaying Tracking Protection state icons.
-    private static final int LEVEL_SHIELD_ENABLED = 5;
-    private static final int LEVEL_SHIELD_DISABLED = 6;
-    // Icon used for about:home
-    private static final int LEVEL_SEARCH_ICON = 999;
-
     private final ForegroundColorSpan mUrlColorSpan;
     private final ForegroundColorSpan mPrivateUrlColorSpan;
     private final ForegroundColorSpan mBlockedColorSpan;
+    private final ForegroundColorSpan mPrivateBlockedColorSpan;
     private final ForegroundColorSpan mDomainColorSpan;
     private final ForegroundColorSpan mPrivateDomainColorSpan;
-    private final ForegroundColorSpan mCertificateOwnerColorSpan;
 
     public ToolbarDisplayLayout(Context context, AttributeSet attrs) {
         super(context, attrs);
@@ -146,23 +129,54 @@ public class ToolbarDisplayLayout extends ThemedLinearLayout {
         LayoutInflater.from(context).inflate(R.layout.toolbar_display_layout, this);
 
         mTitle = (ThemedTextView) findViewById(R.id.url_bar_title);
+        mThemeBackground = (ThemedLinearLayout) findViewById(R.id.url_bar_title_bg);
         mTitlePadding = mTitle.getPaddingRight();
+        mTitleScroll = (HorizontalScrollView) findViewById(R.id.url_bar_title_scroll_view);
+
+        final OnLayoutChangeListener resizeListener = new OnLayoutChangeListener() {
+            @Override
+            public void onLayoutChange(View v, int left, int top, int right, int bottom, int oldLeft, int oldTop, int oldRight, int oldBottom) {
+                final int oldWidth = oldRight - oldLeft;
+                final int newWidth = right - left;
+
+                if (newWidth != oldWidth) {
+                    scrollTitle();
+                }
+            }
+        };
+        mTitle.addTextChangedListener(new TextChangeListener());
+        mTitle.addOnLayoutChangeListener(resizeListener);
+        mTitleScroll.addOnLayoutChangeListener(resizeListener);
+
+        mMinUrlScrollMargin = (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP,
+                                                              MIN_DOMAIN_SCROLL_MARGIN_DP,
+                                                              getResources().getDisplayMetrics());
 
         mUrlColorSpan = new ForegroundColorSpan(ContextCompat.getColor(context, R.color.url_bar_urltext));
         mPrivateUrlColorSpan = new ForegroundColorSpan(ContextCompat.getColor(context, R.color.url_bar_urltext_private));
         mBlockedColorSpan = new ForegroundColorSpan(ContextCompat.getColor(context, R.color.url_bar_blockedtext));
+        mPrivateBlockedColorSpan = new ForegroundColorSpan(ContextCompat.getColor(context, R.color.url_bar_blockedtext_private));
         mDomainColorSpan = new ForegroundColorSpan(ContextCompat.getColor(context, R.color.url_bar_domaintext));
         mPrivateDomainColorSpan = new ForegroundColorSpan(ContextCompat.getColor(context, R.color.url_bar_domaintext_private));
-        mCertificateOwnerColorSpan = new ForegroundColorSpan(ContextCompat.getColor(context, R.color.affirmative_green));
 
-        mSiteSecurity = (ImageButton) findViewById(R.id.site_security);
+        mSiteSecurity = (ThemedImageButton) findViewById(R.id.site_security);
 
         mSiteIdentityPopup = new SiteIdentityPopup(mActivity);
         mSiteIdentityPopup.setAnchor(this);
         mSiteIdentityPopup.setOnVisibilityChangeListener(mActivity);
 
-        mStop = (ImageButton) findViewById(R.id.stop);
+        mStop = (ThemedImageButton) findViewById(R.id.stop);
         mPageActionLayout = (PageActionLayout) findViewById(R.id.page_action_layout);
+    }
+
+    @Override
+    public void setPrivateMode(boolean isPrivate) {
+        super.setPrivateMode(isPrivate);
+        mSiteSecurity.setPrivateMode(isPrivate);
+        mStop.setPrivateMode(isPrivate);
+        mPageActionLayout.setPrivateMode(isPrivate);
+        mTitle.setPrivateMode(isPrivate);
+        mThemeBackground.setPrivateMode(isPrivate);
     }
 
     @Override
@@ -240,6 +254,7 @@ public class ToolbarDisplayLayout extends ThemedLinearLayout {
 
         if (flags.contains(UpdateFlags.PRIVATE_MODE)) {
             mTitle.setPrivateMode(tab.isPrivate());
+            mThemeBackground.setPrivateMode(tab.isPrivate());
         }
     }
 
@@ -281,18 +296,19 @@ public class ToolbarDisplayLayout extends ThemedLinearLayout {
             final String title = tab.getDisplayTitle();
 
             final SpannableStringBuilder builder = new SpannableStringBuilder(title);
-            builder.setSpan(mBlockedColorSpan, 0, title.length(), Spannable.SPAN_INCLUSIVE_INCLUSIVE);
+            final ForegroundColorSpan fgColorSpan = tab.isPrivate()
+                    ? mPrivateBlockedColorSpan
+                    : mBlockedColorSpan;
+            builder.setSpan(fgColorSpan, 0, title.length(), Spannable.SPAN_INCLUSIVE_INCLUSIVE);
 
             setTitle(builder);
             setContentDescription(null);
             return;
         }
 
-        final String baseDomain = tab.getBaseDomain();
+        final String baseDomain = tab.getHighlightDomain();
 
         String strippedURL = stripAboutReaderURL(url);
-
-        final boolean isHttpOrHttps = StringUtils.isHttpOrHttps(strippedURL);
 
         if (mPrefs.shouldTrimUrls()) {
             strippedURL = StringUtils.stripCommonSubdomains(StringUtils.stripScheme(strippedURL));
@@ -308,33 +324,8 @@ public class ToolbarDisplayLayout extends ThemedLinearLayout {
         // will read the content description to obtain the full URL for performing assertions.
         setContentDescription(strippedURL);
 
-        final SiteIdentity siteIdentity = tab.getSiteIdentity();
-        if (siteIdentity.hasOwner() && SwitchBoard.isInExperiment(mActivity, Experiments.URLBAR_SHOW_EV_CERT_OWNER)) {
-            // Show Owner of EV certificate as title
-            updateTitleFromSiteIdentity(siteIdentity);
-        } else if (isHttpOrHttps && !HardwareUtils.isTablet() && !TextUtils.isEmpty(baseDomain)
-                && SwitchBoard.isInExperiment(mActivity, Experiments.URLBAR_SHOW_ORIGIN_ONLY)) {
-            // Show just the base domain as title
-            setTitle(baseDomain);
-        } else {
-            // Display full URL with base domain highlighted as title
-            updateAndColorTitleFromFullURL(strippedURL, baseDomain, tab.isPrivate());
-        }
-    }
-
-    private void updateTitleFromSiteIdentity(SiteIdentity siteIdentity) {
-        final String title;
-
-        if (siteIdentity.hasCountry()) {
-            title = String.format("%s (%s)", siteIdentity.getOwner(), siteIdentity.getCountry());
-        } else {
-            title = siteIdentity.getOwner();
-        }
-
-        final SpannableString spannable = new SpannableString(title);
-        spannable.setSpan(mCertificateOwnerColorSpan, 0, title.length(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
-
-        setTitle(spannable);
+        // Display full URL with base domain highlighted as title
+        updateAndColorTitleFromFullURL(strippedURL, baseDomain, tab.isPrivate());
     }
 
     private void updateAndColorTitleFromFullURL(String url, String baseDomain, boolean isPrivate) {
@@ -368,64 +359,64 @@ public class ToolbarDisplayLayout extends ThemedLinearLayout {
 
     private void updateSiteIdentity(@NonNull Tab tab) {
         final SiteIdentity siteIdentity = tab.getSiteIdentity();
+        final SecurityModeUtil.IconType type = SecurityModeUtil.resolve(siteIdentity, tab.getURL());
+        final int imageLevel = type.getImageLevel();
 
         mSiteIdentityPopup.setSiteIdentity(siteIdentity);
-
-        final SecurityMode securityMode;
-        final MixedMode activeMixedMode;
-        final MixedMode displayMixedMode;
-        final TrackingMode trackingMode;
-        final boolean securityException;
-
-        if (siteIdentity == null) {
-            securityMode = SecurityMode.UNKNOWN;
-            activeMixedMode = MixedMode.UNKNOWN;
-            displayMixedMode = MixedMode.UNKNOWN;
-            trackingMode = TrackingMode.UNKNOWN;
-            securityException = false;
-        } else {
-            securityMode = siteIdentity.getSecurityMode();
-            activeMixedMode = siteIdentity.getMixedModeActive();
-            displayMixedMode = siteIdentity.getMixedModeDisplay();
-            trackingMode = siteIdentity.getTrackingMode();
-            securityException = siteIdentity.isSecurityException();
-        }
-
-        // This is a bit tricky, but we have one icon and three potential indicators.
-        // Default to the identity level
-        int imageLevel = securityMode.ordinal();
-
-        // about: pages should default to having no icon too (the same as SecurityMode.UNKNOWN), however
-        // SecurityMode.CHROMEUI has a different ordinal - hence we need to manually reset it here.
-        // (We then continue and process the tracking / mixed content icons as usual, even for about: pages, as they
-        //  can still load external sites.)
-        if (securityMode == SecurityMode.CHROMEUI) {
-            imageLevel = LEVEL_DEFAULT_GLOBE; // == SecurityMode.UNKNOWN.ordinal()
-        }
-
-        // Check to see if any protection was overridden first
-        if (AboutPages.isTitlelessAboutPage(tab.getURL())) {
-            // We always want to just show a search icon on about:home
-            imageLevel = LEVEL_SEARCH_ICON;
-        } else if (securityException) {
-            imageLevel = LEVEL_WARNING_MINOR;
-        } else if (trackingMode == TrackingMode.TRACKING_CONTENT_LOADED) {
-            imageLevel = LEVEL_SHIELD_DISABLED;
-        } else if (trackingMode == TrackingMode.TRACKING_CONTENT_BLOCKED) {
-            imageLevel = LEVEL_SHIELD_ENABLED;
-        } else if (activeMixedMode == MixedMode.LOADED) {
-            imageLevel = LEVEL_LOCK_DISABLED;
-        } else if (displayMixedMode == MixedMode.LOADED) {
-            imageLevel = LEVEL_WARNING_MINOR;
-        }
+        mTrackingProtectionEnabled = SecurityModeUtil.isTrackingProtectionEnabled(siteIdentity);
 
         if (mSecurityImageLevel != imageLevel) {
             mSecurityImageLevel = imageLevel;
             mSiteSecurity.setImageLevel(mSecurityImageLevel);
             updatePageActions();
         }
+    }
 
-        mTrackingProtectionEnabled = trackingMode == TrackingMode.TRACKING_CONTENT_BLOCKED;
+    private void scrollTitle() {
+        final Editable text = mTitle.getEditableText();
+        final int textViewWidth = mTitle.getWidth();
+        final int textWidth = textViewWidth - mTitlePadding;
+        final int scrollViewWidth = mTitleScroll.getWidth();
+        if (textWidth <= scrollViewWidth) {
+            // The text fits within the ScrollView, so nothing to do here...
+            if (textViewWidth > scrollViewWidth) {
+                // ... although if the TextView is sufficiently padded on the right side, it might
+                // push the text out of view on the left side, so scroll to the beginning just to be
+                // on the safe side.
+                mTitleScroll.scrollTo(0, 0);
+            }
+            return;
+        }
+
+        final ForegroundColorSpan spanToCheck =
+                mTitle.isPrivateMode() ? mPrivateDomainColorSpan : mDomainColorSpan;
+        final int domainEnd = text != null ? text.getSpanEnd(spanToCheck) : -1;
+        if (domainEnd == -1) {
+            // We're not showing a domain, just scroll to the start of the text.
+            mTitleScroll.scrollTo(0, 0);
+            return;
+        }
+
+        // If we're showing an URL that is larger than the URL bar, we want to align the end of
+        // the domain part with the right side of URL bar, so as to put the focus on the base
+        // domain and avoid phishing attacks using long subdomains that have been crafted to be cut
+        // off at just the right place and then resemble a legitimate base domain.
+        final int domainTextWidth = StringUtils.getTextWidth(text.toString(), 0, domainEnd, mTitle.getPaint());
+        final int overhang = textViewWidth - domainTextWidth;
+        // For optimal alignment, we want to take the fadingEdge into account and align the domain
+        // with the start of the fade out.
+        final int maxFadingEdge = mTitleScroll.getHorizontalFadingEdgeLength();
+
+        // The width of the fadingEdge corresponds to the width of the child view that is overhanging
+        // the ScrollView, clamped by maxFadingEdge.
+        int targetMargin = overhang / 2;
+        targetMargin = Math.min(targetMargin, maxFadingEdge);
+        // Even when there is no fadingEdge, we want to keep a little margin between the domain and
+        // the end of the URL bar, so as to show the first character or so of the path part.
+        targetMargin = Math.max(targetMargin, mMinUrlScrollMargin);
+
+        final int scrollTarget = domainTextWidth + targetMargin - scrollViewWidth;
+        mTitleScroll.scrollTo(scrollTarget, 0);
     }
 
     private void updateProgress(@NonNull Tab tab) {
@@ -444,16 +435,6 @@ public class ToolbarDisplayLayout extends ThemedLinearLayout {
         }
 
         mUiMode = uiMode;
-
-        // The "Throbber start" and "Throbber stop" log messages in this method
-        // are needed by S1/S2 tests (http://mrcote.info/phonedash/#).
-        // See discussion in Bug 804457. Bug 805124 tracks paring these down.
-        if (mUiMode == UIMode.PROGRESS) {
-            Log.i(LOGTAG, "zerdatime " + SystemClock.uptimeMillis() + " - Throbber start");
-        } else {
-            Log.i(LOGTAG, "zerdatime " + SystemClock.uptimeMillis() + " - Throbber stop");
-        }
-
         updatePageActions();
     }
 
@@ -469,7 +450,7 @@ public class ToolbarDisplayLayout extends ThemedLinearLayout {
         mTitle.setPadding(0, 0, (!isShowingProgress ? mTitlePadding : 0), 0);
     }
 
-    List<View> getFocusOrder() {
+    List<? extends View> getFocusOrder() {
         return Arrays.asList(mSiteSecurity, mPageActionLayout, mStop);
     }
 
@@ -490,41 +471,6 @@ public class ToolbarDisplayLayout extends ThemedLinearLayout {
      */
     void updateSiteIdentityAnchor(View view) {
         mSiteIdentityPopup.setAnchor(view);
-    }
-
-    private boolean isLayoutRtl() {
-        return ViewCompat.getLayoutDirection(this) == ViewCompat.LAYOUT_DIRECTION_RTL;
-    }
-
-    void prepareForwardAnimation(PropertyAnimator anim, ForwardButtonAnimation animation, int width) {
-        if (animation == ForwardButtonAnimation.HIDE) {
-            // We animate these items individually, rather than this entire view,
-            // so that we don't animate certain views, e.g. the stop button.
-            anim.attach(mTitle,
-                        PropertyAnimator.Property.TRANSLATION_X,
-                        isLayoutRtl() ? width : 0);
-            anim.attach(mSiteSecurity,
-                        PropertyAnimator.Property.TRANSLATION_X,
-                        isLayoutRtl() ? width : 0);
-
-            // We're hiding the forward button. We're going to reset the margin before
-            // the animation starts, so we shift these items to the right so that they don't
-            // appear to move initially.
-            ViewHelper.setTranslationX(mTitle, width);
-            ViewHelper.setTranslationX(mSiteSecurity, width);
-        } else {
-            anim.attach(mTitle,
-                        PropertyAnimator.Property.TRANSLATION_X,
-                        isLayoutRtl() ? 0 : width);
-            anim.attach(mSiteSecurity,
-                        PropertyAnimator.Property.TRANSLATION_X,
-                        isLayoutRtl() ? 0 : width);
-        }
-    }
-
-    void finishForwardAnimation() {
-        ViewHelper.setTranslationX(mTitle, 0);
-        ViewHelper.setTranslationX(mSiteSecurity, 0);
     }
 
     void prepareStartEditingAnimation() {
@@ -556,5 +502,18 @@ public class ToolbarDisplayLayout extends ThemedLinearLayout {
 
     void destroy() {
         mSiteIdentityPopup.destroy();
+    }
+
+    private class TextChangeListener implements TextWatcher {
+        @Override
+        public void afterTextChanged(Editable text) {
+            scrollTitle();
+        }
+
+        @Override
+        public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+
+        @Override
+        public void onTextChanged(CharSequence s, int start, int before, int count) { }
     }
 }

@@ -28,8 +28,6 @@ function getProbeSum(probe, sum) {
 }
 
 function run_test() {
-  installTestEngine();
-
   let resolveContinuePromise;
   let continuePromise = new Promise(resolve => {
     resolveContinuePromise = resolve;
@@ -40,7 +38,6 @@ function run_test() {
   Services.prefs.setCharPref("browser.search.geoip.url", url);
   Services.prefs.setIntPref("browser.search.geoip.timeout", 50);
   Services.search.init(() => {
-    ok(!Services.prefs.prefHasUserValue("browser.search.countryCode"), "should be no countryCode pref");
     ok(!Services.prefs.prefHasUserValue("browser.search.region"), "should be no region pref");
     // should be no result recorded at all.
     checkCountryResultTelemetry(null);
@@ -48,7 +45,7 @@ function run_test() {
     // should have set the flag indicating we saw a timeout.
     let histogram = Services.telemetry.getHistogramById("SEARCH_SERVICE_COUNTRY_TIMEOUT");
     let snapshot = histogram.snapshot();
-    deepEqual(snapshot.counts, [0, 1, 0]);
+    deepEqual(snapshot.values, {0: 0, 1: 1, 2: 0});
     // should not yet have SEARCH_SERVICE_COUNTRY_FETCH_TIME_MS recorded as our
     // test server is still blocked on our promise.
     equal(getProbeSum("SEARCH_SERVICE_COUNTRY_FETCH_TIME_MS"), 0);
@@ -63,9 +60,7 @@ function run_test() {
 
       // and should have the result of the response that finally came in, and
       // everything dependent should also be updated.
-      equal(Services.prefs.getCharPref("browser.search.countryCode"), "AU");
       equal(Services.prefs.getCharPref("browser.search.region"), "AU");
-      ok(!Services.prefs.prefHasUserValue("browser.search.isUS"), "should never have an isUS pref");
 
       do_test_finished();
       server.stop(run_next_test);

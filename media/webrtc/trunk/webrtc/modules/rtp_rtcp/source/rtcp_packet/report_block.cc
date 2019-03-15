@@ -8,11 +8,11 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/report_block.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/report_block.h"
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
-#include "webrtc/modules/rtp_rtcp/source/byte_io.h"
+#include "modules/rtp_rtcp/source/byte_io.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
 
 namespace webrtc {
 namespace rtcp {
@@ -48,7 +48,7 @@ ReportBlock::ReportBlock()
 bool ReportBlock::Parse(const uint8_t* buffer, size_t length) {
   RTC_DCHECK(buffer != nullptr);
   if (length < ReportBlock::kLength) {
-    LOG(LS_ERROR) << "Report Block should be 24 bytes long";
+    RTC_LOG(LS_ERROR) << "Report Block should be 24 bytes long";
     return false;
   }
 
@@ -65,7 +65,7 @@ bool ReportBlock::Parse(const uint8_t* buffer, size_t length) {
 
 void ReportBlock::Create(uint8_t* buffer) const {
   // Runtime check should be done while setting cumulative_lost.
-  RTC_DCHECK_LT(cumulative_lost(), (1u << 24));  // Have only 3 bytes for it.
+  RTC_DCHECK_LT(cumulative_lost(), (1 << 24));  // Have only 3 bytes for it.
 
   ByteWriter<uint32_t>::WriteBigEndian(&buffer[0], source_ssrc());
   ByteWriter<uint8_t>::WriteBigEndian(&buffer[4], fraction_lost());
@@ -76,9 +76,10 @@ void ReportBlock::Create(uint8_t* buffer) const {
   ByteWriter<uint32_t>::WriteBigEndian(&buffer[20], delay_since_last_sr());
 }
 
-bool ReportBlock::WithCumulativeLost(uint32_t cumulative_lost) {
+bool ReportBlock::SetCumulativeLost(uint32_t cumulative_lost) {
   if (cumulative_lost >= (1u << 24)) {  // Have only 3 bytes to store it.
-    LOG(LS_WARNING) << "Cumulative lost is too big to fit into Report Block";
+    RTC_LOG(LS_WARNING)
+        << "Cumulative lost is too big to fit into Report Block";
     return false;
   }
   cumulative_lost_ = cumulative_lost;

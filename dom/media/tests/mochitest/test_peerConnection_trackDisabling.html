@@ -12,12 +12,21 @@ createHTML({
   title: "Disabling locally should be reflected remotely"
 });
 
-runNetworkTest(() => {
+runNetworkTest(async () => {
   var test = new PeerConnectionTest();
 
-  // Always use fake tracks since we depend on video to be somewhat green and
-  // audio to have a large 1000Hz component (or 440Hz if using fake devices).
-  test.setMediaConstraints([{audio: true, video: true, fake: true}], []);
+  await pushPrefs(
+    ["media.getusermedia.camera.stop_on_disable.enabled", true],
+    ["media.getusermedia.camera.stop_on_disable.delay_ms", 0],
+    ["media.getusermedia.microphone.stop_on_disable.enabled", true],
+    ["media.getusermedia.microphone.stop_on_disable.delay_ms", 0],
+    // Always use fake tracks since we depend on video to be somewhat green and
+    // audio to have a large 1000Hz component (or 440Hz if using fake devices).
+    ['media.audio_loopback_dev', ''],
+    ['media.video_loopback_dev', ''],
+    ['media.navigator.streams.fake', true]);
+
+  test.setMediaConstraints([{audio: true, video: true}], []);
   test.chain.append([
     function CHECK_ASSUMPTIONS() {
       is(test.pcLocal.localMediaElements.length, 2,
@@ -29,7 +38,7 @@ runNetworkTest(() => {
       is(test.pcRemote._pc.getRemoteStreams().length, 1,
          "pcRemote should have one stream");
     },
-    function CHECK_VIDEO() {
+    async function CHECK_VIDEO() {
       var h = new CaptureStreamTestHelper2D();
       var localVideo = test.pcLocal.localMediaElements
         .find(e => e instanceof HTMLVideoElement);
@@ -43,52 +52,53 @@ runNetworkTest(() => {
 
       // We're regarding black as disabled here, and we're setting the alpha
       // channel of the pixel to 255 to disregard alpha when testing.
-      var checkVideoEnabled = video =>
-        h.waitForPixel(video, offsetX, offsetY,
-                       px => (px[3] = 255, h.isPixelNot(px, h.black, threshold)));
-      var checkVideoDisabled = video =>
-        h.waitForPixel(video, offsetX, offsetY,
-                       px => (px[3] = 255, h.isPixel(px, h.black, threshold, offsetX*2, offsetY*2)));
-      return Promise.resolve()
-        .then(() => info("Checking local video enabled"))
-        .then(() => checkVideoEnabled(localVideo))
-        .then(() => info("Checking remote video enabled"))
-        .then(() => checkVideoEnabled(remoteVideo))
+      var checkVideoEnabled = video => h.waitForPixel(video,
+        px => (px[3] = 255, h.isPixelNot(px, h.black, threshold)),
+        { offsetX, offsetY }
+      );
+      var checkVideoDisabled = video => h.waitForPixel(video,
+        px => (px[3] = 255, h.isPixel(px, h.black, threshold)),
+        { offsetX, offsetY }
+      );
 
-        .then(() => info("Disabling original"))
-        .then(() => test.pcLocal._pc.getLocalStreams()[0].getVideoTracks()[0].enabled = false)
+      info("Checking local video enabled");
+      await checkVideoEnabled(localVideo);
+      info("Checking remote video enabled");
+      await checkVideoEnabled(remoteVideo);
 
-        .then(() => info("Checking local video disabled"))
-        .then(() => checkVideoDisabled(localVideo))
-        .then(() => info("Checking remote video disabled"))
-        .then(() => checkVideoDisabled(remoteVideo))
+      info("Disabling original");
+      test.pcLocal._pc.getLocalStreams()[0].getVideoTracks()[0].enabled = false;
+
+      info("Checking local video disabled");
+      await checkVideoDisabled(localVideo);
+      info("Checking remote video disabled");
+      await checkVideoDisabled(remoteVideo);
     },
-    function CHECK_AUDIO() {
+    async function CHECK_AUDIO() {
       var ac = new AudioContext();
       var localAnalyser = new AudioStreamAnalyser(ac, test.pcLocal._pc.getLocalStreams()[0]);
       var remoteAnalyser = new AudioStreamAnalyser(ac, test.pcRemote._pc.getRemoteStreams()[0]);
 
       var checkAudio = (analyser, fun) => analyser.waitForAnalysisSuccess(fun);
 
-      var freq1k = localAnalyser.binIndexForFrequency(1000);
+      var freq = localAnalyser.binIndexForFrequency(TEST_AUDIO_FREQ);
       var checkAudioEnabled = analyser =>
-        checkAudio(analyser, array => array[freq1k] > 200);
+        checkAudio(analyser, array => array[freq] > 200);
       var checkAudioDisabled = analyser =>
-        checkAudio(analyser, array => array[freq1k] < 50);
+        checkAudio(analyser, array => array[freq] < 50);
 
-      return Promise.resolve()
-        .then(() => info("Checking local audio enabled"))
-        .then(() => checkAudioEnabled(localAnalyser))
-        .then(() => info("Checking remote audio enabled"))
-        .then(() => checkAudioEnabled(remoteAnalyser))
+      info("Checking local audio enabled");
+      await checkAudioEnabled(localAnalyser);
+      info("Checking remote audio enabled");
+      await checkAudioEnabled(remoteAnalyser);
 
-        .then(() => test.pcLocal._pc.getLocalStreams()[0].getAudioTracks()[0].enabled = false)
+      test.pcLocal._pc.getLocalStreams()[0].getAudioTracks()[0].enabled = false;
 
-        .then(() => info("Checking local audio disabled"))
-        .then(() => checkAudioDisabled(localAnalyser))
-        .then(() => info("Checking remote audio disabled"))
-        .then(() => checkAudioDisabled(remoteAnalyser))
-    }
+      info("Checking local audio disabled");
+      await checkAudioDisabled(localAnalyser);
+      info("Checking remote audio disabled");
+      await checkAudioDisabled(remoteAnalyser);
+    },
   ]);
   test.run();
 });

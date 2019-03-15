@@ -7,27 +7,24 @@
 #include "mozilla/dom/HTMLSpanElement.h"
 #include "mozilla/dom/HTMLSpanElementBinding.h"
 
-#include "mozilla/GenericSpecifiedValuesInlines.h"
+#include "mozilla/MappedDeclarations.h"
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
-#include "nsIAtom.h"
+#include "nsAtom.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Span)
 
 namespace mozilla {
 namespace dom {
 
-HTMLSpanElement::~HTMLSpanElement()
-{
-}
+HTMLSpanElement::~HTMLSpanElement() {}
 
 NS_IMPL_ELEMENT_CLONE(HTMLSpanElement)
 
-JSObject*
-HTMLSpanElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return HTMLSpanElementBinding::Wrap(aCx, this, aGivenProto);
+JSObject* HTMLSpanElement::WrapNode(JSContext* aCx,
+                                    JS::Handle<JSObject*> aGivenProto) {
+  return HTMLSpanElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

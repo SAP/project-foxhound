@@ -15,17 +15,16 @@ namespace mozilla {
 namespace plugins {
 
 /**
- * This class provides a lightweight shared memory interface for a child 
+ * This class provides a lightweight shared memory interface for a child
  * process in Win32.
- * This code assumes that there is a parent-child relationship between 
+ * This code assumes that there is a parent-child relationship between
  * processes, as it inherits handles from the parent process.
  * Note that this class is *not* an IPDL actor.
  *
  * @see MiniShmParent
  */
-class MiniShmChild : public MiniShmBase
-{
-public:
+class MiniShmChild : public MiniShmBase {
+ public:
   MiniShmChild();
   virtual ~MiniShmChild();
 
@@ -37,18 +36,15 @@ public:
    * @param aTimeout Timeout in milliseconds.
    * @return nsresult error code
    */
-  nsresult
-  Init(MiniShmObserver* aObserver, const std::wstring& aCookie,
-       const DWORD aTimeout);
+  nsresult Init(MiniShmObserver* aObserver, const std::wstring& aCookie,
+                const DWORD aTimeout);
 
-  virtual nsresult
-  Send() override;
+  virtual nsresult Send() override;
 
-protected:
-  void
-  OnEvent() override;
+ protected:
+  void OnEvent() override;
 
-private:
+ private:
   HANDLE mParentEvent;
   HANDLE mParentGuard;
   HANDLE mChildEvent;
@@ -56,13 +52,12 @@ private:
   HANDLE mFileMapping;
   HANDLE mRegWait;
   LPVOID mView;
-  DWORD  mTimeout;
+  DWORD mTimeout;
 
   DISALLOW_COPY_AND_ASSIGN(MiniShmChild);
 };
 
-} // namespace plugins
-} // namespace mozilla
+}  // namespace plugins
+}  // namespace mozilla
 
-#endif // mozilla_plugins_MiniShmChild_h
-
+#endif  // mozilla_plugins_MiniShmChild_h

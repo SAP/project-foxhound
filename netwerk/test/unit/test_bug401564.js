@@ -1,7 +1,7 @@
 /* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 "use strict";
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = null;
 const noRedirectURI = "/content";
@@ -16,7 +16,7 @@ function redirectHandler(metadata, response)
 
 function contentHandler(metadata, response)
 {
-  do_check_eq(metadata.getHeader("Accept"), acceptType);
+  Assert.equal(metadata.getHeader("Accept"), acceptType);
   httpserver.stop(do_test_finished);
 }
 
@@ -32,7 +32,7 @@ function run_test()
   httpserver.start(-1);
 
   var prefs = Cc["@mozilla.org/preferences-service;1"]
-                .getService(Components.interfaces.nsIPrefBranch);
+                .getService(Ci.nsIPrefBranch);
   prefs.setBoolPref("network.http.prompt-temp-redirect", false);
 
   var chan = NetUtil.newChannel({

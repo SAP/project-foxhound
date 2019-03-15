@@ -8,6 +8,7 @@ from __future__ import absolute_import, unicode_literals
 
 import logging
 import os
+import signal
 import subprocess
 import sys
 
@@ -41,9 +42,9 @@ class ProcessExecutionMixin(LoggingMixin):
     """Mix-in that provides process execution functionality."""
 
     def run_process(self, args=None, cwd=None, append_env=None,
-        explicit_env=None, log_name=None, log_level=logging.INFO,
-        line_handler=None, require_unix_environment=False,
-        ensure_exit_code=0, ignore_children=False, pass_thru=False):
+                    explicit_env=None, log_name=None, log_level=logging.INFO,
+                    line_handler=None, require_unix_environment=False,
+                    ensure_exit_code=0, ignore_children=False, pass_thru=False):
         """Runs a single process to completion.
 
         Takes a list of arguments to run where the first item is the
@@ -131,11 +132,25 @@ class ProcessExecutionMixin(LoggingMixin):
                     pass
         else:
             p = ProcessHandlerMixin(args, cwd=cwd, env=use_env,
-                processOutputLine=[handleLine], universal_newlines=True,
-                ignore_children=ignore_children)
+                                    processOutputLine=[handleLine],
+                                    universal_newlines=True,
+                                    ignore_children=ignore_children)
             p.run()
             p.processOutput()
-            status = p.wait()
+            status = None
+            sig = None
+            while status is None:
+                try:
+                    if sig is None:
+                        status = p.wait()
+                    else:
+                        status = p.kill(sig=sig)
+                except KeyboardInterrupt:
+                    if sig is None:
+                        sig = signal.SIGINT
+                    elif sig == signal.SIGINT:
+                        # If we've already tried SIGINT, escalate.
+                        sig = signal.SIGKILL
 
         if ensure_exit_code is False:
             return status

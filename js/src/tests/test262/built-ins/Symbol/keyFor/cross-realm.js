@@ -4,13 +4,14 @@
 esid: sec-symbol.keyfor
 es6id: 19.4.2.5
 description: Global symbol registry is shared by all realms
-info: >
+info: |
     The GlobalSymbolRegistry is a List that is globally available. It is shared
     by all realms. Prior to the evaluation of any ECMAScript code it is
     initialized as a new empty List.
+features: [cross-realm, Symbol]
 ---*/
 
-var OSymbol = $.createRealm().global.Symbol;
+var OSymbol = $262.createRealm().global.Symbol;
 var parent = Symbol.for('parent');
 var child = OSymbol.for('child');
 

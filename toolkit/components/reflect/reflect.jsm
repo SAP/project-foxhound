@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-this.EXPORTED_SYMBOLS = [ "Reflect" ];
+var EXPORTED_SYMBOLS = [ "Reflect" ];
 
 /*
  * This is the js module for Reflect. Import it like so:
@@ -19,6 +19,6 @@ this.EXPORTED_SYMBOLS = [ "Reflect" ];
 
 
 // Initialize the ctypes object. You do not need to do this yourself.
-const init = Components.classes["@mozilla.org/jsreflect;1"].createInstance();
+const init = Cc["@mozilla.org/jsreflect;1"].createInstance();
 init();
 this.Reflect = Reflect;

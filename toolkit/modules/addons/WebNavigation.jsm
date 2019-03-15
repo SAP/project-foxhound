@@ -6,15 +6,12 @@
 
 const EXPORTED_SYMBOLS = ["WebNavigation"];
 
-const Ci = Components.interfaces;
-const Cc = Components.classes;
-const Cu = Components.utils;
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "RecentWindow",
-                                  "resource:///modules/RecentWindow.jsm");
+ChromeUtils.defineModuleGetter(this, "BrowserWindowTracker",
+                               "resource:///modules/BrowserWindowTracker.jsm");
+ChromeUtils.defineModuleGetter(this, "PrivateBrowsingUtils",
+                               "resource://gre/modules/PrivateBrowsingUtils.jsm");
 
 // Maximum amount of time that can be passed and still consider
 // the data recent (similar to how is done in nsNavHistory,
@@ -37,7 +34,7 @@ var Manager = {
 
     Services.obs.addObserver(this, "autocomplete-did-enter-text", true);
 
-    Services.obs.addObserver(this, "webNavigation-createdNavigationTarget", false);
+    Services.obs.addObserver(this, "webNavigation-createdNavigationTarget");
 
     Services.mm.addMessageListener("Content:Click", this);
     Services.mm.addMessageListener("Extension:DOMContentLoaded", this);
@@ -68,7 +65,7 @@ var Manager = {
     this.createdNavigationTargetByOuterWindowId.clear();
   },
 
-  addListener(type, listener, filters) {
+  addListener(type, listener, filters, context) {
     if (this.listeners.size == 0) {
       this.init();
     }
@@ -77,7 +74,7 @@ var Manager = {
       this.listeners.set(type, new Map());
     }
     let listeners = this.listeners.get(type);
-    listeners.set(listener, filters);
+    listeners.set(listener, {filters, context});
   },
 
   removeListener(type, listener) {
@@ -99,7 +96,7 @@ var Manager = {
    * Support nsIObserver interface to observe the urlbar autocomplete events used
    * to keep track of the urlbar user interaction.
    */
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIObserver, Ci.nsISupportsWeakReference]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver, Ci.nsISupportsWeakReference]),
 
   /**
    * Observe autocomplete-did-enter-text (to track the user interaction with the awesomebar)
@@ -126,7 +123,7 @@ var Manager = {
 
       this.fire("onCreatedNavigationTarget", createdTabBrowser, {}, {
         sourceTabBrowser,
-        sourceWindowId: sourceFrameOuterWindowID,
+        sourceFrameId: sourceFrameOuterWindowID,
         url,
       });
     }
@@ -161,7 +158,7 @@ var Manager = {
         let action = input._parseActionUrl(value);
 
         if (action) {
-          // Detect keywork and generated and more typed scenarios.
+          // Detect keyword and generated and more typed scenarios.
           switch (action.type) {
             case "keyword":
               tabTransistionData.keyword = true;
@@ -220,7 +217,7 @@ var Manager = {
    * @param {boolean} [tabTransitionData.typed]
    */
   setRecentTabTransitionData(tabTransitionData) {
-    let window = RecentWindow.getMostRecentBrowserWindow();
+    let window = BrowserWindowTracker.getTopWindow();
     if (window && window.gBrowser && window.gBrowser.selectedTab &&
         window.gBrowser.selectedTab.linkedBrowser) {
       let browser = window.gBrowser.selectedTab.linkedBrowser;
@@ -306,33 +303,72 @@ var Manager = {
   },
 
   onCreatedNavigationTarget(browser, data) {
-    const {isSourceTab, createdWindowId, sourceWindowId, url} = data;
+    const {
+      createdOuterWindowId,
+      isSourceTab,
+      sourceFrameId,
+      url,
+    } = data;
 
-    // We are going to potentially received two message manager messages for a single
-    // onCreatedNavigationTarget event that is happening in the child process,
-    // we are going to use the generate uuid to pair them together.
-    const pairedMessage = this.createdNavigationTargetByOuterWindowId.get(createdWindowId);
+    // We are going to receive two message manager messages for a single
+    // onCreatedNavigationTarget event related to a window.open that is happening
+    // in the child process (one from the source tab and one from the created tab),
+    // the unique createdWindowId (the outerWindowID of the created docShell)
+    // to pair them together.
+    const pairedMessage = this.createdNavigationTargetByOuterWindowId.get(createdOuterWindowId);
 
-    if (!pairedMessage) {
-      this.createdNavigationTargetByOuterWindowId.set(createdWindowId, {browser, data});
+    if (!isSourceTab) {
+      if (pairedMessage) {
+        // This should not happen, print a warning before overwriting the unexpected pending data.
+        Services.console.logStringMessage(
+          `Discarding onCreatedNavigationTarget for ${createdOuterWindowId}: ` +
+          "unexpected pending data while receiving the created tab data"
+        );
+      }
+
+      // Store a weak reference to the browser XUL element, so that we don't prevent
+      // it to be garbage collected if it has been destroyed.
+      const browserWeakRef = Cu.getWeakReference(browser);
+
+      this.createdNavigationTargetByOuterWindowId.set(createdOuterWindowId, {
+        browserWeakRef,
+        data,
+      });
+
       return;
     }
 
-    this.createdNavigationTargetByOuterWindowId.delete(createdWindowId);
+    if (!pairedMessage) {
+      // The sourceTab should always be received after the message coming from the created
+      // top level frame because the "webNavigation-createdNavigationTarget-from-js" observers
+      // subscribed by WebNavigationContent.js are going to be executed in reverse order
+      // (See http://searchfox.org/mozilla-central/rev/f54c1723be/xpcom/ds/nsObserverList.cpp#76)
+      // and the observer subscribed to the created target will be the last one subscribed
+      // to the ObserverService (and the first one to be triggered).
+      Services.console.logStringMessage(
+        `Discarding onCreatedNavigationTarget for ${createdOuterWindowId}: ` +
+        "received source tab data without any created tab data available"
+      );
 
-    let sourceTabBrowser;
-    let createdTabBrowser;
+      return;
+    }
 
-    if (isSourceTab) {
-      sourceTabBrowser = browser;
-      createdTabBrowser = pairedMessage.browser;
-    } else {
-      sourceTabBrowser = pairedMessage.browser;
-      createdTabBrowser = browser;
+    this.createdNavigationTargetByOuterWindowId.delete(createdOuterWindowId);
+
+    let sourceTabBrowser = browser;
+    let createdTabBrowser = pairedMessage.browserWeakRef.get();
+
+    if (!createdTabBrowser) {
+      Services.console.logStringMessage(
+        `Discarding onCreatedNavigationTarget for ${createdOuterWindowId}: ` +
+        "the created tab has been already destroyed"
+      );
+
+      return;
     }
 
     this.fire("onCreatedNavigationTarget", createdTabBrowser, {}, {
-      sourceTabBrowser, sourceWindowId, url,
+      sourceTabBrowser, sourceFrameId, url,
     });
   },
 
@@ -391,18 +427,22 @@ var Manager = {
 
     let details = {
       browser,
-      windowId: data.windowId,
+      frameId: data.frameId,
     };
 
-    if (data.parentWindowId) {
-      details.parentWindowId = data.parentWindowId;
+    if (data.parentFrameId !== undefined) {
+      details.parentFrameId = data.parentFrameId;
     }
 
     for (let prop in extra) {
       details[prop] = extra[prop];
     }
 
-    for (let [listener, filters] of listeners) {
+    for (let [listener, {filters, context}] of listeners) {
+      if (context && !context.privateBrowsingAllowed &&
+          PrivateBrowsingUtils.isBrowserPrivate(browser)) {
+        continue;
+      }
       // Call the listener if the listener has no filter or if its filter matches.
       if (!filters || filters.matches(extra.url)) {
         listener(details);

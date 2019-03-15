@@ -5,7 +5,7 @@
 
 // Tests for DevToolsUtils.fetch on http:// URI's.
 
-const { HttpServer } = Cu.import("resource://testing-common/httpd.js", {});
+const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js", {});
 
 const server = new HttpServer();
 server.registerDirectory("/", do_get_cwd());
@@ -18,43 +18,43 @@ const CACHED_URL = serverURL + "/cached.json";
 const NORMAL_URL = serverURL + "/test_fetch-http.js";
 
 function cacheRequestHandler(request, response) {
-  do_print("Got request for " + request.path);
+  info("Got request for " + request.path);
   response.setHeader("Cache-Control", "max-age=10000", false);
   response.setStatusLine(request.httpVersion, 200, "OK");
   response.setHeader("Content-Type", "application/json", false);
 
-  let body = "[" + Math.random() + "]";
+  const body = "[" + Math.random() + "]";
   response.bodyOutputStream.write(body, body.length);
 }
 
-do_register_cleanup(() => {
+registerCleanupFunction(() => {
   return new Promise(resolve => server.stop(resolve));
 });
 
-add_task(function* test_normal() {
-  yield DevToolsUtils.fetch(NORMAL_URL).then(({content}) => {
+add_task(async function test_normal() {
+  await DevToolsUtils.fetch(NORMAL_URL).then(({content}) => {
     ok(content.includes("The content looks correct."),
       "The content looks correct.");
   });
 });
 
-add_task(function* test_caching() {
+add_task(async function test_caching() {
   let initialContent = null;
 
-  do_print("Performing the first request.");
-  yield DevToolsUtils.fetch(CACHED_URL).then(({content}) => {
-    do_print("Got the first response: " + content);
+  info("Performing the first request.");
+  await DevToolsUtils.fetch(CACHED_URL).then(({content}) => {
+    info("Got the first response: " + content);
     initialContent = content;
   });
 
-  do_print("Performing another request, expecting to get cached response.");
-  yield DevToolsUtils.fetch(CACHED_URL).then(({content}) => {
+  info("Performing another request, expecting to get cached response.");
+  await DevToolsUtils.fetch(CACHED_URL).then(({content}) => {
     deepEqual(content, initialContent, "The content was loaded from cache.");
   });
 
-  do_print("Performing a third request with cache bypassed.");
-  let opts = { loadFromCache: false };
-  yield DevToolsUtils.fetch(CACHED_URL, opts).then(({content}) => {
+  info("Performing a third request with cache bypassed.");
+  const opts = { loadFromCache: false };
+  await DevToolsUtils.fetch(CACHED_URL, opts).then(({content}) => {
     notDeepEqual(content, initialContent,
       "The URL wasn't loaded from cache with loadFromCache: false.");
   });

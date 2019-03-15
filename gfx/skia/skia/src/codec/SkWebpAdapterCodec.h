@@ -17,9 +17,9 @@
 class SkWebpAdapterCodec : public SkAndroidCodec {
 public:
 
-    explicit SkWebpAdapterCodec(SkWebpCodec*);
+    explicit SkWebpAdapterCodec(SkWebpCodec*, ExifOrientationBehavior);
 
-    virtual ~SkWebpAdapterCodec() {}
+    ~SkWebpAdapterCodec() override {}
 
 protected:
 

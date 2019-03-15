@@ -1,5 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+/* eslint-disable no-shadow, max-nested-callbacks */
+
+"use strict";
 
 /**
  * Check evals against different frames.
@@ -9,45 +12,47 @@ var gDebuggee;
 var gClient;
 var gThreadClient;
 
-function run_test()
-{
+function run_test() {
+  Services.prefs.setBoolPref("security.allow_eval_with_system_principal", true);
+  registerCleanupFunction(() => {
+    Services.prefs.clearUserPref("security.allow_eval_with_system_principal");
+  });
   initTestDebuggerServer();
   gDebuggee = addTestGlobal("test-stack");
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
-  gClient.connect().then(function () {
-    attachTestTabAndResume(gClient, "test-stack", function (aResponse, aTabClient, aThreadClient) {
-      gThreadClient = aThreadClient;
-      test_syntax_error_eval();
-    });
+  gClient.connect().then(function() {
+    attachTestTabAndResume(gClient, "test-stack",
+                           function(response, targetFront, threadClient) {
+                             gThreadClient = threadClient;
+                             test_different_frames_eval();
+                           });
   });
   do_test_pending();
 }
 
-function test_syntax_error_eval()
-{
-  gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-
-    gThreadClient.getFrames(0, 2, function (aResponse) {
-      let frame0 = aResponse.frames[0];
-      let frame1 = aResponse.frames[1];
+function test_different_frames_eval() {
+  gThreadClient.addOneTimeListener("paused", function(event, packet) {
+    gThreadClient.getFrames(0, 2, function(response) {
+      const frame0 = response.frames[0];
+      const frame1 = response.frames[1];
 
       // Eval against the top frame...
-      gThreadClient.eval(frame0.actor, "arg", function (aResponse) {
-        do_check_eq(aResponse.type, "resumed");
-        gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
+      gThreadClient.eval(frame0.actor, "arg", function(response) {
+        Assert.equal(response.type, "resumed");
+        gThreadClient.addOneTimeListener("paused", function(event, packet) {
           // 'arg' should have been evaluated in frame0
-          do_check_eq(aPacket.type, "paused");
-          do_check_eq(aPacket.why.type, "clientEvaluated");
-          do_check_eq(aPacket.why.frameFinished.return, "arg0");
+          Assert.equal(packet.type, "paused");
+          Assert.equal(packet.why.type, "clientEvaluated");
+          Assert.equal(packet.why.frameFinished.return, "arg0");
 
           // Now eval against the second frame.
-          gThreadClient.eval(frame1.actor, "arg", function (aResponse) {
-            gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
+          gThreadClient.eval(frame1.actor, "arg", function(response) {
+            gThreadClient.addOneTimeListener("paused", function(event, packet) {
               // 'arg' should have been evaluated in frame1
-              do_check_eq(aPacket.type, "paused");
-              do_check_eq(aPacket.why.frameFinished.return, "arg1");
+              Assert.equal(packet.type, "paused");
+              Assert.equal(packet.why.frameFinished.return, "arg1");
 
-              gThreadClient.resume(function () {
+              gThreadClient.resume(function() {
                 finishClient(gClient);
               });
             });
@@ -57,7 +62,7 @@ function test_syntax_error_eval()
     });
   });
 
-  gDebuggee.eval("(" + function () {
+  gDebuggee.eval("(" + function() {
     function frame0(arg) {
       debugger;
     }

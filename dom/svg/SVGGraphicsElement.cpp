@@ -22,20 +22,45 @@ NS_INTERFACE_MAP_END_INHERITING(SVGGraphicsElementBase)
 //----------------------------------------------------------------------
 // Implementation
 
-SVGGraphicsElement::SVGGraphicsElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-  : SVGGraphicsElementBase(aNodeInfo)
-{
+SVGGraphicsElement::SVGGraphicsElement(
+    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : SVGGraphicsElementBase(std::move(aNodeInfo)) {}
+
+SVGGraphicsElement::~SVGGraphicsElement() {}
+
+bool SVGGraphicsElement::IsSVGFocusable(bool* aIsFocusable,
+                                        int32_t* aTabIndex) {
+  Document* doc = GetComposedDoc();
+  if (!doc || doc->HasFlag(NODE_IS_EDITABLE)) {
+    // In designMode documents we only allow focusing the document.
+    if (aTabIndex) {
+      *aTabIndex = -1;
+    }
+
+    *aIsFocusable = false;
+
+    return true;
+  }
+
+  int32_t tabIndex = TabIndex();
+
+  if (aTabIndex) {
+    *aTabIndex = tabIndex;
+  }
+
+  // If a tabindex is specified at all, or the default tabindex is 0, we're
+  // focusable
+  *aIsFocusable = tabIndex >= 0 || HasAttr(nsGkAtoms::tabindex);
+
+  return false;
 }
 
-SVGGraphicsElement::~SVGGraphicsElement()
-{
+bool SVGGraphicsElement::IsFocusableInternal(int32_t* aTabIndex,
+                                             bool aWithMouse) {
+  bool isFocusable = false;
+  IsSVGFocusable(&isFocusable, aTabIndex);
+  return isFocusable;
 }
 
-bool
-SVGGraphicsElement::IsInChromeDoc() const
-{
-  return nsContentUtils::IsChromeDoc(OwnerDoc());
-}
-
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

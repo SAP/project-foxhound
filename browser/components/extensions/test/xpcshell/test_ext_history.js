@@ -2,14 +2,18 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetter(this, "PlacesTestUtils",
-                                  "resource://testing-common/PlacesTestUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
-                                  "resource://gre/modules/PlacesUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "ExtensionUtils",
-                                  "resource://gre/modules/ExtensionUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "PlacesTestUtils",
+                               "resource://testing-common/PlacesTestUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "PlacesUtils",
+                               "resource://gre/modules/PlacesUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "ExtensionCommon",
+                               "resource://gre/modules/ExtensionCommon.jsm");
 
-add_task(function* test_delete() {
+ChromeUtils.import("resource://testing-common/PromiseTestUtils.jsm");
+
+PromiseTestUtils.whitelistRejectionsGlobally(/Message manager disconnected/);
+
+add_task(async function test_delete() {
   function background() {
     let historyClearedCount = 0;
     let removedUrls = [];
@@ -55,9 +59,9 @@ add_task(function* test_delete() {
     background: `(${background})()`,
   });
 
-  yield extension.startup();
-  yield extension.awaitMessage("ready");
-  yield PlacesTestUtils.clearHistory();
+  await extension.startup();
+  await extension.awaitMessage("ready");
+  await PlacesUtils.history.clear();
 
   let historyClearedCount;
   let visits = [];
@@ -85,15 +89,15 @@ add_task(function* test_delete() {
     visits.push(visit);
   }
 
-  yield PlacesUtils.history.insertMany(visits);
-  equal((yield PlacesTestUtils.visitsInDB(visits[0].url)), 5, "5 visits for uri found in history database");
+  await PlacesUtils.history.insertMany(visits);
+  equal((await PlacesTestUtils.visitsInDB(visits[0].url)), 5, "5 visits for uri found in history database");
 
   let testUrl = visits[2].url;
-  ok((yield PlacesTestUtils.isPageInDB(testUrl)), "expected url found in history database");
+  ok((await PlacesTestUtils.isPageInDB(testUrl)), "expected url found in history database");
 
   extension.sendMessage("delete-url", testUrl);
-  yield extension.awaitMessage("url-deleted");
-  equal((yield PlacesTestUtils.isPageInDB(testUrl)), false, "expected url not found in history database");
+  await extension.awaitMessage("url-deleted");
+  equal((await PlacesTestUtils.isPageInDB(testUrl)), false, "expected url not found in history database");
 
   // delete 3 of the 5 visits for url 1
   let filter = {
@@ -102,40 +106,39 @@ add_task(function* test_delete() {
   };
 
   extension.sendMessage("delete-range", filter);
-  let removedUrls = yield extension.awaitMessage("range-deleted");
+  let removedUrls = await extension.awaitMessage("range-deleted");
   ok(!removedUrls.includes(visits[0].url), `${visits[0].url} not received by onVisitRemoved`);
-  ok((yield PlacesTestUtils.isPageInDB(visits[0].url)), "expected uri found in history database");
-  equal((yield PlacesTestUtils.visitsInDB(visits[0].url)), 2, "2 visits for uri found in history database");
-  ok((yield PlacesTestUtils.isPageInDB(visits[1].url)), "expected uri found in history database");
-  equal((yield PlacesTestUtils.visitsInDB(visits[1].url)), 1, "1 visit for uri found in history database");
+  ok((await PlacesTestUtils.isPageInDB(visits[0].url)), "expected uri found in history database");
+  equal((await PlacesTestUtils.visitsInDB(visits[0].url)), 2, "2 visits for uri found in history database");
+  ok((await PlacesTestUtils.isPageInDB(visits[1].url)), "expected uri found in history database");
+  equal((await PlacesTestUtils.visitsInDB(visits[1].url)), 1, "1 visit for uri found in history database");
 
   // delete the rest of the visits for url 1, and the visit for url 2
   filter.startTime = visits[0].visits[0].date;
   filter.endTime = visits[1].visits[0].date;
 
   extension.sendMessage("delete-range", filter);
-  yield extension.awaitMessage("range-deleted");
+  await extension.awaitMessage("range-deleted");
 
-  equal((yield PlacesTestUtils.isPageInDB(visits[0].url)), false, "expected uri not found in history database");
-  equal((yield PlacesTestUtils.visitsInDB(visits[0].url)), 0, "0 visits for uri found in history database");
-  equal((yield PlacesTestUtils.isPageInDB(visits[1].url)), false, "expected uri not found in history database");
-  equal((yield PlacesTestUtils.visitsInDB(visits[1].url)), 0, "0 visits for uri found in history database");
+  equal((await PlacesTestUtils.isPageInDB(visits[0].url)), false, "expected uri not found in history database");
+  equal((await PlacesTestUtils.visitsInDB(visits[0].url)), 0, "0 visits for uri found in history database");
+  equal((await PlacesTestUtils.isPageInDB(visits[1].url)), false, "expected uri not found in history database");
+  equal((await PlacesTestUtils.visitsInDB(visits[1].url)), 0, "0 visits for uri found in history database");
 
-  ok((yield PlacesTestUtils.isPageInDB(visits[3].url)), "expected uri found in history database");
+  ok((await PlacesTestUtils.isPageInDB(visits[3].url)), "expected uri found in history database");
 
   extension.sendMessage("delete-all");
-  [historyClearedCount, removedUrls] = yield extension.awaitMessage("history-cleared");
-  equal(PlacesUtils.history.hasHistoryEntries, false, "history is empty");
+  [historyClearedCount, removedUrls] = await extension.awaitMessage("history-cleared");
   equal(historyClearedCount, 2, "onVisitRemoved called for each clearing of history");
   equal(removedUrls.length, 3, "onVisitRemoved called the expected number of times");
   for (let i = 1; i < 3; ++i) {
     let url = visits[i].url;
     ok(removedUrls.includes(url), `${url} received by onVisitRemoved`);
   }
-  yield extension.unload();
+  await extension.unload();
 });
 
-add_task(function* test_search() {
+add_task(async function test_search() {
   const SINGLE_VISIT_URL = "http://example.com/";
   const DOUBLE_VISIT_URL = "http://example.com/2/";
   const MOZILLA_VISIT_URL = "http://mozilla.com/";
@@ -221,39 +224,39 @@ add_task(function* test_search() {
     equal(result.title, `test visit for ${url}`, "title for search result is correct");
   }
 
-  yield extension.startup();
-  yield extension.awaitMessage("ready");
-  yield PlacesTestUtils.clearHistory();
+  await extension.startup();
+  await extension.awaitMessage("ready");
+  await PlacesUtils.history.clear();
 
-  yield PlacesUtils.history.insertMany(PAGE_INFOS);
+  await PlacesUtils.history.insertMany(PAGE_INFOS);
 
   extension.sendMessage("check-history");
 
-  let results = yield extension.awaitMessage("empty-search");
+  let results = await extension.awaitMessage("empty-search");
   equal(results.length, 3, "history.search with empty text returned 3 results");
   checkResult(results, SINGLE_VISIT_URL, 1);
   checkResult(results, DOUBLE_VISIT_URL, 2);
   checkResult(results, MOZILLA_VISIT_URL, 1);
 
-  results = yield extension.awaitMessage("text-search");
+  results = await extension.awaitMessage("text-search");
   equal(results.length, 1, "history.search with specific text returned 1 result");
   checkResult(results, MOZILLA_VISIT_URL, 1);
 
-  results = yield extension.awaitMessage("max-results-search");
+  results = await extension.awaitMessage("max-results-search");
   equal(results.length, 1, "history.search with maxResults returned 1 result");
   checkResult(results, DOUBLE_VISIT_URL, 2);
 
-  results = yield extension.awaitMessage("date-range-search");
+  results = await extension.awaitMessage("date-range-search");
   equal(results.length, 2, "history.search with a date range returned 2 result");
   checkResult(results, DOUBLE_VISIT_URL, 2);
   checkResult(results, SINGLE_VISIT_URL, 1);
 
-  yield extension.awaitFinish("search");
-  yield extension.unload();
-  yield PlacesTestUtils.clearHistory();
+  await extension.awaitFinish("search");
+  await extension.unload();
+  await PlacesUtils.history.clear();
 });
 
-add_task(function* test_add_url() {
+add_task(async function test_add_url() {
   function background() {
     const TEST_DOMAIN = "http://example.com/";
 
@@ -295,18 +298,18 @@ add_task(function* test_add_url() {
 
   let failTestData = [
     [{transition: "generated"}, "an invalid transition", "|generated| is not a supported transition for history"],
-    [{visitTime: Date.now() + 1000000}, "a future date", "cannot be a future date"],
-    [{url: "about.config"}, "an invalid url", "about.config is not a valid URL"],
+    [{visitTime: Date.now() + 1000000}, "a future date", "Invalid value"],
+    [{url: "about.config"}, "an invalid url", "Invalid value"],
   ];
 
-  function* checkUrl(results) {
-    ok((yield PlacesTestUtils.isPageInDB(results.details.url)), `${results.details.url} found in history database`);
+  async function checkUrl(results) {
+    ok((await PlacesTestUtils.isPageInDB(results.details.url)), `${results.details.url} found in history database`);
     ok(PlacesUtils.isValidGuid(results.result.id), "URL was added with a valid id");
     equal(results.result.title, results.details.title, "URL was added with the correct title");
     if (results.details.visitTime) {
       equal(results.result.lastVisitTime,
-         Number(ExtensionUtils.normalizeTime(results.details.visitTime)),
-         "URL was added with the correct date");
+            Number(ExtensionCommon.normalizeTime(results.details.visitTime)),
+            "URL was added with the correct date");
     }
   }
 
@@ -317,25 +320,25 @@ add_task(function* test_add_url() {
     background: `(${background})()`,
   });
 
-  yield PlacesTestUtils.clearHistory();
-  yield extension.startup();
-  yield extension.awaitMessage("ready");
+  await PlacesUtils.history.clear();
+  await extension.startup();
+  await extension.awaitMessage("ready");
 
   for (let data of addTestData) {
     extension.sendMessage("add-url", data);
-    let results = yield extension.awaitMessage("url-added");
-    yield checkUrl(results);
+    let results = await extension.awaitMessage("url-added");
+    await checkUrl(results);
   }
 
   for (let data of failTestData) {
     extension.sendMessage("expect-failure", data);
-    yield extension.awaitMessage("add-failed");
+    await extension.awaitMessage("add-failed");
   }
 
-  yield extension.unload();
+  await extension.unload();
 });
 
-add_task(function* test_get_visits() {
+add_task(async function test_get_visits() {
   function background() {
     const TEST_DOMAIN = "http://example.com/";
     const FIRST_DATE = Date.now();
@@ -393,14 +396,91 @@ add_task(function* test_get_visits() {
     background: `(${background})()`,
   });
 
-  yield PlacesTestUtils.clearHistory();
-  yield extension.startup();
+  await PlacesUtils.history.clear();
+  await extension.startup();
 
-  yield extension.awaitFinish("get-visits");
-  yield extension.unload();
+  await extension.awaitFinish("get-visits");
+  await extension.unload();
 });
 
-add_task(function* test_on_visited() {
+add_task(async function test_transition_types() {
+  const VISIT_URL_PREFIX = "http://example.com/";
+  const TRANSITIONS = [
+    ["link", Ci.nsINavHistoryService.TRANSITION_LINK],
+    ["typed", Ci.nsINavHistoryService.TRANSITION_TYPED],
+    ["auto_bookmark", Ci.nsINavHistoryService.TRANSITION_BOOKMARK],
+    // Only session history contains TRANSITION_EMBED visits,
+    // So global history query cannot find them.
+    // ["auto_subframe", Ci.nsINavHistoryService.TRANSITION_EMBED],
+    // Redirects are not correctly tested here because History
+    // will not make redirect entries hidden.
+    ["link", Ci.nsINavHistoryService.TRANSITION_REDIRECT_PERMANENT],
+    ["link", Ci.nsINavHistoryService.TRANSITION_REDIRECT_TEMPORARY],
+    ["link", Ci.nsINavHistoryService.TRANSITION_DOWNLOAD],
+    ["manual_subframe", Ci.nsINavHistoryService.TRANSITION_FRAMED_LINK],
+    ["reload", Ci.nsINavHistoryService.TRANSITION_RELOAD],
+  ];
+
+  // pages/visits to add via History.insertMany
+  let pageInfos = [];
+  let visitDate = new Date(1999, 9, 9, 9, 9).getTime();
+  for (let [, transitionType] of TRANSITIONS) {
+    pageInfos.push({
+      url: VISIT_URL_PREFIX + transitionType + "/",
+      visits: [
+        {transition: transitionType, date: new Date(visitDate -= 1000)},
+      ],
+    });
+  }
+
+  function background() {
+    browser.test.onMessage.addListener(async (msg, url) => {
+      switch (msg) {
+        case "search": {
+          let results = await browser.history.search({text: "", startTime: new Date(0)});
+          browser.test.sendMessage("search-result", results);
+          break;
+        }
+        case "get-visits": {
+          let results = await browser.history.getVisits({url});
+          browser.test.sendMessage("get-visits-result", results);
+          break;
+        }
+      }
+    });
+
+    browser.test.sendMessage("ready");
+  }
+
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      permissions: ["history"],
+    },
+    background,
+  });
+
+  await PlacesUtils.history.clear();
+  await extension.startup();
+  await extension.awaitMessage("ready");
+
+  await PlacesUtils.history.insertMany(pageInfos);
+
+  extension.sendMessage("search");
+  let results = await extension.awaitMessage("search-result");
+  equal(results.length, pageInfos.length, "search returned expected length of results");
+  for (let i = 0; i < pageInfos.length; ++i) {
+    equal(results[i].url, pageInfos[i].url, "search returned the expected url");
+
+    extension.sendMessage("get-visits", pageInfos[i].url);
+    let visits = await extension.awaitMessage("get-visits-result");
+    equal(visits.length, 1, "getVisits returned expected length of visits");
+    equal(visits[0].transition, TRANSITIONS[i][0], "getVisits returned the expected transition");
+  }
+
+  await extension.unload();
+});
+
+add_task(async function test_on_visited() {
   const SINGLE_VISIT_URL = "http://example.com/1/";
   const DOUBLE_VISIT_URL = "http://example.com/2/";
   let visitDate = new Date(1999, 9, 9, 9, 9).getTime();
@@ -422,6 +502,13 @@ add_task(function* test_on_visited() {
         {date: new Date(visitDate += 1000)},
       ],
     },
+    {
+      url: SINGLE_VISIT_URL,
+      title: "Title Changed",
+      visits: [
+        {date: new Date(visitDate)},
+      ],
+    },
   ];
 
   function background() {
@@ -432,9 +519,14 @@ add_task(function* test_on_visited() {
         return;
       }
       onVisitedData.push(data);
-      if (onVisitedData.length == 3) {
+      if (onVisitedData.length == 4) {
         browser.test.sendMessage("on-visited-data", onVisitedData);
       }
+    });
+
+    // Verifying onTitleChange Event along with onVisited event
+    browser.history.onTitleChanged.addListener(data => {
+      browser.test.sendMessage("on-title-changed-data", data);
     });
 
     browser.test.sendMessage("ready");
@@ -447,13 +539,13 @@ add_task(function* test_on_visited() {
     background: `(${background})()`,
   });
 
-  yield PlacesTestUtils.clearHistory();
-  yield extension.startup();
-  yield extension.awaitMessage("ready");
+  await PlacesUtils.history.clear();
+  await extension.startup();
+  await extension.awaitMessage("ready");
 
-  yield PlacesUtils.history.insertMany(PAGE_INFOS);
+  await PlacesUtils.history.insertMany(PAGE_INFOS);
 
-  let onVisitedData = yield extension.awaitMessage("on-visited-data");
+  let onVisitedData = await extension.awaitMessage("on-visited-data");
 
   function checkOnVisitedData(index, expected) {
     let onVisited = onVisitedData[index];
@@ -461,7 +553,7 @@ add_task(function* test_on_visited() {
     equal(onVisited.url, expected.url, "onVisited received the expected url");
     // Title will be blank until bug 1287928 lands
     // https://bugzilla.mozilla.org/show_bug.cgi?id=1287928
-    equal(onVisited.title, "", "onVisited received a blank title");
+    equal(onVisited.title, expected.title, "onVisited received the expected title");
     equal(onVisited.lastVisitTime, expected.time, "onVisited received the expected time");
     equal(onVisited.visitCount, expected.visitCount, "onVisited received the expected visitCount");
   }
@@ -483,5 +575,14 @@ add_task(function* test_on_visited() {
   expected.visitCount = 2;
   checkOnVisitedData(2, expected);
 
-  yield extension.unload();
+  expected.url = PAGE_INFOS[2].url;
+  expected.title = PAGE_INFOS[2].title;
+  expected.time = PAGE_INFOS[2].visits[0].date.getTime();
+  expected.visitCount = 2;
+  checkOnVisitedData(3, expected);
+
+  let onTitleChangedData = await extension.awaitMessage("on-title-changed-data");
+  equal(onTitleChangedData.title, "Title Changed", "ontitleChanged received the expected title.");
+
+  await extension.unload();
 });

@@ -13,12 +13,12 @@
  * });
  */
 function leakHunt(root) {
-  let path = [];
-  let seen = [];
+  const path = [];
+  const seen = [];
 
   try {
-    let output = leakHunt.inner(root, path, seen);
-    output.forEach(function (line) {
+    const output = leakHunt.inner(root, path, seen);
+    output.forEach(function(line) {
       dump(line + "\n");
     });
   } catch (ex) {
@@ -26,10 +26,10 @@ function leakHunt(root) {
   }
 }
 
-leakHunt.inner = function (root, path, seen) {
-  let prefix = new Array(path.length).join("  ");
+leakHunt.inner = function(root, path, seen) {
+  const prefix = new Array(path.length).join("  ");
 
-  let reply = [];
+  const reply = [];
   function log(msg) {
     reply.push(msg);
   }
@@ -44,8 +44,8 @@ leakHunt.inner = function (root, path, seen) {
 
   try {
     let index = 0;
-    for (let data of root) {
-      let prop = "" + index;
+    for (const data of root) {
+      const prop = "" + index;
       leakHunt.digProperty(prop, data, path, seen, direct, log);
       index++;
     }
@@ -53,7 +53,7 @@ leakHunt.inner = function (root, path, seen) {
     /* Ignore things that are not enumerable */
   }
 
-  for (let prop in root) {
+  for (const prop in root) {
     let data;
     try {
       data = root[prop];
@@ -74,13 +74,13 @@ leakHunt.noRecurse = [
   /^string$/, /^number$/, /^boolean$/, /^null/, /^undefined/,
   /^Window$/, /^Document$/,
   /^XULDocument$/, /^XULElement$/,
-  /^DOMWindow$/, /^HTMLDocument$/, /^HTML.*Element$/, /^ChromeWindow$/
+  /^DOMWindow$/, /^HTMLDocument$/, /^HTML.*Element$/, /^ChromeWindow$/,
 ];
 
-leakHunt.digProperty = function (prop, data, path, seen, direct, log) {
-  let newPath = path.slice();
+leakHunt.digProperty = function(prop, data, path, seen, direct, log) {
+  const newPath = path.slice();
   newPath.push(prop);
-  let prefix = new Array(newPath.length).join("  ");
+  const prefix = new Array(newPath.length).join("  ");
 
   let recurse = true;
   let message = leakHunt.getType(data);
@@ -89,32 +89,32 @@ leakHunt.digProperty = function (prop, data, path, seen, direct, log) {
     return;
   }
 
-  if (message === "function" && direct.indexOf(prop) == -1) {
+  if (message === "function" && !direct.includes(prop)) {
     return;
   }
 
   if (message === "string") {
-    let extra = data.length > 10 ? data.substring(0, 9) + "_" : data;
+    const extra = data.length > 10 ? data.substring(0, 9) + "_" : data;
     message += ' "' + extra.replace(/\n/g, "|") + '"';
     recurse = false;
   } else if (leakHunt.matchesAnyPattern(message, leakHunt.noRecurse)) {
     message += " (no recurse)";
     recurse = false;
-  } else if (seen.indexOf(data) !== -1) {
+  } else if (seen.includes(data)) {
     message += " (already seen)";
     recurse = false;
   }
 
   if (recurse) {
     seen.push(data);
-    let lines = leakHunt.inner(data, newPath, seen);
+    const lines = leakHunt.inner(data, newPath, seen);
     if (lines.length == 0) {
       if (message !== "function") {
         log(prefix + prop + " = " + message + " { }");
       }
     } else {
       log(prefix + prop + " = " + message + " {");
-      lines.forEach(function (line) {
+      lines.forEach(function(line) {
         log(line);
       });
       log(prefix + "}");
@@ -124,9 +124,9 @@ leakHunt.digProperty = function (prop, data, path, seen, direct, log) {
   }
 };
 
-leakHunt.matchesAnyPattern = function (str, patterns) {
+leakHunt.matchesAnyPattern = function(str, patterns) {
   let match = false;
-  patterns.forEach(function (pattern) {
+  patterns.forEach(function(pattern) {
     if (str.match(pattern)) {
       match = true;
     }
@@ -134,7 +134,7 @@ leakHunt.matchesAnyPattern = function (str, patterns) {
   return match;
 };
 
-leakHunt.getType = function (data) {
+leakHunt.getType = function(data) {
   if (data === null) {
     return "null";
   }
@@ -150,7 +150,7 @@ leakHunt.getType = function (data) {
   return type;
 };
 
-leakHunt.getCtorName = function (obj) {
+leakHunt.getCtorName = function(obj) {
   try {
     if (obj.constructor && obj.constructor.name) {
       return obj.constructor.name;

@@ -7,55 +7,35 @@
 #ifndef mozilla_dom_SVGSymbolElement_h
 #define mozilla_dom_SVGSymbolElement_h
 
-#include "mozilla/dom/SVGTests.h"
-#include "nsSVGElement.h"
-#include "nsSVGViewBox.h"
-#include "SVGAnimatedPreserveAspectRatio.h"
+#include "SVGViewportElement.h"
 
-nsresult NS_NewSVGSymbolElement(nsIContent **aResult,
-                                already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+nsresult NS_NewSVGSymbolElement(
+    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
 namespace mozilla {
 namespace dom {
 
-typedef nsSVGElement SVGSymbolElementBase;
+typedef SVGViewportElement SVGSymbolElementBase;
 
-class SVGSymbolElement final : public SVGSymbolElementBase,
-                               public SVGTests
-{
-protected:
-  friend nsresult (::NS_NewSVGSymbolElement(nsIContent **aResult,
-                                            already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
-  explicit SVGSymbolElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+class SVGSymbolElement final : public SVGSymbolElementBase {
+ protected:
+  friend nsresult(::NS_NewSVGSymbolElement(
+      nsIContent** aResult,
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
+  explicit SVGSymbolElement(
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
   ~SVGSymbolElement();
-  virtual JSObject* WrapNode(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapNode(JSContext* cx,
+                             JS::Handle<JSObject*> aGivenProto) override;
 
-public:
+ public:
   // interfaces:
-
   NS_DECL_ISUPPORTS_INHERITED
 
-  // nsIContent interface
-  NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* name) const override;
-
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;
-
-  // WebIDL
-  already_AddRefed<SVGAnimatedRect> ViewBox();
-  already_AddRefed<DOMSVGAnimatedPreserveAspectRatio> PreserveAspectRatio();
-
-  // SVGTests
-  bool IsInChromeDoc() const override;
-
-protected:
-  virtual nsSVGViewBox *GetViewBox() override;
-  virtual SVGAnimatedPreserveAspectRatio *GetPreserveAspectRatio() override;
-
-  nsSVGViewBox mViewBox;
-  SVGAnimatedPreserveAspectRatio mPreserveAspectRatio;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_SVGSymbolElement_h
+#endif  // mozilla_dom_SVGSymbolElement_h

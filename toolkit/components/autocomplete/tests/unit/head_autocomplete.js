@@ -1,11 +1,7 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cu = Components.utils;
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 /**
  * Dummy nsIAutoCompleteInput source that returns
@@ -63,8 +59,8 @@ AutoCompleteInputBase.prototype = {
   },
 
   // nsISupports implementation
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIAutoCompleteInput])
-}
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIAutoCompleteInput]),
+};
 
 /**
  * nsIAutoCompleteResult implementation
@@ -116,8 +112,8 @@ AutoCompleteResultBase.prototype = {
   removeValueAt(aRowIndex, aRemoveFromDb) {},
 
   // nsISupports implementation
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIAutoCompleteResult])
-}
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIAutoCompleteResult]),
+};
 
 /**
  * nsIAutoCompleteSearch implementation that always returns
@@ -148,14 +144,14 @@ AutoCompleteSearchBase.prototype = {
   stopSearch() {},
 
   // nsISupports implementation
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIFactory,
-                                         Ci.nsIAutoCompleteSearch]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIFactory,
+                                          Ci.nsIAutoCompleteSearch]),
 
   // nsIFactory implementation
   createInstance(outer, iid) {
     return this.QueryInterface(iid);
-  }
-}
+  },
+};
 
 function AutocompletePopupBase(input) {
   this.input = input;
@@ -173,7 +169,7 @@ AutocompletePopupBase.prototype = {
       }
     }
   },
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIAutoCompletePopup]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIAutoCompletePopup]),
 };
 
 /**

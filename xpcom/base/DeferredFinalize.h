@@ -23,11 +23,24 @@ typedef void* (*DeferredFinalizeAppendFunction)(void* aPointers, void* aThing);
 typedef bool (*DeferredFinalizeFunction)(uint32_t aSlice, void* aData);
 
 void DeferredFinalize(DeferredFinalizeAppendFunction aAppendFunc,
-                      DeferredFinalizeFunction aFunc,
-                      void* aThing);
+                      DeferredFinalizeFunction aFunc, void* aThing);
 
 void DeferredFinalize(nsISupports* aSupports);
 
-} // namespace mozilla
+// When recording or replaying, deferred finalizers are forced to run at the
+// same point during replay that they ran at while recording, even if there is
+// a JSObject associated with the reference which has not been collected yet
+// (since at this point the JSObject has been collected during the recording,
+// that JSObject will never be used again and its reference can be released).
+//
+// This requires that RecordReplayRegisterDeferredFinalizeThing() be called for
+// every thing which DeferredFinalize() will be called for at a later time.
+// Calls to these functions must be 1:1. When not recording or replaying, this
+// function is a no-op.
+void RecordReplayRegisterDeferredFinalizeThing(
+    DeferredFinalizeAppendFunction aAppendFunc, DeferredFinalizeFunction aFunc,
+    void* aThing);
 
-#endif // mozilla_DeferredFinalize_h
+}  // namespace mozilla
+
+#endif  // mozilla_DeferredFinalize_h

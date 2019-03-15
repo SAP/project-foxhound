@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=99: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +10,9 @@
 #include "mozilla/layers/APZCTreeManagerChild.h"
 #include "mozilla/Unused.h"
 #include "nsBaseWidget.h"
+#if defined(MOZ_WIDGET_ANDROID)
+#  include "mozilla/layers/UiCompositorControllerChild.h"
+#endif  // defined(MOZ_WIDGET_ANDROID)
 
 namespace mozilla {
 namespace layers {
@@ -17,98 +20,74 @@ namespace layers {
 using namespace gfx;
 using namespace widget;
 
-RemoteCompositorSession::RemoteCompositorSession(nsBaseWidget* aWidget,
-                                                 CompositorBridgeChild* aChild,
-                                                 CompositorWidgetDelegate* aWidgetDelegate,
-                                                 APZCTreeManagerChild* aAPZ,
-                                                 const uint64_t& aRootLayerTreeId)
- : CompositorSession(aWidgetDelegate, aChild, aRootLayerTreeId),
-   mWidget(aWidget),
-   mAPZ(aAPZ)
-{
-  GPUProcessManager::Get()->RegisterSession(this);
+RemoteCompositorSession::RemoteCompositorSession(
+    nsBaseWidget* aWidget, CompositorBridgeChild* aChild,
+    CompositorWidgetDelegate* aWidgetDelegate, APZCTreeManagerChild* aAPZ,
+    const LayersId& aRootLayerTreeId)
+    : CompositorSession(aWidgetDelegate, aChild, aRootLayerTreeId),
+      mWidget(aWidget),
+      mAPZ(aAPZ) {
+  MOZ_ASSERT(!gfxPlatform::IsHeadless());
+  GPUProcessManager::Get()->RegisterRemoteProcessSession(this);
   if (mAPZ) {
     mAPZ->SetCompositorSession(this);
   }
 }
 
-RemoteCompositorSession::~RemoteCompositorSession()
-{
+RemoteCompositorSession::~RemoteCompositorSession() {
   // This should have been shutdown first.
   MOZ_ASSERT(!mCompositorBridgeChild);
+#if defined(MOZ_WIDGET_ANDROID)
+  MOZ_ASSERT(!mUiCompositorControllerChild);
+#endif  // defined(MOZ_WIDGET_ANDROID)
 }
 
-void
-RemoteCompositorSession::NotifyDeviceReset(uint64_t aSeqNo)
-{
-  MOZ_ASSERT(mWidget);
-  mWidget->OnRenderingDeviceReset(aSeqNo);
-}
-
-void
-RemoteCompositorSession::NotifySessionLost()
-{
+void RemoteCompositorSession::NotifySessionLost() {
   // Re-entrancy should be impossible: when we are being notified of a lost
   // session, we have by definition not shut down yet. We will shutdown, but
   // then will be removed from the notification list.
-  MOZ_ASSERT(mWidget);
-  mWidget->NotifyRemoteCompositorSessionLost(this);
+  mWidget->NotifyCompositorSessionLost(this);
 }
 
-CompositorBridgeParent*
-RemoteCompositorSession::GetInProcessBridge() const
-{
+CompositorBridgeParent* RemoteCompositorSession::GetInProcessBridge() const {
   return nullptr;
 }
 
-void
-RemoteCompositorSession::SetContentController(GeckoContentController* aController)
-{
+void RemoteCompositorSession::SetContentController(
+    GeckoContentController* aController) {
   mContentController = aController;
-  mCompositorBridgeChild->SendPAPZConstructor(new APZChild(aController), 0);
+  mCompositorBridgeChild->SendPAPZConstructor(new APZChild(aController),
+                                              LayersId{0});
 }
 
-GeckoContentController*
-RemoteCompositorSession::GetContentController()
-{
+GeckoContentController* RemoteCompositorSession::GetContentController() {
   return mContentController.get();
 }
 
-nsIWidget*
-RemoteCompositorSession::GetWidget()
-{
-  return mWidget;
-}
+nsIWidget* RemoteCompositorSession::GetWidget() const { return mWidget; }
 
-RefPtr<IAPZCTreeManager>
-RemoteCompositorSession::GetAPZCTreeManager() const
-{
+RefPtr<IAPZCTreeManager> RemoteCompositorSession::GetAPZCTreeManager() const {
   return mAPZ;
 }
 
-bool
-RemoteCompositorSession::Reset(const nsTArray<LayersBackend>& aBackendHints,
-                               uint64_t aSeqNo,
-                               TextureFactoryIdentifier* aOutIdentifier)
-{
-  bool didReset;
-  Unused << mCompositorBridgeChild->SendReset(aBackendHints, aSeqNo, &didReset, aOutIdentifier);
-  return didReset;
-}
-
-void
-RemoteCompositorSession::Shutdown()
-{
+void RemoteCompositorSession::Shutdown() {
   mContentController = nullptr;
   if (mAPZ) {
     mAPZ->SetCompositorSession(nullptr);
+    mAPZ->Destroy();
   }
   mCompositorBridgeChild->Destroy();
   mCompositorBridgeChild = nullptr;
   mCompositorWidgetDelegate = nullptr;
   mWidget = nullptr;
-  GPUProcessManager::Get()->UnregisterSession(this);
+#if defined(MOZ_WIDGET_ANDROID)
+  if (mUiCompositorControllerChild) {
+    mUiCompositorControllerChild->Destroy();
+    mUiCompositorControllerChild = nullptr;
+  }
+#endif  // defined(MOZ_WIDGET_ANDROID)
+  GPUProcessManager::Get()->UnregisterRemoteProcessSession(this);
 }
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla

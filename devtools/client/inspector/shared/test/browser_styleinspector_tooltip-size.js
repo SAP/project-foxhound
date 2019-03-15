@@ -11,76 +11,69 @@ const TEST_URI = `
   <style type="text/css">
     div {
       width: 300px;height: 300px;border-radius: 50%;
-      background: red url(chrome://global/skin/icons/warning-64.png);
+      background: red url(chrome://global/skin/icons/warning.svg);
     }
   </style>
   <div></div>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
-  yield selectNode("div", inspector);
-  yield testImageDimension(view);
-  yield testPickerDimension(view);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, view} = await openRuleView();
+  await selectNode("div", inspector);
+  await testImageDimension(view);
+  await testPickerDimension(view);
 });
 
-function* testImageDimension(ruleView) {
+async function testImageDimension(ruleView) {
   info("Testing background-image tooltip dimensions");
 
-  let tooltip = ruleView.tooltips.previewTooltip;
-  let panel = tooltip.panel;
-  let {valueSpan} = getRuleViewProperty(ruleView, "div", "background");
-  let uriSpan = valueSpan.querySelector(".theme-link");
+  const tooltip = ruleView.tooltips.getTooltip("previewTooltip");
+  const panel = tooltip.panel;
+  const {valueSpan} = getRuleViewProperty(ruleView, "div", "background");
+  const uriSpan = valueSpan.querySelector(".theme-link");
 
   // Make sure there is a hover tooltip for this property, this also will fill
   // the tooltip with its content
-  yield assertHoverTooltipOn(tooltip, uriSpan);
-
-  info("Showing the tooltip");
-  let onShown = tooltip.once("shown");
-  tooltip.show(uriSpan);
-  yield onShown;
+  const previewTooltip = await assertShowPreviewTooltip(ruleView, uriSpan);
 
   // Let's not test for a specific size, but instead let's make sure it's at
   // least as big as the image
-  let imageRect = panel.querySelector("img").getBoundingClientRect();
-  let panelRect = panel.getBoundingClientRect();
+  const imageRect = panel.querySelector("img").getBoundingClientRect();
+  const panelRect = panel.getBoundingClientRect();
 
   ok(panelRect.width >= imageRect.width,
     "The panel is wide enough to show the image");
   ok(panelRect.height >= imageRect.height,
     "The panel is high enough to show the image");
 
-  let onHidden = tooltip.once("hidden");
-  tooltip.hide();
-  yield onHidden;
+  await assertTooltipHiddenOnMouseOut(previewTooltip, uriSpan);
 }
 
-function* testPickerDimension(ruleView) {
+async function testPickerDimension(ruleView) {
   info("Testing color-picker tooltip dimensions");
 
-  let {valueSpan} = getRuleViewProperty(ruleView, "div", "background");
-  let swatch = valueSpan.querySelector(".ruleview-colorswatch");
-  let cPicker = ruleView.tooltips.colorPicker;
+  const {valueSpan} = getRuleViewProperty(ruleView, "div", "background");
+  const swatch = valueSpan.querySelector(".ruleview-colorswatch");
+  const cPicker = ruleView.tooltips.getTooltip("colorPicker");
 
-  let onReady = cPicker.once("ready");
+  const onReady = cPicker.once("ready");
   swatch.click();
-  yield onReady;
+  await onReady;
 
   // The colorpicker spectrum's iframe has a fixed width height, so let's
   // make sure the tooltip is at least as big as that
-  let spectrumRect = cPicker.spectrum.element.getBoundingClientRect();
-  let panelRect = cPicker.tooltip.container.getBoundingClientRect();
+  const spectrumRect = cPicker.spectrum.element.getBoundingClientRect();
+  const panelRect = cPicker.tooltip.container.getBoundingClientRect();
 
   ok(panelRect.width >= spectrumRect.width,
     "The panel is wide enough to show the picker");
   ok(panelRect.height >= spectrumRect.height,
     "The panel is high enough to show the picker");
 
-  let onHidden = cPicker.tooltip.once("hidden");
-  let onRuleViewChanged = ruleView.once("ruleview-changed");
+  const onHidden = cPicker.tooltip.once("hidden");
+  const onRuleViewChanged = ruleView.once("ruleview-changed");
   cPicker.hide();
-  yield onHidden;
-  yield onRuleViewChanged;
+  await onHidden;
+  await onRuleViewChanged;
 }

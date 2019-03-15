@@ -5,14 +5,16 @@
 
 /* exported defer, DebuggerClient, initTestDebuggerServer */
 
-const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
-const { require } =
-  Cu.import("resource://devtools/shared/Loader.jsm", {});
+const { loader, require } =
+  ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
 const defer = require("devtools/shared/defer");
 const Services = require("Services");
 const xpcInspector = require("xpcInspector");
 const { DebuggerServer } = require("devtools/server/main");
-const { DebuggerClient } = require("devtools/shared/client/main");
+const { DebuggerClient } = require("devtools/shared/client/debugger-client");
+// We need to require lazily since will be crashed if we load SocketListener too early
+// in xpc shell test due to SocketListener loads PSM module.
+loader.lazyRequireGetter(this, "SocketListener", "devtools/shared/security/socket", true);
 
 // We do not want to log packets by default, because in some tests,
 // we can be sending large amounts of data. The test harness has
@@ -47,7 +49,7 @@ function scriptErrorFlagsToKind(flags) {
 // Register a console listener, so console messages don't just disappear
 // into the ether.
 var listener = {
-  observe: function (message) {
+  observe: function(message) {
     let string;
     try {
       message.QueryInterface(Ci.nsIScriptError);
@@ -72,19 +74,18 @@ var listener = {
 
     // Print in most cases, but ignore the "strict" messages
     if (!(message.flags & Ci.nsIScriptError.strictFlag)) {
-      do_print("head_dbg.js got console message: " + string + "\n");
+      info("head_dbg.js got console message: " + string + "\n");
     }
-  }
+  },
 };
 
-var consoleService = Cc["@mozilla.org/consoleservice;1"]
-                     .getService(Ci.nsIConsoleService);
-consoleService.registerListener(listener);
+Services.console.registerListener(listener);
 
 /**
  * Initialize the testing debugger server.
  */
 function initTestDebuggerServer() {
-  DebuggerServer.registerModule("xpcshell-test/testactors");
+  const { createRootActor } = require("xpcshell-test/testactors");
+  DebuggerServer.setRootActor(createRootActor);
   DebuggerServer.init();
 }

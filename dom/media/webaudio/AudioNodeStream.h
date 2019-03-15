@@ -19,13 +19,14 @@ namespace dom {
 struct ThreeDPoint;
 struct AudioTimelineEvent;
 class AudioContext;
-} // namespace dom
+}  // namespace dom
 
 class AbstractThread;
 class ThreadSharedFloatArrayBufferList;
 class AudioNodeEngine;
 
-typedef AlignedAutoTArray<float, GUESS_AUDIO_CHANNELS*WEBAUDIO_BLOCK_SIZE, 16> DownmixBufferType;
+typedef AlignedAutoTArray<float, GUESS_AUDIO_CHANNELS * WEBAUDIO_BLOCK_SIZE, 16>
+    DownmixBufferType;
 
 /**
  * An AudioNodeStream produces one audio track with ID AUDIO_TRACK.
@@ -37,12 +38,11 @@ typedef AlignedAutoTArray<float, GUESS_AUDIO_CHANNELS*WEBAUDIO_BLOCK_SIZE, 16> D
  * actual audio processing. AudioNodeStream contains the glue code that
  * integrates audio processing with the MediaStreamGraph.
  */
-class AudioNodeStream : public ProcessedMediaStream
-{
+class AudioNodeStream : public ProcessedMediaStream {
   typedef dom::ChannelCountMode ChannelCountMode;
   typedef dom::ChannelInterpretation ChannelInterpretation;
 
-public:
+ public:
   typedef mozilla::dom::AudioContext AudioContext;
 
   enum { AUDIO_TRACK = 1 };
@@ -66,22 +66,21 @@ public:
    * aGraph is required and equals the graph of aCtx in most cases. An exception
    * is AudioDestinationNode where the context's graph hasn't been set up yet.
    */
-  static already_AddRefed<AudioNodeStream>
-  Create(AudioContext* aCtx, AudioNodeEngine* aEngine, Flags aKind,
-         MediaStreamGraph* aGraph);
+  static already_AddRefed<AudioNodeStream> Create(AudioContext* aCtx,
+                                                  AudioNodeEngine* aEngine,
+                                                  Flags aKind,
+                                                  MediaStreamGraph* aGraph);
 
-protected:
+ protected:
   /**
    * Transfers ownership of aEngine to the new AudioNodeStream.
    */
-  AudioNodeStream(AudioNodeEngine* aEngine,
-                  Flags aFlags,
-                  TrackRate aSampleRate,
-                  AbstractThread* aMainThread);
+  AudioNodeStream(AudioNodeEngine* aEngine, Flags aFlags,
+                  TrackRate aSampleRate);
 
   ~AudioNodeStream();
 
-public:
+ public:
   // Control API
   /**
    * Sets a parameter that's a time relative to some stream's played time.
@@ -92,22 +91,23 @@ public:
   void SetDoubleParameter(uint32_t aIndex, double aValue);
   void SetInt32Parameter(uint32_t aIndex, int32_t aValue);
   void SetThreeDPointParameter(uint32_t aIndex, const dom::ThreeDPoint& aValue);
-  void SetBuffer(already_AddRefed<ThreadSharedFloatArrayBufferList>&& aBuffer);
+  void SetBuffer(AudioChunk&& aBuffer);
   // This sends a single event to the timeline on the MSG thread side.
-  void SendTimelineEvent(uint32_t aIndex, const dom::AudioTimelineEvent& aEvent);
-  // This consumes the contents of aData.  aData will be emptied after this returns.
+  void SendTimelineEvent(uint32_t aIndex,
+                         const dom::AudioTimelineEvent& aEvent);
+  // This consumes the contents of aData.  aData will be emptied after this
+  // returns.
   void SetRawArrayData(nsTArray<float>& aData);
   void SetChannelMixingParameters(uint32_t aNumberOfChannels,
                                   ChannelCountMode aChannelCountMoe,
                                   ChannelInterpretation aChannelInterpretation);
   void SetPassThrough(bool aPassThrough);
-  ChannelInterpretation GetChannelInterpretation()
-  {
+  void SendRunnable(already_AddRefed<nsIRunnable> aRunnable);
+  ChannelInterpretation GetChannelInterpretation() {
     return mChannelInterpretation;
   }
 
-  void SetAudioParamHelperStream()
-  {
+  void SetAudioParamHelperStream() {
     MOZ_ASSERT(!mAudioParamStream, "Can only do this once");
     mAudioParamStream = true;
   }
@@ -125,11 +125,12 @@ public:
   void RemoveInput(MediaInputPort* aPort) override;
 
   // Graph thread only
-  void SetStreamTimeParameterImpl(uint32_t aIndex, MediaStream* aRelativeToStream,
+  void SetStreamTimeParameterImpl(uint32_t aIndex,
+                                  MediaStream* aRelativeToStream,
                                   double aStreamTime);
-  void SetChannelMixingParametersImpl(uint32_t aNumberOfChannels,
-                                      ChannelCountMode aChannelCountMoe,
-                                      ChannelInterpretation aChannelInterpretation);
+  void SetChannelMixingParametersImpl(
+      uint32_t aNumberOfChannels, ChannelCountMode aChannelCountMoe,
+      ChannelInterpretation aChannelInterpretation);
   void ProcessInput(GraphTime aFrom, GraphTime aTo, uint32_t aFlags) override;
   /**
    * Produce the next block of output, before input is provided.
@@ -137,19 +138,12 @@ public:
    * the output.  This is used only for DelayNodeEngine in a feedback loop.
    */
   void ProduceOutputBeforeInput(GraphTime aFrom);
-  bool IsAudioParamStream() const
-  {
-    return mAudioParamStream;
-  }
+  bool IsAudioParamStream() const { return mAudioParamStream; }
 
-  const OutputChunks& LastChunks() const
-  {
-    return mLastChunks;
-  }
-  bool MainThreadNeedsUpdates() const override
-  {
+  const OutputChunks& LastChunks() const { return mLastChunks; }
+  bool MainThreadNeedsUpdates() const override {
     return ((mFlags & NEED_MAIN_THREAD_FINISHED) && mFinished) ||
-      (mFlags & NEED_MAIN_THREAD_CURRENT_TIME);
+           (mFlags & NEED_MAIN_THREAD_CURRENT_TIME);
   }
 
   // Any thread
@@ -177,7 +171,7 @@ public:
    */
   void ScheduleCheckForInactive();
 
-protected:
+ protected:
   class AdvanceAndResumeMessage;
   class CheckForInactiveMessage;
 
@@ -236,6 +230,6 @@ protected:
   bool mPassThrough;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif /* MOZILLA_AUDIONODESTREAM_H_ */

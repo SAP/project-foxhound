@@ -3,17 +3,16 @@
 
 "use strict";
 
-const TEST_URI = "data:text/html;charset=utf-8,browser_css_color.js";
 var {colorUtils} = require("devtools/shared/css/color");
 /* global getFixtureColorData */
 loadHelperScript("helper_color_data.js");
 
-add_task(function* () {
-  yield addTab("about:blank");
-  let [host,, doc] = yield createHost("bottom", TEST_URI);
+add_task(async function() {
+  await addTab("about:blank");
+  const [host,, doc] = await createHost("bottom");
 
   info("Creating a test canvas element to test colors");
-  let canvas = createTestCanvas(doc);
+  const canvas = createTestCanvas(doc);
   info("Starting the test");
   testColorUtils(canvas);
 
@@ -22,17 +21,17 @@ add_task(function* () {
 });
 
 function createTestCanvas(doc) {
-  let canvas = doc.createElement("canvas");
+  const canvas = doc.createElement("canvas");
   canvas.width = canvas.height = 10;
   doc.body.appendChild(canvas);
   return canvas;
 }
 
 function testColorUtils(canvas) {
-  let data = getFixtureColorData();
+  const data = getFixtureColorData();
 
-  for (let {authored, name, hex, hsl, rgb} of data) {
-    let color = new colorUtils.CssColor(authored);
+  for (const {authored, name, hex, hsl, rgb} of data) {
+    const color = new colorUtils.CssColor(authored);
 
     // Check all values.
     info("Checking values for " + authored);
@@ -64,32 +63,32 @@ function testToString(color, name, hex, hsl, rgb) {
 
 function testColorMatch(name, hex, hsl, rgb, rgba, canvas) {
   let target;
-  let ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d");
 
-  let clearCanvas = function () {
+  const clearCanvas = function() {
     canvas.width = 1;
   };
-  let setColor = function (color) {
+  const setColor = function(color) {
     ctx.fillStyle = color;
     ctx.fillRect(0, 0, 1, 1);
   };
-  let setTargetColor = function () {
+  const setTargetColor = function() {
     clearCanvas();
     // All colors have rgba so we can use this to compare against.
     setColor(rgba);
-    let [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+    const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
     target = {r: r, g: g, b: b, a: a};
   };
-  let test = function (color, type) {
+  const test = function(color, type) {
     // hsla -> rgba -> hsla produces inaccurate results so we
     // need some tolerence here.
-    let tolerance = 3;
+    const tolerance = 3;
     clearCanvas();
 
     setColor(color);
-    let [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+    const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
 
-    let rgbFail = Math.abs(r - target.r) > tolerance ||
+    const rgbFail = Math.abs(r - target.r) > tolerance ||
                   Math.abs(g - target.g) > tolerance ||
                   Math.abs(b - target.b) > tolerance;
     ok(!rgbFail, "color " + rgba + " matches target. Type: " + type);
@@ -97,7 +96,7 @@ function testColorMatch(name, hex, hsl, rgb, rgba, canvas) {
       info(`target: ${target.toSource()}, color: [r: ${r}, g: ${g}, b: ${b}, a: ${a}]`);
     }
 
-    let alphaFail = a !== target.a;
+    const alphaFail = a !== target.a;
     ok(!alphaFail, "color " + rgba + " alpha value matches target.");
   };
 
@@ -110,7 +109,7 @@ function testColorMatch(name, hex, hsl, rgb, rgba, canvas) {
 }
 
 function testSetAlpha() {
-  let values = [
+  const values = [
     ["longhex", "#ff0000", 0.5, "rgba(255, 0, 0, 0.5)"],
     ["hex", "#f0f", 0.2, "rgba(255, 0, 255, 0.2)"],
     ["rgba", "rgba(120, 34, 23, 1)", 0.25, "rgba(120, 34, 23, 0.25)"],
@@ -118,7 +117,7 @@ function testSetAlpha() {
     ["hsl", "hsl(208, 100%, 97%)", 0.75, "rgba(240, 248, 255, 0.75)"],
     ["hsla", "hsla(208, 100%, 97%, 1)", 0.75, "rgba(240, 248, 255, 0.75)"],
     ["alphahex", "#f08f", 0.6, "rgba(255, 0, 136, 0.6)"],
-    ["longalphahex", "#00ff80ff", 0.2, "rgba(0, 255, 128, 0.2)"]
+    ["longalphahex", "#00ff80ff", 0.2, "rgba(0, 255, 128, 0.2)"],
   ];
   values.forEach(([type, value, alpha, expected]) => {
     is(colorUtils.setAlpha(value, alpha), expected,

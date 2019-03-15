@@ -8,17 +8,12 @@
  * Interface to a dedicated thread handling I/O
  */
 
-const Cu = Components.utils;
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cr = Components.results;
+ChromeUtils.import("resource://gre/modules/PromiseWorker.jsm", this);
+ChromeUtils.import("resource://gre/modules/osfile.jsm", this);
 
-Cu.import("resource://gre/modules/PromiseWorker.jsm", this);
-Cu.import("resource://gre/modules/osfile.jsm", this);
+var EXPORTED_SYMBOLS = ["SessionWorker"];
 
-this.EXPORTED_SYMBOLS = ["SessionWorker"];
-
-this.SessionWorker = new BasePromiseWorker("resource:///modules/sessionstore/SessionWorker.js");
+var SessionWorker = new BasePromiseWorker("resource:///modules/sessionstore/SessionWorker.js");
 // As the Session Worker performs I/O, we can receive instances of
 // OS.File.Error, so we need to install a decoder.
 this.SessionWorker.ExceptionHandlers["OS.File.Error"] = OS.File.Error.fromMsg;

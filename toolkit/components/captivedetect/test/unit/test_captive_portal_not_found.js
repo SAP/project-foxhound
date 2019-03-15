@@ -24,24 +24,24 @@ function fakeUIResponse() {
     if (topic == "captive-portal-login") {
       do_throw("should not receive captive-portal-login event");
     }
-  }, "captive-portal-login", false);
+  }, "captive-portal-login");
 }
 
 function test_portal_not_found() {
   do_test_pending();
 
   let callback = {
-    QueryInterface: XPCOMUtils.generateQI([Ci.nsICaptivePortalCallback]),
+    QueryInterface: ChromeUtils.generateQI([Ci.nsICaptivePortalCallback]),
     prepare: function prepare() {
-      do_check_eq(++step, 1);
+      Assert.equal(++step, 1);
       gCaptivePortalDetector.finishPreparation(kInterfaceName);
     },
     complete: function complete(success) {
-      do_check_eq(++step, 2);
-      do_check_true(success);
-      do_check_eq(attempt, 1);
+      Assert.equal(++step, 2);
+      Assert.ok(success);
+      Assert.equal(attempt, 1);
       gServer.stop(function() { dump("server stop\n"); do_test_finished(); });
-    }
+    },
   };
 
   gCaptivePortalDetector.checkCaptivePortal(kInterfaceName, callback);

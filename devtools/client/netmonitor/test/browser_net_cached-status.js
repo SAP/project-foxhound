@@ -7,18 +7,21 @@
  * Tests if cached requests have the correct status code
  */
 
-add_task(function* () {
-  let { tab, monitor } = yield initNetMonitor(STATUS_CODES_URL, null, true);
+add_task(async function() {
+  // Disable rcwn to make cache behavior deterministic.
+  await pushPref("network.http.rcwn.enabled", false);
+
+  const { tab, monitor } = await initNetMonitor(STATUS_CODES_URL, true);
   info("Starting test... ");
 
-  let { document, gStore, windowRequire } = monitor.panelWin;
-  let Actions = windowRequire("devtools/client/netmonitor/actions/index");
-  let {
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
+  const {
     getDisplayedRequests,
     getSortedRequests,
-  } = windowRequire("devtools/client/netmonitor/selectors/index");
+  } = windowRequire("devtools/client/netmonitor/src/selectors/index");
 
-  gStore.dispatch(Actions.batchEnable(false));
+  store.dispatch(Actions.batchEnable(false));
 
   const REQUEST_DATA = [
     {
@@ -28,8 +31,8 @@ add_task(function* () {
         status: 200,
         statusText: "OK",
         type: "plain",
-        fullMimeType: "text/plain; charset=utf-8"
-      }
+        fullMimeType: "text/plain; charset=utf-8",
+      },
     },
     {
       method: "GET",
@@ -38,8 +41,8 @@ add_task(function* () {
         status: 301,
         statusText: "Moved Permanently",
         type: "html",
-        fullMimeType: "text/html; charset=utf-8"
-      }
+        fullMimeType: "text/html; charset=utf-8",
+      },
     },
     {
       method: "GET",
@@ -48,8 +51,8 @@ add_task(function* () {
         status: 404,
         statusText: "Not Found",
         type: "html",
-        fullMimeType: "text/html; charset=utf-8"
-      }
+        fullMimeType: "text/html; charset=utf-8",
+      },
     },
     {
       method: "GET",
@@ -59,8 +62,8 @@ add_task(function* () {
         statusText: "OK (cached)",
         displayedStatus: "cached",
         type: "plain",
-        fullMimeType: "text/plain; charset=utf-8"
-      }
+        fullMimeType: "text/plain; charset=utf-8",
+      },
     },
     {
       method: "GET",
@@ -70,8 +73,8 @@ add_task(function* () {
         statusText: "Moved Permanently (cached)",
         displayedStatus: "cached",
         type: "html",
-        fullMimeType: "text/html; charset=utf-8"
-      }
+        fullMimeType: "text/html; charset=utf-8",
+      },
     },
     {
       method: "GET",
@@ -80,24 +83,30 @@ add_task(function* () {
         status: 404,
         statusText: "Not Found",
         type: "html",
-        fullMimeType: "text/html; charset=utf-8"
-      }
-    }
+        fullMimeType: "text/html; charset=utf-8",
+      },
+    },
   ];
 
   info("Performing requests #1...");
-  yield performRequestsAndWait();
+  await performRequestsAndWait();
 
   info("Performing requests #2...");
-  yield performRequestsAndWait();
+  await performRequestsAndWait();
 
   let index = 0;
-  for (let request of REQUEST_DATA) {
+  for (const request of REQUEST_DATA) {
+    const requestItem = document.querySelectorAll(".request-list-item")[index];
+    requestItem.scrollIntoView();
+    const requestsListStatus = requestItem.querySelector(".status-code");
+    EventUtils.sendMouseEvent({ type: "mouseover" }, requestsListStatus);
+    await waitUntil(() => requestsListStatus.title);
+
     info("Verifying request #" + index);
-    yield verifyRequestItemTarget(
+    await verifyRequestItemTarget(
       document,
-      getDisplayedRequests(gStore.getState()),
-      getSortedRequests(gStore.getState()).get(index),
+      getDisplayedRequests(store.getState()),
+      getSortedRequests(store.getState()).get(index),
       request.method,
       request.uri,
       request.details
@@ -106,13 +115,13 @@ add_task(function* () {
     index++;
   }
 
-  yield teardown(monitor);
+  await teardown(monitor);
 
-  function* performRequestsAndWait() {
-    let wait = waitForNetworkEvents(monitor, 3);
-    yield ContentTask.spawn(tab.linkedBrowser, {}, function* () {
+  async function performRequestsAndWait() {
+    const wait = waitForNetworkEvents(monitor, 3);
+    await ContentTask.spawn(tab.linkedBrowser, {}, async function() {
       content.wrappedJSObject.performCachedRequests();
     });
-    yield wait;
+    await wait;
   }
 });

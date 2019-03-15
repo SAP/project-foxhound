@@ -1,6 +1,7 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+/* eslint-disable mozilla/no-arbitrary-setTimeout */
 
 function test() {
   waitForExplicitFinish();
@@ -17,7 +18,7 @@ var tests = [
     run() {
       this.notifyObj = new BasicNotification(this.id);
       this.notifyObj.addOptions({
-        removeOnDismissal: true
+        removeOnDismissal: true,
       });
       this.notification = showNotification(this.notifyObj);
     },
@@ -28,7 +29,7 @@ var tests = [
     onHidden(popup) {
       ok(!this.notifyObj.dismissalCallbackTriggered, "dismissal callback wasn't triggered");
       ok(this.notifyObj.removedCallbackTriggered, "removed callback triggered");
-    }
+    },
   },
   // Test multiple notification icons are shown
   { id: "Test#2",
@@ -61,11 +62,11 @@ var tests = [
 
       this.notification2.remove();
       ok(this.notifyObj2.removedCallbackTriggered, "removed callback triggered");
-    }
+    },
   },
   // Test that multiple notification icons are removed when switching tabs
   { id: "Test#3",
-    *run() {
+    async run() {
       // show the notification on old tab.
       this.notifyObjOld = new BasicNotification(this.id);
       this.notifyObjOld.anchorID = "default-notification-icon";
@@ -73,7 +74,7 @@ var tests = [
 
       // switch tab
       this.oldSelectedTab = gBrowser.selectedTab;
-      yield BrowserTestUtils.openNewForegroundTab(gBrowser, "http://example.com/");
+      await BrowserTestUtils.openNewForegroundTab(gBrowser, "http://example.com/");
 
       // show the notification on new tab.
       this.notifyObjNew = new BasicNotification(this.id);
@@ -98,7 +99,7 @@ var tests = [
 
       gBrowser.selectedTab = this.oldSelectedTab;
       this.notificationOld.remove();
-    }
+    },
   },
   // test security delay - too early
   { id: "Test#4",
@@ -122,7 +123,7 @@ var tests = [
     onHidden(popup) {
       ok(!this.notifyObj.mainActionClicked, "mainAction was not clicked because it was too soon");
       ok(this.notifyObj.dismissalCallbackTriggered, "dismissal callback was triggered");
-    }
+    },
   },
   // test security delay - after delay
   { id: "Test#5",
@@ -146,12 +147,12 @@ var tests = [
       ok(this.notifyObj.mainActionClicked, "mainAction was clicked after the delay");
       ok(!this.notifyObj.dismissalCallbackTriggered, "dismissal callback was not triggered");
       PopupNotifications.buttonDelay = PREF_SECURITY_DELAY_INITIAL;
-    }
+    },
   },
   // reload removes notification
   { id: "Test#6",
-    *run() {
-      yield promiseTabLoadEvent(gBrowser.selectedTab, "http://example.com/");
+    async run() {
+      await promiseTabLoadEvent(gBrowser.selectedTab, "http://example.com/");
       let notifyObj = new BasicNotification(this.id);
       notifyObj.options.eventCallback = function(eventName) {
         if (eventName == "removed") {
@@ -163,13 +164,13 @@ var tests = [
       executeSoon(function() {
         gBrowser.selectedBrowser.reload();
       });
-    }
+    },
   },
   // location change in background tab removes notification
   { id: "Test#7",
-    *run() {
+    async run() {
       let oldSelectedTab = gBrowser.selectedTab;
-      let newTab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, "http://example.com/");
+      let newTab = await BrowserTestUtils.openNewForegroundTab(gBrowser, "http://example.com/");
       gBrowser.selectedTab = oldSelectedTab;
       let browser = gBrowser.getBrowserForTab(newTab);
 
@@ -188,15 +189,15 @@ var tests = [
       executeSoon(function() {
         browser.reload();
       });
-    }
+    },
   },
   // Popup notification anchor shouldn't disappear when a notification with the same ID is re-added in a background tab
   { id: "Test#8",
-    *run() {
-      yield promiseTabLoadEvent(gBrowser.selectedTab, "http://example.com/");
+    async run() {
+      await promiseTabLoadEvent(gBrowser.selectedTab, "http://example.com/");
       let originalTab = gBrowser.selectedTab;
-      let bgTab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, "http://example.com/");
-      let anchor = document.createElement("box");
+      let bgTab = await BrowserTestUtils.openNewForegroundTab(gBrowser, "http://example.com/");
+      let anchor = document.createXULElement("box");
       anchor.id = "test26-anchor";
       anchor.className = "notification-anchor-icon";
       PopupNotifications.iconBox.appendChild(anchor);
@@ -223,12 +224,12 @@ var tests = [
       fgNotification.remove();
       gBrowser.removeTab(bgTab);
       goNext();
-    }
+    },
   },
   // location change in an embedded frame should not remove a notification
   { id: "Test#9",
-    *run() {
-      yield promiseTabLoadEvent(gBrowser.selectedTab, "data:text/html;charset=utf8,<iframe%20id='iframe'%20src='http://example.com/'>");
+    async run() {
+      await promiseTabLoadEvent(gBrowser.selectedTab, "data:text/html;charset=utf8,<iframe%20id='iframe'%20src='http://example.com/'>");
       this.notifyObj = new BasicNotification(this.id);
       this.notifyObj.options.eventCallback = function(eventName) {
         if (eventName == "removed") {
@@ -261,7 +262,7 @@ var tests = [
                         .setAttribute("src", "http://example.org/");
       });
     },
-    onHidden() {}
+    onHidden() {},
   },
   // Popup Notifications should catch exceptions from callbacks
   { id: "Test#10",
@@ -288,12 +289,12 @@ var tests = [
       this.notification2 = showNotification(this.testNotif2);
     },
     onShown(popup) {
-      is(popup.childNodes.length, 2, "two notifications are shown");
+      is(popup.children.length, 2, "two notifications are shown");
       dismissNotification(popup);
     },
     onHidden() {
       this.notification1.remove();
       this.notification2.remove();
-    }
-  }
+    },
+  },
 ];

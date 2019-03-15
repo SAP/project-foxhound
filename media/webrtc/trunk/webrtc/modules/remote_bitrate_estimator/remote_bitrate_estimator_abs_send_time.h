@@ -8,22 +8,24 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_REMOTE_BITRATE_ESTIMATOR_REMOTE_BITRATE_ESTIMATOR_ABS_SEND_TIME_H_
-#define WEBRTC_MODULES_REMOTE_BITRATE_ESTIMATOR_REMOTE_BITRATE_ESTIMATOR_ABS_SEND_TIME_H_
+#ifndef MODULES_REMOTE_BITRATE_ESTIMATOR_REMOTE_BITRATE_ESTIMATOR_ABS_SEND_TIME_H_
+#define MODULES_REMOTE_BITRATE_ESTIMATOR_REMOTE_BITRATE_ESTIMATOR_ABS_SEND_TIME_H_
 
 #include <list>
 #include <map>
+#include <memory>
 #include <vector>
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/modules/remote_bitrate_estimator/aimd_rate_control.h"
-#include "webrtc/modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
-#include "webrtc/modules/remote_bitrate_estimator/inter_arrival.h"
-#include "webrtc/modules/remote_bitrate_estimator/overuse_detector.h"
-#include "webrtc/modules/remote_bitrate_estimator/overuse_estimator.h"
-#include "webrtc/modules/remote_bitrate_estimator/rate_statistics.h"
-#include "webrtc/system_wrappers/include/critical_section_wrapper.h"
+#include "modules/remote_bitrate_estimator/aimd_rate_control.h"
+#include "modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
+#include "modules/remote_bitrate_estimator/inter_arrival.h"
+#include "modules/remote_bitrate_estimator/overuse_detector.h"
+#include "modules/remote_bitrate_estimator/overuse_estimator.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/constructormagic.h"
+#include "rtc_base/criticalsection.h"
+#include "rtc_base/race_checker.h"
+#include "rtc_base/rate_statistics.h"
 
 namespace webrtc {
 
@@ -66,89 +68,75 @@ struct Cluster {
 class RemoteBitrateEstimatorAbsSendTime : public RemoteBitrateEstimator {
  public:
   RemoteBitrateEstimatorAbsSendTime(RemoteBitrateObserver* observer,
-                                    Clock* clock);
+                                    const Clock* clock);
   virtual ~RemoteBitrateEstimatorAbsSendTime() {}
-
-  void IncomingPacketFeedbackVector(
-      const std::vector<PacketInfo>& packet_feedback_vector) override;
 
   void IncomingPacket(int64_t arrival_time_ms,
                       size_t payload_size,
-                      const RTPHeader& header,
-                      bool was_paced) override;
+                      const RTPHeader& header) override;
   // This class relies on Process() being called periodically (at least once
   // every other second) for streams to be timed out properly. Therefore it
   // shouldn't be detached from the ProcessThread except if it's about to be
   // deleted.
-  int32_t Process() override;
+  void Process() override;
   int64_t TimeUntilNextProcess() override;
   void OnRttUpdate(int64_t avg_rtt_ms, int64_t max_rtt_ms) override;
-  void RemoveStream(unsigned int ssrc) override;
-  bool LatestEstimate(std::vector<unsigned int>* ssrcs,
-                      unsigned int* bitrate_bps) const override;
-  bool GetStats(ReceiveBandwidthEstimatorStats* output) const override;
+  void RemoveStream(uint32_t ssrc) override;
+  bool LatestEstimate(std::vector<uint32_t>* ssrcs,
+                      uint32_t* bitrate_bps) const override;
   void SetMinBitrate(int min_bitrate_bps) override;
 
  private:
-  typedef std::map<unsigned int, int64_t> Ssrcs;
+  typedef std::map<uint32_t, int64_t> Ssrcs;
+  enum class ProbeResult { kBitrateUpdated, kNoUpdate };
 
   static bool IsWithinClusterBounds(int send_delta_ms,
                                     const Cluster& cluster_aggregate);
 
   static void AddCluster(std::list<Cluster>* clusters, Cluster* cluster);
 
-  int Id() const;
-
   void IncomingPacketInfo(int64_t arrival_time_ms,
                           uint32_t send_time_24bits,
                           size_t payload_size,
-                          uint32_t ssrc,
-                          bool was_paced);
-
-  bool IsProbe(int64_t send_time_ms, int payload_size) const
-      EXCLUSIVE_LOCKS_REQUIRED(crit_sect_.get());
-
-  // Triggers a new estimate calculation.
-  void UpdateEstimate(int64_t now_ms)
-      EXCLUSIVE_LOCKS_REQUIRED(crit_sect_.get());
-
-  void UpdateStats(int propagation_delta_ms, int64_t now_ms)
-      EXCLUSIVE_LOCKS_REQUIRED(crit_sect_.get());
+                          uint32_t ssrc);
 
   void ComputeClusters(std::list<Cluster>* clusters) const;
 
   std::list<Cluster>::const_iterator FindBestProbe(
-      const std::list<Cluster>& clusters) const
-      EXCLUSIVE_LOCKS_REQUIRED(crit_sect_.get());
+      const std::list<Cluster>& clusters) const;
 
-  void ProcessClusters(int64_t now_ms)
-      EXCLUSIVE_LOCKS_REQUIRED(crit_sect_.get());
+  // Returns true if a probe which changed the estimate was detected.
+  ProbeResult ProcessClusters(int64_t now_ms)
+      RTC_EXCLUSIVE_LOCKS_REQUIRED(&crit_);
 
   bool IsBitrateImproving(int probe_bitrate_bps) const
-      EXCLUSIVE_LOCKS_REQUIRED(crit_sect_.get());
+      RTC_EXCLUSIVE_LOCKS_REQUIRED(&crit_);
 
-  rtc::scoped_ptr<CriticalSectionWrapper> crit_sect_;
-  RemoteBitrateObserver* observer_ GUARDED_BY(crit_sect_.get());
-  Clock* clock_;
-  Ssrcs ssrcs_ GUARDED_BY(crit_sect_.get());
-  rtc::scoped_ptr<InterArrival> inter_arrival_ GUARDED_BY(crit_sect_.get());
-  OveruseEstimator estimator_ GUARDED_BY(crit_sect_.get());
-  OveruseDetector detector_ GUARDED_BY(crit_sect_.get());
-  RateStatistics incoming_bitrate_ GUARDED_BY(crit_sect_.get());
-  AimdRateControl remote_rate_ GUARDED_BY(crit_sect_.get());
-  int64_t last_process_time_;
-  std::vector<int> recent_propagation_delta_ms_ GUARDED_BY(crit_sect_.get());
-  std::vector<int64_t> recent_update_time_ms_ GUARDED_BY(crit_sect_.get());
-  int64_t process_interval_ms_ GUARDED_BY(crit_sect_.get());
-  int total_propagation_delta_ms_ GUARDED_BY(crit_sect_.get());
+  void TimeoutStreams(int64_t now_ms) RTC_EXCLUSIVE_LOCKS_REQUIRED(&crit_);
 
+  rtc::RaceChecker network_race_;
+  const Clock* const clock_;
+  RemoteBitrateObserver* const observer_;
+  std::unique_ptr<InterArrival> inter_arrival_;
+  std::unique_ptr<OveruseEstimator> estimator_;
+  OveruseDetector detector_;
+  RateStatistics incoming_bitrate_;
+  bool incoming_bitrate_initialized_;
+  std::vector<int> recent_propagation_delta_ms_;
+  std::vector<int64_t> recent_update_time_ms_;
   std::list<Probe> probes_;
   size_t total_probes_received_;
   int64_t first_packet_time_ms_;
+  int64_t last_update_ms_;
+  bool uma_recorded_;
+
+  rtc::CriticalSection crit_;
+  Ssrcs ssrcs_ RTC_GUARDED_BY(&crit_);
+  AimdRateControl remote_rate_ RTC_GUARDED_BY(&crit_);
 
   RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(RemoteBitrateEstimatorAbsSendTime);
 };
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_REMOTE_BITRATE_ESTIMATOR_REMOTE_BITRATE_ESTIMATOR_ABS_SEND_TIME_H_
+#endif  // MODULES_REMOTE_BITRATE_ESTIMATOR_REMOTE_BITRATE_ESTIMATOR_ABS_SEND_TIME_H_

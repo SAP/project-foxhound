@@ -7,29 +7,49 @@
 with Files("**"):
     BUG_COMPONENT = ("Core", "XUL")
 
+if CONFIG['MOZ_BUILD_APP'] == 'browser':
+    DEFINES['MOZ_BREAK_XUL_OVERLAYS'] = True
+
 MOCHITEST_MANIFESTS += ['test/mochitest.ini']
 
 MOCHITEST_CHROME_MANIFESTS += ['test/chrome.ini']
 
 if CONFIG['MOZ_XUL']:
-    DIRS += ['templates']
-
-    XPIDL_SOURCES += [
-        'nsIXULOverlayProvider.idl',
+    EXPORTS += [
+        'nsXULCommandDispatcher.h',
+        'nsXULElement.h',
+        'nsXULSortService.h',
     ]
 
-    EXPORTS += [
-        'nsIXULDocument.h',
+    EXPORTS.mozilla.dom += [
+        'XULBroadcastManager.h',
+        'XULFrameElement.h',
+        'XULMenuElement.h',
+        'XULPersist.h',
+        'XULPopupElement.h',
+        'XULTextElement.h',
+        'XULTooltipElement.h',
+        'XULTreeElement.h',
     ]
 
     UNIFIED_SOURCES += [
         'nsXULCommandDispatcher.cpp',
         'nsXULContentSink.cpp',
+        'nsXULContentUtils.cpp',
         'nsXULElement.cpp',
         'nsXULPopupListener.cpp',
         'nsXULPrototypeCache.cpp',
         'nsXULPrototypeDocument.cpp',
+        'nsXULSortService.cpp',
+        'XULBroadcastManager.cpp',
         'XULDocument.cpp',
+        'XULFrameElement.cpp',
+        'XULMenuElement.cpp',
+        'XULPersist.cpp',
+        'XULPopupElement.cpp',
+        'XULTextElement.cpp',
+        'XULTooltipElement.cpp',
+        'XULTreeElement.cpp',
     ]
 
 XPIDL_SOURCES += [
@@ -49,14 +69,14 @@ LOCAL_INCLUDES += [
     '/dom/html',
     '/dom/xbl',
     '/dom/xml',
-    '/dom/xul/templates',
     '/layout/base',
     '/layout/generic',
     '/layout/style',
     '/layout/xul',
+    '/layout/xul/tree',
 ]
 
 FINAL_LIBRARY = 'xul'
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 from marionette_driver import By, Wait
 from marionette_driver.errors import NoSuchWindowException
 from marionette_driver.keys import Keys
@@ -50,9 +52,7 @@ class Windows(BaseLib):
 
                   let win = Services.focus.activeWindow;
                   if (win) {
-                    return win.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
-                              .getInterface(Components.interfaces.nsIDOMWindowUtils)
-                              .outerWindowID.toString();
+                    return win.windowUtils.outerWindowID.toString();
                   }
 
                   return null;
@@ -282,7 +282,7 @@ class BaseWindow(BaseLib):
 
         :param callback: Optional, function to trigger the window to open. It is
          triggered with the current :class:`BaseWindow` as parameter.
-         Defaults to `window.open()`.
+         Defaults to `OpenBrowserWindow()` (from browser.js).
 
         :param force: Optional, forces the closing of the window by using the Gecko API.
          Defaults to `False`.
@@ -336,7 +336,7 @@ class BaseWindow(BaseLib):
 
         :param callback: Optional, function to trigger the window to open. It is
          triggered with the current :class:`BaseWindow` as parameter.
-         Defaults to `window.open()`.
+         Defaults to `OpenBrowserWindow()` (from browser.js).
         :param expected_class: Optional, check for the correct window class.
         :param focus: Optional, if true, focus the new window.
          Defaults to `True`.
@@ -350,7 +350,7 @@ class BaseWindow(BaseLib):
             if callback is not None:
                 callback(self)
             else:
-                self.marionette.execute_script(""" window.open(); """)
+                self.marionette.execute_script(""" OpenBrowserWindow(); """)
 
         # TODO: Needs to be replaced with observer handling code (bug 1121698)
         def window_opened(mn):
@@ -392,7 +392,7 @@ class BaseWindow(BaseLib):
         platform = self.marionette.session_capabilities['platformName']
 
         keymap = {
-            'accel': Keys.META if platform == 'darwin' else Keys.CONTROL,
+            'accel': Keys.META if platform == "mac" else Keys.CONTROL,
             'alt': Keys.ALT,
             'cmd': Keys.COMMAND,
             'ctrl': Keys.CONTROL,

@@ -10,7 +10,7 @@ topsrcdir="$SOURCE"
 # Tooltool installs in parent of topsrcdir for spidermonkey builds.
 # Resolve that path since the mozconfigs assume tooltool installs in
 # topsrcdir.
-VSPATH="$(cd ${topsrcdir}/.. && pwd)/vs2015u3"
+export VSPATH="$(cd ${topsrcdir}/.. && pwd)/vs2017_15.8.4"
 
 # When running on a developer machine, several variables will already
 # have the right settings and we will need to keep them since the
@@ -25,12 +25,16 @@ else
   . $topsrcdir/build/win32/mozconfig.vs-latest
 fi
 
+mk_export_correct_style CC
+mk_export_correct_style CXX
+mk_export_correct_style LINKER
+
 # PATH also needs to point to mozmake.exe, which can come from either
 # newer mozilla-build or tooltool.
 if ! which mozmake 2>/dev/null; then
     export PATH="$PATH:$SOURCE/.."
     if ! which mozmake 2>/dev/null; then
-  TT_SERVER=${TT_SERVER:-https://api.pub.build.mozilla.org/tooltool/}
-  ( cd $SOURCE/..; ./scripts/scripts/tooltool/tooltool_wrapper.sh $SOURCE/browser/config/tooltool-manifests/${platform:-win32}/releng.manifest $TT_SERVER setup.sh c:/mozilla-build/python27/python.exe C:/mozilla-build/tooltool.py )
+  TT_SERVER=${TT_SERVER:-https://tooltool.mozilla-releng.net/}
+  ( cd $SOURCE/..; $SOURCE/mach artifact toolchain -v --tooltool-manifest $SOURCE/browser/config/tooltool-manifests/${platform:-win32}/releng.manifest --tooltool-url $TT_SERVER --retry 4${TOOLTOOL_CACHE:+ --cache-dir ${TOOLTOOL_CACHE}}${MOZ_TOOLCHAINS:+ ${MOZ_TOOLCHAINS}})
     fi
 fi

@@ -21,8 +21,7 @@
 
   <script type="application/javascript">
 
-    function doTest()
-    {
+    function doTest() {
       testRole("figure", ROLE_FIGURE);
       testRole("figcaption", ROLE_CAPTION);
 
@@ -33,7 +32,7 @@
       testRelation("figure", RELATION_LABELLED_BY, "figcaption");
       testRelation("figcaption", RELATION_LABEL_FOR, "figure");
 
-      testAttrs("figure", {"xml-roles" : "figure"}, true);
+      testAttrs("figure", {"xml-roles": "figure"}, true);
 
       SimpleTest.finish();
     }

@@ -5,16 +5,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AudioSampleFormat.h"
+#include "BufferReader.h"
 #include "WAVDecoder.h"
 #include "mozilla/SyncRunnable.h"
-
-using mp4_demuxer::ByteReader;
+#include "VideoUtils.h"
 
 namespace mozilla {
 
-int16_t
-DecodeALawSample(uint8_t aValue)
-{
+int16_t DecodeALawSample(uint8_t aValue) {
   aValue = aValue ^ 0x55;
   int8_t sign = (aValue & 0x80) ? -1 : 1;
   uint8_t exponent = (aValue & 0x70) >> 4;
@@ -34,9 +32,7 @@ DecodeALawSample(uint8_t aValue)
   return sign * sample;
 }
 
-int16_t
-DecodeULawSample(uint8_t aValue)
-{
+int16_t DecodeULawSample(uint8_t aValue) {
   aValue = aValue ^ 0xFF;
   int8_t sign = (aValue & 0x80) ? -1 : 1;
   uint8_t exponent = (aValue & 0x70) >> 4;
@@ -46,106 +42,111 @@ DecodeULawSample(uint8_t aValue)
 }
 
 WaveDataDecoder::WaveDataDecoder(const CreateDecoderParams& aParams)
-  : mInfo(aParams.AudioConfig())
-  , mTaskQueue(aParams.mTaskQueue)
-{
-}
+    : mInfo(aParams.AudioConfig()), mTaskQueue(aParams.mTaskQueue) {}
 
-RefPtr<ShutdownPromise>
-WaveDataDecoder::Shutdown()
-{
+RefPtr<ShutdownPromise> WaveDataDecoder::Shutdown() {
   RefPtr<WaveDataDecoder> self = this;
   return InvokeAsync(mTaskQueue, __func__, [self]() {
     return ShutdownPromise::CreateAndResolve(true, __func__);
   });
 }
 
-RefPtr<MediaDataDecoder::InitPromise>
-WaveDataDecoder::Init()
-{
+RefPtr<MediaDataDecoder::InitPromise> WaveDataDecoder::Init() {
   return InitPromise::CreateAndResolve(TrackInfo::kAudioTrack, __func__);
 }
 
-RefPtr<MediaDataDecoder::DecodePromise>
-WaveDataDecoder::Decode(MediaRawData* aSample)
-{
+RefPtr<MediaDataDecoder::DecodePromise> WaveDataDecoder::Decode(
+    MediaRawData* aSample) {
   return InvokeAsync<MediaRawData*>(mTaskQueue, this, __func__,
                                     &WaveDataDecoder::ProcessDecode, aSample);
 }
 
-RefPtr<MediaDataDecoder::DecodePromise>
-WaveDataDecoder::ProcessDecode(MediaRawData* aSample)
-{
+RefPtr<MediaDataDecoder::DecodePromise> WaveDataDecoder::ProcessDecode(
+    MediaRawData* aSample) {
   size_t aLength = aSample->Size();
-  ByteReader aReader(aSample->Data(), aLength);
+  BufferReader aReader(aSample->Data(), aLength);
   int64_t aOffset = aSample->mOffset;
-  uint64_t aTstampUsecs = aSample->mTime;
 
   int32_t frames = aLength * 8 / mInfo.mBitDepth / mInfo.mChannels;
 
   AlignedAudioBuffer buffer(frames * mInfo.mChannels);
   if (!buffer) {
     return DecodePromise::CreateAndReject(
-      MediaResult(NS_ERROR_OUT_OF_MEMORY, __func__), __func__);
+        MediaResult(NS_ERROR_OUT_OF_MEMORY, __func__), __func__);
   }
   for (int i = 0; i < frames; ++i) {
     for (unsigned int j = 0; j < mInfo.mChannels; ++j) {
-      if (mInfo.mProfile == 6) {                              //ALAW Data
-        uint8_t v = aReader.ReadU8();
-        int16_t decoded = DecodeALawSample(v);
+      if (mInfo.mProfile == 6) {  // ALAW Data
+        auto res = aReader.ReadU8();
+        if (res.isErr()) {
+          return DecodePromise::CreateAndReject(
+              MediaResult(res.unwrapErr(), __func__), __func__);
+        }
+        int16_t decoded = DecodeALawSample(res.unwrap());
         buffer[i * mInfo.mChannels + j] =
             IntegerToAudioSample<AudioDataValue>(decoded);
-      } else if (mInfo.mProfile == 7) {                       //ULAW Data
-        uint8_t v = aReader.ReadU8();
-        int16_t decoded = DecodeULawSample(v);
+      } else if (mInfo.mProfile == 7) {  // ULAW Data
+        auto res = aReader.ReadU8();
+        if (res.isErr()) {
+          return DecodePromise::CreateAndReject(
+              MediaResult(res.unwrapErr(), __func__), __func__);
+        }
+        int16_t decoded = DecodeULawSample(res.unwrap());
         buffer[i * mInfo.mChannels + j] =
             IntegerToAudioSample<AudioDataValue>(decoded);
-      } else {                                                //PCM Data
+      } else {  // PCM Data
         if (mInfo.mBitDepth == 8) {
-          uint8_t v = aReader.ReadU8();
+          auto res = aReader.ReadU8();
+          if (res.isErr()) {
+            return DecodePromise::CreateAndReject(
+                MediaResult(res.unwrapErr(), __func__), __func__);
+          }
           buffer[i * mInfo.mChannels + j] =
-              UInt8bitToAudioSample<AudioDataValue>(v);
+              UInt8bitToAudioSample<AudioDataValue>(res.unwrap());
         } else if (mInfo.mBitDepth == 16) {
-          int16_t v = aReader.ReadLE16();
+          auto res = aReader.ReadLE16();
+          if (res.isErr()) {
+            return DecodePromise::CreateAndReject(
+                MediaResult(res.unwrapErr(), __func__), __func__);
+          }
           buffer[i * mInfo.mChannels + j] =
-              IntegerToAudioSample<AudioDataValue>(v);
+              IntegerToAudioSample<AudioDataValue>(res.unwrap());
         } else if (mInfo.mBitDepth == 24) {
-          int32_t v = aReader.ReadLE24();
+          auto res = aReader.ReadLE24();
+          if (res.isErr()) {
+            return DecodePromise::CreateAndReject(
+                MediaResult(res.unwrapErr(), __func__), __func__);
+          }
           buffer[i * mInfo.mChannels + j] =
-              Int24bitToAudioSample<AudioDataValue>(v);
+              Int24bitToAudioSample<AudioDataValue>(res.unwrap());
         }
       }
     }
   }
 
-  int64_t duration = frames / mInfo.mRate;
+  auto duration = FramesToTimeUnit(frames, mInfo.mRate);
 
   return DecodePromise::CreateAndResolve(
-    DecodedData{ new AudioData(aOffset, aTstampUsecs, duration, frames,
-                               Move(buffer), mInfo.mChannels, mInfo.mRate) },
-    __func__);
+      DecodedData{new AudioData(aOffset, aSample->mTime, duration, frames,
+                                std::move(buffer), mInfo.mChannels,
+                                mInfo.mRate)},
+      __func__);
 }
 
-RefPtr<MediaDataDecoder::DecodePromise>
-WaveDataDecoder::Drain()
-{
+RefPtr<MediaDataDecoder::DecodePromise> WaveDataDecoder::Drain() {
   return InvokeAsync(mTaskQueue, __func__, [] {
     return DecodePromise::CreateAndResolve(DecodedData(), __func__);
   });
 }
 
-RefPtr<MediaDataDecoder::FlushPromise>
-WaveDataDecoder::Flush()
-{
+RefPtr<MediaDataDecoder::FlushPromise> WaveDataDecoder::Flush() {
   return InvokeAsync(mTaskQueue, __func__, []() {
     return FlushPromise::CreateAndResolve(true, __func__);
   });
 }
 
 /* static */
-bool
-WaveDataDecoder::IsWave(const nsACString& aMimeType)
-{
+bool WaveDataDecoder::IsWave(const nsACString& aMimeType) {
   // Some WebAudio uses "audio/x-wav",
   // WAVdemuxer uses "audio/wave; codecs=aNum".
   return aMimeType.EqualsLiteral("audio/x-wav") ||
@@ -155,5 +156,5 @@ WaveDataDecoder::IsWave(const nsACString& aMimeType)
          aMimeType.EqualsLiteral("audio/wave; codecs=65534");
 }
 
-} // namespace mozilla
+}  // namespace mozilla
 #undef LOG

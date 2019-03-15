@@ -3,14 +3,14 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-NO_VISIBILITY_FLAGS = True
+NoVisibilityFlags()
 
 EXPORTS += [
     'sqlite3.h',
 ]
 
 # We allow warnings for third-party code that can be updated from upstream.
-ALLOW_COMPILER_WARNINGS = True
+AllowCompilerWarnings()
 
 if CONFIG['MOZ_FOLD_LIBS']:
     # When folding libraries, sqlite is actually in the nss library.
@@ -58,10 +58,6 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'uikit':
     DEFINES['SQLITE_ENABLE_LOCKING_STYLE'] = 0
 
-# Thunderbird needs the 2-argument version of fts3_tokenizer()
-if CONFIG['MOZ_THUNDERBIRD'] or CONFIG['MOZ_SUITE']:
-    DEFINES['SQLITE_ENABLE_FTS3_TOKENIZER'] = 1
-
 # Turn on SQLite's assertions in debug builds.
 if CONFIG['MOZ_DEBUG']:
     DEFINES['SQLITE_DEBUG'] = 1
@@ -93,8 +89,18 @@ elif CONFIG['HAVE_64BIT_BUILD']:
     # On 64bit platforms default to a MEMORY temp store for performance.
     DEFINES['SQLITE_TEMP_STORE'] = 2
 
+# Change the default temp files prefix, to easily distinguish files we created
+# vs files created by other Sqlite instances in the system.
+# This has obviously no effect in case of System Sqlite.
+DEFINES['SQLITE_TEMP_FILE_PREFIX'] = '"mz_etilqs_"'
+
+# Our copy of sqlite3 doesn't know about AArch64 + Windows's endianness yet,
+# help it out.  (This does non-Windows too, but that's OK.)
+if CONFIG['CPU_ARCH'] == 'aarch64':
+    DEFINES['SQLITE_BYTEORDER'] = 1234
+
 # Suppress warnings in third-party code.
-if CONFIG['GNU_CC']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CFLAGS += [
         '-Wno-sign-compare',
         '-Wno-type-limits',

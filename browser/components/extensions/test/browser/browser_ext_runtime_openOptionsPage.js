@@ -2,19 +2,9 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-requestLongerTimeout(2);
-
-function add_tasks(task) {
-  add_task(task.bind(null, {embedded: false}));
-
-  add_task(task.bind(null, {embedded: true}));
-}
-
-function* loadExtension(options) {
+async function loadExtension(options) {
   let extension = ExtensionTestUtils.loadExtension({
     useAddonManager: "temporary",
-
-    embedded: options.embedded,
 
     manifest: Object.assign({
       "permissions": ["tabs"],
@@ -35,7 +25,28 @@ function* loadExtension(options) {
         browser.runtime.onMessage.addListener((msg, sender, respond) => {
           if (msg == "ping") {
             respond("pong");
+          } else if (msg == "connect") {
+            let port = browser.runtime.connect();
+            port.postMessage("ping-from-options-html");
+            port.onMessage.addListener(msg => {
+              if (msg == "ping-from-bg") {
+                browser.test.log("Got outbound options.html pong");
+                browser.test.sendMessage("options-html-outbound-pong");
+              }
+            });
           }
+        });
+
+        browser.runtime.onConnect.addListener(port => {
+          browser.test.log("Got inbound options.html port");
+
+          port.postMessage("ping-from-options-html");
+          port.onMessage.addListener(msg => {
+            if (msg == "ping-from-bg") {
+              browser.test.log("Got inbound options.html pong");
+              browser.test.sendMessage("options-html-inbound-pong");
+            }
+          });
         });
       },
     },
@@ -43,17 +54,17 @@ function* loadExtension(options) {
     background: options.background,
   });
 
-  yield extension.startup();
+  await extension.startup();
 
   return extension;
 }
 
-add_tasks(function* test_inline_options(extraOptions) {
-  info(`Test options opened inline (${JSON.stringify(extraOptions)})`);
+add_task(async function test_inline_options() {
+  info(`Test options opened inline`);
 
-  let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, "http://example.com/");
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, "http://example.com/");
 
-  let extension = yield loadExtension(Object.assign({}, extraOptions, {
+  let extension = await loadExtension({
     manifest: {
       applications: {gecko: {id: "inline_options@tests.mozilla.org"}},
       "options_ui": {
@@ -120,6 +131,39 @@ add_tasks(function* test_inline_options(extraOptions) {
         let pong = await browser.runtime.sendMessage("ping");
         browser.test.assertEq("pong", pong, "Got pong.");
 
+        let done = new Promise(resolve => {
+          browser.test.onMessage.addListener(msg => {
+            if (msg == "ports-done") {
+              resolve();
+            }
+          });
+        });
+
+        browser.runtime.onConnect.addListener(port => {
+          browser.test.log("Got inbound background port");
+
+          port.postMessage("ping-from-bg");
+          port.onMessage.addListener(msg => {
+            if (msg == "ping-from-options-html") {
+              browser.test.log("Got inbound background pong");
+              browser.test.sendMessage("bg-inbound-pong");
+            }
+          });
+        });
+
+        browser.runtime.sendMessage("connect");
+
+        let port = browser.runtime.connect();
+        port.postMessage("ping-from-bg");
+        port.onMessage.addListener(msg => {
+          if (msg == "ping-from-options-html") {
+            browser.test.log("Got outbound background pong");
+            browser.test.sendMessage("bg-outbound-pong");
+          }
+        });
+
+        await done;
+
         browser.test.log("Remove options tab.");
         await browser.tabs.remove(optionsTab.id);
 
@@ -140,20 +184,30 @@ add_tasks(function* test_inline_options(extraOptions) {
         browser.test.notifyFail("options-ui");
       }
     },
-  }));
+  });
 
-  yield extension.awaitFinish("options-ui");
-  yield extension.unload();
+  await Promise.all([
+    extension.awaitMessage("options-html-inbound-pong"),
+    extension.awaitMessage("options-html-outbound-pong"),
+    extension.awaitMessage("bg-inbound-pong"),
+    extension.awaitMessage("bg-outbound-pong"),
+  ]);
 
-  yield BrowserTestUtils.removeTab(tab);
+  extension.sendMessage("ports-done");
+
+  await extension.awaitFinish("options-ui");
+
+  await extension.unload();
+
+  BrowserTestUtils.removeTab(tab);
 });
 
-add_tasks(function* test_tab_options(extraOptions) {
-  info(`Test options opened in a tab (${JSON.stringify(extraOptions)})`);
+add_task(async function test_tab_options() {
+  info(`Test options opened in a tab`);
 
-  let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, "http://example.com/");
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, "http://example.com/");
 
-  let extension = yield loadExtension(Object.assign({}, extraOptions, {
+  let extension = await loadExtension({
     manifest: {
       applications: {gecko: {id: "tab_options@tests.mozilla.org"}},
       "options_ui": {
@@ -243,18 +297,18 @@ add_tasks(function* test_tab_options(extraOptions) {
         browser.test.notifyFail("options-ui-tab");
       }
     },
-  }));
+  });
 
-  yield extension.awaitFinish("options-ui-tab");
-  yield extension.unload();
+  await extension.awaitFinish("options-ui-tab");
+  await extension.unload();
 
-  yield BrowserTestUtils.removeTab(tab);
+  BrowserTestUtils.removeTab(tab);
 });
 
-add_tasks(function* test_options_no_manifest(extraOptions) {
-  info(`Test with no manifest key (${JSON.stringify(extraOptions)})`);
+add_task(async function test_options_no_manifest() {
+  info(`Test with no manifest key`);
 
-  let extension = yield loadExtension(Object.assign({}, extraOptions, {
+  let extension = await loadExtension({
     manifest: {
       applications: {gecko: {id: "no_options@tests.mozilla.org"}},
     },
@@ -269,8 +323,8 @@ add_tasks(function* test_options_no_manifest(extraOptions) {
 
       browser.test.notifyPass("options-no-manifest");
     },
-  }));
+  });
 
-  yield extension.awaitFinish("options-no-manifest");
-  yield extension.unload();
+  await extension.awaitFinish("options-no-manifest");
+  await extension.unload();
 });

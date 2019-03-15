@@ -4,7 +4,7 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
- 
+
 #ifndef SKSL_ASTSTATEMENT
 #define SKSL_ASTSTATEMENT
 
@@ -26,14 +26,15 @@ struct ASTStatement : public ASTPositionNode {
         kFor_Kind,
         kWhile_Kind,
         kDo_Kind,
+        kSwitch_Kind,
         kReturn_Kind,
         kBreak_Kind,
         kContinue_Kind,
         kDiscard_Kind
     };
 
-    ASTStatement(Position position, Kind kind)
-    : INHERITED(position)
+    ASTStatement(int offset, Kind kind)
+    : INHERITED(offset)
     , fKind(kind) {}
 
     Kind fKind;

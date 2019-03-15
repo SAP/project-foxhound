@@ -21,25 +21,25 @@ const TEST_URI = `
   <h1 id="testid" class="testclass">Styled Node</h1>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
-  yield selectNode("#testid", inspector);
-  yield testAddTextInFilter(inspector, view);
-  yield testRemoveTextInFilter(inspector, view);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, view} = await openRuleView();
+  await selectNode("#testid", inspector);
+  await testAddTextInFilter(inspector, view);
+  await testRemoveTextInFilter(inspector, view);
 });
 
-function* testAddTextInFilter(inspector, view) {
-  yield setSearchFilter(view, SEARCH);
+async function testAddTextInFilter(inspector, view) {
+  await setSearchFilter(view, SEARCH);
 
   info("Check that the correct rules are visible");
   is(view.element.children.length, 2, "Should have 2 rules.");
   is(getRuleViewRuleEditor(view, 0).rule.selectorText, "element",
     "First rule is inline element.");
 
-  let rule = getRuleViewRuleEditor(view, 1).rule;
-  let ruleEditor = rule.textProps[0].editor;
-  let computed = ruleEditor.computed;
+  const rule = getRuleViewRuleEditor(view, 1).rule;
+  const ruleEditor = rule.textProps[0].editor;
+  const computed = ruleEditor.computed;
 
   is(rule.selectorText, "#testid", "Second rule is #testid.");
   ok(ruleEditor.expander.getAttribute("open"), "Expander is open.");
@@ -57,24 +57,24 @@ function* testAddTextInFilter(inspector, view) {
     "margin-left computed property is correctly highlighted.");
 }
 
-function* testRemoveTextInFilter(inspector, view) {
+async function testRemoveTextInFilter(inspector, view) {
   info("Press backspace and set filter text to \"margin\"");
 
-  let win = view.styleWindow;
-  let searchField = view.searchField;
+  const win = view.styleWindow;
+  const searchField = view.searchField;
 
   searchField.focus();
   EventUtils.synthesizeKey("VK_BACK_SPACE", {}, win);
-  yield inspector.once("ruleview-filtered");
+  await inspector.once("ruleview-filtered");
 
   info("Check that the correct rules are visible");
   is(view.element.children.length, 2, "Should have 2 rules.");
   is(getRuleViewRuleEditor(view, 0).rule.selectorText, "element",
     "First rule is inline element.");
 
-  let rule = getRuleViewRuleEditor(view, 1).rule;
-  let ruleEditor = rule.textProps[0].editor;
-  let computed = ruleEditor.computed;
+  const rule = getRuleViewRuleEditor(view, 1).rule;
+  const ruleEditor = rule.textProps[0].editor;
+  const computed = ruleEditor.computed;
 
   is(rule.selectorText, "#testid", "Second rule is #testid.");
   ok(!ruleEditor.expander.getAttribute("open"), "Expander is closed.");

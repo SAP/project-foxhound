@@ -4,7 +4,7 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
- 
+
 #ifndef SKSL_BREAKSTATEMENT
 #define SKSL_BREAKSTATEMENT
 
@@ -14,14 +14,18 @@
 namespace SkSL {
 
 /**
- * A 'break' statement. 
+ * A 'break' statement.
  */
 struct BreakStatement : public Statement {
-    BreakStatement(Position position)
-    : INHERITED(position, kBreak_Kind) {}
+    BreakStatement(int offset)
+    : INHERITED(offset, kBreak_Kind) {}
 
-    std::string description() const override {
-        return "break;";
+    std::unique_ptr<Statement> clone() const override {
+        return std::unique_ptr<Statement>(new BreakStatement(fOffset));
+    }
+
+    String description() const override {
+        return String("break;");
     }
 
     typedef Statement INHERITED;

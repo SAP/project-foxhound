@@ -4,27 +4,15 @@
 
 %include ../../shared/customizableui/panelUI.inc.css
 
-.panel-subviews {
-  background-color: var(--arrowpanel-background);
-}
-
-#PanelUI-contents #zoom-out-btn {
-  padding-left: 12px;
-  padding-right: 12px;
-}
-
-#PanelUI-contents #zoom-in-btn {
-  padding-left: 12px;
-  padding-right: 12px;
-}
-
 /* bookmark panel submenus */
 
 #BMB_bookmarksPopup menupopup[placespopup=true] {
   -moz-appearance: none;
   background: transparent;
   border: none;
-  padding: 6px;
+  padding: 0;
+  padding-top: 4px;
+  padding-inline-start: 3px;
 }
 
 #BMB_bookmarksPopup menupopup[placespopup=true] > hbox {
@@ -37,12 +25,8 @@
   margin-top: -4px;
 }
 
-#BMB_bookmarksPopup menupopup {
-  padding-top: 2px;
-}
-
 /* Add some space at the top because there are no headers: */
-#BMB_bookmarksPopup menupopup[placespopup=true] > hbox > .popup-internal-box > .arrowscrollbox-scrollbox > .scrollbox-innerbox  {
+#BMB_bookmarksPopup menupopup[placespopup=true] > hbox > .popup-internal-box > .arrowscrollbox-scrollbox  {
   padding-top: 4px;
 }
 
@@ -52,90 +36,15 @@
   padding-bottom: 0;
 }
 
-.subviewbutton > .menu-right,
-.subviewbutton > .menu-iconic-left {
-  padding-top: 1px;
-  margin-top: 1px;
-  margin-bottom: 2px;
-}
-
 /* Disabled empty item looks too small otherwise, because it has no icon. */
-menuitem.subviewbutton[disabled]:not(.menuitem-iconic),
-/* Same for checkbox menu items, whose icons lose size due to -moz-appearance: none: */
-menuitem[type="checkbox"].subviewbutton {
+menuitem.subviewbutton[disabled]:not(.menuitem-iconic) {
   /* This is 16px for an icon + 3px for its margins + 1px for its padding +
    * 2px for its border, see above */
   min-height: 22px;
 }
 
-.subviewbutton > .toolbarbutton-text {
-  padding-top: 3px;
-  padding-bottom: 3px;
-}
-
-.widget-overflow-list .toolbarbutton-1 > .toolbarbutton-menubutton-button {
-  -moz-appearance: none;
-  border: 0;
-  margin-inline-start: 3px;
-}
-
-.widget-overflow-list .toolbarbutton-1 > .toolbarbutton-menubutton-dropmarker {
-  padding: 0 2px;
-  padding-inline-start: 0;
-  height: 18px;
-}
-
-.widget-overflow-list .toolbarbutton-1 > .toolbarbutton-menubutton-dropmarker > .dropmarker-icon {
-  padding: 0 6px;
-}
-
-.subviewbutton > .toolbarbutton-text {
-  padding-inline-start: 16px;
-}
-
-.subviewbutton:-moz-any([image],[targetURI],.cui-withicon, .restoreallitem, .bookmark-item) > .toolbarbutton-text {
-  padding-inline-start: 0;
-}
-
-/* subviewbutton entries for social sidebars have images that come from external
-/* sources, and are not guaranteed to be the size we want, so force the size on
-/* those icons. */
-toolbarbutton.social-provider-menuitem > .toolbarbutton-icon {
-  width: 16px;
-  height: 16px;
-}
-
-.subviewbutton:-moz-any([image],[targetURI],.cui-withicon, .restoreallitem, .bookmark-item)[checked="true"] > .toolbarbutton-icon {
-  visibility: hidden;
-}
-
-menu.subviewbutton > .menu-right {
-  -moz-appearance: none;
-  list-style-image: url(chrome://browser/skin/customizableui/menu-arrow.svg#arrow);
-  /* Reset the rect we inherit from the button: */
-  -moz-image-region: auto;
-}
-
-menu[disabled="true"].subviewbutton > .menu-right {
-  list-style-image: url(chrome://browser/skin/customizableui/menu-arrow.svg#arrow-disabled);
-}
-
-@media (-moz-windows-default-theme: 0) {
-  menu[_moz-menuactive].subviewbutton > .menu-right {
-    list-style-image: url(chrome://browser/skin/customizableui/menu-arrow.svg#arrow-hover);
-  }
-}
-
-menu.subviewbutton > .menu-right:-moz-locale-dir(rtl) {
-  transform: scaleX(-1);
-}
-
 /* Win8 and beyond. */
-@media not all and (-moz-os-version: windows-win7) {
-  panelview .toolbarbutton-1,
-  .subviewbutton,
-  .widget-overflow-list .toolbarbutton-1,
-  .panelUI-grid .toolbarbutton-1 > .toolbarbutton-menubutton-button,
+@media not (-moz-os-version: windows-win7) {
   #BMB_bookmarksPopup menupopup[placespopup=true] > hbox,
   #edit-controls@inAnyPanel@,
   #zoom-controls@inAnyPanel@,
@@ -145,3 +54,8 @@ menu.subviewbutton > .menu-right:-moz-locale-dir(rtl) {
   }
 }
 
+/* Anchor the bookmark menu drop down panel at the same height as other
+   panels when in the #toolbar-menubar */
+#toolbar-menubar #BMB_bookmarksPopup {
+  margin-top: -6px;
+}

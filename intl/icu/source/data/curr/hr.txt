@@ -262,6 +262,10 @@ hr{
             "CLP",
             "čileanski pezo",
         }
+        CNH{
+            "CNH",
+            "kineski juan (offshore)",
+        }
         CNX{
             "CNX",
             "kineski narodni dolar",
@@ -680,6 +684,10 @@ hr{
         }
         MRO{
             "MRO",
+            "mauritanijska ouguja (1973. – 2017.)",
+        }
+        MRU{
+            "MRU",
             "mauritanijska ouguja",
         }
         MTL{
@@ -780,11 +788,11 @@ hr{
         }
         PEN{
             "PEN",
-            "peruanski novi sol",
+            "peruanski sol",
         }
         PES{
             "PES",
-            "peruanski sol",
+            "peruanski sol (1863–1965)",
         }
         PGK{
             "PGK",
@@ -912,6 +920,10 @@ hr{
         }
         STD{
             "STD",
+            "dobra Svetog Tome i Principa (1977–2017)",
+        }
+        STN{
+            "STN",
             "dobra Svetog Tome i Principa",
         }
         SUR{
@@ -1032,6 +1044,10 @@ hr{
         }
         VEF{
             "VEF",
+            "venezuelanski bolivar (2008. – 2018.)",
+        }
+        VES{
+            "VES",
             "venezuelanski bolivar",
         }
         VND{
@@ -1267,6 +1283,7 @@ hr{
         PKR{"Rs"}
         PLN{"zł"}
         PYG{"₲"}
+        RON{"lei"}
         RUB{"₽"}
         RUR{"р."}
         RWF{"RF"}
@@ -1276,7 +1293,7 @@ hr{
         SHP{"£"}
         SRD{"$"}
         SSP{"£"}
-        STD{"Db"}
+        STN{"Db"}
         SYP{"£"}
         THB{"฿"}
         TOP{"T$"}
@@ -1304,7 +1321,7 @@ hr{
         }
         AED{
             few{"UAE dirhama"}
-            one{"UAE diram"}
+            one{"UAE dirham"}
             other{"UAE dirhama"}
         }
         AFA{
@@ -1616,6 +1633,11 @@ hr{
             few{"čileanska peza"}
             one{"čileanski pezo"}
             other{"čileanskih peza"}
+        }
+        CNH{
+            few{"kineska juana (offshore)"}
+            one{"kineski juan (offshore)"}
+            other{"kineskih juana (offshore)"}
         }
         CNX{
             few{"kineska narodna dolara"}
@@ -2133,6 +2155,11 @@ hr{
             other{"makaoških pataka"}
         }
         MRO{
+            few{"mauritanijske ouguje (1973. – 2017.)"}
+            one{"mauritanijska ouguja (1973. – 2017.)"}
+            other{"mauritanijskih ouguja (1973. – 2017.)"}
+        }
+        MRU{
             few{"mauritanijske ouguje"}
             one{"mauritanijska ouguja"}
             other{"mauritanijskih ouguja"}
@@ -2258,14 +2285,14 @@ hr{
             other{"peruanskih inti"}
         }
         PEN{
-            few{"peruanska nova sola"}
-            one{"peruanski novi sol"}
-            other{"peruanskih novih sola"}
-        }
-        PES{
             few{"peruanska sola"}
             one{"peruanski sol"}
             other{"peruanskih sola"}
+        }
+        PES{
+            few{"peruanska sola (1863–1965)"}
+            one{"peruanski sol (1863–1965)"}
+            other{"peruanskih sola (1863–1965)"}
         }
         PGK{
             few{"kine Papue Nove Gvineje"}
@@ -2423,6 +2450,11 @@ hr{
             other{"južnosudanskih funti"}
         }
         STD{
+            few{"dobre Svetog Tome i Principa (1977–2017)"}
+            one{"dobra Svetog Tome i Principa (1977–2017)"}
+            other{"dobri Svetog Tome i Principa (1977–2017)"}
+        }
+        STN{
             few{"dobre Svetog Tome i Principa"}
             one{"dobra Svetog Tome i Principa"}
             other{"dobri Svetog Tome i Principa"}
@@ -2573,6 +2605,11 @@ hr{
             other{"venezuelanskih bolivara (1871.–2008.)"}
         }
         VEF{
+            few{"venezuelanska bolivara (2008. – 2018.)"}
+            one{"venezuelanski bolivar (2008. – 2018.)"}
+            other{"venezuelanskih bolivara (2008. – 2018.)"}
+        }
+        VES{
             few{"venezuelanska bolivara"}
             one{"venezuelanski bolivar"}
             other{"venezuelanskih bolivara"}
@@ -2783,5 +2820,5 @@ hr{
         one{"{0} {1}"}
         other{"{0} {1}"}
     }
-    Version{"2.1.28.79"}
+    Version{"2.1.43.50"}
 }

@@ -13,10 +13,14 @@
 <!ENTITY % brandDTD SYSTEM "chrome://branding/locale/brand.dtd">
 %updateDTD;
 %brandDTD;
+#if defined(XP_MACOSX) && MOZ_BUILD_APP == browser
+#include ../../../../browser/base/content/browser-doctype.inc
+#endif
 ]>
 
 <wizard id="updates"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+        xmlns:html="http://www.w3.org/1999/xhtml"
         title="&updateWizard.title;"
         windowtype="Update:Wizard"
         style="width: auto; height: auto"
@@ -28,6 +32,10 @@
 
   <script type="application/javascript" src="chrome://global/content/contentAreaUtils.js"/>
   <script type="application/javascript" src="chrome://mozapps/content/update/updates.js"/>
+
+#if defined(XP_MACOSX) && MOZ_BUILD_APP == browser
+#include ../../../../browser/base/content/macWindow.inc.xul
+#endif
 
   <stringbundleset id="updateSet">
     <stringbundle id="brandStrings" src="chrome://branding/locale/brand.properties"/>
@@ -42,7 +50,7 @@
     <vbox class="update-content" flex="1">
       <label>&updateCheck.label;</label>
       <separator class="thin"/>
-      <progressmeter id="checkingProgress" mode="undetermined"/>
+      <html:progress id="checkingProgress"/>
     </vbox>
   </wizardpage>
 
@@ -112,7 +120,7 @@
     <updateheader label="&downloadPage.title;"/>
     <vbox class="update-content" flex="1">
       <hbox id="downloadStatusProgress">
-        <progressmeter id="downloadProgress" mode="undetermined" flex="1"/>
+        <html:progress id="downloadProgress" max="100"/>
         <button id="pauseButton" oncommand="gDownloadingPage.onPause();"
                 paused="false"/>
       </hbox>

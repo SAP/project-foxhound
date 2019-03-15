@@ -20,10 +20,10 @@
  * @return {Promise} promise that resolves when "shown" has been fired, reflow
  *         and repaint done.
  */
-function* showTooltip(tooltip, anchor, {position, x, y} = {}) {
-  let onShown = tooltip.once("shown");
+async function showTooltip(tooltip, anchor, {position, x, y} = {}) {
+  const onShown = tooltip.once("shown");
   tooltip.show(anchor, {position, x, y});
-  yield onShown;
+  await onShown;
   return waitForReflow(tooltip);
 }
 
@@ -36,10 +36,10 @@ function* showTooltip(tooltip, anchor, {position, x, y} = {}) {
  * @return {Promise} promise that resolves when "hidden" has been fired, reflow
  *         and repaint done.
  */
-function* hideTooltip(tooltip) {
-  let onPopupHidden = tooltip.once("hidden");
+async function hideTooltip(tooltip) {
+  const onPopupHidden = tooltip.once("hidden");
   tooltip.hide();
-  yield onPopupHidden;
+  await onPopupHidden;
   return waitForReflow(tooltip);
 }
 
@@ -51,7 +51,7 @@ function* hideTooltip(tooltip) {
  *         have been executed.
  */
 function waitForReflow(tooltip) {
-  let {doc} = tooltip;
+  const {doc} = tooltip;
   return new Promise(resolve => {
     doc.documentElement.offsetWidth;
     doc.defaultView.requestAnimationFrame(resolve);
@@ -75,8 +75,8 @@ function waitForReflow(tooltip) {
 function checkTooltipGeometry(tooltip, anchor,
     {position, leftAligned = true, height, width} = {}) {
   info("Check the tooltip geometry matches expected position and dimensions");
-  let tooltipRect = tooltip.container.getBoundingClientRect();
-  let anchorRect = anchor.getBoundingClientRect();
+  const tooltipRect = tooltip.container.getBoundingClientRect();
+  const anchorRect = anchor.getBoundingClientRect();
 
   if (position === "top") {
     is(tooltipRect.bottom, anchorRect.top, "Tooltip is above the anchor");

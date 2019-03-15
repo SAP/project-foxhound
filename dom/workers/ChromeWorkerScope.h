@@ -7,13 +7,14 @@
 #ifndef mozilla_dom_workers_chromeworkerscope_h__
 #define mozilla_dom_workers_chromeworkerscope_h__
 
-#include "Workers.h"
+#include "WorkerCommon.h"
 
-BEGIN_WORKERS_NAMESPACE
+namespace mozilla {
+namespace dom {
 
-bool
-DefineChromeWorkerFunctions(JSContext* aCx, JS::Handle<JSObject*> aGlobal);
+bool DefineChromeWorkerFunctions(JSContext* aCx, JS::Handle<JSObject*> aGlobal);
 
-END_WORKERS_NAMESPACE
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_workers_chromeworkerscope_h__
+#endif  // mozilla_dom_workers_chromeworkerscope_h__

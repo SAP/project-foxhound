@@ -1,26 +1,24 @@
+NO_NDK=1
+
 . "$topsrcdir/mobile/android/config/mozconfigs/common"
 
+. "$topsrcdir/mobile/android/config/mozconfigs/android-x86/nightly"
+
 # L10n
-ac_add_options --with-l10n-base=../../mozilla-release
-
-# Global options
-ac_add_options --disable-tests
-
-# Android
-ac_add_options --target=i386-linux-android
-ac_add_options --with-android-min-sdk=15
-
-ac_add_options --enable-updater
-ac_add_options --enable-update-channel=${MOZ_UPDATE_CHANNEL}
-
-export MOZILLA_OFFICIAL=1
-
-ac_add_options --with-branding=mobile/android/branding/official
-
-ac_add_options --disable-stdcxx-compat
+ac_add_options --with-l10n-base=../../l10n-central
 
 # Don't autoclobber l10n, as this can lead to missing binaries and broken builds
 # Bug 1283438
 mk_add_options AUTOCLOBBER=
+
+. "$topsrcdir/build/mozconfig.no-compile"
+
+# Global options
+ac_add_options --disable-tests
+ac_add_options --disable-nodejs
+unset NODEJS
+
+ac_add_options --enable-updater
+ac_add_options --enable-update-channel=${MOZ_UPDATE_CHANNEL}
 
 . "$topsrcdir/mobile/android/config/mozconfigs/common.override"

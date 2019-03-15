@@ -39,13 +39,13 @@
  * Note: Basically, makeGetter returns 2 functions that do "get" and "numForm"
  */
 
-const {LocalizationHelper} = require("devtools/shared/l10n");
+const { LocalizationHelper } = require("devtools/shared/l10n");
 const L10N = new LocalizationHelper("toolkit/locales/intl.properties");
 
 // These are the available plural functions that give the appropriate index
 // based on the plural rule number specified. The first element is the number
 // of plural forms and the second is the function to figure out the index.
-var gFunctions = [
+const gFunctions = [
   // 0: Chinese
   [1, (n) => 0],
   // 1: English
@@ -53,7 +53,7 @@ var gFunctions = [
   // 2: French
   [2, (n) => n>1?1:0],
   // 3: Latvian
-  [3, (n) => n%10==1&&n%100!=11?1:n!=0?2:0],
+  [3, (n) => n%10==1&&n%100!=11?1:n%10==0?0:2],
   // 4: Scottish Gaelic
   [4, (n) => n==1||n==11?0:n==2||n==12?1:n>0&&n<20?2:3],
   // 5: Romanian
@@ -74,15 +74,19 @@ var gFunctions = [
   [6, (n) => n==0?5:n==1?0:n==2?1:n%100>=3&&n%100<=10?2:n%100>=11&&n%100<=99?3:4],
   // 13: Maltese
   [4, (n) => n==1?0:n==0||n%100>0&&n%100<=10?1:n%100>10&&n%100<20?2:3],
-  // 14: Macedonian
+  // 14: Unused
   [3, (n) => n%10==1?0:n%10==2?1:2],
-  // 15: Icelandic
+  // 15: Icelandic, Macedonian
   [2, (n) => n%10==1&&n%100!=11?0:1],
   // 16: Breton
   [5, (n) => n%10==1&&n%100!=11&&n%100!=71&&n%100!=91?0:n%10==2&&n%100!=12&&n%100!=72&&n%100!=92?1:(n%10==3||n%10==4||n%10==9)&&n%100!=13&&n%100!=14&&n%100!=19&&n%100!=73&&n%100!=74&&n%100!=79&&n%100!=93&&n%100!=94&&n%100!=99?2:n%1000000==0&&n!=0?3:4],
+  // 17: Shuar
+  [2, (n) => n!=0?1:0],
+  // 18: Welsh
+  [6, (n) => n==0?0:n==1?1:n==2?2:n==3?3:n==6?4:5],
 ];
 
-this.PluralForm = {
+const PluralForm = {
   /**
    * Get the correct plural form of a word based on the number
    *
@@ -100,12 +104,12 @@ this.PluralForm = {
     // See: http://developer.mozilla.org/en/docs/Localization_and_Plurals
 
     // Delete the getters to be overwritten
-    delete PluralForm.numForms;
-    delete PluralForm.get;
+    delete this.numForms;
+    delete this.get;
 
     // Make the plural form get function and set it as the default get
-    [PluralForm.get, PluralForm.numForms] = PluralForm.makeGetter(PluralForm.ruleNum);
-    return PluralForm.get;
+    [this.get, this.numForms] = this.makeGetter(this.ruleNum);
+    return this.get;
   },
 
   /**
@@ -159,8 +163,8 @@ this.PluralForm = {
   get numForms()
   {
     // We lazily load numForms, so trigger the init logic with get()
-    PluralForm.get();
-    return PluralForm.numForms;
+    this.get();
+    return this.numForms;
   },
 
   /**
@@ -173,7 +177,7 @@ this.PluralForm = {
     try {
       return parseInt(L10N.getStr("pluralRule"), 10);
     } catch (e) {
-      // Fallback to English if the pluralRule property is not available.
+    // Fallback to English if the pluralRule property is not available.
       return 1;
     }
   }
@@ -191,6 +195,6 @@ function log(aMsg)
   console.log(msg + "\n");
 }
 
-exports.PluralForm = this.PluralForm;
+exports.PluralForm = PluralForm;
 
 /* eslint-ensable */

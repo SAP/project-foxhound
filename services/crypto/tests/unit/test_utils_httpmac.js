@@ -1,17 +1,16 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://services-common/utils.js");
-Cu.import("resource://services-crypto/utils.js");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://services-common/utils.js");
+ChromeUtils.import("resource://services-crypto/utils.js");
 
-function run_test() {
+add_test(function setup() {
   initTestLogging();
-
   run_next_test();
-}
+});
 
-add_test(function test_sha1() {
+add_task(async function test_sha1() {
   _("Ensure HTTP MAC SHA1 generation works as expected.");
 
   let id = "vmo1txkttblmn51u2p3zk2xiy16hgvm5ok8qiv1yyi86ffjzy9zj0ez9x6wnvbx7";
@@ -21,49 +20,45 @@ add_test(function test_sha1() {
   let nonce = "wGX71";
   let uri = CommonUtils.makeURI("http://10.250.2.176/alias/");
 
-  let result = CryptoUtils.computeHTTPMACSHA1(id, key, method, uri,
+  let result = await CryptoUtils.computeHTTPMACSHA1(id, key, method, uri,
                                               {ts, nonce});
 
-  do_check_eq(btoa(result.mac), "jzh5chjQc2zFEvLbyHnPdX11Yck=");
+  Assert.equal(btoa(result.mac), "jzh5chjQc2zFEvLbyHnPdX11Yck=");
 
-  do_check_eq(result.getHeader(),
-              'MAC id="vmo1txkttblmn51u2p3zk2xiy16hgvm5ok8qiv1yyi86ffjzy9zj0ez9x6wnvbx7", ' +
-              'ts="1329181221", nonce="wGX71", mac="jzh5chjQc2zFEvLbyHnPdX11Yck="');
+  Assert.equal(result.getHeader(),
+               'MAC id="vmo1txkttblmn51u2p3zk2xiy16hgvm5ok8qiv1yyi86ffjzy9zj0ez9x6wnvbx7", ' +
+               'ts="1329181221", nonce="wGX71", mac="jzh5chjQc2zFEvLbyHnPdX11Yck="');
 
   let ext = "EXTRA DATA; foo,bar=1";
 
-  result = CryptoUtils.computeHTTPMACSHA1(id, key, method, uri,
+  result = await CryptoUtils.computeHTTPMACSHA1(id, key, method, uri,
                                               {ts, nonce, ext});
-  do_check_eq(btoa(result.mac), "bNf4Fnt5k6DnhmyipLPkuZroH68=");
-  do_check_eq(result.getHeader(),
-              'MAC id="vmo1txkttblmn51u2p3zk2xiy16hgvm5ok8qiv1yyi86ffjzy9zj0ez9x6wnvbx7", ' +
-              'ts="1329181221", nonce="wGX71", mac="bNf4Fnt5k6DnhmyipLPkuZroH68=", ' +
-              'ext="EXTRA DATA; foo,bar=1"');
-
-  run_next_test();
+  Assert.equal(btoa(result.mac), "bNf4Fnt5k6DnhmyipLPkuZroH68=");
+  Assert.equal(result.getHeader(),
+               'MAC id="vmo1txkttblmn51u2p3zk2xiy16hgvm5ok8qiv1yyi86ffjzy9zj0ez9x6wnvbx7", ' +
+               'ts="1329181221", nonce="wGX71", mac="bNf4Fnt5k6DnhmyipLPkuZroH68=", ' +
+               'ext="EXTRA DATA; foo,bar=1"');
 });
 
-add_test(function test_nonce_length() {
+add_task(async function test_nonce_length() {
   _("Ensure custom nonce lengths are honoured.");
 
   function get_mac(length) {
     let uri = CommonUtils.makeURI("http://example.com/");
     return CryptoUtils.computeHTTPMACSHA1("foo", "bar", "GET", uri, {
-      nonce_bytes: length
+      nonce_bytes: length,
     });
   }
 
-  let result = get_mac(12);
-  do_check_eq(12, atob(result.nonce).length);
+  let result = await get_mac(12);
+  Assert.equal(12, atob(result.nonce).length);
 
-  result = get_mac(2);
-  do_check_eq(2, atob(result.nonce).length);
+  result = await get_mac(2);
+  Assert.equal(2, atob(result.nonce).length);
 
-  result = get_mac(0);
-  do_check_eq(8, atob(result.nonce).length);
+  result = await get_mac(0);
+  Assert.equal(8, atob(result.nonce).length);
 
-  result = get_mac(-1);
-  do_check_eq(8, atob(result.nonce).length);
-
-  run_next_test();
+  result = await get_mac(-1);
+  Assert.equal(8, atob(result.nonce).length);
 });

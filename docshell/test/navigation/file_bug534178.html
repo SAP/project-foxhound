@@ -3,16 +3,16 @@
     <script>
     
       function testDone() {
-        document.body.removeChild(document.body.firstChild);
+        document.body.firstChild.remove();
         var isOK = false;
         try {
           isOK = history.previous != location;
-        } catch(ex) {
+        } catch (ex) {
           // history.previous should throw if this is the first page in shistory.
           isOK = true;
         }
         document.body.textContent = isOK ? "PASSED" : "FAILED";
-        opener.ok(isOK, "Duplicate session history transactions should have been removed!");
+        opener.ok(isOK, "Duplicate session history entries should have been removed!");
         opener.nextTest();
         window.close();
       }

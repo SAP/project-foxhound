@@ -8,14 +8,15 @@
 #define mozilla_ipc_IPCStreamUtils_h
 
 #include "mozilla/ipc/IPCStream.h"
+#include "nsCOMPtr.h"
 #include "nsIInputStream.h"
 
 namespace mozilla {
 
 namespace dom {
 class nsIContentChild;
-class PContentParent;
-}
+class nsIContentParent;
+}  // namespace dom
 
 namespace ipc {
 
@@ -24,14 +25,13 @@ class PBackgroundParent;
 
 // Deserialize an IPCStream received from an actor call.  These methods
 // work in both the child and parent.
-already_AddRefed<nsIInputStream>
-DeserializeIPCStream(const IPCStream& aValue);
+already_AddRefed<nsIInputStream> DeserializeIPCStream(const IPCStream& aValue);
 
-already_AddRefed<nsIInputStream>
-DeserializeIPCStream(const OptionalIPCStream& aValue);
+already_AddRefed<nsIInputStream> DeserializeIPCStream(
+    const OptionalIPCStream& aValue);
 
 // RAII helper class that serializes an nsIInputStream into an IPCStream struct.
-// Any file descriptor or PSendStream actors are automatically managed
+// Any file descriptor or PChildToParentStream actors are automatically managed
 // correctly.
 //
 // Here is a simple example:
@@ -60,7 +60,7 @@ DeserializeIPCStream(const OptionalIPCStream& aValue);
 //    // Do something with stream...
 //
 //    // You can also serialize streams from parent-to-child as long as
-//    // they don't require PSendStream actor support.
+//    // they don't require PChildToParentStream actor support.
 //    AutoIPCStream anotherStream;
 //    anotherStream.Serialize(mFileStream, Manager());
 //    SendStuffDone(anotherStream.TakeValue());
@@ -101,14 +101,17 @@ DeserializeIPCStream(const OptionalIPCStream& aValue);
 //    /* do something with the nsIInputStream */
 //  }
 //
+// Note: This example is about child-to-parent inputStream, but AutoIPCStream
+// works also parent-to-child.
+//
 // The AutoIPCStream class also supports OptionalIPCStream values.  As long as
 // you did not initialize the object with a non-optional IPCStream, you can call
 // TakeOptionalValue() instead.
 //
 // The AutoIPCStream class can also be used to serialize nsIInputStream objects
 // on the parent side to send to the child.  Currently, however, this only
-// works for directly serializable stream types.  The PSendStream actor mechanism
-// is not supported in this direction yet.
+// works for directly serializable stream types.  The PChildToParentStream actor
+// mechanism is not supported in this direction yet.
 //
 // Like SerializeInputStream(), the AutoIPCStream will crash if
 // serialization cannot be completed.
@@ -117,69 +120,76 @@ DeserializeIPCStream(const OptionalIPCStream& aValue);
 //       with complex ipdl structures.  For example, you may want to create an
 //       array of RAII AutoIPCStream objects or build your own wrapping
 //       RAII object to handle other actors that need to be cleaned up.
-class AutoIPCStream final
-{
+class AutoIPCStream final {
   OptionalIPCStream mInlineValue;
   IPCStream* mValue;
   OptionalIPCStream* mOptionalValue;
   bool mTaken;
+  bool mDelayedStart;
 
-  bool
-  IsSet() const;
+  bool IsSet() const;
 
-public:
+ public:
   // Implicitly create an OptionalIPCStream value.  Either
   // TakeValue() or TakeOptionalValue() can be used.
-  AutoIPCStream();
+  explicit AutoIPCStream(bool aDelayedStart = false);
 
   // Wrap an existing IPCStream.  Only TakeValue() may be
   // used.  If a nullptr nsIInputStream is passed to SerializeOrSend() then
   // a crash will be forced.
-  explicit AutoIPCStream(IPCStream& aTarget);
+  explicit AutoIPCStream(IPCStream& aTarget, bool aDelayedStart = false);
 
   // Wrap an existing OptionalIPCStream.  Either TakeValue()
   // or TakeOptionalValue can be used.
-  explicit AutoIPCStream(OptionalIPCStream& aTarget);
+  explicit AutoIPCStream(OptionalIPCStream& aTarget,
+                         bool aDelayedStart = false);
 
   ~AutoIPCStream();
 
   // Serialize the input stream or create a SendStream actor using the PContent
   // manager.  If neither of these succeed, then crash.  This should only be
   // used on the main thread.
-  void
-  Serialize(nsIInputStream* aStream, dom::nsIContentChild* aManager);
+  bool Serialize(nsIInputStream* aStream, dom::nsIContentChild* aManager);
 
   // Serialize the input stream or create a SendStream actor using the
   // PBackground manager.  If neither of these succeed, then crash.  This can
   // be called on the main thread or Worker threads.
-  void
-  Serialize(nsIInputStream* aStream, PBackgroundChild* aManager);
+  bool Serialize(nsIInputStream* aStream, PBackgroundChild* aManager);
 
-  // Serialize the input stream.  A PSendStream cannot be used when going
-  // from parent-to-child.
-  void
-  Serialize(nsIInputStream* aStream, dom::PContentParent* aManager);
+  // Serialize the input stream.
+  MOZ_MUST_USE bool Serialize(nsIInputStream* aStream,
+                              dom::nsIContentParent* aManager);
 
-  // Serialize the input stream.  A PSendStream cannot be used when going
-  // from parent-to-child.
-  void
-  Serialize(nsIInputStream* aStream, PBackgroundParent* aManager);
+  // Serialize the input stream.
+  MOZ_MUST_USE bool Serialize(nsIInputStream* aStream,
+                              PBackgroundParent* aManager);
 
   // Get the IPCStream as a non-optional value.  This will
   // assert if a stream has not been serialized or if it has already been taken.
   // This should only be called if the value is being, or has already been, sent
-  // to the parent
-  IPCStream&
-  TakeValue();
+  // to the other side.
+  IPCStream& TakeValue();
 
   // Get the OptionalIPCStream value.  This will assert if
   // the value has already been taken.  This should only be called if the value
-  // is being, or has already been, sent to the parent
-  OptionalIPCStream&
-  TakeOptionalValue();
+  // is being, or has already been, sent to the other side.
+  OptionalIPCStream& TakeOptionalValue();
+
+ private:
+  AutoIPCStream(const AutoIPCStream& aOther) = delete;
+  AutoIPCStream& operator=(const AutoIPCStream& aOther) = delete;
+  AutoIPCStream& operator=(const AutoIPCStream&& aOther) = delete;
 };
 
-} // namespace ipc
-} // namespace mozilla
+template <>
+struct IPDLParamTraits<nsIInputStream> {
+  static void Write(IPC::Message* aMsg, IProtocol* aActor,
+                    nsIInputStream* aParam);
+  static bool Read(const IPC::Message* aMsg, PickleIterator* aIter,
+                   IProtocol* aActor, RefPtr<nsIInputStream>* aResult);
+};
 
-#endif // mozilla_ipc_IPCStreamUtils_h
+}  // namespace ipc
+}  // namespace mozilla
+
+#endif  // mozilla_ipc_IPCStreamUtils_h

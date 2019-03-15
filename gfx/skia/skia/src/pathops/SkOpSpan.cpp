@@ -24,8 +24,7 @@ const SkOpPtT* SkOpPtT::active() const {
             return ptT;
         }
     }
-    SkASSERT(0);  // should never return deleted
-    return this;
+    return nullptr; // should never return deleted; caller must abort
 }
 
 bool SkOpPtT::contains(const SkOpPtT* check) const {
@@ -160,23 +159,28 @@ void SkOpSpanBase::addOpp(SkOpSpanBase* opp) {
     this->checkForCollapsedCoincidence();
 }
 
-bool SkOpSpanBase::collapsed(double s, double e) const {
+SkOpSpanBase::Collapsed SkOpSpanBase::collapsed(double s, double e) const {
     const SkOpPtT* start = &fPtT;
+    const SkOpPtT* startNext = nullptr;
     const SkOpPtT* walk = start;
     double min = walk->fT;
     double max = min;
     const SkOpSegment* segment = this->segment();
     while ((walk = walk->next()) != start) {
+        if (walk == startNext) {
+            return Collapsed::kError;
+        }
         if (walk->segment() != segment) {
             continue;
         }
         min = SkTMin(min, walk->fT);
         max = SkTMax(max, walk->fT);
         if (between(min, s, max) && between(min, e, max)) {
-            return true;
+            return Collapsed::kYes;
         }
+        startNext = start->next();
     }
-    return false;
+    return Collapsed::kNo;
 }
 
 bool SkOpSpanBase::contains(const SkOpSpanBase* span) const {
@@ -269,12 +273,6 @@ tryNextRemainder:
     fSpanAdds += span->fSpanAdds;
 }
 
-SkOpSpanBase* SkOpSpanBase::active() {
-    SkOpSpanBase* result = fPrev ? fPrev->next() : upCast()->next()->prev();
-    SkASSERT(this == result || fDebugDeleted);
-    return result;
-}
-
 // please keep in sync with debugCheckForCollapsedCoincidence()
 void SkOpSpanBase::checkForCollapsedCoincidence() {
     SkOpCoincidence* coins = this->globalState()->coincidence();
@@ -327,7 +325,7 @@ void SkOpSpanBase::mergeMatches(SkOpSpanBase* opp) {
             }
             SkOpSpanBase* innerBase = inner->span();
             SkASSERT(innerBase->ptT() == inner);
-            // when the intersection is first detected, the span base is marked if there are 
+            // when the intersection is first detected, the span base is marked if there are
             // more than one point in the intersection.
             if (!zero_or_one(inner->fT)) {
                 innerBase->upCast()->release(test);
@@ -407,7 +405,9 @@ bool SkOpSpan::insertCoincidence(const SkOpSegment* segment, bool flipped, bool 
             SkOpSpan* span;
             SkOpSpanBase* base = next->span();
             if (!ordered) {
-                const SkOpSpanBase* spanEnd = fNext->contains(segment)->span();
+                const SkOpPtT* spanEndPtT = fNext->contains(segment);
+                FAIL_IF(!spanEndPtT);
+                const SkOpSpanBase* spanEnd = spanEndPtT->span();
                 const SkOpPtT* start = base->ptT()->starter(spanEnd->ptT());
                 FAIL_IF(!start->span()->upCastable());
                 span = const_cast<SkOpSpan*>(start->span()->upCast());

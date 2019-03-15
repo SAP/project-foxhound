@@ -7,6 +7,7 @@
 SimpleTest.waitForExplicitFinish();
 browserElementTestHelpers.setEnabledPref(true);
 browserElementTestHelpers.addPermission();
+browserElementTestHelpers.allowTopLevelDataURINavigation();
 
 function runTest() {
   var iframe = document.createElement('iframe');
@@ -16,8 +17,8 @@ function runTest() {
   iframe.addEventListener("mozbrowserscroll", function(e) {
     ok(true, "got mozbrowserscroll event.");
     ok(e.detail, "event.detail is not null.");
-    ok(e.detail.top === 4000, "top position is correct.");
-    ok(e.detail.left === 4000, "left position is correct.");
+    ok(Math.round(e.detail.top) == 4000, "top position is correct.");
+    ok(Math.round(e.detail.left) == 4000, "left position is correct.");
     SimpleTest.finish();
   });
 

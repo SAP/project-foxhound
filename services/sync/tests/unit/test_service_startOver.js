@@ -1,11 +1,10 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Cu.import("resource://services-sync/constants.js");
-Cu.import("resource://services-sync/engines.js");
-Cu.import("resource://services-sync/service.js");
-Cu.import("resource://services-sync/util.js");
-Cu.import("resource://testing-common/services/sync/utils.js");
+ChromeUtils.import("resource://services-sync/constants.js");
+ChromeUtils.import("resource://services-sync/engines.js");
+ChromeUtils.import("resource://services-sync/service.js");
+ChromeUtils.import("resource://services-sync/util.js");
 
 function BlaEngine() {
   SyncEngine.call(this, "Bla", Service);
@@ -14,19 +13,15 @@ BlaEngine.prototype = {
   __proto__: SyncEngine.prototype,
 
   removed: false,
-  removeClientData() {
+  async removeClientData() {
     this.removed = true;
-  }
+  },
 
 };
 
-Service.engineManager.register(BlaEngine);
-
-
-function run_test() {
-  initTestLogging("Trace");
-  run_next_test();
-}
+add_task(async function setup() {
+  await Service.engineManager.register(BlaEngine);
+});
 
 add_task(async function test_resetLocalData() {
   await configureIdentity();
@@ -35,7 +30,7 @@ add_task(async function test_resetLocalData() {
   Service.status.minimumNextSync = 23;
 
   // Verify set up.
-  do_check_eq(Service.status.checkSetup(), STATUS_OK);
+  Assert.equal(Service.status.checkSetup(), STATUS_OK);
 
   // Verify state that the observer sees.
   let observerCalled = false;
@@ -43,39 +38,37 @@ add_task(async function test_resetLocalData() {
     Svc.Obs.remove("weave:service:start-over", onStartOver);
     observerCalled = true;
 
-    do_check_eq(Service.status.service, CLIENT_NOT_CONFIGURED);
+    Assert.equal(Service.status.service, CLIENT_NOT_CONFIGURED);
   });
 
-  Service.startOver();
-  do_check_true(observerCalled);
+  await Service.startOver();
+  Assert.ok(observerCalled);
 
   // Verify the site was nuked from orbit.
-  do_check_eq(Svc.Prefs.get("username"), undefined);
+  Assert.equal(Svc.Prefs.get("username"), undefined);
 
-  do_check_eq(Service.status.service, CLIENT_NOT_CONFIGURED);
-  do_check_false(Service.status.enforceBackoff);
-  do_check_eq(Service.status.backoffInterval, 0);
-  do_check_eq(Service.status.minimumNextSync, 0);
+  Assert.equal(Service.status.service, CLIENT_NOT_CONFIGURED);
+  Assert.ok(!Service.status.enforceBackoff);
+  Assert.equal(Service.status.backoffInterval, 0);
+  Assert.equal(Service.status.minimumNextSync, 0);
 });
 
-add_test(function test_removeClientData() {
+add_task(async function test_removeClientData() {
   let engine = Service.engineManager.get("bla");
 
   // No cluster URL = no removal.
-  do_check_false(engine.removed);
-  Service.startOver();
-  do_check_false(engine.removed);
+  Assert.ok(!engine.removed);
+  await Service.startOver();
+  Assert.ok(!engine.removed);
 
   Service.clusterURL = "https://localhost/";
 
-  do_check_false(engine.removed);
-  Service.startOver();
-  do_check_true(engine.removed);
-
-  run_next_test();
+  Assert.ok(!engine.removed);
+  await Service.startOver();
+  Assert.ok(engine.removed);
 });
 
-add_test(function test_reset_SyncScheduler() {
+add_task(async function test_reset_SyncScheduler() {
   // Some non-default values for SyncScheduler's attributes.
   Service.scheduler.idle = true;
   Service.scheduler.hasIncomingItems = true;
@@ -84,14 +77,12 @@ add_test(function test_reset_SyncScheduler() {
   Service.scheduler.syncThreshold = MULTI_DEVICE_THRESHOLD;
   Service.scheduler.syncInterval = Service.scheduler.activeInterval;
 
-  Service.startOver();
+  await Service.startOver();
 
-  do_check_false(Service.scheduler.idle);
-  do_check_false(Service.scheduler.hasIncomingItems);
-  do_check_eq(Service.scheduler.numClients, 0);
-  do_check_eq(Service.scheduler.nextSync, 0);
-  do_check_eq(Service.scheduler.syncThreshold, SINGLE_USER_THRESHOLD);
-  do_check_eq(Service.scheduler.syncInterval, Service.scheduler.singleDeviceInterval);
-
-  run_next_test();
+  Assert.ok(!Service.scheduler.idle);
+  Assert.ok(!Service.scheduler.hasIncomingItems);
+  Assert.equal(Service.scheduler.numClients, 0);
+  Assert.equal(Service.scheduler.nextSync, 0);
+  Assert.equal(Service.scheduler.syncThreshold, SINGLE_USER_THRESHOLD);
+  Assert.equal(Service.scheduler.syncInterval, Service.scheduler.singleDeviceInterval);
 });

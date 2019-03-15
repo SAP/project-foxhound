@@ -5,21 +5,21 @@
  * Tests if screenshots for arbitrary draw calls are generated properly.
  */
 
-function* ifTestingSupported() {
-  let { target, front } = yield initCanvasDebuggerBackend(SIMPLE_CANVAS_TRANSPARENT_URL);
+async function ifTestingSupported() {
+  const { target, front } = await initCanvasDebuggerBackend(SIMPLE_CANVAS_TRANSPARENT_URL);
 
-  let navigated = once(target, "navigate");
+  const navigated = once(target, "navigate");
 
-  yield front.setup({ reload: true });
+  await front.setup({ reload: true });
   ok(true, "The front was setup up successfully.");
 
-  yield navigated;
+  await navigated;
   ok(true, "Target automatically navigated when the front was set up.");
 
-  let snapshotActor = yield front.recordAnimationFrame();
-  let animationOverview = yield snapshotActor.getOverview();
+  const snapshotActor = await front.recordAnimationFrame();
+  const animationOverview = await snapshotActor.getOverview();
 
-  let functionCalls = animationOverview.calls;
+  const functionCalls = animationOverview.calls;
   ok(functionCalls,
     "An array of function call actors was sent after recording.");
   is(functionCalls.length, 8,
@@ -34,10 +34,10 @@ function* ifTestingSupported() {
   is(functionCalls[6].name, "fillRect",
     "The fourth called function's name is correct.");
 
-  let firstDrawCallScreenshot = yield snapshotActor.generateScreenshotFor(functionCalls[0]);
-  let secondDrawCallScreenshot = yield snapshotActor.generateScreenshotFor(functionCalls[2]);
-  let thirdDrawCallScreenshot = yield snapshotActor.generateScreenshotFor(functionCalls[4]);
-  let fourthDrawCallScreenshot = yield snapshotActor.generateScreenshotFor(functionCalls[6]);
+  const firstDrawCallScreenshot = await snapshotActor.generateScreenshotFor(functionCalls[0]);
+  const secondDrawCallScreenshot = await snapshotActor.generateScreenshotFor(functionCalls[2]);
+  const thirdDrawCallScreenshot = await snapshotActor.generateScreenshotFor(functionCalls[4]);
+  const fourthDrawCallScreenshot = await snapshotActor.generateScreenshotFor(functionCalls[6]);
 
   ok(firstDrawCallScreenshot,
     "The first draw call has a screenshot attached.");
@@ -90,11 +90,11 @@ function* ifTestingSupported() {
   isnot(thirdDrawCallScreenshot.pixels, fourthDrawCallScreenshot.pixels,
     "The screenshots taken on consecutive draw calls are different (3).");
 
-  yield removeTab(target.tab);
+  await removeTab(target.tab);
   finish();
 }
 
 function Uint32(src) {
-  let charView = new Uint8Array(src);
+  const charView = new Uint8Array(src);
   return new Uint32Array(charView.buffer);
 }

@@ -17,12 +17,12 @@ Test that when an item in the Tree component is expanded or collapsed the approp
 <pre id="test">
 <script src="head.js" type="application/javascript"></script>
 <script type="application/javascript">
-window.onload = Task.async(function* () {
+window.onload = async function () {
   try {
     const ReactDOM = browserRequire("devtools/client/shared/vendor/react-dom");
-    const React = browserRequire("devtools/client/shared/vendor/react");
-    const { Simulate } = React.addons.TestUtils;
-    const Tree = React.createFactory(browserRequire("devtools/client/shared/components/tree"));
+    const { createFactory } = browserRequire("devtools/client/shared/vendor/react");
+    const { Simulate } = browserRequire("devtools/client/shared/vendor/react-dom-test-utils");
+    const Tree = createFactory(browserRequire("devtools/client/shared/components/VirtualizedTree"));
 
     let numberOfExpands = 0;
     let lastExpandedItem = null;
@@ -59,14 +59,14 @@ window.onload = Task.async(function* () {
 
     // Expand "A" via the keyboard and then let the component re-render.
     Simulate.keyDown(document.querySelector(".tree"), { key: "ArrowRight" });
-    yield forceRender(tree);
+    await forceRender(tree);
 
     is(lastExpandedItem, "A", "Our onExpand callback should have been fired.");
     is(numberOfExpands, 1);
 
     // Now collapse "A" via the keyboard and then let the component re-render.
     Simulate.keyDown(document.querySelector(".tree"), { key: "ArrowLeft" });
-    yield forceRender(tree);
+    await forceRender(tree);
 
     is(lastCollapsedItem, "A", "Our onCollapsed callback should have been fired.");
     is(numberOfCollapses, 1);
@@ -75,7 +75,7 @@ window.onload = Task.async(function* () {
   } finally {
     SimpleTest.finish();
   }
-});
+};
 </script>
 </pre>
 </body>

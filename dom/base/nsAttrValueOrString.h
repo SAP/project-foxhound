@@ -22,47 +22,26 @@
 #include "nsString.h"
 #include "nsAttrValue.h"
 
-class MOZ_STACK_CLASS nsAttrValueOrString
-{
-public:
+class MOZ_STACK_CLASS nsAttrValueOrString {
+ public:
   explicit nsAttrValueOrString(const nsAString& aValue)
-    : mAttrValue(nullptr)
-    , mStringPtr(&aValue)
-    , mCheapString(nullptr)
-  { }
+      : mAttrValue(nullptr), mStringPtr(&aValue), mCheapString(nullptr) {}
 
   explicit nsAttrValueOrString(const nsAString* aValue)
-    : mAttrValue(nullptr)
-    , mStringPtr(aValue)
-    , mCheapString(nullptr)
-  { }
+      : mAttrValue(nullptr), mStringPtr(aValue), mCheapString(nullptr) {}
 
   explicit nsAttrValueOrString(const nsAttrValue& aValue)
-    : mAttrValue(&aValue)
-    , mStringPtr(nullptr)
-    , mCheapString(nullptr)
-  { }
+      : mAttrValue(&aValue), mStringPtr(nullptr), mCheapString(nullptr) {}
 
   explicit nsAttrValueOrString(const nsAttrValue* aValue)
-    : mAttrValue(aValue)
-    , mStringPtr(nullptr)
-    , mCheapString(nullptr)
-  { }
+      : mAttrValue(aValue), mStringPtr(nullptr), mCheapString(nullptr) {}
 
-  void TakeParsedValue(nsAttrValue& aValue)
-  {
-    mStoredAttrValue.SwapValueWith(aValue);
-    mAttrValue = &mStoredAttrValue;
+  void ResetToAttrValue(const nsAttrValue& aValue) {
+    mAttrValue = &aValue;
     mStringPtr = nullptr;
+    // No need to touch mCheapString here.  If we need to use it, we will reset
+    // it to the rigthe value anyway.
   }
-  /**
-   * If TakeParsedValue has been called, returns the value that it set.
-   */
-  nsAttrValue* GetStoredAttrValue()
-  {
-    return mAttrValue == &mStoredAttrValue ? &mStoredAttrValue : nullptr;
-  }
-  const nsAttrValue* GetAttrValue() { return mAttrValue; }
 
   /**
    * Returns a reference to the string value of the contents of this object.
@@ -77,19 +56,30 @@ public:
    * Compares the string representation of this object with the string
    * representation of an nsAttrValue.
    */
-  bool EqualsAsStrings(const nsAttrValue& aOther) const
-  {
+  bool EqualsAsStrings(const nsAttrValue& aOther) const {
     if (mStringPtr) {
       return aOther.Equals(*mStringPtr, eCaseMatters);
     }
     return aOther.EqualsAsStrings(*mAttrValue);
   }
 
-protected:
-  const nsAttrValue*       mAttrValue;
+  /*
+   * Returns true if the value stored is empty
+   */
+  bool IsEmpty() const {
+    if (mStringPtr) {
+      return mStringPtr->IsEmpty();
+    }
+    if (mAttrValue) {
+      return mAttrValue->IsEmptyString();
+    }
+    return true;
+  }
+
+ protected:
+  const nsAttrValue* mAttrValue;
   mutable const nsAString* mStringPtr;
-  mutable nsCheapString    mCheapString;
-  nsAttrValue              mStoredAttrValue;
+  mutable nsCheapString mCheapString;
 };
 
-#endif // nsAttrValueOrString_h___
+#endif  // nsAttrValueOrString_h___

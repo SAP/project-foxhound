@@ -4,8 +4,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files('**'):
+    BUG_COMPONENT = ('Toolkit', 'General')
+
 # These component dirs are built for all apps (including suite)
-if CONFIG['MOZ_ENABLE_XREMOTE']:
+if 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
     DIRS += ['remote']
 
 DIRS += [
@@ -13,27 +16,32 @@ DIRS += [
     'aboutcheckerboard',
     'aboutmemory',
     'aboutperformance',
-    'addoncompat',
     'alerts',
+    'antitracking',
     'apppicker',
     'asyncshutdown',
+    'backgroundhangmonitor',
     'browser',
+    'cleardata',
+    'clearsitedata',
+    'cloudstorage',
     'commandlines',
     'contentprefs',
     'contextualidentity',
+    'crashes',
     'crashmonitor',
-    'diskspacewatcher',
     'downloads',
+    'enterprisepolicies',
     'extensions',
-    'exthelper',
+    'featuregates',
     'filewatcher',
     'finalizationwitness',
-    'formautofill',
     'find',
-    'jsdownloads',
+    'fuzzyfox',
+    'jsoncpp/src/lib_json',
     'lz4',
     'mediasniffer',
-    'microformats',
+    'mozintl',
     'mozprotocol',
     'osfile',
     'parentalcontrols',
@@ -41,15 +49,19 @@ DIRS += [
     'perf',
     'perfmonitoring',
     'places',
-    'privatebrowsing',
     'processsingleton',
     'promiseworker',
     'prompts',
     'protobuf',
     'reader',
     'remotebrowserutils',
+    'remotepagemanager',
     'reflect',
+    'reputationservice',
+    'resistfingerprinting',
     'securityreporter',
+    'sessionstore',
+    'shell',
     'startup',
     'statusfilter',
     'telemetry',
@@ -61,35 +73,24 @@ DIRS += [
     'url-classifier',
     'urlformatter',
     'viewconfig',
+    'viewsource',
     'windowcreator',
     'windowwatcher',
     'workerloader',
     'xulstore'
 ]
 
-if CONFIG['ENABLE_INTL_API']:
-    DIRS += ['mozintl']
-
 if CONFIG['MOZ_BUILD_APP'] != 'mobile/android':
-    DIRS += ['narrate', 'viewsource'];
+    DIRS += ['narrate'];
 
     if CONFIG['NS_PRINTING']:
         DIRS += ['printing']
 
-if CONFIG['MOZ_CRASHREPORTER']:
-    DIRS += ['crashes']
-
 if CONFIG['BUILD_CTYPES']:
     DIRS += ['ctypes']
 
-if CONFIG['MOZ_FEEDS']:
-    DIRS += ['feeds']
-
 if CONFIG['MOZ_XUL']:
     DIRS += ['autocomplete', 'printingui', 'satchel']
-
-if 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
-    DIRS += ['filepicker']
 
 if CONFIG['MOZ_TOOLKIT_SEARCH']:
     DIRS += ['search']
@@ -109,3 +110,6 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] != 'android':
         'nsDefaultCLH.js',
         'nsDefaultCLH.manifest',
     ]
+
+if CONFIG['MOZ_BUILD_APP'] == 'browser':
+    DIRS += ['normandy']

@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,24 +14,22 @@
 namespace mozilla {
 namespace dom {
 
-class FontFaceSetIterator final
-{
-public:
+class FontFaceSetIterator final {
+ public:
   FontFaceSetIterator(mozilla::dom::FontFaceSet* aFontFaceSet,
                       bool aIsKeyAndValue);
 
   NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(FontFaceSetIterator)
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(FontFaceSetIterator)
 
-  bool WrapObject(JSContext* aCx,
-                  JS::Handle<JSObject*> aGivenProto,
+  bool WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto,
                   JS::MutableHandle<JSObject*> aReflector);
 
   // WebIDL
   void Next(JSContext* aCx, FontFaceSetIteratorResult& aResult,
             mozilla::ErrorResult& aRv);
 
-private:
+ private:
   ~FontFaceSetIterator();
 
   RefPtr<FontFaceSet> mFontFaceSet;
@@ -38,7 +37,7 @@ private:
   bool mIsKeyAndValue;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // !defined(mozilla_dom_FontFaceSetIterator_h)
+#endif  // !defined(mozilla_dom_FontFaceSetIterator_h)

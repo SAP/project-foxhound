@@ -10,17 +10,17 @@
 #include <initializer_list>
 
 #include "mozilla/Maybe.h"
+#include "nsStringFwd.h"
 #include "nsTArray.h"
-
-class nsXPIDLString;
 
 namespace mozilla {
 
 // Represents the reason why we can't run the CSS property on the compositor.
-struct AnimationPerformanceWarning
-{
+struct AnimationPerformanceWarning {
   enum class Type : uint8_t {
+    None,
     ContentTooLarge,
+    ContentTooLargeArea,
     TransformBackfaceVisibilityHidden,
     TransformPreserve3D,
     TransformSVG,
@@ -31,18 +31,19 @@ struct AnimationPerformanceWarning
     HasRenderingObserver,
   };
 
-  explicit AnimationPerformanceWarning(Type aType)
-    : mType(aType) { }
+  explicit AnimationPerformanceWarning(Type aType) : mType(aType) {
+    MOZ_ASSERT(mType != Type::None);
+  }
 
   AnimationPerformanceWarning(Type aType,
                               std::initializer_list<int32_t> aParams)
-    : mType(aType)
-  {
+      : mType(aType) {
+    MOZ_ASSERT(mType != Type::None);
     // FIXME:  Once std::initializer_list::size() become a constexpr function,
     // we should use static_assert here.
     MOZ_ASSERT(aParams.size() <= kMaxParamsForLocalization,
-      "The length of parameters should be less than "
-      "kMaxParamsForLocalization");
+               "The length of parameters should be less than "
+               "kMaxParamsForLocalization");
     mParams.emplace(aParams);
   }
 
@@ -61,22 +62,19 @@ struct AnimationPerformanceWarning
   // Optional parameters that may be used for localization.
   Maybe<nsTArray<int32_t>> mParams;
 
-  bool ToLocalizedString(nsXPIDLString& aLocalizedString) const;
-  template<uint32_t N>
-  nsresult ToLocalizedStringWithIntParams(
-    const char* aKey, nsXPIDLString& aLocalizedString) const;
+  bool ToLocalizedString(nsAString& aLocalizedString) const;
+  template <uint32_t N>
+  nsresult ToLocalizedStringWithIntParams(const char* aKey,
+                                          nsAString& aLocalizedString) const;
 
-  bool operator==(const AnimationPerformanceWarning& aOther) const
-  {
-    return mType == aOther.mType &&
-           mParams == aOther.mParams;
+  bool operator==(const AnimationPerformanceWarning& aOther) const {
+    return mType == aOther.mType && mParams == aOther.mParams;
   }
-  bool operator!=(const AnimationPerformanceWarning& aOther) const
-  {
+  bool operator!=(const AnimationPerformanceWarning& aOther) const {
     return !(*this == aOther);
   }
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_dom_AnimationPerformanceWarning_h
+#endif  // mozilla_dom_AnimationPerformanceWarning_h

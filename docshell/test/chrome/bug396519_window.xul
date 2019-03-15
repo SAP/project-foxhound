@@ -14,11 +14,8 @@
         title="396519 test">
 
   <script type="application/javascript"><![CDATA[
-
+    ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
     const LISTEN_EVENTS = ["pageshow"];
-
-    const Cc = Components.classes;
-    const Ci = Components.interfaces;
 
     var gBrowser;
     var gTestCount = 0;
@@ -62,8 +59,8 @@
       var history = gBrowser.webNavigation.sessionHistory;
       if (history.count == gExpected.length) {
         for (var i=0; i<history.count; i++) {
-          var shEntry = history.getEntryAtIndex(i,false).
-                          QueryInterface(Components.interfaces.nsISHEntry);
+          var shEntry = history.legacySHistory.getEntryAtIndex(i).
+                          QueryInterface(Ci.nsISHEntry);
           is(!!shEntry.contentViewer, gExpected[i], "content viewer "+i+", test "+gTestCount);
         }
 
@@ -74,9 +71,9 @@
             if (j == i)
               continue;
 
-            let shentry1 = history.getEntryAtIndex(i, false)
+            let shentry1 = history.legacySHistory.getEntryAtIndex(i)
                                   .QueryInterface(Ci.nsISHEntry);
-            let shentry2 = history.getEntryAtIndex(j, false)
+            let shentry2 = history.legacySHistory.getEntryAtIndex(j)
                                   .QueryInterface(Ci.nsISHEntry);
             ok(!shentry1.sharesDocumentWith(shentry2),
                'Test ' + gTestCount + ': shentry[' + i + "] shouldn't " +
@@ -96,7 +93,6 @@
     }
 
     function* testsIterator() {
-
       // Tests 1 + 2:
       //  Back/forward between two simple documents. Bfcache will be used.
 
@@ -105,33 +101,33 @@
 
       gTestCount++;
       gExpected = [false];
-      gBrowser.loadURI(test1Doc);
+      BrowserTestUtils.loadURI(gBrowser, test1Doc);
       yield undefined;
 
       gTestCount++;
       gExpected = [true, false];
       var test2Doc = test1Doc.replace(/1/,"2");
-      gBrowser.loadURI(test2Doc);
+      BrowserTestUtils.loadURI(gBrowser, test2Doc);
       yield undefined;
 
       gTestCount++;
       gExpected = [true, true, false];
-      gBrowser.loadURI(test1Doc);
+      BrowserTestUtils.loadURI(gBrowser, test1Doc);
       yield undefined;
 
       gTestCount++;
       gExpected = [true, true, true, false];
-      gBrowser.loadURI(test2Doc);
+      BrowserTestUtils.loadURI(gBrowser, test2Doc);
       yield undefined;
 
       gTestCount++;
       gExpected = [false, true, true, true, false];
-      gBrowser.loadURI(test1Doc);
+      BrowserTestUtils.loadURI(gBrowser, test1Doc);
       yield undefined;
 
       gTestCount++;
       gExpected = [false, false, true, true, true, false];
-      gBrowser.loadURI(test2Doc);
+      BrowserTestUtils.loadURI(gBrowser, test2Doc);
       yield undefined;
 
       gTestCount++;

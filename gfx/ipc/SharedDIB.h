@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,14 +13,13 @@
 namespace mozilla {
 namespace gfx {
 
-class SharedDIB
-{
-public:
+class SharedDIB {
+ public:
   typedef base::SharedMemoryHandle Handle;
 
   static const uint32_t kBytesPerPixel = 4;
 
-public:
+ public:
   SharedDIB();
   ~SharedDIB();
 
@@ -32,19 +32,19 @@ public:
   // Returns true if this object contains a valid dib.
   bool IsValid();
 
-  // Wrap a new shared dib around allocated shared memory. Note aHandle must point
-  // to a memory section large enough to hold a dib of size aSize, otherwise this
-  // will fail.
+  // Wrap a new shared dib around allocated shared memory. Note aHandle must
+  // point to a memory section large enough to hold a dib of size aSize,
+  // otherwise this will fail.
   nsresult Attach(Handle aHandle, uint32_t aSize);
 
   // Returns a SharedMemoryHandle suitable for sharing with another process.
   nsresult ShareToProcess(base::ProcessId aTargetPid, Handle *aNewHandle);
 
-protected:
+ protected:
   base::SharedMemory *mShMem;
 };
 
-} // namespace gfx
-} // namespace mozilla
+}  // namespace gfx
+}  // namespace mozilla
 
 #endif

@@ -55,6 +55,7 @@
 #include "nsComponentManagerUtils.h"
 #include "nsServiceManagerUtils.h"
 #include "nsIEventTarget.h"
+#include "nsINamed.h"
 #include "nsITimer.h"
 #include "nsNetCID.h"
 #include "runnable_utils.h"
@@ -65,20 +66,17 @@ extern "C" {
 #include "async_timer.h"
 }
 
-
 namespace mozilla {
 
-class nrappkitCallback  {
+class nrappkitCallback {
  public:
-  nrappkitCallback(NR_async_cb cb, void *cb_arg,
-                   const char *function, int line)
-    : cb_(cb), cb_arg_(cb_arg), function_(function), line_(line) {
-  }
+  nrappkitCallback(NR_async_cb cb, void *cb_arg, const char *function, int line)
+      : cb_(cb), cb_arg_(cb_arg), function_(function), line_(line) {}
   virtual ~nrappkitCallback() {}
 
   virtual void Cancel() = 0;
 
-protected:
+ protected:
   /* additional members */
   NR_async_cb cb_;
   void *cb_arg_;
@@ -87,27 +85,31 @@ protected:
 };
 
 class nrappkitTimerCallback : public nrappkitCallback,
-                              public nsITimerCallback {
+                              public nsITimerCallback,
+                              public nsINamed {
  public:
   // We're going to release ourself in the callback, so we need to be threadsafe
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSITIMERCALLBACK
 
-  nrappkitTimerCallback(NR_async_cb cb, void *cb_arg,
-                        const char *function, int line)
-      : nrappkitCallback(cb, cb_arg, function, line),
-      timer_(nullptr) {}
+  nrappkitTimerCallback(NR_async_cb cb, void *cb_arg, const char *function,
+                        int line)
+      : nrappkitCallback(cb, cb_arg, function, line), timer_(nullptr) {}
 
-  void SetTimer(already_AddRefed<nsITimer>&& timer) {
-    timer_ = timer;
-  }
+  void SetTimer(already_AddRefed<nsITimer> &&timer) { timer_ = timer; }
 
   virtual void Cancel() override {
     AddRef();  // Cancelling the timer causes the callback it holds to
                // be released. AddRef() keeps us alive.
     timer_->Cancel();
     timer_ = nullptr;
-    Release(); // Will cause deletion of this object.
+    Release();  // Will cause deletion of this object.
+  }
+
+  NS_IMETHOD
+  GetName(nsACString &aName) override {
+    aName.AssignLiteral("nrappkitTimerCallback");
+    return NS_OK;
   }
 
  private:
@@ -115,13 +117,13 @@ class nrappkitTimerCallback : public nrappkitCallback,
   virtual ~nrappkitTimerCallback() {}
 };
 
-NS_IMPL_ISUPPORTS(nrappkitTimerCallback, nsITimerCallback)
+NS_IMPL_ISUPPORTS(nrappkitTimerCallback, nsITimerCallback, nsINamed)
 
 NS_IMETHODIMP nrappkitTimerCallback::Notify(nsITimer *timer) {
   r_log(LOG_GENERIC, LOG_DEBUG, "Timer callback fired (set in %s:%d)",
         function_.c_str(), line_);
   MOZ_RELEASE_ASSERT(timer == timer_);
-  cb_(0, 0, cb_arg_);
+  cb_(nullptr, 0, cb_arg_);
 
   // Allow the timer to go away.
   timer_ = nullptr;
@@ -130,26 +132,22 @@ NS_IMETHODIMP nrappkitTimerCallback::Notify(nsITimer *timer) {
 
 class nrappkitScheduledCallback : public nrappkitCallback {
  public:
-
-  nrappkitScheduledCallback(NR_async_cb cb, void *cb_arg,
-                            const char *function, int line)
+  nrappkitScheduledCallback(NR_async_cb cb, void *cb_arg, const char *function,
+                            int line)
       : nrappkitCallback(cb, cb_arg, function, line) {}
 
   void Run() {
     if (cb_) {
-      cb_(0, 0, cb_arg_);
+      cb_(nullptr, 0, cb_arg_);
     }
   }
 
-  virtual void Cancel() override {
-    cb_ = nullptr;
-  }
+  virtual void Cancel() override { cb_ = nullptr; }
 
   ~nrappkitScheduledCallback() {}
 };
 
-}  // close namespace
-
+}  // namespace mozilla
 
 using namespace mozilla;
 
@@ -172,18 +170,16 @@ static void CheckSTSThread() {
   ASSERT_ON_THREAD(sts_thread.value);
 }
 
-static int nr_async_timer_set_zero(NR_async_cb cb, void *arg,
-                                   char *func, int l,
+static int nr_async_timer_set_zero(NR_async_cb cb, void *arg, char *func, int l,
                                    nrappkitCallback **handle) {
-  nrappkitScheduledCallback* callback(new nrappkitScheduledCallback(
-      cb, arg, func, l));
+  nrappkitScheduledCallback *callback(
+      new nrappkitScheduledCallback(cb, arg, func, l));
 
-  nsresult rv = GetSTSThread()->Dispatch(WrapRunnable(
-      nsAutoPtr<nrappkitScheduledCallback>(callback),
-      &nrappkitScheduledCallback::Run),
-                        NS_DISPATCH_NORMAL);
-  if (NS_FAILED(rv))
-    return R_FAILED;
+  nsresult rv = GetSTSThread()->Dispatch(
+      WrapRunnable(nsAutoPtr<nrappkitScheduledCallback>(callback),
+                   &nrappkitScheduledCallback::Run),
+      NS_DISPATCH_NORMAL);
+  if (NS_FAILED(rv)) return R_FAILED;
 
   *handle = callback;
 
@@ -199,14 +195,11 @@ static int nr_async_timer_set_nonzero(int timeout, NR_async_cb cb, void *arg,
   nsresult rv;
   CheckSTSThread();
 
-  nsCOMPtr<nsITimer> timer = do_CreateInstance(NS_TIMER_CONTRACTID, &rv);
-  if (NS_FAILED(rv)) {
-    return(R_FAILED);
-  }
+  nrappkitTimerCallback *callback = new nrappkitTimerCallback(cb, arg, func, l);
 
-  nrappkitTimerCallback* callback =
-      new nrappkitTimerCallback(cb, arg, func, l);
-  rv = timer->InitWithCallback(callback, timeout, nsITimer::TYPE_ONE_SHOT);
+  nsCOMPtr<nsITimer> timer;
+  rv = NS_NewTimerWithCallback(getter_AddRefs(timer), callback, timeout,
+                               nsITimer::TYPE_ONE_SHOT);
   if (NS_FAILED(rv)) {
     return R_FAILED;
   }
@@ -220,8 +213,8 @@ static int nr_async_timer_set_nonzero(int timeout, NR_async_cb cb, void *arg,
   return 0;
 }
 
-int NR_async_timer_set(int timeout, NR_async_cb cb, void *arg,
-                       char *func, int l, void **handle) {
+int NR_async_timer_set(int timeout, NR_async_cb cb, void *arg, char *func,
+                       int l, void **handle) {
   CheckSTSThread();
 
   nrappkitCallback *callback;
@@ -233,11 +226,9 @@ int NR_async_timer_set(int timeout, NR_async_cb cb, void *arg,
     r = nr_async_timer_set_nonzero(timeout, cb, arg, func, l, &callback);
   }
 
-  if (r)
-    return r;
+  if (r) return r;
 
-  if (handle)
-    *handle = callback;
+  if (handle) *handle = callback;
 
   return 0;
 }
@@ -252,14 +243,12 @@ int NR_async_timer_cancel(void *handle) {
   // Check for the handle being nonzero because sometimes we get
   // no-op cancels that aren't on the STS thread. This can be
   // non-racy as long as the upper-level code is careful.
-  if (!handle)
-    return 0;
+  if (!handle) return 0;
 
   CheckSTSThread();
 
-  nrappkitCallback* callback = static_cast<nrappkitCallback *>(handle);
+  nrappkitCallback *callback = static_cast<nrappkitCallback *>(handle);
   callback->Cancel();
 
   return 0;
 }
-

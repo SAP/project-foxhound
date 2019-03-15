@@ -5,8 +5,8 @@ function test() {
   Harness.installsCompletedCallback = finish_test;
   Harness.setup();
 
-  var cr = Components.classes["@mozilla.org/chrome/chrome-registry;1"]
-                     .getService(Components.interfaces.nsIChromeRegistry);
+  var cr = Cc["@mozilla.org/chrome/chrome-registry;1"]
+             .getService(Ci.nsIChromeRegistry);
 
   var chromeroot = extractChromeRoot(gTestPath);
   var xpipath = chromeroot + "unsigned.xpi";
@@ -16,13 +16,16 @@ function test() {
     // scenario where we are running from a .jar and already extracted
   }
 
-  gBrowser.selectedTab = gBrowser.addTab("about:blank");
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, "about:blank");
   BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser).then(() => {
-    gBrowser.loadURI(xpipath);
+    BrowserTestUtils.loadURI(gBrowser, xpipath);
   });
 }
 
 function install_ended(install, addon) {
+  Assert.deepEqual(install.installTelemetryInfo, {source: "file-url"},
+                   "Got the expected install.installTelemetryInfo");
+
   install.cancel();
 }
 

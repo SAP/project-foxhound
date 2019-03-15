@@ -3,8 +3,8 @@
 
 "use strict";
 
-Components.utils.import("resource://gre/modules/MatchPattern.jsm");
-Components.utils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/MatchURLFilters.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function createTestFilter({url, filters}) {
   let m = new MatchURLFilters(filters);
@@ -33,25 +33,25 @@ function expectThrow({url, filters, exceptionMessageContains}) {
   );
 }
 
-add_task(function* test_match_url_filters() {
+add_task(async function test_match_url_filters() {
   const shouldPass = true;
   const shouldFail = true;
   const shouldThrow = true;
 
   var testCases = [
     // Empty, undefined and null filters.
-    {shouldThrow, exceptionMessageContains: "filters array should not be empty",
-     filters: [], url: "http://mozilla.org", },
-    {shouldThrow, exceptionMessageContains: "filters should be an array",
+    {shouldThrow, exceptionMessageContains: /filters array should not be empty/,
+     filters: [], url: "http://mozilla.org" },
+    {shouldThrow, exceptionMessageContains: /filters should be an array/,
      filters: undefined, url: "http://mozilla.org"},
-    {shouldThrow, exceptionMessageContains: "filters should be an array",
+    {shouldThrow, exceptionMessageContains: /filters should be an array/,
      filters: null, url: "http://mozilla.org"},
 
     // Wrong formats (in a real webextension this will be blocked by the schema validation).
-    {shouldThrow, exceptionMessageContains: "filters should be an array", filters: {},
+    {shouldThrow, exceptionMessageContains: /filters should be an array/, filters: {},
      url: "http://mozilla.org"},
-    {shouldThrow, exceptionMessageContains: "filters should be an array",
-     filters: {nonExistentCriteria: true}, url: "http://mozilla.org", },
+    {shouldThrow, exceptionMessageContains: /filters should be an array/,
+     filters: {nonExistentCriteria: true}, url: "http://mozilla.org" },
     {shouldPass, filters: [{nonExistentCriteria: true}], url: "http://mozilla.org"},
 
     // Schemes filter over various url schemes.
@@ -249,7 +249,7 @@ add_task(function* test_match_url_filters() {
         urlPrefix: "https://moz",
         urlSuffix: "#ref",
         urlMatches: "v#ref$",
-        originAndPathMatches: ".*://moz.*/"
+        originAndPathMatches: ".*://moz.*/",
       },
     ], url: "https://www.mozilla.org/sub/path?p1=v#ref"},
     // None matches.
@@ -274,7 +274,7 @@ add_task(function* test_match_url_filters() {
         urlPrefix: "http://moz",
         urlSuffix: "#ref2",
         urlMatches: "value#ref2$",
-        originAndPathMatches: ".*://moz.*com/"
+        originAndPathMatches: ".*://moz.*com/",
       },
     ], url: "https://mozilla.org/sub/path?p1=v#ref"},
     // Some matches
@@ -299,7 +299,7 @@ add_task(function* test_match_url_filters() {
         urlPrefix: "http://moz",
         urlSuffix: "#ref2",
         urlMatches: "value#ref2$",
-        originAndPathMatches: ".*://moz.*com/"
+        originAndPathMatches: ".*://moz.*com/",
       },
     ], url: "https://mozilla.org/sub/path?p1=v#ref"},
 
@@ -386,7 +386,7 @@ add_task(function* test_match_url_filters() {
     } = currentTest;
 
     if (currentTest.shouldThrow) {
-      expectThrow({url, filters, exceptionMessageContains})
+      expectThrow({url, filters, exceptionMessageContains});
     } else if (currentTest.shouldFail) {
       expectFail({url, filters});
     } else {

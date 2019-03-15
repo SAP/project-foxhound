@@ -16,19 +16,17 @@
           src="../events.js"></script>
 
   <script type="application/javascript">
-    function runTest()
-    {
+    function runTest() {
       this.containerNode = getNode("outerDiv");
 
       this.eventSeq = [
         new invokerChecker(EVENT_HIDE, getNode("child")),
         new invokerChecker(EVENT_HIDE, getNode("childDoc")),
         new invokerChecker(EVENT_SHOW, "newChildDoc"),
-        new invokerChecker(EVENT_REORDER, this.containerNode)
+        new invokerChecker(EVENT_REORDER, this.containerNode),
       ];
 
-      this.invoke = function runTest_invoke()
-      {
+      this.invoke = function runTest_invoke() {
         this.containerNode.removeChild(getNode("child"));
 
         var docContainer = getNode("docContainer");
@@ -38,19 +36,17 @@
 
         docContainer.removeChild(getNode("childDoc"));
         docContainer.appendChild(iframe);
-      }
+      };
 
-      this.getID = function runTest_getID()
-      {
+      this.getID = function runTest_getID() {
         return "check show events are not incorrectly coalesced";
-      }
+      };
     }
 
-    //enableLogging("tree");
+    // enableLogging("tree");
     gA11yEventDumpToConsole = true;
     var gQueue = null;
-    function doTest()
-    {
+    function doTest() {
       gQueue = new eventQueue();
       gQueue.push(new runTest());
       gQueue.invoke(); // SimpleTest.finish();

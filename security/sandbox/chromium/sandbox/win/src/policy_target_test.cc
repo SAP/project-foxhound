@@ -170,25 +170,20 @@ SBOX_TESTS_COMMAND int PolicyTargetTest_process(int argc, wchar_t **argv) {
 
 TEST(PolicyTargetTest, SetInformationThread) {
   TestRunner runner;
-  if (base::win::GetVersion() >= base::win::VERSION_XP) {
-    runner.SetTestState(BEFORE_REVERT);
-    EXPECT_EQ(SBOX_TEST_SUCCEEDED, runner.RunTest(L"PolicyTargetTest_token"));
-  }
+  runner.SetTestState(BEFORE_REVERT);
+  EXPECT_EQ(SBOX_TEST_SUCCEEDED, runner.RunTest(L"PolicyTargetTest_token"));
 
   runner.SetTestState(AFTER_REVERT);
   EXPECT_EQ(ERROR_NO_TOKEN, runner.RunTest(L"PolicyTargetTest_token"));
 
   runner.SetTestState(EVERY_STATE);
-  if (base::win::GetVersion() >= base::win::VERSION_XP)
-    EXPECT_EQ(SBOX_TEST_FAILED, runner.RunTest(L"PolicyTargetTest_steal"));
+  EXPECT_EQ(SBOX_TEST_FAILED, runner.RunTest(L"PolicyTargetTest_steal"));
 }
 
 TEST(PolicyTargetTest, OpenThreadToken) {
   TestRunner runner;
-  if (base::win::GetVersion() >= base::win::VERSION_XP) {
-    runner.SetTestState(BEFORE_REVERT);
-    EXPECT_EQ(SBOX_TEST_SUCCEEDED, runner.RunTest(L"PolicyTargetTest_token2"));
-  }
+  runner.SetTestState(BEFORE_REVERT);
+  EXPECT_EQ(SBOX_TEST_SUCCEEDED, runner.RunTest(L"PolicyTargetTest_token2"));
 
   runner.SetTestState(AFTER_REVERT);
   EXPECT_EQ(ERROR_NO_TOKEN, runner.RunTest(L"PolicyTargetTest_token2"));
@@ -196,8 +191,6 @@ TEST(PolicyTargetTest, OpenThreadToken) {
 
 TEST(PolicyTargetTest, OpenThreadTokenEx) {
   TestRunner runner;
-  if (base::win::GetVersion() < base::win::VERSION_XP)
-    return;
 
   runner.SetTestState(BEFORE_REVERT);
   EXPECT_EQ(SBOX_TEST_SUCCEEDED, runner.RunTest(L"PolicyTargetTest_token3"));
@@ -221,6 +214,15 @@ TEST(PolicyTargetTest, OpenProcess) {
       "Opens a process";
 }
 
+TEST(PolicyTargetTest, PolicyBaseNoJobLifetime) {
+  TestRunner runner(JOB_NONE, USER_RESTRICTED_SAME_ACCESS, USER_LOCKDOWN);
+  runner.SetReleasePolicyInRun(true);
+  // TargetPolicy and its SharedMemIPCServer should continue to exist until
+  // the child process dies.
+  EXPECT_EQ(SBOX_TEST_SUCCEEDED, runner.RunTest(L"PolicyTargetTest_thread"))
+      << "Opens the current thread";
+}
+
 // Launches the app in the sandbox and ask it to wait in an
 // infinite loop. Waits for 2 seconds and then check if the
 // desktop associated with the app thread is not the same as the
@@ -229,9 +231,9 @@ TEST(PolicyTargetTest, DesktopPolicy) {
   BrokerServices* broker = GetBroker();
 
   // Precreate the desktop.
-  TargetPolicy* temp_policy = broker->CreatePolicy();
+  scoped_refptr<TargetPolicy> temp_policy = broker->CreatePolicy();
   temp_policy->CreateAlternateDesktop(false);
-  temp_policy->Release();
+  temp_policy = nullptr;
 
   ASSERT_TRUE(broker != NULL);
 
@@ -245,16 +247,19 @@ TEST(PolicyTargetTest, DesktopPolicy) {
 
   // Launch the app.
   ResultCode result = SBOX_ALL_OK;
+  ResultCode warning_result = SBOX_ALL_OK;
+  DWORD last_error = ERROR_SUCCESS;
   base::win::ScopedProcessInformation target;
 
-  TargetPolicy* policy = broker->CreatePolicy();
+  scoped_refptr<TargetPolicy> policy = broker->CreatePolicy();
   policy->SetAlternateDesktop(false);
   policy->SetTokenLevel(USER_INTERACTIVE, USER_LOCKDOWN);
   PROCESS_INFORMATION temp_process_info = {};
-  result = broker->SpawnTarget(prog_name, arguments.c_str(), policy,
-                               &temp_process_info);
+  result =
+      broker->SpawnTarget(prog_name, arguments.c_str(), policy, &warning_result,
+                          &last_error, &temp_process_info);
   base::string16 desktop_name = policy->GetAlternateDesktop();
-  policy->Release();
+  policy = nullptr;
 
   EXPECT_EQ(SBOX_ALL_OK, result);
   if (result == SBOX_ALL_OK)
@@ -278,7 +283,7 @@ TEST(PolicyTargetTest, DesktopPolicy) {
   // Close the desktop handle.
   temp_policy = broker->CreatePolicy();
   temp_policy->DestroyAlternateDesktop();
-  temp_policy->Release();
+  temp_policy = nullptr;
 
   // Make sure the desktop does not exist anymore.
   desk = ::OpenDesktop(desktop_name.c_str(), 0, FALSE, DESKTOP_ENUMERATE);
@@ -293,9 +298,9 @@ TEST(PolicyTargetTest, WinstaPolicy) {
   BrokerServices* broker = GetBroker();
 
   // Precreate the desktop.
-  TargetPolicy* temp_policy = broker->CreatePolicy();
+  scoped_refptr<TargetPolicy> temp_policy = broker->CreatePolicy();
   temp_policy->CreateAlternateDesktop(true);
-  temp_policy->Release();
+  temp_policy = nullptr;
 
   ASSERT_TRUE(broker != NULL);
 
@@ -309,16 +314,19 @@ TEST(PolicyTargetTest, WinstaPolicy) {
 
   // Launch the app.
   ResultCode result = SBOX_ALL_OK;
+  ResultCode warning_result = SBOX_ALL_OK;
   base::win::ScopedProcessInformation target;
 
-  TargetPolicy* policy = broker->CreatePolicy();
+  scoped_refptr<TargetPolicy> policy = broker->CreatePolicy();
   policy->SetAlternateDesktop(true);
   policy->SetTokenLevel(USER_INTERACTIVE, USER_LOCKDOWN);
   PROCESS_INFORMATION temp_process_info = {};
-  result = broker->SpawnTarget(prog_name, arguments.c_str(), policy,
-                               &temp_process_info);
+  DWORD last_error = ERROR_SUCCESS;
+  result =
+      broker->SpawnTarget(prog_name, arguments.c_str(), policy, &warning_result,
+                          &last_error, &temp_process_info);
   base::string16 desktop_name = policy->GetAlternateDesktop();
-  policy->Release();
+  policy = nullptr;
 
   EXPECT_EQ(SBOX_ALL_OK, result);
   if (result == SBOX_ALL_OK)
@@ -350,16 +358,44 @@ TEST(PolicyTargetTest, WinstaPolicy) {
   // Close the desktop handle.
   temp_policy = broker->CreatePolicy();
   temp_policy->DestroyAlternateDesktop();
-  temp_policy->Release();
+  temp_policy = nullptr;
+}
+
+// Creates multiple policies, with alternate desktops on both local and
+// alternate winstations.
+TEST(PolicyTargetTest, BothLocalAndAlternateWinstationDesktop) {
+  BrokerServices* broker = GetBroker();
+
+  scoped_refptr<TargetPolicy> policy1 = broker->CreatePolicy();
+  scoped_refptr<TargetPolicy> policy2 = broker->CreatePolicy();
+  scoped_refptr<TargetPolicy> policy3 = broker->CreatePolicy();
+
+  ResultCode result;
+  result = policy1->SetAlternateDesktop(false);
+  EXPECT_EQ(SBOX_ALL_OK, result);
+  result = policy2->SetAlternateDesktop(true);
+  EXPECT_EQ(SBOX_ALL_OK, result);
+  result = policy3->SetAlternateDesktop(false);
+  EXPECT_EQ(SBOX_ALL_OK, result);
+
+  base::string16 policy1_desktop_name = policy1->GetAlternateDesktop();
+  base::string16 policy2_desktop_name = policy2->GetAlternateDesktop();
+
+  // Extract only the "desktop name" portion of
+  // "{winstation name}\\{desktop name}"
+  EXPECT_NE(policy1_desktop_name.substr(
+                policy1_desktop_name.find_first_of(L'\\') + 1),
+            policy2_desktop_name.substr(
+                policy2_desktop_name.find_first_of(L'\\') + 1));
+
+  policy1->DestroyAlternateDesktop();
+  policy2->DestroyAlternateDesktop();
+  policy3->DestroyAlternateDesktop();
 }
 
 // Launches the app in the sandbox and share a handle with it. The app should
 // be able to use the handle.
 TEST(PolicyTargetTest, ShareHandleTest) {
-  // The way we share handles via STARTUPINFOEX does not work on XP.
-  if (base::win::GetVersion() < base::win::VERSION_VISTA)
-    return;
-
   BrokerServices* broker = GetBroker();
   ASSERT_TRUE(broker != NULL);
 
@@ -381,24 +417,27 @@ TEST(PolicyTargetTest, ShareHandleTest) {
   wchar_t prog_name[MAX_PATH];
   GetModuleFileNameW(NULL, prog_name, MAX_PATH);
 
-  TargetPolicy* policy = broker->CreatePolicy();
-  void* shared_handle =
-      policy->AddHandleToShare(read_only_view.handle().GetHandle());
+  scoped_refptr<TargetPolicy> policy = broker->CreatePolicy();
+  policy->AddHandleToShare(read_only_view.handle().GetHandle());
 
   base::string16 arguments(L"\"");
   arguments += prog_name;
   arguments += L"\" -child 0 shared_memory_handle ";
-  arguments += base::UintToString16(base::win::HandleToUint32(shared_handle));
+  arguments += base::UintToString16(
+      base::win::HandleToUint32(read_only_view.handle().GetHandle()));
 
   // Launch the app.
   ResultCode result = SBOX_ALL_OK;
+  ResultCode warning_result = SBOX_ALL_OK;
   base::win::ScopedProcessInformation target;
 
   policy->SetTokenLevel(USER_INTERACTIVE, USER_LOCKDOWN);
   PROCESS_INFORMATION temp_process_info = {};
-  result = broker->SpawnTarget(prog_name, arguments.c_str(), policy,
-                               &temp_process_info);
-  policy->Release();
+  DWORD last_error = ERROR_SUCCESS;
+  result =
+      broker->SpawnTarget(prog_name, arguments.c_str(), policy, &warning_result,
+                          &last_error, &temp_process_info);
+  policy = nullptr;
 
   EXPECT_EQ(SBOX_ALL_OK, result);
   if (result == SBOX_ALL_OK)

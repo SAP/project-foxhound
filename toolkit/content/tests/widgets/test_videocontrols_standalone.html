@@ -12,6 +12,7 @@
 
 <pre id="test">
 <script class="testbody" type="text/javascript">
+  SimpleTest.expectAssertions(0, 1);
 
 const videoWidth = 320;
 const videoHeight = 240;
@@ -23,6 +24,9 @@ function getMediaElement(aWindow) {
 var popup = window.open("seek_with_sound.ogg");
 popup.addEventListener("load", function() {
   var video = getMediaElement(popup);
+
+  is(popup.document.activeElement, video, "Document should load with focus moved to the video element.");
+
   if (!video.paused)
     runTestVideo(video);
   else {
@@ -51,14 +55,17 @@ function runTestAudioPre() {
   popup = window.open("audio.ogg");
   popup.addEventListener("load", function() {
     var audio = getMediaElement(popup);
+
+    is(popup.document.activeElement, audio, "Document should load with focus moved to the video element.");
+
     if (!audio.paused)
       runTestAudio(audio);
     else {
       audio.addEventListener("play", function() {
         runTestAudio(audio);
-      }, {once: true})
+      }, {once: true});
     }
-  }, {once: true})
+  }, {once: true});
 }
 
 function runTestAudio(aAudio) {

@@ -3,8 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-Components.utils.import("resource://gre/modules/Services.jsm");
-Components.utils.import("resource://gre/modules/Task.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function test() {
   waitForExplicitFinish();
@@ -25,16 +24,16 @@ function test() {
   so it has to be opened as a sub dialog of the main pref tab.
   Open the main tab here.
   */
-  open_preferences(Task.async(function* tabOpened(aContentWindow) {
+  open_preferences(async function tabOpened(aContentWindow) {
     is(gBrowser.currentURI.spec, "about:preferences", "about:preferences loaded");
-    let dialog = yield openAndLoadSubDialog(connectionURL);
-    let dialogClosingPromise = waitForEvent(dialog.document.documentElement, "dialogclosing");
+    let dialog = await openAndLoadSubDialog(connectionURL);
+    let dialogClosingPromise = BrowserTestUtils.waitForEvent(dialog.document.documentElement, "dialogclosing");
 
     ok(dialog, "connection window opened");
     runConnectionTests(dialog);
     dialog.document.documentElement.acceptDialog();
 
-    let dialogClosingEvent = yield dialogClosingPromise;
+    let dialogClosingEvent = await dialogClosingPromise;
     ok(dialogClosingEvent, "connection window closed");
     // runConnectionTests will have changed this pref - make sure it was
     // sanitized correctly when the dialog was accepted
@@ -42,21 +41,25 @@ function test() {
        ".a.com,.b.com,.c.com", "no_proxies_on pref has correct value");
     gBrowser.removeCurrentTab();
     finish();
-  }));
+  });
 }
 
 // run a bunch of tests on the window containing connection.xul
 function runConnectionTests(win) {
   let doc = win.document;
   let networkProxyNone = doc.getElementById("networkProxyNone");
-  let networkProxyNonePref = doc.getElementById("network.proxy.no_proxies_on");
-  let networkProxyTypePref = doc.getElementById("network.proxy.type");
+  let networkProxyNonePref = win.Preferences.get("network.proxy.no_proxies_on");
+  let networkProxyTypePref = win.Preferences.get("network.proxy.type");
 
   // make sure the networkProxyNone textbox is formatted properly
   is(networkProxyNone.getAttribute("multiline"), "true",
      "networkProxyNone textbox is multiline");
   is(networkProxyNone.getAttribute("rows"), "2",
      "networkProxyNone textbox has two rows");
+
+  // make sure manual proxy controls are disabled when the window is opened
+  let networkProxyHTTP = doc.getElementById("networkProxyHTTP");
+  is(networkProxyHTTP.disabled, true, "networkProxyHTTP textbox is disabled");
 
   // check if sanitizing the given input for the no_proxies_on pref results in
   // expected string

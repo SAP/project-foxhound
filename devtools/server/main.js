@@ -8,151 +8,43 @@
  * Toolkit glue for the remote debugging protocol, loaded into the
  * debugging global.
  */
-var { Ci, Cc, CC, Cu, Cr } = require("chrome");
+var { Ci, Cc } = require("chrome");
 var Services = require("Services");
-var { ActorPool, OriginalLocation, RegisteredActorFactory,
-      ObservedActorFactory } = require("devtools/server/actors/common");
-var { LocalDebuggerTransport, ChildDebuggerTransport, WorkerDebuggerTransport } =
-  require("devtools/shared/transport/transport");
+var { Pool } = require("devtools/shared/protocol");
+var { ActorRegistry } = require("devtools/server/actors/utils/actor-registry");
 var DevToolsUtils = require("devtools/shared/DevToolsUtils");
-var { dumpn, dumpv } = DevToolsUtils;
-var flags = require("devtools/shared/flags");
-var EventEmitter = require("devtools/shared/event-emitter");
-var Promise = require("promise");
-var SyncPromise = require("devtools/shared/deprecated-sync-thenables");
+var { dumpn } = DevToolsUtils;
 
-DevToolsUtils.defineLazyGetter(this, "DebuggerSocket", () => {
-  let { DebuggerSocket } = require("devtools/shared/security/socket");
-  return DebuggerSocket;
-});
-DevToolsUtils.defineLazyGetter(this, "Authentication", () => {
-  return require("devtools/shared/security/auth");
-});
-DevToolsUtils.defineLazyGetter(this, "generateUUID", () => {
-  let { generateUUID } = Cc["@mozilla.org/uuid-generator;1"]
+loader.lazyRequireGetter(this, "Authentication", "devtools/shared/security/auth");
+loader.lazyRequireGetter(this, "LocalDebuggerTransport", "devtools/shared/transport/local-transport", true);
+loader.lazyRequireGetter(this, "ChildDebuggerTransport", "devtools/shared/transport/child-transport", true);
+loader.lazyRequireGetter(this, "WorkerThreadWorkerDebuggerTransport", "devtools/shared/transport/worker-transport", true);
+loader.lazyRequireGetter(this, "MainThreadWorkerDebuggerTransport", "devtools/shared/transport/worker-transport", true);
+
+loader.lazyGetter(this, "generateUUID", () => {
+  // eslint-disable-next-line no-shadow
+  const { generateUUID } = Cc["@mozilla.org/uuid-generator;1"]
                            .getService(Ci.nsIUUIDGenerator);
   return generateUUID;
 });
 
-// On B2G, `this` != Global scope, so `Ci` won't be binded on `this`
-// (i.e. this.Ci is undefined) Then later, when using loadSubScript,
-// Ci,... won't be defined for sub scripts.
-this.Ci = Ci;
-this.Cc = Cc;
-this.CC = CC;
-this.Cu = Cu;
-this.Cr = Cr;
-this.Services = Services;
-this.ActorPool = ActorPool;
-this.DevToolsUtils = DevToolsUtils;
-this.dumpn = dumpn;
-this.dumpv = dumpv;
+const CONTENT_PROCESS_SERVER_STARTUP_SCRIPT =
+  "resource://devtools/server/startup/content-process.js";
 
-// Overload `Components` to prevent SDK loader exception on Components
-// object usage
-Object.defineProperty(this, "Components", {
-  get() {
-    return require("chrome").components;
-  }
-});
-
-if (isWorker) {
-  flags.wantLogging = true;
-  flags.wantVerbose = true;
-} else {
-  const LOG_PREF = "devtools.debugger.log";
-  const VERBOSE_PREF = "devtools.debugger.log.verbose";
-
-  flags.wantLogging = Services.prefs.getBoolPref(LOG_PREF);
-  flags.wantVerbose =
-    Services.prefs.getPrefType(VERBOSE_PREF) !== Services.prefs.PREF_INVALID &&
-    Services.prefs.getBoolPref(VERBOSE_PREF);
-}
-
-function loadSubScript(url) {
-  try {
-    let loader = Cc["@mozilla.org/moz/jssubscript-loader;1"]
-                   .getService(Ci.mozIJSSubScriptLoader);
-    loader.loadSubScript(url, this);
-  } catch (e) {
-    let errorStr = "Error loading: " + url + ":\n" +
-                   (e.fileName ? "at " + e.fileName + " : " + e.lineNumber + "\n" : "") +
-                   e + " - " + e.stack + "\n";
-    dump(errorStr);
-    reportError(errorStr);
-    throw e;
-  }
-}
-
-loader.lazyRequireGetter(this, "events", "sdk/event/core");
-
-var gRegisteredModules = Object.create(null);
+loader.lazyRequireGetter(this, "EventEmitter", "devtools/shared/event-emitter");
 
 /**
- * The ModuleAPI object is passed to modules loaded using the
- * DebuggerServer.registerModule() API.  Modules can use this
- * object to register actor factories.
- * Factories registered through the module API will be removed
- * when the module is unregistered or when the server is
- * destroyed.
- */
-function ModuleAPI() {
-  let activeTabActors = new Set();
-  let activeGlobalActors = new Set();
-
-  return {
-    // See DebuggerServer.setRootActor for a description.
-    setRootActor(factory) {
-      DebuggerServer.setRootActor(factory);
-    },
-
-    // See DebuggerServer.addGlobalActor for a description.
-    addGlobalActor(factory, name) {
-      DebuggerServer.addGlobalActor(factory, name);
-      activeGlobalActors.add(factory);
-    },
-    // See DebuggerServer.removeGlobalActor for a description.
-    removeGlobalActor(factory) {
-      DebuggerServer.removeGlobalActor(factory);
-      activeGlobalActors.delete(factory);
-    },
-
-    // See DebuggerServer.addTabActor for a description.
-    addTabActor(factory, name) {
-      DebuggerServer.addTabActor(factory, name);
-      activeTabActors.add(factory);
-    },
-    // See DebuggerServer.removeTabActor for a description.
-    removeTabActor(factory) {
-      DebuggerServer.removeTabActor(factory);
-      activeTabActors.delete(factory);
-    },
-
-    // Destroy the module API object, unregistering any
-    // factories registered by the module.
-    destroy() {
-      for (let factory of activeTabActors) {
-        DebuggerServer.removeTabActor(factory);
-      }
-      activeTabActors = null;
-      for (let factory of activeGlobalActors) {
-        DebuggerServer.removeGlobalActor(factory);
-      }
-      activeGlobalActors = null;
-    }
-  };
-}
-
-/** *
  * Public API
  */
 var DebuggerServer = {
   _listeners: [],
   _initialized: false,
-  // Map of global actor names to actor constructors provided by extensions.
+  // Flag to check if the content process server startup script was already loaded.
+  _contentProcessServerStartupScriptLoaded: false,
+  // Map of global actor names to actor constructors.
   globalActorFactories: {},
-  // Map of tab actor names to actor constructors provided by extensions.
-  tabActorFactories: {},
+  // Map of target-scoped actor names to actor constructors.
+  targetScopedActorFactories: {},
 
   LONG_STRING_LENGTH: 10000,
   LONG_STRING_INITIAL_LENGTH: 1000,
@@ -163,7 +55,7 @@ var DebuggerServer = {
    * window (i.e the global style editor). Set this to your main window type,
    * for example "navigator:browser".
    */
-  chromeWindowType: null,
+  chromeWindowType: "navigator:browser",
 
   /**
    * Allow debugging chrome of (parent or child) processes.
@@ -171,12 +63,19 @@ var DebuggerServer = {
   allowChromeProcess: false,
 
   /**
+   * Flag used to check if the server can be destroyed when all connections have been
+   * removed. Firefox on Android runs a single shared DebuggerServer, and should not be
+   * closed even if no client is connected.
+   */
+  keepAlive: false,
+
+  /**
    * We run a special server in child process whose main actor is an instance
-   * of ContentActor, but that isn't a root actor. Instead there is no root
+   * of FrameTargetActor, but that isn't a root actor. Instead there is no root
    * actor registered on DebuggerServer.
    */
   get rootlessServer() {
-    return !this.isModuleRegistered("devtools/server/actors/webbrowser");
+    return !this.createRootActor;
   },
 
   /**
@@ -188,9 +87,11 @@ var DebuggerServer = {
     }
 
     this._connections = {};
+    ActorRegistry.init(this._connections);
     this._nextConnID = 0;
 
     this._initialized = true;
+    this._onSocketListenerAccepted = this._onSocketListenerAccepted.bind(this);
   },
 
   get protocol() {
@@ -199,6 +100,10 @@ var DebuggerServer = {
 
   get initialized() {
     return this._initialized;
+  },
+
+  hasConnection() {
+    return Object.keys(this._connections).length > 0;
   },
 
   /**
@@ -213,18 +118,13 @@ var DebuggerServer = {
       return;
     }
 
-    for (let connID of Object.getOwnPropertyNames(this._connections)) {
+    for (const connID of Object.getOwnPropertyNames(this._connections)) {
       this._connections[connID].close();
     }
 
-    for (let id of Object.getOwnPropertyNames(gRegisteredModules)) {
-      this.unregisterModule(id);
-    }
-    gRegisteredModules = Object.create(null);
+    ActorRegistry.destroy();
 
-    this.closeAllListeners();
-    this.globalActorFactories = {};
-    this.tabActorFactories = {};
+    this.closeAllSocketListeners();
     this._initialized = false;
 
     dumpn("Debugger server is shut down.");
@@ -239,13 +139,13 @@ var DebuggerServer = {
     }
 
     if (!this.rootlessServer && !this.createRootActor) {
-      throw new Error("Use DebuggerServer.addActors() to add a root actor " +
+      throw new Error("Use DebuggerServer.setRootActor() to add a root actor " +
                       "implementation.");
     }
   },
 
   /**
-   * Register all type of actors. Only register the one that are not already
+   * Register different type of actors. Only register the one that are not already
    * registered.
    *
    * @param root boolean
@@ -254,367 +154,30 @@ var DebuggerServer = {
    * @param browser boolean
    *        Registers all the parent process actors useful for debugging the
    *        runtime itself, like preferences and addons actors.
-   * @param tab boolean
-   *        Registers all the tab actors like console, script, ... all useful
+   * @param target boolean
+   *        Registers all the target-scoped actors like console, script, etc.
    *        for debugging a target context.
-   * @param windowType string
-   *        "windowtype" attribute of the main chrome windows. Used by some
-   *        actors to retrieve them.
    */
-  registerActors({ root = true, browser = true, tab = true,
-                   windowType = "navigator:browser" }) {
-    this.chromeWindowType = windowType;
-
+  registerActors({ root, browser, target }) {
     if (browser) {
-      this.addBrowserActors(windowType);
+      ActorRegistry.addBrowserActors();
     }
 
     if (root) {
-      this.registerModule("devtools/server/actors/webbrowser");
+      const { createRootActor } = require("devtools/server/actors/webbrowser");
+      this.setRootActor(createRootActor);
     }
 
-    if (tab) {
-      this.addTabActors();
-    }
-  },
-
-  /**
-   * Load a subscript into the debugging global.
-   *
-   * @param url string A url that will be loaded as a subscript into the
-   *        debugging global.  The user must load at least one script
-   *        that implements a createRootActor() function to create the
-   *        server's root actor.
-   */
-  addActors(url) {
-    loadSubScript.call(this, url);
-  },
-
-  /**
-   * Register a CommonJS module with the debugger server.
-   * @param id string
-   *        The ID of a CommonJS module.  This module must export 'register'
-   *        and 'unregister' functions if no `options` argument is given.
-   *        If `options` is set, the actor is going to be registered
-   *        immediately, but loaded only when a client starts sending packets
-   *        to an actor with the same id.
-   *
-   * @param options object (optional)
-   *        This parameter is still optional, but not providing it is
-   *        deprecated and will result in eagerly loading the actor module
-   *        with the memory overhead that entails.
-   *        An object with 3 mandatory attributes:
-   *        - prefix (string):
-   *          The prefix of an actor is used to compute:
-   *          - the `actorID` of each new actor instance (ex: prefix1).
-   *            (See ActorPool.addActor)
-   *          - the actor name in the listTabs request. Sending a listTabs
-   *            request to the root actor returns actor IDs. IDs are in
-   *            dictionaries, with actor names as keys and actor IDs as values.
-   *            The actor name is the prefix to which the "Actor" string is
-   *            appended. So for an actor with the `console` prefix, the actor
-   *            name will be `consoleActor`.
-   *        - constructor (string):
-   *          the name of the exported symbol to be used as the actor
-   *          constructor.
-   *        - type (a dictionary of booleans with following attribute names):
-   *          - "global"
-   *            registers a global actor instance, if true.
-   *            A global actor has the root actor as its parent.
-   *          - "tab"
-   *            registers a tab actor instance, if true.
-   *            A new actor will be created for each tab and each app.
-   */
-  registerModule(id, options) {
-    if (id in gRegisteredModules) {
-      return;
-    }
-
-    if (options) {
-      // Lazy loaded actors
-      let {prefix, constructor, type} = options;
-      if (typeof (prefix) !== "string") {
-        throw new Error(`Lazy actor definition for '${id}' requires a string ` +
-                        `'prefix' option.`);
-      }
-      if (typeof (constructor) !== "string") {
-        throw new Error(`Lazy actor definition for '${id}' requires a string ` +
-                        `'constructor' option.`);
-      }
-      if (!("global" in type) && !("tab" in type)) {
-        throw new Error(`Lazy actor definition for '${id}' requires a dictionary ` +
-                        `'type' option whose attributes can be 'global' or 'tab'.`);
-      }
-      let name = prefix + "Actor";
-      let mod = {
-        id: id,
-        prefix: prefix,
-        constructorName: constructor,
-        type: type,
-        globalActor: type.global,
-        tabActor: type.tab
-      };
-      gRegisteredModules[id] = mod;
-      if (mod.tabActor) {
-        this.addTabActor(mod, name);
-      }
-      if (mod.globalActor) {
-        this.addGlobalActor(mod, name);
-      }
-    } else {
-      // Deprecated actors being loaded at startup
-      let moduleAPI = ModuleAPI();
-      let mod = require(id);
-      mod.register(moduleAPI);
-      gRegisteredModules[id] = {
-        module: mod,
-        api: moduleAPI
-      };
+    if (target) {
+      ActorRegistry.addTargetScopedActors();
     }
   },
 
   /**
-   * Returns true if a module id has been registered.
+   * Register all possible actors for this DebuggerServer.
    */
-  isModuleRegistered(id) {
-    return (id in gRegisteredModules);
-  },
-
-  /**
-   * Unregister a previously-loaded CommonJS module from the debugger server.
-   */
-  unregisterModule(id) {
-    let mod = gRegisteredModules[id];
-    if (!mod) {
-      throw new Error("Tried to unregister a module that was not previously registered.");
-    }
-
-    // Lazy actors
-    if (mod.tabActor) {
-      this.removeTabActor(mod);
-    }
-    if (mod.globalActor) {
-      this.removeGlobalActor(mod);
-    }
-
-    if (mod.module) {
-      // Deprecated non-lazy module API
-      mod.module.unregister(mod.api);
-      mod.api.destroy();
-    }
-
-    delete gRegisteredModules[id];
-  },
-
-  /**
-   * Install Firefox-specific actors.
-   *
-   * /!\ Be careful when adding a new actor, especially global actors.
-   * Any new global actor will be exposed and returned by the root actor.
-   *
-   * That's the reason why tab actors aren't loaded on demand via
-   * restrictPrivileges=true, to prevent exposing them on b2g parent process's
-   * root actor.
-   */
-  addBrowserActors(windowType = "navigator:browser", restrictPrivileges = false) {
-    this.chromeWindowType = windowType;
-    this.registerModule("devtools/server/actors/webbrowser");
-
-    if (!restrictPrivileges) {
-      this.addTabActors();
-      this.registerModule("devtools/server/actors/preference", {
-        prefix: "preference",
-        constructor: "PreferenceActor",
-        type: { global: true }
-      });
-      this.registerModule("devtools/server/actors/actor-registry", {
-        prefix: "actorRegistry",
-        constructor: "ActorRegistryActor",
-        type: { global: true }
-      });
-    }
-    this.registerModule("devtools/server/actors/addons", {
-      prefix: "addons",
-      constructor: "AddonsActor",
-      type: { global: true }
-    });
-    this.registerModule("devtools/server/actors/device", {
-      prefix: "device",
-      constructor: "DeviceActor",
-      type: { global: true }
-    });
-    this.registerModule("devtools/server/actors/director-registry", {
-      prefix: "directorRegistry",
-      constructor: "DirectorRegistryActor",
-      type: { global: true }
-    });
-    this.registerModule("devtools/server/actors/heap-snapshot-file", {
-      prefix: "heapSnapshotFile",
-      constructor: "HeapSnapshotFileActor",
-      type: { global: true }
-    });
-  },
-
-  /**
-   * Install tab actors.
-   */
-  addTabActors() {
-    this.registerModule("devtools/server/actors/webconsole", {
-      prefix: "console",
-      constructor: "WebConsoleActor",
-      type: { tab: true }
-    });
-    this.registerModule("devtools/server/actors/inspector", {
-      prefix: "inspector",
-      constructor: "InspectorActor",
-      type: { tab: true }
-    });
-    this.registerModule("devtools/server/actors/call-watcher", {
-      prefix: "callWatcher",
-      constructor: "CallWatcherActor",
-      type: { tab: true }
-    });
-    this.registerModule("devtools/server/actors/canvas", {
-      prefix: "canvas",
-      constructor: "CanvasActor",
-      type: { tab: true }
-    });
-    this.registerModule("devtools/server/actors/webgl", {
-      prefix: "webgl",
-      constructor: "WebGLActor",
-      type: { tab: true }
-    });
-    this.registerModule("devtools/server/actors/webaudio", {
-      prefix: "webaudio",
-      constructor: "WebAudioActor",
-      type: { tab: true }
-    });
-    this.registerModule("devtools/server/actors/stylesheets", {
-      prefix: "styleSheets",
-      constructor: "StyleSheetsActor",
-      type: { tab: true }
-    });
-    this.registerModule("devtools/server/actors/styleeditor", {
-      prefix: "styleEditor",
-      constructor: "StyleEditorActor",
-      type: { tab: true }
-    });
-    this.registerModule("devtools/server/actors/storage", {
-      prefix: "storage",
-      constructor: "StorageActor",
-      type: { tab: true }
-    });
-    this.registerModule("devtools/server/actors/gcli", {
-      prefix: "gcli",
-      constructor: "GcliActor",
-      type: { tab: true }
-    });
-    this.registerModule("devtools/server/actors/memory", {
-      prefix: "memory",
-      constructor: "MemoryActor",
-      type: { tab: true }
-    });
-    this.registerModule("devtools/server/actors/framerate", {
-      prefix: "framerate",
-      constructor: "FramerateActor",
-      type: { tab: true }
-    });
-    this.registerModule("devtools/server/actors/eventlooplag", {
-      prefix: "eventLoopLag",
-      constructor: "EventLoopLagActor",
-      type: { tab: true }
-    });
-    this.registerModule("devtools/server/actors/reflow", {
-      prefix: "reflow",
-      constructor: "ReflowActor",
-      type: { tab: true }
-    });
-    this.registerModule("devtools/server/actors/css-properties", {
-      prefix: "cssProperties",
-      constructor: "CssPropertiesActor",
-      type: { tab: true }
-    });
-    this.registerModule("devtools/server/actors/csscoverage", {
-      prefix: "cssUsage",
-      constructor: "CSSUsageActor",
-      type: { tab: true }
-    });
-    this.registerModule("devtools/server/actors/monitor", {
-      prefix: "monitor",
-      constructor: "MonitorActor",
-      type: { tab: true }
-    });
-    this.registerModule("devtools/server/actors/timeline", {
-      prefix: "timeline",
-      constructor: "TimelineActor",
-      type: { tab: true }
-    });
-    this.registerModule("devtools/server/actors/director-manager", {
-      prefix: "directorManager",
-      constructor: "DirectorManagerActor",
-      type: { global: false, tab: true }
-    });
-    if ("nsIProfiler" in Ci) {
-      this.registerModule("devtools/server/actors/profiler", {
-        prefix: "profiler",
-        constructor: "ProfilerActor",
-        type: { tab: true }
-      });
-      this.registerModule("devtools/server/actors/performance", {
-        prefix: "performance",
-        constructor: "PerformanceActor",
-        type: { tab: true }
-      });
-    }
-    this.registerModule("devtools/server/actors/animation", {
-      prefix: "animations",
-      constructor: "AnimationsActor",
-      type: { tab: true }
-    });
-    this.registerModule("devtools/server/actors/promises", {
-      prefix: "promises",
-      constructor: "PromisesActor",
-      type: { tab: true }
-    });
-    this.registerModule("devtools/server/actors/performance-entries", {
-      prefix: "performanceEntries",
-      constructor: "PerformanceEntriesActor",
-      type: { tab: true }
-    });
-    this.registerModule("devtools/server/actors/emulation", {
-      prefix: "emulation",
-      constructor: "EmulationActor",
-      type: { tab: true }
-    });
-    this.registerModule("devtools/server/actors/webextension-inspected-window", {
-      prefix: "webExtensionInspectedWindow",
-      constructor: "WebExtensionInspectedWindowActor",
-      type: { tab: true }
-    });
-  },
-
-  /**
-   * Passes a set of options to the BrowserAddonActors for the given ID.
-   *
-   * @param id string
-   *        The ID of the add-on to pass the options to
-   * @param options object
-   *        The options.
-   * @return a promise that will be resolved when complete.
-   */
-  setAddonOptions(id, options) {
-    if (!this._initialized) {
-      return Promise.resolve();
-    }
-
-    let promises = [];
-
-    // Pass to all connections
-    for (let connID of Object.getOwnPropertyNames(this._connections)) {
-      promises.push(this._connections[connID].setAddonOptions(id, options));
-    }
-
-    return SyncPromise.all(promises);
+  registerAllActors() {
+    this.registerActors({ root: true, browser: true, target: true });
   },
 
   get listeningSockets() {
@@ -622,33 +185,16 @@ var DebuggerServer = {
   },
 
   /**
-   * Creates a socket listener for remote debugger connections.
-   *
-   * After calling this, set some socket options, such as the port / path to
-   * listen on, and then call |open| on the listener.
-   *
-   * See SocketListener in devtools/shared/security/socket.js for available
-   * options.
-   *
-   * @return SocketListener
-   *         A SocketListener instance that is waiting to be configured and
-   *         opened is returned.  This single listener can be closed at any
-   *         later time by calling |close| on the SocketListener.  If remote
-   *         connections are disabled, an error is thrown.
-   */
-  createListener() {
-    if (!Services.prefs.getBoolPref("devtools.debugger.remote-enabled")) {
-      throw new Error("Can't create listener, remote debugging disabled");
-    }
-    this._checkInit();
-    return DebuggerSocket.createListener();
-  },
-
-  /**
    * Add a SocketListener instance to the server's set of active
    * SocketListeners.  This is called by a SocketListener after it is opened.
    */
-  _addListener(listener) {
+  addSocketListener(listener) {
+    if (!Services.prefs.getBoolPref("devtools.debugger.remote-enabled")) {
+      throw new Error("Can't add a SocketListener, remote debugging disabled");
+    }
+    this._checkInit();
+
+    listener.on("accepted", this._onSocketListenerAccepted);
     this._listeners.push(listener);
   },
 
@@ -656,8 +202,17 @@ var DebuggerServer = {
    * Remove a SocketListener instance from the server's set of active
    * SocketListeners.  This is called by a SocketListener after it is closed.
    */
-  _removeListener(listener) {
+  removeSocketListener(listener) {
+    // Remove connections that were accepted in the listener.
+    for (const connID of Object.getOwnPropertyNames(this._connections)) {
+      const connection = this._connections[connID];
+      if (connection.isAcceptedBy(listener)) {
+        connection.close();
+      }
+    }
+
     this._listeners = this._listeners.filter(l => l !== listener);
+    listener.off("accepted", this._onSocketListenerAccepted);
   },
 
   /**
@@ -666,16 +221,20 @@ var DebuggerServer = {
    * @return boolean
    *         Whether any listeners were actually closed.
    */
-  closeAllListeners() {
+  closeAllSocketListeners() {
     if (!this.listeningSockets) {
       return false;
     }
 
-    for (let listener of this._listeners) {
+    for (const listener of this._listeners) {
       listener.close();
     }
 
     return true;
+  },
+
+  _onSocketListenerAccepted(transport, listener) {
+    this._onConnection(transport, null, false, listener);
   },
 
   /**
@@ -692,10 +251,10 @@ var DebuggerServer = {
   connectPipe(prefix) {
     this._checkInit();
 
-    let serverTransport = new LocalDebuggerTransport();
-    let clientTransport = new LocalDebuggerTransport(serverTransport);
+    const serverTransport = new LocalDebuggerTransport();
+    const clientTransport = new LocalDebuggerTransport(serverTransport);
     serverTransport.other = clientTransport;
-    let connection = this._onConnection(serverTransport, prefix);
+    const connection = this._onConnection(serverTransport, prefix);
 
     // I'm putting this here because I trust you.
     //
@@ -730,92 +289,108 @@ var DebuggerServer = {
   connectToParent(prefix, scopeOrManager) {
     this._checkInit();
 
-    let transport = isWorker ?
-                    new WorkerDebuggerTransport(scopeOrManager, prefix) :
+    const transport = isWorker ?
+                    new WorkerThreadWorkerDebuggerTransport(scopeOrManager, prefix) :
                     new ChildDebuggerTransport(scopeOrManager, prefix);
 
     return this._onConnection(transport, prefix, true);
   },
 
-  connectToContent(connection, mm, onDestroy) {
-    let deferred = SyncPromise.defer();
+  /**
+   * Start a DevTools server in a content process (representing the entire process, not
+   * just a single frame) and add it as a child server for an active connection.
+   */
+  connectToContentProcess(connection, mm, onDestroy) {
+    return new Promise(resolve => {
+      const prefix = connection.allocID("content-process");
+      let actor, childTransport;
 
-    let prefix = connection.allocID("content-process");
-    let actor, childTransport;
+      mm.addMessageListener("debug:content-process-actor", function listener(msg) {
+        // Arbitrarily choose the first content process to reply
+        // XXX: This code needs to be updated if we use more than one content process
+        mm.removeMessageListener("debug:content-process-actor", listener);
 
-    mm.addMessageListener("debug:content-process-actor", function listener(msg) {
-      // Arbitrarily choose the first content process to reply
-      // XXX: This code needs to be updated if we use more than one content process
-      mm.removeMessageListener("debug:content-process-actor", listener);
+        // Pipe Debugger message from/to parent/child via the message manager
+        childTransport = new ChildDebuggerTransport(mm, prefix);
+        childTransport.hooks = {
+          onPacket: connection.send.bind(connection),
+          onClosed() {},
+        };
+        childTransport.ready();
 
-      // Pipe Debugger message from/to parent/child via the message manager
-      childTransport = new ChildDebuggerTransport(mm, prefix);
-      childTransport.hooks = {
-        onPacket: connection.send.bind(connection),
-        onClosed() {}
-      };
-      childTransport.ready();
+        connection.setForwarding(prefix, childTransport);
 
-      connection.setForwarding(prefix, childTransport);
+        dumpn(`Start forwarding for process with prefix ${prefix}`);
 
-      dumpn("establishing forwarding for process with prefix " + prefix);
+        actor = msg.json.actor;
 
-      actor = msg.json.actor;
+        resolve(actor);
+      });
 
-      deferred.resolve(actor);
-    });
+      // Load the content process server startup script only once.
+      if (!this._contentProcessServerStartupScriptLoaded) {
+        // Load the process script that will receive the debug:init-content-server message
+        Services.ppmm.loadProcessScript(CONTENT_PROCESS_SERVER_STARTUP_SCRIPT, true);
+        this._contentProcessServerStartupScriptLoaded = true;
+      }
 
-    mm.sendAsyncMessage("DevTools:InitDebuggerServer", {
-      prefix: prefix
-    });
+      // Send a message to the content process server startup script to forward it the
+      // prefix.
+      mm.sendAsyncMessage("debug:init-content-server", {
+        prefix: prefix,
+      });
 
-    function onClose() {
-      Services.obs.removeObserver(onMessageManagerClose, "message-manager-close");
-      events.off(connection, "closed", onClose);
-      if (childTransport) {
-        // If we have a child transport, the actor has already
-        // been created. We need to stop using this message manager.
-        childTransport.close();
-        childTransport = null;
-        connection.cancelForwarding(prefix);
+      function onClose() {
+        Services.obs.removeObserver(onMessageManagerClose, "message-manager-close");
+        EventEmitter.off(connection, "closed", onClose);
+        if (childTransport) {
+          // If we have a child transport, the actor has already
+          // been created. We need to stop using this message manager.
+          childTransport.close();
+          childTransport = null;
+          connection.cancelForwarding(prefix);
 
-        // ... and notify the child process to clean the tab actors.
-        try {
-          mm.sendAsyncMessage("debug:content-process-destroy");
-        } catch (e) {
-          // Nothing to do
+          // ... and notify the child process to clean the target-scoped actors.
+          try {
+            mm.sendAsyncMessage("debug:content-process-destroy");
+          } catch (e) {
+            // Nothing to do
+          }
+        }
+
+        if (onDestroy) {
+          onDestroy(mm);
         }
       }
 
-      if (onDestroy) {
-        onDestroy(mm);
-      }
-    }
+      const onMessageManagerClose =
+        DevToolsUtils.makeInfallible((subject, topic, data) => {
+          if (subject == mm) {
+            onClose();
+            connection.send({ from: actor.actor, type: "tabDetached" });
+          }
+        });
+      Services.obs.addObserver(onMessageManagerClose,
+                               "message-manager-close");
 
-    let onMessageManagerClose = DevToolsUtils.makeInfallible((subject, topic, data) => {
-      if (subject == mm) {
-        onClose();
-        connection.send({ from: actor.actor, type: "tabDetached" });
-      }
+      EventEmitter.on(connection, "closed", onClose);
     });
-    Services.obs.addObserver(onMessageManagerClose,
-                             "message-manager-close", false);
-
-    events.on(connection, "closed", onClose);
-
-    return deferred.promise;
   },
 
+  /**
+   * Start a DevTools server in a worker and add it as a child server for an active
+   * connection.
+   */
   connectToWorker(connection, dbg, id, options) {
     return new Promise((resolve, reject) => {
       // Step 1: Ensure the worker debugger is initialized.
       if (!dbg.isInitialized) {
-        dbg.initialize("resource://devtools/server/worker.js");
+        dbg.initialize("resource://devtools/server/startup/worker.js");
 
         // Create a listener for rpc requests from the worker debugger. Only do
         // this once, when the worker debugger is first initialized, rather than
         // for each connection.
-        let listener = {
+        const listener = {
           onClose: () => {
             dbg.removeListener(listener);
           },
@@ -827,7 +402,7 @@ var DebuggerServer = {
             }
 
             Promise.resolve().then(() => {
-              let method = {
+              const method = {
                 "fetch": DevToolsUtils.fetch,
               }[message.method];
               if (!method) {
@@ -840,17 +415,17 @@ var DebuggerServer = {
                 type: "rpc",
                 result: value,
                 error: null,
-                id: message.id
+                id: message.id,
               }));
             }, (reason) => {
               dbg.postMessage(JSON.stringify({
                 type: "rpc",
                 result: null,
                 error: reason,
-                id: message.id
+                id: message.id,
               }));
             });
-          }
+          },
         };
 
         dbg.addListener(listener);
@@ -866,7 +441,7 @@ var DebuggerServer = {
       // Steps 3-5 are performed on the worker thread (see worker.js).
 
       // Step 6: Wait for a connection response from the worker debugger.
-      let listener = {
+      const listener = {
         onClose: () => {
           dbg.removeListener(listener);
 
@@ -884,7 +459,7 @@ var DebuggerServer = {
           dbg.removeListener(listener);
 
           // Step 7: Create a transport for the connection to the worker.
-          let transport = new WorkerDebuggerTransport(dbg, id);
+          const transport = new MainThreadWorkerDebuggerTransport(dbg, id);
           transport.ready();
           transport.hooks = {
             onClosed: () => {
@@ -918,7 +493,7 @@ var DebuggerServer = {
               // thread are forwarded to the client on the main thread, as if
               // they had been sent by the server on the main thread.
               connection.send(packet);
-            }
+            },
           };
 
           // Ensure that any packets received from the client on the main thread
@@ -929,9 +504,9 @@ var DebuggerServer = {
           resolve({
             threadActor: message.threadActor,
             consoleActor: message.consoleActor,
-            transport: transport
+            transport: transport,
           });
-        }
+        },
       };
       dbg.addListener(listener);
     });
@@ -961,42 +536,41 @@ var DebuggerServer = {
     if (this._childMessageManagers.size == 0) {
       return Promise.resolve();
     }
-    let deferred = Promise.defer();
-
-    // If waitForEval is set, pass a unique id and expect child.js to send
-    // a message back once the code in child is evaluated.
-    if (typeof (waitForEval) != "boolean") {
-      waitForEval = false;
-    }
-    let count = this._childMessageManagers.size;
-    let id = waitForEval ? generateUUID().toString() : null;
-
-    this._childMessageManagers.forEach(mm => {
-      if (waitForEval) {
-        // Listen for the end of each child execution
-        let evalListener = msg => {
-          if (msg.data.id !== id) {
-            return;
-          }
-          mm.removeMessageListener("debug:setup-in-child-response", evalListener);
-          if (--count === 0) {
-            deferred.resolve();
-          }
-        };
-        mm.addMessageListener("debug:setup-in-child-response", evalListener);
+    return new Promise(done => {
+      // If waitForEval is set, pass a unique id and expect child.js to send
+      // a message back once the code in child is evaluated.
+      if (typeof (waitForEval) != "boolean") {
+        waitForEval = false;
       }
-      mm.sendAsyncMessage("debug:setup-in-child", {
-        module: module,
-        setupChild: setupChild,
-        args: args,
-        id: id,
-      });
-    });
+      let count = this._childMessageManagers.size;
+      const id = waitForEval ? generateUUID().toString() : null;
 
-    if (waitForEval) {
-      return deferred.promise;
-    }
-    return Promise.resolve();
+      this._childMessageManagers.forEach(mm => {
+        if (waitForEval) {
+          // Listen for the end of each child execution
+          const evalListener = msg => {
+            if (msg.data.id !== id) {
+              return;
+            }
+            mm.removeMessageListener("debug:setup-in-child-response", evalListener);
+            if (--count === 0) {
+              done();
+            }
+          };
+          mm.addMessageListener("debug:setup-in-child-response", evalListener);
+        }
+        mm.sendAsyncMessage("debug:setup-in-child", {
+          module: module,
+          setupChild: setupChild,
+          args: args,
+          id: id,
+        });
+      });
+
+      if (!waitForEval) {
+        done();
+      }
+    });
   },
 
   /**
@@ -1005,202 +579,261 @@ var DebuggerServer = {
   _childMessageManagers: new Set(),
 
   /**
-   * Connect to a child process.
+   * Start a DevTools server in a remote frame's process and add it as a child server for
+   * an active connection.
    *
    * @param object connection
    *        The debugger server connection to use.
-   * @param nsIDOMElement frame
-   *        The browser element that holds the child process.
+   * @param Element frame
+   *        The frame element with remote content to connect to.
    * @param function [onDestroy]
-   *        Optional function to invoke when the child process closes
-   *        or the connection shuts down. (Need to forget about the
-   *        related TabActor)
+   *        Optional function to invoke when the child process closes or the connection
+   *        shuts down. (Need to forget about the related target actor.)
    * @return object
-   *         A promise object that is resolved once the connection is
-   *         established.
+   *         A promise object that is resolved once the connection is established.
    */
-  connectToChild(connection, frame, onDestroy) {
-    let deferred = SyncPromise.defer();
+  connectToFrame(connection, frame, onDestroy, {addonId} = {}) {
+    return new Promise(resolve => {
+      // Get messageManager from XUL browser (which might be a specialized tunnel for RDM)
+      // or else fallback to asking the frameLoader itself.
+      let mm = frame.messageManager || frame.frameLoader.messageManager;
+      mm.loadFrameScript("resource://devtools/server/startup/frame.js", false);
 
-    // Get messageManager from XUL browser (which might be a specialized tunnel for RDM)
-    // or else fallback to asking the frameLoader itself.
-    let mm = frame.messageManager || frame.frameLoader.messageManager;
-    mm.loadFrameScript("resource://devtools/server/child.js", false);
+      const trackMessageManager = () => {
+        frame.addEventListener("DevTools:BrowserSwap", onBrowserSwap);
+        mm.addMessageListener("debug:setup-in-parent", onSetupInParent);
+        mm.addMessageListener("debug:spawn-actor-in-parent", onSpawnActorInParent);
+        if (!actor) {
+          mm.addMessageListener("debug:actor", onActorCreated);
+        }
+        DebuggerServer._childMessageManagers.add(mm);
+      };
 
-    let trackMessageManager = () => {
-      frame.addEventListener("DevTools:BrowserSwap", onBrowserSwap);
-      mm.addMessageListener("debug:setup-in-parent", onSetupInParent);
-      if (!actor) {
-        mm.addMessageListener("debug:actor", onActorCreated);
-      }
-      DebuggerServer._childMessageManagers.add(mm);
-    };
+      const untrackMessageManager = () => {
+        frame.removeEventListener("DevTools:BrowserSwap", onBrowserSwap);
+        mm.removeMessageListener("debug:setup-in-parent", onSetupInParent);
+        mm.removeMessageListener("debug:spawn-actor-in-parent", onSpawnActorInParent);
+        if (!actor) {
+          mm.removeMessageListener("debug:actor", onActorCreated);
+        }
+        DebuggerServer._childMessageManagers.delete(mm);
+      };
 
-    let untrackMessageManager = () => {
-      frame.removeEventListener("DevTools:BrowserSwap", onBrowserSwap);
-      mm.removeMessageListener("debug:setup-in-parent", onSetupInParent);
-      if (!actor) {
-        mm.removeMessageListener("debug:actor", onActorCreated);
-      }
-      DebuggerServer._childMessageManagers.delete(mm);
-    };
+      let actor, childTransport;
+      const prefix = connection.allocID("child");
+      // Compute the same prefix that's used by DebuggerServerConnection
+      const connPrefix = prefix + "/";
 
-    let actor, childTransport;
-    let prefix = connection.allocID("child");
-    // Compute the same prefix that's used by DebuggerServerConnection
-    let connPrefix = prefix + "/";
-
-    // provides hook to actor modules that need to exchange messages
-    // between e10s parent and child processes
-    let parentModules = [];
-    let onSetupInParent = function (msg) {
-      // We may have multiple connectToChild instance running for the same tab
-      // and need to filter the messages.
-      if (msg.json.prefix != connPrefix) {
-        return false;
-      }
-
-      let { module, setupParent } = msg.json;
-      let m;
-
-      try {
-        m = require(module);
-
-        if (!(setupParent in m)) {
-          dumpn(`ERROR: module '${module}' does not export '${setupParent}'`);
+      // provides hook to actor modules that need to exchange messages
+      // between e10s parent and child processes
+      const parentModules = [];
+      const onSetupInParent = function(msg) {
+        // We may have multiple connectToFrame instance running for the same frame and
+        // need to filter the messages.
+        if (msg.json.prefix != connPrefix) {
           return false;
         }
 
-        parentModules.push(m[setupParent]({ mm, prefix: connPrefix }));
+        const { module, setupParent } = msg.json;
+        let m;
 
-        return true;
-      } catch (e) {
-        let errorMessage =
-          "Exception during actor module setup running in the parent process: ";
-        DevToolsUtils.reportException(errorMessage + e);
-        dumpn(`ERROR: ${errorMessage}\n\t module: '${module}'\n\t ` +
-              `setupParent: '${setupParent}'\n${DevToolsUtils.safeErrorString(e)}`);
-        return false;
-      }
-    };
+        try {
+          m = require(module);
 
-    let onActorCreated = DevToolsUtils.makeInfallible(function (msg) {
-      if (msg.json.prefix != prefix) {
-        return;
-      }
-      mm.removeMessageListener("debug:actor", onActorCreated);
+          if (!(setupParent in m)) {
+            dumpn(`ERROR: module '${module}' does not export '${setupParent}'`);
+            return false;
+          }
 
-      // Pipe Debugger message from/to parent/child via the message manager
-      childTransport = new ChildDebuggerTransport(mm, prefix);
-      childTransport.hooks = {
-        onPacket: connection.send.bind(connection),
-        onClosed() {}
+          parentModules.push(m[setupParent]({ mm, prefix: connPrefix }));
+
+          return true;
+        } catch (e) {
+          const errorMessage =
+            "Exception during actor module setup running in the parent process: ";
+          DevToolsUtils.reportException(errorMessage + e);
+          dumpn(`ERROR: ${errorMessage}\n\t module: '${module}'\n\t ` +
+                `setupParent: '${setupParent}'\n${DevToolsUtils.safeErrorString(e)}`);
+          return false;
+        }
       };
-      childTransport.ready();
 
-      connection.setForwarding(prefix, childTransport);
+      const parentActors = [];
+      const onSpawnActorInParent = function(msg) {
+        // We may have multiple connectToFrame instance running for the same tab
+        // and need to filter the messages.
+        if (msg.json.prefix != connPrefix) {
+          return;
+        }
 
-      dumpn("establishing forwarding for app with prefix " + prefix);
+        const { module, constructor, args, spawnedByActorID } = msg.json;
+        let m;
 
-      actor = msg.json.actor;
-      deferred.resolve(actor);
-    }).bind(this);
+        try {
+          m = require(module);
 
-    // Listen for browser frame swap
-    let onBrowserSwap = ({ detail: newFrame }) => {
-      // Remove listeners from old frame and mm
-      untrackMessageManager();
-      // Update frame and mm to point to the new browser frame
-      frame = newFrame;
-      // Get messageManager from XUL browser (which might be a specialized tunnel for RDM)
-      // or else fallback to asking the frameLoader itself.
-      mm = frame.messageManager || frame.frameLoader.messageManager;
-      // Add listeners to new frame and mm
+          if (!(constructor in m)) {
+            dump(`ERROR: module '${module}' does not export '${constructor}'`);
+            return;
+          }
+
+          const Constructor = m[constructor];
+          // Bind the actor to parent process connection so that these actors
+          // directly communicates with the client as regular actors instanciated from
+          // parent process
+          const instance = new Constructor(connection, ...args, mm);
+          instance.conn = connection;
+          instance.parentID = spawnedByActorID;
+
+          // Manually set the actor ID in order to insert parent actorID as prefix
+          // in order to help identifying actor hiearchy via actor IDs.
+          // Remove `/` as it may confuse message forwarding between processes.
+          const contentPrefix = spawnedByActorID.replace(connection.prefix, "")
+                                                .replace("/", "-");
+          instance.actorID = connection.allocID(contentPrefix + "/" + instance.typeName);
+          connection.addActor(instance);
+
+          mm.sendAsyncMessage("debug:spawn-actor-in-parent:actor", {
+            prefix: connPrefix,
+            actorID: instance.actorID,
+          });
+
+          parentActors.push(instance);
+        } catch (e) {
+          const errorMessage =
+            "Exception during actor module setup running in the parent process: ";
+          DevToolsUtils.reportException(errorMessage + e + "\n" + e.stack);
+          dumpn(`ERROR: ${errorMessage}\n\t module: '${module}'\n\t ` +
+                `constructor: '${constructor}'\n${DevToolsUtils.safeErrorString(e)}`);
+        }
+      };
+
+      const onActorCreated = DevToolsUtils.makeInfallible(function(msg) {
+        if (msg.json.prefix != prefix) {
+          return;
+        }
+        mm.removeMessageListener("debug:actor", onActorCreated);
+
+        // Pipe Debugger message from/to parent/child via the message manager
+        childTransport = new ChildDebuggerTransport(mm, prefix);
+        childTransport.hooks = {
+          // Pipe all the messages from content process actors back to the client
+          // through the parent process connection.
+          onPacket: connection.send.bind(connection),
+          onClosed() {},
+        };
+        childTransport.ready();
+
+        connection.setForwarding(prefix, childTransport);
+
+        dumpn(`Start forwarding for frame with prefix ${prefix}`);
+
+        actor = msg.json.actor;
+        resolve(actor);
+      }).bind(this);
+
+      // Listen for browser frame swap
+      const onBrowserSwap = ({ detail: newFrame }) => {
+        // Remove listeners from old frame and mm
+        untrackMessageManager();
+        // Update frame and mm to point to the new browser frame
+        frame = newFrame;
+        // Get messageManager from XUL browser (which might be a specialized tunnel for
+        // RDM) or else fallback to asking the frameLoader itself.
+        mm = frame.messageManager || frame.frameLoader.messageManager;
+        // Add listeners to new frame and mm
+        trackMessageManager();
+
+        // provides hook to actor modules that need to exchange messages
+        // between e10s parent and child processes
+        parentModules.forEach(mod => {
+          if (mod.onBrowserSwap) {
+            mod.onBrowserSwap(mm);
+          }
+        });
+
+        // Also notify actors spawned in the parent process about the new message manager.
+        parentActors.forEach(parentActor => {
+          if (parentActor.onBrowserSwap) {
+            parentActor.onBrowserSwap(mm);
+          }
+        });
+
+        if (childTransport) {
+          childTransport.swapBrowser(mm);
+        }
+      };
+
+      const destroy = DevToolsUtils.makeInfallible(function() {
+        EventEmitter.off(connection, "closed", destroy);
+        Services.obs.removeObserver(onMessageManagerClose, "message-manager-close");
+
+        // provides hook to actor modules that need to exchange messages
+        // between e10s parent and child processes
+        parentModules.forEach(mod => {
+          if (mod.onDisconnected) {
+            mod.onDisconnected();
+          }
+        });
+        // TODO: Remove this deprecated path once it's no longer needed by add-ons.
+        DebuggerServer.emit("disconnected-from-child:" + connPrefix,
+                            { mm, prefix: connPrefix });
+
+        if (childTransport) {
+          // If we have a child transport, the actor has already
+          // been created. We need to stop using this message manager.
+          childTransport.close();
+          childTransport = null;
+          connection.cancelForwarding(prefix);
+
+          // ... and notify the child process to clean the target-scoped actors.
+          try {
+            // Bug 1169643: Ignore any exception as the child process
+            // may already be destroyed by now.
+            mm.sendAsyncMessage("debug:disconnect", { prefix });
+          } catch (e) {
+            // Nothing to do
+          }
+        } else {
+          // Otherwise, the frame has been closed before the actor
+          // had a chance to be created, so we are not able to create
+          // the actor.
+          resolve(null);
+        }
+        if (actor) {
+          // The FrameTargetActor within the child process doesn't necessary
+          // have time to uninitialize itself when the frame is closed/killed.
+          // So ensure telling the client that the related actor is detached.
+          connection.send({ from: actor.actor, type: "tabDetached" });
+          actor = null;
+        }
+
+        if (onDestroy) {
+          onDestroy(mm);
+        }
+
+        // Cleanup all listeners
+        untrackMessageManager();
+      });
+
+      // Listen for various messages and frame events
       trackMessageManager();
 
-      // provides hook to actor modules that need to exchange messages
-      // between e10s parent and child processes
-      parentModules.forEach(mod => {
-        if (mod.onBrowserSwap) {
-          mod.onBrowserSwap(mm);
+      // Listen for app process exit
+      const onMessageManagerClose = function(subject, topic, data) {
+        if (subject == mm) {
+          destroy();
         }
-      });
+      };
+      Services.obs.addObserver(onMessageManagerClose,
+                               "message-manager-close");
 
-      if (childTransport) {
-        childTransport.swapBrowser(mm);
-      }
-    };
+      // Listen for connection close to cleanup things
+      // when user unplug the device or we lose the connection somehow.
+      EventEmitter.on(connection, "closed", destroy);
 
-    let destroy = DevToolsUtils.makeInfallible(function () {
-      // provides hook to actor modules that need to exchange messages
-      // between e10s parent and child processes
-      parentModules.forEach(mod => {
-        if (mod.onDisconnected) {
-          mod.onDisconnected();
-        }
-      });
-      // TODO: Remove this deprecated path once it's no longer needed by add-ons.
-      DebuggerServer.emit("disconnected-from-child:" + connPrefix,
-                          { mm, prefix: connPrefix });
-
-      if (childTransport) {
-        // If we have a child transport, the actor has already
-        // been created. We need to stop using this message manager.
-        childTransport.close();
-        childTransport = null;
-        connection.cancelForwarding(prefix);
-
-        // ... and notify the child process to clean the tab actors.
-        try {
-          // Bug 1169643: Ignore any exception as the child process
-          // may already be destroyed by now.
-          mm.sendAsyncMessage("debug:disconnect", { prefix });
-        } catch (e) {
-          // Nothing to do
-        }
-      } else {
-        // Otherwise, the app has been closed before the actor
-        // had a chance to be created, so we are not able to create
-        // the actor.
-        deferred.resolve(null);
-      }
-      if (actor) {
-        // The ContentActor within the child process doesn't necessary
-        // have time to uninitialize itself when the app is closed/killed.
-        // So ensure telling the client that the related actor is detached.
-        connection.send({ from: actor.actor, type: "tabDetached" });
-        actor = null;
-      }
-
-      if (onDestroy) {
-        onDestroy(mm);
-      }
-
-      // Cleanup all listeners
-      untrackMessageManager();
-      Services.obs.removeObserver(onMessageManagerClose, "message-manager-close");
-      events.off(connection, "closed", destroy);
+      mm.sendAsyncMessage("debug:connect", { prefix, addonId });
     });
-
-    // Listen for various messages and frame events
-    trackMessageManager();
-
-    // Listen for app process exit
-    let onMessageManagerClose = function (subject, topic, data) {
-      if (subject == mm) {
-        destroy();
-      }
-    };
-    Services.obs.addObserver(onMessageManagerClose,
-                             "message-manager-close", false);
-
-    // Listen for connection close to cleanup things
-    // when user unplug the device or we lose the connection somehow.
-    events.on(connection, "closed", destroy);
-
-    mm.sendAsyncMessage("debug:connect", { prefix });
-
-    return deferred.promise;
   },
 
   /**
@@ -1213,7 +846,7 @@ var DebuggerServer = {
    * that all our actors have names beginning with |forwardingPrefix + '/'|.
    * In particular, the root actor's name will be |forwardingPrefix + '/root'|.
    */
-  _onConnection(transport, forwardingPrefix, noRootActor = false) {
+  _onConnection(transport, forwardingPrefix, noRootActor = false, socketListener = null) {
     let connID;
     if (forwardingPrefix) {
       connID = forwardingPrefix + "/";
@@ -1225,7 +858,7 @@ var DebuggerServer = {
       connID = "server" + loader.id + ".conn" + this._nextConnID++ + ".";
     }
 
-    let conn = new DebuggerServerConnection(connID, transport);
+    const conn = new DebuggerServerConnection(connID, transport, socketListener);
     this._connections[connID] = conn;
 
     // Create a root actor for the connection and send the hello packet.
@@ -1260,131 +893,38 @@ var DebuggerServer = {
   },
 
   /**
-   * Registers handlers for new tab-scoped request types defined dynamically.
-   * This is used for example by add-ons to augment the functionality of the tab
-   * actor. Note that the name or actorPrefix of the request type is not allowed
-   * to clash with existing protocol packet properties, like 'title', 'url' or
-   * 'actor', since that would break the protocol.
-   *
-   * @param actor function, object
-   *      In case of function:
-   *        The constructor function for this request type. This expects to be
-   *        called as a constructor (i.e. with 'new'), and passed two
-   *        arguments: the DebuggerServerConnection, and the BrowserTabActor
-   *        with which it will be associated.
-   *        Only used for deprecated eagerly loaded actors.
-   *      In case of object:
-   *        First argument of RegisteredActorFactory constructor.
-   *        See the it's definition for more info.
-   *
-   * @param name string [optional]
-   *        The name of the new request type. If this is not present, the
-   *        actorPrefix property of the constructor prototype is used.
+   * Called when DevTools are unloaded to remove the contend process server startup script
+   * for the list of scripts loaded for each new content process. Will also remove message
+   * listeners from already loaded scripts.
    */
-  addTabActor(actor, name = actor.prototype.actorPrefix) {
-    if (["title", "url", "actor"].indexOf(name) != -1) {
-      throw Error(name + " is not allowed");
-    }
-    if (DebuggerServer.tabActorFactories.hasOwnProperty(name)) {
-      throw Error(name + " already exists");
-    }
-    DebuggerServer.tabActorFactories[name] = new RegisteredActorFactory(actor, name);
-  },
-
-  /**
-   * Unregisters the handler for the specified tab-scoped request type.
-   * This may be used for example by add-ons when shutting down or upgrading.
-   * When unregistering an existing tab actor remove related tab factory
-   * as well as all existing instances of the actor.
-   *
-   * @param actor function, object
-   *      In case of function:
-   *        The constructor function for this request type.
-   *      In case of object:
-   *        Same object being given to related addTabActor call.
-   */
-  removeTabActor(actor) {
-    for (let name in DebuggerServer.tabActorFactories) {
-      let handler = DebuggerServer.tabActorFactories[name];
-      if ((handler.name && handler.name == actor.name) ||
-          (handler.id && handler.id == actor.id)) {
-        delete DebuggerServer.tabActorFactories[name];
-        for (let connID of Object.getOwnPropertyNames(this._connections)) {
-          // DebuggerServerConnection in child process don't have rootActor
-          if (this._connections[connID].rootActor) {
-            this._connections[connID].rootActor.removeActorByName(name);
-          }
-        }
-      }
+  removeContentServerScript() {
+    Services.ppmm.removeDelayedProcessScript(CONTENT_PROCESS_SERVER_STARTUP_SCRIPT);
+    try {
+      Services.ppmm.broadcastAsyncMessage("debug:close-content-server");
+    } catch (e) {
+      // Nothing to do
     }
   },
 
   /**
-   * Registers handlers for new browser-scoped request types defined
-   * dynamically. This is used for example by add-ons to augment the
-   * functionality of the root actor. Note that the name or actorPrefix of the
-   * request type is not allowed to clash with existing protocol packet
-   * properties, like 'from', 'tabs' or 'selected', since that would break the
-   * protocol.
+   * Searches all active connections for an actor matching an ID.
    *
-   * @param actor function, object
-   *      In case of function:
-   *        The constructor function for this request type. This expects to be
-   *        called as a constructor (i.e. with 'new'), and passed two
-   *        arguments: the DebuggerServerConnection, and the BrowserRootActor
-   *        with which it will be associated.
-   *        Only used for deprecated eagerly loaded actors.
-   *      In case of object:
-   *        First argument of RegisteredActorFactory constructor.
-   *        See the it's definition for more info.
+   * ⚠ TO BE USED ONLY FROM SERVER CODE OR TESTING ONLY! ⚠`
    *
-   * @param name string [optional]
-   *        The name of the new request type. If this is not present, the
-   *        actorPrefix property of the constructor prototype is used.
-   */
-  addGlobalActor(actor, name = actor.prototype.actorPrefix) {
-    if (["from", "tabs", "selected"].indexOf(name) != -1) {
-      throw Error(name + " is not allowed");
-    }
-    if (DebuggerServer.globalActorFactories.hasOwnProperty(name)) {
-      throw Error(name + " already exists");
-    }
-    DebuggerServer.globalActorFactories[name] = new RegisteredActorFactory(actor, name);
-  },
-
-  /**
-   * Unregisters the handler for the specified browser-scoped request type.
-   * This may be used for example by add-ons when shutting down or upgrading.
-   * When unregistering an existing global actor remove related global factory
-   * as well as all existing instances of the actor.
-   *
-   * @param actor function, object
-   *      In case of function:
-   *        The constructor function for this request type.
-   *      In case of object:
-   *        Same object being given to related addGlobalActor call.
-   */
-  removeGlobalActor(actor) {
-    for (let name in DebuggerServer.globalActorFactories) {
-      let handler = DebuggerServer.globalActorFactories[name];
-      if ((handler.name && handler.name == actor.name) ||
-          (handler.id && handler.id == actor.id)) {
-        delete DebuggerServer.globalActorFactories[name];
-        for (let connID of Object.getOwnPropertyNames(this._connections)) {
-          this._connections[connID].rootActor.removeActorByName(name);
-        }
-      }
-    }
-  },
-
-  /**
-   * ⚠ TESTING ONLY! ⚠ Searches all active connections for an actor matching an ID.
    * This is helpful for some tests which depend on reaching into the server to check some
-   * properties of an actor.
+   * properties of an actor, and it is also used by the actors related to the
+   * DevTools WebExtensions API to be able to interact with the actors created for the
+   * panels natively provided by the DevTools Toolbox.
    */
-  _searchAllConnectionsForActor(actorID) {
-    for (let connID of Object.getOwnPropertyNames(this._connections)) {
-      let actor = this._connections[connID].getActor(actorID);
+  searchAllConnectionsForActor(actorID) {
+    // NOTE: the actor IDs are generated with the following format:
+    //
+    //   `server${loaderID}.conn${ConnectionID}${ActorPrefix}${ActorID}`
+    //
+    // as an optimization we can come up with a regexp to query only
+    // the right connection via its id.
+    for (const connID of Object.getOwnPropertyNames(this._connections)) {
+      const actor = this._connections[connID].getActor(actorID);
       if (actor) {
         return actor;
       }
@@ -1403,25 +943,7 @@ DevToolsUtils.defineLazyGetter(DebuggerServer, "AuthenticationResult", () => {
 
 EventEmitter.decorate(DebuggerServer);
 
-if (this.exports) {
-  exports.DebuggerServer = DebuggerServer;
-  exports.ActorPool = ActorPool;
-  exports.OriginalLocation = OriginalLocation;
-}
-
-// Needed on B2G (See header note)
-this.DebuggerServer = DebuggerServer;
-this.ActorPool = ActorPool;
-this.OriginalLocation = OriginalLocation;
-
-// When using DebuggerServer.addActors, some symbols are expected to be in
-// the scope of the added actor even before the corresponding modules are
-// loaded, so let's explicitly bind the expected symbols here.
-var includes = ["Components", "Ci", "Cu", "require", "Services", "DebuggerServer",
-                "ActorPool", "DevToolsUtils"];
-includes.forEach(name => {
-  DebuggerServer[name] = this[name];
-});
+exports.DebuggerServer = DebuggerServer;
 
 /**
  * Creates a DebuggerServerConnection.
@@ -1435,14 +957,18 @@ includes.forEach(name => {
  *        with prefix.
  * @param transport transport
  *        Packet transport for the debugging protocol.
+ * @param socketListener SocketListener
+ *        SocketListener which accepted the transport.
+ *        If this is null, the transport is not that was accepted by SocketListener.
  */
-function DebuggerServerConnection(prefix, transport) {
+function DebuggerServerConnection(prefix, transport, socketListener) {
   this._prefix = prefix;
   this._transport = transport;
   this._transport.hooks = this;
   this._nextID = 1;
+  this._socketListener = socketListener;
 
-  this._actorPool = new ActorPool(this);
+  this._actorPool = new Pool(this);
   this._extraPools = [this._actorPool];
 
   // Responses to a given actor must be returned the the client
@@ -1462,6 +988,7 @@ function DebuggerServerConnection(prefix, transport) {
    */
   this._forwardingPrefixes = new Map();
 }
+exports.DebuggerServerConnection = DebuggerServerConnection;
 
 DebuggerServerConnection.prototype = {
   _prefix: null,
@@ -1540,9 +1067,9 @@ DebuggerServerConnection.prototype = {
     if (this._extraPools === null) {
       return;
     }
-    let index = this._extraPools.lastIndexOf(actorPool);
+    const index = this._extraPools.lastIndexOf(actorPool);
     if (index > -1) {
-      let pool = this._extraPools.splice(index, 1);
+      const pool = this._extraPools.splice(index, 1);
       if (!noCleanup) {
         pool.forEach(p => p.destroy());
       }
@@ -1553,14 +1080,14 @@ DebuggerServerConnection.prototype = {
    * Add an actor to the default actor pool for this connection.
    */
   addActor(actor) {
-    this._actorPool.addActor(actor);
+    this._actorPool.manage(actor);
   },
 
   /**
    * Remove an actor to the default actor pool for this connection.
    */
   removeActor(actor) {
-    this._actorPool.removeActor(actor);
+    this._actorPool.unmanage(actor);
   },
 
   /**
@@ -1578,7 +1105,7 @@ DebuggerServerConnection.prototype = {
    *        Actor ID to look up.
    */
   getActor(actorID) {
-    let pool = this.poolFor(actorID);
+    const pool = this.poolFor(actorID);
     if (pool) {
       return pool.get(actorID);
     }
@@ -1591,35 +1118,31 @@ DebuggerServerConnection.prototype = {
   },
 
   _getOrCreateActor(actorID) {
-    let actor = this.getActor(actorID);
-    if (!actor) {
-      this.transport.send({ from: actorID ? actorID : "root",
-                            error: "noSuchActor",
-                            message: "No such actor for ID: " + actorID });
-      return null;
-    }
-
-    // Dynamically-loaded actors have to be created lazily.
-    if (actor instanceof ObservedActorFactory) {
-      try {
-        actor = actor.createActor();
-      } catch (e) {
-        this.transport.send(this._unknownError(
-          "Error occurred while creating actor '" + actor.name,
-          e));
+    try {
+      const actor = this.getActor(actorID);
+      if (!actor) {
+        this.transport.send({ from: actorID ? actorID : "root",
+                              error: "noSuchActor",
+                              message: "No such actor for ID: " + actorID });
+        return null;
       }
-    } else if (typeof (actor) !== "object") {
-      // ActorPools should now contain only actor instances (i.e. objects)
-      // or ObservedActorFactory instances.
-      throw new Error("Unexpected actor constructor/function in ActorPool " +
-                      "for actorID=" + actorID + ".");
-    }
 
-    return actor;
+      if (typeof (actor) !== "object") {
+        // ActorPools should now contain only actor instances (i.e. objects)
+        throw new Error("Unexpected actor constructor/function in ActorPool " +
+                        "for actorID=" + actorID + ".");
+      }
+
+      return actor;
+    } catch (error) {
+      const prefix = `Error occurred while creating actor' ${actorID}`;
+      this.transport.send(this._unknownError(actorID, prefix, error));
+    }
+    return null;
   },
 
   poolFor(actorID) {
-    for (let pool of this._extraPools) {
+    for (const pool of this._extraPools) {
       if (pool.has(actorID)) {
         return pool;
       }
@@ -1627,58 +1150,52 @@ DebuggerServerConnection.prototype = {
     return null;
   },
 
-  _unknownError(prefix, error) {
-    let errorString = prefix + ": " + DevToolsUtils.safeErrorString(error);
+  _unknownError(from, prefix, error) {
+    const errorString = prefix + ": " + DevToolsUtils.safeErrorString(error);
     reportError(errorString);
     dumpn(errorString);
     return {
+      from,
       error: "unknownError",
-      message: errorString
+      message: errorString,
     };
   },
 
-  _queueResponse: function (from, type, responseOrPromise) {
-    let pendingResponse = this._actorResponses.get(from) || SyncPromise.resolve(null);
-    let responsePromise = pendingResponse.then(() => {
+  _queueResponse: function(from, type, responseOrPromise) {
+    const pendingResponse = this._actorResponses.get(from) || Promise.resolve(null);
+    const responsePromise = pendingResponse.then(() => {
       return responseOrPromise;
     }).then(response => {
+      if (!this.transport) {
+        throw new Error(`Connection closed, pending response from ${from}, ` +
+                        `type ${type} failed`);
+      }
       if (!response.from) {
         response.from = from;
       }
       this.transport.send(response);
-    }).then(null, (e) => {
-      let errorPacket = this._unknownError(
-        "error occurred while processing '" + type, e);
-      errorPacket.from = from;
-      this.transport.send(errorPacket);
+    }).catch((error) => {
+      if (!this.transport) {
+        throw new Error(`Connection closed, pending error from ${from}, ` +
+                        `type ${type} failed`);
+      }
+
+      const prefix = "error occurred while processing '" + type;
+      this.transport.send(this._unknownError(from, prefix, error));
     });
 
     this._actorResponses.set(from, responsePromise);
   },
 
   /**
-   * Passes a set of options to the BrowserAddonActors for the given ID.
+   * This function returns whether the connection was accepted by passed SocketListener.
    *
-   * @param id string
-   *        The ID of the add-on to pass the options to
-   * @param options object
-   *        The options.
-   * @return a promise that will be resolved when complete.
+   * @param {SocketListener} socketListener
+   * @return {Boolean} return true if this connection was accepted by socketListener,
+   *         else returns false.
    */
-  setAddonOptions(id, options) {
-    let addonList = this.rootActor._parameters.addonList;
-    if (!addonList) {
-      return SyncPromise.resolve();
-    }
-    return addonList.getList().then((addonActors) => {
-      for (let actor of addonActors) {
-        if (actor.id != id) {
-          continue;
-        }
-        actor.setOptions(options);
-        return;
-      }
-    });
+  isAcceptedBy(socketListener) {
+    return this._socketListener === socketListener;
   },
 
   /* Forwarding packets to other transports based on actor name prefixes. */
@@ -1743,7 +1260,7 @@ DebuggerServerConnection.prototype = {
       let separator = to.lastIndexOf("/");
       while (separator >= 0) {
         to = to.substring(0, separator);
-        let forwardTo = this._forwardingPrefixes.get(packet.to.substring(0, separator));
+        const forwardTo = this._forwardingPrefixes.get(packet.to.substring(0, separator));
         if (forwardTo) {
           forwardTo.send(packet);
           return;
@@ -1752,7 +1269,7 @@ DebuggerServerConnection.prototype = {
       }
     }
 
-    let actor = this._getOrCreateActor(packet.to);
+    const actor = this._getOrCreateActor(packet.to);
     if (!actor) {
       return;
     }
@@ -1767,10 +1284,9 @@ DebuggerServerConnection.prototype = {
       try {
         this.currentPacket = packet;
         ret = actor.requestTypes[packet.type].bind(actor)(packet, this);
-      } catch (e) {
-        this.transport.send(this._unknownError(
-          "error occurred while processing '" + packet.type,
-          e));
+      } catch (error) {
+        const prefix = "error occurred while processing '" + packet.type;
+        this.transport.send(this._unknownError(actor.actorID, prefix, error));
       } finally {
         this.currentPacket = undefined;
       }
@@ -1818,9 +1334,9 @@ DebuggerServerConnection.prototype = {
    *                  that is copied.  See stream-utils.js.
    */
   onBulkPacket(packet) {
-    let { actor: actorKey, type } = packet;
+    const { actor: actorKey, type } = packet;
 
-    let actor = this._getOrCreateActor(actorKey);
+    const actor = this._getOrCreateActor(actorKey);
     if (!actor) {
       return;
     }
@@ -1830,13 +1346,13 @@ DebuggerServerConnection.prototype = {
     if (actor.requestTypes && actor.requestTypes[type]) {
       try {
         ret = actor.requestTypes[type].call(actor, packet);
-      } catch (e) {
-        this.transport.send(this._unknownError(
-          "error occurred while processing bulk packet '" + type, e));
-        packet.done.reject(e);
+      } catch (error) {
+        const prefix = "error occurred while processing bulk packet '" + type;
+        this.transport.send(this._unknownError(actorKey, prefix, error));
+        packet.done.reject(error);
       }
     } else {
-      let message = "Actor " + actorKey +
+      const message = "Actor " + actorKey +
                     " does not recognize the bulk packet type " + type;
       ret = { error: "unrecognizedPacketType",
               message: message };
@@ -1864,7 +1380,7 @@ DebuggerServerConnection.prototype = {
     }
     this._actorPool = null;
 
-    events.emit(this, "closed", status);
+    EventEmitter.emit(this, "closed", status);
 
     this._extraPools.forEach(p => p.destroy());
     this._extraPools = null;
@@ -1883,7 +1399,7 @@ DebuggerServerConnection.prototype = {
       dumpn("--------------------- actorPool actors: " +
             uneval(Object.keys(this._actorPool._actors)));
     }
-    for (let pool of this._extraPools) {
+    for (const pool of this._extraPools) {
       if (pool !== this._actorPool) {
         dumpn("--------------------- extraPool actors: " +
               uneval(Object.keys(pool._actors)));
@@ -1917,12 +1433,54 @@ DebuggerServerConnection.prototype = {
       return false;
     }
 
-    let { sendSyncMessage } = this.parentMessageManager;
-
-    return sendSyncMessage("debug:setup-in-parent", {
+    return this.parentMessageManager.sendSyncMessage("debug:setup-in-parent", {
       prefix: this.prefix,
       module: module,
-      setupParent: setupParent
+      setupParent: setupParent,
     });
+  },
+
+  /**
+   * Instanciates a protocol.js actor in the parent process, from the content process
+   * module is the absolute path to protocol.js actor module
+   *
+   * @param spawnByActorID string
+   *        The actor ID of the actor that is requesting an actor to be created.
+   *        This is used as a prefix to compute the actor id of the actor created
+   *        in the parent process.
+   * @param module string
+   *        Absolute path for the actor module to load.
+   * @param constructor string
+   *        The symbol exported by this module that implements Actor.
+   * @param args array
+   *        Arguments to pass to its constructor
+   */
+  spawnActorInParentProcess(spawnedByActorID, { module, constructor, args }) {
+    if (!this.parentMessageManager) {
+      return null;
+    }
+
+    const mm = this.parentMessageManager;
+
+    const onResponse = new Promise(done => {
+      const listener = msg => {
+        if (msg.json.prefix != this.prefix) {
+          return;
+        }
+        mm.removeMessageListener("debug:spawn-actor-in-parent:actor", listener);
+        done(msg.json.actorID);
+      };
+      mm.addMessageListener("debug:spawn-actor-in-parent:actor", listener);
+    });
+
+    mm.sendAsyncMessage("debug:spawn-actor-in-parent", {
+      prefix: this.prefix,
+      module,
+      constructor,
+      args,
+      spawnedByActorID,
+    });
+
+    return onResponse;
   },
 };

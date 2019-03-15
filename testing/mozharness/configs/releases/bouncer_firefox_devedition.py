@@ -1,11 +1,12 @@
 # lint_ignore=E501
 config = {
     "shipped-locales-url": "https://hg.mozilla.org/%(repo)s/raw-file/%(revision)s/browser/locales/shipped-locales",
+    "bouncer_prefix": "https://download.mozilla.org/",
     "products": {
         "installer": {
             "product-name": "Devedition-%(version)s",
             "check_uptake": True,
-            "alias": "devedition-latest",
+            "alias": "firefox-devedition-latest",
             "ssl-only": False,
             "add-locales": True,
             "paths": {
@@ -34,7 +35,7 @@ config = {
         "installer-ssl": {
             "product-name": "Devedition-%(version)s-SSL",
             "check_uptake": True,
-            "alias": "devedition-latest-ssl",
+            "alias": "firefox-devedition-latest-ssl",
             "ssl-only": True,
             "add-locales": True,
             "paths": {
@@ -60,19 +61,36 @@ config = {
                 },
             },
         },
-        "stub-installer": {
-            "product-name": "Devedition-%(version)s-stub",
+        "msi": {
+            "product-name": "Devedition-%(version)s-msi-SSL",
             "check_uptake": True,
-            "alias": "devedition-stub",
+            "alias": "firefox-devedition-msi-latest-ssl",
             "ssl-only": True,
             "add-locales": True,
             "paths": {
                 "win32": {
-                    "path": "/devedition/releases/%(version)s/win32/:lang/Firefox%%20Setup%%20Stub%%20%(version)s.exe",
+                    "path": "/devedition/releases/%(version)s/win32/:lang/Firefox%%20Setup%%20%(version)s.msi",
                     "bouncer-platform": "win",
                 },
                 "win64": {
-                    "path": "/devedition/releases/%(version)s/win32/:lang/Firefox%%20Setup%%20Stub%%20%(version)s.exe",
+                    "path": "/devedition/releases/%(version)s/win64/:lang/Firefox%%20Setup%%20%(version)s.msi",
+                    "bouncer-platform": "win64",
+                },
+            },
+        },
+        "stub-installer": {
+            "product-name": "Devedition-%(version)s-stub",
+            "check_uptake": True,
+            "alias": "firefox-devedition-stub",
+            "ssl-only": True,
+            "add-locales": True,
+            "paths": {
+                "win32": {
+                    "path": "/devedition/releases/%(version)s/win32/:lang/Firefox%%20Installer.exe",
+                    "bouncer-platform": "win",
+                },
+                "win64": {
+                    "path": "/devedition/releases/%(version)s/win32/:lang/Firefox%%20Installer.exe",
                     "bouncer-platform": "win64",
                 },
             },

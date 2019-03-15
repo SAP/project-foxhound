@@ -4,23 +4,26 @@
 
 /* all localizable skin settings shall live here */
 @import url("chrome://global/locale/intl.css");
+@import url("chrome://global/content/widgets.css");
 
 %include shared.inc
 @namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
 
-/* ::::: XBL bindings ::::: */
-
-menulist > menupopup {
-  -moz-binding: url("chrome://global/content/bindings/popup.xml#popup-scrollbars");
-}
+%include ../../shared/global.inc.css
 
 /* ::::: Variables ::::: */
 :root {
   --arrowpanel-padding: 16px;
-  --arrowpanel-background: linear-gradient(hsla(0,0%,99%,1), hsla(0,0%,99%,.975) 10%, hsla(0,0%,98%,.975));
-  --arrowpanel-color: hsl(0,0%,10%);
-  --arrowpanel-border-color: hsla(210,4%,10%,.05);
+  --default-arrowpanel-background: #fff;
+  --default-arrowpanel-color: hsl(0,0%,10%);
+  --default-arrowpanel-border-color: hsla(210,4%,10%,.05);
+  --arrowpanel-background: var(--default-arrowpanel-background);
+  --arrowpanel-color: var(--default-arrowpanel-color);
+  --arrowpanel-border-color: var(--default-arrowpanel-border-color);
   --arrowpanel-border-radius: 3.5px;
+  --panel-disabled-color: GrayText;
+
+  --focus-ring-box-shadow: @focusRingShadow@;
 }
 
 /* ::::: root elements ::::: */
@@ -28,27 +31,11 @@ menulist > menupopup {
 window,
 page,
 dialog,
-wizard,
-prefwindow { 
+wizard {
   -moz-appearance: dialog;
   background-color: #FFFFFF;
   color: -moz-DialogText;
   font: message-box;
-}
-
-prefwindow[type="child"] {
-  padding-top: 18px;
-  padding-bottom: 15px;
-  padding-inline-start: 18px;
-  padding-inline-end: 20px;
-}
-
-/* deprecated */
-window.dialog {
-  padding-top: 8px;
-  padding-bottom: 10px;
-  padding-inline-start: 8px;
-  padding-inline-end: 10px;
 }
 
 /* ::::: alert icons :::::*/
@@ -57,17 +44,17 @@ window.dialog {
 .alert-icon,
 .error-icon,
 .question-icon {
-  width: 64px;
-  height: 64px;
+  width: 32px;
+  height: 32px;
   margin: 6px;
   margin-inline-end: 20px;
 }
 
 .message-icon {
-  list-style-image: url("chrome://global/skin/icons/information-64.png");
+  list-style-image: url("chrome://global/skin/icons/info.svg");
 }
 
-.alert-dialog #info\.icon,
+.alert-dialog #infoIcon,
 .alert-icon {
   list-style-image: url("chrome://global/skin/icons/warning-64.png");
 }
@@ -90,61 +77,32 @@ iframe {
   min-height: 10px;
 }
 
-/* ::::: statusbar ::::: */
-
-statusbar {
-  min-width: 1px; /* DON'T DELETE!
-  Prevents hiding of scrollbars in browser when window is made smaller.*/
-  min-height: 15px !important;
-  margin: 0px !important;
-  /* need to use padding-inline-end when/if bug 631729 gets fixed: */
-  padding: 0px 16px 1px 1px;
-  -moz-appearance: statusbar;
-  text-shadow: rgba(255, 255, 255, 0.4) 0 1px;
+@supports -moz-bool-pref("layout.css.emulate-moz-box-with-flex") {
+  /* In emulation, <iframe> is block instead of inline, so reset the width/height */
+  iframe {
+    width: auto;
+    height: auto;
+  }
 }
-
-statusbarpanel {
-  -moz-box-align: center;
-  -moz-box-pack: center;
-  padding: 0 4px;
-}
-
-.statusbarpanel-iconic {
-  padding: 0px;
-}    
 
 /* ::::: miscellaneous formatting ::::: */
+
+sidebarheader {
+  background-color: -moz-Dialog;
+  color: -moz-dialogText;
+  text-shadow: none;
+}
 
 :root:-moz-lwtheme {
   -moz-appearance: none;
 }
 
-:root:-moz-lwtheme-darktext {
+:root[lwtheme-image]:-moz-lwtheme-darktext {
   text-shadow: 0 -0.5px 1.5px white;
 }
 
-:root:-moz-lwtheme-brighttext {
+:root[lwtheme-image]:-moz-lwtheme-brighttext {
   text-shadow: 1px 1px 1.5px black;
-}
-
-statusbar:-moz-lwtheme {
-  -moz-appearance: none;
-  background: none;
-  border-style: none;
-  text-shadow: inherit;
-}
-
-.inset {
-  border: 1px solid ThreeDShadow;
-  border-right-color: ThreeDHighlight;
-  border-bottom-color: ThreeDHighlight;
-  margin: 0 5px 5px;
-}
-  
-.outset {
-  border: 1px solid ThreeDShadow;
-  border-left-color: ThreeDHighlight;
-  border-top-color: ThreeDHighlight;
 }
 
 separator:not([orient="vertical"]) {
@@ -156,7 +114,7 @@ separator[orient="vertical"] {
 
 separator.thin:not([orient="vertical"]) {
   height: 0.5em;
-}  
+}
 separator.thin[orient="vertical"] {
   width: 0.5em;
 }
@@ -173,7 +131,7 @@ separator.groove[orient="vertical"] {
   margin-left: 0.4em;
   margin-right: 0.4em;
 }
-    
+
 .plain {
   -moz-appearance: none;
   margin: 0 !important;
@@ -222,10 +180,6 @@ label[disabled="true"] {
   margin: 3px 5px 4px;
 }
 
-.wizard-box {
-  padding: 20px 44px 10px;
-}
-
 .text-link {
   color: -moz-nativehyperlinktext;
   cursor: pointer;
@@ -234,44 +188,40 @@ label[disabled="true"] {
 .text-link:hover {
   text-decoration: underline;
 }
-  
+
 .text-link:-moz-focusring {
-  box-shadow: @focusRingShadow@;
+  box-shadow: var(--focus-ring-box-shadow);
 }
 
-.toolbar-focustarget {
-  -moz-user-focus: ignore !important;
-}
-
-notification > button {
+notification > hbox > button {
   margin: 0 3px;
   padding: 1px 10px;
   min-width: 60px;
   min-height: 16px;
   -moz-appearance: none;
   border-radius: 10000px;
-  border: @roundButtonBorder@;
+  border: @roundButtonBorderWidth@ @roundButtonBorderStyle@ @roundButtonBorderColor@;
   text-shadow: @loweredShadow@;
   color: @roundButtonColor@;
-  background: @roundButtonBackground@;
+  background: @roundButtonBackgroundImage@;
   box-shadow: @roundButtonShadow@;
 }
 
-notification > button:active:hover {
+notification > hbox > button:active:hover {
   color: @roundButtonColor@;
-  background: @roundButtonPressedBackground@;
+  background: @roundButtonPressedBackgroundImage@;
   box-shadow: @roundButtonPressedShadow@;
 }
 
-notification > button:-moz-focusring {
-  box-shadow: @focusRingShadow@, @roundButtonShadow@;
+notification > hbox > button:-moz-focusring {
+  box-shadow: var(--focus-ring-box-shadow), @roundButtonShadow@;
 }
 
-notification > button:active:hover:-moz-focusring {
-  box-shadow: @focusRingShadow@, @roundButtonPressedShadow@;
+notification > hbox > button:active:hover:-moz-focusring {
+  box-shadow: var(--focus-ring-box-shadow), @roundButtonPressedShadow@;
 }
 
-notification > button > .button-box > .button-text {
+notification > hbox > button > .button-box > .button-text {
   margin: 0 !important;
 }
 
@@ -281,32 +231,10 @@ popupnotificationcontent {
 
 %include ../../shared/notification-popup.inc.css
 
-/* :::::: autoscroll popup ::::: */
-
-.autoscroller {
-  height: 28px;
-  width: 28px;
-  border: none;
-  margin: -14px;
-  padding: 0;
-  background-image: url("chrome://global/skin/icons/autoscroll.png");
-  background-color: transparent;
-  background-position: right top;
-  -moz-appearance: none;
-  -moz-window-shadow: none;
-}
-
-.autoscroller[scrolldir="NS"] {
-  background-position: right center;
-}
-
-.autoscroller[scrolldir="EW"] {
-  background-position: right bottom;
-}
-
 /* autorepeatbuttons in menus */
 
-.popup-internal-box > autorepeatbutton {
+.popup-internal-box > .scrollbutton-up,
+.popup-internal-box > .scrollbutton-down {
   height: 15px;
   position: relative;
   list-style-image: none;
@@ -322,60 +250,26 @@ popupnotificationcontent {
   -moz-appearance: menuitem;
 }
 
-.popup-internal-box > .autorepeatbutton-up {
+.popup-internal-box > .scrollbutton-up {
   padding-top: 1px; /* 4px padding-top from the .popup-internal-box. */
   margin-bottom: -15px;
 }
 
-.popup-internal-box > .autorepeatbutton-up > .autorepeatbutton-icon {
+.popup-internal-box > .scrollbutton-up > .toolbarbutton-icon {
   -moz-appearance: button-arrow-up;
 }
 
-.popup-internal-box > .autorepeatbutton-down {
+.popup-internal-box > .scrollbutton-down {
   padding-top: 5px;
   margin-top: -15px;
 }
 
-.popup-internal-box > .autorepeatbutton-down > .autorepeatbutton-icon {
+.popup-internal-box > .scrollbutton-down > .toolbarbutton-icon {
   -moz-appearance: button-arrow-down;
 }
 
-.popup-internal-box > autorepeatbutton[disabled="true"] {
+.popup-internal-box > .scrollbutton-up[disabled="true"],
+.popup-internal-box > .scrollbutton-down[disabled="true"] {
   visibility: collapse;
 }
 
-/* :::::: Close button icons ::::: */
-
-.close-icon {
-  list-style-image: url("chrome://global/skin/icons/close.png");
-  -moz-image-region: rect(0, 16px, 16px, 0);
-}
-
-.close-icon:hover {
-  -moz-image-region: rect(0, 32px, 16px, 16px);
-}
-
-.close-icon:hover:active {
-  -moz-image-region: rect(0, 48px, 16px, 32px);
-}
-
-@media (min-resolution: 2dppx) {
-  .close-icon > .button-icon,
-  .close-icon > .button-box > .button-icon,
-  .close-icon > .toolbarbutton-icon {
-    width: 16px;
-  }
-
-  .close-icon {
-    list-style-image: url("chrome://global/skin/icons/close@2x.png");
-    -moz-image-region: rect(0, 32px, 32px, 0);
-  }
-
-  .close-icon:hover {
-    -moz-image-region: rect(0, 64px, 32px, 32px);
-  }
-
-  .close-icon:hover:active {
-    -moz-image-region: rect(0, 96px, 32px, 64px);
-  }
-}

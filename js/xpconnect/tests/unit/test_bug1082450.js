@@ -1,13 +1,12 @@
-const Cu = Components.utils;
 function run_test() {
 
   var sb = new Cu.Sandbox('http://www.example.com');
   function checkThrows(str, rgxp) {
     try {
       sb.eval(str);
-      do_check_true(false);
+      Assert.ok(false, "eval should have thrown");
     } catch (e) {
-      do_check_true(rgxp.test(e));
+      Assert.ok(rgxp.test(e), "error message should match");
     }
   }
 
@@ -29,12 +28,12 @@ function run_test() {
                         chromeCallableValueProp: 'r' }
   };
 
-  do_check_eq(sb.eval('exposed.simpleValueProp'), 42);
-  do_check_eq(sb.eval('exposed.objectValueProp.val'), 42);
-  checkThrows('exposed.getterProp;', /privileged accessor/i);
-  checkThrows('exposed.setterProp = 42;', /privileged accessor/i);
-  checkThrows('exposed.getterSetterProp;', /privileged accessor/i);
-  checkThrows('exposed.getterSetterProp = 42;', /privileged accessor/i);
-  do_check_eq(sb.eval('exposed.contentCallableValueProp()'), 42);
-  checkThrows('exposed.chromeCallableValueProp();', /privileged or cross-origin callable/i);
+  Assert.equal(sb.eval('exposed.simpleValueProp'), undefined);
+  Assert.equal(sb.eval('exposed.objectValueProp'), undefined);
+  Assert.equal(sb.eval('exposed.getterProp;'), undefined);
+  Assert.equal(sb.eval('exposed.getterSetterProp;'), undefined);
+  checkThrows('exposed.setterProp = 42;', /Permission denied/i);
+  checkThrows('exposed.getterSetterProp = 42;', /Permission denied/i);
+  Assert.equal(sb.eval('exposed.contentCallableValueProp'), undefined);
+  checkThrows('exposed.chromeCallableValueProp();', /is not a function/i);
 }

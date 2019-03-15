@@ -8,11 +8,28 @@ namespace mozilla {
 namespace dom {
 namespace quota {
 
+struct InitResponse
+{
+};
+
+struct InitTemporaryStorageResponse
+{
+};
+
+struct InitOriginResponse
+{
+  bool created;
+};
+
 struct ClearOriginResponse
 {
 };
 
-struct ClearOriginsResponse
+struct ResetOriginResponse
+{
+};
+
+struct ClearDataResponse
 {
 };
 
@@ -24,13 +41,28 @@ struct ResetAllResponse
 {
 };
 
+struct PersistedResponse
+{
+  bool persisted;
+};
+
+struct PersistResponse
+{
+};
+
 union RequestResponse
 {
   nsresult;
+  InitResponse;
+  InitTemporaryStorageResponse;
+  InitOriginResponse;
   ClearOriginResponse;
-  ClearOriginsResponse;
+  ResetOriginResponse;
+  ClearDataResponse;
   ClearAllResponse;
   ResetAllResponse;
+  PersistedResponse;
+  PersistResponse;
 };
 
 protocol PQuotaRequest

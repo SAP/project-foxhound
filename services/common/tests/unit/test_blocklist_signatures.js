@@ -1,22 +1,17 @@
 "use strict";
 
-Cu.import("resource://services-common/blocklist-updater.js");
-Cu.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
 
-const { Kinto } = Cu.import("resource://services-common/kinto-offline-client.js", {});
-const { FirefoxAdapter } = Cu.import("resource://services-common/kinto-storage-adapter.js", {});
-const { NetUtil } = Cu.import("resource://gre/modules/NetUtil.jsm", {});
-const { OneCRLBlocklistClient } = Cu.import("resource://services-common/blocklist-clients.js", {});
+const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm", {});
+const BlocklistClients = ChromeUtils.import("resource://services-common/blocklist-clients.js", {});
+const { UptakeTelemetry } = ChromeUtils.import("resource://services-common/uptake-telemetry.js", {});
 
 let server;
 
-const PREF_BLOCKLIST_BUCKET            = "services.blocklist.bucket";
-const PREF_BLOCKLIST_ENFORCE_SIGNING   = "services.blocklist.signing.enforced";
-const PREF_BLOCKLIST_ONECRL_COLLECTION = "services.blocklist.onecrl.collection";
+const PREF_SETTINGS_VERIFY_SIGNATURE   = "services.settings.verify_signature";
 const PREF_SETTINGS_SERVER             = "services.settings.server";
 const PREF_SIGNATURE_ROOT              = "security.content.signature.root_hash";
-
-const kintoFilename = "kinto.sqlite";
 
 const CERT_DIR = "test_blocklist_signatures/";
 const CHAIN_FILES =
@@ -55,36 +50,21 @@ function getCertChain() {
   return chain.join("\n");
 }
 
-function* checkRecordCount(count) {
-  // open the collection manually
-  const base = Services.prefs.getCharPref(PREF_SETTINGS_SERVER);
-  const bucket = Services.prefs.getCharPref(PREF_BLOCKLIST_BUCKET);
-  const collectionName =
-      Services.prefs.getCharPref(PREF_BLOCKLIST_ONECRL_COLLECTION);
-
-  const sqliteHandle = yield FirefoxAdapter.openConnection({path: kintoFilename});
-  const config = {
-    remote: base,
-    bucket,
-    adapter: FirefoxAdapter,
-    adapterOptions: {sqliteHandle},
-  };
-
-  const db = new Kinto(config);
-  const collection = db.collection(collectionName);
-
+async function checkRecordCount(client, count) {
   // Check we have the expected number of records
-  let records = yield collection.list();
-  do_check_eq(count, records.data.length);
-
-  // Close the collection so the test can exit cleanly
-  yield sqliteHandle.close();
+  const records = await client.get();
+  Assert.equal(count, records.length);
 }
 
 // Check to ensure maybeSync is called with correct values when a changes
 // document contains information on when a collection was last modified
-add_task(function* test_check_signatures() {
+add_task(async function test_check_signatures() {
   const port = server.identity.primaryPort;
+
+  const OneCRLBlocklistClient = BlocklistClients.OneCRLBlocklistClient;
+
+  // Telemetry reports.
+  const TELEMETRY_HISTOGRAM_KEY = OneCRLBlocklistClient.identifier;
 
   // a response to give the client when the cert chain is expected
   function makeMetaResponseBody(lastModified, signature) {
@@ -99,9 +79,9 @@ add_task(function* test_check_signatures() {
           signature_encoding: "rs_base64url",
           signature,
           hash_algorithm: "sha384",
-          ref: "1yryrnmzou5rf31ou80znpnq8n"
-        }
-      }
+          ref: "1yryrnmzou5rf31ou80znpnq8n",
+        },
+      },
     };
   }
 
@@ -110,10 +90,10 @@ add_task(function* test_check_signatures() {
       comment,
       sampleHeaders: [
         "Content-Type: application/json; charset=UTF-8",
-        `ETag: \"${eTag}\"`
+        `ETag: \"${eTag}\"`,
       ],
       status: {status: 200, statusText: "OK"},
-      responseBody: JSON.stringify(body)
+      responseBody: JSON.stringify(body),
     };
   }
 
@@ -122,7 +102,6 @@ add_task(function* test_check_signatures() {
       const key = `${request.method}:${request.path}?${request.queryString}`;
       const available = responses[key];
       const sampled = available.length > 1 ? available.shift() : available[0];
-
       if (!sampled) {
         do_throw(`unexpected ${request.method} request for ${request.path}?${request.queryString}`);
       }
@@ -173,9 +152,6 @@ add_task(function* test_check_signatures() {
   Services.prefs.setCharPref(PREF_SETTINGS_SERVER,
     `http://localhost:${server.identity.primaryPort}/v1`);
 
-  // Set up some data we need for our test
-  let startTime = Date.now();
-
   // These are records we'll use in the test collections
   const RECORD1 = {
     details: {
@@ -183,13 +159,13 @@ add_task(function* test_check_signatures() {
       created: "2016-01-18T14:43:37Z",
       name: "GlobalSign certs",
       who: ".",
-      why: "."
+      why: ".",
     },
     enabled: true,
     id: "97fbf7c4-3ef2-f54f-0029-1ba6540c63ea",
     issuerName: "MHExKDAmBgNVBAMTH0dsb2JhbFNpZ24gUm9vdFNpZ24gUGFydG5lcnMgQ0ExHTAbBgNVBAsTFFJvb3RTaWduIFBhcnRuZXJzIENBMRkwFwYDVQQKExBHbG9iYWxTaWduIG52LXNhMQswCQYDVQQGEwJCRQ==",
     last_modified: 2000,
-    serialNumber: "BAAAAAABA/A35EU="
+    serialNumber: "BAAAAAABA/A35EU=",
   };
 
   const RECORD2 = {
@@ -198,13 +174,13 @@ add_task(function* test_check_signatures() {
       created: "2016-01-18T14:48:11Z",
       name: "GlobalSign certs",
       who: ".",
-      why: "."
+      why: ".",
     },
     enabled: true,
     id: "e3bd531e-1ee4-7407-27ce-6fdc9cecbbdc",
     issuerName: "MIGBMQswCQYDVQQGEwJCRTEZMBcGA1UEChMQR2xvYmFsU2lnbiBudi1zYTElMCMGA1UECxMcUHJpbWFyeSBPYmplY3QgUHVibGlzaGluZyBDQTEwMC4GA1UEAxMnR2xvYmFsU2lnbiBQcmltYXJ5IE9iamVjdCBQdWJsaXNoaW5nIENB",
     last_modified: 3000,
-    serialNumber: "BAAAAAABI54PryQ="
+    serialNumber: "BAAAAAABI54PryQ=",
   };
 
   const RECORD3 = {
@@ -213,13 +189,13 @@ add_task(function* test_check_signatures() {
       created: "2016-01-18T14:48:11Z",
       name: "GlobalSign certs",
       who: ".",
-      why: "."
+      why: ".",
     },
     enabled: true,
     id: "c7c49b69-a4ab-418e-92a9-e1961459aa7f",
     issuerName: "MIGBMQswCQYDVQQGEwJCRTEZMBcGA1UEChMQR2xvYmFsU2lnbiBudi1zYTElMCMGA1UECxMcUHJpbWFyeSBPYmplY3QgUHVibGlzaGluZyBDQTEwMC4GA1UEAxMnR2xvYmFsU2lnbiBQcmltYXJ5IE9iamVjdCBQdWJsaXNoaW5nIENB",
     last_modified: 4000,
-    serialNumber: "BAAAAAABI54PryQ="
+    serialNumber: "BAAAAAABI54PryQ=",
   };
 
   const RECORD1_DELETION = {
@@ -239,10 +215,10 @@ add_task(function* test_check_signatures() {
   const RESPONSE_CERT_CHAIN = {
     comment: "RESPONSE_CERT_CHAIN",
     sampleHeaders: [
-      "Content-Type: text/plain; charset=UTF-8"
+      "Content-Type: text/plain; charset=UTF-8",
     ],
     status: {status: 200, statusText: "OK"},
-    responseBody: getCertChain()
+    responseBody: getCertChain(),
   };
 
   // A server settings response. This is used in each sync.
@@ -252,10 +228,19 @@ add_task(function* test_check_signatures() {
       "Access-Control-Allow-Origin: *",
       "Access-Control-Expose-Headers: Retry-After, Content-Length, Alert, Backoff",
       "Content-Type: application/json; charset=UTF-8",
-      "Server: waitress"
+      "Server: waitress",
     ],
     status: {status: 200, statusText: "OK"},
-    responseBody: JSON.stringify({"settings":{"batch_max_requests":25}, "url":`http://localhost:${port}/v1/`, "documentation":"https://kinto.readthedocs.org/", "version":"1.5.1", "commit":"cbc6f58", "hello":"kinto"})
+    responseBody: JSON.stringify({
+      "settings": {
+        "batch_max_requests": 25,
+      },
+      "url": `http://localhost:${port}/v1/`,
+      "documentation": "https://kinto.readthedocs.org/",
+      "version": "1.5.1",
+      "commit": "cbc6f58",
+      "hello": "kinto",
+    }),
   };
 
   // This is the initial, empty state of the collection. This is only used
@@ -264,14 +249,27 @@ add_task(function* test_check_signatures() {
     comment: "RESPONSE_EMPTY_INITIAL",
     sampleHeaders: [
       "Content-Type: application/json; charset=UTF-8",
-      "ETag: \"1000\""
+      "ETag: \"1000\"",
     ],
     status: {status: 200, statusText: "OK"},
-    responseBody: JSON.stringify({"data": []})
+    responseBody: JSON.stringify({"data": []}),
   };
 
   const RESPONSE_BODY_META_EMPTY_SIG = makeMetaResponseBody(1000,
     "vxuAg5rDCB-1pul4a91vqSBQRXJG_j7WOYUTswxRSMltdYmbhLRH8R8brQ9YKuNDF56F-w6pn4HWxb076qgKPwgcEBtUeZAO_RtaHXRkRUUgVzAr86yQL4-aJTbv3D6u");
+
+  const RESPONSE_META_NO_SIG = {
+    sampleHeaders: [
+      "Content-Type: application/json; charset=UTF-8",
+      `ETag: \"123456\"`,
+    ],
+    status: {status: 200, statusText: "OK"},
+    responseBody: JSON.stringify({
+      data: {
+        last_modified: 123456,
+      },
+    }),
+  };
 
   // The collection metadata containing the signature for the empty
   // collection.
@@ -281,21 +279,30 @@ add_task(function* test_check_signatures() {
 
   // Here, we map request method and path to the available responses
   const emptyCollectionResponses = {
-    "GET:/test_blocklist_signatures/test_cert_chain.pem?":[RESPONSE_CERT_CHAIN],
+    "GET:/test_blocklist_signatures/test_cert_chain.pem?": [RESPONSE_CERT_CHAIN],
     "GET:/v1/?": [RESPONSE_SERVER_SETTINGS],
-    "GET:/v1/buckets/blocklists/collections/certificates/records?_sort=-last_modified":
+    "GET:/v1/buckets/blocklists/collections/certificates/records?_expected=1000&_sort=-last_modified":
       [RESPONSE_EMPTY_INITIAL],
-    "GET:/v1/buckets/blocklists/collections/certificates?":
-      [RESPONSE_META_EMPTY_SIG]
+    "GET:/v1/buckets/blocklists/collections/certificates?_expected=1000":
+      [RESPONSE_META_EMPTY_SIG],
   };
 
   // .. and use this map to register handlers for each path
   registerHandlers(emptyCollectionResponses);
 
+  let startHistogram = getUptakeTelemetrySnapshot(TELEMETRY_HISTOGRAM_KEY);
+
   // With all of this set up, we attempt a sync. This will resolve if all is
   // well and throw if something goes wrong.
   // We don't want to load initial json dumps in this test suite.
-  yield OneCRLBlocklistClient.maybeSync(1000, startTime, {loadDump: false});
+  await OneCRLBlocklistClient.maybeSync(1000, { loadDump: false });
+
+  let endHistogram = getUptakeTelemetrySnapshot(TELEMETRY_HISTOGRAM_KEY);
+
+  // ensure that a success histogram is tracked when a succesful sync occurs.
+  let expectedIncrements = {[UptakeTelemetry.STATUS.SUCCESS]: 1};
+  checkUptakeTelemetry(startHistogram, endHistogram, expectedIncrements);
+
 
   // Check that some additions (2 records) to the collection have a valid
   // signature.
@@ -305,10 +312,10 @@ add_task(function* test_check_signatures() {
     comment: "RESPONSE_TWO_ADDED",
     sampleHeaders: [
         "Content-Type: application/json; charset=UTF-8",
-        "ETag: \"3000\""
+        "ETag: \"3000\"",
     ],
     status: {status: 200, statusText: "OK"},
-    responseBody: JSON.stringify({"data": [RECORD2, RECORD1]})
+    responseBody: JSON.stringify({"data": [RECORD2, RECORD1]}),
   };
 
   const RESPONSE_BODY_META_TWO_ITEMS_SIG = makeMetaResponseBody(3000,
@@ -320,13 +327,14 @@ add_task(function* test_check_signatures() {
                      "RESPONSE_META_TWO_ITEMS_SIG");
 
   const twoItemsResponses = {
-    "GET:/v1/buckets/blocklists/collections/certificates/records?_sort=-last_modified&_since=1000":
+    "GET:/v1/buckets/blocklists/collections/certificates/records?_expected=3000&_sort=-last_modified&_since=1000":
       [RESPONSE_TWO_ADDED],
-    "GET:/v1/buckets/blocklists/collections/certificates?":
-      [RESPONSE_META_TWO_ITEMS_SIG]
+    "GET:/v1/buckets/blocklists/collections/certificates?_expected=3000":
+      [RESPONSE_META_TWO_ITEMS_SIG],
   };
   registerHandlers(twoItemsResponses);
-  yield OneCRLBlocklistClient.maybeSync(3000, startTime);
+  await OneCRLBlocklistClient.maybeSync(3000);
+
 
   // Check the collection with one addition and one removal has a valid
   // signature
@@ -336,10 +344,10 @@ add_task(function* test_check_signatures() {
     comment: "RESPONSE_ONE_ADDED_ONE_REMOVED ",
     sampleHeaders: [
       "Content-Type: application/json; charset=UTF-8",
-      "ETag: \"4000\""
+      "ETag: \"4000\"",
     ],
     status: {status: 200, statusText: "OK"},
-    responseBody: JSON.stringify({"data": [RECORD3, RECORD1_DELETION]})
+    responseBody: JSON.stringify({"data": [RECORD3, RECORD1_DELETION]}),
   };
 
   const RESPONSE_BODY_META_THREE_ITEMS_SIG = makeMetaResponseBody(4000,
@@ -351,13 +359,13 @@ add_task(function* test_check_signatures() {
                      "RESPONSE_META_THREE_ITEMS_SIG");
 
   const oneAddedOneRemovedResponses = {
-    "GET:/v1/buckets/blocklists/collections/certificates/records?_sort=-last_modified&_since=3000":
+    "GET:/v1/buckets/blocklists/collections/certificates/records?_expected=4000&_sort=-last_modified&_since=3000":
       [RESPONSE_ONE_ADDED_ONE_REMOVED],
-    "GET:/v1/buckets/blocklists/collections/certificates?":
-      [RESPONSE_META_THREE_ITEMS_SIG]
+    "GET:/v1/buckets/blocklists/collections/certificates?_expected=4000":
+      [RESPONSE_META_THREE_ITEMS_SIG],
   };
   registerHandlers(oneAddedOneRemovedResponses);
-  yield OneCRLBlocklistClient.maybeSync(4000, startTime);
+  await OneCRLBlocklistClient.maybeSync(4000);
 
   // Check the signature is still valid with no operation (no changes)
 
@@ -366,20 +374,21 @@ add_task(function* test_check_signatures() {
     comment: "RESPONSE_EMPTY_NO_UPDATE ",
     sampleHeaders: [
       "Content-Type: application/json; charset=UTF-8",
-      "ETag: \"4000\""
+      "ETag: \"4000\"",
     ],
     status: {status: 200, statusText: "OK"},
-    responseBody: JSON.stringify({"data": []})
+    responseBody: JSON.stringify({"data": []}),
   };
 
   const noOpResponses = {
-    "GET:/v1/buckets/blocklists/collections/certificates/records?_sort=-last_modified&_since=4000":
+    "GET:/v1/buckets/blocklists/collections/certificates/records?_expected=4100&_sort=-last_modified&_since=4000":
       [RESPONSE_EMPTY_NO_UPDATE],
-    "GET:/v1/buckets/blocklists/collections/certificates?":
-      [RESPONSE_META_THREE_ITEMS_SIG]
+    "GET:/v1/buckets/blocklists/collections/certificates?_expected=4100":
+      [RESPONSE_META_THREE_ITEMS_SIG],
   };
   registerHandlers(noOpResponses);
-  yield OneCRLBlocklistClient.maybeSync(4100, startTime);
+  await OneCRLBlocklistClient.maybeSync(4100);
+
 
   // Check the collection is reset when the signature is invalid
 
@@ -389,20 +398,20 @@ add_task(function* test_check_signatures() {
     comment: "RESPONSE_COMPLETE_INITIAL ",
     sampleHeaders: [
       "Content-Type: application/json; charset=UTF-8",
-      "ETag: \"4000\""
+      "ETag: \"4000\"",
     ],
     status: {status: 200, statusText: "OK"},
-    responseBody: JSON.stringify({"data": [RECORD2, RECORD3]})
+    responseBody: JSON.stringify({"data": [RECORD2, RECORD3]}),
   };
 
   const RESPONSE_COMPLETE_INITIAL_SORTED_BY_ID = {
     comment: "RESPONSE_COMPLETE_INITIAL ",
     sampleHeaders: [
       "Content-Type: application/json; charset=UTF-8",
-      "ETag: \"4000\""
+      "ETag: \"4000\"",
     ],
     status: {status: 200, statusText: "OK"},
-    responseBody: JSON.stringify({"data": [RECORD3, RECORD2]})
+    responseBody: JSON.stringify({"data": [RECORD3, RECORD2]}),
   };
 
   const RESPONSE_BODY_META_BAD_SIG = makeMetaResponseBody(4000,
@@ -415,12 +424,12 @@ add_task(function* test_check_signatures() {
     // In this test, we deliberately serve a bad signature initially. The
     // subsequent signature returned is a valid one for the three item
     // collection.
-    "GET:/v1/buckets/blocklists/collections/certificates?":
+    "GET:/v1/buckets/blocklists/collections/certificates?_expected=5000":
       [RESPONSE_META_BAD_SIG, RESPONSE_META_THREE_ITEMS_SIG],
     // The first collection state is the three item collection (since
     // there's a sync with no updates) - but, since the signature is wrong,
     // another request will be made...
-    "GET:/v1/buckets/blocklists/collections/certificates/records?_sort=-last_modified&_since=4000":
+    "GET:/v1/buckets/blocklists/collections/certificates/records?_expected=5000&_sort=-last_modified&_since=4000":
       [RESPONSE_EMPTY_NO_UPDATE],
     // The next request is for the full collection. This will be checked
     // against the valid signature - so the sync should succeed.
@@ -428,64 +437,167 @@ add_task(function* test_check_signatures() {
       [RESPONSE_COMPLETE_INITIAL],
     // The next request is for the full collection sorted by id. This will be
     // checked against the valid signature - so the sync should succeed.
-    "GET:/v1/buckets/blocklists/collections/certificates/records?_sort=id":
-      [RESPONSE_COMPLETE_INITIAL_SORTED_BY_ID]
+    "GET:/v1/buckets/blocklists/collections/certificates/records?_expected=5000&_sort=id":
+      [RESPONSE_COMPLETE_INITIAL_SORTED_BY_ID],
   };
 
   registerHandlers(badSigGoodSigResponses);
-  yield OneCRLBlocklistClient.maybeSync(5000, startTime);
+
+  startHistogram = getUptakeTelemetrySnapshot(TELEMETRY_HISTOGRAM_KEY);
+
+  let syncEventSent = false;
+  OneCRLBlocklistClient.on("sync", ({ data }) => { syncEventSent = true; });
+
+  await OneCRLBlocklistClient.maybeSync(5000);
+
+  endHistogram = getUptakeTelemetrySnapshot(TELEMETRY_HISTOGRAM_KEY);
+
+  // since we only fixed the signature, and no data was changed, the sync event
+  // was not sent.
+  equal(syncEventSent, false);
+
+  // ensure that the failure count is incremented for a succesful sync with an
+  // (initial) bad signature - only SERVICES_SETTINGS_SYNC_SIG_FAIL should
+  // increment.
+  expectedIncrements = {[UptakeTelemetry.STATUS.SIGNATURE_ERROR]: 1};
+  checkUptakeTelemetry(startHistogram, endHistogram, expectedIncrements);
+
 
   const badSigGoodOldResponses = {
     // In this test, we deliberately serve a bad signature initially. The
     // subsequent sitnature returned is a valid one for the three item
     // collection.
-    "GET:/v1/buckets/blocklists/collections/certificates?":
+    "GET:/v1/buckets/blocklists/collections/certificates?_expected=5000":
       [RESPONSE_META_BAD_SIG, RESPONSE_META_EMPTY_SIG],
     // The first collection state is the current state (since there's no update
     // - but, since the signature is wrong, another request will be made)
-    "GET:/v1/buckets/blocklists/collections/certificates/records?_sort=-last_modified&_since=4000":
+    "GET:/v1/buckets/blocklists/collections/certificates/records?_expected=5000&_sort=-last_modified&_since=4000":
       [RESPONSE_EMPTY_NO_UPDATE],
     // The next request is for the full collection sorted by id. This will be
     // checked against the valid signature and last_modified times will be
     // compared. Sync should fail, even though the signature is good,
     // because the local collection is newer.
-    "GET:/v1/buckets/blocklists/collections/certificates/records?_sort=id":
+    "GET:/v1/buckets/blocklists/collections/certificates/records?_expected=5000&_sort=id":
       [RESPONSE_EMPTY_INITIAL],
   };
 
   // ensure our collection hasn't been replaced with an older, empty one
-  yield checkRecordCount(2);
+  await checkRecordCount(OneCRLBlocklistClient, 2);
 
   registerHandlers(badSigGoodOldResponses);
-  yield OneCRLBlocklistClient.maybeSync(5000, startTime);
+
+  syncEventSent = false;
+  OneCRLBlocklistClient.on("sync", ({ data }) => { syncEventSent = true; });
+
+  await OneCRLBlocklistClient.maybeSync(5000);
+
+  // Local data was unchanged, since it was never than the one returned by the server,
+  // thus the sync event is not sent.
+  equal(syncEventSent, false);
+
+  const badLocalContentGoodSigResponses = {
+    // In this test, we deliberately serve a bad signature initially. The
+    // subsequent signature returned is a valid one for the three item
+    // collection.
+    "GET:/v1/buckets/blocklists/collections/certificates?_expected=5000":
+      [RESPONSE_META_BAD_SIG, RESPONSE_META_THREE_ITEMS_SIG],
+    // The next request is for the full collection. This will be checked
+    // against the valid signature - so the sync should succeed.
+    "GET:/v1/buckets/blocklists/collections/certificates/records?_expected=5000&_sort=-last_modified":
+      [RESPONSE_COMPLETE_INITIAL],
+    // The next request is for the full collection sorted by id. This will be
+    // checked against the valid signature - so the sync should succeed.
+    "GET:/v1/buckets/blocklists/collections/certificates/records?_expected=5000&_sort=id":
+      [RESPONSE_COMPLETE_INITIAL_SORTED_BY_ID],
+  };
+
+  registerHandlers(badLocalContentGoodSigResponses);
+
+  // we create a local state manually here, in order to test that the sync event data
+  // properly contains created, updated, and deleted records.
+  // the final server collection contains RECORD2 and RECORD3
+  const kintoCol = await OneCRLBlocklistClient.openCollection();
+  await kintoCol.clear();
+  await kintoCol.create({ ...RECORD2, last_modified: 1234567890, serialNumber: "abc" }, { synced: true, useRecordId: true });
+  const localId = "0602b1b2-12ab-4d3a-b6fb-593244e7b035";
+  await kintoCol.create({ id: localId }, { synced: true, useRecordId: true });
+
+  let syncData;
+  OneCRLBlocklistClient.on("sync", ({ data }) => { syncData = data; });
+
+  await OneCRLBlocklistClient.maybeSync(5000, { loadDump: false });
+
+  // Local data was unchanged, since it was never than the one returned by the server.
+  equal(syncData.current.length, 2);
+  equal(syncData.created.length, 1);
+  equal(syncData.created[0].id, RECORD3.id);
+  equal(syncData.updated.length, 1);
+  equal(syncData.updated[0].old.serialNumber, "abc");
+  equal(syncData.updated[0].new.serialNumber, RECORD2.serialNumber);
+  equal(syncData.deleted.length, 1);
+  equal(syncData.deleted[0].id, localId);
+
 
   const allBadSigResponses = {
     // In this test, we deliberately serve only a bad signature.
-    "GET:/v1/buckets/blocklists/collections/certificates?":
+    "GET:/v1/buckets/blocklists/collections/certificates?_expected=6000":
       [RESPONSE_META_BAD_SIG],
     // The first collection state is the three item collection (since
     // there's a sync with no updates) - but, since the signature is wrong,
     // another request will be made...
-    "GET:/v1/buckets/blocklists/collections/certificates/records?_sort=-last_modified&_since=4000":
+    "GET:/v1/buckets/blocklists/collections/certificates/records?_expected=6000&_sort=-last_modified&_since=4000":
       [RESPONSE_EMPTY_NO_UPDATE],
     // The next request is for the full collection sorted by id. This will be
     // checked against the valid signature - so the sync should succeed.
-    "GET:/v1/buckets/blocklists/collections/certificates/records?_sort=id":
-      [RESPONSE_COMPLETE_INITIAL_SORTED_BY_ID]
+    "GET:/v1/buckets/blocklists/collections/certificates/records?_expected=6000&_sort=id":
+      [RESPONSE_COMPLETE_INITIAL_SORTED_BY_ID],
   };
 
+  startHistogram = getUptakeTelemetrySnapshot(TELEMETRY_HISTOGRAM_KEY);
   registerHandlers(allBadSigResponses);
   try {
-    yield OneCRLBlocklistClient.maybeSync(6000, startTime);
+    await OneCRLBlocklistClient.maybeSync(6000);
     do_throw("Sync should fail (the signature is intentionally bad)");
   } catch (e) {
-    yield checkRecordCount(2);
+    await checkRecordCount(OneCRLBlocklistClient, 2);
   }
+
+  // Ensure that the failure is reflected in the accumulated telemetry:
+  endHistogram = getUptakeTelemetrySnapshot(TELEMETRY_HISTOGRAM_KEY);
+  expectedIncrements = {[UptakeTelemetry.STATUS.SIGNATURE_RETRY_ERROR]: 1};
+  checkUptakeTelemetry(startHistogram, endHistogram, expectedIncrements);
+
+
+  const missingSigResponses = {
+    // In this test, we deliberately serve metadata without the signature attribute.
+    // As if the collection was not signed.
+    "GET:/v1/buckets/blocklists/collections/certificates?_expected=6000":
+      [RESPONSE_META_NO_SIG],
+  };
+
+  startHistogram = getUptakeTelemetrySnapshot(TELEMETRY_HISTOGRAM_KEY);
+  registerHandlers(missingSigResponses);
+  try {
+    await OneCRLBlocklistClient.maybeSync(6000);
+    do_throw("Sync should fail (the signature is missing)");
+  } catch (e) {
+    await checkRecordCount(OneCRLBlocklistClient, 2);
+  }
+
+  // Ensure that the failure is reflected in the accumulated telemetry:
+  endHistogram = getUptakeTelemetrySnapshot(TELEMETRY_HISTOGRAM_KEY);
+  expectedIncrements = {
+    [UptakeTelemetry.STATUS.SIGNATURE_ERROR]: 1,
+    [UptakeTelemetry.STATUS.SIGNATURE_RETRY_ERROR]: 0,  // Not retried since missing.
+  };
+  checkUptakeTelemetry(startHistogram, endHistogram, expectedIncrements);
 });
 
 function run_test() {
+  BlocklistClients.initialize();
+
   // ensure signatures are enforced
-  Services.prefs.setBoolPref(PREF_BLOCKLIST_ENFORCE_SIGNING, true);
+  Services.prefs.setBoolPref(PREF_SETTINGS_VERIFY_SIGNATURE, true);
 
   // get a signature verifier to ensure nsNSSComponent is initialized
   Cc["@mozilla.org/security/contentsignatureverifier;1"]
@@ -500,7 +612,7 @@ function run_test() {
 
   run_next_test();
 
-  do_register_cleanup(function() {
+  registerCleanupFunction(function() {
     server.stop(function() { });
   });
 }

@@ -11,33 +11,32 @@
 #ifndef nsNodeInfoManager_h___
 #define nsNodeInfoManager_h___
 
-#include "mozilla/Attributes.h"           // for final
-#include "nsCOMPtr.h"                     // for member
-#include "nsCycleCollectionParticipant.h" // for NS_DECL_CYCLE_*
-#include "plhash.h"                       // for typedef PLHashNumber
+#include "mozilla/Attributes.h"  // for final
+#include "mozilla/dom/NodeInfo.h"
+#include "mozilla/MruCache.h"
+#include "nsCOMPtr.h"                      // for member
+#include "nsCycleCollectionParticipant.h"  // for NS_DECL_CYCLE_*
+#include "nsDataHashtable.h"
+#include "nsStringFwd.h"
 
-class nsAString;
 class nsBindingManager;
-class nsIAtom;
-class nsIDocument;
-class nsIDOMDocumentType;
+class nsAtom;
 class nsIPrincipal;
-struct PLHashEntry;
-struct PLHashTable;
-template<class T> struct already_AddRefed;
+class nsWindowSizes;
+template <class T>
+struct already_AddRefed;
 
 namespace mozilla {
 namespace dom {
-class NodeInfo;
-} // namespace dom
-} // namespace mozilla
+class Document;
+}
+}  // namespace mozilla
 
-class nsNodeInfoManager final
-{
-private:
+class nsNodeInfoManager final {
+ private:
   ~nsNodeInfoManager();
 
-public:
+ public:
   nsNodeInfoManager();
 
   NS_DECL_CYCLE_COLLECTION_SKIPPABLE_NATIVE_CLASS(nsNodeInfoManager)
@@ -47,7 +46,7 @@ public:
   /**
    * Initialize the nodeinfo manager with a document.
    */
-  nsresult Init(nsIDocument *aDocument);
+  nsresult Init(mozilla::dom::Document*);
 
   /**
    * Release the reference to the document, this will be called when
@@ -58,13 +57,13 @@ public:
   /**
    * Methods for creating nodeinfo's from atoms and/or strings.
    */
-  already_AddRefed<mozilla::dom::NodeInfo>
-  GetNodeInfo(nsIAtom *aName, nsIAtom *aPrefix, int32_t aNamespaceID,
-              uint16_t aNodeType, nsIAtom* aExtraName = nullptr);
-  nsresult GetNodeInfo(const nsAString& aName, nsIAtom *aPrefix,
+  already_AddRefed<mozilla::dom::NodeInfo> GetNodeInfo(
+      nsAtom* aName, nsAtom* aPrefix, int32_t aNamespaceID, uint16_t aNodeType,
+      nsAtom* aExtraName = nullptr);
+  nsresult GetNodeInfo(const nsAString& aName, nsAtom* aPrefix,
                        int32_t aNamespaceID, uint16_t aNodeType,
                        mozilla::dom::NodeInfo** aNodeInfo);
-  nsresult GetNodeInfo(const nsAString& aName, nsIAtom *aPrefix,
+  nsresult GetNodeInfo(const nsAString& aName, nsAtom* aPrefix,
                        const nsAString& aNamespaceURI, uint16_t aNodeType,
                        mozilla::dom::NodeInfo** aNodeInfo);
 
@@ -87,56 +86,93 @@ public:
    * Retrieve a pointer to the document that owns this node info
    * manager.
    */
-  nsIDocument* GetDocument() const
-  {
-    return mDocument;
-  }
+  mozilla::dom::Document* GetDocument() const { return mDocument; }
 
   /**
    * Gets the principal of the document this nodeinfo manager belongs to.
    */
-  nsIPrincipal *DocumentPrincipal() const {
+  nsIPrincipal* DocumentPrincipal() const {
     NS_ASSERTION(mPrincipal, "How'd that happen?");
     return mPrincipal;
   }
 
-  void RemoveNodeInfo(mozilla::dom::NodeInfo *aNodeInfo);
+  void RemoveNodeInfo(mozilla::dom::NodeInfo* aNodeInfo);
 
-  nsBindingManager* GetBindingManager() const
-  {
-    return mBindingManager;
+  nsBindingManager* GetBindingManager() const { return mBindingManager; }
+
+  enum Tri { eTriUnset = 0, eTriFalse, eTriTrue };
+
+  /**
+   * Returns true if SVG nodes in this document have real SVG semantics.
+   */
+  bool SVGEnabled() {
+    return mSVGEnabled == eTriTrue
+               ? true
+               : mSVGEnabled == eTriFalse ? false : InternalSVGEnabled();
   }
 
-protected:
-  friend class nsDocument;
+  /**
+   * Returns true if MathML nodes in this document have real MathML semantics.
+   */
+  bool MathMLEnabled() {
+    return mMathMLEnabled == eTriTrue
+               ? true
+               : mMathMLEnabled == eTriFalse ? false : InternalMathMLEnabled();
+  }
+
+  void AddSizeOfIncludingThis(nsWindowSizes& aSizes) const;
+
+ protected:
+  friend class mozilla::dom::Document;
   friend class nsXULPrototypeDocument;
-  friend nsresult NS_NewDOMDocumentType(nsIDOMDocumentType** ,
-                                        nsNodeInfoManager *,
-                                        nsIAtom *,
-                                        const nsAString& ,
-                                        const nsAString& ,
-                                        const nsAString& );
 
   /**
    * Sets the principal of the document this nodeinfo manager belongs to.
    */
-  void SetDocumentPrincipal(nsIPrincipal *aPrincipal);
+  void SetDocumentPrincipal(nsIPrincipal* aPrincipal);
 
-private:
-  static int NodeInfoInnerKeyCompare(const void *key1, const void *key2);
-  static PLHashNumber GetNodeInfoInnerHashValue(const void *key);
-  static int DropNodeInfoDocument(PLHashEntry *he, int hashIndex,
-                                     void *arg);
+ private:
+  bool InternalSVGEnabled();
+  bool InternalMathMLEnabled();
 
-  PLHashTable *mNodeInfoHash;
-  nsIDocument * MOZ_NON_OWNING_REF mDocument; // WEAK
+  class NodeInfoInnerKey
+      : public nsPtrHashKey<mozilla::dom::NodeInfo::NodeInfoInner> {
+   public:
+    explicit NodeInfoInnerKey(KeyTypePointer aKey) : nsPtrHashKey(aKey) {}
+    NodeInfoInnerKey(NodeInfoInnerKey&&) = default;
+    ~NodeInfoInnerKey() = default;
+    bool KeyEquals(KeyTypePointer aKey) const { return *mKey == *aKey; }
+    static PLDHashNumber HashKey(KeyTypePointer aKey) { return aKey->Hash(); }
+  };
+
+  struct NodeInfoCache
+      : public mozilla::MruCache<mozilla::dom::NodeInfo::NodeInfoInner,
+                                 mozilla::dom::NodeInfo*, NodeInfoCache> {
+    static mozilla::HashNumber Hash(
+        const mozilla::dom::NodeInfo::NodeInfoInner& aKey) {
+      return aKey.Hash();
+    }
+    static bool Match(const mozilla::dom::NodeInfo::NodeInfoInner& aKey,
+                      const mozilla::dom::NodeInfo* aVal) {
+      return aKey == aVal->mInner;
+    }
+  };
+
+  nsDataHashtable<NodeInfoInnerKey, mozilla::dom::NodeInfo*> mNodeInfoHash;
+  mozilla::dom::Document* MOZ_NON_OWNING_REF mDocument;  // WEAK
   uint32_t mNonDocumentNodeInfos;
-  nsCOMPtr<nsIPrincipal> mPrincipal; // Never null after Init() succeeds.
-  nsCOMPtr<nsIPrincipal> mDefaultPrincipal; // Never null after Init() succeeds
-  mozilla::dom::NodeInfo * MOZ_NON_OWNING_REF mTextNodeInfo; // WEAK to avoid circular ownership
-  mozilla::dom::NodeInfo * MOZ_NON_OWNING_REF mCommentNodeInfo; // WEAK to avoid circular ownership
-  mozilla::dom::NodeInfo * MOZ_NON_OWNING_REF mDocumentNodeInfo; // WEAK to avoid circular ownership
+  nsCOMPtr<nsIPrincipal> mPrincipal;  // Never null after Init() succeeds.
+  nsCOMPtr<nsIPrincipal> mDefaultPrincipal;  // Never null after Init() succeeds
+  mozilla::dom::NodeInfo* MOZ_NON_OWNING_REF
+      mTextNodeInfo;  // WEAK to avoid circular ownership
+  mozilla::dom::NodeInfo* MOZ_NON_OWNING_REF
+      mCommentNodeInfo;  // WEAK to avoid circular ownership
+  mozilla::dom::NodeInfo* MOZ_NON_OWNING_REF
+      mDocumentNodeInfo;  // WEAK to avoid circular ownership
   RefPtr<nsBindingManager> mBindingManager;
+  NodeInfoCache mRecentlyUsedNodeInfos;
+  Tri mSVGEnabled;
+  Tri mMathMLEnabled;
 };
 
 #endif /* nsNodeInfoManager_h___ */

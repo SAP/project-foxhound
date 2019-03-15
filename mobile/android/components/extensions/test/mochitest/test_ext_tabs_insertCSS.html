@@ -3,7 +3,7 @@
 <head>
   <title>Tabs executeScript Test</title>
   <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/SpawnTask.js"></script>
+  <script type="text/javascript" src="/tests/SimpleTest/AddTask.js"></script>
   <script type="text/javascript" src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
   <script type="text/javascript" src="head.js"></script>
   <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
@@ -13,7 +13,7 @@
 <script type="text/javascript">
 "use strict";
 
-add_task(function* testExecuteScript() {
+add_task(async function testExecuteScript() {
   let win = window.open("http://mochi.test:8888/");
 
   async function background() {
@@ -103,11 +103,11 @@ add_task(function* testExecuteScript() {
     },
   });
 
-  yield extension.startup();
+  await extension.startup();
 
-  yield extension.awaitFinish("insertCSS");
+  await extension.awaitFinish("insertCSS");
 
-  yield extension.unload();
+  await extension.unload();
 
   win.close();
 });

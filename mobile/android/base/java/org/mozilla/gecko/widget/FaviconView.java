@@ -5,16 +5,21 @@
 
 package org.mozilla.gecko.widget;
 
+import android.graphics.Color;
+import android.support.v7.widget.AppCompatImageView;
 import org.mozilla.gecko.R;
 import org.mozilla.gecko.icons.IconCallback;
 import org.mozilla.gecko.icons.IconResponse;
 
 import android.content.Context;
+import android.content.res.Resources;
 import android.content.res.TypedArray;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.support.v4.graphics.drawable.RoundedBitmapDrawable;
+import android.support.v4.graphics.drawable.RoundedBitmapDrawableFactory;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
 import android.util.TypedValue;
@@ -27,22 +32,33 @@ import java.lang.ref.WeakReference;
  * Displays solid colour background around Favicon to fill space not occupied by the icon. Colour
  * selected is the dominant colour of the provided Favicon.
  */
-public class FaviconView extends ImageView {
-    private static final String LOGTAG = "GeckoFaviconView";
-
-    private static String DEFAULT_FAVICON_KEY = FaviconView.class.getSimpleName() + "DefaultFavicon";
+public class FaviconView extends AppCompatImageView {
 
     // Default x/y-radius of the oval used to round the corners of the background (dp)
-    private static final int DEFAULT_CORNER_RADIUS_DP = 4;
+    private static final int DEFAULT_CORNER_RADIUS_DP = 2;
+
+    /**
+     * True if we're capable of, and want to, display an image, false otherwise. This acts as a switch: if we
+     * don't want to show an image, most other state will be ignored because we don't need it to draw.
+     *
+     * We use this flag, rather than zeroing all relevant state, because if update*Image is called before
+     * onSizeChanged (during init), we would not be able to show an image and thus zero all state. When
+     * onSizeChanged is called, the state has been zeroed and we would not be able to show the image properly
+     * (bug 1341275).
+     *
+     * One notable exception is for ImageView's internal state via setImageBitmap/Drawable, which must be set to
+     * null if we don't want to draw anything.
+     *
+     * By default, we can't show an image because we don't have a size yet (onSizeChanged) or an image (update*Image),
+     * hence false.
+     */
+    private boolean mShouldShowImage = false;
 
     private Bitmap mIconBitmap;
 
     // Reference to the unscaled bitmap, if any, to prevent repeated assignments of the same bitmap
     // to the view from causing repeated rescalings (Some of the callers do this)
     private Bitmap mUnscaledBitmap;
-
-    private int mActualWidth;
-    private int mActualHeight;
 
     // Flag indicating if the most recently assigned image is considered likely to need scaling.
     private boolean mScalingExpected;
@@ -68,6 +84,8 @@ public class FaviconView extends ImageView {
     // boolean switch for disabling rounded corners, value defined in attrs.xml .
     private final boolean areRoundCornersEnabled;
 
+    private final Resources mResources;
+
     // Initializing the static paints.
     static {
         sBackgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -82,6 +100,10 @@ public class FaviconView extends ImageView {
             isDominantBorderEnabled = a.getBoolean(R.styleable.FaviconView_dominantBorderEnabled, true);
             isOverrideScaleTypeEnabled = a.getBoolean(R.styleable.FaviconView_overrideScaleType, true);
             areRoundCornersEnabled = a.getBoolean(R.styleable.FaviconView_enableRoundCorners, true);
+
+            final DisplayMetrics metrics = getResources().getDisplayMetrics();
+            mBackgroundCornerRadius = a.getDimension(R.styleable.FaviconView_backgroundCornerRadius,
+                                                     TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, DEFAULT_CORNER_RADIUS_DP, metrics));
         } finally {
             a.recycle();
         }
@@ -90,23 +112,13 @@ public class FaviconView extends ImageView {
             setScaleType(ImageView.ScaleType.CENTER);
         }
 
-        final DisplayMetrics metrics = getResources().getDisplayMetrics();
-
         mBackgroundRect = new RectF(0, 0, 0, 0);
-        mBackgroundCornerRadius = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, DEFAULT_CORNER_RADIUS_DP, metrics);
+        mResources = getResources();
     }
 
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
-
-        // No point rechecking the image if there hasn't really been any change.
-        if (w == mActualWidth && h == mActualHeight) {
-            return;
-        }
-
-        mActualWidth = w;
-        mActualHeight = h;
 
         mBackgroundRect.right = w;
         mBackgroundRect.bottom = h;
@@ -116,7 +128,7 @@ public class FaviconView extends ImageView {
 
     @Override
     public void onDraw(Canvas canvas) {
-        if (isDominantBorderEnabled) {
+        if (mShouldShowImage && isDominantBorderEnabled) {
             sBackgroundPaint.setColor(mDominantColor);
 
             if (areRoundCornersEnabled) {
@@ -126,6 +138,7 @@ public class FaviconView extends ImageView {
             }
         }
 
+        // If mShouldShowImage == false, setImageDrawable should be null & we are safe to call super.
         super.onDraw(canvas);
     }
 
@@ -135,26 +148,46 @@ public class FaviconView extends ImageView {
      * in this view with the coloured background.
      */
     private void formatImage() {
-        // We're waiting for both onSizeChanged and updateImage to be called before scaling.
-        if (mIconBitmap == null || mActualWidth == 0 || mActualHeight == 0) {
+        // Both onSizeChanged and updateImage have to be called before an image can be shown.
+        //
+        // Note: getWidth/Height get their non-zero values during layout, at which point onSizeChanged will be called.
+        // Since we block for onSizeChanged (getWidth/Height != 0) and we only call getWidth/Height from this method
+        // and the ones it calls, we should have no problems with zero values for `getWidth/Height`.
+        final boolean canImageBeShown = (mIconBitmap != null && getWidth() != 0 && getHeight() != 0);
+        if (!canImageBeShown) {
             showNoImage();
             return;
         }
 
-        if (mScalingExpected && mActualWidth != mIconBitmap.getWidth()) {
+        mShouldShowImage = true;
+
+        if (mScalingExpected && getWidth() != mIconBitmap.getWidth()) {
             scaleBitmap();
             // Don't scale the image every time something changes.
             mScalingExpected = false;
         }
 
-        setImageBitmap(mIconBitmap);
+        // In original, there is no round corners if FaviconView has bitmap icon. But the new design
+        // needs round corners all the time, so we use RoundedBitmapDrawableFactory to create round corners.
+        if (areRoundCornersEnabled) {
+            // mIconBitmap's size must bew small or equal to getWidth(), or we cannot see the round corners.
+            if (getWidth() < mIconBitmap.getWidth()) {
+                scaleBitmap();
+            }
+            RoundedBitmapDrawable roundedBitmapDrawable = RoundedBitmapDrawableFactory.create(mResources, mIconBitmap);
+            roundedBitmapDrawable.setCornerRadius(mBackgroundCornerRadius);
+            roundedBitmapDrawable.setAntiAlias(true);
+            setImageDrawable(roundedBitmapDrawable);
+        } else {
+            setImageBitmap(mIconBitmap);
+        }
 
         // After scaling, determine if we have empty space around the scaled image which we need to
         // fill with the coloured background. If applicable, show it.
         // We assume Favicons are still squares and only bother with the background if more than 3px
         // of it would be displayed.
-        if (Math.abs(mIconBitmap.getWidth() - mActualWidth) < 3) {
-            mDominantColor = 0;
+        if (Math.abs(mIconBitmap.getWidth() - getWidth()) < 3) {
+            mDominantColor = Color.TRANSPARENT;
         }
     }
 
@@ -162,13 +195,13 @@ public class FaviconView extends ImageView {
         // If the Favicon can be resized to fill the view exactly without an enlargment of more than
         // a factor of two, do so.
         int doubledSize = mIconBitmap.getWidth() * 2;
-        if (mActualWidth > doubledSize) {
+        if (getWidth() > doubledSize) {
             // If the view is more than twice the size of the image, just double the image size
             // and do the rest with padding.
             mIconBitmap = Bitmap.createScaledBitmap(mIconBitmap, doubledSize, doubledSize, true);
         } else {
             // Otherwise, scale the image to fill the view.
-            mIconBitmap = Bitmap.createScaledBitmap(mIconBitmap, mActualWidth, mActualWidth, true);
+            mIconBitmap = Bitmap.createScaledBitmap(mIconBitmap, getWidth(), getWidth(), true);
         }
     }
 
@@ -198,8 +231,8 @@ public class FaviconView extends ImageView {
     }
 
     private void showNoImage() {
+        mShouldShowImage = false;
         setImageDrawable(null);
-        mDominantColor = 0;
     }
 
     /**
@@ -209,7 +242,7 @@ public class FaviconView extends ImageView {
         showNoImage();
         mUnscaledBitmap = null;
         mIconBitmap = null;
-        mDominantColor = 0;
+        mDominantColor = Color.TRANSPARENT;
         mScalingExpected = false;
     }
 

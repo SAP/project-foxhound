@@ -1,4 +1,4 @@
-Components.utils.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 function do_info(text, stack) {
   if (!stack)
@@ -29,7 +29,7 @@ function run_test()
 	[ "view-source:http://mozilla.org/", "http://mozilla.org/", true ]
     ];
 
-    var secman = Components.classes["@mozilla.org/scriptsecuritymanager;1"].getService(Components.interfaces.nsIScriptSecurityManager);
+    var secman = Cc["@mozilla.org/scriptsecuritymanager;1"].getService(Ci.nsIScriptSecurityManager);
 
     tests.forEach(function(aTest) {
         do_info("Comparing " + aTest[0] + " to " + aTest[1]);
@@ -39,11 +39,11 @@ function run_test()
 
 	var equal;
 	try {
-	    secman.checkSameOriginURI(uri1, uri2, false);
+	    secman.checkSameOriginURI(uri1, uri2, false, false);
 	    equal = true;
 	} catch (e) {
 	    equal = false
 	}
-	do_check_eq(equal, aTest[2]);
+	Assert.equal(equal, aTest[2]);
     });
 }

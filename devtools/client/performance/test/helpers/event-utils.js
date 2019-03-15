@@ -9,7 +9,7 @@ const Services = require("Services");
 const KNOWN_EE_APIS = [
   ["on", "off"],
   ["addEventListener", "removeEventListener"],
-  ["addListener", "removeListener"]
+  ["addListener", "removeListener"],
 ];
 
 /**
@@ -17,7 +17,7 @@ const KNOWN_EE_APIS = [
  * event emitter it is, returning a promise resolved with the passed arguments
  * once the event is fired.
  */
-exports.once = function (target, eventName, options = {}) {
+exports.once = function(target, eventName, options = {}) {
   return exports.times(target, eventName, 1, options);
 };
 
@@ -26,8 +26,9 @@ exports.once = function (target, eventName, options = {}) {
  * matter what kind of event emitter.
  * Possible options: `useCapture`, `spreadArgs`, `expectedArgs`
  */
-exports.times = function (target, eventName, receiveCount, options = {}) {
-  let msg = `Waiting for event: '${eventName}' on ${target} for ${receiveCount} time(s)`;
+exports.times = function(target, eventName, receiveCount, options = {}) {
+  const msg =
+    `Waiting for event: '${eventName}' on ${target} for ${receiveCount} time(s)`;
   if ("expectedArgs" in options) {
     dump(`${msg} with arguments: ${JSON.stringify(options.expectedArgs)}.\n`);
   } else {
@@ -39,27 +40,24 @@ exports.times = function (target, eventName, receiveCount, options = {}) {
       reject(new Error(`Unexpected event name: ${eventName}.`));
     }
 
-    let API = KNOWN_EE_APIS.find(([a, r]) => (a in target) && (r in target));
+    const API = KNOWN_EE_APIS.find(([a, r]) => (a in target) && (r in target));
     if (!API) {
       reject(new Error("Target is not a supported event listener."));
       return;
     }
 
-    let [add, remove] = API;
+    const [add, remove] = API;
 
     target[add](eventName, function onEvent(...args) {
       if ("expectedArgs" in options) {
-        for (let index of Object.keys(options.expectedArgs)) {
+        for (const [index, expectedValue] of options.expectedArgs.entries()) {
+          const isExpectedValueRegExp = expectedValue instanceof RegExp;
           if (
-            // Expected argument matches this regexp.
-            (options.expectedArgs[index] instanceof RegExp &&
-             !options.expectedArgs[index].exec(args[index])) ||
-            // Expected argument is not a regexp and equal to the received arg.
-            (!(options.expectedArgs[index] instanceof RegExp) &&
-             options.expectedArgs[index] != args[index])
+            (isExpectedValueRegExp && !expectedValue.exec(args[index])) ||
+            (!isExpectedValueRegExp && expectedValue != args[index])
           ) {
             dump(`Ignoring event '${eventName}' with unexpected argument at index ` +
-                 `${index}: ${args[index]}\n`);
+                 `${index}: ${args[index]} - expected ${expectedValue}\n`);
             return;
           }
         }
@@ -79,7 +77,7 @@ exports.times = function (target, eventName, receiveCount, options = {}) {
 /**
  * Like `once`, but for observer notifications.
  */
-exports.observeOnce = function (notificationName, options = {}) {
+exports.observeOnce = function(notificationName, options = {}) {
   return exports.observeTimes(notificationName, 1, options);
 };
 
@@ -87,7 +85,7 @@ exports.observeOnce = function (notificationName, options = {}) {
  * Like `times`, but for observer notifications.
  * Possible options: `expectedSubject`
  */
-exports.observeTimes = function (notificationName, receiveCount, options = {}) {
+exports.observeTimes = function(notificationName, receiveCount, options = {}) {
   dump(`Waiting for notification: '${notificationName}' for ${receiveCount} time(s).\n`);
 
   return new Promise((resolve, reject) => {
@@ -109,6 +107,6 @@ exports.observeTimes = function (notificationName, receiveCount, options = {}) {
         Services.obs.removeObserver(onObserve, topic);
         resolve(data);
       }
-    }, notificationName, false);
+    }, notificationName);
   });
 };

@@ -4,8 +4,11 @@
 
 import codecs
 import encodings.idna
+import imp
+import os
 import re
 import sys
+from make_dafsa import words_to_cxx
 
 """
 Processes a file containing effective TLD data.  See the following URL for a
@@ -34,12 +37,7 @@ def getEffectiveTLDs(path):
     assert domain not in domains, \
            "repeating domain %s makes no sense" % domain
     domains.add(domain)
-    entries.append(entry)
-
-  # Sort the entries so we can use binary search on them.
-  entries.sort(key=EffectiveTLDEntry.domain)
-
-  return entries
+    yield entry
 
 def _normalizeHostname(domain):
   """
@@ -103,19 +101,29 @@ class EffectiveTLDEntry:
 def main(output, effective_tld_filename):
   """
   effective_tld_filename is the effective TLD file to parse.
-  A C++ array of { domain, exception, wild } entries representing the
+  A C++ array of a binary representation of a DAFSA representing the
   eTLD file is then printed to output.
   """
 
-  def boolStr(b):
-    if b:
-      return "true"
-    return "false"
+  def typeEnum(etld):
+    """
+    Maps the flags to the DAFSA's enum types.
+    """
+    if etld.exception():
+      return 1
+    elif etld.wild():
+      return 2
+    else:
+      return 0
 
-  for etld in getEffectiveTLDs(effective_tld_filename):
-    exception = boolStr(etld.exception())
-    wild = boolStr(etld.wild())
-    output.write('ETLD_ENTRY("%s", %s, %s)\n' % (etld.domain(), exception, wild))
+  def dafsa_words():
+    """
+    make_dafsa expects lines of the form "<domain_name><enum_value>"
+    """
+    for etld in getEffectiveTLDs(effective_tld_filename):
+      yield "%s%d" % (etld.domain(), typeEnum(etld))
+
+  output.write(words_to_cxx(dafsa_words()))
 
 if __name__ == '__main__':
     main(sys.stdout, sys.argv[1])

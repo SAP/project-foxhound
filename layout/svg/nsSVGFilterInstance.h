@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,9 +9,9 @@
 
 #include "gfxMatrix.h"
 #include "gfxRect.h"
-#include "nsSVGFilters.h"
+#include "SVGFilters.h"
 #include "nsSVGNumber2.h"
-#include "nsSVGNumberPair.h"
+#include "SVGNumberPair.h"
 #include "nsTArray.h"
 
 class nsSVGFilterFrame;
@@ -19,8 +20,8 @@ struct nsStyleFilter;
 namespace mozilla {
 namespace dom {
 class SVGFilterElement;
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 /**
  * This class helps nsFilterInstance build its filter graph by processing a
@@ -63,15 +64,16 @@ class SVGFilterElement;
  *   "filter space point" = (10, 10) * 2
  *   "filter space point" = (20, 20)
  */
-class nsSVGFilterInstance
-{
+class nsSVGFilterInstance {
+  typedef mozilla::SVGNumberPair SVGNumberPair;
   typedef mozilla::gfx::Point3D Point3D;
   typedef mozilla::gfx::IntRect IntRect;
   typedef mozilla::gfx::SourceSurface SourceSurface;
   typedef mozilla::gfx::FilterPrimitiveDescription FilterPrimitiveDescription;
+  typedef mozilla::dom::SVGFE SVGFE;
   typedef mozilla::dom::UserSpaceMetrics UserSpaceMetrics;
 
-public:
+ public:
   /**
    * @param aFilter The SVG filter reference from the style system. This class
    *   stores aFilter by reference, so callers should avoid modifying or
@@ -80,8 +82,7 @@ public:
    * @param aTargetBBox The SVG bbox to use for the target frame, computed by
    *   the caller. The caller may decide to override the actual SVG bbox.
    */
-  nsSVGFilterInstance(const nsStyleFilter& aFilter,
-                      nsIFrame* aTargetFrame,
+  nsSVGFilterInstance(const nsStyleFilter& aFilter, nsIFrame* aTargetFrame,
                       nsIContent* aTargetContent,
                       const UserSpaceMetrics& aMetrics,
                       const gfxRect& aTargetBBox,
@@ -99,23 +100,22 @@ public:
    * new images from feImage filter primitive elements to the aInputImages list.
    * aInputIsTainted describes whether the input to this filter is tainted, i.e.
    * whether it contains security-sensitive content. This is needed to propagate
-   * taintedness to the FilterPrimitive that take tainted inputs. Something being
-   * tainted means that it contains security sensitive content.
-   * The input to this filter is the previous filter's output, i.e. the last
-   * element in aPrimitiveDescrs, or the SourceGraphic input if this is the first
-   * filter in the filter chain.
+   * taintedness to the FilterPrimitive that take tainted inputs. Something
+   * being tainted means that it contains security sensitive content. The input
+   * to this filter is the previous filter's output, i.e. the last element in
+   * aPrimitiveDescrs, or the SourceGraphic input if this is the first filter in
+   * the filter chain.
    */
-  nsresult BuildPrimitives(nsTArray<FilterPrimitiveDescription>& aPrimitiveDescrs,
-                           nsTArray<RefPtr<SourceSurface>>& aInputImages,
-                           bool aInputIsTainted);
+  nsresult BuildPrimitives(
+      nsTArray<FilterPrimitiveDescription>& aPrimitiveDescrs,
+      nsTArray<RefPtr<SourceSurface>>& aInputImages, bool aInputIsTainted);
 
-  float GetPrimitiveNumber(uint8_t aCtxType, const nsSVGNumber2 *aNumber) const
-  {
+  float GetPrimitiveNumber(uint8_t aCtxType,
+                           const nsSVGNumber2* aNumber) const {
     return GetPrimitiveNumber(aCtxType, aNumber->GetAnimValue());
   }
-  float GetPrimitiveNumber(uint8_t aCtxType, const nsSVGNumberPair *aNumberPair,
-                           nsSVGNumberPair::PairIndex aIndex) const
-  {
+  float GetPrimitiveNumber(uint8_t aCtxType, const SVGNumberPair* aNumberPair,
+                           SVGNumberPair::PairIndex aIndex) const {
     return GetPrimitiveNumber(aCtxType, aNumberPair->GetAnimValue(aIndex));
   }
 
@@ -131,7 +131,7 @@ public:
    */
   gfxRect UserSpaceToFilterSpace(const gfxRect& aUserSpaceRect) const;
 
-private:
+ private:
   /**
    * Finds the filter frame associated with this SVG filter.
    */
@@ -140,18 +140,19 @@ private:
   /**
    * Computes the filter primitive subregion for the given primitive.
    */
-  IntRect ComputeFilterPrimitiveSubregion(nsSVGFE* aFilterElement,
-                                          const nsTArray<FilterPrimitiveDescription>& aPrimitiveDescrs,
-                                          const nsTArray<int32_t>& aInputIndices);
+  IntRect ComputeFilterPrimitiveSubregion(
+      SVGFE* aFilterElement,
+      const nsTArray<FilterPrimitiveDescription>& aPrimitiveDescrs,
+      const nsTArray<int32_t>& aInputIndices);
 
   /**
    * Takes the input indices of a filter primitive and returns for each input
    * whether the input's output is tainted.
    */
-  void GetInputsAreTainted(const nsTArray<FilterPrimitiveDescription>& aPrimitiveDescrs,
-                           const nsTArray<int32_t>& aInputIndices,
-                           bool aFilterInputIsTainted,
-                           nsTArray<bool>& aOutInputsAreTainted);
+  void GetInputsAreTainted(
+      const nsTArray<FilterPrimitiveDescription>& aPrimitiveDescrs,
+      const nsTArray<int32_t>& aInputIndices, bool aFilterInputIsTainted,
+      nsTArray<bool>& aOutInputsAreTainted);
 
   /**
    * Scales a numeric filter primitive length in the X, Y or "XY" directions
@@ -174,7 +175,8 @@ private:
    * The new FilterPrimitiveDescription zeros out the SourceGraphic's RGB
    * channels and keeps the alpha channel intact.
    */
-  int32_t GetOrCreateSourceAlphaIndex(nsTArray<FilterPrimitiveDescription>& aPrimitiveDescrs);
+  int32_t GetOrCreateSourceAlphaIndex(
+      nsTArray<FilterPrimitiveDescription>& aPrimitiveDescrs);
 
   /**
    * Finds the index in aPrimitiveDescrs of each input to aPrimitiveElement.
@@ -183,12 +185,13 @@ private:
    * Then, the resulting aSourceIndices will contain the index of the
    * FilterPrimitiveDescription representing "another-primitive".
    */
-  nsresult GetSourceIndices(nsSVGFE* aPrimitiveElement,
-                            nsTArray<FilterPrimitiveDescription>& aPrimitiveDescrs,
-                            const nsDataHashtable<nsStringHashKey, int32_t>& aImageTable,
-                            nsTArray<int32_t>& aSourceIndices);
+  nsresult GetSourceIndices(
+      SVGFE* aPrimitiveElement,
+      nsTArray<FilterPrimitiveDescription>& aPrimitiveDescrs,
+      const nsDataHashtable<nsStringHashKey, int32_t>& aImageTable,
+      nsTArray<int32_t>& aSourceIndices);
 
-   /**
+  /**
    * Compute the filter region in user space, filter space, and filter
    * space.
    */

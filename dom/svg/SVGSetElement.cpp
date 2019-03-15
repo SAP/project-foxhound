@@ -7,38 +7,33 @@
 #include "mozilla/dom/SVGSetElement.h"
 #include "mozilla/dom/SVGSetElementBinding.h"
 
-NS_IMPL_NS_NEW_NAMESPACED_SVG_ELEMENT(Set)
+NS_IMPL_NS_NEW_SVG_ELEMENT(Set)
 
 namespace mozilla {
 namespace dom {
 
-JSObject*
-SVGSetElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return SVGSetElementBinding::Wrap(aCx, this, aGivenProto);
+JSObject* SVGSetElement::WrapNode(JSContext* aCx,
+                                  JS::Handle<JSObject*> aGivenProto) {
+  return SVGSetElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
 //----------------------------------------------------------------------
 // Implementation
 
-SVGSetElement::SVGSetElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-  : SVGAnimationElement(aNodeInfo)
-{
-}
+SVGSetElement::SVGSetElement(
+    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : SVGAnimationElement(std::move(aNodeInfo)) {}
 
 //----------------------------------------------------------------------
-// nsIDOMNode methods
+// nsINode methods
 
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGSetElement)
 
 //----------------------------------------------------------------------
 
-nsSMILAnimationFunction&
-SVGSetElement::AnimationFunction()
-{
+SMILAnimationFunction& SVGSetElement::AnimationFunction() {
   return mAnimationFunction;
 }
 
-} // namespace dom
-} // namespace mozilla
-
+}  // namespace dom
+}  // namespace mozilla

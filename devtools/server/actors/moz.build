@@ -5,113 +5,100 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 DIRS += [
+    'accessibility',
+    'addon',
+    'canvas',
+    'emulation',
     'highlighters',
+    'inspector',
+    'network-monitor',
+    'object',
+    'replay',
+    'targets',
     'utils',
+    'webconsole',
+    'worker',
 ]
 
 DevToolsModules(
     'actor-registry.js',
-    'addon.js',
-    'addons.js',
+    'animation-type-longhand.js',
     'animation.js',
+    'array-buffer.js',
     'breakpoint.js',
-    'call-watcher.js',
     'canvas.js',
-    'child-process.js',
-    'childtab.js',
-    'chrome.js',
+    'changes.js',
     'common.js',
     'css-properties.js',
     'csscoverage.js',
     'device.js',
-    'director-manager.js',
-    'director-registry.js',
     'emulation.js',
     'environment.js',
     'errordocs.js',
-    'eventlooplag.js',
     'frame.js',
     'framerate.js',
-    'gcli.js',
     'heap-snapshot-file.js',
     'highlighters.css',
     'highlighters.js',
-    'inspector.js',
     'layout.js',
     'memory.js',
-    'monitor.js',
+    'network-event.js',
+    'network-monitor.js',
     'object.js',
-    'performance-entries.js',
+    'pause-scoped.js',
+    'perf.js',
     'performance-recording.js',
     'performance.js',
     'preference.js',
-    'pretty-print-worker.js',
     'process.js',
-    'profiler.js',
     'promises.js',
     'reflow.js',
     'root.js',
-    'script.js',
+    'screenshot.js',
     'source.js',
     'storage.js',
     'string.js',
-    'styleeditor.js',
     'styles.js',
     'stylesheets.js',
-    'tab.js',
-    'timeline.js',
+    'thread.js',
     'webaudio.js',
     'webbrowser.js',
     'webconsole.js',
-    'webextension-inspected-window.js',
-    'webextension.js',
     'webgl.js',
-    'window.js',
-    'worker-list.js',
-    'worker.js',
 )
 
 with Files('animation.js'):
-    BUG_COMPONENT = ('Firefox', 'Developer Tools: Animation Inspector')
+    BUG_COMPONENT = ('DevTools', 'Animation Inspector')
 
 with Files('breakpoint.js'):
-    BUG_COMPONENT = ('Firefox', 'Developer Tools: Debugger')
+    BUG_COMPONENT = ('DevTools', 'Debugger')
 
 with Files('css-properties.js'):
-    BUG_COMPONENT = ('Firefox', 'Developer Tools: CSS Rules Inspector')
+    BUG_COMPONENT = ('DevTools', 'CSS Rules Inspector')
 
 with Files('csscoverage.js'):
-    BUG_COMPONENT = ('Firefox', 'Graphics Commandline and Toolbar')
-
-with Files('inspector.js'):
-    BUG_COMPONENT = ('Firefox', 'Developer Tools: Inspector')
+    BUG_COMPONENT = ('DevTools', 'Graphics Commandline and Toolbar')
 
 with Files('memory.js'):
-    BUG_COMPONENT = ('Firefox', 'Developer Tools: Memory')
-
-with Files('monitor.js'):
-    BUG_COMPONENT = ('Firefox', 'Developer Tools')
+    BUG_COMPONENT = ('DevTools', 'Memory')
 
 with Files('performance*'):
-    BUG_COMPONENT = ('Firefox', 'Developer Tools: Performance Tools (Profiler/Timeline)')
-
-with Files('profiler.js'):
-    BUG_COMPONENT = ('Firefox', 'Developer Tools: Performance Tools (Profiler/Timeline)')
+    BUG_COMPONENT = ('DevTools', 'Performance Tools (Profiler/Timeline)')
 
 with Files('source.js'):
-    BUG_COMPONENT = ('Firefox', 'Developer Tools: Debugger')
+    BUG_COMPONENT = ('DevTools', 'Debugger')
 
 with Files('storage.js'):
-    BUG_COMPONENT = ('Firefox', 'Developer Tools: Storage Inspector')
+    BUG_COMPONENT = ('DevTools', 'Storage Inspector')
 
-with Files('styleeditor.js'):
-    BUG_COMPONENT = ('Firefox', 'Developer Tools: Style Editor')
+with Files('stylesheets.js'):
+    BUG_COMPONENT = ('DevTools', 'Style Editor')
 
 with Files('webaudio.js'):
-    BUG_COMPONENT = ('Firefox', 'Developer Tools: Web Audio Editor')
+    BUG_COMPONENT = ('DevTools', 'Web Audio Editor')
 
 with Files('webconsole.js'):
-    BUG_COMPONENT = ('Firefox', 'Developer Tools: Console')
+    BUG_COMPONENT = ('DevTools', 'Console')
 
 with Files('webgl.js'):
-    BUG_COMPONENT = ('Firefox', 'Developer Tools: WebGL Shader Editor')
+    BUG_COMPONENT = ('DevTools', 'WebGL Shader Editor')

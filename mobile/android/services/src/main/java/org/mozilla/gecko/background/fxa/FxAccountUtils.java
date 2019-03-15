@@ -20,6 +20,7 @@ import org.mozilla.gecko.sync.Utils;
 import org.mozilla.gecko.sync.crypto.HKDF;
 import org.mozilla.gecko.sync.crypto.KeyBundle;
 import org.mozilla.gecko.sync.crypto.PBKDF2;
+import org.mozilla.gecko.util.StringUtils;
 
 import android.content.Context;
 
@@ -49,21 +50,21 @@ public class FxAccountUtils {
     }
   }
 
-  public static String bytes(String string) throws UnsupportedEncodingException {
-    return Utils.byte2Hex(string.getBytes("UTF-8"));
+  public static String bytes(String string) {
+    return Utils.byte2Hex(string.getBytes(StringUtils.UTF_8));
   }
 
-  public static byte[] KW(String name) throws UnsupportedEncodingException {
+  public static byte[] KW(String name) {
     return Utils.concatAll(
-        KW_VERSION_STRING.getBytes("UTF-8"),
-        name.getBytes("UTF-8"));
+        KW_VERSION_STRING.getBytes(StringUtils.UTF_8),
+        name.getBytes(StringUtils.UTF_8));
   }
 
-  public static byte[] KWE(String name, byte[] emailUTF8) throws UnsupportedEncodingException {
+  public static byte[] KWE(String name, byte[] emailUTF8) {
     return Utils.concatAll(
-        KW_VERSION_STRING.getBytes("UTF-8"),
-        name.getBytes("UTF-8"),
-        ":".getBytes("UTF-8"),
+        KW_VERSION_STRING.getBytes(StringUtils.UTF_8),
+        name.getBytes(StringUtils.UTF_8),
+        ":".getBytes(StringUtils.UTF_8),
         emailUTF8);
   }
 
@@ -71,8 +72,8 @@ public class FxAccountUtils {
    * Calculate the SRP verifier <tt>x</tt> value.
    */
   public static BigInteger srpVerifierLowercaseX(byte[] emailUTF8, byte[] srpPWBytes, byte[] srpSaltBytes)
-      throws NoSuchAlgorithmException, UnsupportedEncodingException {
-    byte[] inner = Utils.sha256(Utils.concatAll(emailUTF8, ":".getBytes("UTF-8"), srpPWBytes));
+      throws NoSuchAlgorithmException {
+    byte[] inner = Utils.sha256(Utils.concatAll(emailUTF8, ":".getBytes(StringUtils.UTF_8), srpPWBytes));
     byte[] outer = Utils.sha256(Utils.concatAll(srpSaltBytes, inner));
     return new BigInteger(1, outer);
   }
@@ -99,18 +100,11 @@ public class FxAccountUtils {
     return Utils.byte2Hex(Utils.hex2Byte((x.mod(N)).toString(16), byteLength), hexLength);
   }
 
-  /**
-   * The first engineering milestone of PICL (Profile-in-the-Cloud) was
-   * comprised of Sync 1.1 fronted by a Firefox Account. The sync key was
-   * generated from the Firefox Account password-derived kB value using this
-   * method.
-   */
-  public static KeyBundle generateSyncKeyBundle(final byte[] kB) throws InvalidKeyException, NoSuchAlgorithmException, UnsupportedEncodingException {
+  public static KeyBundle generateSyncKeyBundle(final byte[] kSync) throws InvalidKeyException, NoSuchAlgorithmException, UnsupportedEncodingException {
     byte[] encryptionKey = new byte[32];
     byte[] hmacKey = new byte[32];
-    byte[] derived = HKDF.derive(kB, new byte[0], FxAccountUtils.KW("oldsync"), 2*32);
-    System.arraycopy(derived, 0*32, encryptionKey, 0, 1*32);
-    System.arraycopy(derived, 1*32, hmacKey, 0, 1*32);
+    System.arraycopy(kSync, 0*32, encryptionKey, 0, 1*32);
+    System.arraycopy(kSync, 1*32, hmacKey, 0, 1*32);
     return new KeyBundle(encryptionKey, hmacKey);
   }
 
@@ -167,6 +161,16 @@ public class FxAccountUtils {
       kB[i] = (byte) (wrapkB[i] ^ unwrapkB[i]);
     }
     return kB;
+  }
+
+  /**
+   * The first engineering milestone of PICL (Profile-in-the-Cloud) was
+   * comprised of Sync 1.1 fronted by a Firefox Account. The sync key was
+   * generated from the Firefox Account password-derived kB value using this
+   * method.
+   */
+  public static byte[] deriveSyncKey(byte[] kB) throws UnsupportedEncodingException, InvalidKeyException, NoSuchAlgorithmException {
+    return HKDF.derive(kB, new byte[0], FxAccountUtils.KW("oldsync"), 2*32);
   }
 
   /**

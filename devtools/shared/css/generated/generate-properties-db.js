@@ -1,6 +1,7 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 "use strict";
 
 /*
@@ -8,8 +9,9 @@
  * as known by the platform. It is run from ./mach_commands.py by running
  * `mach devtools-css-db`.
  */
-var {require} = Components.utils.import("resource://devtools/shared/Loader.jsm", {});
+var {require} = ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
 var {generateCssProperties} = require("devtools/server/actors/css-properties");
+const InspectorUtils = require("InspectorUtils");
 
 // xpcshell can output extra information, so place some delimiter text between
 // the output of the css properties database.
@@ -18,7 +20,8 @@ dump("DEVTOOLS_CSS_DB_DELIMITER");
 // Output JSON
 dump(JSON.stringify({
   cssProperties: cssProperties(),
-  pseudoElements: pseudoElements()
+  preferences: preferences(),
+  pseudoElements: pseudoElements(),
 }));
 
 dump("DEVTOOLS_CSS_DB_DELIMITER");
@@ -35,9 +38,9 @@ dump("DEVTOOLS_CSS_DB_DELIMITER");
  */
 function cssProperties() {
   const properties = generateCssProperties();
-  for (let key in properties) {
+  for (const key in properties) {
     // Ignore OS-specific properties
-    if (key.indexOf("-moz-osx-") !== -1) {
+    if (key.includes("-moz-osx-")) {
       properties[key] = undefined;
     }
   }
@@ -45,11 +48,20 @@ function cssProperties() {
 }
 
 /**
+ * A list of preferences of CSS properties.
+ */
+function preferences() {
+  const prefs = InspectorUtils.getCSSPropertyPrefs();
+  const result = [];
+  for (const {name, pref} of prefs) {
+    result.push([name, pref]);
+  }
+  return result;
+}
+
+/**
  * The list of all CSS Pseudo Elements.
  */
 function pseudoElements() {
-  const {classes: Cc, interfaces: Ci} = Components;
-  const domUtils = Cc["@mozilla.org/inspector/dom-utils;1"]
-                             .getService(Ci.inIDOMUtils);
-  return domUtils.getCSSPseudoElementNames();
+  return InspectorUtils.getCSSPseudoElementNames();
 }

@@ -110,6 +110,9 @@ endif
 # NSS_X86_OR_X64 means the target is either x86 or x64
 ifeq (,$(filter-out i386 x386 x86 x86_64,$(CPU_ARCH)))
         DEFINES += -DNSS_X86_OR_X64
+        EXTRA_SRCS += gcm-x86.c aes-x86.c
+$(OBJDIR)/gcm-x86.o: CFLAGS += -mpclmul -maes
+$(OBJDIR)/aes-x86.o: CFLAGS += -mpclmul -maes
 ifneq (,$(USE_64)$(USE_X32))
         DEFINES += -DNSS_X64
 else
@@ -489,8 +492,6 @@ else
 endif # Solaris for non-sparc family CPUs
 endif # target == SunO
 
-# poly1305-donna-x64-sse2-incremental-source.c requires __int128 support
-# in GCC 4.6.0.
 ifdef USE_64
     ifdef CC_IS_CLANG
             HAVE_INT128_SUPPORT = 1
@@ -507,36 +508,41 @@ ifdef USE_64
     endif
 endif
 
+ifndef HAVE_INT128_SUPPORT
+    DEFINES += -DKRML_NOUINT128
+endif
+
 ifndef NSS_DISABLE_CHACHAPOLY
     ifeq ($(CPU_ARCH),x86_64)
         ifdef HAVE_INT128_SUPPORT
-            EXTRA_SRCS += poly1305-donna-x64-sse2-incremental-source.c
+            EXTRA_SRCS += Hacl_Poly1305_64.c
         else
-            EXTRA_SRCS += poly1305.c
-        endif
-
-        ifneq (1,$(CC_IS_GCC))
-            EXTRA_SRCS += chacha20.c
-        else
-            EXTRA_SRCS += chacha20_vec.c
+            EXTRA_SRCS += Hacl_Poly1305_32.c
         endif
     else
-        EXTRA_SRCS += poly1305.c
-        EXTRA_SRCS += chacha20.c
+        ifeq ($(CPU_ARCH),aarch64)
+            EXTRA_SRCS += Hacl_Poly1305_64.c
+        else
+            EXTRA_SRCS += Hacl_Poly1305_32.c
+        endif
     endif # x86_64
+
+    VERIFIED_SRCS += Hacl_Chacha20.c
+    VERIFIED_SRCS += Hacl_Chacha20_Vec128.c
 endif # NSS_DISABLE_CHACHAPOLY
 
-ifeq (,$(filter-out i386 x386 x86 x86_64,$(CPU_ARCH)))
+ifeq (,$(filter-out i386 x386 x86 x86_64 aarch64,$(CPU_ARCH)))
     # All intel architectures get the 64 bit version
     # With custom uint128 if necessary (faster than generic 32 bit version).
     ECL_SRCS += curve25519_64.c
+    VERIFIED_SRCS += Hacl_Curve25519.c
 else
     # All non intel architectures get the generic 32 bit implementation (slow!)
     ECL_SRCS += curve25519_32.c
 endif
 
 ifndef HAVE_INT128_SUPPORT
-    ECL_SRCS += uint128.c
+    VERIFIED_SRCS += FStar.c
 endif
 
 #######################################################################
@@ -562,12 +568,12 @@ rijndael_tables:
 	         $(DEFINES) $(INCLUDES) $(OBJDIR)/libfreebl.a
 	$(OBJDIR)/make_rijndael_tab
 
-vpath %.h mpi ecl
-vpath %.c mpi ecl
+vpath %.h mpi ecl verified
+vpath %.c mpi ecl verified
 vpath %.S mpi ecl
 vpath %.s mpi ecl
 vpath %.asm mpi ecl
-INCLUDES += -Impi -Iecl
+INCLUDES += -Impi -Iecl -Iverified
 
 
 DEFINES += -DMP_API_COMPATIBLE
@@ -585,8 +591,6 @@ ECL_OBJS = $(addprefix $(OBJDIR)/$(PROG_PREFIX), $(ECL_SRCS:.c=$(OBJ_SUFFIX)) $(
 ECL_OBJS += $(addprefix $(OBJDIR)/$(PROG_PREFIX), $(ECL_USERS:.c=$(OBJ_SUFFIX)))
 
 $(ECL_OBJS): $(ECL_HDRS)
-
-
 
 $(OBJDIR)/sysrand$(OBJ_SUFFIX): sysrand.c unix_rand.c win_rand.c
 

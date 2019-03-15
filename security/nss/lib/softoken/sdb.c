@@ -37,6 +37,11 @@
 #elif defined(XP_UNIX)
 #include <unistd.h>
 #endif
+#if defined(LINUX) && !defined(ANDROID)
+#include <linux/magic.h>
+#include <sys/vfs.h>
+#endif
+#include "utilpars.h"
 
 #ifdef SQLITE_UNSAFE_THREADS
 #include "prlock.h"
@@ -153,7 +158,8 @@ static const CK_ATTRIBUTE_TYPE known_attributes[] = {
     CKA_TRUST_EMAIL_PROTECTION, CKA_TRUST_IPSEC_END_SYSTEM,
     CKA_TRUST_IPSEC_TUNNEL, CKA_TRUST_IPSEC_USER, CKA_TRUST_TIME_STAMPING,
     CKA_TRUST_STEP_UP_APPROVED, CKA_CERT_SHA1_HASH, CKA_CERT_MD5_HASH,
-    CKA_NETSCAPE_DB, CKA_NETSCAPE_TRUST, CKA_NSS_OVERRIDE_EXTENSIONS
+    CKA_NETSCAPE_DB, CKA_NETSCAPE_TRUST, CKA_NSS_OVERRIDE_EXTENSIONS,
+    CKA_PUBLIC_KEY_INFO
 };
 
 static int known_attributes_size = sizeof(known_attributes) /
@@ -189,6 +195,34 @@ sdb_done(int err, int *count)
     }
     return 0;
 }
+
+#if defined(_WIN32)
+/*
+ * NSPR functions and narrow CRT functions do not handle UTF-8 file paths that
+ * sqlite3 expects.
+ */
+
+static int
+sdb_chmod(const char *filename, int pmode)
+{
+    int result;
+
+    if (!filename) {
+        return -1;
+    }
+
+    wchar_t *filenameWide = _NSSUTIL_UTF8ToWide(filename);
+    if (!filenameWide) {
+        return -1;
+    }
+    result = _wchmod(filenameWide, pmode);
+    PORT_Free(filenameWide);
+
+    return result;
+}
+#else
+#define sdb_chmod(filename, pmode) chmod((filename), (pmode))
+#endif
 
 /*
  * find out where sqlite stores the temp tables. We do this by replicating
@@ -614,13 +648,18 @@ static int
 sdb_openDB(const char *name, sqlite3 **sqlDB, int flags)
 {
     int sqlerr;
-    /*
-     * in sqlite3 3.5.0, there is a new open call that allows us
-     * to specify read only. Most new OS's are still on 3.3.x (including
-     * NSS's internal version and the version shipped with Firefox).
-     */
+    int openFlags;
+
     *sqlDB = NULL;
-    sqlerr = sqlite3_open(name, sqlDB);
+
+    if (flags & SDB_RDONLY) {
+        openFlags = SQLITE_OPEN_READONLY;
+    } else {
+        openFlags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE;
+    }
+
+    /* Requires SQLite 3.5.0 or newer. */
+    sqlerr = sqlite3_open_v2(name, sqlDB, openFlags, NULL);
     if (sqlerr != SQLITE_OK) {
         return sqlerr;
     }
@@ -674,8 +713,8 @@ struct SDBFindStr {
     sqlite3_stmt *findstmt;
 };
 
-static const char FIND_OBJECTS_CMD[] = "SELECT ALL * FROM %s WHERE %s;";
-static const char FIND_OBJECTS_ALL_CMD[] = "SELECT ALL * FROM %s;";
+static const char FIND_OBJECTS_CMD[] = "SELECT ALL id FROM %s WHERE %s;";
+static const char FIND_OBJECTS_ALL_CMD[] = "SELECT ALL id FROM %s;";
 CK_RV
 sdb_FindObjectsInit(SDB *sdb, const CK_ATTRIBUTE *template, CK_ULONG count,
                     SDBFind **find)
@@ -1600,7 +1639,7 @@ loser:
     return error;
 }
 
-static const char RESET_CMD[] = "DROP TABLE IF EXISTS %s;";
+static const char RESET_CMD[] = "DELETE FROM %s;";
 CK_RV
 sdb_Reset(SDB *sdb)
 {
@@ -1621,17 +1660,19 @@ sdb_Reset(SDB *sdb)
         goto loser;
     }
 
-    /* delete the key table */
-    newStr = sqlite3_mprintf(RESET_CMD, sdb_p->table);
-    if (newStr == NULL) {
-        error = CKR_HOST_MEMORY;
-        goto loser;
-    }
-    sqlerr = sqlite3_exec(sqlDB, newStr, NULL, 0, NULL);
-    sqlite3_free(newStr);
+    if (tableExists(sqlDB, sdb_p->table)) {
+        /* delete the contents of the key table */
+        newStr = sqlite3_mprintf(RESET_CMD, sdb_p->table);
+        if (newStr == NULL) {
+            error = CKR_HOST_MEMORY;
+            goto loser;
+        }
+        sqlerr = sqlite3_exec(sqlDB, newStr, NULL, 0, NULL);
+        sqlite3_free(newStr);
 
-    if (sqlerr != SQLITE_OK)
-        goto loser;
+        if (sqlerr != SQLITE_OK)
+            goto loser;
+    }
 
     /* delete the password entry table */
     sqlerr = sqlite3_exec(sqlDB, "DROP TABLE IF EXISTS metaData;",
@@ -1726,6 +1767,8 @@ sdb_init(char *dbname, char *table, sdbDataType type, int *inUpdate,
     PRIntervalTime now = 0;
     char *env;
     PRBool enableCache = PR_FALSE;
+    PRBool checkFSType = PR_FALSE;
+    PRBool measureSpeed = PR_FALSE;
     PRBool create;
     int flags = inFlags & 0x7;
 
@@ -1737,7 +1780,7 @@ sdb_init(char *dbname, char *table, sdbDataType type, int *inUpdate,
      * sqlite3 will always create it.
      */
     LOCK_SQLITE();
-    create = (PR_Access(dbname, PR_ACCESS_EXISTS) != PR_SUCCESS);
+    create = (_NSSUTIL_Access(dbname, PR_ACCESS_EXISTS) != PR_SUCCESS);
     if ((flags == SDB_RDONLY) && create) {
         error = sdb_mapSQLError(type, SQLITE_CANTOPEN);
         goto loser;
@@ -1754,7 +1797,7 @@ sdb_init(char *dbname, char *table, sdbDataType type, int *inUpdate,
      *
      * NO NSPR call for chmod? :(
      */
-    if (create && chmod(dbname, 0600) != 0) {
+    if (create && sdb_chmod(dbname, 0600) != 0) {
         error = sdb_mapSQLError(type, SQLITE_CANTOPEN);
         goto loser;
     }
@@ -1866,32 +1909,68 @@ sdb_init(char *dbname, char *table, sdbDataType type, int *inUpdate,
      * so we use it for the cache (see sdb_buildCache for how it's done).*/
 
     /*
-      * we decide whether or not to use the cache based on the following input.
-      *
-      * NSS_SDB_USE_CACHE environment variable is non-existant or set to
-      *   anything other than "no" or "yes" ("auto", for instance).
-      *   This is the normal case. NSS will measure the performance of access
-      *   to the temp database versus the access to the users passed in
-      *   database location. If the temp database location is "significantly"
-      *   faster we will use the cache.
-      *
-      * NSS_SDB_USE_CACHE environment variable is set to "no": cache will not
-      *   be used.
-      *
-      * NSS_SDB_USE_CACHE environment variable is set to "yes": cache will
-      *   always be used.
-      *
-      * It is expected that most applications would use the "auto" selection,
-      * the environment variable is primarily to simplify testing, and to
-      * correct potential corner cases where  */
+     * we decide whether or not to use the cache based on the following input.
+     *
+     * NSS_SDB_USE_CACHE environment variable is set to anything other than
+     *   "yes" or "no" (for instance, "auto"): NSS will measure the performance
+     *   of access to the temp database versus the access to the user's
+     *   passed-in database location. If the temp database location is
+     *   "significantly" faster we will use the cache.
+     *
+     * NSS_SDB_USE_CACHE environment variable is nonexistent or set to "no":
+     *   cache will not be used.
+     *
+     * NSS_SDB_USE_CACHE environment variable is set to "yes": cache will
+     *   always be used.
+     *
+     * It is expected that most applications will not need this feature, and
+     * thus it is disabled by default.
+     */
 
     env = PR_GetEnvSecure("NSS_SDB_USE_CACHE");
 
-    if (env && PORT_Strcasecmp(env, "no") == 0) {
-        enableCache = PR_FALSE;
-    } else if (env && PORT_Strcasecmp(env, "yes") == 0) {
+    /* Variables enableCache, checkFSType, measureSpeed are PR_FALSE by default,
+     * which is the expected behavior for NSS_SDB_USE_CACHE="no".
+     * We don't need to check for "no" here. */
+    if (!env) {
+        /* By default, with no variable set, we avoid expensive measuring for
+         * most FS types. We start with inexpensive FS type checking, and
+         * might perform measuring for some types. */
+        checkFSType = PR_TRUE;
+    } else if (PORT_Strcasecmp(env, "yes") == 0) {
         enableCache = PR_TRUE;
-    } else {
+    } else if (PORT_Strcasecmp(env, "no") != 0) { /* not "no" => "auto" */
+        measureSpeed = PR_TRUE;
+    }
+
+    if (checkFSType) {
+#if defined(LINUX) && !defined(ANDROID)
+        struct statfs statfs_s;
+        if (statfs(dbname, &statfs_s) == 0) {
+            switch (statfs_s.f_type) {
+                case SMB_SUPER_MAGIC:
+                case 0xff534d42: /* CIFS_MAGIC_NUMBER */
+                case NFS_SUPER_MAGIC:
+                    /* We assume these are slow. */
+                    enableCache = PR_TRUE;
+                    break;
+                case CODA_SUPER_MAGIC:
+                case 0x65735546: /* FUSE_SUPER_MAGIC */
+                case NCP_SUPER_MAGIC:
+                    /* It's uncertain if this FS is fast or slow.
+                     * It seems reasonable to perform slow measuring for users
+                     * with questionable FS speed. */
+                    measureSpeed = PR_TRUE;
+                    break;
+                case AFS_SUPER_MAGIC: /* Already implements caching. */
+                default:
+                    break;
+            }
+        }
+#endif
+    }
+
+    if (measureSpeed) {
         char *tempDir = NULL;
         PRUint32 tempOps = 0;
         /*
@@ -2035,10 +2114,11 @@ s_open(const char *directory, const char *certPrefix, const char *keyPrefix,
     {
         char *env;
         env = PR_GetEnvSecure("NSS_SDB_USE_CACHE");
-        /* If the environment variable is set to yes or no, sdb_init() will
-         * ignore the value of accessOps, and we can skip the measuring.*/
-        if (!env || ((PORT_Strcasecmp(env, "no") != 0) &&
-                     (PORT_Strcasecmp(env, "yes") != 0))) {
+        /* If the environment variable is undefined or set to yes or no,
+         * sdb_init() will ignore the value of accessOps, and we can skip the
+         * measuring.*/
+        if (env && PORT_Strcasecmp(env, "no") != 0 &&
+            PORT_Strcasecmp(env, "yes") != 0) {
             accessOps = sdb_measureAccess(directory);
         }
     }

@@ -26,11 +26,7 @@ var jan12_1730 = (endTime - (DAY_MSEC * 3) - (HOUR_MSEC * 4)) * 1000;
 
 // Dates outside our query - mult by 1000 to convert to PRTIME
 var jan6_700 = (beginTime - HOUR_MSEC) * 1000;
-var jan5_800 = (beginTime - DAY_MSEC) * 1000;
 var dec27_800 = (beginTime - (DAY_MSEC * 10)) * 1000;
-var jan15_2145 = (endTime + (MIN_MSEC * 15)) * 1000;
-var jan16_2130 = (endTime + (DAY_MSEC)) * 1000;
-var jan25_2130 = (endTime + (DAY_MSEC * 10)) * 1000;
 
 // So that we can easily use these too, convert them to PRTIME
 beginTime *= 1000;
@@ -89,28 +85,28 @@ var testData = [
    annoName: goodAnnoName, annoVal: val, lastVisit: jan14_2130},
 
   // Begin the invalid queries: Test too early
-  {isInQuery: false, isVisit:true, isDetails: true, title: "moz",
+  {isInQuery: false, isVisit: true, isDetails: true, title: "moz",
    uri: "http://foo.com/tooearly.php", lastVisit: jan6_700},
 
   // Test Bad Annotation
-  {isInQuery: false, isVisit:true, isDetails: true, isPageAnnotation: true,
+  {isInQuery: false, isVisit: true, isDetails: true, isPageAnnotation: true,
    title: "moz", uri: "http://foo.com/badanno.htm", lastVisit: jan12_1730,
    annoName: badAnnoName, annoVal: val},
 
   // Test bad URI
-  {isInQuery: false, isVisit:true, isDetails: true, title: "moz",
+  {isInQuery: false, isVisit: true, isDetails: true, title: "moz",
    uri: "http://somefoo.com/justwrong.htm", lastVisit: jan11_800},
 
   // Test afterward, one to update
-  {isInQuery: false, isVisit:true, isDetails: true, title: "changeme",
+  {isInQuery: false, isVisit: true, isDetails: true, title: "changeme",
    uri: "http://foo.com/changeme1.htm", lastVisit: jan12_1730},
 
   // Test invalid title
-  {isInQuery: false, isVisit:true, isDetails: true, title: "changeme2",
+  {isInQuery: false, isVisit: true, isDetails: true, title: "changeme2",
    uri: "http://foo.com/changeme2.htm", lastVisit: jan7_800},
 
   // Test changing the lastVisit
-  {isInQuery: false, isVisit:true, isDetails: true, title: "moz",
+  {isInQuery: false, isVisit: true, isDetails: true, title: "moz",
    uri: "http://foo.com/changeme3.htm", lastVisit: dec27_800}];
 
 /**
@@ -120,13 +116,9 @@ var testData = [
  *                 AND annotationIsNot(match) GROUP BY Domain, Day SORT BY uri,ascending
  *                 excludeITems(should be ignored)
  */
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* test_abstime_annotation_domain() {
+add_task(async function test_abstime_annotation_domain() {
   // Initialize database
-  yield task_populateDB(testData);
+  await task_populateDB(testData);
 
   // Query
   var query = PlacesUtils.history.getNewQuery();
@@ -160,16 +152,16 @@ add_task(function* test_abstime_annotation_domain() {
   // Let's add something first
   var addItem = [{isInQuery: true, isVisit: true, isDetails: true, title: "moz",
                  uri: "http://www.foo.com/i-am-added.html", lastVisit: jan11_800}];
-  yield task_populateDB(addItem);
-  do_print("Adding item foo.com/i-am-added.html");
-  do_check_eq(isInResult(addItem, root), true);
+  await task_populateDB(addItem);
+  info("Adding item foo.com/i-am-added.html");
+  Assert.equal(isInResult(addItem, root), true);
 
   // Let's update something by title
   var change1 = [{isDetails: true, uri: "http://foo.com/changeme1",
                   lastVisit: jan12_1730, title: "moz moz mozzie"}];
-  yield task_populateDB(change1);
-  do_print("LiveUpdate by changing title");
-  do_check_eq(isInResult(change1, root), true);
+  await task_populateDB(change1);
+  info("LiveUpdate by changing title");
+  Assert.equal(isInResult(change1, root), true);
 
   // Let's update something by annotation
   // Updating a page by removing an annotation does not cause it to join this
@@ -186,9 +178,9 @@ add_task(function* test_abstime_annotation_domain() {
   // Let's update by adding a visit in the time range for an existing URI
   var change3 = [{isDetails: true, uri: "http://foo.com/changeme3.htm",
                   title: "moz", lastVisit: jan15_2045}];
-  yield task_populateDB(change3);
-  do_print("LiveUpdate by adding visit within timerange");
-  do_check_eq(isInResult(change3, root), true);
+  await task_populateDB(change3);
+  info("LiveUpdate by adding visit within timerange");
+  Assert.equal(isInResult(change3, root), true);
 
   // And delete something from the result set - using annotation
   // Once again, bug 424050 prevents this from passing
@@ -200,9 +192,9 @@ add_task(function* test_abstime_annotation_domain() {
 
   // Delete something by changing the title
   var change5 = [{isDetails: true, uri: "http://foo.com/end.html", title: "deleted"}];
-  yield task_populateDB(change5);
-  do_print("LiveUpdate by deleting item by changing title");
-  do_check_eq(isInResult(change5, root), false);
+  await task_populateDB(change5);
+  info("LiveUpdate by deleting item by changing title");
+  Assert.equal(isInResult(change5, root), false);
 
   root.containerOpen = false;
 });

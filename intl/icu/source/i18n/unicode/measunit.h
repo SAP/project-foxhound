@@ -1,4 +1,4 @@
-// Copyright (C) 2016 and later: Unicode, Inc. and others.
+// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
 /*
 **********************************************************************
@@ -40,11 +40,10 @@ class U_I18N_API MeasureUnit: public UObject {
 
     /**
      * Default constructor.
+     * Populates the instance with the base dimensionless unit.
      * @stable ICU 3.0
      */
-    MeasureUnit() : fTypeId(0), fSubTypeId(0) { 
-        fCurrency[0] = 0;
-    }
+    MeasureUnit();
     
     /**
      * Copy constructor.
@@ -149,7 +148,7 @@ class U_I18N_API MeasureUnit: public UObject {
      * <pre>
      * .   Base* polymorphic_pointer = createPolymorphicObject();
      * .   if (polymorphic_pointer->getDynamicClassID() ==
-     * .       erived::getStaticClassID()) ...
+     * .       Derived::getStaticClassID()) ...
      * </pre>
      * @return          The class ID for all objects of this class.
      * @stable ICU 53
@@ -197,8 +196,8 @@ class U_I18N_API MeasureUnit: public UObject {
      * ICU use only.
      * @internal
      */
-    static MeasureUnit *resolveUnitPerUnit(
-            const MeasureUnit &unit, const MeasureUnit &perUnit);
+    static MeasureUnit resolveUnitPerUnit(
+            const MeasureUnit &unit, const MeasureUnit &perUnit, bool* isResolved);
 #endif /* U_HIDE_INTERNAL_API */
 
 // All code between the "Start generated createXXX methods" comment and
@@ -345,35 +344,49 @@ class U_I18N_API MeasureUnit: public UObject {
      */
     static MeasureUnit *createKarat(UErrorCode &status);
 
-#ifndef U_HIDE_DRAFT_API
     /**
      * Returns unit of concentr: milligram-per-deciliter.
      * Caller owns returned value and must free it.
      * @param status ICU error code.
-     * @draft ICU 57
+     * @stable ICU 57
      */
     static MeasureUnit *createMilligramPerDeciliter(UErrorCode &status);
-#endif  /* U_HIDE_DRAFT_API */
 
-#ifndef U_HIDE_DRAFT_API
     /**
      * Returns unit of concentr: millimole-per-liter.
      * Caller owns returned value and must free it.
      * @param status ICU error code.
-     * @draft ICU 57
+     * @stable ICU 57
      */
     static MeasureUnit *createMillimolePerLiter(UErrorCode &status);
-#endif  /* U_HIDE_DRAFT_API */
 
-#ifndef U_HIDE_DRAFT_API
     /**
      * Returns unit of concentr: part-per-million.
      * Caller owns returned value and must free it.
      * @param status ICU error code.
-     * @draft ICU 57
+     * @stable ICU 57
      */
     static MeasureUnit *createPartPerMillion(UErrorCode &status);
-#endif  /* U_HIDE_DRAFT_API */
+
+#ifndef U_HIDE_DRAFT_API
+    /**
+     * Returns unit of concentr: percent.
+     * Caller owns returned value and must free it.
+     * @param status ICU error code.
+     * @draft ICU 63
+     */
+    static MeasureUnit *createPercent(UErrorCode &status);
+#endif /* U_HIDE_DRAFT_API */
+
+#ifndef U_HIDE_DRAFT_API
+    /**
+     * Returns unit of concentr: permille.
+     * Caller owns returned value and must free it.
+     * @param status ICU error code.
+     * @draft ICU 63
+     */
+    static MeasureUnit *createPermille(UErrorCode &status);
+#endif /* U_HIDE_DRAFT_API */
 
     /**
      * Returns unit of consumption: liter-per-100kilometers.
@@ -399,55 +412,13 @@ class U_I18N_API MeasureUnit: public UObject {
      */
     static MeasureUnit *createMilePerGallon(UErrorCode &status);
 
-#ifndef U_HIDE_DRAFT_API
     /**
      * Returns unit of consumption: mile-per-gallon-imperial.
      * Caller owns returned value and must free it.
      * @param status ICU error code.
-     * @draft ICU 57
+     * @stable ICU 57
      */
     static MeasureUnit *createMilePerGallonImperial(UErrorCode &status);
-#endif  /* U_HIDE_DRAFT_API */
-
-#ifndef U_HIDE_DRAFT_API
-    /**
-     * Returns unit of coordinate: east.
-     * Caller owns returned value and must free it.
-     * @param status ICU error code.
-     * @draft ICU 58
-     */
-    static MeasureUnit *createEast(UErrorCode &status);
-#endif  /* U_HIDE_DRAFT_API */
-
-#ifndef U_HIDE_DRAFT_API
-    /**
-     * Returns unit of coordinate: north.
-     * Caller owns returned value and must free it.
-     * @param status ICU error code.
-     * @draft ICU 58
-     */
-    static MeasureUnit *createNorth(UErrorCode &status);
-#endif  /* U_HIDE_DRAFT_API */
-
-#ifndef U_HIDE_DRAFT_API
-    /**
-     * Returns unit of coordinate: south.
-     * Caller owns returned value and must free it.
-     * @param status ICU error code.
-     * @draft ICU 58
-     */
-    static MeasureUnit *createSouth(UErrorCode &status);
-#endif  /* U_HIDE_DRAFT_API */
-
-#ifndef U_HIDE_DRAFT_API
-    /**
-     * Returns unit of coordinate: west.
-     * Caller owns returned value and must free it.
-     * @param status ICU error code.
-     * @draft ICU 58
-     */
-    static MeasureUnit *createWest(UErrorCode &status);
-#endif  /* U_HIDE_DRAFT_API */
 
     /**
      * Returns unit of digital: bit.
@@ -512,6 +483,16 @@ class U_I18N_API MeasureUnit: public UObject {
      * @stable ICU 54
      */
     static MeasureUnit *createMegabyte(UErrorCode &status);
+
+#ifndef U_HIDE_DRAFT_API
+    /**
+     * Returns unit of digital: petabyte.
+     * Caller owns returned value and must free it.
+     * @param status ICU error code.
+     * @draft ICU 63
+     */
+    static MeasureUnit *createPetabyte(UErrorCode &status);
+#endif /* U_HIDE_DRAFT_API */
 
     /**
      * Returns unit of digital: terabit.
@@ -874,6 +855,14 @@ class U_I18N_API MeasureUnit: public UObject {
     static MeasureUnit *createPicometer(UErrorCode &status);
 
     /**
+     * Returns unit of length: point.
+     * Caller owns returned value and must free it.
+     * @param status ICU error code.
+     * @stable ICU 59
+     */
+    static MeasureUnit *createPoint(UErrorCode &status);
+
+    /**
      * Returns unit of length: yard.
      * Caller owns returned value and must free it.
      * @param status ICU error code.
@@ -1024,6 +1013,16 @@ class U_I18N_API MeasureUnit: public UObject {
      * @stable ICU 53
      */
     static MeasureUnit *createWatt(UErrorCode &status);
+
+#ifndef U_HIDE_DRAFT_API
+    /**
+     * Returns unit of pressure: atmosphere.
+     * Caller owns returned value and must free it.
+     * @param status ICU error code.
+     * @draft ICU 63
+     */
+    static MeasureUnit *createAtmosphere(UErrorCode &status);
+#endif /* U_HIDE_DRAFT_API */
 
     /**
      * Returns unit of pressure: hectopascal.
@@ -1249,15 +1248,13 @@ class U_I18N_API MeasureUnit: public UObject {
      */
     static MeasureUnit *createGallon(UErrorCode &status);
 
-#ifndef U_HIDE_DRAFT_API
     /**
      * Returns unit of volume: gallon-imperial.
      * Caller owns returned value and must free it.
      * @param status ICU error code.
-     * @draft ICU 57
+     * @stable ICU 57
      */
     static MeasureUnit *createGallonImperial(UErrorCode &status);
-#endif  /* U_HIDE_DRAFT_API */
 
     /**
      * Returns unit of volume: hectoliter.
@@ -1348,6 +1345,12 @@ class U_I18N_API MeasureUnit: public UObject {
      * @internal
      */
     void initCurrency(const char *isoCurrency);
+
+    /**
+     * For ICU use only.
+     * @internal
+     */
+    void initNoUnit(const char *subtype);
 
 #endif  /* U_HIDE_INTERNAL_API */
 

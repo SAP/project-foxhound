@@ -1,0 +1,124 @@
+commit eff6bfdb1db99505122a37f2911bdd3b845e19b8
+Author: Jeff Gilbert <jgilbert@mozilla.com>
+Date:   Thu Jan 3 23:38:44 2019 -0800
+
+    In PixelTransfer11, center offset should be 1/size, not 1/(size-1).
+    
+    Bug: angleproject:3039
+    Change-Id: Ie97bfb5aa3cfe7cd2c4b1d22b5b4a8d82a5e5170
+    Reviewed-on: https://chromium-review.googlesource.com/c/1407251
+    Reviewed-by: Jamie Madill <jmadill@chromium.org>
+    Commit-Queue: Jamie Madill <jmadill@chromium.org>
+
+commit 790e8e6b417905eca335d06c16ec54c977188110
+Author: Olli Etuaho <oetuaho@nvidia.com>
+Date:   Thu Sep 20 13:20:50 2018 +0300
+
+    Fix using a large vertex attrib divisor on D3D11
+    
+    A divisor >= 256 used to trigger an assert on the D3D11 backend since
+    it couldn't fit into the input layout cache. Increase the space
+    reserved for the divisor in the input layout cache to make sure that
+    the correct input layout will get used and to fix the assert.
+    
+    BUG=angleproject:2832
+    TEST=angle_end2end_tests
+    
+    Change-Id: I34eead6c4e8c4fea379bbafc8670b4e32a5b633b
+    Reviewed-on: https://chromium-review.googlesource.com/1236293
+    Reviewed-by: Jamie Madill <jmadill@chromium.org>
+    Reviewed-by: Geoff Lang <geofflang@chromium.org>
+    Commit-Queue: Olli Etuaho <oetuaho@nvidia.com>
+
+commit 598f2502e3a41b76d90037e7858c43c18e66399d
+Merge: 8212058a6 e15a25c6f
+Author: Jeff Gilbert <jdashg@gmail.com>
+Date:   Tue Oct 9 13:54:05 2018 -0700
+
+    Merge pull request #13 from mattwoodrow/async-load-program
+    
+    Support async glProgramBInary
+
+commit 8212058a6c6339ba541f9aabb076900cd31448ef
+Merge: 4fb8d7f97 895294a05
+Author: Jeff Gilbert <jdashg@gmail.com>
+Date:   Tue Oct 9 13:52:08 2018 -0700
+
+    Merge pull request #14 from mattwoodrow/provoking-vertex
+    
+    Add support for EGL_MOZ_create_context_provoking_vertex_dont_care
+
+commit 895294a057c022f0db77975a19419abbec4c9226
+Author: Dan Glastonbury <dan.glastonbury@gmail.com>
+Date:   Tue Oct 9 10:02:46 2018 +1300
+
+    Add support for EGL_MOZ_create_context_provoking_vertex_dont_care
+    extension
+
+commit e15a25c6fa1d910115ce6fd7a03fa5ffece8a054
+Author: Matt Woodrow <matt.woodrow@gmail.com>
+Date:   Tue Oct 9 09:56:16 2018 +1300
+
+    Support async Program::load for ProgramD3D.
+
+commit 2555cc62e340cef6a2744b7f52f3e8b94aa635e1
+Author: Matt Woodrow <matt.woodrow@gmail.com>
+Date:   Tue Oct 9 09:53:40 2018 +1300
+
+    Move task definitions to earlier in the file.
+
+commit 04adbfe1a2bfad21c549a0d30349d1da620e556c
+Author: Matt Woodrow <matt.woodrow@gmail.com>
+Date:   Tue Oct 9 09:52:42 2018 +1300
+
+    Make ProgramImpl::load() return a task and support asynchronously waiting for it to complete.
+
+commit 4fb8d7f978adda36086377ea7846951faa9f6bd3
+Author: Jeff Gilbert <jgilbert@mozilla.com>
+Date:   Wed Sep 26 18:04:05 2018 -0700
+
+    Polyfill BitCount for ARM/ARM64 on MSVC.
+    
+    Also _WIN64 implies _WIN32.
+    
+    Bug: angleproject:2858
+    Change-Id: I63e2ffd2e9e304171ea6adb99836733981cc1813
+
+commit 786e980807f104d35bf31a769d31699024b89c2f
+Author: Jeff Gilbert <jgilbert@mozilla.com>
+Date:   Tue Sep 25 14:18:35 2018 -0700
+
+    Stream support for R16*_UNORM and P010/P016.
+    
+    Bug: angleproject:2850
+    Change-Id: Ib23b3012b5244c8e3edbdfa05d9b4e4869bbfed8
+
+commit b46b71ba277b13a7b72075766676a9698a665efd
+Author: Jeff Gilbert <jgilbert@mozilla.com>
+Date:   Tue Sep 18 17:03:59 2018 -0700
+
+    Remove unused include global_state.h from validationEGL.cpp.
+    
+    Bug: angleproject:2825
+    Change-Id: I34a7c520d31cf0a9321d5599046159ef9bf58be5
+
+Cherries picked
+================================================================================
+Merge base from: origin/chromium/3538
+
+commit 05c729f336efb544e224444c2485a412bd3a66b3
+Author: Jamie Madill <jmadill@chromium.org>
+Date:   Fri Sep 7 17:43:32 2018 -0400
+
+    Pass unpack buffer as explicit parameter to texSubImage.
+    
+    This allows us to override it in the incomplete texture init. Any
+    back-end that used incomplete textures was vulnerable to a bug where
+    the unpack buffer would be used to initialize the incomplete texture.
+    
+    Cherry-picked to the chromium/3538 branch cleanly.
+    
+    Bug: chromium:880906
+    Change-Id: Iead2a8c57674e8962915902d6d5896f44fe8ca88
+    Reviewed-on: https://chromium-review.googlesource.com/1227033
+    Reviewed-by: Jamie Madill <jmadill@chromium.org>

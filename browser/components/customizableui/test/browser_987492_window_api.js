@@ -5,7 +5,7 @@
 "use strict";
 
 
-add_task(function* testOneWindow() {
+add_task(async function testOneWindow() {
   let windows = [];
   for (let win of CustomizableUI.windows)
     windows.push(win);
@@ -13,17 +13,17 @@ add_task(function* testOneWindow() {
 });
 
 
-add_task(function* testOpenCloseWindow() {
+add_task(async function testOpenCloseWindow() {
   let newWindow = null;
   let openListener = {
     onWindowOpened(window) {
       newWindow = window;
-    }
-  }
+    },
+  };
   CustomizableUI.addListener(openListener);
 
   {
-    let win = yield openAndLoadWindow(null, true);
+    let win = await openAndLoadWindow(null, true);
     is(newWindow, win, "onWindowOpen event should have received expected window");
     isnot(newWindow, null, "Should have gotten onWindowOpen event");
   }
@@ -41,11 +41,11 @@ add_task(function* testOpenCloseWindow() {
   let closeListener = {
     onWindowClosed(window) {
       closedWindow = window;
-    }
-  }
+    },
+  };
   CustomizableUI.addListener(closeListener);
-  yield promiseWindowClosed(newWindow);
-  isnot(closedWindow, null, "Should have gotten onWindowClosed event")
+  await promiseWindowClosed(newWindow);
+  isnot(closedWindow, null, "Should have gotten onWindowClosed event");
   is(newWindow, closedWindow, "Closed window should match previously opened window");
   CustomizableUI.removeListener(closeListener);
 

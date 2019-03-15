@@ -9,7 +9,7 @@
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=737003">Mozilla Bug 737003</a>
 <iframe id="iframe" src="additional_sheets_helper.html"></iframe>
 <pre id="test">
-<script type="application/javascript; version=1.8">
+<script type="application/javascript">
 
 var gIOService = SpecialPowers.Cc["@mozilla.org/network/io-service;1"]
   .getService(SpecialPowers.Ci.nsIIOService)
@@ -61,18 +61,14 @@ function removeAuthorSheet(win, style)
 function loadSheet(win, style, type)
 {
   var uri = gIOService.newURI(getUri(style));
-  var windowUtils = SpecialPowers.wrap(win)
-    .QueryInterface(SpecialPowers.Ci.nsIInterfaceRequestor)
-    .getInterface(SpecialPowers.Ci.nsIDOMWindowUtils);
+  var windowUtils = SpecialPowers.getDOMWindowUtils(win);
   windowUtils.loadSheet(uri, windowUtils[type]);
 }
 
 function removeSheet(win, style, type)
 {
   var uri = gIOService.newURI(getUri(style));
-  var windowUtils = SpecialPowers.wrap(win)
-    .QueryInterface(SpecialPowers.Ci.nsIInterfaceRequestor)
-    .getInterface(SpecialPowers.Ci.nsIDOMWindowUtils);
+  var windowUtils = SpecialPowers.getDOMWindowUtils(win);
   windowUtils.removeSheet(uri, windowUtils[type]);
 }
 

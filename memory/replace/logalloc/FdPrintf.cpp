@@ -7,9 +7,9 @@
 #include <cstdarg>
 
 #ifdef _WIN32
-#include <windows.h>
+#  include <windows.h>
 #else
-#include <unistd.h>
+#  include <unistd.h>
 #endif
 #include <cstring>
 #include "mozilla/Assertions.h"
@@ -17,15 +17,12 @@
 
 /* Template class allowing a limited number of increments on a value */
 template <typename T>
-class CheckedIncrement
-{
-public:
+class CheckedIncrement {
+ public:
   CheckedIncrement(T aValue, size_t aMaxIncrement)
-    : mValue(aValue), mMaxIncrement(aMaxIncrement)
-  {}
+      : mValue(aValue), mMaxIncrement(aMaxIncrement) {}
 
-  T operator ++(int)
-  {
+  T operator++(int) {
     if (!mMaxIncrement) {
       MOZ_CRASH("overflow detected");
     }
@@ -33,22 +30,19 @@ public:
     return mValue++;
   }
 
-  T& operator ++()
-  {
+  T& operator++() {
     (*this)++;
     return mValue;
   }
 
   operator T() { return mValue; }
 
-private:
+ private:
   T mValue;
   size_t mMaxIncrement;
 };
 
-void
-FdPrintf(intptr_t aFd, const char* aFormat, ...)
-{
+void FdPrintf(intptr_t aFd, const char* aFormat, ...) {
   if (aFd == 0) {
     return;
   }

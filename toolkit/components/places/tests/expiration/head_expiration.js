@@ -4,12 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var Ci = Components.interfaces;
-var Cc = Components.classes;
-var Cr = Components.results;
-var Cu = Components.utils;
-
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // Import common head.
 {
@@ -20,14 +15,6 @@ Cu.import("resource://gre/modules/Services.jsm");
 }
 
 // Put any other stuff relative to this test folder below.
-
-
-// Simulates an expiration at shutdown.
-function shutdownExpiration() {
-  let expire = Cc["@mozilla.org/places/expiration;1"].getService(Ci.nsIObserver);
-  expire.observe(null, "places-will-close-connection", null);
-}
-
 
 /**
  * Causes expiration component to start, otherwise it would wait for the first

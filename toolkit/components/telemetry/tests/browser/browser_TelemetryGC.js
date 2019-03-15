@@ -14,7 +14,7 @@
  *                                                                               *
  ********************************************************************************/
 
-const {GCTelemetry} = Cu.import("resource://gre/modules/GCTelemetry.jsm", {});
+const {GCTelemetry} = ChromeUtils.import("resource://gre/modules/GCTelemetry.jsm", {});
 
 function check(entries) {
   const FIELDS = ["random", "worst"];
@@ -29,44 +29,42 @@ function check(entries) {
     ok(FIELDS.includes(k), `${k} found in FIELDS`);
   }
 
-  let foundGCs = 0;
-
   for (let f of FIELDS) {
     ok(Array.isArray(entries[f]), "have an array of GCs");
 
     ok(entries[f].length <= 2, "not too many GCs");
 
     for (let gc of entries[f]) {
-      ok(gc !== null, "GC is non-null");
+      isnot(gc, null, "GC is non-null");
 
-      foundGCs++;
-
-      ok(Object.keys(gc).length <= 25, "number of keys in GC is not too large");
+      ok(Object.keys(gc).length <= 24, "number of keys in GC is not too large");
 
       // Sanity check the GC data.
+      ok("status" in gc, "status field present");
+      is(gc.status, "completed", "status field correct");
       ok("total_time" in gc, "total_time field present");
       ok("max_pause" in gc, "max_pause field present");
 
-      ok("slices" in gc, "slices field present");
-      ok(Array.isArray(gc.slices), "slices is an array");
-      ok(gc.slices.length > 0, "slices array non-empty");
-      ok(gc.slices.length <= 4, "slices array is not too long");
+      ok("slices_list" in gc, "slices_list field present");
+      ok(Array.isArray(gc.slices_list), "slices_list is an array");
+      ok(gc.slices_list.length > 0, "slices_list array non-empty");
+      ok(gc.slices_list.length <= 4, "slices_list array is not too long");
 
       ok("totals" in gc, "totals field present");
-      ok(typeof(gc.totals) == "object", "totals is an object");
+      is(typeof(gc.totals), "object", "totals is an object");
       ok(Object.keys(gc.totals).length <= 65, "totals array is not too long");
 
       // Make sure we don't skip any big objects.
       for (let key in gc) {
-        if (key != "slices" && key != "totals") {
-          ok(typeof(gc[key]) != "object", `${key} property should be primitive`);
+        if (key != "slices_list" && key != "totals") {
+          isnot(typeof(gc[key]), "object", `${key} property should be primitive`);
         }
       }
 
       let phases = new Set();
 
-      for (let slice of gc.slices) {
-        ok(Object.keys(slice).length <= 15, "slice is not too large");
+      for (let slice of gc.slices_list) {
+        ok(Object.keys(slice).length <= 12, "slice is not too large");
 
         ok("pause" in slice, "pause field present in slice");
         ok("reason" in slice, "reason field present in slice");
@@ -75,7 +73,7 @@ function check(entries) {
         // Make sure we don't skip any big objects.
         for (let key in slice) {
           if (key != "times") {
-            ok(typeof(slice[key]) != "object", `${key} property should be primitive`);
+            isnot(typeof(slice[key]), "object", `${key} property should be primitive`);
           }
         }
 
@@ -83,14 +81,14 @@ function check(entries) {
 
         for (let phase in slice.times) {
           phases.add(phase);
-          ok(typeof(slice.times[phase]) == "number", `${phase} property should be a number`);
+          is(typeof(slice.times[phase]), "number", `${phase} property should be a number`);
         }
       }
 
       let totals = gc.totals;
       // Make sure we don't skip any big objects.
       for (let phase in totals) {
-        ok(typeof(totals[phase]) == "number", `${phase} property should be a number`);
+        is(typeof(totals[phase]), "number", `${phase} property should be a number`);
       }
 
       for (let phase of phases) {
@@ -98,15 +96,13 @@ function check(entries) {
       }
     }
   }
-
-  ok(foundGCs > 0, "saw at least one GC");
 }
 
-add_task(function* test() {
+add_task(async function test() {
   let multiprocess = Services.appinfo.browserTabsRemoteAutostart;
 
   // Set these prefs to ensure that we get measurements.
-  yield SpecialPowers.pushPrefEnv({"set": [["javascript.options.mem.notify", true]]});
+  await SpecialPowers.pushPrefEnv({"set": [["javascript.options.mem.notify", true]]});
 
   function runRemote(f) {
     gBrowser.selectedBrowser.messageManager.loadFrameScript(`data:,(${f})()`, false);
@@ -115,7 +111,7 @@ add_task(function* test() {
   // These are available to frame scripts.
   /* global addMessageListener:false, removeMessageListener: false */
   function initScript() {
-    const {GCTelemetry} = Components.utils.import("resource://gre/modules/GCTelemetry.jsm", {});
+    const {GCTelemetry} = ChromeUtils.import("resource://gre/modules/GCTelemetry.jsm", {});
 
     /*
      * Don't shut down GC telemetry if it was already running before the test!
@@ -151,7 +147,7 @@ add_task(function* test() {
       Services.obs.removeObserver(obs, "garbage-collection-statistics");
       resolve();
     }
-    Services.obs.addObserver(obs, "garbage-collection-statistics", false);
+    Services.obs.addObserver(obs, "garbage-collection-statistics");
   });
 
   let remotePromise;
@@ -170,12 +166,12 @@ add_task(function* test() {
   // Make sure we have a GC to work with in both processes.
   Cu.forceGC();
   if (multiprocess) {
-    runRemote(() => Components.utils.forceGC());
+    runRemote(() => Cu.forceGC());
   }
 
   info("Waiting for GCs");
 
-  yield Promise.all([localPromise, remotePromise]);
+  await Promise.all([localPromise, remotePromise]);
 
   let localEntries = GCTelemetry.entries("main", true);
   let remoteEntries = multiprocess ? GCTelemetry.entries("content", true) : localEntries;

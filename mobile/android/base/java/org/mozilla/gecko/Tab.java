@@ -5,42 +5,40 @@
 
 package org.mozilla.gecko;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.Future;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.json.JSONObject;
 import org.mozilla.gecko.annotation.RobocopTarget;
 import org.mozilla.gecko.db.BrowserDB;
 import org.mozilla.gecko.db.URLMetadata;
-import org.mozilla.gecko.gfx.BitmapUtils;
 import org.mozilla.gecko.icons.IconCallback;
 import org.mozilla.gecko.icons.IconDescriptor;
 import org.mozilla.gecko.icons.IconRequestBuilder;
 import org.mozilla.gecko.icons.IconResponse;
 import org.mozilla.gecko.icons.Icons;
+import org.mozilla.gecko.pwa.PwaUtils;
 import org.mozilla.gecko.reader.ReaderModeUtils;
 import org.mozilla.gecko.reader.ReadingListHelper;
 import org.mozilla.gecko.toolbar.BrowserToolbar.TabEditingState;
+import org.mozilla.gecko.util.BitmapUtils;
 import org.mozilla.gecko.util.GeckoBundle;
+import org.mozilla.gecko.util.ShortcutUtils;
 import org.mozilla.gecko.util.ThreadUtils;
+import org.mozilla.gecko.webapps.WebAppManifest;
 import org.mozilla.gecko.widget.SiteLogins;
 
 import android.content.ContentResolver;
 import android.content.Context;
 import android.graphics.Bitmap;
-import android.graphics.Color;
 import android.graphics.drawable.BitmapDrawable;
-import android.os.Build;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.text.TextUtils;
 import android.util.Log;
-import android.view.View;
+
+import static org.mozilla.gecko.toolbar.PageActionLayout.PageAction.UUID_PAGE_ACTION_PWA;
 
 public class Tab {
     private static final String LOGTAG = "GeckoTab";
@@ -51,6 +49,7 @@ public class Tab {
     private long mLastUsed;
     private String mUrl;
     private String mBaseDomain;
+    private String mHighlightDomain;
     private String mUserRequested; // The original url requested. May be typed by the user or sent by an extneral app for example.
     private String mTitle;
     private Bitmap mFavicon;
@@ -62,6 +61,7 @@ public class Tab {
 
     private boolean mHasFeeds;
     private String mManifestUrl;
+    private WebAppManifest mWebAppManifest;
     private boolean mHasOpenSearch;
     private final SiteIdentity mSiteIdentity;
     private SiteLogins mSiteLogins;
@@ -74,7 +74,6 @@ public class Tab {
     private int mFaviconLoadId;
     private String mContentType;
     private boolean mHasTouchListeners;
-    private final ArrayList<View> mPluginViews;
     private int mState;
     private Bitmap mThumbnailBitmap;
     private boolean mDesktopMode;
@@ -115,6 +114,14 @@ public class Tab {
     public static final int LOAD_PROGRESS_LOADED = 80;
     public static final int LOAD_PROGRESS_STOP = 100;
 
+    public WebAppManifest getWebAppManifest() {
+        return mWebAppManifest;
+    }
+
+    public void setWebAppManifest(WebAppManifest mWebAppManifest) {
+        this.mWebAppManifest = mWebAppManifest;
+    }
+
     public enum ErrorType {
         CERT_ERROR,  // Pages with certificate problems
         BLOCKED,     // Pages blocked for phishing or malware warnings
@@ -128,13 +135,13 @@ public class Tab {
         mId = id;
         mUrl = url;
         mBaseDomain = "";
+        mHighlightDomain = "";
         mUserRequested = "";
         mExternal = external;
         mParentId = parentId;
         mTitle = title == null ? "" : title;
         mSiteIdentity = new SiteIdentity();
         mContentType = "";
-        mPluginViews = new ArrayList<View>();
         mState = shouldShowProgress(url) ? STATE_LOADING : STATE_SUCCESS;
         mLoadProgress = LOAD_PROGRESS_INIT;
         mIconRequestBuilder = Icons.with(mAppContext).pageUrl(mUrl);
@@ -202,11 +209,18 @@ public class Tab {
     }
 
     /**
-     * Returns the base domain of the loaded uri. Note that if the page is
-     * a Reader mode uri, the base domain returned is that of the original uri.
+     * Returns the base domain based on the node principal of the loaded document. Note that if the
+     * page is a Reader mode URI, the base domain returned is that of the original URI.
      */
     public String getBaseDomain() {
         return mBaseDomain;
+    }
+
+    /**
+     * Return the base domain based on the display URI used in the URL bar.
+     */
+    public String getHighlightDomain() {
+        return mHighlightDomain;
     }
 
     public Bitmap getFavicon() {
@@ -244,13 +258,9 @@ public class Tab {
 
     public Bitmap getThumbnailBitmap(int width, int height) {
         if (mThumbnailBitmap != null) {
-            // Bug 787318 - Honeycomb has a bug with bitmap caching, we can't
-            // reuse the bitmap there.
-            boolean honeycomb = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB
-                              && Build.VERSION.SDK_INT <= Build.VERSION_CODES.HONEYCOMB_MR2);
             boolean sizeChange = mThumbnailBitmap.getWidth() != width
                               || mThumbnailBitmap.getHeight() != height;
-            if (honeycomb || sizeChange) {
+            if (sizeChange) {
                 mThumbnailBitmap = null;
             }
         }
@@ -442,6 +452,7 @@ public class Tab {
         }
 
         mRunningIconRequest = mIconRequestBuilder
+                .setPrivateMode(isPrivate())
                 .build()
                 .execute(new IconCallback() {
                     @Override
@@ -474,6 +485,20 @@ public class Tab {
 
     public void setManifestUrl(String manifestUrl) {
         mManifestUrl = manifestUrl;
+        updatePageAction();
+    }
+
+    public void updatePageAction() {
+        if (!ShortcutUtils.isPinShortcutSupported()) {
+            return;
+        }
+
+        if (mManifestUrl != null) {
+            showPwaBadge();
+
+        } else {
+            clearPwaPageAction();
+        }
     }
 
     public void setHasOpenSearch(boolean hasOpenSearch) {
@@ -486,6 +511,10 @@ public class Tab {
 
     public void updateIdentityData(final GeckoBundle identityData) {
         mSiteIdentity.update(identityData);
+    }
+
+    public void updateTracking(String statusCode) {
+        mSiteIdentity.updateTrackingMode(statusCode);
     }
 
     public void setSiteLogins(SiteLogins siteLogins) {
@@ -575,12 +604,12 @@ public class Tab {
         if (!canDoBack())
             return false;
 
-        GeckoAppShell.notifyObservers("Session:Back", "");
+        EventDispatcher.getInstance().dispatch("Session:Back", null);
         return true;
     }
 
     public void doStop() {
-        GeckoAppShell.notifyObservers("Session:Stop", "");
+        EventDispatcher.getInstance().dispatch("Session:Stop", null);
     }
 
     // Our version of nsSHistory::GetCanGoForward
@@ -592,7 +621,7 @@ public class Tab {
         if (!canDoForward())
             return false;
 
-        GeckoAppShell.notifyObservers("Session:Forward", "");
+        EventDispatcher.getInstance().dispatch("Session:Forward", null);
         return true;
     }
 
@@ -636,6 +665,7 @@ public class Tab {
         setContentType(message.getString("contentType"));
         updateUserRequested(message.getString("userRequested"));
         mBaseDomain = message.getString("baseDomain", "");
+        mHighlightDomain = message.getString("highlightDomain", "");
 
         setHasFeeds(false);
         setManifestUrl(null);
@@ -686,6 +716,11 @@ public class Tab {
                 ThumbnailHelper.getInstance().getAndProcessThumbnailFor(tab);
             }
         }, 500);
+    }
+
+    void handleLoadError() {
+        setState(STATE_ERROR);
+        setLoadProgress(LOAD_PROGRESS_LOADED);
     }
 
     void handleContentLoaded() {
@@ -743,18 +778,6 @@ public class Tab {
         } catch (Exception e) {
             // ignore
         }
-    }
-
-    public void addPluginView(View view) {
-        mPluginViews.add(view);
-    }
-
-    public void removePluginView(View view) {
-        mPluginViews.remove(view);
-    }
-
-    public View[] getPluginViews() {
-        return mPluginViews.toArray(new View[mPluginViews.size()]);
     }
 
     public void setDesktopMode(boolean enabled) {
@@ -861,5 +884,28 @@ public class Tab {
 
     public boolean getShouldShowToolbarWithoutAnimationOnFirstSelection() {
         return mShouldShowToolbarWithoutAnimationOnFirstSelection;
+    }
+
+
+    private void clearPwaPageAction() {
+        GeckoBundle bundle = new GeckoBundle();
+        bundle.putString("id", UUID_PAGE_ACTION_PWA);
+        EventDispatcher.getInstance().dispatch("PageActions:Remove", bundle);
+    }
+
+
+    private void showPwaBadge() {
+        if (PwaUtils.shouldAddPwaShortcut(this)) {
+            GeckoBundle bundle = new GeckoBundle();
+            bundle.putString("id", UUID_PAGE_ACTION_PWA);
+            bundle.putString("title", mAppContext.getString(R.string.pwa_add_to_launcher_badge));
+            bundle.putString("icon", "drawable://add_to_homescreen");
+            bundle.putBoolean("important", true);
+            EventDispatcher.getInstance().dispatch("PageActions:Add", bundle);
+        } else {
+            GeckoBundle bundle = new GeckoBundle();
+            bundle.putString("id", UUID_PAGE_ACTION_PWA);
+            EventDispatcher.getInstance().dispatch("PageActions:Remove", bundle);
+        }
     }
 }

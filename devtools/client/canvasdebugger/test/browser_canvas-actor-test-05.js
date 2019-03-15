@@ -6,26 +6,26 @@
  * the correct "end result" screenshot.
  */
 
-function* ifTestingSupported() {
-  let { target, front } = yield initCanvasDebuggerBackend(SIMPLE_CANVAS_URL);
+async function ifTestingSupported() {
+  const { target, front } = await initCanvasDebuggerBackend(SIMPLE_CANVAS_URL);
 
-  let navigated = once(target, "navigate");
+  const navigated = once(target, "navigate");
 
-  yield front.setup({ reload: true });
+  await front.setup({ reload: true });
   ok(true, "The front was setup up successfully.");
 
-  yield navigated;
+  await navigated;
   ok(true, "Target automatically navigated when the front was set up.");
 
-  let snapshotActor = yield front.recordAnimationFrame();
+  const snapshotActor = await front.recordAnimationFrame();
   ok(snapshotActor,
     "A snapshot actor was sent after recording.");
 
-  let animationOverview = yield snapshotActor.getOverview();
+  const animationOverview = await snapshotActor.getOverview();
   ok(snapshotActor,
     "An animation overview could be retrieved after recording.");
 
-  let screenshot = animationOverview.screenshot;
+  const screenshot = animationOverview.screenshot;
   ok(screenshot,
     "A screenshot was sent after recording.");
 
@@ -40,11 +40,11 @@ function* ifTestingSupported() {
   is([].find.call(Uint32(screenshot.pixels), e => e > 0), 4290822336,
     "The screenshot's pixels seem to not be completely transparent.");
 
-  yield removeTab(target.tab);
+  await removeTab(target.tab);
   finish();
 }
 
 function Uint32(src) {
-  let charView = new Uint8Array(src);
+  const charView = new Uint8Array(src);
   return new Uint32Array(charView.buffer);
 }

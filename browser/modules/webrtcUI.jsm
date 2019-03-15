@@ -4,70 +4,40 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["webrtcUI"];
+var EXPORTED_SYMBOLS = ["webrtcUI"];
 
-const Cu = Components.utils;
-const Cc = Components.classes;
-const Ci = Components.interfaces;
+ChromeUtils.import("resource:///modules/syncedtabs/EventEmitter.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-Cu.import("resource:///modules/syncedtabs/EventEmitter.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "AppConstants",
-                                  "resource://gre/modules/AppConstants.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PluralForm",
-                                  "resource://gre/modules/PluralForm.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PrivateBrowsingUtils",
-                                  "resource://gre/modules/PrivateBrowsingUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Task",
-                                  "resource://gre/modules/Task.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "SitePermissions",
-                                  "resource:///modules/SitePermissions.jsm");
+ChromeUtils.defineModuleGetter(this, "AppConstants",
+                               "resource://gre/modules/AppConstants.jsm");
+ChromeUtils.defineModuleGetter(this, "PluralForm",
+                               "resource://gre/modules/PluralForm.jsm");
+ChromeUtils.defineModuleGetter(this, "PrivateBrowsingUtils",
+                               "resource://gre/modules/PrivateBrowsingUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "SitePermissions",
+                               "resource:///modules/SitePermissions.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "gBrandBundle", function() {
   return Services.strings.createBundle("chrome://branding/locale/brand.properties");
 });
 
-this.webrtcUI = {
+XPCOMUtils.defineLazyServiceGetter(this, "OSPermissions",
+                                   "@mozilla.org/ospermissionrequest;1",
+                                   "nsIOSPermissionRequest");
+
+var webrtcUI = {
   peerConnectionBlockers: new Set(),
   emitter: new EventEmitter(),
 
   init() {
-    Services.obs.addObserver(maybeAddMenuIndicator, "browser-delayed-startup-finished", false);
-
-    let ppmm = Cc["@mozilla.org/parentprocessmessagemanager;1"]
-                 .getService(Ci.nsIMessageBroadcaster);
-    ppmm.addMessageListener("webrtc:UpdatingIndicators", this);
-    ppmm.addMessageListener("webrtc:UpdateGlobalIndicators", this);
-    ppmm.addMessageListener("child-process-shutdown", this);
-
-    let mm = Cc["@mozilla.org/globalmessagemanager;1"]
-               .getService(Ci.nsIMessageListenerManager);
-    mm.addMessageListener("rtcpeer:Request", this);
-    mm.addMessageListener("rtcpeer:CancelRequest", this);
-    mm.addMessageListener("webrtc:Request", this);
-    mm.addMessageListener("webrtc:StopRecording", this);
-    mm.addMessageListener("webrtc:CancelRequest", this);
-    mm.addMessageListener("webrtc:UpdateBrowserIndicators", this);
+    Services.obs.addObserver(maybeAddMenuIndicator, "browser-delayed-startup-finished");
+    Services.ppmm.addMessageListener("child-process-shutdown", this);
   },
 
   uninit() {
     Services.obs.removeObserver(maybeAddMenuIndicator, "browser-delayed-startup-finished");
-
-    let ppmm = Cc["@mozilla.org/parentprocessmessagemanager;1"]
-                 .getService(Ci.nsIMessageBroadcaster);
-    ppmm.removeMessageListener("webrtc:UpdatingIndicators", this);
-    ppmm.removeMessageListener("webrtc:UpdateGlobalIndicators", this);
-
-    let mm = Cc["@mozilla.org/globalmessagemanager;1"]
-               .getService(Ci.nsIMessageListenerManager);
-    mm.removeMessageListener("rtcpeer:Request", this);
-    mm.removeMessageListener("rtcpeer:CancelRequest", this);
-    mm.removeMessageListener("webrtc:Request", this);
-    mm.removeMessageListener("webrtc:StopRecording", this);
-    mm.removeMessageListener("webrtc:CancelRequest", this);
-    mm.removeMessageListener("webrtc:UpdateBrowserIndicators", this);
 
     if (gIndicatorWindow) {
       gIndicatorWindow.close();
@@ -174,9 +144,9 @@ this.webrtcUI = {
     let identityBox = browserWindow.document.getElementById("identity-box");
     if (AppConstants.platform == "macosx" && !Services.focus.activeWindow) {
       browserWindow.addEventListener("activate", function() {
-        Services.tm.mainThread.dispatch(function() {
+        Services.tm.dispatchToMainThread(function() {
           identityBox.click();
-        }, Ci.nsIThread.DISPATCH_NORMAL);
+        });
       }, {once: true});
       Cc["@mozilla.org/widget/macdocksupport;1"].getService(Ci.nsIMacDockSupport)
         .activateApplication(true);
@@ -188,7 +158,7 @@ this.webrtcUI = {
   updateWarningLabel(aMenuList) {
     let type = aMenuList.selectedItem.getAttribute("devicetype");
     let document = aMenuList.ownerDocument;
-    document.getElementById("webRTC-all-windows-shared").hidden = type != "Screen";
+    document.getElementById("webRTC-all-windows-shared").hidden = type != "screen";
   },
 
   // Add-ons can override stock permission behavior by doing:
@@ -231,20 +201,21 @@ this.webrtcUI = {
     return this.emitter.off(...args);
   },
 
+  // Listeners and observers are registered in nsBrowserGlue.js
   receiveMessage(aMessage) {
     switch (aMessage.name) {
 
       case "rtcpeer:Request": {
         let params = Object.freeze(Object.assign({
-          origin: aMessage.target.contentPrincipal.origin
+          origin: aMessage.target.contentPrincipal.origin,
         }, aMessage.data));
 
         let blockers = Array.from(this.peerConnectionBlockers);
 
-        Task.spawn(function*() {
+        (async function() {
           for (let blocker of blockers) {
             try {
-              let result = yield blocker(params);
+              let result = await blocker(params);
               if (result == "deny") {
                 return false;
               }
@@ -253,7 +224,7 @@ this.webrtcUI = {
             }
           }
           return true;
-        }).then(decision => {
+        })().then(decision => {
           let message;
           if (decision) {
             this.emitter.emit("peer-request-allowed", params);
@@ -273,7 +244,7 @@ this.webrtcUI = {
       case "rtcpeer:CancelRequest": {
         let params = Object.freeze({
           origin: aMessage.target.contentPrincipal.origin,
-          callID: aMessage.data
+          callID: aMessage.data,
         });
         this.emitter.emit("peer-request-cancel", params);
         break;
@@ -295,7 +266,6 @@ this.webrtcUI = {
         break;
       case "webrtc:UpdateBrowserIndicators":
         let id = aMessage.data.windowId;
-        aMessage.targetFrameLoader.QueryInterface(Ci.nsIFrameLoader);
         let processMM =
           aMessage.targetFrameLoader.messageManager.processMessageManager;
         let index;
@@ -312,7 +282,7 @@ this.webrtcUI = {
           webrtcUI._streams[index] = {
             browser: aMessage.target,
             processMM,
-            state: aMessage.data
+            state: aMessage.data,
           };
         }
         let tabbrowser = aMessage.target.ownerGlobal.gBrowser;
@@ -325,15 +295,8 @@ this.webrtcUI = {
         updateIndicators(null, null);
         break;
     }
-  }
+  },
 };
-
-function getBrowserForWindow(aContentWindow) {
-  return aContentWindow.QueryInterface(Ci.nsIInterfaceRequestor)
-                       .getInterface(Ci.nsIWebNavigation)
-                       .QueryInterface(Ci.nsIDocShell)
-                       .chromeEventHandler;
-}
 
 function denyRequest(aBrowser, aRequest) {
   aBrowser.messageManager.sendAsyncMessage("webrtc:Deny",
@@ -341,14 +304,78 @@ function denyRequest(aBrowser, aRequest) {
                                             windowID: aRequest.windowID});
 }
 
-function getHost(uri, href) {
+//
+// Deny the request because the browser does not have access to the
+// camera or microphone due to OS security restrictions. The user may
+// have granted camera/microphone access to the site, but not have
+// allowed the browser access in OS settings.
+//
+function denyRequestNoPermission(aBrowser, aRequest) {
+  aBrowser.messageManager.sendAsyncMessage("webrtc:Deny",
+                                           {callID: aRequest.callID,
+                                            windowID: aRequest.windowID,
+                                            noOSPermission: true});
+}
+
+//
+// Check if we have permission to access the camera and or microphone at the
+// OS level. Triggers a request to access the device if access is needed and
+// the permission state has not yet been determined.
+//
+async function checkOSPermission(camNeeded, micNeeded) {
+  let camStatus = {}, micStatus = {};
+  OSPermissions.getMediaCapturePermissionState(camStatus, micStatus);
+  if (camNeeded) {
+    let camPermission = camStatus.value;
+    let camAccessible = await checkAndGetOSPermission(camPermission,
+      OSPermissions.requestVideoCapturePermission);
+    if (!camAccessible) {
+      return false;
+    }
+  }
+  if (micNeeded) {
+    let micPermission = micStatus.value;
+    let micAccessible = await checkAndGetOSPermission(micPermission,
+      OSPermissions.requestAudioCapturePermission);
+    if (!micAccessible) {
+      return false;
+    }
+  }
+  return true;
+}
+
+//
+// Given a device's permission, return true if the device is accessible. If
+// the device's permission is not yet determined, request access to the device.
+// |requestPermissionFunc| must return a promise that resolves with true
+// if the device is accessible and false otherwise.
+//
+async function checkAndGetOSPermission(devicePermission,
+                                       requestPermissionFunc) {
+  if (devicePermission == OSPermissions.PERMISSION_STATE_DENIED ||
+      devicePermission == OSPermissions.PERMISSION_STATE_RESTRICTED) {
+    return false;
+  }
+  if (devicePermission == OSPermissions.PERMISSION_STATE_NOTDETERMINED) {
+    let deviceAllowed = await requestPermissionFunc();
+    if (!deviceAllowed) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function getHostOrExtensionName(uri, href) {
   let host;
   try {
     if (!uri) {
       uri = Services.io.newURI(href);
     }
-    host = uri.host;
+
+    let addonPolicy = WebExtensionPolicy.getByURI(uri);
+    host = addonPolicy ? addonPolicy.name : uri.host;
   } catch (ex) {}
+
   if (!host) {
     if (uri && uri.scheme.toLowerCase() == "about") {
       // For about URIs, just use the full spec, without any #hash parts.
@@ -382,12 +409,20 @@ function prompt(aBrowser, aRequest) {
   let { audioDevices, videoDevices, sharingScreen, sharingAudio,
         requestTypes } = aRequest;
 
+  let uri;
+  try {
+    // This fails for principals that serialize to "null", e.g. file URIs.
+    uri = Services.io.newURI(aRequest.origin);
+  } catch (e) {
+    uri = Services.io.newURI(aRequest.documentURI);
+  }
+
   // If the user has already denied access once in this tab,
   // deny again without even showing the notification icon.
   if ((audioDevices.length && SitePermissions
-        .get(null, "microphone", aBrowser).state == SitePermissions.BLOCK) ||
+        .get(uri, "microphone", aBrowser).state == SitePermissions.BLOCK) ||
       (videoDevices.length && SitePermissions
-        .get(null, sharingScreen ? "screen" : "camera", aBrowser).state == SitePermissions.BLOCK)) {
+        .get(uri, sharingScreen ? "screen" : "camera", aBrowser).state == SitePermissions.BLOCK)) {
     denyRequest(aBrowser, aRequest);
     return;
   }
@@ -397,8 +432,6 @@ function prompt(aBrowser, aRequest) {
   aBrowser.dispatchEvent(new aBrowser.ownerGlobal
                                      .CustomEvent("PermissionStateChange"));
 
-  let uri = Services.io.newURI(aRequest.documentURI);
-  let host = getHost(uri);
   let chromeDoc = aBrowser.ownerDocument;
   let stringBundle = chromeDoc.defaultView.gNavigatorBundle;
 
@@ -419,7 +452,7 @@ function prompt(aBrowser, aRequest) {
     "getUserMedia.shareScreenAndAudioCapture3.message",
   ].find(id => id.includes(joinedRequestTypes));
 
-  let message = stringBundle.getFormattedString(stringId, [host]);
+  let message = stringBundle.getFormattedString(stringId, ["<>"], 1);
 
   let notification; // Used by action callbacks.
   let mainAction = {
@@ -428,7 +461,7 @@ function prompt(aBrowser, aRequest) {
     // The real callback will be set during the "showing" event. The
     // empty function here is so that PopupNotifications.show doesn't
     // reject the action.
-    callback() {}
+    callback() {},
   };
 
   let secondaryActions = [
@@ -447,13 +480,14 @@ function prompt(aBrowser, aRequest) {
         if (videoDevices.length)
           SitePermissions.set(uri, sharingScreen ? "screen" : "camera",
                               SitePermissions.BLOCK, scope, notification.browser);
-      }
-    }
+      },
+    },
   ];
 
   let productName = gBrandBundle.GetStringFromName("brandShortName");
 
   let options = {
+    name: getHostOrExtensionName(uri),
     persistent: true,
     hideClose: !Services.prefs.getBoolPref("privacy.permissionPrompts.showCloseButton"),
     eventCallback(aTopic, aNewBrowser) {
@@ -508,19 +542,22 @@ function prompt(aBrowser, aRequest) {
         let activeCamera;
         let activeMic;
 
-        for (let device of videoDevices) {
-          let set = webrtcUI.activePerms.get(aBrowser.outerWindowID);
-          if (set && set.has(aRequest.windowID + device.mediaSource + device.id)) {
-            activeCamera = device;
-            break;
+        // Always prompt for screen sharing
+        if (!sharingScreen) {
+          for (let device of videoDevices) {
+            let set = webrtcUI.activePerms.get(aBrowser.outerWindowID);
+            if (set && set.has(aRequest.windowID + device.mediaSource + device.id)) {
+              activeCamera = device;
+              break;
+            }
           }
-        }
 
-        for (let device of audioDevices) {
-          let set = webrtcUI.activePerms.get(aBrowser.outerWindowID);
-          if (set && set.has(aRequest.windowID + device.mediaSource + device.id)) {
-            activeMic = device;
-            break;
+          for (let device of audioDevices) {
+            let set = webrtcUI.activePerms.get(aBrowser.outerWindowID);
+            if (set && set.has(aRequest.windowID + device.mediaSource + device.id)) {
+              activeMic = device;
+              break;
+            }
           }
         }
 
@@ -545,10 +582,19 @@ function prompt(aBrowser, aRequest) {
           browser._devicePermissionURIs = browser._devicePermissionURIs || [];
           browser._devicePermissionURIs.push(uri);
 
-          let mm = browser.messageManager;
-          mm.sendAsyncMessage("webrtc:Allow", {callID: aRequest.callID,
-                                               windowID: aRequest.windowID,
-                                               devices: allowedDevices});
+          let camNeeded = videoDevices.length > 0;
+          let micNeeded = audioDevices.length > 0;
+          checkOSPermission(camNeeded, micNeeded).then((havePermission) => {
+            if (havePermission) {
+              let mm = browser.messageManager;
+              mm.sendAsyncMessage("webrtc:Allow", {callID: aRequest.callID,
+                                                   windowID: aRequest.windowID,
+                                                   devices: allowedDevices});
+            } else {
+              denyRequestNoPermission(browser, aRequest);
+            }
+          });
+
           this.remove();
           return true;
         }
@@ -567,32 +613,40 @@ function prompt(aBrowser, aRequest) {
           addDeviceToList(menupopup, device.name, device.deviceIndex);
       }
 
+      function checkDisabledWindowMenuItem() {
+        let list = doc.getElementById("webRTC-selectWindow-menulist");
+        let item = list.selectedItem;
+        let notificationElement = doc.getElementById("webRTC-shareDevices-notification");
+        if (!item || item.hasAttribute("disabled")) {
+          notificationElement.setAttribute("invalidselection", "true");
+        } else {
+          notificationElement.removeAttribute("invalidselection");
+        }
+      }
+
       function listScreenShareDevices(menupopup, devices) {
-        while (menupopup.lastChild)
+        while (menupopup.lastChild) {
           menupopup.removeChild(menupopup.lastChild);
-
-        let type = devices[0].mediaSource;
-        let typeName = type.charAt(0).toUpperCase() + type.substr(1);
-
+        }
         let label = doc.getElementById("webRTC-selectWindow-label");
-        let gumStringId = "getUserMedia.select" + typeName;
+        const gumStringId = "getUserMedia.selectWindowOrScreen";
         label.setAttribute("value",
                            stringBundle.getString(gumStringId + ".label"));
         label.setAttribute("accesskey",
                            stringBundle.getString(gumStringId + ".accesskey"));
 
-        // "No <type>" is the default because we can't pick a
-        // 'default' window to share.
+        // "Select a Window or Screen" is the default because we can't and don't
+        // want to pick a 'default' window to share (Full screen is "scary").
         addDeviceToList(menupopup,
-                        stringBundle.getString("getUserMedia.no" + typeName + ".label"),
+                        stringBundle.getString("getUserMedia.pickWindowOrScreen.label"),
                         "-1");
-        menupopup.appendChild(doc.createElement("menuseparator"));
+        menupopup.appendChild(doc.createXULElement("menuseparator"));
 
         // Build the list of 'devices'.
         let monitorIndex = 1;
         for (let i = 0; i < devices.length; ++i) {
           let device = devices[i];
-
+          let type = device.mediaSource;
           let name;
           // Building screen list from available screens.
           if (type == "screen") {
@@ -616,8 +670,9 @@ function prompt(aBrowser, aRequest) {
                                .replace("#2", count);
             }
           }
-          let item = addDeviceToList(menupopup, name, i, typeName);
+          let item = addDeviceToList(menupopup, name, i, type);
           item.deviceId = device.id;
+          item.mediaSource = type;
           if (device.scary)
             item.scary = true;
         }
@@ -625,13 +680,16 @@ function prompt(aBrowser, aRequest) {
         // Always re-select the "No <type>" item.
         doc.getElementById("webRTC-selectWindow-menulist").removeAttribute("value");
         doc.getElementById("webRTC-all-windows-shared").hidden = true;
+
         menupopup._commandEventListener = event => {
+          checkDisabledWindowMenuItem();
           let video = doc.getElementById("webRTC-previewVideo");
           if (video.stream) {
             video.stream.getTracks().forEach(t => t.stop());
             video.stream = null;
           }
 
+          let type = event.target.mediaSource;
           let deviceId = event.target.deviceId;
           if (deviceId == undefined) {
             doc.getElementById("webRTC-preview").hidden = true;
@@ -652,20 +710,26 @@ function prompt(aBrowser, aRequest) {
               bundle.getString("getUserMedia.shareScreen.learnMoreLabel");
             let baseURL =
               Services.urlFormatter.formatURLPref("app.support.baseURL");
-            let learnMore =
-              "<label class='text-link' href='" + baseURL + "screenshare-safety'>" +
-              learnMoreText + "</label>";
+
+            let learnMore = chromeWin.document.createXULElement("label");
+            learnMore.className = "text-link";
+            learnMore.setAttribute("href", baseURL + "screenshare-safety");
+            learnMore.textContent = learnMoreText;
 
             if (type == "screen") {
               string = bundle.getFormattedString("getUserMedia.shareScreenWarning.message",
-                                                 [learnMore]);
+                                                 ["<>"]);
             } else {
               let brand =
                 doc.getElementById("bundle_brand").getString("brandShortName");
               string = bundle.getFormattedString("getUserMedia.shareFirefoxWarning.message",
-                                                 [brand, learnMore]);
+                                                 [brand, "<>"]);
             }
-            warning.innerHTML = string;
+
+            let [pre, post] = string.split("<>");
+            warning.textContent = pre;
+            warning.appendChild(learnMore);
+            warning.appendChild(chromeWin.document.createTextNode(post));
           }
 
           let perms = Services.perms;
@@ -682,24 +746,36 @@ function prompt(aBrowser, aRequest) {
               stream.getTracks().forEach(t => t.stop());
               return;
             }
-            video.src = chromeWin.URL.createObjectURL(stream);
+            video.srcObject = stream;
             video.stream = stream;
             doc.getElementById("webRTC-preview").hidden = false;
             video.onloadedmetadata = function(e) {
               video.play();
             };
+          },
+          err => {
+            if (err.name == "OverconstrainedError" && err.constraint == "deviceId") {
+              // Window has disappeared since enumeration, which can happen.
+              // No preview for you.
+              return;
+            }
+            Cu.reportError(`error in preview: ${err.message} ${err.constraint}`);
           });
         };
         menupopup.addEventListener("command", menupopup._commandEventListener);
       }
 
       function addDeviceToList(menupopup, deviceName, deviceIndex, type) {
-        let menuitem = doc.createElement("menuitem");
+        let menuitem = doc.createXULElement("menuitem");
         menuitem.setAttribute("value", deviceIndex);
         menuitem.setAttribute("label", deviceName);
         menuitem.setAttribute("tooltiptext", deviceName);
         if (type)
           menuitem.setAttribute("devicetype", type);
+
+        if (deviceIndex == "-1")
+          menuitem.setAttribute("disabled", true);
+
         menupopup.appendChild(menuitem);
         return menuitem;
       }
@@ -711,15 +787,18 @@ function prompt(aBrowser, aRequest) {
       let camMenupopup = doc.getElementById("webRTC-selectCamera-menupopup");
       let windowMenupopup = doc.getElementById("webRTC-selectWindow-menupopup");
       let micMenupopup = doc.getElementById("webRTC-selectMicrophone-menupopup");
-      if (sharingScreen)
+      if (sharingScreen) {
         listScreenShareDevices(windowMenupopup, videoDevices);
-      else
+        checkDisabledWindowMenuItem();
+      } else {
         listDevices(camMenupopup, videoDevices);
+        doc.getElementById("webRTC-shareDevices-notification").removeAttribute("invalidselection");
+      }
 
       if (!sharingAudio)
         listDevices(micMenupopup, audioDevices);
 
-      this.mainAction.callback = function(aState) {
+      this.mainAction.callback = async function(aState) {
         let remember = aState && aState.checkboxChecked;
         let allowedDevices = [];
         let perms = Services.perms;
@@ -786,13 +865,21 @@ function prompt(aBrowser, aRequest) {
           aBrowser._devicePermissionURIs.push(uri);
         }
 
+        let camNeeded = videoDevices.length > 0;
+        let micNeeded = audioDevices.length > 0;
+        let havePermission = await checkOSPermission(camNeeded, micNeeded);
+        if (!havePermission) {
+          denyRequestNoPermission(notification.browser, aRequest);
+          return;
+        }
+
         let mm = notification.browser.messageManager;
         mm.sendAsyncMessage("webrtc:Allow", {callID: aRequest.callID,
                                              windowID: aRequest.windowID,
                                              devices: allowedDevices});
       };
       return false;
-    }
+    },
   };
 
   // Don't offer "always remember" action in PB mode.
@@ -803,7 +890,7 @@ function prompt(aBrowser, aRequest) {
     // share without prompting).
     let reasonForNoPermanentAllow = "";
     if (sharingScreen) {
-      reasonForNoPermanentAllow = "getUserMedia.reasonForNoPermanentAllow.screen2";
+      reasonForNoPermanentAllow = "getUserMedia.reasonForNoPermanentAllow.screen3";
     } else if (sharingAudio) {
       reasonForNoPermanentAllow = "getUserMedia.reasonForNoPermanentAllow.audio";
     } else if (!aRequest.secure) {
@@ -815,7 +902,7 @@ function prompt(aBrowser, aRequest) {
       checkedState: reasonForNoPermanentAllow ? {
         disableMainAction: true,
         warningLabel: stringBundle.getFormattedString(reasonForNoPermanentAllow,
-                                                      [productName])
+                                                      [productName]),
       } : undefined,
     };
   }
@@ -840,6 +927,29 @@ function prompt(aBrowser, aRequest) {
                    anchorId, mainAction, secondaryActions,
                    options);
   notification.callID = aRequest.callID;
+
+  let schemeHistogram = Services.telemetry.getKeyedHistogramById("PERMISSION_REQUEST_ORIGIN_SCHEME");
+  let thirdPartyHistogram = Services.telemetry.getKeyedHistogramById("PERMISSION_REQUEST_THIRD_PARTY_ORIGIN");
+  let userInputHistogram = Services.telemetry.getKeyedHistogramById("PERMISSION_REQUEST_HANDLING_USER_INPUT");
+
+  let docURI = aRequest.documentURI;
+  let scheme = 0;
+  if (docURI.startsWith("https")) {
+    scheme = 2;
+  } else if (docURI.startsWith("http")) {
+    scheme = 1;
+  }
+
+  for (let requestType of requestTypes) {
+    if (requestType == "AudioCapture") {
+      requestType = "Microphone";
+    }
+    requestType = requestType.toLowerCase();
+
+    schemeHistogram.add(requestType, scheme);
+    thirdPartyHistogram.add(requestType, aRequest.isThirdPartyOrigin);
+    userInputHistogram.add(requestType, aRequest.isHandlingUserInput);
+  }
 }
 
 function removePrompt(aBrowser, aCallId) {
@@ -863,9 +973,7 @@ function getGlobalIndicator() {
     _microphone: null,
     _screen: null,
 
-    _hiddenDoc: Cc["@mozilla.org/appshell/appShellService;1"]
-                  .getService(Ci.nsIAppShellService)
-                  .hiddenDOMWindow.document,
+    _hiddenDoc: Services.appShell.hiddenDOMWindow.document,
     _statusBar: Cc["@mozilla.org/widget/macsystemstatusbar;1"]
                   .getService(Ci.nsISystemStatusBar),
 
@@ -891,14 +999,14 @@ function getGlobalIndicator() {
       if (activeStreams.length == 1) {
         let stream = activeStreams[0];
 
-        let menuitem = this.ownerDocument.createElement("menuitem");
+        let menuitem = this.ownerDocument.createXULElement("menuitem");
         let labelId = "webrtcIndicator.sharing" + type + "With.menuitem";
         let label = stream.browser.contentTitle || stream.uri;
         menuitem.setAttribute("label", bundle.formatStringFromName(labelId, [label], 1));
         menuitem.setAttribute("disabled", "true");
         this.appendChild(menuitem);
 
-        menuitem = this.ownerDocument.createElement("menuitem");
+        menuitem = this.ownerDocument.createXULElement("menuitem");
         menuitem.setAttribute("label",
                               bundle.GetStringFromName("webrtcIndicator.controlSharing.menuitem"));
         menuitem.stream = stream;
@@ -909,7 +1017,7 @@ function getGlobalIndicator() {
       }
 
       // We show a different menu when there are several active streams.
-      let menuitem = this.ownerDocument.createElement("menuitem");
+      let menuitem = this.ownerDocument.createXULElement("menuitem");
       let labelId = "webrtcIndicator.sharing" + type + "WithNTabs.menuitem";
       let count = activeStreams.length;
       let label = PluralForm.get(count, bundle.GetStringFromName(labelId)).replace("#1", count);
@@ -918,7 +1026,7 @@ function getGlobalIndicator() {
       this.appendChild(menuitem);
 
       for (let stream of activeStreams) {
-        let item = this.ownerDocument.createElement("menuitem");
+        let item = this.ownerDocument.createXULElement("menuitem");
         labelId = "webrtcIndicator.controlSharingOn.menuitem";
         label = stream.browser.contentTitle || stream.uri;
         item.setAttribute("label", bundle.formatStringFromName(labelId, [label], 1));
@@ -938,7 +1046,7 @@ function getGlobalIndicator() {
     _setIndicatorState(aName, aState) {
       let field = "_" + aName.toLowerCase();
       if (aState && !this[field]) {
-        let menu = this._hiddenDoc.createElement("menu");
+        let menu = this._hiddenDoc.createXULElement("menu");
         menu.setAttribute("id", "webRTC-sharing" + aName + "-menu");
 
         // The CSS will only be applied if the menu is actually inserted in the DOM.
@@ -946,7 +1054,7 @@ function getGlobalIndicator() {
 
         this._statusBar.addItem(menu);
 
-        let menupopup = this._hiddenDoc.createElement("menupopup");
+        let menupopup = this._hiddenDoc.createXULElement("menupopup");
         menupopup.setAttribute("type", aName);
         menupopup.addEventListener("popupshowing", this._popupShowing);
         menupopup.addEventListener("popuphiding", this._popupHiding);
@@ -957,7 +1065,7 @@ function getGlobalIndicator() {
       } else if (this[field] && !aState) {
         this._statusBar.removeItem(this[field]);
         this[field].remove();
-        this[field] = null
+        this[field] = null;
       }
     },
     updateIndicatorState() {
@@ -969,7 +1077,7 @@ function getGlobalIndicator() {
       this._setIndicatorState("Camera", false);
       this._setIndicatorState("Microphone", false);
       this._setIndicatorState("Screen", false);
-    }
+    },
   };
 
   indicator.updateIndicatorState();
@@ -991,8 +1099,8 @@ function onTabSharingMenuPopupShowing(e) {
     let doc = e.target.ownerDocument;
     let bundle = doc.defaultView.gNavigatorBundle;
 
-    let origin = getHost(null, streamInfo.uri);
-    let menuitem = doc.createElement("menuitem");
+    let origin = getHostOrExtensionName(null, streamInfo.uri);
+    let menuitem = doc.createXULElement("menuitem");
     menuitem.setAttribute("label", bundle.getFormattedString(stringName, [origin]));
     menuitem.stream = streamInfo;
     menuitem.addEventListener("command", onTabSharingMenuPopupCommand);
@@ -1014,7 +1122,7 @@ function showOrCreateMenuForWindow(aWindow) {
   let menu = document.getElementById("tabSharingMenu");
   if (!menu) {
     let stringBundle = aWindow.gNavigatorBundle;
-    menu = document.createElement("menu");
+    menu = document.createXULElement("menu");
     menu.id = "tabSharingMenu";
     let labelStringId = "getUserMedia.sharingMenu.label";
     menu.setAttribute("label", stringBundle.getString(labelStringId));
@@ -1023,7 +1131,7 @@ function showOrCreateMenuForWindow(aWindow) {
     if (AppConstants.platform == "macosx") {
       container = document.getElementById("windowPopup");
       insertionPoint = document.getElementById("sep-window-list");
-      let separator = document.createElement("menuseparator");
+      let separator = document.createXULElement("menuseparator");
       separator.id = "tabSharingSeparator";
       container.insertBefore(separator, insertionPoint);
     } else {
@@ -1032,7 +1140,7 @@ function showOrCreateMenuForWindow(aWindow) {
       container = document.getElementById("main-menubar");
       insertionPoint = document.getElementById("helpMenu");
     }
-    let popup = document.createElement("menupopup");
+    let popup = document.createXULElement("menupopup");
     popup.id = "tabSharingMenuPopup";
     popup.addEventListener("popupshowing", onTabSharingMenuPopupShowing);
     popup.addEventListener("popuphiding", onTabSharingMenuPopupHiding);
@@ -1071,9 +1179,7 @@ function updateIndicators(data, target) {
     indicators.showScreenSharingIndicator = data.showScreenSharingIndicator;
   }
 
-  let browserWindowEnum = Services.wm.getEnumerator("navigator:browser");
-  while (browserWindowEnum.hasMoreElements()) {
-    let chromeWin = browserWindowEnum.getNext();
+  for (let chromeWin of Services.wm.getEnumerator("navigator:browser")) {
     if (webrtcUI.showGlobalIndicator) {
       showOrCreateMenuForWindow(chromeWin);
     } else {
@@ -1092,10 +1198,15 @@ function updateIndicators(data, target) {
   }
 
   if (webrtcUI.showGlobalIndicator) {
-    if (!gIndicatorWindow)
+    if (!gIndicatorWindow) {
       gIndicatorWindow = getGlobalIndicator();
-    else
-      gIndicatorWindow.updateIndicatorState();
+    } else {
+      try {
+        gIndicatorWindow.updateIndicatorState();
+      } catch (err) {
+        Cu.reportError(`error in gIndicatorWindow.updateIndicatorState(): ${err.message}`);
+      }
+    }
   } else if (gIndicatorWindow) {
     gIndicatorWindow.close();
     gIndicatorWindow = null;

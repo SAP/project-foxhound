@@ -9,40 +9,29 @@
 
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/dom/NetworkInformationBinding.h"
+#include "nsContentUtils.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsINetworkProperties.h"
 
 namespace mozilla {
 
-namespace workers {
-class WorkerPrivate;
-} // namespace workers
-
 namespace hal {
 class NetworkInformation;
-} // namespace hal
+}  // namespace hal
 
 namespace dom {
+
+class WorkerPrivate;
+
 namespace network {
 
-class Connection : public DOMEventTargetHelper
-                 , public nsINetworkProperties
-{
-public:
+class Connection : public DOMEventTargetHelper {
+ public:
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_NSINETWORKPROPERTIES
-  NS_DECL_OWNINGTHREAD
 
-  NS_REALLY_FORWARD_NSIDOMEVENTTARGET(DOMEventTargetHelper)
+  static Connection* CreateForWindow(nsPIDOMWindowInner* aWindow);
 
-  static bool IsEnabled(JSContext* aCx, JSObject* aObj);
-
-  static Connection*
-  CreateForWindow(nsPIDOMWindowInner* aWindow);
-
-  static already_AddRefed<Connection>
-  CreateForWorker(workers::WorkerPrivate* aWorkerPrivate,
-                  ErrorResult& aRv);
+  static already_AddRefed<Connection> CreateForWorker(
+      WorkerPrivate* aWorkerPrivate, ErrorResult& aRv);
 
   void Shutdown();
 
@@ -51,20 +40,35 @@ public:
   virtual JSObject* WrapObject(JSContext* aCx,
                                JS::Handle<JSObject*> aGivenProto) override;
 
-  ConnectionType Type() const { return mType; }
+  ConnectionType Type() const {
+    return nsContentUtils::ShouldResistFingerprinting()
+               ? static_cast<ConnectionType>(ConnectionType::Unknown)
+               : mType;
+  }
+
+  bool GetIsWifi() {
+    NS_ASSERT_OWNINGTHREAD(Connection);
+
+    return mIsWifi;
+  }
+  uint32_t GetDhcpGateway() {
+    NS_ASSERT_OWNINGTHREAD(Connection);
+
+    return mDHCPGateway;
+  }
 
   IMPL_EVENT_HANDLER(typechange)
 
-protected:
+ protected:
   Connection(nsPIDOMWindowInner* aWindow);
   virtual ~Connection();
 
-  void Update(ConnectionType aType, bool aIsWifi, bool aDHCPGateway,
+  void Update(ConnectionType aType, bool aIsWifi, uint32_t aDHCPGateway,
               bool aNotify);
 
   virtual void ShutdownInternal() = 0;
 
-private:
+ private:
   /**
    * The type of current connection.
    */
@@ -83,8 +87,8 @@ private:
   bool mBeenShutDown;
 };
 
-} // namespace network
-} // namespace dom
-} // namespace mozilla
+}  // namespace network
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_network_Connection_h
+#endif  // mozilla_dom_network_Connection_h

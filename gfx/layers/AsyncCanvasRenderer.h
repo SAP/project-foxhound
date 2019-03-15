@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,13 +8,13 @@
 #define MOZILLA_LAYERS_ASYNCCANVASRENDERER_H_
 
 #include "LayersTypes.h"
-#include "mozilla/gfx/Point.h"          // for IntSize
+#include "mozilla/gfx/Point.h"  // for IntSize
 #include "mozilla/Mutex.h"
-#include "nsCOMPtr.h"                   // for nsCOMPtr
+#include "nsCOMPtr.h"  // for nsCOMPtr
 
 class nsICanvasRenderingContextInternal;
 class nsIInputStream;
-class nsIThread;
+class nsISerialEventTarget;
 
 namespace mozilla {
 
@@ -51,11 +51,10 @@ class TextureClient;
  * If layers backend is LAYERS_CLIENT, this object will pass to ImageBridgeChild
  * for submitting frames to Compositor.
  */
-class AsyncCanvasRenderer final
-{
+class AsyncCanvasRenderer final {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(AsyncCanvasRenderer)
 
-public:
+ public:
   AsyncCanvasRenderer();
 
   void NotifyElementAboutAttributesChanged();
@@ -63,24 +62,17 @@ public:
 
   void SetCanvasClient(CanvasClient* aClient);
 
-  void SetWidth(uint32_t aWidth)
-  {
-    mWidth = aWidth;
-  }
+  void SetWidth(uint32_t aWidth) { mWidth = aWidth; }
 
-  void SetHeight(uint32_t aHeight)
-  {
-    mHeight = aHeight;
-  }
+  void SetHeight(uint32_t aHeight) { mHeight = aHeight; }
 
-  void SetIsAlphaPremultiplied(bool aIsAlphaPremultiplied)
-  {
+  void SetIsAlphaPremultiplied(bool aIsAlphaPremultiplied) {
     mIsAlphaPremultiplied = aIsAlphaPremultiplied;
   }
 
   // Active thread means the thread which spawns GLContext.
-  void SetActiveThread();
-  void ResetActiveThread();
+  void SetActiveEventTarget();
+  void ResetActiveEventTarget();
 
   // This will readback surface and return the surface
   // in the DataSourceSurface.
@@ -88,35 +80,27 @@ public:
   already_AddRefed<gfx::DataSourceSurface> GetSurface();
 
   // For SharedSurface_Basic case, before the frame sending to the compositor,
-  // we readback it to a texture client because SharedSurface_Basic cannot shared.
-  // We don't want to readback it again here, so just copy the content of that
-  // texture client here to avoid readback again.
-  void CopyFromTextureClient(TextureClient *aClient);
+  // we readback it to a texture client because SharedSurface_Basic cannot
+  // shared. We don't want to readback it again here, so just copy the content
+  // of that texture client here to avoid readback again.
+  void CopyFromTextureClient(TextureClient* aClient);
 
   // Readback current WebGL's content and convert it to InputStream. This
   // function called GetSurface implicitly and GetSurface handles only get
   // called in the main thread. So this function can be called in main thread.
-  nsresult
-  GetInputStream(const char *aMimeType,
-                 const char16_t *aEncoderOptions,
-                 nsIInputStream **aStream);
+  nsresult GetInputStream(const char* aMimeType,
+                          const char16_t* aEncoderOptions,
+                          nsIInputStream** aStream);
 
-  gfx::IntSize GetSize() const
-  {
-    return gfx::IntSize(mWidth, mHeight);
-  }
+  gfx::IntSize GetSize() const { return gfx::IntSize(mWidth, mHeight); }
 
-  CompositableHandle GetCanvasClientAsyncHandle() const
-  {
+  CompositableHandle GetCanvasClientAsyncHandle() const {
     return mCanvasClientAsyncHandle;
   }
 
-  CanvasClient* GetCanvasClient() const
-  {
-    return mCanvasClient;
-  }
+  CanvasClient* GetCanvasClient() const { return mCanvasClient; }
 
-  already_AddRefed<nsIThread> GetActiveThread();
+  already_AddRefed<nsISerialEventTarget> GetActiveEventTarget();
 
   // The lifetime is controllered by HTMLCanvasElement.
   // Only accessed in main thread.
@@ -129,8 +113,8 @@ public:
   // canvas' surface texture destructor will deref and destroy it too early
   // Only accessed in active thread.
   RefPtr<gl::GLContext> mGLContext;
-private:
 
+ private:
   virtual ~AsyncCanvasRenderer();
 
   // Readback current WebGL's content and return it as DataSourceSurface.
@@ -159,10 +143,10 @@ private:
   Mutex mMutex;
 
   // Can be accessed in any thread, need protect by mutex.
-  nsCOMPtr<nsIThread> mActiveThread;
+  nsCOMPtr<nsISerialEventTarget> mActiveEventTarget;
 };
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla
 
-#endif // MOZILLA_LAYERS_ASYNCCANVASRENDERER_H_
+#endif  // MOZILLA_LAYERS_ASYNCCANVASRENDERER_H_

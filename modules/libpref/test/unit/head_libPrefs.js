@@ -4,11 +4,6 @@
 
 const NS_APP_USER_PROFILE_50_DIR = "ProfD";
 
-var Ci = Components.interfaces;
-var Cc = Components.classes;
-var Cr = Components.results;
-var Cu = Components.utils;
-
 function do_check_throws(f, result, stack)
 {
   if (!stack)
@@ -17,11 +12,10 @@ function do_check_throws(f, result, stack)
   try {
     f();
   } catch (exc) {
-    if (exc.result == result)
-      return;
-    do_throw("expected result " + result + ", caught " + exc, stack);
+    equal(exc.result, result, "Correct exception was thrown");
+    return;
   }
-  do_throw("expected result " + result + ", none thrown", stack);
+  ok(false, "expected result " + result + ", none thrown");
 }
 
 var dirSvc = Cc["@mozilla.org/file/directory_service;1"].getService(Ci.nsIProperties);

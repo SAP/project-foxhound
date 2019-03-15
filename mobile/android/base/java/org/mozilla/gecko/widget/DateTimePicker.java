@@ -57,6 +57,7 @@ public class DateTimePicker extends FrameLayout {
     boolean mDayEnabled = true;
     boolean mHourEnabled = true;
     boolean mMinuteEnabled = true;
+    boolean mSecondEnabled = true;
     boolean mIs12HourMode;
     private boolean mCalendarEnabled;
 
@@ -74,6 +75,7 @@ public class DateTimePicker extends FrameLayout {
     final NumberPicker mYearSpinner;
     final NumberPicker mHourSpinner;
     final NumberPicker mMinuteSpinner;
+    final NumberPicker mSecondSpinner;
     final NumberPicker mAMPMSpinner;
     private final CalendarView mCalendar;
     private final EditText mDaySpinnerInput;
@@ -82,6 +84,7 @@ public class DateTimePicker extends FrameLayout {
     private final EditText mYearSpinnerInput;
     private final EditText mHourSpinnerInput;
     private final EditText mMinuteSpinnerInput;
+    private final EditText mSecondSpinnerInput;
     private final EditText mAMPMSpinnerInput;
     private Locale mCurrentLocale;
     private String[] mShortMonths;
@@ -94,7 +97,7 @@ public class DateTimePicker extends FrameLayout {
     private Calendar mMaxDate;
     private final PickersState mState;
 
-    public static enum PickersState { DATE, MONTH, WEEK, TIME, DATETIME };
+    public static enum PickersState { DATE, MONTH, WEEK, TIME, DATETIME, DATETIME_WITH_SECOND };
 
     public class OnValueChangeListener implements NumberPicker.OnValueChangeListener {
         @Override
@@ -136,6 +139,8 @@ public class DateTimePicker extends FrameLayout {
                 }
             } else if (picker == mMinuteSpinner && mMinuteEnabled) {
                 setTempDate(Calendar.MINUTE, oldVal, newVal, 0, 59);
+            } else if (picker == mSecondSpinner && mSecondEnabled) {
+                setTempDate(Calendar.SECOND, oldVal, newVal, 0, 59);
             } else if (picker == mAMPMSpinner && mHourEnabled) {
                 mTempDate.set(Calendar.AM_PM, newVal);
             } else {
@@ -184,11 +189,22 @@ public class DateTimePicker extends FrameLayout {
         setWeekShown(false);
         set12HourShown(mIs12HourMode);
         if (mState == PickersState.DATETIME) {
+            setSecondShown(false);
+            return;
+        }
+        if (mState == PickersState.DATETIME_WITH_SECOND) {
+            return;
+        }
+        if (mState == PickersState.TIME) {
+            setYearShown(false);
+            setMonthShown(false);
+            setDayShown(false);
             return;
         }
 
         setHourShown(false);
         setMinuteShown(false);
+        setSecondShown(false);
         if (mState == PickersState.WEEK) {
             setDayShown(false);
             setMonthShown(false);
@@ -283,7 +299,7 @@ public class DateTimePicker extends FrameLayout {
         // If we're displaying a date, the screen is wide enough
         // (and if we're using an SDK where the calendar view exists)
         // then display a calendar.
-        if (mState == PickersState.DATE || mState == PickersState.DATETIME) {
+        if (mState == PickersState.DATE || mState == PickersState.DATETIME || mState == PickersState.DATETIME_WITH_SECOND) {
             mCalendar = new CalendarView(context);
             mCalendar.setVisibility(GONE);
 
@@ -314,8 +330,8 @@ public class DateTimePicker extends FrameLayout {
             });
 
             final int height;
-            if (Versions.preLollipop) {
-                // The 4.X version of CalendarView doesn't request any height, resulting in
+            if (Versions.preLollipopMR1) {
+                // Older versions of CalendarView don't request any height, resulting in
                 // the whole dialog not appearing unless we manually request height.
                 height =  (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 200, getResources().getDisplayMetrics());;
             } else {
@@ -328,7 +344,7 @@ public class DateTimePicker extends FrameLayout {
             // If the screen is more wide than high, we are displaying day and
             // time spinners, and if there is no calendar displayed, we should
             // display the fields in one row.
-            if (mScreenWidth > mScreenHeight && mState == PickersState.DATETIME) {
+            if (mScreenWidth > mScreenHeight && (mState == PickersState.DATETIME || mState == PickersState.DATETIME_WITH_SECOND)) {
                 mPickers.setOrientation(LinearLayout.HORIZONTAL);
             }
             mCalendar = null;
@@ -347,7 +363,8 @@ public class DateTimePicker extends FrameLayout {
         mMonthSpinnerInput = (EditText) mMonthSpinner.getChildAt(1);
 
         mWeekSpinner = setupSpinner(R.id.week, 1,
-                                    mTempDate.get(Calendar.WEEK_OF_YEAR));
+                                    mTempDate.getActualMaximum(Calendar.WEEK_OF_YEAR));
+        mWeekSpinner.setValue(mTempDate.get(Calendar.WEEK_OF_YEAR));
         mWeekSpinner.setFormatter(TWO_DIGIT_FORMATTER);
         mWeekSpinnerInput = (EditText) mWeekSpinner.getChildAt(1);
 
@@ -373,6 +390,10 @@ public class DateTimePicker extends FrameLayout {
         mMinuteSpinner = setupSpinner(R.id.minute, 0, 59);
         mMinuteSpinner.setFormatter(TWO_DIGIT_FORMATTER);
         mMinuteSpinnerInput = (EditText) mMinuteSpinner.getChildAt(1);
+
+        mSecondSpinner = setupSpinner(R.id.second, 0, 59);
+        mSecondSpinner.setFormatter(TWO_DIGIT_FORMATTER);
+        mSecondSpinnerInput = (EditText) mSecondSpinner.getChildAt(1);
 
         // The order in which the spinners are displayed are locale-dependent
         reorderDateSpinners();
@@ -452,6 +473,9 @@ public class DateTimePicker extends FrameLayout {
         } else if (mMinuteEnabled && inputMethodManager.isActive(mMinuteSpinnerInput)) {
             mMinuteSpinnerInput.clearFocus();
             inputMethodManager.hideSoftInputFromWindow(getWindowToken(), 0);
+        } else if (mSecondEnabled && inputMethodManager.isActive(mSecondSpinnerInput)) {
+            mSecondSpinnerInput.clearFocus();
+            inputMethodManager.hideSoftInputFromWindow(getWindowToken(), 0);
         }
     }
 
@@ -513,6 +537,9 @@ public class DateTimePicker extends FrameLayout {
         if (mMinuteEnabled) {
             mMinuteSpinner.setValue(mCurrentDate.get(Calendar.MINUTE));
         }
+        if (mSecondEnabled) {
+            mSecondSpinner.setValue(mCurrentDate.get(Calendar.SECOND));
+        }
     }
 
     void updateCalendar() {
@@ -526,7 +553,7 @@ public class DateTimePicker extends FrameLayout {
     }
 
     public void toggleCalendar(boolean shown) {
-        if ((mState != PickersState.DATE && mState != PickersState.DATETIME)) {
+        if (mState != PickersState.DATE && mState != PickersState.DATETIME && mState != PickersState.DATETIME_WITH_SECOND && mState != PickersState.TIME) {
             return;
         }
 
@@ -620,6 +647,18 @@ public class DateTimePicker extends FrameLayout {
             mMinuteSpinner.setVisibility(GONE);
             mTimeSpinners.findViewById(R.id.mincolon).setVisibility(GONE);
             mMinuteEnabled = false;
+        }
+    }
+
+    private void setSecondShown(boolean shown) {
+        if (shown) {
+            mSecondSpinner.setVisibility(VISIBLE);
+            mTimeSpinners.findViewById(R.id.seccolon).setVisibility(VISIBLE);
+            mSecondEnabled = true;
+        } else {
+            mSecondSpinner.setVisibility(GONE);
+            mTimeSpinners.findViewById(R.id.seccolon).setVisibility(GONE);
+            mSecondEnabled = false;
         }
     }
 

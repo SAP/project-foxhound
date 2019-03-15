@@ -5,20 +5,14 @@
 // Regression test ensuring that that a STORED entry with differing compressed
 // and uncompressed sizes is considered to be corrupt.
 function run_test() {
-  const Cc = Components.classes;
-  const Ci = Components.interfaces;
-
   var file = do_get_file("data/test_corrupt3.zip");
 
   var zipreader = Cc["@mozilla.org/libjar/zip-reader;1"].
                   createInstance(Ci.nsIZipReader);
   zipreader.open(file);
 
-  var entries = zipreader.findEntries('*');
   var failed = false;
-
-  while (entries.hasMore()) {
-    let entryPath = entries.getNext();
+  for (let entryPath of zipreader.findEntries('*')) {
     let entry = zipreader.getEntry(entryPath);
     if (!entry.isDirectory) {
       try {
@@ -29,6 +23,6 @@ function run_test() {
     }
   }
 
-  do_check_true(failed);
+  Assert.ok(failed);
 }
 

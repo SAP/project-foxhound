@@ -10,11 +10,11 @@ import java.util.List;
 import java.util.Map;
 
 import org.mozilla.gecko.annotation.RobocopTarget;
+import org.mozilla.gecko.util.StrictModeContext;
 
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.SharedPreferences.Editor;
-import android.os.StrictMode;
 import android.preference.PreferenceManager;
 import android.util.Log;
 
@@ -172,7 +172,12 @@ public final class GeckoSharedPrefs {
      * exceptions from reading/writing in the UI thread. This method will block
      * the current thread until the migration is finished.
      */
+    @SuppressWarnings("try")
     private static synchronized void migrateIfNecessary(final Context context) {
+        if (!GeckoAppShell.isFennec()) {
+            return;
+        }
+
         if (migrationDone) {
             return;
         }
@@ -181,12 +186,8 @@ public final class GeckoSharedPrefs {
         // is likely the UI thread) as this is actually cheaper than enforcing a
         // context switch to another thread (see bug 940575).
         // Avoid strict mode warnings when doing so.
-        final StrictMode.ThreadPolicy savedPolicy = StrictMode.allowThreadDiskReads();
-        StrictMode.allowThreadDiskWrites();
-        try {
+        try (StrictModeContext unused = StrictModeContext.allowDiskWrites()) {
             performMigration(context);
-        } finally {
-            StrictMode.setThreadPolicy(savedPolicy);
         }
 
         migrationDone = true;
@@ -255,7 +256,7 @@ public final class GeckoSharedPrefs {
      * to either app or profile scopes. The profile-scoped keys are defined
      * in given profileKeys list, all other keys are moved to the app scope.
      */
-    public static Editor migrateFromPreferenceManager(Context context, Editor appEditor,
+    private static Editor migrateFromPreferenceManager(Context context, Editor appEditor,
             Editor profileEditor, List<String> profileKeys) {
         Log.d(LOGTAG, "Migrating from PreferenceManager");
 
@@ -284,7 +285,7 @@ public final class GeckoSharedPrefs {
      * Moves the crash reporter's preferences from the app-wide prefs
      * into its own shared prefs to avoid cross-process pref accesses.
      */
-    public static void migrateCrashReporterSettings(SharedPreferences appPrefs, Editor appEditor,
+    private static void migrateCrashReporterSettings(SharedPreferences appPrefs, Editor appEditor,
                                                     Editor crashEditor, List<String> profileKeys) {
         Log.d(LOGTAG, "Migrating crash reporter settings");
 

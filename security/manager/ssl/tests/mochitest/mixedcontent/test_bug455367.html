@@ -11,11 +11,13 @@
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 
   <script class="testbody" type="text/javascript">
-  /* import-globals-from mixedContentTest.js */
   "use strict";
 
   function runTest()
   {
+    SpecialPowers.pushPrefEnv(
+      {"set": [["security.mixed_content.upgrade_display_content", false]]},
+      null);
     isSecurityState("broken", "broken");
     finish();
   }

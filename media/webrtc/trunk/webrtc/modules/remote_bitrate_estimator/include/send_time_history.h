@@ -8,41 +8,48 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_REMOTE_BITRATE_ESTIMATOR_INCLUDE_SEND_TIME_HISTORY_H_
-#define WEBRTC_MODULES_REMOTE_BITRATE_ESTIMATOR_INCLUDE_SEND_TIME_HISTORY_H_
+#ifndef MODULES_REMOTE_BITRATE_ESTIMATOR_INCLUDE_SEND_TIME_HISTORY_H_
+#define MODULES_REMOTE_BITRATE_ESTIMATOR_INCLUDE_SEND_TIME_HISTORY_H_
 
 #include <map>
 
-#include "webrtc/base/constructormagic.h"
-#include "webrtc/base/basictypes.h"
-#include "webrtc/modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
+#include "modules/include/module_common_types.h"
+#include "rtc_base/basictypes.h"
+#include "rtc_base/constructormagic.h"
 
 namespace webrtc {
+class Clock;
+struct PacketFeedback;
 
 class SendTimeHistory {
  public:
-  SendTimeHistory(Clock* clock, int64_t packet_age_limit);
-  virtual ~SendTimeHistory();
+  SendTimeHistory(const Clock* clock, int64_t packet_age_limit_ms);
+  ~SendTimeHistory();
 
-  void AddAndRemoveOld(uint16_t sequence_number, size_t length, bool was_paced);
-  bool OnSentPacket(uint16_t sequence_number, int64_t timestamp);
-  // Look up PacketInfo for a sent packet, based on the sequence number, and
-  // populate all fields except for receive_time. The packet parameter must
+  // Cleanup old entries, then add new packet info with provided parameters.
+  void AddAndRemoveOld(const PacketFeedback& packet);
+
+  // Updates packet info identified by |sequence_number| with |send_time_ms|.
+  // Return false if not found.
+  bool OnSentPacket(uint16_t sequence_number, int64_t send_time_ms);
+
+  // Look up PacketFeedback for a sent packet, based on the sequence number, and
+  // populate all fields except for arrival_time. The packet parameter must
   // thus be non-null and have the sequence_number field set.
-  bool GetInfo(PacketInfo* packet, bool remove);
-  void Clear();
+  bool GetFeedback(PacketFeedback* packet_feedback, bool remove);
+
+  size_t GetOutstandingBytes(uint16_t local_net_id,
+                             uint16_t remote_net_id) const;
 
  private:
-  void EraseOld();
-  void UpdateOldestSequenceNumber();
+  const Clock* const clock_;
+  const int64_t packet_age_limit_ms_;
+  SequenceNumberUnwrapper seq_num_unwrapper_;
+  std::map<int64_t, PacketFeedback> history_;
+  rtc::Optional<int64_t> latest_acked_seq_num_;
 
-  Clock* const clock_;
-  const int64_t packet_age_limit_;
-  uint16_t oldest_sequence_number_;  // Oldest may not be lowest.
-  std::map<uint16_t, PacketInfo> history_;
-
-  RTC_DISALLOW_COPY_AND_ASSIGN(SendTimeHistory);
+  RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(SendTimeHistory);
 };
 
 }  // namespace webrtc
-#endif  // WEBRTC_MODULES_REMOTE_BITRATE_ESTIMATOR_INCLUDE_SEND_TIME_HISTORY_H_
+#endif  // MODULES_REMOTE_BITRATE_ESTIMATOR_INCLUDE_SEND_TIME_HISTORY_H_

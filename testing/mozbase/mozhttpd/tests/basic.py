@@ -1,48 +1,53 @@
 #!/usr/bin/env python
 
+from __future__ import absolute_import
+
 import mozhttpd
 import mozfile
 import os
-import tempfile
-import unittest
+
+import pytest
 
 import mozunit
 
 
-class TestBasic(unittest.TestCase):
-    """ Test basic Mozhttpd capabilites """
+@pytest.fixture(name="files")
+def fixture_files():
+    """Return a list of tuples with name and binary_string."""
+    return [("small", os.urandom(128)), ("large", os.urandom(16384))]
 
-    def test_basic(self):
-        """ Test mozhttpd can serve files """
 
-        tempdir = tempfile.mkdtemp()
+@pytest.fixture(name="docroot")
+def fixture_docroot(tmpdir, files):
+    """Yield a str path to docroot."""
+    docroot = tmpdir.mkdir("docroot")
 
-        # sizes is a dict of the form: name -> [size, binary_string, filepath]
-        sizes = {'small': [128], 'large': [16384]}
+    for name, binary_string in files:
+        filename = docroot.join(name)
+        filename.write_binary(binary_string)
 
-        for k in sizes.keys():
-            # Generate random binary string
-            sizes[k].append(os.urandom(sizes[k][0]))
+    yield str(docroot)
 
-            # Add path of file with binary string to list
-            fpath = os.path.join(tempdir, k)
-            sizes[k].append(fpath)
+    docroot.remove()
 
-            # Write binary string to file
-            with open(fpath, 'wb') as f:
-                f.write(sizes[k][1])
 
-        server = mozhttpd.MozHttpd(docroot=tempdir)
-        server.start()
-        server_url = server.get_url()
+@pytest.fixture(name="httpd_url")
+def fixture_httpd_url(docroot):
+    """Yield the URL to a started MozHttpd server."""
+    httpd = mozhttpd.MozHttpd(docroot=docroot)
+    httpd.start()
+    yield httpd.get_url()
+    httpd.stop()
 
-        # Retrieve file and check contents matchup
-        for k in sizes.keys():
-            retrieved_content = mozfile.load(server_url + k).read()
-            self.assertEqual(retrieved_content, sizes[k][1])
 
-        # Cleanup tempdir and related files
-        mozfile.rmtree(tempdir)
+def test_basic(httpd_url, files):
+    """Test that mozhttpd can serve files."""
 
-if __name__ == '__main__':
+    # Retrieve file and check contents matchup
+    for name, binary_string in files:
+        retrieved_content = mozfile.load(httpd_url + name).read()
+        assert retrieved_content == binary_string
+
+
+if __name__ == "__main__":
     mozunit.main()

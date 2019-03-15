@@ -4,16 +4,18 @@
 
 "use strict";
 
-const Cu = Components.utils;
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-Cu.import("resource://services-sync/record.js");
-Cu.import("resource://services-sync/main.js");
+ChromeUtils.defineModuleGetter(this, "Async",
+                               "resource://services-common/async.js");
 
-this.EXPORTED_SYMBOLS = ["CollectionValidator", "CollectionProblemData"];
+
+var EXPORTED_SYMBOLS = ["CollectionValidator", "CollectionProblemData"];
 
 class CollectionProblemData {
   constructor() {
     this.missingIDs = 0;
+    this.clientDuplicates = [];
     this.duplicates = [];
     this.clientMissing = [];
     this.serverMissing = [];
@@ -37,7 +39,8 @@ class CollectionProblemData {
       { name: "serverUnexpected", count: this.serverUnexpected.length },
       { name: "differences", count: this.differences.length },
       { name: "missingIDs", count: this.missingIDs },
-      { name: "duplicates", count: this.duplicates.length }
+      { name: "clientDuplicates", count: this.clientDuplicates.length },
+      { name: "duplicates", count: this.duplicates.length },
     ];
   }
 }
@@ -54,6 +57,12 @@ class CollectionValidator {
     this.name = name;
     this.props = props;
     this.idProp = idProp;
+
+    // This property deals with the fact that form history records are never
+    // deleted from the server. The FormValidator subclass needs to ignore the
+    // client missing records, and it uses this property to achieve it -
+    // (Bug 1354016).
+    this.ignoresMissingClients = false;
   }
 
   // Should a custom ProblemData type be needed, return it here.
@@ -61,20 +70,22 @@ class CollectionValidator {
     return new CollectionProblemData();
   }
 
-  getServerItems(engine) {
+  async getServerItems(engine) {
     let collection = engine.itemSource();
     let collectionKey = engine.service.collectionKeys.keyForCollection(engine.name);
     collection.full = true;
-    let items = [];
-    collection.recordHandler = function(item) {
-      item.decrypt(collectionKey);
-      items.push(item.cleartext);
-    };
-    let resp = collection.getBatched();
-    if (!resp.success) {
-      throw resp;
+    let result = await collection.getBatched();
+    if (!result.response.success) {
+      throw result.response;
     }
-    return items;
+    let maybeYield = Async.jankYielder();
+    let cleartexts = [];
+    for (let record of result.records) {
+      await maybeYield();
+      await record.decrypt(collectionKey);
+      cleartexts.push(record.cleartext);
+    }
+    return cleartexts;
   }
 
   // Should return a promise that resolves to an array of client items.
@@ -99,7 +110,7 @@ class CollectionValidator {
 
   // Turn the server item into something that can be easily compared with the client
   // items.
-  normalizeServerItem(item) {
+  async normalizeServerItem(item) {
     return item;
   }
 
@@ -111,7 +122,7 @@ class CollectionValidator {
 
   // Return whether or not a client item should be present on the server. Expected
   // to be overridden
-  syncedByClient(item) {
+  async syncedByClient(item) {
     return true;
   }
 
@@ -134,15 +145,24 @@ class CollectionValidator {
   //   clientRecords: Normalized client records
   //   records: Normalized server records,
   //   deletedRecords: Array of ids that were marked as deleted by the server.
-  compareClientWithServer(clientItems, serverItems) {
-    clientItems = clientItems.map(item => this.normalizeClientItem(item));
-    serverItems = serverItems.map(item => this.normalizeServerItem(item));
+  async compareClientWithServer(clientItems, serverItems) {
+    let maybeYield = Async.jankYielder();
+    const clientRecords = [];
+    for (let item of clientItems) {
+      await maybeYield();
+      clientRecords.push(this.normalizeClientItem(item));
+    }
+    const serverRecords = [];
+    for (let item of serverItems) {
+      await maybeYield();
+      serverRecords.push((await this.normalizeServerItem(item)));
+    }
     let problems = this.emptyProblemData();
     let seenServer = new Map();
     let serverDeleted = new Set();
     let allRecords = new Map();
 
-    for (let record of serverItems) {
+    for (let record of serverRecords) {
       let id = record[this.idProp];
       if (!id) {
         ++problems.missingIDs;
@@ -151,21 +171,27 @@ class CollectionValidator {
       if (record.deleted) {
         serverDeleted.add(record);
       } else {
-        let possibleDupe = seenServer.get(id);
-        if (possibleDupe) {
+        let serverHasPossibleDupe = seenServer.has(id);
+        if (serverHasPossibleDupe) {
           problems.duplicates.push(id);
         } else {
           seenServer.set(id, record);
-          allRecords.set(id, { server: record, client: null, });
+          allRecords.set(id, { server: record, client: null });
         }
         record.understood = this.clientUnderstands(record);
       }
     }
 
     let seenClient = new Map();
-    for (let record of clientItems) {
+    for (let record of clientRecords) {
       let id = record[this.idProp];
-      record.shouldSync = this.syncedByClient(record);
+      record.shouldSync = await this.syncedByClient(record);
+      let clientHasPossibleDupe = seenClient.has(id);
+      if (clientHasPossibleDupe && record.shouldSync) {
+        // Only report duplicate client IDs for syncable records.
+        problems.clientDuplicates.push(id);
+        continue;
+      }
       seenClient.set(id, record);
       let combined = allRecords.get(id);
       if (combined) {
@@ -179,7 +205,7 @@ class CollectionValidator {
       if (!client && !server) {
         throw new Error("Impossible: no client or server record for " + id);
       } else if (server && !client) {
-        if (server.understood) {
+        if (!this.ignoresMissingClients && server.understood) {
           problems.clientMissing.push(id);
         }
       } else if (client && !server) {
@@ -201,9 +227,30 @@ class CollectionValidator {
     }
     return {
       problemData: problems,
-      clientRecords: clientItems,
-      records: serverItems,
-      deletedRecords: [...serverDeleted]
+      clientRecords,
+      records: serverRecords,
+      deletedRecords: [...serverDeleted],
+    };
+  }
+
+  async validate(engine) {
+    let start = Cu.now();
+    let clientItems = await this.getClientItems();
+    let serverItems = await this.getServerItems(engine);
+    let serverRecordCount = serverItems.length;
+    let result = await this.compareClientWithServer(clientItems, serverItems);
+    let end = Cu.now();
+    let duration = end - start;
+    engine._log.debug(`Validated ${this.name} in ${duration}ms`);
+    engine._log.debug(`Problem summary`);
+    for (let { name, count } of result.problemData.getSummary()) {
+      engine._log.debug(`  ${name}: ${count}`);
+    }
+    return {
+      duration,
+      version: this.version,
+      problems: result.problemData,
+      recordCount: serverRecordCount,
     };
   }
 }

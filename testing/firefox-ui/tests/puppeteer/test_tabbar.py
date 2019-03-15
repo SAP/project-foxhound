@@ -128,7 +128,7 @@ class TestTab(PuppeteerMixin, MarionetteTestCase):
         self.assertEqual(tab.window, self.browser)
 
         self.assertEqual(tab.tab_element.get_property('localName'), 'tab')
-        self.assertEqual(tab.close_button.get_property('localName'), 'toolbarbutton')
+        self.assertEqual(tab.close_button.get_property('localName'), 'image')
 
     def test_certificate(self):
         url = self.marionette.absolute_url('layout/mozilla.html')
@@ -156,11 +156,13 @@ class TestTab(PuppeteerMixin, MarionetteTestCase):
         for trigger in close_strategies:
             new_tab = tabbar.open_tab()
             self.assertEqual(len(tabbar.tabs), 2)
+            self.assertEqual(len(self.marionette.window_handles), 2)
             self.assertEqual(new_tab.handle, self.marionette.current_window_handle)
             self.assertEqual(new_tab.handle, tabbar.tabs[1].handle)
 
             new_tab.close(trigger=trigger)
             self.assertEqual(len(tabbar.tabs), 1)
+            self.assertEqual(len(self.marionette.window_handles), 1)
             self.assertEqual(tabbar.tabs[0].handle, self.marionette.current_window_handle)
             self.assertNotEqual(new_tab.handle, tabbar.tabs[0].handle)
 

@@ -6,8 +6,8 @@ load("../unit/head_crashreporter.js");
 
 function run_test() {
   var is_win7_or_newer = false;
-  var ph = Components.classes["@mozilla.org/network/protocol;1?name=http"]
-             .getService(Components.interfaces.nsIHttpProtocolHandler);
+  var ph = Cc["@mozilla.org/network/protocol;1?name=http"]
+             .getService(Ci.nsIHttpProtocolHandler);
   var match = ph.userAgent.match(/Windows NT (\d+).(\d+)/);
   if (match && (parseInt(match[1]) > 6 ||
                 parseInt(match[1]) == 6 && parseInt(match[2]) >= 1)) {
@@ -15,9 +15,9 @@ function run_test() {
   }
 
   do_content_crash(null, function(mdump, extra) {
-             do_check_true(mdump.exists());
-             do_check_true(mdump.fileSize > 0);
+             Assert.ok(mdump.exists());
+             Assert.ok(mdump.fileSize > 0);
              if (is_win7_or_newer)
-               do_check_true(CrashTestUtils.dumpHasStream(mdump.path, CrashTestUtils.MD_MEMORY_INFO_LIST_STREAM));
+               Assert.ok(CrashTestUtils.dumpHasStream(mdump.path, CrashTestUtils.MD_MEMORY_INFO_LIST_STREAM));
            });
 }

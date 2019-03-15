@@ -18,53 +18,72 @@ const kFontSizeFmtVariable      = "font.size.variable.%LANG%";
 const kFontSizeFmtFixed         = "font.size.fixed.%LANG%";
 const kFontMinSizeFmt           = "font.minimum-size.%LANG%";
 
+document.documentElement.addEventListener("dialoghelp", window.top.openPrefsHelp);
+
+Preferences.addAll([
+  { id: "font.language.group", type: "wstring" },
+  { id: "browser.display.use_document_fonts", type: "int" },
+  { id: "intl.charset.fallback.override", type: "string" },
+]);
+
 var gFontsDialog = {
+  _selectLanguageGroupPromise: Promise.resolve(),
+
   _selectLanguageGroup(aLanguageGroup) {
-    var prefs = [{ format: kDefaultFontType,          type: "string",   element: "defaultFontType", fonttype: null},
-                 { format: kFontNameFmtSerif,         type: "fontname", element: "serif",      fonttype: "serif"       },
-                 { format: kFontNameFmtSansSerif,     type: "fontname", element: "sans-serif", fonttype: "sans-serif"  },
-                 { format: kFontNameFmtMonospace,     type: "fontname", element: "monospace",  fonttype: "monospace"   },
-                 { format: kFontNameListFmtSerif,     type: "unichar",  element: null,         fonttype: "serif"       },
-                 { format: kFontNameListFmtSansSerif, type: "unichar",  element: null,         fonttype: "sans-serif"  },
-                 { format: kFontNameListFmtMonospace, type: "unichar",  element: null,         fonttype: "monospace"   },
-                 { format: kFontSizeFmtVariable,      type: "int",      element: "sizeVar",    fonttype: null          },
-                 { format: kFontSizeFmtFixed,         type: "int",      element: "sizeMono",   fonttype: null          },
-                 { format: kFontMinSizeFmt,           type: "int",      element: "minSize",    fonttype: null          }];
-    var preferences = document.getElementById("fontPreferences");
-    for (var i = 0; i < prefs.length; ++i) {
-      var preference = document.getElementById(prefs[i].format.replace(/%LANG%/, aLanguageGroup));
-      if (!preference) {
-        preference = document.createElement("preference");
+    this._selectLanguageGroupPromise = (async () => {
+      // Avoid overlapping language group selections by awaiting the resolution
+      // of the previous one.  We do this because this function is re-entrant,
+      // as inserting <preference> elements into the DOM sometimes triggers a call
+      // back into this function.  And since this function is also asynchronous,
+      // that call can enter this function before the previous run has completed,
+      // which would corrupt the font menulists.  Awaiting the previous call's
+      // resolution avoids that fate.
+      await this._selectLanguageGroupPromise;
+
+      var prefs = [
+        { format: kDefaultFontType,          type: "string",   element: "defaultFontType", fonttype: null     },
+        { format: kFontNameFmtSerif,         type: "fontname", element: "serif",      fonttype: "serif"       },
+        { format: kFontNameFmtSansSerif,     type: "fontname", element: "sans-serif", fonttype: "sans-serif"  },
+        { format: kFontNameFmtMonospace,     type: "fontname", element: "monospace",  fonttype: "monospace"   },
+        { format: kFontNameListFmtSerif,     type: "unichar",  element: null,         fonttype: "serif"       },
+        { format: kFontNameListFmtSansSerif, type: "unichar",  element: null,         fonttype: "sans-serif"  },
+        { format: kFontNameListFmtMonospace, type: "unichar",  element: null,         fonttype: "monospace"   },
+        { format: kFontSizeFmtVariable,      type: "int",      element: "sizeVar",    fonttype: null          },
+        { format: kFontSizeFmtFixed,         type: "int",      element: "sizeMono",   fonttype: null          },
+        { format: kFontMinSizeFmt,           type: "int",      element: "minSize",    fonttype: null          },
+      ];
+      for (var i = 0; i < prefs.length; ++i) {
         var name = prefs[i].format.replace(/%LANG%/, aLanguageGroup);
-        preference.id = name;
-        preference.setAttribute("name", name);
-        preference.setAttribute("type", prefs[i].type);
-        preferences.appendChild(preference);
+        var preference = Preferences.get(name);
+        if (!preference) {
+          preference = Preferences.add({ id: name, type: prefs[i].type });
+        }
+
+        if (!prefs[i].element)
+          continue;
+
+        var element = document.getElementById(prefs[i].element);
+        if (element) {
+          element.setAttribute("preference", preference.id);
+
+          if (prefs[i].fonttype)
+            await FontBuilder.buildFontList(aLanguageGroup, prefs[i].fonttype, element);
+
+          preference.setElementValue(element);
+        }
       }
-
-      if (!prefs[i].element)
-        continue;
-
-      var element = document.getElementById(prefs[i].element);
-      if (element) {
-        element.setAttribute("preference", preference.id);
-
-        if (prefs[i].fonttype)
-          FontBuilder.buildFontList(aLanguageGroup, prefs[i].fonttype, element);
-
-        preference.setElementValue(element);
-      }
-    }
+    })()
+      .catch(Cu.reportError);
   },
 
   readFontLanguageGroup() {
-    var languagePref = document.getElementById("font.language.group");
+    var languagePref = Preferences.get("font.language.group");
     this._selectLanguageGroup(languagePref.value);
     return undefined;
   },
 
   readUseDocumentFonts() {
-    var preference = document.getElementById("browser.display.use_document_fonts");
+    var preference = Preferences.get("browser.display.use_document_fonts");
     return preference.value == 1;
   },
 
@@ -73,28 +92,29 @@ var gFontsDialog = {
     return useDocumentFonts.checked ? 1 : 0;
   },
 
-  onBeforeAccept() {
-    let preferences = document.querySelectorAll("preference[id*='font.minimum-size']");
-    // It would be good if we could avoid touching languages the pref pages won't use, but
-    // unfortunately the language group APIs (deducing language groups from language codes)
-    // are C++ - only. So we just check all the things the user touched:
-    // Don't care about anything up to 24px, or if this value is the same as set previously:
-    preferences = Array.filter(preferences, prefEl => {
-      return prefEl.value > 24 && prefEl.value != prefEl.valueFromPreferences;
-    });
-    if (!preferences.length) {
-      return true;
+  async confirmMinSizeChange() {
+    let menulist = document.getElementById("minSize");
+    let preference = menulist.getAttribute("preference");
+    let defaultValue = Preferences.get(preference).valueFromPreferences;
+    let oldValue = Preferences.get(preference).value;
+    let newValue = menulist.value;
+
+    if (newValue <= 24 || newValue == defaultValue) {
+      return;
     }
 
-    let strings = document.getElementById("bundlePreferences");
-    let title = strings.getString("veryLargeMinimumFontTitle");
-    let confirmLabel = strings.getString("acceptVeryLargeMinimumFont");
-    let warningMessage = strings.getString("veryLargeMinimumFontWarning");
-    let {Services} = Components.utils.import("resource://gre/modules/Services.jsm", {});
+    let [title, warningMessage, confirmLabel] = await document.l10n.formatValues([
+      {id: "fonts-very-large-warning-title"},
+      {id: "fonts-very-large-warning-message"},
+      {id: "fonts-very-large-warning-accept"},
+    ]);
+    let {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm", {});
     let flags = Services.prompt.BUTTON_POS_1 * Services.prompt.BUTTON_TITLE_CANCEL |
                 Services.prompt.BUTTON_POS_0 * Services.prompt.BUTTON_TITLE_IS_STRING |
                 Services.prompt.BUTTON_POS_1_DEFAULT;
     let buttonChosen = Services.prompt.confirmEx(window, title, warningMessage, flags, confirmLabel, null, "", "", {});
-    return buttonChosen == 0;
+    if (buttonChosen != 0) {
+      menulist.value = oldValue;
+    }
   },
 };

@@ -17,7 +17,7 @@ const MS_PER_SEC = 1000;
 
 /* The recommended minimum precision to use for time values[1].
  *
- * [1] https://w3c.github.io/web-animations/#precision-of-time-values
+ * [1] https://drafts.csswg.org/web-animations/#precision-of-time-values
  */
 var TIME_PRECISION = 0.0005; // ms
 
@@ -26,6 +26,13 @@ var TIME_PRECISION = 0.0005; // ms
  * times based on their precision requirements.
  */
 function assert_times_equal(actual, expected, description) {
+  assert_approx_equals(actual, expected, TIME_PRECISION * 2, description);
+}
+
+/*
+ * Compare a time value based on its precision requirements with a fixed value.
+ */
+function assert_time_equals_literal(actual, expected, description) {
   assert_approx_equals(actual, expected, TIME_PRECISION, description);
 }
 
@@ -52,6 +59,55 @@ function assert_matrix_equals(actual, expected, description) {
       'Matrix array should be equal (got \'' + expected + '\' and \'' + actual +
       '\'): ' + description);
   }
+}
+
+/**
+ * Compare given values which are same format of
+ * KeyframeEffectReadonly::GetProperties.
+ */
+function assert_properties_equal(actual, expected) {
+  assert_equals(actual.length, expected.length);
+
+  const compareProperties = (a, b) =>
+    a.property == b.property ? 0 : (a.property < b.property ? -1 : 1);
+
+  const sortedActual   = actual.sort(compareProperties);
+  const sortedExpected = expected.sort(compareProperties);
+
+  const serializeValues = values =>
+    values.map(value =>
+      '{ ' +
+          [ 'offset', 'value', 'easing', 'composite' ].map(
+            member => `${member}: ${value[member]}`
+          ).join(', ') +
+                      ' }')
+          .join(', ');
+
+  for (let i = 0; i < sortedActual.length; i++) {
+    assert_equals(sortedActual[i].property,
+                  sortedExpected[i].property,
+                  'CSS property name should match');
+    assert_equals(serializeValues(sortedActual[i].values),
+                  serializeValues(sortedExpected[i].values),
+                  `Values arrays do not match for `
+                  + `${sortedActual[i].property} property`);
+  }
+}
+
+/**
+ * Construct a object which is same to a value of
+ * KeyframeEffectReadonly::GetProperties().
+ * The method returns undefined as a value in case of missing keyframe.
+ * Therefor, we can use undefined for |value| and |easing| parameter.
+ * @param offset - keyframe offset. e.g. 0.1
+ * @param value - any keyframe value. e.g. undefined '1px', 'center', 0.5
+ * @param composite - 'replace', 'add', 'accumulate'
+ * @param easing - e.g. undefined, 'linear', 'ease' and so on
+ * @return Object -
+ *   e.g. { offset: 0.1, value: '1px', composite: 'replace', easing: 'ease'}
+ */
+function valueFormat(offset, value, composite, easing) {
+  return { offset: offset, value: value, easing: easing, composite: composite };
 }
 
 /**
@@ -163,6 +219,25 @@ function waitForFrame() {
 }
 
 /**
+ * Waits for a requestAnimationFrame callback in the next refresh driver tick.
+ * Note that the 'dom.animations-api.core.enabled' and
+ * 'dom.animations-api.timelines.enabled' prefs should be true to use this
+ * function.
+ */
+function waitForNextFrame() {
+  const timeAtStart = document.timeline.currentTime;
+  return new Promise(resolve => {
+    window.requestAnimationFrame(() => {
+      if (timeAtStart === document.timeline.currentTime) {
+        window.requestAnimationFrame(resolve);
+      } else {
+        resolve();
+      }
+    });
+  });
+}
+
+/**
  * Returns a Promise that is resolved after the given number of consecutive
  * animation frames have occured (using requestAnimationFrame callbacks).
  *
@@ -170,18 +245,29 @@ function waitForFrame() {
  * @param onFrame  An optional function to be processed in each animation frame.
  */
 function waitForAnimationFrames(frameCount, onFrame) {
+  const timeAtStart = document.timeline.currentTime;
   return new Promise(function(resolve, reject) {
     function handleFrame() {
       if (onFrame && typeof onFrame === 'function') {
         onFrame();
       }
-      if (--frameCount <= 0) {
+      if (timeAtStart != document.timeline.currentTime &&
+          --frameCount <= 0) {
         resolve();
       } else {
         window.requestAnimationFrame(handleFrame); // wait another frame
       }
     }
     window.requestAnimationFrame(handleFrame);
+  });
+}
+
+/**
+ * Promise wrapper for requestIdleCallback.
+ */
+function waitForIdle() {
+  return new Promise(resolve => {
+    requestIdleCallback(resolve);
   });
 }
 
@@ -203,7 +289,7 @@ function waitForAllAnimations(animations) {
  * we actually get a transition instead of that being the initial value.
  */
 function flushComputedStyle(elem) {
-  var cs = window.getComputedStyle(elem);
+  var cs = getComputedStyle(elem);
   cs.marginLeft;
 }
 
@@ -211,19 +297,17 @@ if (opener) {
   for (var funcName of ["async_test", "assert_not_equals", "assert_equals",
                         "assert_approx_equals", "assert_less_than",
                         "assert_less_than_equal", "assert_greater_than",
-                        "assert_greater_than_equal",
-                        "assert_not_exists",
                         "assert_between_inclusive",
                         "assert_true", "assert_false",
                         "assert_class_string", "assert_throws",
                         "assert_unreached", "assert_regexp_match",
                         "promise_test", "test"]) {
-    window[funcName] = opener[funcName].bind(opener);
+    if (opener[funcName]) {
+      window[funcName] = opener[funcName].bind(opener);
+    }
   }
 
   window.EventWatcher = opener.EventWatcher;
-  // Used for requestLongerTimeout.
-  window.W3CTest = opener.W3CTest;
 
   function done() {
     opener.add_completion_callback(function() {
@@ -231,25 +315,6 @@ if (opener) {
     });
     opener.done();
   }
-}
-
-/**
- * Return a new MutationObserver which started observing |target| element
- * with { animations: true, subtree: |subtree| } option.
- * NOTE: This observer should be used only with takeRecords(). If any of
- * MutationRecords are observed in the callback of the MutationObserver,
- * it will raise an assertion.
- */
-function setupSynchronousObserver(t, target, subtree) {
-   var observer = new MutationObserver(records => {
-     assert_unreached("Any MutationRecords should not be observed in this " +
-                      "callback");
-   });
-  t.add_cleanup(() => {
-    observer.disconnect();
-  });
-  observer.observe(target, { animations: true, subtree: subtree });
-  return observer;
 }
 
 /*
@@ -269,9 +334,24 @@ function waitForDocumentLoad() {
  * Enters test refresh mode, and restores the mode when |t| finishes.
  */
 function useTestRefreshMode(t) {
-  SpecialPowers.DOMWindowUtils.advanceTimeAndRefresh(0);
-  t.add_cleanup(() => {
-    SpecialPowers.DOMWindowUtils.restoreNormalRefresh();
+  function ensureNoSuppressedPaints() {
+    return new Promise(resolve => {
+      function checkSuppressedPaints() {
+        if (!SpecialPowers.DOMWindowUtils.paintingSuppressed) {
+          resolve();
+        } else {
+          window.requestAnimationFrame(checkSuppressedPaints);
+        }
+      }
+      checkSuppressedPaints();
+    });
+  }
+
+  return ensureNoSuppressedPaints().then(() => {
+    SpecialPowers.DOMWindowUtils.advanceTimeAndRefresh(0);
+    t.add_cleanup(() => {
+      SpecialPowers.DOMWindowUtils.restoreNormalRefresh();
+    });
   });
 }
 
@@ -282,4 +362,77 @@ function isOMTAEnabled() {
   const OMTAPrefKey = 'layers.offmainthreadcomposition.async-animations';
   return SpecialPowers.DOMWindowUtils.layerManagerRemote &&
          SpecialPowers.getBoolPref(OMTAPrefKey);
+}
+
+/**
+ * Append an SVG element to the target element.
+ *
+ * @param target The element which want to append.
+ * @param attrs  A array object with attribute name and values to set on
+ *               the SVG element.
+ * @return An SVG outer element.
+ */
+function addSVGElement(target, tag, attrs) {
+  if (!target) {
+    return null;
+  }
+  var element = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  if (attrs) {
+    for (var attrName in attrs) {
+      element.setAttributeNS(null, attrName, attrs[attrName]);
+    }
+  }
+  target.appendChild(element);
+  return element;
+}
+
+/*
+ * Get Animation distance between two specified values for a specific property.
+ *
+ * @param target The target element.
+ * @param prop The CSS property.
+ * @param v1 The first property value.
+ * @param v2 The Second property value.
+ *
+ * @return The distance between |v1| and |v2| for |prop| on |target|.
+ */
+function getDistance(target, prop, v1, v2) {
+  if (!target) {
+    return 0.0;
+  }
+  return SpecialPowers.DOMWindowUtils
+           .computeAnimationDistance(target, prop, v1, v2);
+}
+
+/*
+ * A promise wrapper for waiting MozAfterPaint.
+ */
+function waitForPaints() {
+  // FIXME: Bug 1415065. Instead waiting for two requestAnimationFrames, we
+  // should wait for MozAfterPaint once after MozAfterPaint is fired properly
+  // (bug 1341294).
+  return waitForAnimationFrames(2);
+}
+
+// Returns true if |aAnimation| begins at the current timeline time.  We
+// sometimes need to detect this case because if we started an animation
+// asynchronously (e.g. using play()) and then ended up running the next frame
+// at precisely the time the animation started (due to aligning with vsync
+// refresh rate) then we won't end up restyling in that frame.
+function animationStartsRightNow(aAnimation) {
+  return aAnimation.startTime === aAnimation.timeline.currentTime &&
+         aAnimation.currentTime === 0;
+}
+
+// Waits for a given animation being ready to restyle.
+async function waitForAnimationReadyToRestyle(aAnimation) {
+  await aAnimation.ready;
+  // If |aAnimation| begins at the current timeline time, we will not process
+  // restyling in the initial frame because of aligning with the refresh driver,
+  // the animation frame in which the ready promise is resolved happens to
+  // coincide perfectly with the start time of the animation.  In this case no
+  // restyling is needed in the frame so we have to wait one more frame.
+  if (animationStartsRightNow(aAnimation)) {
+    await waitForNextFrame();
+  }
 }

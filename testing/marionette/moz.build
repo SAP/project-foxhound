@@ -8,8 +8,15 @@ JAR_MANIFESTS += ["jar.mn"]
 JS_PREFERENCE_FILES += ["prefs/marionette.js"]
 
 MARIONETTE_UNIT_MANIFESTS += ["harness/marionette_harness/tests/unit/unit-tests.ini"]
-MARIONETTE_WEBAPI_MANIFESTS += ["harness/marionette_harness/tests/webapi-tests.ini"]
-XPCSHELL_TESTS_MANIFESTS += ["unit.ini"]
+XPCSHELL_TESTS_MANIFESTS += ["test/unit/xpcshell.ini"]
 
 with Files("**"):
     BUG_COMPONENT = ("Testing", "Marionette")
+
+with Files("harness/**"):
+    SCHEDULES.exclusive = ["marionette", "firefox-ui"]
+
+SPHINX_TREES["marionette"] = "doc"
+
+with Files('doc/**'):
+    SCHEDULES.exclusive = ['docs']

@@ -8,17 +8,17 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_VIDEO_CODING_CODEC_DATABASE_H_
-#define WEBRTC_MODULES_VIDEO_CODING_CODEC_DATABASE_H_
+#ifndef MODULES_VIDEO_CODING_CODEC_DATABASE_H_
+#define MODULES_VIDEO_CODING_CODEC_DATABASE_H_
 
 #include <map>
+#include <memory>
 
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/modules/video_coding/include/video_codec_interface.h"
-#include "webrtc/modules/video_coding/include/video_coding.h"
-#include "webrtc/modules/video_coding/generic_decoder.h"
-#include "webrtc/modules/video_coding/generic_encoder.h"
-#include "webrtc/typedefs.h"
+#include "modules/video_coding/include/video_codec_interface.h"
+#include "modules/video_coding/include/video_coding.h"
+#include "modules/video_coding/generic_decoder.h"
+#include "modules/video_coding/generic_encoder.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -28,7 +28,7 @@ struct VCMDecoderMapItem {
                     int number_of_cores,
                     bool require_key_frame);
 
-  rtc::scoped_ptr<VideoCodec> settings;
+  std::unique_ptr<VideoCodec> settings;
   int number_of_cores;
   bool require_key_frame;
 };
@@ -44,13 +44,8 @@ struct VCMExtDecoderMapItem {
 
 class VCMCodecDataBase {
  public:
-  VCMCodecDataBase(VideoEncoderRateObserver* encoder_rate_observer,
-                   VCMEncodedFrameCallback* encoded_frame_callback);
+  explicit VCMCodecDataBase(VCMEncodedFrameCallback* encoded_frame_callback);
   ~VCMCodecDataBase();
-
-  // Sender Side
-  // Returns the default settings for the codec with type |codec_type|.
-  static void Codec(VideoCodecType codec_type, VideoCodec* settings);
 
   // Sets the sender side codec and initiates the desired codec given the
   // VideoCodec struct.
@@ -99,12 +94,6 @@ class VCMCodecDataBase {
 
   bool DeregisterReceiveCodec(uint8_t payload_type);
 
-  // Get current receive side codec. Relevant for internal codecs only.
-  bool ReceiveCodec(VideoCodec* current_receive_codec) const;
-
-  // Get current receive side codec type. Relevant for internal codecs only.
-  VideoCodecType ReceiveCodec() const;
-
   // Returns a decoder specified by |payload_type|. The decoded frame callback
   // of the encoder is set to |decoded_frame_callback|. If no such decoder
   // already exists an instance will be created and initialized.
@@ -114,9 +103,9 @@ class VCMCodecDataBase {
       const VCMEncodedFrame& frame,
       VCMDecodedFrameCallback* decoded_frame_callback);
 
-  // Deletes the memory of the decoder instance |decoder|. Used to delete
-  // deep copies returned by CreateDecoderCopy().
-  void ReleaseDecoder(VCMGenericDecoder* decoder) const;
+  // Returns the current decoder (i.e. the same value as was last returned from
+  // GetDecoder();
+  VCMGenericDecoder* GetCurrentDecoder();
 
   // Returns true if the currently active decoder prefer to decode frames late.
   // That means that frames must be decoded near the render times stamp.
@@ -128,17 +117,15 @@ class VCMCodecDataBase {
   typedef std::map<uint8_t, VCMDecoderMapItem*> DecoderMap;
   typedef std::map<uint8_t, VCMExtDecoderMapItem*> ExternalDecoderMap;
 
-  VCMGenericDecoder* CreateAndInitDecoder(const VCMEncodedFrame& frame,
-                                          VideoCodec* new_codec) const;
+  std::unique_ptr<VCMGenericDecoder> CreateAndInitDecoder(
+      const VCMEncodedFrame& frame,
+      VideoCodec* new_codec) const;
 
   // Determines whether a new codec has to be created or not.
   // Checks every setting apart from maxFramerate and startBitrate.
   bool RequiresEncoderReset(const VideoCodec& send_codec);
 
   void DeleteEncoder();
-
-  // Create an internal Decoder given a codec type
-  VCMGenericDecoder* CreateDecoder(VideoCodecType type) const;
 
   const VCMDecoderMapItem* FindDecoderItem(uint8_t payload_type) const;
 
@@ -154,14 +141,13 @@ class VCMCodecDataBase {
   uint8_t encoder_payload_type_;
   VideoEncoder* external_encoder_;
   bool internal_source_;
-  VideoEncoderRateObserver* const encoder_rate_observer_;
   VCMEncodedFrameCallback* const encoded_frame_callback_;
-  rtc::scoped_ptr<VCMGenericEncoder> ptr_encoder_;
-  VCMGenericDecoder* ptr_decoder_;
+  std::unique_ptr<VCMGenericEncoder> ptr_encoder_;
+  std::unique_ptr<VCMGenericDecoder> ptr_decoder_;
   DecoderMap dec_map_;
   ExternalDecoderMap dec_external_map_;
 };  // VCMCodecDataBase
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_VIDEO_CODING_CODEC_DATABASE_H_
+#endif  // MODULES_VIDEO_CODING_CODEC_DATABASE_H_

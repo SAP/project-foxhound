@@ -21,14 +21,21 @@ if [ "$QEMU" != "" ]; then
     # image is .gz : download and uncompress it
     qemufile=$(echo ${QEMU%.gz} | sed 's/\//__/g')
     if [ ! -f $tmpdir/$qemufile ]; then
-      curl https://s3.amazonaws.com/rust-lang-ci/libc/$QEMU | \
+      curl https://s3-us-west-1.amazonaws.com/rust-lang-ci2/libc/$QEMU | \
         gunzip -d > $tmpdir/$qemufile
+    fi
+  elif [ -z "${QEMU#*.xz}" ]; then
+    # image is .xz : download and uncompress it
+    qemufile=$(echo ${QEMU%.xz} | sed 's/\//__/g')
+    if [ ! -f $tmpdir/$qemufile ]; then
+      curl https://s3-us-west-1.amazonaws.com/rust-lang-ci2/libc/$QEMU | \
+        unxz > $tmpdir/$qemufile
     fi
   else
     # plain qcow2 image: just download it
     qemufile=$(echo ${QEMU} | sed 's/\//__/g')
     if [ ! -f $tmpdir/$qemufile ]; then
-      curl https://s3.amazonaws.com/rust-lang-ci/libc/$QEMU \
+      curl https://s3-us-west-1.amazonaws.com/rust-lang-ci2/libc/$QEMU \
         > $tmpdir/$qemufile
     fi
   fi
@@ -39,36 +46,15 @@ if [ "$QEMU" != "" ]; then
   rm -f $tmpdir/libc-test.img
   mkdir $tmpdir/mount
 
-  # If we have a cross compiler, then we just do the standard rigamarole of
-  # cross-compiling an executable and then the script to run just executes the
-  # binary.
-  #
-  # If we don't have a cross-compiler, however, then we need to do some crazy
-  # acrobatics to get this to work.  Generate all.{c,rs} on the host which will
-  # be compiled inside QEMU. Do this here because compiling syntex_syntax in
-  # QEMU would time out basically everywhere.
-  if [ "$CAN_CROSS" = "1" ]; then
-    cargo build --manifest-path libc-test/Cargo.toml --target $TARGET
-    cp $CARGO_TARGET_DIR/$TARGET/debug/libc-test $tmpdir/mount/
-    echo 'exec $1/libc-test' > $tmpdir/mount/run.sh
-  else
-    rm -rf $tmpdir/generated
-    mkdir -p $tmpdir/generated
-    cargo build --manifest-path libc-test/generate-files/Cargo.toml
-    (cd libc-test && TARGET=$TARGET OUT_DIR=$tmpdir/generated SKIP_COMPILE=1 \
-      $CARGO_TARGET_DIR/debug/generate-files)
-
-    # Copy this folder into the mounted image, the `run.sh` entry point, and
-    # overwrite the standard libc-test Cargo.toml with the overlay one which will
-    # assume the all.{c,rs} test files have already been generated
-    mkdir $tmpdir/mount/libc
-    cp -r Cargo.* libc-test src ci $tmpdir/mount/libc/
-    ln -s libc-test/target $tmpdir/mount/libc/target
-    cp ci/run-qemu.sh $tmpdir/mount/run.sh
-    echo $TARGET | tee -a $tmpdir/mount/TARGET
-    cp $tmpdir/generated/* $tmpdir/mount/libc/libc-test
-    cp libc-test/run-generated-Cargo.toml $tmpdir/mount/libc/libc-test/Cargo.toml
-  fi
+  # Do the standard rigamarole of cross-compiling an executable and then the
+  # script to run just executes the binary.
+  cargo build \
+    --manifest-path libc-test/Cargo.toml \
+    --target $TARGET \
+    --test main
+  rm $CARGO_TARGET_DIR/$TARGET/debug/main-*.d
+  cp $CARGO_TARGET_DIR/$TARGET/debug/main-* $tmpdir/mount/libc-test
+  echo 'exec $1/libc-test' > $tmpdir/mount/run.sh
 
   du -sh $tmpdir/mount
   genext2fs \
@@ -93,68 +79,20 @@ if [ "$QEMU" != "" ]; then
   exec grep "^PASSED .* tests" $CARGO_TARGET_DIR/out.log
 fi
 
-case "$TARGET" in
-  *-apple-ios)
-    cargo rustc --manifest-path libc-test/Cargo.toml --target $TARGET -- \
-        -C link-args=-mios-simulator-version-min=7.0
-    ;;
+# FIXME: x86_64-unknown-linux-gnux32 fail to compile without --release
+# See https://github.com/rust-lang/rust/issues/45417
+opt=
+if [ "$TARGET" = "x86_64-unknown-linux-gnux32" ]; then
+  opt="--release"
+fi
 
-  *)
-    cargo build --manifest-path libc-test/Cargo.toml --target $TARGET
-    ;;
-esac
-
-case "$TARGET" in
-  arm-linux-androideabi)
-    emulator @arm-21 -no-window &
-    adb wait-for-device
-    adb push $CARGO_TARGET_DIR/$TARGET/debug/libc-test /data/libc-test
-    adb shell /data/libc-test 2>&1 | tee /tmp/out
-    grep "^PASSED .* tests" /tmp/out
-    ;;
-
-  arm-unknown-linux-gnueabihf)
-    qemu-arm -L /usr/arm-linux-gnueabihf $CARGO_TARGET_DIR/$TARGET/debug/libc-test
-    ;;
-
-  mips-unknown-linux-gnu)
-    qemu-mips -L /usr/mips-linux-gnu $CARGO_TARGET_DIR/$TARGET/debug/libc-test
-    ;;
-
-  mips64-unknown-linux-gnuabi64)
-    qemu-mips64 -L /usr/mips64-linux-gnuabi64 $CARGO_TARGET_DIR/$TARGET/debug/libc-test
-    ;;
-
-  mips-unknown-linux-musl)
-    qemu-mips -L /toolchain/staging_dir/toolchain-mips_34kc_gcc-5.3.0_musl-1.1.15 \
-              $CARGO_TARGET_DIR/$TARGET/debug/libc-test
-    ;;
-
-  mipsel-unknown-linux-musl)
-      qemu-mipsel -L /toolchain $CARGO_TARGET_DIR/$TARGET/debug/libc-test
-      ;;
-
-  powerpc-unknown-linux-gnu)
-    qemu-ppc -L /usr/powerpc-linux-gnu $CARGO_TARGET_DIR/$TARGET/debug/libc-test
-    ;;
-
-  powerpc64-unknown-linux-gnu)
-    qemu-ppc64 -L /usr/powerpc64-linux-gnu $CARGO_TARGET_DIR/$TARGET/debug/libc-test
-    ;;
-
-  aarch64-unknown-linux-gnu)
-    qemu-aarch64 -L /usr/aarch64-linux-gnu/ $CARGO_TARGET_DIR/$TARGET/debug/libc-test
-    ;;
-
-  *-rumprun-netbsd)
-    rumprun-bake hw_virtio /tmp/libc-test.img $CARGO_TARGET_DIR/$TARGET/debug/libc-test
-    qemu-system-x86_64 -nographic -vga none -m 64 \
-        -kernel /tmp/libc-test.img 2>&1 | tee /tmp/out &
-    sleep 5
-    grep "^PASSED .* tests" /tmp/out
-    ;;
-
-  *)
-    $CARGO_TARGET_DIR/$TARGET/debug/libc-test
-    ;;
-esac
+# Building with --no-default-features is currently broken on rumprun because we
+# need cfg(target_vendor), which is currently unstable.
+if [ "$TARGET" != "x86_64-rumprun-netbsd" ]; then
+  cargo test $opt --no-default-features --manifest-path libc-test/Cargo.toml --target $TARGET
+fi
+# Test the #[repr(align(x))] feature if this is building on Rust >= 1.25
+if [ $(rustc --version | sed -E 's/^rustc 1\.([0-9]*)\..*/\1/') -ge 25 ]; then
+  cargo test $opt --features align --manifest-path libc-test/Cargo.toml --target $TARGET
+fi
+exec cargo test $opt --manifest-path libc-test/Cargo.toml --target $TARGET

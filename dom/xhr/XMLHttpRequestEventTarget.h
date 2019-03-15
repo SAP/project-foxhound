@@ -8,30 +8,23 @@
 #define mozilla_dom_XMLHttpRequestEventTarget_h
 
 #include "mozilla/DOMEventTargetHelper.h"
-#include "nsIXMLHttpRequest.h"
 
 namespace mozilla {
 namespace dom {
 
-class XMLHttpRequestEventTarget : public DOMEventTargetHelper,
-                                  public nsIXMLHttpRequestEventTarget
-{
-protected:
+class XMLHttpRequestEventTarget : public DOMEventTargetHelper {
+ protected:
   explicit XMLHttpRequestEventTarget(DOMEventTargetHelper* aOwner)
-    : DOMEventTargetHelper(aOwner)
-  {}
+      : DOMEventTargetHelper(aOwner) {}
 
-  XMLHttpRequestEventTarget()
-  {}
+  XMLHttpRequestEventTarget() {}
 
   virtual ~XMLHttpRequestEventTarget() {}
 
-public:
+ public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(XMLHttpRequestEventTarget,
                                            DOMEventTargetHelper)
-  NS_DECL_NSIXMLHTTPREQUESTEVENTTARGET
-  NS_REALLY_FORWARD_NSIDOMEVENTTARGET(DOMEventTargetHelper)
 
   IMPL_EVENT_HANDLER(loadstart)
   IMPL_EVENT_HANDLER(progress)
@@ -41,15 +34,12 @@ public:
   IMPL_EVENT_HANDLER(timeout)
   IMPL_EVENT_HANDLER(loadend)
 
-  nsISupports* GetParentObject() const
-  {
-    return GetOwner();
-  }
+  nsISupports* GetParentObject() const { return GetOwner(); }
 
   virtual void DisconnectFromOwner() override;
 };
 
-} // dom namespace
-} // mozilla namespace
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_XMLHttpRequestEventTarget_h
+#endif  // mozilla_dom_XMLHttpRequestEventTarget_h

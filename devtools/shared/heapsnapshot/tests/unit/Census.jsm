@@ -2,9 +2,11 @@
 // Debugger.Memory.prototype.takeCensus and
 // HeapSnapshot.prototype.takeCensus. Adapted from js/src/jit-test/lib/census.js.
 
+"use strict";
+
 this.EXPORTED_SYMBOLS = ["Census"];
 
-this.Census = (function () {
+this.Census = (function() {
   const Census = {};
 
   function dumpn(msg) {
@@ -35,7 +37,7 @@ this.Census = (function () {
   function walk(subject, name, walker, count) {
     if (typeof subject === "object") {
       dumpn(name);
-      for (let prop in subject) {
+      for (const prop in subject) {
         count = walk(subject[prop],
                      name + "[" + uneval(prop) + "]",
                      walker.enter(prop),
@@ -55,14 +57,18 @@ this.Census = (function () {
   Census.walkAnything = {
     enter: () => Census.walkAnything,
     done: () => undefined,
-    check: () => undefined
+    check: () => undefined,
   };
 
   // A walker that requires all leaves to be zeros.
   Census.assertAllZeros = {
     enter: () => Census.assertAllZeros,
     done: () => undefined,
-    check: elt => { if (elt !== 0) throw new Error("Census mismatch: expected zero, found " + elt); }
+    check: elt => {
+      if (elt !== 0) {
+        throw new Error("Census mismatch: expected zero, found " + elt);
+      }
+    },
   };
 
   function expectedObject() {
@@ -89,27 +95,27 @@ this.Census = (function () {
   function makeBasisChecker({compare, missing, extra}) {
     return function makeWalker(basis) {
       if (typeof basis === "object") {
-        var unvisited = new Set(Object.getOwnPropertyNames(basis));
+        const unvisited = new Set(Object.getOwnPropertyNames(basis));
         return {
           enter: prop => {
             unvisited.delete(prop);
             if (prop in basis) {
               return makeWalker(basis[prop]);
-            } else {
-              return extra(prop);
             }
+
+            return extra(prop);
           },
 
           done: () => unvisited.forEach(prop => missing(prop, basis[prop])),
-          check: expectedObject
-        };
-      } else {
-        return {
-          enter: expectedLeaf,
-          done: expectedLeaf,
-          check: elt => compare(elt, basis)
+          check: expectedObject,
         };
       }
+
+      return {
+        enter: expectedLeaf,
+        done: expectedLeaf,
+        check: elt => compare(elt, basis),
+      };
     };
   }
 
@@ -118,15 +124,20 @@ this.Census = (function () {
   }
 
   function extraProp(prop) {
-    throw new Error("Census mismatch: subject has property not present in basis: " + prop);
+    throw new Error("Census mismatch: subject has property not present in basis: "
+      + prop);
   }
 
   // Return a walker that checks that the subject census has counts all equal to
   // |basis|.
   Census.assertAllEqual = makeBasisChecker({
-    compare: (a, b) => { if (a !== b) throw new Error("Census mismatch: expected " + a + " got " + b);},
+    compare: (a, b) => {
+      if (a !== b) {
+        throw new Error("Census mismatch: expected " + a + " got " + b);
+      }
+    },
     missing: missingProp,
-    extra: extraProp
+    extra: extraProp,
   });
 
   function ok(val) {
@@ -140,7 +151,7 @@ this.Census = (function () {
   Census.assertAllNotLessThan = makeBasisChecker({
     compare: (subject, basis) => ok(subject >= basis),
     missing: missingProp,
-    extra: () => Census.walkAnything
+    extra: () => Census.walkAnything,
   });
 
   // Return a walker that checks that the subject census has at most as many
@@ -148,16 +159,16 @@ this.Census = (function () {
   Census.assertAllNotMoreThan = makeBasisChecker({
     compare: (subject, basis) => ok(subject <= basis),
     missing: missingProp,
-    extra: () => Census.walkAnything
+    extra: () => Census.walkAnything,
   });
 
   // Return a walker that checks that the subject census has within |fudge|
   // items of each category of the count in |basis|.
-  Census.assertAllWithin = function (fudge, basis) {
+  Census.assertAllWithin = function(fudge, basis) {
     return makeBasisChecker({
-      compare: (subject, basis) => ok(Math.abs(subject - basis) <= fudge),
+      compare: (subject, base) => ok(Math.abs(subject - base) <= fudge),
       missing: missingProp,
-      extra: () => Census.walkAnything
+      extra: () => Census.walkAnything,
     })(basis);
   };
 

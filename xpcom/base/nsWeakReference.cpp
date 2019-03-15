@@ -12,25 +12,8 @@
 #include "nsCOMPtr.h"
 #include "nsDebug.h"
 
-#ifdef MOZ_THREAD_SAFETY_OWNERSHIP_CHECKS_SUPPORTED
-
-#define MOZ_WEAKREF_DECL_OWNINGTHREAD nsAutoOwningThread _mWeakRefOwningThread;
-#define MOZ_WEAKREF_ASSERT_OWNINGTHREAD \
-  NS_CheckThreadSafe(_mWeakRefOwningThread.GetThread(), "nsWeakReference not thread-safe")
-#define MOZ_WEAKREF_ASSERT_OWNINGTHREAD_DELEGATED(that) \
-  NS_CheckThreadSafe((that)->_mWeakRefOwningThread.GetThread(), "nsWeakReference not thread-safe")
-
-#else
-
-#define MOZ_WEAKREF_DECL_OWNINGTHREAD
-#define MOZ_WEAKREF_ASSERT_OWNINGTHREAD do { } while (false)
-#define MOZ_WEAKREF_ASSERT_OWNINGTHREAD_DELEGATED(that) do { } while (false)
-
-#endif
-
-class nsWeakReference final : public nsIWeakReference
-{
-public:
+class nsWeakReference final : public nsIWeakReference {
+ public:
   // nsISupports...
   NS_DECL_ISUPPORTS
 
@@ -38,40 +21,32 @@ public:
   NS_DECL_NSIWEAKREFERENCE
   size_t SizeOfOnlyThis(mozilla::MallocSizeOf aMallocSizeOf) const override;
 
-private:
-  MOZ_WEAKREF_DECL_OWNINGTHREAD
-
+ private:
   friend class nsSupportsWeakReference;
 
   explicit nsWeakReference(nsSupportsWeakReference* aReferent)
-    : mReferent(aReferent)
-    // ...I can only be constructed by an |nsSupportsWeakReference|
-  {
-  }
+      : nsIWeakReference(aReferent)
+  // ...I can only be constructed by an |nsSupportsWeakReference|
+  {}
 
   ~nsWeakReference()
   // ...I will only be destroyed by calling |delete| myself.
   {
     MOZ_WEAKREF_ASSERT_OWNINGTHREAD;
-    if (mReferent) {
-      mReferent->NoticeProxyDestruction();
+    if (mObject) {
+      static_cast<nsSupportsWeakReference*>(mObject)->NoticeProxyDestruction();
     }
   }
 
-  void
-  NoticeReferentDestruction()
+  void NoticeReferentDestruction()
   // ...called (only) by an |nsSupportsWeakReference| from _its_ dtor.
   {
     MOZ_WEAKREF_ASSERT_OWNINGTHREAD;
-    mReferent = nullptr;
+    mObject = nullptr;
   }
-
-  nsSupportsWeakReference* MOZ_NON_OWNING_REF mReferent;
 };
 
-nsresult
-nsQueryReferent::operator()(const nsIID& aIID, void** aAnswer) const
-{
+nsresult nsQueryReferent::operator()(const nsIID& aIID, void** aAnswer) const {
   nsresult status;
   if (mWeakPtr) {
     if (NS_FAILED(status = mWeakPtr->QueryReferent(aIID, aAnswer))) {
@@ -87,16 +62,34 @@ nsQueryReferent::operator()(const nsIID& aIID, void** aAnswer) const
   return status;
 }
 
+nsIWeakReference* NS_GetWeakReference(nsISupportsWeakReference* aInstancePtr,
+                                      nsresult* aErrorPtr) {
+  nsresult status;
+
+  nsIWeakReference* result = nullptr;
+
+  if (aInstancePtr) {
+    status = aInstancePtr->GetWeakReference(&result);
+  } else {
+    status = NS_ERROR_NULL_POINTER;
+  }
+
+  if (aErrorPtr) {
+    *aErrorPtr = status;
+  }
+
+  return result;
+}
+
 nsIWeakReference*  // or else |already_AddRefed<nsIWeakReference>|
-NS_GetWeakReference(nsISupports* aInstancePtr, nsresult* aErrorPtr)
-{
+NS_GetWeakReference(nsISupports* aInstancePtr, nsresult* aErrorPtr) {
   nsresult status;
 
   nsIWeakReference* result = nullptr;
 
   if (aInstancePtr) {
     nsCOMPtr<nsISupportsWeakReference> factoryPtr =
-      do_QueryInterface(aInstancePtr, &status);
+        do_QueryInterface(aInstancePtr, &status);
     if (factoryPtr) {
       status = factoryPtr->GetWeakReference(&result);
     }
@@ -111,9 +104,8 @@ NS_GetWeakReference(nsISupports* aInstancePtr, nsresult* aErrorPtr)
   return result;
 }
 
-nsresult
-nsSupportsWeakReference::GetWeakReference(nsIWeakReference** aInstancePtr)
-{
+nsresult nsSupportsWeakReference::GetWeakReference(
+    nsIWeakReference** aInstancePtr) {
   if (!aInstancePtr) {
     return NS_ERROR_NULL_POINTER;
   }
@@ -139,26 +131,30 @@ nsSupportsWeakReference::GetWeakReference(nsIWeakReference** aInstancePtr)
 NS_IMPL_ISUPPORTS(nsWeakReference, nsIWeakReference)
 
 NS_IMETHODIMP
-nsWeakReference::QueryReferent(const nsIID& aIID, void** aInstancePtr)
-{
-  MOZ_WEAKREF_ASSERT_OWNINGTHREAD;
-
-  return mReferent ? mReferent->QueryInterface(aIID, aInstancePtr) :
-                     NS_ERROR_NULL_POINTER;
+nsWeakReference::QueryReferentFromScript(const nsIID& aIID,
+                                         void** aInstancePtr) {
+  return QueryReferent(aIID, aInstancePtr);
 }
 
-size_t
-nsWeakReference::SizeOfOnlyThis(mozilla::MallocSizeOf aMallocSizeOf) const
-{
+nsresult nsIWeakReference::QueryReferent(const nsIID& aIID,
+                                         void** aInstancePtr) {
+  MOZ_WEAKREF_ASSERT_OWNINGTHREAD;
+
+  if (!mObject) {
+    return NS_ERROR_NULL_POINTER;
+  }
+
+  return mObject->QueryInterface(aIID, aInstancePtr);
+}
+
+size_t nsWeakReference::SizeOfOnlyThis(
+    mozilla::MallocSizeOf aMallocSizeOf) const {
   return aMallocSizeOf(this);
 }
 
-void
-nsSupportsWeakReference::ClearWeakReferences()
-{
+void nsSupportsWeakReference::ClearWeakReferences() {
   if (mProxy) {
     mProxy->NoticeReferentDestruction();
     mProxy = nullptr;
   }
 }
-

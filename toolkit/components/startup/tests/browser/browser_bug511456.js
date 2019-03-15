@@ -16,7 +16,7 @@ function test() {
   let win2 = window.openDialog(location, "", "chrome,all,dialog=no", "about:blank");
   win2.addEventListener("load", function() {
     // Create background test tab
-    let browser = gBrowser.addTab(TEST_URL).linkedBrowser;
+    let browser = BrowserTestUtils.addTab(gBrowser, TEST_URL).linkedBrowser;
 
     whenBrowserLoaded(browser, function() {
       let seenDialog = false;
@@ -28,9 +28,7 @@ function test() {
         btnStay.click();
       });
 
-      let appStartup = Cc["@mozilla.org/toolkit/app-startup;1"].
-                         getService(Ci.nsIAppStartup);
-      appStartup.quit(Ci.nsIAppStartup.eAttemptQuit);
+      Services.startup.quit(Ci.nsIAppStartup.eAttemptQuit);
       ok(seenDialog, "Should have seen a prompt dialog");
       ok(!win2.closed, "Shouldn't have closed the additional window");
       win2.close();

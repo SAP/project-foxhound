@@ -8,14 +8,14 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_coding/neteq/rtcp.h"
+#include "modules/audio_coding/neteq/rtcp.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #include <algorithm>
 
-#include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
-#include "webrtc/modules/include/module_common_types.h"
+#include "modules/include/module_common_types.h"
 
 namespace webrtc {
 
@@ -46,34 +46,34 @@ void Rtcp::Update(const RTPHeader& rtp_header, uint32_t receive_timestamp) {
   // Note that the value in |jitter_| is in Q4.
   if (received_packets_ > 1) {
     int32_t ts_diff = receive_timestamp - (rtp_header.timestamp - transit_);
-    ts_diff = WEBRTC_SPL_ABS_W32(ts_diff);
-    int32_t jitter_diff = (ts_diff << 4) - jitter_;
+    int64_t jitter_diff = (std::abs(int64_t{ts_diff}) << 4) - jitter_;
     // Calculate 15 * jitter_ / 16 + jitter_diff / 16 (with proper rounding).
     jitter_ = jitter_ + ((jitter_diff + 8) >> 4);
+    RTC_DCHECK_GE(jitter_, 0);
   }
   transit_ = rtp_header.timestamp - receive_timestamp;
 }
 
 void Rtcp::GetStatistics(bool no_reset, RtcpStatistics* stats) {
   // Extended highest sequence number received.
-  stats->extended_max_sequence_number =
+  stats->extended_highest_sequence_number =
       (static_cast<int>(cycles_) << 16) + max_seq_no_;
 
   // Calculate expected number of packets and compare it with the number of
   // packets that were actually received. The cumulative number of lost packets
   // can be extracted.
   uint32_t expected_packets =
-      stats->extended_max_sequence_number - base_seq_no_ + 1;
+      stats->extended_highest_sequence_number - base_seq_no_ + 1;
   if (received_packets_ == 0) {
     // No packets received, assume none lost.
-    stats->cumulative_lost = 0;
+    stats->packets_lost = 0;
   } else if (expected_packets > received_packets_) {
-    stats->cumulative_lost = expected_packets - received_packets_;
-    if (stats->cumulative_lost > 0xFFFFFF) {
-      stats->cumulative_lost = 0xFFFFFF;
+    stats->packets_lost = expected_packets - received_packets_;
+    if (stats->packets_lost > 0xFFFFFF) {
+      stats->packets_lost = 0xFFFFFF;
     }
   } else {
-    stats->cumulative_lost = 0;
+    stats->packets_lost = 0;
   }
 
   // Fraction lost since last report.

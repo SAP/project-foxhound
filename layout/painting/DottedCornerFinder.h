@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -41,25 +42,19 @@ namespace mozilla {
 // +----+----+
 //     C_n
 
-class DottedCornerFinder
-{
+class DottedCornerFinder {
   typedef mozilla::gfx::Bezier Bezier;
   typedef mozilla::gfx::Float Float;
   typedef mozilla::gfx::Point Point;
   typedef mozilla::gfx::Size Size;
 
-public:
-  struct Result
-  {
+ public:
+  struct Result {
     // Center point of dot and its radius.
     Point C;
     Float r;
 
-    Result(const Point& aC, Float aR)
-     : C(aC), r(aR)
-    {
-      MOZ_ASSERT(aR >= 0);
-    }
+    Result(const Point& aC, Float aR) : C(aC), r(aR) { MOZ_ASSERT(aR >= 0); }
   };
 
   //                        aBorderRadiusX
@@ -116,15 +111,14 @@ public:
   //                                      |<------->|
   //                                          aRn
   DottedCornerFinder(const Bezier& aOuterBezier, const Bezier& aInnerBezier,
-                     mozilla::Corner aCorner,
-                     Float aBorderRadiusX, Float aBorderRadiusY,
-                     const Point& aC0, Float aR0, const Point& aCn, Float aRn,
-                     const Size& aCornerDim);
+                     mozilla::Corner aCorner, Float aBorderRadiusX,
+                     Float aBorderRadiusY, const Point& aC0, Float aR0,
+                     const Point& aCn, Float aRn, const Size& aCornerDim);
 
   bool HasMore(void) const;
   Result Next(void);
 
-private:
+ private:
   static const size_t MAX_LOOP = 32;
 
   // Bezier control points for the outer curve, the inner curve, and a curve
@@ -424,15 +418,15 @@ private:
   Float FindNext(Float overlap);
 
   // Find mBestOverlap for parameters.
-  void FindBestOverlap(Float aMinR,
-                       Float aMinBorderRadius, Float aMaxBorderRadius);
+  void FindBestOverlap(Float aMinR, Float aMinBorderRadius,
+                       Float aMaxBorderRadius);
 
   // Fill corner with dots with given overlap, and return the number of dots
   // and last two dots's overlap.
-  bool GetCountAndLastOverlap(Float aOverlap,
-                              size_t* aCount, Float* aActualOverlap);
+  bool GetCountAndLastOverlap(Float aOverlap, size_t* aCount,
+                              Float* aActualOverlap);
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif /* mozilla_DottedCornerFinder_h_ */

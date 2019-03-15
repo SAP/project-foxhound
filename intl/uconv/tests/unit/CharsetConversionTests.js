@@ -1,5 +1,3 @@
-var Ci = Components.interfaces;
-var Cc = Components.classes;
 var CC = Components.Constructor;
 
 function CreateScriptableConverter()
@@ -36,7 +34,7 @@ function checkDecode(converter, charset, inText, expectedText)
           }
       }
   }
-  do_check_eq(outText, expectedText);
+  Assert.equal(outText, expectedText);
 }
 
 function checkEncode(converter, charset, inText, expectedText)
@@ -60,7 +58,7 @@ function checkEncode(converter, charset, inText, expectedText)
           }
       }
   }
-  do_check_eq(outText, expectedText);
+  Assert.equal(outText, expectedText);
 }
 
 function testDecodeAliases()

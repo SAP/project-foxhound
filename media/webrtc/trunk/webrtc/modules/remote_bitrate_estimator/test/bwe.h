@@ -8,18 +8,19 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_REMOTE_BITRATE_ESTIMATOR_TEST_BWE_H_
-#define WEBRTC_MODULES_REMOTE_BITRATE_ESTIMATOR_TEST_BWE_H_
+#ifndef MODULES_REMOTE_BITRATE_ESTIMATOR_TEST_BWE_H_
+#define MODULES_REMOTE_BITRATE_ESTIMATOR_TEST_BWE_H_
 
 #include <list>
 #include <map>
 #include <sstream>
 #include <string>
 
-#include "webrtc/test/testsupport/gtest_prod_util.h"
-#include "webrtc/modules/remote_bitrate_estimator/test/packet.h"
-#include "webrtc/modules/bitrate_controller/include/bitrate_controller.h"
-#include "webrtc/modules/remote_bitrate_estimator/test/bwe_test_framework.h"
+#include "modules/bitrate_controller/include/bitrate_controller.h"
+#include "modules/remote_bitrate_estimator/test/bwe_test_framework.h"
+#include "modules/remote_bitrate_estimator/test/packet.h"
+#include "rtc_base/constructormagic.h"
+#include "rtc_base/gtest_prod_util.h"
 
 namespace webrtc {
 namespace testing {
@@ -108,8 +109,8 @@ class LinkedSet {
   std::list<PacketIdentifierNode*> list_;
 };
 
-const int kMinBitrateKbps = 50;
-const int kMaxBitrateKbps = 2500;
+const int kMinBitrateKbps = 10;
+const int kMaxBitrateKbps = 25000;
 
 class BweSender : public Module {
  public:
@@ -175,11 +176,12 @@ enum BandwidthEstimatorType {
   kNullEstimator,
   kNadaEstimator,
   kRembEstimator,
-  kFullSendSideEstimator,
-  kTcpEstimator
+  kSendSideEstimator,
+  kTcpEstimator,
+  kBbrEstimator
 };
 
-const std::string bwe_names[] = {"Null", "NADA", "REMB", "GCC", "TCP"};
+const char* const bwe_names[] = {"Null", "NADA", "REMB", "GCC", "TCP", "BBR"};
 
 int64_t GetAbsSendTimeInMs(uint32_t abs_send_time);
 
@@ -194,4 +196,4 @@ BweReceiver* CreateBweReceiver(BandwidthEstimatorType type,
 }  // namespace bwe
 }  // namespace testing
 }  // namespace webrtc
-#endif  // WEBRTC_MODULES_REMOTE_BITRATE_ESTIMATOR_TEST_BWE_H_
+#endif  // MODULES_REMOTE_BITRATE_ESTIMATOR_TEST_BWE_H_

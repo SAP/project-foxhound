@@ -20,7 +20,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=795275
   /** Test for Warning in content scopes about Components. **/
 
   SimpleTest.waitForExplicitFinish();
-  SimpleTest.executeSoon(startLoad);
+  SimpleTest.executeSoon(function() {
+    SpecialPowers.pushPrefEnv({set: [["dom.use_components_shim", true]]},
+			      startLoad)
+  });
   function startLoad() {
     for (var i = 1; i <= document.getElementsByTagName('iframe').length; ++i) {
       var frame = document.getElementById('frame' + i);
@@ -38,15 +41,15 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=795275
   var gListener = {
     observe: onWarning,
     QueryInterface: function (iid) {
-      if (!iid.equals(Components.interfaces.nsIConsoleListener) &&
-          !iid.equals(Components.interfaces.nsISupports)) {
-        throw Components.results.NS_ERROR_NO_INTERFACE;
+      if (!iid.equals(Ci.nsIConsoleListener) &&
+          !iid.equals(Ci.nsISupports)) {
+        throw Cr.NS_ERROR_NO_INTERFACE;
       }
       return this;
     }
   };
-  var gConsoleService = Components.classes["@mozilla.org/consoleservice;1"]
-                                  .getService(Components.interfaces.nsIConsoleService);
+  var gConsoleService = Cc["@mozilla.org/consoleservice;1"]
+                          .getService(Ci.nsIConsoleService);
   gConsoleService.registerListener(gListener);
 
   // Wait for all four child frame to load.
@@ -62,7 +65,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=795275
     getWin('frame2').touchInterfaces();
     getWin('frame4').touchComponents();
     getWin('frame4').touchInterfaces();
-    // This shouldn't warn.
+    // This should warn twice.
     getWin('frame5').touchViaXBL();
 
     // Warnings are dispatched async, so stick ourselves at the end of the event
@@ -72,7 +75,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=795275
 
   function done() {
     gConsoleService.unregisterListener(gListener);
-    is(gWarnings, 3, "Got the right number of warnings");
+    is(gWarnings, 5, "Got the right number of warnings");
     SimpleTest.finish();
   }
 

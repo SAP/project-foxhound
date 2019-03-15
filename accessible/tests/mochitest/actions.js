@@ -1,4 +1,4 @@
-////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////
 // Event constants
 
 const MOUSEDOWN_EVENT = 1;
@@ -10,7 +10,7 @@ const FOCUS_EVENT = 16;
 const CLICK_EVENTS = MOUSEDOWN_EVENT | MOUSEUP_EVENT | CLICK_EVENT;
 const XUL_EVENTS = CLICK_EVENTS | COMMAND_EVENT;
 
-////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////
 // Public functions
 
 /**
@@ -41,14 +41,13 @@ const XUL_EVENTS = CLICK_EVENTS | COMMAND_EVENT;
  *
  *    // [optional] an array of invoker's checker objects (see eventQueue
  *    // constructor events.js)
- *    get eventSeq() {} 
+ *    get eventSeq() {}
  *  };
  *
  *
  * @param  aArray [in] an array of action cheker objects
  */
-function testActions(aArray)
-{
+function testActions(aArray) {
   gActionsQueue = new eventQueue();
 
   for (var idx = 0; idx < aArray.length; idx++) {
@@ -61,20 +60,20 @@ function testActions(aArray)
     var accOrElmOrIDOfTarget = actionObj.targetID ?
       actionObj.targetID : accOrElmOrID;
 
-    var eventSeq = new Array();
+    var eventSeq = [];
     if (events) {
       var elm = getNode(accOrElmOrIDOfTarget);
       if (events & MOUSEDOWN_EVENT)
-        eventSeq.push(new checkerOfActionInvoker("mousedown", elm));
+        eventSeq.push(new checkerOfActionInvoker("mousedown", elm, actionObj));
 
       if (events & MOUSEUP_EVENT)
-        eventSeq.push(new checkerOfActionInvoker("mouseup", elm));
+        eventSeq.push(new checkerOfActionInvoker("mouseup", elm, actionObj));
 
       if (events & CLICK_EVENT)
         eventSeq.push(new checkerOfActionInvoker("click", elm, actionObj));
 
       if (events & COMMAND_EVENT)
-        eventSeq.push(new checkerOfActionInvoker("command", elm));
+        eventSeq.push(new checkerOfActionInvoker("command", elm, actionObj));
 
       if (events & FOCUS_EVENT)
         eventSeq.push(new focusChecker(elm));
@@ -94,8 +93,7 @@ function testActions(aArray)
 /**
  * Test action names and descriptions.
  */
-function testActionNames(aID, aActions)
-{
+function testActionNames(aID, aActions) {
   var actions = (typeof aActions == "string") ?
     [ aActions ] : (aActions || []);
 
@@ -108,15 +106,13 @@ function testActionNames(aID, aActions)
   }
 }
 
-////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////
 // Private
 
 var gActionsQueue = null;
 
-function actionInvoker(aAccOrElmOrId, aActionIndex, aActionName, aEventSeq)
-{
-  this.invoke = function actionInvoker_invoke()
-  {
+function actionInvoker(aAccOrElmOrId, aActionIndex, aActionName, aEventSeq) {
+  this.invoke = function actionInvoker_invoke() {
     var acc = getAccessible(aAccOrElmOrId);
     if (!acc)
       return INVOKER_ACTION_FAILED;
@@ -133,40 +129,39 @@ function actionInvoker(aAccOrElmOrId, aActionIndex, aActionName, aEventSeq)
 
     try {
       acc.doAction(aActionIndex);
-    }
-    catch (e){
+    } catch (e) {
       ok(false, "doAction(" + aActionIndex + ") failed with: " + e.name);
       return INVOKER_ACTION_FAILED;
     }
-  }
+  };
 
   this.eventSeq = aEventSeq;
 
-  this.getID = function actionInvoker_getID()
-  {
+  this.getID = function actionInvoker_getID() {
     return "invoke an action " + aActionName + " at index " + aActionIndex +
       " on " + prettyName(aAccOrElmOrId);
-  }
+  };
 }
 
-function checkerOfActionInvoker(aType, aTarget, aActionObj)
-{
+function checkerOfActionInvoker(aType, aTarget, aActionObj) {
   this.type = aType;
 
   this.target = aTarget;
 
+  if (aActionObj && "eventTarget" in aActionObj) {
+    this.eventTarget = aActionObj.eventTarget;
+  }
+
   this.phase = false;
 
-  this.getID = function getID()
-  {
+  this.getID = function getID() {
     return aType + " event handling";
-  }
+  };
 
-  this.check = function check(aEvent)
-  {
-    if (aActionObj && "checkOnClickEvent" in aActionObj)
+  this.check = function check(aEvent) {
+    if (aType == "click" && aActionObj && "checkOnClickEvent" in aActionObj)
       aActionObj.checkOnClickEvent(aEvent);
-  }
+  };
 }
 
 var gActionDescrMap =
@@ -183,5 +178,5 @@ var gActionDescrMap =
   collapse: "Collapse",
   expand: "Expand",
   activate: "Activate",
-  cycle: "Cycle"
+  cycle: "Cycle",
 };

@@ -17,9 +17,7 @@ class GrResourceKey;
 
 class GrStencilAttachment : public GrGpuResource {
 public:
-
-
-    virtual ~GrStencilAttachment() {
+    ~GrStencilAttachment() override {
         // TODO: allow SB to be purged and detach itself from rts
     }
 
@@ -27,24 +25,9 @@ public:
     int height() const { return fHeight; }
     int bits() const { return fBits; }
     int numSamples() const { return fSampleCnt; }
+    bool isDirty() const { return fIsDirty; }
 
-    // called to note the last clip drawn to this buffer.
-    void setLastClip(int32_t clipStackGenID,
-                     const SkIRect& clipSpaceRect,
-                     const SkIPoint clipOrigin) {
-        fLastClipStackGenID = clipStackGenID;
-        fLastClipStackRect = clipSpaceRect;
-        fLastClipOrigin = clipOrigin;
-    }
-
-    // called to determine if we have to render the clip into SB.
-    bool mustRenderClip(int32_t clipStackGenID,
-                        const SkIRect& clipSpaceRect,
-                        const SkIPoint& clipOrigin) const {
-        return fLastClipStackGenID != clipStackGenID ||
-               fLastClipOrigin != clipOrigin ||
-               !fLastClipStackRect.contains(clipSpaceRect);
-    }
+    void cleared() { fIsDirty = false; }
 
     // We create a unique stencil buffer at each width, height and sampleCnt and share it for
     // all render targets that require a stencil with those params.
@@ -53,25 +36,22 @@ public:
 
 protected:
     GrStencilAttachment(GrGpu* gpu, int width, int height, int bits, int sampleCnt)
-        : GrGpuResource(gpu)
-        , fWidth(width)
-        , fHeight(height)
-        , fBits(bits)
-        , fSampleCnt(sampleCnt)
-        , fLastClipStackGenID(SkClipStack::kInvalidGenID) {
-        fLastClipStackRect.setEmpty();
+            : INHERITED(gpu)
+            , fWidth(width)
+            , fHeight(height)
+            , fBits(bits)
+            , fSampleCnt(sampleCnt)
+            , fIsDirty(true) {
     }
 
 private:
+    const char* getResourceType() const override { return "Stencil"; }
 
     int fWidth;
     int fHeight;
     int fBits;
     int fSampleCnt;
-
-    int32_t     fLastClipStackGenID;
-    SkIRect     fLastClipStackRect;
-    SkIPoint    fLastClipOrigin;
+    bool fIsDirty;
 
     typedef GrGpuResource INHERITED;
 };

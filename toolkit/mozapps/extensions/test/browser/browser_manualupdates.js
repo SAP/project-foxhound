@@ -9,7 +9,7 @@ var gManagerWindow;
 var gCategoryUtilities;
 var gAvailableCategory;
 
-function test() {
+async function test() {
   waitForExplicitFinish();
 
   gProvider = new MockProvider();
@@ -18,20 +18,18 @@ function test() {
     id: "addon1@tests.mozilla.org",
     name: "auto updating addon",
     version: "1.0",
-    applyBackgroundUpdates: AddonManager.AUTOUPDATE_ENABLE
+    applyBackgroundUpdates: AddonManager.AUTOUPDATE_ENABLE,
   }]);
 
-  open_manager("addons://list/extension", function(aWindow) {
-    gManagerWindow = aWindow;
-    gCategoryUtilities = new CategoryUtilities(gManagerWindow);
-    run_next_test();
-  });
+  let aWindow = await open_manager("addons://list/extension");
+  gManagerWindow = aWindow;
+  gCategoryUtilities = new CategoryUtilities(gManagerWindow);
+  run_next_test();
 }
 
-function end_test() {
-  close_manager(gManagerWindow, function() {
-    finish();
-  });
+async function end_test() {
+  await close_manager(gManagerWindow);
+  finish();
 }
 
 
@@ -44,8 +42,9 @@ add_test(function() {
     name: "manually updating addon",
     version: "1.0",
     isCompatible: false,
+    operationsRequiringRestart: 0,
     blocklistState: Ci.nsIBlocklistService.STATE_BLOCKED,
-    applyBackgroundUpdates: AddonManager.AUTOUPDATE_DISABLE
+    applyBackgroundUpdates: AddonManager.AUTOUPDATE_DISABLE,
   }]);
 
   is(gCategoryUtilities.isVisible(gAvailableCategory), false, "Available Updates category should still be hidden");
@@ -54,7 +53,7 @@ add_test(function() {
 });
 
 
-add_test(function() {
+add_test(async function() {
   let finished = 0;
   function maybeRunNext() {
     if (++finished == 2)
@@ -67,34 +66,34 @@ add_test(function() {
     maybeRunNext();
   }, {once: true});
 
-  gCategoryUtilities.openType("extension", function() {
-    gProvider.createInstalls([{
-      name: "manually updating addon (new and improved!)",
-      existingAddon: gProvider.addons[1],
-      version: "1.1",
-      releaseNotesURI: Services.io.newURI(TESTROOT + "thereIsNoFileHere.xhtml")
-    }]);
+  await gCategoryUtilities.openType("extension");
+  gProvider.createInstalls([{
+    name: "manually updating addon (new and improved!)",
+    existingAddon: gProvider.addons[1],
+    version: "1.1",
+    releaseNotesURI: Services.io.newURI(TESTROOT + "thereIsNoFileHere.xhtml"),
+  }]);
 
-    var item = get_addon_element(gManagerWindow, "addon2@tests.mozilla.org");
-    get_tooltip_info(item).then(({ version }) => {
-      is(version, "1.0", "Should still show the old version in the tooltip");
-      maybeRunNext();
-    });
+  var item = get_addon_element(gManagerWindow, "addon2@tests.mozilla.org");
+  get_tooltip_info(item).then(({ version }) => {
+    is(version, "1.0", "Should still show the old version in the tooltip");
+    maybeRunNext();
   });
 });
 
 
-add_test(function() {
-  wait_for_view_load(gManagerWindow, function() {
-    is(gManagerWindow.document.getElementById("categories").selectedItem.value, "addons://updates/available", "Available Updates category should now be selected");
-    is(gManagerWindow.gViewController.currentViewId, "addons://updates/available", "Available Updates view should be the current view");
-    run_next_test();
-  }, true);
-  EventUtils.synthesizeMouseAtCenter(gAvailableCategory, { }, gManagerWindow);
+add_test(async function() {
+  Promise.resolve().then(() => {
+    EventUtils.synthesizeMouseAtCenter(gAvailableCategory, { }, gManagerWindow);
+  });
+  await wait_for_view_load(gManagerWindow, null, true);
+  is(gManagerWindow.document.getElementById("categories").selectedItem.value, "addons://updates/available", "Available Updates category should now be selected");
+  is(gManagerWindow.gViewController.currentViewId, "addons://updates/available", "Available Updates view should be the current view");
+  run_next_test();
 });
 
 
-add_test(function() {
+add_test(async function() {
   var list = gManagerWindow.document.getElementById("updates-list");
   is(list.itemCount, 1, "Should be 1 available update listed");
   var item = list.firstChild;
@@ -103,7 +102,8 @@ add_test(function() {
   // The item in the list will be checking for update information asynchronously
   // so we have to wait for it to complete. Doing the same async request should
   // make our callback be called later.
-  AddonManager.getAllInstalls(run_next_test);
+  await AddonManager.getAllInstalls();
+  run_next_test();
 });
 
 add_test(function() {
@@ -130,7 +130,7 @@ add_test(function() {
       item.addEventListener("RelNotesToggle", function() {
         info("Release notes now closed");
         info("Setting Release notes URI to something that should load");
-        gProvider.installs[0].releaseNotesURI = Services.io.newURI(TESTROOT + "releaseNotes.xhtml")
+        gProvider.installs[0].releaseNotesURI = Services.io.newURI(TESTROOT + "releaseNotes.xhtml");
 
         info("Re-opening release notes");
         item.addEventListener("RelNotesToggle", function() {
@@ -177,7 +177,7 @@ add_test(function() {
       info("Install started");
       is_element_visible(item._installStatus, "Install progress widget should be visible");
     },
-    onInstallEnded() {
+    onInstallEnded(...args) {
       install.removeTestListener(this);
       info("Install ended");
       is_element_hidden(item._installStatus, "Install progress widget should be hidden");
@@ -186,36 +186,33 @@ add_test(function() {
         run_next_test();
       else
         installCompleted = true;
-    }
+    },
   };
   install.addTestListener(listener);
   EventUtils.synthesizeMouseAtCenter(updateBtn, { }, gManagerWindow);
 });
 
 
-add_test(function() {
+add_test(async function() {
   is(gCategoryUtilities.isVisible(gAvailableCategory), true, "Available Updates category should still be visible");
   is(gAvailableCategory.badgeCount, 0, "Badge for Available Updates should now be 0");
 
-  gCategoryUtilities.openType("extension", function() {
-    is(gCategoryUtilities.isVisible(gAvailableCategory), false, "Available Updates category should be hidden");
+  await gCategoryUtilities.openType("extension");
+  is(gCategoryUtilities.isVisible(gAvailableCategory), false, "Available Updates category should be hidden");
 
-    close_manager(gManagerWindow, function() {
-      open_manager(null, function(aWindow) {
-        gManagerWindow = aWindow;
-        gCategoryUtilities = new CategoryUtilities(gManagerWindow);
-        gAvailableCategory = gManagerWindow.gCategories.get("addons://updates/available");
+  await close_manager(gManagerWindow);
+  let aWindow = await open_manager(null);
+  gManagerWindow = aWindow;
+  gCategoryUtilities = new CategoryUtilities(gManagerWindow);
+  gAvailableCategory = gManagerWindow.gCategories.get("addons://updates/available");
 
-        is(gCategoryUtilities.isVisible(gAvailableCategory), false, "Available Updates category should be hidden");
+  is(gCategoryUtilities.isVisible(gAvailableCategory), false, "Available Updates category should be hidden");
 
-        run_next_test();
-      });
-    });
-  });
+  run_next_test();
 });
 
 add_test(function() {
-  gAvailableCategory.addEventListener("CategoryBadgeUpdated", function() {
+  gAvailableCategory.addEventListener("CategoryBadgeUpdated", async function() {
     is(gCategoryUtilities.isVisible(gAvailableCategory), true, "Available Updates category should now be visible");
     is(gAvailableCategory.badgeCount, 1, "Badge for Available Updates should now be 1");
 
@@ -225,15 +222,14 @@ add_test(function() {
       run_next_test();
     }, {once: true});
 
-    AddonManager.getAddonByID("addon2@tests.mozilla.org", function(aAddon) {
-      aAddon.applyBackgroundUpdates = AddonManager.AUTOUPDATE_ENABLE;
-    });
+    let aAddon = await AddonManager.getAddonByID("addon2@tests.mozilla.org");
+    aAddon.applyBackgroundUpdates = AddonManager.AUTOUPDATE_ENABLE;
   }, {once: true});
 
   gProvider.createInstalls([{
     name: "manually updating addon (new and even more improved!)",
     existingAddon: gProvider.addons[1],
     version: "1.2",
-    releaseNotesURI: Services.io.newURI(TESTROOT + "thereIsNoFileHere.xhtml")
+    releaseNotesURI: Services.io.newURI(TESTROOT + "thereIsNoFileHere.xhtml"),
   }]);
 });

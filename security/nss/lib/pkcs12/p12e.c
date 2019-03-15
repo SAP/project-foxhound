@@ -397,18 +397,9 @@ SEC_PKCS12CreatePasswordPrivSafe(SEC_PKCS12ExportContext *p12ctxt,
     }
     safeInfo->arena = p12ctxt->arena;
 
-    if (sec_pkcs12_is_pkcs12_pbe_algorithm(privAlg)) {
-        /* convert the password to unicode */
-        if (!sec_pkcs12_convert_item_to_unicode(NULL, &uniPwitem, pwitem,
-                                                PR_TRUE, PR_TRUE, PR_TRUE)) {
-            PORT_SetError(SEC_ERROR_NO_MEMORY);
-            goto loser;
-        }
-    } else {
-        if (SECITEM_CopyItem(NULL, &uniPwitem, pwitem) != SECSuccess) {
-            PORT_SetError(SEC_ERROR_NO_MEMORY);
-            goto loser;
-        }
+    if (!sec_pkcs12_encode_password(NULL, &uniPwitem, privAlg, pwitem)) {
+        PORT_SetError(SEC_ERROR_NO_MEMORY);
+        goto loser;
     }
     if (SECITEM_CopyItem(p12ctxt->arena, &safeInfo->pwitem, &uniPwitem) != SECSuccess) {
         PORT_SetError(SEC_ERROR_NO_MEMORY);
@@ -893,7 +884,9 @@ sec_PKCS12AddAttributeToBag(SEC_PKCS12ExportContext *p12ctxt,
     unsigned int nItems = 0;
     SECStatus rv;
 
-    if (!safeBag || !p12ctxt) {
+    PORT_Assert(p12ctxt->arena == safeBag->arena);
+    if (!safeBag || !p12ctxt || p12ctxt->arena != safeBag->arena) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
         return SECFailure;
     }
 
@@ -1221,8 +1214,8 @@ SEC_PKCS12AddKeyForCert(SEC_PKCS12ExportContext *p12ctxt, SEC_PKCS12SafeInfo *sa
         SECKEYEncryptedPrivateKeyInfo *epki = NULL;
         PK11SlotInfo *slot = NULL;
 
-        if (!sec_pkcs12_convert_item_to_unicode(p12ctxt->arena, &uniPwitem,
-                                                pwitem, PR_TRUE, PR_TRUE, PR_TRUE)) {
+        if (!sec_pkcs12_encode_password(p12ctxt->arena, &uniPwitem, algorithm,
+                                        pwitem)) {
             PORT_SetError(SEC_ERROR_NO_MEMORY);
             goto loser;
         }
@@ -1598,6 +1591,7 @@ sec_pkcs12_encoder_start_context(SEC_PKCS12ExportContext *p12exp)
             params = PK11_CreatePBEParams(salt, &pwd,
                                           NSS_PBE_DEFAULT_ITERATION_COUNT);
             SECITEM_ZfreeItem(salt, PR_TRUE);
+            salt = NULL;
             SECITEM_ZfreeItem(&pwd, PR_FALSE);
 
             /* get the PBA Mechanism to generate the key */

@@ -8,13 +8,13 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_COMMON_AUDIO_SPARSE_FIR_FILTER_H_
-#define WEBRTC_COMMON_AUDIO_SPARSE_FIR_FILTER_H_
+#ifndef COMMON_AUDIO_SPARSE_FIR_FILTER_H_
+#define COMMON_AUDIO_SPARSE_FIR_FILTER_H_
 
 #include <cstring>
 #include <vector>
 
-#include "webrtc/base/constructormagic.h"
+#include "rtc_base/constructormagic.h"
 
 namespace webrtc {
 
@@ -33,6 +33,7 @@ class SparseFIRFilter final {
                   size_t num_nonzero_coeffs,
                   size_t sparsity,
                   size_t offset);
+  ~SparseFIRFilter();
 
   // Filters the |in| data supplied.
   // |out| must be previously allocated and it must be at least of |length|.
@@ -49,4 +50,4 @@ class SparseFIRFilter final {
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_COMMON_AUDIO_SPARSE_FIR_FILTER_H_
+#endif  // COMMON_AUDIO_SPARSE_FIR_FILTER_H_

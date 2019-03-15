@@ -9,7 +9,7 @@
 
 [Constructor(unsigned long width, unsigned long height),
  Exposed=(Window,Worker),
- Func="mozilla::dom::OffscreenCanvas::PrefEnabled"]
+ Func="mozilla::dom::DOMPrefs::gfx_offscreencanvas_enabled"]
 interface OffscreenCanvas : EventTarget {
   [Pure, SetterThrows]
   attribute unsigned long width;
@@ -20,6 +20,7 @@ interface OffscreenCanvas : EventTarget {
   nsISupports? getContext(DOMString contextId,
                           optional any contextOptions = null);
 
+  [Throws]
   ImageBitmap transferToImageBitmap();
   [Throws]
   Promise<Blob> toBlob(optional DOMString type = "",

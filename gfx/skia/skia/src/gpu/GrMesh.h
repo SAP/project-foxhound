@@ -9,171 +9,249 @@
 #define GrMesh_DEFINED
 
 #include "GrBuffer.h"
-#include "GrGpuResourceRef.h"
+#include "GrPendingIOResource.h"
 
-class GrNonInstancedMesh {
-public:
-    GrPrimitiveType primitiveType() const { return fPrimitiveType; }
-    int startVertex() const { return fStartVertex; }
-    int startIndex() const { return fStartIndex; }
-    int vertexCount() const { return fVertexCount; }
-    int indexCount() const { return fIndexCount; }
-    bool isIndexed() const { return fIndexCount > 0; }
-
-    const GrBuffer* vertexBuffer() const { return fVertexBuffer.get(); }
-    const GrBuffer* indexBuffer() const { return fIndexBuffer.get(); }
-
-protected:
-    GrPrimitiveType         fPrimitiveType;
-    int                     fStartVertex;
-    int                     fStartIndex;
-    int                     fVertexCount;
-    int                     fIndexCount;
-    GrPendingIOResource<const GrBuffer, kRead_GrIOType> fVertexBuffer;
-    GrPendingIOResource<const GrBuffer, kRead_GrIOType> fIndexBuffer;
-    friend class GrMesh;
-};
+class GrPrimitiveProcessor;
 
 /**
- * Used to communicate index and vertex buffers, counts, and offsets for a draw from GrBatch to
+ * Used to communicate index and vertex buffers, counts, and offsets for a draw from GrOp to
  * GrGpu. It also holds the primitive type for the draw. TODO: Consider moving ownership of this
  * and draw-issuing responsibility to GrPrimitiveProcessor. The rest of the vertex info lives there
  * already (stride, attribute mappings).
  */
-class GrMesh : public GrNonInstancedMesh {
+class GrMesh {
 public:
-    GrMesh() {}
-    GrMesh(const GrMesh& di) { (*this) = di; }
-    GrMesh& operator =(const GrMesh& di);
-
-    void init(GrPrimitiveType primType, const GrBuffer* vertexBuffer, int startVertex,
-                int vertexCount) {
-        SkASSERT(vertexBuffer);
-        SkASSERT(vertexCount);
-        SkASSERT(startVertex >= 0);
-        fPrimitiveType = primType;
-        fVertexBuffer.reset(vertexBuffer);
-        fIndexBuffer.reset(nullptr);
-        fStartVertex = startVertex;
-        fStartIndex = 0;
-        fVertexCount = vertexCount;
-        fIndexCount = 0;
-        fInstanceCount = 0;
-        fVerticesPerInstance = 0;
-        fIndicesPerInstance = 0;
-        fMaxInstancesPerDraw = 0;
+    GrMesh(GrPrimitiveType primitiveType = GrPrimitiveType::kTriangles)
+            : fPrimitiveType(primitiveType), fBaseVertex(0) {
+        SkDEBUGCODE(fNonIndexNonInstanceData.fVertexCount = -1;)
     }
 
-    void initIndexed(GrPrimitiveType primType,
-                        const GrBuffer* vertexBuffer,
-                        const GrBuffer* indexBuffer,
-                        int startVertex,
-                        int startIndex,
-                        int vertexCount,
-                        int indexCount) {
-        SkASSERT(indexBuffer);
-        SkASSERT(vertexBuffer);
-        SkASSERT(indexCount);
-        SkASSERT(vertexCount);
-        SkASSERT(startIndex >= 0);
-        SkASSERT(startVertex >= 0);
-        fPrimitiveType = primType;
-        fVertexBuffer.reset(vertexBuffer);
-        fIndexBuffer.reset(indexBuffer);
-        fStartVertex = startVertex;
-        fStartIndex = startIndex;
-        fVertexCount = vertexCount;
-        fIndexCount = indexCount;
-        fInstanceCount = 0;
-        fVerticesPerInstance = 0;
-        fIndicesPerInstance = 0;
-        fMaxInstancesPerDraw = 0;
-    }
+    void setPrimitiveType(GrPrimitiveType type) { fPrimitiveType = type; }
+    GrPrimitiveType primitiveType() const { return fPrimitiveType; }
 
+    bool isIndexed() const { return SkToBool(fIndexBuffer.get()); }
+    bool isInstanced() const { return SkToBool(fInstanceBuffer.get()); }
+    bool hasVertexData() const { return SkToBool(fVertexBuffer.get()); }
 
-    /** Variation of the above that may be used when the total number of instances may exceed
-        the number of instances supported by the index buffer. To be used with
-        nextInstances() to draw in max-sized batches.*/
-    void initInstanced(GrPrimitiveType primType,
-                        const GrBuffer* vertexBuffer,
-                        const GrBuffer* indexBuffer,
-                        int startVertex,
-                        int verticesPerInstance,
-                        int indicesPerInstance,
-                        int instanceCount,
-                        int maxInstancesPerDraw) {
-        SkASSERT(vertexBuffer);
-        SkASSERT(indexBuffer);
-        SkASSERT(instanceCount);
-        SkASSERT(verticesPerInstance);
-        SkASSERT(indicesPerInstance);
-        SkASSERT(startVertex >= 0);
-        fPrimitiveType = primType;
-        fVertexBuffer.reset(vertexBuffer);
-        fIndexBuffer.reset(indexBuffer);
-        fStartVertex = startVertex;
-        fStartIndex = 0;
-        fVerticesPerInstance = verticesPerInstance;
-        fIndicesPerInstance = indicesPerInstance;
-        fInstanceCount = instanceCount;
-        fVertexCount = instanceCount * fVerticesPerInstance;
-        fIndexCount = instanceCount * fIndicesPerInstance;
-        fMaxInstancesPerDraw = maxInstancesPerDraw;
-    }
+    void setNonIndexedNonInstanced(int vertexCount);
 
+    void setIndexed(const GrBuffer* indexBuffer, int indexCount, int baseIndex,
+                    uint16_t minIndexValue, uint16_t maxIndexValue, GrPrimitiveRestart);
+    void setIndexedPatterned(const GrBuffer* indexBuffer, int indexCount, int vertexCount,
+                             int patternRepeatCount, int maxPatternRepetitionsInIndexBuffer);
 
-    /** These return 0 if initInstanced was not used to initialize the GrVertices. */
-    int verticesPerInstance() const { return fVerticesPerInstance; }
-    int indicesPerInstance() const { return fIndicesPerInstance; }
-    int instanceCount() const { return fInstanceCount; }
+    void setInstanced(const GrBuffer* instanceBuffer, int instanceCount, int baseInstance,
+                      int vertexCount);
+    void setIndexedInstanced(const GrBuffer* indexBuffer, int indexCount,
+                             const GrBuffer* instanceBuffer, int instanceCount, int baseInstance,
+                             GrPrimitiveRestart);
 
-    bool isInstanced() const { return fInstanceCount > 0; }
+    void setVertexData(const GrBuffer* vertexBuffer, int baseVertex = 0);
 
-    class Iterator {
+    class SendToGpuImpl {
     public:
-        const GrNonInstancedMesh* init(const GrMesh& mesh) {
-            fMesh = &mesh;
-            if (mesh.fInstanceCount <= mesh.fMaxInstancesPerDraw) {
-                fInstancesRemaining = 0;
-                // Note, this also covers the non-instanced case!
-                return &mesh;
-            }
-            SkASSERT(mesh.isInstanced());
-            fInstanceBatch.fIndexBuffer.reset(mesh.fIndexBuffer.get());
-            fInstanceBatch.fVertexBuffer.reset(mesh.fVertexBuffer.get());
-            fInstanceBatch.fIndexCount = mesh.fMaxInstancesPerDraw *
-                                         mesh.fIndicesPerInstance;
-            fInstanceBatch.fVertexCount = mesh.fMaxInstancesPerDraw *
-                                          mesh.fVerticesPerInstance;
-            fInstanceBatch.fPrimitiveType = mesh.fPrimitiveType;
-            fInstanceBatch.fStartIndex = mesh.fStartIndex;
-            fInstanceBatch.fStartVertex = mesh.fStartVertex;
-            fInstancesRemaining = mesh.fInstanceCount - mesh.fMaxInstancesPerDraw;
-            return &fInstanceBatch;
-        }
+        virtual void sendMeshToGpu(GrPrimitiveType, const GrBuffer* vertexBuffer, int vertexCount,
+                                   int baseVertex) = 0;
 
-        const GrNonInstancedMesh* next() {
-            if (!fInstancesRemaining) {
-                return nullptr;
-            }
-            fInstanceBatch.fStartVertex += fInstanceBatch.fVertexCount;
-            int instances = SkTMin(fInstancesRemaining, fMesh->fMaxInstancesPerDraw);
-            fInstanceBatch.fIndexCount = instances * fMesh->fIndicesPerInstance;
-            fInstanceBatch.fVertexCount = instances * fMesh->fVerticesPerInstance;
-            fInstancesRemaining -= instances;
-            return &fInstanceBatch;
-        }
-    private:
-        GrNonInstancedMesh fInstanceBatch;
-        const GrMesh* fMesh;
-        int fInstancesRemaining;
+        virtual void sendIndexedMeshToGpu(GrPrimitiveType, const GrBuffer* indexBuffer,
+                                          int indexCount, int baseIndex, uint16_t minIndexValue,
+                                          uint16_t maxIndexValue, const GrBuffer* vertexBuffer,
+                                          int baseVertex, GrPrimitiveRestart) = 0;
+
+        virtual void sendInstancedMeshToGpu(GrPrimitiveType, const GrBuffer* vertexBuffer,
+                                            int vertexCount, int baseVertex,
+                                            const GrBuffer* instanceBuffer, int instanceCount,
+                                            int baseInstance) = 0;
+
+        virtual void sendIndexedInstancedMeshToGpu(GrPrimitiveType, const GrBuffer* indexBuffer,
+                                                   int indexCount, int baseIndex,
+                                                   const GrBuffer* vertexBuffer, int baseVertex,
+                                                   const GrBuffer* instanceBuffer,
+                                                   int instanceCount, int baseInstance,
+                                                   GrPrimitiveRestart) = 0;
+
+        virtual ~SendToGpuImpl() {}
     };
 
+    void sendToGpu(SendToGpuImpl*) const;
+
 private:
-    int                     fInstanceCount;
-    int                     fVerticesPerInstance;
-    int                     fIndicesPerInstance;
-    int                     fMaxInstancesPerDraw;
+    using PendingBuffer = GrPendingIOResource<const GrBuffer, kRead_GrIOType>;
+
+    GrPrimitiveType fPrimitiveType;
+    PendingBuffer fIndexBuffer;
+    PendingBuffer fInstanceBuffer;
+    PendingBuffer fVertexBuffer;
+    int fBaseVertex;
+    GrPrimitiveRestart fPrimitiveRestart;
+
+    union {
+        struct { // When fIndexBuffer == nullptr and fInstanceBuffer == nullptr.
+            int   fVertexCount;
+        } fNonIndexNonInstanceData;
+
+        struct { // When fIndexBuffer != nullptr and fInstanceBuffer == nullptr.
+            struct {
+                int   fIndexCount;
+                int   fPatternRepeatCount;
+            } fIndexData;
+
+            union {
+                struct { // When fPatternRepeatCount == 0.
+                    int        fBaseIndex;
+                    uint16_t   fMinIndexValue;
+                    uint16_t   fMaxIndexValue;
+                } fNonPatternIndexData;
+
+                struct { // When fPatternRepeatCount != 0.
+                    int   fVertexCount;
+                    int   fMaxPatternRepetitionsInIndexBuffer;
+                } fPatternData;
+            };
+        };
+
+        struct { // When fInstanceBuffer != nullptr.
+            struct {
+                int   fInstanceCount;
+                int   fBaseInstance;
+            } fInstanceData;
+
+            union { // When fIndexBuffer == nullptr.
+                struct {
+                    int   fVertexCount;
+                } fInstanceNonIndexData;
+
+                struct { // When fIndexBuffer != nullptr.
+                    int   fIndexCount;
+                } fInstanceIndexData;
+            };
+        };
+    };
 };
+
+inline void GrMesh::setNonIndexedNonInstanced(int vertexCount) {
+    fIndexBuffer.reset(nullptr);
+    fInstanceBuffer.reset(nullptr);
+    fNonIndexNonInstanceData.fVertexCount = vertexCount;
+    fPrimitiveRestart = GrPrimitiveRestart::kNo;
+}
+
+inline void GrMesh::setIndexed(const GrBuffer* indexBuffer, int indexCount, int baseIndex,
+                               uint16_t minIndexValue, uint16_t maxIndexValue,
+                               GrPrimitiveRestart primitiveRestart) {
+    SkASSERT(indexBuffer);
+    SkASSERT(indexCount >= 1);
+    SkASSERT(baseIndex >= 0);
+    SkASSERT(maxIndexValue >= minIndexValue);
+    fIndexBuffer.reset(indexBuffer);
+    fInstanceBuffer.reset(nullptr);
+    fIndexData.fIndexCount = indexCount;
+    fIndexData.fPatternRepeatCount = 0;
+    fNonPatternIndexData.fBaseIndex = baseIndex;
+    fNonPatternIndexData.fMinIndexValue = minIndexValue;
+    fNonPatternIndexData.fMaxIndexValue = maxIndexValue;
+    fPrimitiveRestart = primitiveRestart;
+}
+
+inline void GrMesh::setIndexedPatterned(const GrBuffer* indexBuffer, int indexCount,
+                                        int vertexCount, int patternRepeatCount,
+                                        int maxPatternRepetitionsInIndexBuffer) {
+    SkASSERT(indexBuffer);
+    SkASSERT(indexCount >= 1);
+    SkASSERT(vertexCount >= 1);
+    SkASSERT(patternRepeatCount >= 1);
+    SkASSERT(maxPatternRepetitionsInIndexBuffer >= 1);
+    fIndexBuffer.reset(indexBuffer);
+    fInstanceBuffer.reset(nullptr);
+    fIndexData.fIndexCount = indexCount;
+    fIndexData.fPatternRepeatCount = patternRepeatCount;
+    fPatternData.fVertexCount = vertexCount;
+    fPatternData.fMaxPatternRepetitionsInIndexBuffer = maxPatternRepetitionsInIndexBuffer;
+    fPrimitiveRestart = GrPrimitiveRestart::kNo;
+}
+
+inline void GrMesh::setInstanced(const GrBuffer* instanceBuffer, int instanceCount,
+                                 int baseInstance, int vertexCount) {
+    SkASSERT(instanceBuffer);
+    SkASSERT(instanceCount >= 1);
+    SkASSERT(baseInstance >= 0);
+    fIndexBuffer.reset(nullptr);
+    fInstanceBuffer.reset(instanceBuffer);
+    fInstanceData.fInstanceCount = instanceCount;
+    fInstanceData.fBaseInstance = baseInstance;
+    fInstanceNonIndexData.fVertexCount = vertexCount;
+    fPrimitiveRestart = GrPrimitiveRestart::kNo;
+}
+
+inline void GrMesh::setIndexedInstanced(const GrBuffer* indexBuffer, int indexCount,
+                                        const GrBuffer* instanceBuffer, int instanceCount,
+                                        int baseInstance, GrPrimitiveRestart primitiveRestart) {
+    SkASSERT(indexBuffer);
+    SkASSERT(indexCount >= 1);
+    SkASSERT(instanceBuffer);
+    SkASSERT(instanceCount >= 1);
+    SkASSERT(baseInstance >= 0);
+    fIndexBuffer.reset(indexBuffer);
+    fInstanceBuffer.reset(instanceBuffer);
+    fInstanceData.fInstanceCount = instanceCount;
+    fInstanceData.fBaseInstance = baseInstance;
+    fInstanceIndexData.fIndexCount = indexCount;
+    fPrimitiveRestart = primitiveRestart;
+}
+
+inline void GrMesh::setVertexData(const GrBuffer* vertexBuffer, int baseVertex) {
+    SkASSERT(baseVertex >= 0);
+    fVertexBuffer.reset(vertexBuffer);
+    fBaseVertex = baseVertex;
+}
+
+inline void GrMesh::sendToGpu(SendToGpuImpl* impl) const {
+    if (this->isInstanced()) {
+        if (!this->isIndexed()) {
+            impl->sendInstancedMeshToGpu(fPrimitiveType, fVertexBuffer.get(),
+                                         fInstanceNonIndexData.fVertexCount, fBaseVertex,
+                                         fInstanceBuffer.get(), fInstanceData.fInstanceCount,
+                                         fInstanceData.fBaseInstance);
+        } else {
+            impl->sendIndexedInstancedMeshToGpu(
+                    fPrimitiveType, fIndexBuffer.get(), fInstanceIndexData.fIndexCount, 0,
+                    fVertexBuffer.get(), fBaseVertex, fInstanceBuffer.get(),
+                    fInstanceData.fInstanceCount, fInstanceData.fBaseInstance, fPrimitiveRestart);
+        }
+        return;
+    }
+
+    if (!this->isIndexed()) {
+        SkASSERT(fNonIndexNonInstanceData.fVertexCount > 0);
+        impl->sendMeshToGpu(fPrimitiveType, fVertexBuffer.get(),
+                            fNonIndexNonInstanceData.fVertexCount, fBaseVertex);
+        return;
+    }
+
+    if (0 == fIndexData.fPatternRepeatCount) {
+        impl->sendIndexedMeshToGpu(fPrimitiveType, fIndexBuffer.get(), fIndexData.fIndexCount,
+                                   fNonPatternIndexData.fBaseIndex,
+                                   fNonPatternIndexData.fMinIndexValue,
+                                   fNonPatternIndexData.fMaxIndexValue, fVertexBuffer.get(),
+                                   fBaseVertex, fPrimitiveRestart);
+        return;
+    }
+
+    SkASSERT(fIndexData.fPatternRepeatCount > 0);
+    int baseRepetition = 0;
+    do {
+        int repeatCount = SkTMin(fPatternData.fMaxPatternRepetitionsInIndexBuffer,
+                                 fIndexData.fPatternRepeatCount - baseRepetition);
+        // A patterned index buffer must contain indices in the range [0..vertexCount].
+        int minIndexValue = 0;
+        int maxIndexValue = fPatternData.fVertexCount * repeatCount - 1;
+        SkASSERT(fPrimitiveRestart == GrPrimitiveRestart::kNo);
+        impl->sendIndexedMeshToGpu(
+                fPrimitiveType, fIndexBuffer.get(), fIndexData.fIndexCount * repeatCount, 0,
+                minIndexValue, maxIndexValue, fVertexBuffer.get(),
+                fBaseVertex + fPatternData.fVertexCount * baseRepetition, GrPrimitiveRestart::kNo);
+        baseRepetition += repeatCount;
+    } while (baseRepetition < fIndexData.fPatternRepeatCount);
+}
 
 #endif

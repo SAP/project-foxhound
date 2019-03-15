@@ -56,7 +56,13 @@ var EventEmitter = require("devtools/shared/event-emitter");
 function Selection(walker) {
   EventEmitter.decorate(this);
 
+  // A single node front can be represented twice on the client when the node is a slotted
+  // element. It will be displayed once as a direct child of the host element, and once as
+  // a child of a slot in the "shadow DOM". The latter is called the slotted version.
+  this._isSlotted = false;
+
   this._onMutations = this._onMutations.bind(this);
+  this.setNodeFront = this.setNodeFront.bind(this);
   this.setWalker(walker);
 }
 
@@ -65,13 +71,13 @@ exports.Selection = Selection;
 Selection.prototype = {
   _walker: null,
 
-  _onMutations: function (mutations) {
+  _onMutations: function(mutations) {
     let attributeChange = false;
     let pseudoChange = false;
     let detached = false;
     let parentNode = null;
 
-    for (let m of mutations) {
+    for (const m of mutations) {
       if (!attributeChange && m.type == "attributes") {
         attributeChange = true;
       }
@@ -100,11 +106,11 @@ Selection.prototype = {
     }
   },
 
-  destroy: function () {
+  destroy: function() {
     this.setWalker(null);
   },
 
-  setWalker: function (walker) {
+  setWalker: function(walker) {
     if (this._walker) {
       this._walker.off("mutations", this._onMutations);
     }
@@ -114,17 +120,37 @@ Selection.prototype = {
     }
   },
 
-  setNodeFront: function (value, reason = "unknown") {
+  /**
+   * Update the currently selected node-front.
+   *
+   * @param {NodeFront} nodeFront
+   *        The NodeFront being selected.
+   * @param {Object} (optional)
+   *        - {String} reason: Reason that triggered the selection, will be fired with
+   *          the "new-node-front" event.
+   *        - {Boolean} isSlotted: Is the selection representing the slotted version of
+   *          the node.
+   */
+  setNodeFront: function(nodeFront, { reason = "unknown", isSlotted = false} = {}) {
     this.reason = reason;
 
     // If an inlineTextChild text node is being set, then set it's parent instead.
-    let parentNode = value && value.parentNode();
-    if (value && parentNode && parentNode.inlineTextChild === value) {
-      value = parentNode;
+    const parentNode = nodeFront && nodeFront.parentNode();
+    if (nodeFront && parentNode && parentNode.inlineTextChild === nodeFront) {
+      nodeFront = parentNode;
     }
 
-    this._nodeFront = value;
-    this.emit("new-node-front", value, this.reason);
+    if (this._nodeFront == null && nodeFront == null) {
+      // Avoid to notify multiple "unselected" events with a null/undefined nodeFront
+      // (e.g. once when the webpage start to navigate away from the current webpage,
+      // and then again while the new page is being loaded).
+      return;
+    }
+
+    this._isSlotted = isSlotted;
+    this._nodeFront = nodeFront;
+
+    this.emit("new-node-front", nodeFront, this.reason);
   },
 
   get documentFront() {
@@ -135,17 +161,17 @@ Selection.prototype = {
     return this._nodeFront;
   },
 
-  isRoot: function () {
+  isRoot: function() {
     return this.isNode() &&
            this.isConnected() &&
            this._nodeFront.isDocumentElement;
   },
 
-  isNode: function () {
+  isNode: function() {
     return !!this._nodeFront;
   },
 
-  isConnected: function () {
+  isConnected: function() {
     let node = this._nodeFront;
     if (!node || !node.actorID) {
       return false;
@@ -155,69 +181,69 @@ Selection.prototype = {
       if (node === this._walker.rootNode) {
         return true;
       }
-      node = node.parentNode();
+      node = node.parentOrHost();
     }
     return false;
   },
 
-  isHTMLNode: function () {
-    let xhtmlNs = "http://www.w3.org/1999/xhtml";
+  isHTMLNode: function() {
+    const xhtmlNs = "http://www.w3.org/1999/xhtml";
     return this.isNode() && this.nodeFront.namespaceURI == xhtmlNs;
   },
 
   // Node type
 
-  isElementNode: function () {
+  isElementNode: function() {
     return this.isNode() && this.nodeFront.nodeType == nodeConstants.ELEMENT_NODE;
   },
 
-  isPseudoElementNode: function () {
+  isPseudoElementNode: function() {
     return this.isNode() && this.nodeFront.isPseudoElement;
   },
 
-  isAnonymousNode: function () {
+  isAnonymousNode: function() {
     return this.isNode() && this.nodeFront.isAnonymous;
   },
 
-  isAttributeNode: function () {
+  isAttributeNode: function() {
     return this.isNode() && this.nodeFront.nodeType == nodeConstants.ATTRIBUTE_NODE;
   },
 
-  isTextNode: function () {
+  isTextNode: function() {
     return this.isNode() && this.nodeFront.nodeType == nodeConstants.TEXT_NODE;
   },
 
-  isCDATANode: function () {
+  isCDATANode: function() {
     return this.isNode() && this.nodeFront.nodeType == nodeConstants.CDATA_SECTION_NODE;
   },
 
-  isEntityRefNode: function () {
+  isEntityRefNode: function() {
     return this.isNode() &&
       this.nodeFront.nodeType == nodeConstants.ENTITY_REFERENCE_NODE;
   },
 
-  isEntityNode: function () {
+  isEntityNode: function() {
     return this.isNode() && this.nodeFront.nodeType == nodeConstants.ENTITY_NODE;
   },
 
-  isProcessingInstructionNode: function () {
+  isProcessingInstructionNode: function() {
     return this.isNode() &&
       this.nodeFront.nodeType == nodeConstants.PROCESSING_INSTRUCTION_NODE;
   },
 
-  isCommentNode: function () {
+  isCommentNode: function() {
     return this.isNode() &&
       this.nodeFront.nodeType == nodeConstants.PROCESSING_INSTRUCTION_NODE;
   },
 
-  isDocumentNode: function () {
+  isDocumentNode: function() {
     return this.isNode() && this.nodeFront.nodeType == nodeConstants.DOCUMENT_NODE;
   },
 
   /**
    * @returns true if the selection is the <body> HTML element.
    */
-  isBodyNode: function () {
+  isBodyNode: function() {
     return this.isHTMLNode() &&
            this.isConnected() &&
            this.nodeFront.nodeName === "BODY";
@@ -226,22 +252,30 @@ Selection.prototype = {
   /**
    * @returns true if the selection is the <head> HTML element.
    */
-  isHeadNode: function () {
+  isHeadNode: function() {
     return this.isHTMLNode() &&
            this.isConnected() &&
            this.nodeFront.nodeName === "HEAD";
   },
 
-  isDocumentTypeNode: function () {
+  isDocumentTypeNode: function() {
     return this.isNode() && this.nodeFront.nodeType == nodeConstants.DOCUMENT_TYPE_NODE;
   },
 
-  isDocumentFragmentNode: function () {
+  isDocumentFragmentNode: function() {
     return this.isNode() &&
       this.nodeFront.nodeType == nodeConstants.DOCUMENT_FRAGMENT_NODE;
   },
 
-  isNotationNode: function () {
+  isNotationNode: function() {
     return this.isNode() && this.nodeFront.nodeType == nodeConstants.NOTATION_NODE;
+  },
+
+  isSlotted: function() {
+    return this._isSlotted;
+  },
+
+  isShadowRootNode: function() {
+    return this.isNode() && this.nodeFront.isShadowRoot;
   },
 };

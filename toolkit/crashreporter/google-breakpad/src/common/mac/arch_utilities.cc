@@ -46,15 +46,31 @@
 #define CPU_SUBTYPE_ARM64_ALL (static_cast<cpu_subtype_t>(0))
 #endif  // CPU_SUBTYPE_ARM64_ALL
 
+#ifndef CPU_SUBTYPE_ARM64_E
+#define CPU_SUBTYPE_ARM64_E (static_cast<cpu_subtype_t>(2))
+#endif  // CPU_SUBTYPE_ARM64_E
+
 namespace {
 
-const NXArchInfo* ArchInfo_arm64() {
+const NXArchInfo* ArchInfo_arm64(cpu_subtype_t cpu_subtype) {
+  const char* name = NULL;
+  switch (cpu_subtype) {
+    case CPU_SUBTYPE_ARM64_ALL:
+      name = "arm64";
+      break;
+    case CPU_SUBTYPE_ARM64_E:
+      name = "arm64e";
+      break;
+    default:
+      return NULL;
+  }
+
   NXArchInfo* arm64 = new NXArchInfo;
   *arm64 = *NXGetArchInfoFromCpuType(CPU_TYPE_ARM,
                                      CPU_SUBTYPE_ARM_V7);
-  arm64->name = "arm64";
+  arm64->name = name;
   arm64->cputype = CPU_TYPE_ARM64;
-  arm64->cpusubtype = CPU_SUBTYPE_ARM64_ALL;
+  arm64->cpusubtype = cpu_subtype;
   arm64->description = "arm 64";
   return arm64;
 }
@@ -79,6 +95,10 @@ const NXArchInfo* BreakpadGetArchInfoFromName(const char* arch_name) {
     return BreakpadGetArchInfoFromCpuType(CPU_TYPE_ARM64,
                                           CPU_SUBTYPE_ARM64_ALL);
 
+  if (!strcmp("arm64e", arch_name))
+    return BreakpadGetArchInfoFromCpuType(CPU_TYPE_ARM64,
+                                          CPU_SUBTYPE_ARM64_E);
+
   // TODO: Remove this when the OS knows about armv7s.
   if (!strcmp("armv7s", arch_name))
     return BreakpadGetArchInfoFromCpuType(CPU_TYPE_ARM, CPU_SUBTYPE_ARM_V7S);
@@ -90,8 +110,13 @@ const NXArchInfo* BreakpadGetArchInfoFromCpuType(cpu_type_t cpu_type,
                                                  cpu_subtype_t cpu_subtype) {
   // TODO: Remove this when the OS knows about arm64.
   if (cpu_type == CPU_TYPE_ARM64 && cpu_subtype == CPU_SUBTYPE_ARM64_ALL) {
-    static const NXArchInfo* arm64 = ArchInfo_arm64();
+    static const NXArchInfo* arm64 = ArchInfo_arm64(cpu_subtype);
     return arm64;
+  }
+
+  if (cpu_type == CPU_TYPE_ARM64 && cpu_subtype == CPU_SUBTYPE_ARM64_E) {
+    static const NXArchInfo* arm64e = ArchInfo_arm64(cpu_subtype);
+    return arm64e;
   }
 
   // TODO: Remove this when the OS knows about armv7s.
@@ -111,8 +136,10 @@ namespace {
 enum Architecture {
   kArch_i386 = 0,
   kArch_x86_64,
+  kArch_x86_64h,
   kArch_arm,
   kArch_arm64,
+  kArch_arm64e,
   kArch_ppc,
   // This must be last.
   kNumArchitectures
@@ -136,6 +163,13 @@ const NXArchInfo kKnownArchitectures[] = {
     "Intel x86-64"
   },
   {
+    "x86_64h",
+    CPU_TYPE_X86_64,
+    CPU_SUBTYPE_X86_64_H,
+    NX_LittleEndian,
+    "Intel x86-64h Haswell"
+  },
+  {
     "arm",
     CPU_TYPE_ARM,
     CPU_SUBTYPE_ARM_ALL,
@@ -148,6 +182,13 @@ const NXArchInfo kKnownArchitectures[] = {
     CPU_SUBTYPE_ARM64_ALL,
     NX_LittleEndian,
     "ARM64"
+  },
+  {
+    "arm64e",
+    CPU_TYPE_ARM64,
+    CPU_SUBTYPE_ARM64_E,
+    NX_LittleEndian,
+    "ARM64e"
   },
   {
     "ppc",
@@ -189,23 +230,35 @@ const NXArchInfo *NXGetArchInfoFromName(const char *name) {
 
 const NXArchInfo *NXGetArchInfoFromCpuType(cpu_type_t cputype,
                                            cpu_subtype_t cpusubtype) {
+  const NXArchInfo *candidate = NULL;
   for (int arch = 0; arch < kNumArchitectures; ++arch) {
     if (kKnownArchitectures[arch].cputype == cputype) {
-      return &kKnownArchitectures[arch];
+      if (kKnownArchitectures[arch].cpusubtype == cpusubtype) {
+        return &kKnownArchitectures[arch];
+      }
+      if (!candidate) {
+        candidate = &kKnownArchitectures[arch];
+      }
     }
   }
-  return NULL;
+  return candidate;
 }
 
 struct fat_arch *NXFindBestFatArch(cpu_type_t cputype,
                                    cpu_subtype_t cpusubtype,
                                    struct fat_arch *fat_archs,
                                    uint32_t nfat_archs) {
+  struct fat_arch *candidate = NULL;
   for (uint32_t f = 0; f < nfat_archs; ++f) {
     if (fat_archs[f].cputype == cputype) {
-      return &fat_archs[f];
+      if (fat_archs[f].cpusubtype == cpusubtype) {
+        return &fat_archs[f];
+      }
+      if (!candidate) {
+        candidate = &fat_archs[f];
+      }
     }
   }
-  return NULL;
+  return candidate;
 }
 #endif  // !__APPLE__

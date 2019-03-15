@@ -4,6 +4,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files("**"):
+    BUG_COMPONENT = ("Core", "Audio/Video: GMP")
+
 SharedLibrary('clearkey')
 
 FINAL_TARGET = 'dist/bin/gmp-clearkey/0.1'
@@ -49,22 +52,32 @@ TEST_DIRS += [
     'gtest',
 ]
 
-DISABLE_STL_WRAPPING = True
+DisableStlWrapping()
 DEFINES['MOZ_NO_MOZALLOC'] = True
 
 USE_LIBS += ['psshparser']
 
 # Suppress warnings in third-party code.
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'clang-cl', 'gcc'):
     CFLAGS += [
         '-Wno-missing-braces',
         '-Wno-pointer-to-int-cast',
         '-Wno-sign-compare',
+    ]
+elif CONFIG['CC_TYPE'] == 'msvc':
+    CFLAGS += [
+        '-wd4090',                  # '=' : different 'const' qualifiers
+    ]
+
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
+    CFLAGS += [
         '-include', 'stdio.h',      # for sprintf() prototype
         '-include', 'unistd.h',     # for getpid() prototype
     ]
-elif CONFIG['_MSC_VER']:
+elif CONFIG['CC_TYPE'] in ('msvc', 'clang-cl'):
     CFLAGS += [
         '-FI', 'stdio.h',           # for sprintf() prototype
-        '-wd4090',                  # '=' : different 'const' qualifiers
     ]
+
+if CONFIG['CC_TYPE'] == 'clang-cl':
+    AllowCompilerWarnings()  # workaround for bug 1090497

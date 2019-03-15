@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sts=4 et sw=4 tw=99: */
+ * vim: set ts=8 sts=2 et sw=2 tw=80: */
 
 // Copyright 2009 the V8 project authors. All rights reserved.
 // Redistribution and use in source and binary forms, with or without
@@ -82,6 +82,9 @@ class RegExpStack
     static size_t offsetOfBase() { return offsetof(RegExpStack, base_); }
     static size_t offsetOfLimit() { return offsetof(RegExpStack, limit_); }
 
+    void* addressOfBase() { return &base_; }
+    void* addressOfLimit() { return &limit_; }
+
     void* base() { return base_; }
     void* limit() { return limit_; }
 
@@ -90,7 +93,7 @@ class RegExpStack
     static const uintptr_t kMemoryTop = static_cast<uintptr_t>(-1);
 
     // Minimal size of allocated stack area, in bytes.
-    static const size_t kMinimumStackSize = 1 * 1024;
+    static const size_t kMinimumStackSize = 512;
 
     // Maximal size of allocated stack area, in bytes.
     static const size_t kMaximumStackSize = 64 * 1024 * 1024;
@@ -114,7 +117,7 @@ class RegExpStack
     }
 };
 
-int
+bool
 GrowBacktrackStack(JSRuntime* rt);
 
 }}  // namespace js::irregexp

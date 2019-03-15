@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -79,8 +80,8 @@ Float GetBezierLength(const Bezier& aBezier, Float a, Float b);
 //   |
 //   |
 //   + P(0)
-void GetSubBezier(Bezier* aSubBezier, const Bezier& aBezier,
-                  Float t1, Float t2);
+void GetSubBezier(Bezier* aSubBezier, const Bezier& aBezier, Float t1,
+                  Float t2);
 
 // Find a nearest point on bezier curve formed by aBezier to a point aTarget.
 // aInitialT is a hint to find the parameter t for the nearest point.
@@ -104,7 +105,7 @@ void GetSubBezier(Bezier* aSubBezier, const Bezier& aBezier,
 //   |
 //   +
 Point FindBezierNearestPoint(const Bezier& aBezier, const Point& aTarget,
-                             Float aInitialT, Float* aT=nullptr);
+                             Float aInitialT, Float* aT = nullptr);
 
 // Calculate control points for a bezier curve that is an approximation of
 // an elliptic arc.
@@ -176,10 +177,10 @@ Float GetQuarterEllipticArcLength(Float a, Float b);
 //          v          |
 //          -----------+
 Float CalculateDistanceToEllipticArc(const Point& P, const Point& normal,
-                                     const Point& origin,
-                                     Float width, Float height);
+                                     const Point& origin, Float width,
+                                     Float height);
 
-} // namespace gfx
-} // namespace mozilla
+}  // namespace gfx
+}  // namespace mozilla
 
 #endif /* mozilla_BezierUtils_h_ */

@@ -1,5 +1,5 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpserver.identity.primaryPort;
@@ -48,13 +48,13 @@ function serverHandler(metadata, response) {
 }
 
 function checkRequestResponse(request, data, context) {
-  do_check_eq(channel.responseStatus, 200);
-  do_check_eq(channel.responseStatusText, "OK");
-  do_check_true(channel.requestSucceeded);
+  Assert.equal(channel.responseStatus, 200);
+  Assert.equal(channel.responseStatusText, "OK");
+  Assert.ok(channel.requestSucceeded);
 
-  do_check_eq(channel.contentType, "text/plain");
-  do_check_eq(channel.contentLength, httpbody.length);
-  do_check_eq(data, httpbody);
+  Assert.equal(channel.contentType, "text/plain");
+  Assert.equal(channel.contentLength, httpbody.length);
+  Assert.equal(data, httpbody);
 
   httpserver.stop(do_test_finished);
 }

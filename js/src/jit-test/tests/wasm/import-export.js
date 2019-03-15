@@ -19,7 +19,26 @@ const tab2Elem = new Table({initial:2, element:"anyfunc"});
 const tab3Elem = new Table({initial:3, element:"anyfunc"});
 const tab4Elem = new Table({initial:4, element:"anyfunc"});
 
+// Memory size consistency and internal limits.
 assertErrorMessage(() => new Memory({initial:2, maximum:1}), RangeError, /bad Memory maximum size/);
+
+try {
+    new Memory({initial:16384});
+} catch(e) {
+    assertEq(String(e).indexOf("out of memory") !== -1, true);
+}
+
+assertErrorMessage(() => new Memory({initial: 16385}), RangeError, /bad Memory initial size/);
+
+new Memory({initial: 0, maximum: 65536});
+assertErrorMessage(() => new Memory({initial: 0, maximum: 65537}), RangeError, /bad Memory maximum size/);
+
+// Table size consistency and internal limits.
+assertErrorMessage(() => new Table({initial:2, maximum:1, element:"anyfunc"}), RangeError, /bad Table maximum size/);
+new Table({ initial: 10000000, element:"anyfunc" });
+assertErrorMessage(() => new Table({initial:10000001, element:"anyfunc"}), RangeError, /bad Table initial size/);
+new Table({ initial: 0, maximum: 10000000, element:"anyfunc" });
+assertErrorMessage(() => new Table({initial:0, maximum: 10000001, element:"anyfunc"}), RangeError, /bad Table maximum size/);
 
 const m1 = new Module(wasmTextToBinary('(module (import "foo" "bar") (import "baz" "quux"))'));
 assertErrorMessage(() => new Instance(m1), TypeError, /second argument must be an object/);
@@ -395,6 +414,34 @@ var code2 = wasmTextToBinary('(module (import $i "a" "b" (param i64) (result i64
 var e2 = new Instance(new Module(code2), {a:{b:e1.exp}}).exports;
 assertEq(e2.f(), 52);
 
+// i64 is disallowed when called from JS and will cause calls to fail before
+// arguments are coerced.
+
+var sideEffect = false;
+var i = wasmEvalText('(module (func (export "f") (param i64) (result i32) (i32.const 42)))').exports;
+assertErrorMessage(() => i.f({ valueOf() { sideEffect = true; return 42; } }), TypeError, 'cannot pass i64 to or from JS');
+assertEq(sideEffect, false);
+
+i = wasmEvalText('(module (func (export "f") (param i32) (param i64) (result i32) (i32.const 42)))').exports;
+assertErrorMessage(() => i.f({ valueOf() { sideEffect = true; return 42; } }, 0), TypeError, 'cannot pass i64 to or from JS');
+assertEq(sideEffect, false);
+
+i = wasmEvalText('(module (func (export "f") (param i32) (result i64) (i64.const 42)))').exports;
+assertErrorMessage(() => i.f({ valueOf() { sideEffect = true; return 42; } }), TypeError, 'cannot pass i64 to or from JS');
+assertEq(sideEffect, false);
+
+i = wasmEvalText('(module (import "i64" "func" (param i64)) (export "f" 0))', { i64: { func() {} } }).exports;
+assertErrorMessage(() => i.f({ valueOf() { sideEffect = true; return 42; } }), TypeError, 'cannot pass i64 to or from JS');
+assertEq(sideEffect, false);
+
+i = wasmEvalText('(module (import "i64" "func" (param i32) (param i64)) (export "f" 0))', { i64: { func() {} } }).exports;
+assertErrorMessage(() => i.f({ valueOf() { sideEffect = true; return 42; } }, 0), TypeError, 'cannot pass i64 to or from JS');
+assertEq(sideEffect, false);
+
+i = wasmEvalText('(module (import "i64" "func" (result i64)) (export "f" 0))', { i64: { func() {} } }).exports;
+assertErrorMessage(() => i.f({ valueOf() { sideEffect = true; return 42; } }), TypeError, 'cannot pass i64 to or from JS');
+assertEq(sideEffect, false);
+
 // Non-existent export errors
 
 wasmFailValidateText('(module (export "a" 0))', /exported function index out of bounds/);
@@ -406,8 +453,6 @@ wasmFailValidateText('(module (export "a" table))', /exported table index out of
 
 wasmFailValidateText('(module (import "a" "b" (memory 1 1)) (memory 1 1))', /already have default memory/);
 wasmFailValidateText('(module (import "a" "b" (memory 1 1)) (import "x" "y" (memory 2 2)))', /already have default memory/);
-wasmFailValidateText('(module (import "a" "b" (table 1 1 anyfunc)) (table 1 1 anyfunc))', /already have default table/);
-wasmFailValidateText('(module (import "a" "b" (table 1 1 anyfunc)) (import "x" "y" (table 2 2 anyfunc)))', /already have default table/);
 
 // Data segments on imports
 
@@ -589,3 +634,134 @@ var e = {call:() => 1000};
 for (var i = 0; i < 10; i++)
     e = new Instance(m, {a:{val:i, next:e.call}}).exports;
 assertEq(e.call(), 1090);
+
+(function testImportJitExit() {
+    let options = getJitCompilerOptions();
+    if (!options['baseline.enable'])
+        return;
+
+    let baselineTrigger = options['baseline.warmup.trigger'];
+
+    let valueToConvert = 0;
+    function ffi(n) { if (n == 1337) { return valueToConvert }; return 42; }
+
+    function sum(a, b, c) {
+        if (a === 1337)
+            return valueToConvert;
+        return (a|0) + (b|0) + (c|0) | 0;
+    }
+
+    // Baseline compile ffis.
+    for (let i = baselineTrigger + 1; i --> 0;) {
+        ffi(i);
+        sum((i%2)?i:undefined,
+            (i%3)?i:undefined,
+            (i%4)?i:undefined);
+    }
+
+    let imports = {
+        a: {
+            ffi,
+            sum
+        }
+    };
+
+    i = wasmEvalText(`(module
+        (import $ffi "a" "ffi" (param i32) (result i32))
+
+        (import $missingOneArg "a" "sum" (param i32) (param i32) (result i32))
+        (import $missingTwoArgs "a" "sum" (param i32) (result i32))
+        (import $missingThreeArgs "a" "sum" (result i32))
+
+        (func (export "foo") (param i32) (result i32)
+         get_local 0
+         call $ffi
+        )
+
+        (func (export "missThree") (result i32)
+         call $missingThreeArgs
+        )
+
+        (func (export "missTwo") (param i32) (result i32)
+         get_local 0
+         call $missingTwoArgs
+        )
+
+        (func (export "missOne") (param i32) (param i32) (result i32)
+         get_local 0
+         get_local 1
+         call $missingOneArg
+        )
+    )`, imports).exports;
+
+    // Enable the jit exit for each JS callee.
+    assertEq(i.foo(0), 42);
+
+    assertEq(i.missThree(), 0);
+    assertEq(i.missTwo(42), 42);
+    assertEq(i.missOne(13, 37), 50);
+
+    // Test the jit exit under normal conditions.
+    assertEq(i.foo(0), 42);
+    assertEq(i.foo(1337), 0);
+
+    // Test the arguments rectifier.
+    assertEq(i.missThree(), 0);
+    assertEq(i.missTwo(-1), -1);
+    assertEq(i.missOne(23, 10), 33);
+
+    // Test OOL coercion.
+    valueToConvert = 2**31;
+    assertEq(i.foo(1337), -(2**31));
+
+    // Test OOL error path.
+    valueToConvert = { valueOf() { throw new Error('make ffi great again'); } }
+    assertErrorMessage(() => i.foo(1337), Error, "make ffi great again");
+
+    valueToConvert = { toString() { throw new Error('a FFI to believe in'); } }
+    assertErrorMessage(() => i.foo(1337), Error, "a FFI to believe in");
+
+    // Test the error path in the arguments rectifier.
+    assertErrorMessage(() => i.missTwo(1337), Error, "a FFI to believe in");
+})();
+
+(function testCrossRealmImport() {
+    var g = newGlobal({sameCompartmentAs: this});
+    g.evaluate("function f1() { assertCorrectRealm(); return 123; }");
+    g.mem = new Memory({initial:8});
+
+    // The current_memory builtin asserts cx->realm matches instance->realm so
+    // we call it here.
+    var i1 = new Instance(new Module(wasmTextToBinary(`
+        (module
+            (import $imp1 "a" "f1" (result i32))
+            (import $imp2 "a" "f2" (result i32))
+            (import "a" "m" (memory 1))
+            (func $test (result i32)
+                (i32.add
+                    (i32.add
+                        (i32.add (current_memory) (call $imp1))
+                        (current_memory))
+                    (call $imp2)))
+            (export "impstub" $imp1)
+            (export "test" $test))
+    `)), {a:{m:g.mem, f1:g.f1, f2:g.Math.abs}});
+
+    for (var i = 0; i < 20; i++) {
+        assertEq(i1.exports.impstub(), 123);
+        assertEq(i1.exports.test(), 139);
+    }
+
+    // Inter-module/inter-realm wasm => wasm calls.
+    var src = `
+        (module
+            (import $imp "a" "othertest" (result i32))
+            (import "a" "m" (memory 1))
+            (func (result i32) (i32.add (call $imp) (current_memory)))
+            (export "test" 1))
+    `;
+    g.i1 = i1;
+    g.evaluate("i2 = new WebAssembly.Instance(new WebAssembly.Module(wasmTextToBinary(`" + src + "`)), {a:{m:mem,othertest:i1.exports.test}})");
+    for (var i = 0; i < 20; i++)
+        assertEq(g.i2.exports.test(), 147);
+})();

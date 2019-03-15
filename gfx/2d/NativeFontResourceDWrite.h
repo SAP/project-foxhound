@@ -15,10 +15,10 @@
 namespace mozilla {
 namespace gfx {
 
-class NativeFontResourceDWrite final : public NativeFontResource
-{
-public:
-  MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(NativeFontResourceDWrite)
+class NativeFontResourceDWrite final : public NativeFontResource {
+ public:
+  MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(NativeFontResourceDWrite, override)
+
   /**
    * Creates a NativeFontResourceDWrite if data is valid. Note aFontData will be
    * copied if required and so can be released after calling.
@@ -28,30 +28,36 @@ public:
    * @param aNeedsCairo whether the ScaledFont created needs a cairo scaled font
    * @return Referenced NativeFontResourceDWrite or nullptr if invalid.
    */
-  static already_AddRefed<NativeFontResourceDWrite>
-    Create(uint8_t *aFontData, uint32_t aDataLength, bool aNeedsCairo);
+  static already_AddRefed<NativeFontResourceDWrite> Create(uint8_t *aFontData,
+                                                           uint32_t aDataLength,
+                                                           bool aNeedsCairo);
 
-  already_AddRefed<ScaledFont>
-    CreateScaledFont(uint32_t aIndex, Float aGlyphSize,
-                     const uint8_t* aInstanceData, uint32_t aInstanceDataLength) final;
+  already_AddRefed<UnscaledFont> CreateUnscaledFont(
+      uint32_t aIndex, const uint8_t *aInstanceData,
+      uint32_t aInstanceDataLength) final;
 
-private:
-  NativeFontResourceDWrite(IDWriteFactory *aFactory,
-                           already_AddRefed<IDWriteFontFile> aFontFile,
-                           DWRITE_FONT_FACE_TYPE aFaceType,
-                           uint32_t aNumberOfFaces, bool aNeedsCairo)
-    : mFactory(aFactory), mFontFile(aFontFile), mFaceType(aFaceType)
-    , mNumberOfFaces(aNumberOfFaces), mNeedsCairo(aNeedsCairo)
-  {}
+ private:
+  NativeFontResourceDWrite(
+      IDWriteFactory *aFactory, already_AddRefed<IDWriteFontFile> aFontFile,
+      already_AddRefed<IDWriteFontFileStream> aFontFileStream,
+      DWRITE_FONT_FACE_TYPE aFaceType, uint32_t aNumberOfFaces,
+      bool aNeedsCairo)
+      : mFactory(aFactory),
+        mFontFile(aFontFile),
+        mFontFileStream(aFontFileStream),
+        mFaceType(aFaceType),
+        mNumberOfFaces(aNumberOfFaces),
+        mNeedsCairo(aNeedsCairo) {}
 
   IDWriteFactory *mFactory;
   RefPtr<IDWriteFontFile> mFontFile;
+  RefPtr<IDWriteFontFileStream> mFontFileStream;
   DWRITE_FONT_FACE_TYPE mFaceType;
   uint32_t mNumberOfFaces;
   bool mNeedsCairo;
 };
 
-} // gfx
-} // mozilla
+}  // namespace gfx
+}  // namespace mozilla
 
-#endif // mozilla_gfx_NativeFontResourceDWrite_h
+#endif  // mozilla_gfx_NativeFontResourceDWrite_h

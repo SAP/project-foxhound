@@ -1,41 +1,46 @@
-/* Any copyright is dedicated to the Public Domain.
- * http://creativecommons.org/publicdomain/zero/1.0/ */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 // Tests that the source tree works.
 
-function* waitForSourceCount(dbg, i) {
-  // We are forced to wait until the DOM nodes appear because the
-  // source tree batches its rendering.
-  yield waitUntil(() => {
-    return findAllElements(dbg, "sourceNodes").length === i;
-  });
+function getLabel(dbg, index) {
+  return findElement(dbg, "sourceNode", index)
+    .textContent.trim()
+    .replace(/^[\s\u200b]*/g, "");
 }
 
-add_task(function* () {
-  const dbg = yield initDebugger("doc-sources.html");
-  const { selectors: { getSelectedSource }, getState } = dbg;
-
-  yield waitForSources(dbg, "simple1");
+add_task(async function() {
+  const dbg = await initDebugger("doc-sources.html", "simple1", "simple2", "nested-source", "long.js");
+  const {
+    selectors: { getSelectedSource },
+    getState
+  } = dbg;
 
   // Expand nodes and make sure more sources appear.
-  is(findAllElements(dbg, "sourceNodes").length, 2);
+  await assertSourceCount(dbg, 2);
+  await clickElement(dbg, "sourceDirectoryLabel", 2);
 
-  clickElement(dbg, "sourceArrow", 2);
-  is(findAllElements(dbg, "sourceNodes").length, 7);
+  await assertSourceCount(dbg, 7);
+  await clickElement(dbg, "sourceDirectoryLabel", 3);
+  await assertSourceCount(dbg, 8);
 
-  clickElement(dbg, "sourceArrow", 3);
-  is(findAllElements(dbg, "sourceNodes").length, 8);
+  const selected = waitForDispatch(dbg, "SET_SELECTED_LOCATION");
+  await clickElement(dbg, "sourceNode", 4);
+  await selected;
+  await waitForSelectedSource(dbg);
 
-  // Select a source.
-  ok(!findElementWithSelector(dbg, ".sources-list .focused"),
-     "Source is not focused");
-  const selected = waitForDispatch(dbg, "SELECT_SOURCE");
-  clickElement(dbg, "sourceNode", 4);
-  yield selected;
-  ok(findElementWithSelector(dbg, ".sources-list .focused"),
-     "Source is focused");
-  ok(getSelectedSource(getState()).get("url").includes("nested-source.js"),
-     "The right source is selected");
+  // Ensure the source file clicked is now focused
+  await waitForElementWithSelector(dbg, ".sources-list .focused");
+
+  const focusedNode = findElementWithSelector(dbg, ".sources-list .focused");
+  const fourthNode = findElement(dbg, "sourceNode", 4);
+  const selectedSource = getSelectedSource(getState()).url;
+
+  ok(fourthNode.classList.contains("focused"), "4th node is focused");
+  ok(selectedSource.includes("nested-source.js"), "nested-source is selected");
+  await assertNodeIsFocused(dbg, 4);
+  await waitForSelectedSource(dbg, "nested-source");
 
   // Make sure new sources appear in the list.
   ContentTask.spawn(gBrowser.selectedBrowser, null, function() {
@@ -44,17 +49,11 @@ add_task(function* () {
     content.document.body.appendChild(script);
   });
 
-  yield waitForSourceCount(dbg, 9);
-  is(findElement(dbg, "sourceNode", 7).textContent,
-     "math.min.js",
-     "The dynamic script exists");
-
-  // Make sure named eval sources appear in the list.
-  ContentTask.spawn(gBrowser.selectedBrowser, null, function() {
-    content.eval("window.evaledFunc = function() {} //# sourceURL=evaled.js");
-  });
-  yield waitForSourceCount(dbg, 11);
-  is(findElement(dbg, "sourceNode", 2).textContent,
-     "evaled.js",
-     "The eval script exists");
+  await waitForSourceCount(dbg, 9);
+  await assertNodeIsFocused(dbg, 4);
+  is(
+    getLabel(dbg, 7),
+    "math.min.js",
+    "math.min.js - The dynamic script exists"
+  );
 });

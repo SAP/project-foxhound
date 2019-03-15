@@ -1,64 +1,69 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+/* eslint-disable no-shadow, max-nested-callbacks */
+
+"use strict";
 
 var gDebuggee;
 var gClient;
 var gThreadClient;
 
+Services.prefs.setBoolPref("security.allow_eval_with_system_principal", true);
+
+registerCleanupFunction(() => {
+  Services.prefs.clearUserPref("security.allow_eval_with_system_principal");
+});
+
 // Test that the EnvironmentClient's getBindings() method works as expected.
-function run_test()
-{
+function run_test() {
   initTestDebuggerServer();
   gDebuggee = addTestGlobal("test-bindings");
 
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
-  gClient.connect().then(function () {
-    attachTestTabAndResume(gClient, "test-bindings", function (aResponse, aTabClient, aThreadClient) {
-      gThreadClient = aThreadClient;
-      test_banana_environment();
-    });
+  gClient.connect().then(function() {
+    attachTestTabAndResume(gClient, "test-bindings",
+                           function(response, targetFront, threadClient) {
+                             gThreadClient = threadClient;
+                             test_banana_environment();
+                           });
   });
   do_test_pending();
 }
 
-function test_banana_environment()
-{
+function test_banana_environment() {
+  gThreadClient.addOneTimeListener("paused", function(event, packet) {
+    const environment = packet.frame.environment;
+    Assert.equal(environment.type, "function");
 
-  gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-    let environment = aPacket.frame.environment;
-    do_check_eq(environment.type, "function");
+    const parent = environment.parent;
+    Assert.equal(parent.type, "block");
 
-    let parent = environment.parent;
-    do_check_eq(parent.type, "block");
+    const grandpa = parent.parent;
+    Assert.equal(grandpa.type, "function");
 
-    let grandpa = parent.parent;
-    do_check_eq(grandpa.type, "function");
+    const envClient = gThreadClient.environment(environment);
+    envClient.getBindings(response => {
+      Assert.equal(response.bindings.arguments[0].z.value, "z");
 
-    let envClient = gThreadClient.environment(environment);
-    envClient.getBindings(aResponse => {
-      do_check_eq(aResponse.bindings.arguments[0].z.value, "z");
+      const parentClient = gThreadClient.environment(parent);
+      parentClient.getBindings(response => {
+        Assert.equal(response.bindings.variables.banana3.value.class, "Function");
 
-      let parentClient = gThreadClient.environment(parent);
-      parentClient.getBindings(aResponse => {
-        do_check_eq(aResponse.bindings.variables.banana3.value.class, "Function");
-
-        let grandpaClient = gThreadClient.environment(grandpa);
-        grandpaClient.getBindings(aResponse => {
-          do_check_eq(aResponse.bindings.arguments[0].y.value, "y");
+        const grandpaClient = gThreadClient.environment(grandpa);
+        grandpaClient.getBindings(response => {
+          Assert.equal(response.bindings.arguments[0].y.value, "y");
           gThreadClient.resume(() => finishClient(gClient));
         });
       });
     });
   });
 
-  gDebuggee.eval("\
-        function banana(x) {                                            \n\
-          return function banana2(y) {                                  \n\
-            return function banana3(z) {                                \n\
-              debugger;                                                 \n\
-            };                                                          \n\
-          };                                                            \n\
-        }                                                               \n\
-        banana('x')('y')('z');                                          \n\
-        ");
+  gDebuggee.eval("function banana(x) {\n" +
+                 "  return function banana2(y) {\n" +
+                 "    return function banana3(z) {\n" +
+                 "      debugger;\n" +
+                 "    };\n" +
+                 "  };\n" +
+                 "}\n" +
+                 "banana('x')('y')('z');\n");
 }

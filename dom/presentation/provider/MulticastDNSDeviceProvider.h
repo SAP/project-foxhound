@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,9 +16,9 @@
 #include "nsIPresentationDeviceProvider.h"
 #include "nsIPresentationControlService.h"
 #include "nsITimer.h"
+#include "nsIWeakReferenceUtils.h"
 #include "nsString.h"
 #include "nsTArray.h"
-#include "nsWeakPtr.h"
 
 class nsITCPDeviceInfo;
 
@@ -29,14 +30,13 @@ class DNSServiceWrappedListener;
 class MulticastDNSService;
 
 class MulticastDNSDeviceProvider final
-  : public nsIPresentationDeviceProvider
-  , public nsIDNSServiceDiscoveryListener
-  , public nsIDNSRegistrationListener
-  , public nsIDNSServiceResolveListener
-  , public nsIPresentationControlServerListener
-  , public nsIObserver
-{
-public:
+    : public nsIPresentationDeviceProvider,
+      public nsIDNSServiceDiscoveryListener,
+      public nsIDNSRegistrationListener,
+      public nsIDNSServiceResolveListener,
+      public nsIPresentationControlServerListener,
+      public nsIObserver {
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIPRESENTATIONDEVICEPROVIDER
   NS_DECL_NSIDNSSERVICEDISCOVERYLISTENER
@@ -49,73 +49,42 @@ public:
   nsresult Init();
   nsresult Uninit();
 
-private:
-  enum class DeviceState : uint32_t {
-    eUnknown,
-    eActive
-  };
+ private:
+  enum class DeviceState : uint32_t { eUnknown, eActive };
 
-  class Device final : public nsIPresentationDevice
-  {
-  public:
+  class Device final : public nsIPresentationDevice {
+   public:
     NS_DECL_ISUPPORTS
     NS_DECL_NSIPRESENTATIONDEVICE
 
-    explicit Device(const nsACString& aId,
-                    const nsACString& aName,
-                    const nsACString& aType,
-                    const nsACString& aAddress,
-                    const uint16_t aPort,
-                    const nsACString& aCertFingerprint,
-                    DeviceState aState,
-                    MulticastDNSDeviceProvider* aProvider)
-      : mId(aId)
-      , mName(aName)
-      , mType(aType)
-      , mAddress(aAddress)
-      , mPort(aPort)
-      , mCertFingerprint(aCertFingerprint)
-      , mState(aState)
-      , mProvider(aProvider)
-    {
-    }
+    explicit Device(const nsACString& aId, const nsACString& aName,
+                    const nsACString& aType, const nsACString& aAddress,
+                    const uint16_t aPort, const nsACString& aCertFingerprint,
+                    DeviceState aState, MulticastDNSDeviceProvider* aProvider)
+        : mId(aId),
+          mName(aName),
+          mType(aType),
+          mAddress(aAddress),
+          mPort(aPort),
+          mCertFingerprint(aCertFingerprint),
+          mState(aState),
+          mProvider(aProvider) {}
 
-    const nsCString& Id() const
-    {
-      return mId;
-    }
+    const nsCString& Id() const { return mId; }
 
-    const nsCString& Address() const
-    {
-      return mAddress;
-    }
+    const nsCString& Address() const { return mAddress; }
 
-    uint16_t Port() const
-    {
-      return mPort;
-    }
+    uint16_t Port() const { return mPort; }
 
-    const nsCString& CertFingerprint() const
-    {
-      return mCertFingerprint;
-    }
+    const nsCString& CertFingerprint() const { return mCertFingerprint; }
 
-    DeviceState State() const
-    {
-      return mState;
-    }
+    DeviceState State() const { return mState; }
 
-    void ChangeState(DeviceState aState)
-    {
-      mState = aState;
-    }
+    void ChangeState(DeviceState aState) { mState = aState; }
 
-    void Update(const nsACString& aName,
-                const nsACString& aType,
-                const nsACString& aAddress,
-                const uint16_t aPort,
-                const nsACString& aCertFingerprint)
-    {
+    void Update(const nsACString& aName, const nsACString& aType,
+                const nsACString& aAddress, const uint16_t aPort,
+                const nsACString& aCertFingerprint) {
       mName = aName;
       mType = aType;
       mAddress = aAddress;
@@ -123,7 +92,7 @@ private:
       mCertFingerprint = aCertFingerprint;
     }
 
-  private:
+   private:
     virtual ~Device() = default;
 
     nsCString mId;
@@ -155,32 +124,23 @@ private:
   nsresult RegisterMDNSService();
   nsresult UnregisterMDNSService(nsresult aReason);
   nsresult StopDiscovery(nsresult aReason);
-  nsresult Connect(Device* aDevice,
-                   nsIPresentationControlChannel** aRetVal);
+  nsresult Connect(Device* aDevice, nsIPresentationControlChannel** aRetVal);
   bool IsCompatibleServer(nsIDNSServiceInfo* aServiceInfo);
 
   // device manipulation
-  nsresult AddDevice(const nsACString& aId,
-                     const nsACString& aServiceName,
-                     const nsACString& aServiceType,
-                     const nsACString& aAddress,
-                     const uint16_t aPort,
-                     const nsACString& aCertFingerprint);
-  nsresult UpdateDevice(const uint32_t aIndex,
-                        const nsACString& aServiceName,
+  nsresult AddDevice(const nsACString& aId, const nsACString& aServiceName,
+                     const nsACString& aServiceType, const nsACString& aAddress,
+                     const uint16_t aPort, const nsACString& aCertFingerprint);
+  nsresult UpdateDevice(const uint32_t aIndex, const nsACString& aServiceName,
                         const nsACString& aServiceType,
-                        const nsACString& aAddress,
-                        const uint16_t aPort,
+                        const nsACString& aAddress, const uint16_t aPort,
                         const nsACString& aCertFingerprint);
   nsresult RemoveDevice(const uint32_t aIndex);
-  bool FindDeviceById(const nsACString& aId,
-                      uint32_t& aIndex);
+  bool FindDeviceById(const nsACString& aId, uint32_t& aIndex);
 
-  bool FindDeviceByAddress(const nsACString& aAddress,
-                           uint32_t& aIndex);
+  bool FindDeviceByAddress(const nsACString& aAddress, uint32_t& aIndex);
 
-  already_AddRefed<Device>
-  GetOrCreateDevice(nsITCPDeviceInfo* aDeviceInfo);
+  already_AddRefed<Device> GetOrCreateDevice(nsITCPDeviceInfo* aDeviceInfo);
 
   void MarkAllDevicesUnknown();
   void ClearUnknownDevices();
@@ -218,8 +178,8 @@ private:
   nsCString mRegisteredName;
 };
 
-} // namespace presentation
-} // namespace dom
-} // namespace mozilla
+}  // namespace presentation
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_presentation_provider_MulticastDNSDeviceProvider_h
+#endif  // mozilla_dom_presentation_provider_MulticastDNSDeviceProvider_h

@@ -10,12 +10,13 @@ include ProtocolTypes;
 include protocol PMediaSystemResourceManager;
 
 include "mozilla/GfxMessageUtils.h";
+include "mozilla/layers/LayersMessageUtils.h";
+include "mozilla/layers/WebRenderMessageUtils.h";
 
 using struct mozilla::layers::TextureInfo from "mozilla/layers/CompositorTypes.h";
 using mozilla::layers::TextureFlags from "mozilla/layers/CompositorTypes.h";
 using mozilla::layers::CompositableHandle from "mozilla/layers/LayersTypes.h";
-
-using PlatformThreadId from "base/platform_thread.h";
+using mozilla::wr::MaybeExternalImageId from "mozilla/webrender/WebRenderTypes.h";
 
 namespace mozilla {
 namespace layers {
@@ -35,14 +36,10 @@ child:
 
   async DidComposite(ImageCompositeNotification[] aNotifications);
 
+  // Report the number of frames dropped for the given CompositableHost.
+  async ReportFramesDropped(CompositableHandle aHandle, uint32_t aFrames);
+
 parent:
-  async ImageBridgeThreadId(PlatformThreadId aTreahdId);
-
-  // Creates a set of mappings between TextureReadLocks and an associated
-  // ReadLockHandle that can be used in Update, and persist until the
-  // next Update call.
-  async InitReadLocks(ReadLockInit[] locks);
-
   async Update(CompositableOperation[] ops, OpDestroy[] toDestroy, uint64_t fwdTransactionId);
 
   // First step of the destruction sequence. This puts ImageBridge
@@ -54,10 +51,10 @@ parent:
   // before sending closing the channel.
   sync WillClose();
 
-  async PTexture(SurfaceDescriptor aSharedData, LayersBackend aBackend, TextureFlags aTextureFlags, uint64_t aSerial);
+  async PTexture(SurfaceDescriptor aSharedData, ReadLockDescriptor aReadLock, LayersBackend aBackend, TextureFlags aTextureFlags, uint64_t aSerial, MaybeExternalImageId aExternalImageId);
   async PMediaSystemResourceManager();
 
-  sync NewCompositable(CompositableHandle aHandle, TextureInfo aInfo);
+  sync NewCompositable(CompositableHandle aHandle, TextureInfo aInfo, LayersBackend aBackend);
   async ReleaseCompositable(CompositableHandle aHandle);
 };
 

@@ -52,18 +52,16 @@ self.recordingWritableStream = (extras = {}, strategy) => {
 
       return undefined;
     },
-    write(chunk) {
+    write(chunk, controller) {
       stream.events.push('write', chunk);
 
       if (extras.write) {
-        return extras.write(chunk);
+        return extras.write(chunk, controller);
       }
 
       return undefined;
     },
-    close(...args) {
-      assert_array_equals(args, [controllerToCopyOver], 'close must always be called with the controller');
-
+    close() {
       stream.events.push('close');
 
       if (extras.close) {
@@ -82,6 +80,48 @@ self.recordingWritableStream = (extras = {}, strategy) => {
       return undefined;
     }
   }, strategy);
+
+  stream.controller = controllerToCopyOver;
+  stream.events = [];
+
+  return stream;
+};
+
+self.recordingTransformStream = (extras = {}, writableStrategy, readableStrategy) => {
+  let controllerToCopyOver;
+  const stream = new TransformStream({
+    start(controller) {
+      controllerToCopyOver = controller;
+
+      if (extras.start) {
+        return extras.start(controller);
+      }
+
+      return undefined;
+    },
+
+    transform(chunk, controller) {
+      stream.events.push('transform', chunk);
+
+      if (extras.transform) {
+        return extras.transform(chunk, controller);
+      }
+
+      controller.enqueue(chunk);
+
+      return undefined;
+    },
+
+    flush(controller) {
+      stream.events.push('flush');
+
+      if (extras.flush) {
+        return extras.flush(controller);
+      }
+
+      return undefined;
+    }
+  }, writableStrategy, readableStrategy);
 
   stream.controller = controllerToCopyOver;
   stream.events = [];

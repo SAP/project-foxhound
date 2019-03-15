@@ -26,53 +26,53 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=551704
 <pre id="test">
 <script type="application/javascript">
 
-function testLineBreak(div, type, expectedText, expectedHTML, callback)
-{
+function testLineBreak(div, type, expectedText, expectedHTML, callback) {
   div.focus();
   getSelection().collapse(div, 0);
   type();
   is(div.innerHTML, expectedHTML, "The expected HTML after editing should be correct");
-  SimpleTest.waitForClipboard(expectedText,
-    function() {
-      getSelection().selectAllChildren(div);
-      synthesizeKey("C", {accelKey: true});
-    },
-    function() {
-      var t = document.createElement("textarea");
-      document.body.appendChild(t);
-      t.focus();
-      synthesizeKey("V", {accelKey: true});
-      is(t.value, expectedText, "The expected text should be copied to the clipboard");
-      callback();
-    },
-    function() {
-      SimpleTest.finish();
-    }
-  );
+  requestAnimationFrame(function() {
+    SimpleTest.waitForClipboard(expectedText,
+      function() {
+        getSelection().selectAllChildren(div);
+        synthesizeKey("C", {accelKey: true});
+      },
+      function() {
+        var t = document.createElement("textarea");
+        document.body.appendChild(t);
+        t.focus();
+        synthesizeKey("V", {accelKey: true});
+        is(t.value, expectedText, "The expected text should be copied to the clipboard");
+        callback();
+      },
+      function() {
+        SimpleTest.finish();
+      }
+    );
+  });
 }
 
 function typeABCDEF() {
-  synthesizeKey("a", {});
+  sendString("a");
   typeBCDEF_chars();
 }
 
 function typeBCDEF() {
-  synthesizeKey("VK_RIGHT", {});
+  synthesizeKey("KEY_ArrowRight");
   typeBCDEF_chars();
 }
 
 function typeBCDEF_chars() {
-  synthesizeKey("b", {});
-  synthesizeKey("c", {});
-  synthesizeKey("VK_RETURN", {});
-  synthesizeKey("d", {});
-  synthesizeKey("e", {});
-  synthesizeKey("f", {});
+  sendString("bc");
+  synthesizeKey("KEY_Enter");
+  sendString("def");
 }
 
 /** Test for Bug 551704 **/
 SimpleTest.waitForExplicitFinish();
 SimpleTest.waitForFocus(function() {
+  document.execCommand("defaultParagraphSeparator", false, "div");
+
   var preformatted = document.getElementById("preformatted");
   is(preformatted.innerHTML, "a\nb", "No BR node should be injected for preformatted editable fields");
 
@@ -90,14 +90,14 @@ SimpleTest.waitForFocus(function() {
 
     continueTest();
   });
-  iframe.src = "data:text/html,foo";
+  iframe.srcdoc = "foo";
   document.getElementById("content").appendChild(iframe);
 });
 
 function continueTest() {
   var divs = [];
   for (var i = 0; i < 8; ++i) {
-    divs[i] = document.getElementById("test" + (i+1));
+    divs[i] = document.getElementById("test" + (i + 1));
   }
   var current = 0;
   function doNextTest() {
@@ -106,12 +106,13 @@ function continueTest() {
       return;
     }
     var div = divs[current++];
+    let type;
     if (div.textContent == "a") {
-      var type = typeBCDEF;
+      type = typeBCDEF;
     } else {
-      var type = typeABCDEF;
+      type = typeABCDEF;
     }
-    var expectedHTML = "abc<br>def<br>";
+    var expectedHTML = "<div>abc</div><div>def<br></div>";
     var expectedText = "abc\ndef";
     testLineBreak(div, type, expectedText, expectedHTML, doNextTest);
   }

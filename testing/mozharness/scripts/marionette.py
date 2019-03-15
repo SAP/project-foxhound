@@ -6,19 +6,18 @@
 # ***** END LICENSE BLOCK *****
 
 import copy
+import json
 import os
-import re
 import sys
 
 # load modules from parent dir
 sys.path.insert(1, os.path.dirname(sys.path[0]))
 
-from mozharness.base.errors import TarErrorList
-from mozharness.base.log import INFO, ERROR, WARNING
+from mozharness.base.errors import BaseErrorList, TarErrorList
+from mozharness.base.log import INFO
 from mozharness.base.script import PreScriptAction
 from mozharness.base.transfer import TransferMixin
 from mozharness.base.vcs.vcsbase import MercurialScript
-from mozharness.mozilla.blob_upload import BlobUploadMixin, blobupload_config_options
 from mozharness.mozilla.testing.errors import LogcatErrorList
 from mozharness.mozilla.testing.testbase import TestingMixin, testing_config_options
 from mozharness.mozilla.testing.unittest import TestSummaryOutputParserHelper
@@ -26,13 +25,13 @@ from mozharness.mozilla.testing.codecoverage import (
     CodeCoverageMixin,
     code_coverage_config_options
 )
+from mozharness.mozilla.testing.errors import HarnessErrorList
+
 from mozharness.mozilla.structuredlog import StructuredOutputParser
 
-# TODO: we could remove emulator specific code after B2G ICS emulator buildbot
-#       builds is turned off, Bug 1209180.
 
-
-class MarionetteTest(TestingMixin, MercurialScript, BlobUploadMixin, TransferMixin, CodeCoverageMixin):
+class MarionetteTest(TestingMixin, MercurialScript, TransferMixin,
+                     CodeCoverageMixin):
     config_options = [[
         ["--application"],
         {"action": "store",
@@ -52,7 +51,8 @@ class MarionetteTest(TestingMixin, MercurialScript, BlobUploadMixin, TransferMix
         {"action": "store",
          "dest": "marionette_address",
          "default": None,
-         "help": "The host:port of the Marionette server running inside Gecko.  Unused for emulator testing",
+         "help": "The host:port of the Marionette server running inside Gecko. "
+                 "Unused for emulator testing",
          }
     ], [
         ["--emulator"],
@@ -91,24 +91,42 @@ class MarionetteTest(TestingMixin, MercurialScript, BlobUploadMixin, TransferMix
          "help": "Run tests with multiple processes. (Desktop builds only)",
          }
     ], [
+        ["--headless"],
+        {"action": "store_true",
+         "dest": "headless",
+         "default": False,
+         "help": "Run tests in headless mode.",
+         }
+    ], [
+        ["--headless-width"],
+        {"action": "store",
+         "dest": "headless_width",
+         "default": "1600",
+         "help": "Specify headless virtual screen width (default: 1600).",
+         }
+    ], [
+        ["--headless-height"],
+        {"action": "store",
+         "dest": "headless_height",
+         "default": "1200",
+         "help": "Specify headless virtual screen height (default: 1200).",
+         }
+    ], [
        ["--allow-software-gl-layers"],
        {"action": "store_true",
         "dest": "allow_software_gl_layers",
         "default": False,
         "help": "Permits a software GL implementation (such as LLVMPipe) to use the GL compositor."
         }
+    ], [
+       ["--enable-webrender"],
+       {"action": "store_true",
+        "dest": "enable_webrender",
+        "default": False,
+        "help": "Tries to enable the WebRender compositor."
+        }
      ]] + copy.deepcopy(testing_config_options) \
-        + copy.deepcopy(blobupload_config_options) \
         + copy.deepcopy(code_coverage_config_options)
-
-    error_list = [
-        {'substr': 'FAILED (errors=', 'level': WARNING},
-        {'substr': r'''Could not successfully complete transport of message to Gecko, socket closed''', 'level': ERROR},
-        {'substr': r'''Connection to Marionette server is lost. Check gecko''', 'level': ERROR},
-        {'substr': 'Timeout waiting for marionette on port', 'level': ERROR},
-        {'regex': re.compile(r'''(TEST-UNEXPECTED|PROCESS-CRASH)'''), 'level': ERROR},
-        {'regex': re.compile(r'''(\b((?!Marionette|TestMarionette|NoSuchElement|XPathLookup|NoSuchWindow|StaleElement|ScriptTimeout|ElementNotVisible|NoSuchFrame|InvalidResponse|Javascript|Timeout|InvalidElementState|NoAlertPresent|InvalidCookieDomain|UnableToSetCookie|InvalidSelector|MoveTargetOutOfBounds)\w*)Exception)'''), 'level': ERROR},
-    ]
 
     repos = []
 
@@ -116,7 +134,6 @@ class MarionetteTest(TestingMixin, MercurialScript, BlobUploadMixin, TransferMix
         super(MarionetteTest, self).__init__(
             config_options=self.config_options,
             all_actions=['clobber',
-                         'read-buildbot-config',
                          'pull',
                          'download-and-extract',
                          'create-virtualenv',
@@ -139,6 +156,10 @@ class MarionetteTest(TestingMixin, MercurialScript, BlobUploadMixin, TransferMix
         self.test_url = c.get('test_url')
         self.test_packages_url = c.get('test_packages_url')
 
+        self.test_suite = self._get_test_suite(c.get('emulator'))
+        if self.test_suite not in self.config["suite_definitions"]:
+            self.fatal("{} is not defined in the config!".format(self.test_suite))
+
         if c.get('structured_output'):
             self.parser_class = StructuredOutputParser
         else:
@@ -147,7 +168,14 @@ class MarionetteTest(TestingMixin, MercurialScript, BlobUploadMixin, TransferMix
     def _pre_config_lock(self, rw_config):
         super(MarionetteTest, self)._pre_config_lock(rw_config)
         if not self.config.get('emulator') and not self.config.get('marionette_address'):
-                self.fatal("You need to specify a --marionette-address for non-emulator tests! (Try --marionette-address localhost:2828 )")
+                self.fatal("You need to specify a --marionette-address for non-emulator tests! "
+                           "(Try --marionette-address localhost:2828 )")
+
+    def _query_tests_dir(self):
+        dirs = self.query_abs_dirs()
+        test_dir = self.config["suite_definitions"][self.test_suite]["testsdir"]
+
+        return os.path.join(dirs['abs_test_install_dir'], test_dir)
 
     def query_abs_dirs(self):
         if self.abs_dirs:
@@ -200,7 +228,7 @@ class MarionetteTest(TestingMixin, MercurialScript, BlobUploadMixin, TransferMix
             self.register_virtualenv_module(
                 'marionette', os.path.join('tests', 'marionette'))
 
-    def _get_options_group(self, is_emulator):
+    def _get_test_suite(self, is_emulator):
         """
         Determine which in tree options group to use and return the
         appropriate key.
@@ -278,25 +306,26 @@ class MarionetteTest(TestingMixin, MercurialScript, BlobUploadMixin, TransferMix
         if not self.config['e10s']:
             cmd.append('--disable-e10s')
 
-        cmd.append('--gecko-log=%s' % os.path.join(dirs["abs_blob_upload_dir"],
-                                                   'gecko.log'))
+        cmd.append('--gecko-log=-')
 
         if self.config.get("structured_output"):
             cmd.append("--log-raw=-")
 
-        options_group = self._get_options_group(self.config.get('emulator'))
-
-        if options_group not in self.config["suite_definitions"]:
-            self.fatal("%s is not defined in the config!" % options_group)
-
-        for s in self.config["suite_definitions"][options_group]["options"]:
-            cmd.append(s % config_fmt_args)
+        for arg in self.config["suite_definitions"][self.test_suite]["options"]:
+            cmd.append(arg % config_fmt_args)
 
         if self.mkdir_p(dirs["abs_blob_upload_dir"]) == -1:
             # Make sure that the logging directory exists
             self.fatal("Could not create blobber upload directory")
 
-        cmd.append(manifest)
+        test_paths = json.loads(os.environ.get('MOZHARNESS_TEST_PATHS', '""'))
+
+        if test_paths and 'marionette' in test_paths:
+            paths = [os.path.join(dirs['abs_test_install_dir'], 'marionette', 'tests', p)
+                     for p in test_paths['marionette']]
+            cmd.extend(paths)
+        else:
+            cmd.append(manifest)
 
         try_options, try_tests = self.try_args("marionette")
         cmd.extend(self.query_tests_args(try_tests,
@@ -307,24 +336,40 @@ class MarionetteTest(TestingMixin, MercurialScript, BlobUploadMixin, TransferMix
             env['MINIDUMP_STACKWALK'] = self.minidump_stackwalk_path
         env['MOZ_UPLOAD_DIR'] = self.query_abs_dirs()['abs_blob_upload_dir']
         env['MINIDUMP_SAVE_PATH'] = self.query_abs_dirs()['abs_blob_upload_dir']
-        env['RUST_BACKTRACE'] = '1'
+        env['RUST_BACKTRACE'] = 'full'
 
         if self.config['allow_software_gl_layers']:
             env['MOZ_LAYERS_ALLOW_SOFTWARE_GL'] = '1'
+        if self.config['enable_webrender']:
+            env['MOZ_WEBRENDER'] = '1'
+            env['MOZ_ACCELERATED'] = '1'
+
+        if self.config['headless']:
+            env['MOZ_HEADLESS'] = '1'
+            env['MOZ_HEADLESS_WIDTH'] = self.config['headless_width']
+            env['MOZ_HEADLESS_HEIGHT'] = self.config['headless_height']
 
         if not os.path.isdir(env['MOZ_UPLOAD_DIR']):
             self.mkdir_p(env['MOZ_UPLOAD_DIR'])
         env = self.query_env(partial_env=env)
 
+        try:
+            cwd = self._query_tests_dir()
+        except Exception as e:
+            self.fatal("Don't know how to run --test-suite '{0}': {1}!".format(
+                self.test_suite, e))
+
         marionette_parser = self.parser_class(config=self.config,
                                               log_obj=self.log_obj,
-                                              error_list=self.error_list,
+                                              error_list=BaseErrorList + HarnessErrorList,
                                               strict=False)
-        return_code = self.run_command(cmd, env=env,
-                                output_timeout=1000,
-                                output_parser=marionette_parser)
+        return_code = self.run_command(cmd,
+                                       cwd=cwd,
+                                       output_timeout=1000,
+                                       output_parser=marionette_parser,
+                                       env=env)
         level = INFO
-        tbpl_status, log_level = marionette_parser.evaluate_parser(
+        tbpl_status, log_level, summary = marionette_parser.evaluate_parser(
             return_code=return_code)
         marionette_parser.append_tinderboxprint_line("marionette")
 
@@ -356,7 +401,7 @@ class MarionetteTest(TestingMixin, MercurialScript, BlobUploadMixin, TransferMix
 
         self.log("Marionette exited with return code %s: %s" % (return_code, tbpl_status),
                  level=level)
-        self.buildbot_status(tbpl_status)
+        self.record_status(tbpl_status)
 
 
 if __name__ == '__main__':

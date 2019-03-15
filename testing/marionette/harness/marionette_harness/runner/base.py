@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 import json
 import os
 import random
@@ -20,14 +22,17 @@ import mozinfo
 import moznetwork
 import mozprofile
 import mozversion
-import serve
 
 from manifestparser import TestManifest
 from manifestparser.filters import tags
 from marionette_driver.marionette import Marionette
 from moztest.adapters.unit import StructuredTestResult, StructuredTestRunner
 from moztest.results import TestResult, TestResultCollection, relevant_line
-from serve import iter_proc, iter_url
+
+from six import reraise
+
+from . import serve
+
 
 here = os.path.abspath(os.path.dirname(__file__))
 
@@ -183,8 +188,6 @@ class MarionetteTestResult(StructuredTestResult, TestResultCollection):
             return '\n'.join((str(test), doc_first_line))
         else:
             desc = str(test)
-            if hasattr(test, 'jsFile'):
-                desc = "{0}, {1}".format(test.jsFile, desc)
             return desc
 
     def printLogs(self, test):
@@ -241,11 +244,6 @@ class MarionetteTextTestRunner(StructuredTestRunner):
 
 
 class BaseMarionetteArguments(ArgumentParser):
-    # Bug 1336953 - Until we can remove the socket timeout parameter it has to be
-    # set a default value which is larger than the longest timeout as defined by the
-    # WebDriver spec. In that case its 300s for page load. Also add another minute
-    # so that slow builds have enough time to send the timeout error to the client.
-    socket_timeout_default = 360.0
 
     def __init__(self, **kwargs):
         ArgumentParser.__init__(self, **kwargs)
@@ -302,19 +300,28 @@ class BaseMarionetteArguments(ArgumentParser):
                           help="addon to install; repeat for multiple addons.")
         self.add_argument('--repeat',
                           type=int,
-                          default=0,
                           help='number of times to repeat the test(s)')
+        self.add_argument("--run-until-failure",
+                          action="store_true",
+                          help="Run tests repeatedly and stop on the first time a test fails. "
+                               "Default cap is 30 runs, which can be overwritten "
+                               "with the --repeat parameter.")
         self.add_argument('--testvars',
                           action='append',
                           help='path to a json file with any test data required')
         self.add_argument('--symbols-path',
                           help='absolute path to directory containing breakpad symbols, or the '
                                'url of a zip file containing symbols')
+        self.add_argument('--socket-timeout',
+                          type=float,
+                          default=Marionette.DEFAULT_SOCKET_TIMEOUT,
+                          help='Set the global timeout for marionette socket operations.'
+                               ' Default: %(default)ss.')
         self.add_argument('--startup-timeout',
                           type=int,
-                          default=60,
+                          default=Marionette.DEFAULT_STARTUP_TIMEOUT,
                           help='the max number of seconds to wait for a Marionette connection '
-                               'after launching a binary')
+                               'after launching a binary. Default: %(default)ss.')
         self.add_argument('--shuffle',
                           action='store_true',
                           default=False,
@@ -349,16 +356,16 @@ class BaseMarionetteArguments(ArgumentParser):
         self.add_argument('--pydebugger',
                           help='Enable python post-mortem debugger when a test fails.'
                                ' Pass in the debugger you want to use, eg pdb or ipdb.')
-        self.add_argument('--socket-timeout',
-                          type=float,
-                          default=self.socket_timeout_default,
-                          help='Set the global timeout for marionette socket operations.'
-                               ' Default: %(default)ss.')
         self.add_argument('--disable-e10s',
                           action='store_false',
                           dest='e10s',
                           default=True,
                           help='Disable e10s when running marionette tests.')
+        self.add_argument("-z", "--headless",
+                          action="store_true",
+                          dest="headless",
+                          default=os.environ.get("MOZ_HEADLESS", False),
+                          help="Run tests in headless mode.")
         self.add_argument('--tag',
                           action='append', dest='test_tags',
                           default=None,
@@ -430,6 +437,9 @@ class BaseMarionetteArguments(ArgumentParser):
         if not args.address and not args.binary and not args.emulator:
             self.error('You must specify --binary, or --address, or --emulator')
 
+        if args.repeat is not None and args.repeat < 0:
+            self.error('The value of --repeat has to be equal or greater than 0.')
+
         if args.total_chunks is not None and args.this_chunk is None:
             self.error('You must specify which chunk to run.')
 
@@ -499,16 +509,18 @@ class BaseMarionetteTestRunner(object):
     def __init__(self, address=None,
                  app=None, app_args=None, binary=None, profile=None,
                  logger=None, logdir=None,
-                 repeat=0, testvars=None,
+                 repeat=None,
+                 run_until_failure=None,
+                 testvars=None,
                  symbols_path=None,
                  shuffle=False, shuffle_seed=random.randint(0, sys.maxint), this_chunk=1,
                  total_chunks=1,
                  server_root=None, gecko_log=None, result_callbacks=None,
                  prefs=None, test_tags=None,
-                 socket_timeout=BaseMarionetteArguments.socket_timeout_default,
-                 startup_timeout=None, addons=None, workspace=None,
-                 verbose=0, e10s=True, emulator=False, **kwargs):
-        self._appinfo = None
+                 socket_timeout=None,
+                 startup_timeout=None,
+                 addons=None, workspace=None,
+                 verbose=0, e10s=True, emulator=False, headless=False, **kwargs):
         self._appName = None
         self._capabilities = None
         self._filename_pattern = None
@@ -528,9 +540,11 @@ class BaseMarionetteTestRunner(object):
         self.logger = logger
         self.marionette = None
         self.logdir = logdir
-        self.repeat = repeat
+        self.repeat = repeat or 0
+        self.run_until_failure = run_until_failure or False
         self.symbols_path = symbols_path
         self.socket_timeout = socket_timeout
+        self.startup_timeout = startup_timeout
         self.shuffle = shuffle
         self.shuffle_seed = shuffle_seed
         self.server_root = server_root
@@ -542,19 +556,27 @@ class BaseMarionetteTestRunner(object):
         self.result_callbacks = result_callbacks or []
         self.prefs = prefs or {}
         self.test_tags = test_tags
-        self.startup_timeout = startup_timeout
         self.workspace = workspace
         # If no workspace is set, default location for gecko.log is .
         # and default location for profile is TMP
         self.workspace_path = workspace or os.getcwd()
         self.verbose = verbose
+        self.headless = headless
+
+        # self.e10s stores the desired configuration, whereas
+        # self._e10s_from_browser is the cached value from querying e10s
+        # in self.is_e10s
         self.e10s = e10s
+        self._e10s_from_browser = None
         if self.e10s:
             self.prefs.update({
                 'browser.tabs.remote.autostart': True,
                 'browser.tabs.remote.force-enable': True,
-                'extensions.e10sBlocksEnabling': False
             })
+
+        # If no repeat has been set, default to 30 extra runs
+        if self.run_until_failure and repeat is None:
+            self.repeat = 30
 
         def gather_debug(test, status):
             # No screenshots and page source for skipped tests
@@ -600,7 +622,7 @@ class BaseMarionetteTestRunner(object):
     def filename_pattern(self):
         if self._filename_pattern is None:
             self._filename_pattern = re.compile(
-                "^test(((_.+?)+?\.((py)|(js)))|(([A-Z].*?)+?\.js))$")
+                "^test(((_.+?)+?\.((py))))$")
 
         return self._filename_pattern
 
@@ -639,7 +661,7 @@ class BaseMarionetteTestRunner(object):
                 except ValueError as e:
                     exc, val, tb = sys.exc_info()
                     msg = "JSON file ({0}) is not properly formatted: {1}"
-                    raise exc, msg.format(os.path.abspath(path), e.message), tb
+                    reraise(exc, msg.format(os.path.abspath(path), e.message), tb)
         return data
 
     @property
@@ -651,23 +673,6 @@ class BaseMarionetteTestRunner(object):
         self._capabilities = self.marionette.session_capabilities
         self.marionette.delete_session()
         return self._capabilities
-
-    @property
-    def appinfo(self):
-        if self._appinfo:
-            return self._appinfo
-
-        self.marionette.start_session()
-        with self.marionette.using_context('chrome'):
-            self._appinfo = self.marionette.execute_script("""
-            try {
-              return Services.appinfo;
-            } catch (e) {
-              return null;
-            }""")
-        self.marionette.delete_session()
-        self._appinfo = self._appinfo or {}
-        return self._appinfo
 
     @property
     def appName(self):
@@ -723,7 +728,7 @@ class BaseMarionetteTestRunner(object):
         }
         if self.bin or self.emulator:
             kwargs.update({
-                'host': 'localhost',
+                'host': '127.0.0.1',
                 'port': 2828,
                 'app': self.app,
                 'app_args': self.app_args,
@@ -767,9 +772,12 @@ class BaseMarionetteTestRunner(object):
                 except Exception as e:
                     exc, val, tb = sys.exc_info()
                     msg = "Connection attempt to {0}:{1} failed with error: {2}"
-                    raise exc, msg.format(host, port, e), tb
+                    reraise(exc, msg.format(host, port, e), tb)
         if self.workspace:
             kwargs['workspace'] = self.workspace_path
+        if self.headless:
+            kwargs['headless'] = True
+
         return kwargs
 
     def record_crash(self):
@@ -794,21 +802,52 @@ class BaseMarionetteTestRunner(object):
                          if not self._is_filename_valid(t['filepath'])]
         if invalid_tests:
             raise Exception("Test file names must be of the form "
-                            "'test_something.py', 'test_something.js', or 'testSomething.js'."
+                            "'test_something.py'."
                             " Invalid test names:\n  {}".format('\n  '.join(invalid_tests)))
 
     def _is_filename_valid(self, filename):
         filename = os.path.basename(filename)
         return self.filename_pattern.match(filename)
 
+    def _fix_test_path(self, path):
+        """Normalize a logged test path from the test package."""
+        test_path_prefixes = [
+            "tests{}".format(os.path.sep),
+        ]
+
+        for prefix in test_path_prefixes:
+            if path.startswith(prefix):
+                path = path[len(prefix):]
+                break
+        return path
+
     def _log_skipped_tests(self):
         for test in self.manifest_skipped_tests:
-            name = os.path.basename(test['path'])
-            self.logger.test_start(name)
-            self.logger.test_end(name,
+            rel_path = None
+            if os.path.exists(test['path']):
+                rel_path = self._fix_test_path(os.path.relpath(test['path']))
+
+            self.logger.test_start(rel_path)
+            self.logger.test_end(rel_path,
                                  'SKIP',
                                  message=test['disabled'])
             self.todo += 1
+
+    @property
+    def is_e10s(self):
+        """Query the browser on whether E10s (Electrolysis) is enabled."""
+        if self.marionette is None or self.marionette.session is None:
+            self._e10s_from_browser = None
+            raise Exception("No Marionette session to query e10s state")
+
+        if self._e10s_from_browser is not None:
+            return self._e10s_from_browser
+
+        with self.marionette.using_context("chrome"):
+            self._e10s_from_browser = self.marionette.execute_script(
+                "return Services.appinfo.browserTabsRemoteAutostart")
+
+        return self._e10s_from_browser
 
     def run_tests(self, tests):
         start_time = time.time()
@@ -822,7 +861,7 @@ class BaseMarionetteTestRunner(object):
                 any(not server.is_alive for _, server in self.fixture_servers):
             self.logger.info("Starting fixture servers")
             self.fixture_servers = self.start_fixture_servers()
-            for url in iter_url(self.fixture_servers):
+            for url in serve.iter_url(self.fixture_servers):
                 self.logger.info("Fixture server listening on %s" % url)
 
             # backwards compatibility
@@ -833,43 +872,50 @@ class BaseMarionetteTestRunner(object):
         device_info = None
         if self.marionette.instance and self.emulator:
             try:
-                device_info = self.marionette.instance.runner.device.dm.getInfo()
+                device_info = self.marionette.instance.runner.device.device.get_info()
             except Exception:
                 self.logger.warning('Could not get device info', exc_info=True)
 
-        appinfo_e10s = self.appinfo.get('browserTabsRemoteAutostart', False)
-        self.logger.info("e10s is {}".format("enabled" if appinfo_e10s else "disabled"))
-        if self.e10s != appinfo_e10s:
-            message_e10s = ("BaseMarionetteTestRunner configuration (self.e10s) does "
-                            "not match browser appinfo")
+        self.marionette.start_session()
+        self.logger.info("e10s is {}".format("enabled" if self.is_e10s else "disabled"))
+        if self.e10s != self.is_e10s:
             self.cleanup()
-            raise AssertionError(message_e10s)
+            raise AssertionError("BaseMarionetteTestRunner configuration (self.e10s) "
+                                 "does not match browser appinfo (self.is_e10s)")
+        self.marionette.delete_session()
 
         tests_by_group = defaultdict(list)
         for test in self.tests:
             tests_by_group[test['group']].append(test['filepath'])
 
         self.logger.suite_start(tests_by_group,
+                                name='marionette-test',
                                 version_info=self.version_info,
                                 device_info=device_info)
+
+        if self.shuffle:
+            self.logger.info("Using shuffle seed: %d" % self.shuffle_seed)
 
         self._log_skipped_tests()
 
         interrupted = None
         try:
-            counter = self.repeat
-            while counter >= 0:
-                round_num = self.repeat - counter
-                if round_num > 0:
-                    self.logger.info('\nREPEAT {}\n-------'.format(round_num))
+            repeat_index = 0
+            while repeat_index <= self.repeat:
+                if repeat_index > 0:
+                    self.logger.info("\nREPEAT {}\n-------".format(repeat_index))
                 self.run_test_sets()
-                counter -= 1
+                if self.run_until_failure and self.failed > 0:
+                    break
+
+                repeat_index += 1
+
         except KeyboardInterrupt:
             # in case of KeyboardInterrupt during the test execution
             # we want to display current test results.
             # so we keep the exception to raise it later.
             interrupted = sys.exc_info()
-        except:
+        except Exception:
             # For any other exception we return immediately and have to
             # cleanup running processes
             self.cleanup()
@@ -882,11 +928,9 @@ class BaseMarionetteTestRunner(object):
 
             for run_tests in self.mixin_run_tests:
                 run_tests(tests)
-            if self.shuffle:
-                self.logger.info("Using shuffle seed: %d" % self.shuffle_seed)
 
             self.logger.suite_end()
-        except:
+        except Exception:
             # raise only the exception if we were not interrupted
             if not interrupted:
                 raise
@@ -895,7 +939,7 @@ class BaseMarionetteTestRunner(object):
 
             # reraise previous interruption now
             if interrupted:
-                raise interrupted[0], interrupted[1], interrupted[2]
+                reraise(interrupted[0], interrupted[1], interrupted[2])
 
     def _print_summary(self, tests):
         self.logger.info('\nSUMMARY\n-------')
@@ -959,6 +1003,7 @@ class BaseMarionetteTestRunner(object):
                 "appname": self.appName,
                 "e10s": self.e10s,
                 "manage_instance": self.marionette.instance is not None,
+                "headless": self.headless
             }
             values.update(mozinfo.info)
 
@@ -1065,14 +1110,14 @@ class BaseMarionetteTestRunner(object):
         self.run_test_set(self.tests)
 
     def cleanup(self):
-        for proc in iter_proc(self.fixture_servers):
+        for proc in serve.iter_proc(self.fixture_servers):
             proc.stop()
             proc.kill()
         self.fixture_servers = {}
 
         if hasattr(self, 'marionette') and self.marionette:
             if self.marionette.instance is not None:
-                self.marionette.instance.close()
+                self.marionette.instance.close(clean=True)
                 self.marionette.instance = None
 
             self.marionette.cleanup()

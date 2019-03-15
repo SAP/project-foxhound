@@ -1,8 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Components.utils.import("resource://gre/modules/Http.jsm");
-Components.utils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/Http.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
 
 const BinaryInputStream = Components.Constructor("@mozilla.org/binaryinputstream;1",
   "nsIBinaryInputStream", "setInputStream");
@@ -18,7 +18,7 @@ const kPostPath = "/post";
 const kPostUrl = kBaseUrl + kPostPath;
 const kPostDataSent = [["foo", "bar"], ["complex", "!*()@"]];
 const kPostDataReceived = "foo=bar&complex=%21%2A%28%29%40";
-const kPostMimeTypeReceived = "application/x-www-form-urlencoded; charset=utf-8";
+const kPostMimeTypeReceived = "application/x-www-form-urlencoded;charset=UTF-8";
 
 const kJsonPostPath = "/json_post";
 const kJsonPostUrl = kBaseUrl + kJsonPostPath;
@@ -47,38 +47,38 @@ function getDataChecker(aExpectedMethod, aExpectedData, aExpectedMimeType = null
     while ((avail = body.available()) > 0)
       Array.prototype.push.apply(bytes, body.readByteArray(avail));
 
-    do_check_eq(aRequest.method, aExpectedMethod);
+    Assert.equal(aRequest.method, aExpectedMethod);
 
     // Checking if the Content-Type is as expected.
     if (aExpectedMimeType) {
       let contentType = aRequest.getHeader("Content-Type");
-      do_check_eq(contentType, aExpectedMimeType);
+      Assert.equal(contentType, aExpectedMimeType);
     }
 
     var data = String.fromCharCode.apply(null, bytes);
 
-    do_check_eq(data, aExpectedData);
+    Assert.equal(data, aExpectedData);
 
     aResponse.setStatusLine(null, 200, "OK");
     aResponse.setHeader("Content-Type", "application/json");
     aResponse.write("Success!");
-  }
+  };
 }
 
 add_test(function test_successCallback() {
   do_test_pending();
   let options = {
     onLoad(aResponse) {
-      do_check_eq(aResponse, "Success!");
+      Assert.equal(aResponse, "Success!");
       do_test_finished();
       run_next_test();
     },
     onError(e) {
-      do_check_true(false);
+      Assert.ok(false);
       do_test_finished();
       run_next_test();
-    }
-  }
+    },
+  };
   httpRequest(kSuccessUrl, options);
 });
 
@@ -86,16 +86,16 @@ add_test(function test_errorCallback() {
   do_test_pending();
   let options = {
     onSuccess(aResponse) {
-      do_check_true(false);
+      Assert.ok(false);
       do_test_finished();
       run_next_test();
     },
     onError(e, aResponse) {
-      do_check_eq(e, "404 - Not Found");
+      Assert.equal(e, "404 - Not Found");
       do_test_finished();
       run_next_test();
-    }
-  }
+    },
+  };
   httpRequest(kBaseUrl + "/failure", options);
 });
 
@@ -103,17 +103,17 @@ add_test(function test_PostData() {
   do_test_pending();
   let options = {
     onLoad(aResponse) {
-      do_check_eq(aResponse, "Success!");
+      Assert.equal(aResponse, "Success!");
       do_test_finished();
       run_next_test();
     },
     onError(e) {
-      do_check_true(false);
+      Assert.ok(false);
       do_test_finished();
       run_next_test();
     },
-    postData: kPostDataSent
-  }
+    postData: kPostDataSent,
+  };
   httpRequest(kPostUrl, options);
 });
 
@@ -122,17 +122,17 @@ add_test(function test_PutData() {
   let options = {
     method: "PUT",
     onLoad(aResponse) {
-      do_check_eq(aResponse, "Success!");
+      Assert.equal(aResponse, "Success!");
       do_test_finished();
       run_next_test();
     },
     onError(e) {
-      do_check_true(false);
+      Assert.ok(false);
       do_test_finished();
       run_next_test();
     },
-    postData: kPutDataSent
-  }
+    postData: kPutDataSent,
+  };
   httpRequest(kPutUrl, options);
 });
 
@@ -140,17 +140,17 @@ add_test(function test_GetData() {
   do_test_pending();
   let options = {
     onLoad(aResponse) {
-      do_check_eq(aResponse, "Success!");
+      Assert.equal(aResponse, "Success!");
       do_test_finished();
       run_next_test();
     },
     onError(e) {
-      do_check_true(false);
+      Assert.ok(false);
       do_test_finished();
       run_next_test();
     },
-    postData: null
-  }
+    postData: null,
+  };
   httpRequest(kGetUrl, options);
 });
 
@@ -158,7 +158,7 @@ add_test(function test_OptionalParameters() {
   let options = {
     onLoad: null,
     onError: null,
-    logger: null
+    logger: null,
   };
   // Just make sure that nothing throws when doing this (i.e. httpRequest
   // doesn't try to access null options).
@@ -176,19 +176,19 @@ add_test(function test_CustomContentTypeOnPost() {
   // Preparing the request parameters.
   let options = {
     onLoad(aResponse) {
-      do_check_eq(aResponse, "Success!");
+      Assert.equal(aResponse, "Success!");
       do_test_finished();
       run_next_test();
     },
     onError(e) {
-      do_check_true(false);
+      Assert.ok(false);
       do_test_finished();
       run_next_test();
     },
     postData: kJsonPostData,
     // Setting a custom Content-Type header.
-    headers: [["Content-Type", "application/json"]]
-  }
+    headers: [["Content-Type", "application/json"]],
+  };
 
   // Firing the request.
   httpRequest(kJsonPostUrl, options);
@@ -205,23 +205,23 @@ add_test(function test_OverrideMimeType() {
   const kMimeType = "text/xml; charset=UTF-8";
   let options = {
     onLoad(aResponse, xhr) {
-      do_check_eq(aResponse, "Success!");
+      Assert.equal(aResponse, "Success!");
 
       // Set the expected MIME-type.
       let reportedMimeType = xhr.getResponseHeader("Content-Type");
-      do_check_neq(reportedMimeType, kMimeType);
+      Assert.notEqual(reportedMimeType, kMimeType);
 
       // responseXML should not be not null if overriding mime type succeeded.
-      do_check_true(xhr.responseXML != null);
+      Assert.ok(xhr.responseXML != null);
 
       do_test_finished();
       run_next_test();
     },
     onError(e) {
-      do_check_true(false);
+      Assert.ok(false);
       do_test_finished();
       run_next_test();
-    }
+    },
   };
 
   // Firing the request.
@@ -232,6 +232,9 @@ add_test(function test_OverrideMimeType() {
 });
 
 function run_test() {
+  const PREF = "dom.xhr.standard_content_type_normalization";
+  Services.prefs.setBoolPref(PREF, true);
+
   // Set up a mock HTTP server to serve a success page.
   server = new HttpServer();
   server.registerPathHandler(kSuccessPath, successResult);
@@ -250,7 +253,8 @@ function run_test() {
   run_next_test();
 
   // Teardown.
-  do_register_cleanup(function() {
+  registerCleanupFunction(function() {
+    Services.prefs.clearUserPref(PREF);
     server.stop(function() { });
   });
 }

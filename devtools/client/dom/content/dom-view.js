@@ -12,11 +12,11 @@ const { Provider } = require("devtools/client/shared/vendor/react-redux");
 const { combineReducers } = require("devtools/client/shared/vendor/redux");
 
 // DOM Panel
-const MainFrame = React.createFactory(require("./components/main-frame"));
+const MainFrame = React.createFactory(require("./components/MainFrame"));
 
 // Store
 const createStore = require("devtools/client/shared/redux/create-store")({
-  log: false
+  log: false,
 });
 
 const { reducers } = require("./reducers/index");
@@ -36,23 +36,23 @@ function DomView(localStore) {
 }
 
 DomView.prototype = {
-  initialize: function (rootGrip) {
-    let content = document.querySelector("#content");
-    let mainFrame = MainFrame({
+  initialize: function(rootGrip) {
+    const content = document.querySelector("#content");
+    const mainFrame = MainFrame({
       object: rootGrip,
     });
 
     // Render top level component
-    let provider = React.createElement(Provider, {
-      store: this.store
+    const provider = React.createElement(Provider, {
+      store: this.store,
     }, mainFrame);
 
     this.mainFrame = ReactDOM.render(provider, content);
   },
 
-  onMessage: function (event) {
-    let data = event.data;
-    let method = data.type;
+  onMessage: function(event) {
+    const data = event.data;
+    const method = data.type;
 
     if (typeof this[method] == "function") {
       this[method](data.args);
@@ -61,5 +61,5 @@ DomView.prototype = {
 };
 
 // Construct DOM panel view object and expose it to tests.
-// Tests can access it throught: |panel.panelWin.view|
+// Tests can access it through: |panel.panelWin.view|
 window.view = new DomView(store);

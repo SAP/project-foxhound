@@ -5,14 +5,13 @@
 
 #include "nsISupports.idl"
 #include "nsITransaction.idl"
-#include "nsITransactionList.idl"
 #include "nsITransactionListener.idl"
 
-%{ C++
-
-#define NS_TRANSACTIONMANAGER_CONTRACTID "@mozilla.org/transactionmanager;1"
-
-%} C++
+%{C++
+namespace mozilla {
+class TransactionManager;
+} // namespace mozilla
+%}
 
 /**
  * The nsITransactionManager interface.
@@ -68,7 +67,7 @@ interface nsITransactionManager : nsISupports
    * application to execute and group together several independent transactions
    * so they can be undone with a single call to undoTransaction().
    * @param aData An arbitrary nsISupports object that is associated with the
-   * batch. Can be retrieved from nsITransactionList.
+   * batch. Can be retrieved from the undo or redo stacks.
    */
   void beginBatch(in nsISupports aData);
 
@@ -135,20 +134,6 @@ interface nsITransactionManager : nsISupports
   nsITransaction peekRedoStack();
 
   /**
-   * Returns the list of transactions on the undo stack. Note that the
-   * transaction at the top of the undo stack will actually be at the
-   * index 'n-1' in the list, where 'n' is the number of items in the list.
-   */
-  nsITransactionList getUndoList();
-
-  /**
-   * Returns the list of transactions on the redo stack. Note that the
-   * transaction at the top of the redo stack will actually be at the
-   * index 'n-1' in the list, where 'n' is the number of items in the list.
-   */
-  nsITransactionList getRedoList();
-
-  /**
    * Adds a listener to the transaction manager's notification list. Listeners
    * are notified whenever a transaction is done, undone, or redone.
    * <P>
@@ -164,5 +149,14 @@ interface nsITransactionManager : nsISupports
    * @param aListener the lister to remove.
    */
   void RemoveListener(in nsITransactionListener aListener);
-};
 
+%{C++
+  /**
+   * AsTransactionManager() returns a pointer to TransactionManager class.
+   *
+   * In order to avoid circular dependency issues, this method is defined
+   * in mozilla/TransactionManager.h.  Consumers need to #include that header.
+   */
+  inline mozilla::TransactionManager* AsTransactionManager();
+%}
+};

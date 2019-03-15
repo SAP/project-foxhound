@@ -12,13 +12,14 @@
 #include "mozilla/EventForwards.h"
 #include "mozilla/TextEventDispatcherListener.h"
 #include "mozilla/TextRange.h"
+#include "mozilla/widget/IMEData.h"
 
 class nsIWidget;
 
 namespace mozilla {
 namespace widget {
 
-struct IMENotification;
+class PuppetWidget;
 
 /**
  * TextEventDispatcher is a helper class for dispatching widget events defined
@@ -30,15 +31,12 @@ struct IMENotification;
  * handle IME.
  */
 
-class TextEventDispatcher final
-{
-  ~TextEventDispatcher()
-  {
-  }
+class TextEventDispatcher final {
+  ~TextEventDispatcher() {}
 
   NS_INLINE_DECL_REFCOUNTING(TextEventDispatcher)
 
-public:
+ public:
   explicit TextEventDispatcher(nsIWidget* aWidget);
 
   /**
@@ -61,6 +59,13 @@ public:
   nsresult BeginNativeInputTransaction();
 
   /**
+   * BeginInputTransactionFor() should be used when aPuppetWidget dispatches
+   * a composition or keyboard event coming from its parent process.
+   */
+  nsresult BeginInputTransactionFor(const WidgetGUIEvent* aEvent,
+                                    PuppetWidget* aPuppetWidget);
+
+  /**
    * EndInputTransaction() should be called when the listener stops using
    * the TextEventDispatcher.
    *
@@ -74,6 +79,10 @@ public:
   void OnDestroyWidget();
 
   nsIWidget* GetWidget() const { return mWidget; }
+
+  const IMENotificationRequests& IMENotificationRequestsRef() const {
+    return mIMENotificationRequests;
+  }
 
   /**
    * GetState() returns current state of this class.
@@ -89,16 +98,23 @@ public:
 
   /**
    * IsComposing() returns true after calling StartComposition() and before
-   * calling CommitComposition().
+   * calling CommitComposition().  In other words, native IME has composition
+   * when this returns true.
    */
   bool IsComposing() const { return mIsComposing; }
+
+  /**
+   * IsHandlingComposition() returns true after calling StartComposition() and
+   * content has not handled eCompositionCommit(AsIs) event.  In other words,
+   * our content has composition when this returns true.
+   */
+  bool IsHandlingComposition() const { return mIsHandlingComposition; }
 
   /**
    * IsInNativeInputTransaction() returns true if native IME handler began a
    * transaction and it's not finished yet.
    */
-  bool IsInNativeInputTransaction() const
-  {
+  bool IsInNativeInputTransaction() const {
     return mInputTransactionType == eNativeInputTransaction;
   }
 
@@ -112,8 +128,7 @@ public:
    * input transaction whose type is not for native event handler.
    * Otherwise, returns nullptr.
    */
-  void* GetPseudoIMEContext() const
-  {
+  void* GetPseudoIMEContext() const {
     if (mInputTransactionType == eNoInputTransaction ||
         mInputTransactionType == eNativeInputTransaction) {
       return nullptr;
@@ -141,9 +156,9 @@ public:
    *                        be initialized with this.  Otherwise, initialized
    *                        with the time at initializing.
    */
-   nsresult CommitComposition(nsEventStatus& aStatus,
-                              const nsAString* aCommitString = nullptr,
-                              const WidgetEventTime* aEventTime = nullptr);
+  nsresult CommitComposition(nsEventStatus& aStatus,
+                             const nsAString* aCommitString = nullptr,
+                             const WidgetEventTime* aEventTime = nullptr);
 
   /**
    * SetPendingCompositionString() sets new composition string which will be
@@ -151,8 +166,7 @@ public:
    *
    * @param aString         New composition string.
    */
-  nsresult SetPendingCompositionString(const nsAString& aString)
-  {
+  nsresult SetPendingCompositionString(const nsAString& aString) {
     return mPendingComposition.SetString(aString);
   }
 
@@ -167,8 +181,7 @@ public:
    *                        TextRangeType::eSelectedClause.
    */
   nsresult AppendClauseToPendingComposition(uint32_t aLength,
-                                            TextRangeType aTextRangeType)
-  {
+                                            TextRangeType aTextRangeType) {
     return mPendingComposition.AppendClause(aLength, aTextRangeType);
   }
 
@@ -184,9 +197,7 @@ public:
    *                        Note that Gecko doesn't supported wide caret yet,
    *                        therefore, this is ignored for now.
    */
-  nsresult SetCaretInPendingComposition(uint32_t aOffset,
-                                        uint32_t aLength)
-  {
+  nsresult SetCaretInPendingComposition(uint32_t aOffset, uint32_t aLength) {
     return mPendingComposition.SetCaret(aOffset, aLength);
   }
 
@@ -203,8 +214,7 @@ public:
    *                        is not from start to end.
    */
   nsresult SetPendingComposition(const nsAString& aString,
-                                 const TextRangeArray* aRanges)
-  {
+                                 const TextRangeArray* aRanges) {
     return mPendingComposition.Set(aString, aRanges);
   }
 
@@ -219,26 +229,21 @@ public:
    *                        be initialized with this.  Otherwise, initialized
    *                        with the time at initializing.
    */
-  nsresult FlushPendingComposition(nsEventStatus& aStatus,
-                                   const WidgetEventTime* aEventTime = nullptr)
-  {
+  nsresult FlushPendingComposition(
+      nsEventStatus& aStatus, const WidgetEventTime* aEventTime = nullptr) {
     return mPendingComposition.Flush(this, aStatus, aEventTime);
   }
 
   /**
    * ClearPendingComposition() makes this instance forget pending composition.
    */
-  void ClearPendingComposition()
-  {
-    mPendingComposition.Clear();
-  }
+  void ClearPendingComposition() { mPendingComposition.Clear(); }
 
   /**
    * GetPendingCompositionClauses() returns text ranges which was appended by
    * AppendClauseToPendingComposition() or SetPendingComposition().
    */
-  const TextRangeArray* GetPendingCompositionClauses() const
-  {
+  const TextRangeArray* GetPendingCompositionClauses() const {
     return mPendingComposition.GetClauses();
   }
 
@@ -266,8 +271,7 @@ public:
    */
   bool DispatchKeyboardEvent(EventMessage aMessage,
                              const WidgetKeyboardEvent& aKeyboardEvent,
-                             nsEventStatus& aStatus,
-                             void* aData = nullptr);
+                             nsEventStatus& aStatus, void* aData = nullptr);
 
   /**
    * MaybeDispatchKeypressEvents() maybe dispatches a keypress event which is
@@ -295,7 +299,7 @@ public:
                                    void* aData = nullptr,
                                    bool aNeedsCallback = false);
 
-private:
+ private:
   // mWidget is owner of the instance.  When this is created, this is set.
   // And when mWidget is released, this is cleared by OnDestroyWidget().
   // Note that mWidget may be destroyed already (i.e., mWidget->Destroyed() may
@@ -307,43 +311,64 @@ private:
   // check if a method to uninstall the listener is called by valid instance.
   // So, using weak reference is the best way in this case.
   nsWeakPtr mListener;
+  // mIMENotificationRequests should store current IME's notification requests.
+  // So, this may be invalid when IME doesn't have focus.
+  IMENotificationRequests mIMENotificationRequests;
 
   // mPendingComposition stores new composition string temporarily.
   // These values will be used for dispatching eCompositionChange event
   // in Flush().  When Flush() is called, the members will be cleared
   // automatically.
-  class PendingComposition
-  {
-  public:
+  class PendingComposition {
+   public:
     PendingComposition();
     nsresult SetString(const nsAString& aString);
     nsresult AppendClause(uint32_t aLength, TextRangeType aTextRangeType);
     nsresult SetCaret(uint32_t aOffset, uint32_t aLength);
     nsresult Set(const nsAString& aString, const TextRangeArray* aRanges);
-    nsresult Flush(TextEventDispatcher* aDispatcher,
-                   nsEventStatus& aStatus,
+    nsresult Flush(TextEventDispatcher* aDispatcher, nsEventStatus& aStatus,
                    const WidgetEventTime* aEventTime);
     const TextRangeArray* GetClauses() const { return mClauses; }
     void Clear();
 
-  private:
+   private:
     nsString mString;
     RefPtr<TextRangeArray> mClauses;
     TextRange mCaret;
+    bool mReplacedNativeLineBreakers;
 
     void EnsureClauseArray();
+
+    /**
+     * ReplaceNativeLineBreakers() replaces "\r\n" and "\r" to "\n" and adjust
+     * each clause information and the caret information.
+     */
+    void ReplaceNativeLineBreakers();
+
+    /**
+     * AdjustRange() adjusts aRange as in the string with XP line breakers.
+     *
+     * @param aRange            The reference to a range in aNativeString.
+     *                          This will be modified.
+     * @param aNativeString     The string with native line breakers.
+     *                          This may include "\r\n" and/or "\r".
+     */
+    static void AdjustRange(TextRange& aRange, const nsAString& aNativeString);
   };
   PendingComposition mPendingComposition;
 
   // While dispatching an event, this is incremented.
   uint16_t mDispatchingEvent;
 
-  enum InputTransactionType : uint8_t
-  {
+  enum InputTransactionType : uint8_t {
     // No input transaction has been started.
     eNoInputTransaction,
     // Input transaction for native IME or keyboard event handler.  Note that
     // keyboard events may be dispatched via parent process if there is.
+    // In remote processes, this is also used when events come from the parent
+    // process and are not for tests because we cannot distinguish if
+    // TextEventDispatcher has which type of transaction when it dispatches
+    // (eNativeInputTransaction or eSameProcessSyncInputTransaction).
     eNativeInputTransaction,
     // Input transaction for automated tests which are APZ-aware.  Note that
     // keyboard events may be dispatched via parent process if there is.
@@ -351,20 +376,21 @@ private:
     // Input transaction for automated tests which assume events are fired
     // synchronously.  I.e., keyboard events are always dispatched in the
     // current process.
+    // In remote processes, this is also used when events come from the parent
+    // process and are not dispatched by the instance itself for APZ-aware
+    // tests because this instance won't dispatch the events via the parent
+    // process again.
     eSameProcessSyncTestInputTransaction,
-    // Input transaction for Others (must be IME on B2G).  Events are fired
-    // synchronously because TextInputProcessor which is the only user of
-    // this input transaction type supports only keyboard apps on B2G.
-    // Keyboard apps on B2G doesn't want to dispatch keyboard events to
-    // chrome process. Therefore, this should dispatch key events only in
-    // the current process.
+    // Input transaction for others (currently, only FuzzingFunctions).
+    // Events are fired synchronously in the process.
+    // XXX Should we make this async for testing default action handlers in
+    //     the main process?
     eSameProcessSyncInputTransaction
   };
 
   InputTransactionType mInputTransactionType;
 
-  bool IsForTests() const
-  {
+  bool IsForTests() const {
     return mInputTransactionType == eAsyncTestInputTransaction ||
            mInputTransactionType == eSameProcessSyncTestInputTransaction;
   }
@@ -374,8 +400,7 @@ private:
   // when the input transaction is for IME of B2G or automated tests which
   // isn't APZ-aware, WidgetInputEvent should be dispatched form current
   // process directly.
-  bool ShouldSendInputEventToAPZ() const
-  {
+  bool ShouldSendInputEventToAPZ() const {
     switch (mInputTransactionType) {
       case eNativeInputTransaction:
       case eAsyncTestInputTransaction:
@@ -384,8 +409,9 @@ private:
       case eSameProcessSyncInputTransaction:
         return false;
       case eNoInputTransaction:
-        NS_WARNING("Why does the caller need to dispatch an event when "
-                   "there is no input transaction?");
+        NS_WARNING(
+            "Why does the caller need to dispatch an event when "
+            "there is no input transaction?");
         return true;
       default:
         MOZ_CRASH("Define the behavior of new InputTransactionType");
@@ -395,13 +421,22 @@ private:
   // See IsComposing().
   bool mIsComposing;
 
+  // See IsHandlingComposition().
+  bool mIsHandlingComposition;
+
+  // true while NOTIFY_IME_OF_FOCUS is received but NOTIFY_IME_OF_BLUR has not
+  // received yet.  Otherwise, false.
+  bool mHasFocus;
+
   // If this is true, keydown and keyup events are dispatched even when there
   // is a composition.
   static bool sDispatchKeyEventsDuringComposition;
+  // If this is true, keypress events for non-printable keys are dispatched only
+  // for event listeners of the system event group in web content.
+  static bool sDispatchKeyPressEventsOnlySystemGroupInContent;
 
-  nsresult BeginInputTransactionInternal(
-             TextEventDispatcherListener* aListener,
-             InputTransactionType aType);
+  nsresult BeginInputTransactionInternal(TextEventDispatcherListener* aListener,
+                                         InputTransactionType aType);
 
   /**
    * InitEvent() initializes aEvent.  This must be called before dispatching
@@ -409,19 +444,16 @@ private:
    */
   void InitEvent(WidgetGUIEvent& aEvent) const;
 
-
   /**
    * DispatchEvent() dispatches aEvent on aWidget.
    */
-  nsresult DispatchEvent(nsIWidget* aWidget,
-                         WidgetGUIEvent& aEvent,
+  nsresult DispatchEvent(nsIWidget* aWidget, WidgetGUIEvent& aEvent,
                          nsEventStatus& aStatus);
 
   /**
    * DispatchInputEvent() dispatches aEvent on aWidget.
    */
-  nsresult DispatchInputEvent(nsIWidget* aWidget,
-                              WidgetInputEvent& aEvent,
+  nsresult DispatchInputEvent(nsIWidget* aWidget, WidgetInputEvent& aEvent,
                               nsEventStatus& aStatus);
 
   /**
@@ -442,8 +474,7 @@ private:
    *                        is nsEventStatus_eConsumeNoDefault.
    */
   nsresult StartCompositionAutomaticallyIfNecessary(
-             nsEventStatus& aStatus,
-             const WidgetEventTime* aEventTime);
+      nsEventStatus& aStatus, const WidgetEventTime* aEventTime);
 
   /**
    * DispatchKeyboardEventInternal() maybe dispatches aKeyboardEvent.
@@ -474,13 +505,25 @@ private:
    */
   bool DispatchKeyboardEventInternal(EventMessage aMessage,
                                      const WidgetKeyboardEvent& aKeyboardEvent,
-                                     nsEventStatus& aStatus,
-                                     void* aData,
+                                     nsEventStatus& aStatus, void* aData,
                                      uint32_t aIndexOfKeypress = 0,
                                      bool aNeedsCallback = false);
+
+  /**
+   * ClearNotificationRequests() clears mIMENotificationRequests.
+   */
+  void ClearNotificationRequests();
+
+  /**
+   * UpdateNotificationRequests() updates mIMENotificationRequests with
+   * current state.  If the instance doesn't have focus, this clears
+   * mIMENotificationRequests.  Otherwise, updates it with both requests of
+   * current listener and native listener.
+   */
+  void UpdateNotificationRequests();
 };
 
-} // namespace widget
-} // namespace mozilla
+}  // namespace widget
+}  // namespace mozilla
 
-#endif // #ifndef mozilla_widget_textcompositionsynthesizer_h_
+#endif  // #ifndef mozilla_widget_textcompositionsynthesizer_h_

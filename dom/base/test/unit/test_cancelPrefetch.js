@@ -1,21 +1,17 @@
-//Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-const Cc = Components.classes;
-const Ci = Components.interfaces;
+// Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
 var prefetch = Cc["@mozilla.org/prefetch-service;1"].
                getService(Ci.nsIPrefetchService);
-var ios = Cc["@mozilla.org/network/io-service;1"].
-          getService(Ci.nsIIOService);
-var prefs = Cc["@mozilla.org/preferences-service;1"].
-            getService(Ci.nsIPrefBranch);
+var ios = Services.io;
+var prefs = Services.prefs;
 
-var parser = Cc["@mozilla.org/xmlextras/domparser;1"].
-             createInstance(Ci.nsIDOMParser);
+Cu.importGlobalProperties(["DOMParser"]);
+var parser = new DOMParser();
 
 var doc;
 
 var docbody = '<html xmlns="http://www.w3.org/1999/xhtml"><head></head><body>' +
               '<link id="node1"/><link id="node2"/>' +
-              '</body></html>';
+              "</body></html>";
 
 var node1;
 var node2;
@@ -23,7 +19,6 @@ var node2;
 function run_test() {
   prefs.setBoolPref("network.prefetch-next", true);
 
-  parser.init();
   doc = parser.parseFromString(docbody, "text/html");
 
   node1 = doc.getElementById("node1");
@@ -37,27 +32,27 @@ add_test(function test_cancel1() {
   var uri = ios.newURI("http://localhost/1");
   prefetch.prefetchURI(uri, uri, node1, true);
 
-  do_check_true(prefetch.hasMoreElements(), 'There is a request in the queue');
+  Assert.ok(prefetch.hasMoreElements(), "There is a request in the queue");
 
   // Trying to prefetch again the same uri with the same node will fail.
   var didFail = 0;
 
   try {
     prefetch.prefetchURI(uri, uri, node1, true);
-  } catch(e) {
+  } catch (e) {
     didFail = 1;
   }
 
-  do_check_true(didFail == 1, 'Prefetching the same request with the same ' +
-                              'node fails.');
+  Assert.ok(didFail == 1, "Prefetching the same request with the same " +
+                          "node fails.");
 
-  do_check_true(prefetch.hasMoreElements(), 'There is still request in ' +
-                                            'the queue');
+  Assert.ok(prefetch.hasMoreElements(), "There is still request in " +
+                                        "the queue");
 
-  prefetch.cancelPrefetchURI(uri, node1);
+  prefetch.cancelPrefetchPreloadURI(uri, node1);
 
-  do_check_false(prefetch.hasMoreElements(), 'There is no request in the ' +
-                                             'queue');
+  Assert.ok(!prefetch.hasMoreElements(), "There is no request in the " +
+                                         "queue");
   run_next_test();
 });
 
@@ -69,16 +64,16 @@ add_test(function test_cancel2() {
   prefetch.prefetchURI(uri, uri, node1, true);
   prefetch.prefetchURI(uri, uri, node2, true);
 
-  do_check_true(prefetch.hasMoreElements(), 'There are requests in the queue');
+  Assert.ok(prefetch.hasMoreElements(), "There are requests in the queue");
 
-  prefetch.cancelPrefetchURI(uri, node1);
+  prefetch.cancelPrefetchPreloadURI(uri, node1);
 
-  do_check_true(prefetch.hasMoreElements(), 'There is still one more request ' +
-                                            'in the queue');
+  Assert.ok(prefetch.hasMoreElements(), "There is still one more request " +
+                                        "in the queue");
 
-  prefetch.cancelPrefetchURI(uri, node2);
+  prefetch.cancelPrefetchPreloadURI(uri, node2);
 
-  do_check_false(prefetch.hasMoreElements(), 'There is no request in the queue');
+  Assert.ok(!prefetch.hasMoreElements(), "There is no request in the queue");
   run_next_test();
 });
 
@@ -88,22 +83,22 @@ add_test(function test_cancel3() {
   var uri = ios.newURI("http://localhost/1");
   prefetch.prefetchURI(uri, uri, node1, true);
 
-  do_check_true(prefetch.hasMoreElements(), 'There is a request in the queue');
+  Assert.ok(prefetch.hasMoreElements(), "There is a request in the queue");
 
   var didFail = 0;
 
   try {
-    prefetch.cancelPrefetchURI(uri, node2);
-  } catch(e) {
+    prefetch.cancelPrefetchPreloadURI(uri, node2, true);
+  } catch (e) {
     didFail = 1;
   }
-  do_check_true(didFail == 1, 'Canceling the request failed');
+  Assert.ok(didFail == 1, "Canceling the request failed");
 
-  do_check_true(prefetch.hasMoreElements(), 'There is still a request ' +
-                                            'in the queue');
+  Assert.ok(prefetch.hasMoreElements(), "There is still a request " +
+                                        "in the queue");
 
-  prefetch.cancelPrefetchURI(uri, node1);
-  do_check_false(prefetch.hasMoreElements(), 'There is no request in the queue');
+  prefetch.cancelPrefetchPreloadURI(uri, node1);
+  Assert.ok(!prefetch.hasMoreElements(), "There is no request in the queue");
   run_next_test();
 });
 
@@ -114,21 +109,21 @@ add_test(function test_cancel4() {
   var uri2 = ios.newURI("http://localhost/2");
   prefetch.prefetchURI(uri1, uri1, node1, true);
 
-  do_check_true(prefetch.hasMoreElements(), 'There is a request in the queue');
+  Assert.ok(prefetch.hasMoreElements(), "There is a request in the queue");
 
   var didFail = 0;
 
   try {
-    prefetch.cancelPrefetchURI(uri2, node1);
-  } catch(e) {
+    prefetch.cancelPrefetchPreloadURI(uri2, node1);
+  } catch (e) {
     didFail = 1;
   }
-  do_check_true(didFail == 1, 'Canceling the request failed');
+  Assert.ok(didFail == 1, "Canceling the request failed");
 
-  do_check_true(prefetch.hasMoreElements(), 'There is still a request ' +
-                                            'in the queue');
+  Assert.ok(prefetch.hasMoreElements(), "There is still a request " +
+                                        "in the queue");
 
-  prefetch.cancelPrefetchURI(uri1, node1);
-  do_check_false(prefetch.hasMoreElements(), 'There is no request in the queue');
+  prefetch.cancelPrefetchPreloadURI(uri1, node1);
+  Assert.ok(!prefetch.hasMoreElements(), "There is no request in the queue");
   run_next_test();
 });

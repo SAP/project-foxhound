@@ -9,24 +9,24 @@
 
 #include "nsISupportsImpl.h"
 #include "nsTArray.h"
-#include "WorkerHolder.h"
+#include "mozilla/dom/WorkerHolder.h"
 
 namespace mozilla {
 
-namespace workers {
 class WorkerPrivate;
-} // namespace workers
 
 namespace dom {
 namespace cache {
 
 class ActorChild;
 
-class CacheWorkerHolder final : public workers::WorkerHolder
-{
-public:
-  static already_AddRefed<CacheWorkerHolder>
-  Create(workers::WorkerPrivate* aWorkerPrivate);
+class CacheWorkerHolder final : public WorkerHolder {
+ public:
+  static already_AddRefed<CacheWorkerHolder> Create(
+      WorkerPrivate* aWorkerPrivate, Behavior aBehavior);
+
+  static already_AddRefed<CacheWorkerHolder> PreferBehavior(
+      CacheWorkerHolder* aCurrentHolder, Behavior aBehavior);
 
   void AddActor(ActorChild* aActor);
   void RemoveActor(ActorChild* aActor);
@@ -34,21 +34,21 @@ public:
   bool Notified() const;
 
   // WorkerHolder methods
-  virtual bool Notify(workers::Status aStatus) override;
+  virtual bool Notify(WorkerStatus aStatus) override;
 
-private:
-  CacheWorkerHolder();
+ private:
+  explicit CacheWorkerHolder(Behavior aBehavior);
   ~CacheWorkerHolder();
 
   nsTArray<ActorChild*> mActorList;
   bool mNotified;
 
-public:
+ public:
   NS_INLINE_DECL_REFCOUNTING(mozilla::dom::cache::CacheWorkerHolder)
 };
 
-} // namespace cache
-} // namespace dom
-} // namespace mozilla
+}  // namespace cache
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_cache_CacheWorkerHolder_h
+#endif  // mozilla_dom_cache_CacheWorkerHolder_h

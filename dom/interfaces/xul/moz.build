@@ -9,25 +9,15 @@ with Files("**"):
 
 XPIDL_SOURCES += [
     'nsIDOMXULButtonElement.idl',
-    'nsIDOMXULCheckboxElement.idl',
     'nsIDOMXULCommandDispatcher.idl',
-    'nsIDOMXULCommandEvent.idl',
     'nsIDOMXULContainerElement.idl',
     'nsIDOMXULControlElement.idl',
-    'nsIDOMXULDescriptionElement.idl',
-    'nsIDOMXULDocument.idl',
-    'nsIDOMXULElement.idl',
-    'nsIDOMXULImageElement.idl',
-    'nsIDOMXULLabeledControlEl.idl',
-    'nsIDOMXULLabelElement.idl',
     'nsIDOMXULMenuListElement.idl',
     'nsIDOMXULMultSelectCntrlEl.idl',
-    'nsIDOMXULPopupElement.idl',
+    'nsIDOMXULRadioGroupElement.idl',
     'nsIDOMXULRelatedElement.idl',
     'nsIDOMXULSelectCntrlEl.idl',
     'nsIDOMXULSelectCntrlItemEl.idl',
-    'nsIDOMXULTextboxElement.idl',
-    'nsIDOMXULTreeElement.idl',
 ]
 
 XPIDL_MODULE = 'dom_xul'

@@ -1,5 +1,4 @@
-Components.utils.import("resource://gre/modules/FileUtils.jsm");
-Components.utils.import("resource://gre/modules/Task.jsm");
+ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
 
 var gMimeSvc = Cc["@mozilla.org/mime;1"].getService(Ci.nsIMIMEService);
 var gHandlerSvc = Cc["@mozilla.org/uriloader/handler-service;1"].getService(Ci.nsIHandlerService);
@@ -36,7 +35,7 @@ function createMockedObjects(createHandlerApp) {
   if (createHandlerApp) {
     let mockedHandlerApp = createMockedHandlerApp();
     internalMockedMIME.description = mockedHandlerApp.detailedDescription;
-    internalMockedMIME.possibleApplicationHandlers.appendElement(mockedHandlerApp, false);
+    internalMockedMIME.possibleApplicationHandlers.appendElement(mockedHandlerApp);
     internalMockedMIME.preferredApplicationHandler = mockedHandlerApp;
   }
 
@@ -69,7 +68,7 @@ function createMockedObjects(createHandlerApp) {
     targetFile: null, // never read
     // PRTime is microseconds since epoch, Date.now() returns milliseconds:
     timeDownloadStarted: Date.now() * 1000,
-    QueryInterface: XPCOMUtils.generateQI([Ci.nsICancelable, Ci.nsIHelperAppLauncher])
+    QueryInterface: ChromeUtils.generateQI([Ci.nsICancelable, Ci.nsIHelperAppLauncher])
   };
 
   registerCleanupFunction(function() {
@@ -83,7 +82,7 @@ function createMockedObjects(createHandlerApp) {
   return mockedLauncher;
 }
 
-function* openHelperAppDialog(launcher) {
+async function openHelperAppDialog(launcher) {
   let helperAppDialog = Cc["@mozilla.org/helperapplauncherdialog;1"].
                         createInstance(Ci.nsIHelperAppLauncherDialog);
 
@@ -94,9 +93,9 @@ function* openHelperAppDialog(launcher) {
     ok(false, "Trying to show unknownContentType.xul failed with exception: " + ex);
     Cu.reportError(ex);
   }
-  let dlg = yield helperAppDialogShownPromise;
+  let dlg = await helperAppDialogShownPromise;
 
-  yield BrowserTestUtils.waitForEvent(dlg, "load", false);
+  await BrowserTestUtils.waitForEvent(dlg, "load", false);
 
   is(dlg.location.href, "chrome://mozapps/content/downloads/unknownContentType.xul",
      "Got correct dialog");

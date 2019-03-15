@@ -5,11 +5,10 @@ set -x -e -v
 
 WORKSPACE=$HOME/workspace
 HOME_DIR=$WORKSPACE/build
-UPLOAD_DIR=$WORKSPACE/artifacts
+UPLOAD_DIR=$HOME/artifacts
 
 cd $HOME_DIR/src
 
-TOOLTOOL_MANIFEST=browser/config/tooltool-manifests/linux64/releng.manifest
 . taskcluster/scripts/misc/tooltool-download.sh
 
 # gets a bit too verbose here

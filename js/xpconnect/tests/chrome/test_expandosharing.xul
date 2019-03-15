@@ -20,12 +20,11 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=758415
 
   /** Test for Cross-Origin Xray Expando Sharing. **/
   SimpleTest.waitForExplicitFinish();
-  const Cu = Components.utils;
 
   // Import our test JSM. We first strip the filename off
   // the chrome url, then append the jsm filename.
   var base = /.*\//.exec(window.location.href)[0];
-  Cu.import(base + "file_expandosharing.jsm");
+  ChromeUtils.import(base + "file_expandosharing.jsm");
 
   // Wait for all child frames to load.
   var gLoadCount = 0;
@@ -86,9 +85,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=758415
       target.prop = name;
     }
 
-    // Set up the sandboxes.
-    sb1 = Cu.Sandbox(window);
-    sb2 = Cu.Sandbox(window);
+    // Set up the sandboxes. Use an expanded principal to get xrays with
+    // exclusive expandos.
+    sb1 = Cu.Sandbox(["http://test1.example.org", "http://test2.example.org"]);
+    sb2 = Cu.Sandbox(["http://test1.example.org", "http://test2.example.org"]);
     sb1.target = target;
     sb2.target = target;
     sb1.name = "sandbox1";
@@ -108,8 +108,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=758415
   function testContentXrays() {
 
     // Give A1 and A3 xrays to (same-origin) A2.
-    Components.utils.setWantXrays(gWinA1);
-    Components.utils.setWantXrays(gWinA3);
+    Cu.setWantXrays(gWinA1);
+    Cu.setWantXrays(gWinA3);
 
     gWinA1.wrappedJSObject.placeExpando('A1_expando', 11, gWinA2.document);
     gWinA3.wrappedJSObject.placeExpando('A3_expando', 33, gWinA2.document);

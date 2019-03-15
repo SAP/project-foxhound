@@ -14,7 +14,7 @@ function triggerSave(aWindow, aCallback) {
   let testBrowser = aWindow.gBrowser.selectedBrowser;
   // This page sets a cookie if and only if a cookie does not exist yet
   let testURI = "http://mochi.test:8888/browser/browser/base/content/test/general/bug792517-2.html";
-  testBrowser.loadURI(testURI);
+  BrowserTestUtils.loadURI(testBrowser, testURI);
   BrowserTestUtils.browserLoaded(testBrowser, false, testURI)
                   .then(() => {
     waitForFocus(function() {
@@ -53,7 +53,7 @@ function triggerSave(aWindow, aCallback) {
       ok(!destFile.exists(), "Destination file should be removed");
       mockTransferCallback = null;
       info("done mockTransferCallback");
-    }
+    };
 
     // Select "Save Link As" option from context menu
     var saveLinkCommand = aWindow.document.getElementById("context-savelink");
@@ -93,7 +93,7 @@ function test() {
         executeSoon(aCallback);
         info("whenDelayedStartupFinished found our window");
       }
-    }, "browser-delayed-startup-finished", false);
+    }, "browser-delayed-startup-finished");
   }
 
   mockTransferRegisterer.register();
@@ -161,8 +161,8 @@ function test() {
     }
   }
 
-  Services.obs.addObserver(observer, "http-on-modify-request", false);
-  Services.obs.addObserver(observer, "http-on-examine-response", false);
+  Services.obs.addObserver(observer, "http-on-modify-request");
+  Services.obs.addObserver(observer, "http-on-examine-response");
 
   testOnWindow(undefined, function(win) {
     // The first save from a regular window sets a cookie.
@@ -181,15 +181,12 @@ function test() {
 }
 
 /* import-globals-from ../../../../../toolkit/content/tests/browser/common/mockTransfer.js */
-Cc["@mozilla.org/moz/jssubscript-loader;1"]
-  .getService(Ci.mozIJSSubScriptLoader)
-  .loadSubScript("chrome://mochitests/content/browser/toolkit/content/tests/browser/common/mockTransfer.js",
-                 this);
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/toolkit/content/tests/browser/common/mockTransfer.js",
+  this);
 
 function createTemporarySaveDirectory() {
-  var saveDir = Cc["@mozilla.org/file/directory_service;1"]
-                  .getService(Ci.nsIProperties)
-                  .get("TmpD", Ci.nsIFile);
+  var saveDir = Services.dirsvc.get("TmpD", Ci.nsIFile);
   saveDir.append("testsavedir");
   if (!saveDir.exists()) {
     info("create testsavedir!");

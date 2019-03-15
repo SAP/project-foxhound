@@ -1,11 +1,9 @@
 function check_cl(iface, desc) {
-    do_check_eq(iface.QueryInterface(Components.interfaces.nsIClassInfo).classDescription, desc);
+    Assert.equal(iface.QueryInterface(Ci.nsIClassInfo).classDescription, desc);
 }
 
 function run_test() {
-    check_cl(Components.interfaces, 'XPCComponents_Interfaces');
-    check_cl(Components.interfacesByID, 'XPCComponents_InterfacesByID');
-    check_cl(Components.classes, 'XPCComponents_Classes');
-    check_cl(Components.classesByID, 'XPCComponents_ClassesByID');
-    check_cl(Components.results, 'XPCComponents_Results');
+    check_cl(Ci, 'XPCComponents_Interfaces');
+    check_cl(Cc, 'XPCComponents_Classes');
+    check_cl(Cr, 'XPCComponents_Results');
 }

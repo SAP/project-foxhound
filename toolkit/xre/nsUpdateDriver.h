@@ -17,13 +17,13 @@
 class nsIFile;
 
 #if defined(XP_WIN)
-#include <windows.h>
-  typedef HANDLE     ProcessType;
+#  include <windows.h>
+typedef HANDLE ProcessType;
 #elif defined(XP_UNIX)
-  typedef pid_t      ProcessType;
+typedef pid_t ProcessType;
 #else
-#include "prproces.h"
-  typedef PRProcess* ProcessType;
+#  include "prproces.h"
+typedef PRProcess *ProcessType;
 #endif
 
 /**
@@ -46,36 +46,26 @@ class nsIFile;
  *
  * This function does not modify appDir.
  */
-nsresult ProcessUpdates(nsIFile *greDir, nsIFile *appDir,
-                                    nsIFile *updRootDir,
-                                    int argc, char **argv,
-                                    const char *appVersion,
-                                    bool restart = true,
-                                    bool isOSUpdate = false,
-                                    nsIFile *osApplyToDir = nullptr,
-                                    ProcessType *pid = nullptr);
+nsresult ProcessUpdates(nsIFile *greDir, nsIFile *appDir, nsIFile *updRootDir,
+                        int argc, char **argv, const char *appVersion,
+                        bool restart = true, ProcessType *pid = nullptr);
 
 // The implementation of the update processor handles the task of loading the
 // updater application for staging an update.
 // XXX ehsan this is living in this file in order to make use of the existing
 // stuff here, we might want to move it elsewhere in the future.
-class nsUpdateProcessor final : public nsIUpdateProcessor
-{
-public:
+class nsUpdateProcessor final : public nsIUpdateProcessor {
+ public:
   nsUpdateProcessor();
 
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIUPDATEPROCESSOR
 
-private:
+ private:
   ~nsUpdateProcessor();
 
   struct StagedUpdateInfo {
-    StagedUpdateInfo()
-      : mArgc(0),
-        mArgv(nullptr),
-        mIsOSUpdate(false)
-    {}
+    StagedUpdateInfo() : mArgc(0), mArgv(nullptr), mIsOSUpdate(false) {}
     ~StagedUpdateInfo() {
       for (int i = 0; i < mArgc; ++i) {
         delete[] mArgv[i];
@@ -93,13 +83,13 @@ private:
     bool mIsOSUpdate;
   };
 
-private:
+ private:
   void StartStagedUpdate();
   void WaitForProcess();
   void UpdateDone();
   void ShutdownWatcherThread();
 
-private:
+ private:
   ProcessType mUpdaterPID;
   nsCOMPtr<nsIThread> mProcessWatcher;
   StagedUpdateInfo mInfo;

@@ -16,8 +16,8 @@
  *
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_FIX_SOURCE_CODEC_H_
-#define WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_FIX_SOURCE_CODEC_H_
+#ifndef MODULES_AUDIO_CODING_CODECS_ISAC_FIX_SOURCE_CODEC_H_
+#define MODULES_AUDIO_CODING_CODECS_ISAC_FIX_SOURCE_CODEC_H_
 
 #include "structs.h"
 
@@ -90,7 +90,7 @@ void WebRtcIsacfix_Spec2TimeC(int16_t* inreQ7,
                               int32_t* outre1Q16,
                               int32_t* outre2Q16);
 
-#if (defined WEBRTC_DETECT_NEON) || (defined WEBRTC_HAS_NEON)
+#if defined(WEBRTC_HAS_NEON)
 void WebRtcIsacfix_Time2SpecNeon(int16_t* inre1Q9,
                                  int16_t* inre2Q9,
                                  int16_t* outre,
@@ -174,7 +174,7 @@ void WebRtcIsacfix_FilterMaLoopC(int16_t input0,
                                  int32_t* ptr1,
                                  int32_t* ptr2);
 
-#if (defined WEBRTC_DETECT_NEON) || (defined WEBRTC_HAS_NEON)
+#if defined(WEBRTC_HAS_NEON)
 int WebRtcIsacfix_AutocorrNeon(int32_t* __restrict r,
                                const int16_t* __restrict x,
                                int16_t N,
@@ -225,4 +225,4 @@ extern FilterMaLoopFix WebRtcIsacfix_FilterMaLoopFix;
 }  // extern "C"
 #endif
 
-#endif /* WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_FIX_SOURCE_CODEC_H_ */
+#endif /* MODULES_AUDIO_CODING_CODECS_ISAC_FIX_SOURCE_CODEC_H_ */

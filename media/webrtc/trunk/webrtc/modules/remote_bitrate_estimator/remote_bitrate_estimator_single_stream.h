@@ -8,62 +8,68 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_REMOTE_BITRATE_ESTIMATOR_REMOTE_BITRATE_ESTIMATOR_SINGLE_STREAM_H_
-#define WEBRTC_MODULES_REMOTE_BITRATE_ESTIMATOR_REMOTE_BITRATE_ESTIMATOR_SINGLE_STREAM_H_
+#ifndef MODULES_REMOTE_BITRATE_ESTIMATOR_REMOTE_BITRATE_ESTIMATOR_SINGLE_STREAM_H_
+#define MODULES_REMOTE_BITRATE_ESTIMATOR_REMOTE_BITRATE_ESTIMATOR_SINGLE_STREAM_H_
 
 #include <map>
+#include <memory>
 #include <vector>
 
-#include "webrtc/modules/remote_bitrate_estimator/aimd_rate_control.h"
-#include "webrtc/modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
-#include "webrtc/modules/remote_bitrate_estimator/rate_statistics.h"
-#include "webrtc/system_wrappers/include/critical_section_wrapper.h"
+#include "modules/remote_bitrate_estimator/aimd_rate_control.h"
+#include "modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
+#include "rtc_base/constructormagic.h"
+#include "rtc_base/criticalsection.h"
+#include "rtc_base/rate_statistics.h"
 
 namespace webrtc {
 
 class RemoteBitrateEstimatorSingleStream : public RemoteBitrateEstimator {
  public:
   RemoteBitrateEstimatorSingleStream(RemoteBitrateObserver* observer,
-                                     Clock* clock);
+                                     const Clock* clock);
   virtual ~RemoteBitrateEstimatorSingleStream();
 
   void IncomingPacket(int64_t arrival_time_ms,
                       size_t payload_size,
-                      const RTPHeader& header,
-                      bool was_paced) override;
-  int32_t Process() override;
+                      const RTPHeader& header) override;
+  void Process() override;
   int64_t TimeUntilNextProcess() override;
   void OnRttUpdate(int64_t avg_rtt_ms, int64_t max_rtt_ms) override;
-  void RemoveStream(unsigned int ssrc) override;
-  bool LatestEstimate(std::vector<unsigned int>* ssrcs,
-                      unsigned int* bitrate_bps) const override;
-  bool GetStats(ReceiveBandwidthEstimatorStats* output) const override;
+  void RemoveStream(uint32_t ssrc) override;
+  bool LatestEstimate(std::vector<uint32_t>* ssrcs,
+                      uint32_t* bitrate_bps) const override;
   void SetMinBitrate(int min_bitrate_bps) override;
 
  private:
   struct Detector;
 
-  typedef std::map<unsigned int, Detector*> SsrcOveruseEstimatorMap;
+  typedef std::map<uint32_t, Detector*> SsrcOveruseEstimatorMap;
 
   // Triggers a new estimate calculation.
   void UpdateEstimate(int64_t time_now)
-      EXCLUSIVE_LOCKS_REQUIRED(crit_sect_.get());
+      RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_sect_);
 
-  void GetSsrcs(std::vector<unsigned int>* ssrcs) const
-      SHARED_LOCKS_REQUIRED(crit_sect_.get());
+  void GetSsrcs(std::vector<uint32_t>* ssrcs) const
+      RTC_SHARED_LOCKS_REQUIRED(crit_sect_);
 
-  Clock* clock_;
-  SsrcOveruseEstimatorMap overuse_detectors_ GUARDED_BY(crit_sect_.get());
-  RateStatistics incoming_bitrate_ GUARDED_BY(crit_sect_.get());
-  rtc::scoped_ptr<AimdRateControl> remote_rate_ GUARDED_BY(crit_sect_.get());
-  RemoteBitrateObserver* observer_ GUARDED_BY(crit_sect_.get());
-  rtc::scoped_ptr<CriticalSectionWrapper> crit_sect_;
+  // Returns |remote_rate_| if the pointed to object exists,
+  // otherwise creates it.
+  AimdRateControl* GetRemoteRate() RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_sect_);
+
+  const Clock* const clock_;
+  SsrcOveruseEstimatorMap overuse_detectors_ RTC_GUARDED_BY(crit_sect_);
+  RateStatistics incoming_bitrate_ RTC_GUARDED_BY(crit_sect_);
+  uint32_t last_valid_incoming_bitrate_ RTC_GUARDED_BY(crit_sect_);
+  std::unique_ptr<AimdRateControl> remote_rate_ RTC_GUARDED_BY(crit_sect_);
+  RemoteBitrateObserver* const observer_ RTC_GUARDED_BY(crit_sect_);
+  rtc::CriticalSection crit_sect_;
   int64_t last_process_time_;
-  int64_t process_interval_ms_ GUARDED_BY(crit_sect_.get());
+  int64_t process_interval_ms_ RTC_GUARDED_BY(crit_sect_);
+  bool uma_recorded_;
 
   RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(RemoteBitrateEstimatorSingleStream);
 };
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_REMOTE_BITRATE_ESTIMATOR_REMOTE_BITRATE_ESTIMATOR_SINGLE_STREAM_H_
+#endif  // MODULES_REMOTE_BITRATE_ESTIMATOR_REMOTE_BITRATE_ESTIMATOR_SINGLE_STREAM_H_

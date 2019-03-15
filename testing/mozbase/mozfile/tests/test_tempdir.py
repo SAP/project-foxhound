@@ -8,6 +8,8 @@
 tests for mozfile.TemporaryDirectory
 """
 
+from __future__ import absolute_import
+
 from mozfile import TemporaryDirectory
 import os
 import unittest
@@ -39,6 +41,7 @@ class TestTemporaryDirectory(unittest.TestCase):
                 raise Exception("oops")
         self.assertFalse(os.path.isdir(path))
         self.assertFalse(os.path.exists(path))
+
 
 if __name__ == '__main__':
     mozunit.main()

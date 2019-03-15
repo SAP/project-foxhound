@@ -8,101 +8,102 @@
 #define mozilla_dom_HTMLFrameElement_h
 
 #include "mozilla/Attributes.h"
-#include "nsIDOMHTMLFrameElement.h"
 #include "nsGenericHTMLFrameElement.h"
 #include "nsGkAtoms.h"
 
 namespace mozilla {
 namespace dom {
 
-class HTMLFrameElement final : public nsGenericHTMLFrameElement,
-                               public nsIDOMHTMLFrameElement
-{
-public:
+class HTMLFrameElement final : public nsGenericHTMLFrameElement {
+ public:
   using nsGenericHTMLFrameElement::SwapFrameLoaders;
 
-  explicit HTMLFrameElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo,
-                            FromParser aFromParser = NOT_FROM_PARSER);
+  explicit HTMLFrameElement(
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
+      FromParser aFromParser = NOT_FROM_PARSER);
 
   // nsISupports
-  NS_DECL_ISUPPORTS_INHERITED
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(HTMLFrameElement,
+                                       nsGenericHTMLFrameElement)
 
-  // nsIDOMHTMLFrameElement
-  NS_DECL_NSIDOMHTMLFRAMEELEMENT
+  NS_IMPL_FROMNODE_HTML_WITH_TAG(HTMLFrameElement, frame)
 
   // nsIContent
-  virtual bool ParseAttribute(int32_t aNamespaceID,
-                              nsIAtom* aAttribute,
+  virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
                               const nsAString& aValue,
+                              nsIPrincipal* aMaybeScriptedPrincipal,
                               nsAttrValue& aResult) override;
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // WebIDL API
-  // The XPCOM GetFrameBorder is OK for us
-  void SetFrameBorder(const nsAString& aFrameBorder, ErrorResult& aError)
-  {
+  void GetFrameBorder(DOMString& aFrameBorder) const {
+    GetHTMLAttr(nsGkAtoms::frameborder, aFrameBorder);
+  }
+  void SetFrameBorder(const nsAString& aFrameBorder, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::frameborder, aFrameBorder, aError);
   }
 
-  // The XPCOM GetLongDesc is OK for us
-  void SetLongDesc(const nsAString& aLongDesc, ErrorResult& aError)
-  {
-    SetAttrHelper(nsGkAtoms::longdesc, aLongDesc);
+  void GetLongDesc(nsAString& aLongDesc) const {
+    GetURIAttr(nsGkAtoms::longdesc, nullptr, aLongDesc);
+  }
+  void SetLongDesc(const nsAString& aLongDesc, ErrorResult& aError) {
+    SetHTMLAttr(nsGkAtoms::longdesc, aLongDesc);
   }
 
-  // The XPCOM GetMarginHeight is OK for us
-  void SetMarginHeight(const nsAString& aMarginHeight, ErrorResult& aError)
-  {
+  void GetMarginHeight(DOMString& aMarginHeight) const {
+    GetHTMLAttr(nsGkAtoms::marginheight, aMarginHeight);
+  }
+  void SetMarginHeight(const nsAString& aMarginHeight, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::marginheight, aMarginHeight, aError);
   }
 
-  // The XPCOM GetMarginWidth is OK for us
-  void SetMarginWidth(const nsAString& aMarginWidth, ErrorResult& aError)
-  {
+  void GetMarginWidth(DOMString& aMarginWidth) const {
+    GetHTMLAttr(nsGkAtoms::marginwidth, aMarginWidth);
+  }
+  void SetMarginWidth(const nsAString& aMarginWidth, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::marginwidth, aMarginWidth, aError);
   }
 
-  // The XPCOM GetName is OK for us
-  void SetName(const nsAString& aName, ErrorResult& aError)
-  {
+  void GetName(DOMString& aName) const { GetHTMLAttr(nsGkAtoms::name, aName); }
+  void SetName(const nsAString& aName, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::name, aName, aError);
   }
 
-  bool NoResize() const
-  {
-   return GetBoolAttr(nsGkAtoms::noresize);
-  }
-  void SetNoResize(bool& aNoResize, ErrorResult& aError)
-  {
+  bool NoResize() const { return GetBoolAttr(nsGkAtoms::noresize); }
+  void SetNoResize(bool& aNoResize, ErrorResult& aError) {
     SetHTMLBoolAttr(nsGkAtoms::noresize, aNoResize, aError);
   }
 
-  // The XPCOM GetScrolling is OK for us
-  void SetScrolling(const nsAString& aScrolling, ErrorResult& aError)
-  {
+  void GetScrolling(DOMString& aScrolling) const {
+    GetHTMLAttr(nsGkAtoms::scrolling, aScrolling);
+  }
+  void SetScrolling(const nsAString& aScrolling, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::scrolling, aScrolling, aError);
   }
 
-  // The XPCOM GetSrc is OK for us
-  void SetSrc(const nsAString& aSrc, ErrorResult& aError)
-  {
-    SetAttrHelper(nsGkAtoms::src, aSrc);
+  void GetSrc(nsString& aSrc) { GetURIAttr(nsGkAtoms::src, nullptr, aSrc); }
+  void SetSrc(const nsAString& aSrc, nsIPrincipal* aTriggeringPrincipal,
+              ErrorResult& aError) {
+    SetHTMLAttr(nsGkAtoms::src, aSrc, aTriggeringPrincipal, aError);
   }
 
   using nsGenericHTMLFrameElement::GetContentDocument;
   using nsGenericHTMLFrameElement::GetContentWindow;
 
-protected:
+  NS_FORWARD_NSIFRAMELOADEROWNER(nsGenericHTMLFrameElement::)
+
+ protected:
   virtual ~HTMLFrameElement();
 
-  virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapNode(JSContext* aCx,
+                             JS::Handle<JSObject*> aGivenProto) override;
 
-private:
+ private:
   static void MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
-                                    GenericSpecifiedValues* aGenericData);
+                                    MappedDeclarations&);
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_HTMLFrameElement_h
+#endif  // mozilla_dom_HTMLFrameElement_h

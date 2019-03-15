@@ -30,10 +30,6 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-
-
-static char *RCSSTRING __UNUSED__="$Id: stun_server_ctx.c,v 1.2 2008/04/28 18:21:30 ekr Exp $";
-
 #include <string.h>
 #include <assert.h>
 
@@ -386,17 +382,9 @@ int nr_stun_server_process_request(nr_stun_server_ctx *ctx, nr_socket *sock, cha
 static int nr_stun_server_send_response(nr_stun_server_ctx *ctx, nr_socket *sock, nr_transport_addr *peer_addr, nr_stun_message *res, nr_stun_server_client *clnt)
   {
     int r,_status;
-    Data *hmacPassword;
     char string[256];
 
     r_log(NR_LOG_STUN,LOG_DEBUG,"STUN-SERVER(label=%s): Sending(my_addr=%s,peer_addr=%s)",ctx->label,ctx->my_addr.as_string,peer_addr->as_string);
-
-    if (clnt) {
-        hmacPassword = &clnt->password;
-    }
-    else {
-        hmacPassword = 0;
-    }
 
     if ((r=nr_stun_encode_message(res))) {
         /* should never happen */

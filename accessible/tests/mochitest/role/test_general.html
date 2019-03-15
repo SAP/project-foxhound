@@ -15,34 +15,33 @@
           src="../attributes.js"></script>
 
   <script type="application/javascript">
-    function doTests()
-    {
+    function doTests() {
       // landmark tests section
       testRole("frm", ROLE_FORM);
 
       // nsHyperTextAcc tests section
       // Test html:form.
-      testRole("nav", ROLE_SECTION);
-      testRole("header", ROLE_HEADER);
-      testRole("footer", ROLE_FOOTER);
-      testRole("article", ROLE_DOCUMENT);
-      testRole("aside", ROLE_NOTE);
+      testRole("nav", ROLE_LANDMARK);
+      testRole("header", ROLE_LANDMARK);
+      testRole("footer", ROLE_LANDMARK);
+      testRole("article", ROLE_ARTICLE);
+      testRole("aside", ROLE_LANDMARK);
       testRole("section", ROLE_SECTION);
 
       // Bug 996821
       // Check that landmark elements get accessibles with styled overflow.
       testRole("section_overflow", ROLE_SECTION);
-      testRole("nav_overflow", ROLE_SECTION);
-      testRole("header_overflow", ROLE_HEADER);
-      testRole("aside_overflow", ROLE_NOTE);
-      testRole("footer_overflow", ROLE_FOOTER);
-      testRole("article_overflow", ROLE_DOCUMENT);
+      testRole("nav_overflow", ROLE_LANDMARK);
+      testRole("header_overflow", ROLE_SECTION);
+      testRole("aside_overflow", ROLE_LANDMARK);
+      testRole("footer_overflow", ROLE_SECTION);
+      testRole("article_overflow", ROLE_ARTICLE);
 
       // test html:div
       testRole("sec", ROLE_SECTION);
 
       // Test html:blockquote
-      testRole("quote", ROLE_SECTION);
+      testRole("quote", ROLE_BLOCKQUOTE);
 
       // Test html:h, all levels
       testRole("head1", ROLE_HEADING);
@@ -56,6 +55,13 @@
       // After fix for bug 471356, it was temporarily exposed as a paragraph,
       // breaking JAWS compatibility.
       testRole("data", ROLE_TEXT_CONTAINER);
+
+      // Test that input type="checkbox" and type="radio" are
+      // exposed as such regardless of appearance style.
+      testRole("checkbox_regular", ROLE_CHECKBUTTON);
+      testRole("checkbox_appearance_none", ROLE_CHECKBUTTON);
+      testRole("radio_regular", ROLE_RADIOBUTTON);
+      testRole("radio_appearance_none", ROLE_RADIOBUTTON);
 
       // Test regular paragraph by comparison to make sure exposure does not
       // get broken.
@@ -136,6 +142,10 @@
   <form id="frm" action="submit.php" method="post">
     <label for="data">File</label>:
     <input type="file" id="data" name="data" size="50"/>
+    <input type="checkbox" id="checkbox_regular" value="Check me"/>
+    <input type="checkbox" style="-moz-appearance: none;" id="checkbox_appearance_none" value="Check me"/>
+    <input type="radio" id="radio_regular" value="Check me"/>
+    <input type="radio" style="-moz-appearance: none;" id="radio_appearance_none" value="Check me"/>
   </form>
 
   <nav id="nav">a nav</nav>

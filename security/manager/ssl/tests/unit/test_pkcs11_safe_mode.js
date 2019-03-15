@@ -19,16 +19,16 @@ function run_test() {
     invalidateCachesOnRestart: function invalidateCachesOnRestart() {
       // Do nothing
     },
-    QueryInterface: XPCOMUtils.generateQI([Ci.nsIXULRuntime])
+    QueryInterface: ChromeUtils.generateQI([Ci.nsIXULRuntime]),
   };
 
   let xulRuntimeFactory = {
-    createInstance: function (outer, iid) {
+    createInstance(outer, iid) {
       if (outer != null) {
         throw new Error(Cr.NS_ERROR_NO_AGGREGATION);
       }
       return xulRuntime.QueryInterface(iid);
-    }
+    },
   };
 
   let registrar = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
@@ -38,12 +38,14 @@ function run_test() {
                             xulRuntimeFactory);
 
   // When starting in safe mode, the test module should fail to load.
-  let pkcs11 = Cc["@mozilla.org/security/pkcs11;1"].getService(Ci.nsIPKCS11);
+  let pkcs11ModuleDB = Cc["@mozilla.org/security/pkcs11moduledb;1"]
+                         .getService(Ci.nsIPKCS11ModuleDB);
   let libraryName = ctypes.libraryName("pkcs11testmodule");
-  let libraryFile = Services.dirsvc.get("CurWorkD", Ci.nsILocalFile);
+  let libraryFile = Services.dirsvc.get("CurWorkD", Ci.nsIFile);
   libraryFile.append("pkcs11testmodule");
   libraryFile.append(libraryName);
   ok(libraryFile.exists(), "The pkcs11testmodule file should exist");
-  throws(() => pkcs11.addModule("PKCS11 Test Module", libraryFile.path, 0, 0),
+  throws(() => pkcs11ModuleDB.addModule("PKCS11 Test Module", libraryFile.path,
+                                        0, 0),
          /NS_ERROR_FAILURE/, "addModule should throw when in safe mode");
 }

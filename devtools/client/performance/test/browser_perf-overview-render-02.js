@@ -14,22 +14,22 @@ const { initPerformanceInNewTab, teardownToolboxAndRemoveTab } = require("devtoo
 const { startRecording, stopRecording } = require("devtools/client/performance/test/helpers/actions");
 const { times } = require("devtools/client/performance/test/helpers/event-utils");
 
-add_task(function* () {
-  let { panel } = yield initPerformanceInNewTab({
+add_task(async function() {
+  const { panel } = await initPerformanceInNewTab({
     url: SIMPLE_URL,
-    win: window
+    win: window,
   });
 
-  let { EVENTS, OverviewView } = panel.panelWin;
+  const { EVENTS, OverviewView } = panel.panelWin;
 
   // Enable memory to test.
   Services.prefs.setBoolPref(UI_ENABLE_MEMORY_PREF, true);
 
-  yield startRecording(panel);
+  await startRecording(panel);
 
-  let framerate = OverviewView.graphs.get("framerate");
-  let markers = OverviewView.graphs.get("timeline");
-  let memory = OverviewView.graphs.get("memory");
+  const framerate = OverviewView.graphs.get("framerate");
+  const markers = OverviewView.graphs.get("timeline");
+  const memory = OverviewView.graphs.get("memory");
 
   ok("selectionEnabled" in framerate,
     "The selection should not be enabled for the framerate overview (1).");
@@ -53,8 +53,8 @@ add_task(function* () {
     "The memory overview shouldn't have a selection before recording.");
 
   // Ensure overview keeps rendering.
-  yield times(OverviewView, EVENTS.UI_OVERVIEW_RENDERED, 3, {
-    expectedArgs: { "1": Constants.FRAMERATE_GRAPH_LOW_RES_INTERVAL }
+  await times(OverviewView, EVENTS.UI_OVERVIEW_RENDERED, 3, {
+    expectedArgs: [Constants.FRAMERATE_GRAPH_LOW_RES_INTERVAL],
   });
 
   ok("selectionEnabled" in framerate,
@@ -78,7 +78,7 @@ add_task(function* () {
   is(memory.hasSelection(), false,
     "The memory overview still shouldn't have a selection before recording.");
 
-  yield stopRecording(panel);
+  await stopRecording(panel);
 
   is(framerate.selectionEnabled, true,
     "The selection should now be enabled for the framerate overview.");
@@ -87,5 +87,5 @@ add_task(function* () {
   is(memory.selectionEnabled, true,
     "The selection should now be enabled for the memory overview.");
 
-  yield teardownToolboxAndRemoveTab(panel);
+  await teardownToolboxAndRemoveTab(panel);
 });

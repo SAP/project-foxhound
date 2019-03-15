@@ -15,4 +15,12 @@ var code = `(module
  (export "run" 0)
 )`;
 
-wasmFullPass(code, Math.fround(13.37), {}, 13.37);
+try {
+    wasmFullPass(code, Math.fround(13.37), {}, 13.37);
+} catch (e) {
+    // Some configurations, like e.g. ASAN, will fail these tests because its
+    // stack frames are much bigger than usual ones and the parser will bail
+    // out during its recursive descent.
+    // Ignore those errors specifically.
+    assertEq(e.message.includes('out of memory'), true);
+}

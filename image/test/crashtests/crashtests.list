@@ -6,7 +6,9 @@ load 83804-1.gif
 load 89341-1.gif
 load 463696.bmp
 load 570451.png
-skip-if(Android) load 694165-1.xhtml
+# Bug 1390704 - Skip on debug because it triggers a quadratic behavior that makes it take
+# so much time that it can trip on the reftest timeout of 5 minutes.
+skip-if(Android||isDebugBuild) load 694165-1.xhtml
 load 681190.html
 load 732319-1.html
 load 844403-1.html
@@ -24,7 +26,10 @@ load 1242093-1.html
 load 1242778-1.png
 load 1249576-1.png
 load 1253362-1.html
-load 1355898-1.html
+skip-if(Android&&browserIsRemote) load 1355898-1.html # bug 1507207
+load 1375842-1.html
+load 1413762-1.gif
+pref(image.downscale-during-decode.enabled,true) load 1443232-1.html
 load colormap-range.gif
 HTTP load delayedframe.sjs # A 3-frame animated GIF with an inordinate delay between the second and third frame
 
@@ -50,3 +55,6 @@ load invalid-size-second-frame.gif
 load multiple-png-hassize.ico # Bug 863958 - This icon's size is such that it leads to multiple writes to the PNG decoder after we've gotten our size.
 asserts(0-2) load ownerdiscard.html # Bug 1323672, bug 807211
 load truncated-second-frame.png # Bug 863975
+
+# Bug 1509998 - Ensure that we handle empty frame rects in animated images.
+load 1509998.gif

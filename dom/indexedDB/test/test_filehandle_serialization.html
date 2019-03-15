@@ -16,12 +16,10 @@
 
     const databaseInfo = [
       { name: window.location.pathname + "1" },
-      { name: window.location.pathname + "2" }
+      { name: window.location.pathname + "2" },
     ];
 
     const objectStoreName = "Blobs";
-
-    const testFile = getRandomFile("random.bin", 100000);
 
     let databases = [];
     for (let info of databaseInfo) {
@@ -49,7 +47,7 @@
 
     let request = db1.createMutableFile("random.bin", "binary/random");
     request.onsuccess = grabEventAndContinueHandler;
-    event = yield undefined;
+    let event = yield undefined;
 
     let mutableFile = event.target.result;
     is(getFileId(mutableFile), 1, "Correct file id");

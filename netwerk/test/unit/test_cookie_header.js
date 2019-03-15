@@ -1,8 +1,8 @@
 // This file tests bug 250375
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpserv.identity.primaryPort + "/";
@@ -22,7 +22,7 @@ function check_request_header(chan, name, value) {
     do_throw("Expected to find header '" + name + "' but didn't find it, got exception: " + e);
   }
   dump("Value for header '" + name + "' is '" + chanValue + "'\n");
-  do_check_eq(chanValue, value);
+  Assert.equal(chanValue, value);
 }
 
 var cookieVal = "C1=V1";
@@ -30,17 +30,17 @@ var cookieVal = "C1=V1";
 var listener = {
   onStartRequest: function test_onStartR(request, ctx) {
     try {
-      var chan = request.QueryInterface(Components.interfaces.nsIHttpChannel);
+      var chan = request.QueryInterface(Ci.nsIHttpChannel);
       check_request_header(chan, "Cookie", cookieVal);
     } catch (e) {
       do_throw("Unexpected exception: " + e);
     }
 
-    throw Components.results.NS_ERROR_ABORT;
+    throw Cr.NS_ERROR_ABORT;
   },
 
   onDataAvailable: function test_ODA() {
-    throw Components.results.NS_ERROR_UNEXPECTED;
+    throw Cr.NS_ERROR_UNEXPECTED;
   },
 
   onStopRequest: function test_onStopR(request, ctx, status) {
@@ -58,7 +58,7 @@ var listener = {
 
 function makeChan() {
   return NetUtil.newChannel({uri: URL, loadUsingSystemPrincipal: true})
-                .QueryInterface(Components.interfaces.nsIHttpChannel);
+                .QueryInterface(Ci.nsIHttpChannel);
 }
 
 var httpserv = null;
@@ -83,8 +83,8 @@ function run_test() {
 function run_test_continued() {
   var chan = makeChan();
 
-  var cookServ = Components.classes["@mozilla.org/cookieService;1"]
-                           .getService(Components.interfaces.nsICookieService);
+  var cookServ = Cc["@mozilla.org/cookieService;1"]
+                   .getService(Ci.nsICookieService);
   var cookie2 = "C2=V2";
   cookServ.setCookieString(chan.URI, null, cookie2, chan);
   chan.setRequestHeader("Cookie", cookieVal, false);

@@ -1,8 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Components.utils.import("resource://gre/modules/PlacesUtils.jsm");
-Components.utils.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/PlacesUtils.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 function test() {
   waitForExplicitFinish();
@@ -16,15 +16,15 @@ function test() {
   var extps = Cc["@mozilla.org/uriloader/external-protocol-service;1"].
               getService(Ci.nsIExternalProtocolService);
   var info = extps.getProtocolHandlerInfo("apppanetest");
-  info.possibleApplicationHandlers.appendElement(handler, false);
+  info.possibleApplicationHandlers.appendElement(handler);
 
   var hserv = Cc["@mozilla.org/uriloader/handler-service;1"].
               getService(Ci.nsIHandlerService);
   hserv.store(info);
 
-  openPreferencesViaOpenPreferencesAPI("applications", null, {leaveOpen: true}).then(
-      () => runTest(gBrowser.selectedBrowser.contentWindow)
-  );
+  openPreferencesViaOpenPreferencesAPI("general", {leaveOpen: true})
+  .then(() => gBrowser.selectedBrowser.contentWindow.promiseLoadHandlersList)
+  .then(() => runTest(gBrowser.selectedBrowser.contentWindow));
 }
 
 function runTest(win) {

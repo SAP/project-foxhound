@@ -16,8 +16,8 @@
 
   <script type="application/javascript"><![CDATA[
 
-var fm = Components.classes["@mozilla.org/focus-manager;1"].
-           getService(Components.interfaces.nsIFocusManager);
+var fm = Cc["@mozilla.org/focus-manager;1"].
+           getService(Ci.nsIFocusManager);
 
 const kChildDocumentRootIndex = 13;
 const kBeforeTabboxIndex = 34;
@@ -274,11 +274,7 @@ function checkSelection(node, testid)
 
 function getTopWindow(win)
 {
-  return win.QueryInterface(Components.interfaces.nsIInterfaceRequestor).
-             getInterface(Components.interfaces.nsIWebNavigation).
-             QueryInterface(Components.interfaces.nsIDocShellTreeItem).rootTreeItem.
-             QueryInterface(Components.interfaces.nsIInterfaceRequestor).
-             getInterface(Components.interfaces.nsIDOMWindow);
+  return win.docShell.rootTreeItem.domWindow;
 }
 
 function mouseWillTriggerFocus(element)
@@ -299,7 +295,7 @@ function mouseWillTriggerFocus(element)
                                          element.type == "password")) {
       return true;
     }
-  } else if (element.localName == "listbox") {
+  } else if (element.localName == "richlistbox") {
     return true;
   }
 
@@ -333,7 +329,7 @@ function done()
   opener.wrappedJSObject.SimpleTest.finish();
 }
 
-var pressTab = () => synthesizeKey("VK_TAB", { });
+var pressTab = () => synthesizeKey("KEY_Tab");
 
 function setFocusTo(id, fwindow)
 {
@@ -400,10 +396,10 @@ function startTest()
     }
     setFocusTo("last", window);
     expectFocusShift(pressTab, null, getById(partialTabList[0]), true, "partial tab key wrap to start");
-    expectFocusShift(() => synthesizeKey("VK_TAB", { shiftKey: true }),
+    expectFocusShift(() => synthesizeKey("KEY_Tab", {shiftKey: true}),
                      null, getById("last"), true, "partial shift tab key wrap to end");
     for (var idx = partialTabList.length - 1; idx >= 0; idx--) {
-      expectFocusShift(() => synthesizeKey("VK_TAB", { shiftKey: true }),
+      expectFocusShift(() => synthesizeKey("KEY_Tab", {shiftKey: true}),
                        null, getById(partialTabList[idx]), true, "partial tab key " + partialTabList[idx]);
     }
   }
@@ -416,13 +412,13 @@ function startTest()
     // wrapping around at end with TAB key
     setFocusTo("last", window);
     expectFocusShift(pressTab, null, getById("t1"), true, "tab key wrap to start");
-    expectFocusShift(() => synthesizeKey("VK_TAB", { shiftKey: true }),
+    expectFocusShift(() => synthesizeKey("KEY_Tab", {shiftKey: true}),
                      null, getById("last"), true, "shift tab key wrap to end");
 
     // Shift+TAB key
     setFocusTo("o5", window);
     for (idx = kTabbableSteps; idx > 0; idx--) {
-      expectFocusShift(() => synthesizeKey("VK_TAB", { shiftKey: true }),
+      expectFocusShift(() => synthesizeKey("KEY_Tab", {shiftKey: true}),
                        null, getById("t" + idx), true, "shift tab key t" + idx);
     }
   }
@@ -457,7 +453,7 @@ function startTest()
 
     mouseOnElement(element, getById("t" + idx), true, "mouse on element t" + idx);
     var expectedWindow = (element.ownerGlobal == gChildWindow) ? gChildWindow : window;
-    if (element.localName == "listbox" && expectedWindow == window &&
+    if (element.localName == "richlistbox" && expectedWindow == window &&
         navigator.platform.indexOf("Mac") == 0) {
       // after focusing a listbox on Mac, clear the focus before continuing.
       setFocusTo(null, window);
@@ -539,7 +535,7 @@ function startTest()
     legend.tabIndex = "-1";
   }
 
-  var accessKeyDetails = (navigator.platform.indexOf("Mac") >= 0) ?
+  var accessKeyDetails = (navigator.platform.includes("Mac")) ?
                          { ctrlKey : true } : { altKey : true };
 
   // test accesskeys
@@ -554,7 +550,7 @@ function startTest()
     // on Windows and Linux, the shift key must be pressed for content area access keys
     // and on Mac, the alt key must be pressed for content area access keys
     var isContent = (getById(keys[k]).ownerGlobal == gChildWindow);
-    if (navigator.platform.indexOf("Mac") == -1) {
+    if (!navigator.platform.includes("Mac")) {
       accessKeyDetails.shiftKey = isContent;
     } else {
       accessKeyDetails.altKey = isContent;
@@ -807,7 +803,7 @@ function startTest()
   expectFocusShift(() => textbox2.focus(),
                    null, textbox2.inputField, true, "focus on textbox");
   gLastFocusMethod = fm.FLAG_BYKEY;
-  expectFocusShift(() => synthesizeKey("VK_TAB", { shiftKey: true }),
+  expectFocusShift(() => synthesizeKey("KEY_Tab", {shiftKey: true}),
                    null, textbox1.inputField, true, "shift+tab on textbox");
 
   textbox1.tabIndex = 2;
@@ -816,7 +812,7 @@ function startTest()
   expectFocusShift(() => textbox2.focus(),
                    null, textbox2.inputField, true, "focus on textbox with tabindex set");
   gLastFocusMethod = fm.FLAG_BYKEY;
-  expectFocusShift(() => synthesizeKey("VK_TAB", { shiftKey: true }),
+  expectFocusShift(() => synthesizeKey("KEY_Tab", {shiftKey: true}),
                    null, textbox1.inputField, true, "shift+tab on textbox with tabindex set");
 
   // ---- test for bug 618907 which ensures that canceling the mousedown event still focuses the
@@ -1026,15 +1022,15 @@ function testMoveFocus()
   is(fm.focusedElement, t25, "move caret to link focusedElement");
 
   // enable caret browsing temporarily to test caret movement
-  var prefs = Components.classes["@mozilla.org/preferences-service;1"].
-                getService(Components.interfaces.nsIPrefBranch);
+  var prefs = Cc["@mozilla.org/preferences-service;1"].
+                getService(Ci.nsIPrefBranch);
   prefs.setBoolPref("accessibility.browsewithcaret", true);
 
-  synthesizeKey("VK_LEFT", { }, gChildWindow);
-  synthesizeKey("VK_LEFT", { }, gChildWindow);
+  synthesizeKey("KEY_ArrowLeft", {}, gChildWindow);
+  synthesizeKey("KEY_ArrowLeft", {}, gChildWindow);
   is(fm.focusedElement, null, "move caret away from link");
 
-  synthesizeKey("VK_LEFT", { }, gChildWindow);
+  synthesizeKey("KEY_ArrowLeft", {}, gChildWindow);
   is(fm.focusedElement, getById("t24"), "move caret away onto link");
 
   prefs.setBoolPref("accessibility.browsewithcaret", false);
@@ -1049,18 +1045,18 @@ function testMoveFocus()
     gLastFocusMethod = fm.FLAG_BYKEY;
 
     selection.selectAllChildren(getById("hiddenspan"));
-    expectFocusShift(() => synthesizeKey("VK_TAB", { }),
+    expectFocusShift(() => synthesizeKey("KEY_Tab"),
                      gChildWindow, getById("t26"), true, "tab with selection on hidden content");
 
     setFocusTo($("o15"), window);
     $("o15").hidden = true;
     document.documentElement.getBoundingClientRect(); // flush after hiding
-    expectFocusShift(() => synthesizeKey("VK_TAB", { }),
+    expectFocusShift(() => synthesizeKey("KEY_Tab"),
                      window, $("o17"), true, "tab with focus on hidden content");
 
     $("o17").hidden = true;
     document.documentElement.getBoundingClientRect();
-    expectFocusShift(() => synthesizeKey("VK_TAB", { shiftKey: true }),
+    expectFocusShift(() => synthesizeKey("KEY_Tab", {shiftKey: true}),
                      window, $("o13"), true, "shift+tab with focus on hidden content");
   }
 
@@ -1143,7 +1139,7 @@ function otherWindowFocused(otherWindow)
   // next, check modal dialogs
   // XXXndeakin Bug 621399 - the modal dialog test as well as later tests sometime fail
   // on Windows 8 so just end the test here.
-  if (navigator.userAgent.indexOf("Windows NT 6.2") >= 0) {
+  if (navigator.userAgent.includes("Windows NT 6.2")) {
     done();
   }
   else {
@@ -1157,7 +1153,7 @@ function modalWindowOpened(modalWindow)
   if (gPartialTabbing)
     elem.focus();
   else
-    synthesizeKey("VK_TAB", { }, modalWindow);
+    synthesizeKey("KEY_Tab", {}, modalWindow);
   is(fm.activeWindow, modalWindow, "modal activeWindow");
   is(fm.focusedElement, elem, "modal focusedElement");
 
@@ -1187,43 +1183,43 @@ function framesetWindowLoaded(framesetWindow)
     gNewExpectedWindow = framesetWindow.frames[(idx - 1) >> 1];
     if (idx % 2)
       initEvents(gNewExpectedWindow);
-    expectFocusShift(() => synthesizeKey("VK_TAB", { }, framesetWindow),
+    expectFocusShift(() => synthesizeKey("KEY_Tab", {}, framesetWindow),
                      gNewExpectedWindow, getById("f" + idx), true, "frameset tab key f" + idx);
     gMoveToFocusFrame = false;
     gOldExpectedWindow = gNewExpectedWindow;
   }
 
   gNewExpectedWindow = framesetWindow.frames[0];
-  expectFocusShift(() => synthesizeKey("VK_TAB", { }, framesetWindow),
+  expectFocusShift(() => synthesizeKey("KEY_Tab", {}, framesetWindow),
                    gNewExpectedWindow, getById("f1"), true, "frameset tab key wrap to start");
   gOldExpectedWindow = gNewExpectedWindow;
   gNewExpectedWindow = framesetWindow.frames[3];
-  expectFocusShift(() => synthesizeKey("VK_TAB", { shiftKey: true }, framesetWindow),
+  expectFocusShift(() => synthesizeKey("KEY_Tab", {shiftKey: true}, framesetWindow),
                    gNewExpectedWindow, getById("f8"), true, "frameset shift tab key wrap to end");
 
   for (idx = 7; idx >= 1; idx--) {
     gOldExpectedWindow = gNewExpectedWindow;
     gNewExpectedWindow = framesetWindow.frames[(idx - 1) >> 1];
-    expectFocusShift(() => synthesizeKey("VK_TAB", { shiftKey: true }, framesetWindow),
+    expectFocusShift(() => synthesizeKey("KEY_Tab", {shiftKey: true}, framesetWindow),
                      gNewExpectedWindow, getById("f" + idx), true, "frameset shift tab key f" + idx);
   }
 
   // document shifting
   // XXXndeakin P3 ctrl+tab doesn't seem to be testable currently for some reason
   gNewExpectedWindow = framesetWindow.frames[1];
-  expectFocusShift(() => synthesizeKey("VK_F6", { ctrlKey: true }, framesetWindow),
+  expectFocusShift(() => synthesizeKey("KEY_F6", {ctrlKey: true}, framesetWindow),
                    gNewExpectedWindow, getById("f3"), true, "switch document forward with f6");
   gOldExpectedWindow = gNewExpectedWindow;
   gNewExpectedWindow = framesetWindow.frames[2];
-  expectFocusShift(() => synthesizeKey("VK_F6", { }, framesetWindow),
+  expectFocusShift(() => synthesizeKey("KEY_F6", {}, framesetWindow),
                    gNewExpectedWindow, getById("f5"), true, "switch document forward with ctrl+tab");
   gOldExpectedWindow = gNewExpectedWindow;
   gNewExpectedWindow = framesetWindow.frames[3];
-  expectFocusShift(() => synthesizeKey("VK_F6", { ctrlKey: true }, framesetWindow),
+  expectFocusShift(() => synthesizeKey("KEY_F6", {ctrlKey: true}, framesetWindow),
                    gNewExpectedWindow, getById("f7"), true, "switch document forward with ctrl+f6");
   gOldExpectedWindow = gNewExpectedWindow;
   gNewExpectedWindow = framesetWindow.frames[0];
-  expectFocusShift(() => synthesizeKey("VK_F6", { ctrlKey: true }, framesetWindow),
+  expectFocusShift(() => synthesizeKey("KEY_F6", {ctrlKey: true}, framesetWindow),
                    gNewExpectedWindow, getById("f1"), true, "switch document forward and wrap");
 
 // going backwards by document and wrapping doesn't currently work, but didn't work
@@ -1232,7 +1228,7 @@ function framesetWindowLoaded(framesetWindow)
 /*
   gOldExpectedWindow = gNewExpectedWindow;
   gNewExpectedWindow = framesetWindow.frames[3];
-  expectFocusShift(() => synthesizeKey("VK_F6", { ctrlKey: true, shiftKey: true }, framesetWindow),
+  expectFocusShift(() => synthesizeKey("KEY_F6", { ctrlKey: true, shiftKey: true }, framesetWindow),
                    gNewExpectedWindow, getById("f7"), true, "switch document backward and wrap");
  */
 
@@ -1241,20 +1237,20 @@ function framesetWindowLoaded(framesetWindow)
 
   gOldExpectedWindow = gNewExpectedWindow;
   gNewExpectedWindow = framesetWindow.frames[2];
-  expectFocusShift(() => synthesizeKey("VK_F6", { ctrlKey: true, shiftKey: true }, framesetWindow),
+  expectFocusShift(() => synthesizeKey("KEY_F6", {ctrlKey: true, shiftKey: true}, framesetWindow),
                    gNewExpectedWindow, getById("f5"), true, "switch document backward with f6");
   gOldExpectedWindow = gNewExpectedWindow;
   gNewExpectedWindow = framesetWindow.frames[1];
-  expectFocusShift(() => synthesizeKey("VK_F6", { ctrlKey: true, shiftKey: true }, framesetWindow),
+  expectFocusShift(() => synthesizeKey("KEY_F6", {ctrlKey: true, shiftKey: true}, framesetWindow),
                    gNewExpectedWindow, getById("f3"), true, "switch document backward with ctrl+tab");
   gOldExpectedWindow = gNewExpectedWindow;
   gNewExpectedWindow = framesetWindow.frames[0];
-  expectFocusShift(() => synthesizeKey("VK_F6", { ctrlKey: true, shiftKey: true }, framesetWindow),
+  expectFocusShift(() => synthesizeKey("KEY_F6", {ctrlKey: true, shiftKey: true}, framesetWindow),
                    gNewExpectedWindow, getById("f1"), true, "switch document backward with ctrl+f6");
 
   // skip the window switching tests for now on Linux, as raising and lowering
   // a window is asynchronous there
-  if (navigator.platform.indexOf("Linux") == -1) {
+  if (!navigator.platform.includes("Linux")) {
     window.openDialog("focus_window2.xul", "_blank", "chrome", switchWindowTest, framesetWindow);
   }
   else {
@@ -1344,9 +1340,8 @@ function switchWindowTest(otherWindow, framesetWindow)
 
   fm.clearFocus(otherWindow);
 
-  // test to ensure that a synthetic event works
-  var synevent = document.createEvent("Event");
-  synevent.initEvent("focus", false, false);
+  // test to ensure that a synthetic event won't move focus
+  var synevent = new FocusEvent("focus", {});
   otherTextbox.inputField.dispatchEvent(synevent);
   is(synevent.type, "focus", "event.type after synthetic focus event");
   is(synevent.target, otherTextbox, "event.target after synthetic focus event");
@@ -1380,15 +1375,8 @@ function switchWindowTest(otherWindow, framesetWindow)
 var noRootWindow = null;
 function doWindowNoRootTest()
 {
-  var data = "data:application/vnd.mozilla.xul+xml," + unescape(
-             "<window onfocus='dostuff()' xmlns='http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul'" +
-             "        style='-moz-user-focus: normal;'>" +
-             "<script>function dostuff() { setTimeout(function() { " +
-             "document.documentElement.focus(); document.removeChild(document.documentElement);" +
-             "window.opener.focus(); }, 100); }</script></window>");
-
   addEventListener("focus", doFrameSwitchingTests, true);
-  noRootWindow = window.open(data, "_blank", "chrome,width=100,height=100");
+  noRootWindow = window.open("window_focus_inner.xul", "_blank", "chrome,width=100,height=100");
 }
 
 // these tests check when focus is moved between a tree of frames to ensure
@@ -1577,7 +1565,7 @@ function doFrameHistoryTests()
   }, true);
 
   // make sure that loading a new page and then going back maintains the focus
-  gChildWindow.location = "data:text/html,<script>window.onload=function() {setTimeout(function () {SpecialPowers.wrap(window).back();}, 0);}</script>";
+  gChildWindow.location = "data:text/html,<script>window.onload=function() {setTimeout(function () { history.back() }, 0);}</script>";
 }
 
 function addFrameSwitchingListeners(frame)
@@ -1642,14 +1630,14 @@ SimpleTest.waitForFocus(startTest);
 <hbox id="innerbox">
   <button id="t4" accesskey="h" label="no tabindex"/>
   <button id="o1" accesskey="i" label="tabindex = -1" tabindex="-1"/>
-  <listbox id="t5" label="tabindex = 0" tabindex="0" rows="1">
-    <listitem/>
-  </listbox>
+  <richlistbox id="t5" label="tabindex = 0" tabindex="0" width="50">
+    <richlistitem height="10"/>
+  </richlistbox>
   <button id="t1" label="tabindex = 2" tabindex="2"/>
 </hbox>
 <hbox>
   <button id="o2" accesskey="o" style="-moz-user-focus: ignore;" label="no tabindex"/>
-  <button id="o4" style="-moz-user-focus: ignore;" label="tabindex = -1" tabindex="-1"/>
+  <button id="o4" style="-moz-user-focus: ignore;" label="no tabindex"/>
   <button id="t6" style="-moz-user-focus: ignore;" label="tabindex = 0" tabindex="0"/>
   <button id="t2" style="-moz-user-focus: ignore;" label="tabindex = 2" tabindex="2"/>
 </hbox>
@@ -1657,9 +1645,9 @@ SimpleTest.waitForFocus(startTest);
   <button id="t7" style="-moz-user-focus: normal;" label="no tabindex"/>
   <button id="o3" style="-moz-user-focus: normal;" label="tabindex = -1" tabindex="-1"/>
   <button id="t8" style="-moz-user-focus: normal;" label="tabindex = 0" tabindex="0"/>
-  <listbox id="t3" style="-moz-user-focus: normal;" label="tabindex = 2" tabindex="2" rows="1">
-    <listitem/>
-  </listbox>
+  <richlistbox id="t3" style="-moz-user-focus: normal;" label="tabindex = 2" tabindex="2" width="50">
+    <richlistitem height="10"/>
+  </richlistbox>
 </hbox>
 <hbox>
   <button accesskey="p" style="display: none;"/> <button accesskey="q" style="visibility: collapse;"/>
@@ -1675,17 +1663,17 @@ SimpleTest.waitForFocus(startTest);
 <vbox>
 <hbox>
   <dropmarker id="o6" value="no tabindex"/>
-  <dropmarker id="o8" value="tabindex = -1" tabindex="-1"/>
-  <dropmarker id="o10" value="tabindex = 0" tabindex="0"/>
-  <dropmarker id="o12" value="tabindex = 2" tabindex="2"/>
+  <dropmarker id="o8" value="no tabindex"/>
+  <dropmarker id="o10" value="no tabindx"/>
+  <dropmarker id="o12" value="no tabindex"/>
   <dropmarker id="t9" accesskey="r" style="-moz-user-focus: normal;" value="no tabindex" />
-  <dropmarker id="t10" style="-moz-user-focus: normal;" value="tabindex = -1" tabindex="-1" />
+  <dropmarker id="t10" style="-moz-user-focus: normal;" value="no tabindex"/>
   <dropmarker id="t11" style="-moz-user-focus: normal;" value="tabindex = 0" tabindex="0" />
-  <dropmarker id="t12" style="-moz-user-focus: normal;" value="tabindex = 2" tabindex="2" />
+  <dropmarker id="t12" style="-moz-user-focus: normal;" value="no tabindex"/>
   <dropmarker id="o14" style="-moz-user-focus: ignore;" value="no tabindex"/>
-  <dropmarker id="o16" style="-moz-user-focus: ignore;" value="tabindex = -1" tabindex="-1"/>
-  <dropmarker id="n1" style="-moz-user-focus: none;" value="tabindex = 0" tabindex="0"/>
-  <dropmarker id="n3" style="-moz-user-focus: none;" value="tabindex = 2" tabindex="2"/>
+  <dropmarker id="o16" style="-moz-user-focus: ignore;" value="no tabindex"/>
+  <dropmarker id="n1" style="-moz-user-focus: none;" value="no tabindex"/>
+  <dropmarker id="n3" style="-moz-user-focus: none;" value="no tabindex"/>
 </hbox>
 </vbox>
 <browser id="childframe" type="content" src="child_focus_frame.html" width="300" height="195"/>
@@ -1717,7 +1705,7 @@ SimpleTest.waitForFocus(startTest);
 <checkbox id="o5"/><checkbox id="o7"/><hbox><checkbox id="o9"/></hbox>
 <checkbox id="o13"/><checkbox id="o15"/><checkbox id="o17"/><checkbox id="o19"/><checkbox id="o21"/><checkbox id="o23"/><checkbox id="o25"/>
 <checkbox id="n2"/><checkbox id="n4"/>
-<listbox id="last" width="20" rows="1"/>
+<richlistbox id="last" width="20" height="20"/>
 
 <iframe id="ifa" width="40" height="60" style="-moz-user-focus: ignore;" type="content"
         src="data:text/html,&lt;input id=fra size='2'&gt;&lt;input id='fra-b' size='2'&gt;

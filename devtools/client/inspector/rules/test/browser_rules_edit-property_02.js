@@ -19,21 +19,21 @@ const TEST_URI = `
   <div id="testid2">Styled Node</div>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
-  yield selectNode("#testid", inspector);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, view} = await openRuleView();
+  await selectNode("#testid", inspector);
 
-  yield testEditProperty(inspector, view);
-  yield testDisableProperty(inspector, view);
-  yield testPropertyStillMarkedDirty(inspector, view);
+  await testEditProperty(inspector, view);
+  await testDisableProperty(inspector, view);
+  await testPropertyStillMarkedDirty(inspector, view);
 });
 
-function* testEditProperty(inspector, ruleView) {
-  let idRule = getRuleViewRuleEditor(ruleView, 1).rule;
-  let prop = idRule.textProps[0];
+async function testEditProperty(inspector, ruleView) {
+  const idRule = getRuleViewRuleEditor(ruleView, 1).rule;
+  const prop = idRule.textProps[0];
 
-  let editor = yield focusEditableField(ruleView, prop.editor.nameSpan);
+  let editor = await focusEditableField(ruleView, prop.editor.nameSpan);
   let input = editor.input;
   is(inplaceEditor(prop.editor.nameSpan), editor,
     "Next focused editor should be the name editor.");
@@ -48,11 +48,11 @@ function* testEditProperty(inspector, ruleView) {
 
   info("Entering property name \"border-color\" followed by a colon to " +
     "focus the value");
-  let onNameDone = ruleView.once("ruleview-changed");
-  let onFocus = once(idRule.editor.element, "focus", true);
+  const onNameDone = ruleView.once("ruleview-changed");
+  const onFocus = once(idRule.editor.element, "focus", true);
   EventUtils.sendString("border-color:", ruleView.styleWindow);
-  yield onFocus;
-  yield onNameDone;
+  await onFocus;
+  await onNameDone;
 
   info("Verifying that the focused field is the valueSpan");
   editor = inplaceEditor(ruleView.styleDocument.activeElement);
@@ -63,69 +63,69 @@ function* testEditProperty(inspector, ruleView) {
     "Editor contents are selected.");
 
   info("Entering a value following by a semi-colon to commit it");
-  let onBlur = once(editor.input, "blur");
+  const onBlur = once(editor.input, "blur");
   // Use sendChar() to pass each character as a string so that we can test
   // prop.editor.warning.hidden after each character.
-  for (let ch of "red;") {
-    let onPreviewDone = ruleView.once("ruleview-changed");
+  for (const ch of "red;") {
+    const onPreviewDone = ruleView.once("ruleview-changed");
     EventUtils.sendChar(ch, ruleView.styleWindow);
-    ruleView.throttle.flush();
-    yield onPreviewDone;
+    ruleView.debounce.flush();
+    await onPreviewDone;
     is(prop.editor.warning.hidden, true,
       "warning triangle is hidden or shown as appropriate");
   }
-  yield onBlur;
+  await onBlur;
 
-  let newValue = yield executeInContent("Test:GetRulePropertyValue", {
+  const newValue = await executeInContent("Test:GetRulePropertyValue", {
     styleSheetIndex: 0,
     ruleIndex: 0,
-    name: "border-color"
+    name: "border-color",
   });
   is(newValue, "red", "border-color should have been set.");
 
   ruleView.styleDocument.activeElement.blur();
-  yield addProperty(ruleView, 1, "color", "red", ";");
+  await addProperty(ruleView, 1, "color", "red", ";");
 
-  let props = ruleView.element.querySelectorAll(".ruleview-property");
+  const props = ruleView.element.querySelectorAll(".ruleview-property");
   for (let i = 0; i < props.length; i++) {
     is(props[i].hasAttribute("dirty"), i <= 1,
       "props[" + i + "] marked dirty as appropriate");
   }
 }
 
-function* testDisableProperty(inspector, ruleView) {
-  let idRule = getRuleViewRuleEditor(ruleView, 1).rule;
-  let prop = idRule.textProps[0];
+async function testDisableProperty(inspector, ruleView) {
+  const idRule = getRuleViewRuleEditor(ruleView, 1).rule;
+  const prop = idRule.textProps[0];
 
   info("Disabling a property");
-  yield togglePropStatus(ruleView, prop);
+  await togglePropStatus(ruleView, prop);
 
-  let newValue = yield executeInContent("Test:GetRulePropertyValue", {
+  let newValue = await executeInContent("Test:GetRulePropertyValue", {
     styleSheetIndex: 0,
     ruleIndex: 0,
-    name: "border-color"
+    name: "border-color",
   });
   is(newValue, "", "Border-color should have been unset.");
 
   info("Enabling the property again");
-  yield togglePropStatus(ruleView, prop);
+  await togglePropStatus(ruleView, prop);
 
-  newValue = yield executeInContent("Test:GetRulePropertyValue", {
+  newValue = await executeInContent("Test:GetRulePropertyValue", {
     styleSheetIndex: 0,
     ruleIndex: 0,
-    name: "border-color"
+    name: "border-color",
   });
   is(newValue, "red", "Border-color should have been reset.");
 }
 
-function* testPropertyStillMarkedDirty(inspector, ruleView) {
+async function testPropertyStillMarkedDirty(inspector, ruleView) {
   // Select an unstyled node.
-  yield selectNode("#testid2", inspector);
+  await selectNode("#testid2", inspector);
 
   // Select the original node again.
-  yield selectNode("#testid", inspector);
+  await selectNode("#testid", inspector);
 
-  let props = ruleView.element.querySelectorAll(".ruleview-property");
+  const props = ruleView.element.querySelectorAll(".ruleview-property");
   for (let i = 0; i < props.length; i++) {
     is(props[i].hasAttribute("dirty"), i <= 1,
       "props[" + i + "] marked dirty as appropriate");

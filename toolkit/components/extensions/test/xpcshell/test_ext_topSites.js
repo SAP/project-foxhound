@@ -1,57 +1,57 @@
 "use strict";
 
-Cu.import("resource://gre/modules/NewTabUtils.jsm");
+ChromeUtils.import("resource://gre/modules/PlacesUtils.jsm");
+ChromeUtils.import("resource://gre/modules/NewTabUtils.jsm");
+ChromeUtils.import("resource://testing-common/PlacesTestUtils.jsm");
 
+// Disable top site search shortcuts for this test
+Services.prefs.setBoolPref("browser.newtabpage.activity-stream.improvesearch.topSiteSearchShortcuts", false);
 
-function TestProvider(getLinksFn) {
-  this.getLinks = getLinksFn;
-  this._observers = new Set();
-}
+// A small 1x1 test png
+const IMAGE_1x1 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVQI12NgAAAAAgAB4iG8MwAAAABJRU5ErkJggg==";
 
-TestProvider.prototype = {
-  addObserver: function(observer) {
-    this._observers.add(observer);
-  },
-  notifyLinkChanged: function(link, index = -1, deleted = false) {
-    this._notifyObservers("onLinkChanged", link, index, deleted);
-  },
-  notifyManyLinksChanged: function() {
-    this._notifyObservers("onManyLinksChanged");
-  },
-  _notifyObservers: function(observerMethodName, ...args) {
-    args.unshift(this);
-    for (let obs of this._observers) {
-      if (obs[observerMethodName]) {
-        obs[observerMethodName].apply(NewTabUtils.links, args);
-      }
+add_task(async function test_topSites() {
+  let visits = [];
+  const numVisits = 15; // To make sure we get frecency.
+  let visitDate = new Date(1999, 9, 9, 9, 9).getTime();
+
+  function setVisit(visit) {
+    for (let j = 0; j < numVisits; ++j) {
+      visitDate -= 1000;
+      visit.visits.push({date: new Date(visitDate)});
     }
-  },
-};
-
-function makeLinks(links) {
-  // Important: To avoid test failures due to clock jitter on Windows XP, call
-  // Date.now() once here, not each time through the loop.
-  let frecency = 0;
-  let now = Date.now() * 1000;
-  let places = [];
-  links.map((link, i) => {
-    places.push({
-      url: link.url,
-      title: link.title,
-      lastVisitDate: now - i,
-      frecency: frecency++,
+    visits.push(visit);
+  }
+  // Stick a couple sites into history.
+  for (let i = 0; i < 2; ++i) {
+    setVisit({
+      url: `http://example${i}.com/`,
+      title: `visit${i}`,
+      visits: [],
     });
-  });
-  return places;
-}
+    setVisit({
+      url: `http://www.example${i}.com/foobar`,
+      title: `visit${i}-www`,
+      visits: [],
+    });
+  }
+  NewTabUtils.init();
+  await PlacesUtils.history.insertMany(visits);
 
-add_task(function* test_topSites() {
-  let expect = [{url: "http://example.com/", title: "site#-1"},
-                {url: "http://example0.com/", title: "site#0"},
-                {url: "http://example1.com/", title: "site#1"},
-                {url: "http://example2.com/", title: "site#2"},
-                {url: "http://example3.com/", title: "site#3"}];
+  // Insert a favicon to show that favicons are not returned by default.
+  let faviconData = new Map();
+  faviconData.set("http://example0.com", IMAGE_1x1);
+  await PlacesTestUtils.addFavicons(faviconData);
 
+  // Ensure our links show up in activityStream.
+  let links = await NewTabUtils.activityStreamLinks.getTopSites({onePerDomain: false, topsiteFrecency: 1});
+
+  equal(links.length, visits.length, "Top sites has been successfully initialized");
+
+  // Drop the visits.visits for later testing.
+  visits = visits.map(v => { return {url: v.url, title: v.title, favicon: undefined}; });
+
+  // Test that results from all providers are returned by default.
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       "permissions": [
@@ -59,27 +59,49 @@ add_task(function* test_topSites() {
       ],
     },
     background() {
-      browser.topSites.get(result => {
-        browser.test.sendMessage("done", result);
+      browser.test.onMessage.addListener(async options => {
+        let sites;
+        if (typeof options !== undefined) {
+          sites = await browser.topSites.get(options);
+        } else {
+          sites = await browser.topSites.get();
+        }
+        browser.test.sendMessage("sites", sites);
       });
     },
   });
 
+  await extension.startup();
 
-  let expectedLinks = makeLinks(expect);
-  let provider = new TestProvider(done => done(expectedLinks));
+  function getSites(options) {
+    extension.sendMessage(options);
+    return extension.awaitMessage("sites");
+  }
 
-  NewTabUtils.initWithoutProviders();
-  NewTabUtils.links.addProvider(provider);
+  Assert.deepEqual([visits[0], visits[2]],
+                   await getSites(),
+                   "got topSites default");
+  Assert.deepEqual(visits,
+                   await getSites({onePerDomain: false}),
+                   "got topSites all links");
 
-  yield NewTabUtils.links.populateCache();
+  NewTabUtils.activityStreamLinks.blockURL(visits[0]);
+  ok(NewTabUtils.blockedLinks.isBlocked(visits[0]), `link ${visits[0].url} is blocked`);
 
-  yield extension.startup();
+  Assert.deepEqual([visits[2], visits[1]],
+                   await getSites(),
+                   "got topSites with blocked links filtered out");
+  Assert.deepEqual([visits[0], visits[2]],
+                   await getSites({includeBlocked: true}),
+                   "got topSites with blocked links included");
 
-  let result = yield extension.awaitMessage("done");
-  Assert.deepEqual(expect, result, "got topSites");
+  // Test favicon result
+  let topSites = await getSites({includeBlocked: true, includeFavicon: true});
+  equal(topSites[0].favicon, IMAGE_1x1, "received favicon");
 
-  yield extension.unload();
+  equal(1, (await getSites({limit: 1, includeBlocked: true})).length, "limit 1 topSite");
 
-  NewTabUtils.links.removeProvider(provider);
+  NewTabUtils.uninit();
+  await extension.unload();
+  await PlacesUtils.history.clear();
 });

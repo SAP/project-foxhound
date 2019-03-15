@@ -21,7 +21,7 @@ svg {
   overflow: hidden;
   -moz-box-flex: 1;
   --arrow-color: var(--theme-splitter-color);
-  --text-color: var(--theme-body-color-alt);
+  --text-color: var(--theme-body-color);
 }
 
 .theme-dark svg {
@@ -32,6 +32,7 @@ svg {
 .edgePath path {
   stroke-width: 1px;
   stroke: var(--arrow-color);
+  fill: none;
 }
 svg #arrowhead {
   /* !important is needed to override inline style */
@@ -123,8 +124,10 @@ text {
 }
 
 .web-audio-inspector .error {
-  background-image: url(images/alerticon-warning.png);
-  background-size: 13px 12px;
+  background-image: url(chrome://devtools/skin/images/alert.svg);
+  background-size: 12px 12px;
+  -moz-context-properties: fill;
+  fill: var(--yellow-60);
   -moz-appearance: none;
   opacity: 0;
   transition: opacity .5s ease-out 0s;
@@ -134,7 +137,7 @@ text {
   background: none;
   box-shadow: none;
   border: none;
-  list-style-image: var(--theme-pane-collapse-image);
+  list-style-image: url(chrome://devtools/skin/images/pane-collapse.svg);
 }
 
 #inspector-pane-toggle > .toolbarbutton-icon {
@@ -143,7 +146,7 @@ text {
 }
 
 #inspector-pane-toggle.pane-collapsed {
-  list-style-image: var(--theme-pane-expand-image);
+  list-style-image: url(chrome://devtools/skin/images/pane-expand.svg);
 }
 
 /**
@@ -158,12 +161,6 @@ text {
 #automation-graph {
   overflow: hidden;
   -moz-box-flex: 1;
-}
-
-@media (min-resolution: 1.1dppx) {
-  .web-audio-inspector .error {
-    background-image: url(images/alerticon-warning@2x.png);
-  }
 }
 
 /**

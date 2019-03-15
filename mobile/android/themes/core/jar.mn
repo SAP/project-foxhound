@@ -3,7 +3,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-
 chrome.jar:
 % skin browser classic/1.0 %skin/
   skin/aboutPage.css                        (aboutPage.css)
@@ -12,40 +11,23 @@ chrome.jar:
   skin/aboutAddons.css                      (aboutAddons.css)
   skin/aboutBase.css                        (aboutBase.css)
   skin/aboutDownloads.css                   (aboutDownloads.css)
-#ifdef MOZ_SERVICES_HEALTHREPORT
-  skin/aboutHealthReport.css                (aboutHealthReport.css)
-#endif
+  skin/aboutExperiments.css                 (aboutExperiments.css)
   skin/aboutMemory.css                      (aboutMemory.css)
   skin/aboutPrivateBrowsing.css             (aboutPrivateBrowsing.css)
   skin/aboutReader.css                      (aboutReader.css)
-  skin/aboutReaderContent.css               (aboutReaderContent.css)
-  skin/aboutReaderControls.css              (aboutReaderControls.css)
   skin/aboutSupport.css                     (aboutSupport.css)
-  skin/content.css                          (content.css)
-  skin/scrollbar.css                        (scrollbar-apz.css)
-  skin/config.css                           (config.css)
   skin/defines.css                          (defines.css)
-  skin/touchcontrols.css                    (touchcontrols.css)
   skin/netError.css                         (netError.css)
   skin/spinner.css                          (spinner.css)
 % override chrome://global/skin/about.css chrome://browser/skin/about.css
 % override chrome://global/skin/aboutMemory.css chrome://browser/skin/aboutMemory.css
 % override chrome://global/skin/aboutReader.css chrome://browser/skin/aboutReader.css
-% override chrome://global/skin/aboutReaderContent.css chrome://browser/skin/aboutReaderContent.css
-% override chrome://global/skin/aboutReaderControls.css chrome://browser/skin/aboutReaderControls.css
 % override chrome://global/skin/aboutSupport.css chrome://browser/skin/aboutSupport.css
-% override chrome://global/skin/media/videocontrols.css chrome://browser/skin/touchcontrols.css
 % override chrome://global/skin/netError.css chrome://browser/skin/netError.css
 
   skin/aboutLogins.css                      (aboutLogins.css)
 
-  skin/images/search.png                    (images/search.png)
-  skin/images/lock.png                      (images/lock.png)
-  skin/images/textfield.png                 (images/textfield.png)
-
   skin/images/amo-logo.png                  (images/amo-logo.png)
-  skin/images/arrowdown-16.png              (images/arrowdown-16.png)
-  skin/images/arrowup-16.png                (images/arrowup-16.png)
   skin/images/blocked-warning.png           (images/blocked-warning.png)
   skin/images/checkbox_checked.png          (images/checkbox_checked.png)
   skin/images/checkbox_checked_disabled.png (images/checkbox_checked_disabled.png)
@@ -55,27 +37,13 @@ chrome.jar:
   skin/images/checkbox_unchecked_pressed.png  (images/checkbox_unchecked_pressed.png)
   skin/images/chevron.png                   (images/chevron.png)
   skin/images/chevron-rtl.png               (images/chevron-rtl.png)
-  skin/images/dropmarker.svg                (images/dropmarker.svg)
-  skin/images/dropmarker-right.svg          (images/dropmarker-right.svg)
   skin/images/errorpage-warning.png         (images/errorpage-warning.png)
-  skin/images/exitfullscreen.svg            (images/exitfullscreen.svg)
-  skin/images/fullscreen.svg                (images/fullscreen.svg)
   skin/images/grey-caution.svg              (images/grey-caution.svg)
   skin/images/certerror-warning.png         (images/certerror-warning.png)
-  skin/images/throbber.png                  (images/throbber.png)
-  skin/images/search-clear-30.png           (images/search-clear-30.png)
   skin/images/placeholder_image.svg         (images/placeholder_image.svg)
-  skin/images/play.svg                 (images/play.svg)
-  skin/images/pause.svg                (images/pause.svg)
-  skin/images/cast-ready.svg           (images/cast-ready.svg)
-  skin/images/cast-active.svg          (images/cast-active.svg)
-  skin/images/mute.svg                 (images/mute.svg)
-  skin/images/unmute.svg               (images/unmute.svg)
-  skin/images/scrubber.svg             (images/scrubber.svg)
   skin/images/about-btn-darkgrey.png        (images/about-btn-darkgrey.png)
   skin/images/logo-hdpi.png                 (images/logo-hdpi.png)
   skin/images/wordmark-hdpi.png             (images/wordmark-hdpi.png)
-  skin/images/config-plus.png               (images/config-plus.png)
   skin/images/reader-minus-hdpi.png              (images/reader-minus-hdpi.png)
   skin/images/reader-minus-xhdpi.png             (images/reader-minus-xhdpi.png)
   skin/images/reader-minus-xxhdpi.png            (images/reader-minus-xxhdpi.png)
@@ -88,12 +56,4 @@ chrome.jar:
   skin/images/privatebrowsing-mask.png           (images/privatebrowsing-mask.png)
   skin/images/privatebrowsing-mask-and-shield.svg (images/privatebrowsing-mask-and-shield.svg)
   skin/images/icon_key_emptypage.svg             (images/icon_key_emptypage.svg)
-  skin/images/accessiblecaret-normal-hdpi.png       (images/accessiblecaret-normal-hdpi.png)
-  skin/images/accessiblecaret-normal-xhdpi.png      (images/accessiblecaret-normal-xhdpi.png)
-  skin/images/accessiblecaret-normal-xxhdpi.png     (images/accessiblecaret-normal-xxhdpi.png)
-  skin/images/accessiblecaret-tilt-left-hdpi.png    (images/accessiblecaret-tilt-left-hdpi.png)
-  skin/images/accessiblecaret-tilt-left-xhdpi.png   (images/accessiblecaret-tilt-left-xhdpi.png)
-  skin/images/accessiblecaret-tilt-left-xxhdpi.png  (images/accessiblecaret-tilt-left-xxhdpi.png)
-  skin/images/accessiblecaret-tilt-right-hdpi.png   (images/accessiblecaret-tilt-right-hdpi.png)
-  skin/images/accessiblecaret-tilt-right-xhdpi.png  (images/accessiblecaret-tilt-right-xhdpi.png)
-  skin/images/accessiblecaret-tilt-right-xxhdpi.png (images/accessiblecaret-tilt-right-xxhdpi.png)
+  skin/images/extension-update.svg               (images/extension-update.svg)

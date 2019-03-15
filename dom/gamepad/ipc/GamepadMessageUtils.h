@@ -1,3 +1,8 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef mozilla_dom_gamepad_GamepadMessageUtils_h
 #define mozilla_dom_gamepad_GamepadMessageUtils_h
@@ -9,39 +14,37 @@
 
 namespace IPC {
 
-template<>
-struct ParamTraits<mozilla::dom::GamepadMappingType> :
-  public ContiguousEnumSerializer<mozilla::dom::GamepadMappingType,
-                                  mozilla::dom::GamepadMappingType(0),
-                                  mozilla::dom::GamepadMappingType(
-                                  mozilla::dom::GamepadMappingType::EndGuard_)> {};
-
-template<>
-struct ParamTraits<mozilla::dom::GamepadHand> :
-  public ContiguousEnumSerializer<mozilla::dom::GamepadHand,
-                                  mozilla::dom::GamepadHand(0),
-                                  mozilla::dom::GamepadHand(
-                                  mozilla::dom::GamepadHand::EndGuard_)> {};
-
-template<>
-struct ParamTraits<mozilla::dom::GamepadServiceType> :
-  public ContiguousEnumSerializer<mozilla::dom::GamepadServiceType,
-                                  mozilla::dom::GamepadServiceType(0),
-                                  mozilla::dom::GamepadServiceType(
-                                  mozilla::dom::GamepadServiceType::NumGamepadServiceType)> {};
-
-template<>
-struct ParamTraits<mozilla::dom::GamepadCapabilityFlags> :
-  public BitFlagsEnumSerializer<mozilla::dom::GamepadCapabilityFlags,
-                                mozilla::dom::GamepadCapabilityFlags::Cap_All> {};
+template <>
+struct ParamTraits<mozilla::dom::GamepadMappingType>
+    : public ContiguousEnumSerializer<
+          mozilla::dom::GamepadMappingType, mozilla::dom::GamepadMappingType(0),
+          mozilla::dom::GamepadMappingType(
+              mozilla::dom::GamepadMappingType::EndGuard_)> {};
 
 template <>
-struct ParamTraits<mozilla::dom::GamepadPoseState>
-{
+struct ParamTraits<mozilla::dom::GamepadHand>
+    : public ContiguousEnumSerializer<
+          mozilla::dom::GamepadHand, mozilla::dom::GamepadHand(0),
+          mozilla::dom::GamepadHand(mozilla::dom::GamepadHand::EndGuard_)> {};
+
+template <>
+struct ParamTraits<mozilla::dom::GamepadServiceType>
+    : public ContiguousEnumSerializer<
+          mozilla::dom::GamepadServiceType, mozilla::dom::GamepadServiceType(0),
+          mozilla::dom::GamepadServiceType(
+              mozilla::dom::GamepadServiceType::NumGamepadServiceType)> {};
+
+template <>
+struct ParamTraits<mozilla::dom::GamepadCapabilityFlags>
+    : public BitFlagsEnumSerializer<
+          mozilla::dom::GamepadCapabilityFlags,
+          mozilla::dom::GamepadCapabilityFlags::Cap_All> {};
+
+template <>
+struct ParamTraits<mozilla::dom::GamepadPoseState> {
   typedef mozilla::dom::GamepadPoseState paramType;
 
-  static void Write(Message* aMsg, const paramType& aParam)
-  {
+  static void Write(Message* aMsg, const paramType& aParam) {
     WriteParam(aMsg, aParam.flags);
     WriteParam(aMsg, aParam.orientation[0]);
     WriteParam(aMsg, aParam.orientation[1]);
@@ -62,10 +65,12 @@ struct ParamTraits<mozilla::dom::GamepadPoseState>
     WriteParam(aMsg, aParam.linearAcceleration[0]);
     WriteParam(aMsg, aParam.linearAcceleration[1]);
     WriteParam(aMsg, aParam.linearAcceleration[2]);
+    WriteParam(aMsg, aParam.isPositionValid);
+    WriteParam(aMsg, aParam.isOrientationValid);
   }
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter, paramType* aResult)
-  {
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   paramType* aResult) {
     if (!ReadParam(aMsg, aIter, &(aResult->flags)) ||
         !ReadParam(aMsg, aIter, &(aResult->orientation[0])) ||
         !ReadParam(aMsg, aIter, &(aResult->orientation[1])) ||
@@ -85,13 +90,15 @@ struct ParamTraits<mozilla::dom::GamepadPoseState>
         !ReadParam(aMsg, aIter, &(aResult->linearVelocity[2])) ||
         !ReadParam(aMsg, aIter, &(aResult->linearAcceleration[0])) ||
         !ReadParam(aMsg, aIter, &(aResult->linearAcceleration[1])) ||
-        !ReadParam(aMsg, aIter, &(aResult->linearAcceleration[2]))) {
+        !ReadParam(aMsg, aIter, &(aResult->linearAcceleration[2])) ||
+        !ReadParam(aMsg, aIter, &(aResult->isPositionValid)) ||
+        !ReadParam(aMsg, aIter, &(aResult->isOrientationValid))) {
       return false;
     }
     return true;
   }
 };
 
-} // namespace IPC
+}  // namespace IPC
 
-#endif // mozilla_dom_gamepad_GamepadMessageUtils_h
+#endif  // mozilla_dom_gamepad_GamepadMessageUtils_h

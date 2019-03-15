@@ -4,15 +4,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const nsPK11TokenDB = "@mozilla.org/security/pk11tokendb;1";
-const nsIPK11TokenDB = Components.interfaces.nsIPK11TokenDB;
-const nsIDialogParamBlock = Components.interfaces.nsIDialogParamBlock;
+const nsIPK11TokenDB = Ci.nsIPK11TokenDB;
+const nsIDialogParamBlock = Ci.nsIDialogParamBlock;
 const nsPKCS11ModuleDB = "@mozilla.org/security/pkcs11moduledb;1";
-const nsIPKCS11ModuleDB = Components.interfaces.nsIPKCS11ModuleDB;
-const nsIPKCS11Slot = Components.interfaces.nsIPKCS11Slot;
-const nsIPK11Token = Components.interfaces.nsIPK11Token;
+const nsIPKCS11ModuleDB = Ci.nsIPKCS11ModuleDB;
+const nsIPKCS11Slot = Ci.nsIPKCS11Slot;
+const nsIPK11Token = Ci.nsIPK11Token;
 
 
 var params;
@@ -26,8 +26,6 @@ function init() {
 
 
 function process() {
-  let bundle = document.getElementById("bundlePreferences");
-
   // If the token is unitialized, don't use the old password box.
   // Otherwise, do.
 
@@ -39,7 +37,7 @@ function process() {
     let msgBox = document.getElementById("message");
     if ((token.needsLogin() && token.needsUserInit) || !token.needsLogin()) {
       oldpwbox.setAttribute("hidden", "true");
-      msgBox.setAttribute("value", bundle.getString("password_not_set"));
+      document.l10n.setAttributes(msgBox, "password-not-set");
       msgBox.setAttribute("hidden", "false");
 
       if (!token.needsLogin()) {
@@ -67,15 +65,20 @@ function process() {
   checkPasswords();
 }
 
+async function createAlert(titleL10nId, messageL10nId) {
+  const [title, message] = await document.l10n.formatValues([
+    {id: titleL10nId},
+    {id: messageL10nId},
+  ]);
+  Services.prompt.alert(window, title, message);
+}
+
 function setPassword() {
-  var pk11db = Components.classes[nsPK11TokenDB].getService(nsIPK11TokenDB);
-  var promptService = Components.classes["@mozilla.org/embedcomp/prompt-service;1"]
-                                .getService(Components.interfaces.nsIPromptService);
+  var pk11db = Cc[nsPK11TokenDB].getService(nsIPK11TokenDB);
   var token = pk11db.getInternalKeyToken();
 
   var oldpwbox = document.getElementById("oldpw");
   var initpw = oldpwbox.getAttribute("inited");
-  var bundle = document.getElementById("bundlePreferences");
 
   var success = false;
 
@@ -97,26 +100,19 @@ function setPassword() {
           // we reached a case that should have been prevented by checkPasswords.
         } else {
           if (pw1.value == "") {
-            var secmoddb = Components.classes[nsPKCS11ModuleDB].getService(nsIPKCS11ModuleDB);
+            var secmoddb = Cc[nsPKCS11ModuleDB].getService(nsIPKCS11ModuleDB);
             if (secmoddb.isFIPSEnabled) {
               // empty passwords are not allowed in FIPS mode
-              promptService.alert(window,
-                                  bundle.getString("pw_change_failed_title"),
-                                  bundle.getString("pw_change2empty_in_fips_mode"));
+              createAlert("pw-change-failed-title", "pw-change2empty-in-fips-mode");
               passok = 0;
             }
           }
           if (passok) {
             token.changePassword(oldpw, pw1.value);
             if (pw1.value == "") {
-              promptService.alert(window,
-                                  bundle.getString("pw_change_success_title"),
-                                  bundle.getString("pw_erased_ok")
-                                  + " " + bundle.getString("pw_empty_warning"));
+              createAlert("pw-change-success-title", "pw-erased-ok");
             } else {
-              promptService.alert(window,
-                                  bundle.getString("pw_change_success_title"),
-                                  bundle.getString("pw_change_ok"));
+              createAlert("pw-change-success-title", "pw-change-ok");
             }
             success = true;
           }
@@ -124,22 +120,15 @@ function setPassword() {
       } else {
         oldpwbox.focus();
         oldpwbox.setAttribute("value", "");
-        promptService.alert(window,
-                            bundle.getString("pw_change_failed_title"),
-                            bundle.getString("incorrect_pw"));
+        createAlert("pw-change-failed-title", "incorrect-pw");
       }
     } catch (e) {
-      promptService.alert(window,
-                          bundle.getString("pw_change_failed_title"),
-                          bundle.getString("failed_pw_change"));
+      createAlert("pw-change-failed-title", "failed-pw-change");
     }
   } else {
     token.initPassword(pw1.value);
     if (pw1.value == "") {
-      promptService.alert(window,
-                          bundle.getString("pw_change_success_title"),
-                          bundle.getString("pw_not_wanted")
-                          + " " + bundle.getString("pw_empty_warning"));
+      createAlert("pw-change-success-title", "pw-not-wanted");
     }
     success = true;
   }
@@ -147,6 +136,8 @@ function setPassword() {
   // Terminate dialog
   if (success)
     window.close();
+
+  return success;
 }
 
 function setPasswordStrength() {

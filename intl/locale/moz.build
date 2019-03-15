@@ -12,57 +12,42 @@ if toolkit == 'windows':
     DIRS += ['windows']
 elif toolkit == 'cocoa':
     DIRS += ['mac']
-else:
-    DIRS += ['unix']
-    if 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
-        DIRS += ['gtk']
+elif 'gtk' in toolkit:
+    DIRS += ['gtk']
+elif toolkit == 'android':
+    DIRS += ['android']
 
 XPIDL_SOURCES += [
     'mozILocaleService.idl',
     'mozIOSPreferences.idl',
     'nsICollation.idl',
-    'nsILocale.idl',
-    'nsILocaleService.idl',
-    'nsIScriptableDateFormat.idl',
 ]
 
 XPIDL_MODULE = 'locale'
 
 EXPORTS += [
     'DateTimeFormat.h',
-    'nsCollation.h',
     'nsCollationCID.h',
-    'nsILanguageAtomService.h',
-    'nsIPlatformCharset.h',
-    'nsPosixLocale.h',
+    'nsLanguageAtomService.h',
     'nsUConvPropertySearch.h',
-    'nsWin32Locale.h',
 ]
 
 EXPORTS.mozilla.intl += [
     'LocaleService.h',
+    'MozLocale.h',
     'OSPreferences.h',
 ]
 
 UNIFIED_SOURCES += [
+    'DateTimeFormat.cpp',
     'LocaleService.cpp',
+    'MozLocale.cpp',
     'nsCollation.cpp',
+    'nsCollationFactory.cpp',
     'nsLanguageAtomService.cpp',
-    'nsLocale.cpp',
-    'nsLocaleService.cpp',
-    'nsScriptableDateFormat.cpp',
     'nsUConvPropertySearch.cpp',
     'OSPreferences.cpp',
 ]
-
-if CONFIG['ENABLE_INTL_API']:
-    UNIFIED_SOURCES += [
-        'DateTimeFormat.cpp',
-    ]
-else:
-    UNIFIED_SOURCES += [
-        'DateTimeFormatAndroid.cpp',
-    ]
 
 EXTRA_JS_MODULES += [
     'PluralForm.jsm',
@@ -75,16 +60,20 @@ LOCAL_INCLUDES += [
 ]
 
 RESOURCE_FILES += [
-    'langGroups.properties',
     'language.properties',
 ]
 
-GENERATED_FILES += [
-    'langGroups.properties.h',
-]
-langgroups = GENERATED_FILES['langGroups.properties.h']
-langgroups.script = 'props2arrays.py'
-langgroups.inputs = ['langGroups.properties']
+prefixes = (
+    'encodingsgroups',
+)
+
+for prefix in prefixes:
+    input_file = prefix + '.properties'
+    header = prefix + '.properties.h'
+    GENERATED_FILES += [header]
+    props = GENERATED_FILES[header]
+    props.script = 'props2arrays.py'
+    props.inputs = [input_file]
 
 if CONFIG['ENABLE_TESTS']:
     DIRS += ['tests/gtest']

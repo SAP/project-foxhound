@@ -2,23 +2,21 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-Components.utils.import("resource://testing-common/MockRegistrar.jsm");
-
 const WindowWatcher = {
   openWindow(aParent, aUrl, aName, aFeatures, aArgs) {
-    gCheckFunc();
+    check_showUpdateAvailable();
   },
 
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIWindowWatcher])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIWindowWatcher]),
 };
 
 const WindowMediator = {
   getMostRecentWindow(aWindowType) {
-    do_execute_soon(check_status);
-    return { getInterface: XPCOMUtils.generateQI([Ci.nsIDOMWindow]) };
+    executeSoon(check_status);
+    return null;
   },
 
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIWindowMediator])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIWindowMediator]),
 };
 
 function run_test() {
@@ -26,10 +24,9 @@ function run_test() {
   // Calling do_get_profile prevents an error from being logged
   do_get_profile();
 
-  debugDump("testing that an update download doesn't start when the " +
-            PREF_APP_UPDATE_AUTO + " preference is false");
+  debugDump("testing that an update download doesn't start when the \"update " +
+            "auto\" value is false");
 
-  Services.prefs.setBoolPref(PREF_APP_UPDATE_AUTO, false);
   Services.prefs.setBoolPref(PREF_APP_UPDATE_SILENT, false);
 
   start_httpserver();
@@ -42,14 +39,13 @@ function run_test() {
   let windowMediatorCID =
     MockRegistrar.register("@mozilla.org/appshell/window-mediator;1",
                            WindowMediator);
-  do_register_cleanup(() => {
+  registerCleanupFunction(() => {
     MockRegistrar.unregister(windowWatcherCID);
     MockRegistrar.unregister(windowMediatorCID);
   });
 
-  gCheckFunc = check_showUpdateAvailable;
-  let patches = getRemotePatchString("complete");
-  let updates = getRemoteUpdateString(patches, "minor", null, null, "1.0");
+  let patches = getRemotePatchString({});
+  let updates = getRemoteUpdateString({}, patches);
   gResponseBody = getRemoteUpdatesXMLString(updates);
   gAUS.notify(null);
 }
@@ -67,7 +63,7 @@ function check_status() {
   writeUpdatesToXMLFile(getLocalUpdatesXMLString(""), false);
   reloadUpdateManagerData();
 
-  do_execute_soon(doTestFinish);
+  executeSoon(doTestFinish);
 }
 
 function check_showUpdateAvailable() {

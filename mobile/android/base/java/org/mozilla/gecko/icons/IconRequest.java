@@ -23,13 +23,16 @@ public class IconRequest {
     // Those values are written by the IconRequestBuilder class.
     /* package-private */ String pageUrl;
     /* package-private */ boolean privileged;
+    /* package-private */ boolean isPrivate;
     /* package-private */ TreeSet<IconDescriptor> icons;
     /* package-private */ boolean skipNetwork;
     /* package-private */ boolean backgroundThread;
     /* package-private */ boolean skipDisk;
     /* package-private */ boolean skipMemory;
     /* package-private */ int targetSize;
+    /* package-private */ int minimumSizePxAfterScaling;
     /* package-private */ boolean prepareOnly;
+    /* package-private */ float textSize;
     private IconCallback callback;
 
     /* package-private */ IconRequest(Context context) {
@@ -38,11 +41,16 @@ public class IconRequest {
 
         // Setting some sensible defaults.
         this.privileged = false;
+        this.isPrivate = false;
         this.skipMemory = false;
         this.skipDisk = false;
         this.skipNetwork = false;
         this.targetSize = context.getResources().getDimensionPixelSize(R.dimen.favicon_bg);
+        this.minimumSizePxAfterScaling = 0;
         this.prepareOnly = false;
+
+        // textSize is only used in IconGenerator.java for creating a icon with specific text size.
+        this.textSize = 0;
     }
 
     /**
@@ -91,6 +99,13 @@ public class IconRequest {
     }
 
     /**
+     * Is this request initiated from a tab in private browsing mode?
+     */
+    public boolean isPrivateMode() {
+        return isPrivate;
+    }
+
+    /**
      * Get the number of icon descriptors associated with this request.
      */
     public int getIconCount() {
@@ -102,6 +117,17 @@ public class IconRequest {
      */
     public int getTargetSize() {
         return targetSize;
+    }
+
+    /**
+     * Gets the minimum size the icon can be before we substitute a generated icon.
+     *
+     * N.B. the minimum size is compared to the icon *after* scaling: consider using
+     * {@link org.mozilla.gecko.icons.processing.ResizingProcessor#MAX_SCALE_FACTOR}
+     * when setting this value.
+     */
+    public int getMinimumSizePxAfterScaling() {
+        return minimumSizePxAfterScaling;
     }
 
     /**
@@ -130,6 +156,14 @@ public class IconRequest {
      */
     public Iterator<IconDescriptor> getIconIterator() {
         return icons.iterator();
+    }
+
+    /**
+     * Get the required text size of the icon created by
+     * {@link org.mozilla.gecko.icons.loader.IconGenerator}.
+     */
+    public float getTextSize() {
+        return textSize;
     }
 
     /**

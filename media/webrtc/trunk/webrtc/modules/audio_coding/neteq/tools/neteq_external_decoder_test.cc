@@ -9,57 +9,50 @@
  */
 
 
-#include "webrtc/modules/audio_coding/neteq/tools/neteq_external_decoder_test.h"
+#include "modules/audio_coding/neteq/tools/neteq_external_decoder_test.h"
 
-#include "testing/gtest/include/gtest/gtest.h"
-#include "webrtc/base/format_macros.h"
+#include "api/audio_codecs/builtin_audio_decoder_factory.h"
+#include "rtc_base/format_macros.h"
+#include "test/gtest.h"
 
 namespace webrtc {
 namespace test {
 
 NetEqExternalDecoderTest::NetEqExternalDecoderTest(NetEqDecoder codec,
+                                                   int sample_rate_hz,
                                                    AudioDecoder* decoder)
     : codec_(codec),
       decoder_(decoder),
-      sample_rate_hz_(CodecSampleRateHz(codec_)),
+      sample_rate_hz_(sample_rate_hz),
       channels_(decoder_->Channels()) {
   NetEq::Config config;
   config.sample_rate_hz = sample_rate_hz_;
-  neteq_.reset(NetEq::Create(config));
-  printf("%" PRIuS "\n", channels_);
+  neteq_.reset(NetEq::Create(config, CreateBuiltinAudioDecoderFactory()));
 }
 
 void NetEqExternalDecoderTest::Init() {
   ASSERT_EQ(NetEq::kOK,
             neteq_->RegisterExternalDecoder(decoder_, codec_, name_,
-                                            kPayloadType, sample_rate_hz_));
+                                            kPayloadType));
 }
 
 void NetEqExternalDecoderTest::InsertPacket(
-    WebRtcRTPHeader rtp_header,
+    RTPHeader rtp_header,
     rtc::ArrayView<const uint8_t> payload,
     uint32_t receive_timestamp) {
   ASSERT_EQ(NetEq::kOK,
             neteq_->InsertPacket(rtp_header, payload, receive_timestamp));
 }
 
-size_t NetEqExternalDecoderTest::GetOutputAudio(size_t max_length,
-                                                int16_t* output,
-                                                NetEqOutputType* output_type) {
+void NetEqExternalDecoderTest::GetOutputAudio(AudioFrame* output) {
   // Get audio from regular instance.
-  size_t samples_per_channel;
-  size_t num_channels;
-  EXPECT_EQ(NetEq::kOK,
-            neteq_->GetAudio(max_length,
-                             output,
-                             &samples_per_channel,
-                             &num_channels,
-                             output_type));
-  EXPECT_EQ(channels_, num_channels);
+  bool muted;
+  EXPECT_EQ(NetEq::kOK, neteq_->GetAudio(output, &muted));
+  ASSERT_FALSE(muted);
+  EXPECT_EQ(channels_, output->num_channels_);
   EXPECT_EQ(static_cast<size_t>(kOutputLengthMs * sample_rate_hz_ / 1000),
-            samples_per_channel);
+            output->samples_per_channel_);
   EXPECT_EQ(sample_rate_hz_, neteq_->last_output_sample_rate_hz());
-  return samples_per_channel;
 }
 
 }  // namespace test

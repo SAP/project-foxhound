@@ -7,26 +7,24 @@
 #ifndef FLAC_DECODER_H_
 #define FLAC_DECODER_H_
 
-#include "MediaDecoder.h"
+#include "mozilla/UniquePtr.h"
+#include "nsTArray.h"
 
 namespace mozilla {
 
 class MediaContainerType;
+class TrackInfo;
 
-class FlacDecoder : public MediaDecoder
-{
-public:
-  // MediaDecoder interface.
-  explicit FlacDecoder(MediaDecoderOwner* aOwner) : MediaDecoder(aOwner) {}
-  MediaDecoder* Clone(MediaDecoderOwner* aOwner) override;
-  MediaDecoderStateMachine* CreateStateMachine() override;
-
+class FlacDecoder {
+ public:
   // Returns true if the Flac backend is pref'ed on, and we're running on a
   // platform that is likely to have decoders for the format.
   static bool IsEnabled();
   static bool IsSupportedType(const MediaContainerType& aContainerType);
+  static nsTArray<UniquePtr<TrackInfo>> GetTracksInfo(
+      const MediaContainerType& aType);
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // !FLAC_DECODER_H_
+#endif  // !FLAC_DECODER_H_

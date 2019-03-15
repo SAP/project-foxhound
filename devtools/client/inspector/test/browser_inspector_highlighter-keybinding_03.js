@@ -9,28 +9,28 @@
 const IS_OSX = Services.appinfo.OS === "Darwin";
 const TEST_URL = URL_ROOT + "doc_inspector_highlighter_dom.html";
 
-add_task(function* () {
-  let {inspector, toolbox, testActor} = yield openInspectorForURL(TEST_URL);
+add_task(async function() {
+  const {inspector, toolbox, testActor} = await openInspectorForURL(TEST_URL);
 
-  yield startPicker(toolbox);
-  yield moveMouseOver("#another");
+  await startPicker(toolbox);
+  await moveMouseOver("#another");
 
   info("Testing enter/return key as pick-node command");
-  yield doKeyPick({key: "VK_RETURN", options: {}});
+  await doKeyPick({key: "VK_RETURN", options: {}});
   is(inspector.selection.nodeFront.id, "another",
      "The #another node was selected. Passed.");
 
   info("Testing escape key as cancel-picker command");
-  yield startPicker(toolbox);
-  yield moveMouseOver("#ahoy");
-  yield doKeyStop({key: "VK_ESCAPE", options: {}});
+  await startPicker(toolbox);
+  await moveMouseOver("#ahoy");
+  await doKeyStop({key: "VK_ESCAPE", options: {}});
   is(inspector.selection.nodeFront.id, "another",
      "The #another DIV is still selected. Passed.");
 
   info("Testing Ctrl+Shift+C shortcut as cancel-picker command");
-  yield startPicker(toolbox);
-  yield moveMouseOver("#ahoy");
-  let shortcutOpts = {key: "VK_C", options: {}};
+  await startPicker(toolbox);
+  await moveMouseOver("#ahoy");
+  const shortcutOpts = {key: "VK_C", options: {}};
   if (IS_OSX) {
     shortcutOpts.options.metaKey = true;
     shortcutOpts.options.altKey = true;
@@ -38,7 +38,7 @@ add_task(function* () {
     shortcutOpts.options.ctrlKey = true;
     shortcutOpts.options.shiftKey = true;
   }
-  yield doKeyStop(shortcutOpts);
+  await doKeyStop(shortcutOpts);
   is(inspector.selection.nodeFront.id, "another",
      "The #another DIV is still selected. Passed.");
 
@@ -47,24 +47,26 @@ add_task(function* () {
     testActor.synthesizeKey(args);
     return promise.all([
       inspector.selection.once("new-node-front"),
-      inspector.once("inspector-updated")
+      inspector.once("inspector-updated"),
+      inspector.inspector.nodePicker.once("picker-stopped"),
     ]);
   }
 
   function doKeyStop(args) {
     info("Key pressed. Waiting for picker to be canceled");
     testActor.synthesizeKey(args);
-    return inspector.toolbox.once("picker-stopped");
+    return inspector.inspector.nodePicker.once("picker-stopped");
   }
 
   function moveMouseOver(selector) {
     info("Waiting for element " + selector + " to be highlighted");
-    let onHighlighterReady = toolbox.once("highlighter-ready");
-    let onPickerNodeHovered = inspector.toolbox.once("picker-node-hovered");
+    const onHighlighterReady = toolbox.once("highlighter-ready");
+    const onPickerNodeHovered =
+      inspector.inspector.nodePicker.once("picker-node-hovered");
     testActor.synthesizeMouse({
       options: {type: "mousemove"},
       center: true,
-      selector: selector
+      selector: selector,
     });
     return promise.all([onHighlighterReady, onPickerNodeHovered]);
   }

@@ -12,7 +12,6 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/dom/FileModeBinding.h"
-#include "mozilla/dom/MutableFileBase.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsHashKeys.h"
 #include "nsString.h"
@@ -35,11 +34,10 @@ namespace indexedDB {
 class BackgroundMutableFileChild;
 }
 
-class IDBMutableFile final
-  : public DOMEventTargetHelper
-  , public MutableFileBase
-{
+class IDBMutableFile final : public DOMEventTargetHelper {
   RefPtr<IDBDatabase> mDatabase;
+
+  indexedDB::BackgroundMutableFileChild* mBackgroundActor;
 
   nsTHashtable<nsPtrHashKey<IDBFileHandle>> mFileHandles;
 
@@ -48,62 +46,76 @@ class IDBMutableFile final
 
   Atomic<bool> mInvalidated;
 
-public:
+ public:
   IDBMutableFile(IDBDatabase* aDatabase,
                  indexedDB::BackgroundMutableFileChild* aActor,
-                 const nsAString& aName,
-                 const nsAString& aType);
+                 const nsAString& aName, const nsAString& aType);
 
-  void
-  SetLazyData(const nsAString& aName,
-              const nsAString& aType)
+  void AssertIsOnOwningThread() const
+#ifdef DEBUG
+      ;
+#else
   {
+  }
+#endif
+
+  indexedDB::BackgroundMutableFileChild* GetBackgroundActor() const {
+    AssertIsOnOwningThread();
+
+    return mBackgroundActor;
+  }
+
+  void ClearBackgroundActor() {
+    AssertIsOnOwningThread();
+
+    mBackgroundActor = nullptr;
+  }
+
+  const nsString& Name() const {
+    AssertIsOnOwningThread();
+
+    return mName;
+  }
+
+  const nsString& Type() const {
+    AssertIsOnOwningThread();
+
+    return mType;
+  }
+
+  void SetLazyData(const nsAString& aName, const nsAString& aType) {
     mName = aName;
     mType = aType;
   }
 
-  int64_t
-  GetFileId() const;
+  int64_t GetFileId() const;
 
-  void
-  Invalidate();
+  void Invalidate();
 
-  void
-  RegisterFileHandle(IDBFileHandle* aFileHandle);
+  bool IsInvalidated() const {
+    AssertIsOnOwningThread();
 
-  void
-  UnregisterFileHandle(IDBFileHandle* aFileHandle);
+    return mInvalidated;
+  }
 
-  void
-  AbortFileHandles();
+  void RegisterFileHandle(IDBFileHandle* aFileHandle);
+
+  void UnregisterFileHandle(IDBFileHandle* aFileHandle);
+
+  void AbortFileHandles();
 
   // WebIDL
-  nsPIDOMWindowInner*
-  GetParentObject() const
-  {
-    return GetOwner();
-  }
+  nsPIDOMWindowInner* GetParentObject() const { return GetOwner(); }
 
-  void
-  GetName(nsString& aName) const
-  {
-    aName = mName;
-  }
+  void GetName(nsString& aName) const { aName = mName; }
 
-  void
-  GetType(nsString& aType) const
-  {
-    aType = mType;
-  }
+  void GetType(nsString& aType) const { aType = mType; }
 
-  IDBDatabase*
-  Database() const;
+  IDBDatabase* Database() const;
 
-  already_AddRefed<IDBFileHandle>
-  Open(FileMode aMode, ErrorResult& aError);
+  already_AddRefed<IDBFileHandle> Open(FileMode aMode, ErrorResult& aError);
 
-  already_AddRefed<DOMRequest>
-  GetFile(ErrorResult& aError);
+  already_AddRefed<DOMRequest> GetFile(ErrorResult& aError);
 
   IMPL_EVENT_HANDLER(abort)
   IMPL_EVENT_HANDLER(error)
@@ -112,28 +124,14 @@ public:
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(IDBMutableFile, DOMEventTargetHelper)
 
   // nsWrapperCache
-  virtual JSObject*
-  WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override;
 
-  // MutableFileBase
-  virtual const nsString&
-  Name() const override;
-
-  virtual const nsString&
-  Type() const override;
-
-  virtual bool
-  IsInvalidated() override;
-
-  virtual already_AddRefed<File>
-  CreateFileFor(BlobImpl* aBlobImpl,
-                FileHandleBase* aFileHandle) override;
-
-private:
+ private:
   ~IDBMutableFile();
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_idbmutablefile_h__
+#endif  // mozilla_dom_idbmutablefile_h__

@@ -11,12 +11,9 @@ const PREF_GETADDONS_CACHE_ENABLED = "extensions.getAddons.cache.enabled";
 Services.prefs.setBoolPref(PREF_EM_CHECK_UPDATE_SECURITY, false);
 Services.prefs.setBoolPref(PREF_EM_STRICT_COMPATIBILITY, false);
 
-var testserver = createHttpServer();
-gPort = testserver.identity.primaryPort;
-mapFile("/data/test_update.rdf", testserver);
-mapFile("/data/test_update.json", testserver);
-mapFile("/data/test_update.xml", testserver);
-testserver.registerDirectory("/addons/", do_get_file("addons"));
+var testserver = AddonTestUtils.createHttpServer({hosts: ["example.com"]});
+testserver.registerDirectory("/data/", do_get_file("data"));
+testserver.registerDirectory("/data/", do_get_file("data"));
 
 const profileDir = gProfD.clone();
 profileDir.append("extensions");
@@ -24,84 +21,77 @@ profileDir.append("extensions");
 
 createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "1");
 
-let testParams = [
-  { updateFile: "test_update.rdf",
-    appId: "xpcshell@tests.mozilla.org" },
-  { updateFile: "test_update.json",
-    appId: "toolkit@mozilla.org" },
-];
+const updateFile = "test_update.json";
+const appId = "toolkit@mozilla.org";
 
-for (let test of testParams) {
-  let { updateFile, appId } = test;
+// Test that the update check correctly observes the
+// extensions.strictCompatibility pref and compatibility overrides.
+add_test(async function() {
+  await promiseWriteInstallRDFForExtension({
+    id: "addon9@tests.mozilla.org",
+    version: "1.0",
+    updateURL: "http://example.com/data/" + updateFile,
+    targetApplications: [{
+      id: appId,
+      minVersion: "0.1",
+      maxVersion: "0.2",
+    }],
+    name: "Test Addon 9",
+  }, profileDir);
 
-  // Test that the update check correctly observes the
-  // extensions.strictCompatibility pref and compatibility overrides.
-  add_test(function() {
-    writeInstallRDFForExtension({
-      id: "addon9@tests.mozilla.org",
-      version: "1.0",
-      updateURL: "http://localhost:" + gPort + "/data/" + updateFile,
-      targetApplications: [{
-        id: appId,
-        minVersion: "0.1",
-        maxVersion: "0.2"
-      }],
-      name: "Test Addon 9",
-    }, profileDir);
+  await promiseRestartManager();
 
-    restartManager();
-
-    AddonManager.addInstallListener({
-      onNewInstall(aInstall) {
-        if (aInstall.existingAddon.id != "addon9@tests.mozilla.org")
-          do_throw("Saw unexpected onNewInstall for " + aInstall.existingAddon.id);
-        do_check_eq(aInstall.version, "4.0");
-      },
-      onDownloadFailed(aInstall) {
-        run_next_test();
-      }
-    });
-
-    Services.prefs.setCharPref(PREF_GETADDONS_BYIDS_PERFORMANCE,
-                               "http://localhost:" + gPort + "/data/" + updateFile);
-    Services.prefs.setBoolPref(PREF_GETADDONS_CACHE_ENABLED, true);
-
-    AddonManagerInternal.backgroundUpdateCheck();
+  AddonManager.addInstallListener({
+    onNewInstall(aInstall) {
+      if (aInstall.existingAddon.id != "addon9@tests.mozilla.org")
+        do_throw("Saw unexpected onNewInstall for " + aInstall.existingAddon.id);
+      Assert.equal(aInstall.version, "4.0");
+    },
+    onDownloadFailed(aInstall) {
+      run_next_test();
+    },
   });
 
-  // Test that the update check correctly observes when an addon opts-in to
-  // strict compatibility checking.
-  add_test(function() {
-    writeInstallRDFForExtension({
-      id: "addon11@tests.mozilla.org",
-      version: "1.0",
-      updateURL: "http://localhost:" + gPort + "/data/" + updateFile,
-      targetApplications: [{
-        id: appId,
-        minVersion: "0.1",
-        maxVersion: "0.2"
-      }],
-      name: "Test Addon 11",
-    }, profileDir);
+  Services.prefs.setCharPref(PREF_GETADDONS_BYIDS,
+                             `http://example.com/data/test_update_addons.json`);
+  Services.prefs.setCharPref(PREF_COMPAT_OVERRIDES,
+                             `http://example.com/data/test_update_compat.json`);
+  Services.prefs.setBoolPref(PREF_GETADDONS_CACHE_ENABLED, true);
 
-    restartManager();
+  AddonManagerInternal.backgroundUpdateCheck();
+});
 
-    AddonManager.getAddonByID("addon11@tests.mozilla.org", function(a11) {
-      do_check_neq(a11, null);
+// Test that the update check correctly observes when an addon opts-in to
+// strict compatibility checking.
+add_test(async function() {
+  await promiseWriteInstallRDFForExtension({
+    id: "addon11@tests.mozilla.org",
+    version: "1.0",
+    updateURL: "http://example.com/data/" + updateFile,
+    targetApplications: [{
+      id: appId,
+      minVersion: "0.1",
+      maxVersion: "0.2",
+    }],
+    name: "Test Addon 11",
+  }, profileDir);
 
-      a11.findUpdates({
-        onCompatibilityUpdateAvailable() {
-          do_throw("Should not have seen compatibility information");
-        },
+  await promiseRestartManager();
 
-        onUpdateAvailable() {
-          do_throw("Should not have seen an available update");
-        },
+  let a11 = await AddonManager.getAddonByID("addon11@tests.mozilla.org");
+  Assert.notEqual(a11, null);
 
-        onUpdateFinished() {
-          run_next_test();
-        }
-      }, AddonManager.UPDATE_WHEN_USER_REQUESTED);
-    });
-  });
-}
+  a11.findUpdates({
+    onCompatibilityUpdateAvailable() {
+      do_throw("Should not have seen compatibility information");
+    },
+
+    onUpdateAvailable() {
+      do_throw("Should not have seen an available update");
+    },
+
+    onUpdateFinished() {
+      run_next_test();
+    },
+  }, AddonManager.UPDATE_WHEN_USER_REQUESTED);
+});

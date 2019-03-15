@@ -4,6 +4,8 @@
 # http://creativecommons.org/publicdomain/zero/1.0/
 #
 
+from __future__ import absolute_import
+
 import mozinfo
 import mozunit
 import os
@@ -28,22 +30,23 @@ mozinfo.find_and_update_from_json()
 objdir = build_obj.topobjdir.encode("utf-8")
 
 if mozinfo.isMac:
-  xpcshellBin = os.path.join(objdir, "dist", substs['MOZ_MACBUNDLE_NAME'], "Contents", "MacOS", "xpcshell")
+    xpcshellBin = os.path.join(objdir, "dist", substs['MOZ_MACBUNDLE_NAME'],
+                               "Contents", "MacOS", "xpcshell")
 else:
-  xpcshellBin = os.path.join(objdir, "dist", "bin", "xpcshell")
-  if sys.platform == "win32":
-    xpcshellBin += ".exe"
+    xpcshellBin = os.path.join(objdir, "dist", "bin", "xpcshell")
+    if sys.platform == "win32":
+        xpcshellBin += ".exe"
 
 TEST_PASS_STRING = "TEST-PASS"
 TEST_FAIL_STRING = "TEST-UNEXPECTED-FAIL"
 
-SIMPLE_PASSING_TEST = "function run_test() { do_check_true(true); }"
-SIMPLE_FAILING_TEST = "function run_test() { do_check_true(false); }"
+SIMPLE_PASSING_TEST = "function run_test() { Assert.ok(true); }"
+SIMPLE_FAILING_TEST = "function run_test() { Assert.ok(false); }"
 
 SIMPLE_UNCAUGHT_REJECTION_TEST = '''
 function run_test() {
   Promise.reject(new Error("Test rejection."));
-  do_check_true(true);
+  Assert.ok(true);
 }
 '''
 
@@ -53,7 +56,7 @@ Components.utils.import("resource://gre/modules/Promise.jsm");
 Promise.reject(new Error("Test rejection."));
 
 function run_test() {
-  do_check_true(true);
+  Assert.ok(true);
 }
 '''
 
@@ -61,7 +64,7 @@ ADD_TEST_SIMPLE = '''
 function run_test() { run_next_test(); }
 
 add_test(function test_simple() {
-  do_check_true(true);
+  Assert.ok(true);
   run_next_test();
 });
 '''
@@ -70,7 +73,7 @@ ADD_TEST_FAILING = '''
 function run_test() { run_next_test(); }
 
 add_test(function test_failing() {
-  do_check_true(false);
+  Assert.ok(false);
   run_next_test();
 });
 '''
@@ -149,7 +152,7 @@ PASSING_TEST_UNICODE = '''
 function run_test () { run_next_test(); }
 
 add_test(function test_unicode_print () {
-  do_check_eq("\u201c\u201d", "\u201c\u201d");
+  Assert.equal("\u201c\u201d", "\u201c\u201d");
   run_next_test();
 });
 '''
@@ -159,9 +162,9 @@ Components.utils.import("resource://gre/modules/Promise.jsm");
 
 function run_test() { run_next_test(); }
 
-add_task(function test_task() {
-  yield Promise.resolve(true);
-  yield Promise.resolve(false);
+add_task(async function test_task() {
+  await Promise.resolve(true);
+  await Promise.resolve(false);
 });
 '''
 
@@ -170,12 +173,12 @@ Components.utils.import("resource://gre/modules/Promise.jsm");
 
 function run_test() { run_next_test(); }
 
-add_task(function test_task() {
-  yield Promise.resolve(true);
+add_task(async function test_task() {
+  await Promise.resolve(true);
 });
 
-add_task(function test_2() {
-  yield Promise.resolve(true);
+add_task(async function test_2() {
+  await Promise.resolve(true);
 });
 '''
 
@@ -184,8 +187,8 @@ Components.utils.import("resource://gre/modules/Promise.jsm");
 
 function run_test() { run_next_test(); }
 
-add_task(function test_failing() {
-  yield Promise.reject(new Error("I fail."));
+add_task(async function test_failing() {
+  await Promise.reject(new Error("I fail."));
 });
 '''
 
@@ -194,10 +197,10 @@ Components.utils.import("resource://gre/modules/Promise.jsm");
 
 function run_test() { run_next_test(); }
 
-add_task(function test() {
-  let result = yield Promise.resolve(false);
+add_task(async function test() {
+  let result = await Promise.resolve(false);
 
-  do_check_true(result);
+  Assert.ok(result);
 });
 '''
 
@@ -216,24 +219,55 @@ Components.utils.import("resource://gre/modules/Promise.jsm", this);
 
 function run_test() { run_next_test(); }
 
-add_task(function* this_test_will_fail() {
+add_task(async function this_test_will_fail() {
   for (let i = 0; i < 10; ++i) {
-    yield Promise.resolve();
+    await Promise.resolve();
   }
   Assert.ok(false);
 });
 '''
 
-ADD_TASK_STACK_TRACE_WITHOUT_STAR = '''
-Components.utils.import("resource://gre/modules/Promise.jsm", this);
+ADD_TASK_SKIP = '''
+add_task(async function skipMeNot1() {
+  Assert.ok(true, "Well well well.");
+});
 
-function run_test() { run_next_test(); }
+add_task(async function skipMe1() {
+  Assert.ok(false, "Not skipped after all.");
+}).skip();
 
-add_task(function this_test_will_fail() {
-  for (let i = 0; i < 10; ++i) {
-    yield Promise.resolve();
-  }
-  Assert.ok(false);
+add_task(async function skipMeNot2() {
+  Assert.ok(true, "Well well well.");
+});
+
+add_task(async function skipMeNot3() {
+  Assert.ok(true, "Well well well.");
+});
+
+add_task(async function skipMe2() {
+  Assert.ok(false, "Not skipped after all.");
+}).skip();
+'''
+
+ADD_TASK_SKIPALL = '''
+add_task(async function skipMe1() {
+  Assert.ok(false, "Not skipped after all.");
+});
+
+add_task(async function skipMe2() {
+  Assert.ok(false, "Not skipped after all.");
+}).skip();
+
+add_task(async function skipMe3() {
+  Assert.ok(false, "Not skipped after all.");
+}).only();
+
+add_task(async function skipMeNot() {
+  Assert.ok(true, "Well well well.");
+}).only();
+
+add_task(async function skipMe4() {
+  Assert.ok(false, "Not skipped after all.");
 });
 '''
 
@@ -262,7 +296,7 @@ function run_test() {do_report_unexpected_exception(error)};
 '''
 
 ADD_TEST_VERBOSE = '''
-function run_test() {do_print("a message from do_print")};
+function run_test() {info("a message from info")};
 '''
 
 # A test for genuine JS-generated Error objects
@@ -286,8 +320,7 @@ function run_test(
 # A test for failure to load a test due to an error other than a syntax error
 LOAD_ERROR_OTHER_ERROR = '''
 function run_test() {
-    yield "foo";
-    return "foo"; // can't use return in a generator!
+    1 = "foo"; // invalid assignment left-hand side
 };
 '''
 
@@ -300,41 +333,41 @@ function run_test() {
   let checkpoints = [];
 
   // Cleanup tasks, in reverse order
-  do_register_cleanup(function cleanup_checkout() {
-    do_check_eq(checkpoints.join(""), "123456");
-    do_print("At this stage, the test has succeeded");
+  registerCleanupFunction(function cleanup_checkout() {
+    Assert.equal(checkpoints.join(""), "123456");
+    info("At this stage, the test has succeeded");
     do_throw("Throwing an error to force displaying the log");
   });
 
-  do_register_cleanup(function sync_cleanup_2() {
+  registerCleanupFunction(function sync_cleanup_2() {
     checkpoints.push(6);
   });
 
-  do_register_cleanup(async function async_cleanup_4() {
+  registerCleanupFunction(async function async_cleanup_4() {
     await undefined;
     checkpoints.push(5);
   });
 
-  do_register_cleanup(function* async_cleanup_3() {
-    yield undefined;
+  registerCleanupFunction(async function async_cleanup_3() {
+    await undefined;
     checkpoints.push(4);
   });
 
-  do_register_cleanup(function async_cleanup_2() {
+  registerCleanupFunction(function async_cleanup_2() {
     let deferred = Promise.defer();
-    do_execute_soon(deferred.resolve);
+    executeSoon(deferred.resolve);
     return deferred.promise.then(function() {
       checkpoints.push(3);
     });
   });
 
-  do_register_cleanup(function sync_cleanup() {
+  registerCleanupFunction(function sync_cleanup() {
     checkpoints.push(2);
   });
 
-  do_register_cleanup(function async_cleanup() {
+  registerCleanupFunction(function async_cleanup() {
     let deferred = Promise.defer();
-    do_execute_soon(deferred.resolve);
+    executeSoon(deferred.resolve);
     return deferred.promise.then(function() {
       checkpoints.push(1);
     });
@@ -346,7 +379,7 @@ function run_test() {
 # A test to check that add_test() tests run without run_test()
 NO_RUN_TEST_ADD_TEST = '''
 add_test(function no_run_test_add_test() {
-  do_check_true(true);
+  Assert.ok(true);
   run_next_test();
 });
 '''
@@ -354,19 +387,19 @@ add_test(function no_run_test_add_test() {
 # A test to check that add_task() tests run without run_test()
 NO_RUN_TEST_ADD_TASK = '''
 add_task(function no_run_test_add_task() {
-  do_check_true(true);
+  Assert.ok(true);
 });
 '''
 
 # A test to check that both add_task() and add_test() work without run_test()
 NO_RUN_TEST_ADD_TEST_ADD_TASK = '''
 add_test(function no_run_test_add_test() {
-  do_check_true(true);
+  Assert.ok(true);
   run_next_test();
 });
 
 add_task(function no_run_test_add_task() {
-  do_check_true(true);
+  Assert.ok(true);
 });
 '''
 
@@ -378,33 +411,33 @@ NO_RUN_TEST_EMPTY_TEST = '''
 
 NO_RUN_TEST_ADD_TEST_FAIL = '''
 add_test(function no_run_test_add_test_fail() {
-  do_check_true(false);
+  Assert.ok(false);
   run_next_test();
 });
 '''
 
 NO_RUN_TEST_ADD_TASK_FAIL = '''
 add_task(function no_run_test_add_task_fail() {
-  do_check_true(false);
+  Assert.ok(false);
 });
 '''
 
 NO_RUN_TEST_ADD_TASK_MULTIPLE = '''
 Components.utils.import("resource://gre/modules/Promise.jsm");
 
-add_task(function test_task() {
-  yield Promise.resolve(true);
+add_task(async function test_task() {
+  await Promise.resolve(true);
 });
 
-add_task(function test_2() {
-  yield Promise.resolve(true);
+add_task(async function test_2() {
+  await Promise.resolve(true);
 });
 '''
 
 LOAD_MOZINFO = '''
 function run_test() {
-  do_check_neq(typeof mozinfo, undefined);
-  do_check_neq(typeof mozinfo.os, undefined);
+  Assert.notEqual(typeof mozinfo, undefined);
+  Assert.notEqual(typeof mozinfo.os, undefined);
 }
 '''
 
@@ -416,6 +449,8 @@ add_test(function test_child_mozinfo () {
   run_next_test();
 });
 '''
+
+
 class XPCShellTestsTests(unittest.TestCase):
     """
     Yes, these are unit tests for a unit test harness.
@@ -428,11 +463,11 @@ class XPCShellTestsTests(unittest.TestCase):
                                                       {},
                                                       {"tbpl": self.log})
         self.x = XPCShellTests(logger)
-        self.x.harness_timeout = 15
+        self.x.harness_timeout = 15 if not mozinfo.info["ccov"] else 60
         self.symbols_path = None
         candidate_path = os.path.join(build_obj.distdir, 'crashreporter-symbols')
         if (os.path.isdir(candidate_path)):
-          self.symbols_path = candidate_path
+            self.symbols_path = candidate_path
 
     def tearDown(self):
         shutil.rmtree(self.tempdir)
@@ -473,16 +508,18 @@ tail =
         Assert that self.x.runTests with manifest=self.manifest
         returns |expected|.
         """
+        kwargs = {}
+        kwargs['xpcshell'] = xpcshellBin
+        kwargs['symbolsPath'] = self.symbols_path
+        kwargs['manifest'] = self.manifest
+        kwargs['mozInfo'] = mozinfo.info
+        kwargs['shuffle'] = shuffle
+        kwargs['verbose'] = verbose
+        kwargs['sequential'] = True
+        kwargs['testingModulesDir'] = os.path.join(objdir, '_tests', 'modules')
+        kwargs['utility_path'] = self.utility_path
         self.assertEquals(expected,
-                          self.x.runTests(xpcshellBin,
-                                          symbolsPath=self.symbols_path,
-                                          manifest=self.manifest,
-                                          mozInfo=mozinfo.info,
-                                          shuffle=shuffle,
-                                          verbose=verbose,
-                                          sequential=True,
-                                          testingModulesDir=os.path.join(objdir, '_tests', 'modules'),
-                                          utility_path=self.utility_path),
+                          self.x.runTests(kwargs),
                           msg="""Tests should have %s, log:
 ========
 %s
@@ -562,12 +599,12 @@ tail =
         line_pat = "#\d\d:"
         unknown_pat = "#\d\d\: \?\?\?\[.* \+0x[a-f0-9]+\]"
         self.assertFalse(any(re.search(unknown_pat, line) for line in log_lines),
-                         "An stack frame without symbols was found in\n%s" % pprint.pformat(log_lines))
+                         "An stack frame without symbols was found in\n%s" %
+                         pprint.pformat(log_lines))
         self.assertTrue(any(re.search(line_pat, line) for line in log_lines),
-                        "No line resembling a stack frame was found in\n%s" % pprint.pformat(log_lines))
+                        "No line resembling a stack frame was found in\n%s" %
+                        pprint.pformat(log_lines))
 
-    @unittest.skipIf(mozinfo.info.get('stylo'),
-                     'failing on stylo for some reason') # bug 1337667
     def testChildPass(self):
         """
         Check that a simple test running in a child process passes.
@@ -586,9 +623,6 @@ tail =
         self.assertInLog("CHILD-TEST-COMPLETED")
         self.assertNotInLog(TEST_FAIL_STRING)
 
-
-    @unittest.skipIf(mozinfo.info.get('stylo'),
-                     'failing on stylo for some reason') # bug 1337667
     def testChildFail(self):
         """
         Check that a simple failing test running in a child process fails.
@@ -607,8 +641,6 @@ tail =
         self.assertInLog("CHILD-TEST-COMPLETED")
         self.assertNotInLog(TEST_PASS_STRING)
 
-    @unittest.skipIf(mozinfo.info.get('stylo'),
-                     'failing on stylo for some reason') # bug 1337667
     def testChildHang(self):
         """
         Check that incomplete output from a child process results in a
@@ -628,8 +660,6 @@ tail =
         self.assertNotInLog("CHILD-TEST-COMPLETED")
         self.assertNotInLog(TEST_PASS_STRING)
 
-    @unittest.skipIf(mozinfo.info.get('stylo'),
-                     'failing on stylo for some reason') # bug 1337667
     def testChild(self):
         """
         Checks that calling do_load_child_test_harness without run_test_in_child
@@ -655,7 +685,7 @@ tail =
 add_test({
   skip_if: () => true,
 }, function test_should_be_skipped() {
-  do_check_true(false);
+  Assert.ok(false);
   run_next_test();
 });
 """)
@@ -677,7 +707,7 @@ add_test({
 add_task({
   skip_if: () => false,
 }, function test_should_not_be_skipped() {
-  do_check_true(true);
+  Assert.ok(true);
 });
 """)
         self.writeManifest(["test_not_skip.js"])
@@ -698,7 +728,7 @@ add_task({
 add_task({
   skip_if: () => true,
 }, function test_should_be_skipped() {
-  do_check_true(false);
+  Assert.ok(false);
 });
 """)
         self.writeManifest(["test_skip.js"])
@@ -719,7 +749,7 @@ add_task({
 add_test({
   skip_if: () => false,
 }, function test_should_not_be_skipped() {
-  do_check_true(true);
+  Assert.ok(true);
   run_next_test();
 });
 """)
@@ -863,14 +893,13 @@ add_test({
         """
         Ensure a simple test with an uncaught rejection is reported.
         """
-        self.writeFile("test_simple_uncaught_rejection.js", SIMPLE_UNCAUGHT_REJECTION_TEST)
+        self.writeFile("test_simple_uncaught_rejection.js",
+                       SIMPLE_UNCAUGHT_REJECTION_TEST)
         self.writeManifest(["test_simple_uncaught_rejection.js"])
 
         self.assertTestResult(False)
         self.assertInLog(TEST_FAIL_STRING)
-        if not substs.get('RELEASE_OR_BETA'):
-          # async stacks are currently not enabled in release builds.
-          self.assertInLog("test_simple_uncaught_rejection.js:3:3")
+        self.assertInLog("test_simple_uncaught_rejection.js:3:18")
         self.assertInLog("Test rejection.")
         self.assertEquals(1, self.x.testCount)
         self.assertEquals(0, self.x.passCount)
@@ -913,7 +942,7 @@ add_test({
 
         self.assertTestResult(True, verbose=True)
         self.assertInLog("true == true")
-        self.assertNotInLog("[do_check_true :")
+        self.assertNotInLog("[Assert.ok :")
         self.assertInLog("[test_simple : 5]")
 
     def testAddTestFailing(self):
@@ -969,7 +998,7 @@ add_test({
         Ensure multiple calls to add_test_task() work as expected.
         """
         self.writeFile("test_add_task_multiple.js",
-            ADD_TASK_MULTIPLE)
+                       ADD_TASK_MULTIPLE)
         self.writeManifest(["test_add_task_multiple.js"])
 
         self.assertTestResult(True)
@@ -982,7 +1011,7 @@ add_test({
         Ensure rejected task reports as failure.
         """
         self.writeFile("test_add_task_rejected.js",
-            ADD_TASK_REJECTED)
+                       ADD_TASK_REJECTED)
         self.writeManifest(["test_add_task_rejected.js"])
 
         self.assertTestResult(False)
@@ -995,7 +1024,7 @@ add_test({
         Ensure tests inside task are reported as failures.
         """
         self.writeFile("test_add_task_failure_inside.js",
-            ADD_TASK_FAILURE_INSIDE)
+                       ADD_TASK_FAILURE_INSIDE)
         self.writeManifest(["test_add_task_failure_inside.js"])
 
         self.assertTestResult(False)
@@ -1008,7 +1037,7 @@ add_test({
         Calling run_next_test() from inside add_task() results in failure.
         """
         self.writeFile("test_add_task_run_next_test.js",
-            ADD_TASK_RUN_NEXT_TEST)
+                       ADD_TASK_RUN_NEXT_TEST)
         self.writeManifest(["test_add_task_run_next_test.js"])
 
         self.assertTestResult(False)
@@ -1022,7 +1051,7 @@ add_test({
         results in a human-readable stack trace.
         """
         self.writeFile("test_add_task_stack_trace.js",
-            ADD_TASK_STACK_TRACE)
+                       ADD_TASK_STACK_TRACE)
         self.writeManifest(["test_add_task_stack_trace.js"])
 
         self.assertTestResult(False)
@@ -1031,21 +1060,23 @@ add_test({
         self.assertInLog("run_test")
         self.assertNotInLog("Task.jsm")
 
-    def testAddTaskStackTraceWithoutStar(self):
-        """
-        Ensuring that calling Assert.ok(false) from inside add_task()
-        results in a human-readable stack trace. This variant uses deprecated
-        `function()` syntax instead of now standard `function*()`.
-        """
-        self.writeFile("test_add_task_stack_trace_without_star.js",
-            ADD_TASK_STACK_TRACE)
-        self.writeManifest(["test_add_task_stack_trace_without_star.js"])
+    def testAddTaskSkip(self):
+        self.writeFile("test_tasks_skip.js", ADD_TASK_SKIP)
+        self.writeManifest(["test_tasks_skip.js"])
 
-        self.assertTestResult(False)
-        self.assertInLog("this_test_will_fail")
-        self.assertInLog("run_next_test")
-        self.assertInLog("run_test")
-        self.assertNotInLog("Task.jsm")
+        self.assertTestResult(True)
+        self.assertEquals(1, self.x.testCount)
+        self.assertEquals(1, self.x.passCount)
+        self.assertEquals(0, self.x.failCount)
+
+    def testAddTaskSkipAll(self):
+        self.writeFile("test_tasks_skipall.js", ADD_TASK_SKIPALL)
+        self.writeManifest(["test_tasks_skipall.js"])
+
+        self.assertTestResult(True)
+        self.assertEquals(1, self.x.testCount)
+        self.assertEquals(1, self.x.passCount)
+        self.assertEquals(0, self.x.failCount)
 
     def testMissingHeadFile(self):
         """
@@ -1059,7 +1090,7 @@ add_test({
         try:
             # The actual return value is never checked because we raise.
             self.assertTestResult(True)
-        except Exception, ex:
+        except Exception as ex:
             raised = True
             self.assertEquals(ex.message[0:9], "head file")
 
@@ -1163,34 +1194,34 @@ add_test({
 
         self.assertTestResult(False)
         self.assertInLog(TEST_FAIL_STRING)
-        self.assertInLog("TypeError: generator function can't return a value at")
-        self.assertInLog("test_error.js:4")
+        self.assertInLog("ReferenceError: invalid assignment left-hand side at")
+        self.assertInLog("test_error.js:3")
         self.assertNotInLog(TEST_PASS_STRING)
 
     def testDoPrintWhenVerboseNotExplicit(self):
         """
-        Check that do_print() and similar calls that generate output do
+        Check that info() and similar calls that generate output do
         not have the output when not run verbosely.
         """
         self.writeFile("test_verbose.js", ADD_TEST_VERBOSE)
         self.writeManifest(["test_verbose.js"])
 
         self.assertTestResult(True)
-        self.assertNotInLog("a message from do_print")
+        self.assertNotInLog("a message from info")
 
     def testDoPrintWhenVerboseExplicit(self):
         """
-        Check that do_print() and similar calls that generate output have the
+        Check that info() and similar calls that generate output have the
         output shown when run verbosely.
         """
         self.writeFile("test_verbose.js", ADD_TEST_VERBOSE)
         self.writeManifest(["test_verbose.js"])
         self.assertTestResult(True, verbose=True)
-        self.assertInLog("a message from do_print")
+        self.assertInLog("a message from info")
 
     def testDoPrintWhenVerboseInManifest(self):
         """
-        Check that do_print() and similar calls that generate output have the
+        Check that info() and similar calls that generate output have the
         output shown when 'verbose = true' is in the manifest, even when
         not run verbosely.
         """
@@ -1198,11 +1229,11 @@ add_test({
         self.writeManifest([("test_verbose.js", "verbose = true")])
 
         self.assertTestResult(True)
-        self.assertInLog("a message from do_print")
+        self.assertInLog("a message from info")
 
     def testAsyncCleanup(self):
         """
-        Check that do_register_cleanup handles nicely async cleanup tasks
+        Check that registerCleanupFunction handles nicely async cleanup tasks
         """
         self.writeFile("test_asyncCleanup.js", ASYNC_CLEANUP)
         self.writeManifest(["test_asyncCleanup.js"])
@@ -1325,8 +1356,6 @@ add_test({
         self.assertInLog(TEST_PASS_STRING)
         self.assertNotInLog(TEST_FAIL_STRING)
 
-    @unittest.skipIf(mozinfo.info.get('stylo'),
-                     'failing on stylo for some reason') # bug 1337667
     def testChildMozinfo(self):
         """
         Check that mozinfo.json is loaded in child process
@@ -1341,6 +1370,7 @@ add_test({
         self.assertEquals(0, self.x.todoCount)
         self.assertInLog(TEST_PASS_STRING)
         self.assertNotInLog(TEST_FAIL_STRING)
+
 
 if __name__ == "__main__":
     mozunit.main()

@@ -4,8 +4,6 @@
 
 /* See https://bugzilla.mozilla.org/show_bug.cgi?id=769273 */
 
-const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
-
 const global = this;
 
 function run_test()
@@ -13,15 +11,13 @@ function run_test()
   var ifacePointer = Cc["@mozilla.org/supports-interface-pointer;1"]
       .createInstance(Ci.nsISupportsInterfacePointer);
 
-  var sb = Cu.Sandbox(global);
+  var sb = Cu.Sandbox(global, {wantGlobalProperties: ["ChromeUtils"]});
   sb.prop = "prop"
   sb.ifacePointer = ifacePointer
 
   var refToObjFromSb = Cu.evalInSandbox(`
-    Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-
     ifacePointer.data = {
-      QueryInterface: XPCOMUtils.generateQI([]),
+      QueryInterface: ChromeUtils.generateQI([]),
       wrappedJSObject: {foo: "bar"},
     };
 
@@ -39,16 +35,16 @@ function run_test()
 
   try{
     sb.prop;
-    do_check_true(false);
+    Assert.ok(false);
   } catch (e) {
-    do_check_true(e.toString().indexOf("can't access dead object") > -1);
+    Assert.ok(e.toString().indexOf("can't access dead object") > -1);
   }
 
-  Components.utils.isDeadWrapper(refToObjFromSb, "ref to object from sb should be dead");
+  Cu.isDeadWrapper(refToObjFromSb, "ref to object from sb should be dead");
   try{
     refToObjFromSb.prop2;
-    do_check_true(false);
+    Assert.ok(false);
   } catch (e) {
-    do_check_true(e.toString().indexOf("can't access dead object") > -1);
+    Assert.ok(e.toString().indexOf("can't access dead object") > -1);
   }
 }

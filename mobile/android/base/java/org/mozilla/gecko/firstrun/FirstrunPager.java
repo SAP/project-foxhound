@@ -9,7 +9,6 @@ import android.content.Context;
 import android.support.v4.app.Fragment;
 import android.support.v4.app.FragmentManager;
 import android.support.v4.app.FragmentPagerAdapter;
-import android.support.v4.view.ViewPager;
 import android.util.AttributeSet;
 import android.view.View;
 import android.view.ViewGroup;
@@ -17,8 +16,11 @@ import android.animation.Animator;
 import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
 
+import com.booking.rtlviewpager.RtlViewPager;
+
 import org.mozilla.gecko.Telemetry;
 import org.mozilla.gecko.TelemetryContract;
+import org.mozilla.gecko.fxa.FirefoxAccounts;
 import org.mozilla.gecko.home.HomePager.Decor;
 import org.mozilla.gecko.home.TabMenuStrip;
 import org.mozilla.gecko.restrictions.Restrictions;
@@ -30,7 +32,7 @@ import java.util.List;
  *
  * @see FirstrunPanel for the first run pages that are used in this pager.
  */
-public class FirstrunPager extends ViewPager {
+public class FirstrunPager extends RtlViewPager {
 
     private Context context;
     protected FirstrunPanel.PagerNavigation pagerNavigation;
@@ -48,7 +50,7 @@ public class FirstrunPager extends ViewPager {
     @Override
     public void addView(View child, int index, ViewGroup.LayoutParams params) {
         if (child instanceof Decor) {
-            ((ViewPager.LayoutParams) params).isDecor = true;
+            ((RtlViewPager.LayoutParams) params).isDecor = true;
             mDecor = (Decor) child;
             mDecor.setOnTitleClickListener(new TabMenuStrip.OnTitleClickListener() {
                 @Override
@@ -61,13 +63,16 @@ public class FirstrunPager extends ViewPager {
         super.addView(child, index, params);
     }
 
-    public void load(Context appContext, FragmentManager fm, final FirstrunAnimationContainer.OnFinishListener onFinishListener) {
+    public void load(Context appContext, FragmentManager fm, final boolean useLocalValues,
+                     final FirstrunAnimationContainer.OnFinishListener onFinishListener) {
         final List<FirstrunPagerConfig.FirstrunPanelConfig> panels;
 
-        if (Restrictions.isRestrictedProfile(context)) {
-            panels = FirstrunPagerConfig.getRestricted();
+        if (Restrictions.isRestrictedProfile(appContext)) {
+            panels = FirstrunPagerConfig.getRestricted(appContext);
+        } else if (FirefoxAccounts.firefoxAccountsExist(appContext)) {
+            panels = FirstrunPagerConfig.forFxAUser(appContext, useLocalValues);
         } else {
-            panels = FirstrunPagerConfig.getDefault(appContext);
+            panels = FirstrunPagerConfig.getDefault(appContext, useLocalValues);
         }
 
         setAdapter(new ViewPagerAdapter(fm, panels));
@@ -140,7 +145,7 @@ public class FirstrunPager extends ViewPager {
             this.panels = panels;
             this.fragments = new Fragment[panels.size()];
             for (FirstrunPagerConfig.FirstrunPanelConfig panel : panels) {
-                mDecor.onAddPagerView(context.getString(panel.getTitleRes()));
+                mDecor.onAddPagerView(panel.getTitle());
             }
 
             if (panels.size() > 0) {
@@ -168,7 +173,7 @@ public class FirstrunPager extends ViewPager {
         @Override
         public CharSequence getPageTitle(int i) {
             // Unused now that we use TabMenuStrip.
-            return context.getString(panels.get(i).getTitleRes()).toUpperCase();
+            return panels.get(i).getTitle().toUpperCase();
         }
     }
 }

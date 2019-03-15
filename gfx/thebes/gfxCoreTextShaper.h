@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,59 +13,57 @@
 class gfxMacFont;
 
 class gfxCoreTextShaper : public gfxFontShaper {
-public:
-    explicit gfxCoreTextShaper(gfxMacFont *aFont);
+ public:
+  explicit gfxCoreTextShaper(gfxMacFont *aFont);
 
-    virtual ~gfxCoreTextShaper();
+  virtual ~gfxCoreTextShaper();
 
-    virtual bool ShapeText(DrawTarget      *aDrawTarget,
-                           const char16_t *aText,
-                           uint32_t         aOffset,
-                           uint32_t         aLength,
-                           Script           aScript,
-                           bool             aVertical,
-                           gfxShapedText   *aShapedText);
+  bool ShapeText(DrawTarget *aDrawTarget, const char16_t *aText, uint32_t aOffset, uint32_t aLength,
+                 Script aScript, bool aVertical, RoundingFlags aRounding,
+                 gfxShapedText *aShapedText) override;
 
-    // clean up static objects that may have been cached
-    static void Shutdown();
+  // clean up static objects that may have been cached
+  static void Shutdown();
 
-protected:
-    CTFontRef mCTFont;
+  // Flags used to track what AAT features should be enabled on the Core Text
+  // font instance. (Internal; only public so that we can use the
+  // MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS macro below.)
+  enum FeatureFlags : uint8_t {
+    kDefaultFeatures = 0x00,
+    // bit flags for non-default feature settings we might need
+    // to use, which will require separate font instances
+    kDisableLigatures = 0x01,
+    kAddSmallCaps = 0x02,
+    kIndicFeatures = 0x04,
 
-    // attributes for shaping text with LTR or RTL directionality
-    CFDictionaryRef mAttributesDictLTR;
-    CFDictionaryRef mAttributesDictRTL;
+    // number of font instances, indexed by OR-ing the flags above
+    kMaxFontInstances = 8
+  };
 
-    nsresult SetGlyphsFromRun(gfxShapedText *aShapedText,
-                              uint32_t       aOffset,
-                              uint32_t       aLength,
-                              CTRunRef       aCTRun,
-                              int32_t        aStringOffset);
+ protected:
+  CTFontRef mCTFont[kMaxFontInstances];
 
-    CTFontRef CreateCTFontWithFeatures(CGFloat aSize,
-                                       CTFontDescriptorRef aDescriptor);
+  // attributes for shaping text with LTR or RTL directionality
+  CFDictionaryRef mAttributesDictLTR;
+  CFDictionaryRef mAttributesDictRTL;
 
-    CFDictionaryRef CreateAttrDict(bool aRightToLeft);
-    CFDictionaryRef CreateAttrDictWithoutDirection();
+  nsresult SetGlyphsFromRun(gfxShapedText *aShapedText, uint32_t aOffset, uint32_t aLength,
+                            CTRunRef aCTRun);
 
-    static CTFontDescriptorRef
-    CreateFontFeaturesDescriptor(const std::pair<SInt16,SInt16> aFeatures[],
-                                 size_t aCount);
+  CTFontRef CreateCTFontWithFeatures(CGFloat aSize, CTFontDescriptorRef aDescriptor);
 
-    static CTFontDescriptorRef GetDefaultFeaturesDescriptor();
-    static CTFontDescriptorRef GetDisableLigaturesDescriptor();
-    static CTFontDescriptorRef GetIndicFeaturesDescriptor();
-    static CTFontDescriptorRef GetIndicDisableLigaturesDescriptor();
+  CFDictionaryRef CreateAttrDict(bool aRightToLeft);
+  CFDictionaryRef CreateAttrDictWithoutDirection();
 
-    // cached font descriptor, created the first time it's needed
-    static CTFontDescriptorRef    sDefaultFeaturesDescriptor;
+  static CTFontDescriptorRef CreateFontFeaturesDescriptor(
+      const std::pair<SInt16, SInt16> *aFeatures, size_t aCount);
 
-    // cached descriptor for adding disable-ligatures setting to a font
-    static CTFontDescriptorRef    sDisableLigaturesDescriptor;
+  static CTFontDescriptorRef GetFeaturesDescriptor(FeatureFlags aFeatureFlags);
 
-    // feature descriptors for buggy Indic AAT font workaround
-    static CTFontDescriptorRef    sIndicFeaturesDescriptor;
-    static CTFontDescriptorRef    sIndicDisableLigaturesDescriptor;
+  // cached font descriptors, created the first time they're needed
+  static CTFontDescriptorRef sFeaturesDescriptor[kMaxFontInstances];
 };
+
+MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(gfxCoreTextShaper::FeatureFlags)
 
 #endif /* GFX_CORETEXTSHAPER_H */

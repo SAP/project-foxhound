@@ -4,126 +4,112 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const TEST_URI = NetUtil.newURI("http://mozilla.com/");
-const TEST_SUBDOMAIN_URI = NetUtil.newURI("http://foobar.mozilla.com/");
+const TEST_URI = "http://mozilla.com/";
+const TEST_SUBDOMAIN_URI = "http://foobar.mozilla.com/";
 
-add_task(function* test_addPage() {
-  yield PlacesTestUtils.addVisits(TEST_URI);
-  do_check_eq(1, PlacesUtils.history.hasHistoryEntries);
+async function checkEmptyHistory() {
+  let db = await PlacesUtils.promiseDBConnection();
+  let rows = await db.executeCached("SELECT count(*) FROM moz_historyvisits");
+  return !rows[0].getResultByIndex(0);
+}
+
+add_task(async function test_addPage() {
+  await PlacesTestUtils.addVisits(TEST_URI);
+  Assert.ok(!await checkEmptyHistory(), "History has entries");
 });
 
-add_task(function* test_removePage() {
-  PlacesUtils.bhistory.removePage(TEST_URI);
-  do_check_eq(0, PlacesUtils.history.hasHistoryEntries);
+add_task(async function test_removePage() {
+  await PlacesUtils.history.remove(TEST_URI);
+  Assert.ok(await checkEmptyHistory(), "History is empty");
 });
 
-add_task(function* test_removePages() {
+add_task(async function test_removePages() {
   let pages = [];
   for (let i = 0; i < 8; i++) {
-    pages.push(NetUtil.newURI(TEST_URI.spec + i));
+    pages.push(TEST_URI + i);
   }
 
-  yield PlacesTestUtils.addVisits(pages.map(uri => ({ uri })));
+  await PlacesTestUtils.addVisits(pages.map(uri => ({ uri })));
   // Bookmarked item should not be removed from moz_places.
   const ANNO_INDEX = 1;
   const ANNO_NAME = "testAnno";
   const ANNO_VALUE = "foo";
   const BOOKMARK_INDEX = 2;
-  PlacesUtils.annotations.setPageAnnotation(pages[ANNO_INDEX],
-                                            ANNO_NAME, ANNO_VALUE, 0,
-                                            Ci.nsIAnnotationService.EXPIRE_NEVER);
-  PlacesUtils.bookmarks.insertBookmark(PlacesUtils.unfiledBookmarksFolderId,
-                                       pages[BOOKMARK_INDEX],
-                                       PlacesUtils.bookmarks.DEFAULT_INDEX,
-                                       "test bookmark");
-  PlacesUtils.annotations.setPageAnnotation(pages[BOOKMARK_INDEX],
-                                            ANNO_NAME, ANNO_VALUE, 0,
-                                            Ci.nsIAnnotationService.EXPIRE_NEVER);
+  await PlacesUtils.history.update({
+    url: pages[ANNO_INDEX],
+    annotations: new Map([[ANNO_NAME, ANNO_VALUE]]),
+  });
+  await PlacesUtils.bookmarks.insert({
+    parentGuid: PlacesUtils.bookmarks.unfiledGuid,
+    url: pages[BOOKMARK_INDEX],
+    title: "test bookmark",
+  });
+  await PlacesUtils.history.update({
+    url: pages[BOOKMARK_INDEX],
+    annotations: new Map([[ANNO_NAME, ANNO_VALUE]]),
+  });
 
-  PlacesUtils.bhistory.removePages(pages, pages.length);
-  do_check_eq(0, PlacesUtils.history.hasHistoryEntries);
+  await PlacesUtils.history.remove(pages);
+  Assert.ok(await checkEmptyHistory(), "History is empty");
 
   // Check that the bookmark and its annotation still exist.
-  do_check_true(PlacesUtils.bookmarks.getIdForItemAt(PlacesUtils.unfiledBookmarksFolderId, 0) > 0);
-  do_check_eq(PlacesUtils.annotations.getPageAnnotation(pages[BOOKMARK_INDEX], ANNO_NAME),
-              ANNO_VALUE);
+  let folder = await PlacesUtils.getFolderContents(PlacesUtils.bookmarks.unfiledGuid);
+  Assert.equal(folder.root.childCount, 1);
+  let pageInfo = await PlacesUtils.history.fetch(pages[BOOKMARK_INDEX], {includeAnnotations: true});
+  Assert.equal(pageInfo.annotations.get(ANNO_NAME), ANNO_VALUE);
 
   // Check the annotation on the non-bookmarked page does not exist anymore.
-  try {
-    PlacesUtils.annotations.getPageAnnotation(pages[ANNO_INDEX], ANNO_NAME);
-    do_throw("did not expire expire_never anno on a not bookmarked item");
-  } catch (ex) {}
+  await assertNoOrphanPageAnnotations();
 
   // Cleanup.
-  PlacesUtils.bookmarks.removeFolderChildren(PlacesUtils.unfiledBookmarksFolderId);
-  yield PlacesTestUtils.clearHistory();
+  await PlacesUtils.bookmarks.eraseEverything();
+  await PlacesUtils.history.clear();
 });
 
-add_task(function* test_removePagesByTimeframe() {
+add_task(async function test_removePagesByTimeframe() {
   let visits = [];
   let startDate = (Date.now() - 10000) * 1000;
   for (let i = 0; i < 10; i++) {
     visits.push({
-      uri: NetUtil.newURI(TEST_URI.spec + i),
-      visitDate: startDate + i * 1000
+      uri: TEST_URI + i,
+      visitDate: startDate + i * 1000,
     });
   }
 
-  yield PlacesTestUtils.addVisits(visits);
+  await PlacesTestUtils.addVisits(visits);
 
   // Delete all pages except the first and the last.
-  PlacesUtils.bhistory.removePagesByTimeframe(startDate + 1000, startDate + 8000);
+  await PlacesUtils.history.removeByFilter({
+    beginDate: PlacesUtils.toDate(startDate + 1000),
+    endDate: PlacesUtils.toDate(startDate + 8000),
+  });
 
   // Check that we have removed the correct pages.
   for (let i = 0; i < 10; i++) {
-    do_check_eq(page_in_database(NetUtil.newURI(TEST_URI.spec + i)) == 0,
-                i > 0 && i < 9);
+    Assert.equal(page_in_database(TEST_URI + i) == 0, i > 0 && i < 9);
   }
 
   // Clear remaining items and check that all pages have been removed.
-  PlacesUtils.bhistory.removePagesByTimeframe(startDate, startDate + 9000);
-  do_check_eq(0, PlacesUtils.history.hasHistoryEntries);
-});
-
-add_task(function* test_removePagesFromHost() {
-  yield PlacesTestUtils.addVisits(TEST_URI);
-  PlacesUtils.bhistory.removePagesFromHost("mozilla.com", true);
-  do_check_eq(0, PlacesUtils.history.hasHistoryEntries);
-});
-
-add_task(function* test_removePagesFromHost_keepSubdomains() {
-  yield PlacesTestUtils.addVisits([{ uri: TEST_URI }, { uri: TEST_SUBDOMAIN_URI }]);
-  PlacesUtils.bhistory.removePagesFromHost("mozilla.com", false);
-  do_check_eq(1, PlacesUtils.history.hasHistoryEntries);
-});
-
-add_task(function* test_history_clear() {
-  yield PlacesTestUtils.clearHistory();
-  do_check_eq(0, PlacesUtils.history.hasHistoryEntries);
-});
-
-add_task(function* test_getObservers() {
-  // Ensure that getObservers() invalidates the hasHistoryEntries cache.
-  yield PlacesTestUtils.addVisits(TEST_URI);
-  do_check_eq(1, PlacesUtils.history.hasHistoryEntries);
-  // This is just for testing purposes, never do it.
-  return new Promise((resolve, reject) => {
-    DBConn().executeSimpleSQLAsync("DELETE FROM moz_historyvisits", {
-      handleError(error) {
-        reject(error);
-      },
-      handleResult(result) {
-      },
-      handleCompletion(result) {
-        // Just invoking getObservers should be enough to invalidate the cache.
-        PlacesUtils.history.getObservers();
-        do_check_eq(0, PlacesUtils.history.hasHistoryEntries);
-        resolve();
-      }
-    });
+  await PlacesUtils.history.removeByFilter({
+    beginDate: PlacesUtils.toDate(startDate),
+    endDate: PlacesUtils.toDate(startDate + 9000),
   });
+  Assert.ok(await checkEmptyHistory(), "History is empty");
 });
 
-function run_test() {
-  run_next_test();
-}
+add_task(async function test_removePagesFromHost() {
+  await PlacesTestUtils.addVisits(TEST_URI);
+  await PlacesUtils.history.removeByFilter({ host: ".mozilla.com" });
+  Assert.ok(await checkEmptyHistory(), "History is empty");
+});
+
+add_task(async function test_removePagesFromHost_keepSubdomains() {
+  await PlacesTestUtils.addVisits([{ uri: TEST_URI }, { uri: TEST_SUBDOMAIN_URI }]);
+  await PlacesUtils.history.removeByFilter({ host: "mozilla.com" });
+  Assert.ok(!await checkEmptyHistory(), "History has entries");
+});
+
+add_task(async function test_history_clear() {
+  await PlacesUtils.history.clear();
+  Assert.ok(await checkEmptyHistory(), "History is empty");
+});

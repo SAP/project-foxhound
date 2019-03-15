@@ -7,41 +7,50 @@
  * in the database is unordered so that a hierarchy is defined before its
  * ancestor in the bookmarks table.
  */
-function run_test() {
-  run_next_test();
-}
+add_task(async function() {
+  let bms = await PlacesUtils.bookmarks.insertTree({
+    guid: PlacesUtils.bookmarks.unfiledGuid,
+    children: [{
+      title: "bookmark",
+      url: "http://mozilla.org",
+    }, {
+      title: "f2",
+      type: PlacesUtils.bookmarks.TYPE_FOLDER,
+    }, {
+      title: "f1",
+      type: PlacesUtils.bookmarks.TYPE_FOLDER,
+    }],
+  });
 
-add_task(function*() {
-  let bm = PlacesUtils.bookmarks.insertBookmark(PlacesUtils.unfiledBookmarksFolderId,
-                                                NetUtil.newURI("http://mozilla.org/"),
-                                                PlacesUtils.bookmarks.DEFAULT_INDEX,
-                                                "bookmark");
-  let f2 = PlacesUtils.bookmarks.createFolder(PlacesUtils.unfiledBookmarksFolderId, "f2",
-                                              PlacesUtils.bookmarks.DEFAULT_INDEX);
-  PlacesUtils.bookmarks.moveItem(bm, f2, PlacesUtils.bookmarks.DEFAULT_INDEX);
-  let f1 = PlacesUtils.bookmarks.createFolder(PlacesUtils.unfiledBookmarksFolderId, "f1",
-                                              PlacesUtils.bookmarks.DEFAULT_INDEX);
-  PlacesUtils.bookmarks.moveItem(f2, f1, PlacesUtils.bookmarks.DEFAULT_INDEX);
+  let bookmark = bms[0];
+  let folder2 = bms[1];
+  let folder1 = bms[2];
+  bookmark.parentGuid = folder2.guid;
+  await PlacesUtils.bookmarks.update(bookmark);
+
+  folder2.parentGuid = folder1.guid;
+  await PlacesUtils.bookmarks.update(folder2);
 
   // Create a backup.
-  yield PlacesBackups.create();
+  await PlacesBackups.create();
 
   // Remove the bookmarks, then restore the backup.
-  PlacesUtils.bookmarks.removeItem(f1);
-  yield BookmarkJSONUtils.importFromFile((yield PlacesBackups.getMostRecentBackup()), true);
+  await PlacesUtils.bookmarks.remove(folder1);
+  await BookmarkJSONUtils.importFromFile((await PlacesBackups.getMostRecentBackup()),
+                                         { replace: true });
 
-  do_print("Checking first level");
-  let root = PlacesUtils.getFolderContents(PlacesUtils.unfiledBookmarksFolderId).root;
+  info("Checking first level");
+  let root = PlacesUtils.getFolderContents(PlacesUtils.bookmarks.unfiledGuid).root;
   let level1 = root.getChild(0);
-  do_check_eq(level1.title, "f1");
-  do_print("Checking second level");
-  PlacesUtils.asContainer(level1).containerOpen = true
+  Assert.equal(level1.title, "f1");
+  info("Checking second level");
+  PlacesUtils.asContainer(level1).containerOpen = true;
   let level2 = level1.getChild(0);
-  do_check_eq(level2.title, "f2");
-  do_print("Checking bookmark");
-  PlacesUtils.asContainer(level2).containerOpen = true
-  let bookmark = level2.getChild(0);
-  do_check_eq(bookmark.title, "bookmark");
+  Assert.equal(level2.title, "f2");
+  info("Checking bookmark");
+  PlacesUtils.asContainer(level2).containerOpen = true;
+  bookmark = level2.getChild(0);
+  Assert.equal(bookmark.title, "bookmark");
   level2.containerOpen = false;
   level1.containerOpen = false;
   root.containerOpen = false;

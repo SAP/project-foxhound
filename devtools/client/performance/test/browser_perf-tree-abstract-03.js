@@ -10,15 +10,15 @@
 const { appendAndWaitForPaint } = require("devtools/client/performance/test/helpers/dom-utils");
 const { synthesizeCustomTreeClass } = require("devtools/client/performance/test/helpers/synth-utils");
 
-add_task(function* () {
-  let { MyCustomTreeItem, myDataSrc } = synthesizeCustomTreeClass();
+add_task(async function() {
+  const { MyCustomTreeItem, myDataSrc } = synthesizeCustomTreeClass();
 
-  let container = document.createElement("vbox");
-  yield appendAndWaitForPaint(gBrowser.selectedBrowser.parentNode, container);
+  const container = document.createXULElement("vbox");
+  await appendAndWaitForPaint(gBrowser.selectedBrowser.parentNode, container);
 
   // Populate the tree by pressing RIGHT...
 
-  let treeRoot = new MyCustomTreeItem(myDataSrc, { parent: null });
+  const treeRoot = new MyCustomTreeItem(myDataSrc, { parent: null });
   treeRoot.attachTo(container);
   treeRoot.focus();
 
@@ -28,8 +28,8 @@ add_task(function* () {
   is(document.commandDispatcher.focusedElement, treeRoot.target,
     "The root node is still focused.");
 
-  let fooItem = treeRoot.getChild(0);
-  let barItem = treeRoot.getChild(1);
+  const fooItem = treeRoot.getChild(0);
+  const barItem = treeRoot.getChild(1);
 
   key("VK_RIGHT");
   ok(!fooItem.expanded,
@@ -55,7 +55,7 @@ add_task(function* () {
   is(document.commandDispatcher.focusedElement, barItem.target,
     "The 'bar' node is still focused.");
 
-  let bazItem = barItem.getChild(0);
+  const bazItem = barItem.getChild(0);
 
   key("VK_RIGHT");
   ok(!bazItem.expanded,

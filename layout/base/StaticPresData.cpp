@@ -7,47 +7,37 @@
 #include "mozilla/StaticPresData.h"
 
 #include "mozilla/Preferences.h"
+#include "mozilla/ServoBindings.h"
 #include "nsPresContext.h"
-
 namespace mozilla {
 
 static StaticPresData* sSingleton = nullptr;
 
-void
-StaticPresData::Init()
-{
+void StaticPresData::Init() {
   MOZ_ASSERT(!sSingleton);
   sSingleton = new StaticPresData();
 }
 
-void
-StaticPresData::Shutdown()
-{
+void StaticPresData::Shutdown() {
   MOZ_ASSERT(sSingleton);
   delete sSingleton;
   sSingleton = nullptr;
 }
 
-StaticPresData*
-StaticPresData::Get()
-{
+StaticPresData* StaticPresData::Get() {
   MOZ_ASSERT(sSingleton);
   return sSingleton;
 }
 
-StaticPresData::StaticPresData()
-{
-  mLangService = do_GetService(NS_LANGUAGEATOMSERVICE_CONTRACTID);
-
-  mBorderWidthTable[NS_STYLE_BORDER_WIDTH_THIN] = nsPresContext::CSSPixelsToAppUnits(1);
-  mBorderWidthTable[NS_STYLE_BORDER_WIDTH_MEDIUM] = nsPresContext::CSSPixelsToAppUnits(3);
-  mBorderWidthTable[NS_STYLE_BORDER_WIDTH_THICK] = nsPresContext::CSSPixelsToAppUnits(5);
+StaticPresData::StaticPresData() {
+  mLangService = nsLanguageAtomService::GetService();
 }
 
 #define MAKE_FONT_PREF_KEY(_pref, _s0, _s1) \
- _pref.Assign(_s0); \
- _pref.Append(_s1);
+  _pref.Assign(_s0);                        \
+  _pref.Append(_s1);
 
+// clang-format off
 static const char* const kGenericFont[] = {
   ".variable.",
   ".fixed.",
@@ -57,6 +47,7 @@ static const char* const kGenericFont[] = {
   ".cursive.",
   ".fantasy."
 };
+// clang-format on
 
 // These are private, use the list in nsFont.h if you want a public list.
 enum {
@@ -70,109 +61,60 @@ enum {
   eDefaultFont_COUNT
 };
 
-const LangGroupFontPrefs*
-StaticPresData::GetFontPrefsForLangHelper(nsIAtom *aLanguage,
-                                          const LangGroupFontPrefs* aPrefs) const
-{
-  // Get language group for aLanguage:
-  MOZ_ASSERT(aLanguage);
-  MOZ_ASSERT(mLangService);
-  MOZ_ASSERT(aPrefs);
-
-  nsresult rv = NS_OK;
-  nsIAtom *langGroupAtom = nullptr;
-  langGroupAtom = mLangService->GetLanguageGroup(aLanguage, &rv);
-  if (NS_FAILED(rv) || !langGroupAtom) {
-    langGroupAtom = nsGkAtoms::x_western; // Assume x-western is safe...
-  }
-
-  LangGroupFontPrefs *prefs = const_cast<LangGroupFontPrefs*>(aPrefs);
-  if (prefs->mLangGroup) { // if initialized
-    DebugOnly<uint32_t> count = 0;
-    for (;;) {
-      NS_ASSERTION(++count < 35, "Lang group count exceeded!!!");
-      if (prefs->mLangGroup == langGroupAtom) {
-        return prefs;
-      }
-      if (!prefs->mNext) {
-        break;
-      }
-      prefs = prefs->mNext;
-    }
-
-    // nothing cached, so go on and fetch the prefs for this lang group:
-    prefs = prefs->mNext = new LangGroupFontPrefs;
-  }
-
-  prefs->mLangGroup = langGroupAtom;
+void LangGroupFontPrefs::Initialize(nsAtom* aLangGroupAtom) {
+  mLangGroup = aLangGroupAtom;
 
   /* Fetch the font prefs to be used -- see bug 61883 for details.
      Not all prefs are needed upfront. Some are fallback prefs intended
      for the GFX font sub-system...
 
-  1) unit : assumed to be the same for all language groups -------------
-  font.size.unit = px | pt    XXX could be folded in the size... bug 90440
+  -- attributes for generic fonts --------------------------------------
 
-  2) attributes for generic fonts --------------------------------------
-  font.default.[langGroup] = serif | sans-serif - fallback generic font
-  font.name.[generic].[langGroup] = current user' selected font on the pref dialog
-  font.name-list.[generic].[langGroup] = fontname1, fontname2, ... [factory pre-built list]
-  font.size.[generic].[langGroup] = integer - settable by the user
-  font.size-adjust.[generic].[langGroup] = "float" - settable by the user
-  font.minimum-size.[langGroup] = integer - settable by the user
+  font.default.[langGroup] = serif | sans-serif
+    fallback generic font
+
+  font.name.[generic].[langGroup]
+    current user' selected font on the pref dialog
+
+  font.name-list.[generic].[langGroup] = fontname1, fontname2, ...
+    [factory pre-built list]
+
+  font.size.[generic].[langGroup] = integer
+    settable by the user
+
+  font.size-adjust.[generic].[langGroup] = "float"
+    settable by the user
+
+  font.minimum-size.[langGroup] = integer
+    settable by the user
   */
 
   nsAutoCString langGroup;
-  langGroupAtom->ToUTF8String(langGroup);
+  aLangGroupAtom->ToUTF8String(langGroup);
 
-  prefs->mDefaultVariableFont.size = nsPresContext::CSSPixelsToAppUnits(16);
-  prefs->mDefaultFixedFont.size = nsPresContext::CSSPixelsToAppUnits(13);
+  mDefaultVariableFont.size = nsPresContext::CSSPixelsToAppUnits(16);
+  mDefaultFixedFont.size = nsPresContext::CSSPixelsToAppUnits(13);
 
   nsAutoCString pref;
-
-  // get the current applicable font-size unit
-  enum {eUnit_unknown = -1, eUnit_px, eUnit_pt};
-  int32_t unit = eUnit_px;
-
-  nsAdoptingCString cvalue =
-    Preferences::GetCString("font.size.unit");
-
-  if (!cvalue.IsEmpty()) {
-    if (cvalue.EqualsLiteral("px")) {
-      unit = eUnit_px;
-    }
-    else if (cvalue.EqualsLiteral("pt")) {
-      unit = eUnit_pt;
-    }
-    else {
-      // XXX should really send this warning to the user (Error Console?).
-      // And just default to unit = eUnit_px?
-      NS_WARNING("unexpected font-size unit -- expected: 'px' or 'pt'");
-      unit = eUnit_unknown;
-    }
-  }
 
   // get font.minimum-size.[langGroup]
 
   MAKE_FONT_PREF_KEY(pref, "font.minimum-size.", langGroup);
 
   int32_t size = Preferences::GetInt(pref.get());
-  if (unit == eUnit_px) {
-    prefs->mMinimumFontSize = nsPresContext::CSSPixelsToAppUnits(size);
-  }
-  else if (unit == eUnit_pt) {
-    prefs->mMinimumFontSize = nsPresContext::CSSPointsToAppUnits(size);
-  }
+  mMinimumFontSize = nsPresContext::CSSPixelsToAppUnits(size);
 
+  // clang-format off
   nsFont* fontTypes[] = {
-    &prefs->mDefaultVariableFont,
-    &prefs->mDefaultFixedFont,
-    &prefs->mDefaultSerifFont,
-    &prefs->mDefaultSansSerifFont,
-    &prefs->mDefaultMonospaceFont,
-    &prefs->mDefaultCursiveFont,
-    &prefs->mDefaultFantasyFont
+    &mDefaultVariableFont,
+    &mDefaultFixedFont,
+    &mDefaultSerifFont,
+    &mDefaultSansSerifFont,
+    &mDefaultMonospaceFont,
+    &mDefaultCursiveFont,
+    &mDefaultFantasyFont
   };
+  // clang-format on
   static_assert(MOZ_ARRAY_LENGTH(fontTypes) == eDefaultFont_COUNT,
                 "FontTypes array count is not correct");
 
@@ -188,124 +130,156 @@ StaticPresData::GetFontPrefsForLangHelper(nsIAtom *aLanguage,
 
     nsFont* font = fontTypes[eType];
 
-    // set the default variable font (the other fonts are seen as 'generic' fonts
-    // in GFX and will be queried there when hunting for alternative fonts)
+    // set the default variable font (the other fonts are seen as 'generic'
+    // fonts in GFX and will be queried there when hunting for alternative
+    // fonts)
     if (eType == eDefaultFont_Variable) {
+      // XXX "font.name.variable."?  There is no such pref...
       MAKE_FONT_PREF_KEY(pref, "font.name.variable.", langGroup);
 
-      nsAdoptingString value = Preferences::GetString(pref.get());
+      nsAutoCString value;
+      Preferences::GetCString(pref.get(), value);
       if (!value.IsEmpty()) {
         FontFamilyName defaultVariableName = FontFamilyName::Convert(value);
         FontFamilyType defaultType = defaultVariableName.mType;
-        NS_ASSERTION(defaultType == eFamily_serif ||
-                     defaultType == eFamily_sans_serif,
-                     "default type must be serif or sans-serif");
-        prefs->mDefaultVariableFont.fontlist = FontFamilyList(defaultType);
-      }
-      else {
+        NS_ASSERTION(
+            defaultType == eFamily_serif || defaultType == eFamily_sans_serif,
+            "default type must be serif or sans-serif");
+        mDefaultVariableFont.fontlist = FontFamilyList();
+        mDefaultVariableFont.fontlist.SetDefaultFontType(defaultType);
+        // We create mDefaultVariableFont.fontlist with defaultType as the
+        // fallback font, and not as part of the font list proper. This way,
+        // it can be overwritten should there be a language change.
+      } else {
         MAKE_FONT_PREF_KEY(pref, "font.default.", langGroup);
-        value = Preferences::GetString(pref.get());
+        Preferences::GetCString(pref.get(), value);
         if (!value.IsEmpty()) {
           FontFamilyName defaultVariableName = FontFamilyName::Convert(value);
           FontFamilyType defaultType = defaultVariableName.mType;
-          NS_ASSERTION(defaultType == eFamily_serif ||
-                       defaultType == eFamily_sans_serif,
-                       "default type must be serif or sans-serif");
-          prefs->mDefaultVariableFont.fontlist = FontFamilyList(defaultType);
+          NS_ASSERTION(
+              defaultType == eFamily_serif || defaultType == eFamily_sans_serif,
+              "default type must be serif or sans-serif");
+          mDefaultVariableFont.fontlist = FontFamilyList();
+          mDefaultVariableFont.fontlist.SetDefaultFontType(defaultType);
+          // We create mDefaultVariableFont.fontlist with defaultType as the
+          // (fallback) font, and not as part of the font list proper. This way,
+          // it can be overwritten should there be a language change.
         }
       }
-    }
-    else {
+    } else {
       if (eType == eDefaultFont_Monospace) {
-        // This takes care of the confusion whereby people often expect "monospace"
-        // to have the same default font-size as "-moz-fixed" (this tentative
-        // size may be overwritten with the specific value for "monospace" when
-        // "font.size.monospace.[langGroup]" is read -- see below)
-        prefs->mDefaultMonospaceFont.size = prefs->mDefaultFixedFont.size;
-      }
-      else if (eType != eDefaultFont_Fixed) {
+        // This takes care of the confusion whereby people often expect
+        // "monospace" to have the same default font-size as "-moz-fixed" (this
+        // tentative size may be overwritten with the specific value for
+        // "monospace" when "font.size.monospace.[langGroup]" is read -- see
+        // below)
+        mDefaultMonospaceFont.size = mDefaultFixedFont.size;
+      } else if (eType != eDefaultFont_Fixed) {
         // all the other generic fonts are initialized with the size of the
-        // variable font, but their specific size can supersede later -- see below
-        font->size = prefs->mDefaultVariableFont.size;
+        // variable font, but their specific size can supersede later -- see
+        // below
+        font->size = mDefaultVariableFont.size;
       }
     }
 
     // Bug 84398: for spec purists, a different font-size only applies to the
-    // .variable. and .fixed. fonts and the other fonts should get |font-size-adjust|.
-    // The problem is that only GfxWin has the support for |font-size-adjust|. So for
-    // parity, we enable the ability to set a different font-size on all platforms.
+    // .variable. and .fixed. fonts and the other fonts should get
+    // |font-size-adjust|. The problem is that only GfxWin has the support for
+    // |font-size-adjust|. So for parity, we enable the ability to set a
+    // different font-size on all platforms.
 
     // get font.size.[generic].[langGroup]
-    // size=0 means 'Auto', i.e., generic fonts retain the size of the variable font
+    // size=0 means 'Auto', i.e., generic fonts retain the size of the variable
+    // font
     MAKE_FONT_PREF_KEY(pref, "font.size", generic_dot_langGroup);
     size = Preferences::GetInt(pref.get());
     if (size > 0) {
-      if (unit == eUnit_px) {
-        font->size = nsPresContext::CSSPixelsToAppUnits(size);
-      }
-      else if (unit == eUnit_pt) {
-        font->size = nsPresContext::CSSPointsToAppUnits(size);
-      }
+      font->size = nsPresContext::CSSPixelsToAppUnits(size);
     }
 
     // get font.size-adjust.[generic].[langGroup]
     // XXX only applicable on GFX ports that handle |font-size-adjust|
     MAKE_FONT_PREF_KEY(pref, "font.size-adjust", generic_dot_langGroup);
-    cvalue = Preferences::GetCString(pref.get());
+    nsAutoCString cvalue;
+    Preferences::GetCString(pref.get(), cvalue);
     if (!cvalue.IsEmpty()) {
       font->sizeAdjust = (float)atof(cvalue.get());
     }
 
 #ifdef DEBUG_rbs
     printf("%s Family-list:%s size:%d sizeAdjust:%.2f\n",
-           generic_dot_langGroup.get(),
-           NS_ConvertUTF16toUTF8(font->name).get(), font->size,
-           font->sizeAdjust);
+           generic_dot_langGroup.get(), NS_ConvertUTF16toUTF8(font->name).get(),
+           font->size, font->sizeAdjust);
 #endif
   }
+}
+
+nsAtom* StaticPresData::GetLangGroup(nsAtom* aLanguage,
+                                     bool* aNeedsToCache) const {
+  nsAtom* langGroupAtom = nullptr;
+  langGroupAtom = mLangService->GetLanguageGroup(aLanguage, aNeedsToCache);
+  if (!langGroupAtom) {
+    langGroupAtom = nsGkAtoms::x_western;  // Assume x-western is safe...
+  }
+  return langGroupAtom;
+}
+
+already_AddRefed<nsAtom> StaticPresData::GetUncachedLangGroup(
+    nsAtom* aLanguage) const {
+  RefPtr<nsAtom> langGroupAtom =
+      mLangService->GetUncachedLanguageGroup(aLanguage);
+  if (!langGroupAtom) {
+    langGroupAtom = nsGkAtoms::x_western;  // Assume x-western is safe...
+  }
+  return langGroupAtom.forget();
+}
+
+const LangGroupFontPrefs* StaticPresData::GetFontPrefsForLangHelper(
+    nsAtom* aLanguage, const LangGroupFontPrefs* aPrefs,
+    bool* aNeedsToCache) const {
+  // Get language group for aLanguage:
+  MOZ_ASSERT(aLanguage);
+  MOZ_ASSERT(mLangService);
+  MOZ_ASSERT(aPrefs);
+
+  nsAtom* langGroupAtom = GetLangGroup(aLanguage, aNeedsToCache);
+
+  if (aNeedsToCache && *aNeedsToCache) {
+    return nullptr;
+  }
+
+  LangGroupFontPrefs* prefs = const_cast<LangGroupFontPrefs*>(aPrefs);
+  if (prefs->mLangGroup) {  // if initialized
+    DebugOnly<uint32_t> count = 0;
+    for (;;) {
+      NS_ASSERTION(++count < 35, "Lang group count exceeded!!!");
+      if (prefs->mLangGroup == langGroupAtom) {
+        return prefs;
+      }
+      if (!prefs->mNext) {
+        break;
+      }
+      prefs = prefs->mNext.get();
+    }
+    if (aNeedsToCache) {
+      *aNeedsToCache = true;
+      return nullptr;
+    }
+    AssertIsMainThreadOrServoFontMetricsLocked();
+    // nothing cached, so go on and fetch the prefs for this lang group:
+    prefs->mNext = MakeUnique<LangGroupFontPrefs>();
+    prefs = prefs->mNext.get();
+  }
+
+  if (aNeedsToCache) {
+    *aNeedsToCache = true;
+    return nullptr;
+  }
+
+  AssertIsMainThreadOrServoFontMetricsLocked();
+  prefs->Initialize(langGroupAtom);
 
   return prefs;
 }
 
-const nsFont*
-StaticPresData::GetDefaultFontHelper(uint8_t aFontID, nsIAtom *aLanguage,
-                                     const LangGroupFontPrefs* aPrefs) const
-{
-  MOZ_ASSERT(aLanguage);
-  MOZ_ASSERT(aPrefs);
-
-  const nsFont *font;
-  switch (aFontID) {
-    // Special (our default variable width font and fixed width font)
-    case kPresContext_DefaultVariableFont_ID:
-      font = &aPrefs->mDefaultVariableFont;
-      break;
-    case kPresContext_DefaultFixedFont_ID:
-      font = &aPrefs->mDefaultFixedFont;
-      break;
-    // CSS
-    case kGenericFont_serif:
-      font = &aPrefs->mDefaultSerifFont;
-      break;
-    case kGenericFont_sans_serif:
-      font = &aPrefs->mDefaultSansSerifFont;
-      break;
-    case kGenericFont_monospace:
-      font = &aPrefs->mDefaultMonospaceFont;
-      break;
-    case kGenericFont_cursive:
-      font = &aPrefs->mDefaultCursiveFont;
-      break;
-    case kGenericFont_fantasy:
-      font = &aPrefs->mDefaultFantasyFont;
-      break;
-    default:
-      font = nullptr;
-      NS_ERROR("invalid arg");
-      break;
-  }
-  return font;
-}
-
-
-} // namespace mozilla
+}  // namespace mozilla

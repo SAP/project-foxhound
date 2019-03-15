@@ -4,16 +4,24 @@
 
 "use strict";
 
-add_task(function*() {
+add_task(async function() {
   info("Check find button existence and functionality");
+  CustomizableUI.addWidgetToArea("find-button", CustomizableUI.AREA_FIXED_OVERFLOW_PANEL);
+  registerCleanupFunction(() => CustomizableUI.reset());
 
-  yield PanelUI.show();
+  await waitForOverflowButtonShown();
+
+  await document.getElementById("nav-bar").overflowable.show();
   info("Menu panel was opened");
 
   let findButton = document.getElementById("find-button");
   ok(findButton, "Find button exists in Panel Menu");
 
+  let findBarPromise = gBrowser.isFindBarInitialized() ?
+    null : BrowserTestUtils.waitForEvent(gBrowser.selectedTab, "TabFindInitialized");
+
   findButton.click();
+  await findBarPromise;
   ok(!gFindBar.hasAttribute("hidden"), "Findbar opened successfully");
 
   // close find bar

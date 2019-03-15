@@ -11,12 +11,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-const { utils: Cu } = Components;
-const { Sqlite } = Cu.import("resource://gre/modules/Sqlite.jsm", {});
-const { Task } = Cu.import("resource://gre/modules/Task.jsm", {});
-const { Kinto } = Cu.import("resource://services-common/kinto-offline-client.js", {});
-
-const SQLITE_PATH = "kinto.sqlite";
+const { Sqlite } = ChromeUtils.import("resource://gre/modules/Sqlite.jsm", {});
+const { Kinto } = ChromeUtils.import("resource://services-common/kinto-offline-client.js", {});
 
 /**
  * Filter and sort list against provided filters and order.
@@ -212,24 +208,22 @@ class FirefoxAdapter extends Kinto.adapters.BaseAdapter {
    *
    * This will be called automatically by open().
    */
-  static _init(connection) {
-    return Task.spawn(function* () {
-      yield connection.executeTransaction(function* doSetup() {
-        const schema = yield connection.getSchemaVersion();
+  static async _init(connection) {
+    await connection.executeTransaction(async function doSetup() {
+      const schema = await connection.getSchemaVersion();
 
-        if (schema == 0) {
+      if (schema == 0) {
 
-          for (let statementName of createStatements) {
-            yield connection.execute(statements[statementName]);
-          }
-
-          yield connection.setSchemaVersion(currentSchemaVersion);
-        } else if (schema != 1) {
-          throw new Error("Unknown database schema: " + schema);
+        for (let statementName of createStatements) {
+          await connection.execute(statements[statementName]);
         }
-      });
-      return connection;
+
+        await connection.setSchemaVersion(currentSchemaVersion);
+      } else if (schema != 1) {
+        throw new Error("Unknown database schema: " + schema);
+      }
     });
+    return connection;
   }
 
   _executeStatement(statement, params) {
@@ -248,7 +242,16 @@ class FirefoxAdapter extends Kinto.adapters.BaseAdapter {
    */
   static async openConnection(options) {
     const opts = Object.assign({}, { sharedMemoryCache: false }, options);
-    return await Sqlite.openConnection(opts).then(this._init);
+    const conn = await Sqlite.openConnection(opts).then(this._init);
+    try {
+      Sqlite.shutdown.addBlocker("Kinto storage adapter connection closing",
+                                 () => conn.close());
+    } catch (e) {
+      // It's too late to block shutdown, just close the connection.
+      await conn.close();
+      throw e;
+    }
+    return conn;
   }
 
   clear() {
@@ -261,27 +264,39 @@ class FirefoxAdapter extends Kinto.adapters.BaseAdapter {
     const conn = this._connection;
     const collection = this.collection;
 
-    return conn.executeTransaction(function* doExecuteTransaction() {
+    return conn.executeTransaction(async function doExecuteTransaction() {
       // Preload specified records from DB, within transaction.
-      const parameters = [
-        collection,
-        ...options.preload,
-      ];
-      const placeholders = options.preload.map(_ => "?");
-      const stmt = statements.listRecordsById + "(" + placeholders.join(",") + ");";
-      const rows = yield conn.execute(stmt, parameters);
 
-      const preloaded = rows.reduce((acc, row) => {
-        const record = JSON.parse(row.getResultByName("record"));
-        acc[row.getResultByName("record_id")] = record;
-        return acc;
-      }, {});
+      // if options.preload has more elements than the sqlite variable
+      // limit, split it up.
+      const limit = 100;
+      let preloaded = {};
+      let preload;
+      let more = options.preload;
 
+      while (more.length > 0) {
+        preload = more.slice(0, limit);
+        more = more.slice(limit, more.length);
+
+        const parameters = [
+          collection,
+          ...preload,
+        ];
+        const placeholders = preload.map(_ => "?");
+        const stmt = statements.listRecordsById + "(" + placeholders.join(",") + ");";
+        const rows = await conn.execute(stmt, parameters);
+
+        rows.reduce((acc, row) => {
+          const record = JSON.parse(row.getResultByName("record"));
+          acc[row.getResultByName("record_id")] = record;
+          return acc;
+        }, preloaded);
+      }
       const proxy = transactionProxy(collection, preloaded);
       result = callback(proxy);
 
       for (let { statement, params } of proxy.operations) {
-        yield conn.executeCached(statement, params);
+        await conn.executeCached(statement, params);
       }
     }, conn.TRANSACTION_EXCLUSIVE).then(_ => result);
   }
@@ -327,39 +342,37 @@ class FirefoxAdapter extends Kinto.adapters.BaseAdapter {
    * @param  {Array} records.
    * @return {Array} imported records.
    */
-  loadDump(records) {
+  async loadDump(records) {
     const connection = this._connection;
     const collection_name = this.collection;
-    return Task.spawn(function* () {
-      yield connection.executeTransaction(function* doImport() {
-        for (let record of records) {
-          const params = {
-            collection_name,
-            record_id: record.id,
-            record: JSON.stringify(record),
-          };
-          yield connection.execute(statements.importData, params);
-        }
-        const lastModified = Math.max(...records.map(record => record.last_modified));
+    await connection.executeTransaction(async function doImport() {
+      for (let record of records) {
         const params = {
           collection_name,
+          record_id: record.id,
+          record: JSON.stringify(record),
         };
-        const previousLastModified = yield connection.execute(
-          statements.getLastModified, params).then(result => {
-            return result.length > 0
-              ? result[0].getResultByName("last_modified")
-              : -1;
-          });
-        if (lastModified > previousLastModified) {
-          const params = {
-            collection_name,
-            last_modified: lastModified,
-          };
-          yield connection.execute(statements.saveLastModified, params);
-        }
-      });
-      return records;
+        await connection.execute(statements.importData, params);
+      }
+      const lastModified = Math.max(...records.map(record => record.last_modified));
+      const params = {
+        collection_name,
+      };
+      const previousLastModified = await connection.execute(
+        statements.getLastModified, params).then(result => {
+          return result.length > 0
+            ? result[0].getResultByName("last_modified")
+            : -1;
+        });
+      if (lastModified > previousLastModified) {
+        const params = {
+          collection_name,
+          last_modified: lastModified,
+        };
+        await connection.execute(statements.saveLastModified, params);
+      }
     });
+    return records;
   }
 
   saveLastModified(lastModified) {
@@ -407,9 +420,9 @@ class FirefoxAdapter extends Kinto.adapters.BaseAdapter {
       throw new Error("The storage adapter is not open");
     }
 
-    return this._connection.executeTransaction(function* (conn) {
+    return this._connection.executeTransaction(async function(conn) {
       const promises = [];
-      yield conn.execute(statements.scanAllRecords, null, function(row) {
+      await conn.execute(statements.scanAllRecords, null, function(row) {
         const record = JSON.parse(row.getResultByName("record"));
         const record_id = row.getResultByName("record_id");
         const collection_name = row.getResultByName("collection_name");
@@ -428,8 +441,8 @@ class FirefoxAdapter extends Kinto.adapters.BaseAdapter {
           }));
         }
       });
-      yield Promise.all(promises);
-      yield conn.execute(statements.clearCollectionMetadata);
+      await Promise.all(promises);
+      await conn.execute(statements.clearCollectionMetadata);
     });
   }
 }
@@ -449,8 +462,8 @@ function transactionProxy(collection, preloaded) {
         params: {
           collection_name: collection,
           record_id: record.id,
-          record: JSON.stringify(record)
-        }
+          record: JSON.stringify(record),
+        },
       });
     },
 
@@ -460,8 +473,8 @@ function transactionProxy(collection, preloaded) {
         params: {
           collection_name: collection,
           record_id: record.id,
-          record: JSON.stringify(record)
-        }
+          record: JSON.stringify(record),
+        },
       });
     },
 
@@ -470,17 +483,17 @@ function transactionProxy(collection, preloaded) {
         statement: statements.deleteData,
         params: {
           collection_name: collection,
-          record_id: id
-        }
+          record_id: id,
+        },
       });
     },
 
     get(id) {
       // Gecko JS engine outputs undesired warnings if id is not in preloaded.
       return id in preloaded ? preloaded[id] : undefined;
-    }
+    },
   };
 }
 this.FirefoxAdapter = FirefoxAdapter;
 
-this.EXPORTED_SYMBOLS = ["FirefoxAdapter"];
+var EXPORTED_SYMBOLS = ["FirefoxAdapter"];

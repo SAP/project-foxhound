@@ -21,8 +21,7 @@ function Spinner(props, context) {
 
   const ITEM_HEIGHT = 2.5,
         VIEWPORT_SIZE = 7,
-        VIEWPORT_COUNT = 5,
-        SCROLL_TIMEOUT = 100;
+        VIEWPORT_COUNT = 5;
 
   Spinner.prototype = {
     /**
@@ -53,21 +52,21 @@ function Spinner(props, context) {
 
       this.state = {
         items: [],
-        isScrolling: false
+        isScrolling: false,
       };
       this.props = {
         setValue, getDisplayString, viewportSize, rootFontSize,
         // We can assume that the viewportSize is an odd number. Calculate how many
         // items we need to insert on top of the spinner so that the selected is at
         // the center. Ex: if viewportSize is 5, we need 2 items on top.
-        viewportTopOffset: (viewportSize - 1) / 2
+        viewportTopOffset: (viewportSize - 1) / 2,
       };
       this.elements = {
         container: spinnerElement.querySelector(".spinner-container"),
         spinner: spinnerElement.querySelector(".spinner"),
         up: spinnerElement.querySelector(".up"),
         down: spinnerElement.querySelector(".down"),
-        itemsViewElements: []
+        itemsViewElements: [],
       };
 
       this.elements.spinner.style.height = (ITEM_HEIGHT * viewportSize) + "rem";
@@ -124,8 +123,6 @@ function Spinner(props, context) {
     /**
      * Whenever scroll event is detected:
      * - Update the index state
-     * - If a smooth scroll has reached its destination, set [isScrolling] state
-     *   to false
      * - If the value has changed, update the [value] state and call [setValue]
      * - If infinite scrolling is on, reset the scrolling position if necessary
      */
@@ -138,14 +135,8 @@ function Spinner(props, context) {
 
       const value = itemsView[this.state.index + viewportTopOffset].value;
 
-      // Check if smooth scrolling has reached its destination.
-      // This prevents input box jump when input box changes values.
-      if (this.state.value == value && this.state.isScrolling) {
-        this.state.isScrolling = false;
-      }
-
-      // Call setValue if value has changed, and is not smooth scrolling
-      if (this.state.value != value && !this.state.isScrolling) {
+      // Call setValue if value has changed
+      if (this.state.value != value) {
         this.state.value = value;
         this.props.setValue(value);
       }
@@ -161,15 +152,14 @@ function Spinner(props, context) {
         }
       }
 
-      // Use a timer to detect if a scroll event has not fired within some time
-      // (defined in SCROLL_TIMEOUT). This is required because we need to hide
-      // highlight and hover state when user is scrolling.
-      clearTimeout(this.state.scrollTimer);
       this.elements.spinner.classList.add("scrolling");
-      this.state.scrollTimer = setTimeout(() => {
-        this.elements.spinner.classList.remove("scrolling");
-        this.elements.spinner.dispatchEvent(new CustomEvent("ScrollStop"));
-      }, SCROLL_TIMEOUT);
+    },
+
+    /**
+     * Remove the "scrolling" state on scrollend.
+     */
+    _onScrollend() {
+      this.elements.spinner.classList.remove("scrolling");
     },
 
     /**
@@ -272,6 +262,7 @@ function Spinner(props, context) {
       const { spinner, container } = this.elements;
 
       spinner.addEventListener("scroll", this, { passive: true });
+      spinner.addEventListener("scrollend", this, { passive: true });
       container.addEventListener("mouseup", this, { passive: true });
       container.addEventListener("mousedown", this, { passive: true });
     },
@@ -290,21 +281,25 @@ function Spinner(props, context) {
           this._onScroll();
           break;
         }
+        case "scrollend": {
+          this._onScrollend();
+          break;
+        }
         case "mousedown": {
           this.state.mouseState = {
             down: true,
             layerX: event.layerX,
-            layerY: event.layerY
+            layerY: event.layerY,
           };
           if (event.target == up) {
             // An "active" class is needed to simulate :active pseudo-class
             // because element is not focused.
             event.target.classList.add("active");
-            this._smoothScrollToIndex(index + 1);
+            this._smoothScrollToIndex(index - 1);
           }
           if (event.target == down) {
             event.target.classList.add("active");
-            this._smoothScrollToIndex(index - 1);
+            this._smoothScrollToIndex(index + 1);
           }
           if (event.target.parentNode == spinner) {
             // Listen to dragging events
@@ -444,12 +439,8 @@ function Spinner(props, context) {
     _smoothScrollToIndex(index) {
       const element = this.elements.spinner.children[index];
       if (element) {
-        // Set the isScrolling flag before smooth scrolling begins
-        // and remove it when it has reached the destination.
-        // This prevents input box jump when input box changes values
-        this.state.isScrolling = true;
         element.scrollIntoView({
-          behavior: "smooth", block: "start"
+          behavior: "smooth", block: "start",
         });
       }
     },
@@ -509,6 +500,6 @@ function Spinner(props, context) {
         }
       }
       return false;
-    }
+    },
   };
 }

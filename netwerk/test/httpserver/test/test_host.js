@@ -9,15 +9,16 @@
  * and used in HTTP requests and responses.
  */
 
+"use strict";
+
 const PORT = 4444;
 const FAKE_PORT_ONE = 8888;
 const FAKE_PORT_TWO = 8889;
 
-var srv, id;
+let srv, id;
 
-function run_test()
-{
-  dumpn("*** run_test");
+add_task(async function run_test1() {
+  dump("*** run_test1");
 
   srv = createServer();
 
@@ -34,155 +35,126 @@ function run_test()
   // The default location is http://localhost:PORT, where PORT is whatever you
   // provided when you started the server.  http://127.0.0.1:PORT is also part
   // of the default set of locations.
-  do_check_eq(id.primaryScheme, "http");
-  do_check_eq(id.primaryHost, "localhost");
-  do_check_eq(id.primaryPort, FAKE_PORT_ONE);
-  do_check_true(id.has("http", "localhost", FAKE_PORT_ONE));
-  do_check_true(id.has("http", "127.0.0.1", FAKE_PORT_ONE));
+  Assert.equal(id.primaryScheme, "http");
+  Assert.equal(id.primaryHost, "localhost");
+  Assert.equal(id.primaryPort, FAKE_PORT_ONE);
+  Assert.ok(id.has("http", "localhost", FAKE_PORT_ONE));
+  Assert.ok(id.has("http", "127.0.0.1", FAKE_PORT_ONE));
 
   // This should be a nop.
   id.add("http", "localhost", FAKE_PORT_ONE);
-  do_check_eq(id.primaryScheme, "http");
-  do_check_eq(id.primaryHost, "localhost");
-  do_check_eq(id.primaryPort, FAKE_PORT_ONE);
-  do_check_true(id.has("http", "localhost", FAKE_PORT_ONE));
-  do_check_true(id.has("http", "127.0.0.1", FAKE_PORT_ONE));
+  Assert.equal(id.primaryScheme, "http");
+  Assert.equal(id.primaryHost, "localhost");
+  Assert.equal(id.primaryPort, FAKE_PORT_ONE);
+  Assert.ok(id.has("http", "localhost", FAKE_PORT_ONE));
+  Assert.ok(id.has("http", "127.0.0.1", FAKE_PORT_ONE));
 
   // Change the primary location and make sure all the getters work correctly.
   id.setPrimary("http", "127.0.0.1", FAKE_PORT_ONE);
-  do_check_eq(id.primaryScheme, "http");
-  do_check_eq(id.primaryHost, "127.0.0.1");
-  do_check_eq(id.primaryPort, FAKE_PORT_ONE);
-  do_check_true(id.has("http", "localhost", FAKE_PORT_ONE));
-  do_check_true(id.has("http", "127.0.0.1", FAKE_PORT_ONE));
+  Assert.equal(id.primaryScheme, "http");
+  Assert.equal(id.primaryHost, "127.0.0.1");
+  Assert.equal(id.primaryPort, FAKE_PORT_ONE);
+  Assert.ok(id.has("http", "localhost", FAKE_PORT_ONE));
+  Assert.ok(id.has("http", "127.0.0.1", FAKE_PORT_ONE));
 
   // Okay, now remove the primary location -- we fall back to the original
   // location.
   id.remove("http", "127.0.0.1", FAKE_PORT_ONE);
-  do_check_eq(id.primaryScheme, "http");
-  do_check_eq(id.primaryHost, "localhost");
-  do_check_eq(id.primaryPort, FAKE_PORT_ONE);
-  do_check_true(id.has("http", "localhost", FAKE_PORT_ONE));
-  do_check_false(id.has("http", "127.0.0.1", FAKE_PORT_ONE));
+  Assert.equal(id.primaryScheme, "http");
+  Assert.equal(id.primaryHost, "localhost");
+  Assert.equal(id.primaryPort, FAKE_PORT_ONE);
+  Assert.ok(id.has("http", "localhost", FAKE_PORT_ONE));
+  Assert.ok(!id.has("http", "127.0.0.1", FAKE_PORT_ONE));
 
   // You can't remove every location -- try this and the original default
   // location will be silently readded.
   id.remove("http", "localhost", FAKE_PORT_ONE);
-  do_check_eq(id.primaryScheme, "http");
-  do_check_eq(id.primaryHost, "localhost");
-  do_check_eq(id.primaryPort, FAKE_PORT_ONE);
-  do_check_true(id.has("http", "localhost", FAKE_PORT_ONE));
-  do_check_false(id.has("http", "127.0.0.1", FAKE_PORT_ONE));
+  Assert.equal(id.primaryScheme, "http");
+  Assert.equal(id.primaryHost, "localhost");
+  Assert.equal(id.primaryPort, FAKE_PORT_ONE);
+  Assert.ok(id.has("http", "localhost", FAKE_PORT_ONE));
+  Assert.ok(!id.has("http", "127.0.0.1", FAKE_PORT_ONE));
 
   // Okay, now that we've exercised that behavior, shut down the server and
   // restart it on the correct port, to exercise port-changing behaviors at
   // server start and stop.
-  do_test_pending();
-  srv.stop(function()
-  {
-    try
-    {
-      do_test_pending();
-      run_test_2();
-    }
-    finally
-    {
-      do_test_finished();
-    }
-  });
-}
 
-function run_test_2()
-{
-  dumpn("*** run_test_2");
+  await new Promise(resolve => srv.stop(resolve));
+});
 
-  do_test_finished();
+add_task(async function run_test_2() {
+  dump("*** run_test_2");
 
   // Our primary location is gone because it was dependent on the port on which
   // the server was running.
   checkPrimariesThrow(id);
-  do_check_false(id.has("http", "127.0.0.1", FAKE_PORT_ONE));
-  do_check_false(id.has("http", "localhost", FAKE_PORT_ONE));
+  Assert.ok(!id.has("http", "127.0.0.1", FAKE_PORT_ONE));
+  Assert.ok(!id.has("http", "localhost", FAKE_PORT_ONE));
 
   srv.start(FAKE_PORT_TWO);
 
   // We should have picked up http://localhost:8889 as our primary location now
   // that we've restarted.
-  do_check_eq(id.primaryScheme, "http");
-  do_check_eq(id.primaryHost, "localhost", FAKE_PORT_TWO);
-  do_check_eq(id.primaryPort, FAKE_PORT_TWO);
-  do_check_false(id.has("http", "localhost", FAKE_PORT_ONE));
-  do_check_false(id.has("http", "127.0.0.1", FAKE_PORT_ONE));
-  do_check_true(id.has("http", "localhost", FAKE_PORT_TWO));
-  do_check_true(id.has("http", "127.0.0.1", FAKE_PORT_TWO));
+  Assert.equal(id.primaryScheme, "http");
+  Assert.equal(id.primaryHost, "localhost");
+  Assert.equal(id.primaryPort, FAKE_PORT_TWO);
+  Assert.ok(!id.has("http", "localhost", FAKE_PORT_ONE));
+  Assert.ok(!id.has("http", "127.0.0.1", FAKE_PORT_ONE));
+  Assert.ok(id.has("http", "localhost", FAKE_PORT_TWO));
+  Assert.ok(id.has("http", "127.0.0.1", FAKE_PORT_TWO));
 
   // Now we're going to see what happens when we shut down with a primary
   // location that wasn't a default.  That location should persist, and the
   // default we remove should still not be present.
   id.setPrimary("http", "example.com", FAKE_PORT_TWO);
-  do_check_true(id.has("http", "example.com", FAKE_PORT_TWO));
-  do_check_true(id.has("http", "127.0.0.1", FAKE_PORT_TWO));
-  do_check_true(id.has("http", "localhost", FAKE_PORT_TWO));
-  do_check_false(id.has("http", "127.0.0.1", FAKE_PORT_ONE));
-  do_check_false(id.has("http", "localhost", FAKE_PORT_ONE));
+  Assert.ok(id.has("http", "example.com", FAKE_PORT_TWO));
+  Assert.ok(id.has("http", "127.0.0.1", FAKE_PORT_TWO));
+  Assert.ok(id.has("http", "localhost", FAKE_PORT_TWO));
+  Assert.ok(!id.has("http", "127.0.0.1", FAKE_PORT_ONE));
+  Assert.ok(!id.has("http", "localhost", FAKE_PORT_ONE));
 
   id.remove("http", "localhost", FAKE_PORT_TWO);
-  do_check_true(id.has("http", "example.com", FAKE_PORT_TWO));
-  do_check_false(id.has("http", "localhost", FAKE_PORT_TWO));
-  do_check_true(id.has("http", "127.0.0.1", FAKE_PORT_TWO));
-  do_check_false(id.has("http", "localhost", FAKE_PORT_ONE));
-  do_check_false(id.has("http", "127.0.0.1", FAKE_PORT_ONE));
+  Assert.ok(id.has("http", "example.com", FAKE_PORT_TWO));
+  Assert.ok(!id.has("http", "localhost", FAKE_PORT_TWO));
+  Assert.ok(id.has("http", "127.0.0.1", FAKE_PORT_TWO));
+  Assert.ok(!id.has("http", "localhost", FAKE_PORT_ONE));
+  Assert.ok(!id.has("http", "127.0.0.1", FAKE_PORT_ONE));
 
   id.remove("http", "127.0.0.1", FAKE_PORT_TWO);
-  do_check_true(id.has("http", "example.com", FAKE_PORT_TWO));
-  do_check_false(id.has("http", "localhost", FAKE_PORT_TWO));
-  do_check_false(id.has("http", "127.0.0.1", FAKE_PORT_TWO));
-  do_check_false(id.has("http", "localhost", FAKE_PORT_ONE));
-  do_check_false(id.has("http", "127.0.0.1", FAKE_PORT_ONE));
+  Assert.ok(id.has("http", "example.com", FAKE_PORT_TWO));
+  Assert.ok(!id.has("http", "localhost", FAKE_PORT_TWO));
+  Assert.ok(!id.has("http", "127.0.0.1", FAKE_PORT_TWO));
+  Assert.ok(!id.has("http", "localhost", FAKE_PORT_ONE));
+  Assert.ok(!id.has("http", "127.0.0.1", FAKE_PORT_ONE));
 
-  do_test_pending();
-  srv.stop(function()
-  {
-    try
-    {
-      do_test_pending();
-      run_test_3();
-    }
-    finally
-    {
-      do_test_finished();
-    }
-  });
-}
+  await new Promise(resolve => srv.stop(resolve));
+});
 
-function run_test_3()
-{
-  dumpn("*** run_test_3");
-
-  do_test_finished();
+add_task(async function run_test_3() {
+  dump("*** run_test_3");
 
   // Only the default added location disappears; any others stay around,
   // possibly as the primary location.  We may have removed the default primary
   // location, but the one we set manually should persist here.
-  do_check_eq(id.primaryScheme, "http");
-  do_check_eq(id.primaryHost, "example.com");
-  do_check_eq(id.primaryPort, FAKE_PORT_TWO);
-  do_check_true(id.has("http", "example.com", FAKE_PORT_TWO));
-  do_check_false(id.has("http", "localhost", FAKE_PORT_TWO));
-  do_check_false(id.has("http", "127.0.0.1", FAKE_PORT_TWO));
-  do_check_false(id.has("http", "localhost", FAKE_PORT_ONE));
-  do_check_false(id.has("http", "127.0.0.1", FAKE_PORT_ONE));
+  Assert.equal(id.primaryScheme, "http");
+  Assert.equal(id.primaryHost, "example.com");
+  Assert.equal(id.primaryPort, FAKE_PORT_TWO);
+  Assert.ok(id.has("http", "example.com", FAKE_PORT_TWO));
+  Assert.ok(!id.has("http", "localhost", FAKE_PORT_TWO));
+  Assert.ok(!id.has("http", "127.0.0.1", FAKE_PORT_TWO));
+  Assert.ok(!id.has("http", "localhost", FAKE_PORT_ONE));
+  Assert.ok(!id.has("http", "127.0.0.1", FAKE_PORT_ONE));
 
   srv.start(PORT);
 
   // Starting always adds HTTP entries for 127.0.0.1:port and localhost:port.
-  do_check_true(id.has("http", "example.com", FAKE_PORT_TWO));
-  do_check_false(id.has("http", "localhost", FAKE_PORT_TWO));
-  do_check_false(id.has("http", "127.0.0.1", FAKE_PORT_TWO));
-  do_check_false(id.has("http", "localhost", FAKE_PORT_ONE));
-  do_check_false(id.has("http", "127.0.0.1", FAKE_PORT_ONE));
-  do_check_true(id.has("http", "localhost", PORT));
-  do_check_true(id.has("http", "127.0.0.1", PORT));
+  Assert.ok(id.has("http", "example.com", FAKE_PORT_TWO));
+  Assert.ok(!id.has("http", "localhost", FAKE_PORT_TWO));
+  Assert.ok(!id.has("http", "127.0.0.1", FAKE_PORT_TWO));
+  Assert.ok(!id.has("http", "localhost", FAKE_PORT_ONE));
+  Assert.ok(!id.has("http", "127.0.0.1", FAKE_PORT_ONE));
+  Assert.ok(id.has("http", "localhost", PORT));
+  Assert.ok(id.has("http", "127.0.0.1", PORT));
 
   // Remove the primary location we'd left set from last time.
   id.remove("http", "example.com", FAKE_PORT_TWO);
@@ -194,25 +166,28 @@ function run_test_3()
   // Make sure we don't have anything lying around from running on either the
   // first or the second port -- all we should have is our generated default,
   // plus the additional port to test "portless" hostport variants.
-  do_check_true(id.has("http", "localhost", 80));
-  do_check_eq(id.primaryScheme, "http");
-  do_check_eq(id.primaryHost, "localhost");
-  do_check_eq(id.primaryPort, PORT);
-  do_check_true(id.has("http", "localhost", PORT));
-  do_check_true(id.has("http", "127.0.0.1", PORT));
-  do_check_false(id.has("http", "localhost", FAKE_PORT_ONE));
-  do_check_false(id.has("http", "127.0.0.1", FAKE_PORT_ONE));
-  do_check_false(id.has("http", "example.com", FAKE_PORT_TWO));
-  do_check_false(id.has("http", "localhost", FAKE_PORT_TWO));
-  do_check_false(id.has("http", "127.0.0.1", FAKE_PORT_TWO));
+  Assert.ok(id.has("http", "localhost", 80));
+  Assert.equal(id.primaryScheme, "http");
+  Assert.equal(id.primaryHost, "localhost");
+  Assert.equal(id.primaryPort, PORT);
+  Assert.ok(id.has("http", "localhost", PORT));
+  Assert.ok(id.has("http", "127.0.0.1", PORT));
+  Assert.ok(!id.has("http", "localhost", FAKE_PORT_ONE));
+  Assert.ok(!id.has("http", "127.0.0.1", FAKE_PORT_ONE));
+  Assert.ok(!id.has("http", "example.com", FAKE_PORT_TWO));
+  Assert.ok(!id.has("http", "localhost", FAKE_PORT_TWO));
+  Assert.ok(!id.has("http", "127.0.0.1", FAKE_PORT_TWO));
 
   // Okay, finally done with identity testing.  Our primary location is the one
   // we want it to be, so we're off!
-  runRawTests(tests, testComplete(srv));
-}
+  await new Promise(resolve => runRawTests(tests, resolve, (idx) => dump(`running test no ${idx}`)));
+
+  // Finally shut down the server.
+  await new Promise(resolve => srv.stop(resolve));
+});
 
 
-/*********************
+/** *******************
  * UTILITY FUNCTIONS *
  *********************/
 
@@ -220,59 +195,48 @@ function run_test_3()
  * Verifies that all .primary* getters on a server identity correctly throw
  * NS_ERROR_NOT_INITIALIZED.
  *
- * @param id : nsIHttpServerIdentity
+ * @param aId : nsIHttpServerIdentity
  *   the server identity to test
  */
-function checkPrimariesThrow(id)
-{
-  var threw = false;
-  try
-  {
-    id.primaryScheme;
+function checkPrimariesThrow(aId) {
+  let threw = false;
+  try {
+    aId.primaryScheme;
+  } catch (e) {
+    threw = e.result === Cr.NS_ERROR_NOT_INITIALIZED;
   }
-  catch (e)
-  {
-    threw = e === Cr.NS_ERROR_NOT_INITIALIZED;
-  }
-  do_check_true(threw);
+  Assert.ok(threw);
 
   threw = false;
-  try
-  {
-    id.primaryHost;
+  try {
+    aId.primaryHost;
+  } catch (e) {
+    threw = e.result === Cr.NS_ERROR_NOT_INITIALIZED;
   }
-  catch (e)
-  {
-    threw = e === Cr.NS_ERROR_NOT_INITIALIZED;
-  }
-  do_check_true(threw);
+  Assert.ok(threw);
 
   threw = false;
-  try
-  {
-    id.primaryPort;
+  try {
+    aId.primaryPort;
+  } catch (e) {
+    threw = e.result === Cr.NS_ERROR_NOT_INITIALIZED;
   }
-  catch (e)
-  {
-    threw = e === Cr.NS_ERROR_NOT_INITIALIZED;
-  }
-  do_check_true(threw);
+  Assert.ok(threw);
 }
 
 /**
  * Utility function to check for a 400 response.
  */
-function check400(data)
-{
-  var iter = LineIterator(data);
+function check400(aData) {
+  let iter = LineIterator(aData);
 
   // Status-Line
-  var { value: firstLine } = iter.next();
-  do_check_eq(firstLine.substring(0, HTTP_400_LEADER_LENGTH), HTTP_400_LEADER);
+  let { value: firstLine } = iter.next();
+  Assert.equal(firstLine.substring(0, HTTP_400_LEADER_LENGTH), HTTP_400_LEADER);
 }
 
 
-/***************
+/** *************
  * BEGIN TESTS *
  ***************/
 
@@ -284,24 +248,22 @@ var tests = [];
 
 // HTTP/1.0 request, to ensure we see our default scheme/host/port
 
-function http10Request(request, response)
-{
+function http10Request(request, response) {
   writeDetails(request, response);
   response.setStatusLine("1.0", 200, "TEST PASSED");
 }
 data = "GET /http/1.0-request HTTP/1.0\r\n" +
        "\r\n";
-function check10(data)
-{
-  var iter = LineIterator(data);
+function check10(aData) {
+  let iter = LineIterator(aData);
 
   // Status-Line
-  do_check_eq(iter.next().value, "HTTP/1.0 200 TEST PASSED");
+  Assert.equal(iter.next().value, "HTTP/1.0 200 TEST PASSED");
 
   skipHeaders(iter);
 
   // Okay, next line must be the data we expected to be written
-  var body =
+  let body =
     [
      "Method:  GET",
      "Path:    /http/1.0-request",
@@ -314,7 +276,7 @@ function check10(data)
 
   expectLines(iter, body);
 }
-test = new RawTest("localhost", PORT, data, check10),
+test = new RawTest("localhost", PORT, data, check10);
 tests.push(test);
 
 
@@ -322,7 +284,7 @@ tests.push(test);
 
 data = "GET /http/1.1-request HTTP/1.1\r\n" +
        "\r\n";
-test = new RawTest("localhost", PORT, data, check400),
+test = new RawTest("localhost", PORT, data, check400);
 tests.push(test);
 
 
@@ -331,7 +293,7 @@ tests.push(test);
 data = "GET /http/1.1-request HTTP/1.1\r\n" +
        "Host: not-localhost\r\n" +
        "\r\n";
-test = new RawTest("localhost", PORT, data, check400),
+test = new RawTest("localhost", PORT, data, check400);
 tests.push(test);
 
 
@@ -340,7 +302,7 @@ tests.push(test);
 data = "GET /http/1.1-request HTTP/1.1\r\n" +
        "Host: not-localhost:4444\r\n" +
        "\r\n";
-test = new RawTest("localhost", PORT, data, check400),
+test = new RawTest("localhost", PORT, data, check400);
 tests.push(test);
 
 
@@ -349,7 +311,7 @@ tests.push(test);
 data = "GET /http/1.1-request HTTP/1.1\r\n" +
        "Host: 127.0.0.1\r\n" +
        "\r\n";
-test = new RawTest("localhost", PORT, data, check400),
+test = new RawTest("localhost", PORT, data, check400);
 tests.push(test);
 
 
@@ -358,7 +320,7 @@ tests.push(test);
 data = "GET http://127.0.0.1/http/1.1-request HTTP/1.1\r\n" +
        "Host: 127.0.0.1\r\n" +
        "\r\n";
-test = new RawTest("localhost", PORT, data, check400),
+test = new RawTest("localhost", PORT, data, check400);
 tests.push(test);
 
 
@@ -367,7 +329,7 @@ tests.push(test);
 data = "GET http://localhost:31337/http/1.1-request HTTP/1.1\r\n" +
        "Host: localhost:31337\r\n" +
        "\r\n";
-test = new RawTest("localhost", PORT, data, check400),
+test = new RawTest("localhost", PORT, data, check400);
 tests.push(test);
 
 
@@ -376,31 +338,29 @@ tests.push(test);
 data = "GET https://localhost:4444/http/1.1-request HTTP/1.1\r\n" +
        "Host: localhost:4444\r\n" +
        "\r\n";
-test = new RawTest("localhost", PORT, data, check400),
+test = new RawTest("localhost", PORT, data, check400);
 tests.push(test);
 
 
 // HTTP/1.1 request, correct Host header, expect handler's response
 
-function http11goodHost(request, response)
-{
+function http11goodHost(request, response) {
   writeDetails(request, response);
   response.setStatusLine("1.1", 200, "TEST PASSED");
 }
 data = "GET /http/1.1-good-host HTTP/1.1\r\n" +
        "Host: localhost:4444\r\n" +
        "\r\n";
-function check11goodHost(data)
-{
-  var iter = LineIterator(data);
+function check11goodHost(aData) {
+  let iter = LineIterator(aData);
 
   // Status-Line
-  do_check_eq(iter.next().value, "HTTP/1.1 200 TEST PASSED");
+  Assert.equal(iter.next().value, "HTTP/1.1 200 TEST PASSED");
 
   skipHeaders(iter);
 
   // Okay, next line must be the data we expected to be written
-  var body =
+  let body =
     [
      "Method:  GET",
      "Path:    /http/1.1-good-host",
@@ -413,31 +373,29 @@ function check11goodHost(data)
 
   expectLines(iter, body);
 }
-test = new RawTest("localhost", PORT, data, check11goodHost),
+test = new RawTest("localhost", PORT, data, check11goodHost);
 tests.push(test);
 
 
 // HTTP/1.1 request, Host header is secondary identity
 
-function http11ipHost(request, response)
-{
+function http11ipHost(request, response) {
   writeDetails(request, response);
   response.setStatusLine("1.1", 200, "TEST PASSED");
 }
 data = "GET /http/1.1-ip-host HTTP/1.1\r\n" +
        "Host: 127.0.0.1:4444\r\n" +
        "\r\n";
-function check11ipHost(data)
-{
-  var iter = LineIterator(data);
+function check11ipHost(aData) {
+  let iter = LineIterator(aData);
 
   // Status-Line
-  do_check_eq(iter.next().value, "HTTP/1.1 200 TEST PASSED");
+  Assert.equal(iter.next().value, "HTTP/1.1 200 TEST PASSED");
 
   skipHeaders(iter);
 
   // Okay, next line must be the data we expected to be written
-  var body =
+  let body =
     [
      "Method:  GET",
      "Path:    /http/1.1-ip-host",
@@ -450,7 +408,7 @@ function check11ipHost(data)
 
   expectLines(iter, body);
 }
-test = new RawTest("localhost", PORT, data, check11ipHost),
+test = new RawTest("localhost", PORT, data, check11ipHost);
 tests.push(test);
 
 
@@ -461,7 +419,7 @@ tests.push(test);
 data = "GET http://localhost:4444/http/1.1-good-host HTTP/1.1\r\n" +
        "Host: localhost:4444\r\n" +
        "\r\n";
-test = new RawTest("localhost", PORT, data, check11goodHost),
+test = new RawTest("localhost", PORT, data, check11goodHost);
 tests.push(test);
 
 
@@ -472,7 +430,7 @@ tests.push(test);
 data = "GET http://localhost:4444/http/1.1-good-host HTTP/1.1\r\n" +
        "Host: localhost:1234\r\n" +
        "\r\n";
-test = new RawTest("localhost", PORT, data, check11goodHost),
+test = new RawTest("localhost", PORT, data, check11goodHost);
 tests.push(test);
 
 
@@ -483,7 +441,7 @@ tests.push(test);
 data = "GET http://localhost:4444/http/1.1-good-host HTTP/1.1\r\n" +
        "Host: not-localhost:4444\r\n" +
        "\r\n";
-test = new RawTest("localhost", PORT, data, check11goodHost),
+test = new RawTest("localhost", PORT, data, check11goodHost);
 tests.push(test);
 
 
@@ -494,14 +452,13 @@ tests.push(test);
 data = "GET http://localhost:4444/http/1.1-good-host HTTP/1.1\r\n" +
        "Host: yippity-skippity\r\n" +
        "\r\n";
-function checkInaccurate(data)
-{
-  check11goodHost(data);
+function checkInaccurate(aData) {
+  check11goodHost(aData);
 
   // dynamism setup
   srv.identity.setPrimary("http", "127.0.0.1", 4444);
 }
-test = new RawTest("localhost", PORT, data, checkInaccurate),
+test = new RawTest("localhost", PORT, data, checkInaccurate);
 tests.push(test);
 
 
@@ -512,17 +469,16 @@ tests.push(test);
 data = "GET /http/1.0-request HTTP/1.0\r\n" +
        "Host: not-localhost:4444\r\n" +
        "\r\n";
-function check10ip(data)
-{
-  var iter = LineIterator(data);
+function check10ip(aData) {
+  let iter = LineIterator(aData);
 
   // Status-Line
-  do_check_eq(iter.next().value, "HTTP/1.0 200 TEST PASSED");
+  Assert.equal(iter.next().value, "HTTP/1.0 200 TEST PASSED");
 
   skipHeaders(iter);
 
   // Okay, next line must be the data we expected to be written
-  var body =
+  let body =
     [
      "Method:  GET",
      "Path:    /http/1.0-request",
@@ -535,31 +491,29 @@ function check10ip(data)
 
   expectLines(iter, body);
 }
-test = new RawTest("localhost", PORT, data, check10ip),
+test = new RawTest("localhost", PORT, data, check10ip);
 tests.push(test);
 
 
 // HTTP/1.1 request, Host header with implied port
 
-function http11goodHostWackyPort(request, response)
-{
+function http11goodHostWackyPort(request, response) {
   writeDetails(request, response);
   response.setStatusLine("1.1", 200, "TEST PASSED");
 }
 data = "GET /http/1.1-good-host-wacky-port HTTP/1.1\r\n" +
        "Host: localhost\r\n" +
        "\r\n";
-function check11goodHostWackyPort(data)
-{
-  var iter = LineIterator(data);
+function check11goodHostWackyPort(aData) {
+  let iter = LineIterator(aData);
 
   // Status-Line
-  do_check_eq(iter.next().value, "HTTP/1.1 200 TEST PASSED");
+  Assert.equal(iter.next().value, "HTTP/1.1 200 TEST PASSED");
 
   skipHeaders(iter);
 
   // Okay, next line must be the data we expected to be written
-  var body =
+  let body =
     [
      "Method:  GET",
      "Path:    /http/1.1-good-host-wacky-port",
@@ -572,7 +526,7 @@ function check11goodHostWackyPort(data)
 
   expectLines(iter, body);
 }
-test = new RawTest("localhost", PORT, data, check11goodHostWackyPort),
+test = new RawTest("localhost", PORT, data, check11goodHostWackyPort);
 tests.push(test);
 
 
@@ -581,7 +535,7 @@ tests.push(test);
 data = "GET /http/1.1-good-host-wacky-port HTTP/1.1\r\n" +
        "Host: localhost:\r\n" +
        "\r\n";
-test = new RawTest("localhost", PORT, data, check11goodHostWackyPort),
+test = new RawTest("localhost", PORT, data, check11goodHostWackyPort);
 tests.push(test);
 
 
@@ -590,7 +544,7 @@ tests.push(test);
 data = "GET http://localhost/http/1.1-good-host-wacky-port HTTP/1.1\r\n" +
        "Host: localhost\r\n" +
        "\r\n";
-test = new RawTest("localhost", PORT, data, check11goodHostWackyPort),
+test = new RawTest("localhost", PORT, data, check11goodHostWackyPort);
 tests.push(test);
 
 
@@ -599,7 +553,7 @@ tests.push(test);
 data = "GET http://localhost:/http/1.1-good-host-wacky-port HTTP/1.1\r\n" +
        "Host: localhost\r\n" +
        "\r\n";
-test = new RawTest("localhost", PORT, data, check11goodHostWackyPort),
+test = new RawTest("localhost", PORT, data, check11goodHostWackyPort);
 tests.push(test);
 
 
@@ -608,7 +562,7 @@ tests.push(test);
 data = "GET http://localhost:80/http/1.1-good-host-wacky-port HTTP/1.1\r\n" +
        "Host: who-cares\r\n" +
        "\r\n";
-test = new RawTest("localhost", PORT, data, check11goodHostWackyPort),
+test = new RawTest("localhost", PORT, data, check11goodHostWackyPort);
 tests.push(test);
 
 
@@ -617,7 +571,7 @@ tests.push(test);
 data = "GET is-this-the-real-life-is-this-just-fantasy HTTP/1.1\r\n" +
        "Host: localhost:4444\r\n" +
        "\r\n";
-test = new RawTest("localhost", PORT, data, check400),
+test = new RawTest("localhost", PORT, data, check400);
 tests.push(test);
 
 
@@ -626,7 +580,7 @@ tests.push(test);
 data = "GET /http/1.1-request HTTP/1.1\r\n" +
        "Host: la la la\r\n" +
        "\r\n";
-test = new RawTest("localhost", PORT, data, check400),
+test = new RawTest("localhost", PORT, data, check400);
 tests.push(test);
 
 
@@ -635,7 +589,7 @@ tests.push(test);
 data = "GET http://localhost:4444/http/1.1-good-host HTTP/1.1\r\n" +
        "Host: la la la\r\n" +
        "\r\n";
-test = new RawTest("localhost", PORT, data, check11goodHost),
+test = new RawTest("localhost", PORT, data, check11goodHost);
 tests.push(test);
 
 
@@ -644,7 +598,7 @@ tests.push(test);
 data = "GET http://localhost:4444/http/1.1-request HTTP/1.0\r\n" +
        "Host: localhost:4444\r\n" +
        "\r\n";
-test = new RawTest("localhost", PORT, data, check400),
+test = new RawTest("localhost", PORT, data, check400);
 tests.push(test);
 
 
@@ -653,7 +607,7 @@ tests.push(test);
 data = "GET http://not-localhost:4444/http/1.1-request HTTP/1.1\r\n" +
        "Host: not-localhost:4444\r\n" +
        "\r\n";
-test = new RawTest("localhost", PORT, data, check400),
+test = new RawTest("localhost", PORT, data, check400);
 tests.push(test);
 
 
@@ -662,5 +616,5 @@ tests.push(test);
 data = "GET http://not-localhost:4444/http/1.1-request HTTP/1.1\r\n" +
        "Host: localhost:4444\r\n" +
        "\r\n";
-test = new RawTest("localhost", PORT, data, check400),
+test = new RawTest("localhost", PORT, data, check400);
 tests.push(test);

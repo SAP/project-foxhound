@@ -2,16 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-'use strict';
+"use strict";
 
-const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
+var EXPORTED_SYMBOLS = ["WebsiteMetadata"];
 
-this.EXPORTED_SYMBOLS = ["WebsiteMetadata"];
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "EventDispatcher", "resource://gre/modules/Messaging.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Task", "resource://gre/modules/Task.jsm");
+ChromeUtils.defineModuleGetter(this, "EventDispatcher", "resource://gre/modules/Messaging.jsm");
 
 var WebsiteMetadata = {
   /**
@@ -19,28 +14,26 @@ var WebsiteMetadata = {
    * will be sent.
    */
   parseAsynchronously: function(doc) {
-    Task.spawn(function() {
-      let metadata = getMetadata(doc, doc.location.href, {
-        image_url: metadataRules['image_url'],
-        provider: metadataRules['provider'],
-        description_length: metadataRules['description_length']
-      });
-
-      // No metadata was extracted, so don't bother sending it.
-      if (Object.keys(metadata).length === 0) {
-        return;
-      }
-
-      let msg = {
-        type: 'Website:Metadata',
-        location: doc.location.href,
-        hasImage: metadata.image_url && metadata.image_url !== "",
-        metadata: JSON.stringify(metadata),
-      };
-
-      EventDispatcher.instance.sendRequest(msg);
+    let metadata = getMetadata(doc, doc.location.href, {
+      image_url: metadataRules.image_url,
+      provider: metadataRules.provider,
+      description_length: metadataRules.description_length,
     });
-  }
+
+    // No metadata was extracted, so don't bother sending it.
+    if (Object.keys(metadata).length === 0) {
+      return;
+    }
+
+    let msg = {
+      type: "Website:Metadata",
+      location: doc.location.href,
+      hasImage: metadata.image_url && metadata.image_url !== "",
+      metadata: JSON.stringify(metadata),
+    };
+
+    EventDispatcher.instance.sendRequest(msg);
+  },
 };
 
 // #################################################################################################
@@ -48,7 +41,7 @@ var WebsiteMetadata = {
 // #################################################################################################
 
 function makeUrlAbsolute(context, relative) {
-	var a = context.doc.createElement('a');
+    var a = context.doc.createElement("a");
     a.href = relative;
     return a.href;
 }
@@ -94,97 +87,97 @@ function buildRuleset(name, rules, processors) {
 }
 
 const descriptionRules = [
-  ['meta[property="og:description"]', node => node.element.getAttribute('content')],
-  ['meta[name="description"]', node => node.element.getAttribute('content')],
+  ['meta[property="og:description"]', node => node.element.getAttribute("content")],
+  ['meta[name="description"]', node => node.element.getAttribute("content")],
 ];
 
 const metadataRules = {
   description: {
-    rules: descriptionRules
+    rules: descriptionRules,
   },
 
   description_length: {
     rules: descriptionRules,
     processors: [
-      (description) => description.length
-    ]
+      (description) => description.length,
+    ],
   },
 
   icon_url: {
     rules: [
-      ['link[rel="apple-touch-icon"]', node => node.element.getAttribute('href')],
-      ['link[rel="apple-touch-icon-precomposed"]', node => node.element.getAttribute('href')],
-      ['link[rel="icon"]', node => node.element.getAttribute('href')],
-      ['link[rel="fluid-icon"]', node => node.element.getAttribute('href')],
-      ['link[rel="shortcut icon"]', node => node.element.getAttribute('href')],
-      ['link[rel="Shortcut Icon"]', node => node.element.getAttribute('href')],
-      ['link[rel="mask-icon"]', node => node.element.getAttribute('href')],
+      ['link[rel="apple-touch-icon"]', node => node.element.getAttribute("href")],
+      ['link[rel="apple-touch-icon-precomposed"]', node => node.element.getAttribute("href")],
+      ['link[rel="icon"]', node => node.element.getAttribute("href")],
+      ['link[rel="fluid-icon"]', node => node.element.getAttribute("href")],
+      ['link[rel="shortcut icon"]', node => node.element.getAttribute("href")],
+      ['link[rel="Shortcut Icon"]', node => node.element.getAttribute("href")],
+      ['link[rel="mask-icon"]', node => node.element.getAttribute("href")],
     ],
     processors: [
-      (icon_url, context) => makeUrlAbsolute(context, icon_url)
-    ]
+      (icon_url, context) => makeUrlAbsolute(context, icon_url),
+    ],
   },
 
   image_url: {
     rules: [
-      ['meta[property="og:image:secure_url"]', node => node.element.getAttribute('content')],
-      ['meta[property="og:image:url"]', node => node.element.getAttribute('content')],
-      ['meta[property="og:image"]', node => node.element.getAttribute('content')],
-      ['meta[property="twitter:image"]', node => node.element.getAttribute('content')],
-      ['meta[name="thumbnail"]', node => node.element.getAttribute('content')],
+      ['meta[property="og:image:secure_url"]', node => node.element.getAttribute("content")],
+      ['meta[property="og:image:url"]', node => node.element.getAttribute("content")],
+      ['meta[property="og:image"]', node => node.element.getAttribute("content")],
+      ['meta[property="twitter:image"]', node => node.element.getAttribute("content")],
+      ['meta[name="thumbnail"]', node => node.element.getAttribute("content")],
     ],
     processors: [
-      (image_url, context) => makeUrlAbsolute(context, image_url)
+      (image_url, context) => makeUrlAbsolute(context, image_url),
     ],
   },
 
   keywords: {
     rules: [
-      ['meta[name="keywords"]', node => node.element.getAttribute('content')],
+      ['meta[name="keywords"]', node => node.element.getAttribute("content")],
     ],
     processors: [
-      (keywords) => keywords.split(',').map((keyword) => keyword.trim()),
-    ]
+      (keywords) => keywords.split(",").map((keyword) => keyword.trim()),
+    ],
   },
 
   title: {
     rules: [
-      ['meta[property="og:title"]', node => node.element.getAttribute('content')],
-      ['meta[property="twitter:title"]', node => node.element.getAttribute('content')],
-      ['meta[name="hdl"]', node => node.element.getAttribute('content')],
-      ['title', node => node.element.text],
+      ['meta[property="og:title"]', node => node.element.getAttribute("content")],
+      ['meta[property="twitter:title"]', node => node.element.getAttribute("content")],
+      ['meta[name="hdl"]', node => node.element.getAttribute("content")],
+      ["title", node => node.element.text],
     ],
   },
 
   type: {
     rules: [
-      ['meta[property="og:type"]', node => node.element.getAttribute('content')],
+      ['meta[property="og:type"]', node => node.element.getAttribute("content")],
     ],
   },
 
   url: {
     rules: [
-      ['meta[property="og:url"]', node => node.element.getAttribute('content')],
-      ['link[rel="canonical"]', node => node.element.getAttribute('href')],
+      ['meta[property="og:url"]', node => node.element.getAttribute("content")],
+      ['link[rel="canonical"]', node => node.element.getAttribute("href")],
     ],
   },
 
   provider: {
     rules: [
-      ['meta[property="og:site_name"]', node => node.element.getAttribute('content')]
-    ]
+      ['meta[property="og:site_name"]', node => node.element.getAttribute("content")],
+    ],
   },
 };
 
 function getMetadata(doc, url, rules) {
   const metadata = {};
-  const context = {url,doc};
+  const context = {url, doc};
   const ruleSet = rules || metadataRules;
 
   Object.keys(ruleSet).map(metadataKey => {
     const metadataRule = ruleSet[metadataKey];
 
-    if(Array.isArray(metadataRule.rules)) {
+    if (Array.isArray(metadataRule.rules)) {
       const builtRule = buildRuleset(metadataKey, metadataRule.rules, metadataRule.processors);
       metadata[metadataKey] = builtRule(doc, context);
     } else {
@@ -210,7 +203,7 @@ function best(iterable, by, isBetter) {
     let bestSoFar, bestKeySoFar;
     let isFirst = true;
     forEach(
-        function (item) {
+        function(item) {
             const key = by(item);
             if (isBetter(key, bestKeySoFar) || isFirst) {
                 bestSoFar = item;
@@ -220,7 +213,7 @@ function best(iterable, by, isBetter) {
         },
         iterable);
     if (isFirst) {
-        throw new Error('Tried to call best() on empty iterable');
+        throw new Error("Tried to call best() on empty iterable");
     }
     return bestSoFar;
 }
@@ -249,7 +242,7 @@ function getDefault(map, key, defaultMaker) {
 
 // Construct a filtration network of rules.
 function ruleset(...rules) {
-    const rulesByInputFlavor = new Map();  // [someInputFlavor: [rule, ...]]
+    const rulesByInputFlavor = new Map(); // [someInputFlavor: [rule, ...]]
 
     // File each rule under its input flavor:
     forEach(rule => getDefault(rulesByInputFlavor, rule.source.inputFlavor, () => []).push(rule),
@@ -261,12 +254,12 @@ function ruleset(...rules) {
         // elements. Return the knowledgebase.
         //
         // This is the "rank" portion of the rank-and-yank algorithm.
-        score: function (tree) {
+        score: function(tree) {
             const kb = knowledgebase();
 
             // Introduce the whole DOM into the KB as flavor 'dom' to get
             // things started:
-            const nonterminals = [[{tree}, 'dom']];  // [[node, flavor], [node, flavor], ...]
+            const nonterminals = [[{tree}, "dom"]]; // [[node, flavor], [node, flavor], ...]
 
             // While there are new facts, run the applicable rules over them to
             // generate even newer facts. Repeat until everything's fully
@@ -318,14 +311,14 @@ function ruleset(...rules) {
                         // that).
                         if (!outNode.flavors.has(fact.flavor)) {
                             outNode.flavors.set(fact.flavor, fact.notes);
-                            kb.indexNodeByFlavor(outNode, fact.flavor);  // TODO: better encapsulation rather than indexing explicitly
+                            kb.indexNodeByFlavor(outNode, fact.flavor); // TODO: better encapsulation rather than indexing explicitly
                             nonterminals.push([outNode, fact.flavor]);
                         }
                     }
                 }
             }
             return kb;
-        }
+        },
     };
 }
 
@@ -334,7 +327,7 @@ function ruleset(...rules) {
 // flavor (used to dispatch further rules upon), a corresponding DOM element, a
 // score, and some other arbitrary notes opaque to fathom.
 function knowledgebase() {
-    const nodesByFlavor = new Map();  // Map{'texty' -> [NodeA],
+    const nodesByFlavor = new Map(); // Map{'texty' -> [NodeA],
                                       //     'spiffy' -> [NodeA, NodeB]}
                                       // NodeA = {element: <someElement>,
                                       //
@@ -354,7 +347,7 @@ function knowledgebase() {
     return {
         // Return the "node" (our own data structure that we control) that
         // corresponds to a given DOM element, creating one if necessary.
-        nodeForElement: function (element) {
+        nodeForElement: function(element) {
             return getDefault(nodesByElement,
                               element,
                               () => ({element,
@@ -364,19 +357,19 @@ function knowledgebase() {
 
         // Return the highest-scored node of the given flavor, undefined if
         // there is none.
-        max: function (flavor) {
+        max: function(flavor) {
             const nodes = nodesByFlavor.get(flavor);
             return nodes === undefined ? undefined : max(nodes, node => node.score);
         },
 
         // Let the KB know that a new flavor has been added to an element.
-        indexNodeByFlavor: function (node, flavor) {
+        indexNodeByFlavor: function(node, flavor) {
             getDefault(nodesByFlavor, flavor, () => []).push(node);
         },
 
-        nodesOfFlavor: function (flavor) {
+        nodesOfFlavor: function(flavor) {
             return getDefault(nodesByFlavor, flavor, () => []);
-        }
+        },
     };
 }
 
@@ -385,17 +378,17 @@ function knowledgebase() {
 // new facts that result.
 function resultsOf(rule, node, flavor, kb) {
     // If more types of rule pop up someday, do fancier dispatching here.
-    return rule.source.flavor === 'flavor' ? resultsOfFlavorRule(rule, node, flavor) : resultsOfDomRule(rule, node, kb);
+    return rule.source.flavor === "flavor" ? resultsOfFlavorRule(rule, node, flavor) : resultsOfDomRule(rule, node, kb);
 }
 
 
 // Pull the DOM tree off the special property of the root "dom" fact, and query
 // against it.
-function *resultsOfDomRule(rule, specialDomNode, kb) {
+function* resultsOfDomRule(rule, specialDomNode, kb) {
     // Use the special "tree" property of the special starting node:
     const matches = specialDomNode.tree.querySelectorAll(rule.source.selector);
 
-    for (let i = 0; i < matches.length; i++) {  // matches is a NodeList, which doesn't conform to iterator protocol
+    for (let i = 0; i < matches.length; i++) { // matches is a NodeList, which doesn't conform to iterator protocol
         const element = matches[i];
         const newFacts = explicitFacts(rule.ranker(kb.nodeForElement(element)));
         for (let fact of newFacts) {
@@ -403,7 +396,7 @@ function *resultsOfDomRule(rule, specialDomNode, kb) {
                 fact.element = element;
             }
             if (fact.flavor === undefined) {
-                throw new Error('Rankers of dom() rules must return a flavor in each fact. Otherwise, there is no way for that fact to be used later.');
+                throw new Error("Rankers of dom() rules must return a flavor in each fact. Otherwise, there is no way for that fact to be used later.");
             }
             yield fact;
         }
@@ -411,7 +404,7 @@ function *resultsOfDomRule(rule, specialDomNode, kb) {
 }
 
 
-function *resultsOfFlavorRule(rule, node, flavor) {
+function* resultsOfFlavorRule(rule, node, flavor) {
     const newFacts = explicitFacts(rule.ranker(node));
 
     for (let fact of newFacts) {
@@ -433,7 +426,7 @@ function *resultsOfFlavorRule(rule, node, flavor) {
 //
 // Rankers can return undefined, which means "no facts", a single fact, or an
 // array of facts.
-function *explicitFacts(rankerResult) {
+function* explicitFacts(rankerResult) {
     const array = (rankerResult === undefined) ? [] : (Array.isArray(rankerResult) ? rankerResult : [rankerResult]);
     for (let fact of array) {
         if (fact.score === undefined) {
@@ -469,9 +462,9 @@ function *explicitFacts(rankerResult) {
 // ...)
 function dom(selector) {
     return {
-        flavor: 'dom',
-        inputFlavor: 'dom',
-        selector
+        flavor: "dom",
+        inputFlavor: "dom",
+        selector,
     };
 }
 
@@ -479,8 +472,8 @@ function dom(selector) {
 // Return a condition that discriminates on nodes of the knowledgebase by flavor.
 function flavor(inputFlavor) {
     return {
-        flavor: 'flavor',
-        inputFlavor
+        flavor: "flavor",
+        inputFlavor,
     };
 }
 
@@ -488,6 +481,6 @@ function flavor(inputFlavor) {
 function rule(source, ranker) {
     return {
         source,
-        ranker
+        ranker,
     };
 }

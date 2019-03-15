@@ -4,13 +4,13 @@
 esid: sec-symbol.hasinstance
 es6id: 19.4.2.2
 description: Value shared by all realms
-info: >
+info: |
   Unless otherwise specified, well-known symbols values are shared by all
   realms.
-features: [Symbol.hasInstance]
+features: [cross-realm, Symbol.hasInstance]
 ---*/
 
-var OSymbol = $.createRealm().global.Symbol;
+var OSymbol = $262.createRealm().global.Symbol;
 
 assert.sameValue(Symbol.hasInstance, OSymbol.hasInstance);
 

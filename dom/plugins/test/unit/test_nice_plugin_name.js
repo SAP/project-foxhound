@@ -6,14 +6,14 @@
 const XULAPPINFO_CONTRACTID = "@mozilla.org/xre/app-info;1";
 const XULAPPINFO_CID = Components.ID("{c763b610-9d49-455a-bbd2-ede71682a1ac}");
 
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-Components.utils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var gAppInfo = null;
 
 function createAppInfo(ID, name, version, platformVersion="1.0") {
   let tmp = {};
-  Cu.import("resource://testing-common/AppInfo.jsm", tmp);
+  ChromeUtils.import("resource://testing-common/AppInfo.jsm", tmp);
   tmp.updateAppInfo({
     ID, name, version, platformVersion,
     crashReporter: true
@@ -26,16 +26,16 @@ var gPluginHost = null;
 function test_expected_permission_string(aPermString) {
   gPluginHost.reloadPlugins(false);
   let plugin = get_test_plugintag();
-  do_check_false(plugin == null);
-  do_check_eq(gPluginHost.getPermissionStringForType("application/x-test"),
-              aPermString);
+  Assert.equal(false, plugin == null);
+  Assert.equal(gPluginHost.getPermissionStringForType("application/x-test"),
+               aPermString);
 }
 
 function run_test() {
   allow_all_plugins();
-  do_check_true(gIsWindows || gIsOSX || gIsLinux);
-  do_check_true(!(gIsWindows && gIsOSX) && !(gIsWindows && gIsLinux) &&
-                !(gIsOSX && gIsLinux));
+  Assert.ok(gIsWindows || gIsOSX || gIsLinux);
+  Assert.ok(!(gIsWindows && gIsOSX) && !(gIsWindows && gIsLinux) &&
+            !(gIsOSX && gIsLinux));
 
   createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9");
   gPluginHost = Cc["@mozilla.org/plugin/host;1"].getService(Ci.nsIPluginHost);

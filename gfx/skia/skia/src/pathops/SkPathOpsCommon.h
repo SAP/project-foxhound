@@ -19,15 +19,12 @@ const SkOpAngle* AngleWinding(SkOpSpanBase* start, SkOpSpanBase* end, int* windi
 SkOpSegment* FindChase(SkTDArray<SkOpSpanBase*>* chase, SkOpSpanBase** startPtr,
                        SkOpSpanBase** endPtr);
 SkOpSpan* FindSortableTop(SkOpContourHead* );
-SkOpSegment* FindUndone(SkOpContourHead* , SkOpSpanBase** startPtr,
-                        SkOpSpanBase** endPtr);
+SkOpSpan* FindUndone(SkOpContourHead* );
 bool FixWinding(SkPath* path);
 bool SortContourList(SkOpContourHead** , bool evenOdd, bool oppEvenOdd);
 bool HandleCoincidence(SkOpContourHead* , SkOpCoincidence* );
 bool OpDebug(const SkPath& one, const SkPath& two, SkPathOp op, SkPath* result
              SkDEBUGPARAMS(bool skipAssert)
              SkDEBUGPARAMS(const char* testName));
-SkScalar ScaleFactor(const SkPath& path);
-void ScalePath(const SkPath& path, SkScalar scale, SkPath* scaled);
 
 #endif

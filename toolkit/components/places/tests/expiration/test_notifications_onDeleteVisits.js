@@ -22,6 +22,7 @@ var tests = [
     addBookmarks: 1,
     limitExpiration: -1,
     expectedNotifications: 1, // Will expire visits for 1 page.
+    expectedIsPartialRemoval: true,
   },
 
   { desc: "Add 2 pages, 1 bookmarked.",
@@ -30,6 +31,7 @@ var tests = [
     addBookmarks: 1,
     limitExpiration: -1,
     expectedNotifications: 1, // Will expire visits for 1 page.
+    expectedIsPartialRemoval: true,
   },
 
   { desc: "Add 10 pages, none bookmarked.",
@@ -38,6 +40,7 @@ var tests = [
     addBookmarks: 0,
     limitExpiration: -1,
     expectedNotifications: 0, // Will expire only full pages.
+    expectedIsPartialRemoval: false,
   },
 
   { desc: "Add 10 pages, all bookmarked.",
@@ -45,7 +48,8 @@ var tests = [
     visitsPerPage: 1,
     addBookmarks: 10,
     limitExpiration: -1,
-    expectedNotifications: 10, // Will expire visist for all pages.
+    expectedNotifications: 10, // Will expire visits for all pages.
+    expectedIsPartialRemoval: true,
   },
 
   { desc: "Add 10 pages with lot of visits, none bookmarked.",
@@ -53,16 +57,14 @@ var tests = [
     visitsPerPage: 10,
     addBookmarks: 0,
     limitExpiration: 10,
-    expectedNotifications: 10, // Will expire 1 visist for each page, but won't
-  },                           // expire pages since they still have visits.
+    expectedNotifications: 10, // Will expire 1 visit for each page, but won't
+                               // expire pages since they still have visits.
+    expectedIsPartialRemoval: true,
+  },
 
 ];
 
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* test_notifications_onDeleteVisits() {
+add_task(async function test_notifications_onDeleteVisits() {
   // Set interval to a large value so we don't expire on it.
   setInterval(3600); // 1h
 
@@ -85,7 +87,7 @@ add_task(function* test_notifications_onDeleteVisits() {
     for (let j = 0; j < currentTest.visitsPerPage; j++) {
       for (let i = 0; i < currentTest.addPages; i++) {
         let page = "http://" + testIndex + "." + i + ".mozilla.org/";
-        yield PlacesTestUtils.addVisits({ uri: uri(page), visitDate: newTimeInMicroseconds() });
+        await PlacesTestUtils.addVisits({ uri: uri(page), visitDate: newTimeInMicroseconds() });
       }
     }
 
@@ -93,10 +95,10 @@ add_task(function* test_notifications_onDeleteVisits() {
     currentTest.bookmarks = [];
     for (let i = 0; i < currentTest.addBookmarks; i++) {
       let page = "http://" + testIndex + "." + i + ".mozilla.org/";
-      yield PlacesUtils.bookmarks.insert({
+      await PlacesUtils.bookmarks.insert({
         parentGuid: PlacesUtils.bookmarks.unfiledGuid,
         title: null,
-        url: page
+        url: page,
       });
       currentTest.bookmarks.push(page);
     }
@@ -106,37 +108,38 @@ add_task(function* test_notifications_onDeleteVisits() {
       onBeginUpdateBatch: function PEX_onBeginUpdateBatch() {},
       onEndUpdateBatch: function PEX_onEndUpdateBatch() {},
       onClearHistory() {},
-      onVisit() {},
       onTitleChanged() {},
       onDeleteURI(aURI, aGUID, aReason) {
         // Check this uri was not bookmarked.
-        do_check_eq(currentTest.bookmarks.indexOf(aURI.spec), -1);
+        Assert.equal(currentTest.bookmarks.indexOf(aURI.spec), -1);
         do_check_valid_places_guid(aGUID);
-        do_check_eq(aReason, Ci.nsINavHistoryObserver.REASON_EXPIRED);
+        Assert.equal(aReason, Ci.nsINavHistoryObserver.REASON_EXPIRED);
       },
       onPageChanged() {},
-      onDeleteVisits(aURI, aTime, aGUID, aReason) {
+      onDeleteVisits(aURI, aPartialRemoval, aGUID, aReason) {
         currentTest.receivedNotifications++;
         do_check_guid_for_uri(aURI, aGUID);
-        do_check_eq(aReason, Ci.nsINavHistoryObserver.REASON_EXPIRED);
+        Assert.equal(aPartialRemoval, currentTest.expectedIsPartialRemoval,
+          "Should have the correct flag setting for partial removal");
+        Assert.equal(aReason, Ci.nsINavHistoryObserver.REASON_EXPIRED);
       },
     };
-    hs.addObserver(historyObserver, false);
+    hs.addObserver(historyObserver);
 
     // Expire now.
-    yield promiseForceExpirationStep(currentTest.limitExpiration);
+    await promiseForceExpirationStep(currentTest.limitExpiration);
 
     hs.removeObserver(historyObserver, false);
 
-    do_check_eq(currentTest.receivedNotifications,
-                currentTest.expectedNotifications);
+    Assert.equal(currentTest.receivedNotifications,
+                 currentTest.expectedNotifications);
 
     // Clean up.
-    yield PlacesUtils.bookmarks.eraseEverything();
-    yield PlacesTestUtils.clearHistory();
+    await PlacesUtils.bookmarks.eraseEverything();
+    await PlacesUtils.history.clear();
   }
 
   clearMaxPages();
-  yield PlacesUtils.bookmarks.eraseEverything();
-  yield PlacesTestUtils.clearHistory();
+  await PlacesUtils.bookmarks.eraseEverything();
+  await PlacesUtils.history.clear();
 });

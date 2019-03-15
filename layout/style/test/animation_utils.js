@@ -258,13 +258,16 @@ function runOMTATest(aTestFunction, aOnSkip, specialPowersForPrefs) {
     return waitForDocumentLoad()
       .then(loadPaintListener)
       .then(function() {
-        // Put refresh driver under test control and trigger animation
+        // Put refresh driver under test control and flush all pending style,
+        // layout and paint to avoid the situation that waitForPaintsFlush()
+        // receives unexpected MozAfterpaint event for those pending
+        // notifications.
         utils.advanceTimeAndRefresh(0);
+        return waitForPaintsFlushed();
+      }).then(function() {
         div.style.animation = animationName + " 10s";
 
-        // Trigger style flush
-        div.clientTop;
-        return waitForPaints();
+        return waitForPaintsFlushed();
       }).then(function() {
         var opacity = utils.getOMTAStyle(div, "opacity");
         cleanUp();
@@ -282,12 +285,6 @@ function runOMTATest(aTestFunction, aOnSkip, specialPowersForPrefs) {
       } else {
         window.addEventListener("load", resolve);
       }
-    });
-  }
-
-  function waitForPaints() {
-    return new Promise(function(resolve, reject) {
-      waitForAllPaintsFlushed(resolve);
     });
   }
 
@@ -371,9 +368,12 @@ function runOMTATest(aTestFunction, aOnSkip, specialPowersForPrefs) {
     SpecialPowers.DOMWindowUtils.advanceTimeAndRefresh(0);
 
     // Run test
-    generator = aTestFunc();
-    return step()
-    .catch(function(err) {
+    var promise = aTestFunc();
+    if (!promise.then) {
+      generator = promise;
+      promise = step();
+    }
+    return promise.catch(function(err) {
       ok(false, err.message);
       if (typeof aOnAbort == "function") {
         aOnAbort();
@@ -422,19 +422,30 @@ const ExpectComparisonTo = {
                                    runningOn, desc, expectedComparisonResult,
                                    pseudo) {
     // Check input
-    const omtaProperties = [ "transform", "opacity" ];
-    if (omtaProperties.indexOf(property) === -1) {
+    // FIXME: Auto generate this array.
+    const omtaProperties = [ "transform", "opacity", "background-color" ];
+    if (!omtaProperties.includes(property)) {
       ok(false, property + " is not an OMTA property");
       return;
     }
-    var isTransform = property == "transform";
-    var normalize = isTransform ? convertTo3dMatrix : parseFloat;
-    var compare = isTransform ?
-                  matricesRoughlyEqual :
-                  function(a, b, error) { return Math.abs(a - b) <= error; };
-    var normalizedToString = isTransform ?
-                             convert3dMatrixToString :
-                             JSON.stringify;
+    var normalize;
+    var compare;
+    var normalizedToString = JSON.stringify;
+    switch (property) {
+      case "transform":
+        normalize = convertTo3dMatrix;
+        compare = matricesRoughlyEqual;
+        normalizedToString = convert3dMatrixToString;
+        break;
+      case "opacity":
+        normalize = parseFloat;
+        compare = function(a, b, error) { return Math.abs(a - b) <= error; };
+        break;
+      default:
+        normalize = function(value) { return value; };
+        compare = function(a, b, error) { return a == b; };
+        break;
+    }
 
     // Get actual values
     var compositorStr =
@@ -505,7 +516,7 @@ const ExpectComparisonTo = {
                   " - got " + computedStr);
         return;
       }
-      okOrTodo(compare(computedValue, actualValue, 0),
+      okOrTodo(compare(computedValue, actualValue, 0.0),
                desc + ": OMTA style and computed style should be equal" +
                " - OMTA " + actualStr + ", computed " + computedStr);
     }
@@ -587,30 +598,35 @@ const ExpectComparisonTo = {
     }
   }
 
+  // Return the first defined value in args.
+  function defined(...args) {
+    return args.find(arg => typeof arg !== 'undefined');
+  }
+
   // Takes an object of the form { a: 1.1, e: 23 } and builds up a 3d matrix
   // with unspecified values filled in with identity values.
   function convertObjectTo3dMatrix(obj) {
     return [
       [
-        obj.a || obj.sx || obj.m11 || 1,
+        defined(obj.a, obj.sx, obj.m11, 1),
         obj.b || obj.m12 || 0,
         obj.m13 || 0,
         obj.m14 || 0
       ], [
         obj.c || obj.m21 || 0,
-        obj.d || obj.sy || obj.m22 || 1,
+        defined(obj.d, obj.sy, obj.m22, 1),
         obj.m23 || 0,
         obj.m24 || 0
       ], [
         obj.m31 || 0,
         obj.m32 || 0,
-        obj.sz || obj.m33 || 1,
+        defined(obj.sz, obj.m33, 1),
         obj.m34 || 0
       ], [
         obj.e || obj.tx || obj.m41 || 0,
         obj.f || obj.ty || obj.m42 || 0,
         obj.tz || obj.m43 || 0,
-        obj.m44 || 1
+        defined(obj.m44, 1),
       ]
     ];
   }

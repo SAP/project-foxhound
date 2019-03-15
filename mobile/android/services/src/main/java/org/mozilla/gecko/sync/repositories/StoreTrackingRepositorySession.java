@@ -8,7 +8,7 @@ import java.util.Collection;
 import java.util.Iterator;
 
 import org.mozilla.gecko.background.common.log.Logger;
-import org.mozilla.gecko.sync.repositories.delegates.RepositorySessionBeginDelegate;
+import org.mozilla.gecko.sync.SyncException;
 import org.mozilla.gecko.sync.repositories.delegates.RepositorySessionFinishDelegate;
 import org.mozilla.gecko.sync.repositories.domain.Record;
 
@@ -25,17 +25,10 @@ public abstract class StoreTrackingRepositorySession extends RepositorySession {
   }
 
   @Override
-  public void begin(RepositorySessionBeginDelegate delegate) throws InvalidSessionTransitionException {
-    RepositorySessionBeginDelegate deferredDelegate = delegate.deferredBeginDelegate(delegateQueue);
-    try {
-      super.sharedBegin();
-    } catch (InvalidSessionTransitionException e) {
-      deferredDelegate.onBeginFailed(e);
-      return;
-    }
+  public void begin() throws SyncException {
+    super.sharedBegin();
     // Or do this in your own subclass.
     storeTracker = createStoreTracker();
-    deferredDelegate.onBeginSucceeded(this);
   }
 
   @Override
@@ -47,7 +40,7 @@ public abstract class StoreTrackingRepositorySession extends RepositorySession {
   }
 
   @Override
-  protected synchronized void untrackGUID(String guid) {
+  public synchronized void untrackGUID(String guid) {
     if (this.storeTracker == null) {
       throw new IllegalStateException("Store tracker not yet initialized!");
     }
@@ -55,7 +48,7 @@ public abstract class StoreTrackingRepositorySession extends RepositorySession {
   }
 
   @Override
-  protected synchronized void untrackGUIDs(Collection<String> guids) {
+  public synchronized void untrackGUIDs(Collection<String> guids) {
     if (this.storeTracker == null) {
       throw new IllegalStateException("Store tracker not yet initialized!");
     }
@@ -67,10 +60,7 @@ public abstract class StoreTrackingRepositorySession extends RepositorySession {
     }
   }
 
-  protected void trackRecord(Record record) {
-
-    Logger.debug(LOG_TAG, "Tracking record " + record.guid +
-                           " (" + record.lastModified + ") to avoid re-upload.");
+  public void trackRecord(Record record) {
     // Future: we care about the timestamp…
     trackGUID(record.guid);
   }

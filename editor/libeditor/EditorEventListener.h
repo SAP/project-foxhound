@@ -16,42 +16,45 @@
 
 class nsCaret;
 class nsIContent;
-class nsIDOMDragEvent;
-class nsIDOMEvent;
-class nsIDOMKeyEvent;
-class nsIDOMMouseEvent;
 class nsIPresShell;
 class nsPresContext;
 
 // X.h defines KeyPress
 #ifdef KeyPress
-#undef KeyPress
+#  undef KeyPress
 #endif
 
 #ifdef XP_WIN
 // On Windows, we support switching the text direction by pressing Ctrl+Shift
-#define HANDLE_NATIVE_TEXT_DIRECTION_SWITCH
+#  define HANDLE_NATIVE_TEXT_DIRECTION_SWITCH
 #endif
 
 namespace mozilla {
 
 class EditorBase;
 
-class EditorEventListener : public nsIDOMEventListener
-{
-public:
+namespace dom {
+class DragEvent;
+class MouseEvent;
+}  // namespace dom
+
+class EditorEventListener : public nsIDOMEventListener {
+ public:
   EditorEventListener();
 
   virtual nsresult Connect(EditorBase* aEditorBase);
 
-  void Disconnect();
+  virtual void Disconnect();
 
   NS_DECL_ISUPPORTS
-  NS_DECL_NSIDOMEVENTLISTENER
+
+  // nsIDOMEventListener
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
+  NS_IMETHOD HandleEvent(dom::Event* aEvent) override;
 
   void SpellCheckIfNeeded();
 
-protected:
+ protected:
   virtual ~EditorEventListener();
 
   nsresult InstallToEditor();
@@ -59,33 +62,37 @@ protected:
 
 #ifdef HANDLE_NATIVE_TEXT_DIRECTION_SWITCH
   nsresult KeyDown(const WidgetKeyboardEvent* aKeyboardEvent);
+  MOZ_CAN_RUN_SCRIPT
   nsresult KeyUp(const WidgetKeyboardEvent* aKeyboardEvent);
 #endif
   nsresult KeyPress(WidgetKeyboardEvent* aKeyboardEvent);
+  MOZ_CAN_RUN_SCRIPT
   nsresult HandleChangeComposition(WidgetCompositionEvent* aCompositionEvent);
   nsresult HandleStartComposition(WidgetCompositionEvent* aCompositionEvent);
+  MOZ_CAN_RUN_SCRIPT
   void HandleEndComposition(WidgetCompositionEvent* aCompositionEvent);
-  virtual nsresult MouseDown(nsIDOMMouseEvent* aMouseEvent);
-  virtual nsresult MouseUp(nsIDOMMouseEvent* aMouseEvent) { return NS_OK; }
-  virtual nsresult MouseClick(nsIDOMMouseEvent* aMouseEvent);
-  nsresult Focus(WidgetEvent* aFocusEvent);
-  nsresult Blur(WidgetEvent* aBlurEvent);
-  nsresult DragEnter(nsIDOMDragEvent* aDragEvent);
-  nsresult DragOver(nsIDOMDragEvent* aDragEvent);
-  nsresult DragExit(nsIDOMDragEvent* aDragEvent);
-  nsresult Drop(nsIDOMDragEvent* aDragEvent);
+  MOZ_CAN_RUN_SCRIPT
+  virtual nsresult MouseDown(dom::MouseEvent* aMouseEvent);
+  virtual nsresult MouseUp(dom::MouseEvent* aMouseEvent) { return NS_OK; }
+  MOZ_CAN_RUN_SCRIPT
+  virtual nsresult MouseClick(WidgetMouseEvent* aMouseClickEvent);
+  nsresult Focus(InternalFocusEvent* aFocusEvent);
+  nsresult Blur(InternalFocusEvent* aBlurEvent);
+  MOZ_CAN_RUN_SCRIPT nsresult DragEnter(dom::DragEvent* aDragEvent);
+  MOZ_CAN_RUN_SCRIPT nsresult DragOver(dom::DragEvent* aDragEvent);
+  nsresult DragExit(dom::DragEvent* aDragEvent);
+  MOZ_CAN_RUN_SCRIPT nsresult Drop(dom::DragEvent* aDragEvent);
 
-  bool CanDrop(nsIDOMDragEvent* aEvent);
+  MOZ_CAN_RUN_SCRIPT bool CanDrop(dom::DragEvent* aEvent);
   void CleanupDragDropCaret();
-  already_AddRefed<nsIPresShell> GetPresShell();
-  nsPresContext* GetPresContext();
+  nsIPresShell* GetPresShell() const;
+  nsPresContext* GetPresContext() const;
   nsIContent* GetFocusedRootContent();
   // Returns true if IME consumes the mouse event.
   bool NotifyIMEOfMouseButtonEvent(WidgetMouseEvent* aMouseEvent);
   bool EditorHasFocus();
   bool IsFileControlTextBox();
   bool ShouldHandleNativeKeyBindings(WidgetKeyboardEvent* aKeyboardEvent);
-  nsresult HandleMiddleClickPaste(nsIDOMMouseEvent* aMouseEvent);
 
   /**
    * DetachedFromEditor() returns true if editor was detached.
@@ -105,9 +112,9 @@ protected:
    * Returns false if the editor is detached from the listener, i.e.,
    * impossible to continue to handle the event.  Otherwise, true.
    */
-  MOZ_MUST_USE bool EnsureCommitCompoisition();
+  MOZ_MUST_USE bool EnsureCommitComposition();
 
-  EditorBase* mEditorBase; // weak
+  EditorBase* mEditorBase;  // weak
   RefPtr<nsCaret> mCaret;
   bool mCommitText;
   bool mInTransaction;
@@ -119,6 +126,6 @@ protected:
 #endif
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // #ifndef EditorEventListener_h
+#endif  // #ifndef EditorEventListener_h

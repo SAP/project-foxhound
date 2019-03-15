@@ -2,11 +2,14 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 import json
 import os
 import types
 import urllib2
 
+import mozunit
 import pytest
 
 from wptserve.handlers import json_handler
@@ -86,6 +89,4 @@ def test_handler(server):
 
 
 if __name__ == "__main__":
-    import sys
-    sys.exit(pytest.main(
-        ['--log-tbpl=-', __file__]))
+    mozunit.main('-p', 'no:terminalreporter', '--log-tbpl=-', '--capture', 'no')

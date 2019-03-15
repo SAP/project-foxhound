@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sts=4 et sw=4 tw=99: */
+ * vim: set ts=8 sts=2 et sw=2 tw=80: */
 
 // Copyright 2012 the V8 project authors. All rights reserved.
 // Redistribution and use in source and binary forms, with or without
@@ -31,24 +31,32 @@
 #ifndef V8_PARSER_H_
 #define V8_PARSER_H_
 
+#include "mozilla/Range.h"
+
+#include <stdarg.h>
+
 #include "irregexp/RegExpAST.h"
 
 namespace js {
 
 namespace frontend {
-    class TokenStream;
+    class TokenStreamAnyChars;
 }
 
 namespace irregexp {
 
-bool
-ParsePattern(frontend::TokenStream& ts, LifoAlloc& alloc, JSAtom* str,
+extern bool
+ParsePattern(frontend::TokenStreamAnyChars& ts, LifoAlloc& alloc, JSAtom* str,
              bool multiline, bool match_only, bool unicode, bool ignore_case,
              bool global, bool sticky, RegExpCompileData* data);
 
-bool
-ParsePatternSyntax(frontend::TokenStream& ts, LifoAlloc& alloc, JSAtom* str,
+extern bool
+ParsePatternSyntax(frontend::TokenStreamAnyChars& ts, LifoAlloc& alloc, JSAtom* str,
                    bool unicode);
+
+extern bool
+ParsePatternSyntax(frontend::TokenStreamAnyChars& ts, LifoAlloc& alloc,
+                   const mozilla::Range<const char16_t> chars, bool unicode);
 
 // A BufferedVector is an automatically growing list, just like (and backed
 // by) a Vector, that is optimized for the case of adding and removing
@@ -176,7 +184,7 @@ template <typename CharT>
 class RegExpParser
 {
   public:
-    RegExpParser(frontend::TokenStream& ts, LifoAlloc* alloc,
+    RegExpParser(frontend::TokenStreamAnyChars& ts, LifoAlloc* alloc,
                  const CharT* chars, const CharT* end, bool multiline_mode, bool unicode,
                  bool ignore_case);
 
@@ -211,7 +219,13 @@ class RegExpParser
     bool ParseBackReferenceIndex(int* index_out);
 
     bool ParseClassAtom(char16_t* char_class, widechar *value);
+
+  private:
+    void SyntaxError(unsigned errorNumber, ...);
+
+  public:
     RegExpTree* ReportError(unsigned errorNumber, const char* param = nullptr);
+
     void Advance();
     void Advance(int dist) {
         next_pos_ += dist - 1;
@@ -288,9 +302,10 @@ class RegExpParser
     }
     void ScanForCaptures();
 
-    frontend::TokenStream& ts;
+    frontend::TokenStreamAnyChars& ts;
     LifoAlloc* alloc;
     RegExpCaptureVector* captures_;
+    const CharT* const start_;
     const CharT* next_pos_;
     const CharT* end_;
     widechar current_;

@@ -18,7 +18,7 @@ addMessageListener(TEST_MSG, msg => {
 var messageHandlers = {
 
   init() {
-    Services.search.currentEngine = Services.search.getEngineByName(ENGINE_NAME);
+    Services.search.defaultEngine = Services.search.getEngineByName(ENGINE_NAME);
     let input = content.document.querySelector("input");
     gController =
       new content.ContentSearchUIController(input, input.parentNode, "test", "test");
@@ -33,7 +33,7 @@ var messageHandlers = {
 
   key(arg) {
     let keyName = typeof(arg) == "string" ? arg : arg.key;
-    content.synthesizeKey(keyName, arg.modifiers || {});
+    content.synthesizeKey(keyName, arg.modifiers);
     let wait = arg.waitForSuggestions ? waitForSuggestions : cb => cb();
     wait(ack.bind(null, "key"));
   },
@@ -49,10 +49,10 @@ var messageHandlers = {
       composition: {
         string: data,
         clauses: [
-          { length: data.length, attr: content.COMPOSITION_ATTR_RAW_CLAUSE }
-        ]
+          { length: data.length, attr: content.COMPOSITION_ATTR_RAW_CLAUSE },
+        ],
       },
-      caret: { start: data.length, length: 0 }
+      caret: { start: data.length, length: 0 },
     });
     let wait = arg.waitForSuggestions ? waitForSuggestions : cb => cb();
     wait(ack.bind(null, "changeComposition"));
@@ -95,7 +95,7 @@ var messageHandlers = {
     let event = {
       type: "mousemove",
       clickcount: 0,
-    }
+    };
     row.addEventListener("mousemove", function() {
       ack("mousemove");
     }, {once: true});
@@ -143,9 +143,9 @@ var messageHandlers = {
     // no text entered, this won't have any effect, so also escape to ensure the
     // suggestions table is closed.
     gController.input.focus();
-    content.synthesizeKey("a", { accelKey: true });
-    content.synthesizeKey("VK_DELETE", {});
-    content.synthesizeKey("VK_ESCAPE", {});
+    content.synthesizeKey("a", {accelKey: true});
+    content.synthesizeKey("KEY_Delete");
+    content.synthesizeKey("KEY_Escape");
     ack("reset");
   },
 };
@@ -168,8 +168,7 @@ function waitForSuggestions(cb) {
 }
 
 function waitForContentSearchEvent(messageType, cb) {
-  let mm = content.SpecialPowers.Cc["@mozilla.org/globalmessagemanager;1"].
-    getService(content.SpecialPowers.Ci.nsIMessageListenerManager);
+  let mm = content.SpecialPowers.Cc["@mozilla.org/globalmessagemanager;1"].getService();
   mm.addMessageListener("ContentSearch", function listener(aMsg) {
     if (aMsg.data.type != messageType) {
       return;

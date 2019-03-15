@@ -3,8 +3,7 @@
 
 "use strict";
 
-var {OS: {File, Path, Constants}} = Components.utils.import("resource://gre/modules/osfile.jsm", {});
-Components.utils.import("resource://gre/modules/Task.jsm");
+var {OS: {File, Path, Constants}} = ChromeUtils.import("resource://gre/modules/osfile.jsm", {});
 
 /**
  * Remove all temporary files and back up files, including
@@ -32,12 +31,8 @@ async function clearFiles() {
   }
 }
 
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* init() {
-  yield clearFiles();
+add_task(async function init() {
+  await clearFiles();
 });
 
 /**
@@ -47,17 +42,17 @@ add_task(function* init() {
  * destination file exists
  * @result destination file will be backed up
  */
-add_task(function* test_backupTo_option_with_tmpPath() {
+add_task(async function test_backupTo_option_with_tmpPath() {
   let DEFAULT_CONTENTS = "default contents" + Math.random();
   let WRITE_CONTENTS = "abc" + Math.random();
   let path = Path.join(Constants.Path.tmpDir,
                        "test_backupTo_option_with_tmpPath.tmp");
-  yield File.writeAtomic(path, DEFAULT_CONTENTS);
-  yield File.writeAtomic(path, WRITE_CONTENTS, { tmpPath: path + ".tmp",
+  await File.writeAtomic(path, DEFAULT_CONTENTS);
+  await File.writeAtomic(path, WRITE_CONTENTS, { tmpPath: path + ".tmp",
                                         backupTo: path + ".backup" });
-  do_check_true((yield File.exists(path + ".backup")));
-  let contents = yield File.read(path + ".backup");
-  do_check_eq(DEFAULT_CONTENTS, (new TextDecoder()).decode(contents));
+  Assert.ok((await File.exists(path + ".backup")));
+  let contents = await File.read(path + ".backup");
+  Assert.equal(DEFAULT_CONTENTS, (new TextDecoder()).decode(contents));
 });
 
 /**
@@ -67,16 +62,16 @@ add_task(function* test_backupTo_option_with_tmpPath() {
  * destination file exists
  * @result destination file will be backed up
  */
-add_task(function* test_backupTo_option_without_tmpPath() {
+add_task(async function test_backupTo_option_without_tmpPath() {
   let DEFAULT_CONTENTS = "default contents" + Math.random();
   let WRITE_CONTENTS = "abc" + Math.random();
   let path = Path.join(Constants.Path.tmpDir,
                        "test_backupTo_option_without_tmpPath.tmp");
-  yield File.writeAtomic(path, DEFAULT_CONTENTS);
-  yield File.writeAtomic(path, WRITE_CONTENTS, { backupTo: path + ".backup" });
-  do_check_true((yield File.exists(path + ".backup")));
-  let contents = yield File.read(path + ".backup");
-  do_check_eq(DEFAULT_CONTENTS, (new TextDecoder()).decode(contents));
+  await File.writeAtomic(path, DEFAULT_CONTENTS);
+  await File.writeAtomic(path, WRITE_CONTENTS, { backupTo: path + ".backup" });
+  Assert.ok((await File.exists(path + ".backup")));
+  let contents = await File.read(path + ".backup");
+  Assert.equal(DEFAULT_CONTENTS, (new TextDecoder()).decode(contents));
 });
 
 /**
@@ -86,14 +81,14 @@ add_task(function* test_backupTo_option_without_tmpPath() {
  * destination file exists
  * @result destination file will not be backed up
  */
-add_task(function* test_non_backupTo_option() {
+add_task(async function test_non_backupTo_option() {
   let DEFAULT_CONTENTS = "default contents" + Math.random();
   let WRITE_CONTENTS = "abc" + Math.random();
   let path = Path.join(Constants.Path.tmpDir,
                        "test_non_backupTo_option.tmp");
-  yield File.writeAtomic(path, DEFAULT_CONTENTS);
-  yield File.writeAtomic(path, WRITE_CONTENTS);
-  do_check_false((yield File.exists(path + ".backup")));
+  await File.writeAtomic(path, DEFAULT_CONTENTS);
+  await File.writeAtomic(path, WRITE_CONTENTS);
+  Assert.equal(false, (await File.exists(path + ".backup")));
 });
 
 /**
@@ -103,14 +98,13 @@ add_task(function* test_non_backupTo_option() {
  * destination file not exists
  * @result no back up file exists
  */
-add_task(function* test_backupTo_option_without_destination_file() {
-  let DEFAULT_CONTENTS = "default contents" + Math.random();
+add_task(async function test_backupTo_option_without_destination_file() {
   let WRITE_CONTENTS = "abc" + Math.random();
   let path = Path.join(Constants.Path.tmpDir,
                        "test_backupTo_option_without_destination_file.tmp");
-  yield File.remove(path);
-  yield File.writeAtomic(path, WRITE_CONTENTS, { backupTo: path + ".backup" });
-  do_check_false((yield File.exists(path + ".backup")));
+  await File.remove(path);
+  await File.writeAtomic(path, WRITE_CONTENTS, { backupTo: path + ".backup" });
+  Assert.equal(false, (await File.exists(path + ".backup")));
 });
 
 /**
@@ -121,21 +115,21 @@ add_task(function* test_backupTo_option_without_destination_file() {
  * destination file exists
  * @result destination file will be backed up
  */
-add_task(function* test_backupTo_option_with_backup_file() {
+add_task(async function test_backupTo_option_with_backup_file() {
   let DEFAULT_CONTENTS = "default contents" + Math.random();
   let WRITE_CONTENTS = "abc" + Math.random();
   let path = Path.join(Constants.Path.tmpDir,
                        "test_backupTo_option_with_backup_file.tmp");
-  yield File.writeAtomic(path, DEFAULT_CONTENTS);
+  await File.writeAtomic(path, DEFAULT_CONTENTS);
 
-  yield File.writeAtomic(path + ".backup", new Uint8Array(1000));
+  await File.writeAtomic(path + ".backup", new Uint8Array(1000));
 
-  yield File.writeAtomic(path, WRITE_CONTENTS, { backupTo: path + ".backup" });
-  do_check_true((yield File.exists(path + ".backup")));
-  let contents = yield File.read(path + ".backup");
-  do_check_eq(DEFAULT_CONTENTS, (new TextDecoder()).decode(contents));
+  await File.writeAtomic(path, WRITE_CONTENTS, { backupTo: path + ".backup" });
+  Assert.ok((await File.exists(path + ".backup")));
+  let contents = await File.read(path + ".backup");
+  Assert.equal(DEFAULT_CONTENTS, (new TextDecoder()).decode(contents));
 });
 
-add_task(function* cleanup() {
-  yield clearFiles();
+add_task(async function cleanup() {
+  await clearFiles();
 });

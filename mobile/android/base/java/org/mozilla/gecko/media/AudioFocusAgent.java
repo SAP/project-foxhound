@@ -1,29 +1,52 @@
+/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 package org.mozilla.gecko.media;
 
-import org.mozilla.gecko.annotation.RobocopTarget;
-import org.mozilla.gecko.annotation.WrapForJNI;
-import org.mozilla.gecko.EventDispatcher;
-import org.mozilla.gecko.GeckoAppShell;
-
+import android.annotation.SuppressLint;
 import android.content.Context;
-import android.content.Intent;
 import android.media.AudioManager;
 import android.media.AudioManager.OnAudioFocusChangeListener;
+import android.support.annotation.VisibleForTesting;
 import android.util.Log;
 
-public class AudioFocusAgent {
-    private static final String LOGTAG = "AudioFocusAgent";
+import org.mozilla.gecko.EventDispatcher;
+import org.mozilla.gecko.GeckoAppShell;
+import org.mozilla.gecko.Tab;
+import org.mozilla.gecko.Tabs;
+import org.mozilla.gecko.annotation.RobocopTarget;
+import org.mozilla.gecko.annotation.WrapForJNI;
 
+import java.lang.ref.WeakReference;
+
+import static org.mozilla.gecko.AppConstants.Versions;
+
+public class AudioFocusAgent implements Tabs.OnTabsChangedListener {
+    private static final String LOGTAG = "AudioFocusAgent";
+    /**
+     * Event dispatched when the initialization process is done.
+     */
+    public static final String READY = "AudioFocusAgent:Ready";
+
+    // We're referencing the *application* context, so this is in fact okay.
+    @SuppressLint("StaticFieldLeak")
     private static Context mContext;
     private AudioManager mAudioManager;
     private OnAudioFocusChangeListener mAfChangeListener;
 
-    public static final String OWN_FOCUS = "own_focus";
-    public static final String LOST_FOCUS = "lost_focus";
-    public static final String LOST_FOCUS_TRANSIENT = "lost_focus_transient";
-    public static final String LOST_FOCUS_TRANSIENT_CAN_DUCK = "lost_focus_transient_can_duck";
+    private WeakReference<Tab> mTabReference = new WeakReference<>(null);
 
-    private String mAudioFocusState = LOST_FOCUS;
+    private GeckoMediaControlAgent geckoMediaControlAgent = GeckoMediaControlAgent.getInstance();
+
+    public enum State {
+        OWN_FOCUS,
+        LOST_FOCUS,
+        LOST_FOCUS_TRANSIENT,
+        LOST_FOCUS_TRANSIENT_CAN_DUCK
+    }
+
+    private State mAudioFocusState = State.LOST_FOCUS;
 
     @WrapForJNI(calledFrom = "gecko")
     public static void notifyStartedPlaying() {
@@ -48,45 +71,49 @@ public class AudioFocusAgent {
             return;
         }
 
-        mContext = context;
+        mContext = context.getApplicationContext();
+        geckoMediaControlAgent.attachToContext(mContext);
         mAudioManager = (AudioManager) mContext.getSystemService(Context.AUDIO_SERVICE);
+        Tabs.registerOnTabsChangedListener(this);
 
         mAfChangeListener = new OnAudioFocusChangeListener() {
             public void onAudioFocusChange(int focusChange) {
                 switch (focusChange) {
                     case AudioManager.AUDIOFOCUS_LOSS:
                         Log.d(LOGTAG, "onAudioFocusChange, AUDIOFOCUS_LOSS");
-                        notifyObservers("AudioFocusChanged", "lostAudioFocus");
-                        notifyMediaControlService(MediaControlService.ACTION_PAUSE_BY_AUDIO_FOCUS);
-                        mAudioFocusState = LOST_FOCUS;
+                        mAudioFocusState = State.LOST_FOCUS;
+                        notifyObservers("audioFocusChanged", "lostAudioFocus");
+                        notifyMediaControlAgent(GeckoMediaControlAgent.ACTION_PAUSE_BY_AUDIO_FOCUS);
                         break;
                     case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
                         Log.d(LOGTAG, "onAudioFocusChange, AUDIOFOCUS_LOSS_TRANSIENT");
-                        notifyObservers("AudioFocusChanged", "lostAudioFocusTransiently");
-                        notifyMediaControlService(MediaControlService.ACTION_PAUSE_BY_AUDIO_FOCUS);
-                        mAudioFocusState = LOST_FOCUS_TRANSIENT;
+                        mAudioFocusState = State.LOST_FOCUS_TRANSIENT;
+                        notifyObservers("audioFocusChanged", "lostAudioFocusTransiently");
+                        notifyMediaControlAgent(GeckoMediaControlAgent.ACTION_PAUSE_BY_AUDIO_FOCUS);
                         break;
                     case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
                         Log.d(LOGTAG, "onAudioFocusChange, AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK");
-                        notifyMediaControlService(MediaControlService.ACTION_START_AUDIO_DUCK);
-                        mAudioFocusState = LOST_FOCUS_TRANSIENT_CAN_DUCK;
+                        mAudioFocusState = State.LOST_FOCUS_TRANSIENT_CAN_DUCK;
+                        notifyMediaControlAgent(GeckoMediaControlAgent.ACTION_START_AUDIO_DUCK);
                         break;
                     case AudioManager.AUDIOFOCUS_GAIN:
-                        if (mAudioFocusState.equals(LOST_FOCUS_TRANSIENT_CAN_DUCK)) {
+                        State state = mAudioFocusState;
+                        mAudioFocusState = State.OWN_FOCUS;
+                        if (state.equals(State.LOST_FOCUS_TRANSIENT_CAN_DUCK)) {
                             Log.d(LOGTAG, "onAudioFocusChange, AUDIOFOCUS_GAIN (from DUCKING)");
-                            notifyMediaControlService(MediaControlService.ACTION_STOP_AUDIO_DUCK);
-                        } else if (mAudioFocusState.equals(LOST_FOCUS_TRANSIENT)) {
+                            notifyMediaControlAgent(GeckoMediaControlAgent.ACTION_STOP_AUDIO_DUCK);
+                        } else if (state.equals(State.LOST_FOCUS_TRANSIENT)) {
                             Log.d(LOGTAG, "onAudioFocusChange, AUDIOFOCUS_GAIN");
-                            notifyObservers("AudioFocusChanged", "gainAudioFocus");
-                            notifyMediaControlService(MediaControlService.ACTION_RESUME_BY_AUDIO_FOCUS);
+                            notifyObservers("audioFocusChanged", "gainAudioFocus");
+                            notifyMediaControlAgent(GeckoMediaControlAgent.ACTION_RESUME_BY_AUDIO_FOCUS);
                         }
-                        mAudioFocusState = OWN_FOCUS;
                         break;
                     default:
                 }
             }
         };
-        notifyMediaControlService(MediaControlService.ACTION_INIT);
+
+        EventDispatcher.getInstance().dispatch(READY, null);
     }
 
     @RobocopTarget
@@ -95,6 +122,8 @@ public class AudioFocusAgent {
     }
 
     private static class SingletonHolder {
+        // We're referencing the *application* context, so this is in fact okay.
+        @SuppressLint("StaticFieldLeak")
         private static final AudioFocusAgent INSTANCE = new AudioFocusAgent();
     }
 
@@ -109,7 +138,7 @@ public class AudioFocusAgent {
     private AudioFocusAgent() {}
 
     private void requestAudioFocusIfNeeded() {
-        if (mAudioFocusState.equals(OWN_FOCUS)) {
+        if (mAudioFocusState.equals(State.OWN_FOCUS)) {
             return;
         }
 
@@ -121,23 +150,90 @@ public class AudioFocusAgent {
             "AudioFocus request granted" : "AudioFoucs request failed";
         Log.d(LOGTAG, focusMsg);
         if (result == AudioManager.AUDIOFOCUS_GAIN) {
-            mAudioFocusState = OWN_FOCUS;
+            mAudioFocusState = State.OWN_FOCUS;
         }
     }
 
     private void abandonAudioFocusIfNeeded() {
-        if (!mAudioFocusState.equals(OWN_FOCUS)) {
+        if (!mAudioFocusState.equals(State.OWN_FOCUS)) {
             return;
         }
 
         Log.d(LOGTAG, "Abandon AudioFocus");
         mAudioManager.abandonAudioFocus(mAfChangeListener);
-        mAudioFocusState = LOST_FOCUS;
+        mAudioFocusState = State.LOST_FOCUS;
     }
 
-    private void notifyMediaControlService(String action) {
-        Intent intent = new Intent(mContext, MediaControlService.class);
-        intent.setAction(action);
-        mContext.startService(intent);
+    /* package */ Tab getActiveMediaTab() {
+        return mTabReference.get();
+    }
+
+    /* package */ void clearActiveMediaTab() {
+        mTabReference = new WeakReference<>(null);
+    }
+
+    @Override
+    public void onTabChanged(Tab tab, Tabs.TabEvents msg, String data) {
+        if (!isAttachedToContext()) {
+            return;
+        }
+
+        final Tab playingTab = mTabReference.get();
+        switch (msg) {
+            case MEDIA_PLAYING_CHANGE:
+                // The 'MEDIA_PLAYING_CHANGE' would only be received when the
+                // media starts or ends.
+                if (playingTab != tab && tab.isMediaPlaying()) {
+                    mTabReference = new WeakReference<>(tab);
+                    notifyMediaControlAgent(GeckoMediaControlAgent.ACTION_TAB_STATE_PLAYING);
+                } else if (playingTab == tab) {
+                    mTabReference = new WeakReference<>(tab.isMediaPlaying() ? tab : null);
+                    final String action = tab.isMediaPlaying()
+                            ? GeckoMediaControlAgent.ACTION_TAB_STATE_PLAYING
+                            : GeckoMediaControlAgent.ACTION_TAB_STATE_STOPPED;
+                    notifyMediaControlAgent(action);
+                }
+                break;
+            case MEDIA_PLAYING_RESUME:
+                // user resume the paused-by-control media from page so that we
+                // should make the control interface consistent.
+                if (playingTab == tab) {
+                    notifyMediaControlAgent(GeckoMediaControlAgent.ACTION_TAB_STATE_RESUMED);
+                }
+                break;
+            case CLOSED:
+                if (playingTab == null || playingTab == tab) {
+                    // Remove the controls when the playing tab disappeared or was closed.
+                    notifyMediaControlAgent(GeckoMediaControlAgent.ACTION_TAB_STATE_STOPPED);
+                }
+                break;
+            case FAVICON:
+                if (playingTab == tab) {
+                    notifyMediaControlAgent(GeckoMediaControlAgent.ACTION_TAB_STATE_FAVICON);
+                }
+                break;
+        }
+    }
+
+    private void notifyMediaControlAgent(String action) {
+        if (Versions.preLollipop) {
+            // The notification only works from Lollipop onwards (at least until we try using
+            // the support library version), so there's no point in starting the service.
+            return;
+        }
+
+        geckoMediaControlAgent.handleAction(action);
+    }
+
+    @VisibleForTesting
+    @RobocopTarget
+    public State getAudioFocusState() {
+        return mAudioFocusState;
+    }
+
+    @VisibleForTesting
+    @RobocopTarget
+    public void changeAudioFocus(int focusChange) {
+        mAfChangeListener.onAudioFocusChange(focusChange);
     }
 }

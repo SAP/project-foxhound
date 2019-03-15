@@ -4,14 +4,9 @@
 
 "use strict";
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cu = Components.utils;
+var EXPORTED_SYMBOLS = ["AutoCompletePopup"];
 
-this.EXPORTED_SYMBOLS = [ "AutoCompletePopup" ];
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // AutoCompleteResultView is an abstraction around a list of results
 // we got back up from browser-content.js. It implements enough of
@@ -19,8 +14,10 @@ Cu.import("resource://gre/modules/Services.jsm");
 // richlistbox popup work.
 var AutoCompleteResultView = {
   // nsISupports
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIAutoCompleteController,
-                                         Ci.nsIAutoCompleteInput]),
+  QueryInterface: ChromeUtils.generateQI([
+    Ci.nsIAutoCompleteController,
+    Ci.nsIAutoCompleteInput,
+  ]),
 
   // Private variables
   results: [],
@@ -31,6 +28,10 @@ var AutoCompleteResultView = {
   },
 
   getValueAt(index) {
+    return this.results[index].value;
+  },
+
+  getFinalCompleteValueAt(index) {
     return this.results[index].value;
   },
 
@@ -101,11 +102,24 @@ this.AutoCompletePopup = {
     for (let msg of this.MESSAGES) {
       Services.mm.addMessageListener(msg, this);
     }
+    Services.obs.addObserver(this, "message-manager-disconnect");
   },
 
   uninit() {
     for (let msg of this.MESSAGES) {
       Services.mm.removeMessageListener(msg, this);
+    }
+    Services.obs.removeObserver(this, "message-manager-disconnect");
+  },
+
+  observe(subject, topic, data) {
+    switch (topic) {
+      case "message-manager-disconnect": {
+        if (this.openedPopup) {
+          this.openedPopup.closePopup();
+        }
+        break;
+      }
     }
   },
 
@@ -117,8 +131,12 @@ this.AutoCompletePopup = {
       }
 
       case "popuphidden": {
+        let selectedIndex = this.openedPopup.selectedIndex;
+        let selectedRowStyle = selectedIndex != -1 ?
+          AutoCompleteResultView.getStyleAt(selectedIndex) : "";
+        this.sendMessageToBrowser("FormAutoComplete:PopupClosed",
+                                  { selectedRowStyle });
         AutoCompleteResultView.clearResults();
-        this.sendMessageToBrowser("FormAutoComplete:PopupClosed");
         // adjustHeight clears the height from the popup so that
         // we don't have a big shrink effect if we closed with a
         // large list, and then open on a small one.
@@ -145,18 +163,19 @@ this.AutoCompletePopup = {
     }
 
     let window = browser.ownerGlobal;
-    let tabbrowser = window.gBrowser;
-    if (Services.focus.activeWindow != window ||
-        tabbrowser.selectedBrowser != browser) {
+    // Also check window top in case this is a sidebar.
+    if (Services.focus.activeWindow !== window.top &&
+        Services.focus.focusedWindow.top !== window.top) {
       // We were sent a message from a window or tab that went into the
       // background, so we'll ignore it for now.
       return;
     }
 
+    let firstResultStyle = results[0].style;
     this.weakBrowser = Cu.getWeakReference(browser);
     this.openedPopup = browser.autoCompletePopup;
     // the layout varies according to different result type
-    this.openedPopup.setAttribute("firstresultstyle", results[0].style);
+    this.openedPopup.setAttribute("firstresultstyle", firstResultStyle);
     this.openedPopup.hidden = false;
     // don't allow the popup to become overly narrow
     this.openedPopup.setAttribute("width", Math.max(100, rect.width));
@@ -169,8 +188,12 @@ this.AutoCompletePopup = {
     if (results.length) {
       // Reset fields that were set from the last time the search popup was open
       this.openedPopup.mInput = AutoCompleteResultView;
-      this.openedPopup.showCommentColumn = false;
-      this.openedPopup.showImageColumn = false;
+      // Temporarily increase the maxRows as we don't want to show
+      // the scrollbar in form autofill popup.
+      if (firstResultStyle == "autofill-profile") {
+        this.openedPopup._normalMaxRows = this.openedPopup.maxRows;
+        this.openedPopup.mInput.maxRows = 100;
+      }
       this.openedPopup.addEventListener("popuphidden", this);
       this.openedPopup.addEventListener("popupshowing", this);
       this.openedPopup.openPopupAtScreenRect("after_start", rect.left, rect.top,
@@ -242,8 +265,12 @@ this.AutoCompletePopup = {
 
       case "FormAutoComplete:MaybeOpenPopup": {
         let { results, rect, dir } = message.data;
-        this.showPopupWithResults({ browser: message.target, rect, dir,
-                                    results });
+        this.showPopupWithResults({
+          browser: message.target,
+          rect,
+          dir,
+          results,
+        });
         break;
       }
 
@@ -278,6 +305,7 @@ this.AutoCompletePopup = {
    * The real controller's handleEnter is called directly in the content process
    * for other methods of completing a selection (e.g. using the tab or enter
    * keys) since the field with focus is in that process.
+   * @param {boolean} aIsPopupSelection
    */
   handleEnter(aIsPopupSelection) {
     if (this.openedPopup) {
@@ -298,10 +326,17 @@ this.AutoCompletePopup = {
    *        The optional data to send with the message.
    */
   sendMessageToBrowser(msgName, data) {
-    let browser = this.weakBrowser ? this.weakBrowser.get()
-                                   : null;
-    if (browser) {
+    let browser = this.weakBrowser ?
+      this.weakBrowser.get() :
+      null;
+    if (!browser) {
+      return;
+    }
+
+    if (browser.messageManager) {
       browser.messageManager.sendAsyncMessage(msgName, data);
+    } else {
+      Cu.reportError(`AutoCompletePopup: No messageManager for message "${msgName}"`);
     }
   },
 
@@ -316,4 +351,4 @@ this.AutoCompletePopup = {
       this.sendMessageToBrowser("FormAutoComplete:Focus");
     }
   },
-}
+};

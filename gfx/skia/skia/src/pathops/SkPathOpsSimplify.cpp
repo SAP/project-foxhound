@@ -10,7 +10,7 @@
 #include "SkPathOpsCommon.h"
 #include "SkPathWriter.h"
 
-static bool bridgeWinding(SkOpContourHead* contourList, SkPathWriter* simple) {
+static bool bridgeWinding(SkOpContourHead* contourList, SkPathWriter* writer) {
     bool unsortable = false;
     do {
         SkOpSpan* span = FindSortableTop(contourList);
@@ -25,7 +25,7 @@ static bool bridgeWinding(SkOpContourHead* contourList, SkPathWriter* simple) {
             if (current->activeWinding(start, end)) {
                 do {
                     if (!unsortable && current->done()) {
-                          break;
+                        break;
                     }
                     SkASSERT(unsortable || !current->done());
                     SkOpSpanBase* nextStart = start;
@@ -40,25 +40,28 @@ static bool bridgeWinding(SkOpContourHead* contourList, SkPathWriter* simple) {
                     current->debugID(), start->pt().fX, start->pt().fY,
                     end->pt().fX, end->pt().fY);
         #endif
-                    if (!current->addCurveTo(start, end, simple)) {
+                    if (!current->addCurveTo(start, end, writer)) {
                         return false;
                     }
                     current = next;
                     start = nextStart;
                     end = nextEnd;
-                } while (!simple->isClosed() && (!unsortable || !start->starter(end)->done()));
-                if (current->activeWinding(start, end) && !simple->isClosed()) {
+                } while (!writer->isClosed() && (!unsortable || !start->starter(end)->done()));
+                if (current->activeWinding(start, end) && !writer->isClosed()) {
                     SkOpSpan* spanStart = start->starter(end);
                     if (!spanStart->done()) {
-                        if (!current->addCurveTo(start, end, simple)) {
+                        if (!current->addCurveTo(start, end, writer)) {
                             return false;
                         }
                         current->markDone(spanStart);
                     }
                 }
-                simple->finishContour();
+                writer->finishContour();
             } else {
-                SkOpSpanBase* last = current->markAndChaseDone(start, end);
+                SkOpSpanBase* last;
+                if (!current->markAndChaseDone(start, end, &last)) {
+                    return false;
+                }
                 if (last && !last->chased()) {
                     last->setChased(true);
                     SkASSERT(!SkPathOpsDebug::ChaseContains(chase, last));
@@ -83,31 +86,30 @@ static bool bridgeWinding(SkOpContourHead* contourList, SkPathWriter* simple) {
 }
 
 // returns true if all edges were processed
-static bool bridgeXor(SkOpContourHead* contourList, SkPathWriter* simple) {
-    SkOpSegment* current;
-    SkOpSpanBase* start;
-    SkOpSpanBase* end;
+static bool bridgeXor(SkOpContourHead* contourList, SkPathWriter* writer) {
     bool unsortable = false;
-    while ((current = FindUndone(contourList, &start, &end))) {
+    int safetyNet = 1000000;
+    do {
+        SkOpSpan* span = FindUndone(contourList);
+        if (!span) {
+            break;
+        }
+        SkOpSegment* current = span->segment();
+        SkOpSpanBase* start = span->next();
+        SkOpSpanBase* end = span;
         do {
+            if (--safetyNet < 0) {
+                return false;
+            }
             if (!unsortable && current->done()) {
-                SkPathOpsDebug::ShowActiveSpans(contourList);
+                break;
             }
             SkASSERT(unsortable || !current->done());
             SkOpSpanBase* nextStart = start;
             SkOpSpanBase* nextEnd = end;
-            SkOpSegment* next = current->findNextXor(&nextStart, &nextEnd, &unsortable);
+            SkOpSegment* next = current->findNextXor(&nextStart, &nextEnd,
+                    &unsortable);
             if (!next) {
-                if (!unsortable && simple->hasMove()
-                        && current->verb() != SkPath::kLine_Verb
-                        && !simple->isClosed()) {
-                    if (!current->addCurveTo(start, end, simple)) {
-                        return false;
-                    }
-                    if (!simple->isClosed()) {
-                        SkPathOpsDebug::ShowActiveSpans(contourList);
-                    }
-                }
                 break;
             }
         #if DEBUG_FLOW
@@ -115,26 +117,25 @@ static bool bridgeXor(SkOpContourHead* contourList, SkPathWriter* simple) {
                     current->debugID(), start->pt().fX, start->pt().fY,
                     end->pt().fX, end->pt().fY);
         #endif
-            if (!current->addCurveTo(start, end, simple)) {
+            if (!current->addCurveTo(start, end, writer)) {
                 return false;
             }
             current = next;
             start = nextStart;
             end = nextEnd;
-        } while (!simple->isClosed() && (!unsortable || !start->starter(end)->done()));
-        if (!simple->isClosed()) {
-            SkASSERT(unsortable);
+        } while (!writer->isClosed() && (!unsortable || !start->starter(end)->done()));
+        if (!writer->isClosed()) {
             SkOpSpan* spanStart = start->starter(end);
             if (!spanStart->done()) {
-                if (!current->addCurveTo(start, end, simple)) {
+                if (!current->addCurveTo(start, end, writer)) {
                     return false;
                 }
                 current->markDone(spanStart);
             }
         }
-        simple->finishContour();
+        writer->finishContour();
         SkPathOpsDebug::ShowActiveSpans(contourList);
-    }
+    } while (true);
     return true;
 }
 
@@ -152,25 +153,24 @@ bool SimplifyDebug(const SkPath& path, SkPath* result
         return true;
     }
     // turn path into list of segments
-    SkChunkAlloc allocator(4096);  // FIXME: constant-ize, tune
+    SkSTArenaAlloc<4096> allocator;  // FIXME: constant-ize, tune
     SkOpContour contour;
     SkOpContourHead* contourList = static_cast<SkOpContourHead*>(&contour);
     SkOpGlobalState globalState(contourList, &allocator
             SkDEBUGPARAMS(skipAssert) SkDEBUGPARAMS(testName));
     SkOpCoincidence coincidence(&globalState);
-    SkScalar scaleFactor = ScaleFactor(path);
-    SkPath scaledPath;
-    const SkPath* workingPath;
-    if (scaleFactor > SK_Scalar1) {
-        ScalePath(path, 1.f / scaleFactor, &scaledPath);
-        workingPath = &scaledPath;
-    } else {
-        workingPath = &path;
+#if DEBUG_DUMP_VERIFY
+#ifndef SK_DEBUG
+    const char* testName = "release";
+#endif
+    if (SkPathOpsDebug::gDumpOp) {
+        SkPathOpsDebug::DumpSimplify(path, testName);
     }
+#endif
 #if DEBUG_SORT
     SkPathOpsDebug::gSortCount = SkPathOpsDebug::gSortCountDefault;
 #endif
-    SkOpEdgeBuilder builder(*workingPath, contourList, &globalState);
+    SkOpEdgeBuilder builder(path, contourList, &globalState);
     if (!builder.finish()) {
         return false;
     }
@@ -211,12 +211,19 @@ bool SimplifyDebug(const SkPath& path, SkPath* result
         return false;
     }
     wrapper.assemble();  // if some edges could not be resolved, assemble remaining
-    if (scaleFactor > 1) {
-        ScalePath(*result, scaleFactor, result);
-    }
     return true;
 }
 
 bool Simplify(const SkPath& path, SkPath* result) {
+#if DEBUG_DUMP_VERIFY
+    if (SkPathOpsDebug::gVerifyOp) {
+        if (!SimplifyDebug(path, result  SkDEBUGPARAMS(false) SkDEBUGPARAMS(nullptr))) {
+            SkPathOpsDebug::ReportSimplifyFail(path);
+            return false;
+        }
+        SkPathOpsDebug::VerifySimplify(path, *result);
+        return true;
+    }
+#endif
     return SimplifyDebug(path, result  SkDEBUGPARAMS(true) SkDEBUGPARAMS(nullptr));
 }

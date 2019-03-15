@@ -8,15 +8,16 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/remote_bitrate_estimator/test/bwe.h"
+#include "modules/remote_bitrate_estimator/test/bwe.h"
 
 #include <limits>
 
-#include "webrtc/base/common.h"
-#include "webrtc/modules/remote_bitrate_estimator/test/estimators/nada.h"
-#include "webrtc/modules/remote_bitrate_estimator/test/estimators/remb.h"
-#include "webrtc/modules/remote_bitrate_estimator/test/estimators/send_side.h"
-#include "webrtc/modules/remote_bitrate_estimator/test/estimators/tcp.h"
+#include "modules/remote_bitrate_estimator/test/estimators/bbr.h"
+#include "modules/remote_bitrate_estimator/test/estimators/nada.h"
+#include "modules/remote_bitrate_estimator/test/estimators/remb.h"
+#include "modules/remote_bitrate_estimator/test/estimators/send_side.h"
+#include "modules/remote_bitrate_estimator/test/estimators/tcp.h"
+#include "rtc_base/constructormagic.h"
 
 namespace webrtc {
 namespace testing {
@@ -67,7 +68,7 @@ class NullBweSender : public BweSender {
   int64_t TimeUntilNextProcess() override {
     return std::numeric_limits<int64_t>::max();
   }
-  int Process() override { return 0; }
+  void Process() override {}
 
  private:
   RTC_DISALLOW_COPY_AND_ASSIGN(NullBweSender);
@@ -89,10 +90,12 @@ BweSender* CreateBweSender(BandwidthEstimatorType estimator,
   switch (estimator) {
     case kRembEstimator:
       return new RembBweSender(kbps, observer, clock);
-    case kFullSendSideEstimator:
-      return new FullBweSender(kbps, observer, clock);
+    case kSendSideEstimator:
+      return new SendSideBweSender(kbps, observer, clock);
     case kNadaEstimator:
       return new NadaBweSender(kbps, observer, clock);
+    case kBbrEstimator:
+      return new BbrBweSender(observer, clock);
     case kTcpEstimator:
       FALLTHROUGH();
     case kNullEstimator:
@@ -108,10 +111,12 @@ BweReceiver* CreateBweReceiver(BandwidthEstimatorType type,
   switch (type) {
     case kRembEstimator:
       return new RembReceiver(flow_id, plot);
-    case kFullSendSideEstimator:
+    case kSendSideEstimator:
       return new SendSideBweReceiver(flow_id);
     case kNadaEstimator:
       return new NadaBweReceiver(flow_id);
+    case kBbrEstimator:
+      return new BbrBweReceiver(flow_id);
     case kTcpEstimator:
       return new TcpBweReceiver(flow_id);
     case kNullEstimator:

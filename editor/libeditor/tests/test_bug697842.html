@@ -5,7 +5,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=697842
 -->
 <head>
   <title>Test for Bug 697842</title>
-  <script type="application/javascript" src="/MochiKit/packed.js"></script>
   <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css"
@@ -16,7 +15,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=697842
   <p id="editor" contenteditable style="min-height: 1.5em;"></p>
 </div>
 <div id="content" style="display: none">
-  
+
 </div>
 <pre id="test">
 </pre>
@@ -27,8 +26,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=697842
 SimpleTest.waitForExplicitFinish();
 SimpleTest.waitForFocus(runTests);
 
-function runTests()
-{
+function runTests() {
   var editor = document.getElementById("editor");
   editor.focus();
 
@@ -55,7 +53,6 @@ function runTests()
     editor.addEventListener("compositionstart", handler, true);
     editor.addEventListener("compositionend", handler, true);
     editor.addEventListener("compositionupdate", handler, true);
-    editor.addEventListener("text", handler, true);
 
     // input first character
     composingString = "\u306B";
@@ -64,10 +61,10 @@ function runTests()
         { "string": composingString,
           "clauses":
           [
-            { "length": 1, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
-          ]
+            { "length": 1, "attr": COMPOSITION_ATTR_RAW_CLAUSE },
+          ],
         },
-        "caret": { "start": 1, "length": 0 }
+        "caret": { "start": 1, "length": 0 },
       });
 
     // input second character
@@ -77,10 +74,10 @@ function runTests()
         { "string": composingString,
           "clauses":
           [
-            { "length": 2, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
-          ]
+            { "length": 2, "attr": COMPOSITION_ATTR_RAW_CLAUSE },
+          ],
         },
-        "caret": { "start": 2, "length": 0 }
+        "caret": { "start": 2, "length": 0 },
       });
 
     // convert them
@@ -90,10 +87,10 @@ function runTests()
           "clauses":
           [
             { "length": 2,
-              "attr": COMPOSITION_ATTR_SELECTED_CLAUSE }
-          ]
+              "attr": COMPOSITION_ATTR_SELECTED_CLAUSE },
+          ],
         },
-        "caret": { "start": 2, "length": 0 }
+        "caret": { "start": 2, "length": 0 },
       });
 
     synthesizeComposition({ type: "compositioncommitasis" });

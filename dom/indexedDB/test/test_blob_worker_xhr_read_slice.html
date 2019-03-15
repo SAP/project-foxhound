@@ -71,13 +71,14 @@
     info("Sending blob to a worker");
 
     function workerScript() {
+      /* eslint-env worker */
       onmessage = function(event) {
         var blob = event.data;
         var slicedBlob = blob.slice(0, 3, "text/plain");
         var blobUrl = URL.createObjectURL(slicedBlob);
         var xhr = new XMLHttpRequest();
-        xhr.open('GET', blobUrl, true);
-        xhr.responseType = 'text';
+        xhr.open("GET", blobUrl, true);
+        xhr.responseType = "text";
         xhr.onload = function() {
           postMessage({ data: xhr.response });
           URL.revokeObjectURL(blobUrl);
@@ -85,9 +86,9 @@
         xhr.onerror = function() {
           postMessage({ data: null });
           URL.revokeObjectURL(blobUrl);
-        }
+        };
         xhr.send();
-      }
+      };
     }
 
     let workerScriptUrl =

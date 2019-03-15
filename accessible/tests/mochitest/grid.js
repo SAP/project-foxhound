@@ -1,32 +1,23 @@
-const nsIDOMKeyEvent = Components.interfaces.nsIDOMKeyEvent;
-
 /**
  * Create grid object based on HTML table.
  */
-function grid(aTableIdentifier)
-{
-  this.getRowCount = function getRowCount()
-  {
+function grid(aTableIdentifier) {
+  this.getRowCount = function getRowCount() {
     return this.table.rows.length - (this.table.tHead ? 1 : 0);
-  }
-  this.getColsCount = function getColsCount()
-  {
+  };
+  this.getColsCount = function getColsCount() {
     return this.table.rows[0].cells.length;
-  }
+  };
 
-  this.getRowAtIndex = function getRowAtIndex(aIndex)
-  {
+  this.getRowAtIndex = function getRowAtIndex(aIndex) {
     return this.table.rows[this.table.tHead ? aIndex + 1 : aIndex];
-  }
+  };
 
-  this.getMaxIndex = function getMaxIndex()
-  {
+  this.getMaxIndex = function getMaxIndex() {
     return this.getRowCount() * this.getColsCount() - 1;
-  }
+  };
 
-  this.getCellAtIndex = function getCellAtIndex(aIndex)
-  {
-    var rowCount = this.getRowCount();
+  this.getCellAtIndex = function getCellAtIndex(aIndex) {
     var colsCount = this.getColsCount();
 
     var rowIdx = Math.floor(aIndex / colsCount);
@@ -34,10 +25,9 @@ function grid(aTableIdentifier)
 
     var row = this.getRowAtIndex(rowIdx);
     return row.cells[colIdx];
-  }
+  };
 
-  this.getIndexByCell = function getIndexByCell(aCell)
-  {
+  this.getIndexByCell = function getIndexByCell(aCell) {
     var colIdx = aCell.cellIndex;
 
     var rowIdx = aCell.parentNode.rowIndex;
@@ -46,10 +36,9 @@ function grid(aTableIdentifier)
 
     var colsCount = this.getColsCount();
     return rowIdx * colsCount + colIdx;
-  }
+  };
 
-  this.getCurrentCell = function getCurrentCell()
-  {
+  this.getCurrentCell = function getCurrentCell() {
     var rowCount = this.table.rows.length;
     var colsCount = this.getColsCount();
     for (var rowIdx = 0; rowIdx < rowCount; rowIdx++) {
@@ -60,32 +49,29 @@ function grid(aTableIdentifier)
       }
     }
     return null;
-  }
+  };
 
-  this.initGrid = function initGrid()
-  {
+  this.initGrid = function initGrid() {
     this.table.addEventListener("keypress", this);
     this.table.addEventListener("click", this);
-  }
+  };
 
-  this.handleEvent = function handleEvent(aEvent)
-  {
-    if (aEvent instanceof nsIDOMKeyEvent)
+  this.handleEvent = function handleEvent(aEvent) {
+    if (aEvent instanceof KeyboardEvent)
       this.handleKeyEvent(aEvent);
     else
       this.handleClickEvent(aEvent);
-  }
+  };
 
-  this.handleKeyEvent = function handleKeyEvent(aEvent)
-  {
+  this.handleKeyEvent = function handleKeyEvent(aEvent) {
     if (aEvent.target.localName != "td")
       return;
 
     var cell = aEvent.target;
-    switch(aEvent.keyCode) {
-      case nsIDOMKeyEvent.DOM_VK_UP:
-        var colsCount = this.getColsCount();
-        var idx = this.getIndexByCell(cell);
+    switch (aEvent.keyCode) {
+      case KeyboardEvent.DOM_VK_UP: {
+        let colsCount = this.getColsCount();
+        let idx = this.getIndexByCell(cell);
         var upidx = idx - colsCount;
         if (upidx >= 0) {
           cell.removeAttribute("tabindex");
@@ -94,10 +80,10 @@ function grid(aTableIdentifier)
           upcell.focus();
         }
         break;
-
-      case nsIDOMKeyEvent.DOM_VK_DOWN:
-        var colsCount = this.getColsCount();
-        var idx = this.getIndexByCell(cell);
+      }
+      case KeyboardEvent.DOM_VK_DOWN: {
+        let colsCount = this.getColsCount();
+        let idx = this.getIndexByCell(cell);
         var downidx = idx + colsCount;
         if (downidx <= this.getMaxIndex()) {
           cell.removeAttribute("tabindex");
@@ -106,9 +92,9 @@ function grid(aTableIdentifier)
           downcell.focus();
         }
         break;
-
-      case nsIDOMKeyEvent.DOM_VK_LEFT:
-        var idx = this.getIndexByCell(cell);
+      }
+      case KeyboardEvent.DOM_VK_LEFT: {
+        let idx = this.getIndexByCell(cell);
         if (idx > 0) {
           cell.removeAttribute("tabindex");
           var prevcell = this.getCellAtIndex(idx - 1);
@@ -116,9 +102,9 @@ function grid(aTableIdentifier)
           prevcell.focus();
         }
         break;
-
-      case nsIDOMKeyEvent.DOM_VK_RIGHT:
-        var idx = this.getIndexByCell(cell);
+      }
+      case KeyboardEvent.DOM_VK_RIGHT: {
+        let idx = this.getIndexByCell(cell);
         if (idx < this.getMaxIndex()) {
           cell.removeAttribute("tabindex");
           var nextcell = this.getCellAtIndex(idx + 1);
@@ -126,14 +112,14 @@ function grid(aTableIdentifier)
           nextcell.focus();
         }
         break;
+      }
     }
-  }
+  };
 
-  this.handleClickEvent = function handleClickEvent(aEvent)
-  {
+  this.handleClickEvent = function handleClickEvent(aEvent) {
     if (aEvent.target.localName != "td")
       return;
-    
+
     var curCell = this.getCurrentCell();
     var cell = aEvent.target;
 
@@ -142,7 +128,7 @@ function grid(aTableIdentifier)
       cell.setAttribute("tabindex", "0");
       cell.focus();
     }
-  }
+  };
 
   this.table = getNode(aTableIdentifier);
   this.initGrid();

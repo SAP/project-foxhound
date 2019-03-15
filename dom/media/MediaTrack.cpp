@@ -12,40 +12,25 @@
 namespace mozilla {
 namespace dom {
 
-MediaTrack::MediaTrack(const nsAString& aId,
-                       const nsAString& aKind,
-                       const nsAString& aLabel,
+MediaTrack::MediaTrack(nsIGlobalObject* aOwnerGlobal, const nsAString& aId,
+                       const nsAString& aKind, const nsAString& aLabel,
                        const nsAString& aLanguage)
-  : DOMEventTargetHelper()
-  , mId(aId)
-  , mKind(aKind)
-  , mLabel(aLabel)
-  , mLanguage(aLanguage)
-{
-}
+    : DOMEventTargetHelper(aOwnerGlobal),
+      mId(aId),
+      mKind(aKind),
+      mLabel(aLabel),
+      mLanguage(aLanguage) {}
 
-MediaTrack::~MediaTrack()
-{
-}
+MediaTrack::~MediaTrack() {}
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(MediaTrack, DOMEventTargetHelper, mList)
 
 NS_IMPL_ADDREF_INHERITED(MediaTrack, DOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(MediaTrack, DOMEventTargetHelper)
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(MediaTrack)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(MediaTrack)
 NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 
-void
-MediaTrack::SetTrackList(MediaTrackList* aList)
-{
-  mList = aList;
-}
+void MediaTrack::SetTrackList(MediaTrackList* aList) { mList = aList; }
 
-void
-MediaTrack::Init(nsPIDOMWindowInner* aOwnerWindow)
-{
-  BindToOwner(aOwnerWindow);
-}
-
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

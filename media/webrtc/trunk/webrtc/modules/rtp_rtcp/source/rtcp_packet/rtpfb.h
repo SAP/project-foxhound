@@ -9,11 +9,11 @@
  *
  */
 
-#ifndef WEBRTC_MODULES_RTP_RTCP_SOURCE_RTCP_PACKET_RTPFB_H_
-#define WEBRTC_MODULES_RTP_RTCP_SOURCE_RTCP_PACKET_RTPFB_H_
+#ifndef MODULES_RTP_RTCP_SOURCE_RTCP_PACKET_RTPFB_H_
+#define MODULES_RTP_RTCP_SOURCE_RTCP_PACKET_RTPFB_H_
 
-#include "webrtc/base/basictypes.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet.h"
+#include "modules/rtp_rtcp/source/rtcp_packet.h"
+#include "rtc_base/basictypes.h"
 
 namespace webrtc {
 namespace rtcp {
@@ -22,19 +22,19 @@ namespace rtcp {
 // RFC4585, Section 6.2
 class Rtpfb : public RtcpPacket {
  public:
-  static const uint8_t kPacketType = 205;
+  static constexpr uint8_t kPacketType = 205;
 
   Rtpfb() : sender_ssrc_(0), media_ssrc_(0) {}
-  virtual ~Rtpfb() {}
+  ~Rtpfb() override {}
 
-  void From(uint32_t ssrc) { sender_ssrc_ = ssrc; }
-  void To(uint32_t ssrc) { media_ssrc_ = ssrc; }
+  void SetSenderSsrc(uint32_t ssrc) { sender_ssrc_ = ssrc; }
+  void SetMediaSsrc(uint32_t ssrc) { media_ssrc_ = ssrc; }
 
   uint32_t sender_ssrc() const { return sender_ssrc_; }
   uint32_t media_ssrc() const { return media_ssrc_; }
 
  protected:
-  static const size_t kCommonFeedbackLength = 8;
+  static constexpr size_t kCommonFeedbackLength = 8;
   void ParseCommonFeedback(const uint8_t* payload);
   void CreateCommonFeedback(uint8_t* payload) const;
 
@@ -45,4 +45,4 @@ class Rtpfb : public RtcpPacket {
 
 }  // namespace rtcp
 }  // namespace webrtc
-#endif  // WEBRTC_MODULES_RTP_RTCP_SOURCE_RTCP_PACKET_RTPFB_H_
+#endif  // MODULES_RTP_RTCP_SOURCE_RTCP_PACKET_RTPFB_H_

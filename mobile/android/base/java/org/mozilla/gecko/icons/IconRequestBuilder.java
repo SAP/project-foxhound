@@ -13,6 +13,7 @@ import org.mozilla.gecko.GeckoAppShell;
 import java.util.TreeSet;
 
 import ch.boye.httpclientandroidlib.util.TextUtils;
+import org.mozilla.gecko.icons.processing.ResizingProcessor;
 
 /**
  * Builder for creating a request to load an icon.
@@ -61,6 +62,15 @@ public class IconRequestBuilder {
     }
 
     /**
+     * Set the private mode to avoid saving the result to the disk.
+     */
+    @CheckResult
+    public IconRequestBuilder setPrivateMode(boolean isPrivate) {
+        internal.isPrivate = isPrivate;
+        return this;
+    }
+
+    /**
      * Skip the network and do not load an icon from a network connection.
      */
     @CheckResult
@@ -97,11 +107,39 @@ public class IconRequestBuilder {
     }
 
     /**
+     * If shouldSkipMemory is true then skip the memory cache and do not return
+     * a previously loaded icon.
+     */
+    @CheckResult
+    public IconRequestBuilder skipMemoryIf(boolean shouldSkipMemory) {
+        internal.skipMemory = shouldSkipMemory;
+        return this;
+    }
+
+    /**
      * The icon will be used as (Android) launcher icon. The loaded icon will be scaled to the
      * preferred Android launcher icon size.
      */
     public IconRequestBuilder forLauncherIcon() {
         internal.targetSize = GeckoAppShell.getPreferredIconSize();
+        return this;
+    }
+
+    /**
+     * The icon will be scaled to the given size.
+     */
+    public IconRequestBuilder targetSize(final int targetSize) {
+        internal.targetSize = targetSize;
+        return this;
+    }
+
+    /**
+     * The icon will be used in Activity Stream: a minimum size for the icon will be set.
+     */
+    public IconRequestBuilder forActivityStream() {
+        // This value was set anecdotally: 16px icons scaled up both look blurry and
+        // don't fill the space well. 32px icons look good enough.
+        internal.minimumSizePxAfterScaling = 32 * ResizingProcessor.MAX_SCALE_FACTOR;
         return this;
     }
 
@@ -126,6 +164,15 @@ public class IconRequestBuilder {
     }
 
     /**
+     * The text size will be resized to the given size, and this field is only used by
+     * {@link org.mozilla.gecko.icons.loader.IconGenerator} for creating a new icon.
+     */
+    public IconRequestBuilder textSize(final float textSize) {
+        internal.textSize = textSize;
+        return this;
+    }
+
+    /**
      * Return the request built with this builder.
      */
     @CheckResult
@@ -137,13 +184,16 @@ public class IconRequestBuilder {
         IconRequest request = new IconRequest(internal.getContext());
         request.pageUrl = internal.pageUrl;
         request.privileged = internal.privileged;
+        request.isPrivate = internal.isPrivate;
         request.icons = new TreeSet<>(internal.icons);
         request.skipNetwork = internal.skipNetwork;
         request.backgroundThread = internal.backgroundThread;
         request.skipDisk = internal.skipDisk;
         request.skipMemory = internal.skipMemory;
         request.targetSize = internal.targetSize;
+        request.minimumSizePxAfterScaling = internal.minimumSizePxAfterScaling;
         request.prepareOnly = internal.prepareOnly;
+        request.textSize = internal.textSize;
         return request;
     }
 

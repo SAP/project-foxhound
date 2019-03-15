@@ -2,25 +2,23 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-this.EXPORTED_SYMBOLS = [ "CharsetMenu" ];
+var EXPORTED_SYMBOLS = [ "CharsetMenu" ];
 
-const { classes: Cc, interfaces: Ci, utils: Cu} = Components;
-
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 XPCOMUtils.defineLazyGetter(this, "gBundle", function() {
   const kUrl = "chrome://global/locale/charsetMenu.properties";
   return Services.strings.createBundle(kUrl);
 });
 
-XPCOMUtils.defineLazyModuleGetter(this, "Deprecated",
+ChromeUtils.defineModuleGetter(this, "Deprecated",
     "resource://gre/modules/Deprecated.jsm");
 
 const kAutoDetectors = [
   ["off", ""],
   ["ja", "ja_parallel_state_machine"],
   ["ru", "ruprob"],
-  ["uk", "ukprob"]
+  ["uk", "ukprob"],
 ];
 
 /**
@@ -46,7 +44,7 @@ const kEncodings = new Set([
   "windows-1250",
   "ISO-8859-2",
   // Chinese, Simplified
-  "gbk",
+  "GBK",
   // Chinese, Traditional
   "Big5",
   // Cyrillic
@@ -87,7 +85,7 @@ const kEncodings = new Set([
 // Always at the start of the menu, in this order, followed by a separator.
 const kPinned = [
   "UTF-8",
-  "windows-1252"
+  "windows-1252",
 ];
 
 kPinned.forEach(x => kEncodings.delete(x));
@@ -103,9 +101,8 @@ function CharsetComparator(a, b) {
 }
 
 function SetDetector(event) {
-  let str = Cc["@mozilla.org/supports-string;1"].createInstance(Ci.nsISupportsString);
-  str.data = event.target.getAttribute("detector");
-  Services.prefs.setComplexValue("intl.charset.detector", Ci.nsISupportsString, str);
+  Services.prefs.setStringPref("intl.charset.detector",
+                               event.target.getAttribute("detector"));
 }
 
 function UpdateDetectorMenu(event) {
@@ -169,7 +166,7 @@ var CharsetMenu = {
     return {
       detectors: gDetectorInfoCache,
       pinnedCharsets: gPinnedInfoCache,
-      otherCharsets: gCharsetInfoCache
+      otherCharsets: gCharsetInfoCache,
     };
   },
 
@@ -186,7 +183,7 @@ var CharsetMenu = {
       label: this._getDetectorLabel(detectorName),
       accesskey: this._getDetectorAccesskey(detectorName),
       name: "detector",
-      value: nodeId
+      value: nodeId,
     }));
   },
 
@@ -195,7 +192,7 @@ var CharsetMenu = {
       label: this._getCharsetLabel(charset),
       accesskey: this._getCharsetAccessKey(charset),
       name: "charset",
-      value: charset
+      value: charset,
     }));
 
     if (sort) {
@@ -218,7 +215,7 @@ var CharsetMenu = {
   },
 
   _getCharsetLabel(charset) {
-    if (charset == "gbk") {
+    if (charset == "GBK") {
       // Localization key has been revised
       charset = "gbk.bis";
     }
@@ -228,7 +225,7 @@ var CharsetMenu = {
     return charset;
   },
   _getCharsetAccessKey(charset) {
-    if (charset == "gbk") {
+    if (charset == "GBK") {
       // Localization key has been revised
       charset = "gbk.bis";
     }
@@ -248,7 +245,7 @@ var CharsetMenu = {
         return "windows-1255";
 
       case "gb18030":
-        return "gbk";
+        return "GBK";
 
       default:
         return charset;

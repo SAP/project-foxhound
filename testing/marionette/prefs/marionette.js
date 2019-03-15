@@ -2,26 +2,37 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// Marionette is the remote protocol that lets OOP programs communicate
-// with, instrument, and control Gecko.
-//
-// It is included in Firefox, but not enabled by default unless the
-// --marionette flag is passed or the marionette.enabled preference is
-// set to true.
+/* global pref */
 
-// Whether or not Marionette is enabled.
+// Marionette is the remote protocol that lets OOP programs
+// communicate with, instrument, and control Gecko.
+
+// Starts and stops the Marionette server.
 pref("marionette.enabled", false);
+
+// Delay server startup until a modal dialogue has been clicked to
+// allow time for user to set breakpoints in the Browser Toolbox.
+pref("marionette.debugging.clicktostart", false);
+
+// Verbosity of Marionette logger repository.
+//
+// Available levels are, in descending order of severity,
+// "trace", "debug", "config", "info", "warn", "error", and "fatal".
+// The value is treated case-insensitively.
+pref("marionette.log.level", "Info");
+
+// Certain log messages that are known to be long are truncated.
+// This preference causes them to not be truncated.
+pref("marionette.log.truncate", true);
 
 // Port to start Marionette server on.
 pref("marionette.port", 2828);
 
-// Forces client connections to come from a loopback device.
-pref("marionette.forcelocal", true);
-
-// Marionette logging verbosity.  Allowed values are "fatal", "error",
-// "warn", "info", "config", "debug", and "trace".
-pref("marionette.log.level", "info");
-
-// Sets preferences recommended when using Firefox in automation with
-// Marionette.
+// Sets recommended automation preferences when Marionette is started.
 pref("marionette.prefs.recommended", true);
+
+// Whether content scripts can be safely reused.
+//
+// Deprecated and scheduled for removal
+// with https://bugzil.la/marionette-window-tracking
+pref("marionette.contentListener", false);

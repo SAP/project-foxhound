@@ -7,63 +7,70 @@ Transform the checksums signing task into an actual task description.
 
 from __future__ import absolute_import, print_function, unicode_literals
 
+from taskgraph.loader.single_dep import schema
 from taskgraph.transforms.base import TransformSequence
-from taskgraph.util.schema import validate_schema
-from taskgraph.util.scriptworker import get_signing_cert_scope
+from taskgraph.util.attributes import copy_attributes_from_dependent_job
+from taskgraph.util.scriptworker import (
+    get_signing_cert_scope,
+    get_worker_type_for_scope,
+    add_scope_prefix,
+)
+from taskgraph.util.treeherder import replace_group
 from taskgraph.transforms.task import task_description_schema
-from voluptuous import Schema, Any, Required, Optional
+from voluptuous import Required, Optional
 
 # Voluptuous uses marker objects as dictionary *keys*, but they are not
 # comparable, so we cast all of the keys back to regular strings
 task_description_schema = {str(k): v for k, v in task_description_schema.schema.iteritems()}
 
-transforms = TransformSequence()
-
-taskref_or_string = Any(
-    basestring,
-    {Required('task-reference'): basestring})
-
-checksums_signing_description_schema = Schema({
-    Required('dependent-task'): object,
+checksums_signing_description_schema = schema.extend({
     Required('depname', default='beetmover'): basestring,
     Optional('label'): basestring,
     Optional('treeherder'): task_description_schema['treeherder'],
+    Optional('shipping-product'): task_description_schema['shipping-product'],
+    Optional('shipping-phase'): task_description_schema['shipping-phase'],
 })
 
-
-@transforms.add
-def validate(config, jobs):
-    for job in jobs:
-        label = job.get('dependent-task', object).__dict__.get('label', '?no-label?')
-        yield validate_schema(
-            checksums_signing_description_schema, job,
-            "In checksums-signing ({!r} kind) task for {!r}:".format(config.kind, label))
+transforms = TransformSequence()
+transforms.add_validate(checksums_signing_description_schema)
 
 
 @transforms.add
 def make_checksums_signing_description(config, jobs):
     for job in jobs:
-        dep_job = job['dependent-task']
+        dep_job = job['primary-dependency']
+        attributes = dep_job.attributes
 
         treeherder = job.get('treeherder', {})
-        treeherder.setdefault('symbol', 'tc-cs(N)')
+        treeherder.setdefault(
+            'symbol',
+            replace_group(dep_job.task['extra']['treeherder']['symbol'], 'cs')
+        )
         dep_th_platform = dep_job.task.get('extra', {}).get(
             'treeherder', {}).get('machine', {}).get('platform', '')
         treeherder.setdefault('platform',
                               "{}/opt".format(dep_th_platform))
-        treeherder.setdefault('tier', 1)
+        treeherder.setdefault(
+            'tier',
+            dep_job.task.get('extra', {}).get('treeherder', {}).get('tier', 1)
+        )
         treeherder.setdefault('kind', 'build')
 
-        label = job.get('label', "checksumssigning-{}".format(dep_job.label))
+        label = job['label']
+        description = (
+            "Signing of Checksums file for locale '{locale}' for build '"
+            "{build_platform}/{build_type}'".format(
+                locale=attributes.get('locale', 'en-US'),
+                build_platform=attributes.get('build_platform'),
+                build_type=attributes.get('build_type')
+            )
+        )
         dependencies = {"beetmover": dep_job.label}
 
-        attributes = {
-            'nightly': dep_job.attributes.get('nightly', False),
-            'build_platform': dep_job.attributes.get('build_platform'),
-            'build_type': dep_job.attributes.get('build_type'),
-        }
+        attributes = copy_attributes_from_dependent_job(dep_job)
+
         if dep_job.attributes.get('locale'):
-            treeherder['symbol'] = 'tc-cs({})'.format(dep_job.attributes.get('locale'))
+            treeherder['symbol'] = 'cs({})'.format(dep_job.attributes.get('locale'))
             attributes['locale'] = dep_job.attributes.get('locale')
 
         upstream_artifacts = [{
@@ -78,15 +85,14 @@ def make_checksums_signing_description(config, jobs):
         signing_cert_scope = get_signing_cert_scope(config)
         task = {
             'label': label,
-            'description': "Checksum signing {} ".format(
-                dep_job.task["metadata"]["description"]),
-            'worker-type': "scriptworker-prov-v1/signing-linux-v1",
+            'description': description,
+            'worker-type': get_worker_type_for_scope(config, signing_cert_scope),
             'worker': {'implementation': 'scriptworker-signing',
                        'upstream-artifacts': upstream_artifacts,
                        'max-run-time': 3600},
             'scopes': [
                 signing_cert_scope,
-                "project:releng:signing:format:gpg"
+                add_scope_prefix(config, 'signing:format:gpg'),
             ],
             'dependencies': dependencies,
             'attributes': attributes,

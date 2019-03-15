@@ -5,7 +5,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 with Files('*'):
-    BUG_COMPONENT = ('Core', 'Video/Audio')
+    BUG_COMPONENT = ('Core', 'Audio/Video')
 
 EXPORTS.theora += [
     'include/theora/codec.h',
@@ -14,7 +14,7 @@ EXPORTS.theora += [
 ]
 
 # We allow warnings for third-party code that can be updated from upstream.
-ALLOW_COMPILER_WARNINGS = True
+AllowCompilerWarnings()
 
 FINAL_LIBRARY = 'gkmedias'
 
@@ -22,20 +22,19 @@ FINAL_LIBRARY = 'gkmedias'
 DEFINES['THEORA_DISABLE_ENCODE'] = True
 
 # Suppress warnings in third-party code.
-if CONFIG['GNU_CC'] or CONFIG['CLANG_CL']:
+if CONFIG['CC_TYPE'] in ('clang', 'clang-cl', 'gcc'):
     CFLAGS += ['-Wno-type-limits']
-if CONFIG['CLANG_CXX'] or CONFIG['CLANG_CL']:
+if CONFIG['CC_TYPE'] in ('clang', 'clang-cl'):
     CFLAGS += ['-Wno-tautological-compare']
-if CONFIG['CLANG_CL']:
+if CONFIG['CC_TYPE'] == 'clang-cl':
     CFLAGS += [
+        '-Wno-parentheses',
         '-Wno-pointer-sign',
-        '-Wno-shift-op-parentheses',
+        '-Wno-shift-negative-value',
     ]
 
 UNIFIED_SOURCES += [
-    'lib/apiwrapper.c',
     'lib/bitpack.c',
-    'lib/decapiwrapper.c',
     'lib/decinfo.c',
     'lib/decode.c',
     'lib/dequant.c',
@@ -50,20 +49,20 @@ UNIFIED_SOURCES += [
 
 LOCAL_INCLUDES += ['include']
 
-if '86' in CONFIG['OS_TEST']:
+if CONFIG['INTEL_ARCHITECTURE']:
     if CONFIG['OS_ARCH'] != 'SunOS':
-        if CONFIG['CLANG_CL']:
+        if CONFIG['CC_TYPE'] == 'clang-cl':
             # clang-cl can't handle libtheora's inline asm.
             pass
-        elif CONFIG['OS_ARCH'] != 'WINNT' or CONFIG['OS_TEST'] != 'x86_64':
+        elif CONFIG['OS_ARCH'] != 'WINNT' or CONFIG['CPU_ARCH'] != 'x86_64':
             DEFINES['OC_X86_ASM'] = True
-            if '64' in CONFIG['OS_TEST']:
+            if CONFIG['CPU_ARCH'] == 'x86_64':
                 DEFINES['OC_X86_64_ASM'] = True
-    if CONFIG['_MSC_VER']:
-        if CONFIG['CLANG_CL']:
+    if CONFIG['CC_TYPE'] in ('msvc', 'clang-cl'):
+        if CONFIG['CC_TYPE'] == 'clang-cl':
             # clang-cl can't handle libtheora's inline asm.
             pass
-        elif '64' not in CONFIG['OS_TEST']:
+        elif CONFIG['CPU_ARCH'] == 'x86':
             SOURCES += [
                 'lib/x86_vc/mmxfrag.c',
                 'lib/x86_vc/mmxidct.c',
@@ -82,7 +81,7 @@ if '86' in CONFIG['OS_TEST']:
         ]
 
 if CONFIG['GNU_AS']:
-    if 'arm' in CONFIG['OS_TEST']:
+    if CONFIG['CPU_ARCH'] == 'arm':
         SOURCES += [
             'lib/arm/armcpu.c',
             'lib/arm/armstate.c',
@@ -111,7 +110,7 @@ if CONFIG['GNU_AS']:
         ]
         ASFLAGS += CONFIG['NEON_FLAGS']
 
-        if CONFIG['CLANG_CXX']:
+        if CONFIG['CC_TYPE'] == 'clang':
             ASFLAGS += [
                 '-no-integrated-as',
             ]

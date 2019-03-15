@@ -61,13 +61,16 @@ const MAX_ITERATIONS = 1000;
 
 function createIframe(url,next) {
   var iframe = document.createElement("iframe");
-  iframe.src = url;
   iframe.remotePageLoaded = remotePageLoaded;
   var me = this;
   var currentIteration = 0;
   function iframeLoadCompleted() {
+    let loc = iframe.contentWindow.location;
+    if (loc && loc.href == "about:blank") {
+      return;
+    }
     var docEl = iframe.contentDocument.documentElement;
-    if (docEl.className.indexOf("reftest-wait") >= 0) {
+    if (docEl.className.includes("reftest-wait")) {
       if (currentIteration++ > MAX_ITERATIONS) {
         ok(false, "iframe load for " + url + " timed out");
         endTest();
@@ -84,6 +87,8 @@ function createIframe(url,next) {
   }
   iframe.addEventListener("load", iframeLoadCompleted);
   window.document.body.appendChild(iframe);
+  iframe.clientHeight; // flush layout.
+  iframe.src = url;
   iframe.focus();
 };
 
@@ -143,6 +148,7 @@ var tests = [
     [ 'input-maxlength-ui-invalid-change.html', 'input-invalid-ref.html'] ,
     [ 'input-minlength-ui-valid-change.html', 'input-valid-ref.html'] ,
     [ 'input-minlength-ui-invalid-change.html', 'input-invalid-ref.html'] ,
+    [ 'input-stoppropagation.html', 'input-stoppropagation-ref.html'] ,
     [ 'textarea-maxlength-valid-before-change.html', 'textarea-valid-ref.html'] ,
     [ 'textarea-maxlength-valid-change.html', 'textarea-valid-ref.html'] ,
     [ 'textarea-maxlength-invalid-change.html', 'textarea-invalid-ref.html'] ,
@@ -186,11 +192,34 @@ var tests = [
     [ 'bug1263357-3.html' , 'bug1263357-3-ref.html'] ,
     [ 'bug1263357-4.html' , 'bug1263357-4-ref.html'] ,
     [ 'bug1263357-5.html' , 'bug1263357-5-ref.html'] ,
+    [ 'bug1354478-1.html' , 'bug1354478-1-ref.html'] ,
+    [ 'bug1354478-2.html' , 'bug1354478-2-ref.html'] ,
+    [ 'bug1354478-3.html' , 'bug1354478-3-ref.html'] ,
+    [ 'bug1354478-4.html' , 'bug1354478-4-ref.html'] ,
+    [ 'bug1354478-5.html' , 'bug1354478-5-ref.html'] ,
+    [ 'bug1354478-6.html' , 'bug1354478-6-ref.html'] ,
+    [ 'bug1359411.html'   , 'bug1359411-ref.html' ] ,
+    [ 'bug1415416.html'   , 'bug1415416-ref.html' ] ,
+    [ 'bug1423331-1.html' , 'bug1423331-1-ref.html' ] ,
+    [ 'bug1423331-2.html' , 'bug1423331-2-ref.html' ] ,
+    // FIXME(bug 1434949): These two fail in some platforms.
+    // [ 'bug1423331-3.html' , 'bug1423331-1-ref.html' ] ,
+    // [ 'bug1423331-4.html' , 'bug1423331-2-ref.html' ] ,
+    [ 'bug1484094-1.html' , 'bug1484094-1-ref.html' ] ,
+    [ 'bug1484094-2.html' , 'bug1484094-2-ref.html' ] ,
+    [ 'bug1506547-1.html' , 'bug1506547-2.html' ] ,
+    [ 'bug1506547-2.html' , 'bug1506547-3.html' ] ,
+    [ 'bug1506547-4.html' , 'bug1506547-4-ref.html' ] ,
+    [ 'bug1506547-5.html' , 'bug1506547-5-ref.html' ] ,
+    [ 'bug1506547-6.html' , 'bug1506547-5-ref.html' ] ,
+    [ 'bug1510942-1.html' , 'bug1510942-1-ref.html' ] ,
+    [ 'bug1510942-2.html' , 'bug1510942-2-ref.html' ] ,
+    [ 'bug1518339-1.html' , 'bug1518339-1-ref.html' ] ,
+    [ 'bug1518339-2.html' , 'bug1518339-2-ref.html' ] ,
     function() {SpecialPowers.pushPrefEnv({'clear': [['layout.accessiblecaret.enabled']]}, nextTest);} ,
 ];
 
-if (navigator.appVersion.indexOf("Android") == -1 &&
-  SpecialPowers.Services.appinfo.name != "B2G") {
+if (!navigator.appVersion.includes("Android")) {
   tests.push([ 'bug512295-1.html' , 'bug512295-1-ref.html' ]);
   tests.push([ 'bug512295-2.html' , 'bug512295-2-ref.html' ]);
   tests.push([ 'bug923376.html'   , 'bug923376-ref.html'   ]);
@@ -204,8 +233,7 @@ if (navigator.appVersion.indexOf("Android") == -1 &&
   is(SpecialPowers.getIntPref("layout.spellcheckDefault"), 0, "Spellcheck should be turned off for this platform or this if..else check removed");
 }
 
-if (navigator.platform.indexOf("Linux") >= 0 &&
-    SpecialPowers.Services.appinfo.name != "B2G") {
+if (navigator.platform.includes("Linux")) {
   tests = tests.concat([
     // eDirPrevious, Shift+click
     [ 'multi-range-user-select.html#prev1S_' , 'multi-range-user-select-ref.html#prev1S_'  ] ,

@@ -4,24 +4,27 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #if !defined(AudioStream_h_)
-#define AudioStream_h_
+#  define AudioStream_h_
 
-#include "AudioSampleFormat.h"
-#include "nsAutoPtr.h"
-#include "nsCOMPtr.h"
-#include "nsThreadUtils.h"
-#include "mozilla/dom/AudioChannelBinding.h"
-#include "mozilla/Monitor.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/TimeStamp.h"
-#include "mozilla/UniquePtr.h"
-#include "CubebUtils.h"
-#include "soundtouch/SoundTouchFactory.h"
+#  include "AudioSampleFormat.h"
+#  include "CubebUtils.h"
+#  include "MediaInfo.h"
+#  include "mozilla/Monitor.h"
+#  include "mozilla/RefPtr.h"
+#  include "mozilla/TimeStamp.h"
+#  include "mozilla/UniquePtr.h"
+#  include "nsAutoPtr.h"
+#  include "nsCOMPtr.h"
+#  include "nsThreadUtils.h"
+#  include "soundtouch/SoundTouchFactory.h"
+
+#  if defined(XP_WIN)
+#    include "mozilla/audio/AudioNotificationReceiver.h"
+#  endif
 
 namespace mozilla {
 
-struct CubebDestroyPolicy
-{
+struct CubebDestroyPolicy {
   void operator()(cubeb_stream* aStream) const {
     cubeb_stream_destroy(aStream);
   }
@@ -30,11 +33,9 @@ struct CubebDestroyPolicy
 class AudioStream;
 class FrameHistory;
 class AudioConfig;
-class AudioConverter;
 
-class AudioClock
-{
-public:
+class AudioClock {
+ public:
   AudioClock();
 
   // Initialize the clock with the current sampling rate.
@@ -75,7 +76,7 @@ public:
   uint32_t GetInputRate() const { return mInRate; }
   uint32_t GetOutputRate() const { return mOutRate; }
 
-private:
+ private:
   // Output rate in Hz (characteristic of the playback rate)
   uint32_t mOutRate;
   // Input rate in Hz (characteristic of the media being played)
@@ -90,9 +91,9 @@ private:
  * A bookkeeping class to track the read/write position of an audio buffer.
  */
 class AudioBufferCursor {
-public:
+ public:
   AudioBufferCursor(AudioDataValue* aPtr, uint32_t aChannels, uint32_t aFrames)
-    : mPtr(aPtr), mChannels(aChannels), mFrames(aFrames) {}
+      : mPtr(aPtr), mChannels(aChannels), mFrames(aFrames) {}
 
   // Advance the cursor to account for frames that are consumed.
   uint32_t Advance(uint32_t aFrames) {
@@ -108,7 +109,7 @@ public:
   // Return a pointer where read/write should begin.
   AudioDataValue* Ptr() const { return mPtr; }
 
-protected:
+ protected:
   AudioDataValue* mPtr;
   const uint32_t mChannels;
   uint32_t mFrames;
@@ -119,9 +120,9 @@ protected:
  * the underlying audio buffer.
  */
 class AudioBufferWriter : private AudioBufferCursor {
-public:
+ public:
   AudioBufferWriter(AudioDataValue* aPtr, uint32_t aChannels, uint32_t aFrames)
-    : AudioBufferCursor(aPtr, aChannels, aFrames) {}
+      : AudioBufferCursor(aPtr, aChannels, aFrames) {}
 
   uint32_t WriteZeros(uint32_t aFrames) {
     memset(mPtr, 0, sizeof(AudioDataValue) * mChannels * aFrames);
@@ -151,14 +152,17 @@ public:
 // GetPosition, GetPositionInFrames, SetVolume, and Get{Rate,Channels},
 // SetMicrophoneActive is thread-safe without external synchronization.
 class AudioStream final
+#  if defined(XP_WIN)
+    : public audio::DeviceChangeListener
+#  endif
 {
   virtual ~AudioStream();
 
-public:
+ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(AudioStream)
 
   class Chunk {
-  public:
+   public:
     // Return a pointer to the audio data.
     virtual const AudioDataValue* Data() const = 0;
     // Return the number of frames in this chunk.
@@ -173,7 +177,7 @@ public:
   };
 
   class DataSource {
-  public:
+   public:
     // Return a chunk which contains at most aFrames frames or zero if no
     // frames in the source at all.
     virtual UniquePtr<Chunk> PopFrames(uint32_t aFrames) = 0;
@@ -181,8 +185,9 @@ public:
     virtual bool Ended() const = 0;
     // Notify that all data is drained by the AudioStream.
     virtual void Drained() = 0;
-  protected:
-    virtual ~DataSource() {}
+
+   protected:
+    virtual ~DataSource() = default;
   };
 
   explicit AudioStream(DataSource& aSource);
@@ -191,8 +196,9 @@ public:
   // channels (1 for mono, 2 for stereo, etc), aChannelMap is the indicator for
   // channel layout(mono, stereo, 5.1 or 7.1 ) and aRate is the sample rate
   // (22050Hz, 44100Hz, etc).
-  nsresult Init(uint32_t aNumChannels, uint32_t aChannelMap, uint32_t aRate,
-                const dom::AudioChannel aAudioStreamChannel);
+  nsresult Init(uint32_t aNumChannels,
+                AudioConfig::ChannelLayout::ChannelMap aChannelMap,
+                uint32_t aRate, AudioDeviceInfo* aSinkInfo);
 
   // Closes the stream. All future use of the stream is an error.
   void Shutdown();
@@ -204,13 +210,18 @@ public:
   void SetVolume(double aVolume);
 
   // Start the stream.
-  void Start();
+  nsresult Start();
 
   // Pause audio playback.
   void Pause();
 
   // Resume audio playback.
   void Resume();
+
+#  if defined(XP_WIN)
+  // Reset stream to the default device.
+  void ResetDefaultDevice() override;
+#  endif
 
   // Return the position in microseconds of the audio frame being played by
   // the audio hardware, compensated for playback rate change. Thread-safe.
@@ -220,14 +231,8 @@ public:
   // was opened, of the audio hardware.  Thread-safe.
   int64_t GetPositionInFrames();
 
-  static uint32_t GetPreferredRate()
-  {
+  static uint32_t GetPreferredRate() {
     return CubebUtils::PreferredSampleRate();
-  }
-
-  static uint32_t GetPreferredChannelMap(uint32_t aChannels)
-  {
-    return CubebUtils::PreferredChannelMap(aChannels);
   }
 
   uint32_t GetOutChannels() { return mOutChannels; }
@@ -235,12 +240,13 @@ public:
   // Set playback rate as a multiple of the intrinsic playback rate. This is to
   // be called only with aPlaybackRate > 0.0.
   nsresult SetPlaybackRate(double aPlaybackRate);
-  // Switch between resampling (if false) and time stretching (if true, default).
+  // Switch between resampling (if false) and time stretching (if true,
+  // default).
   nsresult SetPreservesPitch(bool aPreservesPitch);
 
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const;
 
-protected:
+ protected:
   friend class AudioClock;
 
   // Return the position, measured in audio frames played since the stream was
@@ -249,22 +255,20 @@ protected:
   // Caller must own the monitor.
   int64_t GetPositionInFramesUnlocked();
 
-private:
+ private:
   nsresult OpenCubeb(cubeb* aContext, cubeb_stream_params& aParams,
                      TimeStamp aStartTime, bool aIsFirst);
 
   static long DataCallback_S(cubeb_stream*, void* aThis,
-                             const void* /* aInputBuffer */, void* aOutputBuffer,
-                             long aFrames)
-  {
-    return static_cast<AudioStream*>(aThis)->DataCallback(aOutputBuffer, aFrames);
+                             const void* /* aInputBuffer */,
+                             void* aOutputBuffer, long aFrames) {
+    return static_cast<AudioStream*>(aThis)->DataCallback(aOutputBuffer,
+                                                          aFrames);
   }
 
-  static void StateCallback_S(cubeb_stream*, void* aThis, cubeb_state aState)
-  {
+  static void StateCallback_S(cubeb_stream*, void* aThis, cubeb_state aState) {
     static_cast<AudioStream*>(aThis)->StateCallback(aState);
   }
-
 
   long DataCallback(void* aBuffer, long aFrames);
   void StateCallback(cubeb_state aState);
@@ -296,19 +300,26 @@ private:
   UniquePtr<cubeb_stream, CubebDestroyPolicy> mCubebStream;
 
   enum StreamState {
-    INITIALIZED, // Initialized, playback has not begun.
-    STARTED,     // cubeb started.
-    STOPPED,     // Stopped by a call to Pause().
-    DRAINED,     // StateCallback has indicated that the drain is complete.
-    ERRORED,     // Stream disabled due to an internal error.
-    SHUTDOWN     // Shutdown has been called
+    INITIALIZED,  // Initialized, playback has not begun.
+    STARTED,      // cubeb started.
+    STOPPED,      // Stopped by a call to Pause().
+    DRAINED,      // StateCallback has indicated that the drain is complete.
+    ERRORED,      // Stream disabled due to an internal error.
+    SHUTDOWN      // Shutdown has been called
   };
 
   StreamState mState;
 
   DataSource& mDataSource;
+
+  bool mPrefillQuirk;
+
+  // The device info of the current sink. If null
+  // the default device is used. It is set
+  // during the Init() in decoder thread.
+  RefPtr<AudioDeviceInfo> mSinkInfo;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif

@@ -43,20 +43,43 @@ interface Screen : EventTarget {
    * DEPRECATED, use ScreenOrientation API instead.
    * Lock screen orientation to the specified type.
    */
-  [Throws, UnsafeInPrerendering]
+  [Throws]
   boolean mozLockOrientation(DOMString orientation);
-  [Throws, UnsafeInPrerendering]
+  [Throws]
   boolean mozLockOrientation(sequence<DOMString> orientation);
 
   /**
    * DEPRECATED, use ScreenOrientation API instead.
    * Unlock the screen orientation.
    */
-  [UnsafeInPrerendering]
   void mozUnlockOrientation();
 };
 
 // https://w3c.github.io/screen-orientation
 partial interface Screen {
   readonly attribute ScreenOrientation orientation;
+};
+
+// https://wicg.github.io/media-capabilities/#idl-index
+enum ScreenColorGamut {
+  "srgb",
+  "p3",
+  "rec2020",
+};
+
+[Func="nsScreen::MediaCapabilitiesEnabled"]
+interface ScreenLuminance {
+  readonly attribute double min;
+  readonly attribute double max;
+  readonly attribute double maxAverage;
+};
+
+partial interface Screen {
+  [Func="nsScreen::MediaCapabilitiesEnabled"]
+  readonly attribute ScreenColorGamut colorGamut;
+  [Func="nsScreen::MediaCapabilitiesEnabled"]
+  readonly attribute ScreenLuminance? luminance;
+
+  [Func="nsScreen::MediaCapabilitiesEnabled"]
+  attribute EventHandler onchange;
 };

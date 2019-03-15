@@ -10,7 +10,9 @@
 #include "SkPaintPriv.h"
 #include "SkImage.h"
 #include "SkPaint.h"
-#include "SkShader.h"
+#include "SkShaderBase.h"
+#include "SkUTF.h"
+#include "SkXfermodePriv.h"
 
 static bool changes_alpha(const SkPaint& paint) {
     SkColorFilter* cf = paint.getColorFilter();
@@ -53,3 +55,52 @@ bool SkPaintPriv::Overwrites(const SkImage* image, const SkPaint* paint) {
     return Overwrites(paint, image->isOpaque() ? kOpaque_ShaderOverrideOpacity
                                                : kNotOpaque_ShaderOverrideOpacity);
 }
+
+void SkPaintPriv::ScaleFontMetrics(SkPaint::FontMetrics* metrics, SkScalar scale) {
+    metrics->fTop *= scale;
+    metrics->fAscent *= scale;
+    metrics->fDescent *= scale;
+    metrics->fBottom *= scale;
+    metrics->fLeading *= scale;
+    metrics->fAvgCharWidth *= scale;
+    metrics->fMaxCharWidth *= scale;
+    metrics->fXMin *= scale;
+    metrics->fXMax *= scale;
+    metrics->fXHeight *= scale;
+    metrics->fCapHeight *= scale;
+    metrics->fUnderlineThickness *= scale;
+    metrics->fUnderlinePosition *= scale;
+    metrics->fStrikeoutThickness *= scale;
+    metrics->fStrikeoutPosition *= scale;
+}
+
+bool SkPaintPriv::ShouldDither(const SkPaint& p, SkColorType dstCT) {
+    // The paint dither flag can veto.
+    if (!p.isDither()) {
+        return false;
+    }
+
+    // We always dither 565 or 4444 when requested.
+    if (dstCT == kRGB_565_SkColorType || dstCT == kARGB_4444_SkColorType) {
+        return true;
+    }
+
+    // Otherwise, dither is only needed for non-const paints.
+    return p.getImageFilter() || p.getMaskFilter()
+        || !p.getShader() || !as_SB(p.getShader())->isConstant();
+}
+
+int SkPaintPriv::ValidCountText(const void* text, size_t length, SkPaint::TextEncoding encoding) {
+    switch (encoding) {
+        case SkPaint::kUTF8_TextEncoding: return SkUTF::CountUTF8((const char*)text, length);
+        case SkPaint::kUTF16_TextEncoding: return SkUTF::CountUTF16((const uint16_t*)text, length);
+        case SkPaint::kUTF32_TextEncoding: return SkUTF::CountUTF32((const int32_t*)text, length);
+        case SkPaint::kGlyphID_TextEncoding:
+            if (!SkIsAlign2(intptr_t(text)) || !SkIsAlign2(length)) {
+                return -1;
+            }
+            return length >> 1;
+    }
+    return -1;
+}
+

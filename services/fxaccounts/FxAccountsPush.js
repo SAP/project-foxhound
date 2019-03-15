@@ -2,15 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cu = Components.utils;
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://services-sync/util.js");
+ChromeUtils.import("resource://gre/modules/FxAccountsCommon.js");
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://services-sync/util.js");
-Cu.import("resource://gre/modules/FxAccountsCommon.js");
-Cu.import("resource://gre/modules/Task.jsm");
+XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
 
 /**
  * FxAccountsPushService manages Push notifications for Firefox Accounts in the browser
@@ -52,7 +49,7 @@ FxAccountsPushService.prototype = {
   /**
    * Register used interfaces in this service
    */
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIObserver]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver]),
   /**
    * Initialize the service and register all the required observers.
    *
@@ -74,14 +71,14 @@ FxAccountsPushService.prototype = {
     if (options.fxAccounts) {
       this.fxAccounts = options.fxAccounts;
     } else {
-      XPCOMUtils.defineLazyModuleGetter(this, "fxAccounts",
+      ChromeUtils.defineModuleGetter(this, "fxAccounts",
         "resource://gre/modules/FxAccounts.jsm");
     }
 
     // listen to new push messages, push changes and logout events
-    Services.obs.addObserver(this, this.pushService.pushTopic, false);
-    Services.obs.addObserver(this, this.pushService.subscriptionChangeTopic, false);
-    Services.obs.addObserver(this, ONLOGOUT_NOTIFICATION, false);
+    Services.obs.addObserver(this, this.pushService.pushTopic);
+    Services.obs.addObserver(this, this.pushService.subscriptionChangeTopic);
+    Services.obs.addObserver(this, ONLOGOUT_NOTIFICATION);
 
     this.log.debug("FxAccountsPush initialized");
     return true;
@@ -165,18 +162,33 @@ FxAccountsPushService.prototype = {
     let payload = message.data.json();
     this.log.debug(`push command: ${payload.command}`);
     switch (payload.command) {
+      case ON_COMMAND_RECEIVED_NOTIFICATION:
+        this.fxAccounts.commands.consumeRemoteCommand(payload.data.index);
+        break;
       case ON_DEVICE_CONNECTED_NOTIFICATION:
         Services.obs.notifyObservers(null, ON_DEVICE_CONNECTED_NOTIFICATION, payload.data.deviceName);
         break;
       case ON_DEVICE_DISCONNECTED_NOTIFICATION:
         this.fxAccounts.handleDeviceDisconnection(payload.data.id);
         return;
+      case ON_PROFILE_UPDATED_NOTIFICATION:
+        // We already have a "profile updated" notification sent via WebChannel,
+        // let's just re-use that.
+        Services.obs.notifyObservers(null, ON_PROFILE_CHANGE_NOTIFICATION);
+        return;
       case ON_PASSWORD_CHANGED_NOTIFICATION:
       case ON_PASSWORD_RESET_NOTIFICATION:
         this._onPasswordChanged();
         return;
+      case ON_ACCOUNT_DESTROYED_NOTIFICATION:
+        this.fxAccounts.handleAccountDestroyed(payload.data.uid);
+        return;
       case ON_COLLECTION_CHANGED_NOTIFICATION:
         Services.obs.notifyObservers(null, ON_COLLECTION_CHANGED_NOTIFICATION, payload.data.collections);
+        return;
+      case ON_VERIFY_LOGIN_NOTIFICATION:
+        Services.obs.notifyObservers(null, ON_VERIFY_LOGIN_NOTIFICATION, JSON.stringify(payload.data));
+        break;
       default:
         this.log.warn("FxA Push command unrecognized: " + payload.command);
     }
@@ -189,12 +201,12 @@ FxAccountsPushService.prototype = {
    * @returns {Promise}
    * @private
    */
-  _onPasswordChanged: Task.async(function* () {
-    if (!(yield this.fxAccounts.sessionStatus())) {
-      yield this.fxAccounts.resetCredentials();
-      Services.obs.notifyObservers(null, ON_ACCOUNT_STATE_CHANGE_NOTIFICATION, null);
+  async _onPasswordChanged() {
+    if (!(await this.fxAccounts.sessionStatus())) {
+      await this.fxAccounts.resetCredentials();
+      Services.obs.notifyObservers(null, ON_ACCOUNT_STATE_CHANGE_NOTIFICATION);
     }
-  }),
+  },
   /**
    * Fired when the Push server drops a subscription, or the subscription identifier changes.
    *
@@ -231,6 +243,27 @@ FxAccountsPushService.prototype = {
             this.log.warn("FxAccountsPushService failed to unsubscribe", result);
           }
           return resolve(ok);
+        });
+    });
+  },
+
+  /**
+   * Get our Push server subscription.
+   *
+   * Ref: https://developer.mozilla.org/en-US/docs/Mozilla/Tech/XPCOM/Reference/Interface/nsIPushService#getSubscription()
+   *
+   * @returns {Promise}
+   */
+  getSubscription() {
+    return new Promise((resolve) => {
+      this.pushService.getSubscription(FXA_PUSH_SCOPE_ACCOUNT_UPDATE,
+        Services.scriptSecurityManager.getSystemPrincipal(),
+        (result, subscription) => {
+          if (!subscription) {
+            this.log.info("FxAccountsPushService no subscription found");
+            return resolve(null);
+          }
+          return resolve(subscription);
         });
     });
   },

@@ -1,5 +1,5 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 var httpserver = new HttpServer();
 
 var ios;
@@ -21,11 +21,11 @@ var listener_3 = {
     // the cache invalidation. it expects to see the 'right data'
 
     QueryInterface: function(iid) {
-	if (iid.equals(Components.interfaces.nsIStreamListener) ||
-            iid.equals(Components.interfaces.nsIRequestObserver) ||
-            iid.equals(Components.interfaces.nsISupports))
+	if (iid.equals(Ci.nsIStreamListener) ||
+            iid.equals(Ci.nsIRequestObserver) ||
+            iid.equals(Ci.nsISupports))
 	    return this;
-	throw Components.results.NS_ERROR_NO_INTERFACE;
+	throw Cr.NS_ERROR_NO_INTERFACE;
     },
 
     onStartRequest: function test_onStartR(request, ctx) {},
@@ -34,7 +34,7 @@ var listener_3 = {
                                        offset, count) {
 	var data = new BinaryInputStream(inputStream).readByteArray(count);
       
-	do_check_eq(data[0], "B".charCodeAt(0));
+	Assert.equal(data[0], "B".charCodeAt(0));
     },
 
     onStopRequest: function test_onStopR(request, ctx, status) {
@@ -48,11 +48,11 @@ XPCOMUtils.defineLazyGetter(this, "listener_2", function() {
     // corrupted cache entry. its revalidation prompts it to be cleaned
 
     QueryInterface: function(iid) {
-	if (iid.equals(Components.interfaces.nsIStreamListener) ||
-            iid.equals(Components.interfaces.nsIRequestObserver) ||
-            iid.equals(Components.interfaces.nsISupports))
+	if (iid.equals(Ci.nsIStreamListener) ||
+            iid.equals(Ci.nsIRequestObserver) ||
+            iid.equals(Ci.nsISupports))
 	    return this;
-	throw Components.results.NS_ERROR_NO_INTERFACE;
+	throw Cr.NS_ERROR_NO_INTERFACE;
     },
 
     onStartRequest: function test_onStartR(request, ctx) {},
@@ -64,7 +64,7 @@ XPCOMUtils.defineLazyGetter(this, "listener_2", function() {
 	// This is 'A' from a cache revalidation, but that reval will clean the cache
 	// because of mismatched last-modified response headers
 	
-	do_check_eq(data[0], "A".charCodeAt(0));
+	Assert.equal(data[0], "A".charCodeAt(0));
     },
 
     onStopRequest: function test_onStopR(request, ctx, status) {
@@ -84,11 +84,11 @@ XPCOMUtils.defineLazyGetter(this, "listener_1", function() {
     // the server responds with the wrong data ('A')
 
     QueryInterface: function(iid) {
-	if (iid.equals(Components.interfaces.nsIStreamListener) ||
-            iid.equals(Components.interfaces.nsIRequestObserver) ||
-            iid.equals(Components.interfaces.nsISupports))
+	if (iid.equals(Ci.nsIStreamListener) ||
+            iid.equals(Ci.nsIRequestObserver) ||
+            iid.equals(Ci.nsISupports))
 	    return this;
-	throw Components.results.NS_ERROR_NO_INTERFACE;
+	throw Cr.NS_ERROR_NO_INTERFACE;
     },
 
     onStartRequest: function test_onStartR(request, ctx) {},
@@ -96,7 +96,7 @@ XPCOMUtils.defineLazyGetter(this, "listener_1", function() {
     onDataAvailable: function test_ODA(request, cx, inputStream,
                                        offset, count) {
 	var data = new BinaryInputStream(inputStream).readByteArray(count);
-	do_check_eq(data[0], "A".charCodeAt(0));
+	Assert.equal(data[0], "A".charCodeAt(0));
     },
 
     onStopRequest: function test_onStopR(request, ctx, status) {

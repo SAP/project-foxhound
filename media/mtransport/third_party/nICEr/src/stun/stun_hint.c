@@ -30,10 +30,6 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-
-static char *RCSSTRING __UNUSED__="$Id: stun_hint.c,v 1.2 2008/04/28 18:21:30 ekr Exp $";
-
-
 #include <errno.h>
 #include <csi_platform.h>
 
@@ -55,7 +51,7 @@ static char *RCSSTRING __UNUSED__="$Id: stun_hint.c,v 1.2 2008/04/28 18:21:30 ek
  *         2 if it's super likely to be a STUN message
  *         3 if it really is a STUN message */
 int
-nr_is_stun_message(UCHAR *buf, int len)
+nr_is_stun_message(UCHAR *buf, size_t len)
 {
    const UINT4 cookie = htonl(NR_STUN_MAGIC_COOKIE);
    const UINT4 cookie2 = htonl(NR_STUN_MAGIC_COOKIE2);
@@ -163,7 +159,7 @@ nr_is_stun_message(UCHAR *buf, int len)
 }
 
 int
-nr_is_stun_request_message(UCHAR *buf, int len)
+nr_is_stun_request_message(UCHAR *buf, size_t len)
 {
    UINT2 type;
 
@@ -180,7 +176,7 @@ nr_is_stun_request_message(UCHAR *buf, int len)
 }
 
 int
-nr_is_stun_indication_message(UCHAR *buf, int len)
+nr_is_stun_indication_message(UCHAR *buf, size_t len)
 {
    UINT2 type;
 
@@ -197,7 +193,7 @@ nr_is_stun_indication_message(UCHAR *buf, int len)
 }
 
 int
-nr_is_stun_response_message(UCHAR *buf, int len)
+nr_is_stun_response_message(UCHAR *buf, size_t len)
 {
    UINT2 type;
 
@@ -215,7 +211,7 @@ nr_is_stun_response_message(UCHAR *buf, int len)
 }
 
 int
-nr_has_stun_cookie(UCHAR *buf, int len)
+nr_has_stun_cookie(UCHAR *buf, size_t len)
 {
    static UINT4 cookie;
 

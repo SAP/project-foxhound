@@ -2,20 +2,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const C_i = Components.interfaces;
+Cu.importGlobalProperties(["NodeFilter"]);
 
-const UNORDERED_TYPE = C_i.nsIDOMXPathResult.ANY_UNORDERED_NODE_TYPE;
+const UNORDERED_TYPE = 8; // XPathResult.ANY_UNORDERED_NODE_TYPE
 
 /**
  * Determine if the data node has only ignorable white-space.
  *
- * @return nsIDOMNodeFilter.FILTER_SKIP if it does.
- * @return nsIDOMNodeFilter.FILTER_ACCEPT otherwise.
+ * @return NodeFilter.FILTER_SKIP if it does.
+ * @return NodeFilter.FILTER_ACCEPT otherwise.
  */
 function isWhitespace(aNode) {
   return ((/\S/).test(aNode.nodeValue)) ?
-         C_i.nsIDOMNodeFilter.FILTER_SKIP :
-         C_i.nsIDOMNodeFilter.FILTER_ACCEPT;
+         NodeFilter.FILTER_SKIP :
+         NodeFilter.FILTER_ACCEPT;
 }
 
 /**
@@ -35,7 +35,7 @@ function getFragment(aNode) {
 
 // Goodies from head_content.js
 const serializer = new DOMSerializer();
-const parser = new DOMParser();
+const parser = getParser();
 
 /**
  * Dump the contents of a document fragment to the console.
@@ -53,11 +53,11 @@ function dumpFragment(aFragment) {
  * @param aContextNode The context node to apply the XPath to.
  * @param aPath        The XPath to use.
  *
- * @return nsIDOMNode  The target node retrieved from the XPath.
+ * @return Node  The target node retrieved from the XPath.
  */
 function evalXPathInDocumentFragment(aContextNode, aPath) {
-  do_check_true(aContextNode instanceof C_i.nsIDOMDocumentFragment);
-  do_check_true(aContextNode.childNodes.length > 0);
+  Assert.equal(ChromeUtils.getClassName(aContextNode), "DocumentFragment");
+  Assert.ok(aContextNode.childNodes.length > 0);
   if (aPath == ".") {
     return aContextNode;
   }
@@ -78,52 +78,51 @@ function evalXPathInDocumentFragment(aContextNode, aPath) {
   var bracketIndex = prefix.indexOf("[");
   if (bracketIndex != -1) {
     childIndex = Number(prefix.substring(bracketIndex + 1, prefix.indexOf("]")));
-    do_check_true(childIndex > 0);
+    Assert.ok(childIndex > 0);
     prefix = prefix.substr(0, bracketIndex);
   }
 
-  var targetType = C_i.nsIDOMNodeFilter.SHOW_ELEMENT;
+  var targetType = NodeFilter.SHOW_ELEMENT;
   var targetNodeName = prefix;
   if (prefix.indexOf("processing-instruction(") == 0) {
-    targetType = C_i.nsIDOMNodeFilter.SHOW_PROCESSING_INSTRUCTION;
+    targetType = NodeFilter.SHOW_PROCESSING_INSTRUCTION;
     targetNodeName = prefix.substring(prefix.indexOf("(") + 2, prefix.indexOf(")") - 1);
   }
   switch (prefix) {
     case "text()":
-      targetType = C_i.nsIDOMNodeFilter.SHOW_TEXT |
-                   C_i.nsIDOMNodeFilter.SHOW_CDATA_SECTION;
+      targetType = NodeFilter.SHOW_TEXT | NodeFilter.SHOW_CDATA_SECTION;
       targetNodeName = null;
       break;
     case "comment()":
-      targetType = C_i.nsIDOMNodeFilter.SHOW_COMMENT;
+      targetType = NodeFilter.SHOW_COMMENT;
       targetNodeName = null;
       break;
     case "node()":
-      targetType = C_i.nsIDOMNodeFilter.SHOW_ALL;
+      targetType = NodeFilter.SHOW_ALL;
       targetNodeName = null;
   }
 
   var filter = {
     count: 0,
 
-    // nsIDOMNodeFilter
+    // NodeFilter
     acceptNode: function acceptNode(aNode) {
       if (aNode.parentNode != aContextNode) {
         // Don't bother looking at kids either.
-        return C_i.nsIDOMNodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_REJECT;
       }
 
       if (targetNodeName && targetNodeName != aNode.nodeName) {
-        return C_i.nsIDOMNodeFilter.FILTER_SKIP;
+        return NodeFilter.FILTER_SKIP;
       }
 
       this.count++;
       if (this.count != childIndex) {
-        return C_i.nsIDOMNodeFilter.FILTER_SKIP;
+        return NodeFilter.FILTER_SKIP;
       }
 
-      return C_i.nsIDOMNodeFilter.FILTER_ACCEPT;
-    }
+      return NodeFilter.FILTER_ACCEPT;
+    },
   };
 
   // Look for the node matching the step from the document fragment.
@@ -132,7 +131,7 @@ function evalXPathInDocumentFragment(aContextNode, aPath) {
                  targetType,
                  filter);
   var targetNode = walker.nextNode();
-  do_check_neq(targetNode, null);
+  Assert.notEqual(targetNode, null);
 
   // Apply our remaining xpath to the found node.
   var expr = aContextNode.ownerDocument.createExpression(realPath, null);
@@ -149,8 +148,8 @@ function evalXPathInDocumentFragment(aContextNode, aPath) {
  * @return Range object.
  */
 function getRange(aSourceNode, aFragment) {
-  do_check_true(aSourceNode instanceof C_i.nsIDOMElement);
-  do_check_true(aFragment instanceof C_i.nsIDOMDocumentFragment);
+  Assert.ok(Element.isInstance(aSourceNode));
+  Assert.equal(ChromeUtils.getClassName(aFragment), "DocumentFragment");
   var doc = aSourceNode.ownerDocument;
 
   var containerPath = aSourceNode.getAttribute("startContainer");
@@ -177,14 +176,13 @@ function getParsedDocument(aPath) {
 }
 
 function processParsedDocument(doc) {
-  do_check_true(doc.documentElement.localName != "parsererror");
-  do_check_true(doc instanceof C_i.nsIDOMXPathEvaluator);
-  do_check_true(doc instanceof C_i.nsIDOMDocument);
+  Assert.ok(doc.documentElement.localName != "parsererror");
+  Assert.equal(ChromeUtils.getClassName(doc), "XMLDocument");
 
   // Clean out whitespace.
   var walker = doc.createTreeWalker(doc,
-                                    C_i.nsIDOMNodeFilter.SHOW_TEXT |
-                                    C_i.nsIDOMNodeFilter.SHOW_CDATA_SECTION,
+                                    NodeFilter.SHOW_TEXT |
+                                    NodeFilter.SHOW_CDATA_SECTION,
                                     isWhitespace);
   while (walker.nextNode()) {
     var parent = walker.currentNode.parentNode;
@@ -196,7 +194,7 @@ function processParsedDocument(doc) {
   var splits = doc.getElementsByTagName("split");
   var i;
   for (i = splits.length - 1; i >= 0; i--) {
-    var node = splits.item(i);
+    let node = splits.item(i);
     node.remove();
   }
   splits = null;
@@ -204,7 +202,7 @@ function processParsedDocument(doc) {
   // Replace empty CDATA sections.
   var emptyData = doc.getElementsByTagName("empty-cdata");
   for (i = emptyData.length - 1; i >= 0; i--) {
-    var node = emptyData.item(i);
+    let node = emptyData.item(i);
     var cdata = doc.createCDATASection("");
     node.parentNode.replaceChild(cdata, node);
   }
@@ -230,12 +228,12 @@ function do_extract_test(doc) {
 
     // Validate the test is properly formatted for what this harness expects.
     var baseSource = currentTest.firstChild;
-    do_check_eq(baseSource.nodeName, "source");
+    Assert.equal(baseSource.nodeName, "source");
     var baseResult = baseSource.nextSibling;
-    do_check_eq(baseResult.nodeName, "result");
+    Assert.equal(baseResult.nodeName, "result");
     var baseExtract = baseResult.nextSibling;
-    do_check_eq(baseExtract.nodeName, "extract");
-    do_check_eq(baseExtract.nextSibling, null);
+    Assert.equal(baseExtract.nodeName, "extract");
+    Assert.equal(baseExtract.nextSibling, null);
 
     /* We do all our tests on DOM document fragments, derived from the test
        element's children.  This lets us rip the various fragments to shreds,
@@ -243,7 +241,7 @@ function do_extract_test(doc) {
        them.
 
        After the range's extraction or deletion is done, we use
-       nsIDOMNode.isEqualNode() between the altered source fragment and the
+       Node.isEqualNode() between the altered source fragment and the
        result fragment.  We also run isEqualNode() between the extracted
        fragment and the fragment from the baseExtract node.  If they are not
        equal, we have failed a test.
@@ -270,16 +268,16 @@ function do_extract_test(doc) {
     var cutFragment = baseRange.extractContents();
     dump("cutFragment: " + cutFragment + "\n");
     if (cutFragment) {
-      do_check_true(extractFrag.isEqualNode(cutFragment));
+      Assert.ok(extractFrag.isEqualNode(cutFragment));
     } else {
-      do_check_eq(extractFrag.firstChild, null);
+      Assert.equal(extractFrag.firstChild, null);
     }
-    do_check_true(baseFrag.isEqualNode(resultFrag));
+    Assert.ok(baseFrag.isEqualNode(resultFrag));
 
     dump("Ensure the original nodes weren't extracted - test " + i + "\n\n");
     var walker = doc.createTreeWalker(baseFrag,
-				      C_i.nsIDOMNodeFilter.SHOW_ALL,
-				      null);
+                                      NodeFilter.SHOW_ALL,
+                                      null);
     var foundStart = false;
     var foundEnd = false;
     do {
@@ -289,12 +287,12 @@ function do_extract_test(doc) {
 
       if (walker.currentNode == endContainer) {
         // An end container node should not come before the start container node.
-        do_check_true(foundStart);
+        Assert.ok(foundStart);
         foundEnd = true;
         break;
       }
-    } while (walker.nextNode())
-    do_check_true(foundEnd);
+    } while (walker.nextNode());
+    Assert.ok(foundEnd);
 
     /* Now, we reset our test for the deleteContents case.  This one differs
        from the extractContents case only in that there is no extracted document
@@ -304,14 +302,14 @@ function do_extract_test(doc) {
     dump("Delete contents test " + i + "\n\n");
     baseFrag = getFragment(baseSource);
     baseRange = getRange(baseSource, baseFrag);
-    var startContainer = baseRange.startContainer;
-    var endContainer = baseRange.endContainer;
+    startContainer = baseRange.startContainer;
+    endContainer = baseRange.endContainer;
     baseRange.deleteContents();
-    do_check_true(baseFrag.isEqualNode(resultFrag));
+    Assert.ok(baseFrag.isEqualNode(resultFrag));
 
     dump("Ensure the original nodes weren't deleted - test " + i + "\n\n");
     walker = doc.createTreeWalker(baseFrag,
-                                  C_i.nsIDOMNodeFilter.SHOW_ALL,
+                                  NodeFilter.SHOW_ALL,
                                   null);
     foundStart = false;
     foundEnd = false;
@@ -322,12 +320,12 @@ function do_extract_test(doc) {
 
       if (walker.currentNode == endContainer) {
         // An end container node should not come before the start container node.
-        do_check_true(foundStart);
+        Assert.ok(foundStart);
         foundEnd = true;
         break;
       }
-    } while (walker.nextNode())
-    do_check_true(foundEnd);
+    } while (walker.nextNode());
+    Assert.ok(foundEnd);
 
     // Clean up after ourselves.
     walker = null;
@@ -342,14 +340,17 @@ function run_miscellaneous_tests() {
   getParsedDocument(filePath).then(do_miscellaneous_tests);
 }
 
+function isText(node) {
+  return node.nodeType == node.TEXT_NODE ||
+         node.nodeType == node.CDATA_SECTION_NODE;
+}
+
 function do_miscellaneous_tests(doc) {
   var tests = doc.getElementsByTagName("test");
 
   // Let's try some invalid inputs to our DOM range and see what happens.
   var currentTest = tests.item(0);
   var baseSource = currentTest.firstChild;
-  var baseResult = baseSource.nextSibling;
-  var baseExtract = baseResult.nextSibling;
 
   var baseFrag = getFragment(baseSource);
 
@@ -362,13 +363,13 @@ function do_miscellaneous_tests(doc) {
   // Text range manipulation.
   if ((endOffset > startOffset) &&
       (startContainer == endContainer) &&
-      (startContainer instanceof C_i.nsIDOMText)) {
+      isText(startContainer)) {
     // Invalid start node
     try {
       baseRange.setStart(null, 0);
       do_throw("Should have thrown NOT_OBJECT_ERR!");
     } catch (e) {
-      do_check_eq(e.constructor.name, "TypeError");
+      Assert.equal(e.constructor.name, "TypeError");
     }
 
     // Invalid start node
@@ -376,7 +377,7 @@ function do_miscellaneous_tests(doc) {
       baseRange.setStart({}, 0);
       do_throw("Should have thrown SecurityError!");
     } catch (e) {
-      do_check_eq(e.constructor.name, "TypeError");
+      Assert.equal(e.constructor.name, "TypeError");
     }
 
     // Invalid index
@@ -384,34 +385,34 @@ function do_miscellaneous_tests(doc) {
       baseRange.setStart(startContainer, -1);
       do_throw("Should have thrown IndexSizeError!");
     } catch (e) {
-      do_check_eq(e.name, "IndexSizeError");
+      Assert.equal(e.name, "IndexSizeError");
     }
-  
+
     // Invalid index
-    var newOffset = startContainer instanceof C_i.nsIDOMText ?
+    var newOffset = isText(startContainer) ?
                       startContainer.nodeValue.length + 1 :
                       startContainer.childNodes.length + 1;
     try {
       baseRange.setStart(startContainer, newOffset);
       do_throw("Should have thrown IndexSizeError!");
     } catch (e) {
-      do_check_eq(e.name, "IndexSizeError");
+      Assert.equal(e.name, "IndexSizeError");
     }
-  
+
     newOffset--;
     // Valid index
     baseRange.setStart(startContainer, newOffset);
-    do_check_eq(baseRange.startContainer, baseRange.endContainer);
-    do_check_eq(baseRange.startOffset, newOffset);
-    do_check_true(baseRange.collapsed);
+    Assert.equal(baseRange.startContainer, baseRange.endContainer);
+    Assert.equal(baseRange.startOffset, newOffset);
+    Assert.ok(baseRange.collapsed);
 
     // Valid index
     baseRange.setEnd(startContainer, 0);
-    do_check_eq(baseRange.startContainer, baseRange.endContainer);
-    do_check_eq(baseRange.startOffset, 0);
-    do_check_true(baseRange.collapsed);
+    Assert.equal(baseRange.startContainer, baseRange.endContainer);
+    Assert.equal(baseRange.startOffset, 0);
+    Assert.ok(baseRange.collapsed);
   } else {
-    do_throw("The first test should be a text-only range test.  Test is invalid.")
+    do_throw("The first test should be a text-only range test.  Test is invalid.");
   }
 
   /* See what happens when a range has a startContainer in one fragment, and an
@@ -419,9 +420,9 @@ function do_miscellaneous_tests(doc) {
      should collapse to the new container and offset. */
   baseRange = getRange(baseSource, baseFrag);
   startContainer = baseRange.startContainer;
-  var startOffset = baseRange.startOffset;
+  startOffset = baseRange.startOffset;
   endContainer = baseRange.endContainer;
-  var endOffset = baseRange.endOffset;
+  endOffset = baseRange.endOffset;
 
   dump("External fragment test\n\n");
 
@@ -431,9 +432,9 @@ function do_miscellaneous_tests(doc) {
   var externalRange = getRange(externalSource, externalFrag);
 
   baseRange.setEnd(externalRange.endContainer, 0);
-  do_check_eq(baseRange.startContainer, externalRange.endContainer);
-  do_check_eq(baseRange.startOffset, 0);
-  do_check_true(baseRange.collapsed);
+  Assert.equal(baseRange.startContainer, externalRange.endContainer);
+  Assert.equal(baseRange.startOffset, 0);
+  Assert.ok(baseRange.collapsed);
 
   /*
   // XXX ajvincent if rv == WRONG_DOCUMENT_ERR, return false?
@@ -444,15 +445,16 @@ function do_miscellaneous_tests(doc) {
 
   // Requested by smaug:  A range involving a comment as a document child.
   doc = parser.parseFromString("<!-- foo --><foo/>", "application/xml");
-  do_check_true(doc instanceof C_i.nsIDOMDocument);
-  do_check_eq(doc.childNodes.length, 2);
+  Assert.equal(ChromeUtils.getClassName(doc), "XMLDocument");
+  Assert.equal(doc.childNodes.length, 2);
   baseRange = doc.createRange();
   baseRange.setStart(doc.firstChild, 1);
   baseRange.setEnd(doc.firstChild, 2);
   var frag = baseRange.extractContents();
-  do_check_eq(frag.childNodes.length, 1);
-  do_check_true(frag.firstChild instanceof C_i.nsIDOMComment);
-  do_check_eq(frag.firstChild.nodeValue, "f");
+  Assert.equal(frag.childNodes.length, 1);
+  Assert.ok(ChromeUtils.getClassName(frag.firstChild) == "Comment");
+  Assert.equal(frag.firstChild.nodeType, frag.COMMENT_NODE);
+  Assert.equal(frag.firstChild.nodeValue, "f");
 
   /* smaug also requested attribute tests.  Sadly, those are not yet supported
      in ranges - see https://bugzilla.mozilla.org/show_bug.cgi?id=302775.

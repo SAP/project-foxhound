@@ -7,14 +7,13 @@
 
 interface mozIDOMWindow;
 interface nsIURI;
-interface nsIDOMNode;
-interface nsIDOMDocument;
 interface nsIOfflineCacheUpdate;
 interface nsIPrincipal;
 interface nsIPrefBranch;
 interface nsIApplicationCache;
 interface nsIFile;
 interface nsIObserver;
+webidl Document;
 
 [scriptable, uuid(47360d57-8ef4-4a5d-8865-1a27a739ad1a)]
 interface nsIOfflineCacheUpdateObserver : nsISupports {
@@ -62,7 +61,7 @@ interface nsIOfflineCacheUpdateObserver : nsISupports {
 interface nsIOfflineCacheUpdate : nsISupports {
   /**
    * Fetch the status of the running update.  This will return a value
-   * defined in nsIDOMOfflineResourceList.
+   * defined in OfflineResourceList.webidl.
    */
   readonly attribute unsigned short status;
 
@@ -107,7 +106,7 @@ interface nsIOfflineCacheUpdate : nsISupports {
   void init(in nsIURI aManifestURI,
             in nsIURI aDocumentURI,
             in nsIPrincipal aLoadingPrincipal,
-            in nsIDOMDocument aDocument,
+            in Document aDocument,
             [optional] in nsIFile aCustomProfileDir);
 
   /**
@@ -168,7 +167,7 @@ interface nsIOfflineCacheUpdate : nsISupports {
    *        observer, FALSE for a strong reference.
    */
   void addObserver(in nsIOfflineCacheUpdateObserver aObserver,
-                   in boolean aHoldWeak);
+                   [optional] in boolean aHoldWeak);
 
   /**
    * Remove an observer from the update.
@@ -240,7 +239,7 @@ interface nsIOfflineCacheUpdateService : nsISupports {
     void scheduleOnDocumentStop(in nsIURI aManifestURI,
                                 in nsIURI aDocumentURI,
                                 in nsIPrincipal aLoadingPrincipal,
-                                in nsIDOMDocument aDocument);
+                                in Document aDocument);
 
     /**
      * Schedule a check to see if an update is available.

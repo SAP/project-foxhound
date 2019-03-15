@@ -7,17 +7,6 @@
 with Files("**"):
     BUG_COMPONENT = ("Core", "XSLT")
 
-XPIDL_SOURCES += [
-    'nsIXSLTProcessor.idl',
-    'nsIXSLTProcessorPrivate.idl',
-    'txIEXSLTRegExFunctions.idl',
-    'txIFunctionEvaluationContext.idl',
-    'txINodeSet.idl',
-    'txIXPathObject.idl',
-]
-
-XPIDL_MODULE = 'content_xslt'
-
 EXPORTS += [
     'nsIDocumentTransformer.h',
 ]
@@ -30,5 +19,4 @@ DIRS += [
 ]
 
 if CONFIG['ENABLE_TESTS']:
-    JAR_MANIFESTS += ['tests/buster/jar.mn']
     MOCHITEST_MANIFESTS += ['tests/mochitest/mochitest.ini']

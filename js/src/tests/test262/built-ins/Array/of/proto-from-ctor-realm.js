@@ -18,9 +18,10 @@ info: |
        a. Let realm be ? GetFunctionRealm(constructor).
        b. Let proto be realm's intrinsic object named intrinsicDefaultProto.
     [...]
+features: [cross-realm]
 ---*/
 
-var other = $.createRealm().global;
+var other = $262.createRealm().global;
 var C = new other.Function();
 C.prototype = null;
 

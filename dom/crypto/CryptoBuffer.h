@@ -17,9 +17,8 @@ namespace dom {
 class ArrayBufferViewOrArrayBuffer;
 class OwningArrayBufferViewOrArrayBuffer;
 
-class CryptoBuffer : public FallibleTArray<uint8_t>
-{
-public:
+class CryptoBuffer : public FallibleTArray<uint8_t> {
+ public:
   uint8_t* Assign(const CryptoBuffer& aData);
   uint8_t* Assign(const uint8_t* aData, uint32_t aLength);
   uint8_t* Assign(const nsACString& aString);
@@ -33,12 +32,12 @@ public:
   uint8_t* AppendSECItem(const SECItem* aItem);
   uint8_t* AppendSECItem(const SECItem& aItem);
 
-  template<typename T,
-           JSObject* UnwrapArray(JSObject*),
-           void GetLengthAndDataAndSharedness(JSObject*, uint32_t*, bool*, T**)>
-  uint8_t* Assign(const TypedArray_base<T, UnwrapArray,
-                                        GetLengthAndDataAndSharedness>& aArray)
-  {
+  template <typename T, JSObject* UnwrapArray(JSObject*),
+            void GetLengthAndDataAndSharedness(JSObject*, uint32_t*, bool*,
+                                               T**)>
+  uint8_t* Assign(
+      const TypedArray_base<T, UnwrapArray, GetLengthAndDataAndSharedness>&
+          aArray) {
     aArray.ComputeLengthAndData();
     return Assign(aArray.Data(), aArray.Length());
   }
@@ -47,12 +46,13 @@ public:
   nsresult ToJwkBase64(nsString& aBase64) const;
   bool ToSECItem(PLArenaPool* aArena, SECItem* aItem) const;
   JSObject* ToUint8Array(JSContext* aCx) const;
+  JSObject* ToArrayBuffer(JSContext* aCx) const;
   bool ToNewUnsignedBuffer(uint8_t** aBuf, uint32_t* aBufLen) const;
 
   bool GetBigIntValue(unsigned long& aRetVal);
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_CryptoBuffer_h
+#endif  // mozilla_dom_CryptoBuffer_h

@@ -10,15 +10,15 @@ const TEST_PATH = getRootDirectory(gTestPath).replace("chrome://mochitests/conte
  * Test that the reader mode correctly calculates and displays the
  * estimated reading time for a normal length article
  */
-add_task(function* () {
-  yield BrowserTestUtils.withNewTab(TEST_PATH + "readerModeArticle.html", function* (browser) {
+add_task(async function() {
+  await BrowserTestUtils.withNewTab(TEST_PATH + "readerModeArticle.html", async function(browser) {
     let pageShownPromise = BrowserTestUtils.waitForContentEvent(browser, "AboutReaderContentReady");
     let readerButton = document.getElementById("reader-mode-button");
     readerButton.click();
-    yield pageShownPromise;
-    yield ContentTask.spawn(browser, null, function* () {
+    await pageShownPromise;
+    await ContentTask.spawn(browser, null, async function() {
       // make sure there is a reading time on the page and that it displays the correct information
-      let readingTimeElement = content.document.getElementById("reader-estimated-time");
+      let readingTimeElement = content.document.querySelector(".reader-estimated-time");
       ok(readingTimeElement, "Reading time element should be in document");
       is(readingTimeElement.textContent, "9-12 minutes", "Reading time should be '9-12 minutes'");
     });
@@ -29,15 +29,15 @@ add_task(function* () {
  * Test that the reader mode correctly calculates and displays the
  * estimated reading time for a short article
  */
-add_task(function* () {
-  yield BrowserTestUtils.withNewTab(TEST_PATH + "readerModeArticleShort.html", function* (browser) {
+add_task(async function() {
+  await BrowserTestUtils.withNewTab(TEST_PATH + "readerModeArticleShort.html", async function(browser) {
     let pageShownPromise = BrowserTestUtils.waitForContentEvent(browser, "AboutReaderContentReady");
     let readerButton = document.getElementById("reader-mode-button");
     readerButton.click();
-    yield pageShownPromise;
-    yield ContentTask.spawn(browser, null, function* () {
+    await pageShownPromise;
+    await ContentTask.spawn(browser, null, async function() {
       // make sure there is a reading time on the page and that it displays the correct information
-      let readingTimeElement = content.document.getElementById("reader-estimated-time");
+      let readingTimeElement = content.document.querySelector(".reader-estimated-time");
       ok(readingTimeElement, "Reading time element should be in document");
       is(readingTimeElement.textContent, "1 minute", "Reading time should be '1 minute'");
     });
@@ -49,15 +49,15 @@ add_task(function* () {
  * estimated reading time for a medium article where a single number
  * is displayed.
  */
-add_task(function* () {
-  yield BrowserTestUtils.withNewTab(TEST_PATH + "readerModeArticleMedium.html", function* (browser) {
+add_task(async function() {
+  await BrowserTestUtils.withNewTab(TEST_PATH + "readerModeArticleMedium.html", async function(browser) {
     let pageShownPromise = BrowserTestUtils.waitForContentEvent(browser, "AboutReaderContentReady");
     let readerButton = document.getElementById("reader-mode-button");
     readerButton.click();
-    yield pageShownPromise;
-    yield ContentTask.spawn(browser, null, function* () {
+    await pageShownPromise;
+    await ContentTask.spawn(browser, null, async function() {
       // make sure there is a reading time on the page and that it displays the correct information
-      let readingTimeElement = content.document.getElementById("reader-estimated-time");
+      let readingTimeElement = content.document.querySelector(".reader-estimated-time");
       ok(readingTimeElement, "Reading time element should be in document");
       is(readingTimeElement.textContent, "3 minutes", "Reading time should be '3 minutes'");
     });

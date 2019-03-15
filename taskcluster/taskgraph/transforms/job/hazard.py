@@ -7,14 +7,16 @@ Support for running hazard jobs via dedicated scripts
 
 from __future__ import absolute_import, print_function, unicode_literals
 
-from voluptuous import Schema, Required, Optional, Any
+from taskgraph.util.schema import Schema
+from voluptuous import Required, Optional, Any
 
 from taskgraph.transforms.job import run_job_using
 from taskgraph.transforms.job.common import (
     docker_worker_add_workspace_cache,
-    docker_worker_setup_secrets,
-    docker_worker_add_public_artifacts,
-    docker_worker_support_vcs_checkout,
+    setup_secrets,
+    docker_worker_add_artifacts,
+    docker_worker_add_tooltool,
+    support_vcs_checkout,
 )
 
 haz_run_schema = Schema({
@@ -22,9 +24,6 @@ haz_run_schema = Schema({
 
     # The command to run within the task image (passed through to the worker)
     Required('command'): basestring,
-
-    # The tooltool manifest to use; default in the script is used if omitted
-    Optional('tooltool-manifest'): basestring,
 
     # The mozconfig to use; default in the script is used if omitted
     Optional('mozconfig'): basestring,
@@ -35,6 +34,9 @@ haz_run_schema = Schema({
     # appropriately.  `true` here means ['*'], all secrets.  Not supported on
     # Windows
     Required('secrets', default=False): Any(bool, [basestring]),
+
+    # Base work directory used to set up the task.
+    Required('workdir'): basestring,
 })
 
 
@@ -44,12 +46,12 @@ def docker_worker_hazard(config, job, taskdesc):
 
     worker = taskdesc['worker']
     worker['artifacts'] = []
-    worker['caches'] = []
 
-    docker_worker_add_public_artifacts(config, job, taskdesc)
+    docker_worker_add_artifacts(config, job, taskdesc)
     docker_worker_add_workspace_cache(config, job, taskdesc)
-    docker_worker_setup_secrets(config, job, taskdesc)
-    docker_worker_support_vcs_checkout(config, job, taskdesc)
+    docker_worker_add_tooltool(config, job, taskdesc)
+    setup_secrets(config, job, taskdesc)
+    support_vcs_checkout(config, job, taskdesc)
 
     env = worker['env']
     env.update({
@@ -58,32 +60,16 @@ def docker_worker_hazard(config, job, taskdesc):
     })
 
     # script parameters
-    if run.get('tooltool-manifest'):
-        env['TOOLTOOL_MANIFEST'] = run['tooltool-manifest']
     if run.get('mozconfig'):
         env['MOZCONFIG'] = run['mozconfig']
 
-    # tooltool downloads
-    worker['caches'].append({
-        'type': 'persistent',
-        'name': 'tooltool-cache',
-        'mount-point': '/home/worker/tooltool-cache',
-    })
-    worker['relengapi-proxy'] = True
-    taskdesc['scopes'].extend([
-        'docker-worker:relengapi-proxy:tooltool.download.public',
-    ])
-    env['TOOLTOOL_CACHE'] = '/home/worker/tooltool-cache'
-
     # build-haz-linux.sh needs this otherwise it assumes the checkout is in
     # the workspace.
-    env['GECKO_DIR'] = '/home/worker/checkouts/gecko'
+    env['GECKO_DIR'] = '{workdir}/checkouts/gecko'.format(**run)
 
     worker['command'] = [
-        '/home/worker/bin/run-task',
-        '--chown-recursive', '/home/worker/tooltool-cache',
-        '--chown-recursive', '/home/worker/workspace',
-        '--vcs-checkout', '/home/worker/checkouts/gecko',
+        '{workdir}/bin/run-task'.format(**run),
+        '--gecko-checkout', '{workdir}/checkouts/gecko'.format(**run),
         '--',
         '/bin/bash', '-c', run['command']
     ]

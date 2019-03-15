@@ -8,37 +8,29 @@
 #define nsXMLElement_h___
 
 #include "mozilla/Attributes.h"
-#include "nsIDOMElement.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/DOMRect.h"
 
-class nsXMLElement : public mozilla::dom::Element,
-                     public nsIDOMElement
-{
-public:
-  explicit nsXMLElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-    : mozilla::dom::Element(aNodeInfo)
-  {
-  }
+class nsXMLElement : public mozilla::dom::Element {
+ public:
+  explicit nsXMLElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+      : mozilla::dom::Element(std::move(aNodeInfo)) {}
 
   // nsISupports
-  NS_DECL_ISUPPORTS_INHERITED
-
-  // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE_TO_NSINODE
-
-  // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(nsXMLElement, mozilla::dom::Element)
 
   // nsINode interface methods
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;
+  virtual nsresult Clone(mozilla::dom::NodeInfo*,
+                         nsINode** aResult) const override;
 
-  virtual nsIDOMNode* AsDOMNode() override { return this; }
+  virtual void UnbindFromTree(bool aDeep = true,
+                              bool aNullParent = true) override;
 
-protected:
+ protected:
   virtual ~nsXMLElement() {}
 
-  virtual JSObject* WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapNode(JSContext* aCx,
+                             JS::Handle<JSObject*> aGivenProto) override;
 };
 
-#endif // nsXMLElement_h___
+#endif  // nsXMLElement_h___

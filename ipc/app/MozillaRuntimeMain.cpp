@@ -11,16 +11,18 @@
 
 using namespace mozilla;
 
-int
-main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
 #ifdef HAS_DLL_BLOCKLIST
-  DllBlocklist_Initialize();
+  DllBlocklist_Initialize(eDllBlocklistInitFlagIsChildProcess);
 #endif
 
   Bootstrap::UniquePtr bootstrap = GetBootstrap();
   if (!bootstrap) {
     return 2;
   }
-  return content_process_main(bootstrap.get(), argc, argv);
+  int ret = content_process_main(bootstrap.get(), argc, argv);
+#if defined(DEBUG) && defined(HAS_DLL_BLOCKLIST)
+  DllBlocklist_Shutdown();
+#endif
+  return ret;
 }

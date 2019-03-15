@@ -8,13 +8,23 @@
 #define nsChangeObserver_h_
 
 class nsIContent;
-class nsIDocument;
-class nsIAtom;
+class nsAtom;
+namespace mozilla {
+namespace dom {
+class Document;
+}
+}  // namespace mozilla
 
-#define NS_DECL_CHANGEOBSERVER \
-void ObserveAttributeChanged(nsIDocument *aDocument, nsIContent *aContent, nsIAtom *aAttribute) override; \
-void ObserveContentRemoved(nsIDocument *aDocument, nsIContent *aChild, int32_t aIndexInContainer) override; \
-void ObserveContentInserted(nsIDocument *aDocument, nsIContent* aContainer, nsIContent *aChild) override;
+#define NS_DECL_CHANGEOBSERVER                                            \
+  void ObserveAttributeChanged(mozilla::dom::Document* aDocument,         \
+                               nsIContent* aContent, nsAtom* aAttribute)  \
+      override;                                                           \
+  void ObserveContentRemoved(mozilla::dom::Document* aDocument,           \
+                             nsIContent* aContainer, nsIContent* aChild,  \
+                             nsIContent* aPreviousChild) override;        \
+  void ObserveContentInserted(mozilla::dom::Document* aDocument,          \
+                              nsIContent* aContainer, nsIContent* aChild) \
+      override;
 
 // Something that wants to be alerted to changes in attributes or changes in
 // its corresponding content object.
@@ -24,21 +34,20 @@ void ObserveContentInserted(nsIDocument *aDocument, nsIContent* aContainer, nsIC
 //
 // Any class that implements this interface must take care to unregister itself
 // on deletion.
-class nsChangeObserver
-{
-public:
+class nsChangeObserver {
+ public:
   // XXX use dom::Element
-  virtual void ObserveAttributeChanged(nsIDocument* aDocument,
+  virtual void ObserveAttributeChanged(mozilla::dom::Document* aDocument,
                                        nsIContent* aContent,
-                                       nsIAtom* aAttribute)=0;
+                                       nsAtom* aAttribute) = 0;
 
-  virtual void ObserveContentRemoved(nsIDocument* aDocument,
-                                     nsIContent* aChild, 
-                                     int32_t aIndexInContainer)=0;
+  virtual void ObserveContentRemoved(mozilla::dom::Document* aDocument,
+                                     nsIContent* aContainer, nsIContent* aChild,
+                                     nsIContent* aPreviousSibling) = 0;
 
-  virtual void ObserveContentInserted(nsIDocument* aDocument,
+  virtual void ObserveContentInserted(mozilla::dom::Document* aDocument,
                                       nsIContent* aContainer,
-                                      nsIContent* aChild)=0;
+                                      nsIContent* aChild) = 0;
 };
 
-#endif // nsChangeObserver_h_
+#endif  // nsChangeObserver_h_

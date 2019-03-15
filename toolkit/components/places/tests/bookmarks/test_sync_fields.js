@@ -27,7 +27,7 @@ class CounterTracker {
   // Call this to check *only* the specified IDs had a change increment, and
   // that none of the other "tracked" ones did.
   async check(...expectedToIncrement) {
-    do_print(`Checking counter for items ${JSON.stringify(expectedToIncrement)}`);
+    info(`Checking counter for items ${JSON.stringify(expectedToIncrement)}`);
     for (let [guid, entry] of this.tracked) {
       let { name, value } = entry;
       let newValue = await this._getCounter(guid);
@@ -59,28 +59,32 @@ async function checkSyncFields(guid, expected) {
 // Common test cases for sync field changes.
 class TestCases {
   async run() {
-    do_print("Test 1: inserts, updates, tags, and keywords");
+    info("Test 1: inserts, updates, tags, and keywords");
     try {
       await this.testChanges();
     } finally {
-      do_print("Reset sync fields after test 1");
+      info("Reset sync fields after test 1");
       await PlacesTestUtils.markBookmarksAsSynced();
     }
 
-    do_print("Test 2: reparenting");
-    try {
-      await this.testReparenting();
-    } finally {
-      do_print("Reset sync fields after test 2");
-      await PlacesTestUtils.markBookmarksAsSynced();
+    if (("moveItem" in this) && ("reorder" in this)) {
+      info("Test 2: reparenting");
+      try {
+        await this.testReparenting();
+      } finally {
+        info("Reset sync fields after test 2");
+        await PlacesTestUtils.markBookmarksAsSynced();
+      }
     }
 
-    do_print("Test 3: separators");
-    try {
-      await this.testSeparators();
-    } finally {
-      do_print("Reset sync fields after test 3");
-      await PlacesTestUtils.markBookmarksAsSynced();
+    if ("insertSeparator" in this) {
+      info("Test 3: separators");
+      try {
+        await this.testSeparators();
+      } finally {
+        info("Reset sync fields after test 3");
+        await PlacesTestUtils.markBookmarksAsSynced();
+      }
     }
   }
 
@@ -91,59 +95,62 @@ class TestCases {
                                           testUri,
                                           PlacesUtils.bookmarks.DEFAULT_INDEX,
                                           "bookmark title");
-    do_print(`Inserted bookmark ${guid}`);
+    info(`Inserted bookmark ${guid}`);
     await checkSyncFields(guid, { syncStatus: PlacesUtils.bookmarks.SYNC_STATUS.NEW,
                                    syncChangeCounter: 1 });
 
     // Pretend Sync just did whatever it does
     await PlacesTestUtils.setBookmarkSyncFields({ guid,
                                                   syncStatus: PlacesUtils.bookmarks.SYNC_STATUS.NORMAL });
-    do_print(`Updated sync status of ${guid}`);
+    info(`Updated sync status of ${guid}`);
     await checkSyncFields(guid, { syncStatus: PlacesUtils.bookmarks.SYNC_STATUS.NORMAL,
                                    syncChangeCounter: 1 });
 
     // update it - it should increment the change counter
     await this.setTitle(guid, "new title");
-    do_print(`Changed title of ${guid}`);
+    info(`Changed title of ${guid}`);
     await checkSyncFields(guid, { syncStatus: PlacesUtils.bookmarks.SYNC_STATUS.NORMAL,
                                    syncChangeCounter: 2 });
 
     await this.setAnno(guid, "random-anno", "random-value");
-    do_print(`Set anno on ${guid}`);
+    info(`Set anno on ${guid}`);
     await checkSyncFields(guid, { syncChangeCounter: 3 });
 
     // Tagging a bookmark should update its change counter.
     await this.tagURI(testUri, ["test-tag"]);
-    do_print(`Tagged bookmark ${guid}`);
+    info(`Tagged bookmark ${guid}`);
     await checkSyncFields(guid, { syncChangeCounter: 4 });
 
-    await this.setKeyword(guid, "keyword");
-    do_print(`Set keyword for bookmark ${guid}`);
-    await checkSyncFields(guid, { syncChangeCounter: 5 });
-
-    await this.removeKeyword(guid, "keyword");
-    do_print(`Removed keyword from bookmark ${guid}`);
-    await checkSyncFields(guid, { syncChangeCounter: 6 });
+    if ("setKeyword" in this) {
+      await this.setKeyword(guid, "keyword");
+      info(`Set keyword for bookmark ${guid}`);
+      await checkSyncFields(guid, { syncChangeCounter: 5 });
+    }
+    if ("removeKeyword" in this) {
+      await this.removeKeyword(guid, "keyword");
+      info(`Removed keyword from bookmark ${guid}`);
+      await checkSyncFields(guid, { syncChangeCounter: 6 });
+    }
   }
 
   async testSeparators() {
-    let insertSyncedBookmark = async function(uri) {
-      return await this.insertBookmark(PlacesUtils.bookmarks.unfiledGuid,
-                                           NetUtil.newURI(uri),
-                                           PlacesUtils.bookmarks.DEFAULT_INDEX,
-                                           "A bookmark name");
-    }.bind(this);
+    let insertSyncedBookmark = uri => {
+      return this.insertBookmark(PlacesUtils.bookmarks.unfiledGuid,
+                                 NetUtil.newURI(uri),
+                                 PlacesUtils.bookmarks.DEFAULT_INDEX,
+                                 "A bookmark name");
+    };
 
     await insertSyncedBookmark("http://foo.bar");
     let secondBmk = await insertSyncedBookmark("http://bar.foo");
     let sepGuid = await this.insertSeparator(PlacesUtils.bookmarks.unfiledGuid, PlacesUtils.bookmarks.DEFAULT_INDEX);
     await insertSyncedBookmark("http://barbar.foo");
 
-    do_print("Move a bookmark around the separator");
+    info("Move a bookmark around the separator");
     await this.moveItem(secondBmk, PlacesUtils.bookmarks.unfiledGuid, 4);
     await checkSyncFields(sepGuid, { syncChangeCounter: 2 });
 
-    do_print("Move a separator around directly");
+    info("Move a separator around directly");
     await this.moveItem(sepGuid, PlacesUtils.bookmarks.unfiledGuid, 0);
     await checkSyncFields(sepGuid, { syncChangeCounter: 3 });
   }
@@ -154,7 +161,7 @@ class TestCases {
     let folder1 = await this.createFolder(PlacesUtils.bookmarks.unfiledGuid,
                                            "folder1",
                                            PlacesUtils.bookmarks.DEFAULT_INDEX);
-    do_print(`Created the first folder, guid is ${folder1}`);
+    info(`Created the first folder, guid is ${folder1}`);
 
     // New folder should have a change recorded.
     await counterTracker.track(folder1, "folder 1");
@@ -165,7 +172,7 @@ class TestCases {
                                             testUri,
                                             PlacesUtils.bookmarks.DEFAULT_INDEX,
                                             "bookmark 1");
-    do_print(`Created a new bookmark into ${folder1}, guid is ${child1}`);
+    info(`Created a new bookmark into ${folder1}, guid is ${child1}`);
     // both the folder and the child should have a change recorded.
     await counterTracker.track(child1, "child 1");
     await counterTracker.check(folder1);
@@ -176,7 +183,7 @@ class TestCases {
                                             testUri,
                                             0,
                                             "bookmark 2");
-    do_print(`Created a second new bookmark into folder ${folder1}, guid is ${child2}`);
+    info(`Created a second new bookmark into folder ${folder1}, guid is ${child2}`);
 
     await counterTracker.track(child2, "child 2");
     await counterTracker.check(folder1);
@@ -191,13 +198,13 @@ class TestCases {
     let folder2 = await this.createFolder(PlacesUtils.bookmarks.unfiledGuid,
                                            "folder2",
                                            PlacesUtils.bookmarks.DEFAULT_INDEX);
-    do_print(`Created a second new folder, guid is ${folder2}`);
+    info(`Created a second new folder, guid is ${folder2}`);
     await counterTracker.track(folder2, "folder 2");
     // nothing else has changed.
     await counterTracker.check();
 
     // Move one of the children to the new folder.
-    do_print(`Moving bookmark ${child2} from folder ${folder1} to folder ${folder2}`);
+    info(`Moving bookmark ${child2} from folder ${folder1} to folder ${folder2}`);
     await this.moveItem(child2, folder2, PlacesUtils.bookmarks.DEFAULT_INDEX);
     // child1 should have no change, everything should have a new change.
     await counterTracker.check(folder1, folder2, child2);
@@ -205,7 +212,7 @@ class TestCases {
     // Move the new folder to another root.
     await this.moveItem(folder2, PlacesUtils.bookmarks.toolbarGuid,
                          PlacesUtils.bookmarks.DEFAULT_INDEX);
-    do_print(`Moving folder ${folder2} to toolbar`);
+    info(`Moving folder ${folder2} to toolbar`);
     await counterTracker.check(folder2, PlacesUtils.bookmarks.toolbarGuid,
                                 PlacesUtils.bookmarks.unfiledGuid);
 
@@ -213,12 +220,12 @@ class TestCases {
                                             testUri,
                                             0,
                                             "bookmark 3");
-    do_print(`Prepended child ${child3} to folder ${folder2}`);
+    info(`Prepended child ${child3} to folder ${folder2}`);
     await counterTracker.check(folder2, child3);
 
     // Reordering should only track the parent.
     await this.reorder(folder2, [child2, child3]);
-    do_print(`Reorder children of ${folder2}`);
+    info(`Reorder children of ${folder2}`);
     await counterTracker.check(folder2);
 
     // All fields still have a syncStatus of SYNC_STATUS_NEW - so deleting them
@@ -253,25 +260,13 @@ class SyncTestCases extends TestCases {
   async createFolder(parentGuid, title, index) {
     let parentId = await PlacesUtils.promiseItemId(parentGuid);
     let id = PlacesUtils.bookmarks.createFolder(parentId, title, index);
-    return await PlacesUtils.promiseItemGuid(id);
+    return PlacesUtils.promiseItemGuid(id);
   }
 
   async insertBookmark(parentGuid, uri, index, title) {
     let parentId = await PlacesUtils.promiseItemId(parentGuid);
     let id = PlacesUtils.bookmarks.insertBookmark(parentId, uri, index, title);
-    return await PlacesUtils.promiseItemGuid(id);
-  }
-
-  async insertSeparator(parentGuid, index) {
-    let parentId = await PlacesUtils.promiseItemId(parentGuid);
-    let id = PlacesUtils.bookmarks.insertSeparator(parentId, index);
-    return await PlacesUtils.promiseItemGuid(id);
-  }
-
-  async moveItem(guid, newParentGuid, index) {
-    let id = await PlacesUtils.promiseItemId(guid);
-    let newParentId = await PlacesUtils.promiseItemId(newParentGuid);
-    PlacesUtils.bookmarks.moveItem(id, newParentId, index);
+    return PlacesUtils.promiseItemGuid(id);
   }
 
   async removeItem(guid) {
@@ -284,34 +279,13 @@ class SyncTestCases extends TestCases {
     PlacesUtils.bookmarks.setItemTitle(id, title);
   }
 
-  async setKeyword(guid, keyword) {
-    let id = await PlacesUtils.promiseItemId(guid);
-    PlacesUtils.bookmarks.setKeywordForBookmark(id, keyword);
-  }
-
-  async removeKeyword(guid, keyword) {
-    let id = await PlacesUtils.promiseItemId(guid);
-    if (PlacesUtils.bookmarks.getKeywordForBookmark(id) != keyword) {
-      throw new Error(`Keyword ${keyword} not set for bookmark ${guid}`);
-    }
-    PlacesUtils.bookmarks.setKeywordForBookmark(id, "");
-  }
-
   async tagURI(uri, tags) {
     PlacesUtils.tagging.tagURI(uri, tags);
-  }
-
-  async reorder(parentGuid, childGuids) {
-    let parentId = await PlacesUtils.promiseItemId(parentGuid);
-    for (let index = 0; index < childGuids.length; ++index) {
-      let id = await PlacesUtils.promiseItemId(childGuids[index]);
-      PlacesUtils.bookmarks.moveItem(id, parentId, index);
-    }
   }
 }
 
 async function findTagFolder(tag) {
-  let db = await PlacesUtils.promiseDBConnection()
+  let db = await PlacesUtils.promiseDBConnection();
   let results = await db.executeCached(`
   SELECT guid
   FROM moz_bookmarks
@@ -349,7 +323,7 @@ class AsyncTestCases extends TestCases {
     let item = await PlacesUtils.bookmarks.insert({
       type: PlacesUtils.bookmarks.TYPE_SEPARATOR,
       parentGuid,
-      index
+      index,
     });
     return item.guid;
   }

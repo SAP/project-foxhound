@@ -7,7 +7,7 @@
 #include "SandboxFilterUtil.h"
 
 #ifndef ANDROID
-#include <linux/ipc.h>
+#  include <linux/ipc.h>
 #endif
 #include <linux/net.h>
 
@@ -17,13 +17,13 @@
 // Older kernel headers (mostly Android, but also some older desktop
 // distributions) are missing some or all of these:
 #ifndef SYS_ACCEPT4
-#define SYS_ACCEPT4  18
+#  define SYS_ACCEPT4 18
 #endif
 #ifndef SYS_RECVMMSG
-#define SYS_RECVMMSG 19
+#  define SYS_RECVMMSG 19
 #endif
 #ifndef SYS_SENDMMSG
-#define SYS_SENDMMSG 20
+#  define SYS_SENDMMSG 20
 #endif
 
 using namespace sandbox::bpf_dsl;
@@ -31,15 +31,15 @@ using namespace sandbox::bpf_dsl;
 
 namespace mozilla {
 
-sandbox::bpf_dsl::ResultExpr
-SandboxPolicyBase::EvaluateSyscall(int aSysno) const {
+sandbox::bpf_dsl::ResultExpr SandboxPolicyBase::EvaluateSyscall(
+    int aSysno) const {
   switch (aSysno) {
 #ifdef __NR_socketcall
     case __NR_socketcall: {
       Arg<int> call(0);
       UniquePtr<Caser<int>> acc(new Caser<int>(Switch(call)));
       for (int i = SYS_SOCKET; i <= SYS_SENDMMSG; ++i) {
-        auto thisCase = EvaluateSocketCall(i);
+        auto thisCase = EvaluateSocketCall(i, false);
         // Optimize out cases that are equal to the default.
         if (thisCase) {
           acc.reset(new Caser<int>(acc->Case(i, *thisCase)));
@@ -47,7 +47,7 @@ SandboxPolicyBase::EvaluateSyscall(int aSysno) const {
       }
       return acc->Default(InvalidSyscall());
     }
-#ifndef ANDROID
+#  ifndef ANDROID
     case __NR_ipc: {
       Arg<int> callAndVersion(0);
       auto call = callAndVersion & 0xFFFF;
@@ -61,11 +61,12 @@ SandboxPolicyBase::EvaluateSyscall(int aSysno) const {
       }
       return acc->Default(InvalidSyscall());
     }
-#endif // ANDROID
-#endif // __NR_socketcall
-#define DISPATCH_SOCKETCALL(sysnum, socketnum)                       \
-    case sysnum:                                                     \
-      return EvaluateSocketCall(socketnum).valueOr(InvalidSyscall())
+#  endif  // ANDROID
+#endif    // __NR_socketcall
+          // clang-format off
+#define DISPATCH_SOCKETCALL(sysnum, socketnum) \
+  case sysnum:                                 \
+    return EvaluateSocketCall(socketnum, true).valueOr(InvalidSyscall())
 #ifdef __NR_socket
       DISPATCH_SOCKETCALL(__NR_socket,      SYS_SOCKET);
       DISPATCH_SOCKETCALL(__NR_bind,        SYS_BIND);
@@ -80,7 +81,7 @@ SandboxPolicyBase::EvaluateSyscall(int aSysno) const {
 #ifdef __NR_send
       DISPATCH_SOCKETCALL(__NR_send,        SYS_SEND);
       DISPATCH_SOCKETCALL(__NR_recv,        SYS_RECV);
-#endif // __NR_send
+#endif  // __NR_send
       DISPATCH_SOCKETCALL(__NR_sendto,      SYS_SENDTO);
       DISPATCH_SOCKETCALL(__NR_recvfrom,    SYS_RECVFROM);
       DISPATCH_SOCKETCALL(__NR_shutdown,    SYS_SHUTDOWN);
@@ -91,13 +92,13 @@ SandboxPolicyBase::EvaluateSyscall(int aSysno) const {
       DISPATCH_SOCKETCALL(__NR_accept4,     SYS_ACCEPT4);
       DISPATCH_SOCKETCALL(__NR_recvmmsg,    SYS_RECVMMSG);
       DISPATCH_SOCKETCALL(__NR_sendmmsg,    SYS_SENDMMSG);
-#endif // __NR_socket
+#endif  // __NR_socket
 #undef DISPATCH_SOCKETCALL
 #ifndef __NR_socketcall
 #ifndef ANDROID
-#define DISPATCH_SYSVCALL(sysnum, ipcnum)         \
-    case sysnum:                                  \
-      return EvaluateIpcCall(ipcnum).valueOr(InvalidSyscall())
+#define DISPATCH_SYSVCALL(sysnum, ipcnum) \
+  case sysnum:                            \
+    return EvaluateIpcCall(ipcnum).valueOr(InvalidSyscall())
       DISPATCH_SYSVCALL(__NR_semop,       SEMOP);
       DISPATCH_SYSVCALL(__NR_semget,      SEMGET);
       DISPATCH_SYSVCALL(__NR_semctl,      SEMCTL);
@@ -111,11 +112,12 @@ SandboxPolicyBase::EvaluateSyscall(int aSysno) const {
       DISPATCH_SYSVCALL(__NR_shmget,      SHMGET);
       DISPATCH_SYSVCALL(__NR_shmctl,      SHMCTL);
 #undef DISPATCH_SYSVCALL
-#endif // ANDROID
-#endif // __NR_socketcall
-  default:
-    return InvalidSyscall();
+#endif  // ANDROID
+#endif  // __NR_socketcall
+          // clang-format on
+    default:
+      return InvalidSyscall();
   }
 }
 
-}
+}  // namespace mozilla

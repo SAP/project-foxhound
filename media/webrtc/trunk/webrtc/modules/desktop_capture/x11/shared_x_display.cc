@@ -8,21 +8,24 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/desktop_capture/x11/shared_x_display.h"
+#include "modules/desktop_capture/x11/shared_x_display.h"
+
+#include <X11/Xlib.h>
 
 #include <algorithm>
 
-#include "webrtc/system_wrappers/include/logging.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
 
 namespace webrtc {
 
 SharedXDisplay::SharedXDisplay(Display* display)
   : display_(display) {
-  assert(display_);
+  RTC_DCHECK(display_);
 }
 
 SharedXDisplay::~SharedXDisplay() {
-  assert(event_handlers_.empty());
+  RTC_DCHECK(event_handlers_.empty());
   XCloseDisplay(display_);
 }
 
@@ -32,7 +35,7 @@ rtc::scoped_refptr<SharedXDisplay> SharedXDisplay::Create(
   Display* display =
       XOpenDisplay(display_name.empty() ? NULL : display_name.c_str());
   if (!display) {
-    LOG(LS_ERROR) << "Unable to open display";
+    RTC_LOG(LS_ERROR) << "Unable to open display";
     return NULL;
   }
   return new SharedXDisplay(display);

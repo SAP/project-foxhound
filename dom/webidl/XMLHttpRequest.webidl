@@ -4,7 +4,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * The origin of this IDL file is
- * www.w3.org/TR/2012/WD-XMLHttpRequest-20120117/
+ * https://xhr.spec.whatwg.org/#interface-xmlhttprequest
  *
  * Copyright © 2012 W3C® (MIT, ERCIM, Keio), All Rights Reserved. W3C
  * liability, trademark and document use rules apply.
@@ -12,7 +12,6 @@
 
 interface InputStream;
 interface MozChannel;
-interface IID;
 
 enum XMLHttpRequestResponseType {
   "",
@@ -23,9 +22,7 @@ enum XMLHttpRequestResponseType {
   "text",
 
   // Mozilla-specific stuff
-  "moz-chunked-text",
   "moz-chunked-arraybuffer",
-  "moz-blob"
 };
 
 /**
@@ -87,23 +84,7 @@ interface XMLHttpRequest : XMLHttpRequestEventTarget {
   readonly attribute XMLHttpRequestUpload upload;
 
   [Throws]
-  void send();
-  [Throws]
-  void send(ArrayBuffer data);
-  [Throws]
-  void send(ArrayBufferView data);
-  [Throws]
-  void send(Blob data);
-  [Throws]
-  void send(Document data);
-  [Throws]
-  void send(USVString? data);
-  [Throws]
-  void send(FormData data);
-  [Throws]
-  void send(InputStream data);
-  [Throws]
-  void send(URLSearchParams data);
+  void send(optional (Document or BodyInit)? body = null);
 
   [Throws]
   void abort();
@@ -144,16 +125,19 @@ interface XMLHttpRequest : XMLHttpRequestEventTarget {
   [ChromeOnly, Exposed=Window]
   readonly attribute MozChannel? channel;
 
-  // A platform-specific identifer to represent the network interface 
-  // which the HTTP request would occur on.
-  [ChromeOnly, Exposed=Window]
-  attribute ByteString? networkInterfaceId;
-
   [Throws, ChromeOnly, Exposed=Window]
-  any getInterface(IID iid);
+  any getInterface(any iid);
 
   [ChromeOnly, Exposed=Window]
   void setOriginAttributes(optional OriginAttributesDictionary originAttributes);
+
+  [ChromeOnly, Throws]
+  void sendInputStream(InputStream body);
+
+  // Only works on MainThread.
+  // Its permanence is to be evaluated in bug 1368540 for Firefox 60.
+  [ChromeOnly]
+  readonly attribute unsigned short errorCode;
 
   readonly attribute boolean mozAnon;
   readonly attribute boolean mozSystem;

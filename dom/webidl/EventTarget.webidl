@@ -14,16 +14,19 @@
 dictionary EventListenerOptions {
   boolean capture = false;
   /* Setting to true make the listener be added to the system group. */
-  [Func="ThreadSafeIsChromeOrXBL"]
+  [Func="ThreadSafeIsChromeOrXBLOrUAWidget"]
   boolean mozSystemGroup = false;
 };
 
 dictionary AddEventListenerOptions : EventListenerOptions {
-  boolean passive = false;
+  boolean passive;
   boolean once = false;
+  [ChromeOnly]
+  boolean wantUntrusted;
 };
 
-[Exposed=(Window,Worker,WorkerDebugger,System)]
+[Constructor,
+ Exposed=(Window,Worker,WorkerDebugger,AudioWorklet)]
 interface EventTarget {
   /* Passing null for wantsUntrusted means "default behavior", which
      differs in content and chrome.  In content that default boolean
@@ -62,6 +65,6 @@ partial interface EventTarget {
 // chrome easier.  This returns the window which can be used to create
 // events to fire at this EventTarget, or null if there isn't one.
 partial interface EventTarget {
-  [ChromeOnly, Exposed=(Window,System), BinaryName="ownerGlobalForBindings"]
+  [ChromeOnly, Exposed=Window, BinaryName="ownerGlobalForBindings"]
   readonly attribute WindowProxy? ownerGlobal;
 };

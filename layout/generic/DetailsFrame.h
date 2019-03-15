@@ -11,7 +11,6 @@
 #include "nsIAnonymousContentCreator.h"
 
 class nsContainerFrame;
-class nsStyleContext;
 
 namespace mozilla {
 
@@ -19,23 +18,18 @@ namespace mozilla {
 // nsCSSFrameConstructor::ConstructDetailsFrame for the structure of a
 // DetailsFrame.
 //
-class DetailsFrame final : public nsBlockFrame
-                         , public nsIAnonymousContentCreator
-{
-public:
-  NS_DECL_FRAMEARENA_HELPERS
-  NS_DECL_QUERYFRAME_TARGET(DetailsFrame)
+class DetailsFrame final : public nsBlockFrame,
+                           public nsIAnonymousContentCreator {
+ public:
+  NS_DECL_FRAMEARENA_HELPERS(DetailsFrame)
   NS_DECL_QUERYFRAME
 
-  explicit DetailsFrame(nsStyleContext* aContext);
+  explicit DetailsFrame(ComputedStyle* aStyle);
 
   virtual ~DetailsFrame();
 
-  nsIAtom* GetType() const override;
-
 #ifdef DEBUG_FRAME_DUMP
-  nsresult GetFrameName(nsAString& aResult) const override
-  {
+  nsresult GetFrameName(nsAString& aResult) const override {
     return MakeFrameName(NS_LITERAL_STRING("Details"), aResult);
   }
 #endif
@@ -49,18 +43,25 @@ public:
   void SetInitialChildList(ChildListID aListID,
                            nsFrameList& aChildList) override;
 
-  void DestroyFrom(nsIFrame* aDestructRoot) override;
+  void DestroyFrom(nsIFrame* aDestructRoot,
+                   PostDestroyData& aPostDestroyData) override;
 
   // nsIAnonymousContentCreator
   nsresult CreateAnonymousContent(nsTArray<ContentInfo>& aElements) override;
 
   void AppendAnonymousContentTo(nsTArray<nsIContent*>& aElements,
                                 uint32_t aFilter) override;
+  // Returns true if |aSummaryFrame| is the main summary (i.e. the first child
+  // of this details frame).
+  // This function is used when the summary element is removed from the parent
+  // details element since at that moment the summary element has been already
+  // removed from the details element children.
+  bool HasMainSummaryFrame(nsIFrame* aSummaryFrame);
 
-private:
+ private:
   nsCOMPtr<nsIContent> mDefaultSummary;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // DetailsFrame_h
+#endif  // DetailsFrame_h

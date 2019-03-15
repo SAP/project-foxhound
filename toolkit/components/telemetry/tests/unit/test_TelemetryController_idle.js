@@ -3,34 +3,30 @@
 
 // Check that TelemetrySession notifies correctly on idle-daily.
 
-Cu.import("resource://testing-common/httpd.js", this);
-Cu.import("resource://gre/modules/PromiseUtils.jsm", this);
-Cu.import("resource://gre/modules/Services.jsm", this);
-Cu.import("resource://gre/modules/Task.jsm", this);
-Cu.import("resource://gre/modules/TelemetryStorage.jsm", this);
-Cu.import("resource://gre/modules/TelemetryController.jsm", this);
-Cu.import("resource://gre/modules/TelemetrySession.jsm", this);
-Cu.import("resource://gre/modules/TelemetrySend.jsm", this);
-
-const PREF_FHR_UPLOAD_ENABLED = "datareporting.healthreport.uploadEnabled";
+ChromeUtils.import("resource://testing-common/httpd.js", this);
+ChromeUtils.import("resource://gre/modules/PromiseUtils.jsm", this);
+ChromeUtils.import("resource://gre/modules/Services.jsm", this);
+ChromeUtils.import("resource://gre/modules/TelemetryStorage.jsm", this);
+ChromeUtils.import("resource://gre/modules/TelemetryController.jsm", this);
+ChromeUtils.import("resource://gre/modules/TelemetrySession.jsm", this);
+ChromeUtils.import("resource://gre/modules/TelemetrySend.jsm", this);
 
 var gHttpServer = null;
 
-add_task(function* test_setup() {
+add_task(async function test_setup() {
   do_get_profile();
 
   // Make sure we don't generate unexpected pings due to pref changes.
-  yield setEmptyPrefWatchlist();
+  await setEmptyPrefWatchlist();
 
-  Services.prefs.setBoolPref(PREF_TELEMETRY_ENABLED, true);
-  Services.prefs.setBoolPref(PREF_FHR_UPLOAD_ENABLED, true);
+  Services.prefs.setBoolPref(TelemetryUtils.Preferences.FhrUploadEnabled, true);
 
   // Start the webserver to check if the pending ping correctly arrives.
   gHttpServer = new HttpServer();
   gHttpServer.start(-1);
 });
 
-add_task(function* testSendPendingOnIdleDaily() {
+add_task(async function testSendPendingOnIdleDaily() {
   // Create a valid pending ping.
   const PENDING_PING = {
     id: "2133234d-4ea1-44f4-909e-ce8c6c41e0fc",
@@ -39,35 +35,35 @@ add_task(function* testSendPendingOnIdleDaily() {
     application: {},
     payload: {},
   };
-  yield TelemetryStorage.savePing(PENDING_PING, true);
+  await TelemetryStorage.savePing(PENDING_PING, true);
 
   // Telemetry will not send this ping at startup, because it's not overdue.
-  yield TelemetryController.testSetup();
+  await TelemetryController.testSetup();
   TelemetrySend.setServer("http://localhost:" + gHttpServer.identity.primaryPort);
 
   let pendingPromise = new Promise(resolve =>
     gHttpServer.registerPrefixHandler("/submit/telemetry/", request => resolve(request)));
 
   let gatherPromise = PromiseUtils.defer();
-  Services.obs.addObserver(gatherPromise.resolve, "gather-telemetry", false);
+  Services.obs.addObserver(gatherPromise.resolve, "gather-telemetry");
 
   // Check that we are correctly receiving the gather-telemetry notification.
   TelemetrySession.observe(null, "idle-daily", null);
-  yield gatherPromise;
+  await gatherPromise.promise;
   Assert.ok(true, "Received gather-telemetry notification.");
 
   Services.obs.removeObserver(gatherPromise.resolve, "gather-telemetry");
 
   // Check that the pending ping is correctly received.
   let ns = {};
-  let module = Cu.import("resource://gre/modules/TelemetrySend.jsm", ns);
+  let module = ChromeUtils.import("resource://gre/modules/TelemetrySend.jsm", ns);
   module.TelemetrySendImpl.observe(null, "idle-daily", null);
-  let request = yield pendingPromise;
+  let request = await pendingPromise;
   let ping = decodeRequestPayload(request);
 
   // Validate the ping data.
   Assert.equal(ping.id, PENDING_PING.id);
   Assert.equal(ping.type, PENDING_PING.type);
 
-  yield new Promise(resolve => gHttpServer.stop(resolve));
+  await new Promise(resolve => gHttpServer.stop(resolve));
 });

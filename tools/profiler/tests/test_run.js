@@ -3,40 +3,39 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 function run_test() {
-  // If we can't get the profiler component then assume gecko was
-  // built without it and pass all the tests
-  var profilerCc = Cc["@mozilla.org/tools/profiler;1"];
-  if (!profilerCc)
+  if (!AppConstants.MOZ_GECKO_PROFILER) {
     return;
+  }
 
-  var profiler = Cc["@mozilla.org/tools/profiler;1"].getService(Ci.nsIProfiler);
-  if (!profiler)
-    return;
+  Assert.ok(!Services.profiler.IsActive());
 
-  do_check_true(!profiler.IsActive());
+  Services.profiler.StartProfiler(1000, 10, [], 0);
 
-  profiler.StartProfiler(1000, 10, [], 0);
-
-  do_check_true(profiler.IsActive());
+  Assert.ok(Services.profiler.IsActive());
 
   do_test_pending();
 
   do_timeout(1000, function wait() {
     // Check text profile format
-    var profileStr = profiler.GetProfile();
-    do_check_true(profileStr.length > 10);
+    var profileStr = Services.profiler.GetProfile();
+    Assert.ok(profileStr.length > 10);
 
     // check json profile format
-    var profileObj = profiler.getProfileData();
-    do_check_neq(profileObj, null);
-    do_check_neq(profileObj.threads, null);
-    do_check_true(profileObj.threads.length >= 1);
-    do_check_neq(profileObj.threads[0].samples, null);
+    var profileObj = Services.profiler.getProfileData();
+    Assert.notEqual(profileObj, null);
+    Assert.notEqual(profileObj.threads, null);
+    // We capture memory counters by default only when jemalloc is turned
+    // on (and it isn't for ASAN), so unless we can conditionalize for ASAN
+    // here we can't check that we're capturing memory counter data.
+    Assert.notEqual(profileObj.counters, null);
+    Assert.notEqual(profileObj.memory, null);
+    Assert.ok(profileObj.threads.length >= 1);
+    Assert.notEqual(profileObj.threads[0].samples, null);
     // NOTE: The number of samples will be empty since we
     //       don't have any labels in the xpcshell code
 
-    profiler.StopProfiler();
-    do_check_true(!profiler.IsActive());
+    Services.profiler.StopProfiler();
+    Assert.ok(!Services.profiler.IsActive());
     do_test_finished();
   });
 

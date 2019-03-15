@@ -6,7 +6,7 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = [
+var EXPORTED_SYMBOLS = [
   "DeferredTask",
 ];
 
@@ -84,14 +84,8 @@ this.EXPORTED_SYMBOLS = [
 
 // Globals
 
-const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "Promise",
-                                  "resource://gre/modules/Promise.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Task",
-                                  "resource://gre/modules/Task.jsm");
+ChromeUtils.defineModuleGetter(this, "PromiseUtils",
+                               "resource://gre/modules/PromiseUtils.jsm");
 
 const Timer = Components.Constructor("@mozilla.org/timer;1", "nsITimer",
                                      "initWithCallback");
@@ -102,8 +96,8 @@ const Timer = Components.Constructor("@mozilla.org/timer;1", "nsITimer",
  * Sets up a task whose execution can be triggered after a delay.
  *
  * @param aTaskFn
- *        Function or generator function to execute.  This argument is passed to
- *        the "Task.spawn" method every time the task should be executed.  This
+ *        Function to execute.  If the function returns a promise, the task is
+ *        not considered complete until that promise resolves.  This
  *        task is never re-entered while running.
  * @param aDelayMs
  *        Time between executions, in milliseconds.  Multiple attempts to run
@@ -111,11 +105,16 @@ const Timer = Components.Constructor("@mozilla.org/timer;1", "nsITimer",
  *        inactivity is guaranteed to pass between multiple executions of the
  *        task, except on finalization, when the task may restart immediately
  *        after the previous execution finished.
+ * @param aIdleTimeoutMs
+ *        The maximum time to wait for an idle slot on the main thread after
+ *        aDelayMs have elapsed. If omitted, waits indefinitely for an idle
+ *        callback.
  */
-this.DeferredTask = function(aTaskFn, aDelayMs) {
+var DeferredTask = function(aTaskFn, aDelayMs, aIdleTimeoutMs) {
   this._taskFn = aTaskFn;
   this._delayMs = aDelayMs;
-}
+  this._timeoutMs = aIdleTimeoutMs;
+};
 
 this.DeferredTask.prototype = {
   /**
@@ -261,7 +260,7 @@ this.DeferredTask.prototype = {
    * Timer callback used to run the delayed task.
    */
   _timerCallback() {
-    let runningDeferred = Promise.defer();
+    let runningDeferred = PromiseUtils.defer();
 
     // All these state changes must occur at the same time directly inside the
     // timer callback, to prevent race conditions and to ensure that all the
@@ -272,9 +271,9 @@ this.DeferredTask.prototype = {
     this._armed = false;
     this._runningPromise = runningDeferred.promise;
 
-    runningDeferred.resolve(Task.spawn(function* () {
+    runningDeferred.resolve((async () => {
       // Execute the provided function asynchronously.
-      yield Task.spawn(this._taskFn).then(null, Cu.reportError);
+      await this._runTask();
 
       // Now that the task has finished, we check the state of the object to
       // determine if we should restart the task again.
@@ -286,13 +285,30 @@ this.DeferredTask.prototype = {
           // property should return false while the task is running, and should
           // remain false after the last execution terminates.
           this._armed = false;
-          yield Task.spawn(this._taskFn).then(null, Cu.reportError);
+          await this._runTask();
         }
       }
 
       // Indicate that the execution of the task has finished.  This happens
       // synchronously with the previous state changes in the function.
       this._runningPromise = null;
-    }.bind(this)).then(null, Cu.reportError));
+    })().catch(Cu.reportError));
+  },
+
+  /**
+   * Executes the associated task in an idle callback and catches exceptions.
+   */
+  async _runTask() {
+    try {
+      // If we're being finalized, execute the task immediately, so we don't
+      // risk blocking async shutdown longer than necessary.
+      if (this._finalized || this._timeoutMs === 0) {
+        await this._taskFn();
+      } else {
+        await PromiseUtils.idleDispatch(this._taskFn, this._timeoutMs);
+      }
+    } catch (ex) {
+      Cu.reportError(ex);
+    }
   },
 };

@@ -15,12 +15,15 @@ namespace mozilla {
 // send reports from the SIGSYS handler to the SandboxReporter
 // instance in the parent.
 class SandboxReporterClient {
-public:
+ public:
   // Note: this does not take ownership of the file descriptor; if
   // it's not kSandboxReporterFileDesc (e.g., for unit testing), the
   // caller will need to close it to avoid leaks.
-  explicit SandboxReporterClient(SandboxReport::ProcType aProcType,
-                                 int aFd = kSandboxReporterFileDesc);
+  SandboxReporterClient(SandboxReport::ProcType aProcType, int aFd);
+
+  // This constructor uses the default fd (kSandboxReporterFileDesc)
+  // for a sandboxed child process.
+  explicit SandboxReporterClient(SandboxReport::ProcType aProcType);
 
   // Constructs a report from a signal context (the ucontext_t* passed
   // as void* to an sa_sigaction handler); uses the caller's pid and tid.
@@ -33,11 +36,12 @@ public:
     SendReport(report);
     return report;
   }
-private:
+
+ private:
   SandboxReport::ProcType mProcType;
   int mFd;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_SandboxReporterClient_h
+#endif  // mozilla_SandboxReporterClient_h

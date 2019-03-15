@@ -8,14 +8,13 @@ const protocol = require("devtools/shared/protocol");
 const { Memory } = require("devtools/server/performance/memory");
 const { actorBridgeWithSpec } = require("devtools/server/actors/common");
 const { memorySpec } = require("devtools/shared/specs/memory");
-loader.lazyRequireGetter(this, "events", "sdk/event/core");
 loader.lazyRequireGetter(this, "StackFrameCache",
                          "devtools/server/actors/utils/stack", true);
 
 /**
  * An actor that returns memory usage data for its parent actor's window.
- * A tab-scoped instance of this actor will measure the memory footprint of its
- * parent tab. A global-scoped instance however, will measure the memory
+ * A target-scoped instance of this actor will measure the memory footprint of
+ * the target, such as a tab. A global-scoped instance however, will measure the memory
  * footprint of the chrome window referenced by the root actor.
  *
  * This actor wraps the Memory module at devtools/server/performance/memory.js
@@ -24,7 +23,7 @@ loader.lazyRequireGetter(this, "StackFrameCache",
  * @see devtools/server/performance/memory.js for documentation.
  */
 exports.MemoryActor = protocol.ActorClassWithSpec(memorySpec, {
-  initialize: function (conn, parent, frameCache = new StackFrameCache()) {
+  initialize: function(conn, parent, frameCache = new StackFrameCache()) {
     protocol.Actor.prototype.initialize.call(this, conn);
 
     this._onGarbageCollection = this._onGarbageCollection.bind(this);
@@ -34,7 +33,7 @@ exports.MemoryActor = protocol.ActorClassWithSpec(memorySpec, {
     this.bridge.on("allocations", this._onAllocations);
   },
 
-  destroy: function () {
+  destroy: function() {
     this.bridge.off("garbage-collection", this._onGarbageCollection);
     this.bridge.off("allocations", this._onAllocations);
     this.bridge.destroy();
@@ -47,7 +46,7 @@ exports.MemoryActor = protocol.ActorClassWithSpec(memorySpec, {
 
   getState: actorBridgeWithSpec("getState"),
 
-  saveHeapSnapshot: function (boundaries) {
+  saveHeapSnapshot: function(boundaries) {
     return this.bridge.saveHeapSnapshot(boundaries);
   },
 
@@ -69,15 +68,15 @@ exports.MemoryActor = protocol.ActorClassWithSpec(memorySpec, {
 
   residentUnique: actorBridgeWithSpec("residentUnique"),
 
-  _onGarbageCollection: function (data) {
+  _onGarbageCollection: function(data) {
     if (this.conn.transport) {
-      events.emit(this, "garbage-collection", data);
+      this.emit("garbage-collection", data);
     }
   },
 
-  _onAllocations: function (data) {
+  _onAllocations: function(data) {
     if (this.conn.transport) {
-      events.emit(this, "allocations", data);
+      this.emit("allocations", data);
     }
   },
 });

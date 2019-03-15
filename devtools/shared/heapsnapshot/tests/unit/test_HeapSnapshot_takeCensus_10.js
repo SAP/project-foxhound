@@ -1,15 +1,16 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+"use strict";
 
 // Check byte counts produced by takeCensus.
 //
 // Ported from js/src/jit-test/tests/debug/Memory-take Census-10.js
 
 function run_test() {
-  let g = newGlobal();
-  let dbg = new Debugger(g);
+  const g = newGlobal();
+  const dbg = new Debugger(g);
 
-  let sizeOfAM = byteSize(allocationMarker());
+  const sizeOfAM = byteSize(allocationMarker());
 
   // Allocate a single allocation marker, and check that we can find it.
   g.eval("var hold = allocationMarker();");
@@ -25,7 +26,7 @@ function run_test() {
            for (let i = 0; i < 10; i++)     // 5
              objs.push(allocationMarker()); // 6
          }                                  // 7
-         `);                                // 8
+         `);
 
   dbg.memory.allocationSamplingProbability = 1;
   dbg.memory.trackingAllocationSites = true;
@@ -34,8 +35,8 @@ function run_test() {
 
   census = saveHeapSnapshotAndTakeCensus(dbg, {
     breakdown: { by: "objectClass",
-                 then: { by: "allocationStack" }
-               }
+                 then: { by: "allocationStack" },
+    },
   });
 
   let seen = 0;

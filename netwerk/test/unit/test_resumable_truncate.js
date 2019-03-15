@@ -1,5 +1,5 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = null;
 
@@ -43,7 +43,7 @@ Canceler.prototype = {
         iid.equals(Ci.nsIRequestObserver) ||
         iid.equals(Ci.nsISupports))
       return this;
-    throw Components.results.NS_ERROR_NO_INTERFACE;
+    throw Cr.NS_ERROR_NO_INTERFACE;
   },
 
   onStartRequest: function(request, context) {
@@ -51,11 +51,11 @@ Canceler.prototype = {
 
   onDataAvailable: function(request, context, stream, offset, count) {
     request.QueryInterface(Ci.nsIChannel)
-           .cancel(Components.results.NS_BINDING_ABORTED);
+           .cancel(Cr.NS_BINDING_ABORTED);
   },
 
   onStopRequest: function(request, context, status) {
-    do_check_eq(status, Components.results.NS_BINDING_ABORTED);
+    Assert.equal(status, Cr.NS_BINDING_ABORTED);
     this.continueFn();
   }
 };

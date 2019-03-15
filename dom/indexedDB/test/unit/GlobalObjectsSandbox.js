@@ -3,6 +3,8 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+/* import-globals-from xpcshell-head-parent-process.js */
+
 function runTest() {
   const name = "Splendid Test";
 
@@ -13,10 +15,10 @@ function runTest() {
   request.onerror = function(event) {
     ok(false, "indexedDB error, '" + event.target.error.name + "'");
     finishTest();
-  }
+  };
   request.onsuccess = function(event) {
     let db = event.target.result;
     ok(db, "Got database");
     finishTest();
-  }
+  };
 }

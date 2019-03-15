@@ -18,35 +18,35 @@ const EXPECTED_REQUESTS_TOP = [
     url: TOP_URL,
     causeType: "document",
     causeUri: null,
-    stack: true
+    stack: true,
   },
   {
     method: "GET",
     url: EXAMPLE_URL + "stylesheet_request",
     causeType: "stylesheet",
     causeUri: TOP_URL,
-    stack: false
+    stack: false,
   },
   {
     method: "GET",
     url: EXAMPLE_URL + "img_request",
     causeType: "img",
     causeUri: TOP_URL,
-    stack: false
+    stack: false,
   },
   {
     method: "GET",
     url: EXAMPLE_URL + "xhr_request",
     causeType: "xhr",
     causeUri: TOP_URL,
-    stack: [{ fn: "performXhrRequest", file: TOP_FILE_NAME, line: 25 }]
+    stack: [{ fn: "performXhrRequest", file: TOP_FILE_NAME, line: 25 }],
   },
   {
     method: "GET",
     url: EXAMPLE_URL + "fetch_request",
     causeType: "fetch",
     causeUri: TOP_URL,
-    stack: [{ fn: "performFetchRequest", file: TOP_FILE_NAME, line: 29 }]
+    stack: [{ fn: "performFetchRequest", file: TOP_FILE_NAME, line: 29 }],
   },
   {
     method: "GET",
@@ -56,7 +56,7 @@ const EXPECTED_REQUESTS_TOP = [
     stack: [
       { fn: "performPromiseFetchRequest", file: TOP_FILE_NAME, line: 41 },
       { fn: null, file: TOP_FILE_NAME, line: 40, asyncCause: "promise callback" },
-    ]
+    ],
   },
   {
     method: "GET",
@@ -67,14 +67,14 @@ const EXPECTED_REQUESTS_TOP = [
       { fn: "performTimeoutFetchRequest", file: TOP_FILE_NAME, line: 43 },
       { fn: "performPromiseFetchRequest", file: TOP_FILE_NAME, line: 42,
         asyncCause: "setTimeout handler" },
-    ]
+    ],
   },
   {
     method: "POST",
     url: EXAMPLE_URL + "beacon_request",
     causeType: "beacon",
     causeUri: TOP_URL,
-    stack: [{ fn: "performBeaconRequest", file: TOP_FILE_NAME, line: 33 }]
+    stack: [{ fn: "performBeaconRequest", file: TOP_FILE_NAME, line: 33 }],
   },
 ];
 
@@ -84,35 +84,35 @@ const EXPECTED_REQUESTS_SUB = [
     url: SUB_URL,
     causeType: "subdocument",
     causeUri: TOP_URL,
-    stack: false
+    stack: false,
   },
   {
     method: "GET",
     url: EXAMPLE_URL + "stylesheet_request",
     causeType: "stylesheet",
     causeUri: SUB_URL,
-    stack: false
+    stack: false,
   },
   {
     method: "GET",
     url: EXAMPLE_URL + "img_request",
     causeType: "img",
     causeUri: SUB_URL,
-    stack: false
+    stack: false,
   },
   {
     method: "GET",
     url: EXAMPLE_URL + "xhr_request",
     causeType: "xhr",
     causeUri: SUB_URL,
-    stack: [{ fn: "performXhrRequest", file: SUB_FILE_NAME, line: 24 }]
+    stack: [{ fn: "performXhrRequest", file: SUB_FILE_NAME, line: 24 }],
   },
   {
     method: "GET",
     url: EXAMPLE_URL + "fetch_request",
     causeType: "fetch",
     causeUri: SUB_URL,
-    stack: [{ fn: "performFetchRequest", file: SUB_FILE_NAME, line: 28 }]
+    stack: [{ fn: "performFetchRequest", file: SUB_FILE_NAME, line: 28 }],
   },
   {
     method: "GET",
@@ -122,7 +122,7 @@ const EXPECTED_REQUESTS_SUB = [
     stack: [
       { fn: "performPromiseFetchRequest", file: SUB_FILE_NAME, line: 40 },
       { fn: null, file: SUB_FILE_NAME, line: 39, asyncCause: "promise callback" },
-    ]
+    ],
   },
   {
     method: "GET",
@@ -133,22 +133,22 @@ const EXPECTED_REQUESTS_SUB = [
       { fn: "performTimeoutFetchRequest", file: SUB_FILE_NAME, line: 42 },
       { fn: "performPromiseFetchRequest", file: SUB_FILE_NAME, line: 41,
         asyncCause: "setTimeout handler" },
-    ]
+    ],
   },
   {
     method: "POST",
     url: EXAMPLE_URL + "beacon_request",
     causeType: "beacon",
     causeUri: SUB_URL,
-    stack: [{ fn: "performBeaconRequest", file: SUB_FILE_NAME, line: 32 }]
+    stack: [{ fn: "performBeaconRequest", file: SUB_FILE_NAME, line: 32 }],
   },
 ];
 
 const REQUEST_COUNT = EXPECTED_REQUESTS_TOP.length + EXPECTED_REQUESTS_SUB.length;
 
-add_task(function* () {
+add_task(async function() {
   // Async stacks aren't on by default in all builds
-  yield SpecialPowers.pushPrefEnv({ set: [["javascript.options.asyncstack", true]] });
+  await SpecialPowers.pushPrefEnv({ set: [["javascript.options.asyncstack", true]] });
 
   // the initNetMonitor function clears the network request list after the
   // page is loaded. That's why we first load a bogus page from SIMPLE_URL,
@@ -156,23 +156,29 @@ add_task(function* () {
   // all the requests the page is making, not only the XHRs.
   // We can't use about:blank here, because initNetMonitor checks that the
   // page has actually made at least one request.
-  let { tab, monitor } = yield initNetMonitor(SIMPLE_URL);
+  const { tab, monitor } = await initNetMonitor(SIMPLE_URL);
 
-  let { document, gStore, windowRequire } = monitor.panelWin;
-  let Actions = windowRequire("devtools/client/netmonitor/actions/index");
-  let {
+  const { document, store, windowRequire, connector } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
+  const {
     getDisplayedRequests,
     getSortedRequests,
-  } = windowRequire("devtools/client/netmonitor/selectors/index");
+  } = windowRequire("devtools/client/netmonitor/src/selectors/index");
 
-  gStore.dispatch(Actions.batchEnable(false));
+  store.dispatch(Actions.batchEnable(false));
 
-  tab.linkedBrowser.loadURI(TOP_URL, null, null);
+  BrowserTestUtils.loadURI(tab.linkedBrowser, TOP_URL);
 
-  yield waitForNetworkEvents(monitor, REQUEST_COUNT);
+  await waitForNetworkEvents(monitor, REQUEST_COUNT);
 
-  is(gStore.getState().requests.requests.size, REQUEST_COUNT,
+  is(store.getState().requests.requests.size, REQUEST_COUNT,
     "All the page events should be recorded.");
+
+  // Fetch stack-trace data from the backend and wait till
+  // all packets are received.
+  const requests = getSortedRequests(store.getState());
+  await Promise.all(requests.map(requestItem =>
+    connector.requestData(requestItem.id, "stackTrace")));
 
   // While there is a defined order for requests in each document separately, the requests
   // from different documents may interleave in various ways that change per test run, so
@@ -180,29 +186,29 @@ add_task(function* () {
   let currentTop = 0;
   let currentSub = 0;
   for (let i = 0; i < REQUEST_COUNT; i++) {
-    let requestItem = getSortedRequests(gStore.getState()).get(i);
+    const requestItem = getSortedRequests(store.getState()).get(i);
 
-    let itemUrl = requestItem.url;
-    let itemCauseUri = requestItem.cause.loadingDocumentUri;
+    const itemUrl = requestItem.url;
+    const itemCauseUri = requestItem.cause.loadingDocumentUri;
     let spec;
     if (itemUrl == SUB_URL || itemCauseUri == SUB_URL) {
       spec = EXPECTED_REQUESTS_SUB[currentSub++];
     } else {
       spec = EXPECTED_REQUESTS_TOP[currentTop++];
     }
-    let { method, url, causeType, causeUri, stack } = spec;
+    const { method, url, causeType, causeUri, stack } = spec;
 
     verifyRequestItemTarget(
       document,
-      getDisplayedRequests(gStore.getState()),
+      getDisplayedRequests(store.getState()),
       requestItem,
       method,
       url,
       { cause: { type: causeType, loadingDocumentUri: causeUri } }
     );
 
-    let { stacktrace } = requestItem.cause;
-    let stackLen = stacktrace ? stacktrace.length : 0;
+    const { stacktrace } = requestItem;
+    const stackLen = stacktrace ? stacktrace.length : 0;
 
     if (stack) {
       ok(stacktrace, `Request #${i} has a stacktrace`);
@@ -227,5 +233,5 @@ add_task(function* () {
     }
   }
 
-  yield teardown(monitor);
+  await teardown(monitor);
 });

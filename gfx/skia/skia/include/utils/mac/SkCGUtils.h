@@ -10,6 +10,8 @@
 
 #include "SkSize.h"
 #include "SkImageInfo.h"
+#include "SkImage.h"
+#include "SkPixmap.h"
 
 #if defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
 
@@ -23,7 +25,10 @@
 
 class SkBitmap;
 class SkData;
+class SkPixmap;
 class SkStreamRewindable;
+
+SK_API CGContextRef SkCreateCGContext(const SkPixmap&);
 
 /**
  *  Given a CGImage, allocate an SkBitmap and copy the image's pixels into it. If scaleToFit is not
@@ -32,7 +37,9 @@ class SkStreamRewindable;
  *
  *  On failure, return false, and leave bitmap unchanged.
  */
-SK_API bool SkCreateBitmapFromCGImage(SkBitmap* dst, CGImageRef src, SkISize* scaleToFit = NULL);
+SK_API bool SkCreateBitmapFromCGImage(SkBitmap* dst, CGImageRef src);
+
+SK_API sk_sp<SkImage> SkMakeImageFromCGImage(CGImageRef);
 
 /**
  *  Copy the pixels from src into the memory specified by info/rowBytes/dstPixels. On failure,
@@ -40,6 +47,9 @@ SK_API bool SkCreateBitmapFromCGImage(SkBitmap* dst, CGImageRef src, SkISize* sc
  */
 SK_API bool SkCopyPixelsFromCGImage(const SkImageInfo& info, size_t rowBytes, void* dstPixels,
                                     CGImageRef src);
+static inline bool SkCopyPixelsFromCGImage(const SkPixmap& dst, CGImageRef src) {
+    return SkCopyPixelsFromCGImage(dst.info(), dst.rowBytes(), dst.writable_addr(), src);
+}
 
 /**
  *  Create an imageref from the specified bitmap using the specified colorspace.

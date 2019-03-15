@@ -286,21 +286,38 @@ const testcases = [
     // Thai (also tests that node with over 63 UTF-8 octets doesn't fail)
     ["เครื่องทําน้ําทําน้ําแข็ง",
                  "xn--22cdjb2fanb9fyepcbbb9dwh4a3igze4fdcd",
-                                                     false, true, true]
-];
+                                                     false, true, true],
 
+    // Effect of adding valid or invalid subdomains (bug 1399540)
+    ["䕮䕵䕶䕱.ascii", "xn--google.ascii",                       false, true,  true],
+    ["ascii.䕮䕵䕶䕱", "ascii.xn--google",                       false, true,  true],
+    ["中国123.䕮䕵䕶䕱", "xn--123-u68dy61b.xn--google",           false, true,  true],
+    ["䕮䕵䕶䕱.中国123", "xn--google.xn--123-u68dy61b",           false, true,  true],
+    ["xn--accountlogin.䕮䕵䕶䕱", "xn--accountlogin.xn--google", false, true,  true],
+    ["䕮䕵䕶䕱.xn--accountlogin", "xn--google.xn--accountlogin", false, true,  true],
+
+    // Arabic diacritic not allowed in Latin text (bug 1370497)
+    ["goo\u0650gle", "xn--google-yri", false, false, false],
+    // ...but Arabic diacritics are allowed on Arabic text
+    ["العَرَبِي", "xn--mgbc0a5a6cxbzabt", false, true, true],
+
+    // Hebrew diacritic also not allowed in Latin text (bug 1404349)
+    ["goo\u05b4gle", "xn--google-rvh", false, false, false],
+
+    // Accents above dotless-i are not allowed
+    ["na\u0131\u0308ve", "xn--nave-mza04z", false, false, false],
+    ["d\u0131\u0302ner", "xn--dner-lza40z", false, false, false],
+    // but the corresponding accented-i (based on dotted i) is OK
+    ["na\u00efve.com", "xn--nave-6pa.com", false, true, true],
+    ["d\u00eener.com", "xn--dner-0pa.com", false, true, true],
+];
 
 const profiles = ["ASCII", "high", "moderate"];
 
 function run_test() {
     var pbi = Cc["@mozilla.org/preferences-service;1"].getService(Ci.nsIPrefBranch);
     var oldProfile = pbi.getCharPref("network.IDN.restriction_profile", "moderate");
-    var oldWhiteListCom;
-    try {
-        oldWhitelistCom = pbi.getBoolPref("network.IDN.whitelist.com");
-    } catch(e) {
-        oldWhitelistCom = false;
-    }
+    var oldWhitelistCom = pbi.getBoolPref("network.IDN.whitelist.com", false);
     var idnService = Cc["@mozilla.org/network/idn-service;1"].getService(Ci.nsIIDNService);
 
     for (var i = 0; i < profiles.length; ++i) {
@@ -316,27 +333,27 @@ function run_test() {
             var expectedUnicode = test[2 + i];
             var isASCII = {};
 
-	    var result;
-	    try {
-		result = idnService.convertToDisplayIDN(URL, isASCII);
-	    } catch(e) {
-		result = ".com";
-	    }
-            if (punycodeURL.substr(0, 4) == "xn--") {
+            var result;
+            try {
+                result = idnService.convertToDisplayIDN(URL, isASCII);
+            } catch(e) {
+                result = ".com";
+            }
+            if (punycodeURL.substr(0, 4) == "xn--" || punycodeURL.indexOf(".xn--") > 0) {
                 // test convertToDisplayIDN with a Unicode URL and with a
                 //  Punycode URL if we have one
-                do_check_eq(escape(result),
-                            expectedUnicode ? escape(URL) : escape(punycodeURL));
+                Assert.equal(escape(result),
+                             expectedUnicode ? escape(URL) : escape(punycodeURL));
 
                 result = idnService.convertToDisplayIDN(punycodeURL, isASCII);
-                do_check_eq(escape(result),
-                            expectedUnicode ? escape(URL) : escape(punycodeURL));
+                Assert.equal(escape(result),
+                             expectedUnicode ? escape(URL) : escape(punycodeURL));
             } else {
                 // The "punycode" URL isn't punycode. This happens in testcases
                 // where the Unicode URL has become normalized to an ASCII URL,
                 // so, even though expectedUnicode is true, the expected result
                 // is equal to punycodeURL
-                do_check_eq(escape(result), escape(punycodeURL));
+                Assert.equal(escape(result), escape(punycodeURL));
             }
         }
     }

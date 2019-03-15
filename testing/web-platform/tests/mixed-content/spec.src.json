@@ -231,23 +231,33 @@
     ],
     "subresource": {
       "blockable": [
-        "iframe-tag",
         "script-tag",
         "link-css-tag",
-        "form-tag",
         "xhr-request",
         "worker-request",
+        "module-worker-top-level",
+        "module-data-worker-import",
+        "classic-data-worker-fetch",
+        "worklet-animation-top-level",
+        "worklet-audio-top-level",
+        "worklet-layout-top-level",
+        "worklet-paint-top-level",
+        "worklet-animation-data-import",
+        "worklet-audio-data-import",
+        "worklet-layout-data-import",
+        "worklet-paint-data-import",
         "fetch-request",
         "a-tag",
         "object-tag",
         "picture-tag",
-        "websocket-request"
+        "websocket-request",
+        "link-prefetch-tag",
+        "beacon-request"
       ],
       "optionally-blockable": [
         "img-tag",
         "audio-tag",
-        "video-tag",
-        "link-prefetch-tag"
+        "video-tag"
       ]
     },
     "expectation": [

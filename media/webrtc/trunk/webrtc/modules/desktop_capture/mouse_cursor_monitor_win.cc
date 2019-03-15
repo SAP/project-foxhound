@@ -8,26 +8,44 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/desktop_capture/mouse_cursor_monitor.h"
+#include "modules/desktop_capture/mouse_cursor_monitor.h"
 
 #include <assert.h>
+#include <string.h>
 
-#include "webrtc/modules/desktop_capture/desktop_frame.h"
-#include "webrtc/modules/desktop_capture/mouse_cursor.h"
-#include "webrtc/modules/desktop_capture/win/cursor.h"
-#include "webrtc/modules/desktop_capture/win/window_capture_utils.h"
-#include "webrtc/system_wrappers/include/logging.h"
+#include <memory>
+
+#include "modules/desktop_capture/desktop_capture_types.h"
+#include "modules/desktop_capture/desktop_frame.h"
+#include "modules/desktop_capture/desktop_geometry.h"
+#include "modules/desktop_capture/mouse_cursor.h"
+#include "modules/desktop_capture/win/cursor.h"
+#include "modules/desktop_capture/win/screen_capture_utils.h"
+#include "modules/desktop_capture/win/window_capture_utils.h"
+#include "rtc_base/logging.h"
+
+#include <windows.h>
 
 namespace webrtc {
+
+namespace {
+
+bool IsSameCursorShape(const CURSORINFO& left, const CURSORINFO& right) {
+  // If the cursors are not showing, we do not care the hCursor handle.
+  return left.flags == right.flags &&
+         (left.flags != CURSOR_SHOWING ||
+          left.hCursor == right.hCursor);
+}
+
+}  // namespace
 
 class MouseCursorMonitorWin : public MouseCursorMonitor {
  public:
   explicit MouseCursorMonitorWin(HWND window);
   explicit MouseCursorMonitorWin(ScreenId screen);
-  virtual ~MouseCursorMonitorWin();
+  ~MouseCursorMonitorWin() override;
 
-  void Start(Callback* callback, Mode mode) override;
-  void Stop() override;
+  void Init(Callback* callback, Mode mode) override;
   void Capture() override;
 
  private:
@@ -44,7 +62,8 @@ class MouseCursorMonitorWin : public MouseCursorMonitor {
 
   HDC desktop_dc_;
 
-  HCURSOR last_cursor_;
+  // The last CURSORINFO (converted to MouseCursor) we have sent to the client.
+  CURSORINFO last_cursor_;
 };
 
 MouseCursorMonitorWin::MouseCursorMonitorWin(HWND window)
@@ -52,8 +71,8 @@ MouseCursorMonitorWin::MouseCursorMonitorWin(HWND window)
       screen_(kInvalidScreenId),
       callback_(NULL),
       mode_(SHAPE_AND_POSITION),
-      desktop_dc_(NULL),
-      last_cursor_(NULL) {
+      desktop_dc_(NULL) {
+  memset(&last_cursor_, 0, sizeof(CURSORINFO));
 }
 
 MouseCursorMonitorWin::MouseCursorMonitorWin(ScreenId screen)
@@ -61,9 +80,9 @@ MouseCursorMonitorWin::MouseCursorMonitorWin(ScreenId screen)
       screen_(screen),
       callback_(NULL),
       mode_(SHAPE_AND_POSITION),
-      desktop_dc_(NULL),
-      last_cursor_(NULL) {
+      desktop_dc_(NULL) {
   assert(screen >= kFullDesktopScreenId);
+  memset(&last_cursor_, 0, sizeof(CURSORINFO));
 }
 
 MouseCursorMonitorWin::~MouseCursorMonitorWin() {
@@ -71,7 +90,7 @@ MouseCursorMonitorWin::~MouseCursorMonitorWin() {
     ReleaseDC(NULL, desktop_dc_);
 }
 
-void MouseCursorMonitorWin::Start(Callback* callback, Mode mode) {
+void MouseCursorMonitorWin::Init(Callback* callback, Mode mode) {
   assert(!callback_);
   assert(callback);
   assert(IsGUIThread(false));
@@ -82,14 +101,6 @@ void MouseCursorMonitorWin::Start(Callback* callback, Mode mode) {
   desktop_dc_ = GetDC(NULL);
 }
 
-void MouseCursorMonitorWin::Stop() {
-  callback_ = NULL;
-
-  if (desktop_dc_)
-    ReleaseDC(NULL, desktop_dc_);
-  desktop_dc_ = NULL;
-}
-
 void MouseCursorMonitorWin::Capture() {
   assert(IsGUIThread(false));
   assert(callback_);
@@ -97,22 +108,43 @@ void MouseCursorMonitorWin::Capture() {
   CURSORINFO cursor_info;
   cursor_info.cbSize = sizeof(CURSORINFO);
   if (!GetCursorInfo(&cursor_info)) {
-    LOG_F(LS_ERROR) << "Unable to get cursor info. Error = " << GetLastError();
+    RTC_LOG_F(LS_ERROR) << "Unable to get cursor info. Error = "
+                        << GetLastError();
     return;
   }
 
-  if (last_cursor_ != cursor_info.hCursor) {
-    last_cursor_ = cursor_info.hCursor;
-    // Note that |cursor_info.hCursor| does not need to be freed.
-    rtc::scoped_ptr<MouseCursor> cursor(
-        CreateMouseCursorFromHCursor(desktop_dc_, cursor_info.hCursor));
-    if (cursor.get())
-      callback_->OnMouseCursor(cursor.release());
+  if (!IsSameCursorShape(cursor_info, last_cursor_)) {
+    // Mozilla - CURSOR_SUPPRESSED is win8 and above; so we seem not to be able to see the symbol
+    if (cursor_info.flags != CURSOR_SHOWING) {
+      // The cursor is intentionally hidden now, send an empty bitmap.
+      last_cursor_ = cursor_info;
+      callback_->OnMouseCursor(new MouseCursor(
+          new BasicDesktopFrame(DesktopSize()), DesktopVector()));
+    } else {
+      // According to MSDN https://goo.gl/u6gyuC, HCURSOR instances returned by
+      // functions other than CreateCursor do not need to be actively destroyed.
+      // And CloseHandle function (https://goo.gl/ja5ycW) does not close a
+      // cursor, so assume a HCURSOR does not need to be closed.
+      if (cursor_info.flags == 0) {
+        // Host machine does not have a hardware mouse attached, we will send a
+        // default one instead.
+        // Note, Windows automatically caches cursor resource, so we do not need
+        // to cache the result of LoadCursor.
+        cursor_info.hCursor = LoadCursor(nullptr, IDC_ARROW);
+      }
+      std::unique_ptr<MouseCursor> cursor(
+          CreateMouseCursorFromHCursor(desktop_dc_, cursor_info.hCursor));
+      if (cursor) {
+        last_cursor_ = cursor_info;
+        callback_->OnMouseCursor(cursor.release());
+      }
+    }
   }
 
   if (mode_ != SHAPE_AND_POSITION)
     return;
 
+  // CURSORINFO::ptScreenPos is in full desktop coordinate.
   DesktopVector position(cursor_info.ptScreenPos.x, cursor_info.ptScreenPos.y);
   bool inside = cursor_info.flags == CURSOR_SHOWING;
 
@@ -138,7 +170,9 @@ void MouseCursorMonitorWin::Capture() {
     position = position.subtract(rect.top_left());
   }
 
+  // TODO(zijiehe): Remove this overload.
   callback_->OnMouseCursorPosition(inside ? INSIDE : OUTSIDE, position);
+  callback_->OnMouseCursorPosition(position);
 }
 
 DesktopRect MouseCursorMonitorWin::GetScreenRect() {
@@ -180,6 +214,12 @@ MouseCursorMonitor* MouseCursorMonitor::CreateForScreen(
     const DesktopCaptureOptions& options,
     ScreenId screen) {
   return new MouseCursorMonitorWin(screen);
+}
+
+std::unique_ptr<MouseCursorMonitor> MouseCursorMonitor::Create(
+    const DesktopCaptureOptions& options) {
+  return std::unique_ptr<MouseCursorMonitor>(
+      CreateForScreen(options, kFullDesktopScreenId));
 }
 
 }  // namespace webrtc

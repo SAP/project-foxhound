@@ -1,5 +1,5 @@
-/* -*- Mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 40 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,12 +18,11 @@
 namespace mozilla {
 namespace dom {
 
-class PresentationParent final : public PPresentationParent
-                               , public nsIPresentationAvailabilityListener
-                               , public nsIPresentationSessionListener
-                               , public nsIPresentationRespondingListener
-{
-public:
+class PresentationParent final : public PPresentationParent,
+                                 public nsIPresentationAvailabilityListener,
+                                 public nsIPresentationSessionListener,
+                                 public nsIPresentationRespondingListener {
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIPRESENTATIONAVAILABILITYLISTENER
   NS_DECL_NSIPRESENTATIONSESSIONLISTENER
@@ -33,55 +32,56 @@ public:
 
   bool Init(ContentParentId aContentParentId);
 
-  bool RegisterTransportBuilder(const nsString& aSessionId, const uint8_t& aRole);
+  bool RegisterTransportBuilder(const nsString& aSessionId,
+                                const uint8_t& aRole);
 
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
 
-  virtual mozilla::ipc::IPCResult
-  RecvPPresentationRequestConstructor(PPresentationRequestParent* aActor,
-                                      const PresentationIPCRequest& aRequest) override;
+  virtual mozilla::ipc::IPCResult RecvPPresentationRequestConstructor(
+      PPresentationRequestParent* aActor,
+      const PresentationIPCRequest& aRequest) override;
 
-  virtual PPresentationRequestParent*
-  AllocPPresentationRequestParent(const PresentationIPCRequest& aRequest) override;
+  virtual PPresentationRequestParent* AllocPPresentationRequestParent(
+      const PresentationIPCRequest& aRequest) override;
 
-  virtual bool
-  DeallocPPresentationRequestParent(PPresentationRequestParent* aActor) override;
+  virtual bool DeallocPPresentationRequestParent(
+      PPresentationRequestParent* aActor) override;
 
-  virtual PPresentationBuilderParent*
-  AllocPPresentationBuilderParent(const nsString& aSessionId,
-                                  const uint8_t& aRole) override;
+  virtual PPresentationBuilderParent* AllocPPresentationBuilderParent(
+      const nsString& aSessionId, const uint8_t& aRole) override;
 
-  virtual bool
-  DeallocPPresentationBuilderParent(
-    PPresentationBuilderParent* aActor) override;
+  virtual bool DeallocPPresentationBuilderParent(
+      PPresentationBuilderParent* aActor) override;
 
   virtual mozilla::ipc::IPCResult Recv__delete__() override;
 
   virtual mozilla::ipc::IPCResult RecvRegisterAvailabilityHandler(
-    nsTArray<nsString>&& aAvailabilityUrls) override;
+      nsTArray<nsString>&& aAvailabilityUrls) override;
 
   virtual mozilla::ipc::IPCResult RecvUnregisterAvailabilityHandler(
-    nsTArray<nsString>&& aAvailabilityUrls) override;
+      nsTArray<nsString>&& aAvailabilityUrls) override;
 
-  virtual mozilla::ipc::IPCResult RecvRegisterSessionHandler(const nsString& aSessionId,
-                                                             const uint8_t& aRole) override;
+  virtual mozilla::ipc::IPCResult RecvRegisterSessionHandler(
+      const nsString& aSessionId, const uint8_t& aRole) override;
 
-  virtual mozilla::ipc::IPCResult RecvUnregisterSessionHandler(const nsString& aSessionId,
-                                                               const uint8_t& aRole) override;
+  virtual mozilla::ipc::IPCResult RecvUnregisterSessionHandler(
+      const nsString& aSessionId, const uint8_t& aRole) override;
 
-  virtual mozilla::ipc::IPCResult RecvRegisterRespondingHandler(const uint64_t& aWindowId) override;
+  virtual mozilla::ipc::IPCResult RecvRegisterRespondingHandler(
+      const uint64_t& aWindowId) override;
 
-  virtual mozilla::ipc::IPCResult RecvUnregisterRespondingHandler(const uint64_t& aWindowId) override;
+  virtual mozilla::ipc::IPCResult RecvUnregisterRespondingHandler(
+      const uint64_t& aWindowId) override;
 
-  virtual mozilla::ipc::IPCResult RecvNotifyReceiverReady(const nsString& aSessionId,
-                                                          const uint64_t& aWindowId,
-                                                          const bool& aIsLoading) override;
+  virtual mozilla::ipc::IPCResult RecvNotifyReceiverReady(
+      const nsString& aSessionId, const uint64_t& aWindowId,
+      const bool& aIsLoading) override;
 
-  virtual mozilla::ipc::IPCResult RecvNotifyTransportClosed(const nsString& aSessionId,
-                                                            const uint8_t& aRole,
-                                                            const nsresult& aReason) override;
+  virtual mozilla::ipc::IPCResult RecvNotifyTransportClosed(
+      const nsString& aSessionId, const uint8_t& aRole,
+      const nsresult& aReason) override;
 
-private:
+ private:
   virtual ~PresentationParent();
 
   bool mActorDestroyed = false;
@@ -93,12 +93,11 @@ private:
   nsTArray<nsString> mContentAvailabilityUrls;
 };
 
-class PresentationRequestParent final : public PPresentationRequestParent
-                                      , public nsIPresentationServiceCallback
-{
+class PresentationRequestParent final : public PPresentationRequestParent,
+                                        public nsIPresentationServiceCallback {
   friend class PresentationParent;
 
-public:
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIPRESENTATIONSERVICECALLBACK
 
@@ -107,7 +106,7 @@ public:
 
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
 
-private:
+ private:
   virtual ~PresentationRequestParent();
 
   nsresult SendResponse(nsresult aResult);
@@ -131,7 +130,7 @@ private:
   ContentParentId mChildId;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_PresentationParent_h__
+#endif  // mozilla_dom_PresentationParent_h__

@@ -17,13 +17,13 @@ function cleanUpAfterTests() {
 }
 
 // ------------------------------------------------------
-function verifyUInotDegraded() {
+async function verifyUInotDegraded() {
   // make sure that not mixed content is loaded and also not blocked
-  assertMixedContentBlockingState(
+  await assertMixedContentBlockingState(
     gTestBrowser,
     { activeLoaded: false,
       activeBlocked: false,
-      passiveLoaded: false
+      passiveLoaded: false,
     }
   );
   // clean up and finish test
@@ -32,15 +32,15 @@ function verifyUInotDegraded() {
 
 // ------------------------------------------------------
 function runTests() {
-  var newTab = gBrowser.addTab();
+  var newTab = BrowserTestUtils.addTab(gBrowser);
   gBrowser.selectedTab = newTab;
   gTestBrowser = gBrowser.selectedBrowser;
   newTab.linkedBrowser.stop();
 
   // Starting the test
-  BrowserTestUtils.browserLoaded(gTestBrowser).then(verifyUInotDegraded);
   var url = PRE_PATH + "file_csp_block_all_mixedcontent.html";
-  gTestBrowser.loadURI(url);
+  BrowserTestUtils.browserLoaded(gTestBrowser, false, url).then(verifyUInotDegraded);
+  BrowserTestUtils.loadURI(gTestBrowser, url);
 }
 
 // ------------------------------------------------------

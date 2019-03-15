@@ -12,17 +12,17 @@
 namespace mozilla {
 
 ShmemPool::ShmemPool(size_t aPoolSize)
-  : mMutex("mozilla::ShmemPool"),
-    mPoolFree(aPoolSize)
+    : mMutex("mozilla::ShmemPool"),
+      mPoolFree(aPoolSize)
 #ifdef DEBUG
-    ,mMaxPoolUse(0)
+      ,
+      mMaxPoolUse(0)
 #endif
 {
   mShmemPool.SetLength(aPoolSize);
 }
 
-mozilla::ShmemBuffer ShmemPool::GetIfAvailable(size_t aSize)
-{
+mozilla::ShmemBuffer ShmemPool::GetIfAvailable(size_t aSize) {
   MutexAutoLock lock(mMutex);
 
   // Pool is empty, don't block caller.
@@ -50,28 +50,26 @@ mozilla::ShmemBuffer ShmemPool::GetIfAvailable(size_t aSize)
   size_t poolUse = mShmemPool.Length() - mPoolFree;
   if (poolUse > mMaxPoolUse) {
     mMaxPoolUse = poolUse;
-    LOG(("Maximum ShmemPool use increased: %" PRIuSIZE " buffers", mMaxPoolUse));
+    LOG(("Maximum ShmemPool use increased: %zu buffers", mMaxPoolUse));
   }
 #endif
-  return Move(res);
+  return std::move(res);
 }
 
-void ShmemPool::Put(ShmemBuffer&& aShmem)
-{
+void ShmemPool::Put(ShmemBuffer&& aShmem) {
   MutexAutoLock lock(mMutex);
   MOZ_ASSERT(mPoolFree < mShmemPool.Length());
-  mShmemPool[mPoolFree] = Move(aShmem);
+  mShmemPool[mPoolFree] = std::move(aShmem);
   mPoolFree++;
 #ifdef DEBUG
   size_t poolUse = mShmemPool.Length() - mPoolFree;
   if (poolUse > 0) {
-    LOG_VERBOSE(("ShmemPool usage reduced to %" PRIuSIZE " buffers", poolUse));
+    LOG_VERBOSE(("ShmemPool usage reduced to %zu buffers", poolUse));
   }
 #endif
 }
 
-ShmemPool::~ShmemPool()
-{
+ShmemPool::~ShmemPool() {
 #ifdef DEBUG
   for (size_t i = 0; i < mShmemPool.Length(); i++) {
     MOZ_ASSERT(!mShmemPool[i].Valid());
@@ -79,4 +77,4 @@ ShmemPool::~ShmemPool()
 #endif
 }
 
-} // namespace mozilla
+}  // namespace mozilla

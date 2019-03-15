@@ -22,11 +22,7 @@ SimpleTest.waitForExplicitFinish();
 
 function doTest()
 {
-  var viewer = window
-                 .QueryInterface(Components.interfaces.nsIInterfaceRequestor)
-                 .getInterface(Components.interfaces.nsIWebNavigation)
-                 .QueryInterface(Components.interfaces.nsIDocShell)
-                 .contentViewer;
+  var viewer = window.docShell.contentViewer;
   viewer.authorStyleDisabled = true;
 
   document.documentElement.getBoundingClientRect();

@@ -6,16 +6,17 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 include "mozilla/GfxMessageUtils.h";
+include "mozilla/layers/LayersMessageUtils.h";
 
 include protocol PCompositorBridge;
 
 using CSSRect from "Units.h";
-using struct mozilla::layers::FrameMetrics from "FrameMetrics.h";
-using struct mozilla::layers::ScrollableLayerGuid from "FrameMetrics.h";
-using mozilla::layers::FrameMetrics::ViewID from "FrameMetrics.h";
-using mozilla::layers::MaybeZoomConstraints from "FrameMetrics.h";
-using mozilla::layers::TouchBehaviorFlags from "mozilla/layers/APZUtils.h";
+using struct mozilla::layers::RepaintRequest from "mozilla/layers/RepaintRequest.h";
+using struct mozilla::layers::ScrollableLayerGuid from "mozilla/layers/ScrollableLayerGuid.h";
+using mozilla::layers::ScrollableLayerGuid::ViewID from "mozilla/layers/ScrollableLayerGuid.h";
+using mozilla::layers::MaybeZoomConstraints from "mozilla/layers/ZoomConstraints.h";
 using mozilla::layers::GeckoContentController::APZStateChange from "mozilla/layers/GeckoContentController.h";
+using mozilla::layers::ScrollDirection from "mozilla/layers/LayersTypes.h";
 using mozilla::dom::TabId from "mozilla/dom/ipc/IdType.h";
 using mozilla::dom::ContentParentId from "mozilla/dom/ipc/IdType.h";
 using mozilla::layers::AsyncDragMetrics from "mozilla/layers/AsyncDragMetrics.h";
@@ -50,13 +51,11 @@ parent:
 
 child:
 
-  async RequestContentRepaint(FrameMetrics frame);
+  async RequestContentRepaint(RepaintRequest request);
 
   async UpdateOverscrollVelocity(float aX, float aY, bool aIsRootContent);
 
   async UpdateOverscrollOffset(float aX, float aY, bool aIsRootContent);
-
-  async SetScrollingRootContent(bool aIsRootContent);
 
   async NotifyMozMouseScrollEvent(ViewID aScrollId, nsString aEvent);
 
@@ -64,7 +63,11 @@ child:
 
   async NotifyFlushComplete();
 
+  async NotifyAsyncScrollbarDragInitiated(uint64_t aDragBlockId, ViewID aScrollId, ScrollDirection aDirection);
+
   async NotifyAsyncScrollbarDragRejected(ViewID aScrollId);
+
+  async NotifyAsyncAutoscrollRejected(ViewID aScrollId);
 
   async Destroy();
 };

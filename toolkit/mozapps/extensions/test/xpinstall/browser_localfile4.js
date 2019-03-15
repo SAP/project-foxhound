@@ -9,8 +9,8 @@ function test() {
   // Disable file request whitelisting, installing by file referrer should be blocked.
   Services.prefs.setBoolPref("xpinstall.whitelist.fileRequest", false);
 
-  var cr = Components.classes["@mozilla.org/chrome/chrome-registry;1"]
-                     .getService(Components.interfaces.nsIChromeRegistry);
+  var cr = Cc["@mozilla.org/chrome/chrome-registry;1"]
+             .getService(Ci.nsIChromeRegistry);
 
   var chromeroot = extractChromeRoot(gTestPath);
   var xpipath = chromeroot;
@@ -20,10 +20,10 @@ function test() {
     // scenario where we are running from a .jar and already extracted
   }
   var triggers = encodeURIComponent(JSON.stringify({
-    "Unsigned XPI": TESTROOT + "amosigned.xpi"
+    "Unsigned XPI": TESTROOT + "amosigned.xpi",
   }));
-  gBrowser.selectedTab = gBrowser.addTab();
-  gBrowser.loadURI(xpipath + "installtrigger.html?" + triggers);
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
+  BrowserTestUtils.loadURI(gBrowser, xpipath + "installtrigger.html?" + triggers);
 }
 
 function allow_blocked(installInfo) {

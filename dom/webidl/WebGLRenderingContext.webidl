@@ -32,6 +32,10 @@ typedef unrestricted float GLfloat;
 typedef unrestricted float GLclampf;
 typedef unsigned long long GLuint64EXT;
 
+// The power preference settings are documented in the WebGLContextAttributes
+// section of the specification.
+enum WebGLPowerPreference { "default", "low-power", "high-performance" };
+
 dictionary WebGLContextAttributes {
     // boolean alpha = true;
     // We deviate from the spec here.
@@ -43,6 +47,7 @@ dictionary WebGLContextAttributes {
     GLboolean premultipliedAlpha = true;
     GLboolean preserveDrawingBuffer = false;
     GLboolean failIfMajorPerformanceCaveat = false;
+    WebGLPowerPreference powerPreference = "default";
 };
 
 [Exposed=(Window,Worker),
@@ -217,6 +222,7 @@ interface WebGLRenderingContextBase {
     const GLenum SAMPLE_COVERAGE                = 0x80A0;
 
     /* ErrorCode */
+    [NeedsWindowsUndef]
     const GLenum NO_ERROR                       = 0;
     const GLenum INVALID_ENUM                   = 0x0500;
     const GLenum INVALID_VALUE                  = 0x0501;
@@ -482,7 +488,6 @@ interface WebGLRenderingContextBase {
     const GLenum RGB5_A1                        = 0x8057;
     const GLenum RGB565                         = 0x8D62;
     const GLenum DEPTH_COMPONENT16              = 0x81A5;
-    const GLenum STENCIL_INDEX                  = 0x1901;
     const GLenum STENCIL_INDEX8                 = 0x8D48;
     const GLenum DEPTH_STENCIL                  = 0x84F9;
 
@@ -803,12 +808,28 @@ WebGLRenderingContext implements WebGLRenderingContextBase;
 // Reference: https://wiki.whatwg.org/wiki/OffscreenCanvas
 [Exposed=(Window,Worker)]
 partial interface WebGLRenderingContext {
-    [Func="mozilla::dom::OffscreenCanvas::PrefEnabled"]
+    [Func="mozilla::dom::DOMPrefs::gfx_offscreencanvas_enabled"]
     void commit();
 };
 
 ////////////////////////////////////////
 // specific extension interfaces
+
+[NoInterfaceObject]
+interface EXT_texture_compression_bptc {
+    const GLenum COMPRESSED_RGBA_BPTC_UNORM_EXT = 0x8E8C;
+    const GLenum COMPRESSED_SRGB_ALPHA_BPTC_UNORM_EXT = 0x8E8D;
+    const GLenum COMPRESSED_RGB_BPTC_SIGNED_FLOAT_EXT = 0x8E8E;
+    const GLenum COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT_EXT = 0x8E8F;
+};
+
+[NoInterfaceObject]
+interface EXT_texture_compression_rgtc {
+    const GLenum COMPRESSED_RED_RGTC1_EXT = 0x8DBB;
+    const GLenum COMPRESSED_SIGNED_RED_RGTC1_EXT = 0x8DBC;
+    const GLenum COMPRESSED_RED_GREEN_RGTC2_EXT = 0x8DBD;
+    const GLenum COMPRESSED_SIGNED_RED_GREEN_RGTC2_EXT = 0x8DBE;
+};
 
 [NoInterfaceObject]
 interface WEBGL_compressed_texture_s3tc
@@ -817,6 +838,15 @@ interface WEBGL_compressed_texture_s3tc
     const GLenum COMPRESSED_RGBA_S3TC_DXT1_EXT = 0x83F1;
     const GLenum COMPRESSED_RGBA_S3TC_DXT3_EXT = 0x83F2;
     const GLenum COMPRESSED_RGBA_S3TC_DXT5_EXT = 0x83F3;
+};
+
+[NoInterfaceObject]
+interface WEBGL_compressed_texture_s3tc_srgb {
+    /* Compressed Texture Formats */
+    const GLenum COMPRESSED_SRGB_S3TC_DXT1_EXT        = 0x8C4C;
+    const GLenum COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT  = 0x8C4D;
+    const GLenum COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT  = 0x8C4E;
+    const GLenum COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT  = 0x8C4F;
 };
 
 [NoInterfaceObject]
@@ -854,14 +884,6 @@ interface WEBGL_compressed_texture_astc {
 
     // Profile query support.
     sequence<DOMString>? getSupportedProfiles();
-};
-
-[NoInterfaceObject]
-interface WEBGL_compressed_texture_atc
-{
-    const GLenum COMPRESSED_RGB_ATC_WEBGL                     = 0x8C92;
-    const GLenum COMPRESSED_RGBA_ATC_EXPLICIT_ALPHA_WEBGL     = 0x8C93;
-    const GLenum COMPRESSED_RGBA_ATC_INTERPOLATED_ALPHA_WEBGL = 0x87EE;
 };
 
 [NoInterfaceObject]
@@ -1085,9 +1107,12 @@ interface EXT_disjoint_timer_query {
 };
 
 [NoInterfaceObject]
-interface MOZ_debug_get {
+interface MOZ_debug {
     const GLenum EXTENSIONS = 0x1F03;
+
     const GLenum WSI_INFO   = 0x10000;
+    const GLenum UNPACK_REQUIRE_FASTPATH = 0x10001;
+    const GLenum DOES_INDEX_VALIDATION   = 0x10002;
 
     [Throws]
     any getParameter(GLenum pname);

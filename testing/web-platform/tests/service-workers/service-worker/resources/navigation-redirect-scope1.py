@@ -3,13 +3,20 @@ def main(request, response):
         headers = [("Location", request.GET["url"])]
         return 302, headers, ''
 
-    return [], '''
+    status = 200
+
+    if "noLocationRedirect" in request.GET:
+        status = 302
+
+    return status, [("content-type", "text/html")], '''
 <!DOCTYPE html>
 <script>
+onmessage = event => {
   window.parent.postMessage(
       {
-        id: 'last_url',
+        id: event.data.id,
         result: location.href
       }, '*');
+};
 </script>
 '''

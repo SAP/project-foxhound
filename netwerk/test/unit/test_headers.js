@@ -21,8 +21,8 @@ var lastTest = 4;    // set to test of interest when debugging
 
 // Note: sets Cc and Ci variables
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpserver.identity.primaryPort;
@@ -50,9 +50,9 @@ function runNextTest()
   }
   nextTest++;
   // Make sure test functions exist
-  if (eval("handler" + nextTest) == undefined)
+  if (this["handler" + nextTest] == undefined)
     do_throw("handler" + nextTest + " undefined!");
-  if (eval("completeTest" + nextTest) == undefined)
+  if (this["completeTest" + nextTest] == undefined)
     do_throw("completeTest" + nextTest + " undefined!");
   
   run_test_number(nextTest);
@@ -61,11 +61,11 @@ function runNextTest()
 function run_test_number(num)
 {
   testPath = testPathBase + num;
-  httpserver.registerPathHandler(testPath, eval("handler" + num));
+  httpserver.registerPathHandler(testPath, this["handler" + num]);
 
   var channel = setupChannel(testPath);
   flags = test_flags[num];   // OK if flags undefined for test
-  channel.asyncOpen2(new ChannelListener(eval("completeTest" + num),
+  channel.asyncOpen2(new ChannelListener(this["completeTest" + num],
                                          channel, flags));
 }
 
@@ -75,7 +75,7 @@ function setupChannel(url)
     uri: URL + url,
     loadUsingSystemPrincipal: true
   });
-  var httpChan = chan.QueryInterface(Components.interfaces.nsIHttpChannel);
+  var httpChan = chan.QueryInterface(Ci.nsIHttpChannel);
   return httpChan;
 }
 
@@ -98,9 +98,9 @@ function completeTest1(request, data, ctx)
 {
   try {
     var chan = request.QueryInterface(Ci.nsIChannel);
-    do_check_eq(chan.contentDisposition, chan.DISPOSITION_ATTACHMENT);
-    do_check_eq(chan.contentDispositionFilename, "foo");
-    do_check_eq(chan.contentDispositionHeader, "attachment; filename=foo");
+    Assert.equal(chan.contentDisposition, chan.DISPOSITION_ATTACHMENT);
+    Assert.equal(chan.contentDispositionFilename, "foo");
+    Assert.equal(chan.contentDispositionHeader, "attachment; filename=foo");
   } catch (ex) {
     do_throw("error parsing Content-Disposition: " + ex);
   }
@@ -122,13 +122,13 @@ function completeTest2(request, data, ctx)
 {
   try {
     var chan = request.QueryInterface(Ci.nsIChannel);
-    do_check_eq(chan.contentDisposition, chan.DISPOSITION_ATTACHMENT);
-    do_check_eq(chan.contentDispositionHeader, "attachment");
+    Assert.equal(chan.contentDisposition, chan.DISPOSITION_ATTACHMENT);
+    Assert.equal(chan.contentDispositionHeader, "attachment");
 
     filename = chan.contentDispositionFilename;  // should barf
     do_throw("Should have failed getting Content-Disposition filename");
   } catch (ex) {
-    do_print("correctly ate exception");    
+    info("correctly ate exception");    
   }
   runNextTest();  
 }
@@ -148,13 +148,13 @@ function completeTest3(request, data, ctx)
 {
   try {
     var chan = request.QueryInterface(Ci.nsIChannel);
-    do_check_eq(chan.contentDisposition, chan.DISPOSITION_ATTACHMENT);
-    do_check_eq(chan.contentDispositionHeader, "attachment; filename=");
+    Assert.equal(chan.contentDisposition, chan.DISPOSITION_ATTACHMENT);
+    Assert.equal(chan.contentDispositionHeader, "attachment; filename=");
 
     filename = chan.contentDispositionFilename;  // should barf
     do_throw("Should have failed getting Content-Disposition filename");
   } catch (ex) {
-    do_print("correctly ate exception");    
+    info("correctly ate exception");    
   }
   runNextTest();  
 }
@@ -174,13 +174,13 @@ function completeTest4(request, data, ctx)
 {
   try {
     var chan = request.QueryInterface(Ci.nsIChannel);
-    do_check_eq(chan.contentDisposition, chan.DISPOSITION_INLINE);
-    do_check_eq(chan.contentDispositionHeader, "inline");
+    Assert.equal(chan.contentDisposition, chan.DISPOSITION_INLINE);
+    Assert.equal(chan.contentDispositionHeader, "inline");
 
     filename = chan.contentDispositionFilename;  // should barf
     do_throw("Should have failed getting Content-Disposition filename");
   } catch (ex) {
-    do_print("correctly ate exception");    
+    info("correctly ate exception");    
   }
   runNextTest();
 }

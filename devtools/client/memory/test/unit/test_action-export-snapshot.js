@@ -5,37 +5,33 @@
 
 // Test exporting a snapshot to a user specified location on disk.
 
-let { exportSnapshot } = require("devtools/client/memory/actions/io");
-let { takeSnapshotAndCensus } = require("devtools/client/memory/actions/snapshot");
-let { actions, treeMapState } = require("devtools/client/memory/constants");
+const { exportSnapshot } = require("devtools/client/memory/actions/io");
+const { takeSnapshotAndCensus } = require("devtools/client/memory/actions/snapshot");
+const { actions, treeMapState } = require("devtools/client/memory/constants");
 
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* () {
-  let front = new StubbedMemoryFront();
-  let heapWorker = new HeapAnalysesClient();
-  yield front.attach();
-  let store = Store();
+add_task(async function() {
+  const front = new StubbedMemoryFront();
+  const heapWorker = new HeapAnalysesClient();
+  await front.attach();
+  const store = Store();
   const { getState, dispatch } = store;
 
-  let destPath = yield createTempFile();
+  const destPath = await createTempFile();
   dispatch(takeSnapshotAndCensus(front, heapWorker));
-  yield waitUntilCensusState(store, snapshot => snapshot.treeMap,
+  await waitUntilCensusState(store, snapshot => snapshot.treeMap,
                              [treeMapState.SAVED]);
 
-  let exportEvents = Promise.all([
+  const exportEvents = Promise.all([
     waitUntilAction(store, actions.EXPORT_SNAPSHOT_START),
-    waitUntilAction(store, actions.EXPORT_SNAPSHOT_END)
+    waitUntilAction(store, actions.EXPORT_SNAPSHOT_END),
   ]);
   dispatch(exportSnapshot(getState().snapshots[0], destPath));
-  yield exportEvents;
+  await exportEvents;
 
-  let stat = yield OS.File.stat(destPath);
-  do_print(stat.size);
+  const stat = await OS.File.stat(destPath);
+  info(stat.size);
   ok(stat.size > 0, "destination file is more than 0 bytes");
 
   heapWorker.destroy();
-  yield front.detach();
+  await front.detach();
 });

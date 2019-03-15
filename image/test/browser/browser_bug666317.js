@@ -35,7 +35,6 @@ function ImageObserver(decodeCallback, discardCallback) {
 function currentRequest() {
   let img = gBrowser.getBrowserForTab(newTab).contentWindow
             .document.getElementById('testImg');
-  img.QueryInterface(Ci.nsIImageLoadingContent);
   return img.getRequest(Ci.nsIImageLoadingContent.CURRENT_REQUEST);
 }
 
@@ -77,7 +76,7 @@ function test() {
 
   // Create and focus a new tab.
   oldTab = gBrowser.selectedTab;
-  newTab = gBrowser.addTab('data:text/html,' + pageSource);
+  newTab = BrowserTestUtils.addTab(gBrowser, 'data:text/html,' + pageSource);
   gBrowser.selectedTab = newTab;
 
   // Run step2 after the tab loads.

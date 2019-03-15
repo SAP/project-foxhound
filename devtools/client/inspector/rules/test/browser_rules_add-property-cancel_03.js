@@ -16,25 +16,25 @@ const TEST_URI = `
   <div>Test node</div>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
-  yield selectNode("div", inspector);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, view} = await openRuleView();
+  await selectNode("div", inspector);
 
   // Add a property to the element's style declaration, add some text,
   // then press escape.
 
-  let elementRuleEditor = getRuleViewRuleEditor(view, 1);
-  let editor = yield focusNewRuleViewProperty(elementRuleEditor);
+  const elementRuleEditor = getRuleViewRuleEditor(view, 1);
+  const editor = await focusNewRuleViewProperty(elementRuleEditor);
 
   is(inplaceEditor(elementRuleEditor.newPropSpan), editor,
     "Next focused editor should be the new property editor.");
 
   EventUtils.sendString("background", view.styleWindow);
 
-  let onBlur = once(editor.input, "blur");
-  EventUtils.synthesizeKey("VK_ESCAPE", {});
-  yield onBlur;
+  const onBlur = once(editor.input, "blur");
+  EventUtils.synthesizeKey("KEY_Escape");
+  await onBlur;
 
   is(elementRuleEditor.rule.textProps.length, 1,
     "Should have canceled creating a new text property.");

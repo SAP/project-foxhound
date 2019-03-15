@@ -5,21 +5,8 @@
 
 package org.mozilla.gecko.home;
 
-import android.content.Context;
-import android.support.v7.widget.RecyclerView;
-import android.util.Log;
-import android.view.LayoutInflater;
-import android.view.View;
-import android.view.ViewGroup;
-import android.widget.TextView;
-
-import org.json.JSONArray;
-import org.json.JSONException;
-import org.json.JSONObject;
 import org.mozilla.gecko.AboutPages;
 import org.mozilla.gecko.EventDispatcher;
-import org.mozilla.gecko.GeckoApp;
-import org.mozilla.gecko.GeckoAppShell;
 import org.mozilla.gecko.GeckoProfile;
 import org.mozilla.gecko.R;
 import org.mozilla.gecko.SessionParser;
@@ -29,6 +16,15 @@ import org.mozilla.gecko.util.BundleEventListener;
 import org.mozilla.gecko.util.EventCallback;
 import org.mozilla.gecko.util.GeckoBundle;
 import org.mozilla.gecko.util.ThreadUtils;
+
+import android.content.Context;
+import android.support.v7.widget.RecyclerView;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.TextView;
+
+import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -84,11 +80,11 @@ public class RecentTabsAdapter extends RecyclerView.Adapter<CombinedHistoryItem>
 
     public void startListeningForClosedTabs() {
         EventDispatcher.getInstance().registerUiThreadListener(this, "ClosedTabs:Data");
-        GeckoAppShell.notifyObservers("ClosedTabs:StartNotifications", null);
+        EventDispatcher.getInstance().dispatch("ClosedTabs:StartNotifications", null);
     }
 
     public void stopListeningForClosedTabs() {
-        GeckoAppShell.notifyObservers("ClosedTabs:StopNotifications", null);
+        EventDispatcher.getInstance().dispatch("ClosedTabs:StopNotifications", null);
         EventDispatcher.getInstance().unregisterUiThreadListener(this, "ClosedTabs:Data");
         recentlyClosedTabsReceived = false;
     }
@@ -153,7 +149,15 @@ public class RecentTabsAdapter extends RecyclerView.Adapter<CombinedHistoryItem>
                 // Make sure that the start up code has had a chance to update sessionstore.old as necessary.
                 GeckoProfile.get(context).waitForOldSessionDataProcessing();
 
-                final String jsonString = GeckoProfile.get(context).readPreviousSessionFile();
+                final String jsonString;
+                try {
+                    jsonString = GeckoProfile.get(context).readPreviousSessionFile();
+                } catch (OutOfMemoryError oom) {
+                    // The file is too large, give up.
+                    // TODO: A streaming JSON parser might help by having to read only one tab at a
+                    // time.
+                    return;
+                }
                 if (jsonString == null) {
                     // No previous session data.
                     return;
@@ -165,13 +169,24 @@ public class RecentTabsAdapter extends RecyclerView.Adapter<CombinedHistoryItem>
                     @Override
                     public void onTabRead(SessionTab tab) {
                         final String url = tab.getUrl();
-
                         // Don't show last tabs for about:home
                         if (AboutPages.isAboutHome(url)) {
                             return;
                         }
 
-                        parsedTabs.add(new ClosedTab(url, tab.getTitle(), tab.getTabObject().toString()));
+                        final JSONObject tabObject = tab.getTabObject();
+                        // The tab ID will be used to remove recently closed tabs that have been re-
+                        // stored again. Because these tabs come from a different source that is
+                        // read-only, we therefore need to remove the stored tab ID.
+                        tabObject.remove("tabId");
+
+                        try {
+                            parsedTabs.add(new ClosedTab(url, tab.getTitle(), tabObject.toString()));
+                        } catch (OutOfMemoryError oom) {
+                            // Stringifying may fail if the tab data is too large - let's hope that
+                            // this tab was an exception and that the next one will be smaller and
+                            // possibly succeed.
+                        }
                     }
                 }.parse(jsonString);
 
@@ -295,14 +310,9 @@ public class RecentTabsAdapter extends RecyclerView.Adapter<CombinedHistoryItem>
     }
 
     private static void restoreSessionWithHistory(List<String> dataList) {
-        final JSONObject json = new JSONObject();
-        try {
-            json.put("tabs", new JSONArray(dataList));
-        } catch (JSONException e) {
-            Log.e(LOGTAG, "JSON error", e);
-        }
-
-        GeckoAppShell.notifyObservers("Session:RestoreRecentTabs", json.toString());
+        final GeckoBundle data = new GeckoBundle(1);
+        data.putStringArray("tabs", dataList);
+        EventDispatcher.getInstance().dispatch("Session:RestoreRecentTabs", data);
     }
 
     @Override

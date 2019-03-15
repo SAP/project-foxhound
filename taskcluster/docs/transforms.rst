@@ -23,7 +23,7 @@ Transform Functions
 
 Each transformation looks like this:
 
-.. code-block::
+.. code-block:: python
 
     @transforms.add
     def transform_an_item(config, items):
@@ -78,7 +78,7 @@ using :func:`taskgraph.transform.base.resolve_keyed_by`.
 
 Exact matches are used immediately.  If no exact matches are found, each
 alternative is treated as a regular expression, matched against the whole
-value.  Thus ``android.*`` would match ``android-api-15/debug``.  If nothing
+value.  Thus ``android.*`` would match ``android-api-16/debug``.  If nothing
 matches as a regular expression, but there is a ``default`` alternative, it is
 used.  Otherwise, an exception is raised and graph generation stops.
 
@@ -142,8 +142,12 @@ following ``run-using`` are available
   * ``mozharness``
   * ``mozharness-test``
   * ``run-task``
-  * ``spidermonkey`` or ``spidermonkey-package`` or ``spidermonkey-mozjs-crate``
+  * ``spidermonkey`` or ``spidermonkey-package`` or ``spidermonkey-mozjs-crate`` or ``spidermonkey-rust-bindings``
+  * ``debian-package``
   * ``toolchain-script``
+  * ``always-optimized``
+  * ``fetch-url``
+  * ``python-test``
 
 
 Task Descriptions
@@ -198,9 +202,10 @@ this common functionality.  They expect a "signing description", and produce a
 task definition.  The schema for a signing description is defined at the top of
 ``signing.py``, with copious comments.
 
-In particular you define a set of upstream artifact urls (that point at the dependent
-task) and can optionally provide a dependent name (defaults to build) for use in
-task-reference. You also need to provide the signing formats to use.
+In particular you define a set of upstream artifact urls (that point at the
+dependent task) and can optionally provide a dependent name (defaults to build)
+for use in ``task-reference``/``artifact-reference``. You also need to provide
+the signing formats to use.
 
 More Detail
 -----------

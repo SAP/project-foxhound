@@ -10,31 +10,36 @@
 #include "nsCSSPropertyID.h"
 #include "nsCSSValue.h"
 #include "nsTArray.h"
+#include "mozilla/dom/BaseKeyframeTypesBinding.h"  // CompositeOperationOrAuto
 #include "mozilla/ComputedTimingFunction.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
 
 struct RawServoDeclarationBlock;
 namespace mozilla {
-namespace dom {
-enum class CompositeOperation : uint8_t;
-}
 
 /**
  * A property-value pair specified on a keyframe.
  */
-struct PropertyValuePair
-{
-  nsCSSPropertyID mProperty;
-  // The specified value for the property. For shorthand properties or invalid
-  // property values, we store the specified property value as a token stream
-  // (string).
-  nsCSSValue mValue;
+struct PropertyValuePair {
+  explicit PropertyValuePair(nsCSSPropertyID aProperty)
+      : mProperty(aProperty) {}
+  PropertyValuePair(nsCSSPropertyID aProperty,
+                    RefPtr<RawServoDeclarationBlock>&& aValue)
+      : mProperty(aProperty), mServoDeclarationBlock(std::move(aValue)) {
+    MOZ_ASSERT(mServoDeclarationBlock, "Should be valid property value");
+  }
 
-  // The specified value when using the Servo backend. However, even when
-  // using the Servo backend, we still fill in |mValue| in the case where we
-  // fail to parse the value since we use it to store the original string.
+  nsCSSPropertyID mProperty;
+
+  // The specified value when using the Servo backend.
   RefPtr<RawServoDeclarationBlock> mServoDeclarationBlock;
+
+#ifdef DEBUG
+  // Flag to indicate that when we call StyleAnimationValue::ComputeValues on
+  // this value we should behave as if that function had failed.
+  bool mSimulateComputeValuesFailure = false;
+#endif
 
   bool operator==(const PropertyValuePair&) const;
 };
@@ -51,39 +56,35 @@ struct PropertyValuePair
  * overlapping shorthands/longhands, convert specified CSS values to computed
  * values, etc.
  *
- * When the target element or style context changes, however, we rebuild these
+ * When the target element or computed style changes, however, we rebuild these
  * per-property arrays from the original list of keyframes objects. As a result,
  * these objects represent the master definition of the effect's values.
  */
-struct Keyframe
-{
+struct Keyframe {
   Keyframe() = default;
   Keyframe(const Keyframe& aOther) = default;
-  Keyframe(Keyframe&& aOther)
-  {
-    *this = Move(aOther);
-  }
+  Keyframe(Keyframe&& aOther) { *this = std::move(aOther); }
 
   Keyframe& operator=(const Keyframe& aOther) = default;
-  Keyframe& operator=(Keyframe&& aOther)
-  {
-    mOffset         = aOther.mOffset;
+  Keyframe& operator=(Keyframe&& aOther) {
+    mOffset = aOther.mOffset;
     mComputedOffset = aOther.mComputedOffset;
-    mTimingFunction = Move(aOther.mTimingFunction);
-    mComposite      = Move(aOther.mComposite);
-    mPropertyValues = Move(aOther.mPropertyValues);
+    mTimingFunction = std::move(aOther.mTimingFunction);
+    mComposite = std::move(aOther.mComposite);
+    mPropertyValues = std::move(aOther.mPropertyValues);
     return *this;
   }
 
-  Maybe<double>                 mOffset;
+  Maybe<double> mOffset;
   static constexpr double kComputedOffsetNotSet = -1.0;
-  double                        mComputedOffset = kComputedOffsetNotSet;
-  Maybe<ComputedTimingFunction> mTimingFunction; // Nothing() here means
-                                                 // "linear"
-  Maybe<dom::CompositeOperation> mComposite;
-  nsTArray<PropertyValuePair>   mPropertyValues;
+  double mComputedOffset = kComputedOffsetNotSet;
+  Maybe<ComputedTimingFunction> mTimingFunction;  // Nothing() here means
+                                                  // "linear"
+  dom::CompositeOperationOrAuto mComposite =
+      dom::CompositeOperationOrAuto::Auto;
+  nsTArray<PropertyValuePair> mPropertyValues;
 };
 
-}
+}  // namespace mozilla
 
-#endif // mozilla_dom_Keyframe_h
+#endif  // mozilla_dom_Keyframe_h

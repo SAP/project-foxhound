@@ -1,7 +1,7 @@
 "use strict";
 
-Cu.import("resource://gre/modules/OSCrypto.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/OSCrypto.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const PROFILE = {
   id: "Default",
@@ -126,31 +126,31 @@ function generateDifferentLogin(login) {
   return newLogin;
 }
 
-add_task(function* setup() {
+add_task(async function setup() {
   let loginDataFile = do_get_file("AppData/Local/Google/Chrome/User Data/Default/Login Data");
-  dbConn = yield Sqlite.openConnection({ path: loginDataFile.path });
+  dbConn = await Sqlite.openConnection({ path: loginDataFile.path });
   registerFakePath("LocalAppData", do_get_file("AppData/Local/"));
 
-  do_register_cleanup(() => {
+  registerCleanupFunction(() => {
     Services.logins.removeAllLogins();
     crypto.finalize();
     return dbConn.close();
   });
 });
 
-add_task(function* test_importIntoEmptyDB() {
+add_task(async function test_importIntoEmptyDB() {
   for (let login of TEST_LOGINS) {
-    yield promiseSetPassword(login);
+    await promiseSetPassword(login);
   }
 
-  let migrator = MigrationUtils.getMigrator("chrome");
-  Assert.ok(migrator.sourceExists, "Sanity check the source exists");
+  let migrator = await MigrationUtils.getMigrator("chrome");
+  Assert.ok(await migrator.isSourceAvailable(), "Sanity check the source exists");
 
   let logins = Services.logins.getAllLogins({});
   Assert.equal(logins.length, 0, "There are no logins initially");
 
   // Migrate the logins.
-  yield promiseMigration(migrator, MigrationUtils.resourceTypes.PASSWORDS, PROFILE);
+  await promiseMigration(migrator, MigrationUtils.resourceTypes.PASSWORDS, PROFILE);
 
   logins = Services.logins.getAllLogins({});
   Assert.equal(logins.length, TEST_LOGINS.length, "Check login count after importing the data");
@@ -163,9 +163,9 @@ add_task(function* test_importIntoEmptyDB() {
 });
 
 // Test that existing logins for the same primary key don't get overwritten
-add_task(function* test_importExistingLogins() {
-  let migrator = MigrationUtils.getMigrator("chrome");
-  Assert.ok(migrator.sourceExists, "Sanity check the source exists");
+add_task(async function test_importExistingLogins() {
+  let migrator = await MigrationUtils.getMigrator("chrome");
+  Assert.ok(await migrator.isSourceAvailable(), "Sanity check the source exists");
 
   Services.logins.removeAllLogins();
   let logins = Services.logins.getAllLogins({});
@@ -186,7 +186,7 @@ add_task(function* test_importExistingLogins() {
     checkLoginsAreEqual(logins[i], newLogins[i], i + 1);
   }
   // Migrate the logins.
-  yield promiseMigration(migrator, MigrationUtils.resourceTypes.PASSWORDS, PROFILE);
+  await promiseMigration(migrator, MigrationUtils.resourceTypes.PASSWORDS, PROFILE);
 
   logins = Services.logins.getAllLogins({});
   Assert.equal(logins.length, TEST_LOGINS.length,

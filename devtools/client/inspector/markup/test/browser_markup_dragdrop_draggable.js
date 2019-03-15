@@ -22,41 +22,41 @@ const TEST_DATA = [
   { node: "input", draggable: true },
   { node: "div", draggable: true },
   {
-    node: function* (inspector) {
-      let parentFront = yield getNodeFront("#before", inspector);
-      let {nodes} = yield inspector.walker.children(parentFront);
+    node: async function(inspector) {
+      const parentFront = await getNodeFront("#before", inspector);
+      const {nodes} = await inspector.walker.children(parentFront);
       // Getting the comment node.
       return getContainerForNodeFront(nodes[1], inspector);
     },
-    draggable: true
+    draggable: true,
   },
   {
-    node: function* (inspector) {
-      let parentFront = yield getNodeFront("#test", inspector);
-      let {nodes} = yield inspector.walker.children(parentFront);
+    node: async function(inspector) {
+      const parentFront = await getNodeFront("#test", inspector);
+      const {nodes} = await inspector.walker.children(parentFront);
       // Getting the ::before pseudo element.
       return getContainerForNodeFront(nodes[0], inspector);
     },
-    draggable: false
-  }
+    draggable: false,
+  },
 ];
 
-add_task(function* () {
-  let {inspector} = yield openInspectorForURL(TEST_URL);
-  yield inspector.markup.expandAll();
+add_task(async function() {
+  const {inspector} = await openInspectorForURL(TEST_URL);
+  await inspector.markup.expandAll();
 
-  for (let {node, draggable} of TEST_DATA) {
+  for (const {node, draggable} of TEST_DATA) {
     let container;
     let name;
     if (typeof node === "string") {
-      container = yield getContainerForSelector(node, inspector);
+      container = await getContainerForSelector(node, inspector);
       name = node;
     } else {
-      container = yield node(inspector);
+      container = await node(inspector);
       name = container.toString();
     }
 
-    let status = draggable ? "draggable" : "not draggable";
+    const status = draggable ? "draggable" : "not draggable";
     info(`Testing ${name}, expecting it to be ${status}`);
     is(container.isDraggable(), draggable, `The node is ${status}`);
   }

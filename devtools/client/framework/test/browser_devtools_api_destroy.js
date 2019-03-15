@@ -9,53 +9,53 @@ function test() {
   addTab("about:blank").then(runTests);
 }
 
-function runTests(aTab) {
-  let toolDefinition = {
+async function runTests(aTab) {
+  const toolDefinition = {
     id: "testTool",
     visibilityswitch: "devtools.testTool.enabled",
     isTargetSupported: () => true,
     url: "about:blank",
     label: "someLabel",
-    build: function (iframeWindow, toolbox) {
-      let deferred = defer();
-      executeSoon(() => {
-        deferred.resolve({
-          target: toolbox.target,
-          toolbox: toolbox,
-          isReady: true,
-          destroy: function () {},
+    build: function(iframeWindow, toolbox) {
+      return new Promise(resolve => {
+        executeSoon(() => {
+          resolve({
+            target: toolbox.target,
+            toolbox: toolbox,
+            isReady: true,
+            destroy: function() {},
+          });
         });
       });
-      return deferred.promise;
     },
   };
 
   gDevTools.registerTool(toolDefinition);
 
-  let collectedEvents = [];
+  const collectedEvents = [];
 
-  let target = TargetFactory.forTab(aTab);
-  gDevTools.showToolbox(target, toolDefinition.id).then(function (toolbox) {
-    let panel = toolbox.getPanel(toolDefinition.id);
+  const target = await TargetFactory.forTab(aTab);
+  gDevTools.showToolbox(target, toolDefinition.id).then(function(toolbox) {
+    const panel = toolbox.getPanel(toolDefinition.id);
     ok(panel, "Tool open");
 
-    gDevTools.once("toolbox-destroy", (event, toolbox, iframe) => {
-      collectedEvents.push(event);
+    gDevTools.once("toolbox-destroy", (toolbox, iframe) => {
+      collectedEvents.push("toolbox-destroy");
     });
 
-    gDevTools.once(toolDefinition.id + "-destroy", (event, toolbox, iframe) => {
-      collectedEvents.push("gDevTools-" + event);
+    gDevTools.once(toolDefinition.id + "-destroy", (toolbox, iframe) => {
+      collectedEvents.push("gDevTools-" + toolDefinition.id + "-destroy");
     });
 
-    toolbox.once("destroy", (event) => {
-      collectedEvents.push(event);
+    toolbox.once("destroy", () => {
+      collectedEvents.push("destroy");
     });
 
-    toolbox.once(toolDefinition.id + "-destroy", (event) => {
-      collectedEvents.push("toolbox-" + event);
+    toolbox.once(toolDefinition.id + "-destroy", () => {
+      collectedEvents.push("toolbox-" + toolDefinition.id + "-destroy");
     });
 
-    toolbox.destroy().then(function () {
+    toolbox.destroy().then(function() {
       is(collectedEvents.join(":"),
         "toolbox-destroy:destroy:gDevTools-testTool-destroy:toolbox-testTool-destroy",
         "Found the right amount of collected events.");
@@ -63,7 +63,7 @@ function runTests(aTab) {
       gDevTools.unregisterTool(toolDefinition.id);
       gBrowser.removeCurrentTab();
 
-      executeSoon(function () {
+      executeSoon(function() {
         finish();
       });
     });

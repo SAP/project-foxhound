@@ -1,0 +1,57 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`SourcesTree After changing expanded nodes Shows the tree with four.js, five.js and six.js expanded 1`] = `
+<div
+  className="sources-pane"
+  key="pane"
+>
+  <div
+    className="no-sources-message"
+    key="empty"
+  >
+    This page has no sources
+  </div>
+</div>
+`;
+
+exports[`SourcesTree Should show the tree with nothing expanded 1`] = `
+<div
+  className="sources-pane"
+  key="pane"
+>
+  <div
+    className="no-sources-message"
+    key="empty"
+  >
+    This page has no sources
+  </div>
+</div>
+`;
+
+exports[`SourcesTree When loading initial source Shows the tree with one.js, two.js and three.js expanded 1`] = `
+<div
+  className="sources-pane"
+  key="pane"
+>
+  <div
+    className="no-sources-message"
+    key="empty"
+  >
+    This page has no sources
+  </div>
+</div>
+`;
+
+exports[`SourcesTree on receiving new props updates highlighted items updates highlightItems if selectedSource changes 1`] = `
+<div
+  className="sources-pane"
+  key="pane"
+>
+  <div
+    className="no-sources-message"
+    key="empty"
+  >
+    This page has no sources
+  </div>
+</div>
+`;

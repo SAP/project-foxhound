@@ -8,6 +8,7 @@ with Files("**"):
     BUG_COMPONENT = ("Core", "DOM")
 
 EXPORTS.mozilla.dom += [
+    'Promise-inl.h',
     'Promise.h',
     'PromiseDebugging.h',
     'PromiseNativeHandler.h',
@@ -22,7 +23,6 @@ UNIFIED_SOURCES += [
 LOCAL_INCLUDES += [
     '../base',
     '../ipc',
-    '../workers',
 ]
 
 include('/ipc/chromium/chromium-config.mozbuild')
@@ -35,5 +35,5 @@ MOCHITEST_CHROME_MANIFESTS += ['tests/chrome.ini']
 
 XPCSHELL_TESTS_MANIFESTS += ['tests/unit/xpcshell.ini']
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

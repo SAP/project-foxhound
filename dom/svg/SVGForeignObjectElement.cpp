@@ -4,88 +4,80 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"
-
-#include "nsCOMPtr.h"
-#include "mozilla/dom/SVGDocument.h"
 #include "mozilla/dom/SVGForeignObjectElement.h"
-#include "mozilla/dom/SVGForeignObjectElementBinding.h"
 
-NS_IMPL_NS_NEW_NAMESPACED_SVG_ELEMENT(ForeignObject)
+#include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/ArrayUtils.h"
+#include "mozilla/dom/SVGDocument.h"
+#include "mozilla/dom/SVGForeignObjectElementBinding.h"
+#include "mozilla/dom/SVGLengthBinding.h"
+
+NS_IMPL_NS_NEW_SVG_ELEMENT(ForeignObject)
 
 namespace mozilla {
 namespace dom {
 
-JSObject*
-SVGForeignObjectElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return SVGForeignObjectElementBinding::Wrap(aCx, this, aGivenProto);
+JSObject* SVGForeignObjectElement::WrapNode(JSContext* aCx,
+                                            JS::Handle<JSObject*> aGivenProto) {
+  return SVGForeignObjectElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-nsSVGElement::LengthInfo SVGForeignObjectElement::sLengthInfo[4] =
-{
-  { &nsGkAtoms::x, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::X },
-  { &nsGkAtoms::y, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::Y },
-  { &nsGkAtoms::width, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::X },
-  { &nsGkAtoms::height, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::Y },
+SVGElement::LengthInfo SVGForeignObjectElement::sLengthInfo[4] = {
+    {nsGkAtoms::x, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
+     SVGContentUtils::X},
+    {nsGkAtoms::y, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
+     SVGContentUtils::Y},
+    {nsGkAtoms::width, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
+     SVGContentUtils::X},
+    {nsGkAtoms::height, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
+     SVGContentUtils::Y},
 };
 
 //----------------------------------------------------------------------
 // Implementation
 
-SVGForeignObjectElement::SVGForeignObjectElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-  : SVGGraphicsElement(aNodeInfo)
-{
-}
+SVGForeignObjectElement::SVGForeignObjectElement(
+    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : SVGGraphicsElement(std::move(aNodeInfo)) {}
 
 //----------------------------------------------------------------------
-// nsIDOMNode methods
+// nsINode methods
 
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGForeignObjectElement)
 
 //----------------------------------------------------------------------
 
-already_AddRefed<SVGAnimatedLength>
-SVGForeignObjectElement::X()
-{
+already_AddRefed<SVGAnimatedLength> SVGForeignObjectElement::X() {
   return mLengthAttributes[ATTR_X].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedLength>
-SVGForeignObjectElement::Y()
-{
+already_AddRefed<SVGAnimatedLength> SVGForeignObjectElement::Y() {
   return mLengthAttributes[ATTR_Y].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedLength>
-SVGForeignObjectElement::Width()
-{
+already_AddRefed<SVGAnimatedLength> SVGForeignObjectElement::Width() {
   return mLengthAttributes[ATTR_WIDTH].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedLength>
-SVGForeignObjectElement::Height()
-{
+already_AddRefed<SVGAnimatedLength> SVGForeignObjectElement::Height() {
   return mLengthAttributes[ATTR_HEIGHT].ToDOMAnimatedLength(this);
 }
 
 //----------------------------------------------------------------------
-// nsSVGElement methods
+// SVGElement methods
 
-/* virtual */ gfxMatrix
-SVGForeignObjectElement::PrependLocalTransformsTo(
-  const gfxMatrix &aMatrix, SVGTransformTypes aWhich) const
-{
+/* virtual */ gfxMatrix SVGForeignObjectElement::PrependLocalTransformsTo(
+    const gfxMatrix& aMatrix, SVGTransformTypes aWhich) const {
   // 'transform' attribute:
   gfxMatrix fromUserSpace =
-    SVGGraphicsElement::PrependLocalTransformsTo(aMatrix, aWhich);
+      SVGGraphicsElement::PrependLocalTransformsTo(aMatrix, aWhich);
   if (aWhich == eUserSpaceToParent) {
     return fromUserSpace;
   }
   // our 'x' and 'y' attributes:
   float x, y;
-  const_cast<SVGForeignObjectElement*>(this)->
-    GetAnimatedLengthValues(&x, &y, nullptr);
+  const_cast<SVGForeignObjectElement*>(this)->GetAnimatedLengthValues(&x, &y,
+                                                                      nullptr);
   gfxMatrix toUserSpace = gfxMatrix::Translation(x, y);
   if (aWhich == eChildToUserSpace) {
     return toUserSpace * aMatrix;
@@ -94,9 +86,7 @@ SVGForeignObjectElement::PrependLocalTransformsTo(
   return toUserSpace * fromUserSpace;
 }
 
-/* virtual */ bool
-SVGForeignObjectElement::HasValidDimensions() const
-{
+/* virtual */ bool SVGForeignObjectElement::HasValidDimensions() const {
   return mLengthAttributes[ATTR_WIDTH].IsExplicitlySet() &&
          mLengthAttributes[ATTR_WIDTH].GetAnimValInSpecifiedUnits() > 0 &&
          mLengthAttributes[ATTR_HEIGHT].IsExplicitlySet() &&
@@ -106,60 +96,28 @@ SVGForeignObjectElement::HasValidDimensions() const
 //----------------------------------------------------------------------
 // nsIContent methods
 
-nsresult
-SVGForeignObjectElement::BindToTree(nsIDocument* aDocument,
-                                    nsIContent* aParent,
-                                    nsIContent* aBindingParent,
-                                    bool aCompileEventHandlers)
-{
-  nsresult rv = SVGGraphicsElement::BindToTree(aDocument, aParent,
-                                               aBindingParent,
-                                               aCompileEventHandlers);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsIDocument* doc = GetComposedDoc();
-  if (doc && doc->IsSVGDocument()) {
-    // We assume that we're going to have HTML content, so we ensure that the
-    // UA style sheets that nsDocumentViewer::CreateStyleSet skipped when
-    // it saw the document was an SVG document are loaded.
-    //
-    // We setup these style sheets during binding, not element construction,
-    // because elements can be moved from the document that creates them to
-    // another document.
-    doc->AsSVGDocument()->EnsureNonSVGUserAgentStyleSheetsLoaded();
-  }
-
-  return rv;
-}
-
 NS_IMETHODIMP_(bool)
-SVGForeignObjectElement::IsAttributeMapped(const nsIAtom* name) const
-{
-  static const MappedAttributeEntry* const map[] = {
-    sFEFloodMap,
-    sFiltersMap,
-    sFontSpecificationMap,
-    sGradientStopMap,
-    sLightingEffectsMap,
-    sMarkersMap,
-    sTextContentElementsMap,
-    sViewportsMap
-  };
+SVGForeignObjectElement::IsAttributeMapped(const nsAtom* name) const {
+  static const MappedAttributeEntry* const map[] = {sFEFloodMap,
+                                                    sFiltersMap,
+                                                    sFontSpecificationMap,
+                                                    sGradientStopMap,
+                                                    sLightingEffectsMap,
+                                                    sMarkersMap,
+                                                    sTextContentElementsMap,
+                                                    sViewportsMap};
 
   return FindAttributeDependence(name, map) ||
-    SVGGraphicsElement::IsAttributeMapped(name);
+         SVGGraphicsElement::IsAttributeMapped(name);
 }
 
 //----------------------------------------------------------------------
-// nsSVGElement methods
+// SVGElement methods
 
-nsSVGElement::LengthAttributesInfo
-SVGForeignObjectElement::GetLengthInfo()
-{
+SVGElement::LengthAttributesInfo SVGForeignObjectElement::GetLengthInfo() {
   return LengthAttributesInfo(mLengthAttributes, sLengthInfo,
                               ArrayLength(sLengthInfo));
 }
 
-} // namespace dom
-} // namespace mozilla
-
+}  // namespace dom
+}  // namespace mozilla

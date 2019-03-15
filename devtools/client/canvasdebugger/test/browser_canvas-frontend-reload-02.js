@@ -5,9 +5,9 @@
  * Tests that the frontend UI is properly reconfigured after reloading.
  */
 
-function* ifTestingSupported() {
-  let { target, panel } = yield initCanvasDebuggerFrontend(SIMPLE_CANVAS_URL);
-  let { window, $, $all, EVENTS, SnapshotsListView, CallsListView } = panel.panelWin;
+async function ifTestingSupported() {
+  const { target, panel } = await initCanvasDebuggerFrontend(SIMPLE_CANVAS_URL);
+  const { window, $, $all, EVENTS, SnapshotsListView, CallsListView } = panel.panelWin;
 
   is(SnapshotsListView.itemCount, 0,
     "There should be no snapshots initially displayed in the UI.");
@@ -21,18 +21,18 @@ function* ifTestingSupported() {
   is($all(".filmstrip-thumbnail").length, 0,
     "There should be no thumbnails initially displayed in the UI (2).");
 
-  yield reload(target);
+  await reload(target);
 
-  let recordingFinished = once(window, EVENTS.SNAPSHOT_RECORDING_FINISHED);
-  let callListPopulated = once(window, EVENTS.CALL_LIST_POPULATED);
-  let thumbnailsDisplayed = once(window, EVENTS.THUMBNAILS_DISPLAYED);
-  let screenshotDisplayed = once(window, EVENTS.CALL_SCREENSHOT_DISPLAYED);
+  const recordingFinished = once(window, EVENTS.SNAPSHOT_RECORDING_FINISHED);
+  const callListPopulated = once(window, EVENTS.CALL_LIST_POPULATED);
+  const thumbnailsDisplayed = once(window, EVENTS.THUMBNAILS_DISPLAYED);
+  const screenshotDisplayed = once(window, EVENTS.CALL_SCREENSHOT_DISPLAYED);
   SnapshotsListView._onRecordButtonClick();
-  yield promise.all([
+  await Promise.all([
     recordingFinished,
     callListPopulated,
     thumbnailsDisplayed,
-    screenshotDisplayed
+    screenshotDisplayed,
   ]);
 
   is(SnapshotsListView.itemCount, 1,
@@ -47,10 +47,10 @@ function* ifTestingSupported() {
   is($all(".filmstrip-thumbnail").length, 4,
     "All the thumbnails should now be displayed in the UI (2).");
 
-  let reset = once(window, EVENTS.UI_RESET);
-  let navigated = reload(target);
+  const reset = once(window, EVENTS.UI_RESET);
+  const navigated = reload(target);
 
-  yield reset;
+  await reset;
   ok(true, "The UI was reset after the refresh button was clicked.");
 
   is(SnapshotsListView.itemCount, 0,
@@ -62,9 +62,9 @@ function* ifTestingSupported() {
   is($("#screenshot-container").hidden, true,
     "The screenshot should not be displayed in the UI after navigating.");
 
-  yield navigated;
+  await navigated;
   ok(true, "The target finished reloading.");
 
-  yield teardown(panel);
+  await teardown(panel);
   finish();
 }

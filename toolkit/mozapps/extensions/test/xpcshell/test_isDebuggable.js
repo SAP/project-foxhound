@@ -3,34 +3,19 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-var ADDONS = [
-  "test_bootstrap2_1", // restartless addon
-  "test_bootstrap1_4", // old-school addon
-  "test_jetpack"       // sdk addon
-];
+var ID = "debuggable@tests.mozilla.org";
 
-var IDS = [
-  "bootstrap1@tests.mozilla.org",
-  "bootstrap2@tests.mozilla.org",
-  "jetpack@tests.mozilla.org"
-];
-
-function run_test() {
-  do_test_pending();
-
+add_task(async function() {
   createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "2", "2");
 
-  startupManager();
-  AddonManager.checkCompatibility = false;
+  await promiseStartupManager();
 
-  installAllFiles(ADDONS.map(do_get_addon), function() {
-    restartManager();
+  await promiseInstallWebExtension({
+    manifest: {
+      applications: {gecko: {id: ID}},
+    },
+  });
 
-    AddonManager.getAddonsByIDs(IDS, function([a1, a2, a3]) {
-      do_check_eq(a1.isDebuggable, false);
-      do_check_eq(a2.isDebuggable, true);
-      do_check_eq(a3.isDebuggable, true);
-      do_test_finished();
-    });
-  }, true);
-}
+  let addon = await AddonManager.getAddonByID(ID);
+  Assert.equal(addon.isDebuggable, true);
+});

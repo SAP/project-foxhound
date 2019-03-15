@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // checking to make sure we don't hang as per 1038304
 // offline so url isn't impt
@@ -18,11 +18,11 @@ var listener = {
   onStart: function(aContext)
   {
     // onStart is not called when a connection fails
-    do_check_true(false);
+    Assert.ok(false);
   },
   onStop: function(aContext, aStatusCode)
   {
-    do_check_neq(aStatusCode, Cr.NS_OK);
+    Assert.notEqual(aStatusCode, Cr.NS_OK);
     Services.io.offline = offlineStatus;
     do_test_finished();
   }
@@ -34,7 +34,7 @@ function run_test() {
 
   try {
     chan = Cc["@mozilla.org/network/protocol;1?name=ws"].
-      createInstance(Components.interfaces.nsIWebSocketChannel);
+      createInstance(Ci.nsIWebSocketChannel);
     chan.initLoadInfo(null, // aLoadingNode
                       Services.scriptSecurityManager.getSystemPrincipal(),
                       null, // aTriggeringPrincipal

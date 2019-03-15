@@ -7,6 +7,7 @@
 // which may modify the following variables to add or remove expected APIs.
 /* globals expectedContentApisTargetSpecific */
 /* globals expectedBackgroundApisTargetSpecific */
+/* import-globals-from ../../../../../testing/mochitest/tests/SimpleTest/AddTask.js */
 
 // Generates a list of expectations.
 function generateExpectations(list) {
@@ -59,6 +60,10 @@ let expectedContentApis = [
 let expectedBackgroundApis = [
   ...expectedCommonApis,
   ...expectedBackgroundApisTargetSpecific,
+  "contentScripts.register",
+  "experiments.APIChildScope",
+  "experiments.APIEvent",
+  "experiments.APIParentScope",
   "extension.ViewType",
   "extension.getBackgroundPage",
   "extension.getViews",
@@ -73,6 +78,10 @@ let expectedBackgroundApis = [
   "management.ExtensionType",
   "management.getSelf",
   "management.uninstallSelf",
+  "permissions.getAll",
+  "permissions.contains",
+  "permissions.request",
+  "permissions.remove",
   "runtime.getBackgroundPage",
   "runtime.getBrowserInfo",
   "runtime.getPlatformInfo",
@@ -84,6 +93,8 @@ let expectedBackgroundApis = [
   "runtime.openOptionsPage",
   "runtime.reload",
   "runtime.setUninstallURL",
+  "theme.getCurrent",
+  "theme.onUpdated",
   "types.LevelOfControl",
   "types.SettingScope",
 ];
@@ -124,7 +135,7 @@ function sendAllApis() {
   browser.test.sendMessage("allApis", results.sort());
 }
 
-add_task(function* test_enumerate_content_script_apis() {
+add_task(async function test_enumerate_content_script_apis() {
   let extensionData = {
     manifest: {
       content_scripts: [{
@@ -138,26 +149,26 @@ add_task(function* test_enumerate_content_script_apis() {
     },
   };
   let extension = ExtensionTestUtils.loadExtension(extensionData);
-  yield extension.startup();
+  await extension.startup();
 
   let win = window.open("file_sample.html");
-  let actualApis = yield extension.awaitMessage("allApis");
+  let actualApis = await extension.awaitMessage("allApis");
   win.close();
   let expectedApis = generateExpectations(expectedContentApis);
   isDeeply(actualApis, expectedApis, "content script APIs");
 
-  yield extension.unload();
+  await extension.unload();
 });
 
-add_task(function* test_enumerate_background_script_apis() {
+add_task(async function test_enumerate_background_script_apis() {
   let extensionData = {
     background: sendAllApis,
   };
   let extension = ExtensionTestUtils.loadExtension(extensionData);
-  yield extension.startup();
-  let actualApis = yield extension.awaitMessage("allApis");
+  await extension.startup();
+  let actualApis = await extension.awaitMessage("allApis");
   let expectedApis = generateExpectations(expectedBackgroundApis);
   isDeeply(actualApis, expectedApis, "background script APIs");
 
-  yield extension.unload();
+  await extension.unload();
 });

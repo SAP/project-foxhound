@@ -9,7 +9,7 @@
 
 var EXPORTED_SYMBOLS = ["Logger"];
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var Logger = {
   _foStream: null,
@@ -22,16 +22,14 @@ var Logger = {
       return;
     }
 
-    let prefs = Cc["@mozilla.org/preferences-service;1"]
-                .getService(Ci.nsIPrefBranch);
     if (path) {
-      prefs.setCharPref("tps.logfile", path);
+      Services.prefs.setCharPref("tps.logfile", path);
     } else {
-      path = prefs.getCharPref("tps.logfile");
+      path = Services.prefs.getCharPref("tps.logfile");
     }
 
     this._file = Cc["@mozilla.org/file/local;1"]
-                 .createInstance(Ci.nsILocalFile);
+                 .createInstance(Ci.nsIFile);
     this._file.initWithPath(path);
     var exists = this._file.exists();
 
@@ -44,7 +42,7 @@ var Logger = {
     this._foStream.init(this._file, fileflags, 0o666, 0);
     this._converter = Cc["@mozilla.org/intl/converter-output-stream;1"]
                       .createInstance(Ci.nsIConverterOutputStream);
-    this._converter.init(this._foStream, "UTF-8", 0, 0);
+    this._converter.init(this._foStream, "UTF-8");
   },
 
   write(data) {
@@ -81,9 +79,10 @@ var Logger = {
   },
 
   AssertEqual(val1, val2, msg) {
-    if (val1 != val2)
+    if (val1 != val2) {
       throw new Error("ASSERTION FAILED! " + msg + "; expected " +
             JSON.stringify(val2) + ", got " + JSON.stringify(val1));
+    }
   },
 
   log(msg, withoutPrefix) {
@@ -133,14 +132,14 @@ var Logger = {
   },
 
   logInfo(msg, withoutPrefix) {
-    if (withoutPrefix)
+    if (withoutPrefix) {
       this.log(msg, true);
-    else
+    } else {
       this.log("CROSSWEAVE INFO: " + msg);
+    }
   },
 
   logPass(msg) {
     this.log("CROSSWEAVE TEST PASS: " + msg);
   },
 };
-

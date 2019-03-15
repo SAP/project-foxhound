@@ -2,152 +2,108 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-Components.utils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // restartManager() mucks with XPIProvider.jsm importing, so we hack around.
 this.__defineGetter__("XPIProvider", function() {
   let scope = {};
-  return Components.utils.import("resource://gre/modules/addons/XPIProvider.jsm", scope)
+  return ChromeUtils.import("resource://gre/modules/addons/XPIProvider.jsm", scope)
                    .XPIProvider;
 });
 
-const addonId = "addon1@tests.mozilla.org";
+const UUID_PATTERN = /^\{[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\}$/i;
 
-function run_test() {
+const ADDONS = [
+  {
+    id: "addon1@tests.mozilla.org",
+    name: "Test 1",
+  },
+  {
+    id: "addon2@tests.mozilla.org",
+    name: "Real Test 2",
+  },
+];
+
+let xpis;
+
+add_task(async function setup() {
   Services.prefs.setBoolPref("extensions.checkUpdateSecurity", false);
 
   createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9");
-  startupManager();
+  await promiseStartupManager();
 
-  run_next_test();
-}
-
-const UUID_PATTERN = /^\{[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\}$/i;
-
-add_test(function test_getter_and_setter() {
-  // Our test add-on requires a restart.
-  let listener = {
-    onInstallEnded: function onInstallEnded() {
-     AddonManager.removeInstallListener(listener);
-     // never restart directly inside an onInstallEnded handler!
-     do_execute_soon(function getter_setter_install_ended() {
-      restartManager();
-
-      AddonManager.getAddonByID(addonId, function(addon) {
-
-        do_check_neq(addon, null);
-        do_check_neq(addon.syncGUID, null);
-        do_check_true(UUID_PATTERN.test(addon.syncGUID));
-
-        let newGUID = "foo";
-
-        addon.syncGUID = newGUID;
-        do_check_eq(newGUID, addon.syncGUID);
-
-        // Verify change made it to DB.
-        AddonManager.getAddonByID(addonId, function(newAddon) {
-          do_check_neq(newAddon, null);
-          do_check_eq(newGUID, newAddon.syncGUID);
-        });
-
-        run_next_test();
-      });
-     });
-    }
-  };
-
-  AddonManager.addInstallListener(listener);
-
-  AddonManager.getInstallForFile(do_get_addon("test_install1"),
-                                 function(install) {
-    install.install();
-  });
+  xpis = await Promise.all(ADDONS.map(info => createTempWebExtensionFile({
+    manifest: {
+      name: info.name,
+      applications: {gecko: {id: info.id}},
+    },
+  })));
 });
 
-add_test(function test_fetch_by_guid_unknown_guid() {
-  XPIProvider.getAddonBySyncGUID("XXXX", function(addon) {
-    do_check_eq(null, addon);
-    run_next_test();
-  });
+add_task(async function test_getter_and_setter() {
+  await promiseInstallFile(xpis[0]);
+
+  let addon = await AddonManager.getAddonByID(ADDONS[0].id);
+  Assert.notEqual(addon, null);
+  Assert.notEqual(addon.syncGUID, null);
+  Assert.ok(UUID_PATTERN.test(addon.syncGUID));
+
+  let newGUID = "foo";
+
+  addon.syncGUID = newGUID;
+  Assert.equal(newGUID, addon.syncGUID);
+
+  // Verify change made it to DB.
+  let newAddon = await AddonManager.getAddonByID(ADDONS[0].id);
+  Assert.notEqual(newAddon, null);
+  Assert.equal(newGUID, newAddon.syncGUID);
+});
+
+add_task(async function test_fetch_by_guid_unknown_guid() {
+  let addon = await XPIProvider.getAddonBySyncGUID("XXXX");
+  Assert.equal(null, addon);
 });
 
 // Ensure setting an extension to an existing syncGUID results in error.
-add_test(function test_error_on_duplicate_syncguid_insert() {
-  const installNames = ["test_install1", "test_install2_1"];
-  const installIDs = ["addon1@tests.mozilla.org", "addon2@tests.mozilla.org"];
+add_task(async function test_error_on_duplicate_syncguid_insert() {
+  await promiseInstallAllFiles(xpis);
 
-  let installCount = 0;
+  let addons = await AddonManager.getAddonsByIDs(ADDONS.map(a => a.id));
+  let initialGUID = addons[1].syncGUID;
 
-  let listener = {
-    onInstallEnded: function onInstallEnded() {
-      installCount++;
+  Assert.throws(() => { addons[1].syncGUID = addons[0].syncGUID; },
+                /Addon sync GUID conflict/,
+                "Assigning conflicting sync guids throws");
 
-      if (installCount == installNames.length) {
-       AddonManager.removeInstallListener(listener);
-       do_execute_soon(function duplicate_syncguid_install_ended() {
-        restartManager();
+  await promiseRestartManager();
 
-        AddonManager.getAddonsByIDs(installIDs, callback_soon(function(addons) {
-          let initialGUID = addons[1].syncGUID;
-
-          try {
-            addons[1].syncGUID = addons[0].syncGUID;
-            do_throw("Should not get here.");
-          } catch (e) {
-            do_check_true(e.message.startsWith("Addon sync GUID conflict"));
-            restartManager();
-
-            AddonManager.getAddonByID(installIDs[1], function(addon) {
-              do_check_eq(initialGUID, addon.syncGUID);
-              run_next_test();
-            });
-          }
-        }));
-       });
-      }
-    }
-  };
-
-  AddonManager.addInstallListener(listener);
-  let getInstallCB = function(install) { install.install(); };
-
-  for (let name of installNames) {
-    AddonManager.getInstallForFile(do_get_addon(name), getInstallCB);
-  }
+  let addon = await AddonManager.getAddonByID(ADDONS[1].id);
+  Assert.equal(initialGUID, addon.syncGUID);
 });
 
-add_test(function test_fetch_by_guid_known_guid() {
-  AddonManager.getAddonByID(addonId, function(addon) {
-    do_check_neq(null, addon);
-    do_check_neq(null, addon.syncGUID);
+add_task(async function test_fetch_by_guid_known_guid() {
+  let addon = await AddonManager.getAddonByID(ADDONS[0].id);
+  Assert.notEqual(null, addon);
+  Assert.notEqual(null, addon.syncGUID);
 
-    let syncGUID = addon.syncGUID;
+  let syncGUID = addon.syncGUID;
 
-    XPIProvider.getAddonBySyncGUID(syncGUID, function(newAddon) {
-      do_check_neq(null, newAddon);
-      do_check_eq(syncGUID, newAddon.syncGUID);
-
-      run_next_test();
-    });
-  });
+  let newAddon = await XPIProvider.getAddonBySyncGUID(syncGUID);
+  Assert.notEqual(null, newAddon);
+  Assert.equal(syncGUID, newAddon.syncGUID);
 });
 
-add_test(function test_addon_manager_get_by_sync_guid() {
-  AddonManager.getAddonByID(addonId, function(addon) {
-    do_check_neq(null, addon.syncGUID);
+add_task(async function test_addon_manager_get_by_sync_guid() {
+  let addon = await AddonManager.getAddonByID(ADDONS[0].id);
+  Assert.notEqual(null, addon.syncGUID);
 
-    let syncGUID = addon.syncGUID;
+  let syncGUID = addon.syncGUID;
 
-    AddonManager.getAddonBySyncGUID(syncGUID, function(newAddon) {
-      do_check_neq(null, newAddon);
-      do_check_eq(addon.id, newAddon.id);
-      do_check_eq(syncGUID, newAddon.syncGUID);
+  let newAddon = await AddonManager.getAddonBySyncGUID(syncGUID);
+  Assert.notEqual(null, newAddon);
+  Assert.equal(addon.id, newAddon.id);
+  Assert.equal(syncGUID, newAddon.syncGUID);
 
-      AddonManager.getAddonBySyncGUID("DOES_NOT_EXIST", function(missing) {
-        do_check_eq(undefined, missing);
-
-        run_next_test();
-      });
-    });
-  });
+  let missing = await AddonManager.getAddonBySyncGUID("DOES_NOT_EXIST");
+  Assert.equal(undefined, missing);
 });

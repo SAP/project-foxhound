@@ -7,30 +7,29 @@
  * Tests if copying a request's url works.
  */
 
-add_task(function* () {
-  let { tab, monitor } = yield initNetMonitor(CUSTOM_GET_URL);
+add_task(async function() {
+  const { tab, monitor } = await initNetMonitor(CUSTOM_GET_URL);
   info("Starting test... ");
 
-  let { document, gStore, windowRequire } = monitor.panelWin;
-  let { getSortedRequests } = windowRequire("devtools/client/netmonitor/selectors/index");
+  const { document, store, windowRequire } = monitor.panelWin;
+  const {
+    getSortedRequests,
+  } = windowRequire("devtools/client/netmonitor/src/selectors/index");
 
-  let wait = waitForNetworkEvents(monitor, 1);
-  yield ContentTask.spawn(tab.linkedBrowser, {}, function* () {
-    content.wrappedJSObject.performRequests(1);
-  });
-  yield wait;
+  // Execute requests.
+  await performRequests(monitor, tab, 1);
 
   EventUtils.sendMouseEvent({ type: "mousedown" },
     document.querySelectorAll(".request-list-item")[0]);
   EventUtils.sendMouseEvent({ type: "contextmenu" },
     document.querySelectorAll(".request-list-item")[0]);
 
-  let requestItem = getSortedRequests(gStore.getState()).get(0);
+  const requestItem = getSortedRequests(store.getState()).get(0);
 
-  yield waitForClipboardPromise(function setup() {
+  await waitForClipboardPromise(function setup() {
     monitor.panelWin.parent.document
       .querySelector("#request-list-context-copy-url").click();
   }, requestItem.url);
 
-  yield teardown(monitor);
+  await teardown(monitor);
 });

@@ -11,6 +11,9 @@
 enum RTCStatsType {
   "inbound-rtp",
   "outbound-rtp",
+  "remote-inbound-rtp",
+  "remote-outbound-rtp",
+  "csrc",
   "session",
   "track",
   "transport",
@@ -25,42 +28,51 @@ dictionary RTCStats {
   DOMString id;
 };
 
-dictionary RTCRTPStreamStats : RTCStats {
-  DOMString ssrc;
+dictionary RTCRtpStreamStats : RTCStats {
+  unsigned long ssrc;
   DOMString mediaType;
-  DOMString remoteId;
-  boolean isRemote = false;
-  DOMString mediaTrackId;
+  DOMString kind;
   DOMString transportId;
   DOMString codecId;
+  // Local only measurements, RTCP related but not communicated via RTCP. Not
+  // present in RTCP case. See Bug 1367562
+  unsigned long firCount;
+  unsigned long pliCount;
+  unsigned long nackCount;
+  unsigned long long qpSum;
 
-  // Video encoder/decoder measurements (absent for rtcp)
+  DOMString remoteId; // See Bug 1515716
+  DOMString localId;  // See Bug 1515716
+  DOMString mediaTrackId;
+
+  // Video encoder/decoder measurements, not present in RTCP case
   double bitrateMean;
   double bitrateStdDev;
   double framerateMean;
   double framerateStdDev;
 };
 
-dictionary RTCInboundRTPStreamStats : RTCRTPStreamStats {
+dictionary RTCInboundRTPStreamStats : RTCRtpStreamStats {
   unsigned long packetsReceived;
   unsigned long long bytesReceived;
   double jitter;
   unsigned long packetsLost;
-  long mozAvSyncDelay;
-  long mozJitterBufferDelay;
-  long mozRtt;
+  long roundTripTime;
 
-  // Video decoder measurement (absent in rtcp case)
+  // Video decoder measurement, not present in RTCP case
   unsigned long discardedPackets;
+  unsigned long framesDecoded;
 };
 
-dictionary RTCOutboundRTPStreamStats : RTCRTPStreamStats {
+
+dictionary RTCOutboundRTPStreamStats : RTCRtpStreamStats {
   unsigned long packetsSent;
   unsigned long long bytesSent;
   double targetBitrate;  // config encoder bitrate target of this SSRC in bits/s
 
-  // Video encoder measurement (absent in rtcp case)
+  // Video encoder measurements, not present in RTCP case
   unsigned long droppedFrames;
+  unsigned long framesEncoded;
 };
 
 dictionary RTCMediaStreamTrackStats : RTCStats {
@@ -88,6 +100,11 @@ dictionary RTCMediaStreamStats : RTCStats {
   sequence<DOMString> trackIds;   // Note: stats object ids, not track.id
 };
 
+dictionary RTCRTPContributingSourceStats : RTCStats {
+  unsigned long contributorSsrc;
+  DOMString     inboundRtpStreamId;
+};
+
 dictionary RTCTransportStats: RTCStats {
   unsigned long bytesSent;
   unsigned long bytesReceived;
@@ -111,31 +128,41 @@ enum RTCStatsIceCandidatePairState {
 };
 
 dictionary RTCIceCandidatePairStats : RTCStats {
-  DOMString componentId;
+  DOMString transportId;
   DOMString localCandidateId;
   DOMString remoteCandidateId;
   RTCStatsIceCandidatePairState state;
   unsigned long long priority;
-  boolean readable;
   boolean nominated;
+  boolean writable;
+  boolean readable;
+  unsigned long long bytesSent;
+  unsigned long long bytesReceived;
+  DOMHighResTimeStamp lastPacketSentTimestamp;
+  DOMHighResTimeStamp lastPacketReceivedTimestamp;
   boolean selected;
+  [ChromeOnly]
+  unsigned long componentId; // moz
 };
 
-enum RTCStatsIceCandidateType {
+enum RTCIceCandidateType {
   "host",
-  "serverreflexive",
-  "peerreflexive",
-  "relayed"
+  "srflx",
+  "prflx",
+  "relay"
 };
 
 dictionary RTCIceCandidateStats : RTCStats {
-  DOMString componentId;
-  DOMString candidateId;
-  DOMString ipAddress;
-  DOMString transport;
-  DOMString mozLocalTransport; // needs standardization
-  long portNumber;
-  RTCStatsIceCandidateType candidateType;
+  DOMString address;
+  long port;
+  DOMString protocol;
+  RTCIceCandidateType candidateType;
+  long priority;
+  DOMString relayProtocol;
+  // Because we use this internally but don't support RTCIceCandidateStats,
+  // we need to keep the field as ChromeOnly. Bug 1225723
+  [ChromeOnly]
+  DOMString transportId;
 };
 
 dictionary RTCCodecStats : RTCStats {
@@ -150,27 +177,30 @@ dictionary RTCCodecStats : RTCStats {
 // to be received from c++
 
 dictionary RTCStatsReportInternal {
-  DOMString                           pcid = "";
-  sequence<RTCInboundRTPStreamStats>  inboundRTPStreamStats;
-  sequence<RTCOutboundRTPStreamStats> outboundRTPStreamStats;
-  sequence<RTCMediaStreamTrackStats>  mediaStreamTrackStats;
-  sequence<RTCMediaStreamStats>       mediaStreamStats;
-  sequence<RTCTransportStats>         transportStats;
-  sequence<RTCIceComponentStats>      iceComponentStats;
-  sequence<RTCIceCandidatePairStats>  iceCandidatePairStats;
-  sequence<RTCIceCandidateStats>      iceCandidateStats;
-  sequence<RTCCodecStats>             codecStats;
-  DOMString                           localSdp;
-  DOMString                           remoteSdp;
-  DOMHighResTimeStamp                 timestamp;
-  unsigned long                       iceRestarts;
-  unsigned long                       iceRollbacks;
-  boolean                             closed; // Is the PC now closed
+  DOMString                               pcid = "";
+  sequence<RTCInboundRTPStreamStats>      inboundRTPStreamStats;
+  sequence<RTCOutboundRTPStreamStats>     outboundRTPStreamStats;
+  sequence<RTCRTPContributingSourceStats> rtpContributingSourceStats;
+  sequence<RTCMediaStreamTrackStats>      mediaStreamTrackStats;
+  sequence<RTCMediaStreamStats>           mediaStreamStats;
+  sequence<RTCTransportStats>             transportStats;
+  sequence<RTCIceComponentStats>          iceComponentStats;
+  sequence<RTCIceCandidatePairStats>      iceCandidatePairStats;
+  sequence<RTCIceCandidateStats>          iceCandidateStats;
+  sequence<RTCCodecStats>                 codecStats;
+  DOMString                               localSdp;
+  DOMString                               remoteSdp;
+  DOMHighResTimeStamp                     timestamp;
+  unsigned long                           iceRestarts;
+  unsigned long                           iceRollbacks;
+  boolean                                 offerer; // Is the PC the offerer
+  boolean                                 closed; // Is the PC now closed
+  sequence<RTCIceCandidateStats>          trickledIceCandidateStats;
+  sequence<DOMString>                     rawLocalCandidates;
+  sequence<DOMString>                     rawRemoteCandidates;
 };
 
 [Pref="media.peerconnection.enabled",
-// TODO: Use MapClass here once it's available (Bug 928114)
-// MapClass(DOMString, object)
  JSImplementation="@mozilla.org/dom/rtcstatsreport;1"]
 interface RTCStatsReport {
   readonly maplike<DOMString, object>;

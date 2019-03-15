@@ -11,35 +11,35 @@ const { SIMPLE_URL } = require("devtools/client/performance/test/helpers/urls");
 const { initPerformanceInNewTab, teardownToolboxAndRemoveTab } = require("devtools/client/performance/test/helpers/panel-utils");
 const { startRecording, stopRecording } = require("devtools/client/performance/test/helpers/actions");
 
-add_task(function* () {
-  let { panel } = yield initPerformanceInNewTab({
+add_task(async function() {
+  const { panel } = await initPerformanceInNewTab({
     url: SIMPLE_URL,
-    win: window
+    win: window,
   });
 
-  let { $, PerformanceView } = panel.panelWin;
+  const { $, PerformanceView } = panel.panelWin;
 
-  let MAIN_CONTAINER = $("#performance-view");
-  let EMPTY = $("#empty-notice");
-  let CONTENT = $("#performance-view-content");
-  let DETAILS_CONTAINER = $("#details-pane-container");
-  let RECORDING = $("#recording-notice");
-  let DETAILS = $("#details-pane");
+  const MAIN_CONTAINER = $("#performance-view");
+  const EMPTY = $("#empty-notice");
+  const CONTENT = $("#performance-view-content");
+  const DETAILS_CONTAINER = $("#details-pane-container");
+  const RECORDING = $("#recording-notice");
+  const DETAILS = $("#details-pane");
 
   is(PerformanceView.getState(), "empty", "Correct default state.");
   is(MAIN_CONTAINER.selectedPanel, EMPTY, "Showing empty panel on load.");
 
-  yield startRecording(panel);
+  await startRecording(panel);
 
   is(PerformanceView.getState(), "recording", "Correct state during recording.");
   is(MAIN_CONTAINER.selectedPanel, CONTENT, "Showing main view with timeline.");
   is(DETAILS_CONTAINER.selectedPanel, RECORDING, "Showing recording panel.");
 
-  yield stopRecording(panel);
+  await stopRecording(panel);
 
   is(PerformanceView.getState(), "recorded", "Correct state after recording.");
   is(MAIN_CONTAINER.selectedPanel, CONTENT, "Showing main view with timeline.");
   is(DETAILS_CONTAINER.selectedPanel, DETAILS, "Showing rendered graphs.");
 
-  yield teardownToolboxAndRemoveTab(panel);
+  await teardownToolboxAndRemoveTab(panel);
 });

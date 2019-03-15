@@ -11,8 +11,12 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsCOMPtr.h"
 
-#define TCPSERVERSOCKETCHILD_CID \
-  { 0x41a77ec8, 0xfd86, 0x409e, { 0xae, 0xa9, 0xaf, 0x2c, 0xa4, 0x07, 0xef, 0x8e } }
+#define TCPSERVERSOCKETCHILD_CID                     \
+  {                                                  \
+    0x41a77ec8, 0xfd86, 0x409e, {                    \
+      0xae, 0xa9, 0xaf, 0x2c, 0xa4, 0x07, 0xef, 0x8e \
+    }                                                \
+  }
 
 class nsITCPServerSocketInternal;
 
@@ -22,14 +26,14 @@ namespace dom {
 class TCPServerSocket;
 
 class TCPServerSocketChildBase : public nsISupports {
-public:
+ public:
   NS_DECL_CYCLE_COLLECTION_CLASS(TCPServerSocketChildBase)
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 
   void AddIPDLReference();
   void ReleaseIPDLReference();
 
-protected:
+ protected:
   TCPServerSocketChildBase();
   virtual ~TCPServerSocketChildBase();
 
@@ -37,22 +41,23 @@ protected:
   bool mIPCOpen;
 };
 
-class TCPServerSocketChild : public mozilla::net::PTCPServerSocketChild
-                           , public TCPServerSocketChildBase
-{
-public:
+class TCPServerSocketChild : public mozilla::net::PTCPServerSocketChild,
+                             public TCPServerSocketChildBase {
+ public:
   NS_IMETHOD_(MozExternalRefCountType) Release() override;
 
   TCPServerSocketChild(TCPServerSocket* aServerSocket, uint16_t aLocalPort,
-                       uint16_t aBacklog, bool aUseArrayBuffers);
+                       uint16_t aBacklog, bool aUseArrayBuffers,
+                       nsIEventTarget* aIPCEventTarget);
   ~TCPServerSocketChild();
 
   void Close();
 
-  virtual mozilla::ipc::IPCResult RecvCallbackAccept(PTCPSocketChild *socket)  override;
+  virtual mozilla::ipc::IPCResult RecvCallbackAccept(
+      PTCPSocketChild* socket) override;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_TCPServerSocketChild_h
+#endif  // mozilla_dom_TCPServerSocketChild_h

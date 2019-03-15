@@ -8,28 +8,32 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_coding/neteq/delay_manager.h"
+#include "modules/audio_coding/neteq/delay_manager.h"
 
 #include <assert.h>
 #include <math.h>
 
 #include <algorithm>  // max, min
+#include <numeric>
 
-#include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
-#include "webrtc/modules/audio_coding/neteq/delay_peak_detector.h"
-#include "webrtc/modules/include/module_common_types.h"
-#include "webrtc/system_wrappers/include/logging.h"
+#include "common_audio/signal_processing/include/signal_processing_library.h"
+#include "modules/audio_coding/neteq/delay_peak_detector.h"
+#include "modules/include/module_common_types.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/numerics/safe_conversions.h"
+#include "system_wrappers/include/field_trial.h"
 
 namespace webrtc {
 
 DelayManager::DelayManager(size_t max_packets_in_buffer,
-                           DelayPeakDetector* peak_detector)
+                           DelayPeakDetector* peak_detector,
+                           const TickTimer* tick_timer)
     : first_packet_received_(false),
       max_packets_in_buffer_(max_packets_in_buffer),
       iat_vector_(kMaxIat + 1, 0),
       iat_factor_(0),
-      packet_iat_count_ms_(0),
-      base_target_level_(4),  // In Q0 domain.
+      tick_timer_(tick_timer),
+      base_target_level_(4),                   // In Q0 domain.
       target_level_(base_target_level_ << 8),  // In Q8 domain.
       packet_len_ms_(0),
       streaming_mode_(false),
@@ -40,9 +44,10 @@ DelayManager::DelayManager(size_t max_packets_in_buffer,
       maximum_delay_ms_(target_level_),
       iat_cumulative_sum_(0),
       max_iat_cumulative_sum_(0),
-      max_timer_ms_(0),
       peak_detector_(*peak_detector),
-      last_pack_cng_or_dtmf_(1) {
+      last_pack_cng_or_dtmf_(1),
+      frame_length_change_experiment_(
+          field_trial::IsEnabled("WebRTC-Audio-NetEqFramelengthExperiment")) {
   assert(peak_detector);  // Should never be NULL.
   Reset();
 }
@@ -78,7 +83,7 @@ int DelayManager::Update(uint16_t sequence_number,
 
   if (!first_packet_received_) {
     // Prepare for next packet arrival.
-    packet_iat_count_ms_ = 0;
+    packet_iat_stopwatch_ = tick_timer_->GetNewStopwatch();
     last_seq_no_ = sequence_number;
     last_timestamp_ = timestamp;
     first_packet_received_ = true;
@@ -93,10 +98,11 @@ int DelayManager::Update(uint16_t sequence_number,
     packet_len_ms = packet_len_ms_;
   } else {
     // Calculate timestamps per packet and derive packet length in ms.
-    int packet_len_samp =
+    int64_t packet_len_samp =
         static_cast<uint32_t>(timestamp - last_timestamp_) /
         static_cast<uint16_t>(sequence_number - last_seq_no_);
-    packet_len_ms = (1000 * packet_len_samp) / sample_rate_hz;
+    packet_len_ms =
+        rtc::saturated_cast<int>(1000 * packet_len_samp / sample_rate_hz);
   }
 
   if (packet_len_ms > 0) {
@@ -104,7 +110,7 @@ int DelayManager::Update(uint16_t sequence_number,
     // Calculate inter-arrival time (IAT) in integer "packet times"
     // (rounding down). This is the value used as index to the histogram
     // vector |iat_vector_|.
-    int iat_packets = packet_iat_count_ms_ / packet_len_ms;
+    int iat_packets = packet_iat_stopwatch_->ElapsedMs() / packet_len_ms;
 
     if (streaming_mode_) {
       UpdateCumulativeSums(packet_len_ms, sequence_number);
@@ -135,7 +141,7 @@ int DelayManager::Update(uint16_t sequence_number,
   }  // End if (packet_len_ms > 0).
 
   // Prepare for next packet arrival.
-  packet_iat_count_ms_ = 0;
+  packet_iat_stopwatch_ = tick_timer_->GetNewStopwatch();
   last_seq_no_ = sequence_number;
   last_timestamp_ = timestamp;
   return 0;
@@ -145,7 +151,8 @@ void DelayManager::UpdateCumulativeSums(int packet_len_ms,
                                         uint16_t sequence_number) {
   // Calculate IAT in Q8, including fractions of a packet (i.e., more
   // accurate than |iat_packets|.
-  int iat_packets_q8 = (packet_iat_count_ms_ << 8) / packet_len_ms;
+  int iat_packets_q8 =
+      (packet_iat_stopwatch_->ElapsedMs() << 8) / packet_len_ms;
   // Calculate cumulative sum IAT with sequence number compensation. The sum
   // is zero if there is no clock-drift.
   iat_cumulative_sum_ += (iat_packets_q8 -
@@ -157,9 +164,9 @@ void DelayManager::UpdateCumulativeSums(int packet_len_ms,
   if (iat_cumulative_sum_ > max_iat_cumulative_sum_) {
     // Found a new maximum.
     max_iat_cumulative_sum_ = iat_cumulative_sum_;
-    max_timer_ms_ = 0;
+    max_iat_stopwatch_ = tick_timer_->GetNewStopwatch();
   }
-  if (max_timer_ms_ > kMaxStreamingPeakPeriodMs) {
+  if (max_iat_stopwatch_->ElapsedMs() > kMaxStreamingPeakPeriodMs) {
     // Too long since the last maximum was observed; decrease max value.
     max_iat_cumulative_sum_ -= kCumulativeSumDrift;
   }
@@ -292,12 +299,16 @@ int DelayManager::CalculateTargetLevel(int iat_packets) {
 
 int DelayManager::SetPacketAudioLength(int length_ms) {
   if (length_ms <= 0) {
-    LOG_F(LS_ERROR) << "length_ms = " << length_ms;
+    RTC_LOG_F(LS_ERROR) << "length_ms = " << length_ms;
     return -1;
   }
+  if (frame_length_change_experiment_ && packet_len_ms_ != length_ms) {
+    iat_vector_ = ScaleHistogram(iat_vector_, packet_len_ms_, length_ms);
+  }
+
   packet_len_ms_ = length_ms;
   peak_detector_.SetPacketAudioLength(packet_len_ms_);
-  packet_iat_count_ms_ = 0;
+  packet_iat_stopwatch_ = tick_timer_->GetNewStopwatch();
   last_pack_cng_or_dtmf_ = 1;  // TODO(hlundin): Legacy. Remove?
   return 0;
 }
@@ -309,49 +320,40 @@ void DelayManager::Reset() {
   peak_detector_.Reset();
   ResetHistogram();  // Resets target levels too.
   iat_factor_ = 0;  // Adapt the histogram faster for the first few packets.
-  packet_iat_count_ms_ = 0;
-  max_timer_ms_ = 0;
+  packet_iat_stopwatch_ = tick_timer_->GetNewStopwatch();
+  max_iat_stopwatch_ = tick_timer_->GetNewStopwatch();
   iat_cumulative_sum_ = 0;
   max_iat_cumulative_sum_ = 0;
   last_pack_cng_or_dtmf_ = 1;
 }
 
-int DelayManager::AverageIAT() const {
-  int32_t sum_q24 = 0;
-  // Using an int for the upper limit of the following for-loop so the
-  // loop-counter can be int. Otherwise we need a cast where |sum_q24| is
-  // updated.
-  const int iat_vec_size = static_cast<int>(iat_vector_.size());
-  assert(iat_vector_.size() == 65);  // Algorithm is hard-coded for this size.
-  for (int i = 0; i < iat_vec_size; ++i) {
-    // Shift 6 to fit worst case: 2^30 * 64.
-    sum_q24 += (iat_vector_[i] >> 6) * i;
+double DelayManager::EstimatedClockDriftPpm() const {
+  double sum = 0.0;
+  // Calculate the expected value based on the probabilities in |iat_vector_|.
+  for (size_t i = 0; i < iat_vector_.size(); ++i) {
+    sum += static_cast<double>(iat_vector_[i]) * i;
   }
-  // Subtract the nominal inter-arrival time 1 = 2^24 in Q24.
-  sum_q24 -= (1 << 24);
-  // Multiply with 1000000 / 2^24 = 15625 / 2^18 to get in parts-per-million.
-  // Shift 7 to Q17 first, then multiply with 15625 and shift another 11.
-  return ((sum_q24 >> 7) * 15625) >> 11;
+  // The probabilities in |iat_vector_| are in Q30. Divide by 1 << 30 to convert
+  // to Q0; subtract the nominal inter-arrival time (1) to make a zero
+  // clockdrift represent as 0; mulitply by 1000000 to produce parts-per-million
+  // (ppm).
+  return (sum / (1 << 30) - 1) * 1e6;
 }
 
 bool DelayManager::PeakFound() const {
   return peak_detector_.peak_found();
 }
 
-void DelayManager::UpdateCounters(int elapsed_time_ms) {
-  packet_iat_count_ms_ += elapsed_time_ms;
-  peak_detector_.IncrementCounter(elapsed_time_ms);
-  max_timer_ms_ += elapsed_time_ms;
+void DelayManager::ResetPacketIatCount() {
+  packet_iat_stopwatch_ = tick_timer_->GetNewStopwatch();
 }
-
-void DelayManager::ResetPacketIatCount() { packet_iat_count_ms_ = 0; }
 
 // Note that |low_limit| and |higher_limit| are not assigned to
 // |minimum_delay_ms_| and |maximum_delay_ms_| defined by the client of this
 // class. They are computed from |target_level_| and used for decision making.
 void DelayManager::BufferLimits(int* lower_limit, int* higher_limit) const {
   if (!lower_limit || !higher_limit) {
-    LOG_F(LS_ERROR) << "NULL pointers supplied as input";
+    RTC_LOG_F(LS_ERROR) << "NULL pointers supplied as input";
     assert(false);
     return;
   }
@@ -372,16 +374,56 @@ int DelayManager::TargetLevel() const {
   return target_level_;
 }
 
-void DelayManager::LastDecoderType(NetEqDecoder decoder_type) {
-  if (decoder_type == NetEqDecoder::kDecoderAVT ||
-      decoder_type == NetEqDecoder::kDecoderCNGnb ||
-      decoder_type == NetEqDecoder::kDecoderCNGwb ||
-      decoder_type == NetEqDecoder::kDecoderCNGswb32kHz ||
-      decoder_type == NetEqDecoder::kDecoderCNGswb48kHz) {
+void DelayManager::LastDecodedWasCngOrDtmf(bool it_was) {
+  if (it_was) {
     last_pack_cng_or_dtmf_ = 1;
   } else if (last_pack_cng_or_dtmf_ != 0) {
     last_pack_cng_or_dtmf_ = -1;
   }
+}
+
+void DelayManager::RegisterEmptyPacket() {
+  ++last_seq_no_;
+}
+
+DelayManager::IATVector DelayManager::ScaleHistogram(const IATVector& histogram,
+                                                     int old_packet_length,
+                                                     int new_packet_length) {
+  if (old_packet_length == 0) {
+    // If we don't know the previous frame length, don't make any changes to the
+    // histogram.
+    return histogram;
+  }
+  RTC_DCHECK_GT(new_packet_length, 0);
+  RTC_DCHECK_EQ(old_packet_length % 10, 0);
+  RTC_DCHECK_EQ(new_packet_length % 10, 0);
+  IATVector new_histogram(histogram.size(), 0);
+  int acc = 0;
+  int time_counter = 0;
+  size_t new_histogram_idx = 0;
+  for (size_t i = 0; i < histogram.size(); i++) {
+    acc += histogram[i];
+    time_counter += old_packet_length;
+    // The bins should be scaled, to ensure the histogram still sums to one.
+    const int scaled_acc = acc * new_packet_length / time_counter;
+    int actually_used_acc = 0;
+    while (time_counter >= new_packet_length) {
+      actually_used_acc += scaled_acc;
+      new_histogram[new_histogram_idx] += scaled_acc;
+      new_histogram_idx =
+          std::min(new_histogram_idx + 1, new_histogram.size() - 1);
+      time_counter -= new_packet_length;
+    }
+    // Only subtract the part that was succesfully written to the new histogram.
+    acc -= actually_used_acc;
+  }
+  // If there is anything left in acc (due to rounding errors), add it to the
+  // last bin.
+  new_histogram[new_histogram_idx] += acc;
+  RTC_DCHECK_EQ(histogram.size(), new_histogram.size());
+  RTC_DCHECK_EQ(accumulate(histogram.begin(), histogram.end(), 0),
+                accumulate(new_histogram.begin(), new_histogram.end(), 0));
+  return new_histogram;
 }
 
 bool DelayManager::SetMinimumDelay(int delay_ms) {

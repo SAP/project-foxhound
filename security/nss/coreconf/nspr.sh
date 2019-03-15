@@ -32,6 +32,9 @@ nspr_build()
     if [ "$opt_build" = 1 ]; then
         extra_params+=(--disable-debug --enable-optimize)
     fi
+    if [ "$target_arch" = "x64" ]; then
+        extra_params+=(--enable-64bit)
+    fi
 
     echo "NSPR [1/3] configure ..."
     pushd "$nspr_dir" >/dev/null
@@ -48,4 +51,12 @@ nspr_build()
 nspr_clean()
 {
     rm -rf "$cwd"/../nspr/$target
+}
+
+set_nspr_path()
+{
+    local include=$(echo "$1" | cut -d: -f1)
+    local lib=$(echo "$1" | cut -d: -f2)
+    gyp_params+=(-Dnspr_include_dir="$include")
+    gyp_params+=(-Dnspr_lib_dir="$lib")
 }

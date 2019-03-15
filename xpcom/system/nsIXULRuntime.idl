@@ -24,7 +24,7 @@ uint32_t GetMaxWebProcessCount();
  *                    stable/frozen, please contact Benjamin Smedberg.
  */
 
-[scriptable, uuid(a1b2e167-b748-42bf-ba85-996ec39062b9)]
+[scriptable, uuid(03602fac-fa3f-4a50-9baa-b88456fb4a0f)]
 interface nsIXULRuntime : nsISupports
 {
   /**
@@ -76,6 +76,9 @@ interface nsIXULRuntime : nsISupports
   const unsigned long PROCESS_TYPE_IPDLUNITTEST = 3;
   const unsigned long PROCESS_TYPE_GMPLUGIN = 4;
   const unsigned long PROCESS_TYPE_GPU = 5;
+  const unsigned long PROCESS_TYPE_VR = 6;
+  const unsigned long PROCESS_TYPE_RDD = 7;
+  const unsigned long PROCESS_TYPE_SOCKET = 8;
 
   /**
    * The type of the caller's process.  Returns one of the values above.
@@ -96,7 +99,7 @@ interface nsIXULRuntime : nsISupports
    * The type of remote content process we're running in.
    * null if we're in the parent/chrome process.
    */
-  readonly attribute DOMString remoteType;
+  readonly attribute AString remoteType;
 
   /**
    * If true, browser tabs may be opened by default in a different process
@@ -120,16 +123,25 @@ interface nsIXULRuntime : nsISupports
   const uint32_t E10S_MULTI_EXPERIMENT = 1;
 
   /**
-   * A numeric value indicating whether multiprocess might be blocked.
-   * Possible values can be found at nsAppRunner.cpp. A value of 0
-   * represents not blocking.
-   */
-   readonly attribute unsigned long multiprocessBlockPolicy;
-
-  /**
    * If true, the accessibility service is running.
    */
   readonly attribute boolean accessibilityEnabled;
+
+  /**
+   * If true, the AccessibleHandler dll is used.
+   */
+  readonly attribute boolean accessibleHandlerUsed;
+
+  /**
+   * Executable of Windows service that activated accessibility.
+   */
+  readonly attribute AString accessibilityInstantiator;
+
+  /**
+   * Temporary, do not use. Indicates if an incompat version of JAWS
+   * screen reader software is loaded in our process space.
+   */
+  readonly attribute boolean shouldBlockIncompatJaws;
 
   /**
    * Indicates whether the current Firefox build is 64-bit.
@@ -160,12 +172,6 @@ interface nsIXULRuntime : nsISupports
   readonly attribute PRTime replacedLockTime;
 
   /**
-   * Local ID of the minidump generated when the process crashed
-   * on the previous run. Can be passed directly to CrashSubmit.submit.
-   */
-  readonly attribute DOMString lastRunCrashID;
-
-  /**
    * True if this is RELEASE_OR_BETA.
    */
   readonly attribute boolean isReleaseOrBeta;
@@ -186,13 +192,20 @@ interface nsIXULRuntime : nsISupports
   readonly attribute AUTF8String distributionID;
 
   /**
-   * True if this is an official build (MOZILLA_OFFICIAL).
-   */
-  readonly attribute boolean isOfficial;
-
-  /**
    * True if Windows DLL blocklist initialized correctly. This is
    * primarily for automated testing purposes.
    */
   readonly attribute boolean windowsDLLBlocklistStatus;
+
+  /**
+   * True if this application was started by the OS as part of an automatic
+   * restart mechanism (such as RegisterApplicationRestart on Windows).
+   */
+  readonly attribute boolean restartedByOS;
+
+  /**
+   * Returns a value corresponding to one of the
+   * |mozilla::LauncherRegistryInfo::EnabledState| values.
+   */
+  readonly attribute uint32_t launcherProcessState;
 };

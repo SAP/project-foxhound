@@ -19,54 +19,52 @@
           src="../states.js"></script>
 
   <script type="application/javascript">
-  //gA11yEventDumpToConsole = true;
-  function doPreTest()
-  {
+  // gA11yEventDumpToConsole = true;
+  function doPreTest() {
     waitForImageMap("imagemap", doTest);
   }
 
-  function doTest()
-  {
+  function doTest() {
     var accTree = {
       role: ROLE_IMAGE_MAP,
       children: [
         {
           role: ROLE_ENTRY,
-          name: "first name"
+          name: "first name",
         },
         {
           role: ROLE_ENTRY,
-          name: "last name"
+          name: "last name",
         },
         {
           role: ROLE_RADIOBUTTON,
-          name: "male"
+          name: "male",
         },
         {
           role: ROLE_RADIOBUTTON,
-          name: "female"
+          name: "female",
         },
         {
           role: ROLE_CHECKBUTTON,
-          name: "have bike"
+          name: "have bike",
         },
         {
-          role: ROLE_COMBOBOX,
-          name: "bike model"
-        },
-        {
-          role: ROLE_CHECKBUTTON,
-          name: "have car"
+          role: ROLE_EDITCOMBOBOX,
+          name: "bike model",
         },
         {
           role: ROLE_CHECKBUTTON,
-          name: "have airplane"
+          name: "have car",
+        },
+        {
+          role: ROLE_CHECKBUTTON,
+          name: "have airplane",
         },
         {
           role: ROLE_PUSHBUTTON,
-          name: "submit"
-        }
-      ]
+          name: "submit",
+        },
+      ],
     };
 
     // Test image map tree structure, roles, and names.

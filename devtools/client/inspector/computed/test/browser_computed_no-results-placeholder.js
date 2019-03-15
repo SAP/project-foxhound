@@ -15,56 +15,56 @@ const TEST_URI = `
   <span id="matches" class="matches">Some styled text</span>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openComputedView();
-  yield selectNode("#matches", inspector);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, view} = await openComputedView();
+  await selectNode("#matches", inspector);
 
-  yield enterInvalidFilter(inspector, view);
+  await enterInvalidFilter(inspector, view);
   checkNoResultsPlaceholderShown(view);
 
-  yield clearFilterText(inspector, view);
+  await clearFilterText(inspector, view);
   checkNoResultsPlaceholderHidden(view);
 });
 
-function* enterInvalidFilter(inspector, computedView) {
-  let searchbar = computedView.searchField;
-  let searchTerm = "xxxxx";
+async function enterInvalidFilter(inspector, computedView) {
+  const searchbar = computedView.searchField;
+  const searchTerm = "xxxxx";
 
   info("setting filter text to \"" + searchTerm + "\"");
 
-  let onRefreshed = inspector.once("computed-view-refreshed");
+  const onRefreshed = inspector.once("computed-view-refreshed");
   searchbar.focus();
   synthesizeKeys(searchTerm, computedView.styleWindow);
-  yield onRefreshed;
+  await onRefreshed;
 }
 
 function checkNoResultsPlaceholderShown(computedView) {
   info("Checking that the no results placeholder is shown");
 
-  let placeholder = computedView.noResults;
-  let win = computedView.styleWindow;
-  let display = win.getComputedStyle(placeholder).display;
+  const placeholder = computedView.noResults;
+  const win = computedView.styleWindow;
+  const display = win.getComputedStyle(placeholder).display;
   is(display, "block", "placeholder is visible");
 }
 
-function* clearFilterText(inspector, computedView) {
+async function clearFilterText(inspector, computedView) {
   info("Clearing the filter text");
 
-  let searchbar = computedView.searchField;
+  const searchbar = computedView.searchField;
 
-  let onRefreshed = inspector.once("computed-view-refreshed");
+  const onRefreshed = inspector.once("computed-view-refreshed");
   searchbar.focus();
   searchbar.value = "";
   EventUtils.synthesizeKey("c", {}, computedView.styleWindow);
-  yield onRefreshed;
+  await onRefreshed;
 }
 
 function checkNoResultsPlaceholderHidden(computedView) {
   info("Checking that the no results placeholder is hidden");
 
-  let placeholder = computedView.noResults;
-  let win = computedView.styleWindow;
-  let display = win.getComputedStyle(placeholder).display;
+  const placeholder = computedView.noResults;
+  const win = computedView.styleWindow;
+  const display = win.getComputedStyle(placeholder).display;
   is(display, "none", "placeholder is hidden");
 }

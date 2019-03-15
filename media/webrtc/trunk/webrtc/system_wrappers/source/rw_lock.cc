@@ -8,32 +8,21 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/system_wrappers/include/rw_lock_wrapper.h"
+#include "system_wrappers/include/rw_lock_wrapper.h"
 
 #include <assert.h>
 
 #if defined(_WIN32)
-#include "webrtc/system_wrappers/source/rw_lock_generic.h"
-#include "webrtc/system_wrappers/source/rw_lock_win.h"
-#elif defined(ANDROID)
-#include "webrtc/system_wrappers/source/rw_lock_generic.h"
+#include "system_wrappers/source/rw_lock_win.h"
 #else
-#include "webrtc/system_wrappers/source/rw_lock_posix.h"
+#include "system_wrappers/source/rw_lock_posix.h"
 #endif
 
 namespace webrtc {
 
 RWLockWrapper* RWLockWrapper::CreateRWLock() {
 #ifdef _WIN32
-  // Native implementation is faster, so use that if available.
-  RWLockWrapper* lock = RWLockWin::Create();
-  if (lock) {
-    return lock;
-  }
-  return new RWLockGeneric();
-#elif defined(ANDROID)
-  // Android 2.2 and before do not have POSIX pthread rwlocks.
-  return new RWLockGeneric();
+  return RWLockWin::Create();
 #else
   return RWLockPosix::Create();
 #endif

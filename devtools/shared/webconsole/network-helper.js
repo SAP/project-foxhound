@@ -67,6 +67,14 @@ const Services = require("Services");
 // The cache used in the `nsIURL` function.
 const gNSURLStore = new Map();
 
+// "Lax", "Strict" and "Unset" are special values of the SameSite cookie
+// attribute that should not be translated.
+const COOKIE_SAMESITE = {
+  LAX: "Lax",
+  STRICT: "Strict",
+  UNSET: "Unset",
+};
+
 /**
  * Helper object for networking stuff.
  *
@@ -84,8 +92,8 @@ var NetworkHelper = {
    * @returns string
    *          Converted text.
    */
-  convertToUnicode: function (text, charset) {
-    let conv = Cc["@mozilla.org/intl/scriptableunicodeconverter"]
+  convertToUnicode: function(text, charset) {
+    const conv = Cc["@mozilla.org/intl/scriptableunicodeconverter"]
         .createInstance(Ci.nsIScriptableUnicodeConverter);
     try {
       conv.charset = charset || "UTF-8";
@@ -103,7 +111,7 @@ var NetworkHelper = {
    * @returns string
    *          UTF-16 encoded string based on the content of stream and charset.
    */
-  readAndConvertFromStream: function (stream, charset) {
+  readAndConvertFromStream: function(stream, charset) {
     let text = null;
     try {
       text = NetUtil.readInputStreamToString(stream, stream.available());
@@ -123,9 +131,9 @@ var NetworkHelper = {
    *          Returns the posted string if it was possible to read from request
    *          otherwise null.
    */
-  readPostTextFromRequest: function (request, charset) {
+  readPostTextFromRequest: function(request, charset) {
     if (request instanceof Ci.nsIUploadChannel) {
-      let iStream = request.uploadStream;
+      const iStream = request.uploadStream;
 
       let isSeekableStream = false;
       if (iStream instanceof Ci.nsISeekableStream) {
@@ -139,7 +147,7 @@ var NetworkHelper = {
       }
 
       // Read data from the stream.
-      let text = this.readAndConvertFromStream(iStream, charset);
+      const text = this.readAndConvertFromStream(iStream, charset);
 
       // Seek locks the file, so seek to the beginning only if necko hasn't
       // read it yet, since necko doesn't seek to 0 before reading (at lest
@@ -161,8 +169,8 @@ var NetworkHelper = {
    *          Returns the posted string if it was possible to read from
    *          docShell otherwise null.
    */
-  readPostTextFromPage: function (docShell, charset) {
-    let webNav = docShell.QueryInterface(Ci.nsIWebNavigation);
+  readPostTextFromPage: function(docShell, charset) {
+    const webNav = docShell.QueryInterface(Ci.nsIWebNavigation);
     return this.readPostTextFromPageViaWebNav(webNav, charset);
   },
 
@@ -176,9 +184,9 @@ var NetworkHelper = {
    *          Returns the posted string if it was possible to read from
    *          webNav, otherwise null.
    */
-  readPostTextFromPageViaWebNav: function (webNav, charset) {
+  readPostTextFromPageViaWebNav: function(webNav, charset) {
     if (webNav instanceof Ci.nsIWebPageDescriptor) {
-      let descriptor = webNav.currentDescriptor;
+      const descriptor = webNav.currentDescriptor;
 
       if (descriptor instanceof Ci.nsISHEntry && descriptor.postData &&
           descriptor instanceof Ci.nsISeekableStream) {
@@ -191,31 +199,15 @@ var NetworkHelper = {
   },
 
   /**
-   * Gets the web appId that is associated with request.
-   *
-   * @param nsIHttpChannel request
-   * @returns number|null
-   *          The appId for the given request, if available.
-   */
-  getAppIdForRequest: function (request) {
-    try {
-      return this.getRequestLoadContext(request).appId;
-    } catch (ex) {
-      // request loadContent is not always available.
-    }
-    return null;
-  },
-
-  /**
    * Gets the topFrameElement that is associated with request. This
    * works in single-process and multiprocess contexts. It may cross
    * the content/chrome boundary.
    *
    * @param nsIHttpChannel request
-   * @returns nsIDOMElement|null
+   * @returns Element|null
    *          The top frame element for the given request.
    */
-  getTopFrameForRequest: function (request) {
+  getTopFrameForRequest: function(request) {
     try {
       return this.getRequestLoadContext(request).topFrameElement;
     } catch (ex) {
@@ -230,7 +222,7 @@ var NetworkHelper = {
    * @param nsIHttpChannel request
    * @returns nsIDOMWindow or null
    */
-  getWindowForRequest: function (request) {
+  getWindowForRequest: function(request) {
     try {
       return this.getRequestLoadContext(request).associatedWindow;
     } catch (ex) {
@@ -246,7 +238,7 @@ var NetworkHelper = {
    * @param nsIHttpChannel request
    * @returns nsILoadContext or null
    */
-  getRequestLoadContext: function (request) {
+  getRequestLoadContext: function(request) {
     try {
       return request.notificationCallbacks.getInterface(Ci.nsILoadContext);
     } catch (ex) {
@@ -269,9 +261,9 @@ var NetworkHelper = {
    * @param nsIHttpChannel request
    * @returns Boolean True if the request represents the top level document.
    */
-  isTopLevelLoad: function (request) {
+  isTopLevelLoad: function(request) {
     if (request instanceof Ci.nsIChannel) {
-      let loadInfo = request.loadInfo;
+      const loadInfo = request.loadInfo;
       if (loadInfo && loadInfo.isTopLevelLoad) {
         return (request.loadFlags & Ci.nsIChannel.LOAD_DOCUMENT_URI);
       }
@@ -292,9 +284,9 @@ var NetworkHelper = {
    *        Callback that is called with the loaded cached content if available
    *        or null if something failed while getting the cached content.
    */
-  loadFromCache: function (url, charset, callback) {
-    let channel = NetUtil.newChannel({uri: url,
-                                      loadUsingSystemPrincipal: true});
+  loadFromCache: function(url, charset, callback) {
+    const channel = NetUtil.newChannel({uri: url,
+                                        loadUsingSystemPrincipal: true});
 
     // Ensure that we only read from the cache and not the server.
     channel.loadFlags = Ci.nsIRequest.LOAD_FROM_CACHE |
@@ -311,8 +303,8 @@ var NetworkHelper = {
 
         // Try to get the encoding from the channel. If there is none, then use
         // the passed assumed charset.
-        let requestChannel = request.QueryInterface(Ci.nsIChannel);
-        let contentCharset = requestChannel.contentCharset || charset;
+        const requestChannel = request.QueryInterface(Ci.nsIChannel);
+        const contentCharset = requestChannel.contentCharset || charset;
 
         // Read the content of the stream using contentCharset as encoding.
         callback(this.readAndConvertFromStream(inputStream, contentCharset));
@@ -328,14 +320,14 @@ var NetworkHelper = {
    *         Array holding an object for each cookie. Each object holds the
    *         following properties: name and value.
    */
-  parseCookieHeader: function (header) {
-    let cookies = header.split(";");
-    let result = [];
+  parseCookieHeader: function(header) {
+    const cookies = header.split(";");
+    const result = [];
 
-    cookies.forEach(function (cookie) {
-      let equal = cookie.indexOf("=");
-      let name = cookie.substr(0, equal);
-      let value = cookie.substr(equal + 1);
+    cookies.forEach(function(cookie) {
+      const equal = cookie.indexOf("=");
+      const name = cookie.substr(0, equal);
+      const value = cookie.substr(equal + 1);
       result.push({name: unescape(name.trim()),
                    value: unescape(value.trim())});
     });
@@ -351,31 +343,44 @@ var NetworkHelper = {
    * @return array
    *         Array holding an object for each cookie. Each object holds the
    *         following properties: name, value, secure (boolean), httpOnly
-   *         (boolean), path, domain and expires (ISO date string).
+   *         (boolean), path, domain, samesite and expires (ISO date string).
    */
-  parseSetCookieHeader: function (header) {
-    let rawCookies = header.split(/\r\n|\n|\r/);
-    let cookies = [];
+  parseSetCookieHeader: function(header) {
+    function parseSameSiteAttribute(attribute) {
+      switch (attribute) {
+        case COOKIE_SAMESITE.LAX:
+          return COOKIE_SAMESITE.LAX;
+        case COOKIE_SAMESITE.STRICT:
+          return COOKIE_SAMESITE.STRICT;
+        default:
+          return COOKIE_SAMESITE.UNSET;
+      }
+    }
 
-    rawCookies.forEach(function (cookie) {
-      let equal = cookie.indexOf("=");
-      let name = unescape(cookie.substr(0, equal).trim());
-      let parts = cookie.substr(equal + 1).split(";");
-      let value = unescape(parts.shift().trim());
+    const rawCookies = header.split(/\r\n|\n|\r/);
+    const cookies = [];
+
+    rawCookies.forEach(function(cookie) {
+      const equal = cookie.indexOf("=");
+      const name = unescape(cookie.substr(0, equal).trim());
+      const parts = cookie.substr(equal + 1).split(";");
+      const value = unescape(parts.shift().trim());
 
       cookie = {name: name, value: value};
 
-      parts.forEach(function (part) {
+      parts.forEach(function(part) {
         part = part.trim();
         if (part.toLowerCase() == "secure") {
           cookie.secure = true;
         } else if (part.toLowerCase() == "httponly") {
           cookie.httpOnly = true;
         } else if (part.indexOf("=") > -1) {
-          let pair = part.split("=");
+          const pair = part.split("=");
           pair[0] = pair[0].toLowerCase();
           if (pair[0] == "path" || pair[0] == "domain") {
             cookie[pair[0]] = pair[1];
+          } else if (pair[0] == "samesite") {
+            cookie[pair[0]] = parseSameSiteAttribute(pair[1]);
           } else if (pair[0] == "expires") {
             try {
               pair[1] = pair[1].replace(/-/g, " ");
@@ -465,7 +470,7 @@ var NetworkHelper = {
     "application/x-json": "json",
     "application/json-rpc": "json",
     "application/x-web-app-manifest+json": "json",
-    "application/manifest+json": "json"
+    "application/manifest+json": "json",
   },
 
   /**
@@ -474,7 +479,7 @@ var NetworkHelper = {
    * @param string mimeType
    * @return boolean
    */
-  isTextMimeType: function (mimeType) {
+  isTextMimeType: function(mimeType) {
     if (mimeType.indexOf("text/") == 0) {
       return true;
     }
@@ -487,7 +492,7 @@ var NetworkHelper = {
       return true;
     }
 
-    let category = this.mimeCategoryMap[mimeType] || null;
+    const category = this.mimeCategoryMap[mimeType] || null;
     switch (category) {
       case "txt":
       case "js":
@@ -523,8 +528,7 @@ var NetworkHelper = {
    *                    * "broken": secure connection failed (e.g. expired cert)
    *                    * "secure": the connection was properly secured.
    *          If state == broken:
-   *            - errorMessage: full error message from
-   *                            nsITransportSecurityInfo.
+   *            - errorMessage: error code string.
    *          If state == secure:
    *            - protocolVersion: one of TLSv1, TLSv1.1, TLSv1.2, TLSv1.3.
    *            - cipherSuite: the cipher suite used in this connection.
@@ -537,7 +541,7 @@ var NetworkHelper = {
    *            - weaknessReasons: list of reasons that cause the request to be
    *                               considered weak. See getReasonsForWeakness.
    */
-  parseSecurityInfo: function (securityInfo, httpActivity) {
+  parseSecurityInfo: function(securityInfo, httpActivity) {
     const info = {
       state: "insecure",
     };
@@ -580,12 +584,10 @@ var NetworkHelper = {
      */
 
     securityInfo.QueryInterface(Ci.nsITransportSecurityInfo);
-    securityInfo.QueryInterface(Ci.nsISSLStatusProvider);
 
     const wpl = Ci.nsIWebProgressListener;
     const NSSErrorsService = Cc["@mozilla.org/nss_errors_service;1"]
                                .getService(Ci.nsINSSErrorsService);
-    const SSLStatus = securityInfo.SSLStatus;
     if (!NSSErrorsService.isNSSErrorCode(securityInfo.errorCode)) {
       const state = securityInfo.securityState;
 
@@ -618,14 +620,23 @@ var NetworkHelper = {
       }
 
       // Cipher suite.
-      info.cipherSuite = SSLStatus.cipherName;
+      info.cipherSuite = securityInfo.cipherName;
+
+      // Key exchange group name.
+      info.keaGroupName = securityInfo.keaGroupName;
+
+      // Certificate signature scheme.
+      info.signatureSchemeName = securityInfo.signatureSchemeName;
 
       // Protocol version.
       info.protocolVersion =
-        this.formatSecurityProtocol(SSLStatus.protocolVersion);
+        this.formatSecurityProtocol(securityInfo.protocolVersion);
 
       // Certificate.
-      info.cert = this.parseCertificateInfo(SSLStatus.serverCert);
+      info.cert = this.parseCertificateInfo(securityInfo.serverCert);
+
+      // Certificate transparency status.
+      info.certificateTransparency = securityInfo.certificateTransparencyStatus;
 
       // HSTS and HPKP if available.
       if (httpActivity.hostname) {
@@ -635,12 +646,12 @@ var NetworkHelper = {
         // SiteSecurityService uses different storage if the channel is
         // private. Thus we must give isSecureURI correct flags or we
         // might get incorrect results.
-        let flags = (httpActivity.private) ?
+        const flags = (httpActivity.private) ?
                       Ci.nsISocketProvider.NO_PERMANENT_STORAGE : 0;
 
         if (!uri) {
           // isSecureURI only cares about the host, not the scheme.
-          let host = httpActivity.hostname;
+          const host = httpActivity.hostname;
           uri = Services.io.newURI("https://" + host);
         }
 
@@ -655,7 +666,7 @@ var NetworkHelper = {
     } else {
       // The connection failed.
       info.state = "broken";
-      info.errorMessage = securityInfo.errorMessage;
+      info.errorMessage = securityInfo.errorCodeString;
     }
 
     return info;
@@ -675,8 +686,8 @@ var NetworkHelper = {
    *             fingerprint: { sha1, sha256 }
    *           }
    */
-  parseCertificateInfo: function (cert) {
-    let info = {};
+  parseCertificateInfo: function(cert) {
+    const info = {};
     if (cert) {
       info.subject = {
         commonName: cert.commonName,
@@ -708,24 +719,24 @@ var NetworkHelper = {
   },
 
   /**
-   * Takes protocolVersion of SSLStatus object and returns human readable
-   * description.
+   * Takes protocolVersion of TransportSecurityInfo object and returns
+   * human readable description.
    *
    * @param Number version
-   *        One of nsISSLStatus version constants.
+   *        One of nsITransportSecurityInfo version constants.
    * @return string
    *         One of TLSv1, TLSv1.1, TLSv1.2, TLSv1.3 if @param version
    *         is valid, Unknown otherwise.
    */
-  formatSecurityProtocol: function (version) {
+  formatSecurityProtocol: function(version) {
     switch (version) {
-      case Ci.nsISSLStatus.TLS_VERSION_1:
+      case Ci.nsITransportSecurityInfo.TLS_VERSION_1:
         return "TLSv1";
-      case Ci.nsISSLStatus.TLS_VERSION_1_1:
+      case Ci.nsITransportSecurityInfo.TLS_VERSION_1_1:
         return "TLSv1.1";
-      case Ci.nsISSLStatus.TLS_VERSION_1_2:
+      case Ci.nsITransportSecurityInfo.TLS_VERSION_1_2:
         return "TLSv1.2";
-      case Ci.nsISSLStatus.TLS_VERSION_1_3:
+      case Ci.nsITransportSecurityInfo.TLS_VERSION_1_3:
         return "TLSv1.3";
       default:
         DevToolsUtils.reportException("NetworkHelper.formatSecurityProtocol",
@@ -745,16 +756,16 @@ var NetworkHelper = {
    *         List of weakness reasons. A subset of { cipher } where
    *         * cipher: The cipher suite is consireded to be weak (RC4).
    */
-  getReasonsForWeakness: function (state) {
+  getReasonsForWeakness: function(state) {
     const wpl = Ci.nsIWebProgressListener;
 
     // If there's non-fatal security issues the request has STATE_IS_BROKEN
     // flag set. See https://hg.mozilla.org/mozilla-central/file/44344099d119
     // /security/manager/ssl/nsNSSCallbacks.cpp#l1233
-    let reasons = [];
+    const reasons = [];
 
     if (state & wpl.STATE_IS_BROKEN) {
-      let isCipher = state & wpl.STATE_USES_WEAK_CRYPTO;
+      const isCipher = state & wpl.STATE_USES_WEAK_CRYPTO;
 
       if (isCipher) {
         reasons.push("cipher");
@@ -777,7 +788,7 @@ var NetworkHelper = {
    * @return array
    *         Array of query params {name, value}
    */
-  parseQueryString: function (queryString) {
+  parseQueryString: function(queryString) {
     // Make sure there's at least one param available.
     // Be careful here, params don't necessarily need to have values, so
     // no need to verify the existence of a "=".
@@ -786,13 +797,13 @@ var NetworkHelper = {
     }
 
     // Turn the params string into an array containing { name: value } tuples.
-    let paramsArray = queryString.replace(/^[?&]/, "").split("&").map(e => {
-      let param = e.split("=");
+    const paramsArray = queryString.replace(/^[?&]/, "").split("&").map(e => {
+      const param = e.split("=");
       return {
         name: param[0] ?
           NetworkHelper.convertToUnicode(unescape(param[0])) : "",
         value: param[1] ?
-          NetworkHelper.convertToUnicode(unescape(param[1])) : ""
+          NetworkHelper.convertToUnicode(unescape(param[1])) : "",
       };
     });
 
@@ -802,17 +813,17 @@ var NetworkHelper = {
   /**
    * Helper for getting an nsIURL instance out of a string.
    */
-  nsIURL: function (url, store = gNSURLStore) {
+  nsIURL: function(url, store = gNSURLStore) {
     if (store.has(url)) {
       return store.get(url);
     }
 
-    let uri = Services.io.newURI(url).QueryInterface(Ci.nsIURL);
+    const uri = Services.io.newURI(url).QueryInterface(Ci.nsIURL);
     store.set(url, uri);
     return uri;
-  }
+  },
 };
 
-for (let prop of Object.getOwnPropertyNames(NetworkHelper)) {
+for (const prop of Object.getOwnPropertyNames(NetworkHelper)) {
   exports[prop] = NetworkHelper[prop];
 }

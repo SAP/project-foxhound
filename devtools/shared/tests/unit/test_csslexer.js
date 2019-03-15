@@ -3,85 +3,17 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-// This file is a copy of layout/style/test/test_csslexer.js, modified
-// to use both our pure-JS lexer and the DOMUtils lexer for
-// cross-checking.
-
 "use strict";
 
 const jsLexer = require("devtools/shared/css/lexer");
-const domutils = Components.classes["@mozilla.org/inspector/dom-utils;1"]
-                           .getService(Components.interfaces.inIDOMUtils);
-
-// An object that acts like a CSSLexer but verifies that the DOM lexer
-// and the JS lexer do the same thing.
-function DoubleLexer(input) {
-  do_print("DoubleLexer input: " + input);
-  this.domLexer = domutils.getCSSLexer(input);
-  this.jsLexer = jsLexer.getCSSLexer(input);
-}
-
-DoubleLexer.prototype = {
-  checkState: function () {
-    equal(this.domLexer.lineNumber, this.jsLexer.lineNumber,
-          "check line number");
-    equal(this.domLexer.columnNumber, this.jsLexer.columnNumber,
-         "check column number");
-  },
-
-  get lineNumber() {
-    return this.domLexer.lineNumber;
-  },
-
-  get columnNumber() {
-    return this.domLexer.columnNumber;
-  },
-
-  performEOFFixup: function (inputString, preserveBackslash) {
-    let d = this.domLexer.performEOFFixup(inputString, preserveBackslash);
-    let j = this.jsLexer.performEOFFixup(inputString, preserveBackslash);
-
-    equal(d, j);
-    return d;
-  },
-
-  mungeNumber: function (token) {
-    if (token && (token.tokenType === "number" ||
-                  token.tokenType === "percentage") &&
-        !token.isInteger) {
-      // The JS lexer does its computations in double, but the
-      // platform lexer does its computations in float.  Account for
-      // this discrepancy in a way that's sufficient for this test.
-      // See https://bugzilla.mozilla.org/show_bug.cgi?id=1163047
-      token.number = parseFloat(token.number.toPrecision(8));
-    }
-  },
-
-  nextToken: function () {
-    // Check state both before and after.
-    this.checkState();
-
-    let d = this.domLexer.nextToken();
-    let j = this.jsLexer.nextToken();
-
-    this.mungeNumber(d);
-    this.mungeNumber(j);
-
-    deepEqual(d, j);
-
-    this.checkState();
-
-    return d;
-  }
-};
 
 function test_lexer(cssText, tokenTypes) {
-  let lexer = new DoubleLexer(cssText);
+  const lexer = jsLexer.getCSSLexer(cssText);
   let reconstructed = "";
   let lastTokenEnd = 0;
   let i = 0;
   while (true) {
-    let token = lexer.nextToken();
+    const token = lexer.nextToken();
     if (!token) {
       break;
     }
@@ -128,8 +60,7 @@ var LEX_TESTS = [
              ["url:http://example.com"]],
   // In CSS Level 3, this is an ordinary URL, not a BAD_URL.
   ["url(http://example.com", ["url:http://example.com"]],
-  // See bug 1153981 to understand why this gets a SYMBOL token.
-  ["url(http://example.com @", ["bad_url:http://example.com", "symbol:@"]],
+  ["url(http://example.com @", ["bad_url:http://example.com"]],
   ["quo\\ting", ["ident:quoting"]],
   ["'bad string\n", ["bad_string:bad string", "whitespace"]],
   ["~=", ["includes"]],
@@ -147,16 +78,16 @@ var LEX_TESTS = [
 
   // earlier versions of CSS had "bad comment" tokens, but in level 3,
   // unterminated comments are just comments.
-  ["/* bad comment", ["comment"]]
+  ["/* bad comment", ["comment"]],
 ];
 
 function test_lexer_linecol(cssText, locations) {
-  let lexer = new DoubleLexer(cssText);
+  const lexer = jsLexer.getCSSLexer(cssText);
   let i = 0;
   while (true) {
-    let token = lexer.nextToken();
-    let startLine = lexer.lineNumber;
-    let startColumn = lexer.columnNumber;
+    const token = lexer.nextToken();
+    const startLine = lexer.lineNumber;
+    const startColumn = lexer.columnNumber;
 
     // We do this in a bit of a funny way so that we can also test the
     // location of the EOF.
@@ -178,12 +109,12 @@ function test_lexer_linecol(cssText, locations) {
 
 function test_lexer_eofchar(cssText, argText, expectedAppend,
                             expectedNoAppend) {
-  let lexer = new DoubleLexer(cssText);
+  const lexer = jsLexer.getCSSLexer(cssText);
   while (lexer.nextToken()) {
     // Nothing.
   }
 
-  do_print("EOF char test, input = " + cssText);
+  info("EOF char test, input = " + cssText);
 
   let result = lexer.performEOFFixup(argText, true);
   equal(result, expectedAppend);
@@ -196,7 +127,7 @@ var LINECOL_TESTS = [
   ["simple", ["ident:0:0", ":0:6"]],
   ["\n    stuff", ["whitespace:0:0", "ident:1:4", ":1:9"]],
   ['"string with \\\nnewline"    \r\n', ["string:0:0", "whitespace:1:8",
-                                         ":2:0"]]
+                                         ":2:0"]],
 ];
 
 var EOFCHAR_TESTS = [

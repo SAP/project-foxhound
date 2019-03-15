@@ -2,25 +2,25 @@
 
 /**
  * Tests that the identity-box shows the chromeUI styling
- * when viewing about:home in a new window.
+ * when viewing such a page in a new window.
  */
-add_task(function*() {
-  let homepage = "about:home";
-  yield SpecialPowers.pushPrefEnv({
+add_task(async function() {
+  let homepage = "about:preferences";
+  await SpecialPowers.pushPrefEnv({
     "set": [
       ["browser.startup.homepage", homepage],
       ["browser.startup.page", 1],
-    ]
+    ],
   });
 
   let win = OpenBrowserWindow();
-  yield BrowserTestUtils.firstBrowserLoaded(win, false);
+  await BrowserTestUtils.firstBrowserLoaded(win, false);
 
   let browser = win.gBrowser.selectedBrowser;
   is(browser.currentURI.spec, homepage, "Loaded the correct homepage");
   checkIdentityMode(win);
 
-  yield BrowserTestUtils.closeWindow(win);
+  await BrowserTestUtils.closeWindow(win);
 });
 
 function checkIdentityMode(win) {

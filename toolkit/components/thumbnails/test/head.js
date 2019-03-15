@@ -6,16 +6,20 @@
 /* global runTests */
 
 var tmp = {};
-Cu.import("resource://gre/modules/PageThumbs.jsm", tmp);
-Cu.import("resource://gre/modules/BackgroundPageThumbs.jsm", tmp);
-Cu.import("resource://gre/modules/NewTabUtils.jsm", tmp);
-Cu.import("resource:///modules/sessionstore/SessionStore.jsm", tmp);
-Cu.import("resource://gre/modules/FileUtils.jsm", tmp);
-Cu.import("resource://gre/modules/osfile.jsm", tmp);
+ChromeUtils.import("resource://gre/modules/PageThumbs.jsm", tmp);
+ChromeUtils.import("resource://gre/modules/BackgroundPageThumbs.jsm", tmp);
+ChromeUtils.import("resource://gre/modules/NewTabUtils.jsm", tmp);
+ChromeUtils.import("resource:///modules/sessionstore/SessionStore.jsm", tmp);
+ChromeUtils.import("resource://gre/modules/FileUtils.jsm", tmp);
+ChromeUtils.import("resource://gre/modules/osfile.jsm", tmp);
 var {PageThumbs, BackgroundPageThumbs, NewTabUtils, PageThumbsStorage, SessionStore, FileUtils, OS} = tmp;
 
-XPCOMUtils.defineLazyModuleGetter(this, "PlacesTestUtils",
+ChromeUtils.defineModuleGetter(this, "PlacesTestUtils",
   "resource://testing-common/PlacesTestUtils.jsm");
+
+XPCOMUtils.defineLazyServiceGetter(this, "PageThumbsStorageService",
+  "@mozilla.org/thumbnails/pagethumbs-service;1",
+  "nsIPageThumbsStorageService");
 
 var oldEnabledPref = Services.prefs.getBoolPref("browser.pagethumbnails.capturing_disabled");
 Services.prefs.setBoolPref("browser.pagethumbnails.capturing_disabled", false);
@@ -23,7 +27,7 @@ Services.prefs.setBoolPref("browser.pagethumbnails.capturing_disabled", false);
 registerCleanupFunction(function() {
   while (gBrowser.tabs.length > 1)
     gBrowser.removeTab(gBrowser.tabs[1]);
-  Services.prefs.setBoolPref("browser.pagethumbnails.capturing_disabled", oldEnabledPref)
+  Services.prefs.setBoolPref("browser.pagethumbnails.capturing_disabled", oldEnabledPref);
 });
 
 /**
@@ -43,14 +47,14 @@ var TestRunner = {
   run() {
     waitForExplicitFinish();
 
-    SessionStore.promiseInitialized.then(function() {
+    SessionStore.promiseInitialized.then(() => {
       this._iter = runTests();
       if (this._iter) {
         this.next();
       } else {
         finish();
       }
-    }.bind(this));
+    });
   },
 
   /**
@@ -73,7 +77,7 @@ var TestRunner = {
         ok(false, error + "\n" + error.stack);
       });
     }
-  }
+  },
 };
 
 /**
@@ -91,8 +95,9 @@ function next(aValue) {
  * @param aCallback The function to call when the tab has loaded.
  */
 function addTab(aURI, aCallback) {
-  let tab = gBrowser.selectedTab = gBrowser.addTab(aURI);
-  whenLoaded(tab.linkedBrowser, aCallback);
+  let tab = gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, aURI);
+  let callback = aCallback ? aCallback : next;
+  BrowserTestUtils.browserLoaded(tab.linkedBrowser).then(callback);
 }
 
 /**
@@ -101,8 +106,8 @@ function addTab(aURI, aCallback) {
  */
 function navigateTo(aURI) {
   let browser = gBrowser.selectedBrowser;
-  whenLoaded(browser);
-  browser.loadURI(aURI);
+  BrowserTestUtils.browserLoaded(browser).then(next);
+  BrowserTestUtils.loadURI(browser, aURI);
 }
 
 /**
@@ -173,7 +178,7 @@ function retrieveImageDataForURL(aURL, aCallback) {
  * @param aURL The URL of the thumbnail.
  */
 function thumbnailFile(aURL) {
-  return new FileUtils.File(PageThumbsStorage.getFilePathForURL(aURL));
+  return new FileUtils.File(PageThumbsStorageService.getFilePathForURL(aURL));
 }
 
 /**
@@ -221,7 +226,7 @@ function whenFileExists(aURL, aCallback = next) {
     callback = () => whenFileExists(aURL, aCallback);
   }
 
-  executeSoon(callback);
+  setTimeout(callback, 0);
 }
 
 /**
@@ -297,63 +302,7 @@ function bgAddPageThumbObserver(url) {
         Services.obs.removeObserver(observe, "page-thumbnail:error");
       }
     }
-    Services.obs.addObserver(observe, "page-thumbnail:create", false);
-    Services.obs.addObserver(observe, "page-thumbnail:error", false);
+    Services.obs.addObserver(observe, "page-thumbnail:create");
+    Services.obs.addObserver(observe, "page-thumbnail:error");
   });
-}
-
-function bgAddCrashObserver() {
-  let crashed = false;
-  Services.obs.addObserver(function crashObserver(subject, topic, data) {
-    is(topic, "ipc:content-shutdown", "Received correct observer topic.");
-    ok(subject instanceof Components.interfaces.nsIPropertyBag2,
-       "Subject implements nsIPropertyBag2.");
-    // we might see this called as the process terminates due to previous tests.
-    // We are only looking for "abnormal" exits...
-    if (!subject.hasKey("abnormal")) {
-      info("This is a normal termination and isn't the one we are looking for...");
-      return;
-    }
-    Services.obs.removeObserver(crashObserver, "ipc:content-shutdown");
-    crashed = true;
-
-    var dumpID;
-    if ("nsICrashReporter" in Components.interfaces) {
-      dumpID = subject.getPropertyAsAString("dumpID");
-      ok(dumpID, "dumpID is present and not an empty string");
-    }
-
-    if (dumpID) {
-      var minidumpDirectory = getMinidumpDirectory();
-      removeFile(minidumpDirectory, dumpID + ".dmp");
-      removeFile(minidumpDirectory, dumpID + ".extra");
-    }
-  }, "ipc:content-shutdown", false);
-  return {
-    get crashed() {
-      return crashed;
-    }
-  };
-}
-
-function bgInjectCrashContentScript() {
-  const TEST_CONTENT_HELPER = "chrome://mochitests/content/browser/toolkit/components/thumbnails/test/thumbnails_crash_content_helper.js";
-  let thumbnailBrowser = BackgroundPageThumbs._thumbBrowser;
-  let mm = thumbnailBrowser.messageManager;
-  mm.loadFrameScript(TEST_CONTENT_HELPER, false);
-  return mm;
-}
-
-function getMinidumpDirectory() {
-  var dir = Services.dirsvc.get("ProfD", Components.interfaces.nsIFile);
-  dir.append("minidumps");
-  return dir;
-}
-
-function removeFile(directory, filename) {
-  var file = directory.clone();
-  file.append(filename);
-  if (file.exists()) {
-    file.remove(false);
-  }
 }

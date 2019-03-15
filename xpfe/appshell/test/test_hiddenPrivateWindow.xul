@@ -24,19 +24,23 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=815847
 <script class="testbody" type="application/javascript">
 <![CDATA[
 
-var Cu = Components.utils;
-
-Cu.import('resource://gre/modules/Services.jsm');
-Cu.import('resource://gre/modules/PrivateBrowsingUtils.jsm');
+ChromeUtils.import('resource://gre/modules/Services.jsm');
+ChromeUtils.import('resource://gre/modules/PrivateBrowsingUtils.jsm');
 
 ok(Services.appShell.hiddenWindow, "hiddenWindow should exist");
 ok(Services.appShell.hiddenDOMWindow, "hiddenDOMWindow should exist");
 ok(Services.appShell.hiddenPrivateWindow, "hiddenPrivateWindow should exist");
 ok(Services.appShell.hiddenPrivateDOMWindow, "hiddenPrivateDOMWindow should exist");
 
-ok(!PrivateBrowsingUtils.isWindowPrivate(Services.appShell.hiddenWindow.docShell), "hiddenWindow should not be private");
+ok(
+  !PrivateBrowsingUtils.isWindowPrivate(
+    Services.appShell.hiddenWindow.docShell.domWindow),
+  "hiddenWindow should not be private");
 ok(!PrivateBrowsingUtils.isWindowPrivate(Services.appShell.hiddenDOMWindow), "hiddenDOMWindow should not be private");
-ok(PrivateBrowsingUtils.isWindowPrivate(Services.appShell.hiddenPrivateWindow.docShell), "hiddenPrivateWindow should be private");
+ok(
+  PrivateBrowsingUtils.isWindowPrivate(
+    Services.appShell.hiddenPrivateWindow.docShell.domWindow),
+  "hiddenPrivateWindow should be private");
 ok(PrivateBrowsingUtils.isWindowPrivate(Services.appShell.hiddenPrivateDOMWindow), "hiddenPrivateDOMWindow should be private");
 
 ]]>

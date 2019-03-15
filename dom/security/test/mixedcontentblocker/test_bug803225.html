@@ -19,8 +19,11 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=803225
 
   //Cycle through 4 different preference settings.
   function changePrefs(callback) {
-    let newPrefs = [["security.mixed_content.block_display_content", settings[counter][0]],
-                    ["security.mixed_content.block_active_content", settings[counter][1]]];
+    let newPrefs = [
+      ["security.all_resource_uri_content_accessible", true], // Temporarily allow content to access all resource:// URIs.
+      ["security.mixed_content.block_display_content", settings[counter][0]],
+      ["security.mixed_content.block_active_content", settings[counter][1]]
+    ];
 
     SpecialPowers.pushPrefEnv({"set": newPrefs}, function () {
       blockDisplay = SpecialPowers.getBoolPref("security.mixed_content.block_display_content");
@@ -33,7 +36,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=803225
   var testsToRun = {
     /* https - Tests already run as part of bug 62178. */
     about: false,
-    mozicon: false,
     resource: false,
     unsafe_about: false,
     data_protocol: false,
@@ -95,11 +97,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=803225
       case "resource":
         ok(event.data.msg == "resource with resource protocol loaded", "resource with resource protocol did not load");
         testsToRun["resource"] = true;
-        break;
-
-      case "mozicon":
-        ok(event.data.msg == "resource with mozicon protocol loaded", "resource with mozicon protocol did not load");
-        testsToRun["mozicon"] = true;
         break;
 
       case "unsafe_about":

@@ -1,13 +1,14 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
+from __future__ import absolute_import, print_function
 
-import sys
-import os
 import copy
+import os
+import sys
+import time
 
 from mozlog.commandline import setup_logging
-
 from talos import utils, test
 from talos.cmdline import parse_args
 
@@ -18,7 +19,7 @@ class ConfigurationError(Exception):
 
 DEFAULTS = dict(
     # args to pass to browser
-    extra_args='',
+    extra_args=[],
     buildid='testbuildid',
     init_url='getInfo.html',
     env={'NO_EM_RESTART': '1'},
@@ -27,24 +28,26 @@ DEFAULTS = dict(
         cycles=1,
         profile_path='${talos}/base_profile',
         responsiveness=False,
-        e10s=False,
         gecko_profile=False,
         gecko_profile_interval=1,
         gecko_profile_entries=100000,
         resolution=1,
-        rss=False,
         mainthread=False,
         shutdown=False,
         timeout=3600,
         tpchrome=True,
         tpcycles=10,
         tpmozafterpaint=False,
-        tpdisable_e10s=False,
-        tpnoisy=True,
+        tphero=False,
+        fnbpaint=False,
+        firstpaint=False,
+        format_pagename=True,
+        userready=False,
+        testeventmap=[],
+        base_vs_ref=False,
         tppagecycles=1,
         tploadnocache=False,
         tpscrolltest=False,
-        tprender=False,
         win_counters=[],
         w7_counters=[],
         linux_counters=[],
@@ -52,139 +55,8 @@ DEFAULTS = dict(
         xperf_counters=[],
         setup=None,
         cleanup=None,
+        preferences={},
     ),
-    # default preferences to run with
-    # these are updated with --extraPrefs from the commandline
-    # for extension scopes, see
-    # see https://developer.mozilla.org/en/Installing_extensions
-    preferences={
-        'app.update.enabled': False,
-        'browser.addon-watch.interval': -1,  # Deactivate add-on watching
-        'browser.aboutHomeSnippets.updateUrl':
-            'https://127.0.0.1/about-dummy/',
-        'browser.bookmarks.max_backups': 0,
-        'browser.cache.disk.smart_size.enabled': False,
-        'browser.cache.disk.smart_size.first_run': False,
-        'browser.chrome.dynamictoolbar': False,
-        'browser.dom.window.dump.enabled': True,
-        'browser.EULA.override': True,
-        'browser.link.open_newwindow': 2,
-        'browser.reader.detectedFirstArticle': True,
-        'browser.shell.checkDefaultBrowser': False,
-        'browser.warnOnQuit': False,
-        'browser.tabs.remote.autostart': False,
-        'dom.allow_scripts_to_close_windows': True,
-        'dom.disable_open_during_load': False,
-        'dom.disable_window_flip': True,
-        'dom.disable_window_move_resize': True,
-        'dom.max_chrome_script_run_time': 0,
-        'dom.max_script_run_time': 0,
-        'extensions.autoDisableScopes': 10,
-        'extensions.checkCompatibility': False,
-        'extensions.enabledScopes': 5,
-        'extensions.update.notifyUser': False,
-        'hangmonitor.timeout': 0,
-        'network.proxy.http': 'localhost',
-        'network.proxy.http_port': 80,
-        'network.proxy.type': 1,
-        'security.enable_java': False,
-        'security.fileuri.strict_origin_policy': False,
-        'dom.send_after_paint_to_content': True,
-        'security.turn_off_all_security_so_that_viruses_can_'
-        'take_over_this_computer': True,
-        'browser.newtabpage.directory.source':
-            '${webserver}/directoryLinks.json',
-        'browser.newtabpage.directory.ping': '',
-        'browser.newtabpage.introShown': True,
-        'browser.safebrowsing.provider.google.gethashURL':
-            'http://127.0.0.1/safebrowsing-dummy/gethash',
-        'browser.safebrowsing.provider.google.updateURL':
-            'http://127.0.0.1/safebrowsing-dummy/update',
-        'browser.safebrowsing.provider.google4.gethashURL':
-            'http://127.0.0.1/safebrowsing4-dummy/gethash',
-        'browser.safebrowsing.provider.google4.updateURL':
-            'http://127.0.0.1/safebrowsing4-dummy/update',
-        'browser.safebrowsing.provider.mozilla.gethashURL':
-            'http://127.0.0.1/safebrowsing-dummy/gethash',
-        'browser.safebrowsing.provider.mozilla.updateURL':
-            'http://127.0.0.1/safebrowsing-dummy/update',
-        'privacy.trackingprotection.introURL':
-            'http://127.0.0.1/trackingprotection/tour',
-        'browser.safebrowsing.phishing.enabled': False,
-        'browser.safebrowsing.malware.enabled': False,
-        'browser.safebrowsing.forbiddenURIs.enabled': False,
-        'browser.safebrowsing.blockedURIs.enabled': False,
-        'privacy.trackingprotection.enabled': False,
-        'privacy.trackingprotection.pbmode.enabled': False,
-        'browser.search.isUS': True,
-        'browser.search.countryCode': 'US',
-        'browser.selfsupport.url':
-            'https://127.0.0.1/selfsupport-dummy/',
-        'extensions.update.url':
-            'http://127.0.0.1/extensions-dummy/updateURL',
-        'extensions.update.background.url':
-            'http://127.0.0.1/extensions-dummy/updateBackgroundURL',
-        'extensions.blocklist.enabled': False,
-        'extensions.blocklist.url':
-            'http://127.0.0.1/extensions-dummy/blocklistURL',
-        'extensions.hotfix.url':
-            'http://127.0.0.1/extensions-dummy/hotfixURL',
-        'extensions.update.enabled': False,
-        'extensions.webservice.discoverURL':
-            'http://127.0.0.1/extensions-dummy/discoveryURL',
-        'extensions.getAddons.maxResults': 0,
-        'extensions.getAddons.get.url':
-            'http://127.0.0.1/extensions-dummy/repositoryGetURL',
-        'extensions.getAddons.getWithPerformance.url':
-            'http://127.0.0.1/extensions-dummy'
-            '/repositoryGetWithPerformanceURL',
-        'extensions.getAddons.search.browseURL':
-            'http://127.0.0.1/extensions-dummy/repositoryBrowseURL',
-        'extensions.getAddons.search.url':
-            'http://127.0.0.1/extensions-dummy/repositorySearchURL',
-        'media.gmp-manager.url':
-            'http://127.0.0.1/gmpmanager-dummy/update.xml',
-        'media.gmp-manager.updateEnabled': False,
-        'extensions.systemAddon.update.url':
-            'http://127.0.0.1/dummy-system-addons.xml',
-        'extensions.shield-recipe-client.api_url':
-            'https://127.0.0.1/selfsupport-dummy/',
-        'media.navigator.enabled': True,
-        'media.peerconnection.enabled': True,
-        'media.navigator.permission.disabled': True,
-        'media.capturestream_hints.enabled': True,
-        'browser.contentHandlers.types.0.uri': 'http://127.0.0.1/rss?url=%s',
-        'browser.contentHandlers.types.1.uri': 'http://127.0.0.1/rss?url=%s',
-        'browser.contentHandlers.types.2.uri': 'http://127.0.0.1/rss?url=%s',
-        'browser.contentHandlers.types.3.uri': 'http://127.0.0.1/rss?url=%s',
-        'browser.contentHandlers.types.4.uri': 'http://127.0.0.1/rss?url=%s',
-        'browser.contentHandlers.types.5.uri': 'http://127.0.0.1/rss?url=%s',
-        'identity.fxaccounts.auth.uri': 'https://127.0.0.1/fxa-dummy/',
-        'datareporting.healthreport.about.reportUrl':
-            'http://127.0.0.1/abouthealthreport/',
-        'datareporting.healthreport.documentServerURI':
-            'http://127.0.0.1/healthreport/',
-        'datareporting.policy.dataSubmissionPolicyBypassNotification': True,
-        'general.useragent.updates.enabled': False,
-        'browser.webapps.checkForUpdates': 0,
-        'browser.search.geoSpecificDefaults': False,
-        'browser.snippets.enabled': False,
-        'browser.snippets.syncPromo.enabled': False,
-        'toolkit.telemetry.server': 'https://127.0.0.1/telemetry-dummy/',
-        'experiments.manifest.uri':
-            'https://127.0.0.1/experiments-dummy/manifest',
-        'network.http.speculative-parallel-limit': 0,
-        'app.update.badge': False,
-        'lightweightThemes.selectedThemeID': "",
-        'devtools.webide.widget.enabled': False,
-        'devtools.webide.widget.inNavbarByDefault': False,
-        'devtools.chrome.enabled': False,
-        'devtools.debugger.remote-enabled': False,
-        'devtools.theme': "light",
-        'devtools.timeline.enabled': False,
-        'identity.fxaccounts.migrateToDevEdition': False,
-        'media.libavcodec.allow-obsolete': True
-    }
 )
 
 
@@ -194,15 +66,15 @@ GLOBAL_OVERRIDES = (
     'gecko_profile',
     'gecko_profile_interval',
     'gecko_profile_entries',
-    'rss',
-    'mainthread',
-    'shutdown',
     'tpcycles',
-    'tpdelay',
     'tppagecycles',
     'tpmanifest',
     'tptimeout',
     'tpmozafterpaint',
+    'tphero',
+    'fnbpaint',
+    'firstpaint',
+    'userready',
 )
 
 
@@ -240,6 +112,7 @@ def fix_xperf(config):
     # BBB: remove doubly-quoted xperf values from command line
     # (needed for buildbot)
     # https://bugzilla.mozilla.org/show_bug.cgi?id=704654#c43
+    win7_path = 'c:/Program Files/Microsoft Windows Performance Toolkit/xperf.exe'
     if config['xperf_path']:
         xperf_path = config['xperf_path']
         quotes = ('"', "'")
@@ -248,8 +121,11 @@ def fix_xperf(config):
                 config['xperf_path'] = xperf_path[1:-1]
                 break
         if not os.path.exists(config['xperf_path']):
-            raise ConfigurationError(
-                "xperf.exe cannot be found at the path specified")
+            # look for old win7 path
+            if not os.path.exists(win7_path):
+                raise ConfigurationError(
+                    "xperf.exe cannot be found at the path specified")
+            config['xperf_path'] = win7_path
 
 
 @validator
@@ -261,19 +137,15 @@ def set_webserver(config):
     port = sock.getsockname()[1]
     sock.close()
 
-    config['webserver'] = 'localhost:%d' % port
+    config['webserver'] = '127.0.0.1:%d' % port
 
 
 @validator
 def update_prefs(config):
-    # if e10s is enabled, set prefs accordingly
-    if config['e10s']:
-        config['preferences']['browser.tabs.remote.autostart'] = True
-        config['preferences']['extensions.e10sBlocksEnabling'] = False
-    else:
-        config['preferences']['browser.tabs.remote.autostart'] = False
-        config['preferences']['browser.tabs.remote.autostart.1'] = False
-        config['preferences']['browser.tabs.remote.autostart.2'] = False
+    config.setdefault('preferences', {}).update({
+        # Bug 1383896 - reduces noise in tests
+        'idle.lastDailyNotification': int(time.time()),
+    })
 
     # update prefs from command line
     prefs = config.pop('extraPrefs')
@@ -289,10 +161,22 @@ def fix_init_url(config):
         config['init_url'] = convert_url(config, config['init_url'])
 
 
+@validator
+def determine_local_symbols_path(config):
+    if 'symbols_path' not in config:
+        return
+
+    # use objdir/dist/crashreporter-symbols for symbolsPath if none provided
+    if not config['symbols_path'] and \
+       config['develop'] and \
+       'MOZ_DEVELOPER_OBJ_DIR' in os.environ:
+        config['symbols_path'] = os.path.join(os.environ['MOZ_DEVELOPER_OBJ_DIR'],
+                                              'dist',
+                                              'crashreporter-symbols')
+
+
 def get_counters(config):
     counters = set()
-    if config['rss']:
-        counters.add('Main_RSS')
     return counters
 
 
@@ -307,9 +191,6 @@ def get_active_tests(config):
         raise ConfigurationError("No definition found for test(s): %s"
                                  % missing)
 
-    # disabled DAMP on winXP: frequent hangs, <3% of devtools users on winXP
-    if utils.PLATFORM_TYPE == 'win_':
-        activeTests = [i for i in activeTests if i != 'damp']
     return activeTests
 
 
@@ -323,16 +204,6 @@ def get_global_overrides(config):
         if key != 'gecko_profile':
             config.pop(key)
 
-    # add noChrome to global overrides (HACK)
-    noChrome = config.pop('noChrome')
-    if noChrome:
-        global_overrides['tpchrome'] = False
-
-    # HACK: currently xperf tests post results to graph server and
-    # we want to ensure we don't publish shutdown numbers
-    # This is also hacked because "--noShutdown -> shutdown:True"
-    if config['xperf_path']:
-        global_overrides['shutdown'] = False
     return global_overrides
 
 
@@ -356,6 +227,10 @@ def build_manifest(config, manifestName):
 
 def get_test(config, global_overrides, counters, test_instance):
     mozAfterPaint = getattr(test_instance, 'tpmozafterpaint', None)
+    hero = getattr(test_instance, 'tphero', None)
+    firstPaint = getattr(test_instance, 'firstpaint', None)
+    userReady = getattr(test_instance, 'userready', None)
+    firstNonBlankPaint = getattr(test_instance, 'fnbpaint', None)
 
     test_instance.update(**global_overrides)
 
@@ -363,6 +238,14 @@ def get_test(config, global_overrides, counters, test_instance):
     # so check for None
     if mozAfterPaint is not None:
         test_instance.tpmozafterpaint = mozAfterPaint
+    if firstNonBlankPaint is not None:
+        test_instance.fnbpaint = firstNonBlankPaint
+    if firstPaint is not None:
+        test_instance.firstpaint = firstPaint
+    if userReady is not None:
+        test_instance.userready = userReady
+    if hero is not None:
+        test_instance.tphero = hero
 
     # fix up url
     url = getattr(test_instance, 'url', None)
@@ -407,13 +290,14 @@ def tests(config):
 
 
 def get_browser_config(config):
-    required = ('preferences', 'extensions', 'browser_path', 'browser_wait',
+    required = ('extensions', 'browser_path', 'browser_wait',
                 'extra_args', 'buildid', 'env', 'init_url', 'webserver')
     optional = {'bcontroller_config': '${talos}/bcontroller.json',
-                'branch_name': '',
                 'child_process': 'plugin-container',
+                'debug': False,
+                'debugger': None,
+                'debugger_args': None,
                 'develop': False,
-                'e10s': False,
                 'process': '',
                 'framework': 'talos',
                 'repository': None,
@@ -422,6 +306,10 @@ def get_browser_config(config):
                 'test_timeout': 1200,
                 'xperf_path': None,
                 'error_filename': None,
+                'no_upload_results': False,
+                'stylothreads': 0,
+                'subtests': None,
+                'preferences': {},
                 }
     browser_config = dict(title=config['title'])
     browser_config.update(dict([(i, config[i]) for i in required]))
@@ -447,7 +335,10 @@ def get_config(argv=None):
         except KeyError:
             raise ConfigurationError('No such suite: %r' % cli_opts.suite)
         argv += ['-a', ':'.join(suite_conf['tests'])]
-        argv += suite_conf.get('talos_options', [])
+        # talos_options in the suite config should not override command line
+        # options, so we prepend argv with talos_options so that, when parsed,
+        # the command line options will clobber the suite config options.
+        argv = suite_conf.get('talos_options', []) + argv
         # args needs to be reparsed now
     elif not cli_opts.activeTests:
         raise ConfigurationError('--activeTests or --suite required!')

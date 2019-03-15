@@ -34,13 +34,7 @@
  * empty string and a non-empty string for switch nsINavHistoryQuery.searchTerms.
  * When switches have more than one value for a test run, we use the Cartesian
  * product of their values to generate all possible combinations of values.
- *
- * Second, we need to also test serialization of multiple nsINavHistoryQuery
- * objects at once.  To do this, we remember the previous NUM_MULTIPLE_QUERIES
- * queries we tested individually and then serialize them together.  We do this
- * each time we test an individual query.  Thus the set of queries we test
- * together loses one query and gains another each time.
- *
+  *
  * To summarize, here's how this test works:
  *
  * - For n = CHOOSE_HOW_MANY_SWITCHES_LO to CHOOSE_HOW_MANY_SWITCHES_HI:
@@ -53,18 +47,10 @@
  *       - Serialize the query.
  *       - De-serialize and ensure that the de-serialized query objects equal
  *         the originals.
- *       - For each of the previous NUM_MULTIPLE_QUERIES
- *         nsINavHistoryQueryOptions objects o we created:
- *         - Serialize the previous NUM_MULTIPLE_QUERIES nsINavHistoryQuery
- *           objects together with o.
- *         - De-serialize and ensure that the de-serialized query objects
- *           equal the originals.
  */
 
 const CHOOSE_HOW_MANY_SWITCHES_LO = 1;
 const CHOOSE_HOW_MANY_SWITCHES_HI = 2;
-
-const NUM_MULTIPLE_QUERIES        = 2;
 
 // The switches are represented by objects below, in arrays querySwitches and
 // queryOptionSwitches.  Use them to set up test runs.
@@ -107,8 +93,8 @@ const querySwitches = [
       function(aQuery, aQueryOptions) {
         aQuery.beginTime = Date.now() * 1000;
         aQuery.beginTimeReference = Ci.nsINavHistoryQuery.TIME_RELATIVE_TODAY;
-      }
-    ]
+      },
+    ],
   },
   // hasEndTime
   {
@@ -124,8 +110,8 @@ const querySwitches = [
       function(aQuery, aQueryOptions) {
         aQuery.endTime = Date.now() * 1000;
         aQuery.endTimeReference = Ci.nsINavHistoryQuery.TIME_RELATIVE_TODAY;
-      }
-    ]
+      },
+    ],
   },
   // hasSearchTerms
   {
@@ -139,8 +125,8 @@ const querySwitches = [
       },
       function(aQuery, aQueryOptions) {
         aQuery.searchTerms = "";
-      }
-    ]
+      },
+    ],
   },
   // hasDomain
   {
@@ -159,8 +145,8 @@ const querySwitches = [
       },
       function(aQuery, aQueryOptions) {
         aQuery.domain = "";
-      }
-    ]
+      },
+    ],
   },
   // hasUri
   {
@@ -172,7 +158,7 @@ const querySwitches = [
       function(aQuery, aQueryOptions) {
         aQuery.uri = uri("http://mozilla.com");
       },
-    ]
+    ],
   },
   // hasAnnotation
   {
@@ -188,8 +174,8 @@ const querySwitches = [
       function(aQuery, aQueryOptions) {
         aQuery.annotation = "bookmarks/toolbarFolder";
         aQuery.annotationIsNot = true;
-      }
-    ]
+      },
+    ],
   },
   // minVisits
   {
@@ -200,8 +186,8 @@ const querySwitches = [
     runs:     [
       function(aQuery, aQueryOptions) {
         aQuery.minVisits = 0x7fffffff; // 2^31 - 1
-      }
-    ]
+      },
+    ],
   },
   // maxVisits
   {
@@ -211,8 +197,8 @@ const querySwitches = [
     runs:     [
       function(aQuery, aQueryOptions) {
         aQuery.maxVisits = 0x7fffffff; // 2^31 - 1
-      }
-    ]
+      },
+    ],
   },
   // onlyBookmarked
   {
@@ -222,38 +208,39 @@ const querySwitches = [
     runs:     [
       function(aQuery, aQueryOptions) {
         aQuery.onlyBookmarked = true;
-      }
-    ]
+      },
+    ],
   },
   // getFolders
   {
-    desc:    "nsINavHistoryQuery.getFolders",
+    desc:    "nsINavHistoryQuery.getParents",
     matches(aQuery1, aQuery2) {
-      var q1Folders = aQuery1.getFolders();
-      var q2Folders = aQuery2.getFolders();
-      if (q1Folders.length !== q2Folders.length)
+      var q1Parents = aQuery1.getParents();
+      var q2Parents = aQuery2.getParents();
+      if (q1Parents.length !== q2Parents.length)
         return false;
-      for (let i = 0; i < q1Folders.length; i++) {
-        if (q2Folders.indexOf(q1Folders[i]) < 0)
+      for (let i = 0; i < q1Parents.length; i++) {
+        if (!q2Parents.includes(q1Parents[i]))
           return false;
       }
-      for (let i = 0; i < q2Folders.length; i++) {
-        if (q1Folders.indexOf(q2Folders[i]) < 0)
+      for (let i = 0; i < q2Parents.length; i++) {
+        if (!q1Parents.includes(q2Parents[i]))
           return false;
       }
       return true;
     },
     runs: [
       function(aQuery, aQueryOptions) {
-        aQuery.setFolders([], 0);
+        aQuery.setParents([], 0);
       },
       function(aQuery, aQueryOptions) {
-        aQuery.setFolders([PlacesUtils.placesRootId], 1);
+        aQuery.setParents([PlacesUtils.bookmarks.rootGuid], 1);
       },
       function(aQuery, aQueryOptions) {
-        aQuery.setFolders([PlacesUtils.placesRootId, PlacesUtils.tagsFolderId], 2);
-      }
-    ]
+        aQuery.setParents([PlacesUtils.bookmarks.rootGuid,
+                           PlacesUtils.bookmarks.tagsGuid], 2);
+      },
+    ],
   },
   // tags
   {
@@ -266,11 +253,11 @@ const querySwitches = [
       if (q1Tags.length !== q2Tags.length)
         return false;
       for (let i = 0; i < q1Tags.length; i++) {
-        if (q2Tags.indexOf(q1Tags[i]) < 0)
+        if (!q2Tags.includes(q1Tags[i]))
           return false;
       }
       for (let i = 0; i < q2Tags.length; i++) {
-        if (q1Tags.indexOf(q2Tags[i]) < 0)
+        if (!q1Tags.includes(q2Tags[i]))
           return false;
       }
       return true;
@@ -308,8 +295,8 @@ const querySwitches = [
           "あいうえお",
         ];
         aQuery.tagsAreNot =  true;
-      }
-    ]
+      },
+    ],
   },
   // transitions
   {
@@ -320,11 +307,11 @@ const querySwitches = [
       if (q1Trans.length !== q2Trans.length)
         return false;
       for (let i = 0; i < q1Trans.length; i++) {
-        if (q2Trans.indexOf(q1Trans[i]) < 0)
+        if (!q2Trans.includes(q1Trans[i]))
           return false;
       }
       for (let i = 0; i < q2Trans.length; i++) {
-        if (q1Trans.indexOf(q2Trans[i]) < 0)
+        if (!q1Trans.includes(q2Trans[i]))
           return false;
       }
       return true;
@@ -340,8 +327,8 @@ const querySwitches = [
       function(aQuery, aQueryOptions) {
         aQuery.setTransitions([Ci.nsINavHistoryService.TRANSITION_TYPED,
                                Ci.nsINavHistoryService.TRANSITION_BOOKMARK], 2);
-      }
-    ]
+      },
+    ],
   },
 ];
 
@@ -352,11 +339,6 @@ const queryOptionSwitches = [
     desc:    "nsINavHistoryQueryOptions.sortingMode",
     matches(aOptions1, aOptions2) {
       if (aOptions1.sortingMode === aOptions2.sortingMode) {
-        switch (aOptions1.sortingMode) {
-          case aOptions1.SORT_BY_ANNOTATION_ASCENDING:
-          case aOptions1.SORT_BY_ANNOTATION_DESCENDING:
-            return aOptions1.sortingAnnotation === aOptions2.sortingAnnotation;
-        }
         return true;
       }
       return false;
@@ -365,11 +347,7 @@ const queryOptionSwitches = [
       function(aQuery, aQueryOptions) {
         aQueryOptions.sortingMode = aQueryOptions.SORT_BY_DATE_ASCENDING;
       },
-      function(aQuery, aQueryOptions) {
-        aQueryOptions.sortingMode = aQueryOptions.SORT_BY_ANNOTATION_ASCENDING;
-        aQueryOptions.sortingAnnotation = "bookmarks/toolbarFolder";
-      }
-    ]
+    ],
   },
   // resultType
   {
@@ -381,10 +359,7 @@ const queryOptionSwitches = [
       function(aQuery, aQueryOptions) {
         aQueryOptions.resultType = aQueryOptions.RESULTS_AS_URI;
       },
-      function(aQuery, aQueryOptions) {
-        aQueryOptions.resultType = aQueryOptions.RESULTS_AS_FULL_VISIT;
-      }
-    ]
+    ],
   },
   // excludeItems
   {
@@ -394,8 +369,8 @@ const queryOptionSwitches = [
     runs:     [
       function(aQuery, aQueryOptions) {
         aQueryOptions.excludeItems = true;
-      }
-    ]
+      },
+    ],
   },
   // excludeQueries
   {
@@ -405,8 +380,8 @@ const queryOptionSwitches = [
     runs:     [
       function(aQuery, aQueryOptions) {
         aQueryOptions.excludeQueries = true;
-      }
-    ]
+      },
+    ],
   },
   // expandQueries
   {
@@ -416,8 +391,8 @@ const queryOptionSwitches = [
     runs:     [
       function(aQuery, aQueryOptions) {
         aQueryOptions.expandQueries = true;
-      }
-    ]
+      },
+    ],
   },
   // includeHidden
   {
@@ -427,8 +402,8 @@ const queryOptionSwitches = [
     runs:     [
       function(aQuery, aQueryOptions) {
         aQueryOptions.includeHidden = true;
-      }
-    ]
+      },
+    ],
   },
   // maxResults
   {
@@ -438,8 +413,8 @@ const queryOptionSwitches = [
     runs:     [
       function(aQuery, aQueryOptions) {
         aQueryOptions.maxResults = 0xffffffff; // 2^32 - 1
-      }
-    ]
+      },
+    ],
   },
   // queryType
   {
@@ -452,8 +427,8 @@ const queryOptionSwitches = [
       },
       function(aQuery, aQueryOptions) {
         aQueryOptions.queryType = aQueryOptions.QUERY_TYPE_UNIFIED;
-      }
-    ]
+      },
+    ],
   },
 ];
 
@@ -662,8 +637,6 @@ function queryObjsEqual(aSwitches, aObj1, aObj2) {
  */
 function runQuerySequences(aHowManyLo, aHowManyHi) {
   var allSwitches = querySwitches.concat(queryOptionSwitches);
-  var prevQueries = [];
-  var prevOpts = [];
 
   // Choose aHowManyLo switches up to aHowManyHi switches.
   for (let howMany = aHowManyLo; howMany <= aHowManyHi; howMany++) {
@@ -699,21 +672,7 @@ function runQuerySequences(aHowManyLo, aHowManyHi) {
         for (let i = 0; i < runSet.length; i++) {
           runSet[i](query, opts);
         }
-        serializeDeserialize([query], opts);
-
-        // Test the previous NUM_MULTIPLE_QUERIES queries together.
-        prevQueries.push(query);
-        prevOpts.push(opts);
-        if (prevQueries.length >= NUM_MULTIPLE_QUERIES) {
-          // We can serialize multiple nsINavHistoryQuery objects together but
-          // only one nsINavHistoryQueryOptions object with them.  So, test each
-          // of the previous NUM_MULTIPLE_QUERIES nsINavHistoryQueryOptions.
-          for (let i = 0; i < prevOpts.length; i++) {
-            serializeDeserialize(prevQueries, prevOpts[i]);
-          }
-          prevQueries.shift();
-          prevOpts.shift();
-        }
+        serializeDeserialize(query, opts);
       });
     });
   }
@@ -721,50 +680,28 @@ function runQuerySequences(aHowManyLo, aHowManyHi) {
 }
 
 /**
- * Serializes the nsINavHistoryQuery objects in aQueryArr and the
+ * Serializes the nsINavHistoryQuery objects in aQuery and the
  * nsINavHistoryQueryOptions object aQueryOptions, de-serializes the
  * serialization, and ensures (using do_check_* functions) that the
  * de-serialized objects equal the originals.
  *
- * @param aQueryArr
- *        an array containing nsINavHistoryQuery objects
+ * @param aQuery
+ *        an nsINavHistoryQuery object
  * @param aQueryOptions
  *        an nsINavHistoryQueryOptions object
  */
-function serializeDeserialize(aQueryArr, aQueryOptions) {
-  var queryStr = PlacesUtils.history.queriesToQueryString(aQueryArr,
-                                                        aQueryArr.length,
-                                                        aQueryOptions);
+function serializeDeserialize(aQuery, aQueryOptions) {
+  let queryStr = PlacesUtils.history.queryToQueryString(aQuery, aQueryOptions);
   print("  " + queryStr);
-  var queryArr2 = {};
-  var opts2 = {};
-  PlacesUtils.history.queryStringToQueries(queryStr, queryArr2, {}, opts2);
-  queryArr2 = queryArr2.value;
+  let query2 = {}, opts2 = {};
+  PlacesUtils.history.queryStringToQuery(queryStr, query2, opts2);
+  query2 = query2.value;
   opts2 = opts2.value;
 
-  // The two sets of queries cannot be the same if their lengths differ.
-  do_check_eq(aQueryArr.length, queryArr2.length);
-
-  // Although the query serialization code as it is written now practically
-  // ensures that queries appear in the query string in the same order they
-  // appear in both the array to be serialized and the array resulting from
-  // de-serialization, the interface does not guarantee any ordering.  So, for
-  // each query in aQueryArr, find its equivalent in queryArr2 and delete it
-  // from queryArr2.  If queryArr2 is empty after looping through aQueryArr,
-  // the two sets of queries are equal.
-  for (let i = 0; i < aQueryArr.length; i++) {
-    let j = 0;
-    for (; j < queryArr2.length; j++) {
-      if (queryObjsEqual(querySwitches, aQueryArr[i], queryArr2[j]))
-        break;
-    }
-    if (j < queryArr2.length)
-      queryArr2.splice(j, 1);
-  }
-  do_check_eq(queryArr2.length, 0);
+  Assert.ok(queryObjsEqual(querySwitches, aQuery, query2));
 
   // Finally check the query options objects.
-  do_check_true(queryObjsEqual(queryOptionSwitches, aQueryOptions, opts2));
+  Assert.ok(queryObjsEqual(queryOptionSwitches, aQueryOptions, opts2));
 }
 
 /**

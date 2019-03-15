@@ -1,10 +1,10 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 "use strict";
 
 const Telemetry = require("devtools/client/shared/telemetry");
-const flags = require("devtools/shared/flags");
 const EVENTS = require("devtools/client/performance/events");
 
 const EVENT_MAP_FLAGS = new Map([
@@ -13,7 +13,7 @@ const EVENT_MAP_FLAGS = new Map([
 ]);
 
 const RECORDING_FEATURES = [
-  "withMarkers", "withTicks", "withMemory", "withAllocations"
+  "withMarkers", "withTicks", "withMemory", "withAllocations",
 ];
 
 const SELECTED_VIEW_HISTOGRAM_NAME = "DEVTOOLS_PERFTOOLS_SELECTED_VIEW_MS";
@@ -25,25 +25,21 @@ function PerformanceTelemetry(emitter) {
   this.onRecordingStateChange = this.onRecordingStateChange.bind(this);
   this.onViewSelected = this.onViewSelected.bind(this);
 
-  for (let [event] of EVENT_MAP_FLAGS) {
-    this._emitter.on(event, this.onFlagEvent);
+  for (const [event] of EVENT_MAP_FLAGS) {
+    this._emitter.on(event, this.onFlagEvent.bind(this, event));
   }
 
   this._emitter.on(EVENTS.RECORDING_STATE_CHANGE, this.onRecordingStateChange);
   this._emitter.on(EVENTS.UI_DETAILS_VIEW_SELECTED, this.onViewSelected);
-
-  if (flags.testing) {
-    this.recordLogs();
-  }
 }
 
-PerformanceTelemetry.prototype.destroy = function () {
+PerformanceTelemetry.prototype.destroy = function() {
   if (this._previousView) {
-    this._telemetry.stopTimer(SELECTED_VIEW_HISTOGRAM_NAME, this._previousView);
+    this._telemetry.finishKeyed(
+      SELECTED_VIEW_HISTOGRAM_NAME, this._previousView, this, false);
   }
 
-  this._telemetry.destroy();
-  for (let [event] of EVENT_MAP_FLAGS) {
+  for (const [event] of EVENT_MAP_FLAGS) {
     this._emitter.off(event, this.onFlagEvent);
   }
   this._emitter.off(EVENTS.RECORDING_STATE_CHANGE, this.onRecordingStateChange);
@@ -51,72 +47,43 @@ PerformanceTelemetry.prototype.destroy = function () {
   this._emitter = null;
 };
 
-PerformanceTelemetry.prototype.onFlagEvent = function (eventName, ...data) {
-  this._telemetry.log(EVENT_MAP_FLAGS.get(eventName), true);
+PerformanceTelemetry.prototype.onFlagEvent = function(eventName, ...data) {
+  this._telemetry.getHistogramById(EVENT_MAP_FLAGS.get(eventName)).add(true);
 };
 
-PerformanceTelemetry.prototype.onRecordingStateChange = function (_, status, model) {
+PerformanceTelemetry.prototype.onRecordingStateChange = function(status, model) {
   if (status != "recording-stopped") {
     return;
   }
 
   if (model.isConsole()) {
-    this._telemetry.log("DEVTOOLS_PERFTOOLS_CONSOLE_RECORDING_COUNT", true);
+    this._telemetry.getHistogramById("DEVTOOLS_PERFTOOLS_CONSOLE_RECORDING_COUNT")
+                   .add(true);
   } else {
-    this._telemetry.log("DEVTOOLS_PERFTOOLS_RECORDING_COUNT", true);
+    this._telemetry.getHistogramById("DEVTOOLS_PERFTOOLS_RECORDING_COUNT")
+                   .add(true);
   }
 
-  this._telemetry.log("DEVTOOLS_PERFTOOLS_RECORDING_DURATION_MS", model.getDuration());
+  this._telemetry.getHistogramById("DEVTOOLS_PERFTOOLS_RECORDING_DURATION_MS")
+                 .add(model.getDuration());
 
-  let config = model.getConfiguration();
-  for (let k in config) {
-    if (RECORDING_FEATURES.indexOf(k) !== -1) {
-      this._telemetry.logKeyed("DEVTOOLS_PERFTOOLS_RECORDING_FEATURES_USED", k,
-                               config[k]);
+  const config = model.getConfiguration();
+  for (const k in config) {
+    if (RECORDING_FEATURES.includes(k)) {
+      this._telemetry
+          .getKeyedHistogramById("DEVTOOLS_PERFTOOLS_RECORDING_FEATURES_USED")
+          .add(k, config[k]);
     }
   }
 };
 
-PerformanceTelemetry.prototype.onViewSelected = function (_, viewName) {
+PerformanceTelemetry.prototype.onViewSelected = function(viewName) {
   if (this._previousView) {
-    this._telemetry.stopTimer(SELECTED_VIEW_HISTOGRAM_NAME, this._previousView);
+    this._telemetry.finishKeyed(
+      SELECTED_VIEW_HISTOGRAM_NAME, this._previousView, this, false);
   }
   this._previousView = viewName;
-  this._telemetry.startTimer(SELECTED_VIEW_HISTOGRAM_NAME);
-};
-
-/**
- * Utility to record histogram calls to this instance.
- * Should only be used in testing mode; throws otherwise.
- */
-PerformanceTelemetry.prototype.recordLogs = function () {
-  if (!flags.testing) {
-    throw new Error("Can only record telemetry logs in tests.");
-  }
-
-  let originalLog = this._telemetry.log;
-  let originalLogKeyed = this._telemetry.logKeyed;
-  this._log = {};
-
-  this._telemetry.log = (function (histo, data) {
-    let results = this._log[histo] = this._log[histo] || [];
-    results.push(data);
-    originalLog(histo, data);
-  }).bind(this);
-
-  this._telemetry.logKeyed = (function (histo, key, data) {
-    let results = this._log[histo] = this._log[histo] || [];
-    results.push([key, data]);
-    originalLogKeyed(histo, key, data);
-  }).bind(this);
-};
-
-PerformanceTelemetry.prototype.getLogs = function () {
-  if (!flags.testing) {
-    throw new Error("Can only get telemetry logs in tests.");
-  }
-
-  return this._log;
+  this._telemetry.startKeyed(SELECTED_VIEW_HISTOGRAM_NAME, viewName, this);
 };
 
 exports.PerformanceTelemetry = PerformanceTelemetry;

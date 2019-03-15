@@ -7,24 +7,22 @@
  * Tests if beacons are handled correctly.
  */
 
-add_task(function* () {
-  let { tab, monitor } = yield initNetMonitor(SEND_BEACON_URL);
-  let { gStore, windowRequire } = monitor.panelWin;
-  let Actions = windowRequire("devtools/client/netmonitor/actions/index");
-  let { getSortedRequests } = windowRequire("devtools/client/netmonitor/selectors/index");
+add_task(async function() {
+  const { tab, monitor } = await initNetMonitor(SEND_BEACON_URL);
+  const { store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
+  const { getSortedRequests } =
+    windowRequire("devtools/client/netmonitor/src/selectors/index");
 
-  gStore.dispatch(Actions.batchEnable(false));
+  store.dispatch(Actions.batchEnable(false));
 
-  is(gStore.getState().requests.requests.size, 0, "The requests menu should be empty.");
+  is(store.getState().requests.requests.size, 0, "The requests menu should be empty.");
 
-  let wait = waitForNetworkEvents(monitor, 1);
-  yield ContentTask.spawn(tab.linkedBrowser, {}, function* () {
-    content.wrappedJSObject.performRequest();
-  });
-  yield wait;
+  // Execute requests.
+  await performRequests(monitor, tab, 1);
 
-  is(gStore.getState().requests.requests.size, 1, "The beacon should be recorded.");
-  let request = getSortedRequests(gStore.getState()).get(0);
+  is(store.getState().requests.requests.size, 1, "The beacon should be recorded.");
+  const request = getSortedRequests(store.getState()).get(0);
   is(request.method, "POST", "The method is correct.");
   ok(request.url.endsWith("beacon_request"), "The URL is correct.");
   is(request.status, "404", "The status is correct.");

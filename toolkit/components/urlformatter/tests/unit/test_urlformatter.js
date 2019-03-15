@@ -1,37 +1,23 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+
 function run_test() {
-  var formatter = Cc["@mozilla.org/toolkit/URLFormatterService;1"].
-                  getService(Ci.nsIURLFormatter);
-  var locale = Cc["@mozilla.org/chrome/chrome-registry;1"].
-               getService(Ci.nsIXULChromeRegistry).
-               getSelectedLocale("global");
-  var prefs = Cc["@mozilla.org/preferences-service;1"].
-              getService(Ci.nsIPrefBranch);
-  var sysInfo = Cc["@mozilla.org/system-info;1"].
-                getService(Ci.nsIPropertyBag2);
-  var OSVersion = sysInfo.getProperty("name") + " " +
-                  sysInfo.getProperty("version");
+  var formatter = Services.urlFormatter;
+  var locale = Services.locale.appLocaleAsLangTag;
+  var OSVersion = Services.sysinfo.getProperty("name") + " " +
+                  Services.sysinfo.getProperty("version");
   try {
-    OSVersion += " (" + sysInfo.getProperty("secondaryLibrary") + ")";
+    OSVersion += " (" + Services.sysinfo.getProperty("secondaryLibrary") + ")";
   } catch (e) {}
   OSVersion = encodeURIComponent(OSVersion);
-  var macutils = null;
-  try {
-    macutils = Cc["@mozilla.org/xpcom/mac-utils;1"].
-               getService(Ci.nsIMacUtils);
-  } catch (e) {}
-  var appInfo = Cc["@mozilla.org/xre/app-info;1"].
-                getService(Ci.nsIXULAppInfo).
-                QueryInterface(Ci.nsIXULRuntime);
-  var abi = macutils && macutils.isUniversalBinary ? "Universal-gcc3" : appInfo.XPCOMABI;
+  var abi = Services.appinfo.XPCOMABI;
 
-  let channel = "default";
-  let defaults = prefs.QueryInterface(Ci.nsIPrefService).getDefaultBranch(null);
-  try {
-    channel = defaults.getCharPref("app.update.channel");
-  } catch (e) {}
+  let defaults = Services.prefs.getDefaultBranch(null);
+  let channel = defaults.getCharPref("app.update.channel", "default");
+
   // Set distribution values.
   defaults.setCharPref("distribution.id", "bacon");
   defaults.setCharPref("distribution.version", "1.0");
@@ -48,18 +34,26 @@ function run_test() {
   var advancedUrlRef = "http://test.mozilla.com/Url Formatter Test/1/" + gAppInfo.appBuildID + "/XPCShell_" + abi + "/" + locale + "/" + channel + "/" + OSVersion + "/bacon/1.0/";
 
   var pref = "xpcshell.urlformatter.test";
-  var str = Cc["@mozilla.org/supports-string;1"].
-            createInstance(Ci.nsISupportsString);
-  str.data = upperUrlRaw;
-  prefs.setComplexValue(pref, Ci.nsISupportsString, str);
+  Services.prefs.setStringPref(pref, upperUrlRaw);
 
-  do_check_eq(formatter.formatURL(upperUrlRaw), ulUrlRef);
-  do_check_eq(formatter.formatURLPref(pref), ulUrlRef);
+  Assert.equal(formatter.formatURL(upperUrlRaw), ulUrlRef);
+  Assert.equal(formatter.formatURLPref(pref), ulUrlRef);
   // Keys must be uppercase
-  do_check_neq(formatter.formatURL(lowerUrlRaw), ulUrlRef);
-  do_check_eq(formatter.formatURL(multiUrl), multiUrlRef);
+  Assert.notEqual(formatter.formatURL(lowerUrlRaw), ulUrlRef);
+  Assert.equal(formatter.formatURL(multiUrl), multiUrlRef);
   // Encoded strings must be kept as is (Bug 427304)
-  do_check_eq(formatter.formatURL(encodedUrl), encodedUrlRef);
+  Assert.equal(formatter.formatURL(encodedUrl), encodedUrlRef);
 
-  do_check_eq(formatter.formatURL(advancedUrl), advancedUrlRef);
+  Assert.equal(formatter.formatURL(advancedUrl), advancedUrlRef);
+
+  for (let val of ["MOZILLA_API_KEY", "GOOGLE_LOCATION_SERVICE_API_KEY", "GOOGLE_SAFEBROWSING_API_KEY", "BING_API_CLIENTID", "BING_API_KEY"]) {
+    let url = "http://test.mozilla.com/?val=%" + val + "%";
+    Assert.notEqual(formatter.formatURL(url), url);
+  }
+
+  let url_sb = "http://test.mozilla.com/%GOOGLE_SAFEBROWSING_API_KEY%/?val=%GOOGLE_SAFEBROWSING_API_KEY%";
+  Assert.equal(formatter.trimSensitiveURLs(formatter.formatURL(url_sb)), "http://test.mozilla.com/[trimmed-google-api-key]/?val=[trimmed-google-api-key]");
+
+  let url_gls = "http://test.mozilla.com/%GOOGLE_LOCATION_SERVICE_API_KEY%/?val=%GOOGLE_LOCATION_SERVICE_API_KEY%";
+  Assert.equal(formatter.trimSensitiveURLs(formatter.formatURL(url_gls)), "http://test.mozilla.com/[trimmed-google-api-key]/?val=[trimmed-google-api-key]");
 }

@@ -95,7 +95,7 @@ function execAsync(aStmt, aOptions, aResults) {
         do_throw("handleResult invoked with 0 result rows!");
     },
     handleError(aError) {
-      if (errorCodeSeen != false)
+      if (errorCodeSeen)
         do_throw("handleError called when we already had an error!");
       errorCodeSeen = aError.result;
     },
@@ -107,7 +107,7 @@ function execAsync(aStmt, aOptions, aResults) {
         do_throw("Expected " + resultsExpected + " rows of results but " +
                  "got " + resultsSeen + " rows!", caller);
 
-      if (errorCodeExpected == true && errorCodeSeen == false)
+      if (errorCodeExpected && !errorCodeSeen)
         do_throw("Expected an error, but did not see one.", caller);
       else if (errorCodeExpected != errorCodeSeen)
         do_throw("Expected error code " + errorCodeExpected + " but got " +
@@ -119,7 +119,7 @@ function execAsync(aStmt, aOptions, aResults) {
                  " but got " + aReason, caller);
 
       completed = true;
-    }
+    },
   };
 
   let pending;
@@ -135,10 +135,7 @@ function execAsync(aStmt, aOptions, aResults) {
   if ("cancel" in aOptions && aOptions.cancel)
     pending.cancel();
 
-  let curThread = Components.classes["@mozilla.org/thread-manager;1"]
-                            .getService().currentThread;
-  while (!completed && !_quit)
-    curThread.processNextEvent(true);
+  Services.tm.spinEventLoopUntil(() => completed || _quit);
 
   return pending;
 }
@@ -165,7 +162,7 @@ test_illegal_sql_async_deferred.asyncOnly = true;
 
 function test_create_table() {
   // Ensure our table doesn't exist
-  do_check_false(getOpenedDatabase().tableExists("test"));
+  Assert.ok(!getOpenedDatabase().tableExists("test"));
 
   var stmt = makeTestStatement(
     "CREATE TABLE test (" +
@@ -180,7 +177,7 @@ function test_create_table() {
   stmt.finalize();
 
   // Check that the table has been created
-  do_check_true(getOpenedDatabase().tableExists("test"));
+  Assert.ok(getOpenedDatabase().tableExists("test"));
 
   // Verify that it's created correctly (this will throw if it wasn't)
   let checkStmt = getOpenedDatabase().createStatement(
@@ -218,50 +215,50 @@ function test_get_data() {
   stmt.bindByIndex(0, INTEGER);
   execAsync(stmt, {}, [
     function(tuple) {
-      do_check_neq(null, tuple);
+      Assert.notEqual(null, tuple);
 
       // Check that it's what we expect
-      do_check_false(tuple.getIsNull(0));
-      do_check_eq(tuple.getResultByName("string"), tuple.getResultByIndex(0));
-      do_check_eq(TEXT, tuple.getResultByName("string"));
-      do_check_eq(Ci.mozIStorageValueArray.VALUE_TYPE_TEXT,
-                  tuple.getTypeOfIndex(0));
+      Assert.ok(!tuple.getIsNull(0));
+      Assert.equal(tuple.getResultByName("string"), tuple.getResultByIndex(0));
+      Assert.equal(TEXT, tuple.getResultByName("string"));
+      Assert.equal(Ci.mozIStorageValueArray.VALUE_TYPE_TEXT,
+                   tuple.getTypeOfIndex(0));
 
-      do_check_false(tuple.getIsNull(1));
-      do_check_eq(tuple.getResultByName("number"), tuple.getResultByIndex(1));
-      do_check_eq(REAL, tuple.getResultByName("number"));
-      do_check_eq(Ci.mozIStorageValueArray.VALUE_TYPE_FLOAT,
-                  tuple.getTypeOfIndex(1));
+      Assert.ok(!tuple.getIsNull(1));
+      Assert.equal(tuple.getResultByName("number"), tuple.getResultByIndex(1));
+      Assert.equal(REAL, tuple.getResultByName("number"));
+      Assert.equal(Ci.mozIStorageValueArray.VALUE_TYPE_FLOAT,
+                   tuple.getTypeOfIndex(1));
 
-      do_check_true(tuple.getIsNull(2));
-      do_check_eq(tuple.getResultByName("nuller"), tuple.getResultByIndex(2));
-      do_check_eq(null, tuple.getResultByName("nuller"));
-      do_check_eq(Ci.mozIStorageValueArray.VALUE_TYPE_NULL,
-                  tuple.getTypeOfIndex(2));
+      Assert.ok(tuple.getIsNull(2));
+      Assert.equal(tuple.getResultByName("nuller"), tuple.getResultByIndex(2));
+      Assert.equal(null, tuple.getResultByName("nuller"));
+      Assert.equal(Ci.mozIStorageValueArray.VALUE_TYPE_NULL,
+                   tuple.getTypeOfIndex(2));
 
-      do_check_false(tuple.getIsNull(3));
+      Assert.ok(!tuple.getIsNull(3));
       var blobByName = tuple.getResultByName("blober");
-      do_check_eq(BLOB.length, blobByName.length);
+      Assert.equal(BLOB.length, blobByName.length);
       var blobByIndex = tuple.getResultByIndex(3);
-      do_check_eq(BLOB.length, blobByIndex.length);
+      Assert.equal(BLOB.length, blobByIndex.length);
       for (let i = 0; i < BLOB.length; i++) {
-        do_check_eq(BLOB[i], blobByName[i]);
-        do_check_eq(BLOB[i], blobByIndex[i]);
+        Assert.equal(BLOB[i], blobByName[i]);
+        Assert.equal(BLOB[i], blobByIndex[i]);
       }
       var count = { value: 0 };
       var blob = { value: null };
       tuple.getBlob(3, count, blob);
-      do_check_eq(BLOB.length, count.value);
+      Assert.equal(BLOB.length, count.value);
       for (let i = 0; i < BLOB.length; i++)
-        do_check_eq(BLOB[i], blob.value[i]);
-      do_check_eq(Ci.mozIStorageValueArray.VALUE_TYPE_BLOB,
-                  tuple.getTypeOfIndex(3));
+        Assert.equal(BLOB[i], blob.value[i]);
+      Assert.equal(Ci.mozIStorageValueArray.VALUE_TYPE_BLOB,
+                   tuple.getTypeOfIndex(3));
 
-      do_check_false(tuple.getIsNull(4));
-      do_check_eq(tuple.getResultByName("id"), tuple.getResultByIndex(4));
-      do_check_eq(INTEGER, tuple.getResultByName("id"));
-      do_check_eq(Ci.mozIStorageValueArray.VALUE_TYPE_INTEGER,
-                  tuple.getTypeOfIndex(4));
+      Assert.ok(!tuple.getIsNull(4));
+      Assert.equal(tuple.getResultByName("id"), tuple.getResultByIndex(4));
+      Assert.equal(INTEGER, tuple.getResultByName("id"));
+      Assert.equal(Ci.mozIStorageValueArray.VALUE_TYPE_INTEGER,
+                   tuple.getTypeOfIndex(4));
     }]);
   stmt.finalize();
   run_next_test();
@@ -273,7 +270,7 @@ function test_tuple_out_of_bounds() {
   );
   execAsync(stmt, {}, [
     function(tuple) {
-      do_check_neq(null, tuple);
+      Assert.notEqual(null, tuple);
 
       // Check all out of bounds - should throw
       var methods = [
@@ -290,7 +287,7 @@ function test_tuple_out_of_bounds() {
           tuple[methods[i]](tuple.numEntries);
           do_throw("did not throw :(");
         } catch (e) {
-          do_check_eq(Cr.NS_ERROR_ILLEGAL_VALUE, e.result);
+          Assert.equal(Cr.NS_ERROR_ILLEGAL_VALUE, e.result);
         }
       }
 
@@ -301,7 +298,7 @@ function test_tuple_out_of_bounds() {
         tuple.getBlob(tuple.numEntries, blob, size);
         do_throw("did not throw :(");
       } catch (e) {
-        do_check_eq(Cr.NS_ERROR_ILLEGAL_VALUE, e.result);
+        Assert.equal(Cr.NS_ERROR_ILLEGAL_VALUE, e.result);
       }
     }]);
   stmt.finalize();
@@ -350,13 +347,13 @@ function test_partial_listener_works() {
   );
   stmt.bindByIndex(0, 0);
   stmt.executeAsync({
-    handleResult(aResultSet) {}
+    handleResult(aResultSet) {},
   });
   stmt.executeAsync({
-    handleError(aError) {}
+    handleError(aError) {},
   });
   stmt.executeAsync({
-    handleCompletion(aReason) {}
+    handleCompletion(aReason) {},
   });
   stmt.finalize();
 
@@ -542,13 +539,13 @@ function test_bind_multiple_rows_by_index() {
     bp.bindByIndex(3, null);
     bp.bindBlobByIndex(4, BLOB, BLOB.length);
     array.addParams(bp);
-    do_check_eq(array.length, i + 1);
+    Assert.equal(array.length, i + 1);
   }
   stmt.bindParameters(array);
 
   let rowCount = getTableRowCount("test");
   execAsync(stmt);
-  do_check_eq(rowCount + AMOUNT_TO_ADD, getTableRowCount("test"));
+  Assert.equal(rowCount + AMOUNT_TO_ADD, getTableRowCount("test"));
   stmt.finalize();
   run_next_test();
 }
@@ -568,13 +565,13 @@ function test_bind_multiple_rows_by_name() {
     bp.bindByName("null", null);
     bp.bindBlobByName("blob", BLOB, BLOB.length);
     array.addParams(bp);
-    do_check_eq(array.length, i + 1);
+    Assert.equal(array.length, i + 1);
   }
   stmt.bindParameters(array);
 
   let rowCount = getTableRowCount("test");
   execAsync(stmt);
-  do_check_eq(rowCount + AMOUNT_TO_ADD, getTableRowCount("test"));
+  Assert.equal(rowCount + AMOUNT_TO_ADD, getTableRowCount("test"));
   stmt.finalize();
   run_next_test();
 }
@@ -824,7 +821,7 @@ function test_bind_empty_array() {
 function test_multiple_results() {
   let expectedResults = getTableRowCount("test");
   // Sanity check - we should have more than one result, but let's be sure.
-  do_check_true(expectedResults > 1);
+  Assert.ok(expectedResults > 1);
 
   // Now check that we get back two rows of data from our async query.
   let stmt = makeTestStatement("SELECT * FROM test");
@@ -943,7 +940,7 @@ function run_next_test() {
   // Don't actually schedule another test if we're quitting.
   if (!_quit) {
     // For saner stacks, we execute this code RSN.
-    do_execute_soon(_run_next_test);
+    executeSoon(_run_next_test);
   }
 }
 

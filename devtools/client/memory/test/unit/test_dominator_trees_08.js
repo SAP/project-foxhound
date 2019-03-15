@@ -10,10 +10,10 @@ const {
   dominatorTreeState,
   viewState,
   labelDisplays,
-  treeMapState
+  treeMapState,
 } = require("devtools/client/memory/constants");
 const {
-  setLabelDisplayAndRefresh
+  setLabelDisplayAndRefresh,
 } = require("devtools/client/memory/actions/label-display");
 const {
   changeView,
@@ -22,27 +22,23 @@ const {
   takeSnapshotAndCensus,
 } = require("devtools/client/memory/actions/snapshot");
 
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* () {
-  let front = new StubbedMemoryFront();
-  let heapWorker = new HeapAnalysesClient();
-  yield front.attach();
-  let store = Store();
-  let { getState, dispatch } = store;
+add_task(async function() {
+  const front = new StubbedMemoryFront();
+  const heapWorker = new HeapAnalysesClient();
+  await front.attach();
+  const store = Store();
+  const { getState, dispatch } = store;
 
   dispatch(changeView(viewState.DOMINATOR_TREE));
 
   dispatch(takeSnapshotAndCensus(front, heapWorker));
-  yield waitUntilCensusState(store, s => s.treeMap, [treeMapState.SAVED]);
+  await waitUntilCensusState(store, s => s.treeMap, [treeMapState.SAVED]);
   ok(!getState().snapshots[0].dominatorTree,
      "There shouldn't be a dominator tree model yet since it is not computed " +
      "until we switch to the dominators view.");
 
   // Wait for the dominator tree to finish being fetched.
-  yield waitUntilState(store, state =>
+  await waitUntilState(store, state =>
     state.snapshots[0] &&
     state.snapshots[0].dominatorTree &&
     state.snapshots[0].dominatorTree.state === dominatorTreeState.LOADED);
@@ -61,13 +57,13 @@ add_task(function* () {
     heapWorker,
     labelDisplays.allocationStack));
 
-  yield waitUntilState(store, state =>
+  await waitUntilState(store, state =>
     state.snapshots[0].dominatorTree.state === dominatorTreeState.FETCHING);
   ok(true,
      "switching display types caused the dominator tree to be fetched " +
      "again.");
 
-  yield waitUntilState(store, state =>
+  await waitUntilState(store, state =>
     state.snapshots[0].dominatorTree.state === dominatorTreeState.LOADED);
   equal(getState().snapshots[0].dominatorTree.display,
         labelDisplays.allocationStack,
@@ -77,5 +73,5 @@ add_task(function* () {
         "as is our requested dominator tree display");
 
   heapWorker.destroy();
-  yield front.detach();
+  await front.detach();
 });

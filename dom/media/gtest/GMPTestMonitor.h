@@ -7,41 +7,34 @@
 #include "nsThreadUtils.h"
 
 #ifndef __GMPTestMonitor_h__
-#define __GMPTestMonitor_h__
+#  define __GMPTestMonitor_h__
 
-class GMPTestMonitor
-{
-public:
-  GMPTestMonitor()
-    : mFinished(false)
-  {
-  }
+class GMPTestMonitor {
+ public:
+  GMPTestMonitor() : mFinished(false) {}
 
-  void AwaitFinished()
-  {
+  void AwaitFinished() {
     MOZ_ASSERT(NS_IsMainThread());
-    while (!mFinished) {
-      NS_ProcessNextEvent(nullptr, true);
-    }
+    mozilla::SpinEventLoopUntil([&]() { return mFinished; });
     mFinished = false;
   }
 
-private:
-  void MarkFinished()
-  {
+ private:
+  void MarkFinished() {
     MOZ_ASSERT(NS_IsMainThread());
     mFinished = true;
   }
 
-public:
-  void SetFinished()
-  {
-    NS_DispatchToMainThread(mozilla::NewNonOwningRunnableMethod(this,
-                                                                &GMPTestMonitor::MarkFinished));
+ public:
+  void SetFinished() {
+    mozilla::SystemGroup::Dispatch(mozilla::TaskCategory::Other,
+                                   mozilla::NewNonOwningRunnableMethod(
+                                       "GMPTestMonitor::MarkFinished", this,
+                                       &GMPTestMonitor::MarkFinished));
   }
 
-private:
+ private:
   bool mFinished;
 };
 
-#endif // __GMPTestMonitor_h__
+#endif  // __GMPTestMonitor_h__

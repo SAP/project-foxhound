@@ -20,14 +20,10 @@
  *   implementation isn't always required (or even well defined)
  */
 
-this.EXPORTED_SYMBOLS = [ "console", "ConsoleAPI" ];
+var EXPORTED_SYMBOLS = [ "console", "ConsoleAPI" ];
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "Services",
-                                  "resource://gre/modules/Services.jsm");
+ChromeUtils.defineModuleGetter(this, "Services",
+                               "resource://gre/modules/Services.jsm");
 
 var gTimerRegistry = new Map();
 
@@ -142,7 +138,7 @@ function stringify(aThing, aAllowNewLines) {
 
   if (typeof aThing == "object") {
     let type = getCtorName(aThing);
-    if (aThing instanceof Components.interfaces.nsIDOMNode && aThing.tagName) {
+    if (Element.isInstance(aThing)) {
       return debugElement(aThing);
     }
     type = (type == "Object" ? "" : type + " ");
@@ -151,7 +147,7 @@ function stringify(aThing, aAllowNewLines) {
       json = JSON.stringify(aThing);
     } catch (ex) {
       // Can't use a real ellipsis here, because cmd.exe isn't unicode-enabled
-      json = "{" + Object.keys(aThing).join(":..,") + ":.., " + "}";
+      json = "{" + Object.keys(aThing).join(":..,") + ":.., }";
     }
     return type + json;
   }
@@ -170,7 +166,7 @@ function stringify(aThing, aAllowNewLines) {
 /**
  * Create a simple debug representation of a given element.
  *
- * @param {nsIDOMElement} aElement
+ * @param {Element} aElement
  *        The element to debug
  * @return {string}
  *        A simple single line representation of aElement
@@ -226,7 +222,7 @@ function log(aThing) {
           frame = frame.caller;
         }
       }
-    } else if (aThing instanceof Components.interfaces.nsIDOMNode && aThing.tagName) {
+    } else if (Element.isInstance(aThing)) {
       reply += "  " + debugElement(aThing) + "\n";
     } else {
       let keys = Object.getOwnPropertyNames(aThing);
@@ -294,6 +290,7 @@ const LOG_LEVELS = {
   "trace": 3,
   "timeEnd": 3,
   "time": 3,
+  "assert": 3,
   "group": 3,
   "groupEnd": 3,
   "profile": 3,
@@ -343,7 +340,7 @@ function parseStack(aStack) {
     trace.push({
       filename: posn.split(":")[0],
       lineNumber: posn.split(":")[1],
-      functionName: line.substring(0, at)
+      functionName: line.substring(0, at),
     });
   });
   return trace;
@@ -623,7 +620,7 @@ function ConsoleAPI(aConsoleOptions = {}) {
 
   if (aConsoleOptions.maxLogLevelPref) {
     updateMaxLogLevel();
-    Services.prefs.addObserver(aConsoleOptions.maxLogLevelPref, updateMaxLogLevel, false);
+    Services.prefs.addObserver(aConsoleOptions.maxLogLevelPref, updateMaxLogLevel);
   }
 
   // Bind all the functions to this object.
@@ -645,6 +642,7 @@ ConsoleAPI.prototype = {
    */
   _maxLogLevel: null,
   debug: createMultiLineDumper("debug"),
+  assert: createDumper("assert"),
   log: createDumper("log"),
   info: createDumper("info"),
   warn: createDumper("warn"),
@@ -699,9 +697,9 @@ ConsoleAPI.prototype = {
     Services.obs.notifyObservers({
       wrappedJSObject: {
         action: "profile",
-        arguments: [ profileName ]
-      }
-    }, "console-api-profiler", null);
+        arguments: [ profileName ],
+      },
+    }, "console-api-profiler");
     dumpMessage(this, "profile", `'${profileName}'`);
   },
 
@@ -712,9 +710,9 @@ ConsoleAPI.prototype = {
     Services.obs.notifyObservers({
       wrappedJSObject: {
         action: "profileEnd",
-        arguments: [ profileName ]
-      }
-    }, "console-api-profiler", null);
+        arguments: [ profileName ],
+      },
+    }, "console-api-profiler");
     dumpMessage(this, "profileEnd", `'${profileName}'`);
   },
 
@@ -727,5 +725,4 @@ ConsoleAPI.prototype = {
   },
 };
 
-this.console = new ConsoleAPI();
-this.ConsoleAPI = ConsoleAPI;
+var console = new ConsoleAPI();

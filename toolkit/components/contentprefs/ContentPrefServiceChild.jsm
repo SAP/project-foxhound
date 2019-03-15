@@ -5,15 +5,10 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = [ "ContentPrefServiceChild" ];
+var EXPORTED_SYMBOLS = [ "ContentPrefServiceChild" ];
 
-const Ci = Components.interfaces;
-const Cc = Components.classes;
-const Cu = Components.utils;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/ContentPrefUtils.jsm");
-Cu.import("resource://gre/modules/ContentPrefStore.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/ContentPrefUtils.jsm");
 
 // We only need one bit of information out of the context.
 function contextArg(context) {
@@ -48,13 +43,10 @@ CallbackCaller.prototype = {
 };
 
 var ContentPrefServiceChild = {
-  QueryInterface: XPCOMUtils.generateQI([ Ci.nsIContentPrefService2 ]),
+  QueryInterface: ChromeUtils.generateQI([ Ci.nsIContentPrefService2 ]),
 
   // Map from pref name -> set of observers
   _observers: new Map(),
-
-  _mm: Cc["@mozilla.org/childprocessmessagemanager;1"]
-         .getService(Ci.nsIMessageSender),
 
   _getRandomId() {
     return Cc["@mozilla.org/uuid-generator;1"]
@@ -65,9 +57,16 @@ var ContentPrefServiceChild = {
   _requests: new Map(),
 
   init() {
-    this._mm.addMessageListener("ContentPrefs:HandleResult", this);
-    this._mm.addMessageListener("ContentPrefs:HandleError", this);
-    this._mm.addMessageListener("ContentPrefs:HandleCompletion", this);
+    Services.cpmm.addMessageListener("ContentPrefs:HandleResult", this);
+    Services.cpmm.addMessageListener("ContentPrefs:HandleError", this);
+    Services.cpmm.addMessageListener("ContentPrefs:HandleCompletion", this);
+    Services.obs.addObserver(this, "xpcom-shutdown");
+  },
+
+  observe() {
+    Services.obs.removeObserver(this, "xpcom-shutdown");
+    delete this._observers;
+    delete this._requests;
   },
 
   receiveMessage(msg) {
@@ -108,7 +107,7 @@ var ContentPrefServiceChild = {
     let requestId = this._getRandomId();
     let data = { call, args, requestId };
 
-    this._mm.sendAsyncMessage("ContentPrefs:FunctionCall", data);
+    Services.cpmm.sendAsyncMessage("ContentPrefs:FunctionCall", data);
 
     this._requests.set(requestId, new CallbackCaller(callback));
   },
@@ -123,12 +122,12 @@ var ContentPrefServiceChild = {
       set = new Set();
       if (this._observers.size === 0) {
         // This is the first observer of any kind. Start listening for changes.
-        this._mm.addMessageListener("ContentPrefs:NotifyObservers", this);
+        Services.cpmm.addMessageListener("ContentPrefs:NotifyObservers", this);
       }
 
       // This is the first observer for this name. Start listening for changes
       // to it.
-      this._mm.sendAsyncMessage("ContentPrefs:AddObserverForName", { name });
+      Services.cpmm.sendAsyncMessage("ContentPrefs:AddObserverForName", { name });
       this._observers.set(name, set);
     }
 
@@ -143,18 +142,18 @@ var ContentPrefServiceChild = {
     set.delete(observer);
     if (set.size === 0) {
       // This was the last observer for this name. Stop listening for changes.
-      this._mm.sendAsyncMessage("ContentPrefs:RemoveObserverForName", { name });
+      Services.cpmm.sendAsyncMessage("ContentPrefs:RemoveObserverForName", { name });
 
       this._observers.delete(name);
       if (this._observers.size === 0) {
         // This was the last observer for this process. Stop listing for all
         // changes.
-        this._mm.removeMessageListener("ContentPrefs:NotifyObservers", this);
+        Services.cpmm.removeMessageListener("ContentPrefs:NotifyObservers", this);
       }
     }
   },
 
-  extractDomain: NYI
+  extractDomain: NYI,
 };
 
 function forwardMethodToParent(method, signature, ...args) {

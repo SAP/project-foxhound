@@ -7,67 +7,149 @@ Transform the push-apk kind into an actual task description.
 
 from __future__ import absolute_import, print_function, unicode_literals
 
-import functools
+import re
 
 from taskgraph.transforms.base import TransformSequence
-from taskgraph.util.scriptworker import get_push_apk_scope, get_push_apk_track, \
-    get_push_apk_dry_run_option, get_push_apk_rollout_percentage
-from taskgraph.util.push_apk import fill_labels_tranform, validate_jobs_schema_transform_partial, \
-    validate_dependent_tasks_transform, delete_non_required_fields_transform, generate_dependencies
-from voluptuous import Schema, Required
+from taskgraph.transforms.task import task_description_schema
+from taskgraph.util.schema import optionally_keyed_by, resolve_keyed_by, Schema
+from taskgraph.util.scriptworker import get_push_apk_scope
+from taskgraph.util.taskcluster import get_artifact_prefix
 
+from voluptuous import Optional, Required
 
-transforms = TransformSequence()
+# Voluptuous uses marker objects as dictionary *keys*, but they are not
+# comparable, so we cast all of the keys back to regular strings
+task_description_schema = {str(k): v for k, v in task_description_schema.schema.iteritems()}
+
 
 push_apk_description_schema = Schema({
-    # the dependent task (object) for this beetmover job, used to inform beetmover.
     Required('dependent-tasks'): object,
     Required('name'): basestring,
-    Required('label'): basestring,
-    Required('description'): basestring,
-    Required('attributes'): object,
-    Required('treeherder'): object,
-    Required('run-on-projects'): list,
-    Required('worker-type'): basestring,
+    Required('label'): task_description_schema['label'],
+    Required('description'): task_description_schema['description'],
+    Required('job-from'): task_description_schema['job-from'],
+    Required('attributes'): task_description_schema['attributes'],
+    Required('treeherder'): task_description_schema['treeherder'],
+    Required('run-on-projects'): task_description_schema['run-on-projects'],
+    Required('worker-type'): optionally_keyed_by('release-level', basestring),
     Required('worker'): object,
     Required('scopes'): None,
+    Required('requires'): task_description_schema['requires'],
     Required('deadline-after'): basestring,
+    Required('shipping-phase'): task_description_schema['shipping-phase'],
+    Required('shipping-product'): task_description_schema['shipping-product'],
+    Optional('extra'): task_description_schema['extra'],
 })
 
-validate_jobs_schema_transform = functools.partial(
-    validate_jobs_schema_transform_partial,
-    push_apk_description_schema,
-    'PushApk'
-)
 
-transforms.add(fill_labels_tranform)
-transforms.add(validate_jobs_schema_transform)
-transforms.add(validate_dependent_tasks_transform)
+PLATFORM_REGEX = re.compile(r'build-signing-android-(\S+)-nightly')
+
+transforms = TransformSequence()
+transforms.add_validate(push_apk_description_schema)
+
+
+@transforms.add
+def validate_dependent_tasks(config, jobs):
+    for job in jobs:
+        check_every_architecture_is_present_in_dependent_tasks(
+            config.params['project'], job['dependent-tasks']
+        )
+        yield job
+
+
+def check_every_architecture_is_present_in_dependent_tasks(project, dependent_tasks):
+    dep_platforms = set(t.attributes.get('build_platform') for t in dependent_tasks)
+    required_architectures = _get_required_architectures(project)
+    missed_architectures = required_architectures - dep_platforms
+    if missed_architectures:
+        raise Exception('''One or many required architectures are missing.
+
+Required architectures: {}.
+Given dependencies: {}.
+'''.format(required_architectures, dependent_tasks)
+        )
+
+
+def _get_required_architectures(project):
+    architectures = {
+        'android-api-16-nightly',
+        'android-x86-nightly',
+    }
+    if project == 'mozilla-central':
+        architectures.add('android-aarch64-nightly')
+
+    return architectures
 
 
 @transforms.add
 def make_task_description(config, jobs):
     for job in jobs:
         job['dependencies'] = generate_dependencies(job['dependent-tasks'])
-        job['worker']['upstream-artifacts'] = generate_upstream_artifacts(job['dependencies'])
-        job['worker']['google-play-track'] = get_push_apk_track(config)
-        job['worker']['dry-run'] = get_push_apk_dry_run_option(config)
+        job['worker']['upstream-artifacts'] = generate_upstream_artifacts(
+            job, job['dependencies']
+        )
 
-        rollout_percentage = get_push_apk_rollout_percentage(config)
-        if rollout_percentage is not None:
-            job['worker']['rollout-percentage'] = rollout_percentage
+        resolve_keyed_by(
+            job, 'worker.google-play-track', item_name=job['name'],
+            **{'release-type': config.params['release_type']}
+        )
+        resolve_keyed_by(
+            job, 'worker.commit', item_name=job['name'],
+            **{'release-level': config.params.release_level()}
+        )
+
+        resolve_keyed_by(
+            job, 'worker.rollout-percentage', item_name=job['name'],
+            **{'release-type': config.params['release_type']}
+        )
 
         job['scopes'] = [get_push_apk_scope(config)]
+
+        resolve_keyed_by(
+            job, 'worker-type', item_name=job['name'],
+            **{'release-level': config.params.release_level()}
+        )
 
         yield job
 
 
-transforms.add(delete_non_required_fields_transform)
+def generate_dependencies(dependent_tasks):
+    # Because we depend on several tasks that have the same kind, we introduce the platform
+    dependencies = {}
+    for task in dependent_tasks:
+        platform_match = PLATFORM_REGEX.match(task.label)
+        # platform_match is None when the google-play-string task is given, for instance
+        task_kind = task.kind if platform_match is None else \
+            '{}-{}'.format(task.kind, platform_match.group(1))
+        dependencies[task_kind] = task.label
+    return dependencies
 
 
-def generate_upstream_artifacts(dependencies):
-    return [{
+def generate_upstream_artifacts(job, dependencies):
+    artifact_prefix = get_artifact_prefix(job)
+    apks = [{
         'taskId': {'task-reference': '<{}>'.format(task_kind)},
         'taskType': 'signing',
-        'paths': ['public/build/target.apk'],
-    } for task_kind in dependencies.keys() if 'breakpoint' not in task_kind]
+        'paths': ['{}/target.apk'.format(artifact_prefix)],
+    } for task_kind in dependencies.keys()
+      if 'google-play-strings' not in task_kind
+    ]
+
+    google_play_strings = [{
+        'taskId': {'task-reference': '<{}>'.format(task_kind)},
+        'taskType': 'build',
+        'paths': ['public/google_play_strings.json'],
+        'optional': True,
+    } for task_kind in dependencies.keys()
+      if 'google-play-strings' in task_kind
+    ]
+
+    return apks + google_play_strings
+
+
+@transforms.add
+def delete_non_required_fields(_, jobs):
+    for job in jobs:
+        del job['name']
+        del job['dependent-tasks']
+        yield job

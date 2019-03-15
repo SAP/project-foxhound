@@ -87,14 +87,8 @@
       doPageNavigation(navData);
       yield undefined;
 
-      var Ci = Components.interfaces;
-      var docshell = TestWindow.getWindow()
-                               .QueryInterface(Ci.nsIInterfaceRequestor)
-                               .getInterface(Ci.nsIWebNavigation)
-                               .QueryInterface(Ci.nsIDocShell);
-      var shistory = docshell.QueryInterface(Ci.nsIInterfaceRequestor)
-                             .getInterface(Ci.nsISHistory)
-                             .QueryInterface(Ci.nsIWebNavigation);
+      var docshell = TestWindow.getWindow().docShell;
+      var shistory = docshell.sessionHistory.legacySHistory;
 
       // Reload.
       navData = {
@@ -107,9 +101,10 @@
       };
       // Asking the docshell harness to reload for us will call reload on
       // nsDocShell which has different behavior than the reload on nsSHistory
-      // so we call reload explicitly here
+      // so we call reloadCurrentEntry() (which is equivalent to reload(0) and
+      // visible from JS) explicitly here.
       waitForPageEvents(navData);
-      shistory.reload(0);
+      shistory.reloadCurrentEntry();
       yield undefined;
 
       // After this sequence of events, we should be able to go back and forward

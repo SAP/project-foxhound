@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,16 +14,16 @@
 // <semantics> -- associate annotations with a MathML expression
 //
 
-class nsMathMLsemanticsFrame : public nsMathMLSelectedFrame {
-public:
-  NS_DECL_FRAMEARENA_HELPERS
+class nsMathMLsemanticsFrame final : public nsMathMLSelectedFrame {
+ public:
+  NS_DECL_FRAMEARENA_HELPERS(nsMathMLsemanticsFrame)
 
   friend nsIFrame* NS_NewMathMLsemanticsFrame(nsIPresShell* aPresShell,
-                                              nsStyleContext* aContext);
+                                              ComputedStyle* aStyle);
 
-protected:
-  explicit nsMathMLsemanticsFrame(nsStyleContext* aContext) :
-    nsMathMLSelectedFrame(aContext) {}
+ protected:
+  explicit nsMathMLsemanticsFrame(ComputedStyle* aStyle)
+      : nsMathMLSelectedFrame(aStyle, kClassID) {}
   virtual ~nsMathMLsemanticsFrame();
 
   nsIFrame* GetSelectedFrame() override;

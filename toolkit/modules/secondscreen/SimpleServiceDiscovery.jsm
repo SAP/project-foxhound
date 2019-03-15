@@ -5,15 +5,14 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["SimpleServiceDiscovery"];
+var EXPORTED_SYMBOLS = ["SimpleServiceDiscovery"];
 
-const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
-
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Timer.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
 var log = Cu.reportError;
+XPCOMUtils.defineLazyGlobalGetters(this, ["XMLHttpRequest"]);
 
 XPCOMUtils.defineLazyGetter(this, "converter", function() {
   let conv = Cc["@mozilla.org/intl/scriptableunicodeconverter"].createInstance(Ci.nsIScriptableUnicodeConverter);
@@ -186,10 +185,7 @@ var SimpleServiceDiscovery = {
   },
 
   _searchFixedDevices: function _searchFixedDevices() {
-    let fixedDevices = null;
-    try {
-      fixedDevices = Services.prefs.getCharPref("browser.casting.fixedDevices");
-    } catch (e) {}
+    let fixedDevices = Services.prefs.getCharPref("browser.casting.fixedDevices", "");
 
     if (!fixedDevices) {
       return;
@@ -206,7 +202,7 @@ var SimpleServiceDiscovery = {
 
       let service = {
         location: fixedDevice.location,
-        target: fixedDevice.target
+        target: fixedDevice.target,
       };
 
       // We don't assume the fixed target is ready. We still need to ping it.
@@ -351,12 +347,12 @@ var SimpleServiceDiscovery = {
 
   _processService: function _processService(aService) {
     // Use the REST api to request more information about this service
-    let xhr = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"].createInstance(Ci.nsIXMLHttpRequest);
+    let xhr = new XMLHttpRequest();
     xhr.open("GET", aService.location, true);
     xhr.channel.loadFlags |= Ci.nsIRequest.INHIBIT_CACHING;
     xhr.overrideMimeType("text/xml");
 
-    xhr.addEventListener("load", (function() {
+    xhr.addEventListener("load", () => {
       if (xhr.status == 200) {
         let doc = xhr.responseXML;
         aService.appsURL = xhr.getResponseHeader("Application-URL");
@@ -369,7 +365,7 @@ var SimpleServiceDiscovery = {
 
         this.addService(aService);
       }
-    }).bind(this));
+    });
 
     xhr.send(null);
   },
@@ -432,4 +428,4 @@ var SimpleServiceDiscovery = {
       discovery.stopDiscovery();
     }
   },
-}
+};

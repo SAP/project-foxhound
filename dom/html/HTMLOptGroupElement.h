@@ -8,71 +8,58 @@
 #define mozilla_dom_HTMLOptGroupElement_h
 
 #include "mozilla/Attributes.h"
-#include "nsIDOMHTMLOptGroupElement.h"
 #include "nsGenericHTMLElement.h"
 
 namespace mozilla {
 class EventChainPreVisitor;
 namespace dom {
 
-class HTMLOptGroupElement final : public nsGenericHTMLElement,
-                                  public nsIDOMHTMLOptGroupElement
-{
-public:
-  explicit HTMLOptGroupElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+class HTMLOptGroupElement final : public nsGenericHTMLElement {
+ public:
+  explicit HTMLOptGroupElement(
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
-  NS_IMPL_FROMCONTENT_HTML_WITH_TAG(HTMLOptGroupElement, optgroup)
+  NS_IMPL_FROMNODE_HTML_WITH_TAG(HTMLOptGroupElement, optgroup)
 
   // nsISupports
-  NS_DECL_ISUPPORTS_INHERITED
-
-  // nsIDOMHTMLOptGroupElement
-  NS_DECL_NSIDOMHTMLOPTGROUPELEMENT
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(HTMLOptGroupElement,
+                                       nsGenericHTMLElement)
 
   // nsINode
-  virtual nsresult InsertChildAt(nsIContent* aKid, uint32_t aIndex,
-                                 bool aNotify) override;
-  virtual void RemoveChildAt(uint32_t aIndex, bool aNotify) override;
+  virtual nsresult InsertChildBefore(nsIContent* aKid, nsIContent* aBeforeThis,
+                                     bool aNotify) override;
+  virtual void RemoveChildNode(nsIContent* aKid, bool aNotify) override;
 
   // nsIContent
-  virtual nsresult GetEventTargetParent(
-                     EventChainPreVisitor& aVisitor) override;
+  void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
 
-  virtual EventStates IntrinsicState() const override;
- 
-  virtual nsresult Clone(mozilla::dom::NodeInfo* aNodeInfo, nsINode** aResult) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
-  virtual nsresult AfterSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
-                                const nsAttrValue* aValue, bool aNotify) override;
+  virtual nsresult AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                                const nsAttrValue* aValue,
+                                const nsAttrValue* aOldValue,
+                                nsIPrincipal* aSubjectPrincipal,
+                                bool aNotify) override;
 
-  virtual nsIDOMNode* AsDOMNode() override { return this; }
-
-  virtual bool IsDisabled() const override {
-    return HasAttr(kNameSpaceID_None, nsGkAtoms::disabled);
+  bool Disabled() const { return GetBoolAttr(nsGkAtoms::disabled); }
+  void SetDisabled(bool aValue, ErrorResult& aError) {
+    SetHTMLBoolAttr(nsGkAtoms::disabled, aValue, aError);
   }
 
-  bool Disabled() const
-  {
-    return GetBoolAttr(nsGkAtoms::disabled);
+  void GetLabel(nsAString& aValue) const {
+    GetHTMLAttr(nsGkAtoms::label, aValue);
   }
-  void SetDisabled(bool aValue, ErrorResult& aError)
-  {
-     SetHTMLBoolAttr(nsGkAtoms::disabled, aValue, aError);
-  }
-
-  // The XPCOM GetLabel is OK for us
-  void SetLabel(const nsAString& aLabel, ErrorResult& aError)
-  {
+  void SetLabel(const nsAString& aLabel, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::label, aLabel, aError);
   }
 
-protected:
+ protected:
   virtual ~HTMLOptGroupElement();
 
-  virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapNode(JSContext* aCx,
+                             JS::Handle<JSObject*> aGivenProto) override;
 
-protected:
-
+ protected:
   /**
    * Get the select content element that contains this option
    * @param aSelectElement the select element [OUT]
@@ -80,7 +67,7 @@ protected:
   Element* GetSelect();
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif /* mozilla_dom_HTMLOptGroupElement_h */

@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,98 +12,143 @@
 #include "nsILayoutHistoryState.h"
 #include "nsWeakReference.h"
 #include "nsClassHashtable.h"
-#include "nsPresState.h"
+#include "mozilla/PresState.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/UniquePtr.h"
+
+using namespace mozilla;
 
 class nsLayoutHistoryState final : public nsILayoutHistoryState,
-                                   public nsSupportsWeakReference
-{
-public:
-  nsLayoutHistoryState()
-    : mScrollPositionOnly(false)
-  {
-  }
+                                   public nsSupportsWeakReference {
+ public:
+  nsLayoutHistoryState() : mScrollPositionOnly(false) {}
 
   NS_DECL_ISUPPORTS
+  NS_DECL_NSILAYOUTHISTORYSTATE
 
-  // nsILayoutHistoryState
-  virtual void
-  AddState(const nsCString& aKey, nsPresState* aState) override;
-  virtual nsPresState*
-  GetState(const nsCString& aKey) override;
-  virtual void
-  RemoveState(const nsCString& aKey) override;
-  virtual bool
-  HasStates() const override;
-  virtual void
-  SetScrollPositionOnly(const bool aFlag) override;
-  virtual void
-  ResetScrollState() override;
-
-private:
+ private:
   ~nsLayoutHistoryState() {}
   bool mScrollPositionOnly;
 
-  nsClassHashtable<nsCStringHashKey,nsPresState> mStates;
+  nsDataHashtable<nsCStringHashKey, UniquePtr<PresState>> mStates;
 };
 
-
-already_AddRefed<nsILayoutHistoryState>
-NS_NewLayoutHistoryState()
-{
+already_AddRefed<nsILayoutHistoryState> NS_NewLayoutHistoryState() {
   RefPtr<nsLayoutHistoryState> state = new nsLayoutHistoryState();
   return state.forget();
 }
 
-NS_IMPL_ISUPPORTS(nsLayoutHistoryState,
-                  nsILayoutHistoryState,
+NS_IMPL_ISUPPORTS(nsLayoutHistoryState, nsILayoutHistoryState,
                   nsISupportsWeakReference)
 
-void
-nsLayoutHistoryState::AddState(const nsCString& aStateKey, nsPresState* aState)
-{
-  mStates.Put(aStateKey, aState);
+NS_IMETHODIMP
+nsLayoutHistoryState::GetHasStates(bool* aHasStates) {
+  *aHasStates = HasStates();
+  return NS_OK;
 }
 
-nsPresState*
-nsLayoutHistoryState::GetState(const nsCString& aKey)
-{
-  nsPresState* state = nullptr;
-  bool entryExists = mStates.Get(aKey, &state);
+NS_IMETHODIMP
+nsLayoutHistoryState::GetKeys(uint32_t* aCount, char*** aKeys) {
+  if (!HasStates()) {
+    return NS_ERROR_FAILURE;
+  }
 
-  if (entryExists && mScrollPositionOnly) {
+  char** keys =
+      static_cast<char**>(moz_xmalloc(sizeof(char*) * mStates.Count()));
+  *aCount = mStates.Count();
+  *aKeys = keys;
+
+  for (auto iter = mStates.Iter(); !iter.Done(); iter.Next()) {
+    *keys = ToNewCString(iter.Key());
+    keys++;
+  }
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsLayoutHistoryState::GetPresState(const nsACString& aKey, float* aScrollX,
+                                   float* aScrollY,
+                                   bool* aAllowScrollOriginDowngrade,
+                                   float* aRes) {
+  PresState* state = GetState(nsCString(aKey));
+
+  if (!state) {
+    return NS_ERROR_FAILURE;
+  }
+
+  *aScrollX = state->scrollState().x;
+  *aScrollY = state->scrollState().y;
+  *aAllowScrollOriginDowngrade = state->allowScrollOriginDowngrade();
+  *aRes = state->resolution();
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsLayoutHistoryState::AddNewPresState(const nsACString& aKey, float aScrollX,
+                                      float aScrollY,
+                                      bool aAllowScrollOriginDowngrade,
+                                      float aRes) {
+  UniquePtr<PresState> newState = NewPresState();
+  newState->scrollState() = nsPoint(aScrollX, aScrollY);
+  newState->allowScrollOriginDowngrade() = aAllowScrollOriginDowngrade;
+  newState->resolution() = aRes;
+
+  mStates.Put(nsCString(aKey), std::move(newState));
+
+  return NS_OK;
+}
+
+void nsLayoutHistoryState::AddState(const nsCString& aStateKey,
+                                    UniquePtr<PresState> aState) {
+  mStates.Put(aStateKey, std::move(aState));
+}
+
+PresState* nsLayoutHistoryState::GetState(const nsCString& aKey) {
+  UniquePtr<PresState>* statePtr = mStates.GetValue(aKey);
+  if (!statePtr) {
+    return nullptr;
+  }
+  PresState* state = statePtr->get();
+
+  if (mScrollPositionOnly) {
     // Ensure any state that shouldn't be restored is removed
-    state->ClearNonScrollState();
+    state->contentData() = void_t();
+    state->disabledSet() = false;
   }
 
   return state;
 }
 
-void
-nsLayoutHistoryState::RemoveState(const nsCString& aKey)
-{
+void nsLayoutHistoryState::RemoveState(const nsCString& aKey) {
   mStates.Remove(aKey);
 }
 
-bool
-nsLayoutHistoryState::HasStates() const
-{
-  return mStates.Count() != 0;
-}
+bool nsLayoutHistoryState::HasStates() { return mStates.Count() != 0; }
 
-void
-nsLayoutHistoryState::SetScrollPositionOnly(const bool aFlag)
-{
+void nsLayoutHistoryState::SetScrollPositionOnly(const bool aFlag) {
   mScrollPositionOnly = aFlag;
 }
 
-void
-nsLayoutHistoryState::ResetScrollState()
-{
+void nsLayoutHistoryState::ResetScrollState() {
   for (auto iter = mStates.Iter(); !iter.Done(); iter.Next()) {
-    nsPresState* state = iter.UserData();
+    PresState* state = iter.Data().get();
     if (state) {
-      state->SetScrollState(nsPoint(0, 0));
+      state->scrollState() = nsPoint(0, 0);
     }
   }
 }
+
+namespace mozilla {
+UniquePtr<PresState> NewPresState() {
+  return MakeUnique<PresState>(
+      /* contentData */ mozilla::void_t(),
+      /* scrollState */ nsPoint(0, 0),
+      /* allowScrollOriginDowngrade */ true,
+      /* resolution */ 1.0,
+      /* disabledSet */ false,
+      /* disabled */ false,
+      /* droppedDown */ false);
+}
+}  // namespace mozilla

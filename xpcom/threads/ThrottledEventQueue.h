@@ -9,11 +9,14 @@
 #ifndef mozilla_ThrottledEventQueue_h
 #define mozilla_ThrottledEventQueue_h
 
-#include "nsIEventTarget.h"
+#include "nsISerialEventTarget.h"
 
-#define NS_THROTTLEDEVENTQUEUE_IID \
-{ 0x8f3cf7dc, 0xfc14, 0x4ad5, \
-  { 0x9f, 0xd5, 0xdb, 0x79, 0xbc, 0xe6, 0xd5, 0x08 } }
+#define NS_THROTTLEDEVENTQUEUE_IID                   \
+  {                                                  \
+    0x8f3cf7dc, 0xfc14, 0x4ad5, {                    \
+      0x9f, 0xd5, 0xdb, 0x79, 0xbc, 0xe6, 0xd5, 0x08 \
+    }                                                \
+  }
 
 namespace mozilla {
 
@@ -22,7 +25,7 @@ namespace mozilla {
 // own queue of events and only dispatches one at a time to the wrapped
 // target.  This can be used to avoid flooding the base target.
 //
-// Flooding is avoided via a very simply principal.  Runnables dispatched
+// Flooding is avoided via a very simple principle.  Runnables dispatched
 // to the ThrottledEventQueue are only dispatched to the base target
 // one at a time.  Only once that runnable has executed will we dispatch
 // the next runnable to the base target.  This in effect makes all
@@ -52,32 +55,20 @@ namespace mozilla {
 // If you are targeting a single thread or other non-concurrent event
 // target, you probably want a ThrottledEventQueue.
 //
-// ThrottledEventQueue also implements an automatic shutdown mechanism.
-// De-referencing the queue or browser shutdown will automatically begin
-// shutdown.
-//
-// Once shutdown begins all events will bypass the queue and be dispatched
-// straight to the underlying base target.
-class ThrottledEventQueue final : public nsIEventTarget
-{
+// If you drop a ThrottledEventQueue while its queue still has events to be run,
+// they will continue to be dispatched as usual to the base. Only once the last
+// event has run will all the ThrottledEventQueue's memory be freed.
+class ThrottledEventQueue final : public nsISerialEventTarget {
   class Inner;
   RefPtr<Inner> mInner;
 
   explicit ThrottledEventQueue(already_AddRefed<Inner> aInner);
-  ~ThrottledEventQueue();
+  ~ThrottledEventQueue() = default;
 
-  // Begin shutdown of the event queue.  This has no effect if shutdown
-  // is already in process.  After this is called nsIEventTarget methods
-  // will bypass the queue and operate directly on the base target.
-  // Note, this could be made public if code needs to explicitly shutdown
-  // for some reason.
-  void MaybeStartShutdown();
-
-public:
-  // Attempt to create a ThrottledEventQueue for the given target.  This
-  // may return nullptr if the browser is already shutting down.
-  static already_AddRefed<ThrottledEventQueue>
-  Create(nsIEventTarget* aBaseTarget);
+ public:
+  // Create a ThrottledEventQueue for the given target.
+  static already_AddRefed<ThrottledEventQueue> Create(
+      nsISerialEventTarget* aBaseTarget);
 
   // Determine if there are any events pending in the queue.
   bool IsEmpty() const;
@@ -85,18 +76,40 @@ public:
   // Determine how many events are pending in the queue.
   uint32_t Length() const;
 
-  // Block the current thread until the queue is empty.  This may not
-  // be called on the main thread or the base target.
+  // Block the current thread until the queue is empty. This may not be called
+  // on the main thread or the base target. The ThrottledEventQueue must not be
+  // paused.
   void AwaitIdle() const;
 
+  // If |aIsPaused| is true, pause execution of events from this queue. No
+  // events from this queue will be run until this is called with |aIsPaused|
+  // false.
+  //
+  // To un-pause a ThrottledEventQueue, we need to dispatch a runnable to the
+  // underlying event target. That operation may fail, so this method is
+  // fallible as well.
+  //
+  // Note that, although ThrottledEventQueue's behavior is descibed as queueing
+  // events on the base target, an event queued on a TEQ is never actually moved
+  // to any other queue. What is actually dispatched to the base is an
+  // "executor" event which, when run, removes an event from the TEQ and runs it
+  // immediately. This means that you can pause a TEQ even after the executor
+  // has been queued on the base target, and even so, no events from the TEQ
+  // will run. When the base target gets around to running the executor, the
+  // executor will see that the TEQ is paused, and do nothing.
+  MOZ_MUST_USE nsresult SetIsPaused(bool aIsPaused);
+
+  // Return true if this ThrottledEventQueue is paused.
+  bool IsPaused() const;
+
   NS_DECL_THREADSAFE_ISUPPORTS
-  NS_DECL_NSIEVENTTARGET
+  NS_DECL_NSIEVENTTARGET_FULL
 
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_THROTTLEDEVENTQUEUE_IID);
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(ThrottledEventQueue, NS_THROTTLEDEVENTQUEUE_IID);
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_ThrottledEventQueue_h
+#endif  // mozilla_ThrottledEventQueue_h

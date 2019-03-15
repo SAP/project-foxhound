@@ -5,23 +5,22 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #if !defined(WMFPlatformDecoderModule_h_)
-#define WMFPlatformDecoderModule_h_
+#  define WMFPlatformDecoderModule_h_
 
-#include "PlatformDecoderModule.h"
+#  include "PlatformDecoderModule.h"
 
 namespace mozilla {
 
-class WMFDecoderModule : public PlatformDecoderModule
-{
-public:
+class WMFDecoderModule : public PlatformDecoderModule {
+ public:
   // Initializes the module, loads required dynamic libraries, etc.
   nsresult Startup() override;
 
-  already_AddRefed<MediaDataDecoder>
-  CreateVideoDecoder(const CreateDecoderParams& aParams) override;
+  already_AddRefed<MediaDataDecoder> CreateVideoDecoder(
+      const CreateDecoderParams& aParams) override;
 
-  already_AddRefed<MediaDataDecoder>
-  CreateAudioDecoder(const CreateDecoderParams& aParams) override;
+  already_AddRefed<MediaDataDecoder> CreateAudioDecoder(
+      const CreateDecoderParams& aParams) override;
 
   bool SupportsMimeType(const nsACString& aMimeType,
                         DecoderDoctorDiagnostics* aDiagnostics) const override;
@@ -42,12 +41,12 @@ public:
   static bool HasAAC();
   static bool HasH264();
 
-private:
+ private:
   virtual ~WMFDecoderModule();
 
   bool mWMFInitialized = false;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif

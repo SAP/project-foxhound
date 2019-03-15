@@ -3,13 +3,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-var {Ci, Cu, CC} = require("chrome");
-const promise = require("promise");
+var {Ci} = require("chrome");
 
-const {FileUtils} = Cu.import("resource://gre/modules/FileUtils.jsm", {});
+const {FileUtils} = require("resource://gre/modules/FileUtils.jsm");
 const Services = require("Services");
-const {Task} = require("devtools/shared/task");
-var XMLHttpRequest = CC("@mozilla.org/xmlextras/xmlhttprequest;1");
 var strings = Services.strings.createBundle("chrome://devtools/locale/app-manager.properties");
 
 function AppValidator({ type, location }) {
@@ -19,16 +16,16 @@ function AppValidator({ type, location }) {
   this.warnings = [];
 }
 
-AppValidator.prototype.error = function (message) {
+AppValidator.prototype.error = function(message) {
   this.errors.push(message);
 };
 
-AppValidator.prototype.warning = function (message) {
+AppValidator.prototype.warning = function(message) {
   this.warnings.push(message);
 };
 
-AppValidator.prototype._getPackagedManifestFile = function () {
-  let manifestFile = FileUtils.File(this.location);
+AppValidator.prototype._getPackagedManifestFile = function() {
+  const manifestFile = FileUtils.File(this.location);
   if (!manifestFile.exists()) {
     this.error(strings.GetStringFromName("validator.nonExistingFolder"));
     return null;
@@ -38,14 +35,14 @@ AppValidator.prototype._getPackagedManifestFile = function () {
     return null;
   }
 
-  let appManifestFile = manifestFile.clone();
+  const appManifestFile = manifestFile.clone();
   appManifestFile.append("manifest.webapp");
 
-  let jsonManifestFile = manifestFile.clone();
+  const jsonManifestFile = manifestFile.clone();
   jsonManifestFile.append("manifest.json");
 
-  let hasAppManifest = appManifestFile.exists() && appManifestFile.isFile();
-  let hasJsonManifest = jsonManifestFile.exists() && jsonManifestFile.isFile();
+  const hasAppManifest = appManifestFile.exists() && appManifestFile.isFile();
+  const hasJsonManifest = jsonManifestFile.exists() && jsonManifestFile.isFile();
 
   if (!hasAppManifest && !hasJsonManifest) {
     this.error(strings.GetStringFromName("validator.noManifestFile"));
@@ -55,131 +52,127 @@ AppValidator.prototype._getPackagedManifestFile = function () {
   return hasAppManifest ? appManifestFile : jsonManifestFile;
 };
 
-AppValidator.prototype._getPackagedManifestURL = function () {
-  let manifestFile = this._getPackagedManifestFile();
+AppValidator.prototype._getPackagedManifestURL = function() {
+  const manifestFile = this._getPackagedManifestFile();
   if (!manifestFile) {
     return null;
   }
   return Services.io.newFileURI(manifestFile).spec;
 };
 
-AppValidator.checkManifest = function (manifestURL) {
-  let deferred = promise.defer();
-  let error;
+AppValidator.checkManifest = function(manifestURL) {
+  return new Promise((resolve, reject) => {
+    let error;
 
-  let req = new XMLHttpRequest();
-  req.overrideMimeType("text/plain");
+    const req = new XMLHttpRequest();
+    req.overrideMimeType("text/plain");
 
-  try {
-    req.open("GET", manifestURL, true);
-    req.channel.loadFlags |= Ci.nsIRequest.LOAD_BYPASS_CACHE | Ci.nsIRequest.INHIBIT_CACHING;
-  } catch (e) {
-    error = strings.formatStringFromName("validator.invalidManifestURL", [manifestURL], 1);
-    deferred.reject(error);
-    return deferred.promise;
-  }
-
-  req.onload = function () {
-    let manifest = null;
     try {
-      manifest = JSON.parse(req.responseText);
+      req.open("GET", manifestURL, true);
+      req.channel.loadFlags |= Ci.nsIRequest.LOAD_BYPASS_CACHE | Ci.nsIRequest.INHIBIT_CACHING;
     } catch (e) {
-      error = strings.formatStringFromName("validator.invalidManifestJSON", [e, manifestURL], 2);
-      deferred.reject(error);
+      error = strings.formatStringFromName("validator.invalidManifestURL", [manifestURL], 1);
+      return reject(error);
     }
 
-    deferred.resolve({manifest, manifestURL});
-  };
+    req.onload = function() {
+      let manifest = null;
+      try {
+        manifest = JSON.parse(req.responseText);
+      } catch (e) {
+        error = strings.formatStringFromName("validator.invalidManifestJSON", [e, manifestURL], 2);
+        reject(error);
+      }
 
-  req.onerror = function () {
-    error = strings.formatStringFromName("validator.noAccessManifestURL", [req.statusText, manifestURL], 2);
-    deferred.reject(error);
-  };
+      resolve({manifest, manifestURL});
+    };
 
-  try {
-    req.send(null);
-  } catch (e) {
-    error = strings.formatStringFromName("validator.noAccessManifestURL", [e, manifestURL], 2);
-    deferred.reject(error);
-  }
+    req.onerror = function() {
+      error = strings.formatStringFromName("validator.noAccessManifestURL", [req.statusText, manifestURL], 2);
+      reject(error);
+    };
 
-  return deferred.promise;
-};
-
-AppValidator.findManifestAtOrigin = function (manifestURL) {
-  let fixedManifest = Services.io.newURI(manifestURL).prePath + "/manifest.webapp";
-  return AppValidator.checkManifest(fixedManifest);
-};
-
-AppValidator.findManifestPath = function (manifestURL) {
-  let deferred = promise.defer();
-
-  if (manifestURL.endsWith("manifest.webapp")) {
-    deferred.reject();
-  } else {
-    let fixedManifest = manifestURL + "/manifest.webapp";
-    deferred.resolve(AppValidator.checkManifest(fixedManifest));
-  }
-
-  return deferred.promise;
-};
-
-AppValidator.checkAlternateManifest = function (manifestURL) {
-  return Task.spawn(function* () {
-    let result;
     try {
-      result = yield AppValidator.findManifestPath(manifestURL);
+      req.send(null);
     } catch (e) {
-      result = yield AppValidator.findManifestAtOrigin(manifestURL);
+      error = strings.formatStringFromName("validator.noAccessManifestURL", [e, manifestURL], 2);
+      reject(error);
     }
-
-    return result;
   });
 };
 
-AppValidator.prototype._fetchManifest = function (manifestURL) {
-  let deferred = promise.defer();
-  this.manifestURL = manifestURL;
-
-  AppValidator.checkManifest(manifestURL)
-              .then(({manifest, manifestURL}) => {
-                deferred.resolve(manifest);
-              }, error => {
-                AppValidator.checkAlternateManifest(manifestURL)
-                            .then(({manifest, manifestURL}) => {
-                              this.manifestURL = manifestURL;
-                              deferred.resolve(manifest);
-                            }, () => {
-                              this.error(error);
-                              deferred.resolve(null);
-                            });
-              });
-
-  return deferred.promise;
+AppValidator.findManifestAtOrigin = function(manifestURL) {
+  const fixedManifest = Services.io.newURI(manifestURL).prePath + "/manifest.webapp";
+  return AppValidator.checkManifest(fixedManifest);
 };
 
-AppValidator.prototype._getManifest = function () {
+AppValidator.findManifestPath = function(manifestURL) {
+  return new Promise((resolve, reject) => {
+    if (manifestURL.endsWith("manifest.webapp")) {
+      reject();
+    } else {
+      const fixedManifest = manifestURL + "/manifest.webapp";
+      resolve(AppValidator.checkManifest(fixedManifest));
+    }
+  });
+};
+
+AppValidator.checkAlternateManifest = function(manifestURL) {
+  return (async function() {
+    let result;
+    try {
+      result = await AppValidator.findManifestPath(manifestURL);
+    } catch (e) {
+      result = await AppValidator.findManifestAtOrigin(manifestURL);
+    }
+
+    return result;
+  })();
+};
+
+AppValidator.prototype._fetchManifest = function(manifestURL) {
+  return new Promise(resolve => {
+    this.manifestURL = manifestURL;
+
+    AppValidator.checkManifest(manifestURL)
+                .then(({manifest, manifestURL}) => {
+                  resolve(manifest);
+                }, error => {
+                  AppValidator.checkAlternateManifest(manifestURL)
+                              .then(({manifest, manifestURL}) => {
+                                this.manifestURL = manifestURL;
+                                resolve(manifest);
+                              }, () => {
+                                this.error(error);
+                                resolve(null);
+                              });
+                });
+  });
+};
+
+AppValidator.prototype._getManifest = function() {
   let manifestURL;
   if (this.type == "packaged") {
     manifestURL = this._getPackagedManifestURL();
-    if (!manifestURL)
-      return promise.resolve(null);
+    if (!manifestURL) {
+      return Promise.resolve(null);
+    }
   } else if (this.type == "hosted") {
     manifestURL = this.location;
     try {
       Services.io.newURI(manifestURL);
     } catch (e) {
       this.error(strings.formatStringFromName("validator.invalidHostedManifestURL", [manifestURL, e.message], 2));
-      return promise.resolve(null);
+      return Promise.resolve(null);
     }
   } else {
     this.error(strings.formatStringFromName("validator.invalidProjectType", [this.type], 1));
-    return promise.resolve(null);
+    return Promise.resolve(null);
   }
   return this._fetchManifest(manifestURL);
 };
 
-AppValidator.prototype.validateManifest = function (manifest) {
+AppValidator.prototype.validateManifest = function(manifest) {
   if (!manifest.name) {
     this.error(strings.GetStringFromName("validator.missNameManifestProperty"));
   }
@@ -191,75 +184,72 @@ AppValidator.prototype.validateManifest = function (manifest) {
   }
 };
 
-AppValidator.prototype._getOriginURL = function () {
+AppValidator.prototype._getOriginURL = function() {
   if (this.type == "packaged") {
-    let manifestURL = Services.io.newURI(this.manifestURL);
+    const manifestURL = Services.io.newURI(this.manifestURL);
     return Services.io.newURI(".", null, manifestURL).spec;
   } else if (this.type == "hosted") {
     return Services.io.newURI(this.location).prePath;
   }
 };
 
-AppValidator.prototype.validateLaunchPath = function (manifest) {
-  let deferred = promise.defer();
-  // The launch_path field has to start with a `/`
-  if (manifest.launch_path && manifest.launch_path[0] !== "/") {
-    this.error(strings.formatStringFromName("validator.nonAbsoluteLaunchPath", [manifest.launch_path], 1));
-    deferred.resolve();
-    return deferred.promise;
-  }
-  let origin = this._getOriginURL();
-  let path;
-  if (this.type == "packaged") {
-    path = "." + (manifest.launch_path || "/index.html");
-  } else if (this.type == "hosted") {
-    path = manifest.launch_path || "/";
-  }
-  let indexURL;
-  try {
-    indexURL = Services.io.newURI(path, null, Services.io.newURI(origin)).spec;
-  } catch (e) {
-    this.error(strings.formatStringFromName("validator.accessFailedLaunchPath", [origin + path], 1));
-    deferred.resolve();
-    return deferred.promise;
-  }
+AppValidator.prototype.validateLaunchPath = function(manifest) {
+  return new Promise(resolve => {
+    // The launch_path field has to start with a `/`
+    if (manifest.launch_path && manifest.launch_path[0] !== "/") {
+      this.error(strings.formatStringFromName("validator.nonAbsoluteLaunchPath", [manifest.launch_path], 1));
+      resolve();
+    }
+    const origin = this._getOriginURL();
+    let path;
+    if (this.type == "packaged") {
+      path = "." + (manifest.launch_path || "/index.html");
+    } else if (this.type == "hosted") {
+      path = manifest.launch_path || "/";
+    }
+    let indexURL;
+    try {
+      indexURL = Services.io.newURI(path, null, Services.io.newURI(origin)).spec;
+    } catch (e) {
+      this.error(strings.formatStringFromName("validator.accessFailedLaunchPath", [origin + path], 1));
+      return resolve();
+    }
 
-  let req = new XMLHttpRequest();
-  req.overrideMimeType("text/plain");
-  try {
-    req.open("HEAD", indexURL, true);
-    req.channel.loadFlags |= Ci.nsIRequest.LOAD_BYPASS_CACHE | Ci.nsIRequest.INHIBIT_CACHING;
-  } catch (e) {
-    this.error(strings.formatStringFromName("validator.accessFailedLaunchPath", [indexURL], 1));
-    deferred.resolve();
-    return deferred.promise;
-  }
-  req.onload = () => {
-    if (req.status >= 400)
-      this.error(strings.formatStringFromName("validator.accessFailedLaunchPathBadHttpCode", [indexURL, req.status], 2));
-    deferred.resolve();
-  };
-  req.onerror = () => {
-    this.error(strings.formatStringFromName("validator.accessFailedLaunchPath", [indexURL], 1));
-    deferred.resolve();
-  };
+    const req = new XMLHttpRequest();
+    req.overrideMimeType("text/plain");
+    try {
+      req.open("HEAD", indexURL, true);
+      req.channel.loadFlags |= Ci.nsIRequest.LOAD_BYPASS_CACHE | Ci.nsIRequest.INHIBIT_CACHING;
+    } catch (e) {
+      this.error(strings.formatStringFromName("validator.accessFailedLaunchPath", [indexURL], 1));
+      return resolve();
+    }
+    req.onload = () => {
+      if (req.status >= 400) {
+        this.error(strings.formatStringFromName("validator.accessFailedLaunchPathBadHttpCode", [indexURL, req.status], 2));
+      }
+      resolve();
+    };
+    req.onerror = () => {
+      this.error(strings.formatStringFromName("validator.accessFailedLaunchPath", [indexURL], 1));
+      resolve();
+    };
 
-  try {
-    req.send(null);
-  } catch (e) {
-    this.error(strings.formatStringFromName("validator.accessFailedLaunchPath", [indexURL], 1));
-    deferred.resolve();
-  }
-
-  return deferred.promise;
+    try {
+      req.send(null);
+    } catch (e) {
+      this.error(strings.formatStringFromName("validator.accessFailedLaunchPath", [indexURL], 1));
+      resolve();
+    }
+  });
 };
 
-AppValidator.prototype.validateType = function (manifest) {
-  let appType = manifest.type || "web";
-  if (["web", "privileged", "certified"].indexOf(appType) === -1) {
+AppValidator.prototype.validateType = function(manifest) {
+  const appType = manifest.type || "web";
+  if (!["web", "privileged", "certified"].includes(appType)) {
     this.error(strings.formatStringFromName("validator.invalidAppType", [appType], 1));
   } else if (this.type == "hosted" &&
-             ["certified", "privileged"].indexOf(appType) !== -1) {
+             ["certified", "privileged"].includes(appType)) {
     this.error(strings.formatStringFromName("validator.invalidHostedPriviledges", [appType], 1));
   }
 
@@ -269,17 +259,17 @@ AppValidator.prototype.validateType = function (manifest) {
   }
 };
 
-AppValidator.prototype.validate = function () {
+AppValidator.prototype.validate = function() {
   this.errors = [];
   this.warnings = [];
-  return this._getManifest().
-    then((manifest) => {
+  return this._getManifest()
+    .then((manifest) => {
       if (manifest) {
         this.manifest = manifest;
 
         // Skip validations for add-ons
         if (manifest.role === "addon" || manifest.manifest_version) {
-          return promise.resolve();
+          return Promise.resolve();
         }
 
         this.validateManifest(manifest);

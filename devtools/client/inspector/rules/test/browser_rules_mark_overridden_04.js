@@ -19,18 +19,18 @@ const TEST_URI = `
   <div id='testid' class='testclass'>Styled Node</div>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
-  yield selectNode("#testid", inspector);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, view} = await openRuleView();
+  await selectNode("#testid", inspector);
 
-  let idRule = getRuleViewRuleEditor(view, 1).rule;
-  let idProp = idRule.textProps[0];
+  const idRule = getRuleViewRuleEditor(view, 1).rule;
+  const idProp = idRule.textProps[0];
 
-  yield togglePropStatus(view, idProp);
+  await togglePropStatus(view, idProp);
 
-  let classRule = getRuleViewRuleEditor(view, 2).rule;
-  let classProp = classRule.textProps[0];
+  const classRule = getRuleViewRuleEditor(view, 2).rule;
+  const classProp = classRule.textProps[0];
   ok(!classProp.overridden,
     "Class prop should not be overridden after id prop was disabled.");
 });

@@ -6,8 +6,10 @@
 "use strict";
 
 /* exported Process */
-/* globals BaseProcess, BasePipe, win32 */
 
+/* import-globals-from subprocess_shared.js */
+/* import-globals-from subprocess_shared_win.js */
+/* import-globals-from subprocess_worker_common.js */
 importScripts("resource://gre/modules/subprocess/subprocess_shared.js",
               "resource://gre/modules/subprocess/subprocess_shared_win.js",
               "resource://gre/modules/subprocess/subprocess_worker_common.js");
@@ -378,14 +380,20 @@ class Process extends BaseProcess {
         srcHandle = libc.GetStdHandle(win32.STD_ERROR_HANDLE);
       }
 
-      let handle = win32.HANDLE();
+      // If we don't have a valid stderr handle, just pass it along without duplicating.
+      if (String(srcHandle) == win32.INVALID_HANDLE_VALUE ||
+          String(srcHandle) == win32.NULL_HANDLE_VALUE) {
+        their_pipes[2] = srcHandle;
+      } else {
+        let handle = win32.HANDLE();
 
-      let curProc = libc.GetCurrentProcess();
-      let ok = libc.DuplicateHandle(curProc, srcHandle, curProc, handle.address(),
-                                    0, true /* inheritable */,
-                                    win32.DUPLICATE_SAME_ACCESS);
+        let curProc = libc.GetCurrentProcess();
+        let ok = libc.DuplicateHandle(curProc, srcHandle, curProc, handle.address(),
+                                      0, true /* inheritable */,
+                                      win32.DUPLICATE_SAME_ACCESS);
 
-      their_pipes[2] = ok && win32.Handle(handle);
+        their_pipes[2] = ok && win32.Handle(handle);
+      }
     }
 
     if (!their_pipes.every(handle => handle)) {
@@ -447,7 +455,7 @@ class Process extends BaseProcess {
       args = args.map(arg => this.quoteString(arg));
     }
 
-    if (/\.bat$/i.test(command)) {
+    if (/\.(bat|cmd)$/i.test(command)) {
       command = io.comspec;
       args = ["cmd.exe", "/s/c", `"${args.join(" ")}"`];
     }
@@ -500,7 +508,10 @@ class Process extends BaseProcess {
       procInfo.address());
 
     for (let handle of new Set(handles)) {
-      handle.dispose();
+      // If any of our handles are invalid, they don't have finalizers.
+      if (handle && handle.dispose) {
+        handle.dispose();
+      }
     }
 
     if (threadAttrs) {
@@ -605,6 +616,8 @@ io = {
 
   running: true,
 
+  polling: false,
+
   init(details) {
     this.comspec = details.comspec;
 
@@ -657,6 +670,16 @@ io = {
 
     handlers = handlers.filter(handler => handler.event);
 
+    // Our poll loop is only useful if we've got at least 1 thing to poll other than our own
+    // signal.
+    if (handlers.length == 1) {
+      this.polling = false;
+    } else if (!this.polling && this.running) {
+      // Restart the poll loop if necessary:
+      setTimeout(this.loop.bind(this), 0);
+      this.polling = true;
+    }
+
     this.eventHandlers = handlers;
 
     let handles = handlers.map(handler => handler.event);
@@ -665,7 +688,7 @@ io = {
 
   loop() {
     this.poll();
-    if (this.running) {
+    if (this.running && this.polling) {
       setTimeout(this.loop.bind(this), 0);
     }
   },

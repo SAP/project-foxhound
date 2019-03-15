@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 import imp
 import os
 import re
@@ -19,9 +21,8 @@ from unittest.case import (
 )
 
 from marionette_driver.errors import (
-    MarionetteException,
-    ScriptTimeoutException,
     TimeoutException,
+    UnresponsiveInstanceException
 )
 from mozlog import get_default_logger
 
@@ -60,13 +61,6 @@ class MetaParameterized(type):
         return type.__new__(cls, name, bases, attrs)
 
 
-class JSTest:
-    head_js_re = re.compile(r"MARIONETTE_HEAD_JS(\s*)=(\s*)['|\"](.*?)['|\"];")
-    context_re = re.compile(r"MARIONETTE_CONTEXT(\s*)=(\s*)['|\"](.*?)['|\"];")
-    timeout_re = re.compile(r"MARIONETTE_TIMEOUT(\s*)=(\s*)(\d+);")
-    inactivity_timeout_re = re.compile(r"MARIONETTE_INACTIVITY_TIMEOUT(\s*)=(\s*)(\d+);")
-
-
 class CommonTestCase(unittest.TestCase):
 
     __metaclass__ = MetaParameterized
@@ -81,7 +75,6 @@ class CommonTestCase(unittest.TestCase):
         self._marionette_weakref = marionette_weakref
         self.fixtures = fixtures
 
-        self.loglines = []
         self.duration = 0
         self.start_time = 0
         self.expected = kwargs.pop('expected', 'pass')
@@ -147,11 +140,11 @@ class CommonTestCase(unittest.TestCase):
                     self.setUp()
             except SkipTest as e:
                 self._addSkip(result, str(e))
-            except KeyboardInterrupt:
+            except (KeyboardInterrupt, UnresponsiveInstanceException) as e:
                 raise
             except _ExpectedFailure as e:
                 expected_failure(result, e.exc_info)
-            except:
+            except Exception:
                 self._enter_pm()
                 result.addError(self, sys.exc_info())
             else:
@@ -159,7 +152,7 @@ class CommonTestCase(unittest.TestCase):
                     if self.expected == 'fail':
                         try:
                             testMethod()
-                        except:
+                        except Exception:
                             raise _ExpectedFailure(sys.exc_info())
                         raise _UnexpectedSuccess
                     else:
@@ -167,7 +160,7 @@ class CommonTestCase(unittest.TestCase):
                 except self.failureException:
                     self._enter_pm()
                     result.addFailure(self, sys.exc_info())
-                except KeyboardInterrupt:
+                except (KeyboardInterrupt, UnresponsiveInstanceException) as e:
                     raise
                 except _ExpectedFailure as e:
                     expected_failure(result, e.exc_info)
@@ -182,7 +175,7 @@ class CommonTestCase(unittest.TestCase):
                         result.addFailure(self, sys.exc_info())
                 except SkipTest as e:
                     self._addSkip(result, str(e))
-                except:
+                except Exception:
                     self._enter_pm()
                     result.addError(self, sys.exc_info())
                 else:
@@ -191,15 +184,15 @@ class CommonTestCase(unittest.TestCase):
                     if self.expected == "fail":
                         try:
                             self.tearDown()
-                        except:
+                        except Exception:
                             raise _ExpectedFailure(sys.exc_info())
                     else:
                         self.tearDown()
-                except KeyboardInterrupt:
+                except (KeyboardInterrupt, UnresponsiveInstanceException) as e:
                     raise
                 except _ExpectedFailure as e:
                     expected_failure(result, e.exc_info)
-                except:
+                except Exception:
                     self._enter_pm()
                     result.addError(self, sys.exc_info())
                     success = False
@@ -235,12 +228,13 @@ class CommonTestCase(unittest.TestCase):
 
     @property
     def test_name(self):
-        if hasattr(self, 'jsFile'):
-            return os.path.basename(self.jsFile)
-        else:
-            return '{0}.py {1}.{2}'.format(self.__class__.__module__,
-                                           self.__class__.__name__,
-                                           self._testMethodName)
+        rel_path = None
+        if os.path.exists(self.filepath):
+            rel_path = self._fix_test_path(os.path.relpath(self.filepath))
+
+        return '{0} {1}.{2}'.format(rel_path,
+                                    self.__class__.__name__,
+                                    self._testMethodName)
 
     def id(self):
         # TBPL starring requires that the "test name" field of a failure message
@@ -263,161 +257,30 @@ class CommonTestCase(unittest.TestCase):
         super(CommonTestCase, self).setUp()
 
     def cleanTest(self):
-        self._deleteSession()
+        self._delete_session()
 
-    def _deleteSession(self):
-        if hasattr(self, 'start_time'):
+    def _delete_session(self):
+        if hasattr(self, "start_time"):
             self.duration = time.time() - self.start_time
-        if hasattr(self.marionette, 'session'):
-            if self.marionette.session is not None:
-                try:
-                    self.loglines.extend(self.marionette.get_logs())
-                except Exception, inst:
-                    self.loglines = [['Error getting log: {}'.format(inst)]]
-                try:
-                    self.marionette.delete_session()
-                except IOError:
-                    # Gecko has crashed?
-                    pass
+        if self.marionette.session is not None:
+            try:
+                self.marionette.delete_session()
+            except IOError:
+                # Gecko has crashed?
+                pass
         self.marionette = None
 
-    def setup_SpecialPowers_observer(self):
-        self.marionette.set_context("chrome")
-        self.marionette.execute_script("""
-let SECURITY_PREF = "security.turn_off_all_security_so_that_viruses_can_take_over_this_computer";
-Components.utils.import("resource://gre/modules/Preferences.jsm");
-Preferences.set(SECURITY_PREF, true);
+    def _fix_test_path(self, path):
+        """Normalize a logged test path from the test package."""
+        test_path_prefixes = [
+            "tests{}".format(os.path.sep),
+        ]
 
-if (!testUtils.hasOwnProperty("specialPowersObserver")) {
-  let loader = Components.classes["@mozilla.org/moz/jssubscript-loader;1"]
-    .getService(Components.interfaces.mozIJSSubScriptLoader);
-  loader.loadSubScript("chrome://specialpowers/content/SpecialPowersObserver.jsm",
-    testUtils);
-  testUtils.specialPowersObserver = new testUtils.SpecialPowersObserver();
-  testUtils.specialPowersObserver.init();
-}
-""")
-
-    def run_js_test(self, filename, marionette=None):
-        """Run a JavaScript test file.
-
-        It collects its set of assertions into the current test's results.
-
-        :param filename: The path to the JavaScript test file to execute.
-                         May be relative to the current script.
-        :param marionette: The Marionette object in which to execute the test.
-                           Defaults to self.marionette.
-        """
-        marionette = marionette or self.marionette
-        if not os.path.isabs(filename):
-            # Find the caller's filename and make the path relative to that.
-            caller_file = sys._getframe(1).f_globals.get('__file__', '')
-            caller_file = os.path.abspath(caller_file)
-            filename = os.path.join(os.path.dirname(caller_file), filename)
-        self.assert_(os.path.exists(filename),
-                     'Script "{}" must exist' .format(filename))
-        original_test_name = self.marionette.test_name
-        self.marionette.test_name = os.path.basename(filename)
-        f = open(filename, 'r')
-        js = f.read()
-        args = []
-
-        head_js = JSTest.head_js_re.search(js)
-        if head_js:
-            head_js = head_js.group(3)
-            head = open(os.path.join(os.path.dirname(filename), head_js), 'r')
-            js = head.read() + js
-
-        context = JSTest.context_re.search(js)
-        if context:
-            context = context.group(3)
-        else:
-            context = 'content'
-
-        if 'SpecialPowers' in js:
-            self.setup_SpecialPowers_observer()
-
-            if context == 'content':
-                js = "var SpecialPowers = window.wrappedJSObject.SpecialPowers;\n" + js
-            else:
-                marionette.execute_script("""
-                if (typeof(SpecialPowers) == 'undefined') {
-                  let loader = Components.classes["@mozilla.org/moz/jssubscript-loader;1"]
-                    .getService(Components.interfaces.mozIJSSubScriptLoader);
-                  loader.loadSubScript("chrome://specialpowers/content/specialpowersAPI.js");
-                  loader.loadSubScript("chrome://specialpowers/content/SpecialPowersObserverAPI.js");
-                  loader.loadSubScript("chrome://specialpowers/content/ChromePowers.js");
-                }
-                """)
-
-        marionette.set_context(context)
-
-        if context != 'chrome':
-            marionette.navigate('data:text/html,<html>test page</html>')
-
-        timeout = JSTest.timeout_re.search(js)
-        if timeout:
-            ms = timeout.group(3)
-            marionette.timeout.script = int(ms) / 1000.0
-
-        inactivity_timeout = JSTest.inactivity_timeout_re.search(js)
-        if inactivity_timeout:
-            inactivity_timeout = int(inactivity_timeout.group(3))
-
-        try:
-            results = marionette.execute_js_script(
-                js,
-                args,
-                inactivity_timeout=inactivity_timeout,
-                filename=os.path.basename(filename)
-            )
-
-            self.assertTrue('timeout' not in filename,
-                            'expected timeout not triggered')
-
-            if 'fail' in filename:
-                self.assertTrue(len(results['failures']) > 0,
-                                "expected test failures didn't occur")
-            else:
-                for failure in results['failures']:
-                    diag = "" if failure.get('diag') is None else failure['diag']
-                    name = ("got false, expected true" if failure.get('name') is None else
-                            failure['name'])
-                    self.logger.test_status(self.test_name, name, 'FAIL',
-                                            message=diag)
-                for failure in results['expectedFailures']:
-                    diag = "" if failure.get('diag') is None else failure['diag']
-                    name = ("got false, expected false" if failure.get('name') is None else
-                            failure['name'])
-                    self.logger.test_status(self.test_name, name, 'FAIL',
-                                            expected='FAIL', message=diag)
-                for failure in results['unexpectedSuccesses']:
-                    diag = "" if failure.get('diag') is None else failure['diag']
-                    name = ("got true, expected false" if failure.get('name') is None else
-                            failure['name'])
-                    self.logger.test_status(self.test_name, name, 'PASS',
-                                            expected='FAIL', message=diag)
-                self.assertEqual(0, len(results['failures']),
-                                 '{} tests failed' .format(len(results['failures'])))
-                if len(results['unexpectedSuccesses']) > 0:
-                    raise _UnexpectedSuccess('')
-                if len(results['expectedFailures']) > 0:
-                    raise _ExpectedFailure((AssertionError, AssertionError(''), None))
-
-            self.assertTrue(results['passed'] +
-                            len(results['failures']) +
-                            len(results['expectedFailures']) +
-                            len(results['unexpectedSuccesses']) > 0,
-                            'no tests run')
-
-        except ScriptTimeoutException:
-            if 'timeout' in filename:
-                # expected exception
-                pass
-            else:
-                self.loglines = marionette.get_logs()
-                raise
-        self.marionette.test_name = original_test_name
+        for prefix in test_path_prefixes:
+            if path.startswith(prefix):
+                path = path[len(prefix):]
+                break
+        return path
 
 
 class MarionetteTestCase(CommonTestCase):
@@ -467,10 +330,6 @@ class MarionetteTestCase(CommonTestCase):
     def setUp(self):
         super(MarionetteTestCase, self).setUp()
         self.marionette.test_name = self.test_name
-        self.marionette.execute_script("log('TEST-START: {0}:{1}')"
-                                       .format(self.filepath.replace('\\', '\\\\'),
-                                               self.methodName),
-                                       sandbox="simpletest")
 
     def tearDown(self):
         # In the case no session is active (eg. the application was quit), start
@@ -478,18 +337,7 @@ class MarionetteTestCase(CommonTestCase):
         if not self.marionette.session:
             self.marionette.start_session()
 
-        if not self.marionette.crashed:
-            try:
-                self.marionette.clear_imported_scripts()
-                self.marionette.execute_script("log('TEST-END: {0}:{1}')"
-                                               .format(self.filepath.replace('\\', '\\\\'),
-                                                       self.methodName),
-                                               sandbox="simpletest")
-                self.marionette.test_name = None
-            except (MarionetteException, IOError):
-                # We have tried to log the test end when there is no listener
-                # object that we can access
-                pass
+        self.marionette.test_name = None
 
         super(MarionetteTestCase, self).tearDown()
 

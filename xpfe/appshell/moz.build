@@ -4,11 +4,13 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files("**"):
+    BUG_COMPONENT = ("Core", "Window Management")
+
 MOCHITEST_CHROME_MANIFESTS += ['test/chrome.ini']
 
 XPIDL_SOURCES += [
     'nsIAppShellService.idl',
-    'nsIPopupWindowManager.idl',
     'nsIWindowlessBrowser.idl',
     'nsIWindowMediator.idl',
     'nsIWindowMediatorListener.idl',
@@ -36,6 +38,7 @@ UNIFIED_SOURCES += [
 
 LOCAL_INCLUDES += [
     '/dom/base',
+    '/dom/xul',
 ]
 
 FINAL_LIBRARY = 'xul'

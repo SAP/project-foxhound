@@ -7,15 +7,66 @@ const {
   Arg,
   RetVal,
   generateActorSpec,
-  types
+  types,
 } = require("devtools/shared/protocol.js");
 
 types.addDictType("imageData", {
   // The image data
   data: "nullable:longstring",
   // The original image dimensions
-  size: "json"
+  size: "json",
 });
+
+types.addDictType("windowDimensions", {
+  // The window innerWidth
+  innerWidth: "nullable:number",
+  // The window innerHeight
+  innerHeight: "nullable:number",
+});
+
+/**
+ * Returned from any call that might return a node that isn't connected to root
+ * by nodes the child has seen, such as querySelector.
+ */
+types.addDictType("disconnectedNode", {
+  // The actual node to return
+  node: "domnode",
+
+  // Nodes that are needed to connect the node to a node the client has already
+  // seen
+  newParents: "array:domnode",
+});
+
+types.addDictType("disconnectedNodeArray", {
+  // The actual node list to return
+  nodes: "array:domnode",
+
+  // Nodes that are needed to connect those nodes to the root.
+  newParents: "array:domnode",
+});
+
+const nodeListSpec = generateActorSpec({
+  typeName: "domnodelist",
+
+  methods: {
+    item: {
+      request: { item: Arg(0) },
+      response: RetVal("disconnectedNode"),
+    },
+    items: {
+      request: {
+        start: Arg(0, "nullable:number"),
+        end: Arg(1, "nullable:number"),
+      },
+      response: RetVal("disconnectedNodeArray"),
+    },
+    release: {
+      release: true,
+    },
+  },
+});
+
+exports.nodeListSpec = nodeListSpec;
 
 const nodeSpec = generateActorSpec({
   typeName: "domnode",
@@ -24,50 +75,66 @@ const nodeSpec = generateActorSpec({
     getNodeValue: {
       request: {},
       response: {
-        value: RetVal("longstring")
-      }
+        value: RetVal("longstring"),
+      },
     },
     setNodeValue: {
       request: { value: Arg(0) },
-      response: {}
+      response: {},
     },
     getUniqueSelector: {
       request: {},
       response: {
-        value: RetVal("string")
-      }
+        value: RetVal("string"),
+      },
     },
     getCssPath: {
       request: {},
       response: {
-        value: RetVal("string")
-      }
+        value: RetVal("string"),
+      },
+    },
+    getXPath: {
+      request: {},
+      response: {
+        value: RetVal("string"),
+      },
     },
     scrollIntoView: {
       request: {},
-      response: {}
+      response: {},
     },
     getImageData: {
       request: {maxDim: Arg(0, "nullable:number")},
-      response: RetVal("imageData")
+      response: RetVal("imageData"),
     },
     getEventListenerInfo: {
       request: {},
       response: {
-        events: RetVal("json")
-      }
+        events: RetVal("json"),
+      },
     },
     modifyAttributes: {
       request: {
-        modifications: Arg(0, "array:json")
+        modifications: Arg(0, "array:json"),
       },
-      response: {}
+      response: {},
     },
     getFontFamilyDataURL: {
       request: {font: Arg(0, "string"), fillStyle: Arg(1, "nullable:string")},
-      response: RetVal("imageData")
-    }
-  }
+      response: RetVal("imageData"),
+    },
+    getClosestBackgroundColor: {
+      request: {},
+      response: {
+        value: RetVal("string"),
+      },
+    },
+    getOwnerGlobalDimensions: {
+      request: {},
+      response: RetVal("windowDimensions"),
+    },
+  },
 });
 
 exports.nodeSpec = nodeSpec;

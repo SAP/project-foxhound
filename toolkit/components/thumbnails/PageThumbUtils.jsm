@@ -7,19 +7,14 @@
  * PageThumbs and backgroundPageThumbsContent.
  */
 
-this.EXPORTED_SYMBOLS = ["PageThumbUtils"];
+var EXPORTED_SYMBOLS = ["PageThumbUtils"];
 
-const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm", this);
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Promise.jsm", this);
-Cu.import("resource://gre/modules/AppConstants.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "BrowserUtils",
+ChromeUtils.defineModuleGetter(this, "BrowserUtils",
   "resource://gre/modules/BrowserUtils.jsm");
 
-this.PageThumbUtils = {
+var PageThumbUtils = {
   // The default background color for page thumbnails.
   THUMBNAIL_BG_COLOR: "#fff",
   // The namespace for thumbnail canvas elements.
@@ -61,26 +56,14 @@ this.PageThumbUtils = {
       let left = {}, top = {}, screenWidth = {}, screenHeight = {};
       screenManager.primaryScreen.GetRectDisplayPix(left, top, screenWidth, screenHeight);
 
-      /** *
-       * The system default scale might be different than
-       * what is reported by the window. For example,
-       * retina displays have 1:1 system scales, but 2:1 window
-       * scale as 1 pixel system wide == 2 device pixels.
+      /**
+       * The primary monitor default scale might be different than
+       * what is reported by the window on mixed-DPI systems.
        * To get the best image quality, query both and take the highest one.
        */
-      let systemScale = screenManager.systemDefaultScale;
-      let windowScale = aWindow ? aWindow.devicePixelRatio : systemScale;
-      let scale = Math.max(systemScale, windowScale);
-
-      /** *
-       * On retina displays, we can sometimes go down this path
-       * without a window object. In those cases, force 2x scaling
-       * as the system scale doesn't represent the 2x scaling
-       * on OS X.
-       */
-      if (AppConstants.platform == "macosx" && !aWindow) {
-        scale = 2;
-      }
+      let primaryScale = screenManager.primaryScreen.defaultCSSScaleFactor;
+      let windowScale = aWindow ? aWindow.devicePixelRatio : primaryScale;
+      let scale = Math.max(primaryScale, windowScale);
 
       /** *
        * THESE VALUES ARE DEFINED IN newtab.css and hard coded.
@@ -106,8 +89,7 @@ this.PageThumbUtils = {
    * minus the scroll bars.
    */
   getContentSize(aWindow) {
-    let utils = aWindow.QueryInterface(Ci.nsIInterfaceRequestor)
-                       .getInterface(Ci.nsIDOMWindowUtils);
+    let utils = aWindow.windowUtils;
     // aWindow may be a cpow, add exposed props security values.
     let sbWidth = {}, sbHeight = {};
 
@@ -125,6 +107,49 @@ this.PageThumbUtils = {
     let height = aWindow.innerHeight - sbHeight.value;
 
     return [width, height];
+  },
+
+  /**
+   * Renders an image onto a new canvas of a given width and proportional
+   * height. Uses an image that exists in the window and is loaded, or falls
+   * back to loading the url into a new image element.
+   */
+  async createImageThumbnailCanvas(window, url, targetWidth = 448, backgroundColor = this.THUMBNAIL_BG_COLOR) {
+    // 224px is the width of cards in ActivityStream; capture thumbnails at 2x
+    const doc = (window || Services.appShell.hiddenDOMWindow).document;
+
+    let image = doc.querySelector("img");
+    if (!image) {
+      image = doc.createElementNS(this.HTML_NAMESPACE, "img");
+      await new Promise((resolve, reject) => {
+        image.onload = () => resolve();
+        image.onerror = () => reject(new Error("LOAD_FAILED"));
+        image.src = url;
+      });
+    }
+
+    // <img src="*.svg"> has width/height but not naturalWidth/naturalHeight
+    const imageWidth = image.naturalWidth || image.width;
+    const imageHeight = image.naturalHeight || image.height;
+    if (imageWidth === 0 || imageHeight === 0) {
+      throw new Error("IMAGE_ZERO_DIMENSION");
+    }
+    const width = Math.min(targetWidth, imageWidth);
+    const height = imageHeight * width / imageWidth;
+
+    // As we're setting the width and maintaining the aspect ratio, if an image
+    // is very tall we might get a very large thumbnail. Restricting the canvas
+    // size to {width}x{width} solves this problem. Here we choose to clip the
+    // image at the bottom rather than centre it vertically, based on an
+    // estimate that the focus of a tall image is most likely to be near the top
+    // (e.g., the face of a person).
+    const canvasHeight = Math.min(height, width);
+    const canvas = this.createCanvas(window, width, canvasHeight);
+    const context = canvas.getContext("2d");
+    context.fillStyle = backgroundColor;
+    context.fillRect(0, 0, width, canvasHeight);
+    context.drawImage(image, 0, 0, width, height);
+    return canvas;
   },
 
   /** *
@@ -233,8 +258,7 @@ this.PageThumbUtils = {
     if (Cu.isCrossProcessWrapper(aWindow)) {
       throw new Error("Do not pass cpows here.");
     }
-    let utils = aWindow.QueryInterface(Ci.nsIInterfaceRequestor)
-                       .getInterface(Ci.nsIDOMWindowUtils);
+    let utils = aWindow.windowUtils;
     // aWindow may be a cpow, add exposed props security values.
     let sbWidth = {}, sbHeight = {};
 
@@ -272,7 +296,7 @@ this.PageThumbUtils = {
 
     // FIXME Bug 720575 - Don't capture thumbnails for SVG or XML documents as
     //       that currently regresses Talos SVG tests.
-    if (aDocument instanceof Ci.nsIDOMXMLDocument) {
+    if (ChromeUtils.getClassName(aDocument) === "XMLDocument") {
       return false;
     }
 

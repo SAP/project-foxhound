@@ -17,6 +17,7 @@
 #include "nsIEventTarget.h"
 #include "nsIObserver.h"
 #include "mozilla/RefPtr.h"
+#include "nsStringFwd.h"
 
 class nsIThread;
 class nsIThreadPool;
@@ -38,9 +39,8 @@ class IDecodingTask;
  * off-main-thread in the image decoding thread pool, or on some combination of
  * the two.
  */
-class DecodePool : public nsIObserver
-{
-public:
+class DecodePool final : public nsIObserver {
+ public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIOBSERVER
 
@@ -54,6 +54,10 @@ public:
   /// same as the number of decoding threads we're actually using.
   static uint32_t NumberOfCores();
 
+  /// True if the DecodePool is being shutdown. This may only be called by
+  /// threads from the pool to check if they should keep working or not.
+  bool IsShuttingDown() const;
+
   /// Ask the DecodePool to run @aTask asynchronously and return immediately.
   void AsyncRun(IDecodingTask* aTask);
 
@@ -64,15 +68,15 @@ public:
    * immediately.
    * @return true if the task was run sync, false otherwise.
    */
-  bool SyncRunIfPreferred(IDecodingTask* aTask);
+  bool SyncRunIfPreferred(IDecodingTask* aTask, const nsCString& aURI);
 
   /**
    * Run @aTask synchronously. This does not guarantee that @aTask will complete
-   * synchronously. If, for example, @aTask doesn't yet have the data it needs to
-   * run synchronously, it may recover by scheduling an async task to finish up
-   * the work when the remaining data is available.
+   * synchronously. If, for example, @aTask doesn't yet have the data it needs
+   * to run synchronously, it may recover by scheduling an async task to finish
+   * up the work when the remaining data is available.
    */
-  void SyncRunIfPossible(IDecodingTask* aTask);
+  void SyncRunIfPossible(IDecodingTask* aTask, const nsCString& aURI);
 
   /**
    * Returns an event target interface to the DecodePool's I/O thread. Callers
@@ -83,7 +87,7 @@ public:
    */
   already_AddRefed<nsIEventTarget> GetIOEventTarget();
 
-private:
+ private:
   friend class DecodePoolWorker;
 
   DecodePool();
@@ -94,13 +98,12 @@ private:
 
   RefPtr<DecodePoolImpl> mImpl;
 
-  // mMutex protects mThreads and mIOThread.
-  Mutex                         mMutex;
-  nsTArray<nsCOMPtr<nsIThread>> mThreads;
-  nsCOMPtr<nsIThread>           mIOThread;
+  // mMutex protects mIOThread.
+  Mutex mMutex;
+  nsCOMPtr<nsIThread> mIOThread;
 };
 
-} // namespace image
-} // namespace mozilla
+}  // namespace image
+}  // namespace mozilla
 
-#endif // mozilla_image_DecodePool_h
+#endif  // mozilla_image_DecodePool_h

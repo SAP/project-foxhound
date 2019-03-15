@@ -8,9 +8,9 @@
     <script>
         function test() {
           for (var i = 0; i < 5; ++i) {
-            synthesizeKey("VK_RIGHT", {});
+            synthesizeKey("KEY_ArrowRight");
           }
-          synthesizeKey("VK_LEFT", {});
+          synthesizeKey("KEY_ArrowLeft");
           document.documentElement.removeAttribute("class");
         }
         function runTests() {
@@ -24,7 +24,7 @@
 </head>
 <body>
 
-<div id="test1" contenteditable="true" spellcheck="false" onfocus="test()">This text is NOT selectable.</div>
+<div id="test1" contenteditable="true" spellcheck="false" onfocus="setTimeout(test, 0)">This text is NOT selectable.</div>
 
 <script>
 SimpleTest.waitForFocus(runTests);

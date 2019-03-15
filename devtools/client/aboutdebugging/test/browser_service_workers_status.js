@@ -11,54 +11,42 @@ const SW_TIMEOUT = 2000;
 
 requestLongerTimeout(2);
 
-add_task(function* () {
-  yield enableServiceWorkerDebugging();
-  yield pushPref("dom.serviceWorkers.idle_timeout", SW_TIMEOUT);
-  yield pushPref("dom.serviceWorkers.idle_extended_timeout", SW_TIMEOUT);
+add_task(async function() {
+  await enableServiceWorkerDebugging();
+  await pushPref("dom.serviceWorkers.idle_timeout", SW_TIMEOUT);
+  await pushPref("dom.serviceWorkers.idle_extended_timeout", SW_TIMEOUT);
 
-  let { tab, document } = yield openAboutDebugging("workers");
+  const { tab, document } = await openAboutDebugging("workers");
 
   // Listen for mutations in the service-workers list.
-  let serviceWorkersElement = getServiceWorkerList(document);
-  let onMutation = waitForMutation(serviceWorkersElement, { childList: true });
+  const serviceWorkersElement = getServiceWorkerList(document);
 
-  let swTab = yield addTab(TAB_URL);
+  const swTab = await addTab(TAB_URL);
 
-  info("Make the test page notify us when the service worker sends a message.");
+  info("Wait until the service worker appears in about:debugging");
+  const container = await waitUntilServiceWorkerContainer(SERVICE_WORKER, document);
 
-  // Wait for the service-workers list to update.
-  yield onMutation;
-
-  // Check that the service worker appears in the UI
-  let names = [...document.querySelectorAll("#service-workers .target-name")];
-  let name = names.filter(element => element.textContent === SERVICE_WORKER)[0];
-  ok(name, "Found the service worker in the list");
-
-  let targetElement = name.parentNode.parentNode;
-  let status = targetElement.querySelector(".target-status");
-  // We might miss the registering state in some setup...
-  if (status.textContent == "Registering") {
-    yield waitForMutation(serviceWorkersElement, { childList: true, subtree: true });
-  }
-
-  is(status.textContent, "Running", "Service worker is currently running");
-
-  yield waitForMutation(serviceWorkersElement, { attributes: true, subtree: true });
+  // We should ideally check that the service worker registration goes through the
+  // "registering" and "running" steps, but it is difficult to workaround race conditions
+  // for a test running on a wide variety of platforms. Due to intermittent failures, we
+  // simply check that the registration transitions to "stopped".
+  const status = container.querySelector(".target-status");
+  await waitUntil(() => status.textContent == "Stopped", 100);
   is(status.textContent, "Stopped", "Service worker is currently stopped");
 
   try {
-    yield unregisterServiceWorker(swTab, serviceWorkersElement);
+    await unregisterServiceWorker(swTab, serviceWorkersElement);
     ok(true, "Service worker unregistered");
   } catch (e) {
     ok(false, "Service worker not unregistered; " + e);
   }
 
   // Check that the service worker disappeared from the UI
-  names = [...document.querySelectorAll("#service-workers .target-name")];
+  let names = [...document.querySelectorAll("#service-workers .target-name")];
   names = names.map(element => element.textContent);
   ok(!names.includes(SERVICE_WORKER),
     "The service worker url is no longer in the list: " + names);
 
-  yield removeTab(swTab);
-  yield closeAboutDebugging(tab);
+  await removeTab(swTab);
+  await closeAboutDebugging(tab);
 });

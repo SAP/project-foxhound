@@ -6,19 +6,19 @@
  * after finishing recording.
  */
 
-function* ifTestingSupported() {
-  let { target, panel } = yield initCanvasDebuggerFrontend(SIMPLE_CANVAS_URL);
-  let { window, EVENTS, $, SnapshotsListView } = panel.panelWin;
+async function ifTestingSupported() {
+  const { target, panel } = await initCanvasDebuggerFrontend(SIMPLE_CANVAS_URL);
+  const { window, EVENTS, $, SnapshotsListView } = panel.panelWin;
 
-  yield reload(target);
+  await reload(target);
 
-  let recordingFinished = once(window, EVENTS.SNAPSHOT_RECORDING_FINISHED);
+  const recordingFinished = once(window, EVENTS.SNAPSHOT_RECORDING_FINISHED);
   SnapshotsListView._onRecordButtonClick();
 
-  yield recordingFinished;
+  await recordingFinished;
   ok(true, "Finished recording a snapshot of the animation loop.");
 
-  let item = SnapshotsListView.getItemAtIndex(0);
+  const item = SnapshotsListView.getItemAtIndex(0);
 
   is(SnapshotsListView.selectedItem, item,
     "The first item should now be selected in the snapshots list view (1).");
@@ -32,6 +32,6 @@ function* ifTestingSupported() {
   is($(".snapshot-item-save", item.target).getAttribute("disabled"), "false",
     "The placeholder item's save label should be clickable.");
 
-  yield teardown(panel);
+  await teardown(panel);
   finish();
 }

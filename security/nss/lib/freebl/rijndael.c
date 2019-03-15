@@ -18,38 +18,48 @@
 #include "cts.h"
 #include "ctr.h"
 #include "gcm.h"
+#include "mpi.h"
 
 #ifdef USE_HW_AES
 #include "intel-aes.h"
 #endif
-
-#include "mpi.h"
-
-#ifdef USE_HW_AES
-static int has_intel_aes = 0;
-static PRBool use_hw_aes = PR_FALSE;
-
 #ifdef INTEL_GCM
 #include "intel-gcm.h"
-static int has_intel_avx = 0;
-static int has_intel_clmul = 0;
-static PRBool use_hw_gcm = PR_FALSE;
-#if defined(_MSC_VER) && !defined(_M_IX86)
-#include <intrin.h> /* for _xgetbv() */
-#endif
-#endif
-#endif /* USE_HW_AES */
+#endif /* INTEL_GCM */
+
+/* Forward declarations */
+void rijndael_native_key_expansion(AESContext *cx, const unsigned char *key,
+                                   unsigned int Nk);
+void rijndael_native_encryptBlock(AESContext *cx,
+                                  unsigned char *output,
+                                  const unsigned char *input);
+
+/* Stub definitions for the above rijndael_native_* functions, which
+ * shouldn't be used unless NSS_X86_OR_X64 is defined */
+#ifndef NSS_X86_OR_X64
+void
+rijndael_native_key_expansion(AESContext *cx, const unsigned char *key,
+                              unsigned int Nk)
+{
+    PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
+    PORT_Assert(0);
+}
+
+void
+rijndael_native_encryptBlock(AESContext *cx,
+                             unsigned char *output,
+                             const unsigned char *input)
+{
+    PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
+    PORT_Assert(0);
+}
+#endif /* NSS_X86_OR_X64 */
 
 /*
- * There are currently five ways to build this code, varying in performance
+ * There are currently three ways to build this code, varying in performance
  * and code size.
  *
  * RIJNDAEL_INCLUDE_TABLES         Include all tables from rijndael32.tab
- * RIJNDAEL_GENERATE_TABLES        Generate tables on first
- *                                 encryption/decryption, then store them;
- *                                 use the function gfm
- * RIJNDAEL_GENERATE_TABLES_MACRO  Same as above, but use macros to do
- *                                 the generation
  * RIJNDAEL_GENERATE_VALUES        Do not store tables, generate the table
  *                                 values "on-the-fly", using gfm
  * RIJNDAEL_GENERATE_VALUES_MACRO  Same as above, but use macros
@@ -121,8 +131,7 @@ static PRBool use_hw_gcm = PR_FALSE;
     ((a & 0x80) ? ((a << 1) ^ 0x1b) : (a << 1))
 
 /* Choose GFM method (macros or function) */
-#if defined(RIJNDAEL_GENERATE_TABLES_MACRO) || \
-    defined(RIJNDAEL_GENERATE_VALUES_MACRO)
+#if defined(RIJNDAEL_GENERATE_VALUES_MACRO)
 
 /*
  * Galois field GF(2**8) multipliers, in macro form
@@ -146,7 +155,7 @@ static PRBool use_hw_gcm = PR_FALSE;
 #define GFM0E(a) \
     (GFM02(a) ^ GFM04(a) ^ GFM08(a)) /* a * 0E = a * (02 + 04 + 08) */
 
-#else /* RIJNDAEL_GENERATE_TABLES or RIJNDAEL_GENERATE_VALUES */
+#else /* RIJNDAEL_GENERATE_VALUES */
 
 /* GF_MULTIPLY
  *
@@ -257,7 +266,7 @@ gen_TInvXi(PRUint8 tx, PRUint8 i)
 #define IMXC1(b) G_IMXC1(b)
 #define IMXC2(b) G_IMXC2(b)
 #define IMXC3(b) G_IMXC3(b)
-#elif defined(RIJNDAEL_GENERATE_VALUES_MACRO)
+#else /* RIJNDAEL_GENERATE_VALUES_MACRO */
 /* generate values for the tables with macros */
 #define T0(i) G_T0(i)
 #define T1(i) G_T1(i)
@@ -271,83 +280,9 @@ gen_TInvXi(PRUint8 tx, PRUint8 i)
 #define IMXC1(b) G_IMXC1(b)
 #define IMXC2(b) G_IMXC2(b)
 #define IMXC3(b) G_IMXC3(b)
-#else /* RIJNDAEL_GENERATE_TABLES or RIJNDAEL_GENERATE_TABLES_MACRO */
-/* Generate T and T**-1 table values and store, then index */
-/* The inverse mix column tables are still generated */
-#define T0(i) rijndaelTables->T0[i]
-#define T1(i) rijndaelTables->T1[i]
-#define T2(i) rijndaelTables->T2[i]
-#define T3(i) rijndaelTables->T3[i]
-#define TInv0(i) rijndaelTables->TInv0[i]
-#define TInv1(i) rijndaelTables->TInv1[i]
-#define TInv2(i) rijndaelTables->TInv2[i]
-#define TInv3(i) rijndaelTables->TInv3[i]
-#define IMXC0(b) G_IMXC0(b)
-#define IMXC1(b) G_IMXC1(b)
-#define IMXC2(b) G_IMXC2(b)
-#define IMXC3(b) G_IMXC3(b)
 #endif /* choose T-table indexing method */
 
 #endif /* not RIJNDAEL_INCLUDE_TABLES */
-
-#if defined(RIJNDAEL_GENERATE_TABLES) || \
-    defined(RIJNDAEL_GENERATE_TABLES_MACRO)
-
-/* Code to generate and store the tables */
-
-struct rijndael_tables_str {
-    PRUint32 T0[256];
-    PRUint32 T1[256];
-    PRUint32 T2[256];
-    PRUint32 T3[256];
-    PRUint32 TInv0[256];
-    PRUint32 TInv1[256];
-    PRUint32 TInv2[256];
-    PRUint32 TInv3[256];
-};
-
-static struct rijndael_tables_str *rijndaelTables = NULL;
-static PRCallOnceType coRTInit = { 0, 0, 0 };
-static PRStatus
-init_rijndael_tables(void)
-{
-    PRUint32 i;
-    PRUint8 si01, si02, si03, si04, si08, si09, si0B, si0D, si0E;
-    struct rijndael_tables_str *rts;
-    rts = (struct rijndael_tables_str *)
-        PORT_Alloc(sizeof(struct rijndael_tables_str));
-    if (!rts)
-        return PR_FAILURE;
-    for (i = 0; i < 256; i++) {
-        /* The forward values */
-        si01 = SBOX(i);
-        si02 = XTIME(si01);
-        si03 = si02 ^ si01;
-        rts->T0[i] = WORD4(si02, si01, si01, si03);
-        rts->T1[i] = WORD4(si03, si02, si01, si01);
-        rts->T2[i] = WORD4(si01, si03, si02, si01);
-        rts->T3[i] = WORD4(si01, si01, si03, si02);
-        /* The inverse values */
-        si01 = SINV(i);
-        si02 = XTIME(si01);
-        si04 = XTIME(si02);
-        si08 = XTIME(si04);
-        si03 = si02 ^ si01;
-        si09 = si08 ^ si01;
-        si0B = si08 ^ si03;
-        si0D = si09 ^ si04;
-        si0E = si08 ^ si04 ^ si02;
-        rts->TInv0[i] = WORD4(si0E, si09, si0D, si0B);
-        rts->TInv1[i] = WORD4(si0B, si0E, si09, si0D);
-        rts->TInv2[i] = WORD4(si0D, si0B, si0E, si09);
-        rts->TInv3[i] = WORD4(si09, si0D, si0B, si0E);
-    }
-    /* wait until all the values are in to set */
-    rijndaelTables = rts;
-    return PR_SUCCESS;
-}
-
-#endif /* code to generate tables */
 
 /**************************************************************************
  *
@@ -379,7 +314,7 @@ init_rijndael_tables(void)
  * Nk == 8 where it happens twice in every key word, in the same positions).
  * For now, I'm implementing this case "dumbly", w/o any unrolling.
  */
-static SECStatus
+static void
 rijndael_key_expansion7(AESContext *cx, const unsigned char *key, unsigned int Nk)
 {
     unsigned int i;
@@ -400,14 +335,13 @@ rijndael_key_expansion7(AESContext *cx, const unsigned char *key, unsigned int N
             tmp = SUBBYTE(tmp);
         *pW = W[i - Nk] ^ tmp;
     }
-    return SECSuccess;
 }
 
 /* rijndael_key_expansion
  *
  * Generate the expanded key from the key input by the user.
  */
-static SECStatus
+static void
 rijndael_key_expansion(AESContext *cx, const unsigned char *key, unsigned int Nk)
 {
     unsigned int i;
@@ -415,8 +349,10 @@ rijndael_key_expansion(AESContext *cx, const unsigned char *key, unsigned int Nk
     PRUint32 *pW;
     PRUint32 tmp;
     unsigned int round_key_words = cx->Nb * (cx->Nr + 1);
-    if (Nk == 7)
-        return rijndael_key_expansion7(cx, key, Nk);
+    if (Nk == 7) {
+        rijndael_key_expansion7(cx, key, Nk);
+        return;
+    }
     W = cx->expandedKey;
     /* The first Nk words contain the input cipher key */
     memcpy(W, key, Nk * 4);
@@ -475,7 +411,6 @@ rijndael_key_expansion(AESContext *cx, const unsigned char *key, unsigned int Nk
             *pW = W[i - Nk] ^ tmp;
         }
     }
-    return SECSuccess;
 }
 
 /* rijndael_invkey_expansion
@@ -483,7 +418,7 @@ rijndael_key_expansion(AESContext *cx, const unsigned char *key, unsigned int Nk
  * Generate the expanded key for the inverse cipher from the key input by
  * the user.
  */
-static SECStatus
+static void
 rijndael_invkey_expansion(AESContext *cx, const unsigned char *key, unsigned int Nk)
 {
     unsigned int r;
@@ -491,8 +426,7 @@ rijndael_invkey_expansion(AESContext *cx, const unsigned char *key, unsigned int
     PRUint8 *b;
     int Nb = cx->Nb;
     /* begins like usual key expansion ... */
-    if (rijndael_key_expansion(cx, key, Nk) != SECSuccess)
-        return SECFailure;
+    rijndael_key_expansion(cx, key, Nk);
     /* ... but has the additional step of InvMixColumn,
      * excepting the first and last round keys.
      */
@@ -534,12 +468,11 @@ rijndael_invkey_expansion(AESContext *cx, const unsigned char *key, unsigned int
                                IMXC2(b[2]) ^ IMXC3(b[3]);
         }
     }
-    return SECSuccess;
 }
+
 /**************************************************************************
  *
- * Stuff related to Rijndael encryption/decryption, optimized for
- * a 128-bit blocksize.
+ * Stuff related to Rijndael encryption/decryption.
  *
  *************************************************************************/
 
@@ -567,7 +500,7 @@ typedef union {
 
 #define STATE_BYTE(i) state.b[i]
 
-static SECStatus NO_SANITIZE_ALIGNMENT
+static void NO_SANITIZE_ALIGNMENT
 rijndael_encryptBlock128(AESContext *cx,
                          unsigned char *output,
                          const unsigned char *input)
@@ -660,7 +593,6 @@ rijndael_encryptBlock128(AESContext *cx,
         memcpy(output, outBuf, sizeof outBuf);
     }
 #endif
-    return SECSuccess;
 }
 
 static SECStatus NO_SANITIZE_ALIGNMENT
@@ -757,104 +689,6 @@ rijndael_decryptBlock128(AESContext *cx,
 
 /**************************************************************************
  *
- * Stuff related to general Rijndael encryption/decryption, for blocksizes
- * greater than 128 bits.
- *
- * XXX This code is currently untested!  So far, AES specs have only been
- *     released for 128 bit blocksizes.  This will be tested, but for now
- *     only the code above has been tested using known values.
- *
- *************************************************************************/
-
-#define COLUMN(array, j) *((PRUint32 *)(array + j))
-
-SECStatus
-rijndael_encryptBlock(AESContext *cx,
-                      unsigned char *output,
-                      const unsigned char *input)
-{
-    return SECFailure;
-#ifdef rijndael_large_blocks_fixed
-    unsigned int j, r, Nb;
-    unsigned int c2 = 0, c3 = 0;
-    PRUint32 *roundkeyw;
-    PRUint8 clone[RIJNDAEL_MAX_STATE_SIZE];
-    Nb = cx->Nb;
-    roundkeyw = cx->expandedKey;
-    /* Step 1: Add Round Key 0 to initial state */
-    for (j = 0; j < 4 * Nb; j += 4) {
-        COLUMN(clone, j) = COLUMN(input, j) ^ *roundkeyw++;
-    }
-    /* Step 2: Loop over rounds [1..NR-1] */
-    for (r = 1; r < cx->Nr; ++r) {
-        for (j = 0; j < Nb; ++j) {
-            COLUMN(output, j) = T0(STATE_BYTE(4 * j)) ^
-                                T1(STATE_BYTE(4 * ((j + 1) % Nb) + 1)) ^
-                                T2(STATE_BYTE(4 * ((j + c2) % Nb) + 2)) ^
-                                T3(STATE_BYTE(4 * ((j + c3) % Nb) + 3));
-        }
-        for (j = 0; j < 4 * Nb; j += 4) {
-            COLUMN(clone, j) = COLUMN(output, j) ^ *roundkeyw++;
-        }
-    }
-    /* Step 3: Do the last round */
-    /* Final round does not employ MixColumn */
-    for (j = 0; j < Nb; ++j) {
-        COLUMN(output, j) = ((BYTE0WORD(T2(STATE_BYTE(4 * j)))) |
-                             (BYTE1WORD(T3(STATE_BYTE(4 * (j + 1) % Nb) + 1))) |
-                             (BYTE2WORD(T0(STATE_BYTE(4 * (j + c2) % Nb) + 2))) |
-                             (BYTE3WORD(T1(STATE_BYTE(4 * (j + c3) % Nb) + 3)))) ^
-                            *roundkeyw++;
-    }
-    return SECSuccess;
-#endif
-}
-
-SECStatus
-rijndael_decryptBlock(AESContext *cx,
-                      unsigned char *output,
-                      const unsigned char *input)
-{
-    return SECFailure;
-#ifdef rijndael_large_blocks_fixed
-    int j, r, Nb;
-    int c2 = 0, c3 = 0;
-    PRUint32 *roundkeyw;
-    PRUint8 clone[RIJNDAEL_MAX_STATE_SIZE];
-    Nb = cx->Nb;
-    roundkeyw = cx->expandedKey + cx->Nb * cx->Nr + 3;
-    /* reverse key addition */
-    for (j = 4 * Nb; j >= 0; j -= 4) {
-        COLUMN(clone, j) = COLUMN(input, j) ^ *roundkeyw--;
-    }
-    /* Loop over rounds in reverse [NR..1] */
-    for (r = cx->Nr; r > 1; --r) {
-        /* Invert the (InvByteSub*InvMixColumn)(InvShiftRow(state)) */
-        for (j = 0; j < Nb; ++j) {
-            COLUMN(output, 4 * j) = TInv0(STATE_BYTE(4 * j)) ^
-                                    TInv1(STATE_BYTE(4 * (j + Nb - 1) % Nb) + 1) ^
-                                    TInv2(STATE_BYTE(4 * (j + Nb - c2) % Nb) + 2) ^
-                                    TInv3(STATE_BYTE(4 * (j + Nb - c3) % Nb) + 3);
-        }
-        /* Invert the key addition step */
-        for (j = 4 * Nb; j >= 0; j -= 4) {
-            COLUMN(clone, j) = COLUMN(output, j) ^ *roundkeyw--;
-        }
-    }
-    /* inverse sub */
-    for (j = 0; j < 4 * Nb; ++j) {
-        output[j] = SINV(clone[j]);
-    }
-    /* final key addition */
-    for (j = 4 * Nb; j >= 0; j -= 4) {
-        COLUMN(output, j) ^= *roundkeyw--;
-    }
-    return SECSuccess;
-#endif
-}
-
-/**************************************************************************
- *
  *  Rijndael modes of operation (ECB and CBC)
  *
  *************************************************************************/
@@ -862,22 +696,21 @@ rijndael_decryptBlock(AESContext *cx,
 static SECStatus
 rijndael_encryptECB(AESContext *cx, unsigned char *output,
                     unsigned int *outputLen, unsigned int maxOutputLen,
-                    const unsigned char *input, unsigned int inputLen,
-                    unsigned int blocksize)
+                    const unsigned char *input, unsigned int inputLen)
 {
-    SECStatus rv;
     AESBlockFunc *encryptor;
 
-    encryptor = (blocksize == RIJNDAEL_MIN_BLOCKSIZE)
-                    ? &rijndael_encryptBlock128
-                    : &rijndael_encryptBlock;
+    if (aesni_support()) {
+        /* Use hardware acceleration for normal AES parameters. */
+        encryptor = &rijndael_native_encryptBlock;
+    } else {
+        encryptor = &rijndael_encryptBlock128;
+    }
     while (inputLen > 0) {
-        rv = (*encryptor)(cx, output, input);
-        if (rv != SECSuccess)
-            return rv;
-        output += blocksize;
-        input += blocksize;
-        inputLen -= blocksize;
+        (*encryptor)(cx, output, input);
+        output += AES_BLOCK_SIZE;
+        input += AES_BLOCK_SIZE;
+        inputLen -= AES_BLOCK_SIZE;
     }
     return SECSuccess;
 }
@@ -885,58 +718,44 @@ rijndael_encryptECB(AESContext *cx, unsigned char *output,
 static SECStatus
 rijndael_encryptCBC(AESContext *cx, unsigned char *output,
                     unsigned int *outputLen, unsigned int maxOutputLen,
-                    const unsigned char *input, unsigned int inputLen,
-                    unsigned int blocksize)
+                    const unsigned char *input, unsigned int inputLen)
 {
     unsigned int j;
-    SECStatus rv;
-    AESBlockFunc *encryptor;
     unsigned char *lastblock;
-    unsigned char inblock[RIJNDAEL_MAX_STATE_SIZE * 8];
+    unsigned char inblock[AES_BLOCK_SIZE * 8];
 
     if (!inputLen)
         return SECSuccess;
     lastblock = cx->iv;
-    encryptor = (blocksize == RIJNDAEL_MIN_BLOCKSIZE)
-                    ? &rijndael_encryptBlock128
-                    : &rijndael_encryptBlock;
     while (inputLen > 0) {
         /* XOR with the last block (IV if first block) */
-        for (j = 0; j < blocksize; ++j)
+        for (j = 0; j < AES_BLOCK_SIZE; ++j) {
             inblock[j] = input[j] ^ lastblock[j];
+        }
         /* encrypt */
-        rv = (*encryptor)(cx, output, inblock);
-        if (rv != SECSuccess)
-            return rv;
+        rijndael_encryptBlock128(cx, output, inblock);
         /* move to the next block */
         lastblock = output;
-        output += blocksize;
-        input += blocksize;
-        inputLen -= blocksize;
+        output += AES_BLOCK_SIZE;
+        input += AES_BLOCK_SIZE;
+        inputLen -= AES_BLOCK_SIZE;
     }
-    memcpy(cx->iv, lastblock, blocksize);
+    memcpy(cx->iv, lastblock, AES_BLOCK_SIZE);
     return SECSuccess;
 }
 
 static SECStatus
 rijndael_decryptECB(AESContext *cx, unsigned char *output,
                     unsigned int *outputLen, unsigned int maxOutputLen,
-                    const unsigned char *input, unsigned int inputLen,
-                    unsigned int blocksize)
+                    const unsigned char *input, unsigned int inputLen)
 {
-    SECStatus rv;
-    AESBlockFunc *decryptor;
-
-    decryptor = (blocksize == RIJNDAEL_MIN_BLOCKSIZE)
-                    ? &rijndael_decryptBlock128
-                    : &rijndael_decryptBlock;
     while (inputLen > 0) {
-        rv = (*decryptor)(cx, output, input);
-        if (rv != SECSuccess)
-            return rv;
-        output += blocksize;
-        input += blocksize;
-        inputLen -= blocksize;
+        if (rijndael_decryptBlock128(cx, output, input) != SECSuccess) {
+            return SECFailure;
+        }
+        output += AES_BLOCK_SIZE;
+        input += AES_BLOCK_SIZE;
+        inputLen -= AES_BLOCK_SIZE;
     }
     return SECSuccess;
 }
@@ -944,43 +763,37 @@ rijndael_decryptECB(AESContext *cx, unsigned char *output,
 static SECStatus
 rijndael_decryptCBC(AESContext *cx, unsigned char *output,
                     unsigned int *outputLen, unsigned int maxOutputLen,
-                    const unsigned char *input, unsigned int inputLen,
-                    unsigned int blocksize)
+                    const unsigned char *input, unsigned int inputLen)
 {
-    SECStatus rv;
-    AESBlockFunc *decryptor;
     const unsigned char *in;
     unsigned char *out;
     unsigned int j;
-    unsigned char newIV[RIJNDAEL_MAX_BLOCKSIZE];
+    unsigned char newIV[AES_BLOCK_SIZE];
 
     if (!inputLen)
         return SECSuccess;
     PORT_Assert(output - input >= 0 || input - output >= (int)inputLen);
-    decryptor = (blocksize == RIJNDAEL_MIN_BLOCKSIZE)
-                    ? &rijndael_decryptBlock128
-                    : &rijndael_decryptBlock;
-    in = input + (inputLen - blocksize);
-    memcpy(newIV, in, blocksize);
-    out = output + (inputLen - blocksize);
-    while (inputLen > blocksize) {
-        rv = (*decryptor)(cx, out, in);
-        if (rv != SECSuccess)
-            return rv;
-        for (j = 0; j < blocksize; ++j)
-            out[j] ^= in[(int)(j - blocksize)];
-        out -= blocksize;
-        in -= blocksize;
-        inputLen -= blocksize;
+    in = input + (inputLen - AES_BLOCK_SIZE);
+    memcpy(newIV, in, AES_BLOCK_SIZE);
+    out = output + (inputLen - AES_BLOCK_SIZE);
+    while (inputLen > AES_BLOCK_SIZE) {
+        if (rijndael_decryptBlock128(cx, out, in) != SECSuccess) {
+            return SECFailure;
+        }
+        for (j = 0; j < AES_BLOCK_SIZE; ++j)
+            out[j] ^= in[(int)(j - AES_BLOCK_SIZE)];
+        out -= AES_BLOCK_SIZE;
+        in -= AES_BLOCK_SIZE;
+        inputLen -= AES_BLOCK_SIZE;
     }
     if (in == input) {
-        rv = (*decryptor)(cx, out, in);
-        if (rv != SECSuccess)
-            return rv;
-        for (j = 0; j < blocksize; ++j)
+        if (rijndael_decryptBlock128(cx, out, in) != SECSuccess) {
+            return SECFailure;
+        }
+        for (j = 0; j < AES_BLOCK_SIZE; ++j)
             out[j] ^= cx->iv[j];
     }
-    memcpy(cx->iv, newIV, blocksize);
+    memcpy(cx->iv, newIV, AES_BLOCK_SIZE);
     return SECSuccess;
 }
 
@@ -996,41 +809,8 @@ rijndael_decryptCBC(AESContext *cx, unsigned char *output,
 AESContext *
 AES_AllocateContext(void)
 {
-    return PORT_ZNew(AESContext);
+    return PORT_ZNewAligned(AESContext, 16, mem);
 }
-
-#ifdef INTEL_GCM
-/*
- * Adapted from the example code in "How to detect New Instruction support in
- * the 4th generation Intel Core processor family" by Max Locktyukhin.
- *
- * XGETBV:
- *   Reads an extended control register (XCR) specified by ECX into EDX:EAX.
- */
-static PRBool
-check_xcr0_ymm()
-{
-    PRUint32 xcr0;
-#if defined(_MSC_VER)
-#if defined(_M_IX86)
-    __asm {
-        mov ecx, 0
-        xgetbv
-        mov xcr0, eax
-    }
-#else
-    xcr0 = (PRUint32)_xgetbv(0); /* Requires VS2010 SP1 or later. */
-#endif
-#else
-    __asm__("xgetbv"
-            : "=a"(xcr0)
-            : "c"(0)
-            : "%edx");
-#endif
-    /* Check if xmm and ymm state are enabled in XCR0. */
-    return (xcr0 & 6) == 6;
-}
-#endif
 
 /*
 ** Initialize a new AES context suitable for AES encryption/decryption in
@@ -1039,21 +819,19 @@ check_xcr0_ymm()
 */
 static SECStatus
 aes_InitContext(AESContext *cx, const unsigned char *key, unsigned int keysize,
-                const unsigned char *iv, int mode, unsigned int encrypt,
-                unsigned int blocksize)
+                const unsigned char *iv, int mode, unsigned int encrypt)
 {
     unsigned int Nk;
-    /* According to Rijndael AES Proposal, section 12.1, block and key
-     * lengths between 128 and 256 bits are supported, as long as the
+    PRBool use_hw_aes;
+    /* According to AES, block lengths are 128 and key lengths are 128, 192, or
+     * 256 bits. We support other key sizes as well [128, 256] as long as the
      * length in bytes is divisible by 4.
      */
+
     if (key == NULL ||
-        keysize < RIJNDAEL_MIN_BLOCKSIZE ||
-        keysize > RIJNDAEL_MAX_BLOCKSIZE ||
-        keysize % 4 != 0 ||
-        blocksize < RIJNDAEL_MIN_BLOCKSIZE ||
-        blocksize > RIJNDAEL_MAX_BLOCKSIZE ||
-        blocksize % 4 != 0) {
+        keysize < AES_BLOCK_SIZE ||
+        keysize > 32 ||
+        keysize % 4 != 0) {
         PORT_SetError(SEC_ERROR_INVALID_ARGS);
         return SECFailure;
     }
@@ -1069,45 +847,16 @@ aes_InitContext(AESContext *cx, const unsigned char *key, unsigned int keysize,
         PORT_SetError(SEC_ERROR_INVALID_ARGS);
         return SECFailure;
     }
-#ifdef USE_HW_AES
-    if (has_intel_aes == 0) {
-        unsigned long eax, ebx, ecx, edx;
-        char *disable_hw_aes = PR_GetEnvSecure("NSS_DISABLE_HW_AES");
-
-        if (disable_hw_aes == NULL) {
-            freebl_cpuid(1, &eax, &ebx, &ecx, &edx);
-            has_intel_aes = (ecx & (1 << 25)) != 0 ? 1 : -1;
-#ifdef INTEL_GCM
-            has_intel_clmul = (ecx & (1 << 1)) != 0 ? 1 : -1;
-            if ((ecx & (1 << 27)) != 0 && (ecx & (1 << 28)) != 0 &&
-                check_xcr0_ymm()) {
-                has_intel_avx = 1;
-            } else {
-                has_intel_avx = -1;
-            }
-#endif
-        } else {
-            has_intel_aes = -1;
-#ifdef INTEL_GCM
-            has_intel_avx = -1;
-            has_intel_clmul = -1;
-#endif
-        }
-    }
-    use_hw_aes = (PRBool)(has_intel_aes > 0 && (keysize % 8) == 0 && blocksize == 16);
-#ifdef INTEL_GCM
-    use_hw_gcm = (PRBool)(use_hw_aes && has_intel_avx > 0 && has_intel_clmul > 0);
-#endif
-#endif /* USE_HW_AES */
+    use_hw_aes = aesni_support() && (keysize % 8) == 0;
     /* Nb = (block size in bits) / 32 */
-    cx->Nb = blocksize / 4;
+    cx->Nb = AES_BLOCK_SIZE / 4;
     /* Nk = (key size in bits) / 32 */
     Nk = keysize / 4;
     /* Obtain number of rounds from "table" */
     cx->Nr = RIJNDAEL_NUM_ROUNDS(Nk, cx->Nb);
     /* copy in the iv, if neccessary */
     if (mode == NSS_AES_CBC) {
-        memcpy(cx->iv, iv, blocksize);
+        memcpy(cx->iv, iv, AES_BLOCK_SIZE);
 #ifdef USE_HW_AES
         if (use_hw_aes) {
             cx->worker = (freeblCipherFunc)
@@ -1135,7 +884,7 @@ aes_InitContext(AESContext *cx, const unsigned char *key, unsigned int keysize,
     PORT_Assert((cx->Nb * (cx->Nr + 1)) <= RIJNDAEL_MAX_EXP_KEY_SIZE);
     if ((cx->Nb * (cx->Nr + 1)) > RIJNDAEL_MAX_EXP_KEY_SIZE) {
         PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
-        goto cleanup;
+        return SECFailure;
     }
 #ifdef USE_HW_AES
     if (use_hw_aes) {
@@ -1143,30 +892,24 @@ aes_InitContext(AESContext *cx, const unsigned char *key, unsigned int keysize,
     } else
 #endif
     {
-
-#if defined(RIJNDAEL_GENERATE_TABLES) || \
-    defined(RIJNDAEL_GENERATE_TABLES_MACRO)
-        if (rijndaelTables == NULL) {
-            if (PR_CallOnce(&coRTInit, init_rijndael_tables) != PR_SUCCESS) {
-                return SecFailure;
-            }
-        }
-#endif
         /* Generate expanded key */
         if (encrypt) {
-            if (rijndael_key_expansion(cx, key, Nk) != SECSuccess)
-                goto cleanup;
+            if (use_hw_aes && (cx->mode == NSS_AES_GCM || cx->mode == NSS_AES ||
+                               cx->mode == NSS_AES_CTR)) {
+                PORT_Assert(keysize == 16 || keysize == 24 || keysize == 32);
+                /* Prepare hardware key for normal AES parameters. */
+                rijndael_native_key_expansion(cx, key, Nk);
+            } else {
+                rijndael_key_expansion(cx, key, Nk);
+            }
         } else {
-            if (rijndael_invkey_expansion(cx, key, Nk) != SECSuccess)
-                goto cleanup;
+            rijndael_invkey_expansion(cx, key, Nk);
         }
     }
     cx->worker_cx = cx;
     cx->destroy = NULL;
     cx->isBlock = PR_TRUE;
     return SECSuccess;
-cleanup:
-    return SECFailure;
 }
 
 SECStatus
@@ -1178,6 +921,11 @@ AES_InitContext(AESContext *cx, const unsigned char *key, unsigned int keysize,
     PRBool baseencrypt = encrypt;
     SECStatus rv;
 
+    if (blocksize != AES_BLOCK_SIZE) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        return SECFailure;
+    }
+
     switch (mode) {
         case NSS_AES_CTS:
             basemode = NSS_AES_CBC;
@@ -1188,45 +936,47 @@ AES_InitContext(AESContext *cx, const unsigned char *key, unsigned int keysize,
             baseencrypt = PR_TRUE;
             break;
     }
-    /* make sure enough is initializes so we can safely call Destroy */
+    /* Make sure enough is initialized so we can safely call Destroy. */
     cx->worker_cx = NULL;
     cx->destroy = NULL;
-    rv = aes_InitContext(cx, key, keysize, iv, basemode,
-                         baseencrypt, blocksize);
+    cx->mode = mode;
+    rv = aes_InitContext(cx, key, keysize, iv, basemode, baseencrypt);
     if (rv != SECSuccess) {
         AES_DestroyContext(cx, PR_FALSE);
         return rv;
     }
-    cx->mode = mode;
 
     /* finally, set up any mode specific contexts */
     switch (mode) {
         case NSS_AES_CTS:
-            cx->worker_cx = CTS_CreateContext(cx, cx->worker, iv, blocksize);
+            cx->worker_cx = CTS_CreateContext(cx, cx->worker, iv);
             cx->worker = (freeblCipherFunc)(encrypt ? CTS_EncryptUpdate : CTS_DecryptUpdate);
             cx->destroy = (freeblDestroyFunc)CTS_DestroyContext;
             cx->isBlock = PR_FALSE;
             break;
         case NSS_AES_GCM:
-#ifdef INTEL_GCM
-            if (use_hw_gcm) {
-                cx->worker_cx = intel_AES_GCM_CreateContext(cx, cx->worker, iv, blocksize);
-                cx->worker = (freeblCipherFunc)(encrypt ? intel_AES_GCM_EncryptUpdate : intel_AES_GCM_DecryptUpdate);
+#if defined(INTEL_GCM) && defined(USE_HW_AES)
+            if (aesni_support() && (keysize % 8) == 0 && avx_support() &&
+                clmul_support()) {
+                cx->worker_cx = intel_AES_GCM_CreateContext(cx, cx->worker, iv);
+                cx->worker = (freeblCipherFunc)(encrypt ? intel_AES_GCM_EncryptUpdate
+                                                        : intel_AES_GCM_DecryptUpdate);
                 cx->destroy = (freeblDestroyFunc)intel_AES_GCM_DestroyContext;
                 cx->isBlock = PR_FALSE;
             } else
 #endif
             {
-                cx->worker_cx = GCM_CreateContext(cx, cx->worker, iv, blocksize);
-                cx->worker = (freeblCipherFunc)(encrypt ? GCM_EncryptUpdate : GCM_DecryptUpdate);
+                cx->worker_cx = GCM_CreateContext(cx, cx->worker, iv);
+                cx->worker = (freeblCipherFunc)(encrypt ? GCM_EncryptUpdate
+                                                        : GCM_DecryptUpdate);
                 cx->destroy = (freeblDestroyFunc)GCM_DestroyContext;
                 cx->isBlock = PR_FALSE;
             }
             break;
         case NSS_AES_CTR:
-            cx->worker_cx = CTR_CreateContext(cx, cx->worker, iv, blocksize);
+            cx->worker_cx = CTR_CreateContext(cx, cx->worker, iv);
 #if defined(USE_HW_AES) && defined(_MSC_VER)
-            if (use_hw_aes) {
+            if (aesni_support() && (keysize % 8) == 0) {
                 cx->worker = (freeblCipherFunc)CTR_Update_HW_AES;
             } else
 #endif
@@ -1238,7 +988,7 @@ AES_InitContext(AESContext *cx, const unsigned char *key, unsigned int keysize,
             break;
         default:
             /* everything has already been set up by aes_InitContext, just
-     * return */
+             * return */
             return SECSuccess;
     }
     /* check to see if we succeeded in getting the worker context */
@@ -1287,8 +1037,9 @@ AES_DestroyContext(AESContext *cx, PRBool freeit)
         cx->worker_cx = NULL;
         cx->destroy = NULL;
     }
-    if (freeit)
-        PORT_Free(cx);
+    if (freeit) {
+        PORT_Free(cx->mem);
+    }
 }
 
 /*
@@ -1302,14 +1053,12 @@ AES_Encrypt(AESContext *cx, unsigned char *output,
             unsigned int *outputLen, unsigned int maxOutputLen,
             const unsigned char *input, unsigned int inputLen)
 {
-    int blocksize;
     /* Check args */
     if (cx == NULL || output == NULL || (input == NULL && inputLen != 0)) {
         PORT_SetError(SEC_ERROR_INVALID_ARGS);
         return SECFailure;
     }
-    blocksize = 4 * cx->Nb;
-    if (cx->isBlock && (inputLen % blocksize != 0)) {
+    if (cx->isBlock && (inputLen % AES_BLOCK_SIZE != 0)) {
         PORT_SetError(SEC_ERROR_INPUT_LEN);
         return SECFailure;
     }
@@ -1340,7 +1089,7 @@ AES_Encrypt(AESContext *cx, unsigned char *output,
 #endif
 
     return (*cx->worker)(cx->worker_cx, output, outputLen, maxOutputLen,
-                         input, inputLen, blocksize);
+                         input, inputLen, AES_BLOCK_SIZE);
 }
 
 /*
@@ -1354,14 +1103,12 @@ AES_Decrypt(AESContext *cx, unsigned char *output,
             unsigned int *outputLen, unsigned int maxOutputLen,
             const unsigned char *input, unsigned int inputLen)
 {
-    int blocksize;
     /* Check args */
     if (cx == NULL || output == NULL || (input == NULL && inputLen != 0)) {
         PORT_SetError(SEC_ERROR_INVALID_ARGS);
         return SECFailure;
     }
-    blocksize = 4 * cx->Nb;
-    if (cx->isBlock && (inputLen % blocksize != 0)) {
+    if (cx->isBlock && (inputLen % AES_BLOCK_SIZE != 0)) {
         PORT_SetError(SEC_ERROR_INPUT_LEN);
         return SECFailure;
     }
@@ -1371,5 +1118,5 @@ AES_Decrypt(AESContext *cx, unsigned char *output,
     }
     *outputLen = inputLen;
     return (*cx->worker)(cx->worker_cx, output, outputLen, maxOutputLen,
-                         input, inputLen, blocksize);
+                         input, inputLen, AES_BLOCK_SIZE);
 }

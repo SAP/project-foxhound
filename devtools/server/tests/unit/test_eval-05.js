@@ -1,5 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+/* eslint-disable no-shadow, max-nested-callbacks */
+
+"use strict";
 
 /**
  * Check pauses within evals.
@@ -9,35 +12,38 @@ var gDebuggee;
 var gClient;
 var gThreadClient;
 
-function run_test()
-{
+function run_test() {
+  Services.prefs.setBoolPref("security.allow_eval_with_system_principal", true);
+  registerCleanupFunction(() => {
+    Services.prefs.clearUserPref("security.allow_eval_with_system_principal");
+  });
   initTestDebuggerServer();
   gDebuggee = addTestGlobal("test-stack");
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
-  gClient.connect().then(function () {
-    attachTestTabAndResume(gClient, "test-stack", function (aResponse, aTabClient, aThreadClient) {
-      gThreadClient = aThreadClient;
-      test_syntax_error_eval();
-    });
+  gClient.connect().then(function() {
+    attachTestTabAndResume(gClient, "test-stack",
+                           function(response, targetFront, threadClient) {
+                             gThreadClient = threadClient;
+                             test_pauses_eval();
+                           });
   });
   do_test_pending();
 }
 
-function test_syntax_error_eval()
-{
-  gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-    gThreadClient.eval(null, "debugger", function (aResponse) {
+function test_pauses_eval() {
+  gThreadClient.addOneTimeListener("paused", function(event, packet) {
+    gThreadClient.eval(null, "debugger", function(response) {
       // Expect a resume then a debuggerStatement pause.
-      do_check_eq(aResponse.type, "resumed");
-      gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-        do_check_eq(aPacket.why.type, "debuggerStatement");
+      Assert.equal(response.type, "resumed");
+      gThreadClient.addOneTimeListener("paused", function(event, packet) {
+        Assert.equal(packet.why.type, "debuggerStatement");
         // Resume from the debugger statement should immediately re-pause
         // with a clientEvaluated reason.
-        gThreadClient.resume(function (aPacket) {
-          do_check_eq(aPacket.type, "resumed");
-          gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-            do_check_eq(aPacket.why.type, "clientEvaluated");
-            gThreadClient.resume(function () {
+        gThreadClient.resume(function(packet) {
+          Assert.equal(packet.type, "resumed");
+          gThreadClient.addOneTimeListener("paused", function(event, packet) {
+            Assert.equal(packet.why.type, "clientEvaluated");
+            gThreadClient.resume(function() {
               finishClient(gClient);
             });
           });
@@ -45,7 +51,7 @@ function test_syntax_error_eval()
       });
     });
   });
-  gDebuggee.eval("(" + function () {
+  gDebuggee.eval("(" + function() {
     function stopMe(arg) {
       debugger;
     }

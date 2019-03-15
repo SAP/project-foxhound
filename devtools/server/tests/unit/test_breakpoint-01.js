@@ -1,75 +1,51 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+/* eslint-disable no-shadow, max-nested-callbacks */
+
+"use strict";
 
 /**
  * Check basic breakpoint functionality.
  */
-var gDebuggee;
-var gClient;
-var gThreadClient;
-var gCallback;
 
-function run_test()
-{
-  run_test_with_server(DebuggerServer, function () {
-    run_test_with_server(WorkerDebuggerServer, do_test_finished);
-  });
-  do_test_pending();
-}
+add_task(threadClientTest(async ({ threadClient, debuggee }) => {
+  (async () => {
+    info("Wait for the debugger statement to be hit");
+    let packet = await waitForPause(threadClient);
+    const source = await getSourceById(
+      threadClient,
+      packet.frame.where.actor
+    );
 
-function run_test_with_server(aServer, aCallback)
-{
-  gCallback = aCallback;
-  initTestDebuggerServer(aServer);
-  gDebuggee = addTestGlobal("test-stack", aServer);
-  gClient = new DebuggerClient(aServer.connectPipe());
-  gClient.connect().then(function () {
-    attachTestTabAndResume(gClient, "test-stack", function (aResponse, aTabClient, aThreadClient) {
-      gThreadClient = aThreadClient;
-      test_simple_breakpoint();
-    });
-  });
-}
+    const location = { line: debuggee.line0 + 3 };
 
-function test_simple_breakpoint()
-{
-  gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-    let source = gThreadClient.source(aPacket.frame.where.source);
-    let location = {
-      line: gDebuggee.line0 + 3
-    };
+    const [, bpClient] = await source.setBreakpoint(location);
 
-    source.setBreakpoint(location, function (aResponse, bpClient) {
-      gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-        // Check the return value.
-        do_check_eq(aPacket.type, "paused");
-        do_check_eq(aPacket.frame.where.source.actor, source.actor);
-        do_check_eq(aPacket.frame.where.line, location.line);
-        do_check_eq(aPacket.why.type, "breakpoint");
-        do_check_eq(aPacket.why.actors[0], bpClient.actor);
-        // Check that the breakpoint worked.
-        do_check_eq(gDebuggee.a, 1);
-        do_check_eq(gDebuggee.b, undefined);
+    await threadClient.resume();
+    packet = await waitForPause(threadClient);
 
-        // Remove the breakpoint.
-        bpClient.remove(function (aResponse) {
-          gThreadClient.resume(function () {
-            gClient.close().then(gCallback);
-          });
-        });
+    info("Paused at the breakpoint");
+    Assert.equal(packet.type, "paused");
+    Assert.equal(packet.frame.where.actor, source.actor);
+    Assert.equal(packet.frame.where.line, location.line);
+    Assert.equal(packet.why.type, "breakpoint");
+    Assert.equal(packet.why.actors[0], bpClient.actor);
 
-      });
+    info("Check that the breakpoint worked.");
+    Assert.equal(debuggee.a, 1);
+    Assert.equal(debuggee.b, undefined);
 
-      // Continue until the breakpoint is hit.
-      gThreadClient.resume();
-    });
-  });
+    await bpClient.remove();
+    await threadClient.resume();
+  })();
 
+  /* eslint-disable */
   Cu.evalInSandbox(
     "var line0 = Error().lineNumber;\n" +
     "debugger;\n" +   // line0 + 1
     "var a = 1;\n" +  // line0 + 2
     "var b = 2;\n",   // line0 + 3
-    gDebuggee
+     debuggee
   );
-}
+  /* eslint-enable */
+}));

@@ -20,10 +20,14 @@
 <script class="testbody" type="application/javascript">
 <![CDATA[
 
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+
 // Set to indicate whether or not we want autoCompleteSimple to return a result
 var returnResult = true;
 
-const ACR = Components.interfaces.nsIAutoCompleteResult;
+const IS_MAC = navigator.platform.includes("Mac");
+
+const ACR = Ci.nsIAutoCompleteResult;
 
 // This result can't be constructed in-line, because otherwise we leak memory.
 function nsAutoCompleteSimpleResult(aString)
@@ -57,12 +61,12 @@ var autoCompleteSimpleID = Components.ID("0a2afbdb-f30e-47d1-9cb1-0cd160240aca")
 var autoCompleteSimpleName = "@mozilla.org/autocomplete/search;1?name=simple"
 var autoCompleteSimple = {
   QueryInterface: function(iid) {
-    if (iid.equals(Components.interfaces.nsISupports) ||
-        iid.equals(Components.interfaces.nsIFactory) ||
-        iid.equals(Components.interfaces.nsIAutoCompleteSearch))
+    if (iid.equals(Ci.nsISupports) ||
+        iid.equals(Ci.nsIFactory) ||
+        iid.equals(Ci.nsIAutoCompleteSearch))
       return this;
 
-    throw Components.results.NS_ERROR_NO_INTERFACE;
+    throw Cr.NS_ERROR_NO_INTERFACE;
   },
 
   createInstance: function(outer, iid) {
@@ -78,7 +82,7 @@ var autoCompleteSimple = {
 };
 
 var componentManager = Components.manager
-                                 .QueryInterface(Components.interfaces.nsIComponentRegistrar);
+                                 .QueryInterface(Ci.nsIComponentRegistrar);
 componentManager.registerFactory(autoCompleteSimpleID, "Test Simple Autocomplete",
                                  autoCompleteSimpleName, autoCompleteSimple);
 
@@ -86,6 +90,7 @@ componentManager.registerFactory(autoCompleteSimpleID, "Test Simple Autocomplete
 // Test Bug 325842 - completeDefaultIndex
 
 SimpleTest.waitForExplicitFinish();
+
 setTimeout(nextTest, 0);
 
 var currentTest = null;
@@ -94,58 +99,58 @@ var currentTest = null;
 const tests = [
   {
     desc: "HOME key remove selection",
-    key: "VK_HOME",
+    key: "KEY_Home",
     removeSelection: true,
     result: "re",
     start: 0, end: 0
   },
   {
     desc: "LEFT key remove selection",
-    key: "VK_LEFT",
+    key: "KEY_ArrowLeft",
     removeSelection: true,
     result: "re",
     start: 1, end: 1
   },
   { desc: "RIGHT key remove selection",
-    key: "VK_RIGHT",
+    key: "KEY_ArrowRight",
     removeSelection: true,
     result: "re",
     start: 2, end: 2
   },
   { desc: "ENTER key remove selection",
-    key: "VK_RETURN",
+    key: "KEY_Enter",
     removeSelection: true,
     result: "re",
     start: 2, end: 2
   },
   {
     desc: "HOME key",
-    key: "VK_HOME",
+    key: "KEY_Home",
     removeSelection: false,
     result: "Result",
     start: 0, end: 0
   },
   {
     desc: "LEFT key",
-    key: "VK_LEFT",
+    key: "KEY_ArrowLeft",
     removeSelection: false,
     result: "Result",
     start: 5, end: 5
   },
   { desc: "RIGHT key",
-    key: "VK_RIGHT",
+    key: "KEY_ArrowRight",
     removeSelection: false,
     result: "Result",
     start: 6, end: 6
   },
   { desc: "RETURN key",
-    key: "VK_RETURN",
+    key: "KEY_Enter",
     removeSelection: false,
     result: "Result",
     start: 6, end: 6
   },
   { desc: "TAB key should confirm suggestion when forcecomplete is set",
-    key: "VK_TAB",
+    key: "KEY_Tab",
     removeSelection: false,
     forceComplete: true,
     result: "Result",
@@ -153,7 +158,7 @@ const tests = [
   },
 
   { desc: "RIGHT key complete from middle",
-    key: "VK_RIGHT",
+    key: "KEY_ArrowRight",
     forceComplete: true,
     completeFromMiddle: true,
     result: "Result",
@@ -161,7 +166,7 @@ const tests = [
   },
   {
     desc: "RIGHT key w/ minResultsForPopup=2",
-    key: "VK_RIGHT",
+    key: "KEY_ArrowRight",
     removeSelection: false,
     minResultsForPopup: 2,
     result: "Result",
@@ -185,7 +190,7 @@ function nextTest() {
   currentTest = tests.shift();
 
   // HOME key works differently on Mac, so we skip tests using it.
-  if (currentTest.key == "VK_HOME" && navigator.platform.indexOf("Mac") != -1)
+  if (currentTest.key == "KEY_Home" && IS_MAC)
     nextTest();
   else
     setTimeout(runCurrentTest, 0);
@@ -201,12 +206,10 @@ function runCurrentTest() {
   autocomplete.focus();
 
   if (!currentTest.completeFromMiddle) {
-    synthesizeKey("r", {});
-    synthesizeKey("e", {});
+    sendString("re");
   }
   else {
-    synthesizeKey("l", {});
-    synthesizeKey("t", {});
+    sendString("lt");
   }
 }
 
@@ -216,7 +219,7 @@ function searchComplete() {
 
   if (currentTest.completeFromMiddle) {
     if (!currentTest.forceComplete) {
-      synthesizeKey(currentTest.key, {});
+      synthesizeKey(currentTest.key);
     }
     else if (!/ >> /.test(autocomplete.value)) {
       // At this point we should have a value like "lt >> Result" showing.
@@ -238,10 +241,10 @@ function searchComplete() {
   if (autocomplete.selectionStart == 2) {  // Finished inserting "re" string.
     if (currentTest.removeSelection) {
       // remove current selection
-      synthesizeKey("VK_DELETE", {});
+      synthesizeKey("KEY_Delete");
     }
 
-    synthesizeKey(currentTest.key, {});
+    synthesizeKey(currentTest.key);
 
     checkResult();
   }

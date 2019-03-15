@@ -10,32 +10,36 @@
 #include "nsTArray.h"
 
 class nsIContent;
-class nsIDocument;
+
+class nsINode;
 
 namespace mozilla {
 
 namespace dom {
 class Element;
-} // namespace dom
+}  // namespace dom
 
 /**
  * DocumentStyleRootIterator traverses the roots of the document from the
- * perspective of the Servo-backed style system.  This will first traverse
- * the document root, followed by any document level native anonymous content.
+ * perspective of the Servo-backed style system. In the general case, this
+ * will first traverse the document root, followed by any document level
+ * native anonymous content.
+ *
+ * If the caller passes an element to the constructor rather than the document,
+ * that element (and nothing else) is returned from GetNextStyleRoot.
  */
-class DocumentStyleRootIterator
-{
-public:
-  explicit DocumentStyleRootIterator(nsIDocument* aDocument);
+class DocumentStyleRootIterator {
+ public:
+  explicit DocumentStyleRootIterator(nsINode* aStyleRoot);
   ~DocumentStyleRootIterator() { MOZ_COUNT_DTOR(DocumentStyleRootIterator); }
 
   dom::Element* GetNextStyleRoot();
 
-private:
+ private:
   AutoTArray<nsIContent*, 8> mStyleRoots;
   uint32_t mPosition;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // DocumentStyleRootIterator_h
+#endif  // DocumentStyleRootIterator_h

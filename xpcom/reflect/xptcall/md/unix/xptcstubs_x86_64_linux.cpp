@@ -9,7 +9,6 @@
 // Keep this in sync with the darwin version.
 
 #include "xptcprivate.h"
-#include "xptiprivate.h"
 
 // The Linux/x86-64 ABI passes the first 6 integer parameters and the
 // first 8 floating point parameters in registers (rdi, rsi, rdx, rcx,
@@ -26,7 +25,7 @@ const uint32_t FPR_COUNT            = 8;
 // - 'args[]' contains the arguments passed on stack
 // - 'gpregs[]' contains the arguments passed in integer registers
 // - 'fpregs[]' contains the arguments passed in floating point registers
-// 
+//
 // The parameters are mapped into an array of type 'nsXPTCMiniVariant'
 // and then the method gets called.
 
@@ -39,7 +38,6 @@ PrepareAndDispatch(nsXPTCStubBase * self, uint32_t methodIndex,
     const nsXPTMethodInfo* info;
     uint32_t paramCount;
     uint32_t i;
-    nsresult result = NS_ERROR_FAILURE;
 
     NS_ASSERTION(self,"no self");
 
@@ -60,6 +58,8 @@ PrepareAndDispatch(nsXPTCStubBase * self, uint32_t methodIndex,
     if (!dispatchParams)
         return NS_ERROR_OUT_OF_MEMORY;
 
+    const uint8_t indexOfJSContext = info->IndexOfJSContext();
+
     uint64_t* ap = args;
     uint32_t nr_gpr = 1;    // skip one GPR register for 'that'
     uint32_t nr_fpr = 0;
@@ -69,6 +69,13 @@ PrepareAndDispatch(nsXPTCStubBase * self, uint32_t methodIndex,
         const nsXPTParamInfo& param = info->GetParam(i);
         const nsXPTType& type = param.GetType();
         nsXPTCMiniVariant* dp = &dispatchParams[i];
+
+        if (i == indexOfJSContext) {
+            if (nr_gpr < GPR_COUNT)
+                nr_gpr++;
+            else
+                ap++;
+        }
 
         if (!param.IsOut() && type == nsXPTType::T_DOUBLE) {
             if (nr_fpr < FPR_COUNT)
@@ -117,7 +124,8 @@ PrepareAndDispatch(nsXPTCStubBase * self, uint32_t methodIndex,
         }
     }
 
-    result = self->mOuter->CallMethod((uint16_t) methodIndex, info, dispatchParams);
+    nsresult result = self->mOuter->CallMethod((uint16_t) methodIndex, info,
+                                               dispatchParams);
 
     if (dispatchParams != paramBuffer)
         delete [] dispatchParams;
@@ -126,6 +134,8 @@ PrepareAndDispatch(nsXPTCStubBase * self, uint32_t methodIndex,
 }
 
 // Linux/x86-64 uses gcc >= 3.1
+// We don't include .cfi_startproc/endproc directives for the individual stubs
+// because there's no extra CFI bits to define beyond the default CIE.
 #define STUB_ENTRY(n) \
 asm(".section	\".text\"\n\t" \
     ".align	2\n\t" \
@@ -162,9 +172,13 @@ asm(".section   \".text\"\n\t"
     ".align     2\n\t"
     ".type      SharedStub,@function\n\t"
     "SharedStub:\n\t"
+    ".cfi_startproc\n\t"
     // make room for gpregs (48), fpregs (64)
     "pushq      %rbp\n\t"
+    ".cfi_def_cfa_offset 16\n\t"
+    ".cfi_offset 6, -16\n\t"
     "movq       %rsp,%rbp\n\t"
+    ".cfi_def_cfa_register 6\n\t"
     "subq       $112,%rsp\n\t"
     // save GP registers
     "movq       %rdi,-112(%rbp)\n\t"
@@ -173,6 +187,12 @@ asm(".section   \".text\"\n\t"
     "movq       %rcx, -88(%rbp)\n\t"
     "movq       %r8 , -80(%rbp)\n\t"
     "movq       %r9 , -72(%rbp)\n\t"
+    ".cfi_offset 5, -24\n\t"	// rdi
+    ".cfi_offset 4, -32\n\t"	// rsi
+    ".cfi_offset 1, -40\n\t"	// rdx
+    ".cfi_offset 2, -48\n\t"	// rcx
+    ".cfi_offset 8, -56\n\t"	// r8
+    ".cfi_offset 9, -64\n\t"	// r9
     "leaq       -112(%rbp),%rcx\n\t"
     // save FP registers
     "movsd      %xmm0,-64(%rbp)\n\t"
@@ -189,7 +209,9 @@ asm(".section   \".text\"\n\t"
     "leaq       16(%rbp),%rdx\n\t"
     "call       PrepareAndDispatch@plt\n\t"
     "leave\n\t"
+    ".cfi_def_cfa 7, 8\n\t"
     "ret\n\t"
+    ".cfi_endproc\n\t"
     ".size      SharedStub,.-SharedStub");
 
 #define SENTINEL_ENTRY(n) \

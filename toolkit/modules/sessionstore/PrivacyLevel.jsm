@@ -4,11 +4,9 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["PrivacyLevel"];
+var EXPORTED_SYMBOLS = ["PrivacyLevel"];
 
-const Cu = Components.utils;
-
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const PREF = "browser.sessionstore.privacy_level";
 
@@ -17,7 +15,7 @@ const PREF = "browser.sessionstore.privacy_level";
 // data, and cookies.
 //
 // Collect data from all sites (http and https).
-const PRIVACY_NONE = 0;
+// const PRIVACY_NONE = 0;
 // Collect data from unencrypted sites (http), only.
 const PRIVACY_ENCRYPTED = 1;
 // Collect no data.
@@ -35,18 +33,16 @@ var PrivacyLevel = Object.freeze({
    * @return bool
    */
   check(url) {
-    return PrivacyLevel.canSave({ isHttps: url.startsWith("https:") });
+    return PrivacyLevel.canSave(url.startsWith("https:"));
   },
 
   /**
    * Checks whether we're allowed to save data for a specific site.
    *
-   * @param {isHttps: boolean}
-   *        An object that must have one property: 'isHttps'.
-   *        'isHttps' tells whether the site us secure communication (HTTPS).
+   * @param isHttps A boolean that tells whether the site uses TLS.
    * @return {bool} Whether we can save data for the specified site.
    */
-  canSave({isHttps}) {
+  canSave(isHttps) {
     let level = Services.prefs.getIntPref(PREF);
 
     // Never save any data when full privacy is requested.
@@ -60,5 +56,5 @@ var PrivacyLevel = Object.freeze({
     }
 
     return true;
-  }
+  },
 });

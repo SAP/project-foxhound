@@ -2,12 +2,25 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-Components.utils.import("resource://gre/modules/Services.jsm");
-Components.utils.import("resource://gre/modules/ContextualIdentityService.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/ContextualIdentityService.jsm");
 
-const containersBundle = Services.strings.createBundle("chrome://browser/locale/preferences/containers.properties");
+/**
+ * We want to set the window title immediately to prevent flickers.
+ */
+function setTitle() {
+  let params = window.arguments[0] || {};
 
-const HTMLNS = "http://www.w3.org/1999/xhtml";
+  let winElem = document.documentElement;
+  if (params.userContextId) {
+    document.l10n.setAttributes(winElem, "containers-window-update", {
+      name: params.identity.name,
+    });
+  } else {
+    document.l10n.setAttributes(winElem, "containers-window-new");
+  }
+}
+setTitle();
 
 let gContainersManager = {
   icons: [
@@ -15,7 +28,14 @@ let gContainersManager = {
     "briefcase",
     "dollar",
     "cart",
-    "circle"
+    "circle",
+    "gift",
+    "vacation",
+    "food",
+    "fruit",
+    "pet",
+    "tree",
+    "chill",
   ],
 
   colors: [
@@ -26,7 +46,7 @@ let gContainersManager = {
     "orange",
     "red",
     "pink",
-    "purple"
+    "purple",
   ],
 
   onLoad() {
@@ -37,10 +57,6 @@ let gContainersManager = {
   init(aParams) {
     this.userContextId = aParams.userContextId || null;
     this.identity = aParams.identity;
-
-    if (aParams.windowTitle) {
-      document.title = aParams.windowTitle;
-    }
 
     const iconWrapper = document.getElementById("iconWrapper");
     iconWrapper.appendChild(this.createIconButtons());
@@ -54,28 +70,14 @@ let gContainersManager = {
       this.checkForm();
     }
 
-    this.setLabelsMinWidth();
-
     // This is to prevent layout jank caused by the svgs and outlines rendering at different times
     document.getElementById("containers-content").removeAttribute("hidden");
-  },
-
-  setLabelsMinWidth() {
-    const labelMinWidth = containersBundle.GetStringFromName("containers.labelMinWidth");
-    const labels = [
-      document.getElementById("nameLabel"),
-      document.getElementById("iconLabel"),
-      document.getElementById("colorLabel")
-    ];
-    for (let label of labels) {
-      label.style.minWidth = labelMinWidth;
-    }
   },
 
   uninit() {
   },
 
-  // Check if name string as to if the form can be submitted
+  // Check if name is provided to determine if the form can be submitted
   checkForm() {
     const name = document.getElementById("name");
     let btnApplyChanges = document.getElementById("btnApplyChanges");
@@ -87,12 +89,12 @@ let gContainersManager = {
   },
 
   createIconButtons(defaultIcon) {
-    let radiogroup = document.createElement("radiogroup");
+    let radiogroup = document.createXULElement("radiogroup");
     radiogroup.setAttribute("id", "icon");
     radiogroup.className = "icon-buttons radio-buttons";
 
     for (let icon of this.icons) {
-      let iconSwatch = document.createElement("radio");
+      let iconSwatch = document.createXULElement("radio");
       iconSwatch.id = "iconbutton-" + icon;
       iconSwatch.name = "icon";
       iconSwatch.type = "radio";
@@ -102,9 +104,8 @@ let gContainersManager = {
         iconSwatch.setAttribute("selected", true);
       }
 
-      iconSwatch.setAttribute("label",
-        containersBundle.GetStringFromName(`containers.${icon}.label`));
-      let iconElement = document.createElement("hbox");
+      document.l10n.setAttributes(iconSwatch, `containers-icon-${icon}`);
+      let iconElement = document.createXULElement("hbox");
       iconElement.className = "userContext-icon";
       iconElement.setAttribute("data-identity-icon", icon);
 
@@ -116,12 +117,12 @@ let gContainersManager = {
   },
 
   createColorSwatches(defaultColor) {
-    let radiogroup = document.createElement("radiogroup");
+    let radiogroup = document.createXULElement("radiogroup");
     radiogroup.setAttribute("id", "color");
     radiogroup.className = "radio-buttons";
 
     for (let color of this.colors) {
-      let colorSwatch = document.createElement("radio");
+      let colorSwatch = document.createXULElement("radio");
       colorSwatch.id = "colorswatch-" + color;
       colorSwatch.name = "color";
       colorSwatch.type = "radio";
@@ -131,9 +132,8 @@ let gContainersManager = {
         colorSwatch.setAttribute("selected", true);
       }
 
-      colorSwatch.setAttribute("label",
-        containersBundle.GetStringFromName(`containers.${color}.label`));
-      let iconElement = document.createElement("hbox");
+      document.l10n.setAttributes(colorSwatch, `containers-color-${color}`);
+      let iconElement = document.createXULElement("hbox");
       iconElement.className = "userContext-icon";
       iconElement.setAttribute("data-identity-icon", "circle");
       iconElement.setAttribute("data-identity-color", color);
@@ -149,11 +149,11 @@ let gContainersManager = {
     let color = document.getElementById("color").value;
     let name = document.getElementById("name").value;
 
-    if (this.icons.indexOf(icon) == -1) {
+    if (!this.icons.includes(icon)) {
       throw "Internal error. The icon value doesn't match.";
     }
 
-    if (this.colors.indexOf(color) == -1) {
+    if (!this.colors.includes(color)) {
       throw "Internal error. The color value doesn't match.";
     }
 
@@ -167,11 +167,11 @@ let gContainersManager = {
         icon,
         color);
     }
-    window.parent.location.reload()
+    window.parent.location.reload();
   },
 
   onWindowKeyPress(aEvent) {
     if (aEvent.keyCode == KeyEvent.DOM_VK_ESCAPE)
       window.close();
-  }
-}
+  },
+};

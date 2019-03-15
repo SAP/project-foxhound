@@ -10,8 +10,8 @@
 
 #include <utility>
 
-#include "webrtc/base/checks.h"
-#include "webrtc/modules/audio_processing/test/test_utils.h"
+#include "modules/audio_processing/test/test_utils.h"
+#include "rtc_base/checks.h"
 
 namespace webrtc {
 
@@ -24,7 +24,11 @@ RawFile::~RawFile() {
 
 void RawFile::WriteSamples(const int16_t* samples, size_t num_samples) {
 #ifndef WEBRTC_ARCH_LITTLE_ENDIAN
-#error "Need to convert samples to little-endian when writing to PCM file"
+  //convert to big-endian
+  int16_t* s = (int16_t*)samples;
+  for(size_t idx = 0; idx < num_samples; idx++) {
+    s[idx] = (samples[idx]<<8) | (samples[idx]>>8);
+  }
 #endif
   fwrite(samples, sizeof(*samples), num_samples, file_handle_);
 }
@@ -33,8 +37,10 @@ void RawFile::WriteSamples(const float* samples, size_t num_samples) {
   fwrite(samples, sizeof(*samples), num_samples, file_handle_);
 }
 
-ChannelBufferWavReader::ChannelBufferWavReader(rtc::scoped_ptr<WavReader> file)
+ChannelBufferWavReader::ChannelBufferWavReader(std::unique_ptr<WavReader> file)
     : file_(std::move(file)) {}
+
+ChannelBufferWavReader::~ChannelBufferWavReader() = default;
 
 bool ChannelBufferWavReader::Read(ChannelBuffer<float>* buffer) {
   RTC_CHECK_EQ(file_->num_channels(), buffer->num_channels());
@@ -50,8 +56,10 @@ bool ChannelBufferWavReader::Read(ChannelBuffer<float>* buffer) {
   return true;
 }
 
-ChannelBufferWavWriter::ChannelBufferWavWriter(rtc::scoped_ptr<WavWriter> file)
+ChannelBufferWavWriter::ChannelBufferWavWriter(std::unique_ptr<WavWriter> file)
     : file_(std::move(file)) {}
+
+ChannelBufferWavWriter::~ChannelBufferWavWriter() = default;
 
 void ChannelBufferWavWriter::Write(const ChannelBuffer<float>& buffer) {
   RTC_CHECK_EQ(file_->num_channels(), buffer.num_channels());
@@ -80,7 +88,7 @@ void WriteFloatData(const float* const* data,
                     WavWriter* wav_file,
                     RawFile* raw_file) {
   size_t length = num_channels * samples_per_channel;
-  rtc::scoped_ptr<float[]> buffer(new float[length]);
+  std::unique_ptr<float[]> buffer(new float[length]);
   Interleave(data, samples_per_channel, num_channels, buffer.get());
   if (raw_file) {
     raw_file->WriteSamples(buffer.get(), length);
@@ -132,7 +140,7 @@ std::vector<Point> ParseArrayGeometry(const std::string& mic_positions) {
   const std::vector<float> values = ParseList<float>(mic_positions);
   const size_t num_mics =
       rtc::CheckedDivExact(values.size(), static_cast<size_t>(3));
-  RTC_CHECK_GT(num_mics, 0u) << "mic_positions is not large enough.";
+  RTC_CHECK_GT(num_mics, 0) << "mic_positions is not large enough.";
 
   std::vector<Point> result;
   result.reserve(num_mics);

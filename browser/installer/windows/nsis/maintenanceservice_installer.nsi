@@ -51,7 +51,9 @@ Var BrandFullName
 ; We keep defines.nsi defined so that we get other things like 
 ; the version number, but we redefine BrandFullName
 !define MaintFullName "Mozilla Maintenance Service"
+!ifdef BrandFullName
 !undef BrandFullName
+!endif
 !define BrandFullName "${MaintFullName}"
 
 !include common.nsh
@@ -179,6 +181,7 @@ Section "MaintenanceService"
   ; Since the Maintenance service can be installed either x86 or x64,
   ; always use the 64-bit registry.
   ${If} ${RunningX64}
+  ${OrIf} ${IsNativeARM64}
     ; Previous versions always created the uninstall key in the 32-bit registry.
     ; Clean those old entries out if they still exist.
     SetRegView 32
@@ -216,6 +219,7 @@ Section "MaintenanceService"
   ; WriteRegStr HKLM "${FallbackKey}\0" "name" "Mozilla Corporation"
   ; WriteRegStr HKLM "${FallbackKey}\0" "issuer" "DigiCert SHA2 Assured ID Code Signing CA"
   ${If} ${RunningX64}
+  ${OrIf} ${IsNativeARM64}
     SetRegView lastused
   ${EndIf}
 SectionEnd
@@ -316,6 +320,7 @@ Section "Uninstall"
   RMDir /REBOOTOK "$INSTDIR"
 
   ${If} ${RunningX64}
+  ${OrIf} ${IsNativeARM64}
     SetRegView 64
   ${EndIf}
   DeleteRegKey HKLM "${MaintUninstallKey}"
@@ -323,6 +328,7 @@ Section "Uninstall"
   DeleteRegValue HKLM "Software\Mozilla\MaintenanceService" "FFPrefetchDisabled"
   DeleteRegKey HKLM "${FallbackKey}\"
   ${If} ${RunningX64}
+  ${OrIf} ${IsNativeARM64}
     SetRegView lastused
   ${EndIf}
 SectionEnd

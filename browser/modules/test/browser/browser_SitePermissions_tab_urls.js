@@ -4,10 +4,14 @@
 
 "use strict";
 
-Cu.import("resource:///modules/SitePermissions.jsm", this);
+ChromeUtils.import("resource:///modules/SitePermissions.jsm", this);
+
+function newURI(url) {
+  return Services.io.newURI(url);
+}
 
 // This tests the key used to store the URI -> permission map on a tab.
-add_task(function* testTemporaryPermissionTabURLs() {
+add_task(async function testTemporaryPermissionTabURLs() {
 
   // Prevent showing a dialog for https://name:password@example.com
   SpecialPowers.pushPrefEnv({set: [
@@ -18,23 +22,30 @@ add_task(function* testTemporaryPermissionTabURLs() {
   // due to the combinatory nature of the test that is hard to fix.
   requestLongerTimeout(2);
 
-  let same = [ "https://example.com", "https://example.com/sub/path", "https://example.com:443" ].map(Services.io.newURI);
-  let different = [ "https://example.com", "https://name:password@example.com", "https://test1.example.com", "http://example.com", "http://example.org" ].map(Services.io.newURI);
+
+  let same = [ newURI("https://example.com"),
+               newURI("https://example.com/sub/path"),
+               newURI("https://example.com:443") ];
+  let different = [ newURI("https://example.com"),
+                    newURI("https://name:password@example.com"),
+                    newURI("https://test1.example.com"),
+                    newURI("http://example.com"),
+                    newURI("http://example.org") ];
 
   let id = "microphone";
 
-  yield BrowserTestUtils.withNewTab("about:blank", function*(browser) {
+  await BrowserTestUtils.withNewTab("about:blank", async function(browser) {
     for (let uri of same) {
         let loaded = BrowserTestUtils.browserLoaded(browser, false, uri.spec);
-        browser.loadURI(uri.spec);
-        yield loaded;
+        BrowserTestUtils.loadURI(browser, uri.spec);
+        await loaded;
 
         SitePermissions.set(uri, id, SitePermissions.BLOCK, SitePermissions.SCOPE_TEMPORARY, browser);
 
         for (let uri2 of same) {
           let loaded2 = BrowserTestUtils.browserLoaded(browser, false, uri2.spec);
-          browser.loadURI(uri2.spec);
-          yield loaded2;
+          BrowserTestUtils.loadURI(browser, uri2.spec);
+          await loaded2;
 
           Assert.deepEqual(SitePermissions.get(uri2, id, browser), {
             state: SitePermissions.BLOCK,
@@ -47,8 +58,8 @@ add_task(function* testTemporaryPermissionTabURLs() {
 
     for (let uri of different) {
       let loaded = BrowserTestUtils.browserLoaded(browser, false, uri.spec);
-      browser.loadURI(uri.spec);
-      yield loaded;
+      BrowserTestUtils.loadURI(browser, uri.spec);
+      await loaded;
 
       SitePermissions.set(uri, id, SitePermissions.BLOCK, SitePermissions.SCOPE_TEMPORARY, browser);
 
@@ -59,8 +70,8 @@ add_task(function* testTemporaryPermissionTabURLs() {
 
       for (let uri2 of different) {
         loaded = BrowserTestUtils.browserLoaded(browser, false, uri2.spec);
-        browser.loadURI(uri2.spec);
-        yield loaded;
+        BrowserTestUtils.loadURI(browser, uri2.spec);
+        await loaded;
 
         if (uri2 != uri) {
           Assert.deepEqual(SitePermissions.get(uri2, id, browser), {

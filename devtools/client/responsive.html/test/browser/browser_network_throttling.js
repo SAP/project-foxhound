@@ -3,54 +3,52 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 
 "use strict";
 
-const throttlingProfiles = require("devtools/client/shared/network-throttling-profiles");
+const throttlingProfiles = require("devtools/client/shared/components/throttling/profiles");
 
 // Tests changing network throttling
 const TEST_URL = "data:text/html;charset=utf-8,Network throttling test";
 
-addRDMTask(TEST_URL, function* ({ ui, manager }) {
-  let { store } = ui.toolWindow;
+addRDMTask(TEST_URL, async function({ ui, manager }) {
+  const { store } = ui.toolWindow;
 
   // Wait until the viewport has been added
-  yield waitUntilState(store, state => state.viewports.length == 1);
+  await waitUntilState(store, state => state.viewports.length == 1);
 
   // Test defaults
   testNetworkThrottlingSelectorLabel(ui, "No throttling");
-  yield testNetworkThrottlingState(ui, null);
+  await testNetworkThrottlingState(ui, null);
 
   // Test a fast profile
-  yield testThrottlingProfile(ui, "Wi-Fi");
+  await testThrottlingProfile(ui, "Wi-Fi");
 
   // Test a slower profile
-  yield testThrottlingProfile(ui, "Regular 3G");
+  await testThrottlingProfile(ui, "Regular 3G");
 
   // Test switching back to no throttling
-  yield selectNetworkThrottling(ui, "No throttling");
+  await selectNetworkThrottling(ui, "No throttling");
   testNetworkThrottlingSelectorLabel(ui, "No throttling");
-  yield testNetworkThrottlingState(ui, null);
+  await testNetworkThrottlingState(ui, null);
 });
 
 function testNetworkThrottlingSelectorLabel(ui, expected) {
-  let selector = "#global-network-throttling-selector";
-  let select = ui.toolWindow.document.querySelector(selector);
-  is(select.selectedOptions[0].textContent, expected,
-    `Select label should be changed to ${expected}`);
+  const title = ui.toolWindow.document.querySelector("#network-throttling-menu .title");
+  is(title.textContent, expected, `Button title should be changed to ${expected}`);
 }
 
-var testNetworkThrottlingState = Task.async(function* (ui, expected) {
-  let state = yield ui.emulationFront.getNetworkThrottling();
+var testNetworkThrottlingState = async function(ui, expected) {
+  const state = await ui.emulationFront.getNetworkThrottling();
   Assert.deepEqual(state, expected, "Network throttling state should be " +
                                     JSON.stringify(expected, null, 2));
-});
+};
 
-var testThrottlingProfile = Task.async(function* (ui, profile) {
-  yield selectNetworkThrottling(ui, profile);
+var testThrottlingProfile = async function(ui, profile) {
+  await selectNetworkThrottling(ui, profile);
   testNetworkThrottlingSelectorLabel(ui, profile);
-  let data = throttlingProfiles.find(({ id }) => id == profile);
-  let { download, upload, latency } = data;
-  yield testNetworkThrottlingState(ui, {
+  const data = throttlingProfiles.find(({ id }) => id == profile);
+  const { download, upload, latency } = data;
+  await testNetworkThrottlingState(ui, {
     downloadThroughput: download,
     uploadThroughput: upload,
     latency,
   });
-});
+};

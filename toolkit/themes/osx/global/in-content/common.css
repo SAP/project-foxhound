@@ -8,49 +8,32 @@
 xul|tabs {
   padding-right: 0;
   padding-left: 0;
+  position: static;
 }
 
 xul|tab[visuallyselected] {
+  color: inherit !important;
   text-shadow: none;
 }
 
-xul|button,
-html|button,
-xul|colorpicker[type="button"],
-xul|menulist {
-  margin-top: 3px;
+xul|button[dlgtype="help"] {
+  -moz-appearance: none;
+  width: auto;
 }
 
-xul|button,
-html|button {
-  /* use the same margin of other elements for the alignment */
-  margin-left: 4px;
-  margin-right: 4px;
-}
-
-xul|caption {
-  padding-inline-start: 0;
-}
-
-xul|groupbox > xul|*.groupbox-body {
-  padding: 0;
-}
-
-xul|menulist:not([editable="true"]) > xul|menupopup > xul|menuitem[checked="true"]::before,
-xul|menulist:not([editable="true"]) > xul|menupopup > xul|menuitem[selected="true"]::before {
+xul|menulist > xul|menupopup > xul|menuitem[checked="true"]::before,
+xul|menulist > xul|menupopup > xul|menuitem[selected="true"]::before {
   display: none;
 }
 
-xul|menulist:not([editable="true"]) > xul|*.menulist-dropmarker {
+xul|*.menulist-dropmarker {
   display: -moz-box;
   margin-top: 1px;
   margin-bottom: 1px;
 }
 
 xul|menulist > xul|menupopup xul|menu,
-xul|menulist > xul|menupopup xul|menuitem,
-xul|button[type="menu"] > xul|menupopup xul|menu,
-xul|button[type="menu"] > xul|menupopup xul|menuitem {
+xul|menulist > xul|menupopup xul|menuitem {
   padding-inline-end: 34px;
 }
 
@@ -66,24 +49,12 @@ xul|*.radio-icon {
   margin-inline-end: 0;
 }
 
-xul|*.numberbox-input-box {
-  -moz-appearance: none;
-  border-width: 0;
-}
-
-xul|description {
-  font-size: 1.25rem;
-  line-height: 22px;
-}
-
 xul|*.text-link:-moz-focusring {
   color: var(--in-content-link-highlight);
   text-decoration: underline;
   box-shadow: none;
 }
 
-xul|button:-moz-focusring,
-xul|menulist:-moz-focusring,
 xul|checkbox:-moz-focusring > .checkbox-check,
 html|input[type="checkbox"]:-moz-focusring + html|label:before,
 xul|radio[focused="true"] > .radio-check,
@@ -97,25 +68,18 @@ xul|radio[focused="true"] > .radio-check {
   -moz-outline-radius: 100%;
 }
 
-xul|spinbuttons {
+textbox[type="search"] {
   -moz-appearance: none;
+  padding-inline-start: 8px;
+  padding-inline-end: 8px;
 }
 
-xul|*.spinbuttons-up {
-  margin-top: 0 !important;
-  border-radius: 4px 4px 0 0;
+xul|textbox[type="search"] > moz-input-box > .textbox-search-sign {
+  list-style-image: url(chrome://global/skin/icons/search-textbox.svg);
+  margin-inline-end: 5px;
 }
 
-xul|*.spinbuttons-down  {
-  margin-bottom: 0 !important;
-  border-radius: 0 0 4px 4px;
-}
-
-xul|*.spinbuttons-button > xul|*.button-box {
-  padding-inline-start: 2px !important;
-  padding-inline-end: 3px !important;
-}
-
-xul|*.spinbuttons-button > xul|*.button-box > xul|*.button-text {
-  display: none;
+html|button {
+  /* XUL button min-width */
+  min-width: 79px;
 }

@@ -8,19 +8,19 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
-import android.support.v4.app.NotificationCompat;
-import android.support.v4.app.NotificationCompat.Builder;
+import android.support.v7.app.NotificationCompat;
+
+import org.mozilla.gecko.AppConstants;
 import org.mozilla.gecko.Locales;
 import org.mozilla.gecko.R;
 import org.mozilla.gecko.background.common.log.Logger;
-import org.mozilla.gecko.background.common.telemetry.TelemetryWrapper;
 import org.mozilla.gecko.background.fxa.FxAccountUtils;
 import org.mozilla.gecko.fxa.FxAccountConstants;
 import org.mozilla.gecko.fxa.activities.FxAccountWebFlowActivity;
 import org.mozilla.gecko.fxa.authenticator.AndroidFxAccount;
 import org.mozilla.gecko.fxa.login.State;
 import org.mozilla.gecko.fxa.login.State.Action;
-import org.mozilla.gecko.sync.telemetry.TelemetryContract;
+import org.mozilla.gecko.notifications.NotificationHelper;
 
 /**
  * Abstraction that manages notifications shown or hidden for a Firefox Account.
@@ -64,6 +64,7 @@ public class FxAccountNotificationManager {
    * @param fxAccount
    *          Firefox Account to reflect to the notification manager.
    */
+  @SuppressWarnings("NewApi")
   public void update(Context context, AndroidFxAccount fxAccount) {
     final NotificationManager notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
 
@@ -84,7 +85,7 @@ public class FxAccountNotificationManager {
     final String text;
     final Intent notificationIntent;
     if (action == Action.NeedsFinishMigrating) {
-      TelemetryWrapper.addToHistogram(TelemetryContract.SYNC11_MIGRATION_NOTIFICATIONS_OFFERED, 1);
+      //TelemetryWrapper.addToHistogram(TelemetryContract.SYNC11_MIGRATION_NOTIFICATIONS_OFFERED, 1);
 
       title = context.getResources().getString(R.string.fxaccount_sync_finish_migrating_notification_title);
       text = context.getResources().getString(R.string.fxaccount_sync_finish_migrating_notification_text, state.email);
@@ -102,13 +103,19 @@ public class FxAccountNotificationManager {
 
     final PendingIntent pendingIntent = PendingIntent.getActivity(context, 0, notificationIntent, 0);
 
-    final Builder builder = new NotificationCompat.Builder(context);
+    final NotificationCompat.Builder builder = new NotificationCompat.Builder(context);
     builder
     .setContentTitle(title)
     .setContentText(text)
     .setSmallIcon(R.drawable.ic_status_logo)
     .setAutoCancel(true)
     .setContentIntent(pendingIntent);
+
+    if (!AppConstants.Versions.preO) {
+      builder.setChannelId(NotificationHelper.getInstance(context)
+              .getNotificationChannel(NotificationHelper.Channel.DEFAULT).getId());
+    }
+
     notificationManager.notify(notificationId, builder.build());
   }
 }

@@ -4,79 +4,46 @@
 
 %include ../../../shared/in-content/common.inc.css
 
-xul|caption {
-  background-color: transparent;
-}
-
-xul|button,
-html|button,
-xul|colorpicker[type="button"],
-xul|menulist {
-  margin: 2px 4px;
-}
-
-xul|menulist:not([editable="true"]) > xul|*.menulist-dropmarker {
+xul|*.menulist-dropmarker {
   margin-top: 1px;
   margin-bottom: 1px;
 }
 
-xul|checkbox {
-  padding-inline-start: 0;
-}
-
-@media (-moz-windows-default-theme: 0) {
-  xul|*.checkbox-check {
-    background-image: none !important;
-  }
-
-  xul|*.checkbox-check[checked] {
-    list-style-image: url("chrome://global/skin/in-content/check.svg#check-native");
-    background-color: -moz-dialog;
-  }
-}
-
+xul|checkbox,
 xul|radio {
-  -moz-binding: url("chrome://global/content/bindings/radio.xml#radio");
   padding-inline-start: 0;
 }
 
 @media (-moz-windows-default-theme: 0) {
-  xul|*.radio-check {
-    background-image: none;
-  }
-
+  xul|*.checkbox-check[checked],
   xul|*.radio-check[selected] {
-    list-style-image: url("chrome://global/skin/in-content/radio.svg#radio-native");
-    background-color: -moz-dialog;
+    fill: -moz-fieldText;
+    background-color: -moz-field;
   }
 }
 
-xul|*.radio-icon,
-xul|*.checkbox-icon {
-  margin-inline-end: 0;
+xul|menulist:-moz-focusring > xul|*.menulist-label-box {
+  outline: none !important;
 }
 
-/* Never draw a border for the focusring, use outline instead */
-xul|*.button-box,
-xul|*.menulist-label-box,
-xul|*.radio-label-box,
-xul|*.checkbox-label-box {
-  border-style: none;
-}
-
-xul|button:-moz-focusring > xul|*.button-box,
-xul|menulist:-moz-focusring > xul|*.menulist-label-box,
-xul|radio[focused="true"] > xul|*.radio-label-box,
-html|input[type="checkbox"]:-moz-focusring + html|label:before,
-xul|checkbox:-moz-focusring > xul|*.checkbox-label-box {
+html|input[type="checkbox"]:-moz-focusring + html|label:before {
   outline: 1px dotted;
 }
 
 /* Use a 2px border so that selected row highlight is still visible behind
     an existing high-contrast border that uses the background color */
 @media (-moz-windows-default-theme: 0) {
-  xul|treechildren::-moz-tree-row(selected),
-  xul|listbox xul|listitem[selected="true"] {
+  xul|treechildren::-moz-tree-row(selected) {
      border: 2px dotted Highlight;
   }
+}
+
+html|button {
+  /* XUL button min-width */
+  min-width: 6.3em;
+}
+
+xul|button > xul|*.button-box {
+  padding-right: 0;
+  padding-left: 0;
 }

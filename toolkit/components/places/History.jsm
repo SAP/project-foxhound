@@ -23,6 +23,12 @@
  *     values.
  * - title: (string)
  *     The title associated with the page, if any.
+ * - description: (string)
+ *     The description of the page, if any.
+ * - previewImageURL: (URL)
+ *     or (nsIURI)
+ *     or (string)
+ *     The preview image URL of the page, if any.
  * - frecency: (number)
  *     The frecency of the page, if any.
  *     See https://developer.mozilla.org/en-US/docs/Mozilla/Tech/Places/Frecency_algorithm
@@ -31,6 +37,8 @@
  *     passed as argument to a function of this API will be ignored.
  *  - visits: (Array<VisitInfo>)
  *     All the visits for this page, if any.
+ *  - annotations: (Map)
+ *     A map containing key/value pairs of the annotations for this page, if any.
  *
  * See the documentation of individual methods to find out which properties
  * are required for `PageInfo` arguments or returned for `PageInfo` results.
@@ -60,26 +68,19 @@
  * @see nsINavHistoryObserver
  */
 
-this.EXPORTED_SYMBOLS = [ "History" ];
+var EXPORTED_SYMBOLS = [ "History" ];
 
-const { classes: Cc, interfaces: Ci, results: Cr, utils: Cu } = Components;
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "NetUtil",
+                               "resource://gre/modules/NetUtil.jsm");
+ChromeUtils.defineModuleGetter(this, "PlacesUtils",
+                               "resource://gre/modules/PlacesUtils.jsm");
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "AsyncShutdown",
-                                  "resource://gre/modules/AsyncShutdown.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Services",
-                                  "resource://gre/modules/Services.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
-                                  "resource://gre/modules/NetUtil.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Promise",
-                                  "resource://gre/modules/Promise.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Task",
-                                  "resource://gre/modules/Task.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Sqlite",
-                                  "resource://gre/modules/Sqlite.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
-                                  "resource://gre/modules/PlacesUtils.jsm");
-Cu.importGlobalProperties(["URL"]);
+XPCOMUtils.defineLazyServiceGetter(this, "asyncHistory",
+                                   "@mozilla.org/browser/history;1",
+                                   "mozIAsyncHistory");
+
+XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
 
 /**
  * Whenever we update or remove numerous pages, it is preferable
@@ -90,8 +91,8 @@ Cu.importGlobalProperties(["URL"]);
 const NOTIFICATION_CHUNK_SIZE = 300;
 const ONRESULT_CHUNK_SIZE = 300;
 
-// Timers resolution is not always good, it can have a 16ms precision on Win.
-const TIMERS_RESOLUTION_SKEW_MS = 16;
+// This constant determines the maximum number of remove pages before we cycle.
+const REMOVE_PAGES_CHUNKLEN = 300;
 
 /**
  * Sends a bookmarks notification through the given observers.
@@ -111,27 +112,87 @@ function notify(observers, notification, args = []) {
   }
 }
 
-this.History = Object.freeze({
+var History = Object.freeze({
   /**
    * Fetch the available information for one page.
    *
-   * @param guidOrURI: (URL or nsIURI)
-   *      The full URI of the page.
-   *            or (string)
+   * @param guidOrURI: (string) or (URL, nsIURI or href)
    *      Either the full URI of the page or the GUID of the page.
+   * @param [optional] options (object)
+   *      An optional object whose properties describe options:
+   *        - `includeVisits` (boolean) set this to true if `visits` in the
+   *           PageInfo needs to contain VisitInfo in a reverse chronological order.
+   *           By default, `visits` is undefined inside the returned `PageInfo`.
+   *        - `includeMeta` (boolean) set this to true to fetch page meta fields,
+   *           i.e. `description` and `preview_image_url`.
+   *        - `includeAnnotations` (boolean) set this to true to fetch any
+   *           annotations that are associated with the page.
    *
    * @return (Promise)
    *      A promise resolved once the operation is complete.
    * @resolves (PageInfo | null) If the page could be found, the information
-   *      on that page. Note that this `PageInfo` does NOT contain the visit
-   *      data (i.e. `visits` is `undefined`).
+   *      on that page.
+   * @note the VisitInfo objects returned while fetching visits do not
+   *       contain the property `referrer`.
+   *       TODO: Add `referrer` to VisitInfo. See Bug #1365913.
+   * @note the visits returned will not contain `TRANSITION_EMBED` visits.
    *
    * @throws (Error)
    *      If `guidOrURI` does not have the expected type or if it is a string
    *      that may be parsed neither as a valid URL nor as a valid GUID.
    */
-  fetch(guidOrURI) {
-    throw new Error("Method not implemented");
+  fetch(guidOrURI, options = {}) {
+    // First, normalize to guid or string, and throw if not possible
+    guidOrURI = PlacesUtils.normalizeToURLOrGUID(guidOrURI);
+
+    // See if options exists and make sense
+    if (!options || typeof options !== "object") {
+      throw new TypeError("options should be an object and not null");
+    }
+
+    let hasIncludeVisits = "includeVisits" in options;
+    if (hasIncludeVisits && typeof options.includeVisits !== "boolean") {
+      throw new TypeError("includeVisits should be a boolean if exists");
+    }
+
+    let hasIncludeMeta = "includeMeta" in options;
+    if (hasIncludeMeta && typeof options.includeMeta !== "boolean") {
+      throw new TypeError("includeMeta should be a boolean if exists");
+    }
+
+    let hasIncludeAnnotations = "includeAnnotations" in options;
+    if (hasIncludeAnnotations && typeof options.includeAnnotations !== "boolean") {
+      throw new TypeError("includeAnnotations should be a boolean if exists");
+    }
+
+    return PlacesUtils.promiseDBConnection()
+                      .then(db => fetch(db, guidOrURI, options));
+  },
+
+  /**
+   * Fetches all pages which have one or more of the specified annotations.
+   *
+   * @param annotations: An array of strings containing the annotation names to
+   *                     find.
+   * @return (Promise)
+   *      A promise resolved once the operation is complete.
+   * @resolves (Map)
+   *      A Map containing the annotations, pages and their contents, e.g.
+   *      Map("anno1" => [{page, content}, {page, content}]), "anno2" => ....);
+   * @rejects (Error) XXX
+   *      Rejects if the insert was unsuccessful.
+   */
+  fetchAnnotatedPages(annotations) {
+    // See if options exists and make sense
+    if (!annotations || !Array.isArray(annotations)) {
+      throw new TypeError("annotations should be an Array and not null");
+    }
+    if (annotations.some(name => typeof name !== "string")) {
+      throw new TypeError("all annotation values should be strings");
+    }
+
+    return PlacesUtils.promiseDBConnection()
+                      .then(db => fetchAnnotatedPages(db, annotations));
   },
 
   /**
@@ -160,9 +221,7 @@ this.History = Object.freeze({
    *
    * @throws (Error)
    *      If the `url` specified was for a protocol that should not be
-   *      stored (e.g. "chrome:", "mailbox:", "about:", "imap:", "news:",
-   *      "moz-anno:", "view-source:", "resource:", "data:", "wyciwyg:",
-   *      "javascript:", "blob:").
+   *      stored (@see nsNavHistory::CanAddURI).
    * @throws (Error)
    *      If `pageInfo` has an unexpected type.
    * @throws (Error)
@@ -176,11 +235,7 @@ this.History = Object.freeze({
    *      If an element of `visits` has an invalid `transition`.
    */
   insert(pageInfo) {
-    if (typeof pageInfo != "object" || !pageInfo) {
-      throw new TypeError("pageInfo must be an object");
-    }
-
-    let info = validatePageInfo(pageInfo);
+    let info = PlacesUtils.validatePageInfo(pageInfo);
 
     return PlacesUtils.withConnectionWrapper("History.jsm: insert",
       db => insert(db, info));
@@ -216,9 +271,7 @@ this.History = Object.freeze({
    *
    * @throws (Error)
    *      If the `url` specified was for a protocol that should not be
-   *      stored (e.g. "chrome:", "mailbox:", "about:", "imap:", "news:",
-   *      "moz-anno:", "view-source:", "resource:", "data:", "wyciwyg:",
-   *      "javascript:", "blob:").
+   *      stored (@see nsNavHistory::CanAddURI).
    * @throws (Error)
    *      If `pageInfos` has an unexpected type.
    * @throws (Error)
@@ -249,7 +302,7 @@ this.History = Object.freeze({
     }
 
     for (let pageInfo of pageInfos) {
-      let info = validatePageInfo(pageInfo);
+      let info = PlacesUtils.validatePageInfo(pageInfo);
       infos.push(info);
     }
 
@@ -296,14 +349,13 @@ this.History = Object.freeze({
     for (let page of pages) {
       // Normalize to URL or GUID, or throw if `page` cannot
       // be normalized.
-      let normalized = normalizeToURLOrGUID(page);
+      let normalized = PlacesUtils.normalizeToURLOrGUID(page);
       if (typeof normalized === "string") {
         guids.push(normalized);
       } else {
         urls.push(normalized.href);
       }
     }
-    let normalizedPages = {guids, urls};
 
     // At this stage, we know that either `guids` is not-empty
     // or `urls` is not-empty.
@@ -312,8 +364,32 @@ this.History = Object.freeze({
       throw new TypeError("Invalid function: " + onResult);
     }
 
-    return PlacesUtils.withConnectionWrapper("History.jsm: remove",
-      db => remove(db, normalizedPages, onResult));
+    return (async function() {
+      let removedPages = false;
+      let count = 0;
+      while (guids.length || urls.length) {
+        if (count && count % 2 == 0) {
+          // Every few cycles, yield time back to the main
+          // thread to avoid jank.
+          await Promise.resolve();
+        }
+        count++;
+        let guidsSlice = guids.splice(0, REMOVE_PAGES_CHUNKLEN);
+        let urlsSlice = [];
+        if (guidsSlice.length < REMOVE_PAGES_CHUNKLEN) {
+          urlsSlice = urls.splice(0, REMOVE_PAGES_CHUNKLEN - guidsSlice.length);
+        }
+
+        let pages = {guids: guidsSlice, urls: urlsSlice};
+
+        let result =
+          await PlacesUtils.withConnectionWrapper("History.jsm: remove",
+                                                  db => remove(db, pages, onResult));
+
+        removedPages = removedPages || result;
+      }
+      return removedPages;
+    })();
   },
 
   /**
@@ -331,6 +407,8 @@ this.History = Object.freeze({
    *          - limit: (Number) Limit the number of visits
    *                we remove to this number
    *          - url: (URL) Only remove visits to this URL
+   *          - transition: (Integer)
+   *                The type of the transition (see TRANSITIONS below)
    *      If both `beginDate` and `endDate` are specified,
    *      visits between `beginDate` (inclusive) and `end`
    *      (inclusive) are removed.
@@ -357,16 +435,21 @@ this.History = Object.freeze({
     let hasEndDate = "endDate" in filter;
     let hasURL = "url" in filter;
     let hasLimit = "limit" in filter;
+    let hasTransition = "transition" in filter;
     if (hasBeginDate) {
-      ensureDate(filter.beginDate);
+      this.ensureDate(filter.beginDate);
     }
     if (hasEndDate) {
-      ensureDate(filter.endDate);
+      this.ensureDate(filter.endDate);
     }
     if (hasBeginDate && hasEndDate && filter.beginDate > filter.endDate) {
       throw new TypeError("`beginDate` should be at least as old as `endDate`");
     }
-    if (!hasBeginDate && !hasEndDate && !hasURL && !hasLimit) {
+    if (hasTransition &&
+        !this.isValidTransition(filter.transition)) {
+      throw new TypeError("`transition` should be valid");
+    }
+    if (!hasBeginDate && !hasEndDate && !hasURL && !hasLimit && !hasTransition) {
       throw new TypeError("Expected a non-empty filter");
     }
 
@@ -392,23 +475,129 @@ this.History = Object.freeze({
   },
 
   /**
+   * Remove pages from the database based on a filter.
+   *
+   * Any change may be observed through nsINavHistoryObserver
+   *
+   *
+   * @param filter: An object containing a non empty subset of the following
+   * properties:
+   * - host: (string)
+   *     Hostname with or without subhost. Examples:
+   *       "mozilla.org" removes pages from mozilla.org but not its subdomains
+   *       ".mozilla.org" removes pages from mozilla.org and its subdomains
+   *       "." removes local files
+   * - beginDate: (Date)
+   *     The first time the page was visited (inclusive)
+   * - endDate: (Date)
+   *     The last time the page was visited (inclusive)
+   * @param [optional] onResult: (function(PageInfo))
+   *      A callback invoked for each page found.
+   *
+   * @note This removes pages with at least one visit inside the timeframe.
+   *       Any visits outside the timeframe will also be removed with the page.
+   * @return (Promise)
+   *      A promise resolved once the operation is complete.
+   * @resolve (bool)
+   *      `true` if at least one page was removed, `false` otherwise.
+   * @throws (TypeError)
+   *       if `filter` does not have the expected type, in particular
+   *       if the `object` is empty, or its components do not satisfy the
+   *       criteria given above
+   */
+  removeByFilter(filter, onResult) {
+    if (!filter || typeof filter !== "object") {
+      throw new TypeError("Expected a filter object");
+    }
+
+    let hasHost = filter.host;
+    if (hasHost) {
+      if (typeof filter.host !== "string") {
+        throw new TypeError("`host` should be a string");
+      }
+      filter.host = filter.host.toLowerCase();
+      if (filter.host.length > 1 && filter.host.lastIndexOf(".") == 0) {
+        // The input contains only an initial period, thus it may be a
+        // wildcarded local host, like ".localhost". Ideally the consumer should
+        // pass just "localhost", because there is no concept of subhosts for
+        // it, but we are being more lenient to allow for simpler input.
+        // Anyway, in this case we remove the wildcard to avoid clearing too
+        // much if the consumer wrongly passes in things like ".com".
+        filter.host = filter.host.slice(1);
+      }
+    }
+
+    let hasBeginDate = "beginDate" in filter;
+    if (hasBeginDate) {
+      this.ensureDate(filter.beginDate);
+    }
+
+    let hasEndDate = "endDate" in filter;
+    if (hasEndDate) {
+      this.ensureDate(filter.endDate);
+    }
+
+    if (hasBeginDate && hasEndDate && filter.beginDate > filter.endDate) {
+      throw new TypeError("`beginDate` should be at least as old as `endDate`");
+    }
+
+    if (!hasBeginDate && !hasEndDate && !hasHost) {
+      throw new TypeError("Expected a non-empty filter");
+    }
+
+    // Check the host format.
+    // Either it has no dots, or has multiple dots, or it's a single dot char.
+    if (hasHost &&
+        (!/^(\.?([.a-z0-9-]+\.[a-z0-9-]+)?|[a-z0-9-]+)$/.test(filter.host) ||
+         filter.host.includes(".."))) {
+      throw new TypeError("Expected well formed hostname string for `host` with atmost 1 wildcard.");
+    }
+
+    if (onResult && typeof onResult != "function") {
+      throw new TypeError("Invalid function: " + onResult);
+    }
+
+    return PlacesUtils.withConnectionWrapper(
+      "History.jsm: removeByFilter",
+      db => removeByFilter(db, filter, onResult)
+    );
+  },
+
+  /**
    * Determine if a page has been visited.
    *
-   * @param pages: (URL or nsIURI)
-   *      The full URI of the page.
-   *            or (string)
-   *      The full URI of the page or the GUID of the page.
-   *
+   * @param guidOrURI: (string) or (URL, nsIURI or href)
+   *      Either the full URI of the page or the GUID of the page.
    * @return (Promise)
    *      A promise resolved once the operation is complete.
    * @resolve (bool)
    *      `true` if the page has been visited, `false` otherwise.
    * @throws (Error)
-   *      If `pages` has an unexpected type or if a string provided
+   *      If `guidOrURI` has an unexpected type or if a string provided
    *      is neither not a valid GUID nor a valid URI.
    */
-  hasVisits(page, onResult) {
-    throw new Error("Method not implemented");
+  hasVisits(guidOrURI) {
+    // Quick fallback to the cpp version.
+    if (guidOrURI instanceof Ci.nsIURI) {
+      return new Promise(resolve => {
+        asyncHistory.isURIVisited(guidOrURI, (aURI, aIsVisited) => {
+          resolve(aIsVisited);
+        });
+      });
+    }
+
+    guidOrURI = PlacesUtils.normalizeToURLOrGUID(guidOrURI);
+    let isGuid = typeof guidOrURI == "string";
+    let sqlFragment = isGuid ? "guid = :val"
+                             : "url_hash = hash(:val) AND url = :val ";
+
+    return PlacesUtils.promiseDBConnection().then(async db => {
+      let rows = await db.executeCached(`SELECT 1 FROM moz_places
+                                         WHERE ${sqlFragment}
+                                         AND last_visit_date NOTNULL`,
+                                        { val: isGuid ? guidOrURI : guidOrURI.href });
+      return !!rows.length;
+    });
   },
 
   /**
@@ -422,6 +611,89 @@ this.History = Object.freeze({
       clear
     );
   },
+
+  /**
+   * Is a value a valid transition type?
+   *
+   * @param transition: (String)
+   * @return (Boolean)
+   */
+  isValidTransition(transition) {
+    return Object.values(History.TRANSITIONS).includes(transition);
+  },
+
+  /**
+   * Throw if an object is not a Date object.
+   */
+  ensureDate(arg) {
+    if (!arg || typeof arg != "object" || arg.constructor.name != "Date") {
+      throw new TypeError("Expected a Date, got " + arg);
+    }
+  },
+
+   /**
+   * Update information for a page.
+   *
+   * Currently, it supports updating the description, preview image URL and annotations
+   * for a page, any other fields will be ignored.
+   *
+   * Note that this function will ignore the update if the target page has not
+   * yet been stored in the database. `History.fetch` could be used to check
+   * whether the page and its meta information exist or not. Beware that
+   * fetch&update might fail as they are not executed in a single transaction.
+   *
+   * @param pageInfo: (PageInfo)
+   *      pageInfo must contain a URL of the target page. It will be ignored
+   *      if a valid page `guid` is also provided.
+   *
+   *      If a property `description` is provided, the description of the
+   *      page is updated. Note that:
+   *      1). An empty string or null `description` will clear the existing
+   *          value in the database.
+   *      2). Descriptions longer than DB_DESCRIPTION_LENGTH_MAX will be
+   *          truncated.
+   *
+   *      If a property `previewImageURL` is provided, the preview image
+   *      URL of the page is updated. Note that:
+   *      1). A null `previewImageURL` will clear the existing value in the
+   *          database.
+   *      2). It throws if its length is greater than DB_URL_LENGTH_MAX
+   *          defined in PlacesUtils.jsm.
+   *
+   *      If a property `annotations` is provided, the annotations will be
+   *      updated. Note that:
+   *      1). It should be a Map containing key/value pairs to be updated.
+   *      2). If the value is falsy, the annotation will be removed.
+   *      3). If the value is non-falsy, the annotation will be added or updated.
+   *      For `annotations` the keys must all be strings, the values should be
+   *      Boolean, Number or Strings. null and undefined are supported as falsy values.
+   *
+   * @return (Promise)
+   *      A promise resolved once the update is complete.
+   * @rejects (Error)
+   *      Rejects if the update was unsuccessful.
+   *
+   * @throws (Error)
+   *      If `pageInfo` has an unexpected type.
+   * @throws (Error)
+   *      If `pageInfo` has an invalid `url` or an invalid `guid`.
+   * @throws (Error)
+   *      If `pageInfo` has neither `description` nor `previewImageURL`.
+   * @throws (Error)
+   *      If the length of `pageInfo.previewImageURL` is greater than
+   *      DB_URL_LENGTH_MAX defined in PlacesUtils.jsm.
+   */
+  update(pageInfo) {
+    let info = PlacesUtils.validatePageInfo(pageInfo, false);
+
+    if (info.description === undefined && info.previewImageURL === undefined &&
+        info.annotations === undefined) {
+      throw new TypeError("pageInfo object must at least have either a description, previewImageURL or annotations property.");
+    }
+
+    return PlacesUtils.withConnectionWrapper("History.jsm: update", db => update(db, info));
+  },
+
 
   /**
    * Possible values for the `transition` property of `VisitInfo`
@@ -483,68 +755,17 @@ this.History = Object.freeze({
 });
 
 /**
- * Validate an input PageInfo object, returning a valid PageInfo object.
- *
- * @param pageInfo: (PageInfo)
- * @return (PageInfo)
- */
-function validatePageInfo(pageInfo) {
-  let info = {
-    visits: [],
-  };
-
-  if (!pageInfo.url) {
-    throw new TypeError("PageInfo object must have a url property");
-  }
-
-  info.url = normalizeToURLOrGUID(pageInfo.url);
-
-  if (typeof pageInfo.title === "string") {
-    info.title = pageInfo.title;
-  } else if (pageInfo.title != null && pageInfo.title != undefined) {
-    throw new TypeError(`title property of PageInfo object: ${pageInfo.title} must be a string if provided`);
-  }
-
-  if (!pageInfo.visits || !Array.isArray(pageInfo.visits) || !pageInfo.visits.length) {
-    throw new TypeError("PageInfo object must have an array of visits");
-  }
-  for (let inVisit of pageInfo.visits) {
-    let visit = {
-      date: new Date(),
-      transition: inVisit.transition || History.TRANSITIONS.LINK,
-    };
-
-    if (!isValidTransitionType(visit.transition)) {
-      throw new TypeError(`transition: ${visit.transition} is not a valid transition type`);
-    }
-
-    if (inVisit.date) {
-      ensureDate(inVisit.date);
-      if (inVisit.date > (Date.now() + TIMERS_RESOLUTION_SKEW_MS)) {
-        throw new TypeError(`date: ${inVisit.date} cannot be a future date`);
-      }
-      visit.date = inVisit.date;
-    }
-
-    if (inVisit.referrer) {
-      visit.referrer = normalizeToURLOrGUID(inVisit.referrer);
-    }
-    info.visits.push(visit);
-  }
-  return info;
-}
-
-/**
  * Convert a PageInfo object into the format expected by updatePlaces.
  *
  * Note: this assumes that the PageInfo object has already been validated
- * via validatePageInfo.
+ * via PlacesUtils.validatePageInfo.
  *
  * @param pageInfo: (PageInfo)
  * @return (info)
  */
 function convertForUpdatePlaces(pageInfo) {
   let info = {
+    guid: pageInfo.guid,
     uri: PlacesUtils.toURI(pageInfo.url),
     title: pageInfo.title,
     visits: [],
@@ -562,55 +783,11 @@ function convertForUpdatePlaces(pageInfo) {
 }
 
 /**
- * Is a value a valid transition type?
- *
- * @param transitionType: (String)
- * @return (Boolean)
- */
-function isValidTransitionType(transitionType) {
-  return Object.values(History.TRANSITIONS).includes(transitionType);
-}
-
-/**
- * Normalize a key to either a string (if it is a valid GUID) or an
- * instance of `URL` (if it is a `URL`, `nsIURI`, or a string
- * representing a valid url).
- *
- * @throws (TypeError)
- *         If the key is neither a valid guid nor a valid url.
- */
-function normalizeToURLOrGUID(key) {
-  if (typeof key === "string") {
-    // A string may be a URL or a guid
-    if (PlacesUtils.isValidGuid(key)) {
-      return key;
-    }
-    return new URL(key);
-  }
-  if (key instanceof URL) {
-    return key;
-  }
-  if (key instanceof Ci.nsIURI) {
-    return new URL(key.spec);
-  }
-  throw new TypeError("Invalid url or guid: " + key);
-}
-
-/**
- * Throw if an object is not a Date object.
- */
-function ensureDate(arg) {
-  if (!arg || typeof arg != "object" || arg.constructor.name != "Date") {
-    throw new TypeError("Expected a Date, got " + arg);
-  }
-}
-
-/**
  * Convert a list of strings or numbers to its SQL
  * representation as a string.
  */
-function sqlList(list) {
-  return list.map(JSON.stringify).join();
+function sqlList(list, prefix = "", suffix = "") {
+  return list.map(str => `${prefix}"${str}"${suffix}`).join();
 }
 
 /**
@@ -622,52 +799,76 @@ function sqlList(list) {
  *      The `moz_places` identifiers for the places to invalidate.
  * @return (Promise)
  */
-var invalidateFrecencies = Task.async(function*(db, idList) {
+var invalidateFrecencies = async function(db, idList) {
   if (idList.length == 0) {
     return;
   }
   let ids = sqlList(idList);
-  yield db.execute(
+  await db.execute(
     `UPDATE moz_places
      SET frecency = NOTIFY_FRECENCY(
        CALCULATE_FRECENCY(id), url, guid, hidden, last_visit_date
      ) WHERE id in (${ ids })`
   );
-  yield db.execute(
+  await db.execute(
     `UPDATE moz_places
      SET hidden = 0
      WHERE id in (${ ids })
      AND frecency <> 0`
   );
-});
+  // Trigger frecency updates for all affected origins.
+  await db.execute(`DELETE FROM moz_updateoriginsupdate_temp`);
+};
 
 // Inner implementation of History.clear().
-var clear = Task.async(function* (db) {
-  // Remove all history.
-  yield db.execute("DELETE FROM moz_historyvisits");
+var clear = async function(db) {
+  await db.executeTransaction(async function() {
+    // Remove all non-bookmarked places entries first, this will speed up the
+    // triggers work.
+    await db.execute(`DELETE FROM moz_places WHERE foreign_count = 0`);
+    await db.execute(`DELETE FROM moz_updateoriginsdelete_temp`);
+
+    // Expire orphan icons.
+    await db.executeCached(`DELETE FROM moz_pages_w_icons
+                            WHERE page_url_hash NOT IN (SELECT url_hash FROM moz_places)`);
+    await removeOrphanIcons(db);
+
+    // Expire annotations.
+    await db.execute(`DELETE FROM moz_annos WHERE NOT EXISTS (
+                        SELECT 1 FROM moz_places WHERE id = place_id
+                      )`);
+
+    // Expire inputhistory.
+    await db.execute(`DELETE FROM moz_inputhistory WHERE place_id IN (
+                        SELECT i.place_id FROM moz_inputhistory i
+                        LEFT JOIN moz_places h ON h.id = i.place_id
+                        WHERE h.id IS NULL)`);
+
+    // Remove all history.
+    await db.execute("DELETE FROM moz_historyvisits");
+
+    // Invalidate frecencies for the remaining places.
+    await db.execute(`UPDATE moz_places SET frecency =
+                        (CASE
+                          WHEN url_hash BETWEEN hash("place", "prefix_lo") AND
+                                                hash("place", "prefix_hi")
+                          THEN 0
+                          ELSE -1
+                          END)
+                        WHERE frecency > 0`);
+  });
 
   // Clear the registered embed visits.
   PlacesUtils.history.clearEmbedVisits();
 
-  // Expiration will take care of orphans.
   let observers = PlacesUtils.history.getObservers();
   notify(observers, "onClearHistory");
-
-  // Invalidate frecencies for the remaining places. This must happen
-  // after the notification to ensure it runs enqueued to expiration.
-  yield db.execute(
-    `UPDATE moz_places SET frecency =
-     (CASE
-      WHEN url_hash BETWEEN hash("place", "prefix_lo") AND
-                            hash("place", "prefix_hi")
-      THEN 0
-      ELSE -1
-      END)
-     WHERE frecency > 0`);
-
   // Notify frecency change observers.
   notify(observers, "onManyFrecenciesChanged");
-});
+
+  // Trigger frecency updates for all affected origins.
+  await db.execute(`DELETE FROM moz_updateoriginsupdate_temp`);
+};
 
 /**
  * Clean up pages whose history has been modified, by either
@@ -690,31 +891,53 @@ var clear = Task.async(function* (db) {
  *              be kept and its frecency updated.
  * @return (Promise)
  */
-var cleanupPages = Task.async(function*(db, pages) {
-  yield invalidateFrecencies(db, pages.filter(p => p.hasForeign || p.hasVisits).map(p => p.id));
+var cleanupPages = async function(db, pages) {
+  await invalidateFrecencies(db, pages.filter(p => p.hasForeign || p.hasVisits).map(p => p.id));
 
-  let pageIdsToRemove = pages.filter(p => !p.hasForeign && !p.hasVisits).map(p => p.id);
-  if (pageIdsToRemove.length > 0) {
-    let idsList = sqlList(pageIdsToRemove);
-    // Note, we are already in a transaction, since callers create it.
-    // Check relations regardless, to avoid creating orphans in case of
-    // async race conditions.
-    yield db.execute(`DELETE FROM moz_places WHERE id IN ( ${ idsList } )
-                      AND foreign_count = 0 AND last_visit_date ISNULL`);
-    // Hosts accumulated during the places delete are updated through a trigger
-    // (see nsPlacesTriggers.h).
-    yield db.executeCached(`DELETE FROM moz_updatehosts_temp`);
+  let pagesToRemove = pages.filter(p => !p.hasForeign && !p.hasVisits);
+  if (pagesToRemove.length == 0)
+    return;
 
-    // Expire orphans.
-    yield db.executeCached(`
-      DELETE FROM moz_favicons WHERE NOT EXISTS
-        (SELECT 1 FROM moz_places WHERE favicon_id = moz_favicons.id)`);
-    yield db.execute(`DELETE FROM moz_annos
-                      WHERE place_id IN ( ${ idsList } )`);
-    yield db.execute(`DELETE FROM moz_inputhistory
-                      WHERE place_id IN ( ${ idsList } )`);
-  }
-});
+  let idsList = sqlList(pagesToRemove.map(p => p.id));
+  // Note, we are already in a transaction, since callers create it.
+  // Check relations regardless, to avoid creating orphans in case of
+  // async race conditions.
+  await db.execute(`DELETE FROM moz_places WHERE id IN ( ${ idsList } )
+                    AND foreign_count = 0 AND last_visit_date ISNULL`);
+  // Hosts accumulated during the places delete are updated through a trigger
+  // (see nsPlacesTriggers.h).
+  await db.executeCached(`DELETE FROM moz_updateoriginsdelete_temp`);
+
+  // Expire orphans.
+  let hashesToRemove = pagesToRemove.map(p => p.hash);
+  await db.executeCached(`DELETE FROM moz_pages_w_icons
+                          WHERE page_url_hash IN (${sqlList(hashesToRemove)})`);
+  await removeOrphanIcons(db);
+
+  await db.execute(`DELETE FROM moz_annos
+                    WHERE place_id IN ( ${ idsList } )`);
+  await db.execute(`DELETE FROM moz_inputhistory
+                    WHERE place_id IN ( ${ idsList } )`);
+};
+
+/**
+ * Remove icons whose origin is not in moz_origins, unless referenced.
+ * @param db: (Sqlite connection)
+ *      The database.
+ */
+function removeOrphanIcons(db) {
+  return db.executeCached(`
+    DELETE FROM moz_icons WHERE id IN (
+      SELECT id FROM moz_icons WHERE root = 0
+      UNION ALL
+      SELECT id FROM moz_icons
+      WHERE root = 1
+        AND get_host_and_port(icon_url) NOT IN (SELECT host FROM moz_origins)
+        AND fixup_url(get_host_and_port(icon_url)) NOT IN (SELECT host FROM moz_origins)
+      EXCEPT
+      SELECT icon_id FROM moz_icons_to_pages
+    )`);
+}
 
 /**
  * Notify observers that pages have been removed/updated.
@@ -731,9 +954,12 @@ var cleanupPages = Task.async(function*(db, pages) {
  *          - hasForeign: (boolean) If `true`, the page has at least
  *              one foreign reference (i.e. a bookmark), so the page should
  *              be kept and its frecency updated.
+ * @param transition: (Number)
+ *      Set to a valid TRANSITIONS value to indicate all transitions of a
+ *      certain type have been removed, otherwise defaults to -1 (unknown value).
  * @return (Promise)
  */
-var notifyCleanup = Task.async(function*(db, pages) {
+var notifyCleanup = async function(db, pages, transition = -1) {
   let notifiedCount = 0;
   let observers = PlacesUtils.history.getObservers();
 
@@ -742,16 +968,11 @@ var notifyCleanup = Task.async(function*(db, pages) {
   for (let page of pages) {
     let uri = NetUtil.newURI(page.url.href);
     let guid = page.guid;
-    if (page.hasVisits) {
-      // For the moment, we do not have the necessary observer API
-      // to notify when we remove a subset of visits, see bug 937560.
-      continue;
-    }
-    if (page.hasForeign) {
+    if (page.hasVisits || page.hasForeign) {
       // We have removed all visits, but the page is still alive, e.g.
       // because of a bookmark.
       notify(observers, "onDeleteVisits",
-        [uri, /* last visit*/0, guid, reason, -1]);
+        [uri, page.hasVisits > 0, guid, reason, transition]);
     } else {
       // The page has been entirely removed.
       notify(observers, "onDeleteURI",
@@ -760,10 +981,10 @@ var notifyCleanup = Task.async(function*(db, pages) {
     if (++notifiedCount % NOTIFICATION_CHUNK_SIZE == 0) {
       // Every few notifications, yield time back to the main
       // thread to avoid jank.
-      yield Promise.resolve();
+      await Promise.resolve();
     }
   }
-});
+};
 
 /**
  * Notify an `onResult` callback of a set of operations
@@ -775,7 +996,7 @@ var notifyCleanup = Task.async(function*(db, pages) {
  *      If provided, call `onResult` with `data[0]`, `data[1]`, etc.
  *      Otherwise, do nothing.
  */
-var notifyOnResult = Task.async(function*(data, onResult) {
+var notifyOnResult = async function(data, onResult) {
   if (!onResult) {
     return;
   }
@@ -790,18 +1011,134 @@ var notifyOnResult = Task.async(function*(data, onResult) {
     if (++notifiedCount % ONRESULT_CHUNK_SIZE == 0) {
       // Every few notifications, yield time back to the main
       // thread to avoid jank.
-      yield Promise.resolve();
+      await Promise.resolve();
     }
   }
-});
+};
+
+// Inner implementation of History.fetch.
+var fetch = async function(db, guidOrURL, options) {
+  let whereClauseFragment = "";
+  let params = {};
+  if (guidOrURL instanceof URL) {
+    whereClauseFragment = "WHERE h.url_hash = hash(:url) AND h.url = :url";
+    params.url = guidOrURL.href;
+  } else {
+    whereClauseFragment = "WHERE h.guid = :guid";
+    params.guid = guidOrURL;
+  }
+
+  let visitSelectionFragment = "";
+  let joinFragment = "";
+  let visitOrderFragment = "";
+  if (options.includeVisits) {
+    visitSelectionFragment = ", v.visit_date, v.visit_type";
+    joinFragment = "JOIN moz_historyvisits v ON h.id = v.place_id";
+    visitOrderFragment = "ORDER BY v.visit_date DESC";
+  }
+
+  let pageMetaSelectionFragment = "";
+  if (options.includeMeta) {
+    pageMetaSelectionFragment = ", description, preview_image_url";
+  }
+
+  let query = `SELECT h.id, guid, url, title, frecency
+               ${pageMetaSelectionFragment} ${visitSelectionFragment}
+               FROM moz_places h ${joinFragment}
+               ${whereClauseFragment}
+               ${visitOrderFragment}`;
+  let pageInfo = null;
+  let placeId = null;
+  await db.executeCached(
+    query,
+    params,
+    row => {
+      if (pageInfo === null) {
+        // This means we're on the first row, so we need to get all the page info.
+        pageInfo = {
+          guid: row.getResultByName("guid"),
+          url: new URL(row.getResultByName("url")),
+          frecency: row.getResultByName("frecency"),
+          title: row.getResultByName("title") || "",
+        };
+        placeId = row.getResultByName("id");
+      }
+      if (options.includeMeta) {
+        pageInfo.description = row.getResultByName("description") || "";
+        let previewImageURL = row.getResultByName("preview_image_url");
+        pageInfo.previewImageURL = previewImageURL ? new URL(previewImageURL) : null;
+      }
+      if (options.includeVisits) {
+        // On every row (not just the first), we need to collect visit data.
+        if (!("visits" in pageInfo)) {
+          pageInfo.visits = [];
+        }
+        let date = PlacesUtils.toDate(row.getResultByName("visit_date"));
+        let transition = row.getResultByName("visit_type");
+
+        // TODO: Bug #1365913 add referrer URL to the `VisitInfo` data as well.
+        pageInfo.visits.push({ date, transition });
+      }
+    });
+
+  // Only try to get annotations if requested, and if there's an actual page found.
+  if (pageInfo && options.includeAnnotations) {
+    let rows = await db.executeCached(`
+      SELECT n.name, a.content FROM moz_anno_attributes n
+      JOIN moz_annos a ON n.id = a.anno_attribute_id
+      WHERE a.place_id = :placeId
+    `, {placeId});
+
+    pageInfo.annotations = new Map(rows.map(
+      row => [row.getResultByName("name"), row.getResultByName("content")]
+    ));
+  }
+  return pageInfo;
+};
+
+// Inner implementation of History.fetchAnnotatedPages.
+var fetchAnnotatedPages = async function(db, annotations) {
+  let result = new Map();
+  let rows = await db.execute(`
+    SELECT n.name, h.url, a.content FROM moz_anno_attributes n
+    JOIN moz_annos a ON n.id = a.anno_attribute_id
+    JOIN moz_places h ON h.id = a.place_id
+    WHERE n.name IN (${new Array(annotations.length).fill("?").join(",")})
+  `, annotations);
+
+  for (let row of rows) {
+    let uri;
+    try {
+      uri = new URL(row.getResultByName("url"));
+    } catch (ex) {
+      Cu.reportError("Invalid URL read from database in fetchAnnotatedPages");
+      continue;
+    }
+
+    let anno = {
+      uri,
+      content: row.getResultByName("content"),
+    };
+    let annoName = row.getResultByName("name");
+    let pageAnnos = result.get(annoName);
+    if (!pageAnnos) {
+      pageAnnos = [];
+      result.set(annoName, pageAnnos);
+    }
+    pageAnnos.push(anno);
+  }
+
+  return result;
+};
 
 // Inner implementation of History.removeVisitsByFilter.
-var removeVisitsByFilter = Task.async(function*(db, filter, onResult = null) {
+var removeVisitsByFilter = async function(db, filter, onResult = null) {
   // 1. Determine visits that took place during the interval.  Note
   // that the database uses microseconds, while JS uses milliseconds,
   // so we need to *1000 one way and /1000 the other way.
   let conditions = [];
   let args = {};
+  let transition = -1;
   if ("beginDate" in filter) {
     conditions.push("v.visit_date >= :begin * 1000");
     args.begin = Number(filter.beginDate);
@@ -812,6 +1149,11 @@ var removeVisitsByFilter = Task.async(function*(db, filter, onResult = null) {
   }
   if ("limit" in filter) {
     args.limit = Number(filter.limit);
+  }
+  if ("transition" in filter) {
+    conditions.push("v.visit_type = :transition");
+    args.transition = filter.transition;
+    transition = filter.transition;
   }
 
   let optionalJoin = "";
@@ -832,7 +1174,7 @@ var removeVisitsByFilter = Task.async(function*(db, filter, onResult = null) {
   let pagesToInspect = new Set();
   let onResultData = onResult ? [] : null;
 
-  yield db.executeCached(
+  await db.executeCached(
      `SELECT v.id, place_id, visit_date / 1000 AS date, visit_type FROM moz_historyvisits v
              ${optionalJoin}
              WHERE ${ conditions.join(" AND ") }${ args.limit ? " LIMIT :limit" : "" }`,
@@ -846,7 +1188,7 @@ var removeVisitsByFilter = Task.async(function*(db, filter, onResult = null) {
        if (onResult) {
          onResultData.push({
            date: new Date(row.getResultByName("date")),
-           transition: row.getResultByName("visit_type")
+           transition: row.getResultByName("visit_type"),
          });
        }
      }
@@ -859,14 +1201,14 @@ var removeVisitsByFilter = Task.async(function*(db, filter, onResult = null) {
     }
 
     let pages = [];
-    yield db.executeTransaction(function*() {
+    await db.executeTransaction(async function() {
       // 2. Remove all offending visits.
-      yield db.execute(`DELETE FROM moz_historyvisits
+      await db.execute(`DELETE FROM moz_historyvisits
                         WHERE id IN (${ sqlList(visitsToRemove) } )`);
 
       // 3. Find out which pages have been orphaned
-      yield db.execute(
-        `SELECT id, url, guid,
+      await db.execute(
+        `SELECT id, url, url_hash, guid,
           (foreign_count != 0) AS has_foreign,
           (last_visit_date NOTNULL) as has_visits
          FROM moz_places
@@ -879,15 +1221,16 @@ var removeVisitsByFilter = Task.async(function*(db, filter, onResult = null) {
              hasForeign: row.getResultByName("has_foreign"),
              hasVisits: row.getResultByName("has_visits"),
              url: new URL(row.getResultByName("url")),
+             hash: row.getResultByName("url_hash"),
            };
            pages.push(page);
          });
 
       // 4. Clean up and notify
-      yield cleanupPages(db, pages);
+      await cleanupPages(db, pages);
     });
 
-    notifyCleanup(db, pages);
+    notifyCleanup(db, pages, transition);
     notifyOnResult(onResultData, onResult); // don't wait
   } finally {
     // Ensure we cleanup embed visits, even if we bailed out early.
@@ -895,24 +1238,131 @@ var removeVisitsByFilter = Task.async(function*(db, filter, onResult = null) {
   }
 
   return visitsToRemove.length != 0;
-});
+};
 
+// Inner implementation of History.removeByFilter
+var removeByFilter = async function(db, filter, onResult = null) {
+  // 1. Create fragment for date filtration
+  let dateFilterSQLFragment = "";
+  let conditions = [];
+  let params = {};
+  if ("beginDate" in filter) {
+    conditions.push("v.visit_date >= :begin");
+    params.begin = PlacesUtils.toPRTime(filter.beginDate);
+  }
+  if ("endDate" in filter) {
+    conditions.push("v.visit_date <= :end");
+    params.end = PlacesUtils.toPRTime(filter.endDate);
+  }
+
+  if (conditions.length !== 0) {
+    dateFilterSQLFragment =
+      `EXISTS
+         (SELECT id FROM moz_historyvisits v WHERE v.place_id = h.id AND
+         ${ conditions.join(" AND ") }
+         LIMIT 1)`;
+  }
+
+  // 2. Create fragment for host and subhost filtering
+  let hostFilterSQLFragment = "";
+  if (filter.host) {
+    // There are four cases that we need to consider:
+    // mozilla.org, .mozilla.org, localhost, and local files
+    let revHost = filter.host.split("").reverse().join("");
+    if (filter.host == ".") {
+      // Local files.
+      hostFilterSQLFragment = `h.rev_host = :revHost`;
+    } else if (filter.host.startsWith(".")) {
+      // Remove the subhost wildcard.
+      revHost = revHost.slice(0, -1);
+      hostFilterSQLFragment =
+        `h.rev_host between :revHost || "." and :revHost || "/"`;
+    } else {
+      // This covers non-wildcarded hosts (e.g.: mozilla.org, localhost)
+      hostFilterSQLFragment =
+        `h.rev_host = :revHost || "."`;
+    }
+    params.revHost = revHost;
+  }
+
+  // 3. Find out what needs to be removed
+  let fragmentArray = [hostFilterSQLFragment, dateFilterSQLFragment];
+  let query =
+      `SELECT h.id, url, url_hash, rev_host, guid, title, frecency, foreign_count
+       FROM moz_places h WHERE
+       (${ fragmentArray.filter(f => f !== "").join(") AND (") })`;
+  let onResultData = onResult ? [] : null;
+  let pages = [];
+  let hasPagesToRemove = false;
+
+  await db.executeCached(
+    query,
+    params,
+    row => {
+      let hasForeign = row.getResultByName("foreign_count") != 0;
+      if (!hasForeign) {
+        hasPagesToRemove = true;
+      }
+      let id = row.getResultByName("id");
+      let guid = row.getResultByName("guid");
+      let url = row.getResultByName("url");
+      let page = {
+        id,
+        guid,
+        hasForeign,
+        hasVisits: false,
+        url: new URL(url),
+        hash: row.getResultByName("url_hash"),
+      };
+      pages.push(page);
+      if (onResult) {
+        onResultData.push({
+          guid,
+          title: row.getResultByName("title"),
+          frecency: row.getResultByName("frecency"),
+          url: new URL(url),
+        });
+      }
+    });
+
+  if (pages.length === 0) {
+    // Nothing to do
+    return false;
+  }
+
+  try {
+    await db.executeTransaction(async function() {
+      // 4. Actually remove visits
+      await db.execute(`DELETE FROM moz_historyvisits
+                        WHERE place_id IN(${ sqlList(pages.map(p => p.id)) })`);
+      // 5. Clean up and notify
+      await cleanupPages(db, pages);
+    });
+
+    notifyCleanup(db, pages);
+    notifyOnResult(onResultData, onResult);
+  } finally {
+    PlacesUtils.history.clearEmbedVisits();
+  }
+
+  return hasPagesToRemove;
+};
 
 // Inner implementation of History.remove.
-var remove = Task.async(function*(db, {guids, urls}, onResult = null) {
+var remove = async function(db, {guids, urls}, onResult = null) {
   // 1. Find out what needs to be removed
   let query =
-    `SELECT id, url, guid, foreign_count, title, frecency
+    `SELECT id, url, url_hash, guid, foreign_count, title, frecency
      FROM moz_places
      WHERE guid IN (${ sqlList(guids) })
-        OR (url_hash IN (${ urls.map(u => "hash(" + JSON.stringify(u) + ")").join(",") })
+        OR (url_hash IN (${ sqlList(urls, "hash(", ")") })
             AND url IN (${ sqlList(urls) }))
     `;
 
   let onResultData = onResult ? [] : null;
   let pages = [];
   let hasPagesToRemove = false;
-  yield db.execute(query, null, Task.async(function*(row) {
+  await db.execute(query, null, function(row) {
     let hasForeign = row.getResultByName("foreign_count") != 0;
     if (!hasForeign) {
       hasPagesToRemove = true;
@@ -926,6 +1376,7 @@ var remove = Task.async(function*(db, {guids, urls}, onResult = null) {
       hasForeign,
       hasVisits: false,
       url: new URL(url),
+      hash: row.getResultByName("url_hash"),
     };
     pages.push(page);
     if (onResult) {
@@ -933,10 +1384,10 @@ var remove = Task.async(function*(db, {guids, urls}, onResult = null) {
         guid,
         title: row.getResultByName("title"),
         frecency: row.getResultByName("frecency"),
-        url: new URL(url)
+        url: new URL(url),
       });
     }
-  }));
+  });
 
   try {
     if (pages.length == 0) {
@@ -944,14 +1395,14 @@ var remove = Task.async(function*(db, {guids, urls}, onResult = null) {
       return false;
     }
 
-    yield db.executeTransaction(function*() {
+    await db.executeTransaction(async function() {
       // 2. Remove all visits to these pages.
-      yield db.execute(`DELETE FROM moz_historyvisits
+      await db.execute(`DELETE FROM moz_historyvisits
                         WHERE place_id IN (${ sqlList(pages.map(p => p.id)) })
                        `);
 
       // 3. Clean up and notify
-      yield cleanupPages(db, pages);
+      await cleanupPages(db, pages);
     });
 
     notifyCleanup(db, pages);
@@ -962,7 +1413,7 @@ var remove = Task.async(function*(db, {guids, urls}, onResult = null) {
   }
 
   return hasPagesToRemove;
-});
+};
 
 /**
  * Merges an updateInfo object, as returned by asyncHistory.updatePlaces
@@ -981,6 +1432,7 @@ var remove = Task.async(function*(db, {guids, urls}, onResult = null) {
  */
 function mergeUpdateInfoIntoPageInfo(updateInfo, pageInfo = {}) {
   pageInfo.guid = updateInfo.guid;
+  pageInfo.title = updateInfo.title;
   if (!pageInfo.url) {
     pageInfo.url = new URL(updateInfo.uri.spec);
     pageInfo.title = updateInfo.title;
@@ -988,19 +1440,19 @@ function mergeUpdateInfoIntoPageInfo(updateInfo, pageInfo = {}) {
       return {
         date: PlacesUtils.toDate(visit.visitDate),
         transition: visit.transitionType,
-        referrer: (visit.referrerURI) ? new URL(visit.referrerURI.spec) : null
-      }
+        referrer: (visit.referrerURI) ? new URL(visit.referrerURI.spec) : null,
+      };
     });
   }
   return pageInfo;
 }
 
 // Inner implementation of History.insert.
-var insert = Task.async(function*(db, pageInfo) {
+var insert = function(db, pageInfo) {
   let info = convertForUpdatePlaces(pageInfo);
 
   return new Promise((resolve, reject) => {
-    PlacesUtils.asyncHistory.updatePlaces(info, {
+    asyncHistory.updatePlaces(info, {
       handleError: error => {
         reject(error);
       },
@@ -1009,13 +1461,13 @@ var insert = Task.async(function*(db, pageInfo) {
       },
       handleCompletion: () => {
         resolve(pageInfo);
-      }
+      },
     });
   });
-});
+};
 
 // Inner implementation of History.insertMany.
-var insertMany = Task.async(function*(db, pageInfos, onResult, onError) {
+var insertMany = function(db, pageInfos, onResult, onError) {
   let infos = [];
   let onResultData = [];
   let onErrorData = [];
@@ -1026,7 +1478,7 @@ var insertMany = Task.async(function*(db, pageInfos, onResult, onError) {
   }
 
   return new Promise((resolve, reject) => {
-    PlacesUtils.asyncHistory.updatePlaces(infos, {
+    asyncHistory.updatePlaces(infos, {
       handleError: (resultCode, result) => {
         let pageInfo = mergeUpdateInfoIntoPageInfo(result);
         onErrorData.push(pageInfo);
@@ -1035,15 +1487,121 @@ var insertMany = Task.async(function*(db, pageInfos, onResult, onError) {
         let pageInfo = mergeUpdateInfoIntoPageInfo(result);
         onResultData.push(pageInfo);
       },
-      handleCompletion: () => {
+      ignoreErrors: !onError,
+      ignoreResults: !onResult,
+      handleCompletion: (updatedCount) => {
         notifyOnResult(onResultData, onResult);
         notifyOnResult(onErrorData, onError);
-        if (onResultData.length) {
+        if (updatedCount > 0) {
           resolve();
         } else {
-          reject({message: "No items were added to history."})
+          reject({message: "No items were added to history."});
+        }
+      },
+    }, true);
+  });
+};
+
+// Inner implementation of History.update.
+var update = async function(db, pageInfo) {
+  // Check for page existence first; we can skip most of the work if it doesn't
+  // exist and anyway we'll need the place id multiple times later.
+  // Prefer GUID over url if it's present.
+  let id;
+  if (typeof pageInfo.guid === "string") {
+    let rows = await db.executeCached(
+      "SELECT id FROM moz_places WHERE guid = :guid",
+      {guid: pageInfo.guid}
+    );
+    id = rows.length ? rows[0].getResultByName("id") : null;
+  } else {
+    let rows = await db.executeCached(
+      "SELECT id FROM moz_places WHERE url_hash = hash(:url) AND url = :url",
+    {url: pageInfo.url.href});
+    id = rows.length ? rows[0].getResultByName("id") : null;
+  }
+  if (!id) {
+    return;
+  }
+
+  let updateFragments = [];
+  let params = {};
+  if ("description" in pageInfo) {
+    updateFragments.push("description");
+    params.description = pageInfo.description;
+  }
+  if ("previewImageURL" in pageInfo) {
+    updateFragments.push("preview_image_url");
+    params.preview_image_url = pageInfo.previewImageURL ? pageInfo.previewImageURL.href : null;
+  }
+  if (updateFragments.length > 0) {
+    // Since this data may be written at every visit and is textual, avoid
+    // overwriting the existing record if it didn't change.
+    await db.execute(`
+      UPDATE moz_places
+      SET ${updateFragments.map(v => `${v} = :${v}`).join(", ")}
+      WHERE id = :id
+        AND (${updateFragments.map(v => `IFNULL(${v}, "") <> IFNULL(:${v}, "")`).join(" OR ")})
+    `, {id, ...params});
+  }
+
+  if (pageInfo.annotations) {
+    let annosToRemove = [];
+    let annosToUpdate = [];
+
+    for (let anno of pageInfo.annotations) {
+      anno[1] ? annosToUpdate.push(anno[0]) : annosToRemove.push(anno[0]);
+    }
+
+    await db.executeTransaction(async function() {
+      if (annosToUpdate.length) {
+        await db.execute(`
+          INSERT OR IGNORE INTO moz_anno_attributes (name)
+          VALUES ${Array.from(annosToUpdate.keys()).map(k => `(:${k})`).join(", ")}
+        `, Object.assign({}, annosToUpdate));
+
+        for (let anno of annosToUpdate) {
+          let content = pageInfo.annotations.get(anno);
+          // TODO: We only really need to save the type whilst we still support
+          // accessing page annotations via the annotation service.
+          let type = typeof content == "string" ? Ci.nsIAnnotationService.TYPE_STRING :
+            Ci.nsIAnnotationService.TYPE_INT64;
+          let date = PlacesUtils.toPRTime(new Date());
+
+          // This will replace the id every time an annotation is updated. This is
+          // not currently an issue as we're not joining on the id field.
+          await db.execute(`
+            INSERT OR REPLACE INTO moz_annos
+              (place_id, anno_attribute_id, content, flags,
+               expiration, type, dateAdded, lastModified)
+            VALUES (:id,
+                    (SELECT id FROM moz_anno_attributes WHERE name = :anno_name),
+                    :content, 0, :expiration, :type, :date_added,
+                    :last_modified)
+          `, {
+            id,
+            anno_name: anno,
+            content,
+            expiration: PlacesUtils.annotations.EXPIRE_NEVER,
+            type,
+            // The date fields are unused, so we just set them both to the latest.
+            date_added: date,
+            last_modified: date,
+          });
         }
       }
+
+      for (let anno of annosToRemove) {
+        // We don't remove anything from the moz_anno_attributes table. If we
+        // delete the last item of a given name, that item really should go away.
+        // It will be cleaned up by expiration.
+        await db.execute(`
+          DELETE FROM moz_annos
+          WHERE place_id = :id
+          AND anno_attribute_id =
+            (SELECT id FROM moz_anno_attributes WHERE name = :anno_name)
+        `, { id, anno_name: anno });
+      }
     });
-  });
-});
+  }
+};

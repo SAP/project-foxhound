@@ -4,21 +4,13 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-BROWSER_CHROME_MANIFESTS += ['tests/browser/browser.ini']
+with Files("**"):
+    BUG_COMPONENT = ("Firefox", "Activity Streams: Newtab")
+
+BROWSER_CHROME_MANIFESTS += ['test/browser/browser.ini']
 
 XPCSHELL_TESTS_MANIFESTS += [
-    'tests/xpcshell/xpcshell.ini',
-]
-
-EXTRA_JS_MODULES += [
-    'NewTabMessages.jsm',
-    'NewTabPrefsProvider.jsm',
-    'NewTabRemoteResources.jsm',
-    'NewTabSearchProvider.jsm',
-    'NewTabURL.jsm',
-    'NewTabWebChannel.jsm',
-    'PlacesProvider.jsm',
-    'PreviewProvider.jsm'
+    'test/xpcshell/xpcshell.ini',
 ]
 
 XPIDL_SOURCES += [
@@ -31,3 +23,5 @@ EXTRA_COMPONENTS += [
     'aboutNewTabService.js',
     'NewTabComponents.manifest',
 ]
+
+JAR_MANIFESTS += ['jar.mn']

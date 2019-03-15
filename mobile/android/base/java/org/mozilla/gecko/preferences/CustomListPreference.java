@@ -21,7 +21,7 @@ import android.widget.TextView;
  */
 
 public abstract class CustomListPreference extends Preference implements View.OnLongClickListener {
-    protected String LOGTAG = "CustomListPreference";
+    protected static final String LOGTAG = "CustomListPreference";
 
     // Indices of the buttons of the Dialog.
     public static final int INDEX_SET_DEFAULT_BUTTON = 0;
@@ -97,13 +97,6 @@ public abstract class CustomListPreference extends Preference implements View.On
         }
     }
 
-    private String[] getCachedDialogItems() {
-        if (mDialogItems == null) {
-            mDialogItems = createDialogItems();
-        }
-        return mDialogItems;
-    }
-
     /**
      * Returns the strings to be displayed in the dialog.
      */
@@ -115,7 +108,7 @@ public abstract class CustomListPreference extends Preference implements View.On
     public void showDialog() {
         final AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
         builder.setTitle(getTitle().toString());
-        builder.setItems(getCachedDialogItems(), new DialogInterface.OnClickListener() {
+        builder.setItems(createDialogItems(), new DialogInterface.OnClickListener() {
             // Forward relevant events to the container class for handling.
             @Override
             public void onClick(DialogInterface dialog, int indexClicked) {

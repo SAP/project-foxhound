@@ -8,10 +8,10 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_FIX_SOURCE_FILTERBANK_INTERNAL_H_
-#define WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_FIX_SOURCE_FILTERBANK_INTERNAL_H_
+#ifndef MODULES_AUDIO_CODING_CODECS_ISAC_FIX_SOURCE_FILTERBANK_INTERNAL_H_
+#define MODULES_AUDIO_CODING_CODECS_ISAC_FIX_SOURCE_FILTERBANK_INTERNAL_H_
 
-#include "webrtc/typedefs.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 #if defined(__cplusplus) || defined(c_plusplus)
 extern "C" {
@@ -60,7 +60,7 @@ void WebRtcIsacfix_AllpassFilter2FixDec16C(
    int32_t *filter_state_ch1,
    int32_t *filter_state_ch2);
 
-#if (defined WEBRTC_DETECT_NEON) || (defined WEBRTC_HAS_NEON)
+#if defined(WEBRTC_HAS_NEON)
 void WebRtcIsacfix_AllpassFilter2FixDec16Neon(
    int16_t *data_ch1,
    int16_t *data_ch2,

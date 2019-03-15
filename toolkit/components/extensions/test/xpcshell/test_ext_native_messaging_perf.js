@@ -2,13 +2,6 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetter(this, "MockRegistry",
-                                  "resource://testing-common/MockRegistry.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "OS",
-                                  "resource://gre/modules/osfile.jsm");
-
-Cu.import("resource://gre/modules/Subprocess.jsm");
-
 const MAX_ROUND_TRIP_TIME_MS = AppConstants.DEBUG || AppConstants.ASAN ? 60 : 30;
 const MAX_RETRIES = 5;
 
@@ -37,11 +30,11 @@ const SCRIPTS = [
   },
 ];
 
-add_task(function* setup() {
-  yield setupHosts(SCRIPTS);
+add_task(async function setup() {
+  await setupHosts(SCRIPTS);
 });
 
-add_task(function* test_round_trip_perf() {
+add_task(async function test_round_trip_perf() {
   let extension = ExtensionTestUtils.loadExtension({
     background() {
       browser.test.onMessage.addListener(msg => {
@@ -113,15 +106,15 @@ add_task(function* test_round_trip_perf() {
     },
   });
 
-  yield extension.startup();
+  await extension.startup();
 
   let roundTripTime = Infinity;
   for (let i = 0; i < MAX_RETRIES && roundTripTime > MAX_ROUND_TRIP_TIME_MS; i++) {
     extension.sendMessage("run-tests");
-    roundTripTime = yield extension.awaitMessage("result");
+    roundTripTime = await extension.awaitMessage("result");
   }
 
-  yield extension.unload();
+  await extension.unload();
 
   ok(roundTripTime <= MAX_ROUND_TRIP_TIME_MS,
      `Expected round trip time (${roundTripTime}ms) to be less than ${MAX_ROUND_TRIP_TIME_MS}ms`);

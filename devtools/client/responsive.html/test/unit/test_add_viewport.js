@@ -8,8 +8,8 @@
 const { addViewport } =
   require("devtools/client/responsive.html/actions/viewports");
 
-add_task(function* () {
-  let store = Store();
+add_task(async function() {
+  const store = Store();
   const { getState, dispatch } = store;
 
   equal(getState().viewports.length, 0, "Defaults to no viewpots at startup");

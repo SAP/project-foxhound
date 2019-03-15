@@ -10,23 +10,29 @@ const IGNORE = ["getPreferredIconURL", "escapeAddonURI",
                 "addAddonListener", "removeAddonListener",
                 "addInstallListener", "removeInstallListener",
                 "addManagerListener", "removeManagerListener",
-                "mapURIToAddonID", "shutdown", "init",
+                "addExternalExtensionLoader",
+                "shutdown", "init",
                 "stateToString", "errorToString", "getUpgradeListener",
-                "addUpgradeListener", "removeUpgradeListener"];
+                "addUpgradeListener", "removeUpgradeListener",
+                "getInstallSourceFromHost", "getInstallSourceFromPrincipal",
+               ];
 
 const IGNORE_PRIVATE = ["AddonAuthor", "AddonCompatibilityOverride",
                         "AddonScreenshot", "AddonType", "startup", "shutdown",
-                        "registerProvider", "unregisterProvider",
+                        "addonIsActive", "registerProvider", "unregisterProvider",
                         "addStartupChange", "removeStartupChange",
+                        "getNewSideloads",
                         "recordTimestamp", "recordSimpleMeasure",
                         "recordException", "getSimpleMeasures", "simpleTimer",
                         "setTelemetryDetails", "getTelemetryDetails",
                         "callNoUpdateListeners", "backgroundUpdateTimerHandler",
-                        "hasUpgradeListener", "getUpgradeListener"];
+                        "hasUpgradeListener", "getUpgradeListener",
+                        "isDBLoaded", "recordTiming", "BOOTSTRAP_REASONS",
+                        "notifyAddonChanged"];
 
-function test_functions() {
+async function test_functions() {
   for (let prop in AddonManager) {
-    if (IGNORE.indexOf(prop) != -1)
+    if (IGNORE.includes(prop))
       continue;
     if (typeof AddonManager[prop] != "function")
       continue;
@@ -46,37 +52,46 @@ function test_functions() {
       }
     }
 
+    // Clean this up in bug 1365720
+    if (prop == "getActiveAddons") {
+      args = [];
+    }
+
     try {
-      do_print("AddonManager." + prop);
-      AddonManager[prop](...args);
+      info("AddonManager." + prop);
+      await AddonManager[prop](...args);
       do_throw(prop + " did not throw an exception");
     } catch (e) {
-      if (e.result != Components.results.NS_ERROR_NOT_INITIALIZED)
+      if (e.result != Cr.NS_ERROR_NOT_INITIALIZED)
         do_throw(prop + " threw an unexpected exception: " + e);
     }
   }
 
   for (let prop in AddonManagerPrivate) {
-    if (typeof AddonManagerPrivate[prop] != "function")
+    if (IGNORE_PRIVATE.includes(prop))
       continue;
-    if (IGNORE_PRIVATE.indexOf(prop) != -1)
+    if (typeof AddonManagerPrivate[prop] != "function")
       continue;
 
     try {
-      do_print("AddonManagerPrivate." + prop);
+      info("AddonManagerPrivate." + prop);
       AddonManagerPrivate[prop]();
       do_throw(prop + " did not throw an exception");
     } catch (e) {
-      if (e.result != Components.results.NS_ERROR_NOT_INITIALIZED)
+      if (e.result != Cr.NS_ERROR_NOT_INITIALIZED)
         do_throw(prop + " threw an unexpected exception: " + e);
     }
   }
 }
 
+add_task(async function() {
+  await test_functions();
+  await promiseStartupManager();
+  await promiseShutdownManager();
+  await test_functions();
+});
+
 function run_test() {
   createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9.2");
-  test_functions();
-  startupManager();
-  shutdownManager();
-  test_functions();
+  run_next_test();
 }

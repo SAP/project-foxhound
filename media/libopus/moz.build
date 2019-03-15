@@ -5,7 +5,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 with Files('*'):
-    BUG_COMPONENT = ('Core', 'Video/Audio')
+    BUG_COMPONENT = ('Core', 'Audio/Video')
 
 EXPORTS.opus += [
     'include/opus.h',
@@ -15,13 +15,14 @@ EXPORTS.opus += [
 ]
 
 # We allow warnings for third-party code that can be updated from upstream.
-ALLOW_COMPILER_WARNINGS = True
+AllowCompilerWarnings()
 
 FINAL_LIBRARY = 'gkmedias'
 
 DEFINES['OPUS_BUILD'] = True
-DEFINES['OPUS_VERSION'] = '"v1.1.4-mozilla"'
+DEFINES['OPUS_VERSION'] = '"v1.3-rc-19-g5cbd7d5f-mozilla"'
 DEFINES['USE_ALLOCA'] = True
+DEFINES['ENABLE_HARDENING'] = True
 
 # Don't export symbols
 DEFINES['OPUS_EXPORT'] = ''
@@ -45,7 +46,7 @@ if CONFIG['OS_ARCH'] in ('Linux', 'Darwin', 'DragonFly', 'FreeBSD',
 
 if CONFIG['OS_ARCH'] == 'WINNT':
     DEFINES['inline'] = '__inline'
-    if CONFIG['GNU_CC']:
+    if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
         DEFINES['HAVE_LRINTF'] = True
 
 if CONFIG['OS_ARCH'] == 'AIX':
@@ -85,8 +86,29 @@ else:
         'silk/fixed',
     ]
     UNIFIED_SOURCES += silk_sources_fixed
-# for webrtc
-    UNIFIED_SOURCES += opus_sources_float
+
+if CONFIG['CPU_ARCH'] in ('x86', 'x86_64'):
+    DEFINES['OPUS_HAVE_RTCD'] = True
+    DEFINES['OPUS_X86_MAY_HAVE_SSE'] = True
+    DEFINES['OPUS_X86_MAY_HAVE_SSE2'] = True
+    DEFINES['OPUS_X86_MAY_HAVE_SSE4_1'] = True
+    DEFINES['OPUS_X86_MAY_HAVE_AVX'] = True
+    SOURCES += celt_sources_sse
+    SOURCES += celt_sources_sse2
+    SOURCES += celt_sources_sse4_1
+    SOURCES += silk_sources_sse4_1
+    if not CONFIG['MOZ_SAMPLE_TYPE_FLOAT32']:
+        SOURCES += silk_sources_fixed_sse4_1
+    if CONFIG['CC_TYPE'] != 'msvc':
+        for f in SOURCES:
+            if f in celt_sources_sse:
+                SOURCES[f].flags += CONFIG['SSE_FLAGS']
+            if f in celt_sources_sse2:
+                SOURCES[f].flags += CONFIG['SSE2_FLAGS']
+            if f in celt_sources_sse4_1 or \
+               f in silk_sources_sse4_1 or \
+               f in silk_sources_fixed_sse4_1:
+                SOURCES[f].flags += ['-msse4.1']
 
 if CONFIG['CPU_ARCH'] == 'arm' and CONFIG['GNU_AS']:
     SOURCES += celt_sources_arm
@@ -108,7 +130,16 @@ if CONFIG['CPU_ARCH'] == 'arm' and CONFIG['GNU_AS']:
     ]
     ASFLAGS += CONFIG['NEON_FLAGS']
 
+if CONFIG['CPU_ARCH'] == 'aarch64' and CONFIG['CC_TYPE'] in ('clang', 'gcc'):
+    DEFINES['OPUS_ARM_PRESUME_AARCH64_NEON_INTR'] = True
+    DEFINES['OPUS_ARM_PRESUME_NEON'] = True
+    DEFINES['OPUS_ARM_PRESUME_NEON_INTR'] = True
+    SOURCES += celt_sources_arm_neon_intr
+    SOURCES += silk_sources_arm_neon_intr
+    if not CONFIG['MOZ_SAMPLE_TYPE_FLOAT32']:
+        SOURCES += silk_sources_fixed_arm_neon_intr
+
 # Suppress warnings in third-party code.
-if CONFIG['GNU_CC']:
-    if CONFIG['CLANG_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
+    if CONFIG['CC_TYPE'] == 'clang':
         CFLAGS += ['-Wno-#pragma-messages']

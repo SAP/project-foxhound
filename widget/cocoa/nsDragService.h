@@ -18,44 +18,41 @@ extern NSString* const kMozWildcardPboardType;
 extern NSString* const kMozCustomTypesPboardType;
 extern NSString* const kMozFileUrlsPboardType;
 
-class nsDragService : public nsBaseDragService
-{
-public:
+class nsDragService : public nsBaseDragService {
+ public:
   nsDragService();
 
   // nsBaseDragService
   virtual nsresult InvokeDragSessionImpl(nsIArray* anArrayTransferables,
-                                         nsIScriptableRegion* aRegion,
-                                         uint32_t aActionType);
+                                         const mozilla::Maybe<mozilla::CSSIntRegion>& aRegion,
+                                         uint32_t aActionType) override;
   // nsIDragService
-  NS_IMETHOD EndDragSession(bool aDoneDrag);
-  NS_IMETHOD UpdateDragImage(nsIDOMNode* aImage, int32_t aImageX, int32_t aImageY);
+  NS_IMETHOD EndDragSession(bool aDoneDrag, uint32_t aKeyModifiers) override;
+  NS_IMETHOD UpdateDragImage(nsINode* aImage, int32_t aImageX, int32_t aImageY) override;
 
   // nsIDragSession
-  NS_IMETHOD GetData(nsITransferable * aTransferable, uint32_t aItemIndex);
-  NS_IMETHOD IsDataFlavorSupported(const char *aDataFlavor, bool *_retval);
-  NS_IMETHOD GetNumDropItems(uint32_t * aNumItems);
+  NS_IMETHOD GetData(nsITransferable* aTransferable, uint32_t aItemIndex) override;
+  NS_IMETHOD IsDataFlavorSupported(const char* aDataFlavor, bool* _retval) override;
+  NS_IMETHOD GetNumDropItems(uint32_t* aNumItems) override;
 
   void DragMovedWithView(NSDraggingSession* aSession, NSPoint aPoint);
 
-protected:
+ protected:
   virtual ~nsDragService();
 
-private:
-
+ private:
   // Creates and returns the drag image for a drag. aImagePoint will be set to
   // the origin of the drag relative to mNativeDragView.
-  NSImage* ConstructDragImage(nsIDOMNode* aDOMNode,
-                              nsIScriptableRegion* aRegion,
+  NSImage* ConstructDragImage(nsINode* aDOMNode,
+                              const mozilla::Maybe<mozilla::CSSIntRegion>& aRegion,
                               NSPoint* aImagePoint);
 
   // Creates and returns the drag image for a drag. aPoint should be the origin
   // of the drag, for example the mouse coordinate of the mousedown event.
   // aDragRect will be set the area of the drag relative to this.
-  NSImage* ConstructDragImage(nsIDOMNode* aDOMNode,
-                              nsIScriptableRegion* aRegion,
-                              mozilla::CSSIntPoint aPoint,
-                              mozilla::LayoutDeviceIntRect* aDragRect);
+  NSImage* ConstructDragImage(nsINode* aDOMNode,
+                              const mozilla::Maybe<mozilla::CSSIntRegion>& aRegion,
+                              mozilla::CSSIntPoint aPoint, mozilla::LayoutDeviceIntRect* aDragRect);
 
   bool IsValidType(NSString* availableType, bool allowFileURL);
   NSString* GetStringForType(NSPasteboardItem* item, const NSString* type,
@@ -63,11 +60,11 @@ private:
   NSString* GetTitleForURL(NSPasteboardItem* item);
   NSString* GetFilePath(NSPasteboardItem* item);
 
-  nsCOMPtr<nsIArray> mDataItems; // only valid for a drag started within gecko
+  nsCOMPtr<nsIArray> mDataItems;  // only valid for a drag started within gecko
   ChildView* mNativeDragView;
   NSEvent* mNativeDragEvent;
 
   bool mDragImageChanged;
 };
 
-#endif // nsDragService_h_
+#endif  // nsDragService_h_

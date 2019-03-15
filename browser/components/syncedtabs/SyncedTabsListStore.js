@@ -4,12 +4,10 @@
 
 "use strict";
 
-const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
+let { EventEmitter } = ChromeUtils.import("resource:///modules/syncedtabs/EventEmitter.jsm", {});
 
-let { EventEmitter } = Cu.import("resource:///modules/syncedtabs/EventEmitter.jsm", {});
-
-this.EXPORTED_SYMBOLS = [
-  "SyncedTabsListStore"
+var EXPORTED_SYMBOLS = [
+  "SyncedTabsListStore",
 ];
 
 /**
@@ -80,7 +78,7 @@ Object.assign(SyncedTabsListStore.prototype, EventEmitter.prototype, {
       canUpdateAll: updateType === "all",
       canUpdateInput: updateType === "searchbox",
       filter: this.filter,
-      inputFocused: this.inputFocused
+      inputFocused: this.inputFocused,
     });
   },
 
@@ -231,5 +229,5 @@ Object.assign(SyncedTabsListStore.prototype, EventEmitter.prototype, {
         this._change(updateType);
       })
       .catch(Cu.reportError);
-  }
+  },
 });

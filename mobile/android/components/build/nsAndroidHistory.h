@@ -1,4 +1,4 @@
-/* -*- Mode: c++; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
+/* -*- Mode: c++; c-basic-offset: 2; tab-width: 20; indent-tabs-mode: nil; -*-
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,13 +9,17 @@
 #include "IHistory.h"
 #include "nsDataHashtable.h"
 #include "nsTPriorityQueue.h"
+#include "nsINamed.h"
 #include "nsIRunnable.h"
 #include "nsIURI.h"
 #include "nsITimer.h"
 
-
-#define NS_ANDROIDHISTORY_CID \
-    {0xCCAA4880, 0x44DD, 0x40A7, {0xA1, 0x3F, 0x61, 0x56, 0xFC, 0x88, 0x2C, 0x0B}}
+#define NS_ANDROIDHISTORY_CID                        \
+  {                                                  \
+    0xCCAA4880, 0x44DD, 0x40A7, {                    \
+      0xA1, 0x3F, 0x61, 0x56, 0xFC, 0x88, 0x2C, 0x0B \
+    }                                                \
+  }
 
 // Max size of History::mRecentlyVisitedURIs
 #define RECENTLY_VISITED_URI_SIZE 8
@@ -25,23 +29,24 @@
 
 class nsAndroidHistory final : public mozilla::IHistory,
                                public nsIRunnable,
-                               public nsITimerCallback
-{
-public:
+                               public nsITimerCallback,
+                               public nsINamed {
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_IHISTORY
   NS_DECL_NSIRUNNABLE
   NS_DECL_NSITIMERCALLBACK
+  NS_DECL_NSINAMED
 
   /**
    * Obtains a pointer that has had AddRef called on it.  Used by the service
    * manager only.
    */
-  static nsAndroidHistory* GetSingleton();
+  static already_AddRefed<nsAndroidHistory> GetSingleton();
 
   nsAndroidHistory();
 
-private:
+ private:
   ~nsAndroidHistory() {}
 
   static nsAndroidHistory* sHistory;
@@ -56,7 +61,7 @@ private:
   /**
    * We need to manage data used to determine a:visited status.
    */
-  nsDataHashtable<nsStringHashKey, nsTArray<mozilla::dom::Link *> *> mListeners;
+  nsDataHashtable<nsStringHashKey, nsTArray<mozilla::dom::Link*>*> mListeners;
   nsTPriorityQueue<nsString> mPendingLinkURIs;
 
   /**
@@ -65,7 +70,8 @@ private:
    * need to cache the pending visit and make sure it doesn't redirect.
    */
   RefPtr<nsITimer> mTimer;
-  typedef AutoTArray<nsCOMPtr<nsIURI>, RECENTLY_VISITED_URI_SIZE> PendingVisitArray;
+  typedef AutoTArray<nsCOMPtr<nsIURI>, RECENTLY_VISITED_URI_SIZE>
+      PendingVisitArray;
   PendingVisitArray mPendingVisitURIs;
 
   bool RemovePendingVisitURI(nsIURI* aURI);
@@ -75,7 +81,8 @@ private:
    * mRecentlyVisitedURIs remembers URIs which are recently added to the DB,
    * to avoid saving these locations repeatedly in a short period.
    */
-  typedef AutoTArray<nsCOMPtr<nsIURI>, RECENTLY_VISITED_URI_SIZE> RecentlyVisitedArray;
+  typedef AutoTArray<nsCOMPtr<nsIURI>, RECENTLY_VISITED_URI_SIZE>
+      RecentlyVisitedArray;
   RecentlyVisitedArray mRecentlyVisitedURIs;
   RecentlyVisitedArray::index_type mRecentlyVisitedURIsNextIndex;
 

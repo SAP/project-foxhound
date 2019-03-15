@@ -8,8 +8,12 @@ LOCAL_INCLUDES += [
     '../..',
 ]
 
+DEFINES['GOOGLE_PROTOBUF_NO_RTTI'] = True
+DEFINES['GOOGLE_PROTOBUF_NO_STATIC_INITIALIZER'] = True
+
 UNIFIED_SOURCES += [
     'Common.cpp',
+    'TestCaching.cpp',
     'TestChunkSet.cpp',
     'TestClassifier.cpp',
     'TestFailUpdate.cpp',
@@ -32,3 +36,6 @@ if CONFIG['NIGHTLY_BUILD'] or CONFIG['MOZ_DEBUG']:
     DEFINES['MOZ_SAFEBROWSING_DUMP_FAILED_UPDATES'] = True
 
 FINAL_LIBRARY = 'xul-gtest'
+
+if CONFIG['CC_TYPE'] == 'clang-cl':
+    AllowCompilerWarnings()  # workaround for bug 1090497

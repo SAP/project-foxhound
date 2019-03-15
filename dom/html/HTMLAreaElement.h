@@ -11,23 +11,17 @@
 #include "mozilla/dom/Link.h"
 #include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
-#include "nsDOMTokenList.h"
-#include "nsIDOMHTMLAreaElement.h"
 #include "nsIURL.h"
-
-class nsIDocument;
 
 namespace mozilla {
 class EventChainPostVisitor;
 class EventChainPreVisitor;
 namespace dom {
 
-class HTMLAreaElement final : public nsGenericHTMLElement,
-                              public nsIDOMHTMLAreaElement,
-                              public Link
-{
-public:
-  explicit HTMLAreaElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+class HTMLAreaElement final : public nsGenericHTMLElement, public Link {
+ public:
+  explicit HTMLAreaElement(
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
@@ -36,102 +30,81 @@ public:
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(HTMLAreaElement,
                                            nsGenericHTMLElement)
 
-  // DOM memory reporter participant
-  NS_DECL_SIZEOF_EXCLUDING_THIS
+  NS_DECL_ADDSIZEOFEXCLUDINGTHIS
+
+  NS_IMPL_FROMNODE_HTML_WITH_TAG(HTMLAreaElement, area)
 
   virtual int32_t TabIndexDefault() override;
 
-  // nsIDOMHTMLAreaElement
-  NS_DECL_NSIDOMHTMLAREAELEMENT
-
-  virtual nsresult GetEventTargetParent(
-                     EventChainPreVisitor& aVisitor) override;
+  void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
   virtual nsresult PostHandleEvent(EventChainPostVisitor& aVisitor) override;
   virtual bool IsLink(nsIURI** aURI) const override;
   virtual void GetLinkTarget(nsAString& aTarget) override;
   virtual already_AddRefed<nsIURI> GetHrefURI() const override;
 
-  virtual nsresult BindToTree(nsIDocument* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent,
-                              bool aCompileEventHandlers) override;
+  virtual nsresult BindToTree(Document* aDocument, nsIContent* aParent,
+                              nsIContent* aBindingParent) override;
   virtual void UnbindFromTree(bool aDeep = true,
                               bool aNullParent = true) override;
-  nsresult SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
-                   const nsAString& aValue, bool aNotify)
-  {
-    return SetAttr(aNameSpaceID, aName, nullptr, aValue, aNotify);
-  }
-  virtual nsresult SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
-                           nsIAtom* aPrefix, const nsAString& aValue,
-                           bool aNotify) override;
-  virtual nsresult UnsetAttr(int32_t aNameSpaceID, nsIAtom* aAttribute,
-                             bool aNotify) override;
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo* aNodeInfo, nsINode** aResult) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   virtual EventStates IntrinsicState() const override;
 
   // WebIDL
-
-  // The XPCOM GetAlt is OK for us
-  void SetAlt(const nsAString& aAlt, ErrorResult& aError)
-  {
+  void GetAlt(DOMString& aValue) { GetHTMLAttr(nsGkAtoms::alt, aValue); }
+  void SetAlt(const nsAString& aAlt, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::alt, aAlt, aError);
   }
 
-  // The XPCOM GetCoords is OK for us
-  void SetCoords(const nsAString& aCoords, ErrorResult& aError)
-  {
+  void GetCoords(DOMString& aValue) { GetHTMLAttr(nsGkAtoms::coords, aValue); }
+  void SetCoords(const nsAString& aCoords, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::coords, aCoords, aError);
   }
 
-  // The XPCOM GetShape is OK for us
-  void SetShape(const nsAString& aShape, ErrorResult& aError)
-  {
+  // argument type nsAString for HTMLImageMapAccessible
+  void GetShape(nsAString& aValue) { GetHTMLAttr(nsGkAtoms::shape, aValue); }
+  void SetShape(const nsAString& aShape, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::shape, aShape, aError);
   }
 
-  // The XPCOM GetHref is OK for us
-  void SetHref(const nsAString& aHref, ErrorResult& aError)
-  {
-    aError = SetHref(aHref);
+  // argument type nsAString for nsContextMenuInfo
+  void GetHref(nsAString& aValue) {
+    GetURIAttr(nsGkAtoms::href, nullptr, aValue);
+  }
+  void SetHref(const nsAString& aHref, ErrorResult& aError) {
+    SetHTMLAttr(nsGkAtoms::href, aHref, aError);
   }
 
-  // The XPCOM GetTarget is OK for us
-  void SetTarget(const nsAString& aTarget, ErrorResult& aError)
-  {
+  void GetTarget(DOMString& aValue);
+  void SetTarget(const nsAString& aTarget, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::target, aTarget, aError);
   }
 
-  // The XPCOM GetDownload is OK for us
-  void SetDownload(const nsAString& aDownload, ErrorResult& aError)
-  {
+  void GetDownload(DOMString& aValue) {
+    GetHTMLAttr(nsGkAtoms::download, aValue);
+  }
+  void SetDownload(const nsAString& aDownload, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::download, aDownload, aError);
   }
 
-  // The XPCOM GetPing is OK for us
-  void SetPing(const nsAString& aPing, ErrorResult& aError)
-  {
+  void GetPing(DOMString& aValue) { GetHTMLAttr(nsGkAtoms::ping, aValue); }
+
+  void SetPing(const nsAString& aPing, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::ping, aPing, aError);
   }
-  
-  void GetRel(DOMString& aValue)
-  {
-    GetHTMLAttr(nsGkAtoms::rel, aValue);
-  }
 
-  void SetRel(const nsAString& aRel, ErrorResult& aError)
-  {
+  void GetRel(DOMString& aValue) { GetHTMLAttr(nsGkAtoms::rel, aValue); }
+
+  void SetRel(const nsAString& aRel, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::rel, aRel, aError);
-  } 
+  }
   nsDOMTokenList* RelList();
 
-  void SetReferrerPolicy(const nsAString& aValue, mozilla::ErrorResult& rv)
-  {
+  void SetReferrerPolicy(const nsAString& aValue, mozilla::ErrorResult& rv) {
     SetHTMLAttr(nsGkAtoms::referrerpolicy, aValue, rv);
   }
-  void GetReferrerPolicy(nsAString& aReferrer)
-  {
+  void GetReferrerPolicy(nsAString& aReferrer) {
     GetEnumAttr(nsGkAtoms::referrerpolicy, EmptyCString().get(), aReferrer);
   }
 
@@ -166,30 +139,36 @@ public:
 
   // The Link::GetSearchParams is OK for us
 
-  bool NoHref() const
-  {
-    return GetBoolAttr(nsGkAtoms::nohref);
-  }
+  bool NoHref() const { return GetBoolAttr(nsGkAtoms::nohref); }
 
-  void SetNoHref(bool aValue, ErrorResult& aError)
-  {
+  void SetNoHref(bool aValue, ErrorResult& aError) {
     SetHTMLBoolAttr(nsGkAtoms::nohref, aValue, aError);
   }
 
-  void Stringify(nsAString& aResult)
-  {
-    GetHref(aResult);
+  void ToString(nsAString& aSource);
+  void Stringify(nsAString& aResult) { GetHref(aResult); }
+
+  void NodeInfoChanged(Document* aOldDoc) final {
+    ClearHasPendingLinkUpdate();
+    nsGenericHTMLElement::NodeInfoChanged(aOldDoc);
   }
 
-protected:
+ protected:
   virtual ~HTMLAreaElement();
 
-  virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapNode(JSContext* aCx,
+                             JS::Handle<JSObject*> aGivenProto) override;
 
-  RefPtr<nsDOMTokenList > mRelList;
+  virtual nsresult AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                const nsAttrValue* aValue,
+                                const nsAttrValue* aOldValue,
+                                nsIPrincipal* aSubjectPrincipal,
+                                bool aNotify) override;
+
+  RefPtr<nsDOMTokenList> mRelList;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif /* mozilla_dom_HTMLAreaElement_h */

@@ -7,34 +7,31 @@
  * Tests if keyboard and mouse navigation works in the network requests menu.
  */
 
-add_task(function* () {
-  let { tab, monitor } = yield initNetMonitor(CUSTOM_GET_URL);
+add_task(async function() {
+  const { tab, monitor } = await initNetMonitor(CUSTOM_GET_URL);
   info("Starting test... ");
 
   // It seems that this test may be slow on Ubuntu builds running on ec2.
   requestLongerTimeout(2);
 
-  let { window, document, gStore, windowRequire } = monitor.panelWin;
-  let Actions = windowRequire("devtools/client/netmonitor/actions/index");
+  const { window, document, windowRequire, store } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
 
-  gStore.dispatch(Actions.batchEnable(false));
+  store.dispatch(Actions.batchEnable(false));
 
   let count = 0;
   function check(selectedIndex, panelVisibility) {
     info("Performing check " + (count++) + ".");
 
-    let requestItems = Array.from(document.querySelectorAll(".request-list-item"));
+    const requestItems = Array.from(document.querySelectorAll(".request-list-item"));
     is(requestItems.findIndex((item) => item.matches(".selected")), selectedIndex,
       "The selected item in the requests menu was incorrect.");
     is(!!document.querySelector(".network-details-panel"), panelVisibility,
       "The network details panel should render correctly.");
   }
 
-  let wait = waitForNetworkEvents(monitor, 2);
-  yield ContentTask.spawn(tab.linkedBrowser, {}, function* () {
-    content.wrappedJSObject.performRequests(2);
-  });
-  yield wait;
+  // Execute requests.
+  await performRequests(monitor, tab, 2);
 
   document.querySelector(".requests-list-contents").focus();
 
@@ -55,11 +52,8 @@ add_task(function* () {
   EventUtils.sendKey("HOME", window);
   check(0, true);
 
-  wait = waitForNetworkEvents(monitor, 18);
-  yield ContentTask.spawn(tab.linkedBrowser, {}, function* () {
-    content.wrappedJSObject.performRequests(18);
-  });
-  yield wait;
+  // Execute requests.
+  await performRequests(monitor, tab, 18);
 
   EventUtils.sendKey("DOWN", window);
   check(1, true);
@@ -127,5 +121,5 @@ add_task(function* () {
     document.querySelector(".request-list-item"));
   check(0, true);
 
-  yield teardown(monitor);
+  await teardown(monitor);
 });

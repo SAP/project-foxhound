@@ -8,28 +8,27 @@ EXPORTS += [
     'DMD.h',
 ]
 
-SOURCES += [
-    '../../../mfbt/HashFunctions.cpp',
-    '../../../mfbt/JSONWriter.cpp',
-    '../../../mfbt/Poison.cpp',
-    '../../../mozglue/misc/StackWalk.cpp',
+UNIFIED_SOURCES += [
     'DMD.cpp',
 ]
 
-SOURCES += [
-    '../../../nsprpub/lib/libc/src/strcpy.c',
-]
+if not CONFIG['MOZ_REPLACE_MALLOC_STATIC']:
+    UNIFIED_SOURCES += [
+        '/mfbt/HashFunctions.cpp',
+        '/mfbt/JSONWriter.cpp',
+        '/mfbt/Poison.cpp',
+        '/mozglue/misc/StackWalk.cpp',
+    ]
 
-SharedLibrary('dmd')
+ReplaceMalloc('dmd')
 
 DEFINES['MOZ_NO_MOZALLOC'] = True
 DEFINES['IMPL_MFBT'] = True
-DEFINES['XPCOM_GLUE'] = True
 
 if CONFIG['MOZ_OPTIMIZE']:
     DEFINES['MOZ_OPTIMIZE'] = True
 
-DISABLE_STL_WRAPPING = True
+DisableStlWrapping()
 
 if CONFIG['OS_ARCH'] == 'WINNT':
     OS_LIBS += [
@@ -37,3 +36,6 @@ if CONFIG['OS_ARCH'] == 'WINNT':
     ]
 
 TEST_DIRS += ['test']
+
+if CONFIG['CC_TYPE'] == 'clang-cl':
+    AllowCompilerWarnings()  # workaround for bug 1090497

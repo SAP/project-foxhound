@@ -1,9 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-'use strict';
+"use strict";
 
-const { classes: Cc, interfaces: Ci } = Components;
 const BIN_SUFFIX = mozinfo.bin_suffix;
 const tempDir = do_get_tempdir();
 
@@ -15,10 +14,10 @@ const tempDir = do_get_tempdir();
  * @param arr2 The second array to compare
  */
 function compareBinaryData(arr1, arr2) {
-  do_check_eq(arr1.length, arr2.length);
+  Assert.equal(arr1.length, arr2.length);
   for (let i = 0; i < arr1.length; i++) {
     if (arr1[i] != arr2[i]) {
-      throw "Data differs at index " + i + 
+      throw "Data differs at index " + i +
             ", arr1: " + arr1[i] + ", arr2: " + arr2[i];
     }
   }
@@ -59,7 +58,7 @@ function run_tests(obj) {
     cleanup_per_test = function __cleanup_per_test() {};
   }
 
-  do_register_cleanup(cleanup_per_test);
+  registerCleanupFunction(cleanup_per_test);
 
   // Make sure there's nothing left over from a preious failed test
   cleanup_per_test();
@@ -87,7 +86,7 @@ function run_tests(obj) {
  */
 function createMAR(outMAR, dataDir, files) {
   // You cannot create an empy MAR.
-  do_check_true(files.length > 0);
+  Assert.ok(files.length > 0);
 
   // Get an nsIProcess to the signmar binary.
   let process = Cc["@mozilla.org/process/util;1"].
@@ -95,8 +94,8 @@ function createMAR(outMAR, dataDir, files) {
   let signmarBin = do_get_file("signmar" + BIN_SUFFIX);
 
   // Make sure the signmar binary exists and is an executable.
-  do_check_true(signmarBin.exists());
-  do_check_true(signmarBin.isExecutable());
+  Assert.ok(signmarBin.exists());
+  Assert.ok(signmarBin.isExecutable());
 
   // Ensure on non Windows platforms we encode the same permissions
   // as the refernence MARs contain.  On Windows this is also safe.
@@ -114,15 +113,15 @@ function createMAR(outMAR, dataDir, files) {
               "-V", "13.0a1", "-c", outMAR.path];
   args = args.concat(files);
 
-  do_print('Running: ' + signmarBin.path);
+  info("Running: " + signmarBin.path + " " + args.join(" "));
   process.init(signmarBin);
   process.run(true, args, args.length);
 
   // Verify signmar returned 0 for success.
-  do_check_eq(process.exitValue, 0);
+  Assert.equal(process.exitValue, 0);
 
   // Verify the out MAR file actually exists.
-  do_check_true(outMAR.exists());
+  Assert.ok(outMAR.exists());
 }
 
 /**
@@ -138,16 +137,15 @@ function extractMAR(mar, dataDir) {
   let signmarBin = do_get_file("signmar" + BIN_SUFFIX);
 
   // Make sure the signmar binary exists and is an executable.
-  do_check_true(signmarBin.exists());
-  do_check_true(signmarBin.isExecutable());
+  Assert.ok(signmarBin.exists());
+  Assert.ok(signmarBin.isExecutable());
 
-  // Setup the command line arguments to create the MAR.
+  // Setup the command line arguments to extract the MAR.
   let args = ["-C", dataDir.path, "-x", mar.path];
 
-  do_print('Running: ' + signmarBin.path);
+  info("Running: " + signmarBin.path + " " + args.join(" "));
   process.init(signmarBin);
   process.run(true, args, args.length);
 
-  // Verify signmar returned 0 for success.
-  do_check_eq(process.exitValue, 0);
+  return process.exitValue;
 }

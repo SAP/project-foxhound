@@ -48,8 +48,6 @@ interface PannerNode : AudioNode {
     // Uses a 3D cartesian coordinate system
     void setPosition(double x, double y, double z);
     void setOrientation(double x, double y, double z);
-    [Deprecated="PannerNodeDoppler"]
-    void setVelocity(double x, double y, double z);
 
     // Cartesian coordinate for position
     readonly attribute AudioParam positionX;
@@ -63,13 +61,17 @@ interface PannerNode : AudioNode {
 
     // Distance model and attributes
     attribute DistanceModelType distanceModel;
+    [SetterThrows]
     attribute double refDistance;
+    [SetterThrows]
     attribute double maxDistance;
+    [SetterThrows]
     attribute double rolloffFactor;
 
     // Directional sound cone
     attribute double coneInnerAngle;
     attribute double coneOuterAngle;
+    [SetterThrows]
     attribute double coneOuterGain;
 
 };

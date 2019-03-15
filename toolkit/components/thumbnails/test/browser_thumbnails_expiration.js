@@ -6,10 +6,8 @@ const URL1 = URL + "#1";
 const URL2 = URL + "#2";
 const URL3 = URL + "#3";
 
-var tmp = {};
-Cc["@mozilla.org/moz/jssubscript-loader;1"]
-  .getService(Ci.mozIJSSubScriptLoader)
-  .loadSubScript("resource://gre/modules/PageThumbs.jsm", tmp);
+var tmp = Cu.Sandbox(window, {wantGlobalProperties: ["ChromeUtils"]});
+Services.scriptloader.loadSubScript("resource://gre/modules/PageThumbs.jsm", tmp);
 
 const EXPIRATION_MIN_CHUNK_SIZE = 50;
 const {PageThumbsExpiration} = tmp;

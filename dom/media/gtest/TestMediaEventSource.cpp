@@ -5,6 +5,7 @@
 
 #include "gtest/gtest.h"
 
+#include "mozilla/SharedThreadPool.h"
 #include "mozilla/TaskQueue.h"
 #include "mozilla/UniquePtr.h"
 #include "MediaEventSource.h"
@@ -15,15 +16,14 @@ using namespace mozilla;
 /*
  * Test if listeners receive the event data correctly.
  */
-TEST(MediaEventSource, SingleListener)
-{
-  RefPtr<TaskQueue> queue = new TaskQueue(
-    GetMediaThreadPool(MediaThreadType::PLAYBACK));
+TEST(MediaEventSource, SingleListener) {
+  RefPtr<TaskQueue> queue =
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK));
 
   MediaEventProducer<int> source;
   int i = 0;
 
-  auto func = [&] (int j) { i += j; };
+  auto func = [&](int j) { i += j; };
   MediaEventListener listener = source.Connect(queue, func);
 
   // Call Notify 3 times. The listener should be also called 3 times.
@@ -35,21 +35,20 @@ TEST(MediaEventSource, SingleListener)
   queue->AwaitShutdownAndIdle();
 
   // Verify the event data is passed correctly to the listener.
-  EXPECT_EQ(i, 15); // 3 + 5 + 7
+  EXPECT_EQ(i, 15);  // 3 + 5 + 7
   listener.Disconnect();
 }
 
-TEST(MediaEventSource, MultiListener)
-{
-  RefPtr<TaskQueue> queue = new TaskQueue(
-    GetMediaThreadPool(MediaThreadType::PLAYBACK));
+TEST(MediaEventSource, MultiListener) {
+  RefPtr<TaskQueue> queue =
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK));
 
   MediaEventProducer<int> source;
   int i = 0;
   int j = 0;
 
-  auto func1 = [&] (int k) { i = k * 2; };
-  auto func2 = [&] (int k) { j = k * 3; };
+  auto func1 = [&](int k) { i = k * 2; };
+  auto func2 = [&](int k) { j = k * 3; };
   MediaEventListener listener1 = source.Connect(queue, func1);
   MediaEventListener listener2 = source.Connect(queue, func2);
 
@@ -60,8 +59,8 @@ TEST(MediaEventSource, MultiListener)
   queue->AwaitShutdownAndIdle();
 
   // Verify the event data is passed correctly to the listener.
-  EXPECT_EQ(i, 22); // 11 * 2
-  EXPECT_EQ(j, 33); // 11 * 3
+  EXPECT_EQ(i, 22);  // 11 * 2
+  EXPECT_EQ(j, 33);  // 11 * 3
 
   listener1.Disconnect();
   listener2.Disconnect();
@@ -70,16 +69,18 @@ TEST(MediaEventSource, MultiListener)
 /*
  * Test if disconnecting a listener prevents events from coming.
  */
-TEST(MediaEventSource, DisconnectAfterNotification)
-{
-  RefPtr<TaskQueue> queue = new TaskQueue(
-    GetMediaThreadPool(MediaThreadType::PLAYBACK));
+TEST(MediaEventSource, DisconnectAfterNotification) {
+  RefPtr<TaskQueue> queue =
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK));
 
   MediaEventProducer<int> source;
   int i = 0;
 
   MediaEventListener listener;
-  auto func = [&] (int j) { i += j; listener.Disconnect(); };
+  auto func = [&](int j) {
+    i += j;
+    listener.Disconnect();
+  };
   listener = source.Connect(queue, func);
 
   // Call Notify() twice. Since we disconnect the listener when receiving
@@ -94,17 +95,16 @@ TEST(MediaEventSource, DisconnectAfterNotification)
   EXPECT_EQ(i, 11);
 }
 
-TEST(MediaEventSource, DisconnectBeforeNotification)
-{
-  RefPtr<TaskQueue> queue = new TaskQueue(
-    GetMediaThreadPool(MediaThreadType::PLAYBACK));
+TEST(MediaEventSource, DisconnectBeforeNotification) {
+  RefPtr<TaskQueue> queue =
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK));
 
   MediaEventProducer<int> source;
   int i = 0;
   int j = 0;
 
-  auto func1 = [&] (int k) { i = k * 2; };
-  auto func2 = [&] (int k) { j = k * 3; };
+  auto func1 = [&](int k) { i = k * 2; };
+  auto func2 = [&](int k) { j = k * 3; };
   MediaEventListener listener1 = source.Connect(queue, func1);
   MediaEventListener listener2 = source.Connect(queue, func2);
 
@@ -116,8 +116,8 @@ TEST(MediaEventSource, DisconnectBeforeNotification)
   queue->BeginShutdown();
   queue->AwaitShutdownAndIdle();
 
-  EXPECT_EQ(i, 22); // 11 * 2
-  EXPECT_EQ(j, 0); // event not received
+  EXPECT_EQ(i, 22);  // 11 * 2
+  EXPECT_EQ(j, 0);   // event not received
 
   listener1.Disconnect();
 }
@@ -126,37 +126,33 @@ TEST(MediaEventSource, DisconnectBeforeNotification)
  * Test we don't hit the assertion when calling Connect() and Disconnect()
  * repeatedly.
  */
-TEST(MediaEventSource, DisconnectAndConnect)
-{
+TEST(MediaEventSource, DisconnectAndConnect) {
   RefPtr<TaskQueue> queue;
   MediaEventProducerExc<int> source;
-  MediaEventListener listener = source.Connect(queue, [](){});
+  MediaEventListener listener = source.Connect(queue, []() {});
   listener.Disconnect();
-  listener = source.Connect(queue, [](){});
+  listener = source.Connect(queue, []() {});
   listener.Disconnect();
 }
 
 /*
  * Test void event type.
  */
-TEST(MediaEventSource, VoidEventType)
-{
-  RefPtr<TaskQueue> queue = new TaskQueue(
-    GetMediaThreadPool(MediaThreadType::PLAYBACK));
+TEST(MediaEventSource, VoidEventType) {
+  RefPtr<TaskQueue> queue =
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK));
 
   MediaEventProducer<void> source;
   int i = 0;
 
   // Test function object.
-  auto func = [&] () { ++i; };
+  auto func = [&]() { ++i; };
   MediaEventListener listener1 = source.Connect(queue, func);
 
   // Test member function.
   struct Foo {
     Foo() : j(1) {}
-    void OnNotify() {
-      j *= 2;
-    }
+    void OnNotify() { j *= 2; }
     int j;
   } foo;
   MediaEventListener listener2 = source.Connect(queue, &foo, &Foo::OnNotify);
@@ -169,8 +165,8 @@ TEST(MediaEventSource, VoidEventType)
   queue->AwaitShutdownAndIdle();
 
   // Verify the event data is passed correctly to the listener.
-  EXPECT_EQ(i, 2); // ++i called twice
-  EXPECT_EQ(foo.j, 4); // |j *= 2| called twice
+  EXPECT_EQ(i, 2);      // ++i called twice
+  EXPECT_EQ(foo.j, 4);  // |j *= 2| called twice
   listener1.Disconnect();
   listener2.Disconnect();
 }
@@ -178,18 +174,17 @@ TEST(MediaEventSource, VoidEventType)
 /*
  * Test listeners can take various event types (T, T&&, const T& and void).
  */
-TEST(MediaEventSource, ListenerType1)
-{
-  RefPtr<TaskQueue> queue = new TaskQueue(
-    GetMediaThreadPool(MediaThreadType::PLAYBACK));
+TEST(MediaEventSource, ListenerType1) {
+  RefPtr<TaskQueue> queue =
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK));
 
   MediaEventProducer<int> source;
   int i = 0;
 
   // Test various argument types.
-  auto func1 = [&] (int&& j) { i += j; };
-  auto func2 = [&] (const int& j) { i += j; };
-  auto func3 = [&] () { i += 1; };
+  auto func1 = [&](int&& j) { i += j; };
+  auto func2 = [&](const int& j) { i += j; };
+  auto func3 = [&]() { i += 1; };
   MediaEventListener listener1 = source.Connect(queue, func1);
   MediaEventListener listener2 = source.Connect(queue, func2);
   MediaEventListener listener3 = source.Connect(queue, func3);
@@ -206,10 +201,9 @@ TEST(MediaEventSource, ListenerType1)
   listener3.Disconnect();
 }
 
-TEST(MediaEventSource, ListenerType2)
-{
-  RefPtr<TaskQueue> queue = new TaskQueue(
-    GetMediaThreadPool(MediaThreadType::PLAYBACK));
+TEST(MediaEventSource, ListenerType2) {
+  RefPtr<TaskQueue> queue =
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK));
 
   MediaEventProducer<int> source;
 
@@ -248,24 +242,22 @@ struct SomeEvent {
   explicit SomeEvent(int& aCount) : mCount(aCount) {}
   // Increment mCount when copy constructor is called to know how many times
   // the event data is copied.
-  SomeEvent(const SomeEvent& aOther) : mCount(aOther.mCount) {
-    ++mCount;
-  }
+  SomeEvent(const SomeEvent& aOther) : mCount(aOther.mCount) { ++mCount; }
+  SomeEvent(SomeEvent&& aOther) : mCount(aOther.mCount) {}
   int& mCount;
 };
 
 /*
  * Test we don't have unnecessary copies of the event data.
  */
-TEST(MediaEventSource, CopyEvent1)
-{
-  RefPtr<TaskQueue> queue = new TaskQueue(
-    GetMediaThreadPool(MediaThreadType::PLAYBACK));
+TEST(MediaEventSource, CopyEvent1) {
+  RefPtr<TaskQueue> queue =
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK));
 
   MediaEventProducer<SomeEvent> source;
   int i = 0;
 
-  auto func = [] (SomeEvent&& aEvent) {};
+  auto func = [](SomeEvent&& aEvent) {};
   struct Foo {
     void OnNotify(SomeEvent&& aEvent) {}
   } foo;
@@ -284,15 +276,14 @@ TEST(MediaEventSource, CopyEvent1)
   listener2.Disconnect();
 }
 
-TEST(MediaEventSource, CopyEvent2)
-{
-  RefPtr<TaskQueue> queue = new TaskQueue(
-    GetMediaThreadPool(MediaThreadType::PLAYBACK));
+TEST(MediaEventSource, CopyEvent2) {
+  RefPtr<TaskQueue> queue =
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK));
 
   MediaEventProducer<SomeEvent> source;
   int i = 0;
 
-  auto func = [] () {};
+  auto func = []() {};
   struct Foo {
     void OnNotify() {}
   } foo;
@@ -313,16 +304,13 @@ TEST(MediaEventSource, CopyEvent2)
 /*
  * Test move-only types.
  */
-TEST(MediaEventSource, MoveOnly)
-{
-  RefPtr<TaskQueue> queue = new TaskQueue(
-    GetMediaThreadPool(MediaThreadType::PLAYBACK));
+TEST(MediaEventSource, MoveOnly) {
+  RefPtr<TaskQueue> queue =
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK));
 
   MediaEventProducerExc<UniquePtr<int>> source;
 
-  auto func = [] (UniquePtr<int>&& aEvent) {
-    EXPECT_EQ(*aEvent, 20);
-  };
+  auto func = [](UniquePtr<int>&& aEvent) { EXPECT_EQ(*aEvent, 20); };
   MediaEventListener listener = source.Connect(queue, func);
 
   // It is OK to pass an rvalue which is move-only.
@@ -334,4 +322,64 @@ TEST(MediaEventSource, MoveOnly)
   queue->BeginShutdown();
   queue->AwaitShutdownAndIdle();
   listener.Disconnect();
+}
+
+struct RefCounter {
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(RefCounter)
+  explicit RefCounter(int aVal) : mVal(aVal) {}
+  int mVal;
+
+ private:
+  ~RefCounter() {}
+};
+
+/*
+ * Test we should copy instead of move in NonExclusive mode
+ * for each listener must get a copy.
+ */
+TEST(MediaEventSource, NoMove) {
+  RefPtr<TaskQueue> queue =
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK));
+
+  MediaEventProducer<RefPtr<RefCounter>> source;
+
+  auto func1 = [](RefPtr<RefCounter>&& aEvent) { EXPECT_EQ(aEvent->mVal, 20); };
+  auto func2 = [](RefPtr<RefCounter>&& aEvent) { EXPECT_EQ(aEvent->mVal, 20); };
+  MediaEventListener listener1 = source.Connect(queue, func1);
+  MediaEventListener listener2 = source.Connect(queue, func2);
+
+  // We should copy this rvalue instead of move it in NonExclusive mode.
+  RefPtr<RefCounter> val = new RefCounter(20);
+  source.Notify(std::move(val));
+
+  queue->BeginShutdown();
+  queue->AwaitShutdownAndIdle();
+  listener1.Disconnect();
+  listener2.Disconnect();
+}
+
+/*
+ * Rvalue lambda should be moved instead of copied.
+ */
+TEST(MediaEventSource, MoveLambda) {
+  RefPtr<TaskQueue> queue;
+  MediaEventProducer<void> source;
+
+  int counter = 0;
+  SomeEvent someEvent(counter);
+
+  auto func = [someEvent]() {};
+  // someEvent is copied when captured by the lambda.
+  EXPECT_EQ(someEvent.mCount, 1);
+
+  // someEvent should be copied for we pass |func| as an lvalue.
+  MediaEventListener listener1 = source.Connect(queue, func);
+  EXPECT_EQ(someEvent.mCount, 2);
+
+  // someEvent should be moved for we pass |func| as an rvalue.
+  MediaEventListener listener2 = source.Connect(queue, std::move(func));
+  EXPECT_EQ(someEvent.mCount, 2);
+
+  listener1.Disconnect();
+  listener2.Disconnect();
 }

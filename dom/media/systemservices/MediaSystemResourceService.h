@@ -5,61 +5,56 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #if !defined(MediaSystemResourceService_h_)
-#define MediaSystemResourceService_h_
+#  define MediaSystemResourceService_h_
 
-#include <deque>
+#  include <deque>
 
-#include "MediaSystemResourceTypes.h"
-#include "mozilla/StaticPtr.h"
-#include "nsClassHashtable.h"
+#  include "MediaSystemResourceTypes.h"
+#  include "mozilla/StaticPtr.h"
+#  include "nsClassHashtable.h"
 
 namespace mozilla {
 
 namespace media {
 class MediaSystemResourceManagerParent;
-} // namespace media
+}  // namespace media
 
 /**
  * Manage media system resource allocation requests within system.
  */
-class MediaSystemResourceService
-{
-public:
+class MediaSystemResourceService {
+ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MediaSystemResourceService)
 
   static MediaSystemResourceService* Get();
   static void Init();
   static void Shutdown();
 
-  void Acquire(media::MediaSystemResourceManagerParent* aParent,
-               uint32_t aId,
-               MediaSystemResourceType aResourceType,
-               bool aWillWait);
+  void Acquire(media::MediaSystemResourceManagerParent* aParent, uint32_t aId,
+               MediaSystemResourceType aResourceType, bool aWillWait);
 
   void ReleaseResource(media::MediaSystemResourceManagerParent* aParent,
-                       uint32_t aId,
-                       MediaSystemResourceType aResourceType);
+                       uint32_t aId, MediaSystemResourceType aResourceType);
 
   void ReleaseResource(media::MediaSystemResourceManagerParent* aParent);
 
-private:
+ private:
   MediaSystemResourceService();
   ~MediaSystemResourceService();
 
   struct MediaSystemResourceRequest {
-    MediaSystemResourceRequest()
-      : mParent(nullptr), mId(-1) {}
-    MediaSystemResourceRequest(media::MediaSystemResourceManagerParent* aParent, uint32_t aId)
-      : mParent(aParent), mId(aId) {}
+    MediaSystemResourceRequest() : mParent(nullptr), mId(-1) {}
+    MediaSystemResourceRequest(media::MediaSystemResourceManagerParent* aParent,
+                               uint32_t aId)
+        : mParent(aParent), mId(aId) {}
     media::MediaSystemResourceManagerParent* mParent;
     uint32_t mId;
   };
 
   struct MediaSystemResource {
-    MediaSystemResource()
-      : mResourceCount(0) {}
+    MediaSystemResource() : mResourceCount(0) {}
     explicit MediaSystemResource(uint32_t aResourceCount)
-      : mResourceCount(aResourceCount) {}
+        : mResourceCount(aResourceCount) {}
 
     std::deque<MediaSystemResourceRequest> mWaitingRequests;
     std::deque<MediaSystemResourceRequest> mAcquiredRequests;
@@ -69,8 +64,7 @@ private:
   void Destroy();
 
   void RemoveRequest(media::MediaSystemResourceManagerParent* aParent,
-                     uint32_t aId,
-                     MediaSystemResourceType aResourceType);
+                     uint32_t aId, MediaSystemResourceType aResourceType);
 
   void RemoveRequests(media::MediaSystemResourceManagerParent* aParent,
                       MediaSystemResourceType aResourceType);
@@ -84,6 +78,6 @@ private:
   static StaticRefPtr<MediaSystemResourceService> sSingleton;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif

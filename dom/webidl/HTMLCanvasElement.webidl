@@ -15,18 +15,18 @@ interface Variant;
 
 [HTMLConstructor]
 interface HTMLCanvasElement : HTMLElement {
-  [Pure, SetterThrows]
+  [CEReactions, Pure, SetterThrows]
            attribute unsigned long width;
-  [Pure, SetterThrows]
+  [CEReactions, Pure, SetterThrows]
            attribute unsigned long height;
 
   [Throws]
   nsISupports? getContext(DOMString contextId, optional any contextOptions = null);
 
-  [Throws, NeedsCallerType]
+  [Throws, NeedsSubjectPrincipal]
   DOMString toDataURL(optional DOMString type = "",
                       optional any encoderOptions);
-  [Throws, NeedsCallerType]
+  [Throws, NeedsSubjectPrincipal]
   void toBlob(BlobCallback _callback,
               optional DOMString type = "",
               optional any encoderOptions);
@@ -36,7 +36,7 @@ interface HTMLCanvasElement : HTMLElement {
 partial interface HTMLCanvasElement {
   [Pure, SetterThrows]
            attribute boolean mozOpaque;
-  [Throws, NeedsCallerType]
+  [Throws, NeedsSubjectPrincipal]
   File mozGetAsFile(DOMString name, optional DOMString? type = null);
   // A Mozilla-only extension to get a canvas context backed by double-buffered
   // shared memory. Only privileged callers can call this.
@@ -45,7 +45,7 @@ partial interface HTMLCanvasElement {
 
            attribute PrintCallback? mozPrintCallback;
 
-  [Throws, UnsafeInPrerendering, Pref="canvas.capturestream.enabled"]
+  [Throws, Pref="canvas.capturestream.enabled", NeedsSubjectPrincipal]
   CanvasCaptureMediaStream captureStream(optional double frameRate);
 };
 

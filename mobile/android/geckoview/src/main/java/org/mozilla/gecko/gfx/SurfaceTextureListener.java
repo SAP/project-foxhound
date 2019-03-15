@@ -10,17 +10,19 @@ import org.mozilla.gecko.mozglue.JNIObject;
 
 import android.graphics.SurfaceTexture;
 
-final class SurfaceTextureListener
+/* package */ final class SurfaceTextureListener
     extends JNIObject implements SurfaceTexture.OnFrameAvailableListener
 {
     @WrapForJNI(calledFrom = "gecko")
     private SurfaceTextureListener() {
     }
 
+    @WrapForJNI(dispatchTo = "gecko") @Override // JNIObject
+    protected native void disposeNative();
+
     @Override
-    protected void disposeNative() {
-        // SurfaceTextureListener is disposed inside AndroidSurfaceTexture.
-        throw new IllegalStateException("unreachable code");
+    protected void finalize() {
+        disposeNative();
     }
 
     @WrapForJNI(stubName = "OnFrameAvailable")

@@ -1,17 +1,13 @@
-asserts(0-6) load 307322-1.svg # bug 563481
+load 307322-1.svg
 load 327705-1.svg
 load 336994-1.html
 load 344888-1.svg
 load 345445-1.svg
 load 360836-1.svg
-load 367357-1.xhtml
 load 369051-1.svg
-load 369249-1.svg
 load 369291-1.svg
 load 369291-2.svg
 load 369568-1.svg
-load 372046-1.svg
-load 372046-2.svg
 load 374882-1.svg
 load 380101-1.svg 
 load 381777-1.svg
@@ -35,13 +31,12 @@ load 409811-1.html
 load 410659-1.svg
 load 410659-2.svg
 load 410659-3.svg
-asserts(3-4) load 412104-1.svg # bug 903785
+load 412104-1.svg
 load 413174-1.svg
 load 414188-1.svg
 load 427325-1.svg
 load 428228-1.svg
 load 428841-1.svg
-load 435209-1.svg
 load 436418-mpathRoot-1.svg
 load 448244-1.svg
 load 466576-1.xhtml
@@ -66,11 +61,6 @@ load 837450-1.svg
 load 842463-1.html
 load 847138-1.svg
 load 864509.svg
-load 880544-1.svg
-load 880544-2.svg
-load 880544-3.svg
-load 880544-4.svg
-load 880544-5.svg
 load 898915-1.svg
 load 1035248-1.svg
 load 1035248-2.svg
@@ -88,3 +78,16 @@ load 1329849-3.svg
 load 1329849-4.svg
 load 1329849-5.svg
 load 1329849-6.svg
+load 1329093-1.html
+load 1329093-2.html
+load 1343147.svg
+load 1347617-1.svg
+load 1347617-2.svg
+load 1347617-3.svg
+load 1402798.html
+load 1419250-1.html
+load 1420492.html
+load 1477853.html
+load 1486488.html
+load 1493447.html
+skip-if(Android) load 1507961-1.html  # times out on Android due to the test size

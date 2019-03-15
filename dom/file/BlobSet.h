@@ -17,23 +17,21 @@ namespace dom {
 
 class BlobImpl;
 
-class BlobSet final
-{
-public:
-  nsresult AppendVoidPtr(const void* aData, uint32_t aLength);
+class BlobSet final {
+ public:
+  MOZ_MUST_USE nsresult AppendVoidPtr(const void* aData, uint32_t aLength);
 
-  nsresult AppendString(const nsAString& aString, bool nativeEOL,
-                        JSContext* aCx);
+  MOZ_MUST_USE nsresult AppendString(const nsAString& aString, bool nativeEOL);
 
-  nsresult AppendBlobImpl(BlobImpl* aBlobImpl);
+  MOZ_MUST_USE nsresult AppendBlobImpl(BlobImpl* aBlobImpl);
 
-  nsTArray<RefPtr<BlobImpl>>& GetBlobImpls() { return mBlobImpls; }
+  FallibleTArray<RefPtr<BlobImpl>>& GetBlobImpls() { return mBlobImpls; }
 
-private:
-  nsTArray<RefPtr<BlobImpl>> mBlobImpls;
+ private:
+  FallibleTArray<RefPtr<BlobImpl>> mBlobImpls;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_BlobSet_h
+#endif  // mozilla_dom_BlobSet_h

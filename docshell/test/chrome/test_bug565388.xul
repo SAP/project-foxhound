@@ -17,9 +17,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=565388
   /** Test for Bug 565388 **/
   SimpleTest.waitForExplicitFinish();
 
-  var Ci = Components.interfaces;
-  var Cc = Components.classes;
-
+function test() {
   var progressListener = {
     add: function(docShell, callback) {
       this.callback = callback;
@@ -46,21 +44,19 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=565388
     },
 
     QueryInterface: function(iid) {
-      if (iid.equals(Components.interfaces.nsIWebProgressListener) ||
-          iid.equals(Components.interfaces.nsISupportsWeakReference))
+      if (iid.equals(Ci.nsIWebProgressListener) ||
+          iid.equals(Ci.nsISupportsWeakReference))
         return this;
-      throw Components.results.NS_ERROR_NO_INTERFACE;
+      throw Cr.NS_ERROR_NO_INTERFACE;
     }
   }
 
-  var systemPrincipal = Cc["@mozilla.org/systemprincipal;1"].
-  createInstance(Ci.nsIPrincipal);
-  var webNav = Cc["@mozilla.org/appshell/appShellService;1"].
-  getService(Ci.nsIAppShellService).
-  createWindowlessBrowser(true);
-  var docShell = webNav.
-  QueryInterface(Ci.nsIInterfaceRequestor).
-  getInterface(Ci.nsIDocShell);
+  var systemPrincipal = Cc["@mozilla.org/systemprincipal;1"]
+                          .getService(Ci.nsIPrincipal);
+  var webNav = Cc["@mozilla.org/appshell/appShellService;1"]
+                 .getService(Ci.nsIAppShellService)
+                 .createWindowlessBrowser(true);
+  var docShell = webNav.docShell;
   docShell.createAboutBlankContentViewer(systemPrincipal);
   var win = docShell.contentViewer.DOMDocument.defaultView;
 
@@ -71,6 +67,12 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=565388
   });
 
   win.location = "data:application/vnd.mozilla.xul+xml;charset=utf-8,<window/>";
+}
+
+addLoadEvent(function onLoad() {
+  SpecialPowers.pushPrefEnv({"set": [
+    ["security.data_uri.unique_opaque_origin", false]]}, test);
+});
 
   ]]>
   </script>

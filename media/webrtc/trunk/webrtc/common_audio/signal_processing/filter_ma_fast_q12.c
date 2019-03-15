@@ -15,7 +15,9 @@
  *
  */
 
-#include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
+#include "common_audio/signal_processing/include/signal_processing_library.h"
+
+#include "rtc_base/sanitizer.h"
 
 void WebRtcSpl_FilterMAFastQ12(const int16_t* in_ptr,
                                int16_t* out_ptr,
@@ -24,6 +26,11 @@ void WebRtcSpl_FilterMAFastQ12(const int16_t* in_ptr,
                                size_t length)
 {
     size_t i, j;
+
+    rtc_MsanCheckInitialized(B, sizeof(B[0]), B_length);
+    rtc_MsanCheckInitialized(in_ptr - B_length + 1, sizeof(in_ptr[0]),
+                             B_length + length - 1);
+
     for (i = 0; i < length; i++)
     {
         int32_t o = 0;

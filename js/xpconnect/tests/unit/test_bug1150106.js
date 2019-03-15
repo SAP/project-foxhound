@@ -2,9 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-
 var srvScope = {};
 
 function success(result) {
@@ -30,6 +27,7 @@ function run_test() {
                        .getService(Ci.mozIJSSubScriptLoader);
   var p = scriptLoader.loadSubScriptWithOptions(uri.spec,
                                                 { target: srvScope,
-                                                  async: true });
+                                                  async: true,
+                                                  wantReturnValue: true });
   p.then(success, error);
 }

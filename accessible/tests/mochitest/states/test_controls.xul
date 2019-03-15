@@ -20,33 +20,6 @@
 
   <script type="application/javascript">
   <![CDATA[
-    function openColorpicker(aID)
-    {
-      this.popupNode = getNode(aID).mPicker.parentNode;
-      this.popup = getAccessible(this.popupNode);
-
-      this.eventSeq = [
-        new invokerChecker(EVENT_REORDER, this.popupNode)
-      ];
-
-      this.invoke = function openColorpicker_invoke()
-      {
-        getNode(aID).showPopup();
-      }
-
-      this.finalCheck = function openColorpicker_finalCheck()
-      {
-        testStates(this.popup.firstChild,
-                   STATE_FOCUSABLE | STATE_SELECTABLE, 0,
-                   STATE_UNAVAILABLE);
-      }
-
-      this.getID = function openColorpicker_getID()
-      {
-        return "open colorpicker";
-      }
-    }
-
     var gQueue = null;
     function doTest()
     {
@@ -59,24 +32,23 @@
       testStates("radio-disabledradiogroup", STATE_UNAVAILABLE, 0 , STATE_FOCUSABLE);
       testStates("button", STATE_FOCUSABLE, 0, STATE_UNAVAILABLE);
       testStates("button-disabled", STATE_UNAVAILABLE, 0 , STATE_FOCUSABLE);
-      testStates("colorpicker", STATE_FOCUSABLE | STATE_HASPOPUP, 0, STATE_UNAVAILABLE);
-      testStates("colorpicker-disabled", STATE_HASPOPUP, 0, STATE_FOCUSABLE);
+      testStates("checkbutton",
+                 STATE_FOCUSABLE | STATE_CHECKABLE | STATE_PRESSED);
+      testStates("fakecheckbutton", STATE_FOCUSABLE | STATE_PRESSED, 0, 
+                 STATE_CHECKABLE);
       testStates("combobox", STATE_FOCUSABLE | STATE_HASPOPUP, 0, STATE_UNAVAILABLE);
       testStates("combobox-disabled", STATE_UNAVAILABLE | STATE_HASPOPUP, 0, STATE_FOCUSABLE);
       testStates("listbox", STATE_FOCUSABLE, 0, STATE_UNAVAILABLE);
-      testStates("listitem", STATE_FOCUSABLE | STATE_SELECTABLE, 0, STATE_UNAVAILABLE);
+      testStates("listitem", STATE_FOCUSABLE | STATE_SELECTABLE | STATE_SELECTED, 0, STATE_UNAVAILABLE);
       testStates("listbox-disabled", STATE_UNAVAILABLE, 0, STATE_FOCUSABLE | STATE_SELECTABLE);
-      testStates("listitem-disabledlistbox", STATE_UNAVAILABLE, 0, STATE_FOCUSABLE | STATE_SELECTABLE);
+      testStates("listitem-disabledlistbox", STATE_UNAVAILABLE | STATE_SELECTED, 0, STATE_FOCUSABLE | STATE_SELECTABLE);
       testStates("menubar", 0, 0, STATE_FOCUSABLE);
       testStates("menu", STATE_FOCUSABLE, 0, STATE_UNAVAILABLE);
       testStates("menu-disabled", STATE_UNAVAILABLE, 0, STATE_FOCUSABLE | STATE_SELECTABLE);
-      testStates("scale", STATE_FOCUSABLE, 0, STATE_UNAVAILABLE);
-      testStates("scale-disabled", STATE_UNAVAILABLE, 0, STATE_FOCUSABLE);
       testStates("tab", STATE_FOCUSABLE | STATE_SELECTABLE | STATE_SELECTED, 0, STATE_UNAVAILABLE);
       testStates("tab-disabled", STATE_UNAVAILABLE, 0, STATE_FOCUSABLE | STATE_SELECTABLE | STATE_SELECTED);
 
       gQueue = new eventQueue();
-      gQueue.push(new openColorpicker("colorpicker"));
       gQueue.invoke(); // Will call SimpleTest.finish()
     }
 
@@ -121,9 +93,9 @@
 
     <button id="button" value="button"/>
     <button id="button-disabled" disabled="true" value="button"/>
-
-    <colorpicker id="colorpicker" type="button"/>
-    <colorpicker id="colorpicker-disabled" type="button" disabled="true"/>
+    <button id="checkbutton" type="checkbox" checked="true" 
+            value="checkbutton" />
+    <button id="fakecheckbutton" checked="true" value="fakecheckbutton" />
 
     <menulist id="combobox">
       <menupopup>
@@ -137,13 +109,17 @@
       </menupopup>
     </menulist>
 
-    <listbox id="listbox">
-      <listitem id="listitem" label="list item"/>
-    </listbox>
+    <richlistbox id="listbox">
+      <richlistitem id="listitem">
+        <label value="list item"/>
+      </richlistitem>
+    </richlistbox>
 
-    <listbox id="listbox-disabled" disabled="true">
-      <listitem id="listitem-disabledlistbox" label="list item"/>
-    </listbox>
+    <richlistbox id="listbox-disabled" disabled="true">
+      <richlistitem id="listitem-disabledlistbox">
+        <label value="list item"/>
+      </richlistitem>
+    </richlistbox>
 
     <toolbox>
       <menubar id="menubar">
@@ -159,9 +135,6 @@
         </menu>
       </menubar>
     </toolbox>
-
-    <scale id="scale" min="1" max="10"/>
-    <scale id="scale-disabled" min="1" max="10" disabled="true"/>
 
     <tabbox>
       <tabs>
@@ -179,4 +152,3 @@
   </hbox>
 
 </window>
-

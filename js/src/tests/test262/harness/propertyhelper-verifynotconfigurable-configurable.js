@@ -7,7 +7,6 @@ description: >
     assertion.
 includes: [propertyHelper.js]
 ---*/
-
 var threw = false;
 var obj = {};
 Object.defineProperty(obj, 'a', {

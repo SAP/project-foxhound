@@ -7,24 +7,15 @@
 with Files("**"):
     BUG_COMPONENT = ("Core", "XPCOM")
 
-if not CONFIG['MOZ_B2G']:
-    TEST_DIRS += ['test']
-
-XPIDL_SOURCES += [
-    'nsIStartupCache.idl',
-]
-
-XPIDL_MODULE = 'startupcache'
+TEST_DIRS += ['test']
 
 EXPORTS.mozilla.scache += [
     'StartupCache.h',
     'StartupCacheUtils.h',
 ]
 
-# These files cannot be built in unified mode because they rely on plarena.h.
-SOURCES += [
+UNIFIED_SOURCES += [
     'StartupCache.cpp',
-    'StartupCacheModule.cpp',
     'StartupCacheUtils.cpp',
 ]
 

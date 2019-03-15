@@ -19,9 +19,12 @@ XPIDL_SOURCES += [
 XPIDL_MODULE = 'necko_cache'
 
 EXPORTS += [
+    'nsApplicationCache.h',
     'nsApplicationCacheService.h',
+    'nsCacheDevice.h',
     'nsCacheService.h',
-    'nsDeleteDir.h'
+    'nsDeleteDir.h',
+    'nsDiskCacheDeviceSQL.h',
 ]
 
 UNIFIED_SOURCES += [
@@ -50,5 +53,5 @@ LOCAL_INCLUDES += [
     '/netwerk/base',
 ]
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

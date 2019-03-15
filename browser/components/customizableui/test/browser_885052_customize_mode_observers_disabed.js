@@ -10,25 +10,26 @@ function isFullscreenSizeMode() {
 }
 
 // Observers should be disabled when in customization mode.
-add_task(function*() {
-  // Open and close the panel to make sure that the
-  // area is generated before getting a child of the area.
-  let shownPanelPromise = promisePanelShown(window);
-  PanelUI.toggle({type: "command"});
-  yield shownPanelPromise;
-  let hiddenPanelPromise = promisePanelHidden(window);
-  PanelUI.toggle({type: "command"});
-  yield hiddenPanelPromise;
+add_task(async function() {
+  CustomizableUI.addWidgetToArea("fullscreen-button", CustomizableUI.AREA_FIXED_OVERFLOW_PANEL);
+
+  await waitForOverflowButtonShown();
+
+  // Show the panel so it isn't hidden and has bindings applied etc.:
+  await document.getElementById("nav-bar").overflowable.show();
+
+  // Hide it again.
+  document.getElementById("widget-overflow").hidePopup();
 
   let fullscreenButton = document.getElementById("fullscreen-button");
-  ok(!fullscreenButton.checked, "Fullscreen button should not be checked when not in fullscreen.")
+  ok(!fullscreenButton.checked, "Fullscreen button should not be checked when not in fullscreen.");
   ok(!isFullscreenSizeMode(), "Should not be in fullscreen sizemode before we enter fullscreen.");
 
   BrowserFullScreen();
-  yield waitForCondition(() => isFullscreenSizeMode());
-  ok(fullscreenButton.checked, "Fullscreen button should be checked when in fullscreen.")
+  await waitForCondition(() => isFullscreenSizeMode());
+  ok(fullscreenButton.checked, "Fullscreen button should be checked when in fullscreen.");
 
-  yield startCustomizing();
+  await startCustomizing();
 
   let fullscreenButtonWrapper = document.getElementById("wrapper-fullscreen-button");
   ok(fullscreenButtonWrapper.hasAttribute("itemobserves"), "Observer should be moved to wrapper");
@@ -36,10 +37,11 @@ add_task(function*() {
   ok(!fullscreenButton.hasAttribute("observes"), "Observer should be removed from button");
   ok(!fullscreenButton.checked, "Fullscreen button should no longer be checked during customization mode");
 
-  yield endCustomizing();
+  await endCustomizing();
 
   BrowserFullScreen();
   fullscreenButton = document.getElementById("fullscreen-button");
-  yield waitForCondition(() => !isFullscreenSizeMode());
-  ok(!fullscreenButton.checked, "Fullscreen button should not be checked when not in fullscreen.")
+  await waitForCondition(() => !isFullscreenSizeMode());
+  ok(!fullscreenButton.checked, "Fullscreen button should not be checked when not in fullscreen.");
+  CustomizableUI.reset();
 });

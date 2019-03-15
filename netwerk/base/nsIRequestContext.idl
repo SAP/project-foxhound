@@ -14,7 +14,31 @@ class SpdyPushCache;
 }
 %}
 
+interface nsILoadGroup;
+interface nsIChannel;
+interface nsIStreamListener;
+
 [ptr] native SpdyPushCachePtr(mozilla::net::SpdyPushCache);
+
+/**
+ * Requests capable of tail-blocking must implement this
+ * interfaces (typically channels).
+ * If the request is tail-blocked, it will be held in its request
+ * context queue until unblocked.
+ */
+[scriptable, uuid(7EB361D4-37A5-42C9-AFAE-F6C88FE7C394)]
+interface nsIRequestTailUnblockCallback : nsISupports
+{
+  /**
+   * Called when the requests is unblocked and proceed.
+   * @param result
+   *    NS_OK - the request is OK to go, unblocking is not
+   *            caused by cancelation of the request.
+   *    any error - the request must behave as it were canceled
+   *                with the result as status.
+   */
+  void onTailUnblock(in nsresult aResult);
+};
 
 /**
  * The nsIRequestContext is used to maintain state about connections
@@ -30,7 +54,18 @@ interface nsIRequestContext : nsISupports
   /**
    * A unique identifier for this request context
    */
-  [noscript] readonly attribute nsID ID;
+  [notxpcom, nostdcall] readonly attribute unsigned long long ID;
+
+  /**
+   * Called by the associated document when its load starts.  This resets
+   * context's internal states.
+   */
+  void beginLoad();
+
+  /**
+  * Called when the associated document notified the DOMContentLoaded event.
+  */
+  void DOMContentLoaded();
 
   /**
    * Number of active blocking transactions associated with this context
@@ -56,12 +91,41 @@ interface nsIRequestContext : nsISupports
    * and will destroy it when overwritten or when the context
    * ends.
    */
-  [noscript] attribute SpdyPushCachePtr spdyPushCache;
+  [notxpcom,nostdcall] attribute SpdyPushCachePtr spdyPushCache;
 
   /**
    * This holds a cached value of the user agent override.
    */
-  [noscript] attribute ACString userAgentOverride;
+  [notxpcom,nostdcall] attribute ACString userAgentOverride;
+
+  /**
+   * Increases/decrease the number of non-tailed requests in this context.
+   * If the count drops to zero, all tail-blocked callbacks are notified
+   * shortly after that to be unblocked.
+   */
+  void addNonTailRequest();
+  void removeNonTailRequest();
+
+  /**
+   * If the request context is in tail-blocked state, the callback
+   * is queued and result is true.  The callback will be notified
+   * about tail-unblocking or when the request context is canceled.
+   */
+  [must_use] boolean isContextTailBlocked(in nsIRequestTailUnblockCallback callback);
+
+  /**
+   * Called when the request is sitting in the tail queue but has been
+   * canceled before untailing.  This just removes the request from the
+   * queue so that it is not notified on untail and not referenced.
+   */
+  void cancelTailedRequest(in nsIRequestTailUnblockCallback request);
+
+  /**
+   * This notifies all queued tail-blocked requests, they will be notified
+   * aResult and released afterwards.  Called by the load group when
+   * it's canceled.
+   */
+  void cancelTailPendingRequests(in nsresult aResult);
 };
 
 /**
@@ -81,15 +145,19 @@ interface nsIRequestContextService : nsISupports
   /**
    * Get an existing request context from its ID
    */
-  nsIRequestContext getRequestContext(in nsIDRef id);
+  nsIRequestContext getRequestContext(in unsigned long long id);
+  /**
+   * Shorthand to get request context from a load group
+   */
+  nsIRequestContext getRequestContextFromLoadGroup(in nsILoadGroup lg);
 
   /**
-   * Create a new request context identifier
+   * Create a new request context
    */
-  nsID newRequestContextID();
+  nsIRequestContext newRequestContext();
 
   /**
    * Remove an existing request context from its ID
    */
-  void removeRequestContext(in nsIDRef id);
+  void removeRequestContext(in unsigned long long id);
 };

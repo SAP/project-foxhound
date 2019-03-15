@@ -1,3 +1,5 @@
+/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
+ * vim: ts=4 sw=4 expandtab:
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,18 +9,19 @@ package org.mozilla.gecko;
 import org.mozilla.gecko.annotation.ReflectionTarget;
 import org.mozilla.gecko.annotation.RobocopTarget;
 import org.mozilla.gecko.annotation.WrapForJNI;
-import org.mozilla.gecko.GeckoAppShell;
 import org.mozilla.gecko.mozglue.JNIObject;
 import org.mozilla.gecko.util.BundleEventListener;
 import org.mozilla.gecko.util.EventCallback;
 import org.mozilla.gecko.util.GeckoBundle;
 import org.mozilla.gecko.util.ThreadUtils;
+import org.mozilla.geckoview.BuildConfig;
 
 import org.json.JSONException;
 import org.json.JSONObject;
 
 import android.os.Bundle;
 import android.os.Handler;
+import android.support.annotation.AnyThread;
 import android.util.Log;
 
 import java.util.ArrayList;
@@ -32,9 +35,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
 @RobocopTarget
 public final class EventDispatcher extends JNIObject {
     private static final String LOGTAG = "GeckoEventDispatcher";
-    /* package */ static final String GUID = "__guid__";
-    private static final String STATUS_ERROR = "error";
-    private static final String STATUS_SUCCESS = "success";
 
     private static final EventDispatcher INSTANCE = new EventDispatcher();
 
@@ -44,9 +44,9 @@ public final class EventDispatcher extends JNIObject {
      * empirically determine the initial capacity that avoids rehashing, we need to
      * determine the initial size, divide it by 75%, and round up to the next power-of-2.
      */
-    private static final int DEFAULT_GECKO_EVENTS_COUNT = 256; // Empirically measured
-    private static final int DEFAULT_UI_EVENTS_COUNT = 0; // Default for HashMap
-    private static final int DEFAULT_BACKGROUND_EVENTS_COUNT = 0; // Default for HashMap
+    private static final int DEFAULT_GECKO_EVENTS_COUNT = 64; // Empirically measured
+    private static final int DEFAULT_UI_EVENTS_COUNT = 128; // Empirically measured
+    private static final int DEFAULT_BACKGROUND_EVENTS_COUNT = 64; // Empirically measured
 
     // GeckoBundle-based events.
     private final Map<String, List<BundleEventListener>> mGeckoThreadListeners =
@@ -57,6 +57,7 @@ public final class EventDispatcher extends JNIObject {
         new HashMap<String, List<BundleEventListener>>(DEFAULT_BACKGROUND_EVENTS_COUNT);
 
     private boolean mAttachedToGecko;
+    private final NativeQueue mNativeQueue;
 
     @ReflectionTarget
     @WrapForJNI(calledFrom = "gecko")
@@ -65,9 +66,18 @@ public final class EventDispatcher extends JNIObject {
     }
 
     /* package */ EventDispatcher() {
+        mNativeQueue = GeckoThread.getNativeQueue();
     }
 
-    @WrapForJNI(dispatchTo = "gecko") @Override // JNIObject
+    public EventDispatcher(final NativeQueue queue) {
+        mNativeQueue = queue;
+    }
+
+    private boolean isReadyForDispatchingToGecko() {
+        return mNativeQueue.isReady();
+    }
+
+    @WrapForJNI @Override // JNIObject
     protected native void disposeNative();
 
     @WrapForJNI private static final int DETACHED = 0;
@@ -77,13 +87,25 @@ public final class EventDispatcher extends JNIObject {
     @WrapForJNI(calledFrom = "gecko")
     private synchronized void setAttachedToGecko(final int state) {
         if (mAttachedToGecko && state == DETACHED) {
-            if (GeckoThread.isRunning()) {
-                disposeNative();
-            } else {
-                GeckoThread.queueNativeCall(this, "disposeNative");
-            }
+            dispose(false);
         }
         mAttachedToGecko = (state == ATTACHED);
+    }
+
+    private void dispose(boolean force) {
+        final Handler geckoHandler = ThreadUtils.sGeckoHandler;
+        if (geckoHandler == null) {
+            return;
+        }
+
+        geckoHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                if (force || !mAttachedToGecko) {
+                    disposeNative();
+                }
+            }
+        });
     }
 
     private <T> void registerListener(final Class<?> listType,
@@ -104,20 +126,20 @@ public final class EventDispatcher extends JNIObject {
                         listeners = type.newInstance();
                         listenersMap.put(event, listeners);
                     }
-                    if (!AppConstants.RELEASE_OR_BETA && listeners.contains(listener)) {
+                    if (!BuildConfig.RELEASE_OR_BETA && listeners.contains(listener)) {
                         throw new IllegalStateException("Already registered " + event);
                     }
                     listeners.add(listener);
                 }
             }
-        } catch (final IllegalAccessException | InstantiationException e) {
+        } catch (final Exception e) {
             throw new IllegalArgumentException("Invalid new list type", e);
         }
     }
 
     private void checkNotRegisteredElsewhere(final Map<String, ?> allowedMap,
                                              final String[] events) {
-        if (AppConstants.RELEASE_OR_BETA) {
+        if (BuildConfig.RELEASE_OR_BETA) {
             // for performance reasons, we only check for
             // already-registered listeners in non-release builds.
             return;
@@ -149,7 +171,7 @@ public final class EventDispatcher extends JNIObject {
                 }
                 List<T> listeners = listenersMap.get(event);
                 if ((listeners == null ||
-                     !listeners.remove(listener)) && !AppConstants.RELEASE_OR_BETA) {
+                     !listeners.remove(listener)) && !BuildConfig.RELEASE_OR_BETA) {
                     throw new IllegalArgumentException(event + " was not registered");
                 }
             }
@@ -225,22 +247,32 @@ public final class EventDispatcher extends JNIObject {
      * @param message Bundle message
      * @param callback Optional object for callbacks from events.
      */
+    @AnyThread
     public void dispatch(final String type, final GeckoBundle message,
                          final EventCallback callback) {
+        final boolean isGeckoReady;
         synchronized (this) {
-            if (mAttachedToGecko && hasGeckoListener(type)) {
+            isGeckoReady = isReadyForDispatchingToGecko();
+            if (isGeckoReady && mAttachedToGecko && hasGeckoListener(type)) {
                 dispatchToGecko(type, message, JavaCallbackDelegate.wrap(callback));
                 return;
             }
         }
 
-        dispatchToThreads(type, message, /* callback */ callback);
+        dispatchToThreads(type, message, callback, isGeckoReady);
     }
 
     @WrapForJNI(calledFrom = "gecko")
     private boolean dispatchToThreads(final String type,
                                       final GeckoBundle message,
                                       final EventCallback callback) {
+        return dispatchToThreads(type, message, callback, /* isGeckoReady */ true);
+    }
+
+    private boolean dispatchToThreads(final String type,
+                                      final GeckoBundle message,
+                                      final EventCallback callback,
+                                      final boolean isGeckoReady) {
         final List<BundleEventListener> geckoListeners;
         synchronized (mGeckoThreadListeners) {
             geckoListeners = mGeckoThreadListeners.get(type);
@@ -277,16 +309,34 @@ public final class EventDispatcher extends JNIObject {
             return true;
         }
 
-        if (!GeckoThread.isRunning()) {
-            // Usually, we discard an event if there is no listeners for it by the time of
-            // the dispatch. However, if Gecko is not ready and there is no listener for
-            // this event that's possibly headed to Gecko, we make a special exception to
-            // queue this event until Gecko is ready. This way, Gecko can first register
-            // its listeners, and accept the event when it is ready.
-            GeckoThread.queueNativeCall(this, "dispatchToGecko",
-                                        String.class, type, GeckoBundle.class, message,
-                                        EventCallback.class, JavaCallbackDelegate.wrap(callback));
+        if (!isGeckoReady) {
+            // Usually, we discard an event if there is no listeners for it by
+            // the time of the dispatch. However, if Gecko(View) is not ready and
+            // there is no listener for this event that's possibly headed to
+            // Gecko, we make a special exception to queue this event until
+            // Gecko(View) is ready. This way, Gecko can first register its
+            // listeners, and accept the event when it is ready.
+            mNativeQueue.queueUntilReady(this, "dispatchToGecko",
+                String.class, type,
+                GeckoBundle.class, message,
+                EventCallback.class, JavaCallbackDelegate.wrap(callback));
             return true;
+        }
+
+        Log.w(LOGTAG, "No listener for " + type);
+        return false;
+    }
+
+    @WrapForJNI
+    public boolean hasListener(final String event) {
+        for (final Map<String, ?> listenersMap : Arrays.asList(mGeckoThreadListeners,
+                mUiThreadListeners,
+                mBackgroundThreadListeners)) {
+            synchronized (listenersMap) {
+                if (listenersMap.get(event) != null) {
+                    return true;
+                }
+            }
         }
 
         return false;
@@ -326,6 +376,11 @@ public final class EventDispatcher extends JNIObject {
             }
             return true;
         }
+    }
+
+    @Override
+    protected void finalize() throws Throwable {
+        dispose(true);
     }
 
     private static class NativeCallbackDelegate extends JNIObject implements EventCallback {

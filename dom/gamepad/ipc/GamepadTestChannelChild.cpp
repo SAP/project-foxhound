@@ -1,3 +1,5 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,17 +9,14 @@
 namespace mozilla {
 namespace dom {
 
-void
-GamepadTestChannelChild::AddPromise(const uint32_t& aID, Promise* aPromise)
-{
+void GamepadTestChannelChild::AddPromise(const uint32_t& aID,
+                                         Promise* aPromise) {
   MOZ_ASSERT(!mPromiseList.Get(aID, nullptr));
   mPromiseList.Put(aID, aPromise);
 }
 
-mozilla::ipc::IPCResult
-GamepadTestChannelChild::RecvReplyGamepadIndex(const uint32_t& aID,
-                                               const uint32_t& aIndex)
-{
+mozilla::ipc::IPCResult GamepadTestChannelChild::RecvReplyGamepadIndex(
+    const uint32_t& aID, const uint32_t& aIndex) {
   RefPtr<Promise> p;
   if (!mPromiseList.Get(aID, getter_AddRefs(p))) {
     MOZ_CRASH("We should always have a promise.");
@@ -28,5 +27,5 @@ GamepadTestChannelChild::RecvReplyGamepadIndex(const uint32_t& aID,
   return IPC_OK();
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

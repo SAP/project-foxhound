@@ -5,16 +5,12 @@
 
 "use strict";
 
-var Cu = Components.utils;
-var Ci = Components.interfaces;
-var Cc = Components.classes;
-var Cr = Components.results;
 var Cm = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
 
-this.EXPORTED_SYMBOLS = ["BrowserElementPromptService"];
+var EXPORTED_SYMBOLS = ["BrowserElementPromptService"];
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const NS_PREFBRANCH_PREFCHANGE_TOPIC_ID = "nsPref:changed";
 const BROWSER_FRAMES_ENABLED_PREF = "dom.mozBrowserFramesEnabled";
@@ -29,7 +25,7 @@ function BrowserElementPrompt(win, browserElementChild) {
 }
 
 BrowserElementPrompt.prototype = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIPrompt]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIPrompt]),
 
   alert: function(title, text) {
     this._browserElementChild.showModalPrompt(
@@ -216,7 +212,7 @@ function BrowserElementAuthPrompt() {
 }
 
 BrowserElementAuthPrompt.prototype = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIAuthPrompt2]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIAuthPrompt2]),
 
   promptAuth: function promptAuth(channel, level, authInfo) {
     throw Cr.NS_ERROR_NOT_IMPLEMENTED;
@@ -246,7 +242,7 @@ BrowserElementAuthPrompt.prototype = {
     }
 
     let consumer = {
-      QueryInterface: XPCOMUtils.generateQI([Ci.nsICancelable]),
+      QueryInterface: ChromeUtils.generateQI([Ci.nsICancelable]),
       callback: callback,
       context: context,
       cancel: function() {
@@ -369,7 +365,7 @@ BrowserElementAuthPrompt.prototype = {
       }
     }
 
-    Services.tm.currentThread.dispatch(runnable, Ci.nsIThread.DISPATCH_NORMAL);
+    Services.tm.dispatchToMainThread(runnable);
   },
 
   _getFrameFromChannel: function(channel) {
@@ -381,7 +377,7 @@ BrowserElementAuthPrompt.prototype = {
     let [hostname, httpRealm] = this._getAuthTarget(channel, authInfo);
     return {
       host:             hostname,
-      path:             channel.URI.path,
+      path:             channel.URI.pathQueryRef,
       realm:            httpRealm,
       username:         authInfo.username,
       isProxy:          !!(authInfo.flags & Ci.nsIAuthInformation.AUTH_PROXY),
@@ -445,7 +441,7 @@ function AuthPromptWrapper(oldImpl, browserElementImpl) {
 }
 
 AuthPromptWrapper.prototype = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIAuthPrompt2]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIAuthPrompt2]),
   promptAuth: function(channel, level, authInfo) {
     if (this._canGetParentElement(channel)) {
       return this._browserElementImpl.promptAuth(channel, level, authInfo);
@@ -487,7 +483,7 @@ function BrowserElementPromptFactory(toWrap) {
 
 BrowserElementPromptFactory.prototype = {
   classID: Components.ID("{24f3d0cf-e417-4b85-9017-c9ecf8bb1299}"),
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIPromptFactory]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIPromptFactory]),
 
   _mayUseNativePrompt: function() {
     try {
@@ -566,9 +562,9 @@ BrowserElementPromptFactory.prototype = {
   }
 };
 
-this.BrowserElementPromptService = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIObserver,
-                                         Ci.nsISupportsWeakReference]),
+var BrowserElementPromptService = {
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver,
+                                          Ci.nsISupportsWeakReference]),
 
   _initialized: false,
 
@@ -622,9 +618,7 @@ this.BrowserElementPromptService = {
   },
 
   _getOuterWindowID: function(win) {
-    return win.QueryInterface(Ci.nsIInterfaceRequestor)
-              .getInterface(Ci.nsIDOMWindowUtils)
-              .outerWindowID;
+    return win.windowUtils.outerWindowID;
   },
 
   _browserElementChildMap: {},

@@ -12,10 +12,7 @@ Migrated from Robocop: https://bugzilla.mozilla.org/show_bug.cgi?id=1184186
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
   <script type="application/javascript">
 
-  Components.utils.import("resource://gre/modules/Services.jsm");
-
-  var Cc = Components.classes;
-  var Ci = Components.interfaces;
+  ChromeUtils.import("resource://gre/modules/Services.jsm");
 
   SimpleTest.waitForExplicitFinish();
 
@@ -50,14 +47,15 @@ Migrated from Robocop: https://bugzilla.mozilla.org/show_bug.cgi?id=1184186
     }
 
     SimpleTest.finish();
-  };
+  }
 
-  SimpleTest.registerCleanupFunction(function() {
+SimpleTest.registerCleanupFunction(function() {
     Services.obs.removeObserver(search_observer, "browser-search-engine-modified");
   });
-  Services.obs.addObserver(search_observer, "browser-search-engine-modified", false);
+  Services.obs.addObserver(search_observer, "browser-search-engine-modified");
   info("Loading search engine");
-  Services.search.addEngine("http://mochi.test:8888/chrome/mobile/android/tests/browser/chrome/devicesearch.xml", Ci.nsISearchEngine.DATA_XML, null, false);
+  Services.search.addEngine("http://mochi.test:8888/chrome/mobile/android/tests/browser/chrome/devicesearch.xml",
+                            null, false);
 
   </script>
 </head>

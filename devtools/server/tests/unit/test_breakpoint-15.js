@@ -1,6 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+"use strict";
+
 /**
  * Check that adding a breakpoint in the same place returns the same actor.
  */
@@ -9,53 +11,59 @@ var gDebuggee;
 var gClient;
 var gThreadClient;
 
-function run_test()
-{
+function run_test() {
   initTestDebuggerServer();
   gDebuggee = addTestGlobal("test-stack");
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
-  gClient.connect().then(function () {
-    attachTestTabAndResume(gClient, "test-stack", function (aResponse, aTabClient, aThreadClient) {
-      gThreadClient = aThreadClient;
-      testSameBreakpoint();
-    });
+  gClient.connect().then(function() {
+    attachTestTabAndResume(gClient, "test-stack",
+                           function(response, targetFront, threadClient) {
+                             gThreadClient = threadClient;
+                             testSameBreakpoint();
+                           });
   });
   do_test_pending();
 }
 
 const SOURCE_URL = "http://example.com/source.js";
 
-const testSameBreakpoint = Task.async(function* () {
-  let packet = yield executeOnNextTickAndWaitForPause(evalCode, gClient);
-  let source = gThreadClient.source(packet.frame.where.source);
+const testSameBreakpoint = async function() {
+  const packet = await executeOnNextTickAndWaitForPause(evalCode, gClient);
+  const source = await getSourceById(
+    gThreadClient,
+    packet.frame.where.actor
+  );
 
   // Whole line
-  let wholeLineLocation = {
-    line: 2
+  const wholeLineLocation = {
+    line: 2,
   };
 
-  let [firstResponse, firstBpClient] = yield setBreakpoint(source, wholeLineLocation);
-  let [secondResponse, secondBpClient] = yield setBreakpoint(source, wholeLineLocation);
+  let [, firstBpClient] = await setBreakpoint(source, wholeLineLocation);
+  let [, secondBpClient] = await setBreakpoint(source, wholeLineLocation);
 
-  do_check_eq(firstBpClient.actor, secondBpClient.actor, "Should get the same actor w/ whole line breakpoints");
+  Assert.equal(firstBpClient.actor, secondBpClient.actor,
+               "Should get the same actor w/ whole line breakpoints");
 
   // Specific column
 
-  let columnLocation = {
+  const columnLocation = {
     line: 2,
-    column: 6
+    column: 6,
   };
 
-  [firstResponse, firstBpClient] = yield setBreakpoint(source, columnLocation);
-  [secondResponse, secondBpClient] = yield setBreakpoint(source, columnLocation);
+  [, firstBpClient] = await setBreakpoint(source, columnLocation);
+  [, secondBpClient] = await setBreakpoint(source, columnLocation);
 
-  do_check_eq(secondBpClient.actor, secondBpClient.actor, "Should get the same actor column breakpoints");
+  Assert.equal(secondBpClient.actor, secondBpClient.actor,
+               "Should get the same actor column breakpoints");
 
   finishClient(gClient);
-});
+};
 
 function evalCode() {
-  Components.utils.evalInSandbox(
+  /* eslint-disable */
+  Cu.evalInSandbox(
     "" + function doStuff(k) { // line 1
       let arg = 15;            // line 2 - Step in here
       k(arg);                  // line 3
@@ -66,4 +74,5 @@ function evalCode() {
     SOURCE_URL,
     1
   );
+  /* eslint-enable */
 }

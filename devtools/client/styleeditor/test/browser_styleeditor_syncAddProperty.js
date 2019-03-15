@@ -19,27 +19,27 @@ const expectedText = `
   }
   `;
 
-add_task(function* () {
-  yield addTab(TESTCASE_URI);
-  let { inspector, view } = yield openRuleView();
-  yield selectNode("#testid", inspector);
+add_task(async function() {
+  await addTab(TESTCASE_URI);
+  const { inspector, view } = await openRuleView();
+  await selectNode("#testid", inspector);
 
   info("Focusing a new property name in the rule-view");
-  let ruleEditor = getRuleViewRuleEditor(view, 1);
-  let editor = yield focusEditableField(view, ruleEditor.closeBrace);
+  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const editor = await focusEditableField(view, ruleEditor.closeBrace);
   is(inplaceEditor(ruleEditor.newPropSpan), editor,
     "The new property editor has focus");
 
-  let input = editor.input;
+  const input = editor.input;
   input.value = "/* background-color: yellow; */";
 
   info("Pressing return to commit and focus the new value field");
-  let onModifications = view.once("ruleview-changed");
+  const onModifications = view.once("ruleview-changed");
   EventUtils.synthesizeKey("VK_RETURN", {}, view.styleWindow);
-  yield onModifications;
+  await onModifications;
 
-  let { ui } = yield openStyleEditor();
-  let sourceEditor = yield ui.editors[0].getSourceEditor();
-  let text = sourceEditor.sourceEditor.getText();
+  const { ui } = await openStyleEditor();
+  const sourceEditor = await ui.editors[0].getSourceEditor();
+  const text = sourceEditor.sourceEditor.getText();
   is(text, expectedText, "selector edits are synced");
 });

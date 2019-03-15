@@ -1,3 +1,6 @@
+setJitCompilerOption("ion.warmup.trigger", 50);
+setJitCompilerOption("offthread-compilation.enable", 0);
+gcPreserveCode();
 
 var testSet1 = [1, "", Symbol("a"), true];
 var testSet2 = [1, "", Symbol("a"), true, { bar: 5 }];
@@ -32,7 +35,8 @@ var template = function (set) {
         // If we bailout in the inner loop, then x will have a smaller value
         // than the number of iterations.
         cont = assertEqIf(lastX > 0, x, set.length);
-        lastX = x;
+        if (inIon())
+            lastX = x;
         x = 0;
     }
     return y;

@@ -27,30 +27,30 @@ const TEST_URI =
   </style>
   <h1 class=title>Header</h1>`;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let { inspector, view} = yield openRuleView();
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const { inspector, view} = await openRuleView();
 
   info("Selecting the test node");
-  yield selectNode("h1", inspector);
+  await selectNode("h1", inspector);
 
   info("Focusing the property editable field");
-  let rule = getRuleViewRuleEditor(view, 1).rule;
-  let prop = rule.textProps[0];
+  const rule = getRuleViewRuleEditor(view, 1).rule;
+  const prop = rule.textProps[0];
 
   // Calculate offsets to click in the middle of the first box quad.
-  let rect = prop.editor.valueSpan.getBoundingClientRect();
-  let firstQuad = prop.editor.valueSpan.getBoxQuads()[0];
+  const rect = prop.editor.valueSpan.getBoundingClientRect();
+  const firstQuadBounds = prop.editor.valueSpan.getBoxQuads()[0].getBounds();
   // For a multiline value, the first quad left edge is not aligned with the
   // bounding rect left edge. The offsets expected by focusEditableField are
   // relative to the bouding rectangle, so we need to translate the x-offset.
-  let x = firstQuad.bounds.left - rect.left + firstQuad.bounds.width / 2;
+  const x = firstQuadBounds.left - rect.left + firstQuadBounds.width / 2;
   // The first quad top edge is aligned with the bounding top edge, no
   // translation needed here.
-  let y = firstQuad.bounds.height / 2;
+  const y = firstQuadBounds.height / 2;
 
   info("Focusing the css property editable value");
-  let editor = yield focusEditableField(view, prop.editor.valueSpan, x, y);
+  const editor = await focusEditableField(view, prop.editor.valueSpan, x, y);
 
   info("Moving the caret next to a number");
   let pos = editor.input.value.indexOf("0deg") + 1;
@@ -68,8 +68,8 @@ add_task(function* () {
   editor.input.setSelectionRange(pos, pos);
 
   info("Sending \", re\" to the editable field.");
-  for (let key of ", re") {
-    yield synthesizeKeyForAutocomplete(key, editor, view.styleWindow);
+  for (const key of ", re") {
+    await synthesizeKeyForAutocomplete(key, editor, view.styleWindow);
   }
 
   info("Check the autocomplete can still be displayed.");
@@ -83,25 +83,25 @@ add_task(function* () {
 
   info("Check autocomplete suggestions can be cycled using UP/DOWN arrows.");
 
-  yield synthesizeKeyForAutocomplete("VK_DOWN", editor, view.styleWindow);
-  ok(editor.popup.selectedIndex, 1, "Using DOWN cycles autocomplete values.");
-  yield synthesizeKeyForAutocomplete("VK_DOWN", editor, view.styleWindow);
-  ok(editor.popup.selectedIndex, 2, "Using DOWN cycles autocomplete values.");
-  yield synthesizeKeyForAutocomplete("VK_UP", editor, view.styleWindow);
+  await synthesizeKeyForAutocomplete("VK_DOWN", editor, view.styleWindow);
+  is(editor.popup.selectedIndex, 1, "Using DOWN cycles autocomplete values.");
+  await synthesizeKeyForAutocomplete("VK_DOWN", editor, view.styleWindow);
+  is(editor.popup.selectedIndex, 2, "Using DOWN cycles autocomplete values.");
+  await synthesizeKeyForAutocomplete("VK_UP", editor, view.styleWindow);
   is(editor.popup.selectedIndex, 1, "Using UP cycles autocomplete values.");
   item = editor.popup.getItemAtIndex(editor.popup.selectedIndex);
   is(item.label, "red", "Check autocomplete displays expected value.");
 
   info("Select the background-color suggestion with a mouse click.");
   let onRuleviewChanged = view.once("ruleview-changed");
-  let onSuggest = editor.once("after-suggest");
+  const onSuggest = editor.once("after-suggest");
 
-  let node = editor.popup._list.childNodes[editor.popup.selectedIndex];
+  const node = editor.popup._list.childNodes[editor.popup.selectedIndex];
   EventUtils.synthesizeMouseAtCenter(node, {}, editor.popup._window);
 
-  view.throttle.flush();
-  yield onSuggest;
-  yield onRuleviewChanged;
+  view.debounce.flush();
+  await onSuggest;
+  await onRuleviewChanged;
 
   is(editor.input.value, EXPECTED_CSS_VALUE,
     "Input value correctly autocompleted");
@@ -109,7 +109,7 @@ add_task(function* () {
   info("Press ESCAPE to leave the input.");
   onRuleviewChanged = view.once("ruleview-changed");
   EventUtils.synthesizeKey("VK_ESCAPE", {}, view.styleWindow);
-  yield onRuleviewChanged;
+  await onRuleviewChanged;
 });
 
 /**
@@ -124,8 +124,8 @@ add_task(function* () {
  * @param {Window} win
  *        Window in which the key event will be dispatched.
  */
-function* synthesizeKeyForAutocomplete(key, editor, win) {
-  let onSuggest = editor.once("after-suggest");
+async function synthesizeKeyForAutocomplete(key, editor, win) {
+  const onSuggest = editor.once("after-suggest");
   EventUtils.synthesizeKey(key, {}, win);
-  yield onSuggest;
+  await onSuggest;
 }

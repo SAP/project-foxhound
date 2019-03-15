@@ -1,5 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+"use strict";
 
 // Test that we can generate label structures from node description reports.
 
@@ -22,22 +23,27 @@ const breakdown = {
     by: "internalType",
     then: { by: "count", count: true, bytes: true },
   },
+  domNode: {
+    by: "descriptiveType",
+    then: { by: "count", count: true, bytes: true },
+  },
 };
 
 const description = {
   objects: {
-    other: { count: 0, bytes: 0 }
+    other: { count: 0, bytes: 0 },
   },
   strings: {
     "JSString": { count: 1, bytes: 42 },
   },
   scripts: {},
-  other: {}
+  other: {},
+  domNode: {},
 };
 
 const expected = [
   "strings",
-  "JSString"
+  "JSString",
 ];
 
 const shallowSize = 42;

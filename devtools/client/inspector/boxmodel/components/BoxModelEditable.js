@@ -4,62 +4,73 @@
 
 "use strict";
 
-const { addons, createClass, DOM: dom, PropTypes } =
-  require("devtools/client/shared/vendor/react");
+const { PureComponent } = require("devtools/client/shared/vendor/react");
+const dom = require("devtools/client/shared/vendor/react-dom-factories");
+const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const { editableItem } = require("devtools/client/shared/inplace-editor");
 
 const LONG_TEXT_ROTATE_LIMIT = 3;
 
-module.exports = createClass({
-
-  displayName: "BoxModelEditable",
-
-  propTypes: {
-    box: PropTypes.string.isRequired,
-    direction: PropTypes.string.isRequired,
-    property: PropTypes.string.isRequired,
-    textContent: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
-    onShowBoxModelEditor: PropTypes.func.isRequired,
-  },
-
-  mixins: [ addons.PureRenderMixin ],
+class BoxModelEditable extends PureComponent {
+  static get propTypes() {
+    return {
+      box: PropTypes.string.isRequired,
+      direction: PropTypes.string,
+      focusable: PropTypes.bool.isRequired,
+      level: PropTypes.string,
+      onShowBoxModelEditor: PropTypes.func.isRequired,
+      property: PropTypes.string.isRequired,
+      textContent: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+    };
+  }
 
   componentDidMount() {
-    let { property, onShowBoxModelEditor } = this.props;
+    const { property, onShowBoxModelEditor } = this.props;
 
     editableItem({
-      element: this.refs.span,
+      element: this.boxModelEditable,
     }, (element, event) => {
       onShowBoxModelEditor(element, event, property);
     });
-  },
+  }
 
   render() {
-    let {
+    const {
       box,
       direction,
+      focusable,
+      level,
       property,
       textContent,
     } = this.props;
 
-    let rotate = (direction == "left" || direction == "right") &&
+    const rotate = direction &&
+                 (direction == "left" || direction == "right") &&
+                 box !== "position" &&
                  textContent.toString().length > LONG_TEXT_ROTATE_LIMIT;
 
-    return dom.p(
-      {
-        className: `boxmodel-${box} boxmodel-${direction}
-          ${rotate ? "boxmodel-rotate" : ""}`,
-      },
-      dom.span(
+    return (
+      dom.p(
         {
-          className: "boxmodel-editable",
-          "data-box": box,
-          title: property,
-          ref: "span",
+          className: `boxmodel-${box}
+                      ${direction ? " boxmodel-" + direction : "boxmodel-" + property}
+                      ${rotate ? " boxmodel-rotate" : ""}`,
         },
-        textContent
+        dom.span(
+          {
+            className: "boxmodel-editable",
+            "data-box": box,
+            tabIndex: box === level && focusable ? 0 : -1,
+            title: property,
+            ref: span => {
+              this.boxModelEditable = span;
+            },
+          },
+          textContent
+        )
       )
     );
-  },
+  }
+}
 
-});
+module.exports = BoxModelEditable;

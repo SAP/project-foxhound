@@ -4,13 +4,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files('**'):
+    BUG_COMPONENT = ('Core', 'Window Management')
+
 TEST_DIRS += ['test']
 
 XPIDL_SOURCES += [
     'nsIDialogParamBlock.idl',
     'nsIPromptFactory.idl',
     'nsIPromptService.idl',
-    'nsIPromptService2.idl',
     'nsIWindowWatcher.idl',
     'nsPIPromptService.idl',
     'nsPIWindowWatcher.idl',
@@ -43,7 +45,7 @@ LOCAL_INCLUDES += [
     '/dom/base',
 ]
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
 
 include('/ipc/chromium/chromium-config.mozbuild')

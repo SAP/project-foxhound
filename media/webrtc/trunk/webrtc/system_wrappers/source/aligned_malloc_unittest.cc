@@ -8,28 +8,29 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/system_wrappers/include/aligned_malloc.h"
+#include "system_wrappers/include/aligned_malloc.h"
 
-#if _WIN32
+#include <memory>
+
+#ifdef _WIN32
 #include <windows.h>
 #else
 #include <stdint.h>
 #endif
 
-#include "testing/gtest/include/gtest/gtest.h"
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/typedefs.h"
+#include "test/gtest.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
 // Returns true if |size| and |alignment| are valid combinations.
 bool CorrectUsage(size_t size, size_t alignment) {
-  rtc::scoped_ptr<char, AlignedFreeDeleter> scoped(
+  std::unique_ptr<char, AlignedFreeDeleter> scoped(
       static_cast<char*>(AlignedMalloc(size, alignment)));
   if (scoped.get() == NULL) {
     return false;
   }
-  const uintptr_t scoped_address = reinterpret_cast<uintptr_t> (scoped.get());
+  const uintptr_t scoped_address = reinterpret_cast<uintptr_t>(scoped.get());
   return 0u == scoped_address % alignment;
 }
 
@@ -37,13 +38,13 @@ TEST(AlignedMalloc, GetRightAlign) {
   const size_t size = 100;
   const size_t alignment = 32;
   const size_t left_misalignment = 1;
-  rtc::scoped_ptr<char, AlignedFreeDeleter> scoped(
+  std::unique_ptr<char, AlignedFreeDeleter> scoped(
       static_cast<char*>(AlignedMalloc(size, alignment)));
   EXPECT_TRUE(scoped.get() != NULL);
-  const uintptr_t aligned_address = reinterpret_cast<uintptr_t> (scoped.get());
+  const uintptr_t aligned_address = reinterpret_cast<uintptr_t>(scoped.get());
   const uintptr_t misaligned_address = aligned_address - left_misalignment;
-  const char* misaligned_ptr = reinterpret_cast<const char*>(
-      misaligned_address);
+  const char* misaligned_ptr =
+      reinterpret_cast<const char*>(misaligned_address);
   const char* realigned_ptr = GetRightAlign(misaligned_ptr, alignment);
   EXPECT_EQ(scoped.get(), realigned_ptr);
 }
@@ -79,4 +80,3 @@ TEST(AlignedMalloc, AlignTo128Bytes) {
 }
 
 }  // namespace webrtc
-

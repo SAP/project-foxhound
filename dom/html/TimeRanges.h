@@ -8,33 +8,33 @@
 #define mozilla_dom_TimeRanges_h_
 
 #include "nsCOMPtr.h"
-#include "nsIDOMTimeRanges.h"
 #include "nsISupports.h"
 #include "nsTArray.h"
 #include "nsWrapperCache.h"
 #include "mozilla/ErrorResult.h"
+#include "TimeUnits.h"
 
 namespace mozilla {
+
 namespace dom {
-
 class TimeRanges;
-
-} // namespace dom
+}  // namespace dom
 
 namespace dom {
 
 // Implements media TimeRanges:
 // http://www.whatwg.org/specs/web-apps/current-work/multipage/video.html#timeranges
-class TimeRanges final : public nsIDOMTimeRanges,
-                         public nsWrapperCache
-{
-public:
+class TimeRanges final : public nsISupports, public nsWrapperCache {
+ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(TimeRanges)
-  NS_DECL_NSIDOMTIMERANGES
 
   TimeRanges();
   explicit TimeRanges(nsISupports* aParent);
+  explicit TimeRanges(const media::TimeIntervals& aTimeIntervals);
+  TimeRanges(nsISupports* aParent, const media::TimeIntervals& aTimeIntervals);
+
+  media::TimeIntervals ToTimeIntervals() const;
 
   void Add(double aStart, double aEnd);
 
@@ -53,37 +53,35 @@ public:
   // Mutate this TimeRange to be the intersection of this and aOtherRanges.
   void Intersection(const TimeRanges* aOtherRanges);
 
-  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
   nsISupports* GetParentObject() const;
 
-  uint32_t Length() const
-  {
-    return mRanges.Length();
-  }
+  uint32_t Length() const { return mRanges.Length(); }
 
-  virtual double Start(uint32_t aIndex, ErrorResult& aRv);
+  double Start(uint32_t aIndex, ErrorResult& aRv) const;
 
-  virtual double End(uint32_t aIndex, ErrorResult& aRv);
+  double End(uint32_t aIndex, ErrorResult& aRv) const;
+
+  double Start(uint32_t aIndex) const { return mRanges[aIndex].mStart; }
+
+  double End(uint32_t aIndex) const { return mRanges[aIndex].mEnd; }
 
   // Shift all values by aOffset seconds.
   void Shift(double aOffset);
 
-private:
+ private:
   ~TimeRanges();
 
   // Comparator which orders TimeRanges by start time. Used by Normalize().
-  struct TimeRange
-  {
-    TimeRange(double aStart, double aEnd)
-      : mStart(aStart),
-        mEnd(aEnd) {}
+  struct TimeRange {
+    TimeRange(double aStart, double aEnd) : mStart(aStart), mEnd(aEnd) {}
     double mStart;
     double mEnd;
   };
 
-  struct CompareTimeRanges
-  {
+  struct CompareTimeRanges {
     bool Equals(const TimeRange& aTr1, const TimeRange& aTr2) const {
       return aTr1.mStart == aTr2.mStart && aTr1.mEnd == aTr2.mEnd;
     }
@@ -93,11 +91,11 @@ private:
     }
   };
 
-  AutoTArray<TimeRange,4> mRanges;
+  AutoTArray<TimeRange, 4> mRanges;
 
   nsCOMPtr<nsISupports> mParent;
 
-public:
+ public:
   typedef nsTArray<TimeRange>::index_type index_type;
   static const index_type NoIndex = index_type(-1);
 
@@ -113,7 +111,7 @@ public:
   }
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_TimeRanges_h_
+#endif  // mozilla_dom_TimeRanges_h_

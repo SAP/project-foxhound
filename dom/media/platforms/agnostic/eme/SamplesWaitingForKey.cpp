@@ -14,29 +14,23 @@
 namespace mozilla {
 
 SamplesWaitingForKey::SamplesWaitingForKey(
-  CDMProxy* aProxy, TrackInfo::TrackType aType,
-  MediaEventProducer<TrackInfo::TrackType>* aOnWaitingForKey)
-  : mMutex("SamplesWaitingForKey")
-  , mProxy(aProxy)
-  , mType(aType)
-  , mOnWaitingForKeyEvent(aOnWaitingForKey)
-{
-}
+    CDMProxy* aProxy, TrackInfo::TrackType aType,
+    MediaEventProducer<TrackInfo::TrackType>* aOnWaitingForKey)
+    : mMutex("SamplesWaitingForKey"),
+      mProxy(aProxy),
+      mType(aType),
+      mOnWaitingForKeyEvent(aOnWaitingForKey) {}
 
-SamplesWaitingForKey::~SamplesWaitingForKey()
-{
-  Flush();
-}
+SamplesWaitingForKey::~SamplesWaitingForKey() { Flush(); }
 
 RefPtr<SamplesWaitingForKey::WaitForKeyPromise>
-SamplesWaitingForKey::WaitIfKeyNotUsable(MediaRawData* aSample)
-{
-  if (!aSample || !aSample->mCrypto.mValid || !mProxy) {
+SamplesWaitingForKey::WaitIfKeyNotUsable(MediaRawData* aSample) {
+  if (!aSample || !aSample->mCrypto.IsEncrypted() || !mProxy) {
     return WaitForKeyPromise::CreateAndResolve(aSample, __func__);
   }
-  CDMCaps::AutoLock caps(mProxy->Capabilites());
+  auto caps = mProxy->Capabilites().Lock();
   const auto& keyid = aSample->mCrypto.mKeyId;
-  if (caps.IsKeyUsable(keyid)) {
+  if (caps->IsKeyUsable(keyid)) {
     return WaitForKeyPromise::CreateAndResolve(aSample, __func__);
   }
   SampleEntry entry;
@@ -44,18 +38,16 @@ SamplesWaitingForKey::WaitIfKeyNotUsable(MediaRawData* aSample)
   RefPtr<WaitForKeyPromise> p = entry.mPromise.Ensure(__func__);
   {
     MutexAutoLock lock(mMutex);
-    mSamples.AppendElement(Move(entry));
+    mSamples.AppendElement(std::move(entry));
   }
   if (mOnWaitingForKeyEvent) {
     mOnWaitingForKeyEvent->Notify(mType);
   }
-  caps.NotifyWhenKeyIdUsable(aSample->mCrypto.mKeyId, this);
+  caps->NotifyWhenKeyIdUsable(aSample->mCrypto.mKeyId, this);
   return p;
 }
 
-void
-SamplesWaitingForKey::NotifyUsable(const CencKeyId& aKeyId)
-{
+void SamplesWaitingForKey::NotifyUsable(const CencKeyId& aKeyId) {
   MutexAutoLock lock(mMutex);
   size_t i = 0;
   while (i < mSamples.Length()) {
@@ -69,9 +61,7 @@ SamplesWaitingForKey::NotifyUsable(const CencKeyId& aKeyId)
   }
 }
 
-void
-SamplesWaitingForKey::Flush()
-{
+void SamplesWaitingForKey::Flush() {
   MutexAutoLock lock(mMutex);
   for (auto& sample : mSamples) {
     sample.mPromise.Reject(true, __func__);
@@ -79,4 +69,9 @@ SamplesWaitingForKey::Flush()
   mSamples.Clear();
 }
 
-} // namespace mozilla
+void SamplesWaitingForKey::BreakCycles() {
+  MutexAutoLock lock(mMutex);
+  mProxy = nullptr;
+}
+
+}  // namespace mozilla

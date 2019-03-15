@@ -7,12 +7,15 @@
 #ifndef mozilla_dom_DOMJSClass_h
 #define mozilla_dom_DOMJSClass_h
 
+#include "jsapi.h"
 #include "jsfriendapi.h"
+#include "js/PropertySpec.h"
+#include "js/Wrapper.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Likely.h"
 
-#include "mozilla/dom/PrototypeList.h" // auto-generated
+#include "mozilla/dom/PrototypeList.h"  // auto-generated
 
 #include "mozilla/dom/JSSlots.h"
 
@@ -42,13 +45,13 @@ namespace dom {
  *
  * Since we want [SecureContext] exposure to depend on the privileges of the
  * running code (rather than the privileges of an object's creator), this
- * function checks to see whether the given JSContext's Compartment is flagged
+ * function checks to see whether the given JSContext's Realm is flagged
  * as a Secure Context.  That allows us to make sure that system principal code
  * (which is marked as a Secure Context) can access Secure Context API on an
- * object in a different compartment, regardless of whether the other
- * compartment is a Secure Context or not.
+ * object in a different realm, regardless of whether the other realm is a
+ * Secure Context or not.
  *
- * Checking the JSContext's Compartment doesn't work for expanded principal
+ * Checking the JSContext's Realm doesn't work for expanded principal
  * globals accessing a Secure Context web page though (e.g. those used by frame
  * scripts).  To handle that we fall back to checking whether the JSObject came
  * from a Secure Context.
@@ -57,36 +60,34 @@ namespace dom {
  * call it in this header, and BindingUtils.h includes us (i.e. we'd have a
  * circular dependency between headers if it lived there).
  */
-inline bool
-IsSecureContextOrObjectIsFromSecureContext(JSContext* aCx, JSObject* aObj)
-{
-  return JS::CompartmentCreationOptionsRef(js::GetContextCompartment(aCx)).secureContext() ||
-         JS::CompartmentCreationOptionsRef(js::GetObjectCompartment(aObj)).secureContext();
+inline bool IsSecureContextOrObjectIsFromSecureContext(JSContext* aCx,
+                                                       JSObject* aObj) {
+  MOZ_ASSERT(!js::IsWrapper(aObj));
+  return JS::GetIsSecureContext(js::GetContextRealm(aCx)) ||
+         JS::GetIsSecureContext(js::GetNonCCWObjectRealm(aObj));
 }
 
-typedef bool
-(* ResolveOwnProperty)(JSContext* cx, JS::Handle<JSObject*> wrapper,
-                       JS::Handle<JSObject*> obj, JS::Handle<jsid> id,
-                       JS::MutableHandle<JS::PropertyDescriptor> desc);
+typedef bool (*ResolveOwnProperty)(
+    JSContext* cx, JS::Handle<JSObject*> wrapper, JS::Handle<JSObject*> obj,
+    JS::Handle<jsid> id, JS::MutableHandle<JS::PropertyDescriptor> desc);
 
-typedef bool
-(* EnumerateOwnProperties)(JSContext* cx, JS::Handle<JSObject*> wrapper,
-                           JS::Handle<JSObject*> obj,
-                           JS::AutoIdVector& props);
+typedef bool (*EnumerateOwnProperties)(JSContext* cx,
+                                       JS::Handle<JSObject*> wrapper,
+                                       JS::Handle<JSObject*> obj,
+                                       JS::AutoIdVector& props);
 
-typedef bool
-(* DeleteNamedProperty)(JSContext* cx, JS::Handle<JSObject*> wrapper,
-                        JS::Handle<JSObject*> obj, JS::Handle<jsid> id,
-                        JS::ObjectOpResult& opresult);
+typedef bool (*DeleteNamedProperty)(JSContext* cx,
+                                    JS::Handle<JSObject*> wrapper,
+                                    JS::Handle<JSObject*> obj,
+                                    JS::Handle<jsid> id,
+                                    JS::ObjectOpResult& opresult);
 
 // Returns true if the given global is of a type whose bit is set in
 // aNonExposedGlobals.
-bool
-IsNonExposedGlobal(JSContext* aCx, JSObject* aGlobal,
-                   uint32_t aNonExposedGlobals);
+bool IsNonExposedGlobal(JSContext* aCx, JSObject* aGlobal,
+                        uint32_t aNonExposedGlobals);
 
-struct ConstantSpec
-{
+struct ConstantSpec {
   const char* name;
   JS::Value value;
 };
@@ -104,7 +105,8 @@ static const uint32_t SharedWorkerGlobalScope = 1u << 3;
 static const uint32_t ServiceWorkerGlobalScope = 1u << 4;
 static const uint32_t WorkerDebuggerGlobalScope = 1u << 5;
 static const uint32_t WorkletGlobalScope = 1u << 6;
-} // namespace GlobalNames
+static const uint32_t AudioWorkletGlobalScope = 1u << 7;
+}  // namespace GlobalNames
 
 struct PrefableDisablers {
   inline bool isEnabled(JSContext* cx, JS::Handle<JSObject*> obj) const {
@@ -118,7 +120,7 @@ struct PrefableDisablers {
     // globals; our IDL parser enforces that.  So as long as we check our
     // exposure set before checking "enabled" we will be ok.
     if (nonExposedGlobals &&
-        IsNonExposedGlobal(cx, js::GetGlobalForObjectCrossCompartment(obj),
+        IsNonExposedGlobal(cx, JS::GetNonCCWObjectGlobal(obj),
                            nonExposedGlobals)) {
       return false;
     }
@@ -128,8 +130,7 @@ struct PrefableDisablers {
     if (secureContext && !IsSecureContextOrObjectIsFromSecureContext(cx, obj)) {
       return false;
     }
-    if (enabledFunc &&
-        !enabledFunc(cx, js::GetGlobalForObjectCrossCompartment(obj))) {
+    if (enabledFunc && !enabledFunc(cx, JS::GetNonCCWObjectGlobal(obj))) {
       return false;
     }
     return true;
@@ -151,9 +152,10 @@ struct PrefableDisablers {
   const PropertyEnabled enabledFunc;
 };
 
-template<typename T>
+template <typename T>
 struct Prefable {
   inline bool isEnabled(JSContext* cx, JS::Handle<JSObject*> obj) const {
+    MOZ_ASSERT(!js::IsWrapper(obj));
     if (MOZ_LIKELY(!disablers)) {
       return true;
     }
@@ -170,24 +172,74 @@ struct Prefable {
   const T* const specs;
 };
 
-// Conceptually, NativeProperties has seven (Prefable<T>*, jsid*, T*) trios
+enum PropertyType {
+  eStaticMethod,
+  eStaticAttribute,
+  eMethod,
+  eAttribute,
+  eUnforgeableMethod,
+  eUnforgeableAttribute,
+  eConstant,
+  ePropertyTypeCount
+};
+
+#define NUM_BITS_PROPERTY_INFO_TYPE 3
+#define NUM_BITS_PROPERTY_INFO_PREF_INDEX 13
+#define NUM_BITS_PROPERTY_INFO_SPEC_INDEX 16
+
+struct PropertyInfo {
+ private:
+  // MSVC generates static initializers if we store a jsid here, even if
+  // PropertyInfo has a constexpr constructor. See bug 1460341 and bug 1464036.
+  uintptr_t mIdBits;
+
+ public:
+  // One of PropertyType, will be used for accessing the corresponding Duo in
+  // NativePropertiesN.duos[].
+  uint32_t type : NUM_BITS_PROPERTY_INFO_TYPE;
+  // The index to the corresponding Preable in Duo.mPrefables[].
+  uint32_t prefIndex : NUM_BITS_PROPERTY_INFO_PREF_INDEX;
+  // The index to the corresponding spec in Duo.mPrefables[prefIndex].specs[].
+  uint32_t specIndex : NUM_BITS_PROPERTY_INFO_SPEC_INDEX;
+
+  void SetId(jsid aId) {
+    static_assert(sizeof(jsid) == sizeof(mIdBits),
+                  "jsid should fit in mIdBits");
+    mIdBits = JSID_BITS(aId);
+  }
+  MOZ_ALWAYS_INLINE jsid Id() const { return jsid::fromRawBits(mIdBits); }
+};
+
+static_assert(
+    ePropertyTypeCount <= 1ull << NUM_BITS_PROPERTY_INFO_TYPE,
+    "We have property type count that is > (1 << NUM_BITS_PROPERTY_INFO_TYPE)");
+
+// Conceptually, NativeProperties has seven (Prefable<T>*, PropertyInfo*) duos
 // (where T is one of JSFunctionSpec, JSPropertySpec, or ConstantSpec), one for
 // each of: static methods and attributes, methods and attributes, unforgeable
 // methods and attributes, and constants.
 //
-// That's 21 pointers, but in most instances most of the trios are all null,
-// and there are many instances. To save space we use a variable-length type,
+// That's 14 pointers, but in most instances most of the duos are all null, and
+// there are many instances. To save space we use a variable-length type,
 // NativePropertiesN<N>, to hold the data and getters to access it. It has N
-// actual trios (stored in trios[]), plus four bits for each of the 7 possible
-// trios: 1 bit that states if that trio is present, and 3 that state that
-// trio's offset (if present) in trios[].
+// actual duos (stored in duos[]), plus four bits for each of the 7 possible
+// duos: 1 bit that states if that duo is present, and 3 that state that duo's
+// offset (if present) in duos[].
 //
-// All trio accesses should be done via the getters, which contain assertions
-// that check we don't overrun the end of the struct. (The trio data members are
+// All duo accesses should be done via the getters, which contain assertions
+// that check we don't overrun the end of the struct. (The duo data members are
 // public only so they can be statically initialized.) These assertions should
 // never fail so long as (a) accesses to the variable-length part are guarded by
 // appropriate Has*() calls, and (b) all instances are well-formed, i.e. the
 // value of N matches the number of mHas* members that are true.
+//
+// We store all the property ids a NativePropertiesN owns in a single array of
+// PropertyInfo structs. Each struct contains an id and the information needed
+// to find the corresponding Prefable for the enabled check, as well as the
+// information needed to find the correct property descriptor in the
+// Prefable. We also store an array of indices into the PropertyInfo array,
+// sorted by bits of the corresponding jsid. Given a jsid, this allows us to
+// binary search for the index of the corresponding PropertyInfo, if any.
 //
 // Finally, we define a typedef of NativePropertiesN<7>, NativeProperties, which
 // we use as a "base" type used to refer to all instances of NativePropertiesN.
@@ -198,45 +250,41 @@ struct Prefable {
 //
 template <int N>
 struct NativePropertiesN {
-  // Trio structs are stored in the trios[] array, and each element in the
-  // array could require a different T. Therefore, we can't use the correct
-  // type for mPrefables and mSpecs. Instead we use void* and cast to the
-  // correct type in the getters.
-  struct Trio {
+  // Duo structs are stored in the duos[] array, and each element in the array
+  // could require a different T. Therefore, we can't use the correct type for
+  // mPrefables. Instead we use void* and cast to the correct type in the
+  // getters.
+  struct Duo {
     const /*Prefable<const T>*/ void* const mPrefables;
-    const jsid* const mIds;
-    const /*T*/ void* const mSpecs;
+    PropertyInfo* const mPropertyInfos;
   };
-
-  const int32_t iteratorAliasMethodIndex;
 
   constexpr const NativePropertiesN<7>* Upcast() const {
     return reinterpret_cast<const NativePropertiesN<7>*>(this);
   }
 
-#define DO(SpecT, FieldName) \
-public: \
-  /* The bitfields indicating the trio's presence and (if present) offset. */ \
-  const uint32_t mHas##FieldName##s:1; \
-  const uint32_t m##FieldName##sOffset:3; \
-private: \
-  const Trio* FieldName##sTrio() const { \
-    MOZ_ASSERT(Has##FieldName##s()); \
-    return &trios[m##FieldName##sOffset]; \
-  } \
-public: \
-  bool Has##FieldName##s() const { \
-    return mHas##FieldName##s; \
-  } \
-  const Prefable<const SpecT>* FieldName##s() const { \
-    return static_cast<const Prefable<const SpecT>*> \
-                      (FieldName##sTrio()->mPrefables); \
-  } \
-  const jsid* FieldName##Ids() const { \
-    return FieldName##sTrio()->mIds; \
-  } \
-  const SpecT* FieldName##Specs() const { \
-    return static_cast<const SpecT*>(FieldName##sTrio()->mSpecs); \
+  const PropertyInfo* PropertyInfos() const { return duos[0].mPropertyInfos; }
+
+#define DO(SpecT, FieldName)                                                 \
+ public:                                                                     \
+  /* The bitfields indicating the duo's presence and (if present) offset. */ \
+  const uint32_t mHas##FieldName##s : 1;                                     \
+  const uint32_t m##FieldName##sOffset : 3;                                  \
+                                                                             \
+ private:                                                                    \
+  const Duo* FieldName##sDuo() const {                                       \
+    MOZ_ASSERT(Has##FieldName##s());                                         \
+    return &duos[m##FieldName##sOffset];                                     \
+  }                                                                          \
+                                                                             \
+ public:                                                                     \
+  bool Has##FieldName##s() const { return mHas##FieldName##s; }              \
+  const Prefable<const SpecT>* FieldName##s() const {                        \
+    return static_cast<const Prefable<const SpecT>*>(                        \
+        FieldName##sDuo()->mPrefables);                                      \
+  }                                                                          \
+  PropertyInfo* FieldName##PropertyInfos() const {                           \
+    return FieldName##sDuo()->mPropertyInfos;                                \
   }
 
   DO(JSFunctionSpec, StaticMethod)
@@ -245,28 +293,37 @@ public: \
   DO(JSPropertySpec, Attribute)
   DO(JSFunctionSpec, UnforgeableMethod)
   DO(JSPropertySpec, UnforgeableAttribute)
-  DO(ConstantSpec,   Constant)
+  DO(ConstantSpec, Constant)
 
 #undef DO
 
-  const Trio trios[N];
+  // The index to the iterator method in MethodPropertyInfos() array.
+  const int16_t iteratorAliasMethodIndex;
+  // The number of PropertyInfo structs that the duos manage. This is the total
+  // count across all duos.
+  const uint16_t propertyInfoCount;
+  // The sorted indices array from sorting property ids, which will be used when
+  // we binary search for a property.
+  uint16_t* sortedPropertyIndices;
+
+  const Duo duos[N];
 };
 
-// Ensure the struct has the expected size. The 8 is for the
-// iteratorAliasMethodIndex plus the bitfields; the rest is for trios[].
-static_assert(sizeof(NativePropertiesN<1>) == 8 +  3*sizeof(void*), "1 size");
-static_assert(sizeof(NativePropertiesN<2>) == 8 +  6*sizeof(void*), "2 size");
-static_assert(sizeof(NativePropertiesN<3>) == 8 +  9*sizeof(void*), "3 size");
-static_assert(sizeof(NativePropertiesN<4>) == 8 + 12*sizeof(void*), "4 size");
-static_assert(sizeof(NativePropertiesN<5>) == 8 + 15*sizeof(void*), "5 size");
-static_assert(sizeof(NativePropertiesN<6>) == 8 + 18*sizeof(void*), "6 size");
-static_assert(sizeof(NativePropertiesN<7>) == 8 + 21*sizeof(void*), "7 size");
+// Ensure the struct has the expected size. The 8 is for the bitfields plus
+// iteratorAliasMethodIndex and idsLength; the rest is for the idsSortedIndex,
+// and duos[].
+static_assert(sizeof(NativePropertiesN<1>) == 8 + 3 * sizeof(void*), "1 size");
+static_assert(sizeof(NativePropertiesN<2>) == 8 + 5 * sizeof(void*), "2 size");
+static_assert(sizeof(NativePropertiesN<3>) == 8 + 7 * sizeof(void*), "3 size");
+static_assert(sizeof(NativePropertiesN<4>) == 8 + 9 * sizeof(void*), "4 size");
+static_assert(sizeof(NativePropertiesN<5>) == 8 + 11 * sizeof(void*), "5 size");
+static_assert(sizeof(NativePropertiesN<6>) == 8 + 13 * sizeof(void*), "6 size");
+static_assert(sizeof(NativePropertiesN<7>) == 8 + 15 * sizeof(void*), "7 size");
 
 // The "base" type.
 typedef NativePropertiesN<7> NativeProperties;
 
-struct NativePropertiesHolder
-{
+struct NativePropertiesHolder {
   const NativeProperties* regular;
   const NativeProperties* chromeOnly;
 };
@@ -274,8 +331,7 @@ struct NativePropertiesHolder
 // Helper structure for Xrays for DOM binding objects. The same instance is used
 // for instances, interface objects and interface prototype objects of a
 // specific interface.
-struct NativePropertyHooks
-{
+struct NativePropertyHooks {
   // The hook to call for resolving indexed or named properties. May be null if
   // there can't be any.
   ResolveOwnProperty mResolveOwnProperty;
@@ -323,17 +379,11 @@ enum DOMObjectType : uint8_t {
   eNamedPropertiesObject
 };
 
-inline
-bool
-IsInstance(DOMObjectType type)
-{
+inline bool IsInstance(DOMObjectType type) {
   return type == eInstance || type == eGlobalInstance;
 }
 
-inline
-bool
-IsInterfacePrototype(DOMObjectType type)
-{
+inline bool IsInterfacePrototype(DOMObjectType type) {
   return type == eInterfacePrototype || type == eGlobalInterfacePrototype;
 }
 
@@ -352,8 +402,7 @@ typedef JSObject* (*ProtoGetter)(JSContext* aCx);
 typedef JS::Handle<JSObject*> (*ProtoHandleGetter)(JSContext* aCx);
 
 // Special JSClass for reflected DOM objects.
-struct DOMJSClass
-{
+struct DOMJSClass {
   // It would be nice to just inherit from JSClass, but that precludes pure
   // compile-time initialization of the form |DOMJSClass = {...};|, since C++
   // only allows brace initialization for aggregate/POD types.
@@ -395,8 +444,7 @@ struct DOMJSClass
 };
 
 // Special JSClass for DOM interface and interface prototype objects.
-struct DOMIfaceAndProtoJSClass
-{
+struct DOMIfaceAndProtoJSClass {
   // It would be nice to just inherit from js::Class, but that precludes pure
   // compile-time initialization of the form
   // |DOMJSInterfaceAndPrototypeClass = {...};|, since C++ only allows brace
@@ -405,14 +453,14 @@ struct DOMIfaceAndProtoJSClass
 
   // Either eInterface, eInterfacePrototype, eGlobalInterfacePrototype or
   // eNamedPropertiesObject.
-  DOMObjectType mType; // uint8_t
+  DOMObjectType mType;  // uint8_t
 
   // Boolean indicating whether this object wants a @@hasInstance property
   // pointing to InterfaceHasInstance defined on it.  Only ever true for the
   // eInterface case.
   bool wantsInterfaceHasInstance;
 
-  const prototypes::ID mPrototypeID; // uint16_t
+  const prototypes::ID mPrototypeID;  // uint16_t
   const uint32_t mDepth;
 
   const NativePropertyHooks* mNativeHooks;
@@ -436,32 +484,26 @@ struct DOMIfaceAndProtoJSClass
 
 class ProtoAndIfaceCache;
 
-inline bool
-DOMGlobalHasProtoAndIFaceCache(JSObject* global)
-{
+inline bool DOMGlobalHasProtoAndIFaceCache(JSObject* global) {
   MOZ_ASSERT(js::GetObjectClass(global)->flags & JSCLASS_DOM_GLOBAL);
   // This can be undefined if we GC while creating the global
   return !js::GetReservedSlot(global, DOM_PROTOTYPE_SLOT).isUndefined();
 }
 
-inline bool
-HasProtoAndIfaceCache(JSObject* global)
-{
+inline bool HasProtoAndIfaceCache(JSObject* global) {
   if (!(js::GetObjectClass(global)->flags & JSCLASS_DOM_GLOBAL)) {
     return false;
   }
   return DOMGlobalHasProtoAndIFaceCache(global);
 }
 
-inline ProtoAndIfaceCache*
-GetProtoAndIfaceCache(JSObject* global)
-{
+inline ProtoAndIfaceCache* GetProtoAndIfaceCache(JSObject* global) {
   MOZ_ASSERT(js::GetObjectClass(global)->flags & JSCLASS_DOM_GLOBAL);
   return static_cast<ProtoAndIfaceCache*>(
-    js::GetReservedSlot(global, DOM_PROTOTYPE_SLOT).toPrivate());
+      js::GetReservedSlot(global, DOM_PROTOTYPE_SLOT).toPrivate());
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif /* mozilla_dom_DOMJSClass_h */

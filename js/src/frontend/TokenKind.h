@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sts=4 et sw=4 tw=99:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+ * vim: set ts=8 sts=2 et sw=2 tw=80:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,33 +7,35 @@
 #ifndef frontend_TokenKind_h
 #define frontend_TokenKind_h
 
+#include <stdint.h>
+
 /*
  * List of token kinds and their ranges.
  *
  * The format for each line is:
  *
- *   macro(<TOKEN_KIND_NAME>, <DESCRIPTION>)
+ *   MACRO(<TOKEN_KIND_NAME>, <DESCRIPTION>)
  *
  * or
  *
- *   range(<TOKEN_RANGE_NAME>, <TOKEN_KIND_NAME>)
+ *   RANGE(<TOKEN_RANGE_NAME>, <TOKEN_KIND_NAME>)
  *
  * where ;
  * <TOKEN_KIND_NAME> is a legal C identifier of the token, that will be used in
- * the JS engine source, with `TOK_` prefix.
+ * the JS engine source.
  *
  * <DESCRIPTION> is a string that describe about the token, and will be used in
  * error message.
  *
  * <TOKEN_RANGE_NAME> is a legal C identifier of the range that will be used to
- * JS engine source, with `TOK_` prefix. It should end with `_FIRST` or `_LAST`.
- * This is used to check TokenKind by range-testing:
- *   TOK_BINOP_FIRST <= tt && tt <= TOK_BINOP_LAST
+ * JS engine source. It should end with `First` or `Last`. This is used to check
+ * TokenKind by range-testing:
+ *   BinOpFirst <= tt && tt <= BinOpLast
  *
- * Second argument of `range` is the actual value of the <TOKEN_RANGE_NAME>,
- * should be same as one of <TOKEN_KIND_NAME> in other `macro`s.
+ * Second argument of `RANGE` is the actual value of the <TOKEN_RANGE_NAME>,
+ * should be same as one of <TOKEN_KIND_NAME> in other `MACRO`s.
  *
- * To use this macro, define two macros for `macro` and `range`, and pass them
+ * To use this macro, define two macros for `MACRO` and `RANGE`, and pass them
  * as arguments.
  *
  *   #define EMIT_TOKEN(name, desc) ...
@@ -50,285 +52,266 @@
  *
  * Note that this list does not contain ERROR and LIMIT.
  */
-#define FOR_EACH_TOKEN_KIND_WITH_RANGE(macro, range) \
-    macro(EOF,         "end of script") \
-    \
-    /* only returned by peekTokenSameLine() */ \
-    macro(EOL,          "line terminator") \
-    \
-    macro(SEMI,         "';'") \
-    macro(COMMA,        "','") \
-    macro(HOOK,         "'?'")    /* conditional */ \
-    macro(COLON,        "':'")    /* conditional */ \
-    macro(INC,          "'++'")   /* increment */ \
-    macro(DEC,          "'--'")   /* decrement */ \
-    macro(DOT,          "'.'")    /* member operator */ \
-    macro(TRIPLEDOT,    "'...'")  /* rest arguments and spread operator */ \
-    macro(LB,           "'['") \
-    macro(RB,           "']'") \
-    macro(LC,           "'{'") \
-    macro(RC,           "'}'") \
-    macro(LP,           "'('") \
-    macro(RP,           "')'") \
-    macro(NAME,         "identifier") \
-    macro(NUMBER,       "numeric literal") \
-    macro(STRING,       "string literal") \
-    \
-    /* start of template literal with substitutions */ \
-    macro(TEMPLATE_HEAD,    "'${'") \
-    /* template literal without substitutions */ \
-    macro(NO_SUBS_TEMPLATE, "template literal") \
-    \
-    macro(REGEXP,       "regular expression literal") \
-    macro(TRUE,         "boolean literal 'true'") \
-    range(RESERVED_WORD_LITERAL_FIRST, TRUE) \
-    macro(FALSE,        "boolean literal 'false'") \
-    macro(NULL,         "null literal") \
-    range(RESERVED_WORD_LITERAL_LAST, NULL) \
-    macro(THIS,         "keyword 'this'") \
-    range(KEYWORD_FIRST, THIS) \
-    macro(FUNCTION,     "keyword 'function'") \
-    macro(IF,           "keyword 'if'") \
-    macro(ELSE,         "keyword 'else'") \
-    macro(SWITCH,       "keyword 'switch'") \
-    macro(CASE,         "keyword 'case'") \
-    macro(DEFAULT,      "keyword 'default'") \
-    macro(WHILE,        "keyword 'while'") \
-    macro(DO,           "keyword 'do'") \
-    macro(FOR,          "keyword 'for'") \
-    macro(BREAK,        "keyword 'break'") \
-    macro(CONTINUE,     "keyword 'continue'") \
-    macro(VAR,          "keyword 'var'") \
-    macro(CONST,        "keyword 'const'") \
-    macro(WITH,         "keyword 'with'") \
-    macro(RETURN,       "keyword 'return'") \
-    macro(NEW,          "keyword 'new'") \
-    macro(DELETE,       "keyword 'delete'") \
-    macro(TRY,          "keyword 'try'") \
-    macro(CATCH,        "keyword 'catch'") \
-    macro(FINALLY,      "keyword 'finally'") \
-    macro(THROW,        "keyword 'throw'") \
-    macro(DEBUGGER,     "keyword 'debugger'") \
-    macro(EXPORT,       "keyword 'export'") \
-    macro(IMPORT,       "keyword 'import'") \
-    macro(CLASS,        "keyword 'class'") \
-    macro(EXTENDS,      "keyword 'extends'") \
-    macro(SUPER,        "keyword 'super'") \
-    range(KEYWORD_LAST, SUPER) \
-    \
-    /* contextual keywords */ \
-    macro(AS,           "'as'") \
-    range(CONTEXTUAL_KEYWORD_FIRST, AS) \
-    macro(ASYNC,        "'async'") \
-    macro(AWAIT,        "'await'") \
-    macro(EACH,         "'each'") \
-    macro(FROM,         "'from'") \
-    macro(GET,          "'get'") \
-    macro(LET,          "'let'") \
-    macro(OF,           "'of'") \
-    macro(SET,          "'set'") \
-    macro(STATIC,       "'static'") \
-    macro(TARGET,       "'target'") \
-    macro(YIELD,        "'yield'") \
-    range(CONTEXTUAL_KEYWORD_LAST, YIELD) \
-    \
-    /* future reserved words */ \
-    macro(ENUM,         "reserved word 'enum'") \
-    range(FUTURE_RESERVED_KEYWORD_FIRST, ENUM) \
-    range(FUTURE_RESERVED_KEYWORD_LAST, ENUM) \
-    \
-    /* reserved words in strict mode */ \
-    macro(IMPLEMENTS,   "reserved word 'implements'") \
-    range(STRICT_RESERVED_KEYWORD_FIRST, IMPLEMENTS) \
-    macro(INTERFACE,    "reserved word 'interface'") \
-    macro(PACKAGE,      "reserved word 'package'") \
-    macro(PRIVATE,      "reserved word 'private'") \
-    macro(PROTECTED,    "reserved word 'protected'") \
-    macro(PUBLIC,       "reserved word 'public'") \
-    range(STRICT_RESERVED_KEYWORD_LAST, PUBLIC) \
-    \
-    /* \
-     * The following token types occupy contiguous ranges to enable easy \
-     * range-testing. \
-     */ \
-    /* \
-     * Binary operators tokens, TOK_OR thru TOK_POW. These must be in the same \
-     * order as F(OR) and friends in FOR_EACH_PARSE_NODE_KIND in ParseNode.h. \
-     */ \
-    macro(OR,           "'||'")   /* logical or */ \
-    range(BINOP_FIRST, OR) \
-    macro(AND,          "'&&'")   /* logical and */ \
-    macro(BITOR,        "'|'")    /* bitwise-or */ \
-    macro(BITXOR,       "'^'")    /* bitwise-xor */ \
-    macro(BITAND,       "'&'")    /* bitwise-and */ \
-    \
-    /* Equality operation tokens, per TokenKindIsEquality. */ \
-    macro(STRICTEQ,     "'==='") \
-    range(EQUALITY_START, STRICTEQ) \
-    macro(EQ,           "'=='") \
-    macro(STRICTNE,     "'!=='") \
-    macro(NE,           "'!='") \
-    range(EQUALITY_LAST, NE) \
-    \
-    /* Relational ops, per TokenKindIsRelational. */ \
-    macro(LT,           "'<'") \
-    range(RELOP_START, LT) \
-    macro(LE,           "'<='") \
-    macro(GT,           "'>'") \
-    macro(GE,           "'>='") \
-    range(RELOP_LAST, GE) \
-    \
-    macro(INSTANCEOF,   "keyword 'instanceof'") \
-    range(KEYWORD_BINOP_FIRST, INSTANCEOF) \
-    macro(IN,           "keyword 'in'") \
-    range(KEYWORD_BINOP_LAST, IN) \
-    \
-    /* Shift ops, per TokenKindIsShift. */ \
-    macro(LSH,          "'<<'") \
-    range(SHIFTOP_START, LSH) \
-    macro(RSH,          "'>>'") \
-    macro(URSH,         "'>>>'") \
-    range(SHIFTOP_LAST, URSH) \
-    \
-    macro(ADD,          "'+'") \
-    macro(SUB,          "'-'") \
-    macro(MUL,          "'*'") \
-    macro(DIV,          "'/'") \
-    macro(MOD,          "'%'") \
-    macro(POW,          "'**'") \
-    range(BINOP_LAST, POW) \
-    \
-    /* Unary operation tokens. */ \
-    macro(TYPEOF,       "keyword 'typeof'") \
-    range(KEYWORD_UNOP_FIRST, TYPEOF) \
-    macro(VOID,         "keyword 'void'") \
-    range(KEYWORD_UNOP_LAST, VOID) \
-    macro(NOT,          "'!'") \
-    macro(BITNOT,       "'~'") \
-    \
-    macro(ARROW,        "'=>'")   /* function arrow */ \
-    \
-    /* Assignment ops, per TokenKindIsAssignment */ \
-    macro(ASSIGN,       "'='") \
-    range(ASSIGNMENT_START, ASSIGN) \
-    macro(ADDASSIGN,    "'+='") \
-    macro(SUBASSIGN,    "'-='") \
-    macro(BITORASSIGN,  "'|='") \
-    macro(BITXORASSIGN, "'^='") \
-    macro(BITANDASSIGN, "'&='") \
-    macro(LSHASSIGN,    "'<<='") \
-    macro(RSHASSIGN,    "'>>='") \
-    macro(URSHASSIGN,   "'>>>='") \
-    macro(MULASSIGN,    "'*='") \
-    macro(DIVASSIGN,    "'/='") \
-    macro(MODASSIGN,    "'%='") \
-    macro(POWASSIGN,    "'**='") \
-    range(ASSIGNMENT_LAST, POWASSIGN)
+#define FOR_EACH_TOKEN_KIND_WITH_RANGE(MACRO, RANGE)                        \
+  MACRO(Eof, "end of script")                                               \
+                                                                            \
+  /* only returned by peekTokenSameLine() */                                \
+  MACRO(Eol, "line terminator")                                             \
+                                                                            \
+  MACRO(Semi, "';'")                                                        \
+  MACRO(Comma, "','")                                                       \
+  MACRO(Hook, "'?'")        /* conditional */                               \
+  MACRO(Colon, "':'")       /* conditional */                               \
+  MACRO(Inc, "'++'")        /* increment */                                 \
+  MACRO(Dec, "'--'")        /* decrement */                                 \
+  MACRO(Dot, "'.'")         /* member operator */                           \
+  MACRO(TripleDot, "'...'") /* rest arguments and spread operator */        \
+  MACRO(LeftBracket, "'['")                                                 \
+  MACRO(RightBracket, "']'")                                                \
+  MACRO(LeftCurly, "'{'")                                                   \
+  MACRO(RightCurly, "'}'")                                                  \
+  MACRO(LeftParen, "'('")                                                   \
+  MACRO(RightParen, "')'")                                                  \
+  MACRO(Name, "identifier")                                                 \
+  MACRO(PrivateName, "private identifier")                                  \
+  MACRO(Number, "numeric literal")                                          \
+  MACRO(String, "string literal")                                           \
+  IF_BIGINT(MACRO(BigInt, "bigint literal"), )                              \
+                                                                            \
+  /* start of template literal with substitutions */                        \
+  MACRO(TemplateHead, "'${'")                                               \
+  /* template literal without substitutions */                              \
+  MACRO(NoSubsTemplate, "template literal")                                 \
+                                                                            \
+  MACRO(RegExp, "regular expression literal")                               \
+  MACRO(True, "boolean literal 'true'")                                     \
+  RANGE(ReservedWordLiteralFirst, True)                                     \
+  MACRO(False, "boolean literal 'false'")                                   \
+  MACRO(Null, "null literal")                                               \
+  RANGE(ReservedWordLiteralLast, Null)                                      \
+  MACRO(This, "keyword 'this'")                                             \
+  RANGE(KeywordFirst, This)                                                 \
+  MACRO(Function, "keyword 'function'")                                     \
+  MACRO(If, "keyword 'if'")                                                 \
+  MACRO(Else, "keyword 'else'")                                             \
+  MACRO(Switch, "keyword 'switch'")                                         \
+  MACRO(Case, "keyword 'case'")                                             \
+  MACRO(Default, "keyword 'default'")                                       \
+  MACRO(While, "keyword 'while'")                                           \
+  MACRO(Do, "keyword 'do'")                                                 \
+  MACRO(For, "keyword 'for'")                                               \
+  MACRO(Break, "keyword 'break'")                                           \
+  MACRO(Continue, "keyword 'continue'")                                     \
+  MACRO(Var, "keyword 'var'")                                               \
+  MACRO(Const, "keyword 'const'")                                           \
+  MACRO(With, "keyword 'with'")                                             \
+  MACRO(Return, "keyword 'return'")                                         \
+  MACRO(New, "keyword 'new'")                                               \
+  MACRO(Delete, "keyword 'delete'")                                         \
+  MACRO(Try, "keyword 'try'")                                               \
+  MACRO(Catch, "keyword 'catch'")                                           \
+  MACRO(Finally, "keyword 'finally'")                                       \
+  MACRO(Throw, "keyword 'throw'")                                           \
+  MACRO(Debugger, "keyword 'debugger'")                                     \
+  MACRO(Export, "keyword 'export'")                                         \
+  MACRO(Import, "keyword 'import'")                                         \
+  MACRO(Class, "keyword 'class'")                                           \
+  MACRO(Extends, "keyword 'extends'")                                       \
+  MACRO(Super, "keyword 'super'")                                           \
+  RANGE(KeywordLast, Super)                                                 \
+                                                                            \
+  /* contextual keywords */                                                 \
+  MACRO(As, "'as'")                                                         \
+  RANGE(ContextualKeywordFirst, As)                                         \
+  MACRO(Async, "'async'")                                                   \
+  MACRO(Await, "'await'")                                                   \
+  MACRO(Each, "'each'")                                                     \
+  MACRO(From, "'from'")                                                     \
+  MACRO(Get, "'get'")                                                       \
+  MACRO(Let, "'let'")                                                       \
+  MACRO(Meta, "'meta'")                                                     \
+  MACRO(Of, "'of'")                                                         \
+  MACRO(Set, "'set'")                                                       \
+  MACRO(Static, "'static'")                                                 \
+  MACRO(Target, "'target'")                                                 \
+  MACRO(Yield, "'yield'")                                                   \
+  RANGE(ContextualKeywordLast, Yield)                                       \
+                                                                            \
+  /* future reserved words */                                               \
+  MACRO(Enum, "reserved word 'enum'")                                       \
+  RANGE(FutureReservedKeywordFirst, Enum)                                   \
+  RANGE(FutureReservedKeywordLast, Enum)                                    \
+                                                                            \
+  /* reserved words in strict mode */                                       \
+  MACRO(Implements, "reserved word 'implements'")                           \
+  RANGE(StrictReservedKeywordFirst, Implements)                             \
+  MACRO(Interface, "reserved word 'interface'")                             \
+  MACRO(Package, "reserved word 'package'")                                 \
+  MACRO(Private, "reserved word 'private'")                                 \
+  MACRO(Protected, "reserved word 'protected'")                             \
+  MACRO(Public, "reserved word 'public'")                                   \
+  RANGE(StrictReservedKeywordLast, Public)                                  \
+                                                                            \
+  /*                                                                        \
+   * The following token types occupy contiguous ranges to enable easy      \
+   * range-testing.                                                         \
+   */                                                                       \
+  /*                                                                        \
+   * Binary operators tokens, Or thru Pow. These must be in the same        \
+   * order as F(Or) and friends in FOR_EACH_PARSE_NODE_KIND in ParseNode.h. \
+   */                                                                       \
+  MACRO(Pipeline, "'|>'")                                                   \
+  RANGE(BinOpFirst, Pipeline)                                               \
+  MACRO(Or, "'||'")    /* logical or */                                     \
+  MACRO(And, "'&&'")   /* logical and */                                    \
+  MACRO(BitOr, "'|'")  /* bitwise-or */                                     \
+  MACRO(BitXor, "'^'") /* bitwise-xor */                                    \
+  MACRO(BitAnd, "'&'") /* bitwise-and */                                    \
+                                                                            \
+  /* Equality operation tokens, per TokenKindIsEquality. */                 \
+  MACRO(StrictEq, "'==='")                                                  \
+  RANGE(EqualityStart, StrictEq)                                            \
+  MACRO(Eq, "'=='")                                                         \
+  MACRO(StrictNe, "'!=='")                                                  \
+  MACRO(Ne, "'!='")                                                         \
+  RANGE(EqualityLast, Ne)                                                   \
+                                                                            \
+  /* Relational ops, per TokenKindIsRelational. */                          \
+  MACRO(Lt, "'<'")                                                          \
+  RANGE(RelOpStart, Lt)                                                     \
+  MACRO(Le, "'<='")                                                         \
+  MACRO(Gt, "'>'")                                                          \
+  MACRO(Ge, "'>='")                                                         \
+  RANGE(RelOpLast, Ge)                                                      \
+                                                                            \
+  MACRO(InstanceOf, "keyword 'instanceof'")                                 \
+  RANGE(KeywordBinOpFirst, InstanceOf)                                      \
+  MACRO(In, "keyword 'in'")                                                 \
+  RANGE(KeywordBinOpLast, In)                                               \
+                                                                            \
+  /* Shift ops, per TokenKindIsShift. */                                    \
+  MACRO(Lsh, "'<<'")                                                        \
+  RANGE(ShiftOpStart, Lsh)                                                  \
+  MACRO(Rsh, "'>>'")                                                        \
+  MACRO(Ursh, "'>>>'")                                                      \
+  RANGE(ShiftOpLast, Ursh)                                                  \
+                                                                            \
+  MACRO(Add, "'+'")                                                         \
+  MACRO(Sub, "'-'")                                                         \
+  MACRO(Mul, "'*'")                                                         \
+  MACRO(Div, "'/'")                                                         \
+  MACRO(Mod, "'%'")                                                         \
+  MACRO(Pow, "'**'")                                                        \
+  RANGE(BinOpLast, Pow)                                                     \
+                                                                            \
+  /* Unary operation tokens. */                                             \
+  MACRO(TypeOf, "keyword 'typeof'")                                         \
+  RANGE(KeywordUnOpFirst, TypeOf)                                           \
+  MACRO(Void, "keyword 'void'")                                             \
+  RANGE(KeywordUnOpLast, Void)                                              \
+  MACRO(Not, "'!'")                                                         \
+  MACRO(BitNot, "'~'")                                                      \
+                                                                            \
+  MACRO(Arrow, "'=>'") /* function arrow */                                 \
+                                                                            \
+  /* Assignment ops, per TokenKindIsAssignment */                           \
+  MACRO(Assign, "'='")                                                      \
+  RANGE(AssignmentStart, Assign)                                            \
+  MACRO(AddAssign, "'+='")                                                  \
+  MACRO(SubAssign, "'-='")                                                  \
+  MACRO(BitOrAssign, "'|='")                                                \
+  MACRO(BitXorAssign, "'^='")                                               \
+  MACRO(BitAndAssign, "'&='")                                               \
+  MACRO(LshAssign, "'<<='")                                                 \
+  MACRO(RshAssign, "'>>='")                                                 \
+  MACRO(UrshAssign, "'>>>='")                                               \
+  MACRO(MulAssign, "'*='")                                                  \
+  MACRO(DivAssign, "'/='")                                                  \
+  MACRO(ModAssign, "'%='")                                                  \
+  MACRO(PowAssign, "'**='")                                                 \
+  RANGE(AssignmentLast, PowAssign)
 
 #define TOKEN_KIND_RANGE_EMIT_NONE(name, value)
-#define FOR_EACH_TOKEN_KIND(macro) \
-    FOR_EACH_TOKEN_KIND_WITH_RANGE(macro, TOKEN_KIND_RANGE_EMIT_NONE)
+#define FOR_EACH_TOKEN_KIND(MACRO) \
+  FOR_EACH_TOKEN_KIND_WITH_RANGE(MACRO, TOKEN_KIND_RANGE_EMIT_NONE)
 
 namespace js {
 namespace frontend {
 
 // Values of this type are used to index into arrays such as isExprEnding[],
 // so the first value must be zero.
-enum TokenKind {
-#define EMIT_ENUM(name, desc) TOK_##name,
-#define EMIT_ENUM_RANGE(name, value) TOK_##name = TOK_##value,
-    FOR_EACH_TOKEN_KIND_WITH_RANGE(EMIT_ENUM, EMIT_ENUM_RANGE)
+enum class TokenKind : uint8_t {
+#define EMIT_ENUM(name, desc) name,
+#define EMIT_ENUM_RANGE(name, value) name = value,
+  FOR_EACH_TOKEN_KIND_WITH_RANGE(EMIT_ENUM, EMIT_ENUM_RANGE)
 #undef EMIT_ENUM
 #undef EMIT_ENUM_RANGE
-    TOK_LIMIT                      // domain size
+      Limit  // domain size
 };
 
-inline bool
-TokenKindIsBinaryOp(TokenKind tt)
-{
-    return TOK_BINOP_FIRST <= tt && tt <= TOK_BINOP_LAST;
+inline bool TokenKindIsBinaryOp(TokenKind tt) {
+  return TokenKind::BinOpFirst <= tt && tt <= TokenKind::BinOpLast;
 }
 
-inline bool
-TokenKindIsEquality(TokenKind tt)
-{
-    return TOK_EQUALITY_START <= tt && tt <= TOK_EQUALITY_LAST;
+inline bool TokenKindIsEquality(TokenKind tt) {
+  return TokenKind::EqualityStart <= tt && tt <= TokenKind::EqualityLast;
 }
 
-inline bool
-TokenKindIsRelational(TokenKind tt)
-{
-    return TOK_RELOP_START <= tt && tt <= TOK_RELOP_LAST;
+inline bool TokenKindIsRelational(TokenKind tt) {
+  return TokenKind::RelOpStart <= tt && tt <= TokenKind::RelOpLast;
 }
 
-inline bool
-TokenKindIsShift(TokenKind tt)
-{
-    return TOK_SHIFTOP_START <= tt && tt <= TOK_SHIFTOP_LAST;
+inline bool TokenKindIsShift(TokenKind tt) {
+  return TokenKind::ShiftOpStart <= tt && tt <= TokenKind::ShiftOpLast;
 }
 
-inline bool
-TokenKindIsAssignment(TokenKind tt)
-{
-    return TOK_ASSIGNMENT_START <= tt && tt <= TOK_ASSIGNMENT_LAST;
+inline bool TokenKindIsAssignment(TokenKind tt) {
+  return TokenKind::AssignmentStart <= tt && tt <= TokenKind::AssignmentLast;
 }
 
-inline MOZ_MUST_USE bool
-TokenKindIsKeyword(TokenKind tt)
-{
-    return (TOK_KEYWORD_FIRST <= tt && tt <= TOK_KEYWORD_LAST) ||
-           (TOK_KEYWORD_BINOP_FIRST <= tt && tt <= TOK_KEYWORD_BINOP_LAST) ||
-           (TOK_KEYWORD_UNOP_FIRST <= tt && tt <= TOK_KEYWORD_UNOP_LAST);
+inline MOZ_MUST_USE bool TokenKindIsKeyword(TokenKind tt) {
+  return (TokenKind::KeywordFirst <= tt && tt <= TokenKind::KeywordLast) ||
+         (TokenKind::KeywordBinOpFirst <= tt &&
+          tt <= TokenKind::KeywordBinOpLast) ||
+         (TokenKind::KeywordUnOpFirst <= tt &&
+          tt <= TokenKind::KeywordUnOpLast);
 }
 
-inline MOZ_MUST_USE bool
-TokenKindIsContextualKeyword(TokenKind tt)
-{
-    return TOK_CONTEXTUAL_KEYWORD_FIRST <= tt && tt <= TOK_CONTEXTUAL_KEYWORD_LAST;
+inline MOZ_MUST_USE bool TokenKindIsContextualKeyword(TokenKind tt) {
+  return TokenKind::ContextualKeywordFirst <= tt &&
+         tt <= TokenKind::ContextualKeywordLast;
 }
 
-inline MOZ_MUST_USE bool
-TokenKindIsFutureReservedWord(TokenKind tt)
-{
-    return TOK_FUTURE_RESERVED_KEYWORD_FIRST <= tt && tt <= TOK_FUTURE_RESERVED_KEYWORD_LAST;
+inline MOZ_MUST_USE bool TokenKindIsFutureReservedWord(TokenKind tt) {
+  return TokenKind::FutureReservedKeywordFirst <= tt &&
+         tt <= TokenKind::FutureReservedKeywordLast;
 }
 
-inline MOZ_MUST_USE bool
-TokenKindIsStrictReservedWord(TokenKind tt)
-{
-    return TOK_STRICT_RESERVED_KEYWORD_FIRST <= tt && tt <= TOK_STRICT_RESERVED_KEYWORD_LAST;
+inline MOZ_MUST_USE bool TokenKindIsStrictReservedWord(TokenKind tt) {
+  return TokenKind::StrictReservedKeywordFirst <= tt &&
+         tt <= TokenKind::StrictReservedKeywordLast;
 }
 
-inline MOZ_MUST_USE bool
-TokenKindIsReservedWordLiteral(TokenKind tt)
-{
-    return TOK_RESERVED_WORD_LITERAL_FIRST <= tt && tt <= TOK_RESERVED_WORD_LITERAL_LAST;
+inline MOZ_MUST_USE bool TokenKindIsReservedWordLiteral(TokenKind tt) {
+  return TokenKind::ReservedWordLiteralFirst <= tt &&
+         tt <= TokenKind::ReservedWordLiteralLast;
 }
 
-inline MOZ_MUST_USE bool
-TokenKindIsReservedWord(TokenKind tt)
-{
-    return TokenKindIsKeyword(tt) ||
-           TokenKindIsFutureReservedWord(tt) ||
-           TokenKindIsReservedWordLiteral(tt);
+inline MOZ_MUST_USE bool TokenKindIsReservedWord(TokenKind tt) {
+  return TokenKindIsKeyword(tt) || TokenKindIsFutureReservedWord(tt) ||
+         TokenKindIsReservedWordLiteral(tt);
 }
 
-inline MOZ_MUST_USE bool
-TokenKindIsPossibleIdentifier(TokenKind tt)
-{
-    return tt == TOK_NAME ||
-           TokenKindIsContextualKeyword(tt) ||
-           TokenKindIsStrictReservedWord(tt);
+inline MOZ_MUST_USE bool TokenKindIsPossibleIdentifier(TokenKind tt) {
+  return tt == TokenKind::Name || tt == TokenKind::PrivateName ||
+         TokenKindIsContextualKeyword(tt) || TokenKindIsStrictReservedWord(tt);
 }
 
-inline MOZ_MUST_USE bool
-TokenKindIsPossibleIdentifierName(TokenKind tt)
-{
-    return TokenKindIsPossibleIdentifier(tt) ||
-           TokenKindIsReservedWord(tt);
+inline MOZ_MUST_USE bool TokenKindIsPossibleIdentifierName(TokenKind tt) {
+  return TokenKindIsPossibleIdentifier(tt) || TokenKindIsReservedWord(tt);
 }
 
-} // namespace frontend
-} // namespace js
+}  // namespace frontend
+}  // namespace js
 
 #endif /* frontend_TokenKind_h */

@@ -28,9 +28,7 @@ void SkBigPicture::playback(SkCanvas* canvas, AbortCallback* callback) const {
     SkASSERT(canvas);
 
     // If the query contains the whole picture, don't bother with the BBH.
-    SkRect clipBounds = { 0, 0, 0, 0 };
-    (void)canvas->getClipBounds(&clipBounds);
-    const bool useBBH = !clipBounds.contains(this->cullRect());
+    const bool useBBH = !canvas->getLocalClipBounds().contains(this->cullRect());
 
     SkRecordDraw(*fRecord,
                  canvas,
@@ -55,14 +53,7 @@ void SkBigPicture::partialPlayback(SkCanvas* canvas,
                         initialCTM);
 }
 
-const SkBigPicture::Analysis& SkBigPicture::analysis() const {
-    fAnalysisOnce([this] { fAnalysis.init(*fRecord); });
-    return fAnalysis;
-}
-
 SkRect SkBigPicture::cullRect()            const { return fCullRect; }
-bool   SkBigPicture::willPlayBackBitmaps() const { return this->analysis().fWillPlaybackBitmaps; }
-int    SkBigPicture::numSlowPaths() const { return this->analysis().fNumSlowPathsAndDashEffects; }
 int    SkBigPicture::approximateOpCount()   const { return fRecord->count(); }
 size_t SkBigPicture::approximateBytesUsed() const {
     size_t bytes = sizeof(*this) + fRecord->bytesUsed() + fApproxBytesUsedBySubPictures;
@@ -78,17 +69,3 @@ SkPicture const* const* SkBigPicture::drawablePicts() const {
     return fDrawablePicts ? fDrawablePicts->begin() : nullptr;
 }
 
-void SkBigPicture::Analysis::init(const SkRecord& record) {
-    TRACE_EVENT0("disabled-by-default-skia", "SkBigPicture::Analysis::init()");
-    SkBitmapHunter bitmap;
-    SkPathCounter  path;
-
-    bool hasBitmap = false;
-    for (int i = 0; i < record.count(); i++) {
-        hasBitmap = hasBitmap || record.visit(i, bitmap);
-        record.visit(i, path);
-    }
-
-    fWillPlaybackBitmaps        = hasBitmap;
-    fNumSlowPathsAndDashEffects = SkTMin<int>(path.fNumSlowPathsAndDashEffects, 255);
-}

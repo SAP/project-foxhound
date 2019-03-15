@@ -8,6 +8,7 @@
 #ifndef SkBigPicture_DEFINED
 #define SkBigPicture_DEFINED
 
+#include "SkNoncopyable.h"
 #include "SkOnce.h"
 #include "SkPicture.h"
 #include "SkRect.h"
@@ -43,7 +44,6 @@ public:
 // SkPicture overrides
     void playback(SkCanvas*, AbortCallback*) const override;
     SkRect cullRect() const override;
-    bool willPlayBackBitmaps() const override;
     int approximateOpCount() const override;
     size_t approximateBytesUsed() const override;
     const SkBigPicture* asSkBigPicture() const override { return this; }
@@ -54,31 +54,18 @@ public:
                          int stop,
                          const SkMatrix& initialCTM) const;
 // Used by GrRecordReplaceDraw
-    const SkBBoxHierarchy* bbh() const { return fBBH; }
-    const SkRecord*     record() const { return fRecord; }
+    const SkBBoxHierarchy* bbh() const { return fBBH.get(); }
+    const SkRecord*     record() const { return fRecord.get(); }
 
 private:
-    struct Analysis {
-        void init(const SkRecord&);
-
-        bool suitableForGpuRasterization(const char** reason) const;
-
-        uint8_t fNumSlowPathsAndDashEffects;
-        bool    fWillPlaybackBitmaps : 1;
-    };
-
-    int numSlowPaths() const override;
-    const Analysis& analysis() const;
     int drawableCount() const;
     SkPicture const* const* drawablePicts() const;
 
-    const SkRect                          fCullRect;
-    const size_t                          fApproxBytesUsedBySubPictures;
-    mutable SkOnce                        fAnalysisOnce;
-    mutable Analysis                      fAnalysis;
-    SkAutoTUnref<const SkRecord>          fRecord;
-    SkAutoTDelete<const SnapshotArray>    fDrawablePicts;
-    SkAutoTUnref<const SkBBoxHierarchy>   fBBH;
+    const SkRect                         fCullRect;
+    const size_t                         fApproxBytesUsedBySubPictures;
+    sk_sp<const SkRecord>                fRecord;
+    std::unique_ptr<const SnapshotArray> fDrawablePicts;
+    sk_sp<const SkBBoxHierarchy>         fBBH;
 };
 
 #endif//SkBigPicture_DEFINED

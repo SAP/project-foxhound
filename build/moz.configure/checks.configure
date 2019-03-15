@@ -11,6 +11,8 @@
 # lot of them, let's stack them all here. When adding a new one, put it in the
 # _declare_exceptions template, and add it to the return statement. Then
 # destructure in the assignment below the function declaration.
+
+
 @template
 @imports(_from='__builtin__', _import='Exception')
 def _declare_exceptions():
@@ -20,6 +22,7 @@ def _declare_exceptions():
         Debugging messages emitted from the decorated function will also be
         printed out.'''
     return (FatalCheckError,)
+
 
 (FatalCheckError,) = _declare_exceptions()
 
@@ -42,6 +45,8 @@ del _declare_exceptions
 #       ...
 # An optional callback can be given, that will be used to format the returned
 # value when displaying it.
+
+
 @template
 def checking(what, callback=None):
     def decorator(func):
@@ -85,6 +90,10 @@ def checking(what, callback=None):
 #   that will cause the given path(s) to be searched rather than $PATH. Input
 #   paths may either be individual paths or delimited by os.pathsep, to allow
 #   passing $PATH (for example) as an element.
+# - `paths_have_priority` means that any programs found early in the PATH
+#   will be prioritized over programs found later in the PATH.  The default is
+#   False, meaning that any of the programs earlier in the program list will be
+#   given priority, no matter where in the PATH they are found.
 #
 # The simplest form is:
 #   check_prog('PROG', ('a', 'b'))
@@ -94,10 +103,10 @@ def checking(what, callback=None):
 @template
 @imports(_from='mozbuild.shellutil', _import='quote')
 def check_prog(var, progs, what=None, input=None, allow_missing=False,
-               paths=None):
-    if input:
+               paths=None, paths_have_priority=False, when=None):
+    if input is not None:
         # Wrap input with type checking and normalization.
-        @depends(input)
+        @depends(input, when=when)
         def input(value):
             if not value:
                 return
@@ -108,7 +117,7 @@ def check_prog(var, progs, what=None, input=None, allow_missing=False,
             configure_error('input must resolve to a tuple or a list with a '
                             'single element, or a string')
     else:
-        option(env=var, nargs=1,
+        option(env=var, nargs=1, when=when,
                help='Path to %s' % (what or 'the %s program' % var.lower()))
         input = var
     what = what or var.lower()
@@ -117,7 +126,7 @@ def check_prog(var, progs, what=None, input=None, allow_missing=False,
     progs = dependable(progs)
     paths = dependable(paths)
 
-    @depends_if(input, progs, paths)
+    @depends_if(input, progs, paths, when=when)
     @checking('for %s' % what, lambda x: quote(x) if x else 'not found')
     def check(value, progs, paths):
         if progs is None:
@@ -126,16 +135,24 @@ def check_prog(var, progs, what=None, input=None, allow_missing=False,
         if not isinstance(progs, (tuple, list)):
             configure_error('progs must resolve to a list or tuple!')
 
-        for prog in value or progs:
-            log.debug('%s: Trying %s', var.lower(), quote(prog))
-            result = find_program(prog, paths)
-            if result:
-                return result
+        if paths_have_priority:
+            for path in paths:
+                for prog in value or progs:
+                    log.debug('%s: Trying %s', var.lower(), quote(prog))
+                    result = find_program(prog, [path])
+                    if result:
+                        return result
+        else:
+            for prog in value or progs:
+                log.debug('%s: Trying %s', var.lower(), quote(prog))
+                result = find_program(prog, paths)
+                if result:
+                    return result
 
         if not allow_missing or value:
             raise FatalCheckError('Cannot find %s' % what)
 
-    @depends_if(check, progs)
+    @depends_if(check, progs, when=when)
     def normalized_for_config(value, progs):
         return ':' if value is None else value
 

@@ -1,0 +1,75 @@
+// Type sizes
+$header-font-size: 17;
+$header-line-height: 24;
+$excerpt-font-size: 14;
+$excerpt-line-height: 20;
+
+.ds-card {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+
+  &:hover {
+    header {
+      color: $blue-60;
+    }
+  }
+
+  &:active {
+    header {
+      color: $blue-70;
+    }
+  }
+
+  .img-wrapper {
+    width: 100%;
+  }
+
+  .img {
+    @include image-as-background;
+    height: 0;
+    padding-top: 50%; // 2:1 aspect ratio
+  }
+
+  .meta {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    padding: 16px;
+
+    .info-wrap {
+      flex-grow: 1;
+    }
+
+    .title {
+      // show only 3 lines of copy
+      @include limit-visibile-lines(3, $header-line-height, $header-font-size);
+      font-weight: 600;
+    }
+
+    .excerpt {
+      // show only 3 lines of copy
+      @include limit-visibile-lines(3, $excerpt-line-height, $excerpt-font-size);
+    }
+
+    .context,
+    .source {
+      font-size: 13px;
+      color: $teal-80;
+    }
+  }
+
+  header {
+    line-height: $header-line-height * 1px;
+    font-size: $header-font-size * 1px;
+    color: $grey-90;
+
+  }
+
+  p {
+    font-size: $excerpt-font-size * 1px;
+    line-height: $excerpt-line-height * 1px;
+    color: $grey-50;
+    margin: 8px 0 0;
+  }
+}

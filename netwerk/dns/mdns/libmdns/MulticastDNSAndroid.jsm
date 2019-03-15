@@ -5,18 +5,15 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["MulticastDNS"];
+var EXPORTED_SYMBOLS = ["MulticastDNS"];
 
-const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
-
-Cu.import("resource://gre/modules/Messaging.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Messaging.jsm");
 
 const DEBUG = false;
 
 var log = function(s) {};
 if (DEBUG) {
-  log = Cu.import("resource://gre/modules/AndroidLog.jsm", {})
+  log = ChromeUtils.import("resource://gre/modules/AndroidLog.jsm", {})
           .AndroidLog.d.bind(null, "MulticastDNS");
 }
 
@@ -25,7 +22,7 @@ const FAILURE_INTERNAL_ERROR = -65537;
 // Helper function for sending commands to Java.
 function send(type, data, callback) {
   let msg = {
-    type: type
+    type,
   };
 
   for (let i in data) {
@@ -48,7 +45,7 @@ ServiceManager.prototype = {
   listeners: {},
   numListeners: 0,
 
-  onEvent: function(event, data, callback) {
+  onEvent(event, data, callback) {
     if (event === "NsdManager:ServiceFound") {
       this.onServiceFound();
     } else if (event === "NsdManager:ServiceLost") {
@@ -56,7 +53,7 @@ ServiceManager.prototype = {
     }
   },
 
-  registerEvent: function() {
+  registerEvent() {
     log("registerEvent");
     EventDispatcher.instance.registerListener(this, [
       "NsdManager:ServiceFound",
@@ -64,7 +61,7 @@ ServiceManager.prototype = {
     ]);
   },
 
-  unregisterEvent: function() {
+  unregisterEvent() {
     log("unregisterEvent");
     EventDispatcher.instance.unregisterListener(this, [
       "NsdManager:ServiceFound",
@@ -72,7 +69,7 @@ ServiceManager.prototype = {
     ]);
   },
 
-  addListener: function(aServiceType, aListener) {
+  addListener(aServiceType, aListener) {
     log("addListener: " + aServiceType + ", " + aListener);
 
     if (!this.listeners[aServiceType]) {
@@ -93,7 +90,7 @@ ServiceManager.prototype = {
     log("listener added: " + this);
   },
 
-  removeListener: function(aServiceType, aListener) {
+  removeListener(aServiceType, aListener) {
     log("removeListener: " + aServiceType + ", " + aListener);
 
     if (!this.listeners[aServiceType]) {
@@ -116,7 +113,7 @@ ServiceManager.prototype = {
     log("listener removed" + this);
   },
 
-  onServiceFound: function(aServiceInfo) {
+  onServiceFound(aServiceInfo) {
     let listeners = this.listeners[aServiceInfo.serviceType];
     if (listeners) {
       for (let listener of listeners) {
@@ -128,7 +125,7 @@ ServiceManager.prototype = {
     return {};
   },
 
-  onServiceLost: function(aServiceInfo) {
+  onServiceLost(aServiceInfo) {
     let listeners = this.listeners[aServiceInfo.serviceType];
     if (listeners) {
       for (let listener of listeners) {
@@ -138,7 +135,7 @@ ServiceManager.prototype = {
       log("no listener");
     }
     return {};
-  }
+  },
 };
 
 // make an object from nsIPropertyBag2
@@ -148,13 +145,11 @@ function parsePropertyBag2(bag) {
   }
 
   let attributes = [];
-  let enumerator = bag.enumerator;
-  while (enumerator.hasMoreElements()) {
-    let name = enumerator.getNext().QueryInterface(Ci.nsIProperty).name;
+  for (let {name} of bag.enumerator) {
     let value = bag.getPropertyAsACString(name);
     attributes.push({
       "name": name,
-      "value": value
+      "value": value,
     });
   }
 
@@ -166,12 +161,12 @@ function MulticastDNS() {
 }
 
 MulticastDNS.prototype = {
-  startDiscovery: function(aServiceType, aListener) {
+  startDiscovery(aServiceType, aListener) {
     this.serviceManager.addListener(aServiceType, aListener);
 
     let serviceInfo = {
       serviceType: aServiceType,
-      uniqueId: aListener.uuid
+      uniqueId: aListener.uuid,
     };
 
     send("NsdManager:DiscoverServices", serviceInfo, (result, err) => {
@@ -185,11 +180,11 @@ MulticastDNS.prototype = {
     });
   },
 
-  stopDiscovery: function(aServiceType, aListener) {
+  stopDiscovery(aServiceType, aListener) {
     this.serviceManager.removeListener(aServiceType, aListener);
 
     let serviceInfo = {
-      uniqueId: aListener.uuid
+      uniqueId: aListener.uuid,
     };
 
     send("NsdManager:StopServiceDiscovery", serviceInfo, (result, err) => {
@@ -202,26 +197,26 @@ MulticastDNS.prototype = {
     });
   },
 
-  registerService: function(aServiceInfo, aListener) {
+  registerService(aServiceInfo, aListener) {
     let serviceInfo = {
       port: aServiceInfo.port,
       serviceType: aServiceInfo.serviceType,
-      uniqueId: aListener.uuid
+      uniqueId: aListener.uuid,
     };
 
     try {
       serviceInfo.host = aServiceInfo.host;
-    } catch(e) {
+    } catch (e) {
       // host unspecified
     }
     try {
       serviceInfo.serviceName = aServiceInfo.serviceName;
-    } catch(e) {
+    } catch (e) {
       // serviceName unspecified
     }
     try {
       serviceInfo.attributes = parsePropertyBag2(aServiceInfo.attributes);
-    } catch(e) {
+    } catch (e) {
       // attributes unspecified
     }
 
@@ -235,9 +230,9 @@ MulticastDNS.prototype = {
     });
   },
 
-  unregisterService: function(aServiceInfo, aListener) {
+  unregisterService(aServiceInfo, aListener) {
     let serviceInfo = {
-      uniqueId: aListener.uuid
+      uniqueId: aListener.uuid,
     };
 
     send("NsdManager:UnregisterService", serviceInfo, (result, err) => {
@@ -250,7 +245,7 @@ MulticastDNS.prototype = {
     });
   },
 
-  resolveService: function(aServiceInfo, aListener) {
+  resolveService(aServiceInfo, aListener) {
     send("NsdManager:ResolveService", aServiceInfo, (result, err) => {
       if (err) {
         log("onResolveFailed: (" + err + ")");
@@ -259,5 +254,5 @@ MulticastDNS.prototype = {
         aListener.onServiceResolved(result);
       }
     });
-  }
+  },
 };

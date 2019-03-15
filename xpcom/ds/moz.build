@@ -7,10 +7,6 @@
 XPIDL_SOURCES += [
     'nsIArray.idl',
     'nsIArrayExtensions.idl',
-    'nsIAtom.idl',
-    'nsIAtomService.idl',
-    'nsICollection.idl',
-    'nsIEnumerator.idl',
     'nsIHashable.idl',
     'nsIINIParser.idl',
     'nsIMutableArray.idl',
@@ -24,7 +20,6 @@ XPIDL_SOURCES += [
     'nsISerializable.idl',
     'nsISimpleEnumerator.idl',
     'nsIStringEnumerator.idl',
-    'nsISupportsArray.idl',
     'nsISupportsIterators.idl',
     'nsISupportsPrimitives.idl',
     'nsIVariant.idl',
@@ -44,10 +39,12 @@ if CONFIG['OS_ARCH'] == 'WINNT':
 XPIDL_MODULE = 'xpcom_ds'
 
 EXPORTS += [
+    '!nsGkAtomConsts.h',
+    '!nsGkAtomList.h',
     'nsArray.h',
     'nsArrayEnumerator.h',
     'nsArrayUtils.h',
-    'nsAtomService.h',
+    'nsAtom.h',
     'nsBaseHashtable.h',
     'nsCharSeparatedTokenizer.h',
     'nsCheapSets.h',
@@ -58,18 +55,21 @@ EXPORTS += [
     'nsDeque.h',
     'nsEnumeratorUtils.h',
     'nsExpirationTracker.h',
+    'nsGkAtoms.h',
     'nsHashKeys.h',
     'nsHashPropertyBag.h',
     'nsInterfaceHashtable.h',
     'nsJSThingHashtable.h',
     'nsMathUtils.h',
+    'nsPersistentProperties.h',
     'nsPointerHashKeys.h',
+    'nsProperties.h',
     'nsQuickSort.h',
     'nsRefPtrHashtable.h',
-    'nsStaticAtom.h',
+    'nsSimpleEnumerator.h',
+    'nsStaticAtomUtils.h',
     'nsStaticNameTable.h',
     'nsStringEnumerator.h',
-    'nsSupportsArray.h',
     'nsSupportsPrimitives.h',
     'nsTArray-inl.h',
     'nsTArray.h',
@@ -83,19 +83,26 @@ EXPORTS += [
 ]
 
 EXPORTS.mozilla += [
+    'ArenaAllocator.h',
+    'ArenaAllocatorExtensions.h',
     'ArrayIterator.h',
+    'AtomArray.h',
+    'Dafsa.h',
     'IncrementalTokenizer.h',
+    'MruCache.h',
     'Observer.h',
+    'PerfectHash.h',
+    'SimpleEnumerator.h',
     'StickyTimeDuration.h',
     'Tokenizer.h',
 ]
 
 UNIFIED_SOURCES += [
+    'Dafsa.cpp',
     'IncrementalTokenizer.cpp',
     'nsArray.cpp',
     'nsArrayEnumerator.cpp',
     'nsArrayUtils.cpp',
-    'nsAtomService.cpp',
     'nsAtomTable.cpp',
     'nsCOMArray.cpp',
     'nsCRT.cpp',
@@ -105,11 +112,12 @@ UNIFIED_SOURCES += [
     'nsINIParserImpl.cpp',
     'nsObserverList.cpp',
     'nsObserverService.cpp',
+    'nsPersistentProperties.cpp',
     'nsProperties.cpp',
     'nsQuickSort.cpp',
+    'nsSimpleEnumerator.cpp',
+    'nsStaticNameTable.cpp',
     'nsStringEnumerator.cpp',
-    'nsSupportsArray.cpp',
-    'nsSupportsArrayEnumerator.cpp',
     'nsSupportsPrimitives.cpp',
     'nsTArray.cpp',
     'nsTObserverArray.cpp',
@@ -118,20 +126,26 @@ UNIFIED_SOURCES += [
     'Tokenizer.cpp',
 ]
 
-# These two files cannot be built in unified mode because they use the
-# PL_ARENA_CONST_ALIGN_MASK macro with plarena.h.
 SOURCES += [
-    'nsPersistentProperties.cpp',
-    'nsStaticNameTable.cpp',
+    'nsGkAtoms.cpp',
 ]
-
-EXTRA_COMPONENTS += [
-    'nsINIProcessor.js',
-    'nsINIProcessor.manifest',
-]
+if CONFIG['CC_TYPE'] == 'msvc':
+    # Needed for gGkAtoms.
+    SOURCES['nsGkAtoms.cpp'].flags += [
+        '-constexpr:steps300000',
+        '-Zc:externConstexpr',
+    ]
 
 LOCAL_INCLUDES += [
     '../io',
 ]
+
+GENERATED_FILES += ['nsGkAtomList.h']
+GENERATED_FILES['nsGkAtomList.h'].script = 'StaticAtoms.py:generate_nsgkatomlist_h'
+GENERATED_FILES['nsGkAtomList.h'].inputs = ['Atom.py', 'HTMLAtoms.py']
+
+GENERATED_FILES += ['nsGkAtomConsts.h']
+GENERATED_FILES['nsGkAtomConsts.h'].script = 'StaticAtoms.py:generate_nsgkatomconsts_h'
+GENERATED_FILES['nsGkAtomConsts.h'].inputs = ['Atom.py', 'HTMLAtoms.py']
 
 FINAL_LIBRARY = 'xul'

@@ -2,92 +2,91 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-'use strict';
+"use strict";
 
-/* global EVENT_REORDER, ROLE_LINK */
+/* import-globals-from ../../mochitest/role.js */
+loadScripts({ name: "role.js", dir: MOCHITESTS_DIR });
 
-loadScripts({ name: 'role.js', dir: MOCHITESTS_DIR });
-
-function* testImageMap(browser, accDoc) {
-  const id = 'imgmap';
+async function testImageMap(browser, accDoc) {
+  const id = "imgmap";
   const acc = findAccessibleChildByID(accDoc, id);
 
   /* ================= Initial tree test ==================================== */
   let tree = {
     IMAGE_MAP: [
-      { role: ROLE_LINK, name: 'b', children: [ ] }
+      { role: ROLE_LINK, name: "b", children: [ ] }
     ]
   };
   testAccessibleTree(acc, tree);
 
   /* ================= Insert area ========================================== */
   let onReorder = waitForEvent(EVENT_REORDER, id);
-  yield ContentTask.spawn(browser, {}, () => {
-    let areaElm = content.document.createElement('area');
-    let mapNode = content.document.getElementById('map');
-    areaElm.setAttribute('href',
-                         'http://www.bbc.co.uk/radio4/atoz/index.shtml#a');
-    areaElm.setAttribute('coords', '0,0,13,14');
-    areaElm.setAttribute('alt', 'a');
-    areaElm.setAttribute('shape', 'rect');
+  await ContentTask.spawn(browser, {}, () => {
+    let areaElm = content.document.createElement("area");
+    let mapNode = content.document.getElementById("map");
+    areaElm.setAttribute("href",
+                         "http://www.bbc.co.uk/radio4/atoz/index.shtml#a");
+    areaElm.setAttribute("coords", "0,0,13,14");
+    areaElm.setAttribute("alt", "a");
+    areaElm.setAttribute("shape", "rect");
     mapNode.insertBefore(areaElm, mapNode.firstChild);
   });
-  yield onReorder;
+  await onReorder;
 
   tree = {
     IMAGE_MAP: [
-      { role: ROLE_LINK, name: 'a', children: [ ] },
-      { role: ROLE_LINK, name: 'b', children: [ ] }
+      { role: ROLE_LINK, name: "a", children: [ ] },
+      { role: ROLE_LINK, name: "b", children: [ ] }
     ]
   };
   testAccessibleTree(acc, tree);
 
   /* ================= Append area ========================================== */
   onReorder = waitForEvent(EVENT_REORDER, id);
-  yield ContentTask.spawn(browser, {}, () => {
-    let areaElm = content.document.createElement('area');
-    let mapNode = content.document.getElementById('map');
-    areaElm.setAttribute('href',
-                         'http://www.bbc.co.uk/radio4/atoz/index.shtml#c');
-    areaElm.setAttribute('coords', '34,0,47,14');
-    areaElm.setAttribute('alt', 'c');
-    areaElm.setAttribute('shape', 'rect');
+  await ContentTask.spawn(browser, {}, () => {
+    let areaElm = content.document.createElement("area");
+    let mapNode = content.document.getElementById("map");
+    areaElm.setAttribute("href",
+                         "http://www.bbc.co.uk/radio4/atoz/index.shtml#c");
+    areaElm.setAttribute("coords", "34,0,47,14");
+    areaElm.setAttribute("alt", "c");
+    areaElm.setAttribute("shape", "rect");
     mapNode.appendChild(areaElm);
   });
-  yield onReorder;
+  await onReorder;
 
   tree = {
     IMAGE_MAP: [
-      { role: ROLE_LINK, name: 'a', children: [ ] },
-      { role: ROLE_LINK, name: 'b', children: [ ] },
-      { role: ROLE_LINK, name: 'c', children: [ ] }
+      { role: ROLE_LINK, name: "a", children: [ ] },
+      { role: ROLE_LINK, name: "b", children: [ ] },
+      { role: ROLE_LINK, name: "c", children: [ ] }
     ]
   };
   testAccessibleTree(acc, tree);
 
   /* ================= Remove area ========================================== */
   onReorder = waitForEvent(EVENT_REORDER, id);
-  yield ContentTask.spawn(browser, {}, () => {
-    let mapNode = content.document.getElementById('map');
+  await ContentTask.spawn(browser, {}, () => {
+    let mapNode = content.document.getElementById("map");
     mapNode.removeChild(mapNode.firstElementChild);
   });
-  yield onReorder;
+  await onReorder;
 
   tree = {
     IMAGE_MAP: [
-      { role: ROLE_LINK, name: 'b', children: [ ] },
-      { role: ROLE_LINK, name: 'c', children: [ ] }
+      { role: ROLE_LINK, name: "b", children: [ ] },
+      { role: ROLE_LINK, name: "c", children: [ ] }
     ]
   };
   testAccessibleTree(acc, tree);
 }
 
-function* testContainer(browser) {
-  const id = 'container';
+async function testContainer(browser) {
+  const id = "container";
   /* ================= Remove name on map =================================== */
   let onReorder = waitForEvent(EVENT_REORDER, id);
-  yield invokeSetAttribute(browser, 'map', 'name');
-  let event = yield onReorder;
+  await invokeSetAttribute(browser, "map", "name");
+  let event = await onReorder;
   const acc = event.accessible;
 
   let tree = {
@@ -99,11 +98,11 @@ function* testContainer(browser) {
 
   /* ================= Restore name on map ================================== */
   onReorder = waitForEvent(EVENT_REORDER, id);
-  yield invokeSetAttribute(browser, 'map', 'name', 'atoz_map');
+  await invokeSetAttribute(browser, "map", "name", "atoz_map");
   // XXX: force repainting of the image (see bug 745788 for details).
-  yield BrowserTestUtils.synthesizeMouse('#imgmap', 10, 10,
-    { type: 'mousemove' }, browser);
-  yield onReorder;
+  await BrowserTestUtils.synthesizeMouse("#imgmap", 10, 10,
+    { type: "mousemove" }, browser);
+  await onReorder;
 
   tree = {
     SECTION: [ {
@@ -117,11 +116,11 @@ function* testContainer(browser) {
 
   /* ================= Remove map =========================================== */
   onReorder = waitForEvent(EVENT_REORDER, id);
-  yield ContentTask.spawn(browser, {}, () => {
-    let mapNode = content.document.getElementById('map');
+  await ContentTask.spawn(browser, {}, () => {
+    let mapNode = content.document.getElementById("map");
     mapNode.remove();
   });
-  yield onReorder;
+  await onReorder;
 
   tree = {
     SECTION: [
@@ -132,23 +131,23 @@ function* testContainer(browser) {
 
   /* ================= Insert map =========================================== */
   onReorder = waitForEvent(EVENT_REORDER, id);
-  yield ContentTask.spawn(browser, id, contentId => {
-    let map = content.document.createElement('map');
-    let area = content.document.createElement('area');
+  await ContentTask.spawn(browser, id, contentId => {
+    let map = content.document.createElement("map");
+    let area = content.document.createElement("area");
 
-    map.setAttribute('name', 'atoz_map');
-    map.setAttribute('id', 'map');
+    map.setAttribute("name", "atoz_map");
+    map.setAttribute("id", "map");
 
-    area.setAttribute('href',
-                      'http://www.bbc.co.uk/radio4/atoz/index.shtml#b');
-    area.setAttribute('coords', '17,0,30,14');
-    area.setAttribute('alt', 'b');
-    area.setAttribute('shape', 'rect');
+    area.setAttribute("href",
+                      "http://www.bbc.co.uk/radio4/atoz/index.shtml#b");
+    area.setAttribute("coords", "17,0,30,14");
+    area.setAttribute("alt", "b");
+    area.setAttribute("shape", "rect");
 
     map.appendChild(area);
     content.document.getElementById(contentId).appendChild(map);
   });
-  yield onReorder;
+  await onReorder;
 
   tree = {
     SECTION: [ {
@@ -161,8 +160,8 @@ function* testContainer(browser) {
 
   /* ================= Hide image map ======================================= */
   onReorder = waitForEvent(EVENT_REORDER, id);
-  yield invokeSetStyle(browser, 'imgmap', 'display', 'none');
-  yield onReorder;
+  await invokeSetStyle(browser, "imgmap", "display", "none");
+  await onReorder;
 
   tree = {
     SECTION: [ ]
@@ -170,8 +169,8 @@ function* testContainer(browser) {
   testAccessibleTree(acc, tree);
 }
 
-function* waitForImageMap(browser, accDoc) {
-  const id = 'imgmap';
+async function waitForImageMap(browser, accDoc) {
+  const id = "imgmap";
   const acc = findAccessibleChildByID(accDoc, id);
   if (acc.firstChild) {
     return;
@@ -179,13 +178,13 @@ function* waitForImageMap(browser, accDoc) {
 
   const onReorder = waitForEvent(EVENT_REORDER, id);
   // Wave over image map
-  yield BrowserTestUtils.synthesizeMouse(`#${id}`, 10, 10,
-                                         { type: 'mousemove' }, browser);
-  yield onReorder;
+  await BrowserTestUtils.synthesizeMouse(`#${id}`, 10, 10,
+                                         { type: "mousemove" }, browser);
+  await onReorder;
 }
 
-addAccessibleTask('doc_treeupdate_imagemap.html', function*(browser, accDoc) {
-  yield waitForImageMap(browser, accDoc);
-  yield testImageMap(browser, accDoc);
-  yield testContainer(browser);
+addAccessibleTask("doc_treeupdate_imagemap.html", async function(browser, accDoc) {
+  await waitForImageMap(browser, accDoc);
+  await testImageMap(browser, accDoc);
+  await testContainer(browser);
 });

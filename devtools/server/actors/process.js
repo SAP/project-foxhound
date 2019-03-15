@@ -4,11 +4,10 @@
 
 "use strict";
 
-var { Cc, Ci } = require("chrome");
+var { Cc } = require("chrome");
 
 loader.lazyGetter(this, "ppmm", () => {
-  return Cc["@mozilla.org/parentprocessmessagemanager;1"].getService(
-    Ci.nsIMessageBroadcaster);
+  return Cc["@mozilla.org/parentprocessmessagemanager;1"].getService();
 });
 
 function ProcessActorList() {
@@ -21,8 +20,8 @@ function ProcessActorList() {
 }
 
 ProcessActorList.prototype = {
-  getList: function () {
-    let processes = [];
+  getList: function() {
+    const processes = [];
     for (let i = 0; i < ppmm.childCount; i++) {
       processes.push({
         // XXX: may not be a perfect id, but process message manager doesn't
@@ -56,7 +55,7 @@ ProcessActorList.prototype = {
     this._checkListening();
   },
 
-  _checkListening: function () {
+  _checkListening: function() {
     if (this._onListChanged !== null && this._mustNotify) {
       this._knownProcesses = [];
       for (let i = 0; i < ppmm.childCount; i++) {
@@ -70,14 +69,14 @@ ProcessActorList.prototype = {
     }
   },
 
-  _notifyListChanged: function () {
+  _notifyListChanged: function() {
     if (this._mustNotify) {
       this._onListChanged();
       this._mustNotify = false;
     }
   },
 
-  _onMessage: function ({ target }) {
+  _onMessage: function({ target }) {
     if (this._knownProcesses.includes(target)) {
       return;
     }

@@ -1,6 +1,7 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+"use strict";
 
 /**
  * Firefox Accounts Web Channel.
@@ -9,23 +10,25 @@
  * about account state changes.
  */
 
-this.EXPORTED_SYMBOLS = ["EnsureFxAccountsWebChannel"];
+var EXPORTED_SYMBOLS = ["EnsureFxAccountsWebChannel"];
 
-const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/FxAccountsCommon.js");
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/FxAccountsCommon.js");
-
-XPCOMUtils.defineLazyModuleGetter(this, "Services",
-                                  "resource://gre/modules/Services.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "WebChannel",
-                                  "resource://gre/modules/WebChannel.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "fxAccounts",
-                                  "resource://gre/modules/FxAccounts.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "FxAccountsStorageManagerCanStoreField",
-                                  "resource://gre/modules/FxAccountsStorage.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Weave",
-                                  "resource://services-sync/main.js");
+ChromeUtils.defineModuleGetter(this, "Services",
+                               "resource://gre/modules/Services.jsm");
+ChromeUtils.defineModuleGetter(this, "WebChannel",
+                               "resource://gre/modules/WebChannel.jsm");
+ChromeUtils.defineModuleGetter(this, "fxAccounts",
+                               "resource://gre/modules/FxAccounts.jsm");
+ChromeUtils.defineModuleGetter(this, "FxAccountsStorageManagerCanStoreField",
+                               "resource://gre/modules/FxAccountsStorage.jsm");
+ChromeUtils.defineModuleGetter(this, "PrivateBrowsingUtils",
+                               "resource://gre/modules/PrivateBrowsingUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "Weave",
+                               "resource://services-sync/main.js");
+ChromeUtils.defineModuleGetter(this, "CryptoUtils",
+                               "resource://services-crypto/utils.js");
 
 const COMMAND_PROFILE_CHANGE       = "profile:change";
 const COMMAND_CAN_LINK_ACCOUNT     = "fxaccounts:can_link_account";
@@ -34,8 +37,12 @@ const COMMAND_LOGOUT               = "fxaccounts:logout";
 const COMMAND_DELETE               = "fxaccounts:delete";
 const COMMAND_SYNC_PREFERENCES     = "fxaccounts:sync_preferences";
 const COMMAND_CHANGE_PASSWORD      = "fxaccounts:change_password";
+const COMMAND_FXA_STATUS           = "fxaccounts:fxa_status";
 
-const PREF_LAST_FXA_USER           = "identity.fxaccounts.lastSignedInUserHash";
+// These engines were added years after Sync had been introduced, they need
+// special handling since they are system add-ons and are un-available on
+// older versions of Firefox.
+const EXTRA_ENGINES = ["addresses", "creditcards"];
 
 /**
  * A helper function that extracts the message and stack from an error object.
@@ -74,18 +81,20 @@ this.FxAccountsWebChannel = function(options) {
   if (!options) {
     throw new Error("Missing configuration options");
   }
-  if (!options["content_uri"]) {
+  if (!options.content_uri) {
     throw new Error("Missing 'content_uri' option");
   }
   this._contentUri = options.content_uri;
 
-  if (!options["channel_id"]) {
+  if (!options.channel_id) {
     throw new Error("Missing 'channel_id' option");
   }
   this._webChannelId = options.channel_id;
 
   // options.helpers is only specified by tests.
-  this._helpers = options.helpers || new FxAccountsWebChannelHelpers(options);
+  XPCOMUtils.defineLazyGetter(this, "_helpers", () => {
+    return options.helpers || new FxAccountsWebChannelHelpers(options);
+  });
 
   this._setupChannel();
 };
@@ -158,7 +167,7 @@ this.FxAccountsWebChannel.prototype = {
         let response = {
           command,
           messageId: message.messageId,
-          data: { ok: canLinkAccount }
+          data: { ok: canLinkAccount },
         };
 
         log.debug("FxAccountsWebChannel response", response);
@@ -170,6 +179,22 @@ this.FxAccountsWebChannel.prototype = {
       case COMMAND_CHANGE_PASSWORD:
         this._helpers.changePassword(data).catch(error =>
           this._sendError(error, message, sendingContext));
+        break;
+      case COMMAND_FXA_STATUS:
+        log.debug("fxa_status received");
+
+        const service = data && data.service;
+        this._helpers.getFxaStatus(service, sendingContext)
+          .then(fxaStatus => {
+            let response = {
+              command,
+              messageId: message.messageId,
+              data: fxaStatus,
+            };
+            this._channel.send(response, sendingContext);
+          }).catch(error =>
+            this._sendError(error, message, sendingContext)
+          );
         break;
       default:
         log.warn("Unrecognized FxAccountsWebChannel command", command);
@@ -230,13 +255,14 @@ this.FxAccountsWebChannel.prototype = {
     this._channel = new WebChannel(this._webChannelId, this._webChannelOrigin);
     this._channel.listen(listener);
     log.debug("FxAccountsWebChannel registered: " + this._webChannelId + " with origin " + this._webChannelOrigin.prePath);
-  }
+  },
 };
 
 this.FxAccountsWebChannelHelpers = function(options) {
   options = options || {};
 
   this._fxAccounts = options.fxAccounts || fxAccounts;
+  this._privateBrowsingUtils = options.privateBrowsingUtils || PrivateBrowsingUtils;
 };
 
 this.FxAccountsWebChannelHelpers.prototype = {
@@ -260,6 +286,17 @@ this.FxAccountsWebChannelHelpers.prototype = {
     // We don't act on customizeSync anymore, it used to open a dialog inside
     // the browser to selecte the engines to sync but we do it on the web now.
     delete accountData.customizeSync;
+
+    if (accountData.offeredSyncEngines) {
+      EXTRA_ENGINES.forEach(engine => {
+        if (accountData.offeredSyncEngines.includes(engine) &&
+            !accountData.declinedSyncEngines.includes(engine)) {
+          // These extra engines are disabled by default.
+          Services.prefs.setBoolPref(`services.sync.engine.${engine}`, true);
+        }
+      });
+      delete accountData.offeredSyncEngines;
+    }
 
     if (accountData.declinedSyncEngines) {
       let declinedSyncEngines = accountData.declinedSyncEngines;
@@ -295,7 +332,7 @@ this.FxAccountsWebChannelHelpers.prototype = {
    */
   logout(uid) {
     return fxAccounts.getSignedInUser().then(userData => {
-      if (userData.uid === uid) {
+      if (userData && userData.uid === uid) {
         // true argument is `localOnly`, because server-side stuff
         // has already been taken care of by the content server
         return fxAccounts.signOut(true);
@@ -304,7 +341,82 @@ this.FxAccountsWebChannelHelpers.prototype = {
     });
   },
 
-  changePassword(credentials) {
+  /**
+   * Check if `sendingContext` is in private browsing mode.
+   */
+  isPrivateBrowsingMode(sendingContext) {
+    if (!sendingContext) {
+      log.error("Unable to check for private browsing mode, assuming true");
+      return true;
+    }
+
+    const isPrivateBrowsing = this._privateBrowsingUtils.isBrowserPrivate(sendingContext.browser);
+    log.debug("is private browsing", isPrivateBrowsing);
+    return isPrivateBrowsing;
+  },
+
+  /**
+   * Check whether sending fxa_status data should be allowed.
+   */
+  shouldAllowFxaStatus(service, sendingContext) {
+    // Return user data for any service in non-PB mode. In PB mode,
+    // only return user data if service==="sync".
+    //
+    // This behaviour allows users to click the "Manage Account"
+    // link from about:preferences#sync while in PB mode and things
+    // "just work". While in non-PB mode, users can sign into
+    // Pocket w/o entering their password a 2nd time, while in PB
+    // mode they *will* have to enter their email/password again.
+    //
+    // The difference in behaviour is to try to match user
+    // expectations as to what is and what isn't part of the browser.
+    // Sync is viewed as an integral part of the browser, interacting
+    // with FxA as part of a Sync flow should work all the time. If
+    // Sync is broken in PB mode, users will think Firefox is broken.
+    // See https://bugzilla.mozilla.org/show_bug.cgi?id=1323853
+    log.debug("service", service);
+    return !this.isPrivateBrowsingMode(sendingContext) || service === "sync";
+  },
+
+  /**
+   * Get fxa_status information. Resolves to { signedInUser: <user_data> }.
+   * If returning status information is not allowed or no user is signed into
+   * Sync, `user_data` will be null.
+   */
+  async getFxaStatus(service, sendingContext) {
+    let signedInUser = null;
+
+    if (this.shouldAllowFxaStatus(service, sendingContext)) {
+      const userData = await this._fxAccounts.getSignedInUser();
+      if (userData) {
+        signedInUser = {
+          email: userData.email,
+          sessionToken: userData.sessionToken,
+          uid: userData.uid,
+          verified: userData.verified,
+        };
+      }
+    }
+
+    return {
+      signedInUser,
+      capabilities: {
+        engines: this._getAvailableExtraEngines(),
+      },
+    };
+  },
+
+  _getAvailableExtraEngines() {
+    return EXTRA_ENGINES.filter(engineName => {
+      try {
+        return Services.prefs.getBoolPref(`services.sync.engine.${engineName}.available`);
+      } catch (e) {
+        return false;
+      }
+    });
+  },
+
+  async changePassword(credentials) {
     // If |credentials| has fields that aren't handled by accounts storage,
     // updateUserAccountData will throw - mainly to prevent errors in code
     // that hard-codes field names.
@@ -315,7 +427,7 @@ this.FxAccountsWebChannelHelpers.prototype = {
     // versions to supported field names doesn't buy us much.
     // So we just remove field names we know aren't handled.
     let newCredentials = {
-      deviceId: null
+      device: null, // Force a brand new device registration.
     };
     for (let name of Object.keys(credentials)) {
       if (name == "email" || name == "uid" || FxAccountsStorageManagerCanStoreField(name)) {
@@ -324,8 +436,15 @@ this.FxAccountsWebChannelHelpers.prototype = {
         log.info("changePassword ignoring unsupported field", name);
       }
     }
-    return this._fxAccounts.updateUserAccountData(newCredentials)
-      .then(() => this._fxAccounts.updateDeviceRegistration());
+    await this._fxAccounts.updateUserAccountData(newCredentials);
+    // Force the keys derivation, to be able to register a send-tab command
+    // in updateDeviceRegistration.
+    try {
+      await this._fxAccounts.getKeys();
+    } catch (e) {
+      log.error("getKeys errored", e);
+    }
+    await this._fxAccounts.updateDeviceRegistration();
   },
 
   /**
@@ -333,7 +452,7 @@ this.FxAccountsWebChannelHelpers.prototype = {
    */
   getPreviousAccountNameHashPref() {
     try {
-      return Services.prefs.getComplexValue(PREF_LAST_FXA_USER, Ci.nsISupportsString).data;
+      return Services.prefs.getStringPref(PREF_LAST_FXA_USER);
     } catch (_) {
       return "";
     }
@@ -345,27 +464,7 @@ this.FxAccountsWebChannelHelpers.prototype = {
    * @param acctName the account name of the user's account.
    */
   setPreviousAccountNameHashPref(acctName) {
-    let string = Cc["@mozilla.org/supports-string;1"]
-                 .createInstance(Ci.nsISupportsString);
-    string.data = this.sha256(acctName);
-    Services.prefs.setComplexValue(PREF_LAST_FXA_USER, Ci.nsISupportsString, string);
-  },
-
-  /**
-   * Given a string, returns the SHA265 hash in base64
-   */
-  sha256(str) {
-    let converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"]
-                      .createInstance(Ci.nsIScriptableUnicodeConverter);
-    converter.charset = "UTF-8";
-    // Data is an array of bytes.
-    let data = converter.convertToByteArray(str, {});
-    let hasher = Cc["@mozilla.org/security/hash;1"]
-                   .createInstance(Ci.nsICryptoHash);
-    hasher.init(hasher.SHA256);
-    hasher.update(data, data.length);
-
-    return hasher.finish(true);
+    Services.prefs.setStringPref(PREF_LAST_FXA_USER, CryptoUtils.sha256Base64(acctName));
   },
 
   /**
@@ -393,7 +492,7 @@ this.FxAccountsWebChannelHelpers.prototype = {
    */
   _needRelinkWarning(acctName) {
     let prevAcctHash = this.getPreviousAccountNameHashPref();
-    return prevAcctHash && prevAcctHash != this.sha256(acctName);
+    return prevAcctHash && prevAcctHash != CryptoUtils.sha256Base64(acctName);
   },
 
   /**
@@ -416,12 +515,11 @@ this.FxAccountsWebChannelHelpers.prototype = {
                       ps.BUTTON_POS_1_DEFAULT;
 
     // If running in context of the browser chrome, window does not exist.
-    var targetWindow = typeof window === "undefined" ? null : window;
-    let pressed = Services.prompt.confirmEx(targetWindow, title, body, buttonFlags,
+    let pressed = Services.prompt.confirmEx(null, title, body, buttonFlags,
                                        continueLabel, null, null, null,
                                        {});
     return pressed === 0; // 0 is the "continue" button
-  }
+  },
 };
 
 var singleton;
@@ -430,8 +528,8 @@ var singleton;
 // (eg, it uses the observer service to tell interested parties of interesting
 // things) and allowing multiple channels would cause such notifications to be
 // sent multiple times.
-this.EnsureFxAccountsWebChannel = function() {
-  let contentUri = Services.urlFormatter.formatURLPref("identity.fxaccounts.remote.webchannel.uri");
+var EnsureFxAccountsWebChannel = () => {
+  let contentUri = Services.urlFormatter.formatURLPref("identity.fxaccounts.remote.root");
   if (singleton && singleton._contentUri !== contentUri) {
     singleton.tearDown();
     singleton = null;
@@ -452,4 +550,4 @@ this.EnsureFxAccountsWebChannel = function() {
       log.error("Failed to create FxA WebChannel", ex);
     }
   }
-}
+};

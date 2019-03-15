@@ -5,14 +5,15 @@
  * found in the LICENSE file.
  */
 
-#include "SkTypes.h"
+#include "SkImageEncoderPriv.h"
+
 #if defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
 
+#include "mac/SkUniqueCFRef.h"
 #include "SkBitmap.h"
 #include "SkCGUtils.h"
-#include "SkColorPriv.h"
+#include "SkColorData.h"
 #include "SkData.h"
-#include "SkImageEncoder.h"
 #include "SkStream.h"
 #include "SkStreamPriv.h"
 #include "SkTemplates.h"
@@ -37,70 +38,62 @@ static void consumer_release(void* info) {
     // we do nothing, since by design we don't "own" the stream (i.e. info)
 }
 
-static CGDataConsumerRef SkStreamToCGDataConsumer(SkWStream* stream) {
+static SkUniqueCFRef<CGDataConsumerRef> SkStreamToCGDataConsumer(SkWStream* stream) {
     CGDataConsumerCallbacks procs;
     procs.putBytes = consumer_put;
     procs.releaseConsumer = consumer_release;
     // we don't own/reference the stream, so it our consumer must not live
     // longer that our caller's ownership of the stream
-    return CGDataConsumerCreate(stream, &procs);
+    return SkUniqueCFRef<CGDataConsumerRef>(CGDataConsumerCreate(stream, &procs));
 }
 
-static CGImageDestinationRef SkStreamToImageDestination(SkWStream* stream,
-                                                        CFStringRef type) {
-    CGDataConsumerRef consumer = SkStreamToCGDataConsumer(stream);
+static SkUniqueCFRef<CGImageDestinationRef> SkStreamToImageDestination(SkWStream* stream,
+                                                                       CFStringRef type) {
+    SkUniqueCFRef<CGDataConsumerRef> consumer = SkStreamToCGDataConsumer(stream);
     if (nullptr == consumer) {
         return nullptr;
     }
-    SkAutoTCallVProc<const void, CFRelease> arconsumer(consumer);
 
-    return CGImageDestinationCreateWithDataConsumer(consumer, type, 1, nullptr);
+    return SkUniqueCFRef<CGImageDestinationRef>(
+            CGImageDestinationCreateWithDataConsumer(consumer.get(), type, 1, nullptr));
 }
-
-class SkImageEncoder_CG : public SkImageEncoder {
-public:
-    SkImageEncoder_CG(Type t) : fType(t) {}
-
-protected:
-    virtual bool onEncode(SkWStream* stream, const SkBitmap& bm, int quality);
-
-private:
-    Type fType;
-};
 
 /*  Encode bitmaps via CGImageDestination. We setup a DataConsumer which writes
     to our SkWStream. Since we don't reference/own the SkWStream, our consumer
     must only live for the duration of the onEncode() method.
  */
-bool SkImageEncoder_CG::onEncode(SkWStream* stream, const SkBitmap& bm,
-                                 int quality) {
-    // Used for converting a bitmap to 8888.
-    const SkBitmap* bmPtr = &bm;
-    SkBitmap bitmap8888;
+bool SkEncodeImageWithCG(SkWStream* stream, const SkPixmap& pixmap, SkEncodedImageFormat format) {
+    SkBitmap bm;
+    if (!bm.installPixels(pixmap)) {
+        return false;
+    }
+    bm.setImmutable();
 
     CFStringRef type;
-    switch (fType) {
-        case kICO_Type:
+    switch (format) {
+        case SkEncodedImageFormat::kICO:
             type = kUTTypeICO;
             break;
-        case kBMP_Type:
+        case SkEncodedImageFormat::kBMP:
             type = kUTTypeBMP;
             break;
-        case kGIF_Type:
+        case SkEncodedImageFormat::kGIF:
             type = kUTTypeGIF;
             break;
-        case kJPEG_Type:
+        case SkEncodedImageFormat::kJPEG:
             type = kUTTypeJPEG;
             break;
-        case kPNG_Type:
+        case SkEncodedImageFormat::kPNG:
             // PNG encoding an ARGB_4444 bitmap gives the following errors in GM:
             // <Error>: CGImageDestinationAddImage image could not be converted to destination
             // format.
             // <Error>: CGImageDestinationFinalize image destination does not have enough images
             // So instead we copy to 8888.
             if (bm.colorType() == kARGB_4444_SkColorType) {
-                bm.copyTo(&bitmap8888, kN32_SkColorType);
-                bmPtr = &bitmap8888;
+                SkBitmap bitmapN32;
+                bitmapN32.allocPixels(bm.info().makeColorType(kN32_SkColorType));
+                bm.readPixels(bitmapN32.info(), bitmapN32.getPixels(), bitmapN32.rowBytes(), 0, 0);
+                bm.swap(bitmapN32);
             }
             type = kUTTypePNG;
             break;
@@ -108,44 +101,18 @@ bool SkImageEncoder_CG::onEncode(SkWStream* stream, const SkBitmap& bm,
             return false;
     }
 
-    CGImageDestinationRef dst = SkStreamToImageDestination(stream, type);
+    SkUniqueCFRef<CGImageDestinationRef> dst = SkStreamToImageDestination(stream, type);
     if (nullptr == dst) {
         return false;
     }
-    SkAutoTCallVProc<const void, CFRelease> ardst(dst);
 
-    CGImageRef image = SkCreateCGImageRef(*bmPtr);
+    SkUniqueCFRef<CGImageRef> image(SkCreateCGImageRef(bm));
     if (nullptr == image) {
         return false;
     }
-    SkAutoTCallVProc<CGImage, CGImageRelease> agimage(image);
 
-    CGImageDestinationAddImage(dst, image, nullptr);
-    return CGImageDestinationFinalize(dst);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-#ifdef SK_USE_CG_ENCODER
-static SkImageEncoder* sk_imageencoder_cg_factory(SkImageEncoder::Type t) {
-    switch (t) {
-        case SkImageEncoder::kICO_Type:
-        case SkImageEncoder::kBMP_Type:
-        case SkImageEncoder::kGIF_Type:
-        case SkImageEncoder::kJPEG_Type:
-        case SkImageEncoder::kPNG_Type:
-            break;
-        default:
-            return nullptr;
-    }
-    return new SkImageEncoder_CG(t);
-}
-
-static SkImageEncoder_EncodeReg gEReg(sk_imageencoder_cg_factory);
-#endif
-
-SkImageEncoder* CreateImageEncoder_CG(SkImageEncoder::Type type) {
-    return new SkImageEncoder_CG(type);
+    CGImageDestinationAddImage(dst.get(), image.get(), nullptr);
+    return CGImageDestinationFinalize(dst.get());
 }
 
 #endif//defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)

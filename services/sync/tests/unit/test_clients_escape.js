@@ -1,11 +1,10 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Cu.import("resource://services-sync/keys.js");
-Cu.import("resource://services-sync/record.js");
-Cu.import("resource://services-sync/service.js");
-Cu.import("resource://services-sync/util.js");
-Cu.import("resource://testing-common/services/sync/utils.js");
+ChromeUtils.import("resource://services-sync/keys.js");
+ChromeUtils.import("resource://services-sync/record.js");
+ChromeUtils.import("resource://services-sync/service.js");
+ChromeUtils.import("resource://services-sync/util.js");
 
 add_task(async function test_clients_escape() {
   _("Set up test fixtures.");
@@ -21,12 +20,12 @@ add_task(async function test_clients_escape() {
     engine.localName = "wéävê";
 
     _("Make sure we have the expected record");
-    let record = engine._createRecord("ascii");
-    do_check_eq(record.id, "ascii");
-    do_check_eq(record.name, "wéävê");
+    let record = await engine._createRecord("ascii");
+    Assert.equal(record.id, "ascii");
+    Assert.equal(record.name, "wéävê");
 
     _("Encrypting record...");
-    record.encrypt(keyBundle);
+    await record.encrypt(keyBundle);
     _("Encrypted.");
 
     let serialized = JSON.stringify(record);
@@ -35,22 +34,22 @@ add_task(async function test_clients_escape() {
     Array.forEach(serialized, function(ch) {
       let code = ch.charCodeAt(0);
       _("Checking asciiness of '", ch, "'=", code);
-      do_check_true(code < 128);
+      Assert.ok(code < 128);
       checkCount++;
     });
 
     _("Processed", checkCount, "characters out of", serialized.length);
-    do_check_eq(checkCount, serialized.length);
+    Assert.equal(checkCount, serialized.length);
 
     _("Making sure the record still looks like it did before");
-    record.decrypt(keyBundle);
-    do_check_eq(record.id, "ascii");
-    do_check_eq(record.name, "wéävê");
+    await record.decrypt(keyBundle);
+    Assert.equal(record.id, "ascii");
+    Assert.equal(record.name, "wéävê");
 
     _("Sanity check that creating the record also gives the same");
-    record = engine._createRecord("ascii");
-    do_check_eq(record.id, "ascii");
-    do_check_eq(record.name, "wéävê");
+    record = await engine._createRecord("ascii");
+    Assert.equal(record.id, "ascii");
+    Assert.equal(record.name, "wéävê");
   } finally {
     Svc.Prefs.resetBranch("");
   }

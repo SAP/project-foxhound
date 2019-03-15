@@ -13,22 +13,17 @@
 
 #if SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSE42
     #include <immintrin.h>
-#elif defined(SK_CPU_ARM64) && defined(SK_ARM_HAS_CRC32)
+#elif defined(SK_ARM_HAS_CRC32)
     #include <arm_acle.h>
 #endif
 
-namespace SK_OPTS_NS {
+#include "../jumper/SkJumper_misc.h"
 
-template <typename T>
-static inline T unaligned_load(const uint8_t* src) {
-    T val;
-    memcpy(&val, src, sizeof(val));
-    return val;
-}
+namespace SK_OPTS_NS {
 
 #if SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSE42 && (defined(__x86_64__) || defined(_M_X64))
     // This is not a CRC32.  It's Just A Hash that uses those instructions because they're fast.
-    static uint32_t hash_fn(const void* vdata, size_t bytes, uint32_t seed) {
+    /*not static*/ inline uint32_t hash_fn(const void* vdata, size_t bytes, uint32_t seed) {
         auto data = (const uint8_t*)vdata;
 
         // _mm_crc32_u64() operates on 64-bit registers, so we use uint64_t for a while.
@@ -48,7 +43,7 @@ static inline T unaligned_load(const uint8_t* src) {
                 data += 24;
             }
             bytes %= 24;
-            hash = a^b^c;
+            hash = _mm_crc32_u32(a, _mm_crc32_u32(b, c));
         }
 
         SkASSERT(bytes < 24);
@@ -84,7 +79,7 @@ static inline T unaligned_load(const uint8_t* src) {
 
 #elif SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSE42
     // 32-bit version of above, using _mm_crc32_u32() but not _mm_crc32_u64().
-    static uint32_t hash_fn(const void* vdata, size_t bytes, uint32_t hash) {
+    /*not static*/ inline uint32_t hash_fn(const void* vdata, size_t bytes, uint32_t hash) {
         auto data = (const uint8_t*)vdata;
 
         if (bytes >= 12) {
@@ -102,7 +97,7 @@ static inline T unaligned_load(const uint8_t* src) {
                 data += 12;
             }
             bytes %= 12;
-            hash = a^b^c;
+            hash = _mm_crc32_u32(a, _mm_crc32_u32(b, c));
         }
 
         SkASSERT(bytes < 12);
@@ -127,8 +122,8 @@ static inline T unaligned_load(const uint8_t* src) {
         return hash;
     }
 
-#elif defined(SK_CPU_ARM64) && defined(SK_ARM_HAS_CRC32)
-    static uint32_t hash_fn(const void* vdata, size_t bytes, uint32_t hash) {
+#elif defined(SK_ARM_HAS_CRC32)
+    /*not static*/ inline uint32_t hash_fn(const void* vdata, size_t bytes, uint32_t hash) {
         auto data = (const uint8_t*)vdata;
         if (bytes >= 24) {
             uint32_t a = hash,
@@ -142,7 +137,7 @@ static inline T unaligned_load(const uint8_t* src) {
                 data += 24;
             }
             bytes %= 24;
-            hash = a^b^c;
+            hash = __crc32w(a, __crc32w(b, c));
         }
 
         SkASSERT(bytes < 24);
@@ -173,7 +168,7 @@ static inline T unaligned_load(const uint8_t* src) {
 
 #else
     // This is Murmur3.
-    static uint32_t hash_fn(const void* vdata, size_t bytes, uint32_t hash) {
+    /*not static*/ inline uint32_t hash_fn(const void* vdata, size_t bytes, uint32_t hash) {
         auto data = (const uint8_t*)vdata;
 
         size_t original_bytes = bytes;

@@ -6,18 +6,16 @@
 #ifndef widget_gtk_CompositorWidgetChild_h
 #define widget_gtk_CompositorWidgetChild_h
 
-#include "X11CompositorWidget.h"
+#include "GtkCompositorWidget.h"
 #include "mozilla/widget/PCompositorWidgetChild.h"
 #include "mozilla/widget/CompositorWidgetVsyncObserver.h"
 
 namespace mozilla {
 namespace widget {
 
-class CompositorWidgetChild final
- : public PCompositorWidgetChild
- , public CompositorWidgetDelegate
-{
-public:
+class CompositorWidgetChild final : public PCompositorWidgetChild,
+                                    public PlatformCompositorWidgetDelegate {
+ public:
   CompositorWidgetChild(RefPtr<CompositorVsyncDispatcher> aVsyncDispatcher,
                         RefPtr<CompositorWidgetVsyncObserver> aVsyncObserver);
   ~CompositorWidgetChild() override;
@@ -27,12 +25,12 @@ public:
 
   void NotifyClientSizeChanged(const LayoutDeviceIntSize& aClientSize) override;
 
-private:
+ private:
   RefPtr<CompositorVsyncDispatcher> mVsyncDispatcher;
   RefPtr<CompositorWidgetVsyncObserver> mVsyncObserver;
 };
 
-} // namespace widget
-} // namespace mozilla
+}  // namespace widget
+}  // namespace mozilla
 
-#endif // widget_gtk_CompositorWidgetChild_h
+#endif  // widget_gtk_CompositorWidgetChild_h

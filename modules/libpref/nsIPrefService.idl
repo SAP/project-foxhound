@@ -6,16 +6,17 @@
 #include "nsISupports.idl"
 #include "nsIPrefBranch.idl"
 
-%{C++
-struct PrefTuple;
-#include "nsTArrayForwardDeclare.h"
-%}
-
-[ptr] native nsPreferencesArrayPtr(nsTArray<PrefTuple>);
-[ptr] native nsPreferencePtr(PrefTuple);
-[ptr] native nsPreferencePtrConst(const PrefTuple);
-
 interface nsIFile;
+
+/**
+ * A helper function for reading access statistics for preferences.
+ * See nsIPrefService.readStats for more details.
+ */
+[function, scriptable, uuid(c3f0cedc-e244-4316-b33a-80306a1c35a1)]
+interface nsIPrefStatsCallback : nsISupports
+{
+  void visit(in ACString prefName, in unsigned long accessCount);
+};
 
 /**
  * The nsIPrefService interface is the main entry point into the back end
@@ -30,22 +31,6 @@ interface nsIFile;
 [scriptable, uuid(1f84fd56-3956-40df-b86a-1ea01402ee96)]
 interface nsIPrefService : nsISupports
 {
-  /**
-   * Called to read in the preferences specified in a user preference file.
-   *
-   * @param aFile The file to be read.
-   *
-   * @note
-   * If nullptr is passed in for the aFile parameter the default preferences
-   * file(s) [prefs.js, user.js] will be read and processed.
-   *
-   * @throws Error File failed to read or contained invalid data.
-   *
-   * @see savePrefFile
-   * @see nsIFile
-   */
-  void readUserPrefs(in nsIFile aFile);
-
   /**
    * Called to completely flush and re-initialize the preferences system.
    *
@@ -70,7 +55,7 @@ interface nsIPrefService : nsISupports
    *
    * @throws Error File failed to write.
    *
-   * @see readUserPrefs
+   * @see readUserPrefsFromFile
    * @see nsIFile
    */
   void savePrefFile(in nsIFile aFile);
@@ -125,6 +110,40 @@ interface nsIPrefService : nsISupports
    * that have not been written to disk
    */
   readonly attribute boolean dirty;
+
+  /**
+   * Read in the preferences specified in a default preference file. This
+   * method does not clear preferences that were already set, but it may
+   * overwrite existing preferences.
+   *
+   * @param aFile The file to be read.
+   *
+   * @throws Error File failed to read or contained invalid data.
+   * @note This method is intended for internal unit testing only!
+   */
+  void readDefaultPrefsFromFile(in nsIFile aFile);
+
+  /**
+   * Like readDefaultPrefsFromFile, but for a user prefs file.
+   */
+  void readUserPrefsFromFile(in nsIFile aFile);
+
+  /**
+   * Usage statistics for performance tests. This function takes a function
+   * that is passed (preferenceName, accessCount) as arguments for every
+   * recorded preference. You can use this function to build e.g. a JS object
+   * holding that data.
+   *
+   * This is not implemented in non-debug builds and will throw an error.
+   */
+  void readStats(in nsIPrefStatsCallback callback);
+
+  /**
+   * Reset usage statistics for performance tests.
+   *
+   * This is not implemented in non-debug builds and will throw an error.
+   */
+  void resetStats();
 };
 
 %{C++
@@ -145,15 +164,8 @@ interface nsIPrefService : nsISupports
 #define NS_PREFSERVICE_READ_TOPIC_ID "prefservice:before-read-userprefs"
 
 /**
- * Notification sent when resetPrefs has been called, but before the actual
- * reset process occurs.
- */
-#define NS_PREFSERVICE_RESET_TOPIC_ID "prefservice:before-reset"
-
-/**
  * Notification sent when after reading app-provided default
- * preferences, but before user profile override defaults or extension
- * defaults are loaded.
+ * preferences, but before user profile override defaults are loaded.
  */
 #define NS_PREFSERVICE_APPDEFAULTS_TOPIC_ID "prefservice:after-app-defaults"
 

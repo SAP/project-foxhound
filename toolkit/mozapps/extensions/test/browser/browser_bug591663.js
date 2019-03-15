@@ -18,32 +18,31 @@ var gItem;
 
 var gInstallProperties = {
   name: "Bug 591663 Mock Install",
-  type: "mock-addon"
+  type: "mock-addon",
 };
 var gAddonProperties = {
   id: "test1@tests.mozilla.org",
   name: "Bug 591663 Mock Add-on",
-  type: "mock-addon"
+  type: "mock-addon",
 };
 var gExtensionProperties = {
   name: "Bug 591663 Extension Install",
-  type: "extension"
+  type: "extension",
 };
 
-function test() {
+async function test() {
   waitForExplicitFinish();
 
   gProvider = new MockProvider(true, [{
     id: "mock-addon",
     name: "Mock Add-ons",
     uiPriority: 4500,
-    flags: AddonManager.TYPE_UI_VIEW_LIST
+    flags: AddonManager.TYPE_UI_VIEW_LIST,
   }]);
 
-  open_manager(VIEW_ID, function(aWindow) {
-    gManagerWindow = aWindow;
-    run_next_test();
-  });
+  let aWindow = await open_manager(VIEW_ID);
+  gManagerWindow = aWindow;
+  run_next_test();
 }
 
 function end_test() {
@@ -98,19 +97,18 @@ add_test(function() {
     onInstallEnded() {
       check_list(gItem);
       run_next_test();
-    }
+    },
   });
 
   gItem.install();
 });
 
 // Test that restarting the manager does not change list
-add_test(function() {
-  restart_manager(gManagerWindow, VIEW_ID, function(aManagerWindow) {
-    gManagerWindow = aManagerWindow;
-    check_list(gItem);
-    run_next_test();
-  });
+add_test(async function() {
+  let aManagerWindow = await restart_manager(gManagerWindow, VIEW_ID);
+  gManagerWindow = aManagerWindow;
+  check_list(gItem);
+  run_next_test();
 });
 
 // Test that onInstallCancelled removes install and shows empty notice
@@ -137,7 +135,7 @@ add_test(function() {
       check_list(null);
       extension.cancel();
       run_next_test();
-    }
+    },
   });
 
   extension.install();
@@ -151,11 +149,10 @@ add_test(function() {
 });
 
 // Test that restarting the manager does not change list
-add_test(function() {
-  restart_manager(gManagerWindow, VIEW_ID, function(aManagerWindow) {
-    gManagerWindow = aManagerWindow;
-    check_list(gItem);
-    run_next_test();
-  });
+add_test(async function() {
+  let aManagerWindow = await restart_manager(gManagerWindow, VIEW_ID);
+  gManagerWindow = aManagerWindow;
+  check_list(gItem);
+  run_next_test();
 });
 

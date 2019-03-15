@@ -1,6 +1,7 @@
 # lint_ignore=E501
 config = {
     "shipped-locales-url": "https://hg.mozilla.org/%(repo)s/raw-file/%(revision)s/mail/locales/shipped-locales",
+    "bouncer_prefix": "https://download.mozilla.org/",
     "products": {
         "installer": {
             "product-name": "Thunderbird-%(version)s",
@@ -24,22 +25,6 @@ config = {
                 "win32": {
                     "path": "/thunderbird/releases/%(version)s/win32/:lang/Thunderbird%%20Setup%%20%(version)s.exe",
                     "bouncer-platform": "win",
-                },
-                "opensolaris-i386": {
-                    "path": "/thunderbird/releases/%(version)s/contrib/solaris_tarball/thunderbird-%(version)s.en-US.opensolaris-i386.tar.bz2",
-                    "bouncer-platform": "opensolaris-i386",
-                },
-                "opensolaris-sparc": {
-                    "path": "/thunderbird/releases/%(version)s/contrib/solaris_tarball/thunderbird-%(version)s.en-US.opensolaris-sparc.tar.bz2",
-                    "bouncer-platform": "opensolaris-sparc",
-                },
-                "solaris-i386": {
-                    "path": "/thunderbird/releases/%(version)s/contrib/solaris_tarball/thunderbird-%(version)s.en-US.solaris-i386.tar.bz2",
-                    "bouncer-platform": "solaris-i386",
-                },
-                "solaris-sparc": {
-                    "path": "/thunderbird/releases/%(version)s/contrib/solaris_tarball/thunderbird-%(version)s.en-US.solaris-sparc.tar.bz2",
-                    "bouncer-platform": "solaris-sparc",
                 },
             },
         },
@@ -65,22 +50,6 @@ config = {
                     "path": "/thunderbird/releases/%(version)s/win32/:lang/Thunderbird%%20Setup%%20%(version)s.exe",
                     "bouncer-platform": "win",
                 },
-                "opensolaris-i386": {
-                    "path": "/thunderbird/releases/%(version)s/contrib/solaris_tarball/thunderbird-%(version)s.en-US.opensolaris-i386.tar.bz2",
-                    "bouncer-platform": "opensolaris-i386",
-                },
-                "opensolaris-sparc": {
-                    "path": "/thunderbird/releases/%(version)s/contrib/solaris_tarball/thunderbird-%(version)s.en-US.opensolaris-sparc.tar.bz2",
-                    "bouncer-platform": "opensolaris-sparc",
-                },
-                "solaris-i386": {
-                    "path": "/thunderbird/releases/%(version)s/contrib/solaris_tarball/thunderbird-%(version)s.en-US.solaris-i386.tar.bz2",
-                    "bouncer-platform": "solaris-i386",
-                },
-                "solaris-sparc": {
-                    "path": "/thunderbird/releases/%(version)s/contrib/solaris_tarball/thunderbird-%(version)s.en-US.solaris-sparc.tar.bz2",
-                    "bouncer-platform": "solaris-sparc",
-                },
             },
         },
         "complete-mar": {
@@ -104,22 +73,6 @@ config = {
                 "win32": {
                     "path": "/thunderbird/releases/%(version)s/update/win32/:lang/thunderbird-%(version)s.complete.mar",
                     "bouncer-platform": "win",
-                },
-                "opensolaris-i386": {
-                    "path": "/thunderbird/releases/%(version)s/contrib/solaris_tarball/thunderbird-%(version)s.en-US.opensolaris-i386.complete.mar",
-                    "bouncer-platform": "opensolaris-i386",
-                },
-                "opensolaris-sparc": {
-                    "path": "/thunderbird/releases/%(version)s/contrib/solaris_tarball/thunderbird-%(version)s.en-US.opensolaris-sparc.complete.mar",
-                    "bouncer-platform": "opensolaris-sparc",
-                },
-                "solaris-i386": {
-                    "path": "/thunderbird/releases/%(version)s/contrib/solaris_tarball/thunderbird-%(version)s.en-US.solaris-i386.complete.mar",
-                    "bouncer-platform": "solaris-i386",
-                },
-                "solaris-sparc": {
-                    "path": "/thunderbird/releases/%(version)s/contrib/solaris_tarball/thunderbird-%(version)s.en-US.solaris-sparc.complete.mar",
-                    "bouncer-platform": "solaris-sparc",
                 },
             },
         },
@@ -146,22 +99,6 @@ config = {
                 "win32": {
                     "path": "/thunderbird/releases/%(version)s/update/win32/:lang/thunderbird-%(prev_version)s-%(version)s.partial.mar",
                     "bouncer-platform": "win",
-                },
-                "opensolaris-i386": {
-                    "path": "/thunderbird/releases/%(version)s/contrib/solaris_tarball/thunderbird-%(prev_version)s-%(version)s.en-US.opensolaris-i386.partial.mar",
-                    "bouncer-platform": "opensolaris-i386",
-                },
-                "opensolaris-sparc": {
-                    "path": "/thunderbird/releases/%(version)s/contrib/solaris_tarball/thunderbird-%(prev_version)s-%(version)s.en-US.opensolaris-sparc.partial.mar",
-                    "bouncer-platform": "opensolaris-sparc",
-                },
-                "solaris-i386": {
-                    "path": "/thunderbird/releases/%(version)s/contrib/solaris_tarball/thunderbird-%(prev_version)s-%(version)s.en-US.solaris-i386.partial.mar",
-                    "bouncer-platform": "solaris-i386",
-                },
-                "solaris-sparc": {
-                    "path": "/thunderbird/releases/%(version)s/contrib/solaris_tarball/thunderbird-%(prev_version)s-%(version)s.en-US.solaris-sparc.partial.mar",
-                    "bouncer-platform": "solaris-sparc",
                 },
             },
         },

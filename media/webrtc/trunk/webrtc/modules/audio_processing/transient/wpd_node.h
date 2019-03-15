@@ -8,11 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_PROCESSING_TRANSIENT_WPD_NODE_H_
-#define WEBRTC_MODULES_AUDIO_PROCESSING_TRANSIENT_WPD_NODE_H_
+#ifndef MODULES_AUDIO_PROCESSING_TRANSIENT_WPD_NODE_H_
+#define MODULES_AUDIO_PROCESSING_TRANSIENT_WPD_NODE_H_
 
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/typedefs.h"
+#include <memory>
+
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -36,11 +37,11 @@ class WPDNode {
   size_t length() const { return length_; }
 
  private:
-  rtc::scoped_ptr<float[]> data_;
+  std::unique_ptr<float[]> data_;
   size_t length_;
-  rtc::scoped_ptr<FIRFilter> filter_;
+  std::unique_ptr<FIRFilter> filter_;
 };
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_AUDIO_PROCESSING_TRANSIENT_WPD_NODE_H_
+#endif  // MODULES_AUDIO_PROCESSING_TRANSIENT_WPD_NODE_H_

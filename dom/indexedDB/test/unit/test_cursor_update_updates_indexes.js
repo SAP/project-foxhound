@@ -26,11 +26,11 @@ function* testSteps()
     let info = objectStoreInfo[i];
 
     ok(true, "1");
-    request = indexedDB.open(name, i + 1);
+    let request = indexedDB.open(name, i + 1);
     request.onerror = errorHandler;
     request.onupgradeneeded = grabEventAndContinueHandler;
     request.onsuccess = grabEventAndContinueHandler;
-    event = yield undefined;
+    let event = yield undefined;
 
     let db = event.target.result;
 
@@ -75,7 +75,7 @@ function* testSteps()
     request.onsuccess = grabEventAndContinueHandler;
     event = yield undefined;
     ok(true, "6");
-    ok(obj.data, event.target.result.data,
+    is(obj.data, event.target.result.data,
                   "Non-unique index was properly updated.");
 
     request = uniqueIndex.get(END_DATA);
@@ -84,7 +84,7 @@ function* testSteps()
     event = yield undefined;
 
     ok(true, "7");
-    ok(obj.data, event.target.result.data,
+    is(obj.data, event.target.result.data,
                   "Unique index was properly updated.");
 
     // Wait for success
@@ -95,4 +95,3 @@ function* testSteps()
 
   finishTest();
 }
-

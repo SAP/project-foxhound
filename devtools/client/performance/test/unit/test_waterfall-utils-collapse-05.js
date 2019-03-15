@@ -7,24 +7,20 @@
  * when dealing with OTMT markers.
  */
 
-function run_test() {
-  run_next_test();
-}
-
 add_task(function test() {
   const WaterfallUtils = require("devtools/client/performance/modules/logic/waterfall-utils");
 
-  let rootMarkerNode = WaterfallUtils.createParentNode({ name: "(root)" });
+  const rootMarkerNode = WaterfallUtils.createParentNode({ name: "(root)" });
 
   WaterfallUtils.collapseMarkersIntoNode({
     rootNode: rootMarkerNode,
-    markersList: gTestMarkers
+    markersList: gTestMarkers,
   });
 
   compare(rootMarkerNode, gExpectedOutput);
 
   function compare(marker, expected) {
-    for (let prop in expected) {
+    for (const prop in expected) {
       if (prop === "submarkers") {
         for (let i = 0; i < expected.submarkers.length; i++) {
           compare(marker.submarkers[i], expected.submarkers[i]);
@@ -81,14 +77,14 @@ const gExpectedOutput = {
       end: 3,
       name: "B1",
       processType: 1,
-      isOffMainThread: false
-    }]
+      isOffMainThread: false,
+    }],
   }, {
     start: 2,
     end: 3,
     name: "C1",
     processType: 1,
-    isOffMainThread: true
+    isOffMainThread: true,
   }, {
     start: 5,
     end: 8,
@@ -100,14 +96,14 @@ const gExpectedOutput = {
       end: 7,
       name: "B2",
       processType: 1,
-      isOffMainThread: false
-    }]
+      isOffMainThread: false,
+    }],
   }, {
     start: 6,
     end: 7,
     name: "C2",
     processType: 1,
-    isOffMainThread: true
+    isOffMainThread: true,
   }, {
     start: 9,
     end: 12,
@@ -119,14 +115,14 @@ const gExpectedOutput = {
       end: 11,
       name: "D1",
       processType: 2,
-      isOffMainThread: false
-    }]
+      isOffMainThread: false,
+    }],
   }, {
     start: 10,
     end: 11,
     name: "E1",
     processType: 2,
-    isOffMainThread: true
+    isOffMainThread: true,
   }, {
     start: 13,
     end: 16,
@@ -138,27 +134,27 @@ const gExpectedOutput = {
       end: 15,
       name: "D2",
       processType: 2,
-      isOffMainThread: false
-    }]
+      isOffMainThread: false,
+    }],
   }, {
     start: 14,
     end: 15,
     name: "E2",
     processType: 2,
-    isOffMainThread: true
+    isOffMainThread: true,
   }, {
     start: 14,
     end: 15,
     name: "F",
     processType: 3,
     isOffMainThread: false,
-    submarkers: []
+    submarkers: [],
   }, {
     start: 14,
     end: 15,
     name: "G",
     processType: 3,
     isOffMainThread: true,
-    submarkers: []
-  }]
+    submarkers: [],
+  }],
 };

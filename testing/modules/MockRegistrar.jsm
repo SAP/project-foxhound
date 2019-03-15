@@ -4,17 +4,16 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = [
+var EXPORTED_SYMBOLS = [
   "MockRegistrar",
 ];
 
-const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr, manager: Cm} = Components;
+const Cm = Components.manager;
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Log.jsm");
+ChromeUtils.import("resource://gre/modules/Log.jsm");
 var logger = Log.repository.getLogger("MockRegistrar");
 
-this.MockRegistrar = Object.freeze({
+var MockRegistrar = Object.freeze({
   _registeredComponents: new Map(),
   _originalCIDs: new Map(),
   get registrar() {
@@ -62,7 +61,7 @@ this.MockRegistrar = Object.freeze({
         try {
           let genuine = originalFactory.createInstance(outer, iid);
           wrappedMock._genuine = genuine;
-        } catch(ex) {
+        } catch (ex) {
           logger.info("Creating original instance failed", ex);
         }
 
@@ -71,7 +70,7 @@ this.MockRegistrar = Object.freeze({
       lockFactory(lock) {
         throw Cr.NS_ERROR_NOT_IMPLEMENTED;
       },
-      QueryInterface: XPCOMUtils.generateQI([Ci.nsIFactory])
+      QueryInterface: ChromeUtils.generateQI([Ci.nsIFactory]),
     };
 
     this.registrar.unregisterFactory(originalCID, originalFactory);
@@ -81,9 +80,9 @@ this.MockRegistrar = Object.freeze({
                                    factory);
 
     this._registeredComponents.set(originalCID, {
-      contractID: contractID,
-      factory: factory,
-      originalFactory: originalFactory
+      contractID,
+      factory,
+      originalFactory,
     });
 
     return originalCID;
@@ -118,6 +117,6 @@ this.MockRegistrar = Object.freeze({
     for (let cid of this._registeredComponents.keys()) {
       this.unregister(cid);
     }
-  }
+  },
 
 });

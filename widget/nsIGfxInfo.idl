@@ -16,46 +16,54 @@ interface nsIGfxInfo : nsISupports
   readonly attribute boolean D2DEnabled;
   readonly attribute boolean DWriteEnabled;
   readonly attribute boolean usingGPUProcess;
-  readonly attribute DOMString DWriteVersion;
-  readonly attribute DOMString cleartypeParameters;
+  readonly attribute AString DWriteVersion;
+  readonly attribute AString cleartypeParameters;
 
   /*
    * These are valid across all platforms.
    */
-  readonly attribute DOMString ContentBackend;
+  readonly attribute AString ContentBackend;
+  readonly attribute boolean WebRenderEnabled;
+  readonly attribute boolean isHeadless;
+  readonly attribute boolean UsesTiling;
+  readonly attribute boolean ContentUsesTiling;
+  readonly attribute boolean OffMainThreadPaintEnabled;
+  readonly attribute long OffMainThreadPaintWorkerCount;
+  readonly attribute boolean LowEndMachine;
+  readonly attribute unsigned long TargetFrameRate;
 
   // XXX: Switch to a list of devices, rather than explicitly numbering them.
 
   /**
    * The name of the display adapter.
    */
-  readonly attribute DOMString adapterDescription;
-  readonly attribute DOMString adapterDescription2;
+  readonly attribute AString adapterDescription;
+  readonly attribute AString adapterDescription2;
 
-  readonly attribute DOMString adapterDriver;
-  readonly attribute DOMString adapterDriver2;
+  readonly attribute AString adapterDriver;
+  readonly attribute AString adapterDriver2;
 
   /* These types are inspired by DXGI_ADAPTER_DESC */
-  readonly attribute DOMString adapterVendorID;
-  readonly attribute DOMString adapterVendorID2;
+  readonly attribute AString adapterVendorID;
+  readonly attribute AString adapterVendorID2;
 
-  readonly attribute DOMString adapterDeviceID;
-  readonly attribute DOMString adapterDeviceID2;
+  readonly attribute AString adapterDeviceID;
+  readonly attribute AString adapterDeviceID2;
 
-  readonly attribute DOMString adapterSubsysID;
-  readonly attribute DOMString adapterSubsysID2;
+  readonly attribute AString adapterSubsysID;
+  readonly attribute AString adapterSubsysID2;
 
   /**
    * The amount of RAM in MB in the display adapter.
    */
-  readonly attribute DOMString adapterRAM;
-  readonly attribute DOMString adapterRAM2;
+  readonly attribute AString adapterRAM;
+  readonly attribute AString adapterRAM2;
 
-  readonly attribute DOMString adapterDriverVersion;
-  readonly attribute DOMString adapterDriverVersion2;
+  readonly attribute AString adapterDriverVersion;
+  readonly attribute AString adapterDriverVersion2;
 
-  readonly attribute DOMString adapterDriverDate;
-  readonly attribute DOMString adapterDriverDate2;
+  readonly attribute AString adapterDriverDate;
+  readonly attribute AString adapterDriverDate2;
 
   readonly attribute boolean isGPU2Active;
 
@@ -113,18 +121,28 @@ interface nsIGfxInfo : nsISupports
   const long FEATURE_WEBRTC_HW_ACCELERATION_DECODE = 15;
   /* Whether Canvas acceleration is supported, starting in 45 */
   const long FEATURE_CANVAS2D_ACCELERATION = 16;
-  /* Whether hardware VP8 decoding is supported, starting in 48. */
+  /* Whether hardware VP8 decoding is supported, starting in 48; not for downloadable blocking. */
   const long FEATURE_VP8_HW_DECODE = 17;
-  /* Whether hardware VP9 decoding is supported, starting in 48. */
+  /* Whether hardware VP9 decoding is supported, starting in 48; not for downloadable blocking. */
   const long FEATURE_VP9_HW_DECODE = 18;
-  /* Whether NV_dx_interop2 is supported, starting in 50. */
+  /* Whether NV_dx_interop2 is supported, starting in 50; downloadable blocking in 58. */
   const long FEATURE_DX_INTEROP2 = 19;
-  /* Whether the GPU process is supported, starting in 52. */
+  /* Whether the GPU process is supported, starting in 52; downloadable blocking in 58. */
   const long FEATURE_GPU_PROCESS = 20;
   /* Whether the WebGL2 is supported, starting in 54 */
   const long FEATURE_WEBGL2 = 21;
+  /* Whether Advanced Layers is supported, starting in 56 */
+  const long FEATURE_ADVANCED_LAYERS = 22;
+  /* Whether D3D11 keyed mutex is supported, starting in 56 */
+  const long FEATURE_D3D11_KEYED_MUTEX = 23;
+  /* Whether WebRender is supported, starting in 62 */
+  const long FEATURE_WEBRENDER = 24;
+  /* Whether WebRender is supported, starting in 62 */
+  const long FEATURE_DX_NV12 = 25;
+  const long FEATURE_DX_P010 = 26;
+  const long FEATURE_DX_P016 = 27;
   /* the maximum feature value. */
-  const long FEATURE_MAX_VALUE = FEATURE_WEBGL2;
+  const long FEATURE_MAX_VALUE = FEATURE_DX_P016;
 
   /*
    * A set of return values from GetFeatureStatus
@@ -158,14 +176,7 @@ interface nsIGfxInfo : nsISupports
    * Ask about a feature, return the minimum driver version required for it if its status is
    * FEATURE_BLOCKED_DRIVER_VERSION, otherwise return an empty string.
    */
-  DOMString getFeatureSuggestedDriverVersion(in long aFeature);
-
-  /**
-   * WebGL info; valid params are "full-renderer", "vendor", "renderer", "version",
-   * "shading_language_version", "extensions".  These return info from
-   * underlying GL impl that's used to implement WebGL.
-   */
-  DOMString getWebGLParameter(in DOMString aParam);
+  AString getFeatureSuggestedDriverVersion(in long aFeature);
 
   // only useful on X11
   [noscript, notxpcom] void GetData();

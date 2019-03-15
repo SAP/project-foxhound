@@ -4,7 +4,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-if CONFIG['OS_TARGET'] != 'WINNT' and CONFIG['MOZ_WIDGET_TOOLKIT'] != 'gonk':
+include("/ipc/chromium/chromium-config.mozbuild")
+
+if CONFIG['OS_TARGET'] != 'WINNT':
     SOURCES += [
         'buffered_stun_socket_unittest.cpp',
         'ice_unittest.cpp',
@@ -16,10 +18,12 @@ if CONFIG['OS_TARGET'] != 'WINNT' and CONFIG['MOZ_WIDGET_TOOLKIT'] != 'gonk':
         'simpletokenbucket_unittest.cpp',
         'sockettransportservice_unittest.cpp',
         'stunserver.cpp',
+        'test_nr_socket_ice_unittest.cpp',
         'test_nr_socket_unittest.cpp',
         'TestSyncRunnable.cpp',
         'transport_unittests.cpp',
         'turn_unittest.cpp',
+        'webrtcproxychannel_unittest.cpp',
     ]
 
     if CONFIG['MOZ_SCTP']:
@@ -28,7 +32,7 @@ if CONFIG['OS_TARGET'] != 'WINNT' and CONFIG['MOZ_WIDGET_TOOLKIT'] != 'gonk':
         ]
 
 
-for var in ('HAVE_STRDUP', 'NR_SOCKET_IS_VOID_PTR', 'SCTP_DEBUG', 'INET'):
+for var in ('HAVE_STRDUP', 'NR_SOCKET_IS_VOID_PTR', 'SCTP_DEBUG'):
     DEFINES[var] = True
 
 if CONFIG['OS_TARGET'] == 'Android':
@@ -37,8 +41,6 @@ if CONFIG['OS_TARGET'] == 'Android':
     LOCAL_INCLUDES += [
         '/media/mtransport/third_party/nrappkit/src/port/android/include',
     ]
-else:
-    DEFINES['INET6'] = True
 
 if CONFIG['OS_TARGET'] == 'Linux':
     DEFINES['LINUX'] = True
@@ -96,5 +98,5 @@ LOCAL_INCLUDES += [
 
 FINAL_LIBRARY = 'xul-gtest'
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

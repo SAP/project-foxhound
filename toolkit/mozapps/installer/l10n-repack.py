@@ -15,16 +15,14 @@ import buildconfig
 # localized.
 NON_CHROME = set([
     '**/crashreporter*.ini',
-    'searchplugins',
     'dictionaries',
-    'hyphenation',
     'defaults/profile',
     'defaults/pref*/*-l10n.js',
     'update.locale',
     'updater.ini',
     'extensions/langpack-*@*',
     'distribution/extensions/langpack-*@*',
-    'chrome/**/searchplugins/*.xml',
+    '**/multilocale.txt'
 ])
 
 

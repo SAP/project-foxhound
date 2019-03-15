@@ -6,11 +6,7 @@
 
 const TOTAL_SITES = 20;
 
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* test_execute() {
+add_task(async function test_execute() {
   let places = [];
   for (let i = 0; i < TOTAL_SITES; i++) {
     for (let j = 0; j <= i; j++) {
@@ -24,7 +20,7 @@ add_task(function* test_execute() {
                     transition: TRANSITION_FRAMED_LINK });
     }
   }
-  yield PlacesTestUtils.addVisits(places);
+  await PlacesTestUtils.addVisits(places);
 
   // test our optimized query for the "Most Visited" item
   // in the "Smart Bookmarks" folder
@@ -42,12 +38,12 @@ add_task(function* test_execute() {
                                               options).root;
   root.containerOpen = true;
   let cc = root.childCount;
-  do_check_eq(cc, options.maxResults);
+  Assert.equal(cc, options.maxResults);
   for (let i = 0; i < cc; i++) {
     let node = root.getChild(i);
     let site = "http://www.test-" + (TOTAL_SITES - 1 - i) + ".com/";
-    do_check_eq(node.uri, site);
-    do_check_eq(node.type, Ci.nsINavHistoryResultNode.RESULT_TYPE_URI);
+    Assert.equal(node.uri, site);
+    Assert.equal(node.type, Ci.nsINavHistoryResultNode.RESULT_TYPE_URI);
   }
   root.containerOpen = false;
 
@@ -65,12 +61,12 @@ add_task(function* test_execute() {
                                               options).root;
   root.containerOpen = true;
   cc = root.childCount;
-  do_check_eq(cc, TOTAL_SITES);
+  Assert.equal(cc, TOTAL_SITES);
   for (let i = 0; i < 10; i++) {
     let node = root.getChild(i);
     let site = "http://www.test-" + (TOTAL_SITES - 1 - i) + ".com/";
-    do_check_eq(node.uri, site);
-    do_check_eq(node.type, Ci.nsINavHistoryResultNode.RESULT_TYPE_URI);
+    Assert.equal(node.uri, site);
+    Assert.equal(node.type, Ci.nsINavHistoryResultNode.RESULT_TYPE_URI);
   }
   root.containerOpen = false;
 });

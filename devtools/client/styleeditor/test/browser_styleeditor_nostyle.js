@@ -8,11 +8,11 @@
 
 const TESTCASE_URI = TEST_BASE_HTTP + "nostyle.html";
 
-add_task(function* () {
-  let { panel } = yield openStyleEditorForURL(TESTCASE_URI);
-  let { panelWindow } = panel;
+add_task(async function() {
+  const { panel } = await openStyleEditorForURL(TESTCASE_URI);
+  const { panelWindow } = panel;
 
-  let root = panelWindow.document.querySelector(".splitview-root");
+  const root = panelWindow.document.querySelector(".splitview-root");
   ok(!root.classList.contains("loading"),
      "style editor root element does not have 'loading' class name anymore");
 

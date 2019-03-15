@@ -15,35 +15,27 @@ namespace dom {
 
 class BlobImpl;
 
-class FileSystemBase
-{
-public:
+class FileSystemBase {
+ public:
   NS_INLINE_DECL_REFCOUNTING(FileSystemBase)
 
   FileSystemBase();
 
-  virtual void
-  Shutdown();
+  virtual void Shutdown();
 
   // SerializeDOMPath the FileSystem to string.
-  virtual void
-  SerializeDOMPath(nsAString& aOutput) const = 0;
+  virtual void SerializeDOMPath(nsAString& aOutput) const = 0;
 
-  virtual already_AddRefed<FileSystemBase>
-  Clone() = 0;
+  virtual already_AddRefed<FileSystemBase> Clone() = 0;
 
-  virtual bool
-  ShouldCreateDirectory() = 0;
+  virtual bool ShouldCreateDirectory() = 0;
 
-  virtual nsISupports*
-  GetParentObject() const;
+  virtual nsISupports* GetParentObject() const;
 
-  virtual void
-  GetDirectoryName(nsIFile* aFile, nsAString& aRetval,
-                   ErrorResult& aRv) const;
+  virtual void GetDirectoryName(nsIFile* aFile, nsAString& aRetval,
+                                ErrorResult& aRv) const;
 
-  void
-  GetDOMPath(nsIFile* aFile, nsAString& aRetval, ErrorResult& aRv) const;
+  void GetDOMPath(nsIFile* aFile, nsAString& aRetval, ErrorResult& aRv) const;
 
   /*
    * Return the local root path of the FileSystem implementation.
@@ -51,47 +43,23 @@ public:
    * For DeviceStorageFileSystem, this is the path of the SDCard, parent
    * directory of the exposed root Directory (per type).
    */
-  const nsAString&
-  LocalRootPath() const
-  {
-    return mLocalRootPath;
-  }
+  const nsAString& LocalRootPath() const { return mLocalRootPath; }
 
-  bool
-  IsShutdown() const
-  {
-    return mShutdown;
-  }
+  bool IsShutdown() const { return mShutdown; }
 
-  virtual bool
-  IsSafeFile(nsIFile* aFile) const;
+  virtual bool IsSafeFile(nsIFile* aFile) const;
 
-  virtual bool
-  IsSafeDirectory(Directory* aDir) const;
+  virtual bool IsSafeDirectory(Directory* aDir) const;
 
-  bool
-  GetRealPath(BlobImpl* aFile, nsIFile** aPath) const;
-
-  // IPC initialization
-  // See how these 2 methods are used in FileSystemTaskChildBase.
-
-  virtual bool
-  NeedToGoToMainThread() const { return false; }
-
-  virtual nsresult
-  MainThreadWork() { return NS_ERROR_FAILURE; }
-
-  virtual bool
-  ClonableToDifferentThreadOrProcess() const { return false; }
+  bool GetRealPath(BlobImpl* aFile, nsIFile** aPath) const;
 
   // CC methods
   virtual void Unlink() {}
-  virtual void Traverse(nsCycleCollectionTraversalCallback &cb) {}
+  virtual void Traverse(nsCycleCollectionTraversalCallback& cb) {}
 
-  void
-  AssertIsOnOwningThread() const;
+  void AssertIsOnOwningThread() const;
 
-protected:
+ protected:
   virtual ~FileSystemBase();
 
   // The local path of the root (i.e. the OS path, with OS path separators, of
@@ -106,13 +74,9 @@ protected:
   nsString mLocalRootPath;
 
   bool mShutdown;
-
-#ifdef DEBUG
-  PRThread* mOwningThread;
-#endif
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_FileSystemBase_h
+#endif  // mozilla_dom_FileSystemBase_h

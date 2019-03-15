@@ -9,9 +9,13 @@ requestLongerTimeout(2);
 
 // Tests that disabling the cache for a tab works as it should when toolboxes
 // are not toggled.
+/* import-globals-from helper_disable_cache.js */
 loadHelperScript("helper_disable_cache.js");
 
-add_task(function* () {
+add_task(async function() {
+  // Disable rcwn to make cache behavior deterministic.
+  await pushPref("network.http.rcwn.enabled", false);
+
   // Ensure that the setting is cleared after the test.
   registerCleanupFunction(() => {
     info("Resetting devtools.cache.disabled to false.");
@@ -19,16 +23,16 @@ add_task(function* () {
   });
 
   // Initialise tabs: 1 and 2 with a toolbox, 3 and 4 without.
-  for (let tab of tabs) {
-    yield initTab(tab, tab.startToolbox);
+  for (const tab of tabs) {
+    await initTab(tab, tab.startToolbox);
   }
 
   // Ensure cache is enabled for all tabs.
-  yield checkCacheStateForAllTabs([true, true, true, true]);
+  await checkCacheStateForAllTabs([true, true, true, true]);
 
   // Check the checkbox in tab 0 and ensure cache is disabled for tabs 0 and 1.
-  yield setDisableCacheCheckboxChecked(tabs[0], true);
-  yield checkCacheStateForAllTabs([false, false, true, true]);
+  await setDisableCacheCheckboxChecked(tabs[0], true);
+  await checkCacheStateForAllTabs([false, false, true, true]);
 
-  yield finishUp();
+  await finishUp();
 });

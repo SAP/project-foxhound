@@ -4,16 +4,15 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["LoginManagerContextMenu"];
+var EXPORTED_SYMBOLS = ["LoginManagerContextMenu"];
 
-const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "LoginHelper",
-                                  "resource://gre/modules/LoginHelper.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "LoginManagerParent",
-                                  "resource://gre/modules/LoginManagerParent.jsm");
+ChromeUtils.defineModuleGetter(this, "LoginHelper",
+                               "resource://gre/modules/LoginHelper.jsm");
+ChromeUtils.defineModuleGetter(this, "LoginManagerParent",
+                               "resource://gre/modules/LoginManagerParent.jsm");
 
 /*
  * Password manager object for the browser contextual menu.
@@ -42,27 +41,27 @@ var LoginManagerContextMenu = {
     let fragment = browser.ownerDocument.createDocumentFragment();
     let duplicateUsernames = this._findDuplicates(foundLogins);
     for (let login of foundLogins) {
-        let item = fragment.ownerDocument.createElement("menuitem");
+      let item = fragment.ownerDocument.createXULElement("menuitem");
 
-        let username = login.username;
-        // If login is empty or duplicated we want to append a modification date to it.
-        if (!username || duplicateUsernames.has(username)) {
-          if (!username) {
-            username = this._getLocalizedString("noUsername");
-          }
-          let meta = login.QueryInterface(Ci.nsILoginMetaInfo);
-          let time = this.dateAndTimeFormatter.format(new Date(meta.timePasswordChanged));
-          username = this._getLocalizedString("loginHostAge", [username, time]);
+      let username = login.username;
+      // If login is empty or duplicated we want to append a modification date to it.
+      if (!username || duplicateUsernames.has(username)) {
+        if (!username) {
+          username = this._getLocalizedString("noUsername");
         }
-        item.setAttribute("label", username);
-        item.setAttribute("class", "context-login-item");
+        let meta = login.QueryInterface(Ci.nsILoginMetaInfo);
+        let time = this.dateAndTimeFormatter.format(new Date(meta.timePasswordChanged));
+        username = this._getLocalizedString("loginHostAge", [username, time]);
+      }
+      item.setAttribute("label", username);
+      item.setAttribute("class", "context-login-item");
 
-        // login is bound so we can keep the reference to each object.
-        item.addEventListener("command", function(login, event) {
-          this._fillTargetField(login, inputElement, browser, documentURI);
-        }.bind(this, login));
+      // login is bound so we can keep the reference to each object.
+      item.addEventListener("command", function(login, event) {
+        this._fillTargetField(login, inputElement, browser, documentURI);
+      }.bind(this, login));
 
-        fragment.appendChild(item);
+      fragment.appendChild(item);
     }
 
     return fragment;
@@ -93,7 +92,7 @@ var LoginManagerContextMenu = {
    */
   _findLogins(documentURI) {
     let searchParams = {
-      hostname: documentURI.prePath,
+      hostname: documentURI.displayPrePath,
       schemeUpgrades: LoginHelper.schemeUpgrades,
     };
     let logins = LoginHelper.searchLoginsWithObject(searchParams);
@@ -101,7 +100,7 @@ var LoginManagerContextMenu = {
       "scheme",
       "timePasswordChanged",
     ];
-    logins = LoginHelper.dedupeLogins(logins, ["username", "password"], resolveBy, documentURI.prePath);
+    logins = LoginHelper.dedupeLogins(logins, ["username", "password"], resolveBy, documentURI.displayPrePath);
 
     // Sort logins in alphabetical order and by date.
     logins.sort((loginA, loginB) => {
@@ -162,7 +161,7 @@ var LoginManagerContextMenu = {
   _fillTargetField(login, inputElement, browser, documentURI) {
     LoginManagerParent.fillForm({
       browser,
-      loginFormOrigin: documentURI.prePath,
+      loginFormOrigin: documentURI.displayPrePath,
       login,
       inputElement,
     }).catch(Cu.reportError);
@@ -191,9 +190,7 @@ XPCOMUtils.defineLazyGetter(LoginManagerContextMenu, "_stringBundle", function()
 });
 
 XPCOMUtils.defineLazyGetter(LoginManagerContextMenu, "dateAndTimeFormatter", function() {
-  return new Intl.DateTimeFormat(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
+  return new Services.intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
   });
 });

@@ -8,6 +8,14 @@ Browser context menu subtest.
 
 <div id="test-text">Lorem ipsum dolor sit amet, consectetuer adipiscing elit.</div>
 <a id="test-link" href="http://mozilla.com">Click the monkey!</a>
+<div id="shadow-host"></div>
+<script>
+// Create the shadow DOM in case shadow DOM is enabled.
+if ("ShadowRoot" in this) {
+  var sr = document.getElementById("shadow-host").attachShadow({mode: "closed"});
+  sr.innerHTML = "<a href='http://mozilla.com'>Click the monkey!</a>";
+}
+</script>
 <a id="test-mailto" href="mailto:codemonkey@mozilla.com">Mail the monkey!</a><br>
 <input id="test-input"><br>
 <img id="test-image" src="ctxmenu-image.png">
@@ -69,5 +77,11 @@ Browser context menu subtest.
 <embed id="test-plugin" style="width: 200px; height: 200px;" type="application/x-test"></embed>
 <img id="test-longdesc" src="ctxmenu-image.png" longdesc="http://www.mozilla.org"></embed>
 <iframe id="test-srcdoc" width="98"  height="98" srcdoc="Hello World" style="border: 1px solid black"></iframe>
+<svg id="svg-with-link" width=10 height=10><a xlink:href="http://example.com/"><circle cx="50%" cy="50%" r="50%" fill="blue"/></a></svg>
+<svg id="svg-with-link2" width=10 height=10><a xlink:href="http://example.com/" xlink:type="simple"><circle cx="50%" cy="50%" r="50%" fill="green"/></a></svg>
+<svg id="svg-with-link3" width=10 height=10><a href="http://example.com/"><circle cx="50%" cy="50%" r="50%" fill="red"/></a></svg>
+<svg id="svg-with-relative-link" width=10 height=10><a xlink:href="/"><circle cx="50%" cy="50%" r="50%" fill="blue"/></a></svg>
+<svg id="svg-with-relative-link2" width=10 height=10><a xlink:href="/" xlink:type="simple"><circle cx="50%" cy="50%" r="50%" fill="green"/></a></svg>
+<svg id="svg-with-relative-link3" width=10 height=10><a href="/"><circle cx="50%" cy="50%" r="50%" fill="red"/></a></svg>
 </body>
 </html>

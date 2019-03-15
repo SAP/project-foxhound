@@ -13,6 +13,9 @@
       'sources': [
         'util_utf8_unittest.cc',
         'util_b64_unittest.cc',
+        'util_pkcs11uri_unittest.cc',
+        'util_aligned_malloc_unittest.cc',
+        'util_memcmpzero_unittest.cc',
         '<(DEPTH)/gtests/common/gtests.cc',
       ],
       'dependencies': [
@@ -28,7 +31,18 @@
         '<(DEPTH)/lib/dev/dev.gyp:nssdev',
         '<(DEPTH)/lib/pki/pki.gyp:nsspki',
         '<(DEPTH)/lib/ssl/ssl.gyp:ssl',
-      ]
+        '<(DEPTH)/lib/libpkix/libpkix.gyp:libpkix',
+      ],
+      'conditions': [
+        [ 'OS=="win"', {
+          'libraries': [
+            'advapi32.lib',
+          ],
+        }],
+      ],
+      'defines': [
+        'NSS_USE_STATIC_LIBS'
+      ],
     }
   ],
   'target_defaults': {

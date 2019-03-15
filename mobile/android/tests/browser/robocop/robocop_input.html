@@ -9,7 +9,7 @@
     <p>Input: <input id="input" type="text"></p>
     <p>Text area: <textarea id="text-area"></textarea></p>
     <p>Content editable: <div id="content-editable" contentEditable="true"></div></p>
-    <p>Design mode: <iframe id="design-mode" src="data:text/html;charset=utf-8,<html><body></body></html>"></iframe></p>
+    <p>Design mode: <iframe id="design-mode" srcdoc="<html><body></body></html>"></iframe></p>
     <p>Resetting input: <input id="resetting-input" type="text"></p>
     <p>Hiding input: <input id="hiding-input" type="text"></p>
     <script type="application/javascript" src="robocop_head.js"></script>
@@ -23,21 +23,23 @@
         designMode.contentDocument.designMode = "on";
       } catch (e) {
         // Setting designMode above sometimes fails, so try again later.
-        setTimeout(function() { designMode.contentDocument.designMode = "on" }, 0);
+        setTimeout(function() { designMode.contentDocument.designMode = "on"; }, 0);
       }
 
-      // Spatial navigation interferes with design-mode key event tests.
-      SpecialPowers.setBoolPref("snav.enabled", false);
+      // Add key listeners to trigger dummy key synthesis.
+      input.addEventListener("keydown", function() {});
+      textArea.addEventListener("keydown", function() {});
+      contentEditable.addEventListener("keydown", function() {});
 
       // An input that resets the editor on every input by resetting the value property.
       let resetting_input = document.getElementById("resetting-input");
-      resetting_input.addEventListener('input', function() {
+      resetting_input.addEventListener("input", function() {
         this.value = this.value;
       });
 
       // An input that hides on input.
       let hiding_input = document.getElementById("hiding-input");
-      hiding_input.addEventListener('keydown', function(e) {
+      hiding_input.addEventListener("keydown", function(e) {
         if (e.key === "!") { // '!' key event as sent by testInputConnection.java.
           this.value = "";
           this.style.display = "none";
@@ -58,8 +60,32 @@
           case "compositionend":
             events_log += ">";
             break;
+          case "selectionchange":
+            events_log += "|";
+            break;
           default:
             events_log += "?";
+            break;
+        }
+      }
+
+      let key_log;
+      function get_key_metastate(event) {
+        return (event.ctrlKey ? "C" : "c") +
+               (event.altKey ? "A" : "a") +
+               (event.shiftKey ? "S" : "s") +
+               (event.metaKey ? "M" : "m");
+      }
+
+      function log_key(event) {
+        switch (event.type) {
+          case "keydown":
+          case "keypress":
+          case "keyup":
+            key_log += `${event.type}:${event.key},${get_key_metastate(event)};`;
+            break;
+          default:
+            key_log += "unknown;";
             break;
         }
       }
@@ -76,10 +102,9 @@
       }
 
       let test = {
-        focus_input: function(val) {
+        focus_input: function(value) {
           getEditor = function() {
-            return SpecialPowers.wrap(input).QueryInterface(
-                SpecialPowers.Ci.nsIDOMNSEditableElement).editor;
+            return SpecialPowers.wrap(input).editor;
           };
           setValue = function(val) {
             input.value = val;
@@ -87,14 +112,13 @@
           setSelection = function(pos) {
             input.setSelectionRange(pos, pos);
           };
-          setValue(val);
+          setValue(value);
           input.focus();
         },
 
-        focus_text_area: function(val) {
+        focus_text_area: function(value) {
           getEditor = function() {
-            return SpecialPowers.wrap(textArea).QueryInterface(
-                SpecialPowers.Ci.nsIDOMNSEditableElement).editor;
+            return SpecialPowers.wrap(textArea).editor;
           };
           setValue = function(val) {
             textArea.value = val;
@@ -102,42 +126,38 @@
           setSelection = function(pos) {
             textArea.setSelectionRange(pos, pos);
           };
-          setValue(val);
+          setValue(value);
           textArea.focus();
         },
 
-        focus_content_editable: function(val) {
+        focus_content_editable: function(value) {
           getEditor = function() {
-            return SpecialPowers.wrap(window).QueryInterface(
-                SpecialPowers.Ci.nsIInterfaceRequestor).getInterface(
-                SpecialPowers.Ci.nsIWebNavigation).QueryInterface(
-                SpecialPowers.Ci.nsIDocShell).editor;
+            return SpecialPowers.wrap(window).docShell.editor;
           };
           setValue = function(val) {
+            // eslint-disable-next-line no-unsanitized/property
             contentEditable.innerHTML = val;
           };
           setSelection = function(pos) {
             window.getSelection().collapse(contentEditable.firstChild, pos);
           };
-          setValue(val);
+          setValue(value);
           contentEditable.focus();
         },
 
-        focus_design_mode: function(val) {
+        focus_design_mode: function(value) {
           getEditor = function() {
-            return SpecialPowers.wrap(designMode.contentWindow).QueryInterface(
-                SpecialPowers.Ci.nsIInterfaceRequestor).getInterface(
-                SpecialPowers.Ci.nsIWebNavigation).QueryInterface(
-                SpecialPowers.Ci.nsIDocShell).editor;
+            return SpecialPowers.wrap(designMode.contentWindow).docShell.editor;
           };
           setValue = function(val) {
+          // eslint-disable-next-line no-unsanitized/property
             designMode.contentDocument.body.innerHTML = val;
           };
           setSelection = function(pos) {
             designMode.contentWindow.getSelection().collapse(
                 designMode.contentDocument.body.firstChild, pos);
           };
-          setValue(val);
+          setValue(value);
           designMode.contentWindow.focus();
           designMode.contentDocument.body.focus();
         },
@@ -167,6 +187,7 @@
           target.addEventListener("compositionstart", log_event);
           target.addEventListener("compositionupdate", log_event);
           target.addEventListener("compositionend", log_event);
+          target.addEventListener("selectionchange", log_event);
         },
 
         end_events_log: function() {
@@ -176,13 +197,33 @@
           target.removeEventListener("compositionstart", log_event);
           target.removeEventListener("compositionupdate", log_event);
           target.removeEventListener("compositionend", log_event);
+          target.removeEventListener("selectionchange", log_event);
+        },
+
+        start_key_log: function() {
+          // Reset the log
+          key_log = "";
+
+          let target = get_event_target();
+          target.addEventListener("keydown", log_key);
+          target.addEventListener("keypress", log_key);
+          target.addEventListener("keyup", log_key);
+        },
+
+        end_key_log: function() {
+          java.asyncCall("setKeyLog", key_log);
+
+          let target = get_event_target();
+          target.removeEventListener("keydown", log_key);
+          target.removeEventListener("keypress", log_key);
+          target.removeEventListener("keyup", log_key);
         },
 
         test_bug1123514: function() {
-          document.activeElement.addEventListener('input', function() {
+          document.activeElement.addEventListener("input", function() {
             // Only works on input and textarea.
-            if (this.value === 'b') {
-              this.value = 'abc';
+            if (this.value === "b") {
+              this.value = "abc";
             }
           }, {once: true});
         },
@@ -196,6 +237,10 @@
           hiding_input.value = val;
           hiding_input.style.display = "";
           hiding_input.focus();
+        },
+
+        blur_hiding_input: function() {
+          hiding_input.blur();
         },
 
         finish_test: function() {

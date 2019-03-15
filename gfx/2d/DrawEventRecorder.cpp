@@ -1,117 +1,157 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DrawEventRecorder.h"
 #include "PathRecording.h"
 #include "RecordingTypes.h"
+#include "RecordedEventImpl.h"
 
 namespace mozilla {
 namespace gfx {
 
 using namespace std;
 
-DrawEventRecorderPrivate::DrawEventRecorderPrivate(std::ostream *aStream)
-  : mOutputStream(aStream)
-{
+DrawEventRecorderPrivate::DrawEventRecorderPrivate() : mExternalFonts(false) {}
+
+void DrawEventRecorderPrivate::StoreExternalSurfaceRecording(
+    SourceSurface *aSurface, uint64_t aKey) {
+  RecordEvent(RecordedExternalSurfaceCreation(aSurface, aKey));
+  mExternalSurfaces.push_back(aSurface);
 }
 
-void
-DrawEventRecorderPrivate::WriteHeader()
-{
-  WriteElement(*mOutputStream, kMagicInt);
-  WriteElement(*mOutputStream, kMajorRevision);
-  WriteElement(*mOutputStream, kMinorRevision);
+void DrawEventRecorderPrivate::StoreSourceSurfaceRecording(
+    SourceSurface *aSurface, const char *aReason) {
+  RefPtr<DataSourceSurface> dataSurf = aSurface->GetDataSurface();
+  if (dataSurf) {
+    DataSourceSurface::ScopedMap map(dataSurf, DataSourceSurface::READ);
+    RecordEvent(RecordedSourceSurfaceCreation(
+        aSurface, map.GetData(), map.GetStride(), dataSurf->GetSize(),
+        dataSurf->GetFormat()));
+    return;
+  }
+
+  gfxWarning() << "Recording failed to record SourceSurface for " << aReason;
+  // Insert a bogus source surface.
+  int32_t stride =
+      aSurface->GetSize().width * BytesPerPixel(aSurface->GetFormat());
+  UniquePtr<uint8_t[]> sourceData(
+      new uint8_t[stride * aSurface->GetSize().height]());
+  RecordEvent(RecordedSourceSurfaceCreation(aSurface, sourceData.get(), stride,
+                                            aSurface->GetSize(),
+                                            aSurface->GetFormat()));
 }
 
-void
-DrawEventRecorderPrivate::RecordEvent(const RecordedEvent &aEvent)
-{
-  WriteElement(*mOutputStream, aEvent.mType);
+void DrawEventRecorderFile::RecordEvent(const RecordedEvent &aEvent) {
+  WriteElement(mOutputStream, aEvent.mType);
 
-  aEvent.RecordToStream(*mOutputStream);
+  aEvent.RecordToStream(mOutputStream);
 
   Flush();
 }
 
-DrawEventRecorderFile::DrawEventRecorderFile(const char *aFilename)
-  : DrawEventRecorderPrivate(nullptr)
-  , mOutputFile(aFilename, ofstream::binary)
-{
-  mOutputStream = &mOutputFile;
+void DrawEventRecorderMemory::RecordEvent(const RecordedEvent &aEvent) {
+  WriteElement(mOutputStream, aEvent.mType);
 
-  WriteHeader();
+  aEvent.RecordToStream(mOutputStream);
 }
 
-DrawEventRecorderFile::~DrawEventRecorderFile()
-{
-  mOutputFile.close();
+void DrawEventRecorderMemory::AddDependentSurface(uint64_t aDependencyId) {
+  mDependentSurfaces.PutEntry(aDependencyId);
 }
 
-void
-DrawEventRecorderFile::Flush()
-{
-  mOutputFile.flush();
+nsTHashtable<nsUint64HashKey>
+    &&DrawEventRecorderMemory::TakeDependentSurfaces() {
+  return std::move(mDependentSurfaces);
 }
 
-bool
-DrawEventRecorderFile::IsOpen()
-{
-  return mOutputFile.is_open();
+DrawEventRecorderFile::DrawEventRecorderFile(const char_type *aFilename)
+    : mOutputStream(aFilename, ofstream::binary) {
+  WriteHeader(mOutputStream);
 }
 
-void
-DrawEventRecorderFile::OpenNew(const char *aFilename)
-{
-  MOZ_ASSERT(!mOutputFile.is_open());
+DrawEventRecorderFile::~DrawEventRecorderFile() { mOutputStream.close(); }
 
-  mOutputFile.open(aFilename, ofstream::binary);
-  WriteHeader();
+void DrawEventRecorderFile::Flush() { mOutputStream.flush(); }
+
+bool DrawEventRecorderFile::IsOpen() { return mOutputStream.is_open(); }
+
+void DrawEventRecorderFile::OpenNew(const char_type *aFilename) {
+  MOZ_ASSERT(!mOutputStream.is_open());
+
+  mOutputStream.open(aFilename, ofstream::binary);
+  WriteHeader(mOutputStream);
 }
 
-void
-DrawEventRecorderFile::Close()
-{
-  MOZ_ASSERT(mOutputFile.is_open());
+void DrawEventRecorderFile::Close() {
+  MOZ_ASSERT(mOutputStream.is_open());
 
-  mOutputFile.close();
+  mOutputStream.close();
 }
 
-DrawEventRecorderMemory::DrawEventRecorderMemory()
-  : DrawEventRecorderPrivate(nullptr)
-{
-  mOutputStream = &mMemoryStream;
-
-  WriteHeader();
+DrawEventRecorderMemory::DrawEventRecorderMemory() {
+  WriteHeader(mOutputStream);
 }
 
-void
-DrawEventRecorderMemory::Flush()
-{
-   mOutputStream->flush();
+DrawEventRecorderMemory::DrawEventRecorderMemory(
+    const SerializeResourcesFn &aFn)
+    : mSerializeCallback(aFn) {
+  mExternalFonts = !!mSerializeCallback;
+  WriteHeader(mOutputStream);
 }
 
-size_t
-DrawEventRecorderMemory::RecordingSize()
-{
-  return mMemoryStream.tellp();
+void DrawEventRecorderMemory::Flush() {}
+
+void DrawEventRecorderMemory::FlushItem(IntRect aRect) {
+  MOZ_RELEASE_ASSERT(!aRect.IsEmpty());
+  // Detaching our existing resources will add some
+  // destruction events to our stream so we need to do that
+  // first.
+  DetachResources();
+
+  // See moz2d_renderer.rs for a description of the stream format
+  WriteElement(mIndex, mOutputStream.mLength);
+
+  // write out the fonts into the extra data section
+  mSerializeCallback(mOutputStream, mScaledFonts);
+  WriteElement(mIndex, mOutputStream.mLength);
+
+  WriteElement(mIndex, aRect.x);
+  WriteElement(mIndex, aRect.y);
+  WriteElement(mIndex, aRect.XMost());
+  WriteElement(mIndex, aRect.YMost());
+  ClearResources();
+
+  // write out a new header for the next recording in the stream
+  WriteHeader(mOutputStream);
 }
 
-bool
-DrawEventRecorderMemory::CopyRecording(char* aBuffer, size_t aBufferLen)
-{
-  return !!mMemoryStream.read(aBuffer, aBufferLen);
+bool DrawEventRecorderMemory::Finish() {
+  // this length might be 0, and things should still work.
+  // for example if there are no items in a particular area
+  size_t indexOffset = mOutputStream.mLength;
+  // write out the index
+  mOutputStream.write(mIndex.mData, mIndex.mLength);
+  bool hasItems = mIndex.mLength != 0;
+  mIndex = MemStream();
+  // write out the offset of the Index to the end of the output stream
+  WriteElement(mOutputStream, indexOffset);
+  ClearResources();
+  return hasItems;
 }
 
-void
-DrawEventRecorderMemory::WipeRecording()
-{
-  mMemoryStream.str(std::string());
-  mMemoryStream.clear();
-
-  WriteHeader();
+size_t DrawEventRecorderMemory::RecordingSize() {
+  return mOutputStream.mLength;
 }
 
-} // namespace gfx
-} // namespace mozilla
+void DrawEventRecorderMemory::WipeRecording() {
+  mOutputStream = MemStream();
+  mIndex = MemStream();
+
+  WriteHeader(mOutputStream);
+}
+
+}  // namespace gfx
+}  // namespace mozilla

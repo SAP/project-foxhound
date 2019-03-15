@@ -2,10 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
-
-Cu.import("resource://gre/modules/AppConstants.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // Copied from nsILookAndFeel.h, see comments on eMetric_AlertNotificationOrigin
 const NS_ALERT_HORIZONTAL = 1;
@@ -70,7 +68,7 @@ function prefillAlertInfo() {
                                             1));
         let doNotDisturbMenuItem = document.getElementById("doNotDisturbMenuItem");
         doNotDisturbMenuItem.setAttribute("label",
-          ALERT_BUNDLE.formatStringFromName("doNotDisturb.label",
+          ALERT_BUNDLE.formatStringFromName("pauseNotifications.label",
                                             [BRAND_NAME],
                                             1));
         let disableForOrigin = document.getElementById("disableForOriginMenuItem");
@@ -169,7 +167,7 @@ function onAlertLoad() {
 
   // If the require interaction flag is set, prevent auto-closing the notification.
   if (!gRequireInteraction) {
-    if (Services.prefs.getBoolPref("alerts.disableSlidingEffect")) {
+    if (!Services.prefs.getBoolPref("toolkit.cosmeticAnimations.enabled")) {
       setTimeout(function() { window.close(); }, ALERT_DURATION_IMMEDIATE);
     } else {
       let alertBox = document.getElementById("alertBox");
@@ -202,9 +200,7 @@ function moveWindowToReplace(aReplacedAlert) {
 
   // Move windows that come after the replaced alert if the height is different.
   if (heightDelta != 0) {
-    let windows = Services.wm.getEnumerator("alert:alert");
-    while (windows.hasMoreElements()) {
-      let alertWindow = windows.getNext();
+    for (let alertWindow of Services.wm.getEnumerator("alert:alert")) {
       // boolean to determine if the alert window is after the replaced alert.
       let alertIsAfter = gOrigin & NS_ALERT_TOP ?
                          alertWindow.screenY > aReplacedAlert.screenY :
@@ -232,9 +228,7 @@ function moveWindowToEnd() {
           screen.availTop + screen.availHeight - window.outerHeight;
 
   // Position the window at the end of all alerts.
-  let windows = Services.wm.getEnumerator("alert:alert");
-  while (windows.hasMoreElements()) {
-    let alertWindow = windows.getNext();
+  for (let alertWindow of Services.wm.getEnumerator("alert:alert")) {
     if (alertWindow != window) {
       if (gOrigin & NS_ALERT_TOP) {
         y = Math.max(y, alertWindow.screenY + alertWindow.outerHeight - WINDOW_SHADOW_SPREAD);
@@ -255,9 +249,7 @@ function onAlertBeforeUnload() {
   if (!gIsReplaced) {
     // Move other alert windows to fill the gap left by closing alert.
     let heightDelta = window.outerHeight + WINDOW_MARGIN - WINDOW_SHADOW_SPREAD;
-    let windows = Services.wm.getEnumerator("alert:alert");
-    while (windows.hasMoreElements()) {
-      let alertWindow = windows.getNext();
+    for (let alertWindow of Services.wm.getEnumerator("alert:alert")) {
       if (alertWindow != window) {
         if (gOrigin & NS_ALERT_TOP) {
           if (alertWindow.screenY > window.screenY) {

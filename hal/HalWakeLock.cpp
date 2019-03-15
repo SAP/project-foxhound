@@ -8,7 +8,6 @@
 #include "mozilla/HalWakeLock.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/dom/ContentParent.h"
 #include "nsAutoPtr.h"
 #include "nsClassHashtable.h"
 #include "nsDataHashtable.h"
@@ -22,10 +21,7 @@ using namespace mozilla::hal;
 namespace {
 
 struct LockCount {
-  LockCount()
-    : numLocks(0)
-    , numHidden(0)
-  {}
+  LockCount() : numLocks(0), numHidden(0) {}
   uint32_t numLocks;
   uint32_t numHidden;
   nsTArray<uint64_t> processes;
@@ -36,29 +32,18 @@ typedef nsClassHashtable<nsStringHashKey, ProcessLockTable> LockTable;
 
 int sActiveListeners = 0;
 StaticAutoPtr<LockTable> sLockTable;
-bool sInitialized = false;
 bool sIsShuttingDown = false;
 
-WakeLockInformation
-WakeLockInfoFromLockCount(const nsAString& aTopic, const LockCount& aLockCount)
-{
-  // TODO: Once we abandon b2g18, we can switch this to use the
-  // WakeLockInformation constructor, which is better because it doesn't let us
-  // forget to assign a param.  For now we have to do it this way, because
-  // b2g18 doesn't have the nsTArray <--> InfallibleTArray conversion (bug
-  // 819791).
+WakeLockInformation WakeLockInfoFromLockCount(const nsAString& aTopic,
+                                              const LockCount& aLockCount) {
+  nsString topic(aTopic);
+  WakeLockInformation info(topic, aLockCount.numLocks, aLockCount.numHidden,
+                           aLockCount.processes);
 
-  WakeLockInformation info;
-  info.topic() = aTopic;
-  info.numLocks() = aLockCount.numLocks;
-  info.numHidden() = aLockCount.numHidden;
-  info.lockingProcesses().AppendElements(aLockCount.processes);
   return info;
 }
 
-static void
-CountWakeLocks(ProcessLockTable* aTable, LockCount* aTotalCount)
-{
+static void CountWakeLocks(ProcessLockTable* aTable, LockCount* aTotalCount) {
   for (auto iter = aTable->Iter(); !iter.Done(); iter.Next()) {
     const uint64_t& key = iter.Key();
     LockCount count = iter.UserData();
@@ -75,7 +60,8 @@ CountWakeLocks(ProcessLockTable* aTable, LockCount* aTotalCount)
 
 class ClearHashtableOnShutdown final : public nsIObserver {
   ~ClearHashtableOnShutdown() {}
-public:
+
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIOBSERVER
 };
@@ -83,8 +69,8 @@ public:
 NS_IMPL_ISUPPORTS(ClearHashtableOnShutdown, nsIObserver)
 
 NS_IMETHODIMP
-ClearHashtableOnShutdown::Observe(nsISupports* aSubject, const char* aTopic, const char16_t* data)
-{
+ClearHashtableOnShutdown::Observe(nsISupports* aSubject, const char* aTopic,
+                                  const char16_t* data) {
   MOZ_ASSERT(!strcmp(aTopic, "xpcom-shutdown"));
 
   sIsShuttingDown = true;
@@ -95,7 +81,8 @@ ClearHashtableOnShutdown::Observe(nsISupports* aSubject, const char* aTopic, con
 
 class CleanupOnContentShutdown final : public nsIObserver {
   ~CleanupOnContentShutdown() {}
-public:
+
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIOBSERVER
 };
@@ -103,8 +90,8 @@ public:
 NS_IMPL_ISUPPORTS(CleanupOnContentShutdown, nsIObserver)
 
 NS_IMETHODIMP
-CleanupOnContentShutdown::Observe(nsISupports* aSubject, const char* aTopic, const char16_t* data)
-{
+CleanupOnContentShutdown::Observe(nsISupports* aSubject, const char* aTopic,
+                                  const char16_t* data) {
   MOZ_ASSERT(!strcmp(aTopic, "ipc:content-shutdown"));
 
   if (sIsShuttingDown) {
@@ -118,8 +105,8 @@ CleanupOnContentShutdown::Observe(nsISupports* aSubject, const char* aTopic, con
   }
 
   uint64_t childID = 0;
-  nsresult rv = props->GetPropertyAsUint64(NS_LITERAL_STRING("childID"),
-                                           &childID);
+  nsresult rv =
+      props->GetPropertyAsUint64(NS_LITERAL_STRING("childID"), &childID);
   if (NS_SUCCEEDED(rv)) {
     for (auto iter = sLockTable->Iter(); !iter.Done(); iter.Next()) {
       nsAutoPtr<ProcessLockTable>& table = iter.Data();
@@ -131,8 +118,8 @@ CleanupOnContentShutdown::Observe(nsISupports* aSubject, const char* aTopic, con
         CountWakeLocks(table, &totalCount);
 
         if (sActiveListeners) {
-          NotifyWakeLockChange(WakeLockInfoFromLockCount(iter.Key(),
-                                                         totalCount));
+          NotifyWakeLockChange(
+              WakeLockInfoFromLockCount(iter.Key(), totalCount));
         }
 
         if (totalCount.numLocks == 0) {
@@ -146,28 +133,24 @@ CleanupOnContentShutdown::Observe(nsISupports* aSubject, const char* aTopic, con
   return NS_OK;
 }
 
-void
-Init()
-{
-  sLockTable = new LockTable();
-  sInitialized = true;
-
-  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
-  if (obs) {
-    obs->AddObserver(new ClearHashtableOnShutdown(), "xpcom-shutdown", false);
-    obs->AddObserver(new CleanupOnContentShutdown(), "ipc:content-shutdown", false);
-  }
-}
-
-} // namespace
+}  // namespace
 
 namespace mozilla {
 
 namespace hal {
 
-WakeLockState
-ComputeWakeLockState(int aNumLocks, int aNumHidden)
-{
+void WakeLockInit() {
+  sLockTable = new LockTable();
+
+  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+  if (obs) {
+    obs->AddObserver(new ClearHashtableOnShutdown(), "xpcom-shutdown", false);
+    obs->AddObserver(new CleanupOnContentShutdown(), "ipc:content-shutdown",
+                     false);
+  }
+}
+
+WakeLockState ComputeWakeLockState(int aNumLocks, int aNumHidden) {
   if (aNumLocks == 0) {
     return WAKE_LOCK_STATE_UNLOCKED;
   } else if (aNumLocks == aNumHidden) {
@@ -177,36 +160,21 @@ ComputeWakeLockState(int aNumLocks, int aNumHidden)
   }
 }
 
-} // namespace hal
+}  // namespace hal
 
 namespace hal_impl {
 
-void
-EnableWakeLockNotifications()
-{
-  sActiveListeners++;
-}
+void EnableWakeLockNotifications() { sActiveListeners++; }
 
-void
-DisableWakeLockNotifications()
-{
-  sActiveListeners--;
-}
+void DisableWakeLockNotifications() { sActiveListeners--; }
 
-void
-ModifyWakeLock(const nsAString& aTopic,
-               hal::WakeLockControl aLockAdjust,
-               hal::WakeLockControl aHiddenAdjust,
-               uint64_t aProcessID)
-{
+void ModifyWakeLock(const nsAString& aTopic, hal::WakeLockControl aLockAdjust,
+                    hal::WakeLockControl aHiddenAdjust, uint64_t aProcessID) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aProcessID != CONTENT_PROCESS_ID_UNKNOWN);
 
   if (sIsShuttingDown) {
     return;
-  }
-  if (!sInitialized) {
-    Init();
   }
 
   ProcessLockTable* table = sLockTable->Get(aTopic);
@@ -227,7 +195,8 @@ ModifyWakeLock(const nsAString& aTopic,
   MOZ_ASSERT(aLockAdjust >= 0 || totalCount.numLocks > 0);
   MOZ_ASSERT(aHiddenAdjust >= 0 || totalCount.numHidden > 0);
 
-  WakeLockState oldState = ComputeWakeLockState(totalCount.numLocks, totalCount.numHidden);
+  WakeLockState oldState =
+      ComputeWakeLockState(totalCount.numLocks, totalCount.numHidden);
   bool processWasLocked = processCount.numLocks > 0;
 
   processCount.numLocks += aLockAdjust;
@@ -246,26 +215,22 @@ ModifyWakeLock(const nsAString& aTopic,
   }
 
   if (sActiveListeners &&
-      (oldState != ComputeWakeLockState(totalCount.numLocks,
-                                        totalCount.numHidden) ||
+      (oldState !=
+           ComputeWakeLockState(totalCount.numLocks, totalCount.numHidden) ||
        processWasLocked != (processCount.numLocks > 0))) {
-
     WakeLockInformation info;
     hal::GetWakeLockInfo(aTopic, &info);
     NotifyWakeLockChange(info);
   }
 }
 
-void
-GetWakeLockInfo(const nsAString& aTopic, WakeLockInformation* aWakeLockInfo)
-{
+void GetWakeLockInfo(const nsAString& aTopic,
+                     WakeLockInformation* aWakeLockInfo) {
   if (sIsShuttingDown) {
-    NS_WARNING("You don't want to get wake lock information during xpcom-shutdown!");
+    NS_WARNING(
+        "You don't want to get wake lock information during xpcom-shutdown!");
     *aWakeLockInfo = WakeLockInformation();
     return;
-  }
-  if (!sInitialized) {
-    Init();
   }
 
   ProcessLockTable* table = sLockTable->Get(aTopic);
@@ -278,5 +243,5 @@ GetWakeLockInfo(const nsAString& aTopic, WakeLockInformation* aWakeLockInfo)
   *aWakeLockInfo = WakeLockInfoFromLockCount(aTopic, totalCount);
 }
 
-} // namespace hal_impl
-} // namespace mozilla
+}  // namespace hal_impl
+}  // namespace mozilla

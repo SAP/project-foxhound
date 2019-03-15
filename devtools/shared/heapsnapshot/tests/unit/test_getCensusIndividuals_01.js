@@ -24,6 +24,7 @@ function run_test() {
         breakdown,
         CensusUtils.countToBucketBreakdown(BREAKDOWN));
 
+      /* eslint-disable */
       //                                DFS Index
       return new Map([               // 0
         [stack1, {                   // 1
@@ -43,7 +44,8 @@ function run_test() {
           JSString: [411, 412, 413], // 12
         }],
       ]);
-    }
+      /* eslint-enable */
+    },
   };
 
   const INDICES = new Set([3, 5, 9]);

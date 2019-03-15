@@ -1,9 +1,9 @@
-Components.utils.import("resource://gre/modules/Services.jsm");
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 function createURI(s) {
-  let service = Components.classes["@mozilla.org/network/io-service;1"]
-                .getService(Components.interfaces.nsIIOService);
+  let service = Cc["@mozilla.org/network/io-service;1"]
+                .getService(Ci.nsIIOService);
   return service.newURI(s);
 }
  
@@ -23,27 +23,26 @@ function run_test() {
   am.setAuthIdentity("http", "a.example.com", -1, "basic", "realm", "", "example.com", "user3", "pass3", false, app1browser);
   am.setAuthIdentity("http", "a.example.com", -1, "basic", "realm", "", "example.com", "user2", "pass2", false, app10);
 
-  let attrs_inBrowser = JSON.stringify({ appId:1, inIsolatedMozBrowser:true });
-  Services.obs.notifyObservers(null, "clear-origin-attributes-data", attrs_inBrowser);
+  Services.clearData.deleteDataFromOriginAttributesPattern({ appId:1, inIsolatedMozBrowser:true });
   
   var domain = {value: ""}, user = {value: ""}, pass = {value: ""};
   try {
     am.getAuthIdentity("http", "a.example.com", -1, "basic", "realm", "", domain, user, pass, false, app1browser);
-    do_check_false(true); // no identity should be present
+    Assert.equal(false, true); // no identity should be present
   } catch (x) {
-    do_check_eq(domain.value, "");
-    do_check_eq(user.value, "");
-    do_check_eq(pass.value, "");
+    Assert.equal(domain.value, "");
+    Assert.equal(user.value, "");
+    Assert.equal(pass.value, "");
   }
 
   am.getAuthIdentity("http", "a.example.com", -1, "basic", "realm", "", domain, user, pass, false, app1);
-  do_check_eq(domain.value, "example.com");
-  do_check_eq(user.value, "user");
-  do_check_eq(pass.value, "pass");
+  Assert.equal(domain.value, "example.com");
+  Assert.equal(user.value, "user");
+  Assert.equal(pass.value, "pass");
 
 
   am.getAuthIdentity("http", "a.example.com", -1, "basic", "realm", "", domain, user, pass, false, app10);
-  do_check_eq(domain.value, "example.com");
-  do_check_eq(user.value, "user2");
-  do_check_eq(pass.value, "pass2");
+  Assert.equal(domain.value, "example.com");
+  Assert.equal(user.value, "user2");
+  Assert.equal(pass.value, "pass2");
 }

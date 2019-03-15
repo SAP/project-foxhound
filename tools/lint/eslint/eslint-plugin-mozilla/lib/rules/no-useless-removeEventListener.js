@@ -13,8 +13,6 @@
 // Rule Definition
 // -----------------------------------------------------------------------------
 
-var helpers = require("../helpers");
-
 module.exports = function(context) {
 
   // ---------------------------------------------------------------------------
@@ -32,7 +30,9 @@ module.exports = function(context) {
       }
 
       let listener = node.arguments[1];
-      if (listener.type != "FunctionExpression" || !listener.body ||
+      if (!listener ||
+          listener.type != "FunctionExpression" ||
+          !listener.body ||
           listener.body.type != "BlockStatement" ||
           !listener.body.body.length ||
           listener.body.body[0].type != "ExpressionStatement" ||
@@ -52,6 +52,6 @@ module.exports = function(context) {
                        "use {once: true} instead of removeEventListener as " +
                        "the first instruction of the listener");
       }
-    }
+    },
   };
 };

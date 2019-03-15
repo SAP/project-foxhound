@@ -2,11 +2,11 @@
    http://creativecommons.org/publicdomain/zero/1.0/
 */
 
-Cu.import("resource://gre/modules/Services.jsm", this);
-Cu.import("resource://gre/modules/TelemetryController.jsm", this);
-Cu.import("resource://gre/modules/TelemetrySession.jsm", this);
-Cu.import("resource://gre/modules/PromiseUtils.jsm", this);
-Cu.import("resource://testing-common/ContentTaskUtils.jsm", this);
+ChromeUtils.import("resource://gre/modules/Services.jsm", this);
+ChromeUtils.import("resource://gre/modules/TelemetryController.jsm", this);
+ChromeUtils.import("resource://gre/modules/TelemetrySession.jsm", this);
+ChromeUtils.import("resource://gre/modules/PromiseUtils.jsm", this);
+ChromeUtils.import("resource://testing-common/ContentTaskUtils.jsm", this);
 
 const MESSAGE_CHILD_TEST_DONE = "ChildTest:Done";
 
@@ -121,15 +121,14 @@ function checkContentScalars(processData) {
  * This function waits until content scalars are reported into the
  * scalar snapshot.
  */
-function* waitForContentScalars() {
-  yield ContentTaskUtils.waitForCondition(() => {
-    const scalars =
-      Telemetry.snapshotScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN);
-    return Object.keys(scalars).includes("tab");
+async function waitForContentScalars() {
+  await ContentTaskUtils.waitForCondition(() => {
+    const scalars = Telemetry.getSnapshotForScalars("main", false);
+    return Object.keys(scalars).includes("content");
   });
 }
 
-add_task(function*() {
+add_task(async function() {
   if (!runningInParent) {
     TelemetryController.testSetupContent();
     run_child_test();
@@ -140,23 +139,24 @@ add_task(function*() {
   // Setup.
   do_get_profile(true);
   loadAddonManager(APP_ID, APP_NAME, APP_VERSION, PLATFORM_VERSION);
-  Services.prefs.setBoolPref(PREF_TELEMETRY_ENABLED, true);
-  yield TelemetryController.testSetup();
+  finishAddonManagerStartup();
+  fakeIntlReady();
+  await TelemetryController.testSetup();
   if (runningInParent) {
     setParentScalars();
     // Make sure we don't generate unexpected pings due to pref changes.
-    yield setEmptyPrefWatchlist();
+    await setEmptyPrefWatchlist();
   }
 
   // Run test in child, don't wait for it to finish: just wait for the
   // MESSAGE_CHILD_TEST_DONE.
   run_test_in_child("test_ChildScalars.js");
-  yield do_await_remote_message(MESSAGE_CHILD_TEST_DONE);
+  await do_await_remote_message(MESSAGE_CHILD_TEST_DONE);
 
   // Once scalars are set by the content process, they don't immediately get
   // sent to the parent process. Wait for the Telemetry IPC Timer to trigger
   // and batch send the data back to the parent process.
-  yield waitForContentScalars();
+  await waitForContentScalars();
 
   // Get an "environment-changed" ping rather than a "test-ping", as
   // scalar measurements are only supported in subsession pings.

@@ -6,14 +6,15 @@
 
 #include <stddef.h>
 
+#include "base/debug/activity_tracker.h"
 #include "base/debug/alias.h"
 #include "base/debug/profiler.h"
 #include "base/logging.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_id_name_manager.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/tracked_objects.h"
 #include "base/win/scoped_handle.h"
-#include "base/win/windows_version.h"
 
 namespace base {
 
@@ -30,8 +31,14 @@ typedef struct tagTHREADNAME_INFO {
   DWORD dwFlags;  // Reserved for future use, must be zero.
 } THREADNAME_INFO;
 
+// The SetThreadDescription API was brought in version 1607 of Windows 10.
+typedef HRESULT(WINAPI* SetThreadDescription)(HANDLE hThread,
+                                              PCWSTR lpThreadDescription);
+
 // This function has try handling, so it is separated out of its caller.
 void SetNameInternal(PlatformThreadId thread_id, const char* name) {
+  //This function is only used for debugging purposes, as you can find by its caller
+#ifndef __MINGW32__
   THREADNAME_INFO info;
   info.dwType = 0x1000;
   info.szName = name;
@@ -43,6 +50,7 @@ void SetNameInternal(PlatformThreadId thread_id, const char* name) {
                    reinterpret_cast<DWORD_PTR*>(&info));
   } __except(EXCEPTION_CONTINUE_EXECUTION) {
   }
+#endif
 }
 
 struct ThreadParams {
@@ -100,10 +108,8 @@ bool CreateThreadInternal(size_t stack_size,
                           PlatformThreadHandle* out_thread_handle,
                           ThreadPriority priority) {
   unsigned int flags = 0;
-  if (stack_size > 0 && base::win::GetVersion() >= base::win::VERSION_XP) {
+  if (stack_size > 0) {
     flags = STACK_SIZE_PARAM_IS_A_RESERVATION;
-  } else {
-    stack_size = 0;
   }
 
   ThreadParams* params = new ThreadParams;
@@ -174,6 +180,15 @@ void PlatformThread::SetName(const std::string& name) {
   if (name != "BrokerEvent")
     tracked_objects::ThreadData::InitializeThreadContext(name);
 
+  // The SetThreadDescription API works even if no debugger is attached.
+  auto set_thread_description_func =
+      reinterpret_cast<SetThreadDescription>(::GetProcAddress(
+          ::GetModuleHandle(L"Kernel32.dll"), "SetThreadDescription"));
+  if (set_thread_description_func) {
+    set_thread_description_func(::GetCurrentThread(),
+                                base::UTF8ToWide(name).c_str());
+  }
+
   // The debugger needs to be around to catch the name in the exception.  If
   // there isn't a debugger, we are just needlessly throwing an exception.
   // If this image file is instrumented, we raise the exception anyway
@@ -199,8 +214,16 @@ bool PlatformThread::CreateWithPriority(size_t stack_size, Delegate* delegate,
 
 // static
 bool PlatformThread::CreateNonJoinable(size_t stack_size, Delegate* delegate) {
-  return CreateThreadInternal(stack_size, delegate, nullptr,
-                              ThreadPriority::NORMAL);
+  return CreateNonJoinableWithPriority(stack_size, delegate,
+                                       ThreadPriority::NORMAL);
+}
+
+// static
+bool PlatformThread::CreateNonJoinableWithPriority(size_t stack_size,
+                                                   Delegate* delegate,
+                                                   ThreadPriority priority) {
+  return CreateThreadInternal(stack_size, delegate, nullptr /* non-joinable */,
+                              priority);
 }
 
 // static
@@ -215,18 +238,34 @@ void PlatformThread::Join(PlatformThreadHandle thread_handle) {
   base::ThreadRestrictions::AssertIOAllowed();
 #endif
 
+  DWORD thread_id = 0;
+  thread_id = ::GetThreadId(thread_handle.platform_handle());
+  DWORD last_error = 0;
+  if (!thread_id)
+    last_error = ::GetLastError();
+
+  // Record information about the exiting thread in case joining hangs.
+  base::debug::Alias(&thread_id);
+  base::debug::Alias(&last_error);
+
+  // Record the event that this thread is blocking upon (for hang diagnosis).
+  base::debug::ScopedThreadJoinActivity thread_activity(&thread_handle);
+
   // Wait for the thread to exit.  It should already have terminated but make
   // sure this assumption is valid.
-  DWORD result = WaitForSingleObject(thread_handle.platform_handle(), INFINITE);
-  if (result != WAIT_OBJECT_0) {
-    // Debug info for bug 127931.
-    DWORD error = GetLastError();
-    debug::Alias(&error);
-    debug::Alias(&result);
-    CHECK(false);
-  }
-
+  CHECK_EQ(WAIT_OBJECT_0,
+           WaitForSingleObject(thread_handle.platform_handle(), INFINITE));
   CloseHandle(thread_handle.platform_handle());
+}
+
+// static
+void PlatformThread::Detach(PlatformThreadHandle thread_handle) {
+  CloseHandle(thread_handle.platform_handle());
+}
+
+// static
+bool PlatformThread::CanIncreaseCurrentThreadPriority() {
+  return true;
 }
 
 // static
@@ -251,7 +290,7 @@ void PlatformThread::SetCurrentThreadPriority(ThreadPriority priority) {
   }
   DCHECK_NE(desired_priority, THREAD_PRIORITY_ERROR_RETURN);
 
-#ifndef NDEBUG
+#if DCHECK_IS_ON()
   const BOOL success =
 #endif
       ::SetThreadPriority(PlatformThread::CurrentHandle().platform_handle(),

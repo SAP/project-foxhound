@@ -4,13 +4,13 @@
 esid: sec-symbol.tostringtag
 es6id: 19.4.2.13
 description: Value shared by all realms
-info: >
+info: |
   Unless otherwise specified, well-known symbols values are shared by all
   realms.
-features: [Symbol.toStringTag]
+features: [cross-realm, Symbol.toStringTag]
 ---*/
 
-var OSymbol = $.createRealm().global.Symbol;
+var OSymbol = $262.createRealm().global.Symbol;
 
 assert.sameValue(Symbol.toStringTag, OSymbol.toStringTag);
 

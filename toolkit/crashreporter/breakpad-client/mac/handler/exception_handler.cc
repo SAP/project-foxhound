@@ -41,6 +41,8 @@
 #include "common/mac/scoped_task_suspend-inl.h"
 #include "google_breakpad/common/minidump_exception_mac.h"
 
+#include "mozilla/RecordReplay.h"
+
 #ifndef __EXCEPTIONS
 // This file uses C++ try/catch (but shouldn't). Duplicate the macros from
 // <c++/4.2.1/exception_defines.h> allowing this file to work properly with
@@ -126,7 +128,7 @@ extern "C" {
                        mach_msg_header_t* reply);
 
   // This symbol must be visible to dlsym() - see
-  // http://code.google.com/p/google-breakpad/issues/detail?id=345 for details.
+  // https://bugs.chromium.org/p/google-breakpad/issues/detail?id=345 for details.
   kern_return_t catch_exception_raise(mach_port_t target_port,
                                       mach_port_t failed_thread,
                                       mach_port_t task,
@@ -356,6 +358,11 @@ bool ExceptionHandler::WriteMinidumpWithException(
     bool report_current_thread) {
   bool result = false;
 
+#if TARGET_OS_IPHONE
+  // _exit() should never be called on iOS.
+  exit_after_write = false;
+#endif
+
   if (directCallback_) {
     if (directCallback_(callback_context_,
                         exception_type,
@@ -459,7 +466,7 @@ kern_return_t ForwardException(mach_port_t task, mach_port_t failed_thread,
 
   kern_return_t result;
   // TODO: Handle the case where |target_behavior| has MACH_EXCEPTION_CODES
-  // set. https://code.google.com/p/google-breakpad/issues/detail?id=551
+  // set. https://bugs.chromium.org/p/google-breakpad/issues/detail?id=551
   switch (target_behavior) {
     case EXCEPTION_DEFAULT:
       result = exception_raise(target_port, failed_thread, task, exception,
@@ -561,34 +568,39 @@ void* ExceptionHandler::WaitForMessage(void* exception_handler_class) {
           self->SuspendThreads();
 
 #if USE_PROTECTED_ALLOCATIONS
-        if (gBreakpadAllocator)
-          gBreakpadAllocator->Unprotect();
+          if (gBreakpadAllocator)
+            gBreakpadAllocator->Unprotect();
 #endif
 
-        int subcode = 0;
-        if (receive.exception == EXC_BAD_ACCESS && receive.code_count > 1)
-          subcode = receive.code[1];
+          int subcode = 0;
+          if (receive.exception == EXC_BAD_ACCESS && receive.code_count > 1)
+            subcode = receive.code[1];
 
-        // Generate the minidump with the exception data.
-        self->WriteMinidumpWithException(receive.exception, receive.code[0],
-                                         subcode, NULL, receive.thread.name,
-                                         true, false);
+          // Generate the minidump with the exception data.
+          self->WriteMinidumpWithException(receive.exception, receive.code[0],
+                                           subcode, NULL, receive.thread.name,
+                                           true, false);
 
 #if USE_PROTECTED_ALLOCATIONS
-        // This may have become protected again within
-        // WriteMinidumpWithException, but it needs to be unprotected for
-        // UninstallHandler.
-        if (gBreakpadAllocator)
-          gBreakpadAllocator->Unprotect();
+          // This may have become protected again within
+          // WriteMinidumpWithException, but it needs to be unprotected for
+          // UninstallHandler.
+          if (gBreakpadAllocator)
+            gBreakpadAllocator->Unprotect();
 #endif
 
-        self->UninstallHandler(true);
+          self->UninstallHandler(true);
 
 #if USE_PROTECTED_ALLOCATIONS
-        if (gBreakpadAllocator)
-          gBreakpadAllocator->Protect();
+          if (gBreakpadAllocator)
+            gBreakpadAllocator->Protect();
 #endif
+          // It's not safe to call exc_server with threads suspended.
+          // exc_server can trigger dlsym(3) calls which deadlock if
+          // another thread is paused while in dlopen(3).
+          self->ResumeThreads();
         }
+
         // Pass along the exception to the server, which will setup the
         // message and call catch_exception_raise() and put the return
         // code into the reply.
@@ -627,30 +639,44 @@ void ExceptionHandler::SignalHandler(int sig, siginfo_t* info, void* uc) {
 #endif
 }
 
+// static
+bool ExceptionHandler::WriteForwardedExceptionMinidump(int exception_type,
+						       int exception_code,
+						       int exception_subcode,
+						       mach_port_t thread)
+{
+  if (!gProtectedData.handler) {
+    return false;
+  }
+  return gProtectedData.handler->WriteMinidumpWithException(exception_type, exception_code,
+							    exception_subcode, NULL, thread,
+							    /* exit_after_write = */ false,
+							    /* report_current_thread = */ true);
+}
+
 bool ExceptionHandler::InstallHandler() {
   // If a handler is already installed, something is really wrong.
   if (gProtectedData.handler != NULL) {
     return false;
   }
-  if (!IsOutOfProcess()) {
-    struct sigaction sa;
-    memset(&sa, 0, sizeof(sa));
-    sigemptyset(&sa.sa_mask);
-    sigaddset(&sa.sa_mask, SIGABRT);
-    sa.sa_sigaction = ExceptionHandler::SignalHandler;
-    sa.sa_flags = SA_SIGINFO;
 
-    scoped_ptr<struct sigaction> old(new struct sigaction);
-    if (sigaction(SIGABRT, &sa, old.get()) == -1) {
-      return false;
-    }
-    old_handler_.swap(old);
-    gProtectedData.handler = this;
-#if USE_PROTECTED_ALLOCATIONS
-    assert(((size_t)(gProtectedData.protected_buffer) & PAGE_MASK) == 0);
-    mprotect(gProtectedData.protected_buffer, PAGE_SIZE, PROT_READ);
-#endif
+  struct sigaction sa;
+  memset(&sa, 0, sizeof(sa));
+  sigemptyset(&sa.sa_mask);
+  sigaddset(&sa.sa_mask, SIGABRT);
+  sa.sa_sigaction = ExceptionHandler::SignalHandler;
+  sa.sa_flags = SA_SIGINFO;
+
+  scoped_ptr<struct sigaction> old(new struct sigaction);
+  if (sigaction(SIGABRT, &sa, old.get()) == -1) {
+    return false;
   }
+  old_handler_.swap(old);
+  gProtectedData.handler = this;
+#if USE_PROTECTED_ALLOCATIONS
+  assert(((size_t)(gProtectedData.protected_buffer) & PAGE_MASK) == 0);
+  mprotect(gProtectedData.protected_buffer, PAGE_SIZE, PROT_READ);
+#endif
 
   try {
 #if USE_PROTECTED_ALLOCATIONS
@@ -662,6 +688,12 @@ bool ExceptionHandler::InstallHandler() {
   }
   catch (std::bad_alloc) {
     return false;
+  }
+
+  // Don't modify exception ports when replaying, to avoid interfering with the
+  // record/replay system's exception handler.
+  if (mozilla::recordreplay::IsReplaying()) {
+    return true;
   }
 
   // Save the current exception ports so that we can forward to them
@@ -695,7 +727,14 @@ bool ExceptionHandler::UninstallHandler(bool in_exception) {
     mprotect(gProtectedData.protected_buffer, PAGE_SIZE,
         PROT_READ | PROT_WRITE);
 #endif
-    old_handler_.reset();
+    // If we're handling an exception, leak the sigaction struct
+    // because it is unsafe to delete objects while in exception
+    // handling context.
+    if (in_exception) {
+      old_handler_.release();
+    } else {
+      old_handler_.reset();
+    }
     gProtectedData.handler = NULL;
   }
 
@@ -746,7 +785,9 @@ bool ExceptionHandler::Setup(bool install_handler) {
     if (!InstallHandler())
       return false;
 
-  if (result == KERN_SUCCESS) {
+  // Don't spawn the handler thread when replaying, as we have not set up
+  // exception ports for it to monitor.
+  if (result == KERN_SUCCESS && !mozilla::recordreplay::IsReplaying()) {
     // Install the handler in its own thread, detached as we won't be joining.
     pthread_attr_t attr;
     pthread_attr_init(&attr);

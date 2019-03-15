@@ -7,7 +7,8 @@
 
 interface nsIAccessible;
 interface nsIAccessibleDocument;
-interface nsIDOMNode;
+
+webidl Node;
 
 %{C++
 #define NS_ACCESSIBLE_EVENT_TOPIC "accessible-event"
@@ -418,9 +419,14 @@ interface nsIAccessibleEvent : nsISupports
   const unsigned long EVENT_TEXT_VALUE_CHANGE = 0x0057;
 
   /**
+   * An accessible's viewport is scrolling.
+   */
+  const unsigned long EVENT_SCROLLING = 0x0058;
+
+  /**
    * Help make sure event map does not get out-of-line.
    */
-  const unsigned long EVENT_LAST_ENTRY = 0x0058;
+  const unsigned long EVENT_LAST_ENTRY = 0x0059;
 
   /**
    * The type of event, based on the enumerated event values
@@ -442,10 +448,10 @@ interface nsIAccessibleEvent : nsISupports
   readonly attribute nsIAccessibleDocument accessibleDocument;
 
   /**
-   * The nsIDOMNode associated with the event
+   * The Node associated with the event
    * May return null if accessible for event has been shut down
    */
-  readonly attribute nsIDOMNode DOMNode;
+  readonly attribute Node DOMNode;
 
   /**
    * Returns true if the event was caused by explicit user input,

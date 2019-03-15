@@ -45,17 +45,17 @@ function split(element, caretPos, nbKeyPresses) {
       pos = 0;
       break;
     case CARET_MIDDLE:
-      pos = Math.floor(len/2);
+      pos = Math.floor(len / 2);
       break;
     case CARET_END:
       pos = len;
       break;
   }
   sel.collapse(element.firstChild, pos);
-  
+
   // simulates a [Return] keypress
   for (var i = 0; i < nbKeyPresses; i++)
-    synthesizeKey("VK_RETURN", {});
+    synthesizeKey("KEY_Enter");
 }
 
 function undo(nbKeyPresses) {
@@ -65,13 +65,14 @@ function undo(nbKeyPresses) {
 
 function SameTypeAsPreviousSibling(element) {
   var sibling = element.previousSibling;
-  while (sibling && sibling.nodeType != 1)
+  while (sibling && sibling.nodeType != Node.ELEMENT_NODE) {
     sibling = element.previousSibling;
+  }
   return (element.nodeName == sibling.nodeName);
 }
 
-function isParagraph(element) {
-  return element.nodeName.toLowerCase() == "p";
+function isType(element, type) {
+  return element.nodeName.toLowerCase() == type;
 }
 
 function runTests() {
@@ -84,47 +85,56 @@ function runTests() {
   // beginning of selection: split current node
   split(header, CARET_BEGIN, 1);
   ok(SameTypeAsPreviousSibling(header),
-    "Pressing [Return] at the beginning of a header " + 
+    "Pressing [Return] at the beginning of a header " +
     "should create another header.");
   split(ulItem, CARET_BEGIN, 2);
   ok(SameTypeAsPreviousSibling(ulItem),
-    "Pressing [Return] at the beginning of an unordered list item " + 
+    "Pressing [Return] at the beginning of an unordered list item " +
     "should create another list item.");
   split(olItem, CARET_BEGIN, 2);
   ok(SameTypeAsPreviousSibling(olItem),
-    "Pressing [Return] at the beginning of an ordered list item " + 
+    "Pressing [Return] at the beginning of an ordered list item " +
     "should create another list item.");
   undo(3);
 
   // middle of selection: split current node
   split(header, CARET_MIDDLE, 1);
   ok(SameTypeAsPreviousSibling(header),
-    "Pressing [Return] at the middle of a header " + 
+    "Pressing [Return] at the middle of a header " +
     "should create another header.");
   split(ulItem, CARET_MIDDLE, 2);
   ok(SameTypeAsPreviousSibling(ulItem),
-    "Pressing [Return] at the middle of an unordered list item " + 
+    "Pressing [Return] at the middle of an unordered list item " +
     "should create another list item.");
   split(olItem, CARET_MIDDLE, 2);
   ok(SameTypeAsPreviousSibling(olItem),
-    "Pressing [Return] at the middle of an ordered list item " + 
+    "Pressing [Return] at the middle of an ordered list item " +
     "should create another list item.");
   undo(3);
 
-  // end of selection: create a new paragraph
-  split(header, CARET_END, 1);
-  ok(isParagraph(content.querySelector("h2+*")),
-    "Pressing [Return] at the end of a header " + 
-    "should create a new paragraph.");
-  split(ulItem, CARET_END, 2);
-  ok(isParagraph(content.querySelector("ul+*")),
-    "Pressing [Return] twice at the end of an unordered list item " + 
-    "should create a new paragraph.");
-  split(olItem, CARET_END, 2);
-  ok(isParagraph(content.querySelector("ol+*")),
-    "Pressing [Return] twice at the end of an ordered list item " + 
-    "should create a new paragraph.");
-  undo(3);
+  // end of selection: create a new div/paragraph
+  function testEndOfSelection(expected) {
+    split(header, CARET_END, 1);
+    ok(isType(content.querySelector("h2+*"), expected),
+      "Pressing [Return] at the end of a header " +
+      "should create a new " + expected);
+    split(ulItem, CARET_END, 2);
+    ok(isType(content.querySelector("ul+*"), expected),
+      "Pressing [Return] twice at the end of an unordered list item " +
+      "should create a new " + expected);
+    split(olItem, CARET_END, 2);
+    ok(isType(content.querySelector("ol+*"), expected),
+      "Pressing [Return] twice at the end of an ordered list item " +
+      "should create a new " + expected);
+    undo(3);
+  }
+
+  document.execCommand("defaultParagraphSeparator", false, "div");
+  testEndOfSelection("div");
+  document.execCommand("defaultParagraphSeparator", false, "p");
+  testEndOfSelection("p");
+  document.execCommand("defaultParagraphSeparator", false, "br");
+  testEndOfSelection("p");
 
   // done
   SimpleTest.finish();

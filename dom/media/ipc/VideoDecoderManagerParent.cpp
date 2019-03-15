@@ -1,10 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=99: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "VideoDecoderManagerParent.h"
 #include "VideoDecoderParent.h"
+#include "VideoUtils.h"
 #include "base/thread.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Services.h"
@@ -15,44 +16,66 @@
 #include "nsThreadUtils.h"
 #include "ImageContainer.h"
 #include "mozilla/layers/VideoBridgeChild.h"
-#include "mozilla/SharedThreadPool.h"
 #include "mozilla/layers/ImageDataSerializer.h"
 #include "mozilla/SyncRunnable.h"
 
 #if XP_WIN
-#include <objbase.h>
+#  include <objbase.h>
 #endif
 
 namespace mozilla {
-namespace dom {
 
-using base::Thread;
+#ifdef XP_WIN
+extern const nsCString GetFoundD3D11BlacklistedDLL();
+extern const nsCString GetFoundD3D9BlacklistedDLL();
+#endif  // XP_WIN
+
 using namespace ipc;
 using namespace layers;
 using namespace gfx;
 
-SurfaceDescriptorGPUVideo
-VideoDecoderManagerParent::StoreImage(Image* aImage, TextureClient* aTexture)
-{
-  mImageMap[aTexture->GetSerial()] = aImage;
-  mTextureMap[aTexture->GetSerial()] = aTexture;
-  return SurfaceDescriptorGPUVideo(aTexture->GetSerial());
+SurfaceDescriptorGPUVideo VideoDecoderManagerParent::StoreImage(
+    Image* aImage, TextureClient* aTexture) {
+  SurfaceDescriptorGPUVideo ret;
+  aTexture->GPUVideoDesc(&ret);
+
+  mImageMap[ret.handle()] = aImage;
+  mTextureMap[ret.handle()] = aTexture;
+  return ret;
 }
 
 StaticRefPtr<nsIThread> sVideoDecoderManagerThread;
 StaticRefPtr<TaskQueue> sManagerTaskQueue;
 
-class ManagerThreadShutdownObserver : public nsIObserver
-{
+class VideoDecoderManagerThreadHolder {
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(VideoDecoderManagerThreadHolder)
+
+ public:
+  VideoDecoderManagerThreadHolder() {}
+
+ private:
+  ~VideoDecoderManagerThreadHolder() {
+    NS_DispatchToMainThread(
+        NS_NewRunnableFunction("VideoDecoderManagerThreadHolder::~"
+                               "VideoDecoderManagerThreadHolder",
+                               []() -> void {
+                                 sVideoDecoderManagerThread->Shutdown();
+                                 sVideoDecoderManagerThread = nullptr;
+                               }));
+  }
+};
+StaticRefPtr<VideoDecoderManagerThreadHolder> sVideoDecoderManagerThreadHolder;
+
+class ManagerThreadShutdownObserver : public nsIObserver {
   virtual ~ManagerThreadShutdownObserver() = default;
-public:
+
+ public:
   ManagerThreadShutdownObserver() {}
 
   NS_DECL_ISUPPORTS
 
   NS_IMETHOD Observe(nsISupports* aSubject, const char* aTopic,
-                     const char16_t* aData) override
-  {
+                     const char16_t* aData) override {
     MOZ_ASSERT(strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID) == 0);
 
     VideoDecoderManagerParent::ShutdownThreads();
@@ -61,9 +84,7 @@ public:
 };
 NS_IMPL_ISUPPORTS(ManagerThreadShutdownObserver, nsIObserver);
 
-void
-VideoDecoderManagerParent::StartupThreads()
-{
+void VideoDecoderManagerParent::StartupThreads() {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (sVideoDecoderManagerThread) {
@@ -81,53 +102,55 @@ VideoDecoderManagerParent::StartupThreads()
     return;
   }
   sVideoDecoderManagerThread = managerThread;
+  sVideoDecoderManagerThreadHolder = new VideoDecoderManagerThreadHolder();
 #if XP_WIN
-  sVideoDecoderManagerThread->Dispatch(NS_NewRunnableFunction([]() {
-    HRESULT hr = CoInitializeEx(0, COINIT_MULTITHREADED);
-    MOZ_ASSERT(hr == S_OK);
-  }), NS_DISPATCH_NORMAL);
+  sVideoDecoderManagerThread->Dispatch(
+      NS_NewRunnableFunction("VideoDecoderManagerParent::StartupThreads",
+                             []() {
+                               DebugOnly<HRESULT> hr =
+                                   CoInitializeEx(0, COINIT_MULTITHREADED);
+                               MOZ_ASSERT(hr == S_OK);
+                             }),
+      NS_DISPATCH_NORMAL);
 #endif
-  sVideoDecoderManagerThread->Dispatch(NS_NewRunnableFunction([]() {
-    layers::VideoBridgeChild::Startup();
-  }), NS_DISPATCH_NORMAL);
+  sVideoDecoderManagerThread->Dispatch(
+      NS_NewRunnableFunction("VideoDecoderManagerParent::StartupThreads",
+                             []() { layers::VideoBridgeChild::Startup(); }),
+      NS_DISPATCH_NORMAL);
 
-  sManagerTaskQueue = new TaskQueue(managerThread.forget());
+  sManagerTaskQueue = new TaskQueue(
+      managerThread.forget(), "VideoDecoderManagerParent::sManagerTaskQueue");
 
   auto* obs = new ManagerThreadShutdownObserver();
   observerService->AddObserver(obs, NS_XPCOM_SHUTDOWN_OBSERVER_ID, false);
 }
 
-void
-VideoDecoderManagerParent::ShutdownThreads()
-{
+void VideoDecoderManagerParent::ShutdownThreads() {
   sManagerTaskQueue->BeginShutdown();
   sManagerTaskQueue->AwaitShutdownAndIdle();
   sManagerTaskQueue = nullptr;
 
-  sVideoDecoderManagerThread->Shutdown();
-  sVideoDecoderManagerThread = nullptr;
+  sVideoDecoderManagerThreadHolder = nullptr;
+  while (sVideoDecoderManagerThread) {
+    NS_ProcessNextEvent(nullptr, true);
+  }
 }
 
-void
-VideoDecoderManagerParent::ShutdownVideoBridge()
-{
+void VideoDecoderManagerParent::ShutdownVideoBridge() {
   if (sVideoDecoderManagerThread) {
-    RefPtr<Runnable> task = NS_NewRunnableFunction([]() {
-      VideoBridgeChild::Shutdown();
-    });
+    RefPtr<Runnable> task =
+        NS_NewRunnableFunction("VideoDecoderManagerParent::ShutdownVideoBridge",
+                               []() { VideoBridgeChild::Shutdown(); });
     SyncRunnable::DispatchToThread(sVideoDecoderManagerThread, task);
   }
 }
 
-bool
-VideoDecoderManagerParent::OnManagerThread()
-{
+bool VideoDecoderManagerParent::OnManagerThread() {
   return NS_GetCurrentThread() == sVideoDecoderManagerThread;
 }
 
-bool
-VideoDecoderManagerParent::CreateForContent(Endpoint<PVideoDecoderManagerParent>&& aEndpoint)
-{
+bool VideoDecoderManagerParent::CreateForContent(
+    Endpoint<PVideoDecoderManagerParent>&& aEndpoint) {
   MOZ_ASSERT(XRE_GetProcessType() == GeckoProcessType_GPU);
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -136,45 +159,63 @@ VideoDecoderManagerParent::CreateForContent(Endpoint<PVideoDecoderManagerParent>
     return false;
   }
 
-  RefPtr<VideoDecoderManagerParent> parent = new VideoDecoderManagerParent();
+  RefPtr<VideoDecoderManagerParent> parent =
+      new VideoDecoderManagerParent(sVideoDecoderManagerThreadHolder);
 
-  RefPtr<Runnable> task = NewRunnableMethod<Endpoint<PVideoDecoderManagerParent>&&>(
-    parent, &VideoDecoderManagerParent::Open, Move(aEndpoint));
+  RefPtr<Runnable> task =
+      NewRunnableMethod<Endpoint<PVideoDecoderManagerParent>&&>(
+          "VideoDecoderManagerParent::Open", parent,
+          &VideoDecoderManagerParent::Open, std::move(aEndpoint));
   sVideoDecoderManagerThread->Dispatch(task.forget(), NS_DISPATCH_NORMAL);
   return true;
 }
 
-VideoDecoderManagerParent::VideoDecoderManagerParent()
-{
+VideoDecoderManagerParent::VideoDecoderManagerParent(
+    VideoDecoderManagerThreadHolder* aHolder)
+    : mThreadHolder(aHolder) {
   MOZ_COUNT_CTOR(VideoDecoderManagerParent);
 }
 
-VideoDecoderManagerParent::~VideoDecoderManagerParent()
-{
+VideoDecoderManagerParent::~VideoDecoderManagerParent() {
   MOZ_COUNT_DTOR(VideoDecoderManagerParent);
 }
 
-PVideoDecoderParent*
-VideoDecoderManagerParent::AllocPVideoDecoderParent(const VideoInfo& aVideoInfo,
-                                                    const layers::TextureFactoryIdentifier& aIdentifier,
-                                                    bool* aSuccess)
-{
-  return new VideoDecoderParent(this, aVideoInfo, aIdentifier, sManagerTaskQueue,
-                                new TaskQueue(SharedThreadPool::Get(NS_LITERAL_CSTRING("VideoDecoderParent"), 4)),
-                                aSuccess);
+void VideoDecoderManagerParent::ActorDestroy(
+    mozilla::ipc::IProtocol::ActorDestroyReason) {
+  mThreadHolder = nullptr;
 }
 
-bool
-VideoDecoderManagerParent::DeallocPVideoDecoderParent(PVideoDecoderParent* actor)
-{
+PVideoDecoderParent* VideoDecoderManagerParent::AllocPVideoDecoderParent(
+    const VideoInfo& aVideoInfo, const float& aFramerate,
+    const CreateDecoderParams::OptionSet& aOptions,
+    const layers::TextureFactoryIdentifier& aIdentifier, bool* aSuccess,
+    nsCString* aBlacklistedD3D11Driver, nsCString* aBlacklistedD3D9Driver,
+    nsCString* aErrorDescription) {
+  RefPtr<TaskQueue> decodeTaskQueue =
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::PLATFORM_DECODER),
+                    "VideoDecoderParent::mDecodeTaskQueue");
+
+  auto* parent = new VideoDecoderParent(
+      this, aVideoInfo, aFramerate, aOptions, aIdentifier, sManagerTaskQueue,
+      decodeTaskQueue, aSuccess, aErrorDescription);
+
+#ifdef XP_WIN
+  *aBlacklistedD3D11Driver = GetFoundD3D11BlacklistedDLL();
+  *aBlacklistedD3D9Driver = GetFoundD3D9BlacklistedDLL();
+#endif  // XP_WIN
+
+  return parent;
+}
+
+bool VideoDecoderManagerParent::DeallocPVideoDecoderParent(
+    PVideoDecoderParent* actor) {
   VideoDecoderParent* parent = static_cast<VideoDecoderParent*>(actor);
   parent->Destroy();
   return true;
 }
 
-void
-VideoDecoderManagerParent::Open(Endpoint<PVideoDecoderManagerParent>&& aEndpoint)
-{
+void VideoDecoderManagerParent::Open(
+    Endpoint<PVideoDecoderManagerParent>&& aEndpoint) {
   if (!aEndpoint.Bind(this)) {
     // We can't recover from this.
     MOZ_CRASH("Failed to bind VideoDecoderManagerParent to endpoint");
@@ -182,15 +223,12 @@ VideoDecoderManagerParent::Open(Endpoint<PVideoDecoderManagerParent>&& aEndpoint
   AddRef();
 }
 
-void
-VideoDecoderManagerParent::DeallocPVideoDecoderManagerParent()
-{
+void VideoDecoderManagerParent::DeallocPVideoDecoderManagerParent() {
   Release();
 }
 
-mozilla::ipc::IPCResult
-VideoDecoderManagerParent::RecvReadback(const SurfaceDescriptorGPUVideo& aSD, SurfaceDescriptor* aResult)
-{
+mozilla::ipc::IPCResult VideoDecoderManagerParent::RecvReadback(
+    const SurfaceDescriptorGPUVideo& aSD, SurfaceDescriptor* aResult) {
   RefPtr<Image> image = mImageMap[aSD.handle()];
   if (!image) {
     *aResult = null_t();
@@ -208,15 +246,15 @@ VideoDecoderManagerParent::RecvReadback(const SurfaceDescriptorGPUVideo& aSD, Su
   size_t length = ImageDataSerializer::ComputeRGBBufferSize(size, format);
 
   Shmem buffer;
-  if (!length || !AllocShmem(length, Shmem::SharedMemory::TYPE_BASIC, &buffer)) {
+  if (!length ||
+      !AllocShmem(length, Shmem::SharedMemory::TYPE_BASIC, &buffer)) {
     *aResult = null_t();
     return IPC_OK();
   }
 
-  RefPtr<DrawTarget> dt = Factory::CreateDrawTargetForData(gfx::BackendType::CAIRO,
-                                                           buffer.get<uint8_t>(), size,
-                                                           ImageDataSerializer::ComputeRGBStride(format, size.width),
-                                                           format);
+  RefPtr<DrawTarget> dt = Factory::CreateDrawTargetForData(
+      gfx::BackendType::CAIRO, buffer.get<uint8_t>(), size,
+      ImageDataSerializer::ComputeRGBStride(format, size.width), format);
   if (!dt) {
     DeallocShmem(buffer);
     *aResult = null_t();
@@ -226,17 +264,17 @@ VideoDecoderManagerParent::RecvReadback(const SurfaceDescriptorGPUVideo& aSD, Su
   dt->CopySurface(source, IntRect(0, 0, size.width, size.height), IntPoint());
   dt->Flush();
 
-  *aResult = SurfaceDescriptorBuffer(RGBDescriptor(size, format, true), MemoryOrShmem(buffer));
+  *aResult = SurfaceDescriptorBuffer(RGBDescriptor(size, format, true),
+                                     MemoryOrShmem(buffer));
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult
-VideoDecoderManagerParent::RecvDeallocateSurfaceDescriptorGPUVideo(const SurfaceDescriptorGPUVideo& aSD)
-{
+VideoDecoderManagerParent::RecvDeallocateSurfaceDescriptorGPUVideo(
+    const SurfaceDescriptorGPUVideo& aSD) {
   mImageMap.erase(aSD.handle());
   mTextureMap.erase(aSD.handle());
   return IPC_OK();
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace mozilla

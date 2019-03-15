@@ -10,34 +10,34 @@
 #include "mozilla/Move.h"
 
 #ifndef IPC_ErrorIPCUtils_h
-#define IPC_ErrorIPCUtils_h
+#  define IPC_ErrorIPCUtils_h
 
 namespace IPC {
 
-template<>
-struct ParamTraits<mozilla::dom::ErrNum> :
-  public ContiguousEnumSerializer<mozilla::dom::ErrNum,
-                                  mozilla::dom::ErrNum(0),
-                                  mozilla::dom::ErrNum(mozilla::dom::Err_Limit)> {};
+template <>
+struct ParamTraits<mozilla::dom::ErrNum>
+    : public ContiguousEnumSerializer<
+          mozilla::dom::ErrNum, mozilla::dom::ErrNum(0),
+          mozilla::dom::ErrNum(mozilla::dom::Err_Limit)> {};
 
-template<>
-struct ParamTraits<mozilla::ErrorResult>
-{
+template <>
+struct ParamTraits<mozilla::ErrorResult> {
   typedef mozilla::ErrorResult paramType;
 
-  static void Write(Message* aMsg, const paramType& aParam)
-  {
+  static void Write(Message* aMsg, const paramType& aParam) {
     // It should be the case that mMightHaveUnreportedJSException can only be
     // true when we're expecting a JS exception.  We cannot send such messages
     // over the IPC channel since there is no sane way of transferring the JS
     // value over to the other side.  Callers should never do that.
-    MOZ_ASSERT_IF(aParam.IsJSException(), aParam.mMightHaveUnreportedJSException);
+    MOZ_ASSERT_IF(aParam.IsJSException(),
+                  aParam.mMightHaveUnreportedJSException);
     if (aParam.IsJSException()
-#ifdef DEBUG
+#  ifdef DEBUG
         || aParam.mMightHaveUnreportedJSException
-#endif
-        ) {
-      MOZ_CRASH("Cannot encode an ErrorResult representing a Javascript exception");
+#  endif
+    ) {
+      MOZ_CRASH(
+          "Cannot encode an ErrorResult representing a Javascript exception");
     }
 
     WriteParam(aMsg, aParam.mResult);
@@ -50,8 +50,8 @@ struct ParamTraits<mozilla::ErrorResult>
     }
   }
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter, paramType* aResult)
-  {
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   paramType* aResult) {
     paramType readValue;
     if (!ReadParam(aMsg, aIter, &readValue.mResult)) {
       return false;
@@ -74,11 +74,26 @@ struct ParamTraits<mozilla::ErrorResult>
                !readValue.DeserializeDOMExceptionInfo(aMsg, aIter)) {
       return false;
     }
-    *aResult = Move(readValue);
+    *aResult = std::move(readValue);
     return true;
   }
 };
 
-} // namespace IPC
+template <>
+struct ParamTraits<mozilla::CopyableErrorResult> {
+  typedef mozilla::CopyableErrorResult paramType;
+
+  static void Write(Message* aMsg, const paramType& aParam) {
+    ParamTraits<mozilla::ErrorResult>::Write(aMsg, aParam);
+  }
+
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   paramType* aResult) {
+    mozilla::ErrorResult& ref = static_cast<mozilla::ErrorResult&>(*aResult);
+    return ParamTraits<mozilla::ErrorResult>::Read(aMsg, aIter, &ref);
+  }
+};
+
+}  // namespace IPC
 
 #endif

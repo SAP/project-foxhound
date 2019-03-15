@@ -6,8 +6,8 @@
 
 DIRS += [
     'content',
-    'components',
     'modules',
+    'preferences',
     'themes',
 ]
 
@@ -18,9 +18,5 @@ MOCHITEST_CHROME_MANIFESTS += [
     'test/chrome.ini'
 ]
 
-JS_PREFERENCE_PP_FILES += [
-    'webide-prefs.js',
-]
-
 with Files('**'):
-    BUG_COMPONENT = ('Firefox', 'Developer Tools: WebIDE')
+    BUG_COMPONENT = ('DevTools', 'WebIDE')

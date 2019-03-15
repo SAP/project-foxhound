@@ -9,9 +9,7 @@ config = {
         {"file": "browser/config/version_display.txt", "suffix": ""},
         {"file": "config/milestone.txt", "suffix": ""},
     ],
-    "tools_repo_url": "https://hg.mozilla.org/build/tools",
-    "tools_repo_branch": "default",
-    "to_repo_url": "ssh://hg.mozilla.org/releases/mozilla-esr52",
+    "to_repo_url": "https://hg.mozilla.org/releases/mozilla-esr60",
 
     "migration_behavior": "bump_second_digit",
     "require_remove_locales": False,
@@ -19,6 +17,7 @@ config = {
     "default_actions": [
         "clean-repos",
         "pull",
+        "set_push_to_ssh",
         "bump_second_digit"
     ],
 }

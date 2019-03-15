@@ -17,7 +17,7 @@ function test() {
 
   waitForExplicitFinish();
 
-  let tab = gBrowser.addTab(origURL);
+  let tab = BrowserTestUtils.addTab(gBrowser, origURL);
 
   // The page at origURL has a <link rel='icon'>, so we should get a call into
   // our observer below when it loads.  Once we verify that we have the right
@@ -48,13 +48,12 @@ function test() {
 
     onBeginUpdateBatch: function() { },
     onEndUpdateBatch: function() { },
-    onVisit: function() { },
     onTitleChanged: function() { },
     onDeleteURI: function() { },
     onClearHistory: function() { },
     onDeleteVisits: function() { },
-    QueryInterface: XPCOMUtils.generateQI([Ci.nsINavHistoryObserver])
+    QueryInterface: ChromeUtils.generateQI([Ci.nsINavHistoryObserver])
   };
 
-  PlacesUtils.history.addObserver(observer, false);
+  PlacesUtils.history.addObserver(observer);
 }

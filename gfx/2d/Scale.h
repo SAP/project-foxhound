@@ -1,3 +1,5 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,11 +28,12 @@ namespace gfx {
  * example, could simply set a status bit on a copy of the image, and use
  * Direct2D's high-quality scaler at draw time.
  */
-GFX2D_API bool Scale(uint8_t* srcData, int32_t srcWidth, int32_t srcHeight, int32_t srcStride,
-                     uint8_t* dstData, int32_t dstWidth, int32_t dstHeight, int32_t dstStride,
+GFX2D_API bool Scale(uint8_t* srcData, int32_t srcWidth, int32_t srcHeight,
+                     int32_t srcStride, uint8_t* dstData, int32_t dstWidth,
+                     int32_t dstHeight, int32_t dstStride,
                      SurfaceFormat format);
 
-} // namespace gfx
-} // namespace mozilla
+}  // namespace gfx
+}  // namespace mozilla
 
 #endif /* MOZILLA_GFX_BLUR_H_ */

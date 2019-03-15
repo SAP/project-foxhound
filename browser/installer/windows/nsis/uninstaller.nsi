@@ -37,6 +37,7 @@ ManifestDPIAware true
 
 Var TmpVal
 Var MaintCertKey
+Var ShouldOpenSurvey
 
 ; Other included files may depend upon these includes!
 ; The following includes are provided by NSIS.
@@ -124,6 +125,8 @@ OutFile "helper.exe"
 !endif
 ShowUnInstDetails nevershow
 
+!define URLUninstallSurvey "https://qsurvey.mozilla.com/s3/FF-Desktop-Post-Uninstall?channel=${UpdateChannel}&version=${AppVersion}&osversion="
+
 ################################################################################
 # Modern User Interface - MUI
 
@@ -157,7 +160,11 @@ UninstPage custom un.preConfirm
 !insertmacro MUI_UNPAGE_INSTFILES
 
 ; Finish Page
-
+!define MUI_FINISHPAGE_SHOWREADME
+!define MUI_FINISHPAGE_SHOWREADME_NOTCHECKED
+!define MUI_FINISHPAGE_SHOWREADME_TEXT $(UN_SURVEY_CHECKBOX_LABEL)
+!define MUI_FINISHPAGE_SHOWREADME_FUNCTION un.Survey
+!define MUI_PAGE_CUSTOMFUNCTION_PRE un.preFinish
 !insertmacro MUI_UNPAGE_FINISH
 
 ; Use the default dialog for IDD_VERIFY for a simple Banner
@@ -165,6 +172,15 @@ ChangeUI IDD_VERIFY "${NSISDIR}\Contrib\UIs\default.exe"
 
 ################################################################################
 # Helper Functions
+
+Function un.Survey
+  ; We can't actually call ExecInExplorer here because it's going to have to
+  ; make some marshalled COM calls and those are not allowed from within a
+  ; synchronous message handler (where we currently are); we'll be thrown
+  ; RPC_E_CANTCALLOUT_ININPUTSYNCCALL if we try. So all we can do is record
+  ; that we need to make the call later, which we'll do from un.onGUIEnd.
+  StrCpy $ShouldOpenSurvey "1"
+FunctionEnd
 
 ; This function is used to uninstall the maintenance service if the
 ; application currently being uninstalled is the last application to use the
@@ -178,6 +194,7 @@ Function un.UninstallServiceIfNotUsed
 
   ; The maintenance service always uses the 64-bit registry on x64 systems
   ${If} ${RunningX64}
+  ${OrIf} ${IsNativeARM64}
     SetRegView 64
   ${EndIf}
 
@@ -193,6 +210,7 @@ Function un.UninstallServiceIfNotUsed
 
   ; Restore back the registry view
   ${If} ${RunningX64}
+  ${OrIf} ${IsNativeARM64}
     SetRegView lastUsed
   ${EndIf}
 
@@ -203,11 +221,13 @@ Function un.UninstallServiceIfNotUsed
     ReadRegStr $1 HKLM ${MaintUninstallKey} "UninstallString"
     SetRegView lastused
 
-    ${If} $1 == ""
-    ${AndIf} ${RunningX64}
-      SetRegView 64
-      ReadRegStr $1 HKLM ${MaintUninstallKey} "UninstallString"
-      SetRegView lastused
+    ${If} ${RunningX64}
+    ${OrIf} ${IsNativeARM64}
+      ${If} $1 == ""
+        SetRegView 64
+        ReadRegStr $1 HKLM ${MaintUninstallKey} "UninstallString"
+        SetRegView lastused
+      ${EndIf}
     ${EndIf}
 
     ; If the uninstall string does not exist, skip executing it
@@ -322,6 +342,7 @@ Section "Uninstall"
     DeleteRegKey HKLM "Software\Classes\FirefoxURL"
     ${StrFilter} "${FileMainEXE}" "+" "" "" $R9
     DeleteRegKey HKLM "Software\Clients\StartMenuInternet\$R9"
+    DeleteRegValue HKLM "Software\RegisteredApplications" "$R9"
     DeleteRegValue HKLM "Software\RegisteredApplications" "${AppRegName}"
   ${EndIf}
   ReadRegStr $0 HKCU "Software\Classes\FirefoxHTML\DefaultIcon" ""
@@ -331,6 +352,7 @@ Section "Uninstall"
     DeleteRegKey HKCU "Software\Classes\FirefoxURL"
     ${StrFilter} "${FileMainEXE}" "+" "" "" $R9
     DeleteRegKey HKCU "Software\Clients\StartMenuInternet\$R9"
+    DeleteRegValue HKCU "Software\RegisteredApplications" "$R9"
     DeleteRegValue HKCU "Software\RegisteredApplications" "${AppRegName}"
   ${EndIf}
 
@@ -382,6 +404,18 @@ Section "Uninstall"
   ${If} "$INSTDIR\AccessibleMarshal.dll" == "$R1"
     ${UnregisterDLL} "$INSTDIR\AccessibleMarshal.dll"
   ${EndIf}
+
+  ; Only unregister the dll if the registration points to this installation
+  ReadRegStr $R1 HKCR "CLSID\${AccessibleHandlerCLSID}\InprocHandler32" ""
+  ${If} "$INSTDIR\AccessibleHandler.dll" == "$R1"
+    ${UnregisterDLL} "$INSTDIR\AccessibleHandler.dll"
+  ${EndIf}
+
+!ifdef MOZ_LAUNCHER_PROCESS
+  DeleteRegValue HKCU ${MOZ_LAUNCHER_SUBKEY} "$INSTDIR\${FileMainEXE}|Launcher"
+  DeleteRegValue HKCU ${MOZ_LAUNCHER_SUBKEY} "$INSTDIR\${FileMainEXE}|Browser"
+  DeleteRegValue HKCU ${MOZ_LAUNCHER_SUBKEY} "$INSTDIR\${FileMainEXE}|Image"
+!endif
 
   ${un.RemovePrecompleteEntries} "false"
 
@@ -451,10 +485,12 @@ Section "Uninstall"
   ${If} $MaintCertKey != ""
     ; Always use the 64bit registry for certs on 64bit systems.
     ${If} ${RunningX64}
+    ${OrIf} ${IsNativeARM64}
       SetRegView 64
     ${EndIf}
     DeleteRegKey HKLM "$MaintCertKey"
     ${If} ${RunningX64}
+    ${OrIf} ${IsNativeARM64}
       SetRegView lastused
     ${EndIf}
   ${EndIf}
@@ -579,6 +615,19 @@ Function un.preConfirm
   !insertmacro MUI_INSTALLOPTIONS_SHOW
 FunctionEnd
 
+Function un.preFinish
+  ; Need to give the survey (readme) checkbox a few extra DU's of height
+  ; to accommodate a potentially multi-line label. If the reboot flag is set,
+  ; then we're not showing the survey checkbox and Field 4 is the "reboot now"
+  ; radio button; setting it to go from 90 to 120 (instead of 90 to 100) would
+  ; cover up Field 5 which is "reboot later", running from 110 to 120. For
+  ; whatever reason child windows get created at the bottom of the z-order, so
+  ; 4 overlaps 5.
+  ${IfNot} ${RebootFlag}
+    WriteINIStr "$PLUGINSDIR\ioSpecial.ini" "Field 4" Bottom "120"
+  ${EndIf}
+FunctionEnd
+
 ################################################################################
 # Initialization Functions
 
@@ -597,6 +646,7 @@ Function un.onInit
   System::Call 'kernel32::SetDllDirectoryW(w "")'
 
   StrCpy $LANGUAGE 0
+  StrCpy $ShouldOpenSurvey "0"
 
   ${un.UninstallUnOnInitCommon}
 
@@ -609,4 +659,32 @@ FunctionEnd
 
 Function un.onGUIEnd
   ${un.OnEndCommon}
+
+  ${If} $ShouldOpenSurvey == "1"
+    ; Though these values are sometimes incorrect due to bug 444664 it happens
+    ; so rarely it isn't worth working around it by reading the registry values.
+    ${WinVerGetMajor} $0
+    ${WinVerGetMinor} $1
+    ${WinVerGetBuild} $2
+    ${WinVerGetServicePackLevel} $3
+    StrCpy $R1 "${URLUninstallSurvey}$0.$1.$2.$3"
+
+    ; We can't just open the URL normally because we are most likely running
+    ; elevated without an unelevated process to redirect through, and we're
+    ; not going to go around starting elevated web browsers. But to start an
+    ; unelevated process directly from here we need a pretty nasty hack; see
+    ; the ExecInExplorer plugin code itself for the details.
+    ; If we were the default browser and we've now been uninstalled, we need
+    ; to take steps to make sure the user doesn't see an "open with" dialog;
+    ; they're helping us out by answering this survey, they don't need more
+    ; friction. Sometimes Windows 7 and 8 automatically switch the default to
+    ; IE, but it isn't reliable, so we'll manually invoke IE in that case.
+    ; Windows 10 always seems to just clear the default browser, so for it
+    ; we'll manually invoke Edge using Edge's custom URI scheme.
+    ${If} ${AtLeastWin10}
+      ExecInExplorer::Exec "microsoft-edge:$R1"
+    ${Else}
+      ExecInExplorer::Exec "iexplore.exe" /cmdargs "$R1"
+    ${EndIf}
+  ${EndIf}
 FunctionEnd

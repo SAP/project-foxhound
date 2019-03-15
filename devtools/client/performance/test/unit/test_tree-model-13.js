@@ -4,13 +4,9 @@
 
 // Like test_tree-model-12, but inverted.
 
-function run_test() {
-  run_next_test();
-}
-
-add_task(function () {
-  let { ThreadNode } = require("devtools/client/performance/modules/logic/tree-model");
-  let root = new ThreadNode(gThread, { invertTree: true, startTime: 0, endTime: 50 });
+add_task(function() {
+  const { ThreadNode } = require("devtools/client/performance/modules/logic/tree-model");
+  const root = new ThreadNode(gThread, { invertTree: true, startTime: 0, endTime: 50 });
 
   /**
    * Samples
@@ -40,26 +36,26 @@ var gThread = synthesizeProfileForTest([{
     { location: "(root)" },
     { location: "A" },
     { location: "B" },
-  ]
+  ],
 }, {
   time: 10,
   frames: [
     { location: "(root)" },
     { location: "C" },
     { location: "B" },
-  ]
+  ],
 }, {
   time: 15,
   frames: [
     { location: "(root)" },
     { location: "B" },
-  ]
+  ],
 }, {
   time: 20,
   frames: [
     { location: "(root)" },
     { location: "A" },
-  ]
+  ],
 }, {
   time: 21,
   frames: [
@@ -67,7 +63,7 @@ var gThread = synthesizeProfileForTest([{
     { location: "Z" },
     { location: "Y" },
     { location: "X" },
-  ]
+  ],
 }, {
   time: 22,
   frames: [
@@ -75,12 +71,12 @@ var gThread = synthesizeProfileForTest([{
     { location: "W" },
     { location: "Y" },
     { location: "X" },
-  ]
+  ],
 }, {
   time: 23,
   frames: [
     { location: "(root)" },
     { location: "Y" },
     { location: "X" },
-  ]
+  ],
 }]);

@@ -18,9 +18,7 @@ struct VideoCaptureCapability
   int width;
   int height;
   int maxFPS;
-  int expectedCaptureDelay;
-  int rawType;
-  int codecType;
+  int videoType;
   bool interlaced;
 };
 
@@ -55,7 +53,6 @@ async protocol PCameras
   manager PBackground;
 
 child:
-  async FrameSizeChange(CaptureEngine capEngine, int cap_id, int w, int h);
   // transfers ownership of |buffer| from parent to child
   async DeliverFrame(CaptureEngine capEngine, int streamId,
                      Shmem buffer, VideoFrameProperties props);
@@ -81,6 +78,7 @@ parent:
                               PrincipalInfo principal);
   async ReleaseCaptureDevice(CaptureEngine engine, int numdev);
   async StartCapture(CaptureEngine engine, int numdev, VideoCaptureCapability capability);
+  async FocusOnSelectedSource(CaptureEngine engine, int numdev);
   async StopCapture(CaptureEngine engine, int numdev);
   // transfers frame back
   async ReleaseFrame(Shmem s);

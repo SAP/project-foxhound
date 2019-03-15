@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,14 +15,12 @@
 // "Techniques For Accessibility Evalution And Repair Tools".
 // See http://www.w3.org/TR/AERT#color-contrast
 #define NS_SUFFICIENT_LUMINOSITY_DIFFERENCE 125000
-#define NS_LUMINOSITY_DIFFERENCE(a, b) \
-          int32_t(mozilla::Abs( \
-            NS_GetLuminosity(a | 0xff000000) - NS_GetLuminosity(b | 0xff000000)))
+#define NS_LUMINOSITY_DIFFERENCE(a, b)                    \
+  int32_t(mozilla::Abs(NS_GetLuminosity(a | 0xff000000) - \
+                       NS_GetLuminosity(b | 0xff000000)))
 
-// To determine colors based on the background brightness and border color
-void NS_GetSpecial3DColors(nscolor aResult[2],
-                           nscolor aBackgroundColor,
-                           nscolor aBorderColor);
+// To determine 3D colors for groove / ridge borders based on the border color
+void NS_GetSpecial3DColors(nscolor aResult[2], nscolor aBorderColor);
 
 // Determins brightness for a specific color
 int NS_GetBrightness(uint8_t aRed, uint8_t aGreen, uint8_t aBlue);
@@ -30,11 +29,11 @@ int NS_GetBrightness(uint8_t aRed, uint8_t aGreen, uint8_t aBlue);
 // The range of return value is 0 to 255000.
 int32_t NS_GetLuminosity(nscolor aColor);
 
-// function to convert from RGBA color space to HSVA color space 
+// function to convert from RGBA color space to HSVA color space
 void NS_RGB2HSV(nscolor aColor, uint16_t &aHue, uint16_t &aSat,
                 uint16_t &aValue, uint8_t &aAlpha);
 
-// function to convert from HSVA color space to RGBA color space 
+// function to convert from HSVA color space to RGBA color space
 void NS_HSV2RGB(nscolor &aColor, uint16_t aHue, uint16_t aSat, uint16_t aValue,
                 uint8_t aAlpha);
 

@@ -4,26 +4,27 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsSVGElement.h"
 #include "DOMSVGPathSegList.h"
+
 #include "DOMSVGPathSeg.h"
 #include "nsError.h"
 #include "SVGAnimatedPathSegList.h"
-#include "nsCOMPtr.h"
-#include "nsSVGAttrTearoffTable.h"
+#include "SVGAttrTearoffTable.h"
 #include "SVGPathSegUtils.h"
+#include "mozilla/dom/SVGElement.h"
 #include "mozilla/dom/SVGPathSegListBinding.h"
+#include "mozilla/RefPtr.h"
+
+using namespace mozilla::dom;
 
 // See the comment in this file's header.
 
 namespace mozilla {
 
-  static inline
-nsSVGAttrTearoffTable<void, DOMSVGPathSegList>&
-SVGPathSegListTearoffTable()
-{
-  static nsSVGAttrTearoffTable<void, DOMSVGPathSegList>
-    sSVGPathSegListTearoffTable;
+static inline SVGAttrTearoffTable<void, DOMSVGPathSegList>&
+SVGPathSegListTearoffTable() {
+  static SVGAttrTearoffTable<void, DOMSVGPathSegList>
+      sSVGPathSegListTearoffTable;
   return sSVGPathSegListTearoffTable;
 }
 
@@ -49,44 +50,38 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DOMSVGPathSegList)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
-
 //----------------------------------------------------------------------
 // Helper class: AutoChangePathSegListNotifier
 // Stack-based helper class to pair calls to WillChangePathSegList and
 // DidChangePathSegList.
-class MOZ_RAII AutoChangePathSegListNotifier
-{
-public:
-  explicit AutoChangePathSegListNotifier(DOMSVGPathSegList* aPathSegList MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-    : mPathSegList(aPathSegList)
-  {
+class MOZ_RAII AutoChangePathSegListNotifier {
+ public:
+  explicit AutoChangePathSegListNotifier(
+      DOMSVGPathSegList* aPathSegList MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+      : mPathSegList(aPathSegList) {
     MOZ_GUARD_OBJECT_NOTIFIER_INIT;
     MOZ_ASSERT(mPathSegList, "Expecting non-null pathSegList");
-    mEmptyOrOldValue =
-      mPathSegList->Element()->WillChangePathSegList();
+    mEmptyOrOldValue = mPathSegList->Element()->WillChangePathSegList();
   }
 
-  ~AutoChangePathSegListNotifier()
-  {
+  ~AutoChangePathSegListNotifier() {
     mPathSegList->Element()->DidChangePathSegList(mEmptyOrOldValue);
     if (mPathSegList->AttrIsAnimating()) {
       mPathSegList->Element()->AnimationNeedsResample();
     }
   }
 
-private:
+ private:
   DOMSVGPathSegList* const mPathSegList;
-  nsAttrValue        mEmptyOrOldValue;
+  nsAttrValue mEmptyOrOldValue;
   MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 /* static */ already_AddRefed<DOMSVGPathSegList>
-DOMSVGPathSegList::GetDOMWrapper(void *aList,
-                                 nsSVGElement *aElement,
-                                 bool aIsAnimValList)
-{
+DOMSVGPathSegList::GetDOMWrapper(void* aList, SVGElement* aElement,
+                                 bool aIsAnimValList) {
   RefPtr<DOMSVGPathSegList> wrapper =
-    SVGPathSegListTearoffTable().GetTearoff(aList);
+      SVGPathSegListTearoffTable().GetTearoff(aList);
   if (!wrapper) {
     wrapper = new DOMSVGPathSegList(aElement, aIsAnimValList);
     SVGPathSegListTearoffTable().AddTearoff(aList, wrapper);
@@ -94,31 +89,25 @@ DOMSVGPathSegList::GetDOMWrapper(void *aList,
   return wrapper.forget();
 }
 
-/* static */ DOMSVGPathSegList*
-DOMSVGPathSegList::GetDOMWrapperIfExists(void *aList)
-{
+/* static */ DOMSVGPathSegList* DOMSVGPathSegList::GetDOMWrapperIfExists(
+    void* aList) {
   return SVGPathSegListTearoffTable().GetTearoff(aList);
 }
 
-DOMSVGPathSegList::~DOMSVGPathSegList()
-{
+DOMSVGPathSegList::~DOMSVGPathSegList() {
   // There are now no longer any references to us held by script or list items.
   // Note we must use GetAnimValKey/GetBaseValKey here, NOT InternalList()!
-  void *key = mIsAnimValList ?
-    InternalAList().GetAnimValKey() :
-    InternalAList().GetBaseValKey();
+  void* key = mIsAnimValList ? InternalAList().GetAnimValKey()
+                             : InternalAList().GetBaseValKey();
   SVGPathSegListTearoffTable().RemoveTearoff(key);
 }
 
-JSObject*
-DOMSVGPathSegList::WrapObject(JSContext *cx, JS::Handle<JSObject*> aGivenProto)
-{
-  return mozilla::dom::SVGPathSegListBinding::Wrap(cx, this, aGivenProto);
+JSObject* DOMSVGPathSegList::WrapObject(JSContext* cx,
+                                        JS::Handle<JSObject*> aGivenProto) {
+  return mozilla::dom::SVGPathSegList_Binding::Wrap(cx, this, aGivenProto);
 }
 
-void
-DOMSVGPathSegList::InternalListWillChangeTo(const SVGPathData& aNewValue)
-{
+void DOMSVGPathSegList::InternalListWillChangeTo(const SVGPathData& aNewValue) {
   // When the number of items in our internal counterpart changes, we MUST stay
   // in sync. Everything in the scary comment in
   // DOMSVGLengthList::InternalBaseValListWillChangeTo applies here just as
@@ -126,7 +115,8 @@ DOMSVGPathSegList::InternalListWillChangeTo(const SVGPathData& aNewValue)
   // mean that - assuming we aren't reading bad memory - we would likely end up
   // decoding command types from argument floats when looking in our
   // SVGPathData's data array! Either way, we'll likely then go down
-  // NS_NOTREACHED code paths, or end up reading/setting more bad memory!!
+  // MOZ_ASSERT_UNREACHABLE code paths, or end up reading/setting more bad
+  // memory!!
 
   // The only time that our other DOM list type implementations remove items is
   // if those items become surplus items due to an attribute change or SMIL
@@ -156,7 +146,7 @@ DOMSVGPathSegList::InternalListWillChangeTo(const SVGPathData& aNewValue)
   uint32_t index = 0;
 
   uint32_t dataLength = aNewValue.mData.Length();
-  uint32_t dataIndex = 0; // index into aNewValue's raw data array
+  uint32_t dataIndex = 0;  // index into aNewValue's raw data array
 
   uint32_t newSegType;
 
@@ -191,7 +181,7 @@ DOMSVGPathSegList::InternalListWillChangeTo(const SVGPathData& aNewValue)
   }
 
   MOZ_ASSERT((index == length && dataIndex <= dataLength) ||
-             (index <= length && dataIndex == dataLength),
+                 (index <= length && dataIndex == dataLength),
              "very bad - list corruption?");
 
   if (index < length) {
@@ -227,7 +217,9 @@ DOMSVGPathSegList::InternalListWillChangeTo(const SVGPathData& aNewValue)
         MOZ_ASSERT(!rv.Failed());
         return;
       }
-      dataIndex += 1 + SVGPathSegUtils::ArgCountForType(SVGPathSegUtils::DecodeType(aNewValue.mData[dataIndex]));
+      dataIndex +=
+          1 + SVGPathSegUtils::ArgCountForType(
+                  SVGPathSegUtils::DecodeType(aNewValue.mData[dataIndex]));
     }
   }
 
@@ -235,29 +227,22 @@ DOMSVGPathSegList::InternalListWillChangeTo(const SVGPathData& aNewValue)
   MOZ_ASSERT(index == length, "Serious counting error");
 }
 
-bool
-DOMSVGPathSegList::AttrIsAnimating() const
-{
+bool DOMSVGPathSegList::AttrIsAnimating() const {
   return InternalAList().IsAnimating();
 }
 
-bool
-DOMSVGPathSegList::AnimListMirrorsBaseList() const
-{
+bool DOMSVGPathSegList::AnimListMirrorsBaseList() const {
   return GetDOMWrapperIfExists(InternalAList().GetAnimValKey()) &&
-           !AttrIsAnimating();
-}
- 
-SVGPathData&
-DOMSVGPathSegList::InternalList() const
-{
-  SVGAnimatedPathSegList *alist = mElement->GetAnimPathSegList();
-  return mIsAnimValList && alist->IsAnimating() ? *alist->mAnimVal : alist->mBaseVal;
+         !AttrIsAnimating();
 }
 
-SVGAnimatedPathSegList&
-DOMSVGPathSegList::InternalAList() const
-{
+SVGPathData& DOMSVGPathSegList::InternalList() const {
+  SVGAnimatedPathSegList* alist = mElement->GetAnimPathSegList();
+  return mIsAnimValList && alist->IsAnimating() ? *alist->mAnimVal
+                                                : alist->mBaseVal;
+}
+
+SVGAnimatedPathSegList& DOMSVGPathSegList::InternalAList() const {
   MOZ_ASSERT(mElement->GetAnimPathSegList(), "Internal error");
   return *mElement->GetAnimPathSegList();
 }
@@ -265,9 +250,7 @@ DOMSVGPathSegList::InternalAList() const
 // ----------------------------------------------------------------------------
 // nsIDOMSVGPathSegList implementation:
 
-void
-DOMSVGPathSegList::Clear(ErrorResult& aError)
-{
+void DOMSVGPathSegList::Clear(ErrorResult& aError) {
   if (IsAnimValList()) {
     aError.Throw(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR);
     return;
@@ -279,14 +262,14 @@ DOMSVGPathSegList::Clear(ErrorResult& aError)
     // the internal list, otherwise they wouldn't be able to copy their
     // internal counterparts' values!
 
-    InternalListWillChangeTo(SVGPathData()); // clears mItems
+    InternalListWillChangeTo(SVGPathData());  // clears mItems
 
     if (!AttrIsAnimating()) {
       // The anim val list is in sync with the base val list
-      DOMSVGPathSegList *animList =
-        GetDOMWrapperIfExists(InternalAList().GetAnimValKey());
+      DOMSVGPathSegList* animList =
+          GetDOMWrapperIfExists(InternalAList().GetAnimValKey());
       if (animList) {
-        animList->InternalListWillChangeTo(SVGPathData()); // clears its mItems
+        animList->InternalListWillChangeTo(SVGPathData());  // clears its mItems
       }
     }
 
@@ -294,9 +277,8 @@ DOMSVGPathSegList::Clear(ErrorResult& aError)
   }
 }
 
-already_AddRefed<DOMSVGPathSeg>
-DOMSVGPathSegList::Initialize(DOMSVGPathSeg& aNewItem, ErrorResult& aError)
-{
+already_AddRefed<DOMSVGPathSeg> DOMSVGPathSegList::Initialize(
+    DOMSVGPathSeg& aNewItem, ErrorResult& aError) {
   if (IsAnimValList()) {
     aError.Throw(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR);
     return nullptr;
@@ -320,9 +302,8 @@ DOMSVGPathSegList::Initialize(DOMSVGPathSeg& aNewItem, ErrorResult& aError)
   return InsertItemBefore(*domItem, 0, aError);
 }
 
-already_AddRefed<DOMSVGPathSeg>
-DOMSVGPathSegList::GetItem(uint32_t index, ErrorResult& error)
-{
+already_AddRefed<DOMSVGPathSeg> DOMSVGPathSegList::GetItem(uint32_t index,
+                                                           ErrorResult& error) {
   bool found;
   RefPtr<DOMSVGPathSeg> item = IndexedGetter(index, found, error);
   if (!found) {
@@ -331,10 +312,8 @@ DOMSVGPathSegList::GetItem(uint32_t index, ErrorResult& error)
   return item.forget();
 }
 
-already_AddRefed<DOMSVGPathSeg>
-DOMSVGPathSegList::IndexedGetter(uint32_t aIndex, bool& aFound,
-                                 ErrorResult& aError)
-{
+already_AddRefed<DOMSVGPathSeg> DOMSVGPathSegList::IndexedGetter(
+    uint32_t aIndex, bool& aFound, ErrorResult& aError) {
   if (IsAnimValList()) {
     Element()->FlushAnimations();
   }
@@ -345,11 +324,8 @@ DOMSVGPathSegList::IndexedGetter(uint32_t aIndex, bool& aFound,
   return nullptr;
 }
 
-already_AddRefed<DOMSVGPathSeg>
-DOMSVGPathSegList::InsertItemBefore(DOMSVGPathSeg& aNewItem,
-                                    uint32_t aIndex,
-                                    ErrorResult& aError)
-{
+already_AddRefed<DOMSVGPathSeg> DOMSVGPathSegList::InsertItemBefore(
+    DOMSVGPathSeg& aNewItem, uint32_t aIndex, ErrorResult& aError) {
   if (IsAnimValList()) {
     aError.Throw(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR);
     return nullptr;
@@ -369,24 +345,23 @@ DOMSVGPathSegList::InsertItemBefore(DOMSVGPathSeg& aNewItem,
 
   RefPtr<DOMSVGPathSeg> domItem = &aNewItem;
   if (domItem->HasOwner()) {
-    domItem = domItem->Clone(); // must do this before changing anything!
+    domItem = domItem->Clone();  // must do this before changing anything!
   }
 
   uint32_t argCount = SVGPathSegUtils::ArgCountForType(domItem->Type());
 
   // Ensure we have enough memory so we can avoid complex error handling below:
   if (!mItems.SetCapacity(mItems.Length() + 1, fallible) ||
-      !InternalList().mData.SetCapacity(InternalList().mData.Length() + 1 + argCount,
-                                        fallible)) {
+      !InternalList().mData.SetCapacity(
+          InternalList().mData.Length() + 1 + argCount, fallible)) {
     aError.Throw(NS_ERROR_OUT_OF_MEMORY);
     return nullptr;
   }
   if (AnimListMirrorsBaseList()) {
-    DOMSVGPathSegList *animVal =
-      GetDOMWrapperIfExists(InternalAList().GetAnimValKey());
+    DOMSVGPathSegList* animVal =
+        GetDOMWrapperIfExists(InternalAList().GetAnimValKey());
     MOZ_ASSERT(animVal, "animVal should be a valid pointer");
-    if (!animVal->mItems.SetCapacity(
-          animVal->mItems.Length() + 1, fallible)) {
+    if (!animVal->mItems.SetCapacity(animVal->mItems.Length() + 1, fallible)) {
       aError.Throw(NS_ERROR_OUT_OF_MEMORY);
       return nullptr;
     }
@@ -399,14 +374,10 @@ DOMSVGPathSegList::InsertItemBefore(DOMSVGPathSeg& aNewItem,
   float segAsRaw[1 + NS_SVG_PATH_SEG_MAX_ARGS];
   domItem->ToSVGPathSegEncodedData(segAsRaw);
 
-  MOZ_ALWAYS_TRUE(InternalList().mData.InsertElementsAt(internalIndex,
-                                                        segAsRaw,
-                                                        1 + argCount,
-                                                        fallible));
-  MOZ_ALWAYS_TRUE(mItems.InsertElementAt(aIndex,
-                                         ItemProxy(domItem.get(),
-                                                   internalIndex),
-                                         fallible));
+  MOZ_ALWAYS_TRUE(InternalList().mData.InsertElementsAt(
+      internalIndex, segAsRaw, 1 + argCount, fallible));
+  MOZ_ALWAYS_TRUE(mItems.InsertElementAt(
+      aIndex, ItemProxy(domItem.get(), internalIndex), fallible));
 
   // This MUST come after the insertion into InternalList(), or else under the
   // insertion into InternalList() the values read from domItem would be bad
@@ -418,11 +389,8 @@ DOMSVGPathSegList::InsertItemBefore(DOMSVGPathSeg& aNewItem,
   return domItem.forget();
 }
 
-already_AddRefed<DOMSVGPathSeg>
-DOMSVGPathSegList::ReplaceItem(DOMSVGPathSeg& aNewItem,
-                               uint32_t aIndex,
-                               ErrorResult& aError)
-{
+already_AddRefed<DOMSVGPathSeg> DOMSVGPathSegList::ReplaceItem(
+    DOMSVGPathSeg& aNewItem, uint32_t aIndex, ErrorResult& aError) {
   if (IsAnimValList()) {
     aError.Throw(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR);
     return nullptr;
@@ -435,7 +403,7 @@ DOMSVGPathSegList::ReplaceItem(DOMSVGPathSeg& aNewItem,
 
   RefPtr<DOMSVGPathSeg> domItem = &aNewItem;
   if (domItem->HasOwner()) {
-    domItem = domItem->Clone(); // must do this before changing anything!
+    domItem = domItem->Clone();  // must do this before changing anything!
   }
 
   AutoChangePathSegListNotifier notifier(this);
@@ -448,7 +416,8 @@ DOMSVGPathSegList::ReplaceItem(DOMSVGPathSeg& aNewItem,
   uint32_t internalIndex = mItems[aIndex].mInternalDataIndex;
   // We use InternalList() to get oldArgCount since we may not have a DOM
   // wrapper at the index being replaced.
-  uint32_t oldType = SVGPathSegUtils::DecodeType(InternalList().mData[internalIndex]);
+  uint32_t oldType =
+      SVGPathSegUtils::DecodeType(InternalList().mData[internalIndex]);
 
   // NOTE: ArgCountForType returns a (small) unsigned value, but we're
   // intentionally putting it in a signed variable, because we're going to
@@ -481,10 +450,8 @@ DOMSVGPathSegList::ReplaceItem(DOMSVGPathSeg& aNewItem,
   return domItem.forget();
 }
 
-already_AddRefed<DOMSVGPathSeg>
-DOMSVGPathSegList::RemoveItem(uint32_t aIndex,
-                              ErrorResult& aError)
-{
+already_AddRefed<DOMSVGPathSeg> DOMSVGPathSegList::RemoveItem(
+    uint32_t aIndex, ErrorResult& aError) {
   if (IsAnimValList()) {
     aError.Throw(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR);
     return nullptr;
@@ -503,7 +470,8 @@ DOMSVGPathSegList::RemoveItem(uint32_t aIndex,
   ItemAt(aIndex)->RemovingFromList();
 
   uint32_t internalIndex = mItems[aIndex].mInternalDataIndex;
-  uint32_t segType = SVGPathSegUtils::DecodeType(InternalList().mData[internalIndex]);
+  uint32_t segType =
+      SVGPathSegUtils::DecodeType(InternalList().mData[internalIndex]);
   // NOTE: ArgCountForType returns a (small) unsigned value, but we're
   // intentionally putting it in a signed value, because we're going to
   // negate it, and you can't negate an unsigned value.
@@ -522,9 +490,7 @@ DOMSVGPathSegList::RemoveItem(uint32_t aIndex,
   return result.forget();
 }
 
-already_AddRefed<DOMSVGPathSeg>
-DOMSVGPathSegList::GetItemAt(uint32_t aIndex)
-{
+already_AddRefed<DOMSVGPathSeg> DOMSVGPathSegList::GetItemAt(uint32_t aIndex) {
   MOZ_ASSERT(aIndex < mItems.Length());
 
   if (!ItemAt(aIndex)) {
@@ -534,12 +500,8 @@ DOMSVGPathSegList::GetItemAt(uint32_t aIndex)
   return result.forget();
 }
 
-void
-DOMSVGPathSegList::
-  MaybeInsertNullInAnimValListAt(uint32_t aIndex,
-                                 uint32_t aInternalIndex,
-                                 uint32_t aArgCountForItem)
-{
+void DOMSVGPathSegList::MaybeInsertNullInAnimValListAt(
+    uint32_t aIndex, uint32_t aInternalIndex, uint32_t aArgCountForItem) {
   MOZ_ASSERT(!IsAnimValList(), "call from baseVal to animVal");
 
   if (!AnimListMirrorsBaseList()) {
@@ -547,25 +509,20 @@ DOMSVGPathSegList::
   }
 
   // The anim val list is in sync with the base val list
-  DOMSVGPathSegList *animVal =
-    GetDOMWrapperIfExists(InternalAList().GetAnimValKey());
+  DOMSVGPathSegList* animVal =
+      GetDOMWrapperIfExists(InternalAList().GetAnimValKey());
 
   MOZ_ASSERT(animVal, "AnimListMirrorsBaseList() promised a non-null animVal");
   MOZ_ASSERT(animVal->mItems.Length() == mItems.Length(),
              "animVal list not in sync!");
-  MOZ_ALWAYS_TRUE(animVal->mItems.InsertElementAt(aIndex,
-                                                  ItemProxy(nullptr,
-                                                            aInternalIndex),
-                                                  fallible));
+  MOZ_ALWAYS_TRUE(animVal->mItems.InsertElementAt(
+      aIndex, ItemProxy(nullptr, aInternalIndex), fallible));
 
   animVal->UpdateListIndicesFromIndex(aIndex + 1, 1 + aArgCountForItem);
 }
 
-void
-DOMSVGPathSegList::
-  MaybeRemoveItemFromAnimValListAt(uint32_t aIndex,
-                                   int32_t aArgCountForItem)
-{
+void DOMSVGPathSegList::MaybeRemoveItemFromAnimValListAt(
+    uint32_t aIndex, int32_t aArgCountForItem) {
   MOZ_ASSERT(!IsAnimValList(), "call from baseVal to animVal");
 
   if (!AnimListMirrorsBaseList()) {
@@ -575,7 +532,7 @@ DOMSVGPathSegList::
   // This needs to be a strong reference; otherwise, the RemovingFromList call
   // below might drop the last reference to animVal before we're done with it.
   RefPtr<DOMSVGPathSegList> animVal =
-    GetDOMWrapperIfExists(InternalAList().GetAnimValKey());
+      GetDOMWrapperIfExists(InternalAList().GetAnimValKey());
 
   MOZ_ASSERT(animVal, "AnimListMirrorsBaseList() promised a non-null animVal");
   MOZ_ASSERT(animVal->mItems.Length() == mItems.Length(),
@@ -589,10 +546,8 @@ DOMSVGPathSegList::
   animVal->UpdateListIndicesFromIndex(aIndex, -(1 + aArgCountForItem));
 }
 
-void
-DOMSVGPathSegList::UpdateListIndicesFromIndex(uint32_t aStartingIndex,
-                                              int32_t  aInternalDataIndexDelta)
-{
+void DOMSVGPathSegList::UpdateListIndicesFromIndex(
+    uint32_t aStartingIndex, int32_t aInternalDataIndexDelta) {
   uint32_t length = mItems.Length();
 
   for (uint32_t i = aStartingIndex; i < length; ++i) {
@@ -603,4 +558,4 @@ DOMSVGPathSegList::UpdateListIndicesFromIndex(uint32_t aStartingIndex,
   }
 }
 
-} // namespace mozilla
+}  // namespace mozilla

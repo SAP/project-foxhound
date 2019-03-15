@@ -19,13 +19,12 @@ namespace a11y {
  * IAccessibleTable and IAccessibleTable2 interfaces.
  */
 class XULListboxAccessibleWrap : public XULListboxAccessible,
-                                 public ia2AccessibleTable
-{
+                                 public ia2AccessibleTable {
   ~XULListboxAccessibleWrap() {}
 
-public:
-  XULListboxAccessibleWrap(nsIContent* aContent, DocAccessible* aDoc) :
-    XULListboxAccessible(aContent, aDoc), ia2AccessibleTable(this) {}
+ public:
+  XULListboxAccessibleWrap(nsIContent* aContent, DocAccessible* aDoc)
+      : XULListboxAccessible(aContent, aDoc), ia2AccessibleTable(this) {}
 
   // IUnknown
   DECL_IUNKNOWN_INHERITED
@@ -36,29 +35,7 @@ public:
   virtual void Shutdown() override;
 };
 
-/**
- * IA2 wrapper class for XULListCellAccessible class, implements
- * IAccessibleTableCell interface.
- */
-class XULListCellAccessibleWrap : public XULListCellAccessible,
-                                  public ia2AccessibleTableCell
-{
-  ~XULListCellAccessibleWrap() {}
-
-public:
-  XULListCellAccessibleWrap(nsIContent* aContent, DocAccessible* aDoc) :
-    XULListCellAccessible(aContent, aDoc), ia2AccessibleTableCell(this) {}
-
-  // IUnknown
-  DECL_IUNKNOWN_INHERITED
-
-  // nsISupports
-  NS_DECL_ISUPPORTS_INHERITED
-
-  virtual void Shutdown() override;
-};
-
-} // namespace a11y
-} // namespace mozilla
+}  // namespace a11y
+}  // namespace mozilla
 
 #endif

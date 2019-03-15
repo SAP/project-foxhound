@@ -1,8 +1,25 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html#License
 gd{
-    Version{"2.1.28.76"}
+    Version{"2.1.44.91"}
     zoneStrings{
+        "Etc:UTC"{
+            ls{"Àm Uile-choitcheann Co-òrdanaichte"}
+            ss{"UTC"}
+        }
+        "Europe:Dublin"{
+            ld{"Bun-àm na h-Èireann"}
+            sd{"TSÈ (Èirinn)"}
+        }
+        "Europe:London"{
+            ld{"Tìde samhraidh Bhreatainn"}
+            sd{"TSB"}
+        }
+        "Pacific:Honolulu"{
+            sd{"HDT"}
+            sg{"HST"}
+            ss{"HST"}
+        }
         "meta:Acre"{
             ld{"Tìde samhraidh Acre"}
             lg{"Àm Acre"}
@@ -555,6 +572,9 @@ gd{
         }
         "meta:Ponape"{
             ls{"Àm Pohnpei"}
+        }
+        "meta:Pyongyang"{
+            ls{"Àm Pyeongyang"}
         }
         "meta:Qyzylorda"{
             ld{"Tìde samhraidh Qızılorda"}

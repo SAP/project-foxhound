@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,50 +16,43 @@ class MessagePortChild;
 class MessagePortMessage;
 class MessagePortParent;
 
-class SharedMessagePortMessage final : public ipc::StructuredCloneData
-{
-public:
+class SharedMessagePortMessage final : public ipc::StructuredCloneData {
+ public:
   NS_INLINE_DECL_REFCOUNTING(SharedMessagePortMessage)
 
-  SharedMessagePortMessage()
-    : ipc::StructuredCloneData()
-  {}
+  SharedMessagePortMessage() : ipc::StructuredCloneData() {}
 
   // Note that the populated ClonedMessageData borrows the underlying
   // JSStructuredCloneData from the SharedMessagePortMessage, so the caller is
   // required to ensure that the ClonedMessageData instances are destroyed prior
   // to the SharedMessagePortMessage instances.
-  static void
-  FromSharedToMessagesChild(
-                      MessagePortChild* aActor,
-                      const nsTArray<RefPtr<SharedMessagePortMessage>>& aData,
-                      nsTArray<ClonedMessageData>& aArray);
+  static void FromSharedToMessagesChild(
+      MessagePortChild* aActor,
+      const nsTArray<RefPtr<SharedMessagePortMessage>>& aData,
+      nsTArray<ClonedMessageData>& aArray);
 
-  static bool
-  FromMessagesToSharedChild(
-                     nsTArray<ClonedMessageData>& aArray,
-                     FallibleTArray<RefPtr<SharedMessagePortMessage>>& aData);
+  static bool FromMessagesToSharedChild(
+      nsTArray<ClonedMessageData>& aArray,
+      FallibleTArray<RefPtr<SharedMessagePortMessage>>& aData);
 
   // Note that the populated ClonedMessageData borrows the underlying
   // JSStructuredCloneData from the SharedMessagePortMessage, so the caller is
   // required to ensure that the ClonedMessageData instances are destroyed prior
   // to the SharedMessagePortMessage instances.
-  static bool
-  FromSharedToMessagesParent(
-                      MessagePortParent* aActor,
-                      const nsTArray<RefPtr<SharedMessagePortMessage>>& aData,
-                      FallibleTArray<ClonedMessageData>& aArray);
+  static bool FromSharedToMessagesParent(
+      MessagePortParent* aActor,
+      const nsTArray<RefPtr<SharedMessagePortMessage>>& aData,
+      FallibleTArray<ClonedMessageData>& aArray);
 
-  static bool
-  FromMessagesToSharedParent(
-                     nsTArray<ClonedMessageData>& aArray,
-                     FallibleTArray<RefPtr<SharedMessagePortMessage>>& aData);
+  static bool FromMessagesToSharedParent(
+      nsTArray<ClonedMessageData>& aArray,
+      FallibleTArray<RefPtr<SharedMessagePortMessage>>& aData);
 
-private:
+ private:
   ~SharedMessagePortMessage() {}
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_SharedMessagePortMessage_h
+#endif  // mozilla_dom_SharedMessagePortMessage_h

@@ -5,7 +5,7 @@
 
 #include "nsISupports.idl"
 
-[scriptable, uuid(b74fb158-1265-4102-91eb-edd0136b49f8)]
+[scriptable, builtinclass, uuid(b74fb158-1265-4102-91eb-edd0136b49f8)]
 interface nsIPlaintextEditor : nsISupports
 {
 
@@ -64,12 +64,6 @@ interface nsIPlaintextEditor : nsISupports
     */
   readonly attribute long textLength;
 
-  /**
-    * The maximum number of characters allowed.
-    *   default: -1 (unlimited).
-    */
-  attribute long maxTextLength;
-
   /** Get and set the body wrap width.
     *
     * Special values:
@@ -100,7 +94,7 @@ interface nsIPlaintextEditor : nsISupports
    *
    * @param aString   the string to be inserted
    */
-   void insertText(in DOMString aStringToInsert);
+   void insertText(in AString aStringToInsert);
 
   /**
    * Insert a line break into the content model.

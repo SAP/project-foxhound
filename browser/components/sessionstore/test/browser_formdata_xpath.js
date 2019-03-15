@@ -21,7 +21,7 @@ const FILE1 = createFilePath("346337_test1.file");
 const FILE2 = createFilePath("346337_test2.file");
 
 const FIELDS = {
-  "//input[@name='input']":     Date.now().toString(),
+  "//input[@name='input']":     Date.now().toString(16),
   "//input[@name='spaced 1']":  Math.random().toString(),
   "//input[3]":                 "three",
   "//input[@type='checkbox']":  true,
@@ -35,53 +35,53 @@ const FIELDS = {
   "//textarea[2]":              "Some text... " + Math.random(),
   "//textarea[3]":              "Some more text\n" + new Date(),
   "//input[@type='file'][1]":   [FILE1],
-  "//input[@type='file'][2]":   [FILE1, FILE2]
+  "//input[@type='file'][2]":   [FILE1, FILE2],
 };
 
-add_task(function* test_form_data_restoration() {
+add_task(async function test_form_data_restoration() {
   // Load page with some input fields.
-  let tab = gBrowser.addTab(URL);
+  let tab = BrowserTestUtils.addTab(gBrowser, URL);
   let browser = tab.linkedBrowser;
-  yield promiseBrowserLoaded(browser);
+  await promiseBrowserLoaded(browser);
 
   // Fill in some values.
   for (let xpath of Object.keys(FIELDS)) {
-    yield setFormValue(browser, xpath);
+    await setFormValue(browser, xpath);
   }
 
   // Duplicate the tab.
   let tab2 = gBrowser.duplicateTab(tab);
   let browser2 = tab2.linkedBrowser;
-  yield promiseTabRestored(tab2);
+  await promiseTabRestored(tab2);
 
   // Check that all form values have been duplicated.
   for (let xpath of Object.keys(FIELDS)) {
     let expected = JSON.stringify(FIELDS[xpath]);
-    let actual = JSON.stringify(yield getFormValue(browser2, xpath));
+    let actual = JSON.stringify(await getFormValue(browser2, xpath));
     is(actual, expected, "The value for \"" + xpath + "\" was correctly restored");
   }
 
   // Remove all tabs.
-  yield promiseRemoveTab(tab2);
-  yield promiseRemoveTab(tab);
+  await promiseRemoveTabAndSessionState(tab2);
+  await promiseRemoveTabAndSessionState(tab);
 
   // Restore one of the tabs again.
   tab = ss.undoCloseTab(window, 0);
   browser = tab.linkedBrowser;
-  yield promiseTabRestored(tab);
+  await promiseTabRestored(tab);
 
   // Check that none of the form values have been restored due to the privacy
   // level settings.
   for (let xpath of Object.keys(FIELDS)) {
     let expected = FIELDS[xpath];
     if (expected) {
-      let actual = yield getFormValue(browser, xpath, expected);
+      let actual = await getFormValue(browser, xpath, expected);
       isnot(actual, expected, "The value for \"" + xpath + "\" was correctly discarded");
     }
   }
 
   // Cleanup.
-  yield promiseRemoveTab(tab);
+  BrowserTestUtils.removeTab(tab);
 });
 
 function createFilePath(leaf) {
@@ -102,23 +102,23 @@ function getFormValue(browser, xpath) {
   let value = FIELDS[xpath];
 
   if (typeof value == "string") {
-    return getInputValue(browser, {xpath: xpath});
+    return getInputValue(browser, {xpath});
   }
 
   if (typeof value == "boolean") {
-    return getInputChecked(browser, {xpath: xpath});
+    return getInputChecked(browser, {xpath});
   }
 
   if (typeof value == "number") {
-    return getSelectedIndex(browser, {xpath: xpath});
+    return getSelectedIndex(browser, {xpath});
   }
 
   if (isArrayOfNumbers(value)) {
-    return getMultipleSelected(browser, {xpath: xpath});
+    return getMultipleSelected(browser, {xpath});
   }
 
   if (isArrayOfStrings(value)) {
-    return getFileNameArray(browser, {xpath: xpath});
+    return getFileNameArray(browser, {xpath});
   }
 
   throw new Error("unknown input type");
@@ -128,23 +128,23 @@ function setFormValue(browser, xpath) {
   let value = FIELDS[xpath];
 
   if (typeof value == "string") {
-    return setInputValue(browser, {xpath: xpath, value: value});
+    return setInputValue(browser, {xpath, value});
   }
 
   if (typeof value == "boolean") {
-    return setInputChecked(browser, {xpath: xpath, checked: value});
+    return setInputChecked(browser, {xpath, checked: value});
   }
 
   if (typeof value == "number") {
-    return setSelectedIndex(browser, {xpath: xpath, index: value});
+    return setSelectedIndex(browser, {xpath, index: value});
   }
 
   if (isArrayOfNumbers(value)) {
-    return setMultipleSelected(browser, {xpath: xpath, indices: value});
+    return setMultipleSelected(browser, {xpath, indices: value});
   }
 
   if (isArrayOfStrings(value)) {
-    return setFileNameArray(browser, {xpath: xpath, names: value});
+    return setFileNameArray(browser, {xpath, names: value});
   }
 
   throw new Error("unknown input type");

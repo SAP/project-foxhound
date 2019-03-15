@@ -13,23 +13,23 @@ const { waitForRecordingStoppedEvents } = require("devtools/client/performance/t
 const { waitUntil } = require("devtools/client/performance/test/helpers/wait-utils");
 const { getSelectedRecording } = require("devtools/client/performance/test/helpers/recording-utils");
 
-add_task(function* () {
-  let { target, console } = yield initConsoleInNewTab({
+add_task(async function() {
+  const { target, console } = await initConsoleInNewTab({
     url: SIMPLE_URL,
-    win: window
+    win: window,
   });
 
-  yield console.profile("rust");
-  yield console.profileEnd("rust");
-  yield console.profile("rust2");
+  await console.profile("rust");
+  await console.profileEnd("rust");
+  await console.profile("rust2");
 
-  let { panel } = yield initPerformanceInTab({ tab: target.tab });
-  let { PerformanceController, WaterfallView } = panel.panelWin;
+  const { panel } = await initPerformanceInTab({ tab: target.tab });
+  const { PerformanceController, WaterfallView } = panel.panelWin;
 
-  yield waitUntil(() => PerformanceController.getRecordings().length == 2);
-  yield waitUntil(() => WaterfallView.wasRenderedAtLeastOnce);
+  await waitUntil(() => PerformanceController.getRecordings().length == 2);
+  await waitUntil(() => WaterfallView.wasRenderedAtLeastOnce);
 
-  let recordings = PerformanceController.getRecordings();
+  const recordings = PerformanceController.getRecordings();
   is(recordings.length, 2, "Two recordings found in the performance panel.");
   is(recordings[0].isConsole(), true, "Recording came from console.profile (1).");
   is(recordings[0].getLabel(), "rust", "Correct label in the recording model (1).");
@@ -44,15 +44,15 @@ add_task(function* () {
   is(selected.getLabel(), "rust",
     "The profile label for the first recording is correct.");
 
-  let stopped = waitForRecordingStoppedEvents(panel, {
+  const stopped = waitForRecordingStoppedEvents(panel, {
     // only emitted for manual recordings
     skipWaitingForBackendReady: true,
     // only emitted when a finished recording is selected
     skipWaitingForOverview: true,
     skipWaitingForSubview: true,
   });
-  yield console.profileEnd("rust2");
-  yield stopped;
+  await console.profileEnd("rust2");
+  await stopped;
 
-  yield teardownToolboxAndRemoveTab(panel);
+  await teardownToolboxAndRemoveTab(panel);
 });

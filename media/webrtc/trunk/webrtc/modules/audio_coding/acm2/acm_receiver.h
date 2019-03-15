@@ -8,46 +8,36 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_ACM2_ACM_RECEIVER_H_
-#define WEBRTC_MODULES_AUDIO_CODING_ACM2_ACM_RECEIVER_H_
+#ifndef MODULES_AUDIO_CODING_ACM2_ACM_RECEIVER_H_
+#define MODULES_AUDIO_CODING_ACM2_ACM_RECEIVER_H_
 
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
+#include <atomic>
 
-#include "webrtc/base/array_view.h"
-#include "webrtc/base/optional.h"
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/base/thread_annotations.h"
-#include "webrtc/common_audio/vad/include/webrtc_vad.h"
-#include "webrtc/engine_configurations.h"
-#include "webrtc/modules/audio_coding/include/audio_coding_module.h"
-#include "webrtc/modules/audio_coding/acm2/acm_resampler.h"
-#include "webrtc/modules/audio_coding/acm2/call_statistics.h"
-#include "webrtc/modules/audio_coding/acm2/initial_delay_manager.h"
-#include "webrtc/modules/audio_coding/neteq/include/neteq.h"
-#include "webrtc/modules/include/module_common_types.h"
-#include "webrtc/typedefs.h"
+#include "api/array_view.h"
+#include "api/optional.h"
+#include "common_audio/vad/include/webrtc_vad.h"
+#include "modules/audio_coding/acm2/acm_resampler.h"
+#include "modules/audio_coding/acm2/call_statistics.h"
+#include "modules/audio_coding/include/audio_coding_module.h"
+#include "modules/audio_coding/neteq/include/neteq.h"
+#include "modules/include/module_common_types.h"
+#include "rtc_base/criticalsection.h"
+#include "rtc_base/thread_annotations.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
 struct CodecInst;
-class CriticalSectionWrapper;
 class NetEq;
 
 namespace acm2 {
 
 class AcmReceiver {
  public:
-  struct Decoder {
-    int acm_codec_id;
-    uint8_t payload_type;
-    // This field is meaningful for codecs where both mono and
-    // stereo versions are registered under the same ID.
-    size_t channels;
-    int sample_rate_hz;
-  };
-
   // Constructor of the class
   explicit AcmReceiver(const AudioCodingModule::Config& config);
 
@@ -82,11 +72,16 @@ class AcmReceiver {
   // Output:
   //   -audio_frame           : an audio frame were output data and
   //                            associated parameters are written to.
+  //   -muted                 : if true, the sample data in audio_frame is not
+  //                            populated, and must be interpreted as all zero.
   //
   // Return value             : 0 if OK.
   //                           -1 if NetEq returned an error.
   //
-  int GetAudio(int desired_freq_hz, AudioFrame* audio_frame);
+  int GetAudio(int desired_freq_hz, AudioFrame* audio_frame, bool* muted);
+
+  // Replace the current set of decoders with the specified set.
+  void SetCodecs(const std::map<int, SdpAudioFormat>& codecs);
 
   //
   // Adds a new codec to the NetEq codec database.
@@ -120,6 +115,10 @@ class AcmReceiver {
                int sample_rate_hz,
                AudioDecoder* audio_decoder,
                const std::string& name);
+
+  // Adds a new decoder to the NetEq codec database. Returns true iff
+  // successful.
+  bool AddCodec(int rtp_payload_type, const SdpAudioFormat& audio_format);
 
   //
   // Sets a minimum delay for packet buffer. The given delay is maintained,
@@ -175,21 +174,6 @@ class AcmReceiver {
   void GetNetworkStatistics(NetworkStatistics* statistics);
 
   //
-  // Enable post-decoding VAD.
-  //
-  void EnableVad();
-
-  //
-  // Disable post-decoding VAD.
-  //
-  void DisableVad();
-
-  //
-  // Returns whether post-decoding VAD is enabled (true) or disabled (false).
-  //
-  bool vad_enabled() const { return vad_enabled_; }
-
-  //
   // Flushes the NetEq packet and speech buffers.
   //
   void FlushBuffers();
@@ -208,18 +192,22 @@ class AcmReceiver {
   //
   // Remove all registered codecs.
   //
-  int RemoveAllCodecs();
+  void RemoveAllCodecs();
 
-  //
-  // Set ID.
-  //
-  void set_id(int id);  // TODO(turajs): can be inline.
+  // Returns the RTP timestamp for the last sample delivered by GetAudio().
+  // The return value will be empty if no valid timestamp is available.
+  rtc::Optional<uint32_t> GetPlayoutTimestamp();
 
+  // Returns the current total delay from NetEq (packet buffer and sync buffer)
+  // in ms, with smoothing applied to even out short-time fluctuations due to
+  // jitter. The packet buffer part of the delay is not updated during DTX/CNG
+  // periods.
   //
-  // Gets the RTP timestamp of the last sample delivered by GetAudio().
-  // Returns true if the RTP timestamp is valid, otherwise false.
+  int FilteredCurrentDelayMs() const;
+
+  // Returns the current target delay for NetEq in ms.
   //
-  bool GetPlayoutTimestamp(uint32_t* timestamp);
+  int TargetDelayMs() const;
 
   //
   // Get the audio codec associated with the last non-CNG/non-DTMF received
@@ -227,6 +215,9 @@ class AcmReceiver {
   // otherwise return 0.
   //
   int LastAudioCodec(CodecInst* codec) const;
+
+  rtc::Optional<SdpAudioFormat> LastAudioFormat() const;
+  int LastAudioSampleRate() const;
 
   //
   // Get a decoder given its registered payload-type.
@@ -275,33 +266,39 @@ class AcmReceiver {
   void GetDecodingCallStatistics(AudioDecodingCallStats* stats) const;
 
  private:
-  const Decoder* RtpHeaderToDecoder(const RTPHeader& rtp_header,
-                                    uint8_t payload_type) const
-      EXCLUSIVE_LOCKS_REQUIRED(crit_sect_);
+  struct Decoder {
+    int acm_codec_id;
+    uint8_t payload_type;
+    // This field is meaningful for codecs where both mono and
+    // stereo versions are registered under the same ID.
+    size_t channels;
+    int sample_rate_hz;
+  };
+
+  const rtc::Optional<CodecInst> RtpHeaderToDecoder(const RTPHeader& rtp_header,
+                                                    uint8_t first_payload_byte)
+      const RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_sect_);
 
   uint32_t NowInTimestamp(int decoder_sampling_rate) const;
 
-  rtc::scoped_ptr<CriticalSectionWrapper> crit_sect_;
-  int id_;  // TODO(henrik.lundin) Make const.
-  const Decoder* last_audio_decoder_ GUARDED_BY(crit_sect_);
-  AudioFrame::VADActivity previous_audio_activity_ GUARDED_BY(crit_sect_);
-  ACMResampler resampler_ GUARDED_BY(crit_sect_);
-  // Used in GetAudio, declared as member to avoid allocating every 10ms.
-  // TODO(henrik.lundin) Stack-allocate in GetAudio instead?
-  rtc::scoped_ptr<int16_t[]> audio_buffer_ GUARDED_BY(crit_sect_);
-  rtc::scoped_ptr<int16_t[]> last_audio_buffer_ GUARDED_BY(crit_sect_);
-  CallStatistics call_stats_ GUARDED_BY(crit_sect_);
-  NetEq* neteq_;
-  // Decoders map is keyed by payload type
-  std::map<uint8_t, Decoder> decoders_ GUARDED_BY(crit_sect_);
-  bool vad_enabled_;
-  Clock* clock_;  // TODO(henrik.lundin) Make const if possible.
-  bool resampled_last_output_frame_ GUARDED_BY(crit_sect_);
-  rtc::Optional<int> last_packet_sample_rate_hz_ GUARDED_BY(crit_sect_);
+  rtc::CriticalSection crit_sect_;
+  rtc::Optional<CodecInst> last_audio_decoder_ RTC_GUARDED_BY(crit_sect_);
+  rtc::Optional<SdpAudioFormat> last_audio_format_ RTC_GUARDED_BY(crit_sect_);
+  ACMResampler resampler_ RTC_GUARDED_BY(crit_sect_);
+
+  // After construction, this is only ever touched on the thread that calls
+  // AcmReceiver::GetAudio, and only modified in this method.
+  std::unique_ptr<int16_t[]> last_audio_buffer_;
+  CallStatistics call_stats_ RTC_GUARDED_BY(crit_sect_);
+  const std::unique_ptr<NetEq> neteq_;  // NetEq is thread-safe; no lock needed.
+  const Clock* const clock_;
+  std::atomic<bool> resampled_last_output_frame_;
+  rtc::Optional<int> last_packet_sample_rate_hz_ RTC_GUARDED_BY(crit_sect_);
+  std::atomic<int> last_audio_format_clockrate_hz_;
 };
 
 }  // namespace acm2
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_AUDIO_CODING_ACM2_ACM_RECEIVER_H_
+#endif  // MODULES_AUDIO_CODING_ACM2_ACM_RECEIVER_H_

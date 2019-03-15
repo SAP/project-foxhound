@@ -17,7 +17,7 @@ var visits = [];
  */
 function check_results_callback(aSequence) {
   // Sanity check: we should receive 3 parameters.
-  do_check_eq(aSequence.length, 3);
+  Assert.equal(aSequence.length, 3);
   let includeHidden = aSequence[0];
   let maxResults = aSequence[1];
   let sortingMode = aSequence[2];
@@ -175,17 +175,13 @@ function cartProd(aSequences, aCallback) {
   return numProds;
 }
 
-function run_test() {
-  run_next_test();
-}
-
 /**
  * Populate the visits array and add visits to the database.
  * We will generate visit-chains like:
  *   visit -> redirect_temp -> redirect_perm
  */
-add_task(function* test_add_visits_to_database() {
-  yield PlacesUtils.bookmarks.eraseEverything();
+add_task(async function test_add_visits_to_database() {
+  await PlacesUtils.bookmarks.eraseEverything();
 
   // We don't really bother on this, but we need a time to add visits.
   let timeInMicroseconds = Date.now() * 1000;
@@ -204,7 +200,7 @@ add_task(function* test_add_visits_to_database() {
     // calculated excluding download transitions, but the query includes
     // downloads.
     // TODO: Bug 488966 could fix this behavior.
-    //Ci.nsINavHistoryService.TRANSITION_DOWNLOAD,
+    // Ci.nsINavHistoryService.TRANSITION_DOWNLOAD,
   ];
 
   function newTimeInMicroseconds() {
@@ -280,19 +276,19 @@ add_task(function* test_add_visits_to_database() {
     isInQuery: false });
 
   // Put visits in the database.
-  yield task_populateDB(visits);
+  await task_populateDB(visits);
 });
 
-add_task(function* test_redirects() {
+add_task(async function test_redirects() {
   // Frecency and hidden are updated asynchronously, wait for them.
-  yield PlacesTestUtils.promiseAsyncUpdates();
+  await PlacesTestUtils.promiseAsyncUpdates();
 
   // This array will be used by cartProd to generate a matrix of all possible
   // combinations.
   let includeHidden_options = [true, false];
   let maxResults_options = [5, 10, 20, null];
   // These sortingMode are choosen to toggle using special queries for history
-  // menu and most visited smart bookmark.
+  // menu.
   let sorting_options = [Ci.nsINavHistoryQueryOptions.SORT_BY_NONE,
                          Ci.nsINavHistoryQueryOptions.SORT_BY_VISITCOUNT_DESCENDING,
                          Ci.nsINavHistoryQueryOptions.SORT_BY_DATE_DESCENDING];
@@ -300,7 +296,7 @@ add_task(function* test_redirects() {
   cartProd([includeHidden_options, maxResults_options, sorting_options],
            check_results_callback);
 
-  yield PlacesUtils.bookmarks.eraseEverything();
+  await PlacesUtils.bookmarks.eraseEverything();
 
-  yield PlacesTestUtils.clearHistory();
+  await PlacesUtils.history.clear();
 });

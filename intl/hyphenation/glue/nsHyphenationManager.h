@@ -13,31 +13,29 @@
 #include "mozilla/Omnijar.h"
 
 class nsHyphenator;
-class nsIAtom;
+class nsAtom;
 class nsIURI;
 
-class nsHyphenationManager
-{
-public:
+class nsHyphenationManager {
+ public:
   nsHyphenationManager();
 
-  already_AddRefed<nsHyphenator> GetHyphenator(nsIAtom *aLocale);
+  already_AddRefed<nsHyphenator> GetHyphenator(nsAtom *aLocale);
 
   static nsHyphenationManager *Instance();
 
   static void Shutdown();
 
-private:
+ private:
   ~nsHyphenationManager();
 
-protected:
-  class MemoryPressureObserver final : public nsIObserver
-  {
-      ~MemoryPressureObserver() {}
+ protected:
+  class MemoryPressureObserver final : public nsIObserver {
+    ~MemoryPressureObserver() {}
 
-  public:
-      NS_DECL_ISUPPORTS
-      NS_DECL_NSIOBSERVER
+   public:
+    NS_DECL_ISUPPORTS
+    NS_DECL_NSIOBSERVER
   };
 
   void LoadPatternList();
@@ -45,11 +43,11 @@ protected:
   void LoadPatternListFromDir(nsIFile *aDir);
   void LoadAliases();
 
-  nsInterfaceHashtable<nsISupportsHashKey,nsIAtom> mHyphAliases;
-  nsInterfaceHashtable<nsISupportsHashKey,nsIURI> mPatternFiles;
-  nsRefPtrHashtable<nsISupportsHashKey,nsHyphenator> mHyphenators;
+  nsRefPtrHashtable<nsRefPtrHashKey<nsAtom>, nsAtom> mHyphAliases;
+  nsInterfaceHashtable<nsRefPtrHashKey<nsAtom>, nsIURI> mPatternFiles;
+  nsRefPtrHashtable<nsRefPtrHashKey<nsAtom>, nsHyphenator> mHyphenators;
 
   static nsHyphenationManager *sInstance;
 };
 
-#endif // nsHyphenationManager_h__
+#endif  // nsHyphenationManager_h__

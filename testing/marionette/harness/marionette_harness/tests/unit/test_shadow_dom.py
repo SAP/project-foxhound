@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 from marionette_driver.by import By
 from marionette_driver.errors import (
     NoSuchElementException,
@@ -16,7 +18,6 @@ class TestShadowDom(MarionetteTestCase):
 
     def setUp(self):
         super(TestShadowDom, self).setUp()
-        self.marionette.set_pref("dom.webcomponents.enabled", True)
         self.marionette.navigate(self.marionette.absolute_url("test_shadow_dom.html"))
 
         self.host = self.marionette.find_element(By.ID, "host")
@@ -24,7 +25,6 @@ class TestShadowDom(MarionetteTestCase):
         self.button = self.marionette.find_element(By.ID, "button")
 
     def tearDown(self):
-        self.marionette.clear_pref("dom.webcomponents.enabled")
         super(TestShadowDom, self).tearDown()
 
     def test_chrome_error(self):
@@ -35,13 +35,6 @@ class TestShadowDom(MarionetteTestCase):
     def test_shadow_dom(self):
         # Button in shadow root should be actionable
         self.button.click()
-
-    def test_shadow_dom_after_switch_away_from_shadow_root(self):
-        # Button in shadow root should be actionable
-        self.button.click()
-        self.marionette.switch_to_shadow_root()
-        # After switching back to top content, button should be stale
-        self.assertRaises(StaleElementException, self.button.click)
 
     def test_shadow_dom_raises_stale_element_exception_when_button_remove(self):
         self.marionette.execute_script(
@@ -70,11 +63,3 @@ class TestShadowDom(MarionetteTestCase):
         # Nested nutton in nested shadow root should be actionable
         self.inner_button.click()
         self.marionette.switch_to_shadow_root()
-        # After jumping back to parent shadow root, button should again be actionable but inner
-        # button should now be stale
-        self.button.click()
-        self.assertRaises(StaleElementException, self.inner_button.click)
-        self.marionette.switch_to_shadow_root()
-        # After switching back to top content, both buttons should now be stale
-        self.assertRaises(StaleElementException, self.button.click)
-        self.assertRaises(StaleElementException, self.inner_button.click)

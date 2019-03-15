@@ -7,6 +7,7 @@
 #include "AudioListener.h"
 #include "AudioContext.h"
 #include "mozilla/dom/AudioListenerBinding.h"
+#include "MediaStreamGraphImpl.h"
 
 namespace mozilla {
 namespace dom {
@@ -16,28 +17,51 @@ NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(AudioListener, mContext)
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(AudioListener, AddRef)
 NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(AudioListener, Release)
 
+AudioListenerEngine::AudioListenerEngine()
+    : mPosition(), mFrontVector(0., 0., -1.), mRightVector(1., 0., 0.) {}
+
+void AudioListenerEngine::RecvListenerEngineEvent(
+    AudioListenerEngine::AudioListenerParameter aParameter,
+    const ThreeDPoint& aValue) {
+  switch (aParameter) {
+    case AudioListenerParameter::POSITION:
+      mPosition = aValue;
+      break;
+    case AudioListenerParameter::FRONT:
+      mFrontVector = aValue;
+      break;
+    case AudioListenerParameter::RIGHT:
+      mRightVector = aValue;
+      break;
+    default:
+      MOZ_CRASH("Not handled");
+  }
+}
+
+const ThreeDPoint& AudioListenerEngine::Position() const { return mPosition; }
+const ThreeDPoint& AudioListenerEngine::FrontVector() const {
+  return mFrontVector;
+}
+const ThreeDPoint& AudioListenerEngine::RightVector() const {
+  return mRightVector;
+}
+
 AudioListener::AudioListener(AudioContext* aContext)
-  : mContext(aContext)
-  , mPosition()
-  , mFrontVector(0., 0., -1.)
-  , mRightVector(1., 0., 0.)
-  , mVelocity()
-  , mDopplerFactor(1.)
-  , mSpeedOfSound(343.3) // meters/second
-{
+    : mContext(aContext),
+      mEngine(new AudioListenerEngine()),
+      mPosition(),
+      mFrontVector(0., 0., -1.),
+      mRightVector(1., 0., 0.) {
   MOZ_ASSERT(aContext);
 }
 
-JSObject*
-AudioListener::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return AudioListenerBinding::Wrap(aCx, this, aGivenProto);
+JSObject* AudioListener::WrapObject(JSContext* aCx,
+                                    JS::Handle<JSObject*> aGivenProto) {
+  return AudioListener_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-void
-AudioListener::SetOrientation(double aX, double aY, double aZ,
-                              double aXUp, double aYUp, double aZUp)
-{
+void AudioListener::SetOrientation(double aX, double aY, double aZ, double aXUp,
+                                   double aYUp, double aZUp) {
   ThreeDPoint front(aX, aY, aZ);
   // The panning effect and the azimuth and elevation calculation in the Web
   // Audio spec becomes undefined with linearly dependent vectors, so keep
@@ -60,72 +84,56 @@ AudioListener::SetOrientation(double aX, double aY, double aZ,
 
   if (!mFrontVector.FuzzyEqual(front)) {
     mFrontVector = front;
-    SendThreeDPointParameterToStream(PannerNode::LISTENER_FRONT_VECTOR, front);
+    SendListenerEngineEvent(AudioListenerEngine::AudioListenerParameter::FRONT,
+                            mFrontVector);
   }
   if (!mRightVector.FuzzyEqual(right)) {
     mRightVector = right;
-    SendThreeDPointParameterToStream(PannerNode::LISTENER_RIGHT_VECTOR, right);
+    SendListenerEngineEvent(AudioListenerEngine::AudioListenerParameter::RIGHT,
+                            mRightVector);
   }
 }
 
-void
-AudioListener::RegisterPannerNode(PannerNode* aPannerNode)
-{
-  mPanners.AppendElement(aPannerNode);
-
-  // Let the panner node know about our parameters
-  aPannerNode->SendThreeDPointParameterToStream(PannerNode::LISTENER_POSITION, mPosition);
-  aPannerNode->SendThreeDPointParameterToStream(PannerNode::LISTENER_FRONT_VECTOR, mFrontVector);
-  aPannerNode->SendThreeDPointParameterToStream(PannerNode::LISTENER_RIGHT_VECTOR, mRightVector);
-  aPannerNode->SendThreeDPointParameterToStream(PannerNode::LISTENER_VELOCITY, mVelocity);
-  aPannerNode->SendDoubleParameterToStream(PannerNode::LISTENER_DOPPLER_FACTOR, mDopplerFactor);
-  aPannerNode->SendDoubleParameterToStream(PannerNode::LISTENER_SPEED_OF_SOUND, mSpeedOfSound);
-  UpdatePannersVelocity();
+void AudioListener::SetPosition(double aX, double aY, double aZ) {
+  if (WebAudioUtils::FuzzyEqual(mPosition.x, aX) &&
+      WebAudioUtils::FuzzyEqual(mPosition.y, aY) &&
+      WebAudioUtils::FuzzyEqual(mPosition.z, aZ)) {
+    return;
+  }
+  mPosition.x = aX;
+  mPosition.y = aY;
+  mPosition.z = aZ;
+  SendListenerEngineEvent(AudioListenerEngine::AudioListenerParameter::POSITION,
+                          mPosition);
 }
 
-void AudioListener::UnregisterPannerNode(PannerNode* aPannerNode)
-{
-  mPanners.RemoveElement(aPannerNode);
-}
-
-void
-AudioListener::SendDoubleParameterToStream(uint32_t aIndex, double aValue)
-{
-  for (uint32_t i = 0; i < mPanners.Length(); ++i) {
-    if (mPanners[i]) {
-      mPanners[i]->SendDoubleParameterToStream(aIndex, aValue);
+void AudioListener::SendListenerEngineEvent(
+    AudioListenerEngine::AudioListenerParameter aParameter,
+    const ThreeDPoint& aValue) {
+  class Message final : public ControlMessage {
+   public:
+    Message(AudioListenerEngine* aEngine,
+            AudioListenerEngine::AudioListenerParameter aParameter,
+            const ThreeDPoint& aValue)
+        : ControlMessage(nullptr),
+          mEngine(aEngine),
+          mParameter(aParameter),
+          mValue(aValue) {}
+    void Run() override {
+      mEngine->RecvListenerEngineEvent(mParameter, mValue);
     }
-  }
+    RefPtr<AudioListenerEngine> mEngine;
+    AudioListenerEngine::AudioListenerParameter mParameter;
+    ThreeDPoint mValue;
+  };
+
+  mContext->DestinationStream()->GraphImpl()->AppendMessage(
+      MakeUnique<Message>(Engine(), aParameter, aValue));
 }
 
-void
-AudioListener::SendThreeDPointParameterToStream(uint32_t aIndex, const ThreeDPoint& aValue)
-{
-  for (uint32_t i = 0; i < mPanners.Length(); ++i) {
-    if (mPanners[i]) {
-      mPanners[i]->SendThreeDPointParameterToStream(aIndex, aValue);
-    }
-  }
+size_t AudioListener::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const {
+  return aMallocSizeOf(this);
 }
 
-void AudioListener::UpdatePannersVelocity()
-{
-  for (uint32_t i = 0; i < mPanners.Length(); ++i) {
-    if (mPanners[i]) {
-      mPanners[i]->SendDopplerToSourcesIfNeeded();
-    }
-  }
-}
-
-size_t
-AudioListener::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const
-{
-  size_t amount = aMallocSizeOf(this);
-  // AudioNodes are tracked separately
-  amount += mPanners.ShallowSizeOfExcludingThis(aMallocSizeOf);
-  return amount;
-}
-
-} // namespace dom
-} // namespace mozilla
-
+}  // namespace dom
+}  // namespace mozilla

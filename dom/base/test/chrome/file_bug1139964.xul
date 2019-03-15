@@ -11,11 +11,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1139964
   <label value="Mozilla Bug 1139964"/>
   <!-- test code goes here -->
   <script type="application/javascript"><![CDATA[
-  var Cc = Components.classes;
-  var Ci = Components.interfaces;
-
-  var ppm = Cc["@mozilla.org/parentprocessmessagemanager;1"]
-              .getService(Ci.nsIMessageBroadcaster);
+  var ppm = Cc["@mozilla.org/parentprocessmessagemanager;1"].getService();
 
   function ok(cond, msg) {
     opener.wrappedJSObject.ok(cond, msg);
@@ -36,7 +32,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1139964
     ppm.removeMessageListener(msgName, processListener);
     ok(m.data.hasPromise, "ProcessGlobal should have Promise object in the global scope!");
     ok(m.data.hasTextEncoder, "ProcessGlobal should have TextEncoder object in the global scope!");
-    ok(!m.data.hasWindow, "ProcessGlobal should not have Window object in the global scope!");
+    ok(m.data.hasWindow, "ProcessGlobal should have Window object in the global scope!");
 
     messageManager.addMessageListener(msgName, tabListener)
     messageManager.loadFrameScript("data:,(" + mmScriptForPromiseTest.toString() + ")()", true);
@@ -46,7 +42,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1139964
     messageManager.removeMessageListener(msgName, tabListener);
     ok(m.data.hasPromise, "TabChildGlobal should have Promise object in the global scope!");
     ok(m.data.hasTextEncoder, "TabChildGlobal should have TextEncoder object in the global scope!");
-    ok(!m.data.hasWindow, "TabChildGlobal should not have Window object in the global scope!");
+    ok(m.data.hasWindow, "TabChildGlobal should have Window object in the global scope!");
 
     opener.setTimeout("done()", 0);
     window.close();

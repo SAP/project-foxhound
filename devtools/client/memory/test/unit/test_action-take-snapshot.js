@@ -7,26 +7,22 @@
  * Tests the async reducer responding to the action `takeSnapshot(front)`
  */
 
-let actions = require("devtools/client/memory/actions/snapshot");
-let { snapshotState: states } = require("devtools/client/memory/constants");
+const actions = require("devtools/client/memory/actions/snapshot");
+const { snapshotState: states } = require("devtools/client/memory/constants");
 
-function run_test() {
-  run_next_test();
-}
+add_task(async function() {
+  const front = new StubbedMemoryFront();
+  await front.attach();
+  const store = Store();
 
-add_task(function* () {
-  let front = new StubbedMemoryFront();
-  yield front.attach();
-  let store = Store();
-
-  let unsubscribe = store.subscribe(checkState);
+  const unsubscribe = store.subscribe(checkState);
 
   let foundPendingState = false;
   let foundDoneState = false;
 
   function checkState() {
-    let { snapshots } = store.getState();
-    let lastSnapshot = snapshots[snapshots.length - 1];
+    const { snapshots } = store.getState();
+    const lastSnapshot = snapshots[snapshots.length - 1];
 
     if (lastSnapshot.state === states.SAVING) {
       foundPendingState = true;
@@ -45,7 +41,7 @@ add_task(function* () {
 
   for (let i = 0; i < 4; i++) {
     store.dispatch(actions.takeSnapshot(front));
-    yield waitUntilState(store, () => foundPendingState && foundDoneState);
+    await waitUntilState(store, () => foundPendingState && foundDoneState);
 
     // reset state trackers
     foundDoneState = foundPendingState = false;

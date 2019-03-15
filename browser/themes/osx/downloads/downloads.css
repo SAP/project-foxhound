@@ -6,12 +6,7 @@
 
 /*** Panel and outer controls ***/
 
-#downloadsPanel {
-  margin-top: -1px;
-}
-
-@keyfocus@ #downloadsSummary:focus,
-@keyfocus@ .downloadsPanelFooterButton:focus {
+@keyfocus@ #downloadsSummary:focus {
   outline: 2px -moz-mac-focusring solid;
   outline-offset: -2px;
 }
@@ -29,15 +24,19 @@
   outline-offset: -2px;
 }
 
-@item@[verdict="Malware"] {
+@item@[verdict="Malware"]:not(:hover) {
   color: #aa1b08;
 }
 
-.downloadProgress > .progress-bar {
+:root[lwt-popup-brighttext] @item@[verdict="Malware"]:not(:hover) {
+  color: #ff0039;
+}
+
+.downloadProgress::-moz-progress-bar {
   background-color: #3c9af8;
 }
 
-.downloadProgress[paused="true"] > .progress-bar {
+.downloadProgress[paused]::-moz-progress-bar {
   background-color: #a6a6a6;
 }
 

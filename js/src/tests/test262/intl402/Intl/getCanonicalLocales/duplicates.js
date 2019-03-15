@@ -1,4 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty('Intl')) -- needs Intl
 // Copyright 2016 Mozilla Corporation. All rights reserved.
 // This code is governed by the license found in the LICENSE file.
 
@@ -16,7 +15,7 @@ assert(compareArray(
   Intl.getCanonicalLocales(
     ['ab-cd', 'ff', 'de-rt', 'ab-Cd']), ['ab-CD', 'ff', 'de-RT']));
 
-var locales = Intl.getCanonicalLocales(["en-US", "en-US"]);
+var locales = Intl.getCanonicalLocales(['en-US', 'en-US']);
 assert(compareArray(locales, ['en-US']), 'en-US');
 
 reportCompare(0, 0);

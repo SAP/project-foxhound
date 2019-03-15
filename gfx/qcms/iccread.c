@@ -280,7 +280,7 @@ qcms_bool qcms_profile_is_bogus(qcms_profile *profile)
        if (profile->color_space != RGB_SIGNATURE)
 	       return false;
 
-       if (profile->A2B0 || profile->B2A0)
+       if (profile->A2B0 || profile->B2A0 || profile->mAB || profile->mBA)
                return false;
 
        rX = s15Fixed16Number_to_float(profile->redColorant.X);
@@ -294,17 +294,6 @@ qcms_bool qcms_profile_is_bogus(qcms_profile *profile)
        bX = s15Fixed16Number_to_float(profile->blueColorant.X);
        bY = s15Fixed16Number_to_float(profile->blueColorant.Y);
        bZ = s15Fixed16Number_to_float(profile->blueColorant.Z);
-
-       // Check if any of the XYZ values are negative (see mozilla bug 498245)
-       // CIEXYZ tristimulus values cannot be negative according to the spec.
-       negative =
-	       (rX < 0) || (rY < 0) || (rZ < 0) ||
-	       (gX < 0) || (gY < 0) || (gZ < 0) ||
-	       (bX < 0) || (bY < 0) || (bZ < 0);
-
-       if (negative)
-	       return true;
-
 
        // Sum the values; they should add up to something close to white
        sum[0] = rX + gX + bX;
@@ -330,6 +319,28 @@ qcms_bool qcms_profile_is_bogus(qcms_profile *profile)
                  ((sum[i] + tolerance[i]) >= target[i])))
                return true;
        }
+
+#ifndef __APPLE__
+       // Check if any of the XYZ values are negative (see mozilla bug 498245)
+       // CIEXYZ tristimulus values cannot be negative according to the spec.
+
+       negative =
+	       (rX < 0) || (rY < 0) || (rZ < 0) ||
+	       (gX < 0) || (gY < 0) || (gZ < 0) ||
+	       (bX < 0) || (bY < 0) || (bZ < 0);
+
+#else
+       // Chromatic adaption to D50 can result in negative XYZ, but the white
+       // point D50 tolerance test has passed. Accept negative values herein.
+       // See https://bugzilla.mozilla.org/show_bug.cgi?id=498245#c18 onwards
+       // for discussion about whether profile XYZ can or cannot be negative,
+       // per the spec. Also the https://bugzil.la/450923 user report.
+
+       // FIXME: allow this relaxation on all ports?
+       negative = false;
+#endif
+       if (negative)
+	       return true; // bogus
 
        // All Good
        return false;
@@ -503,6 +514,7 @@ static void read_nested_curveType(struct mem_source *src, struct curveType *(*cu
 		(*curveArray)[i] = read_curveType(src, curve_offset + channel_offset, &tag_len);
 		if (!(*curveArray)[i]) {
 			invalid_source(src, "invalid nested curveType curve");
+			break;
 		}
 
 		channel_offset += tag_len;
@@ -679,18 +691,17 @@ static struct lutType *read_tag_lutType(struct mem_source *src, struct tag_index
 	uint16_t num_input_table_entries;
 	uint16_t num_output_table_entries;
 	uint8_t in_chan, grid_points, out_chan;
-	uint32_t clut_offset, output_offset;
+	uint32_t input_offset, clut_offset, output_offset;
 	uint32_t clut_size;
 	size_t entry_size;
 	struct lutType *lut;
 	uint32_t i;
 
-	/* I'm not sure why the spec specifies a fixed number of entries for LUT8 tables even though
-	 * they have room for the num_entries fields */
 	if (type == LUT8_TYPE) {
 		num_input_table_entries = 256;
 		num_output_table_entries = 256;
 		entry_size = 1;
+		input_offset = 48;
 	} else if (type == LUT16_TYPE) {
 		num_input_table_entries  = read_u16(src, offset + 48);
 		num_output_table_entries = read_u16(src, offset + 50);
@@ -699,6 +710,7 @@ static struct lutType *read_tag_lutType(struct mem_source *src, struct tag_index
 			return NULL;
 		}
 		entry_size = 2;
+		input_offset = 52;
 	} else {
 		assert(0); // the caller checks that this doesn't happen
 		invalid_source(src, "Unexpected lut type");
@@ -753,13 +765,13 @@ static struct lutType *read_tag_lutType(struct mem_source *src, struct tag_index
 
 	for (i = 0; i < (uint32_t)(lut->num_input_table_entries * in_chan); i++) {
 		if (type == LUT8_TYPE) {
-			lut->input_table[i] = uInt8Number_to_float(read_uInt8Number(src, offset + 52 + i * entry_size));
+			lut->input_table[i] = uInt8Number_to_float(read_uInt8Number(src, offset + input_offset + i * entry_size));
 		} else {
-			lut->input_table[i] = uInt16Number_to_float(read_uInt16Number(src, offset + 52 + i * entry_size));
+			lut->input_table[i] = uInt16Number_to_float(read_uInt16Number(src, offset + input_offset + i * entry_size));
 		}
 	}
 
-	clut_offset = offset + 52 + lut->num_input_table_entries * in_chan * entry_size;
+	clut_offset = offset + input_offset + lut->num_input_table_entries * in_chan * entry_size;
 	for (i = 0; i < clut_size * out_chan; i+=3) {
 		if (type == LUT8_TYPE) {
 			lut->clut_table[i+0] = uInt8Number_to_float(read_uInt8Number(src, clut_offset + i*entry_size + 0));
@@ -917,6 +929,7 @@ qcms_profile* qcms_profile_create_rgb_with_gamma(
 	profile->class = DISPLAY_DEVICE_PROFILE;
 	profile->rendering_intent = QCMS_INTENT_PERCEPTUAL;
 	profile->color_space = RGB_SIGNATURE;
+        profile->pcs = XYZ_SIGNATURE;
 	return profile;
 }
 
@@ -946,6 +959,7 @@ qcms_profile* qcms_profile_create_rgb_with_table(
 	profile->class = DISPLAY_DEVICE_PROFILE;
 	profile->rendering_intent = QCMS_INTENT_PERCEPTUAL;
 	profile->color_space = RGB_SIGNATURE;
+        profile->pcs = XYZ_SIGNATURE;
 	return profile;
 }
 

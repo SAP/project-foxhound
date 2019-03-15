@@ -19,21 +19,17 @@ const {
   popViewAndRefresh,
 } = require("devtools/client/memory/actions/view");
 
-function run_test() {
-  run_next_test();
-}
-
 const TEST_STATES = [
   individualsState.COMPUTING_DOMINATOR_TREE,
   individualsState.FETCHING,
   individualsState.FETCHED,
 ];
 
-add_task(function* () {
-  let front = new StubbedMemoryFront();
-  let heapWorker = new HeapAnalysesClient();
-  yield front.attach();
-  let store = Store();
+add_task(async function() {
+  const front = new StubbedMemoryFront();
+  const heapWorker = new HeapAnalysesClient();
+  await front.attach();
+  const store = Store();
   const { getState, dispatch } = store;
 
   equal(getState().individuals, null,
@@ -41,7 +37,7 @@ add_task(function* () {
 
   dispatch(changeView(viewState.CENSUS));
   dispatch(takeSnapshotAndCensus(front, heapWorker));
-  yield waitUntilCensusState(store, s => s.census, [censusState.SAVED]);
+  await waitUntilCensusState(store, s => s.census, [censusState.SAVED]);
 
   const root = getState().snapshots[0].census.report;
   ok(root, "Should have a census");
@@ -55,14 +51,14 @@ add_task(function* () {
   const breakdown = getState().snapshots[0].census.display.breakdown;
   ok(breakdown, "Should have a breakdown");
 
-  for (let state of TEST_STATES) {
+  for (const state of TEST_STATES) {
     dumpn(`Testing popping back to the old view from state = ${state}`);
 
     dispatch(fetchIndividuals(heapWorker, snapshotId, breakdown,
                               reportLeafIndex));
 
     // Wait for the expected test state.
-    yield waitUntilState(store, s => {
+    await waitUntilState(store, s => {
       return s.view.state === viewState.INDIVIDUALS &&
              s.individuals &&
              s.individuals.state === state;
@@ -71,12 +67,12 @@ add_task(function* () {
 
     // Pop back to the CENSUS state.
     dispatch(popViewAndRefresh(heapWorker));
-    yield waitUntilState(store, s => {
+    await waitUntilState(store, s => {
       return s.view.state === viewState.CENSUS;
     });
     ok(!getState().individuals, "Should no longer have individuals");
   }
 
   heapWorker.destroy();
-  yield front.detach();
+  await front.detach();
 });

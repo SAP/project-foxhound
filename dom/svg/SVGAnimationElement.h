@@ -8,78 +8,66 @@
 #define mozilla_dom_SVGAnimationElement_h
 
 #include "mozilla/Attributes.h"
+#include "mozilla/SMILTimedElement.h"
+#include "mozilla/dom/IDTracker.h"
+#include "mozilla/dom/SVGElement.h"
 #include "mozilla/dom/SVGTests.h"
-#include "nsReferencedElement.h"
-#include "nsSMILTimedElement.h"
-#include "nsSVGElement.h"
-
-typedef nsSVGElement SVGAnimationElementBase;
 
 namespace mozilla {
 namespace dom {
 
-enum nsSMILTargetAttrType {
-  eSMILTargetAttrType_auto,
-  eSMILTargetAttrType_CSS,
-  eSMILTargetAttrType_XML
-};
+typedef SVGElement SVGAnimationElementBase;
 
-class SVGAnimationElement : public SVGAnimationElementBase,
-                            public SVGTests
-{
-protected:
-  explicit SVGAnimationElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+class SVGAnimationElement : public SVGAnimationElementBase, public SVGTests {
+ protected:
+  explicit SVGAnimationElement(
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
   nsresult Init();
   virtual ~SVGAnimationElement();
 
-public:
+ public:
   // interfaces:
   NS_DECL_ISUPPORTS_INHERITED
 
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(SVGAnimationElement,
                                            SVGAnimationElementBase)
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override = 0;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override = 0;
 
   // nsIContent specializations
-  virtual nsresult BindToTree(nsIDocument* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent,
-                              bool aCompileEventHandlers) override;
+  virtual nsresult BindToTree(Document* aDocument, nsIContent* aParent,
+                              nsIContent* aBindingParent) override;
   virtual void UnbindFromTree(bool aDeep, bool aNullParent) override;
-
-  virtual nsresult UnsetAttr(int32_t aNamespaceID, nsIAtom* aAttribute,
-                             bool aNotify) override;
 
   virtual bool IsNodeOfType(uint32_t aFlags) const override;
 
   // Element specializations
-  virtual bool ParseAttribute(int32_t aNamespaceID,
-                                nsIAtom* aAttribute,
-                                const nsAString& aValue,
-                                nsAttrValue& aResult) override;
-  virtual nsresult AfterSetAttr(int32_t aNamespaceID, nsIAtom* aName,
-                                const nsAttrValue* aValue, bool aNotify) override;
+  virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                              const nsAString& aValue,
+                              nsIPrincipal* aMaybeScriptedPrincipal,
+                              nsAttrValue& aResult) override;
+  virtual nsresult AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                const nsAttrValue* aValue,
+                                const nsAttrValue* aOldValue,
+                                nsIPrincipal* aSubjectPrincipal,
+                                bool aNotify) override;
 
-  const nsAttrValue* GetAnimAttr(nsIAtom* aName) const;
-  bool GetAnimAttr(nsIAtom* aAttName, nsAString& aResult) const;
-  bool HasAnimAttr(nsIAtom* aAttName) const;
   Element* GetTargetElementContent();
   virtual bool GetTargetAttributeName(int32_t* aNamespaceID,
-                                      nsIAtom** aLocalName) const;
-  virtual nsSMILTargetAttrType GetTargetAttributeType() const;
-  nsSMILTimedElement& TimedElement();
-  nsSMILTimeContainer* GetTimeContainer();
-  virtual nsSMILAnimationFunction& AnimationFunction() = 0;
+                                      nsAtom** aLocalName) const;
+  mozilla::SMILTimedElement& TimedElement();
+  mozilla::SMILTimeContainer* GetTimeContainer();
+  virtual SMILAnimationFunction& AnimationFunction() = 0;
 
-  virtual bool IsEventAttributeName(nsIAtom* aName) override;
+  virtual bool IsEventAttributeNameInternal(nsAtom* aName) override;
 
   // Utility methods for within SVG
   void ActivateByHyperlink();
 
   // WebIDL
-  nsSVGElement* GetTargetElement();
+  SVGElement* GetTargetElement();
   float GetStartTime(ErrorResult& rv);
-  float GetCurrentTime();
+  float GetCurrentTimeAsFloat();
   float GetSimpleDuration(ErrorResult& rv);
   void BeginElement(ErrorResult& rv) { BeginElementAt(0.f, rv); }
   void BeginElementAt(float offset, ErrorResult& rv);
@@ -87,41 +75,49 @@ public:
   void EndElementAt(float offset, ErrorResult& rv);
 
   // SVGTests
-  virtual bool IsInChromeDoc() const override;
-
+  SVGElement* AsSVGElement() final { return this; }
 
  protected:
-  // nsSVGElement overrides
+  // SVGElement overrides
 
-  void UpdateHrefTarget(nsIContent* aNodeForContext,
-                        const nsAString& aHrefStr);
+  void UpdateHrefTarget(const nsAString& aHrefStr);
   void AnimationTargetChanged();
 
-  class TargetReference : public nsReferencedElement {
-  public:
-    explicit TargetReference(SVGAnimationElement* aAnimationElement) :
-      mAnimationElement(aAnimationElement) {}
-  protected:
+  /**
+   * Helper that provides a reference to the element with the ID that is
+   * referenced by the animation element's 'href' attribute, if any, and that
+   * will notify the animation element if the element that that ID identifies
+   * changes to a different element (or none).  (If the 'href' attribute is not
+   * specified, then the animation target is the parent element and this helper
+   * is not used.)
+   */
+  class HrefTargetTracker final : public IDTracker {
+   public:
+    explicit HrefTargetTracker(SVGAnimationElement* aAnimationElement)
+        : mAnimationElement(aAnimationElement) {}
+
+   protected:
     // We need to be notified when target changes, in order to request a
     // sample (which will clear animation effects from old target and apply
     // them to the new target) and update any event registrations.
     virtual void ElementChanged(Element* aFrom, Element* aTo) override {
-      nsReferencedElement::ElementChanged(aFrom, aTo);
+      IDTracker::ElementChanged(aFrom, aTo);
       mAnimationElement->AnimationTargetChanged();
     }
 
     // We need to override IsPersistent to get persistent tracking (beyond the
     // first time the target changes)
     virtual bool IsPersistent() override { return true; }
-  private:
+
+   private:
     SVGAnimationElement* const mAnimationElement;
   };
 
-  TargetReference      mHrefTarget;
-  nsSMILTimedElement   mTimedElement;
+  HrefTargetTracker mHrefTarget;
+  mozilla::SMILTimedElement mTimedElement;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_SVGAnimationElement_h
+#endif  // mozilla_dom_SVGAnimationElement_h

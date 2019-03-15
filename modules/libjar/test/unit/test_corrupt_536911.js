@@ -4,8 +4,8 @@
 
 function wrapInputStream(input)
 {
-  var nsIScriptableInputStream = Components.interfaces.nsIScriptableInputStream;
-  var factory = Components.classes["@mozilla.org/scriptableinputstream;1"];
+  var nsIScriptableInputStream = Ci.nsIScriptableInputStream;
+  var factory = Cc["@mozilla.org/scriptableinputstream;1"];
   var wrapper = factory.createInstance(nsIScriptableInputStream);
   wrapper.init(input);
   return wrapper;
@@ -13,9 +13,6 @@ function wrapInputStream(input)
 
 // Check that files can be read from after closing zipreader
 function run_test() {
-  const Cc = Components.classes;
-  const Ci = Components.interfaces;
-
   // the build script have created the zip we can test on in the current dir.
   var file = do_get_file("data/test_corrupt.zip");
 
@@ -31,6 +28,6 @@ function run_test() {
   } catch (ex) {
     failed = true;
   }
-  do_check_true(failed);
+  Assert.ok(failed);
 }
 

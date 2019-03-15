@@ -19,9 +19,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=484459
   <!-- test code goes here -->
   <script type="application/javascript"><![CDATA[
     SimpleTest.waitForExplicitFinish();
-    var util = window.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
-                     .getInterface(Components.interfaces.nsIDOMWindowUtils);
-    var weakUtil = Components.utils.getWeakReference(util);
+    var util = window.windowUtils;
+    var weakUtil = Cu.getWeakReference(util);
     util = null;
 
     function callback() {

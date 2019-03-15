@@ -12,20 +12,13 @@ config = {
     ],
     "replacements": [
         # File, from, to
-        ("{}/{}".format(d, f),
+        ("{}{}".format(d, f),
         "ac_add_options --with-branding=mobile/android/branding/beta",
         "ac_add_options --with-branding=mobile/android/branding/official")
-        for d in ["mobile/android/config/mozconfigs/android-api-15/",
-                  "mobile/android/config/mozconfigs/android-x86/"]
-        for f in ["debug", "nightly", "l10n-nightly", "l10n-release", "release"]
-    ] + [
-        # File, from, to
-        ("{}/{}".format(d, f),
-        "ac_add_options --with-l10n-base=../../mozilla-beta",
-        "ac_add_options --with-l10n-base=../../mozilla-release")
-        for d in ["mobile/android/config/mozconfigs/android-api-15/",
-                  "mobile/android/config/mozconfigs/android-x86/"]
-        for f in ["l10n-nightly", "l10n-release"]
+        for d in ["mobile/android/config/mozconfigs/android-api-16/",
+                  "mobile/android/config/mozconfigs/android-x86/",
+                  "mobile/android/config/mozconfigs/android-aarch64/"]
+        for f in ["debug", "nightly"]
     ] + [
         # File, from, to
         ("browser/confvars.sh",
@@ -38,10 +31,8 @@ config = {
 
     "vcs_share_base": os.path.join(ABS_WORK_DIR, 'hg-shared'),
     # "hg_share_base": None,
-    "tools_repo_url": "https://hg.mozilla.org/build/tools",
-    "tools_repo_branch": "default",
-    "from_repo_url": "ssh://hg.mozilla.org/releases/mozilla-beta",
-    "to_repo_url": "ssh://hg.mozilla.org/releases/mozilla-release",
+    "from_repo_url": "https://hg.mozilla.org/releases/mozilla-beta",
+    "to_repo_url": "https://hg.mozilla.org/releases/mozilla-release",
 
     "base_tag": "FIREFOX_RELEASE_%(major_version)s_BASE",
     "end_tag": "FIREFOX_RELEASE_%(major_version)s_END",
@@ -52,10 +43,5 @@ config = {
 
     "virtualenv_modules": [
         "requests==2.8.1",
-    ],
-
-    "post_merge_builders": [],
-    "post_merge_nightly_branches": [
-        # No nightlies on mozilla-release
     ],
 }

@@ -9,7 +9,6 @@
   <script class="testbody" type="text/javascript">
   /* sendAsyncMessage isn't actually a global - this just mollifies eslint */
   /* global sendAsyncMessage */
-  /* import-globals-from mixedContentTest.js */
   "use strict";
 
   // We want to start this test from an insecure context
@@ -19,7 +18,7 @@
 
   function runTest() {
     let script = SpecialPowers.loadChromeScript(function() {
-      const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
+      const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm", {});
       // Force download to be w/o user assistance for our testing mime type
       const mimeSvc = Cc["@mozilla.org/mime;1"].getService(Ci.nsIMIMEService);
       let handlerInfo =
@@ -32,26 +31,20 @@
                            .getService(Ci.nsIHandlerService);
       handlerSvc.store(handlerInfo);
 
-      let dirProvider = Cc["@mozilla.org/file/directory_service;1"]
-                          .getService(Ci.nsIProperties);
-      let profileDir = dirProvider.get("ProfDS", Ci.nsIFile);
+      let profileDir = Services.dirsvc.get("ProfDS", Ci.nsIFile);
       profileDir.append("downloads");
 
-      let prefs = Cc["@mozilla.org/preferences-service;1"]
-                    .getService(Ci.nsIPrefService);
-      let prefBranch = prefs.getBranch("browser.download.");
+      let prefBranch = Services.prefs.getBranch("browser.download.");
 
       prefBranch.setCharPref("dir", profileDir.path);
       prefBranch.setBoolPref("useDownloadDir", true);
       prefBranch.setIntPref("folderList", 2);
-      prefBranch.setBoolPref("manager.closeWhenDone", true);
-      prefBranch.setBoolPref("manager.showWhenStarting", false);
 
       const { Downloads } =
-        Cu.import("resource://gre/modules/Downloads.jsm", {});
+        ChromeUtils.import("resource://gre/modules/Downloads.jsm", {});
       Downloads.getList(Downloads.PUBLIC).then(list => {
         list.addView({
-          onDownloadAdded: function (aDownload) {
+          onDownloadAdded(aDownload) {
             list.removeView(this);
             aDownload.whenSucceeded().then(() => {
               list.removeFinished();
@@ -60,7 +53,7 @@
           },
         });
         sendAsyncMessage("navigate", "download.auto");
-      }).then(null, Cu.reportError);
+      }).catch(Cu.reportError);
     });
     script.addMessageListener("navigate", function(url) {
       window.location = url;
@@ -71,7 +64,7 @@
 
   testCleanUp = function cleanup() {
     SpecialPowers.loadChromeScript(function() {
-      const { classes: Cc, interfaces: Ci } = Components;
+      const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm", {});
       const mimeSvc = Cc["@mozilla.org/mime;1"].getService(Ci.nsIMIMEService);
       let handlerInfo =
         mimeSvc.getFromTypeAndExtension("application/x-auto-download", "auto");
@@ -80,12 +73,9 @@
                            .getService(Ci.nsIHandlerService);
       handlerSvc.remove(handlerInfo);
 
-      let prefs = Cc["@mozilla.org/preferences-service;1"]
-                    .getService(Ci.nsIPrefService);
-      let prefBranch = prefs.getBranch("browser.download.");
+      let prefBranch = Services.prefs.getBranch("browser.download.");
 
-      const prefKeys = ["dir", "useDownloadDir", "folderList",
-                        "manager.closeWhenDone", "manager.showWhenStarting"];
+      const prefKeys = ["dir", "useDownloadDir", "folderList"];
       for (let prefKey of prefKeys) {
         if (prefBranch.prefHasUserValue(prefKey)) {
           prefBranch.clearUserPref(prefKey);

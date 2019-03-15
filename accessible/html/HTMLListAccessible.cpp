@@ -21,30 +21,21 @@ using namespace mozilla::a11y;
 // HTMLListAccessible
 ////////////////////////////////////////////////////////////////////////////////
 
-NS_IMPL_ISUPPORTS_INHERITED0(HTMLListAccessible, HyperTextAccessible)
-
-role
-HTMLListAccessible::NativeRole()
-{
+role HTMLListAccessible::NativeRole() const {
   a11y::role r = GetAccService()->MarkupRole(mContent);
   return r != roles::NOTHING ? r : roles::LIST;
 }
 
-uint64_t
-HTMLListAccessible::NativeState()
-{
+uint64_t HTMLListAccessible::NativeState() const {
   return HyperTextAccessibleWrap::NativeState() | states::READONLY;
 }
-
 
 ////////////////////////////////////////////////////////////////////////////////
 // HTMLLIAccessible
 ////////////////////////////////////////////////////////////////////////////////
 
-HTMLLIAccessible::
-  HTMLLIAccessible(nsIContent* aContent, DocAccessible* aDoc) :
-  HyperTextAccessibleWrap(aContent, aDoc), mBullet(nullptr)
-{
+HTMLLIAccessible::HTMLLIAccessible(nsIContent* aContent, DocAccessible* aDoc)
+    : HyperTextAccessibleWrap(aContent, aDoc), mBullet(nullptr) {
   mType = eHTMLLiType;
 
   nsBlockFrame* blockFrame = do_QueryFrame(GetFrame());
@@ -55,46 +46,34 @@ HTMLLIAccessible::
   }
 }
 
-NS_IMPL_ISUPPORTS_INHERITED0(HTMLLIAccessible, HyperTextAccessible)
-
-void
-HTMLLIAccessible::Shutdown()
-{
+void HTMLLIAccessible::Shutdown() {
   mBullet = nullptr;
 
   HyperTextAccessibleWrap::Shutdown();
 }
 
-role
-HTMLLIAccessible::NativeRole()
-{
+role HTMLLIAccessible::NativeRole() const {
   a11y::role r = GetAccService()->MarkupRole(mContent);
   return r != roles::NOTHING ? r : roles::LISTITEM;
 }
 
-uint64_t
-HTMLLIAccessible::NativeState()
-{
+uint64_t HTMLLIAccessible::NativeState() const {
   return HyperTextAccessibleWrap::NativeState() | states::READONLY;
 }
 
-nsIntRect
-HTMLLIAccessible::Bounds() const
-{
-  nsIntRect rect = AccessibleWrap::Bounds();
-  if (rect.IsEmpty() || !mBullet || mBullet->IsInside())
+nsRect HTMLLIAccessible::BoundsInAppUnits() const {
+  nsRect rect = AccessibleWrap::BoundsInAppUnits();
+  if (rect.IsEmpty() || !mBullet || mBullet->IsInside()) {
     return rect;
+  }
 
-  nsIntRect bulletRect = mBullet->Bounds();
-
-  rect.width += rect.x - bulletRect.x;
-  rect.x = bulletRect.x; // Move x coordinate of list item over to cover bullet as well
+  nsRect bulletRect = mBullet->BoundsInAppUnits();
+  // Move x coordinate of list item over to cover bullet as well
+  rect.SetLeftEdge(bulletRect.X());
   return rect;
 }
 
-bool
-HTMLLIAccessible::InsertChildAt(uint32_t aIndex, Accessible* aChild)
-{
+bool HTMLLIAccessible::InsertChildAt(uint32_t aIndex, Accessible* aChild) {
   // Adjust index if there's a bullet.
   if (mBullet && aIndex == 0 && aChild != mBullet) {
     return HyperTextAccessible::InsertChildAt(aIndex + 1, aChild);
@@ -106,11 +85,9 @@ HTMLLIAccessible::InsertChildAt(uint32_t aIndex, Accessible* aChild)
 ////////////////////////////////////////////////////////////////////////////////
 // HTMLLIAccessible: public
 
-void
-HTMLLIAccessible::UpdateBullet(bool aHasBullet)
-{
+void HTMLLIAccessible::UpdateBullet(bool aHasBullet) {
   if (aHasBullet == !!mBullet) {
-    NS_NOTREACHED("Bullet and accessible are in sync already!");
+    MOZ_ASSERT_UNREACHABLE("Bullet and accessible are in sync already!");
     return;
   }
 
@@ -120,8 +97,7 @@ HTMLLIAccessible::UpdateBullet(bool aHasBullet)
     mDoc->BindToDocument(mBullet, nullptr);
     InsertChildAt(0, mBullet);
     mt.AfterInsertion(mBullet);
-  }
-  else {
+  } else {
     mt.BeforeRemoval(mBullet);
     RemoveChild(mBullet);
     mBullet = nullptr;
@@ -132,10 +108,9 @@ HTMLLIAccessible::UpdateBullet(bool aHasBullet)
 ////////////////////////////////////////////////////////////////////////////////
 // HTMLListBulletAccessible
 ////////////////////////////////////////////////////////////////////////////////
-HTMLListBulletAccessible::
-  HTMLListBulletAccessible(nsIContent* aContent, DocAccessible* aDoc) :
-  LeafAccessible(aContent, aDoc)
-{
+HTMLListBulletAccessible::HTMLListBulletAccessible(nsIContent* aContent,
+                                                   DocAccessible* aDoc)
+    : LeafAccessible(aContent, aDoc) {
   mGenericTypes |= eText;
   mStateFlags |= eSharedNode;
 }
@@ -143,16 +118,12 @@ HTMLListBulletAccessible::
 ////////////////////////////////////////////////////////////////////////////////
 // HTMLListBulletAccessible: Accessible
 
-nsIFrame*
-HTMLListBulletAccessible::GetFrame() const
-{
+nsIFrame* HTMLListBulletAccessible::GetFrame() const {
   nsBlockFrame* blockFrame = do_QueryFrame(mContent->GetPrimaryFrame());
   return blockFrame ? blockFrame->GetBullet() : nullptr;
 }
 
-ENameValueFlag
-HTMLListBulletAccessible::Name(nsString &aName)
-{
+ENameValueFlag HTMLListBulletAccessible::Name(nsString& aName) const {
   aName.Truncate();
 
   // Native anonymous content, ARIA can't be used. Get list bullet text.
@@ -164,26 +135,18 @@ HTMLListBulletAccessible::Name(nsString &aName)
   return eNameOK;
 }
 
-role
-HTMLListBulletAccessible::NativeRole()
-{
-  return roles::STATICTEXT;
-}
+role HTMLListBulletAccessible::NativeRole() const { return roles::STATICTEXT; }
 
-uint64_t
-HTMLListBulletAccessible::NativeState()
-{
+uint64_t HTMLListBulletAccessible::NativeState() const {
   return LeafAccessible::NativeState() | states::READONLY;
 }
 
-void
-HTMLListBulletAccessible::AppendTextTo(nsAString& aText, uint32_t aStartOffset,
-                                       uint32_t aLength)
-{
+void HTMLListBulletAccessible::AppendTextTo(nsAString& aText,
+                                            uint32_t aStartOffset,
+                                            uint32_t aLength) {
   nsAutoString bulletText;
   nsBlockFrame* blockFrame = do_QueryFrame(mContent->GetPrimaryFrame());
-  if (blockFrame)
-    blockFrame->GetSpokenBulletText(bulletText);
+  if (blockFrame) blockFrame->GetSpokenBulletText(bulletText);
 
   aText.Append(Substring(bulletText, aStartOffset, aLength));
 }
@@ -191,9 +154,7 @@ HTMLListBulletAccessible::AppendTextTo(nsAString& aText, uint32_t aStartOffset,
 ////////////////////////////////////////////////////////////////////////////////
 // HTMLListBulletAccessible: public
 
-bool
-HTMLListBulletAccessible::IsInside() const
-{
+bool HTMLListBulletAccessible::IsInside() const {
   nsBlockFrame* blockFrame = do_QueryFrame(mContent->GetPrimaryFrame());
   return blockFrame ? blockFrame->HasInsideBullet() : false;
 }

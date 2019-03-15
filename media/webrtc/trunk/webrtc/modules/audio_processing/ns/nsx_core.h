@@ -8,16 +8,16 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_PROCESSING_NS_MAIN_SOURCE_NSX_CORE_H_
-#define WEBRTC_MODULES_AUDIO_PROCESSING_NS_MAIN_SOURCE_NSX_CORE_H_
+#ifndef MODULES_AUDIO_PROCESSING_NS_MAIN_SOURCE_NSX_CORE_H_
+#define MODULES_AUDIO_PROCESSING_NS_MAIN_SOURCE_NSX_CORE_H_
 
 #ifdef NS_FILEDEBUG
 #include <stdio.h>
 #endif
 
-#include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
-#include "webrtc/modules/audio_processing/ns/nsx_defines.h"
-#include "webrtc/typedefs.h"
+#include "common_audio/signal_processing/include/signal_processing_library.h"
+#include "modules/audio_processing/ns/nsx_defines.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 typedef struct NoiseSuppressionFixedC_ {
   uint32_t                fs;
@@ -215,7 +215,7 @@ void WebRtcNsx_SpeechNoiseProb(NoiseSuppressionFixedC* inst,
                                uint32_t* priorLocSnr,
                                uint32_t* postLocSnr);
 
-#if (defined WEBRTC_DETECT_NEON || defined WEBRTC_HAS_NEON)
+#if defined(WEBRTC_HAS_NEON)
 // For the above function pointers, functions for generic platforms are declared
 // and defined as static in file nsx_core.c, while those for ARM Neon platforms
 // are declared below and defined in file nsx_core_neon.c.
@@ -260,4 +260,4 @@ void WebRtcNsx_Denormalize_mips(NoiseSuppressionFixedC* inst,
 }
 #endif
 
-#endif  // WEBRTC_MODULES_AUDIO_PROCESSING_NS_MAIN_SOURCE_NSX_CORE_H_
+#endif  // MODULES_AUDIO_PROCESSING_NS_MAIN_SOURCE_NSX_CORE_H_

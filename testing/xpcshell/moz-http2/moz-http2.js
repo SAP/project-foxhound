@@ -194,6 +194,9 @@ var didRst = false;
 var rstConnection = null;
 var illegalheader_conn = null;
 
+var ns_confirm = 0;
+var cname_confirm = 0;
+
 function handleRequest(req, res) {
   // We do this first to ensure nothing goes wonky in our tests that don't want
   // the headers to have something illegal in them
@@ -277,6 +280,11 @@ function handleRequest(req, res) {
     content = '<head> <script src="push.js"/></head>body text';
   }
 
+  else if (u.pathname === "/push.js") {
+    content = '// comments';
+    res.setHeader("pushed", "no");
+  }
+
   else if (u.pathname === "/push2") {
     push = res.push('/push2.js');
     push.writeHead(200, {
@@ -339,14 +347,15 @@ function handleRequest(req, res) {
 
     push3 = res.push(
         { hostname: 'localhost:' + serverPort, port: serverPort, path : '/pushapi1/3', method : 'GET',
-          headers: {'x-pushed-request': 'true'}});
+          headers: {'x-pushed-request': 'true', 'Accept-Encoding' : 'br'}});
     push3.writeHead(200, {
       'pushed' : 'yes',
-      'content-length' : 1,
+      'content-length' : 6,
       'subresource' : '3',
+      'content-encoding' : 'br',
       'X-Connection-Http2': 'yes'
     });
-    push3.end('3');
+    push3.end(new Buffer([0x8b, 0x00, 0x80, 0x33, 0x0a, 0x03])); // '3\n'
 
     content = '0';
   }
@@ -500,9 +509,9 @@ function handleRequest(req, res) {
       res.writeHead(400);
       res.end("WHAT?");
       return;
-   }
-   // test the alt svc frame for use with altsvc2
-   res.altsvc("foo.example.com", serverPort, "h2", 3600, req.headers['x-redirect-origin']);
+    }
+    // test the alt svc frame for use with altsvc2
+    res.altsvc("foo.example.com", serverPort, "h2", 3600, req.headers['x-redirect-origin']);
   }
 
   else if (u.pathname === "/altsvc2") {
@@ -519,6 +528,292 @@ function handleRequest(req, res) {
   else if (u.pathname === "/altsvc-test") {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Alt-Svc', 'h2=' + req.headers['x-altsvc']);
+  }
+  // for use with test_trr.js
+  else if (u.pathname === "/dns-cname") {
+    // asking for cname.example.com
+    var content;
+    if(0 == cname_confirm) {
+      // ... this sends a CNAME back to pointing-elsewhere.example.com
+      content = new Buffer("00000100000100010000000005636E616D65076578616D706C6503636F6D0000050001C00C0005000100000037002012706F696E74696E672D656C73657768657265076578616D706C6503636F6D00", "hex");
+      cname_confirm++;
+    }
+    else {
+      // ... this sends an A 99.88.77.66 entry back for pointing-elsewhere.example.com
+      content = new Buffer("00000100000100010000000012706F696E74696E672D656C73657768657265076578616D706C6503636F6D0000010001C00C0001000100000037000463584D42", "hex");
+    }
+    res.setHeader('Content-Type', 'application/dns-message');
+    res.setHeader('Content-Length', content.length);
+    res.writeHead(200);
+    res.write(content);
+    res.end("");
+    return;
+
+  }
+  else if (u.pathname === "/dns-cname-a") {
+    // test23 asks for cname-a.example.com
+    // this responds with a CNAME to here.example.com *and* an A record
+    // for here.example.com
+    var content;
+
+    content = new Buffer("0000" +
+                         "0100" +
+                         "0001" + // QDCOUNT
+                         "0002" + // ANCOUNT
+                         "00000000" + // NSCOUNT + ARCOUNT
+                         "07636E616D652d61" + // cname-a
+                         "076578616D706C6503636F6D00" + // .example.com
+                         "00010001" + // question type (A) + question class (IN)
+
+                         // answer record 1
+                         "C00C" + // name pointer to cname-a.example.com
+                         "0005" + // type (CNAME)
+                         "0001" + // class
+                         "00000037" + // TTL
+                         "0012" +   // RDLENGTH
+                         "0468657265" + // here
+                         "076578616D706C6503636F6D00" + // .example.com
+
+                         // answer record 2, the A entry for the CNAME above
+                         "0468657265" + // here
+                         "076578616D706C6503636F6D00" + // .example.com
+                         "0001" + // type (A)
+                         "0001" + // class
+                         "00000037" + // TTL
+                         "0004" + // RDLENGTH
+                         "09080706", // IPv4 address
+                         "hex");
+    res.setHeader('Content-Type', 'application/dns-message');
+    res.setHeader('Content-Length', content.length);
+    res.writeHead(200);
+    res.write(content);
+    res.end("");
+    return;
+
+  }
+  else if (u.pathname === "/dns-cname-loop") {
+    // asking for cname.example.com
+    var content;
+    // ... this always sends a CNAME back to pointing-elsewhere.example.com. Loop time!
+    content = new Buffer("00000100000100010000000005636E616D65076578616D706C6503636F6D0000050001C00C0005000100000037002012706F696E74696E672D656C73657768657265076578616D706C65C01A00", "hex");
+    res.setHeader('Content-Type', 'application/dns-message');
+    res.setHeader('Content-Length', content.length);
+    res.writeHead(200);
+    res.write(content);
+    res.end("");
+    return;
+
+  }
+    // for use with test_trr.js, test8b
+  else if (u.path === "/dns-ecs?dns=AAABAAABAAAAAAABA2VjcwdleGFtcGxlA2NvbQAAAQABAAApEAAAAAAAAAgACAAEAAEAAA") {
+    // the query string asks for an A entry for ecs.example.com
+    // ecs.example.com has A entry 5.5.5.5
+    var content= new Buffer("00000100000100010000000003656373076578616D706C6503636F6D0000010001C00C0001000100000037000405050505", "hex");
+    res.setHeader('Content-Type', 'application/dns-message');
+    res.setHeader('Content-Length', content.length);
+    res.writeHead(200);
+    res.write(content);
+    res.end("");
+    return;
+  }
+  // for use with test_trr.js
+  else if (u.path === "/dns-get?dns=AAABAAABAAAAAAAAA2dldAdleGFtcGxlA2NvbQAAAQAB") {
+    // the query string asks for an A entry for get.example.com
+    // get.example.com has A entry 1.2.3.4
+    var content= new Buffer("00000100000100010000000003676574076578616D706C6503636F6D0000010001C00C0001000100000037000401020304", "hex");
+    res.setHeader('Content-Type', 'application/dns-message');
+    res.setHeader('Content-Length', content.length);
+    res.writeHead(200);
+    res.write(content);
+    res.end("");
+    ns_confirm = 0; // back to first reply for dns-confirm
+    cname_confirm = 0; // back to first reply for dns-cname
+    return;
+  }
+  // for use with test_trr.js
+  else if (u.pathname === "/dns") {
+    // bar.example.com has A entry 127.0.0.1
+    var content= new Buffer("00000100000100010000000003626172076578616D706C6503636F6D0000010001C00C000100010000003700047F000001", "hex");
+    res.setHeader('Content-Type', 'application/dns-message');
+    res.setHeader('Content-Length', content.length);
+    // pass back a cookie here, check it in /dns-auth
+    res.setHeader('Set-Cookie', 'trackyou=yes; path=/; max-age=100000;');
+    res.writeHead(200);
+    res.write(content);
+    res.end("");
+    return;
+  }
+  else if (u.pathname === "/dns-ns") {
+    // confirm.example.com has NS entry ns.example.com
+    var content= new Buffer("00000100000100010000000007636F6E6669726D076578616D706C6503636F6D0000020001C00C00020001000000370012026E73076578616D706C6503636F6D010A00", "hex");
+    res.setHeader('Content-Type', 'application/dns-message');
+    res.setHeader('Content-Length', content.length);
+    res.writeHead(200);
+    res.write(content);
+    res.end("");
+    return;
+  }
+  else if (u.pathname === '/dns-750ms') {
+    // it's just meant to be this slow - the test doesn't care about the actual response
+    return;
+  }
+  // for use with test_trr.js
+  else if (u.pathname === "/dns-confirm") {
+    if (0 == ns_confirm) {
+      // confirm.example.com has NS entry ns.example.com
+      var content= new Buffer("00000100000100010000000007636F6E6669726D076578616D706C6503636F6D0000020001C00C00020001000000370012026E73076578616D706C6503636F6D010A00", "hex");
+      ns_confirm++;
+    } else if (2 >= ns_confirm) {
+      // next response: 10b-100.example.com has AAAA entry 1::FFFF
+
+      // we expect two requests for this name (A + AAAA), respond identically
+      // for both and expect the client to reject the wrong one
+      var content= new Buffer("000001000001000100000000" + "073130622d313030" +
+                              "076578616D706C6503636F6D00001C0001C00C001C00010000003700100001000000000000000000000000FFFF", "hex");
+      ns_confirm++;
+    } else {
+      // everything else is just wrong
+      return;
+    }
+    res.setHeader('Content-Type', 'application/dns-message');
+    res.setHeader('Content-Length', content.length);
+    res.writeHead(200);
+    res.write(content);
+    res.end("");
+    return;
+  }
+  // for use with test_trr.js
+  else if (u.pathname === "/dns-aaaa") {
+    // aaaa.example.com has AAAA entry 2020:2020::2020
+    var content= new Buffer("0000010000010001000000000461616161076578616D706C6503636F6D00001C0001C00C001C000100000037001020202020000000000000000000002020", "hex");
+    res.setHeader('Content-Type', 'application/dns-message');
+    res.setHeader('Content-Length', content.length);
+    res.writeHead(200);
+    res.write(content);
+    res.end("");
+    return;
+  }
+  else if (u.pathname === "/dns-rfc1918") {
+    // rfc1918.example.com has A entry 192.168.0.1
+    var content= new Buffer("0000010000010001000000000772666331393138076578616D706C6503636F6D0000010001C00C00010001000000370004C0A80001", "hex");
+    res.setHeader('Content-Type', 'application/dns-message');
+    res.setHeader('Content-Length', content.length);
+    res.writeHead(200);
+    res.write(content);
+    res.end("");
+    return;
+  }
+  // for use with test_trr.js
+  else if (u.pathname === "/dns-push") {
+    // first.example.com has A entry 127.0.0.1
+    var content= new Buffer("000001000001000100000000056669727374076578616D706C6503636F6D0000010001C00C000100010000003700047F000001", "hex");
+    // push.example.com has AAAA entry 2018::2018
+    var pcontent= new Buffer("0000010000010001000000000470757368076578616D706C6503636F6D00001C0001C00C001C000100000037001020180000000000000000000000002018", "hex");
+    push = res.push({
+      hostname: 'foo.example.com:' + serverPort,
+      port: serverPort,
+      path: '/dns-pushed-response?dns=AAAAAAABAAAAAAAABHB1c2gHZXhhbXBsZQNjb20AABwAAQ',
+      method: 'GET',
+      headers: {
+        'accept' : 'application/dns-message'
+      }
+    });
+    push.writeHead(200, {
+      'content-type': 'application/dns-message',
+      'pushed' : 'yes',
+      'content-length' : pcontent.length,
+      'X-Connection-Http2': 'yes'
+    });
+    push.end(pcontent);
+    res.setHeader('Content-Type', 'application/dns-message');
+    res.setHeader('Content-Length', content.length);
+    res.writeHead(200);
+    res.write(content);
+    res.end("");
+    return;
+  }
+  // for use with test_trr.js
+  else if (u.pathname === "/dns-auth") {
+    // There's a Set-Cookie: header in the response for "/dns" , which this
+    // request subsequently would include if the http channel wasn't
+    // anonymous. Thus, if there's a cookie in this request, we know Firefox
+    // mishaved. If there's not, we're fine.
+    if (req.headers['cookie']) {
+      res.writeHead(403);
+      res.end("cookie for me, not for you");
+      return;
+    }
+    if (req.headers['authorization'] != "user:password") {
+      res.writeHead(401);
+      res.end("bad boy!");
+      return;
+    }
+    // bar.example.com has A entry 127.0.0.1
+    var content= new Buffer("00000100000100010000000003626172076578616D706C6503636F6D0000010001C00C000100010000003700047F000001", "hex");
+    res.setHeader('Content-Type', 'application/dns-message');
+    res.setHeader('Content-Length', content.length);
+    res.writeHead(200);
+    res.write(content);
+    res.end("");
+    return;
+  }
+
+  // for use with test_esni_dns_fetch.js
+  else if (u.pathname === "/esni-dns") {
+    content = new Buffer("0000" +
+                         "8180" +
+                         "0001" + // QDCOUNT
+                         "0001" + // ANCOUNT
+                         "00000000" + // NSCOUNT + ARCOUNT
+                         "055F65736E69076578616D706C6503636F6D00" + // _esni.example.com
+                         "00100001" + // question type (TXT) + question class (IN)
+
+                         "C00C" + // name pointer to .example.com
+                         "0010" + // type (TXT)
+                         "0001" + // class
+                         "00000037" + // TTL
+                         "0021" + // RDLENGTH
+                         "2062586B67646D39705932556761584D6762586B676347467A63336476636D513D", // esni keys.
+                         "hex");
+
+    res.setHeader('Content-Type', 'application/dns-message');
+    res.setHeader('Content-Length', content.length);
+    res.writeHead(200);
+    res.write(content);
+    res.end("");
+    return;
+  }
+
+  // for use with test_esni_dns_fetch.js
+  else if (u.pathname === "/esni-dns-push") {
+    // _esni_push.example.com has A entry 127.0.0.1
+    var content= new Buffer("0000010000010001000000000A5F65736E695F70757368076578616D706C6503636F6D0000010001C00C000100010000003700047F000001", "hex");
+
+    // _esni_push.example.com has TXT entry 2062586B67646D39705932556761584D6762586B676347467A63336476636D513D
+    var pcontent= new Buffer("0000818000010001000000000A5F65736E695F70757368076578616D706C6503636F6D0000100001C00C001000010000003700212062586B67646D39705932556761584D6762586B676347467A63336476636D513D", "hex");
+
+    push = res.push({
+      hostname: 'foo.example.com:' + serverPort,
+      port: serverPort,
+      path: '/dns-pushed-response?dns=AAABAAABAAAAAAABCl9lc25pX3B1c2gHZXhhbXBsZQNjb20AABAAAQAAKRAAAAAAAAAIAAgABAABAAA',
+      method: 'GET',
+      headers: {
+        'accept' : 'application/dns-message'
+      }
+    });
+    push.writeHead(200, {
+      'content-type': 'application/dns-message',
+      'pushed' : 'yes',
+      'content-length' : pcontent.length,
+      'X-Connection-Http2': 'yes'
+    });
+    push.end(pcontent);
+    res.setHeader('Content-Type', 'application/dns-message');
+    res.setHeader('Content-Length', content.length);
+    res.writeHead(200);
+    res.write(content);
+    res.end("");
+    return;
   }
 
   else if (u.pathname === "/.well-known/http-opportunistic") {
@@ -723,20 +1018,134 @@ function handleRequest(req, res) {
 
   // for use with test_immutable.js
   else if (u.pathname === "/immutable-test-without-attribute") {
-     res.setHeader('Cache-Control', 'max-age=100000');
-     res.setHeader('Etag', '1');
-     if (req.headers["if-none-match"]) {
-       res.setHeader("x-conditional", "true");
-     }
+    res.setHeader('Cache-Control', 'max-age=100000');
+    res.setHeader('Etag', '1');
+    if (req.headers["if-none-match"]) {
+      res.setHeader("x-conditional", "true");
+    }
     // default response from here
   }
   else if (u.pathname === "/immutable-test-with-attribute") {
     res.setHeader('Cache-Control', 'max-age=100000, immutable');
     res.setHeader('Etag', '2');
-     if (req.headers["if-none-match"]) {
-       res.setHeader("x-conditional", "true");
-     }
-   // default response from here
+    if (req.headers["if-none-match"]) {
+      res.setHeader("x-conditional", "true");
+    }
+    // default response from here
+  }
+  else if (u.pathname === "/origin-4") {
+   var originList = [ ];
+   req.stream.connection.originFrame(originList);
+   res.setHeader("x-client-port", req.remotePort);
+  }
+  else if (u.pathname === "/origin-6") {
+   var originList = [ "https://alt1.example.com:" + serverPort,
+                      "https://alt2.example.com:" + serverPort,
+                      "https://bar.example.com:" + serverPort ];
+   req.stream.connection.originFrame(originList);
+   res.setHeader("x-client-port", req.remotePort);
+  }
+  else if (u.pathname === "/origin-11-a") {
+    res.setHeader("x-client-port", req.remotePort);
+
+    pushb = res.push(
+        { hostname: 'foo.example.com:' + serverPort, port: serverPort, path : '/origin-11-b', method : 'GET',
+          headers: {'x-pushed-request': 'true', 'x-foo' : 'bar'}});
+    pushb.writeHead(200, {
+      'pushed' : 'yes',
+      'content-length' : 1
+      });
+    pushb.end('1');
+
+    pushc = res.push(
+        { hostname: 'bar.example.com:' + serverPort, port: serverPort, path : '/origin-11-c', method : 'GET',
+          headers: {'x-pushed-request': 'true', 'x-foo' : 'bar'}});
+    pushc.writeHead(200, {
+      'pushed' : 'yes',
+      'content-length' : 1
+      });
+    pushc.end('1');
+
+    pushd = res.push(
+        { hostname: 'madeup.example.com:' + serverPort, port: serverPort, path : '/origin-11-d', method : 'GET',
+          headers: {'x-pushed-request': 'true', 'x-foo' : 'bar'}});
+    pushd.writeHead(200, {
+      'pushed' : 'yes',
+      'content-length' : 1
+      });
+    pushd.end('1');
+
+    pushe = res.push(
+        { hostname: 'alt1.example.com:' + serverPort, port: serverPort, path : '/origin-11-e', method : 'GET',
+          headers: {'x-pushed-request': 'true', 'x-foo' : 'bar'}});
+    pushe.writeHead(200, {
+      'pushed' : 'yes',
+      'content-length' : 1
+      });
+    pushe.end('1');
+  }
+  else if (u.pathname.substring(0,8) === "/origin-") { // test_origin.js coalescing
+    res.setHeader("x-client-port", req.remotePort);
+  }
+
+  else if (u.pathname === "/statusphrase") {
+    // Fortunately, the node-http2 API is dumb enough to allow this right on
+    // through, so we can easily test rejecting this on gecko's end.
+    res.writeHead("200 OK");
+    res.end(content);
+    return;
+  }
+
+  else if (u.pathname === "/doublepush") {
+    push1 = res.push('/doublypushed');
+    push1.writeHead(200, {
+      'content-type': 'text/plain',
+      'pushed' : 'yes',
+      'content-length' : 6,
+      'X-Connection-Http2': 'yes'
+    });
+    push1.end('pushed');
+
+    push2 = res.push('/doublypushed');
+    push2.writeHead(200, {
+      'content-type': 'text/plain',
+      'pushed' : 'yes',
+      'content-length' : 6,
+      'X-Connection-Http2': 'yes'
+    });
+    push2.end('pushed');
+  }
+
+  else if (u.pathname === "/doublypushed") {
+    content = 'not pushed';
+  }
+
+  else if (u.pathname === "/diskcache") {
+    content = "this was pulled via h2";
+  }
+
+  else if (u.pathname === "/pushindisk") {
+    var pushedContent = "this was pushed via h2";
+    push = res.push('/diskcache');
+    push.writeHead(200, {
+      'content-type': 'text/html',
+      'pushed' : 'yes',
+      'content-length' : pushedContent.length,
+      'X-Connection-Http2': 'yes'
+    });
+    push.end(pushedContent);
+  }
+
+  // For test_header_Server_Timing.js
+  else if (u.pathname === "/server-timing") {
+    res.setHeader('Content-Type', 'text/plain');
+    res.setHeader('Content-Length', '12');
+    res.setHeader('Trailer', 'Server-Timing');
+    res.setHeader('Server-Timing', 'metric; dur=123.4; desc=description, metric2; dur=456.78; desc=description1');
+    res.write('data reached');
+    res.addTrailers({'Server-Timing': 'metric3; dur=789.11; desc=description2, metric4; dur=1112.13; desc=description3'});
+    res.end();
+    return;
   }
 
   res.setHeader('Content-Type', 'text/html');

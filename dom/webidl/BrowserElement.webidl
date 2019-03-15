@@ -4,60 +4,11 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-callback BrowserElementNextPaintEventCallback = void ();
-
-enum BrowserFindCaseSensitivity { "case-sensitive", "case-insensitive" };
-enum BrowserFindDirection { "forward", "backward" };
-
-dictionary BrowserElementDownloadOptions {
-  DOMString? filename;
-  DOMString? referrer;
-};
-
-dictionary BrowserElementExecuteScriptOptions {
-  DOMString? url;
-  DOMString? origin;
-};
-
 [NoInterfaceObject]
 interface BrowserElement {
 };
 
-BrowserElement implements BrowserElementCommon;
 BrowserElement implements BrowserElementPrivileged;
-
-[NoInterfaceObject]
-interface BrowserElementCommon {
-  [Throws,
-   Pref="dom.mozBrowserFramesEnabled",
-   ChromeOnly]
-  void setVisible(boolean visible);
-
-  [Throws,
-   Pref="dom.mozBrowserFramesEnabled",
-   ChromeOnly]
-  DOMRequest getVisible();
-
-  [Throws,
-   Pref="dom.mozBrowserFramesEnabled",
-   ChromeOnly]
-  void setActive(boolean active);
-
-  [Throws,
-   Pref="dom.mozBrowserFramesEnabled",
-   ChromeOnly]
-  boolean getActive();
-
-  [Throws,
-   Pref="dom.mozBrowserFramesEnabled",
-   ChromeOnly]
-  void addNextPaintListener(BrowserElementNextPaintEventCallback listener);
-
-  [Throws,
-   Pref="dom.mozBrowserFramesEnabled",
-   ChromeOnly]
-  void removeNextPaintListener(BrowserElementNextPaintEventCallback listener);
-};
 
 [NoInterfaceObject]
 interface BrowserElementPrivileged {
@@ -69,21 +20,6 @@ interface BrowserElementPrivileged {
                       unsigned long y,
                       unsigned long button,
                       unsigned long clickCount,
-                      unsigned long modifiers);
-
-  [Throws,
-   Pref="dom.mozBrowserFramesEnabled",
-   Func="TouchEvent::PrefEnabled",
-   ChromeOnly]
-  void sendTouchEvent(DOMString type,
-                      sequence<unsigned long> identifiers,
-                      sequence<long> x,
-                      sequence<long> y,
-                      sequence<unsigned long> rx,
-                      sequence<unsigned long> ry,
-                      sequence<float> rotationAngles,
-                      sequence<float> forces,
-                      unsigned long count,
                       unsigned long modifiers);
 
   [Throws,
@@ -109,113 +45,10 @@ interface BrowserElementPrivileged {
   [Throws,
    Pref="dom.mozBrowserFramesEnabled",
    ChromeOnly]
-  DOMRequest download(DOMString url,
-                      optional BrowserElementDownloadOptions options);
+  Promise<boolean> getCanGoBack();
 
   [Throws,
    Pref="dom.mozBrowserFramesEnabled",
    ChromeOnly]
-  DOMRequest purgeHistory();
-
-  [Throws,
-   Pref="dom.mozBrowserFramesEnabled",
-   ChromeOnly]
-  DOMRequest getScreenshot([EnforceRange] unsigned long width,
-                           [EnforceRange] unsigned long height,
-                           optional DOMString mimeType="");
-
-  [Throws,
-   Pref="dom.mozBrowserFramesEnabled",
-   ChromeOnly]
-  void zoom(float zoom);
-
-  [Throws,
-   Pref="dom.mozBrowserFramesEnabled",
-   ChromeOnly]
-  DOMRequest getCanGoBack();
-
-  [Throws,
-   Pref="dom.mozBrowserFramesEnabled",
-   ChromeOnly]
-  DOMRequest getCanGoForward();
-
-  [Throws,
-   Pref="dom.mozBrowserFramesEnabled",
-   ChromeOnly]
-  DOMRequest getContentDimensions();
-
-  [Throws,
-   Pref="dom.mozBrowserFramesEnabled",
-   ChromeOnly]
-  void findAll(DOMString searchString, BrowserFindCaseSensitivity caseSensitivity);
-
-  [Throws,
-   Pref="dom.mozBrowserFramesEnabled",
-   ChromeOnly]
-  void findNext(BrowserFindDirection direction);
-
-  [Throws,
-   Pref="dom.mozBrowserFramesEnabled",
-   ChromeOnly]
-  void clearMatch();
-
-  [Throws,
-   Pref="dom.mozBrowserFramesEnabled",
-   ChromeOnly]
-  DOMRequest executeScript(DOMString script,
-                           optional BrowserElementExecuteScriptOptions options);
-
-  [Throws,
-   Pref="dom.mozBrowserFramesEnabled",
-   ChromeOnly]
-  DOMRequest getWebManifest();
-
-};
-
-// Bits needed for BrowserElementAudioChannel.
-partial interface BrowserElementPrivileged {
-  [Pure, Cached, Throws,
-   Pref="dom.mozBrowserFramesEnabled",
-   ChromeOnly]
-  readonly attribute sequence<BrowserElementAudioChannel> allowedAudioChannels;
-
-  /**
-   * Mutes all audio in this browser.
-   */
-  [Throws,
-   Pref="dom.mozBrowserFramesEnabled",
-   ChromeOnly]
-  void mute();
-
-  /**
-   * Unmutes all audio in this browser.
-   */
-  [Throws,
-   Pref="dom.mozBrowserFramesEnabled",
-   ChromeOnly]
-  void unmute();
-
-  /**
-   * Obtains whether or not the browser is muted.
-   */
-  [Throws,
-   Pref="dom.mozBrowserFramesEnabled",
-   ChromeOnly]
-  DOMRequest getMuted();
-
-  /**
-   * Sets the volume for the browser.
-   */
-  [Throws,
-   Pref="dom.mozBrowserFramesEnabled",
-   ChromeOnly]
-  void setVolume(float volume);
-
-  /**
-   * Gets the volume for the browser.
-   */
-  [Throws,
-   Pref="dom.mozBrowserFramesEnabled",
-   ChromeOnly]
-  DOMRequest getVolume();
+  Promise<boolean> getCanGoForward();
 };

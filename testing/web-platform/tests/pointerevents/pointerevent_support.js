@@ -39,7 +39,8 @@ function check_PointerEvent(event, testNamePrefix) {
         "long": function (v) { return typeof v === "number" && Math.round(v) === v; },
         "float": function (v) { return typeof v === "number"; },
         "string": function (v) { return typeof v === "string"; },
-        "boolean": function (v) { return typeof v === "boolean" }
+        "boolean": function (v) { return typeof v === "boolean" },
+        "object": function (v) { return typeof v === "object" }
     };
     [
         ["readonly", "long", "pointerId"],
@@ -50,7 +51,9 @@ function check_PointerEvent(event, testNamePrefix) {
         ["readonly", "long", "tiltY"],
         ["readonly", "string", "pointerType"],
         ["readonly", "boolean", "isPrimary"],
-        ["readonly", "long", "detail", 0]
+        ["readonly", "long", "detail", 0],
+        ["readonly", "object", "fromElement", null],
+        ["readonly", "object", "toElement", null]
     ].forEach(function (attr) {
         var readonly = attr[0];
         var type = attr[1];
@@ -75,7 +78,7 @@ function check_PointerEvent(event, testNamePrefix) {
         }, pointerTestName + "." + name + " IDL type " + type + " (JS type was " + typeof event[name] + ")");
 
         // value check if defined
-        if (value != undefined) {
+        if (value !== undefined) {
             test(function () {
                 assert_equals(event[name], value, name + " attribute value");
             }, pointerTestName + "." + name + " value is " + value + ".");
@@ -90,15 +93,13 @@ function check_PointerEvent(event, testNamePrefix) {
         assert_greater_than_equal(event.pressure, 0, "pressure is greater than or equal to 0");
         assert_less_than_equal(event.pressure, 1, "pressure is less than or equal to 1");
 
-        if (event.type === "pointerup") {
-            assert_equals(event.pressure, 0, "pressure is 0 during pointerup");
+        if (event.buttons === 0) {
+            assert_equals(event.pressure, 0, "pressure is 0 for mouse with no buttons pressed");
         }
 
         // TA: 1.7, 1.8
         if (event.pointerType === "mouse") {
-            if (event.buttons === 0) {
-                assert_equals(event.pressure, 0, "pressure is 0 for mouse with no buttons pressed");
-            } else {
+            if (event.buttons !== 0) {
                 assert_equals(event.pressure, 0.5, "pressure is 0.5 for mouse with a button pressed");
             }
         }
@@ -135,15 +136,7 @@ function showLoggedEvents() {
     complete_notice.style.display = "block";
 }
 
-function log(msg, el) {
-    if (++count > 10){
-      count = 0;
-      el.innerHTML = ' ';
-    }
-    el.innerHTML = msg + '; ' + el.innerHTML;
-}
-
- function failOnScroll() {
+function failOnScroll() {
     assert_true(false,
     "scroll received while shouldn't");
 }
@@ -157,16 +150,19 @@ function updateDescriptionComplete() {
 }
 
 function updateDescriptionSecondStepTouchActionElement(target, scrollReturnInterval) {
-    window.setTimeout(function() {
+    window.step_timeout(function() {
     objectScroller(target, 'up', 0);}
     , scrollReturnInterval);
     document.getElementById('desc').innerHTML = "Test Description: Try to scroll element RIGHT moving your outside of the red border";
 }
 
-function updateDescriptionThirdStepTouchActionElement(target, scrollReturnInterval) {
-    window.setTimeout(function() {
-    objectScroller(target, 'left', 0);}
-    , scrollReturnInterval);
+function updateDescriptionThirdStepTouchActionElement(target, scrollReturnInterval, callback = null) {
+    window.step_timeout(function() {
+        objectScroller(target, 'left', 0);
+        if (callback) {
+            callback();
+        }
+    }, scrollReturnInterval);
     document.getElementById('desc').innerHTML = "Test Description: Try to scroll element DOWN then RIGHT starting your touch inside of the element. Then tap complete button";
 }
 

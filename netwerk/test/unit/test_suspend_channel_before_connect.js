@@ -1,7 +1,7 @@
 
 var CC = Components.Constructor;
 
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 const ServerSocket = CC("@mozilla.org/network/server-socket;1",
                         "nsIServerSocket",
@@ -11,7 +11,7 @@ var obs = Cc["@mozilla.org/observer-service;1"]
             .getService(Ci.nsIObserverService);
 
 var ios = Cc["@mozilla.org/network/io-service;1"]
-            .getService(Components.interfaces.nsIIOService);
+            .getService(Ci.nsIIOService);
 
 // A server that waits for a connect. If a channel is suspended it should not
 // try to connect to the server until it is is resumed or not try at all if it
@@ -24,7 +24,7 @@ function TestServer() {
 
 TestServer.prototype = {
   onSocketAccepted: function(socket, trans) {
-    do_check_true(false, "Socket should not have tried to connect!");
+    Assert.ok(false, "Socket should not have tried to connect!");
   },
 
   onStopListening: function(socket) {
@@ -41,7 +41,7 @@ var requestListenerObserver = {
     if (iid.equals(Ci.nsISupports) ||
         iid.equals(Ci.nsIObserver))
       return this;
-    throw Components.results.NS_ERROR_NO_INTERFACE;
+    throw Cr.NS_ERROR_NO_INTERFACE;
   },
 
   observe: function(subject, topic, data) {
@@ -75,7 +75,7 @@ var listener = {
   },
 
   onStopRequest: function test_onStopR(request, ctx, status) {
-    do_execute_soon(run_next_test);
+    executeSoon(run_next_test);
   }
 };
 
@@ -87,14 +87,14 @@ add_test(function testNoConnectChannelCanceledEarly() {
 
   serv = new TestServer();
 
-  obs.addObserver(requestListenerObserver, "http-on-modify-request", false);
+  obs.addObserver(requestListenerObserver, "http-on-modify-request");
   var chan = NetUtil.newChannel({
     uri:"http://localhost:" + serv.port,
     loadUsingSystemPrincipal: true
   });
   chan.asyncOpen2(listener);
 
-  do_register_cleanup(function(){ serv.stop(); });
+  registerCleanupFunction(function(){ serv.stop(); });
 });
 
 function run_test() {

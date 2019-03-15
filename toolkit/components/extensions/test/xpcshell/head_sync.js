@@ -6,8 +6,8 @@
 
 /* exported withSyncContext */
 
-Components.utils.import("resource://gre/modules/Services.jsm", this);
-Components.utils.import("resource://gre/modules/ExtensionCommon.jsm", this);
+ChromeUtils.import("resource://gre/modules/Services.jsm", this);
+ChromeUtils.import("resource://gre/modules/ExtensionCommon.jsm", this);
 
 var {
   BaseContext,
@@ -20,7 +20,7 @@ class Context extends BaseContext {
       value: principal,
       configurable: true,
     });
-    this.sandbox = Components.utils.Sandbox(principal, {wantXrays: false});
+    this.sandbox = Cu.Sandbox(principal, {wantXrays: false});
     this.extension = {id: "test@web.extension"};
   }
 
@@ -35,14 +35,14 @@ class Context extends BaseContext {
  *
  * @param {function} f    the function to call
  */
-function* withContext(f) {
+async function withContext(f) {
   const ssm = Services.scriptSecurityManager;
   const PRINCIPAL1 = ssm.createCodebasePrincipalFromOrigin("http://www.example.org");
   const context = new Context(PRINCIPAL1);
   try {
-    yield* f(context);
+    await f(context);
   } finally {
-    yield context.unload();
+    await context.unload();
   }
 }
 
@@ -54,13 +54,13 @@ function* withContext(f) {
  *
  * @param {function} f    the function to call
  */
-function* withSyncContext(f) {
+async function withSyncContext(f) {
   const STORAGE_SYNC_PREF = "webextensions.storage.sync.enabled";
   let prefs = Services.prefs;
 
   try {
     prefs.setBoolPref(STORAGE_SYNC_PREF, true);
-    yield* withContext(f);
+    await withContext(f);
   } finally {
     prefs.clearUserPref(STORAGE_SYNC_PREF);
   }

@@ -50,10 +50,14 @@ function _assertPixelApprox(canvas, x,y, r,g,b,a, pos, colour, tolerance)
     assert_approx_equals(c[3], a, tolerance, 'Alpha channel of the pixel at (' + x + ', ' + y + ')');
 }
 
+let _deferred = false;
+
+function deferTest() {
+  _deferred = true;
+}
+
 function _addTest(testFn)
 {
-    var deferred = false;
-    window.deferTest = function () { deferred = true; };
     on_event(window, "load", function()
     {
         t.step(function() {
@@ -62,7 +66,7 @@ function _addTest(testFn)
             t.step(testFn, window, canvas, ctx);
         });
 
-        if (!deferred) {
+        if (!_deferred) {
             t.done();
         }
     });
@@ -91,5 +95,15 @@ function addCrossOriginYellowImage()
     img.id = "yellow.png";
     img.className = "resource";
     img.src = get_host_info().HTTP_REMOTE_ORIGIN + "/images/yellow.png";
+    document.body.appendChild(img);
+}
+
+function addCrossOriginRedirectYellowImage()
+{
+    var img = new Image();
+    img.id = "yellow.png";
+    img.className = "resource";
+    img.src = get_host_info().HTTP_ORIGIN + "/common/redirect.py?location=" +
+        get_host_info().HTTP_REMOTE_ORIGIN + "/images/yellow.png";
     document.body.appendChild(img);
 }

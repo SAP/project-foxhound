@@ -15,14 +15,14 @@
         let event = yield undefined;
 
         if (event.type == "error") {
-          testException = event.target.error.name;
+          testResult = event.target.error.name;
         }
         else {
           let db = event.target.result;
           testResult = db.version;
         }
 
-        finishTest()
+        finishTest();
         yield undefined;
       }
     </script>

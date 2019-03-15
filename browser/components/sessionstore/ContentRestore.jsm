@@ -4,26 +4,17 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["ContentRestore"];
+var EXPORTED_SYMBOLS = ["ContentRestore"];
 
-const Cu = Components.utils;
-const Ci = Components.interfaces;
+ChromeUtils.import("resource://gre/modules/Services.jsm", this);
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm", this);
-
-XPCOMUtils.defineLazyModuleGetter(this, "DocShellCapabilities",
-  "resource:///modules/sessionstore/DocShellCapabilities.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "FormData",
+ChromeUtils.defineModuleGetter(this, "FormData",
   "resource://gre/modules/FormData.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PageStyle",
-  "resource:///modules/sessionstore/PageStyle.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "ScrollPosition",
-  "resource://gre/modules/ScrollPosition.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "SessionHistory",
-  "resource:///modules/sessionstore/SessionHistory.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "SessionStorage",
+ChromeUtils.defineModuleGetter(this, "SessionHistory",
+  "resource://gre/modules/sessionstore/SessionHistory.jsm");
+ChromeUtils.defineModuleGetter(this, "SessionStorage",
   "resource:///modules/sessionstore/SessionStorage.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Utils",
+ChromeUtils.defineModuleGetter(this, "Utils",
   "resource://gre/modules/sessionstore/Utils.jsm");
 
 /**
@@ -62,7 +53,7 @@ function ContentRestore(chromeGlobal) {
   let EXPORTED_METHODS = ["restoreHistory",
                           "restoreTabContent",
                           "restoreDocument",
-                          "resetRestore"
+                          "resetRestore",
                          ];
 
   for (let method of EXPORTED_METHODS) {
@@ -82,7 +73,7 @@ function ContentRestoreInternal(chromeGlobal) {
   // restoreTabContent.
   this._tabData = null;
 
-  // Contains {entry, pageStyle, scrollPositions, formdata}, where entry is a
+  // Contains {entry, scrollPositions, formdata}, where entry is a
   // single entry from the tabData.entries array. Set in
   // restoreTabContent and removed in restoreDocument.
   this._restoringDocument = null;
@@ -130,7 +121,7 @@ ContentRestoreInternal.prototype = {
     let activePageData = tabData.entries[activeIndex] || {};
     let uri = activePageData.url || null;
     if (uri && !loadArguments) {
-      webNavigation.setCurrentURI(Utils.makeURI(uri));
+      webNavigation.setCurrentURI(Services.io.newURI(uri));
     }
 
     SessionHistory.restore(this.docShell, tabData);
@@ -141,13 +132,13 @@ ContentRestoreInternal.prototype = {
       this.restoreTabContent(null, false, callbacks.onLoadFinished);
     });
 
-    webNavigation.sessionHistory.addSHistoryListener(listener);
+    webNavigation.sessionHistory.legacySHistory.addSHistoryListener(listener);
     this._historyListener = listener;
 
     // Make sure to reset the capabilities and attributes in case this tab gets
     // reused.
-    let disallow = new Set(tabData.disallow && tabData.disallow.split(","));
-    DocShellCapabilities.restore(this.docShell, disallow);
+    SessionStoreUtils.restoreDocShellCapabilities(this.docShell, tabData.disallow);
+
 
     if (tabData.storage && this.docShell instanceof Ci.nsIDocShell) {
       SessionStorage.restore(this.docShell, tabData.storage);
@@ -167,7 +158,7 @@ ContentRestoreInternal.prototype = {
 
         // Notify the parent.
         callbacks.onLoadStarted();
-      }
+      },
     });
   },
 
@@ -175,12 +166,12 @@ ContentRestoreInternal.prototype = {
    * Start loading the current page. When the data has finished loading from the
    * network, finishCallback is called. Returns true if the load was successful.
    */
-  restoreTabContent: function (loadArguments, isRemotenessUpdate, finishCallback) {
+  restoreTabContent(loadArguments, isRemotenessUpdate, finishCallback) {
     let tabData = this._tabData;
     this._tabData = null;
 
     let webNavigation = this.docShell.QueryInterface(Ci.nsIWebNavigation);
-    let history = webNavigation.sessionHistory;
+    let history = webNavigation.sessionHistory.legacySHistory;
 
     // Listen for the tab to finish loading.
     this.restoreTabContentStarted(finishCallback);
@@ -190,45 +181,57 @@ ContentRestoreInternal.prototype = {
     // load happens. Don't bother doing this if we're restoring immediately
     // due to a process switch.
     if (!isRemotenessUpdate) {
-      webNavigation.setCurrentURI(Utils.makeURI("about:blank"));
+      webNavigation.setCurrentURI(Services.io.newURI("about:blank"));
     }
 
     try {
       if (loadArguments) {
+        // If the load was started in another process, and the in-flight channel
+        // was redirected into this process, resume that load within our process.
+        if (loadArguments.redirectLoadSwitchId) {
+          webNavigation.resumeRedirectedLoad(loadArguments.redirectLoadSwitchId);
+          return true;
+        }
+
         // A load has been redirected to a new process so get history into the
         // same state it was before the load started then trigger the load.
         let referrer = loadArguments.referrer ?
-                       Utils.makeURI(loadArguments.referrer) : null;
-        let referrerPolicy = ('referrerPolicy' in loadArguments
+                       Services.io.newURI(loadArguments.referrer) : null;
+        let referrerPolicy = ("referrerPolicy" in loadArguments
             ? loadArguments.referrerPolicy
             : Ci.nsIHttpChannel.REFERRER_POLICY_UNSET);
         let postData = loadArguments.postData ?
                        Utils.makeInputStream(loadArguments.postData) : null;
         let triggeringPrincipal = loadArguments.triggeringPrincipal
                                   ? Utils.deserializePrincipal(loadArguments.triggeringPrincipal)
-                                  : null;
+                                  : Services.scriptSecurityManager.createNullPrincipal({});
 
         if (loadArguments.userContextId) {
           webNavigation.setOriginAttributesBeforeLoading({ userContextId: loadArguments.userContextId });
         }
-
-        webNavigation.loadURIWithOptions(loadArguments.uri, loadArguments.flags,
-                                         referrer, referrerPolicy, postData,
-                                         null, null, triggeringPrincipal);
+        let loadURIOptions = {
+          triggeringPrincipal,
+          loadFlags: loadArguments.flags,
+          referrerURI: referrer,
+          referrerPolicy,
+          postData,
+        };
+        webNavigation.loadURI(loadArguments.uri, loadURIOptions);
       } else if (tabData.userTypedValue && tabData.userTypedClear) {
         // If the user typed a URL into the URL bar and hit enter right before
         // we crashed, we want to start loading that page again. A non-zero
         // userTypedClear value means that the load had started.
         // Load userTypedValue and fix up the URL if it's partial/broken.
-        webNavigation.loadURI(tabData.userTypedValue,
-                              Ci.nsIWebNavigation.LOAD_FLAGS_ALLOW_THIRD_PARTY_FIXUP,
-                              null, null, null);
+        let loadURIOptions = {
+          triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+          loadFlags: Ci.nsIWebNavigation.LOAD_FLAGS_ALLOW_THIRD_PARTY_FIXUP,
+        };
+        webNavigation.loadURI(tabData.userTypedValue, loadURIOptions);
       } else if (tabData.entries.length) {
         // Stash away the data we need for restoreDocument.
         let activeIndex = tabData.index - 1;
         this._restoringDocument = {entry: tabData.entries[activeIndex] || {},
                                    formdata: tabData.formdata || {},
-                                   pageStyle: tabData.pageStyle || {},
                                    scrollPositions: tabData.scroll || {}};
 
         // In order to work around certain issues in session history, we need to
@@ -237,17 +240,22 @@ ContentRestoreInternal.prototype = {
         history.reloadCurrentEntry();
       } else {
         // If there's nothing to restore, we should still blank the page.
-        webNavigation.loadURI("about:blank",
-                              Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_HISTORY,
-                              null, null, null);
+        let loadURIOptions = {
+          triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+          loadFlags: Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_HISTORY,
+        };
+        webNavigation.loadURI("about:blank", loadURIOptions);
       }
 
       return true;
-    } catch (ex if ex instanceof Ci.nsIException) {
-      // Ignore page load errors, but return false to signal that the load never
-      // happened.
-      return false;
+    } catch (ex) {
+      if (ex instanceof Ci.nsIException) {
+        // Ignore page load errors, but return false to signal that the load never
+        // happened.
+        return false;
+      }
     }
+    return null;
   },
 
   /**
@@ -272,7 +280,7 @@ ContentRestoreInternal.prototype = {
         this.resetRestore();
 
         finishCallback();
-      }
+      },
     });
   },
 
@@ -281,19 +289,29 @@ ContentRestoreInternal.prototype = {
    * position. The restore is complete when this function exits. It should be
    * called when the "load" event fires for the restoring tab.
    */
-  restoreDocument: function () {
+  restoreDocument() {
     if (!this._restoringDocument) {
       return;
     }
-    let {entry, pageStyle, formdata, scrollPositions} = this._restoringDocument;
+    let {formdata, scrollPositions} = this._restoringDocument;
     this._restoringDocument = null;
 
-    let window = this.docShell.QueryInterface(Ci.nsIInterfaceRequestor)
-                               .getInterface(Ci.nsIDOMWindow);
+    let window = this.docShell.domWindow;
 
-    PageStyle.restoreTree(this.docShell, pageStyle);
-    FormData.restoreTree(window, formdata);
-    ScrollPosition.restoreTree(window, scrollPositions);
+    // Restore form data.
+    Utils.restoreFrameTreeData(window, formdata, (frame, data) => {
+      // restore() will return false, and thus abort restoration for the
+      // current |frame| and its descendants, if |data.url| is given but
+      // doesn't match the loaded document's URL.
+      return FormData.restore(frame, data);
+    });
+
+    // Restore scroll data.
+    Utils.restoreFrameTreeData(window, scrollPositions, (frame, data) => {
+      if (data.scroll) {
+        SessionStoreUtils.restoreScrollPosition(frame, data);
+      }
+    });
   },
 
   /**
@@ -305,7 +323,7 @@ ContentRestoreInternal.prototype = {
    * case, it's called before restoreDocument, so it cannot clear
    * _restoringDocument.
    */
-  resetRestore: function () {
+  resetRestore() {
     this._tabData = null;
 
     if (this._historyListener) {
@@ -317,7 +335,7 @@ ContentRestoreInternal.prototype = {
       this._progressListener.uninstall();
     }
     this._progressListener = null;
-  }
+  },
 };
 
 /*
@@ -327,29 +345,27 @@ ContentRestoreInternal.prototype = {
  */
 function HistoryListener(docShell, callback) {
   let webNavigation = docShell.QueryInterface(Ci.nsIWebNavigation);
-  webNavigation.sessionHistory.addSHistoryListener(this);
+  webNavigation.sessionHistory.legacySHistory.addSHistoryListener(this);
 
   this.webNavigation = webNavigation;
   this.callback = callback;
 }
 HistoryListener.prototype = {
-  QueryInterface: XPCOMUtils.generateQI([
+  QueryInterface: ChromeUtils.generateQI([
     Ci.nsISHistoryListener,
-    Ci.nsISupportsWeakReference
+    Ci.nsISupportsWeakReference,
   ]),
 
-  uninstall: function () {
-    let shistory = this.webNavigation.sessionHistory;
+  uninstall() {
+    let shistory = this.webNavigation.sessionHistory.legacySHistory;
     if (shistory) {
       shistory.removeSHistoryListener(this);
     }
   },
 
-  OnHistoryGoBack: function(backURI) { return true; },
-  OnHistoryGoForward: function(forwardURI) { return true; },
-  OnHistoryGotoIndex: function(index, gotoURI) { return true; },
-  OnHistoryPurge: function(numEntries) { return true; },
-  OnHistoryReplaceEntry: function(index) {},
+  OnHistoryGotoIndex(index, gotoURI) {},
+  OnHistoryPurge(numEntries) {},
+  OnHistoryReplaceEntry(index) {},
 
   // This will be called for a pending tab when loadURI(uri) is called where
   // the given |uri| only differs in the fragment.
@@ -365,14 +381,18 @@ HistoryListener.prototype = {
 
     // Reset the tab's URL to what it's actually showing. Without this loadURI()
     // would use the current document and change the displayed URL only.
-    this.webNavigation.setCurrentURI(Utils.makeURI("about:blank"));
+    this.webNavigation.setCurrentURI(Services.io.newURI("about:blank"));
 
     // Kick off a new load so that we navigate away from about:blank to the
     // new URL that was passed to loadURI(). The new load will cause a
     // STATE_START notification to be sent and the ProgressListener will then
     // notify the parent and do the rest.
     let flags = Ci.nsIWebNavigation.LOAD_FLAGS_ALLOW_THIRD_PARTY_FIXUP;
-    this.webNavigation.loadURI(newURI.spec, flags, null, null, null);
+    let loadURIOptions = {
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+      loadFlags: flags,
+    };
+    this.webNavigation.loadURI(newURI.spec, loadURIOptions);
   },
 
   OnHistoryReload(reloadURI, reloadFlags) {
@@ -381,7 +401,7 @@ HistoryListener.prototype = {
     // Cancel the load.
     return false;
   },
-}
+};
 
 /**
  * This class informs SessionStore.jsm whenever the network requests for a
@@ -403,16 +423,16 @@ function ProgressListener(docShell, callbacks) {
 }
 
 ProgressListener.prototype = {
-  QueryInterface: XPCOMUtils.generateQI([
+  QueryInterface: ChromeUtils.generateQI([
     Ci.nsIWebProgressListener,
-    Ci.nsISupportsWeakReference
+    Ci.nsISupportsWeakReference,
   ]),
 
-  uninstall: function() {
+  uninstall() {
     this.webProgress.removeProgressListener(this);
   },
 
-  onStateChange: function(webProgress, request, stateFlags, status) {
+  onStateChange(webProgress, request, stateFlags, status) {
     let {STATE_IS_WINDOW, STATE_STOP, STATE_START} = Ci.nsIWebProgressListener;
     if (!webProgress.isTopLevel || !(stateFlags & STATE_IS_WINDOW)) {
       return;
@@ -426,9 +446,4 @@ ProgressListener.prototype = {
       this.callbacks.onStopRequest();
     }
   },
-
-  onLocationChange: function() {},
-  onProgressChange: function() {},
-  onStatusChange: function() {},
-  onSecurityChange: function() {},
 };

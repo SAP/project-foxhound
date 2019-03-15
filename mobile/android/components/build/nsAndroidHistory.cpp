@@ -7,7 +7,7 @@
 #include "nsComponentManagerUtils.h"
 #include "nsIURI.h"
 #include "nsIObserverService.h"
-#include "GeneratedJNIWrappers.h"
+#include "FennecJNIWrappers.h"
 #include "Link.h"
 
 #include "mozilla/Services.h"
@@ -25,36 +25,30 @@
 using namespace mozilla;
 using mozilla::dom::Link;
 
-NS_IMPL_ISUPPORTS(nsAndroidHistory, IHistory, nsIRunnable, nsITimerCallback)
+NS_IMPL_ISUPPORTS(nsAndroidHistory, IHistory, nsIRunnable, nsITimerCallback,
+                  nsINamed)
 
 nsAndroidHistory* nsAndroidHistory::sHistory = nullptr;
 
 /*static*/
-nsAndroidHistory*
-nsAndroidHistory::GetSingleton()
-{
+already_AddRefed<nsAndroidHistory> nsAndroidHistory::GetSingleton() {
   if (!sHistory) {
     sHistory = new nsAndroidHistory();
     NS_ENSURE_TRUE(sHistory, nullptr);
   }
 
-  NS_ADDREF(sHistory);
-  return sHistory;
+  return do_AddRef(sHistory);
 }
 
-nsAndroidHistory::nsAndroidHistory()
-  : mHistoryEnabled(true)
-{
+nsAndroidHistory::nsAndroidHistory() : mHistoryEnabled(true) {
   LoadPrefs();
 
-  mTimer = do_CreateInstance(NS_TIMER_CONTRACTID);
+  mTimer = NS_NewTimer();
 }
 
 NS_IMETHODIMP
-nsAndroidHistory::RegisterVisitedCallback(nsIURI *aURI, Link *aContent)
-{
-  if (!aContent || !aURI)
-    return NS_OK;
+nsAndroidHistory::RegisterVisitedCallback(nsIURI* aURI, Link* aContent) {
+  if (!aContent || !aURI) return NS_OK;
 
   // Silently return if URI is something we would never add to DB.
   bool canAdd;
@@ -65,38 +59,35 @@ nsAndroidHistory::RegisterVisitedCallback(nsIURI *aURI, Link *aContent)
   }
 
   nsAutoCString uri;
-  rv = aURI->GetSpec(uri);
+  rv = aURI->GetDisplaySpec(uri);
   if (NS_FAILED(rv)) return rv;
   NS_ConvertUTF8toUTF16 uriString(uri);
 
   nsTArray<Link*>* list = mListeners.Get(uriString);
-  if (! list) {
+  if (!list) {
     list = new nsTArray<Link*>();
     mListeners.Put(uriString, list);
   }
   list->AppendElement(aContent);
 
-  if (jni::IsAvailable()) {
-    java::GeckoAppShell::CheckURIVisited(uriString);
+  if (jni::IsFennec()) {
+    java::GlobalHistory::CheckURIVisited(uriString);
   }
 
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsAndroidHistory::UnregisterVisitedCallback(nsIURI *aURI, Link *aContent)
-{
-  if (!aContent || !aURI)
-    return NS_OK;
+nsAndroidHistory::UnregisterVisitedCallback(nsIURI* aURI, Link* aContent) {
+  if (!aContent || !aURI) return NS_OK;
 
   nsAutoCString uri;
-  nsresult rv = aURI->GetSpec(uri);
+  nsresult rv = aURI->GetDisplaySpec(uri);
   if (NS_FAILED(rv)) return rv;
   NS_ConvertUTF8toUTF16 uriString(uri);
 
   nsTArray<Link*>* list = mListeners.Get(uriString);
-  if (! list)
-    return NS_OK;
+  if (!list) return NS_OK;
 
   list->RemoveElement(aContent);
   if (list->IsEmpty()) {
@@ -106,8 +97,7 @@ nsAndroidHistory::UnregisterVisitedCallback(nsIURI *aURI, Link *aContent)
   return NS_OK;
 }
 
-void
-nsAndroidHistory::AppendToRecentlyVisitedURIs(nsIURI* aURI) {
+void nsAndroidHistory::AppendToRecentlyVisitedURIs(nsIURI* aURI) {
   if (mRecentlyVisitedURIs.Length() < RECENTLY_VISITED_URI_SIZE) {
     // Append a new element while the array is not full.
     mRecentlyVisitedURIs.AppendElement(aURI);
@@ -119,18 +109,13 @@ nsAndroidHistory::AppendToRecentlyVisitedURIs(nsIURI* aURI) {
   }
 }
 
-bool
-nsAndroidHistory::ShouldRecordHistory() {
-  return mHistoryEnabled;
-}
+bool nsAndroidHistory::ShouldRecordHistory() { return mHistoryEnabled; }
 
-void
-nsAndroidHistory::LoadPrefs() {
+void nsAndroidHistory::LoadPrefs() {
   mHistoryEnabled = Preferences::GetBool(PREF_HISTORY_ENABLED, true);
 }
 
-inline bool
-nsAndroidHistory::IsRecentlyVisitedURI(nsIURI* aURI) {
+inline bool nsAndroidHistory::IsRecentlyVisitedURI(nsIURI* aURI) {
   bool equals = false;
   RecentlyVisitedArray::index_type i;
   RecentlyVisitedArray::size_type length = mRecentlyVisitedURIs.Length();
@@ -140,8 +125,7 @@ nsAndroidHistory::IsRecentlyVisitedURI(nsIURI* aURI) {
   return equals;
 }
 
-void
-nsAndroidHistory::AppendToEmbedURIs(nsIURI* aURI) {
+void nsAndroidHistory::AppendToEmbedURIs(nsIURI* aURI) {
   if (mEmbedURIs.Length() < EMBED_URI_SIZE) {
     // Append a new element while the array is not full.
     mEmbedURIs.AppendElement(aURI);
@@ -153,8 +137,7 @@ nsAndroidHistory::AppendToEmbedURIs(nsIURI* aURI) {
   }
 }
 
-inline bool
-nsAndroidHistory::IsEmbedURI(nsIURI* aURI) {
+inline bool nsAndroidHistory::IsEmbedURI(nsIURI* aURI) {
   bool equals = false;
   EmbedArray::index_type i;
   EmbedArray::size_type length = mEmbedURIs.Length();
@@ -164,8 +147,7 @@ nsAndroidHistory::IsEmbedURI(nsIURI* aURI) {
   return equals;
 }
 
-inline bool
-nsAndroidHistory::RemovePendingVisitURI(nsIURI* aURI) {
+inline bool nsAndroidHistory::RemovePendingVisitURI(nsIURI* aURI) {
   // Remove the first pending URI that matches. Return a boolean to
   // let the caller know if we removed a URI or not.
   bool equals = false;
@@ -181,8 +163,7 @@ nsAndroidHistory::RemovePendingVisitURI(nsIURI* aURI) {
 }
 
 NS_IMETHODIMP
-nsAndroidHistory::Notify(nsITimer *timer)
-{
+nsAndroidHistory::Notify(nsITimer* timer) {
   // Any pending visits left in the queue have exceeded our threshold for
   // redirects, so save them
   PendingVisitArray::index_type i;
@@ -194,28 +175,34 @@ nsAndroidHistory::Notify(nsITimer *timer)
   return NS_OK;
 }
 
-void
-nsAndroidHistory::SaveVisitURI(nsIURI* aURI) {
+NS_IMETHODIMP
+nsAndroidHistory::GetName(nsACString& aName) {
+  aName.AssignLiteral("nsAndroidHistory");
+  return NS_OK;
+}
+
+void nsAndroidHistory::SaveVisitURI(nsIURI* aURI) {
   // Add the URI to our cache so we can take a fast path later
   AppendToRecentlyVisitedURIs(aURI);
 
-  if (jni::IsAvailable()) {
+  if (jni::IsFennec()) {
     // Save this URI in our history
     nsAutoCString spec;
-    (void)aURI->GetSpec(spec);
-    java::GeckoAppShell::MarkURIVisited(NS_ConvertUTF8toUTF16(spec));
+    (void)aURI->GetDisplaySpec(spec);
+    java::GlobalHistory::MarkURIVisited(NS_ConvertUTF8toUTF16(spec));
   }
 
   // Finally, notify that we've been visited.
-  nsCOMPtr<nsIObserverService> obsService = mozilla::services::GetObserverService();
+  nsCOMPtr<nsIObserverService> obsService =
+      mozilla::services::GetObserverService();
   if (obsService) {
     obsService->NotifyObservers(aURI, NS_LINK_VISITED_EVENT_TOPIC, nullptr);
   }
 }
 
 NS_IMETHODIMP
-nsAndroidHistory::VisitURI(nsIURI *aURI, nsIURI *aLastVisitedURI, uint32_t aFlags)
-{
+nsAndroidHistory::VisitURI(nsIWidget* aWidget, nsIURI* aURI,
+                           nsIURI* aLastVisitedURI, uint32_t aFlags) {
   if (!aURI) {
     return NS_OK;
   }
@@ -263,14 +250,14 @@ nsAndroidHistory::VisitURI(nsIURI *aURI, nsIURI *aLastVisitedURI, uint32_t aFlag
 
   // Let's wait and see if this visit is not a redirect.
   mPendingVisitURIs.AppendElement(aURI);
-  mTimer->InitWithCallback(this, PENDING_REDIRECT_TIMEOUT, nsITimer::TYPE_ONE_SHOT);
+  mTimer->InitWithCallback(this, PENDING_REDIRECT_TIMEOUT,
+                           nsITimer::TYPE_ONE_SHOT);
 
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsAndroidHistory::SetURITitle(nsIURI *aURI, const nsAString& aTitle)
-{
+nsAndroidHistory::SetURITitle(nsIURI* aURI, const nsAString& aTitle) {
   // Silently return if URI is something we shouldn't add to DB.
   bool canAdd;
   nsresult rv = CanAddURI(aURI, &canAdd);
@@ -283,26 +270,26 @@ nsAndroidHistory::SetURITitle(nsIURI *aURI, const nsAString& aTitle)
     return NS_OK;
   }
 
-  if (jni::IsAvailable()) {
+  if (jni::IsFennec()) {
     nsAutoCString uri;
-    nsresult rv = aURI->GetSpec(uri);
+    nsresult rv = aURI->GetDisplaySpec(uri);
     if (NS_FAILED(rv)) return rv;
     if (RemovePendingVisitURI(aURI)) {
-      // We have a title, so aURI isn't a redirect, so save the visit now before setting the title.
+      // We have a title, so aURI isn't a redirect, so save the visit now before
+      // setting the title.
       SaveVisitURI(aURI);
     }
     NS_ConvertUTF8toUTF16 uriString(uri);
-    java::GeckoAppShell::SetURITitle(uriString, aTitle);
+    java::GlobalHistory::SetURITitle(uriString, aTitle);
   }
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsAndroidHistory::NotifyVisited(nsIURI *aURI)
-{
+nsAndroidHistory::NotifyVisited(nsIURI* aURI) {
   if (aURI && sHistory) {
     nsAutoCString spec;
-    (void)aURI->GetSpec(spec);
+    (void)aURI->GetDisplaySpec(spec);
     sHistory->mPendingLinkURIs.Push(NS_ConvertUTF8toUTF16(spec));
     NS_DispatchToMainThread(sHistory);
   }
@@ -310,9 +297,8 @@ nsAndroidHistory::NotifyVisited(nsIURI *aURI)
 }
 
 NS_IMETHODIMP
-nsAndroidHistory::Run()
-{
-  while (! mPendingLinkURIs.IsEmpty()) {
+nsAndroidHistory::Run() {
+  while (!mPendingLinkURIs.IsEmpty()) {
     nsString uriString = mPendingLinkURIs.Pop();
     nsTArray<Link*>* list = sHistory->mListeners.Get(uriString);
     if (list) {
@@ -337,8 +323,7 @@ nsAndroidHistory::Run()
 // Logic ported from nsNavHistory::CanAddURI.
 
 NS_IMETHODIMP
-nsAndroidHistory::CanAddURI(nsIURI* aURI, bool* canAdd)
-{
+nsAndroidHistory::CanAddURI(nsIURI* aURI, bool* canAdd) {
   NS_ASSERTION(NS_IsMainThread(), "This can only be called on the main thread");
   NS_ENSURE_ARG(aURI);
   NS_ENSURE_ARG_POINTER(canAdd);
@@ -365,7 +350,7 @@ nsAndroidHistory::CanAddURI(nsIURI* aURI, bool* canAdd)
   }
   if (scheme.EqualsLiteral("about")) {
     nsAutoCString path;
-    rv = aURI->GetPath(path);
+    rv = aURI->GetPathQueryRef(path);
     NS_ENSURE_SUCCESS(rv, rv);
 
     if (StringBeginsWith(path, NS_LITERAL_CSTRING("reader"))) {
@@ -375,18 +360,12 @@ nsAndroidHistory::CanAddURI(nsIURI* aURI, bool* canAdd)
   }
 
   // now check for all bad things
-  if (scheme.EqualsLiteral("about") ||
-      scheme.EqualsLiteral("imap") ||
-      scheme.EqualsLiteral("news") ||
-      scheme.EqualsLiteral("mailbox") ||
-      scheme.EqualsLiteral("moz-anno") ||
-      scheme.EqualsLiteral("view-source") ||
-      scheme.EqualsLiteral("chrome") ||
-      scheme.EqualsLiteral("resource") ||
-      scheme.EqualsLiteral("data") ||
-      scheme.EqualsLiteral("wyciwyg") ||
-      scheme.EqualsLiteral("javascript") ||
-      scheme.EqualsLiteral("blob")) {
+  if (scheme.EqualsLiteral("about") || scheme.EqualsLiteral("imap") ||
+      scheme.EqualsLiteral("news") || scheme.EqualsLiteral("mailbox") ||
+      scheme.EqualsLiteral("moz-anno") || scheme.EqualsLiteral("view-source") ||
+      scheme.EqualsLiteral("chrome") || scheme.EqualsLiteral("resource") ||
+      scheme.EqualsLiteral("data") || scheme.EqualsLiteral("wyciwyg") ||
+      scheme.EqualsLiteral("javascript") || scheme.EqualsLiteral("blob")) {
     *canAdd = false;
     return NS_OK;
   }

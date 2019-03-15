@@ -3,8 +3,8 @@
 
 "use strict";
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 const BinaryInputStream = Components.Constructor(
   "@mozilla.org/binaryinputstream;1", "nsIBinaryInputStream",
@@ -23,7 +23,7 @@ var httpserv = null;
   // Commented by default as it relies on external ressources
   //test_ftp_channel,
   end
-].forEach(add_test);
+].forEach(f => add_test(f));
 
 // Utility functions
 
@@ -48,13 +48,13 @@ function check_throws(closure, error) {
     closure();
   } catch (e) {
     if (error instanceof Array) {
-      do_check_neq(error.indexOf(e.result), -1);
+      Assert.notEqual(error.indexOf(e.result), -1);
     } else {
-      do_check_eq(e.result, error);
+      Assert.equal(e.result, error);
     }
     thrown = true;
   }
-  do_check_true(thrown);
+  Assert.ok(thrown);
 }
 
 function check_open_throws(error) {

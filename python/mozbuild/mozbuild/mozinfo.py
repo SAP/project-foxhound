@@ -37,7 +37,7 @@ def build_dict(config, env=os.environ):
     known_os = {"Linux": "linux",
                 "WINNT": "win",
                 "Darwin": "mac",
-                "Android": "b2g" if substs.get("MOZ_WIDGET_TOOLKIT") == "gonk" else "android"}
+                "Android": "android"}
     if o in known_os:
         d["os"] = known_os[o]
     else:
@@ -52,9 +52,7 @@ def build_dict(config, env=os.environ):
         d["appname"] = substs["MOZ_APP_NAME"]
 
     # Build app name
-    if 'MOZ_MULET' in substs and substs.get('MOZ_MULET') == "1":
-        d["buildapp"] = "mulet"
-    elif 'MOZ_BUILD_APP' in substs:
+    if 'MOZ_BUILD_APP' in substs:
         d["buildapp"] = substs["MOZ_BUILD_APP"]
 
     # processor
@@ -67,7 +65,7 @@ def build_dict(config, env=os.environ):
         p = "x86"
     d["processor"] = p
     # hardcoded list of 64-bit CPUs
-    if p in ["x86_64", "ppc64"]:
+    if p in ["x86_64", "ppc64", "aarch64"]:
         d["bits"] = 64
     # hardcoded list of known 32-bit CPUs
     elif p in ["x86", "arm", "ppc"]:
@@ -77,25 +75,30 @@ def build_dict(config, env=os.environ):
     d['debug'] = substs.get('MOZ_DEBUG') == '1'
     d['nightly_build'] = substs.get('NIGHTLY_BUILD') == '1'
     d['release_or_beta'] = substs.get('RELEASE_OR_BETA') == '1'
+    d['devedition'] = substs.get('MOZ_DEV_EDITION') == '1'
     d['pgo'] = substs.get('MOZ_PGO') == '1'
     d['crashreporter'] = bool(substs.get('MOZ_CRASHREPORTER'))
     d['datareporting'] = bool(substs.get('MOZ_DATA_REPORTING'))
     d['healthreport'] = substs.get('MOZ_SERVICES_HEALTHREPORT') == '1'
     d['sync'] = substs.get('MOZ_SERVICES_SYNC') == '1'
-    d['stylo'] = substs.get('MOZ_STYLO') == '1'
+    # FIXME(emilio): We need to update a lot of WPT expectations before removing this.
+    d['stylo'] = True
     d['asan'] = substs.get('MOZ_ASAN') == '1'
     d['tsan'] = substs.get('MOZ_TSAN') == '1'
+    d['ubsan'] = substs.get('MOZ_UBSAN') == '1'
     d['telemetry'] = substs.get('MOZ_TELEMETRY_REPORTING') == '1'
     d['tests_enabled'] = substs.get('ENABLE_TESTS') == "1"
     d['bin_suffix'] = substs.get('BIN_SUFFIX', '')
-    d['addon_signing'] = substs.get('MOZ_ADDON_SIGNING') == '1'
     d['require_signing'] = substs.get('MOZ_REQUIRE_SIGNING') == '1'
+    d['allow_legacy_extensions'] = substs.get('MOZ_ALLOW_LEGACY_EXTENSIONS') == '1'
     d['official'] = bool(substs.get('MOZILLA_OFFICIAL'))
     d['updater'] = substs.get('MOZ_UPDATER') == '1'
     d['artifact'] = substs.get('MOZ_ARTIFACT_BUILDS') == '1'
+    d['ccov'] = substs.get('MOZ_CODE_COVERAGE') == '1'
+    d['cc_type'] = substs.get('CC_TYPE')
 
     def guess_platform():
-        if d['buildapp'] in ('browser', 'mulet'):
+        if d['buildapp'] == 'browser':
             p = d['os']
             if p == 'mac':
                 p = 'macosx64'
@@ -104,21 +107,10 @@ def build_dict(config, env=os.environ):
             elif p in ('win',):
                 p = '{}32'.format(p)
 
-            if d['buildapp'] == 'mulet':
-                p = '{}-mulet'.format(p)
-
             if d['asan']:
                 p = '{}-asan'.format(p)
 
             return p
-
-        if d['buildapp'] == 'b2g':
-            if d['toolkit'] == 'gonk':
-                return 'emulator'
-
-            if d['bits'] == 64:
-                return 'linux64_gecko'
-            return 'linux32_gecko'
 
         if d['buildapp'] == 'mobile/android':
             if d['processor'] == 'x86':

@@ -18,9 +18,8 @@ class nsZipItem;
 
 namespace mozilla {
 
-class FileLocation
-{
-public:
+class FileLocation {
+ public:
   /**
    * FileLocation is an helper to handle different kind of file locations
    * within Gecko:
@@ -34,6 +33,11 @@ public:
    */
   FileLocation();
   ~FileLocation();
+
+  FileLocation(const FileLocation& aOther);
+  FileLocation(FileLocation&& aOther);
+
+  FileLocation& operator=(const FileLocation&) = default;
 
   /**
    * Constructor for plain files
@@ -51,7 +55,7 @@ public:
   /**
    * Creates a new file location relative to another one.
    */
-  FileLocation(const FileLocation& aFile, const char* aPath = nullptr);
+  FileLocation(const FileLocation& aFile, const char* aPath);
 
   /**
    * Initialization functions corresponding to constructors
@@ -74,6 +78,8 @@ public:
    * - The outer archive file when the location is in an archive in an archive
    */
   already_AddRefed<nsIFile> GetBaseFile();
+
+  nsZipArchive* GetBaseZip() { return mBaseZip; }
 
   /**
    * Returns whether the "base file" (see GetBaseFile) is an archive
@@ -99,9 +105,8 @@ public:
   /**
    * Data associated with a FileLocation.
    */
-  class Data
-  {
-  public:
+  class Data {
+   public:
     /**
      * Returns the data size
      */
@@ -111,7 +116,8 @@ public:
      * Copies the data in the given buffer
      */
     nsresult Copy(char* aBuf, uint32_t aLen);
-  protected:
+
+   protected:
     friend class FileLocation;
     nsZipItem* mItem;
     RefPtr<nsZipArchive> mZip;
@@ -123,7 +129,8 @@ public:
    * location.
    */
   nsresult GetData(Data& aData);
-private:
+
+ private:
   nsCOMPtr<nsIFile> mBaseFile;
   RefPtr<nsZipArchive> mBaseZip;
   nsCString mPath;

@@ -8,15 +8,16 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_coding/neteq/audio_vector.h"
+#include "modules/audio_coding/neteq/audio_vector.h"
 
 #include <assert.h>
 #include <stdlib.h>
 
 #include <string>
 
-#include "testing/gtest/include/gtest/gtest.h"
-#include "webrtc/typedefs.h"
+#include "rtc_base/numerics/safe_conversions.h"
+#include "test/gtest.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -25,7 +26,7 @@ class AudioVectorTest : public ::testing::Test {
   virtual void SetUp() {
     // Populate test array.
     for (size_t i = 0; i < array_length(); ++i) {
-      array_[i] = i;
+      array_[i] = rtc::checked_cast<int16_t>(i);
     }
   }
 
@@ -80,14 +81,6 @@ TEST_F(AudioVectorTest, PushBackAndCopy) {
   // Now copy the empty vector and verify that the copy becomes empty too.
   vec.CopyTo(&vec_copy);
   EXPECT_TRUE(vec_copy.Empty());
-}
-
-// Try to copy to a NULL pointer. Nothing should happen.
-TEST_F(AudioVectorTest, CopyToNull) {
-  AudioVector vec;
-  AudioVector* vec_copy = NULL;
-  vec.PushBack(array_, array_length());
-  vec.CopyTo(vec_copy);
 }
 
 // Test the PushBack method with another AudioVector as input argument.
@@ -261,7 +254,7 @@ TEST_F(AudioVectorTest, InsertAtEnd) {
   for (int i = 0; i < kNewLength; ++i) {
     new_array[i] = 100 + i;
   }
-  int insert_position = array_length();
+  int insert_position = rtc::checked_cast<int>(array_length());
   vec.InsertAt(new_array, kNewLength, insert_position);
   // Verify that the vector looks as follows:
   // {0, 1, ..., kLength - 1, 100, 101, ..., 100 + kNewLength - 1 }.
@@ -290,7 +283,8 @@ TEST_F(AudioVectorTest, InsertBeyondEnd) {
   for (int i = 0; i < kNewLength; ++i) {
     new_array[i] = 100 + i;
   }
-  int insert_position = array_length() + 10;  // Too large.
+  int insert_position = rtc::checked_cast<int>(
+      array_length() + 10); // Too large.
   vec.InsertAt(new_array, kNewLength, insert_position);
   // Verify that the vector looks as follows:
   // {0, 1, ..., kLength - 1, 100, 101, ..., 100 + kNewLength - 1 }.
@@ -346,7 +340,7 @@ TEST_F(AudioVectorTest, OverwriteBeyondEnd) {
   for (int i = 0; i < kNewLength; ++i) {
     new_array[i] = 100 + i;
   }
-  int insert_position = array_length() - 2;
+  int insert_position = rtc::checked_cast<int>(array_length() - 2);
   vec.OverwriteAt(new_array, kNewLength, insert_position);
   ASSERT_EQ(array_length() - 2u + kNewLength, vec.Size());
   // Verify that the vector looks as follows:

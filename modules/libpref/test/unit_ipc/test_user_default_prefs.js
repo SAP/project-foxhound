@@ -1,6 +1,3 @@
-var Ci = Components.interfaces;
-var Cc = Components.classes;
-
 var pb = Cc["@mozilla.org/preferences-service;1"].getService(Ci.nsIPrefBranch);
 
 // This pref is chosen somewhat arbitrarily --- we just need one
@@ -17,8 +14,8 @@ function check_child_pref_info_eq(continuation) {
         'pb.prefHasUserValue("'+ kPrefName +'");',
         function (info) {
             let [ value, isUser ] = info.split(',');
-            do_check_eq(pb.getCharPref(kPrefName), value);
-            do_check_eq(pb.prefHasUserValue(kPrefName), isUser == "true");
+            Assert.equal(pb.getCharPref(kPrefName), value);
+            Assert.equal(pb.prefHasUserValue(kPrefName), isUser == "true");
             continuation();
         });
 }
@@ -41,7 +38,7 @@ function test_user_setting() {
     // process triggered by the above set happens-before the remaining
     // code here
     check_child_pref_info_eq(function () {
-            do_check_eq(pb.prefHasUserValue(kPrefName), true);
+            Assert.equal(pb.prefHasUserValue(kPrefName), true);
 
             test_cleared_is_default();
         });
@@ -53,7 +50,7 @@ function test_cleared_is_default() {
     // process triggered by the above set happens-before the remaining
     // code here
     check_child_pref_info_eq(function () {
-            do_check_eq(pb.prefHasUserValue(kPrefName), false);
+            Assert.equal(pb.prefHasUserValue(kPrefName), false);
 
             clean_up();
         });

@@ -10,21 +10,41 @@ function run_test() {
             "same version of the application with the same application " +
             "build id on startup (Bug 536547)");
 
-  let patches = getLocalPatchString(null, null, null, null, null, null,
-                                    STATE_DOWNLOADING);
-  let updates = getLocalUpdateString(patches, null, null, "version 1.0", "1.0",
-                                     "2007010101");
+  let patchProps = {state: STATE_DOWNLOADING};
+  let patches = getLocalPatchString(patchProps);
+  let updateProps = {appVersion: "1.0",
+                     buildID: "2007010101"};
+  let updates = getLocalUpdateString(updateProps, patches);
   writeUpdatesToXMLFile(getLocalUpdatesXMLString(updates), true);
   writeStatusFile(STATE_DOWNLOADING);
-
-  writeUpdatesToXMLFile(getLocalUpdatesXMLString(""), false);
 
   standardInit();
 
   Assert.ok(!gUpdateManager.activeUpdate,
             "there should not be an active update");
-  Assert.equal(gUpdateManager.updateCount, 0,
+  Assert.equal(gUpdateManager.updateCount, 1,
                "the update manager update count" + MSG_SHOULD_EQUAL);
+  let update = gUpdateManager.getUpdateAt(0);
+  Assert.equal(update.state, STATE_FAILED,
+               "the first update state" + MSG_SHOULD_EQUAL);
+  Assert.equal(update.errorCode, ERR_OLDER_VERSION_OR_SAME_BUILD,
+               "the first update errorCode" + MSG_SHOULD_EQUAL);
+  Assert.equal(update.statusText, getString("statusFailed"),
+               "the first update statusText " + MSG_SHOULD_EQUAL);
+  executeSoon(waitForUpdateXMLFiles);
+}
+
+/**
+ * Called after the call to waitForUpdateXMLFiles finishes.
+ */
+function waitForUpdateXMLFilesFinished() {
+  let dir = getUpdatesDir();
+  dir.append(DIR_PATCH);
+  Assert.ok(dir.exists(), MSG_SHOULD_EXIST);
+
+  let statusFile = dir.clone();
+  statusFile.append(FILE_UPDATE_STATUS);
+  Assert.ok(!statusFile.exists(), MSG_SHOULD_NOT_EXIST);
 
   doTestFinish();
 }

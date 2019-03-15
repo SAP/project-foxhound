@@ -30,26 +30,27 @@ namespace mozilla {
 
 class TransportLayerIce : public TransportLayer {
  public:
-  explicit TransportLayerIce(const std::string& name);
+  TransportLayerIce();
 
   virtual ~TransportLayerIce();
 
-  void SetParameters(RefPtr<NrIceCtx> ctx,
-                     RefPtr<NrIceMediaStream> stream,
-                     int component);
+  void SetParameters(RefPtr<NrIceMediaStream> stream, int component);
 
-  void ResetOldStream(); // called after successful ice restart
-  void RestoreOldStream(); // called after unsuccessful ice restart
+  void ResetOldStream();    // called after successful ice restart
+  void RestoreOldStream();  // called after unsuccessful ice restart
 
   // Transport layer overrides.
-  TransportResult SendPacket(const unsigned char *data, size_t len) override;
+  TransportResult SendPacket(MediaPacket &packet) override;
 
   // Slots for ICE
-  void IceCandidate(NrIceMediaStream *stream, const std::string&);
+  void IceCandidate(NrIceMediaStream *stream, const std::string &);
   void IceReady(NrIceMediaStream *stream);
   void IceFailed(NrIceMediaStream *stream);
   void IcePacketReceived(NrIceMediaStream *stream, int component,
                          const unsigned char *data, int len);
+
+  // Useful for capturing encrypted packets
+  sigslot::signal2<TransportLayer *, MediaPacket &> SignalPacketSending;
 
   TRANSPORT_LAYER_ID("ice")
 
@@ -57,14 +58,9 @@ class TransportLayerIce : public TransportLayer {
   DISALLOW_COPY_ASSIGN(TransportLayerIce);
   void PostSetup();
 
-  const std::string name_;
-  RefPtr<NrIceCtx> ctx_;
   RefPtr<NrIceMediaStream> stream_;
   int component_;
-
-  // used to hold the old stream
-  RefPtr<NrIceMediaStream> old_stream_;
 };
 
-}  // close namespace
+}  // namespace mozilla
 #endif

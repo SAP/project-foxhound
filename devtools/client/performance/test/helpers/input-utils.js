@@ -9,9 +9,9 @@ exports.VERTICAL_AXIS = 2;
  * Simulates a command event on an element.
  */
 exports.command = (node) => {
-  let ev = node.ownerDocument.createEvent("XULCommandEvent");
+  const ev = node.ownerDocument.createEvent("XULCommandEvent");
   ev.initCommandEvent("command", true, true, node.ownerDocument.defaultView, 0, false,
-                      false, false, false, null);
+                      false, false, false, null, 0);
   node.dispatchEvent(ev);
 };
 
@@ -62,7 +62,7 @@ exports.scrollCanvasGraph = (graph, { axis, wheel, x, y }) => {
   y /= graph._window.devicePixelRatio;
   graph._onMouseMove({
     testX: x,
-    testY: y
+    testY: y,
   });
   graph._onMouseWheel({
     testX: x,
@@ -70,6 +70,6 @@ exports.scrollCanvasGraph = (graph, { axis, wheel, x, y }) => {
     axis: axis,
     detail: wheel,
     HORIZONTAL_AXIS: exports.HORIZONTAL_AXIS,
-    VERTICAL_AXIS: exports.VERTICAL_AXIS
+    VERTICAL_AXIS: exports.VERTICAL_AXIS,
   });
 };

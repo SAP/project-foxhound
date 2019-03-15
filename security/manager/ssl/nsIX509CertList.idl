@@ -8,30 +8,39 @@ interface nsISimpleEnumerator;
 interface nsIX509Cert;
 
 %{C++
-typedef struct CERTCertListStr CERTCertList;
+class nsNSSCertList;
 %}
-[ptr] native CERTCertListPtr(CERTCertList);
+[ptr] native nsNSSCertListPtr(nsNSSCertList);
 
-[scriptable, uuid(ae74cda5-cd2f-473f-96f5-f0b7fff62c68)]
+[scriptable, builtinclass, uuid(ae74cda5-cd2f-473f-96f5-f0b7fff62c68)]
 interface nsIX509CertList : nsISupports {
-   void addCert(in nsIX509Cert cert);
-   void deleteCert(in nsIX509Cert cert);
-   nsISimpleEnumerator getEnumerator();
+  [must_use]
+  void addCert(in nsIX509Cert cert);
+  [must_use]
+  nsISimpleEnumerator getEnumerator();
 
-   /**
-    * Returns the raw, backing cert list.
-    * Must be called only from functions where an nsNSSShutDownPreventionLock
-    * has been acquired.
-    */
-   [notxpcom, noscript] CERTCertListPtr getRawCertList();
+  /**
+   * Test whether two certificate list instances represent the same
+   * certificate list.
+   *
+   * @return Whether the certificate lists are equal
+   */
+  [must_use]
+  boolean equals(in nsIX509CertList other);
 
-   /**
-    * Test whether two certificate list instances represent the same
-    * certificate list.
-    *
-    * @return Whether the certificate lists are equal
-    */
-   boolean equals(in nsIX509CertList other);
+  /**
+   * Retrieves the PSM helper class that wraps the NSS certificate list
+   */
+  [notxpcom, noscript, must_use]
+  nsNSSCertListPtr getCertList();
+
+  /**
+   * Encode the list of certificates as a PKCS#7 SignedData structure. No data
+   * is actually signed - this is merely a way of exporting a collection of
+   * certificates.
+   */
+  [must_use]
+  ACString asPKCS7Blob();
 
 };
 

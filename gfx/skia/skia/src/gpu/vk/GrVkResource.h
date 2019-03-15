@@ -31,7 +31,7 @@ class GrVkGpu;
 
   This is nearly identical to SkRefCntBase. The exceptions are that unref()
   takes a GrVkGpu, and any derived classes must implement freeGPUData() and
-  possibly abandonSubResources().
+  possibly abandonGPUData().
 */
 
 class GrVkResource : SkNoncopyable {
@@ -59,7 +59,6 @@ public:
     private:
         SkTHashSet<const GrVkResource*, GrVkResource::Hash> fHashSet;
     };
-    static Trace  fTrace;
 
     static uint32_t fKeyCounter;
 #endif
@@ -69,7 +68,7 @@ public:
     GrVkResource() : fRefCnt(1) {
 #ifdef SK_TRACE_VK_RESOURCES
         fKey = sk_atomic_fetch_add(&fKeyCounter, 1u, sk_memory_order_relaxed);
-        fTrace.add(this);
+        GetTrace()->add(this);
 #endif
     }
 
@@ -148,15 +147,24 @@ public:
 #endif
 
 private:
+#ifdef SK_TRACE_VK_RESOURCES
+    static Trace* GetTrace() {
+        static Trace kTrace;
+        return &kTrace;
+    }
+#endif
+
     /** Must be implemented by any subclasses.
      *  Deletes any Vk data associated with this resource
      */
     virtual void freeGPUData(const GrVkGpu* gpu) const = 0;
 
-    /** Must be overridden by subclasses that themselves store GrVkResources.
-     *  Will unrefAndAbandon those resources without deleting the underlying Vk data
+    /**
+     * Called from unrefAndAbandon. Resources should do any necessary cleanup without freeing
+     * underlying Vk objects. This must be overridden by subclasses that themselves store
+     * GrVkResources since those resource will need to be unrefed.
      */
-    virtual void abandonSubResources() const {}
+    virtual void abandonGPUData() const {}
 
     /**
      *  Called when the ref count goes to 0. Will free Vk resources.
@@ -164,7 +172,7 @@ private:
     void internal_dispose(const GrVkGpu* gpu) const {
         this->freeGPUData(gpu);
 #ifdef SK_TRACE_VK_RESOURCES
-        fTrace.remove(this);
+        GetTrace()->remove(this);
 #endif
         SkASSERT(0 == fRefCnt);
         fRefCnt = 1;
@@ -175,9 +183,9 @@ private:
      *  Internal_dispose without freeing Vk resources. Used when we've lost context.
      */
     void internal_dispose() const {
-        this->abandonSubResources();
+        this->abandonGPUData();
 #ifdef SK_TRACE_VK_RESOURCES
-        fTrace.remove(this);
+        GetTrace()->remove(this);
 #endif
         SkASSERT(0 == fRefCnt);
         fRefCnt = 1;

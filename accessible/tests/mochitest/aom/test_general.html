@@ -8,7 +8,7 @@
   <script type="application/javascript"
           src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <script>
-  'use strict';
+  "use strict";
 
   SimpleTest.waitForExplicitFinish();
   const finish = SimpleTest.finish.bind(SimpleTest);
@@ -41,13 +41,63 @@
     });
   }
 
+  function testStringProp(anode, prop) {
+    is(anode[prop], null, `anode.${prop} should be null`);
+    let text = "This is a string test";
+    anode[prop] = text;
+    is(anode[prop], text, `anode.${prop} was assigned "${text}"`);
+    anode[prop] = null;
+    is(anode[prop], null, `anode.${prop} was assigned null`);
+  }
+
+  function testBoolProp(anode, prop) {
+    is(anode[prop], null, `anode.${prop} should be null`);
+    anode[prop] = true;
+    is(anode[prop], true, `anode.${prop} was assigned true`);
+    anode[prop] = false;
+    is(anode[prop], false, `anode.${prop} was assigned false`);
+    anode[prop] = null;
+    is(anode[prop], null, `anode.${prop} was assigned null`);
+  }
+
+  function testDoubleProp(anode, prop) {
+    is(anode[prop], null, `anode.${prop} should be null`);
+    anode[prop] = Number.MAX_VALUE;
+    is(anode[prop], Number.MAX_VALUE, `anode.${prop} was assigned ${Number.MAX_VALUE}`);
+    anode[prop] = null;
+    is(anode[prop], null, `anode.${prop} was assigned null`);
+  }
+
+  function testIntProp(anode, prop) {
+    is(anode[prop], null, `anode.${prop} should be null`);
+    anode[prop] = -1;
+    is(anode[prop], -1, `anode.${prop} was assigned -1`);
+    anode[prop] = null;
+    is(anode[prop], null, `anode.${prop} was assigned null`);
+  }
+
+  function testUIntProp(anode, prop) {
+    is(anode[prop], null, `anode.${prop} should be null`);
+    anode[prop] = 4294967295;
+    is(anode[prop], 4294967295, `anode.${prop} was assigned 4294967295`);
+    anode[prop] = null;
+    is(anode[prop], null, `anode.${prop} was assigned null`);
+  }
+
+  function testRelationProp(anode, node, prop) {
+    is(anode[prop], null, `anode.${prop} should be null`);
+    anode[prop] = node.accessibleNode;
+    is(anode[prop], node.accessibleNode, `anode.${prop} was assigned AccessibleNode`);
+    anode[prop] = null;
+    is(anode[prop], null, `anode.${prop} was assigned null`);
+  }
   // Check that the WebIDL is as expected.
   function checkImplementation(ifrDoc) {
     let anode = ifrDoc.accessibleNode;
     ok(anode, "DOM document has accessible node");
 
-    is(anode.role, 'document', 'correct role of a document accessible node');
-    is(anode.DOMNode, ifrDoc, 'correct DOM Node of a document accessible node');
+    is(anode.computedRole, "document", "correct role of a document accessible node");
+    is(anode.DOMNode, ifrDoc, "correct DOM Node of a document accessible node");
 
     // States may differ depending on the document state, for example, if it is
     // loaded or is loading still.
@@ -55,50 +105,100 @@
     switch (anode.states.length) {
       case 5:
         states = [
-          'readonly', 'focusable', 'opaque', 'enabled', 'sensitive'
+          "readonly", "focusable", "opaque", "enabled", "sensitive",
         ];
         break;
       case 6:
         states = [
-          'readonly', 'busy', 'focusable', 'opaque', 'enabled', 'sensitive'
+          "readonly", "busy", "focusable", "opaque", "enabled", "sensitive",
         ];
         break;
       case 7:
         states = [
-          'readonly', 'busy', 'focusable', 'opaque', 'stale', 'enabled', 'sensitive'
+          "readonly", "busy", "focusable", "opaque", "stale", "enabled", "sensitive",
         ];
         break;
       default:
-        ok(false, 'Unexpected amount of states');
+        ok(false, "Unexpected amount of states");
     }
     if (states) {
-      for (var i = 0; i < states.length; i++) {
+      for (let i = 0; i < states.length; i++) {
         is(anode.states[i], states[i], `${states[i]} state is expected at ${i}th index`);
       }
     }
 
-    ok(anode.is('document', 'focusable'),
-       'correct role and state on an accessible node');
+    ok(anode.is("document", "focusable"),
+       "correct role and state on an accessible node");
 
-    is(anode.get('explicit-name'), 'true',
-       'correct object attribute value on an accessible node');
+    is(anode.get("explicit-name"), "true",
+       "correct object attribute value on an accessible node");
 
-    ok(anode.has('explicit-name'),
-       'object attributes are present');
+    ok(anode.has("explicit-name"),
+       "object attributes are present");
 
-    var attrs = [ 'explicit-name' ];
+    var attrs = [ "explicit-name" ];
     if (anode.attributes.length > 1) {
       attrs = [
-        'margin-left', 'text-align', 'text-indent', 'margin-right',
-        'tag', 'margin-top', 'margin-bottom', 'display',
-        'explicit-name'
+        "margin-left", "text-align", "text-indent", "margin-right",
+        "tag", "margin-top", "margin-bottom", "display",
+        "explicit-name",
       ];
     }
 
-    is(anode.attributes.length, attrs.length, 'correct number of attributes');
-    for (var i = 0; i < attrs.length; i++) {
-      is(anode.attributes[i], attrs[i],
-         `${attrs[i]} attribute is expected at ${i}th index`);
+    is(anode.attributes.length, attrs.length, "correct number of attributes");
+    for (let i = 0; i < attrs.length; i++) {
+      ok(attrs.includes(anode.attributes[i]),
+         `${anode.attributes[i]} attribute is expected and found`);
+    }
+
+    const strProps = ["autocomplete", "checked", "current", "hasPopUp", "invalid",
+                      "keyShortcuts", "label", "live", "orientation", "placeholder",
+                      "pressed", "relevant", "role", "roleDescription", "sort",
+                      "valueText"];
+
+    for (const strProp of strProps) {
+      testStringProp(anode, strProp);
+    }
+
+    const boolProps = ["atomic", "busy", "disabled", "expanded", "hidden", "modal",
+                       "multiline", "multiselectable", "readOnly", "required", "selected"];
+
+    for (const boolProp of boolProps) {
+      testBoolProp(anode, boolProp);
+    }
+
+    const doubleProps = ["valueMax", "valueMin", "valueNow"];
+
+    for (const doubleProp of doubleProps) {
+      testDoubleProp(anode, doubleProp);
+    }
+
+    const intProps = ["colCount", "rowCount", "setSize"];
+
+    for (const intProp of intProps) {
+      testIntProp(anode, intProp);
+    }
+
+    const uintProps = ["colIndex", "colSpan", "level", "posInSet", "rowIndex", "rowSpan"];
+
+    for (const uintProp of uintProps) {
+      testUIntProp(anode, uintProp);
+    }
+
+    // Check if an AccessibleNode is properly cached.
+    let node = ifrDoc.createElement("div");
+    anode = node.accessibleNode;
+    is(anode, node.accessibleNode, "an AccessibleNode is properly cached");
+
+    // Adopting node to another document doesn't change .accessibleNode
+    let anotherDoc = document.implementation.createDocument("", "", null);
+    let adopted_node = anotherDoc.adoptNode(node);
+    is(anode, adopted_node.accessibleNode, "adopting node to another document doesn't change node.accessibleNode");
+
+    const relationProps = ["activeDescendant", "details", "errorMessage"];
+
+    for (const relationProp of relationProps) {
+      testRelationProp(anode, node, relationProp);
     }
 
     finish();

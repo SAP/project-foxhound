@@ -12,7 +12,7 @@ EXPORTS.graphite2 += [
     '../include/graphite2/Types.h',
 ]
 
-if CONFIG['GNU_CC']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     UNIFIED_SOURCES += [
         'direct_machine.cpp'
     ]
@@ -23,7 +23,6 @@ else:
 
 # This should contain all of the _SOURCES from files.mk, except *_machine.cpp
 UNIFIED_SOURCES += [
-    'CachedFace.cpp',
     'CmapCache.cpp',
     'Code.cpp',
     'Collider.cpp',
@@ -44,11 +43,9 @@ UNIFIED_SOURCES += [
     'Intervals.cpp',
     'json.cpp',
     'Justifier.cpp',
+    'NameTable.cpp',
     'Pass.cpp',
     'Position.cpp',
-    'SegCache.cpp',
-    'SegCacheEntry.cpp',
-    'SegCacheStore.cpp',
     'Segment.cpp',
     'Silf.cpp',
     'Slot.cpp',
@@ -57,18 +54,12 @@ UNIFIED_SOURCES += [
     'UtfCodec.cpp',
 ]
 
-# Excluded from UNIFIED_SOURCES because <cmath> from other files breaks it,
-# see bug 1272647.
-SOURCES += [
-    'NameTable.cpp',
-]
-
 # tell graphite2 not to export symbols, we'll be linking it directly with
 # thebes
 DEFINES['GRAPHITE2_STATIC'] = True
 
 # We allow warnings for third-party code that can be updated from upstream.
-ALLOW_COMPILER_WARNINGS = True
+AllowCompilerWarnings()
 
 FINAL_LIBRARY = 'gkmedias'
 

@@ -1,7 +1,7 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-Components.utils.import("resource:///modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 function TestParams() {
 }
@@ -40,7 +40,7 @@ function f_size_and_iid(aSize, aIID, a, bSize, bIID, b, rvSize, rvIID) {
 TestParams.prototype = {
 
   /* Boilerplate */
-  QueryInterface: XPCOMUtils.generateQI([Components.interfaces["nsIXPCTestParams"]]),
+  QueryInterface: ChromeUtils.generateQI([Ci["nsIXPCTestParams"]]),
   contractID: "@mozilla.org/js/xpc/test/js/Params;1",
   classID: Components.ID("{e3b86f4e-49c0-487c-a2b0-3a986720a044}"),
 
@@ -59,16 +59,23 @@ TestParams.prototype = {
   testString: f,
   testWchar: f,
   testWstring: f,
-  testDOMString: f,
   testAString: f,
   testAUTF8String: f,
   testACString: f,
   testJsval: f,
+  testShortSequence: f,
+  testDoubleSequence: f,
+  testAStringSequence: f,
+  testACStringSequence: f,
+  testInterfaceSequence: f,
+  testJsvalSequence: f,
+  testInterfaceIsSequence: f_is,
   testShortArray: f_is,
   testDoubleArray: f_is,
   testStringArray: f_is,
   testWstringArray: f_is,
   testInterfaceArray: f_is,
+  testJsvalArray: f_is,
   testSizedString: f_is,
   testSizedWstring: f_is,
   testInterfaceIs: f_is,

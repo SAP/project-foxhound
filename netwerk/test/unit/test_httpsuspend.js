@@ -1,8 +1,8 @@
 // This file ensures that suspending a channel directly after opening it
 // suspends future notifications correctly.
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpserv.identity.primaryPort;
@@ -16,11 +16,11 @@ var listener = {
   _gotData: false,
 
   QueryInterface: function(iid) {
-    if (iid.equals(Components.interfaces.nsIStreamListener) ||
-        iid.equals(Components.interfaces.nsIRequestObserver) ||
-        iid.equals(Components.interfaces.nsISupports))
+    if (iid.equals(Ci.nsIStreamListener) ||
+        iid.equals(Ci.nsIRequestObserver) ||
+        iid.equals(Ci.nsISupports))
       return this;
-    throw Components.results.NS_ERROR_NO_INTERFACE;
+    throw Cr.NS_ERROR_NO_INTERFACE;
   },
 
   onStartRequest: function(request, ctx) {
@@ -36,7 +36,7 @@ var listener = {
   },
 
   onDataAvailable: function(request, context, stream, offset, count) {
-    do_check_true(Date.now() - this._lastEvent >= MIN_TIME_DIFFERENCE);
+    Assert.ok(Date.now() - this._lastEvent >= MIN_TIME_DIFFERENCE);
     read_stream(stream, count);
 
     // Ensure that suspending and resuming inside a callback works correctly
@@ -49,7 +49,7 @@ var listener = {
   },
 
   onStopRequest: function(request, ctx, status) {
-    do_check_true(this._gotData);
+    Assert.ok(this._gotData);
     httpserv.stop(do_test_finished);
   }
 };

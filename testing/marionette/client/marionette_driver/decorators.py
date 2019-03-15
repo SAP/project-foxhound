@@ -2,8 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from functools import wraps
+from __future__ import absolute_import, print_function
+
 import socket
+
+from functools import wraps
 
 
 def _find_marionette_in_args(*args, **kwargs):
@@ -22,9 +25,14 @@ def do_process_check(func):
         try:
             return func(*args, **kwargs)
         except (socket.error, socket.timeout):
-            # In case of socket failures which will also include crashes of the
-            # application, make sure to handle those correctly.
             m = _find_marionette_in_args(*args, **kwargs)
+
+            # In case of socket failures which will also include crashes of the
+            # application, make sure to handle those correctly. In case of an
+            # active shutdown just let it bubble up.
+            if m.is_shutting_down:
+                raise
+
             m._handle_socket_failure()
 
     return _

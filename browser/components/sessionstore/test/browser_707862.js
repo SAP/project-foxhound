@@ -1,11 +1,12 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+/* eslint-disable mozilla/no-arbitrary-setTimeout */
 
 var tabState = {
   entries: [{
     url: "about:robots",
     triggeringPrincipal_base64,
-    children: [{url: "about:mozilla", triggeringPrincipal_base64,}]}]
+    children: [{url: "about:mozilla", triggeringPrincipal_base64 }]}],
 };
 
 function test() {
@@ -13,26 +14,25 @@ function test() {
   requestLongerTimeout(2);
 
   Services.prefs.setIntPref("browser.sessionstore.interval", 4000);
-  registerCleanupFunction(function () {
+  registerCleanupFunction(function() {
     Services.prefs.clearUserPref("browser.sessionstore.interval");
   });
 
-  let tab = gBrowser.addTab("about:blank");
+  let tab = BrowserTestUtils.addTab(gBrowser, "about:blank");
 
   let browser = tab.linkedBrowser;
 
   promiseTabState(tab, tabState).then(() => {
     let sessionHistory = browser.sessionHistory;
-    let entry = sessionHistory.getEntryAtIndex(0, false);
-    entry.QueryInterface(Ci.nsISHContainer);
+    let entry = sessionHistory.legacySHistory.getEntryAtIndex(0);
 
-    whenChildCount(entry, 1, function () {
-      whenChildCount(entry, 2, function () {
+    whenChildCount(entry, 1, function() {
+      whenChildCount(entry, 2, function() {
         promiseBrowserLoaded(browser).then(() => {
-          let sessionHistory = browser.sessionHistory;
-          let entry = sessionHistory.getEntryAtIndex(0, false);
+          let newSessionHistory = browser.sessionHistory;
+          let newEntry = newSessionHistory.legacySHistory.getEntryAtIndex(0);
 
-          whenChildCount(entry, 0, function () {
+          whenChildCount(newEntry, 0, function() {
             // Make sure that we reset the state.
             let blankState = { windows: [{ tabs: [{ entries: [{ url: "about:blank",
                                                                 triggeringPrincipal_base64 }] }]}]};
@@ -40,11 +40,11 @@ function test() {
           });
         });
 
-        // reload the browser to deprecate the subframes
-        browser.reload();
+        // Force reload the browser to deprecate the subframes.
+        browser.reloadWithFlags(Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_CACHE);
       });
 
-      // create a dynamic subframe
+      // Create a dynamic subframe.
       let doc = browser.contentDocument;
       let iframe = doc.createElement("iframe");
       doc.body.appendChild(iframe);

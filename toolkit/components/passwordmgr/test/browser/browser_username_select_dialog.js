@@ -7,30 +7,21 @@
 function getSelectDialogDoc() {
   // Trudge through all the open windows, until we find the one
   // that has selectDialog.xul loaded.
-  var wm = Cc["@mozilla.org/appshell/window-mediator;1"].
-           getService(Ci.nsIWindowMediator);
-  // var enumerator = wm.getEnumerator("navigator:browser");
-  var enumerator = wm.getXULWindowEnumerator(null);
+  // var enumerator = Services.wm.getEnumerator("navigator:browser");
+  for (let {docShell} of Services.wm.getEnumerator(null)) {
+    var containedDocShells = docShell.getDocShellEnumerator(
+      docShell.typeChrome,
+      docShell.ENUMERATE_FORWARDS);
+    for (let childDocShell of containedDocShells) {
+      // We don't want it if it's not done loading.
+      if (childDocShell.busyFlags != Ci.nsIDocShell.BUSY_FLAGS_NONE) {
+        continue;
+      }
+      var childDoc = childDocShell.contentViewer.DOMDocument;
 
-  while (enumerator.hasMoreElements()) {
-    var win = enumerator.getNext();
-    var windowDocShell = win.QueryInterface(Ci.nsIXULWindow).docShell;
-
-    var containedDocShells = windowDocShell.getDocShellEnumerator(
-                                      Ci.nsIDocShellTreeItem.typeChrome,
-                                      Ci.nsIDocShell.ENUMERATE_FORWARDS);
-    while (containedDocShells.hasMoreElements()) {
-        // Get the corresponding document for this docshell
-        var childDocShell = containedDocShells.getNext();
-        // We don't want it if it's not done loading.
-        if (childDocShell.busyFlags != Ci.nsIDocShell.BUSY_FLAGS_NONE)
-          continue;
-        var childDoc = childDocShell.QueryInterface(Ci.nsIDocShell)
-                                    .contentViewer
-                                    .DOMDocument;
-
-        if (childDoc.location.href == "chrome://global/content/selectDialog.xul")
-          return childDoc;
+      if (childDoc.location.href == "chrome://global/content/selectDialog.xul") {
+        return childDoc;
+      }
     }
   }
 
@@ -44,16 +35,16 @@ let login1 = new nsLoginInfo("http://example.com", "http://example.com", null,
 let login1B = new nsLoginInfo("http://example.com", "http://example.com", null,
                               "notifyu1B", "notifyp1B", "user", "pass");
 
-add_task(function* test_changeUPLoginOnPUpdateForm_accept() {
+add_task(async function test_changeUPLoginOnPUpdateForm_accept() {
   info("Select an u+p login from multiple logins, on password update form, and accept.");
   Services.logins.addLogin(login1);
   Services.logins.addLogin(login1B);
 
-  yield testSubmittingLoginForm("subtst_notifications_change_p.html", function*(fieldValues) {
+  await testSubmittingLoginForm("subtst_notifications_change_p.html", async function(fieldValues) {
     is(fieldValues.username, "null", "Checking submitted username");
     is(fieldValues.password, "pass2", "Checking submitted password");
 
-    yield ContentTaskUtils.waitForCondition(() => {
+    await ContentTaskUtils.waitForCondition(() => {
       return getSelectDialogDoc();
     }, "Wait for selection dialog to be accessible.");
 
@@ -69,7 +60,7 @@ add_task(function* test_changeUPLoginOnPUpdateForm_accept() {
 
     dialog.acceptDialog();
 
-    yield ContentTaskUtils.waitForCondition(() => {
+    await ContentTaskUtils.waitForCondition(() => {
       return !getSelectDialogDoc();
     }, "Wait for selection dialog to disappear.");
   });
@@ -95,16 +86,16 @@ add_task(function* test_changeUPLoginOnPUpdateForm_accept() {
   Services.logins.removeLogin(login1B);
 });
 
-add_task(function* test_changeUPLoginOnPUpdateForm_cancel() {
+add_task(async function test_changeUPLoginOnPUpdateForm_cancel() {
   info("Select an u+p login from multiple logins, on password update form, and cancel.");
   Services.logins.addLogin(login1);
   Services.logins.addLogin(login1B);
 
-  yield testSubmittingLoginForm("subtst_notifications_change_p.html", function*(fieldValues) {
+  await testSubmittingLoginForm("subtst_notifications_change_p.html", async function(fieldValues) {
     is(fieldValues.username, "null", "Checking submitted username");
     is(fieldValues.password, "pass2", "Checking submitted password");
 
-    yield ContentTaskUtils.waitForCondition(() => {
+    await ContentTaskUtils.waitForCondition(() => {
       return getSelectDialogDoc();
     }, "Wait for selection dialog to be accessible.");
 
@@ -120,7 +111,7 @@ add_task(function* test_changeUPLoginOnPUpdateForm_cancel() {
 
     dialog.cancelDialog();
 
-    yield ContentTaskUtils.waitForCondition(() => {
+    await ContentTaskUtils.waitForCondition(() => {
       return !getSelectDialogDoc();
     }, "Wait for selection dialog to disappear.");
   });

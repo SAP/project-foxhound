@@ -12,6 +12,17 @@ SOURCES += [
 
 SharedLibrary('modules-test')
 
+NO_PGO = True
+
+TESTING_JS_MODULES += [
+    'utils/TelemetryTestUtils.jsm',
+]
+
 if CONFIG['COMPILE_ENVIRONMENT']:
     shared_library = '!%smodules-test%s' % (CONFIG['DLL_PREFIX'], CONFIG['DLL_SUFFIX'])
     TEST_HARNESS_FILES.xpcshell.toolkit.components.telemetry.tests.unit += [shared_library]
+
+if CONFIG['ENABLE_TESTS'] and CONFIG['OS_ARCH'] == 'WINNT':
+    DIRS += [
+        'untrusted-startup-test-dll',
+    ]

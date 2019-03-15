@@ -1,36 +1,44 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+/* eslint-disable no-shadow */
 
-const protocol = require("devtools/shared/protocol");
+"use strict";
+
 const {AddonManager} = require("resource://gre/modules/AddonManager.jsm");
 
 startupAddonsManager();
 
 function promiseAddonEvent(event) {
   return new Promise(resolve => {
-    let listener = {
-      [event]: function (...args) {
+    const listener = {
+      [event]: function(...args) {
         AddonManager.removeAddonListener(listener);
         resolve(args);
-      }
+      },
     };
 
     AddonManager.addAddonListener(listener);
   });
 }
 
-function* findAddonInRootList(client, addonId) {
-  const result = yield client.listAddons();
-  const addonActor = result.addons.filter(addon => addon.id === addonId)[0];
-  ok(addonActor, `Found add-on actor for ${addonId}`);
-  return addonActor;
+function promiseWebExtensionStartup() {
+  const {Management} = ChromeUtils.import("resource://gre/modules/Extension.jsm", {});
+
+  return new Promise(resolve => {
+    const listener = (evt, extension) => {
+      Management.off("ready", listener);
+      resolve(extension);
+    };
+
+    Management.on("ready", listener);
+  });
 }
 
-function* reloadAddon(client, addonActor) {
+async function reloadAddon(addonFront) {
   // The add-on will be re-installed after a successful reload.
   const onInstalled = promiseAddonEvent("onInstalled");
-  yield client.request({to: addonActor.actor, type: "reload"});
-  yield onInstalled;
+  await addonFront.reload();
+  await onInstalled;
 }
 
 function getSupportFile(path) {
@@ -38,61 +46,67 @@ function getSupportFile(path) {
   return do_get_file(path, allowMissing);
 }
 
-add_task(function* testReloadExitedAddon() {
-  const client = yield new Promise(resolve => {
-    get_chrome_actors(client => resolve(client));
-  });
+add_task(async function testReloadExitedAddon() {
+  DebuggerServer.init();
+  DebuggerServer.registerAllActors();
+
+  const client = new DebuggerClient(DebuggerServer.connectPipe());
+  await client.connect();
 
   // Install our main add-on to trigger reloads on.
   const addonFile = getSupportFile("addons/web-extension");
-  const installedAddon = yield AddonManager.installTemporaryAddon(
-    addonFile);
+  const [installedAddon] = await Promise.all([
+    AddonManager.installTemporaryAddon(addonFile),
+    promiseWebExtensionStartup(),
+  ]);
 
   // Install a decoy add-on.
   const addonFile2 = getSupportFile("addons/web-extension2");
-  const installedAddon2 = yield AddonManager.installTemporaryAddon(
-    addonFile2);
+  const [installedAddon2] = await Promise.all([
+    AddonManager.installTemporaryAddon(addonFile2),
+    promiseWebExtensionStartup(),
+  ]);
 
-  let addonActor = yield findAddonInRootList(client, installedAddon.id);
+  const addonFront = await client.mainRoot.getAddon({ id: installedAddon.id });
 
-  yield reloadAddon(client, addonActor);
+  await Promise.all([
+    reloadAddon(addonFront),
+    promiseWebExtensionStartup(),
+  ]);
 
   // Uninstall the decoy add-on, which should cause its actor to exit.
   const onUninstalled = promiseAddonEvent("onUninstalled");
   installedAddon2.uninstall();
-  const [uninstalledAddon] = yield onUninstalled;
+  await onUninstalled;
 
   // Try to re-list all add-ons after a reload.
   // This was throwing an exception because of the exited actor.
-  const newAddonActor = yield findAddonInRootList(client, installedAddon.id);
-  equal(newAddonActor.id, addonActor.id);
+  const newAddonFront = await client.mainRoot.getAddon({ id: installedAddon.id });
+  equal(newAddonFront.id, addonFront.id);
 
-  // The actor id should be the same after the reload
-  equal(newAddonActor.actor, addonActor.actor);
+  // The fronts should be the same after the reload
+  equal(newAddonFront, addonFront);
 
-  const onAddonListChanged = new Promise((resolve) => {
-    client.addListener("addonListChanged", function listener() {
-      client.removeListener("addonListChanged", listener);
-      resolve();
-    });
-  });
+  const onAddonListChanged = client.mainRoot.once("addonListChanged");
 
   // Install an upgrade version of the first add-on.
   const addonUpgradeFile = getSupportFile("addons/web-extension-upgrade");
-  const upgradedAddon = yield AddonManager.installTemporaryAddon(
-    addonUpgradeFile);
+  const [upgradedAddon] = await Promise.all([
+    AddonManager.installTemporaryAddon(addonUpgradeFile),
+    promiseWebExtensionStartup(),
+  ]);
 
   // Waiting for addonListChanged unsolicited event
-  yield onAddonListChanged;
+  await onAddonListChanged;
 
   // re-list all add-ons after an upgrade.
-  const upgradedAddonActor = yield findAddonInRootList(client, upgradedAddon.id);
-  equal(upgradedAddonActor.id, addonActor.id);
-  // The actor id should be the same after the upgrade.
-  equal(upgradedAddonActor.actor, addonActor.actor);
+  const upgradedAddonFront = await client.mainRoot.getAddon({ id: upgradedAddon.id });
+  equal(upgradedAddonFront.id, addonFront.id);
+  // The fronts should be the same after the upgrade.
+  equal(upgradedAddonFront, addonFront);
 
   // The addon metadata has been updated.
-  equal(upgradedAddonActor.name, "Test Addons Actor Upgrade");
+  equal(upgradedAddonFront.name, "Test Addons Actor Upgrade");
 
-  yield close(client);
+  await close(client);
 });

@@ -10,17 +10,15 @@ var Primitives = {};
 
 var SharedAll;
 if (typeof Components != "undefined") {
-  let Cu = Components.utils;
   SharedAll = {};
-  Cu.import("resource://gre/modules/osfile/osfile_shared_allthreads.jsm", SharedAll);
+  ChromeUtils.import("resource://gre/modules/osfile/osfile_shared_allthreads.jsm", SharedAll);
 
   this.EXPORTED_SYMBOLS = [
-    "Primitives"
+    "Primitives",
   ];
   this.Primitives = Primitives;
   this.exports = {};
 } else if (typeof module != "undefined" && typeof require != "undefined") {
-  /* global require:false */
   SharedAll = require("resource://gre/modules/osfile/osfile_shared_allthreads.jsm");
 } else {
   throw new Error("Please load this module with Component.utils.import or with require()");
@@ -57,7 +55,6 @@ libxul.declareLazyFFI(Primitives, "maxCompressedSize",
 );
 
 if (typeof module != "undefined") {
-  /* global module:false */
   module.exports = {
     get compress() {
       return Primitives.compress;
@@ -67,6 +64,6 @@ if (typeof module != "undefined") {
     },
     get maxCompressedSize() {
       return Primitives.maxCompressedSize;
-    }
+    },
   };
 }

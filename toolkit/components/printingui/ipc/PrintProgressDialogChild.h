@@ -7,6 +7,7 @@
 
 #include "mozilla/embedding/PPrintProgressDialogChild.h"
 #include "nsIPrintProgressParams.h"
+#include "nsIPrintSettings.h"
 #include "nsIWebProgressListener.h"
 
 class nsIObserver;
@@ -16,25 +17,28 @@ namespace embedding {
 
 class PrintProgressDialogChild final : public PPrintProgressDialogChild,
                                        public nsIWebProgressListener,
-                                       public nsIPrintProgressParams
-{
+                                       public nsIPrintProgressParams {
   NS_DECL_ISUPPORTS
   NS_DECL_NSIWEBPROGRESSLISTENER
   NS_DECL_NSIPRINTPROGRESSPARAMS
 
-public:
-  MOZ_IMPLICIT PrintProgressDialogChild(nsIObserver* aOpenObserver);
+ public:
+  MOZ_IMPLICIT PrintProgressDialogChild(nsIObserver* aOpenObserver,
+                                        nsIPrintSettings* aPrintSettings);
 
   virtual mozilla::ipc::IPCResult RecvDialogOpened() override;
 
-private:
+  virtual mozilla::ipc::IPCResult RecvCancelledCurrentJob() override;
+
+ private:
   virtual ~PrintProgressDialogChild();
   nsCOMPtr<nsIObserver> mOpenObserver;
   nsString mDocTitle;
   nsString mDocURL;
+  nsCOMPtr<nsIPrintSettings> mPrintSettings;
 };
 
-} // namespace embedding
-} // namespace mozilla
+}  // namespace embedding
+}  // namespace mozilla
 
 #endif

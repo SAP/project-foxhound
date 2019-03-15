@@ -12,8 +12,10 @@ XPIDL_SOURCES += [
 ]
 
 EXPORTS += [
+    'ChromiumCDMCallback.h',
+    'ChromiumCDMParent.h',
+    'ChromiumCDMProxy.h',
     'DecryptJob.h',
-    'gmp-api/gmp-decryption.h',
     'gmp-api/gmp-entrypoints.h',
     'gmp-api/gmp-errors.h',
     'gmp-api/gmp-platform.h',
@@ -27,17 +29,11 @@ EXPORTS += [
     'gmp-api/gmp-video-host.h',
     'gmp-api/gmp-video-plane.h',
     'GMPCallbackBase.h',
-    'GMPCDMCallbackProxy.h',
-    'GMPCDMProxy.h',
     'GMPChild.h',
     'GMPContentChild.h',
     'GMPContentParent.h',
     'GMPCrashHelper.h',
     'GMPCrashHelperHolder.h',
-    'GMPDecryptorChild.h',
-    'GMPDecryptorParent.h',
-    'GMPDecryptorProxy.h',
-    'GMPEncryptedBufferDataImpl.h',
     'GMPLoader.h',
     'GMPMessageUtils.h',
     'GMPParent.h',
@@ -65,21 +61,25 @@ EXPORTS += [
     'GMPVideoi420FrameImpl.h',
     'GMPVideoPlaneImpl.h',
     'widevine-adapter/content_decryption_module.h',
+    'widevine-adapter/content_decryption_module_export.h',
+    'widevine-adapter/content_decryption_module_ext.h',
+    'widevine-adapter/content_decryption_module_proxy.h',
 ]
 
 UNIFIED_SOURCES += [
+    'CDMStorageIdProvider.cpp',
+    'ChromiumCDMAdapter.cpp',
+    'ChromiumCDMCallbackProxy.cpp',
+    'ChromiumCDMChild.cpp',
+    'ChromiumCDMParent.cpp',
+    'ChromiumCDMProxy.cpp',
     'DecryptJob.cpp',
-    'GMPCDMCallbackProxy.cpp',
-    'GMPCDMProxy.cpp',
     'GMPChild.cpp',
     'GMPContentChild.cpp',
     'GMPContentParent.cpp',
     'GMPCrashHelper.cpp',
     'GMPCrashHelperHolder.cpp',
-    'GMPDecryptorChild.cpp',
-    'GMPDecryptorParent.cpp',
     'GMPDiskStorage.cpp',
-    'GMPEncryptedBufferDataImpl.cpp',
     'GMPLoader.cpp',
     'GMPMemoryStorage.cpp',
     'GMPParent.cpp',
@@ -106,20 +106,24 @@ UNIFIED_SOURCES += [
 ]
 
 DIRS += [
+    'rlz',
     'widevine-adapter',
 ]
 
 IPDL_SOURCES += [
   'GMPTypes.ipdlh',
+  'PChromiumCDM.ipdl',
   'PGMP.ipdl',
   'PGMPContent.ipdl',
-  'PGMPDecryptor.ipdl',
   'PGMPService.ipdl',
   'PGMPStorage.ipdl',
   'PGMPTimer.ipdl',
   'PGMPVideoDecoder.ipdl',
   'PGMPVideoEncoder.ipdl',
 ]
+
+if CONFIG['OS_TARGET'] in ['WINNT', 'Darwin']:
+    DEFINES['SUPPORT_STORAGE_ID'] = 1;
 
 # comment this out to use Unsafe Shmem for more performance
 DEFINES['GMP_SAFE_SHMEM'] = True
@@ -143,5 +147,8 @@ LOCAL_INCLUDES += [
     '/xpcom/threads',
 ]
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
+
+if CONFIG['CC_TYPE'] == 'clang-cl':
+    AllowCompilerWarnings()  # workaround for bug 1090497

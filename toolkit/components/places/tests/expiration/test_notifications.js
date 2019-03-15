@@ -4,35 +4,33 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+"use strict";
+
 /**
  * What this is aimed to test:
  *
  * Ensure that History (through category cache) notifies us just once.
  */
 
-var os = Cc["@mozilla.org/observer-service;1"].
-         getService(Ci.nsIObserverService);
-
 var gObserver = {
   notifications: 0,
   observe(aSubject, aTopic, aData) {
     this.notifications++;
-  }
+  },
 };
-os.addObserver(gObserver, PlacesUtils.TOPIC_EXPIRATION_FINISHED, false);
+Services.obs.addObserver(gObserver, PlacesUtils.TOPIC_EXPIRATION_FINISHED);
 
-function run_test() {
+add_task(async function test_history_expirations_notify_just_once() {
   // Set interval to a large value so we don't expire on it.
   setInterval(3600); // 1h
 
-  PlacesTestUtils.clearHistory();
+  promiseForceExpirationStep(1);
 
-  do_timeout(2000, check_result);
-  do_test_pending();
-}
+  await new Promise(resolve => {
+    do_timeout(2000, resolve);
+  });
 
-function check_result() {
-  os.removeObserver(gObserver, PlacesUtils.TOPIC_EXPIRATION_FINISHED);
-  do_check_eq(gObserver.notifications, 1);
-  do_test_finished();
-}
+  Assert.equal(gObserver.notifications, 1);
+
+  Services.obs.removeObserver(gObserver, PlacesUtils.TOPIC_EXPIRATION_FINISHED);
+});

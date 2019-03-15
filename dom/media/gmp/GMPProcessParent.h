@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: sw=4 ts=4 et :
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+ * vim: sw=2 ts=4 et :
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,9 +19,8 @@ class nsIRunnable;
 namespace mozilla {
 namespace gmp {
 
-class GMPProcessParent final : public mozilla::ipc::GeckoChildProcessHost
-{
-public:
+class GMPProcessParent final : public mozilla::ipc::GeckoChildProcessHost {
+ public:
   explicit GMPProcessParent(const std::string& aGMPPath);
   ~GMPProcessParent();
 
@@ -37,7 +36,7 @@ public:
   using mozilla::ipc::GeckoChildProcessHost::GetChannel;
   using mozilla::ipc::GeckoChildProcessHost::GetChildProcessHandle;
 
-private:
+ private:
   void DoDelete();
 
   std::string mGMPPath;
@@ -46,7 +45,7 @@ private:
   DISALLOW_COPY_AND_ASSIGN(GMPProcessParent);
 };
 
-} // namespace gmp
-} // namespace mozilla
+}  // namespace gmp
+}  // namespace mozilla
 
-#endif // ifndef GMPProcessParent_h
+#endif  // ifndef GMPProcessParent_h

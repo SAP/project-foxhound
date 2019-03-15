@@ -11,12 +11,12 @@ function* testSteps()
 
   const objectStores = [
     { name: "a", autoIncrement: false },
-    { name: "b", autoIncrement: true }
+    { name: "b", autoIncrement: true },
   ];
 
   const indexes = [
     { name: "a", options: { } },
-    { name: "b", options: { unique: true } }
+    { name: "b", options: { unique: true } },
   ];
 
   var j = 0;
@@ -71,10 +71,10 @@ function* testSteps()
 
       request = index.openCursor();
       request.onerror = errorHandler;
-      request.onsuccess = function (event) {
+      request.onsuccess = function(event) {
         is(event.target.result.value.name, "Ben", "Good object");
         executeSoon(function() { testGenerator.next(); });
-      }
+      };
       yield undefined;
     }
   }

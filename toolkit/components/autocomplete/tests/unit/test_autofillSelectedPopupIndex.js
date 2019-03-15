@@ -1,14 +1,14 @@
 "use strict";
 
-add_task(function* sameCaseAsMatch() {
-  yield runTest("moz");
+add_task(async function sameCaseAsMatch() {
+  await runTest("moz");
 });
 
-add_task(function* differentCaseFromMatch() {
-  yield runTest("MOZ");
+add_task(async function differentCaseFromMatch() {
+  await runTest("MOZ");
 });
 
-function* runTest(searchStr) {
+async function runTest(searchStr) {
   let matches = [
     "mozilla.org",
     "example.com",
@@ -38,7 +38,7 @@ function* runTest(searchStr) {
   input.controller = controller;
 
   // Start a search.
-  yield new Promise(resolve => {
+  await new Promise(resolve => {
     controller.startSearch(searchStr);
     input.onSearchComplete = () => {
       // The first match should have autofilled, but the case of the search
@@ -55,7 +55,9 @@ function* runTest(searchStr) {
   });
 
   // Key down to select the second match in the popup.
-  controller.handleKeyNavigation(Ci.nsIDOMKeyEvent.DOM_VK_DOWN);
+  // Hardcode KeyboardEvent.DOM_VK_DOWN, because we can't easily
+  // include KeyboardEvent here.
+  controller.handleKeyNavigation(0x28 /* KeyboardEvent.DOM_VK_DOWN */);
   let expectedValue = matches[1];
   Assert.equal(input.textValue, expectedValue,
                "Should have filled second match");
@@ -67,7 +69,9 @@ function* runTest(searchStr) {
   // Key up to select the first match again.  The input should be restored
   // exactly as it was when the first match was autofilled above: the search
   // string's case should be preserved, and the selection should be preserved.
-  controller.handleKeyNavigation(Ci.nsIDOMKeyEvent.DOM_VK_UP);
+  // Hardcode KeyboardEvent.DOM_VK_UP, because we can't easily
+  // include KeyboardEvent here.
+  controller.handleKeyNavigation(0x26 /* KeyboardEvent.DOM_VK_UP */);
   expectedValue = searchStr + matches[0].substr(searchStr.length);
   Assert.equal(input.textValue, expectedValue,
                "Should have filled first match again");

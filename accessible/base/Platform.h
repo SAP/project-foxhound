@@ -8,8 +8,12 @@
 #define mozilla_a11y_Platform_h
 
 #include <stdint.h>
+#include "nsStringFwd.h"
 
-class nsString;
+#if defined(ANDROID)
+#  include "nsTArray.h"
+#  include "nsRect.h"
+#endif
 
 namespace mozilla {
 namespace a11y {
@@ -44,6 +48,19 @@ void PreInit();
 bool ShouldA11yBeEnabled();
 #endif
 
+#if defined(XP_WIN)
+/*
+ * Do we have AccessibleHandler.dll registered.
+ */
+bool IsHandlerRegistered();
+
+/*
+ * Name of platform service that instantiated accessibility
+ */
+void SetInstantiator(const uint32_t aInstantiatorPid);
+bool GetInstantiator(nsIFile** aOutInstantiator);
+#endif
+
 /**
  * Called to initialize platform specific accessibility support.
  * Note this is called after internal accessibility support is initialized.
@@ -74,7 +91,15 @@ void ProxyDestroyed(ProxyAccessible*);
 void ProxyEvent(ProxyAccessible* aTarget, uint32_t aEventType);
 void ProxyStateChangeEvent(ProxyAccessible* aTarget, uint64_t aState,
                            bool aEnabled);
+
+#if defined(XP_WIN)
+void ProxyFocusEvent(ProxyAccessible* aTarget,
+                     const LayoutDeviceIntRect& aCaretRect);
+void ProxyCaretMoveEvent(ProxyAccessible* aTarget,
+                         const LayoutDeviceIntRect& aCaretRect);
+#else
 void ProxyCaretMoveEvent(ProxyAccessible* aTarget, int32_t aOffset);
+#endif
 void ProxyTextChangeEvent(ProxyAccessible* aTarget, const nsString& aStr,
                           int32_t aStart, uint32_t aLen, bool aIsInsert,
                           bool aFromUser);
@@ -82,7 +107,29 @@ void ProxyShowHideEvent(ProxyAccessible* aTarget, ProxyAccessible* aParent,
                         bool aInsert, bool aFromUser);
 void ProxySelectionEvent(ProxyAccessible* aTarget, ProxyAccessible* aWidget,
                          uint32_t aType);
-} // namespace a11y
-} // namespace mozilla
 
-#endif // mozilla_a11y_Platform_h
+#if defined(ANDROID)
+void ProxyVirtualCursorChangeEvent(ProxyAccessible* aTarget,
+                                   ProxyAccessible* aOldPosition,
+                                   int32_t aOldStartOffset,
+                                   int32_t aOldEndOffset,
+                                   ProxyAccessible* aNewPosition,
+                                   int32_t aNewStartOffset,
+                                   int32_t aNewEndOffset, int16_t aReason,
+                                   int16_t aBoundaryType, bool aFromUser);
+
+void ProxyScrollingEvent(ProxyAccessible* aTarget, uint32_t aEventType,
+                         uint32_t aScrollX, uint32_t aScrollY,
+                         uint32_t aMaxScrollX, uint32_t aMaxScrollY);
+
+class BatchData;
+
+void ProxyBatch(ProxyAccessible* aDocument, const uint64_t aBatchType,
+                const nsTArray<ProxyAccessible*>& aAccessibles,
+                const nsTArray<BatchData>& aData);
+#endif
+
+}  // namespace a11y
+}  // namespace mozilla
+
+#endif  // mozilla_a11y_Platform_h

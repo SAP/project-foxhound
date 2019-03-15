@@ -16,26 +16,26 @@ const TEST_URI = `
   <span>This is a span</span>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, view} = await openRuleView();
 
   info("Selecting the test element");
-  yield selectNode("#testid", inspector);
-  yield testEditSelector(view, "span");
+  await selectNode("#testid", inspector);
+  await testEditSelector(view, "span");
 
   info("Selecting the modified element with the new rule");
-  yield selectNode("span", inspector);
-  yield checkModifiedElement(view, "span");
+  await selectNode("span", inspector);
+  await checkModifiedElement(view, "span");
 });
 
-function* testEditSelector(view, name) {
+async function testEditSelector(view, name) {
   info("Test editing existing selector fields");
 
-  let idRuleEditor = getRuleViewRuleEditor(view, 1);
+  const idRuleEditor = getRuleViewRuleEditor(view, 1);
 
   info("Focusing an existing selector name in the rule-view");
-  let editor = yield focusEditableField(view, idRuleEditor.selectorText);
+  const editor = await focusEditableField(view, idRuleEditor.selectorText);
 
   is(inplaceEditor(idRuleEditor.selectorText), editor,
     "The selector editor got focused");
@@ -44,11 +44,11 @@ function* testEditSelector(view, name) {
   editor.input.value = name;
 
   info("Waiting for rule view to update");
-  let onRuleViewChanged = once(view, "ruleview-changed");
+  const onRuleViewChanged = once(view, "ruleview-changed");
 
   info("Entering the commit key");
-  EventUtils.synthesizeKey("VK_RETURN", {});
-  yield onRuleViewChanged;
+  EventUtils.synthesizeKey("KEY_Enter");
+  await onRuleViewChanged;
 
   is(view._elementStyle.rules.length, 2, "Should have 2 rules.");
   ok(getRuleViewRule(view, name), "Rule with " + name + " selector exists.");
@@ -56,7 +56,7 @@ function* testEditSelector(view, name) {
     "Rule with " + name + " does not match the current element.");
 }
 
-function* checkModifiedElement(view, name) {
+function checkModifiedElement(view, name) {
   is(view._elementStyle.rules.length, 2, "Should have 2 rules.");
   ok(getRuleViewRule(view, name), "Rule with " + name + " selector exists.");
 }

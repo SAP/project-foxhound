@@ -16,19 +16,33 @@ namespace dom {
 namespace cache {
 
 StreamList::StreamList(Manager* aManager, Context* aContext)
-  : mManager(aManager)
-  , mContext(aContext)
-  , mCacheId(INVALID_CACHE_ID)
-  , mStreamControl(nullptr)
-  , mActivated(false)
-{
+    : mManager(aManager),
+      mContext(aContext),
+      mCacheId(INVALID_CACHE_ID),
+      mStreamControl(nullptr),
+      mActivated(false) {
   MOZ_DIAGNOSTIC_ASSERT(mManager);
   mContext->AddActivity(this);
 }
 
-void
-StreamList::SetStreamControl(CacheStreamControlParent* aStreamControl)
-{
+Manager* StreamList::GetManager() const {
+  MOZ_DIAGNOSTIC_ASSERT(mManager);
+  return mManager;
+}
+
+bool StreamList::ShouldOpenStreamFor(const nsID& aId) const {
+  NS_ASSERT_OWNINGTHREAD(StreamList);
+
+  for (auto entry : mList) {
+    if (entry.mId == aId) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+void StreamList::SetStreamControl(CacheStreamControlParent* aStreamControl) {
   NS_ASSERT_OWNINGTHREAD(StreamList);
   MOZ_DIAGNOSTIC_ASSERT(aStreamControl);
 
@@ -44,18 +58,14 @@ StreamList::SetStreamControl(CacheStreamControlParent* aStreamControl)
   mStreamControl->SetStreamList(this);
 }
 
-void
-StreamList::RemoveStreamControl(CacheStreamControlParent* aStreamControl)
-{
+void StreamList::RemoveStreamControl(CacheStreamControlParent* aStreamControl) {
   NS_ASSERT_OWNINGTHREAD(StreamList);
   MOZ_DIAGNOSTIC_ASSERT(mStreamControl);
   MOZ_DIAGNOSTIC_ASSERT(mStreamControl == aStreamControl);
   mStreamControl = nullptr;
 }
 
-void
-StreamList::Activate(CacheId aCacheId)
-{
+void StreamList::Activate(CacheId aCacheId) {
   NS_ASSERT_OWNINGTHREAD(StreamList);
   MOZ_DIAGNOSTIC_ASSERT(!mActivated);
   MOZ_DIAGNOSTIC_ASSERT(mCacheId == INVALID_CACHE_ID);
@@ -69,21 +79,14 @@ StreamList::Activate(CacheId aCacheId)
   }
 }
 
-void
-StreamList::Add(const nsID& aId, nsIInputStream* aStream)
-{
+void StreamList::Add(const nsID& aId, nsCOMPtr<nsIInputStream>&& aStream) {
   // All streams should be added on IO thread before we set the stream
   // control on the owning IPC thread.
   MOZ_DIAGNOSTIC_ASSERT(!mStreamControl);
-  MOZ_DIAGNOSTIC_ASSERT(aStream);
-  Entry* entry = mList.AppendElement();
-  entry->mId = aId;
-  entry->mStream = aStream;
+  mList.AppendElement(Entry(aId, std::move(aStream)));
 }
 
-already_AddRefed<nsIInputStream>
-StreamList::Extract(const nsID& aId)
-{
+already_AddRefed<nsIInputStream> StreamList::Extract(const nsID& aId) {
   NS_ASSERT_OWNINGTHREAD(StreamList);
   for (uint32_t i = 0; i < mList.Length(); ++i) {
     if (mList[i].mId == aId) {
@@ -93,9 +96,7 @@ StreamList::Extract(const nsID& aId)
   return nullptr;
 }
 
-void
-StreamList::NoteClosed(const nsID& aId)
-{
+void StreamList::NoteClosed(const nsID& aId) {
   NS_ASSERT_OWNINGTHREAD(StreamList);
   for (uint32_t i = 0; i < mList.Length(); ++i) {
     if (mList[i].mId == aId) {
@@ -110,9 +111,7 @@ StreamList::NoteClosed(const nsID& aId)
   }
 }
 
-void
-StreamList::NoteClosedAll()
-{
+void StreamList::NoteClosedAll() {
   NS_ASSERT_OWNINGTHREAD(StreamList);
   for (uint32_t i = 0; i < mList.Length(); ++i) {
     mManager->ReleaseBodyId(mList[i].mId);
@@ -124,40 +123,31 @@ StreamList::NoteClosedAll()
   }
 }
 
-void
-StreamList::Close(const nsID& aId)
-{
+void StreamList::Close(const nsID& aId) {
   NS_ASSERT_OWNINGTHREAD(StreamList);
   if (mStreamControl) {
     mStreamControl->Close(aId);
   }
 }
 
-void
-StreamList::CloseAll()
-{
+void StreamList::CloseAll() {
   NS_ASSERT_OWNINGTHREAD(StreamList);
   if (mStreamControl) {
     mStreamControl->CloseAll();
   }
 }
 
-void
-StreamList::Cancel()
-{
+void StreamList::Cancel() {
   NS_ASSERT_OWNINGTHREAD(StreamList);
   CloseAll();
 }
 
-bool
-StreamList::MatchesCacheId(CacheId aCacheId) const
-{
+bool StreamList::MatchesCacheId(CacheId aCacheId) const {
   NS_ASSERT_OWNINGTHREAD(StreamList);
   return aCacheId == mCacheId;
 }
 
-StreamList::~StreamList()
-{
+StreamList::~StreamList() {
   NS_ASSERT_OWNINGTHREAD(StreamList);
   MOZ_DIAGNOSTIC_ASSERT(!mStreamControl);
   if (mActivated) {
@@ -170,6 +160,6 @@ StreamList::~StreamList()
   mContext->RemoveActivity(this);
 }
 
-} // namespace cache
-} // namespace dom
-} // namespace mozilla
+}  // namespace cache
+}  // namespace dom
+}  // namespace mozilla

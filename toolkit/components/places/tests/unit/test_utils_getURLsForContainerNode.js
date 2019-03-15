@@ -11,141 +11,214 @@
 
 var PU = PlacesUtils;
 var hs = PU.history;
-var bs = PU.bookmarks;
 
-var tests = [
 
-function() {
-  dump("\n\n*** TEST: folder\n");
-  // This is the folder we will check for children.
-  var folderId = bs.createFolder(bs.toolbarFolder, "folder", bs.DEFAULT_INDEX);
-
-  // Create a folder and a query node inside it, these should not be considered
-  // uri nodes.
-  bs.createFolder(folderId, "inside folder", bs.DEFAULT_INDEX);
-  bs.insertBookmark(folderId, uri("place:sort=1"),
-                    bs.DEFAULT_INDEX, "inside query");
+add_task(async function test_getURLsForContainerNode_folder() {
+  info("*** TEST: folder");
+  let bookmarks = await PlacesUtils.bookmarks.insertTree({
+    guid: PlacesUtils.bookmarks.toolbarGuid,
+    children: [{
+      // This is the folder we will check for children.
+      title: "folder",
+      type: PlacesUtils.bookmarks.TYPE_FOLDER,
+      // Create a folder and a query node inside it, these should not be considered
+      // uri nodes.
+      children: [{
+        title: "inside folder",
+        type: PlacesUtils.bookmarks.TYPE_FOLDER,
+        children: [{
+          url: "place:sort=1",
+          title: "inside query",
+        }],
+      }],
+    }],
+  });
 
   var query = hs.getNewQuery();
-  query.setFolders([bs.toolbarFolder], 1);
+  query.setParents([PlacesUtils.bookmarks.toolbarGuid], 1);
   var options = hs.getNewQueryOptions();
 
-  dump("Check folder without uri nodes\n");
+  info("Check folder without uri nodes");
   check_uri_nodes(query, options, 0);
 
-  dump("Check folder with uri nodes\n");
+  info("Check folder with uri nodes");
   // Add an uri node, this should be considered.
-  bs.insertBookmark(folderId, uri("http://www.mozilla.org/"),
-                    bs.DEFAULT_INDEX, "bookmark");
+  await PlacesUtils.bookmarks.insert({
+    parentGuid: bookmarks[0].guid,
+    url: "http://www.mozilla.org/",
+    title: "bookmark",
+  });
   check_uri_nodes(query, options, 1);
-},
 
-function() {
-  dump("\n\n*** TEST: folder in an excludeItems root\n");
-  // This is the folder we will check for children.
-  var folderId = bs.createFolder(bs.toolbarFolder, "folder", bs.DEFAULT_INDEX);
+  await PlacesUtils.bookmarks.eraseEverything();
+});
 
-  // Create a folder and a query node inside it, these should not be considered
-  // uri nodes.
-  bs.createFolder(folderId, "inside folder", bs.DEFAULT_INDEX);
-  bs.insertBookmark(folderId, uri("place:sort=1"), bs.DEFAULT_INDEX, "inside query");
+add_task(async function test_getURLsForContainerNode_folder_excludeItems() {
+  info("*** TEST: folder in an excludeItems root");
+  let bookmarks = await PlacesUtils.bookmarks.insertTree({
+    guid: PlacesUtils.bookmarks.toolbarGuid,
+    children: [{
+      // This is the folder we will check for children.
+      title: "folder",
+      type: PlacesUtils.bookmarks.TYPE_FOLDER,
+      // Create a folder and a query node inside it, these should not be considered
+      // uri nodes.
+      children: [{
+        title: "inside folder",
+        type: PlacesUtils.bookmarks.TYPE_FOLDER,
+        children: [{
+          url: "place:sort=1",
+          title: "inside query",
+        }],
+      }],
+    }],
+  });
 
   var query = hs.getNewQuery();
-  query.setFolders([bs.toolbarFolder], 1);
-  var options = hs.getNewQueryOptions();
-  options.excludeItems = true;
-
-  dump("Check folder without uri nodes\n");
-  check_uri_nodes(query, options, 0);
-
-  dump("Check folder with uri nodes\n");
-  // Add an uri node, this should be considered.
-  bs.insertBookmark(folderId, uri("http://www.mozilla.org/"),
-                    bs.DEFAULT_INDEX, "bookmark");
-  check_uri_nodes(query, options, 1);
-},
-
-function() {
-  dump("\n\n*** TEST: query\n");
-  // This is the query we will check for children.
-  bs.insertBookmark(bs.toolbarFolder, uri("place:folder=BOOKMARKS_MENU&sort=1"),
-                    bs.DEFAULT_INDEX, "inside query");
-
-  // Create a folder and a query node inside it, these should not be considered
-  // uri nodes.
-  bs.createFolder(bs.bookmarksMenuFolder, "inside folder", bs.DEFAULT_INDEX);
-  bs.insertBookmark(bs.bookmarksMenuFolder, uri("place:sort=1"),
-                    bs.DEFAULT_INDEX, "inside query");
-
-  var query = hs.getNewQuery();
-  query.setFolders([bs.toolbarFolder], 1);
-  var options = hs.getNewQueryOptions();
-
-  dump("Check query without uri nodes\n");
-  check_uri_nodes(query, options, 0);
-
-  dump("Check query with uri nodes\n");
-  // Add an uri node, this should be considered.
-  bs.insertBookmark(bs.bookmarksMenuFolder, uri("http://www.mozilla.org/"),
-                    bs.DEFAULT_INDEX, "bookmark");
-  check_uri_nodes(query, options, 1);
-},
-
-function() {
-  dump("\n\n*** TEST: excludeItems Query\n");
-  // This is the query we will check for children.
-  bs.insertBookmark(bs.toolbarFolder, uri("place:folder=BOOKMARKS_MENU&sort=8"),
-                    bs.DEFAULT_INDEX, "inside query");
-
-  // Create a folder and a query node inside it, these should not be considered
-  // uri nodes.
-  bs.createFolder(bs.bookmarksMenuFolder, "inside folder", bs.DEFAULT_INDEX);
-  bs.insertBookmark(bs.bookmarksMenuFolder, uri("place:sort=1"),
-                    bs.DEFAULT_INDEX, "inside query");
-
-  var query = hs.getNewQuery();
-  query.setFolders([bs.toolbarFolder], 1);
+  query.setParents([PlacesUtils.bookmarks.toolbarGuid], 1);
   var options = hs.getNewQueryOptions();
   options.excludeItems = true;
 
-  dump("Check folder without uri nodes\n");
+  info("Check folder without uri nodes");
   check_uri_nodes(query, options, 0);
 
-  dump("Check folder with uri nodes\n");
+  info("Check folder with uri nodes");
   // Add an uri node, this should be considered.
-  bs.insertBookmark(bs.bookmarksMenuFolder, uri("http://www.mozilla.org/"),
-                    bs.DEFAULT_INDEX, "bookmark");
+  await PlacesUtils.bookmarks.insert({
+    parentGuid: bookmarks[0].guid,
+    url: "http://www.mozilla.org/",
+    title: "bookmark",
+  });
   check_uri_nodes(query, options, 1);
-},
 
-function() {
-  dump("\n\n*** TEST: !expandQueries Query\n");
+  await PlacesUtils.bookmarks.eraseEverything();
+});
+
+add_task(async function test_getURLsForContainerNode_query() {
+  info("*** TEST: query");
   // This is the query we will check for children.
-  bs.insertBookmark(bs.toolbarFolder, uri("place:folder=BOOKMARKS_MENU&sort=8"),
-                    bs.DEFAULT_INDEX, "inside query");
+  await PlacesUtils.bookmarks.insert({
+    parentGuid: PlacesUtils.bookmarks.toolbarGuid,
+    title: "inside query",
+    url: `place:parent=${PlacesUtils.bookmarks.menuGuid}&sort=1`,
+  });
 
   // Create a folder and a query node inside it, these should not be considered
   // uri nodes.
-  bs.createFolder(bs.bookmarksMenuFolder, "inside folder", bs.DEFAULT_INDEX);
-  bs.insertBookmark(bs.bookmarksMenuFolder, uri("place:sort=1"),
-                    bs.DEFAULT_INDEX, "inside query");
+  await PlacesUtils.bookmarks.insertTree({
+    guid: PlacesUtils.bookmarks.menuGuid,
+    children: [{
+      title: "inside folder",
+      type: PlacesUtils.bookmarks.TYPE_FOLDER,
+      children: [{
+        url: "place:sort=1",
+        title: "inside query",
+      }],
+    }],
+  });
 
   var query = hs.getNewQuery();
-  query.setFolders([bs.toolbarFolder], 1);
+  query.setParents([PlacesUtils.bookmarks.toolbarGuid], 1);
+  var options = hs.getNewQueryOptions();
+
+  info("Check query without uri nodes");
+  check_uri_nodes(query, options, 0);
+
+  info("Check query with uri nodes");
+  // Add an uri node, this should be considered.
+  await PlacesUtils.bookmarks.insert({
+    parentGuid: PlacesUtils.bookmarks.menuGuid,
+    url: "http://www.mozilla.org/",
+    title: "bookmark",
+  });
+  check_uri_nodes(query, options, 1);
+
+  await PlacesUtils.bookmarks.eraseEverything();
+});
+
+add_task(async function test_getURLsForContainerNode_query_excludeItems() {
+  info("*** TEST: excludeItems Query");
+  // This is the query we will check for children.
+  await PlacesUtils.bookmarks.insert({
+    parentGuid: PlacesUtils.bookmarks.toolbarGuid,
+    title: "inside query",
+    url: `place:parent=${PlacesUtils.bookmarks.menuGuid}&sort=1`,
+  });
+
+  // Create a folder and a query node inside it, these should not be considered
+  // uri nodes.
+  await PlacesUtils.bookmarks.insertTree({
+    guid: PlacesUtils.bookmarks.menuGuid,
+    children: [{
+      title: "inside folder",
+      type: PlacesUtils.bookmarks.TYPE_FOLDER,
+      children: [{
+        url: "place:sort=1",
+        title: "inside query",
+      }],
+    }],
+  });
+
+  var query = hs.getNewQuery();
+  query.setParents([PlacesUtils.bookmarks.toolbarGuid], 1);
+  var options = hs.getNewQueryOptions();
+  options.excludeItems = true;
+
+  info("Check folder without uri nodes");
+  check_uri_nodes(query, options, 0);
+
+  info("Check folder with uri nodes");
+  // Add an uri node, this should be considered.
+  await PlacesUtils.bookmarks.insert({
+    parentGuid: PlacesUtils.bookmarks.menuGuid,
+    url: "http://www.mozilla.org/",
+    title: "bookmark",
+  });
+  check_uri_nodes(query, options, 1);
+
+  await PlacesUtils.bookmarks.eraseEverything();
+});
+
+add_task(async function test_getURLsForContainerNode_query_excludeQueries() {
+  info("*** TEST: !expandQueries Query");
+  // This is the query we will check for children.
+  await PlacesUtils.bookmarks.insert({
+    parentGuid: PlacesUtils.bookmarks.toolbarGuid,
+    title: "inside query",
+    url: `place:parent=${PlacesUtils.bookmarks.menuGuid}&sort=1`,
+  });
+
+  // Create a folder and a query node inside it, these should not be considered
+  // uri nodes.
+  await PlacesUtils.bookmarks.insertTree({
+    guid: PlacesUtils.bookmarks.menuGuid,
+    children: [{
+      title: "inside folder",
+      type: PlacesUtils.bookmarks.TYPE_FOLDER,
+      children: [{
+        url: "place:sort=1",
+        title: "inside query",
+      }],
+    }],
+  });
+
+  var query = hs.getNewQuery();
+  query.setParents([PlacesUtils.bookmarks.toolbarGuid], 1);
   var options = hs.getNewQueryOptions();
   options.expandQueries = false;
 
-  dump("Check folder without uri nodes\n");
+  info("Check folder without uri nodes");
   check_uri_nodes(query, options, 0);
 
-  dump("Check folder with uri nodes\n");
+  info("Check folder with uri nodes");
   // Add an uri node, this should be considered.
-  bs.insertBookmark(bs.bookmarksMenuFolder, uri("http://www.mozilla.org/"),
-                    bs.DEFAULT_INDEX, "bookmark");
+  await PlacesUtils.bookmarks.insert({
+    parentGuid: PlacesUtils.bookmarks.menuGuid,
+    url: "http://www.mozilla.org/",
+    title: "bookmark",
+  });
   check_uri_nodes(query, options, 1);
-}
-
-];
+});
 
 /**
  * Executes a query and checks number of uri nodes in the first container in
@@ -164,17 +237,7 @@ function check_uri_nodes(aQuery, aOptions, aExpectedURINodes) {
   var root = result.root;
   root.containerOpen = true;
   var node = root.getChild(0);
-  do_check_eq(PU.hasChildURIs(node), aExpectedURINodes > 0);
-  do_check_eq(PU.getURLsForContainerNode(node).length, aExpectedURINodes);
+  Assert.equal(PU.hasChildURIs(node), aExpectedURINodes > 0);
+  Assert.equal(PU.getURLsForContainerNode(node).length, aExpectedURINodes);
   root.containerOpen = false;
 }
-
-add_task(function* () {
-  for (let test of tests) {
-    yield PlacesUtils.bookmarks.eraseEverything();
-    test();
-  }
-
-  // Cleanup.
-  yield PlacesUtils.bookmarks.eraseEverything();
-});

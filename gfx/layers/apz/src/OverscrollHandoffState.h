@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,8 +11,8 @@
 #include "mozilla/RefPtr.h"   // for RefPtr
 #include "nsISupportsImpl.h"  // for NS_INLINE_DECL_THREADSAFE_REFCOUNTING
 #include "APZUtils.h"         // for CancelAnimationFlags
-#include "mozilla/layers/LayersTypes.h" // for Layer::ScrollDirection
-#include "Units.h"            // for ScreenPoint
+#include "mozilla/layers/LayersTypes.h"  // for Layer::ScrollDirection
+#include "Units.h"                       // for ScreenPoint
 
 namespace mozilla {
 
@@ -23,19 +23,19 @@ namespace layers {
 class AsyncPanZoomController;
 
 /**
- * This class represents the chain of APZCs along which overscroll is handed off.
- * It is created by APZCTreeManager by starting from an initial APZC which is
- * the target for input events, and following the scroll parent ID links (often
- * but not always corresponding to parent pointers in the APZC tree), then
- * adjusting for scrollgrab.
+ * This class represents the chain of APZCs along which overscroll is handed
+ * off. It is created by APZCTreeManager by starting from an initial APZC which
+ * is the target for input events, and following the scroll parent ID links
+ * (often but not always corresponding to parent pointers in the APZC tree),
+ * then adjusting for scrollgrab.
  */
-class OverscrollHandoffChain
-{
-protected:
+class OverscrollHandoffChain {
+ protected:
   // Reference-counted classes cannot have public destructors.
   ~OverscrollHandoffChain();
-public:
-  // Threadsafe so that the controller and compositor threads can both maintain
+
+ public:
+  // Threadsafe so that the controller and sampler threads can both maintain
   // nsRefPtrs to the same handoff chain.
   // Mutable so that we can pass around the class by
   // RefPtr<const OverscrollHandoffChain> and thus enforce that, once built,
@@ -44,7 +44,8 @@ public:
 
   /*
    * Methods for building the handoff chain.
-   * These should be used only by AsyncPanZoomController::BuildOverscrollHandoffChain().
+   * These should be used only by
+   * AsyncPanZoomController::BuildOverscrollHandoffChain().
    */
   void Add(AsyncPanZoomController* aApzc);
   void SortByScrollPriority();
@@ -89,9 +90,15 @@ public:
   // Determine whether any APZC along this handoff chain has been flung fast.
   bool HasFastFlungApzc() const;
 
-  RefPtr<AsyncPanZoomController> FindFirstScrollable(const InputData& aInput) const;
+  // Find the first APZC in this handoff chain that can be scrolled by |aInput|.
+  // Since overscroll-behavior can restrict handoff in some directions,
+  // |aOutAllowedScrollDirections| is populated with the scroll directions
+  // in which scrolling of the returned APZC is allowed.
+  RefPtr<AsyncPanZoomController> FindFirstScrollable(
+      const InputData& aInput,
+      ScrollDirections* aOutAllowedScrollDirections) const;
 
-private:
+ private:
   std::vector<RefPtr<AsyncPanZoomController>> mChain;
 
   typedef void (AsyncPanZoomController::*APZCMethod)();
@@ -107,11 +114,10 @@ struct OverscrollHandoffState {
   OverscrollHandoffState(const OverscrollHandoffChain& aChain,
                          const ScreenPoint& aPanDistance,
                          ScrollSource aScrollSource)
-    : mChain(aChain),
-      mChainIndex(0),
-      mPanDistance(aPanDistance),
-      mScrollSource(aScrollSource)
-  {}
+      : mChain(aChain),
+        mChainIndex(0),
+        mPanDistance(aPanDistance),
+        mScrollSource(aScrollSource) {}
 
   // The chain of APZCs along which we hand off scroll.
   // This is const to indicate that the chain does not change over the
@@ -153,7 +159,7 @@ struct FlingHandoffState {
   RefPtr<const AsyncPanZoomController> mScrolledApzc;
 };
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla
 
 #endif /* mozilla_layers_OverscrollHandoffChain_h */

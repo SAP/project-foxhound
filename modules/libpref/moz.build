@@ -4,6 +4,12 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files('**'):
+    BUG_COMPONENT = ('Core', 'Preferences: Backend')
+
+if CONFIG['ENABLE_TESTS']:
+    DIRS += ['test/gtest']
+
 XPCSHELL_TESTS_MANIFESTS += [
     'test/unit/xpcshell.ini',
     'test/unit_ipc/xpcshell.ini',
@@ -11,8 +17,6 @@ XPCSHELL_TESTS_MANIFESTS += [
 
 XPIDL_SOURCES += [
     'nsIPrefBranch.idl',
-    'nsIPrefBranch2.idl',
-    'nsIPrefBranchInternal.idl',
     'nsIPrefLocalizedString.idl',
     'nsIPrefService.idl',
     'nsIRelativeFilePref.idl',
@@ -21,19 +25,15 @@ XPIDL_SOURCES += [
 XPIDL_MODULE = 'pref'
 
 EXPORTS.mozilla += [
+    'init/StaticPrefList.h',
+    'nsRelativeFilePref.h',
     'Preferences.h',
+    'StaticPrefs.h',
 ]
 
 UNIFIED_SOURCES += [
-    'nsPrefBranch.cpp',
-    'nsPrefsFactory.cpp',
     'Preferences.cpp',
-    'prefread.cpp',
-]
-
-# prefapi.cpp cannot be built in unified mode because it uses plarena.h
-SOURCES += [
-    'prefapi.cpp',
+    'SharedPrefMap.cpp',
 ]
 
 include('/ipc/chromium/chromium-config.mozbuild')
@@ -42,6 +42,12 @@ FINAL_LIBRARY = 'xul'
 
 DEFINES['OS_ARCH'] = CONFIG['OS_ARCH']
 DEFINES['MOZ_WIDGET_TOOLKIT'] = CONFIG['MOZ_WIDGET_TOOLKIT']
+if CONFIG['MOZ_ENABLE_WEBRENDER']:
+    DEFINES['MOZ_ENABLE_WEBRENDER'] = True
+
+if CONFIG['NIGHTLY_BUILD']:
+    DEFINES['ENABLE_WASM_REFTYPES'] = True
+    DEFINES['ENABLE_WASM_GC'] = True
 
 FINAL_TARGET_PP_FILES += [
     'greprefs.js',

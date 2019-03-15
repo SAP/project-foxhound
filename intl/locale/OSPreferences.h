@@ -7,11 +7,10 @@
 #define mozilla_intl_IntlOSPreferences_h__
 
 #include "mozilla/StaticPtr.h"
+#include "nsDataHashtable.h"
 #include "nsString.h"
 #include "nsTArray.h"
-#ifdef ENABLE_INTL_API
 #include "unicode/uloc.h"
-#endif
 
 #include "mozIOSPreferences.h"
 
@@ -42,10 +41,8 @@ namespace intl {
  * notify apps about changes, new OS-level settings may not be reflected
  * in the app until it is relaunched.
  */
-class OSPreferences: public mozIOSPreferences
-{
-
-public:
+class OSPreferences : public mozIOSPreferences {
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_MOZIOSPREFERENCES
 
@@ -57,6 +54,12 @@ public:
     Long,    // e.g. time: including seconds, date: including weekday
     Full     // e.g. time: with timezone, date: with long weekday, month
   };
+
+  /**
+   * Constructor, to do any necessary initialization such as registering for
+   * notifications from the system when prefs are modified.
+   */
+  OSPreferences();
 
   /**
    * Create (if necessary) and return a raw pointer to the singleton instance.
@@ -71,41 +74,35 @@ public:
    * Return an addRef'd pointer to the singleton instance. This is used by the
    * XPCOM constructor that exists to support usage from JS.
    */
-  static already_AddRefed<OSPreferences> GetInstanceAddRefed()
-  {
+  static already_AddRefed<OSPreferences> GetInstanceAddRefed() {
     return RefPtr<OSPreferences>(GetInstance()).forget();
   }
 
+  static bool GetDateTimeConnectorPattern(const nsACString& aLocale,
+                                          nsAString& aRetVal);
 
   /**
-   * Returns a list of locales used by the host environment.
+   * Triggers a refresh of retrieving data from host environment.
    *
-   * The result is a sorted list and we expect that the OS attempts to
-   * use the top locale from the list for which it has data.
+   * If the result differs from the previous list, it will additionally
+   * trigger global events for changed values:
    *
-   * Each element of the list is a valid locale ID that can be passed to ICU
-   * and ECMA402 Intl APIs,
-   * At the same time each element is a valid BCP47 language tag that can be
-   * used for language negotiation.
+   *  * SystemLocales: "intl:system-locales-changed"
    *
-   * Example: ["en-US", "de", "pl", "sr-Cyrl", "zh-Hans-HK"]
-   *
-   * The return bool value indicates whether the function successfully
-   * resolved at least one locale.
-   *
-   * Usage:
-   *   nsTArray<nsCString> systemLocales;
-   *   OSPreferences::GetInstance()->GetSystemLocales(systemLocales);
-   *
-   * (See mozIOSPreferences.idl for a JS-callable version of this.)
+   * This method should not be called from anywhere except of per-platform
+   * hooks into OS events.
    */
-  bool GetSystemLocales(nsTArray<nsCString>& aRetVal);
+  void Refresh();
 
-protected:
+ protected:
   nsTArray<nsCString> mSystemLocales;
+  nsTArray<nsCString> mRegionalPrefsLocales;
 
-private:
-  virtual ~OSPreferences() {};
+  const size_t kMaxCachedPatterns = 15;
+  nsDataHashtable<nsCStringHashKey, nsString> mPatternCache;
+
+ private:
+  virtual ~OSPreferences();
 
   static StaticRefPtr<OSPreferences> sInstance;
 
@@ -126,11 +123,7 @@ private:
                                    nsAString& aRetVal);
 
   bool GetPatternForSkeleton(const nsAString& aSkeleton,
-                             const nsACString& aLocale,
-                             nsAString& aRetVal);
-
-  bool GetDateTimeConnectorPattern(const nsACString& aLocale,
-                                   nsAString& aRetVal);
+                             const nsACString& aLocale, nsAString& aRetVal);
 
   /**
    * This is a host environment specific method that will be implemented
@@ -142,6 +135,8 @@ private:
    * resolved at least one locale.
    */
   bool ReadSystemLocales(nsTArray<nsCString>& aRetVal);
+
+  bool ReadRegionalPrefsLocales(nsTArray<nsCString>& aRetVal);
 
   /**
    * This is a host environment specific method that will be implemented
@@ -158,24 +153,10 @@ private:
    */
   bool ReadDateTimePattern(DateTimeFormatStyle aDateFormatStyle,
                            DateTimeFormatStyle aTimeFormatStyle,
-                           const nsACString& aLocale,
-                           nsAString& aRetVal);
-
-  /**
-   * Triggers a refresh of retrieving data from host environment.
-   *
-   * If the result differs from the previous list, it will additionally
-   * trigger global events for changed values:
-   *
-   *  * SystemLocales: "intl:system-locales-changed"
-   *
-   * This method should not be called from anywhere except of per-platform
-   * hooks into OS events.
-   */
-  void Refresh();
+                           const nsACString& aLocale, nsAString& aRetVal);
 };
 
-} // intl
-} // namespace mozilla
+}  // namespace intl
+}  // namespace mozilla
 
 #endif /* mozilla_intl_IntlOSPreferences_h__ */

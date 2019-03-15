@@ -38,37 +38,6 @@ pub fn next_utf8(text: &[u8], i: usize) -> usize {
     i + inc
 }
 
-/// Encode the given Unicode character to `dst` as a single UTF-8 sequence.
-///
-/// If `dst` is not long enough, then `None` is returned. Otherwise, the number
-/// of bytes written is returned.
-#[allow(dead_code)]
-#[inline]
-pub fn encode_utf8(character: char, dst: &mut [u8]) -> Option<usize> {
-    let code = character as u32;
-    if code <= 0x7F && !dst.is_empty() {
-        dst[0] = code as u8;
-        Some(1)
-    } else if code <= 0x7FF && dst.len() >= 2 {
-        dst[0] = (code >> 6 & 0x1F) as u8 | TAG_TWO;
-        dst[1] = (code & 0x3F) as u8 | TAG_CONT;
-        Some(2)
-    } else if code <= 0xFFFF && dst.len() >= 3  {
-        dst[0] = (code >> 12 & 0x0F) as u8 | TAG_THREE;
-        dst[1] = (code >>  6 & 0x3F) as u8 | TAG_CONT;
-        dst[2] = (code & 0x3F) as u8 | TAG_CONT;
-        Some(3)
-    } else if dst.len() >= 4 {
-        dst[0] = (code >> 18 & 0x07) as u8 | TAG_FOUR;
-        dst[1] = (code >> 12 & 0x3F) as u8 | TAG_CONT;
-        dst[2] = (code >>  6 & 0x3F) as u8 | TAG_CONT;
-        dst[3] = (code & 0x3F) as u8 | TAG_CONT;
-        Some(4)
-    } else {
-        None
-    }
-}
-
 /// Decode a single UTF-8 sequence into a single Unicode codepoint from `src`.
 ///
 /// If no valid UTF-8 sequence could be found, then `None` is returned.
@@ -92,6 +61,9 @@ pub fn decode_utf8(src: &[u8]) -> Option<(char, usize)> {
                 return None;
             }
             let b1 = src[1];
+            if 0b11_000000 & b1 != TAG_CONT {
+                return None;
+            }
             let cp = ((b0 & !TAG_TWO) as u32) << 6
                      | ((b1 & !TAG_CONT) as u32);
             match cp {
@@ -104,6 +76,12 @@ pub fn decode_utf8(src: &[u8]) -> Option<(char, usize)> {
                 return None;
             }
             let (b1, b2) = (src[1], src[2]);
+            if 0b11_000000 & b1 != TAG_CONT {
+                return None;
+            }
+            if 0b11_000000 & b2 != TAG_CONT {
+                return None;
+            }
             let cp = ((b0 & !TAG_THREE) as u32) << 12
                      | ((b1 & !TAG_CONT) as u32) << 6
                      | ((b2 & !TAG_CONT) as u32);
@@ -118,6 +96,15 @@ pub fn decode_utf8(src: &[u8]) -> Option<(char, usize)> {
                 return None;
             }
             let (b1, b2, b3) = (src[1], src[2], src[3]);
+            if 0b11_000000 & b1 != TAG_CONT {
+                return None;
+            }
+            if 0b11_000000 & b2 != TAG_CONT {
+                return None;
+            }
+            if 0b11_000000 & b3 != TAG_CONT {
+                return None;
+            }
             let cp = ((b0 & !TAG_FOUR) as u32) << 18
                      | ((b1 & !TAG_CONT) as u32) << 12
                      | ((b2 & !TAG_CONT) as u32) << 6
@@ -131,8 +118,8 @@ pub fn decode_utf8(src: &[u8]) -> Option<(char, usize)> {
     }
 }
 
-/// Like decode_utf8, but decodes the last UTF-8 sequence in `src` instead of
-/// the first.
+/// Like `decode_utf8`, but decodes the last UTF-8 sequence in `src` instead
+/// of the first.
 pub fn decode_last_utf8(src: &[u8]) -> Option<(char, usize)> {
     if src.is_empty() {
         return None;
@@ -166,14 +153,14 @@ mod tests {
 
     use super::{
         TAG_CONT, TAG_TWO, TAG_THREE, TAG_FOUR,
-        decode_utf8, decode_last_utf8, encode_utf8,
+        decode_utf8, decode_last_utf8,
     };
 
     #[test]
     fn prop_roundtrip() {
         fn p(given_cp: char) -> bool {
             let mut tmp = [0; 4];
-            let encoded_len = encode_utf8(given_cp, &mut tmp).unwrap();
+            let encoded_len = given_cp.encode_utf8(&mut tmp).len();
             let (got_cp, got_len) = decode_utf8(&tmp[..encoded_len]).unwrap();
             encoded_len == got_len && given_cp == got_cp
         }
@@ -184,7 +171,7 @@ mod tests {
     fn prop_roundtrip_last() {
         fn p(given_cp: char) -> bool {
             let mut tmp = [0; 4];
-            let encoded_len = encode_utf8(given_cp, &mut tmp).unwrap();
+            let encoded_len = given_cp.encode_utf8(&mut tmp).len();
             let (got_cp, got_len) =
                 decode_last_utf8(&tmp[..encoded_len]).unwrap();
             encoded_len == got_len && given_cp == got_cp
@@ -196,7 +183,7 @@ mod tests {
     fn prop_encode_matches_std() {
         fn p(cp: char) -> bool {
             let mut got = [0; 4];
-            let n = encode_utf8(cp, &mut got).unwrap();
+            let n = cp.encode_utf8(&mut got).len();
             let expected = cp.to_string();
             &got[..n] == expected.as_bytes()
         }
@@ -207,7 +194,7 @@ mod tests {
     fn prop_decode_matches_std() {
         fn p(given_cp: char) -> bool {
             let mut tmp = [0; 4];
-            let n = encode_utf8(given_cp, &mut tmp).unwrap();
+            let n = given_cp.encode_utf8(&mut tmp).len();
             let (got_cp, _) = decode_utf8(&tmp[..n]).unwrap();
             let expected_cp =
                 str::from_utf8(&tmp[..n]).unwrap().chars().next().unwrap();
@@ -220,7 +207,7 @@ mod tests {
     fn prop_decode_last_matches_std() {
         fn p(given_cp: char) -> bool {
             let mut tmp = [0; 4];
-            let n = encode_utf8(given_cp, &mut tmp).unwrap();
+            let n = given_cp.encode_utf8(&mut tmp).len();
             let (got_cp, _) = decode_last_utf8(&tmp[..n]).unwrap();
             let expected_cp =
                 str::from_utf8(&tmp[..n]).unwrap()
@@ -236,6 +223,8 @@ mod tests {
         assert_eq!(decode_utf8(&[0xFF]), None);
         // Surrogate pair
         assert_eq!(decode_utf8(&[0xED, 0xA0, 0x81]), None);
+        // Invalid continuation byte.
+        assert_eq!(decode_utf8(&[0xD4, 0xC2]), None);
         // Bad lengths
         assert_eq!(decode_utf8(&[0xC3]), None); // 2 bytes
         assert_eq!(decode_utf8(&[0xEF, 0xBF]), None); // 3 bytes

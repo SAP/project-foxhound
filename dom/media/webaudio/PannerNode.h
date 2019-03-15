@@ -11,7 +11,6 @@
 #include "AudioParam.h"
 #include "mozilla/dom/PannerNodeBinding.h"
 #include "ThreeDPoint.h"
-#include "mozilla/WeakPtr.h"
 #include <limits>
 #include <set>
 
@@ -22,37 +21,31 @@ class AudioContext;
 class AudioBufferSourceNode;
 struct PannerOptions;
 
-class PannerNode final : public AudioNode,
-                         public SupportsWeakPtr<PannerNode>
-{
-public:
-  static already_AddRefed<PannerNode>
-  Create(AudioContext& aAudioContext, const PannerOptions& aOptions,
-         ErrorResult& aRv);
+class PannerNode final : public AudioNode {
+ public:
+  static already_AddRefed<PannerNode> Create(AudioContext& aAudioContext,
+                                             const PannerOptions& aOptions,
+                                             ErrorResult& aRv);
 
-  MOZ_DECLARE_WEAKREFERENCE_TYPENAME(PannerNode)
-
-  static already_AddRefed<PannerNode>
-  Constructor(const GlobalObject& aGlobal, AudioContext& aAudioContext,
-              const PannerOptions& aOptions, ErrorResult& aRv)
-  {
+  static already_AddRefed<PannerNode> Constructor(const GlobalObject& aGlobal,
+                                                  AudioContext& aAudioContext,
+                                                  const PannerOptions& aOptions,
+                                                  ErrorResult& aRv) {
     return Create(aAudioContext, aOptions, aRv);
   }
 
-  JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
-  void DestroyMediaStream() override;
-
-  void SetChannelCount(uint32_t aChannelCount, ErrorResult& aRv) override
-  {
+  void SetChannelCount(uint32_t aChannelCount, ErrorResult& aRv) override {
     if (aChannelCount > 2) {
       aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
       return;
     }
     AudioNode::SetChannelCount(aChannelCount, aRv);
   }
-  void SetChannelCountModeValue(ChannelCountMode aMode, ErrorResult& aRv) override
-  {
+  void SetChannelCountModeValue(ChannelCountMode aMode,
+                                ErrorResult& aRv) override {
     if (aMode == ChannelCountMode::Max) {
       aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
       return;
@@ -63,24 +56,16 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(PannerNode, AudioNode)
 
-  PanningModelType PanningModel() const
-  {
-    return mPanningModel;
-  }
+  PanningModelType PanningModel() const { return mPanningModel; }
   void SetPanningModel(PanningModelType aPanningModel);
 
-  DistanceModelType DistanceModel() const
-  {
-    return mDistanceModel;
-  }
-  void SetDistanceModel(DistanceModelType aDistanceModel)
-  {
+  DistanceModelType DistanceModel() const { return mDistanceModel; }
+  void SetDistanceModel(DistanceModelType aDistanceModel) {
     mDistanceModel = aDistanceModel;
     SendInt32ParameterToStream(DISTANCE_MODEL, int32_t(mDistanceModel));
   }
 
-  void SetPosition(double aX, double aY, double aZ)
-  {
+  void SetPosition(double aX, double aY, double aZ) {
     if (fabs(aX) > std::numeric_limits<float>::max() ||
         fabs(aY) > std::numeric_limits<float>::max() ||
         fabs(aZ) > std::numeric_limits<float>::max()) {
@@ -89,11 +74,11 @@ public:
     mPositionX->SetValue(aX);
     mPositionY->SetValue(aY);
     mPositionZ->SetValue(aZ);
-    SendThreeDPointParameterToStream(POSITION, ConvertAudioParamTo3DP(mPositionX, mPositionY, mPositionZ));
+    SendThreeDPointParameterToStream(
+        POSITION, ConvertAudioParamTo3DP(mPositionX, mPositionY, mPositionZ));
   }
 
-  void SetOrientation(double aX, double aY, double aZ)
-  {
+  void SetOrientation(double aX, double aY, double aZ) {
     if (fabs(aX) > std::numeric_limits<float>::max() ||
         fabs(aY) > std::numeric_limits<float>::max() ||
         fabs(aZ) > std::numeric_limits<float>::max()) {
@@ -102,68 +87,57 @@ public:
     mOrientationX->SetValue(aX);
     mOrientationY->SetValue(aY);
     mOrientationZ->SetValue(aZ);
-    SendThreeDPointParameterToStream(ORIENTATION, ConvertAudioParamTo3DP(mOrientationX, mOrientationY, mOrientationZ));
+    SendThreeDPointParameterToStream(
+        ORIENTATION,
+        ConvertAudioParamTo3DP(mOrientationX, mOrientationY, mOrientationZ));
   }
 
-  void SetVelocity(double aX, double aY, double aZ)
-  {
-    if (WebAudioUtils::FuzzyEqual(mVelocity.x, aX) &&
-        WebAudioUtils::FuzzyEqual(mVelocity.y, aY) &&
-        WebAudioUtils::FuzzyEqual(mVelocity.z, aZ)) {
-      return;
-    }
-    mVelocity.x = aX;
-    mVelocity.y = aY;
-    mVelocity.z = aZ;
-    SendThreeDPointParameterToStream(VELOCITY, mVelocity);
-    SendDopplerToSourcesIfNeeded();
-  }
-
-  double RefDistance() const
-  {
-    return mRefDistance;
-  }
-  void SetRefDistance(double aRefDistance)
-  {
+  double RefDistance() const { return mRefDistance; }
+  void SetRefDistance(double aRefDistance, ErrorResult& aRv) {
     if (WebAudioUtils::FuzzyEqual(mRefDistance, aRefDistance)) {
       return;
     }
+
+    if (aRefDistance < 0) {
+      aRv.template ThrowRangeError<MSG_INVALID_PANNERNODE_REFDISTANCE_ERROR>();
+      return;
+    }
+
     mRefDistance = aRefDistance;
     SendDoubleParameterToStream(REF_DISTANCE, mRefDistance);
   }
 
-  double MaxDistance() const
-  {
-    return mMaxDistance;
-  }
-  void SetMaxDistance(double aMaxDistance)
-  {
+  double MaxDistance() const { return mMaxDistance; }
+  void SetMaxDistance(double aMaxDistance, ErrorResult& aRv) {
     if (WebAudioUtils::FuzzyEqual(mMaxDistance, aMaxDistance)) {
       return;
     }
+
+    if (aMaxDistance <= 0) {
+      aRv.template ThrowRangeError<MSG_INVALID_PANNERNODE_MAXDISTANCE_ERROR>();
+      return;
+    }
+
     mMaxDistance = aMaxDistance;
     SendDoubleParameterToStream(MAX_DISTANCE, mMaxDistance);
   }
 
-  double RolloffFactor() const
-  {
-    return mRolloffFactor;
-  }
-  void SetRolloffFactor(double aRolloffFactor)
-  {
+  double RolloffFactor() const { return mRolloffFactor; }
+  void SetRolloffFactor(double aRolloffFactor, ErrorResult& aRv) {
     if (WebAudioUtils::FuzzyEqual(mRolloffFactor, aRolloffFactor)) {
       return;
     }
+
+    if (aRolloffFactor < 0) {
+      aRv.template ThrowRangeError<MSG_INVALID_PANNERNODE_ROLLOFF_ERROR>();
+    }
+
     mRolloffFactor = aRolloffFactor;
     SendDoubleParameterToStream(ROLLOFF_FACTOR, mRolloffFactor);
   }
 
-  double ConeInnerAngle() const
-  {
-    return mConeInnerAngle;
-  }
-  void SetConeInnerAngle(double aConeInnerAngle)
-  {
+  double ConeInnerAngle() const { return mConeInnerAngle; }
+  void SetConeInnerAngle(double aConeInnerAngle) {
     if (WebAudioUtils::FuzzyEqual(mConeInnerAngle, aConeInnerAngle)) {
       return;
     }
@@ -171,12 +145,8 @@ public:
     SendDoubleParameterToStream(CONE_INNER_ANGLE, mConeInnerAngle);
   }
 
-  double ConeOuterAngle() const
-  {
-    return mConeOuterAngle;
-  }
-  void SetConeOuterAngle(double aConeOuterAngle)
-  {
+  double ConeOuterAngle() const { return mConeOuterAngle; }
+  void SetConeOuterAngle(double aConeOuterAngle) {
     if (WebAudioUtils::FuzzyEqual(mConeOuterAngle, aConeOuterAngle)) {
       return;
     }
@@ -184,87 +154,55 @@ public:
     SendDoubleParameterToStream(CONE_OUTER_ANGLE, mConeOuterAngle);
   }
 
-  double ConeOuterGain() const
-  {
-    return mConeOuterGain;
-  }
-  void SetConeOuterGain(double aConeOuterGain)
-  {
+  double ConeOuterGain() const { return mConeOuterGain; }
+  void SetConeOuterGain(double aConeOuterGain, ErrorResult& aRv) {
     if (WebAudioUtils::FuzzyEqual(mConeOuterGain, aConeOuterGain)) {
       return;
     }
+
+    if (aConeOuterGain < 0 || aConeOuterGain > 1) {
+      aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+      return;
+    }
+
     mConeOuterGain = aConeOuterGain;
     SendDoubleParameterToStream(CONE_OUTER_GAIN, mConeOuterGain);
   }
 
-  AudioParam* PositionX()
-  {
-    return mPositionX;
-  }
+  AudioParam* PositionX() { return mPositionX; }
 
-  AudioParam* PositionY()
-  {
-    return mPositionY;
-  }
+  AudioParam* PositionY() { return mPositionY; }
 
-  AudioParam* PositionZ()
-  {
-    return mPositionZ;
-  }
+  AudioParam* PositionZ() { return mPositionZ; }
 
-  AudioParam* OrientationX()
-  {
-    return mOrientationX;
-  }
+  AudioParam* OrientationX() { return mOrientationX; }
 
-  AudioParam* OrientationY()
-  {
-    return mOrientationY;
-  }
+  AudioParam* OrientationY() { return mOrientationY; }
 
-  AudioParam* OrientationZ()
-  {
-    return mOrientationZ;
-  }
+  AudioParam* OrientationZ() { return mOrientationZ; }
 
-
-  float ComputeDopplerShift();
-  void SendDopplerToSourcesIfNeeded();
-  void FindConnectedSources();
-  void FindConnectedSources(AudioNode* aNode, nsTArray<AudioBufferSourceNode*>& aSources, std::set<AudioNode*>& aSeenNodes);
-
-  const char* NodeType() const override
-  {
-    return "PannerNode";
-  }
+  const char* NodeType() const override { return "PannerNode"; }
 
   size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const override;
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const override;
 
-private:
+ private:
   explicit PannerNode(AudioContext* aContext);
-  ~PannerNode();
+  ~PannerNode() = default;
 
   friend class AudioListener;
   friend class PannerNodeEngine;
   enum EngineParameters {
-    LISTENER_POSITION,
-    LISTENER_FRONT_VECTOR, // unit length
-    LISTENER_RIGHT_VECTOR, // unit length, orthogonal to LISTENER_FRONT_VECTOR
-    LISTENER_VELOCITY,
-    LISTENER_DOPPLER_FACTOR,
-    LISTENER_SPEED_OF_SOUND,
     PANNING_MODEL,
     DISTANCE_MODEL,
     POSITION,
     POSITIONX,
     POSITIONY,
     POSITIONZ,
-    ORIENTATION, // unit length or zero
+    ORIENTATION,  // unit length or zero
     ORIENTATIONX,
     ORIENTATIONY,
     ORIENTATIONZ,
-    VELOCITY,
     REF_DISTANCE,
     MAX_DISTANCE,
     ROLLOFF_FACTOR,
@@ -273,8 +211,9 @@ private:
     CONE_OUTER_GAIN
   };
 
-  ThreeDPoint ConvertAudioParamTo3DP(RefPtr <AudioParam> aX, RefPtr <AudioParam> aY, RefPtr <AudioParam> aZ)
-  {
+  ThreeDPoint ConvertAudioParamTo3DP(RefPtr<AudioParam> aX,
+                                     RefPtr<AudioParam> aY,
+                                     RefPtr<AudioParam> aZ) {
     return ThreeDPoint(aX->GetValue(), aY->GetValue(), aZ->GetValue());
   }
 
@@ -286,7 +225,6 @@ private:
   RefPtr<AudioParam> mOrientationX;
   RefPtr<AudioParam> mOrientationY;
   RefPtr<AudioParam> mOrientationZ;
-  ThreeDPoint mVelocity;
 
   double mRefDistance;
   double mMaxDistance;
@@ -294,13 +232,9 @@ private:
   double mConeInnerAngle;
   double mConeOuterAngle;
   double mConeOuterGain;
-
-  // An array of all the AudioBufferSourceNode connected directly or indirectly
-  // to this AudioPannerNode.
-  nsTArray<AudioBufferSourceNode*> mSources;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif

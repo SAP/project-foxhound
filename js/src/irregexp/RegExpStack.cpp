@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sts=4 et sw=4 tw=99: */
+ * vim: set ts=8 sts=2 et sw=2 tw=80: */
 
 // Copyright 2012 the V8 project authors. All rights reserved.
 // Redistribution and use in source and binary forms, with or without
@@ -30,7 +30,7 @@
 
 #include "irregexp/RegExpStack.h"
 
-#include "jscntxt.h"
+#include "vm/JSContext.h"
 
 using namespace js;
 using namespace js::irregexp;
@@ -44,10 +44,11 @@ RegExpStackScope::~RegExpStackScope()
     regexp_stack->reset();
 }
 
-int
+bool
 irregexp::GrowBacktrackStack(JSRuntime* rt)
 {
-    return TlsContext.get()->regexpStack.ref().grow();
+    AutoUnsafeCallWithABI unsafe;
+    return rt->mainContextFromOwnThread()->regexpStack.ref().grow();
 }
 
 RegExpStack::RegExpStack()

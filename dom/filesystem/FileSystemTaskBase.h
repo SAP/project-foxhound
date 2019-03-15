@@ -10,7 +10,7 @@
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/FileSystemRequestParent.h"
 #include "mozilla/dom/PFileSystemRequestChild.h"
-#include "nsIIPCBackgroundChildCreateCallback.h"
+#include "nsIGlobalObject.h"
 #include "nsThreadUtils.h"
 
 namespace mozilla {
@@ -19,7 +19,6 @@ namespace dom {
 class BlobImpl;
 class FileSystemBase;
 class FileSystemParams;
-class PBlobParent;
 
 /*
  * The base class to implement a Task class.
@@ -82,8 +81,8 @@ class PBlobParent;
  *   (3) The parent process receives IPC and handle it in
  *   FileystemRequestParent. Get the IPC parameters and create a task to run the
  *   IPC task.
- *   (4) The task operation will be performed in the member function of [IOWork].
- *   A I/O  thread will be created to run that function. If error occurs
+ *   (4) The task operation will be performed in the member function of
+ * [IOWork]. A I/O  thread will be created to run that function. If error occurs
  *   during the operation, call [SetError] to record the error and then abort.
  *   (5) After finishing the task operation, call [HandleResult] to send the
  *   result back to the child process though the IPC.
@@ -99,49 +98,41 @@ class PBlobParent;
  *   parsing function [SetSuccessRequestResult] to get the success result.
  *   (8) Call [HandlerCallback] to send the task result to the content page.
  */
-class FileSystemTaskChildBase : public PFileSystemRequestChild
-                              , public nsIIPCBackgroundChildCreateCallback
-{
-public:
-  NS_DECL_ISUPPORTS
-  NS_DECL_NSIIPCBACKGROUNDCHILDCREATECALLBACK
+class FileSystemTaskChildBase : public PFileSystemRequestChild {
+ public:
+  NS_INLINE_DECL_REFCOUNTING(FileSystemTaskChildBase)
 
   /*
    * Start the task. It will dispatch all the information to the parent process,
    * PBackground thread. This method must be called from the owning thread.
    */
-  void
-  Start();
+  void Start();
 
   /*
    * The error codes are defined in xpcom/base/ErrorList.h and their
    * corresponding error name and message are defined in dom/base/domerr.msg.
    */
-  void
-  SetError(const nsresult& aErrorCode);
+  void SetError(const nsresult& aErrorCode);
 
-  FileSystemBase*
-  GetFileSystem() const;
+  FileSystemBase* GetFileSystem() const;
 
   /*
    * After the task is completed, this function will be called to pass the task
    * result to the content page. This method is called in the owning thread.
    * Override this function to handle the call back to the content page.
    */
-  virtual void
-  HandlerCallback() = 0;
+  virtual void HandlerCallback() = 0;
 
-  bool
-  HasError() const { return NS_FAILED(mErrorValue); }
+  bool HasError() const { return NS_FAILED(mErrorValue); }
 
-protected:
+ protected:
   /*
    * To create a task to handle the page content request.
    */
-  explicit FileSystemTaskChildBase(FileSystemBase* aFileSystem);
+  FileSystemTaskChildBase(nsIGlobalObject* aGlobalObject,
+                          FileSystemBase* aFileSystem);
 
-  virtual
-  ~FileSystemTaskChildBase();
+  virtual ~FileSystemTaskChildBase();
 
   /*
    * Wrap the task parameter to FileSystemParams for sending it through IPC.
@@ -149,9 +140,8 @@ protected:
    * the parent process. This method runs in the owning thread.
    * @param filesystem The string representation of the file system.
    */
-  virtual FileSystemParams
-  GetRequestParams(const nsString& aSerializedDOMPath,
-                   ErrorResult& aRv) const = 0;
+  virtual FileSystemParams GetRequestParams(const nsString& aSerializedDOMPath,
+                                            ErrorResult& aRv) const = 0;
 
   /*
    * Unwrap the IPC message to get the task success result.
@@ -159,54 +149,52 @@ protected:
    * message is received in the child process and we want to get the task
    * success result. This method runs in the owning thread.
    */
-  virtual void
-  SetSuccessRequestResult(const FileSystemResponseValue& aValue,
-                          ErrorResult& aRv) = 0;
+  virtual void SetSuccessRequestResult(const FileSystemResponseValue& aValue,
+                                       ErrorResult& aRv) = 0;
 
   // Overrides PFileSystemRequestChild
-  virtual mozilla::ipc::IPCResult
-  Recv__delete__(const FileSystemResponseValue& value) override;
+  virtual mozilla::ipc::IPCResult Recv__delete__(
+      const FileSystemResponseValue& value) final;
 
   nsresult mErrorValue;
   RefPtr<FileSystemBase> mFileSystem;
+  nsCOMPtr<nsIGlobalObject> mGlobalObject;
 
-private:
-
+ private:
   /*
    * Unwrap the IPC message to get the task result.
    * It will be called when the task is completed and an IPC message is received
    * in the content process and we want to get the task result. This runs on the
    * owning thread.
    */
-  void
-  SetRequestResult(const FileSystemResponseValue& aValue);
+  void SetRequestResult(const FileSystemResponseValue& aValue);
 };
 
 // This class is the 'alter ego' of FileSystemTaskChildBase in the PBackground
 // world.
-class FileSystemTaskParentBase : public Runnable
-{
-public:
+class FileSystemTaskParentBase : public Runnable {
+ public:
+  FileSystemTaskParentBase()
+      : Runnable("FileSystemTaskParentBase"),
+        mErrorValue(NS_ERROR_NOT_INITIALIZED) {}
+
   /*
    * Start the task. This must be called from the PBackground thread only.
    */
-  void
-  Start();
+  void Start();
 
   /*
    * The error codes are defined in xpcom/base/ErrorList.h and their
    * corresponding error name and message are defined in dom/base/domerr.msg.
    */
-  void
-  SetError(const nsresult& aErrorCode);
+  void SetError(const nsresult& aErrorCode);
 
   /*
    * The function to perform task operation. It will be run on the I/O
    * thread of the parent process.
    * Overrides this function to define the task operation for individual task.
    */
-  virtual nsresult
-  IOWork() = 0;
+  virtual nsresult IOWork() = 0;
 
   /*
    * Wrap the task success result to FileSystemResponseValue for sending it
@@ -214,48 +202,33 @@ public:
    * It will be called when the task is completed successfully and we need to
    * send the task success result back to the child process.
    */
-  virtual FileSystemResponseValue
-  GetSuccessRequestResult(ErrorResult& aRv) const = 0;
+  virtual FileSystemResponseValue GetSuccessRequestResult(
+      ErrorResult& aRv) const = 0;
 
   /*
    * After finishing the task operation, handle the task result.
    * If it is an IPC task, send back the IPC result. It runs on the PBackground
    * thread.
    */
-  void
-  HandleResult();
+  void HandleResult();
 
-  // If this task must do something on the main-thread before IOWork(), it must
-  // overwrite this method. Otherwise it returns true if the FileSystem must be
-  // initialized on the main-thread. It's called from the Background thread.
-  virtual bool
-  NeedToGoToMainThread() const;
-
-  // This method is called only if NeedToGoToMainThread() returns true.
-  // Of course, it runs on the main-thread.
-  virtual nsresult
-  MainThreadWork();
-
-  bool
-  HasError() const { return NS_FAILED(mErrorValue); }
+  bool HasError() const { return NS_FAILED(mErrorValue); }
 
   NS_IMETHOD
   Run() override;
 
-  virtual nsresult
-  GetTargetPath(nsAString& aPath) const = 0;
+  virtual nsresult GetTargetPath(nsAString& aPath) const = 0;
 
-private:
+ private:
   /*
    * Wrap the task result to FileSystemResponseValue for sending it through IPC.
    * It will be called when the task is completed and we need to
    * send the task result back to the content. This runs on the PBackground
    * thread.
    */
-  FileSystemResponseValue
-  GetRequestResult() const;
+  FileSystemResponseValue GetRequestResult() const;
 
-protected:
+ protected:
   /*
    * To create a parent process task delivered from the child process through
    * IPC.
@@ -264,8 +237,7 @@ protected:
                            const FileSystemParams& aParam,
                            FileSystemRequestParent* aParent);
 
-  virtual
-  ~FileSystemTaskParentBase();
+  virtual ~FileSystemTaskParentBase();
 
   nsresult mErrorValue;
   RefPtr<FileSystemBase> mFileSystem;
@@ -273,7 +245,7 @@ protected:
   nsCOMPtr<nsIEventTarget> mBackgroundEventTarget;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_FileSystemTaskBase_h
+#endif  // mozilla_dom_FileSystemTaskBase_h

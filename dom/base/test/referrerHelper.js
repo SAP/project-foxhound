@@ -25,9 +25,6 @@ function doXHR(url, onSuccess, onFail) {
   xhr.onload = function () {
     if (xhr.status == 200) {
       onSuccess(xhr);
-    } else if (xhr.status == 418) {
-      // Ignore HSTS priming responses
-      return;
     } else {
       onFail(xhr);
     }
@@ -65,7 +62,7 @@ function checkIndividualResults(testname, expected) {
             testname + " Test: Expected 2 loads for image requests.");
 
           expected.forEach(function (ref) {
-            ok(results['img'].referrers.indexOf(ref) >= 0,
+            ok(results['img'].referrers.includes(ref),
                 testname + " Test: Expected " + ref + " referrer policy in test, results were " +
                 JSON.stringify(results['img'].referrers) +".");
             });
@@ -80,7 +77,7 @@ function checkIndividualResults(testname, expected) {
 /**
  * Grabs the results via XHR and checks them
  */
-function checkExpectedGlobalResults() {
+function checkExpectedGlobalResults(testName) {
   var url = 'bug704320.sjs?action=get-test-results';
   doXHR(url,
 	function(xhr) {
@@ -96,7 +93,7 @@ function checkExpectedGlobalResults() {
 		  }
 		}
 	      }
-		advance();
+		advance(testName);
 	},
 	function(xhr) {
           	ok(false, "Can't get results from the counter server.");

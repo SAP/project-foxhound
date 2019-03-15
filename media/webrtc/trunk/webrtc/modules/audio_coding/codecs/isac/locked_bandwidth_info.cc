@@ -8,12 +8,11 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_coding/codecs/isac/locked_bandwidth_info.h"
+#include "modules/audio_coding/codecs/isac/locked_bandwidth_info.h"
 
 namespace webrtc {
 
-LockedIsacBandwidthInfo::LockedIsacBandwidthInfo()
-      : lock_(CriticalSectionWrapper::CreateCriticalSection()) {
+LockedIsacBandwidthInfo::LockedIsacBandwidthInfo() : ref_count_(0) {
   bwinfo_.in_use = 0;
 }
 

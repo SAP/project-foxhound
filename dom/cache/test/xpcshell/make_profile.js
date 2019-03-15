@@ -6,10 +6,6 @@
  * and are CC licensed by https://www.flickr.com/photos/legofenris/.
  */
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cu = Components.utils;
-
 // Enumerate the directory tree and store results in entryList as
 //
 //  { path: 'a/b/c', file: <nsIFile> }
@@ -23,7 +19,7 @@ function enumerate_tree(entryList) {
     if (file.isDirectory()) {
       var dirList = file.directoryEntries;
       while (dirList.hasMoreElements()) {
-        var dirFile = dirList.getNext().QueryInterface(Ci.nsIFile);
+        var dirFile = dirList.nextFile;
         entryList.push({ path: path + '/' + dirFile.leafName, file: dirFile });
       }
     }

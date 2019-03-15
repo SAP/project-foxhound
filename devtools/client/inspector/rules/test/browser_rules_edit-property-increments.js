@@ -10,6 +10,8 @@
 // Bug 1275446 - This test happen to hit the default timeout on linux32
 requestLongerTimeout(2);
 
+loader.lazyRequireGetter(this, "AppConstants", "resource://gre/modules/AppConstants.jsm", true);
+
 const TEST_URI = `
   <style>
     #test {
@@ -20,38 +22,41 @@ const TEST_URI = `
       background: none;
       transition: initial;
       z-index: 0;
+      opacity: 1;
     }
   </style>
   <div id="test"></div>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
 
-  let {inspector, view} = yield openRuleView();
-  yield selectNode("#test", inspector);
+  const {inspector, view} = await openRuleView();
+  await selectNode("#test", inspector);
 
-  yield testMarginIncrements(view);
-  yield testVariousUnitIncrements(view);
-  yield testHexIncrements(view);
-  yield testAlphaHexIncrements(view);
-  yield testRgbIncrements(view);
-  yield testShorthandIncrements(view);
-  yield testOddCases(view);
-  yield testZeroValueIncrements(view);
+  await testMarginIncrements(view);
+  await testVariousUnitIncrements(view);
+  await testHexIncrements(view);
+  await testAlphaHexIncrements(view);
+  await testRgbIncrements(view);
+  await testShorthandIncrements(view);
+  await testOddCases(view);
+  await testZeroValueIncrements(view);
+  await testOpacityIncrements(view);
 });
 
-function* testMarginIncrements(view) {
+async function testMarginIncrements(view) {
   info("Testing keyboard increments on the margin property");
 
-  let idRuleEditor = getRuleViewRuleEditor(view, 1);
-  let marginPropEditor = idRuleEditor.rule.textProps[0].editor;
+  const idRuleEditor = getRuleViewRuleEditor(view, 1);
+  const marginPropEditor = idRuleEditor.rule.textProps[0].editor;
 
-  yield runIncrementTest(marginPropEditor, view, {
-    1: {alt: true, start: "0px", end: "0.1px", selectAll: true},
+  await runIncrementTest(marginPropEditor, view, {
+    1: { ...getSmallIncrementKey(), start: "0px", end: "0.1px", selectAll: true},
     2: {start: "0px", end: "1px", selectAll: true},
     3: {shift: true, start: "0px", end: "10px", selectAll: true},
-    4: {down: true, alt: true, start: "0.1px", end: "0px", selectAll: true},
+    4: {down: true, ...getSmallIncrementKey(), start: "0.1px",
+        end: "0px", selectAll: true},
     5: {down: true, start: "0px", end: "-1px", selectAll: true},
     6: {down: true, shift: true, start: "0px", end: "-10px", selectAll: true},
     7: {pageUp: true, shift: true, start: "0px", end: "100px", selectAll: true},
@@ -62,13 +67,13 @@ function* testMarginIncrements(view) {
   });
 }
 
-function* testVariousUnitIncrements(view) {
+async function testVariousUnitIncrements(view) {
   info("Testing keyboard increments on values with various units");
 
-  let idRuleEditor = getRuleViewRuleEditor(view, 1);
-  let paddingPropEditor = idRuleEditor.rule.textProps[1].editor;
+  const idRuleEditor = getRuleViewRuleEditor(view, 1);
+  const paddingPropEditor = idRuleEditor.rule.textProps[1].editor;
 
-  yield runIncrementTest(paddingPropEditor, view, {
+  await runIncrementTest(paddingPropEditor, view, {
     1: {start: "0px", end: "1px", selectAll: true},
     2: {start: "0pt", end: "1pt", selectAll: true},
     3: {start: "0pc", end: "1pc", selectAll: true},
@@ -83,47 +88,47 @@ function* testVariousUnitIncrements(view) {
   });
 }
 
-function* testHexIncrements(view) {
+async function testHexIncrements(view) {
   info("Testing keyboard increments with hex colors");
 
-  let idRuleEditor = getRuleViewRuleEditor(view, 1);
-  let hexColorPropEditor = idRuleEditor.rule.textProps[2].editor;
+  const idRuleEditor = getRuleViewRuleEditor(view, 1);
+  const hexColorPropEditor = idRuleEditor.rule.textProps[2].editor;
 
-  yield runIncrementTest(hexColorPropEditor, view, {
+  await runIncrementTest(hexColorPropEditor, view, {
     1: {start: "#CCCCCC", end: "#CDCDCD", selectAll: true},
     2: {shift: true, start: "#CCCCCC", end: "#DCDCDC", selectAll: true},
     3: {start: "#CCCCCC", end: "#CDCCCC", selection: [1, 3]},
     4: {shift: true, start: "#CCCCCC", end: "#DCCCCC", selection: [1, 3]},
     5: {start: "#FFFFFF", end: "#FFFFFF", selectAll: true},
     6: {down: true, shift: true, start: "#000000", end: "#000000",
-        selectAll: true}
+        selectAll: true},
   });
 }
 
-function* testAlphaHexIncrements(view) {
+async function testAlphaHexIncrements(view) {
   info("Testing keyboard increments with alpha hex colors");
 
-  let idRuleEditor = getRuleViewRuleEditor(view, 1);
-  let hexColorPropEditor = idRuleEditor.rule.textProps[2].editor;
+  const idRuleEditor = getRuleViewRuleEditor(view, 1);
+  const hexColorPropEditor = idRuleEditor.rule.textProps[2].editor;
 
-  yield runIncrementTest(hexColorPropEditor, view, {
+  await runIncrementTest(hexColorPropEditor, view, {
     1: {start: "#CCCCCCAA", end: "#CDCDCDAB", selectAll: true},
     2: {shift: true, start: "#CCCCCCAA", end: "#DCDCDCBA", selectAll: true},
     3: {start: "#CCCCCCAA", end: "#CDCCCCAA", selection: [1, 3]},
     4: {shift: true, start: "#CCCCCCAA", end: "#DCCCCCAA", selection: [1, 3]},
     5: {start: "#FFFFFFFF", end: "#FFFFFFFF", selectAll: true},
     6: {down: true, shift: true, start: "#00000000", end: "#00000000",
-        selectAll: true}
+        selectAll: true},
   });
 }
 
-function* testRgbIncrements(view) {
+async function testRgbIncrements(view) {
   info("Testing keyboard increments with rgb colors");
 
-  let idRuleEditor = getRuleViewRuleEditor(view, 1);
-  let rgbColorPropEditor = idRuleEditor.rule.textProps[3].editor;
+  const idRuleEditor = getRuleViewRuleEditor(view, 1);
+  const rgbColorPropEditor = idRuleEditor.rule.textProps[3].editor;
 
-  yield runIncrementTest(rgbColorPropEditor, view, {
+  await runIncrementTest(rgbColorPropEditor, view, {
     1: {start: "rgb(0,0,0)", end: "rgb(0,1,0)", selection: [6, 7]},
     2: {shift: true, start: "rgb(0,0,0)", end: "rgb(0,10,0)",
         selection: [6, 7]},
@@ -132,17 +137,17 @@ function* testRgbIncrements(view) {
         selection: [6, 9]},
     5: {down: true, start: "rgb(0,0,0)", end: "rgb(0,0,0)", selection: [6, 7]},
     6: {down: true, shift: true, start: "rgb(0,5,0)", end: "rgb(0,0,0)",
-        selection: [6, 7]}
+        selection: [6, 7]},
   });
 }
 
-function* testShorthandIncrements(view) {
+async function testShorthandIncrements(view) {
   info("Testing keyboard increments within shorthand values");
 
-  let idRuleEditor = getRuleViewRuleEditor(view, 1);
-  let paddingPropEditor = idRuleEditor.rule.textProps[1].editor;
+  const idRuleEditor = getRuleViewRuleEditor(view, 1);
+  const paddingPropEditor = idRuleEditor.rule.textProps[1].editor;
 
-  yield runIncrementTest(paddingPropEditor, view, {
+  await runIncrementTest(paddingPropEditor, view, {
     1: {start: "0px 0px 0px 0px", end: "0px 1px 0px 0px", selection: [4, 7]},
     2: {shift: true, start: "0px 0px 0px 0px", end: "0px 10px 0px 0px",
         selection: [4, 7]},
@@ -155,22 +160,22 @@ function* testShorthandIncrements(view) {
         end: "-10px 0px 0px 0px", selectAll: true},
     7: {up: true, start: "0.1em .1em 0em 0em", end: "0.1em 1.1em 0em 0em",
         selection: [6, 9]},
-    8: {up: true, alt: true, start: "0.1em .9em 0em 0em",
+    8: {up: true, ...getSmallIncrementKey(), start: "0.1em .9em 0em 0em",
         end: "0.1em 1em 0em 0em", selection: [6, 9]},
     9: {up: true, shift: true, start: "0.2em .2em 0em 0em",
-        end: "0.2em 10.2em 0em 0em", selection: [6, 9]}
+        end: "0.2em 10.2em 0em 0em", selection: [6, 9]},
   });
 }
 
-function* testOddCases(view) {
+async function testOddCases(view) {
   info("Testing some more odd cases");
 
-  let idRuleEditor = getRuleViewRuleEditor(view, 1);
-  let marginPropEditor = idRuleEditor.rule.textProps[0].editor;
+  const idRuleEditor = getRuleViewRuleEditor(view, 1);
+  const marginPropEditor = idRuleEditor.rule.textProps[0].editor;
 
-  yield runIncrementTest(marginPropEditor, view, {
+  await runIncrementTest(marginPropEditor, view, {
     1: {start: "98.7%", end: "99.7%", selection: [3, 3]},
-    2: {alt: true, start: "98.7%", end: "98.8%", selection: [3, 3]},
+    2: {...getSmallIncrementKey(), start: "98.7%", end: "98.8%", selection: [3, 3]},
     3: {start: "0", end: "1px"},
     4: {down: true, start: "0", end: "-1px"},
     5: {start: "'a=-1'", end: "'a=0'", selection: [4, 4]},
@@ -185,19 +190,19 @@ function* testOddCases(view) {
          selection: [9, 11]},
     12: {start: "url('test1.1.png')", end: "url('test1.2.png')",
          selection: [11, 12]},
-    13: {down: true, alt: true, start: "url('test-0.png')",
+    13: {down: true, ...getSmallIncrementKey(), start: "url('test-0.png')",
          end: "url('test--0.1.png')", selection: [10, 11]},
-    14: {alt: true, start: "url('test--0.1.png')", end: "url('test-0.png')",
-         selection: [10, 14]}
+    14: {...getSmallIncrementKey(), start: "url('test--0.1.png')",
+         end: "url('test-0.png')", selection: [10, 14]},
   });
 }
 
-function* testZeroValueIncrements(view) {
+async function testZeroValueIncrements(view) {
   info("Testing a valid unit is added when incrementing from 0");
 
-  let idRuleEditor = getRuleViewRuleEditor(view, 1);
-  let backgroundPropEditor = idRuleEditor.rule.textProps[4].editor;
-  yield runIncrementTest(backgroundPropEditor, view, {
+  const idRuleEditor = getRuleViewRuleEditor(view, 1);
+  const backgroundPropEditor = idRuleEditor.rule.textProps[4].editor;
+  await runIncrementTest(backgroundPropEditor, view, {
     1: { start: "url(test-0.png) no-repeat 0 0",
          end: "url(test-0.png) no-repeat 1px 0", selection: [26, 26] },
     2: { start: "url(test-0.png) no-repeat 0 0",
@@ -214,37 +219,60 @@ function* testZeroValueIncrements(view) {
          end: "linear-gradient(1deg, red 0, blue 1px)", selection: [35, 35] },
   });
 
-  let transitionPropEditor = idRuleEditor.rule.textProps[5].editor;
-  yield runIncrementTest(transitionPropEditor, view, {
+  const transitionPropEditor = idRuleEditor.rule.textProps[5].editor;
+  await runIncrementTest(transitionPropEditor, view, {
     1: { start: "all 0 ease-out", end: "all 1s ease-out", selection: [5, 5] },
     2: { start: "margin 4s, color 0",
          end: "margin 4s, color 1s", selection: [18, 18] },
   });
 
-  let zIndexPropEditor = idRuleEditor.rule.textProps[6].editor;
-  yield runIncrementTest(zIndexPropEditor, view, {
+  const zIndexPropEditor = idRuleEditor.rule.textProps[6].editor;
+  await runIncrementTest(zIndexPropEditor, view, {
     1: {start: "0", end: "1", selection: [1, 1]},
   });
 }
 
-function* runIncrementTest(propertyEditor, view, tests) {
-  let editor = yield focusEditableField(view, propertyEditor.valueSpan);
+async function testOpacityIncrements(view) {
+  info("Testing keyboard increments on the opacity property");
 
-  for (let test in tests) {
-    yield testIncrement(editor, tests[test], view, propertyEditor);
+  const idRuleEditor = getRuleViewRuleEditor(view, 1);
+  const opacityPropEditor = idRuleEditor.rule.textProps[7].editor;
+
+  await runIncrementTest(opacityPropEditor, view, {
+    1: {...getSmallIncrementKey(), start: "0.5", end: "0.51", selectAll: true},
+    2: {start: "0", end: "0.1", selectAll: true},
+    3: {shift: true, start: "0", end: "1", selectAll: true},
+    4: {down: true, ...getSmallIncrementKey(), start: "0.1",
+        end: "0.09", selectAll: true},
+    5: {down: true, start: "0", end: "-0.1", selectAll: true},
+    6: {down: true, shift: true, start: "0", end: "-1", selectAll: true},
+    7: {pageUp: true, shift: true, start: "0", end: "10", selectAll: true},
+    8: {pageDown: true, shift: true, start: "0", end: "-10",
+        selectAll: true},
+    9: {start: "0.7", end: "0.8", selectAll: true},
+    10: {down: true, start: "0", end: "-0.1", selectAll: true},
+  });
+}
+
+async function runIncrementTest(propertyEditor, view, tests) {
+  propertyEditor.valueSpan.scrollIntoView();
+  const editor = await focusEditableField(view, propertyEditor.valueSpan);
+
+  for (const test in tests) {
+    await testIncrement(editor, tests[test], view, propertyEditor);
   }
 
   // Blur the field to put back the UI in its initial state (and avoid pending
   // requests when the test ends).
-  let onRuleViewChanged = view.once("ruleview-changed");
+  const onRuleViewChanged = view.once("ruleview-changed");
   EventUtils.synthesizeKey("VK_ESCAPE", {}, view.styleWindow);
-  view.throttle.flush();
-  yield onRuleViewChanged;
+  view.debounce.flush();
+  await onRuleViewChanged;
 }
 
-function* testIncrement(editor, options, view) {
+async function testIncrement(editor, options, view) {
   editor.input.value = options.start;
-  let input = editor.input;
+  const input = editor.input;
 
   if (options.selectAll) {
     input.select();
@@ -254,8 +282,8 @@ function* testIncrement(editor, options, view) {
 
   is(input.value, options.start, "Value initialized at " + options.start);
 
-  let onRuleViewChanged = view.once("ruleview-changed");
-  let onKeyUp = once(input, "keyup");
+  const onRuleViewChanged = view.once("ruleview-changed");
+  const onKeyUp = once(input, "keyup");
 
   let key;
   key = options.down ? "VK_DOWN" : "VK_UP";
@@ -265,16 +293,28 @@ function* testIncrement(editor, options, view) {
     key = "VK_PAGE_UP";
   }
 
-  EventUtils.synthesizeKey(key, {altKey: options.alt, shiftKey: options.shift},
+  let smallIncrementKey = {ctrlKey: options.ctrl};
+  if (AppConstants.platform === "macosx") {
+    smallIncrementKey = {altKey: options.alt};
+  }
+
+  EventUtils.synthesizeKey(key, {...smallIncrementKey, shiftKey: options.shift},
     view.styleWindow);
 
-  yield onKeyUp;
+  await onKeyUp;
 
   // Only expect a change if the value actually changed!
   if (options.start !== options.end) {
-    view.throttle.flush();
-    yield onRuleViewChanged;
+    view.debounce.flush();
+    await onRuleViewChanged;
   }
 
   is(input.value, options.end, "Value changed to " + options.end);
+}
+
+function getSmallIncrementKey() {
+  if (AppConstants.platform === "macosx") {
+    return { alt: true };
+  }
+  return { ctrl: true };
 }

@@ -4,7 +4,7 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
- 
+
 #ifndef SKSL_ASTIFSTATEMENT
 #define SKSL_ASTIFSTATEMENT
 
@@ -13,18 +13,23 @@
 namespace SkSL {
 
 /**
- * An 'if' statement. 
+ * An 'if' statement.
  */
 struct ASTIfStatement : public ASTStatement {
-    ASTIfStatement(Position position, std::unique_ptr<ASTExpression> test, 
+    ASTIfStatement(int offset, bool isStatic, std::unique_ptr<ASTExpression> test,
                    std::unique_ptr<ASTStatement> ifTrue, std::unique_ptr<ASTStatement> ifFalse)
-    : INHERITED(position, kIf_Kind)
+    : INHERITED(offset, kIf_Kind)
+    , fIsStatic(isStatic)
     , fTest(std::move(test))
     , fIfTrue(std::move(ifTrue))
     , fIfFalse(std::move(ifFalse)) {}
 
-    std::string description() const override {
-        std::string result("if (");
+    String description() const override {
+        String result;
+        if (fIsStatic) {
+            result += "@";
+        }
+        result += "if (";
         result += fTest->description();
         result += ") ";
         result += fIfTrue->description();
@@ -32,9 +37,10 @@ struct ASTIfStatement : public ASTStatement {
             result += " else ";
             result += fIfFalse->description();
         }
-        return result;        
+        return result;
     }
 
+    const bool fIsStatic;
     const std::unique_ptr<ASTExpression> fTest;
     const std::unique_ptr<ASTStatement> fIfTrue;
     const std::unique_ptr<ASTStatement> fIfFalse;

@@ -1,32 +1,44 @@
-sphinx/opt:
+generate:
     description: Generate the Sphinx documentation
+    platform: lint/opt
     treeherder:
-        symbol: tc(Doc)
+        symbol: Doc
         kind: test
         tier: 1
-        platform: lint/opt
-    worker-type: aws-provisioner-v1/b2gtest
+    run-on-projects: ['trunk', 'try']
+    worker-type: aws-provisioner-v1/gecko-t-linux-xlarge
     worker:
-        implementation: docker-worker
         docker-image: {in-tree: "lint"}
         max-run-time: 1800
         artifacts:
             - type: file
               name: public/docs.tar.gz
-              path: /home/worker/checkouts/gecko/docs.tar.gz
+              path: /builds/worker/checkouts/gecko/docs-out/main.tar.gz
     run:
-        using: run-task
-        command: >
-            cd /home/worker/checkouts/gecko &&
-            ./mach doc --outdir docs-out --no-open &&
-            rm -rf docs-out/html/Mozilla_Source_Tree_Docs/_venv &&
-            mv docs-out/html/Mozilla_Source_Tree_Docs docs &&
-            tar -czf docs.tar.gz docs
-    run-on-projects:
-        - integration
-        - release
-    when:
-        files-changed:
-            - '**/*.py'
-            - '**/*.rst'
-            - 'tools/docs/**'
+        using: mach
+        mach: doc --outdir docs-out --no-open --no-serve --archive
+        sparse-profile: sphinx-docs
+    optimization:
+        skip-unless-schedules: [docs]
+
+upload:
+    description: Generate and upload the Sphinx documentation
+    platform: lint/opt
+    treeherder:
+        symbol: DocUp
+        kind: test
+        tier: 3
+    run-on-projects: [mozilla-central]
+    worker-type: aws-provisioner-v1/gecko-t-linux-xlarge
+    worker:
+        docker-image: {in-tree: "lint"}
+        max-run-time: 1800
+        taskcluster-proxy: true
+    run:
+        using: mach
+        mach: doc --upload --no-open --no-serve
+        sparse-profile: sphinx-docs
+    scopes:
+        - secrets:get:project/releng/gecko/build/level-{level}/gecko-docs-upload
+    optimization:
+        skip-unless-schedules: [docs]

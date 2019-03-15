@@ -2,11 +2,6 @@ function run_test()
 {
   do_get_profile();
 
-  if (!newCacheBackEndUsed()) {
-    do_check_true(true, "This test doesn't run when the old cache back end is used since the behavior is different");
-    return;
-  }
-
   // Open for write, write
   asyncOpenCacheEntry("http://200/", "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
     new OpenCallback(NEW, "21m", "21d", function(entry) {
@@ -16,7 +11,7 @@ function run_test()
           asyncOpenCacheEntry("http://200/", "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
             new OpenCallback(REVAL, "21m", "21d", function(entry) {
               // emulate 200 from server (new content)
-              do_execute_soon(function() {
+              executeSoon(function() {
                 var entry2 = entry.recreate();
 
                 // now fill the new entry, use OpenCallback directly for it

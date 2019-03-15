@@ -10,13 +10,12 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import org.mozilla.gecko.FennecNativeDriver.LogLevel;
-import org.mozilla.gecko.gfx.LayerView;
-import org.mozilla.gecko.gfx.LayerView.DrawListener;
 import org.mozilla.gecko.mozglue.GeckoLoader;
 import org.mozilla.gecko.sqlite.SQLiteBridge;
 import org.mozilla.gecko.util.BundleEventListener;
 import org.mozilla.gecko.util.EventCallback;
 import org.mozilla.gecko.util.GeckoBundle;
+import org.mozilla.geckoview.GeckoView;
 
 import android.app.Activity;
 import android.app.Instrumentation;
@@ -39,7 +38,7 @@ public class FennecNativeActions implements Actions {
         mInstr = instrumentation;
         mAsserter = asserter;
 
-        GeckoLoader.loadSQLiteLibs(activity, activity.getApplication().getPackageResourcePath());
+        GeckoLoader.loadSQLiteLibs(activity);
     }
 
     class GeckoEventExpecter implements RepeatedEventExpecter {
@@ -224,7 +223,9 @@ public class FennecNativeActions implements Actions {
 
     public RepeatedEventExpecter expectWindowEvent(final EventType type, final String geckoEvent) {
         FennecNativeDriver.log(FennecNativeDriver.LogLevel.DEBUG, "waiting for " + geckoEvent);
-        return new GeckoEventExpecter(GeckoApp.getEventDispatcher(), type, geckoEvent);
+        return new GeckoEventExpecter(
+                ((GeckoApp) mSolo.getCurrentActivity()).getAppEventDispatcher(),
+                type, geckoEvent);
     }
 
     public void sendGlobalEvent(final String event, final GeckoBundle data) {
@@ -232,7 +233,7 @@ public class FennecNativeActions implements Actions {
     }
 
     public void sendWindowEvent(final String event, final GeckoBundle data) {
-        GeckoApp.getEventDispatcher().dispatch(event, data);
+        ((GeckoApp) mSolo.getCurrentActivity()).getAppEventDispatcher().dispatch(event, data);
     }
 
     public static final class PrefProxy implements PrefsHelper.PrefHandler, PrefWaiter {
@@ -349,21 +350,26 @@ public class FennecNativeActions implements Actions {
         private boolean mPaintDone;
         private boolean mListening;
 
-        private final LayerView mLayerView;
-        private final DrawListener mDrawListener;
+        private final GeckoView mGeckoView;
+        private final Runnable mDrawCallback;
 
         PaintExpecter() {
             final PaintExpecter expecter = this;
-            mLayerView = GeckoAppShell.getLayerView();
-            mDrawListener = new DrawListener() {
+            mGeckoView = (GeckoView) mSolo.getView(R.id.layer_view);
+            mDrawCallback = new Runnable() {
                 @Override
-                public void drawFinished() {
+                public void run() {
                     FennecNativeDriver.log(FennecNativeDriver.LogLevel.DEBUG,
                             "Received drawFinished notification");
                     expecter.notifyOfEvent();
                 }
             };
-            mLayerView.addDrawListener(mDrawListener);
+            mGeckoView.post(new Runnable() {
+                @Override
+                public void run() {
+                    mGeckoView.getSession().getCompositorController().addDrawCallback(mDrawCallback);
+                }
+            });
             mListening = true;
         }
 
@@ -474,7 +480,12 @@ public class FennecNativeActions implements Actions {
 
             FennecNativeDriver.log(LogLevel.INFO,
                     "PaintExpecter: no longer listening for events");
-            mLayerView.removeDrawListener(mDrawListener);
+            mGeckoView.post(new Runnable() {
+                @Override
+                public void run() {
+                    mGeckoView.getSession().getCompositorController().removeDrawCallback(mDrawCallback);
+                }
+            });
             mListening = false;
         }
     }

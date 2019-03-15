@@ -5,7 +5,7 @@
 #include "ExplicitOperatorBoolChecker.h"
 #include "CustomMatchers.h"
 
-void ExplicitOperatorBoolChecker::registerMatchers(MatchFinder* AstMatcher) {
+void ExplicitOperatorBoolChecker::registerMatchers(MatchFinder *AstMatcher) {
   // Older clang versions such as the ones used on the infra recognize these
   // conversions as 'operator _Bool', but newer clang versions recognize these
   // as 'operator bool'.
@@ -22,12 +22,14 @@ void ExplicitOperatorBoolChecker::check(
   const CXXRecordDecl *Clazz = Method->getParent();
 
   if (!Method->isExplicitSpecified() &&
-      !hasCustomAnnotation(Method, "moz_implicit") &&
+      !hasCustomAttribute<moz_implicit>(Method) &&
       !ASTIsInSystemHeader(Method->getASTContext(), *Method) &&
       isInterestingDeclForImplicitConversion(Method)) {
-    diag(Method->getLocStart(), "bad implicit conversion operator for %0",
-         DiagnosticIDs::Error) << Clazz;
-    diag(Method->getLocStart(), "consider adding the explicit keyword to %0",
-         DiagnosticIDs::Note) << "'operator bool'";
+    diag(Method->getBeginLoc(), "bad implicit conversion operator for %0",
+         DiagnosticIDs::Error)
+        << Clazz;
+    diag(Method->getBeginLoc(), "consider adding the explicit keyword to %0",
+         DiagnosticIDs::Note)
+        << "'operator bool'";
   }
 }

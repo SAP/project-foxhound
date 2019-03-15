@@ -6,6 +6,7 @@
 
 package org.mozilla.gecko.telemetry.pingbuilders;
 
+import android.accessibilityservice.AccessibilityServiceInfo;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Build;
@@ -15,28 +16,35 @@ import android.support.annotation.WorkerThread;
 import android.text.TextUtils;
 
 import android.util.Log;
+
 import org.mozilla.gecko.AppConstants;
 import org.mozilla.gecko.GeckoApp;
 import org.mozilla.gecko.GeckoProfile;
 import org.mozilla.gecko.GeckoSharedPrefs;
 import org.mozilla.gecko.Locales;
+import org.mozilla.gecko.mma.MmaDelegate;
 import org.mozilla.gecko.search.SearchEngine;
 import org.mozilla.gecko.sync.ExtendedJSONObject;
-import org.mozilla.gecko.telemetry.TelemetryPing;
+import org.mozilla.gecko.telemetry.TelemetryOutgoingPing;
 import org.mozilla.gecko.util.DateUtil;
 import org.mozilla.gecko.Experiments;
+import org.mozilla.gecko.util.HardwareUtils;
 import org.mozilla.gecko.util.StringUtils;
 
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Builds a {@link TelemetryPing} representing a core ping.
+ * Builds a {@link TelemetryOutgoingPing} representing a core ping.
  *
- * See https://gecko.readthedocs.org/en/latest/toolkit/components/telemetry/telemetry/core-ping.html
+ * See https://firefox-source-docs.mozilla.org/toolkit/components/telemetry/telemetry/data/core-ping.html
  * for details on the core ping.
  */
 public class TelemetryCorePingBuilder extends TelemetryPingBuilder {
@@ -46,15 +54,16 @@ public class TelemetryCorePingBuilder extends TelemetryPingBuilder {
     private static final String PREF_SEQ_COUNT = "telemetry-seqCount";
 
     private static final String NAME = "core";
-    private static final int VERSION_VALUE = 8; // For version history, see toolkit/components/telemetry/docs/core-ping.rst
-    private static final String OS_VALUE = "Android";
+    private static final int VERSION_VALUE = 10; // For version history, see toolkit/components/telemetry/docs/core-ping.rst
 
+    private static final String DEFAULT_BROWSER = "defaultBrowser";
     private static final String ARCHITECTURE = "arch";
     private static final String CAMPAIGN_ID = "campaignId";
     private static final String CLIENT_ID = "clientId";
     private static final String DEFAULT_SEARCH_ENGINE = "defaultSearch";
     private static final String DEVICE = "device";
     private static final String DISTRIBUTION_ID = "distributionId";
+    private static final String DISPLAY_VERSION = "displayVersion";
     private static final String EXPERIMENTS = "experiments";
     private static final String LOCALE = "locale";
     private static final String OS_ATTR = "os";
@@ -68,6 +77,8 @@ public class TelemetryCorePingBuilder extends TelemetryPingBuilder {
     private static final String TIMEZONE_OFFSET = "tz";
     private static final String VERSION_ATTR = "v";
     private static final String FLASH_USAGE = "flashUsage";
+    private static final String ACCESSIBILITY_SERVICES = "accessibilityServices";
+    private static final String HAD_CANARY_CLIENT_ID = "bug_1501329_affected";
 
     public TelemetryCorePingBuilder(final Context context) {
         initPayloadConstants(context);
@@ -75,7 +86,7 @@ public class TelemetryCorePingBuilder extends TelemetryPingBuilder {
 
     private void initPayloadConstants(final Context context) {
         payload.put(VERSION_ATTR, VERSION_VALUE);
-        payload.put(OS_ATTR, OS_VALUE);
+        payload.put(OS_ATTR, TelemetryPingBuilder.OS_NAME);
 
         // We limit the device descriptor to 32 characters because it can get long. We give fewer characters to the
         // manufacturer because we're less likely to have manufacturers with similar names than we are for a
@@ -86,12 +97,14 @@ public class TelemetryCorePingBuilder extends TelemetryPingBuilder {
         final Calendar nowCalendar = Calendar.getInstance();
         final DateFormat pingCreationDateFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
 
-        payload.put(ARCHITECTURE, AppConstants.ANDROID_CPU_ARCH);
+        payload.put(DEFAULT_BROWSER, MmaDelegate.isDefaultBrowser(context));
+        payload.put(ARCHITECTURE, HardwareUtils.getRealAbi());
         payload.put(DEVICE, deviceDescriptor);
         payload.put(LOCALE, Locales.getLanguageTag(Locale.getDefault()));
         payload.put(OS_VERSION, Integer.toString(Build.VERSION.SDK_INT)); // A String for cross-platform reasons.
         payload.put(PING_CREATION_DATE, pingCreationDateFormat.format(nowCalendar.getTime()));
         payload.put(TIMEZONE_OFFSET, DateUtil.getTimezoneOffsetInMinutesForGivenDate(nowCalendar));
+        payload.put(DISPLAY_VERSION, AppConstants.MOZ_APP_VERSION_DISPLAY);
         payload.putArray(EXPERIMENTS, Experiments.getActiveExperiments(context));
         synchronized (this) {
             SharedPreferences prefs = GeckoSharedPrefs.forApp(context);
@@ -121,6 +134,7 @@ public class TelemetryCorePingBuilder extends TelemetryPingBuilder {
                 SEQ,
                 TIMEZONE_OFFSET,
                 VERSION_ATTR,
+                HAD_CANARY_CLIENT_ID,
         };
     }
 
@@ -129,6 +143,11 @@ public class TelemetryCorePingBuilder extends TelemetryPingBuilder {
             throw new IllegalArgumentException("Expected non-null clientID");
         }
         payload.put(CLIENT_ID, clientID);
+        return this;
+    }
+
+    public TelemetryCorePingBuilder setHadCanaryClientId(final boolean hadCanaryClientId) {
+        payload.put(HAD_CANARY_CLIENT_ID, hadCanaryClientId);
         return this;
     }
 
@@ -162,6 +181,21 @@ public class TelemetryCorePingBuilder extends TelemetryPingBuilder {
         }
 
         payload.put(SEARCH_COUNTS, searchCounts);
+        return this;
+    }
+
+    /**
+     * Get enabled accessibility services that might start gecko accessibility.
+     */
+    public TelemetryCorePingBuilder setOptAccessibility(@NonNull final List<AccessibilityServiceInfo> enabledServices) {
+        // Some services, like TalkBack, register themselves several times. We
+        // only record unique services.
+        final Set<String> services = new HashSet<String>();
+        for (AccessibilityServiceInfo service : enabledServices) {
+            services.add(service.getId());
+        }
+
+        payload.putArray(ACCESSIBILITY_SERVICES, new ArrayList<String>(services));
         return this;
     }
 

@@ -75,7 +75,7 @@ public class Themed@VIEW_NAME_SUFFIX@ extends @BASE_TYPE@
     }
 
     @Override
-    public void onAttachedToWindow() {
+    protected void onAttachedToWindow() {
         super.onAttachedToWindow();
 
         if (autoUpdateTheme)
@@ -83,7 +83,7 @@ public class Themed@VIEW_NAME_SUFFIX@ extends @BASE_TYPE@
     }
 
     @Override
-    public void onDetachedFromWindow() {
+    protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
 
         if (autoUpdateTheme)
@@ -203,6 +203,10 @@ public class Themed@VIEW_NAME_SUFFIX@ extends @BASE_TYPE@
 //#endif
     public ColorDrawable getColorDrawable(int id) {
         return new ColorDrawable(ContextCompat.getColor(getContext(), id));
+    }
+
+    public ColorStateList getDrawableColors() {
+        return drawableColors;
     }
 
     protected LightweightTheme getTheme() {

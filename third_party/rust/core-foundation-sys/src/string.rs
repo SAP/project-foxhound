@@ -7,7 +7,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use libc::{c_char, c_ushort, c_void};
+use std::os::raw::{c_char, c_ushort, c_void};
 
 use base::{Boolean, CFOptionFlags, CFIndex, CFAllocatorRef, CFRange, CFTypeID};
 
@@ -209,8 +209,7 @@ extern {
                                    bytes: *const u8,
                                    numBytes: CFIndex,
                                    encoding: CFStringEncoding,
-                                   isExternalRepresentation: Boolean,
-                                   contentsDeallocator: CFAllocatorRef)
+                                   isExternalRepresentation: Boolean)
                                    -> CFStringRef;
     pub fn CFStringCreateWithBytesNoCopy(alloc: CFAllocatorRef,
                                          bytes: *const u8,

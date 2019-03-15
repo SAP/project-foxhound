@@ -122,6 +122,10 @@ af{
             "CLP",
             "Chileense peso",
         }
+        CNH{
+            "CNH",
+            "Chinese joean",
+        }
         CNY{
             "CN¥",
             "Sjinese joean renminbi",
@@ -180,7 +184,7 @@ af{
         }
         EUR{
             "€",
-            "Euro",
+            "euro",
         }
         FJD{
             "FJD",
@@ -388,6 +392,10 @@ af{
         }
         MRO{
             "MRO",
+            "Mauritaniese ouguiya (1973–2017)",
+        }
+        MRU{
+            "MRU",
             "Mauritaniese ouguiya",
         }
         MUR{
@@ -452,7 +460,7 @@ af{
         }
         PEN{
             "PEN",
-            "Peruaanse nuwe sol",
+            "Peruaanse sol",
         }
         PGK{
             "PGK",
@@ -544,6 +552,10 @@ af{
         }
         STD{
             "STD",
+            "São Tomé en Príncipe dobra (1977–2017)",
+        }
+        STN{
+            "STN",
             "São Tomé en Príncipe dobra",
         }
         SYP{
@@ -618,6 +630,10 @@ af{
             "VEF",
             "Venezolaanse bolivar",
         }
+        VES{
+            "VES",
+            "Venezolaanse Bolívar",
+        }
         VND{
             "₫",
             "Viëtnamese dong",
@@ -647,8 +663,8 @@ af{
             "CFP-frank",
         }
         XXX{
-            "XXX",
-            "Onbekende geldeenheid",
+            "¤",
+            "onbekende geldeenheid",
         }
         YER{
             "YER",
@@ -742,6 +758,7 @@ af{
         PKR{"Rs"}
         PLN{"zł"}
         PYG{"₲"}
+        RON{"leu"}
         RUB{"₽"}
         RWF{"RF"}
         SBD{"$"}
@@ -750,7 +767,7 @@ af{
         SHP{"£"}
         SRD{"$"}
         SSP{"£"}
-        STD{"Db"}
+        STN{"Db"}
         SYP{"£"}
         THB{"฿"}
         TOP{"T$"}
@@ -891,6 +908,10 @@ af{
         CLP{
             one{"Chileense peso"}
             other{"Chileense peso"}
+        }
+        CNH{
+            one{"Chinese joean (buiteland)"}
+            other{"Chinese joean (buiteland)"}
         }
         CNY{
             one{"Sjinese joean renminbi"}
@@ -1137,6 +1158,10 @@ af{
             other{"Macaose pataca"}
         }
         MRO{
+            one{"Mauritaniese ouguiya (1973–2017)"}
+            other{"Mauritaniese ouguiya (1973–2017)"}
+        }
+        MRU{
             one{"Mauritaniese ouguiya"}
             other{"Mauritaniese ouguiya"}
         }
@@ -1197,8 +1222,8 @@ af{
             other{"Panamese balboa"}
         }
         PEN{
-            one{"Peruaanse nuwe sol"}
-            other{"Peruaanse nuwe sol"}
+            one{"Peruaanse sol"}
+            other{"Peruaanse sol"}
         }
         PGK{
             one{"Papoea-Nieu-Guinese kina"}
@@ -1285,6 +1310,10 @@ af{
             other{"Suid-Soedanese pond"}
         }
         STD{
+            one{"São Tomé en Príncipe dobra (1977–2017)"}
+            other{"São Tomé en Príncipe dobra (1977–2017)"}
+        }
+        STN{
             one{"São Tomé en Príncipe dobra"}
             other{"São Tomé en Príncipe dobra"}
         }
@@ -1353,8 +1382,12 @@ af{
             other{"Oezbekiese som"}
         }
         VEF{
-            one{"Venezolaanse bolivar"}
-            other{"Venezolaanse bolivar"}
+            one{"Venezolaanse bolívar (2008–2018)"}
+            other{"Venezolaanse bolívare (2008–2018)"}
+        }
+        VES{
+            one{"Venezolaanse bolívar"}
+            other{"Venezolaanse bolívare"}
         }
         VND{
             one{"Viëtnamese dong"}
@@ -1405,5 +1438,5 @@ af{
         one{"{0} {1}"}
         other{"{0} {1}"}
     }
-    Version{"2.1.29.44"}
+    Version{"2.1.43.65"}
 }

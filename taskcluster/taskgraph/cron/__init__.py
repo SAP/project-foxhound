@@ -15,13 +15,11 @@ import traceback
 import yaml
 
 from . import decision, schema
-from .util import (
-    match_utc,
-    calculate_head_rev
-)
+from .util import match_utc
 from ..create import create_task
 from .. import GECKO
 from taskgraph.util.attributes import match_run_on_projects
+from taskgraph.util.hg import calculate_head_rev
 from taskgraph.util.schema import resolve_keyed_by
 from taskgraph.util.taskcluster import get_session
 
@@ -36,16 +34,13 @@ JOB_TYPES = {
 logger = logging.getLogger(__name__)
 
 
-def load_jobs(params):
-    with open(os.path.join(GECKO, '.cron.yml'), 'rb') as f:
-        cron_yml = yaml.load(f)
+def load_jobs(params, root):
+    with open(os.path.join(root, '.cron.yml'), 'rb') as f:
+        cron_yml = yaml.safe_load(f)
     schema.validate(cron_yml)
 
     # resolve keyed_by fields in each job
     jobs = cron_yml['jobs']
-    for job in jobs:
-        resolve_keyed_by(job, 'when', 'Cron job ' + job['name'],
-                         project=params['project'])
 
     return {j['name']: j for j in jobs}
 
@@ -54,19 +49,23 @@ def should_run(job, params):
     run_on_projects = job.get('run-on-projects', ['all'])
     if not match_run_on_projects(params['project'], run_on_projects):
         return False
-    if not any(match_utc(params, hour=sched.get('hour'), minute=sched.get('minute'))
-               for sched in job.get('when', [])):
+    # Resolve when key here, so we don't require it before we know that we
+    # actually want to run on this branch.
+    resolve_keyed_by(job, 'when', 'Cron job ' + job['name'],
+                     project=params['project'])
+    if not any(match_utc(params, sched=sched) for sched in job.get('when', [])):
         return False
     return True
 
 
-def run_job(job_name, job, params):
+def run_job(job_name, job, params, root):
+    params = params.copy()
     params['job_name'] = job_name
 
     try:
         job_type = job['job']['type']
         if job_type in JOB_TYPES:
-            tasks = JOB_TYPES[job_type](job['job'], params)
+            tasks = JOB_TYPES[job_type](job['job'], params, root=root)
         else:
             raise Exception("job type {} not recognized".format(job_type))
         if params['no_create']:
@@ -75,7 +74,7 @@ def run_job(job_name, job, params):
                             json.dumps(task, sort_keys=True, indent=4, separators=(',', ': ')))
         else:
             for task_id, task in tasks:
-                create_task(get_session(), task_id, params['job_name'], task)
+                create_task(get_session(), task_id, job_name, task)
 
     except Exception:
         # report the exception, but don't fail the whole cron task, as that
@@ -94,6 +93,7 @@ def calculate_time(options):
             logger.warning("setting params['time'] based on $CRON_TIME")
             time = datetime.datetime.utcfromtimestamp(
                 int(os.environ['CRON_TIME']))
+            print(time)
         else:
             logger.warning("using current time for params['time']; try setting $CRON_TIME "
                            "to a timestamp")
@@ -105,7 +105,7 @@ def calculate_time(options):
         if res.status_code != 200:
             try:
                 logger.error(res.json()['message'])
-            except:
+            except Exception:
                 logger.error(res.text)
             res.raise_for_status()
         # the task's `created` time is close to when the hook ran, although that
@@ -121,21 +121,15 @@ def calculate_time(options):
 
 
 def taskgraph_cron(options):
+    root = options.get('root') or GECKO
+
     params = {
-        # name of this cron job (set per job below)
-        'job_name': '..',
-
         # repositories
-        'base_repository': options['base_repository'],
-        'head_repository': options['head_repository'],
-
-        # the symbolic ref this should run against (which happens to be what
-        # run-task checked out for us)
-        'head_ref': options['head_ref'],
+        'repository_url': options['head_repository'],
 
         # *calculated* head_rev; this is based on the current meaning of this
         # reference in the working copy
-        'head_rev': calculate_head_rev(options),
+        'head_rev': calculate_head_rev(root),
 
         # the project (short name for the repository) and its SCM level
         'project': options['project'],
@@ -148,17 +142,17 @@ def taskgraph_cron(options):
         'time': calculate_time(options),
     }
 
-    jobs = load_jobs(params)
+    jobs = load_jobs(params, root=root)
 
     if options['force_run']:
         job_name = options['force_run']
         logger.info("force-running cron job {}".format(job_name))
-        run_job(job_name, jobs[job_name], params)
+        run_job(job_name, jobs[job_name], params, root)
         return
 
     for job_name, job in sorted(jobs.items()):
         if should_run(job, params):
             logger.info("running cron job {}".format(job_name))
-            run_job(job_name, job, params)
+            run_job(job_name, job, params, root)
         else:
             logger.info("not running cron job {}".format(job_name))

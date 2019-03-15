@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +11,7 @@
 #include "nsContainerFrame.h"
 #include "nsFrame.h"
 #include "nsIFrame.h"
-#include "nsISVGChildFrame.h"
+#include "nsSVGDisplayableFrame.h"
 #include "nsQueryFrame.h"
 #include "nsRect.h"
 #include "nsSVGUtils.h"
@@ -19,7 +20,6 @@ class gfxContext;
 class nsFrameList;
 class nsIContent;
 class nsIPresShell;
-class nsStyleContext;
 
 struct nsRect;
 
@@ -33,28 +33,24 @@ struct nsRect;
  *                               *** WARNING ***
  *
  * Do *not* blindly cast to SVG element types in this class's methods (see the
- * warning comment for nsSVGDisplayContainerFrame below). 
+ * warning comment for nsSVGDisplayContainerFrame below).
  */
-class nsSVGContainerFrame : public nsContainerFrame
-{
+class nsSVGContainerFrame : public nsContainerFrame {
   friend nsIFrame* NS_NewSVGContainerFrame(nsIPresShell* aPresShell,
-                                           nsStyleContext* aContext);
-protected:
-  explicit nsSVGContainerFrame(nsStyleContext* aContext)
-    : nsContainerFrame(aContext)
-  {
+                                           ComputedStyle* aStyle);
+
+ protected:
+  nsSVGContainerFrame(ComputedStyle* aStyle, ClassID aID)
+      : nsContainerFrame(aStyle, aID) {
     AddStateBits(NS_FRAME_SVG_LAYOUT);
   }
 
-public:
-  NS_DECL_QUERYFRAME_TARGET(nsSVGContainerFrame)
+ public:
   NS_DECL_QUERYFRAME
-  NS_DECL_FRAMEARENA_HELPERS
+  NS_DECL_FRAMEARENA_HELPERS(nsSVGContainerFrame)
 
   // Returns the transform to our gfxContext (to device pixels, not CSS px)
-  virtual gfxMatrix GetCanvasTM() {
-    return gfxMatrix();
-  }
+  virtual gfxMatrix GetCanvasTM() { return gfxMatrix(); }
 
   /**
    * Returns true if the frame's content has a transform that applies only to
@@ -63,32 +59,32 @@ public:
    * due to a root-<svg> having its currentScale/currentTransform properties
    * set. If aTransform is non-null, then it will be set to the transform.
    */
-  virtual bool HasChildrenOnlyTransform(Matrix *aTransform) const {
+  virtual bool HasChildrenOnlyTransform(Matrix* aTransform) const {
     return false;
   }
 
   // nsIFrame:
-  virtual void AppendFrames(ChildListID     aListID,
-                            nsFrameList&    aFrameList) override;
-  virtual void InsertFrames(ChildListID     aListID,
-                            nsIFrame*       aPrevFrame,
-                            nsFrameList&    aFrameList) override;
-  virtual void RemoveFrame(ChildListID     aListID,
-                           nsIFrame*       aOldFrame) override;
+  virtual void AppendFrames(ChildListID aListID,
+                            nsFrameList& aFrameList) override;
+  virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                            nsFrameList& aFrameList) override;
+  virtual void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
 
-  virtual bool IsFrameOfType(uint32_t aFlags) const override
-  {
+  virtual bool IsFrameOfType(uint32_t aFlags) const override {
+    if (aFlags & eSupportsContainLayoutAndPaint) {
+      return false;
+    }
+
     return nsContainerFrame::IsFrameOfType(
-            aFlags & ~(nsIFrame::eSVG | nsIFrame::eSVGContainer));
+        aFlags & ~(nsIFrame::eSVG | nsIFrame::eSVGContainer));
   }
 
-  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                                const nsRect&           aDirtyRect,
+  virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                 const nsDisplayListSet& aLists) override {}
 
   virtual bool ComputeCustomOverflow(nsOverflowAreas& aOverflowAreas) override;
 
-protected:
+ protected:
   /**
    * Traverses a frame tree, marking any SVGTextFrame frames as dirty
    * and calling InvalidateRenderingObservers() on it.
@@ -108,48 +104,49 @@ protected:
  * SVG namespace. Do *not* blindly cast to SVG element types.
  */
 class nsSVGDisplayContainerFrame : public nsSVGContainerFrame,
-                                   public nsISVGChildFrame
-{
-protected:
-  explicit nsSVGDisplayContainerFrame(nsStyleContext* aContext)
-    : nsSVGContainerFrame(aContext)
-  {
-     AddStateBits(NS_FRAME_MAY_BE_TRANSFORMED);
+                                   public nsSVGDisplayableFrame {
+ protected:
+  nsSVGDisplayContainerFrame(ComputedStyle* aStyle, nsIFrame::ClassID aID)
+      : nsSVGContainerFrame(aStyle, aID) {
+    AddStateBits(NS_FRAME_MAY_BE_TRANSFORMED);
   }
 
-public:
-  NS_DECL_QUERYFRAME_TARGET(nsSVGDisplayContainerFrame)
+ public:
   NS_DECL_QUERYFRAME
-  NS_DECL_FRAMEARENA_HELPERS
+  NS_DECL_QUERYFRAME_TARGET(nsSVGDisplayContainerFrame)
+  NS_DECL_ABSTRACT_FRAME(nsSVGDisplayContainerFrame)
 
   // nsIFrame:
-  virtual void InsertFrames(ChildListID     aListID,
-                                nsIFrame*       aPrevFrame,
-                                nsFrameList&    aFrameList) override;
-  virtual void RemoveFrame(ChildListID     aListID,
-                               nsIFrame*       aOldFrame) override;
- virtual void Init(nsIContent*       aContent,
-                   nsContainerFrame* aParent,
-                   nsIFrame*         aPrevInFlow) override;
+  virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                            nsFrameList& aFrameList) override;
+  virtual void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
+  virtual void Init(nsIContent* aContent, nsContainerFrame* aParent,
+                    nsIFrame* aPrevInFlow) override;
 
-  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                                const nsRect&           aDirtyRect,
+  virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                 const nsDisplayListSet& aLists) override;
 
-  virtual bool IsSVGTransformed(Matrix *aOwnTransform = nullptr,
-                                Matrix *aFromParentTransform = nullptr) const override;
+  virtual bool IsSVGTransformed(
+      Matrix* aOwnTransform = nullptr,
+      Matrix* aFromParentTransform = nullptr) const override;
 
-  // nsISVGChildFrame interface:
-  virtual DrawResult PaintSVG(gfxContext& aContext,
-                              const gfxMatrix& aTransform,
-                              const nsIntRect *aDirtyRect = nullptr) override;
+  // nsSVGDisplayableFrame interface:
+  virtual void PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
+                        imgDrawingParams& aImgParams,
+                        const nsIntRect* aDirtyRect = nullptr) override;
   virtual nsIFrame* GetFrameForPoint(const gfxPoint& aPoint) override;
-  virtual nsRect GetCoveredRegion() override;
   virtual void ReflowSVG() override;
   virtual void NotifySVGChanged(uint32_t aFlags) override;
-  virtual SVGBBox GetBBoxContribution(const Matrix &aToBBoxUserspace,
+  virtual SVGBBox GetBBoxContribution(const Matrix& aToBBoxUserspace,
                                       uint32_t aFlags) override;
   virtual bool IsDisplayContainer() override { return true; }
+  virtual gfxMatrix GetCanvasTM() override;
+
+ protected:
+  /**
+   * Cached canvasTM value.
+   */
+  nsAutoPtr<gfxMatrix> mCanvasTM;
 };
 
 #endif

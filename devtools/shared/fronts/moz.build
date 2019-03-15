@@ -4,38 +4,42 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+DIRS += [
+    'addon',
+    'inspector',
+    'targets',
+    'worker',
+]
+
 DevToolsModules(
+    'accessibility.js',
     'actor-registry.js',
-    'addons.js',
     'animation.js',
-    'call-watcher.js',
     'canvas.js',
+    'changes.js',
     'css-properties.js',
     'csscoverage.js',
     'device.js',
-    'director-manager.js',
-    'director-registry.js',
     'emulation.js',
-    'eventlooplag.js',
     'framerate.js',
-    'gcli.js',
+    'function-call.js',
     'highlighters.js',
     'inspector.js',
     'layout.js',
     'memory.js',
-    'performance-entries.js',
+    'node.js',
+    'perf.js',
     'performance-recording.js',
     'performance.js',
     'preference.js',
-    'profiler.js',
     'promises.js',
     'reflow.js',
+    'root.js',
+    'screenshot.js',
     'storage.js',
     'string.js',
     'styles.js',
     'stylesheets.js',
-    'timeline.js',
     'webaudio.js',
-    'webextension-inspected-window.js',
     'webgl.js'
 )

@@ -14,22 +14,28 @@
 
 */
 
-function run_test() {
-    const IDX = PlacesUtils.bookmarks.DEFAULT_INDEX;
-    var folderId =
-      PlacesUtils.bookmarks.createFolder(PlacesUtils.toolbarFolderId, "", IDX);
+add_task(async function test_query_with_remove_shortcut() {
+  let folder = await PlacesUtils.bookmarks.insert({
+    parentGuid: PlacesUtils.bookmarks.toolbarGuid,
+    title: "",
+    type: PlacesUtils.bookmarks.TYPE_FOLDER,
+  });
 
-    var queryId =
-      PlacesUtils.bookmarks.insertBookmark(PlacesUtils.toolbarFolderId,
-                                           uri("place:folder=" + folderId), IDX, "");
+  let query = await PlacesUtils.bookmarks.insert({
+    parentGuid: PlacesUtils.bookmarks.toolbarGuid,
+    title: "",
+    url: `place:parent=${folder.guid}`,
+  });
 
-    var root = PlacesUtils.getFolderContents(PlacesUtils.toolbarFolderId, false, true).root;
+  var root = PlacesUtils.getFolderContents(PlacesUtils.bookmarks.toolbarGuid, false, true).root;
 
-    var oldCount = root.childCount;
+  var oldCount = root.childCount;
 
-    PlacesUtils.bookmarks.removeItem(queryId);
+  await PlacesUtils.bookmarks.remove(query.guid);
 
-    do_check_eq(root.childCount, oldCount - 1);
+  Assert.equal(root.childCount, oldCount - 1);
 
-    root.containerOpen = false;
-}
+  root.containerOpen = false;
+
+  await PlacesTestUtils.promiseAsyncUpdates();
+});

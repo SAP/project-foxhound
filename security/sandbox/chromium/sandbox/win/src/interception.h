@@ -17,12 +17,12 @@
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
 #include "base/strings/string16.h"
+#include "sandbox/win/src/interceptors.h"
 #include "sandbox/win/src/sandbox_types.h"
 
 namespace sandbox {
 
 class TargetProcess;
-enum InterceptorId;
 
 // Internal structures used for communication between the broker and the target.
 struct DllPatchInfo;
@@ -49,9 +49,10 @@ struct DllInterceptionData;
 //         sandbox::INTERCEPTION_EAT, L"MyCreateDirectoryW@12", MY_ID_2))
 //   return false;
 //
-// if (!interception_manager.InitializeInterceptions()) {
+// sandbox::ResultCode rc = interception_manager.InitializeInterceptions();
+// if (rc != sandbox::SBOX_ALL_OK) {
 //   DWORD error = ::GetLastError();
-//   return false;
+//   return rc;
 // }
 //
 // Any required syncronization must be performed outside this class. Also, it is
@@ -122,7 +123,7 @@ class InterceptionManager {
   bool AddToUnloadModules(const wchar_t* dll_name);
 
   // Initializes all interceptions on the client.
-  // Returns true on success.
+  // Returns SBOX_ALL_OK on success, or an appropriate error code.
   //
   // The child process must be created suspended, and cannot be resumed until
   // after this method returns. In addition, no action should be performed on
@@ -131,12 +132,13 @@ class InterceptionManager {
   //
   // This function must be called only once, after all interceptions have been
   // set up using AddToPatchedFunctions.
-  bool InitializeInterceptions();
+  ResultCode InitializeInterceptions();
 
  private:
   // Used to store the interception information until the actual set-up.
   struct InterceptionData {
     InterceptionData();
+    InterceptionData(const InterceptionData& other);
     ~InterceptionData();
 
     InterceptionType type;            // Interception type.
@@ -191,24 +193,24 @@ class InterceptionManager {
 
   // Allocates a buffer on the child's address space (returned on
   // remote_buffer), and fills it with the contents of a local buffer.
-  // Returns true on success.
-  bool CopyDataToChild(const void* local_buffer, size_t buffer_bytes,
-                       void** remote_buffer) const;
+  // Returns SBOX_ALL_OK on success.
+  ResultCode CopyDataToChild(const void* local_buffer, size_t buffer_bytes,
+                             void** remote_buffer) const;
 
   // Performs the cold patch (from the parent) of ntdll.
-  // Returns true on success.
+  // Returns SBOX_ALL_OK on success.
   //
   // This method will insert additional interceptions to launch the interceptor
   // agent on the child process, if there are additional interceptions to do.
-  bool PatchNtdll(bool hot_patch_needed);
+  ResultCode PatchNtdll(bool hot_patch_needed);
 
   // Peforms the actual interceptions on ntdll.
   // thunks is the memory to store all the thunks for this dll (on the child),
   // and dll_data is a local buffer to hold global dll interception info.
-  // Returns true on success.
-  bool PatchClientFunctions(DllInterceptionData* thunks,
-                            size_t thunk_bytes,
-                            DllInterceptionData* dll_data);
+  // Returns SBOX_ALL_OK on success.
+  ResultCode PatchClientFunctions(DllInterceptionData* thunks,
+                                  size_t thunk_bytes,
+                                  DllInterceptionData* dll_data);
 
   // The process to intercept.
   TargetProcess* child_;
@@ -267,7 +269,7 @@ class InterceptionManager {
 #define ADD_NT_INTERCEPTION(service, id, num_params) \
   AddToPatchedFunctions(kNtdllName, #service, \
                         sandbox::INTERCEPTION_SERVICE_CALL, \
-                        MAKE_SERVICE_NAME(service), id)
+                        (void*)MAKE_SERVICE_NAME(service), id)
 
 #define INTERCEPT_NT(manager, service, id, num_params) \
   manager->ADD_NT_INTERCEPTION(service, id, num_params)
@@ -278,7 +280,7 @@ class InterceptionManager {
 // we are guaranteed that our IAT has been initialized.
 #define INTERCEPT_EAT(manager, dll, function, id, num_params) \
   manager->AddToPatchedFunctions(dll, #function, sandbox::INTERCEPTION_EAT, \
-                                 MAKE_SERVICE_NAME(function), id)
+                                 (void*)MAKE_SERVICE_NAME(function), id)
 #endif  // SANDBOX_EXPORTS
 
 }  // namespace sandbox

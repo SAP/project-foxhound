@@ -8,21 +8,20 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_TEST_APITEST_H_
-#define WEBRTC_MODULES_AUDIO_CODING_TEST_APITEST_H_
+#ifndef MODULES_AUDIO_CODING_TEST_APITEST_H_
+#define MODULES_AUDIO_CODING_TEST_APITEST_H_
 
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/modules/audio_coding/include/audio_coding_module.h"
-#include "webrtc/modules/audio_coding/test/ACMTest.h"
-#include "webrtc/modules/audio_coding/test/Channel.h"
-#include "webrtc/modules/audio_coding/test/PCMFile.h"
-#include "webrtc/modules/audio_coding/test/utility.h"
-#include "webrtc/system_wrappers/include/event_wrapper.h"
-#include "webrtc/system_wrappers/include/rw_lock_wrapper.h"
+#include <memory>
+
+#include "modules/audio_coding/include/audio_coding_module.h"
+#include "modules/audio_coding/test/ACMTest.h"
+#include "modules/audio_coding/test/Channel.h"
+#include "modules/audio_coding/test/PCMFile.h"
+#include "modules/audio_coding/test/utility.h"
+#include "system_wrappers/include/event_wrapper.h"
+#include "system_wrappers/include/rw_lock_wrapper.h"
 
 namespace webrtc {
-
-class Config;
 
 enum APITESTAction {
   TEST_CHANGE_CODEC_ONLY = 0,
@@ -31,7 +30,7 @@ enum APITESTAction {
 
 class APITest : public ACMTest {
  public:
-  explicit APITest(const Config& config);
+  APITest();
   ~APITest();
 
   void Perform();
@@ -82,8 +81,8 @@ class APITest : public ACMTest {
   bool APIRunB();
 
   //--- ACMs
-  rtc::scoped_ptr<AudioCodingModule> _acmA;
-  rtc::scoped_ptr<AudioCodingModule> _acmB;
+  std::unique_ptr<AudioCodingModule> _acmA;
+  std::unique_ptr<AudioCodingModule> _acmB;
 
   //--- Channels
   Channel* _channel_A2B;
@@ -160,4 +159,4 @@ class APITest : public ACMTest {
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_AUDIO_CODING_TEST_APITEST_H_
+#endif  // MODULES_AUDIO_CODING_TEST_APITEST_H_

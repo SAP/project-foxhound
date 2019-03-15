@@ -4,8 +4,6 @@
 
 // This test verifies that hidden add-ons cannot be user disabled.
 
-// for normal add-ons
-const profileDir = FileUtils.getDir("ProfD", ["extensions"]);
 // for system add-ons
 const distroDir = FileUtils.getDir("ProfD", ["sysfeatures"], true);
 registerDirectory("XREAppFeat", distroDir);
@@ -16,92 +14,75 @@ const SYSTEM_ID = "system@tests.mozilla.org";
 createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "42");
 
 // normal add-ons can be user disabled.
-add_task(function*() {
+add_task(async function() {
+  await promiseStartupManager();
 
-  writeInstallRDFToDir({
-    id: NORMAL_ID,
-    version: "1.0",
-    bootstrap: true,
-    targetApplications: [{
-      id: "xpcshell@tests.mozilla.org",
-      minVersion: "1",
-      maxVersion: "1"
-    }],
-    name: "Test disabling hidden add-ons, non-hidden add-on case.",
-  }, profileDir, NORMAL_ID);
+  await promiseInstallWebExtension({
+    manifest: {
+      name: "Test disabling hidden add-ons, non-hidden add-on case.",
+      version: "1.0",
+      applications: {gecko: {id: NORMAL_ID}},
+    },
+  });
 
-  startupManager();
-
-  let addon = yield promiseAddonByID(NORMAL_ID);
-  do_check_neq(addon, null);
-  do_check_eq(addon.version, "1.0");
-  do_check_eq(addon.name, "Test disabling hidden add-ons, non-hidden add-on case.");
-  do_check_true(addon.isCompatible);
-  do_check_false(addon.appDisabled);
-  do_check_false(addon.userDisabled);
-  do_check_true(addon.isActive);
-  do_check_eq(addon.type, "extension");
+  let addon = await promiseAddonByID(NORMAL_ID);
+  Assert.notEqual(addon, null);
+  Assert.equal(addon.version, "1.0");
+  Assert.equal(addon.name, "Test disabling hidden add-ons, non-hidden add-on case.");
+  Assert.ok(addon.isCompatible);
+  Assert.ok(!addon.appDisabled);
+  Assert.ok(!addon.userDisabled);
+  Assert.ok(addon.isActive);
+  Assert.equal(addon.type, "extension");
 
   // normal add-ons can be disabled by the user.
-  addon.userDisabled = true;
+  await addon.disable();
 
-  do_check_neq(addon, null);
-  do_check_eq(addon.version, "1.0");
-  do_check_eq(addon.name, "Test disabling hidden add-ons, non-hidden add-on case.");
-  do_check_true(addon.isCompatible);
-  do_check_false(addon.appDisabled);
-  do_check_true(addon.userDisabled);
-  do_check_false(addon.isActive);
-  do_check_eq(addon.type, "extension");
+  Assert.notEqual(addon, null);
+  Assert.equal(addon.version, "1.0");
+  Assert.equal(addon.name, "Test disabling hidden add-ons, non-hidden add-on case.");
+  Assert.ok(addon.isCompatible);
+  Assert.ok(!addon.appDisabled);
+  Assert.ok(addon.userDisabled);
+  Assert.ok(!addon.isActive);
+  Assert.equal(addon.type, "extension");
 
-  addon.uninstall();
+  await addon.uninstall();
 
-  shutdownManager();
+  await promiseShutdownManager();
 });
 
 // system add-ons can never be user disabled.
-add_task(function*() {
+add_task(async function() {
+  let xpi = createTempWebExtensionFile({
+    manifest: {
+      name: "Test disabling hidden add-ons, hidden system add-on case.",
+      version: "1.0",
+      applications: {gecko: {id: SYSTEM_ID}},
+    },
+  });
+  xpi.copyTo(distroDir, `${SYSTEM_ID}.xpi`);
+  await overrideBuiltIns({ "system": [SYSTEM_ID] });
 
-  writeInstallRDFToDir({
-    id: SYSTEM_ID,
-    version: "1.0",
-    bootstrap: true,
-    targetApplications: [{
-      id: "xpcshell@tests.mozilla.org",
-      minVersion: "1",
-      maxVersion: "1"
-    }],
-    name: "Test disabling hidden add-ons, hidden system add-on case.",
-  }, distroDir, SYSTEM_ID);
+  await promiseStartupManager();
 
-  startupManager();
-
-  let addon = yield promiseAddonByID(SYSTEM_ID);
-  do_check_neq(addon, null);
-  do_check_eq(addon.version, "1.0");
-  do_check_eq(addon.name, "Test disabling hidden add-ons, hidden system add-on case.");
-  do_check_true(addon.isCompatible);
-  do_check_false(addon.appDisabled);
-  do_check_false(addon.userDisabled);
-  do_check_true(addon.isActive);
-  do_check_eq(addon.type, "extension");
+  let addon = await promiseAddonByID(SYSTEM_ID);
+  Assert.notEqual(addon, null);
+  Assert.equal(addon.version, "1.0");
+  Assert.equal(addon.name, "Test disabling hidden add-ons, hidden system add-on case.");
+  Assert.ok(addon.isCompatible);
+  Assert.ok(!addon.appDisabled);
+  Assert.ok(!addon.userDisabled);
+  Assert.ok(addon.isActive);
+  Assert.equal(addon.type, "extension");
 
   // system add-ons cannot be disabled by the user.
-  try {
-    addon.userDisabled = true;
-    do_throw("Expected addon.userDisabled on a hidden add-on to throw!");
-  } catch (e) {
-    do_check_eq(e.message, `Cannot disable hidden add-on ${SYSTEM_ID}`);
-  }
+  await Assert.rejects(addon.disable(),
+                       err => err.message == `Cannot disable system add-on ${SYSTEM_ID}`,
+                       "disable() on a hidden add-on should fail");
 
-  do_check_neq(addon, null);
-  do_check_eq(addon.version, "1.0");
-  do_check_eq(addon.name, "Test disabling hidden add-ons, hidden system add-on case.");
-  do_check_true(addon.isCompatible);
-  do_check_false(addon.appDisabled);
-  do_check_false(addon.userDisabled);
-  do_check_true(addon.isActive);
-  do_check_eq(addon.type, "extension");
+  Assert.ok(!addon.userDisabled);
+  Assert.ok(addon.isActive);
 
-  shutdownManager();
+  await promiseShutdownManager();
 });

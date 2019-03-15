@@ -8,12 +8,8 @@
 
 menupopup,
 panel {
-  border: 3px solid transparent;
-  -moz-border-top-colors   : ThreeDLightShadow ThreeDHighlight ThreeDFace;
-  -moz-border-left-colors  : ThreeDLightShadow ThreeDHighlight ThreeDFace;
-  -moz-border-right-colors : ThreeDDarkShadow  ThreeDShadow    ThreeDFace;
-  -moz-border-bottom-colors: ThreeDDarkShadow  ThreeDShadow    ThreeDFace;
-  padding: 0px;
+  border: 1px solid ThreeDShadow;
+  padding: 0;
   min-width: 1px;
   background: Menu;
   color: MenuText;
@@ -67,10 +63,15 @@ panel[type="arrow"][side="right"] {
 }
 %endif
 
+.panel-arrow {
+  -moz-context-properties: fill, stroke;
+  fill: var(--arrowpanel-background);
+  stroke: var(--arrowpanel-border-color);
+}
+
 .panel-arrow[side="top"],
 .panel-arrow[side="bottom"] {
-  list-style-image: var(--panel-arrow-image-vertical,
-                        url("chrome://global/skin/arrow/panelarrow-vertical-themed.svg"));
+  list-style-image: url("chrome://global/skin/arrow/panelarrow-vertical.svg");
   position: relative;
   margin-left: 10px;
   margin-right: 10px;
@@ -87,7 +88,7 @@ panel[type="arrow"][side="right"] {
 
 .panel-arrow[side="left"],
 .panel-arrow[side="right"] {
-  list-style-image: url("chrome://global/skin/arrow/panelarrow-horizontal-themed.svg");
+  list-style-image: url("chrome://global/skin/arrow/panelarrow-horizontal.svg");
   position: relative;
   margin-top: 10px;
   margin-bottom: 10px;
@@ -105,53 +106,15 @@ panel[type="arrow"][side="right"] {
 %ifdef XP_WIN
 @media (-moz-windows-default-theme) {
   .panel-arrowcontent {
-    --arrowpanel-border-color: hsla(210,4%,10%,.2);
     box-shadow: 0 0 4px hsla(210,4%,10%,.2);
-  }
-
-  .panel-arrow[side="top"],
-  .panel-arrow[side="bottom"] {
-    list-style-image: var(--panel-arrow-image-vertical,
-                          url("chrome://global/skin/arrow/panelarrow-vertical.svg"));
-  }
-
-  .panel-arrow[side="left"],
-  .panel-arrow[side="right"] {
-    list-style-image: url("chrome://global/skin/arrow/panelarrow-horizontal.svg");
   }
 }
 %endif
-
-/* ::::: tooltip ::::: */
-
-tooltip {
-  -moz-appearance: tooltip;
-  margin-top: 21px;
-  border: 1px solid InfoText;
-  padding: 2px 3px;
-  max-width: 40em;
-  background-color: InfoBackground;
-  color: InfoText;
-  font: message-box;
-}
-
-tooltip[titletip="true"] {
- /* See bug 32157 comment 128
-  * margin: -2px 0px 0px -3px;
-  */
-  max-width: none;
-}
 
 /* rules for popups associated with menulists */
 
 menulist > menupopup {
   -moz-appearance: none;
-  border-width: 1px;
-  -moz-border-top-colors: -moz-FieldText;
-  -moz-border-right-colors: -moz-FieldText;
-  -moz-border-bottom-colors: -moz-FieldText;
-  -moz-border-left-colors: -moz-FieldText;
-  padding: 0px;
-  min-width: 0px;
+  min-width: 0;
   background-color: -moz-Field;
 }

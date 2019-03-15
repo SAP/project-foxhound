@@ -6,11 +6,11 @@
  * with correct arguments from the content.
  */
 
-add_task(function* () {
-  let { target, front } = yield initBackend(AUTOMATION_URL);
-  let events = [];
+add_task(async function() {
+  const { target, front } = await initBackend(AUTOMATION_URL);
+  const events = [];
 
-  let expected = [
+  const expected = [
     ["setValueAtTime", 0.2, 0],
     ["linearRampToValueAtTime", 1, 0.3],
     ["exponentialRampToValueAtTime", 0.75, 0.6],
@@ -19,18 +19,18 @@ add_task(function* () {
 
   front.on("automation-event", onAutomationEvent);
 
-  let [_, __, [destNode, oscNode, gainNode], [connect1, connect2]] = yield Promise.all([
+  const [_, __, [destNode, oscNode, gainNode], [connect1, connect2]] = await Promise.all([
     front.setup({ reload: true }),
     once(front, "start-context"),
     get3(front, "create-node"),
-    get2(front, "connect-node")
+    get2(front, "connect-node"),
   ]);
 
   is(events.length, 4, "correct number of events fired");
 
   function onAutomationEvent(e) {
-    let { eventName, paramName, args } = e;
-    let exp = expected[events.length];
+    const { eventName, paramName, args } = e;
+    const exp = expected[events.length];
 
     is(eventName, exp[0], "correct eventName in event");
     is(paramName, "frequency", "correct paramName in event");
@@ -48,5 +48,5 @@ add_task(function* () {
   }
 
   front.off("automation-event", onAutomationEvent);
-  yield removeTab(target.tab);
+  await removeTab(target.tab);
 });

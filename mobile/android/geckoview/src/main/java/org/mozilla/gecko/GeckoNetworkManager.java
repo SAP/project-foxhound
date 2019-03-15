@@ -15,6 +15,7 @@ import org.mozilla.gecko.util.NetworkUtils.ConnectionSubType;
 import org.mozilla.gecko.util.NetworkUtils.ConnectionType;
 import org.mozilla.gecko.util.NetworkUtils.NetworkStatus;
 
+import android.annotation.SuppressLint;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -389,8 +390,12 @@ public class GeckoNetworkManager extends BroadcastReceiver implements BundleEven
         }
 
         try {
-            WifiManager mgr = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
-            DhcpInfo d = mgr.getDhcpInfo();
+            WifiManager mgr = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+            if (mgr == null) {
+                return 0;
+            }
+
+            @SuppressLint("MissingPermission") DhcpInfo d = mgr.getDhcpInfo();
             if (d == null) {
                 return 0;
             }
@@ -405,6 +410,7 @@ public class GeckoNetworkManager extends BroadcastReceiver implements BundleEven
         }
     }
 
+    @SuppressLint("MissingPermission")
     @Override // BundleEventListener
     /**
      * Handles native messages, not part of the state machine flow.
@@ -416,6 +422,9 @@ public class GeckoNetworkManager extends BroadcastReceiver implements BundleEven
             case "Wifi:Enable":
                 final WifiManager mgr = (WifiManager)
                         applicationContext.getSystemService(Context.WIFI_SERVICE);
+                if (mgr == null) {
+                    return;
+                }
 
                 if (!mgr.isWifiEnabled()) {
                     mgr.setWifiEnabled(true);
@@ -443,7 +452,7 @@ public class GeckoNetworkManager extends BroadcastReceiver implements BundleEven
             return;
         }
 
-        final WifiInfo info = mgr.getConnectionInfo();
+        @SuppressLint("MissingPermission") final WifiInfo info = mgr.getConnectionInfo();
         if (info == null) {
             callback.sendError("Cannot get connection info");
             return;

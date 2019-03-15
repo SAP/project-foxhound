@@ -33,6 +33,8 @@
 #include <cmath>
 #include <string.h>
 
+#include "jit/AtomicOperations.h"
+
 namespace vixl {
 
 const Instruction* Simulator::kEndOfSimAddress = NULL;
@@ -202,6 +204,10 @@ void Simulator::set_trace_parameters(int parameters) {
 
 
 void Simulator::set_instruction_stats(bool value) {
+  if (instrumentation_ == nullptr) {
+    return;
+  }
+
   if (value != instruction_stats_) {
     if (value) {
       decoder_->AppendVisitor(instrumentation_);
@@ -1012,7 +1018,38 @@ void Simulator::VisitLoadStoreRegisterOffset(const Instruction* instr) {
   LoadStoreHelper(instr, offset, Offset);
 }
 
+template<typename T>
+static T Faulted() {
+    return ~0;
+}
 
+template<>
+Simulator::qreg_t Faulted() {
+    static_assert(kQRegSizeInBytes == 16, "Known constraint");
+    static Simulator::qreg_t dummy = { {
+	255, 255, 255, 255, 255, 255, 255, 255,
+	255, 255, 255, 255, 255, 255, 255, 255
+    } };
+    return dummy;
+}
+
+template<typename T> T
+Simulator::Read(uintptr_t address)
+{
+    address = Memory::AddressUntag(address);
+    if (handle_wasm_seg_fault(address, sizeof(T)))
+	return Faulted<T>();
+    return Memory::Read<T>(address);
+}
+
+template <typename T> void
+Simulator::Write(uintptr_t address, T value)
+{
+    address = Memory::AddressUntag(address);
+    if (handle_wasm_seg_fault(address, sizeof(T)))
+	return;
+    Memory::Write<T>(address, value);
+}
 
 void Simulator::LoadStoreHelper(const Instruction* instr,
                                 int64_t offset,
@@ -1023,43 +1060,43 @@ void Simulator::LoadStoreHelper(const Instruction* instr,
   LoadStoreOp op = static_cast<LoadStoreOp>(instr->Mask(LoadStoreMask));
   switch (op) {
     case LDRB_w:
-      set_wreg(srcdst, Memory::Read<uint8_t>(address), NoRegLog); break;
+      set_wreg(srcdst, Read<uint8_t>(address), NoRegLog); break;
     case LDRH_w:
-      set_wreg(srcdst, Memory::Read<uint16_t>(address), NoRegLog); break;
+      set_wreg(srcdst, Read<uint16_t>(address), NoRegLog); break;
     case LDR_w:
-      set_wreg(srcdst, Memory::Read<uint32_t>(address), NoRegLog); break;
+      set_wreg(srcdst, Read<uint32_t>(address), NoRegLog); break;
     case LDR_x:
-      set_xreg(srcdst, Memory::Read<uint64_t>(address), NoRegLog); break;
+      set_xreg(srcdst, Read<uint64_t>(address), NoRegLog); break;
     case LDRSB_w:
-      set_wreg(srcdst, Memory::Read<int8_t>(address), NoRegLog); break;
+      set_wreg(srcdst, Read<int8_t>(address), NoRegLog); break;
     case LDRSH_w:
-      set_wreg(srcdst, Memory::Read<int16_t>(address), NoRegLog); break;
+      set_wreg(srcdst, Read<int16_t>(address), NoRegLog); break;
     case LDRSB_x:
-      set_xreg(srcdst, Memory::Read<int8_t>(address), NoRegLog); break;
+      set_xreg(srcdst, Read<int8_t>(address), NoRegLog); break;
     case LDRSH_x:
-      set_xreg(srcdst, Memory::Read<int16_t>(address), NoRegLog); break;
+      set_xreg(srcdst, Read<int16_t>(address), NoRegLog); break;
     case LDRSW_x:
-      set_xreg(srcdst, Memory::Read<int32_t>(address), NoRegLog); break;
+      set_xreg(srcdst, Read<int32_t>(address), NoRegLog); break;
     case LDR_b:
-      set_breg(srcdst, Memory::Read<uint8_t>(address), NoRegLog); break;
+      set_breg(srcdst, Read<uint8_t>(address), NoRegLog); break;
     case LDR_h:
-      set_hreg(srcdst, Memory::Read<uint16_t>(address), NoRegLog); break;
+      set_hreg(srcdst, Read<uint16_t>(address), NoRegLog); break;
     case LDR_s:
-      set_sreg(srcdst, Memory::Read<float>(address), NoRegLog); break;
+      set_sreg(srcdst, Read<float>(address), NoRegLog); break;
     case LDR_d:
-      set_dreg(srcdst, Memory::Read<double>(address), NoRegLog); break;
+      set_dreg(srcdst, Read<double>(address), NoRegLog); break;
     case LDR_q:
-      set_qreg(srcdst, Memory::Read<qreg_t>(address), NoRegLog); break;
+      set_qreg(srcdst, Read<qreg_t>(address), NoRegLog); break;
 
-    case STRB_w:  Memory::Write<uint8_t>(address, wreg(srcdst)); break;
-    case STRH_w:  Memory::Write<uint16_t>(address, wreg(srcdst)); break;
-    case STR_w:   Memory::Write<uint32_t>(address, wreg(srcdst)); break;
-    case STR_x:   Memory::Write<uint64_t>(address, xreg(srcdst)); break;
-    case STR_b:   Memory::Write<uint8_t>(address, breg(srcdst)); break;
-    case STR_h:   Memory::Write<uint16_t>(address, hreg(srcdst)); break;
-    case STR_s:   Memory::Write<float>(address, sreg(srcdst)); break;
-    case STR_d:   Memory::Write<double>(address, dreg(srcdst)); break;
-    case STR_q:   Memory::Write<qreg_t>(address, qreg(srcdst)); break;
+    case STRB_w:  Write<uint8_t>(address, wreg(srcdst)); break;
+    case STRH_w:  Write<uint16_t>(address, wreg(srcdst)); break;
+    case STR_w:   Write<uint32_t>(address, wreg(srcdst)); break;
+    case STR_x:   Write<uint64_t>(address, xreg(srcdst)); break;
+    case STR_b:   Write<uint8_t>(address, breg(srcdst)); break;
+    case STR_h:   Write<uint16_t>(address, hreg(srcdst)); break;
+    case STR_s:   Write<float>(address, sreg(srcdst)); break;
+    case STR_d:   Write<double>(address, dreg(srcdst)); break;
+    case STR_q:   Write<qreg_t>(address, qreg(srcdst)); break;
 
     // Ignore prfm hint instructions.
     case PRFM: break;
@@ -1129,58 +1166,58 @@ void Simulator::LoadStorePairHelper(const Instruction* instr,
     // Use NoRegLog to suppress the register trace (LOG_REGS, LOG_FP_REGS). We
     // will print a more detailed log.
     case LDP_w: {
-      set_wreg(rt, Memory::Read<uint32_t>(address), NoRegLog);
-      set_wreg(rt2, Memory::Read<uint32_t>(address2), NoRegLog);
+      set_wreg(rt, Read<uint32_t>(address), NoRegLog);
+      set_wreg(rt2, Read<uint32_t>(address2), NoRegLog);
       break;
     }
     case LDP_s: {
-      set_sreg(rt, Memory::Read<float>(address), NoRegLog);
-      set_sreg(rt2, Memory::Read<float>(address2), NoRegLog);
+      set_sreg(rt, Read<float>(address), NoRegLog);
+      set_sreg(rt2, Read<float>(address2), NoRegLog);
       break;
     }
     case LDP_x: {
-      set_xreg(rt, Memory::Read<uint64_t>(address), NoRegLog);
-      set_xreg(rt2, Memory::Read<uint64_t>(address2), NoRegLog);
+      set_xreg(rt, Read<uint64_t>(address), NoRegLog);
+      set_xreg(rt2, Read<uint64_t>(address2), NoRegLog);
       break;
     }
     case LDP_d: {
-      set_dreg(rt, Memory::Read<double>(address), NoRegLog);
-      set_dreg(rt2, Memory::Read<double>(address2), NoRegLog);
+      set_dreg(rt, Read<double>(address), NoRegLog);
+      set_dreg(rt2, Read<double>(address2), NoRegLog);
       break;
     }
     case LDP_q: {
-      set_qreg(rt, Memory::Read<qreg_t>(address), NoRegLog);
-      set_qreg(rt2, Memory::Read<qreg_t>(address2), NoRegLog);
+      set_qreg(rt, Read<qreg_t>(address), NoRegLog);
+      set_qreg(rt2, Read<qreg_t>(address2), NoRegLog);
       break;
     }
     case LDPSW_x: {
-      set_xreg(rt, Memory::Read<int32_t>(address), NoRegLog);
-      set_xreg(rt2, Memory::Read<int32_t>(address2), NoRegLog);
+      set_xreg(rt, Read<int32_t>(address), NoRegLog);
+      set_xreg(rt2, Read<int32_t>(address2), NoRegLog);
       break;
     }
     case STP_w: {
-      Memory::Write<uint32_t>(address, wreg(rt));
-      Memory::Write<uint32_t>(address2, wreg(rt2));
+      Write<uint32_t>(address, wreg(rt));
+      Write<uint32_t>(address2, wreg(rt2));
       break;
     }
     case STP_s: {
-      Memory::Write<float>(address, sreg(rt));
-      Memory::Write<float>(address2, sreg(rt2));
+      Write<float>(address, sreg(rt));
+      Write<float>(address2, sreg(rt2));
       break;
     }
     case STP_x: {
-      Memory::Write<uint64_t>(address, xreg(rt));
-      Memory::Write<uint64_t>(address2, xreg(rt2));
+      Write<uint64_t>(address, xreg(rt));
+      Write<uint64_t>(address2, xreg(rt2));
       break;
     }
     case STP_d: {
-      Memory::Write<double>(address, dreg(rt));
-      Memory::Write<double>(address2, dreg(rt2));
+      Write<double>(address, dreg(rt));
+      Write<double>(address2, dreg(rt2));
       break;
     }
     case STP_q: {
-      Memory::Write<qreg_t>(address, qreg(rt));
-      Memory::Write<qreg_t>(address2, qreg(rt2));
+      Write<qreg_t>(address, qreg(rt));
+      Write<qreg_t>(address2, qreg(rt2));
       break;
     }
     default: VIXL_UNREACHABLE();
@@ -1276,32 +1313,32 @@ void Simulator::VisitLoadStoreExclusive(const Instruction* instr) {
       case LDXRB_w:
       case LDAXRB_w:
       case LDARB_w:
-        set_wreg(rt, Memory::Read<uint8_t>(address), NoRegLog);
+        set_wreg(rt, Read<uint8_t>(address), NoRegLog);
         break;
       case LDXRH_w:
       case LDAXRH_w:
       case LDARH_w:
-        set_wreg(rt, Memory::Read<uint16_t>(address), NoRegLog);
+        set_wreg(rt, Read<uint16_t>(address), NoRegLog);
         break;
       case LDXR_w:
       case LDAXR_w:
       case LDAR_w:
-        set_wreg(rt, Memory::Read<uint32_t>(address), NoRegLog);
+        set_wreg(rt, Read<uint32_t>(address), NoRegLog);
         break;
       case LDXR_x:
       case LDAXR_x:
       case LDAR_x:
-        set_xreg(rt, Memory::Read<uint64_t>(address), NoRegLog);
+        set_xreg(rt, Read<uint64_t>(address), NoRegLog);
         break;
       case LDXP_w:
       case LDAXP_w:
-        set_wreg(rt, Memory::Read<uint32_t>(address), NoRegLog);
-        set_wreg(rt2, Memory::Read<uint32_t>(address + element_size), NoRegLog);
+        set_wreg(rt, Read<uint32_t>(address), NoRegLog);
+        set_wreg(rt2, Read<uint32_t>(address + element_size), NoRegLog);
         break;
       case LDXP_x:
       case LDAXP_x:
-        set_xreg(rt, Memory::Read<uint64_t>(address), NoRegLog);
-        set_xreg(rt2, Memory::Read<uint64_t>(address + element_size), NoRegLog);
+        set_xreg(rt, Read<uint64_t>(address), NoRegLog);
+        set_xreg(rt2, Read<uint64_t>(address + element_size), NoRegLog);
         break;
       default:
         VIXL_UNREACHABLE();
@@ -1309,7 +1346,7 @@ void Simulator::VisitLoadStoreExclusive(const Instruction* instr) {
 
     if (is_acquire_release) {
       // Approximate load-acquire by issuing a full barrier after the load.
-      __sync_synchronize();
+      js::jit::AtomicOperations::fenceSeqCst();
     }
 
     LogRead(address, rt, GetPrintRegisterFormatForSize(element_size));
@@ -1320,7 +1357,7 @@ void Simulator::VisitLoadStoreExclusive(const Instruction* instr) {
   } else {
     if (is_acquire_release) {
       // Approximate store-release by issuing a full barrier before the store.
-      __sync_synchronize();
+      js::jit::AtomicOperations::fenceSeqCst();
     }
 
     bool do_store = true;
@@ -1341,32 +1378,32 @@ void Simulator::VisitLoadStoreExclusive(const Instruction* instr) {
         case STXRB_w:
         case STLXRB_w:
         case STLRB_w:
-          Memory::Write<uint8_t>(address, wreg(rt));
+          Write<uint8_t>(address, wreg(rt));
           break;
         case STXRH_w:
         case STLXRH_w:
         case STLRH_w:
-          Memory::Write<uint16_t>(address, wreg(rt));
+          Write<uint16_t>(address, wreg(rt));
           break;
         case STXR_w:
         case STLXR_w:
         case STLR_w:
-          Memory::Write<uint32_t>(address, wreg(rt));
+          Write<uint32_t>(address, wreg(rt));
           break;
         case STXR_x:
         case STLXR_x:
         case STLR_x:
-          Memory::Write<uint64_t>(address, xreg(rt));
+          Write<uint64_t>(address, xreg(rt));
           break;
         case STXP_w:
         case STLXP_w:
-          Memory::Write<uint32_t>(address, wreg(rt));
-          Memory::Write<uint32_t>(address + element_size, wreg(rt2));
+          Write<uint32_t>(address, wreg(rt));
+          Write<uint32_t>(address + element_size, wreg(rt2));
           break;
         case STXP_x:
         case STLXP_x:
-          Memory::Write<uint64_t>(address, xreg(rt));
-          Memory::Write<uint64_t>(address + element_size, xreg(rt2));
+          Write<uint64_t>(address, xreg(rt));
+          Write<uint64_t>(address + element_size, xreg(rt2));
           break;
         default:
           VIXL_UNREACHABLE();
@@ -1393,27 +1430,27 @@ void Simulator::VisitLoadLiteral(const Instruction* instr) {
     // Use NoRegLog to suppress the register trace (LOG_REGS, LOG_VREGS), then
     // print a more detailed log.
     case LDR_w_lit:
-      set_wreg(rt, Memory::Read<uint32_t>(address), NoRegLog);
+      set_wreg(rt, Read<uint32_t>(address), NoRegLog);
       LogRead(address, rt, kPrintWReg);
       break;
     case LDR_x_lit:
-      set_xreg(rt, Memory::Read<uint64_t>(address), NoRegLog);
+      set_xreg(rt, Read<uint64_t>(address), NoRegLog);
       LogRead(address, rt, kPrintXReg);
       break;
     case LDR_s_lit:
-      set_sreg(rt, Memory::Read<float>(address), NoRegLog);
+      set_sreg(rt, Read<float>(address), NoRegLog);
       LogVRead(address, rt, kPrintSReg);
       break;
     case LDR_d_lit:
-      set_dreg(rt, Memory::Read<double>(address), NoRegLog);
+      set_dreg(rt, Read<double>(address), NoRegLog);
       LogVRead(address, rt, kPrintDReg);
       break;
     case LDR_q_lit:
-      set_qreg(rt, Memory::Read<qreg_t>(address), NoRegLog);
+      set_qreg(rt, Read<qreg_t>(address), NoRegLog);
       LogVRead(address, rt, kPrintReg1Q);
       break;
     case LDRSW_x_lit:
-      set_xreg(rt, Memory::Read<int32_t>(address), NoRegLog);
+      set_xreg(rt, Read<int32_t>(address), NoRegLog);
       LogRead(address, rt, kPrintWReg);
       break;
 
@@ -2242,7 +2279,7 @@ void Simulator::SysOp_W(int op, int64_t val) {
     case CIVAC: {
       // Perform a dummy memory access to ensure that we have read access
       // to the specified address.
-      volatile uint8_t y = Memory::Read<uint8_t>(val);
+      volatile uint8_t y = Read<uint8_t>(val);
       USE(y);
       // TODO: Implement "case ZVA:".
       break;
@@ -2295,10 +2332,11 @@ void Simulator::VisitSystem(const Instruction* instr) {
     VIXL_ASSERT(instr->Mask(SystemHintMask) == HINT);
     switch (instr->ImmHint()) {
       case NOP: break;
+      case CSDB: break;
       default: VIXL_UNIMPLEMENTED();
     }
   } else if (instr->Mask(MemBarrierFMask) == MemBarrierFixed) {
-    __sync_synchronize();
+    js::jit::AtomicOperations::fenceSeqCst();
   } else if ((instr->Mask(SystemSysFMask) == SystemSysFixed)) {
     switch (instr->Mask(SystemSysMask)) {
       case SYS: SysOp_W(instr->SysOp(), xreg(instr->Rt())); break;
@@ -3244,7 +3282,7 @@ void Simulator::VisitNEONModifiedImmediate(const Instruction* instr) {
         vform = q ? kFormat2D : kFormat1D;
         imm = 0;
         for (int i = 0; i < 8; ++i) {
-          if (imm8 & (1 << i)) {
+          if (imm8 & (1ULL << i)) {
             imm |= (UINT64_C(0xff) << (8 * i));
           }
         }

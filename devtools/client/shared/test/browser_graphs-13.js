@@ -7,30 +7,30 @@
 
 const LineGraphWidget = require("devtools/client/shared/widgets/LineGraphWidget");
 
-add_task(function* () {
-  yield addTab("about:blank");
-  yield performTest();
+add_task(async function() {
+  await addTab("about:blank");
+  await performTest();
   gBrowser.removeCurrentTab();
 });
 
-function* performTest() {
-  let [host,, doc] = yield createHost();
+async function performTest() {
+  const [host,, doc] = await createHost();
   doc.body.setAttribute("style",
                         "position: fixed; width: 100%; height: 100%; margin: 0;");
 
-  let graph = new LineGraphWidget(doc.body, "fps");
+  const graph = new LineGraphWidget(doc.body, "fps");
   graph.fixedWidth = 200;
   graph.fixedHeight = 100;
 
-  yield graph.ready();
+  await graph.ready();
   testGraph(host, graph);
 
-  yield graph.destroy();
+  await graph.destroy();
   host.destroy();
 }
 
 function testGraph(host, graph) {
-  let bounds = host.frame.getBoundingClientRect();
+  const bounds = host.frame.getBoundingClientRect();
 
   isnot(graph.width, bounds.width * window.devicePixelRatio,
     "The graph should not span all the parent node's width.");

@@ -8,11 +8,14 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/remote_bitrate_estimator/test/bwe_test_framework.h"
+#include "modules/remote_bitrate_estimator/test/bwe_test_framework.h"
 
 #include <stdio.h>
 
 #include <sstream>
+
+#include "rtc_base/constructormagic.h"
+#include "rtc_base/numerics/safe_minmax.h"
 
 namespace webrtc {
 namespace testing {
@@ -97,18 +100,14 @@ Packet::Packet()
       creation_time_us_(-1),
       send_time_us_(-1),
       sender_timestamp_us_(-1),
-      payload_size_(0),
-      paced_(false) {
-}
+      payload_size_(0) {}
 
 Packet::Packet(int flow_id, int64_t send_time_us, size_t payload_size)
     : flow_id_(flow_id),
       creation_time_us_(send_time_us),
       send_time_us_(send_time_us),
       sender_timestamp_us_(send_time_us),
-      payload_size_(payload_size),
-      paced_(false) {
-}
+      payload_size_(payload_size) {}
 
 Packet::~Packet() {
 }
@@ -154,6 +153,14 @@ void MediaPacket::SetAbsSendTimeMs(int64_t abs_send_time_ms) {
     (1 << 18)) + 500) / 1000) & 0x00fffffful;
 }
 
+BbrBweFeedback::BbrBweFeedback(
+    int flow_id,
+    int64_t send_time_us,
+    int64_t latest_send_time_ms,
+    const std::vector<uint16_t>& packet_feedback_vector)
+    : FeedbackPacket(flow_id, send_time_us, latest_send_time_ms),
+      packet_feedback_vector_(packet_feedback_vector) {}
+
 RembFeedback::RembFeedback(int flow_id,
                            int64_t send_time_us,
                            int64_t last_send_time_ms,
@@ -168,10 +175,9 @@ SendSideBweFeedback::SendSideBweFeedback(
     int flow_id,
     int64_t send_time_us,
     int64_t last_send_time_ms,
-    const std::vector<PacketInfo>& packet_feedback_vector)
+    const std::vector<PacketFeedback>& packet_feedback_vector)
     : FeedbackPacket(flow_id, send_time_us, last_send_time_ms),
-      packet_feedback_vector_(packet_feedback_vector) {
-}
+      packet_feedback_vector_(packet_feedback_vector) {}
 
 bool IsTimeSorted(const Packets& packets) {
   PacketsConstIt last_it = packets.begin();
@@ -219,42 +225,46 @@ uint32_t PacketProcessor::bits_per_second() const {
 RateCounterFilter::RateCounterFilter(PacketProcessorListener* listener,
                                      int flow_id,
                                      const char* name,
-                                     const std::string& plot_name)
+                                     const std::string& algorithm_name)
     : PacketProcessor(listener, flow_id, kRegular),
       packets_per_second_stats_(),
       kbps_stats_(),
       start_plotting_time_ms_(0),
-      plot_name_(plot_name) {
-  std::stringstream ss;
-  ss << name << "_" << flow_id;
-  name_ = ss.str();
+      flow_id_(flow_id),
+      name_(name),
+      algorithm_name_(algorithm_name) {
+  // Only used when compiling with BWE test logging enabled.
+  RTC_UNUSED(flow_id_);
 }
 
 RateCounterFilter::RateCounterFilter(PacketProcessorListener* listener,
                                      const FlowIds& flow_ids,
                                      const char* name,
-                                     const std::string& plot_name)
+                                     const std::string& algorithm_name)
     : PacketProcessor(listener, flow_ids, kRegular),
       packets_per_second_stats_(),
       kbps_stats_(),
       start_plotting_time_ms_(0),
-      plot_name_(plot_name) {
+      name_(name),
+      algorithm_name_(algorithm_name) {
+  // TODO(terelius): Appending the flow IDs to the algorithm name is a hack to
+  // keep the current plot functionality without having to print the full
+  // context for each PLOT line. It is unclear whether multiple flow IDs are
+  // needed at all in the long term.
   std::stringstream ss;
-  ss << name;
-  char delimiter = '_';
+  ss << algorithm_name_;
   for (int flow_id : flow_ids) {
-    ss << delimiter << flow_id;
-    delimiter = ',';
+    ss << ',' << flow_id;
   }
-  name_ = ss.str();
+  algorithm_name_ = ss.str();
 }
 
 RateCounterFilter::RateCounterFilter(PacketProcessorListener* listener,
                                      const FlowIds& flow_ids,
                                      const char* name,
                                      int64_t start_plotting_time_ms,
-                                     const std::string& plot_name)
-    : RateCounterFilter(listener, flow_ids, name, plot_name) {
+                                     const std::string& algorithm_name)
+    : RateCounterFilter(listener, flow_ids, name, algorithm_name) {
   start_plotting_time_ms_ = start_plotting_time_ms;
 }
 
@@ -274,18 +284,21 @@ Stats<double> RateCounterFilter::GetBitrateStats() const {
 }
 
 void RateCounterFilter::Plot(int64_t timestamp_ms) {
+  // TODO(stefan): Reorganize logging configuration to reduce amount
+  // of preprocessor conditionals in the code.
   uint32_t plot_kbps = 0;
   if (timestamp_ms >= start_plotting_time_ms_) {
     plot_kbps = rate_counter_.bits_per_second() / 1000.0;
   }
   BWE_TEST_LOGGING_CONTEXT(name_.c_str());
-  if (plot_name_.empty()) {
-    BWE_TEST_LOGGING_PLOT(0, "Throughput_kbps#1", timestamp_ms, plot_kbps);
+  if (algorithm_name_.empty()) {
+    BWE_TEST_LOGGING_PLOT_WITH_SSRC(0, "Throughput_kbps#1", timestamp_ms,
+                                    plot_kbps, flow_id_);
   } else {
-    BWE_TEST_LOGGING_PLOT_WITH_NAME(0, "Throughput_kbps#1", timestamp_ms,
-                                    plot_kbps, plot_name_);
+    BWE_TEST_LOGGING_PLOT_WITH_NAME_AND_SSRC(0, "Throughput_kbps#1",
+                                             timestamp_ms, plot_kbps, flow_id_,
+                                             algorithm_name_);
   }
-
   RTC_UNUSED(plot_kbps);
 }
 
@@ -394,8 +407,8 @@ namespace {
 inline int64_t TruncatedNSigmaGaussian(Random* const random,
                                        int64_t mean,
                                        int64_t std_dev) {
-  int64_t gaussian_random = random->Gaussian(mean, std_dev);
-  return std::max(std::min(gaussian_random, kN * std_dev), -kN * std_dev);
+  const int64_t gaussian_random = random->Gaussian(mean, std_dev);
+  return rtc::SafeClamp(gaussian_random, -kN * std_dev, kN * std_dev);
 }
 }
 
@@ -505,12 +518,12 @@ void ChokeFilter::RunFor(int64_t /*time_ms*/, Packets* in_out) {
   for (PacketsIt it = in_out->begin(); it != in_out->end(); ) {
     int64_t earliest_send_time_us =
         std::max(last_send_time_us_, (*it)->send_time_us());
-
     int64_t new_send_time_us =
         earliest_send_time_us +
         ((*it)->payload_size() * 8 * 1000 + capacity_kbps_ / 2) /
             capacity_kbps_;
-
+    BWE_TEST_LOGGING_PLOT(0, "MaxThroughput_", new_send_time_us / 1000,
+                          capacity_kbps_);
     if (delay_cap_helper_->ShouldSendPacket(new_send_time_us,
                                             (*it)->send_time_us())) {
       (*it)->set_send_time_us(new_send_time_us);
@@ -760,7 +773,7 @@ AdaptiveVideoSource::AdaptiveVideoSource(int flow_id,
 }
 
 void AdaptiveVideoSource::SetBitrateBps(int bitrate_bps) {
-  bits_per_second_ = std::min(bitrate_bps, 2500000);
+  bits_per_second_ = bitrate_bps;
   frame_size_bytes_ = (bits_per_second_ / 8 * frame_period_ms_ + 500) / 1000;
 }
 

@@ -9,39 +9,34 @@
 #include "nsIFile.h"
 #include "nsIRunnable.h"
 #if defined(XP_WIN) && defined(MOZ_SANDBOX)
-#include "WinUtils.h"
+#  include "WinUtils.h"
 #endif
+#include "GMPLog.h"
 
 #include "base/string_util.h"
 #include "base/process_util.h"
 
 #include <string>
 
-using std::vector;
 using std::string;
+using std::vector;
 
 using mozilla::gmp::GMPProcessParent;
 using mozilla::ipc::GeckoChildProcessHost;
-using base::ProcessArchitecture;
+
+static const int kInvalidFd = -1;
 
 namespace mozilla {
 namespace gmp {
 
 GMPProcessParent::GMPProcessParent(const std::string& aGMPPath)
-: GeckoChildProcessHost(GeckoProcessType_GMPlugin),
-  mGMPPath(aGMPPath)
-{
+    : GeckoChildProcessHost(GeckoProcessType_GMPlugin), mGMPPath(aGMPPath) {
   MOZ_COUNT_CTOR(GMPProcessParent);
 }
 
-GMPProcessParent::~GMPProcessParent()
-{
-  MOZ_COUNT_DTOR(GMPProcessParent);
-}
+GMPProcessParent::~GMPProcessParent() { MOZ_COUNT_DTOR(GMPProcessParent); }
 
-bool
-GMPProcessParent::Launch(int32_t aTimeoutMs)
-{
+bool GMPProcessParent::Launch(int32_t aTimeoutMs) {
   vector<string> args;
 
 #if defined(XP_WIN) && defined(MOZ_SANDBOX)
@@ -51,10 +46,13 @@ GMPProcessParent::Launch(int32_t aTimeoutMs)
   // symbolic links or junction points. Sometimes the Users folder has been
   // moved to another drive using a junction point, so allow for this specific
   // case. See bug 1236680 for details.
-  if (!widget::WinUtils::ResolveMovedUsersFolder(wGMPPath)) {
-    NS_WARNING("ResolveMovedUsersFolder failed for GMP path.");
+  if (!widget::WinUtils::ResolveJunctionPointsAndSymLinks(wGMPPath)) {
+    GMP_LOG("ResolveJunctionPointsAndSymLinks failed for GMP path=%S",
+            wGMPPath.c_str());
+    NS_WARNING("ResolveJunctionPointsAndSymLinks failed for GMP path.");
     return false;
   }
+  GMP_LOG("GMPProcessParent::Launch() resolved path to %S", wGMPPath.c_str());
 
   // If the GMP path is a network path that is not mapped to a drive letter,
   // then we need to fix the path format for the sandbox rule.
@@ -74,19 +72,22 @@ GMPProcessParent::Launch(int32_t aTimeoutMs)
   args.push_back(mGMPPath);
 #endif
 
-  return SyncLaunch(args, aTimeoutMs, base::GetCurrentProcessArchitecture());
+#ifdef MOZ_WIDGET_ANDROID
+  // Add dummy values for pref and pref map to the file descriptors remapping
+  // table. See bug 1440207 and 1481139.
+  AddFdToRemap(kInvalidFd, kInvalidFd);
+  AddFdToRemap(kInvalidFd, kInvalidFd);
+#endif
+  return SyncLaunch(args, aTimeoutMs);
 }
 
-void
-GMPProcessParent::Delete(nsCOMPtr<nsIRunnable> aCallback)
-{
+void GMPProcessParent::Delete(nsCOMPtr<nsIRunnable> aCallback) {
   mDeletedCallback = aCallback;
-  XRE_GetIOMessageLoop()->PostTask(NewNonOwningRunnableMethod(this, &GMPProcessParent::DoDelete));
+  XRE_GetIOMessageLoop()->PostTask(NewNonOwningRunnableMethod(
+      "gmp::GMPProcessParent::DoDelete", this, &GMPProcessParent::DoDelete));
 }
 
-void
-GMPProcessParent::DoDelete()
-{
+void GMPProcessParent::DoDelete() {
   MOZ_ASSERT(MessageLoop::current() == XRE_GetIOMessageLoop());
   Join();
 
@@ -97,5 +98,5 @@ GMPProcessParent::DoDelete()
   delete this;
 }
 
-} // namespace gmp
-} // namespace mozilla
+}  // namespace gmp
+}  // namespace mozilla

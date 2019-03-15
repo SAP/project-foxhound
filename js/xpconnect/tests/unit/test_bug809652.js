@@ -4,7 +4,6 @@
 
 /* See https://bugzilla.mozilla.org/show_bug.cgi?id=813901 */
 
-const Cu = Components.utils;
 const TypedArrays = [ Int8Array, Uint8Array, Int16Array, Uint16Array,
                       Int32Array, Uint32Array, Float32Array, Float64Array,
                       Uint8ClampedArray ];
@@ -58,6 +57,6 @@ function run_test() {
 function checkThrows(expression, sb) {
   var result = Cu.evalInSandbox('(function() { try { ' + expression + '; return "allowed"; } catch (e) { return e.toString(); }})();', sb);
   dump('result: ' + result + '\n\n\n');
-  do_check_true(!!/denied/.exec(result));
+  Assert.ok(!!/denied/.exec(result));
 }
 

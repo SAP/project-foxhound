@@ -14,11 +14,6 @@ Test autocomplete for non-English URLs
 
 */
 
-var histsvc = Cc["@mozilla.org/browser/nav-history-service;1"].
-              getService(Ci.nsINavHistoryService);
-var bmsvc = Cc["@mozilla.org/browser/nav-bookmarks-service;1"].
-            getService(Ci.nsINavBookmarksService);
-
 // create test data
 var searchTerm = "ユニコード";
 var decoded = "http://www.foobar.com/" + searchTerm + "/";
@@ -58,33 +53,18 @@ AutoCompleteInput.prototype = {
     invalidate() {},
 
     // nsISupports implementation
-    QueryInterface(iid) {
-      if (iid.equals(Ci.nsISupports) ||
-          iid.equals(Ci.nsIAutoCompletePopup))
-        return this;
-
-      throw Components.results.NS_ERROR_NO_INTERFACE;
-    }
+    QueryInterface: ChromeUtils.generateQI(["nsIAutoCompletePopup"]),
   },
 
   // nsISupports implementation
-  QueryInterface(iid) {
-    if (iid.equals(Ci.nsISupports) ||
-        iid.equals(Ci.nsIAutoCompleteInput))
-      return this;
+  QueryInterface: ChromeUtils.generateQI(["nsIAutoCompleteInput"]),
+};
 
-    throw Components.results.NS_ERROR_NO_INTERFACE;
-  }
-}
+add_task(async function test_autocomplete_non_english() {
+  await PlacesTestUtils.addVisits(url);
 
-function run_test() {
-  do_test_pending();
-  PlacesTestUtils.addVisits(url).then(continue_test);
-}
-
-function continue_test() {
-  var controller = Components.classes["@mozilla.org/autocomplete/controller;1"].
-                   getService(Components.interfaces.nsIAutoCompleteController);
+  var controller = Cc["@mozilla.org/autocomplete/controller;1"].
+                   getService(Ci.nsIAutoCompleteController);
 
   // Make an AutoCompleteInput that uses our searches
   // and confirms results on search complete
@@ -92,25 +72,27 @@ function continue_test() {
 
   controller.input = input;
 
-  var numSearchesStarted = 0;
-  input.onSearchBegin = function() {
-    numSearchesStarted++;
-    do_check_eq(numSearchesStarted, 1);
-  };
+  return new Promise(resolve => {
+    var numSearchesStarted = 0;
+    input.onSearchBegin = function() {
+      numSearchesStarted++;
+      Assert.equal(numSearchesStarted, 1);
+    };
 
-  input.onSearchComplete = function() {
-    do_check_eq(numSearchesStarted, 1);
-    do_check_eq(controller.searchStatus,
-                Ci.nsIAutoCompleteController.STATUS_COMPLETE_MATCH);
+    input.onSearchComplete = function() {
+      Assert.equal(numSearchesStarted, 1);
+      Assert.equal(controller.searchStatus,
+                   Ci.nsIAutoCompleteController.STATUS_COMPLETE_MATCH);
 
-    // test that we found the entry we added
-    do_check_eq(controller.matchCount, 1);
+      // test that we found the entry we added
+      Assert.equal(controller.matchCount, 1);
 
-    // Make sure the url is the same according to spec, so it can be deleted
-    do_check_eq(controller.getValueAt(0), url.spec);
+      // Make sure the url is the same according to spec, so it can be deleted
+      Assert.equal(controller.getValueAt(0), url.spec);
 
-    do_test_finished();
-  };
+      resolve();
+    };
 
-  controller.startSearch(searchTerm);
-}
+    controller.startSearch(searchTerm);
+  });
+});

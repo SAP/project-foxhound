@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,7 +15,7 @@
 // used to satisfy the nsBaseChannel::OpenContentStream method.
 //
 // The subclass typically overrides the default Available, ReadSegments and
-// CloseWithStatus methods.  By default, Read is implemented in terms of 
+// CloseWithStatus methods.  By default, Read is implemented in terms of
 // ReadSegments, and Close is implemented in terms of CloseWithStatus.  If
 // CloseWithStatus is overriden, then the subclass will usually want to call
 // the base class' CloseWithStatus method before returning.
@@ -33,17 +33,14 @@
 // to ensure that the pending callback is dispatched when it wants to have its
 // ReadSegments method called again.
 
-class nsBaseContentStream : public nsIAsyncInputStream
-{
-public: 
+class nsBaseContentStream : public nsIAsyncInputStream {
+ public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIINPUTSTREAM
   NS_DECL_NSIASYNCINPUTSTREAM
 
   explicit nsBaseContentStream(bool nonBlocking)
-    : mStatus(NS_OK)
-    , mNonBlocking(nonBlocking) {
-  }
+      : mStatus(NS_OK), mNonBlocking(nonBlocking) {}
 
   nsresult Status() { return mStatus; }
   bool IsNonBlocking() { return mNonBlocking; }
@@ -57,26 +54,26 @@ public:
 
   // Called to dispatch a pending callback.  If there is no pending callback,
   // then this function does nothing.  Pass true to this function to cause the
-  // callback to occur asynchronously; otherwise, the callback will happen 
+  // callback to occur asynchronously; otherwise, the callback will happen
   // before this function returns.
   void DispatchCallback(bool async = true);
 
   // Helper function to make code more self-documenting.
   void DispatchCallbackSync() { DispatchCallback(false); }
 
-protected:
-  virtual ~nsBaseContentStream() {}
+ protected:
+  virtual ~nsBaseContentStream() = default;
 
-private:
+ private:
   // Called from the base stream's AsyncWait method when a pending callback
   // is installed on the stream.
   virtual void OnCallbackPending() {}
 
-private:
+ private:
   nsCOMPtr<nsIInputStreamCallback> mCallback;
-  nsCOMPtr<nsIEventTarget>         mCallbackTarget;
-  nsresult                         mStatus;
-  bool                             mNonBlocking;
+  nsCOMPtr<nsIEventTarget> mCallbackTarget;
+  nsresult mStatus;
+  bool mNonBlocking;
 };
 
-#endif // nsBaseContentStream_h__
+#endif  // nsBaseContentStream_h__

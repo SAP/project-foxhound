@@ -12,7 +12,7 @@ var navbar = document.getElementById(CustomizableUI.AREA_NAVBAR);
 // When we drag an item onto a customizable area, and not over a specific target, we
 // should assume that we're appending them to the area. If doing so, we should scan
 // backwards over any hidden items and insert the item before those hidden items.
-add_task(function*() {
+add_task(async function() {
   ok(CustomizableUI.inDefaultState, "Should be in the default state");
 
   // Iterate backwards over the items in the nav-bar until we find the first
@@ -38,19 +38,20 @@ add_task(function*() {
   hidden1.hidden = hidden2.hidden = true;
 
   // Make sure we have some hidden items at the end of the nav-bar.
-  navbar.insertItem(hidden1.id);
-  navbar.insertItem(hidden2.id);
+  CustomizableUI.addWidgetToArea(kHidden1Id, "nav-bar");
+  CustomizableUI.addWidgetToArea(kHidden2Id, "nav-bar");
 
   // Drag an item and drop it onto the nav-bar customization target, but
   // not over a particular item.
-  yield startCustomizing();
-  let downloadsButton = document.getElementById("downloads-button");
-  simulateItemDrag(downloadsButton, navbar.customizationTarget);
+  await startCustomizing();
+  let homeButton = document.getElementById("home-button");
+  let navbarTarget = CustomizableUI.getCustomizationTarget(navbar);
+  simulateItemDrag(homeButton, navbarTarget, "end");
 
-  yield endCustomizing();
+  await endCustomizing();
 
-  is(downloadsButton.previousSibling.id, lastVisible.id,
+  is(homeButton.previousElementSibling.id, lastVisible.id,
      "The downloads button should be placed after the last visible item.");
 
-  yield resetCustomization();
+  await resetCustomization();
 });

@@ -6,18 +6,15 @@
 const { components } = require("chrome");
 const Services = require("Services");
 const { actorActorSpec, actorRegistrySpec } = require("devtools/shared/specs/actor-registry");
-const protocol = require("devtools/shared/protocol");
-const { custom } = protocol;
+const { FrontClassWithSpec, registerFront } = require("devtools/shared/protocol");
 
 loader.lazyImporter(this, "NetUtil", "resource://gre/modules/NetUtil.jsm");
 
-const ActorActorFront = protocol.FrontClassWithSpec(actorActorSpec, {
-  initialize: function (client, form) {
-    protocol.Front.prototype.initialize.call(this, client, form);
-  }
-});
+class ActorActorFront extends FrontClassWithSpec(actorActorSpec) {
+}
 
 exports.ActorActorFront = ActorActorFront;
+registerFront(ActorActorFront);
 
 function request(uri) {
   return new Promise((resolve, reject) => {
@@ -39,29 +36,27 @@ function request(uri) {
         return;
       }
 
-      let source = NetUtil.readInputStreamToString(stream, stream.available());
+      const source = NetUtil.readInputStreamToString(stream, stream.available());
       stream.close();
       resolve(source);
     });
   });
 }
 
-const ActorRegistryFront = protocol.FrontClassWithSpec(actorRegistrySpec, {
-  initialize: function (client, form) {
-    protocol.Front.prototype.initialize.call(this, client,
-                                             { actor: form.actorRegistryActor });
+class ActorRegistryFront extends FrontClassWithSpec(actorRegistrySpec) {
+  constructor(client, form) {
+    super(client, { actor: form.actorRegistryActor });
 
     this.manage(this);
-  },
+  }
 
-  registerActor: custom(function (uri, options) {
+  registerActor(uri, options) {
     return request(uri, options)
       .then(sourceText => {
-        return this._registerActor(sourceText, uri, options);
+        return super.registerActor(sourceText, uri, options);
       });
-  }, {
-    impl: "_registerActor"
-  })
-});
+  }
+}
 
 exports.ActorRegistryFront = ActorRegistryFront;
+registerFront(ActorRegistryFront);

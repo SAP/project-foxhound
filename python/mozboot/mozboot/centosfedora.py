@@ -2,13 +2,16 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import os
+from __future__ import absolute_import
+
 import platform
 
 from mozboot.base import BaseBootstrapper
+from mozboot.linux_common import NodeInstall, StyloInstall, ClangStaticAnalysisInstall
 
 
-class CentOSFedoraBootstrapper(BaseBootstrapper):
+class CentOSFedoraBootstrapper(NodeInstall, StyloInstall,
+                               ClangStaticAnalysisInstall, BaseBootstrapper):
     def __init__(self, distro, version, dist_id, **kwargs):
         BaseBootstrapper.__init__(self, **kwargs)
 
@@ -20,7 +23,9 @@ class CentOSFedoraBootstrapper(BaseBootstrapper):
 
         self.packages = [
             'autoconf213',
-            'mercurial',
+            'nodejs',
+            'npm',
+            'which',
         ]
 
         self.browser_group_packages = [
@@ -36,13 +41,17 @@ class CentOSFedoraBootstrapper(BaseBootstrapper):
                            # Development group.
             'libstdc++-static',
             'libXt-devel',
-            'mesa-libGL-devel',
+            'nasm',
             'pulseaudio-libs-devel',
             'wireless-tools-devel',
             'yasm',
         ]
 
-        self.mobile_android_packages = []
+        self.mobile_android_packages = [
+            'java-1.8.0-openjdk-devel',
+            # For downloading the Android SDK and NDK.
+            'wget',
+        ]
 
         if self.distro in ('CentOS', 'CentOS Linux'):
             self.group_packages += [
@@ -75,10 +84,7 @@ class CentOSFedoraBootstrapper(BaseBootstrapper):
             ]
 
             self.mobile_android_packages += [
-                'java-1.8.0-openjdk-devel',
-                'ncurses-devel.i686',
-                'libstdc++.i686',
-                'zlib-devel.i686',
+                'ncurses-compat-libs',
             ]
 
     def install_system_packages(self):
@@ -92,16 +98,10 @@ class CentOSFedoraBootstrapper(BaseBootstrapper):
         self.ensure_browser_packages(artifact_mode=True)
 
     def install_mobile_android_packages(self):
-        if self.distro in ('CentOS', 'CentOS Linux'):
-            BaseBootstrapper.install_mobile_android_packages(self)
-        elif self.distro == 'Fedora':
-            self.install_fedora_mobile_android_packages()
+        self.ensure_mobile_android_packages(artifact_mode=False)
 
     def install_mobile_android_artifact_mode_packages(self):
-        if self.distro in ('CentOS', 'CentOS Linux'):
-            BaseBootstrapper.install_mobile_android_artifact_mode_packages(self)
-        elif self.distro == 'Fedora':
-            self.install_fedora_mobile_android_packages(artifact_mode=True)
+        self.ensure_mobile_android_packages(artifact_mode=True)
 
     def ensure_browser_packages(self, artifact_mode=False):
         # TODO: Figure out what not to install for artifact mode
@@ -109,44 +109,26 @@ class CentOSFedoraBootstrapper(BaseBootstrapper):
         self.dnf_install(*self.browser_packages)
 
         if self.distro in ('CentOS', 'CentOS Linux'):
-            yasm = 'http://pkgs.repoforge.org/yasm/yasm-1.1.0-1.el6.rf.i686.rpm'
+            yasm = ('http://dl.fedoraproject.org/pub/epel/6/i386/'
+                    'Packages/y/yasm-1.2.0-1.el6.i686.rpm')
             if platform.architecture()[0] == '64bit':
-                yasm = 'http://pkgs.repoforge.org/yasm/yasm-1.1.0-1.el6.rf.x86_64.rpm'
+                yasm = ('http://dl.fedoraproject.org/pub/epel/6/x86_64/'
+                        'Packages/y/yasm-1.2.0-1.el6.x86_64.rpm')
 
             self.run_as_root(['rpm', '-ivh', yasm])
 
-    def install_fedora_mobile_android_packages(self, artifact_mode=False):
-        import android
-
+    def ensure_mobile_android_packages(self, artifact_mode=False):
         # Install Android specific packages.
         self.dnf_install(*self.mobile_android_packages)
 
-        # Fetch Android SDK and NDK.
-        mozbuild_path = os.environ.get('MOZBUILD_STATE_PATH', os.path.expanduser(os.path.join('~', '.mozbuild')))
-        self.sdk_path = os.environ.get('ANDROID_SDK_HOME', os.path.join(mozbuild_path, 'android-sdk-linux'))
-        self.ndk_path = os.environ.get('ANDROID_NDK_HOME', os.path.join(mozbuild_path, 'android-ndk-r11b'))
-        self.sdk_url = 'https://dl.google.com/android/android-sdk_r24.0.1-linux.tgz'
-        self.ndk_url = android.android_ndk_url('linux')
-
-        android.ensure_android_sdk_and_ndk(path=mozbuild_path,
-                                           sdk_path=self.sdk_path, sdk_url=self.sdk_url,
-                                           ndk_path=self.ndk_path, ndk_url=self.ndk_url,
-                                           artifact_mode=artifact_mode)
-
-        # Most recent version of build-tools appears to be 23.0.1 on Fedora
-        packages = [p for p in android.ANDROID_PACKAGES if not p.startswith('build-tools')]
-        packages.append('build-tools-23.0.1')
-
-        # 3. We expect the |android| tool to be at
-        # ~/.mozbuild/android-sdk-linux/tools/android.
-        android_tool = os.path.join(self.sdk_path, 'tools', 'android')
-        android.ensure_android_packages(android_tool=android_tool, packages=packages)
+        self.ensure_java()
+        from mozboot import android
+        android.ensure_android('linux', artifact_mode=artifact_mode,
+                               no_interactive=self.no_interactive)
 
     def suggest_mobile_android_mozconfig(self, artifact_mode=False):
-        import android
-        android.suggest_mozconfig(sdk_path=self.sdk_path,
-                                  ndk_path=self.ndk_path,
-                                  artifact_mode=artifact_mode)
+        from mozboot import android
+        android.suggest_mozconfig('linux', artifact_mode=artifact_mode)
 
     def suggest_mobile_android_artifact_mode_mozconfig(self):
         self.suggest_mobile_android_mozconfig(artifact_mode=True)

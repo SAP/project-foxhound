@@ -1,7 +1,7 @@
 // Debugger.Environment.prototype.callee reveals the callee of environments
 // that have them.
 
-var g = newGlobal();
+var g = newGlobal({newCompartment: true});
 var dbg = new Debugger;
 var gw = dbg.addDebuggee(g);
 
@@ -38,7 +38,7 @@ check('j()', 'declarative', null);
 // All evals get a lexical scope.
 check('eval("debugger");', 'declarative', null);
 
-g.eval('function m() { debugger; yield true; }');
+g.eval('function* m() { debugger; yield true; }');
 check('m().next();', 'declarative', gw.makeDebuggeeValue(g.m));
 
 g.eval('function n() { { let x = 1; debugger; } }');

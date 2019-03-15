@@ -4,7 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-this.EXPORTED_SYMBOLS = [
+var EXPORTED_SYMBOLS = [
   "NetUtil",
 ];
 
@@ -12,23 +12,20 @@ this.EXPORTED_SYMBOLS = [
  * Necko utilities
  */
 
-////////////////////////////////////////////////////////////////////////////////
-//// Constants
-
-const Ci = Components.interfaces;
-const Cc = Components.classes;
-const Cr = Components.results;
-const Cu = Components.utils;
+// //////////////////////////////////////////////////////////////////////////////
+// // Constants
 
 const PR_UINT32_MAX = 0xffffffff;
 
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-Components.utils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-////////////////////////////////////////////////////////////////////////////////
-//// NetUtil Object
+const BinaryInputStream = Components.Constructor("@mozilla.org/binaryinputstream;1",
+                                                 "nsIBinaryInputStream", "setInputStream");
 
-this.NetUtil = {
+// //////////////////////////////////////////////////////////////////////////////
+// // NetUtil Object
+
+var NetUtil = {
     /**
      * Function to perform simple async copying from aSource (an input stream)
      * to aSink (an output stream).  The copy will happen on some background
@@ -47,8 +44,7 @@ this.NetUtil = {
      *         return value if desired.
      */
     asyncCopy: function NetUtil_asyncCopy(aSource, aSink,
-                                          aCallback = null)
-    {
+                                          aCallback = null) {
         if (!aSource || !aSink) {
             let exception = new Components.Exception(
                 "Must have a source and a sink",
@@ -69,11 +65,11 @@ this.NetUtil = {
         var observer;
         if (aCallback) {
             observer = {
-                onStartRequest: function(aRequest, aContext) {},
-                onStopRequest: function(aRequest, aContext, aStatusCode) {
+                onStartRequest(aRequest, aContext) {},
+                onStopRequest(aRequest, aContext, aStatusCode) {
                     aCallback(aStatusCode);
-                }
-            }
+                },
+            };
         } else {
             observer = null;
         }
@@ -101,8 +97,7 @@ this.NetUtil = {
      *        2) The status code from opening the source.
      *        3) Reference to the nsIRequest.
      */
-    asyncFetch: function NetUtil_asyncFetch(aSource, aCallback)
-    {
+    asyncFetch: function NetUtil_asyncFetch(aSource, aCallback) {
         if (!aSource || !aCallback) {
             let exception = new Components.Exception(
                 "Must have a source and a callback",
@@ -122,18 +117,18 @@ this.NetUtil = {
         let listener = Cc["@mozilla.org/network/simple-stream-listener;1"].
                        createInstance(Ci.nsISimpleStreamListener);
         listener.init(pipe.outputStream, {
-            onStartRequest: function(aRequest, aContext) {},
-            onStopRequest: function(aRequest, aContext, aStatusCode) {
+            onStartRequest(aRequest, aContext) {},
+            onStopRequest(aRequest, aContext, aStatusCode) {
                 pipe.outputStream.close();
                 aCallback(pipe.inputStream, aStatusCode, aRequest);
-            }
+            },
         });
 
         // Input streams are handled slightly differently from everything else.
         if (aSource instanceof Ci.nsIInputStream) {
             let pump = Cc["@mozilla.org/network/input-stream-pump;1"].
                        createInstance(Ci.nsIInputStreamPump);
-            pump.init(aSource, -1, -1, 0, 0, true);
+            pump.init(aSource, 0, 0, true);
             pump.asyncRead(listener, null);
             return;
         }
@@ -149,8 +144,7 @@ this.NetUtil = {
             if (channel.loadInfo &&
                 channel.loadInfo.securityMode != 0) {
                 channel.asyncOpen2(listener);
-            }
-            else {
+            } else {
                 // Log deprecation warning to console to make sure all channels
                 // are created providing the correct security flags in the loadinfo.
                 // See nsILoadInfo for all available security flags and also the API
@@ -160,8 +154,7 @@ this.NetUtil = {
                     "Please create channel using NetUtil.newChannel()");
                 channel.asyncOpen(listener, null);
             }
-        }
-        catch (e) {
+        } catch (e) {
             let exception = new Components.Exception(
                 "Failed to open input source '" + channel.originalURI.spec + "'",
                 e.result,
@@ -188,8 +181,7 @@ this.NetUtil = {
      *
      * @return an nsIURI object.
      */
-    newURI: function NetUtil_newURI(aTarget, aOriginCharset, aBaseURI)
-    {
+    newURI: function NetUtil_newURI(aTarget, aOriginCharset, aBaseURI) {
         if (!aTarget) {
             let exception = new Components.Exception(
                 "Must have a non-null string spec or nsIFile object",
@@ -200,10 +192,10 @@ this.NetUtil = {
         }
 
         if (aTarget instanceof Ci.nsIFile) {
-            return this.ioService.newFileURI(aTarget);
+            return Services.io.newFileURI(aTarget);
         }
 
-        return this.ioService.newURI(aTarget, aOriginCharset, aBaseURI);
+        return Services.io.newURI(aTarget, aOriginCharset, aBaseURI);
     },
 
     /**
@@ -236,48 +228,11 @@ this.NetUtil = {
      *            loadingNode are present.
      *            This should be used with care as it skips security checks.
      *        }
-     * @param aOriginCharset [deprecated]
-     *        The character set for the URI.  Only used if aWhatToLoad is a
-     *        string, which is a deprecated API.  Must be undefined otherwise.
-     *        Use NetUtil.newURI if you need to use this option.
-     * @param aBaseURI [deprecated]
-     *        The base URI for the spec.  Only used if aWhatToLoad is a string,
-     *        which is a deprecated API.  Must be undefined otherwise.  Use
-     *        NetUtil.newURI if you need to use this option.
      * @return an nsIChannel object.
      */
-    newChannel: function NetUtil_newChannel(aWhatToLoad, aOriginCharset, aBaseURI)
-    {
-        // Check for the deprecated API first.
-        if (typeof aWhatToLoad == "string" ||
-            (aWhatToLoad instanceof Ci.nsIFile) ||
-            (aWhatToLoad instanceof Ci.nsIURI)) {
-
-            let uri = (aWhatToLoad instanceof Ci.nsIURI)
-                      ? aWhatToLoad
-                      : this.newURI(aWhatToLoad, aOriginCharset, aBaseURI);
-
-            // log deprecation warning for developers.
-            Services.console.logStringMessage(
-              "Warning: NetUtil.newChannel(uri) deprecated, please provide argument 'aWhatToLoad'");
-
-            // Provide default loadinfo arguments and call the new API.
-            let systemPrincipal =
-              Services.scriptSecurityManager.getSystemPrincipal();
-
-            return this.ioService.newChannelFromURI2(
-                     uri,
-                     null, // loadingNode
-                     systemPrincipal, // loadingPrincipal
-                     null, // triggeringPrincipal
-                     Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
-                     Ci.nsIContentPolicy.TYPE_OTHER);
-        }
-
-        // We are using the updated API, that requires only the options object.
-        if (typeof aWhatToLoad != "object" ||
-             aOriginCharset !== undefined ||
-             aBaseURI !== undefined) {
+    newChannel: function NetUtil_newChannel(aWhatToLoad) {
+        // Make sure the API is called using only the options object.
+        if (typeof aWhatToLoad != "object" || arguments.length != 1) {
             throw new Components.Exception(
                 "newChannel requires a single object argument",
                 Cr.NS_ERROR_INVALID_ARG,
@@ -337,9 +292,15 @@ this.NetUtil = {
         }
 
         if (securityFlags === undefined) {
-            securityFlags = loadUsingSystemPrincipal
-                            ? Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL
-                            : Ci.nsILoadInfo.SEC_NORMAL;
+            if (!loadUsingSystemPrincipal) {
+                throw new Components.Exception(
+                    "newChannel requires the 'securityFlags' property on" +
+                    " the options object unless loading from system principal.",
+                    Cr.NS_ERROR_INVALID_ARG,
+                    Components.stack.caller
+                );
+            }
+            securityFlags = Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL;
         }
 
         if (contentPolicyType === undefined) {
@@ -354,12 +315,12 @@ this.NetUtil = {
             contentPolicyType = Ci.nsIContentPolicy.TYPE_OTHER;
         }
 
-        return this.ioService.newChannelFromURI2(uri,
-                                                 loadingNode || null,
-                                                 loadingPrincipal || null,
-                                                 triggeringPrincipal || null,
-                                                 securityFlags,
-                                                 contentPolicyType);
+        return Services.io.newChannelFromURI2(uri,
+                                              loadingNode || null,
+                                              loadingPrincipal || null,
+                                              triggeringPrincipal || null,
+                                              securityFlags,
+                                              contentPolicyType);
     },
 
     /**
@@ -387,8 +348,7 @@ this.NetUtil = {
      */
     readInputStreamToString: function NetUtil_readInputStreamToString(aInputStream,
                                                                       aCount,
-                                                                      aOptions)
-    {
+                                                                      aOptions) {
         if (!(aInputStream instanceof Ci.nsIInputStream)) {
             let exception = new Components.Exception(
                 "First argument should be an nsIInputStream",
@@ -426,8 +386,7 @@ this.NetUtil = {
             cis.readString(-1, str);
             cis.close();
             return str.value;
-          }
-          catch (e) {
+          } catch (e) {
             // Adjust the stack so it throws at the caller's location.
             throw new Components.Exception(e.message, e.result,
                                            Components.stack.caller, e.data);
@@ -439,8 +398,7 @@ this.NetUtil = {
         sis.init(aInputStream);
         try {
             return sis.readBytes(aCount);
-        }
-        catch (e) {
+        } catch (e) {
             // Adjust the stack so it throws at the caller's location.
             throw new Components.Exception(e.message, e.result,
                                            Components.stack.caller, e.data);
@@ -448,14 +406,38 @@ this.NetUtil = {
     },
 
     /**
-     * Returns a reference to nsIIOService.
+     * Reads aCount bytes from aInputStream into a string.
      *
-     * @return a reference to nsIIOService.
+     * @param {nsIInputStream} aInputStream
+     *        The input stream to read from.
+     * @param {integer} [aCount = aInputStream.available()]
+     *        The number of bytes to read from the stream.
+     *
+     * @return the bytes from the input stream in string form.
+     *
+     * @throws NS_ERROR_INVALID_ARG if aInputStream is not an nsIInputStream.
+     * @throws NS_BASE_STREAM_WOULD_BLOCK if reading from aInputStream would
+     *         block the calling thread (non-blocking mode only).
+     * @throws NS_ERROR_FAILURE if there are not enough bytes available to read
+     *         aCount amount of data.
      */
-    get ioService()
-    {
-        delete this.ioService;
-        return this.ioService = Cc["@mozilla.org/network/io-service;1"].
-                                getService(Ci.nsIIOService);
+    readInputStream(aInputStream, aCount) {
+        if (!(aInputStream instanceof Ci.nsIInputStream)) {
+            let exception = new Components.Exception(
+                "First argument should be an nsIInputStream",
+                Cr.NS_ERROR_INVALID_ARG,
+                Components.stack.caller
+            );
+            throw exception;
+        }
+
+        if (!aCount) {
+            aCount = aInputStream.available();
+        }
+
+        let stream = new BinaryInputStream(aInputStream);
+        let result = new ArrayBuffer(aCount);
+        stream.readArrayBuffer(result.byteLength, result);
+        return result;
     },
 };

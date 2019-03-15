@@ -10,27 +10,27 @@
 const { appendAndWaitForPaint } = require("devtools/client/performance/test/helpers/dom-utils");
 const { synthesizeCustomTreeClass } = require("devtools/client/performance/test/helpers/synth-utils");
 
-add_task(function* () {
-  let { MyCustomTreeItem } = synthesizeCustomTreeClass();
+add_task(async function() {
+  const { MyCustomTreeItem } = synthesizeCustomTreeClass();
 
-  let container = document.createElement("vbox");
+  const container = document.createXULElement("vbox");
   container.style.height = "100%";
   container.style.overflow = "scroll";
-  yield appendAndWaitForPaint(gBrowser.selectedBrowser.parentNode, container);
+  await appendAndWaitForPaint(gBrowser.selectedBrowser.parentNode, container);
 
-  let myDataSrc = {
+  const myDataSrc = {
     label: "root",
-    children: []
+    children: [],
   };
 
   for (let i = 0; i < 1000; i++) {
     myDataSrc.children.push({
       label: "child-" + i,
-      children: []
+      children: [],
     });
   }
 
-  let treeRoot = new MyCustomTreeItem(myDataSrc, { parent: null });
+  const treeRoot = new MyCustomTreeItem(myDataSrc, { parent: null });
   treeRoot.attachTo(container);
   treeRoot.focus();
   treeRoot.expand();
@@ -51,7 +51,7 @@ add_task(function* () {
 
   // Test PageUp and PageDown
 
-  let nodesPerPageSize = treeRoot._getNodesPerPageSize();
+  const nodesPerPageSize = treeRoot._getNodesPerPageSize();
 
   key("VK_PAGE_DOWN");
   is(document.commandDispatcher.focusedElement,

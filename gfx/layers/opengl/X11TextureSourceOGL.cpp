@@ -1,9 +1,8 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-#ifdef GL_PROVIDER_GLX
 
 #include "X11TextureSourceOGL.h"
 #include "gfxXlibSurface.h"
@@ -14,35 +13,28 @@ namespace layers {
 
 using namespace mozilla::gfx;
 
-X11TextureSourceOGL::X11TextureSourceOGL(CompositorOGL* aCompositor, gfxXlibSurface* aSurface)
-  : mCompositor(aCompositor)
-  , mSurface(aSurface)
-  , mTexture(0)
-  , mUpdated(false)
-{
-}
+X11TextureSourceOGL::X11TextureSourceOGL(CompositorOGL* aCompositor,
+                                         gfxXlibSurface* aSurface)
+    : mGL(aCompositor->gl()),
+      mSurface(aSurface),
+      mTexture(0),
+      mUpdated(false) {}
 
-X11TextureSourceOGL::~X11TextureSourceOGL()
-{
-  DeallocateDeviceData();
-}
+X11TextureSourceOGL::~X11TextureSourceOGL() { DeallocateDeviceData(); }
 
-void
-X11TextureSourceOGL::DeallocateDeviceData()
-{
+void X11TextureSourceOGL::DeallocateDeviceData() {
   if (mTexture) {
     if (gl() && gl()->MakeCurrent()) {
-      gl::sGLXLibrary.ReleaseTexImage(mSurface->XDisplay(), mSurface->GetGLXPixmap());
+      gl::sGLXLibrary.ReleaseTexImage(mSurface->XDisplay(),
+                                      mSurface->GetGLXPixmap());
       gl()->fDeleteTextures(1, &mTexture);
       mTexture = 0;
     }
   }
 }
 
-void
-X11TextureSourceOGL::BindTexture(GLenum aTextureUnit,
-                                 gfx::SamplingFilter aSamplingFilter)
-{
+void X11TextureSourceOGL::BindTexture(GLenum aTextureUnit,
+                                      gfx::SamplingFilter aSamplingFilter) {
   gl()->fActiveTexture(aTextureUnit);
 
   if (!mTexture) {
@@ -50,11 +42,13 @@ X11TextureSourceOGL::BindTexture(GLenum aTextureUnit,
 
     gl()->fBindTexture(LOCAL_GL_TEXTURE_2D, mTexture);
 
-    gl::sGLXLibrary.BindTexImage(mSurface->XDisplay(), mSurface->GetGLXPixmap());
+    gl::sGLXLibrary.BindTexImage(mSurface->XDisplay(),
+                                 mSurface->GetGLXPixmap());
   } else {
     gl()->fBindTexture(LOCAL_GL_TEXTURE_2D, mTexture);
     if (mUpdated) {
-      gl::sGLXLibrary.UpdateTexImage(mSurface->XDisplay(), mSurface->GetGLXPixmap());
+      gl::sGLXLibrary.UpdateTexImage(mSurface->XDisplay(),
+                                     mSurface->GetGLXPixmap());
       mUpdated = false;
     }
   }
@@ -62,40 +56,24 @@ X11TextureSourceOGL::BindTexture(GLenum aTextureUnit,
   ApplySamplingFilterToBoundTexture(gl(), aSamplingFilter, LOCAL_GL_TEXTURE_2D);
 }
 
-IntSize
-X11TextureSourceOGL::GetSize() const
-{
-  return mSurface->GetSize();
-}
+IntSize X11TextureSourceOGL::GetSize() const { return mSurface->GetSize(); }
 
-SurfaceFormat
-X11TextureSourceOGL::GetFormat() const {
+SurfaceFormat X11TextureSourceOGL::GetFormat() const {
   gfxContentType type = mSurface->GetContentType();
   return X11TextureSourceOGL::ContentTypeToSurfaceFormat(type);
 }
 
-void
-X11TextureSourceOGL::SetCompositor(Compositor* aCompositor)
-{
-  CompositorOGL* glCompositor = AssertGLCompositor(aCompositor);
-  if (mCompositor == glCompositor) {
-    return;
+void X11TextureSourceOGL::SetTextureSourceProvider(
+    TextureSourceProvider* aProvider) {
+  gl::GLContext* newGL = aProvider ? aProvider->GetGLContext() : nullptr;
+  if (mGL != newGL) {
+    DeallocateDeviceData();
   }
-  DeallocateDeviceData();
-  if (glCompositor) {
-    mCompositor = glCompositor;
-  }
+  mGL = newGL;
 }
 
-gl::GLContext*
-X11TextureSourceOGL::gl() const
-{
-  return mCompositor ? mCompositor->gl() : nullptr;
-}
-
-SurfaceFormat
-X11TextureSourceOGL::ContentTypeToSurfaceFormat(gfxContentType aType)
-{
+SurfaceFormat X11TextureSourceOGL::ContentTypeToSurfaceFormat(
+    gfxContentType aType) {
   // X11 uses a switched format and the OGL compositor
   // doesn't support ALPHA / A8.
   switch (aType) {
@@ -108,7 +86,5 @@ X11TextureSourceOGL::ContentTypeToSurfaceFormat(gfxContentType aType)
   }
 }
 
-}
-}
-
-#endif
+}  // namespace layers
+}  // namespace mozilla

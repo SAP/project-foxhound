@@ -18,53 +18,59 @@
       /* exported performRequests */
       "use strict";
 
-      function get(address, query) {
-        let xhr = new XMLHttpRequest();
-        xhr.open("GET", address + query, true);
-        xhr.send();
+      async function get(address, query) {
+        return new Promise(resolve => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("GET", address + query, true);
+          xhr.onreadystatechange = function() {
+            if (this.readyState == this.DONE) {
+              resolve();
+            }
+          };
+          xhr.send();
+        });
       }
 
-      function post(address, query, contentType, postBody) {
-        let xhr = new XMLHttpRequest();
-        xhr.open("POST", address + query, true);
-        xhr.setRequestHeader("content-type", contentType);
-        xhr.send(postBody);
+      async function request(address, query, contentType, requestBody, method) {
+        return new Promise(resolve => {
+          const xhr = new XMLHttpRequest();
+          xhr.open(method, address + query, true);
+          xhr.setRequestHeader("content-type", contentType);
+          xhr.onreadystatechange = function() {
+            if (this.readyState == this.DONE) {
+              resolve();
+            }
+          };
+          xhr.send(requestBody);
+        });
       }
 
-      function performRequests() {
+      async function post(address, query, contentType, postBody) {
+        return request(address, query, contentType, postBody, "POST");
+      }
+
+      async function patch(address, query, contentType, patchBody) {
+        return request(address, query, contentType, patchBody, "PATCH");
+      }
+
+      async function put(address, query, contentType, putBody) {
+        return request(address, query, contentType, putBody, "PUT");
+      }
+
+      async function performRequests() {
         const urlencoded = "application/x-www-form-urlencoded";
-
-        /* eslint-disable max-nested-callbacks */
-        setTimeout(function () {
-          post("baz", "?a", urlencoded, '{ "foo": "bar" }');
-
-          setTimeout(function () {
-            post("baz", "?a=b", urlencoded, '{ "foo": "bar" }');
-
-            setTimeout(function () {
-              post("baz", "?a=b", urlencoded, "?foo=bar");
-
-              setTimeout(function () {
-                post("baz", "?a", undefined, '{ "foo": "bar" }');
-
-                setTimeout(function () {
-                  post("baz", "?a=b", undefined, '{ "foo": "bar" }');
-
-                  setTimeout(function () {
-                    post("baz", "?a=b", undefined, "?foo=bar");
-
-                    setTimeout(function () {
-                      get("baz", "");
-
-                      // Done.
-                    }, 10);
-                  }, 10);
-                }, 10);
-              }, 10);
-            }, 10);
-          }, 10);
-        }, 10);
-        /* eslint-enable max-nested-callbacks */
+        await post("baz", "?a", urlencoded, '{ "foo": "bar" }');
+        await post("baz", "?a=b", urlencoded, '{ "foo": "bar" }');
+        await post("baz", "?a=b", urlencoded, "?foo=bar");
+        await post("baz", "?a", undefined, '{ "foo": "bar" }');
+        await post("baz", "?a=b", undefined, '{ "foo": "bar" }');
+        await post("baz", "?a=b", undefined, "?foo=bar");
+        await get("baz", "");
+        await patch("baz", "?a=b", urlencoded, '{ "foo": "bar" }');
+        await put("baz", "?a=b", urlencoded, '{ "foo": "bar" }');
+        await get("baz", "?species=in=(52,60)");
+        await get("baz", "?a=&a=b");
+        await get("baz", "?a=b&a=c&d=1");
       }
     </script>
   </body>

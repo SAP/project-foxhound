@@ -4,29 +4,25 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"
-
 #include "SVGTransformListParser.h"
+
+#include "mozilla/ArrayUtils.h"
 #include "SVGContentUtils.h"
-#include "nsSVGTransform.h"
+#include "SVGTransform.h"
 #include "nsGkAtoms.h"
-#include "nsIAtom.h"
+#include "nsAtom.h"
 
 using namespace mozilla;
 
 //----------------------------------------------------------------------
 // private methods
 
-bool
-SVGTransformListParser::Parse()
-{
+bool SVGTransformListParser::Parse() {
   mTransforms.Clear();
   return ParseTransforms();
 }
 
-bool
-SVGTransformListParser::ParseTransforms()
-{
+bool SVGTransformListParser::ParseTransforms() {
   if (!SkipWsp()) {
     return true;
   }
@@ -51,9 +47,7 @@ SVGTransformListParser::ParseTransforms()
   return true;
 }
 
-bool
-SVGTransformListParser::ParseTransform()
-{
+bool SVGTransformListParser::ParseTransform() {
   RangedPtr<const char16_t> start(mIter);
   while (IsAlpha(*mIter)) {
     ++mIter;
@@ -68,7 +62,7 @@ SVGTransformListParser::ParseTransform()
   }
 
   const nsAString& transform = Substring(start.get(), mIter.get());
-  nsIAtom* keyAtom = NS_GetStaticAtom(transform);
+  nsStaticAtom* keyAtom = NS_GetStaticAtom(transform);
 
   if (!keyAtom || !SkipWsp()) {
     return false;
@@ -95,11 +89,8 @@ SVGTransformListParser::ParseTransform()
   return false;
 }
 
-bool
-SVGTransformListParser::ParseArguments(float* aResult,
-                                       uint32_t aMaxCount,
-                                       uint32_t* aParsedCount)
-{
+bool SVGTransformListParser::ParseArguments(float* aResult, uint32_t aMaxCount,
+                                            uint32_t* aParsedCount) {
   if (*mIter != '(') {
     return false;
   }
@@ -123,16 +114,15 @@ SVGTransformListParser::ParseArguments(float* aResult,
       return false;
     }
     SkipCommaWsp();
-    if (!SVGContentUtils::ParseNumber(mIter, mEnd, aResult[(*aParsedCount)++])) {
+    if (!SVGContentUtils::ParseNumber(mIter, mEnd,
+                                      aResult[(*aParsedCount)++])) {
       return false;
     }
   }
   return false;
 }
 
-bool
-SVGTransformListParser::ParseTranslate()
-{
+bool SVGTransformListParser::ParseTranslate() {
   float t[2];
   uint32_t count;
 
@@ -144,9 +134,8 @@ SVGTransformListParser::ParseTranslate()
     case 1:
       t[1] = 0.f;
       MOZ_FALLTHROUGH;
-    case 2:
-    {
-      nsSVGTransform* transform = mTransforms.AppendElement(fallible);
+    case 2: {
+      SVGTransform* transform = mTransforms.AppendElement(fallible);
       if (!transform) {
         return false;
       }
@@ -158,9 +147,7 @@ SVGTransformListParser::ParseTranslate()
   return false;
 }
 
-bool
-SVGTransformListParser::ParseScale()
-{
+bool SVGTransformListParser::ParseScale() {
   float s[2];
   uint32_t count;
 
@@ -172,9 +159,8 @@ SVGTransformListParser::ParseScale()
     case 1:
       s[1] = s[0];
       MOZ_FALLTHROUGH;
-    case 2:
-    {
-      nsSVGTransform* transform = mTransforms.AppendElement(fallible);
+    case 2: {
+      SVGTransform* transform = mTransforms.AppendElement(fallible);
       if (!transform) {
         return false;
       }
@@ -186,10 +172,7 @@ SVGTransformListParser::ParseScale()
   return false;
 }
 
-
-bool
-SVGTransformListParser::ParseRotate()
-{
+bool SVGTransformListParser::ParseRotate() {
   float r[3];
   uint32_t count;
 
@@ -201,9 +184,8 @@ SVGTransformListParser::ParseRotate()
     case 1:
       r[1] = r[2] = 0.f;
       MOZ_FALLTHROUGH;
-    case 3:
-    {
-      nsSVGTransform* transform = mTransforms.AppendElement(fallible);
+    case 3: {
+      SVGTransform* transform = mTransforms.AppendElement(fallible);
       if (!transform) {
         return false;
       }
@@ -215,9 +197,7 @@ SVGTransformListParser::ParseRotate()
   return false;
 }
 
-bool
-SVGTransformListParser::ParseSkewX()
-{
+bool SVGTransformListParser::ParseSkewX() {
   float skew;
   uint32_t count;
 
@@ -225,7 +205,7 @@ SVGTransformListParser::ParseSkewX()
     return false;
   }
 
-  nsSVGTransform* transform = mTransforms.AppendElement(fallible);
+  SVGTransform* transform = mTransforms.AppendElement(fallible);
   if (!transform) {
     return false;
   }
@@ -234,9 +214,7 @@ SVGTransformListParser::ParseSkewX()
   return true;
 }
 
-bool
-SVGTransformListParser::ParseSkewY()
-{
+bool SVGTransformListParser::ParseSkewY() {
   float skew;
   uint32_t count;
 
@@ -244,7 +222,7 @@ SVGTransformListParser::ParseSkewY()
     return false;
   }
 
-  nsSVGTransform* transform = mTransforms.AppendElement(fallible);
+  SVGTransform* transform = mTransforms.AppendElement(fallible);
   if (!transform) {
     return false;
   }
@@ -253,9 +231,7 @@ SVGTransformListParser::ParseSkewY()
   return true;
 }
 
-bool
-SVGTransformListParser::ParseMatrix()
-{
+bool SVGTransformListParser::ParseMatrix() {
   float m[6];
   uint32_t count;
 
@@ -263,7 +239,7 @@ SVGTransformListParser::ParseMatrix()
     return false;
   }
 
-  nsSVGTransform* transform = mTransforms.AppendElement(fallible);
+  SVGTransform* transform = mTransforms.AppendElement(fallible);
   if (!transform) {
     return false;
   }

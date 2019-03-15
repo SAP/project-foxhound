@@ -4,57 +4,26 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #if !defined(OggDecoder_h_)
-#define OggDecoder_h_
+#  define OggDecoder_h_
 
-#include "MediaDecoder.h"
+#  include "mozilla/UniquePtr.h"
+#  include "nsTArray.h"
 
 namespace mozilla {
 
 class MediaContainerType;
+class TrackInfo;
 
-class OggDecoder : public MediaDecoder
-{
-public:
-  explicit OggDecoder(MediaDecoderOwner* aOwner)
-    : MediaDecoder(aOwner)
-    , mShutdownBitMonitor("mShutdownBitMonitor")
-    , mShutdownBit(false)
-  {}
-
-  MediaDecoder* Clone(MediaDecoderOwner* aOwner) override {
-    if (!IsOggEnabled()) {
-      return nullptr;
-    }
-    return new OggDecoder(aOwner);
-  }
-  MediaDecoderStateMachine* CreateStateMachine() override;
-
-  // For yucky legacy reasons, the ogg decoder needs to do a cross-thread read
-  // to check for shutdown while it hogs its own task queue. We don't want to
-  // protect the general state with a lock, so we make a special copy and a
-  // special-purpose lock. This method may be called on any thread.
-  bool IsOggDecoderShutdown() override
-  {
-    MonitorAutoLock lock(mShutdownBitMonitor);
-    return mShutdownBit;
-  }
-
+class OggDecoder {
+ public:
   // Returns true if aContainerType is an Ogg type that we think we can render
   // with an enabled platform decoder backend.
   // If provided, codecs are checked for support.
   static bool IsSupportedType(const MediaContainerType& aContainerType);
-
-protected:
-  void ShutdownBitChanged() override
-  {
-    MonitorAutoLock lock(mShutdownBitMonitor);
-    mShutdownBit = mStateMachineIsShutdown;
-  }
-
-  Monitor mShutdownBitMonitor;
-  bool mShutdownBit;
+  static nsTArray<UniquePtr<TrackInfo>> GetTracksInfo(
+      const MediaContainerType& aType);
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif

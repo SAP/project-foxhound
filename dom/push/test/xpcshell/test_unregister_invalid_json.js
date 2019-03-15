@@ -17,9 +17,9 @@ function run_test() {
   run_next_test();
 }
 
-add_task(function* test_unregister_invalid_json() {
+add_task(async function test_unregister_invalid_json() {
   let db = PushServiceWebSocket.newPushDB();
-  do_register_cleanup(() => {return db.drop().then(_ => db.close());});
+  registerCleanupFunction(() => {return db.drop().then(_ => db.close());});
   let records = [{
     channelID: '87902e90-c57e-4d18-8354-013f4a556559',
     pushEndpoint: 'https://example.org/update/1',
@@ -36,7 +36,7 @@ add_task(function* test_unregister_invalid_json() {
     quota: Infinity,
   }];
   for (let record of records) {
-    yield db.put(record);
+    await db.put(record);
   }
 
   let unregisterDone;
@@ -62,31 +62,33 @@ add_task(function* test_unregister_invalid_json() {
     }
   });
 
-  yield rejects(
+  await rejects(
     PushService.unregister({
       scope: 'https://example.edu/page/1',
       originAttributes: '',
     }),
+    /Request timed out/,
     'Expected error for first invalid JSON response'
   );
 
-  let record = yield db.getByKeyID(
+  let record = await db.getByKeyID(
     '87902e90-c57e-4d18-8354-013f4a556559');
   ok(!record, 'Failed to delete unregistered record');
 
-  yield rejects(
+  await rejects(
     PushService.unregister({
       scope: 'https://example.net/page/1',
       originAttributes: ChromeUtils.originAttributesToSuffix(
         { appId: Ci.nsIScriptSecurityManager.NO_APP_ID, inIsolatedMozBrowser: false }),
     }),
+    /Request timed out/,
     'Expected error for second invalid JSON response'
   );
 
-  record = yield db.getByKeyID(
+  record = await db.getByKeyID(
     '057caa8f-9b99-47ff-891c-adad18ce603e');
   ok(!record,
     'Failed to delete unregistered record after receiving invalid JSON');
 
-  yield unregisterPromise;
+  await unregisterPromise;
 });

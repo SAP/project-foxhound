@@ -9,13 +9,7 @@ const AutocompletePopup = require("devtools/client/shared/autocomplete-popup");
 const { InplaceEditor } = require("devtools/client/shared/inplace-editor");
 loadHelperScript("helper_inplace_editor.js");
 
-const TEST_URI = `data:text/xml;charset=UTF-8,<?xml version="1.0"?>
-  <?xml-stylesheet href="chrome://global/skin/global.css"?>
-  <?xml-stylesheet href="resource://devtools/client/themes/common.css"?>
-  <?xml-stylesheet href="chrome://devtools/skin/tooltips.css"?>
-  <window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
-   title="Tooltip test">
-  </window>`;
+const TEST_URI = CHROME_URL_ROOT + "doc_inplace-editor_autocomplete_offset.xul";
 
 // Test the inplace-editor autocomplete popup is aligned with the completed query.
 // Which means when completing "style=display:flex; color:" the popup will aim to be
@@ -48,7 +42,7 @@ const testData = [
   ["checkPopupOffset"],
 ];
 
-const mockGetCSSPropertyList = function () {
+const mockGetCSSPropertyList = function() {
   return [
     "clear",
     "color",
@@ -57,28 +51,28 @@ const mockGetCSSPropertyList = function () {
   ];
 };
 
-const mockGetCSSValuesForPropertyName = function (propertyName) {
-  let values = {
+const mockGetCSSValuesForPropertyName = function(propertyName) {
+  const values = {
     "color": ["blue", "red"],
-    "display": ["block", "flex", "none"]
+    "display": ["block", "flex", "none"],
   };
   return values[propertyName] || [];
 };
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8,inplace editor CSS value autocomplete");
-  let [host,, doc] = yield createHost("bottom", TEST_URI);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8,inplace editor CSS value autocomplete");
+  const [host,, doc] = await createHost("bottom", TEST_URI);
 
-  let popup = new AutocompletePopup(doc, { autoSelect: true });
+  const popup = new AutocompletePopup(doc, { autoSelect: true });
 
   info("Create a CSS_MIXED type autocomplete");
-  yield new Promise(resolve => {
+  await new Promise(resolve => {
     createInplaceEditorAndClick({
       initial: "style=",
       start: runAutocompletionTest,
       contentType: InplaceEditor.CONTENT_TYPES.CSS_MIXED,
       done: resolve,
-      popup: popup
+      popup: popup,
     }, doc);
   });
 
@@ -87,33 +81,33 @@ add_task(function* () {
   gBrowser.removeCurrentTab();
 });
 
-let runAutocompletionTest = Task.async(function* (editor) {
+const runAutocompletionTest = async function(editor) {
   info("Starting autocomplete test for inplace-editor popup offset");
   editor._getCSSPropertyList = mockGetCSSPropertyList;
   editor._getCSSValuesForPropertyName = mockGetCSSValuesForPropertyName;
 
   let previousOffset = -1;
-  for (let data of testData) {
+  for (const data of testData) {
     if (data[0] === "checkPopupOffset") {
       info("Check the popup offset has been modified");
       // We are not testing hard coded offset values here, which could be fragile. We only
       // want to ensure the popup tries to match the position of the query in the editor
       // input.
-      let offset = getPopupOffset(editor);
+      const offset = getPopupOffset(editor);
       ok(offset > previousOffset, "New popup offset is greater than the previous one");
       previousOffset = offset;
     } else {
-      yield testCompletion(data, editor);
+      await testCompletion(data, editor);
     }
   }
 
   EventUtils.synthesizeKey("VK_RETURN", {}, editor.input.defaultView);
-});
+};
 
 /**
  * Get the autocomplete panel left offset, relative to the provided input's left offset.
  */
 function getPopupOffset({popup, input}) {
-  let popupQuads = popup._panel.getBoxQuads({relativeTo: input});
-  return popupQuads[0].bounds.left;
+  const popupQuads = popup._panel.getBoxQuads({relativeTo: input});
+  return popupQuads[0].getBounds().left;
 }

@@ -8,13 +8,13 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_LOCKED_BANDWIDTH_INFO_H_
-#define WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_LOCKED_BANDWIDTH_INFO_H_
+#ifndef MODULES_AUDIO_CODING_CODECS_ISAC_LOCKED_BANDWIDTH_INFO_H_
+#define MODULES_AUDIO_CODING_CODECS_ISAC_LOCKED_BANDWIDTH_INFO_H_
 
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/base/thread_annotations.h"
-#include "webrtc/modules/audio_coding/codecs/isac/bandwidth_info.h"
-#include "webrtc/system_wrappers/include/critical_section_wrapper.h"
+#include "modules/audio_coding/codecs/isac/bandwidth_info.h"
+#include "rtc_base/atomicops.h"
+#include "rtc_base/criticalsection.h"
+#include "rtc_base/thread_annotations.h"
 
 namespace webrtc {
 
@@ -26,20 +26,31 @@ class LockedIsacBandwidthInfo final {
   ~LockedIsacBandwidthInfo();
 
   IsacBandwidthInfo Get() const {
-    CriticalSectionScoped cs(lock_.get());
+    rtc::CritScope lock(&lock_);
     return bwinfo_;
   }
 
   void Set(const IsacBandwidthInfo& bwinfo) {
-    CriticalSectionScoped cs(lock_.get());
+    rtc::CritScope lock(&lock_);
     bwinfo_ = bwinfo;
   }
 
+  int AddRef() const { return rtc::AtomicOps::Increment(&ref_count_); }
+
+  int Release() const {
+    const int count = rtc::AtomicOps::Decrement(&ref_count_);
+    if (count == 0) {
+      delete this;
+    }
+    return count;
+  }
+
  private:
-  const rtc::scoped_ptr<CriticalSectionWrapper> lock_;
-  IsacBandwidthInfo bwinfo_ GUARDED_BY(lock_);
+  mutable volatile int ref_count_;
+  rtc::CriticalSection lock_;
+  IsacBandwidthInfo bwinfo_ RTC_GUARDED_BY(lock_);
 };
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_LOCKED_BANDWIDTH_INFO_H_
+#endif  // MODULES_AUDIO_CODING_CODECS_ISAC_LOCKED_BANDWIDTH_INFO_H_

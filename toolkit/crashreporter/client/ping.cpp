@@ -9,40 +9,40 @@
 #include <string>
 
 #if defined(XP_LINUX)
-#include <fcntl.h>
-#include <unistd.h>
-#include <sys/stat.h>
+#  include <fcntl.h>
+#  include <unistd.h>
+#  include <sys/stat.h>
 #elif defined(XP_MACOSX)
-#include <CoreFoundation/CoreFoundation.h>
+#  include <CoreFoundation/CoreFoundation.h>
 #elif defined(XP_WIN)
-#include <Objbase.h>
+#  include <objbase.h>
 #endif
 
 #include "json/json.h"
+
+#include "CrashAnnotations.h"
 
 using std::string;
 
 namespace CrashReporter {
 
 struct UUID {
-    uint32_t m0;
-    uint16_t m1;
-    uint16_t m2;
-    uint8_t  m3[8];
+  uint32_t m0;
+  uint16_t m1;
+  uint16_t m2;
+  uint8_t m3[8];
 };
 
 // Generates an UUID; the code here is mostly copied from nsUUIDGenerator.cpp
-static string
-GenerateUUID()
-{
+static string GenerateUUID() {
   UUID id = {};
 
-#if defined(XP_WIN) // Windows
+#if defined(XP_WIN)  // Windows
   HRESULT hr = CoCreateGuid((GUID*)&id);
   if (FAILED(hr)) {
     return "";
   }
-#elif defined(XP_MACOSX) // MacOS X
+#elif defined(XP_MACOSX)            // MacOS X
   CFUUIDRef uuid = CFUUIDCreate(kCFAllocatorDefault);
   if (!uuid) {
     return "";
@@ -52,9 +52,9 @@ GenerateUUID()
   memcpy(&id, &bytes, sizeof(UUID));
 
   CFRelease(uuid);
-#elif defined(HAVE_ARC4RANDOM_BUF) // Android, BSD, ...
+#elif defined(HAVE_ARC4RANDOM_BUF)  // Android, BSD, ...
   arc4random_buf(id, sizeof(UUID));
-#else // Linux
+#else                               // Linux
   int fd = open("/dev/urandom", O_RDONLY);
 
   if (fd == -1) {
@@ -78,13 +78,13 @@ GenerateUUID()
   id.m3[0] |= 0x80;
 
   const char* kUUIDFormatString =
-    "%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x";
+      "%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x";
   const size_t kUUIDFormatStringLength = 36;
-  char str[kUUIDFormatStringLength + 1] = { '\0' };
+  char str[kUUIDFormatStringLength + 1] = {'\0'};
 
-  int num = snprintf(str, kUUIDFormatStringLength + 1, kUUIDFormatString,
-                     id.m0, id.m1, id.m2, id.m3[0], id.m3[1], id.m3[2],
-                     id.m3[3], id.m3[4], id.m3[5], id.m3[6], id.m3[7]);
+  int num = snprintf(str, kUUIDFormatStringLength + 1, kUUIDFormatString, id.m0,
+                     id.m1, id.m2, id.m3[0], id.m3[1], id.m3[2], id.m3[3],
+                     id.m3[4], id.m3[5], id.m3[6], id.m3[7]);
 
   if (num != kUUIDFormatStringLength) {
     return "";
@@ -100,61 +100,31 @@ const char kISO8601DateHours[] = "%FT%H:00:00.000Z";
 // constants are provided:
 // - kISO8601Date, the ISO 8601 date format, YYYY-MM-DD
 // - kISO8601DateHours, the ISO 8601 full date format, YYYY-MM-DDTHH:00:00.000Z
-static string
-CurrentDate(string format)
-{
+static string CurrentDate(string format) {
   time_t now;
   time(&now);
-  char buf[64]; // This should be plenty
+  char buf[64];  // This should be plenty
   strftime(buf, sizeof buf, format.c_str(), gmtime(&now));
   return buf;
 }
 
-const char kTelemetryClientId[]  = "TelemetryClientId";
-const char kTelemetryUrl[]       = "TelemetryServerURL";
+const char kTelemetryClientId[] = "TelemetryClientId";
+const char kTelemetryUrl[] = "TelemetryServerURL";
 const char kTelemetrySessionId[] = "TelemetrySessionId";
-const int  kTelemetryVersion     = 4;
+const int kTelemetryVersion = 4;
 
 // Create the payload.metadata node of the crash ping using fields extracted
 // from the .extra file
-static Json::Value
-CreateMetadataNode(StringTable& strings)
-{
-  // The following list should be kept in sync with the one in CrashManager.jsm
-  const char *entries[] = {
-    "AvailablePageFile",
-    "AvailablePhysicalMemory",
-    "AvailableVirtualMemory",
-    "BlockedDllList",
-    "BlocklistInitFailed",
-    "BuildID",
-    "ContainsMemoryReport",
-    "CrashTime",
-    "EventLoopNestingLevel",
-    "IsGarbageCollecting",
-    "MozCrashReason",
-    "OOMAllocationSize",
-    "ProductID",
-    "ProductName",
-    "ReleaseChannel",
-    "SecondsSinceLastCrash",
-    "StartupCrash",
-    "SystemMemoryUsePercentage",
-    "TelemetrySessionId",
-    "TextureUsage",
-    "TotalPageFile",
-    "TotalPhysicalMemory",
-    "TotalVirtualMemory",
-    "UptimeTS",
-    "User32BeforeBlocklist",
-    "Version",
-  };
-
+static Json::Value CreateMetadataNode(StringTable& strings) {
   Json::Value node;
 
-  for (auto entry : entries) {
-    if ((strings.find(entry) != strings.end()) && !strings[entry].empty()) {
-      node[entry] = strings[entry];
+  for (auto line : strings) {
+    Annotation annotation;
+
+    if (AnnotationFromString(annotation, line.first.c_str())) {
+      if (IsAnnotationWhitelistedForPing(annotation)) {
+        node[line.first] = line.second;
+      }
     }
   }
 
@@ -162,17 +132,18 @@ CreateMetadataNode(StringTable& strings)
 }
 
 // Create the payload node of the crash ping
-static Json::Value
-CreatePayloadNode(StringTable& strings, const string& aSessionId)
-{
+static Json::Value CreatePayloadNode(StringTable& strings, const string& aHash,
+                                     const string& aSessionId) {
   Json::Value payload;
 
   payload["sessionId"] = aSessionId;
   payload["version"] = 1;
   payload["crashDate"] = CurrentDate(kISO8601Date);
+  payload["crashTime"] = CurrentDate(kISO8601DateHours);
   payload["hasCrashEnvironment"] = true;
   payload["crashId"] = GetDumpLocalID();
-  payload["processType"] = "main"; // This is always a main crash
+  payload["minidumpSha256Hash"] = aHash;
+  payload["processType"] = "main";  // This is always a main crash
 
   // Parse the stack traces
   Json::Value stackTracesValue;
@@ -190,19 +161,18 @@ CreatePayloadNode(StringTable& strings, const string& aSessionId)
 }
 
 // Create the application node of the crash ping
-static Json::Value
-CreateApplicationNode(const string& aVendor, const string& aName,
-                      const string& aVersion, const string& aChannel,
-                      const string& aBuildId, const string& aArchitecture,
-                      const string& aXpcomAbi)
-{
+static Json::Value CreateApplicationNode(
+    const string& aVendor, const string& aName, const string& aVersion,
+    const string& aDisplayVersion, const string& aPlatformVersion,
+    const string& aChannel, const string& aBuildId, const string& aArchitecture,
+    const string& aXpcomAbi) {
   Json::Value application;
 
   application["vendor"] = aVendor;
   application["name"] = aName;
   application["buildId"] = aBuildId;
-  application["displayVersion"] = aVersion;
-  application["platformVersion"] = aVersion;
+  application["displayVersion"] = aDisplayVersion;
+  application["platformVersion"] = aPlatformVersion;
   application["version"] = aVersion;
   application["channel"] = aChannel;
   if (!aArchitecture.empty()) {
@@ -216,14 +186,14 @@ CreateApplicationNode(const string& aVendor, const string& aName,
 }
 
 // Create the root node of the crash ping
-static Json::Value
-CreateRootNode(StringTable& strings, const string& aUuid,
-               const string& aClientId, const string& aSessionId,
-               const string& aName, const string& aVersion,
-               const string& aChannel, const string& aBuildId)
-{
+static Json::Value CreateRootNode(StringTable& strings, const string& aUuid,
+                                  const string& aHash, const string& aClientId,
+                                  const string& aSessionId, const string& aName,
+                                  const string& aVersion,
+                                  const string& aChannel,
+                                  const string& aBuildId) {
   Json::Value root;
-  root["type"] = "crash"; // This is a crash ping
+  root["type"] = "crash";  // This is a crash ping
   root["id"] = aUuid;
   root["version"] = kTelemetryVersion;
   root["creationDate"] = CurrentDate(kISO8601DateHours);
@@ -234,6 +204,8 @@ CreateRootNode(StringTable& strings, const string& aUuid,
   Json::Reader reader;
   string architecture;
   string xpcomAbi;
+  string displayVersion;
+  string platformVersion;
 
   if (reader.parse(strings["TelemetryEnvironment"], environment,
                    /* collectComments */ false)) {
@@ -245,25 +217,31 @@ CreateRootNode(StringTable& strings, const string& aUuid,
       if (build.isMember("xpcomAbi") && build["xpcomAbi"].isString()) {
         xpcomAbi = build["xpcomAbi"].asString();
       }
+      if (build.isMember("displayVersion") &&
+          build["displayVersion"].isString()) {
+        displayVersion = build["displayVersion"].asString();
+      }
+      if (build.isMember("platformVersion") &&
+          build["platformVersion"].isString()) {
+        platformVersion = build["platformVersion"].asString();
+      }
     }
 
     root["environment"] = environment;
   }
 
-  root["payload"] = CreatePayloadNode(strings, aSessionId);
-  root["application"] = CreateApplicationNode(strings["Vendor"], aName,
-                                              aVersion, aChannel, aBuildId,
-                                              architecture, xpcomAbi);
+  root["payload"] = CreatePayloadNode(strings, aHash, aSessionId);
+  root["application"] = CreateApplicationNode(
+      strings["Vendor"], aName, aVersion, displayVersion, platformVersion,
+      aChannel, aBuildId, architecture, xpcomAbi);
 
   return root;
 }
 
 // Generates the URL used to submit the crash ping, see TelemetrySend.jsm
-string
-GenerateSubmissionUrl(const string& aUrl, const string& aId,
-                      const string& aName, const string& aVersion,
-                      const string& aChannel, const string& aBuildId)
-{
+string GenerateSubmissionUrl(const string& aUrl, const string& aId,
+                             const string& aName, const string& aVersion,
+                             const string& aChannel, const string& aBuildId) {
   return aUrl + "/submit/telemetry/" + aId + "/crash/" + aName + "/" +
          aVersion + "/" + aChannel + "/" + aBuildId +
          "?v=" + std::to_string(kTelemetryVersion);
@@ -272,21 +250,14 @@ GenerateSubmissionUrl(const string& aUrl, const string& aId,
 // Write out the ping into the specified file.
 //
 // Returns true if the ping was written out successfully, false otherwise.
-static bool
-WritePing(const string& aPath, const string& aPing)
-{
+static bool WritePing(const string& aPath, const string& aPing) {
   ofstream* f = UIOpenWrite(aPath.c_str());
   bool success = false;
 
   if (f->is_open()) {
     *f << aPing;
-    f->flush();
-
-    if (f->good()) {
-      success = true;
-    }
-
     f->close();
+    success = f->good();
   }
 
   delete f;
@@ -303,31 +274,30 @@ WritePing(const string& aPath, const string& aPing)
 //
 // Returns true if the ping was assembled and handed over to the pingsender
 // correctly, false otherwise and populates the aUUID field with the ping UUID.
-bool
-SendCrashPing(StringTable& strings, string& pingUuid, const string& pingDir)
-{
-  string clientId    = strings[kTelemetryClientId];
-  string serverUrl   = strings[kTelemetryUrl];
-  string sessionId   = strings[kTelemetrySessionId];
+bool SendCrashPing(StringTable& strings, const string& aHash, string& pingUuid,
+                   const string& pingDir) {
+  string clientId = strings[kTelemetryClientId];
+  string serverUrl = strings[kTelemetryUrl];
+  string sessionId = strings[kTelemetrySessionId];
 
   // Remove the telemetry-related data from the crash annotations
   strings.erase(kTelemetryClientId);
   strings.erase(kTelemetryUrl);
   strings.erase(kTelemetrySessionId);
 
-  string buildId     = strings["BuildID"];
-  string channel     = strings["ReleaseChannel"];
-  string name        = strings["ProductName"];
-  string version     = strings["Version"];
-  string uuid        = GenerateUUID();
-  string url         = GenerateSubmissionUrl(serverUrl, uuid, name, version,
-                                             channel, buildId);
+  string buildId = strings["BuildID"];
+  string channel = strings["ReleaseChannel"];
+  string name = strings["ProductName"];
+  string version = strings["Version"];
+  string uuid = GenerateUUID();
+  string url =
+      GenerateSubmissionUrl(serverUrl, uuid, name, version, channel, buildId);
 
   if (serverUrl.empty() || uuid.empty()) {
     return false;
   }
 
-  Json::Value root = CreateRootNode(strings, uuid, clientId, sessionId,
+  Json::Value root = CreateRootNode(strings, uuid, aHash, clientId, sessionId,
                                     name, version, channel, buildId);
 
   // Write out the result to the pending pings directory
@@ -340,7 +310,7 @@ SendCrashPing(StringTable& strings, string& pingUuid, const string& pingDir)
   }
 
   // Hand over the ping to the sender
-  vector<string> args = { url, pingPath };
+  vector<string> args = {url, pingPath};
   if (UIRunProgram(GetProgramPath(UI_PING_SENDER_FILENAME), args)) {
     pingUuid = uuid;
     return true;
@@ -349,5 +319,4 @@ SendCrashPing(StringTable& strings, string& pingUuid, const string& pingDir)
   }
 }
 
-} // namespace crashreporter
-
+}  // namespace CrashReporter

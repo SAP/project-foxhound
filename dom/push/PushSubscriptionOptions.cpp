@@ -1,3 +1,5 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,20 +12,18 @@
 namespace mozilla {
 namespace dom {
 
-PushSubscriptionOptions::PushSubscriptionOptions(nsIGlobalObject* aGlobal,
-                                                 nsTArray<uint8_t>&& aRawAppServerKey)
-  : mGlobal(aGlobal)
-  , mRawAppServerKey(Move(aRawAppServerKey))
-  , mAppServerKey(nullptr)
-{
+PushSubscriptionOptions::PushSubscriptionOptions(
+    nsIGlobalObject* aGlobal, nsTArray<uint8_t>&& aRawAppServerKey)
+    : mGlobal(aGlobal),
+      mRawAppServerKey(std::move(aRawAppServerKey)),
+      mAppServerKey(nullptr) {
   // There's only one global on a worker, so we don't need to pass a global
   // object to the constructor.
   MOZ_ASSERT_IF(NS_IsMainThread(), mGlobal);
   mozilla::HoldJSObjects(this);
 }
 
-PushSubscriptionOptions::~PushSubscriptionOptions()
-{
+PushSubscriptionOptions::~PushSubscriptionOptions() {
   mAppServerKey = nullptr;
   mozilla::DropJSObjects(this);
 }
@@ -50,18 +50,13 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(PushSubscriptionOptions)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
-JSObject*
-PushSubscriptionOptions::WrapObject(JSContext* aCx,
-                                    JS::Handle<JSObject*> aGivenProto)
-{
-  return PushSubscriptionOptionsBinding::Wrap(aCx, this, aGivenProto);
+JSObject* PushSubscriptionOptions::WrapObject(
+    JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
+  return PushSubscriptionOptions_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-void
-PushSubscriptionOptions::GetApplicationServerKey(JSContext* aCx,
-                                                 JS::MutableHandle<JSObject*> aKey,
-                                                 ErrorResult& aRv)
-{
+void PushSubscriptionOptions::GetApplicationServerKey(
+    JSContext* aCx, JS::MutableHandle<JSObject*> aKey, ErrorResult& aRv) {
   if (!mRawAppServerKey.IsEmpty() && !mAppServerKey) {
     JS::Rooted<JSObject*> appServerKey(aCx);
     PushUtil::CopyArrayToArrayBuffer(aCx, mRawAppServerKey, &appServerKey, aRv);
@@ -74,5 +69,5 @@ PushSubscriptionOptions::GetApplicationServerKey(JSContext* aCx,
   aKey.set(mAppServerKey);
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

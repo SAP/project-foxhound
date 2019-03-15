@@ -10,14 +10,14 @@
 
 #include "SkBitmap.h"
 #include "SkBRDAllocator.h"
-#include "SkEncodedFormat.h"
+#include "SkEncodedImageFormat.h"
 #include "SkStream.h"
 
 /*
  * This class aims to provide an interface to test multiple implementations of
  * SkBitmapRegionDecoder.
  */
-class SkBitmapRegionDecoder {
+class SK_API SkBitmapRegionDecoder {
 public:
 
     enum Strategy {
@@ -55,18 +55,22 @@ public:
      *                        if this color type is unsupported.
      * @param requireUnpremul If the image is not opaque, we will use this to determine the
      *                        alpha type to use.
+     * @param prefColorSpace  If non-null and supported, this is the color space that we will
+     *                        decode into.  Otherwise, we will choose a default.
      *
      */
     virtual bool decodeRegion(SkBitmap* bitmap, SkBRDAllocator* allocator,
                               const SkIRect& desiredSubset, int sampleSize,
-                              SkColorType colorType, bool requireUnpremul) = 0;
-    /*
-     * @param  Requested destination color type
-     * @return true if we support the requested color type and false otherwise
-     */
-    virtual bool conversionSupported(SkColorType colorType) = 0;
+                              SkColorType colorType, bool requireUnpremul,
+                              sk_sp<SkColorSpace> prefColorSpace = nullptr) = 0;
 
-    virtual SkEncodedFormat getEncodedFormat() = 0;
+    virtual SkEncodedImageFormat getEncodedFormat() = 0;
+
+    virtual SkColorType computeOutputColorType(SkColorType requestedColorType) = 0;
+
+    virtual sk_sp<SkColorSpace> computeOutputColorSpace(SkColorType outputColorType,
+            sk_sp<SkColorSpace> prefColorSpace = nullptr) = 0;
+
 
     int width() const { return fWidth; }
     int height() const { return fHeight; }

@@ -44,9 +44,13 @@
 // This is allowed in workers.
 /* global setImmediate:false */
 
+/* eslint-disable mozilla/no-define-cc-etc */
+/* eslint-disable mozilla/use-cc-etc */
 var Cu = this.require ? require("chrome").Cu : Components.utils;
 var Cc = this.require ? require("chrome").Cc : Components.classes;
 var Ci = this.require ? require("chrome").Ci : Components.interfaces;
+/* eslint-enable mozilla/use-cc-etc */
+/* eslint-enable mozilla/no-define-cc-etc */
 // If we can access Components, then we use it to capture an async
 // parent stack trace; see scheduleWalkerLoop.  However, as it might
 // not be available (see above), users of this must check it first.
@@ -54,16 +58,14 @@ var Components_ = this.require ? require("chrome").components : Components;
 
 // If Cu is defined, use it to lazily define the FinalizationWitnessService.
 if (Cu) {
-  Cu.import("resource://gre/modules/Services.jsm");
-  Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+  // If we're in a devtools module environment, ChromeUtils won't exist.
+  /* eslint "mozilla/use-chromeutils-import": ["error", {allowCu: true}] */
+  Cu.import("resource://gre/modules/Services.jsm", this);
+  Cu.import("resource://gre/modules/XPCOMUtils.jsm", this);
 
   XPCOMUtils.defineLazyServiceGetter(this, "FinalizationWitnessService",
                                      "@mozilla.org/toolkit/finalizationwitness;1",
                                      "nsIFinalizationWitnessService");
-
-  // For now, we're worried about add-ons using Promises with CPOWs, so we'll
-  // permit them in this scope, but this support will go away soon.
-  Cu.permitCPOWsInScope(this);
 }
 
 const STATUS_PENDING = 0;
@@ -126,7 +128,7 @@ var PendingErrors = {
   init() {
     Services.obs.addObserver(function observe(aSubject, aTopic, aValue) {
       PendingErrors.report(aValue);
-    }, "promise-finalization-witness", false);
+    }, "promise-finalization-witness");
   },
 
   /**
@@ -153,7 +155,7 @@ var PendingErrors = {
       message: "" + error,
       fileName: null,
       stack: null,
-      lineNumber: null
+      lineNumber: null,
     };
     try { // Defend against non-enumerable values
       if (error && error instanceof Ci.nsIException) {
@@ -281,7 +283,7 @@ var PendingErrors = {
    */
   removeAllObservers() {
     this._observers.clear();
-  }
+  },
 };
 
 // Initialize the warn-upon-finalization mechanism if and only if Cu is defined.
@@ -376,7 +378,7 @@ this.Promise = function Promise(aExecutor) {
      * - {FinalizationWitness} witness A witness broadcasting |id| on
      *   notification "promise-finalization-witness".
      */
-    witness: undefined
+    witness: undefined,
   }});
 
   Object.seal(this);
@@ -391,7 +393,7 @@ this.Promise = function Promise(aExecutor) {
   } catch (ex) {
     reject(ex);
   }
-}
+};
 
 /**
  * Calls one of the provided functions as soon as this promise is either
@@ -740,7 +742,7 @@ this.PromiseWalker = {
       if (stack) {
         DOMPromise.resolve().then(() => {
           Cu.callFunctionWithAsyncStack(this.walkerLoop.bind(this), stack,
-                                        "Promise")
+                                        "Promise");
         });
       } else {
         DOMPromise.resolve().then(() => this.walkerLoop());
@@ -930,7 +932,7 @@ Handler.prototype = {
       // An exception has occurred in the handler.
 
       if (ex && typeof ex == "object" && "name" in ex &&
-          ERRORS_TO_REPORT.indexOf(ex.name) != -1) {
+          ERRORS_TO_REPORT.includes(ex.name)) {
 
         // We suspect that the exception is a programmer error, so we now
         // display it using dump().  Note that we do not use Cu.reportError as

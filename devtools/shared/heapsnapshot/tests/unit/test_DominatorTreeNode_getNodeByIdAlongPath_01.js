@@ -1,5 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+"use strict";
 
 // Test that we can find the node with the given id along the specified path.
 
@@ -28,7 +29,7 @@ const tests = [
 ];
 
 function run_test() {
-  for (let { id, expected } of tests) {
+  for (const { id, expected } of tests) {
     const actual = DominatorTreeNode.getNodeByIdAlongPath(id, tree, path);
     equal(actual, expected, `We should have got the node with id = ${id}`);
   }

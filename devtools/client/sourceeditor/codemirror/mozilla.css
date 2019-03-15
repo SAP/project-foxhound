@@ -89,22 +89,6 @@
   cursor: default;
 }
 
-/* This is to avoid the fake horizontal scrollbar div of codemirror to go 0
-height when floating scrollbars are active. Make sure that this value is equal
-to the maximum of `min-height` specific to the `scrollbar[orient="horizontal"]`
-selector in floating-scrollbar-light.css across all platforms. */
-.CodeMirror-hscrollbar {
-  min-height: 10px;
-}
-
-/* This is to avoid the fake vertical scrollbar div of codemirror to go 0
-width when floating scrollbars are active. Make sure that this value is equal
-to the maximum of `min-width` specific to the `scrollbar[orient="vertical"]`
-selector in floating-scrollbar-light.css across all platforms. */
-.CodeMirror-vscrollbar {
-  min-width: 10px;
-}
-
 .cm-trailingspace {
   background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAACCAYAAAB/qH1jAAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAB3RJTUUH3QUXCToH00Y1UgAAACFJREFUCNdjPMDBUc/AwNDAAAFMTAwMDA0OP34wQgX/AQBYgwYEx4f9lQAAAABJRU5ErkJggg==");
   opacity: 0.75;
@@ -168,10 +152,15 @@ selector in floating-scrollbar-light.css across all platforms. */
 /* Fold addon */
 
 .CodeMirror-foldmarker {
-  color: blue;
-  text-shadow: #b9f 1px 1px 2px, #b9f -1px -1px 2px, #b9f 1px -1px 2px, #b9f -1px 1px 2px;
+  display: inline-block;
   font-family: sans-serif;
-  line-height: .3;
+  line-height: 10px;
+  margin: 0 1px;
+  padding: 0 2px;
+  border-radius: 3px;
+  border: solid 1px var(--theme-splitter-color);
+  color: var(--theme-body-color);
+  background-color: var(--theme-sidebar-background);
   cursor: pointer;
 }
 
@@ -181,18 +170,19 @@ selector in floating-scrollbar-light.css across all platforms. */
 
 .CodeMirror-foldgutter-open,
 .CodeMirror-foldgutter-folded {
-  color: #555;
+  height: 14px;
+  background-image: url("chrome://devtools/skin/images/arrow.svg");
+  background-position: center;
+  background-repeat: no-repeat;
+  -moz-context-properties: fill;
+  fill: var(--theme-content-color3);
+  /* make the icons smaller than regular twistys (10->8px) */
+  background-size: 8px;
   cursor: pointer;
 }
 
-.CodeMirror-foldgutter-open:after {
-  font-size: 120%;
-  content: "\25BE";
-}
-
-.CodeMirror-foldgutter-folded:after {
-  font-size: 120%;
-  content: "\25B8";
+.CodeMirror-foldgutter-folded {
+  transform: rotate(-90deg);
 }
 
 .CodeMirror-hints {
@@ -290,4 +280,9 @@ selector in floating-scrollbar-light.css across all platforms. */
 
 .CodeMirror-Tern-fhint-guess {
   opacity: .7;
+}
+
+/* Override the background-color: white applied to filler elements in codemirror.css */
+.CodeMirror-scrollbar-filler, .CodeMirror-gutter-filler {
+  -moz-appearance: scrollcorner;
 }

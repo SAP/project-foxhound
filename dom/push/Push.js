@@ -4,17 +4,12 @@
 
 "use strict";
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cu = Components.utils;
-const Cr = Components.results;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/DOMRequestHelper.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/DOMRequestHelper.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "console", () => {
-  let {ConsoleAPI} = Cu.import("resource://gre/modules/Console.jsm", {});
+  let {ConsoleAPI} = ChromeUtils.import("resource://gre/modules/Console.jsm", {});
   return new ConsoleAPI({
     maxLogLevelPref: "dom.push.loglevel",
     prefix: "Push",
@@ -42,9 +37,9 @@ Push.prototype = {
 
   classID : PUSH_CID,
 
-  QueryInterface : XPCOMUtils.generateQI([Ci.nsIDOMGlobalPropertyInitializer,
-                                          Ci.nsISupportsWeakReference,
-                                          Ci.nsIObserver]),
+  QueryInterface : ChromeUtils.generateQI([Ci.nsIDOMGlobalPropertyInitializer,
+                                           Ci.nsISupportsWeakReference,
+                                           Ci.nsIObserver]),
 
   init: function(win) {
     console.debug("init()");
@@ -54,6 +49,8 @@ Push.prototype = {
     this.initDOMRequestHelper(win);
 
     this._principal = win.document.nodePrincipal;
+
+    this._topLevelPrincipal = win.top.document.nodePrincipal;
   },
 
   __init: function(scope) {
@@ -92,8 +89,6 @@ Push.prototype = {
   subscribe: function(options) {
     console.debug("subscribe()", this._scope);
 
-    let histogram = Services.telemetry.getHistogramById("PUSH_API_USED");
-    histogram.add(true);
     return this.askPermission().then(() =>
       this.createPromise((resolve, reject) => {
         let callback = new PushSubscriptionCallback(this, resolve, reject);
@@ -187,37 +182,26 @@ Push.prototype = {
     // Create an array with a single nsIContentPermissionType element.
     let type = {
       type: "desktop-notification",
-      access: null,
       options: [],
-      QueryInterface: XPCOMUtils.generateQI([Ci.nsIContentPermissionType]),
+      QueryInterface: ChromeUtils.generateQI([Ci.nsIContentPermissionType]),
     };
     let typeArray = Cc["@mozilla.org/array;1"].createInstance(Ci.nsIMutableArray);
-    typeArray.appendElement(type, false);
+    typeArray.appendElement(type);
 
     // create a nsIContentPermissionRequest
     let request = {
       types: typeArray,
       principal: this._principal,
-      QueryInterface: XPCOMUtils.generateQI([Ci.nsIContentPermissionRequest]),
-      allow: function() {
-        let histogram = Services.telemetry.getHistogramById("PUSH_API_PERMISSION_GRANTED");
-        histogram.add();
-        allowCallback();
-      },
-      cancel: function() {
-        let histogram = Services.telemetry.getHistogramById("PUSH_API_PERMISSION_DENIED");
-        histogram.add();
-        cancelCallback();
-      },
+      topLevelrincipal: this._topLevelPrincipal,
+      QueryInterface: ChromeUtils.generateQI([Ci.nsIContentPermissionRequest]),
+      allow: allowCallback,
+      cancel: cancelCallback,
       window: this._window,
     };
 
-    let histogram = Services.telemetry.getHistogramById("PUSH_API_PERMISSION_REQUESTED");
-    histogram.add(1);
     // Using askPermission from nsIDOMWindowUtils that takes care of the
     // remoting if needed.
-    let windowUtils = this._window.QueryInterface(Ci.nsIInterfaceRequestor)
-                          .getInterface(Ci.nsIDOMWindowUtils);
+    let windowUtils = this._window.windowUtils;
     windowUtils.askPermission(request);
   },
 };
@@ -229,7 +213,7 @@ function PushSubscriptionCallback(pushManager, resolve, reject) {
 }
 
 PushSubscriptionCallback.prototype = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIPushSubscriptionCallback]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIPushSubscriptionCallback]),
 
   onPushSubscription: function(ok, subscription) {
     let {pushManager} = this;

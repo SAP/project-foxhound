@@ -6,16 +6,16 @@
  * are properly displayed in the UI.
  */
 
-function* ifTestingSupported() {
-  let { target, panel } = yield initCanvasDebuggerFrontend(SIMPLE_CANVAS_URL);
-  let { window, $, EVENTS, SnapshotsListView, CallsListView } = panel.panelWin;
+async function ifTestingSupported() {
+  const { target, panel } = await initCanvasDebuggerFrontend(SIMPLE_CANVAS_URL);
+  const { window, $, EVENTS, SnapshotsListView, CallsListView } = panel.panelWin;
 
-  yield reload(target);
+  await reload(target);
 
-  let recordingFinished = once(window, EVENTS.SNAPSHOT_RECORDING_FINISHED);
-  let callListPopulated = once(window, EVENTS.CALL_LIST_POPULATED);
+  const recordingFinished = once(window, EVENTS.SNAPSHOT_RECORDING_FINISHED);
+  const callListPopulated = once(window, EVENTS.CALL_LIST_POPULATED);
   SnapshotsListView._onRecordButtonClick();
-  yield promise.all([recordingFinished, callListPopulated]);
+  await Promise.all([recordingFinished, callListPopulated]);
 
   is(CallsListView.itemCount, 8,
     "All the function calls should now be displayed in the UI.");
@@ -42,7 +42,7 @@ function* ifTestingSupported() {
     "8", "", "requestAnimationFrame", "(Function)", "doc_simple-canvas.html:30");
 
   function testItem(item, index, context, name, args, location) {
-    let i = CallsListView.indexOfItem(item);
+    const i = CallsListView.indexOfItem(item);
     is(i, index - 1,
       "The item at index " + index + " is correctly displayed in the UI.");
 
@@ -53,7 +53,7 @@ function* ifTestingSupported() {
       is($(".call-item-context", item.target).getAttribute("value"), context,
         "The item's context label has the correct text.");
     } else {
-      is($(".call-item-context", item.target) + "", "[object XULElement]",
+      is($(".call-item-context", item.target) + "", "[object XULTextElement]",
         "The item's context label should not be available.");
     }
 
@@ -65,6 +65,6 @@ function* ifTestingSupported() {
       "The item's location label has the correct text.");
   }
 
-  yield teardown(panel);
+  await teardown(panel);
   finish();
 }

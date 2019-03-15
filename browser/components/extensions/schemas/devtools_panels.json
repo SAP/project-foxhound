@@ -17,14 +17,14 @@
         "events": [
           {
             "name": "onSelectionChanged",
-            "unsupported": true,
+            "type": "function",
             "description": "Fired when an object is selected in the panel."
           }
         ],
         "functions": [
           {
             "name": "createSidebarPane",
-            "unsupported": true,
+            "async": "callback",
             "type": "function",
             "description": "Creates a pane within panel's sidebar.",
             "parameters": [
@@ -180,7 +180,7 @@
           },
           {
             "name": "setExpression",
-            "unsupported": true,
+            "async": "callback",
             "type": "function",
             "description": "Sets an expression that is evaluated within the inspected page. The result is displayed in the sidebar pane.",
             "parameters": [
@@ -205,7 +205,7 @@
           },
           {
             "name": "setObject",
-            "unsupported": true,
+            "async": "callback",
             "type": "function",
             "description": "Sets a JSON-compliant object to be displayed in the sidebar pane.",
             "parameters": [
@@ -230,13 +230,13 @@
           },
           {
             "name": "setPage",
-            "unsupported": true,
             "type": "function",
+            "async": true,
             "description": "Sets an HTML page to be displayed in the sidebar pane.",
             "parameters": [
               {
                 "name": "path",
-                "type": "string",
+                "$ref": "manifest.ExtensionURL",
                 "description": "Relative path of an extension page to display within the sidebar."
               }
             ]
@@ -245,7 +245,6 @@
         "events": [
           {
             "name": "onShown",
-            "unsupported": true,
             "type": "function",
             "description": "Fired when the sidebar pane becomes visible as a result of user switching to the panel that hosts it.",
             "parameters": [
@@ -260,7 +259,6 @@
           },
           {
             "name": "onHidden",
-            "unsupported": true,
             "type": "function",
             "description": "Fired when the sidebar pane becomes hidden as a result of the user switching away from the panel that hosts the sidebar pane."
           }
@@ -316,6 +314,10 @@
       "sources": {
         "$ref": "SourcesPanel",
         "description": "Sources panel."
+      },
+      "themeName": {
+        "type": "string",
+        "description": "The name of the current devtools theme."
       }
     },
     "functions": [
@@ -332,12 +334,15 @@
           },
           {
             "name": "iconPath",
-            "type": "string",
-            "description": "Path of the panel's icon relative to the extension directory."
+            "description": "Path of the panel's icon relative to the extension directory, or an empty string to use the default extension icon as the panel icon.",
+            "choices": [
+              {"type": "string", "enum": [""]},
+              {"$ref": "manifest.ExtensionURL"}
+            ]
           },
           {
             "name": "pagePath",
-            "type": "string",
+            "$ref": "manifest.ExtensionURL",
             "description": "Path of the panel's HTML page relative to the extension directory."
           },
           {
@@ -399,6 +404,20 @@
             "type": "function",
             "optional": true,
             "description": "A function that is called when the resource has been successfully loaded."
+          }
+        ]
+      }
+    ],
+    "events": [
+      {
+        "name": "onThemeChanged",
+        "type": "function",
+        "description": "Fired when the devtools theme changes.",
+        "parameters": [
+          {
+            "name": "themeName",
+            "type": "string",
+            "description": "The name of the current devtools theme."
           }
         ]
       }

@@ -15,10 +15,11 @@ namespace mozilla {
 
 void CreateAndroidUiThread();
 void DestroyAndroidUiThread();
+int64_t RunAndroidUiTasks();
 
 MessageLoop* GetAndroidUiThreadMessageLoop();
 RefPtr<nsThread> GetAndroidUiThread();
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // AndroidUiThread_h__
+#endif  // AndroidUiThread_h__

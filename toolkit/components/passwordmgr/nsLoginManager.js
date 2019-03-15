@@ -4,28 +4,25 @@
 
 "use strict";
 
-const { classes: Cc, interfaces: Ci, results: Cr, utils: Cu } = Components;
-
 const PERMISSION_SAVE_LOGINS = "login-saving";
 
-Cu.import("resource://gre/modules/AppConstants.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Timer.jsm");
-Cu.import("resource://gre/modules/LoginManagerContent.jsm"); /* global UserAutoCompleteResult */
+ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "Promise",
-                                  "resource://gre/modules/Promise.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Task",
-                                  "resource://gre/modules/Task.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "BrowserUtils",
-                                  "resource://gre/modules/BrowserUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "LoginHelper",
-                                  "resource://gre/modules/LoginHelper.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "LoginFormFactory",
-                                  "resource://gre/modules/LoginManagerContent.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "InsecurePasswordUtils",
-                                  "resource://gre/modules/InsecurePasswordUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "BrowserUtils",
+                               "resource://gre/modules/BrowserUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "LoginHelper",
+                               "resource://gre/modules/LoginHelper.jsm");
+ChromeUtils.defineModuleGetter(this, "LoginFormFactory",
+                               "resource://gre/modules/LoginManagerContent.jsm");
+ChromeUtils.defineModuleGetter(this, "LoginManagerContent",
+                               "resource://gre/modules/LoginManagerContent.jsm");
+ChromeUtils.defineModuleGetter(this, "UserAutoCompleteResult",
+                               "resource://gre/modules/LoginManagerContent.jsm");
+ChromeUtils.defineModuleGetter(this, "InsecurePasswordUtils",
+                               "resource://gre/modules/InsecurePasswordUtils.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "log", () => {
   let logger = LoginHelper.createLogger("nsLoginManager");
@@ -41,9 +38,9 @@ function LoginManager() {
 LoginManager.prototype = {
 
   classID: Components.ID("{cb9e0de8-3598-4ed7-857b-827f011ad5d8}"),
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsILoginManager,
-                                         Ci.nsISupportsWeakReference,
-                                         Ci.nsIInterfaceRequestor]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsILoginManager,
+                                          Ci.nsISupportsWeakReference,
+                                          Ci.nsIInterfaceRequestor]),
   getInterface(aIID) {
     if (aIID.equals(Ci.mozIStorageConnection) && this._storage) {
       let ir = this._storage.QueryInterface(Ci.nsIInterfaceRequestor);
@@ -91,46 +88,29 @@ LoginManager.prototype = {
 
     // Preferences. Add observer so we get notified of changes.
     this._prefBranch = Services.prefs.getBranch("signon.");
-    this._prefBranch.addObserver("rememberSignons", this._observer, false);
+    this._prefBranch.addObserver("rememberSignons", this._observer);
 
     this._remember = this._prefBranch.getBoolPref("rememberSignons");
     this._autoCompleteLookupPromise = null;
 
     // Form submit observer checks forms for new logins and pw changes.
-    Services.obs.addObserver(this._observer, "xpcom-shutdown", false);
+    Services.obs.addObserver(this._observer, "xpcom-shutdown");
 
     if (Services.appinfo.processType ===
         Services.appinfo.PROCESS_TYPE_DEFAULT) {
-      Services.obs.addObserver(this._observer, "passwordmgr-storage-replace",
-                               false);
+      Services.obs.addObserver(this._observer, "passwordmgr-storage-replace");
 
       // Initialize storage so that asynchronous data loading can start.
       this._initStorage();
     }
 
-    Services.obs.addObserver(this._observer, "gather-telemetry", false);
+    Services.obs.addObserver(this._observer, "gather-telemetry");
   },
 
 
   _initStorage() {
-    let contractID;
-    if (AppConstants.platform == "android") {
-      contractID = "@mozilla.org/login-manager/storage/mozStorage;1";
-    } else {
-      contractID = "@mozilla.org/login-manager/storage/json;1";
-    }
-    try {
-      let catMan = Cc["@mozilla.org/categorymanager;1"].
-                   getService(Ci.nsICategoryManager);
-      contractID = catMan.getCategoryEntry("login-manager-storage",
-                                           "nsILoginManagerStorage");
-      log.debug("Found alternate nsILoginManagerStorage with contract ID:", contractID);
-    } catch (e) {
-      log.debug("No alternate nsILoginManagerStorage registered");
-    }
-
-    this._storage = Cc[contractID].
-                    createInstance(Ci.nsILoginManagerStorage);
+    this._storage = Cc["@mozilla.org/login-manager/storage/default;1"]
+                    .createInstance(Ci.nsILoginManagerStorage);
     this.initializationPromise = this._storage.initialize();
   },
 
@@ -145,8 +125,8 @@ LoginManager.prototype = {
   _observer: {
     _pwmgr: null,
 
-    QueryInterface: XPCOMUtils.generateQI([Ci.nsIObserver,
-                                           Ci.nsISupportsWeakReference]),
+    QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver,
+                                            Ci.nsISupportsWeakReference]),
 
     // nsIObserver
     observe(subject, topic, data) {
@@ -166,13 +146,13 @@ LoginManager.prototype = {
         delete this._pwmgr._prefBranch;
         this._pwmgr = null;
       } else if (topic == "passwordmgr-storage-replace") {
-        Task.spawn(function* () {
-          yield this._pwmgr._storage.terminate();
+        (async () => {
+          await this._pwmgr._storage.terminate();
           this._pwmgr._initStorage();
-          yield this._pwmgr.initializationPromise;
+          await this._pwmgr.initializationPromise;
           Services.obs.notifyObservers(null,
-                       "passwordmgr-storage-replace-complete", null);
-        }.bind(this));
+                                       "passwordmgr-storage-replace-complete");
+        })();
       } else if (topic == "gather-telemetry") {
         // When testing, the "data" parameter is a string containing the
         // reference time in milliseconds for time-based statistics.
@@ -181,7 +161,7 @@ LoginManager.prototype = {
       } else {
         log.debug("Oops! Unexpected notification:", topic);
       }
-    }
+    },
   },
 
   /**
@@ -212,10 +192,13 @@ LoginManager.prototype = {
     clearAndGetHistogram("PWMGR_NUM_HTTPAUTH_PASSWORDS").add(
       this.countLogins("", null, "")
     );
+    Services.obs.notifyObservers(null, "weave:telemetry:histogram", "PWMGR_BLOCKLIST_NUM_SITES");
+    Services.obs.notifyObservers(null, "weave:telemetry:histogram", "PWMGR_NUM_SAVED_PASSWORDS");
 
     // This is a boolean histogram, and not a flag, because we don't want to
     // record any value if _gatherTelemetry is not called.
     clearAndGetHistogram("PWMGR_SAVING_ENABLED").add(this._remember);
+    Services.obs.notifyObservers(null, "weave:telemetry:histogram", "PWMGR_SAVING_ENABLED");
 
     // Don't try to get logins if MP is enabled, since we don't want to show a MP prompt.
     if (!this.isLoggedIn) {
@@ -232,7 +215,7 @@ LoginManager.prototype = {
       usernamePresentHistogram.add(!!login.username);
 
       let hostname = login.hostname;
-      hostnameCount.set(hostname, (hostnameCount.get(hostname) || 0 ) + 1);
+      hostnameCount.set(hostname, (hostnameCount.get(hostname) || 0) + 1);
 
       login.QueryInterface(Ci.nsILoginMetaInfo);
       let timeLastUsedAgeMs = referenceTimeMs - login.timeLastUsed;
@@ -242,34 +225,23 @@ LoginManager.prototype = {
         );
       }
     }
+    Services.obs.notifyObservers(null, "weave:telemetry:histogram", "PWMGR_LOGIN_LAST_USED_DAYS");
 
     let passwordsCountHistogram = clearAndGetHistogram("PWMGR_NUM_PASSWORDS_PER_HOSTNAME");
     for (let count of hostnameCount.values()) {
       passwordsCountHistogram.add(count);
     }
+    Services.obs.notifyObservers(null, "weave:telemetry:histogram", "PWMGR_NUM_PASSWORDS_PER_HOSTNAME");
   },
 
 
-
-
-
-  /* ---------- Primary Public interfaces ---------- */
-
-
-
-
   /**
-   * @type Promise
-   * This promise is resolved when initialization is complete, and is rejected
-   * in case the asynchronous part of initialization failed.
+   * Ensures that a login isn't missing any necessary fields.
+   *
+   * @param login
+   *        The login to check.
    */
-  initializationPromise: null,
-
-
-  /**
-   * Add a new login to login storage.
-   */
-  addLogin(login) {
+  _checkLogin(login) {
     // Sanity check the login
     if (login.hostname == null || login.hostname.length == 0) {
       throw new Error("Can't add a login with a null or empty hostname.");
@@ -298,7 +270,29 @@ LoginManager.prototype = {
       // Need one or the other!
       throw new Error("Can't add a login without a httpRealm or formSubmitURL.");
     }
+  },
 
+
+
+
+  /* ---------- Primary Public interfaces ---------- */
+
+
+
+
+  /**
+   * @type Promise
+   * This promise is resolved when initialization is complete, and is rejected
+   * in case the asynchronous part of initialization failed.
+   */
+  initializationPromise: null,
+
+
+  /**
+   * Add a new login to login storage.
+   */
+  addLogin(login) {
+    this._checkLogin(login);
 
     // Look for an existing entry.
     var logins = this.findLogins({}, login.hostname, login.formSubmitURL,
@@ -310,6 +304,39 @@ LoginManager.prototype = {
 
     log.debug("Adding login");
     return this._storage.addLogin(login);
+  },
+
+  async addLogins(logins) {
+    let crypto = Cc["@mozilla.org/login-manager/crypto/SDR;1"].
+                 getService(Ci.nsILoginManagerCrypto);
+    let plaintexts = logins.map(l => l.username).concat(logins.map(l => l.password));
+    let ciphertexts = await crypto.encryptMany(plaintexts);
+    let usernames = ciphertexts.slice(0, logins.length);
+    let passwords = ciphertexts.slice(logins.length);
+    let resultLogins = [];
+    for (let i = 0; i < logins.length; i++) {
+      try {
+        this._checkLogin(logins[i]);
+      } catch (e) {
+        Cu.reportError(e);
+        continue;
+      }
+
+      let plaintextUsername = logins[i].username;
+      let plaintextPassword = logins[i].password;
+      logins[i].username = usernames[i];
+      logins[i].password = passwords[i];
+      log.debug("Adding login");
+      let resultLogin = this._storage.addLogin(logins[i], true);
+      // Reset the username and password to keep the same guarantees as addLogin
+      logins[i].username = plaintextUsername;
+      logins[i].password = plaintextPassword;
+
+      resultLogin.username = plaintextUsername;
+      resultLogin.password = plaintextPassword;
+      resultLogins.push(resultLogin);
+    }
+    return resultLogins;
   },
 
   /**
@@ -362,17 +389,15 @@ LoginManager.prototype = {
     log.debug("Getting a list of all disabled origins");
 
     let disabledHosts = [];
-    let enumerator = Services.perms.enumerator;
-
-    while (enumerator.hasMoreElements()) {
-      let perm = enumerator.getNext();
+    for (let perm of Services.perms.enumerator) {
       if (perm.type == PERMISSION_SAVE_LOGINS && perm.capability == Services.perms.DENY_ACTION) {
-        disabledHosts.push(perm.principal.URI.prePath);
+        disabledHosts.push(perm.principal.URI.displayPrePath);
       }
     }
 
-    if (count)
-      count.value = disabledHosts.length; // needed for XPCOM
+    if (count) {
+      count.value = disabledHosts.length;
+    } // needed for XPCOM
 
     log.debug("getAllDisabledHosts: returning", disabledHosts.length, "disabled hosts.");
     return disabledHosts;
@@ -480,10 +505,27 @@ LoginManager.prototype = {
   autoCompleteSearchAsync(aSearchString, aPreviousResult,
                           aElement, aCallback) {
     // aPreviousResult is an nsIAutoCompleteResult, aElement is
-    // nsIDOMHTMLInputElement
+    // HTMLInputElement
 
-    let form = LoginFormFactory.createFromField(aElement);
-    let isSecure = InsecurePasswordUtils.isFormSecure(form);
+    let {isNullPrincipal} = aElement.nodePrincipal;
+    // Show the insecure login warning in the passwords field on null principal documents.
+    let isSecure = !isNullPrincipal;
+    // Avoid loading InsecurePasswordUtils.jsm in a sandboxed document (e.g. an ad. frame) if we
+    // already know it has a null principal and will therefore get the insecure autocomplete
+    // treatment.
+    // InsecurePasswordUtils doesn't handle the null principal case as not secure because we don't
+    // want the same treatment:
+    // * The web console warnings will be confusing (as they're primarily about http:) and not very
+    //   useful if the developer intentionally sandboxed the document.
+    // * The site identity insecure field warning would require LoginManagerContent being loaded and
+    //   listening to some of the DOM events we're ignoring in null principal documents. For memory
+    //   reasons it's better to not load LMC at all for these sandboxed frames. Also, if the top-
+    //   document is sandboxing a document, it probably doesn't want that sandboxed document to be
+    //   able to affect the identity icon in the address bar by adding a password field.
+    if (isSecure) {
+      let form = LoginFormFactory.createFromField(aElement);
+      isSecure = InsecurePasswordUtils.isFormSecure(form);
+    }
     let isPasswordField = aElement.type == "password";
 
     let completeSearch = (autoCompleteLookupPromise, { logins, messageManager }) => {
@@ -501,6 +543,14 @@ LoginManager.prototype = {
       });
       aCallback.onSearchCompletion(results);
     };
+
+    if (isNullPrincipal) {
+      // Don't search login storage when the field has a null principal as we don't want to fill
+      // logins for the `location` in this case.
+      let acLookupPromise = this._autoCompleteLookupPromise = Promise.resolve({ logins: [] });
+      acLookupPromise.then(completeSearch.bind(this, acLookupPromise));
+      return;
+    }
 
     if (isPasswordField && aSearchString) {
       // Return empty result on password fields with password already filled.
@@ -530,7 +580,7 @@ LoginManager.prototype = {
       LoginManagerContent._autoCompleteSearchAsync(aSearchString, previousResult,
                                                    aElement, rect);
     acLookupPromise.then(completeSearch.bind(this, acLookupPromise))
-                             .then(null, Cu.reportError);
+                             .catch(Cu.reportError);
   },
 
   stopSearch() {

@@ -1,8 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-XPCOMUtils.defineLazyModuleGetter(this, "PlacesTestUtils",
-                                  "resource://testing-common/PlacesTestUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "PlacesTestUtils",
+                               "resource://testing-common/PlacesTestUtils.jsm");
 
 var PERMISSIONS_FILE_NAME = "permissions.sqlite";
 
@@ -13,13 +13,10 @@ function GetPermissionsFile(profile)
   return file;
 }
 
-function run_test() {
-  run_next_test();
-}
-
 add_task(function test() {
   /* Create and set up the permissions database */
   let profile = do_get_profile();
+  Services.prefs.setCharPref("permissions.manager.defaultsUrl", "");
 
   let db = Services.storage.openDatabase(GetPermissionsFile(profile));
   db.schemaVersion = 5;
@@ -58,7 +55,11 @@ add_task(function test() {
     stmt5Insert.bindByName("expireTime", expireTime);
     stmt5Insert.bindByName("modificationTime", modificationTime);
 
-    stmt5Insert.execute();
+    try {
+      stmt5Insert.execute();
+    } finally {
+      stmt5Insert.reset();
+    }
 
     return {
       id: thisId,
@@ -100,9 +101,7 @@ add_task(function test() {
   let found = expected.map((it) => 0);
 
   // Force initialization of the nsPermissionManager
-  let enumerator = Services.perms.enumerator;
-  while (enumerator.hasMoreElements()) {
-    let permission = enumerator.getNext().QueryInterface(Ci.nsIPermission);
+  for (let permission of Services.perms.enumerator) {
     let isExpected = false;
 
     expected.forEach((it, i) => {
@@ -116,52 +115,59 @@ add_task(function test() {
       }
     });
 
-    do_check_true(isExpected,
-                  "Permission " + (isExpected ? "should" : "shouldn't") +
-                  " be in permission database: " +
-                  permission.principal.origin + ", " +
-                  permission.type + ", " +
-                  permission.capability + ", " +
-                  permission.expireType + ", " +
-                  permission.expireTime);
+    Assert.ok(isExpected,
+              "Permission " + (isExpected ? "should" : "shouldn't") +
+              " be in permission database: " +
+              permission.principal.origin + ", " +
+              permission.type + ", " +
+              permission.capability + ", " +
+              permission.expireType + ", " +
+              permission.expireTime);
   }
 
   found.forEach((count, i) => {
-    do_check_true(count == 1, "Expected count = 1, got count = " + count + " for permission " + expected[i]);
+    Assert.ok(count == 1, "Expected count = 1, got count = " + count + " for permission " + expected[i]);
   });
 
   // Check to make sure that all of the tables which we care about are present
   {
     let db = Services.storage.openDatabase(GetPermissionsFile(profile));
-    do_check_true(db.tableExists("moz_perms"));
-    do_check_true(db.tableExists("moz_hosts"));
-    do_check_false(db.tableExists("moz_hosts_is_backup"));
-    do_check_false(db.tableExists("moz_perms_v6"));
+    Assert.ok(db.tableExists("moz_perms"));
+    Assert.ok(db.tableExists("moz_hosts"));
+    Assert.ok(!db.tableExists("moz_hosts_is_backup"));
+    Assert.ok(!db.tableExists("moz_perms_v6"));
 
     let mozHostsStmt = db.createStatement("SELECT " +
                                           "host, type, permission, expireType, expireTime, " +
                                           "modificationTime, appId, isInBrowserElement " +
                                           "FROM moz_hosts WHERE id = :id");
-
-    // Check that the moz_hosts table still contains the correct values.
-    created4.forEach((it) => {
-      mozHostsStmt.reset();
-      mozHostsStmt.bindByName("id", it.id);
-      mozHostsStmt.executeStep();
-      do_check_eq(mozHostsStmt.getUTF8String(0), it.host);
-      do_check_eq(mozHostsStmt.getUTF8String(1), it.type);
-      do_check_eq(mozHostsStmt.getInt64(2), it.permission);
-      do_check_eq(mozHostsStmt.getInt64(3), it.expireType);
-      do_check_eq(mozHostsStmt.getInt64(4), it.expireTime);
-      do_check_eq(mozHostsStmt.getInt64(5), it.modificationTime);
-      do_check_eq(mozHostsStmt.getInt64(6), it.appId);
-      do_check_eq(mozHostsStmt.getInt64(7), it.isInBrowserElement);
-    });
+    try {
+      // Check that the moz_hosts table still contains the correct values.
+      created4.forEach((it) => {
+        mozHostsStmt.reset();
+        mozHostsStmt.bindByName("id", it.id);
+        mozHostsStmt.executeStep();
+        Assert.equal(mozHostsStmt.getUTF8String(0), it.host);
+        Assert.equal(mozHostsStmt.getUTF8String(1), it.type);
+        Assert.equal(mozHostsStmt.getInt64(2), it.permission);
+        Assert.equal(mozHostsStmt.getInt64(3), it.expireType);
+        Assert.equal(mozHostsStmt.getInt64(4), it.expireTime);
+        Assert.equal(mozHostsStmt.getInt64(5), it.modificationTime);
+        Assert.equal(mozHostsStmt.getInt64(6), it.appId);
+        Assert.equal(mozHostsStmt.getInt64(7), it.isInBrowserElement);
+      });
+    } finally {
+      mozHostsStmt.finalize();
+    }
 
     // Check that there are the right number of values
     let mozHostsCount = db.createStatement("SELECT count(*) FROM moz_hosts");
-    mozHostsCount.executeStep();
-    do_check_eq(mozHostsCount.getInt64(0), created4.length);
+    try {
+      mozHostsCount.executeStep();
+      Assert.equal(mozHostsCount.getInt64(0), created4.length);
+    } finally {
+      mozHostsCount.finalize();
+    }
 
     db.close();
   }

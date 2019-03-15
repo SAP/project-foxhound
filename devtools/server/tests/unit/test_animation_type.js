@@ -9,19 +9,19 @@ const { ANIMATION_TYPES, AnimationPlayerActor } =
 
 function run_test() {
   // Mock a window with just the properties the AnimationPlayerActor uses.
-  let window = {
-    MutationObserver: function () {
+  const window = {
+    MutationObserver: function() {
       this.observe = () => {};
     },
-    Animation: function () {
+    Animation: function() {
       this.effect = {target: getMockNode()};
     },
-    CSSAnimation: function () {
+    CSSAnimation: function() {
       this.effect = {target: getMockNode()};
     },
-    CSSTransition: function () {
+    CSSTransition: function() {
       this.effect = {target: getMockNode()};
-    }
+    },
   };
 
   window.CSSAnimation.prototype = Object.create(window.Animation.prototype);
@@ -31,8 +31,8 @@ function run_test() {
   function getMockNode() {
     return {
       ownerDocument: {
-        defaultView: window
-      }
+        defaultView: window,
+      },
     };
   }
 
@@ -45,24 +45,24 @@ function run_test() {
   const TEST_DATA = [{
     desc: "Test CSSAnimation type",
     animation: new window.CSSAnimation(),
-    expectedType: ANIMATION_TYPES.CSS_ANIMATION
+    expectedType: ANIMATION_TYPES.CSS_ANIMATION,
   }, {
     desc: "Test CSSTransition type",
     animation: new window.CSSTransition(),
-    expectedType: ANIMATION_TYPES.CSS_TRANSITION
+    expectedType: ANIMATION_TYPES.CSS_TRANSITION,
   }, {
     desc: "Test ScriptAnimation type",
     animation: new window.Animation(),
-    expectedType: ANIMATION_TYPES.SCRIPT_ANIMATION
+    expectedType: ANIMATION_TYPES.SCRIPT_ANIMATION,
   }, {
     desc: "Test unknown type",
     animation: {effect: {target: getMockNode()}},
-    expectedType: ANIMATION_TYPES.UNKNOWN
+    expectedType: ANIMATION_TYPES.UNKNOWN,
   }];
 
-  for (let { desc, animation, expectedType } of TEST_DATA) {
-    do_print(desc);
-    let actor = AnimationPlayerActor({}, animation);
-    do_check_eq(actor.getType(), expectedType);
+  for (const { desc, animation, expectedType } of TEST_DATA) {
+    info(desc);
+    const actor = AnimationPlayerActor({}, animation);
+    Assert.equal(actor.getType(), expectedType);
   }
 }

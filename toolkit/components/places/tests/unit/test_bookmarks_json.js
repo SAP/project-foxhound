@@ -2,14 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-Cu.import("resource://gre/modules/BookmarkJSONUtils.jsm");
-
-function run_test() {
-  run_next_test();
-}
-
-const LOAD_IN_SIDEBAR_ANNO = "bookmarkProperties/loadInSidebar";
-const DESCRIPTION_ANNO = "bookmarkProperties/description";
+ChromeUtils.import("resource://gre/modules/BookmarkJSONUtils.jsm");
 
 // An object representing the contents of bookmarks.json.
 var test_bookmarks = {
@@ -17,225 +10,232 @@ var test_bookmarks = {
     { guid: "OCyeUO5uu9FF",
       title: "Mozilla Firefox",
       children: [
-        { guid:"OCyeUO5uu9FG",
+        { guid: "OCyeUO5uu9FG",
           title: "Help and Tutorials",
           url: "http://en-us.www.mozilla.com/en-US/firefox/help/",
-          icon: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABGdBTUEAAK/INwWK6QAAABl0RVh0U29mdHdhcmUAQWRvYmUgSW1hZ2VSZWFkeXHJZTwAAAHWSURBVHjaYvz//z8DJQAggJiQOe/fv2fv7Oz8rays/N+VkfG/iYnJfyD/1+rVq7ffu3dPFpsBAAHEAHIBCJ85c8bN2Nj4vwsDw/8zQLwKiO8CcRoQu0DxqlWrdsHUwzBAAIGJmTNnPgYa9j8UqhFElwPxf2MIDeIrKSn9FwSJoRkAEEAM0DD4DzMAyPi/G+QKY4hh5WAXGf8PDQ0FGwJ22d27CjADAAIIrLmjo+MXA9R2kAHvGBA2wwx6B8W7od6CeQcggKCmCEL8bgwxYCbUIGTDVkHDBia+CuotgACCueD3TDQN75D4xmAvCoK9ARMHBzAw0AECiBHkAlC0Mdy7x9ABNA3obAZXIAa6iKEcGlMVQHwWyjYuL2d4v2cPg8vZswx7gHyAAAK7AOif7SAbOqCmn4Ha3AHFsIDtgPq/vLz8P4MSkJ2W9h8ggBjevXvHDo4FQUQg/kdypqCg4H8lUIACnQ/SOBMYI8bAsAJFPcj1AAEEjwVQqLpAbXmH5BJjqI0gi9DTAAgDBBCcAVLkgmQ7yKCZxpCQxqUZhAECCJ4XgMl493ug21ZD+aDAXH0WLM4A9MZPXJkJIIAwTAR5pQMalaCABQUULttBGCCAGCnNzgABBgAMJ5THwGvJLAAAAABJRU5ErkJggg=="
+          icon: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABGdBTUEAAK/INwWK6QAAABl0RVh0U29mdHdhcmUAQWRvYmUgSW1hZ2VSZWFkeXHJZTwAAAHWSURBVHjaYvz//z8DJQAggJiQOe/fv2fv7Oz8rays/N+VkfG/iYnJfyD/1+rVq7ffu3dPFpsBAAHEAHIBCJ85c8bN2Nj4vwsDw/8zQLwKiO8CcRoQu0DxqlWrdsHUwzBAAIGJmTNnPgYa9j8UqhFElwPxf2MIDeIrKSn9FwSJoRkAEEAM0DD4DzMAyPi/G+QKY4hh5WAXGf8PDQ0FGwJ22d27CjADAAIIrLmjo+MXA9R2kAHvGBA2wwx6B8W7od6CeQcggKCmCEL8bgwxYCbUIGTDVkHDBia+CuotgACCueD3TDQN75D4xmAvCoK9ARMHBzAw0AECiBHkAlC0Mdy7x9ABNA3obAZXIAa6iKEcGlMVQHwWyjYuL2d4v2cPg8vZswx7gHyAAAK7AOif7SAbOqCmn4Ha3AHFsIDtgPq/vLz8P4MSkJ2W9h8ggBjevXvHDo4FQUQg/kdypqCg4H8lUIACnQ/SOBMYI8bAsAJFPcj1AAEEjwVQqLpAbXmH5BJjqI0gi9DTAAgDBBCcAVLkgmQ7yKCZxpCQxqUZhAECCJ4XgMl493ug21ZD+aDAXH0WLM4A9MZPXJkJIIAwTAR5pQMalaCABQUULttBGCCAGCnNzgABBgAMJ5THwGvJLAAAAABJRU5ErkJggg==",
         },
-        { guid:"OCyeUO5uu9FH",
+        { guid: "OCyeUO5uu9FH",
           title: "Customize Firefox",
           url: "http://en-us.www.mozilla.com/en-US/firefox/customize/",
-          icon: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABGdBTUEAAK/INwWK6QAAABl0RVh0U29mdHdhcmUAQWRvYmUgSW1hZ2VSZWFkeXHJZTwAAAHWSURBVHjaYvz//z8DJQAggJiQOe/fv2fv7Oz8rays/N+VkfG/iYnJfyD/1+rVq7ffu3dPFpsBAAHEAHIBCJ85c8bN2Nj4vwsDw/8zQLwKiO8CcRoQu0DxqlWrdsHUwzBAAIGJmTNnPgYa9j8UqhFElwPxf2MIDeIrKSn9FwSJoRkAEEAM0DD4DzMAyPi/G+QKY4hh5WAXGf8PDQ0FGwJ22d27CjADAAIIrLmjo+MXA9R2kAHvGBA2wwx6B8W7od6CeQcggKCmCEL8bgwxYCbUIGTDVkHDBia+CuotgACCueD3TDQN75D4xmAvCoK9ARMHBzAw0AECiBHkAlC0Mdy7x9ABNA3obAZXIAa6iKEcGlMVQHwWyjYuL2d4v2cPg8vZswx7gHyAAAK7AOif7SAbOqCmn4Ha3AHFsIDtgPq/vLz8P4MSkJ2W9h8ggBjevXvHDo4FQUQg/kdypqCg4H8lUIACnQ/SOBMYI8bAsAJFPcj1AAEEjwVQqLpAbXmH5BJjqI0gi9DTAAgDBBCcAVLkgmQ7yKCZxpCQxqUZhAECCJ4XgMl493ug21ZD+aDAXH0WLM4A9MZPXJkJIIAwTAR5pQMalaCABQUULttBGCCAGCnNzgABBgAMJ5THwGvJLAAAAABJRU5ErkJggg=="
+          icon: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABGdBTUEAAK/INwWK6QAAABl0RVh0U29mdHdhcmUAQWRvYmUgSW1hZ2VSZWFkeXHJZTwAAAHWSURBVHjaYvz//z8DJQAggJiQOe/fv2fv7Oz8rays/N+VkfG/iYnJfyD/1+rVq7ffu3dPFpsBAAHEAHIBCJ85c8bN2Nj4vwsDw/8zQLwKiO8CcRoQu0DxqlWrdsHUwzBAAIGJmTNnPgYa9j8UqhFElwPxf2MIDeIrKSn9FwSJoRkAEEAM0DD4DzMAyPi/G+QKY4hh5WAXGf8PDQ0FGwJ22d27CjADAAIIrLmjo+MXA9R2kAHvGBA2wwx6B8W7od6CeQcggKCmCEL8bgwxYCbUIGTDVkHDBia+CuotgACCueD3TDQN75D4xmAvCoK9ARMHBzAw0AECiBHkAlC0Mdy7x9ABNA3obAZXIAa6iKEcGlMVQHwWyjYuL2d4v2cPg8vZswx7gHyAAAK7AOif7SAbOqCmn4Ha3AHFsIDtgPq/vLz8P4MSkJ2W9h8ggBjevXvHDo4FQUQg/kdypqCg4H8lUIACnQ/SOBMYI8bAsAJFPcj1AAEEjwVQqLpAbXmH5BJjqI0gi9DTAAgDBBCcAVLkgmQ7yKCZxpCQxqUZhAECCJ4XgMl493ug21ZD+aDAXH0WLM4A9MZPXJkJIIAwTAR5pQMalaCABQUULttBGCCAGCnNzgABBgAMJ5THwGvJLAAAAABJRU5ErkJggg==",
         },
-        { guid:"OCyeUO5uu9FI",
+        { guid: "OCyeUO5uu9FI",
           title: "Get Involved",
           url: "http://en-us.www.mozilla.com/en-US/firefox/community/",
-          icon: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABGdBTUEAAK/INwWK6QAAABl0RVh0U29mdHdhcmUAQWRvYmUgSW1hZ2VSZWFkeXHJZTwAAAHWSURBVHjaYvz//z8DJQAggJiQOe/fv2fv7Oz8rays/N+VkfG/iYnJfyD/1+rVq7ffu3dPFpsBAAHEAHIBCJ85c8bN2Nj4vwsDw/8zQLwKiO8CcRoQu0DxqlWrdsHUwzBAAIGJmTNnPgYa9j8UqhFElwPxf2MIDeIrKSn9FwSJoRkAEEAM0DD4DzMAyPi/G+QKY4hh5WAXGf8PDQ0FGwJ22d27CjADAAIIrLmjo+MXA9R2kAHvGBA2wwx6B8W7od6CeQcggKCmCEL8bgwxYCbUIGTDVkHDBia+CuotgACCueD3TDQN75D4xmAvCoK9ARMHBzAw0AECiBHkAlC0Mdy7x9ABNA3obAZXIAa6iKEcGlMVQHwWyjYuL2d4v2cPg8vZswx7gHyAAAK7AOif7SAbOqCmn4Ha3AHFsIDtgPq/vLz8P4MSkJ2W9h8ggBjevXvHDo4FQUQg/kdypqCg4H8lUIACnQ/SOBMYI8bAsAJFPcj1AAEEjwVQqLpAbXmH5BJjqI0gi9DTAAgDBBCcAVLkgmQ7yKCZxpCQxqUZhAECCJ4XgMl493ug21ZD+aDAXH0WLM4A9MZPXJkJIIAwTAR5pQMalaCABQUULttBGCCAGCnNzgABBgAMJ5THwGvJLAAAAABJRU5ErkJggg=="
+          icon: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABGdBTUEAAK/INwWK6QAAABl0RVh0U29mdHdhcmUAQWRvYmUgSW1hZ2VSZWFkeXHJZTwAAAHWSURBVHjaYvz//z8DJQAggJiQOe/fv2fv7Oz8rays/N+VkfG/iYnJfyD/1+rVq7ffu3dPFpsBAAHEAHIBCJ85c8bN2Nj4vwsDw/8zQLwKiO8CcRoQu0DxqlWrdsHUwzBAAIGJmTNnPgYa9j8UqhFElwPxf2MIDeIrKSn9FwSJoRkAEEAM0DD4DzMAyPi/G+QKY4hh5WAXGf8PDQ0FGwJ22d27CjADAAIIrLmjo+MXA9R2kAHvGBA2wwx6B8W7od6CeQcggKCmCEL8bgwxYCbUIGTDVkHDBia+CuotgACCueD3TDQN75D4xmAvCoK9ARMHBzAw0AECiBHkAlC0Mdy7x9ABNA3obAZXIAa6iKEcGlMVQHwWyjYuL2d4v2cPg8vZswx7gHyAAAK7AOif7SAbOqCmn4Ha3AHFsIDtgPq/vLz8P4MSkJ2W9h8ggBjevXvHDo4FQUQg/kdypqCg4H8lUIACnQ/SOBMYI8bAsAJFPcj1AAEEjwVQqLpAbXmH5BJjqI0gi9DTAAgDBBCcAVLkgmQ7yKCZxpCQxqUZhAECCJ4XgMl493ug21ZD+aDAXH0WLM4A9MZPXJkJIIAwTAR5pQMalaCABQUULttBGCCAGCnNzgABBgAMJ5THwGvJLAAAAABJRU5ErkJggg==",
         },
-        { guid:"OCyeUO5uu9FJ",
+        { guid: "OCyeUO5uu9FJ",
           title: "About Us",
           url: "http://en-us.www.mozilla.com/en-US/about/",
-          icon: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABGdBTUEAAK/INwWK6QAAABl0RVh0U29mdHdhcmUAQWRvYmUgSW1hZ2VSZWFkeXHJZTwAAAHWSURBVHjaYvz//z8DJQAggJiQOe/fv2fv7Oz8rays/N+VkfG/iYnJfyD/1+rVq7ffu3dPFpsBAAHEAHIBCJ85c8bN2Nj4vwsDw/8zQLwKiO8CcRoQu0DxqlWrdsHUwzBAAIGJmTNnPgYa9j8UqhFElwPxf2MIDeIrKSn9FwSJoRkAEEAM0DD4DzMAyPi/G+QKY4hh5WAXGf8PDQ0FGwJ22d27CjADAAIIrLmjo+MXA9R2kAHvGBA2wwx6B8W7od6CeQcggKCmCEL8bgwxYCbUIGTDVkHDBia+CuotgACCueD3TDQN75D4xmAvCoK9ARMHBzAw0AECiBHkAlC0Mdy7x9ABNA3obAZXIAa6iKEcGlMVQHwWyjYuL2d4v2cPg8vZswx7gHyAAAK7AOif7SAbOqCmn4Ha3AHFsIDtgPq/vLz8P4MSkJ2W9h8ggBjevXvHDo4FQUQg/kdypqCg4H8lUIACnQ/SOBMYI8bAsAJFPcj1AAEEjwVQqLpAbXmH5BJjqI0gi9DTAAgDBBCcAVLkgmQ7yKCZxpCQxqUZhAECCJ4XgMl493ug21ZD+aDAXH0WLM4A9MZPXJkJIIAwTAR5pQMalaCABQUULttBGCCAGCnNzgABBgAMJ5THwGvJLAAAAABJRU5ErkJggg=="
-        }
-      ]
+          icon: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABGdBTUEAAK/INwWK6QAAABl0RVh0U29mdHdhcmUAQWRvYmUgSW1hZ2VSZWFkeXHJZTwAAAHWSURBVHjaYvz//z8DJQAggJiQOe/fv2fv7Oz8rays/N+VkfG/iYnJfyD/1+rVq7ffu3dPFpsBAAHEAHIBCJ85c8bN2Nj4vwsDw/8zQLwKiO8CcRoQu0DxqlWrdsHUwzBAAIGJmTNnPgYa9j8UqhFElwPxf2MIDeIrKSn9FwSJoRkAEEAM0DD4DzMAyPi/G+QKY4hh5WAXGf8PDQ0FGwJ22d27CjADAAIIrLmjo+MXA9R2kAHvGBA2wwx6B8W7od6CeQcggKCmCEL8bgwxYCbUIGTDVkHDBia+CuotgACCueD3TDQN75D4xmAvCoK9ARMHBzAw0AECiBHkAlC0Mdy7x9ABNA3obAZXIAa6iKEcGlMVQHwWyjYuL2d4v2cPg8vZswx7gHyAAAK7AOif7SAbOqCmn4Ha3AHFsIDtgPq/vLz8P4MSkJ2W9h8ggBjevXvHDo4FQUQg/kdypqCg4H8lUIACnQ/SOBMYI8bAsAJFPcj1AAEEjwVQqLpAbXmH5BJjqI0gi9DTAAgDBBCcAVLkgmQ7yKCZxpCQxqUZhAECCJ4XgMl493ug21ZD+aDAXH0WLM4A9MZPXJkJIIAwTAR5pQMalaCABQUULttBGCCAGCnNzgABBgAMJ5THwGvJLAAAAABJRU5ErkJggg==",
+        },
+        { guid: "QFM-QnE2ZpMz",
+          title: "Test null postData",
+          url: "http://example.com/search?q=%s&suggid=",
+        },
+      ],
     },
     {
       guid: "OCyeUO5uu9FK",
-      type: Ci.nsINavHistoryResultNode.RESULT_TYPE_SEPARATOR
+      type: Ci.nsINavHistoryResultNode.RESULT_TYPE_SEPARATOR,
     },
     {
-      guid:"OCyeUO5uu9FL",
+      guid: "OCyeUO5uu9FL",
       title: "test",
-      description: "folder test comment",
       dateAdded: 1177541020000000,
-      // lastModified: 1177541050000000,
+      lastModified: 1177541050000000,
       children: [
-        { guid:"OCyeUO5uu9GX",
+        { guid: "OCyeUO5uu9GX",
           title: "test post keyword",
-          description: "item description",
           dateAdded: 1177375336000000,
-          // lastModified: 1177375423000000,
+          lastModified: 1177375423000000,
           keyword: "test",
-          sidebar: true,
           postData: "hidden1%3Dbar&text1%3D%25s",
-          charset: "ISO-8859-1"
-        }
-      ]
-    }
+          charset: "ISO-8859-1",
+        },
+      ],
+    },
   ],
   toolbar: [
     { guid: "OCyeUO5uu9FB",
       title: "Getting Started",
       url: "http://en-us.www.mozilla.com/en-US/firefox/central/",
-      icon: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABGdBTUEAAK/INwWK6QAAABl0RVh0U29mdHdhcmUAQWRvYmUgSW1hZ2VSZWFkeXHJZTwAAAHWSURBVHjaYvz//z8DJQAggJiQOe/fv2fv7Oz8rays/N+VkfG/iYnJfyD/1+rVq7ffu3dPFpsBAAHEAHIBCJ85c8bN2Nj4vwsDw/8zQLwKiO8CcRoQu0DxqlWrdsHUwzBAAIGJmTNnPgYa9j8UqhFElwPxf2MIDeIrKSn9FwSJoRkAEEAM0DD4DzMAyPi/G+QKY4hh5WAXGf8PDQ0FGwJ22d27CjADAAIIrLmjo+MXA9R2kAHvGBA2wwx6B8W7od6CeQcggKCmCEL8bgwxYCbUIGTDVkHDBia+CuotgACCueD3TDQN75D4xmAvCoK9ARMHBzAw0AECiBHkAlC0Mdy7x9ABNA3obAZXIAa6iKEcGlMVQHwWyjYuL2d4v2cPg8vZswx7gHyAAAK7AOif7SAbOqCmn4Ha3AHFsIDtgPq/vLz8P4MSkJ2W9h8ggBjevXvHDo4FQUQg/kdypqCg4H8lUIACnQ/SOBMYI8bAsAJFPcj1AAEEjwVQqLpAbXmH5BJjqI0gi9DTAAgDBBCcAVLkgmQ7yKCZxpCQxqUZhAECCJ4XgMl493ug21ZD+aDAXH0WLM4A9MZPXJkJIIAwTAR5pQMalaCABQUULttBGCCAGCnNzgABBgAMJ5THwGvJLAAAAABJRU5ErkJggg=="
+      icon: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABGdBTUEAAK/INwWK6QAAABl0RVh0U29mdHdhcmUAQWRvYmUgSW1hZ2VSZWFkeXHJZTwAAAHWSURBVHjaYvz//z8DJQAggJiQOe/fv2fv7Oz8rays/N+VkfG/iYnJfyD/1+rVq7ffu3dPFpsBAAHEAHIBCJ85c8bN2Nj4vwsDw/8zQLwKiO8CcRoQu0DxqlWrdsHUwzBAAIGJmTNnPgYa9j8UqhFElwPxf2MIDeIrKSn9FwSJoRkAEEAM0DD4DzMAyPi/G+QKY4hh5WAXGf8PDQ0FGwJ22d27CjADAAIIrLmjo+MXA9R2kAHvGBA2wwx6B8W7od6CeQcggKCmCEL8bgwxYCbUIGTDVkHDBia+CuotgACCueD3TDQN75D4xmAvCoK9ARMHBzAw0AECiBHkAlC0Mdy7x9ABNA3obAZXIAa6iKEcGlMVQHwWyjYuL2d4v2cPg8vZswx7gHyAAAK7AOif7SAbOqCmn4Ha3AHFsIDtgPq/vLz8P4MSkJ2W9h8ggBjevXvHDo4FQUQg/kdypqCg4H8lUIACnQ/SOBMYI8bAsAJFPcj1AAEEjwVQqLpAbXmH5BJjqI0gi9DTAAgDBBCcAVLkgmQ7yKCZxpCQxqUZhAECCJ4XgMl493ug21ZD+aDAXH0WLM4A9MZPXJkJIIAwTAR5pQMalaCABQUULttBGCCAGCnNzgABBgAMJ5THwGvJLAAAAABJRU5ErkJggg==",
     },
-    { guid:"OCyeUO5uu9FR",
+    { guid: "OCyeUO5uu9FR",
       title: "Latest Headlines",
-      url: "http://en-us.fxfeeds.mozilla.com/en-US/firefox/livebookmarks/",
-      feedUrl: "http://en-us.fxfeeds.mozilla.com/en-US/firefox/headlines.xml"
-    }
+      // This used to be a livemark, but we don't import them anymore, instead
+      // it will be imported as an empty folder, because the json format stores
+      // it like that: an empty folder with a couple annotations. Since
+      // annotations will go away, there won't be a clean way to import it as a
+      // bookmark instead.
+      // Note: date gets truncated to milliseconds, whereas the value in bookmarks.json
+      // has full microseconds.
+      dateAdded: 1361551979451000,
+      lastModified: 1361551979457000,
+    },
   ],
   unfiled: [
     { guid: "OCyeUO5uu9FW",
       title: "Example.tld",
-      url: "http://example.tld/"
-    }
-  ]
+      url: "http://example.tld/",
+    },
+    { guid: "Cfkety492Afk",
+      title: "test tagged bookmark",
+      dateAdded: 1507025843703000,
+      lastModified: 1507025844703000,
+      url: "http://example.tld/tagged",
+      tags: ["foo"],
+    },
+    { guid: "lOZGoFR1eXbl",
+      title: "Bookmarks Toolbar Shortcut",
+      dateAdded: 1507025843703000,
+      lastModified: 1507025844703000,
+      url: `place:parent=${PlacesUtils.bookmarks.toolbarGuid}`,
+    },
+    { guid: "7yJWnBVhjRtP",
+      title: "Folder Shortcut",
+      dateAdded: 1507025843703000,
+      lastModified: 1507025844703000,
+      url: `place:parent=OCyeUO5uu9FF`,
+    },
+    { guid: "vm5QXWuWc12l",
+      title: "Folder Shortcut 2",
+      dateAdded: 1507025843703000,
+      lastModified: 1507025844703000,
+      url: "place:invalidOldParentId=6123443&excludeItems=1",
+    },
+    { guid: "Icg1XlIozA1D",
+      title: "Folder Shortcut 3",
+      dateAdded: 1507025843703000,
+      lastModified: 1507025844703000,
+      url: `place:parent=OCyeUO5uu9FF&parent=${PlacesUtils.bookmarks.menuGuid}`,
+    },
+  ],
 };
 
 // Exported bookmarks file pointer.
 var bookmarksExportedFile;
 
-add_task(function* test_import_bookmarks() {
+add_task(async function test_import_bookmarks() {
   let bookmarksFile = OS.Path.join(do_get_cwd().path, "bookmarks.json");
 
-  yield BookmarkJSONUtils.importFromFile(bookmarksFile, true);
-  yield PlacesTestUtils.promiseAsyncUpdates();
-  yield testImportedBookmarks();
+  await BookmarkJSONUtils.importFromFile(bookmarksFile, { replace: true });
+  await PlacesTestUtils.promiseAsyncUpdates();
+  await testImportedBookmarks();
 });
 
-add_task(function* test_export_bookmarks() {
+add_task(async function test_export_bookmarks() {
   bookmarksExportedFile = OS.Path.join(OS.Constants.Path.profileDir,
                                        "bookmarks.exported.json");
-  yield BookmarkJSONUtils.exportToFile(bookmarksExportedFile);
-  yield PlacesTestUtils.promiseAsyncUpdates();
+  await BookmarkJSONUtils.exportToFile(bookmarksExportedFile);
+  await PlacesTestUtils.promiseAsyncUpdates();
 });
 
-add_task(function* test_import_exported_bookmarks() {
-  yield PlacesUtils.bookmarks.eraseEverything();
-  yield BookmarkJSONUtils.importFromFile(bookmarksExportedFile, true);
-  yield PlacesTestUtils.promiseAsyncUpdates();
-  yield testImportedBookmarks();
+add_task(async function test_import_exported_bookmarks() {
+  await PlacesUtils.bookmarks.eraseEverything();
+  await BookmarkJSONUtils.importFromFile(bookmarksExportedFile, { replace: true });
+  await PlacesTestUtils.promiseAsyncUpdates();
+  await testImportedBookmarks();
 });
 
-add_task(function* test_import_ontop() {
-  yield PlacesUtils.bookmarks.eraseEverything();
-  yield BookmarkJSONUtils.importFromFile(bookmarksExportedFile, true);
-  yield PlacesTestUtils.promiseAsyncUpdates();
-  yield BookmarkJSONUtils.exportToFile(bookmarksExportedFile);
-  yield PlacesTestUtils.promiseAsyncUpdates();
-  yield BookmarkJSONUtils.importFromFile(bookmarksExportedFile, true);
-  yield PlacesTestUtils.promiseAsyncUpdates();
-  yield testImportedBookmarks();
+add_task(async function test_import_ontop() {
+  await PlacesUtils.bookmarks.eraseEverything();
+  await BookmarkJSONUtils.importFromFile(bookmarksExportedFile, { replace: true });
+  await PlacesTestUtils.promiseAsyncUpdates();
+  await BookmarkJSONUtils.exportToFile(bookmarksExportedFile);
+  await PlacesTestUtils.promiseAsyncUpdates();
+  await BookmarkJSONUtils.importFromFile(bookmarksExportedFile, { replace: true });
+  await PlacesTestUtils.promiseAsyncUpdates();
+  await testImportedBookmarks();
 });
 
-add_task(function* test_clean() {
-  yield PlacesUtils.bookmarks.eraseEverything();
+add_task(async function test_clean() {
+  await PlacesUtils.bookmarks.eraseEverything();
 });
 
-function* testImportedBookmarks() {
+async function testImportedBookmarks() {
   for (let group in test_bookmarks) {
-    do_print("[testImportedBookmarks()] Checking group '" + group + "'");
+    info("[testImportedBookmarks()] Checking group '" + group + "'");
 
-    let root;
-    switch (group) {
-      case "menu":
-        root =
-          PlacesUtils.getFolderContents(PlacesUtils.bookmarksMenuFolderId).root;
-        break;
-      case "toolbar":
-        root =
-          PlacesUtils.getFolderContents(PlacesUtils.toolbarFolderId).root;
-        break;
-      case "unfiled":
-        root =
-          PlacesUtils.getFolderContents(PlacesUtils.unfiledBookmarksFolderId).root;
-        break;
-    }
+    let root = PlacesUtils.getFolderContents(PlacesUtils.bookmarks[`${group}Guid`]).root;
 
     let items = test_bookmarks[group];
-    do_check_eq(root.childCount, items.length);
+    Assert.equal(root.childCount, items.length);
 
     for (let key in items) {
-      yield checkItem(items[key], root.getChild(key));
+      await checkItem(items[key], root.getChild(key));
     }
 
     root.containerOpen = false;
   }
 }
 
-function* checkItem(aExpected, aNode) {
-  let id = aNode.itemId;
+async function checkItem(aExpected, aNode) {
+  let bookmark = await PlacesUtils.bookmarks.fetch(aNode.bookmarkGuid);
 
-  return Task.spawn(function* () {
-    for (let prop in aExpected) {
-      switch (prop) {
-        case "type":
-          do_check_eq(aNode.type, aExpected.type);
-          break;
-        case "title":
-          do_check_eq(aNode.title, aExpected.title);
-          break;
-        case "description":
-          do_check_eq(PlacesUtils.annotations.getItemAnnotation(
-                      id, DESCRIPTION_ANNO), aExpected.description);
-          break;
-        case "dateAdded":
-          do_check_eq(PlacesUtils.bookmarks.getItemDateAdded(id),
-                      aExpected.dateAdded);
-          break;
-        case "lastModified":
-          do_check_eq(PlacesUtils.bookmarks.getItemLastModified(id),
-                      aExpected.lastModified);
-          break;
-        case "url":
-          if (!("feedUrl" in aExpected))
-            do_check_eq(aNode.uri, aExpected.url);
-          break;
-        case "icon":
-          let deferred = Promise.defer();
-          PlacesUtils.favicons.getFaviconDataForPage(
-            NetUtil.newURI(aExpected.url),
-            function(aURI, aDataLen, aData, aMimeType) {
-              deferred.resolve(aData);
-            });
-          let data = yield deferred.promise;
-          let base64Icon = "data:image/png;base64," +
-                           base64EncodeString(String.fromCharCode.apply(String, data));
-          do_check_true(base64Icon == aExpected.icon);
-          break;
-        case "keyword": {
-          let entry = yield PlacesUtils.keywords.fetch({ url: aNode.uri });
-          Assert.equal(entry.keyword, aExpected.keyword);
-          break;
-        }
-        case "guid":
-          let guid = yield PlacesUtils.promiseItemGuid(id);
-          do_check_eq(guid, aExpected.guid);
-          break;
-        case "sidebar":
-          do_check_eq(PlacesUtils.annotations.itemHasAnnotation(
-                      id, LOAD_IN_SIDEBAR_ANNO), aExpected.sidebar);
-          break;
-        case "postData": {
-          let entry = yield PlacesUtils.keywords.fetch({ url: aNode.uri });
-          Assert.equal(entry.postData, aExpected.postData);
-          break;
-        }
-        case "charset":
-          let testURI = NetUtil.newURI(aNode.uri);
-          do_check_eq((yield PlacesUtils.getCharsetForURI(testURI)), aExpected.charset);
-          break;
-        case "feedUrl":
-          let livemark = yield PlacesUtils.livemarks.getLivemark({ id });
-          do_check_eq(livemark.siteURI.spec, aExpected.url);
-          do_check_eq(livemark.feedURI.spec, aExpected.feedUrl);
-          break;
-        case "children":
-          let folder = aNode.QueryInterface(Ci.nsINavHistoryContainerResultNode);
-          do_check_eq(folder.hasChildren, aExpected.children.length > 0);
-          folder.containerOpen = true;
-          do_check_eq(folder.childCount, aExpected.children.length);
-
-          for (let index = 0; index < aExpected.children.length; index++) {
-            yield checkItem(aExpected.children[index], folder.getChild(index));
-          }
-
-          folder.containerOpen = false;
-          break;
-        default:
-          throw new Error("Unknown property");
+  for (let prop in aExpected) {
+    switch (prop) {
+      case "type":
+        Assert.equal(aNode.type, aExpected.type);
+        break;
+      case "title":
+        Assert.equal(aNode.title, aExpected.title);
+        break;
+      case "dateAdded":
+        Assert.equal(PlacesUtils.toPRTime(bookmark.dateAdded),
+                     aExpected.dateAdded);
+        break;
+      case "lastModified":
+        Assert.equal(PlacesUtils.toPRTime(bookmark.lastModified),
+                     aExpected.lastModified);
+        break;
+      case "url":
+        Assert.equal(aNode.uri, aExpected.url);
+        break;
+      case "icon":
+        let {data} = await getFaviconDataForPage(aExpected.url);
+        let base64Icon = "data:image/png;base64," +
+                         base64EncodeString(String.fromCharCode.apply(String, data));
+        Assert.equal(base64Icon, aExpected.icon);
+        break;
+      case "keyword": {
+        let entry = await PlacesUtils.keywords.fetch({ url: aNode.uri });
+        Assert.equal(entry.keyword, aExpected.keyword);
+        break;
       }
+      case "guid":
+        Assert.equal(bookmark.guid, aExpected.guid);
+        break;
+      case "postData": {
+        let entry = await PlacesUtils.keywords.fetch({ url: aNode.uri });
+        Assert.equal(entry.postData, aExpected.postData);
+        break;
+      }
+      case "charset":
+        let pageInfo = await PlacesUtils.history.fetch(aNode.uri, {includeAnnotations: true});
+        Assert.equal(pageInfo.annotations.get(PlacesUtils.CHARSET_ANNO), aExpected.charset);
+        break;
+      case "children":
+        let folder = aNode.QueryInterface(Ci.nsINavHistoryContainerResultNode);
+        Assert.equal(folder.hasChildren, aExpected.children.length > 0);
+        folder.containerOpen = true;
+        Assert.equal(folder.childCount, aExpected.children.length);
+
+        for (let index = 0; index < aExpected.children.length; index++) {
+          await checkItem(aExpected.children[index], folder.getChild(index));
+        }
+
+        folder.containerOpen = false;
+        break;
+      case "tags":
+        let uri = Services.io.newURI(aNode.uri);
+        Assert.deepEqual(PlacesUtils.tagging.getTagsForURI(uri), aExpected.tags,
+          "should have the expected tags");
+        break;
+      default:
+        throw new Error("Unknown property");
     }
-  });
+  }
 }

@@ -2,14 +2,29 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+// This test asserts that the new debugger works from the browser toolbox process
+// Its pass a big piece of Javascript string to the browser toolbox process via
+// MOZ_TOOLBOX_TEST_SCRIPT env variable. It does that as test resources fetched from
+// chrome://mochitests/ package isn't available from browser toolbox process.
+
+// There are shutdown issues for which multiple rejections are left uncaught.
+// See bug 1018184 for resolving these issues.
+const { PromiseTestUtils } = scopedCuImport("resource://testing-common/PromiseTestUtils.jsm");
+PromiseTestUtils.whitelistRejectionsGlobally(/File closed/);
+
 // On debug test runner, it takes about 50s to run the test.
 requestLongerTimeout(4);
 
-const { setInterval, clearInterval } = require("sdk/timers");
+const { fetch } = require("devtools/shared/DevToolsUtils");
 
-add_task(function* runTest() {
-  yield new Promise(done => {
-    let options = {"set": [
+const debuggerHeadURL = CHROME_URL_ROOT + "../../debugger/new/test/mochitest/head.js";
+const helpersURL = CHROME_URL_ROOT + "../../debugger/new/test/mochitest/helpers.js";
+const helpersContextURL = CHROME_URL_ROOT + "../../debugger/new/test/mochitest/helpers/context.js";
+const testScriptURL = CHROME_URL_ROOT + "test_browser_toolbox_debugger.js";
+
+add_task(async function runTest() {
+  await new Promise(done => {
+    const options = {"set": [
       ["devtools.debugger.prompt-connection", false],
       ["devtools.debugger.remote-enabled", true],
       ["devtools.chrome.enabled", true],
@@ -18,105 +33,126 @@ add_task(function* runTest() {
       ["devtools.browser-toolbox.allow-unsafe-script", true],
       // On debug test runner, it takes more than the default time (20s)
       // to get a initialized console
-      ["devtools.debugger.remote-timeout", 120000]
+      ["devtools.debugger.remote-timeout", 120000],
     ]};
     SpecialPowers.pushPrefEnv(options, done);
   });
 
-  let s = Cu.Sandbox("http://mozilla.org");
+  const s = Cu.Sandbox("http://mozilla.org");
+
+  // Use a unique id for the fake script name in order to be able to run
+  // this test more than once. That's because the Sandbox is not immediately
+  // destroyed and so the debugger would display only one file but not necessarily
+  // connected to the latest sandbox.
+  const id = new Date().getTime();
+
   // Pass a fake URL to evalInSandbox. If we just pass a filename,
   // Debugger is going to fail and only display root folder (`/`) listing.
   // But it won't try to fetch this url and use sandbox content as expected.
-  let testUrl = "http://mozilla.org/browser-toolbox-test.js";
-  Cu.evalInSandbox("(" + function () {
+  const testUrl = `http://mozilla.org/browser-toolbox-test-${id}.js`;
+  Cu.evalInSandbox("(" + function() {
     this.plop = function plop() {
       return 1;
     };
   } + ").call(this)", s, "1.8", testUrl, 0);
 
   // Execute the function every second in order to trigger the breakpoint
-  let interval = setInterval(s.plop, 1000);
+  const interval = setInterval(s.plop, 1000);
 
   // Be careful, this JS function is going to be executed in the browser toolbox,
   // which lives in another process. So do not try to use any scope variable!
-  let env = Components.classes["@mozilla.org/process/environment;1"]
-                      .getService(Components.interfaces.nsIEnvironment);
-  let testScript = function () {
-    const { Task } = Components.utils.import("resource://gre/modules/Task.jsm", {});
-    dump("Opening the browser toolbox and debugger panel\n");
-    let window, document;
-    let testUrl = "http://mozilla.org/browser-toolbox-test.js";
-    Task.spawn(function* () {
-      dump("Waiting for debugger load\n");
-      let panel = yield toolbox.selectTool("jsdebugger");
-      let window = panel.panelWin;
-      let document = window.document;
-
-      yield window.once(window.EVENTS.SOURCE_SHOWN);
-
-      dump("Loaded, selecting the test script to debug\n");
-      let item = document.querySelector(`.dbg-source-item[tooltiptext="${testUrl}"]`);
-      let onSourceShown = window.once(window.EVENTS.SOURCE_SHOWN);
-      item.click();
-      yield onSourceShown;
-
-      dump("Selected, setting a breakpoint\n");
-      let { Sources, editor } = window.DebuggerView;
-      let onBreak = window.once(window.EVENTS.FETCHED_SCOPES);
-      editor.emit("gutterClick", 1);
-      yield onBreak;
-
-      dump("Paused, asserting breakpoint position\n");
-      let url = Sources.selectedItem.attachment.source.url;
-      if (url != testUrl) {
-        throw new Error("Breaking on unexpected script: " + url);
+  const env = Cc["@mozilla.org/process/environment;1"]
+              .getService(Ci.nsIEnvironment);
+  // First inject a very minimal head, with simplest assertion methods
+  // and very common globals
+  /* eslint-disable no-unused-vars */
+  const testHead = (function() {
+    const info = msg => dump(msg + "\n");
+    const is = (a, b, description) => {
+      let msg = "'" + JSON.stringify(a) + "' is equal to '" + JSON.stringify(b) + "'";
+      if (description) {
+        msg += " - " + description;
       }
-      let cursor = editor.getCursor();
-      if (cursor.line != 1) {
-        throw new Error("Breaking on unexpected line: " + cursor.line);
+      if (a !== b) {
+        msg = "FAILURE: " + msg;
+        dump(msg + "\n");
+        throw new Error(msg);
+      } else {
+        msg = "SUCCESS: " + msg;
+        dump(msg + "\n");
       }
-
-      dump("Now, stepping over\n");
-      let stepOver = window.document.querySelector("#step-over");
-      let onFetchedScopes = window.once(window.EVENTS.FETCHED_SCOPES);
-      stepOver.click();
-      yield onFetchedScopes;
-
-      dump("Stepped, asserting step position\n");
-      url = Sources.selectedItem.attachment.source.url;
-      if (url != testUrl) {
-        throw new Error("Stepping on unexpected script: " + url);
+    };
+    const ok = (a, description) => {
+      let msg = "'" + JSON.stringify(a) + "' is true";
+      if (description) {
+        msg += " - " + description;
       }
-      cursor = editor.getCursor();
-      if (cursor.line != 2) {
-        throw new Error("Stepping on unexpected line: " + cursor.line);
+      if (!a) {
+        msg = "FAILURE: " + msg;
+        dump(msg + "\n");
+        throw new Error(msg);
+      } else {
+        msg = "SUCCESS: " + msg;
+        dump(msg + "\n");
       }
+    };
 
-      dump("Resume script execution\n");
-      let resume = window.document.querySelector("#resume");
-      let onResume = toolbox.target.once("thread-resumed");
-      resume.click();
-      yield onResume;
+    const registerCleanupFunction = () => {};
 
-      dump("Close the browser toolbox\n");
-      toolbox.destroy();
+    const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
+    const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm", {});
 
-    }).catch(error => {
-      dump("Error while running code in the browser toolbox process:\n");
-      dump(error + "\n");
-      dump("stack:\n" + error.stack + "\n");
-    });
-  };
-  env.set("MOZ_TOOLBOX_TEST_SCRIPT", "new " + testScript);
+    // Copied from shared-head.js:
+    // test_browser_toolbox_debugger.js uses waitForPaused, which relies on waitUntil
+    // which is normally provided by shared-head.js
+    const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm", {});
+    function waitUntil(predicate, interval = 10) {
+      if (predicate()) {
+        return Promise.resolve(true);
+      }
+      return new Promise(resolve => {
+        // TODO: fixme.
+        // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+        setTimeout(function() {
+          waitUntil(predicate, interval).then(() => resolve(true));
+        }, interval);
+      });
+    }
+  }).toSource().replace(/^\(function\(\) \{|\}\)$/g, "");
+  /* eslint-enable no-unused-vars */
+  // Stringify testHead's function and remove `(function {` prefix and `})` suffix
+  // to ensure inner symbols gets exposed to next pieces of code
+  // Then inject new debugger head file
+  let { content: debuggerHead } = await fetch(debuggerHeadURL);
+
+  // Also include the debugger helpers which are separated from debugger's head to be
+  // reused in other modules.
+  const { content: debuggerHelpers } = await fetch(helpersURL);
+  const { content: debuggerContextHelpers } = await fetch(helpersContextURL);
+  debuggerHead = debuggerHead + debuggerContextHelpers + debuggerHelpers;
+
+  // We remove its import of shared-head, which isn't available in browser toolbox process
+  // And isn't needed thanks to testHead's symbols
+  debuggerHead = debuggerHead.replace(/Services.scriptloader.loadSubScript[^\)]*\);/g, "");
+
+  // Finally, fetch the debugger test script that is going to be execute in the browser
+  // toolbox process
+  const testScript = (await fetch(testScriptURL)).content;
+  const source =
+    "try { let testUrl = \"" + testUrl + "\";" + testHead + debuggerHead + testScript + "} catch (e) {" +
+    "  dump('Exception: '+ e + ' at ' + e.fileName + ':' + " +
+    "       e.lineNumber + '\\nStack: ' + e.stack + '\\n');" +
+    "}";
+  env.set("MOZ_TOOLBOX_TEST_SCRIPT", source);
   registerCleanupFunction(() => {
     env.set("MOZ_TOOLBOX_TEST_SCRIPT", "");
   });
 
-  let { BrowserToolboxProcess } = Cu.import("resource://devtools/client/framework/ToolboxProcess.jsm", {});
+  const { BrowserToolboxProcess } = ChromeUtils.import("resource://devtools/client/framework/ToolboxProcess.jsm", {});
   // Use two promises, one for each BrowserToolboxProcess.init callback
   // arguments, to ensure that we wait for toolbox run and close events.
   let closePromise;
-  yield new Promise(onRun => {
+  await new Promise(onRun => {
     closePromise = new Promise(onClose => {
       info("Opening the browser toolbox\n");
       BrowserToolboxProcess.init(onClose, onRun);
@@ -124,7 +160,7 @@ add_task(function* runTest() {
   });
   ok(true, "Browser toolbox started\n");
 
-  yield closePromise;
+  await closePromise;
   ok(true, "Browser toolbox process just closed");
 
   clearInterval(interval);

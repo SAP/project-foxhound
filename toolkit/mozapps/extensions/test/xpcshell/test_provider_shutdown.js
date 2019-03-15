@@ -37,10 +37,6 @@ function mockAddonProvider(aName) {
   return mockProvider;
 }
 
-function run_test() {
-  run_next_test();
-}
-
 // Helper to find a particular shutdown blocker's status in the JSON blob
 function findInStatus(aStatus, aName) {
   for (let {name, state} of aStatus.state) {
@@ -54,7 +50,7 @@ function findInStatus(aStatus, aName) {
 /*
  * Make sure we report correctly when an add-on provider or AddonRepository block shutdown
  */
-add_task(function* blockRepoShutdown() {
+add_task(async function blockRepoShutdown() {
   // Reach into the AddonManager scope and inject our mock AddonRepository
   // the mock provider behaves enough like AddonRepository for the purpose of this test
   let mockRepo = mockAddonProvider("Mock repo");
@@ -64,16 +60,18 @@ add_task(function* blockRepoShutdown() {
 
   let mockProvider = mockAddonProvider("Mock provider");
 
-  startupManager();
+  await promiseStartupManager();
   AddonManagerPrivate.registerProvider(mockProvider);
+
+  let {fetchState} = MockAsyncShutdown.profileBeforeChange.blockers[0].options;
 
   // Start shutting the manager down
   let managerDown = promiseShutdownManager();
 
   // Wait for manager to call provider shutdown.
-  yield mockProvider.shutdownPromise;
+  await mockProvider.shutdownPromise;
   // check AsyncShutdown state
-  let status = MockAsyncShutdown.status();
+  let status = fetchState();
   equal(findInStatus(status[0], "Mock provider"), "(none)");
   equal(status[1].name, "AddonRepository: async shutdown");
   equal(status[1].state, "pending");
@@ -81,9 +79,9 @@ add_task(function* blockRepoShutdown() {
   mockProvider.doneResolve();
 
   // Wait for manager to call repo shutdown and start waiting for it
-  yield mockRepo.shutdownPromise;
+  await mockRepo.shutdownPromise;
   // Check the shutdown state
-  status = MockAsyncShutdown.status();
+  status = fetchState();
   equal(status[0].name, "AddonManager: Waiting for providers to shut down.");
   equal(status[0].state, "Complete");
   equal(status[1].name, "AddonRepository: async shutdown");
@@ -91,10 +89,10 @@ add_task(function* blockRepoShutdown() {
 
   // Now finish our shutdown, and wait for the manager to wrap up
   mockRepo.doneResolve();
-  yield managerDown;
+  await managerDown;
 
   // Check the shutdown state again
-  status = MockAsyncShutdown.status();
+  status = fetchState();
   equal(status[0].name, "AddonRepository: async shutdown");
   equal(status[0].state, "done");
 });

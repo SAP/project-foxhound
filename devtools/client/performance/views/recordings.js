@@ -13,7 +13,7 @@ var RecordingsView = {
   /**
    * Initialization function, called when the tool is started.
    */
-  initialize: function () {
+  initialize: function() {
     this._onSelect = this._onSelect.bind(this);
     this._onRecordingStateChange = this._onRecordingStateChange.bind(this);
     this._onNewRecording = this._onNewRecording.bind(this);
@@ -73,7 +73,7 @@ var RecordingsView = {
   /**
    * DE-XUL: Render the recording list using React.
    */
-  _renderList: function () {
+  _renderList: function() {
     const {recordings, labels, selected} = this._listState;
 
     const recordingList = RecordingList({
@@ -86,7 +86,7 @@ var RecordingsView = {
         isSelected: recording === selected,
         duration: recording.getDuration().toFixed(0),
         label: labels.get(recording),
-      }))
+      })),
     });
 
     ReactDOM.render(recordingList, this._listMount);
@@ -95,7 +95,7 @@ var RecordingsView = {
   /**
    * Destruction function, called when the tool is closed.
    */
-  destroy: function () {
+  destroy: function() {
     PerformanceController.off(EVENTS.RECORDING_STATE_CHANGE,
                               this._onRecordingStateChange);
     PerformanceController.off(EVENTS.RECORDING_ADDED, this._onNewRecording);
@@ -109,8 +109,8 @@ var RecordingsView = {
    * before the tool is loaded) or imported. In normal manual recording cases,
    * this will also be fired.
    */
-  _onNewRecording: function (_, recording) {
-    this._onRecordingStateChange(_, null, recording);
+  _onNewRecording: function(recording) {
+    this._onRecordingStateChange(null, recording);
   },
 
   /**
@@ -121,7 +121,7 @@ var RecordingsView = {
    * @param RecordingModel recording
    *        Model of the recording that was started.
    */
-  _onRecordingStateChange: function (_, state, recording) {
+  _onRecordingStateChange: function(state, recording) {
     const { recordings, labels } = this._listState;
 
     if (!recordings.includes(recording)) {
@@ -148,7 +148,7 @@ var RecordingsView = {
   /**
    * Clears out all non-console recordings.
    */
-  _onRecordingDeleted: function (_, recording) {
+  _onRecordingDeleted: function(recording) {
     const { recordings } = this._listState;
     const index = recordings.indexOf(recording);
     if (index === -1) {
@@ -161,17 +161,17 @@ var RecordingsView = {
   /**
    * The select listener for this container.
    */
-  _onSelect: Task.async(function* (recording) {
+  async _onSelect(recording) {
     this._listState.selected = recording;
     this.emit(EVENTS.UI_RECORDING_SELECTED, recording);
     this._renderList();
-  }),
+  },
 
   /**
    * The click listener for the "save" button of each item in this container.
    */
-  _onSaveButtonClick: function (recording) {
-    let fp = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
+  _onSaveButtonClick: function(recording) {
+    const fp = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
     fp.init(window, L10N.getStr("recordingsList.saveDialogTitle"),
             Ci.nsIFilePicker.modeSave);
     fp.appendFilter(L10N.getStr("recordingsList.saveDialogJSONFilter"), "*.json");
@@ -186,14 +186,14 @@ var RecordingsView = {
     }});
   },
 
-  _onRecordingExported: function (_, recording, file) {
+  _onRecordingExported: function(recording, file) {
     if (recording.isConsole()) {
       return;
     }
     const name = file.leafName.replace(/\..+$/, "");
     this._listState.labels.set(recording, name);
     this._renderList();
-  }
+  },
 };
 
 /**

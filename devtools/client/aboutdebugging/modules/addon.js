@@ -4,20 +4,35 @@
 
 "use strict";
 
-loader.lazyImporter(this, "BrowserToolboxProcess",
-  "resource://devtools/client/framework/ToolboxProcess.jsm");
+loader.lazyImporter(this, "AddonManagerPrivate", "resource://gre/modules/AddonManager.jsm");
 
-let toolbox = null;
+const {
+  debugLocalAddon,
+  debugRemoteAddon,
+  getExtensionUuid,
+  openTemporaryExtension,
+  parseFileUri,
+  uninstallAddon,
+} = require("devtools/client/aboutdebugging-new/src/modules/extensions-helper");
 
-exports.debugAddon = function (addonID) {
-  if (toolbox) {
-    toolbox.close();
-  }
+/**
+ * Most of the implementation for this module has been moved to
+ * devtools/client/aboutdebugging-new/src/modules/extensions-helper.js
+ * The only methods implemented here are the ones used in the old aboutdebugging only.
+ */
 
-  toolbox = BrowserToolboxProcess.init({
-    addonID,
-    onClose: () => {
-      toolbox = null;
-    }
-  });
+exports.isTemporaryID = function(addonID) {
+  return AddonManagerPrivate.isTemporaryInstallID(addonID);
 };
+
+/**
+ * See JSDoc in devtools/client/aboutdebugging-new/src/modules/extensions-helper for all
+ * the methods exposed below.
+ */
+
+exports.debugLocalAddon = debugLocalAddon;
+exports.debugRemoteAddon = debugRemoteAddon;
+exports.getExtensionUuid = getExtensionUuid;
+exports.openTemporaryExtension = openTemporaryExtension;
+exports.parseFileUri = parseFileUri;
+exports.uninstallAddon = uninstallAddon;

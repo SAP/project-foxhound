@@ -12,10 +12,10 @@
 
 #include "nsIAsyncInputStream.h"
 #include "nsIInterfaceRequestor.h"
+#include "nsINamed.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"
 #include "nsWeakReference.h"
-#include "WorkerHolder.h"
 
 #define NS_PROGRESS_EVENT_INTERVAL 50
 
@@ -26,34 +26,41 @@ namespace mozilla {
 namespace dom {
 
 class Blob;
-class DOMError;
-
-namespace workers {
-class WorkerPrivate;
-}
+class DOMException;
+class StrongWorkerRef;
+class WeakWorkerRef;
 
 extern const uint64_t kUnknownSize;
 
 class FileReaderDecreaseBusyCounter;
+
+// 26a79031-c94b-47e9-850a-f04fe17bc026
+#define FILEREADER_ID                                \
+  {                                                  \
+    0x26a79031, 0xc94b, 0x47e9, {                    \
+      0x85, 0x0a, 0xf0, 0x4f, 0xe1, 0x7b, 0xc0, 0x26 \
+    }                                                \
+  }
 
 class FileReader final : public DOMEventTargetHelper,
                          public nsIInterfaceRequestor,
                          public nsSupportsWeakReference,
                          public nsIInputStreamCallback,
                          public nsITimerCallback,
-                         public workers::WorkerHolder
-{
+                         public nsINamed {
   friend class FileReaderDecreaseBusyCounter;
 
-public:
-  FileReader(nsIGlobalObject* aGlobal,
-             workers::WorkerPrivate* aWorkerPrivate);
+ public:
+  FileReader(nsIGlobalObject* aGlobal, WeakWorkerRef* aWorkerRef);
 
   NS_DECL_ISUPPORTS_INHERITED
 
   NS_DECL_NSITIMERCALLBACK
   NS_DECL_NSIINPUTSTREAMCALLBACK
   NS_DECL_NSIINTERFACEREQUESTOR
+  NS_DECL_NSINAMED
+
+  NS_DECLARE_STATIC_IID_ACCESSOR(FILEREADER_ID)
 
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(FileReader,
                                                          DOMEventTargetHelper)
@@ -62,34 +69,30 @@ public:
                                JS::Handle<JSObject*> aGivenProto) override;
 
   // WebIDL
-  static already_AddRefed<FileReader>
-  Constructor(const GlobalObject& aGlobal, ErrorResult& aRv);
-  void ReadAsArrayBuffer(JSContext* aCx, Blob& aBlob, ErrorResult& aRv)
-  {
+  static already_AddRefed<FileReader> Constructor(const GlobalObject& aGlobal,
+                                                  ErrorResult& aRv);
+  void ReadAsArrayBuffer(JSContext* aCx, Blob& aBlob, ErrorResult& aRv) {
     ReadFileContent(aBlob, EmptyString(), FILE_AS_ARRAYBUFFER, aRv);
   }
 
-  void ReadAsText(Blob& aBlob, const nsAString& aLabel, ErrorResult& aRv)
-  {
-    ReadFileContent(aBlob, aLabel, FILE_AS_TEXT, aRv);
+  void ReadAsText(Blob& aBlob, const Optional<nsAString>& aLabel,
+                  ErrorResult& aRv) {
+    if (aLabel.WasPassed()) {
+      ReadFileContent(aBlob, aLabel.Value(), FILE_AS_TEXT, aRv);
+    } else {
+      ReadFileContent(aBlob, EmptyString(), FILE_AS_TEXT, aRv);
+    }
   }
 
-  void ReadAsDataURL(Blob& aBlob, ErrorResult& aRv)
-  {
+  void ReadAsDataURL(Blob& aBlob, ErrorResult& aRv) {
     ReadFileContent(aBlob, EmptyString(), FILE_AS_DATAURL, aRv);
   }
 
   void Abort();
 
-  uint16_t ReadyState() const
-  {
-    return static_cast<uint16_t>(mReadyState);
-  }
+  uint16_t ReadyState() const { return static_cast<uint16_t>(mReadyState); }
 
-  DOMError* GetError() const
-  {
-    return mError;
-  }
+  DOMException* GetError() const { return mError; }
 
   void GetResult(JSContext* aCx, JS::MutableHandle<JS::Value> aResult,
                  ErrorResult& aRv);
@@ -101,23 +104,9 @@ public:
   IMPL_EVENT_HANDLER(error)
   IMPL_EVENT_HANDLER(loadend)
 
-  void ReadAsBinaryString(Blob& aBlob, ErrorResult& aRv)
-  {
+  void ReadAsBinaryString(Blob& aBlob, ErrorResult& aRv) {
     ReadFileContent(aBlob, EmptyString(), FILE_AS_BINARY, aRv);
   }
-
-  // WorkerHolder
-  bool Notify(workers::Status) override;
-
-private:
-  virtual ~FileReader();
-
-  // This must be in sync with dom/webidl/FileReader.webidl
-  enum eReadyState {
-    EMPTY = 0,
-    LOADING = 1,
-    DONE = 2
-  };
 
   enum eDataFormat {
     FILE_AS_ARRAYBUFFER,
@@ -126,16 +115,24 @@ private:
     FILE_AS_DATAURL
   };
 
+  eDataFormat DataFormat() const { return mDataFormat; }
+  const nsString& Result() const { return mResult; }
+
+ private:
+  virtual ~FileReader();
+
+  // This must be in sync with dom/webidl/FileReader.webidl
+  enum eReadyState { EMPTY = 0, LOADING = 1, DONE = 2 };
+
   void RootResultArrayBuffer();
 
-  void ReadFileContent(Blob& aBlob,
-                       const nsAString &aCharset, eDataFormat aDataFormat,
-                       ErrorResult& aRv);
-  nsresult GetAsText(Blob *aBlob, const nsACString &aCharset,
-                     const char *aFileData, uint32_t aDataLen,
-                     nsAString &aResult);
-  nsresult GetAsDataURL(Blob *aBlob, const char *aFileData,
-                        uint32_t aDataLen, nsAString &aResult);
+  void ReadFileContent(Blob& aBlob, const nsAString& aCharset,
+                       eDataFormat aDataFormat, ErrorResult& aRv);
+  nsresult GetAsText(Blob* aBlob, const nsACString& aCharset,
+                     const char* aFileData, uint32_t aDataLen,
+                     nsAString& aResult);
+  nsresult GetAsDataURL(Blob* aBlob, const char* aFileData, uint32_t aDataLen,
+                        nsAString& aResult);
 
   nsresult OnLoadEnd(nsresult aStatus);
 
@@ -152,19 +149,14 @@ private:
 
   void OnLoadEndArrayBuffer();
 
-  void FreeFileData()
-  {
-    free(mFileData);
-    mFileData = nullptr;
-    mDataLen = 0;
-  }
+  void FreeFileData();
 
   nsresult IncreaseBusyCounter();
   void DecreaseBusyCounter();
 
   void Shutdown();
 
-  char *mFileData;
+  char* mFileData;
   RefPtr<Blob> mBlob;
   nsCString mCharset;
   uint32_t mDataLen;
@@ -181,7 +173,7 @@ private:
 
   nsCOMPtr<nsIAsyncInputStream> mAsyncStream;
 
-  RefPtr<DOMError> mError;
+  RefPtr<DOMException> mError;
 
   eReadyState mReadyState;
 
@@ -192,11 +184,19 @@ private:
 
   uint64_t mBusyCount;
 
-  // Kept alive with a WorkerHolder.
-  workers::WorkerPrivate* mWorkerPrivate;
+  // This is set if FileReader is created on workers, but it is null if the
+  // worker is shutting down. The null value is checked in ReadFileContent()
+  // before starting any reading.
+  RefPtr<WeakWorkerRef> mWeakWorkerRef;
+
+  // This value is set when the reading starts in order to keep the worker alive
+  // during the process.
+  RefPtr<StrongWorkerRef> mStrongWorkerRef;
 };
 
-} // dom namespace
-} // mozilla namespace
+NS_DEFINE_STATIC_IID_ACCESSOR(FileReader, FILEREADER_ID)
 
-#endif // mozilla_dom_FileReader_h
+}  // namespace dom
+}  // namespace mozilla
+
+#endif  // mozilla_dom_FileReader_h

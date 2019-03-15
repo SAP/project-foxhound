@@ -6,14 +6,9 @@
 
 // Test that the Shutdown Terminator reloads durations correctly
 
-var Cu = Components.utils;
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-
-Cu.import("resource://gre/modules/Services.jsm", this);
-Cu.import("resource://gre/modules/osfile.jsm", this);
-Cu.import("resource://gre/modules/Timer.jsm", this);
-Cu.import("resource://gre/modules/Task.jsm", this);
+ChromeUtils.import("resource://gre/modules/Services.jsm", this);
+ChromeUtils.import("resource://gre/modules/osfile.jsm", this);
+ChromeUtils.import("resource://gre/modules/Timer.jsm", this);
 
 var {Path, File, Constants} = OS;
 
@@ -26,15 +21,16 @@ var HISTOGRAMS = {
   "xpcom-will-shutdown": "SHUTDOWN_PHASE_DURATION_TICKS_XPCOM_WILL_SHUTDOWN",
 };
 
-add_task(function* init() {
+add_task(async function init() {
   do_get_profile();
   PATH = Path.join(Constants.Path.localProfileDir, "ShutdownDuration.json");
 });
 
-add_task(function* test_reload() {
-  do_print("Forging data");
+add_task(async function test_reload() {
+  info("Forging data");
   let data = {};
-  let telemetrySnapshots = Services.telemetry.histogramSnapshots;
+  let telemetrySnapshots = Services.telemetry.getSnapshotForHistograms("main",
+                                                                       false /* clear */).parent;
   let i = 0;
   for (let k of Object.keys(HISTOGRAMS)) {
     let id = HISTOGRAMS[k];
@@ -43,43 +39,39 @@ add_task(function* test_reload() {
   }
 
 
-  yield OS.File.writeAtomic(PATH, JSON.stringify(data));
+  await OS.File.writeAtomic(PATH, JSON.stringify(data));
 
   const TOPIC = "shutdown-terminator-telemetry-updated";
 
   let wait = new Promise(resolve =>
     Services.obs.addObserver(
       function observer() {
-        do_print("Telemetry has been updated");
+        info("Telemetry has been updated");
         Services.obs.removeObserver(observer, TOPIC);
         resolve();
       },
-      TOPIC,
-      false));
+      TOPIC));
 
-  do_print("Starting nsTerminatorTelemetry");
+  info("Starting nsTerminatorTelemetry");
   let tt = Cc["@mozilla.org/toolkit/shutdown-terminator-telemetry;1"].
     createInstance(Ci.nsIObserver);
   tt.observe(null, "profile-after-change", "");
 
-  do_print("Waiting until telemetry is updated");
+  info("Waiting until telemetry is updated");
   // Now wait until Telemetry is updated
-  yield wait;
+  await wait;
 
-  telemetrySnapshots = Services.telemetry.histogramSnapshots;
+  telemetrySnapshots = Services.telemetry.getSnapshotForHistograms("main",
+                                                                   false /* clear */).parent;
   for (let k of Object.keys(HISTOGRAMS)) {
     let id = HISTOGRAMS[k];
-    do_print("Testing histogram " + id);
+    info("Testing histogram " + id);
     let snapshot = telemetrySnapshots[id];
     let count = 0;
-    for (let x of snapshot.counts) {
+    for (let x of Object.values(snapshot.values)) {
       count += x;
     }
     Assert.equal(count, 1, "We have added one item");
   }
 
 });
-
-function run_test() {
-  run_next_test();
-}

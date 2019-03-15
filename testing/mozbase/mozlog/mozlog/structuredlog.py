@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import unicode_literals
+from __future__ import absolute_import, print_function, unicode_literals
 
 from multiprocessing import current_process
 from threading import current_thread, Lock
@@ -11,14 +11,17 @@ import sys
 import time
 import traceback
 
-from logtypes import Unicode, TestId, TestList, Status, SubStatus, Dict, List, Int, Any, Tuple
-from logtypes import log_action, convertor_registry
+from .logtypes import (Unicode, TestId, TestList, Status, SubStatus, Dict, List, Int, Any, Tuple,
+                       Boolean, Nullable)
+from .logtypes import log_action, convertor_registry
+import six
 
 """Structured Logging for recording test results.
 
 Allowed actions, and subfields:
   suite_start
       tests  - List of test names
+      name - Name for the suite
 
   suite_end
 
@@ -50,6 +53,26 @@ Allowed actions, and subfields:
       count - Number of assertions produced
       min_expected - Minimum expected number of assertions
       max_expected - Maximum expected number of assertions
+
+  lsan_leak
+      frames - List of stack frames from the leak report
+      scope - An identifier for the set of tests run during the browser session
+              (e.g. a directory name)
+      allowed_match - A stack frame in the list that matched a rule meaning the
+                      leak is expected
+
+  lsan_summary
+      bytes - Number of bytes leaked
+      allocations - Number of allocations
+      allowed - Boolean indicating whether all detected leaks matched allow rules
+
+  mozleak_object
+     process - Process that leaked
+     bytes - Number of bytes that leaked
+     name - Name of the object that leaked
+     scope - An identifier for the set of tests run during the browser session
+             (e.g. a directory name)
+     allowed - Boolean indicating whether the leak was permitted
 
   log
       level [CRITICAL | ERROR | WARNING |
@@ -97,6 +120,7 @@ def set_default_logger(default_logger):
 
     _default_logger_name = default_logger.name
 
+
 log_levels = dict((k.upper(), v) for v, k in
                   enumerate(["critical", "error", "warning", "info", "debug"]))
 
@@ -108,13 +132,21 @@ def log_actions():
     return set(convertor_registry.keys())
 
 
+class LoggerShutdownError(Exception):
+    """Raised when attempting to log after logger.shutdown() has been called."""
+
+
 class LoggerState(object):
 
     def __init__(self):
+        self.reset()
+
+    def reset(self):
         self.handlers = []
         self.running_tests = set()
         self.suite_started = False
         self.component_states = {}
+        self.has_shutdown = False
 
 
 class ComponentState(object):
@@ -154,6 +186,13 @@ class StructuredLogger(object):
         """Remove a handler from the current logger"""
         self._state.handlers.remove(handler)
 
+    def reset_state(self):
+        """Resets the logger to a brand new state. This means all handlers
+        are removed, running tests are discarded and components are reset.
+        """
+        self._state.reset()
+        self._component_state = self._state.component_states[self.component] = ComponentState()
+
     def send_message(self, topic, command, *args):
         """Send a message to each handler configured for this logger. This
         part of the api is useful to those users requiring dynamic control
@@ -190,7 +229,7 @@ class StructuredLogger(object):
 
         action = raw_data["action"]
         converted_data = convertor_registry[action].convert_known(**raw_data)
-        for k, v in raw_data.iteritems():
+        for k, v in six.iteritems(raw_data):
             if k not in converted_data:
                 converted_data[k] = v
 
@@ -215,6 +254,9 @@ class StructuredLogger(object):
         self._handle_log(log_data)
 
     def _handle_log(self, data):
+        if self._state.has_shutdown:
+            raise LoggerShutdownError("{} action received after shutdown.".format(data['action']))
+
         with self._lock:
             if self.component_filter:
                 data = self.component_filter(data)
@@ -227,8 +269,8 @@ class StructuredLogger(object):
                 except Exception:
                     # Write the exception details directly to stderr because
                     # log() would call this method again which is currently locked.
-                    print >> sys.__stderr__, '%s: Failure calling log handler:' % __name__
-                    print >> sys.__stderr__, traceback.format_exc()
+                    print('%s: Failure calling log handler:' % __name__, file=sys.__stderr__)
+                    print(traceback.format_exc(), file=sys.__stderr__)
 
     def _make_log_data(self, action, data):
         all_data = {"action": action,
@@ -244,8 +286,9 @@ class StructuredLogger(object):
     def _ensure_suite_state(self, action, data):
         if action == 'suite_start':
             if self._state.suite_started:
+                # limit data to reduce unnecessary log bloat
                 self.error("Got second suite_start message before suite_end. " +
-                           "Logged with data: {}".format(json.dumps(data)))
+                           "Logged with data: {}".format(json.dumps(data)[:100]))
                 return False
             self._state.suite_started = True
         elif action == 'suite_end':
@@ -257,6 +300,7 @@ class StructuredLogger(object):
         return True
 
     @log_action(TestList("tests"),
+                Unicode("name", default=None, optional=True),
                 Dict(Any, "run_info", default=None, optional=True),
                 Dict(Any, "version_info", default=None, optional=True),
                 Dict(Any, "device_info", default=None, optional=True),
@@ -265,6 +309,7 @@ class StructuredLogger(object):
         """Log a suite_start message
 
         :param dict tests: Test identifiers that will be run in the suite, keyed by group name.
+        :param str name: Optional name to identify the suite.
         :param dict run_info: Optional information typically provided by mozinfo.
         :param dict version_info: Optional target application version information provided
           by mozversion.
@@ -281,7 +326,7 @@ class StructuredLogger(object):
         if not self._ensure_suite_state('suite_end', data):
             return
 
-        self._log_data("suite_end")
+        self._log_data("suite_end", data)
 
     @log_action(TestId("test"),
                 Unicode("path", default=None, optional=True))
@@ -439,6 +484,55 @@ class StructuredLogger(object):
         :param max_expected: - Maximum expected number of assertions
         """
         self._log_data("assertion_count", data)
+
+    @log_action(List(Unicode, "frames"),
+                Unicode("scope", optional=True, default=None),
+                Unicode("allowed_match", optional=True, default=None))
+    def lsan_leak(self, data):
+        self._log_data("lsan_leak", data)
+
+    @log_action(Int("bytes"),
+                Int("allocations"),
+                Boolean("allowed", optional=True, default=False))
+    def lsan_summary(self, data):
+        self._log_data("lsan_summary", data)
+
+    @log_action(Unicode("process"),
+                Int("bytes"),
+                Unicode("name"),
+                Unicode("scope", optional=True, default=None),
+                Boolean("allowed", optional=True, default=False))
+    def mozleak_object(self, data):
+        self._log_data("mozleak_object", data)
+
+    @log_action(Unicode("process"),
+                Nullable(Int, "bytes"),
+                Int("threshold"),
+                List(Unicode, "objects"),
+                Unicode("scope", optional=True, default=None),
+                Boolean("induced_crash", optional=True, default=False),
+                Boolean("ignore_missing", optional=True, default=False))
+    def mozleak_total(self, data):
+        self._log_data("mozleak_total", data)
+
+    @log_action()
+    def shutdown(self, data):
+        """Shutdown the logger.
+
+        This logs a 'shutdown' action after which any further attempts to use
+        the logger will raise a :exc:`LoggerShutdownError`.
+
+        This is also called implicitly from the destructor or
+        when exiting the context manager.
+        """
+        self._log_data('shutdown', data)
+        self._state.has_shutdown = True
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc, val, tb):
+        self.shutdown()
 
 
 def _log_func(level_name):

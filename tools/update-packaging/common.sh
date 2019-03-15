@@ -11,8 +11,31 @@
 # -----------------------------------------------------------------------------
 # By default just assume that these tools exist on our path
 MAR=${MAR:-mar}
-BZIP2=${BZIP2:-bzip2}
 MBSDIFF=${MBSDIFF:-mbsdiff}
+if [[ -z "${MAR_OLD_FORMAT}" ]]; then
+  XZ=${XZ:-xz}
+  $XZ --version > /dev/null 2>&1
+  if [ $? -ne 0 ]; then
+    # If $XZ is not set and not found on the path then this is probably
+    # running on a windows buildbot. Some of the Windows build systems have
+    # xz.exe in topsrcdir/xz/. Look in the places this would be in both a
+    # mozilla-central and comm-central build.
+    XZ="$(dirname "$(dirname "$(dirname "$0")")")/xz/xz.exe"
+    $XZ --version > /dev/null 2>&1
+    if [ $? -ne 0 ]; then
+      XZ="$(dirname "$(dirname "$(dirname "$(dirname "$0")")")")/xz/xz.exe"
+      $XZ --version > /dev/null 2>&1
+      if [ $? -ne 0 ]; then
+        echo "xz was not found on this system!"
+        echo "exiting"
+        exit 1
+      fi
+    fi
+  fi
+else
+  MAR_OLD_FORMAT=1
+  BZIP2=${BZIP2:-bzip2}
+fi
 
 # -----------------------------------------------------------------------------
 # Helper routines
@@ -60,15 +83,15 @@ make_add_instruction() {
     # before performing this add instruction.
     testdir=$(echo "$f" | sed 's/\(.*distribution\/extensions\/[^\/]*\)\/.*/\1/')
     notice "     add-if \"$testdir\" \"$f\""
-    echo "add-if \"$testdir\" \"$f\"" >> $filev2
+    echo "add-if \"$testdir\" \"$f\"" >> "$filev2"
     if [ ! $filev3 = "" ]; then
-      echo "add-if \"$testdir\" \"$f\"" >> $filev3
+      echo "add-if \"$testdir\" \"$f\"" >> "$filev3"
     fi
   else
     notice "        add \"$f\"$forced"
-    echo "add \"$f\"" >> $filev2
-    if [ ! $filev3 = "" ]; then
-      echo "add \"$f\"" >> $filev3
+    echo "add \"$f\"" >> "$filev2"
+    if [ ! "$filev3" = "" ]; then
+      echo "add \"$f\"" >> "$filev3"
     fi
   fi
 }
@@ -101,7 +124,7 @@ make_add_if_not_instruction() {
   filev3="$2"
 
   notice " add-if-not \"$f\" \"$f\""
-  echo "add-if-not \"$f\" \"$f\"" >> $filev3
+  echo "add-if-not \"$f\" \"$f\"" >> "$filev3"
 }
 
 make_patch_instruction() {
@@ -115,12 +138,12 @@ make_patch_instruction() {
     # before performing this add instruction.
     testdir=$(echo "$f" | sed 's/\(.*distribution\/extensions\/[^\/]*\)\/.*/\1/')
     notice "   patch-if \"$testdir\" \"$f.patch\" \"$f\""
-    echo "patch-if \"$testdir\" \"$f.patch\" \"$f\"" >> $filev2
-    echo "patch-if \"$testdir\" \"$f.patch\" \"$f\"" >> $filev3
+    echo "patch-if \"$testdir\" \"$f.patch\" \"$f\"" >> "$filev2"
+    echo "patch-if \"$testdir\" \"$f.patch\" \"$f\"" >> "$filev3"
   else
     notice "      patch \"$f.patch\" \"$f\""
-    echo "patch \"$f.patch\" \"$f\"" >> $filev2
-    echo "patch \"$f.patch\" \"$f\"" >> $filev3
+    echo "patch \"$f.patch\" \"$f\"" >> "$filev2"
+    echo "patch \"$f.patch\" \"$f\"" >> "$filev3"
   fi
 }
 
@@ -149,18 +172,18 @@ append_remove_instructions() {
         if [ ! $(echo "$f" | grep -c '^#') = 1 ]; then
           if [ $(echo "$f" | grep -c '\/$') = 1 ]; then
             notice "      rmdir \"$f\""
-            echo "rmdir \"$f\"" >> $filev2
-            echo "rmdir \"$f\"" >> $filev3
+            echo "rmdir \"$f\"" >> "$filev2"
+            echo "rmdir \"$f\"" >> "$filev3"
           elif [ $(echo "$f" | grep -c '\/\*$') = 1 ]; then
             # Remove the *
             f=$(echo "$f" | sed -e 's:\*$::')
             notice "    rmrfdir \"$f\""
-            echo "rmrfdir \"$f\"" >> $filev2
-            echo "rmrfdir \"$f\"" >> $filev3
+            echo "rmrfdir \"$f\"" >> "$filev2"
+            echo "rmrfdir \"$f\"" >> "$filev3"
           else
             notice "     remove \"$f\""
-            echo "remove \"$f\"" >> $filev2
-            echo "remove \"$f\"" >> $filev3
+            echo "remove \"$f\"" >> "$filev2"
+            echo "remove \"$f\"" >> "$filev3"
           fi
         fi
       fi

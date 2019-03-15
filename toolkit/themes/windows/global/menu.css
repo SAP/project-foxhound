@@ -10,19 +10,18 @@
 
 /* ::::: menu/menuitem ::::: */
 
+menupopup,
+menubar {
+  font: menu;
+}
+
 menu,
 menuitem,
 menucaption {
   -moz-appearance: menuitem;
   -moz-box-align: center;
-  color: MenuText;
-  font: menu;
   list-style-image: none;
   -moz-image-region: auto;
-}
-
-menuitem[default="true"] {
-  font-weight: bold;
 }
 
 menu[disabled="true"],
@@ -42,7 +41,9 @@ menuitem[_moz-menuactive="true"][disabled="true"] {
   }
 }
 
-menuitem.spell-suggestion {
+menuitem[default="true"],
+menuitem.spell-suggestion,
+menucaption {
   font-weight: bold;
 }
 
@@ -52,9 +53,8 @@ menuitem.spell-suggestion {
 .menu-iconic-accel,
 .menu-text,
 .menu-iconic-text {
-  margin: 0px !important;
-  padding: 1px 0px;
-  color: inherit;
+  margin: 0 !important;
+  padding: 1px 0;
 }
 
 .menu-text {
@@ -64,26 +64,12 @@ menuitem.spell-suggestion {
 
 .menu-text,
 .menu-iconic-text {
-  font-weight: inherit;
   margin-inline-start: 2px !important;
   padding-inline-end: 2px;
 }
 
-menucaption > .menu-text,
-menucaption > .menu-iconic-text {
-  font-weight: bold;
-  padding-inline-start: 0 !important;
-}
-
-.menu-description {
-  font-style: italic;
-  color: GrayText;
-  margin-inline-start: 1ex !important;
-}
-
 .menu-accel,
 .menu-iconic-accel {
-  color: inherit;
   margin-inline-start: 0.74em !important;
   margin-inline-end: 1.35em !important;
 }
@@ -97,8 +83,8 @@ menucaption > .menu-iconic-text {
   height: 16px;
 }
 
-menu.menu-iconic > .menu-iconic-left,
-menuitem.menuitem-iconic > .menu-iconic-left {
+.menu-iconic > .menu-iconic-left,
+.menuitem-iconic > .menu-iconic-left {
   -moz-appearance: menuimage;
   padding-top: 2px;
 }
@@ -115,16 +101,18 @@ menuitem.menuitem-iconic > .menu-iconic-left {
 
 /* ::::: menu/menuitems in menubar ::::: */
 
-menubar > menu {
-  border: 2px solid transparent;
-}
-
 menubar > menu[_moz-menuactive="true"]:not([disabled="true"]) {
   color: -moz-menubarhovertext;
 }
 
-menubar > menu[_moz-menuactive="true"][open="true"] {
-  border-width: 3px 1px 1px 3px;
+@media (-moz-windows-classic) {
+  menubar > menu {
+    border: 2px solid transparent;
+  }
+
+  menubar > menu[_moz-menuactive="true"][open="true"] {
+    border-width: 3px 1px 1px 3px;
+  }
 }
 
 menubar > menu:-moz-lwtheme {
@@ -161,13 +149,8 @@ menubar > menu:-moz-window-inactive {
 
 /* ..... internal content .... */
 
-.menubar-left {
-  color: inherit;
-}
-
 .menubar-text {
   margin: 1px 6px 2px 6px !important;
-  color: inherit;
 }
 
 /* ::::: menu/menuitems in popups ::::: */
@@ -186,6 +169,10 @@ menuitem[_moz-menuactive="true"] {
 
 /* ::::: menu/menuitems in menulist popups ::::: */
 
+menulist > menupopup {
+  font: inherit;
+}
+
 menulist > menupopup > menuitem,
 menulist > menupopup > menucaption,
 menulist > menupopup > menu {
@@ -194,7 +181,6 @@ menulist > menupopup > menu {
   padding-inline-start: 5px;
   padding-inline-end: 5px;
   max-width: none;
-  font: message-box;
   color: -moz-FieldText;
 }
 
@@ -213,8 +199,8 @@ menulist > menupopup > menu > .menu-iconic-left {
 menulist > menupopup > menuitem > label,
 menulist > menupopup > menucaption > label,
 menulist > menupopup > menu > label {
-  padding-top: 0px;
-  padding-bottom: 0px;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 menulist:-moz-focusring > menupopup > menuitem[_moz-menuactive="true"] {
@@ -225,9 +211,11 @@ menulist > menupopup > menuitem[_moz-menuactive="true"][disabled="true"] {
   color: GrayText;
 }
 
-menulist > menupopup > menuitem[disabled="true"]:not([_moz-menuactive="true"]):-moz-system-metric(windows-classic) {
-  color: GrayText;
-  text-shadow: none;
+@media (-moz-windows-classic) {
+  menulist > menupopup > menuitem[disabled="true"]:not([_moz-menuactive="true"]) {
+    color: GrayText;
+    text-shadow: none;
+  }
 }
 
 menulist > menupopup > :-moz-any(menuitem, menucaption):not(.menuitem-iconic) > .menu-iconic-text {
@@ -243,7 +231,7 @@ menuitem[checked="true"] {
 menuitem[type="checkbox"] > .menu-iconic-left,
 menuitem[checked="true"] > .menu-iconic-left {
   -moz-appearance: menucheckbox;
-  padding-top: 0px;
+  padding-top: 0;
 }
 
 menuitem[type="radio"] {
@@ -251,7 +239,7 @@ menuitem[type="radio"] {
 }
 menuitem[type="radio"] > .menu-iconic-left {
   -moz-appearance: menuradio;
-  padding-top: 0px;
+  padding-top: 0;
 }
 
 menuitem[type="checkbox"] > .menu-iconic-left > .menu-iconic-icon,
@@ -275,11 +263,4 @@ menulist > menupopup > menuseparator {
   padding: 6px 0 5px 0;
   border-top: 1px solid #000000;
   border-bottom: none;
-}
-
-/* ::::: autocomplete ::::: */
-
-.autocomplete-history-popup > menuitem {
-  max-width: none !important;
-  font: message-box;
 }

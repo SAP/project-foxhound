@@ -9,6 +9,7 @@
 #ifndef GrGLRenderTarget_DEFINED
 #define GrGLRenderTarget_DEFINED
 
+#include "GrBackendSurface.h"
 #include "GrGLIRect.h"
 #include "GrRenderTarget.h"
 #include "SkScalar.h"
@@ -19,6 +20,8 @@ class GrGLStencilAttachment;
 
 class GrGLRenderTarget : public GrRenderTarget {
 public:
+    bool alwaysClearStencil() const override { return 0 == fRTFBOID; }
+
     // set fTexFBOID to this value to indicate that it is multisampled but
     // Gr doesn't know how to resolve it.
     enum { kUnresolvableFBOID = 0 };
@@ -31,17 +34,16 @@ public:
         bool                       fIsMixedSampled;
     };
 
-    static GrGLRenderTarget* CreateWrapped(GrGLGpu*,
-                                           const GrSurfaceDesc&,
-                                           const IDDesc&,
-                                           int stencilBits);
+    static sk_sp<GrGLRenderTarget> MakeWrapped(GrGLGpu*,
+                                               const GrSurfaceDesc&,
+                                               const IDDesc&,
+                                               int stencilBits);
 
     void setViewport(const GrGLIRect& rect) { fViewport = rect; }
     const GrGLIRect& getViewport() const { return fViewport; }
 
-    // The following two functions return the same ID when a
-    // texture/render target is multisampled, and different IDs when
-    // it is.
+    // The following two functions return the same ID when a texture/render target is not
+    // multisampled, and different IDs when it is multisampled.
     // FBO ID used to render into
     GrGLuint renderFBOID() const { return fRTFBOID; }
     // FBO ID that has texture ID attached.
@@ -49,9 +51,8 @@ public:
 
     // override of GrRenderTarget
     ResolveType getResolveType() const override {
-        if (!this->isUnifiedMultisampled() ||
-            fRTFBOID == fTexFBOID) {
-            // catches FBO 0 and non MSAA case
+        if (GrFSAAType::kUnifiedMSAA != this->fsaaType() || fRTFBOID == fTexFBOID) {
+            // catches FBO 0 and non unified-MSAA case
             return kAutoResolves_ResolveType;
         } else if (kUnresolvableFBOID == fTexFBOID) {
             return kCantResolve_ResolveType;
@@ -60,7 +61,7 @@ public:
         }
     }
 
-    GrBackendObject getRenderTargetHandle() const override { return fRTFBOID; }
+    GrBackendRenderTarget getBackendRenderTarget() const override;
 
     bool canAttemptStencilAttachment() const override;
 
@@ -77,20 +78,19 @@ protected:
     void onAbandon() override;
     void onRelease() override;
 
-    // In protected because subclass GrGLTextureRenderTarget calls this version.
-    size_t onGpuMemorySize() const override;
+    int numSamplesOwnedPerPixel() const { return fNumSamplesOwnedPerPixel; }
 
 private:
     // Constructor for instances wrapping backend objects.
     GrGLRenderTarget(GrGLGpu*, const GrSurfaceDesc&, const IDDesc&, GrGLStencilAttachment*);
 
-    static Flags ComputeFlags(const GrGLCaps&, const IDDesc&);
+    void setFlags(const GrGLCaps&, const IDDesc&);
 
     GrGLGpu* getGLGpu() const;
     bool completeStencilAttachment() override;
 
-    // The total size of the resource (including all pixels) for a single sample.
-    size_t totalBytesPerSample() const;
+    size_t onGpuMemorySize() const override;
+
     int msaaSamples() const;
     // The number total number of samples, including both MSAA and resolve texture samples.
     int totalSamples() const;
@@ -106,9 +106,10 @@ private:
     // we want the rendering to be at top left (GL has origin in bottom left)
     GrGLIRect   fViewport;
 
-    // onGpuMemorySize() needs to know the VRAM footprint of the FBO(s). However, abandon and
-    // release zero out the IDs and the cache needs to know the size even after those actions.
-    size_t      fGpuMemorySize;
+    // The RenderTarget needs to be able to report its VRAM footprint even after abandon and
+    // release have potentially zeroed out the IDs (e.g., so the cache can reset itself). Since
+    // the IDs are just required for the computation in totalSamples we cache that result here.
+    int         fNumSamplesOwnedPerPixel;
 
     typedef GrRenderTarget INHERITED;
 };

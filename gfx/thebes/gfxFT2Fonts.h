@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,67 +18,62 @@
 class FT2FontEntry;
 
 class gfxFT2Font : public gfxFT2FontBase {
-public: // new functions
-    gfxFT2Font(cairo_scaled_font_t *aCairoFont,
-               FT2FontEntry *aFontEntry,
-               const gfxFontStyle *aFontStyle,
-               bool aNeedsBold);
-    virtual ~gfxFT2Font ();
+ public:  // new functions
+  gfxFT2Font(const RefPtr<mozilla::gfx::UnscaledFontFreeType> &aUnscaledFont,
+             cairo_scaled_font_t *aCairoFont, FT_Face aFTFace,
+             FT2FontEntry *aFontEntry, const gfxFontStyle *aFontStyle);
+  virtual ~gfxFT2Font();
 
-    FT2FontEntry *GetFontEntry();
+  FT2FontEntry *GetFontEntry();
 
-    struct CachedGlyphData {
-        CachedGlyphData()
-            : glyphIndex(0xffffffffU) { }
+  virtual already_AddRefed<mozilla::gfx::ScaledFont> GetScaledFont(
+      DrawTarget *aTarget) override;
 
-        CachedGlyphData(uint32_t gid)
-            : glyphIndex(gid) { }
+  virtual void AddSizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf,
+                                      FontCacheSizes *aSizes) const override;
+  virtual void AddSizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf,
+                                      FontCacheSizes *aSizes) const override;
 
-        uint32_t glyphIndex;
-        int32_t lsbDelta;
-        int32_t rsbDelta;
-        int32_t xAdvance;
-    };
+ protected:
+  struct CachedGlyphData {
+    CachedGlyphData() : glyphIndex(0xffffffffU) {}
 
-    const CachedGlyphData* GetGlyphDataForChar(uint32_t ch) {
-        CharGlyphMapEntryType *entry = mCharGlyphCache.PutEntry(ch);
+    explicit CachedGlyphData(uint32_t gid) : glyphIndex(gid) {}
 
-        if (!entry)
-            return nullptr;
+    uint32_t glyphIndex;
+    int32_t lsbDelta;
+    int32_t rsbDelta;
+    int32_t xAdvance;
+  };
 
-        if (entry->mData.glyphIndex == 0xffffffffU) {
-            // this is a new entry, fill it
-            FillGlyphDataForChar(ch, &entry->mData);
-        }
+  const CachedGlyphData *GetGlyphDataForChar(FT_Face aFace, uint32_t ch) {
+    CharGlyphMapEntryType *entry = mCharGlyphCache.PutEntry(ch);
 
-        return &entry->mData;
+    if (!entry) return nullptr;
+
+    if (entry->mData.glyphIndex == 0xffffffffU) {
+      // this is a new entry, fill it
+      FillGlyphDataForChar(aFace, ch, &entry->mData);
     }
 
-    virtual void AddSizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf,
-                                        FontCacheSizes* aSizes) const override;
-    virtual void AddSizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf,
-                                        FontCacheSizes* aSizes) const override;
+    return &entry->mData;
+  }
 
-protected:
-    virtual bool ShapeText(DrawTarget      *aDrawTarget,
-                           const char16_t *aText,
-                           uint32_t         aOffset,
-                           uint32_t         aLength,
-                           Script           aScript,
-                           bool             aVertical,
-                           gfxShapedText   *aShapedText) override;
+  bool ShapeText(DrawTarget *aDrawTarget, const char16_t *aText,
+                 uint32_t aOffset, uint32_t aLength, Script aScript,
+                 bool aVertical, RoundingFlags aRounding,
+                 gfxShapedText *aShapedText) override;
 
-    void FillGlyphDataForChar(uint32_t ch, CachedGlyphData *gd);
+  void FillGlyphDataForChar(FT_Face face, uint32_t ch, CachedGlyphData *gd);
 
-    void AddRange(const char16_t *aText,
-                  uint32_t         aOffset,
-                  uint32_t         aLength,
-                  gfxShapedText   *aShapedText);
+  void AddRange(const char16_t *aText, uint32_t aOffset, uint32_t aLength,
+                gfxShapedText *aShapedText);
 
-    typedef nsBaseHashtableET<nsUint32HashKey, CachedGlyphData> CharGlyphMapEntryType;
-    typedef nsTHashtable<CharGlyphMapEntryType> CharGlyphMap;
-    CharGlyphMap mCharGlyphCache;
+  typedef nsBaseHashtableET<nsUint32HashKey, CachedGlyphData>
+      CharGlyphMapEntryType;
+  typedef nsTHashtable<CharGlyphMapEntryType> CharGlyphMap;
+  CharGlyphMap mCharGlyphCache;
+  FT_Face mFTFace;
 };
 
 #endif /* GFX_FT2FONTS_H */
-

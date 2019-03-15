@@ -16,9 +16,7 @@ function test() {
                             .getService(Ci.nsIConsoleAPIStorage);
 
   function getInnerWindowId(aWindow) {
-    return aWindow.QueryInterface(Ci.nsIInterfaceRequestor)
-                  .getInterface(Ci.nsIDOMWindowUtils)
-                  .currentInnerWindowID;
+    return aWindow.windowUtils.currentInnerWindowID;
   }
 
   function whenNewWindowLoaded(aOptions, aCallback) {
@@ -29,9 +27,9 @@ function test() {
   }
 
   function doTest(aIsPrivateMode, aWindow, aCallback) {
-    aWindow.gBrowser.selectedBrowser.addEventListener("load", function() {
+    BrowserTestUtils.browserLoaded(aWindow.gBrowser.selectedBrowser).then(() => {
       consoleObserver = {
-        observe: function(aSubject, aTopic, aData) {
+        observe(aSubject, aTopic, aData) {
           if (aTopic == "console-api-log-event") {
             afterEvents = ConsoleAPIStorage.getEvents(innerID);
             is(beforeEvents.length == afterEvents.length - 1, storageShouldOccur,
@@ -42,19 +40,19 @@ function test() {
               aCallback();
             });
           }
-        }
+        },
       };
 
       aWindow.Services.obs.addObserver(
-        consoleObserver, "console-api-log-event", false);
+        consoleObserver, "console-api-log-event");
       aWindow.nativeConsole.log("foo bar baz (private: " + aIsPrivateMode + ")");
-    }, {capture: true, once: true});
+    });
 
     // We expect that console API messages are always stored.
     storageShouldOccur = true;
     innerID = getInnerWindowId(aWindow);
     beforeEvents = ConsoleAPIStorage.getEvents(innerID);
-    aWindow.gBrowser.selectedBrowser.loadURI(testURI);
+    BrowserTestUtils.loadURI(aWindow.gBrowser.selectedBrowser, testURI);
   }
 
   function testOnWindow(aOptions, aCallback) {
@@ -65,7 +63,7 @@ function test() {
       // call whenNewWindowLoaded() instead of testOnWindow() on your test.
       executeSoon(() => aCallback(aWin));
     });
-  };
+  }
 
    // this function is called after calling finish() on the test.
   registerCleanupFunction(function() {

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,28 +23,25 @@ class PresentationConnection;
 class PresentationConnectionList;
 class Promise;
 
-class PresentationReceiver final : public nsIPresentationRespondingListener
-                                 , public nsWrapperCache
-{
-public:
+class PresentationReceiver final : public nsIPresentationRespondingListener,
+                                   public nsWrapperCache {
+ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(PresentationReceiver)
   NS_DECL_NSIPRESENTATIONRESPONDINGLISTENER
 
-  static already_AddRefed<PresentationReceiver> Create(nsPIDOMWindowInner* aWindow);
+  static already_AddRefed<PresentationReceiver> Create(
+      nsPIDOMWindowInner* aWindow);
 
   virtual JSObject* WrapObject(JSContext* aCx,
                                JS::Handle<JSObject*> aGivenProto) override;
 
-  nsPIDOMWindowInner* GetParentObject() const
-  {
-    return mOwner;
-  }
+  nsPIDOMWindowInner* GetParentObject() const { return mOwner; }
 
   // WebIDL (public APIs)
   already_AddRefed<Promise> GetConnectionList(ErrorResult& aRv);
 
-private:
+ private:
   explicit PresentationReceiver(nsPIDOMWindowInner* aWindow);
 
   virtual ~PresentationReceiver();
@@ -65,7 +62,7 @@ private:
   RefPtr<PresentationConnectionList> mConnectionList;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_PresentationReceiver_h
+#endif  // mozilla_dom_PresentationReceiver_h

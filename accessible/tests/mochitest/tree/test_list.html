@@ -14,20 +14,19 @@
           src="../role.js"></script>
 
   <script type="application/javascript">
-    function listItemTree(aBulletText, aName, aSubtree)
-    {
+    function listItemTree(aBulletText, aName, aSubtree) {
       var obj = {
         role: ROLE_LISTITEM,
         children: [
           {
             role: ROLE_STATICTEXT,
-            name: aBulletText
+            name: aBulletText,
           },
           {
             role: ROLE_TEXT_LEAF,
-            name: aName
-          }
-        ]
+            name: aName,
+          },
+        ],
       };
 
       if (aSubtree)
@@ -36,16 +35,15 @@
       return obj;
     }
 
-    function doTest()
-    {
+    function doTest() {
       // list1
       var discAccTree = {
         role: ROLE_LIST,
         children: [
           new listItemTree(kDiscBulletText, "Oranges"),
           new listItemTree(kDiscBulletText, "Apples"),
-          new listItemTree(kDiscBulletText, "Bananas")
-        ]
+          new listItemTree(kDiscBulletText, "Bananas"),
+        ],
       };
 
       testAccessibleTree("list1", discAccTree);
@@ -56,8 +54,8 @@
         children: [
           new listItemTree(kCircleBulletText, "Oranges"),
           new listItemTree(kCircleBulletText, "Apples"),
-          new listItemTree(kCircleBulletText, "Bananas")
-        ]
+          new listItemTree(kCircleBulletText, "Bananas"),
+        ],
       };
 
       testAccessibleTree("list2", circleAccTree);
@@ -68,8 +66,8 @@
         children: [
           new listItemTree(kSquareBulletText, "Oranges"),
           new listItemTree(kSquareBulletText, "Apples"),
-          new listItemTree(kSquareBulletText, "Bananas")
-        ]
+          new listItemTree(kSquareBulletText, "Bananas"),
+        ],
       };
 
       testAccessibleTree("list3", squareAccTree);
@@ -80,8 +78,8 @@
         children: [
           new listItemTree("1. ", "Oranges"),
           new listItemTree("2. ", "Apples"),
-          new listItemTree("3. ", "Bananas", circleAccTree)
-        ]
+          new listItemTree("3. ", "Bananas", circleAccTree),
+        ],
       };
 
       testAccessibleTree("list4", nestedAccTree);
@@ -93,14 +91,14 @@
             { TEXT_LEAF: [] },
           ] },
           { DEFINITION: [ // dd
-            { TEXT_LEAF: [] }
+            { TEXT_LEAF: [] },
           ] },
           { TERM: [ // dt
-            { TEXT_LEAF: [] }
+            { TEXT_LEAF: [] },
           ] },
           { DEFINITION: [ // dd
-            { TEXT_LEAF: [] }
-          ] }
+            { TEXT_LEAF: [] },
+          ] },
         ] };
 
       testAccessibleTree("list5", tree);
@@ -112,43 +110,66 @@
             { STATICTEXT: [ ] },
             { DEFINITION_LIST: [ // dl
               { TERM: [ // dt
-                { TEXT_LEAF: [] }
+                { TEXT_LEAF: [] },
               ] },
               { DEFINITION: [ // dd
-                { TEXT_LEAF: [] }
-              ] }
-            ] }
-          ] }
+                { TEXT_LEAF: [] },
+              ] },
+            ] },
+          ] },
         ] };
 
       testAccessibleTree("list6", tree);
 
       // li having no display:list-item style
-      var tree =
+      tree =
         { LIST: [ // ul
           { LISTITEM: [ // li
             { TEXT_LEAF: [] },
           ] },
           { TEXT_LEAF: [] },
           { LISTITEM: [ // li
-            { TEXT_LEAF: [] }
-          ] }
+            { TEXT_LEAF: [] },
+          ] },
         ] };
       testAccessibleTree("list7", tree);
 
-      var tree =
+      tree =
         { LIST: [ // ul
           { LISTITEM: [ // li
             { TEXT_LEAF: [] },
           ] },
           { LISTITEM: [ // li
-            { TEXT_LEAF: [] }
-          ] }
+            { TEXT_LEAF: [] },
+          ] },
         ] };
       testAccessibleTree("list8", tree);
 
       // span having display:list-item style
       testAccessibleTree("list9", discAccTree);
+
+      // dl with div grouping dt/dd
+      tree =
+        { DEFINITION_LIST: [ // dl
+          { SECTION: [ // div
+            { TERM: [ // dt
+              { TEXT_LEAF: [] },
+            ] },
+            { DEFINITION: [ // dd
+              { TEXT_LEAF: [] },
+            ] },
+          ] },
+          { SECTION: [ // div
+            { TERM: [ // dt
+              { TEXT_LEAF: [] },
+            ] },
+            { DEFINITION: [ // dd
+              { TEXT_LEAF: [] },
+            ] },
+          ] },
+        ] };
+
+      testAccessibleTree("list10", tree);
 
       SimpleTest.finish();
     }
@@ -243,5 +264,12 @@
     <span id="l9_li2" style="display:list-item">Apples</span>
     <span id="l9_li3" style="display:list-item">Bananas</span>
   </ul>
+
+  <!-- dl with div grouping dd/dt elements (bug 1476347) -->
+  <dl id="list10">
+    <div><dt>item1</dt><dd>description</dd></div>
+    <div><dt>item2</td><dd>description</dd></div>
+  </dl>
+
 </body>
 </html>

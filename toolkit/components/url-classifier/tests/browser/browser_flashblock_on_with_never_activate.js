@@ -2,42 +2,39 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
-requestLongerTimeout(2);
+requestLongerTimeout(3);
 
-var {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
-
-Cu.import("resource://gre/modules/Task.jsm");
-const scriptLoader = Cc["@mozilla.org/moz/jssubscript-loader;1"].
-                     getService(Ci.mozIJSSubScriptLoader);
-scriptLoader.loadSubScript(
+/* import-globals-from classifierHelper.js */
+Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/toolkit/components/url-classifier/tests/browser/classifierHelper.js",
   this);
-scriptLoader.loadSubScript(
+/* import-globals-from classifierTester.js */
+Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/toolkit/components/url-classifier/tests/browser/classifierTester.js",
   this);
 
-add_task(function* checkFlashBlockLists() {
+add_task(async function checkFlashBlockLists() {
   classifierTester.setPrefs({
     setDBs: true,
     flashBlockEnable: true,
-    flashSetting: classifierTester.NEVER_ACTIVATE_PREF_VALUE
+    flashSetting: classifierTester.NEVER_ACTIVATE_PREF_VALUE,
   });
 
-  yield classifierHelper.waitForInit();
-  yield classifierHelper.addUrlToDB(classifierTester.dbUrls);
+  await classifierHelper.waitForInit();
+  await classifierHelper.addUrlToDB(classifierTester.dbUrls);
 
   for (let testCase of classifierTester.testCases) {
     info(`RUNNING TEST: ${testCase.name} (Never Activate, Flashblock on)`);
-    let tab = yield classifierTester.buildTestCaseInNewTab(gBrowser, testCase);
+    let tab = await classifierTester.buildTestCaseInNewTab(gBrowser, testCase);
 
     let depth = testCase.domains.length - 1;
-    let pluginInfo = yield classifierTester.getPluginInfo(tab.linkedBrowser,
+    let pluginInfo = await classifierTester.getPluginInfo(tab.linkedBrowser,
                                                           depth);
 
     classifierTester.checkPluginInfo(pluginInfo,
                                      testCase.expectedFlashClassification,
                                      classifierTester.NEVER_ACTIVATE_PREF_VALUE);
 
-    yield BrowserTestUtils.removeTab(tab);
+    BrowserTestUtils.removeTab(tab);
   }
 });

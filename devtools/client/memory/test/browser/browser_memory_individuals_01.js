@@ -9,13 +9,12 @@
 const {
   individualsState,
   viewState,
-  censusState,
 } = require("devtools/client/memory/constants");
 const { changeView } = require("devtools/client/memory/actions/view");
 
 const TEST_URL = "http://example.com/browser/devtools/client/memory/test/browser/doc_steady_allocation.html";
 
-this.test = makeMemoryTest(TEST_URL, function* ({ tab, panel }) {
+this.test = makeMemoryTest(TEST_URL, async function({ tab, panel }) {
   const store = panel.panelWin.gStore;
   const { dispatch } = store;
   const doc = panel.panelWin.document;
@@ -27,7 +26,7 @@ this.test = makeMemoryTest(TEST_URL, function* ({ tab, panel }) {
   const takeSnapshotButton = doc.getElementById("take-snapshot");
   EventUtils.synthesizeMouseAtCenter(takeSnapshotButton, {}, panel.panelWin);
 
-  yield waitUntilState(store, state => {
+  await waitUntilState(store, state => {
     return state.snapshots.length === 1 &&
            state.snapshots[0].census &&
            state.snapshots[0].census.state === censusState.SAVED;
@@ -39,7 +38,7 @@ this.test = makeMemoryTest(TEST_URL, function* ({ tab, panel }) {
   const individualsButton = doc.querySelector(".individuals-button");
   EventUtils.synthesizeMouseAtCenter(individualsButton, {}, panel.panelWin);
 
-  yield waitUntilState(store, state => {
+  await waitUntilState(store, state => {
     return state.view.state === viewState.INDIVIDUALS &&
            state.individuals &&
            state.individuals.state === individualsState.FETCHED;
@@ -56,7 +55,7 @@ this.test = makeMemoryTest(TEST_URL, function* ({ tab, panel }) {
   ok(popViewButton, "Should be showing the #pop-view-button");
   EventUtils.synthesizeMouseAtCenter(popViewButton, {}, panel.panelWin);
 
-  yield waitUntilState(store, state => {
+  await waitUntilState(store, state => {
     return state.view.state === viewState.CENSUS;
   });
 

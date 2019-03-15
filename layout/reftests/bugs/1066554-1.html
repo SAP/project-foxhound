@@ -7,7 +7,7 @@
   <script>
     function insertShadowSVG() {
       var x = document.getElementById("x");
-      x.createShadowRoot();
+      x.attachShadow({ mode: "open" });
       x.shadowRoot.innerHTML =
         '<svg width="50px" height="10px"> \
            <switch> \

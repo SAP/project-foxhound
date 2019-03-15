@@ -10,6 +10,15 @@ interface nsIPrompt;
 interface nsIChannel;
 
 /**
+ * @see nsICookieService::runInTransaction
+ */
+[scriptable, function, uuid(0fc41ffb-f1b7-42d9-9a42-8dc420c158c1)]
+interface nsICookieTransactionCallback : nsISupports
+{
+  void callback();
+};
+
+/**
  * nsICookieService
  *
  * Provides methods for setting and getting cookies in the context of a
@@ -80,6 +89,9 @@ interface nsICookieService : nsISupports
   const uint32_t BEHAVIOR_REJECT         = 2; // reject all cookies
   const uint32_t BEHAVIOR_LIMIT_FOREIGN  = 3; // reject third-party cookies unless the
                                               // eTLD already has at least one cookie
+  const uint32_t BEHAVIOR_REJECT_TRACKER = 4; // reject trackers
+  // When adding a new cookie behavior, please increase this value!
+  const uint32_t BEHAVIOR_LAST           = 4;
 
   /*
    * Possible values for the "network.cookie.lifetimePolicy" preference.
@@ -87,7 +99,7 @@ interface nsICookieService : nsISupports
   const uint32_t ACCEPT_NORMALLY   = 0; // accept normally
   // Value = 1 is considered the same as 0 (See Bug 606655).
   const uint32_t ACCEPT_SESSION    = 2; // downgrade to session
-  const uint32_t ACCEPT_FOR_N_DAYS = 3; // limit lifetime to N days
+  // Value = 3 is considered the same as 0
 
   /*
    * Get the complete cookie string associated with the URI.
@@ -190,4 +202,19 @@ interface nsICookieService : nsISupports
    *        provided, the cookies will be assumed third-party.)
    */
   void setCookieStringFromHttp(in nsIURI aURI, in nsIURI aFirstURI, in nsIPrompt aPrompt, in string aCookie, in string aServerTime, in nsIChannel aChannel);
+
+
+  /*
+   * Batch SQLite operations into one transaction. By default each call to
+   * CookieService that affects the underlying SQLite database (add, remove,
+   * setCookieString etc.) runs in a separate transaction.  If you do this many
+   * times in a row, it's faster and suggested to wrap them all in a single
+   * transaction by setting all the operations into the callback parameter.
+   * Example: test scripts that need to construct a large cookie database.
+   * @param aCallback
+   *        nsICookieTransactionCallback interface to call
+   * @throws NS_ERROR_FAILURE if aCallback() fails.
+   * @throws NS_ERROR_NOT_AVAILABLE if the connection is not established.
+   */
+   void runInTransaction(in nsICookieTransactionCallback aCallback);
 };

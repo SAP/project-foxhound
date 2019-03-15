@@ -9,34 +9,59 @@
 #ifndef GrGLProgram_DEFINED
 #define GrGLProgram_DEFINED
 
-#include "GrGLContext.h"
-#include "GrProgramDesc.h"
-#include "GrGLTexture.h"
 #include "GrGLProgramDataManager.h"
 #include "glsl/GrGLSLProgramDataManager.h"
 #include "glsl/GrGLSLUniformHandler.h"
 
-#include "SkString.h"
-#include "SkXfermode.h"
-
-#include "builders/GrGLProgramBuilder.h"
-
-class GrGLInstalledProcessors;
-class GrGLProgramBuilder;
+class GrGLSLFragmentProcessor;
+class GrGLSLPrimitiveProcessor;
+class GrGLSLXferProcessor;
 class GrPipeline;
+class GrPrimitiveProcessor;
+class GrRenderTargetProxy;
+class GrTextureProxy;
 
 /**
- * This class manages a GPU program and records per-program information.
- * We can specify the attribute locations so that they are constant
- * across our shaders. But the driver determines the uniform locations
- * at link time. We don't need to remember the sampler uniform location
- * because we will bind a texture slot to it and never change it
- * Uniforms are program-local so we can't rely on fHWState to hold the
- * previous uniform state after a program change.
+ * This class manages a GPU program and records per-program information. It also records the vertex
+ * and instance attribute layouts that are to be used with the program.
  */
 class GrGLProgram : public SkRefCnt {
 public:
-    typedef GrGLSLProgramBuilder::BuiltinUniformHandles BuiltinUniformHandles;
+    /**
+     * This class has its own Attribute representation as it does not need the name and we don't
+     * want to worry about copying the name string to memory with life time of GrGLProgram.
+     * Additionally, these store the attribute location.
+     */
+    struct Attribute {
+        GrVertexAttribType fCPUType;
+        GrSLType fGPUType;
+        size_t fOffset;
+        GrGLint fLocation;
+    };
+
+    using UniformHandle = GrGLSLProgramDataManager::UniformHandle;
+    using UniformInfoArray = GrGLProgramDataManager::UniformInfoArray;
+    using VaryingInfoArray = GrGLProgramDataManager::VaryingInfoArray;
+
+    /**
+     * The attribute array consists of vertexAttributeCnt + instanceAttributeCnt elements with
+     * the vertex attributes preceding the instance attributes.
+     */
+    GrGLProgram(GrGLGpu*,
+                const GrGLSLBuiltinUniformHandles&,
+                GrGLuint programID,
+                const UniformInfoArray& uniforms,
+                const UniformInfoArray& textureSamplers,
+                const VaryingInfoArray&, // used for NVPR only currently
+                std::unique_ptr<GrGLSLPrimitiveProcessor> geometryProcessor,
+                std::unique_ptr<GrGLSLXferProcessor> xferProcessor,
+                std::unique_ptr<std::unique_ptr<GrGLSLFragmentProcessor>[]> fragmentProcessors,
+                int fragmentProcessorCnt,
+                std::unique_ptr<Attribute[]>,
+                int vertexAttributeCnt,
+                int instanceAttributeCnt,
+                int vertexStride,
+                int instanceStride);
 
     ~GrGLProgram();
 
@@ -44,8 +69,6 @@ public:
      * Call to abandon GL objects owned by this program.
      */
     void abandon();
-
-    const GrProgramDesc& getDesc() { return fDesc; }
 
     /**
      * Gets the GL program ID for this program.
@@ -69,8 +92,8 @@ public:
         }
 
         /**
-         * Gets a vec4 that adjusts the position from Skia device coords to GL's normalized device
-         * coords. Assuming the transformed position, pos, is a homogeneous vec3, the vec, v, is
+         * Gets a float4 that adjusts the position from Skia device coords to GL's normalized device
+         * coords. Assuming the transformed position, pos, is a homogeneous float3, the vec, v, is
          * applied as such:
          * pos.x = dot(v.xy, pos.xz)
          * pos.y = dot(v.zw, pos.yz)
@@ -89,62 +112,61 @@ public:
     };
 
     /**
-     * This function uploads uniforms, calls each GrGL*Processor's setData, and retrieves the
-     * textures that need to be bound on each unit. It is the caller's responsibility to ensure
-     * the program is bound before calling, and to bind the outgoing textures to their respective
-     * units upon return. (Each index in the array corresponds to its matching GL texture unit.)
+     * This function uploads uniforms, calls each GrGLSL*Processor's setData. It binds all fragment
+     * processor textures. Primitive process textures can be bound using this function or by
+     * calling updatePrimitiveProcessorTextureBindings.
+     *
+     * It is the caller's responsibility to ensure the program is bound before calling.
      */
-    void setData(const GrPrimitiveProcessor&, const GrPipeline&);
+    void updateUniformsAndTextureBindings(const GrPrimitiveProcessor&, const GrPipeline&,
+                                          const GrTextureProxy* const primitiveProcessorTextures[]);
 
-    /**
-     * This function retrieves the textures that need to be used by each GrGL*Processor, and
-     * ensures that any textures requiring mipmaps have their mipmaps correctly built.
-     */
-    void generateMipmaps(const GrPrimitiveProcessor&, const GrPipeline&);
+    void updatePrimitiveProcessorTextureBindings(const GrPrimitiveProcessor&,
+                                                 const GrTextureProxy* const[]);
 
-protected:
-    typedef GrGLSLProgramDataManager::UniformHandle UniformHandle;
-    typedef GrGLProgramDataManager::UniformInfoArray UniformInfoArray;
-    typedef GrGLProgramDataManager::VaryingInfoArray VaryingInfoArray;
+    int vertexStride() const { return fVertexStride; }
+    int instanceStride() const { return fInstanceStride; }
 
-    GrGLProgram(GrGLGpu*,
-                const GrProgramDesc&,
-                const BuiltinUniformHandles&,
-                GrGLuint programID,
-                const UniformInfoArray&,
-                const SkTArray<GrGLSampler>&,
-                const VaryingInfoArray&, // used for NVPR only currently
-                GrGLSLPrimitiveProcessor* geometryProcessor,
-                GrGLSLXferProcessor* xferProcessor,
-                const GrGLSLFragProcs& fragmentProcessors);
+    int numVertexAttributes() const { return fVertexAttributeCnt; }
+    const Attribute& vertexAttribute(int i) const {
+        SkASSERT(i >= 0 && i < fVertexAttributeCnt);
+        return fAttributes[i];
+    }
 
+    int numInstanceAttributes() const { return fInstanceAttributeCnt; }
+    const Attribute& instanceAttribute(int i) const {
+        SkASSERT(i >= 0 && i < fInstanceAttributeCnt);
+        return fAttributes[i + fVertexAttributeCnt];
+    }
+
+private:
     // A helper to loop over effects, set the transforms (via subclass) and bind textures
-    void setFragmentData(const GrPrimitiveProcessor&, const GrPipeline&, int* nextSamplerIdx);
+    void setFragmentData(const GrPipeline&, int* nextTexSamplerIdx);
 
     // Helper for setData() that sets the view matrix and loads the render target height uniform
-    void setRenderTargetState(const GrPrimitiveProcessor&, const GrPipeline&);
-
-    // Helper for setData() that binds textures and texel buffers to the appropriate texture units
-    void bindTextures(const GrProcessor&, bool allowSRGBInputs, int* nextSamplerIdx);
-
-    // Helper for generateMipmaps() that ensures mipmaps are up to date
-    void generateMipmaps(const GrProcessor&, bool allowSRGBInputs);
+    void setRenderTargetState(const GrPrimitiveProcessor&, const GrRenderTargetProxy*);
 
     // these reflect the current values of uniforms (GL uniform values travel with program)
     RenderTargetState fRenderTargetState;
-    BuiltinUniformHandles fBuiltinUniformHandles;
+    GrGLSLBuiltinUniformHandles fBuiltinUniformHandles;
     GrGLuint fProgramID;
 
     // the installed effects
-    SkAutoTDelete<GrGLSLPrimitiveProcessor> fGeometryProcessor;
-    SkAutoTDelete<GrGLSLXferProcessor> fXferProcessor;
-    GrGLSLFragProcs fFragmentProcessors;
+    std::unique_ptr<GrGLSLPrimitiveProcessor> fPrimitiveProcessor;
+    std::unique_ptr<GrGLSLXferProcessor> fXferProcessor;
+    std::unique_ptr<std::unique_ptr<GrGLSLFragmentProcessor>[]> fFragmentProcessors;
+    int fFragmentProcessorCnt;
 
-    GrProgramDesc fDesc;
+    std::unique_ptr<Attribute[]> fAttributes;
+    int fVertexAttributeCnt;
+    int fInstanceAttributeCnt;
+    int fVertexStride;
+    int fInstanceStride;
+
     GrGLGpu* fGpu;
     GrGLProgramDataManager fProgramDataManager;
 
-    friend class GrGLProgramBuilder;
+    int fNumTextureSamplers;
 
     typedef SkRefCnt INHERITED;
 };

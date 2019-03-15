@@ -5,9 +5,11 @@
   <body>
     <div id="host"></div>
     <script>
-      var host = document.getElementById("host");
-      var root = host.createShadowRoot();
-      root.innerHTML = 'a <content></content> c';
+      var host, root;
+
+      host = document.getElementById("host");
+      root = host.attachShadow({mode: 'open'});
+      root.innerHTML = 'a <slot></slot> c';
 
       function tweak() {
         var span = document.createElement("span");

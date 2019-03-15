@@ -2,10 +2,20 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/
 
+# ALL CHANGES TO THIS FILE MUST HAVE REVIEW FROM A MARIONETTE PEER!
+#
+# The Marionette Python client is used out-of-tree with various builds of
+# Firefox. Removing a preference from this file will cause regressions,
+# so please be careful and get review from a Testing :: Marionette peer
+# before you make any changes to this file.
+
+from __future__ import absolute_import
+
 import os
 import sys
 import tempfile
 import time
+import traceback
 
 from copy import deepcopy
 
@@ -13,10 +23,16 @@ import mozversion
 
 from mozprofile import Profile
 from mozrunner import Runner, FennecEmulatorRunner
+from six import reraise
+
+from . import errors
 
 
 class GeckoInstance(object):
     required_prefs = {
+        # Make sure Shield doesn't hit the network.
+        "app.normandy.api_url": "",
+
         # Increase the APZ content response timeout in tests to 1 minute.
         # This is to accommodate the fact that test environments tends to be slower
         # than production environments (with the b2g emulator being the slowest of them
@@ -26,12 +42,17 @@ class GeckoInstance(object):
         "apz.content_response_timeout": 60000,
 
         # Do not send Firefox health reports to the production server
-        "datareporting.healthreport.documentServerURI": "http://%(server)s/dummy/healthreport/",
+        # removed in Firefox 59
         "datareporting.healthreport.about.reportUrl": "http://%(server)s/dummy/abouthealthreport/",
+        "datareporting.healthreport.documentServerURI": "http://%(server)s/dummy/healthreport/",
 
         # Do not show datareporting policy notifications which can interfer with tests
         "datareporting.policy.dataSubmissionPolicyBypassNotification": True,
 
+        # Automatically unload beforeunload alerts
+        "dom.disable_beforeunload": True,
+
+        # Disable the ProcessHangMonitor
         "dom.ipc.reportProcessHangs": False,
 
         # No slow script dialogs
@@ -42,12 +63,15 @@ class GeckoInstance(object):
         # AddonManager.SCOPE_PROFILE + AddonManager.SCOPE_APPLICATION
         "extensions.autoDisableScopes": 0,
         "extensions.enabledScopes": 5,
-        # don't block add-ons for e10s
-        "extensions.e10sBlocksEnabling": False,
         # Disable metadata caching for installed add-ons by default
         "extensions.getAddons.cache.enabled": False,
         # Disable intalling any distribution add-ons
         "extensions.installDistroAddons": False,
+        # Make sure Shield doesn't hit the network.
+        # Removed in Firefox 60.
+        "extensions.shield-recipe-client.api_url": "",
+        # Disable extensions compatibility dialogue.
+        # Removed in Firefox 61.
         "extensions.showMismatchUI": False,
         # Turn off extension updates so they don't bother tests
         "extensions.update.enabled": False,
@@ -67,22 +91,21 @@ class GeckoInstance(object):
         # Do not scan Wifi
         "geo.wifi.scan": False,
 
-        # No hang monitor
-        "hangmonitor.timeout": 0,
-
         "javascript.options.showInConsole": True,
 
         # Enable Marionette component
         "marionette.enabled": True,
-        # Deprecated, and can be removed in Firefox 60.0
+        # (deprecated and can be removed when Firefox 60 ships)
         "marionette.defaultPrefs.enabled": True,
+
         # Disable recommended automation prefs in CI
         "marionette.prefs.recommended": False,
 
+        # Disable download and usage of OpenH264, and Widevine plugins
+        "media.gmp-manager.updateEnabled": False,
+
         "media.volume_scale": "0.01",
 
-        # Make sure the disk cache doesn't get auto disabled
-        "network.http.bypass-cachelock-threshold": 200000,
         # Do not prompt for temporary redirects
         "network.http.prompt-temp-redirect": False,
         # Disable speculative connections so they aren"t reported as leaking when they"re
@@ -108,11 +131,14 @@ class GeckoInstance(object):
 
         # We want to collect telemetry, but we don't want to send in the results
         "toolkit.telemetry.server": "https://%(server)s/dummy/telemetry/",
+
+        # Enabling the support for File object creation in the content process.
+        "dom.file.createInChild": True,
     }
 
     def __init__(self, host=None, port=None, bin=None, profile=None, addons=None,
                  app_args=None, symbols_path=None, gecko_log=None, prefs=None,
-                 workspace=None, verbose=0):
+                 workspace=None, verbose=0, headless=False):
         self.runner_class = Runner
         self.app_args = app_args or []
         self.runner = None
@@ -121,15 +147,7 @@ class GeckoInstance(object):
 
         self.marionette_host = host
         self.marionette_port = port
-        # Alternative to default temporary directory
-        self.workspace = workspace
         self.addons = addons
-        # Check if it is a Profile object or a path to profile
-        self.profile = None
-        if isinstance(profile, Profile):
-            self.profile = profile
-        else:
-            self.profile_path = profile
         self.prefs = prefs
         self.required_prefs = deepcopy(self.required_prefs)
         if prefs:
@@ -138,6 +156,18 @@ class GeckoInstance(object):
         self._gecko_log_option = gecko_log
         self._gecko_log = None
         self.verbose = verbose
+        self.headless = headless
+
+        # keep track of errors to decide whether instance is unresponsive
+        self.unresponsive_count = 0
+
+        # Alternative to default temporary directory
+        self.workspace = workspace
+
+        # Don't use the 'profile' property here, because sub-classes could add
+        # further preferences and data, which would not be included in the new
+        # profile
+        self._profile = profile
 
     @property
     def gecko_log(self):
@@ -159,42 +189,102 @@ class GeckoInstance(object):
         self._gecko_log = path
         return self._gecko_log
 
-    def _update_profile(self):
-        profile_args = {"preferences": deepcopy(self.required_prefs)}
-        profile_args["preferences"]["marionette.defaultPrefs.port"] = self.marionette_port
+    @property
+    def profile(self):
+        return self._profile
+
+    @profile.setter
+    def profile(self, value):
+        self._update_profile(value)
+
+    def _update_profile(self, profile=None, profile_name=None):
+        """Check if the profile has to be created, or replaced
+
+        :param profile: A Profile instance to be used.
+        :param name: Profile name to be used in the path.
+        """
+        if self.runner and self.runner.is_running():
+            raise errors.MarionetteException("The current profile can only be updated "
+                                             "when the instance is not running")
+
+        if isinstance(profile, Profile):
+            # Only replace the profile if it is not the current one
+            if hasattr(self, "_profile") and profile is self._profile:
+                return
+
+        else:
+            profile_args = self.profile_args
+            profile_path = profile
+
+            # If a path to a profile is given then clone it
+            if isinstance(profile_path, basestring):
+                profile_args["path_from"] = profile_path
+                profile_args["path_to"] = tempfile.mkdtemp(
+                    suffix=u".{}".format(profile_name or os.path.basename(profile_path)),
+                    dir=self.workspace)
+                # The target must not exist yet
+                os.rmdir(profile_args["path_to"])
+
+                profile = Profile.clone(**profile_args)
+
+            # Otherwise create a new profile
+            else:
+                profile_args["profile"] = tempfile.mkdtemp(
+                    suffix=u".{}".format(profile_name or "mozrunner"),
+                    dir=self.workspace)
+                profile = Profile(**profile_args)
+                profile.create_new = True
+
+        if isinstance(self.profile, Profile):
+            self.profile.cleanup()
+
+        self._profile = profile
+
+    def switch_profile(self, profile_name=None, clone_from=None):
+        """Switch the profile by using the given name, and optionally clone it.
+
+        Compared to :attr:`profile` this method allows to switch the profile
+        by giving control over the profile name as used for the new profile. It
+        also always creates a new blank profile, or as clone of an existent one.
+
+        :param profile_name: Optional, name of the profile, which will be used
+            as part of the profile path (folder name containing the profile).
+        :clone_from: Optional, if specified the new profile will be cloned
+            based on the given profile. This argument can be an instance of
+            ``mozprofile.Profile``, or the path of the profile.
+        """
+        if isinstance(clone_from, Profile):
+            clone_from = clone_from.profile
+
+        self._update_profile(clone_from, profile_name=profile_name)
+
+    @property
+    def profile_args(self):
+        args = {"preferences": deepcopy(self.required_prefs)}
+        args["preferences"]["marionette.port"] = self.marionette_port
+        args["preferences"]["marionette.defaultPrefs.port"] = self.marionette_port
+
         if self.prefs:
-            profile_args["preferences"].update(self.prefs)
+            args["preferences"].update(self.prefs)
+
         if self.verbose:
-            level = "TRACE" if self.verbose >= 2 else "DEBUG"
-            profile_args["preferences"]["marionette.logging"] = level
+            level = "Trace" if self.verbose >= 2 else "Debug"
+            args["preferences"]["marionette.log.level"] = level
+            args["preferences"]["marionette.logging"] = level
+
         if "-jsdebugger" in self.app_args:
-            profile_args["preferences"].update({
+            args["preferences"].update({
                 "devtools.browsertoolbox.panel": "jsdebugger",
                 "devtools.debugger.remote-enabled": True,
                 "devtools.chrome.enabled": True,
                 "devtools.debugger.prompt-connection": False,
                 "marionette.debugging.clicktostart": True,
             })
-        if self.addons:
-            profile_args["addons"] = self.addons
 
-        if hasattr(self, "profile_path") and self.profile is None:
-            if not self.profile_path:
-                if self.workspace:
-                    profile_args["profile"] = tempfile.mkdtemp(
-                        suffix=".mozrunner-{:.0f}".format(time.time()),
-                        dir=self.workspace)
-                self.profile = Profile(**profile_args)
-            else:
-                profile_args["path_from"] = self.profile_path
-                profile_name = "{}-{:.0f}".format(
-                    os.path.basename(self.profile_path),
-                    time.time()
-                )
-                if self.workspace:
-                    profile_args["path_to"] = os.path.join(self.workspace,
-                                                           profile_name)
-                self.profile = Profile.clone(**profile_args)
+        if self.addons:
+            args["addons"] = self.addons
+
+        return args
 
     @classmethod
     def create(cls, app=None, *args, **kwargs):
@@ -207,12 +297,12 @@ class GeckoInstance(object):
         except (IOError, KeyError):
             exc, val, tb = sys.exc_info()
             msg = 'Application "{0}" unknown (should be one of {1})'
-            raise NotImplementedError, msg.format(app, apps.keys()), tb
+            reraise(NotImplementedError, msg.format(app, apps.keys()), tb)
 
         return instance_class(*args, **kwargs)
 
     def start(self):
-        self._update_profile()
+        self._update_profile(self.profile)
         self.runner = self.runner_class(**self._get_runner_args())
         self.runner.start()
 
@@ -227,6 +317,10 @@ class GeckoInstance(object):
             process_args["logfile"] = self.gecko_log
 
         env = os.environ.copy()
+
+        if self.headless:
+            env["MOZ_HEADLESS"] = "1"
+            env["DISPLAY"] = "77"  # Set a fake display.
 
         # environment variables needed for crashreporting
         # https://developer.mozilla.org/docs/Environment_variables_affecting_crash_reporting
@@ -244,32 +338,46 @@ class GeckoInstance(object):
             "process_args": process_args
         }
 
-    def close(self, restart=False):
-        if not restart:
-            self.profile = None
+    def close(self, clean=False):
+        """
+        Close the managed Gecko process.
 
+        Depending on self.runner_class, setting `clean` to True may also kill
+        the emulator process in which this instance is running.
+
+        :param clean: If True, also perform runner cleanup.
+        """
         if self.runner:
             self.runner.stop()
-            self.runner.cleanup()
+            if clean:
+                self.runner.cleanup()
 
-    def restart(self, prefs=None, clean=True):
-        self.close(restart=True)
-
-        if clean and self.profile:
-            self.profile.cleanup()
+        if clean:
+            if isinstance(self.profile, Profile):
+                self.profile.cleanup()
             self.profile = None
 
+    def restart(self, prefs=None, clean=True):
+        """
+        Close then start the managed Gecko process.
+
+        :param prefs: Dictionary of preference names and values.
+        :param clean: If True, reset the profile before starting.
+        """
         if prefs:
             self.prefs = prefs
         else:
             self.prefs = None
+
+        self.close(clean=clean)
         self.start()
 
 
 class FennecInstance(GeckoInstance):
     fennec_prefs = {
-        # Enable output of dump()
+        # Enable output for dump() and chrome console API
         "browser.dom.window.dump.enabled": True,
+        "devtools.console.stdout.chrome": True,
 
         # Disable Android snippets
         "browser.snippets.enabled": False,
@@ -277,14 +385,16 @@ class FennecInstance(GeckoInstance):
         "browser.snippets.firstrunHomepage.enabled": False,
 
         # Disable safebrowsing components
+        "browser.safebrowsing.blockedURIs.enabled": False,
         "browser.safebrowsing.downloads.enabled": False,
+        "browser.safebrowsing.passwords.enabled": False,
+        "browser.safebrowsing.malware.enabled": False,
+        "browser.safebrowsing.phishing.enabled": False,
 
         # Do not restore the last open set of tabs if the browser has crashed
         "browser.sessionstore.resume_from_crash": False,
 
         # Disable e10s by default
-        "browser.tabs.remote.autostart.1": False,
-        "browser.tabs.remote.autostart.2": False,
         "browser.tabs.remote.autostart": False,
 
         # Do not allow background tabs to be zombified, otherwise for tests that
@@ -295,8 +405,11 @@ class FennecInstance(GeckoInstance):
     def __init__(self, emulator_binary=None, avd_home=None, avd=None,
                  adb_path=None, serial=None, connect_to_running_emulator=False,
                  package_name=None, *args, **kwargs):
+        required_prefs = deepcopy(FennecInstance.fennec_prefs)
+        required_prefs.update(kwargs.get("prefs", {}))
+
         super(FennecInstance, self).__init__(*args, **kwargs)
-        self.required_prefs.update(FennecInstance.fennec_prefs)
+        self.required_prefs.update(required_prefs)
 
         self.runner_class = FennecEmulatorRunner
         # runner args
@@ -323,7 +436,7 @@ class FennecInstance(GeckoInstance):
         return self._package_name
 
     def start(self):
-        self._update_profile()
+        self._update_profile(self.profile)
         self.runner = self.runner_class(**self._get_runner_args())
         try:
             if self.connect_to_running_emulator:
@@ -332,20 +445,10 @@ class FennecInstance(GeckoInstance):
         except Exception as e:
             exc, val, tb = sys.exc_info()
             message = "Error possibly due to runner or device args: {}"
-            raise exc, message.format(e.message), tb
-        # gecko_log comes from logcat when running with device/emulator
-        logcat_args = {
-            "filterspec": "Gecko",
-            "serial": self.runner.device.dm._deviceSerial
-        }
-        if self.gecko_log == "-":
-            logcat_args["stream"] = sys.stdout
-        else:
-            logcat_args["logfile"] = self.gecko_log
-        self.runner.device.start_logcat(**logcat_args)
+            reraise(exc, message.format(e.message), tb)
 
-        # forward marionette port (localhost:2828)
-        self.runner.device.dm.forward(
+        # forward marionette port
+        self.runner.device.device.forward(
             local="tcp:{}".format(self.marionette_port),
             remote="tcp:{}".format(self.marionette_port))
 
@@ -371,20 +474,47 @@ class FennecInstance(GeckoInstance):
 
         return runner_args
 
-    def close(self, restart=False):
-        super(FennecInstance, self).close(restart)
-        if self.runner and self.runner.device.connected:
-            self.runner.device.dm.remove_forward(
-                "tcp:{}".format(self.marionette_port))
+    def close(self, clean=False):
+        """
+        Close the managed Gecko process.
+
+        If `clean` is True and the Fennec instance is running in an
+        emulator managed by mozrunner, this will stop the emulator.
+
+        :param clean: If True, also perform runner cleanup.
+        """
+        super(FennecInstance, self).close(clean)
+        if clean and self.runner and self.runner.device.connected:
+            try:
+                self.runner.device.device.remove_forwards(
+                    "tcp:{}".format(self.marionette_port))
+                self.unresponsive_count = 0
+            except Exception:
+                self.unresponsive_count += 1
+                traceback.print_exception(*sys.exc_info())
 
 
 class DesktopInstance(GeckoInstance):
     desktop_prefs = {
-        # Disable application updates
-        "app.update.enabled": False,
+        # Disable Firefox old build background check
+        "app.update.checkInstallTime": False,
 
-        # Enable output of dump()
+        # Disable automatically upgrading Firefox
+        #
+        # Note: Possible update tests could reset or flip the value to allow
+        # updates to be downloaded and applied.
+        "app.update.disabledForTesting": True,
+        # !!! For backward compatibility up to Firefox 64. Only remove
+        # when this Firefox version is no longer supported by the client !!!
+        "app.update.auto": False,
+
+        # Don't show the content blocking introduction panel
+        # We use a larger number than the default 22 to have some buffer
+        "browser.contentblocking.introCount": 99,
+
+        # Enable output for dump() and chrome console API
         "browser.dom.window.dump.enabled": True,
+        "devtools.console.stdout.chrome": True,
 
         # Indicate that the download panel has been shown once so that whichever
         # download test runs first doesn"t show the popup inconsistently
@@ -393,23 +523,17 @@ class DesktopInstance(GeckoInstance):
         # Do not show the EULA notification which can interfer with tests
         "browser.EULA.override": True,
 
-        # Turn off about:newtab and make use of about:blank instead for new opened tabs
+        # Always display a blank page
         "browser.newtabpage.enabled": False,
-        # Assume the about:newtab page"s intro panels have been shown to not depend on
-        # which test runs first and happens to open about:newtab
-        "browser.newtabpage.introShown": True,
 
         # Background thumbnails in particular cause grief, and disabling thumbnails
         # in general can"t hurt - we re-enable them when tests need them
         "browser.pagethumbnails.capturing_disabled": True,
 
-        # Avoid performing Reader Mode intros during tests
-        "browser.reader.detectedFirstArticle": True,
-
         # Disable safebrowsing components
         "browser.safebrowsing.blockedURIs.enabled": False,
         "browser.safebrowsing.downloads.enabled": False,
-        "browser.safebrowsing.forbiddenURIs.enabled": False,
+        "browser.safebrowsing.passwords.enabled": False,
         "browser.safebrowsing.malware.enabled": False,
         "browser.safebrowsing.phishing.enabled": False,
 
@@ -423,8 +547,6 @@ class DesktopInstance(GeckoInstance):
         "browser.shell.checkDefaultBrowser": False,
 
         # Disable e10s by default
-        "browser.tabs.remote.autostart.1": False,
-        "browser.tabs.remote.autostart.2": False,
         "browser.tabs.remote.autostart": False,
 
         # Needed for branded builds to prevent opening a second tab on startup
@@ -432,10 +554,10 @@ class DesktopInstance(GeckoInstance):
         # Start with a blank page by default
         "browser.startup.page": 0,
 
-        # Disable tab animation
-        "browser.tabs.animate": False,
+        # Disable browser animations
+        "toolkit.cosmeticAnimations.enabled": False,
 
-        # Do not warn on exit when multiple tabs are open
+        # Do not warn when closing all open tabs
         "browser.tabs.warnOnClose": False,
         # Do not warn when closing all other open tabs
         "browser.tabs.warnOnCloseOtherTabs": False,
@@ -445,14 +567,28 @@ class DesktopInstance(GeckoInstance):
         # Disable the UI tour
         "browser.uitour.enabled": False,
 
+        # Turn off search suggestions in the location bar so as not to trigger network
+        # connections.
+        "browser.urlbar.suggest.searches": False,
+
+        # Turn off the location bar search suggestions opt-in.  It interferes with
+        # tests that don't expect it to be there.
+        "browser.urlbar.userMadeSearchSuggestionsChoice": True,
+
+        # Don't warn when exiting the browser
+        "browser.warnOnQuit": False,
+
         # Disable first-run welcome page
         "startup.homepage_welcome_url": "about:blank",
         "startup.homepage_welcome_url.additional": "",
     }
 
     def __init__(self, *args, **kwargs):
+        required_prefs = deepcopy(DesktopInstance.desktop_prefs)
+        required_prefs.update(kwargs.get("prefs", {}))
+
         super(DesktopInstance, self).__init__(*args, **kwargs)
-        self.required_prefs.update(DesktopInstance.desktop_prefs)
+        self.required_prefs.update(required_prefs)
 
 
 class NullOutput(object):

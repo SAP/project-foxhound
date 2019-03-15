@@ -4,7 +4,7 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["SessionFile"];
+var EXPORTED_SYMBOLS = ["SessionFile"];
 
 /**
  * Implementation of all the disk I/O required by the session store.
@@ -25,36 +25,20 @@ this.EXPORTED_SYMBOLS = ["SessionFile"];
  * This implementation uses OS.File, which guarantees property 1.
  */
 
-const Cu = Components.utils;
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cr = Components.results;
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/osfile.jsm");
+ChromeUtils.import("resource://gre/modules/AsyncShutdown.jsm");
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/osfile.jsm");
-Cu.import("resource://gre/modules/Promise.jsm");
-Cu.import("resource://gre/modules/AsyncShutdown.jsm");
-Cu.import("resource://gre/modules/Preferences.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "console",
-  "resource://gre/modules/Console.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PromiseUtils",
-  "resource://gre/modules/PromiseUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "RunState",
-  "resource:///modules/sessionstore/RunState.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "TelemetryStopwatch",
-  "resource://gre/modules/TelemetryStopwatch.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Task",
-  "resource://gre/modules/Task.jsm");
 XPCOMUtils.defineLazyServiceGetter(this, "Telemetry",
   "@mozilla.org/base/telemetry;1", "nsITelemetry");
-XPCOMUtils.defineLazyServiceGetter(this, "sessionStartup",
-  "@mozilla.org/browser/sessionstartup;1", "nsISessionStartup");
-XPCOMUtils.defineLazyModuleGetter(this, "SessionWorker",
-  "resource:///modules/sessionstore/SessionWorker.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "SessionStore",
-  "resource:///modules/sessionstore/SessionStore.jsm");
+
+XPCOMUtils.defineLazyModuleGetters(this, {
+  RunState: "resource:///modules/sessionstore/RunState.jsm",
+  SessionStartup: "resource:///modules/sessionstore/SessionStartup.jsm",
+  SessionStore: "resource:///modules/sessionstore/SessionStore.jsm",
+  SessionWorker: "resource:///modules/sessionstore/SessionWorker.jsm",
+});
 
 const PREF_UPGRADE_BACKUP = "browser.sessionstore.upgradeBackup.latestBuildID";
 const PREF_MAX_UPGRADE_BACKUPS = "browser.sessionstore.upgradeBackup.maxUpgradeBackups";
@@ -62,23 +46,26 @@ const PREF_MAX_UPGRADE_BACKUPS = "browser.sessionstore.upgradeBackup.maxUpgradeB
 const PREF_MAX_SERIALIZE_BACK = "browser.sessionstore.max_serialize_back";
 const PREF_MAX_SERIALIZE_FWD = "browser.sessionstore.max_serialize_forward";
 
-this.SessionFile = {
+XPCOMUtils.defineLazyPreferenceGetter(this, "kMaxWriteFailures",
+  "browser.sessionstore.max_write_failures", 5);
+
+var SessionFile = {
   /**
    * Read the contents of the session file, asynchronously.
    */
-  read: function () {
+  read() {
     return SessionFileInternal.read();
   },
   /**
    * Write the contents of the session file, asynchronously.
    */
-  write: function (aData) {
+  write(aData) {
     return SessionFileInternal.write(aData);
   },
   /**
    * Wipe the contents of the session file, asynchronously.
    */
-  wipe: function () {
+  wipe() {
     return SessionFileInternal.wipe();
   },
 
@@ -88,7 +75,11 @@ this.SessionFile = {
    */
   get Paths() {
     return SessionFileInternal.Paths;
-  }
+  },
+
+  get MaxWriteFailures() {
+    return kMaxWriteFailures;
+  },
 };
 
 Object.freeze(SessionFile);
@@ -100,11 +91,11 @@ var SessionFileInternal = {
   Paths: Object.freeze({
     // The path to the latest version of sessionstore written during a clean
     // shutdown. After startup, it is renamed `cleanBackup`.
-    clean: Path.join(profileDir, "sessionstore.js"),
+    clean: Path.join(profileDir, "sessionstore.jsonlz4"),
 
     // The path at which we store the previous version of `clean`. Updated
     // whenever we successfully load from `clean`.
-    cleanBackup: Path.join(profileDir, "sessionstore-backups", "previous.js"),
+    cleanBackup: Path.join(profileDir, "sessionstore-backups", "previous.jsonlz4"),
 
     // The directory containing all sessionstore backups.
     backups: Path.join(profileDir, "sessionstore-backups"),
@@ -114,7 +105,7 @@ var SessionFileInternal = {
     // privacy-sensitive information than |clean|, and this file is
     // therefore removed during clean shutdown. This file is designed to protect
     // against crashes / sudden shutdown.
-    recovery: Path.join(profileDir, "sessionstore-backups", "recovery.js"),
+    recovery: Path.join(profileDir, "sessionstore-backups", "recovery.jsonlz4"),
 
     // The path to the previous version of the sessionstore written
     // during runtime (e.g. 15 seconds before recovery). In case of a
@@ -123,13 +114,13 @@ var SessionFileInternal = {
     // this file is therefore removed during clean shutdown.  This
     // file is designed to protect against crashes that are nasty
     // enough to corrupt |recovery|.
-    recoveryBackup: Path.join(profileDir, "sessionstore-backups", "recovery.bak"),
+    recoveryBackup: Path.join(profileDir, "sessionstore-backups", "recovery.baklz4"),
 
     // The path to a backup created during an upgrade of Firefox.
     // Having this backup protects the user essentially from bugs in
     // Firefox or add-ons, especially for users of Nightly. This file
     // does not contain any information more sensitive than |clean|.
-    upgradeBackupPrefix: Path.join(profileDir, "sessionstore-backups", "upgrade.js-"),
+    upgradeBackupPrefix: Path.join(profileDir, "sessionstore-backups", "upgrade.jsonlz4-"),
 
     // The path to the backup of the version of the session store used
     // during the latest upgrade of Firefox. During load/recovery,
@@ -191,13 +182,22 @@ var SessionFileInternal = {
   // Used for error reporting.
   _failures: 0,
 
-  // Resolved once initialization is complete.
-  // The promise never rejects.
-  _deferredInitialized: PromiseUtils.defer(),
+  // Object that keeps statistics that should help us make informed decisions
+  // about the current status of the worker.
+  _workerHealth: {
+    failures: 0,
+  },
 
-  // `true` once we have started initialization, i.e. once something
-  // has been scheduled that will eventually resolve `_deferredInitialized`.
+  // `true` once we have started initialization of the worker.
   _initializationStarted: false,
+
+  // A string that will be set to the session file name part that was read from
+  // disk. It will be available _after_ a session file read() is done.
+  _readOrigin: null,
+
+  // `true` if the old, uncompressed, file format was used to read from disk, as
+  // a fallback mechanism.
+  _usingOldExtension: false,
 
   // The ID of the latest version of Gecko for which we have an upgrade backup
   // or |undefined| if no upgrade backup was ever written.
@@ -209,49 +209,61 @@ var SessionFileInternal = {
     }
   },
 
-  // Find the correct session file, read it and setup the worker.
-  read: Task.async(function* () {
-    this._initializationStarted = true;
-
+  async _readInternal(useOldExtension) {
     let result;
     let noFilesFound = true;
+    this._usingOldExtension = useOldExtension;
+
     // Attempt to load by order of priority from the various backups
     for (let key of this.Paths.loadOrder) {
       let corrupted = false;
       let exists = true;
       try {
-        let path = this.Paths[key];
+        let path;
         let startMs = Date.now();
 
-        let source = yield OS.File.read(path, { encoding: "utf-8" });
+        let options = {encoding: "utf-8"};
+        if (useOldExtension) {
+          path = this.Paths[key]
+                     .replace("jsonlz4", "js")
+                     .replace("baklz4", "bak");
+        } else {
+          path = this.Paths[key];
+          options.compression = "lz4";
+        }
+        let source = await OS.File.read(path, options);
         let parsed = JSON.parse(source);
 
-        if (!SessionStore.isFormatVersionCompatible(parsed.version || ["sessionrestore", 0] /*fallback for old versions*/)) {
+        if (!SessionStore.isFormatVersionCompatible(parsed.version || ["sessionrestore", 0] /* fallback for old versions*/)) {
           // Skip sessionstore files that we don't understand.
-          Cu.reportError("Cannot extract data from Session Restore file " + path + ". Wrong format/version: " + JSON.stringify(parsed.version) + ".");
+          Cu.reportError("Cannot extract data from Session Restore file " + path +
+            ". Wrong format/version: " + JSON.stringify(parsed.version) + ".");
           continue;
         }
         result = {
           origin: key,
-          source: source,
-          parsed: parsed
+          source,
+          parsed,
+          useOldExtension,
         };
         Telemetry.getHistogramById("FX_SESSION_RESTORE_CORRUPT_FILE").
           add(false);
         Telemetry.getHistogramById("FX_SESSION_RESTORE_READ_FILE_MS").
           add(Date.now() - startMs);
         break;
-      } catch (ex if ex instanceof OS.File.Error && ex.becauseNoSuchFile) {
-        exists = false;
-      } catch (ex if ex instanceof OS.File.Error) {
-        // The file might be inaccessible due to wrong permissions
-        // or similar failures. We'll just count it as "corrupted".
-        console.error("Could not read session file ", ex, ex.stack);
-        corrupted = true;
-      } catch (ex if ex instanceof SyntaxError) {
-        console.error("Corrupt session file (invalid JSON found) ", ex, ex.stack);
-        // File is corrupted, try next file
-        corrupted = true;
+      } catch (ex) {
+          if (ex instanceof OS.File.Error && ex.becauseNoSuchFile) {
+            exists = false;
+          } else if (ex instanceof OS.File.Error) {
+            // The file might be inaccessible due to wrong permissions
+            // or similar failures. We'll just count it as "corrupted".
+            console.error("Could not read session file ", ex, ex.stack);
+            corrupted = true;
+          } else if (ex instanceof SyntaxError) {
+            console.error("Corrupt session file (invalid JSON found) ", ex, ex.stack);
+            // File is corrupted, try next file
+            corrupted = true;
+          }
       } finally {
         if (exists) {
           noFilesFound = false;
@@ -259,6 +271,19 @@ var SessionFileInternal = {
             add(corrupted);
         }
       }
+    }
+    return {result, noFilesFound};
+  },
+
+  // Find the correct session file, read it and setup the worker.
+  async read() {
+    // Load session files with lz4 compression.
+    let {result, noFilesFound} = await this._readInternal(false);
+    if (!result) {
+      // No result? Probably because of migration, let's
+      // load uncompressed session files.
+      let r = await this._readInternal(true);
+      result = r.result;
     }
 
     // All files are corrupted if files found but none could deliver a result.
@@ -271,46 +296,80 @@ var SessionFileInternal = {
       result = {
         origin: "empty",
         source: "",
-        parsed: null
+        parsed: null,
+        useOldExtension: false,
       };
     }
+    this._readOrigin = result.origin;
 
     result.noFilesFound = noFilesFound;
 
     // Initialize the worker (in the background) to let it handle backups and also
     // as a workaround for bug 964531.
-    let promiseInitialized = SessionWorker.post("init", [result.origin, this.Paths, {
-      maxUpgradeBackups: Preferences.get(PREF_MAX_UPGRADE_BACKUPS, 3),
-      maxSerializeBack: Preferences.get(PREF_MAX_SERIALIZE_BACK, 10),
-      maxSerializeForward: Preferences.get(PREF_MAX_SERIALIZE_FWD, -1)
-    }]);
-
-    promiseInitialized.catch(err => {
-      // Ensure that we report errors but that they do not stop us.
-      Promise.reject(err);
-    }).then(() => this._deferredInitialized.resolve());
+    this._initWorker();
 
     return result;
-  }),
+  },
 
-  // Post a message to the worker, making sure that it has been initialized
-  // first.
-  _postToWorker: Task.async(function*(...args) {
-    if (!this._initializationStarted) {
-      // Initializing the worker is somewhat complex, as proper handling of
-      // backups requires us to first read and check the session. Consequently,
-      // the only way to initialize the worker is to first call `this.read()`.
+  // Initialize the worker in the background.
+  // Since this called _before_ any other messages are posted to the worker (see
+  // `_postToWorker()`), we know that this initialization process will be completed
+  // on time.
+  // Thus, effectively, this blocks callees on its completion.
+  // In case of a worker crash/ shutdown during its initialization phase,
+  // `_checkWorkerHealth()` will detect it and flip the `_initializationStarted`
+  // property back to `false`. This means that we'll respawn the worker upon the
+  // next request, followed by the initialization sequence here. In other words;
+  // exactly the same procedure as when the worker crashed/ shut down 'regularly'.
+  //
+  // This will never throw an error.
+  _initWorker() {
+    return new Promise(resolve => {
+      if (this._initializationStarted) {
+        resolve();
+        return;
+      }
 
-      // The call to `this.read()` causes background initialization of the worker.
-      // Initialization will be complete once `this._deferredInitialized.promise`
-      // resolves.
-      this.read();
+      if (!this._readOrigin) {
+        throw new Error("_initWorker called too early! Please read the session file from disk first.");
+      }
+
+      this._initializationStarted = true;
+      SessionWorker.post("init", [this._readOrigin, this._usingOldExtension, this.Paths, {
+        maxUpgradeBackups: Services.prefs.getIntPref(PREF_MAX_UPGRADE_BACKUPS, 3),
+        maxSerializeBack: Services.prefs.getIntPref(PREF_MAX_SERIALIZE_BACK, 10),
+        maxSerializeForward: Services.prefs.getIntPref(PREF_MAX_SERIALIZE_FWD, -1),
+      }]).catch(err => {
+        // Ensure that we report errors but that they do not stop us.
+        Promise.reject(err);
+      }).then(resolve);
+    });
+  },
+
+  // Post a message to the worker, making sure that it has been initialized first.
+  async _postToWorker(...args) {
+    await this._initWorker();
+    return SessionWorker.post(...args);
+  },
+
+  /**
+   * For good measure, terminate the worker when we've had over `kMaxWriteFailures`
+   * amount of failures to deal with. This will spawn a fresh worker upon the next
+   * write.
+   * This also resets the `_workerHealth` stats.
+   */
+  _checkWorkerHealth() {
+    if (this._workerHealth.failures >= kMaxWriteFailures) {
+      SessionWorker.terminate();
+      // Flag as not-initialized, to ensure that the worker state init is performed
+      // upon the next request.
+      this._initializationStarted = false;
+      // Reset the counter and report to telemetry.
+      this._workerHealth.failures = 0;
     }
-    yield this._deferredInitialized.promise;
-    return SessionWorker.post(...args)
-  }),
+  },
 
-  write: function (aData) {
+  write(aData) {
     if (RunState.isClosed) {
       return Promise.reject(new Error("SessionFile is closed"));
     }
@@ -324,7 +383,7 @@ var SessionFileInternal = {
     }
 
     let performShutdownCleanup = isFinalWrite &&
-      !sessionStartup.isAutomaticRestoreEnabled();
+      !SessionStartup.isAutomaticRestoreEnabled();
 
     this._attempts++;
     let options = {isFinalWrite, performShutdownCleanup};
@@ -345,6 +404,7 @@ var SessionFileInternal = {
       // Catch and report any errors.
       console.error("Could not write session state file ", err, err.stack);
       this._failures++;
+      this._workerHealth.failures++;
       // By not doing anything special here we ensure that |promise| cannot
       // be rejected anymore. The shutdown/cleanup code at the end of the
       // function will thus always be executed.
@@ -361,7 +421,7 @@ var SessionFileInternal = {
           attempts: this._attempts,
           successes: this._successes,
           failures: this._failures,
-        })
+        }),
       });
 
     // This code will always be executed because |promise| can't fail anymore.
@@ -372,17 +432,23 @@ var SessionFileInternal = {
       AsyncShutdown.profileBeforeChange.removeBlocker(promise);
 
       if (isFinalWrite) {
-        Services.obs.notifyObservers(null, "sessionstore-final-state-write-complete", "");
+        Services.obs.notifyObservers(null, "sessionstore-final-state-write-complete");
+      } else {
+        this._checkWorkerHealth();
       }
     });
   },
 
-  wipe: function () {
-    return this._postToWorker("wipe");
+  wipe() {
+    return this._postToWorker("wipe").then(() => {
+      // After a wipe, we need to make sure to re-initialize upon the next read(),
+      // because the state variables as sent to the worker have changed.
+      this._initializationStarted = false;
+    });
   },
 
-  _recordTelemetry: function(telemetry) {
-    for (let id of Object.keys(telemetry)){
+  _recordTelemetry(telemetry) {
+    for (let id of Object.keys(telemetry)) {
       let value = telemetry[id];
       let samples = [];
       if (Array.isArray(value)) {
@@ -395,5 +461,5 @@ var SessionFileInternal = {
         histogram.add(sample);
       }
     }
-  }
+  },
 };

@@ -7,6 +7,8 @@
 
 interface nsIAutoCompletePopup;
 
+webidl Event;
+
 [scriptable, uuid(B068E70F-F82C-4C12-AD87-82E271C5C180)]
 interface nsIAutoCompleteInput : nsISupports
 {
@@ -58,18 +60,6 @@ interface nsIAutoCompleteInput : nsISupports
    * The maximum number of rows to show in the autocomplete popup.
    */
   attribute unsigned long maxRows;
-
-  /*
-   * Option to show a second column in the popup which contains
-   * the comment for each autocomplete result
-   */
-  attribute boolean showCommentColumn;
-
-  /*
-   * Option to show a third column in the popup which contains
-   * an additional image for each autocomplete result
-   */
-  attribute boolean showImageColumn;
 
   /*
    * Number of milliseconds after a keystroke before a search begins
@@ -147,7 +137,7 @@ interface nsIAutoCompleteInput : nsISupports
    *        The event that triggered the enter.
    * @return True if the user wishes to prevent the enter
    */
-  boolean onTextEntered([optional] in nsIDOMEvent aEvent);
+  boolean onTextEntered([optional] in Event aEvent);
 
   /*
    * Notification that the user cancelled the autocomplete session

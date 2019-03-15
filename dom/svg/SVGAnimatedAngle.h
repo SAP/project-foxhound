@@ -8,41 +8,39 @@
 #define mozilla_dom_SVGAnimatedAngle_h
 
 #include "nsWrapperCache.h"
-#include "nsSVGElement.h"
+#include "SVGElement.h"
 #include "mozilla/Attributes.h"
 
-class nsSVGAngle;
+class SVGAngle;
 
 namespace mozilla {
 namespace dom {
 
-class SVGAngle;
+class DOMSVGAngle;
 
-class SVGAnimatedAngle final : public nsWrapperCache
-{
-public:
+class SVGAnimatedAngle final : public nsWrapperCache {
+ public:
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(SVGAnimatedAngle)
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(SVGAnimatedAngle)
 
-  SVGAnimatedAngle(nsSVGAngle* aVal, nsSVGElement *aSVGElement)
-    : mVal(aVal), mSVGElement(aSVGElement)
-  {
-  }
+  SVGAnimatedAngle(SVGAngle* aVal, SVGElement* aSVGElement)
+      : mVal(aVal), mSVGElement(aSVGElement) {}
 
   // WebIDL
-  nsSVGElement* GetParentObject() { return mSVGElement; }
-  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
-  already_AddRefed<SVGAngle> BaseVal();
-  already_AddRefed<SVGAngle> AnimVal();
+  SVGElement* GetParentObject() { return mSVGElement; }
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override;
+  already_AddRefed<DOMSVGAngle> BaseVal();
+  already_AddRefed<DOMSVGAngle> AnimVal();
 
-protected:
+ protected:
   ~SVGAnimatedAngle();
 
-  nsSVGAngle* mVal; // kept alive because it belongs to content
-  RefPtr<nsSVGElement> mSVGElement;
+  SVGAngle* mVal;  // kept alive because it belongs to content
+  RefPtr<SVGElement> mSVGElement;
 };
 
-} //namespace dom
-} //namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_SVGAnimatedAngle_h
+#endif  // mozilla_dom_SVGAnimatedAngle_h

@@ -11,18 +11,21 @@
  */
 
 [Constructor(optional DOMString label = "utf-8", optional TextDecoderOptions options),
- Exposed=(Window,Worker,System)]
+ Exposed=(Window,Worker)]
 interface TextDecoder {
   [Constant]
   readonly attribute DOMString encoding;
   [Constant]
   readonly attribute boolean fatal;
+  [Constant]
+  readonly attribute boolean ignoreBOM;
   [Throws]
   USVString decode(optional BufferSource input, optional TextDecodeOptions options);
 };
 
 dictionary TextDecoderOptions {
   boolean fatal = false;
+  boolean ignoreBOM = false;
 };
 
 dictionary TextDecodeOptions {

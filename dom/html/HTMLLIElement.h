@@ -9,64 +9,50 @@
 
 #include "mozilla/Attributes.h"
 
-#include "nsIDOMHTMLLIElement.h"
 #include "nsGenericHTMLElement.h"
 
 namespace mozilla {
 namespace dom {
 
-class HTMLLIElement final : public nsGenericHTMLElement,
-                            public nsIDOMHTMLLIElement
-{
-public:
-  explicit HTMLLIElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-    : nsGenericHTMLElement(aNodeInfo)
-  {
-  }
+class HTMLLIElement final : public nsGenericHTMLElement {
+ public:
+  explicit HTMLLIElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+      : nsGenericHTMLElement(std::move(aNodeInfo)) {}
 
   // nsISupports
-  NS_DECL_ISUPPORTS_INHERITED
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(HTMLLIElement, nsGenericHTMLElement)
 
-  // nsIDOMHTMLLIElement
-  NS_DECL_NSIDOMHTMLLIELEMENT
-
-  virtual bool ParseAttribute(int32_t aNamespaceID,
-                                nsIAtom* aAttribute,
-                                const nsAString& aValue,
-                                nsAttrValue& aResult) override;
-  NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const override;
-  virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction() const override;
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;
+  virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                              const nsAString& aValue,
+                              nsIPrincipal* aMaybeScriptedPrincipal,
+                              nsAttrValue& aResult) override;
+  NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
+  virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction()
+      const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // WebIDL API
-  void GetType(DOMString& aType)
-  {
-    GetHTMLAttr(nsGkAtoms::type, aType);
-  }
-  void SetType(const nsAString& aType, mozilla::ErrorResult& rv)
-  {
+  void GetType(DOMString& aType) { GetHTMLAttr(nsGkAtoms::type, aType); }
+  void SetType(const nsAString& aType, mozilla::ErrorResult& rv) {
     SetHTMLAttr(nsGkAtoms::type, aType, rv);
   }
-  int32_t Value() const
-  {
-    return GetIntAttr(nsGkAtoms::value, 0);
-  }
-  void SetValue(int32_t aValue, mozilla::ErrorResult& rv)
-  {
+  int32_t Value() const { return GetIntAttr(nsGkAtoms::value, 0); }
+  void SetValue(int32_t aValue, mozilla::ErrorResult& rv) {
     SetHTMLIntAttr(nsGkAtoms::value, aValue, rv);
   }
 
-protected:
+ protected:
   virtual ~HTMLLIElement();
 
-  virtual JSObject* WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapNode(JSContext* aCx,
+                             JS::Handle<JSObject*> aGivenProto) override;
 
-private:
+ private:
   static void MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
-                                    GenericSpecifiedValues* aGenericData);
+                                    MappedDeclarations&);
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_HTMLLIElement_h
+#endif  // mozilla_dom_HTMLLIElement_h

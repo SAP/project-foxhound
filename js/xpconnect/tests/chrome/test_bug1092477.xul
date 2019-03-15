@@ -19,8 +19,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1092477
   <!-- test code goes here -->
   <script type="application/javascript"><![CDATA[
 
-var Cu = Components.utils;
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 var exn;
 var url = "resource://non-existent/script.js";
 try {
@@ -30,7 +29,7 @@ try {
 catch (e) {
     exn = String(e);
 }
-var msg = "loadSubscript should throw an exception for trying to load a non-existent script"
+var msg = "loadSubScript should throw an exception for trying to load a non-existent script"
 is(exn, "Error opening input stream (invalid filename?): " + url, msg);
   ]]></script>
 </window>

@@ -11,37 +11,37 @@ function deactivateDomainPolicy() {
   }
 }
 
-function* test_domainPolicy() {
+async function test_domainPolicy() {
 
-  XPCOMUtils.defineLazyModuleGetter(this, "Promise", "resource://gre/modules/Promise.jsm");
-  let deferred = Promise.defer();
-  let currentTask = deferred.promise;
+  ChromeUtils.defineModuleGetter(this, "Promise", "resource://gre/modules/Promise.jsm");
+  let outerDeferred = Promise.defer();
+  let currentTask = outerDeferred.promise;
   SpecialPowers.pushPrefEnv(
     {set: [["dom.ipc.browser_frames.oop_by_default", false],
           ["browser.pagethumbnails.capturing_disabled", false],
           ["dom.mozBrowserFramesEnabled", false]]},
-    () => { return deferred.resolve()});
-  yield currentTask;
+    () => { return outerDeferred.resolve(); });
+  await currentTask;
 
   // Create tab
   let tab;
 
   // Init test
   function initProcess() {
-    tab = gBrowser.addTab();
+    tab = BrowserTestUtils.addTab(gBrowser);
     gBrowser.selectedTab = tab;
 
     let initPromise = ContentTask.spawn(tab.linkedBrowser, null, function() {
-      Cu.import("resource://gre/modules/PromiseUtils.jsm");
+      ChromeUtils.import("resource://gre/modules/PromiseUtils.jsm");
       function loadBase() {
         let deferred = PromiseUtils.defer();
         let listener = (event) => {
           removeEventListener("DOMDocElementInserted", listener, true);
-          let listener2 = (event) => {
-            content.removeEventListener('load', listener2);
+          let listener2 = (event2) => {
+            content.removeEventListener("load", listener2);
             deferred.resolve();
-          }
-          content.addEventListener('load', listener2);
+          };
+          content.addEventListener("load", listener2);
         };
         addEventListener("DOMDocElementInserted", listener, true);
         return deferred.promise;
@@ -49,7 +49,7 @@ function* test_domainPolicy() {
 
       return loadBase();
     });
-    tab.linkedBrowser.loadURI("http://mochi.test:8888/browser/dom/ipc/tests/file_domainPolicy_base.html");
+    BrowserTestUtils.loadURI(tab.linkedBrowser, "http://mochi.test:8888/browser/dom/ipc/tests/file_domainPolicy_base.html");
     return initPromise;
   }
 
@@ -60,26 +60,26 @@ function* test_domainPolicy() {
   function initUtils(obj) {
     obj.checkScriptEnabled = function(win, expectEnabled) {
       win.wrappedJSObject.gFiredOnclick = false;
-      win.document.body.dispatchEvent(new win.Event('click'));
+      win.document.body.dispatchEvent(new win.Event("click"));
       return { passed: win.wrappedJSObject.gFiredOnclick == expectEnabled,
                msg: `Checking script-enabled for ${win.name} (${win.location})`};
-    }
+    };
 
     obj.navigateFrame = function(ifr, src) {
       let deferred = PromiseUtils.defer();
       function onload() {
-        ifr.removeEventListener('load', onload);
+        ifr.removeEventListener("load", onload);
         deferred.resolve();
       }
-      ifr.addEventListener('load', onload);
-      ifr.setAttribute('src', src);
+      ifr.addEventListener("load", onload);
+      ifr.setAttribute("src", src);
       return deferred.promise;
-    }
-  };
+    };
+  }
 
   function runTest(test) {
     return ContentTask.spawn(tab.linkedBrowser,
-      'ipcArgs = ' + JSON.stringify(ipcArgs) + '; (' + initUtils.toSource() + ')(utils)', test);
+      "ipcArgs = " + JSON.stringify(ipcArgs) + "; (" + initUtils.toSource() + ")(utils)", test);
   }
 
   function checkAndCleanup(result) {
@@ -94,140 +94,144 @@ function* test_domainPolicy() {
   function testDomain(domain) {
     ipcArgs.domain = domain;
     return (aUtils) => {
-      Cu.import("resource://gre/modules/PromiseUtils.jsm");
+      ChromeUtils.import("resource://gre/modules/PromiseUtils.jsm");
+      // eslint-disable-next-line no-shadow
       var ipcArgs;
       var utils = {};
+      // eslint-disable-next-line no-eval
       eval(aUtils);
 
-      let path = '/browser/dom/ipc/tests/file_disableScript.html';
+      let path = "/browser/dom/ipc/tests/file_disableScript.html";
       let deferred = PromiseUtils.defer();
-      var rootFrame = content.document.getElementById('root');
+      var rootFrame = content.document.getElementById("root");
       utils.navigateFrame(rootFrame, ipcArgs.domain + path).then(() => {
         deferred.resolve(utils.checkScriptEnabled(rootFrame.contentWindow, false));
       });
       return deferred.promise;
-    }
+    };
   }
 
-  info("Testing simple blacklist policy");
+  info("Testing simple blocklist policy");
 
   info("Creating child process first, activating domainPolicy after");
   currentTask = initProcess();
-  yield currentTask;
+  await currentTask;
   activateDomainPolicy();
-  var bl = policy.blacklist;
-  bl.add(Services.io.newURI('http://example.com'));
+  var bl = policy.blocklist;
+  bl.add(Services.io.newURI("http://example.com"));
   currentTask = runTest(testDomain("http://example.com"));
-  checkAndCleanup(yield currentTask);
+  checkAndCleanup(await currentTask);
 
   info("Activating domainPolicy first, creating child process after");
   activateDomainPolicy();
-  var bl = policy.blacklist;
-  bl.add(Services.io.newURI('http://example.com'));
+  bl = policy.blocklist;
+  bl.add(Services.io.newURI("http://example.com"));
   currentTask = initProcess();
-  yield currentTask;
+  await currentTask;
   currentTask = runTest(testDomain("http://example.com"));
-  checkAndCleanup(yield currentTask);
+  checkAndCleanup(await currentTask);
 
   function testList(expectEnabled, list) {
     ipcArgs.expectEnabled = expectEnabled;
     ipcArgs.list = list;
     return (aUtils) => {
-      Cu.import("resource://gre/modules/PromiseUtils.jsm");
+      ChromeUtils.import("resource://gre/modules/PromiseUtils.jsm");
+      // eslint-disable-next-line no-shadow
       var ipcArgs;
       var utils = {};
+      // eslint-disable-next-line no-eval
       eval(aUtils);
 
       var results = [];
-      var testListInternal = function(expectEnabled, list, idx) {
+      var testListInternal = function(internalExpectEnabled, internalList, idx) {
         idx = idx || 0;
         let deferred = PromiseUtils.defer();
-        let path = '/browser/dom/ipc/tests/file_disableScript.html';
-        let target = list[idx] + path;
-        var rootFrame = content.document.getElementById('root');
+        let path = "/browser/dom/ipc/tests/file_disableScript.html";
+        let target = internalList[idx] + path;
+        var rootFrame = content.document.getElementById("root");
         utils.navigateFrame(rootFrame, target).then(function() {
-          results.push(utils.checkScriptEnabled(rootFrame.contentWindow, expectEnabled));
-          if (idx == list.length - 1)
+          results.push(utils.checkScriptEnabled(rootFrame.contentWindow, internalExpectEnabled));
+          if (idx == internalList.length - 1)
             deferred.resolve(results);
           else
-            testListInternal(expectEnabled, list, idx + 1).then(function(retArg) { deferred.resolve(retArg); });
+            testListInternal(internalExpectEnabled, internalList, idx + 1).then(function(retArg) { deferred.resolve(retArg); });
         });
         return deferred.promise;
-      }
+      };
       return testListInternal(ipcArgs.expectEnabled, ipcArgs.list);
-    }
+    };
   }
 
   let testPolicy = {
-     exceptions: ['http://test1.example.com', 'http://example.com'],
-     superExceptions: ['http://test2.example.org', 'https://test1.example.com'],
-     exempt: ['http://test1.example.com', 'http://example.com',
-              'http://test2.example.org', 'http://sub1.test2.example.org',
-              'https://sub1.test1.example.com'],
-     notExempt: ['http://test2.example.com', 'http://sub1.test1.example.com',
-                 'http://www.example.com', 'https://test2.example.com',
-                 'https://example.com', 'http://test1.example.org'],
+     exceptions: ["http://test1.example.com", "http://example.com"],
+     superExceptions: ["http://test2.example.org", "https://test1.example.com"],
+     exempt: ["http://test1.example.com", "http://example.com",
+              "http://test2.example.org", "http://sub1.test2.example.org",
+              "https://sub1.test1.example.com"],
+     notExempt: ["http://test2.example.com", "http://sub1.test1.example.com",
+                 "http://www.example.com", "https://test2.example.com",
+                 "https://example.com", "http://test1.example.org"],
   };
 
-  function activate(isBlack, exceptions, superExceptions) {
+  function activate(isBlock, exceptions, superExceptions) {
     activateDomainPolicy();
-    let set = isBlack ? policy.blacklist : policy.whitelist;
-    let superSet = isBlack ? policy.superBlacklist : policy.superWhitelist;
-    for (var e of exceptions)
+    let set = isBlock ? policy.blocklist : policy.allowlist;
+    let superSet = isBlock ? policy.superBlocklist : policy.superAllowlist;
+    for (let e of exceptions)
       set.add(makeURI(e));
-    for (var e of superExceptions)
+    for (let e of superExceptions)
       superSet.add(makeURI(e));
-  };
+  }
 
-  info("Testing Blacklist-style Domain Policy");
+  info("Testing Blocklist-style Domain Policy");
   info("Activating domainPolicy first, creating child process after");
   activate(true, testPolicy.exceptions, testPolicy.superExceptions);
   currentTask = initProcess();
-  yield currentTask;
+  await currentTask;
   let results = [];
   currentTask = runTest(testList(true, testPolicy.notExempt));
-  results = results.concat(yield currentTask);
+  results = results.concat(await currentTask);
   currentTask = runTest(testList(false, testPolicy.exempt));
-  results = results.concat(yield currentTask);
+  results = results.concat(await currentTask);
   checkAndCleanup(results);
 
   info("Creating child process first, activating domainPolicy after");
   currentTask = initProcess();
-  yield currentTask;
+  await currentTask;
   activate(true, testPolicy.exceptions, testPolicy.superExceptions);
   results = [];
   currentTask = runTest(testList(true, testPolicy.notExempt));
-  results = results.concat(yield currentTask);
+  results = results.concat(await currentTask);
   currentTask = runTest(testList(false, testPolicy.exempt));
-  results = results.concat(yield currentTask);
+  results = results.concat(await currentTask);
   checkAndCleanup(results);
 
-  info("Testing Whitelist-style Domain Policy");
-  deferred = Promise.defer();
+  info("Testing Allowlist-style Domain Policy");
+  let deferred = Promise.defer();
   currentTask = deferred.promise;
-  SpecialPowers.pushPrefEnv({set:[["javascript.enabled", false]]}, () => { return deferred.resolve()});
-  yield currentTask;
+  SpecialPowers.pushPrefEnv({set: [["javascript.enabled", false]]}, () => { return deferred.resolve(); });
+  await currentTask;
 
   info("Activating domainPolicy first, creating child process after");
   activate(false, testPolicy.exceptions, testPolicy.superExceptions);
   currentTask = initProcess();
-  yield currentTask;
+  await currentTask;
   results = [];
   currentTask = runTest(testList(false, testPolicy.notExempt));
-  results = results.concat(yield currentTask);
+  results = results.concat(await currentTask);
   currentTask = runTest(testList(true, testPolicy.exempt));
-  results = results.concat(yield currentTask);
+  results = results.concat(await currentTask);
   checkAndCleanup(results);
 
   info("Creating child process first, activating domainPolicy after");
   currentTask = initProcess();
-  yield currentTask;
+  await currentTask;
   activate(false, testPolicy.exceptions, testPolicy.superExceptions);
   results = [];
   currentTask = runTest(testList(false, testPolicy.notExempt));
-  results = results.concat(yield currentTask);
+  results = results.concat(await currentTask);
   currentTask = runTest(testList(true, testPolicy.exempt));
-  results = results.concat(yield currentTask);
+  results = results.concat(await currentTask);
   checkAndCleanup(results);
   finish();
 }
@@ -235,6 +239,6 @@ function* test_domainPolicy() {
 
 add_task(test_domainPolicy);
 
-registerCleanupFunction(()=>{
+registerCleanupFunction(() => {
   deactivateDomainPolicy();
-})
+});

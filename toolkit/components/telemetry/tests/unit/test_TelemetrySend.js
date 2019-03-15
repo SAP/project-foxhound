@@ -6,16 +6,21 @@
 
 "use strict";
 
-Cu.import("resource://gre/modules/TelemetryController.jsm", this);
-Cu.import("resource://gre/modules/TelemetrySession.jsm", this);
-Cu.import("resource://gre/modules/TelemetrySend.jsm", this);
-Cu.import("resource://gre/modules/TelemetryStorage.jsm", this);
-Cu.import("resource://gre/modules/TelemetryUtils.jsm", this);
-Cu.import("resource://gre/modules/Services.jsm", this);
-Cu.import("resource://gre/modules/Preferences.jsm", this);
-Cu.import("resource://gre/modules/osfile.jsm", this);
+ChromeUtils.import("resource://gre/modules/TelemetryController.jsm", this);
+ChromeUtils.import("resource://testing-common/ContentTaskUtils.jsm", this);
+ChromeUtils.import("resource://testing-common/MockRegistrar.jsm", this);
+ChromeUtils.import("resource://gre/modules/TelemetrySession.jsm", this);
+ChromeUtils.import("resource://gre/modules/TelemetrySend.jsm", this);
+ChromeUtils.import("resource://gre/modules/TelemetryStorage.jsm", this);
+ChromeUtils.import("resource://gre/modules/TelemetryUtils.jsm", this);
+ChromeUtils.import("resource://gre/modules/Services.jsm", this);
+ChromeUtils.import("resource://gre/modules/osfile.jsm", this);
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
 
-const PREF_TELEMETRY_SERVER = "toolkit.telemetry.server";
+ChromeUtils.defineModuleGetter(this, "TelemetryHealthPing",
+  "resource://gre/modules/HealthPing.jsm");
+
+XPCOMUtils.defineLazyServiceGetter(Services, "cookies", "@mozilla.org/cookieService;1", "nsICookieService");
 
 const MS_IN_A_MINUTE = 60 * 1000;
 
@@ -52,13 +57,13 @@ function fakePingId(type, number) {
   return id;
 }
 
-var checkPingsSaved = Task.async(function* (pingIds) {
+var checkPingsSaved = async function(pingIds) {
   let allFound = true;
   for (let id of pingIds) {
     const path = OS.Path.join(TelemetryStorage.pingDirectoryPath, id);
     let exists = false;
     try {
-      exists = yield OS.File.exists(path);
+      exists = await OS.File.exists(path);
     } catch (ex) {}
 
     if (!exists) {
@@ -68,22 +73,23 @@ var checkPingsSaved = Task.async(function* (pingIds) {
   }
 
   return allFound;
-});
+};
 
 function histogramValueCount(h) {
-  return h.counts.reduce((a, b) => a + b);
+  return Object.values(h.values).reduce((a, b) => a + b, 0);
 }
 
-add_task(function* test_setup() {
+add_task(async function test_setup() {
   // Trigger a proper telemetry init.
   do_get_profile(true);
   // Make sure we don't generate unexpected pings due to pref changes.
-  yield setEmptyPrefWatchlist();
-  Services.prefs.setBoolPref(PREF_TELEMETRY_ENABLED, true);
+  await setEmptyPrefWatchlist();
+  Services.prefs.setBoolPref(TelemetryUtils.Preferences.HealthPingEnabled, true);
+  TelemetryStopwatch.setTestModeEnabled(true);
 });
 
 // Test the ping sending logic.
-add_task(function* test_sendPendingPings() {
+add_task(async function test_sendPendingPings() {
   const TYPE_PREFIX = "test-sendPendingPings-";
   const TEST_TYPE_A = TYPE_PREFIX + "A";
   const TEST_TYPE_B = TYPE_PREFIX + "B";
@@ -109,8 +115,8 @@ add_task(function* test_sendPendingPings() {
   // Submit some pings without the server and telemetry started yet.
   for (let i = 0; i < TYPE_A_COUNT; ++i) {
     fakePingId("a", i);
-    const id = yield TelemetryController.submitExternalPing(TEST_TYPE_A, {});
-    yield setPingLastModified(id, now.getTime() + (i * 1000));
+    const id = await TelemetryController.submitExternalPing(TEST_TYPE_A, {});
+    await setPingLastModified(id, now.getTime() + (i * 1000));
   }
 
   Assert.equal(TelemetrySend.pendingPingCount, TYPE_A_COUNT,
@@ -120,14 +126,14 @@ add_task(function* test_sendPendingPings() {
   now = fakeNow(futureDate(now, 5 * MS_IN_A_MINUTE));
   for (let i = 0; i < TYPE_B_COUNT; ++i) {
     fakePingId("b", i);
-    const id = yield TelemetryController.submitExternalPing(TEST_TYPE_B, {});
-    yield setPingLastModified(id, now.getTime() + (i * 1000));
+    const id = await TelemetryController.submitExternalPing(TEST_TYPE_B, {});
+    await setPingLastModified(id, now.getTime() + (i * 1000));
   }
 
   Assert.equal(TelemetrySend.pendingPingCount, TYPE_A_COUNT + TYPE_B_COUNT,
                "Should have correct pending ping count");
 
-  Assert.deepEqual(histSuccess.snapshot().counts, [0, 0, 0],
+  Assert.deepEqual(histSuccess.snapshot().values, {},
                "Should not have recorded any sending in histograms yet.");
   Assert.equal(histSendTimeSuccess.snapshot().sum, 0,
                "Should not have recorded any sending in histograms yet.");
@@ -137,17 +143,17 @@ add_task(function* test_sendPendingPings() {
   // Now enable sending to the ping server.
   now = fakeNow(futureDate(now, MS_IN_A_MINUTE));
   PingServer.start();
-  Preferences.set(PREF_TELEMETRY_SERVER, "http://localhost:" + PingServer.port);
+  Services.prefs.setStringPref(TelemetryUtils.Preferences.Server, "http://localhost:" + PingServer.port);
 
   let timerPromise = waitForTimer();
-  yield TelemetryController.testReset();
-  let [pingSendTimerCallback, pingSendTimeout] = yield timerPromise;
+  await TelemetryController.testReset();
+  let [pingSendTimerCallback, pingSendTimeout] = await timerPromise;
   Assert.ok(!!pingSendTimerCallback, "Should have a timer callback");
 
   // We should have received 10 pings from the first send batch:
   // 5 of type B and 5 of type A, as sending is newest-first.
   // The other pings should be delayed by the 10-pings-per-minute limit.
-  let pings = yield PingServer.promiseNextPings(10);
+  let pings = await PingServer.promiseNextPings(10);
   Assert.equal(TelemetrySend.pendingPingCount, TYPE_A_COUNT - 5,
                "Should have correct pending ping count");
   PingServer.registerPingHandler(() => Assert.ok(false, "Should not have received any pings now"));
@@ -158,7 +164,7 @@ add_task(function* test_sendPendingPings() {
   Assert.equal(countByType.get(TEST_TYPE_A), 10 - TYPE_B_COUNT,
                "Should have received the correct amount of type A pings");
 
-  Assert.deepEqual(histSuccess.snapshot().counts, [0, 10, 0],
+  Assert.deepEqual(histSuccess.snapshot().values, {0: 0, 1: 10, 2: 0},
                "Should have recorded sending success in histograms.");
   Assert.equal(histogramValueCount(histSendTimeSuccess.snapshot()), 10,
                "Should have recorded successful send times in histograms.");
@@ -175,9 +181,9 @@ add_task(function* test_sendPendingPings() {
   now = fakeNow(futureDate(now, pingSendTimeout));
   timerPromise = waitForTimer();
   pingSendTimerCallback();
-  [pingSendTimerCallback, pingSendTimeout] = yield timerPromise;
+  [pingSendTimerCallback, pingSendTimeout] = await timerPromise;
 
-  pings = yield PingServer.promiseNextPings(10);
+  pings = await PingServer.promiseNextPings(10);
   PingServer.registerPingHandler(() => Assert.ok(false, "Should not have received any pings now"));
   countByType = countPingTypes(pings);
 
@@ -190,24 +196,26 @@ add_task(function* test_sendPendingPings() {
   // Trigger the next tick - we should receive the remaining type A pings.
   PingServer.resetPingHandler();
   now = fakeNow(futureDate(now, pingSendTimeout));
-  yield pingSendTimerCallback();
+  await pingSendTimerCallback();
 
-  pings = yield PingServer.promiseNextPings(5);
+  pings = await PingServer.promiseNextPings(5);
   PingServer.registerPingHandler(() => Assert.ok(false, "Should not have received any pings now"));
   countByType = countPingTypes(pings);
 
   Assert.equal(countByType.get(TEST_TYPE_A), 5, "Should have received the correct amount of type A pings");
 
-  yield TelemetrySend.testWaitOnOutgoingPings();
+  await TelemetrySend.testWaitOnOutgoingPings();
   PingServer.resetPingHandler();
+  // Restore the default ping id generator.
+  fakeGeneratePingId(() => TelemetryUtils.generateUUID());
 });
 
-add_task(function* test_sendDateHeader() {
+add_task(async function test_sendDateHeader() {
   fakeNow(new Date(Date.UTC(2011, 1, 1, 11, 0, 0)));
-  yield TelemetrySend.reset();
+  await TelemetrySend.reset();
 
-  let pingId = yield TelemetryController.submitExternalPing("test-send-date-header", {});
-  let req = yield PingServer.promiseNextRequest();
+  let pingId = await TelemetryController.submitExternalPing("test-send-date-header", {});
+  let req = await PingServer.promiseNextRequest();
   let ping = decodeRequestPayload(req);
   Assert.equal(req.getHeader("Date"), "Tue, 01 Feb 2011 11:00:00 GMT",
                "Telemetry should send the correct Date header with requests.");
@@ -215,7 +223,7 @@ add_task(function* test_sendDateHeader() {
 });
 
 // Test the backoff timeout behavior after send failures.
-add_task(function* test_backoffTimeout() {
+add_task(async function test_backoffTimeout() {
   const TYPE_PREFIX = "test-backoffTimeout-";
   const TEST_TYPE_C = TYPE_PREFIX + "C";
   const TEST_TYPE_D = TYPE_PREFIX + "D";
@@ -227,7 +235,7 @@ add_task(function* test_backoffTimeout() {
 
   // Failing a ping send now should trigger backoff behavior.
   let now = fakeNow(2010, 1, 1, 11, 0, 0);
-  yield TelemetrySend.reset();
+  await TelemetrySend.reset();
   PingServer.stop();
 
   histSuccess.clear();
@@ -238,8 +246,8 @@ add_task(function* test_backoffTimeout() {
   now = fakeNow(futureDate(now, MS_IN_A_MINUTE));
   let sendAttempts = 0;
   let timerPromise = waitForTimer();
-  yield TelemetryController.submitExternalPing(TEST_TYPE_C, {});
-  let [pingSendTimerCallback, pingSendTimeout] = yield timerPromise;
+  await TelemetryController.submitExternalPing(TEST_TYPE_C, {});
+  let [pingSendTimerCallback, pingSendTimeout] = await timerPromise;
   Assert.equal(TelemetrySend.pendingPingCount, 1, "Should have one pending ping.");
   ++sendAttempts;
 
@@ -251,23 +259,23 @@ add_task(function* test_backoffTimeout() {
     let callback = pingSendTimerCallback;
     now = fakeNow(futureDate(now, pingSendTimeout));
     timerPromise = waitForTimer();
-    yield callback();
-    [pingSendTimerCallback, pingSendTimeout] = yield timerPromise;
+    await callback();
+    [pingSendTimerCallback, pingSendTimeout] = await timerPromise;
     ++sendAttempts;
   }
 
   timerPromise = waitForTimer();
-  yield pingSendTimerCallback();
-  [pingSendTimerCallback, pingSendTimeout] = yield timerPromise;
+  await pingSendTimerCallback();
+  [pingSendTimerCallback, pingSendTimeout] = await timerPromise;
   Assert.equal(pingSendTimeout, MAX_BACKOFF_TIMEOUT, "Tick timeout should be capped");
   ++sendAttempts;
 
-  Assert.deepEqual(histSuccess.snapshot().counts, [sendAttempts, 0, 0],
+  Assert.deepEqual(histSuccess.snapshot().values, {0: sendAttempts, 1: 0},
                "Should have recorded sending failure in histograms.");
   Assert.equal(histSendTimeSuccess.snapshot().sum, 0,
                "Should not have recorded any sending success in histograms yet.");
-  Assert.greater(histSendTimeFail.snapshot().sum, 0,
-               "Should have recorded send failure times in histograms.");
+  Assert.greaterOrEqual(histSendTimeFail.snapshot().sum, 0,
+                        "Should have recorded send failure times in histograms.");
   Assert.equal(histogramValueCount(histSendTimeFail.snapshot()), sendAttempts,
                "Should have recorded send failure times in histograms.");
 
@@ -275,8 +283,8 @@ add_task(function* test_backoffTimeout() {
   fakePingId("d", 0);
   now = fakeNow(futureDate(now, MS_IN_A_MINUTE));
   timerPromise = waitForTimer();
-  yield TelemetryController.submitExternalPing(TEST_TYPE_D, {});
-  [pingSendTimerCallback, pingSendTimeout] = yield timerPromise;
+  await TelemetryController.submitExternalPing(TEST_TYPE_D, {});
+  [pingSendTimerCallback, pingSendTimeout] = await timerPromise;
   Assert.equal(pingSendTimeout, 2 * MS_IN_A_MINUTE, "Send tick timeout should be correct");
   sendAttempts += 2;
 
@@ -287,29 +295,32 @@ add_task(function* test_backoffTimeout() {
   fakePingId("e", 0);
   now = fakeNow(futureDate(now, MS_IN_A_MINUTE));
   timerPromise = waitForTimer();
-  yield TelemetryController.submitExternalPing(TEST_TYPE_E, {});
+  await TelemetryController.submitExternalPing(TEST_TYPE_E, {});
 
-  let pings = yield PingServer.promiseNextPings(3);
+  let pings = await PingServer.promiseNextPings(3);
   let countByType = countPingTypes(pings);
 
   Assert.equal(countByType.get(TEST_TYPE_C), 1, "Should have received the correct amount of type C pings");
   Assert.equal(countByType.get(TEST_TYPE_D), 1, "Should have received the correct amount of type D pings");
   Assert.equal(countByType.get(TEST_TYPE_E), 1, "Should have received the correct amount of type E pings");
 
-  yield TelemetrySend.testWaitOnOutgoingPings();
+  await TelemetrySend.testWaitOnOutgoingPings();
   Assert.equal(TelemetrySend.pendingPingCount, 0, "Should have no pending pings left");
 
-  Assert.deepEqual(histSuccess.snapshot().counts, [sendAttempts, 3, 0],
+  Assert.deepEqual(histSuccess.snapshot().values, {0: sendAttempts, 1: 3, 2: 0},
                "Should have recorded sending failure in histograms.");
-  Assert.greater(histSendTimeSuccess.snapshot().sum, 0,
-               "Should have recorded sending success in histograms.");
+  Assert.greaterOrEqual(histSendTimeSuccess.snapshot().sum, 0,
+                        "Should have recorded sending success in histograms.");
   Assert.equal(histogramValueCount(histSendTimeSuccess.snapshot()), 3,
                "Should have recorded sending success in histograms.");
   Assert.equal(histogramValueCount(histSendTimeFail.snapshot()), sendAttempts,
                "Should have recorded send failure times in histograms.");
+
+  // Restore the default ping id generator.
+  fakeGeneratePingId(() => TelemetryUtils.generateUUID());
 });
 
-add_task(function* test_discardBigPings() {
+add_task(async function test_discardBigPings() {
   const TEST_PING_TYPE = "test-ping-type";
 
   let histSizeExceeded = Telemetry.getHistogramById("TELEMETRY_PING_SIZE_EXCEEDED_SEND");
@@ -321,40 +332,63 @@ add_task(function* test_discardBigPings() {
     h.clear();
   }
 
-  // Generate a 2MB string and create an oversized payload.
-  const OVERSIZED_PAYLOAD = {"data": generateRandomString(2 * 1024 * 1024)};
-
-  // Reset the histograms.
-  Telemetry.getHistogramById("TELEMETRY_PING_SIZE_EXCEEDED_SEND").clear();
-  Telemetry.getHistogramById("TELEMETRY_DISCARDED_SEND_PINGS_SIZE_MB").clear();
-
   // Submit a ping of a normal size and check that we don't count it in the histogram.
-  yield TelemetryController.submitExternalPing(TEST_PING_TYPE, { test: "test" });
-  yield TelemetrySend.testWaitOnOutgoingPings();
+  await TelemetryController.submitExternalPing(TEST_PING_TYPE, { test: "test" });
+  await TelemetrySend.testWaitOnOutgoingPings();
+  await PingServer.promiseNextPing();
 
   Assert.equal(histSizeExceeded.snapshot().sum, 0, "Telemetry must report no oversized ping submitted.");
   Assert.equal(histDiscardedSize.snapshot().sum, 0, "Telemetry must report no oversized pings.");
-  Assert.deepEqual(histSuccess.snapshot().counts, [0, 1, 0], "Should have recorded sending success.");
+  Assert.deepEqual(histSuccess.snapshot().values, {0: 0, 1: 1, 2: 0}, "Should have recorded sending success.");
   Assert.equal(histogramValueCount(histSendTimeSuccess.snapshot()), 1, "Should have recorded send success time.");
-  Assert.greater(histSendTimeSuccess.snapshot().sum, 0, "Should have recorded send success time.");
+  Assert.greaterOrEqual(histSendTimeSuccess.snapshot().sum, 0, "Should have recorded send success time.");
   Assert.equal(histogramValueCount(histSendTimeFail.snapshot()), 0, "Should not have recorded send failure time.");
 
   // Submit an oversized ping and check that it gets discarded.
-  yield TelemetryController.submitExternalPing(TEST_PING_TYPE, OVERSIZED_PAYLOAD);
-  yield TelemetrySend.testWaitOnOutgoingPings();
+  TelemetryHealthPing.testReset();
+  // Ensure next ping has a 2 MB gzipped payload.
+  fakeGzipCompressStringForNextPing(2 * 1024 * 1024);
+  const OVERSIZED_PAYLOAD = {"data": "empty on purpose - policy takes care of size"};
+  await TelemetryController.submitExternalPing(TEST_PING_TYPE, OVERSIZED_PAYLOAD);
+  await TelemetrySend.testWaitOnOutgoingPings();
+  let ping = await PingServer.promiseNextPing();
+
+  Assert.equal(ping.type, TelemetryHealthPing.HEALTH_PING_TYPE, "Should have received a health ping.");
+  Assert.equal(ping.payload.reason, TelemetryHealthPing.Reason.IMMEDIATE, "Health ping should have the right reason.");
+  Assert.deepEqual(ping.payload[TelemetryHealthPing.FailureType.DISCARDED_FOR_SIZE],
+    {[TEST_PING_TYPE]: 1}, "Should have recorded correct type of oversized ping.");
+  Assert.deepEqual(ping.payload.os, TelemetryHealthPing.OsInfo, "Should have correct os info.");
 
   Assert.equal(histSizeExceeded.snapshot().sum, 1, "Telemetry must report 1 oversized ping submitted.");
-  Assert.equal(histDiscardedSize.snapshot().counts[2], 1, "Telemetry must report a 2MB, oversized, ping submitted.");
-  Assert.deepEqual(histSuccess.snapshot().counts, [0, 1, 0], "Should have recorded sending success.");
-  Assert.equal(histogramValueCount(histSendTimeSuccess.snapshot()), 1, "Should have recorded send success time.");
-  Assert.greater(histSendTimeSuccess.snapshot().sum, 0, "Should have recorded send success time.");
+  Assert.equal(histDiscardedSize.snapshot().values[2], 1, "Telemetry must report a 2MB, oversized, ping submitted.");
+
+  Assert.deepEqual(histSuccess.snapshot().values, {0: 0, 1: 2, 2: 0}, "Should have recorded sending success.");
+  Assert.equal(histogramValueCount(histSendTimeSuccess.snapshot()), 2, "Should have recorded send success time.");
+  Assert.greaterOrEqual(histSendTimeSuccess.snapshot().sum, 0, "Should have recorded send success time.");
   Assert.equal(histogramValueCount(histSendTimeFail.snapshot()), 0, "Should not have recorded send failure time.");
 });
 
-add_task(function* test_evictedOnServerErrors() {
+add_task(async function test_largeButWithinLimit() {
+  const TEST_PING_TYPE = "test-ping-type";
+
+  let histSuccess = Telemetry.getHistogramById("TELEMETRY_SUCCESS");
+  histSuccess.clear();
+
+  // Next ping will have a 900KB gzip payload.
+  fakeGzipCompressStringForNextPing(900 * 1024);
+  const LARGE_PAYLOAD = {"data": "empty on purpose - policy takes care of size"};
+
+  await TelemetryController.submitExternalPing(TEST_PING_TYPE, LARGE_PAYLOAD);
+  await TelemetrySend.testWaitOnOutgoingPings();
+  await PingServer.promiseNextRequest();
+
+  Assert.deepEqual(histSuccess.snapshot().values, {0: 0, 1: 1, 2: 0}, "Should have sent large ping.");
+});
+
+add_task(async function test_evictedOnServerErrors() {
   const TEST_TYPE = "test-evicted";
 
-  yield TelemetrySend.reset();
+  await TelemetrySend.reset();
 
   let histEvicted = Telemetry.getHistogramById("TELEMETRY_PING_EVICTED_FOR_SERVER_ERRORS");
   let histSuccess = Telemetry.getHistogramById("TELEMETRY_SUCCESS");
@@ -373,39 +407,68 @@ add_task(function* test_evictedOnServerErrors() {
   });
 
   // Clear the histogram and submit a ping.
-  let pingId = yield TelemetryController.submitExternalPing(TEST_TYPE, {});
-  yield TelemetrySend.testWaitOnOutgoingPings();
+  let pingId = await TelemetryController.submitExternalPing(TEST_TYPE, {});
+  await TelemetrySend.testWaitOnOutgoingPings();
 
   Assert.equal(histEvicted.snapshot().sum, 1,
                "Telemetry must report a ping evicted due to server errors");
-  Assert.deepEqual(histSuccess.snapshot().counts, [0, 1, 0]);
+  Assert.deepEqual(histSuccess.snapshot().values, {0: 0, 1: 1, 2: 0});
   Assert.equal(histogramValueCount(histSendTimeSuccess.snapshot()), 1);
-  Assert.greater(histSendTimeSuccess.snapshot().sum, 0);
+  Assert.greaterOrEqual(histSendTimeSuccess.snapshot().sum, 0);
   Assert.equal(histogramValueCount(histSendTimeFail.snapshot()), 0);
 
   // The ping should not be persisted.
-  yield Assert.rejects(TelemetryStorage.loadPendingPing(pingId), "The ping must not be persisted.");
+  await Assert.rejects(TelemetryStorage.loadPendingPing(pingId),
+                       /TelemetryStorage.loadPendingPing - no ping with id/,
+                       "The ping must not be persisted.");
 
   // Reset the ping handler and submit a new ping.
   PingServer.resetPingHandler();
-  pingId = yield TelemetryController.submitExternalPing(TEST_TYPE, {});
+  pingId = await TelemetryController.submitExternalPing(TEST_TYPE, {});
 
-  let ping = yield PingServer.promiseNextPings(1);
+  let ping = await PingServer.promiseNextPings(1);
   Assert.equal(ping[0].id, pingId, "The correct ping must be received");
 
   // We should not have updated the error histogram.
-  yield TelemetrySend.testWaitOnOutgoingPings();
+  await TelemetrySend.testWaitOnOutgoingPings();
   Assert.equal(histEvicted.snapshot().sum, 1, "Telemetry must report only one ping evicted due to server errors");
-  Assert.deepEqual(histSuccess.snapshot().counts, [0, 2, 0]);
+  Assert.deepEqual(histSuccess.snapshot().values, {0: 0, 1: 2, 2: 0});
   Assert.equal(histogramValueCount(histSendTimeSuccess.snapshot()), 2);
   Assert.equal(histogramValueCount(histSendTimeFail.snapshot()), 0);
 });
 
+add_task(async function test_tooLateToSend() {
+  Assert.ok(true, "TEST BEGIN");
+  const TEST_TYPE = "test-too-late-to-send";
+
+  await TelemetrySend.reset();
+  PingServer.start();
+  PingServer.registerPingHandler(() => Assert.ok(false, "Should not have received any pings now"));
+
+  Assert.equal(TelemetrySend.pendingPingCount, 0, "Should have no pending pings yet");
+
+  TelemetrySend.testTooLateToSend(true);
+
+  const id = await TelemetryController.submitExternalPing(TEST_TYPE, {});
+
+  // Triggering a shutdown should persist the pings
+  await TelemetrySend.shutdown();
+  const pendingPings = TelemetryStorage.getPendingPingList();
+  Assert.equal(pendingPings.length, 1, "Should have a pending ping in storage");
+  Assert.equal(pendingPings[0].id, id, "Should have pended our test's ping");
+
+  Assert.equal(Telemetry.getHistogramById("TELEMETRY_SEND_FAILURE_TYPE").snapshot().values[7], 1,
+    "Should have registered the failed attempt to send");
+
+  await TelemetryStorage.reset();
+  Assert.equal(TelemetrySend.pendingPingCount, 0, "Should clean up after yourself");
+});
+
 // Test that the current, non-persisted pending pings are properly saved on shutdown.
-add_task(function* test_persistCurrentPingsOnShutdown() {
+add_task(async function test_persistCurrentPingsOnShutdown() {
   const TEST_TYPE = "test-persistCurrentPingsOnShutdown";
   const PING_COUNT = 5;
-  yield TelemetrySend.reset();
+  await TelemetrySend.reset();
   PingServer.stop();
   Assert.equal(TelemetrySend.pendingPingCount, 0, "Should have no pending pings yet");
 
@@ -419,29 +482,31 @@ add_task(function* test_persistCurrentPingsOnShutdown() {
   Assert.equal(TelemetrySend.pendingPingCount, PING_COUNT, "Should have the correct pending ping count");
 
   // Triggering a shutdown should persist the pings.
-  yield TelemetrySend.shutdown();
-  Assert.ok((yield checkPingsSaved(ids)), "All pending pings should have been persisted");
+  await TelemetrySend.shutdown();
+  Assert.ok((await checkPingsSaved(ids)), "All pending pings should have been persisted");
 
   // After a restart the pings should have been found when scanning.
-  yield TelemetrySend.reset();
+  await TelemetrySend.reset();
   Assert.equal(TelemetrySend.pendingPingCount, PING_COUNT, "Should have the correct pending ping count");
+
+  // Restore the default ping id generator.
+  fakeGeneratePingId(() => TelemetryUtils.generateUUID());
 });
 
-add_task(function* test_sendCheckOverride() {
+add_task(async function test_sendCheckOverride() {
   const TEST_PING_TYPE = "test-sendCheckOverride";
-  const PREF_OVERRIDE_OFFICIAL_CHECK = "toolkit.telemetry.send.overrideOfficialCheck";
 
   // Clear any pending pings.
-  yield TelemetryController.testShutdown();
-  yield TelemetryStorage.testClearPendingPings();
+  await TelemetryController.testShutdown();
+  await TelemetryStorage.testClearPendingPings();
 
   // Enable the ping server.
   PingServer.start();
-  Preferences.set(PREF_TELEMETRY_SERVER, "http://localhost:" + PingServer.port);
+  Services.prefs.setStringPref(TelemetryUtils.Preferences.Server, "http://localhost:" + PingServer.port);
 
   // Start Telemetry and disable the test-mode so pings don't get
   // sent unless we enable the override.
-  yield TelemetryController.testReset();
+  await TelemetryController.testReset();
 
   // Submit a test ping and make sure it doesn't get sent. We only do
   // that if we're on unofficial builds: pings will always get sent otherwise.
@@ -449,25 +514,119 @@ add_task(function* test_sendCheckOverride() {
     TelemetrySend.setTestModeEnabled(false);
     PingServer.registerPingHandler(() => Assert.ok(false, "Should not have received any pings now"));
 
-    yield TelemetryController.submitExternalPing(TEST_PING_TYPE, { test: "test" });
+    await TelemetryController.submitExternalPing(TEST_PING_TYPE, { test: "test" });
     Assert.equal(TelemetrySend.pendingPingCount, 0, "Should have no pending pings");
   }
 
   // Enable the override and try to send again.
-  Preferences.set(PREF_OVERRIDE_OFFICIAL_CHECK, true);
+  Services.prefs.setBoolPref(TelemetryUtils.Preferences.OverrideOfficialCheck, true);
   PingServer.resetPingHandler();
-  yield TelemetrySend.reset();
-  yield TelemetryController.submitExternalPing(TEST_PING_TYPE, { test: "test" });
+  await TelemetrySend.reset();
+  await TelemetryController.submitExternalPing(TEST_PING_TYPE, { test: "test" });
 
   // Make sure we received the ping.
-  const ping = yield PingServer.promiseNextPing();
+  const ping = await PingServer.promiseNextPing();
   Assert.equal(ping.type, TEST_PING_TYPE, "Must receive a ping of the expected type");
 
   // Restore the test mode and disable the override.
   TelemetrySend.setTestModeEnabled(true);
-  Preferences.reset(PREF_OVERRIDE_OFFICIAL_CHECK);
+  Services.prefs.clearUserPref(TelemetryUtils.Preferences.OverrideOfficialCheck);
 });
 
-add_task(function* cleanup() {
-  yield PingServer.stop();
+add_task(async function testCookies() {
+  const TEST_TYPE = "test-cookies";
+
+  await TelemetrySend.reset();
+  PingServer.clearRequests();
+
+  let uri = Services.io.newURI("http://localhost:" + PingServer.port);
+  Services.cookies.setCookieString(uri, null, "cookie-time=yes", null);
+
+  const id = await TelemetryController.submitExternalPing(TEST_TYPE, {});
+  let foundit = false;
+  while (!foundit) {
+    var request = await PingServer.promiseNextRequest();
+    var ping = decodeRequestPayload(request);
+    foundit = id === ping.id;
+  }
+  Assert.equal(id, ping.id, "We're testing the right ping's request, right?");
+  Assert.equal(false, request.hasHeader("Cookie"), "Request should not have Cookie header");
+});
+
+add_task(async function test_pref_observer() {
+  // This test requires the presence of the crash reporter component.
+  let registrar = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
+  if (!registrar.isContractIDRegistered("@mozilla.org/toolkit/crash-reporter;1")) {
+    return;
+  }
+
+  await TelemetrySend.setup(true);
+
+  const IS_UNIFIED_TELEMETRY = Services.prefs.getBoolPref(TelemetryUtils.Preferences.Unified, false);
+
+  let origTelemetryEnabled = Services.prefs.getBoolPref(TelemetryUtils.Preferences.TelemetryEnabled);
+  let origFhrUploadEnabled = Services.prefs.getBoolPref(TelemetryUtils.Preferences.FhrUploadEnabled);
+
+  if (!IS_UNIFIED_TELEMETRY) {
+    Services.prefs.setBoolPref(TelemetryUtils.Preferences.TelemetryEnabled, true);
+  }
+  Services.prefs.setBoolPref(TelemetryUtils.Preferences.FhrUploadEnabled, true);
+
+  function waitAnnotateCrashReport(expectedValue, trigger) {
+    return new Promise(function(resolve, reject) {
+      let keys = new Set(["TelemetryClientId", "TelemetryServerURL"]);
+
+      let crs = {
+        QueryInterface: ChromeUtils.generateQI([Ci.nsICrashReporter]),
+        annotateCrashReport(key, value) {
+          if (!keys.delete(key)) {
+            MockRegistrar.unregister(gMockCrs);
+            reject(Error(`Crash report annotation with unexpected key: "${key}".`));
+          }
+
+          if (expectedValue && value == "") {
+            MockRegistrar.unregister(gMockCrs);
+            reject(Error("Crash report annotation without expected value."));
+          }
+
+          if (keys.size == 0) {
+            MockRegistrar.unregister(gMockCrs);
+            resolve();
+          }
+        },
+        removeCrashReportAnnotation(key) {
+          if (!keys.delete(key)) {
+            MockRegistrar.unregister(gMockCrs);
+          }
+
+          if (keys.size == 0) {
+            MockRegistrar.unregister(gMockCrs);
+            resolve();
+          }
+        },
+        UpdateCrashEventsDir() {
+        },
+      };
+
+      let gMockCrs = MockRegistrar.register("@mozilla.org/toolkit/crash-reporter;1", crs);
+      registerCleanupFunction(function() {
+        MockRegistrar.unregister(gMockCrs);
+      });
+
+      trigger();
+    });
+  }
+
+  await waitAnnotateCrashReport(!IS_UNIFIED_TELEMETRY, () => Services.prefs.setBoolPref(TelemetryUtils.Preferences.FhrUploadEnabled, false));
+
+  await waitAnnotateCrashReport(true, () => Services.prefs.setBoolPref(TelemetryUtils.Preferences.FhrUploadEnabled, true));
+
+  if (!IS_UNIFIED_TELEMETRY) {
+    Services.prefs.setBoolPref(TelemetryUtils.Preferences.TelemetryEnabled, origTelemetryEnabled);
+  }
+  Services.prefs.setBoolPref(TelemetryUtils.Preferences.FhrUploadEnabled, origFhrUploadEnabled);
+});
+
+add_task(async function cleanup() {
+  await PingServer.stop();
 });

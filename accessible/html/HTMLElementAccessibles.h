@@ -14,107 +14,137 @@ namespace a11y {
 /**
  * Used for HTML hr element.
  */
-class HTMLHRAccessible : public LeafAccessible
-{
-public:
-
-  HTMLHRAccessible(nsIContent* aContent, DocAccessible* aDoc) :
-    LeafAccessible(aContent, aDoc) {}
+class HTMLHRAccessible : public LeafAccessible {
+ public:
+  HTMLHRAccessible(nsIContent* aContent, DocAccessible* aDoc)
+      : LeafAccessible(aContent, aDoc) {}
 
   // Accessible
-  virtual a11y::role NativeRole() override;
+  virtual a11y::role NativeRole() const override;
 };
 
 /**
  * Used for HTML br element.
  */
-class HTMLBRAccessible : public LeafAccessible
-{
-public:
-  HTMLBRAccessible(nsIContent* aContent, DocAccessible* aDoc) :
-    LeafAccessible(aContent, aDoc)
-  {
+class HTMLBRAccessible : public LeafAccessible {
+ public:
+  HTMLBRAccessible(nsIContent* aContent, DocAccessible* aDoc)
+      : LeafAccessible(aContent, aDoc) {
     mType = eHTMLBRType;
     mGenericTypes |= eText;
   }
 
   // Accessible
-  virtual a11y::role NativeRole() override;
-  virtual uint64_t NativeState() override;
+  virtual a11y::role NativeRole() const override;
+  virtual uint64_t NativeState() const override;
 
-protected:
+ protected:
   // Accessible
-  virtual ENameValueFlag NativeName(nsString& aName) override;
+  virtual ENameValueFlag NativeName(nsString& aName) const override;
 };
 
 /**
  * Used for HTML label element.
  */
-class HTMLLabelAccessible : public HyperTextAccessibleWrap
-{
-public:
+class HTMLLabelAccessible : public HyperTextAccessibleWrap {
+ public:
+  HTMLLabelAccessible(nsIContent* aContent, DocAccessible* aDoc)
+      : HyperTextAccessibleWrap(aContent, aDoc) {}
 
-  HTMLLabelAccessible(nsIContent* aContent, DocAccessible* aDoc) :
-    HyperTextAccessibleWrap(aContent, aDoc) {}
-
-  NS_DECL_ISUPPORTS_INHERITED
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(HTMLLabelAccessible,
+                                       HyperTextAccessibleWrap)
 
   // Accessible
-  virtual Relation RelationByType(RelationType aType) override;
+  virtual Relation RelationByType(RelationType aType) const override;
 
   // ActionAccessible
-  virtual uint8_t ActionCount() override;
+  virtual uint8_t ActionCount() const override;
   virtual void ActionNameAt(uint8_t aIndex, nsAString& aName) override;
-  virtual bool DoAction(uint8_t aIndex) override;
+  virtual bool DoAction(uint8_t aIndex) const override;
 
-protected:
+ protected:
   virtual ~HTMLLabelAccessible() {}
-  virtual ENameValueFlag NativeName(nsString& aName) override;
+  virtual ENameValueFlag NativeName(nsString& aName) const override;
 };
 
 /**
  * Used for HTML output element.
  */
-class HTMLOutputAccessible : public HyperTextAccessibleWrap
-{
-public:
+class HTMLOutputAccessible : public HyperTextAccessibleWrap {
+ public:
+  HTMLOutputAccessible(nsIContent* aContent, DocAccessible* aDoc)
+      : HyperTextAccessibleWrap(aContent, aDoc) {}
 
-  HTMLOutputAccessible(nsIContent* aContent, DocAccessible* aDoc) :
-    HyperTextAccessibleWrap(aContent, aDoc) {}
-
-  NS_DECL_ISUPPORTS_INHERITED
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(HTMLOutputAccessible,
+                                       HyperTextAccessibleWrap)
 
   // Accessible
-  virtual Relation RelationByType(RelationType aType) override;
+  virtual Relation RelationByType(RelationType aType) const override;
 
-protected:
+ protected:
   virtual ~HTMLOutputAccessible() {}
 };
 
 /**
  * Accessible for the HTML summary element.
  */
-class HTMLSummaryAccessible : public HyperTextAccessibleWrap
-{
-
-public:
+class HTMLSummaryAccessible : public HyperTextAccessibleWrap {
+ public:
   enum { eAction_Click = 0 };
 
   HTMLSummaryAccessible(nsIContent* aContent, DocAccessible* aDoc);
 
   // Accessible
-  virtual uint64_t NativeState() override;
+  virtual uint64_t NativeState() const override;
 
   // ActionAccessible
-  virtual uint8_t ActionCount() override;
+  virtual uint8_t ActionCount() const override;
   virtual void ActionNameAt(uint8_t aIndex, nsAString& aName) override;
-  virtual bool DoAction(uint8_t aIndex) override;
+  virtual bool DoAction(uint8_t aIndex) const override;
 
   // Widgets
   virtual bool IsWidget() const override;
 };
 
-} // namespace a11y
-} // namespace mozilla
+/**
+ * Used for HTML header and footer elements.
+ */
+class HTMLHeaderOrFooterAccessible : public HyperTextAccessibleWrap {
+ public:
+  HTMLHeaderOrFooterAccessible(nsIContent* aContent, DocAccessible* aDoc)
+      : HyperTextAccessibleWrap(aContent, aDoc) {}
+
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(HTMLHeaderOrFooterAccessible,
+                                       HyperTextAccessibleWrap)
+
+  // Accessible
+  virtual nsAtom* LandmarkRole() const override;
+  virtual a11y::role NativeRole() const override;
+
+ protected:
+  virtual ~HTMLHeaderOrFooterAccessible() {}
+};
+
+/**
+ * Used for HTML section element.
+ */
+class HTMLSectionAccessible : public HyperTextAccessibleWrap {
+ public:
+  HTMLSectionAccessible(nsIContent* aContent, DocAccessible* aDoc)
+      : HyperTextAccessibleWrap(aContent, aDoc) {}
+
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(HTMLSectionAccessible,
+                                       HyperTextAccessibleWrap)
+
+  // Accessible
+  virtual nsAtom* LandmarkRole() const override;
+  virtual a11y::role NativeRole() const override;
+
+ protected:
+  virtual ~HTMLSectionAccessible() = default;
+};
+
+}  // namespace a11y
+}  // namespace mozilla
 
 #endif

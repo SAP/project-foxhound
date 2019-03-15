@@ -1,6 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=8 et :
- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,18 +7,14 @@
 #include "LayerTransactionChild.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/layers/ShadowLayers.h"  // for ShadowLayerForwarder
-#include "mozilla/mozalloc.h"           // for operator delete, etc
-#include "nsDebug.h"                    // for NS_RUNTIMEABORT, etc
-#include "nsTArray.h"                   // for nsTArray
+#include "mozilla/mozalloc.h"             // for operator delete, etc
+#include "nsTArray.h"                     // for nsTArray
 #include "mozilla/layers/TextureClient.h"
 
 namespace mozilla {
 namespace layers {
 
-
-void
-LayerTransactionChild::Destroy()
-{
+void LayerTransactionChild::Destroy() {
   if (!IPCOpen()) {
     return;
   }
@@ -34,11 +29,9 @@ LayerTransactionChild::Destroy()
   SendShutdown();
 }
 
-void
-LayerTransactionChild::ActorDestroy(ActorDestroyReason why)
-{
+void LayerTransactionChild::ActorDestroy(ActorDestroyReason why) {
   mDestroyed = true;
 }
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla

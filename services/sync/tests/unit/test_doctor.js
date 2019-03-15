@@ -1,10 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { Doctor, REPAIR_ADVANCE_PERIOD } = Cu.import("resource://services-sync/doctor.js", {});
-Cu.import("resource://gre/modules/Services.jsm");
-
-initTestLogging("Trace");
+const { Doctor, REPAIR_ADVANCE_PERIOD } = ChromeUtils.import("resource://services-sync/doctor.js", {});
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function mockDoctor(mocks) {
   // Clone the object and put mocks in that.
@@ -26,10 +24,10 @@ add_task(async function test_validation_interval() {
       return {
         validate(e) {
           return {};
-        }
-      }
+        },
+      };
     },
-  }
+  };
 
   // setup prefs which enable test-engine validation.
   Services.prefs.setBoolPref("services.sync.engine.test-engine.validation.enabled", true);
@@ -42,7 +40,7 @@ add_task(async function test_validation_interval() {
     "test-engine": {
       engine,
       maxRecords: 1,
-    }
+    },
   });
   // We haven't advanced the timestamp, so we should not validate again.
   deepEqual(doctor._getEnginesToValidate([engine]), {});
@@ -53,7 +51,7 @@ add_task(async function test_validation_interval() {
     "test-engine": {
       engine,
       maxRecords: 1,
-    }
+    },
   });
 });
 
@@ -61,34 +59,37 @@ add_task(async function test_repairs_start() {
   let repairStarted = false;
   let problems = {
     missingChildren: ["a", "b", "c"],
-  }
+  };
   let validator = {
     validate(engine) {
       return problems;
     },
     canValidate() {
       return Promise.resolve(true);
-    }
-  }
+    },
+  };
   let engine = {
     name: "test-engine",
     getValidator() {
       return validator;
-    }
-  }
+    },
+  };
   let requestor = {
-    startRepairs(validationInfo, flowID) {
+    async startRepairs(validationInfo, flowID) {
       ok(flowID, "got a flow ID");
       equal(validationInfo, problems);
       repairStarted = true;
       return true;
-    }
-  }
+    },
+    tryServerOnlyRepairs() {
+      return false;
+    },
+  };
   let doctor = mockDoctor({
     _getEnginesToValidate(recentlySyncedEngines) {
       deepEqual(recentlySyncedEngines, [engine]);
       return {
-        "test-engine": { engine, maxRecords: -1 }
+        "test-engine": { engine, maxRecords: -1 },
       };
     },
     _getRepairRequestor(engineName) {
@@ -108,10 +109,13 @@ add_task(async function test_repairs_start() {
 add_task(async function test_repairs_advanced_daily() {
   let repairCalls = 0;
   let requestor = {
-    continueRepairs() {
+    async continueRepairs() {
       repairCalls++;
-    }
-  }
+    },
+    tryServerOnlyRepairs() {
+      return false;
+    },
+  };
   // start now at just after REPAIR_ADVANCE_PERIOD so we do a a first one.
   let now = REPAIR_ADVANCE_PERIOD + 1;
   let doctor = mockDoctor({
@@ -124,7 +128,7 @@ add_task(async function test_repairs_advanced_daily() {
     _getAllRepairRequestors() {
       return {
         foo: requestor,
-      }
+      };
     },
     _now() {
       return now;
@@ -150,24 +154,27 @@ add_task(async function test_repairs_skip_if_cant_vaidate() {
     },
     validate() {
       ok(false, "Shouldn't validate");
-    }
-  }
+    },
+  };
   let engine = {
     name: "test-engine",
     getValidator() {
       return validator;
-    }
-  }
+    },
+  };
   let requestor = {
-    startRepairs(validationInfo, flowID) {
-      assert.ok(false, "Never should start repairs");
-    }
-  }
+    async startRepairs(validationInfo, flowID) {
+      ok(false, "Never should start repairs");
+    },
+    tryServerOnlyRepairs() {
+      return false;
+    },
+  };
   let doctor = mockDoctor({
     _getEnginesToValidate(recentlySyncedEngines) {
       deepEqual(recentlySyncedEngines, [engine]);
       return {
-        "test-engine": { engine, maxRecords: -1 }
+        "test-engine": { engine, maxRecords: -1 },
       };
     },
     _getRepairRequestor(engineName) {

@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,17 +21,16 @@ static mozilla::LazyLogModule sLayoutLog("layout");
  * the environmental variable MOZ_LOG includes "layout:2" (or higher).
  */
 #ifdef DEBUG
-#define LAYOUT_WARN_IF_FALSE(_cond, _msg)                                  \
-  PR_BEGIN_MACRO                                                           \
-    if (MOZ_LOG_TEST(sLayoutLog, mozilla::LogLevel::Warning) &&        \
-        !(_cond)) {                                                        \
-      mozilla::detail::LayoutLogWarning(_msg, #_cond, __FILE__, __LINE__); \
-    }                                                                      \
-  PR_END_MACRO
+#  define LAYOUT_WARN_IF_FALSE(_cond, _msg)                                 \
+    PR_BEGIN_MACRO                                                          \
+    if (MOZ_LOG_TEST(sLayoutLog, mozilla::LogLevel::Warning) && !(_cond)) { \
+      mozilla::detail::LayoutLogWarning(_msg, #_cond, __FILE__, __LINE__);  \
+    }                                                                       \
+    PR_END_MACRO
 #else
-#define LAYOUT_WARN_IF_FALSE(_cond, _msg) \
-  PR_BEGIN_MACRO                          \
-  PR_END_MACRO
+#  define LAYOUT_WARN_IF_FALSE(_cond, _msg) \
+    PR_BEGIN_MACRO                          \
+    PR_END_MACRO
 #endif
 
 /**
@@ -40,25 +40,25 @@ static mozilla::LazyLogModule sLayoutLog("layout");
  * the environmental variable MOZ_LOG includes "layout:2" (or higher).
  */
 #ifdef DEBUG
-#define LAYOUT_WARNING(_msg)                                                \
-  PR_BEGIN_MACRO                                                            \
-    if (MOZ_LOG_TEST(sLayoutLog, mozilla::LogLevel::Warning)) {         \
+#  define LAYOUT_WARNING(_msg)                                              \
+    PR_BEGIN_MACRO                                                          \
+    if (MOZ_LOG_TEST(sLayoutLog, mozilla::LogLevel::Warning)) {             \
       mozilla::detail::LayoutLogWarning(_msg, nullptr, __FILE__, __LINE__); \
     }                                                                       \
-  PR_END_MACRO
+    PR_END_MACRO
 #else
-#define LAYOUT_WARNING(_msg) \
-  PR_BEGIN_MACRO             \
-  PR_END_MACRO
+#  define LAYOUT_WARNING(_msg) \
+    PR_BEGIN_MACRO             \
+    PR_END_MACRO
 #endif
 
 namespace mozilla {
 namespace detail {
 
-void LayoutLogWarning(const char* aStr, const char* aExpr,
-                      const char* aFile, int32_t aLine);
+void LayoutLogWarning(const char* aStr, const char* aExpr, const char* aFile,
+                      int32_t aLine);
 
-} // namespace detail
-} // namespace mozilla
+}  // namespace detail
+}  // namespace mozilla
 
-#endif // LayoutLogging_h
+#endif  // LayoutLogging_h

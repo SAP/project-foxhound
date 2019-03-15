@@ -9,6 +9,8 @@
 // FIXME: some of the inplace-editor focus/blur/commit/revert stuff
 // should be factored out in head.js
 
+const OPTOUT = Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTOUT;
+
 const TEST_URI = `
   <style type="text/css">
   #testid {
@@ -31,25 +33,67 @@ var TEST_DATA = [
   { name: "border", value: "solid 1px foo", isValid: false },
 ];
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
-  yield selectNode("#testid", inspector);
+const DATA = [
+  {
+    timestamp: null,
+    category: "devtools.main",
+    method: "edit_rule",
+    object: "ruleview",
+  },
+  {
+    timestamp: null,
+    category: "devtools.main",
+    method: "edit_rule",
+    object: "ruleview",
+  },
+  {
+    timestamp: null,
+    category: "devtools.main",
+    method: "edit_rule",
+    object: "ruleview",
+  },
+  {
+    timestamp: null,
+    category: "devtools.main",
+    method: "edit_rule",
+    object: "ruleview",
+  },
+  {
+    timestamp: null,
+    category: "devtools.main",
+    method: "edit_rule",
+    object: "ruleview",
+  },
+];
 
-  let rule = getRuleViewRuleEditor(view, 1).rule;
-  for (let {name, value, isValid} of TEST_DATA) {
-    yield testEditProperty(view, rule, name, value, isValid);
+add_task(async function() {
+  // Let's reset the counts.
+  Services.telemetry.clearEvents();
+
+  // Ensure no events have been logged
+  const snapshot = Services.telemetry.snapshotEvents(OPTOUT, true);
+  ok(!snapshot.parent, "No events have been logged for the main process");
+
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, view} = await openRuleView();
+  await selectNode("#testid", inspector);
+
+  const rule = getRuleViewRuleEditor(view, 1).rule;
+  for (const {name, value, isValid} of TEST_DATA) {
+    await testEditProperty(view, rule, name, value, isValid);
   }
+
+  checkResults();
 });
 
-function* testEditProperty(view, rule, name, value, isValid) {
+async function testEditProperty(view, rule, name, value, isValid) {
   info("Test editing existing property name/value fields");
 
-  let doc = rule.editor.doc;
-  let prop = rule.textProps[0];
+  const doc = rule.editor.doc;
+  const prop = rule.textProps[0];
 
   info("Focusing an existing property name in the rule-view");
-  let editor = yield focusEditableField(view, prop.editor.nameSpan, 32, 1);
+  let editor = await focusEditableField(view, prop.editor.nameSpan, 32, 1);
 
   is(inplaceEditor(prop.editor.nameSpan), editor,
     "The property name editor got focused");
@@ -57,11 +101,11 @@ function* testEditProperty(view, rule, name, value, isValid) {
 
   info("Entering a new property name, including : to commit and " +
     "focus the value");
-  let onValueFocus = once(rule.editor.element, "focus", true);
-  let onNameDone = view.once("ruleview-changed");
+  const onValueFocus = once(rule.editor.element, "focus", true);
+  const onNameDone = view.once("ruleview-changed");
   EventUtils.sendString(name + ":", doc.defaultView);
-  yield onValueFocus;
-  yield onNameDone;
+  await onValueFocus;
+  await onNameDone;
 
   // Getting the value editor after focus
   editor = inplaceEditor(doc.activeElement);
@@ -69,25 +113,44 @@ function* testEditProperty(view, rule, name, value, isValid) {
   is(inplaceEditor(prop.editor.valueSpan), editor, "Focus moved to the value.");
 
   info("Entering a new value, including ; to commit and blur the value");
-  let onValueDone = view.once("ruleview-changed");
-  let onBlur = once(input, "blur");
+  const onValueDone = view.once("ruleview-changed");
+  const onBlur = once(input, "blur");
   EventUtils.sendString(value + ";", doc.defaultView);
-  yield onBlur;
-  yield onValueDone;
+  await onBlur;
+  await onValueDone;
 
   is(prop.editor.isValid(), isValid,
     value + " is " + isValid ? "valid" : "invalid");
 
   info("Checking that the style property was changed on the content page");
-  let propValue = yield executeInContent("Test:GetRulePropertyValue", {
+  const propValue = await executeInContent("Test:GetRulePropertyValue", {
     styleSheetIndex: 0,
     ruleIndex: 0,
-    name
+    name,
   });
 
   if (isValid) {
     is(propValue, value, name + " should have been set.");
   } else {
     isnot(propValue, value, name + " shouldn't have been set.");
+  }
+}
+
+function checkResults() {
+  const snapshot = Services.telemetry.snapshotEvents(OPTOUT, true);
+  const events = snapshot.parent.filter(event => event[1] === "devtools.main" &&
+                                                 event[2] === "edit_rule" &&
+                                                 event[3] === "ruleview"
+  );
+
+  for (const i in DATA) {
+    const [ timestamp, category, method, object ] = events[i];
+    const expected = DATA[i];
+
+    // ignore timestamp
+    ok(timestamp > 0, "timestamp is greater than 0");
+    is(category, expected.category, "category is correct");
+    is(method, expected.method, "method is correct");
+    is(object, expected.object, "object is correct");
   }
 }

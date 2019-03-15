@@ -5,46 +5,38 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/ServoElementSnapshot.h"
+#include "mozilla/GeckoBindings.h"
 #include "mozilla/dom/Element.h"
 #include "nsIContentInlines.h"
 #include "nsContentUtils.h"
 
 namespace mozilla {
 
-ServoElementSnapshot::ServoElementSnapshot(const Element* aElement)
-  : mContains(Flags(0))
-  , mState(0)
-{
+ServoElementSnapshot::ServoElementSnapshot(const Element& aElement)
+    : mState(0),
+      mContains(Flags(0)),
+      mIsTableBorderNonzero(false),
+      mIsMozBrowserFrame(false),
+      mClassAttributeChanged(false),
+      mIdAttributeChanged(false),
+      mOtherAttributeChanged(false) {
   MOZ_COUNT_CTOR(ServoElementSnapshot);
+  MOZ_ASSERT(NS_IsMainThread());
   mIsHTMLElementInHTMLDocument =
-    aElement->IsHTMLElement() && aElement->IsInHTMLDocument();
-  mIsInChromeDocument =
-    nsContentUtils::IsChromeDoc(aElement->OwnerDoc());
+      aElement.IsHTMLElement() && aElement.IsInHTMLDocument();
+  mIsInChromeDocument = nsContentUtils::IsChromeDoc(aElement.OwnerDoc());
+  mSupportsLangAttr = aElement.SupportsLangAttr();
 }
 
-ServoElementSnapshot::~ServoElementSnapshot()
-{
-  MOZ_COUNT_DTOR(ServoElementSnapshot);
-}
-
-void
-ServoElementSnapshot::AddAttrs(Element* aElement)
-{
-  MOZ_ASSERT(aElement);
-
-  if (HasAny(Flags::Attributes)) {
+void ServoElementSnapshot::AddOtherPseudoClassState(const Element& aElement) {
+  if (HasOtherPseudoClassState()) {
     return;
   }
 
-  uint32_t attrCount = aElement->GetAttrCount();
-  const nsAttrName* attrName;
-  for (uint32_t i = 0; i < attrCount; ++i) {
-    attrName = aElement->GetAttrNameAt(i);
-    const nsAttrValue* attrValue =
-      aElement->GetParsedAttr(attrName->LocalName(), attrName->NamespaceID());
-    mAttrs.AppendElement(ServoAttrSnapshot(*attrName, *attrValue));
-  }
-  mContains |= Flags::Attributes;
+  mIsTableBorderNonzero = Gecko_IsTableBorderNonzero(&aElement);
+  mIsMozBrowserFrame = Gecko_IsBrowserFrame(&aElement);
+
+  mContains |= Flags::OtherPseudoClassState;
 }
 
-} // namespace mozilla
+}  // namespace mozilla

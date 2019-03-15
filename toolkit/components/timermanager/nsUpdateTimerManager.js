@@ -2,11 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm", this);
-Components.utils.import("resource://gre/modules/Services.jsm", this);
-
-const Cc = Components.classes;
-const Ci = Components.interfaces;
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
+ChromeUtils.import("resource://gre/modules/Services.jsm", this);
 
 const PREF_APP_UPDATE_LASTUPDATETIME_FMT  = "app.update.lastUpdateTime.%ID%";
 const PREF_APP_UPDATE_TIMERMINIMUMDELAY   = "app.update.timerMinimumDelay";
@@ -16,28 +13,8 @@ const PREF_APP_UPDATE_LOG                 = "app.update.log";
 const CATEGORY_UPDATE_TIMER               = "update-timer";
 
 XPCOMUtils.defineLazyGetter(this, "gLogEnabled", function tm_gLogEnabled() {
-  return getPref("getBoolPref", PREF_APP_UPDATE_LOG, false);
+  return Services.prefs.getBoolPref(PREF_APP_UPDATE_LOG, false);
 });
-
-/**
- *  Gets a preference value, handling the case where there is no default.
- *  @param   func
- *           The name of the preference function to call, on nsIPrefBranch
- *  @param   preference
- *           The name of the preference
- *  @param   defaultValue
- *           The default value to return in the event the preference has
- *           no setting
- *  @returns The value of the preference, or undefined if there was no
- *           user or default value.
- */
-function getPref(func, preference, defaultValue) {
-  try {
-    return Services.prefs[func](preference);
-  } catch (e) {
-  }
-  return defaultValue;
-}
 
 /**
  *  Logs a string to the error console.
@@ -57,7 +34,7 @@ function LOG(string) {
  *  @constructor
  */
 function TimerManager() {
-  Services.obs.addObserver(this, "xpcom-shutdown", false);
+  Services.obs.addObserver(this, "profile-before-change");
 }
 TimerManager.prototype = {
   /**
@@ -93,13 +70,15 @@ TimerManager.prototype = {
         minInterval = 500;
         minFirstInterval = 500;
       case "profile-after-change":
-        this._timerMinimumDelay = Math.max(1000 * getPref("getIntPref", PREF_APP_UPDATE_TIMERMINIMUMDELAY, 120),
-                                           minInterval);
+        this._timerMinimumDelay =
+          Math.max(1000 * Services.prefs.getIntPref(PREF_APP_UPDATE_TIMERMINIMUMDELAY, 120),
+                   minInterval);
         // Prevent the timer delay between notifications to other consumers from
         // being greater than 5 minutes which is 300000 milliseconds.
         this._timerMinimumDelay = Math.min(this._timerMinimumDelay, 300000);
         // Prevent the first interval from being less than the value of minFirstInterval
-        let firstInterval = Math.max(getPref("getIntPref", PREF_APP_UPDATE_TIMERFIRSTINTERVAL,
+        let firstInterval =
+          Math.max(Services.prefs.getIntPref(PREF_APP_UPDATE_TIMERFIRSTINTERVAL,
                                              30000), minFirstInterval);
         // Prevent the first interval from being greater than 2 minutes which is
         // 120000 milliseconds.
@@ -109,8 +88,8 @@ TimerManager.prototype = {
         this._canEnsureTimer = true;
         this._ensureTimer(firstInterval);
         break;
-      case "xpcom-shutdown":
-        Services.obs.removeObserver(this, "xpcom-shutdown");
+      case "profile-before-change":
+        Services.obs.removeObserver(this, "profile-before-change");
 
         // Release everything we hold onto.
         this._cancelTimer();
@@ -172,12 +151,7 @@ TimerManager.prototype = {
       }
     }
 
-    var catMan = Cc["@mozilla.org/categorymanager;1"].
-                 getService(Ci.nsICategoryManager);
-    var entries = catMan.enumerateCategory(CATEGORY_UPDATE_TIMER);
-    while (entries.hasMoreElements()) {
-      let entry = entries.getNext().QueryInterface(Ci.nsISupportsCString).data;
-      let value = catMan.getCategoryEntry(CATEGORY_UPDATE_TIMER, entry);
+    for (let {value} of Services.catMan.enumerateCategory(CATEGORY_UPDATE_TIMER)) {
       let [cid, method, timerID, prefInterval, defaultInterval, maxInterval] = value.split(",");
 
       defaultInterval = parseInt(defaultInterval);
@@ -189,7 +163,7 @@ TimerManager.prototype = {
         continue;
       }
 
-      let interval = getPref("getIntPref", prefInterval, defaultInterval);
+      let interval = Services.prefs.getIntPref(prefInterval, defaultInterval);
       // Allow the update-timer category to specify a maximum value to prevent
       // values larger than desired.
       maxInterval = parseInt(maxInterval);
@@ -200,7 +174,7 @@ TimerManager.prototype = {
                                                                       timerID);
       // Initialize the last update time to 0 when the preference isn't set so
       // the timer will be notified soon after a new profile's first use.
-      lastUpdateTime = getPref("getIntPref", prefLastUpdate, 0);
+      lastUpdateTime = Services.prefs.getIntPref(prefLastUpdate, 0);
 
       // If the last update time is greater than the current time then reset
       // it to 0 and the timer manager will correct the value when it fires
@@ -215,7 +189,7 @@ TimerManager.prototype = {
 
       tryFire(function() {
         try {
-          Components.classes[cid][method](Ci.nsITimerCallback).notify(timer);
+          Cc[cid][method](Ci.nsITimerCallback).notify(timer);
           LOG("TimerManager:notify - notified " + cid);
         } catch (e) {
           LOG("TimerManager:notify - error notifying component id: " +
@@ -240,13 +214,15 @@ TimerManager.prototype = {
       }
       tryFire(function() {
         if (timerData.callback && timerData.callback.notify) {
-          try {
-            timerData.callback.notify(timer);
-            LOG("TimerManager:notify - notified timerID: " + timerID);
-          } catch (e) {
-            LOG("TimerManager:notify - error notifying timerID: " + timerID +
-                ", error: " + e);
-          }
+          ChromeUtils.idleDispatch(() => {
+            try {
+              timerData.callback.notify(timer);
+              LOG("TimerManager:notify - notified timerID: " + timerID);
+            } catch (e) {
+              LOG("TimerManager:notify - error notifying timerID: " + timerID +
+                  ", error: " + e);
+            }
+          });
         } else {
           LOG("TimerManager:notify - timerID: " + timerID + " doesn't " +
               "implement nsITimerCallback - skipping");
@@ -308,6 +284,14 @@ TimerManager.prototype = {
    */
   registerTimer: function TM_registerTimer(id, callback, interval) {
     LOG("TimerManager:registerTimer - id: " + id);
+    if (this._timers === null) {
+      // Use normal logging since reportError is not available while shutting
+      // down.
+      gLogEnabled = true;
+      LOG("TimerManager:registerTimer called after profile-before-change " +
+          "notification. Ignoring timer registration for id: " + id);
+      return;
+    }
     if (id in this._timers && callback != this._timers[id].callback) {
       LOG("TimerManager:registerTimer - Ignoring second registration for " + id);
       return;
@@ -315,7 +299,7 @@ TimerManager.prototype = {
     let prefLastUpdate = PREF_APP_UPDATE_LASTUPDATETIME_FMT.replace(/%ID%/, id);
     // Initialize the last update time to 0 when the preference isn't set so
     // the timer will be notified soon after a new profile's first use.
-    let lastUpdateTime = getPref("getIntPref", prefLastUpdate, 0);
+    let lastUpdateTime = Services.prefs.getIntPref(prefLastUpdate, 0);
     let now = Math.round(Date.now() / 1000);
     if (lastUpdateTime > now) {
       lastUpdateTime = 0;
@@ -331,18 +315,19 @@ TimerManager.prototype = {
   },
 
   unregisterTimer: function TM_unregisterTimer(id) {
-    LOG(`TimerManager:unregisterTimer - id: ${id}`);
+    LOG("TimerManager:unregisterTimer - id: " + id);
     if (id in this._timers) {
       delete this._timers[id];
     } else {
-      LOG(`TimerManager:registerTimer - Ignoring unregistration request for unknown id: ${id}`);
+      LOG("TimerManager:unregisterTimer - Ignoring unregistration request for " +
+          "unknown id: " + id);
     }
   },
 
   classID: Components.ID("{B322A5C0-A419-484E-96BA-D7182163899F}"),
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIUpdateTimerManager,
-                                         Ci.nsITimerCallback,
-                                         Ci.nsIObserver])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIUpdateTimerManager,
+                                          Ci.nsITimerCallback,
+                                          Ci.nsIObserver]),
 };
 
 this.NSGetFactory = XPCOMUtils.generateNSGetFactory([TimerManager]);

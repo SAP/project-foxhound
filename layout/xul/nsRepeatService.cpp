@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,76 +12,81 @@
 //
 
 #include "nsRepeatService.h"
+#include "mozilla/StaticPtr.h"
+#include "mozilla/dom/Document.h"
 #include "nsIServiceManager.h"
 
-nsRepeatService* nsRepeatService::gInstance = nullptr;
+using namespace mozilla;
+
+static StaticAutoPtr<nsRepeatService> gRepeatService;
 
 nsRepeatService::nsRepeatService()
-: mCallback(nullptr), mCallbackData(nullptr)
-{
+    : mCallback(nullptr), mCallbackData(nullptr) {}
+
+nsRepeatService::~nsRepeatService() {
+  NS_ASSERTION(!mCallback && !mCallbackData,
+               "Callback was not removed before shutdown");
 }
 
-nsRepeatService::~nsRepeatService()
-{
-  NS_ASSERTION(!mCallback && !mCallbackData, "Callback was not removed before shutdown");
-}
-
-nsRepeatService* 
-nsRepeatService::GetInstance()
-{
-  if (!gInstance) {
-    gInstance = new nsRepeatService();
-    NS_IF_ADDREF(gInstance);
+/* static */ nsRepeatService* nsRepeatService::GetInstance() {
+  if (!gRepeatService) {
+    gRepeatService = new nsRepeatService();
   }
-  return gInstance;
+  return gRepeatService;
 }
 
-/*static*/ void
-nsRepeatService::Shutdown()
-{
-  NS_IF_RELEASE(gInstance);
-}
+/*static*/ void nsRepeatService::Shutdown() { gRepeatService = nullptr; }
 
 void nsRepeatService::Start(Callback aCallback, void* aCallbackData,
-                            uint32_t aInitialDelay)
-{
-  NS_PRECONDITION(aCallback != nullptr, "null ptr");
+                            dom::Document* aDocument,
+                            const nsACString& aCallbackName,
+                            uint32_t aInitialDelay) {
+  MOZ_ASSERT(aCallback != nullptr, "null ptr");
 
   mCallback = aCallback;
   mCallbackData = aCallbackData;
-  nsresult rv;
-  mRepeatTimer = do_CreateInstance("@mozilla.org/timer;1", &rv);
+  mCallbackName = aCallbackName;
 
-  if (NS_SUCCEEDED(rv))  {
-    mRepeatTimer->InitWithCallback(this, aInitialDelay, nsITimer::TYPE_ONE_SHOT);
+  mRepeatTimer = NS_NewTimer(aDocument->EventTargetFor(TaskCategory::Other));
+
+  if (mRepeatTimer) {
+    InitTimerCallback(aInitialDelay);
   }
 }
 
-void nsRepeatService::Stop(Callback aCallback, void* aCallbackData)
-{
-  if (mCallback != aCallback || mCallbackData != aCallbackData)
-    return;
+void nsRepeatService::Stop(Callback aCallback, void* aCallbackData) {
+  if (mCallback != aCallback || mCallbackData != aCallbackData) return;
 
-  //printf("Stopping repeat timer\n");
+  // printf("Stopping repeat timer\n");
   if (mRepeatTimer) {
-     mRepeatTimer->Cancel();
-     mRepeatTimer = nullptr;
+    mRepeatTimer->Cancel();
+    mRepeatTimer = nullptr;
   }
   mCallback = nullptr;
   mCallbackData = nullptr;
 }
 
-NS_IMETHODIMP nsRepeatService::Notify(nsITimer *timer)
-{
-  // do callback
-  if (mCallback)
-    mCallback(mCallbackData);
-
-  // start timer again.
-  if (mRepeatTimer) {
-    mRepeatTimer->InitWithCallback(this, REPEAT_DELAY, nsITimer::TYPE_ONE_SHOT);
+void nsRepeatService::InitTimerCallback(uint32_t aInitialDelay) {
+  if (!mRepeatTimer) {
+    return;
   }
-  return NS_OK;
-}
 
-NS_IMPL_ISUPPORTS(nsRepeatService, nsITimerCallback)
+  mRepeatTimer->InitWithNamedFuncCallback(
+      [](nsITimer* aTimer, void* aClosure) {
+        // Use gRepeatService instead of nsRepeatService::GetInstance() (because
+        // we don't want nsRepeatService::GetInstance() to re-create a new
+        // instance for us, if we happen to get invoked after
+        // nsRepeatService::Shutdown() has nulled out gRepeatService).
+        nsRepeatService* rs = gRepeatService;
+        if (!rs) {
+          return;
+        }
+
+        if (rs->mCallback) {
+          rs->mCallback(rs->mCallbackData);
+        }
+
+        rs->InitTimerCallback(REPEAT_DELAY);
+      },
+      nullptr, aInitialDelay, nsITimer::TYPE_ONE_SHOT, mCallbackName.Data());
+}

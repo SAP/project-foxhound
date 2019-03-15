@@ -40,7 +40,7 @@ const TEST_DATA_DOUBLE = [
   ["t", "style=\"color:beige\" dat", 23, 23, false],
   ["a", "style=\"color:beige\" data", 24, 24, false],
   ["VK_RETURN", "style=\"color:beige\"",
-   -1, -1, false]
+   -1, -1, false],
 ];
 
 // Check that single quote attribute is also supported
@@ -64,7 +64,7 @@ const TEST_DATA_SINGLE = [
   ["t", "style='color:beige' dat", 23, 23, false],
   ["a", "style='color:beige' data", 24, 24, false],
   ["VK_RETURN", "style=\"color:beige\"",
-   -1, -1, false]
+   -1, -1, false],
 ];
 
 // Check that autocompletion is still enabled after using url('1)
@@ -83,10 +83,10 @@ const TEST_DATA_INNER = [
   ["u", "style=\"background:unset", 19, 23, true],
   ["r", "style=\"background:url", 20, 21, false],
   ["l", "style=\"background:url", 21, 21, false],
-  ["(", "style=\"background:url(", 22, 22, false],
-  ["'", "style=\"background:url('", 23, 23, false],
-  ["1", "style=\"background:url('1", 24, 24, false],
-  ["'", "style=\"background:url('1'", 25, 25, false],
+  ["(", "style=\"background:url()", 22, 22, false],
+  ["'", "style=\"background:url(')", 23, 23, false],
+  ["1", "style=\"background:url('1)", 24, 24, false],
+  ["'", "style=\"background:url('1')", 25, 25, false],
   [")", "style=\"background:url('1')", 26, 26, false],
   [";", "style=\"background:url('1');", 27, 27, false],
   [" ", "style=\"background:url('1'); ", 28, 28, false],
@@ -94,13 +94,13 @@ const TEST_DATA_INNER = [
   ["VK_RIGHT", "style=\"background:url('1'); color", 33, 33, false],
   [":", "style=\"background:url('1'); color:aliceblue", 34, 43, true],
   ["b", "style=\"background:url('1'); color:beige", 35, 39, true],
-  ["VK_RETURN", "style=\"background:url('1'); color:beige\"", -1, -1, false]
+  ["VK_RETURN", "style=\"background:url('1'); color:beige\"", -1, -1, false],
 ];
 
-add_task(function* () {
-  let {inspector} = yield openInspectorForURL(TEST_URL);
+add_task(async function() {
+  const {inspector} = await openInspectorForURL(TEST_URL);
 
-  yield runStyleAttributeAutocompleteTests(inspector, TEST_DATA_DOUBLE);
-  yield runStyleAttributeAutocompleteTests(inspector, TEST_DATA_SINGLE);
-  yield runStyleAttributeAutocompleteTests(inspector, TEST_DATA_INNER);
+  await runStyleAttributeAutocompleteTests(inspector, TEST_DATA_DOUBLE);
+  await runStyleAttributeAutocompleteTests(inspector, TEST_DATA_SINGLE);
+  await runStyleAttributeAutocompleteTests(inspector, TEST_DATA_INNER);
 });

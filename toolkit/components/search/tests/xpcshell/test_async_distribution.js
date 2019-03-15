@@ -4,29 +4,26 @@
 function run_test() {
   do_test_pending();
 
-  removeMetadata();
-  removeCacheFile();
-
   do_load_manifest("data/chrome.manifest");
 
   configureToLoadJarEngines();
   installDistributionEngine();
 
-  do_check_false(Services.search.isInitialized);
+  Assert.ok(!Services.search.isInitialized);
 
   Services.search.init(function search_initialized(aStatus) {
-    do_check_true(Components.isSuccessCode(aStatus));
-    do_check_true(Services.search.isInitialized);
+    Assert.ok(Components.isSuccessCode(aStatus));
+    Assert.ok(Services.search.isInitialized);
 
     // test that the engine from the distribution overrides our jar engine
     let engines = Services.search.getEngines();
-    do_check_eq(engines.length, 1);
+    Assert.equal(engines.length, 1);
 
     let engine = Services.search.getEngineByName("bug645970");
-    do_check_neq(engine, null);
+    Assert.notEqual(engine, null);
 
     // check the engine we have is actually the one from the distribution
-    do_check_eq(engine.description, "override");
+    Assert.equal(engine.description, "override");
 
     do_test_finished();
   });

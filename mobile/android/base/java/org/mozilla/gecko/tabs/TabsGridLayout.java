@@ -6,6 +6,7 @@
 package org.mozilla.gecko.tabs;
 
 import org.mozilla.gecko.R;
+import org.mozilla.gecko.Tabs;
 
 import android.content.Context;
 import android.support.v7.widget.GridLayoutManager;
@@ -23,8 +24,9 @@ abstract class TabsGridLayout extends TabsLayout {
 
         setItemAnimator(new TabsGridLayoutAnimator());
 
-        // A TouchHelper handler for swipe to close.
-        final TabsTouchHelperCallback callback = new TabsTouchHelperCallback(this) {
+        final int dragDirections = ItemTouchHelper.UP | ItemTouchHelper.DOWN | ItemTouchHelper.START | ItemTouchHelper.END;
+        // A TouchHelper handler for drag and drop and swipe to close.
+        final TabsTouchHelperCallback callback = new TabsTouchHelperCallback(this, dragDirections, this) {
             @Override
             protected float alphaForItemSwipeDx(float dX, int distanceToAlphaMin) {
                 return 1f - 2f * Math.abs(dX) / distanceToAlphaMin;
@@ -35,10 +37,13 @@ abstract class TabsGridLayout extends TabsLayout {
     }
 
     @Override
-    public void closeAll() {
+    public void onCloseAll() {
         autoHidePanel();
-
-        closeAllTabs();
+        if (isNormal()) {
+            Tabs.getInstance().closeAllTabs();
+        } else {
+            Tabs.getInstance().closeAllPrivateTabs();
+        }
     }
 
     @Override

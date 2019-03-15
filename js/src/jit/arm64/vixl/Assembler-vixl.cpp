@@ -38,7 +38,7 @@ CPURegister CPURegList::PopLowestIndex() {
     return NoCPUReg;
   }
   int index = CountTrailingZeros(list_);
-  VIXL_ASSERT((1 << index) & list_);
+  VIXL_ASSERT((1ULL << index) & list_);
   Remove(index);
   return CPURegister(index, size_, type_);
 }
@@ -51,7 +51,7 @@ CPURegister CPURegList::PopHighestIndex() {
   }
   int index = CountLeadingZeros(list_);
   index = kRegListSizeInBits - 1 - index;
-  VIXL_ASSERT((1 << index) & list_);
+  VIXL_ASSERT((1ULL << index) & list_);
   Remove(index);
   return CPURegister(index, size_, type_);
 }
@@ -1705,8 +1705,8 @@ void Assembler::LoadStoreStruct(const VRegister& vt,
 
 
 void Assembler::LoadStoreStructSingleAllLanes(const VRegister& vt,
-                                      const MemOperand& addr,
-                                      NEONLoadStoreSingleStructOp op) {
+					      const MemOperand& addr,
+					      NEONLoadStoreSingleStructOp op) {
   LoadStoreStructVerify(vt, addr, op);
   Emit(op | LoadStoreStructAddrModeField(addr) | LSVFormat(vt) | Rt(vt));
 }

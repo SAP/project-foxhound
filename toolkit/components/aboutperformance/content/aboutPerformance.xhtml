@@ -6,183 +6,230 @@
 
 <html xmlns="http://www.w3.org/1999/xhtml">
   <head>
-    <title>about:performance</title>
-    <link rel="icon" type="image/png" id="favicon"
-          href="chrome://branding/content/icon32.png"/>
+    <title data-l10n-id="about-performance-title"/>
+    <link rel="icon" type="image/svg+xml" id="favicon"
+          href="chrome://global/skin/icons/performance.svg"/>
     <link rel="stylesheet" href="chrome://global/skin/in-content/common.css"
           type="text/css"/>
+    <link rel="localization" href="toolkit/about/aboutPerformance.ftl"/>
     <script type="text/javascript" src="chrome://global/content/aboutPerformance.js"></script>
     <style>
       @import url("chrome://global/skin/in-content/common.css");
 
       html {
-        --aboutSupport-table-background: #ebebeb;
         background-color: var(--in-content-page-background);
       }
       body {
-        margin: 40px 48px;
+        overflow-x: hidden;
       }
-      .hidden {
-        display: none;
-      }
-      .summary .title {
-        font-weight: bold;
-      }
-      a {
-        text-decoration: none;
-      }
-      a.more {
-        margin-left: 2ch;
-      }
-      ul.hidden_additional_items {
-        padding-top: 0;
-        margin-top: 0;
-      }
-      ul.visible_items {
-        padding-bottom: 0;
-        margin-bottom: 0;
-      }
-      li.delta {
-        margin-top: .5em;
-      }
-      h2 {
-        margin-top: 1cm;
-      }
-      button.show_all_items {
-        margin-top: .5cm;
-        margin-left: 1cm;
-      }
-      body {
-        margin-left: 1cm;
-      }
-      div.measuring {
-         background: url(chrome://global/skin/media/throbber.png) no-repeat center;
-         min-width: 36px;
-         min-height: 36px;
-      }
-      li.delta {
-        border-left-width: 5px;
-        border-left-style: solid;
-        padding-left: 1em;
-        list-style: none;
-      }
-      li.delta[impact="0"] {
-        border-left-color: rgb(0, 255, 0);
-      }
-      li.delta[impact="1"] {
-        border-left-color: rgb(24, 231, 0);
-      }
-      li.delta[impact="2"] {
-        border-left-color: rgb(48, 207, 0);
-      }
-      li.delta[impact="3"] {
-        border-left-color: rgb(72, 183, 0);
-      }
-      li.delta[impact="4"] {
-        border-left-color: rgb(96, 159, 0);
-      }
-      li.delta[impact="5"] {
-        border-left-color: rgb(120, 135, 0);
-      }
-      li.delta[impact="6"] {
-        border-left-color: rgb(144, 111, 0);
-      }
-      li.delta[impact="7"] {
-        border-left-color: rgb(168, 87, 0);
-      }
-      li.delta[impact="8"] {
-        border-left-color: rgb(192, 63, 0);
-      }
-      li.delta[impact="9"] {
-        border-left-color: rgb(216, 39, 0);
-      }
-      li.delta[impact="10"] {
-        border-left-color: rgb(240, 15, 0);
-      }
-      li.delta[impact="11"] {
-        border-left-color: rgb(255, 0, 0);
+      #dispatch-table {
+        -moz-user-select: none;
+        font-size: 1em;
+        border-spacing: 0;
+        background-color: var(--in-content-box-background);
+        margin: 0;
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        min-width: 40em;
       }
 
-      #subprocess-reports {
-        background-color: var(--aboutSupport-table-background);
-        color: var(--in-content-text-color);
-        font: message-box;
-        text-align: start;
-        border: 1px solid var(--in-content-border-color);
-        border-spacing: 0px;
-        float: right;
-        margin-bottom: 20px;
-        -moz-margin-start: 20px;
-        -moz-margin-end: 0;
+      /* Avoid scrolling the header */
+      #dispatch-tbody {
+        display: block;
+        margin-top: 2em;
+      }
+      #dispatch-thead {
+        position: fixed;
+        z-index: 1;
+        height: 2em;
+        border-bottom: 1px solid var(--in-content-border-color);
+        min-width: 40em;
+      }
+      tr {
+        display: table;
+        table-layout: fixed;
         width: 100%;
       }
-      #subprocess-reports:dir(rtl) {
-        float: left;
+      td:nth-child(2) {
+        width: 8em;
       }
-      #subprocess-reports th,
-      #subprocess-reports td {
-        border: 1px solid var(--in-content-border-color);
-        padding: 4px;
+      td:nth-child(3) {
+        width: 12em;
       }
-      #subprocess-reports thead th {
+      td:nth-child(4) {
+        width: 5em;
+      }
+      #dispatch-tbody td:nth-child(4) {
+        text-align: end;
+      }
+      td:nth-child(5) {
+        width: 20px;
+      }
+
+      /* Show action icons on selected or hovered rows */
+      tr:-moz-any([selected], :hover) > td > .action-icon {
+        padding: 1px 10px;
+        opacity: 1;
+      }
+      /* The action icons have a relative position, so that we can use
+       * absolutely positioned ::before and ::after pseudo elements.
+       * ::before is used to display the square background on hover/active
+       * ::after is used to display the icons as a background that can be
+       * flipped using a CSS transform in RTL mode. */
+      .action-icon {
+        position: relative;
+        opacity: 0;
+      }
+      /* Ensure both pseudo elements have the same size and position. */
+      .action-icon::before, .action-icon::after {
+        height: 200%;
+        position: absolute;
+        top: -50%;
+        left: -3px;
+        padding-left: 13px;
+        padding-right: 13px;
+      }
+
+      /* square background */
+      .action-icon::before {
+        content: "";
+        background-color: currentColor;
+        opacity: 0;
+      }
+      .action-icon:hover::before {
+        opacity: 0.1;
+      }
+      .action-icon:hover:active::before {
+        opacity: 0.2;
+      }
+
+      /* icons */
+      .action-icon::after {
+        -moz-context-properties: fill, fill-opacity;
+        fill-opacity: 0;
+        background-repeat: no-repeat;
+        background-position: center;
+        fill: currentColor;
+        line-height: 100%;
+      }
+      .addon-icon::after {
+        content: url("chrome://global/skin/icons/shortcut.svg");
+        top: 2px;
+        left: -11px;
+        width: 16px;
+      }
+      .addon-icon:dir(rtl)::after {
+        transform: scaleX(-1);
+      }
+      .close-icon::after {
+        content: url("chrome://global/skin/icons/close.svg");
+        height: 100%;
+        top: 0;
+        left: -13px;
+        transform: scale(1.2);
+      }
+
+      #dispatch-thead > tr > td {
+        border: none;
+        background-color: var(--in-content-box-background-hover);
+      }
+      #dispatch-thead > tr > td:not(:first-child) {
+        border-inline-start-width: 1px;
+        border-inline-start-style: solid;
+        border-image: linear-gradient(transparent 0%, transparent 20%, #c1c1c1 20%, #c1c1c1 80%, transparent 80%, transparent 100%) 1 1;
+        border-bottom: 1px solid var(--in-content-border-color);
+      }
+      td {
+        padding: 5px 10px;
+        min-height: 2em;
+        color: var(--in-content-text-color);
+        max-width: 70vw;
+        overflow: hidden;
+        white-space: nowrap;
+      }
+      #dispatch-tbody > tr > td:first-child {
+        text-overflow: ellipsis;
+        padding-inline-start: 32px;
+        background-repeat: no-repeat;
+        background-size: 16px 16px;
+        background-position-y: center;
+      }
+      #dispatch-tbody > tr > td.root{
+        background-position-x: left 36px;
+        padding-inline-start: 62px;
+      }
+      #dispatch-tbody > tr > td.root:dir(rtl) {
+        background-position-x: right 36px;
+      }
+      .twisty {
+        margin-inline-start: -62px;
+        margin-inline-end: 26px;
+        padding-inline-end: 18px;
+        padding-inline-start: 18px;
+        position: relative;
+      }
+      /* Putting the background image in a positioned pseudo element lets us
+       * use CSS transforms on the background image, which we need for rtl. */
+      .twisty::before {
+        content: url("chrome://global/skin/icons/twisty-collapsed.svg");
+        position: absolute;
+        display: block;
+        line-height: 50%;
+        top: 4px; /* Half the image's height */
+        width: 100%;
+        left: 0;
         text-align: center;
+        -moz-context-properties: fill;
+        fill: currentColor;
       }
-      #subprocess-reports th {
-        text-align: start;
-        background-color: var(--in-content-table-header-background);
+      .twisty:dir(rtl)::before {
+        transform: scaleX(-1);
+      }
+      .twisty.open::before {
+        content: url("chrome://global/skin/icons/twisty-expanded.svg");
+      }
+      #dispatch-tbody > tr > td.indent {
+        padding-inline-start: 88px;
+        background-position-x: left 62px;
+      }
+      #dispatch-tbody > tr > td.indent:dir(rtl) {
+        background-position-x: right 62px;
+      }
+      #dispatch-tbody > tr > td.tracker {
+        background-image: url("chrome://browser/skin/controlcenter/trackers.svg");
+        -moz-context-properties: fill;
+        fill: rgb(224, 41, 29);
+      }
+      #dispatch-tbody > tr > td.worker {
+        background-image: url("chrome://devtools/skin/images/debugging-workers.svg");
+        -moz-context-properties: fill;
+        fill: #808080;
+      }
+
+      #dispatch-tbody > tr[selected] > td {
+        background-color: var(--in-content-item-selected);
         color: var(--in-content-selected-text);
       }
-      #subprocess-reports th.column {
-        white-space: nowrap;
-        width: 0px;
-      }
-      #subprocess-reports td {
-        background-color: #ebebeb;
-        text-align: start;
-        border-color: var(--in-content-table-border-dark-color);
-        border-spacing: 40px;
-      }
-      .options {
-        width: 100%;
-      }
-      .options > .toggle-container-with-text {
-        display: inline-flex;
-      }
-      .options > .toggle-container-with-text:not(:first-child) {
-        margin-inline-start: 2ch;
+      #dispatch-tbody > tr:hover {
+        background-color: var(--in-content-item-hover);
       }
     </style>
   </head>
   <body onload="go()">
-    <div>
-      <h2>Memory usage of Subprocesses</h2>
-      <table id="subprocess-reports">
+    <table id="dispatch-table">
+      <thead id="dispatch-thead">
         <tr>
-          <th>Process ID</th>
-          <th title="RSS measures the pages resident in the main memory for the process">Resident Set Size</th>
-          <th title="USS gives a count of unshared pages, unique to the process">Unique Set Size</th>
+          <td data-l10n-id="column-name"/>
+          <td data-l10n-id="column-type"/>
+          <td data-l10n-id="column-energy-impact"/>
+          <td data-l10n-id="column-memory"/>
+          <td></td><!-- actions -->
         </tr>
-      </table>
-    </div>
-    <div class="options">
-      <div class="toggle-container-with-text">
-        <input type="checkbox" checked="false" id="check-display-recent"></input>
-        <label for="check-display-recent" id="label-display-recent">Display only the last few seconds.</label>
-      </div>
-      <div class="toggle-container-with-text">
-        <input type="checkbox" checked="true" id="check-autorefresh"></input>
-        <label for="check-autorefresh">Refresh automatically</label>
-      </div>
-    </div>
-    <div>
-      <h2>Performance of Add-ons</h2>
-      <div id="addons" class="measuring">
-      </div>
-    </div>
-    <div>
-      <h2>Performance of Web pages</h2>
-      <div id="webpages" class="measuring">
-      </div>
-    </div>
+      </thead>
+      <tbody id="dispatch-tbody"></tbody>
+    </table>
   </body>
 </html>

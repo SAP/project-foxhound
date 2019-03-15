@@ -2,32 +2,49 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
 
+// There are shutdown issues for which multiple rejections are left uncaught.
+// See bug 1018184 for resolving these issues.
+const { PromiseTestUtils } = scopedCuImport("resource://testing-common/PromiseTestUtils.jsm");
+PromiseTestUtils.whitelistRejectionsGlobally(/File closed/);
+
 // Avoid test timeouts that can occur while waiting for the "addon-console-works" message.
 requestLongerTimeout(2);
 
 const ADDON_ID = "test-devtools-webextension@mozilla.org";
 const ADDON_NAME = "test-devtools-webextension";
-const ADDON_PATH = "addons/test-devtools-webextension/manifest.json";
 
 const {
-  BrowserToolboxProcess
-} = Cu.import("resource://devtools/client/framework/ToolboxProcess.jsm", {});
+  BrowserToolboxProcess,
+} = ChromeUtils.import("resource://devtools/client/framework/ToolboxProcess.jsm", {});
 
 /**
  * This test file ensures that the webextension addon developer toolbox:
  * - the webextension developer toolbox has a working Inspector panel, with the
  *   background page as default target;
  */
-add_task(function* testWebExtensionsToolboxInspector() {
-  let {
+add_task(async function testWebExtensionsToolboxInspector() {
+  const addonFile = ExtensionTestCommon.generateXPI({
+    background: function() {
+      document.body.innerText = "Background Page Body Test Content";
+    },
+    manifest: {
+      name: ADDON_NAME,
+      applications: {
+        gecko: {id: ADDON_ID},
+      },
+    },
+  });
+  registerCleanupFunction(() => addonFile.remove(false));
+
+  const {
     tab, document, debugBtn,
-  } = yield setupTestAboutDebuggingWebExtension(ADDON_NAME, ADDON_PATH);
+  } = await setupTestAboutDebuggingWebExtension(ADDON_NAME, addonFile);
 
   // Be careful, this JS function is going to be executed in the addon toolbox,
   // which lives in another process. So do not try to use any scope variable!
-  let env = Cc["@mozilla.org/process/environment;1"]
+  const env = Cc["@mozilla.org/process/environment;1"]
         .getService(Ci.nsIEnvironment);
-  let testScript = function () {
+  const testScript = function() {
     /* eslint-disable no-undef */
     toolbox.selectTool("inspector")
       .then(inspector => {
@@ -46,8 +63,8 @@ add_task(function* testWebExtensionsToolboxInspector() {
 
         dump("Got a nodeActor with an inline text child\n");
 
-        let expectedValue = "Background Page Body Test Content";
-        let actualValue = nodeActor.inlineTextChild._form.nodeValue;
+        const expectedValue = "Background Page Body Test Content";
+        const actualValue = nodeActor.inlineTextChild._form.nodeValue;
 
         if (String(actualValue).trim() !== String(expectedValue).trim()) {
           throw new Error(
@@ -71,12 +88,12 @@ add_task(function* testWebExtensionsToolboxInspector() {
     env.set("MOZ_TOOLBOX_TEST_SCRIPT", "");
   });
 
-  let onToolboxClose = BrowserToolboxProcess.once("close");
+  const onToolboxClose = BrowserToolboxProcess.once("close");
   debugBtn.click();
-  yield onToolboxClose;
+  await onToolboxClose;
 
   ok(true, "Addon toolbox closed");
 
-  yield uninstallAddon({document, id: ADDON_ID, name: ADDON_NAME});
-  yield closeAboutDebugging(tab);
+  await uninstallAddon({document, id: ADDON_ID, name: ADDON_NAME});
+  await closeAboutDebugging(tab);
 });

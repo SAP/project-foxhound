@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* import-globals-from ../../framework/test/shared-head.js */
+/* import-globals-from ../../shared/test/shared-head.js */
 
 "use strict";
 
@@ -15,7 +15,7 @@ const TEST_CASES = [
    "ss1", "name"],
   [
     ["cookies", "http://test1.example.org"],
-    getCookieId("c1", "test1.example.org", "/browser"), "name"
+    getCookieId("c1", "test1.example.org", "/browser"), "name",
   ],
   [["indexedDB", "http://test1.example.org", "idb1 (default)", "obj1"],
    1, "name"],
@@ -23,36 +23,36 @@ const TEST_CASES = [
    MAIN_DOMAIN + "404_cached_file.js", "url"],
 ];
 
-add_task(function* () {
-  yield openTabAndSetupStorage(MAIN_DOMAIN + "storage-listings.html");
+add_task(async function() {
+  await openTabAndSetupStorage(MAIN_DOMAIN + "storage-listings.html");
 
-  let contextMenu = gPanelWindow.document.getElementById("storage-table-popup");
-  let menuDeleteItem = contextMenu.querySelector("#storage-table-popup-delete");
+  const contextMenu = gPanelWindow.document.getElementById("storage-table-popup");
+  const menuDeleteItem = contextMenu.querySelector("#storage-table-popup-delete");
 
-  for (let [ treeItem, rowName, cellToClick] of TEST_CASES) {
-    let treeItemName = treeItem.join(" > ");
+  for (const [ treeItem, rowName, cellToClick] of TEST_CASES) {
+    const treeItemName = treeItem.join(" > ");
 
     info(`Selecting tree item ${treeItemName}`);
-    yield selectTreeItem(treeItem);
+    await selectTreeItem(treeItem);
 
-    let row = getRowCells(rowName);
+    const row = getRowCells(rowName);
     ok(gUI.table.items.has(rowName), `There is a row '${rowName}' in ${treeItemName}`);
 
-    let eventWait = gUI.once("store-objects-updated");
+    const eventWait = gUI.once("store-objects-edit");
 
-    yield waitForContextMenu(contextMenu, row[cellToClick], () => {
+    await waitForContextMenu(contextMenu, row[cellToClick], () => {
       info(`Opened context menu in ${treeItemName}, row '${rowName}'`);
       menuDeleteItem.click();
-      let truncatedRowName = String(rowName).replace(SEPARATOR_GUID, "-").substr(0, 16);
+      const truncatedRowName = String(rowName).replace(SEPARATOR_GUID, "-").substr(0, 16);
       ok(menuDeleteItem.getAttribute("label").includes(truncatedRowName),
         `Context menu item label contains '${rowName}' (maybe truncated)`);
     });
 
-    yield eventWait;
+    await eventWait;
 
     ok(!gUI.table.items.has(rowName),
       `There is no row '${rowName}' in ${treeItemName} after deletion`);
   }
 
-  yield finishTests();
+  await finishTests();
 });

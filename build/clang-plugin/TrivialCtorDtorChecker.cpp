@@ -5,16 +5,18 @@
 #include "TrivialCtorDtorChecker.h"
 #include "CustomMatchers.h"
 
-void TrivialCtorDtorChecker::registerMatchers(MatchFinder* AstMatcher) {
+void TrivialCtorDtorChecker::registerMatchers(MatchFinder *AstMatcher) {
   AstMatcher->addMatcher(cxxRecordDecl(hasTrivialCtorDtor()).bind("node"),
                          this);
 }
 
-void TrivialCtorDtorChecker::check(
-    const MatchFinder::MatchResult &Result) {
-  const char* Error =
-      "class %0 must have trivial constructors and destructors";
+void TrivialCtorDtorChecker::check(const MatchFinder::MatchResult &Result) {
+  const char *Error = "class %0 must have trivial constructors and destructors";
   const CXXRecordDecl *Node = Result.Nodes.getNodeAs<CXXRecordDecl>("node");
+
+  if (!Node->hasDefinition()) {
+    return;
+  }
 
   // We need to accept non-constexpr trivial constructors as well. This occurs
   // when a struct contains pod members, which will not be initialized. As
@@ -23,5 +25,5 @@ void TrivialCtorDtorChecker::check(
                    Node->hasTrivialDefaultConstructor());
   bool BadDtor = !Node->hasTrivialDestructor();
   if (BadCtor || BadDtor)
-    diag(Node->getLocStart(), Error, DiagnosticIDs::Error) << Node;
+    diag(Node->getBeginLoc(), Error, DiagnosticIDs::Error) << Node;
 }

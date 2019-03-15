@@ -4,31 +4,34 @@
 
 "use strict";
 
-Cu.import("resource:///modules/SitePermissions.jsm", this);
+ChromeUtils.import("resource:///modules/SitePermissions.jsm", this);
 
 // This asserts that SitePermissions.set can not save ALLOW permissions
 // temporarily on a tab.
-add_task(function* testTempAllowThrows() {
+add_task(async function testTempAllowThrows() {
   let uri = Services.io.newURI("https://example.com");
   let id = "notifications";
 
-  yield BrowserTestUtils.withNewTab(uri.spec, function(browser) {
+  await BrowserTestUtils.withNewTab(uri.spec, function(browser) {
     Assert.throws(function() {
       SitePermissions.set(uri, id, SitePermissions.ALLOW, SitePermissions.SCOPE_TEMPORARY, browser);
-    }, "'Block' is the only permission we can save temporarily on a tab");
+    }, /'Block' is the only permission we can save temporarily on a browser/);
   });
 });
 
 // This tests the SitePermissions.getAllPermissionDetailsForBrowser function.
-add_task(function* testGetAllPermissionDetailsForBrowser() {
+add_task(async function testGetAllPermissionDetailsForBrowser() {
   let uri = Services.io.newURI("https://example.com");
 
-  let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, uri.spec);
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, uri.spec);
+
+  Services.prefs.setIntPref("permissions.default.shortcuts", 2);
 
   SitePermissions.set(uri, "camera", SitePermissions.ALLOW);
   SitePermissions.set(uri, "cookie", SitePermissions.ALLOW_COOKIES_FOR_SESSION);
   SitePermissions.set(uri, "popup", SitePermissions.BLOCK);
   SitePermissions.set(uri, "geo", SitePermissions.ALLOW, SitePermissions.SCOPE_SESSION);
+  SitePermissions.set(uri, "shortcuts", SitePermissions.ALLOW);
 
   let permissions = SitePermissions.getAllPermissionDetailsForBrowser(tab.linkedBrowser);
 
@@ -71,10 +74,20 @@ add_task(function* testGetAllPermissionDetailsForBrowser() {
     scope: SitePermissions.SCOPE_SESSION,
   });
 
+  let shortcuts = permissions.find(({id}) => id === "shortcuts");
+  Assert.deepEqual(shortcuts, {
+    id: "shortcuts",
+    label: "Override Keyboard Shortcuts",
+    state: SitePermissions.ALLOW,
+    scope: SitePermissions.SCOPE_PERSISTENT,
+  });
+
   SitePermissions.remove(uri, "cookie");
   SitePermissions.remove(uri, "popup");
   SitePermissions.remove(uri, "geo");
+  SitePermissions.remove(uri, "shortcuts");
 
-  yield BrowserTestUtils.removeTab(gBrowser.selectedTab);
+  Services.prefs.clearUserPref("permissions.default.shortcuts");
+
+  BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
-

@@ -2,9 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// Global in the DOM for privileged code only.
-/* global CheckerboardReportService */
-
 "use strict";
 
 var trace;
@@ -16,10 +13,11 @@ function onLoad() {
   service = new CheckerboardReportService();
   updateEnabled();
   reports = service.getReports();
-  for (var i = 0; i < reports.length; i++) {
+  for (let i = 0; i < reports.length; i++) {
     let text = "Severity " + reports[i].severity + " at " + new Date(reports[i].timestamp).toString();
     let link = document.createElement("a");
-    link.href = "javascript:showReport(" + i + ")";
+    link.href = "#";
+    link.addEventListener("click", function() { showReport(i); return false; });
     link.textContent = text;
     let bullet = document.createElement("li");
     bullet.appendChild(link);
@@ -29,13 +27,13 @@ function onLoad() {
 
 function updateEnabled() {
   let enabled = document.getElementById("enabled");
-  if (service.isRecordingEnabled()) {
+  let isEnabled = service.isRecordingEnabled();
+  if (isEnabled) {
     enabled.textContent = "enabled";
-    enabled.style.color = "green";
   } else {
     enabled.textContent = "disabled";
-    enabled.style.color = "red";
   }
+  enabled.classList.toggle("enabled", isEnabled);
 }
 
 function toggleEnabled() {
@@ -58,7 +56,7 @@ const CANVAS_USE_RATIO = 0.75;
 const FRAME_INTERVAL_MS = 50;
 const VECTOR_NORMALIZED_MAGNITUDE = 30.0;
 
-var renderData = new Array();
+var renderData = [];
 var currentFrame = 0;
 var playing = false;
 var timerId = 0;
@@ -85,7 +83,7 @@ function getFlag(flag) {
 //   <junk> RENDERTRACE <timestamp> rect <color> <x> <y> <width> <height> [extraInfo]
 function loadData() {
     stopPlay();
-    renderData = new Array();
+    renderData = [];
     currentFrame = 0;
     minX = undefined;
     minY = undefined;
@@ -277,3 +275,23 @@ function stopPlay() {
     currentFrame = 0;
     renderFrame();
 }
+
+document.getElementById("pauseButton").addEventListener("click", togglePlay);
+document.getElementById("stopButton").addEventListener("click", stopPlay);
+document.getElementById("enableToggleButton").addEventListener("click", toggleEnabled);
+document.getElementById("flushReportsButton").addEventListener("click", flushReports);
+document.getElementById("excludePageFromZoom").addEventListener("click", loadData);
+document.getElementById("stepForwardButton").addEventListener("click", function() {
+  step(false);
+});
+document.getElementById("forwardButton").addEventListener("click", function() {
+  reset(false);
+});
+document.getElementById("rewindButton").addEventListener("click", function() {
+  reset(true);
+});
+document.getElementById("stepBackButton").addEventListener("click", function() {
+  step(true);
+});
+window.addEventListener("load", onLoad);
+

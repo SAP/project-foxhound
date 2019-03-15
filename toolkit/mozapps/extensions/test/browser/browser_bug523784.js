@@ -11,7 +11,7 @@ var args = {
   list: [{
     name: "Bug 523784 softblocked addon",
     version: "1",
-    icon: "chrome://mozapps/skin/plugins/pluginGeneric.png",
+    icon: "chrome://global/skin/plugins/pluginGeneric.svg",
     disable: false,
     blocked: false,
     url: "http://example.com/bug523784_1",
@@ -86,7 +86,7 @@ function bug523784_test2(win) {
          "More Info link should link to the general blocklist page.");
       cancelButton.doCommand();
       executeSoon(finish);
-    })
+    });
     }, {once: true});
   };
   Services.ww.registerNotification(windowObserver);
@@ -96,18 +96,18 @@ function bug523784_test2(win) {
   args.list.push({
     name: "Bug 523784 softblocked addon 2",
     version: "2",
-    icon: "chrome://mozapps/skin/plugins/pluginGeneric.png",
+    icon: "chrome://global/skin/plugins/pluginGeneric.svg",
     disable: false,
     blocked: false,
-    url: "http://example.com/bug523784_2"
+    url: "http://example.com/bug523784_2",
   });
   args.list.push({
     name: "Bug 523784 softblocked addon 3",
     version: "4",
-    icon: "chrome://mozapps/skin/plugins/pluginGeneric.png",
+    icon: "chrome://global/skin/plugins/pluginGeneric.svg",
     disable: false,
     blocked: false,
-    url: "http://example.com/bug523784_3"
+    url: "http://example.com/bug523784_3",
   });
 
   args.wrappedJSObject = args;

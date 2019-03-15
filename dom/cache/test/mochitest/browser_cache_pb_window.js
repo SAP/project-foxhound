@@ -70,6 +70,32 @@ function testKeys(browser) {
   });
 }
 
+function testOpen_worker(browser) {
+  return ContentTask.spawn(browser, {}, function() {
+    Cu.importGlobalProperties(["Blob"]);
+
+    let workerFunctionString = function () {
+      caches.open("pb-worker-cache").then(function(cacheObject) {
+        postMessage(cacheObject.toString());
+      }, function (reason) {
+        postMessage(reason.name);
+      });
+    }.toString();
+    let workerBlobURL = content.URL.createObjectURL(
+      new Blob(['(', workerFunctionString, ')()'],
+               { type : 'application/javascript' }));
+    let worker = new content.Worker(workerBlobURL);
+    content.URL.revokeObjectURL(workerBlobURL);
+    return new Promise(function(resolve, reject) {
+      worker.addEventListener("message", function (e) {
+        let isGood = (e.data === "SecurityError");
+        ok(isGood, "caches.open() should throw SecurityError from worker");
+        isGood ? resolve() : reject();
+      });
+    });
+  });
+}
+
 function test() {
   let privateWin, privateTab;
   waitForExplicitFinish();
@@ -79,7 +105,7 @@ function test() {
     return BrowserTestUtils.openNewBrowserWindow({private: true});
   }).then(pw => {
     privateWin = pw;
-    privateTab = pw.gBrowser.addTab("http://example.com/");
+    privateTab = BrowserTestUtils.addTab(pw.gBrowser, "http://example.com/");
     return BrowserTestUtils.browserLoaded(privateTab.linkedBrowser);
   }).then(tab => {
     return Promise.all([
@@ -88,6 +114,7 @@ function test() {
       testOpen(privateTab.linkedBrowser),
       testDelete(privateTab.linkedBrowser),
       testKeys(privateTab.linkedBrowser),
+      testOpen_worker(privateTab.linkedBrowser),
     ]);
   }).then(() => {
     return BrowserTestUtils.closeWindow(privateWin);

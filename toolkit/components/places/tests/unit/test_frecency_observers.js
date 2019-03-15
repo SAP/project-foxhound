@@ -1,84 +1,89 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-function run_test() {
-  run_next_test();
-}
-
 // Each of these tests a path that triggers a frecency update.  Together they
 // hit all sites that update a frecency.
 
 // InsertVisitedURIs::UpdateFrecency and History::InsertPlace
-add_task(function* test_InsertVisitedURIs_UpdateFrecency_and_History_InsertPlace() {
+add_task(async function test_InsertVisitedURIs_UpdateFrecency_and_History_InsertPlace() {
   // InsertPlace is at the end of a path that UpdateFrecency is also on, so kill
   // two birds with one stone and expect two notifications.  Trigger the path by
   // adding a download.
-  let uri = NetUtil.newURI("http://example.com/a");
-  Cc["@mozilla.org/browser/download-history;1"].
-    getService(Ci.nsIDownloadHistory).
-    addDownload(uri);
-  yield Promise.all([onFrecencyChanged(uri), onFrecencyChanged(uri)]);
+  let url = Services.io.newURI("http://example.com/a");
+  let promises = [onFrecencyChanged(url), onFrecencyChanged(url)];
+  await PlacesUtils.history.insert({
+    url,
+    visits: [{
+      transition: PlacesUtils.history.TRANSITIONS.DOWNLOAD,
+    }],
+  });
+  await Promise.all(promises);
 });
 
 // nsNavHistory::UpdateFrecency
-add_task(function* test_nsNavHistory_UpdateFrecency() {
-  let bm = PlacesUtils.bookmarks;
-  let uri = NetUtil.newURI("http://example.com/b");
-  bm.insertBookmark(bm.unfiledBookmarksFolder, uri,
-                    Ci.nsINavBookmarksService.DEFAULT_INDEX, "test");
-  yield onFrecencyChanged(uri);
+add_task(async function test_nsNavHistory_UpdateFrecency() {
+  let url = Services.io.newURI("http://example.com/b");
+  let promise = onFrecencyChanged(url);
+  await PlacesUtils.bookmarks.insert({
+    parentGuid: PlacesUtils.bookmarks.unfiledGuid,
+    url,
+    title: "test",
+  });
+  await promise;
 });
 
-// nsNavHistory::invalidateFrecencies for particular pages
-add_task(function* test_nsNavHistory_invalidateFrecencies_somePages() {
-  let uri = NetUtil.newURI("http://test-nsNavHistory-invalidateFrecencies-somePages.com/");
+// History.jsm invalidateFrecencies()
+add_task(async function test_invalidateFrecencies() {
+  let url = Services.io.newURI("http://test-invalidateFrecencies.com/");
   // Bookmarking the URI is enough to add it to moz_places, and importantly, it
-  // means that removePagesFromHost doesn't remove it from moz_places, so its
+  // means that removeByFilter doesn't remove it from moz_places, so its
   // frecency is able to be changed.
-  let bm = PlacesUtils.bookmarks;
-  bm.insertBookmark(bm.unfiledBookmarksFolder, uri,
-                    Ci.nsINavBookmarksService.DEFAULT_INDEX, "test");
-  PlacesUtils.history.removePagesFromHost(uri.host, false);
-  yield onFrecencyChanged(uri);
+  await PlacesUtils.bookmarks.insert({
+    parentGuid: PlacesUtils.bookmarks.unfiledGuid,
+    url,
+    title: "test",
+  });
+  let promise = onFrecencyChanged(url);
+  await PlacesUtils.history.removeByFilter({ host: url.host });
+  await promise;
 });
 
-// nsNavHistory::invalidateFrecencies for all pages
-add_task(function* test_nsNavHistory_invalidateFrecencies_allPages() {
-  yield Promise.all([onManyFrecenciesChanged(), PlacesTestUtils.clearHistory()]);
+// History.jsm clear()
+add_task(async function test_clear() {
+  await Promise.all([onManyFrecenciesChanged(), PlacesUtils.history.clear()]);
 });
 
-// nsNavHistory::DecayFrecency and nsNavHistory::FixInvalidFrecencies
-add_task(function* test_nsNavHistory_DecayFrecency_and_nsNavHistory_FixInvalidFrecencies() {
-  // FixInvalidFrecencies is at the end of a path that DecayFrecency is also on,
-  // so expect two notifications.  Trigger the path by making nsNavHistory
-  // observe the idle-daily notification.
+// nsNavHistory::FixAndDecayFrecency
+add_task(async function test_nsNavHistory_FixAndDecayFrecency() {
+  // Fix and decay frecencies by making nsNavHistory observe the idle-daily
+  // notification.
   PlacesUtils.history.QueryInterface(Ci.nsIObserver).
     observe(null, "idle-daily", "");
-  yield Promise.all([onManyFrecenciesChanged(), onManyFrecenciesChanged()]);
+  await Promise.all([onManyFrecenciesChanged()]);
 });
 
 function onFrecencyChanged(expectedURI) {
-  let deferred = Promise.defer();
-  let obs = new NavHistoryObserver();
-  obs.onFrecencyChanged =
-    (uri, newFrecency, guid, hidden, visitDate) => {
-      PlacesUtils.history.removeObserver(obs);
-      do_check_true(!!uri);
-      do_check_true(uri.equals(expectedURI));
-      deferred.resolve();
-    };
-  PlacesUtils.history.addObserver(obs, false);
-  return deferred.promise;
+  return new Promise(resolve => {
+    let obs = new NavHistoryObserver();
+    obs.onFrecencyChanged =
+      (uri, newFrecency, guid, hidden, visitDate) => {
+        PlacesUtils.history.removeObserver(obs);
+        Assert.ok(!!uri);
+        Assert.ok(uri.equals(expectedURI));
+        resolve();
+      };
+    PlacesUtils.history.addObserver(obs);
+  });
 }
 
 function onManyFrecenciesChanged() {
-  let deferred = Promise.defer();
-  let obs = new NavHistoryObserver();
-  obs.onManyFrecenciesChanged = () => {
-    PlacesUtils.history.removeObserver(obs);
-    do_check_true(true);
-    deferred.resolve();
-  };
-  PlacesUtils.history.addObserver(obs, false);
-  return deferred.promise;
+  return new Promise(resolve => {
+    let obs = new NavHistoryObserver();
+    obs.onManyFrecenciesChanged = () => {
+      PlacesUtils.history.removeObserver(obs);
+      Assert.ok(true);
+      resolve();
+    };
+    PlacesUtils.history.addObserver(obs);
+  });
 }

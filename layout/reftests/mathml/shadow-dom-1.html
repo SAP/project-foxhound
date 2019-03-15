@@ -7,7 +7,7 @@
   <script>
     function insertShadowMathML() {
       var x = document.getElementById("x");
-      x.createShadowRoot();
+      x.attachShadow({ mode: "open" });
       x.shadowRoot.innerHTML =
         '<math><msup><mi>X</mi><mi>X</mi></msup></math>';
       document.documentElement.removeAttribute("class");

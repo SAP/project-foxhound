@@ -50,8 +50,6 @@ const browserElementTestHelpers = {
 
   enableProcessPriorityManager: function() {
     this._setPrefs(
-      ['dom.ipc.processPriorityManager.BACKGROUND.LRUPoolLevels', 2],
-      ['dom.ipc.processPriorityManager.BACKGROUND_PERCEIVABLE.LRUPoolLevels', 2],
       ['dom.ipc.processPriorityManager.testMode', true],
       ['dom.ipc.processPriorityManager.enabled', true]
     );
@@ -84,6 +82,10 @@ const browserElementTestHelpers = {
       this.unlockTestReady.bind(this));
   },
 
+  allowTopLevelDataURINavigation: function() {
+    this._setPref("security.data_uri.block_toplevel_data_uri_navigations", false);
+  },
+
   _observers: [],
 
   // This function is a wrapper which lets you register an observer to one of
@@ -100,7 +102,7 @@ const browserElementTestHelpers = {
       observe: observerFn
     };
 
-    SpecialPowers.addObserver(observer, topic, /* weak = */ false);
+    SpecialPowers.addObserver(observer, topic);
     this._observers.push([observer, topic]);
   },
 
@@ -197,46 +199,6 @@ function expectPriorityChange(childID, expectedPriority) {
   });
 }
 
-// Returns a promise which is resolved or rejected the next time the
-// process childID changes its priority.  We resolve if the expectedPriority
-// matches the priority and the LRU parameter matches expectedLRU and we
-// reject otherwise.
-
-function expectPriorityWithLRUSet(childID, expectedPriority, expectedLRU) {
-  return new Promise(function(resolve, reject) {
-    var observed = false;
-    browserElementTestHelpers.addProcessPriorityObserver(
-      'process-priority-with-LRU-set',
-      function(subject, topic, data) {
-        if (observed) {
-          return;
-        }
-
-        var [id, priority, lru] = data.split(":");
-        if (id != childID) {
-          return;
-        }
-
-        // Make sure we run the is() calls in this observer only once,
-        // otherwise we'll expect /every/ priority/LRU change to match
-        // expectedPriority/expectedLRU.
-        observed = true;
-
-        is(lru, expectedLRU,
-           'Expected LRU ' + lru +
-           ' of childID ' + childID +
-           ' to change to ' + expectedLRU);
-
-        if ((priority == expectedPriority) && (lru == expectedLRU)) {
-          resolve();
-        } else {
-          reject();
-        }
-      }
-    );
-  });
-}
-
 // Returns a promise which is resolved the first time the given iframe fires
 // the mozbrowser##eventName event.
 function expectMozbrowserEvent(iframe, eventName) {
@@ -284,7 +246,7 @@ function expectMozbrowserEvent(iframe, eventName) {
 //    content results in a broken security state.
 
 (function() {
-  var oop = location.pathname.indexOf('_inproc_') == -1;
+  var oop = !location.pathname.includes('_inproc_');
 
   browserElementTestHelpers.lockTestReady();
   SpecialPowers.setBoolPref("network.disable.ipc.security", true);

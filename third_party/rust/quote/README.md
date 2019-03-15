@@ -5,12 +5,37 @@ Rust Quasi-Quoting
 [![Latest Version](https://img.shields.io/crates/v/quote.svg)](https://crates.io/crates/quote)
 [![Rust Documentation](https://img.shields.io/badge/api-rustdoc-blue.svg)](https://docs.rs/quote/)
 
-Quasi-quoting without a Syntex dependency, intended for use with [Macros
-1.1](https://github.com/rust-lang/rfcs/blob/master/text/1681-macros-1.1.md).
+This crate provides the [`quote!`] macro for turning Rust syntax tree data
+structures into tokens of source code.
+
+[`quote!`]: https://docs.rs/quote/0.6/quote/macro.quote.html
+
+Procedural macros in Rust receive a stream of tokens as input, execute arbitrary
+Rust code to determine how to manipulate those tokens, and produce a stream of
+tokens to hand back to the compiler to compile into the caller's crate.
+Quasi-quoting is a solution to one piece of that -- producing tokens to return
+to the compiler.
+
+The idea of quasi-quoting is that we write *code* that we treat as *data*.
+Within the `quote!` macro, we can write what looks like code to our text editor
+or IDE. We get all the benefits of the editor's brace matching, syntax
+highlighting, indentation, and maybe autocompletion. But rather than compiling
+that as code into the current crate, we can treat it as data, pass it around,
+mutate it, and eventually hand it back to the compiler as tokens to compile into
+the macro caller's crate.
+
+This crate is motivated by the procedural macro use case, but is a
+general-purpose Rust quasi-quoting library and is not specific to procedural
+macros.
+
+*Version requirement: Quote supports any compiler version back to Rust's very
+first support for procedural macros in Rust 1.15.0.*
+
+[*Release notes*](https://github.com/dtolnay/quote/releases)
 
 ```toml
 [dependencies]
-quote = "0.3"
+quote = "0.6"
 ```
 
 ```rust
@@ -18,33 +43,22 @@ quote = "0.3"
 extern crate quote;
 ```
 
-## What is quasi-quoting?
-
-Quasi-quoting is a way of writing code and treating it as data, similar to
-writing code inside of a double-quoted string literal except more friendly to
-your text editor or IDE. It does not get in the way of syntax highlighting,
-brace matching, indentation, or autocompletion, all of which you would lose by
-writing code inside of double quotes.
-
-Check out
-[my meetup talk](https://air.mozilla.org/rust-meetup-december-2016-12-15/)
-on the topic to learn more about the use case. Start the video at 3:00.
-
-This crate is motivated by the Macros 1.1 use case, but is a general-purpose
-Rust quasi-quoting library and is not specific to procedural macros.
-
 ## Syntax
 
-The quote crate provides a `quote!` macro within which you can write Rust code
-that gets packaged into a `quote::Tokens` and can be treated as data. You should
-think of `quote::Tokens` as representing a fragment of Rust source code. Call
-`to_string()` or `as_str()` on a Tokens to get back the fragment of source code
-as a string.
+The quote crate provides a [`quote!`] macro within which you can write Rust code
+that gets packaged into a [`TokenStream`] and can be treated as data. You should
+think of `TokenStream` as representing a fragment of Rust source code. This type
+can be returned directly back to the compiler by a procedural macro to get
+compiled into the caller's crate.
+
+[`TokenStream`]: https://docs.rs/proc-macro2/0.4/proc_macro2/struct.TokenStream.html
 
 Within the `quote!` macro, interpolation is done with `#var`. Any type
-implementing the `quote::ToTokens` trait can be interpolated. This includes most
-Rust primitive types as well as most of the syntax tree types from
-[`syn`](https://github.com/dtolnay/syn).
+implementing the [`quote::ToTokens`] trait can be interpolated. This includes
+most Rust primitive types as well as most of the syntax tree types from [`syn`].
+
+[`quote::ToTokens`]: https://docs.rs/quote/0.6/quote/trait.ToTokens.html
+[`syn`]: https://github.com/dtolnay/syn
 
 ```rust
 let tokens = quote! {
@@ -54,10 +68,11 @@ let tokens = quote! {
     }
 
     impl #generics serde::Serialize for SerializeWith #generics #where_clause {
-        fn serialize<S>(&self, s: &mut S) -> Result<(), S::Error>
-            where S: serde::Serializer
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
         {
-            #path(self.value, s)
+            #path(self.value, serializer)
         }
     }
 
@@ -68,19 +83,47 @@ let tokens = quote! {
 };
 ```
 
-Repetition is done using `#(...)*` or `#(...),*` very similar to `macro_rules!`:
+## Repetition
 
-- `#(#var)*` - no separators
-- `#(#var),*` - the character before the asterisk is used as a separator
-- `#( struct #var; )*` - the repetition can contain other things
-- `#( #k => println!("{}", #v), )*` - even multiple interpolations
+Repetition is done using `#(...)*` or `#(...),*` similar to `macro_rules!`. This
+iterates through the elements of any variable interpolated within the repetition
+and inserts a copy of the repetition body for each one. The variables in an
+interpolation may be anything that implements `IntoIterator`, including `Vec` or
+a pre-existing iterator.
 
-Tokens can be interpolated into other quotes:
+- `#(#var)*` — no separators
+- `#(#var),*` — the character before the asterisk is used as a separator
+- `#( struct #var; )*` — the repetition can contain other things
+- `#( #k => println!("{}", #v), )*` — even multiple interpolations
 
-```rust
-let t = quote! { /* ... */ };
-return quote! { /* ... */ #t /* ... */ };
-```
+Note that there is a difference between `#(#var ,)*` and `#(#var),*`—the latter
+does not produce a trailing comma. This matches the behavior of delimiters in
+`macro_rules!`.
+
+## Hygiene
+
+Any interpolated tokens preserve the `Span` information provided by their
+`ToTokens` implementation. Tokens that originate within a `quote!` invocation
+are spanned with [`Span::call_site()`].
+
+[`Span::call_site()`]: https://docs.rs/proc-macro2/0.4/proc_macro2/struct.Span.html#method.call_site
+
+A different span can be provided explicitly through the [`quote_spanned!`]
+macro.
+
+[`quote_spanned!`]: https://docs.rs/quote/0.6/quote/macro.quote_spanned.html
+
+### Limitations
+
+- A non-repeating variable may not be interpolated inside of a repeating block
+  ([#7]).
+- The same variable may not be interpolated more than once inside of a repeating
+  block ([#8]).
+
+[#7]: https://github.com/dtolnay/quote/issues/7
+[#8]: https://github.com/dtolnay/quote/issues/8
+
+### Recursion limit
 
 The `quote!` macro relies on deep recursion so some large invocations may fail
 with "recursion limit reached" when you compile. If it fails, bump up the

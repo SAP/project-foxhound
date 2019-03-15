@@ -17,29 +17,24 @@
 #include "mozilla/BufferList.h"
 #include "mozilla/mozalloc.h"
 #include "mozilla/TimeStamp.h"
-
 #ifdef FUZZING
-#include "base/singleton.h"
-#include "mozilla/ipc/Faulty.h"
+#  include "mozilla/ipc/Faulty.h"
 #endif
-
-#if !defined(RELEASE_OR_BETA) || defined(DEBUG)
-#define MOZ_PICKLE_SENTINEL_CHECKING
+#if !defined(FUZZING) && (!defined(RELEASE_OR_BETA) || defined(DEBUG))
+#  define MOZ_PICKLE_SENTINEL_CHECKING
 #endif
-
 class Pickle;
-
 class PickleIterator {
-public:
+ public:
   explicit PickleIterator(const Pickle& pickle);
 
-private:
+ private:
   friend class Pickle;
 
   mozilla::BufferList<InfallibleAllocPolicy>::IterImpl iter_;
   mozilla::TimeStamp start_;
 
-  template<typename T>
+  template <typename T>
   void CopyInto(T* dest);
 };
 
@@ -69,7 +64,7 @@ class Pickle {
   // Initialize a Pickle object with the specified header size in bytes, which
   // must be greater-than-or-equal-to sizeof(Pickle::Header).  The header size
   // will be rounded up to ensure that the header size is 32bit-aligned.
-  explicit Pickle(uint32_t header_size);
+  explicit Pickle(uint32_t header_size, size_t segment_capacity = 0);
 
   Pickle(uint32_t header_size, const char* data, uint32_t length);
 
@@ -81,6 +76,8 @@ class Pickle {
   Pickle& operator=(const Pickle& other) = delete;
 
   Pickle& operator=(Pickle&& other);
+
+  void CopyFrom(const Pickle& other);
 
   // Returns the size of the Pickle's data.
   uint32_t size() const { return header_size_ + header_->payload_size; }
@@ -101,7 +98,8 @@ class Pickle {
   MOZ_MUST_USE bool ReadShort(PickleIterator* iter, short* result) const;
   MOZ_MUST_USE bool ReadInt(PickleIterator* iter, int* result) const;
   MOZ_MUST_USE bool ReadLong(PickleIterator* iter, long* result) const;
-  MOZ_MUST_USE bool ReadULong(PickleIterator* iter, unsigned long* result) const;
+  MOZ_MUST_USE bool ReadULong(PickleIterator* iter,
+                              unsigned long* result) const;
   MOZ_MUST_USE bool ReadSize(PickleIterator* iter, size_t* result) const;
   MOZ_MUST_USE bool ReadInt32(PickleIterator* iter, int32_t* result) const;
   MOZ_MUST_USE bool ReadUInt32(PickleIterator* iter, uint32_t* result) const;
@@ -109,12 +107,16 @@ class Pickle {
   MOZ_MUST_USE bool ReadUInt64(PickleIterator* iter, uint64_t* result) const;
   MOZ_MUST_USE bool ReadDouble(PickleIterator* iter, double* result) const;
   MOZ_MUST_USE bool ReadIntPtr(PickleIterator* iter, intptr_t* result) const;
-  MOZ_MUST_USE bool ReadUnsignedChar(PickleIterator* iter, unsigned char* result) const;
+  MOZ_MUST_USE bool ReadUnsignedChar(PickleIterator* iter,
+                                     unsigned char* result) const;
   MOZ_MUST_USE bool ReadString(PickleIterator* iter, std::string* result) const;
-  MOZ_MUST_USE bool ReadWString(PickleIterator* iter, std::wstring* result) const;
-  MOZ_MUST_USE bool ReadBytesInto(PickleIterator* iter, void* data, uint32_t length) const;
-  MOZ_MUST_USE bool ExtractBuffers(PickleIterator* iter, size_t length, BufferList* buffers,
-                                   uint32_t alignment = sizeof(memberAlignmentType)) const;
+  MOZ_MUST_USE bool ReadWString(PickleIterator* iter,
+                                std::wstring* result) const;
+  MOZ_MUST_USE bool ReadBytesInto(PickleIterator* iter, void* data,
+                                  uint32_t length) const;
+  MOZ_MUST_USE bool ExtractBuffers(
+      PickleIterator* iter, size_t length, BufferList* buffers,
+      uint32_t alignment = sizeof(memberAlignmentType)) const;
 
   // Safer version of ReadInt() checks for the result not being negative.
   // Use it for reading the object sizes.
@@ -122,7 +124,16 @@ class Pickle {
 
   MOZ_MUST_USE bool ReadSentinel(PickleIterator* iter, uint32_t sentinel) const
 #ifdef MOZ_PICKLE_SENTINEL_CHECKING
-    ;
+      ;
+#else
+  {
+    return true;
+  }
+#endif
+
+  bool IgnoreSentinel(PickleIterator* iter) const
+#ifdef MOZ_PICKLE_SENTINEL_CHECKING
+      ;
 #else
   {
     return true;
@@ -134,108 +145,42 @@ class Pickle {
   // telemetry probe.
   void EndRead(PickleIterator& iter, uint32_t ipcMessageType = 0) const;
 
+  // Returns true if the given iterator has at least |len| bytes remaining it,
+  // across all segments. If there is not that much data available, returns
+  // false. Generally used when reading a (len, data) pair from the message,
+  // before allocating |len| bytes of space, to ensure that reading |len| bytes
+  // will succeed.
+  bool HasBytesAvailable(const PickleIterator* iter, uint32_t len) const;
+
   // Methods for adding to the payload of the Pickle.  These values are
   // appended to the end of the Pickle's payload.  When reading values from a
   // Pickle, it is important to read them in the order in which they were added
   // to the Pickle.
-  bool WriteBool(bool value) {
-#ifdef FUZZING
-    Singleton<mozilla::ipc::Faulty>::get()->FuzzBool(&value);
-#endif
-    return WriteInt(value ? 1 : 0);
-  }
-  bool WriteInt16(int16_t value) {
-#ifdef FUZZING
-    Singleton<mozilla::ipc::Faulty>::get()->FuzzInt16(&value);
-#endif
-    return WriteBytes(&value, sizeof(value));
-  }
-  bool WriteUInt16(uint16_t value) {
-#ifdef FUZZING
-    Singleton<mozilla::ipc::Faulty>::get()->FuzzUInt16(&value);
-#endif
-    return WriteBytes(&value, sizeof(value));
-  }
-  bool WriteInt(int value) {
-#ifdef FUZZING
-    Singleton<mozilla::ipc::Faulty>::get()->FuzzInt(&value);
-#endif
-    return WriteBytes(&value, sizeof(value));
-  }
-  bool WriteLong(long value) {
-    // Always written as a 64-bit value since the size for this type can
-    // differ between architectures.
-#ifdef FUZZING
-    Singleton<mozilla::ipc::Faulty>::get()->FuzzLong(&value);
-#endif
-    return WriteInt64(int64_t(value));
-  }
-  bool WriteULong(unsigned long value) {
-    // Always written as a 64-bit value since the size for this type can
-    // differ between architectures.
-#ifdef FUZZING
-    Singleton<mozilla::ipc::Faulty>::get()->FuzzULong(&value);
-#endif
-    return WriteUInt64(uint64_t(value));
-  }
-  bool WriteSize(size_t value) {
-    // Always written as a 64-bit value since the size for this type can
-    // differ between architectures.
-#ifdef FUZZING
-    Singleton<mozilla::ipc::Faulty>::get()->FuzzSize(&value);
-#endif
-    return WriteUInt64(uint64_t(value));
-  }
-  bool WriteInt32(int32_t value) {
-#ifdef FUZZING
-    Singleton<mozilla::ipc::Faulty>::get()->FuzzInt(&value);
-#endif
-    return WriteBytes(&value, sizeof(value));
-  }
-  bool WriteUInt32(uint32_t value) {
-#ifdef FUZZING
-    Singleton<mozilla::ipc::Faulty>::get()->FuzzUInt32(&value);
-#endif
-    return WriteBytes(&value, sizeof(value));
-  }
-  bool WriteInt64(int64_t value) {
-#ifdef FUZZING
-    Singleton<mozilla::ipc::Faulty>::get()->FuzzInt64(&value);
-#endif
-    return WriteBytes(&value, sizeof(value));
-  }
-  bool WriteUInt64(uint64_t value) {
-#ifdef FUZZING
-    Singleton<mozilla::ipc::Faulty>::get()->FuzzUInt64(&value);
-#endif
-    return WriteBytes(&value, sizeof(value));
-  }
-  bool WriteDouble(double value) {
-#ifdef FUZZING
-    Singleton<mozilla::ipc::Faulty>::get()->FuzzDouble(&value);
-#endif
-    return WriteBytes(&value, sizeof(value));
-  }
-  bool WriteIntPtr(intptr_t value) {
-    // Always written as a 64-bit value since the size for this type can
-    // differ between architectures.
-    return WriteInt64(int64_t(value));
-  }
-  bool WriteUnsignedChar(unsigned char value) {
-#ifdef FUZZING
-    Singleton<mozilla::ipc::Faulty>::get()->FuzzUChar(&value);
-#endif
-    return WriteBytes(&value, sizeof(value));
-  }
+  bool WriteBool(bool value);
+  bool WriteInt16(int16_t value);
+  bool WriteUInt16(uint16_t value);
+  bool WriteInt(int value);
+  bool WriteLong(long value);
+  bool WriteULong(unsigned long value);
+  bool WriteSize(size_t value);
+  bool WriteInt32(int32_t value);
+  bool WriteUInt32(uint32_t value);
+  bool WriteInt64(int64_t value);
+  bool WriteUInt64(uint64_t value);
+  bool WriteDouble(double value);
+  bool WriteIntPtr(intptr_t value);
+  bool WriteUnsignedChar(unsigned char value);
   bool WriteString(const std::string& value);
   bool WriteWString(const std::wstring& value);
   bool WriteData(const char* data, uint32_t length);
   bool WriteBytes(const void* data, uint32_t data_len,
                   uint32_t alignment = sizeof(memberAlignmentType));
+  // Takes ownership of data
+  bool WriteBytesZeroCopy(void* data, uint32_t data_len, uint32_t capacity);
 
   bool WriteSentinel(uint32_t sentinel)
 #ifdef MOZ_PICKLE_SENTINEL_CHECKING
-    ;
+      ;
 #else
   {
     return true;
@@ -283,7 +228,8 @@ class Pickle {
 
   // Round 'bytes' up to the next multiple of 'alignment'.  'alignment' must be
   // a power of 2.
-  template<uint32_t alignment> struct ConstantAligner {
+  template <uint32_t alignment>
+  struct ConstantAligner {
     static uint32_t align(int bytes) {
       static_assert((alignment & (alignment - 1)) == 0,
                     "alignment must be a power of two");
@@ -312,8 +258,7 @@ class Pickle {
   // Figure out how big the message starting at range_start is. Returns 0 if
   // there's no enough data to determine (i.e., if [range_start, range_end) does
   // not contain enough of the message header to know the size).
-  static uint32_t MessageSize(uint32_t header_size,
-                              const char* range_start,
+  static uint32_t MessageSize(uint32_t header_size, const char* range_start,
                               const char* range_end);
 
   // Segments capacities are aligned to 8 bytes to ensure that all reads/writes

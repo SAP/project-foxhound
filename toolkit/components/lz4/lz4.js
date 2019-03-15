@@ -7,14 +7,13 @@
 var SharedAll;
 var Primitives;
 if (typeof Components != "undefined") {
-  let Cu = Components.utils;
   SharedAll = {};
-  Cu.import("resource://gre/modules/osfile/osfile_shared_allthreads.jsm", SharedAll);
-  Cu.import("resource://gre/modules/lz4_internal.js");
-  Cu.import("resource://gre/modules/ctypes.jsm");
+  ChromeUtils.import("resource://gre/modules/osfile/osfile_shared_allthreads.jsm", SharedAll);
+  ChromeUtils.import("resource://gre/modules/lz4_internal.js");
+  ChromeUtils.import("resource://gre/modules/ctypes.jsm");
 
   this.EXPORTED_SYMBOLS = [
-    "Lz4"
+    "Lz4",
   ];
   this.exports = {};
 } else if (typeof module != "undefined" && typeof require != "undefined") {
@@ -25,7 +24,7 @@ if (typeof Components != "undefined") {
   throw new Error("Please load this module with Component.utils.import or with require()");
 }
 
-const MAGIC_NUMBER = new Uint8Array([109, 111, 122, 76, 122, 52, 48, 0]); // "mozLz4a\0"
+const MAGIC_NUMBER = new Uint8Array([109, 111, 122, 76, 122, 52, 48, 0]); // "mozLz40\0"
 
 const BYTES_IN_SIZE_HEADER = ctypes.uint32_t.size;
 
@@ -149,6 +148,6 @@ exports.decompressFileContent = decompressFileContent;
 if (typeof Components != "undefined") {
   this.Lz4 = {
     compressFileContent,
-    decompressFileContent
+    decompressFileContent,
   };
 }

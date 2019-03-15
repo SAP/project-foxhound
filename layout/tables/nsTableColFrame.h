@@ -13,80 +13,66 @@
 #include "nsTableColGroupFrame.h"
 #include "mozilla/WritingModes.h"
 
-class nsTableColFrame : public nsSplittableFrame {
-public:
-  NS_DECL_FRAMEARENA_HELPERS
+class nsTableColFrame final : public nsSplittableFrame {
+ public:
+  NS_DECL_FRAMEARENA_HELPERS(nsTableColFrame)
 
-  enum {eWIDTH_SOURCE_NONE          =0,   // no cell has contributed to the width style
-        eWIDTH_SOURCE_CELL          =1,   // a cell specified a width
-        eWIDTH_SOURCE_CELL_WITH_SPAN=2    // a cell implicitly specified a width via colspan
+  enum {
+    eWIDTH_SOURCE_NONE = 0,  // no cell has contributed to the width style
+    eWIDTH_SOURCE_CELL = 1,  // a cell specified a width
+    eWIDTH_SOURCE_CELL_WITH_SPAN = 2  // a cell implicitly specified a width via
+                                      // colspan
   };
 
   nsTableColType GetColType() const;
   void SetColType(nsTableColType aType);
 
-  /** instantiate a new instance of nsTableRowFrame.
-    * @param aPresShell the pres shell for this frame
-    *
-    * @return           the frame that was created
-    */
+  /**
+   * instantiate a new instance of nsTableRowFrame.
+   *
+   * @param aPresShell the pres shell for this frame
+   *
+   * @return           the frame that was created
+   */
   friend nsTableColFrame* NS_NewTableColFrame(nsIPresShell* aPresShell,
-                                              nsStyleContext*  aContext);
+                                              ComputedStyle* aContext);
 
   // nsIFrame overrides
-  virtual void Init(nsIContent*       aContent,
-                    nsContainerFrame* aParent,
-                    nsIFrame*         aPrevInFlow) override
-  {
+  virtual void Init(nsIContent* aContent, nsContainerFrame* aParent,
+                    nsIFrame* aPrevInFlow) override {
     nsSplittableFrame::Init(aContent, aParent, aPrevInFlow);
     if (!aPrevInFlow) {
       mWritingMode = GetTableFrame()->GetWritingMode();
     }
   }
 
-  /** @see nsIFrame::DidSetStyleContext */
-  virtual void DidSetStyleContext(nsStyleContext* aOldStyleContext) override;
+  /** @see nsIFrame::DidSetComputedStyle */
+  virtual void DidSetComputedStyle(ComputedStyle* aOldComputedStyle) override;
 
-  virtual void Reflow(nsPresContext*           aPresContext,
-                      ReflowOutput&     aDesiredSize,
+  virtual void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
                       const ReflowInput& aReflowInput,
-                      nsReflowStatus&          aStatus) override;
+                      nsReflowStatus& aStatus) override;
 
-  /**
-   * Table columns never paint anything, nor receive events.
-   */
-  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                                const nsRect&           aDirtyRect,
-                                const nsDisplayListSet& aLists) override {}
-
-  /**
-   * Get the "type" of the frame
-   *
-   * @see nsGkAtoms::tableColFrame
-   */
-  virtual nsIAtom* GetType() const override;
+  virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
+                                const nsDisplayListSet& aLists) override;
 
 #ifdef DEBUG_FRAME_DUMP
   virtual nsresult GetFrameName(nsAString& aResult) const override;
 #endif
 
-  virtual nsSplittableType GetSplittableType() const override;
-
-  nsTableColGroupFrame* GetTableColGroupFrame() const
-  {
+  nsTableColGroupFrame* GetTableColGroupFrame() const {
     nsIFrame* parent = GetParent();
-    MOZ_ASSERT(parent && parent->GetType() == nsGkAtoms::tableColGroupFrame);
+    MOZ_ASSERT(parent && parent->IsTableColGroupFrame());
     return static_cast<nsTableColGroupFrame*>(parent);
   }
 
-  nsTableFrame* GetTableFrame() const
-  {
+  nsTableFrame* GetTableFrame() const {
     return GetTableColGroupFrame()->GetTableFrame();
   }
 
   int32_t GetColIndex() const;
 
-  void SetColIndex (int32_t aColIndex);
+  void SetColIndex(int32_t aColIndex);
 
   nsTableColFrame* GetNextCol() const;
 
@@ -96,8 +82,8 @@ public:
   /** convenience method, calls into cellmap */
   int32_t Count() const;
 
-  nscoord GetIStartBorderWidth() const { return mIStartBorderWidth; }
-  nscoord GetIEndBorderWidth() const { return mIEndBorderWidth; }
+  BCPixelSize GetIStartBorderWidth() const { return mIStartBorderWidth; }
+  BCPixelSize GetIEndBorderWidth() const { return mIEndBorderWidth; }
   void SetIStartBorderWidth(BCPixelSize aWidth) { mIStartBorderWidth = aWidth; }
   void SetIEndBorderWidth(BCPixelSize aWidth) { mIEndBorderWidth = aWidth; }
 
@@ -136,9 +122,7 @@ public:
    * Restore the default value of the preferred percentage width (the
    * only intrinsic width used by FixedTableLayoutStrategy.
    */
-  void ResetPrefPercent() {
-    mPrefPercent = 0.0f;
-  }
+  void ResetPrefPercent() { mPrefPercent = 0.0f; }
 
   /**
    * Restore the default values of the temporary buffer for
@@ -179,13 +163,11 @@ public:
       mHasSpecifiedCoord = true;
     }
     if (!aHasSpecifiedCoord && mHasSpecifiedCoord) {
-      aPrefCoord = aMinCoord; // NOTE: modifying argument
+      aPrefCoord = aMinCoord;  // NOTE: modifying argument
     }
 
-    if (aMinCoord > mMinCoord)
-      mMinCoord = aMinCoord;
-    if (aPrefCoord > mPrefCoord)
-      mPrefCoord = aPrefCoord;
+    if (aMinCoord > mMinCoord) mMinCoord = aMinCoord;
+    if (aPrefCoord > mPrefCoord) mPrefCoord = aPrefCoord;
 
     NS_ASSERTION(mMinCoord <= mPrefCoord, "min larger than pref");
   }
@@ -196,8 +178,7 @@ public:
    * column-spanning cell.
    */
   void AddPrefPercent(float aPrefPercent) {
-    if (aPrefPercent > mPrefPercent)
-      mPrefPercent = aPrefPercent;
+    if (aPrefPercent > mPrefPercent) mPrefPercent = aPrefPercent;
   }
 
   /**
@@ -232,13 +213,11 @@ public:
                  "intrinsic widths out of order");
 
     if (!aSpanHasSpecifiedCoord && mHasSpecifiedCoord) {
-      aSpanPrefCoord = aSpanMinCoord; // NOTE: modifying argument
+      aSpanPrefCoord = aSpanMinCoord;  // NOTE: modifying argument
     }
 
-    if (aSpanMinCoord > mSpanMinCoord)
-      mSpanMinCoord = aSpanMinCoord;
-    if (aSpanPrefCoord > mSpanPrefCoord)
-      mSpanPrefCoord = aSpanPrefCoord;
+    if (aSpanMinCoord > mSpanMinCoord) mSpanMinCoord = aSpanMinCoord;
+    if (aSpanPrefCoord > mSpanPrefCoord) mSpanPrefCoord = aSpanPrefCoord;
 
     NS_ASSERTION(mSpanMinCoord <= mSpanPrefCoord, "min larger than pref");
   }
@@ -264,44 +243,46 @@ public:
   // Used to adjust a column's pref percent so that the table's total
   // never exceeeds 100% (by only allowing percentages to be used,
   // starting at the first column, until they reach 100%).
-  void AdjustPrefPercent(float *aTableTotalPercent) {
+  void AdjustPrefPercent(float* aTableTotalPercent) {
     float allowed = 1.0f - *aTableTotalPercent;
-    if (mPrefPercent > allowed)
-      mPrefPercent = allowed;
+    if (mPrefPercent > allowed) mPrefPercent = allowed;
     *aTableTotalPercent += mPrefPercent;
   }
 
   // The final width of the column.
   void ResetFinalISize() {
-    mFinalISize = nscoord_MIN; // so we detect that it changed
+    mFinalISize = nscoord_MIN;  // so we detect that it changed
   }
-  void SetFinalISize(nscoord aFinalISize) {
-    mFinalISize = aFinalISize;
-  }
-  nscoord GetFinalISize() {
-    return mFinalISize;
-  }
+  void SetFinalISize(nscoord aFinalISize) { mFinalISize = aFinalISize; }
+  nscoord GetFinalISize() { return mFinalISize; }
 
-  virtual bool IsFrameOfType(uint32_t aFlags) const override
-  {
+  virtual bool IsFrameOfType(uint32_t aFlags) const override {
+    if (aFlags & eSupportsContainLayoutAndPaint) {
+      return false;
+    }
+
     return nsSplittableFrame::IsFrameOfType(aFlags & ~(nsIFrame::eTablePart));
   }
 
-  virtual void InvalidateFrame(uint32_t aDisplayItemKey = 0) override;
-  virtual void InvalidateFrameWithRect(const nsRect& aRect, uint32_t aDisplayItemKey = 0) override;
-  virtual void InvalidateFrameForRemoval() override { InvalidateFrameSubtree(); }
+  virtual void InvalidateFrame(uint32_t aDisplayItemKey = 0,
+                               bool aRebuildDisplayItems = true) override;
+  virtual void InvalidateFrameWithRect(
+      const nsRect& aRect, uint32_t aDisplayItemKey = 0,
+      bool aRebuildDisplayItems = true) override;
+  virtual void InvalidateFrameForRemoval() override {
+    InvalidateFrameSubtree();
+  }
 
-protected:
-
-  explicit nsTableColFrame(nsStyleContext* aContext);
+ protected:
+  explicit nsTableColFrame(ComputedStyle* aStyle);
   ~nsTableColFrame();
 
   nscoord mMinCoord;
   nscoord mPrefCoord;
-  nscoord mSpanMinCoord; // XXX...
-  nscoord mSpanPrefCoord; // XXX...
+  nscoord mSpanMinCoord;   // XXX...
+  nscoord mSpanPrefCoord;  // XXX...
   float mPrefPercent;
-  float mSpanPrefPercent; // XXX...
+  float mSpanPrefPercent;  // XXX...
   // ...XXX the four members marked above could be allocated as part of
   // a separate array allocated only during
   // BasicTableLayoutStrategy::ComputeColumnIntrinsicISizes (and only
@@ -323,29 +304,19 @@ protected:
   bool mHasSpecifiedCoord;
 };
 
-inline int32_t nsTableColFrame::GetColIndex() const
-{
-  return mColIndex;
-}
+inline int32_t nsTableColFrame::GetColIndex() const { return mColIndex; }
 
-inline void nsTableColFrame::SetColIndex (int32_t aColIndex)
-{
+inline void nsTableColFrame::SetColIndex(int32_t aColIndex) {
   mColIndex = aColIndex;
 }
 
-inline nscoord
-nsTableColFrame::GetContinuousBCBorderWidth(mozilla::WritingMode aWM,
-                                            mozilla::LogicalMargin& aBorder)
-{
-  int32_t aPixelsToTwips = nsPresContext::AppUnitsPerCSSPixel();
-  aBorder.BStart(aWM) = BC_BORDER_END_HALF_COORD(aPixelsToTwips,
-                                                 mBStartContBorderWidth);
-  aBorder.IEnd(aWM) = BC_BORDER_START_HALF_COORD(aPixelsToTwips,
-                                                 mIEndContBorderWidth);
-  aBorder.BEnd(aWM) = BC_BORDER_START_HALF_COORD(aPixelsToTwips,
-                                                 mBEndContBorderWidth);
-  return BC_BORDER_END_HALF_COORD(aPixelsToTwips, mIEndContBorderWidth);
+inline nscoord nsTableColFrame::GetContinuousBCBorderWidth(
+    mozilla::WritingMode aWM, mozilla::LogicalMargin& aBorder) {
+  int32_t d2a = PresContext()->AppUnitsPerDevPixel();
+  aBorder.BStart(aWM) = BC_BORDER_END_HALF_COORD(d2a, mBStartContBorderWidth);
+  aBorder.IEnd(aWM) = BC_BORDER_START_HALF_COORD(d2a, mIEndContBorderWidth);
+  aBorder.BEnd(aWM) = BC_BORDER_START_HALF_COORD(d2a, mBEndContBorderWidth);
+  return BC_BORDER_END_HALF_COORD(d2a, mIEndContBorderWidth);
 }
 
 #endif
-

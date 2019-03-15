@@ -3,35 +3,34 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+include('/media/webrtc/webrtc.mozbuild')
 
 if CONFIG['MOZ_WEBRTC']:
     EXPORTS += [
         'CamerasChild.h',
         'CamerasParent.h',
-        'LoadManager.h',
-        'LoadManagerFactory.h',
-        'LoadMonitor.h',
         'VideoEngine.h',
         'VideoFrameUtils.h'
     ]
     UNIFIED_SOURCES += [
         'CamerasChild.cpp',
         'CamerasParent.cpp',
-        'LoadManager.cpp',
-        'LoadManagerFactory.cpp',
-        'LoadMonitor.cpp',
         'ShmemPool.cpp',
         'VideoEngine.cpp',
         'VideoFrameUtils.cpp'
     ]
     LOCAL_INCLUDES += [
+        '/media/libyuv/libyuv/include',
         '/media/webrtc/signaling',
         '/media/webrtc/trunk',
+        '/media/webrtc/trunk/webrtc',
     ]
-if CONFIG['OS_TARGET'] == 'WINNT':
-    DEFINES['WEBRTC_WIN'] = True
-else:
-    DEFINES['WEBRTC_POSIX'] = True
+
+    if CONFIG['OS_TARGET'] != 'Android':
+        UNIFIED_SOURCES += [
+            'video_engine/desktop_capture_impl.cc',
+            'video_engine/platform_uithread.cc',
+        ]
 
 if CONFIG['OS_TARGET'] == 'Android':
     DEFINES['WEBRTC_ANDROID'] = True
@@ -49,17 +48,7 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
   UNIFIED_SOURCES += ['OSXRunLoopSingleton.cpp']
   EXPORTS += ['OSXRunLoopSingleton.h']
 
-if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gonk':
-    if CONFIG['ANDROID_VERSION'] >= '17':
-        LOCAL_INCLUDES += [
-            '%' + '%s/frameworks/wilhelm/include' % CONFIG['ANDROID_SOURCE'],
-        ]
-    else:
-        LOCAL_INCLUDES += [
-            '%' + '%s/system/media/wilhelm/include' % CONFIG['ANDROID_SOURCE'],
-        ]
-
-if CONFIG['_MSC_VER']:
+if CONFIG['CC_TYPE'] in ('msvc', 'clang-cl'):
     DEFINES['__PRETTY_FUNCTION__'] = '__FUNCSIG__'
 
     # This is intended as a temporary workaround to enable building with VS2015.
@@ -107,5 +96,5 @@ include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

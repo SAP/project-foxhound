@@ -18,9 +18,10 @@ from mozrunner.utils import get_stack_fixer_function
 
 log = mozlog.unstructured.getLogger('gtest')
 
+
 class GTests(object):
     # Time (seconds) to wait for test process to complete
-    TEST_PROC_TIMEOUT = 1800
+    TEST_PROC_TIMEOUT = 1200
     # Time (seconds) in which process will be killed if it produces no output.
     TEST_PROC_NO_OUTPUT_TIMEOUT = 300
 
@@ -54,20 +55,26 @@ class GTests(object):
         if utility_path:
             stack_fixer = get_stack_fixer_function(utility_path, symbols_path)
             if stack_fixer:
-                process_output = lambda line: stream_output(stack_fixer(line))
+                def f(line): return stream_output(stack_fixer(line))
+                process_output = f
 
-
-        proc = mozprocess.ProcessHandler([prog, "-unittest"],
+        proc = mozprocess.ProcessHandler([prog, "-unittest",
+                                         "--gtest_death_test_style=threadsafe"],
                                          cwd=cwd,
                                          env=env,
                                          processOutputLine=process_output)
-        #TODO: After bug 811320 is fixed, don't let .run() kill the process,
+        # TODO: After bug 811320 is fixed, don't let .run() kill the process,
         # instead use a timeout in .wait() and then kill to get a stack.
         proc.run(timeout=GTests.TEST_PROC_TIMEOUT,
                  outputTimeout=GTests.TEST_PROC_NO_OUTPUT_TIMEOUT)
         proc.wait()
         if proc.timedOut:
-            log.testFail("gtest | timed out after %d seconds", GTests.TEST_PROC_TIMEOUT)
+            if proc.outputTimedOut:
+                log.testFail("gtest | timed out after %d seconds without output",
+                             GTests.TEST_PROC_NO_OUTPUT_TIMEOUT)
+            else:
+                log.testFail("gtest | timed out after %d seconds",
+                             GTests.TEST_PROC_TIMEOUT)
             return False
         if mozcrash.check_for_crashes(cwd, symbols_path, test_name="gtest"):
             # mozcrash will output the log failure line for us.
@@ -77,11 +84,10 @@ class GTests(object):
             log.testFail("gtest | test failed with return code %d", proc.proc.returncode)
         return result
 
-    def build_core_environment(self, env = {}):
+    def build_core_environment(self, env={}):
         """
         Add environment variables likely to be used across all platforms, including remote systems.
         """
-        env["MOZILLA_FIVE_HOME"] = self.xre_path
         env["MOZ_XRE_DIR"] = self.xre_path
         env["MOZ_GMP_PATH"] = os.pathsep.join(
             os.path.join(self.xre_path, p, "1.0")
@@ -95,26 +101,30 @@ class GTests(object):
         env["MOZ_TBPL_PARSER"] = "1"
 
         if not mozinfo.has_sandbox:
-          # Bug 1082193 - This is horrible. Our linux build boxes run CentOS 6,
-          # which is too old to support sandboxing. Disable sandbox for gtests
-          # on machines which don't support sandboxing until they can be
-          # upgraded, or gtests are run on test machines instead.
-          env["MOZ_DISABLE_GMP_SANDBOX"] = "1"
+            # Bug 1082193 - This is horrible. Our linux build boxes run CentOS 6,
+            # which is too old to support sandboxing. Disable sandbox for gtests
+            # on machines which don't support sandboxing until they can be
+            # upgraded, or gtests are run on test machines instead.
+            env["MOZ_DISABLE_GMP_SANDBOX"] = "1"
 
         return env
 
     def build_environment(self):
         """
-        Create and return a dictionary of all the appropriate env variables and values.
-        On a remote system, we overload this to set different values and are missing things like os.environ and PATH.
+        Create and return a dictionary of all the appropriate env variables
+        and values. On a remote system, we overload this to set different
+        values and are missing things like os.environ and PATH.
         """
         if not os.path.isdir(self.xre_path):
             raise Exception("xre_path does not exist: %s", self.xre_path)
         env = dict(os.environ)
         env = self.build_core_environment(env)
+        env["PERFHERDER_ALERTING_ENABLED"] = "1"
         pathvar = ""
         if mozinfo.os == "linux":
             pathvar = "LD_LIBRARY_PATH"
+            # disable alerts for unstable tests (Bug 1369807)
+            del env["PERFHERDER_ALERTING_ENABLED"]
         elif mozinfo.os == "mac":
             pathvar = "DYLD_LIBRARY_PATH"
         elif mozinfo.os == "win":
@@ -128,7 +138,9 @@ class GTests(object):
         # ASan specific environment stuff
         if mozinfo.info["asan"]:
             # Symbolizer support
-            llvmsym = os.path.join(self.xre_path, "llvm-symbolizer")
+            llvmsym = os.path.join(
+                self.xre_path,
+                "llvm-symbolizer" + mozinfo.info["bin_suffix"].encode('ascii'))
             if os.path.isfile(llvmsym):
                 env["ASAN_SYMBOLIZER_PATH"] = llvmsym
                 log.info("gtest | ASan using symbolizer at %s", llvmsym)
@@ -138,25 +150,31 @@ class GTests(object):
 
         return env
 
+
 class gtestOptions(OptionParser):
     def __init__(self):
         OptionParser.__init__(self)
         self.add_option("--cwd",
                         dest="cwd",
                         default=os.getcwd(),
-                        help="absolute path to directory from which to run the binary")
+                        help="absolute path to directory from which "
+                             "to run the binary")
         self.add_option("--xre-path",
                         dest="xre_path",
                         default=None,
-                        help="absolute path to directory containing XRE (probably xulrunner)")
+                        help="absolute path to directory containing XRE "
+                             "(probably xulrunner)")
         self.add_option("--symbols-path",
                         dest="symbols_path",
                         default=None,
-                        help="absolute path to directory containing breakpad symbols, or the URL of a zip file containing symbols")
+                        help="absolute path to directory containing breakpad "
+                             "symbols, or the URL of a zip file containing "
+                             "symbols")
         self.add_option("--utility-path",
                         dest="utility_path",
                         default=None,
                         help="path to a directory containing utility program binaries")
+
 
 def update_mozinfo():
     """walk up directories to find mozinfo.json update the info"""
@@ -168,6 +186,7 @@ def update_mozinfo():
         dirs.add(path)
         path = os.path.split(path)[0]
     mozinfo.find_and_update_from_json(*dirs)
+
 
 def main():
     parser = gtestOptions()
@@ -195,6 +214,6 @@ def main():
         result = False
     sys.exit(0 if result else 1)
 
+
 if __name__ == '__main__':
     main()
-

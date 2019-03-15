@@ -23,8 +23,6 @@
 
 const gSSService = Cc["@mozilla.org/ssservice;1"]
                      .getService(Ci.nsISiteSecurityService);
-const gIOService = Cc["@mozilla.org/network/io-service;1"]
-                    .getService(Ci.nsIIOService);
 
 const kPinningDomain = "include-subdomains.pinning-dynamic.example.com";
 const khpkpPinninEnablePref = "security.cert_pinning.process_headers_from_non_builtin_roots";
@@ -41,7 +39,7 @@ function test() {
   registerCleanupFunction(function() {
     Services.prefs.clearUserPref(kpkpEnforcementPref);
     Services.prefs.clearUserPref(khpkpPinninEnablePref);
-    let uri = gIOService.newURI("https://" + kPinningDomain);
+    let uri = Services.io.newURI("https://" + kPinningDomain);
     gSSService.removeState(Ci.nsISiteSecurityService.HEADER_HPKP, uri, 0);
   });
   whenNewTabLoaded(window, loadPinningPage);
@@ -51,9 +49,7 @@ function test() {
 function loadPinningPage() {
 
   BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "https://" + kPinningDomain + kURLPath + "valid").then(function() {
-    gBrowser.selectedBrowser.addEventListener("load",
-                                               successfulPinningPageListener,
-                                               true);
+      BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser).then(() => successfulPinningPageListener.handleEvent());
   });
 }
 
@@ -61,17 +57,16 @@ function loadPinningPage() {
 // fail to validate
 var successfulPinningPageListener = {
   handleEvent() {
-    gBrowser.selectedBrowser.removeEventListener("load", this, true);
     BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "https://" + kBadPinningDomain).then(function() {
-      return promiseErrorPageLoaded(gBrowser.selectedBrowser);
+      return BrowserTestUtils.waitForErrorPage(gBrowser.selectedBrowser);
     }).then(errorPageLoaded);
-  }
+  },
 };
 
 // The browser should load about:neterror, when this happens, proceed
 // to load the pinning domain again, this time removing the pinning information
 function errorPageLoaded() {
-  ContentTask.spawn(gBrowser.selectedBrowser, null, function*() {
+  ContentTask.spawn(gBrowser.selectedBrowser, null, async function() {
     let textElement = content.document.getElementById("errorShortDescText");
     let text = textElement.innerHTML;
     ok(text.indexOf("MOZILLA_PKIX_ERROR_KEY_PINNING_FAILURE") > 0,
@@ -94,8 +89,7 @@ function pinningRemovalLoaded() {
 // Finally, we should successfully load
 // https://bad.include-subdomains.pinning-dynamic.example.com.
 function badPinningPageLoaded() {
-  BrowserTestUtils.removeTab(gBrowser.selectedTab).then(function() {
-    ok(true, "load complete");
-    finish();
-  });
+  BrowserTestUtils.removeTab(gBrowser.selectedTab);
+  ok(true, "load complete");
+  finish();
 }

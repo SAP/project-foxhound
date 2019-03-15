@@ -8,11 +8,11 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_ACM2_CALL_STATISTICS_H_
-#define WEBRTC_MODULES_AUDIO_CODING_ACM2_CALL_STATISTICS_H_
+#ifndef MODULES_AUDIO_CODING_ACM2_CALL_STATISTICS_H_
+#define MODULES_AUDIO_CODING_ACM2_CALL_STATISTICS_H_
 
-#include "webrtc/common_types.h"
-#include "webrtc/modules/include/module_common_types.h"
+#include "common_types.h"  // NOLINT(build/include)
+#include "modules/include/module_common_types.h"
 
 //
 // This class is for book keeping of calls to ACM. It is not useful to log API
@@ -37,8 +37,9 @@ class CallStatistics {
   ~CallStatistics() {}
 
   // Call this method to indicate that NetEq engaged in decoding. |speech_type|
-  // is the audio-type according to NetEq.
-  void DecodedByNetEq(AudioFrame::SpeechType speech_type);
+  // is the audio-type according to NetEq, and |muted| indicates if the decoded
+  // frame was produced in muted state.
+  void DecodedByNetEq(AudioFrame::SpeechType speech_type, bool muted);
 
   // Call this method to indicate that a decoding call resulted in generating
   // silence, i.e. call to NetEq is bypassed and the output audio is zero.
@@ -60,4 +61,4 @@ class CallStatistics {
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_AUDIO_CODING_ACM2_CALL_STATISTICS_H_
+#endif  // MODULES_AUDIO_CODING_ACM2_CALL_STATISTICS_H_

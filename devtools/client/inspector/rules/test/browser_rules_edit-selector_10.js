@@ -23,26 +23,26 @@ const TEST_URI = `
   </div>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
-  yield selectNode(".pickme", inspector);
-  yield testEditSelector(view);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, view} = await openRuleView();
+  await selectNode(".pickme", inspector);
+  await testEditSelector(view);
 });
 
-function* testEditSelector(view) {
+async function testEditSelector(view) {
   let ruleEditor = getRuleViewRuleEditor(view, 1);
-  let editor = yield focusEditableField(view, ruleEditor.selectorText);
+  const editor = await focusEditableField(view, ruleEditor.selectorText);
 
   editor.input.value = "#testid span";
-  let onRuleViewChanged = once(view, "ruleview-changed");
-  EventUtils.synthesizeKey("VK_RETURN", {});
-  yield onRuleViewChanged;
+  const onRuleViewChanged = once(view, "ruleview-changed");
+  EventUtils.synthesizeKey("KEY_Enter");
+  await onRuleViewChanged;
 
   // Escape the new property editor after editing the selector
-  let onBlur = once(view.styleDocument.activeElement, "blur");
-  EventUtils.synthesizeKey("VK_ESCAPE", {}, view.styleWindow);
-  yield onBlur;
+  const onBlur = once(view.styleDocument.activeElement, "blur");
+  EventUtils.synthesizeKey("KEY_Escape", {}, view.styleWindow);
+  await onBlur;
 
   // Get the new rule editor that replaced the original
   ruleEditor = getRuleViewRuleEditor(view, 1);

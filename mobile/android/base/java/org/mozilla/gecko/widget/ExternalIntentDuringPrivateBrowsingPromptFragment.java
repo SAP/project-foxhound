@@ -9,6 +9,7 @@ import org.mozilla.gecko.GeckoApplication;
 import org.mozilla.gecko.R;
 import org.mozilla.gecko.Tab;
 import org.mozilla.gecko.Tabs;
+import org.mozilla.gecko.util.StrictModeContext;
 
 import android.app.Dialog;
 import android.content.Context;
@@ -25,9 +26,9 @@ import android.util.Log;
 import java.util.List;
 
 /**
- * A DialogFragment to contain a dialog that appears when the user clicks an Intent:// URI during private browsing. The
- * dialog appears to notify the user that a clicked link will open in an external application, potentially leaking their
- * browsing history.
+ * A DialogFragment to contain a dialog that appears when the user clicks an Intent:// URI or
+ * launches a file during private browsing. The dialog appears to notify the user that a clicked
+ * link will open in an external application, potentially leaking their browsing history.
  */
 public class ExternalIntentDuringPrivateBrowsingPromptFragment extends DialogFragment {
     private static final String LOGTAG = ExternalIntentDuringPrivateBrowsingPromptFragment.class.getSimpleName();
@@ -36,6 +37,7 @@ public class ExternalIntentDuringPrivateBrowsingPromptFragment extends DialogFra
     private static final String KEY_APPLICATION_NAME = "matchingApplicationName";
     private static final String KEY_INTENT = "intent";
 
+    @SuppressWarnings("try")
     @Override
     public Dialog onCreateDialog(final Bundle savedInstanceState) {
         final Bundle args = getArguments();
@@ -50,7 +52,12 @@ public class ExternalIntentDuringPrivateBrowsingPromptFragment extends DialogFra
                 .setTitle(intent.getDataString())
                 .setPositiveButton(R.string.button_yes, new DialogInterface.OnClickListener() {
                     public void onClick(final DialogInterface dialog, final int id) {
-                        context.startActivity(intent);
+                        // Bug 1450449 - Downloaded files are already in a public directory and
+                        // aren't really exclusively owned by Firefox, so there's no real benefit
+                        // to using content:// URIs here.
+                        try (StrictModeContext unused = StrictModeContext.allowAllVmPolicies()) {
+                            context.startActivity(intent);
+                        }
                     }
                 })
                 .setNegativeButton(R.string.button_no, null /* we do nothing if the user rejects */ );

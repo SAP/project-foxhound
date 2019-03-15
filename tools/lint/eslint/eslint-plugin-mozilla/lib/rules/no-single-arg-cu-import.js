@@ -12,8 +12,6 @@
 // Rule Definition
 // -----------------------------------------------------------------------------
 
-var helpers = require("../helpers");
-
 module.exports = function(context) {
 
   // ---------------------------------------------------------------------------
@@ -25,7 +23,7 @@ module.exports = function(context) {
       if (node.callee.type === "MemberExpression") {
         let memexp = node.callee;
         if (memexp.object.type === "Identifier" &&
-            // Only Cu, not Components.utils; see bug 1230369.
+            // Only Cu, not ChromeUtils or Components.utils; see bug 1230369.
             memexp.object.name === "Cu" &&
             memexp.property.type === "Identifier" &&
             memexp.property.name === "import" &&
@@ -34,6 +32,6 @@ module.exports = function(context) {
                                "globals to all modules");
         }
       }
-    }
+    },
   };
 };

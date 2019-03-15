@@ -4,13 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsSVGElement.h"
 #include "DOMSVGNumberList.h"
+
+#include "SVGElement.h"
 #include "DOMSVGNumber.h"
 #include "nsError.h"
 #include "SVGAnimatedNumberList.h"
-#include "nsCOMPtr.h"
 #include "mozilla/dom/SVGNumberListBinding.h"
+#include "mozilla/RefPtr.h"
 #include <algorithm>
 
 // See the comment in this file's header.
@@ -18,11 +19,10 @@
 // local helper functions
 namespace {
 
-using mozilla::DOMSVGNumber;
+using mozilla::dom::DOMSVGNumber;
 
 void UpdateListIndicesFromIndex(FallibleTArray<DOMSVGNumber*>& aItemsArray,
-                                uint32_t aStartingIndex)
-{
+                                uint32_t aStartingIndex) {
   uint32_t length = aItemsArray.Length();
 
   for (uint32_t i = aStartingIndex; i < length; ++i) {
@@ -32,9 +32,10 @@ void UpdateListIndicesFromIndex(FallibleTArray<DOMSVGNumber*>& aItemsArray,
   }
 }
 
-} // namespace
+}  // namespace
 
 namespace mozilla {
+namespace dom {
 
 // We could use NS_IMPL_CYCLE_COLLECTION(, except that in Unlink() we need to
 // clear our DOMSVGAnimatedNumberList's weak ref to us to be safe. (The other
@@ -68,31 +69,27 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DOMSVGNumberList)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
-
-JSObject*
-DOMSVGNumberList::WrapObject(JSContext *cx, JS::Handle<JSObject*> aGivenProto)
-{
-  return mozilla::dom::SVGNumberListBinding::Wrap(cx, this, aGivenProto);
+JSObject* DOMSVGNumberList::WrapObject(JSContext* cx,
+                                       JS::Handle<JSObject*> aGivenProto) {
+  return mozilla::dom::SVGNumberList_Binding::Wrap(cx, this, aGivenProto);
 }
 
 //----------------------------------------------------------------------
 // Helper class: AutoChangeNumberListNotifier
 // Stack-based helper class to pair calls to WillChangeNumberList and
 // DidChangeNumberList.
-class MOZ_RAII AutoChangeNumberListNotifier
-{
-public:
-  explicit AutoChangeNumberListNotifier(DOMSVGNumberList* aNumberList MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-    : mNumberList(aNumberList)
-  {
+class MOZ_RAII AutoChangeNumberListNotifier {
+ public:
+  explicit AutoChangeNumberListNotifier(
+      DOMSVGNumberList* aNumberList MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+      : mNumberList(aNumberList) {
     MOZ_GUARD_OBJECT_NOTIFIER_INIT;
     MOZ_ASSERT(mNumberList, "Expecting non-null numberList");
     mEmptyOrOldValue =
-      mNumberList->Element()->WillChangeNumberList(mNumberList->AttrEnum());
+        mNumberList->Element()->WillChangeNumberList(mNumberList->AttrEnum());
   }
 
-  ~AutoChangeNumberListNotifier()
-  {
+  ~AutoChangeNumberListNotifier() {
     mNumberList->Element()->DidChangeNumberList(mNumberList->AttrEnum(),
                                                 mEmptyOrOldValue);
     if (mNumberList->IsAnimating()) {
@@ -100,15 +97,13 @@ public:
     }
   }
 
-private:
+ private:
   DOMSVGNumberList* const mNumberList;
-  nsAttrValue       mEmptyOrOldValue;
+  nsAttrValue mEmptyOrOldValue;
   MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
-void
-DOMSVGNumberList::InternalListLengthWillChange(uint32_t aNewLength)
-{
+void DOMSVGNumberList::InternalListLengthWillChange(uint32_t aNewLength) {
   uint32_t oldLength = mItems.Length();
 
   if (aNewLength > DOMSVGNumber::MaxListIndex()) {
@@ -144,16 +139,13 @@ DOMSVGNumberList::InternalListLengthWillChange(uint32_t aNewLength)
   }
 }
 
-SVGNumberList&
-DOMSVGNumberList::InternalList() const
-{
-  SVGAnimatedNumberList *alist = Element()->GetAnimatedNumberList(AttrEnum());
-  return IsAnimValList() && alist->mAnimVal ? *alist->mAnimVal : alist->mBaseVal;
+SVGNumberList& DOMSVGNumberList::InternalList() const {
+  SVGAnimatedNumberList* alist = Element()->GetAnimatedNumberList(AttrEnum());
+  return IsAnimValList() && alist->mAnimVal ? *alist->mAnimVal
+                                            : alist->mBaseVal;
 }
 
-void
-DOMSVGNumberList::Clear(ErrorResult& error)
-{
+void DOMSVGNumberList::Clear(ErrorResult& error) {
   if (IsAnimValList()) {
     error.Throw(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR);
     return;
@@ -171,10 +163,8 @@ DOMSVGNumberList::Clear(ErrorResult& error)
   }
 }
 
-already_AddRefed<DOMSVGNumber>
-DOMSVGNumberList::Initialize(DOMSVGNumber& aItem,
-                             ErrorResult& error)
-{
+already_AddRefed<DOMSVGNumber> DOMSVGNumberList::Initialize(
+    DOMSVGNumber& aItem, ErrorResult& error) {
   if (IsAnimValList()) {
     error.Throw(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR);
     return nullptr;
@@ -194,9 +184,8 @@ DOMSVGNumberList::Initialize(DOMSVGNumber& aItem,
   return InsertItemBefore(*domItem, 0, error);
 }
 
-already_AddRefed<DOMSVGNumber>
-DOMSVGNumberList::GetItem(uint32_t index, ErrorResult& error)
-{
+already_AddRefed<DOMSVGNumber> DOMSVGNumberList::GetItem(uint32_t index,
+                                                         ErrorResult& error) {
   bool found;
   RefPtr<DOMSVGNumber> item = IndexedGetter(index, found, error);
   if (!found) {
@@ -205,9 +194,8 @@ DOMSVGNumberList::GetItem(uint32_t index, ErrorResult& error)
   return item.forget();
 }
 
-already_AddRefed<DOMSVGNumber>
-DOMSVGNumberList::IndexedGetter(uint32_t index, bool& found, ErrorResult& error)
-{
+already_AddRefed<DOMSVGNumber> DOMSVGNumberList::IndexedGetter(
+    uint32_t index, bool& found, ErrorResult& error) {
   if (IsAnimValList()) {
     Element()->FlushAnimations();
   }
@@ -218,11 +206,8 @@ DOMSVGNumberList::IndexedGetter(uint32_t index, bool& found, ErrorResult& error)
   return nullptr;
 }
 
-already_AddRefed<DOMSVGNumber>
-DOMSVGNumberList::InsertItemBefore(DOMSVGNumber& aItem,
-                                   uint32_t index,
-                                   ErrorResult& error)
-{
+already_AddRefed<DOMSVGNumber> DOMSVGNumberList::InsertItemBefore(
+    DOMSVGNumber& aItem, uint32_t index, ErrorResult& error) {
   if (IsAnimValList()) {
     error.Throw(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR);
     return nullptr;
@@ -245,7 +230,7 @@ DOMSVGNumberList::InsertItemBefore(DOMSVGNumber& aItem,
   }
   if (AnimListMirrorsBaseList()) {
     if (!mAList->mAnimVal->mItems.SetCapacity(
-          mAList->mAnimVal->mItems.Length() + 1, fallible)) {
+            mAList->mAnimVal->mItems.Length() + 1, fallible)) {
       error.Throw(NS_ERROR_OUT_OF_MEMORY);
       return nullptr;
     }
@@ -268,11 +253,8 @@ DOMSVGNumberList::InsertItemBefore(DOMSVGNumber& aItem,
   return domItem.forget();
 }
 
-already_AddRefed<DOMSVGNumber>
-DOMSVGNumberList::ReplaceItem(DOMSVGNumber& aItem,
-                              uint32_t index,
-                              ErrorResult& error)
-{
+already_AddRefed<DOMSVGNumber> DOMSVGNumberList::ReplaceItem(
+    DOMSVGNumber& aItem, uint32_t index, ErrorResult& error) {
   if (IsAnimValList()) {
     error.Throw(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR);
     return nullptr;
@@ -303,10 +285,8 @@ DOMSVGNumberList::ReplaceItem(DOMSVGNumber& aItem,
   return domItem.forget();
 }
 
-already_AddRefed<DOMSVGNumber>
-DOMSVGNumberList::RemoveItem(uint32_t index,
-                             ErrorResult& error)
-{
+already_AddRefed<DOMSVGNumber> DOMSVGNumberList::RemoveItem(
+    uint32_t index, ErrorResult& error) {
   if (IsAnimValList()) {
     error.Throw(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR);
     return nullptr;
@@ -338,21 +318,18 @@ DOMSVGNumberList::RemoveItem(uint32_t index,
   return result.forget();
 }
 
-already_AddRefed<DOMSVGNumber>
-DOMSVGNumberList::GetItemAt(uint32_t aIndex)
-{
+already_AddRefed<DOMSVGNumber> DOMSVGNumberList::GetItemAt(uint32_t aIndex) {
   MOZ_ASSERT(aIndex < mItems.Length());
 
   if (!mItems[aIndex]) {
-    mItems[aIndex] = new DOMSVGNumber(this, AttrEnum(), aIndex, IsAnimValList());
+    mItems[aIndex] =
+        new DOMSVGNumber(this, AttrEnum(), aIndex, IsAnimValList());
   }
   RefPtr<DOMSVGNumber> result = mItems[aIndex];
   return result.forget();
 }
 
-void
-DOMSVGNumberList::MaybeInsertNullInAnimValListAt(uint32_t aIndex)
-{
+void DOMSVGNumberList::MaybeInsertNullInAnimValListAt(uint32_t aIndex) {
   MOZ_ASSERT(!IsAnimValList(), "call from baseVal to animVal");
 
   if (!AnimListMirrorsBaseList()) {
@@ -369,9 +346,7 @@ DOMSVGNumberList::MaybeInsertNullInAnimValListAt(uint32_t aIndex)
   UpdateListIndicesFromIndex(animVal->mItems, aIndex + 1);
 }
 
-void
-DOMSVGNumberList::MaybeRemoveItemFromAnimValListAt(uint32_t aIndex)
-{
+void DOMSVGNumberList::MaybeRemoveItemFromAnimValListAt(uint32_t aIndex) {
   MOZ_ASSERT(!IsAnimValList(), "call from baseVal to animVal");
 
   if (!AnimListMirrorsBaseList()) {
@@ -394,4 +369,5 @@ DOMSVGNumberList::MaybeRemoveItemFromAnimValListAt(uint32_t aIndex)
   UpdateListIndicesFromIndex(animVal->mItems, aIndex);
 }
 
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

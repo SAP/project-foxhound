@@ -5,44 +5,40 @@
 #ifndef BASE_SEQUENCE_CHECKER_IMPL_H_
 #define BASE_SEQUENCE_CHECKER_IMPL_H_
 
+#include <memory>
+
 #include "base/base_export.h"
+#include "base/compiler_specific.h"
 #include "base/macros.h"
 #include "base/synchronization/lock.h"
-#include "base/threading/sequenced_worker_pool.h"
-#include "base/threading/thread_checker_impl.h"
 
 namespace base {
 
-// SequenceCheckerImpl is used to help verify that some methods of a
-// class are called in sequence -- that is, called from the same
-// SequencedTaskRunner. It is a generalization of ThreadChecker; in
-// particular, it behaves exactly like ThreadChecker if constructed
-// on a thread that is not part of a SequencedWorkerPool.
+// Real implementation of SequenceChecker for use in debug mode or for temporary
+// use in release mode (e.g. to CHECK on a threading issue seen only in the
+// wild).
+//
+// Note: You should almost always use the SequenceChecker class to get the right
+// version for your build configuration.
 class BASE_EXPORT SequenceCheckerImpl {
  public:
   SequenceCheckerImpl();
   ~SequenceCheckerImpl();
 
-  // Returns whether the we are being called on the same sequence token
-  // as previous calls. If there is no associated sequence, then returns
-  // whether we are being called on the underlying ThreadChecker's thread.
-  bool CalledOnValidSequencedThread() const;
+  // Returns true if called in sequence with previous calls to this method and
+  // the constructor.
+  bool CalledOnValidSequence() const WARN_UNUSED_RESULT;
 
-  // Unbinds the checker from the currently associated sequence. The
-  // checker will be re-bound on the next call to CalledOnValidSequence().
+  // Unbinds the checker from the currently associated sequence. The checker
+  // will be re-bound on the next call to CalledOnValidSequence().
   void DetachFromSequence();
 
  private:
-  void EnsureSequenceTokenAssigned() const;
+  class Core;
 
   // Guards all variables below.
   mutable Lock lock_;
-
-  // Used if |sequence_token_| is not valid.
-  ThreadCheckerImpl thread_checker_;
-  mutable bool sequence_token_assigned_;
-
-  mutable SequencedWorkerPool::SequenceToken sequence_token_;
+  mutable std::unique_ptr<Core> core_;
 
   DISALLOW_COPY_AND_ASSIGN(SequenceCheckerImpl);
 };

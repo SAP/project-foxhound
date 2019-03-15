@@ -34,7 +34,7 @@ function* testSteps()
       if (++addedCount == 100) {
         executeSoon(function() { testGenerator.next(); });
       }
-    }
+    };
   }
   yield undefined;
 
@@ -69,7 +69,7 @@ function* testSteps()
     trans.objectStore(objectStoreName);
     ok(false, "should have thrown");
   }
-  catch(ex) {
+  catch (ex) {
     ok(ex instanceof DOMException, "Got a DOMException");
     is(ex.name, "NotFoundError", "expect a NotFoundError");
     is(ex.code, DOMException.NOT_FOUND_ERR, "expect a NOT_FOUND_ERR");
@@ -86,7 +86,7 @@ function* testSteps()
   request.onsuccess = function(event) {
     is(event.target.result, null, "ObjectStore shouldn't have any items");
     testGenerator.next(event);
-  }
+  };
   event = yield undefined;
 
   db.deleteObjectStore(objectStore.name);
@@ -113,7 +113,7 @@ function* testSteps()
 
   objectStore = db.createObjectStore(objectStoreName, { keyPath: "foo" });
 
-  request = objectStore.add({foo:"bar"});
+  request = objectStore.add({foo: "bar"});
   request.onerror = errorHandler;
   request.onsuccess = grabEventAndContinueHandler;
 

@@ -3,6 +3,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 import base64
 import cgi
 from datetime import datetime
@@ -11,6 +13,7 @@ import os
 from .. import base
 
 from collections import defaultdict
+import six
 
 html = None
 raw = None
@@ -158,7 +161,7 @@ class HTMLFormatter(base.BaseFormatter):
                     # Encode base64 to avoid that some browsers (such as Firefox, Opera)
                     # treats '#' as the start of another link if it is contained in the data URL.
                     # Use 'charset=utf-8' to show special characters like Chinese.
-                    utf_encoded = unicode(content).encode('utf-8', 'xmlcharrefreplace')
+                    utf_encoded = six.text_type(content).encode('utf-8', 'xmlcharrefreplace')
                     href = 'data:text/html;charset=utf-8;base64,%s' % base64.b64encode(utf_encoded)
 
                 links_html.append(html.a(
@@ -208,7 +211,7 @@ class HTMLFormatter(base.BaseFormatter):
                         id='environment'),
 
                     html.h2('Summary'),
-                    html.p('%i tests ran in %.1f seconds.' % (sum(self.test_count.itervalues()),
+                    html.p('%i tests ran in %.1f seconds.' % (sum(six.itervalues(self.test_count)),
                                                               (self.suite_times["end"] -
                                                                self.suite_times["start"]) / 1000.),
                            html.br(),

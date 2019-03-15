@@ -4,19 +4,18 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["CustomizeMode"];
+var EXPORTED_SYMBOLS = ["CustomizeMode"];
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Timer.jsm");
-
-this.CustomizeMode = {
+var CustomizeMode = {
 
   init(libDir) {},
 
   configurations: {
     notCustomizing: {
+      selectors: ["#navigator-toolbox"],
       applyConfig() {
         return new Promise((resolve) => {
           let browserWindow = Services.wm.getMostRecentWindow("navigator:browser");
@@ -38,6 +37,7 @@ this.CustomizeMode = {
     },
 
     customizing: {
+      selectors: ["#navigator-toolbox", "#customization-container"],
       applyConfig() {
         return new Promise((resolve) => {
           let browserWindow = Services.wm.getMostRecentWindow("navigator:browser");

@@ -4,8 +4,8 @@
 function read_stream(stream, count) {
   /* assume stream has non-ASCII data */
   var wrapper =
-      Components.classes["@mozilla.org/binaryinputstream;1"]
-                .createInstance(Components.interfaces.nsIBinaryInputStream);
+      Cc["@mozilla.org/binaryinputstream;1"]
+        .createInstance(Ci.nsIBinaryInputStream);
   wrapper.setInputStream(stream);
   /* JS methods can be called with a maximum of 65535 arguments, and input
      streams don't have to return all the data they make .available() when
@@ -53,6 +53,7 @@ function ChannelListener(closure, ctx, flags) {
   this._closurectx = ctx;
   this._flags = flags;
   this._isFromCache = false;
+  this._cacheEntryId = undefined;
 }
 ChannelListener.prototype = {
   _closure: null,
@@ -64,11 +65,11 @@ ChannelListener.prototype = {
   _lastEvent: 0,
 
   QueryInterface: function(iid) {
-    if (iid.equals(Components.interfaces.nsIStreamListener) ||
-        iid.equals(Components.interfaces.nsIRequestObserver) ||
-        iid.equals(Components.interfaces.nsISupports))
+    if (iid.equals(Ci.nsIStreamListener) ||
+        iid.equals(Ci.nsIRequestObserver) ||
+        iid.equals(Ci.nsISupports))
       return this;
-    throw Components.results.NS_ERROR_NO_INTERFACE;
+    throw Cr.NS_ERROR_NO_INTERFACE;
   },
 
   onStartRequest: function(request, context) {
@@ -79,10 +80,21 @@ ChannelListener.prototype = {
       this._lastEvent = Date.now();
 
       try {
-        this._isFromCache = request.QueryInterface(Ci.nsICachingChannel).isFromCache();
+        this._isFromCache = request.QueryInterface(Ci.nsICacheInfoChannel).isFromCache();
       } catch (e) {}
 
-      request.QueryInterface(Components.interfaces.nsIChannel);
+      var thrown = false;
+      try {
+        this._cacheEntryId = request.QueryInterface(Ci.nsICacheInfoChannel).getCacheEntryId();
+      } catch (e) {
+        thrown = true;
+      }
+      if (this._isFromCache && thrown)
+        do_throw("Should get a CacheEntryId");
+      else if (!this._isFromCache && !thrown)
+        do_throw("Shouldn't get a CacheEntryId");
+
+      request.QueryInterface(Ci.nsIChannel);
       try {
         this._contentLen = request.contentLength;
       }
@@ -166,12 +178,16 @@ ChannelListener.prototype = {
       if (!(this._flags & (CL_EXPECT_FAILURE | CL_EXPECT_LATE_FAILURE | CL_IGNORE_CL)) &&
           !(this._flags & CL_EXPECT_GZIP) &&
           this._contentLen != -1)
-          do_check_eq(this._buffer.length, this._contentLen)
+          Assert.equal(this._buffer.length, this._contentLen)
     } catch (ex) {
       do_throw("Error in onStopRequest: " + ex);
     }
     try {
-      this._closure(request, this._buffer, this._closurectx, this._isFromCache);
+      this._closure(request,
+                    this._buffer,
+                    this._closurectx,
+                    this._isFromCache,
+                    this._cacheEntryId);
       this._closurectx = null;
     } catch (ex) {
       do_throw("Error in closure function: " + ex);

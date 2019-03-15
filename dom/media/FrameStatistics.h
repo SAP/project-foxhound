@@ -11,8 +11,7 @@
 
 namespace mozilla {
 
-struct FrameStatisticsData
-{
+struct FrameStatisticsData {
   // Number of frames parsed and demuxed from media.
   // Access protected by mReentrantMonitor.
   uint64_t mParsedFrames = 0;
@@ -22,7 +21,8 @@ struct FrameStatisticsData
   uint64_t mDecodedFrames = 0;
 
   // Number of decoded frames which were actually sent down the rendering
-  // pipeline to be painted ("presented"). Access protected by mReentrantMonitor.
+  // pipeline to be painted ("presented"). Access protected by
+  // mReentrantMonitor.
   uint64_t mPresentedFrames = 0;
 
   // Number of frames that have been skipped because they have missed their
@@ -39,15 +39,14 @@ struct FrameStatisticsData
   uint64_t mInterKeyFrameMax_us = 0;
 
   FrameStatisticsData() = default;
-  FrameStatisticsData(uint64_t aParsed, uint64_t aDecoded, uint64_t aDropped)
-    : mParsedFrames(aParsed)
-    , mDecodedFrames(aDecoded)
-    , mDroppedFrames(aDropped)
-  {}
+  FrameStatisticsData(uint64_t aParsed, uint64_t aDecoded, uint64_t aDropped,
+                      uint64_t aPresented)
+      : mParsedFrames(aParsed),
+        mDecodedFrames(aDecoded),
+        mPresentedFrames(aPresented),
+        mDroppedFrames(aDropped) {}
 
-  void
-  Accumulate(const FrameStatisticsData& aStats)
-  {
+  void Accumulate(const FrameStatisticsData& aStats) {
     mParsedFrames += aStats.mParsedFrames;
     mDecodedFrames += aStats.mDecodedFrames;
     mPresentedFrames += aStats.mPresentedFrames;
@@ -63,35 +62,29 @@ struct FrameStatisticsData
 
 // Frame decoding/painting related performance counters.
 // Threadsafe.
-class FrameStatistics
-{
-public:
+class FrameStatistics {
+ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(FrameStatistics);
 
-  FrameStatistics()
-    : mReentrantMonitor("FrameStats")
-  {}
+  FrameStatistics() : mReentrantMonitor("FrameStats") {}
 
   // Returns a copy of all frame statistics data.
   // Can be called on any thread.
-  FrameStatisticsData GetFrameStatisticsData() const
-  {
+  FrameStatisticsData GetFrameStatisticsData() const {
     ReentrantMonitorAutoEnter mon(mReentrantMonitor);
     return mFrameStatisticsData;
   }
 
   // Returns number of frames which have been parsed from the media.
   // Can be called on any thread.
-  uint64_t GetParsedFrames() const
-  {
+  uint64_t GetParsedFrames() const {
     ReentrantMonitorAutoEnter mon(mReentrantMonitor);
     return mFrameStatisticsData.mParsedFrames;
   }
 
   // Returns the number of parsed frames which have been decoded.
   // Can be called on any thread.
-  uint64_t GetDecodedFrames() const
-  {
+  uint64_t GetDecodedFrames() const {
     ReentrantMonitorAutoEnter mon(mReentrantMonitor);
     return mFrameStatisticsData.mDecodedFrames;
   }
@@ -99,37 +92,52 @@ public:
   // Returns the number of decoded frames which have been sent to the rendering
   // pipeline for painting ("presented").
   // Can be called on any thread.
-  uint64_t GetPresentedFrames() const
-  {
+  uint64_t GetPresentedFrames() const {
     ReentrantMonitorAutoEnter mon(mReentrantMonitor);
     return mFrameStatisticsData.mPresentedFrames;
   }
 
   // Returns the number of frames that have been skipped because they have
   // missed their composition deadline.
-  uint64_t GetDroppedFrames() const
-  {
+  uint64_t GetDroppedFrames() const {
     ReentrantMonitorAutoEnter mon(mReentrantMonitor);
     return mFrameStatisticsData.mDroppedFrames;
   }
 
   // Increments the parsed and decoded frame counters by the passed in counts.
   // Can be called on any thread.
-  void NotifyDecodedFrames(const FrameStatisticsData& aStats)
-  {
+  void Accumulate(const FrameStatisticsData& aStats) {
     ReentrantMonitorAutoEnter mon(mReentrantMonitor);
     mFrameStatisticsData.Accumulate(aStats);
   }
 
   // Increments the presented frame counters.
   // Can be called on any thread.
-  void NotifyPresentedFrame()
-  {
+  void NotifyPresentedFrame() {
     ReentrantMonitorAutoEnter mon(mReentrantMonitor);
     ++mFrameStatisticsData.mPresentedFrames;
   }
 
-private:
+  // Stack based class to assist in notifying the frame statistics of
+  // parsed and decoded frames. Use inside video demux & decode functions
+  // to ensure all parsed and decoded frames are reported on all return paths.
+  class AutoNotifyDecoded {
+   public:
+    explicit AutoNotifyDecoded(FrameStatistics* aFrameStats)
+        : mFrameStats(aFrameStats) {}
+    ~AutoNotifyDecoded() {
+      if (mFrameStats) {
+        mFrameStats->Accumulate(mStats);
+      }
+    }
+
+    FrameStatisticsData mStats;
+
+   private:
+    FrameStatistics* mFrameStats;
+  };
+
+ private:
   ~FrameStatistics() {}
 
   // ReentrantMonitor to protect access of playback statistics.
@@ -138,6 +146,6 @@ private:
   FrameStatisticsData mFrameStatisticsData;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // FrameStatistics_h_
+#endif  // FrameStatistics_h_

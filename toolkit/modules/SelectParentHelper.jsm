@@ -4,13 +4,12 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = [
-  "SelectParentHelper"
+var EXPORTED_SYMBOLS = [
+  "SelectParentHelper",
 ];
 
-const {utils: Cu} = Components;
-const {AppConstants} = Cu.import("resource://gre/modules/AppConstants.jsm", {});
-const {Services} = Cu.import("resource://gre/modules/Services.jsm", {});
+const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm", {});
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm", {});
 
 // Maximum number of rows to display in the select dropdown.
 const MAX_ROWS = 20;
@@ -18,21 +17,49 @@ const MAX_ROWS = 20;
 // Minimum elements required to show select search
 const SEARCH_MINIMUM_ELEMENTS = 40;
 
+// Make sure to clear these objects when the popup closes to avoid leaking.
 var currentBrowser = null;
 var currentMenulist = null;
+var selectRect = null;
+
 var currentZoom = 1;
 var closedWithEnter = false;
-var selectRect;
 var customStylingEnabled = Services.prefs.getBoolPref("dom.forms.select.customstyling");
-var usedSelectBackgroundColor;
 
-this.SelectParentHelper = {
-  populate(menulist, items, selectedIndex, zoom, uaBackgroundColor, uaColor,
-           uaSelectBackgroundColor, uaSelectColor, selectBackgroundColor, selectColor,
-           selectTextShadow) {
+var SelectParentHelper = {
+  /**
+   * `populate` takes the `menulist` element and a list of `items` and generates
+   * a popup list of options.
+   *
+   * If `customStylingEnabled` is set to `true`, the function will alse
+   * style the select and its popup trying to prevent the text
+   * and background to end up in the same color.
+   *
+   * All `ua*` variables represent the color values for the default colors
+   * for their respective form elements used by the user agent.
+   * The `select*` variables represent the color values defined for the
+   * particular <select> element.
+   *
+   * The `customoptionstyling` attribute controls the application of
+   * `-moz-appearance` on the elements and is disabled if the element is
+   * defining its own background-color.
+   *
+   * @param {Element}        menulist
+   * @param {Array<Element>} items
+   * @param {Number}         selectedIndex
+   * @param {Number}         zoom
+   * @param {String}         uaSelectBackgroundColor
+   * @param {String}         uaSelectColor
+   * @param {String}         selectBackgroundColor
+   * @param {String}         selectColor
+   * @param {String}         selectTextShadow
+   */
+  populate(menulist, items, selectedIndex, zoom,
+           uaSelectBackgroundColor, uaSelectColor, selectBackgroundColor,
+           selectColor, selectTextShadow) {
     // Clear the current contents of the popup
     menulist.menupopup.textContent = "";
-    let stylesheet = menulist.querySelector("#ContentSelectDropdownScopedStylesheet");
+    let stylesheet = menulist.querySelector("#ContentSelectDropdownStylesheet");
     if (stylesheet) {
       stylesheet.remove();
     }
@@ -41,14 +68,16 @@ this.SelectParentHelper = {
     let sheet;
     if (customStylingEnabled) {
       stylesheet = doc.createElementNS("http://www.w3.org/1999/xhtml", "style");
-      stylesheet.setAttribute("id", "ContentSelectDropdownScopedStylesheet");
-      stylesheet.scoped = true;
+      stylesheet.setAttribute("id", "ContentSelectDropdownStylesheet");
       stylesheet.hidden = true;
       stylesheet = menulist.appendChild(stylesheet);
       sheet = stylesheet.sheet;
     }
 
     let ruleBody = "";
+    let usedSelectBackgroundColor;
+    let usedSelectColor;
+    let selectBackgroundSet = false;
 
     // Some webpages set the <select> backgroundColor to transparent,
     // but they don't intend to change the popup to transparent.
@@ -57,27 +86,41 @@ this.SelectParentHelper = {
         selectBackgroundColor != "rgba(0, 0, 0, 0)") {
       ruleBody = `background-image: linear-gradient(${selectBackgroundColor}, ${selectBackgroundColor});`;
       usedSelectBackgroundColor = selectBackgroundColor;
+      selectBackgroundSet = true;
     } else {
       usedSelectBackgroundColor = uaSelectBackgroundColor;
     }
 
     if (customStylingEnabled &&
         selectColor != uaSelectColor &&
-        selectColor != selectBackgroundColor &&
-        (selectBackgroundColor != "rgba(0, 0, 0, 0)" ||
-         selectColor != uaSelectBackgroundColor)) {
+        selectColor != usedSelectBackgroundColor) {
       ruleBody += `color: ${selectColor};`;
+      usedSelectColor = selectColor;
+    } else {
+      usedSelectColor = uaSelectColor;
     }
 
     if (customStylingEnabled &&
         selectTextShadow != "none") {
       ruleBody += `text-shadow: ${selectTextShadow};`;
+      sheet.insertRule(`#ContentSelectDropdown > menupopup > [_moz-menuactive="true"] {
+        text-shadow: none;
+      }`, 0);
     }
 
     if (ruleBody) {
-      sheet.insertRule(`menupopup {
+      sheet.insertRule(`#ContentSelectDropdown > menupopup {
         ${ruleBody}
       }`, 0);
+      sheet.insertRule(`#ContentSelectDropdown > menupopup > :not([_moz-menuactive="true"]) {
+         color: inherit;
+      }`, 0);
+    }
+
+    // We only set the `customoptionstyling` if the background has been
+    // manually set. This prevents the overlap between moz-appearance and
+    // background-color. `color` and `text-shadow` do not interfere with it.
+    if (selectBackgroundSet) {
       menulist.menupopup.setAttribute("customoptionstyling", "true");
     } else {
       menulist.menupopup.removeAttribute("customoptionstyling");
@@ -86,7 +129,7 @@ this.SelectParentHelper = {
     currentZoom = zoom;
     currentMenulist = menulist;
     populateChildren(menulist, items, selectedIndex, zoom,
-                     uaBackgroundColor, uaColor, sheet);
+                     usedSelectBackgroundColor, usedSelectColor, selectTextShadow, selectBackgroundSet, sheet);
   },
 
   open(browser, menulist, rect, isOpenedViaTouch) {
@@ -100,9 +143,9 @@ this.SelectParentHelper = {
 
     // Set the maximum height to show exactly MAX_ROWS items.
     let menupopup = menulist.menupopup;
-    let firstItem = menupopup.firstChild;
+    let firstItem = menupopup.firstElementChild;
     while (firstItem && firstItem.hidden) {
-      firstItem = firstItem.nextSibling;
+      firstItem = firstItem.nextElementSibling;
     }
 
     if (firstItem) {
@@ -117,11 +160,15 @@ this.SelectParentHelper = {
 
     menupopup.classList.toggle("isOpenedViaTouch", isOpenedViaTouch);
 
-    let constraintRect = browser.getBoundingClientRect();
-    constraintRect = new win.DOMRect(constraintRect.left + win.mozInnerScreenX,
-                                     constraintRect.top + win.mozInnerScreenY,
-                                     constraintRect.width, constraintRect.height);
-    menupopup.setConstraintRect(constraintRect);
+    if (browser.getAttribute("selectmenuconstrained") != "false") {
+      let constraintRect = browser.getBoundingClientRect();
+      constraintRect = new win.DOMRect(constraintRect.left + win.mozInnerScreenX,
+                                       constraintRect.top + win.mozInnerScreenY,
+                                       constraintRect.width, constraintRect.height);
+      menupopup.setConstraintRect(constraintRect);
+    } else {
+      menupopup.setConstraintRect(new win.DOMRect(0, 0, 0, 0));
+    }
     menupopup.openPopupAtScreenRect(AppConstants.platform == "macosx" ? "selection" : "after_start", rect.left, rect.top, rect.width, rect.height, false, false);
   },
 
@@ -162,7 +209,7 @@ this.SelectParentHelper = {
         if (event.target.hasAttribute("value")) {
           currentBrowser.messageManager.sendAsyncMessage("Forms:SelectDropDownItem", {
             value: event.target.value,
-            closedWithEnter
+            closedWithEnter,
           });
         }
         break;
@@ -180,38 +227,42 @@ this.SelectParentHelper = {
         popup.parentNode.hidden = true;
         currentBrowser = null;
         currentMenulist = null;
+        selectRect = null;
         currentZoom = 1;
         break;
     }
   },
 
   receiveMessage(msg) {
+    if (!currentBrowser) {
+      return;
+    }
+
     if (msg.name == "Forms:UpdateDropDown") {
       // Sanity check - we'd better know what the currently
       // opened menulist is, and what browser it belongs to...
-      if (!currentMenulist || !currentBrowser) {
+      if (!currentMenulist) {
         return;
       }
 
-      let scrollBox = currentMenulist.menupopup.scrollBox;
+      let scrollBox = currentMenulist.menupopup.scrollBox.scrollbox;
       let scrollTop = scrollBox.scrollTop;
 
       let options = msg.data.options;
       let selectedIndex = msg.data.selectedIndex;
-      let uaBackgroundColor = msg.data.uaBackgroundColor;
-      let uaColor = msg.data.uaColor;
       let uaSelectBackgroundColor = msg.data.uaSelectBackgroundColor;
       let uaSelectColor = msg.data.uaSelectColor;
       let selectBackgroundColor = msg.data.selectBackgroundColor;
       let selectColor = msg.data.selectColor;
       let selectTextShadow = msg.data.selectTextShadow;
       this.populate(currentMenulist, options, selectedIndex,
-                    currentZoom, uaBackgroundColor, uaColor,
-                    uaSelectBackgroundColor, uaSelectColor,
+                    currentZoom, uaSelectBackgroundColor, uaSelectColor,
                     selectBackgroundColor, selectColor, selectTextShadow);
 
       // Restore scroll position to what it was prior to the update.
       scrollBox.scrollTop = scrollTop;
+    } else if (msg.name == "Forms:BlurDropDown-Ping") {
+      currentBrowser.messageManager.sendAsyncMessage("Forms:BlurDropDown-Pong", {});
     }
   },
 
@@ -224,6 +275,7 @@ this.SelectParentHelper = {
     browser.ownerGlobal.addEventListener("keydown", this, true);
     browser.ownerGlobal.addEventListener("fullscreen", this, true);
     browser.messageManager.addMessageListener("Forms:UpdateDropDown", this);
+    browser.messageManager.addMessageListener("Forms:BlurDropDown-Ping", this);
   },
 
   _unregisterListeners(browser, popup) {
@@ -235,14 +287,41 @@ this.SelectParentHelper = {
     browser.ownerGlobal.removeEventListener("keydown", this, true);
     browser.ownerGlobal.removeEventListener("fullscreen", this, true);
     browser.messageManager.removeMessageListener("Forms:UpdateDropDown", this);
+    browser.messageManager.removeMessageListener("Forms:BlurDropDown-Ping", this);
   },
 
 };
 
+/**
+ * `populateChildren` creates all <menuitem> elements for the popup menu
+ * based on the list of <option> elements from the <select> element.
+ *
+ * It attempts to intelligently add per-item CSS rules if the single
+ * item values differ from the parent menu values and attempting to avoid
+ * ending up with the same color of text and background.
+ *
+ * @param {Element}        menulist
+ * @param {Array<Element>} options
+ * @param {Number}         selectedIndex
+ * @param {Number}         zoom
+ * @param {String}         usedSelectBackgroundColor
+ * @param {String}         usedSelectColor
+ * @param {String}         selectTextShadow
+ * @param {String}         selectBackgroundSet
+ * @param {CSSStyleSheet}  sheet
+ * @param {Element}        parentElement
+ * @param {Boolean}        isGroupDisabled
+ * @param {Number}         adjustedTextSize
+ * @param {Boolean}        addSearch
+ * @param {Number}         nthChildIndex
+ * @returns {Number}
+ */
 function populateChildren(menulist, options, selectedIndex, zoom,
-                          uaBackgroundColor, uaColor, sheet,
+                          usedSelectBackgroundColor, usedSelectColor,
+                          selectTextShadow, selectBackgroundSet, sheet,
                           parentElement = null, isGroupDisabled = false,
-                          adjustedTextSize = -1, addSearch = true, nthChildIndex = 1) {
+                          adjustedTextSize = -1, addSearch = true,
+                          nthChildIndex = 1) {
   let element = menulist.menupopup;
   let win = element.ownerGlobal;
 
@@ -258,7 +337,7 @@ function populateChildren(menulist, options, selectedIndex, zoom,
 
   for (let option of options) {
     let isOptGroup = (option.tagName == "OPTGROUP");
-    let item = element.ownerDocument.createElement(isOptGroup ? "menucaption" : "menuitem");
+    let item = element.ownerDocument.createXULElement(isOptGroup ? "menucaption" : "menuitem");
 
     item.setAttribute("label", option.textContent);
     item.style.direction = option.textDirection;
@@ -270,38 +349,50 @@ function populateChildren(menulist, options, selectedIndex, zoom,
     item.setAttribute("tooltiptext", option.tooltip);
 
     let ruleBody = "";
+    let usedBackgroundColor;
+    let optionBackgroundSet = false;
+
     if (customStylingEnabled &&
         option.backgroundColor &&
         option.backgroundColor != "rgba(0, 0, 0, 0)" &&
         option.backgroundColor != usedSelectBackgroundColor) {
       ruleBody = `background-color: ${option.backgroundColor};`;
+      usedBackgroundColor = option.backgroundColor;
+      optionBackgroundSet = true;
+    } else {
+      usedBackgroundColor = usedSelectBackgroundColor;
     }
 
     if (customStylingEnabled &&
         option.color &&
-        option.color != uaColor) {
+        option.color != usedBackgroundColor &&
+        option.color != usedSelectColor) {
       ruleBody += `color: ${option.color};`;
     }
 
     if (customStylingEnabled &&
-        option.textShadow) {
+        option.textShadow &&
+        option.textShadow != selectTextShadow) {
       ruleBody += `text-shadow: ${option.textShadow};`;
     }
 
     if (ruleBody) {
-      sheet.insertRule(`menupopup > :nth-child(${nthChildIndex}):not([_moz-menuactive="true"]) {
+      sheet.insertRule(`#ContentSelectDropdown > menupopup > :nth-child(${nthChildIndex}):not([_moz-menuactive="true"]) {
         ${ruleBody}
       }`, 0);
 
-      if (option.textShadow) {
+      if (option.textShadow && option.textShadow != selectTextShadow) {
         // Need to explicitly disable the possibly inherited
         // text-shadow rule when _moz-menuactive=true since
         // _moz-menuactive=true disables custom option styling.
-        sheet.insertRule(`menupopup > :nth-child(${nthChildIndex})[_moz-menuactive="true"] {
+        sheet.insertRule(`#ContentSelectDropdown > menupopup > :nth-child(${nthChildIndex})[_moz-menuactive="true"] {
           text-shadow: none;
         }`, 0);
       }
+    }
 
+    if (customStylingEnabled &&
+        (optionBackgroundSet || selectBackgroundSet)) {
       item.setAttribute("customoptionstyling", "true");
     } else {
       item.removeAttribute("customoptionstyling");
@@ -319,7 +410,8 @@ function populateChildren(menulist, options, selectedIndex, zoom,
     if (isOptGroup) {
       nthChildIndex =
         populateChildren(menulist, option.children, selectedIndex, zoom,
-                         uaBackgroundColor, uaColor, sheet,
+                         usedSelectBackgroundColor, usedSelectColor,
+                         selectTextShadow, selectBackgroundSet, sheet,
                          item, isDisabled, adjustedTextSize, false, nthChildIndex);
     } else {
       if (option.index == selectedIndex) {
@@ -335,13 +427,13 @@ function populateChildren(menulist, options, selectedIndex, zoom,
         // may have been removed from the selected item. Since that's normally only
         // set for the initially selected on popupshowing for the menulist, and we
         // don't want to close and re-open the popup, we manually set it here.
-        menulist.menuBoxObject.activeChild = item;
+        menulist.activeChild = item;
       }
 
       item.setAttribute("value", option.index);
 
       if (parentElement) {
-        item.classList.add("contentSelectDropdown-ingroup")
+        item.classList.add("contentSelectDropdown-ingroup");
       }
     }
   }
@@ -352,11 +444,12 @@ function populateChildren(menulist, options, selectedIndex, zoom,
       && element.childElementCount > SEARCH_MINIMUM_ELEMENTS) {
 
     // Add a search text field as the first element of the dropdown
-    let searchbox = element.ownerDocument.createElement("textbox");
+    let searchbox = element.ownerDocument.createXULElement("textbox");
     searchbox.setAttribute("type", "search");
     searchbox.addEventListener("input", onSearchInput);
     searchbox.addEventListener("focus", onSearchFocus);
     searchbox.addEventListener("blur", onSearchBlur);
+    searchbox.addEventListener("command", onSearchInput);
 
     // Handle special keys for exiting search
     searchbox.addEventListener("keydown", function(event) {
@@ -371,17 +464,17 @@ function populateChildren(menulist, options, selectedIndex, zoom,
         case "Enter":
         case "Tab":
           searchbox.blur();
-          if (searchbox.nextSibling.localName == "menuitem" &&
-              !searchbox.nextSibling.hidden) {
-            menulist.menuBoxObject.activeChild = searchbox.nextSibling;
+          if (searchbox.nextElementSibling.localName == "menuitem" &&
+              !searchbox.nextElementSibling.hidden) {
+            menulist.activeChild = searchbox.nextElementSibling;
           } else {
-            var currentOption = searchbox.nextSibling;
+            var currentOption = searchbox.nextElementSibling;
             while (currentOption && (currentOption.localName != "menuitem" ||
                   currentOption.hidden)) {
-              currentOption = currentOption.nextSibling;
+              currentOption = currentOption.nextElementSibling;
             }
             if (currentOption) {
-              menulist.menuBoxObject.activeChild = currentOption;
+              menulist.activeChild = currentOption;
             } else {
               searchbox.focus();
             }
@@ -393,7 +486,7 @@ function populateChildren(menulist, options, selectedIndex, zoom,
       event.preventDefault();
     }, true);
 
-    element.insertBefore(searchbox, element.childNodes[0]);
+    element.insertBefore(searchbox, element.children[0]);
   }
 
   return nthChildIndex;
@@ -434,7 +527,7 @@ function onSearchInput() {
         allHidden = true;
       } else {
         if (!currentItem.classList.contains("contentSelectDropdown-ingroup") &&
-            currentItem.previousSibling.classList.contains("contentSelectDropdown-ingroup")) {
+            currentItem.previousElementSibling.classList.contains("contentSelectDropdown-ingroup")) {
           if (prevCaption != null) {
             prevCaption.hidden = allHidden;
           }
@@ -458,8 +551,9 @@ function onSearchInput() {
 function onSearchFocus() {
   let searchObj = this;
   let menupopup = searchObj.parentElement;
-  menupopup.parentElement.menuBoxObject.activeChild = null;
+  menupopup.parentElement.activeChild = null;
   menupopup.setAttribute("ignorekeys", "true");
+  currentBrowser.messageManager.sendAsyncMessage("Forms:SearchFocused", {});
 }
 
 function onSearchBlur() {

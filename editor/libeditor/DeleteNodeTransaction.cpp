@@ -5,26 +5,34 @@
 
 #include "DeleteNodeTransaction.h"
 #include "mozilla/EditorBase.h"
-#include "mozilla/SelectionState.h" // RangeUpdater
+#include "mozilla/SelectionState.h"  // RangeUpdater
 #include "nsDebug.h"
 #include "nsError.h"
 #include "nsAString.h"
 
 namespace mozilla {
 
-DeleteNodeTransaction::DeleteNodeTransaction()
-  : mEditorBase(nullptr)
-  , mRangeUpdater(nullptr)
-{
+// static
+already_AddRefed<DeleteNodeTransaction> DeleteNodeTransaction::MaybeCreate(
+    EditorBase& aEditorBase, nsINode& aNodeToDelete) {
+  RefPtr<DeleteNodeTransaction> transaction =
+      new DeleteNodeTransaction(aEditorBase, aNodeToDelete);
+  if (NS_WARN_IF(!transaction->CanDoIt())) {
+    return nullptr;
+  }
+  return transaction.forget();
 }
 
-DeleteNodeTransaction::~DeleteNodeTransaction()
-{
-}
+DeleteNodeTransaction::DeleteNodeTransaction(EditorBase& aEditorBase,
+                                             nsINode& aNodeToDelete)
+    : mEditorBase(&aEditorBase),
+      mNodeToDelete(&aNodeToDelete),
+      mParentNode(aNodeToDelete.GetParentNode()) {}
+
+DeleteNodeTransaction::~DeleteNodeTransaction() {}
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(DeleteNodeTransaction, EditTransactionBase,
-                                   mNode,
-                                   mParent,
+                                   mEditorBase, mNodeToDelete, mParentNode,
                                    mRefNode)
 
 NS_IMPL_ADDREF_INHERITED(DeleteNodeTransaction, EditTransactionBase)
@@ -32,92 +40,58 @@ NS_IMPL_RELEASE_INHERITED(DeleteNodeTransaction, EditTransactionBase)
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DeleteNodeTransaction)
 NS_INTERFACE_MAP_END_INHERITING(EditTransactionBase)
 
-nsresult
-DeleteNodeTransaction::Init(EditorBase* aEditorBase,
-                            nsINode* aNode,
-                            RangeUpdater* aRangeUpdater)
-{
-  NS_ENSURE_TRUE(aEditorBase && aNode, NS_ERROR_NULL_POINTER);
-  mEditorBase = aEditorBase;
-  mNode = aNode;
-  mParent = aNode->GetParentNode();
-
-  // do nothing if the node has a parent and it's read-only
-  NS_ENSURE_TRUE(!mParent || mEditorBase->IsModifiableNode(mParent),
-                 NS_ERROR_FAILURE);
-
-  mRangeUpdater = aRangeUpdater;
-  return NS_OK;
+bool DeleteNodeTransaction::CanDoIt() const {
+  if (NS_WARN_IF(!mNodeToDelete) || NS_WARN_IF(!mEditorBase) || !mParentNode ||
+      !mEditorBase->IsModifiableNode(*mParentNode)) {
+    return false;
+  }
+  return true;
 }
 
 NS_IMETHODIMP
-DeleteNodeTransaction::DoTransaction()
-{
-  NS_ENSURE_TRUE(mNode, NS_ERROR_NOT_INITIALIZED);
-
-  if (!mParent) {
-    // this is a no-op, there's no parent to delete mNode from
+DeleteNodeTransaction::DoTransaction() {
+  if (NS_WARN_IF(!CanDoIt())) {
     return NS_OK;
   }
 
-  // remember which child mNode was (by remembering which child was next);
-  // mRefNode can be null
-  mRefNode = mNode->GetNextSibling();
+  // Remember which child mNodeToDelete was (by remembering which child was
+  // next).  Note that mRefNode can be nullptr.
+  mRefNode = mNodeToDelete->GetNextSibling();
 
   // give range updater a chance.  SelAdjDeleteNode() needs to be called
   // *before* we do the action, unlike some of the other RangeItem update
   // methods.
-  if (mRangeUpdater) {
-    mRangeUpdater->SelAdjDeleteNode(mNode->AsDOMNode());
-  }
+  mEditorBase->RangeUpdaterRef().SelAdjDeleteNode(mNodeToDelete);
 
   ErrorResult error;
-  mParent->RemoveChild(*mNode, error);
+  mParentNode->RemoveChild(*mNodeToDelete, error);
   return error.StealNSResult();
 }
 
 NS_IMETHODIMP
-DeleteNodeTransaction::UndoTransaction()
-{
-  if (!mParent) {
-    // this is a legal state, the txn is a no-op
+DeleteNodeTransaction::UndoTransaction() {
+  if (NS_WARN_IF(!CanDoIt())) {
+    // This is a legal state, the transaction is a no-op.
     return NS_OK;
   }
-  if (!mNode) {
-    return NS_ERROR_NULL_POINTER;
-  }
-
   ErrorResult error;
   nsCOMPtr<nsIContent> refNode = mRefNode;
-  mParent->InsertBefore(*mNode, refNode, error);
+  mParentNode->InsertBefore(*mNodeToDelete, refNode, error);
   return error.StealNSResult();
 }
 
 NS_IMETHODIMP
-DeleteNodeTransaction::RedoTransaction()
-{
-  if (!mParent) {
-    // this is a legal state, the txn is a no-op
+DeleteNodeTransaction::RedoTransaction() {
+  if (NS_WARN_IF(!CanDoIt())) {
+    // This is a legal state, the transaction is a no-op.
     return NS_OK;
   }
-  if (!mNode) {
-    return NS_ERROR_NULL_POINTER;
-  }
 
-  if (mRangeUpdater) {
-    mRangeUpdater->SelAdjDeleteNode(mNode->AsDOMNode());
-  }
+  mEditorBase->RangeUpdaterRef().SelAdjDeleteNode(mNodeToDelete);
 
   ErrorResult error;
-  mParent->RemoveChild(*mNode, error);
+  mParentNode->RemoveChild(*mNodeToDelete, error);
   return error.StealNSResult();
 }
 
-NS_IMETHODIMP
-DeleteNodeTransaction::GetTxnDescription(nsAString& aString)
-{
-  aString.AssignLiteral("DeleteNodeTransaction");
-  return NS_OK;
-}
-
-} // namespace mozilla
+}  // namespace mozilla

@@ -7,10 +7,19 @@
 #include "nsISupports.idl"
 
 interface imgIRequest;
-interface nsIDocument;
-interface nsIDOMDocument;
+interface nsIPrincipal;
 interface nsIProperties;
 interface nsIURI;
+
+webidl Document;
+
+%{ C++
+namespace mozilla {
+class OriginAttributes;
+} // mozilla namespace
+%}
+
+[ptr] native OriginAttributesPtr(mozilla::OriginAttributes);
 
 /**
  * imgICache interface
@@ -31,6 +40,24 @@ interface imgICache : nsISupports
   void clearCache(in boolean chrome);
 
   /**
+   * Evict images from the cache.
+   *
+   * @param uri The URI to remove.
+   * @param doc The document to remove the cache entry for.
+   * @throws NS_ERROR_NOT_AVAILABLE if \a uri was unable to be removed from
+   * the cache.
+   */
+  [noscript] void removeEntry(in nsIURI uri, [optional] in Document doc);
+
+  /**
+   * Evict images from the cache with the same origin and the same
+   * originAttributes of the passed principal.
+   *
+   * @param aPrincipal The principal
+   */
+  void removeEntriesFromPrincipal(in nsIPrincipal aPrincipal);
+
+  /**
    * Find Properties
    * Used to get properties such as 'type' and 'content-disposition'
    * 'type' is a nsISupportsCString containing the images' mime type such as
@@ -47,7 +74,7 @@ interface imgICache : nsISupports
    */
   [must_use]
   nsIProperties findEntryProperties(in nsIURI uri,
-                                    [optional] in nsIDOMDocument doc);
+                                    [optional] in Document doc);
 
   /**
    * Make this cache instance respect private browsing notifications. This
@@ -61,5 +88,5 @@ interface imgICache : nsISupports
    * for doing this manually when they get destroyed.
    */
   [noscript, notxpcom]
-  void clearCacheForControlledDocument(in nsIDocument doc);
+  void clearCacheForControlledDocument(in Document doc);
 };

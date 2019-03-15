@@ -2,10 +2,13 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 from threading import Lock
 import codecs
 
-from ..structuredlog import log_levels
+from mozlog.structuredlog import log_levels
+import six
 
 
 class BaseHandler(object):
@@ -95,7 +98,7 @@ class StreamHandler(BaseHandler):
         if not formatted:
             return
         with self._lock:
-            if isinstance(formatted, unicode):
+            if isinstance(formatted, six.text_type):
                 self.stream.write(formatted.encode("utf-8", "replace"))
             elif isinstance(formatted, str):
                 self.stream.write(formatted)

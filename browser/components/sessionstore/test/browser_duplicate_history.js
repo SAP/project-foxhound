@@ -1,22 +1,23 @@
-XPCOMUtils.defineLazyModuleGetter(this, "SessionStore",
+ChromeUtils.defineModuleGetter(this, "SessionStore",
   "resource:///modules/sessionstore/SessionStore.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "TabStateCache",
+ChromeUtils.defineModuleGetter(this, "TabStateCache",
   "resource:///modules/sessionstore/TabStateCache.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "TabStateFlusher",
+ChromeUtils.defineModuleGetter(this, "TabStateFlusher",
   "resource:///modules/sessionstore/TabStateFlusher.jsm");
 
-add_task(function* () {
-  yield BrowserTestUtils.withNewTab("http://example.com", function* (aBrowser) {
+add_task(async function() {
+  await BrowserTestUtils.withNewTab("http://example.com", async function(aBrowser) {
     let tab = gBrowser.getTabForBrowser(aBrowser);
-    yield TabStateFlusher.flush(aBrowser);
+    await TabStateFlusher.flush(aBrowser);
     let before = TabStateCache.get(aBrowser);
 
     let newTab = SessionStore.duplicateTab(window, tab);
-    yield BrowserTestUtils.browserLoaded(newTab.linkedBrowser);
+    await BrowserTestUtils.browserLoaded(newTab.linkedBrowser);
     let after = TabStateCache.get(newTab.linkedBrowser);
 
     isnot(before.history.entries, after.history.entries,
           "The entry objects should not be shared");
-    yield BrowserTestUtils.removeTab(newTab);
+
+    BrowserTestUtils.removeTab(newTab);
   });
 });

@@ -2,9 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var {WebChannel} = Cu.import("resource://gre/modules/WebChannel.jsm", {});
+var {WebChannel} = ChromeUtils.import("resource://gre/modules/WebChannel.jsm", {});
 
-const TEST_URL_TAIL = "example.com/browser/browser/base/content/test/general/test_remoteTroubleshoot.html"
+const TEST_URL_TAIL = "example.com/browser/browser/base/content/test/general/test_remoteTroubleshoot.html";
 const TEST_URI_GOOD = Services.io.newURI("https://" + TEST_URL_TAIL);
 const TEST_URI_BAD = Services.io.newURI("http://" + TEST_URL_TAIL);
 const TEST_URI_GOOD_OBJECT = Services.io.newURI("https://" + TEST_URL_TAIL + "?object");
@@ -25,7 +25,10 @@ function promiseChannelResponse(channelID, originOrPermission) {
 function promiseNewChannelResponse(uri) {
   let channelPromise = promiseChannelResponse("test-remote-troubleshooting-backchannel",
                                               uri);
-  let tab = gBrowser.loadOneTab(uri.spec, { inBackground: false });
+  let tab = gBrowser.loadOneTab(uri.spec, {
+    inBackground: false,
+    triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+  });
   return promiseTabLoaded(tab).then(
     () => channelPromise
   ).then(data => {
@@ -34,9 +37,9 @@ function promiseNewChannelResponse(uri) {
   });
 }
 
-add_task(function*() {
+add_task(async function() {
   // We haven't set a permission yet - so even the "good" URI should fail.
-  let got = yield promiseNewChannelResponse(TEST_URI_GOOD);
+  let got = await promiseNewChannelResponse(TEST_URI_GOOD);
   // Should return an error.
   Assert.ok(got.message.errno === 2, "should have failed with errno 2, no such channel");
 
@@ -49,7 +52,7 @@ add_task(function*() {
   });
 
   // Try again - now we are expecting a response with the actual data.
-  got = yield promiseNewChannelResponse(TEST_URI_GOOD);
+  got = await promiseNewChannelResponse(TEST_URI_GOOD);
 
   // Check some keys we expect to always get.
   Assert.ok(got.message.extensions, "should have extensions");
@@ -61,7 +64,7 @@ add_task(function*() {
 
   let updateChannel = null;
   try {
-    updateChannel = Cu.import("resource://gre/modules/UpdateUtils.jsm", {}).UpdateUtils.UpdateChannel;
+    updateChannel = ChromeUtils.import("resource://gre/modules/UpdateUtils.jsm", {}).UpdateUtils.UpdateChannel;
   } catch (ex) {}
   if (!updateChannel) {
     Assert.ok(!("updateChannel" in got.message.application),
@@ -77,7 +80,7 @@ add_task(function*() {
   Assert.ok(!got.message.crashes, "should not have crash info");
 
   // Now a http:// URI - should receive an error
-  got = yield promiseNewChannelResponse(TEST_URI_BAD);
+  got = await promiseNewChannelResponse(TEST_URI_BAD);
   Assert.ok(got.message.errno === 2, "should have failed with errno 2, no such channel");
 
   // Check that the page can send an object as well if it's in the whitelist
@@ -88,6 +91,6 @@ add_task(function*() {
   registerCleanupFunction(() => {
     Services.prefs.clearUserPref(webchannelWhitelistPref);
   });
-  got = yield promiseNewChannelResponse(TEST_URI_GOOD_OBJECT);
+  got = await promiseNewChannelResponse(TEST_URI_GOOD_OBJECT);
   Assert.ok(got.message, "should have gotten some data back");
 });

@@ -15,9 +15,9 @@ include('/ipc/chromium/chromium-config.mozbuild')
 DEFINES['NS_NO_XPCOM'] = True
 DEFINES['_HAS_EXCEPTIONS'] = 0
 
-DISABLE_STL_WRAPPING = True
+DisableStlWrapping()
 
-if CONFIG['GNU_CC']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     WIN32_EXE_LDFLAGS += ['-municode']
 
 RCINCLUDE = 'HangUIDlg.rc'
@@ -25,3 +25,7 @@ RCINCLUDE = 'HangUIDlg.rc'
 OS_LIBS += [
     'comctl32',
 ]
+
+if (not CONFIG['HAVE_64BIT_BUILD'] and CONFIG['ENABLE_CLANG_PLUGIN']
+    and CONFIG['CC_TYPE'] == 'clang-cl'):
+    AllowCompilerWarnings()  # workaround for bug 1090497

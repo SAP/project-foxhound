@@ -9,69 +9,69 @@
 
 const TEST_URI = URL_ROOT + "doc_keyframeanimation.html";
 
-add_task(function* () {
-  yield addTab(TEST_URI);
-  let {inspector, view} = yield openRuleView();
-  yield testPacman(inspector, view);
-  yield testBoxy(inspector, view);
-  yield testMoxy(inspector, view);
+add_task(async function() {
+  await addTab(TEST_URI);
+  const {inspector, view} = await openRuleView();
+  await testPacman(inspector, view);
+  await testBoxy(inspector, view);
+  await testMoxy(inspector, view);
 });
 
-function* testPacman(inspector, view) {
+async function testPacman(inspector, view) {
   info("Test content and gutter in the keyframes rule of #pacman");
 
-  yield assertKeyframeRules("#pacman", inspector, view, {
+  await assertKeyframeRules("#pacman", inspector, view, {
     elementRulesNb: 2,
     keyframeRulesNb: 2,
     keyframesRules: ["pacman", "pacman"],
-    keyframeRules: ["100%", "100%"]
+    keyframeRules: ["100%", "100%"],
   });
 
   assertGutters(view, {
     guttersNbs: 2,
-    gutterHeading: ["Keyframes pacman", "Keyframes pacman"]
+    gutterHeading: ["Keyframes pacman", "Keyframes pacman"],
   });
 }
 
-function* testBoxy(inspector, view) {
+async function testBoxy(inspector, view) {
   info("Test content and gutter in the keyframes rule of #boxy");
 
-  yield assertKeyframeRules("#boxy", inspector, view, {
+  await assertKeyframeRules("#boxy", inspector, view, {
     elementRulesNb: 3,
     keyframeRulesNb: 3,
     keyframesRules: ["boxy", "boxy", "boxy"],
-    keyframeRules: ["10%", "20%", "100%"]
+    keyframeRules: ["10%", "20%", "100%"],
   });
 
   assertGutters(view, {
     guttersNbs: 1,
-    gutterHeading: ["Keyframes boxy"]
+    gutterHeading: ["Keyframes boxy"],
   });
 }
 
-function* testMoxy(inspector, view) {
+async function testMoxy(inspector, view) {
   info("Test content and gutter in the keyframes rule of #moxy");
 
-  yield assertKeyframeRules("#moxy", inspector, view, {
+  await assertKeyframeRules("#moxy", inspector, view, {
     elementRulesNb: 3,
     keyframeRulesNb: 4,
     keyframesRules: ["boxy", "boxy", "boxy", "moxy"],
-    keyframeRules: ["10%", "20%", "100%", "100%"]
+    keyframeRules: ["10%", "20%", "100%", "100%"],
   });
 
   assertGutters(view, {
     guttersNbs: 2,
-    gutterHeading: ["Keyframes boxy", "Keyframes moxy"]
+    gutterHeading: ["Keyframes boxy", "Keyframes moxy"],
   });
 }
 
-function* assertKeyframeRules(selector, inspector, view, expected) {
-  yield selectNode(selector, inspector);
-  let elementStyle = view._elementStyle;
+async function assertKeyframeRules(selector, inspector, view, expected) {
+  await selectNode(selector, inspector);
+  const elementStyle = view._elementStyle;
 
-  let rules = {
+  const rules = {
     elementRules: elementStyle.rules.filter(rule => !rule.keyframes),
-    keyframeRules: elementStyle.rules.filter(rule => rule.keyframes)
+    keyframeRules: elementStyle.rules.filter(rule => rule.keyframes),
   };
 
   is(rules.elementRules.length, expected.elementRulesNb, selector +
@@ -80,7 +80,7 @@ function* assertKeyframeRules(selector, inspector, view, expected) {
     " has the correct number of keyframe rules");
 
   let i = 0;
-  for (let keyframeRule of rules.keyframeRules) {
+  for (const keyframeRule of rules.keyframeRules) {
     ok(keyframeRule.keyframes.name == expected.keyframesRules[i],
       keyframeRule.keyframes.name + " has the correct keyframes name");
     ok(keyframeRule.domRule.keyText == expected.keyframeRules[i],
@@ -90,13 +90,13 @@ function* assertKeyframeRules(selector, inspector, view, expected) {
 }
 
 function assertGutters(view, expected) {
-  let gutters = view.element.querySelectorAll(".theme-gutter");
+  const gutters = view.element.querySelectorAll(".ruleview-header");
 
   is(gutters.length, expected.guttersNbs,
     "There are " + gutters.length + " gutter headings");
 
   let i = 0;
-  for (let gutter of gutters) {
+  for (const gutter of gutters) {
     is(gutter.textContent, expected.gutterHeading[i],
       "Correct " + gutter.textContent + " gutter headings");
     i++;

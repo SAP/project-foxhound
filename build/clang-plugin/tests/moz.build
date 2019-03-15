@@ -10,7 +10,9 @@ Library('clang-plugin-tests')
 SOURCES += [
     'TestAssertWithAssignment.cpp',
     'TestBadImplicitConversionCtor.cpp',
+    'TestCanRunScript.cpp',
     'TestCustomHeap.cpp',
+    'TestDanglingOnTemporary.cpp',
     'TestExplicitOperatorBool.cpp',
     'TestGlobalClass.cpp',
     'TestHeapClass.cpp',
@@ -18,6 +20,7 @@ SOURCES += [
     'TestKungFuDeathGrip.cpp',
     'TestMultipleAnnotations.cpp',
     'TestMustOverride.cpp',
+    'TestMustReturnFromCaller.cpp',
     'TestMustUse.cpp',
     'TestNANTestingExpr.cpp',
     'TestNANTestingExprC.c',
@@ -36,11 +39,37 @@ SOURCES += [
     'TestNoRefcountedInsideLambdas.cpp',
     'TestOverrideBaseCall.cpp',
     'TestOverrideBaseCallAnnotation.cpp',
+    'TestParamTraitsEnum.cpp',
     'TestRefCountedCopyConstructor.cpp',
     'TestSprintfLiteral.cpp',
     'TestStackClass.cpp',
+    'TestTemporaryClass.cpp',
     'TestTrivialCtorDtor.cpp',
 ]
 
-DISABLE_STL_WRAPPING = True
-NO_VISIBILITY_FLAGS = True
+if CONFIG['OS_ARCH'] == 'WINNT':
+    SOURCES += [
+        'TestLoadLibraryUsage.cpp',
+    ]
+
+DisableStlWrapping()
+NoVisibilityFlags()
+
+# Build without any warning flags, and with clang verify flag for a
+# syntax-only build (no codegen), without a limit on the number of errors.
+COMPILE_FLAGS['OS_CXXFLAGS'] = (
+    [f for f in COMPILE_FLAGS.get('OS_CXXFLAGS', []) if not f.startswith('-W')] +
+    ['-fsyntax-only', '-Xclang', '-verify', '-ferror-limit=0', '-Wno-invalid-noreturn']
+)
+COMPILE_FLAGS['OS_CFLAGS'] = (
+    [f for f in COMPILE_FLAGS.get('OS_CFLAGS', []) if not f.startswith('-W')] +
+    ['-fsyntax-only', '-Xclang', '-verify', '-ferror-limit=0', '-std=c11',
+     '-Wno-invalid-noreturn']
+)
+
+# Don't reflect WARNINGS_CFLAGS into CFLAGS, as the warnings flags should be
+# as specified in OS_CFLAGS above.
+DisableCompilerWarnings()
+
+if CONFIG['ENABLE_CLANG_PLUGIN'] and CONFIG['CC_TYPE'] == 'clang-cl':
+    AllowCompilerWarnings()  # workaround for bug 1090497

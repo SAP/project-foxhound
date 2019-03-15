@@ -2,13 +2,11 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-/* global runTests */
-
 Services.scriptloader.loadSubScript(new URL("head_pageAction.js", gTestPath).href,
                                     this);
 
-add_task(function* testTabSwitchContext() {
-  yield runTests({
+add_task(async function testTabSwitchContext() {
+  await runTests({
     manifest: {
       "name": "Foo Extension",
 
@@ -66,6 +64,9 @@ add_task(function* testTabSwitchContext() {
          "title": "Title 2"},
         {"icon": browser.runtime.getURL("2.png"),
          "popup": browser.runtime.getURL("2.html"),
+         "title": ""},
+        {"icon": browser.runtime.getURL("2.png"),
+         "popup": browser.runtime.getURL("2.html"),
          "title": "Default T\u00edtulo \u263a"},
       ];
 
@@ -100,8 +101,13 @@ add_task(function* testTabSwitchContext() {
           tabs.push(tab.id);
           expect(null);
         },
-        expect => {
+        async expect => {
           browser.test.log("Await tab load. No icon visible.");
+          let promise = promiseTabLoad({id: tabs[1], url: "about:blank?0"});
+          let {url} = await browser.tabs.get(tabs[1]);
+          if (url === "about:blank") {
+            await promise;
+          }
           expect(null);
         },
         async expect => {
@@ -126,10 +132,16 @@ add_task(function* testTabSwitchContext() {
           expect(details[2]);
         },
         expect => {
-          browser.test.log("Clear the title. Expect default title.");
+          browser.test.log("Set empty title. Expect empty title.");
           browser.pageAction.setTitle({tabId: tabs[1], title: ""});
 
           expect(details[3]);
+        },
+        expect => {
+          browser.test.log("Clear the title. Expect default title.");
+          browser.pageAction.setTitle({tabId: tabs[1], title: null});
+
+          expect(details[4]);
         },
         async expect => {
           browser.test.log("Navigate to a new page. Expect icon hidden.");
@@ -174,8 +186,8 @@ add_task(function* testTabSwitchContext() {
   });
 });
 
-add_task(function* testDefaultTitle() {
-  yield runTests({
+add_task(async function testDefaultTitle() {
+  await runTests({
     manifest: {
       "name": "Foo Extension",
 
@@ -198,6 +210,9 @@ add_task(function* testDefaultTitle() {
         {"title": "Foo Title",
          "popup": "",
          "icon": browser.runtime.getURL("icon.png")},
+        {"title": "",
+         "popup": "",
+         "icon": browser.runtime.getURL("icon.png")},
       ];
 
       return [
@@ -216,8 +231,13 @@ add_task(function* testDefaultTitle() {
           expect(details[1]);
         },
         expect => {
-          browser.test.log("Clear the title. Expect extension title.");
+          browser.test.log("Set empty title. Expect empty title.");
           browser.pageAction.setTitle({tabId: tabs[0], title: ""});
+          expect(details[2]);
+        },
+        expect => {
+          browser.test.log("Clear the title. Expect extension title.");
+          browser.pageAction.setTitle({tabId: tabs[0], title: null});
           expect(details[0]);
         },
       ];

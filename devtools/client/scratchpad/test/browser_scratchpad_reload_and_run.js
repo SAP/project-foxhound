@@ -7,33 +7,31 @@ var DEVTOOLS_CHROME_ENABLED = "devtools.chrome.enabled";
 var EDITOR_TEXT = [
   "var evt = new CustomEvent('foo', { bubbles: true });",
   "document.body.innerHTML = 'Modified text';",
-  "window.dispatchEvent(evt);"
+  "window.dispatchEvent(evt);",
 ].join("\n");
 
-function test()
-{
-  requestLongerTimeout(2);
-  waitForExplicitFinish();
+add_task(async function test() {
   Services.prefs.setBoolPref(DEVTOOLS_CHROME_ENABLED, true);
 
-  gBrowser.selectedTab = gBrowser.addTab();
-  gBrowser.selectedBrowser.addEventListener("load", function () {
-    openScratchpad(runTests);
-  }, {capture: true, once: true});
+  const url = "data:text/html,Scratchpad test for bug 740948";
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, url);
+  await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
 
-  content.location = "data:text/html,Scratchpad test for bug 740948";
-}
+  await new Promise((resolve) => openScratchpad(resolve));
+  await runTests();
 
-function runTests()
-{
-  let sp = gScratchpadWindow.Scratchpad;
+  Services.prefs.clearUserPref(DEVTOOLS_CHROME_ENABLED);
+});
+
+async function runTests() {
+  const sp = gScratchpadWindow.Scratchpad;
   ok(sp, "Scratchpad object exists in new window");
 
   // Test that Reload And Run command is enabled in the content
   // context and disabled in the browser context.
 
-  let reloadAndRun = gScratchpadWindow.document.
-    getElementById("sp-cmd-reloadAndRun");
+  const reloadAndRun = gScratchpadWindow.document
+    .getElementById("sp-cmd-reloadAndRun");
   ok(reloadAndRun, "Reload And Run command exists");
   ok(!reloadAndRun.hasAttribute("disabled"),
       "Reload And Run command is enabled");
@@ -51,21 +49,26 @@ function runTests()
   sp.setContentContext();
   sp.setText(EDITOR_TEXT);
 
-  let browser = gBrowser.selectedBrowser;
-
-  let deferred = promise.defer();
-  browser.addEventListener("DOMWindowCreated", function () {
-    browser.contentWindow.addEventListener("foo", function () {
-      is(browser.contentWindow.document.body.innerHTML, "Modified text",
-        "After reloading, HTML is different.");
-
-      Services.prefs.clearUserPref(DEVTOOLS_CHROME_ENABLED);
-      deferred.resolve();
-    }, {capture: true, once: true});
-  }, {capture: true, once: true});
-
-  ok(browser.contentWindow.document.body.innerHTML !== "Modified text",
+  const browser = gBrowser.selectedBrowser;
+  await ContentTask.spawn(browser, null, function() {
+    ok(content.document.body.innerHTML !== "Modified text",
       "Before reloading, HTML is intact.");
-  sp.reloadAndRun().then(deferred.promise).then(finish);
+  });
+
+  const reloaded = BrowserTestUtils.browserLoaded(browser);
+  sp.reloadAndRun();
+  await reloaded;
+
+  await ContentTask.spawn(browser, null, async function() {
+    // If `evt` is not defined, the scratchpad code has not run yet,
+    // so we need to await the "foo" event.
+    if (!content.wrappedJSObject.evt) {
+      await new Promise((resolve) => {
+        content.addEventListener("foo", resolve, {once: true});
+      });
+    }
+    is(content.document.body.innerHTML, "Modified text",
+      "After reloading, HTML is different.");
+  });
 }
 

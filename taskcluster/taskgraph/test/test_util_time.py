@@ -4,6 +4,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import, print_function, unicode_literals
+
 import unittest
 import mozunit
 from datetime import datetime
@@ -52,6 +54,7 @@ class FromNowTest(unittest.TestCase):
                          '2015-01-01T00:00:00Z')
         self.assertEqual(json_time_from_now('6 days', now),
                          '2014-01-07T00:00:00Z')
+
 
 if __name__ == '__main__':
     mozunit.main()

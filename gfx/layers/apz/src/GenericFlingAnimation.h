@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,17 +27,41 @@
 namespace mozilla {
 namespace layers {
 
-class GenericFlingAnimation: public AsyncPanZoomAnimation {
-public:
-  GenericFlingAnimation(AsyncPanZoomController& aApzc,
-                        PlatformSpecificStateBase* aPlatformSpecificState,
-                        const RefPtr<const OverscrollHandoffChain>& aOverscrollHandoffChain,
-                        bool aFlingIsHandedOff,
-                        const RefPtr<const AsyncPanZoomController>& aScrolledApzc)
-    : mApzc(aApzc)
-    , mOverscrollHandoffChain(aOverscrollHandoffChain)
-    , mScrolledApzc(aScrolledApzc)
-  {
+/**
+ * The FlingPhysics template parameter determines the physics model
+ * that the fling animation follows. It must have the following methods:
+ *
+ *   - Default constructor.
+ *
+ *   - Init(const ParentLayerPoint& aStartingVelocity, float aPLPPI).
+ *     Called at the beginning of the fling, with the fling's starting velocity,
+ *     and the number of ParentLayer pixels per (Screen) inch at the point of
+ *     the fling's start in the fling's direction.
+ *
+ *   - Sample(const TimeDuration& aDelta,
+ *            ParentLayerPoint* aOutVelocity,
+ *            ParentLayerPoint* aOutOffset);
+ *     Called on each sample of the fling.
+ *     |aDelta| is the time elapsed since the last sample.
+ *     |aOutVelocity| should be the desired velocity after the current sample,
+ *                    in ParentLayer pixels per millisecond.
+ *     |aOutOffset| should be the desired _delta_ to the scroll offset after
+ *     the current sample. |aOutOffset| should _not_ be clamped to the APZC's
+ *     scrollable bounds; the caller will do the clamping, and it needs to
+ *     know the unclamped value to handle handoff/overscroll correctly.
+ */
+template <typename FlingPhysics>
+class GenericFlingAnimation : public AsyncPanZoomAnimation,
+                              public FlingPhysics {
+ public:
+  GenericFlingAnimation(
+      AsyncPanZoomController& aApzc,
+      const RefPtr<const OverscrollHandoffChain>& aOverscrollHandoffChain,
+      bool aFlingIsHandedOff,
+      const RefPtr<const AsyncPanZoomController>& aScrolledApzc, float aPLPPI)
+      : mApzc(aApzc),
+        mOverscrollHandoffChain(aOverscrollHandoffChain),
+        mScrolledApzc(aScrolledApzc) {
     MOZ_ASSERT(mOverscrollHandoffChain);
     TimeStamp now = aApzc.GetFrameTime();
 
@@ -45,46 +69,53 @@ public:
     // (in this APZC, or an APZC further in the handoff chain).
     // This ensures that we don't take the 'overscroll' path in Sample()
     // on account of one axis which can't scroll having a velocity.
-    if (!mOverscrollHandoffChain->CanScrollInDirection(&mApzc, ScrollDirection::HORIZONTAL)) {
-      ReentrantMonitorAutoEnter lock(mApzc.mMonitor);
+    if (!mOverscrollHandoffChain->CanScrollInDirection(
+            &mApzc, ScrollDirection::eHorizontal)) {
+      RecursiveMutexAutoLock lock(mApzc.mRecursiveMutex);
       mApzc.mX.SetVelocity(0);
     }
-    if (!mOverscrollHandoffChain->CanScrollInDirection(&mApzc, ScrollDirection::VERTICAL)) {
-      ReentrantMonitorAutoEnter lock(mApzc.mMonitor);
+    if (!mOverscrollHandoffChain->CanScrollInDirection(
+            &mApzc, ScrollDirection::eVertical)) {
+      RecursiveMutexAutoLock lock(mApzc.mRecursiveMutex);
       mApzc.mY.SetVelocity(0);
     }
 
     ParentLayerPoint velocity = mApzc.GetVelocityVector();
 
     // If the last fling was very recent and in the same direction as this one,
-    // boost the velocity to be the sum of the two. Check separate axes separately
-    // because we could have two vertical flings with small horizontal components
-    // on the opposite side of zero, and we still want the y-fling to get accelerated.
-    // Note that the acceleration code is only applied on the APZC that initiates
-    // the fling; the accelerated velocities are then handed off using the
-    // normal DispatchFling codepath.
-    // Acceleration is only applied in the APZC that originated the fling,
-    // not in APZCs further down the handoff chain during handoff.
+    // boost the velocity to be the sum of the two. Check separate axes
+    // separately because we could have two vertical flings with small
+    // horizontal components on the opposite side of zero, and we still want the
+    // y-fling to get accelerated. Note that the acceleration code is only
+    // applied on the APZC that initiates the fling; the accelerated velocities
+    // are then handed off using the normal DispatchFling codepath. Acceleration
+    // is only applied in the APZC that originated the fling, not in APZCs
+    // further down the handoff chain during handoff.
     bool applyAcceleration = !aFlingIsHandedOff;
-    if (applyAcceleration && !mApzc.mLastFlingTime.IsNull()
-        && (now - mApzc.mLastFlingTime).ToMilliseconds() < gfxPrefs::APZFlingAccelInterval()
-        && velocity.Length() >= gfxPrefs::APZFlingAccelMinVelocity()) {
+    if (applyAcceleration && !mApzc.mLastFlingTime.IsNull() &&
+        (now - mApzc.mLastFlingTime).ToMilliseconds() <
+            gfxPrefs::APZFlingAccelInterval() &&
+        velocity.Length() >= gfxPrefs::APZFlingAccelMinVelocity()) {
       if (SameDirection(velocity.x, mApzc.mLastFlingVelocity.x)) {
         velocity.x = Accelerate(velocity.x, mApzc.mLastFlingVelocity.x);
         FLING_LOG("%p Applying fling x-acceleration from %f to %f (delta %f)\n",
-                  &mApzc, mApzc.mX.GetVelocity(), velocity.x, mApzc.mLastFlingVelocity.x);
+                  &mApzc, mApzc.mX.GetVelocity(), velocity.x,
+                  mApzc.mLastFlingVelocity.x);
         mApzc.mX.SetVelocity(velocity.x);
       }
       if (SameDirection(velocity.y, mApzc.mLastFlingVelocity.y)) {
         velocity.y = Accelerate(velocity.y, mApzc.mLastFlingVelocity.y);
         FLING_LOG("%p Applying fling y-acceleration from %f to %f (delta %f)\n",
-                  &mApzc, mApzc.mY.GetVelocity(), velocity.y, mApzc.mLastFlingVelocity.y);
+                  &mApzc, mApzc.mY.GetVelocity(), velocity.y,
+                  mApzc.mLastFlingVelocity.y);
         mApzc.mY.SetVelocity(velocity.y);
       }
     }
 
     mApzc.mLastFlingTime = now;
     mApzc.mLastFlingVelocity = velocity;
+
+    FlingPhysics::Init(mApzc.GetVelocityVector(), aPLPPI);
   }
 
   /**
@@ -94,37 +125,30 @@ public:
    * or false if there is no fling or the fling has ended.
    */
   virtual bool DoSample(FrameMetrics& aFrameMetrics,
-                        const TimeDuration& aDelta) override
-  {
-    float friction = gfxPrefs::APZFlingFriction();
-    float threshold = gfxPrefs::APZFlingStoppedThreshold();
+                        const TimeDuration& aDelta) override {
+    ParentLayerPoint velocity;
+    ParentLayerPoint offset;
+    FlingPhysics::Sample(aDelta, &velocity, &offset);
 
-    bool shouldContinueFlingX = mApzc.mX.FlingApplyFrictionOrCancel(aDelta, friction, threshold),
-         shouldContinueFlingY = mApzc.mY.FlingApplyFrictionOrCancel(aDelta, friction, threshold);
+    mApzc.SetVelocityVector(velocity);
+
     // If we shouldn't continue the fling, let's just stop and repaint.
-    if (!shouldContinueFlingX && !shouldContinueFlingY) {
-      FLING_LOG("%p ending fling animation. overscrolled=%d\n", &mApzc, mApzc.IsOverscrolled());
-      // This APZC or an APZC further down the handoff chain may be be overscrolled.
-      // Start a snap-back animation on the overscrolled APZC.
+    if (IsZero(velocity)) {
+      FLING_LOG("%p ending fling animation. overscrolled=%d\n", &mApzc,
+                mApzc.IsOverscrolled());
+      // This APZC or an APZC further down the handoff chain may be be
+      // overscrolled. Start a snap-back animation on the overscrolled APZC.
       // Note:
       //   This needs to be a deferred task even though it can safely run
-      //   while holding mMonitor, because otherwise, if the overscrolled APZC
-      //   is this one, then the SetState(NOTHING) in UpdateAnimation will
+      //   while holding mRecursiveMutex, because otherwise, if the overscrolled
+      //   APZC is this one, then the SetState(NOTHING) in UpdateAnimation will
       //   stomp on the SetState(SNAP_BACK) it does.
-      mDeferredTasks.AppendElement(
-            NewRunnableMethod<AsyncPanZoomController*>(mOverscrollHandoffChain.get(),
-                                                       &OverscrollHandoffChain::SnapBackOverscrolledApzc,
-                                                       &mApzc));
+      mDeferredTasks.AppendElement(NewRunnableMethod<AsyncPanZoomController*>(
+          "layers::OverscrollHandoffChain::SnapBackOverscrolledApzc",
+          mOverscrollHandoffChain.get(),
+          &OverscrollHandoffChain::SnapBackOverscrolledApzc, &mApzc));
       return false;
     }
-
-    // AdjustDisplacement() zeroes out the Axis velocity if we're in overscroll.
-    // Since we need to hand off the velocity to the tree manager in such a case,
-    // we save it here. Would be ParentLayerVector instead of ParentLayerPoint
-    // if we had vector classes.
-    ParentLayerPoint velocity = mApzc.GetVelocityVector();
-
-    ParentLayerPoint offset = velocity * aDelta.ToMilliseconds();
 
     // Ordinarily we might need to do a ScheduleComposite if either of
     // the following AdjustDisplacement calls returns true, but this
@@ -135,7 +159,7 @@ public:
     mApzc.mX.AdjustDisplacement(offset.x, adjustedOffset.x, overscroll.x);
     mApzc.mY.AdjustDisplacement(offset.y, adjustedOffset.y, overscroll.y);
 
-    aFrameMetrics.ScrollBy(adjustedOffset / aFrameMetrics.GetZoom());
+    mApzc.ScrollBy(adjustedOffset / aFrameMetrics.GetZoom());
 
     // The fling may have caused us to reach the end of our scroll range.
     if (!IsZero(overscroll)) {
@@ -158,19 +182,19 @@ public:
       // there is an APZC further in the handoff chain which is pannable; if
       // there isn't, we take the new fling ourselves, entering an overscrolled
       // state.
-      // Note: APZC is holding mMonitor, so directly calling
+      // Note: APZC is holding mRecursiveMutex, so directly calling
       // HandleFlingOverscroll() (which acquires the tree lock) would violate
       // the lock ordering. Instead we schedule HandleFlingOverscroll() to be
-      // called after mMonitor is released.
-      FLING_LOG("%p fling went into overscroll, handing off with velocity %s\n", &mApzc, Stringify(velocity).c_str());
+      // called after mRecursiveMutex is released.
+      FLING_LOG("%p fling went into overscroll, handing off with velocity %s\n",
+                &mApzc, Stringify(velocity).c_str());
       mDeferredTasks.AppendElement(
           NewRunnableMethod<ParentLayerPoint,
                             RefPtr<const OverscrollHandoffChain>,
-                            RefPtr<const AsyncPanZoomController>>(&mApzc,
-                                                                  &AsyncPanZoomController::HandleFlingOverscroll,
-                                                                  velocity,
-                                                                  mOverscrollHandoffChain,
-                                                                  mScrolledApzc));
+                            RefPtr<const AsyncPanZoomController>>(
+              "layers::AsyncPanZoomController::HandleFlingOverscroll", &mApzc,
+              &AsyncPanZoomController::HandleFlingOverscroll, velocity,
+              mOverscrollHandoffChain, mScrolledApzc));
 
       // If there is a remaining velocity on this APZC, continue this fling
       // as well. (This fling and the handed-off fling will run concurrently.)
@@ -182,18 +206,20 @@ public:
     return true;
   }
 
-private:
-  static bool SameDirection(float aVelocity1, float aVelocity2)
-  {
-    return (aVelocity1 == 0.0f)
-        || (aVelocity2 == 0.0f)
-        || (IsNegative(aVelocity1) == IsNegative(aVelocity2));
+  virtual bool HandleScrollOffsetUpdate(
+      const Maybe<CSSPoint>& aRelativeDelta) override {
+    return true;
   }
 
-  static float Accelerate(float aBase, float aSupplemental)
-  {
-    return (aBase * gfxPrefs::APZFlingAccelBaseMultiplier())
-         + (aSupplemental * gfxPrefs::APZFlingAccelSupplementalMultiplier());
+ private:
+  static bool SameDirection(float aVelocity1, float aVelocity2) {
+    return (aVelocity1 == 0.0f) || (aVelocity2 == 0.0f) ||
+           (IsNegative(aVelocity1) == IsNegative(aVelocity2));
+  }
+
+  static float Accelerate(float aBase, float aSupplemental) {
+    return (aBase * gfxPrefs::APZFlingAccelBaseMultiplier()) +
+           (aSupplemental * gfxPrefs::APZFlingAccelSupplementalMultiplier());
   }
 
   AsyncPanZoomController& mApzc;
@@ -201,7 +227,7 @@ private:
   RefPtr<const AsyncPanZoomController> mScrolledApzc;
 };
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla
 
-#endif // mozilla_layers_GenericFlingAnimation_h_
+#endif  // mozilla_layers_GenericFlingAnimation_h_

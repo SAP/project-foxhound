@@ -7,12 +7,10 @@
  * Tests if the prefs that should survive across tool reloads work.
  */
 
-add_task(function* () {
-  let { monitor } = yield initNetMonitor(SIMPLE_URL);
-  let { getRequestFilterTypes } = monitor.panelWin
-    .windowRequire("devtools/client/netmonitor/selectors/index");
-  let Actions = monitor.panelWin
-    .windowRequire("devtools/client/netmonitor/actions/index");
+add_task(async function() {
+  let { monitor } = await initNetMonitor(SIMPLE_URL);
+  const Actions = monitor.panelWin
+    .windowRequire("devtools/client/netmonitor/src/actions/index");
   info("Starting test... ");
 
   // This test reopens the network monitor a bunch of times, for different
@@ -22,60 +20,60 @@ add_task(function* () {
   // Use these getters instead of caching instances inside the panel win,
   // since the tool is reopened a bunch of times during this test
   // and the instances will differ.
-  let getDoc = () => monitor.panelWin.document;
-  let getPrefs = () => monitor.panelWin
-    .windowRequire("devtools/client/netmonitor/utils/prefs").Prefs;
-  let getStore = () => monitor.panelWin.gStore;
-  let getState = () => getStore().getState();
+  const getDoc = () => monitor.panelWin.document;
+  const getPrefs = () => monitor.panelWin
+    .windowRequire("devtools/client/netmonitor/src/utils/prefs").Prefs;
+  const getStore = () => monitor.panelWin.store;
+  const getState = () => getStore().getState();
 
-  let prefsToCheck = {
+  const prefsToCheck = {
     filters: {
       // A custom new value to be used for the verified preference.
       newValue: ["html", "css"],
       // Getter used to retrieve the current value from the frontend, in order
       // to verify that the pref was applied properly.
-      validateValue: () => getRequestFilterTypes(getState())
+      validateValue: () => Object.entries(getState().filters.requestFilterTypes)
         .filter(([type, check]) => check)
         .map(([type, check]) => type),
       // Predicate used to modify the frontend when setting the new pref value,
       // before trying to validate the changes.
       modifyFrontend: (value) => value.forEach(e =>
-        getStore().dispatch(Actions.toggleRequestFilterType(e)))
+        getStore().dispatch(Actions.toggleRequestFilterType(e))),
     },
     networkDetailsWidth: {
       newValue: ~~(Math.random() * 200 + 100),
       validateValue: () =>
         getDoc().querySelector(".monitor-panel .split-box .controlled").clientWidth,
-      modifyFrontend: function (value) {
+      modifyFrontend: function(value) {
         getDoc().querySelector(".monitor-panel .split-box .controlled")
                 .style.width = `${value}px`;
-      }
+      },
     },
     networkDetailsHeight: {
       newValue: ~~(Math.random() * 300 + 100),
       validateValue: () =>
         getDoc().querySelector(".monitor-panel .split-box .controlled").clientHeight,
-      modifyFrontend: function (value) {
+      modifyFrontend: function(value) {
         getDoc().querySelector(".monitor-panel .split-box .controlled")
                 .style.height = `${value}px`;
-      }
-    }
+      },
+    },
     /* add more prefs here... */
   };
 
-  yield testBottom();
-  yield testSide();
-  yield testWindow();
+  await testBottom();
+  await testSide();
+  await testWindow();
 
   info("Moving toolbox back to the bottom...");
-  yield monitor.toolbox.switchHost(Toolbox.HostType.BOTTOM);
+  await monitor.toolbox.switchHost("bottom");
   return teardown(monitor);
 
   function storeFirstPrefValues() {
     info("Caching initial pref values.");
 
-    for (let name in prefsToCheck) {
-      let currentValue = getPrefs()[name];
+    for (const name in prefsToCheck) {
+      const currentValue = getPrefs()[name];
       prefsToCheck[name].firstValue = currentValue;
     }
   }
@@ -83,15 +81,15 @@ add_task(function* () {
   function validateFirstPrefValues(isVerticalSplitter) {
     info("Validating current pref values to the UI elements.");
 
-    for (let name in prefsToCheck) {
+    for (const name in prefsToCheck) {
       if ((isVerticalSplitter && name === "networkDetailsHeight") ||
           (!isVerticalSplitter && name === "networkDetailsWidth")) {
         continue;
       }
 
-      let currentValue = getPrefs()[name];
-      let firstValue = prefsToCheck[name].firstValue;
-      let validateValue = prefsToCheck[name].validateValue;
+      const currentValue = getPrefs()[name];
+      const firstValue = prefsToCheck[name].firstValue;
+      const validateValue = prefsToCheck[name].validateValue;
 
       is(firstValue.toSource(), currentValue.toSource(),
         "Pref " + name + " should be equal to first value: " + currentValue);
@@ -103,17 +101,17 @@ add_task(function* () {
   function modifyFrontend(isVerticalSplitter) {
     info("Modifying UI elements to the specified new values.");
 
-    for (let name in prefsToCheck) {
+    for (const name in prefsToCheck) {
       if ((isVerticalSplitter && name === "networkDetailsHeight") ||
           (!isVerticalSplitter && name === "networkDetailsWidth")) {
         continue;
       }
 
-      let currentValue = getPrefs()[name];
-      let firstValue = prefsToCheck[name].firstValue;
-      let newValue = prefsToCheck[name].newValue;
-      let validateValue = prefsToCheck[name].validateValue;
-      let modFrontend = prefsToCheck[name].modifyFrontend;
+      const currentValue = getPrefs()[name];
+      const firstValue = prefsToCheck[name].firstValue;
+      const newValue = prefsToCheck[name].newValue;
+      const validateValue = prefsToCheck[name].validateValue;
+      const modFrontend = prefsToCheck[name].modifyFrontend;
 
       modFrontend(newValue);
       info("Modified UI element affecting " + name + " to: " + newValue);
@@ -130,16 +128,16 @@ add_task(function* () {
   function validateNewPrefValues(isVerticalSplitter) {
     info("Invalidating old pref values to the modified UI elements.");
 
-    for (let name in prefsToCheck) {
+    for (const name in prefsToCheck) {
       if ((isVerticalSplitter && name === "networkDetailsHeight") ||
           (!isVerticalSplitter && name === "networkDetailsWidth")) {
         continue;
       }
 
-      let currentValue = getPrefs()[name];
-      let firstValue = prefsToCheck[name].firstValue;
-      let newValue = prefsToCheck[name].newValue;
-      let validateValue = prefsToCheck[name].validateValue;
+      const currentValue = getPrefs()[name];
+      const firstValue = prefsToCheck[name].firstValue;
+      const newValue = prefsToCheck[name].newValue;
+      const validateValue = prefsToCheck[name].validateValue;
 
       isnot(firstValue.toSource(), currentValue.toSource(),
         "Pref " + name + " should't be equal to first value: " + currentValue);
@@ -153,17 +151,17 @@ add_task(function* () {
   function resetFrontend(isVerticalSplitter) {
     info("Resetting UI elements to the cached initial pref values.");
 
-    for (let name in prefsToCheck) {
+    for (const name in prefsToCheck) {
       if ((isVerticalSplitter && name === "networkDetailsHeight") ||
           (!isVerticalSplitter && name === "networkDetailsWidth")) {
         continue;
       }
 
-      let currentValue = getPrefs()[name];
-      let firstValue = prefsToCheck[name].firstValue;
-      let newValue = prefsToCheck[name].newValue;
-      let validateValue = prefsToCheck[name].validateValue;
-      let modFrontend = prefsToCheck[name].modifyFrontend;
+      const currentValue = getPrefs()[name];
+      const firstValue = prefsToCheck[name].firstValue;
+      const newValue = prefsToCheck[name].newValue;
+      const validateValue = prefsToCheck[name].validateValue;
+      const modFrontend = prefsToCheck[name].modifyFrontend;
 
       modFrontend(firstValue);
       info("Modified UI element affecting " + name + " to: " + firstValue);
@@ -177,22 +175,21 @@ add_task(function* () {
     }
   }
 
-  function* restartNetMonitorAndSetupEnv() {
-    let newMonitor = yield restartNetMonitor(monitor);
+  async function restartNetMonitorAndSetupEnv() {
+    const newMonitor = await restartNetMonitor(monitor);
     monitor = newMonitor.monitor;
 
-    let networkEvent = waitForNetworkEvents(monitor, 1);
+    const networkEvent = waitForNetworkEvents(monitor, 1);
     newMonitor.tab.linkedBrowser.reload();
-    yield networkEvent;
+    await networkEvent;
 
-    let wait = waitForDOM(getDoc(), ".network-details-panel");
-    EventUtils.sendMouseEvent({ type: "click" },
-      getDoc().querySelector(".network-details-panel-toggle"));
-    yield wait;
+    const wait = waitForDOM(getDoc(), ".network-details-panel");
+    getStore().dispatch(Actions.toggleNetworkDetails());
+    await wait;
   }
 
-  function* testBottom() {
-    yield restartNetMonitorAndSetupEnv();
+  async function testBottom() {
+    await restartNetMonitorAndSetupEnv();
 
     info("Testing prefs reload for a bottom host.");
     storeFirstPrefValues();
@@ -201,49 +198,49 @@ add_task(function* () {
     validateFirstPrefValues(true);
     modifyFrontend(true);
 
-    yield restartNetMonitorAndSetupEnv();
+    await restartNetMonitorAndSetupEnv();
 
     // Revalidate and reset frontend while toolbox is on the bottom.
     validateNewPrefValues(true);
     resetFrontend(true);
 
-    yield restartNetMonitorAndSetupEnv();
+    await restartNetMonitorAndSetupEnv();
 
     // Revalidate.
     validateFirstPrefValues(true);
   }
 
-  function* testSide() {
-    yield restartNetMonitorAndSetupEnv();
+  async function testSide() {
+    await restartNetMonitorAndSetupEnv();
 
-    info("Moving toolbox to the side...");
+    info("Moving toolbox to the right...");
 
-    yield monitor.toolbox.switchHost(Toolbox.HostType.SIDE);
-    info("Testing prefs reload for a side host.");
+    await monitor.toolbox.switchHost("right");
+    info("Testing prefs reload for a right host.");
     storeFirstPrefValues();
 
     // Validate and modify frontend while toolbox is on the side.
     validateFirstPrefValues(false);
     modifyFrontend(false);
 
-    yield restartNetMonitorAndSetupEnv();
+    await restartNetMonitorAndSetupEnv();
 
     // Revalidate and reset frontend while toolbox is on the side.
     validateNewPrefValues(false);
     resetFrontend(false);
 
-    yield restartNetMonitorAndSetupEnv();
+    await restartNetMonitorAndSetupEnv();
 
     // Revalidate.
     validateFirstPrefValues(false);
   }
 
-  function* testWindow() {
-    yield restartNetMonitorAndSetupEnv();
+  async function testWindow() {
+    await restartNetMonitorAndSetupEnv();
 
     info("Moving toolbox into a window...");
 
-    yield monitor.toolbox.switchHost(Toolbox.HostType.WINDOW);
+    await monitor.toolbox.switchHost("window");
     info("Testing prefs reload for a window host.");
     storeFirstPrefValues();
 
@@ -251,13 +248,13 @@ add_task(function* () {
     validateFirstPrefValues(true);
     modifyFrontend(true);
 
-    yield restartNetMonitorAndSetupEnv();
+    await restartNetMonitorAndSetupEnv();
 
     // Revalidate and reset frontend while toolbox is in a window.
     validateNewPrefValues(true);
     resetFrontend(true);
 
-    yield restartNetMonitorAndSetupEnv();
+    await restartNetMonitorAndSetupEnv();
 
     // Revalidate.
     validateFirstPrefValues(true);

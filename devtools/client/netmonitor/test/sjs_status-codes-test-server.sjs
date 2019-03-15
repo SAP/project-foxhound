@@ -1,8 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { classes: Cc, interfaces: Ci } = Components;
-
 function handleRequest(request, response) {
   response.processAsync();
 
@@ -23,6 +21,9 @@ function handleRequest(request, response) {
         break;
       case "300":
         response.setStatusLine(request.httpVersion, 303, "See Other");
+        break;
+      case "304":
+        response.setStatusLine(request.httpVersion, 304, "Not Modified");
         break;
       case "400":
         response.setStatusLine(request.httpVersion, 404, "Not Found");

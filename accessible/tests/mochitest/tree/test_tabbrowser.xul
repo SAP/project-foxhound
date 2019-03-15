@@ -34,8 +34,12 @@
 
       this.invoke = function testTabHierarchy_invoke()
       {
-        var docURIs = ["about:", "about:mozilla"];
-        tabBrowser().loadTabs(docURIs, false, true);
+        var docURIs = ["about:license", "about:mozilla"];
+        tabBrowser().loadTabs(docURIs, {
+          inBackground: false,
+          replace: true,
+          triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+        });
       }
 
       this.finalCheck = function testTabHierarchy_finalCheck(aEvent)
@@ -62,7 +66,7 @@
               children: []
             },
             {
-              // xul:tab ("about:")
+              // xul:tab ("about:license")
               role: ROLE_PAGETAB,
               children: []
             },
@@ -104,17 +108,12 @@
           //     probably due to size reduction in this test.
           tabsAccTree.children.splice(0, 0,
             {
-              // xul:tab ("about:")
+              // xul:tab ("about:license")
               role: ROLE_PAGETAB,
               children: [
                 {
                   // xul:text, i.e. the tab label text
                   role: ROLE_TEXT_LEAF,
-                  children: []
-                },
-                {
-                  // xul:toolbarbutton ("Close Tab")
-                  role: ROLE_PUSHBUTTON,
                   children: []
                 }
               ]
@@ -126,11 +125,6 @@
                 {
                   // xul:text, i.e. the tab label text
                   role: ROLE_TEXT_LEAF,
-                  children: []
-                },
-                {
-                  // xul:toolbarbutton ("Close Tab")
-                  role: ROLE_PUSHBUTTON,
                   children: []
                 }
               ]
@@ -164,11 +158,14 @@
                   role: ROLE_INTERNAL_FRAME,
                   children: [
                     {
-                      // #document ("about:")
+                      // #document ("about:license")
                       role: ROLE_DOCUMENT
                       // children: [ ... ] // Ignore document content.
                     }
                   ]
+                },
+                {
+                  role: ROLE_STATUSBAR
                 }
               ]
             },
@@ -209,7 +206,7 @@
           ]
         };
 
-        testAccessibleTree(tabBrowser().mTabBox.tabpanels, tabboxAccTree);
+        testAccessibleTree(tabBrowser().tabbox.tabpanels, tabboxAccTree);
       }
 
       this.getID = function testTabHierarchy_getID()
@@ -220,12 +217,14 @@
 
     ////////////////////////////////////////////////////////////////////////////
     // Test
-    //gA11yEventDumpToConsole = true;
+    gA11yEventDumpToConsole = true;
     //enableLogging("tree,verbose,stack");
 
     var gQueue = null;
     function doTest()
     {
+      SimpleTest.requestCompleteLog();
+
       // Load documents into tabs and wait for docLoadComplete events caused by these
       // documents load before we start the test.
       gQueue = new eventQueue();

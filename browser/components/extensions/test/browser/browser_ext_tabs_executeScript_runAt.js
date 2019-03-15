@@ -14,32 +14,37 @@
  * fail to load as early as expected, but don't load at any illegal time.
  */
 
-add_task(function* testExecuteScript() {
-  let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, "about:blank", true);
+add_task(async function testExecuteScript() {
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, "about:blank", true);
 
   async function background() {
     let tab;
 
     const BASE = "http://mochi.test:8888/browser/browser/components/extensions/test/browser/";
-    const URL = BASE + "file_iframe_document.sjs";
+    const URL = BASE + "file_slowed_document.sjs";
 
     const MAX_TRIES = 10;
+
+    let onUpdatedPromise = (tabId, url, status) => {
+      return new Promise(resolve => {
+        browser.tabs.onUpdated.addListener(function listener(_, changed, tab) {
+          if (tabId == tab.id && changed.status == status && tab.url == url) {
+            browser.tabs.onUpdated.removeListener(listener);
+            resolve();
+          }
+        });
+      });
+    };
 
     try {
       [tab] = await browser.tabs.query({active: true, currentWindow: true});
 
       let success = false;
       for (let tries = 0; !success && tries < MAX_TRIES; tries++) {
-        let url = `${URL}?r=${Math.random()}`;
+        let url = `${URL}?with-iframe&r=${Math.random()}`;
 
-        let loadingPromise = new Promise(resolve => {
-          browser.tabs.onUpdated.addListener(function listener(tabId, changed, tab_) {
-            if (tabId == tab.id && changed.status == "loading" && tab_.url == url) {
-              browser.tabs.onUpdated.removeListener(listener);
-              resolve();
-            }
-          });
-        });
+        let loadingPromise = onUpdatedPromise(tab.id, url, "loading");
+        let completePromise = onUpdatedPromise(tab.id, url, "complete");
 
         // TODO: Test allFrames and frameId.
 
@@ -50,6 +55,10 @@ add_task(function* testExecuteScript() {
           // Send the executeScript requests in the reverse order that we expect
           // them to execute in, to avoid them passing only because of timing
           // races.
+          browser.tabs.executeScript({
+            code: "document.readyState",
+            // Testing default `runAt`.
+          }),
           browser.tabs.executeScript({
             code: "document.readyState",
             runAt: "document_idle",
@@ -70,14 +79,17 @@ add_task(function* testExecuteScript() {
         // regardless of retries.
         browser.test.assertTrue(states[1] == "interactive" || states[1] == "complete",
                                 `document_end state is valid: ${states[1]}`);
-        browser.test.assertTrue(states[2] == "complete",
+        browser.test.assertTrue(states[2] == "interactive" || states[2] == "complete",
                                 `document_idle state is valid: ${states[2]}`);
 
         // If we have the earliest valid states for each script, we're done.
         // Otherwise, try again.
         success = (states[0] == "loading" &&
                    states[1] == "interactive" &&
-                   states[2] == "complete");
+                   states[2] == "interactive" &&
+                   states[3] == "interactive");
+
+        await completePromise;
       }
 
       browser.test.assertTrue(success, "Got the earliest expected states at least once");
@@ -97,11 +109,11 @@ add_task(function* testExecuteScript() {
     background,
   });
 
-  yield extension.startup();
+  await extension.startup();
 
-  yield extension.awaitFinish("executeScript-runAt");
+  await extension.awaitFinish("executeScript-runAt");
 
-  yield extension.unload();
+  await extension.unload();
 
-  yield BrowserTestUtils.removeTab(tab);
+  BrowserTestUtils.removeTab(tab);
 });

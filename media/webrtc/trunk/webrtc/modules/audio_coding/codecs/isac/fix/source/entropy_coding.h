@@ -16,8 +16,8 @@
  *
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_FIX_SOURCE_ENTROPY_CODING_H_
-#define WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_FIX_SOURCE_ENTROPY_CODING_H_
+#ifndef MODULES_AUDIO_CODING_CODECS_ISAC_FIX_SOURCE_ENTROPY_CODING_H_
+#define MODULES_AUDIO_CODING_CODECS_ISAC_FIX_SOURCE_ENTROPY_CODING_H_
 
 #include "structs.h"
 
@@ -147,7 +147,7 @@ void WebRtcIsacfix_MatrixProduct2C(const int16_t matrix0[],
                                    const int matrix0_index_factor,
                                    const int matrix0_index_step);
 
-#if (defined WEBRTC_DETECT_NEON) || (defined WEBRTC_HAS_NEON)
+#if defined(WEBRTC_HAS_NEON)
 void WebRtcIsacfix_MatrixProduct1Neon(const int16_t matrix0[],
                                       const int32_t matrix1[],
                                       int32_t matrix_product[],
@@ -186,4 +186,4 @@ void WebRtcIsacfix_MatrixProduct2MIPS(const int16_t matrix0[],
                                       const int matrix0_index_step);
 #endif
 
-#endif  // WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_FIX_SOURCE_ENTROPY_CODING_H_
+#endif  // MODULES_AUDIO_CODING_CODECS_ISAC_FIX_SOURCE_ENTROPY_CODING_H_

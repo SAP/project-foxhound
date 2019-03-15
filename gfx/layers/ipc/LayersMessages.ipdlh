@@ -7,18 +7,19 @@
 
 include LayersSurfaces;
 include protocol PCompositorBridge;
-include protocol PRenderFrame;
 include protocol PTexture;
 
 include "gfxipc/ShadowLayerUtils.h";
 include "mozilla/GfxMessageUtils.h";
 include "ImageLayers.h";
 
+using mozilla::gfx::Glyph from "mozilla/gfx/2D.h";
 using mozilla::gfx::SamplingFilter from "mozilla/gfx/2D.h";
 using struct mozilla::gfx::Color from "mozilla/gfx/2D.h";
 using struct mozilla::gfx::Point3D from "mozilla/gfx/Point.h";
 using mozilla::gfx::IntPoint from "mozilla/gfx/Point.h";
 using class mozilla::gfx::Matrix4x4 from "mozilla/gfx/Matrix.h";
+using nscolor from "nsColor.h";
 using nscoord from "nsCoord.h";
 using struct nsRect from "nsRect.h";
 using struct nsPoint from "nsPoint.h";
@@ -26,7 +27,7 @@ using class mozilla::TimeDuration from "mozilla/TimeStamp.h";
 using class mozilla::TimeStamp from "mozilla/TimeStamp.h";
 using mozilla::ScreenRotation from "mozilla/WidgetUtils.h";
 using nsCSSPropertyID from "nsCSSPropertyID.h";
-using mozilla::dom::ScreenOrientationInternal from "mozilla/dom/ScreenOrientation.h";
+using hal::ScreenOrientation from "mozilla/HalScreenConfiguration.h";
 using struct mozilla::layers::TextureInfo from "mozilla/layers/CompositorTypes.h";
 using mozilla::LayerMargin from "Units.h";
 using mozilla::LayerPoint from "Units.h";
@@ -40,19 +41,19 @@ using mozilla::layers::ScaleMode from "mozilla/layers/LayersTypes.h";
 using mozilla::layers::EventRegions from "mozilla/layers/LayersTypes.h";
 using mozilla::layers::EventRegionsOverride from "mozilla/layers/LayersTypes.h";
 using mozilla::layers::DiagnosticTypes from "mozilla/layers/CompositorTypes.h";
+using mozilla::layers::FocusTarget from "mozilla/layers/FocusTarget.h";
 using struct mozilla::layers::ScrollMetadata from "FrameMetrics.h";
-using mozilla::layers::FrameMetrics::ViewID from "FrameMetrics.h";
+using mozilla::layers::ScrollableLayerGuid::ViewID from "mozilla/layers/ScrollableLayerGuid.h";
 using mozilla::layers::LayersBackend from "mozilla/layers/LayersTypes.h";
-using mozilla::layers::MaybeLayerClip from "FrameMetrics.h";
-using mozilla::gfx::Glyph from "Layers.h";
-using mozilla::layers::BorderColors from "mozilla/layers/LayersTypes.h";
-using mozilla::layers::BorderCorners from "mozilla/layers/LayersTypes.h";
-using mozilla::layers::BorderWidths from "mozilla/layers/LayersTypes.h";
 using mozilla::layers::LayerHandle from "mozilla/layers/LayersTypes.h";
 using mozilla::layers::CompositableHandle from "mozilla/layers/LayersTypes.h";
-using mozilla::layers::ReadLockHandle from "mozilla/layers/LayersTypes.h";
+using mozilla::layers::CompositionPayload from "mozilla/layers/LayersTypes.h";
 using mozilla::layers::SimpleLayerAttributes from "mozilla/layers/LayerAttributes.h";
 using mozilla::CrossProcessSemaphoreHandle from "mozilla/ipc/CrossProcessSemaphore.h";
+using struct mozilla::void_t from "ipc/IPCMessageUtils.h";
+using mozilla::layers::LayersId from "mozilla/layers/LayersTypes.h";
+using mozilla::layers::TransactionId from "mozilla/layers/LayersTypes.h";
+using mozilla::VsyncId from "mozilla/VsyncDispatcher.h";
 
 namespace mozilla {
 namespace layers {
@@ -60,7 +61,7 @@ namespace layers {
 struct TargetConfig {
   IntRect naturalBounds;
   ScreenRotation rotation;
-  ScreenOrientationInternal orientation;
+  ScreenOrientation orientation;
   nsIntRegion clearRegion;
 };
 
@@ -69,8 +70,6 @@ struct OpCreatePaintedLayer    { LayerHandle layer; };
 struct OpCreateContainerLayer  { LayerHandle layer; };
 struct OpCreateImageLayer      { LayerHandle layer; };
 struct OpCreateColorLayer      { LayerHandle layer; };
-struct OpCreateTextLayer       { LayerHandle layer; };
-struct OpCreateBorderLayer       { LayerHandle layer; };
 struct OpCreateCanvasLayer     { LayerHandle layer; };
 struct OpCreateRefLayer        { LayerHandle layer; };
 
@@ -98,8 +97,7 @@ struct CubicBezierFunction {
 
 struct StepFunction {
   int steps;
-  // 1 = nsTimingFunction::StepStart, 2 = nsTimingFunction::StepEnd
-  int type;
+  uint8_t type; // Converted from StyleStepPosition.
 };
 
 union TimingFunction {
@@ -165,6 +163,7 @@ union MaybeTimeDuration {
 union Animatable {
   null_t;
   float;
+  nscolor;
   TransformFunction[];
 };
 
@@ -187,6 +186,11 @@ struct TransformData {
   Point3D transformOrigin;
   nsRect bounds;
   int32_t appUnitsPerDevPixel;
+  // The resolution scale inherited from the parent
+  float inheritedXScale;
+  float inheritedYScale;
+  // True if the parent has perspective transform
+  bool hasPerspectiveParent;
 };
 
 union AnimationData {
@@ -230,6 +234,15 @@ struct Animation {
   nsCSSPropertyID property;
   AnimationData data;
   float playbackRate;
+  // When performing an asynchronous update to the playbackRate, |playbackRate|
+  // above is the updated playbackRate while |previousPlaybackRate| is the
+  // existing playbackRate. This is used by AnimationInfo to update the
+  // startTime based on the 'readyTime' (timestamp at the end of painting)
+  // and is not used beyond that point.
+  //
+  // It is set to numeric_limits<float>::quiet_NaN() when no asynchronous update
+  // to the playbackRate is being performed.
+  float previousPlaybackRate;
   // This is used in the transformed progress calculation.
   TimingFunction easingFunction;
   uint8_t iterationComposite;
@@ -243,6 +256,13 @@ struct Animation {
   Animatable baseStyle;
 };
 
+struct CompositorAnimations {
+  Animation[] animations;
+  // This id is used to map the layer animations between content
+  // and compositor side
+  uint64_t id;
+};
+
 // Change a layer's attributes
 struct CommonLayerAttributes {
   LayerIntRegion visibleRegion;
@@ -252,7 +272,7 @@ struct CommonLayerAttributes {
   LayerHandle maskLayer;
   LayerHandle[] ancestorMaskLayers;
   // Animated colors will only honored for ColorLayers.
-  Animation[] animations;
+  CompositorAnimations compositorAnimations;
   nsIntRegion invalidRegion;
   ScrollMetadata[] scrollMetadata;
   nsCString displayListLog;
@@ -267,8 +287,6 @@ struct ContainerLayerAttributes {
   float inheritedXScale;
   float inheritedYScale;
   float presShellResolution;
-  bool scaleToResolution;
-  EventRegionsOverride eventRegionsOverride;
 };
 
 struct GlyphArray
@@ -277,24 +295,13 @@ struct GlyphArray
   Glyph[] glyphs;
 };
 
-// XXX - Bas - Hack warning! This is using a raw pointer to a ScaledFont*
-// and won't work with e10s.
-struct TextLayerAttributes      { IntRect bounds; GlyphArray[] glyphs; uintptr_t scaledFont; };
 struct ColorLayerAttributes     { LayerColor color; IntRect bounds; };
 struct CanvasLayerAttributes    { SamplingFilter samplingFilter; IntRect bounds; };
 struct RefLayerAttributes {
-  int64_t id;
-  // TODO: Once bug 1132895 is fixed we shouldn't need to propagate the override
-  // explicitly here.
+  LayersId id;
   EventRegionsOverride eventRegionsOverride;
 };
 struct ImageLayerAttributes     { SamplingFilter samplingFilter; IntSize scaleToSize; ScaleMode scaleMode; };
-struct BorderLayerAttributes {
-  LayerRect rect;
-  BorderColors colors;
-  BorderCorners corners;
-  BorderWidths widths;
-};
 
 union SpecificLayerAttributes {
   null_t;
@@ -302,10 +309,8 @@ union SpecificLayerAttributes {
   ContainerLayerAttributes;
   ColorLayerAttributes;
   CanvasLayerAttributes;
-  TextLayerAttributes;
   RefLayerAttributes;
   ImageLayerAttributes;
-  BorderLayerAttributes;
 };
 
 struct LayerAttributes {
@@ -359,11 +364,6 @@ union ReadLockDescriptor {
   null_t;
 };
 
-struct ReadLockInit {
-  ReadLockDescriptor sharedLock;
-  ReadLockHandle handle;
-};
-
 union MaybeTexture {
   PTexture;
   null_t;
@@ -373,8 +373,8 @@ struct TexturedTileDescriptor {
   PTexture texture;
   MaybeTexture textureOnWhite;
   IntRect updateRect;
-  ReadLockDescriptor sharedLock;
-  ReadLockDescriptor sharedLockOnWhite;
+  bool readLocked;
+  bool readLockedOnWhite;
   bool wasPlaceholder;
 };
 
@@ -419,11 +419,11 @@ struct OpRemoveTexture {
 
 struct TimedTexture {
   PTexture texture;
-  ReadLockHandle sharedLock;
   TimeStamp timeStamp;
   IntRect picture;
   uint32_t frameID;
   uint32_t producerID;
+  bool readLocked;
 };
 
 /**
@@ -443,8 +443,8 @@ struct OpUseTexture {
 struct OpUseComponentAlphaTextures {
   PTexture textureOnBlack;
   PTexture textureOnWhite;
-  ReadLockHandle sharedLockBlack;
-  ReadLockHandle sharedLockWhite;
+  bool readLockedBlack;
+  bool readLockedWhite;
 };
 
 union MaybeRegion {
@@ -481,8 +481,6 @@ union Edit {
   OpCreateContainerLayer;
   OpCreateImageLayer;
   OpCreateColorLayer;
-  OpCreateTextLayer;
-  OpCreateBorderLayer;
   OpCreateCanvasLayer;
   OpCreateRefLayer;
 
@@ -532,6 +530,15 @@ union AsyncParentMessageData {
   OpNotifyNotUsed;
 };
 
+struct PaintTiming {
+  float serializeMs;
+  float sendMs;
+  float dlMs;
+  float dl2Ms;
+  float flbMs;
+  float rasterMs;
+};
+
 struct TransactionInfo
 {
   Edit[] cset;
@@ -540,15 +547,37 @@ struct TransactionInfo
   CompositableOperation[] paints;
   OpDestroy[] toDestroy;
   uint64_t fwdTransactionId;
-  uint64_t id;
+  TransactionId id;
   TargetConfig targetConfig;
   PluginWindowData[] plugins;
   bool isFirstPaint;
+  FocusTarget focusTarget;
   bool scheduleComposite;
   uint32_t paintSequenceNumber;
   bool isRepeatTransaction;
+  VsyncId vsyncId;
+  TimeStamp vsyncStart;
+  TimeStamp refreshStart;
   TimeStamp transactionStart;
-  int32_t paintSyncId;
+  bool containsSVG;
+  nsCString url;
+  TimeStamp fwdTime;
+  /* This provides some timing information on any content that is meant to be
+   * presented during this transaction.
+   */
+  CompositionPayload[] payload;
+};
+
+union MaybeTransform {
+  Matrix4x4;
+  void_t;
+};
+
+union OMTAValue {
+  null_t;
+  nscolor;
+  float;
+  Matrix4x4;
 };
 
 } // namespace

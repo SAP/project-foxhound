@@ -5,12 +5,13 @@
  * found in the LICENSE file.
  */
 
-
-#include "GrNonAtomicRef.h"
-#include "gl/GrGLInterface.h"
 #include "GrGLTestInterface.h"
+#include "GrNonAtomicRef.h"
 #include "SkMutex.h"
 #include "SkTDArray.h"
+#include "SkTo.h"
+#include "gl/GrGLInterface.h"
+
 #include <type_traits>
 
 // added to suppress 'no previous prototype' warning and because this code is duplicated in
@@ -176,7 +177,7 @@ public:
 
     void notifyAttachmentDeleteWhileBound(const FramebufferAttachment* deleted) {
         for (auto& attachment : fAttachments) {
-            if (attachment == deleted) {
+            if (attachment.get() == deleted) {
                 attachment.reset(nullptr);
             }
         }
@@ -206,7 +207,7 @@ private:
     };
     constexpr int static kNumAttachmentPoints = 1 + (int)AttachmentPoint::kColor;
 
-    SkAutoTUnref<const FramebufferAttachment> fAttachments[kNumAttachmentPoints];
+    sk_sp<const FramebufferAttachment> fAttachments[kNumAttachmentPoints];
 
     typedef GLObject INHERITED;
 };
@@ -224,17 +225,17 @@ public:
         , fCurrUniformLocation(0)
         , fCurrPathID(0) {
         memset(fBoundBuffers, 0, sizeof(fBoundBuffers));
-        fExtensions.push_back("GL_ARB_framebuffer_object");
-        fExtensions.push_back("GL_ARB_blend_func_extended");
-        fExtensions.push_back("GL_ARB_timer_query");
-        fExtensions.push_back("GL_ARB_draw_buffers");
-        fExtensions.push_back("GL_ARB_occlusion_query");
-        fExtensions.push_back("GL_EXT_stencil_wrap");
+        fAdvertisedExtensions.push_back("GL_ARB_framebuffer_object");
+        fAdvertisedExtensions.push_back("GL_ARB_blend_func_extended");
+        fAdvertisedExtensions.push_back("GL_ARB_timer_query");
+        fAdvertisedExtensions.push_back("GL_ARB_draw_buffers");
+        fAdvertisedExtensions.push_back("GL_ARB_occlusion_query");
+        fAdvertisedExtensions.push_back("GL_EXT_stencil_wrap");
         if (enableNVPR) {
-            fExtensions.push_back("GL_NV_path_rendering");
-            fExtensions.push_back("GL_ARB_program_interface_query");
+            fAdvertisedExtensions.push_back("GL_NV_path_rendering");
+            fAdvertisedExtensions.push_back("GL_ARB_program_interface_query");
         }
-        fExtensions.push_back(nullptr);
+        fAdvertisedExtensions.push_back(nullptr);
 
         this->init(kGL_GrGLStandard);
     }
@@ -403,6 +404,9 @@ public:
         Framebuffer* framebuffer = fFramebufferManager.lookUp(id);
 
         GrAlwaysAssert(GR_GL_RENDERBUFFER == renderbuffertarget);
+        if (!renderBufferID && !fCurrRenderbuffer) {
+           return;
+        }
         GrAlwaysAssert(fCurrRenderbuffer);
         Renderbuffer* renderbuffer = fRenderbufferManager.lookUp(fCurrRenderbuffer);
 
@@ -522,12 +526,12 @@ public:
                 break;
             case GR_GL_NUM_EXTENSIONS: {
                 GrGLint i = 0;
-                while (fExtensions[i++]);
+                while (fAdvertisedExtensions[i++]);
                 *params = i;
                 break;
             }
             default:
-                SkFAIL("Unexpected pname to GetIntegerv");
+                SK_ABORT("Unexpected pname to GetIntegerv");
         }
     }
 
@@ -553,7 +557,7 @@ public:
                 *params = 32;
                 break;
             default:
-                SkFAIL("Unexpected pname passed GetQueryiv.");
+                SK_ABORT("Unexpected pname passed GetQueryiv.");
         }
     }
 
@@ -595,7 +599,7 @@ public:
             case GR_GL_RENDERER:
                 return (const GrGLubyte*)"The Null (Non-)Renderer";
             default:
-                SkFAIL("Unexpected name passed to GetString");
+                SK_ABORT("Unexpected name passed to GetString");
                 return nullptr;
         }
     }
@@ -606,13 +610,13 @@ public:
                 GrGLint count;
                 this->getIntegerv(GR_GL_NUM_EXTENSIONS, &count);
                 if ((GrGLint)i <= count) {
-                    return (const GrGLubyte*) fExtensions[i];
+                    return (const GrGLubyte*) fAdvertisedExtensions[i];
                 } else {
                     return nullptr;
                 }
             }
             default:
-                SkFAIL("Unexpected name passed to GetStringi");
+                SK_ABORT("Unexpected name passed to GetStringi");
                 return nullptr;
         }
     }
@@ -673,7 +677,7 @@ public:
                 }
                 break; }
             default:
-                SkFAIL("Unexpected pname to GetBufferParamateriv");
+                SK_ABORT("Unexpected pname to GetBufferParamateriv");
                 break;
         }
     }
@@ -687,7 +691,7 @@ public:
 private:
     inline int static GetBufferIndex(GrGLenum glTarget) {
         switch (glTarget) {
-            default:                           SkFAIL("Unexpected GL target to GetBufferIndex");
+            default:                           SK_ABORT("Unexpected GL target to GetBufferIndex");
             case GR_GL_ARRAY_BUFFER:           return 0;
             case GR_GL_ELEMENT_ARRAY_BUFFER:   return 1;
             case GR_GL_TEXTURE_BUFFER:         return 2;
@@ -710,8 +714,8 @@ private:
     GrGLuint                         fCurrGenericID;
     GrGLuint                         fCurrUniformLocation;
     GrGLuint                         fCurrPathID;
-    SkAutoTUnref<const Texture>      fSingleTextureObject;
-    SkTArray<const char*>            fExtensions;
+    sk_sp<const Texture>             fSingleTextureObject;
+    SkTArray<const char*>            fAdvertisedExtensions;
 
     // the OpenGLES 2.0 spec says this must be >= 128
     static const GrGLint kDefaultMaxVertexUniformVectors = 128;
@@ -746,7 +750,7 @@ private:
         if (!fSingleTextureObject) {
             fSingleTextureObject.reset(new Texture);
         }
-        return fSingleTextureObject;
+        return fSingleTextureObject.get();
     }
 
     const GrGLubyte* CombinedExtensionString() {
@@ -755,11 +759,11 @@ private:
         gMutex.acquire();
         if (0 == gExtString.size()) {
             int i = 0;
-            while (fExtensions[i]) {
+            while (fAdvertisedExtensions[i]) {
                 if (i > 0) {
                     gExtString.append(" ");
                 }
-                gExtString.append(fExtensions[i]);
+                gExtString.append(fAdvertisedExtensions[i]);
                 ++i;
             }
         }
@@ -789,12 +793,13 @@ private:
             case GR_GL_COMPILE_STATUS:
                 *params = GR_GL_TRUE;
                 break;
-            case GR_GL_INFO_LOG_LENGTH:
+            case GR_GL_INFO_LOG_LENGTH: // fallthru
+            case GL_PROGRAM_BINARY_LENGTH:
                 *params = 0;
                 break;
                 // we don't expect any other pnames
             default:
-                SkFAIL("Unexpected pname to GetProgramiv");
+                SK_ABORT("Unexpected pname to GetProgramiv");
                 break;
         }
     }
@@ -809,7 +814,7 @@ private:
                 *params = 0;
                 break;
             default:
-                SkFAIL("Unexpected pname passed to GetQueryObject.");
+                SK_ABORT("Unexpected pname passed to GetQueryObject.");
                 break;
         }
     }

@@ -1,7 +1,7 @@
 "use strict";
 
-const META_PAGE = "http://example.org/browser/browser/base/content/test/general/refresh_meta.sjs"
-const HEADER_PAGE = "http://example.org/browser/browser/base/content/test/general/refresh_header.sjs"
+const META_PAGE = "http://example.org/browser/browser/base/content/test/general/refresh_meta.sjs";
+const HEADER_PAGE = "http://example.org/browser/browser/base/content/test/general/refresh_header.sjs";
 const TARGET_PAGE = "http://example.org/browser/browser/base/content/test/general/dummy_page.html";
 const PREF = "accessibility.blockautorefresh";
 
@@ -16,11 +16,11 @@ const PREF = "accessibility.blockautorefresh";
  *        Whether or not we expect the refresh attempt to succeed.
  * @returns Promise
  */
-function* attemptFakeRefresh(browser, expectRefresh) {
-  yield ContentTask.spawn(browser, expectRefresh, function*(contentExpectRefresh) {
+async function attemptFakeRefresh(browser, expectRefresh) {
+  await ContentTask.spawn(browser, expectRefresh, async function(contentExpectRefresh) {
     let URI = docShell.QueryInterface(Ci.nsIWebNavigation).currentURI;
     let refresher = docShell.QueryInterface(Ci.nsIRefreshURI);
-    refresher.refreshURI(URI, 0, false, true);
+    refresher.refreshURI(URI, null, 0, false, true);
 
     Assert.equal(refresher.refreshPending, contentExpectRefresh,
       "Got the right refreshPending state");
@@ -42,28 +42,28 @@ function* attemptFakeRefresh(browser, expectRefresh) {
  * from occurring while showing a notification bar. Also tests that
  * when we disable the pref, that refreshes can go through again.
  */
-add_task(function* test_can_enable_and_block() {
-  yield BrowserTestUtils.withNewTab({
+add_task(async function test_can_enable_and_block() {
+  await BrowserTestUtils.withNewTab({
     gBrowser,
     url: TARGET_PAGE,
-  }, function*(browser) {
+  }, async function(browser) {
     // By default, we should be able to reload the page.
-    yield attemptFakeRefresh(browser, true);
+    await attemptFakeRefresh(browser, true);
 
-    yield pushPrefs(["accessibility.blockautorefresh", true]);
+    await pushPrefs(["accessibility.blockautorefresh", true]);
 
     let notificationPromise =
       BrowserTestUtils.waitForNotificationBar(gBrowser, browser,
                                               "refresh-blocked");
 
-    yield attemptFakeRefresh(browser, false);
+    await attemptFakeRefresh(browser, false);
 
-    yield notificationPromise;
+    await notificationPromise;
 
-    yield pushPrefs(["accessibility.blockautorefresh", false]);
+    await pushPrefs(["accessibility.blockautorefresh", false]);
 
     // Page reloads should go through again.
-    yield attemptFakeRefresh(browser, true);
+    await attemptFakeRefresh(browser, true);
   });
 });
 
@@ -84,15 +84,15 @@ add_task(function* test_can_enable_and_block() {
  *
  * @returns Promise
  */
-function* testRealRefresh(refreshPage, delay) {
-  yield BrowserTestUtils.withNewTab({
+async function testRealRefresh(refreshPage, delay) {
+  await BrowserTestUtils.withNewTab({
     gBrowser,
     url: "about:blank",
-  }, function*(browser) {
-    yield pushPrefs(["accessibility.blockautorefresh", true]);
+  }, async function(browser) {
+    await pushPrefs(["accessibility.blockautorefresh", true]);
 
-    browser.loadURI(refreshPage + "?p=" + TARGET_PAGE + "&d=" + delay);
-    yield BrowserTestUtils.browserLoaded(browser);
+    BrowserTestUtils.loadURI(browser, refreshPage + "?p=" + TARGET_PAGE + "&d=" + delay);
+    await BrowserTestUtils.browserLoaded(browser);
 
     // Once browserLoaded resolves, all nsIWebProgressListener callbacks
     // should have fired, so the notification should be visible.
@@ -100,7 +100,7 @@ function* testRealRefresh(refreshPage, delay) {
     let notification = notificationBox.currentNotification;
 
     ok(notification, "Notification should be visible");
-    is(notification.value, "refresh-blocked",
+    is(notification.getAttribute("value"), "refresh-blocked",
        "Should be showing the right notification");
 
     // Then click the button to allow the refresh.
@@ -111,25 +111,25 @@ function* testRealRefresh(refreshPage, delay) {
     let refreshPromise = BrowserTestUtils.browserLoaded(browser);
     buttons[0].click();
 
-    yield refreshPromise;
+    await refreshPromise;
   });
 }
 
 /**
  * Tests the meta-tag case for both short and longer delay times.
  */
-add_task(function* test_can_allow_refresh() {
-  yield testRealRefresh(META_PAGE, 0);
-  yield testRealRefresh(META_PAGE, 100);
-  yield testRealRefresh(META_PAGE, 500);
+add_task(async function test_can_allow_refresh() {
+  await testRealRefresh(META_PAGE, 0);
+  await testRealRefresh(META_PAGE, 100);
+  await testRealRefresh(META_PAGE, 500);
 });
 
 /**
  * Tests that when a HTTP header case for both short and longer
  * delay times.
  */
-add_task(function* test_can_block_refresh_from_header() {
-  yield testRealRefresh(HEADER_PAGE, 0);
-  yield testRealRefresh(HEADER_PAGE, 100);
-  yield testRealRefresh(HEADER_PAGE, 500);
+add_task(async function test_can_block_refresh_from_header() {
+  await testRealRefresh(HEADER_PAGE, 0);
+  await testRealRefresh(HEADER_PAGE, 100);
+  await testRealRefresh(HEADER_PAGE, 500);
 });

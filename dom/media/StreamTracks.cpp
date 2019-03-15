@@ -9,30 +9,27 @@
 
 namespace mozilla {
 
-extern LazyLogModule gMediaStreamGraphLog;
-#define STREAM_LOG(type, msg) MOZ_LOG(gMediaStreamGraphLog, type, msg)
-
 #ifdef DEBUG
-void
-StreamTracks::DumpTrackInfo() const
-{
-  STREAM_LOG(LogLevel::Info, ("DumpTracks: mTracksKnownTime %" PRId64, mTracksKnownTime));
+
+extern LazyLogModule gMediaStreamGraphLog;
+#  define STREAM_LOG(type, msg) MOZ_LOG(gMediaStreamGraphLog, type, msg)
+
+void StreamTracks::DumpTrackInfo() const {
+  STREAM_LOG(LogLevel::Info, ("Dumping StreamTracks"));
   for (uint32_t i = 0; i < mTracks.Length(); ++i) {
     Track* track = mTracks[i];
     if (track->IsEnded()) {
       STREAM_LOG(LogLevel::Info, ("Track[%d] %d: ended", i, track->GetID()));
     } else {
-      STREAM_LOG(LogLevel::Info, ("Track[%d] %d: %" PRId64 "", i, track->GetID(),
-                                 track->GetEnd()));
+      STREAM_LOG(LogLevel::Info, ("Track[%d] %d: %" PRId64 "", i,
+                                  track->GetID(), track->GetEnd()));
     }
   }
 }
 #endif
 
-StreamTime
-StreamTracks::GetEnd() const
-{
-  StreamTime t = mTracksKnownTime;
+StreamTime StreamTracks::GetEarliestTrackEnd() const {
+  StreamTime t = STREAM_TIME_MAX;
   for (uint32_t i = 0; i < mTracks.Length(); ++i) {
     Track* track = mTracks[i];
     if (!track->IsEnded()) {
@@ -42,13 +39,7 @@ StreamTracks::GetEnd() const
   return t;
 }
 
-StreamTime
-StreamTracks::GetAllTracksEnd() const
-{
-  if (mTracksKnownTime < STREAM_TIME_MAX) {
-    // A track might be added.
-    return STREAM_TIME_MAX;
-  }
+StreamTime StreamTracks::GetLatestTrackEnd() const {
   StreamTime t = 0;
   for (uint32_t i = 0; i < mTracks.Length(); ++i) {
     Track* track = mTracks[i];
@@ -60,9 +51,7 @@ StreamTracks::GetAllTracksEnd() const
   return t;
 }
 
-StreamTracks::Track*
-StreamTracks::FindTrack(TrackID aID)
-{
+StreamTracks::Track* StreamTracks::FindTrack(TrackID aID) const {
   if (aID == TRACK_NONE || mTracks.IsEmpty()) {
     return nullptr;
   }
@@ -90,9 +79,7 @@ StreamTracks::FindTrack(TrackID aID)
   return nullptr;
 }
 
-void
-StreamTracks::ForgetUpTo(StreamTime aTime)
-{
+void StreamTracks::ForgetUpTo(StreamTime aTime) {
   // Only prune if there is a reasonable chunk (50ms @ 48kHz) to forget, so we
   // don't spend too much time pruning segments.
   const StreamTime minChunkSize = 2400;
@@ -108,10 +95,6 @@ StreamTracks::ForgetUpTo(StreamTime aTime)
   }
 }
 
-void
-StreamTracks::Clear()
-{
-  mTracks.Clear();
-}
+void StreamTracks::Clear() { mTracks.Clear(); }
 
-} // namespace mozilla
+}  // namespace mozilla

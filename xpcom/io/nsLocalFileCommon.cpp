@@ -6,7 +6,7 @@
 
 #include "nsIServiceManager.h"
 
-#include "nsLocalFile.h" // includes platform-specific headers
+#include "nsLocalFile.h"  // includes platform-specific headers
 
 #include "nsString.h"
 #include "nsCOMPtr.h"
@@ -15,28 +15,15 @@
 #include "nsCRT.h"
 #include "nsNativeCharsetUtils.h"
 #include "nsUTF8Utils.h"
+#include "nsArray.h"
 
 #ifdef XP_WIN
-#include <string.h>
+#  include <string.h>
 #endif
-
-
-void
-NS_StartupLocalFile()
-{
-  nsLocalFile::GlobalInit();
-}
-
-void
-NS_ShutdownLocalFile()
-{
-  nsLocalFile::GlobalShutdown();
-}
 
 #if !defined(MOZ_WIDGET_COCOA) && !defined(XP_WIN)
 NS_IMETHODIMP
-nsLocalFile::InitWithFile(nsIFile* aFile)
-{
+nsLocalFile::InitWithFile(nsIFile* aFile) {
   if (NS_WARN_IF(!aFile)) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -52,12 +39,12 @@ nsLocalFile::InitWithFile(nsIFile* aFile)
 
 #define kMaxFilenameLength 255
 #define kMaxExtensionLength 100
-#define kMaxSequenceNumberLength 5 // "-9999"
-// requirement: kMaxExtensionLength < kMaxFilenameLength - kMaxSequenceNumberLength
+#define kMaxSequenceNumberLength 5  // "-9999"
+// requirement: kMaxExtensionLength <
+//                kMaxFilenameLength - kMaxSequenceNumberLength
 
 NS_IMETHODIMP
-nsLocalFile::CreateUnique(uint32_t aType, uint32_t aAttributes)
-{
+nsLocalFile::CreateUnique(uint32_t aType, uint32_t aAttributes) {
   nsresult rv;
   bool longName;
 
@@ -72,11 +59,19 @@ nsLocalFile::CreateUnique(uint32_t aType, uint32_t aAttributes)
     return rv;
   }
 
-  longName = (pathName.Length() + kMaxSequenceNumberLength >
-              kMaxFilenameLength);
+  auto FailedBecauseExists = [&](nsresult aRv) {
+    if (aRv == NS_ERROR_FILE_ACCESS_DENIED) {
+      bool exists;
+      return NS_SUCCEEDED(Exists(&exists)) && exists;
+    }
+    return aRv == NS_ERROR_FILE_ALREADY_EXISTS;
+  };
+
+  longName =
+      (pathName.Length() + kMaxSequenceNumberLength > kMaxFilenameLength);
   if (!longName) {
     rv = Create(aType, aAttributes);
-    if (rv != NS_ERROR_FILE_ALREADY_EXISTS) {
+    if (!FailedBecauseExists(rv)) {
       return rv;
     }
   }
@@ -100,14 +95,14 @@ nsLocalFile::CreateUnique(uint32_t aType, uint32_t aAttributes)
   if (lastDot == kNotFound) {
     rootName = leafName;
   } else {
-    suffix = Substring(leafName, lastDot);      // include '.'
-    rootName = Substring(leafName, 0, lastDot); // strip suffix and dot
+    suffix = Substring(leafName, lastDot);       // include '.'
+    rootName = Substring(leafName, 0, lastDot);  // strip suffix and dot
   }
 
   if (longName) {
-    int32_t maxRootLength = (kMaxFilenameLength -
-                             (pathName.Length() - leafName.Length()) -
-                             suffix.Length() - kMaxSequenceNumberLength);
+    int32_t maxRootLength =
+        (kMaxFilenameLength - (pathName.Length() - leafName.Length()) -
+         suffix.Length() - kMaxSequenceNumberLength);
 
     // We cannot create an item inside a directory whose name is too long.
     // Also, ensure that at least one character remains after we truncate
@@ -118,8 +113,9 @@ nsLocalFile::CreateUnique(uint32_t aType, uint32_t aAttributes)
 
 #ifdef XP_WIN
     // ensure that we don't cut the name in mid-UTF16-character
-    rootName.SetLength(NS_IS_LOW_SURROGATE(rootName[maxRootLength]) ?
-                       maxRootLength - 1 : maxRootLength);
+    rootName.SetLength(NS_IS_LOW_SURROGATE(rootName[maxRootLength])
+                           ? maxRootLength - 1
+                           : maxRootLength);
     SetLeafName(rootName + suffix);
 #else
     if (NS_IsNativeUTF8()) {
@@ -139,7 +135,7 @@ nsLocalFile::CreateUnique(uint32_t aType, uint32_t aAttributes)
     SetNativeLeafName(rootName + suffix);
 #endif
     nsresult rvCreate = Create(aType, aAttributes);
-    if (rvCreate != NS_ERROR_FILE_ALREADY_EXISTS) {
+    if (!FailedBecauseExists(rvCreate)) {
       return rvCreate;
     }
   }
@@ -148,13 +144,12 @@ nsLocalFile::CreateUnique(uint32_t aType, uint32_t aAttributes)
     // start with "Picture-1.jpg" after "Picture.jpg" exists
 #ifdef XP_WIN
     SetLeafName(rootName +
-                NS_ConvertASCIItoUTF16(nsPrintfCString("-%d", indx)) +
-                suffix);
+                NS_ConvertASCIItoUTF16(nsPrintfCString("-%d", indx)) + suffix);
 #else
     SetNativeLeafName(rootName + nsPrintfCString("-%d", indx) + suffix);
 #endif
     rv = Create(aType, aAttributes);
-    if (NS_SUCCEEDED(rv) || rv != NS_ERROR_FILE_ALREADY_EXISTS) {
+    if (NS_SUCCEEDED(rv) || !FailedBecauseExists(rv)) {
       return rv;
     }
   }
@@ -164,16 +159,14 @@ nsLocalFile::CreateUnique(uint32_t aType, uint32_t aAttributes)
 }
 
 #if defined(XP_WIN)
-static const char16_t kPathSeparatorChar       = '\\';
+static const char16_t kPathSeparatorChar = '\\';
 #elif defined(XP_UNIX)
-static const char16_t kPathSeparatorChar       = '/';
+static const char16_t kPathSeparatorChar = '/';
 #else
-#error Need to define file path separator for your platform
+#  error Need to define file path separator for your platform
 #endif
 
-static void
-SplitPath(char16_t* aPath, nsTArray<char16_t*>& aNodeArray)
-{
+static void SplitPath(char16_t* aPath, nsTArray<char16_t*>& aNodeArray) {
   if (*aPath == 0) {
     return;
   }
@@ -194,10 +187,8 @@ SplitPath(char16_t* aPath, nsTArray<char16_t*>& aNodeArray)
   }
 }
 
-
 NS_IMETHODIMP
-nsLocalFile::GetRelativeDescriptor(nsIFile* aFromFile, nsACString& aResult)
-{
+nsLocalFile::GetRelativeDescriptor(nsIFile* aFromFile, nsACString& aResult) {
   if (NS_WARN_IF(!aFromFile)) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -223,10 +214,8 @@ nsLocalFile::GetRelativeDescriptor(nsIFile* aFromFile, nsACString& aResult)
   }
 
   // get raw pointer to mutable string buffer
-  char16_t* thisPathPtr;
-  thisPath.BeginWriting(thisPathPtr);
-  char16_t* fromPathPtr;
-  fromPath.BeginWriting(fromPathPtr);
+  char16_t* thisPathPtr = thisPath.BeginWriting();
+  char16_t* fromPathPtr = fromPath.BeginWriting();
 
   SplitPath(thisPathPtr, thisNodes);
   SplitPath(fromPathPtr, fromNodes);
@@ -264,8 +253,7 @@ nsLocalFile::GetRelativeDescriptor(nsIFile* aFromFile, nsACString& aResult)
 
 NS_IMETHODIMP
 nsLocalFile::SetRelativeDescriptor(nsIFile* aFromFile,
-                                   const nsACString& aRelativeDesc)
-{
+                                   const nsACString& aRelativeDesc) {
   NS_NAMED_LITERAL_CSTRING(kParentDirStr, "../");
 
   nsCOMPtr<nsIFile> targetFile;
@@ -305,7 +293,8 @@ nsLocalFile::SetRelativeDescriptor(nsIFile* aFromFile,
   while (nodeEnd != strEnd) {
     FindCharInReadable('/', nodeEnd, strEnd);
     targetFile->Append(NS_ConvertUTF8toUTF16(Substring(nodeBegin, nodeEnd)));
-    if (nodeEnd != strEnd) { // If there's more left in the string, inc over the '/' nodeEnd is on.
+    if (nodeEnd != strEnd) {  // If there's more left in the string, inc over
+                              // the '/' nodeEnd is on.
       ++nodeEnd;
     }
     nodeBegin = nodeEnd;
@@ -315,14 +304,12 @@ nsLocalFile::SetRelativeDescriptor(nsIFile* aFromFile,
 }
 
 NS_IMETHODIMP
-nsLocalFile::GetRelativePath(nsIFile* aFromFile, nsACString& aResult)
-{
+nsLocalFile::GetRelativePath(nsIFile* aFromFile, nsACString& aResult) {
   return GetRelativeDescriptor(aFromFile, aResult);
 }
 
 NS_IMETHODIMP
 nsLocalFile::SetRelativePath(nsIFile* aFromFile,
-                             const nsACString& aRelativePath)
-{
+                             const nsACString& aRelativePath) {
   return SetRelativeDescriptor(aFromFile, aRelativePath);
 }

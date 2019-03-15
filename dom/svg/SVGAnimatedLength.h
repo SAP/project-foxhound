@@ -8,41 +8,39 @@
 #define mozilla_dom_SVGAnimatedLength_h
 
 #include "mozilla/Attributes.h"
-#include "nsSVGElement.h"
+#include "SVGElement.h"
 
 class nsSVGLength2;
 
 namespace mozilla {
 
-class DOMSVGLength;
-
 namespace dom {
 
-class SVGAnimatedLength final : public nsWrapperCache
-{
-public:
+class DOMSVGLength;
+
+class SVGAnimatedLength final : public nsWrapperCache {
+ public:
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(SVGAnimatedLength)
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(SVGAnimatedLength)
 
-  SVGAnimatedLength(nsSVGLength2* aVal, nsSVGElement *aSVGElement)
-    : mVal(aVal), mSVGElement(aSVGElement)
-  {
-  }
+  SVGAnimatedLength(nsSVGLength2* aVal, SVGElement* aSVGElement)
+      : mVal(aVal), mSVGElement(aSVGElement) {}
 
   // WebIDL
-  nsSVGElement* GetParentObject() { return mSVGElement; }
-  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  SVGElement* GetParentObject() { return mSVGElement; }
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override;
   already_AddRefed<DOMSVGLength> BaseVal();
   already_AddRefed<DOMSVGLength> AnimVal();
 
-protected:
+ protected:
   ~SVGAnimatedLength();
 
-  nsSVGLength2* mVal; // kept alive because it belongs to content
-  RefPtr<nsSVGElement> mSVGElement;
+  nsSVGLength2* mVal;  // kept alive because it belongs to content
+  RefPtr<SVGElement> mSVGElement;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_SVGAnimatedLength_h
+#endif  // mozilla_dom_SVGAnimatedLength_h

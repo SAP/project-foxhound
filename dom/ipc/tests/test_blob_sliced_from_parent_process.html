@@ -9,11 +9,10 @@
   <body onload="setup();">
     <script type="application/javascript">
 "use strict";
+/* eslint-env mozilla/frame-script */
 
 function childFrameScript() {
   "use strict";
-
-  const { classes: Cc, interfaces: Ci } = Components;
 
   const messageName = "test:blob-slice-test";
   const blobData = ["So", " ", "many", " ", "blobs!"];
@@ -23,15 +22,15 @@ function childFrameScript() {
   const sliceText = "an";
 
   function info(msg) {
-    sendAsyncMessage(messageName, { op: "info", msg: msg });
+    sendAsyncMessage(messageName, { op: "info", msg });
   }
 
   function ok(condition, name, diag) {
     sendAsyncMessage(messageName,
                      { op: "ok",
-                       condition: condition,
-                       name: name,
-                       diag: diag });
+                       condition,
+                       name,
+                       diag });
   }
 
   function is(a, b, name) {
@@ -41,7 +40,7 @@ function childFrameScript() {
   }
 
   function finish(result) {
-    sendAsyncMessage(messageName, { op: "done", result: result });
+    sendAsyncMessage(messageName, { op: "done", result });
   }
 
   function grabAndContinue(arg) {
@@ -54,7 +53,7 @@ function childFrameScript() {
 
     let blob = message.data;
 
-    ok(blob instanceof Ci.nsIDOMBlob, "Received a Blob");
+    ok(Blob.isInstance(blob), "Received a Blob");
     is(blob.size, blobText.length, "Blob has correct length");
     is(blob.type, blobType, "Blob has correct type");
 
@@ -73,7 +72,7 @@ function childFrameScript() {
 
     let slice = blob.slice(firstSliceStart, firstSliceEnd, blobType);
 
-    ok(slice instanceof Ci.nsIDOMBlob, "Slice returned a Blob");
+    ok(Blob.isInstance(slice), "Slice returned a Blob");
     is(slice.size, blobData[2].length, "Slice has correct length");
     is(slice.type, blobType, "Slice has correct type");
 
@@ -92,7 +91,7 @@ function childFrameScript() {
 
     slice = slice.slice(secondSliceStart, secondSliceEnd, blobType);
 
-    ok(slice instanceof Ci.nsIDOMBlob, "Second slice returned a Blob");
+    ok(Blob.isInstance(slice), "Second slice returned a Blob");
     is(slice.size, sliceText.length, "Second slice has correct length");
     is(slice.type, blobType, "Second slice has correct type");
 
@@ -107,7 +106,6 @@ function childFrameScript() {
 function parentFrameScript(mm) {
   const messageName = "test:blob-slice-test";
   const blobData = ["So", " ", "many", " ", "blobs!"];
-  const blobText = blobData.join("");
   const blobType = "text/plain";
 
   const sliceText = "an";
@@ -119,13 +117,13 @@ function parentFrameScript(mm) {
   function* testSteps() {
     let slice = yield undefined;
 
-    ok(slice instanceof Blob, "Received a Blob");
+    ok(SpecialPowers.call_Instanceof(slice, Blob), "Received a Blob");
     is(slice.size, sliceText.length, "Slice has correct size");
     is(slice.type, blobType, "Slice has correct type");
 
     let reader = new FileReader();
     reader.onload = grabAndContinue;
-    reader.readAsText(slice);
+    SpecialPowers.wrap(reader).readAsText(slice);
     yield undefined;
 
     is(reader.result, sliceText, "Slice has correct data");
@@ -135,7 +133,7 @@ function parentFrameScript(mm) {
   let testGenerator = testSteps();
   testGenerator.next();
 
-  mm.addMessageListener(messageName, function(message) {
+  mm.addMessageListener(messageName, SpecialPowers.wrapCallback(function(message) {
     let data = message.data;
     switch (data.op) {
       case "info": {
@@ -144,7 +142,7 @@ function parentFrameScript(mm) {
       }
 
       case "ok": {
-        ok(data.condition, data.name, data.diag);
+        ok(data.condition, data.name + " - " + data.diag);
         break;
       }
 
@@ -158,7 +156,7 @@ function parentFrameScript(mm) {
         SimpleTest.finish();
       }
     }
-  });
+  }));
 
   mm.loadFrameScript("data:,(" + childFrameScript.toString() + ")();",
                       false);
@@ -192,7 +190,7 @@ function setup() {
           iframe.addEventListener("mozbrowserloadend", function() {
             info("Starting tests");
 
-            let mm = SpecialPowers.getBrowserFrameMessageManager(iframe)
+            let mm = SpecialPowers.getBrowserFrameMessageManager(iframe);
             parentFrameScript(mm);
           });
 

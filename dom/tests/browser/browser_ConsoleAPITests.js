@@ -5,22 +5,22 @@
 
 const TEST_URI = "http://example.com/browser/dom/tests/browser/test-console-api.html";
 
-add_task(function*() {
-  let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_URI);
+add_task(async function() {
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_URI);
   registerCleanupFunction(() => gBrowser.removeTab(tab));
   let browser = gBrowser.selectedBrowser;
 
-  yield* consoleAPISanityTest(browser);
-  yield* observeConsoleTest(browser);
-  yield* startTraceTest(browser);
-  yield* startLocationTest(browser);
-  yield* startNativeCallbackTest(browser);
-  yield* startGroupTest(browser);
-  yield* startTimeTest(browser);
-  yield* startTimeEndTest(browser);
-  yield* startTimeStampTest(browser);
-  yield* startEmptyTimeStampTest(browser);
-  yield* startEmptyTimerTest(browser);
+  await consoleAPISanityTest(browser);
+  await observeConsoleTest(browser);
+  await startTraceTest(browser);
+  await startLocationTest(browser);
+  await startNativeCallbackTest(browser);
+  await startGroupTest(browser);
+  await startTimeTest(browser);
+  await startTimeEndTest(browser);
+  await startTimeStampTest(browser);
+  await startEmptyTimeStampTest(browser);
+  await startEmptyTimerTest(browser);
 });
 
 function spawnWithObserver(browser, observerFunc, func) {
@@ -52,7 +52,7 @@ function spawnWithObserver(browser, observerFunc, func) {
     // This is the observer itself, it calls the passed-in function whenever
     // it encounters an event
     "  let ConsoleObserver = {",
-    "    QueryInterface: XPCOMUtils.generateQI([Ci.nsIObserver]),",
+    "    QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver]),",
     "    observe: function(aSubject, aTopic, aData) {",
     "      try {",
     "        (" + observerFunc.toString() + ")(aSubject.wrappedJSObject);",
@@ -65,7 +65,7 @@ function spawnWithObserver(browser, observerFunc, func) {
     // Call the initialization function (if present)
     func ? ("(" + func.toString() + ")();") : "",
     "});",
-  ].join('\n');
+  ].join("\n");
 
   return ContentTask.spawn(browser, null, new Function(source));
 }
@@ -76,8 +76,8 @@ function waitForResolve(browser) {
   });
 }
 
-function* consoleAPISanityTest(browser) {
-  yield ContentTask.spawn(browser, null, function() {
+async function consoleAPISanityTest(browser) {
+  await ContentTask.spawn(browser, null, function() {
     let win = XPCNativeWrapper.unwrap(content.window);
 
     ok(win.console, "we have a console attached");
@@ -101,6 +101,8 @@ function* consoleAPISanityTest(browser) {
   });
 }
 
+// These globals are all defined in spawnWithObserver in a sub-process.
+/* global gWindow, gArgs:true, gLevel:true, gStyle:true, expect, resolve */
 function testConsoleData(aMessageObject) {
   let messageWindow = Services.wm.getOuterWindowWithId(aMessageObject.ID);
   is(messageWindow, gWindow, "found correct window by window ID");
@@ -122,13 +124,13 @@ function testConsoleData(aMessageObject) {
   }
   default: {
     is(aMessageObject.arguments.length, gArgs.length, "arguments.length matches");
-    gArgs.forEach(function (a, i) {
+    gArgs.forEach(function(a, i) {
       // Waive Xray so that we don't get messed up by Xray ToString.
       //
       // It'd be nice to just use XPCNativeWrapper.unwrap here, but there are
       // a number of dumb reasons we can't. See bug 868675.
       var arg = aMessageObject.arguments[i];
-      if (Components.utils.isXrayWrapper(arg))
+      if (Cu.isXrayWrapper(arg))
         arg = arg.wrappedJSObject;
       is(arg, a, "correct arg " + i);
     });
@@ -144,8 +146,8 @@ function testConsoleData(aMessageObject) {
   }
 }
 
-function* observeConsoleTest(browser) {
-  yield spawnWithObserver(browser, testConsoleData, function(opts) {
+async function observeConsoleTest(browser) {
+  await spawnWithObserver(browser, testConsoleData, function(opts) {
     let win = XPCNativeWrapper.unwrap(content.window);
     expect("log", "arg");
     win.console.log("arg");
@@ -261,22 +263,22 @@ function testTraceConsoleData(aMessageObject) {
   resolve();
 }
 
-function* startTraceTest(browser) {
+async function startTraceTest(browser) {
   dump("HERE\n");
-  yield spawnWithObserver(browser, testTraceConsoleData, function(opts) {
+  await spawnWithObserver(browser, testTraceConsoleData, function(opts) {
     dump("Observer attached\n");
     gLevel = "trace";
     gArgs = [
-      {columnNumber: 9, filename: TEST_URI, functionName: "window.foobar585956c", language: 2, lineNumber: 6},
-      {columnNumber: 16, filename: TEST_URI, functionName: "foobar585956b", language: 2, lineNumber: 11},
-      {columnNumber: 16, filename: TEST_URI, functionName: "foobar585956a", language: 2, lineNumber: 15},
-      {columnNumber: 1, filename: TEST_URI, functionName: "onclick", language: 2, lineNumber: 1}
+      {columnNumber: 9, filename: TEST_URI, functionName: "window.foobar585956c", lineNumber: 6},
+      {columnNumber: 16, filename: TEST_URI, functionName: "foobar585956b", lineNumber: 11},
+      {columnNumber: 16, filename: TEST_URI, functionName: "foobar585956a", lineNumber: 15},
+      {columnNumber: 1, filename: TEST_URI, functionName: "onclick", lineNumber: 1},
     ];
 
   });
 
   BrowserTestUtils.synthesizeMouseAtCenter("#test-trace", {}, browser);
-  yield waitForResolve(browser);
+  await waitForResolve(browser);
 }
 
 function testLocationData(aMessageObject) {
@@ -290,23 +292,23 @@ function testLocationData(aMessageObject) {
   is(aMessageObject.lineNumber, gArgs[0].lineNumber, "lineNumber matches");
   is(aMessageObject.functionName, gArgs[0].functionName, "functionName matches");
   is(aMessageObject.arguments.length, gArgs[0].arguments.length, "arguments.length matches");
-  gArgs[0].arguments.forEach(function (a, i) {
+  gArgs[0].arguments.forEach(function(a, i) {
     is(aMessageObject.arguments[i], a, "correct arg " + i);
   });
 
   resolve();
 }
 
-function* startLocationTest(browser) {
-  yield spawnWithObserver(browser, testLocationData, function(opts) {
+async function startLocationTest(browser) {
+  await spawnWithObserver(browser, testLocationData, function(opts) {
     gLevel = "log";
     gArgs = [
-      {filename: TEST_URI, functionName: "foobar646025", arguments: ["omg", "o", "d"], lineNumber: 19}
+      {filename: TEST_URI, functionName: "foobar646025", arguments: ["omg", "o", "d"], lineNumber: 19},
     ];
   });
 
   BrowserTestUtils.synthesizeMouseAtCenter("#test-location", {}, browser);
-  yield waitForResolve(browser);
+  await waitForResolve(browser);
 }
 
 function testNativeCallback(aMessageObject) {
@@ -318,11 +320,11 @@ function testNativeCallback(aMessageObject) {
   resolve();
 }
 
-function* startNativeCallbackTest(browser) {
-  yield spawnWithObserver(browser, testNativeCallback);
+async function startNativeCallbackTest(browser) {
+  await spawnWithObserver(browser, testNativeCallback);
 
   BrowserTestUtils.synthesizeMouseAtCenter("#test-nativeCallback", {}, browser);
-  yield waitForResolve(browser);
+  await waitForResolve(browser);
 }
 
 function testConsoleGroup(aMessageObject) {
@@ -341,15 +343,11 @@ function testConsoleGroup(aMessageObject) {
     is(aMessageObject.groupName, "a group", "groupCollapsed groupName matches");
     is(aMessageObject.arguments[0], "a", "groupCollapsed arguments[0] matches");
     is(aMessageObject.arguments[1], "group", "groupCollapsed arguments[0] matches");
-  }
-  else if (aMessageObject.level == "group") {
+  } else if (aMessageObject.level == "group") {
     is(aMessageObject.groupName, "b group", "group groupName matches");
     is(aMessageObject.arguments[0], "b", "group arguments[0] matches");
     is(aMessageObject.arguments[1], "group", "group arguments[1] matches");
-  }
-  else if (aMessageObject.level == "groupEnd") {
-    let groupName = Array.prototype.join.call(aMessageObject.arguments, " ");
-    is(groupName,"b group", "groupEnd arguments matches");
+  } else if (aMessageObject.level == "groupEnd") {
     is(aMessageObject.groupName, "b group", "groupEnd groupName matches");
   }
 
@@ -358,11 +356,11 @@ function testConsoleGroup(aMessageObject) {
   }
 }
 
-function* startGroupTest(browser) {
-  yield spawnWithObserver(browser, testConsoleGroup);
+async function startGroupTest(browser) {
+  await spawnWithObserver(browser, testConsoleGroup);
 
   BrowserTestUtils.synthesizeMouseAtCenter("#test-groups", {}, browser);
-  yield waitForResolve(browser);
+  await waitForResolve(browser);
 }
 
 function testConsoleTime(aMessageObject) {
@@ -376,26 +374,26 @@ function testConsoleTime(aMessageObject) {
   is(aMessageObject.functionName, gArgs[0].functionName, "functionName matches");
   is(aMessageObject.timer.name, gArgs[0].timer.name, "timer.name matches");
 
-  gArgs[0].arguments.forEach(function (a, i) {
+  gArgs[0].arguments.forEach(function(a, i) {
     is(aMessageObject.arguments[i], a, "correct arg " + i);
   });
 
   resolve();
 }
 
-function* startTimeTest(browser) {
-  yield spawnWithObserver(browser, testConsoleTime, function(opts) {
+async function startTimeTest(browser) {
+  await spawnWithObserver(browser, testConsoleTime, function(opts) {
     gLevel = "time";
     gArgs = [
       {filename: TEST_URI, lineNumber: 23, functionName: "startTimer",
        arguments: ["foo"],
        timer: { name: "foo" },
-      }
+      },
     ];
   });
 
   BrowserTestUtils.synthesizeMouseAtCenter("#test-time", {}, browser);
-  yield waitForResolve(browser);
+  await waitForResolve(browser);
 }
 
 function testConsoleTimeEnd(aMessageObject) {
@@ -414,15 +412,15 @@ function testConsoleTimeEnd(aMessageObject) {
   info("timer duration: " + aMessageObject.timer.duration);
   ok(aMessageObject.timer.duration >= 0, "timer duration is positive");
 
-  gArgs[0].arguments.forEach(function (a, i) {
+  gArgs[0].arguments.forEach(function(a, i) {
     is(aMessageObject.arguments[i], a, "correct arg " + i);
   });
 
   resolve();
 }
 
-function* startTimeEndTest(browser) {
-  yield spawnWithObserver(browser, testConsoleTimeEnd, function(opts) {
+async function startTimeEndTest(browser) {
+  await spawnWithObserver(browser, testConsoleTimeEnd, function(opts) {
     gLevel = "timeEnd";
     gArgs = [
       {filename: TEST_URI, lineNumber: 27, functionName: "stopTimer",
@@ -433,7 +431,7 @@ function* startTimeEndTest(browser) {
   });
 
   BrowserTestUtils.synthesizeMouseAtCenter("#test-timeEnd", {}, browser);
-  yield waitForResolve(browser);
+  await waitForResolve(browser);
 }
 
 function testConsoleTimeStamp(aMessageObject) {
@@ -447,25 +445,25 @@ function testConsoleTimeStamp(aMessageObject) {
   is(aMessageObject.functionName, gArgs[0].functionName, "functionName matches");
   ok(aMessageObject.timeStamp > 0, "timeStamp is a positive value");
 
-  gArgs[0].arguments.forEach(function (a, i) {
+  gArgs[0].arguments.forEach(function(a, i) {
     is(aMessageObject.arguments[i], a, "correct arg " + i);
   });
 
   resolve();
 }
 
-function* startTimeStampTest(browser) {
-  yield spawnWithObserver(browser, testConsoleTimeStamp, function() {
+async function startTimeStampTest(browser) {
+  await spawnWithObserver(browser, testConsoleTimeStamp, function() {
     gLevel = "timeStamp";
     gArgs = [
       {filename: TEST_URI, lineNumber: 58, functionName: "timeStamp",
-       arguments: ["!!!"]
-      }
+       arguments: ["!!!"],
+      },
     ];
   });
 
   BrowserTestUtils.synthesizeMouseAtCenter("#test-timeStamp", {}, browser);
-  yield waitForResolve(browser);
+  await waitForResolve(browser);
 }
 
 function testEmptyConsoleTimeStamp(aMessageObject) {
@@ -483,18 +481,18 @@ function testEmptyConsoleTimeStamp(aMessageObject) {
   resolve();
 }
 
-function* startEmptyTimeStampTest(browser) {
-  yield spawnWithObserver(browser, testEmptyConsoleTimeStamp, function() {
+async function startEmptyTimeStampTest(browser) {
+  await spawnWithObserver(browser, testEmptyConsoleTimeStamp, function() {
     gLevel = "timeStamp";
     gArgs = [
       {filename: TEST_URI, lineNumber: 58, functionName: "timeStamp",
-       arguments: []
-      }
+       arguments: [],
+      },
     ];
   });
 
   BrowserTestUtils.synthesizeMouseAtCenter("#test-emptyTimeStamp", {}, browser);
-  yield waitForResolve(browser);
+  await waitForResolve(browser);
 }
 
 function testEmptyTimer(aMessageObject) {
@@ -503,8 +501,9 @@ function testEmptyTimer(aMessageObject) {
 
   ok(aMessageObject.level == "time" || aMessageObject.level == "timeEnd",
      "expected level received");
-  is(aMessageObject.arguments.length, 0, "we don't have arguments");
-  ok(!aMessageObject.timer, "we don't have a timer");
+  is(aMessageObject.arguments.length, 1, "we have the default argument");
+  is(aMessageObject.arguments[0], "default", "we have the default argument");
+  ok(aMessageObject.timer, "we have a timer");
 
   is(aMessageObject.functionName, "namelessTimer", "functionName matches");
   ok(aMessageObject.lineNumber == 31 || aMessageObject.lineNumber == 32,
@@ -513,9 +512,9 @@ function testEmptyTimer(aMessageObject) {
   resolve();
 }
 
-function* startEmptyTimerTest(browser) {
-  yield spawnWithObserver(browser, testEmptyTimer);
+async function startEmptyTimerTest(browser) {
+  await spawnWithObserver(browser, testEmptyTimer);
 
   BrowserTestUtils.synthesizeMouseAtCenter("#test-namelessTimer", {}, browser);
-  yield waitForResolve(browser);
+  await waitForResolve(browser);
 }

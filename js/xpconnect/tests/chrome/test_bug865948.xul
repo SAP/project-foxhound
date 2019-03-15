@@ -20,13 +20,12 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=865948
 
   /** Test for Bug 865948 **/
   SimpleTest.waitForExplicitFinish();
-  const Cu = Components.utils;
   function go() {
     $('ifr').onload = null;
     var sb = Cu.Sandbox(['http://example.com', 'http://example.org']);
     sb.iwin = $('ifr').contentWindow;
     sb.ok = ok;
-    Cu.evalInSandbox('try { iwin.location = "about:"; ok(false, "didnt throw"); } catch (e) { ok(!!/denied/.exec(e), "threw: " + e); }', sb);
+    Cu.evalInSandbox('try { iwin.location = "about:mozilla"; ok(false, "didnt throw"); } catch (e) { ok(!!/denied/.exec(e), "threw: " + e); }', sb);
     SimpleTest.finish();
   }
 

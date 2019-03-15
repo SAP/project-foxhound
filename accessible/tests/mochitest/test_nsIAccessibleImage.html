@@ -20,8 +20,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=429659
           src="layout.js"></script>
 
   <script type="application/javascript">
-    function testCoordinates(aID, aAcc, aWidth, aHeight)
-    {
+    function testCoordinates(aID, aAcc, aWidth, aHeight) {
       var screenX = {}, screenY = {}, windowX = {}, windowY = {}, parentX = {},
           parentY = {};
 
@@ -48,7 +47,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=429659
       var tempAcc = null;
       try {
         tempAcc = aAcc.getChildAtPoint(screenX.value, screenY.value);
-      } catch(e) {}
+      } catch (e) {}
       is(tempAcc, aAcc,
          "Wrong accessible returned for position of " + aID + "!");
 
@@ -56,7 +55,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=429659
       var imageParentAcc = null;
       try {
         imageParentAcc = aAcc.parent;
-      } catch(e) {}
+      } catch (e) {}
       ok(imageParentAcc, "no parent accessible for " + aID + "!");
 
       if (imageParentAcc) {
@@ -80,8 +79,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=429659
     }
 
     function testThis(aID, aSRC, aWidth, aHeight,
-                      aActionCount, aActionNames)
-    {
+                      aActionCount, aActionNames) {
       var acc = getAccessible(aID, [nsIAccessibleImage]);
       if (!acc)
         return;
@@ -102,23 +100,22 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=429659
       if (actionCount) {
         for (index = 0; index < aActionNames.length; index++) {
           is(acc.getActionName(index), aActionNames[index],
-             "Wrong action name for " + aID + ", index " + index +"!");
+             "Wrong action name for " + aID + ", index " + index + "!");
         }
       }
     }
 
-    function doTest()
-    {
+    function doTest() {
       // Test non-linked image
       testThis("nonLinkedImage", "moz.png", 89, 38);
 
       // Test linked image
-      var actionNamesArray = new Array("jump");
+      var actionNamesArray = ["jump"];
       testThis("linkedImage", "moz.png", 89, 38, 1,
                actionNamesArray);
 
       // Image with long desc
-      var actionNamesArray = new Array("showlongdesc");
+      actionNamesArray = ["showlongdesc"];
       testThis("longdesc", "moz.png", 89, 38, 1,
                actionNamesArray);
 
@@ -127,25 +124,25 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=429659
 
       // Image with click and long desc
       actionNamesArray = null;
-      actionNamesArray = new Array("click", "showlongdesc");
+      actionNamesArray = ["click", "showlongdesc"];
       testThis("clickAndLongdesc", "moz.png",
                89, 38, 2, actionNamesArray);
-      
+
       // Image with click
       actionNamesArray = null;
-      actionNamesArray = new Array("click");
+      actionNamesArray = ["click"];
       testThis("click", "moz.png",
                89, 38, 1, actionNamesArray);
-      
+
       // Image with long desc
       actionNamesArray = null;
-      actionNamesArray = new Array("showlongdesc");
+      actionNamesArray = ["showlongdesc"];
       testThis("longdesc2", "moz.png",
                89, 38, 1, actionNamesArray);
 
       // Image described by HTML:a@href with whitespaces
       actionNamesArray = null;
-      actionNamesArray = new Array("showlongdesc");
+      actionNamesArray = ["showlongdesc"];
       testThis("longdesc3", "moz.png",
                89, 38, 1, actionNamesArray);
 

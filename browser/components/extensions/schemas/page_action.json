@@ -30,7 +30,25 @@
               },
               "browser_style": {
                 "type": "boolean",
-                "optional": true
+                "optional": true,
+                "default": false
+              },
+              "show_matches": {
+                "type": "array",
+                "optional": true,
+                "minItems": 1,
+                "items": { "$ref": "MatchPattern" }
+              },
+              "hide_matches": {
+                "type": "array",
+                "optional": true,
+                "minItems": 1,
+                "items": { "$ref": "MatchPatternRestricted" }
+              },
+              "pinned": {
+                "type": "boolean",
+                "optional": true,
+                "default": true
               }
             },
             "optional": true
@@ -85,6 +103,24 @@
         ]
       },
       {
+        "name": "isShown",
+        "type": "function",
+        "description": "Checks whether the page action is shown.",
+        "async": true,
+        "parameters": [
+          {
+            "name": "details",
+            "type": "object",
+            "properties": {
+              "tabId": {
+                "type": "integer",
+                "description": "Specify the tab to get the shownness from."
+              }
+            }
+          }
+        ]
+      },
+      {
         "name": "setTitle",
         "type": "function",
         "description": "Sets the title of the page action. This is displayed in a tooltip over the page action.",
@@ -94,7 +130,13 @@
             "type": "object",
             "properties": {
               "tabId": {"type": "integer", "minimum": 0, "description": "The id of the tab for which you want to modify the page action."},
-              "title": {"type": "string", "description": "The tooltip string."}
+              "title": {
+                "choices": [
+                  {"type": "string"},
+                  {"type": "null"}
+                ],
+                "description": "The tooltip string."
+              }
             }
           }
         ]
@@ -143,7 +185,9 @@
                   { "$ref": "ImageDataType" },
                   {
                     "type": "object",
-                    "additionalProperties": {"$ref": "ImageDataType"}
+                    "patternProperties": {
+                      "^[1-9]\\d*$": {"$ref": "ImageDataType"}
+                    }
                   }
                 ],
                 "optional": true,
@@ -154,7 +198,9 @@
                   { "type": "string" },
                   {
                     "type": "object",
-                    "additionalProperties": {"type": "string"}
+                    "patternProperties": {
+                      "^[1-9]\\d*$": { "type": "string" }
+                    }
                   }
                 ],
                 "optional": true,
@@ -173,6 +219,7 @@
       {
         "name": "setPopup",
         "type": "function",
+        "async": true,
         "description": "Sets the html document to be opened as a popup when the user clicks on the page action's icon.",
         "parameters": [
           {
@@ -181,7 +228,10 @@
             "properties": {
               "tabId": {"type": "integer", "minimum": 0, "description": "The id of the tab for which you want to modify the page action."},
               "popup": {
-                "type": "string",
+                "choices": [
+                  {"type": "string"},
+                  {"type": "null"}
+                ],
                 "description": "The html file to show in a popup.  If set to the empty string (''), no popup is shown."
               }
             }
@@ -215,6 +265,14 @@
             ]
           }
         ]
+      },
+      {
+        "name": "openPopup",
+        "type": "function",
+        "requireUserInput": true,
+        "description": "Opens the extension page action in the active window.",
+        "async": true,
+        "parameters": []
       }
     ],
     "events": [

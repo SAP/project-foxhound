@@ -1,8 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-XPCOMUtils.defineLazyModuleGetter(this, "PlacesTestUtils",
-                                  "resource://testing-common/PlacesTestUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "PlacesTestUtils",
+                               "resource://testing-common/PlacesTestUtils.jsm");
 
 var PERMISSIONS_FILE_NAME = "permissions.sqlite";
 
@@ -13,13 +13,10 @@ function GetPermissionsFile(profile)
   return file;
 }
 
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* test() {
+add_task(async function test() {
   /* Create and set up the permissions database */
   let profile = do_get_profile();
+  Services.prefs.setCharPref("permissions.manager.defaultsUrl", "");
 
   let db = Services.storage.openDatabase(GetPermissionsFile(profile));
   db.schemaVersion = 5;
@@ -81,7 +78,11 @@ add_task(function* test() {
     stmt5Insert.bindByName("expireTime", expireTime);
     stmt5Insert.bindByName("modificationTime", modificationTime);
 
-    stmt5Insert.execute();
+    try {
+      stmt5Insert.execute();
+    } finally {
+      stmt5Insert.reset();
+    }
 
     return {
       id: thisId,
@@ -107,7 +108,11 @@ add_task(function* test() {
     stmtInsert.bindByName("appId", appId);
     stmtInsert.bindByName("isInBrowserElement", isInBrowserElement);
 
-    stmtInsert.execute();
+    try {
+      stmtInsert.execute();
+    } finally {
+      stmtInsert.reset();
+    }
 
     return {
       id: thisId,
@@ -151,6 +156,7 @@ add_task(function* test() {
   ];
 
   // CLose the db connection
+  stmt5Insert.finalize();
   stmtInsert.finalize();
   db.close();
   stmtInsert = null;
@@ -209,13 +215,11 @@ add_task(function* test() {
   let found = expected.map((it) => 0);
 
   // Add some places to the places database
-  yield PlacesTestUtils.addVisits(Services.io.newURI("https://foo.com/some/other/subdirectory"));
-  yield PlacesTestUtils.addVisits(Services.io.newURI("ftp://some.subdomain.of.foo.com:8000/some/subdirectory"));
+  await PlacesTestUtils.addVisits(Services.io.newURI("https://foo.com/some/other/subdirectory"));
+  await PlacesTestUtils.addVisits(Services.io.newURI("ftp://some.subdomain.of.foo.com:8000/some/subdirectory"));
 
   // Force initialization of the nsPermissionManager
-  let enumerator = Services.perms.enumerator;
-  while (enumerator.hasMoreElements()) {
-    let permission = enumerator.getNext().QueryInterface(Ci.nsIPermission);
+  for (let permission of Services.perms.enumerator) {
     let isExpected = false;
 
     expected.forEach((it, i) => {
@@ -229,55 +233,66 @@ add_task(function* test() {
       }
     });
 
-    do_check_true(isExpected,
-                  "Permission " + (isExpected ? "should" : "shouldn't") +
-                  " be in permission database: " +
-                  permission.principal.origin + ", " +
-                  permission.type + ", " +
-                  permission.capability + ", " +
-                  permission.expireType + ", " +
-                  permission.expireTime);
+    Assert.ok(isExpected,
+              "Permission " + (isExpected ? "should" : "shouldn't") +
+              " be in permission database: " +
+              permission.principal.origin + ", " +
+              permission.type + ", " +
+              permission.capability + ", " +
+              permission.expireType + ", " +
+              permission.expireTime);
   }
 
   found.forEach((count, i) => {
-    do_check_true(count == 1, "Expected count = 1, got count = " + count + " for permission " + expected[i]);
+    Assert.ok(count == 1, "Expected count = 1, got count = " + count + " for permission " + expected[i]);
   });
 
   // Check to make sure that all of the tables which we care about are present
   {
     let db = Services.storage.openDatabase(GetPermissionsFile(profile));
-    do_check_true(db.tableExists("moz_perms"));
-    do_check_true(db.tableExists("moz_hosts"));
-    do_check_false(db.tableExists("moz_hosts_is_backup"));
-    do_check_true(db.tableExists("moz_perms_v6"));
+    Assert.ok(db.tableExists("moz_perms"));
+    Assert.ok(db.tableExists("moz_hosts"));
+    Assert.ok(!db.tableExists("moz_hosts_is_backup"));
+    Assert.ok(db.tableExists("moz_perms_v6"));
 
     // The moz_hosts table should still exist but be empty
     let mozHostsCount = db.createStatement("SELECT count(*) FROM moz_hosts");
-    mozHostsCount.executeStep();
-    do_check_eq(mozHostsCount.getInt64(0), 0);
+    try {
+      mozHostsCount.executeStep();
+      Assert.equal(mozHostsCount.getInt64(0), 0);
+    } finally {
+      mozHostsCount.finalize();
+    }
 
     // Check that the moz_perms_v6 table contains the backup of the entry we created
     let mozPermsV6Stmt = db.createStatement("SELECT " +
                                             "origin, type, permission, expireType, expireTime, modificationTime " +
                                             "FROM moz_perms_v6 WHERE id = :id");
-
-    // Check that the moz_hosts table still contains the correct values.
-    created5.forEach((it) => {
-      mozPermsV6Stmt.reset();
-      mozPermsV6Stmt.bindByName("id", it.id);
-      mozPermsV6Stmt.executeStep();
-      do_check_eq(mozPermsV6Stmt.getUTF8String(0), it.origin);
-      do_check_eq(mozPermsV6Stmt.getUTF8String(1), it.type);
-      do_check_eq(mozPermsV6Stmt.getInt64(2), it.permission);
-      do_check_eq(mozPermsV6Stmt.getInt64(3), it.expireType);
-      do_check_eq(mozPermsV6Stmt.getInt64(4), it.expireTime);
-      do_check_eq(mozPermsV6Stmt.getInt64(5), it.modificationTime);
-    });
+    try {
+      // Check that the moz_hosts table still contains the correct values.
+      created5.forEach((it) => {
+        mozPermsV6Stmt.reset();
+        mozPermsV6Stmt.bindByName("id", it.id);
+        mozPermsV6Stmt.executeStep();
+        Assert.equal(mozPermsV6Stmt.getUTF8String(0), it.origin);
+        Assert.equal(mozPermsV6Stmt.getUTF8String(1), it.type);
+        Assert.equal(mozPermsV6Stmt.getInt64(2), it.permission);
+        Assert.equal(mozPermsV6Stmt.getInt64(3), it.expireType);
+        Assert.equal(mozPermsV6Stmt.getInt64(4), it.expireTime);
+        Assert.equal(mozPermsV6Stmt.getInt64(5), it.modificationTime);
+      });
+    } finally {
+      mozPermsV6Stmt.finalize();
+    }
 
     // Check that there are the right number of values
     let mozPermsV6Count = db.createStatement("SELECT count(*) FROM moz_perms_v6");
-    mozPermsV6Count.executeStep();
-    do_check_eq(mozPermsV6Count.getInt64(0), created5.length);
+    try {
+      mozPermsV6Count.executeStep();
+      Assert.equal(mozPermsV6Count.getInt64(0), created5.length);
+    } finally {
+      mozPermsV6Count.finalize();
+    }
 
     db.close();
   }

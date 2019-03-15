@@ -1,10 +1,7 @@
-var Cc = Components.classes;
-var Ci = Components.interfaces;
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function run_test() {
-  var f =
-      Cc["@mozilla.org/file/directory_service;1"].
-      getService(Ci.nsIProperties).get("CurProcD", Ci.nsIFile);
+  var f = Services.dirsvc.get("CurProcD", Ci.nsIFile);
 
   var terminated = false;
   for (var i = 0; i < 100; i++) {
@@ -15,5 +12,5 @@ function run_test() {
     f = f.parent;
   }
 
-  do_check_true(terminated);
+  Assert.ok(terminated);
 }

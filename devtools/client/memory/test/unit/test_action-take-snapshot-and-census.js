@@ -8,30 +8,26 @@
  * taking a snapshot, and its sub-actions.
  */
 
-let { snapshotState: states, treeMapState } = require("devtools/client/memory/constants");
-let actions = require("devtools/client/memory/actions/snapshot");
+const { snapshotState: states, treeMapState } = require("devtools/client/memory/constants");
+const actions = require("devtools/client/memory/actions/snapshot");
 
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* () {
-  let front = new StubbedMemoryFront();
-  let heapWorker = new HeapAnalysesClient();
-  yield front.attach();
-  let store = Store();
+add_task(async function() {
+  const front = new StubbedMemoryFront();
+  const heapWorker = new HeapAnalysesClient();
+  await front.attach();
+  const store = Store();
 
   let snapshotI = 0;
   let censusI = 0;
-  let snapshotStates = ["SAVING", "SAVED", "READING", "READ"];
-  let censusStates = ["SAVING", "SAVED"];
-  let expectStates = () => {
-    let snapshot = store.getState().snapshots[0];
+  const snapshotStates = ["SAVING", "SAVED", "READING", "READ"];
+  const censusStates = ["SAVING", "SAVED"];
+  const expectStates = () => {
+    const snapshot = store.getState().snapshots[0];
     if (!snapshot) {
       return;
     }
     if (snapshotI < snapshotStates.length) {
-      let isCorrectState = snapshot.state === states[snapshotStates[snapshotI]];
+      const isCorrectState = snapshot.state === states[snapshotStates[snapshotI]];
       if (isCorrectState) {
         ok(true, `Found expected snapshot state ${snapshotStates[snapshotI]}`);
         snapshotI++;
@@ -45,10 +41,10 @@ add_task(function* () {
     }
   };
 
-  let unsubscribe = store.subscribe(expectStates);
+  const unsubscribe = store.subscribe(expectStates);
   store.dispatch(actions.takeSnapshotAndCensus(front, heapWorker));
 
-  yield waitUntilState(store, () => {
+  await waitUntilState(store, () => {
     return snapshotI === snapshotStates.length &&
            censusI === censusStates.length;
   });
@@ -56,7 +52,7 @@ add_task(function* () {
 
   ok(true,
     "takeSnapshotAndCensus() produces the correct sequence of states in a snapshot");
-  let snapshot = store.getState().snapshots[0];
+  const snapshot = store.getState().snapshots[0];
   ok(snapshot.treeMap, "snapshot has tree map census data");
   ok(snapshot.selected, "snapshot is selected");
 });

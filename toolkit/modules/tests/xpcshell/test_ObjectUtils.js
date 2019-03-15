@@ -1,10 +1,6 @@
-Components.utils.import("resource://gre/modules/ObjectUtils.jsm");
+ChromeUtils.import("resource://gre/modules/ObjectUtils.jsm");
 
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* test_deepEqual() {
+add_task(async function test_deepEqual() {
   let deepEqual = ObjectUtils.deepEqual.bind(ObjectUtils);
   // CommonJS 7.2
   Assert.ok(deepEqual(new Date(2000, 3, 14), new Date(2000, 3, 14)), "deepEqual date");
@@ -59,7 +55,7 @@ add_task(function* test_deepEqual() {
   Assert.ok(deepEqual(a1, a2));
 
   let nbRoot = {
-    toString() { return this.first + " " + this.last; }
+    toString() { return this.first + " " + this.last; },
   };
 
   function nameBuilder(first, last) {
@@ -110,4 +106,33 @@ add_task(function* test_deepEqual() {
   }
 
   Assert.ok(deepEqual(checkEquiv(e, f), checkEquiv(f, e)));
+});
+
+add_task(async function test_isEmpty() {
+  Assert.ok(ObjectUtils.isEmpty(""), "Empty strings should be empty");
+  Assert.ok(ObjectUtils.isEmpty(0), "0 should be empty");
+  Assert.ok(ObjectUtils.isEmpty(NaN), "NaN should be empty");
+  Assert.ok(ObjectUtils.isEmpty(), "Undefined should be empty");
+  Assert.ok(ObjectUtils.isEmpty(null), "Null should be empty");
+  Assert.ok(ObjectUtils.isEmpty(false), "False should be empty");
+
+  Assert.ok(ObjectUtils.isEmpty({}),
+    "Objects without properties should be empty");
+  Assert.ok(ObjectUtils.isEmpty(Object.defineProperty({}, "a", {
+    value: 1,
+    enumerable: false,
+    configurable: true,
+    writable: true,
+  })), "Objects without enumerable properties should be empty");
+  Assert.ok(ObjectUtils.isEmpty([]), "Arrays without elements should be empty");
+
+  Assert.ok(!ObjectUtils.isEmpty([1]),
+    "Arrays with elements should not be empty");
+  Assert.ok(!ObjectUtils.isEmpty({ a: 1 }),
+    "Objects with properties should not be empty");
+
+  function A() {}
+  A.prototype.b = 2;
+  Assert.ok(!ObjectUtils.isEmpty(new A()),
+    "Objects with inherited enumerable properties should not be empty");
 });

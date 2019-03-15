@@ -5,15 +5,15 @@ title: Introduction
 
 web-platform-tests is a W3C-coordinated effort to build a
 cross-browser testsuite for the majority of
-the [web platform][web-platform]; it excludes only CSS (whose
-testsuite lives in [csswg-test][csswg-test]), ECMAScript (whose
-testsuite lives in [test262][test262]), and WebGL (whose testsuite
+the [web platform][web-platform]; it excludes only ECMAScript (whose
+testsuite lives in [test262][test262]) and WebGL (whose testsuite
 lives in [WebGL][WebGL]).
 
-That said, csswg-test follows a superset of the policies of
-web-platform-tests, so the documentation provided here should
-similarly apply to it. Where extra policies apply, they are provided
-in separate documents and linked from the appropriate section.
+## Watch a Talk
+
+If you prefer watching a video, here is a talk introducing web-platform-tests:
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/XnfE3MfH5hQ" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
 
 ## Help!
 
@@ -38,12 +38,14 @@ and should be easy to run in any browser.
 ## Test Layout
 
 Each top level directory in the repository corresponds to tests for a
-single specification. For W3C specs, these directories are typically
-named after the shortname of the spec (i.e. the name used for snapshot
-publications under `/TR/`); for WHATWG specs, they are typically named
-after the subdomain of the spec (i.e. trimming `.spec.whatwg.org` from
-the URL); for other specs, something deemed sensible is used. In any
-case, there are occasional exceptions for historic reasons.
+single specification, with the exception of `css/` which contains
+testsuites for CSS WG specifications. For W3C specs, these directories
+are typically named after the shortname of the spec (i.e. the name
+used for snapshot publications under `/TR/`); for WHATWG specs, they
+are typically named after the subdomain of the spec (i.e. trimming
+`.spec.whatwg.org` from the URL); for other specs, something deemed
+sensible is used. In any case, there are occasional exceptions for
+historic reasons.
 
 Within the specification-specific directory there are two common ways
 of laying out tests: the first is a flat structure which is sometimes
@@ -63,7 +65,7 @@ The testsuite has a few types of tests, outlined below:
 
 * [Reftests][], which render two (or more) web
   pages and combine them with equality assertions about their
-  rendering (e.g., A.html and B.html must render identically), run
+  rendering (e.g., `A.html` and `B.html` must render identically), run
   either by the user switching between tabs/windows and trying to
   observe differences or through automated scripts.
 
@@ -80,120 +82,108 @@ The testsuite has a few types of tests, outlined below:
 
 ## GitHub
 
-GitHub is used both for issue tracking and test submissions; we
+[GitHub](https://github.com/web-platform-tests/wpt/) is used both for [issue tracking](https://github.com/web-platform-tests/wpt/issues) and [test submissions](https://github.com/web-platform-tests/wpt/pulls); we
 provide [a limited introduction][github-intro] to both git and
 GitHub.
 
 Pull Requests are automatically labeled based on the directory the
 files they change are in; there are also comments added automatically
-to notify a number of people: this list of people comes from OWNERS
+to notify a number of people: this list of people comes from META.yml
 files in those same directories and their parents (i.e., they work
-recursively: `a/OWNERS` will get notified for `a/foo.html` and
+recursively: `a/META.yml` will get notified for `a/foo.html` and
 `a/b/bar.html`).
 
 If you want to be notified about changes to tests in a directory, feel
-free to add yourself to the OWNERS file: there's no requirement to own
-anything as a result!
+free to add yourself to the META.yml file!
 
 
 ## Local Setup
 
 The tests are designed to be run from your local computer. The test
 environment requires [Python 2.7+](http://www.python.org/downloads) (but not Python 3.x).
-You will also need a copy of OpenSSL.
 
 On Windows, be sure to add the Python directory (`c:\python2x`, by default) to
 your `%Path%` [Environment Variable](http://www.computerhope.com/issues/ch000549.htm),
 and read the [Windows Notes](#windows-notes) section below.
 
 To get the tests running, you need to set up the test domains in your
-[`hosts` file](http://en.wikipedia.org/wiki/Hosts_%28file%29%23Location_in_the_file_system). The
-following entries are required:
+[`hosts` file](http://en.wikipedia.org/wiki/Hosts_%28file%29%23Location_in_the_file_system).
 
+The necessary content can be generated with `./wpt make-hosts-file`; on
+Windows, you will need to preceed the prior command with `python` or
+the path to the Python binary (`python wpt make-hosts-file`).
+
+For example, on most UNIX-like systems, you can setup the hosts file with:
+
+```bash
+./wpt make-hosts-file | sudo tee -a /etc/hosts
 ```
-127.0.0.1   web-platform.test
-127.0.0.1   www.web-platform.test
-127.0.0.1   www1.web-platform.test
-127.0.0.1   www2.web-platform.test
-127.0.0.1   xn--n8j6ds53lwwkrqhv28a.web-platform.test
-127.0.0.1   xn--lve-6lad.web-platform.test
-0.0.0.0     nonexistent-origin.web-platform.test
+
+And on Windows (this must be run in a PowerShell session with Administrator privileges):
+
+```bash
+python wpt make-hosts-file | Out-File %SystemRoot%\System32\drivers\etc\hosts -Encoding ascii -Append
 ```
 
 If you are behind a proxy, you also need to make sure the domains above are
 excluded from your proxy lookups.
 
-Because web-platform-tests uses git submodules, you must ensure that
-these are up to date. In the root of your checkout, run:
-
-```
-git submodule update --init --recursive
-```
-
 The test environment can then be started using
 
-    ./serve
+    ./wpt serve
 
 This will start HTTP servers on two ports and a websockets server on
-one port. By default one web server starts on port 8000 and the other
+one port. By default the web servers start on ports 8000 and 8443 and the other
 ports are randomly-chosen free ports. Tests must be loaded from the
-*first* HTTP server in the output. To change the ports, copy the
-`config.default.json` file to `config.json` and edit the new file,
-replacing the part that reads:
+*first* HTTP server in the output. To change the ports,
+create a `config.json` file in the wpt root directory, and add
+port definitions of your choice e.g.:
 
 ```
-"http": [8000, "auto"]
+{
+  "ports": {
+    "http": [1234, "auto"],
+    "https":[5678]
+  }
+}
 ```
 
-to some port of your choice e.g.
+After your `hosts` file is configured, the servers will be locally accessible at:
+
+http://web-platform.test:8000/<br>
+https://web-platform.test:8443/ *
+
+\**See [Trusting Root CA](https://github.com/web-platform-tests/wpt/blob/master/README.md#trusting-root-ca)*
+
+## Running tests automatically
+
+The `wpt run` command provides a frontend for running tests automatically
+in various browsers. The general syntax is:
 
 ```
-"http": [1234, "auto"]
+wpt run [options] <product> [test paths]
 ```
 
-If you installed OpenSSL in such a way that running `openssl` at a
-command line doesn't work, you also need to adjust the path to the
-OpenSSL binary. This can be done by adding a section to `config.json`
-like:
+e.g. to run `dom/historical.html` in Firefox, the required command is:
 
 ```
-"ssl": {"openssl": {"binary": "/path/to/openssl"}}
+wpt run firefox dom/historical.html
 ```
 
 ### Windows Notes
 
-Running wptserve with SSL enabled on Windows typically requires
-installing an OpenSSL distribution.
-[Shining Light](https://slproweb.com/products/Win32OpenSSL.html)
-provide a convenient installer that is known to work, but requires a
-little extra setup, i.e.:
+Generally Windows Subsystem for Linux will provide the smoothest user
+experience for running web-platform-tests on Windows.
 
-Run the installer for Win32_OpenSSL_v1.1.0b (30MB). During installation,
-change the default location for where to Copy OpenSSL Dlls from the
-System directory to the /bin directory.
+The standard Windows shell requires that all `wpt` commands are prefixed
+by the Python binary i.e. assuming `python` is on your path the server is
+started using:
 
-After installation, ensure that the path to OpenSSL (typically,
-this will be `C:\OpenSSL-Win32\bin`) is in your `%Path%`
-[Environment Variable](http://www.computerhope.com/issues/ch000549.htm).
-If you forget to do this part, you will most likely see a 'File Not Found'
-error when you start wptserve.
-
-Finally, set the path value in the server configuration file to the
-default OpenSSL configuration file location. To do this,
-copy `config.default.json` in the web-platform-tests root to `config.json`.
-Then edit the JSON so that the key `ssl/openssl/base_conf_path` has a
-value that is the path to the OpenSSL config file (typically this
-will be `C:\\OpenSSL-Win32\\bin\\openssl.cfg`).
-
-Alternatively, you may also use
-[Bash on Ubuntu on Windows](https://msdn.microsoft.com/en-us/commandline/wsl/about)
-in the Windows 10 Anniversary Update build, then access your windows
-partition from there to launch wptserve.
+`python wpt serve`
 
 
 [web-platform]: https://platform.html5.org
 [test262]: https://github.com/tc39/test262
-[csswg-test]: https://github.com/w3c/csswg-test
 [webgl]: https://github.com/KhronosGroup/WebGL
 [public-test-infra]: https://lists.w3.org/Archives/Public/public-test-infra/
 [IRC]: irc://irc.w3.org:6667/testing

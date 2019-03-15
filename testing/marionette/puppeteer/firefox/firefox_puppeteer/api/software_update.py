@@ -2,12 +2,14 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 import ConfigParser
 import os
 import re
 import sys
 
-import mozinfo
+from six import reraise
 
 from firefox_puppeteer.base import BaseLib
 from firefox_puppeteer.api.appinfo import AppInfo
@@ -180,18 +182,7 @@ class SoftwareUpdate(BaseLib):
 
         :returns: ABI version
         """
-        abi = self.app_info.XPCOMABI
-        if mozinfo.isMac:
-            abi += self.marionette.execute_script("""
-              let macutils = Components.classes['@mozilla.org/xpcom/mac-utils;1']
-                             .getService(Components.interfaces.nsIMacUtils);
-              if (macutils.isUniversalBinary) {
-                return '-u-' + macutils.architecturesInBinary;
-              }
-              return '';
-            """)
-
-        return abi
+        return self.app_info.XPCOMABI
 
     @property
     def active_update(self):
@@ -366,7 +357,8 @@ class SoftwareUpdate(BaseLib):
             return response.read()
         except urllib2.URLError:
             exc, val, tb = sys.exc_info()
-            raise Exception, "Failed to retrieve update snippet: {}".format(val), tb
+            msg = "Failed to retrieve update snippet '{0}': {1}"
+            reraise(Exception, msg.format(update_url, val), tb)
 
     def get_formatted_update_url(self, force=False):
         """Retrieve the formatted AUS update URL the update snippet is retrieved from.
@@ -375,10 +367,19 @@ class SoftwareUpdate(BaseLib):
 
         :returns: The URL of the update snippet
         """
-        # Format the URL by replacing placeholders
-        url = self.marionette.execute_script("""
-          Components.utils.import("resource://gre/modules/UpdateUtils.jsm")
-          return UpdateUtils.formatUpdateURL(arguments[0]);
+        url = self.marionette.execute_async_script("""
+          let resolve = arguments[arguments.length - 1];
+          Components.utils.import("resource://gre/modules/UpdateUtils.jsm");
+          let res = UpdateUtils.formatUpdateURL(arguments[0]);
+
+          // Format the URL by replacing placeholders
+          // In 56 we switched the method to be async.
+          // For now, support both approaches.
+          if (res.then) {
+            res.then(resolve);
+          } else {
+            resolve(res);
+          }
         """, script_args=[self.update_url])
 
         if force:

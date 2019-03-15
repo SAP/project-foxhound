@@ -30,10 +30,6 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-
-
-static char *RCSSTRING __UNUSED__="$Id: transport_addr_reg.c,v 1.2 2008/04/28 17:59:03 ekr Exp $";
-
 #include <csi_platform.h>
 #include <stdio.h>
 #include <string.h>
@@ -114,8 +110,9 @@ nr_reg_get_transport_addr(NR_registry prefix, int keep, nr_transport_addr *addr)
     if ((r=nr_str_port_to_transport_addr(address?address:"0.0.0.0", port, p, addr)))
         ABORT(r);
 
-    if (ifname)
-        strlcpy(addr->ifname, ifname, sizeof(addr->ifname));
+    if (ifname) {
+        (void)strlcpy(addr->ifname, ifname, sizeof(addr->ifname));
+    }
 
     _status=0;
   abort:

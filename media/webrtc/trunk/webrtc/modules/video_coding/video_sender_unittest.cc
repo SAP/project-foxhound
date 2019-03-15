@@ -8,22 +8,24 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <memory>
 #include <vector>
 
-#include "testing/gtest/include/gtest/gtest.h"
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/common.h"
-#include "webrtc/modules/video_coding/include/mock/mock_video_codec_interface.h"
-#include "webrtc/modules/video_coding/codecs/vp8/include/vp8.h"
-#include "webrtc/modules/video_coding/codecs/vp8/include/vp8_common_types.h"
-#include "webrtc/modules/video_coding/codecs/vp8/temporal_layers.h"
-#include "webrtc/modules/video_coding/include/mock/mock_vcm_callbacks.h"
-#include "webrtc/modules/video_coding/include/video_coding.h"
-#include "webrtc/modules/video_coding/video_coding_impl.h"
-#include "webrtc/modules/video_coding/test/test_util.h"
-#include "webrtc/system_wrappers/include/clock.h"
-#include "webrtc/test/frame_generator.h"
-#include "webrtc/test/testsupport/fileutils.h"
+#include "api/video/i420_buffer.h"
+#include "modules/video_coding/codecs/vp8/include/vp8.h"
+#include "modules/video_coding/codecs/vp8/include/vp8_common_types.h"
+#include "modules/video_coding/codecs/vp8/simulcast_rate_allocator.h"
+#include "modules/video_coding/codecs/vp8/temporal_layers.h"
+#include "modules/video_coding/include/mock/mock_vcm_callbacks.h"
+#include "modules/video_coding/include/mock/mock_video_codec_interface.h"
+#include "modules/video_coding/include/video_coding.h"
+#include "modules/video_coding/video_coding_impl.h"
+#include "modules/video_coding/utility/default_video_bitrate_allocator.h"
+#include "system_wrappers/include/clock.h"
+#include "test/frame_generator.h"
+#include "test/gtest.h"
+#include "test/testsupport/fileutils.h"
+#include "test/video_codec_settings.h"
 
 using ::testing::_;
 using ::testing::AllOf;
@@ -40,7 +42,12 @@ using webrtc::test::FrameGenerator;
 namespace webrtc {
 namespace vcm {
 namespace {
-enum { kMaxNumberOfTemporalLayers = 3 };
+static const int kDefaultHeight = 720;
+static const int kDefaultWidth = 1280;
+static const int kMaxNumberOfTemporalLayers = 3;
+static const int kNumberOfLayers = 3;
+static const int kNumberOfStreams = 3;
+static const int kUnusedPayloadType = 10;
 
 struct Vp8StreamInfo {
   float framerate_fps[kMaxNumberOfTemporalLayers];
@@ -70,32 +77,31 @@ class EmptyFrameGenerator : public FrameGenerator {
  public:
   EmptyFrameGenerator(int width, int height) : width_(width), height_(height) {}
   VideoFrame* NextFrame() override {
-    frame_.reset(new VideoFrame());
-    frame_->CreateEmptyFrame(width_, height_, width_, (width_ + 1) / 2,
-                             (width_ + 1) / 2);
+    frame_.reset(new VideoFrame(I420Buffer::Create(width_, height_),
+                                webrtc::kVideoRotation_0, 0));
     return frame_.get();
   }
 
  private:
   const int width_;
   const int height_;
-  rtc::scoped_ptr<VideoFrame> frame_;
+  std::unique_ptr<VideoFrame> frame_;
 };
 
-class PacketizationCallback : public VCMPacketizationCallback {
+class EncodedImageCallbackImpl : public EncodedImageCallback {
  public:
-  explicit PacketizationCallback(Clock* clock)
+  explicit EncodedImageCallbackImpl(Clock* clock)
       : clock_(clock), start_time_ms_(clock_->TimeInMilliseconds()) {}
 
-  virtual ~PacketizationCallback() {}
+  virtual ~EncodedImageCallbackImpl() {}
 
-  int32_t SendData(uint8_t payload_type,
-                   const EncodedImage& encoded_image,
-                   const RTPFragmentationHeader& fragmentation_header,
-                   const RTPVideoHeader* rtp_video_header) override {
-    assert(rtp_video_header);
-    frame_data_.push_back(FrameData(encoded_image._length, *rtp_video_header));
-    return 0;
+  Result OnEncodedImage(const EncodedImage& encoded_image,
+                        const CodecSpecificInfo* codec_specific_info,
+                        const RTPFragmentationHeader* fragmentation) override {
+    assert(codec_specific_info);
+    frame_data_.push_back(
+        FrameData(encoded_image._length, *codec_specific_info));
+    return Result(Result::OK, encoded_image._timeStamp);
   }
 
   void Reset() {
@@ -124,13 +130,14 @@ class PacketizationCallback : public VCMPacketizationCallback {
 
  private:
   struct FrameData {
-    FrameData() {}
+    FrameData() : payload_size(0) {}
 
-    FrameData(size_t payload_size, const RTPVideoHeader& rtp_video_header)
-        : payload_size(payload_size), rtp_video_header(rtp_video_header) {}
+    FrameData(size_t payload_size, const CodecSpecificInfo& codec_specific_info)
+        : payload_size(payload_size),
+          codec_specific_info(codec_specific_info) {}
 
     size_t payload_size;
-    RTPVideoHeader rtp_video_header;
+    CodecSpecificInfo codec_specific_info;
   };
 
   int64_t interval_ms() {
@@ -142,9 +149,9 @@ class PacketizationCallback : public VCMPacketizationCallback {
   int CountFramesWithinTemporalLayer(int temporal_layer) {
     int frames = 0;
     for (size_t i = 0; i < frame_data_.size(); ++i) {
-      EXPECT_EQ(kRtpVideoVp8, frame_data_[i].rtp_video_header.codec);
+      EXPECT_EQ(kVideoCodecVP8, frame_data_[i].codec_specific_info.codecType);
       const uint8_t temporal_idx =
-          frame_data_[i].rtp_video_header.codecHeader.VP8.temporalIdx;
+          frame_data_[i].codec_specific_info.codecSpecific.VP8.temporalIdx;
       if (temporal_idx <= temporal_layer || temporal_idx == kNoTemporalIdx)
         frames++;
     }
@@ -154,9 +161,9 @@ class PacketizationCallback : public VCMPacketizationCallback {
   size_t SumPayloadBytesWithinTemporalLayer(int temporal_layer) {
     size_t payload_size = 0;
     for (size_t i = 0; i < frame_data_.size(); ++i) {
-      EXPECT_EQ(kRtpVideoVp8, frame_data_[i].rtp_video_header.codec);
+      EXPECT_EQ(kVideoCodecVP8, frame_data_[i].codec_specific_info.codecType);
       const uint8_t temporal_idx =
-          frame_data_[i].rtp_video_header.codecHeader.VP8.temporalIdx;
+          frame_data_[i].codec_specific_info.codecSpecific.VP8.temporalIdx;
       if (temporal_idx <= temporal_layer || temporal_idx == kNoTemporalIdx)
         payload_size += frame_data_[i].payload_size;
     }
@@ -172,40 +179,35 @@ class TestVideoSender : public ::testing::Test {
  protected:
   // Note: simulated clock starts at 1 seconds, since parts of webrtc use 0 as
   // a special case (e.g. frame rate in media optimization).
-  TestVideoSender() : clock_(1000), packetization_callback_(&clock_) {}
+  TestVideoSender() : clock_(1000), encoded_frame_callback_(&clock_) {}
 
   void SetUp() override {
-    sender_.reset(
-        new VideoSender(&clock_, &post_encode_callback_, nullptr, nullptr));
-    EXPECT_EQ(0, sender_->RegisterTransportCallback(&packetization_callback_));
+    sender_.reset(new VideoSender(&clock_, &encoded_frame_callback_));
   }
 
   void AddFrame() {
     assert(generator_.get());
-    sender_->AddVideoFrame(*generator_->NextFrame(), NULL, NULL);
+    sender_->AddVideoFrame(*generator_->NextFrame(), NULL);
   }
 
   SimulatedClock clock_;
-  PacketizationCallback packetization_callback_;
-  MockEncodedImageCallback post_encode_callback_;
+  EncodedImageCallbackImpl encoded_frame_callback_;
   // Used by subclassing tests, need to outlive sender_.
-  rtc::scoped_ptr<VideoEncoder> encoder_;
-  rtc::scoped_ptr<VideoSender> sender_;
-  rtc::scoped_ptr<FrameGenerator> generator_;
+  std::unique_ptr<VideoEncoder> encoder_;
+  std::unique_ptr<VideoSender> sender_;
+  std::unique_ptr<FrameGenerator> generator_;
 };
 
 class TestVideoSenderWithMockEncoder : public TestVideoSender {
- protected:
-  static const int kDefaultWidth = 1280;
-  static const int kDefaultHeight = 720;
-  static const int kNumberOfStreams = 3;
-  static const int kNumberOfLayers = 3;
-  static const int kUnusedPayloadType = 10;
+ public:
+  TestVideoSenderWithMockEncoder() {}
+  ~TestVideoSenderWithMockEncoder() override {}
 
+ protected:
   void SetUp() override {
     TestVideoSender::SetUp();
     sender_->RegisterExternalEncoder(&encoder_, kUnusedPayloadType, false);
-    VideoCodingModule::Codec(kVideoCodecVP8, &settings_);
+    webrtc::test::CodecSettings(kVideoCodecVP8, &settings_);
     settings_.numberOfSimulcastStreams = kNumberOfStreams;
     ConfigureStream(kDefaultWidth / 4, kDefaultHeight / 4, 100,
                     &settings_.simulcastStream[0]);
@@ -217,25 +219,35 @@ class TestVideoSenderWithMockEncoder : public TestVideoSender {
     generator_.reset(
         new EmptyFrameGenerator(settings_.width, settings_.height));
     EXPECT_EQ(0, sender_->RegisterSendCodec(&settings_, 1, 1200));
+    rate_allocator_.reset(new DefaultVideoBitrateAllocator(settings_));
   }
 
   void TearDown() override { sender_.reset(); }
 
   void ExpectIntraRequest(int stream) {
-    if (stream == -1) {
-      // No intra request expected.
-      EXPECT_CALL(
-          encoder_,
-          Encode(_, _, Pointee(ElementsAre(kVideoFrameDelta, kVideoFrameDelta,
-                                           kVideoFrameDelta))))
+    ExpectEncodeWithFrameTypes(stream, false);
+  }
+
+  void ExpectInitialKeyFrames() {
+    ExpectEncodeWithFrameTypes(-1, true);
+  }
+
+  void ExpectEncodeWithFrameTypes(int intra_request_stream, bool first_frame) {
+    if (intra_request_stream == -1) {
+      // No intra request expected, keyframes on first frame.
+      FrameType frame_type = first_frame ? kVideoFrameKey : kVideoFrameDelta;
+      EXPECT_CALL(encoder_,
+                  Encode(_, _, Pointee(ElementsAre(frame_type, frame_type,
+                                                   frame_type))))
           .Times(1)
           .WillRepeatedly(Return(0));
       return;
     }
-    assert(stream >= 0);
-    assert(stream < kNumberOfStreams);
+    ASSERT_FALSE(first_frame);
+    ASSERT_GE(intra_request_stream, 0);
+    ASSERT_LT(intra_request_stream, kNumberOfStreams);
     std::vector<FrameType> frame_types(kNumberOfStreams, kVideoFrameDelta);
-    frame_types[stream] = kVideoFrameKey;
+    frame_types[intra_request_stream] = kVideoFrameKey;
     EXPECT_CALL(encoder_,
                 Encode(_, _, Pointee(ElementsAreArray(&frame_types[0],
                                                       frame_types.size()))))
@@ -257,9 +269,13 @@ class TestVideoSenderWithMockEncoder : public TestVideoSender {
 
   VideoCodec settings_;
   NiceMock<MockVideoEncoder> encoder_;
+  std::unique_ptr<DefaultVideoBitrateAllocator> rate_allocator_;
 };
 
 TEST_F(TestVideoSenderWithMockEncoder, TestIntraRequests) {
+  // Initial request should be all keyframes.
+  ExpectInitialKeyFrames();
+  AddFrame();
   EXPECT_EQ(0, sender_->IntraFrameRequest(0));
   ExpectIntraRequest(0);
   AddFrame();
@@ -281,9 +297,29 @@ TEST_F(TestVideoSenderWithMockEncoder, TestIntraRequests) {
   EXPECT_EQ(-1, sender_->IntraFrameRequest(3));
   ExpectIntraRequest(-1);
   AddFrame();
+}
 
-  EXPECT_EQ(-1, sender_->IntraFrameRequest(-1));
-  ExpectIntraRequest(-1);
+TEST_F(TestVideoSenderWithMockEncoder, TestSetRate) {
+  // Let actual fps be half of max, so it can be distinguished from default.
+  const uint32_t kActualFrameRate = settings_.maxFramerate / 2;
+  const int64_t kFrameIntervalMs = 1000 / kActualFrameRate;
+  const uint32_t new_bitrate_kbps = settings_.startBitrate + 300;
+
+  // Initial frame rate is taken from config, as we have no data yet.
+  BitrateAllocation new_rate_allocation = rate_allocator_->GetAllocation(
+      new_bitrate_kbps * 1000, settings_.maxFramerate);
+  EXPECT_CALL(encoder_,
+              SetRateAllocation(new_rate_allocation, settings_.maxFramerate))
+      .Times(1)
+      .WillOnce(Return(0));
+  sender_->SetChannelParameters(new_bitrate_kbps * 1000, 0, 200,
+                                rate_allocator_.get(), nullptr);
+  AddFrame();
+  clock_.AdvanceTimeMilliseconds(kFrameIntervalMs);
+
+  // Expect no call to encoder_.SetRates if the new bitrate is zero.
+  EXPECT_CALL(encoder_, SetRateAllocation(_, _)).Times(0);
+  sender_->SetChannelParameters(0, 0, 200, rate_allocator_.get(), nullptr);
   AddFrame();
 }
 
@@ -293,6 +329,9 @@ TEST_F(TestVideoSenderWithMockEncoder, TestIntraRequestsInternalCapture) {
   // Register encoder with internal capture.
   sender_->RegisterExternalEncoder(&encoder_, kUnusedPayloadType, true);
   EXPECT_EQ(0, sender_->RegisterSendCodec(&settings_, 1, 1200));
+  // Initial request should be all keyframes.
+  ExpectInitialKeyFrames();
+  AddFrame();
   ExpectIntraRequest(0);
   EXPECT_EQ(0, sender_->IntraFrameRequest(0));
   ExpectIntraRequest(1);
@@ -301,21 +340,24 @@ TEST_F(TestVideoSenderWithMockEncoder, TestIntraRequestsInternalCapture) {
   EXPECT_EQ(0, sender_->IntraFrameRequest(2));
   // No requests expected since these indices are out of bounds.
   EXPECT_EQ(-1, sender_->IntraFrameRequest(3));
-  EXPECT_EQ(-1, sender_->IntraFrameRequest(-1));
 }
 
-TEST_F(TestVideoSenderWithMockEncoder, EncoderFramerateUpdatedViaProcess) {
-  sender_->SetChannelParameters(settings_.startBitrate * 1000, 0, 200);
-  const int64_t kRateStatsWindowMs = 2000;
-  const uint32_t kInputFps = 20;
-  int64_t start_time = clock_.TimeInMilliseconds();
-  while (clock_.TimeInMilliseconds() < start_time + kRateStatsWindowMs) {
-    AddFrame();
-    clock_.AdvanceTimeMilliseconds(1000 / kInputFps);
-  }
-  EXPECT_CALL(encoder_, SetRates(_, kInputFps)).Times(1).WillOnce(Return(0));
-  sender_->Process();
-  AddFrame();
+TEST_F(TestVideoSenderWithMockEncoder, TestEncoderParametersForInternalSource) {
+  // De-register current external encoder.
+  sender_->RegisterExternalEncoder(nullptr, kUnusedPayloadType, false);
+  // Register encoder with internal capture.
+  sender_->RegisterExternalEncoder(&encoder_, kUnusedPayloadType, true);
+  EXPECT_EQ(0, sender_->RegisterSendCodec(&settings_, 1, 1200));
+  // Update encoder bitrate parameters. We expect that to immediately call
+  // SetRates on the encoder without waiting for AddFrame processing.
+  const uint32_t new_bitrate_kbps = settings_.startBitrate + 300;
+  BitrateAllocation new_rate_allocation = rate_allocator_->GetAllocation(
+      new_bitrate_kbps * 1000, settings_.maxFramerate);
+  EXPECT_CALL(encoder_, SetRateAllocation(new_rate_allocation, _))
+      .Times(1)
+      .WillOnce(Return(0));
+  sender_->SetChannelParameters(new_bitrate_kbps * 1000, 0, 200,
+                                rate_allocator_.get(), nullptr);
 }
 
 TEST_F(TestVideoSenderWithMockEncoder,
@@ -331,23 +373,23 @@ TEST_F(TestVideoSenderWithMockEncoder,
   EXPECT_CALL(encoder_, SetChannelParameters(kLossRate, kRtt))
       .Times(1)
       .WillOnce(Return(0));
-  sender_->SetChannelParameters(settings_.startBitrate * 1000, kLossRate, kRtt);
+  sender_->SetChannelParameters(settings_.startBitrate * 1000, kLossRate, kRtt,
+                                rate_allocator_.get(), nullptr);
   while (clock_.TimeInMilliseconds() < start_time + kRateStatsWindowMs) {
     AddFrame();
     clock_.AdvanceTimeMilliseconds(1000 / kInputFps);
   }
-  // After process, input framerate should be updated but not ChannelParameters
-  // as they are the same as before.
-  EXPECT_CALL(encoder_, SetRates(_, kInputFps)).Times(1).WillOnce(Return(0));
-  sender_->Process();
-  AddFrame();
+
   // Call to SetChannelParameters with changed bitrate should call encoder
   // SetRates but not encoder SetChannelParameters (that are unchanged).
-  EXPECT_CALL(encoder_, SetRates(2 * settings_.startBitrate, kInputFps))
+  uint32_t new_bitrate_bps = 2 * settings_.startBitrate * 1000;
+  BitrateAllocation new_rate_allocation =
+      rate_allocator_->GetAllocation(new_bitrate_bps, kInputFps);
+  EXPECT_CALL(encoder_, SetRateAllocation(new_rate_allocation, kInputFps))
       .Times(1)
       .WillOnce(Return(0));
-  sender_->SetChannelParameters(2 * settings_.startBitrate * 1000, kLossRate,
-                                kRtt);
+  sender_->SetChannelParameters(new_bitrate_bps, kLossRate, kRtt,
+                                rate_allocator_.get(), nullptr);
   AddFrame();
 }
 
@@ -362,15 +404,21 @@ class TestVideoSenderWithVp8 : public TestVideoSender {
     const char* input_video = "foreman_cif";
     const int width = 352;
     const int height = 288;
-    generator_.reset(FrameGenerator::CreateFromYuvFile(
+    generator_ = FrameGenerator::CreateFromYuvFile(
         std::vector<std::string>(1, test::ResourcePath(input_video, "yuv")),
-        width, height, 1));
+        width, height, 1);
 
     codec_ = MakeVp8VideoCodec(width, height, 3);
     codec_.minBitrate = 10;
     codec_.startBitrate = codec_bitrate_kbps_;
     codec_.maxBitrate = codec_bitrate_kbps_;
-    encoder_.reset(VP8Encoder::Create());
+
+    TemporalLayersFactory* tl_factory = new TemporalLayersFactory();
+    rate_allocator_.reset(new SimulcastRateAllocator(
+        codec_, std::unique_ptr<TemporalLayersFactory>(tl_factory)));
+    codec_.VP8()->tl_factory = tl_factory;
+
+    encoder_ = VP8Encoder::Create();
     sender_->RegisterExternalEncoder(encoder_.get(), codec_.plType, false);
     EXPECT_EQ(0, sender_->RegisterSendCodec(&codec_, 1, 1200));
   }
@@ -379,18 +427,16 @@ class TestVideoSenderWithVp8 : public TestVideoSender {
                                       int height,
                                       int temporal_layers) {
     VideoCodec codec;
-    VideoCodingModule::Codec(kVideoCodecVP8, &codec);
+    webrtc::test::CodecSettings(kVideoCodecVP8, &codec);
     codec.width = width;
     codec.height = height;
-    codec.codecSpecific.VP8.numberOfTemporalLayers = temporal_layers;
+    codec.VP8()->numberOfTemporalLayers = temporal_layers;
     return codec;
   }
 
   void InsertFrames(float framerate, float seconds) {
     for (int i = 0; i < seconds * framerate; ++i) {
       clock_.AdvanceTimeMilliseconds(1000.0f / framerate);
-      EXPECT_CALL(post_encode_callback_, Encoded(_, NULL, NULL))
-          .WillOnce(Return(0));
       AddFrame();
       // SetChannelParameters needs to be called frequently to propagate
       // framerate from the media optimization into the encoder.
@@ -398,7 +444,8 @@ class TestVideoSenderWithVp8 : public TestVideoSender {
       // buffer since it will fail to calculate the framerate.
       if (i != 0) {
         EXPECT_EQ(VCM_OK, sender_->SetChannelParameters(
-                              available_bitrate_kbps_ * 1000, 0, 200));
+                              available_bitrate_kbps_ * 1000, 0, 200,
+                              rate_allocator_.get(), nullptr));
       }
     }
   }
@@ -409,16 +456,17 @@ class TestVideoSenderWithVp8 : public TestVideoSender {
     // It appears that this 5 seconds simulation is needed to allow
     // bitrate and framerate to stabilize.
     InsertFrames(framerate, short_simulation_interval);
-    packetization_callback_.Reset();
+    encoded_frame_callback_.Reset();
 
     InsertFrames(framerate, long_simulation_interval);
-    return packetization_callback_.CalculateVp8StreamInfo();
+    return encoded_frame_callback_.CalculateVp8StreamInfo();
   }
 
  protected:
   VideoCodec codec_;
   int codec_bitrate_kbps_;
   int available_bitrate_kbps_;
+  std::unique_ptr<SimulcastRateAllocator> rate_allocator_;
 };
 
 #if defined(WEBRTC_ANDROID) || defined(WEBRTC_IOS)
@@ -440,49 +488,6 @@ TEST_F(TestVideoSenderWithVp8, MAYBE_FixedTemporalLayersStrategy) {
   }
 }
 
-#if defined(WEBRTC_ANDROID) || defined(WEBRTC_IOS)
-#define MAYBE_RealTimeTemporalLayersStrategy \
-  DISABLED_RealTimeTemporalLayersStrategy
-#else
-#define MAYBE_RealTimeTemporalLayersStrategy RealTimeTemporalLayersStrategy
-#endif
-TEST_F(TestVideoSenderWithVp8, MAYBE_RealTimeTemporalLayersStrategy) {
-  Config extra_options;
-  extra_options.Set<TemporalLayers::Factory>(
-      new RealTimeTemporalLayersFactory());
-  VideoCodec codec = MakeVp8VideoCodec(352, 288, 3);
-  codec.extra_options = &extra_options;
-  codec.minBitrate = 10;
-  codec.startBitrate = codec_bitrate_kbps_;
-  codec.maxBitrate = codec_bitrate_kbps_;
-  EXPECT_EQ(0, sender_->RegisterSendCodec(&codec, 1, 1200));
-
-  const int low_b = codec_bitrate_kbps_ * 0.4;
-  const int mid_b = codec_bitrate_kbps_ * 0.6;
-  const int high_b = codec_bitrate_kbps_;
-
-  {
-    Vp8StreamInfo expected = {{7.5, 15.0, 30.0}, {low_b, mid_b, high_b}};
-    EXPECT_THAT(SimulateWithFramerate(30.0), MatchesVp8StreamInfo(expected));
-  }
-  {
-    Vp8StreamInfo expected = {{5.0, 10.0, 20.0}, {low_b, mid_b, high_b}};
-    EXPECT_THAT(SimulateWithFramerate(20.0), MatchesVp8StreamInfo(expected));
-  }
-  {
-    Vp8StreamInfo expected = {{7.5, 15.0, 15.0}, {mid_b, high_b, high_b}};
-    EXPECT_THAT(SimulateWithFramerate(15.0), MatchesVp8StreamInfo(expected));
-  }
-  {
-    Vp8StreamInfo expected = {{5.0, 10.0, 10.0}, {mid_b, high_b, high_b}};
-    EXPECT_THAT(SimulateWithFramerate(10.0), MatchesVp8StreamInfo(expected));
-  }
-  {
-    // TODO(andresp): Find out why this fails with framerate = 7.5
-    Vp8StreamInfo expected = {{7.0, 7.0, 7.0}, {high_b, high_b, high_b}};
-    EXPECT_THAT(SimulateWithFramerate(7.0), MatchesVp8StreamInfo(expected));
-  }
-}
 }  // namespace
 }  // namespace vcm
 }  // namespace webrtc

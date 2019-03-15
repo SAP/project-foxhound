@@ -16,10 +16,10 @@ XPIDL_SOURCES += [
     'nsIDirectoryService.idl',
     'nsIFile.idl',
     'nsIInputStream.idl',
+    'nsIInputStreamLength.idl',
     'nsIInputStreamTee.idl',
     'nsIIOUtil.idl',
     'nsILineInputStream.idl',
-    'nsILocalFile.idl',
     'nsILocalFileWin.idl',
     'nsIMultiplexInputStream.idl',
     'nsIObjectInputStream.idl',
@@ -33,6 +33,7 @@ XPIDL_SOURCES += [
     'nsIStorageStream.idl',
     'nsIStreamBufferAccess.idl',
     'nsIStringStream.idl',
+    'nsITellableStream.idl',
     'nsIUnicharInputStream.idl',
     'nsIUnicharLineInputStream.idl',
     'nsIUnicharOutputStream.idl',
@@ -61,10 +62,10 @@ else:
 XPIDL_MODULE = 'xpcom_io'
 
 EXPORTS += [
+    'FileDescriptorFile.h',
     'nsAnonymousTemporaryFile.h',
     'nsAppDirectoryServiceDefs.h',
     'nsDirectoryService.h',
-    'nsDirectoryServiceAtomList.h',
     'nsDirectoryServiceDefs.h',
     'nsDirectoryServiceUtils.h',
     'nsEscape.h',
@@ -78,12 +79,16 @@ EXPORTS += [
     'nsStringStream.h',
     'nsUnicharInputStream.h',
     'nsWildCard.h',
-    'SlicedInputStream.h',
     'SpecialSystemDirectory.h',
 ]
 
 EXPORTS.mozilla += [
     'Base64.h',
+    'FilePreferences.h',
+    'InputStreamLengthHelper.h',
+    'InputStreamLengthWrapper.h',
+    'NonBlockingAsyncInputStream.h',
+    'SlicedInputStream.h',
     'SnappyCompressOutputStream.h',
     'SnappyFrameUtils.h',
     'SnappyUncompressInputStream.h',
@@ -92,10 +97,14 @@ EXPORTS.mozilla += [
 UNIFIED_SOURCES += [
     'Base64.cpp',
     'crc32c.c',
+    'FileDescriptorFile.cpp',
+    'FilePreferences.cpp',
+    'InputStreamLengthHelper.cpp',
+    'InputStreamLengthWrapper.cpp',
+    'NonBlockingAsyncInputStream.cpp',
     'nsAnonymousTemporaryFile.cpp',
     'nsAppFileLocationProvider.cpp',
     'nsBinaryStream.cpp',
-    'nsDirectoryService.cpp',
     'nsEscape.cpp',
     'nsInputStreamTee.cpp',
     'nsIOUtil.cpp',
@@ -119,6 +128,13 @@ UNIFIED_SOURCES += [
     'SpecialSystemDirectory.cpp',
 ]
 
+SOURCES += [
+    'nsDirectoryService.cpp',
+]
+if CONFIG['CC_TYPE'] == 'msvc':
+    # Needed for gDirectoryAtoms.
+    SOURCES['nsDirectoryService.cpp'].flags += ['-Zc:externConstexpr']
+
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
     SOURCES += [
         'CocoaFileUtils.mm',
@@ -131,10 +147,16 @@ FINAL_LIBRARY = 'xul'
 if CONFIG['OS_ARCH'] == 'Linux' and 'lib64' in CONFIG['libdir']:
     DEFINES['HAVE_USR_LIB64_DIR'] = True
 
-LOCAL_INCLUDES += ['!..']
+LOCAL_INCLUDES += [
+    '!..',
+    '../build',
+]
 
-if CONFIG['_MSC_VER']:
+if CONFIG['CC_TYPE'] in ('msvc', 'clang-cl'):
     # This is intended as a temporary hack to support building with VS2015.
     # '_snwprintf' : format string '%s' requires an argument of type 'wchar_t *',
     # but variadic argument 3 has type 'char16ptr_t'
     CXXFLAGS += ['-wd4477']
+
+if CONFIG['CC_TYPE'] == 'clang-cl':
+    AllowCompilerWarnings()  # workaround for bug 1090497

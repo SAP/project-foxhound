@@ -3,8 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const NS_XUL  = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
-
 var gUpdateHistory = {
   _view: null,
 
@@ -15,17 +13,16 @@ var gUpdateHistory = {
     this._view = document.getElementById("historyItems");
 
     var um =
-        Components.classes["@mozilla.org/updates/update-manager;1"].
-        getService(Components.interfaces.nsIUpdateManager);
+        Cc["@mozilla.org/updates/update-manager;1"].
+        getService(Ci.nsIUpdateManager);
     var uc = um.updateCount;
     if (uc) {
       while (this._view.hasChildNodes())
-        this._view.removeChild(this._view.firstChild);
-
-      var bundle = document.getElementById("updateBundle");
+        this._view.firstChild.remove();
 
       for (var i = 0; i < uc; ++i) {
         var update = um.getUpdateAt(i);
+
         if (!update || !update.name)
           continue;
 
@@ -34,17 +31,40 @@ var gUpdateHistory = {
         if (!update.statusText)
           continue;
 
-        var element = document.createElementNS(NS_XUL, "update");
+        var element = document.createXULElement("richlistitem");
+        element.className = "update";
+
+        const topLine = document.createXULElement("hbox");
+        const nameLabel = document.createXULElement("label");
+        nameLabel.className = "update-name";
+        document.l10n.setAttributes(nameLabel, "update-full-build-name", {
+          name: update.name,
+          buildID: update.buildID,
+        });
+        topLine.appendChild(nameLabel);
+
+        if (update.detailsURL) {
+          const detailsLink = document.createXULElement("label");
+          detailsLink.className = "text-link";
+          detailsLink.href = update.detailsURL;
+          document.l10n.setAttributes(detailsLink, "update-details");
+          topLine.appendChild(detailsLink);
+        }
+
+        const installedOnLabel = document.createXULElement("label");
+        installedOnLabel.className = "update-installedOn-label";
+        document.l10n.setAttributes(installedOnLabel, "update-installed-on", {
+          date: this._formatDate(update.installDate),
+        });
+
+        const statusLabel = document.createXULElement("label");
+        statusLabel.className = "update-status-label";
+        document.l10n.setAttributes(statusLabel, "update-status", {
+          status: update.statusText,
+        });
+
+        element.append(topLine, installedOnLabel, statusLabel);
         this._view.appendChild(element);
-        element.name = bundle.getFormattedString("updateFullName",
-          [update.name, update.buildID]);
-        element.type = bundle.getString("updateType_" + update.type);
-        element.installDate = this._formatDate(update.installDate);
-        if (update.detailsURL)
-          element.detailsURL = update.detailsURL;
-        else
-          element.hideDetailsURL = true;
-        element.status = update.statusText;
       }
     }
     var cancelbutton = document.documentElement.getButton("cancel");
@@ -59,12 +79,8 @@ var gUpdateHistory = {
    */
   _formatDate(seconds) {
     var date = new Date(seconds);
-    const locale = Components.classes["@mozilla.org/chrome/chrome-registry;1"]
-                   .getService(Components.interfaces.nsIXULChromeRegistry)
-                   .getSelectedLocale("global", true);
     const dtOptions = { year: "numeric", month: "long", day: "numeric",
                         hour: "numeric", minute: "numeric", second: "numeric" };
-    return date.toLocaleString(locale, dtOptions);
-  }
+    return date.toLocaleString(undefined, dtOptions);
+  },
 };
-

@@ -26,8 +26,12 @@ class ShutdownLeaks(object):
         self.seenShutdown = set()
 
     def log(self, message):
-        if message['action'] == 'log':
-            line = message['message']
+        action = message['action']
+
+        # Remove 'log' when clipboard is gone and/or structured.
+        if action in ('log', 'process_output'):
+            line = message['message'] if action == 'log' else message['data']
+
             if line[2:11] == "DOMWINDOW":
                 self._logWindow(line)
             elif line[2:10] == "DOCSHELL":
@@ -35,27 +39,31 @@ class ShutdownLeaks(object):
             elif line.startswith("Completed ShutdownLeaks collections in process"):
                 pid = int(line.split()[-1])
                 self.seenShutdown.add(pid)
-        elif message['action'] == 'test_start':
+        elif action == 'test_start':
             fileName = message['test'].replace(
                 "chrome://mochitests/content/browser/", "")
             self.currentTest = {
                 "fileName": fileName, "windows": set(), "docShells": set()}
-        elif message['action'] == 'test_end':
+        elif action == 'test_end':
             # don't track a test if no windows or docShells leaked
             if self.currentTest and (self.currentTest["windows"] or self.currentTest["docShells"]):
                 self.tests.append(self.currentTest)
             self.currentTest = None
 
     def process(self):
+        failures = 0
+
         if not self.seenShutdown:
             self.logger.error(
                 "TEST-UNEXPECTED-FAIL | ShutdownLeaks | process() called before end of test suite")
+            failures += 1
 
         for test in self._parseLeakingTests():
             for url, count in self._zipLeakedWindows(test["leakedWindows"]):
                 self.logger.error(
                     "TEST-UNEXPECTED-FAIL | %s | leaked %d window(s) until shutdown "
                     "[url = %s]" % (test["fileName"], count, url))
+                failures += 1
 
             if test["leakedWindowsString"]:
                 self.logger.info("TEST-INFO | %s | windows(s) leaked: %s" %
@@ -65,10 +73,13 @@ class ShutdownLeaks(object):
                 self.logger.error("TEST-UNEXPECTED-FAIL | %s | leaked %d docShell(s) until "
                                   "shutdown" %
                                   (test["fileName"], len(test["leakedDocShells"])))
+                failures += 1
                 self.logger.info("TEST-INFO | %s | docShell(s) leaked: %s" %
                                  (test["fileName"], ', '.join(["[pid = %s] [id = %s]" %
                                                                x for x in test["leakedDocShells"]]
                                                               )))
+
+        return failures
 
     def _logWindow(self, line):
         created = line[:2] == "++"
@@ -163,6 +174,7 @@ class LSANLeaks(object):
         self.logger = logger
         self.inReport = False
         self.fatalError = False
+        self.symbolizerError = False
         self.foundFrames = set([])
         self.recordMoreFrames = None
         self.currStack = None
@@ -171,9 +183,12 @@ class LSANLeaks(object):
         # Don't various allocation-related stack frames, as they do not help much to
         # distinguish different leaks.
         unescapedSkipList = [
-            "malloc", "js_malloc", "malloc_", "__interceptor_malloc", "moz_xmalloc",
-            "calloc", "js_calloc", "calloc_", "__interceptor_calloc", "moz_xcalloc",
-            "realloc", "js_realloc", "realloc_", "__interceptor_realloc", "moz_xrealloc",
+            "malloc", "js_malloc", "js_arena_malloc", "malloc_",
+            "__interceptor_malloc", "moz_xmalloc",
+            "calloc", "js_calloc", "js_arena_calloc", "calloc_",
+            "__interceptor_calloc", "moz_xcalloc",
+            "realloc", "js_realloc", "js_arena_realloc", "realloc_",
+            "__interceptor_realloc", "moz_xrealloc",
             "new",
             "js::MallocProvider",
         ]
@@ -184,6 +199,8 @@ class LSANLeaks(object):
             "==\d+==ERROR: LeakSanitizer: detected memory leaks")
         self.fatalErrorRegExp = re.compile(
             "==\d+==LeakSanitizer has encountered a fatal error.")
+        self.symbolizerOomRegExp = re.compile(
+            "LLVMSymbolizer: error reading file: Cannot allocate memory")
         self.stackFrameRegExp = re.compile("    #\d+ 0x[0-9a-f]+ in ([^(</]+)")
         self.sysLibStackFrameRegExp = re.compile(
             "    #\d+ 0x[0-9a-f]+ \(([^+]+)\+0x[0-9a-f]+\)")
@@ -195,6 +212,10 @@ class LSANLeaks(object):
 
         if re.match(self.fatalErrorRegExp, line):
             self.fatalError = True
+            return
+
+        if re.match(self.symbolizerOomRegExp, line):
+            self.symbolizerError = True
             return
 
         if not self.inReport:
@@ -232,9 +253,19 @@ class LSANLeaks(object):
         # We'll end up with "unknown stack" if everything is ignored.
 
     def process(self):
+        failures = 0
+
         if self.fatalError:
             self.logger.error("TEST-UNEXPECTED-FAIL | LeakSanitizer | LeakSanitizer "
                               "has encountered a fatal error.")
+            failures += 1
+
+        if self.symbolizerError:
+            self.logger.error("TEST-UNEXPECTED-FAIL | LeakSanitizer | LLVMSymbolizer "
+                              "was unable to allocate memory.")
+            failures += 1
+            self.logger.info("TEST-INFO | LeakSanitizer | This will cause leaks that "
+                             "should be ignored to instead be reported as an error")
 
         if self.foundFrames:
             self.logger.info("TEST-INFO | LeakSanitizer | To show the "
@@ -245,6 +276,9 @@ class LSANLeaks(object):
         for f in self.foundFrames:
             self.logger.error(
                 "TEST-UNEXPECTED-FAIL | LeakSanitizer | leak at " + f)
+            failures += 1
+
+        return failures
 
     def _finishStack(self):
         if self.recordMoreFrames and len(self.currStack) == 0:

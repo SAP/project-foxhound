@@ -29,8 +29,13 @@ var gCSSFontFaceDescriptors = {
 	},
 	"font-weight": {
 		domProp: "fontWeight",
-		values: [ "normal", "400", "bold", "100", "200", "300", "500", "600", "700", "800", "900" ],
-		invalid_values: [ "107", "399", "401", "699", "710", "bolder", "lighter" ]
+		values: [
+			"normal", "400", "bold", "100", "200", "300", "500", "600",
+			"700", "800", "900", "107", "399", "401", "699", "710",
+			"calc(1001)", "calc(100 + 1)", "calc(1)", "100.6", "99",
+			"700 900", "300.4 500.4", "calc(200.4) calc(400.4)",
+		],
+		invalid_values: [ "bolder", "lighter", "1001", "0", "0 100", "100 1001" ]
 	},
 	"src": {
 		domProp: null,
@@ -61,8 +66,8 @@ var gCSSFontFaceDescriptors = {
 	},
 	"unicode-range": {
 		domProp: null,
-		values: [ "U+0-10FFFF", "U+3-7B3", "U+3??", "U+6A", "U+3????", "U+???", "U+302-302", "U+0-7,U+A-C", "U+100-17F,U+200-17F", "U+3??, U+500-513 ,U+612 , U+4????", "U+1FFF,U+200-27F" ],
-		invalid_values: [ "U+1????-2????", "U+0-7,A-C", "U+100-17F,200-17F", "U+6A!important", "U+6A)" ]
+		values: [ "U+0-10FFFF", "U+3-7B3", "U+3??", "U+6A", "U+3????", "U+???", "U+302-302", "U+0-7,U+A-C", "U+3??, U+500-513 ,U+612 , U+4????", "U+1FFF,U+200-27F" ],
+		invalid_values: [ "U+1????-2????", "U+0-7,A-C", "U+100-17F,U+200-17F", "U+100-17F,200-27F", "U+6A!important", "U+6A)" ]
 	},
 	"font-display": {
 		domProp: null,

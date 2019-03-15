@@ -11,12 +11,11 @@ set -e
 LOCAL_PATCHES=""
 
 LOCAL_PATCHES="$LOCAL_PATCHES add-mfbt-api-markers.patch"
-LOCAL_PATCHES="$LOCAL_PATCHES use-StandardInteger.patch"
 LOCAL_PATCHES="$LOCAL_PATCHES use-mozilla-assertions.patch"
 LOCAL_PATCHES="$LOCAL_PATCHES ToPrecision-exponential.patch"
 
 TMPDIR=`mktemp --directory`
-LOCAL_CLONE="$TMPDIR/double-conversion"
+LOCAL_CLONE="$TMPDIR/new-double-conversion"
 
 git clone https://github.com/google/double-conversion.git "$LOCAL_CLONE"
 
@@ -26,8 +25,8 @@ if [ "$1" !=  "" ]; then
 fi
 
 # First clear out everything already present.
-DEST=./source
-mv "$DEST" "$TMPDIR"/
+DEST=./double-conversion
+mv "$DEST" "$TMPDIR"/old-double-conversion
 mkdir "$DEST"
 
 # Copy over critical files.

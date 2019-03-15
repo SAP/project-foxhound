@@ -12,7 +12,7 @@
 //  * Neither the name of Google, Inc. nor the names of its contributors
 //    may be used to endorse or promote products derived from this
 //    software without specific prior written permission.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
 // "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
 // LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
@@ -32,66 +32,51 @@
 #include <stdint.h>
 #include <math.h>
 #include "MainThreadUtils.h"
-#include "mozilla/StaticMutex.h"
 #include "ThreadResponsiveness.h"
+#include "mozilla/Logging.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/StaticMutex.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Unused.h"
 #include "PlatformMacros.h"
 #include <vector>
-#include "StackTop.h"
 
 // We need a definition of gettid(), but glibc doesn't provide a
 // wrapper for it.
 #if defined(__GLIBC__)
-#include <unistd.h>
-#include <sys/syscall.h>
-static inline pid_t gettid()
-{
-  return (pid_t) syscall(SYS_gettid);
-}
+#  include <unistd.h>
+#  include <sys/syscall.h>
+static inline pid_t gettid() { return (pid_t)syscall(SYS_gettid); }
 #elif defined(GP_OS_darwin)
-#include <unistd.h>
-#include <sys/syscall.h>
-static inline pid_t gettid()
-{
-  return (pid_t) syscall(SYS_thread_selfid);
-}
+#  include <unistd.h>
+#  include <sys/syscall.h>
+static inline pid_t gettid() { return (pid_t)syscall(SYS_thread_selfid); }
+#elif defined(GP_OS_android)
+#  include <unistd.h>
+#elif defined(GP_OS_windows)
+#  include <windows.h>
+#  include <process.h>
+#  ifndef getpid
+#    define getpid _getpid
+#  endif
 #endif
 
-#if defined(GP_OS_windows)
-#include <windows.h>
-#endif
+extern mozilla::LazyLogModule gProfilerLog;
 
-bool profiler_verbose();
+// These are for MOZ_LOG="prof:3" or higher. It's the default logging level for
+// the profiler, and should be used sparingly.
+#define LOG_TEST MOZ_LOG_TEST(gProfilerLog, mozilla::LogLevel::Info)
+#define LOG(arg, ...)                            \
+  MOZ_LOG(gProfilerLog, mozilla::LogLevel::Info, \
+          ("[%d] " arg, getpid(), ##__VA_ARGS__))
 
-#if defined(GP_OS_android)
-# include <android/log.h>
-# define LOG(text) \
-    do { if (profiler_verbose()) \
-           __android_log_write(ANDROID_LOG_ERROR, "Profiler", text); \
-    } while (0)
-# define LOGF(format, ...) \
-    do { if (profiler_verbose()) \
-           __android_log_print(ANDROID_LOG_ERROR, "Profiler", format, \
-                               __VA_ARGS__); \
-    } while (0)
-
-#else
-# define LOG(text) \
-    do { if (profiler_verbose()) fprintf(stderr, "Profiler: %s\n", text); \
-    } while (0)
-# define LOGF(format, ...) \
-    do { if (profiler_verbose()) fprintf(stderr, "Profiler: " format "\n", \
-                                         __VA_ARGS__); \
-    } while (0)
-
-#endif
-
-#if defined(GP_OS_android) && !defined(MOZ_WIDGET_GONK)
-#define PROFILE_JAVA
-#endif
+// These are for MOZ_LOG="prof:4" or higher. It should be used for logging that
+// is somewhat more verbose than LOG.
+#define DEBUG_LOG_TEST MOZ_LOG_TEST(gProfilerLog, mozilla::LogLevel::Debug)
+#define DEBUG_LOG(arg, ...)                       \
+  MOZ_LOG(gProfilerLog, mozilla::LogLevel::Debug, \
+          ("[%d] " arg, getpid(), ##__VA_ARGS__))
 
 typedef uint8_t* Address;
 
@@ -103,33 +88,9 @@ typedef uint8_t* Address;
 // supported platforms.
 
 class Thread {
-public:
-#if defined(GP_OS_windows)
-  typedef DWORD tid_t;
-#else
-  typedef ::pid_t tid_t;
-#endif
-
-  static tid_t GetCurrentId();
+ public:
+  static int GetCurrentId();
 };
-
-// ----------------------------------------------------------------------------
-// HAVE_NATIVE_UNWIND
-//
-// Pseudo backtraces are available on all platforms.  Native
-// backtraces are available only on selected platforms.  Breakpad is
-// the only supported native unwinder.  HAVE_NATIVE_UNWIND is set at
-// build time to indicate whether native unwinding is possible on this
-// platform.
-
-#undef HAVE_NATIVE_UNWIND
-#if defined(MOZ_PROFILING) && \
-    (defined(GP_OS_windows) || \
-     defined(GP_OS_darwin) || \
-     defined(GP_OS_linux) || \
-     defined(GP_PLAT_arm_android))
-# define HAVE_NATIVE_UNWIND
-#endif
 
 // ----------------------------------------------------------------------------
 // Miscellaneous
@@ -143,9 +104,23 @@ struct PlatformDataDestructor {
 };
 
 typedef mozilla::UniquePtr<PlatformData, PlatformDataDestructor>
-  UniquePlatformData;
+    UniquePlatformData;
 UniquePlatformData AllocPlatformData(int aThreadId);
 
-mozilla::UniquePtr<char[]> ToJSON(double aSinceTime);
+namespace mozilla {
+class JSONWriter;
+}
+void AppendSharedLibraries(mozilla::JSONWriter& aWriter);
+
+// Convert the array of strings to a bitfield.
+uint32_t ParseFeaturesFromStringArray(const char** aFeatures,
+                                      uint32_t aFeatureCount);
+
+// Flags to conveniently track various JS features.
+enum class JSSamplingFlags {
+  StackSampling = 0x1,
+  TrackOptimizations = 0x2,
+  TraceLogging = 0x4
+};
 
 #endif /* ndef TOOLS_PLATFORM_H_ */

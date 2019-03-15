@@ -1,22 +1,22 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+"use strict";
+
 console.log("Initializing worker.");
 
-self.onmessage = e => {
+self.onmessage = ex => {
   console.log("Starting test.");
   try {
-    ok(typeof ChromeUtils === "undefined",
-       "Should not have access to ChromeUtils in a worker.");
-    ok(ThreadSafeChromeUtils,
-       "Should have access to ThreadSafeChromeUtils in a worker.");
+    ok(ChromeUtils,
+       "Should have access to ChromeUtils in a worker.");
     ok(HeapSnapshot,
        "Should have access to HeapSnapshot in a worker.");
 
-    const filePath = ThreadSafeChromeUtils.saveHeapSnapshot({ globals: [this] });
+    const filePath = ChromeUtils.saveHeapSnapshot({ globals: [this] });
     ok(true, "Should be able to save a snapshot.");
 
-    const snapshot = ThreadSafeChromeUtils.readHeapSnapshot(filePath);
+    const snapshot = ChromeUtils.readHeapSnapshot(filePath);
     ok(snapshot, "Should be able to read a heap snapshot");
     ok(snapshot instanceof HeapSnapshot, "Should be an instanceof HeapSnapshot");
   } catch (e) {
@@ -33,7 +33,7 @@ function ok(val, msg) {
     type: "assertion",
     passed: !!val,
     msg,
-    stack: Error().stack
+    stack: Error().stack,
   });
 }
 
@@ -41,6 +41,6 @@ function ok(val, msg) {
 function done() {
   console.log("done()");
   self.postMessage({
-    type: "done"
+    type: "done",
   });
 }

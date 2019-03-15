@@ -30,14 +30,10 @@ function mockAddonProvider(name) {
   return mockProvider;
 }
 
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* unsafeProviderStartup() {
+add_task(async function unsafeProviderStartup() {
   let secondProvider = null;
 
-  yield new Promise(resolve => {
+  await new Promise(resolve => {
     let firstProvider = mockAddonProvider("Mock1");
     firstProvider.startupCallback = function() {
       resolve(AddonManager.getAddonByID("does-not-exist"));
@@ -47,7 +43,7 @@ add_task(function* unsafeProviderStartup() {
     secondProvider = mockAddonProvider("Mock2");
     AddonManagerPrivate.registerProvider(secondProvider);
 
-    startupManager();
+    promiseStartupManager();
   });
 
   equal(startupOrder.join(","), ["Mock1", "Mock2"].join(","), "Mock providers should have hasStarted in expected order");

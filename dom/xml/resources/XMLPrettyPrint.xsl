@@ -17,14 +17,17 @@
   <xsl:output method="xml"/>
 
   <xsl:template match="/">
-    <link href="chrome://global/content/xml/XMLPrettyPrint.css" type="text/css" rel="stylesheet"/>
-    <link title="Monospace" href="chrome://global/content/xml/XMLMonoPrint.css" type="text/css" rel="alternate stylesheet"/>
-    <div id="header" dir="&locale.dir;">
-      <p>
-        &xml.nostylesheet;
-      </p>
+    <div id="top">
+      <link rel="stylesheet" href="chrome://global/content/xml/XMLPrettyPrint.css"/>
+      <div id="header" dir="&locale.dir;">
+        <p>
+          &xml.nostylesheet;
+        </p>
+      </div>
+      <main id="tree" class="highlight">
+        <xsl:apply-templates/>
+      </main>
     </div>
-    <xsl:apply-templates/>
   </xsl:template>
 
   <xsl:template match="*">
@@ -52,19 +55,23 @@
   </xsl:template>
 
   <xsl:template match="*[* or processing-instruction() or comment() or string-length(.) &gt; 50]">
-    <div class="expander-open">
-      <xsl:call-template name="expander"/>
+    <div>
+      <details open="" class="expandable-body">
+        <summary class="expandable-opening">
+          <xsl:text>&lt;</xsl:text>
+          <span class="start-tag"><xsl:value-of select="name(.)"/></span>
+          <xsl:apply-templates select="@*"/>
+          <xsl:text>&gt;</xsl:text>
+        </summary>
 
-      <xsl:text>&lt;</xsl:text>
-      <span class="start-tag"><xsl:value-of select="name(.)"/></span>
-      <xsl:apply-templates select="@*"/>
-      <xsl:text>&gt;</xsl:text>
+        <div class="expandable-children"><xsl:apply-templates/></div>
 
-      <div class="expander-content"><xsl:apply-templates/></div>
-
-      <xsl:text>&lt;/</xsl:text>
-      <span class="end-tag"><xsl:value-of select="name(.)"/></span>
-      <xsl:text>&gt;</xsl:text>
+      </details>
+      <span class="expandable-closing">
+        <xsl:text>&lt;/</xsl:text>
+        <span class="end-tag"><xsl:value-of select="name(.)"/></span>
+        <xsl:text>&gt;</xsl:text>
+      </span>
     </div>
   </xsl:template>
 
@@ -92,15 +99,15 @@
   </xsl:template>
 
   <xsl:template match="processing-instruction()[string-length(.) &gt; 50]">
-    <div class="expander-open">
-      <xsl:call-template name="expander"/>
-
-      <span class="pi">
-        <xsl:text> &lt;?</xsl:text>
-        <xsl:value-of select="name(.)"/>
-      </span>
-      <div class="expander-content pi"><xsl:value-of select="."/></div>
-      <span class="pi">
+    <div class="pi">
+      <details open="" class="expandable-body">
+        <summary class="expandable-opening">
+          <xsl:text>&lt;?</xsl:text>
+          <xsl:value-of select="name(.)"/>
+        </summary>
+        <div class="expandable-children"><xsl:value-of select="."/></div>
+      </details>
+      <span class="expandable-closing">
         <xsl:text>?&gt;</xsl:text>
       </span>
     </div>
@@ -115,23 +122,19 @@
   </xsl:template>
 
   <xsl:template match="comment()[string-length(.) &gt; 50]">
-    <div class="expander-open">
-      <xsl:call-template name="expander"/>
-
-      <span class="comment">
-        <xsl:text>&lt;!--</xsl:text>
-      </span>
-      <div class="expander-content comment">
-        <xsl:value-of select="."/>
-      </div>
-      <span class="comment">
+    <div class="comment">
+      <details open="" class="expandable-body">
+        <summary class="expandable-opening">
+          <xsl:text>&lt;!--</xsl:text>
+        </summary>
+        <div class="expandable-children">
+          <xsl:value-of select="."/>
+        </div>
+      </details>
+      <span class="expandable-closing">
         <xsl:text>--&gt;</xsl:text>
-      </span> 
+      </span>
     </div>
-  </xsl:template>
-  
-  <xsl:template name="expander">
-    <div class="expander">&#x2212;</div>
   </xsl:template>
 
 </xsl:stylesheet>

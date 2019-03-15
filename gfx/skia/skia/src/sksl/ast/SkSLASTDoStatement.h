@@ -4,7 +4,7 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
- 
+
 #ifndef SKSL_ASTDOSTATEMENT
 #define SKSL_ASTDOSTATEMENT
 
@@ -13,16 +13,16 @@
 namespace SkSL {
 
 /**
- * A 'do' loop. 
+ * A 'do' loop.
  */
 struct ASTDoStatement : public ASTStatement {
-    ASTDoStatement(Position position, std::unique_ptr<ASTStatement> statement,
+    ASTDoStatement(int offset, std::unique_ptr<ASTStatement> statement,
                    std::unique_ptr<ASTExpression> test)
-    : INHERITED(position, kDo_Kind)
+    : INHERITED(offset, kDo_Kind)
     , fStatement(std::move(statement))
     , fTest(std::move(test)) {}
 
-    std::string description() const override {
+    String description() const override {
         return "do " + fStatement->description() + " while (" + fTest->description() + ");";
     }
 

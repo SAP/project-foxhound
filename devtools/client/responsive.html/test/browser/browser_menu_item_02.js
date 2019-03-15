@@ -7,41 +7,39 @@
 
 const TEST_URL = "data:text/html;charset=utf-8,";
 
-const { getMostRecentBrowserWindow } = require("sdk/window/utils");
-
 const isMenuCheckedFor = ({document}) => {
-  let menu = document.getElementById("menu_responsiveUI");
+  const menu = document.getElementById("menu_responsiveUI");
   return menu.getAttribute("checked") === "true";
 };
 
-add_task(function* () {
-  const window1 = yield BrowserTestUtils.openNewBrowserWindow();
-  let { gBrowser } = window1;
+add_task(async function() {
+  const window1 = await BrowserTestUtils.openNewBrowserWindow();
+  const { gBrowser } = window1;
 
-  yield BrowserTestUtils.withNewTab({ gBrowser, url: TEST_URL },
-    function* (browser) {
-      let tab = gBrowser.getTabForBrowser(browser);
+  await BrowserTestUtils.withNewTab({ gBrowser, url: TEST_URL },
+    async function(browser) {
+      const tab = gBrowser.getTabForBrowser(browser);
 
-      is(window1, getMostRecentBrowserWindow(),
+      is(window1, Services.wm.getMostRecentWindow("navigator:browser"),
         "The new window is the active one");
 
       ok(!isMenuCheckedFor(window1),
         "RDM menu item is unchecked by default");
 
-      yield openRDM(tab);
+      await openRDM(tab);
 
       ok(isMenuCheckedFor(window1),
         "RDM menu item is checked with RDM open");
 
-      yield closeRDM(tab);
+      await closeRDM(tab);
 
       ok(!isMenuCheckedFor(window1),
         "RDM menu item is unchecked with RDM closed");
     });
 
-  yield BrowserTestUtils.closeWindow(window1);
+  await BrowserTestUtils.closeWindow(window1);
 
-  is(window, getMostRecentBrowserWindow(),
+  is(window, Services.wm.getMostRecentWindow("navigator:browser"),
     "The original window is the active one");
 
   ok(!isMenuCheckedFor(window),

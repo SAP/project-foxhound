@@ -4,17 +4,15 @@
   <meta charset="utf-8">
   <title>Test for Bug 1348409</title>
   <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/SpawnTask.js"></script>
+  <script type="application/javascript" src="/tests/SimpleTest/AddTask.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <iframe src="about:blank"></iframe>
-  <script type="text/javascript; version=1.8">
+  <script type="text/javascript">
 
   function checkForFindDialog() {
     let chromeScript = SpecialPowers.loadChromeScript(_ => {
       addMessageListener("test:check", () => {
-        const { utils: Cu } = Components;
-
-        Cu.import("resource://gre/modules/Services.jsm");
+        ChromeUtils.import("resource://gre/modules/Services.jsm");
 
         let sawFind = false;
         let findDialog = Services.wm.getMostRecentWindow("findInPage");
@@ -57,7 +55,7 @@
   }
 
   function startTest() {
-    add_task(function*() {
+    add_task(async function() {
       ok(doWraparoundFind("text to search for", false),
          "Found the text in the document body.");
 

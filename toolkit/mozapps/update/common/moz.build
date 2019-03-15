@@ -5,9 +5,11 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 EXPORTS += [
+    'commonupdatedir.h',
     'readstrings.h',
     'updatecommon.h',
     'updatedefines.h',
+    'updatererrors.h',
 ]
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
@@ -16,6 +18,7 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
         'uachelper.h',
         'updatehelper.cpp',
         'updatehelper.h',
+        'win_dirent.h',
     ]
     if CONFIG['MOZ_MAINTENANCE_SERVICE']:
         EXPORTS += [
@@ -26,7 +29,45 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
 Library('updatecommon')
 
 DEFINES['NS_NO_XPCOM'] = True
+USE_STATIC_LIBS = True
 
-srcdir = '.'
+DisableStlWrapping()
 
-include('sources.mozbuild')
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
+    SOURCES += [
+        'pathhash.cpp',
+        'uachelper.cpp',
+        'updatehelper.cpp',
+        'win_dirent.cpp',
+    ]
+    OS_LIBS += [
+        'advapi32',
+        'ole32',
+        'rpcrt4',
+        'shell32',
+    ]
+    if CONFIG['MOZ_MAINTENANCE_SERVICE']:
+        SOURCES += [
+            'certificatecheck.cpp',
+            'registrycertificates.cpp',
+        ]
+        OS_LIBS += [
+            'crypt32',
+            'wintrust',
+        ]
+
+SOURCES += [
+    '/other-licenses/nsis/Contrib/CityHash/cityhash/city.cpp',
+    'commonupdatedir.cpp',
+    'readstrings.cpp',
+    'updatecommon.cpp',
+]
+
+if CONFIG['CC_TYPE'] == 'clang-cl':
+    AllowCompilerWarnings()  # workaround for bug 1090497
+
+LOCAL_INCLUDES += [
+    '/other-licenses/nsis/Contrib/CityHash/cityhash',
+]
+
+DEFINES['MOZ_APP_BASENAME'] = '"%s"' % CONFIG['MOZ_APP_BASENAME']

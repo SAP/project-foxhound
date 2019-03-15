@@ -24,7 +24,7 @@ struct iovec;
 namespace mozilla {
 
 class SandboxBrokerCommon {
-public:
+ public:
   enum Operation {
     SANDBOX_FILE_OPEN,
     SANDBOX_FILE_ACCESS,
@@ -37,11 +37,15 @@ public:
     SANDBOX_FILE_RMDIR,
     SANDBOX_FILE_UNLINK,
     SANDBOX_FILE_READLINK,
+    SANDBOX_SOCKET_CONNECT,
   };
+  // String versions of the above
+  static const char* OperationDescription[];
 
   struct Request {
     Operation mOp;
     // For open, flags; for access, "mode"; for stat, O_NOFOLLOW for lstat.
+    // For connect, the socket type.
     int mFlags;
     // Size of return value buffer, if any
     size_t mBufSize;
@@ -67,6 +71,6 @@ public:
                             int aPassedFd);
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_SandboxBrokerCommon_h
+#endif  // mozilla_SandboxBrokerCommon_h

@@ -52,16 +52,16 @@ function openWinWithCb(cb, argURIs, expectedURIs) {
   if (!expectedURIs)
     expectedURIs = argURIs;
 
-  var win = openDialog(getBrowserURL(), "_blank",
+  var win = openDialog(AppConstants.BROWSER_CHROME_URL, "_blank",
                        "chrome,all,dialog=no", argURIs.join("|"));
 
-  win.addEventListener("load", function () {
+  win.addEventListener("load", function() {
     info("the window loaded");
 
     var expectedLoads = expectedURIs.length;
 
     win.gBrowser.addTabsProgressListener({
-      onStateChange: function (aBrowser, aWebProgress, aRequest, aStateFlags, aStatus) {
+      onStateChange(aBrowser, aWebProgress, aRequest, aStateFlags, aStatus) {
         if (aRequest &&
             aStateFlags & Ci.nsIWebProgressListener.STATE_STOP &&
             aStateFlags & Ci.nsIWebProgressListener.STATE_IS_NETWORK &&
@@ -70,11 +70,11 @@ function openWinWithCb(cb, argURIs, expectedURIs) {
           win.gBrowser.removeTabsProgressListener(this);
           info("all tabs loaded");
           is(win.gBrowser.tabs.length, expectedURIs.length, "didn't load any unexpected tabs");
-          executeSoon(function () {
+          executeSoon(function() {
             cb(win);
           });
         }
-      }
+      },
     });
   }, {once: true});
 }

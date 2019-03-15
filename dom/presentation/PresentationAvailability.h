@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,21 +16,20 @@ namespace dom {
 
 class Promise;
 
-class PresentationAvailability final : public DOMEventTargetHelper
-                                     , public nsIPresentationAvailabilityListener
-                                     , public SupportsWeakPtr<PresentationAvailability>
-{
-public:
+class PresentationAvailability final
+    : public DOMEventTargetHelper,
+      public nsIPresentationAvailabilityListener,
+      public SupportsWeakPtr<PresentationAvailability> {
+ public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(PresentationAvailability,
                                            DOMEventTargetHelper)
   NS_DECL_NSIPRESENTATIONAVAILABILITYLISTENER
   MOZ_DECLARE_WEAKREFERENCE_TYPENAME(PresentationAvailability)
 
-  static already_AddRefed<PresentationAvailability>
-  Create(nsPIDOMWindowInner* aWindow,
-         const nsTArray<nsString>& aUrls,
-         RefPtr<Promise>& aPromise);
+  static already_AddRefed<PresentationAvailability> Create(
+      nsPIDOMWindowInner* aWindow, const nsTArray<nsString>& aUrls,
+      RefPtr<Promise>& aPromise);
 
   virtual void DisconnectFromOwner() override;
 
@@ -48,7 +47,7 @@ public:
 
   IMPL_EVENT_HANDLER(change);
 
-private:
+ private:
   explicit PresentationAvailability(nsPIDOMWindowInner* aWindow,
                                     const nsTArray<nsString>& aUrls);
 
@@ -68,7 +67,7 @@ private:
   nsTArray<bool> mAvailabilityOfUrl;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_PresentationAvailability_h
+#endif  // mozilla_dom_PresentationAvailability_h

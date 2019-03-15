@@ -3,13 +3,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
-const {interfaces: Ci, utils: Cu} = Components;
 
-this.EXPORTED_SYMBOLS = ["Windows8WindowFrameColor"];
+var EXPORTED_SYMBOLS = ["Windows8WindowFrameColor"];
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-var Registry = Cu.import("resource://gre/modules/WindowsRegistry.jsm").WindowsRegistry;
+var Registry = ChromeUtils.import("resource://gre/modules/WindowsRegistry.jsm").WindowsRegistry;
 
 var Windows8WindowFrameColor = {
   _windowFrameColor: null,

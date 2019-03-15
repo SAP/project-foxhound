@@ -14,7 +14,8 @@
 [OverrideBuiltins]
 interface DOMStringMap {
   getter DOMString (DOMString name);
-  [Throws]
-  setter creator void (DOMString name, DOMString value);
+  [CEReactions, Throws]
+  setter void (DOMString name, DOMString value);
+  [CEReactions]
   deleter void (DOMString name);
 };

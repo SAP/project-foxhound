@@ -5,12 +5,17 @@
  * found in the LICENSE file.
  */
 
-
 #ifndef SkDescriptor_DEFINED
 #define SkDescriptor_DEFINED
 
+#include "SkMacros.h"
+#include "SkNoncopyable.h"
 #include "SkOpts.h"
+#include "SkTo.h"
 #include "SkTypes.h"
+
+#include <memory>
+#include <new>
 
 class SkDescriptor : SkNoncopyable {
 public:
@@ -19,15 +24,13 @@ public:
         return sizeof(SkDescriptor) + entryCount * sizeof(Entry);
     }
 
-    static SkDescriptor* Alloc(size_t length) {
+    static std::unique_ptr<SkDescriptor> Alloc(size_t length) {
         SkASSERT(SkAlign4(length) == length);
-        SkDescriptor* desc = (SkDescriptor*)sk_malloc_throw(length);
-        return desc;
+        return std::unique_ptr<SkDescriptor>(static_cast<SkDescriptor*>(::operator new (length)));
     }
 
-    static void Free(SkDescriptor* desc) {
-        sk_free(desc);
-    }
+    // Ensure the unsized delete is called.
+    void operator delete(void* p) { ::operator delete(p); }
 
     void init() {
         fLength = sizeof(SkDescriptor);
@@ -79,9 +82,9 @@ public:
         return nullptr;
     }
 
-    SkDescriptor* copy() const {
-        SkDescriptor* desc = SkDescriptor::Alloc(fLength);
-        memcpy(desc, this, fLength);
+    std::unique_ptr<SkDescriptor> copy() const {
+        std::unique_ptr<SkDescriptor> desc = SkDescriptor::Alloc(fLength);
+        memcpy(desc.get(), this, fLength);
         return desc;
     }
 
@@ -149,22 +152,24 @@ public:
         if (size <= sizeof(fStorage)) {
             fDesc = (SkDescriptor*)(void*)fStorage;
         } else {
-            fDesc = SkDescriptor::Alloc(size);
+            fDesc = SkDescriptor::Alloc(size).release();
         }
     }
 
     SkDescriptor* getDesc() const { SkASSERT(fDesc); return fDesc; }
 private:
+    SkAutoDescriptor(SkAutoDescriptor&&) = delete;
+    SkAutoDescriptor& operator =(SkAutoDescriptor&&) = delete;
     void free() {
         if (fDesc != (SkDescriptor*)(void*)fStorage) {
-            SkDescriptor::Free(fDesc);
+            delete fDesc;
         }
     }
 
     enum {
         kStorageSize =  sizeof(SkDescriptor)
-                        + sizeof(SkDescriptor::Entry) + sizeof(SkScalerContext::Rec)    // for rec
-                        + sizeof(SkDescriptor::Entry) + sizeof(void*)                   // for typeface
+                        + sizeof(SkDescriptor::Entry) + sizeof(SkScalerContextRec) // for rec
+                        + sizeof(SkDescriptor::Entry) + sizeof(void*)              // for typeface
                         + 32   // slop for occational small extras
     };
     SkDescriptor*   fDesc;

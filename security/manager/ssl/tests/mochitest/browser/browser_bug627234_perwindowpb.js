@@ -3,10 +3,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-var FakeSSLStatus = function() {
+var FakeTransportSecurityInfo = function() {
 };
 
-FakeSSLStatus.prototype = {
+FakeTransportSecurityInfo.prototype = {
   serverCert: null,
   cipherName: null,
   keyLength: 2048,
@@ -14,16 +14,10 @@ FakeSSLStatus.prototype = {
   isNotValidAtThisTime: false,
   isUntrusted: false,
   isExtendedValidation: false,
-  getInterface: function(aIID) {
+  getInterface(aIID) {
     return this.QueryInterface(aIID);
   },
-  QueryInterface: function(aIID) {
-    if (aIID.equals(Ci.nsISSLStatus) ||
-        aIID.equals(Ci.nsISupports)) {
-      return this;
-    }
-    throw new Error(Cr.NS_ERROR_NO_INTERFACE);
-  },
+  QueryInterface: ChromeUtils.generateQI(["nsITransportSecurityInfo"]),
 };
 
 function whenNewWindowLoaded(aOptions, aCallback) {
@@ -49,19 +43,20 @@ function test() {
   }
 
   function doTest(aIsPrivateMode, aWindow, aCallback) {
-    aWindow.gBrowser.selectedBrowser.addEventListener("load", function() {
-      let sslStatus = new FakeSSLStatus();
+    BrowserTestUtils.browserLoaded(aWindow.gBrowser.selectedBrowser).then(() => {
+      let secInfo = new FakeTransportSecurityInfo();
       uri = aWindow.Services.io.newURI("https://localhost/img.png");
       gSSService.processHeader(Ci.nsISiteSecurityService.HEADER_HSTS, uri,
-                               "max-age=1000", sslStatus, privacyFlags(aIsPrivateMode));
+                               "max-age=1000", secInfo, privacyFlags(aIsPrivateMode),
+                               Ci.nsISiteSecurityService.SOURCE_ORGANIC_REQUEST);
       ok(gSSService.isSecureURI(Ci.nsISiteSecurityService.HEADER_HSTS, uri,
                                 privacyFlags(aIsPrivateMode)),
                                 "checking sts host");
 
       aCallback();
-    }, {capture: true, once: true});
+    });
 
-    aWindow.gBrowser.selectedBrowser.loadURI(testURI);
+    BrowserTestUtils.loadURI(aWindow.gBrowser.selectedBrowser, testURI);
   }
 
   function testOnWindow(aOptions, aCallback) {
@@ -86,10 +81,10 @@ function test() {
   // test first when on private mode
   testOnWindow({private: true}, function(aWin) {
     doTest(true, aWin, function() {
-      //test when not on private mode
+      // test when not on private mode
       testOnWindow({}, function(aWin) {
         doTest(false, aWin, function() {
-          //test again when on private mode
+          // test again when on private mode
           testOnWindow({private: true}, function(aWin) {
             doTest(true, aWin, function () {
               finish();

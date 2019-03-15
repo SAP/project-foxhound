@@ -9,19 +9,7 @@
 
 namespace mozilla {
 
-CryptoTask::~CryptoTask()
-{
-  MOZ_ASSERT(mReleasedNSSResources);
-
-  nsNSSShutDownPreventionLock lock;
-  if (!isAlreadyShutDown()) {
-    shutdown(ShutdownCalledFrom::Object);
-  }
-}
-
-nsresult
-CryptoTask::Dispatch(const nsACString& taskThreadName)
-{
+nsresult CryptoTask::Dispatch(const nsACString& taskThreadName) {
   MOZ_ASSERT(taskThreadName.Length() <= 15);
 
   // Ensure that NSS is initialized, since presumably CalculateResult
@@ -31,9 +19,9 @@ CryptoTask::Dispatch(const nsACString& taskThreadName)
   }
 
   // Can't add 'this' as the event to run, since mThread may not be set yet
-  nsresult rv = NS_NewNamedThread(taskThreadName, getter_AddRefs(mThread),
-                                  nullptr,
-                                  nsIThreadManager::DEFAULT_STACK_SIZE);
+  nsresult rv =
+      NS_NewNamedThread(taskThreadName, getter_AddRefs(mThread), nullptr,
+                        nsIThreadManager::DEFAULT_STACK_SIZE);
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -43,33 +31,19 @@ CryptoTask::Dispatch(const nsACString& taskThreadName)
 }
 
 NS_IMETHODIMP
-CryptoTask::Run()
-{
+CryptoTask::Run() {
   if (!NS_IsMainThread()) {
-    nsNSSShutDownPreventionLock locker;
-    if (isAlreadyShutDown()) {
-      mRv = NS_ERROR_NOT_AVAILABLE;
-    } else {
-      mRv = CalculateResult();
-    }
+    mRv = CalculateResult();
     NS_DispatchToMainThread(this);
   } else {
     // back on the main thread
-
-    // call ReleaseNSSResources now, before calling CallCallback, so that
-    // CryptoTasks have consistent behavior regardless of whether NSS is shut
-    // down between CalculateResult being called and CallCallback being called.
-    if (!mReleasedNSSResources) {
-      mReleasedNSSResources = true;
-      ReleaseNSSResources();
-    }
 
     CallCallback(mRv);
 
     // Not all uses of CryptoTask use a transient thread
     if (mThread) {
       // Don't leak threads!
-      mThread->Shutdown(); // can't Shutdown from the thread itself, darn
+      mThread->Shutdown();  // can't Shutdown from the thread itself, darn
       // Don't null out mThread!
       // See bug 999104.  We must hold a ref to the thread across Dispatch()
       // since the internal mThread ref could be released while processing
@@ -81,15 +55,4 @@ CryptoTask::Run()
   return NS_OK;
 }
 
-void
-CryptoTask::virtualDestroyNSSReference()
-{
-  MOZ_ASSERT(NS_IsMainThread(),
-             "virtualDestroyNSSReference called off the main thread");
-  if (!mReleasedNSSResources) {
-    mReleasedNSSResources = true;
-    ReleaseNSSResources();
-  }
-}
-
-} // namespace mozilla
+}  // namespace mozilla

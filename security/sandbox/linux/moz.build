@@ -13,6 +13,11 @@ if CONFIG['OS_TARGET'] == 'Android':
         'mozglue',
     ]
 
+USE_LIBS += [
+    # For PR_GetEnv
+    'nspr',
+]
+
 EXPORTS.mozilla += [
     'Sandbox.h',
     'SandboxInfo.h',
@@ -20,6 +25,7 @@ EXPORTS.mozilla += [
 
 SOURCES += [
     '../chromium-shim/base/logging.cpp',
+    '../chromium-shim/base/threading/platform_thread_linux.cpp',
     '../chromium/base/at_exit.cc',
     '../chromium/base/callback_internal.cc',
     '../chromium/base/lazy_instance.cc',
@@ -39,14 +45,15 @@ SOURCES += [
     '../chromium/base/synchronization/waitable_event_posix.cc',
     '../chromium/base/third_party/icu/icu_utf.cc',
     '../chromium/base/threading/platform_thread_internal_posix.cc',
-    '../chromium/base/threading/platform_thread_linux.cc',
     '../chromium/base/threading/platform_thread_posix.cc',
     '../chromium/base/threading/thread_collision_warner.cc',
     '../chromium/base/threading/thread_id_name_manager.cc',
-    '../chromium/base/threading/thread_local_posix.cc',
+    '../chromium/base/threading/thread_local_storage.cc',
+    '../chromium/base/threading/thread_local_storage_posix.cc',
     '../chromium/base/threading/thread_restrictions.cc',
     '../chromium/base/time/time.cc',
-    '../chromium/base/time/time_posix.cc',
+    '../chromium/base/time/time_exploded_posix.cc',
+    '../chromium/base/time/time_now_posix.cc',
     '../chromium/sandbox/linux/bpf_dsl/bpf_dsl.cc',
     '../chromium/sandbox/linux/bpf_dsl/codegen.cc',
     '../chromium/sandbox/linux/bpf_dsl/dump_bpf.cc',
@@ -58,29 +65,32 @@ SOURCES += [
     '../chromium/sandbox/linux/seccomp-bpf/trap.cc',
     '../chromium/sandbox/linux/services/syscall_wrappers.cc',
     'broker/SandboxBrokerCommon.cpp',
-    'LinuxCapabilities.cpp',
     'Sandbox.cpp',
     'SandboxBrokerClient.cpp',
-    'SandboxChroot.cpp',
     'SandboxFilter.cpp',
     'SandboxFilterUtil.cpp',
     'SandboxHooks.cpp',
     'SandboxInfo.cpp',
     'SandboxLogging.cpp',
     'SandboxReporterClient.cpp',
-    'SandboxUtil.cpp',
 ]
+
+if CONFIG['MOZ_GMP_SANDBOX']:
+    SOURCES += [
+        'SandboxOpenedFiles.cpp',
+    ]
 
 # This copy of SafeSPrintf doesn't need to avoid the Chromium logging
 # dependency like the one in libxul does, but this way the behavior is
 # consistent.  See also the comment in SandboxLogging.h.
 SOURCES['../chromium/base/strings/safe_sprintf.cc'].flags += ['-DNDEBUG']
 
-# Keep clang from warning about intentional 'switch' fallthrough in icu_utf.cc:
-if CONFIG['CLANG_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
+    # Keep clang from warning about intentional 'switch' fallthrough in icu_utf.cc:
     SOURCES['../chromium/base/third_party/icu/icu_utf.cc'].flags += ['-Wno-implicit-fallthrough']
+    SOURCES['../chromium/sandbox/linux/seccomp-bpf/trap.cc'].flags += ['-Wno-unreachable-code-return']
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-shadow']
     SOURCES['../chromium/sandbox/linux/services/syscall_wrappers.cc'].flags += [
         '-Wno-empty-body',
@@ -89,11 +99,12 @@ if CONFIG['GNU_CXX']:
 # gcc lto likes to put the top level asm in syscall.cc in a different partition
 # from the function using it which breaks the build.  Work around that by
 # forcing there to be only one partition.
-if '-flto' in CONFIG['OS_CXXFLAGS'] and not CONFIG['CLANG_CXX']:
-    LDFLAGS += ['--param lto-partitions=1']
+for f in CONFIG['OS_CXXFLAGS']:
+    if f.startswith('-flto') and CONFIG['CC_TYPE'] != 'clang':
+        LDFLAGS += ['--param lto-partitions=1']
 
 DEFINES['NS_NO_XPCOM'] = True
-DISABLE_STL_WRAPPING = True
+DisableStlWrapping()
 
 LOCAL_INCLUDES += ['/security/sandbox/linux']
 LOCAL_INCLUDES += ['/security/sandbox/chromium-shim']
@@ -111,6 +122,7 @@ DIRS += [
     'broker',
     'glue',
     'interfaces',
+    'launch',
     'reporter',
 ]
 

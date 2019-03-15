@@ -20,8 +20,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=787070
 
 /** Test for Bug 1021066 **/
 
-var Cu = Components.utils;
-
 // values should contain the values that the property should have on each of
 // the objects on the prototype chain of obj. A value of undefined signals
 // that the value should not be present on that prototype.
@@ -33,7 +31,9 @@ function checkXrayProperty(obj, name, values)
     if (typeof value == "undefined") {
       ok(!obj.hasOwnProperty(name), "hasOwnProperty shouldn't see \"" + name + "\" through Xrays");
       is(Object.getOwnPropertyDescriptor(obj, name), undefined, "getOwnPropertyDescriptor shouldn't see \"" + name + "\" through Xrays");
-      ok(Object.keys(obj).indexOf(name) == -1, "Enumerating the Xray should not return \"" + name + "\"");
+      ok(!Object.keys(obj).includes(name), "Enumerating the Xray should not return \"" + name + "\"");
+      ok(!Object.getOwnPropertyNames(obj).includes(name),
+         `The Xray's property names should not include ${name}`)
     } else {
       ok(obj.hasOwnProperty(name), "hasOwnProperty should see \"" + name + "\" through Xrays");
       var pd = Object.getOwnPropertyDescriptor(obj, name);
@@ -43,8 +43,12 @@ function checkXrayProperty(obj, name, values)
       } else {
         is(obj[name], value, "Should get the right value for \"" + name + "\" through Xrays");
       }
-      if (pd && pd.enumerable) {
-        ok(Object.keys(obj).indexOf("" + name) > -1, "Enumerating the Xray should return \"" + name + "\"");
+      if (pd) {
+        if (pd.enumerable) {
+          ok(Object.keys(obj).indexOf("" + name) > -1, "Enumerating the Xray should return \"" + name + "\"");
+        }
+        ok(Object.getOwnPropertyNames(obj).indexOf("" + name) > -1,
+           `The Xray's property names should include ${name}`)
       }
     }
   } while ((obj = Object.getPrototypeOf(obj)));
@@ -74,19 +78,20 @@ function test()
   checkWindowXrayProperty(win, "expando", undefined);
   ok(!("expando" in win), "Xrays should filter expandos");
 
-  checkWindowXrayProperty(win, "shadowedIframe", undefined, undefined, doc.getElementById("shadowedIframe").contentWindow);
-  ok("shadowedIframe" in win, "Named properties should be exposed through Xrays");
+  checkWindowXrayProperty(win, "shadowedIframe", undefined);
+  ok(!("shadowedIframe" in win), "Named properties should not be exposed through Xrays");
 
-  // Named properties live on the named properties object for global objects.
-  checkWindowXrayProperty(win, "iframe", undefined, undefined, doc.getElementById("iframe").contentWindow);
-  ok("iframe" in win, "Named properties should be exposed through Xrays");
+  // Named properties live on the named properties object for global objects,
+  // but are not exposed via Xrays.
+  checkWindowXrayProperty(win, "iframe", undefined, undefined, undefined, undefined);
+  ok(!("iframe" in win), "Named properties should not be exposed through Xrays");
 
   // Window properties live on the instance, shadowing the properties of the named property object.
-  checkWindowXrayProperty(win, "document", doc, undefined, doc.getElementById("document").contentWindow);
+  checkWindowXrayProperty(win, "document", doc, undefined, undefined, undefined);
   ok("document" in win, "WebIDL properties should be exposed through Xrays");
 
   // Unforgeable properties live on the instance, shadowing the properties of the named property object.
-  checkWindowXrayProperty(win, "self", win, undefined, doc.getElementById("self").contentWindow);
+  checkWindowXrayProperty(win, "self", win, undefined, undefined, undefined);
   ok("self" in win, "WebIDL properties should be exposed through Xrays");
 
   // Object.prototype is at the end of the prototype chain.
@@ -101,6 +106,13 @@ function test()
   is(win.addEventListener, eventTargetProto.addEventListener, "Named properties shouldn't shadow WebIDL-defined properties");
 
   is(win.toString, win.Object.prototype.toString, "Named properties shouldn't shadow ECMAScript-defined properties");
+
+  // WebIDL interface names should be exposed.
+  var waivedWin = Cu.waiveXrays(win);
+  checkWindowXrayProperty(win, "Element", Cu.unwaiveXrays(waivedWin.Element))
+
+  // JS standard classes should be exposed.
+  checkWindowXrayProperty(win, "Array", Cu.unwaiveXrays(waivedWin.Array))
 
   // HTMLDocument
   // Unforgeable properties live on the instance.
@@ -172,7 +184,7 @@ function test()
 
   // Check that DataTransfer's .types has the hack to alias contains()
   // to includes().
-  var dataTransfer = new win.DataTransfer("foo", true);
+  var dataTransfer = new win.DataTransfer();
   is(dataTransfer.types.contains, dataTransfer.types.includes,
      "Should have contains() set up as an alias to includes()");
   // Waive Xrays on the dataTransfer itself, since the .types we get is
@@ -218,6 +230,71 @@ function test()
   is(storage.foo, undefined, "Should not have a 'foo' property again");
   ok(!('foo' in storage), "Really should not have a 'foo' property again");
   is(storage.getItem("foo"), null, "Should not have an item named 'foo' again");
+
+  // Non-static properties are not exposed on interface objects or instances.
+  is(win.HTMLInputElement.checkValidity, undefined,
+     "Shouldn't see non-static property on interface objects");
+  is(Object.getOwnPropertyDescriptor(win.HTMLInputElement, "checkValidity"), undefined,
+     "Shouldn't see non-static property on interface objects");
+  is(Object.getOwnPropertyNames(win.HTMLInputElement).indexOf("checkValidity"), -1,
+     "Shouldn't see non-static property on interface objects");
+  isnot(typeof doc.createElement("input").checkValidity, "undefined",
+        "Should see non-static property on prototype objects");
+  is(Object.getOwnPropertyDescriptor(doc.createElement("input"), "checkValidity"), undefined,
+     "Shouldn't see non-static property on instances");
+  isnot(typeof Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, "checkValidity"), "undefined",
+        "Should see non-static property on prototype objects");
+
+  // Static properties are not exposed on prototype objects or instances.
+  isnot(typeof win.URL.createObjectURL, "undefined",
+        "Should see static property on interface objects");
+  isnot(typeof Object.getOwnPropertyDescriptor(win.URL, "createObjectURL"), "undefined",
+        "Should see static property on interface objects");
+  isnot(Object.getOwnPropertyNames(win.URL).indexOf("createObjectURL"), -1,
+        "Should see static property on interface objects");
+  is(new URL('http://example.org').createObjectURL, undefined,
+     "Shouldn't see static property on instances and prototype ojbects");
+  is(Object.getOwnPropertyDescriptor(new URL('http://example.org'), "createObjectURL"), undefined,
+     "Shouldn't see static property on instances");
+  is(Object.getOwnPropertyDescriptor(win.URL.prototype, "createObjectURL"), undefined,
+     "Shouldn't see static property on prototype objects");
+
+  // Unforgeable properties are not exposed on prototype objects or interface
+  // objects.
+  is(Window.document, undefined,
+     "Shouldn't see unforgeable property on interface objects");
+  is(Object.getOwnPropertyDescriptor(Window, "document"), undefined,
+     "Shouldn't see unforgeable property on interface objects");
+  is(Object.getOwnPropertyNames(Window).indexOf("document"), -1,
+     "Shouldn't see unforgeable property on interface objects");
+  isnot(typeof win.document, "undefined",
+        "Should see unforgeable property on instances");
+  isnot(typeof Object.getOwnPropertyDescriptor(win, "document"), "undefined",
+        "Should see unforgeable property on instances");
+  is(Object.getOwnPropertyDescriptor(Window.prototype, "document"), undefined,
+     "Shouldn't see unforgeable property on prototype objects");
+
+  // Constant properties are not exposted on instances.
+  isnot(typeof win.Node.ELEMENT_NODE, "undefined",
+        "Should see constant property on interface objects");
+  isnot(typeof Object.getOwnPropertyDescriptor(win.Node, "ELEMENT_NODE"), "undefined",
+        "Should see constant property on interface objects");
+  isnot(Object.getOwnPropertyNames(win.Node).indexOf("ELEMENT_NODE"), -1,
+        "Should see constant property on interface objects");
+  isnot(typeof elem.ELEMENT_NODE, "undefined",
+        "Should see constant property on prototype objects");
+  is(Object.getOwnPropertyDescriptor(elem, "ELEMENT_NODE"), undefined,
+     "Shouldn't see constant property on instances");
+  isnot(typeof Object.getOwnPropertyDescriptor(win.Node.prototype, "ELEMENT_NODE"), "undefined",
+        "Should see constant property on prototype objects");
+
+  // Adopting nodes should not lose expandos.
+  var elem = doc.createElement("span");
+  elem.expando = 5;
+  is(elem.expando, 5, "We just set this property");
+  document.adoptNode(elem);
+  is(elem.wrappedJSObject, undefined, "Shouldn't be an Xray anymore");
+  is(elem.expando, 5, "Expando should not get lost");
 
   SimpleTest.finish();
 }

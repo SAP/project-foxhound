@@ -7,10 +7,9 @@ function test() {
   Harness.installsCompletedCallback = finish_test;
   Harness.setup();
 
-  var cm = Components.classes["@mozilla.org/cookiemanager;1"]
-                     .getService(Components.interfaces.nsICookieManager2);
-  cm.add("example.com", "/browser/" + RELATIVE_DIR, "xpinstall", "true", false,
-         false, true, (Date.now() / 1000) + 60, {});
+  Services.cookies.add("example.com", "/browser/" + RELATIVE_DIR, "xpinstall",
+    "true", false, false, true, (Date.now() / 1000) + 60, {},
+    Ci.nsICookie2.SAMESITE_UNSET);
 
   var pm = Services.perms;
   pm.add(makeURI("http://example.com/"), "install", pm.ALLOW_ACTION);
@@ -18,10 +17,10 @@ function test() {
   Services.prefs.setIntPref("network.cookie.cookieBehavior", 1);
 
   var triggers = encodeURIComponent(JSON.stringify({
-    "Cookie check": TESTROOT + "cookieRedirect.sjs?" + TESTROOT + "amosigned.xpi"
+    "Cookie check": TESTROOT + "cookieRedirect.sjs?" + TESTROOT + "amosigned.xpi",
   }));
-  gBrowser.selectedTab = gBrowser.addTab();
-  gBrowser.loadURI(TESTROOT + "installtrigger.html?" + triggers);
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
+  BrowserTestUtils.loadURI(gBrowser, TESTROOT + "installtrigger.html?" + triggers);
 }
 
 function install_ended(install, addon) {
@@ -31,9 +30,8 @@ function install_ended(install, addon) {
 function finish_test(count) {
   is(count, 1, "1 Add-on should have been successfully installed");
 
-  var cm = Components.classes["@mozilla.org/cookiemanager;1"]
-                     .getService(Components.interfaces.nsICookieManager2);
-  cm.remove("example.com", "xpinstall", "/browser/" + RELATIVE_DIR, false, {});
+  Services.cookies.remove("example.com", "xpinstall", "/browser/" + RELATIVE_DIR,
+    false, {});
 
   Services.prefs.clearUserPref("network.cookie.cookieBehavior");
 

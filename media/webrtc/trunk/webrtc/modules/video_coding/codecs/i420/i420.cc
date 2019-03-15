@@ -8,12 +8,14 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/video_coding/codecs/i420/include/i420.h"
+#include "modules/video_coding/codecs/i420/include/i420.h"
 
 #include <limits>
 #include <string>
 
-#include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
+#include "api/video/i420_buffer.h"
+#include "common_video/libyuv/include/webrtc_libyuv.h"
+#include "libyuv.h"  // NOLINT
 
 namespace {
 const size_t kI420HeaderSize = 4;
@@ -56,9 +58,9 @@ int I420Encoder::InitEncode(const VideoCodec* codecSettings,
     _encodedImage._buffer = NULL;
     _encodedImage._size = 0;
   }
-  const size_t newSize =
-      CalcBufferSize(kI420, codecSettings->width, codecSettings->height) +
-      kI420HeaderSize;
+  const size_t newSize = CalcBufferSize(VideoType::kI420, codecSettings->width,
+                                        codecSettings->height) +
+                         kI420HeaderSize;
   uint8_t* newBuffer = new uint8_t[newSize];
   if (newBuffer == NULL) {
     return WEBRTC_VIDEO_CODEC_MEMORY;
@@ -95,9 +97,9 @@ int I420Encoder::Encode(const VideoFrame& inputImage,
     return WEBRTC_VIDEO_CODEC_ERR_SIZE;
   }
 
-  size_t req_length =
-      CalcBufferSize(kI420, inputImage.width(), inputImage.height()) +
-      kI420HeaderSize;
+  size_t req_length = CalcBufferSize(VideoType::kI420, inputImage.width(),
+                                     inputImage.height()) +
+                      kI420HeaderSize;
   if (_encodedImage._size > req_length) {
     // Reallocate buffer.
     delete[] _encodedImage._buffer;
@@ -116,7 +118,8 @@ int I420Encoder::Encode(const VideoFrame& inputImage,
     return WEBRTC_VIDEO_CODEC_MEMORY;
   _encodedImage._length = ret_length + kI420HeaderSize;
 
-  _encodedCompleteCallback->Encoded(_encodedImage, NULL, NULL);
+  _encodedCompleteCallback->OnEncodedImage(_encodedImage, nullptr, nullptr);
+
   return WEBRTC_VIDEO_CODEC_OK;
 }
 
@@ -137,18 +140,13 @@ int I420Encoder::RegisterEncodeCompleteCallback(
 }
 
 I420Decoder::I420Decoder()
-    : _decodedImage(),
-      _width(0),
+    : _width(0),
       _height(0),
       _inited(false),
       _decodeCompleteCallback(NULL) {}
 
 I420Decoder::~I420Decoder() {
   Release();
-}
-
-int I420Decoder::Reset() {
-  return WEBRTC_VIDEO_CODEC_OK;
 }
 
 int I420Decoder::InitDecode(const VideoCodec* codecSettings,
@@ -196,24 +194,34 @@ int I420Decoder::Decode(const EncodedImage& inputImage,
   _height = height;
 
   // Verify that the available length is sufficient:
-  size_t req_length = CalcBufferSize(kI420, _width, _height) + kI420HeaderSize;
+  size_t req_length =
+      CalcBufferSize(VideoType::kI420, _width, _height) + kI420HeaderSize;
 
   if (req_length > inputImage._length) {
     return WEBRTC_VIDEO_CODEC_ERROR;
   }
   // Set decoded image parameters.
-  int half_width = (_width + 1) / 2;
-  _decodedImage.CreateEmptyFrame(_width, _height, _width, half_width,
-                                 half_width);
-  // Converting from buffer to plane representation.
-  int ret = ConvertToI420(kI420, buffer, 0, 0, _width, _height, 0,
-                          kVideoRotation_0, &_decodedImage);
+  rtc::scoped_refptr<webrtc::I420Buffer> frame_buffer =
+      I420Buffer::Create(_width, _height);
+
+  // Converting from raw buffer I420Buffer.
+  int y_stride = 16 * ((_width + 15) / 16);
+  int uv_stride = 16 * ((_width + 31) / 32);
+  int y_size = y_stride * height;
+  int u_size = uv_stride * frame_buffer->ChromaHeight();
+  int ret = libyuv::I420Copy(
+      buffer, y_stride, buffer + y_size, uv_stride, buffer + y_size + u_size,
+      uv_stride, frame_buffer.get()->MutableDataY(),
+      frame_buffer.get()->StrideY(), frame_buffer.get()->MutableDataU(),
+      frame_buffer.get()->StrideU(), frame_buffer.get()->MutableDataV(),
+      frame_buffer.get()->StrideV(), _width, _height);
   if (ret < 0) {
     return WEBRTC_VIDEO_CODEC_MEMORY;
   }
-  _decodedImage.set_timestamp(inputImage._timeStamp);
 
-  _decodeCompleteCallback->Decoded(_decodedImage);
+  VideoFrame decoded_image(frame_buffer, inputImage._timeStamp, 0,
+                           webrtc::kVideoRotation_0);
+  _decodeCompleteCallback->Decoded(decoded_image);
   return WEBRTC_VIDEO_CODEC_OK;
 }
 

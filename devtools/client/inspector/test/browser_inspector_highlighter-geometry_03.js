@@ -14,48 +14,48 @@ const ID = "geometry-editor-";
 const HIGHLIGHTER_TYPE = "GeometryEditorHighlighter";
 const PROPS = ["left", "right", "top", "bottom"];
 
-add_task(function* () {
-  let helper = yield openInspectorForURL(TEST_URL)
+add_task(async function() {
+  const helper = await openInspectorForURL(TEST_URL)
                        .then(getHighlighterHelperFor(HIGHLIGHTER_TYPE));
 
   helper.prefix = ID;
 
-  let { finalize } = helper;
+  const { finalize } = helper;
 
-  yield checkArrowsLabelsAndHandlers(
+  await checkArrowsLabelsAndHandlers(
     "#node2", ["top", "left", "bottom", "right"],
      helper);
 
-  yield checkArrowsLabelsAndHandlers("#node3", ["top", "left"], helper);
+  await checkArrowsLabelsAndHandlers("#node3", ["top", "left"], helper);
 
-  yield finalize();
+  await finalize();
 });
 
-function* checkArrowsLabelsAndHandlers(selector, expectedProperties,
+async function checkArrowsLabelsAndHandlers(selector, expectedProperties,
   {show, hide, isElementHidden}
 ) {
   info("Getting node " + selector + " from the page");
 
-  yield show(selector);
+  await show(selector);
 
-  for (let name of expectedProperties) {
-    let hidden = (yield isElementHidden("arrow-" + name)) &&
-                 (yield isElementHidden("handler-" + name));
+  for (const name of expectedProperties) {
+    const hidden = (await isElementHidden("arrow-" + name)) &&
+                 (await isElementHidden("handler-" + name));
     ok(!hidden,
       "The " + name + " label/arrow & handler is visible for node " + selector);
   }
 
   // Testing that the other arrows are hidden
-  for (let name of PROPS) {
-    if (expectedProperties.indexOf(name) !== -1) {
+  for (const name of PROPS) {
+    if (expectedProperties.includes(name)) {
       continue;
     }
-    let hidden = (yield isElementHidden("arrow-" + name)) &&
-                 (yield isElementHidden("handler-" + name));
+    const hidden = (await isElementHidden("arrow-" + name)) &&
+                 (await isElementHidden("handler-" + name));
     ok(hidden,
       "The " + name + " arrow & handler is hidden for node " + selector);
   }
 
   info("Hiding the highlighter");
-  yield hide();
+  await hide();
 }

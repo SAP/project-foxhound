@@ -9,15 +9,20 @@ DIRS += [
 ]
 
 DevToolsModules(
+    'accessible.js',
     'auto-refresh.js',
     'box-model.js',
     'css-grid.js',
     'css-transform.js',
     'eye-dropper.js',
+    'flexbox.js',
+    'fonts.js',
     'geometry-editor.js',
     'measuring-tool.js',
-    'rect.js',
+    'paused-debugger.js',
     'rulers.js',
     'selector.js',
-    'simple-outline.js'
+    'shapes.js',
+    'simple-outline.js',
+    'xul-accessible.js'
 )

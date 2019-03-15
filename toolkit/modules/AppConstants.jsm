@@ -6,8 +6,9 @@
 
 "use strict";
 
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Services", "resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "Services", "resource://gre/modules/Services.jsm");
+ChromeUtils.defineModuleGetter(this, "AddonManager", "resource://gre/modules/AddonManager.jsm");
 
 this.EXPORTED_SYMBOLS = ["AppConstants"];
 
@@ -24,6 +25,13 @@ this.AppConstants = Object.freeze({
 
   RELEASE_OR_BETA:
 #ifdef RELEASE_OR_BETA
+  true,
+#else
+  false,
+#endif
+
+  EARLY_BETA_OR_EARLIER:
+#ifdef EARLY_BETA_OR_EARLIER
   true,
 #else
   false,
@@ -102,13 +110,6 @@ this.AppConstants = Object.freeze({
   false,
 #endif
 
-  MOZ_SERVICES_CLOUDSYNC:
-#ifdef MOZ_SERVICES_CLOUDSYNC
-  true,
-#else
-  false,
-#endif
-
   MOZ_UPDATER:
 #ifdef MOZ_UPDATER
   true,
@@ -137,14 +138,6 @@ this.AppConstants = Object.freeze({
   false,
 #endif
 
-# MOZ_B2G covers both device and desktop b2g
-  MOZ_B2G:
-#ifdef MOZ_B2G
-  true,
-#else
-  false,
-#endif
-
   XP_UNIX:
 #ifdef XP_UNIX
   true,
@@ -163,8 +156,6 @@ this.AppConstants = Object.freeze({
   "macosx",
 #elif MOZ_WIDGET_ANDROID
   "android",
-#elif MOZ_WIDGET_GONK
-  "gonk",
 #elif XP_LINUX
   "linux",
 #else
@@ -190,22 +181,8 @@ this.AppConstants = Object.freeze({
   false,
 #endif
 
-  MOZ_VERIFY_MAR_SIGNATURE:
-#ifdef MOZ_VERIFY_MAR_SIGNATURE
-  true,
-#else
-  false,
-#endif
-
   MOZ_MAINTENANCE_SERVICE:
 #ifdef MOZ_MAINTENANCE_SERVICE
-  true,
-#else
-  false,
-#endif
-
-  E10S_TESTING_ONLY:
-#ifdef E10S_TESTING_ONLY
   true,
 #else
   false,
@@ -225,8 +202,8 @@ this.AppConstants = Object.freeze({
   false,
 #endif
 
-  MOZ_B2G_RIL:
-#ifdef MOZ_B2G_RIL
+  ASAN_REPORTER:
+#ifdef MOZ_ASAN_REPORTER
   true,
 #else
   false,
@@ -260,8 +237,19 @@ this.AppConstants = Object.freeze({
   false,
 #endif
 
-  INSTALL_COMPACT_THEMES:
-#ifdef INSTALL_COMPACT_THEMES
+  get MOZ_UNSIGNED_SCOPES() {
+    let result = 0;
+#ifdef MOZ_UNSIGNED_APP_SCOPE
+    result |= AddonManager.SCOPE_APPLICATION;
+#endif
+#ifdef MOZ_UNSIGNED_SYSTEM_SCOPE
+    result |= AddonManager.SCOPE_SYSTEM;
+#endif
+    return result;
+  },
+
+  MOZ_ALLOW_LEGACY_EXTENSIONS:
+#ifdef MOZ_ALLOW_LEGACY_EXTENSIONS
   true,
 #else
   false,
@@ -269,13 +257,6 @@ this.AppConstants = Object.freeze({
 
   MENUBAR_CAN_AUTOHIDE:
 #ifdef MENUBAR_CAN_AUTOHIDE
-  true,
-#else
-  false,
-#endif
-
-  CAN_DRAW_IN_TITLEBAR:
-#ifdef CAN_DRAW_IN_TITLEBAR
   true,
 #else
   false,
@@ -309,6 +290,13 @@ this.AppConstants = Object.freeze({
   false,
 #endif
 
+  MOZ_ANDROID_MOZILLA_ONLINE:
+#ifdef MOZ_ANDROID_MOZILLA_ONLINE
+  true,
+#else
+  false,
+#endif
+
   DLL_PREFIX: "@DLL_PREFIX@",
   DLL_SUFFIX: "@DLL_SUFFIX@",
 
@@ -321,10 +309,16 @@ this.AppConstants = Object.freeze({
   INSTALL_LOCALE: "@AB_CD@",
   MOZ_WIDGET_TOOLKIT: "@MOZ_WIDGET_TOOLKIT@",
   ANDROID_PACKAGE_NAME: "@ANDROID_PACKAGE_NAME@",
-  MOZ_B2G_VERSION: @MOZ_B2G_VERSION@,
-  MOZ_B2G_OS_NAME: @MOZ_B2G_OS_NAME@,
 
   DEBUG_JS_MODULES: "@DEBUG_JS_MODULES@",
+
+  MOZ_BING_API_CLIENTID: "@MOZ_BING_API_CLIENTID@",
+  MOZ_BING_API_KEY: "@MOZ_BING_API_KEY@",
+  MOZ_GOOGLE_LOCATION_SERVICE_API_KEY: "@MOZ_GOOGLE_LOCATION_SERVICE_API_KEY@",
+  MOZ_GOOGLE_SAFEBROWSING_API_KEY: "@MOZ_GOOGLE_SAFEBROWSING_API_KEY@",
+  MOZ_MOZILLA_API_KEY: "@MOZ_MOZILLA_API_KEY@",
+
+  BROWSER_CHROME_URL: "@BROWSER_CHROME_URL@",
 
   // URL to the hg revision this was built from (e.g.
   // "https://hg.mozilla.org/mozilla-central/rev/6256ec9113c1")
@@ -343,6 +337,13 @@ this.AppConstants = Object.freeze({
 
   HAVE_SHELL_SERVICE:
 #ifdef HAVE_SHELL_SERVICE
+    true,
+#else
+    false,
+#endif
+
+  MOZ_CODE_COVERAGE:
+#ifdef MOZ_CODE_COVERAGE
     true,
 #else
     false,

@@ -4,8 +4,8 @@
 
 %include ../../../shared/extensions/extensions.inc.css
 
-#header-utils-btn .toolbarbutton-icon {
-  list-style-image: url("chrome://mozapps/skin/extensions/utilities.svg#utilities-native");
+:root > * {
+  font-size: 1.11em;
 }
 
 .sorter[checkState="1"] .button-icon {

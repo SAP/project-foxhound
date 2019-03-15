@@ -8,13 +8,14 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_DESKTOP_CAPTURE_WIN_SCOPED_THREAD_DESKTOP_H_
-#define WEBRTC_MODULES_DESKTOP_CAPTURE_WIN_SCOPED_THREAD_DESKTOP_H_
+#ifndef MODULES_DESKTOP_CAPTURE_WIN_SCOPED_THREAD_DESKTOP_H_
+#define MODULES_DESKTOP_CAPTURE_WIN_SCOPED_THREAD_DESKTOP_H_
+
+#include <memory>
 
 #include <windows.h>
 
-#include "webrtc/base/constructormagic.h"
-#include "webrtc/base/scoped_ptr.h"
+#include "rtc_base/constructormagic.h"
 
 namespace webrtc {
 
@@ -40,14 +41,14 @@ class ScopedThreadDesktop {
 
  private:
   // The desktop handle assigned to the calling thread by Set
-  rtc::scoped_ptr<Desktop> assigned_;
+  std::unique_ptr<Desktop> assigned_;
 
   // The desktop handle assigned to the calling thread at creation.
-  rtc::scoped_ptr<Desktop> initial_;
+  std::unique_ptr<Desktop> initial_;
 
   RTC_DISALLOW_COPY_AND_ASSIGN(ScopedThreadDesktop);
 };
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_DESKTOP_CAPTURE_WIN_SCOPED_THREAD_DESKTOP_H_
+#endif  // MODULES_DESKTOP_CAPTURE_WIN_SCOPED_THREAD_DESKTOP_H_

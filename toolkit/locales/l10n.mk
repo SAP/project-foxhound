@@ -19,6 +19,8 @@
 #   language pack and zip package.
 #   Other targets like windows installers might be listed, too, and should
 #   be defined in the including makefile.
+#   The installer-% targets should not set AB_CD, so that the unpackaging
+#   step finds the original package.
 # The including makefile should provide values for the variables
 #   MOZ_APP_VERSION and MOZ_LANGPACK_EID.
 
@@ -54,7 +56,15 @@ ACDEFINES += \
 	-DPKG_INST_BASENAME='$(PKG_INST_BASENAME)' \
 	$(NULL)
 
+# export some global defines for l10n repacks
+BASE_MERGE:=$(CURDIR)/merge-dir
+export REAL_LOCALE_MERGEDIR=$(BASE_MERGE)/$(AB_CD)
+# is an l10n repack step:
+export IS_LANGUAGE_REPACK
+# is a language pack:
+export IS_LANGPACK
 
+clobber-%: AB_CD=$*
 clobber-%:
 	$(RM) -rf $(DIST)/xpi-stage/locale-$*
 
@@ -68,7 +78,6 @@ STAGEDIST = $(ABS_DIST)/l10n-stage/$(MOZ_PKG_DIR)
 endif
 UNPACKED_INSTALLER = $(ABS_DIST)/unpacked-installer
 
-include $(MOZILLA_DIR)/toolkit/mozapps/installer/signing.mk
 include $(MOZILLA_DIR)/toolkit/mozapps/installer/packager.mk
 
 PACKAGE_BASE_DIR = $(ABS_DIST)/l10n-stage
@@ -101,51 +110,41 @@ endif
 # may be overridden if necessary.
 MOZDEPTH ?= $(DEPTH)
 
-ifdef MOZ_MAKE_COMPLETE_MAR
-MAKE_COMPLETE_MAR = 1
-ifeq ($(OS_ARCH), WINNT)
-ifneq ($(MOZ_PKG_FORMAT), SFX7Z)
-MAKE_COMPLETE_MAR =
-endif
-endif
-endif
 repackage-zip: UNPACKAGE='$(ZIP_IN)'
-repackage-zip:  libs-$(AB_CD)
-# call a hook for apps to put their uninstall helper.exe into the package
-	$(UNINSTALLER_PACKAGE_HOOK)
-# call a hook for apps to build the stub installer
-ifdef MOZ_STUB_INSTALLER
-	$(STUB_HOOK)
-endif
-	$(PYTHON) $(MOZILLA_DIR)/toolkit/mozapps/installer/l10n-repack.py $(STAGEDIST) $(DIST)/xpi-stage/locale-$(AB_CD) \
+repackage-zip:
+	$(PYTHON) $(MOZILLA_DIR)/toolkit/mozapps/installer/l10n-repack.py '$(STAGEDIST)' $(DIST)/xpi-stage/locale-$(AB_CD) \
 		$(MOZ_PKG_EXTRAL10N) \
 		$(if $(filter omni,$(MOZ_PACKAGER_FORMAT)),$(if $(NON_OMNIJAR_FILES),--non-resource $(NON_OMNIJAR_FILES)))
 
 ifeq (cocoa,$(MOZ_WIDGET_TOOLKIT))
 ifneq (en,$(LPROJ_ROOT))
-	mv $(STAGEDIST)/en.lproj $(STAGEDIST)/$(LPROJ_ROOT).lproj
+	mv '$(STAGEDIST)'/en.lproj '$(STAGEDIST)'/$(LPROJ_ROOT).lproj
 endif
 ifdef MOZ_CRASHREPORTER
 # On Mac OS X, the crashreporter.ini file needs to be moved from under the
 # application bundle's Resources directory where all other l10n files are
 # located to the crash reporter bundle's Resources directory.
-	mv $(STAGEDIST)/crashreporter.app/Contents/Resources/crashreporter.ini \
-	  $(STAGEDIST)/../MacOS/crashreporter.app/Contents/Resources/crashreporter.ini
-	$(RM) -rf $(STAGEDIST)/crashreporter.app
+	mv '$(STAGEDIST)'/crashreporter.app/Contents/Resources/crashreporter.ini \
+	  '$(STAGEDIST)'/../MacOS/crashreporter.app/Contents/Resources/crashreporter.ini
+	$(RM) -rf '$(STAGEDIST)'/crashreporter.app
 endif
+endif
+ifeq (WINNT,$(OS_ARCH))
+	$(MAKE) -C ../installer/windows CONFIG_DIR=l10ngen l10ngen/helper.exe
+	cp ../installer/windows/l10ngen/helper.exe $(STAGEDIST)/uninstall
 endif
 
 	$(NSINSTALL) -D $(DIST)/l10n-stage/$(PKG_PATH)
-	cd $(DIST)/l10n-stage; \
-	  $(MAKE_PACKAGE)
-ifdef MAKE_COMPLETE_MAR
+	(cd $(DIST)/l10n-stage; \
+	  $(MAKE_PACKAGE))
+ifdef MOZ_MAKE_COMPLETE_MAR
 	$(MAKE) -C $(MOZDEPTH)/tools/update-packaging full-update AB_CD=$(AB_CD) \
 	  PACKAGE_BASE_DIR='$(ABS_DIST)/l10n-stage'
 endif
 # packaging done, undo l10n stuff
 ifneq (en,$(LPROJ_ROOT))
 ifeq (cocoa,$(MOZ_WIDGET_TOOLKIT))
-	mv $(STAGEDIST)/$(LPROJ_ROOT).lproj $(STAGEDIST)/en.lproj
+	mv '$(STAGEDIST)'/$(LPROJ_ROOT).lproj '$(STAGEDIST)'/en.lproj
 endif
 endif
 	$(NSINSTALL) -D $(DIST)/$(PKG_PATH)
@@ -155,36 +154,86 @@ endif
 repackage-zip-%: unpack
 	@$(MAKE) repackage-zip AB_CD=$* ZIP_IN='$(ZIP_IN)'
 
-APP_DEFINES = $(firstword $(wildcard $(LOCALE_SRCDIR)/defines.inc) \
-                          $(srcdir)/en-US/defines.inc)
-TK_DEFINES = $(firstword \
-   $(wildcard $(call EXPAND_LOCALE_SRCDIR,toolkit/locales)/defines.inc) \
-   $(MOZILLA_DIR)/toolkit/locales/en-US/defines.inc)
+
+LANGPACK_DEFINES = \
+  $(firstword \
+    $(wildcard $(call EXPAND_LOCALE_SRCDIR,toolkit/locales)/defines.inc) \
+    $(MOZILLA_DIR)/toolkit/locales/en-US/defines.inc) \
+  $(firstword \
+    $(wildcard $(LOCALE_SRCDIR)/defines.inc) \
+    $(srcdir)/en-US/defines.inc) \
+$(NULL)
 
 # Dealing with app sub dirs: If DIST_SUBDIRS is defined it contains a
 # listing of app sub-dirs we should include in langpack xpis. If not,
 # check DIST_SUBDIR, and if that isn't present, just package the default
-# chrome directory.
-PKG_ZIP_DIRS = chrome $(or $(DIST_SUBDIRS),$(DIST_SUBDIR))
+# chrome directory and top-level localization for Fluent.
+PKG_ZIP_DIRS = chrome localization $(or $(DIST_SUBDIRS),$(DIST_SUBDIR))
 
-langpack-%: LANGPACK_FILE=$(ABS_DIST)/$(PKG_LANGPACK_PATH)$(PKG_LANGPACK_BASENAME).xpi
+# Clone a l10n repository, either via hg or git
+# Make this a variable as it's embedded in a sh conditional
+ifeq ($(VCS_CHECKOUT_TYPE),hg)
+L10N_CO = $(HG) --cwd $(L10NBASEDIR) clone https://hg.mozilla.org/l10n-central/$(AB_CD)/
+else
+ifeq ($(VCS_CHECKOUT_TYPE),git)
+L10N_CO = $(GIT) -C $(L10NBASEDIR) clone hg://hg.mozilla.org/l10n-central/$(AB_CD)/
+else
+L10N_CO = $(error You need to use either hg or git)
+endif
+endif
+
+merge-%: IS_LANGUAGE_REPACK=1
+merge-%: AB_CD=$*
+merge-%:
+# For nightly builds, we automatically check out missing localizations
+# from l10n-central.  We never automatically check out in automation:
+# automation builds check out revisions that have been signed-off by
+# l10n drivers prior to use.
+ifdef MOZ_AUTOMATION
+	if  ! test -d $(L10NBASEDIR)/$(AB_CD) ; then \
+		echo 'Error: Automation requires l10n repositories to be checked out: $(L10NBASEDIR)/$(AB_CD)' ; \
+		exit 1 ; \
+	fi
+endif
+ifdef NIGHTLY_BUILD
+	if  ! test -d $(L10NBASEDIR)/$(AB_CD) ; then \
+		echo 'Checking out $(L10NBASEDIR)/$(AB_CD)' ; \
+		$(NSINSTALL) -D $(L10NBASEDIR) ; \
+		$(L10N_CO) ; \
+	fi
+endif
+	$(RM) -rf $(REAL_LOCALE_MERGEDIR)
+	-$(MOZILLA_DIR)/mach compare-locales $(COMPARE_LOCALES_DEFINES) --merge $(BASE_MERGE) $(srcdir)/l10n.toml $(L10NBASEDIR) $*
+
+langpack-%: IS_LANGUAGE_REPACK=1
+langpack-%: IS_LANGPACK=1
 langpack-%: AB_CD=$*
-langpack-%: XPI_NAME=locale-$*
-langpack-%: libs-%
+langpack-%:
 	@echo 'Making langpack $(LANGPACK_FILE)'
+	@$(MAKE) libs-$(AB_CD)
+	@$(MAKE) package-langpack-$(AB_CD)
+
+package-langpack-%: LANGPACK_FILE=$(ABS_DIST)/$(PKG_LANGPACK_PATH)$(PKG_LANGPACK_BASENAME).xpi
+package-langpack-%: XPI_NAME=locale-$*
+package-langpack-%: AB_CD=$*
+package-langpack-%:
 	$(NSINSTALL) -D $(DIST)/$(PKG_LANGPACK_PATH)
-	$(call py_action,preprocessor,$(DEFINES) $(ACDEFINES) \
-	  -DTK_DEFINES=$(TK_DEFINES) -DAPP_DEFINES=$(APP_DEFINES) $(MOZILLA_DIR)/toolkit/locales/generic/install.rdf -o $(DIST)/xpi-stage/$(XPI_NAME)/install.rdf)
-	$(call py_action,zip,-C $(DIST)/xpi-stage/locale-$(AB_CD) $(LANGPACK_FILE) install.rdf $(PKG_ZIP_DIRS) chrome.manifest)
+	$(call py_action,langpack_manifest,--locales $(AB_CD) --min-app-ver $(MOZ_APP_VERSION) --max-app-ver $(MOZ_APP_MAXVERSION) --app-name "$(MOZ_APP_DISPLAYNAME)" --l10n-basedir "$(L10NBASEDIR)" --defines $(LANGPACK_DEFINES) --langpack-eid "$(MOZ_LANGPACK_EID)" --input $(DIST)/xpi-stage/locale-$(AB_CD))
+	$(call py_action,zip,-C $(DIST)/xpi-stage/locale-$(AB_CD) -x **/*.manifest -x **/*.js -x **/*.ini $(LANGPACK_FILE) $(PKG_ZIP_DIRS) manifest.json)
 
 # This variable is to allow the wget-en-US target to know which ftp server to download from
 ifndef EN_US_BINARY_URL 
 EN_US_BINARY_URL = $(error You must set EN_US_BINARY_URL)
 endif
+# In taskcluster the installer comes from another location
+ifndef EN_US_INSTALLER_BINARY_URL
+EN_US_INSTALLER_BINARY_URL = $(EN_US_BINARY_URL)
+endif
 
 # Allow the overriding of PACKAGE format so we can get an EN_US build with a different
 # PACKAGE format than we are creating l10n packages with.
 EN_US_PACKAGE_NAME ?= $(PACKAGE)
+EN_US_PKG_INST_BASENAME ?= $(PKG_INST_BASENAME)
 
 # This make target allows us to wget the latest en-US binary from a specified website
 # The make installers-% target needs the en-US binary in dist/
@@ -201,17 +250,7 @@ ifdef RETRIEVE_WINDOWS_INSTALLER
 ifeq ($(OS_ARCH), WINNT)
 	$(NSINSTALL) -D $(ABS_DIST)/$(PKG_INST_PATH)
 	(cd $(ABS_DIST)/$(PKG_INST_PATH) && \
-        $(WGET) --no-cache -nv --no-iri -N '$(EN_US_BINARY_URL)/$(PKG_PATH)$(PKG_INST_BASENAME).exe')
-	@echo 'Downloaded $(EN_US_BINARY_URL)/$(PKG_PATH)$(PKG_INST_BASENAME).exe to $(ABS_DIST)/$(PKG_INST_PATH)$(PKG_INST_BASENAME).exe'
+        $(WGET) --no-cache -nv --no-iri -N -O $(PKG_INST_BASENAME).exe '$(EN_US_INSTALLER_BINARY_URL)/$(PKG_PATH)$(EN_US_PKG_INST_BASENAME).exe')
+	@echo 'Downloaded $(EN_US_INSTALLER_BINARY_URL)/$(PKG_PATH)$(EN_US_PKG_INST_BASENAME).exe to $(ABS_DIST)/$(PKG_INST_PATH)$(PKG_INST_BASENAME).exe'
 endif
 endif
-
-generate-snippet-%:
-	$(PYTHON) $(MOZILLA_DIR)/tools/update-packaging/generatesnippet.py \
-          --mar-path=$(ABS_DIST)/update \
-          --application-ini-file=$(STAGEDIST)/application.ini \
-          --locale=$* \
-          --product=$(MOZ_PKG_APPNAME) \
-          --platform=$(MOZ_PKG_PLATFORM) \
-          --download-base-URL=$(DOWNLOAD_BASE_URL) \
-          --verbose

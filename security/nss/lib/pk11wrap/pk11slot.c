@@ -18,6 +18,7 @@
 #include "dev3hack.h"
 #include "pkim.h"
 #include "utilpars.h"
+#include "pkcs11uri.h"
 
 /*************************************************************
  * local static and global data
@@ -409,6 +410,7 @@ PK11_NewSlotInfo(SECMODModule *mod)
     slot->slot_name[0] = 0;
     slot->token_name[0] = 0;
     PORT_Memset(slot->serial, ' ', sizeof(slot->serial));
+    PORT_Memset(&slot->tokenInfo, 0, sizeof(slot->tokenInfo));
     slot->module = NULL;
     slot->authTransact = 0;
     slot->authTime = LL_ZERO;
@@ -605,12 +607,32 @@ PK11_FindSlotsByNames(const char *dllName, const char *slotName,
     return slotList;
 }
 
-PK11SlotInfo *
-PK11_FindSlotByName(const char *name)
+typedef PRBool (*PK11SlotMatchFunc)(PK11SlotInfo *slot, const void *arg);
+
+static PRBool
+pk11_MatchSlotByTokenName(PK11SlotInfo *slot, const void *arg)
 {
+    return PORT_Strcmp(slot->token_name, arg) == 0;
+}
+
+static PRBool
+pk11_MatchSlotBySerial(PK11SlotInfo *slot, const void *arg)
+{
+    return PORT_Memcmp(slot->serial, arg, sizeof(slot->serial)) == 0;
+}
+
+static PRBool
+pk11_MatchSlotByTokenURI(PK11SlotInfo *slot, const void *arg)
+{
+    return pk11_MatchUriTokenInfo(slot, (PK11URI *)arg);
+}
+
+static PK11SlotInfo *
+pk11_FindSlot(const void *arg, PK11SlotMatchFunc func)
+{
+    SECMODListLock *moduleLock = SECMOD_GetDefaultModuleListLock();
     SECMODModuleList *mlp;
     SECMODModuleList *modules;
-    SECMODListLock *moduleLock = SECMOD_GetDefaultModuleListLock();
     int i;
     PK11SlotInfo *slot = NULL;
 
@@ -618,10 +640,6 @@ PK11_FindSlotByName(const char *name)
         PORT_SetError(SEC_ERROR_NOT_INITIALIZED);
         return slot;
     }
-    if ((name == NULL) || (*name == 0)) {
-        return PK11_GetInternalKeySlot();
-    }
-
     /* work through all the slots */
     SECMOD_GetReadLock(moduleLock);
     modules = SECMOD_GetDefaultModuleList();
@@ -629,7 +647,7 @@ PK11_FindSlotByName(const char *name)
         for (i = 0; i < mlp->module->slotCount; i++) {
             PK11SlotInfo *tmpSlot = mlp->module->slots[i];
             if (PK11_IsPresent(tmpSlot)) {
-                if (PORT_Strcmp(tmpSlot->token_name, name) == 0) {
+                if (func(tmpSlot, arg)) {
                     slot = PK11_ReferenceSlot(tmpSlot);
                     break;
                 }
@@ -647,43 +665,41 @@ PK11_FindSlotByName(const char *name)
     return slot;
 }
 
+static PK11SlotInfo *
+pk11_FindSlotByTokenURI(const char *uriString)
+{
+    PK11SlotInfo *slot = NULL;
+    PK11URI *uri;
+
+    uri = PK11URI_ParseURI(uriString);
+    if (!uri) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        return slot;
+    }
+
+    slot = pk11_FindSlot(uri, pk11_MatchSlotByTokenURI);
+    PK11URI_DestroyURI(uri);
+    return slot;
+}
+
+PK11SlotInfo *
+PK11_FindSlotByName(const char *name)
+{
+    if ((name == NULL) || (*name == 0)) {
+        return PK11_GetInternalKeySlot();
+    }
+
+    if (!PORT_Strncasecmp(name, "pkcs11:", strlen("pkcs11:"))) {
+        return pk11_FindSlotByTokenURI(name);
+    }
+
+    return pk11_FindSlot(name, pk11_MatchSlotByTokenName);
+}
+
 PK11SlotInfo *
 PK11_FindSlotBySerial(char *serial)
 {
-    SECMODModuleList *mlp;
-    SECMODModuleList *modules;
-    SECMODListLock *moduleLock = SECMOD_GetDefaultModuleListLock();
-    int i;
-    PK11SlotInfo *slot = NULL;
-
-    if (!moduleLock) {
-        PORT_SetError(SEC_ERROR_NOT_INITIALIZED);
-        return slot;
-    }
-    /* work through all the slots */
-    SECMOD_GetReadLock(moduleLock);
-    modules = SECMOD_GetDefaultModuleList();
-    for (mlp = modules; mlp != NULL; mlp = mlp->next) {
-        for (i = 0; i < mlp->module->slotCount; i++) {
-            PK11SlotInfo *tmpSlot = mlp->module->slots[i];
-            if (PK11_IsPresent(tmpSlot)) {
-                if (PORT_Memcmp(tmpSlot->serial, serial,
-                                sizeof(tmpSlot->serial)) == 0) {
-                    slot = PK11_ReferenceSlot(tmpSlot);
-                    break;
-                }
-            }
-        }
-        if (slot != NULL)
-            break;
-    }
-    SECMOD_ReleaseReadLock(moduleLock);
-
-    if (slot == NULL) {
-        PORT_SetError(SEC_ERROR_NO_TOKEN);
-    }
-
-    return slot;
+    return pk11_FindSlot(serial, pk11_MatchSlotBySerial);
 }
 
 /*
@@ -1077,6 +1093,29 @@ PK11_MakeString(PLArenaPool *arena, char *space,
 }
 
 /*
+ * check if a null-terminated string matches with a PKCS11 Static Label
+ */
+PRBool
+pk11_MatchString(const char *string,
+                 const char *staticString, int staticStringLen)
+{
+    int i;
+
+    for (i = (staticStringLen - 1); i >= 0; i--) {
+        if (staticString[i] != ' ')
+            break;
+    }
+    /* move i to point to the last space */
+    i++;
+
+    if (strlen(string) == i && memcmp(string, staticString, i) == 0) {
+        return PR_TRUE;
+    }
+
+    return PR_FALSE;
+}
+
+/*
  * Reads in the slots mechanism list for later use
  */
 SECStatus
@@ -1140,7 +1179,6 @@ PK11_ReadMechanismList(PK11SlotInfo *slot)
 SECStatus
 PK11_InitToken(PK11SlotInfo *slot, PRBool loadCerts)
 {
-    CK_TOKEN_INFO tokenInfo;
     CK_RV crv;
     SECStatus rv;
     PRStatus status;
@@ -1148,7 +1186,7 @@ PK11_InitToken(PK11SlotInfo *slot, PRBool loadCerts)
     /* set the slot flags to the current token values */
     if (!slot->isThreadSafe)
         PK11_EnterSlotMonitor(slot);
-    crv = PK11_GETTAB(slot)->C_GetTokenInfo(slot->slotID, &tokenInfo);
+    crv = PK11_GETTAB(slot)->C_GetTokenInfo(slot->slotID, &slot->tokenInfo);
     if (!slot->isThreadSafe)
         PK11_ExitSlotMonitor(slot);
     if (crv != CKR_OK) {
@@ -1158,14 +1196,14 @@ PK11_InitToken(PK11SlotInfo *slot, PRBool loadCerts)
 
     /* set the slot flags to the current token values */
     slot->series++; /* allow other objects to detect that the
-                      * slot is different */
-    slot->flags = tokenInfo.flags;
-    slot->needLogin = ((tokenInfo.flags & CKF_LOGIN_REQUIRED) ? PR_TRUE : PR_FALSE);
-    slot->readOnly = ((tokenInfo.flags & CKF_WRITE_PROTECTED) ? PR_TRUE : PR_FALSE);
+                     * slot is different */
+    slot->flags = slot->tokenInfo.flags;
+    slot->needLogin = ((slot->tokenInfo.flags & CKF_LOGIN_REQUIRED) ? PR_TRUE : PR_FALSE);
+    slot->readOnly = ((slot->tokenInfo.flags & CKF_WRITE_PROTECTED) ? PR_TRUE : PR_FALSE);
 
-    slot->hasRandom = ((tokenInfo.flags & CKF_RNG) ? PR_TRUE : PR_FALSE);
+    slot->hasRandom = ((slot->tokenInfo.flags & CKF_RNG) ? PR_TRUE : PR_FALSE);
     slot->protectedAuthPath =
-        ((tokenInfo.flags & CKF_PROTECTED_AUTHENTICATION_PATH)
+        ((slot->tokenInfo.flags & CKF_PROTECTED_AUTHENTICATION_PATH)
              ? PR_TRUE
              : PR_FALSE);
     slot->lastLoginCheck = 0;
@@ -1176,15 +1214,15 @@ PK11_InitToken(PK11SlotInfo *slot, PRBool loadCerts)
         slot->protectedAuthPath = PR_FALSE;
     }
     (void)PK11_MakeString(NULL, slot->token_name,
-                          (char *)tokenInfo.label, sizeof(tokenInfo.label));
-    slot->minPassword = tokenInfo.ulMinPinLen;
-    slot->maxPassword = tokenInfo.ulMaxPinLen;
-    PORT_Memcpy(slot->serial, tokenInfo.serialNumber, sizeof(slot->serial));
+                          (char *)slot->tokenInfo.label, sizeof(slot->tokenInfo.label));
+    slot->minPassword = slot->tokenInfo.ulMinPinLen;
+    slot->maxPassword = slot->tokenInfo.ulMaxPinLen;
+    PORT_Memcpy(slot->serial, slot->tokenInfo.serialNumber, sizeof(slot->serial));
 
     nssToken_UpdateName(slot->nssToken);
 
     slot->defRWSession = (PRBool)((!slot->readOnly) &&
-                                  (tokenInfo.ulMaxSessionCount == 1));
+                                  (slot->tokenInfo.ulMaxSessionCount == 1));
     rv = PK11_ReadMechanismList(slot);
     if (rv != SECSuccess)
         return rv;
@@ -1193,13 +1231,13 @@ PK11_InitToken(PK11SlotInfo *slot, PRBool loadCerts)
     slot->RSAInfoFlags = 0;
 
     /* initialize the maxKeyCount value */
-    if (tokenInfo.ulMaxSessionCount == 0) {
+    if (slot->tokenInfo.ulMaxSessionCount == 0) {
         slot->maxKeyCount = 800; /* should be #define or a config param */
-    } else if (tokenInfo.ulMaxSessionCount < 20) {
+    } else if (slot->tokenInfo.ulMaxSessionCount < 20) {
         /* don't have enough sessions to keep that many keys around */
         slot->maxKeyCount = 0;
     } else {
-        slot->maxKeyCount = tokenInfo.ulMaxSessionCount / 2;
+        slot->maxKeyCount = slot->tokenInfo.ulMaxSessionCount / 2;
     }
 
     /* Make sure our session handle is valid */
@@ -1331,13 +1369,12 @@ PK11_InitToken(PK11SlotInfo *slot, PRBool loadCerts)
 SECStatus
 PK11_TokenRefresh(PK11SlotInfo *slot)
 {
-    CK_TOKEN_INFO tokenInfo;
     CK_RV crv;
 
     /* set the slot flags to the current token values */
     if (!slot->isThreadSafe)
         PK11_EnterSlotMonitor(slot);
-    crv = PK11_GETTAB(slot)->C_GetTokenInfo(slot->slotID, &tokenInfo);
+    crv = PK11_GETTAB(slot)->C_GetTokenInfo(slot->slotID, &slot->tokenInfo);
     if (!slot->isThreadSafe)
         PK11_ExitSlotMonitor(slot);
     if (crv != CKR_OK) {
@@ -1345,12 +1382,12 @@ PK11_TokenRefresh(PK11SlotInfo *slot)
         return SECFailure;
     }
 
-    slot->flags = tokenInfo.flags;
-    slot->needLogin = ((tokenInfo.flags & CKF_LOGIN_REQUIRED) ? PR_TRUE : PR_FALSE);
-    slot->readOnly = ((tokenInfo.flags & CKF_WRITE_PROTECTED) ? PR_TRUE : PR_FALSE);
-    slot->hasRandom = ((tokenInfo.flags & CKF_RNG) ? PR_TRUE : PR_FALSE);
+    slot->flags = slot->tokenInfo.flags;
+    slot->needLogin = ((slot->tokenInfo.flags & CKF_LOGIN_REQUIRED) ? PR_TRUE : PR_FALSE);
+    slot->readOnly = ((slot->tokenInfo.flags & CKF_WRITE_PROTECTED) ? PR_TRUE : PR_FALSE);
+    slot->hasRandom = ((slot->tokenInfo.flags & CKF_RNG) ? PR_TRUE : PR_FALSE);
     slot->protectedAuthPath =
-        ((tokenInfo.flags & CKF_PROTECTED_AUTHENTICATION_PATH)
+        ((slot->tokenInfo.flags & CKF_PROTECTED_AUTHENTICATION_PATH)
              ? PR_TRUE
              : PR_FALSE);
     /* on some platforms Active Card incorrectly sets the
@@ -1447,6 +1484,9 @@ PK11_InitSlot(SECMODModule *mod, CK_SLOT_ID slotID, PK11SlotInfo *slot)
             }
             slot->hasRootCerts = PR_TRUE;
         }
+    }
+    if ((slotInfo.flags & CKF_USER_PIN_INITIALIZED) != 0) {
+        slot->flags |= CKF_USER_PIN_INITIALIZED;
     }
 }
 
@@ -1666,6 +1706,63 @@ PK11_GetTokenName(PK11SlotInfo *slot)
 }
 
 char *
+PK11_GetTokenURI(PK11SlotInfo *slot)
+{
+    PK11URI *uri;
+    char *ret = NULL;
+    char label[32 + 1], manufacturer[32 + 1], serial[16 + 1], model[16 + 1];
+    PK11URIAttribute attrs[4];
+    size_t nattrs = 0;
+
+    PK11_MakeString(NULL, label, (char *)slot->tokenInfo.label,
+                    sizeof(slot->tokenInfo.label));
+    if (*label != '\0') {
+        attrs[nattrs].name = PK11URI_PATTR_TOKEN;
+        attrs[nattrs].value = label;
+        nattrs++;
+    }
+
+    PK11_MakeString(NULL, manufacturer, (char *)slot->tokenInfo.manufacturerID,
+                    sizeof(slot->tokenInfo.manufacturerID));
+    if (*manufacturer != '\0') {
+        attrs[nattrs].name = PK11URI_PATTR_MANUFACTURER;
+        attrs[nattrs].value = manufacturer;
+        nattrs++;
+    }
+
+    PK11_MakeString(NULL, serial, (char *)slot->tokenInfo.serialNumber,
+                    sizeof(slot->tokenInfo.serialNumber));
+    if (*serial != '\0') {
+        attrs[nattrs].name = PK11URI_PATTR_SERIAL;
+        attrs[nattrs].value = serial;
+        nattrs++;
+    }
+
+    PK11_MakeString(NULL, model, (char *)slot->tokenInfo.model,
+                    sizeof(slot->tokenInfo.model));
+    if (*model != '\0') {
+        attrs[nattrs].name = PK11URI_PATTR_MODEL;
+        attrs[nattrs].value = model;
+        nattrs++;
+    }
+
+    uri = PK11URI_CreateURI(attrs, nattrs, NULL, 0);
+    if (uri == NULL) {
+        PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
+        return NULL;
+    }
+
+    ret = PK11URI_FormatURI(NULL, uri);
+    PK11URI_DestroyURI(uri);
+
+    if (ret == NULL) {
+        PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
+    }
+
+    return ret;
+}
+
+char *
 PK11_GetSlotName(PK11SlotInfo *slot)
 {
     return slot->slot_name;
@@ -1769,6 +1866,46 @@ PK11_GetTokenInfo(PK11SlotInfo *slot, CK_TOKEN_INFO *info)
         return SECFailure;
     }
     return SECSuccess;
+}
+
+PRBool
+pk11_MatchUriTokenInfo(PK11SlotInfo *slot, PK11URI *uri)
+{
+    const char *value;
+
+    value = PK11URI_GetPathAttribute(uri, PK11URI_PATTR_TOKEN);
+    if (value) {
+        if (!pk11_MatchString(value, (char *)slot->tokenInfo.label,
+                              sizeof(slot->tokenInfo.label))) {
+            return PR_FALSE;
+        }
+    }
+
+    value = PK11URI_GetPathAttribute(uri, PK11URI_PATTR_MANUFACTURER);
+    if (value) {
+        if (!pk11_MatchString(value, (char *)slot->tokenInfo.manufacturerID,
+                              sizeof(slot->tokenInfo.manufacturerID))) {
+            return PR_FALSE;
+        }
+    }
+
+    value = PK11URI_GetPathAttribute(uri, PK11URI_PATTR_SERIAL);
+    if (value) {
+        if (!pk11_MatchString(value, (char *)slot->tokenInfo.serialNumber,
+                              sizeof(slot->tokenInfo.serialNumber))) {
+            return PR_FALSE;
+        }
+    }
+
+    value = PK11URI_GetPathAttribute(uri, PK11URI_PATTR_MODEL);
+    if (value) {
+        if (!pk11_MatchString(value, (char *)slot->tokenInfo.model,
+                              sizeof(slot->tokenInfo.model))) {
+            return PR_FALSE;
+        }
+    }
+
+    return PR_TRUE;
 }
 
 /* Find out if we need to initialize the user's pin */
@@ -2291,6 +2428,14 @@ PK11_GetMaxKeyLength(CK_MECHANISM_TYPE mechanism)
             }
         }
     }
+
+    /* fallback to pk11_GetPredefinedKeyLength for fixed key size algorithms */
+    if (keyLength == 0) {
+        CK_KEY_TYPE keyType;
+        keyType = PK11_GetKeyType(mechanism, 0);
+        keyLength = pk11_GetPredefinedKeyLength(keyType);
+    }
+
     if (le)
         PK11_FreeSlotListElement(list, le);
     if (freeit)
@@ -2356,7 +2501,11 @@ PK11_RandomUpdate(void *data, size_t bytes)
 
     if (!bestIsInternal) {
         /* do internal slot, too. */
-        slot = PK11_GetInternalSlot(); /* can't fail */
+        slot = PK11_GetInternalSlot();
+        PORT_Assert(slot);
+        if (!slot) {
+            return SECFailure;
+        }
         status = PK11_SeedRandom(slot, data, bytes);
         PK11_FreeSlot(slot);
     }

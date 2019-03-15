@@ -3,22 +3,22 @@
 <head>
   <title>Verify mozbrowser APIs are blocked without browser permission</title>
   <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/SpawnTask.js"></script>
+  <script type="text/javascript" src="/tests/SimpleTest/AddTask.js"></script>
   <script type="text/javascript" src="mozbrowser_api_utils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 
 <body>
 <script type="application/javascript">
-  add_task(function*() {
-    yield SpecialPowers.pushPrefEnv(
+  add_task(async function() {
+    await SpecialPowers.pushPrefEnv(
       { "set": [["dom.mozBrowserFramesEnabled", true],
                 ["network.disable.ipc.security", true]] });
   });
 
-  add_task(function*() {
+  add_task(async function() {
     // Create <iframe mozbrowser>
-    let frame = yield loadFrame({
+    let frame = await loadFrame({
       mozbrowser: "true"
     });
 

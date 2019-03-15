@@ -1,21 +1,29 @@
 "use strict";
 
-/* globals docShell */
+/* eslint-env mozilla/frame-script */
 
-var Ci = Components.interfaces;
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "WebNavigationFrames",
+                               "resource://gre/modules/WebNavigationFrames.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "WebNavigationFrames",
-                                  "resource://gre/modules/WebNavigationFrames.jsm");
+function getDocShellOuterWindowId(docShell) {
+  if (!docShell) {
+    return undefined;
+  }
+
+  return docShell.domWindow
+                 .windowUtils
+                 .outerWindowID;
+}
 
 function loadListener(event) {
   let document = event.target;
   let window = document.defaultView;
   let url = document.documentURI;
-  let windowId = WebNavigationFrames.getWindowId(window);
-  let parentWindowId = WebNavigationFrames.getParentWindowId(window);
-  sendAsyncMessage("Extension:DOMContentLoaded", {windowId, parentWindowId, url});
+  let frameId = WebNavigationFrames.getFrameId(window);
+  let parentFrameId = WebNavigationFrames.getParentFrameId(window);
+  sendAsyncMessage("Extension:DOMContentLoaded", {frameId, parentFrameId, url});
 }
 
 addEventListener("DOMContentLoaded", loadListener);
@@ -24,10 +32,10 @@ addMessageListener("Extension:DisableWebNavigation", () => {
 });
 
 var CreatedNavigationTargetListener = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIObserver, Ci.nsISupportsWeakReference]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver, Ci.nsISupportsWeakReference]),
 
   init() {
-    Services.obs.addObserver(this, "webNavigation-createdNavigationTarget-from-js", false);
+    Services.obs.addObserver(this, "webNavigation-createdNavigationTarget-from-js");
   },
   uninit() {
     Services.obs.removeObserver(this, "webNavigation-createdNavigationTarget-from-js");
@@ -43,7 +51,7 @@ var CreatedNavigationTargetListener = {
     const createdDocShell = props.getPropertyAsInterface("createdTabDocShell", Ci.nsIDocShell);
     const sourceDocShell = props.getPropertyAsInterface("sourceTabDocShell", Ci.nsIDocShell);
 
-    const isSourceTabDescendant = WebNavigationFrames.isDescendantDocShell(sourceDocShell, docShell);
+    const isSourceTabDescendant = sourceDocShell.sameTypeRootTreeItem === docShell;
 
     if (docShell !== createdDocShell && docShell !== sourceDocShell &&
         !isSourceTabDescendant) {
@@ -55,8 +63,9 @@ var CreatedNavigationTargetListener = {
     }
 
     const isSourceTab = docShell === sourceDocShell || isSourceTabDescendant;
-    const sourceWindowId = WebNavigationFrames.getDocShellWindowId(sourceDocShell);
-    const createdWindowId = WebNavigationFrames.getDocShellWindowId(createdDocShell);
+
+    const sourceFrameId = WebNavigationFrames.getDocShellFrameId(sourceDocShell);
+    const createdOuterWindowId = getDocShellOuterWindowId(sourceDocShell);
 
     let url;
     if (props.hasKey("url")) {
@@ -65,20 +74,20 @@ var CreatedNavigationTargetListener = {
 
     sendAsyncMessage("Extension:CreatedNavigationTarget", {
       url,
-      sourceWindowId,
-      createdWindowId,
+      sourceFrameId,
+      createdOuterWindowId,
       isSourceTab,
     });
   },
 };
 
 var FormSubmitListener = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIObserver,
-                                         Ci.nsIFormSubmitObserver,
-                                         Ci.nsISupportsWeakReference]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver,
+                                          Ci.nsIFormSubmitObserver,
+                                          Ci.nsISupportsWeakReference]),
   init() {
     this.formSubmitWindows = new WeakSet();
-    Services.obs.addObserver(FormSubmitListener, "earlyformsubmit", false);
+    Services.obs.addObserver(FormSubmitListener, "earlyformsubmit");
   },
 
   uninit() {
@@ -109,8 +118,7 @@ var WebProgressListener = {
 
     // Populate the above previousURIMap by iterating over the docShells tree.
     for (let currentDocShell of WebNavigationFrames.iterateDocShellTree(docShell)) {
-      let win = currentDocShell.QueryInterface(Ci.nsIInterfaceRequestor)
-                               .getInterface(Ci.nsIDOMWindow);
+      let win = currentDocShell.domWindow;
       let {currentURI} = currentDocShell.QueryInterface(Ci.nsIWebNavigation);
 
       this.previousURIMap.set(win, currentURI);
@@ -204,8 +212,8 @@ var WebProgressListener = {
   sendStateChange({webProgress, locationURI, stateFlags, status}) {
     let data = {
       requestURL: locationURI.spec,
-      windowId: webProgress.DOMWindowID,
-      parentWindowId: WebNavigationFrames.getParentWindowId(webProgress.DOMWindow),
+      frameId: WebNavigationFrames.getFrameId(webProgress.DOMWindow),
+      parentFrameId: WebNavigationFrames.getParentFrameId(webProgress.DOMWindow),
       status,
       stateFlags,
     };
@@ -220,8 +228,8 @@ var WebProgressListener = {
     let data = {
       frameTransitionData,
       location: locationURI ? locationURI.spec : "",
-      windowId: webProgress.DOMWindowID,
-      parentWindowId: WebNavigationFrames.getParentWindowId(webProgress.DOMWindow),
+      frameId: WebNavigationFrames.getFrameId(webProgress.DOMWindow),
+      parentFrameId: WebNavigationFrames.getParentFrameId(webProgress.DOMWindow),
     };
 
     sendAsyncMessage("Extension:DocumentChange", data);
@@ -258,8 +266,8 @@ var WebProgressListener = {
         frameTransitionData,
         isHistoryStateUpdated, isReferenceFragmentUpdated,
         location: locationURI ? locationURI.spec : "",
-        windowId: webProgress.DOMWindowID,
-        parentWindowId: WebNavigationFrames.getParentWindowId(webProgress.DOMWindow),
+        frameId: WebNavigationFrames.getFrameId(webProgress.DOMWindow),
+        parentFrameId: WebNavigationFrames.getParentFrameId(webProgress.DOMWindow),
       };
 
       sendAsyncMessage("Extension:HistoryChange", data);
@@ -295,7 +303,7 @@ var WebProgressListener = {
     return frameTransitionData;
   },
 
-  QueryInterface: XPCOMUtils.generateQI([
+  QueryInterface: ChromeUtils.generateQI([
     Ci.nsIWebProgressListener,
     Ci.nsIWebProgressListener2,
     Ci.nsISupportsWeakReference,

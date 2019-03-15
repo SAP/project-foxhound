@@ -2,15 +2,15 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetter(this, "Preferences",
-                                  "resource://gre/modules/Preferences.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Sanitizer",
-                                  "resource:///modules/Sanitizer.jsm");
+ChromeUtils.defineModuleGetter(this, "Preferences",
+                               "resource://gre/modules/Preferences.jsm");
+ChromeUtils.defineModuleGetter(this, "Sanitizer",
+                               "resource:///modules/Sanitizer.jsm");
 
 const PREF_DOMAIN = "privacy.cpd.";
 const SETTINGS_LIST = ["cache", "cookies", "history", "formData", "downloads"].sort();
 
-add_task(function* testSettingsProperties() {
+add_task(async function testSettingsProperties() {
   function background() {
     browser.test.onMessage.addListener(msg => {
       browser.browsingData.settings().then(settings => {
@@ -26,21 +26,24 @@ add_task(function* testSettingsProperties() {
     },
   });
 
-  yield extension.startup();
+  await extension.startup();
 
   extension.sendMessage("settings");
-  let settings = yield extension.awaitMessage("settings");
+  let settings = await extension.awaitMessage("settings");
 
   // Verify that we get the keys back we expect.
-  deepEqual(Object.keys(settings.dataToRemove).sort(), SETTINGS_LIST,
-    "dataToRemove contains expected properties.");
-  deepEqual(Object.keys(settings.dataRemovalPermitted).sort(), SETTINGS_LIST,
-    "dataToRemove contains expected properties.");
+  deepEqual(Object.keys(settings.dataToRemove).sort(),
+            SETTINGS_LIST,
+            "dataToRemove contains expected properties.");
+  deepEqual(Object.keys(settings.dataRemovalPermitted).sort(),
+            SETTINGS_LIST,
+            "dataToRemove contains expected properties.");
 
   let dataTypeSet = settings.dataToRemove;
   for (let key of Object.keys(dataTypeSet)) {
-    equal(Preferences.get(`${PREF_DOMAIN}${key.toLowerCase()}`), dataTypeSet[key],
-      `${key} property of dataToRemove matches the expected pref.`);
+    equal(Preferences.get(`${PREF_DOMAIN}${key.toLowerCase()}`),
+          dataTypeSet[key],
+          `${key} property of dataToRemove matches the expected pref.`);
   }
 
   dataTypeSet = settings.dataRemovalPermitted;
@@ -52,26 +55,26 @@ add_task(function* testSettingsProperties() {
   const SINGLE_OPTION = "cache";
   const SINGLE_PREF = "privacy.cpd.cache";
 
-  do_register_cleanup(() => {
+  registerCleanupFunction(() => {
     Preferences.reset(SINGLE_PREF);
   });
 
   Preferences.set(SINGLE_PREF, true);
 
   extension.sendMessage("settings");
-  settings = yield extension.awaitMessage("settings");
+  settings = await extension.awaitMessage("settings");
   equal(settings.dataToRemove[SINGLE_OPTION], true, "Preference that was set to true returns true.");
 
   Preferences.set(SINGLE_PREF, false);
 
   extension.sendMessage("settings");
-  settings = yield extension.awaitMessage("settings");
+  settings = await extension.awaitMessage("settings");
   equal(settings.dataToRemove[SINGLE_OPTION], false, "Preference that was set to false returns false.");
 
-  yield extension.unload();
+  await extension.unload();
 });
 
-add_task(function* testSettingsSince() {
+add_task(async function testSettingsSince() {
   const TIMESPAN_PREF = "privacy.sanitize.timeSpan";
   const TEST_DATA = {
     TIMESPAN_5MIN: Date.now() - 5 * 60 * 1000,
@@ -95,9 +98,9 @@ add_task(function* testSettingsSince() {
     },
   });
 
-  yield extension.startup();
+  await extension.startup();
 
-  do_register_cleanup(() => {
+  registerCleanupFunction(() => {
     Preferences.reset(TIMESPAN_PREF);
   });
 
@@ -105,7 +108,7 @@ add_task(function* testSettingsSince() {
     Preferences.set(TIMESPAN_PREF, Sanitizer[timespan]);
 
     extension.sendMessage("settings");
-    let settings = yield extension.awaitMessage("settings");
+    let settings = await extension.awaitMessage("settings");
 
     // Because it is based on the current timestamp, we cannot know the exact
     // value to expect for since, so allow a 10s variance.
@@ -113,5 +116,5 @@ add_task(function* testSettingsSince() {
        "settings.options contains the expected since value.");
   }
 
-  yield extension.unload();
+  await extension.unload();
 });

@@ -51,26 +51,17 @@ const TEST_URI = "data:text/html;charset=UTF-8," + encodeURIComponent(
    "   <div></div>",
    "  </div>",
    " </body>",
-   " </html>"
+   " </html>",
   ].join("\n"));
 
-var doc = null;
-function test() {
-  waitForExplicitFinish();
-  gBrowser.selectedTab = gBrowser.addTab(TEST_URI);
-  BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser).then(() => {
-    /* eslint-disable mozilla/no-cpows-in-tests */
-    doc = content.document;
-    /* eslint-enable mozilla/no-cpows-in-tests */
-    runTests();
-  });
-}
+add_task(async function test() {
+  const tab = await addTab(TEST_URI);
+  const browser = tab.linkedBrowser;
 
-function runTests() {
-  let completer = new CSSCompleter({
-    cssProperties: getClientCssProperties()
+  const completer = new CSSCompleter({
+    cssProperties: getClientCssProperties(),
   });
-  let checkState = state => {
+  const checkState = state => {
     if (state[0] == "null" && (!completer.state || completer.state == "null")) {
       return true;
     } else if (state[0] == completer.state && state[0] == "selector" &&
@@ -90,12 +81,15 @@ function runTests() {
     return false;
   };
 
-  let progress = doc.getElementById("progress");
-  let progressDiv = doc.querySelector("#progress > div");
   let i = 0;
-  for (let testcase of tests) {
-    progress.dataset.progress = ++i;
-    progressDiv.style.width = 100 * i / tests.length + "%";
+  for (const testcase of tests) {
+    ++i;
+    await ContentTask.spawn(browser, [i, tests.length], function([idx, len]) {
+      const progress = content.document.getElementById("progress");
+      const progressDiv = content.document.querySelector("#progress > div");
+      progress.dataset.progress = idx;
+      progressDiv.style.width = 100 * idx / len + "%";
+    });
     completer.resolveState(limit(source, testcase[0]),
                            {line: testcase[0][0], ch: testcase[0][1]});
     if (checkState(testcase[1])) {
@@ -105,9 +99,11 @@ function runTests() {
          "but found [" + completer.state + ", " + completer.selectorState +
          ", " + completer.completing + ", " +
          (completer.propertyName || completer.selector) + "].");
-      progress.classList.add("failed");
+      await ContentTask.spawn(browser, null, function() {
+        const progress = content.document.getElementById("progress");
+        progress.classList.add("failed");
+      });
     }
   }
   gBrowser.removeCurrentTab();
-  finish();
-}
+});

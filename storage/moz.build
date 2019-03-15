@@ -29,8 +29,6 @@ XPIDL_SOURCES += [
     'mozIStorageService.idl',
     'mozIStorageStatement.idl',
     'mozIStorageStatementCallback.idl',
-    'mozIStorageStatementParams.idl',
-    'mozIStorageStatementRow.idl',
     'mozIStorageVacuumParticipant.idl',
     'mozIStorageValueArray.idl',
 ]
@@ -48,6 +46,9 @@ EXPORTS.mozilla += [
 # NOTE When adding something to this list, you probably need to add it to the
 #      storage.h file too.
 EXPORTS.mozilla.storage += [
+    'mozStorageAsyncStatementParams.h',
+    'mozStorageStatementParams.h',
+    'mozStorageStatementRow.h',
     'StatementCache.h',
     'Variant.h',
     'Variant_inl.h',
@@ -101,10 +102,13 @@ FINAL_LIBRARY = 'xul'
 # Note: On Windows our sqlite build assumes we use jemalloc.  If you disable
 # MOZ_STORAGE_MEMORY on Windows, you will also need to change the "ifdef
 # MOZ_MEMORY" options in db/sqlite3/src/Makefile.in.
-if CONFIG['MOZ_MEMORY'] and (not CONFIG['MOZ_SYSTEM_SQLITE']
-                             or CONFIG['MOZ_SYSTEM_JEMALLOC']):
+if CONFIG['MOZ_MEMORY'] and not CONFIG['MOZ_SYSTEM_SQLITE']:
     if CONFIG['OS_TARGET'] != 'Android':
         DEFINES['MOZ_STORAGE_MEMORY'] = True
+
+# Thunderbird needs the 2-argument version of fts3_tokenizer()
+if CONFIG['MOZ_THUNDERBIRD'] or CONFIG['MOZ_SUITE']:
+    DEFINES['MOZ_SQLITE_FTS3_TOKENIZER'] = 1
 
 # This is the default value.  If we ever change it when compiling sqlite, we
 # will need to change it here as well.

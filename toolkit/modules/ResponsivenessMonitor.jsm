@@ -4,9 +4,7 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["ResponsivenessMonitor"];
-
-const { classes: Cc, interfaces: Ci } = Components;
+var EXPORTED_SYMBOLS = ["ResponsivenessMonitor"];
 
 function ResponsivenessMonitor(intervalMS = 100) {
   this._intervalMS = intervalMS;

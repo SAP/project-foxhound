@@ -6,8 +6,8 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = [
-  "Promise"
+var EXPORTED_SYMBOLS = [
+  "Promise",
 ];
 
 /**
@@ -89,13 +89,7 @@ this.EXPORTED_SYMBOLS = [
  * -----------------------------------------------------------------------------
  */
 
-// These constants must be defined on the "this" object for them to be visible
-// by subscripts in B2G, since "this" does not match the global scope.
-this.Cc = Components.classes;
-this.Ci = Components.interfaces;
-this.Cu = Components.utils;
-this.Cr = Components.results;
-
-this.Cc["@mozilla.org/moz/jssubscript-loader;1"]
-    .getService(this.Ci.mozIJSSubScriptLoader)
+// eslint-disable-next-line mozilla/use-services
+Cc["@mozilla.org/moz/jssubscript-loader;1"]
+    .getService(Ci.mozIJSSubScriptLoader)
     .loadSubScript("resource://gre/modules/Promise-backend.js", this);

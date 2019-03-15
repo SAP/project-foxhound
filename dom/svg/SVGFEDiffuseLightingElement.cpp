@@ -9,79 +9,73 @@
 #include "nsSVGUtils.h"
 #include "nsSVGFilterInstance.h"
 
-NS_IMPL_NS_NEW_NAMESPACED_SVG_ELEMENT(FEDiffuseLighting)
+NS_IMPL_NS_NEW_SVG_ELEMENT(FEDiffuseLighting)
 
 using namespace mozilla::gfx;
 
 namespace mozilla {
 namespace dom {
 
-JSObject*
-SVGFEDiffuseLightingElement::WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return SVGFEDiffuseLightingElementBinding::Wrap(aCx, this, aGivenProto);
+JSObject* SVGFEDiffuseLightingElement::WrapNode(
+    JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
+  return SVGFEDiffuseLightingElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
 //----------------------------------------------------------------------
-// nsIDOMNode methods
+// nsINode methods
 
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGFEDiffuseLightingElement)
 
 //----------------------------------------------------------------------
 
-already_AddRefed<SVGAnimatedString>
-SVGFEDiffuseLightingElement::In1()
-{
+already_AddRefed<SVGAnimatedString> SVGFEDiffuseLightingElement::In1() {
   return mStringAttributes[IN1].ToDOMAnimatedString(this);
 }
 
 already_AddRefed<SVGAnimatedNumber>
-SVGFEDiffuseLightingElement::SurfaceScale()
-{
+SVGFEDiffuseLightingElement::SurfaceScale() {
   return mNumberAttributes[SURFACE_SCALE].ToDOMAnimatedNumber(this);
 }
 
 already_AddRefed<SVGAnimatedNumber>
-SVGFEDiffuseLightingElement::DiffuseConstant()
-{
+SVGFEDiffuseLightingElement::DiffuseConstant() {
   return mNumberAttributes[DIFFUSE_CONSTANT].ToDOMAnimatedNumber(this);
 }
 
 already_AddRefed<SVGAnimatedNumber>
-SVGFEDiffuseLightingElement::KernelUnitLengthX()
-{
+SVGFEDiffuseLightingElement::KernelUnitLengthX() {
   return mNumberPairAttributes[KERNEL_UNIT_LENGTH].ToDOMAnimatedNumber(
-    nsSVGNumberPair::eFirst, this);
+      SVGNumberPair::eFirst, this);
 }
 
 already_AddRefed<SVGAnimatedNumber>
-SVGFEDiffuseLightingElement::KernelUnitLengthY()
-{
+SVGFEDiffuseLightingElement::KernelUnitLengthY() {
   return mNumberPairAttributes[KERNEL_UNIT_LENGTH].ToDOMAnimatedNumber(
-    nsSVGNumberPair::eSecond, this);
+      SVGNumberPair::eSecond, this);
 }
 
-FilterPrimitiveDescription
-SVGFEDiffuseLightingElement::GetPrimitiveDescription(nsSVGFilterInstance* aInstance,
-                                                     const IntRect& aFilterSubregion,
-                                                     const nsTArray<bool>& aInputsAreTainted,
-                                                     nsTArray<RefPtr<SourceSurface>>& aInputImages)
-{
+FilterPrimitiveDescription SVGFEDiffuseLightingElement::GetPrimitiveDescription(
+    nsSVGFilterInstance* aInstance, const IntRect& aFilterSubregion,
+    const nsTArray<bool>& aInputsAreTainted,
+    nsTArray<RefPtr<SourceSurface>>& aInputImages) {
   float diffuseConstant = mNumberAttributes[DIFFUSE_CONSTANT].GetAnimValue();
 
-  FilterPrimitiveDescription descr(PrimitiveType::DiffuseLighting);
-  descr.Attributes().Set(eDiffuseLightingDiffuseConstant, diffuseConstant);
-  return AddLightingAttributes(descr, aInstance);
+  DiffuseLightingAttributes atts;
+  atts.mLightingConstant = diffuseConstant;
+  if (!AddLightingAttributes(&atts, aInstance)) {
+    return FilterPrimitiveDescription();
+  }
+
+  return FilterPrimitiveDescription(AsVariant(std::move(atts)));
 }
 
-bool
-SVGFEDiffuseLightingElement::AttributeAffectsRendering(int32_t aNameSpaceID,
-                                                       nsIAtom* aAttribute) const
-{
-  return SVGFEDiffuseLightingElementBase::AttributeAffectsRendering(aNameSpaceID, aAttribute) ||
+bool SVGFEDiffuseLightingElement::AttributeAffectsRendering(
+    int32_t aNameSpaceID, nsAtom* aAttribute) const {
+  return SVGFEDiffuseLightingElementBase::AttributeAffectsRendering(
+             aNameSpaceID, aAttribute) ||
          (aNameSpaceID == kNameSpaceID_None &&
           aAttribute == nsGkAtoms::diffuseConstant);
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

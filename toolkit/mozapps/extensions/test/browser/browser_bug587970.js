@@ -1,13 +1,14 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
+/* eslint-disable mozilla/no-arbitrary-setTimeout */
 
 // Bug 587970 - Provide ability "Update all now" within 'Available Updates' screen
 
 var gManagerWindow;
 var gProvider;
 
-function test() {
+async function test() {
   waitForExplicitFinish();
 
   gProvider = new MockProvider();
@@ -16,24 +17,23 @@ function test() {
     id: "addon1@tests.mozilla.org",
     name: "addon 1",
     version: "1.0",
-    applyBackgroundUpdates: AddonManager.AUTOUPDATE_DISABLE
+    applyBackgroundUpdates: AddonManager.AUTOUPDATE_DISABLE,
   }, {
     id: "addon2@tests.mozilla.org",
     name: "addon 2",
     version: "2.0",
-    applyBackgroundUpdates: AddonManager.AUTOUPDATE_DISABLE
+    applyBackgroundUpdates: AddonManager.AUTOUPDATE_DISABLE,
   }, {
     id: "addon3@tests.mozilla.org",
     name: "addon 3",
     version: "3.0",
-    applyBackgroundUpdates: AddonManager.AUTOUPDATE_DISABLE
+    applyBackgroundUpdates: AddonManager.AUTOUPDATE_DISABLE,
   }]);
 
 
-  open_manager("addons://updates/available", function(aWindow) {
-    gManagerWindow = aWindow;
-    run_next_test();
-  });
+  let aWindow = await open_manager("addons://updates/available");
+  gManagerWindow = aWindow;
+  run_next_test();
 }
 
 
@@ -56,15 +56,15 @@ add_test(function() {
   gProvider.createInstalls([{
     name: "addon 1",
     version: "1.1",
-    existingAddon: gProvider.addons[0]
+    existingAddon: gProvider.addons[0],
   }, {
     name: "addon 2",
     version: "2.1",
-    existingAddon: gProvider.addons[1]
+    existingAddon: gProvider.addons[1],
   }, {
     name: "addon 3",
     version: "3.1",
-    existingAddon: gProvider.addons[2]
+    existingAddon: gProvider.addons[2],
   }]);
 
   function wait_for_refresh() {
@@ -153,8 +153,8 @@ add_test(function() {
 
         run_next_test();
       });
-    }
-  }
+    },
+  };
   gProvider.installs[0].addTestListener(listener);
   gProvider.installs[1].addTestListener(listener);
   gProvider.installs[2].addTestListener(listener);

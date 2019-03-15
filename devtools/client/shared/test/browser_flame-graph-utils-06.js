@@ -11,15 +11,15 @@ const {PALLETTE_SIZE} = require("devtools/client/shared/widgets/FlameGraph");
 const MANGLED_FN = "__Z3FooIiEvv";
 const UNMANGLED_FN = "void Foo<int>()";
 
-add_task(function* () {
-  yield addTab("about:blank");
-  yield performTest();
+add_task(async function() {
+  await addTab("about:blank");
+  await performTest();
   gBrowser.removeCurrentTab();
 });
 
-function* performTest() {
-  let out = FlameGraphUtils.createFlameGraphDataFromThread(TEST_DATA, {
-    flattenRecursion: true
+function performTest() {
+  const out = FlameGraphUtils.createFlameGraphDataFromThread(TEST_DATA, {
+    flattenRecursion: true,
   });
 
   ok(out, "Some data was outputted properly");
@@ -28,8 +28,8 @@ function* performTest() {
   info("Got flame graph data:\n" + out.toSource() + "\n");
 
   for (let i = 0; i < out.length; i++) {
-    let found = out[i];
-    let expected = EXPECTED_OUTPUT[i];
+    const found = out[i];
+    const expected = EXPECTED_OUTPUT[i];
 
     is(found.blocks.length, expected.blocks.length,
       "The correct number of blocks were found in this bucket.");
@@ -51,21 +51,21 @@ function* performTest() {
 
 var TEST_DATA = synthesizeProfileForTest([{
   frames: [{
-    location: "A (http://path/to/file.js:10:5)"
+    location: "A (http://path/to/file.js:10:5)",
   }, {
-    location: `${MANGLED_FN} (http://path/to/file.js:100:5)`
+    location: `${MANGLED_FN} (http://path/to/file.js:100:5)`,
   }],
   time: 50,
 }]);
 
 var EXPECTED_OUTPUT = [{
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
   blocks: [{
     startTime: 0,
@@ -74,12 +74,12 @@ var EXPECTED_OUTPUT = [{
     y: 0,
     width: 50,
     height: 15,
-    text: "A (file.js:10)"
-  }]
+    text: "A (file.js:10)",
+  }],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
   blocks: [{
     startTime: 0,
@@ -88,30 +88,30 @@ var EXPECTED_OUTPUT = [{
     y: 15,
     width: 50,
     height: 15,
-    text: `${UNMANGLED_FN} (file.js:100)`
-  }]
+    text: `${UNMANGLED_FN} (file.js:100)`,
+  }],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }, {
-  blocks: []
+  blocks: [],
 }];

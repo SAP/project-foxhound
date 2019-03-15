@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,25 +13,22 @@ class nsPageFrame;
 class nsSharedPageData;
 
 // Page frame class used by the simple page sequence frame
-class nsPageContentFrame : public mozilla::ViewportFrame {
-
-public:
-  NS_DECL_FRAMEARENA_HELPERS
+class nsPageContentFrame final : public mozilla::ViewportFrame {
+ public:
+  NS_DECL_FRAMEARENA_HELPERS(nsPageContentFrame)
 
   friend nsPageContentFrame* NS_NewPageContentFrame(nsIPresShell* aPresShell,
-                                                    nsStyleContext* aContext);
+                                                    ComputedStyle* aStyle);
   friend class nsPageFrame;
 
   // nsIFrame
-  virtual void Reflow(nsPresContext*      aPresContext,
-                      ReflowOutput& aDesiredSize,
-                      const ReflowInput& aMaxSize,
-                      nsReflowStatus&      aStatus) override;
+  virtual void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
+                      const ReflowInput& aReflowInput,
+                      nsReflowStatus& aStatus) override;
 
-  virtual bool IsFrameOfType(uint32_t aFlags) const override
-  {
-    return ViewportFrame::IsFrameOfType(aFlags &
-             ~(nsIFrame::eCanContainOverflowContainers));
+  virtual bool IsFrameOfType(uint32_t aFlags) const override {
+    return ViewportFrame::IsFrameOfType(
+        aFlags & ~(nsIFrame::eCanContainOverflowContainers));
   }
 
   virtual void SetSharedPageData(nsSharedPageData* aPD) { mPD = aPD; }
@@ -38,22 +36,20 @@ public:
   virtual bool HasTransformGetter() const override { return true; }
 
   /**
-   * Get the "type" of the frame
-   *
-   * @see nsGkAtoms::pageContentFrame
+   * Return our canvas frame.
    */
-  virtual nsIAtom* GetType() const override;
+  void AppendDirectlyOwnedAnonBoxes(nsTArray<OwnedAnonBox>& aResult) override;
 
 #ifdef DEBUG_FRAME_DUMP
   // Debugging
-  virtual nsresult  GetFrameName(nsAString& aResult) const override;
+  virtual nsresult GetFrameName(nsAString& aResult) const override;
 #endif
 
-protected:
-  explicit nsPageContentFrame(nsStyleContext* aContext) : ViewportFrame(aContext) {}
+ protected:
+  explicit nsPageContentFrame(ComputedStyle* aStyle)
+      : ViewportFrame(aStyle, kClassID) {}
 
-  nsSharedPageData*         mPD;
+  nsSharedPageData* mPD;
 };
 
 #endif /* nsPageContentFrame_h___ */
-

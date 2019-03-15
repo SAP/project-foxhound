@@ -7,9 +7,8 @@ const {
   Arg,
   RetVal,
   generateActorSpec,
-  types
+  types,
 } = require("devtools/shared/protocol");
-require("devtools/shared/specs/inspector");
 
 /**
  * Sent with the 'mutations' event as part of an array of changes, used to
@@ -19,7 +18,7 @@ types.addDictType("animationMutationChange", {
   // The type of change ("added" or "removed").
   type: "string",
   // The changed AnimationPlayerActor.
-  player: "animationplayer"
+  player: "animationplayer",
 });
 
 const animationPlayerSpec = generateActorSpec({
@@ -28,8 +27,8 @@ const animationPlayerSpec = generateActorSpec({
   events: {
     "changed": {
       type: "changed",
-      state: Arg(0, "json")
-    }
+      state: Arg(0, "json"),
+    },
   },
 
   methods: {
@@ -37,46 +36,24 @@ const animationPlayerSpec = generateActorSpec({
     getCurrentState: {
       request: {},
       response: {
-        data: RetVal("json")
-      }
-    },
-    pause: {
-      request: {},
-      response: {}
-    },
-    play: {
-      request: {},
-      response: {}
-    },
-    ready: {
-      request: {},
-      response: {}
-    },
-    setCurrentTime: {
-      request: {
-        currentTime: Arg(0, "number")
+        data: RetVal("json"),
       },
-      response: {}
-    },
-    setPlaybackRate: {
-      request: {
-        currentTime: Arg(0, "number")
-      },
-      response: {}
-    },
-    getFrames: {
-      request: {},
-      response: {
-        frames: RetVal("json")
-      }
     },
     getProperties: {
       request: {},
       response: {
-        properties: RetVal("array:json")
-      }
-    }
-  }
+        properties: RetVal("array:json"),
+      },
+    },
+    getAnimationTypes: {
+      request: {
+        propertyNames: Arg(0, "array:string"),
+      },
+      response: {
+        animationTypes: RetVal("json"),
+      },
+    },
+  },
 });
 
 exports.animationPlayerSpec = animationPlayerSpec;
@@ -87,65 +64,53 @@ const animationsSpec = generateActorSpec({
   events: {
     "mutations": {
       type: "mutations",
-      changes: Arg(0, "array:animationMutationChange")
-    }
+      changes: Arg(0, "array:animationMutationChange"),
+    },
   },
 
   methods: {
     setWalkerActor: {
       request: {
-        walker: Arg(0, "domwalker")
+        walker: Arg(0, "domwalker"),
       },
-      response: {}
+      response: {},
     },
     getAnimationPlayersForNode: {
       request: {
-        actorID: Arg(0, "domnode")
+        actorID: Arg(0, "domnode"),
       },
       response: {
-        players: RetVal("array:animationplayer")
-      }
+        players: RetVal("array:animationplayer"),
+      },
     },
-    stopAnimationPlayerUpdates: {
-      request: {},
-      response: {}
-    },
-    pauseAll: {
-      request: {},
-      response: {}
-    },
-    playAll: {
-      request: {},
-      response: {}
-    },
-    toggleAll: {
-      request: {},
-      response: {}
-    },
-    toggleSeveral: {
+    pauseSome: {
       request: {
         players: Arg(0, "array:animationplayer"),
-        shouldPause: Arg(1, "boolean")
       },
-      response: {}
+      response: {},
+    },
+    playSome: {
+      request: {
+        players: Arg(0, "array:animationplayer"),
+      },
+      response: {},
     },
     setCurrentTimes: {
       request: {
         players: Arg(0, "array:animationplayer"),
         time: Arg(1, "number"),
-        shouldPause: Arg(2, "boolean")
+        shouldPause: Arg(2, "boolean"),
       },
-      response: {}
+      response: {},
     },
     setPlaybackRates: {
       request: {
         players: Arg(0, "array:animationplayer"),
-        rate: Arg(1, "number")
+        rate: Arg(1, "number"),
       },
-      response: {}
-    }
-  }
+      response: {},
+    },
+  },
 });
 
 exports.animationsSpec = animationsSpec;
-

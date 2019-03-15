@@ -13,11 +13,11 @@
 #include "nsIURI.h"
 #include "nsIURL.h"
 #include "nsIChannel.h"
-#include "nsXPIDLString.h"
+#include "nsString.h"
 #include "plstr.h"
 #include "nsIContent.h"
-#include "nsIDOMElement.h"
-#include "nsIDocument.h"
+#include "nsIContentInlines.h"
+#include "mozilla/dom/Document.h"
 #include "nsContentUtils.h"
 #include "nsIPresShell.h"
 #include "nsIPresShellInlines.h"
@@ -32,9 +32,10 @@
 #include "nsXBLPrototypeBinding.h"
 #include "nsXBLDocumentInfo.h"
 #include "mozilla/dom/XBLChildrenElement.h"
+#ifdef MOZ_XUL
+#  include "nsXULPrototypeCache.h"
+#endif
 
-#include "nsIStyleRuleProcessor.h"
-#include "nsRuleProcessorData.h"
 #include "nsIWeakReference.h"
 
 #include "nsWrapperCacheInlines.h"
@@ -45,7 +46,7 @@
 
 #include "nsIScriptContext.h"
 #include "xpcpublic.h"
-#include "jswrapper.h"
+#include "js/Wrapper.h"
 
 #include "nsThreadUtils.h"
 #include "mozilla/dom/NodeListBinding.h"
@@ -62,14 +63,11 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(nsBindingManager)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsBindingManager)
   tmp->mDestroyed = true;
 
-  if (tmp->mBoundContentSet)
-    tmp->mBoundContentSet->Clear();
+  if (tmp->mBoundContentSet) tmp->mBoundContentSet->Clear();
 
-  if (tmp->mDocumentTable)
-    tmp->mDocumentTable->Clear();
+  if (tmp->mDocumentTable) tmp->mDocumentTable->Clear();
 
-  if (tmp->mLoadingDocTable)
-    tmp->mLoadingDocTable->Clear();
+  if (tmp->mLoadingDocTable) tmp->mLoadingDocTable->Clear();
 
   if (tmp->mWrapperTable) {
     tmp->mWrapperTable->Clear();
@@ -82,7 +80,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsBindingManager)
     tmp->mProcessAttachedQueueEvent->Revoke();
   }
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
-
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsBindingManager)
   // The hashes keyed on nsIContent are traversed from the nsIContent itself.
@@ -112,38 +109,28 @@ NS_IMPL_CYCLE_COLLECTING_ADDREF(nsBindingManager)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsBindingManager)
 
 // Constructors/Destructors
-nsBindingManager::nsBindingManager(nsIDocument* aDocument)
-  : mProcessingAttachedStack(false),
-    mDestroyed(false),
-    mAttachedStackSizeOnOutermost(0),
-    mDocument(aDocument)
-{
-}
+nsBindingManager::nsBindingManager(Document* aDocument)
+    : mProcessingAttachedStack(false),
+      mDestroyed(false),
+      mAttachedStackSizeOnOutermost(0),
+      mDocument(aDocument) {}
 
-nsBindingManager::~nsBindingManager(void)
-{
-  mDestroyed = true;
-}
+nsBindingManager::~nsBindingManager(void) { mDestroyed = true; }
 
-nsXBLBinding*
-nsBindingManager::GetBindingWithContent(const nsIContent* aContent)
-{
+nsXBLBinding* nsBindingManager::GetBindingWithContent(
+    const nsIContent* aContent) {
   nsXBLBinding* binding = aContent ? aContent->GetXBLBinding() : nullptr;
   return binding ? binding->GetBindingWithContent() : nullptr;
 }
 
-void
-nsBindingManager::AddBoundContent(nsIContent* aContent)
-{
+void nsBindingManager::AddBoundContent(nsIContent* aContent) {
   if (!mBoundContentSet) {
-    mBoundContentSet = new nsTHashtable<nsRefPtrHashKey<nsIContent> >;
+    mBoundContentSet = new nsTHashtable<nsRefPtrHashKey<nsIContent>>;
   }
   mBoundContentSet->PutEntry(aContent);
 }
 
-void
-nsBindingManager::RemoveBoundContent(nsIContent* aContent)
-{
+void nsBindingManager::RemoveBoundContent(nsIContent* aContent) {
   if (mBoundContentSet) {
     mBoundContentSet->RemoveEntry(aContent);
   }
@@ -152,9 +139,7 @@ nsBindingManager::RemoveBoundContent(nsIContent* aContent)
   SetWrappedJS(aContent, nullptr);
 }
 
-nsIXPConnectWrappedJS*
-nsBindingManager::GetWrappedJS(nsIContent* aContent)
-{
+nsIXPConnectWrappedJS* nsBindingManager::GetWrappedJS(nsIContent* aContent) {
   if (!mWrapperTable) {
     return nullptr;
   }
@@ -166,9 +151,8 @@ nsBindingManager::GetWrappedJS(nsIContent* aContent)
   return mWrapperTable->GetWeak(aContent);
 }
 
-nsresult
-nsBindingManager::SetWrappedJS(nsIContent* aContent, nsIXPConnectWrappedJS* aWrappedJS)
-{
+nsresult nsBindingManager::SetWrappedJS(nsIContent* aContent,
+                                        nsIXPConnectWrappedJS* aWrappedJS) {
   if (mDestroyed) {
     return NS_OK;
   }
@@ -196,12 +180,10 @@ nsBindingManager::SetWrappedJS(nsIContent* aContent, nsIXPConnectWrappedJS* aWra
   return NS_OK;
 }
 
-void
-nsBindingManager::RemovedFromDocumentInternal(nsIContent* aContent,
-                                              nsIDocument* aOldDocument,
-                                              DestructorHandling aDestructorHandling)
-{
-  NS_PRECONDITION(aOldDocument != nullptr, "no old document");
+void nsBindingManager::RemovedFromDocumentInternal(
+    nsIContent* aContent, Document* aOldDocument,
+    DestructorHandling aDestructorHandling) {
+  MOZ_ASSERT(aOldDocument != nullptr, "no old document");
 
   RefPtr<nsXBLBinding> binding = aContent->GetXBLBinding();
   if (binding) {
@@ -215,20 +197,19 @@ nsBindingManager::RemovedFromDocumentInternal(nsIContent* aContent,
       binding->ChangeDocument(aOldDocument, nullptr);
     }
 
-    aContent->SetXBLBinding(nullptr, this);
+    aContent->AsElement()->SetXBLBinding(nullptr, this);
   }
 
-  // Clear out insertion parent and content lists.
-  aContent->SetXBLInsertionParent(nullptr);
+  // Clear out insertion point and content lists.
+  aContent->SetXBLInsertionPoint(nullptr);
 }
 
-nsIAtom*
-nsBindingManager::ResolveTag(nsIContent* aContent, int32_t* aNameSpaceID)
-{
-  nsXBLBinding *binding = aContent->GetXBLBinding();
+nsAtom* nsBindingManager::ResolveTag(nsIContent* aContent,
+                                     int32_t* aNameSpaceID) {
+  nsXBLBinding* binding = aContent->GetXBLBinding();
 
   if (binding) {
-    nsIAtom* base = binding->GetBaseTag(aNameSpaceID);
+    nsAtom* base = binding->GetBaseTag(aNameSpaceID);
 
     if (base) {
       return base;
@@ -239,27 +220,14 @@ nsBindingManager::ResolveTag(nsIContent* aContent, int32_t* aNameSpaceID)
   return aContent->NodeInfo()->NameAtom();
 }
 
-nsresult
-nsBindingManager::GetAnonymousNodesFor(nsIContent* aContent,
-                                       nsIDOMNodeList** aResult)
-{
-  NS_IF_ADDREF(*aResult = GetAnonymousNodesFor(aContent));
-  return NS_OK;
-}
-
-nsINodeList*
-nsBindingManager::GetAnonymousNodesFor(nsIContent* aContent)
-{
+nsINodeList* nsBindingManager::GetAnonymousNodesFor(nsIContent* aContent) {
   nsXBLBinding* binding = GetBindingWithContent(aContent);
   return binding ? binding->GetAnonymousNodeList() : nullptr;
 }
 
-nsresult
-nsBindingManager::ClearBinding(nsIContent* aContent)
-{
+nsresult nsBindingManager::ClearBinding(Element* aElement) {
   // Hold a ref to the binding so it won't die when we remove it from our table
-  RefPtr<nsXBLBinding> binding =
-    aContent ? aContent->GetXBLBinding() : nullptr;
+  RefPtr<nsXBLBinding> binding = aElement ? aElement->GetXBLBinding() : nullptr;
 
   if (!binding) {
     return NS_OK;
@@ -273,63 +241,61 @@ nsBindingManager::ClearBinding(nsIContent* aContent)
   // XXXbz should that be ownerdoc?  Wouldn't we need a ref to the
   // currentdoc too?  What's the one that should be passed to
   // ChangeDocument?
-  nsCOMPtr<nsIDocument> doc = aContent->OwnerDoc();
+  nsCOMPtr<Document> doc = aElement->OwnerDoc();
+
+  // Destroy the frames here before the UnbindFromTree happens.
+  nsIPresShell* presShell = doc->GetShell();
+  if (presShell) {
+    presShell->DestroyFramesForAndRestyle(aElement);
+  }
 
   // Finally remove the binding...
   // XXXbz this doesn't remove the implementation!  Should fix!  Until
   // then we need the explicit UnhookEventHandlers here.
   binding->UnhookEventHandlers();
   binding->ChangeDocument(doc, nullptr);
-  aContent->SetXBLBinding(nullptr, this);
+  aElement->SetXBLBinding(nullptr, this);
   binding->MarkForDeath();
 
   // ...and recreate its frames. We need to do this since the frames may have
   // been removed and style may have changed due to the removal of the
   // anonymous children.
   // XXXbz this should be using the current doc (if any), not the owner doc.
-  nsIPresShell *presShell = doc->GetShell();
+  presShell = doc->GetShell();  // get the shell again, just in case it changed
   NS_ENSURE_TRUE(presShell, NS_ERROR_FAILURE);
 
-  return presShell->RecreateFramesFor(aContent);;
+  presShell->PostRecreateFramesFor(aElement);
+  return NS_OK;
 }
 
-nsresult
-nsBindingManager::LoadBindingDocument(nsIDocument* aBoundDoc,
-                                      nsIURI* aURL,
-                                      nsIPrincipal* aOriginPrincipal)
-{
-  NS_PRECONDITION(aURL, "Must have a URI to load!");
+nsresult nsBindingManager::LoadBindingDocument(Document* aBoundDoc,
+                                               nsIURI* aURL,
+                                               nsIPrincipal* aOriginPrincipal) {
+  MOZ_ASSERT(aURL, "Must have a URI to load!");
 
   // First we need to load our binding.
   nsXBLService* xblService = nsXBLService::GetInstance();
-  if (!xblService)
-    return NS_ERROR_FAILURE;
+  if (!xblService) return NS_ERROR_FAILURE;
 
   // Load the binding doc.
   RefPtr<nsXBLDocumentInfo> info;
-  xblService->LoadBindingDocumentInfo(nullptr, aBoundDoc, aURL,
-                                      aOriginPrincipal, true,
-                                      getter_AddRefs(info));
-  if (!info)
-    return NS_ERROR_FAILURE;
+  xblService->LoadBindingDocumentInfo(
+      nullptr, aBoundDoc, aURL, aOriginPrincipal, true, getter_AddRefs(info));
+  if (!info) return NS_ERROR_FAILURE;
 
   return NS_OK;
 }
 
-void
-nsBindingManager::RemoveFromAttachedQueue(nsXBLBinding* aBinding)
-{
+void nsBindingManager::RemoveFromAttachedQueue(nsXBLBinding* aBinding) {
   // Don't remove items here as that could mess up an executing
   // ProcessAttachedQueue. Instead, null the entry in the queue.
   size_t index = mAttachedStack.IndexOf(aBinding);
-  if (index != mAttachedStack.NoIndex) {
+  if (index != nsBindingList::NoIndex) {
     mAttachedStack[index] = nullptr;
   }
 }
 
-nsresult
-nsBindingManager::AddToAttachedQueue(nsXBLBinding* aBinding)
-{
+nsresult nsBindingManager::AddToAttachedQueue(nsXBLBinding* aBinding) {
   mAttachedStack.AppendElement(aBinding);
 
   // If we're in the middle of processing our queue already, don't
@@ -344,39 +310,37 @@ nsBindingManager::AddToAttachedQueue(nsXBLBinding* aBinding)
   }
 
   return NS_OK;
-
 }
 
-void
-nsBindingManager::PostProcessAttachedQueueEvent()
-{
+void nsBindingManager::PostProcessAttachedQueueEvent() {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (!mDocument) {
+    return;
+  }
   mProcessAttachedQueueEvent =
-    NewRunnableMethod("nsBindingManager::DoProcessAttachedQueue",
-                      this, &nsBindingManager::DoProcessAttachedQueue);
-  nsresult rv = NS_DispatchToCurrentThread(mProcessAttachedQueueEvent);
-  if (NS_SUCCEEDED(rv) && mDocument) {
+      NewRunnableMethod("nsBindingManager::DoProcessAttachedQueue", this,
+                        &nsBindingManager::DoProcessAttachedQueue);
+  nsresult rv = mDocument->EventTargetFor(TaskCategory::Other)
+                    ->Dispatch(do_AddRef(mProcessAttachedQueueEvent));
+  if (NS_SUCCEEDED(rv)) {
     mDocument->BlockOnload();
   }
 }
 
 // static
-void
-nsBindingManager::PostPAQEventCallback(nsITimer* aTimer, void* aClosure)
-{
-  RefPtr<nsBindingManager> mgr = 
-    already_AddRefed<nsBindingManager>(static_cast<nsBindingManager*>(aClosure));
+void nsBindingManager::PostPAQEventCallback(nsITimer* aTimer, void* aClosure) {
+  RefPtr<nsBindingManager> mgr = already_AddRefed<nsBindingManager>(
+      static_cast<nsBindingManager*>(aClosure));
   mgr->PostProcessAttachedQueueEvent();
   NS_RELEASE(aTimer);
 }
 
-void
-nsBindingManager::DoProcessAttachedQueue()
-{
+void nsBindingManager::DoProcessAttachedQueue() {
   if (!mProcessingAttachedStack) {
     ProcessAttachedQueue();
 
     NS_ASSERTION(mAttachedStack.Length() == 0,
-               "Shouldn't have pending bindings!");
+                 "Shouldn't have pending bindings!");
 
     mProcessAttachedQueueEvent = nullptr;
   } else {
@@ -387,11 +351,10 @@ nsBindingManager::DoProcessAttachedQueue()
     // But don't poll in a tight loop -- otherwise we keep the Gecko
     // event loop non-empty and trigger bug 1021240 on OS X.
     nsresult rv = NS_ERROR_FAILURE;
-    nsCOMPtr<nsITimer> timer = do_CreateInstance(NS_TIMER_CONTRACTID);
-    if (timer) {
-      rv = timer->InitWithFuncCallback(PostPAQEventCallback, this,
-                                       100, nsITimer::TYPE_ONE_SHOT);
-    }
+    nsCOMPtr<nsITimer> timer;
+    rv = NS_NewTimerWithFuncCallback(
+        getter_AddRefs(timer), PostPAQEventCallback, this, 100,
+        nsITimer::TYPE_ONE_SHOT, "nsBindingManager::DoProcessAttachedQueue");
     if (NS_SUCCEEDED(rv)) {
       NS_ADDREF_THIS();
       // We drop our reference to the timer here, since the timer callback is
@@ -404,14 +367,12 @@ nsBindingManager::DoProcessAttachedQueue()
   if (mDocument) {
     // Hold a strong reference while calling UnblockOnload since that might
     // run script.
-    nsCOMPtr<nsIDocument> doc = mDocument;
+    nsCOMPtr<Document> doc = mDocument;
     doc->UnblockOnload(true);
   }
 }
 
-void
-nsBindingManager::ProcessAttachedQueueInternal(uint32_t aSkipSize)
-{
+void nsBindingManager::ProcessAttachedQueueInternal(uint32_t aSkipSize) {
   mProcessingAttachedStack = true;
 
   // Excute constructors. Do this from high index to low
@@ -436,9 +397,7 @@ nsBindingManager::ProcessAttachedQueueInternal(uint32_t aSkipSize)
 }
 
 // Keep bindings and bound elements alive while executing detached handlers.
-void
-nsBindingManager::ExecuteDetachedHandlers()
-{
+void nsBindingManager::ExecuteDetachedHandlers() {
   // Walk our hashtable of bindings.
   if (!mBoundContentSet) {
     return;
@@ -451,7 +410,7 @@ nsBindingManager::ExecuteDetachedHandlers()
     nsXBLBinding* binding = iter.Get()->GetKey()->GetXBLBinding();
     if (binding && bindings.AppendElement(binding)) {
       if (!boundElements.AppendObject(binding->GetBoundElement())) {
-        bindings.RemoveElementAt(bindings.Length() - 1);
+        bindings.RemoveLastElement();
       }
     }
   }
@@ -462,13 +421,12 @@ nsBindingManager::ExecuteDetachedHandlers()
   }
 }
 
-nsresult
-nsBindingManager::PutXBLDocumentInfo(nsXBLDocumentInfo* aDocumentInfo)
-{
-  NS_PRECONDITION(aDocumentInfo, "Must have a non-null documentinfo!");
+nsresult nsBindingManager::PutXBLDocumentInfo(
+    nsXBLDocumentInfo* aDocumentInfo) {
+  MOZ_ASSERT(aDocumentInfo, "Must have a non-null documentinfo!");
 
   if (!mDocumentTable) {
-    mDocumentTable = new nsRefPtrHashtable<nsURIHashKey,nsXBLDocumentInfo>();
+    mDocumentTable = new nsRefPtrHashtable<nsURIHashKey, nsXBLDocumentInfo>();
   }
 
   mDocumentTable->Put(aDocumentInfo->DocumentURI(), aDocumentInfo);
@@ -476,57 +434,44 @@ nsBindingManager::PutXBLDocumentInfo(nsXBLDocumentInfo* aDocumentInfo)
   return NS_OK;
 }
 
-void
-nsBindingManager::RemoveXBLDocumentInfo(nsXBLDocumentInfo* aDocumentInfo)
-{
+void nsBindingManager::RemoveXBLDocumentInfo(nsXBLDocumentInfo* aDocumentInfo) {
   if (mDocumentTable) {
     mDocumentTable->Remove(aDocumentInfo->DocumentURI());
   }
 }
 
-nsXBLDocumentInfo*
-nsBindingManager::GetXBLDocumentInfo(nsIURI* aURL)
-{
-  if (!mDocumentTable)
-    return nullptr;
+nsXBLDocumentInfo* nsBindingManager::GetXBLDocumentInfo(nsIURI* aURL) {
+  if (!mDocumentTable) return nullptr;
 
   return mDocumentTable->GetWeak(aURL);
 }
 
-nsresult
-nsBindingManager::PutLoadingDocListener(nsIURI* aURL, nsIStreamListener* aListener)
-{
-  NS_PRECONDITION(aListener, "Must have a non-null listener!");
+nsresult nsBindingManager::PutLoadingDocListener(nsIURI* aURL,
+                                                 nsIStreamListener* aListener) {
+  MOZ_ASSERT(aListener, "Must have a non-null listener!");
 
   if (!mLoadingDocTable) {
     mLoadingDocTable =
-      new nsInterfaceHashtable<nsURIHashKey,nsIStreamListener>();
+        new nsInterfaceHashtable<nsURIHashKey, nsIStreamListener>();
   }
   mLoadingDocTable->Put(aURL, aListener);
 
   return NS_OK;
 }
 
-nsIStreamListener*
-nsBindingManager::GetLoadingDocListener(nsIURI* aURL)
-{
-  if (!mLoadingDocTable)
-    return nullptr;
+nsIStreamListener* nsBindingManager::GetLoadingDocListener(nsIURI* aURL) {
+  if (!mLoadingDocTable) return nullptr;
 
   return mLoadingDocTable->GetWeak(aURL);
 }
 
-void
-nsBindingManager::RemoveLoadingDocListener(nsIURI* aURL)
-{
+void nsBindingManager::RemoveLoadingDocListener(nsIURI* aURL) {
   if (mLoadingDocTable) {
     mLoadingDocTable->Remove(aURL);
   }
 }
 
-void
-nsBindingManager::FlushSkinBindings()
-{
+void nsBindingManager::FlushSkinBindings() {
   if (!mBoundContentSet) {
     return;
   }
@@ -539,7 +484,7 @@ nsBindingManager::FlushSkinBindings()
     }
 
     nsAutoCString path;
-    binding->PrototypeBinding()->DocURI()->GetPath(path);
+    binding->PrototypeBinding()->DocURI()->GetPathQueryRef(path);
 
     if (!strncmp(path.get(), "/skin", 5)) {
       binding->MarkForDeath();
@@ -553,21 +498,20 @@ struct AntiRecursionData {
   REFNSIID iid;
   AntiRecursionData* next;
 
-  AntiRecursionData(nsIContent* aElement,
-                    REFNSIID aIID,
+  AntiRecursionData(nsIContent* aElement, REFNSIID aIID,
                     AntiRecursionData* aNext)
-    : element(aElement), iid(aIID), next(aNext) {}
+      : element(aElement), iid(aIID), next(aNext) {}
 };
 
-nsresult
-nsBindingManager::GetBindingImplementation(nsIContent* aContent, REFNSIID aIID,
-                                           void** aResult)
-{
+nsresult nsBindingManager::GetBindingImplementation(nsIContent* aContent,
+                                                    REFNSIID aIID,
+                                                    void** aResult) {
   *aResult = nullptr;
-  nsXBLBinding *binding = aContent ? aContent->GetXBLBinding() : nullptr;
+  nsXBLBinding* binding = aContent ? aContent->GetXBLBinding() : nullptr;
   if (binding) {
     // The binding should not be asked for nsISupports
-    NS_ASSERTION(!aIID.Equals(NS_GET_IID(nsISupports)), "Asking a binding for nsISupports");
+    NS_ASSERTION(!aIID.Equals(NS_GET_IID(nsISupports)),
+                 "Asking a binding for nsISupports");
     if (binding->ImplementsInterface(aIID)) {
       nsCOMPtr<nsIXPConnectWrappedJS> wrappedJS = GetWrappedJS(aContent);
 
@@ -606,8 +550,7 @@ nsBindingManager::GetBindingImplementation(nsIContent* aContent, REFNSIID aIID,
 
         list = item.next;
 
-        if (*aResult)
-          return rv;
+        if (*aResult) return rv;
 
         // No result was found, so this must be another XBL interface.
         // Fall through to create a new wrapper.
@@ -619,7 +562,7 @@ nsBindingManager::GetBindingImplementation(nsIContent* aContent, REFNSIID aIID,
       jsapi.Init();
       JSContext* cx = jsapi.cx();
 
-      nsIXPConnect *xpConnect = nsContentUtils::XPConnect();
+      nsIXPConnect* xpConnect = nsContentUtils::XPConnect();
 
       JS::Rooted<JSObject*> jsobj(cx, aContent->GetWrapper());
       NS_ENSURE_TRUE(jsobj, NS_NOINTERFACE);
@@ -634,19 +577,19 @@ nsBindingManager::GetBindingImplementation(nsIContent* aContent, REFNSIID aIID,
       // the XBL scope, we'll end up with the global of the reflector.
       JS::Rooted<JSObject*> xblScope(cx, xpc::GetXBLScopeOrGlobal(cx, jsobj));
       NS_ENSURE_TRUE(xblScope, NS_ERROR_UNEXPECTED);
-      JSAutoCompartment ac(cx, xblScope);
+      JSAutoRealm ar(cx, xblScope);
       bool ok = JS_WrapObject(cx, &jsobj);
       NS_ENSURE_TRUE(ok, NS_ERROR_OUT_OF_MEMORY);
       MOZ_ASSERT_IF(js::IsWrapper(jsobj), xpc::IsXrayWrapper(jsobj));
 
-      nsresult rv = xpConnect->WrapJSAggregatedToNative(aContent, cx,
-                                                        jsobj, aIID, aResult);
-      if (NS_FAILED(rv))
-        return rv;
+      nsresult rv = xpConnect->WrapJSAggregatedToNative(aContent, cx, jsobj,
+                                                        aIID, aResult);
+      if (NS_FAILED(rv)) return rv;
 
-      // We successfully created a wrapper.  We will own this wrapper for as long as the binding remains
-      // alive.  At the time the binding is cleared out of the bindingManager, we will remove the wrapper
-      // from the bindingManager as well.
+      // We successfully created a wrapper.  We will own this wrapper for as
+      // long as the binding remains alive.  At the time the binding is cleared
+      // out of the bindingManager, we will remove the wrapper from the
+      // bindingManager as well.
       nsISupports* supp = static_cast<nsISupports*>(*aResult);
       wrappedJS = do_QueryInterface(supp);
       SetWrappedJS(aContent, wrappedJS);
@@ -659,140 +602,42 @@ nsBindingManager::GetBindingImplementation(nsIContent* aContent, REFNSIID aIID,
   return NS_NOINTERFACE;
 }
 
-nsresult
-nsBindingManager::WalkRules(nsIStyleRuleProcessor::EnumFunc aFunc,
-                            ElementDependentRuleProcessorData* aData,
-                            bool* aCutOffInheritance)
-{
-  *aCutOffInheritance = false;
-
-  NS_ASSERTION(aData->mElement, "How did that happen?");
-
-  // Walk the binding scope chain, starting with the binding attached to our
-  // content, up till we run out of scopes or we get cut off.
-  nsIContent *content = aData->mElement;
-
-  do {
-    nsXBLBinding *binding = content->GetXBLBinding();
-    if (binding) {
-      aData->mTreeMatchContext.mScopedRoot = content;
-      binding->WalkRules(aFunc, aData);
-      // If we're not looking at our original content, allow the binding to cut
-      // off style inheritance
-      if (content != aData->mElement) {
-        if (!binding->InheritsStyle()) {
-          // Go no further; we're not inheriting style from anything above here
-          break;
-        }
-      }
-    }
-
-    if (content->IsRootOfNativeAnonymousSubtree()) {
-      break; // Deliberately cut off style inheritance here.
-    }
-
-    content = content->GetBindingParent();
-  } while (content);
-
-  // If "content" is non-null that means we cut off inheritance at some point
-  // in the loop.
-  *aCutOffInheritance = (content != nullptr);
-
-  // Null out the scoped root that we set repeatedly
-  aData->mTreeMatchContext.mScopedRoot = nullptr;
-
-  return NS_OK;
-}
-
-typedef nsTHashtable<nsPtrHashKey<nsIStyleRuleProcessor> > RuleProcessorSet;
-
-static RuleProcessorSet*
-GetContentSetRuleProcessors(nsTHashtable<nsRefPtrHashKey<nsIContent>>* aContentSet)
-{
-  RuleProcessorSet* set = nullptr;
-
-  for (auto iter = aContentSet->Iter(); !iter.Done(); iter.Next()) {
-    nsIContent* boundContent = iter.Get()->GetKey();
-    for (nsXBLBinding* binding = boundContent->GetXBLBinding(); binding;
-         binding = binding->GetBaseBinding()) {
-      nsIStyleRuleProcessor* ruleProc =
-        binding->PrototypeBinding()->GetRuleProcessor();
-      if (ruleProc) {
-        if (!set) {
-          set = new RuleProcessorSet;
-        }
-        set->PutEntry(ruleProc);
-      }
-    }
-  }
-
-  return set;
-}
-
-void
-nsBindingManager::WalkAllRules(nsIStyleRuleProcessor::EnumFunc aFunc,
-                               ElementDependentRuleProcessorData* aData)
-{
+bool nsBindingManager::EnumerateBoundContentProtoBindings(
+    const BoundContentProtoBindingCallback& aCallback) const {
   if (!mBoundContentSet) {
-    return;
+    return true;
   }
 
-  nsAutoPtr<RuleProcessorSet> set;
-  set = GetContentSetRuleProcessors(mBoundContentSet);
-  if (!set) {
-    return;
-  }
-
-  for (auto iter = set->Iter(); !iter.Done(); iter.Next()) {
-    nsIStyleRuleProcessor* ruleProcessor = iter.Get()->GetKey();
-    (*(aFunc))(ruleProcessor, aData);
-  }
-}
-
-nsresult
-nsBindingManager::MediumFeaturesChanged(nsPresContext* aPresContext,
-                                        bool* aRulesChanged)
-{
-  *aRulesChanged = false;
-  if (!mBoundContentSet) {
-    return NS_OK;
-  }
-
-  nsAutoPtr<RuleProcessorSet> set;
-  set = GetContentSetRuleProcessors(mBoundContentSet);
-  if (!set) {
-    return NS_OK;
-  }
-
-  for (auto iter = set->Iter(); !iter.Done(); iter.Next()) {
-    nsIStyleRuleProcessor* ruleProcessor = iter.Get()->GetKey();
-    bool thisChanged = ruleProcessor->MediumFeaturesChanged(aPresContext);
-    *aRulesChanged = *aRulesChanged || thisChanged;
-  }
-
-  return NS_OK;
-}
-
-void
-nsBindingManager::AppendAllSheets(nsTArray<StyleSheet*>& aArray)
-{
-  if (!mBoundContentSet) {
-    return;
-  }
-
+  nsTHashtable<nsPtrHashKey<nsXBLPrototypeBinding>> bindings;
   for (auto iter = mBoundContentSet->Iter(); !iter.Done(); iter.Next()) {
     nsIContent* boundContent = iter.Get()->GetKey();
     for (nsXBLBinding* binding = boundContent->GetXBLBinding(); binding;
          binding = binding->GetBaseBinding()) {
-      binding->PrototypeBinding()->AppendStyleSheetsTo(aArray);
+      nsXBLPrototypeBinding* proto = binding->PrototypeBinding();
+      // If we have already invoked the callback with a binding, we
+      // should have also invoked it for all its base bindings, so we
+      // don't need to continue this loop anymore.
+      if (!bindings.EnsureInserted(proto)) {
+        break;
+      }
+      if (!aCallback(proto)) {
+        return false;
+      }
     }
   }
+
+  return true;
 }
 
-static void
-InsertAppendedContent(XBLChildrenElement* aPoint,
-                      nsIContent* aFirstNewContent)
-{
+void nsBindingManager::AppendAllSheets(nsTArray<StyleSheet*>& aArray) {
+  EnumerateBoundContentProtoBindings([&aArray](nsXBLPrototypeBinding* aProto) {
+    aProto->AppendStyleSheetsTo(aArray);
+    return true;
+  });
+}
+
+static void InsertAppendedContent(XBLChildrenElement* aPoint,
+                                  nsIContent* aFirstNewContent) {
   int32_t insertionIndex;
   if (nsIContent* prevSibling = aFirstNewContent->GetPreviousSibling()) {
     // If we have a previous sibling, then it must already be in aPoint. Find
@@ -810,26 +655,17 @@ InsertAppendedContent(XBLChildrenElement* aPoint,
   }
 
   // Do the inserting.
-  for (nsIContent* currentChild = aFirstNewContent;
-       currentChild;
+  for (nsIContent* currentChild = aFirstNewContent; currentChild;
        currentChild = currentChild->GetNextSibling()) {
     aPoint->InsertInsertedChildAt(currentChild, insertionIndex++);
   }
 }
 
-void
-nsBindingManager::ContentAppended(nsIDocument* aDocument,
-                                  nsIContent* aContainer,
-                                  nsIContent* aFirstNewContent,
-                                  int32_t     aNewIndexInContainer)
-{
-  if (aNewIndexInContainer == -1) {
-    return;
-  }
-
+void nsBindingManager::ContentAppended(nsIContent* aFirstNewContent) {
   // Try to find insertion points for all the new kids.
   XBLChildrenElement* point = nullptr;
-  nsIContent* parent = aContainer;
+  nsIContent* container = aFirstNewContent->GetParent();
+  nsIContent* parent = container;
 
   // Handle appending of default content.
   if (parent && parent->IsActiveChildrenElement()) {
@@ -856,11 +692,9 @@ nsBindingManager::ContentAppended(nsIDocument* aDocument,
       // We could optimize this in the case when we've nested a few levels
       // deep already, without hitting bindings that have filtered insertion
       // points.
-      int32_t currentIndex = aNewIndexInContainer;
       for (nsIContent* currentChild = aFirstNewContent; currentChild;
            currentChild = currentChild->GetNextSibling()) {
-        HandleChildInsertion(aContainer, currentChild,
-                             currentIndex++, true);
+        HandleChildInsertion(container, currentChild, true);
       }
 
       return;
@@ -878,7 +712,7 @@ nsBindingManager::ContentAppended(nsIDocument* aDocument,
       first = false;
       for (nsIContent* child = aFirstNewContent; child;
            child = child->GetNextSibling()) {
-        point->AppendInsertedChild(child);
+        point->AppendInsertedChild(child, true);
       }
     } else {
       InsertAppendedContent(point, aFirstNewContent);
@@ -892,30 +726,16 @@ nsBindingManager::ContentAppended(nsIDocument* aDocument,
   } while (parent);
 }
 
-void
-nsBindingManager::ContentInserted(nsIDocument* aDocument,
-                                  nsIContent* aContainer,
-                                  nsIContent* aChild,
-                                  int32_t aIndexInContainer)
-{
-  if (aIndexInContainer == -1) {
-    return;
-  }
-
-  HandleChildInsertion(aContainer, aChild, aIndexInContainer, false);
+void nsBindingManager::ContentInserted(nsIContent* aChild) {
+  HandleChildInsertion(aChild->GetParent(), aChild, false);
 }
 
-void
-nsBindingManager::ContentRemoved(nsIDocument* aDocument,
-                                 nsIContent* aContainer,
-                                 nsIContent* aChild,
-                                 int32_t aIndexInContainer,
-                                 nsIContent* aPreviousSibling)
-{
-  aChild->SetXBLInsertionParent(nullptr);
+void nsBindingManager::ContentRemoved(nsIContent* aChild,
+                                      nsIContent* aPreviousSibling) {
+  aChild->SetXBLInsertionPoint(nullptr);
 
   XBLChildrenElement* point = nullptr;
-  nsIContent* parent = aContainer;
+  nsIContent* parent = aChild->GetParent();
 
   // Handle appending of default content.
   if (parent && parent->IsActiveChildrenElement()) {
@@ -959,9 +779,7 @@ nsBindingManager::ContentRemoved(nsIDocument* aDocument,
   } while (parent);
 }
 
-void
-nsBindingManager::ClearInsertionPointsRecursively(nsIContent* aContent)
-{
+void nsBindingManager::ClearInsertionPointsRecursively(nsIContent* aContent) {
   if (aContent->NodeInfo()->Equals(nsGkAtoms::children, kNameSpaceID_XBL)) {
     static_cast<XBLChildrenElement*>(aContent)->ClearInsertedChildren();
   }
@@ -972,9 +790,7 @@ nsBindingManager::ClearInsertionPointsRecursively(nsIContent* aContent)
   }
 }
 
-void
-nsBindingManager::DropDocumentReference()
-{
+void nsBindingManager::DropDocumentReference() {
   mDestroyed = true;
 
   // Make sure to not run any more XBL constructors
@@ -990,10 +806,8 @@ nsBindingManager::DropDocumentReference()
   mDocument = nullptr;
 }
 
-void
-nsBindingManager::Traverse(nsIContent *aContent,
-                           nsCycleCollectionTraversalCallback &cb)
-{
+void nsBindingManager::Traverse(nsIContent* aContent,
+                                nsCycleCollectionTraversalCallback& cb) {
   if (!aContent->HasFlag(NODE_MAY_BE_IN_BINDING_MNGR) ||
       !aContent->IsElement()) {
     // Don't traverse if content is not in this binding manager.
@@ -1005,29 +819,25 @@ nsBindingManager::Traverse(nsIContent *aContent,
   }
 
   if (mBoundContentSet && mBoundContentSet->Contains(aContent)) {
-    NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "[via binding manager] mBoundContentSet entry");
+    NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(
+        cb, "[via binding manager] mBoundContentSet entry");
     cb.NoteXPCOMChild(aContent);
   }
 
-  nsIXPConnectWrappedJS *value = GetWrappedJS(aContent);
+  nsIXPConnectWrappedJS* value = GetWrappedJS(aContent);
   if (value) {
-    NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "[via binding manager] mWrapperTable key");
+    NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(
+        cb, "[via binding manager] mWrapperTable key");
     cb.NoteXPCOMChild(aContent);
-    NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "[via binding manager] mWrapperTable value");
+    NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(
+        cb, "[via binding manager] mWrapperTable value");
     cb.NoteXPCOMChild(value);
   }
 }
 
-void
-nsBindingManager::HandleChildInsertion(nsIContent* aContainer,
-                                       nsIContent* aChild,
-                                       uint32_t aIndexInContainer,
-                                       bool aAppend)
-{
-  NS_PRECONDITION(aChild, "Must have child");
-  NS_PRECONDITION(!aContainer ||
-                  uint32_t(aContainer->IndexOf(aChild)) == aIndexInContainer,
-                  "Child not at the right index?");
+void nsBindingManager::HandleChildInsertion(nsIContent* aContainer,
+                                            nsIContent* aChild, bool aAppend) {
+  MOZ_ASSERT(aChild, "Must have child");
 
   XBLChildrenElement* point = nullptr;
   nsIContent* parent = aContainer;
@@ -1084,60 +894,19 @@ nsBindingManager::HandleChildInsertion(nsIContent* aContainer,
   }
 }
 
-
-nsIContent*
-nsBindingManager::FindNestedInsertionPoint(nsIContent* aContainer,
-                                           nsIContent* aChild)
-{
-  NS_PRECONDITION(aChild->GetParent() == aContainer,
-                  "Wrong container");
+nsIContent* nsBindingManager::FindNestedSingleInsertionPoint(
+    nsIContent* aContainer, bool* aMulti) {
+  *aMulti = false;
 
   nsIContent* parent = aContainer;
   if (aContainer->IsActiveChildrenElement()) {
-    if (static_cast<XBLChildrenElement*>(aContainer)->
-          HasInsertedChildren()) {
+    if (static_cast<XBLChildrenElement*>(aContainer)->HasInsertedChildren()) {
       return nullptr;
     }
     parent = aContainer->GetParent();
   }
 
   while (parent) {
-    nsXBLBinding* binding = GetBindingWithContent(parent);
-    if (!binding) {
-      break;
-    }
-
-    XBLChildrenElement* point = binding->FindInsertionPointFor(aChild);
-    if (!point) {
-      return nullptr;
-    }
-
-    nsIContent* newParent = point->GetParent();
-    if (newParent == parent) {
-      break;
-    }
-    parent = newParent;
-  }
-
-  return parent;
-}
-
-nsIContent*
-nsBindingManager::FindNestedSingleInsertionPoint(nsIContent* aContainer,
-                                                 bool* aMulti)
-{
-  *aMulti = false;
-
-  nsIContent* parent = aContainer;
-  if (aContainer->IsActiveChildrenElement()) {
-    if (static_cast<XBLChildrenElement*>(aContainer)->
-          HasInsertedChildren()) {
-      return nullptr;
-    }
-    parent = aContainer->GetParent();
-  }
-
-  while(parent) {
     nsXBLBinding* binding = GetBindingWithContent(parent);
     if (!binding) {
       break;
@@ -1161,4 +930,37 @@ nsBindingManager::FindNestedSingleInsertionPoint(nsIContent* aContainer,
   }
 
   return parent;
+}
+
+size_t nsBindingManager::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const {
+  size_t n = aMallocSizeOf(this);
+
+#define SHALLOW_SIZE_INCLUDING(field_) \
+  n += field_ ? field_->ShallowSizeOfIncludingThis(aMallocSizeOf) : 0;
+  SHALLOW_SIZE_INCLUDING(mBoundContentSet);
+  SHALLOW_SIZE_INCLUDING(mWrapperTable);
+  SHALLOW_SIZE_INCLUDING(mLoadingDocTable);
+#undef SHALLOW_SIZE_INCLUDING
+  n += mAttachedStack.ShallowSizeOfExcludingThis(aMallocSizeOf);
+
+  if (mDocumentTable) {
+    n += mDocumentTable->ShallowSizeOfIncludingThis(aMallocSizeOf);
+#ifdef MOZ_XUL
+    nsXULPrototypeCache* cache = nsXULPrototypeCache::GetInstance();
+#endif
+    for (auto iter = mDocumentTable->Iter(); !iter.Done(); iter.Next()) {
+      nsXBLDocumentInfo* docInfo = iter.UserData();
+#ifdef MOZ_XUL
+      nsXBLDocumentInfo* cachedInfo = cache->GetXBLDocumentInfo(iter.Key());
+      if (cachedInfo == docInfo) {
+        // If this binding has been cached, skip it since it can be
+        // reused by other documents.
+        continue;
+      }
+#endif
+      n += docInfo->SizeOfIncludingThis(aMallocSizeOf);
+    }
+  }
+
+  return n;
 }

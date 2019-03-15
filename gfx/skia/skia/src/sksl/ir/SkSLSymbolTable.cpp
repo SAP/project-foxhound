@@ -21,7 +21,7 @@ std::vector<const FunctionDeclaration*> SymbolTable::GetFunctions(const Symbol& 
     }
 }
 
-const Symbol* SymbolTable::operator[](const std::string& name) {
+const Symbol* SymbolTable::operator[](StringFragment name) {
     const auto& entry = fSymbols.find(name);
     if (entry == fSymbols.end()) {
         if (fParent) {
@@ -50,7 +50,7 @@ const Symbol* SymbolTable::operator[](const std::string& name) {
                     }
                 }
                 if (modified) {
-                    ASSERT(functions.size() > 1);
+                    SkASSERT(functions.size() > 1);
                     return this->takeOwnership(new UnresolvedFunction(functions));
                 }
             }
@@ -60,16 +60,21 @@ const Symbol* SymbolTable::operator[](const std::string& name) {
 }
 
 Symbol* SymbolTable::takeOwnership(Symbol* s) {
-    fOwnedPointers.push_back(std::unique_ptr<Symbol>(s));
+    fOwnedSymbols.emplace_back(s);
     return s;
 }
 
-void SymbolTable::add(const std::string& name, std::unique_ptr<Symbol> symbol) {
-    this->addWithoutOwnership(name, symbol.get());
-    fOwnedPointers.push_back(std::move(symbol));
+IRNode* SymbolTable::takeOwnership(IRNode* n) {
+    fOwnedNodes.emplace_back(n);
+    return n;
 }
 
-void SymbolTable::addWithoutOwnership(const std::string& name, const Symbol* symbol) {
+void SymbolTable::add(StringFragment name, std::unique_ptr<Symbol> symbol) {
+    this->addWithoutOwnership(name, symbol.get());
+    this->takeOwnership(symbol.release());
+}
+
+void SymbolTable::addWithoutOwnership(StringFragment name, const Symbol* symbol) {
     const auto& existing = fSymbols.find(name);
     if (existing == fSymbols.end()) {
         fSymbols[name] = symbol;
@@ -93,8 +98,35 @@ void SymbolTable::addWithoutOwnership(const std::string& name, const Symbol* sym
             this->takeOwnership(u);
         }
     } else {
-        fErrorReporter.error(symbol->fPosition, "symbol '" + name + "' was already defined");
+        fErrorReporter.error(symbol->fOffset, "symbol '" + name + "' was already defined");
     }
 }
+
+
+void SymbolTable::markAllFunctionsBuiltin() {
+    for (const auto& pair : fSymbols) {
+        switch (pair.second->fKind) {
+            case Symbol::kFunctionDeclaration_Kind:
+                ((FunctionDeclaration&) *pair.second).fBuiltin = true;
+                break;
+            case Symbol::kUnresolvedFunction_Kind:
+                for (auto& f : ((UnresolvedFunction&) *pair.second).fFunctions) {
+                    ((FunctionDeclaration*) f)->fBuiltin = true;
+                }
+                break;
+            default:
+                break;
+        }
+    }
+}
+
+std::unordered_map<StringFragment, const Symbol*>::iterator SymbolTable::begin() {
+    return fSymbols.begin();
+}
+
+std::unordered_map<StringFragment, const Symbol*>::iterator SymbolTable::end() {
+    return fSymbols.end();
+}
+
 
 } // namespace

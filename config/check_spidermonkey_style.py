@@ -3,7 +3,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-#----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # This script checks various aspects of SpiderMonkey code style.  The current checks are as
 # follows.
 #
@@ -33,7 +33,7 @@
 #   statement should go, even to a human.  Therefore, we check the #include
 #   statements within each #if/#endif block (including nested ones) in
 #   isolation, but don't try to do any order checking between such blocks.
-#----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 from __future__ import print_function
 
@@ -42,18 +42,15 @@ import os
 import re
 import sys
 
-from mozversioncontrol import get_repository_from_env
-
-
 # We don't bother checking files in these directories, because they're (a) auxiliary or (b)
 # imported code that doesn't follow our coding style.
 ignored_js_src_dirs = [
-   'js/src/config/',            # auxiliary stuff
-   'js/src/ctypes/libffi/',     # imported code
-   'js/src/devtools/',          # auxiliary stuff
-   'js/src/editline/',          # imported code
-   'js/src/gdb/',               # auxiliary stuff
-   'js/src/vtune/'              # imported code
+    'js/src/config/',            # auxiliary stuff
+    'js/src/ctypes/libffi/',     # imported code
+    'js/src/devtools/',          # auxiliary stuff
+    'js/src/editline/',          # imported code
+    'js/src/gdb/',               # auxiliary stuff
+    'js/src/vtune/'              # imported code
 ]
 
 # We ignore #includes of these files, because they don't follow the usual rules.
@@ -61,12 +58,19 @@ included_inclnames_to_ignore = set([
     'ffi.h',                    # generated in ctypes/libffi/
     'devtools/sharkctl.h',      # we ignore devtools/ in general
     'devtools/Instruments.h',   # we ignore devtools/ in general
-    'double-conversion.h',      # strange MFBT case
+    'double-conversion/double-conversion.h',  # strange MFBT case
     'javascript-trace.h',       # generated in $OBJDIR if HAVE_DTRACE is defined
-    'frontend/ReservedWordsGenerated.h', # generated in $OBJDIR
+    'frontend/ReservedWordsGenerated.h',  # generated in $OBJDIR
+    'gc/StatsPhasesGenerated.h',         # generated in $OBJDIR
+    'gc/StatsPhasesGenerated.cpp',       # generated in $OBJDIR
+    'jit/LOpcodes.h',           # generated in $OBJDIR
+    'jit/MOpcodes.h',           # generated in $OBJDIR
     'jscustomallocator.h',      # provided by embedders;  allowed to be missing
     'js-config.h',              # generated in $OBJDIR
     'fdlibm.h',                 # fdlibm
+    'FuzzerDefs.h',             # included without a path
+    'FuzzingInterface.h',       # included without a path
+    'mozmemory.h',              # included without a path
     'pratom.h',                 # NSPR
     'prcvar.h',                 # NSPR
     'prerror.h',                # NSPR
@@ -80,21 +84,28 @@ included_inclnames_to_ignore = set([
     'prtypes.h',                # NSPR
     'selfhosted.out.h',         # generated in $OBJDIR
     'shellmoduleloader.out.h',  # generated in $OBJDIR
-    'unicode/timezone.h',       # ICU
+    'unicode/basictz.h',        # ICU
+    'unicode/locid.h',          # ICU
     'unicode/plurrule.h',       # ICU
+    'unicode/timezone.h',       # ICU
     'unicode/ucal.h',           # ICU
+    'unicode/uchar.h',          # ICU
     'unicode/uclean.h',         # ICU
     'unicode/ucol.h',           # ICU
     'unicode/udat.h',           # ICU
     'unicode/udatpg.h',         # ICU
+    'unicode/udisplaycontext.h',  # ICU
     'unicode/uenum.h',          # ICU
     'unicode/uloc.h',           # ICU
+    'unicode/unistr.h',         # ICU
     'unicode/unorm2.h',         # ICU
     'unicode/unum.h',           # ICU
     'unicode/unumsys.h',        # ICU
     'unicode/upluralrules.h',   # ICU
+    'unicode/ureldatefmt.h',    # ICU
     'unicode/ustring.h',        # ICU
     'unicode/utypes.h',         # ICU
+    'unicode/uversion.h',       # ICU
     'vtune/VTuneWrapper.h'      # VTune
 ])
 
@@ -102,8 +113,11 @@ included_inclnames_to_ignore = set([
 # ignore #includes of them when checking #include ordering.
 oddly_ordered_inclnames = set([
     'ctypes/typedefs.h',        # Included multiple times in the body of ctypes/CTypes.h
-    'frontend/ReservedWordsGenerated.h', # Included in the body of frontend/TokenStream.h
-    'jswin.h',                  # Must be #included before <psapi.h>
+    # Included in the body of frontend/TokenStream.h
+    'frontend/ReservedWordsGenerated.h',
+    'gc/StatsPhasesGenerated.h',         # Included in the body of gc/Statistics.h
+    'gc/StatsPhasesGenerated.cpp',       # Included in the body of gc/Statistics.cpp
+    'psapi.h',                  # Must be included after "util/Windows.h" on Windows
     'machine/endian.h',         # Must be included after <sys/types.h> on BSD
     'winbase.h',                # Must precede other system headers(?)
     'windef.h'                  # Must precede other system headers(?)
@@ -118,9 +132,6 @@ oddly_ordered_inclnames = set([
 # - This script has been broken somehow.
 #
 expected_output = '''\
-js/src/tests/style/BadIncludes2.h:1: error:
-    vanilla header includes an inline-header file "tests/style/BadIncludes2-inl.h"
-
 js/src/tests/style/BadIncludes.h:3: error:
     the file includes itself
 
@@ -136,11 +147,14 @@ js/src/tests/style/BadIncludes.h:10: error:
     "stdio.h" is included using the wrong path;
     did you forget a prefix, or is the file not yet committed?
 
+js/src/tests/style/BadIncludes2.h:1: error:
+    vanilla header includes an inline-header file "tests/style/BadIncludes2-inl.h"
+
 js/src/tests/style/BadIncludesOrder-inl.h:5:6: error:
-    "vm/Interpreter-inl.h" should be included after "jsscriptinlines.h"
+    "vm/JSScript-inl.h" should be included after "vm/Interpreter-inl.h"
 
 js/src/tests/style/BadIncludesOrder-inl.h:6:7: error:
-    "jsscriptinlines.h" should be included after "js/Value.h"
+    "vm/Interpreter-inl.h" should be included after "js/Value.h"
 
 js/src/tests/style/BadIncludesOrder-inl.h:7:8: error:
     "js/Value.h" should be included after "ds/LifoAlloc.h"
@@ -154,8 +168,8 @@ js/src/tests/style/BadIncludesOrder-inl.h:9:10: error:
 js/src/tests/style/BadIncludesOrder-inl.h:10:11: error:
     <stdio.h> should be included after "mozilla/HashFunctions.h"
 
-js/src/tests/style/BadIncludesOrder-inl.h:27:28: error:
-    "jsobj.h" should be included after "jsfun.h"
+js/src/tests/style/BadIncludesOrder-inl.h:28:29: error:
+    "vm/JSScript.h" should be included after "vm/JSFunction.h"
 
 (multiple files): error:
     header files form one or more cycles
@@ -225,7 +239,7 @@ class FileKind(object):
         error(filename, None, 'unknown file kind')
 
 
-def check_style():
+def check_style(enable_fixup):
     # We deal with two kinds of name.
     # - A "filename" is a full path to a file from the repository root.
     # - An "inclname" is how a file is referred to in a #include statement.
@@ -244,24 +258,42 @@ def check_style():
     non_js_inclnames = set()        # type: set(inclname)
     js_names = dict()               # type: dict(filename, inclname)
 
-    repo = get_repository_from_env()
+    # Process files in js/src.
+    js_src_root = os.path.join('js', 'src')
+    for dirpath, dirnames, filenames in os.walk(js_src_root):
+        if dirpath == js_src_root:
+            # Skip any subdirectories that contain a config.status file
+            # (likely objdirs).
+            builddirs = []
+            for dirname in dirnames:
+                path = os.path.join(dirpath, dirname, 'config.status')
+                if os.path.isfile(path):
+                    builddirs.append(dirname)
+            for dirname in builddirs:
+                dirnames.remove(dirname)
+        for filename in filenames:
+            filepath = os.path.join(dirpath, filename).replace('\\', '/')
+            if not filepath.startswith(tuple(ignored_js_src_dirs)) and \
+               filepath.endswith(('.c', '.cpp', '.h', '.tbl', '.msg')):
+                inclname = filepath[len('js/src/'):]
+                js_names[filepath] = inclname
 
-    # Select the appropriate files.
-    for filename in repo.get_files_in_working_directory():
-        for non_js_dir in non_js_dirnames:
-            if filename.startswith(non_js_dir) and filename.endswith('.h'):
-                inclname = 'mozilla/' + filename.split('/')[-1]
-                non_js_inclnames.add(inclname)
+    # Look for header files in directories in non_js_dirnames.
+    for non_js_dir in non_js_dirnames:
+        for dirpath, dirnames, filenames in os.walk(non_js_dir):
+            for filename in filenames:
+                if filename.endswith('.h'):
+                    inclname = 'mozilla/' + filename
+                    non_js_inclnames.add(inclname)
 
-        if filename.startswith('js/public/') and filename.endswith('.h'):
-            inclname = 'js/' + filename[len('js/public/'):]
-            js_names[filename] = inclname
-
-        if filename.startswith('js/src/') and \
-           not filename.startswith(tuple(ignored_js_src_dirs)) and \
-           filename.endswith(('.c', '.cpp', '.h', '.tbl', '.msg')):
-            inclname = filename[len('js/src/'):]
-            js_names[filename] = inclname
+    # Look for header files in js/public.
+    js_public_root = os.path.join('js', 'public')
+    for dirpath, dirnames, filenames in os.walk(js_public_root):
+        for filename in filenames:
+            if filename.endswith('.h'):
+                filepath = os.path.join(dirpath, filename).replace('\\', '/')
+                inclname = 'js/' + filepath[len('js/public/'):]
+                js_names[filepath] = inclname
 
     all_inclnames = non_js_inclnames | set(js_names.values())
 
@@ -273,17 +305,23 @@ def check_style():
         edges[inclname] = set()
 
     # Process all the JS files.
-    for filename in js_names.keys():
+    for filename in sorted(js_names.keys()):
         inclname = js_names[filename]
         file_kind = FileKind.get(filename)
         if file_kind == FileKind.C or file_kind == FileKind.CPP or \
            file_kind == FileKind.H or file_kind == FileKind.INL_H:
             included_h_inclnames = set()    # type: set(inclname)
 
-            # This script is run in js/src/, so prepend '../../' to get to the root of the Mozilla
-            # source tree.
-            with open(os.path.join(repo.path, filename)) as f:
-                do_file(filename, inclname, file_kind, f, all_inclnames, included_h_inclnames)
+            with open(filename) as f:
+                code = read_file(f)
+
+            if enable_fixup:
+                code = code.sorted(inclname)
+                with open(filename, 'w') as f:
+                    f.write(code.to_source())
+
+            check_file(filename, inclname, file_kind, code,
+                       all_inclnames, included_h_inclnames)
 
         edges[inclname] = included_h_inclnames
 
@@ -291,8 +329,8 @@ def check_style():
 
     # Compare expected and actual output.
     difflines = difflib.unified_diff(expected_output, actual_output,
-                                     fromfile='check_spider_monkey_style.py expected output',
-                                       tofile='check_spider_monkey_style.py actual output')
+                                     fromfile='check_spidermonkey_style.py expected output',
+                                     tofile='check_spidermonkey_style.py actual output')
     ok = True
     for diffline in difflines:
         ok = False
@@ -304,7 +342,7 @@ def check_style():
 def module_name(name):
     '''Strip the trailing .cpp, .h, inlines.h or -inl.h from a filename.'''
 
-    return name.replace('inlines.h', '').replace('-inl.h', '').replace('.h', '').replace('.cpp', '')
+    return name.replace('inlines.h', '').replace('-inl.h', '').replace('.h', '').replace('.cpp', '')  # NOQA: E501
 
 
 def is_module_header(enclosing_inclname, header_inclname):
@@ -328,12 +366,16 @@ def is_module_header(enclosing_inclname, header_inclname):
 class Include(object):
     '''Important information for a single #include statement.'''
 
-    def __init__(self, inclname, linenum, is_system):
+    def __init__(self, include_prefix, inclname, line_suffix, linenum, is_system):
+        self.include_prefix = include_prefix
+        self.line_suffix = line_suffix
         self.inclname = inclname
         self.linenum = linenum
         self.is_system = is_system
 
-    def isLeaf(self):
+    def is_style_relevant(self):
+        # Includes are style-relevant; that is, they're checked by the pairwise
+        # style-checking algorithm in check_file.
         return True
 
     def section(self, enclosing_inclname):
@@ -381,64 +423,206 @@ class Include(object):
         else:
             return '"' + self.inclname + '"'
 
+    def sort_key(self, enclosing_inclname):
+        return (self.section(enclosing_inclname), self.inclname.lower())
 
-class HashIfBlock(object):
-    '''Important information about a #if/#endif block.
+    def to_source(self):
+        return self.include_prefix + self.quote() + self.line_suffix + '\n'
+
+
+class CppBlock(object):
+    '''C preprocessor block: a whole file or a single #if/#elif/#else block.
 
     A #if/#endif block is the contents of a #if/#endif (or similar) section.
     The top-level block, which is not within a #if/#endif pair, is also
     considered a block.
 
-    Each leaf is either an Include (representing a #include), or another
-    nested HashIfBlock.'''
-    def __init__(self):
+    Each kid is either an Include (representing a #include), OrdinaryCode, or
+    a nested CppBlock.'''
+
+    def __init__(self, start_line=""):
+        self.start = start_line
+        self.end = ''
         self.kids = []
 
-    def isLeaf(self):
+    def is_style_relevant(self):
+        return True
+
+    def append_ordinary_line(self, line):
+        if len(self.kids) == 0 or not isinstance(self.kids[-1], OrdinaryCode):
+            self.kids.append(OrdinaryCode())
+        self.kids[-1].lines.append(line)
+
+    def style_relevant_kids(self):
+        """ Return a list of kids in this block that are style-relevant. """
+        return [kid for kid in self.kids if kid.is_style_relevant()]
+
+    def sorted(self, enclosing_inclname):
+        """Return a hopefully-sorted copy of this block. Implements --fixup.
+
+        When in doubt, this leaves the code unchanged.
+        """
+
+        def pretty_sorted_includes(includes):
+            """ Return a new list containing the given includes, in order,
+            with blank lines separating sections. """
+            keys = [inc.sort_key(enclosing_inclname) for inc in includes]
+            if sorted(keys) == keys:
+                return includes  # if nothing is out of order, don't touch anything
+
+            output = []
+            current_section = None
+            for (section, _), inc in sorted(zip(keys, includes)):
+                if current_section is not None and section != current_section:
+                    output.append(OrdinaryCode(["\n"]))  # blank line
+                output.append(inc)
+                current_section = section
+            return output
+
+        def should_try_to_sort(includes):
+            if 'tests/style/BadIncludes' in enclosing_inclname:
+                return False  # don't straighten the counterexample
+            if any(inc.inclname in oddly_ordered_inclnames for inc in includes):
+                return False  # don't sort batches containing odd includes
+            if includes == sorted(includes, key=lambda inc: inc.sort_key(enclosing_inclname)):
+                return False  # it's already sorted, avoid whitespace-only fixups
+            return True
+
+        # The content of the eventual output of this method.
+        output = []
+
+        # The current batch of includes to sort. This list only ever contains Include objects
+        # and whitespace OrdinaryCode objects.
+        batch = []
+
+        def flush_batch():
+            """Sort the contents of `batch` and move it to `output`."""
+
+            assert all(isinstance(item, Include)
+                       or (isinstance(item, OrdinaryCode) and "".join(item.lines).isspace())
+                       for item in batch)
+
+            # Here we throw away the blank lines.
+            # `pretty_sorted_includes` puts them back.
+            includes = []
+            last_include_index = -1
+            for i, item in enumerate(batch):
+                if isinstance(item, Include):
+                    includes.append(item)
+                    last_include_index = i
+            cutoff = last_include_index + 1
+
+            if should_try_to_sort(includes):
+                output.extend(pretty_sorted_includes(
+                    includes) + batch[cutoff:])
+            else:
+                output.extend(batch)
+            del batch[:]
+
+        for kid in self.kids:
+            if isinstance(kid, CppBlock):
+                flush_batch()
+                output.append(kid.sorted(enclosing_inclname))
+            elif isinstance(kid, Include):
+                batch.append(kid)
+            else:
+                assert isinstance(kid, OrdinaryCode)
+                if kid.to_source().isspace():
+                    batch.append(kid)
+                else:
+                    flush_batch()
+                    output.append(kid)
+        flush_batch()
+
+        result = CppBlock()
+        result.start = self.start
+        result.end = self.end
+        result.kids = output
+        return result
+
+    def to_source(self):
+        return self.start + ''.join(kid.to_source() for kid in self.kids) + self.end
+
+
+class OrdinaryCode(object):
+    ''' A list of lines of code that aren't #include/#if/#else/#endif lines. '''
+
+    def __init__(self, lines=None):
+        self.lines = lines if lines is not None else []
+
+    def is_style_relevant(self):
         return False
 
+    def to_source(self):
+        return ''.join(self.lines)
 
-def do_file(filename, inclname, file_kind, f, all_inclnames, included_h_inclnames):
-    block_stack = [HashIfBlock()]
 
-    # Extract the #include statements as a tree of IBlocks and IIncludes.
+# A "snippet" is one of:
+#
+# *   Include - representing an #include line
+# *   CppBlock - a whole file or #if/#elif/#else block; contains a list of snippets
+# *   OrdinaryCode - representing lines of non-#include-relevant code
+
+def read_file(f):
+    block_stack = [CppBlock()]
+
+    # Extract the #include statements as a tree of snippets.
     for linenum, line in enumerate(f, start=1):
-        # We're only interested in lines that contain a '#'.
-        if not '#' in line:
-            continue
+        if line.lstrip().startswith('#'):
+            # Look for a |#include "..."| line.
+            m = re.match(r'(\s*#\s*include\s+)"([^"]*)"(.*)', line)
+            if m is not None:
+                prefix, inclname, suffix = m.groups()
+                block_stack[-1].kids.append(Include(prefix,
+                                                    inclname, suffix, linenum, is_system=False))
+                continue
 
-        # Look for a |#include "..."| line.
-        m = re.match(r'\s*#\s*include\s+"([^"]*)"', line)
-        if m is not None:
-            block_stack[-1].kids.append(Include(m.group(1), linenum, False))
+            # Look for a |#include <...>| line.
+            m = re.match(r'(\s*#\s*include\s+)<([^>]*)>(.*)', line)
+            if m is not None:
+                prefix, inclname, suffix = m.groups()
+                block_stack[-1].kids.append(Include(prefix,
+                                                    inclname, suffix, linenum, is_system=True))
+                continue
 
-        # Look for a |#include <...>| line.
-        m = re.match(r'\s*#\s*include\s+<([^>]*)>', line)
-        if m is not None:
-            block_stack[-1].kids.append(Include(m.group(1), linenum, True))
+            # Look for a |#{if,ifdef,ifndef}| line.
+            m = re.match(r'\s*#\s*(if|ifdef|ifndef)\b', line)
+            if m is not None:
+                # Open a new block.
+                new_block = CppBlock(line)
+                block_stack[-1].kids.append(new_block)
+                block_stack.append(new_block)
+                continue
 
-        # Look for a |#{if,ifdef,ifndef}| line.
-        m = re.match(r'\s*#\s*(if|ifdef|ifndef)\b', line)
-        if m is not None:
-            # Open a new block.
-            new_block = HashIfBlock()
-            block_stack[-1].kids.append(new_block)
-            block_stack.append(new_block)
+            # Look for a |#{elif,else}| line.
+            m = re.match(r'\s*#\s*(elif|else)\b', line)
+            if m is not None:
+                # Close the current block, and open an adjacent one.
+                block_stack.pop()
+                new_block = CppBlock(line)
+                block_stack[-1].kids.append(new_block)
+                block_stack.append(new_block)
+                continue
 
-        # Look for a |#{elif,else}| line.
-        m = re.match(r'\s*#\s*(elif|else)\b', line)
-        if m is not None:
-            # Close the current block, and open an adjacent one.
-            block_stack.pop()
-            new_block = HashIfBlock()
-            block_stack[-1].kids.append(new_block)
-            block_stack.append(new_block)
+            # Look for a |#endif| line.
+            m = re.match(r'\s*#\s*endif\b', line)
+            if m is not None:
+                # Close the current block.
+                block_stack.pop().end = line
+                if len(block_stack) == 0:
+                    raise ValueError(
+                        "#endif without #if at line " + str(linenum))
+                continue
 
-        # Look for a |#endif| line.
-        m = re.match(r'\s*#\s*endif\b', line)
-        if m is not None:
-            # Close the current block.
-            block_stack.pop()
+        # Otherwise, we have an ordinary line.
+        block_stack[-1].append_ordinary_line(line)
+
+    if len(block_stack) > 1:
+        raise ValueError("unmatched #if")
+    return block_stack[-1]
+
+
+def check_file(filename, inclname, file_kind, code, all_inclnames, included_h_inclnames):
 
     def check_include_statement(include):
         '''Check the style of a single #include statement.'''
@@ -474,7 +658,8 @@ def do_file(filename, inclname, file_kind, f, all_inclnames, included_h_inclname
                 # Check a file doesn't #include itself.  (We do this here because the cycle
                 # detection below doesn't detect this case.)
                 if inclname == include.inclname:
-                    error(filename, include.linenum, 'the file includes itself')
+                    error(filename, include.linenum,
+                          'the file includes itself')
 
     def check_includes_order(include1, include2):
         '''Check the ordering of two #include statements.'''
@@ -493,15 +678,16 @@ def do_file(filename, inclname, file_kind, f, all_inclnames, included_h_inclname
     # Check the extracted #include statements, both individually, and the ordering of
     # adjacent pairs that live in the same block.
     def pair_traverse(prev, this):
-        if this.isLeaf():
+        if isinstance(this, Include):
             check_include_statement(this)
-            if prev is not None and prev.isLeaf():
+            if isinstance(prev, Include):
                 check_includes_order(prev, this)
         else:
-            for prev2, this2 in zip([None] + this.kids[0:-1], this.kids):
+            kids = this.style_relevant_kids()
+            for prev2, this2 in zip([None] + kids[0:-1], kids):
                 pair_traverse(prev2, this2)
 
-    pair_traverse(None, block_stack[-1])
+    pair_traverse(None, code)
 
 
 def find_cycles(all_inclnames, edges):
@@ -514,6 +700,7 @@ def find_cycles(all_inclnames, edges):
     def draw_SCC(c):
         cset = set(c)
         drawn = set()
+
         def draw(v, indent):
             out('   ' * indent + ('-> ' if indent else '   ') + v)
             if v in drawn:
@@ -529,7 +716,8 @@ def find_cycles(all_inclnames, edges):
     for scc in sorted(SCCs):
         if len(scc) != 1:
             if not have_drawn_an_SCC:
-                error('(multiple files)', None, 'header files form one or more cycles')
+                error('(multiple files)', None,
+                      'header files form one or more cycles')
                 have_drawn_an_SCC = True
 
             draw_SCC(scc)
@@ -578,12 +766,31 @@ def tarjan(V, E):
 
 
 def main():
-    ok = check_style()
+    if sys.argv[1:] == ["--fixup"]:
+        # Sort #include directives in-place.  Fixup mode doesn't solve
+        # all possible silliness that the script checks for; it's just a
+        # hack for the common case where renaming a header causes style
+        # errors.
+        fixup = True
+    elif sys.argv[1:] == []:
+        fixup = False
+    else:
+        print("TEST-UNEXPECTED-FAIL | check_spidermonkey_style.py | unexpected command "
+              "line options: " + repr(sys.argv[1:]))
+        sys.exit(1)
+
+    ok = check_style(fixup)
 
     if ok:
         print('TEST-PASS | check_spidermonkey_style.py | ok')
     else:
-        print('TEST-UNEXPECTED-FAIL | check_spidermonkey_style.py | actual output does not match expected output;  diff is above')
+        print('TEST-UNEXPECTED-FAIL | check_spidermonkey_style.py | ' +
+              'actual output does not match expected output;  diff is above.')
+        print('TEST-UNEXPECTED-FAIL | check_spidermonkey_style.py | ' +
+              'Hint: If the problem is that you renamed a header, and many #includes ' +
+              'are no longer in alphabetical order, commit your work and then try ' +
+              '`check_spidermonkey_style.py --fixup`. ' +
+              'You need to commit first because --fixup modifies your files in place.')
 
     sys.exit(0 if ok else 1)
 

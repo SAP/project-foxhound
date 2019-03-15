@@ -107,6 +107,8 @@ struct PK11SlotInfoStr {
     unsigned int lastState;
     /* for Stan */
     NSSToken *nssToken;
+    /* the tokeninfo struct */
+    CK_TOKEN_INFO tokenInfo;
     /* fast mechanism lookup */
     char mechanismBits[256];
 };
@@ -173,6 +175,7 @@ struct PK11GenericObjectStr {
     PK11GenericObject *next;
     PK11SlotInfo *slot;
     CK_OBJECT_HANDLE objectID;
+    PRBool owner;
 };
 
 #define MAX_TEMPL_ATTRS 16 /* maximum attributes in template */

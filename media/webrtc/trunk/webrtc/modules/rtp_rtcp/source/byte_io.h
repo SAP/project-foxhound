@@ -8,8 +8,8 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_RTP_RTCP_SOURCE_BYTE_IO_H_
-#define WEBRTC_MODULES_RTP_RTCP_SOURCE_BYTE_IO_H_
+#ifndef MODULES_RTP_RTCP_SOURCE_BYTE_IO_H_
+#define MODULES_RTP_RTCP_SOURCE_BYTE_IO_H_
 
 
 // This file contains classes for reading and writing integer types from/to
@@ -38,7 +38,7 @@
 
 #include <limits>
 
-#include "webrtc/typedefs.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -310,12 +310,19 @@ class ByteReader<T, 4, false> {
  public:
   static T ReadBigEndian(const uint8_t* data) {
     static_assert(sizeof(T) >= 4, kSizeErrorMsg);
-    return (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3];
+    return (Get(data, 0) << 24) | (Get(data, 1) << 16) | (Get(data, 2) << 8) |
+           Get(data, 3);
   }
 
   static T ReadLittleEndian(const uint8_t* data) {
     static_assert(sizeof(T) >= 4, kSizeErrorMsg);
-    return data[0] | (data[1] << 8) | (data[2] << 16) | (data[3] << 24);
+    return Get(data, 0) | (Get(data, 1) << 8) | (Get(data, 2) << 16) |
+           (Get(data, 3) << 24);
+  }
+
+ private:
+  inline static T Get(const uint8_t* data, unsigned int index) {
+    return static_cast<T>(data[index]);
   }
 };
 
@@ -398,4 +405,4 @@ class ByteWriter<T, 8, false> {
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_RTP_RTCP_SOURCE_BYTE_IO_H_
+#endif  // MODULES_RTP_RTCP_SOURCE_BYTE_IO_H_

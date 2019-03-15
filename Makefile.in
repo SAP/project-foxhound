@@ -31,13 +31,18 @@ DIST_GARBAGE = config.cache config.log config.status* config-defs.h \
    .mozconfig.mk
 
 ifndef MOZ_PROFILE_USE
-buildid.h source-repo.h: FORCE
+# Automation builds should always have a new buildid, but for the sake of not
+# re-linking libxul on every incremental build we do not enforce this for
+# developer builds.  Tests always need a new buildid as well.
+ifneq (,$(MOZ_AUTOMATION)$(MOZ_BUILD_DATE)$(TEST_MOZBUILD))
+$(MDDEPDIR)/buildid.h.stub $(MDDEPDIR)/source-repo.h.stub: FORCE
 endif
-
-ifdef JS_STANDALONE
-configure_dir = $(topsrcdir)/js/src
-else
-configure_dir = $(topsrcdir)
+# Additionally, provide a dummy target during tests, because
+# faster/rules.mk will expect these targets to exist.
+ifdef TEST_MOZBUILD
+source-repo.h: $(MDDEPDIR)/source-repo.h.stub
+buildid.h: $(MDDEPDIR)/buildid.h.stub
+endif
 endif
 
 BUILD_BACKEND_FILES := $(addprefix backend.,$(addsuffix Backend,$(BUILD_BACKENDS)))
@@ -46,12 +51,7 @@ ifndef TEST_MOZBUILD
 ifndef MOZ_PROFILE_USE
 # We need to explicitly put BUILD_BACKEND_FILES here otherwise the rule in
 # rules.mk doesn't run early enough.
-$(TIERS) binaries:: CLOBBER $(configure_dir)/configure config.status $(BUILD_BACKEND_FILES)
-ifndef JS_STANDALONE
-ifdef COMPILE_ENVIRONMENT
-$(TIERS) binaries:: $(topsrcdir)/js/src/configure js/src/config.status
-endif
-endif
+$(TIERS) binaries:: CLOBBER $(BUILD_BACKEND_FILES)
 endif
 endif
 
@@ -61,28 +61,9 @@ CLOBBER:
 else
 CLOBBER: $(topsrcdir)/CLOBBER
 	@echo 'STOP!  The CLOBBER file has changed.'
-	@echo 'Please run the build through a sanctioned build wrapper, such as'
-	@echo '"mach build" or client.mk.'
+	@echo 'Please run the build through "mach build".'
 	@exit 1
 endif
-
-$(topsrcdir)/configure: $(topsrcdir)/configure.in $(topsrcdir)/old-configure.in
-$(topsrcdir)/js/src/configure: $(topsrcdir)/js/src/configure.in $(topsrcdir)/js/src/old-configure.in
-$(topsrcdir)/configure $(topsrcdir)/js/src/configure:
-	@echo 'STOP!  $? has changed, and your configure is out of date.'
-	@echo 'Please rerun autoconf and re-configure your build directory.'
-	@echo 'To ignore this message, touch "$@",'
-	@echo 'but your build might not succeed.'
-	@exit 1
-
-config.status: $(configure_dir)/configure $(configure_dir)/old-configure
-js/src/config.status: $(topsrcdir)/js/src/configure $(topsrcdir)/js/src/old-configure
-config.status js/src/config.status:
-	@echo 'STOP!  $? has changed and needs to be run again.'
-	@echo 'Please rerun it.'
-	@echo 'To ignore this message, touch "$(CURDIR)/$@",'
-	@echo 'but your build might not succeed.'
-	@exit 1
 
 # Regenerate the build backend if it is out of date. We only have this rule in
 # this main make file because having it in rules.mk and applied to partial tree
@@ -105,7 +86,7 @@ default:: $(BUILD_BACKEND_FILES)
 endif
 
 install_manifests := \
-  $(addprefix dist/,branding idl include public private sdk xpi-stage) \
+  $(addprefix dist/,branding include public private xpi-stage) \
   _tests \
   $(NULL)
 # Skip the dist/bin install manifest when using the hybrid
@@ -117,60 +98,22 @@ install_manifests += dist/bin
 endif
 install_manifest_depends = \
   CLOBBER \
-  $(configure_dir)/configure \
-  config.status \
   $(BUILD_BACKEND_FILES) \
   $(NULL)
-
-ifndef JS_STANDALONE
-ifdef COMPILE_ENVIRONMENT
-install_manifest_depends += \
-  $(topsrcdir)/js/src/configure \
-  js/src/config.status \
-  $(NULL)
-endif
-endif
 
 .PHONY: install-manifests
 install-manifests: $(addprefix install-,$(install_manifests))
 
 # If we're using the hybrid FasterMake/RecursiveMake backend, we want
 # to recurse in the faster/ directory in parallel of install manifests.
-# But dist/idl needs to happen before (cf. dependencies in
-# config/faster/rules.mk)
 ifneq (,$(filter FasterMake+RecursiveMake,$(BUILD_BACKENDS)))
 install-manifests: faster
 .PHONY: faster
-faster: install-dist/idl
+faster:
 	$(MAKE) -C faster FASTER_RECURSIVE_MAKE=1
 endif
 
-.PHONY: tup
-tup:
-	$(call BUILDSTATUS,TIERS make tup)
-	$(call BUILDSTATUS,TIER_START make)
-	$(MAKE) buildid.h source-repo.h
-	$(call BUILDSTATUS,TIER_FINISH make)
-	$(call BUILDSTATUS,TIER_START tup)
-	@$(TUP) $(if $(findstring s,$(filter-out --%,$(MAKEFLAGS))),,--verbose)
-	$(call BUILDSTATUS,TIER_FINISH tup)
-
-# process_install_manifest needs to be invoked with --no-remove when building
-# js as standalone because automated builds are building nspr separately and
-# that would remove the resulting files.
-# Eventually, a standalone js build would just be able to build nspr itself,
-# removing the need for the former.
-ifdef JS_STANDALONE
-NO_REMOVE=1
-endif
-
-# For an artifact build, _tests will already be partly populated, so run
-# this install manifest with NO_REMOVE set in this case.
-ifdef MOZ_ARTIFACT_BUILDS
-install-_tests: NO_REMOVE=1
-endif
-
-.PHONY: $(addprefix install-,$(subst /,_,$(install_manifests)))
+.PHONY: $(addprefix install-,$(install_manifests))
 $(addprefix install-,$(install_manifests)): install-%: $(install_manifest_depends)
 ifneq (,$(filter FasterMake+RecursiveMake,$(BUILD_BACKENDS)))
 	@# If we're using the hybrid FasterMake/RecursiveMake backend, we want
@@ -178,7 +121,7 @@ ifneq (,$(filter FasterMake+RecursiveMake,$(BUILD_BACKENDS)))
 	@# same directory, because that would blow up
 	$(if $(wildcard _build_manifests/install/$(subst /,_,$*)),$(if $(wildcard faster/install_$(subst /,_,$*)*),$(error FasterMake and RecursiveMake ends of the hybrid build system want to handle $*)))
 endif
-	$(addprefix $(call py_action,process_install_manifest,$(if $(NO_REMOVE),--no-remove )$*) ,$(wildcard _build_manifests/install/$(subst /,_,$*)))
+	$(addprefix $(call py_action,process_install_manifest,--track install_$(subst /,_,$*).track $*) ,$(wildcard _build_manifests/install/$(subst /,_,$*)))
 
 # Dummy wrapper rule to allow the faster backend to piggy back
 $(addprefix install-,$(subst /,_,$(filter dist/%,$(install_manifests)))): install-dist_%: install-dist/% ;
@@ -186,10 +129,9 @@ $(addprefix install-,$(subst /,_,$(filter dist/%,$(install_manifests)))): instal
 .PHONY: install-tests
 install-tests: install-test-files
 
-# Force --no-remove, because $objdir/_tests is handled by multiple manifests.
 .PHONY: install-test-files
 install-test-files:
-	$(call py_action,process_install_manifest,--no-remove _tests _build_manifests/install/_test_files)
+	$(call py_action,process_install_manifest,--track install__test_files.track _tests _build_manifests/install/_test_files)
 
 include $(topsrcdir)/build/moz-automation.mk
 
@@ -198,6 +140,9 @@ include $(topsrcdir)/build/moz-automation.mk
 ifneq ($(filter-out maybe_clobber_profiledbuild,$(MAKECMDGOALS)),)
 GARBAGE_DIRS += dist _tests
 endif
+
+# Dummy rule for the cases below where we don't depend on dist/include
+recurse_pre-export::
 
 # Windows PGO builds don't perform a clean before the 2nd pass. So, we want
 # to preserve content for the 2nd pass on Windows. Everywhere else, we always
@@ -209,23 +154,19 @@ ifndef NO_PROFILE_GUIDED_OPTIMIZE
 ifneq ($(OS_ARCH)_$(GNU_CC), WINNT_)
 recurse_pre-export:: install-manifests
 binaries::
-	@$(MAKE) install-manifests NO_REMOVE=1 install_manifests=dist/include
+	@$(MAKE) install-manifests install_manifests=dist/include
 endif
 endif
 else # !MOZ_PROFILE_USE (normal build)
 recurse_pre-export:: install-manifests
 binaries::
-	@$(MAKE) install-manifests NO_REMOVE=1 install_manifests=dist/include
+	@$(MAKE) install-manifests install_manifests=dist/include
 endif
-
-# For historical reasons that are unknown, $(DIST)/sdk is always blown away
-# with no regard for PGO passes. This decision could probably be revisited.
-recurse_pre-export:: install-dist/sdk
 
 recurse_artifact:
 	$(topsrcdir)/mach --log-no-times artifact install
 
-ifndef JS_STANDALONE
+ifdef MOZ_WIDGET_TOOLKIT
 ifdef ENABLE_TESTS
 # Additional makefile targets to call automated test suites
 include $(topsrcdir)/testing/testsuite-targets.mk
@@ -235,11 +176,42 @@ endif
 default all::
 	$(call BUILDSTATUS,TIERS $(TIERS) $(if $(MOZ_AUTOMATION),$(MOZ_AUTOMATION_TIERS)))
 
+# PGO build target.
+profiledbuild::
+	$(call BUILDSTATUS,TIERS pgo_profile_generate pgo_package pgo_profile pgo_clobber pgo_profile_use)
+	$(call BUILDSTATUS,TIER_START pgo_profile_generate)
+	$(MAKE) default MOZ_PROFILE_GENERATE=1
+	$(call BUILDSTATUS,TIER_FINISH pgo_profile_generate)
+	$(call BUILDSTATUS,TIER_START pgo_package)
+	$(MAKE) package MOZ_INTERNAL_SIGNING_FORMAT= MOZ_EXTERNAL_SIGNING_FORMAT=
+	rm -f jarlog/en-US.log
+	$(call BUILDSTATUS,TIER_FINISH pgo_package)
+	$(call BUILDSTATUS,TIER_START pgo_profile)
+	JARLOG_FILE=jarlog/en-US.log $(PYTHON) $(topsrcdir)/build/pgo/profileserver.py
+	$(call BUILDSTATUS,TIER_FINISH pgo_profile)
+	$(call BUILDSTATUS,TIER_START pgo_clobber)
+	$(MAKE) maybe_clobber_profiledbuild
+	$(call BUILDSTATUS,TIER_FINISH pgo_clobber)
+	$(call BUILDSTATUS,TIER_START pgo_profile_use)
+	$(MAKE) default MOZ_PROFILE_USE=1 $(if $(CLANG_CL),MOZ_PROFILE_ORDER_FILE=$(topobjdir)/cygprofile.txt)
+	$(call BUILDSTATUS,TIER_FINISH pgo_profile_use)
+
+# Change default target to PGO build if PGO is enabled.
+ifdef MOZ_PGO
+ifdef COMPILE_ENVIRONMENT
+# If one of these is already set in addition to PGO we are doing a single phase
+# of PGO in isolation, so don't override the default target.
+ifeq (,$(MOZ_PROFILE_GENERATE)$(MOZ_PROFILE_USE))
+OVERRIDE_DEFAULT_GOAL := profiledbuild
+endif
+endif
+endif
+
 include $(topsrcdir)/config/rules.mk
 
 ifdef SCCACHE_VERBOSE_STATS
-# This won't contain stats for both halves of a universal build, but I can live with that.
 default::
+	-$(CCACHE) --show-stats --stats-format=json > sccache-stats.json
 	@echo "===SCCACHE STATS==="
 	-$(CCACHE) --show-stats
 	@echo "==================="
@@ -248,113 +220,77 @@ endif
 distclean::
 	$(RM) $(DIST_GARBAGE)
 
-ifeq ($(OS_ARCH),WINNT)
-# we want to copy PDB files on Windows
-MAKE_SYM_STORE_ARGS := -c --vcs-info
-ifdef PDBSTR_PATH
-MAKE_SYM_STORE_ARGS += -i
-endif
-ifdef MSVC_HAS_DIA_SDK
-DUMP_SYMS_BIN ?= $(DIST)/host/bin/dump_syms.exe
-else
-DUMP_SYMS_BIN ?= $(topsrcdir)/toolkit/crashreporter/tools/win32/dump_syms_vc$(_MSC_VER).exe
-endif
-# PDB files don't get moved to dist, so we need to scan the whole objdir
-MAKE_SYM_STORE_PATH := .
-endif
-ifeq ($(OS_ARCH),Darwin)
-# need to pass arch flags for universal builds
-MAKE_SYM_STORE_ARGS := -c -a $(OS_TEST) --vcs-info
-MAKE_SYM_STORE_PATH := $(DIST)/bin
-DUMP_SYMS_BIN ?= $(DIST)/host/bin/dump_syms
-endif
-ifeq (,$(filter-out Linux SunOS,$(OS_ARCH)))
-MAKE_SYM_STORE_ARGS := -c --vcs-info
-DUMP_SYMS_BIN ?= $(DIST)/host/bin/dump_syms
-MAKE_SYM_STORE_PATH := $(DIST)/bin
-endif
-MAKE_SYM_STORE_ARGS += --install-manifest=$(DEPTH)/_build_manifests/install/dist_include,$(DIST)/include
-
-SYM_STORE_SOURCE_DIRS := $(topsrcdir)
-
 ifdef MOZ_CRASHREPORTER
 include $(topsrcdir)/toolkit/mozapps/installer/package-name.mk
 
-SYMBOL_INDEX_NAME = \
-  $(MOZ_APP_NAME)-$(MOZ_APP_VERSION)-$(OS_TARGET)-$(BUILDID)-$(CPU_ARCH)-symbols.txt
 endif
 
-.PHONY: generatesymbols
-generatesymbols:
-	echo building symbol store
-	$(RM) -r $(DIST)/crashreporter-symbols
-	$(RM) '$(DIST)/$(SYMBOL_ARCHIVE_BASENAME).zip'
-	$(RM) '$(DIST)/$(SYMBOL_FULL_ARCHIVE_BASENAME).zip'
-	$(NSINSTALL) -D $(DIST)/crashreporter-symbols
-	OBJCOPY='$(OBJCOPY)' \
-	$(PYTHON) $(topsrcdir)/toolkit/crashreporter/tools/symbolstore.py \
-	  $(MAKE_SYM_STORE_ARGS)                                          \
-	  $(foreach dir,$(SYM_STORE_SOURCE_DIRS),-s $(dir))               \
-	  $(DUMP_SYMS_BIN)                                                \
-	  $(DIST)/crashreporter-symbols                                   \
-	  $(MAKE_SYM_STORE_PATH) | grep -iv test >                        \
-	  $(DIST)/crashreporter-symbols/$(SYMBOL_INDEX_NAME)
+.PHONY: prepsymbolsarchive
+prepsymbolsarchive:
 	echo packing symbols
 	$(NSINSTALL) -D $(DIST)/$(PKG_PATH)
 
+ifndef MOZ_AUTOMATION
+prepsymbolsarchive: recurse_syms
+endif
+
 .PHONY: symbolsfullarchive
-symbolsfullarchive: generatesymbols
-	cd $(DIST)/crashreporter-symbols && \
-          zip -r5D '../$(PKG_PATH)$(SYMBOL_FULL_ARCHIVE_BASENAME).zip' . -x '*test*' -x '*Test*'
+symbolsfullarchive: prepsymbolsarchive
+	$(RM) '$(DIST)/$(PKG_PATH)$(SYMBOL_FULL_ARCHIVE_BASENAME).zip'
+	$(call py_action,symbols_archive,'$(DIST)/$(PKG_PATH)$(SYMBOL_FULL_ARCHIVE_BASENAME).zip' \
+                                     $(abspath $(DIST)/crashreporter-symbols) \
+                                     --full-archive)
 
 .PHONY: symbolsarchive
-symbolsarchive: generatesymbols
-	cd $(DIST)/crashreporter-symbols && \
-	grep 'sym' $(SYMBOL_INDEX_NAME) > $(SYMBOL_INDEX_NAME).tmp && \
-	  mv $(SYMBOL_INDEX_NAME).tmp $(SYMBOL_INDEX_NAME)
-	cd $(DIST)/crashreporter-symbols && \
-          zip -r5D '../$(PKG_PATH)$(SYMBOL_ARCHIVE_BASENAME).zip' . -i '*.sym' -i '*.txt'
+symbolsarchive: prepsymbolsarchive
+	$(RM) '$(DIST)/$(PKG_PATH)$(SYMBOL_ARCHIVE_BASENAME).zip'
+	$(call py_action,symbols_archive,'$(DIST)/$(PKG_PATH)$(SYMBOL_ARCHIVE_BASENAME).zip' \
+                                     $(abspath $(DIST)/crashreporter-symbols))
 
 ifdef MOZ_CRASHREPORTER
+# Set MOZ_DISABLE_FULL_SYMBOLS to disable generation and upload of the full
+# crashreporter symbols archives
+ifdef MOZ_DISABLE_FULL_SYMBOLS
+buildsymbols: symbolsarchive
+else
 buildsymbols: symbolsfullarchive symbolsarchive
+endif # MOZ_DISABLE_FULL_SYMBOLS
 else
 buildsymbols:
 endif
 
 uploadsymbols:
 ifdef MOZ_CRASHREPORTER
-ifdef SOCORRO_SYMBOL_UPLOAD_TOKEN_FILE
 	$(PYTHON) -u $(topsrcdir)/toolkit/crashreporter/tools/upload_symbols.py '$(DIST)/$(PKG_PATH)$(SYMBOL_FULL_ARCHIVE_BASENAME).zip'
-endif
 endif
 
 .PHONY: update-packaging
 update-packaging:
 	$(MAKE) -C tools/update-packaging
 
+.PHONY: package-generated-sources
+package-generated-sources:
+	$(call py_action,package_generated_sources,'$(DIST)/$(PKG_PATH)$(GENERATED_SOURCE_FILE_PACKAGE)')
+
 #XXX: this is a hack, since we don't want to clobber for MSVC
 # PGO support, but we can't do this test in client.mk
-ifneq ($(OS_ARCH)_$(GNU_CC), WINNT_)
 # No point in clobbering if PGO has been explicitly disabled.
-ifndef NO_PROFILE_GUIDED_OPTIMIZE
-maybe_clobber_profiledbuild: clean
-else
+ifdef NO_PROFILE_GUIDED_OPTIMIZE
 maybe_clobber_profiledbuild:
+else
+ifneq ($(CC_TYPE),msvc)
+maybe_clobber_profiledbuild: clean
+ifneq (,$(findstring clang,$(CC_TYPE)))
+	$(LLVM_PROFDATA) merge -o $(DEPTH)/merged.profdata $(DEPTH)/*.profraw
 endif
 else
 maybe_clobber_profiledbuild:
 	$(RM) $(DIST)/bin/*.pgc
 	find $(DIST)/$(MOZ_APP_NAME) -name '*.pgc' -exec mv {} $(DIST)/bin \;
-endif
+endif # msvc
+endif # NO_PROFILE_GUIDED_OPTIMIZE
 
 .PHONY: maybe_clobber_profiledbuild
-
-# Look for R_386_PC32 relocations in shared libs, these
-# break x86_64 builds and SELinux users.
-ifeq ($(OS_TARGET)_$(TARGET_XPCOM_ABI),Linux_x86-gcc3)
-check::
-	@relcount=`find $(DIST)/bin -name '*.so' | xargs objdump -R | grep R_386_PC32 | wc -l` && if test $$relcount -gt 0; then echo 'FAILED: R_386_PC32 relocations detected in a shared library.  Did you use a system header without adding it to config/system-headers?'; exit 1; else echo 'PASSED'; fi
-endif
 
 ifdef JS_STANDALONE
 # Delegate js-specific rules to js

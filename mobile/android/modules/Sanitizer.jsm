@@ -1,85 +1,121 @@
-// -*- indent-tabs-mode: nil; js-indent-level: 4 -*-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/*globals LoadContextInfo, FormHistory, Accounts */
+/* globals LoadContextInfo, FormHistory, Accounts */
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cu = Components.utils;
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Integration.jsm");
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/LoadContextInfo.jsm");
-Cu.import("resource://gre/modules/FormHistory.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
-Cu.import("resource://gre/modules/Downloads.jsm");
-Cu.import("resource://gre/modules/osfile.jsm");
-Cu.import("resource://gre/modules/Accounts.jsm");
+XPCOMUtils.defineLazyModuleGetters(this, {
+  Accounts: "resource://gre/modules/Accounts.jsm",
+  Downloads: "resource://gre/modules/Downloads.jsm",
+  EventDispatcher: "resource://gre/modules/Messaging.jsm",
+  FormHistory: "resource://gre/modules/FormHistory.jsm",
+  OfflineAppCacheHelper: "resource://gre/modules/offlineAppCache.jsm",
+  OS: "resource://gre/modules/osfile.jsm",
+  ServiceWorkerCleanUp: "resource://gre/modules/ServiceWorkerCleanUp.jsm",
+});
 
-XPCOMUtils.defineLazyModuleGetter(this, "DownloadIntegration",
-                                  "resource://gre/modules/DownloadIntegration.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "EventDispatcher",
-                                  "resource://gre/modules/Messaging.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "TelemetryStopwatch",
-                                  "resource://gre/modules/TelemetryStopwatch.jsm");
+XPCOMUtils.defineLazyServiceGetters(this, {
+  quotaManagerService: ["@mozilla.org/dom/quota-manager-service;1", "nsIQuotaManagerService"],
+});
 
-function dump(a) {
-  Services.console.logStringMessage(a);
-}
+/* global DownloadIntegration */
+Integration.downloads.defineModuleGetter(this, "DownloadIntegration",
+            "resource://gre/modules/DownloadIntegration.jsm");
 
-this.EXPORTED_SYMBOLS = ["Sanitizer"];
+
+var EXPORTED_SYMBOLS = ["Sanitizer"];
 
 function Sanitizer() {}
 Sanitizer.prototype = {
-  clearItem: function (aItemName)
-  {
-    let item = this.items[aItemName];
-    let canClear = item.canClear;
-    if (typeof canClear == "function") {
-      canClear(function clearCallback(aCanClear) {
-        if (aCanClear)
-          return item.clear();
-      });
-    } else if (canClear) {
-      return item.clear();
+  clearItem: function(aItemName, startTime, clearUnfinishedDownloads) {
+    // Only a subset of items support deletion with startTime.
+    // Those who do not will be rejected with error message.
+    if (typeof startTime != "undefined") {
+      switch (aItemName) {
+        // Normal call to DownloadFiles remove actual data from storage, but our web-extension consumer
+        // deletes only download history. So, for this reason we are passing a flag 'deleteFiles'.
+        case "downloadHistory":
+          return this._clear("downloadFiles", { startTime, deleteFiles: false });
+        case "formdata":
+          return this._clear(aItemName, { startTime });
+        default:
+          return Promise.reject({message: `Invalid argument: ${aItemName} does not support startTime argument.`});
+      }
+    } else if (aItemName === "downloadFiles" && typeof clearUnfinishedDownloads != "undefined") {
+      return this._clear(aItemName, { clearUnfinishedDownloads });
+    } else {
+      return this._clear(aItemName);
     }
   },
 
-  items: {
-    cache: {
-      clear: function ()
-      {
-        return new Promise(function(resolve, reject) {
-          let refObj = {};
-          TelemetryStopwatch.start("FX_SANITIZE_CACHE", refObj);
-
-          var cache = Cc["@mozilla.org/netwerk/cache-storage-service;1"].getService(Ci.nsICacheStorageService);
-          try {
-            cache.clear();
-          } catch(er) {}
-
-          let imageCache = Cc["@mozilla.org/image/tools;1"].getService(Ci.imgITools)
-                                                           .getImgCacheForDocument(null);
-          try {
-            imageCache.clearCache(false); // true=chrome, false=content
-          } catch(er) {}
-
-          TelemetryStopwatch.finish("FX_SANITIZE_CACHE", refObj);
-          resolve();
+ _clear: function(aItemName, options) {
+    let item = this.items[aItemName];
+    let canClear = item.canClear;
+    if (typeof canClear == "function") {
+      let maybeDoClear = async () => {
+        let canClearResult = await new Promise(resolve => {
+          canClear(resolve);
         });
+
+        if (canClearResult) {
+          return item.clear(options);
+        }
+      };
+      return maybeDoClear();
+    } else if (canClear) {
+      return item.clear(options);
+    }
+  },
+
+  // This code is mostly based on the Sanitizer code for desktop Firefox
+  // (browser/modules/Sanitzer.jsm), however over the course of time some
+  // general differences have evolved:
+  // - async shutdown (and seenException handling) isn't implemented in Fennec
+  // - currently there is only limited support for range-based clearing of data
+
+  // Any further specific differences caused by architectural differences between
+  // Fennec and desktop Firefox are documented below for each item.
+  items: {
+    // The difference is specifically the Sanitize:Cache message,
+    // so that the Android front-end can clear its caches as well,
+    // while everything else is unchanged.
+    cache: {
+      clear: function() {
+        let refObj = {};
+        TelemetryStopwatch.start("FX_SANITIZE_CACHE", refObj);
+
+        try {
+          Services.cache2.clear();
+        } catch (er) {}
+
+        let imageCache = Cc["@mozilla.org/image/tools;1"].getService(Ci.imgITools)
+                                                           .getImgCacheForDocument(null);
+        try {
+          imageCache.clearCache(false); // true=chrome, false=content
+        } catch (er) {}
+
+        return EventDispatcher.instance.sendRequestForResult({ type: "Sanitize:Cache" })
+          .catch((err) => {
+            Cu.reportError(`Java-side cache clearing failed with error: ${err}`);
+          })
+          .then(() => {
+            TelemetryStopwatch.finish("FX_SANITIZE_CACHE", refObj);
+          });
       },
 
-      get canClear()
-      {
+      get canClear() {
         return true;
-      }
+      },
     },
 
+    // Compared to desktop, we don't clear plugin data, as plugins
+    // aren't supported on Android.
     cookies: {
-      clear: function ()
-      {
+      clear: function() {
         return new Promise(function(resolve, reject) {
           let refObj = {};
           TelemetryStopwatch.start("FX_SANITIZE_COOKIES_2", refObj);
@@ -87,18 +123,26 @@ Sanitizer.prototype = {
           Services.cookies.removeAll();
 
           TelemetryStopwatch.finish("FX_SANITIZE_COOKIES_2", refObj);
+
+          // Clear deviceIds. Done asynchronously (returns before complete).
+          try {
+            let mediaMgr = Cc["@mozilla.org/mediaManagerService;1"]
+                             .getService(Ci.nsIMediaManagerService);
+            mediaMgr.sanitizeDeviceIds(0);
+          } catch (er) { }
+
           resolve();
         });
       },
 
-      get canClear()
-      {
+      get canClear() {
         return true;
-      }
+      },
     },
 
+    // Same as desktop Firefox.
     siteSettings: {
-      clear: Task.async(function* () {
+      async clear() {
         let refObj = {};
         TelemetryStopwatch.start("FX_SANITIZE_SITESETTINGS", refObj);
 
@@ -116,7 +160,7 @@ Sanitizer.prototype = {
         sss.clearAll();
 
         // Clear push subscriptions
-        yield new Promise((resolve, reject) => {
+        await new Promise((resolve, reject) => {
           let push = Cc["@mozilla.org/push/Service;1"]
                        .getService(Ci.nsIPushService);
           push.clearForDomain("*", status => {
@@ -129,37 +173,63 @@ Sanitizer.prototype = {
           });
         });
         TelemetryStopwatch.finish("FX_SANITIZE_SITESETTINGS", refObj);
-      }),
-
-      get canClear()
-      {
-        return true;
-      }
-    },
-
-    offlineApps: {
-      clear: function ()
-      {
-        return new Promise(function(resolve, reject) {
-          var cacheService = Cc["@mozilla.org/netwerk/cache-storage-service;1"].getService(Ci.nsICacheStorageService);
-          var appCacheStorage = cacheService.appCacheStorage(LoadContextInfo.default, null);
-          try {
-            appCacheStorage.asyncEvictStorage(null);
-          } catch(er) {}
-
-          resolve();
-        });
       },
 
-      get canClear()
-      {
-          return true;
-      }
+      get canClear() {
+        return true;
+      },
     },
 
+    // Same as desktop Firefox.
+    offlineApps: {
+      async clear() {
+        // AppCache
+        // This doesn't wait for the cleanup to be complete.
+        OfflineAppCacheHelper.clear();
+
+        // LocalStorage
+        Services.obs.notifyObservers(null, "extension:purge-localStorage");
+
+        // ServiceWorkers
+        await ServiceWorkerCleanUp.removeAll();
+
+        // QuotaManager
+        let promises = [];
+        await new Promise(resolve => {
+          quotaManagerService.getUsage(request => {
+            if (request.resultCode != Cr.NS_OK) {
+              // We are probably shutting down. We don't want to propagate the
+              // error, rejecting the promise.
+              resolve();
+              return;
+            }
+
+            for (let item of request.result) {
+              let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(item.origin);
+              let uri = principal.URI;
+              if (uri.scheme == "http" || uri.scheme == "https" || uri.scheme == "file") {
+                promises.push(new Promise(r => {
+                  let req = quotaManagerService.clearStoragesForPrincipal(principal);
+                  req.callback = () => { r(); };
+                }));
+              }
+            }
+            resolve();
+          });
+        });
+
+        return Promise.all(promises);
+      },
+
+      get canClear() {
+          return true;
+      },
+    },
+
+    // History on Android is implemented by the Java frontend and requires
+    // different handling. Everything else is the same as for desktop Firefox.
     history: {
-      clear: function ()
-      {
+      clear: function() {
         let refObj = {};
         TelemetryStopwatch.start("FX_SANITIZE_HISTORY", refObj);
 
@@ -168,9 +238,8 @@ Sanitizer.prototype = {
           .then(function() {
             TelemetryStopwatch.finish("FX_SANITIZE_HISTORY", refObj);
             try {
-              Services.obs.notifyObservers(null, "browser:purge-session-history", "");
-            }
-            catch (e) { }
+              Services.obs.notifyObservers(null, "browser:purge-session-history");
+            } catch (e) { }
 
             try {
               var predictor = Cc["@mozilla.org/network/predictor;1"].getService(Ci.nsINetworkPredictor);
@@ -179,17 +248,17 @@ Sanitizer.prototype = {
           });
       },
 
-      get canClear()
-      {
+      get canClear() {
         // bug 347231: Always allow clearing history due to dependencies on
         // the browser:purge-session-history notification. (like error console)
         return true;
-      }
+      },
     },
 
+    // Equivalent to openWindows on desktop, but specific to Fennec's implementation
+    // of tabbed browsing and the session store.
     openTabs: {
-      clear: function ()
-      {
+      clear: function() {
         let refObj = {};
         TelemetryStopwatch.start("FX_SANITIZE_OPENWINDOWS", refObj);
 
@@ -198,123 +267,132 @@ Sanitizer.prototype = {
           .then(function() {
             try {
               // clear "Recently Closed" tabs in Android App
-              Services.obs.notifyObservers(null, "browser:purge-session-tabs", "");
-            }
-            catch (e) { }
+              Services.obs.notifyObservers(null, "browser:purge-session-tabs");
+            } catch (e) { }
             TelemetryStopwatch.finish("FX_SANITIZE_OPENWINDOWS", refObj);
           });
       },
 
-      get canClear()
-      {
+      get canClear() {
         return true;
-      }
+      },
     },
 
+    // Specific to Fennec.
     searchHistory: {
-      clear: function ()
-      {
+      clear: function() {
         return EventDispatcher.instance.sendRequestForResult({ type: "Sanitize:ClearHistory", clearSearchHistory: true })
-          .catch(e => Cu.reportError("Java-side search history clearing failed: " + e))
+          .catch(e => Cu.reportError("Java-side search history clearing failed: " + e));
       },
 
-      get canClear()
-      {
+      get canClear() {
         return true;
-      }
+      },
     },
 
+    // Browser search is handled by searchHistory above and the find bar doesn't
+    // require extra handling. FormHistory itself is cleared like on desktop.
     formdata: {
-      clear: function ()
-      {
+      clear: function({ startTime = 0 } = {}) {
         return new Promise(function(resolve, reject) {
           let refObj = {};
           TelemetryStopwatch.start("FX_SANITIZE_FORMDATA", refObj);
 
-          FormHistory.update({ op: "remove" });
-
-          TelemetryStopwatch.finish("FX_SANITIZE_FORMDATA", refObj);
-          resolve();
+          // Conver time to microseconds
+          let time = startTime * 1000;
+          FormHistory.update({
+            op: "remove",
+            firstUsedStart: time,
+          }, {
+            handleCompletion() {
+              TelemetryStopwatch.finish("FX_SANITIZE_FORMDATA", refObj);
+              resolve();
+            },
+          });
         });
       },
 
-      canClear: function (aCallback)
-      {
+      canClear: function(aCallback) {
         let count = 0;
         let countDone = {
           handleResult: function(aResult) { count = aResult; },
           handleError: function(aError) { Cu.reportError(aError); },
-          handleCompletion: function(aReason) { aCallback(aReason == 0 && count > 0); }
+          handleCompletion: function(aReason) { aCallback(aReason == 0 && count > 0); },
         };
         FormHistory.count({}, countDone);
-      }
+      },
     },
 
+    // Adapted from desktop, but heavily modified - see comments below.
     downloadFiles: {
-      clear: Task.async(function* () {
+      async clear({
+        startTime = 0,
+        deleteFiles = true,
+        clearUnfinishedDownloads = false,
+      } = {}) {
         let refObj = {};
         TelemetryStopwatch.start("FX_SANITIZE_DOWNLOADS", refObj);
 
-        let list = yield Downloads.getList(Downloads.ALL);
-        let downloads = yield list.getAll();
+        let list = await Downloads.getList(Downloads.ALL);
+        let downloads = await list.getAll();
         var finalizePromises = [];
 
         // Logic copied from DownloadList.removeFinished. Ideally, we would
         // just use that method directly, but we want to be able to remove the
         // downloaded files as well.
         for (let download of downloads) {
-          // Remove downloads that have been canceled, even if the cancellation
-          // operation hasn't completed yet so we don't check "stopped" here.
-          // Failed downloads with partial data are also removed.
-          if (download.stopped && (!download.hasPartialData || download.error)) {
+          let downloadFinished = download.stopped &&
+                                 (!download.hasPartialData || download.error);
+          if ((downloadFinished || clearUnfinishedDownloads) &&
+               download.startTime.getTime() >= startTime) {
             // Remove the download first, so that the views don't get the change
             // notifications that may occur during finalization.
-            yield list.remove(download);
+            await list.remove(download);
             // Ensure that the download is stopped and no partial data is kept.
             // This works even if the download state has changed meanwhile.  We
             // don't need to wait for the procedure to be complete before
             // processing the other downloads in the list.
             finalizePromises.push(download.finalize(true).then(() => null, Cu.reportError));
 
-            // Delete the downloaded files themselves.
-            OS.File.remove(download.target.path).then(() => null, ex => {
-              if (!(ex instanceof OS.File.Error && ex.becauseNoSuchFile)) {
-                Cu.reportError(ex);
-              }
-            });
+            if (deleteFiles) {
+              // Delete the downloaded files themselves.
+              OS.File.remove(download.target.path).then(() => null, ex => {
+                if (!(ex instanceof OS.File.Error && ex.becauseNoSuchFile)) {
+                  Cu.reportError(ex);
+                }
+              });
+            }
           }
         }
 
-        yield Promise.all(finalizePromises);
-        yield DownloadIntegration.forceSave();
+        await Promise.all(finalizePromises);
+        await DownloadIntegration.forceSave();
         TelemetryStopwatch.finish("FX_SANITIZE_DOWNLOADS", refObj);
-      }),
+      },
 
-      get canClear()
-      {
+      get canClear() {
         return true;
-      }
+      },
     },
 
+    // Specific to Fennec.
     passwords: {
-      clear: function ()
-      {
+      clear: function() {
         return new Promise(function(resolve, reject) {
           Services.logins.removeAllLogins();
           resolve();
         });
       },
 
-      get canClear()
-      {
+      get canClear() {
         let count = Services.logins.countLogins("", "", ""); // count all logins
         return (count > 0);
-      }
+      },
     },
 
+    // Same as desktop Firefox.
     sessions: {
-      clear: function ()
-      {
+      clear: function() {
         return new Promise(function(resolve, reject) {
           let refObj = {};
           TelemetryStopwatch.start("FX_SANITIZE_SESSIONS", refObj);
@@ -324,37 +402,35 @@ Sanitizer.prototype = {
           sdr.logoutAndTeardown();
 
           // clear FTP and plain HTTP auth sessions
-          Services.obs.notifyObservers(null, "net:clear-active-logins", null);
+          Services.obs.notifyObservers(null, "net:clear-active-logins");
 
           TelemetryStopwatch.finish("FX_SANITIZE_SESSIONS", refObj);
           resolve();
         });
       },
 
-      get canClear()
-      {
+      get canClear() {
         return true;
-      }
+      },
     },
 
+    // Specific to Fennec.
     syncedTabs: {
-      clear: function ()
-      {
+      clear: function() {
         return EventDispatcher.instance.sendRequestForResult({ type: "Sanitize:ClearSyncedTabs" })
           .catch(e => Cu.reportError("Java-side synced tabs clearing failed: " + e));
       },
 
-      canClear: function(aCallback)
-      {
+      canClear: function(aCallback) {
         Accounts.anySyncAccountsExist().then(aCallback)
           .catch(function(err) {
-            Cu.reportError("Java-side synced tabs clearing failed: " + err)
+            Cu.reportError("Java-side synced tabs clearing failed: " + err);
             aCallback(false);
           });
-      }
-    }
+      },
+    },
 
-  }
+  },
 };
 
-this.Sanitizer = new Sanitizer();
+var Sanitizer = new Sanitizer();

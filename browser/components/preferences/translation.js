@@ -5,13 +5,8 @@
 
 "use strict";
 
-var {classes: Cc, interfaces: Ci, utils: Cu} = Components;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-
-XPCOMUtils.defineLazyGetter(this, "gLangBundle", () =>
-  Services.strings.createBundle("chrome://global/locale/languageNames.properties"));
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const kPermissionType = "translate";
 const kLanguagesPref = "browser.translation.neverForLanguages";
@@ -23,8 +18,8 @@ function Tree(aId, aData) {
 }
 
 Tree.prototype = {
-  get boxObject() {
-    return this._tree.treeBoxObject;
+  get tree() {
+    return this._tree;
   },
   get isEmpty() {
     return !this._data.length;
@@ -64,7 +59,6 @@ Tree.prototype = {
   },
   setTree(aTree) {},
   getImageSrc(aRow, aColumn) {},
-  getProgressMode(aRow, aColumn) {},
   getCellValue(aRow, aColumn) {},
   cycleHeader(column) {},
   getRowProperties(row) {
@@ -76,19 +70,19 @@ Tree.prototype = {
   getCellProperties(row, column) {
     return "";
   },
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsITreeView])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsITreeView]),
 };
 
-function Lang(aCode) {
+function Lang(aCode, label) {
   this.langCode = aCode;
-  this._label = gLangBundle.GetStringFromName(aCode);
+  this._label = label;
 }
 
 Lang.prototype = {
   toString() {
     return this._label;
-  }
-}
+  },
+};
 
 var gTranslationExceptions = {
   onLoad() {
@@ -99,23 +93,20 @@ var gTranslationExceptions = {
 
     // Load site permissions into an array.
     this._sites = [];
-    let enumerator = Services.perms.enumerator;
-    while (enumerator.hasMoreElements()) {
-      let perm = enumerator.getNext().QueryInterface(Ci.nsIPermission);
-
+    for (let perm of Services.perms.enumerator) {
       if (perm.type == kPermissionType &&
           perm.capability == Services.perms.DENY_ACTION) {
         this._sites.push(perm.principal.origin);
       }
     }
-    Services.obs.addObserver(this, "perm-changed", false);
+    Services.obs.addObserver(this, "perm-changed");
     this._sites.sort();
 
     this._siteTree = new Tree("sitesTree", this._sites);
     this.onSiteSelected();
 
     this._langs = this.getLanguageExceptions();
-    Services.prefs.addObserver(kLanguagesPref, this, false);
+    Services.prefs.addObserver(kLanguagesPref, this);
     this._langTree = new Tree("languagesTree", this._langs);
     this.onLanguageSelected();
   },
@@ -126,7 +117,9 @@ var gTranslationExceptions = {
     if (!langs)
       return [];
 
-    let result = langs.split(",").map(code => new Lang(code));
+    let langArr = langs.split(",");
+    let displayNames = Services.intl.getLanguageDisplayNames(undefined, langArr);
+    let result = langArr.map((lang, i) => new Lang(lang, displayNames[i]));
     result.sort();
 
     return result;
@@ -138,7 +131,7 @@ var gTranslationExceptions = {
         if (!this._sites.length)
           return;
         let removed = this._sites.splice(0, this._sites.length);
-        this._siteTree.boxObject.rowCountChanged(0, -removed.length);
+        this._siteTree.tree.rowCountChanged(0, -removed.length);
       } else {
         let perm = aSubject.QueryInterface(Ci.nsIPermission);
         if (perm.type != kPermissionType)
@@ -149,15 +142,15 @@ var gTranslationExceptions = {
             return;
           this._sites.push(perm.principal.origin);
           this._sites.sort();
-          let boxObject = this._siteTree.boxObject;
-          boxObject.rowCountChanged(0, 1);
-          boxObject.invalidate();
+          let tree = this._siteTree.tree;
+          tree.rowCountChanged(0, 1);
+          tree.invalidate();
         } else if (aData == "deleted") {
           let index = this._sites.indexOf(perm.principal.origin);
           if (index == -1)
             return;
           this._sites.splice(index, 1);
-          this._siteTree.boxObject.rowCountChanged(index, -1);
+          this._siteTree.tree.rowCountChanged(index, -1);
           this.onSiteSelected();
           return;
         }
@@ -167,10 +160,10 @@ var gTranslationExceptions = {
       this._langs = this.getLanguageExceptions();
       let change = this._langs.length - this._langTree.rowCount;
       this._langTree._data = this._langs;
-      let boxObject = this._langTree.boxObject;
+      let tree = this._langTree.tree;
       if (change)
-        boxObject.rowCountChanged(0, change);
-      boxObject.invalidate();
+        tree.rowCountChanged(0, change);
+      tree.invalidate();
       this.onLanguageSelected();
     }
   },
@@ -197,7 +190,7 @@ var gTranslationExceptions = {
 
     let removed = this._langTree.getSelectedItems().map(l => l.langCode);
 
-    langs = langs.split(",").filter(l => removed.indexOf(l) == -1);
+    langs = langs.split(",").filter(l => !removed.includes(l));
     Services.prefs.setCharPref(kLanguagesPref, langs.join(","));
   },
 
@@ -218,7 +211,7 @@ var gTranslationExceptions = {
       return;
 
     let removedSites = this._sites.splice(0, this._sites.length);
-    this._siteTree.boxObject.rowCountChanged(0, -removedSites.length);
+    this._siteTree.tree.rowCountChanged(0, -removedSites.length);
 
     for (let origin of removedSites) {
       let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(origin);
@@ -246,5 +239,5 @@ var gTranslationExceptions = {
   uninit() {
     Services.obs.removeObserver(this, "perm-changed");
     Services.prefs.removeObserver(kLanguagesPref, this);
-  }
+  },
 };

@@ -4,6 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+
 // dialog is just an array we'll use to store various properties from the dialog document...
 var dialog;
 
@@ -19,6 +21,10 @@ var progressParams = null;
 var switchUI = true;
 
 function ellipseString(aStr, doFront) {
+  if (!aStr) {
+    return "";
+  }
+
   if (aStr.length > 3 && (aStr.substr(0, 3) == "..." || aStr.substr(aStr.length - 4, 3) == "...")) {
     return aStr;
   }
@@ -38,13 +44,12 @@ function ellipseString(aStr, doFront) {
 // all progress notifications are done through the nsIWebProgressListener implementation...
 var progressListener = {
     onStateChange(aWebProgress, aRequest, aStateFlags, aStatus) {
-      if (aStateFlags & Components.interfaces.nsIWebProgressListener.STATE_START) {
+      if (aStateFlags & Ci.nsIWebProgressListener.STATE_START) {
         // Put progress meter in undetermined mode.
-        // dialog.progress.setAttribute( "value", 0 );
-        dialog.progress.setAttribute( "mode", "undetermined" );
+        dialog.progress.removeAttribute("value");
       }
 
-      if (aStateFlags & Components.interfaces.nsIWebProgressListener.STATE_STOP) {
+      if (aStateFlags & Ci.nsIWebProgressListener.STATE_STOP) {
         // we are done printing
         // Indicate completion in title area.
         var msg = getString( "printComplete" );
@@ -52,14 +57,11 @@ var progressListener = {
 
         // Put progress meter at 100%.
         dialog.progress.setAttribute( "value", 100 );
-        dialog.progress.setAttribute( "mode", "normal" );
         var percentPrint = getString( "progressText" );
         percentPrint = replaceInsert( percentPrint, 1, 100 );
         dialog.progressText.setAttribute("value", percentPrint);
 
-        var fm = Components.classes["@mozilla.org/focus-manager;1"]
-                     .getService(Components.interfaces.nsIFocusManager);
-        if (fm && fm.activeWindow == window) {
+        if (Services.focus.activeWindow == window) {
           // This progress dialog is the currently active window. In
           // this case we need to make sure that some other window
           // gets focus before we close this dialog to work around the
@@ -83,7 +85,7 @@ var progressListener = {
     onProgressChange(aWebProgress, aRequest, aCurSelfProgress, aMaxSelfProgress, aCurTotalProgress, aMaxTotalProgress) {
       if (switchUI) {
         dialog.tempLabel.setAttribute("hidden", "true");
-        dialog.progress.setAttribute("hidden", "false");
+        dialog.progressBox.removeAttribute("hidden");
 
         var progressLabel = getString("progress");
         if (progressLabel == "") {
@@ -114,8 +116,6 @@ var progressListener = {
         if ( percent > 100 )
           percent = 100;
 
-        dialog.progress.removeAttribute( "mode");
-
         // Advance progress meter.
         dialog.progress.setAttribute( "value", percent );
 
@@ -125,13 +125,13 @@ var progressListener = {
         dialog.progressText.setAttribute("value", percentPrint);
       } else {
         // Progress meter should be barber-pole in this case.
-        dialog.progress.setAttribute( "mode", "undetermined" );
+        dialog.progress.removeAttribute("value");
         // Update percentage label on progress meter.
         dialog.progressText.setAttribute("value", "");
       }
     },
 
-	  onLocationChange(aWebProgress, aRequest, aLocation, aFlags) {
+    onLocationChange(aWebProgress, aRequest, aLocation, aFlags) {
       // we can ignore this notification
     },
 
@@ -144,12 +144,12 @@ var progressListener = {
       // we can ignore this notification
     },
 
-    QueryInterface(iid) {
-     if (iid.equals(Components.interfaces.nsIWebProgressListener) || iid.equals(Components.interfaces.nsISupportsWeakReference))
-      return this;
+    onContentBlockingEvent(aWebProgress, aRequest, event) {
+      // we can ignore this notification
+    },
 
-     throw Components.results.NS_NOINTERFACE;
-    }
+    QueryInterface: ChromeUtils.generateQI(["nsIWebProgressListener",
+                                            "nsISupportsWeakReference"]),
 };
 
 function getString( stringId ) {
@@ -190,7 +190,7 @@ function onLoad() {
     // Set global variables.
     printProgress = window.arguments[0];
     if (window.arguments[1]) {
-      progressParams = window.arguments[1].QueryInterface(Components.interfaces.nsIPrintProgressParams)
+      progressParams = window.arguments[1].QueryInterface(Ci.nsIPrintProgressParams);
       if (progressParams) {
         docTitle = ellipseString(progressParams.docTitle, false);
         docURL   = ellipseString(progressParams.docURL, true);
@@ -199,20 +199,21 @@ function onLoad() {
 
     if ( !printProgress ) {
         dump( "Invalid argument to printProgress.xul\n" );
-        window.close()
+        window.close();
         return;
     }
 
     dialog = {};
-    dialog.strings = new Array;
+    dialog.strings = [];
     dialog.title        = document.getElementById("dialog.title");
     dialog.titleLabel   = document.getElementById("dialog.titleLabel");
     dialog.progress     = document.getElementById("dialog.progress");
+    dialog.progressBox     = document.getElementById("dialog.progressBox");
     dialog.progressText = document.getElementById("dialog.progressText");
     dialog.progressLabel = document.getElementById("dialog.progressLabel");
     dialog.tempLabel    = document.getElementById("dialog.tempLabel");
 
-    dialog.progress.setAttribute("hidden", "true");
+    dialog.progressBox.setAttribute("hidden", "true");
 
     var progressLabel = getString("preparing");
     if (progressLabel == "") {

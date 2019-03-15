@@ -9,6 +9,8 @@ Marionette.
 
 """
 
+from __future__ import absolute_import, print_function
+
 import argparse
 import os
 import select
@@ -24,10 +26,10 @@ from wptserve import (
 )
 
 
-here = os.path.abspath(os.path.dirname(__file__))
-default_doc_root = os.path.join(os.path.dirname(here), "www")
-default_ssl_cert = os.path.join(here, "test.cert")
-default_ssl_key = os.path.join(here, "test.key")
+root = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+default_doc_root = os.path.join(root, "www")
+default_ssl_cert = os.path.join(root, "certificates", "test.cert")
+default_ssl_key = os.path.join(root, "certificates", "test.key")
 
 
 @handlers.handler
@@ -107,7 +109,7 @@ class FixtureServer(object):
 
         self._httpd = server.WebTestHttpd(host=host,
                                           port=port,
-                                          bind_hostname=True,
+                                          bind_address=True,
                                           doc_root=doc_root,
                                           routes=routes,
                                           use_ssl=True if scheme == "https" else False,
@@ -175,6 +177,6 @@ e.g. \"https://0.0.0.0:0/base/\"""")
                           ssl_cert=args.ssl_cert,
                           ssl_key=args.ssl_key)
     httpd.start()
-    print >>sys.stderr, "%s: started fixture server on %s" % \
-        (sys.argv[0], httpd.get_url("/"))
+    print("{0}: started fixture server on {1}".format(sys.argv[0], httpd.get_url("/")),
+          file=sys.stderr)
     httpd.wait()

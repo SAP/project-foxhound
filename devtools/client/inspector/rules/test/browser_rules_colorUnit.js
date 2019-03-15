@@ -15,50 +15,50 @@ const TEST_URI = `
   <div id='testid' class='testclass'>Styled Node</div>
 `;
 
-add_task(function* () {
-  let TESTS = [
+add_task(async function() {
+  const TESTS = [
     {name: "hex", result: "#0f0"},
-    {name: "rgb", result: "rgb(0, 255, 0)"}
+    {name: "rgb", result: "rgb(0, 255, 0)"},
   ];
 
-  for (let {name, result} of TESTS) {
+  for (const {name, result} of TESTS) {
     info("starting test for " + name);
     Services.prefs.setCharPref("devtools.defaultColorUnit", name);
 
-    let tab = yield addTab("data:text/html;charset=utf-8," +
+    const tab = await addTab("data:text/html;charset=utf-8," +
                            encodeURIComponent(TEST_URI));
-    let {inspector, view} = yield openRuleView();
+    const {inspector, view} = await openRuleView();
 
-    yield selectNode("#testid", inspector);
-    yield basicTest(view, name, result);
+    await selectNode("#testid", inspector);
+    await basicTest(view, name, result);
 
-    let target = TargetFactory.forTab(tab);
-    yield gDevTools.closeToolbox(target);
+    const target = await TargetFactory.forTab(tab);
+    await gDevTools.closeToolbox(target);
     gBrowser.removeCurrentTab();
   }
 });
 
-function* basicTest(view, name, result) {
-  let cPicker = view.tooltips.colorPicker;
-  let swatch = getRuleViewProperty(view, "#testid", "color").valueSpan
+async function basicTest(view, name, result) {
+  const cPicker = view.tooltips.getTooltip("colorPicker");
+  const swatch = getRuleViewProperty(view, "#testid", "color").valueSpan
       .querySelector(".ruleview-colorswatch");
-  let onColorPickerReady = cPicker.once("ready");
+  const onColorPickerReady = cPicker.once("ready");
   swatch.click();
-  yield onColorPickerReady;
+  await onColorPickerReady;
 
-  yield simulateColorPickerChange(view, cPicker, [0, 255, 0, 1], {
+  await simulateColorPickerChange(view, cPicker, [0, 255, 0, 1], {
     selector: "#testid",
     name: "color",
-    value: "rgb(0, 255, 0)"
+    value: "rgb(0, 255, 0)",
   });
 
-  let spectrum = cPicker.spectrum;
-  let onHidden = cPicker.tooltip.once("hidden");
+  const spectrum = cPicker.spectrum;
+  const onHidden = cPicker.tooltip.once("hidden");
   // Validating the color change ends up updating the rule view twice
-  let onRuleViewChanged = waitForNEvents(view, "ruleview-changed", 2);
+  const onRuleViewChanged = waitForNEvents(view, "ruleview-changed", 2);
   focusAndSendKey(spectrum.element.ownerDocument.defaultView, "RETURN");
-  yield onHidden;
-  yield onRuleViewChanged;
+  await onHidden;
+  await onRuleViewChanged;
 
   is(getRuleViewPropertyValue(view, "#testid", "color"), result,
      "changing the color used the " + name + " unit");

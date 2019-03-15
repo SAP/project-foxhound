@@ -7,17 +7,17 @@ description: >
   When the base of a property reference is primitive, it is coerced to an
   object during value retrieval (honoring the realm of the current execution
   context)
-info: >
+info: |
   [...]
   5. If IsPropertyReference(V) is true, then
      a. If HasPrimitiveBase(V) is true, then
         i. Assert: In this case, base will never be null or undefined.
         ii. Let base be ToObject(base).
      b. Return ? base.[[Get]](GetReferencedName(V), GetThisValue(V)).
-features: [Symbol]
+features: [cross-realm, Symbol]
 ---*/
 
-var other = $.createRealm().global;
+var other = $262.createRealm().global;
 
 other.Number.prototype.test262 = 'number prototype';
 other.value = 1;

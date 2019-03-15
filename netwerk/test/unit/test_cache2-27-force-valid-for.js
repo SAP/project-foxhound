@@ -1,19 +1,12 @@
-Components.utils.import('resource://gre/modules/LoadContextInfo.jsm');
-
 function run_test()
 {
   do_get_profile();
-
-  if (!newCacheBackEndUsed()) {
-    do_check_true(true, "This test checks only cache2 specific behavior.");
-    return;
-  }
 
   var mc = new MultipleCallbacks(2, function() {
     finish_cache2_test();
   });
 
-  asyncOpenCacheEntry("http://m1/", "memory", Ci.nsICacheStorage.OPEN_NORMALLY, LoadContextInfo.default,
+  asyncOpenCacheEntry("http://m1/", "memory", Ci.nsICacheStorage.OPEN_NORMALLY, Services.loadContextInfo.default,
     new OpenCallback(NEW, "meta", "data", function(entry) {
       // Check the default
       equal(entry.isForcedValid, false);

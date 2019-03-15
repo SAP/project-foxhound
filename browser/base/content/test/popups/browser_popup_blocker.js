@@ -14,16 +14,41 @@ function clearAllPermissionsByPrefix(aPrefix) {
   }
 }
 
-add_task(function* test_opening_blocked_popups() {
+add_task(async function setup() {
   // Enable the popup blocker.
-  yield SpecialPowers.pushPrefEnv({set: [["dom.disable_open_during_load", true]]});
+  await SpecialPowers.pushPrefEnv({set: [["dom.disable_open_during_load", true]]});
+});
+
+// Tests that we show a special message when popup blocking exceeds
+// a certain maximum of popups per page.
+add_task(async function test_maximum_reported_blocks() {
+  Services.prefs.setIntPref("privacy.popups.maxReported", 5);
 
   // Open the test page.
-  let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, baseURL + "popup_blocker.html");
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, baseURL + "popup_blocker_10_popups.html");
+
+  // Wait for the popup-blocked notification.
+  let notification = await BrowserTestUtils.waitForCondition(() =>
+    gBrowser.getNotificationBox().getNotificationWithValue("popup-blocked"));
+
+  // Slightly hacky way to ensure we show the correct message in this case.
+  ok(notification.messageText.textContent.includes("more than"),
+     "Notification label has 'more than'");
+  ok(notification.messageText.textContent.includes("5"),
+     "Notification label shows the maximum number of popups");
+
+  gBrowser.removeTab(tab);
+
+  Services.prefs.clearUserPref("privacy.popups.maxReported");
+});
+
+add_task(async function test_opening_blocked_popups() {
+  // Open the test page.
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, baseURL + "popup_blocker.html");
 
   // Wait for the popup-blocked notification.
   let notification;
-  yield BrowserTestUtils.waitForCondition(() =>
+  await BrowserTestUtils.waitForCondition(() =>
     notification = gBrowser.getNotificationBox().getNotificationWithValue("popup-blocked"));
 
   // Show the menu.
@@ -31,14 +56,14 @@ add_task(function* test_opening_blocked_popups() {
   let popupFilled = BrowserTestUtils.waitForMessage(gBrowser.selectedBrowser.messageManager,
                                                     "PopupBlocking:ReplyGetBlockedPopupList");
   notification.querySelector("button").doCommand();
-  let popup_event = yield popupShown;
+  let popup_event = await popupShown;
   let menu = popup_event.target;
   is(menu.id, "blockedPopupOptions", "Blocked popup menu shown");
 
-  yield popupFilled;
+  await popupFilled;
   // The menu is filled on the same message that we waited for, so let's ensure that it
   // had a chance of running before this test code.
-  yield new Promise(resolve => executeSoon(resolve));
+  await new Promise(resolve => executeSoon(resolve));
 
   // Check the menu contents.
   let sep = menu.querySelector("menuseparator");
@@ -56,16 +81,16 @@ add_task(function* test_opening_blocked_popups() {
   gBrowser.tabContainer.addEventListener("TabOpen", onTabOpen);
 
   // Press the button.
-  let allow = menu.querySelector("[observes='blockedPopupAllowSite']");
+  let allow = document.getElementById("blockedPopupAllowSite");
   allow.doCommand();
-  yield BrowserTestUtils.waitForCondition(() =>
+  await BrowserTestUtils.waitForCondition(() =>
     popupTabs.length == 2 &&
     popupTabs.every(aTab => aTab.linkedBrowser.currentURI.spec != "about:blank"));
 
   gBrowser.tabContainer.removeEventListener("TabOpen", onTabOpen);
 
-  is(popupTabs[0].linkedBrowser.currentURI.spec, "data:text/plain;charset=utf-8,a", "Popup a");
-  is(popupTabs[1].linkedBrowser.currentURI.spec, "data:text/plain;charset=utf-8,b", "Popup b");
+  ok(popupTabs[0].linkedBrowser.currentURI.spec.endsWith("popup_blocker_a.html"), "Popup a");
+  ok(popupTabs[1].linkedBrowser.currentURI.spec.endsWith("popup_blocker_b.html"), "Popup b");
 
   // Clean up.
   gBrowser.removeTab(tab);
@@ -75,22 +100,4 @@ add_task(function* test_opening_blocked_popups() {
   clearAllPermissionsByPrefix("popup");
   // Ensure the menu closes.
   menu.hidePopup();
-});
-
-add_task(function* check_icon_hides() {
-  // Enable the popup blocker.
-  yield SpecialPowers.pushPrefEnv({set: [["dom.disable_open_during_load", true]]});
-
-  let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, baseURL + "popup_blocker.html");
-
-  let button = document.getElementById("page-report-button");
-  yield BrowserTestUtils.waitForCondition(() =>
-    gBrowser.getNotificationBox().getNotificationWithValue("popup-blocked"));
-  ok(!button.hidden, "Button should be visible");
-
-  let otherPageLoaded = BrowserTestUtils.browserLoaded(tab.linkedBrowser);
-  openLinkIn(baseURL, "current", {});
-  yield otherPageLoaded;
-  ok(button.hidden, "Button should have hidden again after another page loaded.");
-  yield BrowserTestUtils.removeTab(tab);
 });

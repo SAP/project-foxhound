@@ -2657,10 +2657,10 @@ mp_toradix(mp_int *mp, char *str, int radix)
         /* Reverse the digits and sign indicator     */
         ix = 0;
         while (ix < pos) {
-            char tmp = str[ix];
+            char tmpc = str[ix];
 
             str[ix] = str[pos];
-            str[pos] = tmp;
+            str[pos] = tmpc;
             ++ix;
             --pos;
         }
@@ -2782,15 +2782,7 @@ s_mp_pad(mp_int *mp, mp_size min)
 void
 s_mp_setz(mp_digit *dp, mp_size count)
 {
-#if MP_MEMSET == 0
-    int ix;
-
-    for (ix = 0; ix < count; ix++)
-        dp[ix] = 0;
-#else
     memset(dp, 0, count * sizeof(mp_digit));
-#endif
-
 } /* end s_mp_setz() */
 
 /* }}} */
@@ -2801,14 +2793,7 @@ s_mp_setz(mp_digit *dp, mp_size count)
 void
 s_mp_copy(const mp_digit *sp, mp_digit *dp, mp_size count)
 {
-#if MP_MEMCPY == 0
-    int ix;
-
-    for (ix = 0; ix < count; ix++)
-        dp[ix] = sp[ix];
-#else
     memcpy(dp, sp, count * sizeof(mp_digit));
-#endif
 } /* end s_mp_copy() */
 
 /* }}} */
@@ -2859,6 +2844,9 @@ void
 s_mp_exch(mp_int *a, mp_int *b)
 {
     mp_int tmp;
+    if (!a || !b) {
+        return;
+    }
 
     tmp = *a;
     *a = *b;
@@ -3325,13 +3313,14 @@ s_mp_div_d(mp_int *mp, mp_digit d, mp_digit *r)
     /* could check for power of 2 here, but mp_div_d does that. */
     if (MP_USED(mp) == 1) {
         mp_digit n = MP_DIGIT(mp, 0);
-        mp_digit rem;
+        mp_digit remdig;
 
         q = n / d;
-        rem = n % d;
+        remdig = n % d;
         MP_DIGIT(mp, 0) = q;
-        if (r)
-            *r = rem;
+        if (r) {
+            *r = remdig;
+        }
         return MP_OKAY;
     }
 
@@ -4086,7 +4075,7 @@ s_mpv_sqr_add_prop(const mp_digit *pa, mp_size a_len, mp_digit *ps)
 }
 #endif
 
-#if (defined(MP_NO_MP_WORD) || defined(MP_NO_DIV_WORD)) && !defined(MP_ASSEMBLY_DIV_2DX1D)
+#if !defined(MP_ASSEMBLY_DIV_2DX1D)
 /*
 ** Divide 64-bit (Nhi,Nlo) by 32-bit divisor, which must be normalized
 ** so its high bit is 1.   This code is from NSPR.
@@ -4164,11 +4153,7 @@ mp_err s_mp_div(mp_int *rem,  /* i: dividend, o: remainder */
                 mp_int *quot) /* i: 0;        o: quotient  */
 {
     mp_int part, t;
-#if !defined(MP_NO_MP_WORD) && !defined(MP_NO_DIV_WORD)
-    mp_word q_msd;
-#else
     mp_digit q_msd;
-#endif
     mp_err res;
     mp_digit d;
     mp_digit div_msd;
@@ -4213,7 +4198,7 @@ mp_err s_mp_div(mp_int *rem,  /* i: dividend, o: remainder */
         MP_USED(&part) = MP_USED(div);
 
         /* We have now truncated the part of the remainder to the same length as
-     * the divisor. If part is smaller than div, extend part by one digit. */
+         * the divisor. If part is smaller than div, extend part by one digit. */
         if (s_mp_cmp(&part, div) < 0) {
             --unusedRem;
 #if MP_ARGCHK == 2
@@ -4230,18 +4215,12 @@ mp_err s_mp_div(mp_int *rem,  /* i: dividend, o: remainder */
         div_msd = MP_DIGIT(div, MP_USED(div) - 1);
         if (!partExtended) {
             /* In this case, q_msd /= div_msd is always 1. First, since div_msd is
-       * normalized to have the high bit set, 2*div_msd > MP_DIGIT_MAX. Since
-       * we didn't extend part, q_msd >= div_msd. Therefore we know that
-       * div_msd <= q_msd <= MP_DIGIT_MAX < 2*div_msd. Dividing by div_msd we
-       * get 1 <= q_msd/div_msd < 2. So q_msd /= div_msd must be 1. */
+             * normalized to have the high bit set, 2*div_msd > MP_DIGIT_MAX. Since
+             * we didn't extend part, q_msd >= div_msd. Therefore we know that
+             * div_msd <= q_msd <= MP_DIGIT_MAX < 2*div_msd. Dividing by div_msd we
+             * get 1 <= q_msd/div_msd < 2. So q_msd /= div_msd must be 1. */
             q_msd = 1;
         } else {
-#if !defined(MP_NO_MP_WORD) && !defined(MP_NO_DIV_WORD)
-            q_msd = (q_msd << MP_DIGIT_BIT) | MP_DIGIT(&part, MP_USED(&part) - 2);
-            q_msd /= div_msd;
-            if (q_msd == RADIX)
-                --q_msd;
-#else
             if (q_msd == div_msd) {
                 q_msd = MP_DIGIT_MAX;
             } else {
@@ -4249,7 +4228,6 @@ mp_err s_mp_div(mp_int *rem,  /* i: dividend, o: remainder */
                 MP_CHECKOK(s_mpv_div_2dx1d(q_msd, MP_DIGIT(&part, MP_USED(&part) - 2),
                                            div_msd, &q_msd, &r));
             }
-#endif
         }
 #if MP_ARGCHK == 2
         assert(q_msd > 0); /* This case should never occur any more. */
@@ -4259,15 +4237,15 @@ mp_err s_mp_div(mp_int *rem,  /* i: dividend, o: remainder */
 
         /* See what that multiplies out to                   */
         mp_copy(div, &t);
-        MP_CHECKOK(s_mp_mul_d(&t, (mp_digit)q_msd));
+        MP_CHECKOK(s_mp_mul_d(&t, q_msd));
 
         /*
-       If it's too big, back it off.  We should not have to do this
-       more than once, or, in rare cases, twice.  Knuth describes a
-       method by which this could be reduced to a maximum of once, but
-       I didn't implement that here.
-     * When using s_mpv_div_2dx1d, we may have to do this 3 times.
-     */
+           If it's too big, back it off.  We should not have to do this
+           more than once, or, in rare cases, twice.  Knuth describes a
+           method by which this could be reduced to a maximum of once, but
+           I didn't implement that here.
+           When using s_mpv_div_2dx1d, we may have to do this 3 times.
+         */
         for (i = 4; s_mp_cmp(&t, &part) > 0 && i > 0; --i) {
             --q_msd;
             MP_CHECKOK(s_mp_sub(&t, div)); /* t -= div */
@@ -4282,11 +4260,11 @@ mp_err s_mp_div(mp_int *rem,  /* i: dividend, o: remainder */
         s_mp_clamp(rem);
 
         /*
-      Include the digit in the quotient.  We allocated enough memory
-      for any quotient we could ever possibly get, so we should not
-      have to check for failures here
-     */
-        MP_DIGIT(quot, unusedRem) = (mp_digit)q_msd;
+          Include the digit in the quotient.  We allocated enough memory
+          for any quotient we could ever possibly get, so we should not
+          have to check for failures here
+         */
+        MP_DIGIT(quot, unusedRem) = q_msd;
     }
 
     /* Denormalize remainder                */
@@ -4797,38 +4775,61 @@ mp_to_signed_octets(const mp_int *mp, unsigned char *str, mp_size maxlen)
 /* }}} */
 
 /* {{{ mp_to_fixlen_octets(mp, str) */
-/* output a buffer of big endian octets exactly as long as requested. */
+/* output a buffer of big endian octets exactly as long as requested.
+   constant time on the value of mp. */
 mp_err
 mp_to_fixlen_octets(const mp_int *mp, unsigned char *str, mp_size length)
 {
-    int ix, pos = 0;
+    int ix, jx;
     unsigned int bytes;
 
-    ARGCHK(mp != NULL && str != NULL && !SIGN(mp), MP_BADARG);
+    ARGCHK(mp != NULL, MP_BADARG);
+    ARGCHK(str != NULL, MP_BADARG);
+    ARGCHK(!SIGN(mp), MP_BADARG);
+    ARGCHK(length > 0, MP_BADARG);
 
-    bytes = mp_unsigned_octet_size(mp);
-    ARGCHK(bytes <= length, MP_BADARG);
+    /* Constant time on the value of mp.  Don't use mp_unsigned_octet_size. */
+    bytes = USED(mp) * MP_DIGIT_SIZE;
 
-    /* place any needed leading zeros */
-    for (; length > bytes; --length) {
-        *str++ = 0;
+    /* If the output is shorter than the native size of mp, then check that any
+     * bytes not written have zero values.  This check isn't constant time on
+     * the assumption that timing-sensitive callers can guarantee that mp fits
+     * in the allocated space. */
+    ix = USED(mp) - 1;
+    if (bytes > length) {
+        unsigned int zeros = bytes - length;
+
+        while (zeros >= MP_DIGIT_SIZE) {
+            ARGCHK(DIGIT(mp, ix) == 0, MP_BADARG);
+            zeros -= MP_DIGIT_SIZE;
+            ix--;
+        }
+
+        if (zeros > 0) {
+            mp_digit d = DIGIT(mp, ix);
+            mp_digit m = ~0ULL << ((MP_DIGIT_SIZE - zeros) * CHAR_BIT);
+            ARGCHK((d & m) == 0, MP_BADARG);
+            for (jx = MP_DIGIT_SIZE - zeros - 1; jx >= 0; jx--) {
+                *str++ = d >> (jx * CHAR_BIT);
+            }
+            ix--;
+        }
+    } else if (bytes < length) {
+        /* Place any needed leading zeros. */
+        unsigned int zeros = length - bytes;
+        memset(str, 0, zeros);
+        str += zeros;
     }
 
-    /* Iterate over each digit... */
-    for (ix = USED(mp) - 1; ix >= 0; ix--) {
+    /* Iterate over each whole digit... */
+    for (; ix >= 0; ix--) {
         mp_digit d = DIGIT(mp, ix);
-        int jx;
 
         /* Unpack digit bytes, high order first */
-        for (jx = sizeof(mp_digit) - 1; jx >= 0; jx--) {
-            unsigned char x = (unsigned char)(d >> (jx * CHAR_BIT));
-            if (!pos && !x) /* suppress leading zeros */
-                continue;
-            str[pos++] = x;
+        for (jx = MP_DIGIT_SIZE - 1; jx >= 0; jx--) {
+            *str++ = d >> (jx * CHAR_BIT);
         }
     }
-    if (!pos)
-        str[pos++] = 0;
     return MP_OKAY;
 } /* end mp_to_fixlen_octets() */
 /* }}} */

@@ -21,12 +21,12 @@ const TEST_URI = `
   <div class="test">Testing the cubic-bezier tooltip!</div>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
-  yield selectNode("div", inspector);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, view} = await openRuleView();
+  await selectNode("div", inspector);
 
-  let swatches = [];
+  const swatches = [];
   swatches.push(
     getRuleViewProperty(view, "div", "animation").valueSpan
     .querySelector(".ruleview-bezierswatch")
@@ -44,27 +44,27 @@ add_task(function* () {
     .querySelector(".ruleview-bezierswatch")
   );
 
-  for (let swatch of swatches) {
+  for (const swatch of swatches) {
     info("Testing that the cubic-bezier appears on cubicswatch click");
-    yield testAppears(view, swatch);
+    await testAppears(view, swatch);
   }
 });
 
-function* testAppears(view, swatch) {
+async function testAppears(view, swatch) {
   ok(swatch, "The cubic-swatch exists");
 
-  let bezier = view.tooltips.cubicBezier;
+  const bezier = view.tooltips.getTooltip("cubicBezier");
   ok(bezier, "The rule-view has the expected cubicBezier property");
 
-  let bezierPanel = bezier.tooltip.panel;
+  const bezierPanel = bezier.tooltip.panel;
   ok(bezierPanel, "The XUL panel for the cubic-bezier tooltip exists");
 
-  let onBezierWidgetReady = bezier.once("ready");
+  const onBezierWidgetReady = bezier.once("ready");
   swatch.click();
-  yield onBezierWidgetReady;
+  await onBezierWidgetReady;
 
   ok(true, "The cubic-bezier tooltip was shown on click of the cibuc swatch");
   ok(!inplaceEditor(swatch.parentNode),
     "The inplace editor wasn't shown as a result of the cibuc swatch click");
-  yield hideTooltipAndWaitForRuleViewChanged(bezier, view);
+  await hideTooltipAndWaitForRuleViewChanged(bezier, view);
 }

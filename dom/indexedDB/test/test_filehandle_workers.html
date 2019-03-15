@@ -43,9 +43,10 @@
     let mutableFile = event.target.result;
 
     function dummyWorkerScript() {
+      /* eslint-env worker */
       onmessage = function(event) {
-        throw("Shouldn't be called!");
-      }
+        throw ("Shouldn't be called!");
+      };
     }
 
     let url =
@@ -59,7 +60,7 @@
     catch (e) {
       ok(e instanceof DOMException, "Got exception.");
       is(e.name, "DataCloneError", "Good error.");
-      is(e.code, DOMException.DATA_CLONE_ERR, "Good error code.")
+      is(e.code, DOMException.DATA_CLONE_ERR, "Good error code.");
     }
 
     mutableFile.onerror = errorHandler;
@@ -85,7 +86,7 @@
     catch (e) {
       ok(e instanceof DOMException, "Got exception.");
       is(e.name, "DataCloneError", "Good error.");
-      is(e.code, DOMException.DATA_CLONE_ERR, "Good error code.")
+      is(e.code, DOMException.DATA_CLONE_ERR, "Good error code.");
     }
 
     let objectStore =
@@ -105,21 +106,22 @@
           request = objectStore.get(42);
           request.onsuccess = function(event) {
             try {
+              // eslint-disable-next-line no-unused-vars
               let result = request.result;
               postMessage("error");
             }
             catch (e) {
               postMessage("success");
             }
-          }
+          };
           request.onerror = function(event) {
             postMessage("error");
-          }
-        }
+          };
+        };
         request.onerror = function(event) {
           postMessage("error");
-        }
-      }
+        };
+      };
     }
 
     url = URL.createObjectURL(new Blob(["(", workerScript.toSource(), ")()"]));

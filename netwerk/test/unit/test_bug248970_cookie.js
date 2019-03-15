@@ -2,9 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver;
 
@@ -37,7 +37,7 @@ function set_private_cookie(value, callback) {
 function check_cookie_presence(value, isPrivate, expected, callback) {
   var chan = setup_chan('present?cookie=' + value.replace('=','|'), isPrivate, function(req) {
     req.QueryInterface(Ci.nsIHttpChannel);
-    do_check_eq(req.responseStatus, expected ? 200 : 404);
+    Assert.equal(req.responseStatus, expected ? 200 : 404);
     callback(req);
   });
 }
@@ -47,7 +47,7 @@ function presentHandler(metadata, response) {
   var match = /cookie=([^&]*)/.exec(metadata.queryString);
   if (match) {
     try {
-      present = metadata.getHeader("Cookie").indexOf(match[1].replace("|","=")) != -1;
+      present = metadata.getHeader("Cookie").includes(match[1].replace("|","="));
     } catch (x) {
     }
   }
@@ -76,9 +76,9 @@ function run_test() {
   
   function check_cookie(req) {
     req.QueryInterface(Ci.nsIHttpChannel);
-    do_check_eq(req.responseStatus, 200);
+    Assert.equal(req.responseStatus, 200);
     try {
-      do_check_true(req.getResponseHeader("Set-Cookie") != "", "expected a Set-Cookie header");
+      Assert.ok(req.getResponseHeader("Set-Cookie") != "", "expected a Set-Cookie header");
     } catch (x) {
       do_throw("missing Set-Cookie header");
     }
@@ -89,7 +89,7 @@ function run_test() {
   let tests = [];
   
   function runNextTest() {
-    do_execute_soon(tests.shift());
+    executeSoon(tests.shift());
   }
   
   tests.push(function() {
@@ -123,7 +123,7 @@ function run_test() {
       // Simulate all private browsing instances being closed
       var obsvc = Cc["@mozilla.org/observer-service;1"].
         getService(Ci.nsIObserverService);
-      obsvc.notifyObservers(null, "last-pb-context-exited", null);
+      obsvc.notifyObservers(null, "last-pb-context-exited");
       // Check that all private cookies are now unavailable in new private requests
       check_cookie_presence("C2=V2", true, false, runNextTest);
     });

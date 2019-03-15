@@ -4,16 +4,14 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = [
+var EXPORTED_SYMBOLS = [
   "getTestLogger",
   "initTestLogging",
 ];
 
-var {utils: Cu} = Components;
+ChromeUtils.import("resource://gre/modules/Log.jsm");
 
-Cu.import("resource://gre/modules/Log.jsm");
-
-this.initTestLogging = function initTestLogging(level) {
+function initTestLogging(level) {
   function LogStats() {
     this.errorsLogged = 0;
   }
@@ -25,7 +23,7 @@ this.initTestLogging = function initTestLogging(level) {
 
       return message.time + "\t" + message.loggerName + "\t" + message.levelDesc + "\t" +
         this.formatText(message) + "\n";
-    }
+    },
   };
   LogStats.prototype.__proto__ = new Log.BasicFormatter();
 
@@ -45,10 +43,14 @@ this.initTestLogging = function initTestLogging(level) {
   log.ownAppenders = [appender];
   log.updateAppenders();
 
+  // SQLite logging is noisy in these tests - we make it quiet by default
+  // (although individual tests are free to bump it later)
+  Log.repository.getLogger("Sqlite").level = Log.Level.Info;
+
   return logStats;
 }
 
-this.getTestLogger = function getTestLogger(component) {
+function getTestLogger(component) {
   return Log.repository.getLogger("Testing");
 }
 

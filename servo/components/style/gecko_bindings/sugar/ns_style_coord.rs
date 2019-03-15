@@ -1,12 +1,13 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! Rust helpers for Gecko's `nsStyleCoord`.
 
-use gecko_bindings::bindings::{Gecko_ResetStyleCoord, Gecko_SetStyleCoordCalcValue, Gecko_AddRefCalcArbitraryThread};
-use gecko_bindings::structs::{nsStyleCoord_Calc, nsStyleUnit, nsStyleUnion, nsStyleCoord, nsStyleSides, nsStyleCorners};
-use gecko_bindings::structs::{nsStyleCoord_CalcValue, nscoord};
+use crate::gecko_bindings::bindings;
+use crate::gecko_bindings::structs::{nsStyleCoord, nsStyleCoord_Calc, nsStyleCoord_CalcValue};
+use crate::gecko_bindings::structs::{nsStyleCorners, nsStyleSides};
+use crate::gecko_bindings::structs::{nsStyleUnion, nsStyleUnit, nscoord};
 use std::mem;
 
 impl nsStyleCoord {
@@ -20,22 +21,18 @@ impl nsStyleCoord {
     }
 }
 
-impl CoordData for nsStyleCoord {
+unsafe impl CoordData for nsStyleCoord {
     #[inline]
     fn unit(&self) -> nsStyleUnit {
-        unsafe {
-            *self.get_mUnit()
-        }
+        unsafe { *self.get_mUnit() }
     }
     #[inline]
     fn union(&self) -> nsStyleUnion {
-        unsafe {
-            *self.get_mValue()
-        }
+        unsafe { *self.get_mValue() }
     }
 }
 
-impl CoordDataMut for nsStyleCoord {
+unsafe impl CoordDataMut for nsStyleCoord {
     unsafe fn values_mut(&mut self) -> (&mut nsStyleUnit, &mut nsStyleUnion) {
         let unit = self.get_mUnit_mut() as *mut _;
         let value = self.get_mValue_mut() as *mut _;
@@ -51,6 +48,14 @@ impl nsStyleCoord_CalcValue {
             mPercent: 0.0,
             mHasPercent: false,
         }
+    }
+}
+
+impl PartialEq for nsStyleCoord_CalcValue {
+    fn eq(&self, other: &Self) -> bool {
+        self.mLength == other.mLength &&
+            self.mPercent == other.mPercent &&
+            self.mHasPercent == other.mHasPercent
     }
 }
 
@@ -90,35 +95,27 @@ pub struct SidesDataMut<'a> {
     index: usize,
 }
 
-impl<'a> CoordData for SidesData<'a> {
+unsafe impl<'a> CoordData for SidesData<'a> {
     #[inline]
     fn unit(&self) -> nsStyleUnit {
-        unsafe {
-            self.sides.get_mUnits()[self.index]
-        }
+        unsafe { self.sides.get_mUnits()[self.index] }
     }
     #[inline]
     fn union(&self) -> nsStyleUnion {
-        unsafe {
-            self.sides.get_mValues()[self.index]
-        }
+        unsafe { self.sides.get_mValues()[self.index] }
     }
 }
-impl<'a> CoordData for SidesDataMut<'a> {
+unsafe impl<'a> CoordData for SidesDataMut<'a> {
     #[inline]
     fn unit(&self) -> nsStyleUnit {
-        unsafe {
-            self.sides.get_mUnits()[self.index]
-        }
+        unsafe { self.sides.get_mUnits()[self.index] }
     }
     #[inline]
     fn union(&self) -> nsStyleUnion {
-        unsafe {
-            self.sides.get_mValues()[self.index]
-        }
+        unsafe { self.sides.get_mValues()[self.index] }
     }
 }
-impl<'a> CoordDataMut for SidesDataMut<'a> {
+unsafe impl<'a> CoordDataMut for SidesDataMut<'a> {
     unsafe fn values_mut(&mut self) -> (&mut nsStyleUnit, &mut nsStyleUnion) {
         let unit = &mut self.sides.get_mUnits_mut()[self.index] as *mut _;
         let value = &mut self.sides.get_mValues_mut()[self.index] as *mut _;
@@ -160,31 +157,23 @@ pub struct CornersDataMut<'a> {
     index: usize,
 }
 
-impl<'a> CoordData for CornersData<'a> {
+unsafe impl<'a> CoordData for CornersData<'a> {
     fn unit(&self) -> nsStyleUnit {
-        unsafe {
-            self.corners.get_mUnits()[self.index]
-        }
+        unsafe { self.corners.get_mUnits()[self.index] }
     }
     fn union(&self) -> nsStyleUnion {
-        unsafe {
-            self.corners.get_mValues()[self.index]
-        }
+        unsafe { self.corners.get_mValues()[self.index] }
     }
 }
-impl<'a> CoordData for CornersDataMut<'a> {
+unsafe impl<'a> CoordData for CornersDataMut<'a> {
     fn unit(&self) -> nsStyleUnit {
-        unsafe {
-            self.corners.get_mUnits()[self.index]
-        }
+        unsafe { self.corners.get_mUnits()[self.index] }
     }
     fn union(&self) -> nsStyleUnion {
-        unsafe {
-            self.corners.get_mValues()[self.index]
-        }
+        unsafe { self.corners.get_mValues()[self.index] }
     }
 }
-impl<'a> CoordDataMut for CornersDataMut<'a> {
+unsafe impl<'a> CoordDataMut for CornersDataMut<'a> {
     unsafe fn values_mut(&mut self) -> (&mut nsStyleUnit, &mut nsStyleUnion) {
         let unit = &mut self.corners.get_mUnits_mut()[self.index] as *mut _;
         let value = &mut self.corners.get_mValues_mut()[self.index] as *mut _;
@@ -192,11 +181,11 @@ impl<'a> CoordDataMut for CornersDataMut<'a> {
     }
 }
 
-#[derive(Copy, Clone)]
 /// Enum representing the tagged union that is CoordData.
 ///
 /// In release mode this should never actually exist in the code, and will be
 /// optimized out by threading matches and inlining.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CoordDataValue {
     /// eStyleUnit_Null
     Null,
@@ -212,12 +201,6 @@ pub enum CoordDataValue {
     Factor(f32),
     /// eStyleUnit_Degree
     Degree(f32),
-    /// eStyleUnit_Grad
-    Grad(f32),
-    /// eStyleUnit_Radian
-    Radian(f32),
-    /// eStyleUnit_Turn
-    Turn(f32),
     /// eStyleUnit_FlexFraction
     FlexFraction(f32),
     /// eStyleUnit_Coord
@@ -230,9 +213,8 @@ pub enum CoordDataValue {
     Calc(nsStyleCoord_CalcValue),
 }
 
-
 /// A trait to abstract on top of a mutable `nsStyleCoord`-like object.
-pub trait CoordDataMut : CoordData {
+pub unsafe trait CoordDataMut: CoordData {
     /// Get mutably the unit and the union.
     ///
     /// This is unsafe since it's possible to modify the unit without changing
@@ -249,7 +231,7 @@ pub trait CoordDataMut : CoordData {
         unsafe {
             if self.unit() == nsStyleUnit::eStyleUnit_Calc {
                 let (unit, union) = self.values_mut();
-                Gecko_ResetStyleCoord(unit, union);
+                bindings::Gecko_ResetStyleCoord(unit, union);
             }
         }
     }
@@ -285,7 +267,7 @@ pub trait CoordDataMut : CoordData {
     /// Useful for initializing uninits, given that `set_value` may segfault on
     /// uninits.
     fn leaky_set_null(&mut self) {
-        use gecko_bindings::structs::nsStyleUnit::*;
+        use crate::gecko_bindings::structs::nsStyleUnit::*;
         unsafe {
             let (unit, union) = self.values_mut();
             *unit = eStyleUnit_Null;
@@ -296,8 +278,8 @@ pub trait CoordDataMut : CoordData {
     #[inline(always)]
     /// Sets the inner value.
     fn set_value(&mut self, value: CoordDataValue) {
-        use gecko_bindings::structs::nsStyleUnit::*;
         use self::CoordDataValue::*;
+        use crate::gecko_bindings::structs::nsStyleUnit::*;
         self.reset();
         unsafe {
             let (unit, union) = self.values_mut();
@@ -305,63 +287,51 @@ pub trait CoordDataMut : CoordData {
                 Null => {
                     *unit = eStyleUnit_Null;
                     *union.mInt.as_mut() = 0;
-                }
+                },
                 Normal => {
                     *unit = eStyleUnit_Normal;
                     *union.mInt.as_mut() = 0;
-                }
+                },
                 Auto => {
                     *unit = eStyleUnit_Auto;
                     *union.mInt.as_mut() = 0;
-                }
+                },
                 None => {
                     *unit = eStyleUnit_None;
                     *union.mInt.as_mut() = 0;
-                }
+                },
                 Percent(f) => {
                     *unit = eStyleUnit_Percent;
                     *union.mFloat.as_mut() = f;
-                }
+                },
                 Factor(f) => {
                     *unit = eStyleUnit_Factor;
                     *union.mFloat.as_mut() = f;
-                }
+                },
                 Degree(f) => {
                     *unit = eStyleUnit_Degree;
                     *union.mFloat.as_mut() = f;
-                }
-                Grad(f) => {
-                    *unit = eStyleUnit_Grad;
-                    *union.mFloat.as_mut() = f;
-                }
-                Radian(f) => {
-                    *unit = eStyleUnit_Radian;
-                    *union.mFloat.as_mut() = f;
-                }
-                Turn(f) => {
-                    *unit = eStyleUnit_Turn;
-                    *union.mFloat.as_mut() = f;
-                }
+                },
                 FlexFraction(f) => {
                     *unit = eStyleUnit_FlexFraction;
                     *union.mFloat.as_mut() = f;
-                }
+                },
                 Coord(coord) => {
                     *unit = eStyleUnit_Coord;
                     *union.mInt.as_mut() = coord;
-                }
+                },
                 Integer(i) => {
                     *unit = eStyleUnit_Integer;
                     *union.mInt.as_mut() = i;
-                }
+                },
                 Enumerated(i) => {
                     *unit = eStyleUnit_Enumerated;
                     *union.mInt.as_mut() = i as i32;
-                }
+                },
                 Calc(calc) => {
                     // Gecko_SetStyleCoordCalcValue changes the unit internally
-                    Gecko_SetStyleCoordCalcValue(unit, union, calc);
-                }
+                    bindings::Gecko_SetStyleCoordCalcValue(unit, union, calc);
+                },
             }
         }
     }
@@ -370,7 +340,7 @@ pub trait CoordDataMut : CoordData {
     /// Gets the `Calc` value mutably, asserts in debug builds if the unit is
     /// not `Calc`.
     unsafe fn as_calc_mut(&mut self) -> &mut nsStyleCoord_Calc {
-        debug_assert!(self.unit() == nsStyleUnit::eStyleUnit_Calc);
+        debug_assert_eq!(self.unit(), nsStyleUnit::eStyleUnit_Calc);
         &mut *(*self.union().mPointer.as_mut() as *mut nsStyleCoord_Calc)
     }
 
@@ -380,24 +350,23 @@ pub trait CoordDataMut : CoordData {
     fn addref_if_calc(&mut self) {
         unsafe {
             if self.unit() == nsStyleUnit::eStyleUnit_Calc {
-                Gecko_AddRefCalcArbitraryThread(self.as_calc_mut());
+                bindings::Gecko_AddRefCalcArbitraryThread(self.as_calc_mut());
             }
         }
     }
 }
 /// A trait to abstract on top of a `nsStyleCoord`-like object.
-pub trait CoordData {
+pub unsafe trait CoordData {
     /// Get the unit of this object.
     fn unit(&self) -> nsStyleUnit;
     /// Get the `nsStyleUnion` for this object.
     fn union(&self) -> nsStyleUnion;
 
-
     #[inline(always)]
     /// Get the appropriate value for this object.
     fn as_value(&self) -> CoordDataValue {
-        use gecko_bindings::structs::nsStyleUnit::*;
         use self::CoordDataValue::*;
+        use crate::gecko_bindings::structs::nsStyleUnit::*;
         unsafe {
             match self.unit() {
                 eStyleUnit_Null => Null,
@@ -407,9 +376,6 @@ pub trait CoordData {
                 eStyleUnit_Percent => Percent(self.get_float()),
                 eStyleUnit_Factor => Factor(self.get_float()),
                 eStyleUnit_Degree => Degree(self.get_float()),
-                eStyleUnit_Grad => Grad(self.get_float()),
-                eStyleUnit_Radian => Radian(self.get_float()),
-                eStyleUnit_Turn => Turn(self.get_float()),
                 eStyleUnit_FlexFraction => FlexFraction(self.get_float()),
                 eStyleUnit_Coord => Coord(self.get_integer()),
                 eStyleUnit_Integer => Integer(self.get_integer()),
@@ -422,20 +388,25 @@ pub trait CoordData {
     #[inline]
     /// Pretend inner value is a float; obtain it.
     unsafe fn get_float(&self) -> f32 {
-        use gecko_bindings::structs::nsStyleUnit::*;
-        debug_assert!(self.unit() == eStyleUnit_Percent || self.unit() == eStyleUnit_Factor
-                      || self.unit() == eStyleUnit_Degree || self.unit() == eStyleUnit_Grad
-                      || self.unit() == eStyleUnit_Radian || self.unit() == eStyleUnit_Turn
-                      || self.unit() == eStyleUnit_FlexFraction);
+        use crate::gecko_bindings::structs::nsStyleUnit::*;
+        debug_assert!(
+            self.unit() == eStyleUnit_Percent ||
+                self.unit() == eStyleUnit_Factor ||
+                self.unit() == eStyleUnit_Degree ||
+                self.unit() == eStyleUnit_FlexFraction
+        );
         *self.union().mFloat.as_ref()
     }
 
     #[inline]
     /// Pretend inner value is an int; obtain it.
     unsafe fn get_integer(&self) -> i32 {
-        use gecko_bindings::structs::nsStyleUnit::*;
-        debug_assert!(self.unit() == eStyleUnit_Coord || self.unit() == eStyleUnit_Integer
-                      || self.unit() == eStyleUnit_Enumerated);
+        use crate::gecko_bindings::structs::nsStyleUnit::*;
+        debug_assert!(
+            self.unit() == eStyleUnit_Coord ||
+                self.unit() == eStyleUnit_Integer ||
+                self.unit() == eStyleUnit_Enumerated
+        );
         *self.union().mInt.as_ref()
     }
 
@@ -443,15 +414,14 @@ pub trait CoordData {
     /// Pretend inner value is a calc; obtain it.
     /// Ensure that the unit is Calc before calling this.
     unsafe fn get_calc_value(&self) -> nsStyleCoord_CalcValue {
-        debug_assert!(self.unit() == nsStyleUnit::eStyleUnit_Calc);
+        debug_assert_eq!(self.unit(), nsStyleUnit::eStyleUnit_Calc);
         (*self.as_calc())._base
     }
-
 
     #[inline]
     /// Pretend the inner value is a calc expression, and obtain it.
     unsafe fn as_calc(&self) -> &nsStyleCoord_Calc {
-        debug_assert!(self.unit() == nsStyleUnit::eStyleUnit_Calc);
+        debug_assert_eq!(self.unit(), nsStyleUnit::eStyleUnit_Calc);
         &*(*self.union().mPointer.as_ref() as *const nsStyleCoord_Calc)
     }
 }

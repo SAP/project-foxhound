@@ -4,38 +4,45 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+# Most files are General, a few exceptions
+with Files('**'):
+    BUG_COMPONENT = ('Firefox for Android', 'General')
+
+with Files('DownloadNotifications.jsm'):
+    BUG_COMPONENT = ('Firefox for Android', 'Download Manager')
+
+with Files('HomeProvider.jsm'):
+    BUG_COMPONENT = ('Firefox for Android', 'Data Providers')
+
+with Files('geckoview/**'):
+    BUG_COMPONENT = ('GeckoView', 'General')
+
+DIRS += ['geckoview']
+
 EXTRA_JS_MODULES += [
     'Accounts.jsm',
-    'AndroidLog.jsm',
+    'ActionBarHandler.jsm',
+    'BrowserActions.jsm',
     'dbg-browser-actors.js',
-    'DelayedInit.jsm',
     'DownloadNotifications.jsm',
+    'FormAssistant.jsm',
     'FxAccountsWebChannel.jsm',
     'HelperApps.jsm',
     'Home.jsm',
     'HomeProvider.jsm',
-    'JavaAddonManager.jsm',
-    'JNI.jsm',
+    'InputWidgetHelper.jsm',
     'LightweightThemeConsumer.jsm',
     'MediaPlayerApp.jsm',
-    'Messaging.jsm',
     'NetErrorHelper.jsm',
     'Notifications.jsm',
     'PageActions.jsm',
     'Prompt.jsm',
     'RuntimePermissions.jsm',
     'Sanitizer.jsm',
+    'SelectHelper.jsm',
     'SharedPreferences.jsm',
     'Snackbars.jsm',
     'SSLExceptions.jsm',
+    'WebrtcUI.jsm',
     'WebsiteMetadata.jsm'
-]
-
-# GeckoView-sepcific modules added separately.
-EXTRA_JS_MODULES += [
-    'GeckoViewContent.jsm',
-    'GeckoViewModule.jsm',
-    'GeckoViewNavigation.jsm',
-    'GeckoViewProgress.jsm',
-    'GeckoViewSettings.jsm',
 ]

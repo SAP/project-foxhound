@@ -8,11 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_coding/test/PacketLossTest.h"
+#include "modules/audio_coding/test/PacketLossTest.h"
 
-#include "testing/gtest/include/gtest/gtest.h"
-#include "webrtc/common.h"
-#include "webrtc/test/testsupport/fileutils.h"
+#include <memory>
+
+#include "test/gtest.h"
+#include "test/testsupport/fileutils.h"
 
 namespace webrtc {
 
@@ -126,7 +127,7 @@ void PacketLossTest::Perform() {
 #ifndef WEBRTC_CODEC_OPUS
   return;
 #else
-  rtc::scoped_ptr<AudioCodingModule> acm(AudioCodingModule::Create(0));
+  std::unique_ptr<AudioCodingModule> acm(AudioCodingModule::Create());
 
   int codec_id = acm->Codec("opus", 48000, channels_);
 

@@ -9,6 +9,8 @@ processes.
 
 """
 
+from __future__ import absolute_import, print_function
+
 import argparse
 import multiprocessing
 import os
@@ -16,7 +18,7 @@ import sys
 
 from collections import defaultdict
 
-import httpd
+from . import httpd
 
 
 __all__ = ["default_doc_root",
@@ -69,10 +71,11 @@ class ServerProxy(multiprocessing.Process, BlockingChannel):
         self.init_kwargs = init_kwargs
 
     def run(self):
-        server = self.init_func(*self.init_args, **self.init_kwargs)
-        server.start(block=False)
-
         try:
+            server = self.init_func(*self.init_args, **self.init_kwargs)
+            server.start(block=False)
+            self.send(("ok", ()))
+
             while True:
                 # ["func", ("arg", ...)]
                 # ["prop", ()]
@@ -92,6 +95,9 @@ class ServerProxy(multiprocessing.Process, BlockingChannel):
                 if sattr == "stop":
                     return
 
+        except Exception as e:
+            self.send(("stop", e))
+
         except KeyboardInterrupt:
             server.stop()
 
@@ -110,6 +116,10 @@ class ServerProc(BlockingChannel):
             self.child_chan, self._init_func, doc_root, ssl_config, **kwargs)
         self.proc.daemon = True
         self.proc.start()
+
+        res, exc = self.recv()
+        if res == "stop":
+            raise exc
 
     def get_url(self, url):
         return self.call("get_url", (url,))
@@ -212,7 +222,7 @@ def main(args):
 
     servers = start(args.doc_root)
     for url in iter_url(servers):
-        print >>sys.stderr, "{}: listening on {}".format(sys.argv[0], url)
+        print("{}: listening on {}".format(sys.argv[0], url), file=sys.stderr)
 
     try:
         while any(proc.is_alive for proc in iter_proc(servers)):

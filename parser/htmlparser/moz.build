@@ -4,17 +4,20 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files('**'):
+    BUG_COMPONENT = ('Core', 'XML')
+
 MOCHITEST_MANIFESTS += ['tests/mochitest/mochitest.ini']
 BROWSER_CHROME_MANIFESTS += ['tests/mochitest/browser.ini']
 
 XPIDL_SOURCES += [
     'nsIExpatSink.idl',
-    'nsIExtendedExpatSink.idl',
 ]
 
 XPIDL_MODULE = 'htmlparser'
 
 EXPORTS += [
+    'nsElementTable.h',
     'nsHTMLTagList.h',
     'nsHTMLTags.h',
     'nsIContentSink.h',
@@ -22,13 +25,11 @@ EXPORTS += [
     'nsIFragmentContentSink.h',
     'nsIHTMLContentSink.h',
     'nsIParser.h',
-    'nsIParserService.h',
     'nsITokenizer.h',
     'nsParserBase.h',
     'nsParserCIID.h',
     'nsParserConstants.h',
     'nsScannerString.h',
-    'nsToken.h',
 ]
 
 UNIFIED_SOURCES += [
@@ -36,18 +37,16 @@ UNIFIED_SOURCES += [
     'CParserContext.cpp',
     'nsElementTable.cpp',
     'nsExpatDriver.cpp',
-    'nsHTMLEntities.cpp',
     'nsHTMLTags.cpp',
     'nsHTMLTokenizer.cpp',
     'nsParser.cpp',
     'nsParserModule.cpp',
     'nsParserMsgUtils.cpp',
-    'nsParserService.cpp',
     'nsScanner.cpp',
     'nsScannerString.cpp',
 ]
 
 FINAL_LIBRARY = 'xul'
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

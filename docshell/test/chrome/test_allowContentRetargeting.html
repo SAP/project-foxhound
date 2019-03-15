@@ -11,8 +11,6 @@ addLoadEvent(runNextTest);
 
 var TEST_URL = "http://mochi.test:8888/tests/docshell/test/chrome/allowContentRetargeting.sjs";
 
-var Ci = Components.interfaces;
-
 function runNextTest() {
   var test = tests.shift();
   if (!test) {
@@ -28,25 +26,18 @@ var tests = [
   // downloadable stops loading.
   function basic() {
     var iframe = insertIframe();
-    docshellForWindow(iframe.contentWindow).allowContentRetargeting = false;
+    iframe.contentWindow.docShell.allowContentRetargeting = false;
     loadIframe(iframe);
   },
 
   // Set allowContentRetargeting = false on parent docshell, load a downloadable
   // URL, verify the downloadable stops loading.
   function inherit() {
-    var docshell = docshellForWindow(window);
+    var docshell = window.docShell;
     docshell.allowContentRetargeting = false;
     loadIframe(insertIframe());
   },
 ];
-
-function docshellForWindow(win) {
-  return win.
-         QueryInterface(Ci.nsIInterfaceRequestor).
-         getInterface(Ci.nsIWebNavigation).
-         QueryInterface(Ci.nsIDocShell);
-}
 
 function insertIframe() {
   var iframe = document.createElement("iframe");
@@ -56,7 +47,7 @@ function insertIframe() {
 
 function loadIframe(iframe) {
   iframe.setAttribute("src", TEST_URL);
-  docshellForWindow(iframe.contentWindow).
+  iframe.contentWindow.docShell.
     QueryInterface(Ci.nsIInterfaceRequestor).
     getInterface(Ci.nsIWebProgress).
     addProgressListener(progressListener,
@@ -64,7 +55,7 @@ function loadIframe(iframe) {
 }
 
 var progressListener = {
-  onStateChange: function (webProgress, req, flags, status) {
+  onStateChange(webProgress, req, flags, status) {
     if (!(flags & Ci.nsIWebProgressListener.STATE_STOP))
       return;
     is(Components.isSuccessCode(status), false,
@@ -73,16 +64,7 @@ var progressListener = {
     runNextTest();
   },
 
-  QueryInterface: function (iid) {
-    var iids = [
-      Ci.nsIWebProgressListener,
-      Ci.nsISupportsWeakReference,
-      Ci.nsISupports,
-    ];
-    if (iids.some(function (i) { return iid.equals(i); }))
-      return this;
-    throw Components.results.NS_ERROR_NO_INTERFACE;
-  },
+  QueryInterface: ChromeUtils.generateQI(["nsIWebProgressListener", "nsISupportsWeakReference"]),
 };
 
   </script>

@@ -16,19 +16,19 @@ const TEST_URI = `
   <div id="test2"><div id="test1">Styled Node</div></div>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
-  yield selectNode("#test1", inspector);
-  yield emptyInherit(inspector, view);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, view} = await openRuleView();
+  await selectNode("#test1", inspector);
+  await emptyInherit(inspector, view);
 });
 
-function* emptyInherit(inspector, view) {
+function emptyInherit(inspector, view) {
   // No inheritable styles, this rule shouldn't show up.
-  let elementStyle = view._elementStyle;
+  const elementStyle = view._elementStyle;
   is(elementStyle.rules.length, 1, "Should have 1 rule.");
 
-  let elementRule = elementStyle.rules[0];
+  const elementRule = elementStyle.rules[0];
   ok(!elementRule.inherited,
     "Element style attribute should not consider itself inherited.");
 }

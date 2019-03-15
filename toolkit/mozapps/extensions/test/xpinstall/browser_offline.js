@@ -11,10 +11,10 @@ function test() {
   pm.add(makeURI("http://example.com/"), "install", pm.ALLOW_ACTION);
 
   var triggers = encodeURIComponent(JSON.stringify({
-    "Unsigned XPI": TESTROOT + "amosigned.xpi"
+    "Unsigned XPI": TESTROOT + "amosigned.xpi",
   }));
-  gBrowser.selectedTab = gBrowser.addTab();
-  gBrowser.loadURI(TESTROOT + "installtrigger.html?" + triggers);
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
+  BrowserTestUtils.loadURI(gBrowser, TESTROOT + "installtrigger.html?" + triggers);
 }
 
 function download_progress(addon, value, maxValue) {
@@ -34,8 +34,8 @@ function finish_test(count) {
     info("Checking if the browser is still offline...");
 
     let tab = gBrowser.selectedTab;
-    ContentTask.spawn(tab.linkedBrowser, null, function*() {
-      yield ContentTaskUtils.waitForEvent(this, "DOMContentLoaded", true);
+    ContentTask.spawn(tab.linkedBrowser, null, async function() {
+      await ContentTaskUtils.waitForEvent(this, "DOMContentLoaded", true);
       return content.document.documentURI;
     }).then(url => {
       info("loaded: " + url);
@@ -46,7 +46,7 @@ function finish_test(count) {
         Harness.finish();
       }
     });
-    tab.linkedBrowser.loadURI("http://example.com/");
+    BrowserTestUtils.loadURI(tab.linkedBrowser, "http://example.com/");
   }
 
   is(count, 0, "No add-ons should have been installed");

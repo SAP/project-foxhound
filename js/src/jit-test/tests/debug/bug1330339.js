@@ -1,6 +1,6 @@
-// |jit-test| test-also-wasm-baseline; error: TestComplete
+// |jit-test| test-also-wasm-compiler-ion; error: TestComplete
 
-if (!wasmIsSupported())
+if (!wasmDebuggingIsSupported())
      throw "TestComplete";
 
 let module = new WebAssembly.Module(wasmTextToBinary(`
@@ -15,7 +15,7 @@ let module = new WebAssembly.Module(wasmTextToBinary(`
 let imports = {
   global: {
     func: function () {
-        let g = newGlobal();
+        let g = newGlobal({newCompartment: true});
         let dbg = new Debugger(g);
         dbg.onExceptionUnwind = function (frame) {
             frame.older;

@@ -1,5 +1,5 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 const sentCookieVal     = "foo=bar";
 const responseBody      = "response body";
@@ -85,6 +85,6 @@ function run_test()
 
 function finish_test(event)
 {
-  do_check_eq(receivedCookieVal, sentCookieVal);
+  Assert.equal(receivedCookieVal, sentCookieVal);
   httpServer.stop(do_test_finished);
 }

@@ -6,18 +6,17 @@
 const { immutableUpdate, reportException, assert } = require("devtools/shared/DevToolsUtils");
 const { snapshotState: states, actions} = require("../constants");
 const { L10N, openFilePicker, createSnapshot } = require("../utils");
-const telemetry = require("../telemetry");
 const { OS } = require("resource://gre/modules/osfile.jsm");
 const {
   selectSnapshot,
   computeSnapshotData,
-  readSnapshot
+  readSnapshot,
 } = require("./snapshot");
 const VALID_EXPORT_STATES = [states.SAVED, states.READ];
 
-exports.pickFileAndExportSnapshot = function (snapshot) {
-  return function* (dispatch, getState) {
-    let outputFile = yield openFilePicker({
+exports.pickFileAndExportSnapshot = function(snapshot) {
+  return async function(dispatch, getState) {
+    const outputFile = await openFilePicker({
       title: L10N.getFormatStr("snapshot.io.save.window"),
       defaultName: OS.Path.basename(snapshot.path),
       filters: [[L10N.getFormatStr("snapshot.io.filter"), "*.fxsnapshot"]],
@@ -28,21 +27,19 @@ exports.pickFileAndExportSnapshot = function (snapshot) {
       return;
     }
 
-    yield dispatch(exportSnapshot(snapshot, outputFile.path));
+    await dispatch(exportSnapshot(snapshot, outputFile.path));
   };
 };
 
-const exportSnapshot = exports.exportSnapshot = function (snapshot, dest) {
-  return function* (dispatch, getState) {
-    telemetry.countExportSnapshot();
-
+const exportSnapshot = exports.exportSnapshot = function(snapshot, dest) {
+  return async function(dispatch, getState) {
     dispatch({ type: actions.EXPORT_SNAPSHOT_START, snapshot });
 
     assert(VALID_EXPORT_STATES.includes(snapshot.state),
       `Snapshot is in invalid state for exporting: ${snapshot.state}`);
 
     try {
-      yield OS.File.copy(snapshot.path, dest);
+      await OS.File.copy(snapshot.path, dest);
     } catch (error) {
       reportException("exportSnapshot", error);
       dispatch({ type: actions.EXPORT_SNAPSHOT_ERROR, snapshot, error });
@@ -52,9 +49,9 @@ const exportSnapshot = exports.exportSnapshot = function (snapshot, dest) {
   };
 };
 
-exports.pickFileAndImportSnapshotAndCensus = function (heapWorker) {
-  return function* (dispatch, getState) {
-    let input = yield openFilePicker({
+exports.pickFileAndImportSnapshotAndCensus = function(heapWorker) {
+  return async function(dispatch, getState) {
+    const input = await openFilePicker({
       title: L10N.getFormatStr("snapshot.io.import.window"),
       filters: [[L10N.getFormatStr("snapshot.io.filter"), "*.fxsnapshot"]],
       mode: "open",
@@ -64,14 +61,12 @@ exports.pickFileAndImportSnapshotAndCensus = function (heapWorker) {
       return;
     }
 
-    yield dispatch(importSnapshotAndCensus(heapWorker, input.path));
+    await dispatch(importSnapshotAndCensus(heapWorker, input.path));
   };
 };
 
-const importSnapshotAndCensus = function (heapWorker, path) {
-  return function* (dispatch, getState) {
-    telemetry.countImportSnapshot();
-
+const importSnapshotAndCensus = function(heapWorker, path) {
+  return async function(dispatch, getState) {
     const snapshot = immutableUpdate(createSnapshot(getState()), {
       path,
       state: states.IMPORTING,
@@ -83,8 +78,8 @@ const importSnapshotAndCensus = function (heapWorker, path) {
     dispatch(selectSnapshot(snapshot.id));
 
     try {
-      yield dispatch(readSnapshot(heapWorker, id));
-      yield dispatch(computeSnapshotData(heapWorker, id));
+      await dispatch(readSnapshot(heapWorker, id));
+      await dispatch(computeSnapshotData(heapWorker, id));
     } catch (error) {
       reportException("importSnapshot", error);
       dispatch({ type: actions.IMPORT_SNAPSHOT_ERROR, error, id });

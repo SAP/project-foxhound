@@ -1,4 +1,4 @@
-﻿<!DOCTYPE HTML>
+<!DOCTYPE HTML>
 <html>
 <!--
 Storage inspector front end - tests
@@ -20,15 +20,30 @@ document.cookie = "c1=foobar; expires=" +
   new Date(cookieExpiresTime1).toGMTString() + "; path=/browser";
 document.cookie = "cs2=sessionCookie; path=/; domain=" + partialHostname;
 document.cookie = "c3=foobar-2; expires=" +
-  new Date(cookieExpiresTime2).toGMTString() + "; path=/";
+  new Date(cookieExpiresTime1).toGMTString() + "; path=/";
+document.cookie = "c4=foobar-3; expires=" +
+  new Date(cookieExpiresTime2).toGMTString() + "; path=/; domain=" +
+  partialHostname;
 // ... and some local storage items ..
 localStorage.setItem("ls1", "foobar");
 localStorage.setItem("ls2", "foobar-2");
+
+// Because localStorage contains key() on the prototype and it can't be iterated
+// using object.keys() we check the the value "key" exists.
+// See bug 1451991 for details.
+localStorage.setItem("key", "value1");
+
 // ... and finally some session storage items too
 sessionStorage.setItem("ss1", "foobar-3");
+
+// Because sessionStorage contains key() on the prototype and it can't be
+// iterated using object.keys() we check the the value "key" exists.
+// See bug 1451991 for details.
+sessionStorage.setItem("key", "value2");
+
 dump("added cookies and storage from main page\n");
 
-let idbGenerator = async function() {
+let idbGenerator = async function () {
   let request = indexedDB.open("idb1", 1);
   request.onerror = function() {
     throw new Error("error opening db connection");
@@ -102,26 +117,26 @@ async function fetchPut(cache, url) {
   await cache.put(url, response);
 }
 
-let cacheGenerator = async function() {
+let cacheGenerator = async function () {
   let cache = await caches.open("plop");
   await fetchPut(cache, "404_cached_file.js");
   await fetchPut(cache, "browser_storage_basic.js");
 };
 
-window.setup = function*() {
-  yield idbGenerator();
+window.setup = async function () {
+  await idbGenerator();
 
   if (window.caches) {
-    yield cacheGenerator();
+    await cacheGenerator();
   }
 };
 
-window.clear = function*() {
-  yield deleteDB("idb1");
-  yield deleteDB("idb2");
+window.clear = async function () {
+  await deleteDB("idb1");
+  await deleteDB("idb2");
 
   if (window.caches) {
-    yield caches.delete("plop");
+    await caches.delete("plop");
   }
 
   dump("removed indexedDB and cache data from " + document.location + "\n");

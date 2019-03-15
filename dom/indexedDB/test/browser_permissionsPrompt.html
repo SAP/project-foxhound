@@ -22,12 +22,12 @@
           testResult = event.target.result instanceof IDBDatabase;
         }
         else {
-          testException = event.target.error.name;
+          testResult = event.target.error.name;
         }
 
         event.preventDefault();
 
-        finishTest()
+        finishTest();
         yield undefined;
       }
     </script>

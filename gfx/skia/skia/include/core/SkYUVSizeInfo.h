@@ -8,8 +8,10 @@
 #ifndef SkYUVSizeInfo_DEFINED
 #define SkYUVSizeInfo_DEFINED
 
+#include "SkSize.h"
+
 struct SkYUVSizeInfo {
-    enum {
+    enum YUVIndex {
         kY          = 0,
         kU          = 1,
         kV          = 2,

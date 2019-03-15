@@ -1,7 +1,7 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Components.utils.import("resource://services-sync/engines/passwords.js");
+ChromeUtils.import("resource://services-sync/engines/passwords.js");
 
 function getDummyServerAndClient() {
   return {
@@ -74,26 +74,24 @@ function getDummyServerAndClient() {
         username: "quux",
         usernameField: "user",
         httpRealm: null,
-      }
-    ]
+      },
+    ],
   };
 }
 
 
-add_test(function test_valid() {
+add_task(async function test_valid() {
   let { server, client } = getDummyServerAndClient();
   let validator = new PasswordValidator();
   let { problemData, clientRecords, records, deletedRecords } =
-      validator.compareClientWithServer(client, server);
+      await validator.compareClientWithServer(client, server);
   equal(clientRecords.length, 3);
-  equal(records.length, 3)
+  equal(records.length, 3);
   equal(deletedRecords.length, 0);
   deepEqual(problemData, validator.emptyProblemData());
-
-  run_next_test();
 });
 
-add_test(function test_missing() {
+add_task(async function test_missing() {
   let validator = new PasswordValidator();
   {
     let { server, client } = getDummyServerAndClient();
@@ -101,10 +99,10 @@ add_test(function test_missing() {
     client.pop();
 
     let { problemData, clientRecords, records, deletedRecords } =
-        validator.compareClientWithServer(client, server);
+        await validator.compareClientWithServer(client, server);
 
     equal(clientRecords.length, 2);
-    equal(records.length, 3)
+    equal(records.length, 3);
     equal(deletedRecords.length, 0);
 
     let expected = validator.emptyProblemData();
@@ -117,22 +115,20 @@ add_test(function test_missing() {
     server.pop();
 
     let { problemData, clientRecords, records, deletedRecords } =
-        validator.compareClientWithServer(client, server);
+        await validator.compareClientWithServer(client, server);
 
     equal(clientRecords.length, 3);
-    equal(records.length, 2)
+    equal(records.length, 2);
     equal(deletedRecords.length, 0);
 
     let expected = validator.emptyProblemData();
     expected.serverMissing.push("33333");
     deepEqual(problemData, expected);
   }
-
-  run_next_test();
 });
 
 
-add_test(function test_deleted() {
+add_task(async function test_deleted() {
   let { server, client } = getDummyServerAndClient();
   let deletionRecord = { id: "444444", guid: "444444", deleted: true };
 
@@ -140,7 +136,7 @@ add_test(function test_deleted() {
   let validator = new PasswordValidator();
 
   let { problemData, clientRecords, records, deletedRecords } =
-      validator.compareClientWithServer(client, server);
+      await validator.compareClientWithServer(client, server);
 
   equal(clientRecords.length, 3);
   equal(records.length, 4);
@@ -148,11 +144,30 @@ add_test(function test_deleted() {
 
   let expected = validator.emptyProblemData();
   deepEqual(problemData, expected);
-
-  run_next_test();
 });
 
+add_task(async function test_duplicates() {
+  let validator = new PasswordValidator();
+  {
+    let { server, client } = getDummyServerAndClient();
+    client.push(Cu.cloneInto(client[0], {}));
 
-function run_test() {
-  run_next_test();
-}
+    let { problemData } = await validator.compareClientWithServer(
+      client, server);
+
+    let expected = validator.emptyProblemData();
+    expected.clientDuplicates.push("11111");
+    deepEqual(problemData, expected);
+  }
+  {
+    let { server, client } = getDummyServerAndClient();
+    server.push(Cu.cloneInto(server[server.length - 1], {}));
+
+    let { problemData } = await validator.compareClientWithServer(
+      client, server);
+
+    let expected = validator.emptyProblemData();
+    expected.duplicates.push("33333");
+    deepEqual(problemData, expected);
+  }
+});

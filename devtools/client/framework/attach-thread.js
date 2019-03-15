@@ -4,9 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const {Cc, Ci, Cu} = require("chrome");
 const Services = require("Services");
-const defer = require("devtools/shared/defer");
 
 const {LocalizationHelper} = require("devtools/shared/l10n");
 const L10N = new LocalizationHelper("devtools/client/locales/toolbox.properties");
@@ -14,12 +12,14 @@ const L10N = new LocalizationHelper("devtools/client/locales/toolbox.properties"
 function handleThreadState(toolbox, event, packet) {
   // Suppress interrupted events by default because the thread is
   // paused/resumed a lot for various actions.
-  if (event !== "paused" || packet.why.type !== "interrupted") {
-    // TODO: Bug 1225492, we continue emitting events on the target
-    // like we used to, but we should emit these only on the
-    // threadClient now.
-    toolbox.target.emit("thread-" + event);
+  if (event === "paused" && packet.why.type === "interrupted") {
+    return;
   }
+
+  // TODO: Bug 1225492, we continue emitting events on the target
+  // like we used to, but we should emit these only on the
+  // threadClient now.
+  toolbox.target.emit("thread-" + event);
 
   if (event === "paused") {
     toolbox.highlightTool("jsdebugger");
@@ -28,7 +28,7 @@ function handleThreadState(toolbox, event, packet) {
        packet.why.type === "breakpoint" ||
        packet.why.type === "exception") {
       toolbox.raise();
-      toolbox.selectTool("jsdebugger");
+      toolbox.selectTool("jsdebugger", packet.why.type);
     }
   } else if (event === "resumed") {
     toolbox.unhighlightTool("jsdebugger");
@@ -36,75 +36,58 @@ function handleThreadState(toolbox, event, packet) {
 }
 
 function attachThread(toolbox) {
-  let deferred = defer();
+  const target = toolbox.target;
 
-  let target = toolbox.target;
-  let { form: { chromeDebugger, actor } } = target;
+  const autoBlackBox = false;
+  const ignoreFrameEnvironment = true;
 
-  // Sourcemaps are always turned off when using the new debugger
-  // frontend. This is because it does sourcemapping on the
-  // client-side, so the server should not do it. It also does not support
-  // blackboxing yet.
-  let useSourceMaps = false;
-  let autoBlackBox = false;
-  if(!Services.prefs.getBoolPref("devtools.debugger.new-debugger-frontend")) {
-    useSourceMaps = Services.prefs.getBoolPref("devtools.debugger.source-maps-enabled");
-    autoBlackBox = Services.prefs.getBoolPref("devtools.debugger.auto-black-box");
-  }
-  let threadOptions = { useSourceMaps, autoBlackBox };
+  const threadOptions = { autoBlackBox, ignoreFrameEnvironment };
 
-  let handleResponse = (res, threadClient) => {
-    if (res.error) {
-      deferred.reject(new Error("Couldn't attach to thread: " + res.error));
-      return;
-    }
-    threadClient.addListener("paused", handleThreadState.bind(null, toolbox));
-    threadClient.addListener("resumed", handleThreadState.bind(null, toolbox));
-
-    if (!threadClient.paused) {
-      deferred.reject(
-        new Error("Thread in wrong state when starting up, should be paused")
-      );
-    }
-
-    // These flags need to be set here because the client sends them
-    // with the `resume` request. We make sure to do this before
-    // resuming to avoid another interrupt. We can't pass it in with
-    // `threadOptions` because the resume request will override them.
-    threadClient.pauseOnExceptions(
-      Services.prefs.getBoolPref("devtools.debugger.pause-on-exceptions"),
-      Services.prefs.getBoolPref("devtools.debugger.ignore-caught-exceptions")
-    );
-
-    threadClient.resume(res => {
-      if (res.error === "wrongOrder") {
-        const box = toolbox.getNotificationBox();
-        box.appendNotification(
-          L10N.getStr("toolbox.resumeOrderWarning"),
-          "wrong-resume-order",
-          "",
-          box.PRIORITY_WARNING_HIGH
-        );
+  return new Promise((resolve, reject) => {
+    const handleResponse = ([res, threadClient]) => {
+      if (res.error) {
+        reject(new Error("Couldn't attach to thread: " + res.error));
+        return;
       }
 
-      deferred.resolve(threadClient);
-    });
-  };
+      threadClient.addListener("paused", handleThreadState.bind(null, toolbox));
+      threadClient.addListener("resumed", handleThreadState.bind(null, toolbox));
 
-  if (target.isTabActor) {
-    // Attaching a tab, a browser process, or a WebExtensions add-on.
-    target.activeTab.attachThread(threadOptions, handleResponse);
-  } else if (target.isAddon) {
-    // Attaching a legacy addon.
-    target.client.attachAddon(actor, res => {
-      target.client.attachThread(res.threadActor, handleResponse);
-    });
-  }  else {
-    // Attaching an old browser debugger or a content process.
-    target.client.attachThread(chromeDebugger, handleResponse);
-  }
+      if (!threadClient.paused) {
+        reject(new Error("Thread in wrong state when starting up, should be paused"));
+      }
 
-  return deferred.promise;
+      // These flags need to be set here because the client sends them
+      // with the `resume` request. We make sure to do this before
+      // resuming to avoid another interrupt. We can't pass it in with
+      // `threadOptions` because the resume request will override them.
+      threadClient.pauseOnExceptions(
+        Services.prefs.getBoolPref("devtools.debugger.pause-on-exceptions"),
+        Services.prefs.getBoolPref("devtools.debugger.ignore-caught-exceptions")
+      );
+
+      threadClient.resume(res => {
+        if (res.error === "wrongOrder") {
+          const box = toolbox.getNotificationBox();
+          box.appendNotification(
+            L10N.getStr("toolbox.resumeOrderWarning"),
+            "wrong-resume-order",
+            "",
+            box.PRIORITY_WARNING_HIGH
+          );
+        }
+
+        resolve(threadClient);
+      });
+    };
+
+    if (target.activeTab) {
+      target.activeTab.attachThread(threadOptions).then(handleResponse);
+    } else {
+      // Now, all targets should have a front set on activeTab attribute.
+      throw new Error("Target is missing an activeTab attribute");
+    }
+  });
 }
 
 function detachThread(threadClient) {

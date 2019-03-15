@@ -14,7 +14,7 @@
 #include "pkcs11.h"
 #include "pk11func.h"
 #include "secitem.h"
-#include "key.h"
+#include "keyhi.h"
 #include "secoid.h"
 #include "secasn1.h"
 #include "secerr.h"
@@ -153,7 +153,6 @@ const SEC_ASN1Template SECKEY_DHPrivateKeyExportTemplate[] = {
     { SEC_ASN1_INTEGER, offsetof(SECKEYRawPrivateKey, u.dh.prime) },
 };
 
-#ifndef NSS_DISABLE_ECC
 SEC_ASN1_MKSUB(SEC_BitStringTemplate)
 SEC_ASN1_MKSUB(SEC_ObjectIDTemplate)
 
@@ -178,7 +177,6 @@ const SEC_ASN1Template SECKEY_ECPrivateKeyExportTemplate[] = {
       SEC_ASN1_SUB(SEC_BitStringTemplate) },
     { 0 }
 };
-#endif /* NSS_DISABLE_ECC */
 
 const SEC_ASN1Template SECKEY_EncryptedPrivateKeyInfoTemplate[] = {
     { SEC_ASN1_SEQUENCE,
@@ -346,16 +344,13 @@ PK11_ImportAndReturnPrivateKey(PK11SlotInfo *slot, SECKEYRawPrivateKey *lpk,
     switch (lpk->keyType) {
         case rsaKey:
             keyType = CKK_RSA;
-            PK11_SETATTRS(attrs, CKA_UNWRAP, (keyUsage & KU_KEY_ENCIPHERMENT) ? &cktrue
-                                                                              : &ckfalse,
+            PK11_SETATTRS(attrs, CKA_UNWRAP, (keyUsage & KU_KEY_ENCIPHERMENT) ? &cktrue : &ckfalse,
                           sizeof(CK_BBOOL));
             attrs++;
-            PK11_SETATTRS(attrs, CKA_DECRYPT, (keyUsage & KU_DATA_ENCIPHERMENT) ? &cktrue
-                                                                                : &ckfalse,
+            PK11_SETATTRS(attrs, CKA_DECRYPT, (keyUsage & KU_DATA_ENCIPHERMENT) ? &cktrue : &ckfalse,
                           sizeof(CK_BBOOL));
             attrs++;
-            PK11_SETATTRS(attrs, CKA_SIGN, (keyUsage & KU_DIGITAL_SIGNATURE) ? &cktrue
-                                                                             : &ckfalse,
+            PK11_SETATTRS(attrs, CKA_SIGN, (keyUsage & KU_DIGITAL_SIGNATURE) ? &cktrue : &ckfalse,
                           sizeof(CK_BBOOL));
             attrs++;
             PK11_SETATTRS(attrs, CKA_SIGN_RECOVER,
@@ -482,7 +477,6 @@ PK11_ImportAndReturnPrivateKey(PK11SlotInfo *slot, SECKEYRawPrivateKey *lpk,
                           lpk->u.dh.privateValue.len);
             attrs++;
             break;
-#ifndef NSS_DISABLE_ECC
         case ecKey:
             keyType = CKK_EC;
             if (lpk->u.ec.publicValue.len == 0) {
@@ -494,8 +488,7 @@ PK11_ImportAndReturnPrivateKey(PK11SlotInfo *slot, SECKEYRawPrivateKey *lpk,
                               lpk->u.ec.publicValue.len);
                 attrs++;
             }
-            PK11_SETATTRS(attrs, CKA_SIGN, (keyUsage & KU_DIGITAL_SIGNATURE) ? &cktrue
-                                                                             : &ckfalse,
+            PK11_SETATTRS(attrs, CKA_SIGN, (keyUsage & KU_DIGITAL_SIGNATURE) ? &cktrue : &ckfalse,
                           sizeof(CK_BBOOL));
             attrs++;
             PK11_SETATTRS(attrs, CKA_SIGN_RECOVER,
@@ -503,8 +496,7 @@ PK11_ImportAndReturnPrivateKey(PK11SlotInfo *slot, SECKEYRawPrivateKey *lpk,
                                                             : &ckfalse,
                           sizeof(CK_BBOOL));
             attrs++;
-            PK11_SETATTRS(attrs, CKA_DERIVE, (keyUsage & KU_KEY_AGREEMENT) ? &cktrue
-                                                                           : &ckfalse,
+            PK11_SETATTRS(attrs, CKA_DERIVE, (keyUsage & KU_KEY_AGREEMENT) ? &cktrue : &ckfalse,
                           sizeof(CK_BBOOL));
             attrs++;
             ck_id = PK11_MakeIDFromPubKey(&lpk->u.ec.publicValue);
@@ -525,7 +517,6 @@ PK11_ImportAndReturnPrivateKey(PK11SlotInfo *slot, SECKEYRawPrivateKey *lpk,
                           lpk->u.ec.publicValue.len);
             attrs++;
             break;
-#endif /* NSS_DISABLE_ECC */
         default:
             PORT_SetError(SEC_ERROR_BAD_KEY);
             goto loser;
@@ -606,7 +597,6 @@ PK11_ImportPrivateKeyInfoAndReturnKey(PK11SlotInfo *slot,
             paramDest = NULL;
             lpk->keyType = dhKey;
             break;
-#ifndef NSS_DISABLE_ECC
         case SEC_OID_ANSIX962_EC_PUBLIC_KEY:
             prepare_ec_priv_key_export_for_asn1(lpk);
             keyTemplate = SECKEY_ECPrivateKeyExportTemplate;
@@ -614,7 +604,6 @@ PK11_ImportPrivateKeyInfoAndReturnKey(PK11SlotInfo *slot,
             paramDest = NULL;
             lpk->keyType = ecKey;
             break;
-#endif /* NSS_DISABLE_ECC */
 
         default:
             keyTemplate = NULL;
@@ -633,7 +622,6 @@ PK11_ImportPrivateKeyInfoAndReturnKey(PK11SlotInfo *slot,
         goto loser;
     }
 
-#ifndef NSS_DISABLE_ECC
     if (lpk->keyType == ecKey) {
         /* Convert length in bits to length in bytes. */
         lpk->u.ec.publicValue.len >>= 3;
@@ -645,7 +633,6 @@ PK11_ImportPrivateKeyInfoAndReturnKey(PK11SlotInfo *slot,
             goto loser;
         }
     }
-#endif /* NSS_DISABLE_ECC */
 
     if (paramDest && paramTemplate) {
         rv = SEC_ASN1DecodeItem(arena, paramDest, paramTemplate,

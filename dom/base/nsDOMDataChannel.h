@@ -9,12 +9,10 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/DOMEventTargetHelper.h"
-#include "mozilla/dom/DataChannelBinding.h"
+#include "mozilla/dom/RTCDataChannelBinding.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/net/DataChannelListener.h"
-#include "nsIDOMDataChannel.h"
 #include "nsIInputStream.h"
-
 
 namespace mozilla {
 namespace dom {
@@ -22,40 +20,38 @@ class Blob;
 }
 
 class DataChannel;
-};
+};  // namespace mozilla
 
 class nsDOMDataChannel final : public mozilla::DOMEventTargetHelper,
-                               public nsIDOMDataChannel,
-                               public mozilla::DataChannelListener
-{
-public:
+                               public mozilla::DataChannelListener {
+ public:
   nsDOMDataChannel(already_AddRefed<mozilla::DataChannel>& aDataChannel,
                    nsPIDOMWindowInner* aWindow);
 
   nsresult Init(nsPIDOMWindowInner* aDOMWindow);
 
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_NSIDOMDATACHANNEL
-
-  NS_REALLY_FORWARD_NSIDOMEVENTTARGET(mozilla::DOMEventTargetHelper)
 
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsDOMDataChannel,
                                            mozilla::DOMEventTargetHelper)
 
   // EventTarget
-  virtual void EventListenerAdded(nsIAtom* aType) override;
-  virtual void EventListenerRemoved(nsIAtom* aType) override;
+  using EventTarget::EventListenerAdded;
+  virtual void EventListenerAdded(nsAtom* aType) override;
 
-  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-    override;
-  nsPIDOMWindowInner* GetParentObject() const
-  {
-    return GetOwner();
-  }
+  using EventTarget::EventListenerRemoved;
+  virtual void EventListenerRemoved(nsAtom* aType) override;
+
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override;
+  nsPIDOMWindowInner* GetParentObject() const { return GetOwner(); }
 
   // WebIDL
-  // Uses XPIDL GetLabel.
+  void GetLabel(nsAString& aLabel);
+  void GetProtocol(nsAString& aProtocol);
   bool Reliable() const;
+  mozilla::dom::Nullable<uint16_t> GetMaxPacketLifeTime() const;
+  mozilla::dom::Nullable<uint16_t> GetMaxRetransmits() const;
   mozilla::dom::RTCDataChannelState ReadyState() const;
   uint32_t BufferedAmount() const;
   uint32_t BufferedAmountLowThreshold() const;
@@ -63,18 +59,15 @@ public:
   IMPL_EVENT_HANDLER(open)
   IMPL_EVENT_HANDLER(error)
   IMPL_EVENT_HANDLER(close)
-  // Uses XPIDL Close.
+  void Close();
   IMPL_EVENT_HANDLER(message)
   IMPL_EVENT_HANDLER(bufferedamountlow)
-  mozilla::dom::RTCDataChannelType BinaryType() const
-  {
+  mozilla::dom::RTCDataChannelType BinaryType() const {
     return static_cast<mozilla::dom::RTCDataChannelType>(
-      static_cast<int>(mBinaryType));
+        static_cast<int>(mBinaryType));
   }
-  void SetBinaryType(mozilla::dom::RTCDataChannelType aType)
-  {
-    mBinaryType = static_cast<DataChannelBinaryType>(
-      static_cast<int>(aType));
+  void SetBinaryType(mozilla::dom::RTCDataChannelType aType) {
+    mBinaryType = static_cast<DataChannelBinaryType>(static_cast<int>(aType));
   }
   void Send(const nsAString& aData, mozilla::ErrorResult& aRv);
   void Send(mozilla::dom::Blob& aData, mozilla::ErrorResult& aRv);
@@ -82,35 +75,28 @@ public:
   void Send(const mozilla::dom::ArrayBufferView& aData,
             mozilla::ErrorResult& aRv);
 
-  // Uses XPIDL GetProtocol.
   bool Ordered() const;
   uint16_t Id() const;
 
-  nsresult
-  DoOnMessageAvailable(const nsACString& aMessage, bool aBinary);
+  nsresult DoOnMessageAvailable(const nsACString& aMessage, bool aBinary);
 
-  virtual nsresult
-  OnMessageAvailable(nsISupports* aContext, const nsACString& aMessage) override;
+  virtual nsresult OnMessageAvailable(nsISupports* aContext,
+                                      const nsACString& aMessage) override;
 
-  virtual nsresult
-  OnBinaryMessageAvailable(nsISupports* aContext, const nsACString& aMessage) override;
+  virtual nsresult OnBinaryMessageAvailable(
+      nsISupports* aContext, const nsACString& aMessage) override;
 
   virtual nsresult OnSimpleEvent(nsISupports* aContext, const nsAString& aName);
 
-  virtual nsresult
-  OnChannelConnected(nsISupports* aContext) override;
+  virtual nsresult OnChannelConnected(nsISupports* aContext) override;
 
-  virtual nsresult
-  OnChannelClosed(nsISupports* aContext) override;
+  virtual nsresult OnChannelClosed(nsISupports* aContext) override;
 
-  virtual nsresult
-  OnBufferLow(nsISupports* aContext) override;
+  virtual nsresult OnBufferLow(nsISupports* aContext) override;
 
-  virtual nsresult
-  NotBuffered(nsISupports* aContext) override;
+  virtual nsresult NotBuffered(nsISupports* aContext) override;
 
-  virtual void
-  AppReady();
+  virtual void AppReady();
 
   // if there are "strong event listeners" or outgoing not sent messages
   // then this method keeps the object alive when js doesn't have strong
@@ -120,18 +106,20 @@ public:
   // (and possibly collected).
   void DontKeepAliveAnyMore();
 
-protected:
+ protected:
   ~nsDOMDataChannel();
 
-private:
+ private:
   void Send(nsIInputStream* aMsgStream, const nsACString& aMsgString,
-            uint32_t aMsgLength, bool aIsBinary, mozilla::ErrorResult& aRv);
+            bool aIsBinary, mozilla::ErrorResult& aRv);
+
+  void ReleaseSelf();
 
   // to keep us alive while we have listeners
   RefPtr<nsDOMDataChannel> mSelfRef;
   // Owning reference
   RefPtr<mozilla::DataChannel> mDataChannel;
-  nsString  mOrigin;
+  nsString mOrigin;
   enum DataChannelBinaryType {
     DC_BINARY_TYPE_ARRAYBUFFER,
     DC_BINARY_TYPE_BLOB,
@@ -141,4 +129,4 @@ private:
   bool mSentClose;
 };
 
-#endif // nsDOMDataChannel_h
+#endif  // nsDOMDataChannel_h

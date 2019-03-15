@@ -2,9 +2,7 @@
  * Tests for imgITools
  */
 
-var Ci = Components.interfaces;
-var Cc = Components.classes;
-
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 /*
  * dumpToFile()
@@ -79,7 +77,7 @@ function streamToArray(aStream) {
  * Compares two arrays, and throws if there's a difference.
  */
 function compareArrays(aArray1, aArray2) {
-    do_check_eq(aArray1.length, aArray2.length);
+    Assert.equal(aArray1.length, aArray2.length);
 
     for (var i = 0; i < aArray1.length; i++)
         if (aArray1[i] != aArray2[i])
@@ -143,18 +141,16 @@ var inMimeType = "image/png";
 var imgFile = do_get_file(imgName);
 
 var istream = getFileInputStream(imgFile);
-do_check_eq(istream.available(), 8415);
+Assert.equal(istream.available(), 8415);
 
-// Use decodeImageData for this test even though it's deprecated to ensure that
-// it correctly forwards to decodeImage and continues to work.
-var outParam = { value: null };
-imgTools.decodeImageData(istream, inMimeType, outParam);
-var container = outParam.value;
+var buffer = NetUtil.readInputStreamToString(istream, istream.available());
+var container = imgTools.decodeImageFromBuffer(buffer, buffer.length,
+                                               inMimeType);
 
 // It's not easy to look at the pixel values from JS, so just
 // check the container's size.
-do_check_eq(container.width,  64);
-do_check_eq(container.height, 64);
+Assert.equal(container.width,  64);
+Assert.equal(container.height, 64);
 
 
 /* ========== 2 ========== */
@@ -169,7 +165,7 @@ var encodedBytes = streamToArray(istream);
 var refName = "image1png16x16.jpg";
 var refFile = do_get_file(refName);
 istream = getFileInputStream(refFile);
-do_check_eq(istream.available(), 1051);
+Assert.equal(istream.available(), 1051);
 var referenceBytes = streamToArray(istream);
 
 // compare the encoder's output to the reference file.
@@ -188,7 +184,7 @@ encodedBytes = streamToArray(istream);
 refName = "image1png64x64.jpg";
 refFile = do_get_file(refName);
 istream = getFileInputStream(refFile);
-do_check_eq(istream.available(), 4503);
+Assert.equal(istream.available(), 4503);
 referenceBytes = streamToArray(istream);
 
 // compare the encoder's output to the reference file.
@@ -205,14 +201,15 @@ inMimeType = "image/jpeg";
 imgFile = do_get_file(imgName);
 
 istream = getFileInputStream(imgFile);
-do_check_eq(istream.available(), 3494);
+Assert.equal(istream.available(), 3494);
 
-container = imgTools.decodeImage(istream, inMimeType);
+buffer = NetUtil.readInputStreamToString(istream, istream.available());
+container = imgTools.decodeImageFromBuffer(buffer, buffer.length, inMimeType);
 
 // It's not easy to look at the pixel values from JS, so just
 // check the container's size.
-do_check_eq(container.width,  32);
-do_check_eq(container.height, 32);
+Assert.equal(container.width,  32);
+Assert.equal(container.height, 32);
 
 
 /* ========== 5 ========== */
@@ -228,7 +225,7 @@ encodedBytes = streamToArray(istream);
 refName = isWindows ? "image2jpg16x16-win.png" : "image2jpg16x16.png";
 refFile = do_get_file(refName);
 istream = getFileInputStream(refFile);
-do_check_eq(istream.available(), 950);
+Assert.equal(istream.available(), 950);
 referenceBytes = streamToArray(istream);
 
 // compare the encoder's output to the reference file.
@@ -249,7 +246,7 @@ encodedBytes = streamToArray(istream);
 refName = isWindows ? "image2jpg32x32-win.png" : "image2jpg32x32.png";
 refFile = do_get_file(refName);
 istream = getFileInputStream(refFile);
-do_check_eq(istream.available(), 3105);
+Assert.equal(istream.available(), 3105);
 referenceBytes = streamToArray(istream);
 
 // compare the encoder's output to the reference file.
@@ -267,14 +264,15 @@ inMimeType = "image/x-icon";
 imgFile = do_get_file(imgName);
 
 istream = getFileInputStream(imgFile);
-do_check_eq(istream.available(), 1406);
+Assert.equal(istream.available(), 1406);
 
-container = imgTools.decodeImage(istream, inMimeType);
+buffer = NetUtil.readInputStreamToString(istream, istream.available());
+container = imgTools.decodeImageFromBuffer(buffer, buffer.length, inMimeType);
 
 // It's not easy to look at the pixel values from JS, so just
 // check the container's size.
-do_check_eq(container.width,  16);
-do_check_eq(container.height, 16);
+Assert.equal(container.width,  16);
+Assert.equal(container.height, 16);
 
 
 /* ========== 8 ========== */
@@ -289,7 +287,7 @@ encodedBytes = streamToArray(istream);
 refName = "image3ico32x32.png";
 refFile = do_get_file(refName);
 istream = getFileInputStream(refFile);
-do_check_eq(istream.available(), 2285);
+Assert.equal(istream.available(), 2285);
 referenceBytes = streamToArray(istream);
 
 // compare the encoder's output to the reference file.
@@ -308,7 +306,7 @@ encodedBytes = streamToArray(istream);
 refName = "image3ico16x16.png";
 refFile = do_get_file(refName);
 istream = getFileInputStream(refFile);
-do_check_eq(istream.available(), 330);
+Assert.equal(istream.available(), 330);
 referenceBytes = streamToArray(istream);
 
 // compare the encoder's output to the reference file.
@@ -325,14 +323,15 @@ inMimeType = "image/gif";
 imgFile = do_get_file(imgName);
 
 istream = getFileInputStream(imgFile);
-do_check_eq(istream.available(), 1809);
+Assert.equal(istream.available(), 1809);
 
-container = imgTools.decodeImage(istream, inMimeType);
+buffer = NetUtil.readInputStreamToString(istream, istream.available());
+container = imgTools.decodeImageFromBuffer(buffer, buffer.length, inMimeType);
 
 // It's not easy to look at the pixel values from JS, so just
 // check the container's size.
-do_check_eq(container.width, 32);
-do_check_eq(container.height, 32);
+Assert.equal(container.width, 32);
+Assert.equal(container.height, 32);
 
 /* ========== 11 ========== */
 testnum++;
@@ -349,7 +348,7 @@ encodedBytes = streamToArray(istream);
 refName = "image4gif32x32bmp32bpp.ico";
 refFile = do_get_file(refName);
 istream = getFileInputStream(refFile);
-do_check_eq(istream.available(), 4286);
+Assert.equal(istream.available(), 4286);
 referenceBytes = streamToArray(istream);
 
 // compare the encoder's output to the reference file.
@@ -372,7 +371,7 @@ encodedBytes = streamToArray(istream);
 refName = "image4gif16x16bmp32bpp.ico";
 refFile = do_get_file(refName);
 istream = getFileInputStream(refFile);
-do_check_eq(istream.available(), 1150);
+Assert.equal(istream.available(), 1150);
 referenceBytes = streamToArray(istream);
 
 // compare the encoder's output to the reference file.
@@ -393,7 +392,7 @@ encodedBytes = streamToArray(istream);
 refName = "image4gif32x32bmp24bpp.ico";
 refFile = do_get_file(refName);
 istream = getFileInputStream(refFile);
-do_check_eq(istream.available(), 3262);
+Assert.equal(istream.available(), 3262);
 referenceBytes = streamToArray(istream);
 
 // compare the encoder's output to the reference file.
@@ -416,7 +415,7 @@ encodedBytes = streamToArray(istream);
 refName = "image4gif16x16bmp24bpp.ico";
 refFile = do_get_file(refName);
 istream = getFileInputStream(refFile);
-do_check_eq(istream.available(), 894);
+Assert.equal(istream.available(), 894);
 referenceBytes = streamToArray(istream);
 
 // compare the encoder's output to the reference file.
@@ -433,14 +432,15 @@ inMimeType = "image/jpeg";
 imgFile = do_get_file(imgName);
 
 istream = getFileInputStream(imgFile);
-do_check_eq(istream.available(), 3494);
+Assert.equal(istream.available(), 3494);
 
-container = imgTools.decodeImage(istream, inMimeType);
+buffer = NetUtil.readInputStreamToString(istream, istream.available());
+container = imgTools.decodeImageFromBuffer(buffer, buffer.length, inMimeType);
 
 // It's not easy to look at the pixel values from JS, so just
 // check the container's size.
-do_check_eq(container.width,  32);
-do_check_eq(container.height, 32);
+Assert.equal(container.width,  32);
+Assert.equal(container.height, 32);
 
 // encode a cropped image
 istream = imgTools.encodeCroppedImage(container, "image/jpeg", 0, 0, 16, 16);
@@ -450,7 +450,7 @@ encodedBytes = streamToArray(istream);
 refName = "image2jpg16x16cropped.jpg";
 refFile = do_get_file(refName);
 istream = getFileInputStream(refFile);
-do_check_eq(istream.available(), 879);
+Assert.equal(istream.available(), 879);
 referenceBytes = streamToArray(istream);
 
 // compare the encoder's output to the reference file.
@@ -469,7 +469,7 @@ encodedBytes = streamToArray(istream);
 refName = "image2jpg16x16cropped2.jpg";
 refFile = do_get_file(refName);
 istream = getFileInputStream(refFile);
-do_check_eq(istream.available(), 878);
+Assert.equal(istream.available(), 878);
 referenceBytes = streamToArray(istream);
 
 // compare the encoder's output to the reference file.
@@ -488,7 +488,7 @@ encodedBytes = streamToArray(istream);
 refName = "image2jpg16x32cropped3.jpg";
 refFile = do_get_file(refName);
 istream = getFileInputStream(refFile);
-do_check_eq(istream.available(), 1127);
+Assert.equal(istream.available(), 1127);
 referenceBytes = streamToArray(istream);
 
 // compare the encoder's output to the reference file.
@@ -507,7 +507,7 @@ encodedBytes = streamToArray(istream);
 refName = "image2jpg32x16cropped4.jpg";
 refFile = do_get_file(refName);
 istream = getFileInputStream(refFile);
-do_check_eq(istream.available(), 1135);
+Assert.equal(istream.available(), 1135);
 referenceBytes = streamToArray(istream);
 
 // compare the encoder's output to the reference file.
@@ -526,7 +526,7 @@ encodedBytes = streamToArray(istream);
 refName = "image2jpg32x32.jpg";
 refFile = do_get_file(refName);
 istream = getFileInputStream(refFile);
-do_check_eq(istream.available(), 1634);
+Assert.equal(istream.available(), 1634);
 referenceBytes = streamToArray(istream);
 
 // compare the encoder's output to the reference file.
@@ -545,7 +545,7 @@ encodedBytes = streamToArray(istream);
 refName = "image2jpg32x16scaled.jpg";
 refFile = do_get_file(refName);
 istream = getFileInputStream(refFile);
-do_check_eq(istream.available(), 1227);
+Assert.equal(istream.available(), 1227);
 referenceBytes = streamToArray(istream);
 
 // compare the encoder's output to the reference file.
@@ -564,7 +564,7 @@ encodedBytes = streamToArray(istream);
 refName = "image2jpg16x32scaled.jpg";
 refFile = do_get_file(refName);
 istream = getFileInputStream(refFile);
-do_check_eq(istream.available(), 1219);
+Assert.equal(istream.available(), 1219);
 referenceBytes = streamToArray(istream);
 
 // compare the encoder's output to the reference file.
@@ -583,7 +583,7 @@ encodedBytes = streamToArray(istream);
 refName = "image2jpg32x32.jpg";
 refFile = do_get_file(refName);
 istream = getFileInputStream(refFile);
-do_check_eq(istream.available(), 1634);
+Assert.equal(istream.available(), 1634);
 referenceBytes = streamToArray(istream);
 
 // compare the encoder's output to the reference file.
@@ -626,7 +626,7 @@ try {
   imgTools.encodeCroppedImage(container, "image/jpeg", 1, 1, 0, 0);
 } catch (e) { numErrors++; }
 
-do_check_eq(numErrors, 6);
+Assert.equal(numErrors, 6);
 
 
 /* ========== bug 363986 ========== */
@@ -653,7 +653,9 @@ for(var i=0; i<testData.length; ++i) {
     imgFile = do_get_file(dict["preImage"]);
     istream = getFileInputStream(imgFile);
 
-    var container = imgTools.decodeImage(istream, dict["preImageMimeType"]);
+    var buffer = NetUtil.readInputStreamToString(istream, istream.available());
+    var container = imgTools.decodeImageFromBuffer(buffer, buffer.length,
+                                                   dict["preImageMimeType"]);
 
     istream = imgTools.encodeImage(container, dict["refImageMimeType"]);
 
@@ -685,16 +687,18 @@ inMimeType = "image/x-icon";
 imgFile = do_get_file(imgName);
 
 istream = getFileInputStream(imgFile);
-do_check_eq(istream.available(), 17759);
+Assert.equal(istream.available(), 17759);
 var errsrc = "none";
 
 try {
-  container = imgTools.decodeImage(istream, inMimeType);
+  buffer = NetUtil.readInputStreamToString(istream, istream.available());
+  container = imgTools.decodeImageFromBuffer(buffer, buffer.length, inMimeType);
 
   // We expect to hit an error during encoding because the ICO header of the
-  // image is fine, but the actual resources are corrupt. Since decodeImage()
-  // only performs a metadata decode, it doesn't decode far enough to realize
-  // this, but we'll find out when we do a full decode during encodeImage().
+  // image is fine, but the actual resources are corrupt. Since
+  // decodeImageFromBuffer() only performs a metadata decode, it doesn't decode
+  // far enough to realize this, but we'll find out when we do a full decode
+  // during encodeImage().
   try {
       istream = imgTools.encodeImage(container, "image/png");
   } catch (e) {
@@ -706,7 +710,7 @@ try {
   errsrc = "decode";
 }
 
-do_check_eq(errsrc, "encode");
+Assert.equal(errsrc, "encode");
 checkExpectedError(/NS_ERROR_FAILURE/, err);
 
 
@@ -719,14 +723,15 @@ inMimeType = "image/x-icon";
 imgFile = do_get_file(imgName);
 
 istream = getFileInputStream(imgFile);
-do_check_eq(istream.available(), 4286);
+Assert.equal(istream.available(), 4286);
 
-container = imgTools.decodeImage(istream, inMimeType);
+buffer = NetUtil.readInputStreamToString(istream, istream.available());
+container = imgTools.decodeImageFromBuffer(buffer, buffer.length, inMimeType);
 
 var props = container.QueryInterface(Ci.nsIProperties);
 
-do_check_eq(props.get("hotspotX", Ci.nsISupportsPRUint32).data, 10);
-do_check_eq(props.get("hotspotY", Ci.nsISupportsPRUint32).data, 9);
+Assert.equal(props.get("hotspotX", Ci.nsISupportsPRUint32).data, 10);
+Assert.equal(props.get("hotspotY", Ci.nsISupportsPRUint32).data, 9);
 
 
 /* ========== end ========== */

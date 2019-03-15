@@ -22,7 +22,7 @@ main thread when debugging content.
 Triggered when a DOM event occurs, like a click or a keypress.
 
 * unsigned short eventPhase - a number indicating what phase this event is
-  in (target, bubbling, capturing, maps to Ci.nsIDOMEvent constants)
+  in (target, bubbling, capturing, maps to Event constants)
 * DOMString type - the type of event, like "keypress" or "click"
 
 ## Reflow
@@ -42,24 +42,6 @@ elements. Fired via `PresShell::DoReflow`
 Style markers (labeled as "Recalculating Styles") are triggered when Gecko
 needs to figure out the computational style of an element. Fired via
 `RestyleTracker::DoProcessRestyles` when there are elements to restyle.
-
-* DOMString restyleHint - A string indicating what kind of restyling will need
-  to be processed; for example "eRestyle_StyleAttribute" is relatively cheap,
-  whereas "eRestyle_Subtree" is more expensive. The hint can be a string of
-  any amount of the following, separated via " | ". All future restyleHints
-  are from `RestyleManager::RestyleHintToString`.
-
-  * "eRestyle_Self"
-  * "eRestyle_Subtree"
-  * "eRestyle_LaterSiblings"
-  * "eRestyle_CSSTransitions"
-  * "eRestyle_CSSAnimations"
-  * "eRestyle_SVGAttrAnimations"
-  * "eRestyle_StyleAttribute"
-  * "eRestyle_StyleAttribute_Animations"
-  * "eRestyle_Force"
-  * "eRestyle_ForceDescendants"
-
 
 ## Javascript
 

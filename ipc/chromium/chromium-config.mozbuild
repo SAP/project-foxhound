@@ -31,7 +31,7 @@ if CONFIG['OS_ARCH'] == 'WINNT':
         'WIN32_LEAN_AND_MEAN': True,
     })
 
-    if CONFIG['_MSC_VER']:
+    if CONFIG['CC_TYPE'] in ('msvc', 'clang-cl'):
         DEFINES['COMPILER_MSVC'] = True
 
 else:
@@ -39,6 +39,9 @@ else:
 
     if CONFIG['OS_ARCH'] == 'Darwin':
         DEFINES['OS_MACOSX'] = 1
+
+    elif CONFIG['OS_ARCH'] == 'SunOS':
+        DEFINES['OS_SOLARIS'] = 1
 
     elif CONFIG['OS_ARCH'] == 'DragonFly':
         DEFINES.update({
@@ -66,3 +69,7 @@ else:
 
     else:
         DEFINES['OS_LINUX'] = 1
+
+
+# Add libFuzzer configuration directives
+include('/tools/fuzzing/libfuzzer-config.mozbuild')

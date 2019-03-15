@@ -7,7 +7,7 @@
 
 interface nsIURI;
 
-[scriptable, uuid(5daa99d5-265a-4397-b429-c943803e2619)]
+[builtinclass, scriptable, uuid(5daa99d5-265a-4397-b429-c943803e2619)]
 interface nsIPluginTag : nsISupports
 {
   // enabledState is stored as one of the following as an integer in prefs,
@@ -30,21 +30,28 @@ interface nsIPluginTag : nsISupports
    */
   // FIXME-jsplugins QI to fakePluginTag possible
   // FIXME-jsplugins implement missing + tests (whatever that means)
+  [infallible]
   readonly attribute boolean blocklisted;
 
   /**
    * true if the state is non-default and locked, false otherwise.
    */
+  [infallible]
   readonly attribute boolean isEnabledStateLocked;
 
   // If this plugin is capable of being used (not disabled, blocklisted, etc)
+  [infallible]
   readonly attribute boolean active;
 
   // Get a specific nsIBlocklistService::STATE_*
+  [infallible]
   readonly attribute unsigned long blocklistState;
 
+  [infallible]
   readonly attribute boolean disabled;
+  [infallible]
   readonly attribute boolean clicktoplay;
+  [infallible]
   readonly attribute boolean loaded;
   // See the STATE_* values above.
            attribute unsigned long enabledState;
@@ -66,11 +73,28 @@ interface nsIPluginTag : nsISupports
  * as a NPAPI plug-in.  See nsIPluginHost.registerFakePlugin and the
  * documentation for the FakePluginTagInit dictionary.
  */
-[scriptable, uuid(6d22c968-226d-4156-b230-da6ad6bbf6e8)]
+[builtinclass, scriptable, uuid(6d22c968-226d-4156-b230-da6ad6bbf6e8)]
 interface nsIFakePluginTag : nsIPluginTag
 {
-  // The URI that should be loaded into the tag (as a frame) to handle the
-  // plugin. Note that the original data/src value for the plugin is not loaded
-  // and will need to be requested by the handler via XHR or similar if desired.
+  /**
+   * The URI that should be loaded into the tag (as a frame) to handle the
+   * plugin. Note that the original data/src value for the plugin is not loaded
+   * and will need to be requested by the handler via XHR or similar if desired.
+   */
   readonly attribute nsIURI handlerURI;
+
+  /**
+   * Optional script to run in a sandbox when instantiating a plugin. If this
+   * value is an empty string then no such script will be run.
+   * The script runs in a sandbox with system principal in the process that
+   * contains the element that instantiates the plugin (ie the EMBED or OBJECT
+   * element). The sandbox global has a 'pluginElement' property that the script
+   * can use to access the element that instantiates the plugin.
+   */
+  readonly attribute AString sandboxScript;
+
+  /**
+   * A unique id for this JS-implemented plugin. 0 is a valid id.
+   */
+  readonly attribute unsigned long id;
 };

@@ -13,8 +13,7 @@
 /* We call window.open() using different URIs and make sure the triggeringPrincipal
  * loadingPrincipal are correct.
  * Test1: window.open(http:)
- * Test2: window.open(data:)
- * Test3: window.open(javascript:)
+ * Test2: window.open(javascript:)
  */
 
 const TRIGGERING_PRINCIPAL_URI =
@@ -22,7 +21,7 @@ const TRIGGERING_PRINCIPAL_URI =
 
 SimpleTest.waitForExplicitFinish();
 
-const NUM_TESTS = 3;
+const NUM_TESTS = 2;
 var test_counter = 0;
 
 function checkFinish() {
@@ -36,7 +35,7 @@ function checkFinish() {
 // Test 1: window.open(http:)
 var httpWin = window.open("file_triggeringprincipal_window_open.html", "_blank", "width=10,height=10");
 httpWin.onload = function() {
-  var httpChannel = SpecialPowers.wrap(httpWin.document).docShell.currentDocumentChannel;
+  var httpChannel = SpecialPowers.wrap(httpWin).docShell.currentDocumentChannel;
   var httpTriggeringPrincipal = httpChannel.loadInfo.triggeringPrincipal.URI.asciiSpec;
   var httpLoadingPrincipal = httpChannel.loadInfo.loadingPrincipal;
 
@@ -51,34 +50,13 @@ httpWin.onload = function() {
 
   httpWin.close();
   checkFinish();
-}
+};
 
 // ----------------------------------------------------------------------------
-// Test 2: window.open(data:)
-var dataWin = window.open("data:text/html,<html><body>data</body></html>", "_blank", "width=10,height=10");
-dataWin.onload = function() {
-  var dataChannel = SpecialPowers.wrap(dataWin.document).docShell.currentDocumentChannel;
-  var dataTriggeringPrincipal = dataChannel.loadInfo.triggeringPrincipal.URI.asciiSpec;
-  var dataLoadingPrincipal = dataChannel.loadInfo.loadingPrincipal;
-
-  is(dataTriggeringPrincipal, TRIGGERING_PRINCIPAL_URI,
-     "TriggeringPrincipal for window.open(data:) should be the principal of the document");
-
-  is(dataWin.document.referrer, "",
-     "Referrer for window.open(data:) should be empty");
-
-  is(dataLoadingPrincipal, null,
-     "LoadingPrincipal for window.open(data:) should be null");
-
-  dataWin.close();
-  checkFinish();
-}
-
-// ----------------------------------------------------------------------------
-// Test 3: window.open(javascript:)
+// Test 2: window.open(javascript:)
 var jsWin = window.open("javascript:'<html><body>js</body></html>';", "_blank", "width=10,height=10");
 jsWin.onload = function() {
-  var jsChannel = SpecialPowers.wrap(jsWin.document).docShell.currentDocumentChannel;
+  var jsChannel = SpecialPowers.wrap(jsWin).docShell.currentDocumentChannel;
   var jsTriggeringPrincipal = jsChannel.loadInfo.triggeringPrincipal.URI.asciiSpec;
   var jsLoadingPrincipal = jsChannel.loadInfo.loadingPrincipal;
 
@@ -93,7 +71,7 @@ jsWin.onload = function() {
 
   jsWin.close();
   checkFinish();
-}
+};
 
 </script>
 </pre>

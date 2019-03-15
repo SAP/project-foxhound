@@ -34,8 +34,7 @@
  * the child. At this time the child gets its first addref.
  *
  * A reference to the TransportProvider is then sent as part of some other
- * message from the parent to the child. For example in the
- * PFlyWebPublishedServer.WebSocketRequest message.
+ * message from the parent to the child.
  *
  * The receiver of that message can then grab the TransportProviderChild and
  * without addreffing it, effectively using the refcount that the
@@ -49,21 +48,20 @@ class nsIAsyncOutputStream;
 namespace mozilla {
 namespace net {
 
-class TransportProviderParent final : public PTransportProviderParent
-                                    , public nsITransportProvider
-                                    , public nsIHttpUpgradeListener
-{
-public:
-  TransportProviderParent();
+class TransportProviderParent final : public PTransportProviderParent,
+                                      public nsITransportProvider,
+                                      public nsIHttpUpgradeListener {
+ public:
+  TransportProviderParent() = default;
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSITRANSPORTPROVIDER
   NS_DECL_NSIHTTPUPGRADELISTENER
 
-  void ActorDestroy(ActorDestroyReason aWhy) override {};
+  void ActorDestroy(ActorDestroyReason aWhy) override{};
 
-private:
-  ~TransportProviderParent();
+ private:
+  ~TransportProviderParent() = default;
 
   void MaybeNotify();
 
@@ -73,20 +71,19 @@ private:
   nsCOMPtr<nsIAsyncOutputStream> mSocketOut;
 };
 
-class TransportProviderChild final : public PTransportProviderChild
-                                   , public nsITransportProvider
-{
-public:
-  TransportProviderChild();
+class TransportProviderChild final : public PTransportProviderChild,
+                                     public nsITransportProvider {
+ public:
+  TransportProviderChild() = default;
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSITRANSPORTPROVIDER
 
-private:
+ private:
   ~TransportProviderChild();
 };
 
-} // namespace net
-} // namespace mozilla
+}  // namespace net
+}  // namespace mozilla
 
 #endif

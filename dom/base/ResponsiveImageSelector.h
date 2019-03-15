@@ -7,6 +7,8 @@
 #ifndef mozilla_dom_responsiveimageselector_h__
 #define mozilla_dom_responsiveimageselector_h__
 
+#include "mozilla/UniquePtr.h"
+#include "mozilla/ServoBindingTypes.h"
 #include "nsAutoPtr.h"
 #include "nsISupports.h"
 #include "nsIContent.h"
@@ -21,15 +23,15 @@ namespace dom {
 
 class ResponsiveImageCandidate;
 
-class ResponsiveImageSelector
-{
+class ResponsiveImageSelector {
   friend class ResponsiveImageCandidate;
-public:
+
+ public:
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(ResponsiveImageSelector)
   NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(ResponsiveImageSelector)
 
   explicit ResponsiveImageSelector(nsIContent* aContent);
-  explicit ResponsiveImageSelector(nsIDocument* aDocument);
+  explicit ResponsiveImageSelector(dom::Document* aDocument);
 
   // NOTE ABOUT CURRENT SELECTION
   //
@@ -42,27 +44,28 @@ public:
   // viewport size and device pixel ratio, the time at which image
   // selection occurs can affect the result.
 
-
   // Given a srcset string, parse and replace current candidates (does not
   // replace default source)
-  bool SetCandidatesFromSourceSet(const nsAString & aSrcSet);
+  bool SetCandidatesFromSourceSet(const nsAString& aSrcSet,
+                                  nsIPrincipal* aTriggeringPrincipal = nullptr);
 
   // Fill the source sizes from a valid sizes descriptor. Returns false if
   // descriptor is invalid.
-  bool SetSizesFromDescriptor(const nsAString & aSizesDescriptor);
+  bool SetSizesFromDescriptor(const nsAString& aSizesDescriptor);
 
   // Set the default source, treated as the least-precedence 1.0 density source.
-  void SetDefaultSource(const nsAString& aURLString);
+  void SetDefaultSource(const nsAString& aURLString,
+                        nsIPrincipal* aPrincipal = nullptr);
 
   uint32_t NumCandidates(bool aIncludeDefault = true);
 
   // If this was created for a specific content. May be null if we were only
   // created for a document.
-  nsIContent *Content();
+  nsIContent* Content();
 
   // The document we were created for, or the owner document of the content if
   // we were created for a specific nsIContent.
-  nsIDocument *Document();
+  dom::Document* Document();
 
   // Get the url and density for the selected best candidate. These
   // implicitly cause an image to be selected if necessary.
@@ -70,6 +73,7 @@ public:
   // Returns false if there is no selected image
   bool GetSelectedImageURLSpec(nsAString& aResult);
   double GetSelectedImageDensity();
+  nsIPrincipal* GetSelectedImageTriggeringPrincipal();
 
   // Runs image selection now if necessary. If an image has already
   // been choosen, takes no action unless aReselect is true.
@@ -79,13 +83,13 @@ public:
   // return - true if the selected image result changed.
   bool SelectImage(bool aReselect = false);
 
-protected:
+ protected:
   virtual ~ResponsiveImageSelector();
 
-private:
+ private:
   // Append a candidate unless its selector is duplicated by a higher priority
   // candidate
-  void AppendCandidateIfUnique(const ResponsiveImageCandidate &aCandidate);
+  void AppendCandidateIfUnique(const ResponsiveImageCandidate& aCandidate);
 
   // Append a default candidate with this URL if necessary. Does not check if
   // the array already contains one, use SetDefaultSource instead.
@@ -108,6 +112,7 @@ private:
   nsCOMPtr<nsINode> mOwnerNode;
   // The cached URL for default candidate.
   nsString mDefaultSourceURL;
+  nsCOMPtr<nsIPrincipal> mDefaultSourceTriggeringPrincipal;
   // If this array contains an eCandidateType_Default, it should be the last
   // element, such that the Setters can preserve/replace it respectively.
   nsTArray<ResponsiveImageCandidate> mCandidates;
@@ -116,16 +121,18 @@ private:
   // resolve the absolute URL at selection time
   nsCOMPtr<nsIURI> mSelectedCandidateURL;
 
-  nsTArray< nsAutoPtr<nsMediaQuery> > mSizeQueries;
-  nsTArray<nsCSSValue> mSizeValues;
+  // Servo bits.
+  UniquePtr<RawServoSourceSizeList> mServoSourceSizeList;
 };
 
 class ResponsiveImageCandidate {
-public:
+ public:
   ResponsiveImageCandidate();
-  ResponsiveImageCandidate(const nsAString& aURLString, double aDensity);
+  ResponsiveImageCandidate(const nsAString& aURLString, double aDensity,
+                           nsIPrincipal* aTriggeringPrincipal = nullptr);
 
   void SetURLSpec(const nsAString& aURLString);
+  void SetTriggeringPrincipal(nsIPrincipal* aPrincipal);
   // Set this as a default-candidate. This behaves the same as density 1.0, but
   // has a differing type such that it can be replaced by subsequent
   // SetDefaultSource calls.
@@ -145,12 +152,13 @@ public:
                           const nsAString::const_iterator& aIterEnd);
 
   // Check if our parameter (which does not include the url) is identical
-  bool HasSameParameter(const ResponsiveImageCandidate & aOther) const;
+  bool HasSameParameter(const ResponsiveImageCandidate& aOther) const;
 
   const nsAString& URLString() const;
+  nsIPrincipal* TriggeringPrincipal() const;
 
   // Compute and return the density relative to a selector.
-  double Density(ResponsiveImageSelector *aSelector) const;
+  double Density(ResponsiveImageSelector* aSelector) const;
   // If the width is already known. Useful when iterating over candidates to
   // avoid having each call re-compute the width.
   double Density(double aMatchingWidth) const;
@@ -169,9 +177,9 @@ public:
 
   eCandidateType Type() const { return mType; }
 
-private:
-
+ private:
   nsString mURLString;
+  nsCOMPtr<nsIPrincipal> mTriggeringPrincipal;
   eCandidateType mType;
   union {
     double mDensity;
@@ -179,7 +187,7 @@ private:
   } mValue;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_responsiveimageselector_h__
+#endif  // mozilla_dom_responsiveimageselector_h__

@@ -21,82 +21,70 @@
           src="../states.js"></script>
 
   <script type="application/javascript">
-    function focusElmWhileSubdocIsFocused(aID)
-    {
+    function focusElmWhileSubdocIsFocused(aID) {
       this.DOMNode = getNode(aID);
 
-      this.invoke = function focusElmWhileSubdocIsFocused_invoke()
-      {
+      this.invoke = function focusElmWhileSubdocIsFocused_invoke() {
         this.DOMNode.focus();
-      }
+      };
 
       this.eventSeq = [
-        new focusChecker(this.DOMNode)
+        new focusChecker(this.DOMNode),
       ];
 
       this.unexpectedEventSeq = [
-        new invokerChecker(EVENT_FOCUS, this.DOMNode.ownerDocument)
+        new invokerChecker(EVENT_FOCUS, this.DOMNode.ownerDocument),
       ];
 
-      this.getID = function focusElmWhileSubdocIsFocused_getID()
-      {
+      this.getID = function focusElmWhileSubdocIsFocused_getID() {
         return "Focus element while subdocument is focused " + prettyName(aID);
-      }
+      };
     }
 
-    function imageMapChecker(aID)
-    {
+    function imageMapChecker(aID) {
       var node = getNode(aID);
       this.type = EVENT_FOCUS;
-      this.match = function imageMapChecker_match(aEvent)
-      {
+      this.match = function imageMapChecker_match(aEvent) {
         return aEvent.DOMNode == node;
-      }
+      };
     }
 
-    function topMenuChecker()
-    {
+    function topMenuChecker() {
       this.type = EVENT_FOCUS;
-      this.match = function topMenuChecker_match(aEvent)
-      {
+      this.match = function topMenuChecker_match(aEvent) {
         return aEvent.accessible.role == ROLE_PARENT_MENUITEM;
-      }
+      };
     }
 
-    function contextMenuChecker()
-    {
+    function contextMenuChecker() {
       this.type = EVENT_MENUPOPUP_START;
-      this.match = function contextMenuChecker_match(aEvent)
-      {
+      this.match = function contextMenuChecker_match(aEvent) {
         return aEvent.accessible.role == ROLE_MENUPOPUP;
-      }
+      };
     }
 
-    function focusContextMenuItemChecker()
-    {
+    function focusContextMenuItemChecker() {
       this.__proto__ = new focusChecker();
 
-      this.match = function focusContextMenuItemChecker_match(aEvent)
-      {
+      this.match = function focusContextMenuItemChecker_match(aEvent) {
         return aEvent.accessible.role == ROLE_MENUITEM;
-      }
+      };
     }
 
     /**
      * Do tests.
      */
 
-    //gA11yEventDumpID = "eventdump"; // debug stuff
-    //gA11yEventDumpToConsole = true;
+    // gA11yEventDumpID = "eventdump"; // debug stuff
+    // gA11yEventDumpToConsole = true;
 
     var gQueue = null;
 
-    function doTests()
-    {
+    function doTests() {
       var frameDoc = document.getElementById("iframe").contentDocument;
 
-      var editableDoc = document.getElementById('editabledoc').contentDocument;
-      editableDoc.designMode = 'on';
+      var editableDoc = document.getElementById("editabledoc").contentDocument;
+      editableDoc.designMode = "on";
 
       gQueue = new eventQueue();
 
@@ -118,10 +106,9 @@
       gQueue.push(new synthEscapeKey(editableDoc, new focusChecker(editableDoc)));
       if (SEAMONKEY) {
         todo(false, "shift tab from editable document fails on (Windows) SeaMonkey! (Bug 718235)");
-      } else {
-      if (LINUX || MAC)
+      } else if (LINUX || MAC) {
         todo(false, "shift tab from editable document fails on linux and Mac, bug 746519!");
-      else
+      } else {
         gQueue.push(new synthShiftTab("link", new focusChecker("link")));
       } // ! SEAMONKEY
 

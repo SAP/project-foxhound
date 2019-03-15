@@ -5,12 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AppleATDecoder.h"
-#include "AppleCMLinker.h"
 #include "AppleDecoderModule.h"
 #include "AppleVTDecoder.h"
-#include "AppleVTLinker.h"
-#include "MacIOSurfaceImage.h"
-#include "MediaPrefs.h"
+#include "mozilla/gfx/MacIOSurface.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Logging.h"
 #include "mozilla/gfx/gfxVars.h"
@@ -18,79 +15,55 @@
 namespace mozilla {
 
 bool AppleDecoderModule::sInitialized = false;
-bool AppleDecoderModule::sIsCoreMediaAvailable = false;
-bool AppleDecoderModule::sIsVTAvailable = false;
-bool AppleDecoderModule::sIsVTHWAvailable = false;
 bool AppleDecoderModule::sCanUseHardwareVideoDecoder = true;
 
-AppleDecoderModule::AppleDecoderModule() { }
+AppleDecoderModule::AppleDecoderModule() {}
 
-AppleDecoderModule::~AppleDecoderModule() { }
+AppleDecoderModule::~AppleDecoderModule() {}
 
 /* static */
-void
-AppleDecoderModule::Init()
-{
+void AppleDecoderModule::Init() {
   if (sInitialized) {
     return;
   }
 
   // Ensure IOSurface framework is loaded.
   MacIOSurfaceLib::LoadLibrary();
-  const bool loaded = MacIOSurfaceLib::isInit();
 
-  // dlopen CoreMedia.framework if it's available.
-  sIsCoreMediaAvailable = AppleCMLinker::Link();
-  // dlopen VideoToolbox.framework if it's available.
-  // We must link both CM and VideoToolbox framework to allow for proper
-  // paired Link/Unlink calls
-  bool haveVideoToolbox = loaded && AppleVTLinker::Link();
-  sIsVTAvailable = sIsCoreMediaAvailable && haveVideoToolbox;
-
-  sIsVTHWAvailable = AppleVTLinker::skPropEnableHWAccel != nullptr;
-
-  sCanUseHardwareVideoDecoder = loaded &&
-    gfx::gfxVars::CanUseHardwareVideoDecoding();
+  sCanUseHardwareVideoDecoder =
+      MacIOSurfaceLib::isInit() && gfx::gfxVars::CanUseHardwareVideoDecoding();
 
   sInitialized = true;
 }
 
-nsresult
-AppleDecoderModule::Startup()
-{
-  if (!sInitialized || !sIsVTAvailable) {
+nsresult AppleDecoderModule::Startup() {
+  if (!sInitialized) {
     return NS_ERROR_FAILURE;
   }
   return NS_OK;
 }
 
-already_AddRefed<MediaDataDecoder>
-AppleDecoderModule::CreateVideoDecoder(const CreateDecoderParams& aParams)
-{
+already_AddRefed<MediaDataDecoder> AppleDecoderModule::CreateVideoDecoder(
+    const CreateDecoderParams& aParams) {
   RefPtr<MediaDataDecoder> decoder =
-    new AppleVTDecoder(aParams.VideoConfig(),
-                       aParams.mTaskQueue,
-                       aParams.mImageContainer);
+      new AppleVTDecoder(aParams.VideoConfig(), aParams.mTaskQueue,
+                         aParams.mImageContainer, aParams.mOptions);
   return decoder.forget();
 }
 
-already_AddRefed<MediaDataDecoder>
-AppleDecoderModule::CreateAudioDecoder(const CreateDecoderParams& aParams)
-{
+already_AddRefed<MediaDataDecoder> AppleDecoderModule::CreateAudioDecoder(
+    const CreateDecoderParams& aParams) {
   RefPtr<MediaDataDecoder> decoder =
-    new AppleATDecoder(aParams.AudioConfig(), aParams.mTaskQueue);
+      new AppleATDecoder(aParams.AudioConfig(), aParams.mTaskQueue);
   return decoder.forget();
 }
 
-bool
-AppleDecoderModule::SupportsMimeType(const nsACString& aMimeType,
-                                     DecoderDoctorDiagnostics* aDiagnostics) const
-{
-  return (sIsCoreMediaAvailable &&
-          (aMimeType.EqualsLiteral("audio/mpeg") ||
-           aMimeType.EqualsLiteral("audio/mp4a-latm"))) ||
-    (sIsVTAvailable && (aMimeType.EqualsLiteral("video/mp4") ||
-                        aMimeType.EqualsLiteral("video/avc")));
+bool AppleDecoderModule::SupportsMimeType(
+    const nsACString& aMimeType, DecoderDoctorDiagnostics* aDiagnostics) const {
+  return aMimeType.EqualsLiteral("audio/mpeg") ||
+         aMimeType.EqualsLiteral("audio/mp4a-latm") ||
+         aMimeType.EqualsLiteral("video/mp4") ||
+         aMimeType.EqualsLiteral("video/avc");
 }
 
-} // namespace mozilla
+}  // namespace mozilla

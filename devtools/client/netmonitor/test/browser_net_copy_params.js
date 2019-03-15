@@ -7,53 +7,57 @@
  * Tests whether copying a request item's parameters works.
  */
 
-add_task(function* () {
-  let { tab, monitor } = yield initNetMonitor(PARAMS_URL);
+add_task(async function() {
+  const { tab, monitor } = await initNetMonitor(PARAMS_URL);
   info("Starting test... ");
 
-  let { document, gStore, windowRequire } = monitor.panelWin;
-  let Actions = windowRequire("devtools/client/netmonitor/actions/index");
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
 
-  gStore.dispatch(Actions.batchEnable(false));
+  store.dispatch(Actions.batchEnable(false));
 
-  let wait = waitForNetworkEvents(monitor, 1, 6);
-  yield ContentTask.spawn(tab.linkedBrowser, {}, function* () {
-    content.wrappedJSObject.performRequests();
-  });
-  yield wait;
+  // Execute requests.
+  await performRequests(monitor, tab, 7);
 
-  yield testCopyUrlParamsHidden(0, false);
-  yield testCopyUrlParams(0, "a");
-  yield testCopyPostDataHidden(0, false);
-  yield testCopyPostData(0, "{ \"foo\": \"bar\" }");
+  await testCopyUrlParamsHidden(0, false);
+  await testCopyUrlParams(0, "a");
+  await testCopyPostDataHidden(0, false);
+  await testCopyPostData(0, "{ \"foo\": \"bar\" }");
 
-  yield testCopyUrlParamsHidden(1, false);
-  yield testCopyUrlParams(1, "a=b");
-  yield testCopyPostDataHidden(1, false);
-  yield testCopyPostData(1, "{ \"foo\": \"bar\" }");
+  await testCopyUrlParamsHidden(1, false);
+  await testCopyUrlParams(1, "a=b");
+  await testCopyPostDataHidden(1, false);
+  await testCopyPostData(1, "{ \"foo\": \"bar\" }");
 
-  yield testCopyUrlParamsHidden(2, false);
-  yield testCopyUrlParams(2, "a=b");
-  yield testCopyPostDataHidden(2, false);
-  yield testCopyPostData(2, "foo=bar");
+  await testCopyUrlParamsHidden(2, false);
+  await testCopyUrlParams(2, "a=b");
+  await testCopyPostDataHidden(2, false);
+  await testCopyPostData(2, "foo=bar");
 
-  yield testCopyUrlParamsHidden(3, false);
-  yield testCopyUrlParams(3, "a");
-  yield testCopyPostDataHidden(3, false);
-  yield testCopyPostData(3, "{ \"foo\": \"bar\" }");
+  await testCopyUrlParamsHidden(3, false);
+  await testCopyUrlParams(3, "a");
+  await testCopyPostDataHidden(3, false);
+  await testCopyPostData(3, "{ \"foo\": \"bar\" }");
 
-  yield testCopyUrlParamsHidden(4, false);
-  yield testCopyUrlParams(4, "a=b");
-  yield testCopyPostDataHidden(4, false);
-  yield testCopyPostData(4, "{ \"foo\": \"bar\" }");
+  await testCopyUrlParamsHidden(4, false);
+  await testCopyUrlParams(4, "a=b");
+  await testCopyPostDataHidden(4, false);
+  await testCopyPostData(4, "{ \"foo\": \"bar\" }");
 
-  yield testCopyUrlParamsHidden(5, false);
-  yield testCopyUrlParams(5, "a=b");
-  yield testCopyPostDataHidden(5, false);
-  yield testCopyPostData(5, "?foo=bar");
+  await testCopyUrlParamsHidden(5, false);
+  await testCopyUrlParams(5, "a=b");
+  await testCopyPostDataHidden(5, false);
+  await testCopyPostData(5, "?foo=bar");
+  await testCopyRequestDataLabel(5, "POST");
 
-  yield testCopyUrlParamsHidden(6, true);
-  yield testCopyPostDataHidden(6, true);
+  await testCopyUrlParamsHidden(6, true);
+  await testCopyPostDataHidden(6, true);
+
+  await testCopyPostDataHidden(7, false);
+  await testCopyRequestDataLabel(7, "PATCH");
+
+  await testCopyPostDataHidden(8, false);
+  await testCopyRequestDataLabel(8, "PUT");
 
   return teardown(monitor);
 
@@ -62,19 +66,19 @@ add_task(function* () {
       document.querySelectorAll(".request-list-item")[index]);
     EventUtils.sendMouseEvent({ type: "contextmenu" },
       document.querySelectorAll(".request-list-item")[index]);
-    let copyUrlParamsNode = monitor.panelWin.parent.document
+    const copyUrlParamsNode = monitor.panelWin.parent.document
       .querySelector("#request-list-context-copy-url-params");
     is(!!copyUrlParamsNode, !hidden,
       "The \"Copy URL Parameters\" context menu item should" + (hidden ? " " : " not ") +
         "be hidden.");
   }
 
-  function* testCopyUrlParams(index, queryString) {
+  async function testCopyUrlParams(index, queryString) {
     EventUtils.sendMouseEvent({ type: "mousedown" },
       document.querySelectorAll(".request-list-item")[index]);
     EventUtils.sendMouseEvent({ type: "contextmenu" },
       document.querySelectorAll(".request-list-item")[index]);
-    yield waitForClipboardPromise(function setup() {
+    await waitForClipboardPromise(function setup() {
       monitor.panelWin.parent.document
         .querySelector("#request-list-context-copy-url-params").click();
     }, queryString);
@@ -86,19 +90,38 @@ add_task(function* () {
       document.querySelectorAll(".request-list-item")[index]);
     EventUtils.sendMouseEvent({ type: "contextmenu" },
       document.querySelectorAll(".request-list-item")[index]);
-    let copyPostDataNode = monitor.panelWin.parent.document
+    const copyPostDataNode = monitor.panelWin.parent.document
       .querySelector("#request-list-context-copy-post-data");
     is(!!copyPostDataNode, !hidden,
       "The \"Copy POST Data\" context menu item should" + (hidden ? " " : " not ") +
         "be hidden.");
   }
 
-  function* testCopyPostData(index, postData) {
+  function testCopyRequestDataLabel(index, method) {
     EventUtils.sendMouseEvent({ type: "mousedown" },
       document.querySelectorAll(".request-list-item")[index]);
     EventUtils.sendMouseEvent({ type: "contextmenu" },
       document.querySelectorAll(".request-list-item")[index]);
-    yield waitForClipboardPromise(function setup() {
+    const copyPostDataNode = monitor.panelWin.parent.document
+      .querySelector("#request-list-context-copy-post-data");
+    is(copyPostDataNode.attributes.label.value, "Copy " + method + " Data",
+      "The \"Copy Data\" context menu item should have label - Copy " + method + " Data");
+  }
+
+  async function testCopyPostData(index, postData) {
+    // Wait for formDataSections and requestPostData state are ready in redux store
+    // since copyPostData API needs to read these state.
+    await waitUntil(() => {
+      const { requests } = store.getState().requests;
+      const actIDs = [...requests.keys()];
+      const { formDataSections, requestPostData } = requests.get(actIDs[index]);
+      return formDataSections && requestPostData;
+    });
+    EventUtils.sendMouseEvent({ type: "mousedown" },
+      document.querySelectorAll(".request-list-item")[index]);
+    EventUtils.sendMouseEvent({ type: "contextmenu" },
+      document.querySelectorAll(".request-list-item")[index]);
+    await waitForClipboardPromise(function setup() {
       monitor.panelWin.parent.document
         .querySelector("#request-list-context-copy-post-data").click();
     }, postData);

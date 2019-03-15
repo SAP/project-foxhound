@@ -7,14 +7,18 @@
 
 "use strict";
 
-add_task(function* () {
+add_task(async function() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["dom.indexedDB.storageOption.enabled", true]],
+  });
+
   const TESTPAGE = MAIN_DOMAIN + "storage-indexeddb-duplicate-names.html";
 
   setPermission(TESTPAGE, "indexedDB");
 
-  yield openTabAndSetupStorage(TESTPAGE);
+  await openTabAndSetupStorage(TESTPAGE);
 
-  yield checkState([
+  await checkState([
     [
       ["indexedDB", "http://test1.example.org"], [
         "idb1 (default)",
@@ -22,10 +26,10 @@ add_task(function* () {
         "idb1 (persistent)",
         "idb2 (default)",
         "idb2 (temporary)",
-        "idb2 (persistent)"
-      ]
-    ]
+        "idb2 (persistent)",
+      ],
+    ],
   ]);
 
-  yield finishTests();
+  await finishTests();
 });

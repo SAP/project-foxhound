@@ -16,21 +16,35 @@
 #include "nsCOMPtr.h"
 #include "nsIThread.h"
 #include "nsThreadUtils.h"
+#include "nsWindowsHelpers.h"
 
 #include <windows.h>
 
 namespace mozilla {
 namespace mscom {
+namespace detail {
+
+// Forward declarations
+template <typename T>
+struct MTADelete;
+
+template <typename T>
+struct MTARelease;
+
+template <typename T>
+struct MTAReleaseInChildProcess;
+
+struct PreservedStreamDeleter;
+
+}  // namespace detail
 
 // This class is OK to use as a temporary on the stack.
-class MOZ_STACK_CLASS EnsureMTA
-{
-public:
+class MOZ_STACK_CLASS EnsureMTA final {
+ public:
   /**
    * This constructor just ensures that the MTA thread is up and running.
    */
-  EnsureMTA()
-  {
+  EnsureMTA() {
     MOZ_ASSERT(NS_IsMainThread());
     nsCOMPtr<nsIThread> thread = GetMTAThread();
     MOZ_ASSERT(thread);
@@ -38,34 +52,42 @@ public:
   }
 
   template <typename FuncT>
-  explicit EnsureMTA(const FuncT& aClosure)
-  {
-    MOZ_ASSERT(NS_IsMainThread());
+  explicit EnsureMTA(const FuncT& aClosure) {
     if (IsCurrentThreadMTA()) {
       // We're already on the MTA, we can run aClosure directly
       aClosure();
       return;
     }
 
+    MOZ_ASSERT(NS_IsMainThread());
+
     // In this case we need to run aClosure on a background thread in the MTA
     nsCOMPtr<nsIThread> thread = GetMTAThread();
     MOZ_ASSERT(thread);
+    if (!thread) {
+      return;
+    }
 
-    HANDLE event = ::CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    // Note that we might reenter the EnsureMTA constructor while we wait on
+    // this event due to APC dispatch, therefore we need a unique event object
+    // for each entry. If perf becomes an issue then we will want to maintain
+    // an array of events where the Nth event is unique to the Nth reentry.
+    nsAutoHandle event(::CreateEventW(nullptr, FALSE, FALSE, nullptr));
     if (!event) {
       return;
     }
 
-    auto eventSetter = [&]() -> void {
+    HANDLE eventHandle = event.get();
+
+    auto eventSetter = [&aClosure, eventHandle]() -> void {
       aClosure();
-      ::SetEvent(event);
+      ::SetEvent(eventHandle);
     };
 
-    nsresult rv =
-      thread->Dispatch(NS_NewRunnableFunction(eventSetter), NS_DISPATCH_NORMAL);
+    nsresult rv = thread->Dispatch(
+        NS_NewRunnableFunction("EnsureMTA", eventSetter), NS_DISPATCH_NORMAL);
     MOZ_ASSERT(NS_SUCCEEDED(rv));
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      ::CloseHandle(event);
+    if (NS_FAILED(rv)) {
       return;
     }
 
@@ -74,15 +96,47 @@ public:
            WAIT_IO_COMPLETION) {
     }
     MOZ_ASSERT(waitResult == WAIT_OBJECT_0);
-    ::CloseHandle(event);
   }
 
-private:
+ private:
   static nsCOMPtr<nsIThread> GetMTAThread();
+
+  // The following function is private in order to force any consumers to be
+  // declared as friends of EnsureMTA. The intention is to prevent
+  // AsyncOperation from becoming some kind of free-for-all mechanism for
+  // asynchronously executing work on a background thread.
+  template <typename FuncT>
+  static void AsyncOperation(const FuncT& aClosure) {
+    if (IsCurrentThreadMTA()) {
+      aClosure();
+      return;
+    }
+
+    nsCOMPtr<nsIThread> thread(GetMTAThread());
+    MOZ_ASSERT(thread);
+    if (!thread) {
+      return;
+    }
+
+    DebugOnly<nsresult> rv = thread->Dispatch(
+        NS_NewRunnableFunction("mscom::EnsureMTA::AsyncOperation", aClosure),
+        NS_DISPATCH_NORMAL);
+    MOZ_ASSERT(NS_SUCCEEDED(rv));
+  }
+
+  template <typename T>
+  friend struct mozilla::mscom::detail::MTADelete;
+
+  template <typename T>
+  friend struct mozilla::mscom::detail::MTARelease;
+
+  template <typename T>
+  friend struct mozilla::mscom::detail::MTAReleaseInChildProcess;
+
+  friend struct mozilla::mscom::detail::PreservedStreamDeleter;
 };
 
-} // namespace mscom
-} // namespace mozilla
+}  // namespace mscom
+}  // namespace mozilla
 
-#endif // mozilla_mscom_EnsureMTA_h
-
+#endif  // mozilla_mscom_EnsureMTA_h

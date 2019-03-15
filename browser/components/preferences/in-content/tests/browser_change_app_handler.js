@@ -9,15 +9,16 @@ function setupFakeHandler() {
   let handler = info.possibleLocalHandlers.queryElementAt(0, Ci.nsILocalHandlerApp);
 
   let infoToModify = gMimeSvc.getFromTypeAndExtension("text/x-test-handler", null);
-  infoToModify.possibleApplicationHandlers.appendElement(handler, false);
+  infoToModify.possibleApplicationHandlers.appendElement(handler);
 
   gHandlerSvc.store(infoToModify);
 }
 
-add_task(function*() {
+add_task(async function() {
   setupFakeHandler();
-  yield openPreferencesViaOpenPreferencesAPI("applications", null, {leaveOpen: true});
-  info("Preferences page opened on the applications pane.");
+
+  let prefs = await openPreferencesViaOpenPreferencesAPI("paneGeneral", {leaveOpen: true});
+  is(prefs.selectedPane, "paneGeneral", "General pane was selected");
   let win = gBrowser.selectedBrowser.contentWindow;
 
   let container = win.document.getElementById("handlersView");
@@ -27,22 +28,21 @@ add_task(function*() {
   container.selectItem(ourItem);
   ok(ourItem.selected, "Should be able to select our item.");
 
-  let list = yield waitForCondition(() => win.document.getAnonymousElementByAttribute(ourItem, "class", "actionsMenu"));
-  info("Got list after item was selected");
+  let list = ourItem.querySelector(".actionsMenu");
 
-  let chooseItem = list.firstChild.querySelector(".choose-app-item");
+  let chooseItem = list.firstElementChild.querySelector(".choose-app-item");
   let dialogLoadedPromise = promiseLoadSubDialog("chrome://global/content/appPicker.xul");
   let cmdEvent = win.document.createEvent("xulcommandevent");
-  cmdEvent.initCommandEvent("command", true, true, win, 0, false, false, false, false, null);
+  cmdEvent.initCommandEvent("command", true, true, win, 0, false, false, false, false, null, 0);
   chooseItem.dispatchEvent(cmdEvent);
 
-  let dialog = yield dialogLoadedPromise;
+  let dialog = await dialogLoadedPromise;
   info("Dialog loaded");
 
   let dialogDoc = dialog.document;
   let dialogList = dialogDoc.getElementById("app-picker-listbox");
-  dialogList.selectItem(dialogList.firstChild);
-  let selectedApp = dialogList.firstChild.handlerApp;
+  dialogList.selectItem(dialogList.firstElementChild);
+  let selectedApp = dialogList.firstElementChild.handlerApp;
   dialogDoc.documentElement.acceptDialog();
 
   // Verify results are correct in mime service:
@@ -50,8 +50,6 @@ add_task(function*() {
   ok(mimeInfo.preferredApplicationHandler.equals(selectedApp), "App should be set as preferred.");
 
   // Check that we display this result:
-  list = yield waitForCondition(() => win.document.getAnonymousElementByAttribute(ourItem, "class", "actionsMenu"));
-  info("Got list after item was selected");
   ok(list.selectedItem, "Should have a selected item");
   ok(mimeInfo.preferredApplicationHandler.equals(list.selectedItem.handlerApp),
      "App should be visible as preferred item.");
@@ -60,17 +58,17 @@ add_task(function*() {
   // Now try to 'manage' this list:
   dialogLoadedPromise = promiseLoadSubDialog("chrome://browser/content/preferences/applicationManager.xul");
 
-  let manageItem = list.firstChild.querySelector(".manage-app-item");
+  let manageItem = list.firstElementChild.querySelector(".manage-app-item");
   cmdEvent = win.document.createEvent("xulcommandevent");
-  cmdEvent.initCommandEvent("command", true, true, win, 0, false, false, false, false, null);
+  cmdEvent.initCommandEvent("command", true, true, win, 0, false, false, false, false, null, 0);
   manageItem.dispatchEvent(cmdEvent);
 
-  dialog = yield dialogLoadedPromise;
+  dialog = await dialogLoadedPromise;
   info("Dialog loaded the second time");
 
   dialogDoc = dialog.document;
   dialogList = dialogDoc.getElementById("appList");
-  let itemToRemove = dialogList.querySelector('listitem[label="' + selectedApp.name + '"]');
+  let itemToRemove = dialogList.querySelector('richlistitem > label[value="' + selectedApp.name + '"]').parentNode;
   dialogList.selectItem(itemToRemove);
   let itemsBefore = dialogList.children.length;
   dialogDoc.getElementById("remove").click();
@@ -83,16 +81,14 @@ add_task(function*() {
   ok(!mimeInfo.preferredApplicationHandler, "App should no longer be set as preferred.");
 
   // Check that we display this result:
-  list = yield waitForCondition(() => win.document.getAnonymousElementByAttribute(ourItem, "class", "actionsMenu"));
   ok(list.selectedItem, "Should have a selected item");
   ok(!list.selectedItem.handlerApp,
      "No app should be visible as preferred item.");
 
-  gBrowser.removeCurrentTab();
+  BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
 
 registerCleanupFunction(function() {
   let infoToModify = gMimeSvc.getFromTypeAndExtension("text/x-test-handler", null);
   gHandlerSvc.remove(infoToModify);
 });
-

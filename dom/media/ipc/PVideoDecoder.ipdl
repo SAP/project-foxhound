@@ -6,21 +6,11 @@
 include "mozilla/dom/MediaIPCUtils.h";
 
 include protocol PVideoDecoderManager;
+include PMediaDecoderParams;
 include LayersSurfaces;
 using mozilla::layers::LayersBackend from "mozilla/layers/LayersTypes.h";
 
 namespace mozilla {
-namespace dom {
-
-struct MediaDataIPDL
-{
-  int64_t offset;
-  int64_t time;
-  int64_t timecode;
-  int64_t duration;
-  uint32_t frames;
-  bool keyframe;
-};
 
 struct VideoDataIPDL
 {
@@ -29,12 +19,6 @@ struct VideoDataIPDL
   IntSize frameSize;
   SurfaceDescriptorGPUVideo sd;
   int32_t frameID;
-};
-
-struct MediaRawDataIPDL
-{
-  MediaDataIPDL base;
-  Shmem buffer;
 };
 
 // This protocol provides a way to use MediaDataDecoder across processes.
@@ -53,13 +37,13 @@ parent:
   async Flush();
   async Drain();
   async Shutdown();
-
+  // To clear the threshold, call with INT64_MIN.
   async SetSeekThreshold(int64_t time);
 
   async __delete__();
 
 child:
-  async InitComplete(bool hardware, nsCString hardwareReason, uint32_t conversion);
+  async InitComplete(nsCString decoderDescription, bool hardware, nsCString hardwareReason, uint32_t conversion);
   async InitFailed(nsresult reason);
 
   async FlushComplete();
@@ -74,5 +58,4 @@ child:
   async Error(nsresult error);
 };
 
-} // namespace dom
 } // namespace mozilla

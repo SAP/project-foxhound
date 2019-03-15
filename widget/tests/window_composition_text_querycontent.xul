@@ -63,6 +63,21 @@ function isnot(aLeft, aRight, aMessage)
   window.opener.wrappedJSObject.SimpleTest.isnot(aLeft, aRight, aMessage);
 }
 
+function todo(aCondition, aMessage)
+{
+  window.opener.wrappedJSObject.SimpleTest.todo(aCondition, aMessage);
+}
+
+function todo_is(aLeft, aRight, aMessage)
+{
+  window.opener.wrappedJSObject.SimpleTest.todo_is(aLeft, aRight, aMessage);
+}
+
+function todo_isnot(aLeft, aRight, aMessage)
+{
+  window.opener.wrappedJSObject.SimpleTest.todo_isnot(aLeft, aRight, aMessage);
+}
+
 function isSimilarTo(aLeft, aRight, aAllowedDifference, aMessage)
 {
   if (Math.abs(aLeft - aRight) <= aAllowedDifference) {
@@ -99,11 +114,10 @@ var windowOfContenteditable;
 var input = document.getElementById("input");
 var textareaInFrame;
 
-const nsITextInputProcessorCallback = Components.interfaces.nsITextInputProcessorCallback;
-const nsIDOMNSEditableElement = Components.interfaces.nsIDOMNSEditableElement;
-const nsIInterfaceRequestor = Components.interfaces.nsIInterfaceRequestor;
-const nsIWebNavigation = Components.interfaces.nsIWebNavigation;
-const nsIDocShell = Components.interfaces.nsIDocShell;
+const nsITextInputProcessorCallback = Ci.nsITextInputProcessorCallback;
+const nsIInterfaceRequestor = Ci.nsIInterfaceRequestor;
+const nsIWebNavigation = Ci.nsIWebNavigation;
+const nsIDocShell = Ci.nsIDocShell;
 
 function hitEventLoop(aFunc, aTimes)
 {
@@ -116,15 +130,12 @@ function hitEventLoop(aFunc, aTimes)
 
 function getEditor(aNode)
 {
-  return aNode.QueryInterface(nsIDOMNSEditableElement).editor;
+  return aNode.editor;
 }
 
 function getHTMLEditorIMESupport(aWindow)
 {
-  return aWindow.QueryInterface(nsIInterfaceRequestor).
-                 getInterface(nsIWebNavigation).
-                 QueryInterface(nsIDocShell).
-                 editor;
+  return aWindow.docShell.editor;
 }
 
 const kIsWin = (navigator.platform.indexOf("Win") == 0);
@@ -304,7 +315,8 @@ function runUndoRedoTest()
           { "length": 1, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 1, "length": 0 }
+      "caret": { "start": 1, "length": 0 },
+      "key": { key: "," },
     });
 
   synthesizeCompositionChange(
@@ -315,7 +327,8 @@ function runUndoRedoTest()
           { "length": 2, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 2, "length": 0 }
+      "caret": { "start": 2, "length": 0 },
+      "key": { key: "b" },
     });
 
   // convert
@@ -328,11 +341,12 @@ function runUndoRedoTest()
             "attr": COMPOSITION_ATTR_SELECTED_CLAUSE }
         ]
       },
-      "caret": { "start": 1, "length": 0 }
+      "caret": { "start": 1, "length": 0 },
+      "key": { key: " " },
     });
 
   // commit
-  synthesizeComposition({ type: "compositioncommitasis" });
+  synthesizeComposition({ type: "compositioncommitasis", key: { key: "KEY_Enter" } });
 
   // input raw characters
   synthesizeCompositionChange(
@@ -343,11 +357,12 @@ function runUndoRedoTest()
           { "length": 1, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 1, "length": 0 }
+      "caret": { "start": 1, "length": 0 },
+      "key": { key: "j" },
     });
 
   // cancel the composition
-  synthesizeComposition({ type: "compositioncommit", data: "" });
+  synthesizeComposition({ type: "compositioncommit", data: "", key: { key: "KEY_Escape" } });
 
   // input raw characters
   synthesizeCompositionChange(
@@ -358,7 +373,8 @@ function runUndoRedoTest()
           { "length": 1, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 1, "length": 0 }
+      "caret": { "start": 1, "length": 0 },
+      "key": { key: "]" },
     });
 
   synthesizeCompositionChange(
@@ -369,7 +385,8 @@ function runUndoRedoTest()
           { "length": 2, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 2, "length": 0 }
+      "caret": { "start": 2, "length": 0 },
+      "key": { key: "r" },
     });
 
   synthesizeCompositionChange(
@@ -380,7 +397,8 @@ function runUndoRedoTest()
           { "length": 3, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 3, "length": 0 }
+      "caret": { "start": 3, "length": 0 },
+      "key": { key: "/" },
     });
 
   // convert
@@ -393,44 +411,16 @@ function runUndoRedoTest()
             "attr": COMPOSITION_ATTR_SELECTED_CLAUSE }
         ]
       },
-      "caret": { "start": 1, "length": 0 }
+      "caret": { "start": 1, "length": 0 },
+      "key": { key: " " },
     });
 
   // commit
-  synthesizeComposition({ type: "compositioncommitasis" });
+  synthesizeComposition({ type: "compositioncommitasis", key: { key: "KEY_Enter" } });
 
-  synthesizeKey(" ", {});
-  synthesizeKey("m", {});
-  synthesizeKey("e", {});
-  synthesizeKey("a", {});
-  synthesizeKey("n", {});
-  synthesizeKey("t", {});
-  synthesizeKey("VK_BACK_SPACE", {});
-  synthesizeKey("s", {});
-  synthesizeKey(" ", {});
-  synthesizeKey("\"", {});
-  synthesizeKey("c", {});
-  synthesizeKey("a", {});
-  synthesizeKey("t", {});
-  synthesizeKey("-", {});
-  synthesizeKey("g", {});
-  synthesizeKey("i", {});
-  synthesizeKey("r", {});
-  synthesizeKey("l", {});
-  synthesizeKey("\"", {});
-  synthesizeKey(".", {});
-  synthesizeKey(" ", {});
-  synthesizeKey("VK_SHIFT", { type: "keydown" });
-  synthesizeKey("S", { shiftKey: true });
-  synthesizeKey("VK_SHIFT", { type: "keyup" });
-  synthesizeKey("h", {});
-  synthesizeKey("e", {});
-  synthesizeKey(" ", {});
-  synthesizeKey("i", {});
-  synthesizeKey("s", {});
-  synthesizeKey(" ", {});
-  synthesizeKey("a", {});
-  synthesizeKey(" ", {});
+  sendString(" meant");
+  synthesizeKey("KEY_Backspace");
+  synthesizeKey("s \"cat-girl\". She is a ");
 
   // input raw characters
   synthesizeCompositionChange(
@@ -441,7 +431,8 @@ function runUndoRedoTest()
           { "length": 1, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 1, "length": 0 }
+      "caret": { "start": 1, "length": 0 },
+      "key": { key: "9" },
     });
 
   synthesizeCompositionChange(
@@ -452,7 +443,8 @@ function runUndoRedoTest()
           { "length": 2, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 2, "length": 0 }
+      "caret": { "start": 2, "length": 0 },
+      "key": { key: "4" },
     });
 
   synthesizeCompositionChange(
@@ -463,7 +455,8 @@ function runUndoRedoTest()
           { "length": 3, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 3, "length": 0 }
+      "caret": { "start": 3, "length": 0 },
+      "key": { key: "t" },
     });
 
   synthesizeCompositionChange(
@@ -474,7 +467,8 @@ function runUndoRedoTest()
           { "length": 4, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 4, "length": 0 }
+      "caret": { "start": 4, "length": 0 },
+      "key": { key: "e" },
     });
 
   // convert
@@ -486,24 +480,14 @@ function runUndoRedoTest()
           { "length": 2, "attr": COMPOSITION_ATTR_SELECTED_CLAUSE }
         ]
       },
-      "caret": { "start": 2, "length": 0 }
+      "caret": { "start": 2, "length": 0 },
+      "key": { key: " " },
     });
 
   // commit
-  synthesizeComposition({ type: "compositioncommitasis" });
+  synthesizeComposition({ type: "compositioncommitasis", key: { key: "Enter" } });
 
-  synthesizeKey("VK_BACK_SPACE", {});
-  synthesizeKey("VK_BACK_SPACE", {});
-  synthesizeKey("VK_BACK_SPACE", {});
-  synthesizeKey("VK_BACK_SPACE", {});
-  synthesizeKey("VK_BACK_SPACE", {});
-  synthesizeKey("VK_BACK_SPACE", {});
-  synthesizeKey("VK_BACK_SPACE", {});
-  synthesizeKey("VK_BACK_SPACE", {});
-  synthesizeKey("VK_BACK_SPACE", {});
-  synthesizeKey("VK_BACK_SPACE", {});
-  synthesizeKey("VK_BACK_SPACE", {});
-  synthesizeKey("VK_BACK_SPACE", {});
+  synthesizeKey("KEY_Backspace", {repeat: 12});
 
   var i = 0;
   if (!checkContent("\u732B\u5A18 means \"cat-girl\".",
@@ -659,19 +643,30 @@ function runUndoRedoTest()
   }
 }
 
+function checkInputEvent(aEvent, aIsComposing, aInputType, aDescription) {
+  if (aEvent.type != "input") {
+    return;
+  }
+  ok(aEvent instanceof InputEvent, `"input" event should be dispatched with InputEvent interface: ${aDescription}`);
+  is(aEvent.cancelable, false, `"input" event should be never cancelable: ${aDescription}`);
+  is(aEvent.bubbles, true, `"input" event should always bubble: ${aDescription}`);
+  is(aEvent.isComposing, aIsComposing, `isComposing should be ${aIsComposing}: ${aDescription}`);
+  is(aEvent.inputType, aInputType, `inputType should be "${aInputType}": ${aDescription}`);
+}
+
 function runCompositionCommitAsIsTest()
 {
   textarea.focus();
 
-  var result = {};
+  var result = [];
   function clearResult()
   {
-    result = { compositionupdate: false, compositionend: false, text: false, input: false }
+    result = [];
   }
 
   function handler(aEvent)
   {
-    result[aEvent.type] = true;
+    result.push(aEvent);
   }
 
   textarea.addEventListener("compositionupdate", handler, true);
@@ -689,17 +684,24 @@ function runCompositionCommitAsIsTest()
           { "length": 1, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 1, "length": 0 }
+      "caret": { "start": 1, "length": 0 },
+      "key": { key: "a" },
     });
   is(textarea.value, "\u3042", "runCompositionCommitAsIsTest: textarea doesn't have composition string #1");
 
   clearResult();
-  synthesizeComposition({ type: "compositioncommitasis" });
+  synthesizeComposition({ type: "compositioncommitasis", key: { key: "Enter" } });
 
-  is(result.compositionupdate, false, "runCompositionCommitAsIsTest: compositionupdate shouldn't be fired after dispatching compositioncommitasis #1");
-  is(result.compositionend, true, "runCompositionCommitAsIsTest: compositionend should be fired after dispatching compositioncommitasis #1");
-  is(result.text, true, "runCompositionCommitAsIsTest: text should be fired after dispatching compositioncommitasis because it's dispatched when there is composing string #1");
-  is(result.input, true, "runCompositionCommitAsIsTest: input should be fired after dispatching compositioncommitasis #1");
+  is(result.length, 3,
+     "runCompositionCommitAsIsTest: 3 events should be fired after dispatching compositioncommitasis #1");
+  is(result[0].type, "text",
+     "runCompositionCommitAsIsTest: text should be fired after dispatching compositioncommitasis because it's dispatched when there is composing string #1");
+  is(result[1].type, "compositionend",
+     "runCompositionCommitAsIsTest: compositionend should be fired after dispatching compositioncommitasis #1");
+  is(result[2].type, "input",
+     "runCompositionCommitAsIsTest: input should be fired after dispatching compositioncommitasis #1");
+  checkInputEvent(result[2], false, "insertCompositionText",
+                  "runCompositionCommitAsIsTest: after dispatching compositioncommitasis #1");
   is(textarea.value, "\u3042", "runCompositionCommitAsIsTest: textarea doesn't have committed string #1");
 
   // compositioncommitasis with committed string.
@@ -712,7 +714,8 @@ function runCompositionCommitAsIsTest()
           { "length": 1, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 1, "length": 0 }
+      "caret": { "start": 1, "length": 0 },
+      "key": { key: "a" },
     });
   is(textarea.value, "\u3042", "runCompositionCommitAsIsTest: textarea doesn't have composition string #2");
   synthesizeCompositionChange(
@@ -723,17 +726,22 @@ function runCompositionCommitAsIsTest()
           { "length": 0, "attr": 0 }
         ]
       },
-      "caret": { "start": 1, "length": 0 }
+      "caret": { "start": 1, "length": 0 },
+      "key": { key: "KEY_Enter", type: "keydown" },
     });
   is(textarea.value, "\u3042", "runCompositionCommitAsIsTest: textarea doesn't have committed string #2");
 
   clearResult();
-  synthesizeComposition({ type: "compositioncommitasis" });
+  synthesizeComposition({ type: "compositioncommitasis", key: { key: "KEY_Enter", type: "keyup" } });
 
-  is(result.compositionupdate, false, "runCompositionCommitAsIsTest: compositionupdate shouldn't be fired after dispatching compositioncommitasis #2");
-  is(result.compositionend, true, "runCompositionCommitAsIsTest: compositionend should be fired after dispatching compositioncommitasis #2");
-  is(result.text, false, "runCompositionCommitAsIsTest: text shouldn't be fired after dispatching compositioncommitasis because it's dispatched when there is already committed string #2");
-  is(result.input, true, "runCompositionCommitAsIsTest: input should be fired after dispatching compositioncommitasis #2");
+  is(result.length, 2,
+     "runCompositionCommitAsIsTest: 2 events should be fired after dispatching compositioncommitasis #2");
+  is(result[0].type, "compositionend",
+     "runCompositionCommitAsIsTest: compositionend should be fired after dispatching compositioncommitasis #2");
+  is(result[1].type, "input",
+     "runCompositionCommitAsIsTest: input should be fired after dispatching compositioncommitasis #2");
+  checkInputEvent(result[1], false, "insertCompositionText",
+                  "runCompositionCommitAsIsTest: after dispatching compositioncommitasis #2");
   is(textarea.value, "\u3042", "runCompositionCommitAsIsTest: textarea doesn't have committed string #2");
 
   // compositioncommitasis with committed string.
@@ -746,7 +754,8 @@ function runCompositionCommitAsIsTest()
           { "length": 1, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 1, "length": 0 }
+      "caret": { "start": 1, "length": 0 },
+      "key": { key: "a" },
     });
   is(textarea.value, "\u3042", "runCompositionCommitAsIsTest: textarea doesn't have composition string #3");
   synthesizeCompositionChange(
@@ -757,17 +766,22 @@ function runCompositionCommitAsIsTest()
           { "length": 0, "attr": 0 }
         ]
       },
-      "caret": { "start": 0, "length": 0 }
+      "caret": { "start": 0, "length": 0 },
+      "key": { key: "KEY_Escape", type: "keydown" },
     });
   is(textarea.value, "", "runCompositionCommitAsIsTest: textarea has non-empty composition string #3");
 
   clearResult();
-  synthesizeComposition({ type: "compositioncommitasis" });
+  synthesizeComposition({ type: "compositioncommitasis", key: { key: "KEY_Escape", type: "keyup" } });
 
-  is(result.compositionupdate, false, "runCompositionCommitAsIsTest: compositionupdate shouldn't be fired after dispatching compositioncommitasis #3");
-  is(result.compositionend, true, "runCompositionCommitAsIsTest: compositionend should be fired after dispatching compositioncommitasis #3");
-  is(result.text, false, "runCompositionCommitAsIsTest: text shouldn't be fired after dispatching compositioncommitasis because it's dispatched when there is empty composition string #3");
-  is(result.input, true, "runCompositionCommitAsIsTest: input should be fired after dispatching compositioncommitasis #3");
+  is(result.length, 2,
+     "runCompositionCommitAsIsTest: 2 events should be fired after dispatching compositioncommitasis #3");
+  is(result[0].type, "compositionend",
+     "runCompositionCommitAsIsTest: compositionend shouldn't be fired after dispatching compositioncommitasis #3");
+  is(result[1].type, "input",
+     "runCompositionCommitAsIsTest: input should be fired after dispatching compositioncommitasis #3");
+  checkInputEvent(result[1], false, "insertCompositionText",
+                  "runCompositionCommitAsIsTest: after dispatching compositioncommitasis #3");
   is(textarea.value, "", "runCompositionCommitAsIsTest: textarea doesn't have committed string #3");
 
   textarea.removeEventListener("compositionupdate", handler, true);
@@ -780,15 +794,15 @@ function runCompositionCommitTest()
 {
   textarea.focus();
 
-  var result = {};
+  var result = [];
   function clearResult()
   {
-    result = { compositionupdate: false, compositionend: false, text: false, input: false }
+    result = [];
   }
 
   function handler(aEvent)
   {
-    result[aEvent.type] = true;
+    result.push(aEvent);
   }
 
   textarea.addEventListener("compositionupdate", handler, true);
@@ -806,17 +820,26 @@ function runCompositionCommitTest()
           { "length": 1, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 1, "length": 0 }
+      "caret": { "start": 1, "length": 0 },
+      "key": { key: "a", type: "keydown" },
     });
   is(textarea.value, "\u3042", "runCompositionCommitTest: textarea doesn't have composition string #1");
 
   clearResult();
-  synthesizeComposition({ type: "compositioncommit", data: "\u3043" });
+  synthesizeComposition({ type: "compositioncommit", data: "\u3043", key: { key: "a", type: "keyup" } });
 
-  is(result.compositionupdate, true, "runCompositionCommitTest: compositionupdate should be fired after dispatching compositioncommit #1");
-  is(result.compositionend, true, "runCompositionCommitTest: compositionend should be fired after dispatching compositioncommit #1");
-  is(result.text, true, "runCompositionCommitTest: text should be fired after dispatching compositioncommit because it's dispatched when there is compoing string #1");
-  is(result.input, true, "runCompositionCommitTest: input should be fired after dispatching compositioncommit #1");
+  is(result.length, 4,
+     "runCompositionCommitTest: 4 events should be fired after dispatching compositioncommit #1");
+  is(result[0].type, "compositionupdate",
+     "runCompositionCommitTest: compositionupdate should be fired after dispatching compositioncommit because it's dispatched when there is composing string #1");
+  is(result[1].type, "text",
+     "runCompositionCommitTest: text should be fired after dispatching compositioncommit #1");
+  is(result[2].type, "compositionend",
+     "runCompositionCommitTest: compositionend should be fired after dispatching compositioncommit #1");
+  is(result[3].type, "input",
+     "runCompositionCommitTest: input should be fired after dispatching compositioncommit #1");
+  checkInputEvent(result[3], false, "insertCompositionText",
+                  "runCompositionCommitTest: after dispatching compositioncommit #1");
   is(textarea.value, "\u3043", "runCompositionCommitTest: textarea doesn't have committed string #1");
 
   // compositioncommit with different committed string when there is already committed string
@@ -829,7 +852,8 @@ function runCompositionCommitTest()
           { "length": 1, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 1, "length": 0 }
+      "caret": { "start": 1, "length": 0 },
+      "key": { key: "a" },
     });
   is(textarea.value, "\u3042", "runCompositionCommitTest: textarea doesn't have composition string #2");
   synthesizeCompositionChange(
@@ -840,17 +864,26 @@ function runCompositionCommitTest()
           { "length": 0, "attr": 0 }
         ]
       },
-      "caret": { "start": 1, "length": 0 }
+      "caret": { "start": 1, "length": 0 },
+      "key": { key: "KEY_Enter", type: "keydown" },
     });
   is(textarea.value, "\u3042", "runCompositionCommitTest: textarea doesn't have committed string #2");
 
   clearResult();
-  synthesizeComposition({ type: "compositioncommit", data: "\u3043" });
+  synthesizeComposition({ type: "compositioncommit", data: "\u3043", key: { key: "KEY_Enter", type: "keyup" } });
 
-  is(result.compositionupdate, true, "runCompositionCommitTest: compositionupdate should be fired after dispatching compositioncommit #2");
-  is(result.compositionend, true, "runCompositionCommitTest: compositionend should be fired after dispatching compositioncommit #2");
-  is(result.text, true, "runCompositionCommitTest: text should be fired after dispatching compositioncommit #2");
-  is(result.input, true, "runCompositionCommitTest: input should be fired after dispatching compositioncommit #2");
+  is(result.length, 4,
+     "runCompositionCommitTest: 4 events should be fired after dispatching compositioncommit #2");
+  is(result[0].type, "compositionupdate",
+     "runCompositionCommitTest: compositionupdate should be fired after dispatching compositioncommit #2");
+  is(result[1].type, "text",
+     "runCompositionCommitTest: text should be fired after dispatching compositioncommit #2");
+  is(result[2].type, "compositionend",
+     "runCompositionCommitTest: compositionend should be fired after dispatching compositioncommit #2");
+  is(result[3].type, "input",
+     "runCompositionCommitTest: input should be fired after dispatching compositioncommit #2");
+  checkInputEvent(result[3], false, "insertCompositionText",
+                  "runCompositionCommitTest: after dispatching compositioncommit #2");
   is(textarea.value, "\u3043", "runCompositionCommitTest: textarea doesn't have committed string #2");
 
   // compositioncommit with empty composition string.
@@ -863,7 +896,8 @@ function runCompositionCommitTest()
           { "length": 1, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 1, "length": 0 }
+      "caret": { "start": 1, "length": 0 },
+      "key": { key: "a" },
     });
   is(textarea.value, "\u3042", "runCompositionCommitTest: textarea doesn't have composition string #3");
   synthesizeCompositionChange(
@@ -874,18 +908,92 @@ function runCompositionCommitTest()
           { "length": 0, "attr": 0 }
         ]
       },
-      "caret": { "start": 0, "length": 0 }
+      "caret": { "start": 0, "length": 0 },
+      "key": { key: "KEY_Enter", type: "keydown" },
     });
   is(textarea.value, "", "runCompositionCommitTest: textarea has non-empty composition string #3");
 
   clearResult();
-  synthesizeComposition({ type: "compositioncommit", data: "\u3043" });
+  synthesizeComposition({ type: "compositioncommit", data: "\u3043", key: { key: "KEY_Enter", type: "keyup" } });
 
-  is(result.compositionupdate, true, "runCompositionCommitTest: compositionupdate should be fired after dispatching compositioncommit #3");
-  is(result.compositionend, true, "runCompositionCommitTest: compositionend should be fired after dispatching compositioncommit #3");
-  is(result.text, true, "runCompositionCommitTest: text should be fired after dispatching compositioncommit #3");
-  is(result.input, true, "runCompositionCommitTest: input should be fired after dispatching compositioncommit #3");
+  is(result.length, 4,
+     "runCompositionCommitTest: 4 events should be fired after dispatching compositioncommit #3");
+  is(result[0].type, "compositionupdate",
+     "runCompositionCommitTest: compositionupdate should be fired after dispatching compositioncommit #3");
+  is(result[1].type, "text",
+     "runCompositionCommitTest: text should be fired after dispatching compositioncommit #3");
+  is(result[2].type, "compositionend",
+     "runCompositionCommitTest: compositionend should be fired after dispatching compositioncommit #3");
+  is(result[3].type, "input",
+     "runCompositionCommitTest: input should be fired after dispatching compositioncommit #3");
+  checkInputEvent(result[3], false, "insertCompositionText",
+                  "runCompositionCommitTest: after dispatching compositioncommit #3");
   is(textarea.value, "\u3043", "runCompositionCommitTest: textarea doesn't have committed string #3");
+
+  // inserting empty string with simple composition.
+  textarea.value = "abc";
+  textarea.setSelectionRange(3, 3);
+  synthesizeComposition({ type: "compositionstart" });
+
+  clearResult();
+  synthesizeComposition({ type: "compositioncommit", data: "" });
+
+  is(result.length, 3,
+     "runCompositionCommitTest: 3 events should be fired when inserting empty string with composition");
+  is(result[0].type, "text",
+     "runCompositionCommitTest: text should be fired when inserting empty string with composition");
+  is(result[1].type, "compositionend",
+     "runCompositionCommitTest: compositionend should be fired when inserting empty string with composition");
+  is(result[2].type, "input",
+     "runCompositionCommitTest: input should be fired when inserting empty string with composition");
+  checkInputEvent(result[2], false, "insertCompositionText",
+                  "runCompositionCommitTest: when inserting empty string with composition");
+  is(textarea.value, "abc",
+     "runCompositionCommitTest: textarea should keep original value when inserting empty string with composition");
+
+  // replacing selection with empty string with simple composition.
+  textarea.value = "abc";
+  textarea.setSelectionRange(0, 3);
+  synthesizeComposition({ type: "compositionstart" });
+
+  clearResult();
+  synthesizeComposition({ type: "compositioncommit", data: "" });
+
+  is(result.length, 3,
+     "runCompositionCommitTest: 3 events should be fired when replacing with empty string with composition");
+  is(result[0].type, "text",
+     "runCompositionCommitTest: text should be fired when replacing with empty string with composition");
+  is(result[1].type, "compositionend",
+     "runCompositionCommitTest: compositionend should be fired when replacing with empty string with composition");
+  is(result[2].type, "input",
+     "runCompositionCommitTest: input should be fired when replacing with empty string with composition");
+  checkInputEvent(result[2], false, "insertCompositionText",
+                  "runCompositionCommitTest: when replacing with empty string with composition");
+  is(textarea.value, "",
+     "runCompositionCommitTest: textarea should become empty when replacing selection with empty string with composition");
+
+  // replacing selection with same string with simple composition.
+  textarea.value = "abc";
+  textarea.setSelectionRange(0, 3);
+  synthesizeComposition({ type: "compositionstart" });
+
+  clearResult();
+  synthesizeComposition({ type: "compositioncommit", data: "abc" });
+
+  is(result.length, 4,
+     "runCompositionCommitTest: 4 events should be fired when replacing selection with same string with composition");
+  is(result[0].type, "compositionupdate",
+     "runCompositionCommitTest: compositionupdate should be fired when replacing selection with same string with composition");
+  is(result[1].type, "text",
+     "runCompositionCommitTest: text should be fired when replacing selection with same string with composition");
+  is(result[2].type, "compositionend",
+     "runCompositionCommitTest: compositionend should be fired when replacing selection with same string with composition");
+  is(result[3].type, "input",
+     "runCompositionCommitTest: input should be fired when replacing selection with same string with composition");
+  checkInputEvent(result[3], false, "insertCompositionText",
+                  "runCompositionCommitTest: when replacing selection with same string with composition");
+  is(textarea.value, "abc",
+     "runCompositionCommitTest: textarea should keep same value when replacing selection with same string with composition");
 
   // compositioncommit with non-empty composition string.
   textarea.value = "";
@@ -897,29 +1005,46 @@ function runCompositionCommitTest()
           { "length": 1, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 1, "length": 0 }
+      "caret": { "start": 1, "length": 0 },
+      "key": { key: "a" },
     });
   is(textarea.value, "\u3042", "runCompositionCommitTest: textarea doesn't have composition string #4");
 
   clearResult();
-  synthesizeComposition({ type: "compositioncommit", data: "" });
+  synthesizeComposition({ type: "compositioncommit", data: "", key: { key: "KEY_Enter" } });
 
-  is(result.compositionupdate, true, "runCompositionCommitTest: compositionupdate should be fired after dispatching compositioncommit #4");
-  is(result.compositionend, true, "runCompositionCommitTest: compositionend should be fired after dispatching compositioncommit #4");
-  is(result.text, true, "runCompositionCommitTest: text should be fired after dispatching compositioncommit #4");
-  is(result.input, true, "runCompositionCommitTest: input should be fired after dispatching compositioncommit #4");
+  is(result.length, 4,
+     "runCompositionCommitTest: 4 events should be fired after dispatching compositioncommit #4");
+  is(result[0].type, "compositionupdate",
+     "runCompositionCommitTest: compositionupdate should be fired after dispatching compositioncommit #4");
+  is(result[1].type, "text",
+     "runCompositionCommitTest: text should be fired after dispatching compositioncommit #4");
+  is(result[2].type, "compositionend",
+     "runCompositionCommitTest: compositionend should be fired after dispatching compositioncommit #4");
+  is(result[3].type, "input",
+     "runCompositionCommitTest: input should be fired after dispatching compositioncommit #4");
+  checkInputEvent(result[3], false, "insertCompositionText",
+                  "runCompositionCommitTest: after dispatching compositioncommit #4");
   is(textarea.value, "", "runCompositionCommitTest: textarea should be empty #4");
 
   // compositioncommit immediately without compositionstart
   textarea.value = "";
 
   clearResult();
-  synthesizeComposition({ type: "compositioncommit", data: "\u3042" });
+  synthesizeComposition({ type: "compositioncommit", data: "\u3042", key: { key: "a" } });
 
-  is(result.compositionupdate, true, "runCompositionCommitTest: compositionupdate should be fired after dispatching compositioncommit #5");
-  is(result.compositionend, true, "runCompositionCommitTest: compositionend should be fired after dispatching compositioncommit #5");
-  is(result.text, true, "runCompositionCommitTest: text should be fired after dispatching compositioncommit #5");
-  is(result.input, true, "runCompositionCommitTest: input should be fired after dispatching compositioncommit #5");
+  is(result.length, 4,
+     "runCompositionCommitTest: 4 events should be fired after dispatching compositioncommit #5");
+  is(result[0].type, "compositionupdate",
+     "runCompositionCommitTest: compositionupdate should be fired after dispatching compositioncommit #5");
+  is(result[1].type, "text",
+     "runCompositionCommitTest: text should be fired after dispatching compositioncommit #5");
+  is(result[2].type, "compositionend",
+     "runCompositionCommitTest: compositionend should be fired after dispatching compositioncommit #5");
+  is(result[3].type, "input",
+     "runCompositionCommitTest: input should be fired after dispatching compositioncommit #5");
+  checkInputEvent(result[3], false, "insertCompositionText",
+                  "runCompositionCommitTest: after dispatching compositioncommit #5");
   is(textarea.value, "\u3042", "runCompositionCommitTest: textarea should be empty #5");
 
   // compositioncommit with same composition string.
@@ -932,18 +1057,25 @@ function runCompositionCommitTest()
           { "length": 1, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 1, "length": 0 }
+      "caret": { "start": 1, "length": 0 },
+      "key": { key: "a" },
     });
   is(textarea.value, "\u3042", "runCompositionCommitTest: textarea doesn't have composition string #5");
 
   clearResult();
-  synthesizeComposition({ type: "compositioncommit", data: "\u3042" });
+  synthesizeComposition({ type: "compositioncommit", data: "\u3042", key: { key: "KEY_Enter" } });
 
-  is(result.compositionupdate, false, "runCompositionCommitTest: compositionupdate shouldn't be fired after dispatching compositioncommit #5");
-  is(result.compositionend, true, "runCompositionCommitTest: compositionend should be fired after dispatching compositioncommit #5");
-  is(result.text, true, "runCompositionCommitTest: text should be fired after dispatching compositioncommit because there was composition string #5");
-  is(result.input, true, "runCompositionCommitTest: input should be fired after dispatching compositioncommit #5");
-  is(textarea.value, "\u3042", "runCompositionCommitTest: textarea should have committed string #5");
+  is(result.length, 3,
+     "runCompositionCommitTest: 3 events should be fired after dispatching compositioncommit #6");
+  is(result[0].type, "text",
+     "runCompositionCommitTest: text should be fired after dispatching compositioncommit #6");
+  is(result[1].type, "compositionend",
+     "runCompositionCommitTest: compositionend should be fired after dispatching compositioncommit #6");
+  is(result[2].type, "input",
+     "runCompositionCommitTest: input should be fired after dispatching compositioncommit #6");
+  checkInputEvent(result[2], false, "insertCompositionText",
+                  "runCompositionCommitTest: after dispatching compositioncommit #6");
+  is(textarea.value, "\u3042", "runCompositionCommitTest: textarea should have committed string #6");
 
   // compositioncommit with same composition string when there is committed string
   textarea.value = "";
@@ -955,7 +1087,8 @@ function runCompositionCommitTest()
           { "length": 1, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 1, "length": 0 }
+      "caret": { "start": 1, "length": 0 },
+      "key": { key: "a" },
     });
   is(textarea.value, "\u3042", "runCompositionCommitTest: textarea doesn't have composition string #6");
 
@@ -967,17 +1100,22 @@ function runCompositionCommitTest()
           { "length": 0, "attr": 0 }
         ]
       },
-      "caret": { "start": 1, "length": 0 }
+      "caret": { "start": 1, "length": 0 },
+      "key": { key: "KEY_Enter", type: "keydown" },
     });
   is(textarea.value, "\u3042", "runCompositionCommitTest: textarea doesn't have composition string #6");
 
   clearResult();
-  synthesizeComposition({ type: "compositioncommit", data: "\u3042" });
+  synthesizeComposition({ type: "compositioncommit", data: "\u3042", key: { key: "KEY_Enter", type: "keyup" } });
 
-  is(result.compositionupdate, false, "runCompositionCommitTest: compositionupdate shouldn't be fired after dispatching compositioncommit #6");
-  is(result.compositionend, true, "runCompositionCommitTest: compositionend should be fired after dispatching compositioncommit #6");
-  is(result.text, false, "runCompositionCommitTest: text shouldn't be fired after dispatching compositioncommit because there was already committed string #6");
-  is(result.input, true, "runCompositionCommitTest: input should be fired after dispatching compositioncommit #6");
+  is(result.length, 2,
+     "runCompositionCommitTest: 2 events should be fired after dispatching compositioncommit #7");
+  is(result[0].type, "compositionend",
+     "runCompositionCommitTest: compositionend should be fired after dispatching compositioncommit #7");
+  is(result[1].type, "input",
+     "runCompositionCommitTest: input should be fired after dispatching compositioncommit #7");
+  checkInputEvent(result[1], false, "insertCompositionText",
+                  "runCompositionCommitTest: after dispatching compositioncommit #7");
   is(textarea.value, "\u3042", "runCompositionCommitTest: textarea should have committed string #6");
 
   textarea.removeEventListener("compositionupdate", handler, true);
@@ -1008,7 +1146,8 @@ function runCompositionTest()
           { "length": 1, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 1, "length": 0 }
+      "caret": { "start": 1, "length": 0 },
+      "key": { key: "o" },
     });
 
   if (!checkContent("\u3089", "runCompositionTest", "#1-1") ||
@@ -1032,7 +1171,8 @@ function runCompositionTest()
           { "length": 2, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 2, "length": 0 }
+      "caret": { "start": 2, "length": 0 },
+      "key": { key: "\\", code: "IntlYen", keyCode: KeyboardEvent.DOM_VK_BACKSLASH },
     });
 
   if (!checkContent("\u3089\u30FC", "runCompositionTest", "#1-2") ||
@@ -1065,7 +1205,8 @@ function runCompositionTest()
           { "length": 3, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 3, "length": 0 }
+      "caret": { "start": 3, "length": 0 },
+      "key": { key: "/" },
     });
 
   if (!checkContent("\u3089\u30FC\u3081", "runCompositionTest", "#1-3") ||
@@ -1098,7 +1239,8 @@ function runCompositionTest()
           { "length": 3, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 2, "length": 0 }
+      "caret": { "start": 2, "length": 0 },
+      "key": { key: "KEY_ArrowLeft" },
     });
 
   if (!checkContent("\u3089\u30FC\u3081", "runCompositionTest", "#1-3-1") ||
@@ -1132,7 +1274,8 @@ function runCompositionTest()
           { "length": 3, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 1, "length": 0 }
+      "caret": { "start": 1, "length": 0 },
+      "key": { key: "KEY_ArrowLeft" },
     });
 
   if (!checkContent("\u3089\u30FC\u3081", "runCompositionTest", "#1-3-2") ||
@@ -1165,7 +1308,8 @@ function runCompositionTest()
           { "length": 4, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 4, "length": 0 }
+      "caret": { "start": 4, "length": 0 },
+      "key": { key: "y" },
     });
 
   if (!checkContent("\u3089\u30FC\u3081\u3093", "runCompositionTest", "#1-4") ||
@@ -1183,7 +1327,8 @@ function runCompositionTest()
           { "length": 3, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 3, "length": 0 }
+      "caret": { "start": 3, "length": 0 },
+      "key": { key: "KEY_Backspace" },
     });
 
   if (!checkContent("\u3089\u30FC\u3081", "runCompositionTest", "#1-5") ||
@@ -1200,7 +1345,8 @@ function runCompositionTest()
           { "length": 4, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 4, "length": 0 }
+      "caret": { "start": 4, "length": 0 },
+      "key": { key: "y" },
     });
 
   if (!checkContent("\u3089\u30FC\u3081\u3093", "runCompositionTest", "#1-6") ||
@@ -1216,7 +1362,8 @@ function runCompositionTest()
           { "length": 5, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 5, "length": 0 }
+      "caret": { "start": 5, "length": 0 },
+      "key": { key: "x" },
     });
 
   if (!checkContent("\u3089\u30FC\u3081\u3093\u3055", "runCompositionTest", "#1-7") ||
@@ -1232,7 +1379,8 @@ function runCompositionTest()
           { "length": 6, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 6, "length": 0 }
+      "caret": { "start": 6, "length": 0 },
+      "key": { key: "e" },
     });
 
   if (!checkContent("\u3089\u30FC\u3081\u3093\u3055\u3044", "runCompositionTest", "#1-8") ||
@@ -1248,7 +1396,8 @@ function runCompositionTest()
           { "length": 7, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 7, "length": 0 }
+      "caret": { "start": 7, "length": 0 },
+      "key": { key: "b" },
     });
 
   if (!checkContent("\u3089\u30FC\u3081\u3093\u3055\u3044\u3053", "runCompositionTest", "#1-8") ||
@@ -1264,7 +1413,8 @@ function runCompositionTest()
           { "length": 8, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 8, "length": 0 }
+      "caret": { "start": 8, "length": 0 },
+      "key": { key: "4" },
     });
 
   if (!checkContent("\u3089\u30FC\u3081\u3093\u3055\u3044\u3053\u3046",
@@ -1285,7 +1435,8 @@ function runCompositionTest()
             "attr": COMPOSITION_ATTR_CONVERTED_CLAUSE }
         ]
       },
-      "caret": { "start": 4, "length": 0 }
+      "caret": { "start": 4, "length": 0 },
+      "key": { key: " " },
     });
 
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3\u6700\u9AD8",
@@ -1306,7 +1457,8 @@ function runCompositionTest()
             "attr": COMPOSITION_ATTR_SELECTED_CLAUSE }
         ]
       },
-      "caret": { "start": 6, "length": 0 }
+      "caret": { "start": 6, "length": 0 },
+      "key": { key: "KEY_ArrowLeft", shiftKey: true },
     });
 
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3\u6700\u9AD8",
@@ -1327,7 +1479,8 @@ function runCompositionTest()
             "attr": COMPOSITION_ATTR_CONVERTED_CLAUSE }
         ]
       },
-      "caret": { "start": 5, "length": 0 }
+      "caret": { "start": 5, "length": 0 },
+      "key": { key: "KEY_ArrowRight" },
     });
 
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3\u3055\u884C\u3053\u3046",
@@ -1377,7 +1530,8 @@ function runCompositionTest()
           { "length": 1, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 1, "length": 0 }
+      "caret": { "start": 1, "length": 0 },
+      "key": { key: "d" },
     });
 
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3\u3055\u884C\u3053\u3046\u3057",
@@ -1394,7 +1548,8 @@ function runCompositionTest()
           { "length": 1, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 1, "length": 0 }
+      "caret": { "start": 1, "length": 0 },
+      "key": { key: "r" },
     });
 
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3\u3055\u884C\u3053\u3046\u3058",
@@ -1411,7 +1566,8 @@ function runCompositionTest()
           { "length": 2, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 2, "length": 0 }
+      "caret": { "start": 2, "length": 0 },
+      "key": { key: ")", code: "Digit9", keyCode: KeyboardEvent.DOM_VK_9, shiftKey: true },
     });
 
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3\u3055\u884C\u3053\u3046\u3058\u3087",
@@ -1428,7 +1584,8 @@ function runCompositionTest()
           { "length": 3, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 3, "length": 0 }
+      "caret": { "start": 3, "length": 0 },
+      "key": { key: "4" },
     });
 
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3\u3055\u884C\u3053\u3046\u3058\u3087\u3046",
@@ -1438,7 +1595,7 @@ function runCompositionTest()
   }
 
   // commit the composition string
-  synthesizeComposition({ type: "compositioncommitasis" });
+  synthesizeComposition({ type: "compositioncommitasis", key: { key: "KEY_Enter" } });
 
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3\u3055\u884C\u3053\u3046\u3058\u3087\u3046",
                     "runCompositionTest", "#2-4") ||
@@ -1463,7 +1620,8 @@ function runCompositionTest()
           { "length": 1, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 1, "length": 0 }
+      "caret": { "start": 1, "length": 0 },
+      "key": { key: "6" },
     });
 
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3\u304A",
@@ -1481,7 +1639,8 @@ function runCompositionTest()
           { "length": 0, "attr": 0 }
         ]
       },
-      "caret": { "start": 0, "length": 0 }
+      "caret": { "start": 0, "length": 0 },
+      "key": { key: "KEY_Backspace" },
     });
 
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3",
@@ -1499,7 +1658,8 @@ function runCompositionTest()
           { "length": 1, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 1, "length": 0 }
+      "caret": { "start": 1, "length": 0 },
+      "key": { key: "4" },
     });
 
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3\u3046",
@@ -1509,7 +1669,7 @@ function runCompositionTest()
   }
 
   // cancel the composition
-  synthesizeComposition({ type: "compositioncommit", data: "" });
+  synthesizeComposition({ type: "compositioncommit", data: "", key: { key: "KEY_Escape" } });
 
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3",
                     "runCompositionTest", "#3-5") ||
@@ -1528,7 +1688,8 @@ function runCompositionTest()
           { "length": 0, "attr": 0 }
         ]
       },
-      "caret": { "start": 0, "length": 0 }
+      "caret": { "start": 0, "length": 0 },
+      "key": { key: "a" },
     });
 
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3",
@@ -1545,7 +1706,8 @@ function runCompositionTest()
           { "length": 0, "attr": 0 }
         ]
       },
-      "caret": { "start": 0, "length": 0 }
+      "caret": { "start": 0, "length": 0 },
+      "key": { key: "b" },
     });
 
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3",
@@ -1554,7 +1716,7 @@ function runCompositionTest()
     return;
   }
 
-  synthesizeComposition({ type: "compositioncommit", data: "\u6700" });
+  synthesizeComposition({ type: "compositioncommit", data: "\u6700", key: { key: "KEY_Enter" } });
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3\u6700",
                     "runCompositionTest", "#4-3") ||
       !checkSelection(5, "", "runCompositionTest", "#4-3")) {
@@ -1570,7 +1732,8 @@ function runCompositionTest()
           { "length": 0, "attr": 0 }
         ]
       },
-      "caret": { "start": 0, "length": 0 }
+      "caret": { "start": 0, "length": 0 },
+      "key": { key: "a" },
     });
 
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3\u6700",
@@ -1579,7 +1742,7 @@ function runCompositionTest()
     return;
   }
 
-  synthesizeComposition({ type: "compositioncommitasis" });
+  synthesizeComposition({ type: "compositioncommitasis", key: { key: "KEY_Escape" } });
 
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3\u6700",
                     "runCompositionTest", "#4-6") ||
@@ -1588,7 +1751,7 @@ function runCompositionTest()
   }
 
   // testing whether the empty composition string deletes selected string.
-  synthesizeKey("VK_LEFT", { shiftKey: true });
+  synthesizeKey("KEY_ArrowLeft", {shiftKey: true});
 
   synthesizeCompositionChange(
     { "composition":
@@ -1598,7 +1761,8 @@ function runCompositionTest()
           { "length": 0, "attr": 0 }
         ]
       },
-      "caret": { "start": 0, "length": 0 }
+      "caret": { "start": 0, "length": 0 },
+      "key": { key: "a" },
     });
 
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3",
@@ -1607,14 +1771,14 @@ function runCompositionTest()
     return;
   }
 
-  synthesizeComposition({ type: "compositioncommit", data: "\u9AD8" });
+  synthesizeComposition({ type: "compositioncommit", data: "\u9AD8", key: { key: "KEY_Enter" } });
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3\u9AD8",
                     "runCompositionTest", "#4-9") ||
       !checkSelection(5, "", "runCompositionTest", "#4-9")) {
     return;
   }
 
-  synthesizeKey("VK_BACK_SPACE", {});
+  synthesizeKey("KEY_Backspace");
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3",
                     "runCompositionTest", "#4-11") ||
       !checkSelection(4, "", "runCompositionTest", "#4-11")) {
@@ -1631,7 +1795,8 @@ function runCompositionTest()
           { "length": 1, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 1, "length": 0 }
+      "caret": { "start": 1, "length": 0 },
+      "key": { key: "a" },
     });
 
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3\u6700",
@@ -1648,7 +1813,8 @@ function runCompositionTest()
           { "length": 0, "attr": 0 }
         ]
       },
-      "caret": { "start": 0, "length": 0 }
+      "caret": { "start": 0, "length": 0 },
+      "key": { key: "KEY_Backspace", type: "keydown" },
     });
 
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3",
@@ -1657,7 +1823,7 @@ function runCompositionTest()
     return;
   }
 
-  synthesizeComposition({ type: "compositioncommitasis" });
+  synthesizeComposition({ type: "compositioncommitasis", key: { key: "KEY_Backspace", type: "keyup" } });
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3",
                     "runCompositionTest", "#5-3") ||
       !checkSelection(4, "", "runCompositionTest", "#5-3")) {
@@ -1665,7 +1831,7 @@ function runCompositionTest()
   }
 
   // Undo tests for the testcases for bug 23558 and bug 271815
-  synthesizeKey("Z", { accelKey: true });
+  synthesizeKey("z", { accelKey: true });
 
   // XXX this is unexpected behavior, see bug 258291
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3",
@@ -1674,7 +1840,7 @@ function runCompositionTest()
     return;
   }
 
-  synthesizeKey("Z", { accelKey: true });
+  synthesizeKey("z", { accelKey: true });
 
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3\u9AD8",
                     "runCompositionTest", "#6-2") ||
@@ -1682,7 +1848,7 @@ function runCompositionTest()
     return;
   }
 
-  synthesizeKey("Z", { accelKey: true });
+  synthesizeKey("z", { accelKey: true });
 
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3\u6700",
                     "runCompositionTest", "#6-3") ||
@@ -1690,7 +1856,7 @@ function runCompositionTest()
     return;
   }
 
-  synthesizeKey("Z", { accelKey: true });
+  synthesizeKey("z", { accelKey: true });
 
   // XXX this is unexpected behavior, see bug 258291
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3\u6700",
@@ -1699,7 +1865,7 @@ function runCompositionTest()
     return;
   }
 
-  synthesizeKey("Z", { accelKey: true });
+  synthesizeKey("z", { accelKey: true });
 
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3",
                     "runCompositionTest", "#6-5") ||
@@ -1802,7 +1968,8 @@ function runCompositionEventTest()
           { "length": 1, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 1, "length": 0 }
+      "caret": { "start": 1, "length": 0 },
+      "key": { key: "o" },
     });
 
   is(windowEventCounts["compositionstart"], 1,
@@ -1853,7 +2020,8 @@ function runCompositionEventTest()
           { "length": 2, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 2, "length": 0 }
+      "caret": { "start": 2, "length": 0 },
+      "key": { key: "\\", code: "IntlYen", keyCode: KeyboardEvent.DOM_VK_BACKSLASH },
     });
 
   is(windowEventCounts["compositionstart"], 1,
@@ -1889,7 +2057,7 @@ function runCompositionEventTest()
      kDescription + "value of input element wasn't modified (input) #2");
 
   // text event shouldn't cause composition update, e.g., at committing.
-  synthesizeComposition({ type: "compositioncommitasis" });
+  synthesizeComposition({ type: "compositioncommitasis", key: { key: "KEY_Enter" } });
 
   is(windowEventCounts["compositionstart"], 1,
      kDescription + "compositionstart has been handled more than once by window #3");
@@ -1926,7 +2094,7 @@ function runCompositionEventTest()
   // select the second character, then, data of composition start should be
   // the selected character.
   initResults();
-  synthesizeKey("VK_LEFT", { shiftKey: true });
+  synthesizeKey("KEY_ArrowLeft", {shiftKey: true});
 
   synthesizeCompositionChange(
     { "composition":
@@ -1936,10 +2104,11 @@ function runCompositionEventTest()
           { "length": 1, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 1, "length": 0 }
+      "caret": { "start": 1, "length": 0 },
+      "key": { key: "o" },
     });
 
-  synthesizeComposition({ type: "compositioncommitasis" });
+  synthesizeComposition({ type: "compositioncommitasis", key: { key: "KEY_Enter" } });
 
   is(windowEventCounts["compositionstart"], 1,
      kDescription + "compositionstart hasn't been handled by window #4");
@@ -1993,7 +2162,7 @@ function runCompositionEventTest()
   preventDefault = true;
 
   initResults();
-  synthesizeKey("A", { accelKey: true }); // Select All
+  synthesizeKey("a", { accelKey: true }); // Select All
 
   synthesizeCompositionChange(
     { "composition":
@@ -2003,7 +2172,8 @@ function runCompositionEventTest()
           { "length": 1, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 1, "length": 0 }
+      "caret": { "start": 1, "length": 0 },
+      "key": { key: "," },
     });
 
   synthesizeComposition({ type: "compositioncommitasis" });
@@ -2062,7 +2232,7 @@ function runCompositionEventTest()
   stopPropagation = true;
 
   initResults();
-  synthesizeKey("A", { accelKey: true }); // Select All
+  synthesizeKey("a", { accelKey: true }); // Select All
 
   synthesizeCompositionChange(
     { "composition":
@@ -2072,10 +2242,11 @@ function runCompositionEventTest()
           { "length": 1, "attr": COMPOSITION_ATTR_RAW_CLAUSE }
         ]
       },
-      "caret": { "start": 1, "length": 0 }
+      "caret": { "start": 1, "length": 0 },
+      "key": { key: "\\", code: "IntlRo", keyCode: KeyboardEvent.DOM_VK_BACKSLASH },
     });
 
-  synthesizeComposition({ type: "compositioncommitasis" });
+  synthesizeComposition({ type: "compositioncommitasis", key: { key: "KEY_Enter" } });
 
   is(windowEventCounts["compositionstart"], 1,
      kDescription + "compositionstart hasn't been handled by window #6");
@@ -2119,7 +2290,7 @@ function runCompositionEventTest()
   initResults();
 
   input.value = "value of input";
-  synthesizeKey("A", { accelKey: true }); // Select All
+  synthesizeKey("a", { accelKey: true }); // Select All
 
   var compositionstart = document.createEvent("CompositionEvent");
   compositionstart.initCompositionEvent("compositionstart",
@@ -4271,6 +4442,28 @@ function runQueryTextContentEventTest()
   is(result.text, "abc", "runQueryTextContentEventTest #16 (0, 3), \"" + contenteditable.innerHTML + "\"");
 }
 
+function runQuerySelectionEventTest()
+{
+  contenteditable.focus();
+
+  var selection = windowOfContenteditable.getSelection();
+
+  // #1
+  contenteditable.innerHTML = "<br/>a";
+  selection.setBaseAndExtent(contenteditable.firstChild, 0, contenteditable.lastChild, 1);
+  checkSelection(0, kLF + "a", "runQuerySelectionEventTest #1, \"" + contenteditable.innerHTML + "\"");
+
+  // #2
+  contenteditable.innerHTML = "<p></p><p>abc</p>";
+  selection.setBaseAndExtent(contenteditable.firstChild, 0, contenteditable.lastChild.firstChild, 1);
+  checkSelection(kLFLen, kLF + "a", "runQuerySelectionEventTest #2, \"" + contenteditable.innerHTML + "\"");
+
+  // #3
+  contenteditable.innerHTML = "<p>abc</p><p>def</p>";
+  selection.setBaseAndExtent(contenteditable.firstChild, 0, contenteditable.lastChild.firstChild, 1);
+  checkSelection(kLFLen, "abc" + kLF + "d", "runQuerySelectionEventTest #3, \"" + contenteditable.innerHTML + "\"");
+}
+
 function runQueryIMESelectionTest()
 {
   textarea.focus();
@@ -4491,6 +4684,89 @@ function runQueryContentEventRelativeToInsertionPoint()
   }
 
   synthesizeComposition({ type: "compositioncommitasis" });
+}
+
+function runBug1375825Test()
+{
+  contenteditable.focus();
+
+  // #1
+  contenteditable.innerHTML = "abc<span contenteditable=\"false\">defgh</span>";
+
+  var ret = synthesizeQueryTextRect(2, 1);
+  if (!checkQueryContentResult(ret, "runBug1375825Test #1 (2, 1), \"" + contenteditable.innerHTML + "\"")) {
+    return;
+  }
+  is(ret.text, "c", "runBug1375825Test #1 (2, 1), \"" + contenteditable.innerHTML + "\": should have queried a rect for 'c'");
+
+  ret = synthesizeQueryTextRect(3, 1);
+  if (!checkQueryContentResult(ret, "runBug1375825Test #1 (3, 1), \"" + contenteditable.innerHTML + "\"")) {
+    return;
+  }
+  is(ret.text, "d", "runBug1375825Test #1 (3, 1), \"" + contenteditable.innerHTML + "\": should have queried a rect for 'd'");
+
+  ret = synthesizeQueryTextRect(4, 1);
+  if (!checkQueryContentResult(ret, "runBug1375825Test #1 (4, 1), \"" + contenteditable.innerHTML + "\"")) {
+    return;
+  }
+  is(ret.text, "e", "runBug1375825Test #1 (4, 1), \"" + contenteditable.innerHTML + "\": should have queried a rect for 'e'");
+
+  ret = synthesizeQueryTextRect(5, 1);
+  if (!checkQueryContentResult(ret, "runBug1375825Test #1 (5, 1), \"" + contenteditable.innerHTML + "\"")) {
+    return;
+  }
+  is(ret.text, "f", "runBug1375825Test #1 (5, 1), \"" + contenteditable.innerHTML + "\": should have queried a rect for 'f'");
+
+  ret = synthesizeQueryTextRect(6, 1);
+  if (!checkQueryContentResult(ret, "runBug1375825Test #1 (6, 1), \"" + contenteditable.innerHTML + "\"")) {
+    return;
+  }
+  is(ret.text, "g", "runBug1375825Test #1 (6, 1), \"" + contenteditable.innerHTML + "\": should have queried a rect for 'g'");
+
+  ret = synthesizeQueryTextRect(7, 1);
+  if (!checkQueryContentResult(ret, "runBug1375825Test #1 (7, 1), \"" + contenteditable.innerHTML + "\"")) {
+    return;
+  }
+  is(ret.text, "h", "runBug1375825Test #1 (7, 1), \"" + contenteditable.innerHTML + "\": should have queried a rect for 'h'");
+
+  // #2
+  contenteditable.innerHTML = "abc<span style=\"-moz-user-select: all;\">defgh</span>";
+
+  ret = synthesizeQueryTextRect(2, 1);
+  if (!checkQueryContentResult(ret, "runBug1375825Test #2 (2, 1), \"" + contenteditable.innerHTML + "\"")) {
+    return;
+  }
+  is(ret.text, "c", "runBug1375825Test #2 (2, 1), \"" + contenteditable.innerHTML + "\": should have queried a rect for 'c'");
+
+  ret = synthesizeQueryTextRect(3, 1);
+  if (!checkQueryContentResult(ret, "runBug1375825Test #2 (3, 1), \"" + contenteditable.innerHTML + "\"")) {
+    return;
+  }
+  is(ret.text, "d", "runBug1375825Test #2 (3, 1), \"" + contenteditable.innerHTML + "\": should have queried a rect for 'd'");
+
+  ret = synthesizeQueryTextRect(4, 1);
+  if (!checkQueryContentResult(ret, "runBug1375825Test #2 (4, 1), \"" + contenteditable.innerHTML + "\"")) {
+    return;
+  }
+  is(ret.text, "e", "runBug1375825Test #2 (4, 1), \"" + contenteditable.innerHTML + "\": should have queried a rect for 'e'");
+
+  ret = synthesizeQueryTextRect(5, 1);
+  if (!checkQueryContentResult(ret, "runBug1375825Test #2 (5, 1), \"" + contenteditable.innerHTML + "\"")) {
+    return;
+  }
+  is(ret.text, "f", "runBug1375825Test #2 (5, 1), \"" + contenteditable.innerHTML + "\": should have queried a rect for 'f'");
+
+  ret = synthesizeQueryTextRect(6, 1);
+  if (!checkQueryContentResult(ret, "runBug1375825Test #2 (6, 1), \"" + contenteditable.innerHTML + "\"")) {
+    return;
+  }
+  is(ret.text, "g", "runBug1375825Test #2 (6, 1), \"" + contenteditable.innerHTML + "\": should have queried a rect for 'g'");
+
+  ret = synthesizeQueryTextRect(7, 1);
+  if (!checkQueryContentResult(ret, "runBug1375825Test #2 (7, 1), \"" + contenteditable.innerHTML + "\"")) {
+    return;
+  }
+  is(ret.text, "h", "runBug1375825Test #2 (7, 1), \"" + contenteditable.innerHTML + "\": should have queried a rect for 'h'");
 }
 
 function runCSSTransformTest()
@@ -4779,6 +5055,7 @@ function runForceCommitTest()
      "runForceCommitTest: the 3rd event must be text #1");
   is(events[3].type, "input",
      "runForceCommitTest: the 4th event must be input #1");
+  checkInputEvent(events[3], true, "insertCompositionText", "runForceCommitTest #1");
 
   events = [];
   synthesizeMouseAtCenter(textarea, {});
@@ -4791,6 +5068,7 @@ function runForceCommitTest()
      "runForceCommitTest: the 2nd event must be compositionend #2");
   is(events[2].type, "input",
      "runForceCommitTest: the 3rd event must be input #2");
+  checkInputEvent(events[2], false, "insertCompositionText", "runForceCommitTest #2");
   is(events[1].data, "\u306E",
      "runForceCommitTest: compositionend has wrong data #2");
   is(events[0].target, textarea,
@@ -4831,6 +5109,7 @@ function runForceCommitTest()
      "runForceCommitTest: the 2nd event must be compositionend #3");
   is(events[2].type, "input",
      "runForceCommitTest: the 3rd event must be input #3");
+  checkInputEvent(events[2], false, "insertCompositionText", "runForceCommitTest #3");
   is(events[1].data, "\u306E",
      "runForceCommitTest: compositionend has wrong data #3");
   is(events[0].target, textarea,
@@ -4874,6 +5153,7 @@ function runForceCommitTest()
      "runForceCommitTest: the 2nd event must be compositionend #4");
   is(events[2].type, "input",
      "runForceCommitTest: the 3rd event must be input #4");
+  checkInputEvent(events[2], false, "insertCompositionText", "runForceCommitTest #4");
   is(events[1].data, "\u306E",
      "runForceCommitTest: compositionend has wrong data #4");
   is(events[0].target, textarea,
@@ -4914,6 +5194,7 @@ function runForceCommitTest()
      "runForceCommitTest: the 2nd event must be compositionend #5");
   is(events[2].type, "input",
      "runForceCommitTest: the 3rd event must be input #5");
+  checkInputEvent(events[2], false, "insertCompositionText", "runForceCommitTest #5");
   is(events[1].data, "\u306E",
      "runForceCommitTest: compositionend has wrong data #5");
   is(events[0].target, textarea,
@@ -4958,6 +5239,7 @@ function runForceCommitTest()
      "runForceCommitTest: the 2nd event must be compositionend #6");
   is(events[2].type, "input",
      "runForceCommitTest: the 3rd event must be input #6");
+  checkInputEvent(events[2], false, "insertCompositionText", "runForceCommitTest #6");
   is(events[1].data, "\u306E",
      "runForceCommitTest: compositionend has wrong data #6");
   is(events[0].target, textarea,
@@ -5002,6 +5284,7 @@ function runForceCommitTest()
      "runForceCommitTest: the 2nd event must be compositionend #7");
   is(events[2].type, "input",
      "runForceCommitTest: the 3rd event must be input #7");
+  checkInputEvent(events[2], false, "insertCompositionText", "runForceCommitTest #7");
   is(events[1].data, "\u306E",
      "runForceCommitTest: compositionend has wrong data #7");
   is(events[0].target, textarea,
@@ -5047,6 +5330,7 @@ function runForceCommitTest()
      "runForceCommitTest: the 2nd event must be compositionend #8");
   is(events[2].type, "input",
      "runForceCommitTest: the 3rd event must be input #8");
+  checkInputEvent(events[2], false, "insertCompositionText", "runForceCommitTest #8");
   is(events[1].data, "\u306E",
      "runForceCommitTest: compositionend has wrong data #8");
   is(events[0].target, textarea,
@@ -5091,6 +5375,7 @@ function runForceCommitTest()
      "runForceCommitTest: the 2nd event must be compositionend #9");
   is(events[2].type, "input",
      "runForceCommitTest: the 3rd event must be input #9");
+  checkInputEvent(events[2], false, "insertCompositionText", "runForceCommitTest #9");
   is(events[1].data, "\u306E",
      "runForceCommitTest: compositionend has wrong data #9");
   is(events[0].target, iframe2.contentDocument.body,
@@ -5102,7 +5387,7 @@ function runForceCommitTest()
   ok(!getHTMLEditorIMESupport(iframe2.contentWindow).isComposing,
      "runForceCommitTest: the editable document still has composition #9");
   ok(iframe2.contentDocument.body.innerHTML != iframe2BodyInnerHTML &&
-     iframe2.contentDocument.body.innerHTML.indexOf("\u306E") >= 0,
+     iframe2.contentDocument.body.innerHTML.includes("\u306E"),
      "runForceCommitTest: the editable document doesn't have the committed text #9");
 
   // Make the composition in an editable document commit by click in another document's editor
@@ -5133,6 +5418,7 @@ function runForceCommitTest()
      "runForceCommitTest: the 2nd event must be compositionend #10");
   is(events[2].type, "input",
      "runForceCommitTest: the 3rd event must be input #10");
+  checkInputEvent(events[2], false, "insertCompositionText", "runForceCommitTest #10");
   is(events[1].data, "\u306E",
      "runForceCommitTest: compositionend has wrong data #10");
   is(events[0].target, iframe2.contentDocument.body,
@@ -5146,7 +5432,7 @@ function runForceCommitTest()
   ok(!getEditor(textarea).isComposing,
      "runForceCommitTest: the textarea has composition #10");
   ok(iframe2.contentDocument.body.innerHTML != iframe2BodyInnerHTML &&
-     iframe2.contentDocument.body.innerHTML.indexOf("\u306E") >= 0,
+     iframe2.contentDocument.body.innerHTML.includes("\u306E"),
      "runForceCommitTest: the editable document doesn't have the committed text #10");
   is(textarea.value, "",
      "runForceCommitTest: the textarea has the committed text? #10");
@@ -5180,6 +5466,7 @@ function runForceCommitTest()
      "runForceCommitTest: the 2nd event must be compositionend #11");
   is(events[2].type, "input",
      "runForceCommitTest: the 3rd event must be input #11");
+  checkInputEvent(events[2], false, "insertCompositionText", "runForceCommitTest #11");
   is(events[1].data, "\u306E",
      "runForceCommitTest: compositionend has wrong data #11");
   is(events[0].target, iframe2.contentDocument.body,
@@ -5193,7 +5480,7 @@ function runForceCommitTest()
   ok(!getHTMLEditorIMESupport(iframe3.contentWindow).isComposing,
      "runForceCommitTest: the other editable document has composition #11");
   ok(iframe2.contentDocument.body.innerHTML != iframe2BodyInnerHTML &&
-     iframe2.contentDocument.body.innerHTML.indexOf("\u306E") >= 0,
+     iframe2.contentDocument.body.innerHTML.includes("\u306E"),
      "runForceCommitTest: the editable document doesn't have the committed text #11");
   is(iframe3.contentDocument.body.innerHTML, iframe3BodyInnerHTML,
      "runForceCommitTest: the other editable document has the committed text? #11");
@@ -5223,6 +5510,7 @@ function runForceCommitTest()
      "runForceCommitTest: the 2nd event must be compositionend #12");
   is(events[2].type, "input",
      "runForceCommitTest: the 3rd event must be input #12");
+  checkInputEvent(events[2], false, "insertCompositionText", "runForceCommitTest #12");
   is(events[1].data, "\u306E",
      "runForceCommitTest: compositionend has wrong data #12");
   is(events[0].target, input,
@@ -5261,6 +5549,7 @@ function runForceCommitTest()
      "runForceCommitTest: the 2nd event must be compositionend #13");
   is(events[2].type, "input",
      "runForceCommitTest: the 3rd event must be input #13");
+  checkInputEvent(events[2], false, "insertCompositionText", "runForceCommitTest #13");
   is(events[1].data, "\u306E",
      "runForceCommitTest: compositionend has wrong data #13");
   is(events[0].target, textarea,
@@ -5299,6 +5588,7 @@ function runForceCommitTest()
      "runForceCommitTest: the 2nd event must be compositionend #14");
   is(events[2].type, "input",
      "runForceCommitTest: the 3rd event must be input #14");
+  checkInputEvent(events[2], false, "insertCompositionText", "runForceCommitTest #14");
   is(events[1].data, "\u306E",
      "runForceCommitTest: compositionend has wrong data #14");
   is(events[0].target, input,
@@ -5411,6 +5701,7 @@ function runNestedSettingValue()
      "runNestedSettingValue: the 2nd event must be compositionend #1");
   is(events[2].type, "input",
      "runNestedSettingValue: the 3rd event must be input #1");
+  checkInputEvent(events[2], false, "insertCompositionText", "runNestedSettingValue #1");
   is(events[1].data, "\u306E",
      "runNestedSettingValue: compositionend has wrong data #1");
   is(events[0].target, textarea,
@@ -5451,6 +5742,7 @@ function runNestedSettingValue()
      "runNestedSettingValue: the 2nd event must be compositionend #2");
   is(events[2].type, "input",
      "runNestedSettingValue: the 3rd event must be input #2");
+  checkInputEvent(events[2], false, "insertCompositionText", "runNestedSettingValue #2");
   is(events[1].data, "\u306E",
      "runNestedSettingValue: compositionend has wrong data #2");
   is(events[0].target, input,
@@ -5491,6 +5783,7 @@ function runNestedSettingValue()
      "runNestedSettingValue: the 2nd event must be compositionend #3");
   is(events[2].type, "input",
      "runNestedSettingValue: the 3rd event must be input #3");
+  checkInputEvent(events[2], false, "insertCompositionText", "runNestedSettingValue #3");
   is(events[1].data, "\u306E",
      "runNestedSettingValue: compositionend has wrong data #3");
   is(events[0].target, textarea,
@@ -5531,6 +5824,7 @@ function runNestedSettingValue()
      "runNestedSettingValue: the 2nd event must be compositionend #4");
   is(events[2].type, "input",
      "runNestedSettingValue: the 3rd event must be input #4");
+  checkInputEvent(events[2], false, "insertCompositionText", "runNestedSettingValue #4");
   is(events[1].data, "\u306E",
      "runNestedSettingValue: compositionend has wrong data #4");
   is(events[0].target, input,
@@ -5552,7 +5846,7 @@ function runNestedSettingValue()
 
 }
 
-function runAsyncForceCommitTest(aNextTest)
+function runAsyncForceCommitTest()
 {
   var events;
   function eventHandler(aEvent)
@@ -5586,7 +5880,7 @@ function runAsyncForceCommitTest(aNextTest)
       window.removeEventListener("input", eventHandler, true);
       window.removeEventListener("text", eventHandler, true);
 
-      SimpleTest.executeSoon(aNextTest);
+      SimpleTest.executeSoon(continueTest);
     }, 1);
     return true;
   };
@@ -5623,6 +5917,7 @@ function runAsyncForceCommitTest(aNextTest)
      "runAsyncForceCommitTest: the 3rd event must be text #1");
   is(events[3].type, "input",
      "runAsyncForceCommitTest: the 4th event must be input #1");
+  checkInputEvent(events[3], true, "insertCompositionText", "runAsyncForceCommitTest #1");
 
   events = [];
   commitRequested = false;
@@ -5638,6 +5933,7 @@ function runAsyncForceCommitTest(aNextTest)
      "runAsyncForceCommitTest: the 2nd event must be compositionend #2");
   is(events[2].type, "input",
      "runAsyncForceCommitTest: the 3rd event must be input #2");
+  checkInputEvent(events[2], false, "insertCompositionText", "runAsyncForceCommitTest #2");
   is(events[1].data, "\u306E",
      "runAsyncForceCommitTest: compositionend has wrong data #2");
   is(events[0].target, textarea,
@@ -5684,9 +5980,12 @@ function runIsComposingTest()
     if (aEvent.type == "keydown" || aEvent.type == "keyup") {
       is(aEvent.isComposing, expectedIsComposing,
          "runIsComposingTest: " + description + " (type=" + aEvent.type + ", key=" + aEvent.key + ")");
-    } else {
-      is(aEvent.isComposing, expectedIsComposing,
+    } else if (aEvent.type == "keypress") {
+      // keypress event shouldn't be fired during composition so that isComposing should be always false.
+      is(aEvent.isComposing, false,
          "runIsComposingTest: " + description + " (type=" + aEvent.type + ")");
+    } else {
+      checkInputEvent(aEvent, expectedIsComposing, "insertCompositionText", `runIsComposingTest: ${description}`);
     }
   }
 
@@ -5713,7 +6012,7 @@ function runIsComposingTest()
   //     don't dispatch key events while composition (bug 354358).
   SpecialPowers.setBoolPref("dom.keyboardevent.dispatch_during_composition", true);
   description = "events before dispatching compositionstart";
-  synthesizeKey("VK_LEFT", {});
+  synthesizeKey("KEY_ArrowLeft");
 
   description = "events after dispatching compositionchange";
   synthesizeCompositionChange(
@@ -5729,7 +6028,7 @@ function runIsComposingTest()
     });
 
   // Although, firing keypress event during composition is a bug.
-  synthesizeKey("VK_INSERT", {});
+  synthesizeKey("KEY_Insert");
 
   description = "events for committing composition string";
 
@@ -5739,7 +6038,7 @@ function runIsComposingTest()
   // input event will be fired by synthesizing compositionend event.
   // Then, its isComposing should be false.
   description = "events after dispatching compositioncommitasis";
-  synthesizeKey("VK_RETURN", { type: "keyup" });
+  synthesizeKey("KEY_Enter", {type: "keyup"});
 
   SpecialPowers.clearUserPref("dom.keyboardevent.dispatch_during_composition");
 
@@ -5757,19 +6056,15 @@ function runRedundantChangeTest()
 {
   textarea.focus();
 
-  var result = {};
+  var result = [];
   function clearResult()
   {
-    result = { compositionupdate: false, compositionend: false, text: false, input: false, inputaftercompositionend: false };
+    result = [];
   }
 
   function handler(aEvent)
   {
-    if (aEvent.type == "input" && result.compositionend) {
-      result.inputaftercompositionend = true;
-      return;
-    }
-    result[aEvent.type] = true;
+    result.push(aEvent);
   }
 
   textarea.addEventListener("compositionupdate", handler, true);
@@ -5792,10 +6087,16 @@ function runRedundantChangeTest()
       "caret": { "start": 1, "length": 0 }
     });
 
-  is(result.compositionupdate, true, "runRedundantChangeTest: compositionupdate should be fired after synthesizing composition change #1");
-  is(result.compositionend, false, "runRedundantChangeTest: compositionend shouldn't be fired after synthesizing composition change #1");
-  is(result.text, true, "runRedundantChangeTest: text should be fired after synthesizing composition change because it's dispatched when there is composing string #1");
-  is(result.input, true, "runRedundantChangeTest: input should be fired after synthesizing composition change #1");
+  is(result.length, 3,
+     "runRedundantChangeTest: 3 events should be fired after synthesizing composition change #1");
+  is(result[0].type, "compositionupdate",
+     "runRedundantChangeTest: compositionupdate should be fired after synthesizing composition change #1");
+  is(result[1].type, "text",
+     "runRedundantChangeTest: text should be fired after synthesizing composition change because it's dispatched when there is composing string #1");
+  is(result[2].type, "input",
+     "runRedundantChangeTest: input should be fired after synthesizing composition change #1");
+  checkInputEvent(result[2], true, "insertCompositionText",
+                  "runRedundantChangeTest: after synthesizing composition change #1");
   is(textarea.value, "\u3042", "runRedundantChangeTest: textarea has uncommitted string #1");
 
   // synthesize another change event
@@ -5811,10 +6112,16 @@ function runRedundantChangeTest()
       "caret": { "start": 2, "length": 0 }
     });
 
-  is(result.compositionupdate, true, "runRedundantChangeTest: compositionupdate should be fired after synthesizing composition change #2");
-  is(result.compositionend, false, "runRedundantChangeTest: compositionend shouldn't be fired after synthesizing composition change #2");
-  is(result.text, true, "runRedundantChangeTest: text should be fired after synthesizing composition change because it's dispatched when there is composing string #2");
-  is(result.input, true, "runRedundantChangeTest: input should be fired after synthesizing composition change #2");
+  is(result.length, 3,
+     "runRedundantChangeTest: 3 events should be fired after synthesizing composition change #2");
+  is(result[0].type, "compositionupdate",
+     "runRedundantChangeTest: compositionupdate should be fired after synthesizing composition change #2");
+  is(result[1].type, "text",
+     "runRedundantChangeTest: text should be fired after synthesizing composition change because it's dispatched when there is composing string #2");
+  is(result[2].type, "input",
+     "runRedundantChangeTest: input should be fired after synthesizing composition change #2");
+  checkInputEvent(result[2], true, "insertCompositionText",
+                  "runRedundantChangeTest: after synthesizing composition change #2");
   is(textarea.value, "\u3042\u3044", "runRedundantChangeTest: textarea has uncommitted string #2");
 
   // synthesize same change event again
@@ -5830,20 +6137,22 @@ function runRedundantChangeTest()
       "caret": { "start": 2, "length": 0 }
     });
 
-  is(result.compositionupdate, false, "runRedundantChangeTest: compositionupdate shouldn't be fired after synthesizing composition change again");
-  is(result.compositionend, false, "runRedundantChangeTest: compositionend shouldn't be fired after synthesizing composition change again");
-  is(result.text, false, "runRedundantChangeTest: text shouldn't be fired after synthesizing composition change again because it's dispatched when there is composing string");
-  is(result.input, false, "runRedundantChangeTest: input shouldn't be fired after synthesizing composition change again");
+  is(result.length, 0, "runRedundantChangeTest: no events should be fired after synthesizing composition change again");
   is(textarea.value, "\u3042\u3044", "runRedundantChangeTest: textarea has uncommitted string #3");
 
   // synthesize commit-as-is
   clearResult();
   synthesizeComposition({ type: "compositioncommitasis" });
-  is(result.compositionupdate, false, "runRedundantChangeTest: compositionupdate shouldn't be fired after synthesizing composition commit-as-is");
-  is(result.compositionend, true, "runRedundantChangeTest: compositionend should be fired after synthesizing composition commit-as-is");
-  is(result.text, true, "runRedundantChangeTest: text shouldn't be fired after synthesizing composition commit-as-is for removing the ranges");
-  is(result.input, false, "runRedundantChangeTest: input shouldn't be fired before compositionend at synthesizing commit-as-is");
-  is(result.inputaftercompositionend, true, "runRedundantChangeTest: input should be fired after synthesizing composition commit-as-is after compositionend");
+  is(result.length, 3,
+     "runRedundantChangeTest: 3 events be fired after synthesizing composition commit-as-is");
+  is(result[0].type, "text",
+     "runRedundantChangeTest: text shouldn't be fired after synthesizing composition commit-as-is for removing the ranges");
+  is(result[1].type, "compositionend",
+     "runRedundantChangeTest: compositionend should be fired after synthesizing composition commit-as-is");
+  is(result[2].type, "input",
+     "runRedundantChangeTest: input shouldn't be fired before compositionend at synthesizing commit-as-is");
+  checkInputEvent(result[2], false, "insertCompositionText",
+                  "runRedundantChangeTest: at synthesizing commit-as-is");
   is(textarea.value, "\u3042\u3044", "runRedundantChangeTest: textarea has the commit string");
 
   textarea.removeEventListener("compositionupdate", handler, true);
@@ -5856,19 +6165,15 @@ function runNotRedundantChangeTest()
 {
   textarea.focus();
 
-  var result = {};
+  var result = [];
   function clearResult()
   {
-    result = { compositionupdate: false, compositionend: false, text: false, input: false, inputaftercompositionend: false };
+    result = [];
   }
 
   function handler(aEvent)
   {
-    if (aEvent.type == "input" && result.compositionend) {
-      result.inputaftercompositionend = true;
-      return;
-    }
-    result[aEvent.type] = true;
+    result.push(aEvent);
   }
 
   textarea.addEventListener("compositionupdate", handler, true);
@@ -5891,10 +6196,16 @@ function runNotRedundantChangeTest()
       "caret": { "start": 5, "length": 0 }
     });
 
-  is(result.compositionupdate, true, "runNotRedundantChangeTest: compositionupdate should be fired after synthesizing composition change with non-null ranges");
-  is(result.compositionend, false, "runNotRedundantChangeTest: compositionend shouldn't be fired after synthesizing composition change with non-null ranges");
-  is(result.text, true, "runNotRedundantChangeTest: text should be fired after synthesizing composition change because it's dispatched when there is composing string with non-null ranges");
-  is(result.input, true, "runNotRedundantChangeTest: input should be fired after synthesizing composition change with non-null ranges");
+  is(result.length, 3,
+     "runNotRedundantChangeTest: 3 events should be fired after synthesizing composition change with non-null ranges");
+  is(result[0].type, "compositionupdate",
+     "runNotRedundantChangeTest: compositionupdate should be fired after synthesizing composition change with non-null ranges");
+  is(result[1].type, "text",
+     "runNotRedundantChangeTest: text should be fired after synthesizing composition change because it's dispatched when there is composing string with non-null ranges");
+  is(result[2].type, "input",
+     "runNotRedundantChangeTest: input should be fired after synthesizing composition change with non-null ranges");
+  checkInputEvent(result[2], true, "insertCompositionText",
+                  "runNotRedundantChangeTest: after synthesizing composition change with non-null ranges");
   is(textarea.value, "abcdeABCDE", "runNotRedundantChangeTest: textarea has uncommitted string #1");
 
   // synthesize change event with null ranges
@@ -5908,10 +6219,14 @@ function runNotRedundantChangeTest()
         ]
       },
     });
-  is(result.compositionupdate, false, "runNotRedundantChangeTest: compositionupdate shouldn't be fired after synthesizing composition change with null ranges after non-null ranges");
-  is(result.compositionend, false, "runNotRedundantChangeTest: compositionend shouldn't be fired after synthesizing composition change with null ranges after non-null ranges");
-  is(result.text, true, "runNotRedundantChangeTest: text should be fired after synthesizing composition change because it's dispatched when there is composing string with null ranges after non-null ranges");
-  is(result.input, true, "runNotRedundantChangeTest: input should be fired after synthesizing composition change with null ranges after non-null ranges");
+  is(result.length, 2,
+     "runNotRedundantChangeTest: 2 events should be fired after synthesizing composition change with null ranges after non-null ranges");
+  is(result[0].type, "text",
+     "runNotRedundantChangeTest: text should be fired after synthesizing composition change because it's dispatched when there is composing string with null ranges after non-null ranges");
+  is(result[1].type, "input",
+     "runNotRedundantChangeTest: input should be fired after synthesizing composition change with null ranges after non-null ranges");
+  checkInputEvent(result[1], true, "insertCompositionText",
+                  "runNotRedundantChangeTest: after synthesizing composition change with null ranges after non-null ranges");
   is(textarea.value, "abcdeABCDE", "runNotRedundantChangeTest: textarea has uncommitted string #2");
 
   // synthesize change event with non-null ranges
@@ -5927,10 +6242,14 @@ function runNotRedundantChangeTest()
       "caret": { "start": 5, "length": 0 }
     });
 
-  is(result.compositionupdate, false, "runNotRedundantChangeTest: compositionupdate shouldn't be fired after synthesizing composition change with non-null ranges after null ranges");
-  is(result.compositionend, false, "runNotRedundantChangeTest: compositionend shouldn't be fired after synthesizing composition change with non-null ranges after null ranges");
-  is(result.text, true, "runNotRedundantChangeTest: text should be fired after synthesizing composition change because it's dispatched when there is composing string with non-null ranges after null ranges");
-  is(result.input, true, "runNotRedundantChangeTest: input should be fired after synthesizing composition change with non-null ranges after null ranges");
+  is(result.length, 2,
+     "runNotRedundantChangeTest: 2 events should be fired after synthesizing composition change with null ranges after non-null ranges");
+  is(result[0].type, "text",
+     "runNotRedundantChangeTest: text should be fired after synthesizing composition change because it's dispatched when there is composing string with non-null ranges after null ranges");
+  is(result[1].type, "input",
+     "runNotRedundantChangeTest: input should be fired after synthesizing composition change with non-null ranges after null ranges");
+  checkInputEvent(result[1], true, "insertCompositionText",
+                  "runNotRedundantChangeTest: after synthesizing composition change with non-null ranges after null ranges");
   is(textarea.value, "abcdeABCDE", "runNotRedundantChangeTest: textarea has uncommitted string #3");
 
   // synthesize change event with empty data and null ranges
@@ -5944,10 +6263,16 @@ function runNotRedundantChangeTest()
         ]
       },
     });
-  is(result.compositionupdate, true, "runNotRedundantChangeTest: compositionupdate should be fired after synthesizing composition change with empty data and null ranges after non-null ranges");
-  is(result.compositionend, false, "runNotRedundantChangeTest: compositionend shouldn't be fired after synthesizing composition change with empty data and null ranges after non-null ranges");
-  is(result.text, true, "runNotRedundantChangeTest: text should be fired after synthesizing composition change because it's dispatched when there is composing string with empty data and null ranges after non-null ranges");
-  is(result.input, true, "runNotRedundantChangeTest: input should be fired after synthesizing composition change with empty data and null ranges after non-null ranges");
+  is(result.length, 3,
+     "runNotRedundantChangeTest: 3 events should be fired after synthesizing composition change with empty data and null ranges after non-null ranges");
+  is(result[0].type, "compositionupdate",
+     "runNotRedundantChangeTest: compositionupdate should be fired after synthesizing composition change with empty data and null ranges after non-null ranges");
+  is(result[1].type, "text",
+     "runNotRedundantChangeTest: text should be fired after synthesizing composition change because it's dispatched when there is composing string with empty data and null ranges after non-null ranges");
+  is(result[2].type, "input",
+     "runNotRedundantChangeTest: input should be fired after synthesizing composition change with empty data and null ranges after non-null ranges");
+  checkInputEvent(result[2], true, "insertCompositionText",
+                  "runNotRedundantChangeTest: after synthesizing composition change with empty data and null ranges after non-null ranges");
   is(textarea.value, "abcde", "runNotRedundantChangeTest: textarea doesn't have uncommitted string #1");
 
   // synthesize change event with non-null ranges
@@ -5963,26 +6288,173 @@ function runNotRedundantChangeTest()
       "caret": { "start": 5, "length": 0 }
     });
 
-  is(result.compositionupdate, true, "runNotRedundantChangeTest: compositionupdate should be fired after synthesizing composition change with non-null ranges after empty data and null ranges");
-  is(result.compositionend, false, "runNotRedundantChangeTest: compositionend shouldn't be fired after synthesizing composition change with non-null ranges after empty data and null ranges");
-  is(result.text, true, "runNotRedundantChangeTest: text should be fired after synthesizing composition change because it's dispatched when there is composing string with non-null ranges after empty data and null ranges");
-  is(result.input, true, "runNotRedundantChangeTest: input should be fired after synthesizing composition change with non-null ranges after empty data and null ranges");
+  is(result.length, 3,
+     "runNotRedundantChangeTest: 3 events should be fired after synthesizing composition change with non-null ranges after empty data and null ranges");
+  is(result[0].type, "compositionupdate",
+     "runNotRedundantChangeTest: compositionupdate should be fired after synthesizing composition change with non-null ranges after empty data and null ranges");
+  is(result[1].type, "text",
+     "runNotRedundantChangeTest: text should be fired after synthesizing composition change because it's dispatched when there is composing string with non-null ranges after empty data and null ranges");
+  is(result[2].type, "input",
+     "runNotRedundantChangeTest: input should be fired after synthesizing composition change with non-null ranges after empty data and null ranges");
+  checkInputEvent(result[2], true, "insertCompositionText",
+                  "runNotRedundantChangeTest: after synthesizing composition change with non-null ranges after empty data and null ranges");
   is(textarea.value, "abcdeABCDE", "runNotRedundantChangeTest: textarea has uncommitted string #4");
 
   clearResult();
   synthesizeComposition({ type: "compositioncommit", data: "" });
 
-  is(result.compositionupdate, true, "runNotRedundantChangeTest: compositionupdate should be fired after synthesizing composition commit with empty data after non-empty data");
-  is(result.compositionend, true, "runNotRedundantChangeTest: compositionend should be fired after synthesizing composition commit with empty data after non-empty data");
-  is(result.text, true, "runNotRedundantChangeTest: text should be fired after synthesizing composition change because it's dispatched when there is composing string with empty data after non-empty data");
-  is(result.input, false, "runNotRedundantChangeTest: input shouldn't be fired before compositionend after synthesizing composition change with empty data after non-empty data");
-  is(result.inputaftercompositionend, true, "runNotRedundantChangeTest: input should be fired after compositionend after synthesizing composition change with empty data after non-empty data");
+  is(result.length, 4,
+     "runNotRedundantChangeTest: 4 events should be fired after synthesizing composition commit with empty data after non-empty data");
+  is(result[0].type, "compositionupdate",
+     "runNotRedundantChangeTest: compositionupdate should be fired after synthesizing composition commit with empty data after non-empty data");
+  is(result[1].type, "text",
+     "runNotRedundantChangeTest: text should be fired after synthesizing composition change because it's dispatched when there is composing string with empty data after non-empty data");
+  is(result[2].type, "compositionend",
+     "runNotRedundantChangeTest: compositionend should be fired after synthesizing composition commit with empty data after non-empty data");
+  is(result[3].type, "input",
+     "runNotRedundantChangeTest: input should be fired after compositionend after synthesizing composition change with empty data after non-empty data");
+  checkInputEvent(result[3], false, "insertCompositionText",
+                  "runNotRedundantChangeTest: after synthesizing composition change with empty data after non-empty data");
   is(textarea.value, "abcde", "runNotRedundantChangeTest: textarea doesn't have uncommitted string #2");
 
   textarea.removeEventListener("compositionupdate", handler, true);
   textarea.removeEventListener("compositionend", handler, true);
   textarea.removeEventListener("input", handler, true);
   textarea.removeEventListener("text", handler, true);
+}
+
+function runNativeLineBreakerTest()
+{
+  textarea.focus();
+
+  var result = {};
+  function clearResult()
+  {
+    result = { compositionupdate: null, compositionend: null };
+  }
+
+  function handler(aEvent)
+  {
+    result[aEvent.type] = aEvent.data;
+  }
+
+  SpecialPowers.setBoolPref("dom.compositionevent.allow_control_characters", false);
+
+  textarea.addEventListener("compositionupdate", handler, true);
+  textarea.addEventListener("compositionend", handler, true);
+
+  // '\n' in composition string shouldn't be changed.
+  clearResult();
+  textarea.value = "";
+  var clauses = [ "abc\n", "def\n\ng", "hi\n", "\njkl" ];
+  var caret = clauses[0] + clauses[1] + clauses[2];
+  synthesizeCompositionChange(
+    { "composition":
+      { "string": clauses.join(''),
+        "clauses":
+        [
+          { "length": clauses[0].length,
+            "attr": COMPOSITION_ATTR_RAW_CLAUSE },
+          { "length": clauses[1].length,
+            "attr": COMPOSITION_ATTR_SELECTED_RAW_CLAUSE },
+          { "length": clauses[2].length,
+            "attr": COMPOSITION_ATTR_CONVERTED_CLAUSE },
+          { "length": clauses[3].length,
+            "attr": COMPOSITION_ATTR_SELECTED_CLAUSE },
+        ]
+      },
+      "caret": { "start": caret.length, "length": 0 }
+    });
+
+  checkSelection(caret.replace(/\n/g, "\n").length + (kLFLen - 1) * 4, "", "runNativeLineBreakerTest", "#1");
+  checkIMESelection("RawClause", true, 0, clauses[0].replace(/\n/g, kLF), "runNativeLineBreakerTest: \\n shouldn't be replaced with any character #1");
+  checkIMESelection("SelectedRawClause", true, clauses[0].replace(/\n/g, kLF).length, clauses[1].replace(/\n/g, kLF), "runNativeLineBreakerTest: \\n shouldn't be replaced with any character #1");
+  checkIMESelection("ConvertedClause", true, (clauses[0] + clauses[1]).replace(/\n/g, kLF).length, clauses[2].replace(/\n/g, kLF), "runNativeLineBreakerTest: \\n shouldn't be replaced with any character #1");
+  checkIMESelection("SelectedClause", true, (clauses[0] + clauses[1] + clauses[2]).replace(/\n/g, kLF).length, clauses[3].replace(/\n/g, kLF), "runNativeLineBreakerTest: \\n shouldn't be replaced with any character #1");
+  is(result.compositionupdate, clauses.join('').replace(/\n/g, "\n"), "runNativeLineBreakerTest: \\n in compositionupdate.data shouldn't be removed nor replaced with other characters #1");
+  is(textarea.value, clauses.join('').replace(/\n/g, "\n"), "runNativeLineBreakerTest: \\n in textarea.value shouldn't be removed nor replaced with other characters #1");
+
+  synthesizeComposition({ type: "compositioncommit", data: clauses.join('') });
+  checkSelection(clauses.join('').replace(/\n/g, "\n").length + (kLFLen - 1) * 5, "", "runNativeLineBreakerTest", "#2");
+  is(result.compositionend, clauses.join('').replace(/\n/g, "\n"), "runNativeLineBreakerTest: \\n in compositionend.data shouldn't be removed nor replaced with other characters #2");
+  is(textarea.value, clauses.join('').replace(/\n/g, "\n"), "runNativeLineBreakerTest: \\n in textarea.value shouldn't be removed nor replaced with other characters #2");
+
+  // \r\n in composition string should be replaced with \n.
+  clearResult();
+  textarea.value = "";
+  clauses = [ "abc\r\n", "def\r\n\r\ng", "hi\r\n", "\r\njkl" ];
+  caret = clauses[0] + clauses[1] + clauses[2];
+  synthesizeCompositionChange(
+    { "composition":
+      { "string": clauses.join(''),
+        "clauses":
+        [
+          { "length": clauses[0].length,
+            "attr": COMPOSITION_ATTR_RAW_CLAUSE },
+          { "length": clauses[1].length,
+            "attr": COMPOSITION_ATTR_SELECTED_RAW_CLAUSE },
+          { "length": clauses[2].length,
+            "attr": COMPOSITION_ATTR_CONVERTED_CLAUSE },
+          { "length": clauses[3].length,
+            "attr": COMPOSITION_ATTR_SELECTED_CLAUSE },
+        ]
+      },
+      "caret": { "start": caret.length, "length": 0 }
+    });
+
+  checkSelection(caret.replace(/\r\n/g, "\n").length + (kLFLen - 1) * 4, "", "runNativeLineBreakerTest", "#3");
+  checkIMESelection("RawClause", true, 0, clauses[0].replace(/\r\n/g, kLF), "runNativeLineBreakerTest: \\r\\n should be replaced with \\n #3");
+  checkIMESelection("SelectedRawClause", true, clauses[0].replace(/\r\n/g, kLF).length, clauses[1].replace(/\r\n/g, kLF), "runNativeLineBreakerTest: \\r\\n should be replaced with \\n #3");
+  checkIMESelection("ConvertedClause", true, (clauses[0] + clauses[1]).replace(/\r\n/g, kLF).length, clauses[2].replace(/\r\n/g, kLF), "runNativeLineBreakerTest: \\r\\n should be replaced with \\n #3");
+  checkIMESelection("SelectedClause", true, (clauses[0] + clauses[1] + clauses[2]).replace(/\r\n/g, kLF).length, clauses[3].replace(/\r\n/g, kLF), "runNativeLineBreakerTest: \\r\\n should be replaced with \\n #3");
+  is(result.compositionupdate, clauses.join('').replace(/\r\n/g, "\n"), "runNativeLineBreakerTest: \\r\\n in compositionudpate.data should be replaced with \\n #3");
+  is(textarea.value, clauses.join('').replace(/\r\n/g, "\n"), "runNativeLineBreakerTest: \\r\\n in textarea.value should be replaced with \\n #3");
+
+  synthesizeComposition({ type: "compositioncommit", data: clauses.join('') });
+  checkSelection(clauses.join('').replace(/\r\n/g, "\n").length + (kLFLen - 1) * 5, "", "runNativeLineBreakerTest", "#4");
+  is(result.compositionend, clauses.join('').replace(/\r\n/g, "\n"), "runNativeLineBreakerTest: \\r\\n in compositionend.data should be replaced with \\n #4");
+  is(textarea.value, clauses.join('').replace(/\r\n/g, "\n"), "runNativeLineBreakerTest: \\r\\n in textarea.value should be replaced with \\n #4");
+
+  // \r (not followed by \n) in composition string should be replaced with \n.
+  clearResult();
+  textarea.value = "";
+  clauses = [ "abc\r", "def\r\rg", "hi\r", "\rjkl" ];
+  caret = clauses[0] + clauses[1] + clauses[2];
+  synthesizeCompositionChange(
+    { "composition":
+      { "string": clauses.join(''),
+        "clauses":
+        [
+          { "length": clauses[0].length,
+            "attr": COMPOSITION_ATTR_RAW_CLAUSE },
+          { "length": clauses[1].length,
+            "attr": COMPOSITION_ATTR_SELECTED_RAW_CLAUSE },
+          { "length": clauses[2].length,
+            "attr": COMPOSITION_ATTR_CONVERTED_CLAUSE },
+          { "length": clauses[3].length,
+            "attr": COMPOSITION_ATTR_SELECTED_CLAUSE },
+        ]
+      },
+      "caret": { "start": caret.length, "length": 0 }
+    });
+
+  checkSelection(caret.replace(/\r/g, "\n").length + (kLFLen - 1) * 4, "", "runNativeLineBreakerTest", "#5");
+  checkIMESelection("RawClause", true, 0, clauses[0].replace(/\r/g, kLF), "runNativeLineBreakerTest: \\r should be replaced with \\n #5");
+  checkIMESelection("SelectedRawClause", true, clauses[0].replace(/\r/g, kLF).length, clauses[1].replace(/\r/g, kLF), "runNativeLineBreakerTest: \\r should be replaced with \\n #5");
+  checkIMESelection("ConvertedClause", true, (clauses[0] + clauses[1]).replace(/\r/g, kLF).length, clauses[2].replace(/\r/g, kLF), "runNativeLineBreakerTest: \\r should be replaced with \\n #5");
+  checkIMESelection("SelectedClause", true, (clauses[0] + clauses[1] + clauses[2]).replace(/\r/g, kLF).length, clauses[3].replace(/\r/g, kLF), "runNativeLineBreakerTest: \\r should be replaced with \\n #5");
+  is(result.compositionupdate, clauses.join('').replace(/\r/g, "\n"), "runNativeLineBreakerTest: \\r in compositionupdate.data should be replaced with \\n #5");
+  is(textarea.value, clauses.join('').replace(/\r/g, "\n"), "runNativeLineBreakerTest: \\r in textarea.value should be replaced with \\n #5");
+
+  synthesizeComposition({ type: "compositioncommit", data: clauses.join('') });
+  checkSelection(clauses.join('').replace(/\r/g, "\n").length + (kLFLen - 1) * 5, "", "runNativeLineBreakerTest", "#6");
+  is(result.compositionend, clauses.join('').replace(/\r/g, "\n"), "runNativeLineBreakerTest: \\r in compositionend.data should be replaced with \\n #6");
+  is(textarea.value, clauses.join('').replace(/\r/g, "\n"), "runNativeLineBreakerTest: \\r in textarea.value should be replaced with \\n #6");
+
+  textarea.removeEventListener("compositionupdate", handler, true);
+  textarea.removeEventListener("compositionend", handler, true);
+
+  SpecialPowers.clearUserPref("dom.compositionevent.allow_control_characters");
 }
 
 function runControlCharTest()
@@ -6006,7 +6478,7 @@ function runControlCharTest()
   textarea.value = "";
 
   var controlChars = String.fromCharCode.apply(null, Object.keys(Array.from({length:0x20}))) + "\x7F";
-  var allowedChars = "\t";
+  var allowedChars = "\t\n\n";
 
   var data = "AB" + controlChars + "CD" + controlChars + "EF";
   var removedData = "AB" + allowedChars + "CD" + allowedChars + "EF";
@@ -6030,7 +6502,7 @@ function runControlCharTest()
       "caret": { "start": DIndex, "length": 0 }
     });
 
-  checkSelection(removedDIndex, "", "runControlCharTest", "#1")
+  checkSelection(removedDIndex + (kLFLen - 1) * 2, "", "runControlCharTest", "#1")
 
   is(result.compositionupdate, removedData, "runControlCharTest: control characters in event.data should be removed in compositionupdate event #1");
   is(textarea.value, removedData, "runControlCharTest: control characters should not appear in textarea #1");
@@ -6062,14 +6534,14 @@ function runControlCharTest()
       "caret": { "start": DIndex, "length": 0 }
     });
 
-  checkSelection(DIndex - 1 + kLFLen, "", "runControlCharTest", "#3")
+  checkSelection(DIndex + (kLFLen - 1) * 2, "", "runControlCharTest", "#3")
 
-  is(result.compositionupdate, data, "runControlCharTest: control characters in event.data should not be removed in compositionupdate event #3");
+  is(result.compositionupdate, data.replace(/\r/g, "\n"), "runControlCharTest: control characters in event.data should not be removed in compositionupdate event #3");
   is(textarea.value, data.replace(/\r/g, "\n"), "runControlCharTest: control characters should appear in textarea #3");
 
   synthesizeComposition({ type: "compositioncommit", data: data });
 
-  is(result.compositionend, data, "runControlCharTest: control characters in event.data should not be removed in compositionend event #4");
+  is(result.compositionend, data.replace(/\r/g, "\n"), "runControlCharTest: control characters in event.data should not be removed in compositionend event #4");
   is(textarea.value, data.replace(/\r/g, "\n"), "runControlCharTest: control characters should appear in textarea #4");
 
   SpecialPowers.clearUserPref("dom.compositionevent.allow_control_characters");
@@ -6078,7 +6550,7 @@ function runControlCharTest()
   textarea.removeEventListener("compositionend", handler, true);
 }
 
-function runRemoveContentTest(aCallback)
+function runRemoveContentTest()
 {
   var events = [];
   function eventHandler(aEvent)
@@ -6148,13 +6620,15 @@ function runRemoveContentTest(aCallback)
 
     hitEventLoop(function () {
       // XXX Currently, "input" event isn't fired on removed content.
-      is(events.length, 1,
+      is(events.length, 2,
          "runRemoveContentTest: wrong event count #2");
-      is(events[0].type, "compositionend",
+      is(events[0].type, "text",
+         "runRemoveContentTest: the 1st event must be text #2");
+      is(events[1].type, "compositionend",
          "runRemoveContentTest: the 1st event must be compositionend #2");
-      is(events[0].data, "",
+      is(events[1].data, "",
          "runRemoveContentTest: compositionupdate has wrong data #2");
-      is(events[0].target, textarea,
+      is(events[1].target, textarea,
          "runRemoveContentTest: The 1st event was fired on wrong event target #2");
       ok(!getEditor(textarea).isComposing,
          "runRemoveContentTest: the textarea still has composition #2");
@@ -6169,7 +6643,7 @@ function runRemoveContentTest(aCallback)
       textarea.removeEventListener("input", eventHandler, true);
       textarea.removeEventListener("text", eventHandler, true);
 
-      SimpleTest.executeSoon(aCallback);
+      SimpleTest.executeSoon(continueTest);
     }, 50);
   }, 50);
 }
@@ -6310,7 +6784,7 @@ function onPanelHidden(aEvent)
 {
   panel.hidden = true;
   ok(gIsPanelHiding, "runPanelTest: the panel is hidden unexpectedly");
-  finish();
+  SimpleTest.executeSoon(continueTest);
 }
 
 function runPanelTest()
@@ -6635,9 +7109,9 @@ function runMaxLengthTest()
   }
 }
 
-function runEditorReframeTests(aCallback)
+function* runEditorReframeTests()
 {
-  function runEditorReframeTest(aEditor, aWindow, aEventType, aNextTest)
+  function runEditorReframeTest(aEditor, aWindow, aEventType)
   {
     function getValue()
     {
@@ -6813,12 +7287,12 @@ function runEditorReframeTests(aCallback)
       },
       { test: function () {
           // Select "Cd"
-          synthesizeKey("KEY_ArrowLeft", { code: "ArrowLeft" });
-          synthesizeKey("KEY_ArrowLeft", { code: "ArrowLeft" });
-          synthesizeKey("KEY_Shift", { type: "keydown", code: "ShiftLeft", shiftKey: true });
-          synthesizeKey("KEY_ArrowLeft", { code: "ArrowLeft", shiftKey: true });
-          synthesizeKey("KEY_ArrowLeft", { code: "ArrowLeft", shiftKey: true });
-          synthesizeKey("KEY_Shift", { type: "keyup", code: "ShiftLeft" });
+          synthesizeKey("KEY_ArrowLeft");
+          synthesizeKey("KEY_ArrowLeft");
+          synthesizeKey("KEY_Shift", {type: "keydown", shiftKey: true});
+          synthesizeKey("KEY_ArrowLeft", {shiftKey: true});
+          synthesizeKey("KEY_ArrowLeft", {shiftKey: true});
+          synthesizeKey("KEY_Shift", {type: "keyup"});
         },
         check: function () {
         },
@@ -6911,46 +7385,973 @@ function runEditorReframeTests(aCallback)
       if (tests.length <= index) {
         aEditor.style.overflow = "auto";
         aEditor.removeEventListener(aEventType, doReframe);
-        requestAnimationFrame(function() { setTimeout(aNextTest); });
+        requestAnimationFrame(function() { SimpleTest.executeSoon(continueTest); });
         return;
       }
       tests[index].test();
       hitEventLoop(function () {
         tests[index].check();
         index++;
-        setTimeout(doNext, 0);
+        SimpleTest.executeSoon(doNext);
       }, 20);
     }
     doNext();
   }
 
   input.value = "";
-  runEditorReframeTest(input, window, "input", function () {
-    input.value = "";
-    runEditorReframeTest(input, window, "compositionupdate", function () {
-      textarea.value = "";
-      runEditorReframeTest(textarea, window, "input", function () {
-        textarea.value = "";
-        runEditorReframeTest(textarea, window, "compositionupdate", function () {
-          contenteditable.innerHTML = "";
-          runEditorReframeTest(contenteditable, windowOfContenteditable, "input", function () {
-            contenteditable.innerHTML = "";
-            runEditorReframeTest(contenteditable, windowOfContenteditable, "compositionupdate", function () {
-              aCallback();
-            });
-          });
-        });
-      });
-    });
-  });
+  yield runEditorReframeTest(input, window, "input");
+  input.value = "";
+  yield runEditorReframeTest(input, window, "compositionupdate");
+  textarea.value = "";
+  yield runEditorReframeTest(textarea, window, "input");
+  textarea.value = "";
+  yield runEditorReframeTest(textarea, window, "compositionupdate");
+  contenteditable.innerHTML = "";
+  yield runEditorReframeTest(contenteditable, windowOfContenteditable, "input");
+  contenteditable.innerHTML = "";
+  yield runEditorReframeTest(contenteditable, windowOfContenteditable, "compositionupdate");
 }
 
-function runTest()
+function* runIMEContentObserverTest()
 {
-  contenteditable = document.getElementById("iframe4").contentDocument.getElementById("contenteditable");
-  windowOfContenteditable = document.getElementById("iframe4").contentWindow;
-  textareaInFrame = iframe.contentDocument.getElementById("textarea");
+  var notifications = [];
+  var callContinueTest = false;
+  function callback(aTIP, aNotification)
+  {
+    if (aNotification.type != "notify-end-input-transaction") {
+      notifications.push(aNotification);
+    }
+    switch (aNotification.type) {
+      case "request-to-commit":
+        aTIP.commitComposition();
+        break;
+      case "request-to-cancel":
+        aTIP.cancelComposition();
+        break;
+    }
+    if (callContinueTest) {
+      callContinueTest = false;
+      SimpleTest.executeSoon(continueTest);
+    }
+    return true;
+  }
 
+  function dumpUnexpectedNotifications(aDescription, aExpectedCount)
+  {
+    if (notifications.length <= aExpectedCount) {
+      return;
+    }
+    for (var i = aExpectedCount; i < notifications.length; i++) {
+      ok(false,
+         aDescription + " caused unexpected notification: " + notifications[i].type);
+    }
+  }
+
+  function waitUntilNotificationsReceived()
+  {
+    if (notifications.length > 0) {
+      SimpleTest.executeSoon(continueTest);
+    } else {
+      callContinueTest = true;
+    }
+  }
+
+  function flushNotifications()
+  {
+    // FYI: Dispatching non-op keyboard events causes forcibly flushing pending
+    //      notifications.
+    synthesizeKey("KEY_Unidentified", { code: "" });
+    SimpleTest.executeSoon(()=>{
+      notifications = [];
+      continueTest();
+    });
+  }
+
+  function ensureToRemovePrecedingPositionChangeNotification(aDescription)
+  {
+    if (!notifications.length) {
+      return;
+    }
+    if (notifications[0].type != "notify-position-change") {
+      return;
+    }
+    // Sometimes, notify-position-change is notified first separately if
+    // the operation causes scroll or something.  Tests can ignore this.
+    ok(true, "notify-position-change", aDescription + "Unnecessary notify-position-change occurred, ignoring it");
+    notifications.shift();
+  }
+
+  // Bug 1374057 - On ubuntu 16.04 there are notify-position-change events that are
+  // recorded after all the other events so we remove them through this function.
+  function ensureToRemovePostPositionChangeNotification(aDescription, expectedCount)
+  {
+    if (!notifications.length) {
+      return;
+    }
+    if (notifications.length <= expectedCount) {
+      return;
+    }
+    if (notifications[notifications.length-1].type != "notify-position-change") {
+      return;
+    }
+    ok(true, "notify-position-change", aDescription + "Unnecessary notify-position-change occurred, ignoring it");
+    notifications.pop();
+  }
+
+  function getNativeText(aXPText)
+  {
+    if (kLF == "\n") {
+      return aXPText;
+    }
+    return aXPText.replace(/\n/g, kLF);
+  }
+
+  function checkPositionChangeNotification(aNotification, aDescription)
+  {
+    is(!aNotification || aNotification.type, "notify-position-change",
+       aDescription + " should cause position change notification");
+  }
+
+  function checkSelectionChangeNotification(aNotification, aDescription, aExpected)
+  {
+    is(!aNotification || aNotification.type, "notify-selection-change",
+       aDescription + " should cause selection change notification");
+    if (!aNotification || (aNotification.type != "notify-selection-change")) {
+      return;
+    }
+    is(aNotification.offset, aExpected.offset,
+       aDescription + " should cause selection change notification whose offset is " + aExpected.offset);
+    is(aNotification.text, aExpected.text,
+       aDescription + " should cause selection change notification whose text is '" + aExpected.text + "'");
+    is(aNotification.collapsed, aExpected.text.length == 0,
+       aDescription + " should cause selection change notification whose collapsed is " + (aExpected.text.length == 0));
+    is(aNotification.length, aExpected.text.length,
+       aDescription + " should cause selection change notification whose length is " + aExpected.text.length);
+    is(aNotification.reversed, aExpected.reversed || false,
+       aDescription + " should cause selection change notification whose reversed is " + (aExpected.reversed || false));
+    is(aNotification.writingMode, aExpected.writingMode || "horizontal-tb",
+       aDescription + " should cause selection change notification whose writingMode is '" + (aExpected.writingMode || "horizontal-tb"));
+  }
+
+  function checkTextChangeNotification(aNotification, aDescription, aExpected)
+  {
+    is(!aNotification || aNotification.type, "notify-text-change",
+       aDescription + " should cause text change notification");
+    if (!aNotification || aNotification.type != "notify-text-change") {
+      return;
+    }
+    is(aNotification.offset, aExpected.offset,
+       aDescription + " should cause text change notification whose offset is " + aExpected.offset);
+    is(aNotification.removedLength, aExpected.removedLength,
+       aDescription + " should cause text change notification whose removedLength is " + aExpected.removedLength);
+    is(aNotification.addedLength, aExpected.addedLength,
+       aDescription + " should cause text change notification whose addedLength is " + aExpected.addedLength);
+  }
+
+  function getAsInnerHTML(aElement)
+  {
+    if (aElement.tagName.toLowerCase() == "input" || aElement.tagName.toLowerCase() == "textarea") {
+      return aElement.value;
+    }
+    return aElement.innerHTML;
+  }
+
+  function* testWithPlaintextEditor(aDescription, aElement, aTestLineBreaker)
+  {
+    aElement.value = "";
+    aElement.blur();
+    var doc = aElement.ownerDocument;
+    var win = doc.defaultView;
+    aElement.focus();
+    yield flushNotifications();
+
+    // "a[]"
+    var description = aDescription + "typing 'a'";
+    notifications = [];
+    synthesizeKey("a", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkTextChangeNotification(notifications[0], description, { offset: 0, removedLength: 0, addedLength: 1 });
+    checkSelectionChangeNotification(notifications[1], description, { offset: 1, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    ensureToRemovePostPositionChangeNotification(description, 3);
+    dumpUnexpectedNotifications(description, 3);
+
+    // "ab[]"
+    description = aDescription + "typing 'b'";
+    notifications = [];
+    synthesizeKey("b", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkTextChangeNotification(notifications[0], description, { offset: 1, removedLength: 0, addedLength: 1 });
+    checkSelectionChangeNotification(notifications[1], description, { offset: 2, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    ensureToRemovePostPositionChangeNotification(description, 3);
+    dumpUnexpectedNotifications(description, 3);
+
+    // "abc[]"
+    description = aDescription + "typing 'c'";
+    notifications = [];
+    synthesizeKey("c", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkTextChangeNotification(notifications[0], description, { offset: 2, removedLength: 0, addedLength: 1 });
+    checkSelectionChangeNotification(notifications[1], description, { offset: 3, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    ensureToRemovePostPositionChangeNotification(description, 3);
+    dumpUnexpectedNotifications(description, 3);
+
+    // "ab[c]"
+    description = aDescription + "selecting 'c' with pressing Shift+ArrowLeft";
+    notifications = [];
+    synthesizeKey("KEY_ArrowLeft", {shiftKey: true}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkSelectionChangeNotification(notifications[0], description, { offset: 2, text: "c", reversed: true });
+    ensureToRemovePostPositionChangeNotification(description, 1);
+    dumpUnexpectedNotifications(description, 1);
+
+    // "a[bc]"
+    description = aDescription + "selecting 'bc' with pressing Shift+ArrowLeft";
+    notifications = [];
+    synthesizeKey("KEY_ArrowLeft", {shiftKey: true}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkSelectionChangeNotification(notifications[0], description, { offset: 1, text: "bc", reversed: true });
+    ensureToRemovePostPositionChangeNotification(description, 1);
+    dumpUnexpectedNotifications(description, 1);
+
+    // "[abc]"
+    description = aDescription + "selecting 'bc' with pressing Shift+ArrowLeft";
+    notifications = [];
+    synthesizeKey("KEY_ArrowLeft", {shiftKey: true}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkSelectionChangeNotification(notifications[0], description, { offset: 0, text: "abc", reversed: true });
+    ensureToRemovePostPositionChangeNotification(description, 1);
+    dumpUnexpectedNotifications(description, 1);
+
+    // "[]abc"
+    description = aDescription + "collapsing selection to the left-most with pressing ArrowLeft";
+    notifications = [];
+    synthesizeKey("KEY_ArrowLeft", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkSelectionChangeNotification(notifications[0], description, { offset: 0, text: "" });
+    ensureToRemovePostPositionChangeNotification(description, 1);
+    dumpUnexpectedNotifications(description, 1);
+
+    // "[a]bc"
+    description = aDescription + "selecting 'a' with pressing Shift+ArrowRight";
+    notifications = [];
+    synthesizeKey("KEY_ArrowRight", {shiftKey: true}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkSelectionChangeNotification(notifications[0], description, { offset: 0, text: "a" });
+    ensureToRemovePostPositionChangeNotification(description, 1);
+    dumpUnexpectedNotifications(description, 1);
+
+    // "[ab]c"
+    description = aDescription + "selecting 'ab' with pressing Shift+ArrowRight";
+    notifications = [];
+    synthesizeKey("KEY_ArrowRight", {shiftKey: true}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkSelectionChangeNotification(notifications[0], description, { offset: 0, text: "ab" });
+    ensureToRemovePostPositionChangeNotification(description, 1);
+    dumpUnexpectedNotifications(description, 1);
+
+    // "[]c"
+    description = aDescription + "deleting 'ab' with pressing Delete";
+    notifications = [];
+    synthesizeKey("KEY_Delete", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkTextChangeNotification(notifications[0], description, { offset: 0, removedLength: 2, addedLength: 0 });
+    checkSelectionChangeNotification(notifications[1], description, { offset: 0, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    ensureToRemovePostPositionChangeNotification(description, 3);
+    dumpUnexpectedNotifications(description, 3);
+
+    // "[]"
+    description = aDescription + "deleting following 'c' with pressing Delete";
+    notifications = [];
+    synthesizeKey("KEY_Delete", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkTextChangeNotification(notifications[0], description, { offset: 0, removedLength: 1, addedLength: 0 });
+    checkPositionChangeNotification(notifications[1], description);
+    ensureToRemovePostPositionChangeNotification(description, 2);
+    dumpUnexpectedNotifications(description, 2);
+
+    // "abc[]"
+    synthesizeKey("a", {}, win, callback);
+    synthesizeKey("b", {}, win, callback);
+    synthesizeKey("c", {}, win, callback);
+    yield flushNotifications();
+
+    // "ab[]"
+    description = aDescription + "deleting 'c' with pressing Backspace";
+    notifications = [];
+    synthesizeKey("KEY_Backspace", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkTextChangeNotification(notifications[0], description, { offset: 2, removedLength: 1, addedLength: 0 });
+    checkSelectionChangeNotification(notifications[1], description, { offset: 2, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    ensureToRemovePostPositionChangeNotification(description, 3);
+    dumpUnexpectedNotifications(description, 3);
+
+    // "[ab]"
+    synthesizeKey("KEY_ArrowLeft", {shiftKey: true}, win, callback);
+    synthesizeKey("KEY_ArrowLeft", {shiftKey: true}, win, callback);
+    yield flushNotifications();
+
+    // "[]"
+    description = aDescription + "deleting 'ab' with pressing Backspace";
+    notifications = [];
+    synthesizeKey("KEY_Backspace", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkTextChangeNotification(notifications[0], description, { offset: 0, removedLength: 2, addedLength: 0 });
+    checkSelectionChangeNotification(notifications[1], description, { offset: 0, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    ensureToRemovePostPositionChangeNotification(description, 3);
+    dumpUnexpectedNotifications(description, 3);
+
+    // "abcd[]"
+    synthesizeKey("a", {}, win, callback);
+    synthesizeKey("b", {}, win, callback);
+    synthesizeKey("c", {}, win, callback);
+    synthesizeKey("d", {}, win, callback);
+    yield flushNotifications();
+
+    // "a[bc]d"
+    synthesizeKey("KEY_ArrowLeft", {}, win, callback);
+    synthesizeKey("KEY_ArrowLeft", {shiftKey: true}, win, callback);
+    synthesizeKey("KEY_ArrowLeft", {shiftKey: true}, win, callback);
+    yield flushNotifications();
+
+    // "a[]d"
+    description = aDescription + "deleting 'bc' with pressing Backspace";
+    notifications = [];
+    synthesizeKey("KEY_Backspace", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkTextChangeNotification(notifications[0], description, { offset: 1, removedLength: 2, addedLength: 0 });
+    checkSelectionChangeNotification(notifications[1], description, { offset: 1, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    ensureToRemovePostPositionChangeNotification(description, 3);
+    dumpUnexpectedNotifications(description, 3);
+
+    // "a[bc]d"
+    synthesizeKey("b", {}, win, callback);
+    synthesizeKey("c", {}, win, callback);
+    synthesizeKey("KEY_ArrowLeft", {shiftKey: true}, win, callback);
+    synthesizeKey("KEY_ArrowLeft", {shiftKey: true}, win, callback);
+    yield flushNotifications();
+
+    // "aB[]d"
+    description = aDescription + "replacing 'bc' with 'B' with pressing Shift+B";
+    notifications = [];
+    synthesizeKey("B", {shiftKey: true}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkTextChangeNotification(notifications[0], description, { offset: 1, removedLength: 2, addedLength: 1 });
+    checkSelectionChangeNotification(notifications[1], description, { offset: 2, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    ensureToRemovePostPositionChangeNotification(description, 3);
+    dumpUnexpectedNotifications(description, 3);
+
+    if (!aTestLineBreaker) {
+      return;
+    }
+
+    // "aB\n[]d"
+    description = aDescription + "inserting a line break after 'B' with pressing Enter";
+    notifications = [];
+    synthesizeKey("KEY_Enter", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkTextChangeNotification(notifications[0], description, { offset: 2, removedLength: 0, addedLength: kLFLen });
+    checkSelectionChangeNotification(notifications[1], description, { offset: getNativeText("aB\n").length, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    ensureToRemovePostPositionChangeNotification(description, 3);
+    dumpUnexpectedNotifications(description, 3);
+
+    // "aB[]d"
+    description = aDescription + "removing a line break after 'B' with pressing Backspace";
+    notifications = [];
+    synthesizeKey("KEY_Backspace", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkTextChangeNotification(notifications[0], description, { offset: 2, removedLength: kLFLen, addedLength: 0 });
+    checkSelectionChangeNotification(notifications[1], description, { offset: 2, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    ensureToRemovePostPositionChangeNotification(description, 3);
+    dumpUnexpectedNotifications(description, 3);
+
+    // "a[B]d"
+    synthesizeKey("KEY_ArrowLeft", {shiftKey: true}, win, callback);
+    yield flushNotifications();
+
+    // "a\n[]d"
+    description = aDescription + "replacing 'B' with a line break with pressing Enter";
+    notifications = [];
+    synthesizeKey("KEY_Enter", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkTextChangeNotification(notifications[0], description, { offset: 1, removedLength: 1, addedLength: kLFLen });
+    checkSelectionChangeNotification(notifications[1], description, { offset: getNativeText("a\n").length, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    ensureToRemovePostPositionChangeNotification(description, 3);
+    dumpUnexpectedNotifications(description, 3);
+
+    // "a[\n]d"
+    description = aDescription + "selecting '\n' with pressing Shift+ArrowLeft";
+    notifications = [];
+    synthesizeKey("KEY_ArrowLeft", {shiftKey: true}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkSelectionChangeNotification(notifications[0], description, { offset: 1, text: kLF, reversed: true });
+    ensureToRemovePostPositionChangeNotification(description, 1);
+    dumpUnexpectedNotifications(description, 1);
+
+    // "a[]d"
+    description = aDescription + "removing selected '\n' with pressing Delete";
+    notifications = [];
+    synthesizeKey("KEY_Delete", {shiftKey: true}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkTextChangeNotification(notifications[0], description, { offset: 1, removedLength: kLFLen, addedLength: 0 });
+    checkSelectionChangeNotification(notifications[1], description, { offset: 1, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    ensureToRemovePostPositionChangeNotification(description, 3);
+    dumpUnexpectedNotifications(description, 3);
+
+    // ab\ncd\nef\ngh\n[]
+    description = aDescription + "setting the value property to 'ab\ncd\nef\ngh\n'";
+    notifications = [];
+    aElement.value = "ab\ncd\nef\ngh\n";
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkTextChangeNotification(notifications[0], description, { offset: 0, removedLength: 2, addedLength: getNativeText("ab\ncd\nef\ngh\n").length });
+    checkSelectionChangeNotification(notifications[1], description, { offset: getNativeText("ab\ncd\nef\ngh\n").length, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    ensureToRemovePostPositionChangeNotification(description, 3);
+    dumpUnexpectedNotifications(description, 3);
+
+    // []
+    description = aDescription + "setting the value property to ''";
+    notifications = [];
+    aElement.value = "";
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    // XXX Removing invisible <br> or something? The removed length is a line breaker length longer.
+    checkTextChangeNotification(notifications[0], description, { offset: 0, removedLength: getNativeText("ab\ncd\nef\ngh\n").length + kLFLen, addedLength: 0 });
+    checkSelectionChangeNotification(notifications[1], description, { offset: 0, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    ensureToRemovePostPositionChangeNotification(description, 3);
+    dumpUnexpectedNotifications(description, 3);
+  }
+
+  function* testWithHTMLEditor(aDescription, aElement, aDefaultParagraphSeparator)
+  {
+    var doc = aElement.ownerDocument;
+    var win = doc.defaultView;
+    var sel = doc.getSelection();
+    var inDesignMode = doc.designMode == "on";
+    var offsetAtStart = 0;
+    var offsetAtContainer = 0;
+    var isDefaultParagraphSeparatorBlock = aDefaultParagraphSeparator != "br";
+    doc.execCommand("defaultParagraphSeparator", false, aDefaultParagraphSeparator);
+
+    // "[]", "<p>[]</p>" or "<div>[]</div>"
+    switch (aDefaultParagraphSeparator) {
+      case "br":
+        aElement.innerHTML = "";
+        break;
+      case "p":
+      case "div":
+        aElement.innerHTML = "<" + aDefaultParagraphSeparator + "></" + aDefaultParagraphSeparator + ">";
+        sel.collapse(aElement.firstChild, 0);
+        offsetAtContainer = offsetAtStart + kLFLen;
+        break;
+      default:
+        ok(false, aDescription + "aDefaultParagraphSeparator is illegal value");
+        yield flushPendingNotifications();
+        return;
+    }
+
+    if (inDesignMode) {
+      win.focus();
+    } else {
+      aElement.focus();
+    }
+    yield flushNotifications();
+
+    // "a[]"
+    var description = aDescription + "typing 'a'";
+    notifications = [];
+    synthesizeKey("a", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkTextChangeNotification(notifications[0], description, { offset: 0 + offsetAtContainer, removedLength: 0, addedLength: 1 });
+    checkSelectionChangeNotification(notifications[1], description, { offset: 1 + offsetAtContainer, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    dumpUnexpectedNotifications(description, 3);
+
+    // "ab[]"
+    description = aDescription + "typing 'b'";
+    notifications = [];
+    synthesizeKey("b", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkTextChangeNotification(notifications[0], description, { offset: 1 + offsetAtContainer, removedLength: 0, addedLength: 1 });
+    checkSelectionChangeNotification(notifications[1], description, { offset: 2 + offsetAtContainer, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    dumpUnexpectedNotifications(description, 3);
+
+    // "abc[]"
+    description = aDescription + "typing 'c'";
+    notifications = [];
+    synthesizeKey("c", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkTextChangeNotification(notifications[0], description, { offset: 2 + offsetAtContainer, removedLength: 0, addedLength: 1 });
+    checkSelectionChangeNotification(notifications[1], description, { offset: 3 + offsetAtContainer, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    dumpUnexpectedNotifications(description, 3);
+
+    // "ab[c]"
+    description = aDescription + "selecting 'c' with pressing Shift+ArrowLeft";
+    notifications = [];
+    synthesizeKey("KEY_ArrowLeft", {shiftKey: true}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkSelectionChangeNotification(notifications[0], description, { offset: 2 + offsetAtContainer, text: "c", reversed: true });
+    dumpUnexpectedNotifications(description, 1);
+
+    // "a[bc]"
+    description = aDescription + "selecting 'bc' with pressing Shift+ArrowLeft";
+    notifications = [];
+    synthesizeKey("KEY_ArrowLeft", {shiftKey: true}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkSelectionChangeNotification(notifications[0], description, { offset: 1 + offsetAtContainer, text: "bc", reversed: true });
+    dumpUnexpectedNotifications(description, 1);
+
+    // "[abc]"
+    description = aDescription + "selecting 'bc' with pressing Shift+ArrowLeft";
+    notifications = [];
+    synthesizeKey("KEY_ArrowLeft", {shiftKey: true}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkSelectionChangeNotification(notifications[0], description, { offset: 0 + offsetAtContainer, text: "abc", reversed: true });
+    dumpUnexpectedNotifications(description, 1);
+
+    // "[]abc"
+    description = aDescription + "collapsing selection to the left-most with pressing ArrowLeft";
+    notifications = [];
+    synthesizeKey("KEY_ArrowLeft", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkSelectionChangeNotification(notifications[0], description, { offset: 0 + offsetAtContainer, text: "" });
+    dumpUnexpectedNotifications(description, 1);
+
+    // "[a]bc"
+    description = aDescription + "selecting 'a' with pressing Shift+ArrowRight";
+    notifications = [];
+    synthesizeKey("KEY_ArrowRight", {shiftKey: true}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkSelectionChangeNotification(notifications[0], description, { offset: 0 + offsetAtContainer, text: "a" });
+    dumpUnexpectedNotifications(description, 1);
+
+    // "[ab]c"
+    description = aDescription + "selecting 'ab' with pressing Shift+ArrowRight";
+    notifications = [];
+    synthesizeKey("KEY_ArrowRight", {shiftKey: true}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkSelectionChangeNotification(notifications[0], description, { offset: 0 + offsetAtContainer, text: "ab" });
+    dumpUnexpectedNotifications(description, 1);
+
+    // "[]c"
+    description = aDescription + "deleting 'ab' with pressing Delete";
+    notifications = [];
+    synthesizeKey("KEY_Delete", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkTextChangeNotification(notifications[0], description, { offset: 0 + offsetAtContainer, removedLength: 2, addedLength: 0 });
+    checkSelectionChangeNotification(notifications[1], description, { offset: 0 + offsetAtContainer, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    dumpUnexpectedNotifications(description, 3);
+
+    // "[]"
+    description = aDescription + "deleting following 'c' with pressing Delete";
+    notifications = [];
+    synthesizeKey("KEY_Delete", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkTextChangeNotification(notifications[0], description, { offset: 0 + offsetAtContainer, removedLength: 1, addedLength: kLFLen });
+    checkPositionChangeNotification(notifications[1], description);
+    dumpUnexpectedNotifications(description, 2);
+
+    // "abc[]"
+    synthesizeKey("a", {}, win, callback);
+    synthesizeKey("b", {}, win, callback);
+    synthesizeKey("c", {}, win, callback);
+    yield flushNotifications();
+
+    // "ab[]"
+    description = aDescription + "deleting 'c' with pressing Backspace";
+    notifications = [];
+    synthesizeKey("KEY_Backspace", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkTextChangeNotification(notifications[0], description, { offset: 2 + offsetAtContainer, removedLength: 1, addedLength: 0 });
+    checkSelectionChangeNotification(notifications[1], description, { offset: 2 + offsetAtContainer, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    dumpUnexpectedNotifications(description, 3);
+
+    // "[ab]"
+    synthesizeKey("KEY_ArrowLeft", {shiftKey: true}, win, callback);
+    synthesizeKey("KEY_ArrowLeft", {shiftKey: true}, win, callback);
+    yield flushNotifications();
+
+    // "[]"
+    description = aDescription + "deleting 'ab' with pressing Backspace";
+    notifications = [];
+    synthesizeKey("KEY_Backspace", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkTextChangeNotification(notifications[0], description, { offset: 0 + offsetAtContainer, removedLength: 2, addedLength: 0 });
+    checkSelectionChangeNotification(notifications[1], description, { offset: 0 + offsetAtContainer, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    dumpUnexpectedNotifications(description, 3);
+
+    // "abcd[]"
+    synthesizeKey("a", {}, win, callback);
+    synthesizeKey("b", {}, win, callback);
+    synthesizeKey("c", {}, win, callback);
+    synthesizeKey("d", {}, win, callback);
+    yield flushNotifications();
+
+    // "a[bc]d"
+    synthesizeKey("KEY_ArrowLeft", {}, win, callback);
+    synthesizeKey("KEY_ArrowLeft", {shiftKey: true}, win, callback);
+    synthesizeKey("KEY_ArrowLeft", {shiftKey: true}, win, callback);
+    yield flushNotifications();
+
+    // "a[]d"
+    description = aDescription + "deleting 'bc' with pressing Backspace";
+    notifications = [];
+    synthesizeKey("KEY_Backspace", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkTextChangeNotification(notifications[0], description, { offset: 1 + offsetAtContainer, removedLength: 2, addedLength: 0 });
+    checkSelectionChangeNotification(notifications[1], description, { offset: 1 + offsetAtContainer, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    dumpUnexpectedNotifications(description, 3);
+
+    // "a[bc]d"
+    synthesizeKey("b", {}, win, callback);
+    synthesizeKey("c", {}, win, callback);
+    synthesizeKey("KEY_ArrowLeft", {shiftKey: true}, win, callback);
+    synthesizeKey("KEY_ArrowLeft", {shiftKey: true}, win, callback);
+    yield flushNotifications();
+
+    // "aB[]d"
+    description = aDescription + "replacing 'bc' with 'B' with pressing Shift+B";
+    notifications = [];
+    synthesizeKey("B", {shiftKey: true}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkTextChangeNotification(notifications[0], description, { offset: 1 + offsetAtContainer, removedLength: 2, addedLength: 1 });
+    checkSelectionChangeNotification(notifications[1], description, { offset: 2 + offsetAtContainer, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    dumpUnexpectedNotifications(description, 3);
+
+    // "aB<br>[]d" or "<block>ab</block><block>[]d</block>"
+    description = aDescription + "inserting a line break after 'B' with pressing Enter";
+    notifications = [];
+    synthesizeKey("KEY_Enter", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    if (isDefaultParagraphSeparatorBlock) {
+      // Splitting current block causes removing "<block>aB" and inserting "<block>aB</block><block>".
+      checkTextChangeNotification(notifications[0], description, { offset: 0 + offsetAtContainer - kLFLen, removedLength: getNativeText("\naB").length, addedLength: getNativeText("\naB\n").length });
+    } else {
+      // Oddly, inserting <br> causes removing "aB" and inserting "ab<br>".
+      checkTextChangeNotification(notifications[0], description, { offset: 0 + offsetAtContainer, removedLength: 2, addedLength: getNativeText("ab\n").length });
+    }
+    checkSelectionChangeNotification(notifications[1], description, { offset: getNativeText("aB\n").length + offsetAtContainer, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    dumpUnexpectedNotifications(description, 3);
+
+    // "aB[]d"
+    description = aDescription + "removing a line break after 'B' with pressing Backspace";
+    notifications = [];
+    synthesizeKey("KEY_Backspace", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    if (isDefaultParagraphSeparatorBlock) {
+      // Joining two blocks causes removing both block elements and inserting new block element.
+      checkTextChangeNotification(notifications[0], description, { offset: offsetAtContainer - kLFLen, removedLength: getNativeText("\naB\nd").length, addedLength: getNativeText("\naBd").length });
+      checkSelectionChangeNotification(notifications[1], description, { offset: 2 + offsetAtContainer, text: "" });
+      checkPositionChangeNotification(notifications[2], description);
+      dumpUnexpectedNotifications(description, 3);
+    } else {
+      checkTextChangeNotification(notifications[0], description, { offset: 2 + offsetAtContainer, removedLength: kLFLen, addedLength: 0 });
+      is(notifications.length, 3, description + " should cause 3 notifications");
+      is(notifications[1] && notifications[1].type, "notify-selection-change", description + " should cause selection change notification");
+      is(notifications[2] && notifications[2].type, "notify-position-change", description + " should cause position change notification");
+    }
+
+    // "a[B]d"
+    synthesizeKey("KEY_ArrowLeft", {shiftKey: true}, win, callback);
+    yield flushNotifications();
+
+    // "a<br>[]d" or "<block>a</block><block>[]d</block>"
+    description = aDescription + "replacing 'B' with a line break with pressing Enter";
+    notifications = [];
+    synthesizeKey("KEY_Enter", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    if (isDefaultParagraphSeparatorBlock) {
+      // Splitting current block causes removing "<block>aB" and inserting "<block>aB</block><block>".
+      checkTextChangeNotification(notifications[0], description, { offset: 0 + offsetAtContainer - kLFLen, removedLength: getNativeText("\naB").length, addedLength: getNativeText("\na\n").length });
+    } else {
+      checkTextChangeNotification(notifications[0], description, { offset: 1 + offsetAtContainer, removedLength: 1, addedLength: kLFLen });
+    }
+    checkSelectionChangeNotification(notifications[1], description, { offset: getNativeText("a\n").length + offsetAtContainer, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    dumpUnexpectedNotifications(description, 3);
+
+    // "a[<br>]d" or "<block>a[</block><block>]d</block>"
+    description = aDescription + "selecting '\\n' with pressing Shift+ArrowLeft";
+    notifications = [];
+    synthesizeKey("KEY_ArrowLeft", {shiftKey: true}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkSelectionChangeNotification(notifications[0], description, { offset: 1 + offsetAtContainer, text: kLF, reversed: true });
+    dumpUnexpectedNotifications(description, 1);
+
+    // "a[]d"
+    description = aDescription + "removing selected '\\n' with pressing Delete";
+    notifications = [];
+    synthesizeKey("KEY_Delete", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    if (isDefaultParagraphSeparatorBlock) {
+      // Joining the blocks causes removing "<block>a</block><block>d</block>" and inserting "<block>ad</block>".
+      checkTextChangeNotification(notifications[0], description, { offset: 0 + offsetAtContainer - kLFLen, removedLength: getNativeText("\na\nd").length, addedLength: getNativeText("\nad").length });
+    } else {
+      checkTextChangeNotification(notifications[0], description, { offset: 1 + offsetAtContainer, removedLength: kLFLen, addedLength: 0 });
+    }
+    checkSelectionChangeNotification(notifications[1], description, { offset: 1 + offsetAtContainer, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    dumpUnexpectedNotifications(description, 3);
+
+    // aElement.innerHTML = "<div>1<div>2<div>3</div>4</div>5</div>"
+    description = aDescription + "inserting HTML which has nested block elements";
+    notifications = [];
+    aElement.innerHTML = "<div>1<div>2<div>3</div>4</div>5</div>";
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    // There is <br> after the end of the line.  Therefore, removed length includes a line breaker length.
+    if (isDefaultParagraphSeparatorBlock) {
+      checkTextChangeNotification(notifications[0], description, { offset: 0 + offsetAtContainer - kLFLen, removedLength: getNativeText("\nad\n").length, addedLength: getNativeText("\n1\n2\n345").length });
+    } else {
+      checkTextChangeNotification(notifications[0], description, { offset: 0 + offsetAtContainer, removedLength: 2 + kLFLen, addedLength: getNativeText("\n1\n2\n345").length });
+    }
+    checkSelectionChangeNotification(notifications[1], description, { offset: 0, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    dumpUnexpectedNotifications(description, 3);
+
+    // "<div>1[<div>2<div>3</div>4</div>]5</div>" and removing selection
+    sel.setBaseAndExtent(aElement.firstChild.firstChild, 1, aElement.firstChild.childNodes.item(2), 0);
+    yield flushNotifications();
+    description = aDescription + "deleting child nodes with pressing Delete key";
+    notifications = [];
+    synthesizeKey("KEY_Delete", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    is(aElement.innerHTML, "<div>15</div>", description + " should remove '<div>2<div>3</div>4</div>'");
+    checkTextChangeNotification(notifications[0], description, { offset: getNativeText("\n1").length + offsetAtStart, removedLength: getNativeText("\n2\n34").length, addedLength: 0 });
+    checkSelectionChangeNotification(notifications[1], description, { offset: getNativeText("\n1").length + offsetAtStart, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    dumpUnexpectedNotifications(description, 3);
+
+    // "<div>1[<div>2<div>3</div>]4</div>5</div>" and removing selection
+    aElement.innerHTML = "<div>1<div>2<div>3</div>4</div>5</div>";
+    sel.setBaseAndExtent(aElement.firstChild.firstChild, 1, aElement.firstChild.childNodes.item(1).childNodes.item(2), 0);
+    yield flushNotifications();
+    description = aDescription + "deleting child nodes (partially #1) with pressing Delete key";
+    notifications = [];
+    synthesizeKey("KEY_Delete", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    is(aElement.innerHTML, "<div>145</div>", description + " should remove '<div>2<div>3</div></div>'");
+    // It causes removing '<div>2<div>3</div>4</div>' and inserting '4'.
+    checkTextChangeNotification(notifications[0], description, { offset: getNativeText("\n1").length + offsetAtStart, removedLength: getNativeText("\n2\n34").length, addedLength: 1 });
+    checkSelectionChangeNotification(notifications[1], description, { offset: getNativeText("\n1").length + offsetAtStart, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    dumpUnexpectedNotifications(description, 3);
+
+    // "<div>1[<div>2<div>]3</div>4</div>5</div>" and removing selection
+    aElement.innerHTML = "<div>1<div>2<div>3</div>4</div>5</div>";
+    sel.setBaseAndExtent(aElement.firstChild.firstChild, 1, aElement.firstChild.childNodes.item(1).childNodes.item(1).firstChild, 0);
+    yield flushNotifications();
+    description = aDescription + "deleting child nodes (partially #2) with pressing Delete key";
+    notifications = [];
+    synthesizeKey("KEY_Delete", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    is(aElement.innerHTML, "<div>13<div>4</div>5</div>", description + " should remove '<div>2</div>'");
+    // It causes removing '1<div>2<div>3</div></div>' and inserting '13<div>'.
+    checkTextChangeNotification(notifications[0], description, { offset: kLFLen + offsetAtStart, removedLength: getNativeText("1\n2\n3").length, addedLength: getNativeText("13\n").length });
+    checkSelectionChangeNotification(notifications[1], description, { offset: getNativeText("\n1").length + offsetAtStart, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    dumpUnexpectedNotifications(description, 3);
+
+    // "<div>1<div>2<div>3[</div>4</div>]5</div>" and removing selection
+    aElement.innerHTML = "<div>1<div>2<div>3</div>4</div>5</div>";
+    sel.setBaseAndExtent(aElement.firstChild.childNodes.item(1).childNodes.item(1).firstChild, 1, aElement.firstChild.childNodes.item(2), 0);
+    yield flushNotifications();
+    description = aDescription + "deleting child nodes (partially #3) with pressing Delete key";
+    notifications = [];
+    synthesizeKey("KEY_Delete", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    is(aElement.innerHTML, "<div>1<div>2<div>35</div></div></div>", description + " should remove '4'");
+    // It causes removing '45' and inserting '5'.
+    checkTextChangeNotification(notifications[0], description, { offset: getNativeText("\n1\n2\n3").length + offsetAtStart, removedLength: 2, addedLength: 1 });
+    checkSelectionChangeNotification(notifications[1], description, { offset: getNativeText("\n1\n2\n3").length + offsetAtStart, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    dumpUnexpectedNotifications(description, 3);
+
+    // aElement.innerHTML = "<div>1<div>2<div>3</div>4</div>5<div>6<div>7</div>8</div>9</div>"
+    description = aDescription + "inserting HTML which has a pair of nested block elements";
+    notifications = [];
+    aElement.innerHTML = "<div>1<div>2<div>3</div>4</div>5<div>6<div>7</div>8</div>9</div>";
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    checkTextChangeNotification(notifications[0], description, { offset: 0 + offsetAtStart, removedLength: getNativeText("\n1\n2\n35").length, addedLength: getNativeText("\n1\n2\n345\n6\n789").length });
+    checkSelectionChangeNotification(notifications[1], description, { offset: 0 + offsetAtStart, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    dumpUnexpectedNotifications(description, 3);
+
+    // "<div>1<div>2<div>3[</div>4</div>5<div>6<div>]7</div>8</div>9</div>" and removing selection
+    sel.setBaseAndExtent(aElement.firstChild.childNodes.item(1).childNodes.item(1).firstChild, 1, aElement.firstChild.childNodes.item(3).childNodes.item(1).firstChild, 0);
+    yield flushNotifications();
+    description = aDescription + "deleting child nodes (between same level descendants) with pressing Delete key";
+    notifications = [];
+    synthesizeKey("KEY_Delete", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    is(aElement.innerHTML, "<div>1<div>2<div>37</div></div><div>8</div>9</div>", description + " should remove '456<div>7'");
+    // It causes removing '<div>3</div>4</div>5<div>6<div>7</div>' and inserting '<div>37</div><div>'.
+    checkTextChangeNotification(notifications[0], description, { offset: getNativeText("\n1\n2").length + offsetAtStart, removedLength: getNativeText("\n345\n6\n7").length, addedLength: getNativeText("\n37\n").length });
+    checkSelectionChangeNotification(notifications[1], description, { offset: getNativeText("\n1\n2\n3").length + offsetAtStart, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    dumpUnexpectedNotifications(description, 3);
+
+    // "<div>1<div>2[<div>3</div>4</div>5<div>6<div>]7</div>8</div>9</div>" and removing selection
+    aElement.innerHTML = "<div>1<div>2<div>3</div>4</div>5<div>6<div>7</div>8</div>9</div>";
+    sel.setBaseAndExtent(aElement.firstChild.childNodes.item(1).firstChild, 1, aElement.firstChild.childNodes.item(3).childNodes.item(1).firstChild, 0);
+    yield flushNotifications();
+    description = aDescription + "deleting child nodes (between different level descendants #1) with pressing Delete key";
+    notifications = [];
+    synthesizeKey("KEY_Delete", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    is(aElement.innerHTML, "<div>1<div>27</div><div>8</div>9</div>", description + " should remove '<div>2<div>3</div>4</div>5<div>6<div>7</div>'");
+    // It causes removing '<div>2<div>3</div>4</div>5<div>6<div>7</div>' and inserting '<div>27</div>'.
+    checkTextChangeNotification(notifications[0], description, { offset: getNativeText("\n1").length + offsetAtStart, removedLength: getNativeText("\n2\n345\n6\n7").length, addedLength: getNativeText("\n27\n").length });
+    checkSelectionChangeNotification(notifications[1], description, { offset: getNativeText("\n1\n2").length + offsetAtStart, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    dumpUnexpectedNotifications(description, 3);
+
+    // "<div>1<div>2[<div>3</div>4</div>5<div>6<div>7</div>8</div>]9</div>" and removing selection
+    aElement.innerHTML = "<div>1<div>2<div>3</div>4</div>5<div>6<div>7</div>8</div>9</div>";
+    sel.setBaseAndExtent(aElement.firstChild.childNodes.item(1).firstChild, 1, aElement.firstChild.childNodes.item(4), 0);
+    yield flushNotifications();
+    description = aDescription + "deleting child nodes (between different level descendants #2) with pressing Delete key";
+    notifications = [];
+    synthesizeKey("KEY_Delete", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    is(aElement.innerHTML, "<div>1<div>29</div></div>", description + " should remove '<div>3</div>4</div>5<div>6<div>7</div>8</div>'");
+    // It causes removing '<div>3</div>4</div>5</div>6<div>7</div>8</div>9' and inserting '9</div>'.
+    checkTextChangeNotification(notifications[0], description, { offset: getNativeText("\n1\n2").length + offsetAtStart, removedLength: getNativeText("\n345\n6\n789").length, addedLength: 1 });
+    checkSelectionChangeNotification(notifications[1], description, { offset: getNativeText("\n1\n2").length + offsetAtStart, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    dumpUnexpectedNotifications(description, 3);
+
+    // "<div>1<div>2<div>3[</div>4</div>5<div>]6<div>7</div>8</div>9</div>" and removing selection
+    aElement.innerHTML = "<div>1<div>2<div>3</div>4</div>5<div>6<div>7</div>8</div>9</div>";
+    sel.setBaseAndExtent(aElement.firstChild.childNodes.item(1).childNodes.item(1).firstChild, 1, aElement.firstChild.childNodes.item(3).firstChild, 0);
+    yield flushNotifications();
+    description = aDescription + "deleting child nodes (between different level descendants #3) with pressing Delete key";
+    notifications = [];
+    synthesizeKey("KEY_Delete", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    is(aElement.innerHTML, "<div>1<div>2<div>36<div>7</div>8</div></div>9</div>", description + " should remove '<div>36<div>7</div>8</div>'");
+    // It causes removing '<div>3</div>4</div>5<div>6<div>7</div>8</div>' and inserting '<div>36<div>7</div>8</div>'.
+    checkTextChangeNotification(notifications[0], description, { offset: getNativeText("\n1\n2").length + offsetAtStart, removedLength: getNativeText("\n345\n6\n78").length, addedLength: getNativeText("\n36\n78").length });
+    checkSelectionChangeNotification(notifications[1], description, { offset: getNativeText("\n1\n2\n3").length + offsetAtStart, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    dumpUnexpectedNotifications(description, 3);
+
+    // "<div>1<div>2<div>3[</div>4</div>5<div>6<div>7</div>8</div>]9</div>" and removing selection
+    aElement.innerHTML = "<div>1<div>2<div>3</div>4</div>5<div>6<div>7</div>8</div>9</div>";
+    sel.setBaseAndExtent(aElement.firstChild.childNodes.item(1).childNodes.item(1).firstChild, 1, aElement.firstChild.childNodes.item(4), 0);
+    yield flushNotifications();
+    description = aDescription + "deleting child nodes (between different level descendants #4) with pressing Delete key";
+    notifications = [];
+    synthesizeKey("KEY_Delete", {}, win, callback);
+    yield waitUntilNotificationsReceived();
+    ensureToRemovePrecedingPositionChangeNotification();
+    is(aElement.innerHTML, "<div>1<div>2<div>39</div></div></div>", description + " should remove '</div>4</div>5<div>6<div>7</div>8</div>'");
+    // It causes removing '</div>4</div>5<div>6<div>7</div>8</div>' and inserting '<div>36<div>7</div>8</div>'.
+    checkTextChangeNotification(notifications[0], description, { offset: getNativeText("\n1\n2\n3").length + offsetAtStart, removedLength: getNativeText("45\n6\n789").length, addedLength: getNativeText("9").length });
+    checkSelectionChangeNotification(notifications[1], description, { offset: getNativeText("\n1\n2\n3").length + offsetAtStart, text: "" });
+    checkPositionChangeNotification(notifications[2], description);
+    dumpUnexpectedNotifications(description, 3);
+  }
+
+  yield* testWithPlaintextEditor("runIMEContentObserverTest with input element: ", input, false);
+  yield* testWithPlaintextEditor("runIMEContentObserverTest with textarea element: ", textarea, true);
+  yield* testWithHTMLEditor("runIMEContentObserverTest with contenteditable (defaultParagraphSeparator is br): ", contenteditable, "br");
+  yield* testWithHTMLEditor("runIMEContentObserverTest with contenteditable (defaultParagraphSeparator is p): ", contenteditable, "p");
+  yield* testWithHTMLEditor("runIMEContentObserverTest with contenteditable (defaultParagraphSeparator is div): ", contenteditable, "div");
+  // XXX Due to the difference of HTML editor behavior between designMode and contenteditable,
+  //     testWithHTMLEditor() gets some unexpected behavior.  However, IMEContentObserveri is
+  //     not depend on editor's detail.  So, we should investigate this issue later.  It's not
+  //     so important for now.
+  // yield* testWithHTMLEditor("runIMEContentObserverTest in designMode (defaultParagraphSeparator is br): ", iframe2.contentDocument.body, "br");
+  // yield* testWithHTMLEditor("runIMEContentObserverTest in designMode (defaultParagraphSeparator is p): ", iframe2.contentDocument.body, "p");
+  // yield* testWithHTMLEditor("runIMEContentObserverTest in designMode (defaultParagraphSeparator is div): ", iframe2.contentDocument.body, "div");
+}
+
+var gTestContinuation = null;
+
+function continueTest()
+{
+  if (!gTestContinuation) {
+    gTestContinuation = testBody();
+  }
+  var ret = gTestContinuation.next();
+  if (ret.done) {
+    finish();
+  }
+}
+
+function* testBody()
+{
   runUndoRedoTest();
   runCompositionCommitAsIsTest();
   runCompositionCommitTest();
@@ -6961,26 +8362,35 @@ function runTest()
   runCharAtPointAtOutsideTest();
   runSetSelectionEventTest();
   runQueryTextContentEventTest();
+  runQuerySelectionEventTest();
   runQueryIMESelectionTest();
   runQueryContentEventRelativeToInsertionPoint();
+  yield* runIMEContentObserverTest();
   runCSSTransformTest();
   runBug722639Test();
+  runBug1375825Test();
   runForceCommitTest();
   runNestedSettingValue();
   runBug811755Test();
   runIsComposingTest();
   runRedundantChangeTest();
   runNotRedundantChangeTest();
+  runNativeLineBreakerTest();
   runControlCharTest();
-  runEditorReframeTests(function () {
-    runAsyncForceCommitTest(function () {
-      runRemoveContentTest(function () {
-        runFrameTest();
-        runPanelTest();
-        runMaxLengthTest();
-      });
-    });
-  });
+  yield* runEditorReframeTests();
+  yield runAsyncForceCommitTest();
+  yield runRemoveContentTest();
+  runFrameTest();
+  yield runPanelTest();
+  runMaxLengthTest();
+}
+
+function runTest()
+{
+  contenteditable = document.getElementById("iframe4").contentDocument.getElementById("contenteditable");
+  windowOfContenteditable = document.getElementById("iframe4").contentWindow;
+  textareaInFrame = iframe.contentDocument.getElementById("textarea");
+  continueTest();
 }
 
 ]]>

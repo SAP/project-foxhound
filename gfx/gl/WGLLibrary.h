@@ -1,127 +1,108 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GLContextTypes.h"
+#include "mozilla/UniquePtr.h"
 #include <windows.h>
 
 struct PRLibrary;
 
 namespace mozilla {
 namespace gl {
-
-class WGLLibrary
+/*
+struct ScopedDC
 {
-public:
-    WGLLibrary()
-      : mInitialized(false)
-      , mOGLLibrary(nullptr)
-      , mHasRobustness(false)
-      , mHasDXInterop(false)
-      , mHasDXInterop2(false)
-      , mWindow (0)
-      , mWindowDC(0)
-      , mWindowGLContext(0)
-      , mWindowPixelFormat(0)
-    {}
+    const HDC mDC;
 
-    typedef HGLRC (GLAPIENTRY * PFNWGLCREATECONTEXTPROC) (HDC);
-    PFNWGLCREATECONTEXTPROC fCreateContext;
-    typedef BOOL (GLAPIENTRY * PFNWGLDELETECONTEXTPROC) (HGLRC);
-    PFNWGLDELETECONTEXTPROC fDeleteContext;
-    typedef BOOL (GLAPIENTRY * PFNWGLMAKECURRENTPROC) (HDC, HGLRC);
-    PFNWGLMAKECURRENTPROC fMakeCurrent;
-    typedef PROC (GLAPIENTRY * PFNWGLGETPROCADDRESSPROC) (LPCSTR);
-    PFNWGLGETPROCADDRESSPROC fGetProcAddress;
-    typedef HGLRC (GLAPIENTRY * PFNWGLGETCURRENTCONTEXT) (void);
-    PFNWGLGETCURRENTCONTEXT fGetCurrentContext;
-    typedef HDC (GLAPIENTRY * PFNWGLGETCURRENTDC) (void);
-    PFNWGLGETCURRENTDC fGetCurrentDC;
-    typedef BOOL (GLAPIENTRY * PFNWGLSHARELISTS) (HGLRC oldContext, HGLRC newContext);
-    PFNWGLSHARELISTS fShareLists;
+    ScopedDC() = delete;
+    virtual ~ScopedDC() = 0;
+};
 
-    typedef HANDLE (WINAPI * PFNWGLCREATEPBUFFERPROC) (HDC hDC, int iPixelFormat, int iWidth, int iHeight, const int* piAttribList);
-    PFNWGLCREATEPBUFFERPROC fCreatePbuffer;
-    typedef BOOL (WINAPI * PFNWGLDESTROYPBUFFERPROC) (HANDLE hPbuffer);
-    PFNWGLDESTROYPBUFFERPROC fDestroyPbuffer;
-    typedef HDC (WINAPI * PFNWGLGETPBUFFERDCPROC) (HANDLE hPbuffer);
-    PFNWGLGETPBUFFERDCPROC fGetPbufferDC;
+struct WindowDC final : public ScopedDC
+{
+    const HWND mWindow;
 
-    typedef BOOL (WINAPI * PFNWGLBINDTEXIMAGEPROC) (HANDLE hPbuffer, int iBuffer);
-    PFNWGLBINDTEXIMAGEPROC fBindTexImage;
-    typedef BOOL (WINAPI * PFNWGLRELEASETEXIMAGEPROC) (HANDLE hPbuffer, int iBuffer);
-    PFNWGLRELEASETEXIMAGEPROC fReleaseTexImage;
+    WindowDC() = delete;
+    ~WindowDC();
+};
 
-    typedef BOOL (WINAPI * PFNWGLCHOOSEPIXELFORMATPROC) (HDC hdc, const int* piAttribIList, const FLOAT* pfAttribFList, UINT nMaxFormats, int* piFormats, UINT* nNumFormats);
-    PFNWGLCHOOSEPIXELFORMATPROC fChoosePixelFormat;
-    typedef BOOL (WINAPI * PFNWGLGETPIXELFORMATATTRIBIVPROC) (HDC hdc, int iPixelFormat, int iLayerPlane, UINT nAttributes, int* piAttributes, int* piValues);
-    PFNWGLGETPIXELFORMATATTRIBIVPROC fGetPixelFormatAttribiv;
+struct PBufferDC final : public ScopedDC
+{
+    const HWND mWindow;
 
-    typedef const char* (WINAPI * PFNWGLGETEXTENSIONSSTRINGPROC) (HDC hdc);
-    PFNWGLGETEXTENSIONSSTRINGPROC fGetExtensionsString;
+    PBufferDC() = delete;
+    ~PBufferDC();
+};
+*/
+class WGLLibrary {
+ public:
+  ~WGLLibrary() { Reset(); }
 
-    typedef HGLRC (WINAPI * PFNWGLCREATECONTEXTATTRIBSPROC) (HDC hdc, HGLRC hShareContext, const int* attribList);
-    PFNWGLCREATECONTEXTATTRIBSPROC fCreateContextAttribs;
+ private:
+  void Reset();
 
+ public:
+  struct {
+    HGLRC(GLAPIENTRY* fCreateContext)(HDC);
+    BOOL(GLAPIENTRY* fDeleteContext)(HGLRC);
+    BOOL(GLAPIENTRY* fMakeCurrent)(HDC, HGLRC);
+    PROC(GLAPIENTRY* fGetProcAddress)(LPCSTR);
+    HGLRC(GLAPIENTRY* fGetCurrentContext)(void);
+    HDC(GLAPIENTRY* fGetCurrentDC)(void);
+    // BOOL   (GLAPIENTRY * fShareLists) (HGLRC oldContext, HGLRC newContext);
+    HANDLE(GLAPIENTRY* fCreatePbuffer)
+    (HDC hDC, int iPixelFormat, int iWidth, int iHeight,
+     const int* piAttribList);
+    BOOL(GLAPIENTRY* fDestroyPbuffer)(HANDLE hPbuffer);
+    HDC(GLAPIENTRY* fGetPbufferDC)(HANDLE hPbuffer);
+    int(GLAPIENTRY* fReleasePbufferDC)(HANDLE hPbuffer, HDC dc);
+    // BOOL (GLAPIENTRY * fBindTexImage) (HANDLE hPbuffer, int iBuffer);
+    // BOOL (GLAPIENTRY * fReleaseTexImage) (HANDLE hPbuffer, int iBuffer);
+    BOOL(GLAPIENTRY* fChoosePixelFormat)
+    (HDC hdc, const int* piAttribIList, const FLOAT* pfAttribFList,
+     UINT nMaxFormats, int* piFormats, UINT* nNumFormats);
+    // BOOL (GLAPIENTRY * fGetPixelFormatAttribiv) (HDC hdc,
+    //                                             int iPixelFormat,
+    //                                             int iLayerPlane,
+    //                                             UINT nAttributes,
+    //                                             int* piAttributes,
+    //                                             int* piValues);
+    const char*(GLAPIENTRY* fGetExtensionsStringARB)(HDC hdc);
+    HGLRC(GLAPIENTRY* fCreateContextAttribsARB)
+    (HDC hdc, HGLRC hShareContext, const int* attribList);
     // WGL_NV_DX_interop:
-    // BOOL wglDXSetResourceShareHandleNV(void* dxObject, HANDLE shareHandle);
-    typedef BOOL (WINAPI * PFNWGLDXSETRESOURCESHAREHANDLEPROC) (void* dxObject, HANDLE shareHandle);
-    PFNWGLDXSETRESOURCESHAREHANDLEPROC fDXSetResourceShareHandle;
+    BOOL(GLAPIENTRY* fDXSetResourceShareHandleNV)
+    (void* dxObject, HANDLE shareHandle);
+    HANDLE(GLAPIENTRY* fDXOpenDeviceNV)(void* dxDevice);
+    BOOL(GLAPIENTRY* fDXCloseDeviceNV)(HANDLE hDevice);
+    HANDLE(GLAPIENTRY* fDXRegisterObjectNV)
+    (HANDLE hDevice, void* dxObject, GLuint name, GLenum type, GLenum access);
+    BOOL(GLAPIENTRY* fDXUnregisterObjectNV)(HANDLE hDevice, HANDLE hObject);
+    BOOL(GLAPIENTRY* fDXObjectAccessNV)(HANDLE hObject, GLenum access);
+    BOOL(GLAPIENTRY* fDXLockObjectsNV)
+    (HANDLE hDevice, GLint count, HANDLE* hObjects);
+    BOOL(GLAPIENTRY* fDXUnlockObjectsNV)
+    (HANDLE hDevice, GLint count, HANDLE* hObjects);
+  } mSymbols = {};
 
-    // HANDLE wglDXOpenDeviceNV(void* dxDevice);
-    typedef HANDLE (WINAPI * PFNWGLDXOPENDEVICEPROC) (void* dxDevice);
-    PFNWGLDXOPENDEVICEPROC fDXOpenDevice;
+  bool EnsureInitialized();
+  // UniquePtr<WindowDC> CreateDummyWindow();
+  HGLRC CreateContextWithFallback(HDC dc, bool tryRobustBuffers) const;
 
-    // BOOL wglDXCloseDeviceNV(HANDLE hDevice);
-    typedef BOOL (WINAPI * PFNWGLDXCLOSEDEVICEPROC) (HANDLE hDevice);
-    PFNWGLDXCLOSEDEVICEPROC fDXCloseDevice;
+  bool HasDXInterop2() const { return bool(mSymbols.fDXOpenDeviceNV); }
+  bool IsInitialized() const { return mInitialized; }
+  auto GetOGLLibrary() const { return mOGLLibrary; }
+  auto RootDc() const { return mRootDc; }
 
-    // HANDLE wglDXRegisterObjectNV(HANDLE hDevice, void* dxObject, GLuint name, GLenum type, GLenum access);
-    typedef HANDLE (WINAPI * PFNWGLDXREGISTEROBJECTPROC) (HANDLE hDevice, void* dxObject, GLuint name, GLenum type, GLenum access);
-    PFNWGLDXREGISTEROBJECTPROC fDXRegisterObject;
-
-    // BOOL wglDXUnregisterObjectNV(HANDLE hDevice, HANDLE hObject);
-    typedef BOOL (WINAPI * PFNWGLDXUNREGISTEROBJECT) (HANDLE hDevice, HANDLE hObject);
-    PFNWGLDXUNREGISTEROBJECT fDXUnregisterObject;
-
-    // BOOL wglDXObjectAccessNV(HANDLE hObject, GLenum access);
-    typedef BOOL (WINAPI * PFNWGLDXOBJECTACCESSPROC) (HANDLE hObject, GLenum access);
-    PFNWGLDXOBJECTACCESSPROC fDXObjectAccess;
-
-    // BOOL wglDXLockObjectsNV(HANDLE hDevice, GLint count, HANDLE* hObjects);
-    typedef BOOL (WINAPI * PFNWGLDXLOCKOBJECTSPROC) (HANDLE hDevice, GLint count, HANDLE* hObjects);
-    PFNWGLDXLOCKOBJECTSPROC fDXLockObjects;
-
-    // BOOL wglDXUnlockObjectsNV(HANDLE hDevice, GLint count, HANDLE* hObjects);
-    typedef BOOL (WINAPI * PFNWGLDXUNLOCKOBJECTSPROC) (HANDLE hDevice, GLint count, HANDLE* hObjects);
-    PFNWGLDXUNLOCKOBJECTSPROC fDXUnlockObjects;
-
-    bool EnsureInitialized();
-    HWND CreateDummyWindow(HDC* aWindowDC = nullptr);
-
-    bool HasRobustness() const { return mHasRobustness; }
-    bool HasDXInterop() const { return mHasDXInterop; }
-    bool HasDXInterop2() const { return mHasDXInterop2; }
-    bool IsInitialized() const { return mInitialized; }
-    HWND GetWindow() const { return mWindow; }
-    HDC GetWindowDC() const {return mWindowDC; }
-    HGLRC GetWindowGLContext() const {return mWindowGLContext; }
-    int GetWindowPixelFormat() const { return mWindowPixelFormat; }
-    PRLibrary* GetOGLLibrary() { return mOGLLibrary; }
-
-private:
-    bool mInitialized;
-    PRLibrary* mOGLLibrary;
-    bool mHasRobustness;
-    bool mHasDXInterop;
-    bool mHasDXInterop2;
-
-    HWND mWindow;
-    HDC mWindowDC;
-    HGLRC mWindowGLContext;
-    int mWindowPixelFormat;
-
+ private:
+  bool mInitialized = false;
+  PRLibrary* mOGLLibrary;
+  bool mHasRobustness;
+  HWND mDummyWindow;
+  HDC mRootDc;
+  HGLRC mDummyGlrc;
 };
 
 // a global WGLLibrary instance

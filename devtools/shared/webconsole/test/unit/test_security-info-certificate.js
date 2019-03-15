@@ -6,15 +6,15 @@
 // Tests that NetworkHelper.parseCertificateInfo parses certificate information
 // correctly.
 
-const { require } = Components.utils.import("resource://devtools/shared/Loader.jsm", {});
+const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
 
 Object.defineProperty(this, "NetworkHelper", {
-  get: function () {
+  get: function() {
     return require("devtools/shared/webconsole/network-helper");
   },
   configurable: true,
   writeable: false,
-  enumerable: true
+  enumerable: true,
 });
 
 const DUMMY_CERT = {
@@ -29,13 +29,13 @@ const DUMMY_CERT = {
   validity: {
     notBeforeLocalDay: "yesterday",
     notAfterLocalDay: "tomorrow",
-  }
+  },
 };
 
 function run_test() {
-  do_print("Testing NetworkHelper.parseCertificateInfo.");
+  info("Testing NetworkHelper.parseCertificateInfo.");
 
-  let result = NetworkHelper.parseCertificateInfo(DUMMY_CERT);
+  const result = NetworkHelper.parseCertificateInfo(DUMMY_CERT);
 
   // Subject
   equal(result.subject.commonName, DUMMY_CERT.commonName,

@@ -28,26 +28,25 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = [
+var EXPORTED_SYMBOLS = [
   "JSONFile",
 ];
 
 // Globals
 
-const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.defineModuleGetter(this, "AsyncShutdown",
+                               "resource://gre/modules/AsyncShutdown.jsm");
+ChromeUtils.defineModuleGetter(this, "DeferredTask",
+                               "resource://gre/modules/DeferredTask.jsm");
+ChromeUtils.defineModuleGetter(this, "FileUtils",
+                               "resource://gre/modules/FileUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "OS",
+                               "resource://gre/modules/osfile.jsm");
+ChromeUtils.defineModuleGetter(this, "NetUtil",
+                               "resource://gre/modules/NetUtil.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "AsyncShutdown",
-                                  "resource://gre/modules/AsyncShutdown.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "DeferredTask",
-                                  "resource://gre/modules/DeferredTask.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "FileUtils",
-                                  "resource://gre/modules/FileUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "OS",
-                                  "resource://gre/modules/osfile.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "gTextDecoder", function() {
   return new TextDecoder();
@@ -90,6 +89,8 @@ const kSaveDelayMs = 1500;
  *                      automatically finalize the file when triggered. Defaults
  *                      to `profileBeforeChange`; exposed as an option for
  *                      testing.
+ *        - compression: A compression algorithm to use when reading and
+ *                       writing the data.
  */
 function JSONFile(config) {
   this.path = config.path;
@@ -105,6 +106,11 @@ function JSONFile(config) {
     config.saveDelayMs = kSaveDelayMs;
   }
   this._saver = new DeferredTask(() => this._save(), config.saveDelayMs);
+
+  this._options = {};
+  if (config.compression) {
+    this._options.compression = config.compression;
+  }
 
   this._finalizeAt = config.finalizeAt || AsyncShutdown.profileBeforeChange;
   this._finalizeInternalBound = this._finalizeInternal.bind(this);
@@ -172,11 +178,15 @@ JSONFile.prototype = {
    * @rejects JavaScript exception when dataPostProcessor fails. It never fails
    *          if there is no dataPostProcessor.
    */
-  load: Task.async(function* () {
+  async load() {
+    if (this.dataReady) {
+      return;
+    }
+
     let data = {};
 
     try {
-      let bytes = yield OS.File.read(this.path);
+      let bytes = await OS.File.read(this.path, this._options);
 
       // If synchronous loading happened in the meantime, exit now.
       if (this.dataReady) {
@@ -194,10 +204,10 @@ JSONFile.prototype = {
 
         // Move the original file to a backup location, ignoring errors.
         try {
-          let openInfo = yield OS.File.openUnique(this.path + ".corrupt",
+          let openInfo = await OS.File.openUnique(this.path + ".corrupt",
                                                   { humanReadable: true });
-          yield openInfo.file.close();
-          yield OS.File.move(this.path, openInfo.path);
+          await openInfo.file.close();
+          await OS.File.move(this.path, openInfo.path);
         } catch (e2) {
           Cu.reportError(e2);
         }
@@ -213,7 +223,7 @@ JSONFile.prototype = {
     }
 
     this._processLoadedData(data);
-  }),
+  },
 
   /**
    * Loads persistent data from the file to memory, synchronously. An exception
@@ -232,8 +242,8 @@ JSONFile.prototype = {
                                             FileUtils.MODE_RDONLY,
                                             FileUtils.PERMS_FILE, 0);
       try {
-        let json = Cc["@mozilla.org/dom/json;1"].createInstance(Ci.nsIJSON);
-        data = json.decodeFromStream(inputStream, inputStream.available());
+        let bytes = NetUtil.readInputStream(inputStream, inputStream.available());
+        data = JSON.parse(gTextDecoder.decode(bytes));
       } finally {
         inputStream.close();
       }
@@ -279,15 +289,29 @@ JSONFile.prototype = {
    * @resolves When the operation finished successfully.
    * @rejects JavaScript exception.
    */
-  _save: Task.async(function* () {
-    // Create or overwrite the file.
-    let bytes = gTextEncoder.encode(JSON.stringify(this._data));
-    if (this._beforeSave) {
-      yield Promise.resolve(this._beforeSave());
+  async _save() {
+    let json;
+    try {
+      json = JSON.stringify(this._data);
+    } catch (e) {
+      // If serialization fails, try fallback safe JSON converter.
+      if (typeof this._data.toJSONSafe == "function") {
+        json = JSON.stringify(this._data.toJSONSafe());
+      } else {
+        throw e;
+      }
     }
-    yield OS.File.writeAtomic(this.path, bytes,
-                              { tmpPath: this.path + ".tmp" });
-  }),
+
+    // Create or overwrite the file.
+    let bytes = gTextEncoder.encode(json);
+    if (this._beforeSave) {
+      await Promise.resolve(this._beforeSave());
+    }
+    await OS.File.writeAtomic(this.path, bytes,
+                              Object.assign(
+                                { tmpPath: this.path + ".tmp" },
+                                this._options));
+  },
 
   /**
    * Synchronously work on the data just loaded into memory.
@@ -313,11 +337,11 @@ JSONFile.prototype = {
       // possible if `finalize` is called concurrently with shutdown.
       return this._finalizePromise;
     }
-    this._finalizePromise = Task.spawn(function* () {
-      yield this._saver.finalize();
+    this._finalizePromise = (async () => {
+      await this._saver.finalize();
       this._data = null;
       this.dataReady = false;
-    }.bind(this));
+    })();
     return this._finalizePromise;
   },
 
@@ -326,12 +350,12 @@ JSONFile.prototype = {
    * `saveSoon`. This is called automatically on shutdown, but can also be
    * called explicitly when the file is no longer needed.
    */
-  finalize: Task.async(function* () {
+  async finalize() {
     if (this._finalizePromise) {
       throw new Error(`The file ${this.path} has already been finalized`);
     }
     // Wait for finalization before removing the shutdown blocker.
-    yield this._finalizeInternal();
+    await this._finalizeInternal();
     this._finalizeAt.removeBlocker(this._finalizeInternalBound);
-  }),
+  },
 };

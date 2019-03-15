@@ -1,11 +1,9 @@
-// |jit-test| exitstatus: 6;
+// |jit-test| exitstatus: 6; skip-if: !wasmDebuggingIsSupported()
 
 // Don't include wasm.js in timeout tests: when wasm isn't supported, it will
 // quit(0) which will cause the test to fail.
-if (!wasmIsSupported())
-    quit(6);
 
-newGlobal().Debugger().addDebuggee(this);
+newGlobal({newCompartment: true}).Debugger().addDebuggee(this);
 
 var t = new WebAssembly.Table({
     initial: 1,
@@ -28,5 +26,6 @@ outer = new WebAssembly.Instance(new WebAssembly.Module(wasmTextToBinary(`
         call_indirect $v2v)
     )`)), { imports: { t } });
 
+setJitCompilerOption('simulator.always-interrupt', 1);
 timeout(1);
 outer.exports.run();

@@ -9,39 +9,38 @@
 
 #include "mozilla/gfx/2D.h"
 #include "mozilla/RefPtr.h"
-#include "nsSMILAnimationFunction.h"
+#include "mozilla/SMILAnimationFunction.h"
+#include "SVGMotionSMILType.h"
 #include "nsTArray.h"
-#include "SVGMotionSMILType.h"  // for RotateType
 
 class nsAttrValue;
-class nsIAtom;
+class nsAtom;
 class nsIContent;
-class nsISMILAttr;
-class nsSMILValue;
 
 namespace mozilla {
 
+class SMILAttr;
+class SMILValue;
+
 namespace dom {
 class SVGMPathElement;
-} // namespace dom
+}  // namespace dom
 
 //----------------------------------------------------------------------
 // SVGMotionSMILAnimationFunction
 //
-// Subclass of nsSMILAnimationFunction to support a few extra features offered
+// Subclass of SMILAnimationFunction to support a few extra features offered
 // by the <animateMotion> element.
 //
-class SVGMotionSMILAnimationFunction final : public nsSMILAnimationFunction
-{
+class SVGMotionSMILAnimationFunction final : public SMILAnimationFunction {
   typedef mozilla::gfx::Path Path;
 
-public:
+ public:
   SVGMotionSMILAnimationFunction();
-  virtual bool SetAttr(nsIAtom* aAttribute,
-                       const nsAString& aValue,
+  virtual bool SetAttr(nsAtom* aAttribute, const nsAString& aValue,
                        nsAttrValue& aResult,
                        nsresult* aParseResult = nullptr) override;
-  virtual bool UnsetAttr(nsIAtom* aAttribute) override;
+  virtual bool UnsetAttr(nsAtom* aAttribute) override;
 
   // Method to allow our owner-element to signal us when our <mpath>
   // has changed or been added/removed.  When that happens, we need to
@@ -50,56 +49,55 @@ public:
   // <mpath> trumps all the other sources of path data)
   void MpathChanged() { mIsPathStale = mHasChanged = true; }
 
-protected:
+ protected:
   enum PathSourceType {
     // NOTE: Ordering matters here. Higher-priority path-descriptors should
     // have higher enumerated values
-    ePathSourceType_None,      // uninitialized or not applicable
-    ePathSourceType_ByAttr,    // by or from-by animation
-    ePathSourceType_ToAttr,    // to or from-to animation
+    ePathSourceType_None,    // uninitialized or not applicable
+    ePathSourceType_ByAttr,  // by or from-by animation
+    ePathSourceType_ToAttr,  // to or from-to animation
     ePathSourceType_ValuesAttr,
     ePathSourceType_PathAttr,
     ePathSourceType_Mpath
   };
 
-  virtual nsSMILCalcMode GetCalcMode() const override;
-  virtual nsresult GetValues(const nsISMILAttr& aSMILAttr,
-                             nsSMILValueArray& aResult) override;
+  virtual SMILCalcMode GetCalcMode() const override;
+  virtual nsresult GetValues(const SMILAttr& aSMILAttr,
+                             SMILValueArray& aResult) override;
   virtual void CheckValueListDependentAttrs(uint32_t aNumValues) override;
 
   virtual bool IsToAnimation() const override;
 
-  void     CheckKeyPoints();
+  void CheckKeyPoints();
   nsresult SetKeyPoints(const nsAString& aKeyPoints, nsAttrValue& aResult);
-  void     UnsetKeyPoints();
+  void UnsetKeyPoints();
   nsresult SetRotate(const nsAString& aRotate, nsAttrValue& aResult);
-  void     UnsetRotate();
+  void UnsetRotate();
 
   // Helpers for GetValues
-  void     MarkStaleIfAttributeAffectsPath(nsIAtom* aAttribute);
-  void     RebuildPathAndVertices(const nsIContent* aContextElem);
-  void     RebuildPathAndVerticesFromMpathElem(dom::SVGMPathElement* aMpathElem);
-  void     RebuildPathAndVerticesFromPathAttr();
-  void     RebuildPathAndVerticesFromBasicAttrs(const nsIContent* aContextElem);
-  bool     GenerateValuesForPathAndPoints(Path* aPath,
-                                          bool aIsKeyPoints,
-                                          FallibleTArray<double>& aPointDistances,
-                                          nsSMILValueArray& aResult);
+  void MarkStaleIfAttributeAffectsPath(nsAtom* aAttribute);
+  void RebuildPathAndVertices(const nsIContent* aContextElem);
+  void RebuildPathAndVerticesFromMpathElem(dom::SVGMPathElement* aMpathElem);
+  void RebuildPathAndVerticesFromPathAttr();
+  void RebuildPathAndVerticesFromBasicAttrs(const nsIContent* aContextElem);
+  bool GenerateValuesForPathAndPoints(Path* aPath, bool aIsKeyPoints,
+                                      FallibleTArray<double>& aPointDistances,
+                                      SMILValueArray& aResult);
 
   // Members
   // -------
-  FallibleTArray<double>     mKeyPoints; // parsed from "keyPoints" attribute.
+  FallibleTArray<double> mKeyPoints;  // parsed from "keyPoints" attribute.
 
-  RotateType                 mRotateType;  // auto, auto-reverse, or explicit.
-  float                      mRotateAngle; // the angle value, if explicit.
+  RotateType mRotateType;  // auto, auto-reverse, or explicit.
+  float mRotateAngle;      // the angle value, if explicit.
 
-  PathSourceType             mPathSourceType; // source of our Path.
-  RefPtr<Path>               mPath;           // representation of motion path.
-  FallibleTArray<double>     mPathVertices; // distances of vertices along path.
+  PathSourceType mPathSourceType;        // source of our Path.
+  RefPtr<Path> mPath;                    // representation of motion path.
+  FallibleTArray<double> mPathVertices;  // distances of vertices along path.
 
-  bool                       mIsPathStale;
+  bool mIsPathStale;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // MOZILLA_SVGMOTIONSMILANIMATIONFUNCTION_H_
+#endif  // MOZILLA_SVGMOTIONSMILANIMATIONFUNCTION_H_

@@ -5,29 +5,26 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "BodyExtractor.h"
-#include "mozilla/dom/EncodingUtils.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FormData.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/dom/URLSearchParams.h"
 #include "mozilla/dom/XMLHttpRequest.h"
+#include "mozilla/UniquePtr.h"
 #include "nsContentUtils.h"
-#include "nsIDOMDocument.h"
-#include "nsIDOMSerializer.h"
+#include "nsDOMSerializer.h"
+#include "nsIGlobalObject.h"
 #include "nsIInputStream.h"
 #include "nsIOutputStream.h"
 #include "nsIStorageStream.h"
 #include "nsStringStream.h"
-#include "nsIUnicodeEncoder.h"
 
 namespace mozilla {
 namespace dom {
 
-static nsresult
-GetBufferDataAsStream(const uint8_t* aData, uint32_t aDataLength,
-                      nsIInputStream** aResult, uint64_t* aContentLength,
-                      nsACString& aContentType, nsACString& aCharset)
-{
+static nsresult GetBufferDataAsStream(
+    const uint8_t* aData, uint32_t aDataLength, nsIInputStream** aResult,
+    uint64_t* aContentLength, nsACString& aContentType, nsACString& aCharset) {
   aContentType.SetIsVoid(true);
   aCharset.Truncate();
 
@@ -35,8 +32,8 @@ GetBufferDataAsStream(const uint8_t* aData, uint32_t aDataLength,
   const char* data = reinterpret_cast<const char*>(aData);
 
   nsCOMPtr<nsIInputStream> stream;
-  nsresult rv = NS_NewByteInputStream(getter_AddRefs(stream), data, aDataLength,
-                                      NS_ASSIGNMENT_COPY);
+  nsresult rv = NS_NewByteInputStream(
+      getter_AddRefs(stream), MakeSpan(data, aDataLength), NS_ASSIGNMENT_COPY);
   NS_ENSURE_SUCCESS(rv, rv);
 
   stream.forget(aResult);
@@ -44,38 +41,31 @@ GetBufferDataAsStream(const uint8_t* aData, uint32_t aDataLength,
   return NS_OK;
 }
 
-template<> nsresult
-BodyExtractor<const ArrayBuffer>::GetAsStream(nsIInputStream** aResult,
-                                              uint64_t* aContentLength,
-                                              nsACString& aContentTypeWithCharset,
-                                              nsACString& aCharset) const
-{
+template <>
+nsresult BodyExtractor<const ArrayBuffer>::GetAsStream(
+    nsIInputStream** aResult, uint64_t* aContentLength,
+    nsACString& aContentTypeWithCharset, nsACString& aCharset) const {
   mBody->ComputeLengthAndData();
-  return GetBufferDataAsStream(mBody->Data(), mBody->Length(),
-                               aResult, aContentLength, aContentTypeWithCharset,
+  return GetBufferDataAsStream(mBody->Data(), mBody->Length(), aResult,
+                               aContentLength, aContentTypeWithCharset,
                                aCharset);
 }
 
-template<> nsresult
-BodyExtractor<const ArrayBufferView>::GetAsStream(nsIInputStream** aResult,
-                                                  uint64_t* aContentLength,
-                                                  nsACString& aContentTypeWithCharset,
-                                                  nsACString& aCharset) const
-{
+template <>
+nsresult BodyExtractor<const ArrayBufferView>::GetAsStream(
+    nsIInputStream** aResult, uint64_t* aContentLength,
+    nsACString& aContentTypeWithCharset, nsACString& aCharset) const {
   mBody->ComputeLengthAndData();
-  return GetBufferDataAsStream(mBody->Data(), mBody->Length(),
-                               aResult, aContentLength, aContentTypeWithCharset,
+  return GetBufferDataAsStream(mBody->Data(), mBody->Length(), aResult,
+                               aContentLength, aContentTypeWithCharset,
                                aCharset);
 }
 
-template<> nsresult
-BodyExtractor<nsIDocument>::GetAsStream(nsIInputStream** aResult,
-                                        uint64_t* aContentLength,
-                                        nsACString& aContentTypeWithCharset,
-                                        nsACString& aCharset) const
-{
-  nsCOMPtr<nsIDOMDocument> domdoc(do_QueryInterface(mBody));
-  NS_ENSURE_STATE(domdoc);
+template <>
+nsresult BodyExtractor<Document>::GetAsStream(
+    nsIInputStream** aResult, uint64_t* aContentLength,
+    nsACString& aContentTypeWithCharset, nsACString& aCharset) const {
+  NS_ENSURE_STATE(mBody);
   aCharset.AssignLiteral("UTF-8");
 
   nsresult rv;
@@ -108,13 +98,15 @@ BodyExtractor<nsIDocument>::GetAsStream(nsIInputStream** aResult,
   } else {
     aContentTypeWithCharset.AssignLiteral("application/xml;charset=UTF-8");
 
-    nsCOMPtr<nsIDOMSerializer> serializer =
-      do_CreateInstance(NS_XMLSERIALIZER_CONTRACTID, &rv);
-    NS_ENSURE_SUCCESS(rv, rv);
+    auto serializer = MakeUnique<nsDOMSerializer>();
 
     // Make sure to use the encoding we'll send
-    rv = serializer->SerializeToStream(domdoc, output, aCharset);
-    NS_ENSURE_SUCCESS(rv, rv);
+    ErrorResult res;
+    serializer->SerializeToStream(*mBody, output, NS_LITERAL_STRING("UTF-8"),
+                                  res);
+    if (NS_WARN_IF(res.Failed())) {
+      return res.StealNSResult();
+    }
   }
 
   output->Close();
@@ -129,58 +121,31 @@ BodyExtractor<nsIDocument>::GetAsStream(nsIInputStream** aResult,
   return NS_OK;
 }
 
-template<> nsresult
-BodyExtractor<const nsAString>::GetAsStream(nsIInputStream** aResult,
-                                            uint64_t* aContentLength,
-                                            nsACString& aContentTypeWithCharset,
-                                            nsACString& aCharset) const
-{
-  nsCOMPtr<nsIUnicodeEncoder> encoder =
-    EncodingUtils::EncoderForEncoding("UTF-8");
-  if (!encoder) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-
-  int32_t destBufferLen;
-  nsresult rv = encoder->GetMaxLength(mBody->BeginReading(), mBody->Length(),
-                                      &destBufferLen);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
+template <>
+nsresult BodyExtractor<const nsAString>::GetAsStream(
+    nsIInputStream** aResult, uint64_t* aContentLength,
+    nsACString& aContentTypeWithCharset, nsACString& aCharset) const {
   nsCString encoded;
-  if (!encoded.SetCapacity(destBufferLen, fallible)) {
+  if (!CopyUTF16toUTF8(*mBody, encoded, fallible)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
-  char* destBuffer = encoded.BeginWriting();
-  int32_t srcLen = (int32_t) mBody->Length();
-  int32_t outLen = destBufferLen;
-  rv = encoder->Convert(mBody->BeginReading(), &srcLen, destBuffer, &outLen);
+  uint32_t encodedLength = encoded.Length();
+  nsresult rv = NS_NewCStringInputStream(aResult, std::move(encoded));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
-  MOZ_ASSERT(outLen <= destBufferLen);
-  encoded.SetLength(outLen);
-
-  rv = NS_NewCStringInputStream(aResult, encoded);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  *aContentLength = outLen;
+  *aContentLength = encodedLength;
   aContentTypeWithCharset.AssignLiteral("text/plain;charset=UTF-8");
   aCharset.AssignLiteral("UTF-8");
   return NS_OK;
 }
 
-template<> nsresult
-BodyExtractor<nsIInputStream>::GetAsStream(nsIInputStream** aResult,
-                                           uint64_t* aContentLength,
-                                           nsACString& aContentTypeWithCharset,
-                                           nsACString& aCharset) const
-{
+template <>
+nsresult BodyExtractor<nsIInputStream>::GetAsStream(
+    nsIInputStream** aResult, uint64_t* aContentLength,
+    nsACString& aContentTypeWithCharset, nsACString& aCharset) const {
   aContentTypeWithCharset.AssignLiteral("text/plain");
   aCharset.Truncate();
 
@@ -192,15 +157,29 @@ BodyExtractor<nsIInputStream>::GetAsStream(nsIInputStream** aResult,
   return NS_OK;
 }
 
-template<> nsresult
-BodyExtractor<nsIXHRSendable>::GetAsStream(nsIInputStream** aResult,
-                                           uint64_t* aContentLength,
-                                           nsACString& aContentTypeWithCharset,
-                                           nsACString& aCharset) const
-{
+template <>
+nsresult BodyExtractor<const Blob>::GetAsStream(
+    nsIInputStream** aResult, uint64_t* aContentLength,
+    nsACString& aContentTypeWithCharset, nsACString& aCharset) const {
   return mBody->GetSendInfo(aResult, aContentLength, aContentTypeWithCharset,
                             aCharset);
 }
 
-} // dom namespace
-} // mozilla namespace
+template <>
+nsresult BodyExtractor<const FormData>::GetAsStream(
+    nsIInputStream** aResult, uint64_t* aContentLength,
+    nsACString& aContentTypeWithCharset, nsACString& aCharset) const {
+  return mBody->GetSendInfo(aResult, aContentLength, aContentTypeWithCharset,
+                            aCharset);
+}
+
+template <>
+nsresult BodyExtractor<const URLSearchParams>::GetAsStream(
+    nsIInputStream** aResult, uint64_t* aContentLength,
+    nsACString& aContentTypeWithCharset, nsACString& aCharset) const {
+  return mBody->GetSendInfo(aResult, aContentLength, aContentTypeWithCharset,
+                            aCharset);
+}
+
+}  // namespace dom
+}  // namespace mozilla

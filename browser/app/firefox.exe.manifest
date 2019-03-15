@@ -19,6 +19,16 @@
                 />
         </dependentAssembly>
 </dependency>
+<dependency>
+        <dependentAssembly>
+                <assemblyIdentity
+                        type="win32"
+                        name="mozglue"
+                        version="1.0.0.0"
+                        language="*"
+                />
+        </dependentAssembly>
+</dependency>
 <ms_asmv3:trustInfo xmlns:ms_asmv3="urn:schemas-microsoft-com:asm.v3">
   <ms_asmv3:security>
     <ms_asmv3:requestedPrivileges>
@@ -29,6 +39,7 @@
   <ms_asmv3:application xmlns:ms_asmv3="urn:schemas-microsoft-com:asm.v3">
     <ms_asmv3:windowsSettings xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">
       <dpiAware>True/PM</dpiAware>
+      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2,PerMonitor</dpiAwareness>
     </ms_asmv3:windowsSettings>
   </ms_asmv3:application>
   <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">

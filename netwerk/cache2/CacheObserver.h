@@ -14,10 +14,8 @@
 namespace mozilla {
 namespace net {
 
-class CacheObserver : public nsIObserver
-                    , public nsSupportsWeakReference
-{
-  virtual ~CacheObserver() {}
+class CacheObserver : public nsIObserver, public nsSupportsWeakReference {
+  virtual ~CacheObserver() = default;
 
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIOBSERVER
@@ -27,58 +25,63 @@ class CacheObserver : public nsIObserver
   static CacheObserver* Self() { return sSelf; }
 
   // Access to preferences
-  static bool UseNewCache();
-  static bool UseDiskCache()
-    { return sUseDiskCache; }
-  static bool UseMemoryCache()
-    { return sUseMemoryCache; }
-  static uint32_t MetadataMemoryLimit() // result in bytes.
-    { return sMetadataMemoryLimit << 10; }
-  static uint32_t MemoryCacheCapacity(); // result in bytes.
-  static uint32_t DiskCacheCapacity() // result in bytes.
-    { return sDiskCacheCapacity << 10; }
-  static void SetDiskCacheCapacity(uint32_t); // parameter in bytes.
-  static uint32_t DiskFreeSpaceSoftLimit() // result in bytes.
-    { return sDiskFreeSpaceSoftLimit << 10; }
-  static uint32_t DiskFreeSpaceHardLimit() // result in bytes.
-    { return sDiskFreeSpaceHardLimit << 10; }
-  static bool SmartCacheSizeEnabled()
-    { return sSmartCacheSizeEnabled; }
-  static uint32_t PreloadChunkCount()
-    { return sPreloadChunkCount; }
-  static uint32_t MaxMemoryEntrySize() // result in bytes.
-    { return sMaxMemoryEntrySize << 10; }
-  static uint32_t MaxDiskEntrySize() // result in bytes.
-    { return sMaxDiskEntrySize << 10; }
-  static uint32_t MaxDiskChunksMemoryUsage(bool aPriority) // result in bytes.
-    { return aPriority ? sMaxDiskPriorityChunksMemoryUsage << 10
-                       : sMaxDiskChunksMemoryUsage << 10; }
-  static uint32_t CompressionLevel()
-    { return sCompressionLevel; }
-  static uint32_t HalfLifeSeconds()
-    { return sHalfLifeHours * 60.0F * 60.0F; }
-  static int32_t HalfLifeExperiment()
-    { return sHalfLifeExperiment; }
-  static bool ClearCacheOnShutdown()
-    { return sSanitizeOnShutdown && sClearCacheOnShutdown; }
-  static bool CacheFSReported()
-    { return sCacheFSReported; }
+  static bool UseDiskCache() { return sUseDiskCache; }
+  static bool UseMemoryCache() { return sUseMemoryCache; }
+  static uint32_t MetadataMemoryLimit()  // result in kilobytes.
+  {
+    return sMetadataMemoryLimit;
+  }
+  static uint32_t MemoryCacheCapacity();  // result in kilobytes.
+  static uint32_t DiskCacheCapacity()     // result in kilobytes.
+  {
+    return sDiskCacheCapacity;
+  }
+  static void SetDiskCacheCapacity(uint32_t);  // parameter in kilobytes.
+  static uint32_t DiskFreeSpaceSoftLimit()     // result in kilobytes.
+  {
+    return sDiskFreeSpaceSoftLimit;
+  }
+  static uint32_t DiskFreeSpaceHardLimit()  // result in kilobytes.
+  {
+    return sDiskFreeSpaceHardLimit;
+  }
+  static bool SmartCacheSizeEnabled() { return sSmartCacheSizeEnabled; }
+  static uint32_t PreloadChunkCount() { return sPreloadChunkCount; }
+  static uint32_t MaxMemoryEntrySize()  // result in kilobytes.
+  {
+    return sMaxMemoryEntrySize;
+  }
+  static uint32_t MaxDiskEntrySize()  // result in kilobytes.
+  {
+    return sMaxDiskEntrySize;
+  }
+  static uint32_t MaxDiskChunksMemoryUsage(
+      bool aPriority)  // result in kilobytes.
+  {
+    return aPriority ? sMaxDiskPriorityChunksMemoryUsage
+                     : sMaxDiskChunksMemoryUsage;
+  }
+  static uint32_t CompressionLevel() { return sCompressionLevel; }
+  static uint32_t HalfLifeSeconds() { return sHalfLifeHours * 60.0F * 60.0F; }
+  static bool ClearCacheOnShutdown() {
+    return sSanitizeOnShutdown && sClearCacheOnShutdown;
+  }
+  static bool CacheFSReported() { return sCacheFSReported; }
   static void SetCacheFSReported();
-  static bool HashStatsReported()
-    { return sHashStatsReported; }
+  static bool HashStatsReported() { return sHashStatsReported; }
   static void SetHashStatsReported();
-  static void ParentDirOverride(nsIFile ** aDir);
+  static void ParentDirOverride(nsIFile** aDir);
 
   static bool EntryIsTooBig(int64_t aSize, bool aUsingDisk);
 
-  static uint32_t MaxShutdownIOLag()
-    { return sMaxShutdownIOLag; }
+  static uint32_t MaxShutdownIOLag() { return sMaxShutdownIOLag; }
   static bool IsPastShutdownIOLag();
 
-  static bool ShuttingDown()
-    { return sShutdownDemandedTime != PR_INTERVAL_NO_TIMEOUT; }
+  static bool ShuttingDown() {
+    return sShutdownDemandedTime != PR_INTERVAL_NO_TIMEOUT;
+  }
 
-private:
+ private:
   static CacheObserver* sSelf;
 
   void StoreDiskCacheCapacity();
@@ -86,7 +89,6 @@ private:
   void StoreHashStatsReported();
   void AttachToPreferences();
 
-  static uint32_t sUseNewCache;
   static bool sUseMemoryCache;
   static bool sUseDiskCache;
   static uint32_t sMetadataMemoryLimit;
@@ -103,7 +105,6 @@ private:
   static uint32_t sMaxDiskPriorityChunksMemoryUsage;
   static uint32_t sCompressionLevel;
   static float sHalfLifeHours;
-  static int32_t sHalfLifeExperiment;
   static bool sSanitizeOnShutdown;
   static bool sClearCacheOnShutdown;
   static bool sCacheFSReported;
@@ -115,7 +116,7 @@ private:
   nsCOMPtr<nsIFile> mCacheParentDirectoryOverride;
 };
 
-} // namespace net
-} // namespace mozilla
+}  // namespace net
+}  // namespace mozilla
 
 #endif

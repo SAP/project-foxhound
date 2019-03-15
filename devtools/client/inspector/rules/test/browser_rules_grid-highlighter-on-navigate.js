@@ -20,22 +20,22 @@ const TEST_URI = `
 
 const TEST_URI_2 = "data:text/html,<html><body>test</body></html>";
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
-  let highlighters = view.highlighters;
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, view} = await openRuleView();
+  const highlighters = view.highlighters;
 
-  yield selectNode("#grid", inspector);
-  let container = getRuleViewProperty(view, "#grid", "display").valueSpan;
-  let gridToggle = container.querySelector(".ruleview-grid");
+  await selectNode("#grid", inspector);
+  const container = getRuleViewProperty(view, "#grid", "display").valueSpan;
+  const gridToggle = container.querySelector(".ruleview-grid");
 
   info("Toggling ON the CSS grid highlighter from the rule-view.");
-  let onHighlighterShown = highlighters.once("grid-highlighter-shown");
+  const onHighlighterShown = highlighters.once("grid-highlighter-shown");
   gridToggle.click();
-  yield onHighlighterShown;
+  await onHighlighterShown;
 
-  ok(highlighters.gridHighlighterShown, "CSS grid highlighter is shown.");
+  is(highlighters.gridHighlighters.size, 1, "CSS grid highlighter is shown.");
 
-  yield navigateTo(inspector, TEST_URI_2);
-  ok(!highlighters.gridHighlighterShown, "CSS grid highlighter is hidden.");
+  await navigateTo(inspector, TEST_URI_2);
+  ok(!highlighters.gridHighlighters.size, "CSS grid highlighter is hidden.");
 });

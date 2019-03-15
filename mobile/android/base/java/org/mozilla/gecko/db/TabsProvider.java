@@ -15,6 +15,7 @@ import android.content.ContentUris;
 import android.content.ContentValues;
 import android.content.UriMatcher;
 import android.database.Cursor;
+import android.database.DatabaseUtils;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteQueryBuilder;
 import android.net.Uri;
@@ -161,8 +162,8 @@ public class TabsProvider extends SharedBrowserDatabaseProvider {
         switch (match) {
             case CLIENTS_ID:
                 trace("Delete on CLIENTS_ID: " + uri);
-                selection = DBUtils.concatenateWhere(selection, selectColumn(TABLE_CLIENTS, Clients._ID));
-                selectionArgs = DBUtils.appendSelectionArgs(selectionArgs,
+                selection = DatabaseUtils.concatenateWhere(selection, selectColumn(TABLE_CLIENTS, Clients._ID));
+                selectionArgs = DatabaseUtils.appendSelectionArgs(selectionArgs,
                         new String[] { Long.toString(ContentUris.parseId(uri)) });
                 // fall through
             case CLIENTS:
@@ -172,8 +173,8 @@ public class TabsProvider extends SharedBrowserDatabaseProvider {
 
             case TABS_ID:
                 trace("Delete on TABS_ID: " + uri);
-                selection = DBUtils.concatenateWhere(selection, selectColumn(TABLE_TABS, Tabs._ID));
-                selectionArgs = DBUtils.appendSelectionArgs(selectionArgs,
+                selection = DatabaseUtils.concatenateWhere(selection, selectColumn(TABLE_TABS, Tabs._ID));
+                selectionArgs = DatabaseUtils.appendSelectionArgs(selectionArgs,
                         new String[] { Long.toString(ContentUris.parseId(uri)) });
                 // fall through
             case TABS:
@@ -224,6 +225,7 @@ public class TabsProvider extends SharedBrowserDatabaseProvider {
     }
 
     @Override
+    @SuppressWarnings("fallthrough")
     public int updateInTransaction(Uri uri, ContentValues values, String selection, String[] selectionArgs) {
         trace("Calling update in transaction on URI: " + uri);
 
@@ -233,8 +235,8 @@ public class TabsProvider extends SharedBrowserDatabaseProvider {
         switch (match) {
             case CLIENTS_ID:
                 trace("Update on CLIENTS_ID: " + uri);
-                selection = DBUtils.concatenateWhere(selection, selectColumn(TABLE_CLIENTS, Clients._ID));
-                selectionArgs = DBUtils.appendSelectionArgs(selectionArgs,
+                selection = DatabaseUtils.concatenateWhere(selection, selectColumn(TABLE_CLIENTS, Clients._ID));
+                selectionArgs = DatabaseUtils.appendSelectionArgs(selectionArgs,
                         new String[] { Long.toString(ContentUris.parseId(uri)) });
                 // fall through
             case CLIENTS:
@@ -244,8 +246,8 @@ public class TabsProvider extends SharedBrowserDatabaseProvider {
 
             case TABS_ID:
                 trace("Update on TABS_ID: " + uri);
-                selection = DBUtils.concatenateWhere(selection, selectColumn(TABLE_TABS, Tabs._ID));
-                selectionArgs = DBUtils.appendSelectionArgs(selectionArgs,
+                selection = DatabaseUtils.concatenateWhere(selection, selectColumn(TABLE_TABS, Tabs._ID));
+                selectionArgs = DatabaseUtils.appendSelectionArgs(selectionArgs,
                         new String[] { Long.toString(ContentUris.parseId(uri)) });
                 // fall through
             case TABS:
@@ -276,8 +278,8 @@ public class TabsProvider extends SharedBrowserDatabaseProvider {
         switch (match) {
             case TABS_ID:
                 trace("Query is on TABS_ID: " + uri);
-                selection = DBUtils.concatenateWhere(selection, selectColumn(TABLE_TABS, Tabs._ID));
-                selectionArgs = DBUtils.appendSelectionArgs(selectionArgs,
+                selection = DatabaseUtils.concatenateWhere(selection, selectColumn(TABLE_TABS, Tabs._ID));
+                selectionArgs = DatabaseUtils.appendSelectionArgs(selectionArgs,
                         new String[] { Long.toString(ContentUris.parseId(uri)) });
                 // fall through
             case TABS:
@@ -297,8 +299,8 @@ public class TabsProvider extends SharedBrowserDatabaseProvider {
 
             case CLIENTS_ID:
                 trace("Query is on CLIENTS_ID: " + uri);
-                selection = DBUtils.concatenateWhere(selection, selectColumn(TABLE_CLIENTS, Clients._ID));
-                selectionArgs = DBUtils.appendSelectionArgs(selectionArgs,
+                selection = DatabaseUtils.concatenateWhere(selection, selectColumn(TABLE_CLIENTS, Clients._ID));
+                selectionArgs = DatabaseUtils.appendSelectionArgs(selectionArgs,
                         new String[] { Long.toString(ContentUris.parseId(uri)) });
                 // fall through
             case CLIENTS:

@@ -10,41 +10,48 @@ const { SIMPLE_URL } = require("devtools/client/performance/test/helpers/urls");
 const { initPerformanceInTab, initConsoleInNewTab, teardownToolboxAndRemoveTab } = require("devtools/client/performance/test/helpers/panel-utils");
 const { waitForRecordingStartedEvents, waitForRecordingStoppedEvents } = require("devtools/client/performance/test/helpers/actions");
 
-add_task(function* () {
-  let { target, console } = yield initConsoleInNewTab({
+add_task(async function() {
+  startTelemetry();
+
+  const { target, console } = await initConsoleInNewTab({
     url: SIMPLE_URL,
-    win: window
+    win: window,
   });
 
-  let { panel } = yield initPerformanceInTab({ tab: target.tab });
-  let { PerformanceController } = panel.panelWin;
+  const { panel } = await initPerformanceInTab({ tab: target.tab });
 
-  let telemetry = PerformanceController._telemetry;
-  let logs = telemetry.getLogs();
-  let DURATION = "DEVTOOLS_PERFTOOLS_RECORDING_DURATION_MS";
-  let CONSOLE_COUNT = "DEVTOOLS_PERFTOOLS_CONSOLE_RECORDING_COUNT";
-  let FEATURES = "DEVTOOLS_PERFTOOLS_RECORDING_FEATURES_USED";
-
-  let started = waitForRecordingStartedEvents(panel, {
+  const started = waitForRecordingStartedEvents(panel, {
     // only emitted for manual recordings
-    skipWaitingForBackendReady: true
+    skipWaitingForBackendReady: true,
   });
-  yield console.profile("rust");
-  yield started;
+  await console.profile("rust");
+  await started;
 
-  let stopped = waitForRecordingStoppedEvents(panel, {
+  const stopped = waitForRecordingStoppedEvents(panel, {
     // only emitted for manual recordings
-    skipWaitingForBackendReady: true
+    skipWaitingForBackendReady: true,
   });
-  yield console.profileEnd("rust");
-  yield stopped;
+  await console.profileEnd("rust");
+  await stopped;
 
-  is(logs[DURATION].length, 1, `There is one entry for ${DURATION}.`);
-  ok(logs[DURATION].every(d => typeof d === "number"),
-     `Every ${DURATION} entry is a number.`);
-  is(logs[CONSOLE_COUNT].length, 1, `There is one entry for ${CONSOLE_COUNT}.`);
-  is(logs[FEATURES].length, 4,
-     `There is one recording worth of entries for ${FEATURES}.`);
-
-  yield teardownToolboxAndRemoveTab(panel);
+  checkResults();
+  await teardownToolboxAndRemoveTab(panel);
 });
+
+function checkResults() {
+  // For help generating these tests use generateTelemetryTests("DEVTOOLS_PERFTOOLS_")
+  // here.
+  checkTelemetry("DEVTOOLS_PERFTOOLS_CONSOLE_RECORDING_COUNT", "", {0: 1, 1: 0}, "array");
+  checkTelemetry("DEVTOOLS_PERFTOOLS_RECORDING_DURATION_MS", "", null, "hasentries");
+  checkTelemetry(
+    "DEVTOOLS_PERFTOOLS_RECORDING_FEATURES_USED", "withMarkers", {0: 0, 1: 1, 2: 0},
+    "array");
+  checkTelemetry(
+    "DEVTOOLS_PERFTOOLS_RECORDING_FEATURES_USED", "withMemory", {0: 1, 1: 0}, "array");
+  checkTelemetry(
+    "DEVTOOLS_PERFTOOLS_RECORDING_FEATURES_USED", "withAllocations", {0: 1, 1: 0},
+    "array");
+  checkTelemetry(
+    "DEVTOOLS_PERFTOOLS_RECORDING_FEATURES_USED", "withTicks", {0: 0, 1: 1, 2: 0},
+    "array");
+}

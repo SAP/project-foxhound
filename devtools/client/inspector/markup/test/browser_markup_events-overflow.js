@@ -30,29 +30,30 @@ const TEST_DATA = [
   },
 ];
 
-add_task(function* () {
-  let { inspector } = yield openInspectorForURL(TEST_URL);
+add_task(async function() {
+  const { inspector } = await openInspectorForURL(TEST_URL);
 
-  let markupContainer = yield getContainerForSelector("#events", inspector);
-  let evHolder = markupContainer.elt.querySelector(".markupview-events");
-  let tooltip = inspector.markup.eventDetailsTooltip;
+  const markupContainer = await getContainerForSelector("#events", inspector);
+  const evHolder = markupContainer.elt.querySelector(
+    ".inspector-badge.interactive[data-event]");
+  const tooltip = inspector.markup.eventDetailsTooltip;
 
   info("Clicking to open event tooltip.");
   EventUtils.synthesizeMouseAtCenter(evHolder, {},
     inspector.markup.doc.defaultView);
-  yield tooltip.once("shown");
+  await tooltip.once("shown");
   info("EventTooltip visible.");
 
-  let container = tooltip.panel;
-  let containerRect = container.getBoundingClientRect();
-  let headers = container.querySelectorAll(".event-header");
+  const container = tooltip.panel;
+  const containerRect = container.getBoundingClientRect();
+  const headers = container.querySelectorAll(".event-header");
 
-  for (let data of TEST_DATA) {
+  for (const data of TEST_DATA) {
     info("Testing scrolling when " + data.desc);
 
     if (data.initialScrollTop < 0) {
       info("Scrolling container to the bottom.");
-      let newScrollTop = container.scrollHeight - container.clientHeight;
+      const newScrollTop = container.scrollHeight - container.clientHeight;
       data.initialScrollTop = container.scrollTop = newScrollTop;
     } else {
       info("Scrolling container by " + data.initialScrollTop + "px");
@@ -62,24 +63,24 @@ add_task(function* () {
     is(container.scrollTop, data.initialScrollTop, "Container scrolled.");
 
     info("Clicking on header #" + data.headerToClick);
-    let header = headers[data.headerToClick];
+    const header = headers[data.headerToClick];
 
-    let ready = tooltip.once("event-tooltip-ready");
+    const ready = tooltip.once("event-tooltip-ready");
     EventUtils.synthesizeMouseAtCenter(header, {}, header.ownerGlobal);
-    yield ready;
+    await ready;
 
     info("Event handler expanded.");
 
     // Wait for any scrolling to finish.
-    yield promiseNextTick();
+    await promiseNextTick();
 
     if (data.alignTop) {
-      let headerRect = header.getBoundingClientRect();
+      const headerRect = header.getBoundingClientRect();
 
       is(Math.round(headerRect.top), Math.round(containerRect.top),
         "Clicked header is aligned with the container top.");
     } else if (data.alignBottom) {
-      let editorRect = header.nextElementSibling.getBoundingClientRect();
+      const editorRect = header.nextElementSibling.getBoundingClientRect();
 
       is(Math.round(editorRect.bottom), Math.round(containerRect.bottom),
         "Clicked event handler code is aligned with the container bottom.");

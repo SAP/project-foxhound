@@ -7,10 +7,10 @@
 
 #include "SkRecordOpts.h"
 
+#include "SkCanvasPriv.h"
 #include "SkRecordPattern.h"
 #include "SkRecords.h"
 #include "SkTDArray.h"
-#include "SkXfermode.h"
 
 using namespace SkRecords;
 
@@ -134,7 +134,6 @@ static bool fold_opacity_layer_color_to_paint(const SkPaint* layerPaint,
             !layerPaint->isSrcOver()     ||
             layerPaint->getMaskFilter()  ||
             layerPaint->getColorFilter() ||
-            layerPaint->getRasterizer()  ||
             layerPaint->getLooper()      ||
             layerPaint->getImageFilter()) {
             return false;
@@ -173,6 +172,7 @@ void SkRecordNoopSaveRestores(SkRecord* record) {
     while (apply(&onlyDraws, record) || apply(&noDraws, record));
 }
 
+#ifndef SK_BUILD_FOR_ANDROID_FRAMEWORK
 static bool effectively_srcover(const SkPaint* paint) {
     if (!paint || paint->isSrcOver()) {
         return true;
@@ -188,8 +188,14 @@ struct SaveLayerDrawRestoreNooper {
     typedef Pattern<Is<SaveLayer>, IsDraw, Is<Restore>> Match;
 
     bool onMatch(SkRecord* record, Match* match, int begin, int end) {
-        if (match->first<SaveLayer>()->backdrop) {
-            // can't throw away the layer if we have a backdrop
+        if (match->first<SaveLayer>()->backdrop || match->first<SaveLayer>()->clipMask) {
+            // can't throw away the layer if we have a backdrop or clip mask
+            return false;
+        }
+
+        if (match->first<SaveLayer>()->saveLayerFlags &
+                SkCanvasPriv::kDontClipToLayer_SaveLayerFlag) {
+            // can't throw away the layer if set
             return false;
         }
 
@@ -225,7 +231,7 @@ void SkRecordNoopSaveLayerDrawRestores(SkRecord* record) {
     SaveLayerDrawRestoreNooper pass;
     apply(&pass, record);
 }
-
+#endif
 
 /* For SVG generated:
   SaveLayer (non-opaque, typically for CSS opacity)
@@ -293,7 +299,12 @@ void SkRecordOptimize(SkRecord* record) {
     //     https://bugs.chromium.org/p/skia/issues/detail?id=5548
 //    SkRecordNoopSaveRestores(record);
 
+    // Turn off this optimization completely for Android framework
+    // because it makes the following Android CTS test fail:
+    // android.uirendering.cts.testclasses.LayerTests#testSaveLayerClippedWithAlpha
+#ifndef SK_BUILD_FOR_ANDROID_FRAMEWORK
     SkRecordNoopSaveLayerDrawRestores(record);
+#endif
     SkRecordMergeSvgOpacityAndFilterLayers(record);
 
     record->defrag();
@@ -302,7 +313,10 @@ void SkRecordOptimize(SkRecord* record) {
 void SkRecordOptimize2(SkRecord* record) {
     multiple_set_matrices(record);
     SkRecordNoopSaveRestores(record);
+    // See why we turn this off in SkRecordOptimize above.
+#ifndef SK_BUILD_FOR_ANDROID_FRAMEWORK
     SkRecordNoopSaveLayerDrawRestores(record);
+#endif
     SkRecordMergeSvgOpacityAndFilterLayers(record);
 
     record->defrag();

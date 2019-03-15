@@ -2,19 +2,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-Components.utils.importGlobalProperties(['File']);
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+Cu.importGlobalProperties(['File']);
 
 
-const Ci = Components.interfaces;
-
-function do_check_true(cond, text) {
-  // we don't have the test harness' utilities in this scope, so we need this
-  // little helper. In the failure case, the exception is propagated to the
-  // caller in the main run_test() function, and the test fails.
-  if (!cond)
-    throw "Failed check: " + text;
-}
+const Assert = {
+  ok(cond, text) {
+    // we don't have the test harness' utilities in this scope, so we need this
+    // little helper. In the failure case, the exception is propagated to the
+    // caller in the main run_test() function, and the test fails.
+    if (!cond)
+      throw "Failed check: " + text;
+  }
+};
 
 function FileComponent() {
   this.wrappedJSObject = this;
@@ -25,7 +25,7 @@ FileComponent.prototype =
     // throw if anything goes wrong
 
     // find the current directory path
-    var file = Components.classes["@mozilla.org/file/directory_service;1"]
+    var file = Cc["@mozilla.org/file/directory_service;1"]
                .getService(Ci.nsIProperties)
                .get("CurWorkD", Ci.nsIFile);
     file.append("xpcshell.ini");
@@ -38,14 +38,14 @@ FileComponent.prototype =
     ])
     .then(() => {
       // do some tests
-      do_check_true(f1 instanceof File, "Should be a DOM File");
-      do_check_true(f2 instanceof File, "Should be a DOM File");
+      Assert.ok(f1 instanceof File, "Should be a DOM File");
+      Assert.ok(f2 instanceof File, "Should be a DOM File");
 
-      do_check_true(f1.name == "xpcshell.ini", "Should be the right file");
-      do_check_true(f2.name == "xpcshell.ini", "Should be the right file");
+      Assert.ok(f1.name == "xpcshell.ini", "Should be the right file");
+      Assert.ok(f2.name == "xpcshell.ini", "Should be the right file");
 
-      do_check_true(f1.type == "", "Should be the right type");
-      do_check_true(f2.type == "", "Should be the right type");
+      Assert.ok(f1.type == "", "Should be the right type");
+      Assert.ok(f2.type == "", "Should be the right type");
     })
     .then(() => {
       var threw = false;
@@ -55,7 +55,7 @@ FileComponent.prototype =
       } catch (e) {
         threw = true;
       }
-      do_check_true(threw, "No ctor arguments should throw");
+      Assert.ok(threw, "No ctor arguments should throw");
 
       var threw = false;
       try {
@@ -64,18 +64,18 @@ FileComponent.prototype =
       } catch (e) {
         threw = true;
       }
-      do_check_true(threw, "Passing a random object should fail");
+      Assert.ok(threw, "Passing a random object should fail");
 
       // Directories fail
-      var dir = Components.classes["@mozilla.org/file/directory_service;1"]
-                          .getService(Ci.nsIProperties)
-                          .get("CurWorkD", Ci.nsIFile);
+      var dir = Cc["@mozilla.org/file/directory_service;1"]
+                  .getService(Ci.nsIProperties)
+                  .get("CurWorkD", Ci.nsIFile);
       return File.createFromNsIFile(dir)
     })
     .then(() => {
-      do_check_true(false, "Can't create a File object for a directory");
+      Assert.ok(false, "Can't create a File object for a directory");
     }, () => {
-      do_check_true(true, "Can't create a File object for a directory");
+      Assert.ok(true, "Can't create a File object for a directory");
     })
     .then(() => {
       cb(true);
@@ -91,7 +91,7 @@ FileComponent.prototype =
   flags: 0,
 
   getInterfaces: function getInterfaces(aCount) {
-    var interfaces = [Components.interfaces.nsIClassInfo];
+    var interfaces = [Ci.nsIClassInfo];
     aCount.value = interfaces.length;
     return interfaces;
   },
@@ -101,7 +101,7 @@ FileComponent.prototype =
   },
 
   // nsISupports
-  QueryInterface: XPCOMUtils.generateQI([Components.interfaces.nsIClassInfo])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIClassInfo])
 };
 
 var gComponentsArray = [FileComponent];

@@ -3,25 +3,23 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const {Cc, Ci, Cu} = require("chrome");
+const {Cu} = require("chrome");
 const {deviceSpec} = require("devtools/shared/specs/device");
-const protocol = require("devtools/shared/protocol");
+const { FrontClassWithSpec, registerFront } = require("devtools/shared/protocol");
 const defer = require("devtools/shared/defer");
 
-const DeviceFront = protocol.FrontClassWithSpec(deviceSpec, {
-  initialize: function (client, form) {
-    protocol.Front.prototype.initialize.call(this, client);
-    this.actorID = form.deviceActor;
+class DeviceFront extends FrontClassWithSpec(deviceSpec) {
+  constructor(client, form) {
+    super(client, { actor: form.deviceActor });
     this.manage(this);
-  },
+  }
 
-  screenshotToBlob: function () {
+  screenshotToBlob() {
     return this.screenshotToDataURL().then(longstr => {
       return longstr.string().then(dataURL => {
-        let deferred = defer();
-        longstr.release().then(null, Cu.reportError);
-        let req = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"]
-            .createInstance(Ci.nsIXMLHttpRequest);
+        const deferred = defer();
+        longstr.release().catch(Cu.reportError);
+        const req = new XMLHttpRequest();
         req.open("GET", dataURL, true);
         req.responseType = "blob";
         req.onload = () => {
@@ -34,21 +32,8 @@ const DeviceFront = protocol.FrontClassWithSpec(deviceSpec, {
         return deferred.promise;
       });
     });
-  },
-});
-
-const _knownDeviceFronts = new WeakMap();
-
-exports.getDeviceFront = function (client, form) {
-  if (!form.deviceActor) {
-    return null;
   }
+}
 
-  if (_knownDeviceFronts.has(client)) {
-    return _knownDeviceFronts.get(client);
-  }
-
-  let front = new DeviceFront(client, form);
-  _knownDeviceFronts.set(client, front);
-  return front;
-};
+exports.DeviceFront = DeviceFront;
+registerFront(DeviceFront);

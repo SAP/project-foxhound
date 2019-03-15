@@ -13,12 +13,12 @@ const {
 module.exports = {
 
   /**
-   * Update the color used for the grid's highlighter.
+   * Updates the color used for the grid's highlighter.
    *
    * @param  {NodeFront} nodeFront
    *         The NodeFront of the DOM node to toggle the grid highlighter.
    * @param  {String} color
-   *         The color to use for thie nodeFront's grid highlighter.
+   *         The color to use for this nodeFront's grid highlighter.
    */
   updateGridColor(nodeFront, color) {
     return {
@@ -29,7 +29,7 @@ module.exports = {
   },
 
   /**
-   * Update the grid highlighted state.
+   * Updates the grid highlighted state.
    *
    * @param  {NodeFront} nodeFront
    *         The NodeFront of the DOM node to toggle the grid highlighter.
@@ -45,7 +45,7 @@ module.exports = {
   },
 
   /**
-   * Update the grid state with the new list of grids.
+   * Updates the grid state with the new list of grids.
    */
   updateGrids(grids) {
     return {

@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,110 +6,121 @@
 #ifndef WEBGL_BUFFER_H_
 #define WEBGL_BUFFER_H_
 
+#include <map>
+
+#include "CacheInvalidator.h"
 #include "GLDefs.h"
 #include "mozilla/LinkedList.h"
-#include "mozilla/UniquePtr.h"
 #include "nsWrapperCache.h"
-
 #include "WebGLObjectModel.h"
 #include "WebGLTypes.h"
 
 namespace mozilla {
 
-class WebGLElementArrayCache;
+class WebGLBuffer final : public nsWrapperCache,
+                          public WebGLRefCountedObject<WebGLBuffer>,
+                          public LinkedListElement<WebGLBuffer> {
+  friend class WebGLContext;
+  friend class WebGL2Context;
+  friend class WebGLTexture;
 
-class WebGLBuffer final
-    : public nsWrapperCache
-    , public WebGLRefCountedObject<WebGLBuffer>
-    , public LinkedListElement<WebGLBuffer>
-{
-    friend class WebGLContext;
-    friend class WebGL2Context;
-    friend class WebGLTexture;
+ public:
+  enum class Kind { Undefined, ElementArray, OtherData };
 
-public:
-    enum class Kind {
-        Undefined,
-        ElementArray,
-        OtherData
-    };
+  WebGLBuffer(WebGLContext* webgl, GLuint buf);
 
-    WebGLBuffer(WebGLContext* webgl, GLuint buf);
+  void SetContentAfterBind(GLenum target);
+  Kind Content() const { return mContent; }
 
-    void SetContentAfterBind(GLenum target);
-    Kind Content() const { return mContent; }
+  void Delete();
 
-    void Delete();
+  size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
 
-    size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
+  GLenum Usage() const { return mUsage; }
+  size_t ByteLength() const { return mByteLength; }
 
-    GLenum Usage() const { return mUsage; }
-    size_t ByteLength() const { return mByteLength; }
+  Maybe<uint32_t> GetIndexedFetchMaxVert(GLenum type, uint64_t byteOffset,
+                                         uint32_t indexCount) const;
+  bool ValidateRange(size_t byteOffset, size_t byteLen) const;
 
-    bool ElementArrayCacheBufferData(const void* ptr, size_t bufferSizeInBytes);
+  WebGLContext* GetParentObject() const { return mContext; }
 
-    void ElementArrayCacheBufferSubData(size_t pos, const void* ptr,
-                                        size_t updateSizeInBytes);
+  virtual JSObject* WrapObject(JSContext* cx,
+                               JS::Handle<JSObject*> givenProto) override;
 
-    bool Validate(GLenum type, uint32_t max_allowed, size_t first, size_t count) const;
-    bool ValidateRange(const char* funcName, size_t byteOffset, size_t byteLen) const;
+  bool ValidateCanBindToTarget(GLenum target);
+  void BufferData(GLenum target, size_t size, const void* data, GLenum usage);
+  void BufferSubData(GLenum target, size_t dstByteOffset, size_t dataLen,
+                     const void* data) const;
 
-    bool IsElementArrayUsedWithMultipleTypes() const;
+  ////
 
-    WebGLContext* GetParentObject() const {
-        return mContext;
+  static void AddBindCount(GLenum target, WebGLBuffer* buffer, int8_t addVal) {
+    if (!buffer) return;
+
+    if (target == LOCAL_GL_TRANSFORM_FEEDBACK_BUFFER) {
+      MOZ_ASSERT_IF(addVal < 0, buffer->mTFBindCount >= size_t(-addVal));
+      buffer->mTFBindCount += addVal;
+      buffer->mFetchInvalidator.InvalidateCaches();
+    } else {
+      MOZ_ASSERT_IF(addVal < 0, buffer->mNonTFBindCount >= size_t(-addVal));
+      buffer->mNonTFBindCount += addVal;
     }
+  }
 
-    virtual JSObject* WrapObject(JSContext* cx, JS::Handle<JSObject*> givenProto) override;
+  static void SetSlot(GLenum target, WebGLBuffer* newBuffer,
+                      WebGLRefPtr<WebGLBuffer>* const out_slot) {
+    WebGLBuffer* const oldBuffer = *out_slot;
+    AddBindCount(target, oldBuffer, -1);
+    AddBindCount(target, newBuffer, +1);
+    *out_slot = newBuffer;
+  }
 
-    bool ValidateCanBindToTarget(const char* funcName, GLenum target);
-    void BufferData(GLenum target, size_t size, const void* data, GLenum usage);
+  bool IsBoundForTF() const { return bool(mTFBindCount); }
+  bool IsBoundForNonTF() const { return bool(mNonTFBindCount); }
 
-    ////
+  ////
 
-    static void AddBindCount(GLenum target, WebGLBuffer* buffer, int8_t addVal) {
-        if (!buffer)
-            return;
+  const GLenum mGLName;
 
-        if (target == LOCAL_GL_TRANSFORM_FEEDBACK_BUFFER) {
-            MOZ_ASSERT_IF(addVal < 0, buffer->mTFBindCount >= size_t(-addVal));
-            buffer->mTFBindCount += addVal;
-        } else {
-            MOZ_ASSERT_IF(addVal < 0, buffer->mNonTFBindCount >= size_t(-addVal));
-            buffer->mNonTFBindCount += addVal;
-        }
+  NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(WebGLBuffer)
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(WebGLBuffer)
+
+ protected:
+  ~WebGLBuffer();
+
+  void InvalidateCacheRange(uint64_t byteOffset, uint64_t byteLength) const;
+
+  Kind mContent;
+  GLenum mUsage;
+  size_t mByteLength;
+  size_t mTFBindCount;
+  size_t mNonTFBindCount;
+  mutable uint64_t mLastUpdateFenceId = 0;
+
+  struct IndexRange final {
+    GLenum type;
+    uint64_t byteOffset;
+    uint32_t indexCount;
+
+    bool operator<(const IndexRange& x) const {
+      if (type != x.type) return type < x.type;
+
+      if (byteOffset != x.byteOffset) return byteOffset < x.byteOffset;
+
+      return indexCount < x.indexCount;
     }
+  };
 
-    static void SetSlot(GLenum target, WebGLBuffer* newBuffer,
-                        WebGLRefPtr<WebGLBuffer>* const out_slot)
-    {
-        WebGLBuffer* const oldBuffer = *out_slot;
-        AddBindCount(target, oldBuffer, -1);
-        AddBindCount(target, newBuffer, +1);
-        *out_slot = newBuffer;
-    }
+  UniqueBuffer mIndexCache;
+  mutable std::map<IndexRange, Maybe<uint32_t>> mIndexRanges;
 
-    bool IsBoundForTF() const { return bool(mTFBindCount); }
-    bool IsBoundForNonTF() const { return bool(mNonTFBindCount); }
+ public:
+  CacheInvalidator mFetchInvalidator;
 
-    ////
-
-    const GLenum mGLName;
-
-    NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(WebGLBuffer)
-    NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(WebGLBuffer)
-
-protected:
-    ~WebGLBuffer();
-
-    Kind mContent;
-    GLenum mUsage;
-    size_t mByteLength;
-    UniquePtr<WebGLElementArrayCache> mCache;
-    size_t mTFBindCount;
-    size_t mNonTFBindCount;
+  void ResetLastUpdateFenceId() const;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // WEBGL_BUFFER_H_
+#endif  // WEBGL_BUFFER_H_

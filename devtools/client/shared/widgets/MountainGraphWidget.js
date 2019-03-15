@@ -1,6 +1,6 @@
 "use strict";
 
-const { Heritage } = require("devtools/client/shared/widgets/view-helpers");
+const { extend } = require("devtools/shared/extend");
 const { AbstractCanvasGraph } = require("devtools/client/shared/widgets/Graphs");
 
 // Bar graph constants.
@@ -8,12 +8,10 @@ const { AbstractCanvasGraph } = require("devtools/client/shared/widgets/Graphs")
 const GRAPH_DAMPEN_VALUES_FACTOR = 0.9;
 
 const GRAPH_BACKGROUND_COLOR = "#ddd";
-// px
-const GRAPH_STROKE_WIDTH = 1;
+const GRAPH_STROKE_WIDTH = 1; // px
 const GRAPH_STROKE_COLOR = "rgba(255,255,255,0.9)";
-// px
-const GRAPH_HELPER_LINES_DASH = [5];
-const GRAPH_HELPER_LINES_WIDTH = 1;
+const GRAPH_HELPER_LINES_DASH = [5]; // px
+const GRAPH_HELPER_LINES_WIDTH = 1; // px
 
 const GRAPH_CLIPHEAD_LINE_COLOR = "#fff";
 const GRAPH_SELECTION_LINE_COLOR = "#fff";
@@ -52,14 +50,14 @@ const GRAPH_REGION_STRIPES_COLOR = "rgba(237,38,85,0.2)";
  *   ]
  * where the [ymn] values is assumed to aready be normalized from [0..1].
  *
- * @param nsIDOMNode parent
+ * @param Node parent
  *        The parent node holding the graph.
  */
-this.MountainGraphWidget = function (parent, ...args) {
+this.MountainGraphWidget = function(parent, ...args) {
   AbstractCanvasGraph.apply(this, [parent, "mountain-graph", ...args]);
 };
 
-MountainGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
+MountainGraphWidget.prototype = extend(AbstractCanvasGraph.prototype, {
   backgroundColor: GRAPH_BACKGROUND_COLOR,
   strokeColor: GRAPH_STROKE_COLOR,
   strokeWidth: GRAPH_STROKE_WIDTH,
@@ -98,10 +96,10 @@ MountainGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
    * Renders the graph's background.
    * @see AbstractCanvasGraph.prototype.buildBackgroundImage
    */
-  buildBackgroundImage: function () {
-    let { canvas, ctx } = this._getNamedCanvas("mountain-graph-background");
-    let width = this._width;
-    let height = this._height;
+  buildBackgroundImage: function() {
+    const { canvas, ctx } = this._getNamedCanvas("mountain-graph-background");
+    const width = this._width;
+    const height = this._height;
 
     ctx.fillStyle = this.backgroundColor;
     ctx.fillRect(0, 0, width, height);
@@ -113,27 +111,27 @@ MountainGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
    * Renders the graph's data source.
    * @see AbstractCanvasGraph.prototype.buildGraphImage
    */
-  buildGraphImage: function () {
+  buildGraphImage: function() {
     if (!this.format || !this.format.length) {
       throw new Error("The graph format traits are mandatory to style " +
                       "the data source.");
     }
-    let { canvas, ctx } = this._getNamedCanvas("mountain-graph-data");
-    let width = this._width;
-    let height = this._height;
+    const { canvas, ctx } = this._getNamedCanvas("mountain-graph-data");
+    const width = this._width;
+    const height = this._height;
 
-    let totalSections = this.format.length;
-    let totalTicks = this._data.length;
-    let firstTick = totalTicks ? this._data[0].delta : 0;
-    let lastTick = totalTicks ? this._data[totalTicks - 1].delta : 0;
+    const totalSections = this.format.length;
+    const totalTicks = this._data.length;
+    const firstTick = totalTicks ? this._data[0].delta : 0;
+    const lastTick = totalTicks ? this._data[totalTicks - 1].delta : 0;
 
-    let duration = this.dataDuration || lastTick;
-    let dataScaleX = this.dataScaleX = width / (duration - this.dataOffsetX);
-    let dataScaleY = this.dataScaleY = height * this.dampenValuesFactor;
+    const duration = this.dataDuration || lastTick;
+    const dataScaleX = this.dataScaleX = width / (duration - this.dataOffsetX);
+    const dataScaleY = this.dataScaleY = height * this.dampenValuesFactor;
 
     // Draw the graph.
 
-    let prevHeights = Array.from({ length: totalTicks }).fill(0);
+    const prevHeights = Array.from({ length: totalTicks }).fill(0);
 
     ctx.globalCompositeOperation = "destination-over";
     ctx.strokeStyle = this.strokeColor;
@@ -144,10 +142,10 @@ MountainGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
       ctx.beginPath();
 
       for (let tick = 0; tick < totalTicks; tick++) {
-        let { delta, values } = this._data[tick];
-        let currX = (delta - this.dataOffsetX) * dataScaleX;
-        let currY = values[section] * dataScaleY;
-        let prevY = prevHeights[tick];
+        const { delta, values } = this._data[tick];
+        const currX = (delta - this.dataOffsetX) * dataScaleX;
+        const currY = values[section] * dataScaleY;
+        const prevY = prevHeights[tick];
 
         if (delta == firstTick) {
           ctx.moveTo(-GRAPH_STROKE_WIDTH, height);
@@ -175,7 +173,7 @@ MountainGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
     // Draw the maximum value horizontal line.
 
     ctx.beginPath();
-    let maximumY = height * this.dampenValuesFactor;
+    const maximumY = height * this.dampenValuesFactor;
     ctx.moveTo(0, maximumY);
     ctx.lineTo(width, maximumY);
     ctx.stroke();
@@ -183,13 +181,13 @@ MountainGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
     // Draw the average value horizontal line.
 
     ctx.beginPath();
-    let averageY = height / 2 * this.dampenValuesFactor;
+    const averageY = height / 2 * this.dampenValuesFactor;
     ctx.moveTo(0, averageY);
     ctx.lineTo(width, averageY);
     ctx.stroke();
 
     return canvas;
-  }
+  },
 });
 
 module.exports = MountainGraphWidget;

@@ -5,9 +5,9 @@ function run_test() {
   run_next_test();
 }
 
-/// For bug 1024090: test edge case of notificationstore.json
+// For bug 1024090: test edge case of notificationstore.json
 add_test(function test_bug1024090_purge() {
-  Cu.import("resource://gre/modules/osfile.jsm");
+  ChromeUtils.import("resource://gre/modules/osfile.jsm");
   const NOTIFICATION_STORE_PATH =
     OS.Path.join(OS.Constants.Path.profileDir, "notificationstore.json");
   let cleanup = OS.File.writeAtomic(NOTIFICATION_STORE_PATH, "");
@@ -19,7 +19,7 @@ add_test(function test_bug1024090_purge() {
       ok(false, "Notification database error when cleaning: " + reason);
     }
   ).then(function next() {
-    do_print("Cleanup steps completed: " + NOTIFICATION_STORE_PATH);
+    info("Cleanup steps completed: " + NOTIFICATION_STORE_PATH);
     startNotificationDB();
     run_next_test();
   });
@@ -36,7 +36,7 @@ add_test(function test_bug1024090_send_one() {
   addAndSend("Notification:Save", msgReply, msgHandler, {
     origin: systemNotification.origin,
     notification: systemNotification,
-    requestID: requestID
+    requestID,
   });
 });
 
@@ -51,6 +51,6 @@ add_test(function test_bug1024090_get_one() {
 
   addAndSend("Notification:GetAll", msgReply, msgHandler, {
     origin: systemNotification.origin,
-    requestID: requestID
+    requestID,
   });
 });

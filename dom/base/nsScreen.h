@@ -7,51 +7,45 @@
 #define nsScreen_h___
 
 #include "mozilla/Attributes.h"
+#include "mozilla/dom/ScreenBinding.h"
+#include "mozilla/dom/ScreenLuminance.h"
 #include "mozilla/dom/ScreenOrientation.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/ErrorResult.h"
-#include "nsIDOMScreen.h"
+#include "mozilla/StaticPrefs.h"
 #include "nsCOMPtr.h"
 #include "nsRect.h"
 
 class nsDeviceContext;
 
 // Script "screen" object
-class nsScreen : public mozilla::DOMEventTargetHelper
-               , public nsIDOMScreen
-{
+class nsScreen : public mozilla::DOMEventTargetHelper {
   typedef mozilla::ErrorResult ErrorResult;
-public:
+
+ public:
   static already_AddRefed<nsScreen> Create(nsPIDOMWindowInner* aWindow);
 
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_NSIDOMSCREEN
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsScreen, mozilla::DOMEventTargetHelper)
-  NS_REALLY_FORWARD_NSIDOMEVENTTARGET(mozilla::DOMEventTargetHelper)
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsScreen,
+                                           mozilla::DOMEventTargetHelper)
 
-  nsPIDOMWindowInner* GetParentObject() const
-  {
-    return GetOwner();
-  }
+  nsPIDOMWindowInner* GetParentObject() const { return GetOwner(); }
 
   nsPIDOMWindowOuter* GetOuter() const;
 
-  int32_t GetTop(ErrorResult& aRv)
-  {
+  int32_t GetTop(ErrorResult& aRv) {
     nsRect rect;
     aRv = GetRect(rect);
     return rect.y;
   }
 
-  int32_t GetLeft(ErrorResult& aRv)
-  {
+  int32_t GetLeft(ErrorResult& aRv) {
     nsRect rect;
     aRv = GetRect(rect);
     return rect.x;
   }
 
-  int32_t GetWidth(ErrorResult& aRv)
-  {
+  int32_t GetWidth(ErrorResult& aRv) {
     nsRect rect;
     if (IsDeviceSizePageSize()) {
       if (nsCOMPtr<nsPIDOMWindowInner> owner = GetOwner()) {
@@ -62,11 +56,10 @@ public:
     }
 
     aRv = GetRect(rect);
-    return rect.width;
+    return rect.Width();
   }
 
-  int32_t GetHeight(ErrorResult& aRv)
-  {
+  int32_t GetHeight(ErrorResult& aRv) {
     nsRect rect;
     if (IsDeviceSizePageSize()) {
       if (nsCOMPtr<nsPIDOMWindowInner> owner = GetOwner()) {
@@ -77,42 +70,50 @@ public:
     }
 
     aRv = GetRect(rect);
-    return rect.height;
+    return rect.Height();
   }
 
   int32_t GetPixelDepth(ErrorResult& aRv);
-  int32_t GetColorDepth(ErrorResult& aRv)
-  {
-    return GetPixelDepth(aRv);
-  }
+  int32_t GetColorDepth(ErrorResult& aRv) { return GetPixelDepth(aRv); }
 
-  int32_t GetAvailTop(ErrorResult& aRv)
-  {
+  int32_t GetAvailTop(ErrorResult& aRv) {
     nsRect rect;
     aRv = GetAvailRect(rect);
     return rect.y;
   }
 
-  int32_t GetAvailLeft(ErrorResult& aRv)
-  {
+  int32_t GetAvailLeft(ErrorResult& aRv) {
     nsRect rect;
     aRv = GetAvailRect(rect);
     return rect.x;
   }
 
-  int32_t GetAvailWidth(ErrorResult& aRv)
-  {
+  int32_t GetAvailWidth(ErrorResult& aRv) {
     nsRect rect;
     aRv = GetAvailRect(rect);
-    return rect.width;
+    return rect.Width();
   }
 
-  int32_t GetAvailHeight(ErrorResult& aRv)
-  {
+  int32_t GetAvailHeight(ErrorResult& aRv) {
     nsRect rect;
     aRv = GetAvailRect(rect);
-    return rect.height;
+    return rect.Height();
   }
+
+  // Media Capabilities extension
+  mozilla::dom::ScreenColorGamut ColorGamut() const {
+    return mozilla::dom::ScreenColorGamut::Srgb;
+  }
+
+  already_AddRefed<mozilla::dom::ScreenLuminance> GetLuminance() const {
+    return nullptr;
+  }
+
+  static bool MediaCapabilitiesEnabled(JSContext* aCx, JSObject* aGlobal) {
+    return mozilla::StaticPrefs::MediaCapabilitiesScreenEnabled();
+  }
+
+  IMPL_EVENT_HANDLER(change);
 
   // Deprecated
   void GetMozOrientation(nsString& aOrientation,
@@ -121,20 +122,22 @@ public:
   IMPL_EVENT_HANDLER(mozorientationchange)
 
   bool MozLockOrientation(const nsAString& aOrientation, ErrorResult& aRv);
-  bool MozLockOrientation(const mozilla::dom::Sequence<nsString>& aOrientations, ErrorResult& aRv);
+  bool MozLockOrientation(const mozilla::dom::Sequence<nsString>& aOrientations,
+                          ErrorResult& aRv);
   void MozUnlockOrientation();
 
-  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override;
 
   mozilla::dom::ScreenOrientation* Orientation() const;
 
-protected:
+ protected:
   nsDeviceContext* GetDeviceContext();
   nsresult GetRect(nsRect& aRect);
   nsresult GetAvailRect(nsRect& aRect);
   nsresult GetWindowInnerRect(nsRect& aRect);
 
-private:
+ private:
   explicit nsScreen(nsPIDOMWindowInner* aWindow);
   virtual ~nsScreen();
 

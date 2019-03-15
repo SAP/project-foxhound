@@ -9,17 +9,11 @@
   <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>      
   <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>      
 
-<label accesskey="a" control="menulist"/>
-<label accesskey="b" control="textbox"/>
-<label accesskey="c" control="scale"/>
+<label accesskey="a" control="textbox"/>
+<label accesskey="b" control="textbox2"/>
 
-<menulist id="menulist" editable="true">
-  <menupopup>
-    <menuitem label="One"/>
-  </menupopup>
-</menulist>
 <textbox id="textbox"/>
-<scale id="scale"/>
+<textbox id="textbox2"/>
 
 <script class="testbody" type="application/javascript">
 <![CDATA[
@@ -46,56 +40,40 @@ function runTests()
   addEventListener("blur", blurOccurred, true);
 
   gExpectedBlur = null;
-  gExpectedFocus = $("menulist").inputField;
-  $("menulist").focus();
-
-  gExpectedBlur = gExpectedFocus;
   gExpectedFocus = $("textbox").inputField;
   $("textbox").focus();
 
   gExpectedBlur = gExpectedFocus;
-  gExpectedFocus = document.getAnonymousNodes($("scale"))[0];
-  $("scale").focus();
+  gExpectedFocus = $("textbox2").inputField;
+  $("textbox2").focus();
 
-  var accessKeyDetails = (navigator.platform.indexOf("Mac") >= 0) ?
-                         { altKey: true, ctrlKey : true } :
-                         { altKey : true, shiftKey: true };
-
-  gExpectedBlur = document.getAnonymousNodes($("scale"))[0];
-  gExpectedFocus = $("menulist").inputField;
-  synthesizeKey("a", accessKeyDetails);
+  var accessKeyDetails = (navigator.platform.includes("Mac")) ?
+                         {altKey: true, ctrlKey: true} :
+                         {altKey: true, shiftKey: true};
 
   gExpectedBlur = gExpectedFocus;
   gExpectedFocus = $("textbox").inputField;
-  synthesizeKey("b", accessKeyDetails);
+  synthesizeKey("a", accessKeyDetails);
 
   gExpectedBlur = gExpectedFocus;
-  gExpectedFocus = document.getAnonymousNodes($("scale"))[0];
-  synthesizeKey("c", accessKeyDetails);
+  gExpectedFocus = $("textbox2").inputField;
+  synthesizeKey("b", accessKeyDetails);
 
-  if (navigator.platform.indexOf("Mac") == -1) {
+  if (!navigator.platform.includes("Mac")) {
     gExpectedBlur = gExpectedFocus;
     gExpectedFocus = $("textbox").inputField;
-    synthesizeKey("VK_TAB", { shiftKey: true });
+    synthesizeKey("KEY_Tab", {shiftKey: true});
 
     gExpectedBlur = gExpectedFocus;
-    gExpectedFocus = $("menulist").inputField;
-    synthesizeKey("VK_TAB", { shiftKey: true });
+    gExpectedFocus = $("textbox2").inputField;
+    synthesizeKey("KEY_Tab");
 
-    gExpectedBlur = gExpectedFocus;
-    gExpectedFocus = $("textbox").inputField;
-    synthesizeKey("VK_TAB", { });
-
-    gExpectedBlur = gExpectedFocus;
-    gExpectedFocus = document.getAnonymousNodes($("scale"))[0];
-    synthesizeKey("VK_TAB", { });
-
-    is(gBlurs, 9, "correct number of blurs");
-    is(gFocuses, 10, "correct number of focuses");
-  }
-  else {
     is(gBlurs, 5, "correct number of blurs");
     is(gFocuses, 6, "correct number of focuses");
+  }
+  else {
+    is(gBlurs, 3, "correct number of blurs");
+    is(gFocuses, 4, "correct number of focuses");
   }
 
   removeEventListener("focus", focusOccurred, true);

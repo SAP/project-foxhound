@@ -4,7 +4,7 @@
 
 "use strict";
 
-const LMCBackstagePass = Cu.import("resource://gre/modules/LoginManagerContent.jsm", {});
+const LMCBackstagePass = ChromeUtils.import("resource://gre/modules/LoginManagerContent.jsm", {});
 const { LoginManagerContent, LoginFormFactory } = LMCBackstagePass;
 const TESTCASES = [
   {
@@ -78,11 +78,13 @@ const TESTCASES = [
   },
   {
     description: "skipEmptyFields should also skip white-space only fields",
+    /* eslint-disable no-tabs */
     document: `<input id="pw-space" type=password value=" ">
                <input id="pw-tab" type=password value="	">
                <input id="pw-newline" type=password form="form1" value="
 ">
       <form id="form1"></form>`,
+    /* eslint-disable no-tabs */
     returnedFieldIDsByFormLike: [[], []],
     skipEmptyFields: true,
   },
@@ -108,15 +110,24 @@ const TESTCASES = [
       notPasswordSelector: "#pw1",
     },
   },
+  {
+    beforeGetFunction(doc) {
+      doc.getElementById("pw1").remove();
+    },
+    description: "1 password field outside of a <form> which gets removed/disconnected",
+    document: `<input id="pw1" type=password>`,
+    returnedFieldIDsByFormLike: [[]],
+    skipEmptyFields: undefined,
+  },
 ];
 
 for (let tc of TESTCASES) {
-  do_print("Sanity checking the testcase: " + tc.description);
+  info("Sanity checking the testcase: " + tc.description);
 
   (function() {
     let testcase = tc;
-    add_task(function*() {
-      do_print("Starting testcase: " + testcase.description);
+    add_task(async function() {
+      info("Starting testcase: " + testcase.description);
       let document = MockDocument.createTestDocument("http://localhost:8080/test/",
                                                      testcase.document);
 
@@ -130,8 +141,12 @@ for (let tc of TESTCASES) {
         }
 
         // If the formLike is already present, ensure that the properties are the same.
-        do_print("Checking if the new FormLike for the same root has the same properties");
+        info("Checking if the new FormLike for the same root has the same properties");
         formLikeEqual(formLike, existingFormLike);
+      }
+
+      if (testcase.beforeGetFunction) {
+        await testcase.beforeGetFunction(document);
       }
 
       Assert.strictEqual(mapRootElementToFormLike.size, testcase.returnedFieldIDsByFormLike.length,
@@ -145,10 +160,10 @@ for (let tc of TESTCASES) {
           skipEmptyFields: testcase.skipEmptyFields,
         });
 
-        if (formLikeFromInput.rootElement instanceof Ci.nsIDOMHTMLFormElement) {
+        if (ChromeUtils.getClassName(formLikeFromInput.rootElement) === "HTMLFormElement") {
           let formLikeFromForm = LoginFormFactory.createFromForm(formLikeFromInput.rootElement);
-          do_print("Checking that the FormLike created for the <form> matches" +
-                   " the one from a password field");
+          info("Checking that the FormLike created for the <form> matches" +
+               " the one from a password field");
           formLikeEqual(formLikeFromInput, formLikeFromForm);
         }
 

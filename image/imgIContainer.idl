@@ -6,8 +6,10 @@
 
 #include "nsISupports.idl"
 
+webidl Document;
+
 %{C++
-#include "DrawResult.h"
+#include "ImgDrawResult.h"
 #include "gfxContext.h"
 #include "gfxMatrix.h"
 #include "gfxRect.h"
@@ -17,8 +19,6 @@
 #include "nsRect.h"
 #include "nsSize.h"
 #include "limits.h"
-
-class nsIDocument;
 
 namespace mozilla {
 namespace layers {
@@ -45,7 +45,7 @@ struct Orientation;
 
 %}
 
-native DrawResult(mozilla::image::DrawResult);
+native ImgDrawResult(mozilla::image::ImgDrawResult);
 [ptr] native gfxContext(gfxContext);
 [ref] native gfxMatrix(gfxMatrix);
 [ref] native gfxRect(gfxRect);
@@ -57,6 +57,7 @@ native nsIntRectByVal(nsIntRect);
 native nsSize(nsSize);
 [ptr] native nsIFrame(nsIFrame);
 native TempRefImageContainer(already_AddRefed<mozilla::layers::ImageContainer>);
+[ptr] native ImageContainer(mozilla::layers::ImageContainer);
 [ref] native ImageRegion(mozilla::image::ImageRegion);
 [ptr] native LayerManager(mozilla::layers::LayerManager);
 native Orientation(mozilla::image::Orientation);
@@ -65,7 +66,6 @@ native Orientation(mozilla::image::Orientation);
 native TempRefSourceSurface(already_AddRefed<mozilla::gfx::SourceSurface>);
 native TempRefImgIContainer(already_AddRefed<imgIContainer>);
 native nsIntSizeByVal(nsIntSize);
-[ptr] native nsIDocument(nsIDocument);
 
 
 /**
@@ -280,7 +280,7 @@ interface imgIContainer : nsISupports
                                                          in uint32_t aFlags);
   /**
    * Attempts to create an ImageContainer (and Image) containing the current
-   * frame.
+   * frame at its native size.
    *
    * Avoid calling this unless you're actually going to layerize this image.
    *
@@ -293,6 +293,43 @@ interface imgIContainer : nsISupports
    *         not be created.
    */
   [noscript, notxpcom] TempRefImageContainer getImageContainer(in LayerManager aManager,
+                                                               in uint32_t aFlags);
+
+  /**
+   * Attempts to create an ImageContainer (and Image) containing the current
+   * frame at the given size. Match the requested size is best effort; it's
+   * not guaranteed that the surface you get will be a perfect match. (Some
+   * reasons you may get a surface of a different size include: if you
+   * requested upscaling, or if downscale-during-decode is disabled.)
+   *
+   * Avoid calling this unless you're actually going to layerize this image.
+   *
+   * @param aManager The LayerManager which will be used to create the
+   *                 ImageContainer.
+   * @param aSVGContext If specified, SVG-related rendering context, such as
+   *                    overridden attributes on the image document's root <svg>
+   *                    node, and the size of the viewport that the full image
+   *                    would occupy. Ignored for raster images.
+   * @param aFlags Decoding / drawing flags (in other words, FLAG_* flags).
+   *               Currently only FLAG_SYNC_DECODE and FLAG_SYNC_DECODE_IF_FAST
+   *               are supported.
+   * @param aContainer Return value for ImageContainer for the current frame.
+   *                   May be null depending on the draw result.
+   * @return The draw result for the current frame.
+   */
+  [noscript, notxpcom] ImgDrawResult getImageContainerAtSize(in LayerManager aManager,
+                                                             [const] in nsIntSize aSize,
+                                                             [const] in MaybeSVGImageContext aSVGContext,
+                                                             in uint32_t aFlags,
+                                                             out ImageContainer aOutContainer);
+
+  /**
+   * @return true if getImageContainer() is expected to return a valid
+   *         ImageContainer when passed the given @Manager, @Size and @Flags
+   *         parameters.
+   */
+  [noscript, notxpcom] boolean isImageContainerAvailableAtSize(in LayerManager aManager,
+                                                               [const] in nsIntSize aSize,
                                                                in uint32_t aFlags);
 
   /**
@@ -397,10 +434,10 @@ interface imgIContainer : nsISupports
    *                    node, and the size of the viewport that the full image
    *                    would occupy. Ignored for raster images.
    * @param aFlags Flags of the FLAG_* variety
-   * @return A DrawResult value indicating whether and to what degree the
+   * @return A ImgDrawResult value indicating whether and to what degree the
    *         drawing operation was successful.
    */
-  [noscript, notxpcom] DrawResult
+  [noscript, notxpcom] ImgDrawResult
   draw(in gfxContext aContext,
        [const] in nsIntSize aSize,
        [const] in ImageRegion aRegion,
@@ -438,11 +475,7 @@ interface imgIContainer : nsISupports
    * @param aSize The size to which the image should be scaled while decoding,
    *              if possible. If the image cannot be scaled to this size while
    *              being decoded, it will be decoded at its intrinsic size.
-   * @param aFlags Flags of the FLAG_* variety. Only the decode flags
-   *               (FLAG_DECODE_*) and FLAG_SYNC_DECODE (which will
-   *               synchronously decode images that can be decoded "quickly",
-   *               just like startDecoding() does) are accepted; others will be
-   *               ignored.
+   * @param aFlags Flags of the FLAG_* variety.
    */
   [noscript] void requestDecodeForSize([const] in nsIntSize aSize,
                                        in uint32_t aFlags);
@@ -558,5 +591,14 @@ interface imgIContainer : nsISupports
    * Propagate the use counters (if any) from this container to the passed in
    * document.
    */
-  [noscript, notxpcom] void propagateUseCounters(in nsIDocument aDocument);
+  [noscript, notxpcom] void propagateUseCounters(in Document aDocument);
+
+  %{C++
+  /*
+   * Get the set of sizes the image can decode to natively.
+   */
+  virtual nsresult GetNativeSizes(nsTArray<nsIntSize>& aNativeSizes) const = 0;
+
+  virtual size_t GetNativeSizesLength() const = 0;
+  %}
 };

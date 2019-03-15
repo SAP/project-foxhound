@@ -8,14 +8,16 @@
 #include "DOMSVGNumberList.h"
 #include "DOMSVGAnimatedNumberList.h"
 #include "SVGAnimatedNumberList.h"
-#include "nsSVGElement.h"
+#include "SVGElement.h"
 #include "nsError.h"
-#include "nsContentUtils.h" // for NS_ENSURE_FINITE
+#include "nsContentUtils.h"  // for NS_ENSURE_FINITE
 #include "mozilla/dom/SVGNumberBinding.h"
+#include "mozilla/dom/SVGSVGElement.h"
 
 // See the architecture comment in DOMSVGAnimatedNumberList.h.
 
 namespace mozilla {
+namespace dom {
 
 // We could use NS_IMPL_CYCLE_COLLECTION(, except that in Unlink() we need to
 // clear our list's weak ref to us to be safe. (The other option would be to
@@ -52,107 +54,74 @@ NS_INTERFACE_MAP_END
 // Helper class: AutoChangeNumberNotifier
 // Stack-based helper class to pair calls to WillChangeNumberList and
 // DidChangeNumberList.
-class MOZ_RAII AutoChangeNumberNotifier
-{
-public:
-  explicit AutoChangeNumberNotifier(DOMSVGNumber* aNumber MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-    : mNumber(aNumber)
-  {
+class MOZ_RAII AutoChangeNumberNotifier {
+ public:
+  explicit AutoChangeNumberNotifier(
+      DOMSVGNumber* aNumber MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+      : mNumber(aNumber) {
     MOZ_GUARD_OBJECT_NOTIFIER_INIT;
     MOZ_ASSERT(mNumber, "Expecting non-null number");
     MOZ_ASSERT(mNumber->HasOwner(),
                "Expecting list to have an owner for notification");
     mEmptyOrOldValue =
-      mNumber->Element()->WillChangeNumberList(mNumber->mAttrEnum);
+        mNumber->Element()->WillChangeNumberList(mNumber->mAttrEnum);
   }
 
-  ~AutoChangeNumberNotifier()
-  {
+  ~AutoChangeNumberNotifier() {
     mNumber->Element()->DidChangeNumberList(mNumber->mAttrEnum,
                                             mEmptyOrOldValue);
-    if (mNumber->mList->IsAnimating()) {
+    // Null check mNumber->mList, since DidChangeNumberList can run script,
+    // potentially removing mNumber from its list.
+    if (mNumber->mList && mNumber->mList->IsAnimating()) {
       mNumber->Element()->AnimationNeedsResample();
     }
   }
 
-private:
+ private:
   DOMSVGNumber* const mNumber;
-  nsAttrValue   mEmptyOrOldValue;
+  nsAttrValue mEmptyOrOldValue;
   MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
-DOMSVGNumber::DOMSVGNumber(DOMSVGNumberList *aList,
-                           uint8_t aAttrEnum,
-                           uint32_t aListIndex,
-                           bool aIsAnimValItem)
-  : mList(aList)
-  , mParent(aList)
-  , mListIndex(aListIndex)
-  , mAttrEnum(aAttrEnum)
-  , mIsAnimValItem(aIsAnimValItem)
-  , mValue(0.0f)
-{
+DOMSVGNumber::DOMSVGNumber(DOMSVGNumberList* aList, uint8_t aAttrEnum,
+                           uint32_t aListIndex, bool aIsAnimValItem)
+    : mList(aList),
+      mParent(aList),
+      mListIndex(aListIndex),
+      mAttrEnum(aAttrEnum),
+      mIsAnimValItem(aIsAnimValItem),
+      mValue(0.0f) {
   // These shifts are in sync with the members in the header.
-  MOZ_ASSERT(aList &&
-             aAttrEnum < (1 << 4) &&
-             aListIndex <= MaxListIndex(),
+  MOZ_ASSERT(aList && aAttrEnum < (1 << 4) && aListIndex <= MaxListIndex(),
              "bad arg");
 
   MOZ_ASSERT(IndexIsValid(), "Bad index for DOMSVGNumber!");
 }
 
 DOMSVGNumber::DOMSVGNumber(nsISupports* aParent)
-  : mList(nullptr)
-  , mParent(aParent)
-  , mListIndex(0)
-  , mAttrEnum(0)
-  , mIsAnimValItem(false)
-  , mValue(0.0f)
-{
-}
+    : mList(nullptr),
+      mParent(aParent),
+      mListIndex(0),
+      mAttrEnum(0),
+      mIsAnimValItem(false),
+      mValue(0.0f) {}
 
-/* static */ already_AddRefed<DOMSVGNumber>
-DOMSVGNumber::Constructor(const dom::GlobalObject& aGlobal, ErrorResult& aRv)
-{
-  nsCOMPtr<nsPIDOMWindowInner> window =
-    do_QueryInterface(aGlobal.GetAsSupports());
-  if (!window) {
-    aRv.Throw(NS_ERROR_UNEXPECTED);
-    return nullptr;
-  }
+DOMSVGNumber::DOMSVGNumber(SVGSVGElement* aParent)
+    : mList(nullptr),
+      mParent(ToSupports(aParent)),
+      mListIndex(0),
+      mAttrEnum(0),
+      mIsAnimValItem(false),
+      mValue(0.0f) {}
 
-  RefPtr<DOMSVGNumber> number = new DOMSVGNumber(window);
-  return number.forget();
-}
-
-/* static */ already_AddRefed<DOMSVGNumber>
-DOMSVGNumber::Constructor(const dom::GlobalObject& aGlobal, float aValue,
-                          ErrorResult& aRv)
-{
-  nsCOMPtr<nsPIDOMWindowInner> window =
-    do_QueryInterface(aGlobal.GetAsSupports());
-  if (!window) {
-    aRv.Throw(NS_ERROR_UNEXPECTED);
-    return nullptr;
-  }
-
-  RefPtr<DOMSVGNumber> number = new DOMSVGNumber(window);
-  number->SetValue(aValue, aRv);
-  return number.forget();
-}
-
-float
-DOMSVGNumber::Value()
-{
+float DOMSVGNumber::Value() {
   if (mIsAnimValItem && HasOwner()) {
-    Element()->FlushAnimations(); // May make HasOwner() == false
+    Element()->FlushAnimations();  // May make HasOwner() == false
   }
   return HasOwner() ? InternalItem() : mValue;
 }
 
-void
-DOMSVGNumber::SetValue(float aValue, ErrorResult& aRv)
-{
+void DOMSVGNumber::SetValue(float aValue, ErrorResult& aRv) {
   if (mIsAnimValItem) {
     aRv.Throw(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR);
     return;
@@ -170,12 +139,8 @@ DOMSVGNumber::SetValue(float aValue, ErrorResult& aRv)
   mValue = aValue;
 }
 
-void
-DOMSVGNumber::InsertingIntoList(DOMSVGNumberList *aList,
-                                uint8_t aAttrEnum,
-                                uint32_t aListIndex,
-                                bool aIsAnimValItem)
-{
+void DOMSVGNumber::InsertingIntoList(DOMSVGNumberList* aList, uint8_t aAttrEnum,
+                                     uint32_t aListIndex, bool aIsAnimValItem) {
   NS_ASSERTION(!HasOwner(), "Inserting item that is already in a list");
 
   mList = aList;
@@ -186,45 +151,34 @@ DOMSVGNumber::InsertingIntoList(DOMSVGNumberList *aList,
   MOZ_ASSERT(IndexIsValid(), "Bad index for DOMSVGNumber!");
 }
 
-void
-DOMSVGNumber::RemovingFromList()
-{
+void DOMSVGNumber::RemovingFromList() {
   mValue = InternalItem();
   mList = nullptr;
   mIsAnimValItem = false;
 }
 
-float
-DOMSVGNumber::ToSVGNumber()
-{
+float DOMSVGNumber::ToSVGNumber() {
   return HasOwner() ? InternalItem() : mValue;
 }
 
-float&
-DOMSVGNumber::InternalItem()
-{
-  SVGAnimatedNumberList *alist = Element()->GetAnimatedNumberList(mAttrEnum);
-  return mIsAnimValItem && alist->mAnimVal ?
-    (*alist->mAnimVal)[mListIndex] :
-    alist->mBaseVal[mListIndex];
+float& DOMSVGNumber::InternalItem() {
+  SVGAnimatedNumberList* alist = Element()->GetAnimatedNumberList(mAttrEnum);
+  return mIsAnimValItem && alist->mAnimVal ? (*alist->mAnimVal)[mListIndex]
+                                           : alist->mBaseVal[mListIndex];
 }
 
 #ifdef DEBUG
-bool
-DOMSVGNumber::IndexIsValid()
-{
-  SVGAnimatedNumberList *alist = Element()->GetAnimatedNumberList(mAttrEnum);
-  return (mIsAnimValItem &&
-          mListIndex < alist->GetAnimValue().Length()) ||
-         (!mIsAnimValItem &&
-          mListIndex < alist->GetBaseValue().Length());
+bool DOMSVGNumber::IndexIsValid() {
+  SVGAnimatedNumberList* alist = Element()->GetAnimatedNumberList(mAttrEnum);
+  return (mIsAnimValItem && mListIndex < alist->GetAnimValue().Length()) ||
+         (!mIsAnimValItem && mListIndex < alist->GetBaseValue().Length());
 }
 #endif
 
-JSObject*
-DOMSVGNumber::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return dom::SVGNumberBinding::Wrap(aCx, this, aGivenProto);
+JSObject* DOMSVGNumber::WrapObject(JSContext* aCx,
+                                   JS::Handle<JSObject*> aGivenProto) {
+  return SVGNumber_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

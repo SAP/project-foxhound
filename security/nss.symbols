@@ -16,7 +16,6 @@ PL_*
 #include ../db/sqlite3/src/sqlite.symbols
 ATOB_AsciiToData
 ATOB_AsciiToData_Util
-ATOB_ConvertAsciiToItem
 ATOB_ConvertAsciiToItem_Util
 BTOA_ConvertItemToAscii_Util
 BTOA_DataToAscii
@@ -111,6 +110,7 @@ CERT_GenTime2FormattedAscii_Util
 CERT_GetCertChainFromCert
 CERT_GetCertEmailAddress
 CERT_GetCertificateRequestExtensions
+CERT_GetCertKeyType
 CERT_GetCertTimes
 CERT_GetCertTrust
 CERT_GetCommonName
@@ -164,7 +164,6 @@ DER_GeneralizedTimeToTime
 DER_GeneralizedTimeToTime_Util
 DER_GetInteger
 DER_GetInteger_Util
-DER_Lengths
 DER_SetUInteger
 DER_UTCTimeToTime_Util
 DSAU_DecodeDerSigToLen
@@ -180,9 +179,9 @@ HASH_GetType
 HASH_HashBuf
 HASH_ResultLenByOidTag
 HASH_Update
-NSSBase64_DecodeBuffer
 NSSBase64_EncodeItem_Util
 NSS_CMSContentInfo_GetContent
+NSS_CMSContentInfo_GetContentTypeTag
 NSS_CMSContentInfo_SetContent_Data
 NSS_CMSContentInfo_SetContent_EnvelopedData
 NSS_CMSContentInfo_SetContent_SignedData
@@ -214,7 +213,9 @@ NSS_CMSSignedData_Create
 NSS_CMSSignedData_CreateCertsOnly
 NSS_CMSSignedData_Destroy
 NSS_CMSSignedData_GetContentInfo
+NSS_CMSSignedData_GetDigestAlgs
 NSS_CMSSignedData_GetSignerInfo
+NSS_CMSSignedData_HasDigests
 NSS_CMSSignedData_ImportCerts
 NSS_CMSSignedData_SetDigestValue
 NSS_CMSSignedData_SignerInfoCount
@@ -262,19 +263,26 @@ NSS_Get_SEC_UTF8StringTemplate
 NSS_Get_SEC_UTF8StringTemplate_Util
 NSS_GetVersion
 NSS_Init
+NSS_InitContext
 NSS_Initialize
 NSS_InitWithMerge
 NSS_IsInitialized
+NSS_OptionGet
 NSS_OptionSet
 NSS_NoDB_Init
 NSS_SecureMemcmp
 NSS_SetAlgorithmPolicy
 NSS_SetDomesticPolicy
 NSS_Shutdown
+NSS_ShutdownContext
 NSSSMIME_GetVersion
 NSS_SMIMESignerInfo_SaveSMIMEProfile
 NSS_SMIMEUtil_FindBulkAlgForRecipients
 NSSSSL_GetVersion
+#ifdef XP_WIN
+_NSSUTIL_Access
+#endif
+NSSUTIL_AddNSSFlagToModuleSpec
 NSSUTIL_ArgDecodeNumber
 NSSUTIL_ArgFetchValue
 NSSUTIL_ArgGetLabel
@@ -296,12 +304,16 @@ NSSUTIL_MkModuleSpec
 NSSUTIL_MkNSSString
 NSSUTIL_MkSlotString
 NSSUTIL_Quote
+#ifdef XP_WIN
+_NSSUTIL_UTF8ToWide
+#endif
 PK11_AlgtagToMechanism
 PK11_Authenticate
 PK11_ChangePW
 PK11_CheckUserPassword
 PK11_CipherOp
 PK11_ConfigurePKCS11
+PK11_ConvertSessionSymKeyToTokenSymKey
 PK11_CreateContextBySymKey
 PK11_CreateDigestContext
 PK11_CreateGenericObject
@@ -311,6 +323,7 @@ PK11_Decrypt
 PK11_DeleteTokenCertAndKey
 PK11_DeleteTokenPrivateKey
 PK11_DeleteTokenPublicKey
+PK11_DeleteTokenSymKey
 PK11_DEREncodePublicKey
 PK11_Derive
 PK11_DeriveWithTemplate
@@ -362,21 +375,22 @@ PK11_GetKeyData
 PK11_GetKeyGen
 PK11_GetLowLevelKeyIDForPrivateKey
 PK11_GetMechanism
-PK11_GetMinimumPwdLength
 PK11_GetModInfo
+PK11_GetModuleURI
 PK11_GetNextSafe
 PK11_GetNextSymKey
 PK11_GetPadMechanism
 PK11_GetPrivateKeyNickname
 PK11_GetPrivateModulusLen
+PK11_GetSlotFromPrivateKey
 PK11_GetSlotID
 PK11_GetSlotInfo
 PK11_GetSlotName
-PK11_GetSlotPWValues
 PK11_GetSlotSeries
 PK11_GetSymKeyNickname
 PK11_GetTokenInfo
 PK11_GetTokenName
+PK11_GetTokenURI
 PK11_HasAttributeSet
 PK11_HashBuf
 PK11_HasRootCerts
@@ -384,6 +398,7 @@ PK11_ImportCert
 PK11_ImportCertForKey
 PK11_ImportCRL
 PK11_ImportDERPrivateKeyInfoAndReturnKey
+PK11_ImportEncryptedPrivateKeyInfoAndReturnKey
 PK11_ImportPublicKey
 PK11_ImportSymKey
 PK11_InitPin
@@ -392,6 +407,7 @@ PK11_IsFIPS
 PK11_IsFriendly
 PK11_IsHW
 PK11_IsInternal
+PK11_IsInternalKeySlot
 PK11_IsLoggedIn
 PK11_IsPresent
 PK11_IsReadOnly
@@ -430,7 +446,6 @@ PK11_ResetToken
 PK11SDR_Decrypt
 PK11SDR_Encrypt
 PK11_SetPasswordFunc
-PK11_SetSlotPWValues
 PK11_SetSymKeyNickname
 PK11_Sign
 PK11_SignatureLen
@@ -441,6 +456,7 @@ PK11_UnwrapSymKey
 PK11_UpdateSlotAttribute
 PK11_UserDisableSlot
 PK11_UserEnableSlot
+PK11_Verify
 PK11_VerifyWithMechanism
 PK11_WrapPrivKey
 PK11_WrapSymKey
@@ -509,7 +525,6 @@ SECITEM_AllocArray
 SECITEM_AllocItem
 SECITEM_AllocItem_Util
 SECITEM_ArenaDupItem_Util
-SECITEM_CompareItem
 SECITEM_CompareItem_Util
 SECITEM_CopyItem
 SECITEM_CopyItem_Util
@@ -572,6 +587,7 @@ SECMOD_ReferenceModule
 SECMOD_ReleaseReadLock
 SECMOD_UnloadUserModule
 SECMOD_UpdateModule
+SECMOD_UpdateSlotList
 SECMOD_WaitForAnyTokenEvent
 SEC_NullTemplate_Util @DATA@
 SEC_ObjectIDTemplate_Util @DATA@
@@ -664,6 +680,7 @@ SSL_ForceHandshake
 SSL_GetChannelInfo
 SSL_GetCipherSuiteInfo
 SSL_GetClientAuthDataHook
+SSL_GetExperimentalAPI
 SSL_GetImplementedCiphers
 SSL_GetNextProto
 SSL_GetNumImplementedCiphers
@@ -713,6 +730,13 @@ VFY_VerifyDataWithAlgorithmID
 VFY_VerifyDigestDirect
 _SGN_VerifyPKCS1DigestInfo
 __PK11_SetCertificateNickname
+# These symbols are not used by Firefox but are used across NSS library boundaries.
+NSS_SecureMemcmpZero
+PORT_ZAllocAlignedOffset_Util
+CERT_FindCertByNicknameOrEmailAddrCX
+SECKEY_GetPrivateKeyType
+SEC_DerSignDataWithAlgorithmID
+SEC_CreateSignatureAlgorithmParameters
 # These symbols are not used by Firefox itself, but are used by Java's security
 # libraries, which in turn are used by Java applets/plugins/etc.  Provide them
 # to make Java code happy.

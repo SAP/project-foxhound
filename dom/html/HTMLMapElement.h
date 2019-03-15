@@ -9,7 +9,6 @@
 
 #include "mozilla/Attributes.h"
 #include "nsGenericHTMLElement.h"
-#include "nsIDOMHTMLMapElement.h"
 #include "nsGkAtoms.h"
 
 class nsContentList;
@@ -17,39 +16,34 @@ class nsContentList;
 namespace mozilla {
 namespace dom {
 
-class HTMLMapElement final : public nsGenericHTMLElement,
-                             public nsIDOMHTMLMapElement
-{
-public:
-  explicit HTMLMapElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+class HTMLMapElement final : public nsGenericHTMLElement {
+ public:
+  explicit HTMLMapElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
 
-  // nsIDOMHTMLMapElement
-  NS_DECL_NSIDOMHTMLMAPELEMENT
-
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED_NO_UNLINK(HTMLMapElement,
                                                      nsGenericHTMLElement)
 
-  // XPCOM GetName is fine.
-  void SetName(const nsAString& aName, ErrorResult& aError)
-  {
+  void GetName(nsAString& aValue) { GetHTMLAttr(nsGkAtoms::name, aValue); }
+  void SetName(const nsAString& aName, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::name, aName, aError);
   }
   nsIHTMLCollection* Areas();
 
-  virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapNode(JSContext* aCx,
+                             JS::Handle<JSObject*> aGivenProto) override;
 
-protected:
+ protected:
   ~HTMLMapElement() {}
 
   RefPtr<nsContentList> mAreas;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_HTMLMapElement_h
+#endif  // mozilla_dom_HTMLMapElement_h

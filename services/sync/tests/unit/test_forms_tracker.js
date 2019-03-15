@@ -1,72 +1,82 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Cu.import("resource://gre/modules/Log.jsm");
-Cu.import("resource://services-sync/engines/forms.js");
-Cu.import("resource://services-sync/service.js");
-Cu.import("resource://services-sync/util.js");
+ChromeUtils.import("resource://gre/modules/Log.jsm");
+ChromeUtils.import("resource://services-sync/engines/forms.js");
+ChromeUtils.import("resource://services-sync/service.js");
+ChromeUtils.import("resource://services-sync/util.js");
 
-function run_test() {
+add_task(async function run_test() {
   _("Verify we've got an empty tracker to work with.");
   let engine = new FormEngine(Service);
+  await engine.initialize();
   let tracker = engine._tracker;
   // Don't do asynchronous writes.
   tracker.persistChangedIDs = false;
 
-  do_check_empty(tracker.changedIDs);
+  let changes = await tracker.getChangedIDs();
+  do_check_empty(changes);
   Log.repository.rootLogger.addAppender(new Log.DumpAppender());
 
-  function addEntry(name, value) {
-    engine._store.create({name, value});
+  async function addEntry(name, value) {
+    await engine._store.create({name, value});
+    await engine._tracker.asyncObserver.promiseObserversComplete();
   }
-  function removeEntry(name, value) {
-    let guid = engine._findDupe({name, value});
-    engine._store.remove({id: guid});
+  async function removeEntry(name, value) {
+    let guid = await engine._findDupe({name, value});
+    await engine._store.remove({id: guid});
+    await engine._tracker.asyncObserver.promiseObserversComplete();
   }
 
   try {
     _("Create an entry. Won't show because we haven't started tracking yet");
-    addEntry("name", "John Doe");
-    do_check_empty(tracker.changedIDs);
+    await addEntry("name", "John Doe");
+    changes = await tracker.getChangedIDs();
+    do_check_empty(changes);
 
     _("Tell the tracker to start tracking changes.");
-    Svc.Obs.notify("weave:engine:start-tracking");
-    removeEntry("name", "John Doe");
-    addEntry("email", "john@doe.com");
-    do_check_attribute_count(tracker.changedIDs, 2);
+    tracker.start();
+    await removeEntry("name", "John Doe");
+    await addEntry("email", "john@doe.com");
+    changes = await tracker.getChangedIDs();
+    do_check_attribute_count(changes, 2);
 
     _("Notifying twice won't do any harm.");
-    Svc.Obs.notify("weave:engine:start-tracking");
-    addEntry("address", "Memory Lane");
-    do_check_attribute_count(tracker.changedIDs, 3);
+    tracker.start();
+    await addEntry("address", "Memory Lane");
+    changes = await tracker.getChangedIDs();
+    do_check_attribute_count(changes, 3);
 
 
     _("Check that ignoreAll is respected");
-    tracker.clearChangedIDs();
+    await tracker.clearChangedIDs();
     tracker.score = 0;
     tracker.ignoreAll = true;
-    addEntry("username", "johndoe123");
-    addEntry("favoritecolor", "green");
-    removeEntry("name", "John Doe");
+    await addEntry("username", "johndoe123");
+    await addEntry("favoritecolor", "green");
+    await removeEntry("name", "John Doe");
     tracker.ignoreAll = false;
-    do_check_empty(tracker.changedIDs);
+    changes = await tracker.getChangedIDs();
+    do_check_empty(changes);
     equal(tracker.score, 0);
 
     _("Let's stop tracking again.");
-    tracker.clearChangedIDs();
-    Svc.Obs.notify("weave:engine:stop-tracking");
-    removeEntry("address", "Memory Lane");
-    do_check_empty(tracker.changedIDs);
+    await tracker.clearChangedIDs();
+    await tracker.stop();
+    await removeEntry("address", "Memory Lane");
+    changes = await tracker.getChangedIDs();
+    do_check_empty(changes);
 
     _("Notifying twice won't do any harm.");
-    Svc.Obs.notify("weave:engine:stop-tracking");
-    removeEntry("email", "john@doe.com");
-    do_check_empty(tracker.changedIDs);
+    await tracker.stop();
+    await removeEntry("email", "john@doe.com");
+    changes = await tracker.getChangedIDs();
+    do_check_empty(changes);
 
 
 
   } finally {
     _("Clean up.");
-    engine._store.wipe();
+    await engine._store.wipe();
   }
-}
+});

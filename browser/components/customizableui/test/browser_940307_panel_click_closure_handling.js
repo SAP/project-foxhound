@@ -6,97 +6,67 @@
 
 var button, menuButton;
 /* Clicking a button should close the panel */
-add_task(function*() {
-  button = document.createElement("toolbarbutton");
+add_task(async function plain_button() {
+  button = document.createXULElement("toolbarbutton");
   button.id = "browser_940307_button";
   button.setAttribute("label", "Button");
-  PanelUI.contents.appendChild(button);
-  yield PanelUI.show();
-  let hiddenAgain = promisePanelHidden(window);
+  gNavToolbox.palette.appendChild(button);
+  CustomizableUI.addWidgetToArea(button.id, CustomizableUI.AREA_FIXED_OVERFLOW_PANEL);
+
+  await waitForOverflowButtonShown();
+
+  await document.getElementById("nav-bar").overflowable.show();
+  let hiddenAgain = promiseOverflowHidden(window);
   EventUtils.synthesizeMouseAtCenter(button, {});
-  yield hiddenAgain;
+  await hiddenAgain;
+  CustomizableUI.removeWidgetFromArea(button.id);
   button.remove();
 });
 
-/* Clicking a menu button should close the panel, opening the popup shouldn't.  */
-add_task(function*() {
-  menuButton = document.createElement("toolbarbutton");
-  menuButton.setAttribute("type", "menu-button");
-  menuButton.id = "browser_940307_menubutton";
-  menuButton.setAttribute("label", "Menu button");
+add_task(async function searchbar_in_panel() {
+  CustomizableUI.addWidgetToArea("search-container",
+                                 CustomizableUI.AREA_FIXED_OVERFLOW_PANEL);
 
-  let menuPopup = document.createElement("menupopup");
-  menuPopup.id = "browser_940307_menupopup";
+  await waitForOverflowButtonShown();
 
-  let menuItem = document.createElement("menuitem");
-  menuItem.setAttribute("label", "Menu item");
-  menuItem.id = "browser_940307_menuitem";
+  await document.getElementById("nav-bar").overflowable.show();
 
-  menuPopup.appendChild(menuItem);
-  menuButton.appendChild(menuPopup);
-  PanelUI.contents.appendChild(menuButton);
-
-  yield PanelUI.show();
-  let hiddenAgain = promisePanelHidden(window);
-  let innerButton = document.getAnonymousElementByAttribute(menuButton, "anonid", "button");
-  EventUtils.synthesizeMouseAtCenter(innerButton, {});
-  yield hiddenAgain;
-
-  // Now click the dropmarker to show the menu
-  yield PanelUI.show();
-  hiddenAgain = promisePanelHidden(window);
-  let menuShown = promisePanelElementShown(window, menuPopup);
-  let dropmarker = document.getAnonymousElementByAttribute(menuButton, "type", "menu-button");
-  EventUtils.synthesizeMouseAtCenter(dropmarker, {});
-  yield menuShown;
-  // Panel should stay open:
-  ok(isPanelUIOpen(), "Panel should still be open");
-  let menuHidden = promisePanelElementHidden(window, menuPopup);
-  // Then click the menu item to close all the things
-  EventUtils.synthesizeMouseAtCenter(menuItem, {});
-  yield menuHidden;
-  yield hiddenAgain;
-  menuButton.remove();
-});
-
-add_task(function*() {
   let searchbar = document.getElementById("searchbar");
-  gCustomizeMode.addToPanel(searchbar);
-  let placement = CustomizableUI.getPlacementOfWidget("search-container");
-  is(placement.area, CustomizableUI.AREA_PANEL, "Should be in panel");
-  yield PanelUI.show();
-  yield waitForCondition(() => "value" in searchbar && searchbar.value === "");
+  await waitForCondition(() => "value" in searchbar && searchbar.value === "");
 
   // Focusing a non-empty searchbox will cause us to open the
   // autocomplete panel and search for suggestions, which would
   // trigger network requests. Temporarily disable suggestions.
-  yield SpecialPowers.pushPrefEnv({set: [["browser.search.suggest.enabled", false]]});
+  await SpecialPowers.pushPrefEnv({set: [["browser.search.suggest.enabled", false]]});
+  let dontShowPopup = e => e.preventDefault();
+  let searchbarPopup = searchbar.textbox.popup;
+  searchbarPopup.addEventListener("popupshowing", dontShowPopup);
 
   searchbar.value = "foo";
   searchbar.focus();
   // Reaching into this context menu is pretty evil, but hey... it's a test.
-  let textbox = document.getAnonymousElementByAttribute(searchbar.textbox, "anonid", "textbox-input-box");
-  let contextmenu = document.getAnonymousElementByAttribute(textbox, "anonid", "input-box-contextmenu");
+  let textbox = document.getAnonymousElementByAttribute(searchbar.textbox, "anonid", "moz-input-box");
+  let contextmenu = textbox.menupopup;
   let contextMenuShown = promisePanelElementShown(window, contextmenu);
   EventUtils.synthesizeMouseAtCenter(searchbar, {type: "contextmenu", button: 2});
-  yield contextMenuShown;
+  await contextMenuShown;
 
-  ok(isPanelUIOpen(), "Panel should still be open");
+  ok(isOverflowOpen(), "Panel should still be open");
 
   let selectAll = contextmenu.querySelector("[cmd='cmd_selectAll']");
   let contextMenuHidden = promisePanelElementHidden(window, contextmenu);
   EventUtils.synthesizeMouseAtCenter(selectAll, {});
-  yield contextMenuHidden;
+  await contextMenuHidden;
 
-  // Hide the suggestion panel.
-  searchbar.textbox.popup.hidePopup();
+  ok(isOverflowOpen(), "Panel should still be open");
 
-  ok(isPanelUIOpen(), "Panel should still be open");
+  let hiddenPanelPromise = promiseOverflowHidden(window);
+  EventUtils.synthesizeKey("KEY_Escape");
+  await hiddenPanelPromise;
+  ok(!isOverflowOpen(), "Panel should no longer be open");
 
-  let hiddenPanelPromise = promisePanelHidden(window);
-  EventUtils.synthesizeKey("VK_ESCAPE", {});
-  yield hiddenPanelPromise;
-  ok(!isPanelUIOpen(), "Panel should no longer be open");
+  // Allow search bar popup to show again.
+  searchbarPopup.removeEventListener("popupshowing", dontShowPopup);
 
   // We focused the search bar earlier - ensure we don't keep doing that.
   gURLBar.select();
@@ -104,19 +74,23 @@ add_task(function*() {
   CustomizableUI.reset();
 });
 
-add_task(function*() {
-  button = document.createElement("toolbarbutton");
+add_task(async function disabled_button_in_panel() {
+  button = document.createXULElement("toolbarbutton");
   button.id = "browser_946166_button_disabled";
   button.setAttribute("disabled", "true");
   button.setAttribute("label", "Button");
-  PanelUI.contents.appendChild(button);
-  yield PanelUI.show();
+  gNavToolbox.palette.appendChild(button);
+  CustomizableUI.addWidgetToArea(button.id, CustomizableUI.AREA_FIXED_OVERFLOW_PANEL);
+
+  await waitForOverflowButtonShown();
+
+  await document.getElementById("nav-bar").overflowable.show();
   EventUtils.synthesizeMouseAtCenter(button, {});
-  is(PanelUI.panel.state, "open", "Popup stays open");
+  is(PanelUI.overflowPanel.state, "open", "Popup stays open");
   button.removeAttribute("disabled");
-  let hiddenAgain = promisePanelHidden(window);
+  let hiddenAgain = promiseOverflowHidden(window);
   EventUtils.synthesizeMouseAtCenter(button, {});
-  yield hiddenAgain;
+  await hiddenAgain;
   button.remove();
 });
 
@@ -130,7 +104,8 @@ registerCleanupFunction(function() {
   // Sadly this isn't task.jsm-enabled, so we can't wait for this to happen. But we should
   // definitely close it here and hope it won't interfere with other tests.
   // Of course, all the tests are meant to do this themselves, but if they fail...
-  if (isPanelUIOpen()) {
-    PanelUI.hide();
+  if (isOverflowOpen()) {
+    PanelUI.overflowPanel.hidePopup();
   }
+  CustomizableUI.reset();
 });

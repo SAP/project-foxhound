@@ -14,9 +14,9 @@ function run_test() {
   run_next_test();
 }
 
-add_task(function* test_register_invalid_channel() {
+add_task(async function test_register_invalid_channel() {
   let db = PushServiceWebSocket.newPushDB();
-  do_register_cleanup(() => {return db.drop().then(_ => db.close());});
+  registerCleanupFunction(() => {return db.drop().then(_ => db.close());});
 
   PushServiceWebSocket._generateID = () => channelID;
   PushService.init({
@@ -43,15 +43,16 @@ add_task(function* test_register_invalid_channel() {
     }
   });
 
-  yield rejects(
+  await rejects(
     PushService.register({
       scope: 'https://example.com/invalid-channel',
       originAttributes: ChromeUtils.originAttributesToSuffix(
         { appId: Ci.nsIScriptSecurityManager.NO_APP_ID, inIsolatedMozBrowser: false }),
     }),
+    /Registration error/,
     'Expected error for invalid channel ID'
   );
 
-  let record = yield db.getByKeyID(channelID);
+  let record = await db.getByKeyID(channelID);
   ok(!record, 'Should not store records for error responses');
 });

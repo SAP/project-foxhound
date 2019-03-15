@@ -6,14 +6,11 @@
 
 "use strict";
 
-const { require } = Components.utils.import("resource://devtools/shared/Loader.jsm", {});
-const flags = require("devtools/shared/flags");
-
-flags.testing = true;
+const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
 
 function waitUntilState(store, predicate) {
   return new Promise(resolve => {
-    let unsubscribe = store.subscribe(check);
+    const unsubscribe = store.subscribe(check);
     function check() {
       if (predicate(store.getState())) {
         unsubscribe();

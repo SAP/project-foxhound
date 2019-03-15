@@ -5,7 +5,7 @@
 // case identifies the expected innermost shared scope by the name of a
 // variable in it.
 
-var g = newGlobal();
+var g = newGlobal({newCompartment: true});
 g.eval("function h() { debugger; }");
 var dbg = Debugger(g);
 var hits, name, shared, unshared;
@@ -89,7 +89,7 @@ function DeepStaticShallowDynamic(i, n) {
 }
 g.eval(DeepStaticShallowDynamic(1, N));
 
-function range(start, stop) {
+function* range(start, stop) {
     for (var i = start; i < stop; i++)
         yield i;
 }

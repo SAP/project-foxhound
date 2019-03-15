@@ -8,13 +8,15 @@
 function test() {
   // initialization
   waitForExplicitFinish();
+  SpecialPowers.pushPrefEnv({"set": [["security.allow_eval_with_system_principal",
+                                      true]]});
   let windowsToClose = [];
   let testURI = "about:blank";
   let pbMenuItem;
   let cmd;
 
   function doTest(aIsPrivateMode, aWindow, aCallback) {
-    aWindow.gBrowser.selectedBrowser.addEventListener("load", function() {
+    BrowserTestUtils.browserLoaded(aWindow.gBrowser.selectedBrowser).then(function() {
       ok(aWindow.gPrivateBrowsingUI, "The gPrivateBrowsingUI object exists");
 
       pbMenuItem = aWindow.document.getElementById("menu_newPrivateWindow");
@@ -30,9 +32,9 @@ function test() {
         aIsPrivateMode + ")");
 
       aCallback();
-    }, {capture: true, once: true});
+    });
 
-    aWindow.gBrowser.selectedBrowser.loadURI(testURI);
+    BrowserTestUtils.loadURI(aWindow.gBrowser.selectedBrowser, testURI);
   }
 
   function openPrivateBrowsingModeByUI(aWindow, aCallback) {
@@ -42,7 +44,7 @@ function test() {
           windowsToClose.push(aSubject);
           aCallback(aSubject);
       }, {once: true});
-    }, "domwindowopened", false);
+    }, "domwindowopened");
 
     cmd = aWindow.document.getElementById("Tools:PrivateBrowsing");
     var func = new Function("", cmd.getAttribute("oncommand"));

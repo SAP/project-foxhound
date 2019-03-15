@@ -6,11 +6,11 @@ package org.mozilla.gecko.sync.stage;
 
 import android.accounts.Account;
 import android.content.Context;
+import android.os.SystemClock;
 import android.support.annotation.NonNull;
 import android.text.TextUtils;
 import android.util.Log;
 
-import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
@@ -29,6 +29,7 @@ import org.mozilla.gecko.background.fxa.FxAccountClient20;
 import org.mozilla.gecko.background.fxa.FxAccountClientException;
 import org.mozilla.gecko.fxa.FirefoxAccounts;
 import org.mozilla.gecko.fxa.authenticator.AndroidFxAccount;
+import org.mozilla.gecko.fxa.login.State;
 import org.mozilla.gecko.sync.CommandProcessor;
 import org.mozilla.gecko.sync.CommandProcessor.Command;
 import org.mozilla.gecko.sync.CryptoRecord;
@@ -52,6 +53,7 @@ import org.mozilla.gecko.sync.repositories.android.RepoUtils;
 import org.mozilla.gecko.sync.repositories.domain.ClientRecord;
 import org.mozilla.gecko.sync.repositories.domain.ClientRecordFactory;
 import org.mozilla.gecko.sync.repositories.domain.VersionConstants;
+import org.mozilla.gecko.sync.telemetry.TelemetryCollector;
 
 import ch.boye.httpclientandroidlib.HttpStatus;
 
@@ -64,6 +66,10 @@ public class SyncClientsEngineStage extends AbstractSessionManagingSyncStage {
   public static final int MAX_UPLOAD_FAILURE_COUNT = 5;
   public static final long NOTIFY_TAB_SENT_TTL_SECS = TimeUnit.SECONDS.convert(1L, TimeUnit.HOURS); // 1 hour
 
+  // Reasons behind sending collection_changed push notifications.
+  public static final String COLLECTION_MODIFIED_REASON_SENDTAB = "sendtab";
+  public static final String COLLECTION_MODIFIED_REASON_FIRSTSYNC = "firstsync";
+
   protected final ClientRecordFactory factory = new ClientRecordFactory();
   protected ClientUploadDelegate clientUploadDelegate;
   protected ClientDownloadDelegate clientDownloadDelegate;
@@ -73,6 +79,7 @@ public class SyncClientsEngineStage extends AbstractSessionManagingSyncStage {
 
   protected volatile boolean shouldWipe;
   protected volatile boolean shouldUploadLocalRecord;     // Set if, e.g., we received commands or need to refresh our version.
+  protected volatile boolean shouldNotifyOtherClients = false; // If set, ask the FxA server to notify other clients that the client collection changed.
   protected final AtomicInteger uploadAttemptsCount = new AtomicInteger();
   protected final List<ClientRecord> modifiedClientsToUpload = new ArrayList<ClientRecord>();
 
@@ -125,6 +132,8 @@ public class SyncClientsEngineStage extends AbstractSessionManagingSyncStage {
 
     @Override
     public void handleRequestSuccess(SyncStorageResponse response) {
+      final Context context = session.getContext();
+      final Account account = FirefoxAccounts.getFirefoxAccount(context);
 
       // Hang onto the server's last modified timestamp to use
       // in X-If-Unmodified-Since for upload.
@@ -139,6 +148,7 @@ public class SyncClientsEngineStage extends AbstractSessionManagingSyncStage {
       if (!localAccountGUIDDownloaded) {
         Logger.info(LOG_TAG, "Local client GUID does not exist on the server. Upload timestamp will be reset.");
         session.config.persistServerClientRecordTimestamp(0);
+        shouldNotifyOtherClients = true;
       }
       localAccountGUIDDownloaded = false;
 
@@ -173,36 +183,49 @@ public class SyncClientsEngineStage extends AbstractSessionManagingSyncStage {
         // before we actually uploaded the records
         uploadRemoteRecords();
 
-        // Notify the clients who got their record written
-        notifyClients(devicesToNotify);
+        // We will send a push notification later anyway.
+        if (!shouldNotifyOtherClients && account != null) {
+          // Notify the clients who got their record written
+          final AndroidFxAccount fxAccount = new AndroidFxAccount(context, account);
+          notifyClients(fxAccount, devicesToNotify, NOTIFY_TAB_SENT_TTL_SECS, COLLECTION_MODIFIED_REASON_SENDTAB);
+        }
 
         return;
       }
       checkAndUpload();
+      if (shouldNotifyOtherClients && account != null) {
+        final AndroidFxAccount fxAccount = new AndroidFxAccount(context, account);
+        notifyAllClients(fxAccount, 0, COLLECTION_MODIFIED_REASON_FIRSTSYNC);
+      }
     }
 
-    private void notifyClients(final List<String> devicesToNotify) {
-      final ExecutorService executor = Executors.newSingleThreadExecutor();
-      final Context context = session.getContext();
-      final Account account = FirefoxAccounts.getFirefoxAccount(context);
-      if (account == null) {
-        Log.e(LOG_TAG, "Can't notify other clients: no account");
-        return;
-      }
-      final AndroidFxAccount fxAccount = new AndroidFxAccount(context, account);
-      final ExtendedJSONObject payload = createNotifyDevicesPayload();
+    private void notifyClients(@NonNull AndroidFxAccount fxAccount, @NonNull List<String> devicesToNotify,
+                               long ttl, @NonNull String reason) {
+      final ExtendedJSONObject body = createNotifyClientsBody(devicesToNotify, ttl, reason);
+      notifyClientsHelper(fxAccount, body);
+    }
 
+    private void notifyAllClients(@NonNull AndroidFxAccount fxAccount, long ttl,
+                                  @NonNull String reason) {
+      final ExtendedJSONObject body = createNotifyAllClientsBody(fxAccount.getDeviceId(), ttl, reason);
+      notifyClientsHelper(fxAccount, body);
+    }
+
+    private void notifyClientsHelper(@NonNull AndroidFxAccount fxAccount, @NonNull ExtendedJSONObject body) {
       final byte[] sessionToken;
       try {
-        sessionToken = fxAccount.getSessionToken();
-      } catch (AndroidFxAccount.InvalidFxAState invalidFxAState) {
-        Log.e(LOG_TAG, "Could not get session token", invalidFxAState);
+        sessionToken = fxAccount.getState().getSessionToken();
+      } catch (State.NotASessionTokenState e) {
+        // Most of the time we should never reach this, but there can be races with the account
+        // state, so better safe than sorry.
+        Log.e(LOG_TAG, "Could not get a session token during Sync (?)", e);
         return;
       }
 
+      final ExecutorService executor = Executors.newSingleThreadExecutor();
       // API doc : https://github.com/mozilla/fxa-auth-server/blob/master/docs/api.md#post-v1accountdevicesnotify
       final FxAccountClient fxAccountClient = new FxAccountClient20(fxAccount.getAccountServerURI(), executor);
-      fxAccountClient.notifyDevices(sessionToken, devicesToNotify, payload, NOTIFY_TAB_SENT_TTL_SECS, new FxAccountClient20.RequestDelegate<ExtendedJSONObject>() {
+      fxAccountClient.notifyDevices(sessionToken, body, new FxAccountClient20.RequestDelegate<ExtendedJSONObject>() {
         @Override
         public void handleError(Exception e) {
           Log.e(LOG_TAG, "Error while notifying devices", e);
@@ -215,14 +238,45 @@ public class SyncClientsEngineStage extends AbstractSessionManagingSyncStage {
 
         @Override
         public void handleSuccess(ExtendedJSONObject result) {
-          Log.i(LOG_TAG, devicesToNotify.size() + " devices notified");
+          Log.i(LOG_TAG, "Devices notified");
         }
       });
     }
 
     @NonNull
     @SuppressWarnings("unchecked")
-    private ExtendedJSONObject createNotifyDevicesPayload() {
+    private ExtendedJSONObject createNotifyClientsBody(@NonNull List<String> devicesToNotify,
+                                                       long ttl, @NonNull String reason) {
+      final ExtendedJSONObject body = new ExtendedJSONObject();
+      final JSONArray to = new JSONArray();
+      to.addAll(devicesToNotify);
+      body.put("to", to);
+      createNotifyClientsHelper(body, ttl, reason);
+      return body;
+    }
+
+    @NonNull
+    @SuppressWarnings("unchecked")
+    private ExtendedJSONObject createNotifyAllClientsBody(@NonNull String localFxADeviceId,
+                                                          long ttl, @NonNull String reason) {
+      final ExtendedJSONObject body = new ExtendedJSONObject();
+      body.put("to", "all");
+      final JSONArray excluded = new JSONArray();
+      excluded.add(localFxADeviceId);
+      body.put("excluded", excluded);
+      createNotifyClientsHelper(body, ttl, reason);
+      return body;
+    }
+
+    private void createNotifyClientsHelper(ExtendedJSONObject body, long ttl,
+                                           @NonNull String reason) {
+      body.put("payload", createNotifyDevicesPayload(reason));
+      body.put("TTL", ttl);
+    }
+
+    @NonNull
+    @SuppressWarnings("unchecked")
+    private ExtendedJSONObject createNotifyDevicesPayload(@NonNull String reason) {
       final ExtendedJSONObject payload = new ExtendedJSONObject();
       payload.put("version", 1);
       payload.put("command", "sync:collection_changed");
@@ -230,6 +284,7 @@ public class SyncClientsEngineStage extends AbstractSessionManagingSyncStage {
       final JSONArray collections = new JSONArray();
       collections.add("clients");
       data.put("collections", collections);
+      data.put("reason", reason);
       payload.put("data", data);
       return payload;
     }
@@ -241,7 +296,7 @@ public class SyncClientsEngineStage extends AbstractSessionManagingSyncStage {
 
       try {
         Logger.info(LOG_TAG, "Client upload failed. Aborting sync.");
-        session.abort(new HTTPFailureException(response), "Client download failed.");
+        doAbort(new HTTPFailureException(response), "Client download failed.");
       } finally {
         // Close the database upon failure.
         closeDataAccessor();
@@ -253,7 +308,7 @@ public class SyncClientsEngineStage extends AbstractSessionManagingSyncStage {
       localAccountGUIDDownloaded = false;
       try {
         Logger.info(LOG_TAG, "Client upload error. Aborting sync.");
-        session.abort(ex, "Failure fetching client record.");
+        doAbort(ex, "Failure fetching client record.");
       } finally {
         // Close the database upon error.
         closeDataAccessor();
@@ -273,10 +328,14 @@ public class SyncClientsEngineStage extends AbstractSessionManagingSyncStage {
           // Only need to store record if it isn't our local one.
           wipeAndStore(r);
           addCommands(r);
+          // Note that we are downloading all client records during every sync. As such, telemetry
+          // will include every client currently present in the constellation of devices.
+          // See the downloadClientRecords method elsewhere in the file.
+          telemetryStageCollector.getSyncCollector().addDevice(r);
         }
         RepoUtils.logClient(r);
       } catch (Exception e) {
-        session.abort(e, "Exception handling client WBO.");
+        doAbort(e, "Exception handling client WBO.");
         return;
       }
     }
@@ -331,7 +390,7 @@ public class SyncClientsEngineStage extends AbstractSessionManagingSyncStage {
 
       if (responseTimestamp == -1) {
         final String message = "Response did not contain a valid timestamp.";
-        session.abort(new RuntimeException(message), message);
+        doAbort(new RuntimeException(message), message);
         return;
       }
 
@@ -351,7 +410,7 @@ public class SyncClientsEngineStage extends AbstractSessionManagingSyncStage {
       // to do.
       shouldUploadLocalRecord = false;
       session.config.persistServerClientRecordTimestamp(responseTimestamp);
-      session.advance();
+      doAdvance();
     }
 
     @Override
@@ -369,7 +428,7 @@ public class SyncClientsEngineStage extends AbstractSessionManagingSyncStage {
           modifiedClientsToUpload.clear(); // These will be redownloaded.
         }
         BaseResource.consumeEntity(response); // The exception thrown should need the response body.
-        session.abort(new HTTPFailureException(response), "Client upload failed.");
+        doAbort(new HTTPFailureException(response), "Client upload failed.");
         return;
       }
       Logger.trace(LOG_TAG, "Retrying upload…");
@@ -383,7 +442,7 @@ public class SyncClientsEngineStage extends AbstractSessionManagingSyncStage {
     @Override
     public void handleRequestError(Exception ex) {
       Logger.info(LOG_TAG, "Client upload error. Aborting sync.");
-      session.abort(ex, "Client upload failed.");
+      doAbort(ex, "Client upload failed.");
     }
 
     @Override
@@ -404,7 +463,7 @@ public class SyncClientsEngineStage extends AbstractSessionManagingSyncStage {
       // These log messages look best when they match the messages in ServerSyncStage.
       Logger.debug(LOG_TAG, "Stage " + STAGE_NAME + " disabled just for this sync.");
       Logger.info(LOG_TAG, "Skipping stage " + STAGE_NAME + ".");
-      session.advance();
+      doAdvance();
       return;
     }
 
@@ -512,9 +571,21 @@ public class SyncClientsEngineStage extends AbstractSessionManagingSyncStage {
   protected void handleDownloadedLocalRecord(ClientRecord r) {
     session.config.persistServerClientRecordTimestamp(r.lastModified);
 
-    if (!getLocalClientVersion().equals(r.version) ||
+    final Context context = session.getContext();
+    final Account account = FirefoxAccounts.getFirefoxAccount(context);
+    String fxaDeviceId;
+    if (account != null) {
+      final AndroidFxAccount fxAccount = new AndroidFxAccount(context, account);
+      fxaDeviceId = fxAccount.getDeviceId();
+    } else {
+      fxaDeviceId = null;
+    }
+
+    if (!TextUtils.equals(r.fxaDeviceId, fxaDeviceId) ||
+        !getLocalClientVersion().equals(r.version) ||
         !getLocalClientProtocols().equals(r.protocols)) {
       shouldUploadLocalRecord = true;
+      shouldNotifyOtherClients = true;
     }
     processCommands(r.commands);
   }
@@ -588,7 +659,7 @@ public class SyncClientsEngineStage extends AbstractSessionManagingSyncStage {
   protected void checkAndUpload() {
     if (!shouldUpload()) {
       Logger.debug(LOG_TAG, "Not uploading client record.");
-      session.advance();
+      doAdvance();
       return;
     }
 
@@ -608,14 +679,12 @@ public class SyncClientsEngineStage extends AbstractSessionManagingSyncStage {
       CryptoRecord cryptoRecord = recordToUpload.getEnvelope();
       cryptoRecord.keyBundle = clientUploadDelegate.keyBundle();
       if (cryptoRecord.keyBundle == null) {
-        session.abort(new NoCollectionKeysSetException(), "No collection keys set.");
+        doAbort(new NoCollectionKeysSetException(), "No collection keys set.");
         return null;
       }
       return cryptoRecord.encrypt();
-    } catch (UnsupportedEncodingException e) {
-      session.abort(e, encryptionFailure + " Unsupported encoding.");
     } catch (CryptoException e) {
-      session.abort(e, encryptionFailure);
+      doAbort(e, encryptionFailure);
     }
     return null;
   }
@@ -641,7 +710,7 @@ public class SyncClientsEngineStage extends AbstractSessionManagingSyncStage {
       Logger.trace(LOG_TAG, "Downloading client records.");
       request.get();
     } catch (URISyntaxException e) {
-      session.abort(e, "Invalid URI.");
+      doAbort(e, "Invalid URI.");
     }
   }
 
@@ -653,9 +722,9 @@ public class SyncClientsEngineStage extends AbstractSessionManagingSyncStage {
       request.delegate = clientUploadDelegate;
       request.post(records);
     } catch (URISyntaxException e) {
-      session.abort(e, "Invalid URI.");
+      doAbort(e, "Invalid URI.");
     } catch (Exception e) {
-      session.abort(e, "Unable to parse body.");
+      doAbort(e, "Unable to parse body.");
     }
   }
 
@@ -670,7 +739,7 @@ public class SyncClientsEngineStage extends AbstractSessionManagingSyncStage {
       request.delegate = clientUploadDelegate;
       request.post(record);
     } catch (URISyntaxException e) {
-      session.abort(e, "Invalid URI.");
+      doAbort(e, "Invalid URI.");
     }
   }
 
@@ -687,5 +756,18 @@ public class SyncClientsEngineStage extends AbstractSessionManagingSyncStage {
     if (record != null) {
       db.store(record);
     }
+  }
+
+  private void doAdvance() {
+    telemetryStageCollector.finished = SystemClock.elapsedRealtime();
+    session.advance();
+  }
+
+  private void doAbort(Exception e, String reason) {
+    telemetryStageCollector.finished = SystemClock.elapsedRealtime();
+    telemetryStageCollector.error = new TelemetryCollector.StageErrorBuilder()
+            .setLastException(e)
+            .build();
+    session.abort(e, reason);
   }
 }

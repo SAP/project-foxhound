@@ -9,12 +9,10 @@
 
 var EXPORTED_SYMBOLS = ["FormData"];
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
+ChromeUtils.import("resource://tps/logger.jsm");
 
-Cu.import("resource://tps/logger.jsm");
-
-Cu.import("resource://gre/modules/FormHistory.jsm");
-Cu.import("resource://gre/modules/Log.jsm");
+ChromeUtils.import("resource://gre/modules/FormHistory.jsm");
+ChromeUtils.import("resource://gre/modules/Log.jsm");
 
 /**
  * FormDB
@@ -31,8 +29,8 @@ var FormDB = {
         },
         handleCompletion(reason) {
           resolve();
-        }
-      }
+        },
+      };
       FormHistory.update(data, handlers);
     });
   },
@@ -50,7 +48,7 @@ var FormDB = {
    */
   insertValue(fieldname, value, us) {
     let data = { op: "add", fieldname, value, timesUsed: 1,
-                 firstUsed: us, lastUsed: us }
+                 firstUsed: us, lastUsed: us };
     return this._update(data);
   },
 
@@ -96,9 +94,9 @@ var FormDB = {
         },
         handleCompletion(reason) {
           resolve(result);
-        }
-      }
-      FormHistory.search(["guid", "lastUsed", "firstUsed"], { fieldname }, handlers);
+        },
+      };
+      FormHistory.search(["guid", "lastUsed", "firstUsed"], { fieldname, value }, handlers);
     });
   },
 
@@ -120,16 +118,17 @@ var FormDB = {
  *
  * Initializes instance properties.
  */
-function FormData(props, usSinceEpoch) {
+function FormData(props, msSinceEpoch) {
   this.fieldname = null;
   this.value = null;
   this.date = 0;
   this.newvalue = null;
-  this.usSinceEpoch = usSinceEpoch;
+  this.usSinceEpoch = msSinceEpoch * 1000;
 
   for (var prop in props) {
-    if (prop in this)
+    if (prop in this) {
       this[prop] = props[prop];
+    }
   }
 }
 
@@ -211,9 +210,11 @@ FormData.prototype = {
    *
    * @return nothing
    */
-  Remove() {
-    /* Right now Weave doesn't handle this correctly, see bug 568363.
-     */
-    return FormDB.remove(this.id);
+  async Remove() {
+    const formdata = await FormDB.getDataForValue(this.fieldname, this.value);
+    if (!formdata) {
+      return;
+    }
+    await FormDB.remove(formdata.guid);
   },
 };

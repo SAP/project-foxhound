@@ -1,8 +1,9 @@
 /* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* vim: set sts=2 sw=2 et tw=80: */
+/* eslint-disable mozilla/no-arbitrary-setTimeout */
 "use strict";
 
-add_task(function* testWindowCreate() {
+add_task(async function testWindowCreate() {
   let extension = ExtensionTestUtils.loadExtension({
     async background() {
       let _checkWindowPromise;
@@ -105,9 +106,9 @@ add_task(function* testWindowCreate() {
     });
   });
 
-  yield extension.startup();
-  yield extension.awaitFinish("window-size");
-  yield extension.unload();
+  await extension.startup();
+  await extension.awaitFinish("window-size");
+  await extension.unload();
 
   Services.ww.unregisterNotification(windowListener);
   latestWindow = null;

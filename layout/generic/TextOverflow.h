@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set shiftwidth=2 tabstop=8 autoindent cindent expandtab: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +9,9 @@
 
 #include "nsDisplayList.h"
 #include "nsTHashtable.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/Likely.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/WritingModes.h"
 #include <algorithm>
 
@@ -25,20 +27,36 @@ namespace css {
  *  1. allocate an object using WillProcessLines
  *  2. then call ProcessLine for each line you are building display lists for
  */
-class TextOverflow {
+class TextOverflow final {
  public:
   /**
    * Allocate an object for text-overflow processing.
    * @return nullptr if no processing is necessary.  The caller owns the object.
    */
-  static TextOverflow* WillProcessLines(nsDisplayListBuilder*   aBuilder,
-                                        nsIFrame*               aBlockFrame);
+  static Maybe<TextOverflow> WillProcessLines(nsDisplayListBuilder* aBuilder,
+                                              nsIFrame* aBlockFrame);
+
+  /**
+   * Constructor, which client code SHOULD NOT use directly. Instead, clients
+   * should call WillProcessLines(), which is basically the factory function
+   * for TextOverflow instances.
+   */
+  TextOverflow(nsDisplayListBuilder* aBuilder, nsIFrame* aBlockFrame);
+
+  TextOverflow() = delete;
+  ~TextOverflow() = default;
+  TextOverflow(TextOverflow&&) = default;
+  TextOverflow(const TextOverflow&) = delete;
+  TextOverflow& operator=(TextOverflow&&) = default;
+  TextOverflow& operator=(const TextOverflow&) = delete;
+
   /**
    * Analyze the display lists for text overflow and what kind of item is at
    * the content edges.  Add display items for text-overflow markers as needed
    * and remove or clip items that would overlap a marker.
    */
-  void ProcessLine(const nsDisplayListSet& aLists, nsLineBox* aLine);
+  void ProcessLine(const nsDisplayListSet& aLists, nsLineBox* aLine,
+                   uint32_t aLineNumber);
 
   /**
    * Get the resulting text-overflow markers (the list may be empty).
@@ -53,22 +71,17 @@ class TextOverflow {
   /**
    * @return true if aBlockFrame needs analysis for text overflow.
    */
-  static bool CanHaveTextOverflow(nsDisplayListBuilder* aBuilder,
-                                  nsIFrame*             aBlockFrame);
+  static bool CanHaveTextOverflow(nsIFrame* aBlockFrame);
 
-  typedef nsTHashtable<nsPtrHashKey<nsIFrame> > FrameHashtable;
+  typedef nsTHashtable<nsPtrHashKey<nsIFrame>> FrameHashtable;
 
- protected:
-  TextOverflow(nsDisplayListBuilder* aBuilder,
-               nsIFrame* aBlockFrame);
-
+ private:
   typedef mozilla::WritingMode WritingMode;
   typedef mozilla::LogicalRect LogicalRect;
 
   struct AlignmentEdges {
-    AlignmentEdges() : mAssigned(false) {}
-    void Accumulate(WritingMode aWM, const LogicalRect& aRect)
-    {
+    AlignmentEdges() : mIStart(0), mIEnd(0), mAssigned(false) {}
+    void Accumulate(WritingMode aWM, const LogicalRect& aRect) {
       if (MOZ_LIKELY(mAssigned)) {
         mIStart = std::min(mIStart, aRect.IStart(aWM));
         mIEnd = std::max(mIEnd, aRect.IEnd(aWM));
@@ -85,9 +98,9 @@ class TextOverflow {
   };
 
   struct InnerClipEdges {
-    InnerClipEdges() : mAssignedIStart(false), mAssignedIEnd(false) {}
-    void AccumulateIStart(WritingMode aWM, const LogicalRect& aRect)
-    {
+    InnerClipEdges()
+        : mIStart(0), mIEnd(0), mAssignedIStart(false), mAssignedIEnd(false) {}
+    void AccumulateIStart(WritingMode aWM, const LogicalRect& aRect) {
       if (MOZ_LIKELY(mAssignedIStart)) {
         mIStart = std::max(mIStart, aRect.IStart(aWM));
       } else {
@@ -95,8 +108,7 @@ class TextOverflow {
         mAssignedIStart = true;
       }
     }
-    void AccumulateIEnd(WritingMode aWM, const LogicalRect& aRect)
-    {
+    void AccumulateIEnd(WritingMode aWM, const LogicalRect& aRect) {
       if (MOZ_LIKELY(mAssignedIEnd)) {
         mIEnd = std::min(mIEnd, aRect.IEnd(aWM));
       } else {
@@ -110,13 +122,12 @@ class TextOverflow {
     bool mAssignedIEnd;
   };
 
-  LogicalRect
-    GetLogicalScrollableOverflowRectRelativeToBlock(nsIFrame* aFrame) const
-  {
-    return LogicalRect(mBlockWM,
-                       aFrame->GetScrollableOverflowRect() +
-                         aFrame->GetOffsetTo(mBlock),
-                       mBlockSize);
+  LogicalRect GetLogicalScrollableOverflowRectRelativeToBlock(
+      nsIFrame* aFrame) const {
+    return LogicalRect(
+        mBlockWM,
+        aFrame->GetScrollableOverflowRect() + aFrame->GetOffsetTo(mBlock),
+        mBlockSize);
   }
 
   /**
@@ -127,10 +138,11 @@ class TextOverflow {
    * @param aFramesToHide frames that should have their display items removed
    * @param aAlignmentEdges the outermost edges of all text and atomic
    *   inline-level frames that are inside the area between the markers
+   * @return the area inside which we should add any markers;
+   *   this is the block's content area narrowed by any floats on this line.
    */
-  void ExamineLineFrames(nsLineBox*      aLine,
-                         FrameHashtable* aFramesToHide,
-                         AlignmentEdges* aAlignmentEdges);
+  LogicalRect ExamineLineFrames(nsLineBox* aLine, FrameHashtable* aFramesToHide,
+                                AlignmentEdges* aAlignmentEdges);
 
   /**
    * LineHasOverflowingText calls this to analyze edges, both the block's
@@ -146,12 +158,11 @@ class TextOverflow {
    * @param aClippedMarkerEdges the innermost edges of all text and atomic
    *   inline-level frames that are clipped by the current marker width
    */
-  void ExamineFrameSubtree(nsIFrame*       aFrame,
-                           const LogicalRect& aContentArea,
+  void ExamineFrameSubtree(nsIFrame* aFrame, const LogicalRect& aContentArea,
                            const LogicalRect& aInsideMarkersArea,
                            FrameHashtable* aFramesToHide,
                            AlignmentEdges* aAlignmentEdges,
-                           bool*           aFoundVisibleTextOrAtomic,
+                           bool* aFoundVisibleTextOrAtomic,
                            InnerClipEdges* aClippedMarkerEdges);
 
   /**
@@ -173,12 +184,11 @@ class TextOverflow {
    * @param aClippedMarkerEdges the innermost edges of all text and atomic
    *   inline-level frames that are clipped by the current marker width
    */
-  void AnalyzeMarkerEdges(nsIFrame*       aFrame,
-                          const nsIAtom*  aFrameType,
+  void AnalyzeMarkerEdges(nsIFrame* aFrame, mozilla::LayoutFrameType aFrameType,
                           const LogicalRect& aInsideMarkersArea,
                           FrameHashtable* aFramesToHide,
                           AlignmentEdges* aAlignmentEdges,
-                          bool*           aFoundVisibleTextOrAtomic,
+                          bool* aFoundVisibleTextOrAtomic,
                           InnerClipEdges* aClippedMarkerEdges);
 
   /**
@@ -199,27 +209,32 @@ class TextOverflow {
    * @param aCreateIStart if true, create a marker on the inline start side
    * @param aCreateIEnd if true, create a marker on the inline end side
    * @param aInsideMarkersArea is the area inside the markers
+   * @param aContentArea is the area inside which we should add the markers;
+   *   this is the block's content area narrowed by any floats on this line.
    */
-  void CreateMarkers(const nsLineBox* aLine,
-                     bool aCreateIStart, bool aCreateIEnd,
-                     const LogicalRect& aInsideMarkersArea);
+  void CreateMarkers(const nsLineBox* aLine, bool aCreateIStart,
+                     bool aCreateIEnd, const LogicalRect& aInsideMarkersArea,
+                     const LogicalRect& aContentArea, uint32_t aLineNumber);
 
-  LogicalRect            mContentArea;
-  nsDisplayListBuilder*  mBuilder;
-  nsIFrame*              mBlock;
-  nsIScrollableFrame*    mScrollableFrame;
-  nsDisplayList          mMarkerList;
-  nsSize                 mBlockSize;
-  WritingMode            mBlockWM;
-  bool                   mCanHaveInlineAxisScrollbar;
-  bool                   mAdjustForPixelSnapping;
+  LogicalRect mContentArea;
+  nsDisplayListBuilder* mBuilder;
+  nsIFrame* mBlock;
+  nsIScrollableFrame* mScrollableFrame;
+  nsDisplayList mMarkerList;
+  nsSize mBlockSize;
+  WritingMode mBlockWM;
+  bool mCanHaveInlineAxisScrollbar;
+  bool mAdjustForPixelSnapping;
 
   class Marker {
-  public:
+   public:
     void Init(const nsStyleTextOverflowSide& aStyle) {
       mInitialized = false;
       mISize = 0;
       mStyle = &aStyle;
+      mIntrinsicISize = 0;
+      mHasOverflow = false;
+      mActive = false;
     }
 
     /**
@@ -227,33 +242,29 @@ class TextOverflow {
      */
     void SetupString(nsIFrame* aFrame);
 
-    bool IsNeeded() const {
-      return mHasOverflow;
-    }
-    void Reset() {
-      mHasOverflow = false;
-    }
+    bool IsNeeded() const { return mHasOverflow; }
+    void Reset() { mHasOverflow = false; }
 
     // The current width of the marker, the range is [0 .. mIntrinsicISize].
-    nscoord                        mISize;
+    nscoord mISize;
     // The intrinsic width of the marker.
-    nscoord                        mIntrinsicISize;
+    nscoord mIntrinsicISize;
     // The style for this side.
     const nsStyleTextOverflowSide* mStyle;
     // True if there is visible overflowing inline content on this side.
-    bool                           mHasOverflow;
+    bool mHasOverflow;
     // True if mMarkerString and mWidth have been setup from style.
-    bool                           mInitialized;
+    bool mInitialized;
     // True if the style is text-overflow:clip on this side and the marker
     // won't cause the line to become empty.
-    bool                           mActive;
+    bool mActive;
   };
 
-  Marker mIStart; // the inline start marker
-  Marker mIEnd; // the inline end marker
+  Marker mIStart;  // the inline start marker
+  Marker mIEnd;    // the inline end marker
 };
 
-} // namespace css
-} // namespace mozilla
+}  // namespace css
+}  // namespace mozilla
 
 #endif /* !defined(TextOverflow_h_) */

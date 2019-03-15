@@ -34,90 +34,99 @@ const ORIGINAL_COLOR = "rgb(255, 0, 153)";
 // #ff5
 const EXPECTED_COLOR = "rgb(255, 255, 85)";
 
-add_task(function* () {
+registerCleanupFunction(() => {
+  // Restore the default Toolbox host position after the test.
+  Services.prefs.clearUserPref("devtools.toolbox.host");
+});
+
+add_task(async function() {
   info("Add the test tab, open the rule-view and select the test node");
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {testActor, inspector, view} = yield openRuleView();
-  yield selectNode("#div2", inspector);
+
+  const url = "data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI);
+  await addTab(url);
+
+  const {testActor, inspector, view, toolbox} = await openRuleView();
+
+  await runTest(testActor, inspector, view);
+
+  info("Reload the page to restore the initial state");
+  await navigateTo(inspector, url);
+
+  info("Change toolbox host to WINDOW");
+  await toolbox.switchHost("window");
+
+  await runTest(testActor, inspector, view);
+});
+
+async function runTest(testActor, inspector, view) {
+  await selectNode("#div2", inspector);
 
   info("Get the background-color property from the rule-view");
-  let property = getRuleViewProperty(view, "#div2", "background-color");
-  let swatch = property.valueSpan.querySelector(".ruleview-colorswatch");
+  const property = getRuleViewProperty(view, "#div2", "background-color");
+  const swatch = property.valueSpan.querySelector(".ruleview-colorswatch");
   ok(swatch, "Color swatch is displayed for the bg-color property");
 
   info("Open the eyedropper from the colorpicker tooltip");
-  yield openEyedropper(view, swatch);
+  await openEyedropper(view, swatch);
 
-  let tooltip = view.tooltips.colorPicker.tooltip;
+  const tooltip = view.tooltips.getTooltip("colorPicker").tooltip;
   ok(!tooltip.isVisible(), "color picker tooltip is closed after opening eyedropper");
 
   info("Test that pressing escape dismisses the eyedropper");
-  yield testESC(swatch, inspector, testActor);
+  await testESC(swatch, inspector, testActor);
 
   info("Open the eyedropper again");
-  yield openEyedropper(view, swatch);
+  await openEyedropper(view, swatch);
 
   info("Test that a color can be selected with the eyedropper");
-  yield testSelect(view, swatch, inspector, testActor);
+  await testSelect(view, swatch, inspector, testActor);
 
-  let onHidden = tooltip.once("hidden");
+  const onHidden = tooltip.once("hidden");
   tooltip.hide();
-  yield onHidden;
+  await onHidden;
   ok(!tooltip.isVisible(), "color picker tooltip is closed");
 
-  yield waitForTick();
-});
+  await waitForTick();
+}
 
-function* testESC(swatch, inspector, testActor) {
+async function testESC(swatch, inspector, testActor) {
   info("Press escape");
-  let onCanceled = new Promise(resolve => {
+  const onCanceled = new Promise(resolve => {
     inspector.inspector.once("color-pick-canceled", resolve);
   });
-  yield testActor.synthesizeKey({key: "VK_ESCAPE", options: {}});
-  yield onCanceled;
+  await testActor.synthesizeKey({key: "VK_ESCAPE", options: {}});
+  await onCanceled;
 
-  let color = swatch.style.backgroundColor;
+  const color = swatch.style.backgroundColor;
   is(color, ORIGINAL_COLOR, "swatch didn't change after pressing ESC");
 }
 
-function* testSelect(view, swatch, inspector, testActor) {
+async function testSelect(view, swatch, inspector, testActor) {
   info("Click at x:10px y:10px");
-  let onPicked = new Promise(resolve => {
+  const onPicked = new Promise(resolve => {
     inspector.inspector.once("color-picked", resolve);
   });
   // The change to the content is done async after rule view change
-  let onRuleViewChanged = view.once("ruleview-changed");
+  const onRuleViewChanged = view.once("ruleview-changed");
 
-  yield testActor.synthesizeMouse({selector: "html", x: 10, y: 10,
+  await testActor.synthesizeMouse({selector: "html", x: 10, y: 10,
                                    options: {type: "mousemove"}});
-  yield testActor.synthesizeMouse({selector: "html", x: 10, y: 10,
+  await testActor.synthesizeMouse({selector: "html", x: 10, y: 10,
                                    options: {type: "mousedown"}});
-  yield testActor.synthesizeMouse({selector: "html", x: 10, y: 10,
+  await testActor.synthesizeMouse({selector: "html", x: 10, y: 10,
                                    options: {type: "mouseup"}});
 
-  yield onPicked;
-  yield onRuleViewChanged;
+  await onPicked;
+  await onRuleViewChanged;
 
-  let color = swatch.style.backgroundColor;
+  const color = swatch.style.backgroundColor;
   is(color, EXPECTED_COLOR, "swatch changed colors");
 
-  is((yield getComputedStyleProperty("div", null, "background-color")),
+  ok(!swatch.eyedropperOpen, "swatch eye dropper is closed");
+  ok(!swatch.activeSwatch, "no active swatch");
+
+  is((await getComputedStyleProperty("div", null, "background-color")),
      EXPECTED_COLOR,
      "div's color set to body color after dropper");
 }
 
-function* openEyedropper(view, swatch) {
-  let tooltip = view.tooltips.colorPicker.tooltip;
-
-  info("Click on the swatch");
-  let onColorPickerReady = view.tooltips.colorPicker.once("ready");
-  swatch.click();
-  yield onColorPickerReady;
-
-  let dropperButton = tooltip.doc.querySelector("#eyedropper-button");
-
-  info("Click on the eyedropper icon");
-  let onOpened = tooltip.once("eyedropper-opened");
-  dropperButton.click();
-  yield onOpened;
-}

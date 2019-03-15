@@ -4,11 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsIAtom.h"
+#include "nsAtom.h"
 #include "nsString.h"
 #include "jsapi.h"
 #include "nsIContent.h"
-#include "nsIDocument.h"
+#include "mozilla/dom/Document.h"
 #include "nsIGlobalObject.h"
 #include "nsUnicharUtils.h"
 #include "nsReadableUtils.h"
@@ -19,21 +19,19 @@
 #include "nsIXPConnect.h"
 #include "xpcpublic.h"
 #include "nsXBLPrototypeBinding.h"
+#include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ScriptSettings.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
 
-nsXBLProtoImplMethod::nsXBLProtoImplMethod(const char16_t* aName) :
-  nsXBLProtoImplMember(aName),
-  mMethod()
-{
+nsXBLProtoImplMethod::nsXBLProtoImplMethod(const char16_t* aName)
+    : nsXBLProtoImplMember(aName), mMethod() {
   MOZ_COUNT_CTOR(nsXBLProtoImplMethod);
 }
 
-nsXBLProtoImplMethod::~nsXBLProtoImplMethod()
-{
+nsXBLProtoImplMethod::~nsXBLProtoImplMethod() {
   MOZ_COUNT_DTOR(nsXBLProtoImplMethod);
 
   if (!IsCompiled()) {
@@ -41,11 +39,9 @@ nsXBLProtoImplMethod::~nsXBLProtoImplMethod()
   }
 }
 
-void
-nsXBLProtoImplMethod::AppendBodyText(const nsAString& aText)
-{
-  NS_PRECONDITION(!IsCompiled(),
-                  "Must not be compiled when accessing uncompiled method");
+void nsXBLProtoImplMethod::AppendBodyText(const nsAString& aText) {
+  MOZ_ASSERT(!IsCompiled(),
+             "Must not be compiled when accessing uncompiled method");
 
   nsXBLUncompiledMethod* uncompiledMethod = GetUncompiledMethod();
   if (!uncompiledMethod) {
@@ -56,11 +52,9 @@ nsXBLProtoImplMethod::AppendBodyText(const nsAString& aText)
   uncompiledMethod->AppendBodyText(aText);
 }
 
-void
-nsXBLProtoImplMethod::AddParameter(const nsAString& aText)
-{
-  NS_PRECONDITION(!IsCompiled(),
-                  "Must not be compiled when accessing uncompiled method");
+void nsXBLProtoImplMethod::AddParameter(const nsAString& aText) {
+  MOZ_ASSERT(!IsCompiled(),
+             "Must not be compiled when accessing uncompiled method");
 
   if (aText.IsEmpty()) {
     NS_WARNING("Empty name attribute in xbl:parameter!");
@@ -76,11 +70,9 @@ nsXBLProtoImplMethod::AddParameter(const nsAString& aText)
   uncompiledMethod->AddParameter(aText);
 }
 
-void
-nsXBLProtoImplMethod::SetLineNumber(uint32_t aLineNumber)
-{
-  NS_PRECONDITION(!IsCompiled(),
-                  "Must not be compiled when accessing uncompiled method");
+void nsXBLProtoImplMethod::SetLineNumber(uint32_t aLineNumber) {
+  MOZ_ASSERT(!IsCompiled(),
+             "Must not be compiled when accessing uncompiled method");
 
   nsXBLUncompiledMethod* uncompiledMethod = GetUncompiledMethod();
   if (!uncompiledMethod) {
@@ -91,19 +83,16 @@ nsXBLProtoImplMethod::SetLineNumber(uint32_t aLineNumber)
   uncompiledMethod->SetLineNumber(aLineNumber);
 }
 
-nsresult
-nsXBLProtoImplMethod::InstallMember(JSContext* aCx,
-                                    JS::Handle<JSObject*> aTargetClassObject)
-{
-  NS_PRECONDITION(IsCompiled(),
-                  "Should not be installing an uncompiled method");
+nsresult nsXBLProtoImplMethod::InstallMember(
+    JSContext* aCx, JS::Handle<JSObject*> aTargetClassObject) {
+  MOZ_ASSERT(IsCompiled(), "Should not be installing an uncompiled method");
   MOZ_ASSERT(js::IsObjectInContextCompartment(aTargetClassObject, aCx));
 
 #ifdef DEBUG
   {
-    JS::Rooted<JSObject*> globalObject(aCx, JS_GetGlobalForObject(aCx, aTargetClassObject));
+    JS::Rooted<JSObject*> globalObject(
+        aCx, JS::GetNonCCWObjectGlobal(aTargetClassObject));
     MOZ_ASSERT(xpc::IsInContentXBLScope(globalObject) ||
-               xpc::IsInAddonScope(globalObject) ||
                globalObject == xpc::GetXBLScope(aCx, globalObject));
     MOZ_ASSERT(JS::CurrentGlobalOrNull(aCx) == globalObject);
   }
@@ -113,28 +102,25 @@ nsXBLProtoImplMethod::InstallMember(JSContext* aCx,
   if (jsMethodObject) {
     nsDependentString name(mName);
 
-    JS::Rooted<JSObject*> method(aCx, JS::CloneFunctionObject(aCx, jsMethodObject));
+    JS::Rooted<JSObject*> method(aCx,
+                                 JS::CloneFunctionObject(aCx, jsMethodObject));
     NS_ENSURE_TRUE(method, NS_ERROR_OUT_OF_MEMORY);
 
     if (!::JS_DefineUCProperty(aCx, aTargetClassObject,
                                static_cast<const char16_t*>(mName),
-                               name.Length(), method,
-                               JSPROP_ENUMERATE)) {
+                               name.Length(), method, JSPROP_ENUMERATE)) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
   }
   return NS_OK;
 }
 
-nsresult
-nsXBLProtoImplMethod::CompileMember(AutoJSAPI& jsapi, const nsString& aClassStr,
-                                    JS::Handle<JSObject*> aClassObject)
-{
+nsresult nsXBLProtoImplMethod::CompileMember(
+    AutoJSAPI& jsapi, const nsString& aClassStr,
+    JS::Handle<JSObject*> aClassObject) {
   AssertInCompilationScope();
-  NS_PRECONDITION(!IsCompiled(),
-                  "Trying to compile an already-compiled method");
-  NS_PRECONDITION(aClassObject,
-                  "Must have class object to compile");
+  MOZ_ASSERT(!IsCompiled(), "Trying to compile an already-compiled method");
+  MOZ_ASSERT(aClassObject, "Must have class object to compile");
 
   nsXBLUncompiledMethod* uncompiledMethod = GetUncompiledMethod();
 
@@ -165,8 +151,7 @@ nsXBLProtoImplMethod::CompileMember(AutoJSAPI& jsapi, const nsString& aClassStr,
 
     // Add our parameters to our args array.
     int32_t argPos = 0;
-    for (nsXBLParameter* curr = uncompiledMethod->mParameters;
-         curr;
+    for (nsXBLParameter* curr = uncompiledMethod->mParameters; curr;
          curr = curr->mNext) {
       args[argPos] = curr->mName;
       argPos++;
@@ -175,9 +160,8 @@ nsXBLProtoImplMethod::CompileMember(AutoJSAPI& jsapi, const nsString& aClassStr,
 
   // Get the body
   nsDependentString body;
-  char16_t *bodyText = uncompiledMethod->mBodyText.GetText();
-  if (bodyText)
-    body.Rebind(bodyText);
+  char16_t* bodyText = uncompiledMethod->mBodyText.GetText();
+  if (bodyText) body.Rebind(bodyText);
 
   // Now that we have a body and args, compile the function
   // and then define it.
@@ -188,22 +172,20 @@ nsXBLProtoImplMethod::CompileMember(AutoJSAPI& jsapi, const nsString& aClassStr,
     functionUri.Truncate(hash);
   }
 
-  JSContext *cx = jsapi.cx();
-  JSAutoCompartment ac(cx, aClassObject);
+  JSContext* cx = jsapi.cx();
+  JSAutoRealm ar(cx, aClassObject);
   JS::CompileOptions options(cx);
   options.setFileAndLine(functionUri.get(),
-                         uncompiledMethod->mBodyText.GetLineNumber())
-         .setVersion(JSVERSION_LATEST);
+                         uncompiledMethod->mBodyText.GetLineNumber());
   JS::Rooted<JSObject*> methodObject(cx);
   JS::AutoObjectVector emptyVector(cx);
-  nsresult rv = nsJSUtils::CompileFunction(jsapi, emptyVector, options, cname,
-                                           paramCount,
-                                           const_cast<const char**>(args),
-                                           body, methodObject.address());
+  nsresult rv = nsJSUtils::CompileFunction(
+      jsapi, emptyVector, options, cname, paramCount,
+      const_cast<const char**>(args), body, methodObject.address());
 
   // Destroy our uncompiled method and delete our arg list.
   delete uncompiledMethod;
-  delete [] args;
+  delete[] args;
   if (NS_FAILED(rv)) {
     SetUncompiledMethod(nullptr);
     return rv;
@@ -214,17 +196,14 @@ nsXBLProtoImplMethod::CompileMember(AutoJSAPI& jsapi, const nsString& aClassStr,
   return NS_OK;
 }
 
-void
-nsXBLProtoImplMethod::Trace(const TraceCallbacks& aCallbacks, void *aClosure)
-{
+void nsXBLProtoImplMethod::Trace(const TraceCallbacks& aCallbacks,
+                                 void* aClosure) {
   if (IsCompiled() && GetCompiledMethodPreserveColor()) {
     aCallbacks.Trace(&mMethod.AsHeapObject(), "mMethod", aClosure);
   }
 }
 
-nsresult
-nsXBLProtoImplMethod::Read(nsIObjectInputStream* aStream)
-{
+nsresult nsXBLProtoImplMethod::Read(nsIObjectInputStream* aStream) {
   AssertInCompilationScope();
   MOZ_ASSERT(!IsCompiled() && !GetUncompiledMethod());
 
@@ -241,9 +220,7 @@ nsXBLProtoImplMethod::Read(nsIObjectInputStream* aStream)
   return NS_OK;
 }
 
-nsresult
-nsXBLProtoImplMethod::Write(nsIObjectOutputStream* aStream)
-{
+nsresult nsXBLProtoImplMethod::Write(nsIObjectOutputStream* aStream) {
   AssertInCompilationScope();
   MOZ_ASSERT(IsCompiled());
   if (GetCompiledMethodPreserveColor()) {
@@ -260,11 +237,10 @@ nsXBLProtoImplMethod::Write(nsIObjectOutputStream* aStream)
   return NS_OK;
 }
 
-nsresult
-nsXBLProtoImplAnonymousMethod::Execute(nsIContent* aBoundElement, JSAddonId* aAddonId)
-{
+nsresult nsXBLProtoImplAnonymousMethod::Execute(
+    nsIContent* aBoundElement, const nsXBLPrototypeBinding& aProtoBinding) {
   MOZ_ASSERT(aBoundElement->IsElement());
-  NS_PRECONDITION(IsCompiled(), "Can't execute uncompiled method");
+  MOZ_ASSERT(IsCompiled(), "Can't execute uncompiled method");
 
   if (!GetCompiledMethod()) {
     // Nothing to do here
@@ -273,10 +249,10 @@ nsXBLProtoImplAnonymousMethod::Execute(nsIContent* aBoundElement, JSAddonId* aAd
 
   // Get the script context the same way
   // nsXBLProtoImpl::InstallImplementation does.
-  nsIDocument* document = aBoundElement->OwnerDoc();
+  Document* document = aBoundElement->OwnerDoc();
 
   nsCOMPtr<nsIGlobalObject> global =
-    do_QueryInterface(document->GetInnerWindow());
+      do_QueryInterface(document->GetInnerWindow());
   if (!global) {
     return NS_OK;
   }
@@ -285,7 +261,7 @@ nsXBLProtoImplAnonymousMethod::Execute(nsIContent* aBoundElement, JSAddonId* aAd
 
   // We are going to run script via JS::Call, so we need a script entry point,
   // but as this is XBL related it does not appear in the HTML spec.
-  // We need an actual JSContext to do GetScopeForXBLExecution, and it needs to
+  // We need an actual JSContext to do GetXBLScopeOrGlobal, and it needs to
   // be in the compartment of globalObject.  But we want our XBL execution scope
   // to be our entry global.
   AutoJSAPI jsapi;
@@ -293,19 +269,17 @@ nsXBLProtoImplAnonymousMethod::Execute(nsIContent* aBoundElement, JSAddonId* aAd
     return NS_ERROR_UNEXPECTED;
   }
 
-  JS::Rooted<JSObject*> globalObject(jsapi.cx(), global->GetGlobalJSObject());
-
-  JS::Rooted<JSObject*> scopeObject(jsapi.cx(),
-    xpc::GetScopeForXBLExecution(jsapi.cx(), globalObject, aAddonId));
+  JS::Rooted<JSObject*> scopeObject(
+      jsapi.cx(),
+      xpc::GetXBLScopeOrGlobal(jsapi.cx(), global->GetGlobalJSObject()));
   NS_ENSURE_TRUE(scopeObject, NS_ERROR_OUT_OF_MEMORY);
 
   dom::AutoEntryScript aes(scopeObject,
-                           "XBL <constructor>/<destructor> invocation",
-                           true);
+                           "XBL <constructor>/<destructor> invocation", true);
   JSContext* cx = aes.cx();
   JS::AutoObjectVector scopeChain(cx);
-  if (!nsJSUtils::GetScopeChainForElement(cx, aBoundElement->AsElement(),
-                                          scopeChain)) {
+  if (!nsJSUtils::GetScopeChainForXBL(cx, aBoundElement->AsElement(),
+                                      aProtoBinding, scopeChain)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
   MOZ_ASSERT(scopeChain.length() != 0);
@@ -313,10 +287,9 @@ nsXBLProtoImplAnonymousMethod::Execute(nsIContent* aBoundElement, JSAddonId* aAd
   // Clone the function object, using our scope chain (for backwards
   // compat to the days when this was an event handler).
   JS::Rooted<JSObject*> jsMethodObject(cx, GetCompiledMethod());
-  JS::Rooted<JSObject*> method(cx, JS::CloneFunctionObject(cx, jsMethodObject,
-                                                           scopeChain));
-  if (!method)
-    return NS_ERROR_OUT_OF_MEMORY;
+  JS::Rooted<JSObject*> method(
+      cx, JS::CloneFunctionObject(cx, jsMethodObject, scopeChain));
+  if (!method) return NS_ERROR_OUT_OF_MEMORY;
 
   // Now call the method
 
@@ -328,16 +301,15 @@ nsXBLProtoImplAnonymousMethod::Execute(nsIContent* aBoundElement, JSAddonId* aAd
     JS::Rooted<JS::Value> methodVal(cx, JS::ObjectValue(*method));
     // No need to check the return here as AutoEntryScript has taken ownership
     // of error reporting.
-    ::JS::Call(cx, scopeChain[0], methodVal, JS::HandleValueArray::empty(), &retval);
+    ::JS::Call(cx, scopeChain[0], methodVal, JS::HandleValueArray::empty(),
+               &retval);
   }
 
   return NS_OK;
 }
 
-nsresult
-nsXBLProtoImplAnonymousMethod::Write(nsIObjectOutputStream* aStream,
-                                     XBLBindingSerializeDetails aType)
-{
+nsresult nsXBLProtoImplAnonymousMethod::Write(
+    nsIObjectOutputStream* aStream, XBLBindingSerializeDetails aType) {
   AssertInCompilationScope();
   MOZ_ASSERT(IsCompiled());
   if (GetCompiledMethodPreserveColor()) {

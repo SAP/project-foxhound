@@ -131,7 +131,7 @@ window.onload =
 
         // Create responseStart/responseEnd tests from the following array of templates.  In this test, the server delays before
         // responding with responsePart1, then delays again before completing with responsePart2.  The test looks for the expected
-        // pauses before responeStart and responseEnd.
+        // pauses before responseStart and responseEnd.
         [
             { initiator: "iframe",         responsePart1: serverStepDelay + "ms;", responsePart2: (serverStepDelay * 2) + "ms;(done)",                                                      mime: mimeHtml },
             { initiator: "xmlhttprequest", responsePart1: serverStepDelay + "ms;", responsePart2: (serverStepDelay * 2) + "ms;(done)",                                                      mime: mimeText },
@@ -142,7 +142,7 @@ window.onload =
         ]
         .forEach(function (template) {
             testCases.push({
-                description: "'" + template.initiator + ": 1 second delay before 'responseStart', another 1 second delay before 'responseEnd'.",
+                description: "'" + template.initiator + ": " + serverStepDelay + "ms delay before 'responseStart', another " + serverStepDelay + "ms delay before 'responseEnd'.",
                 test: function (test) {
                     initiateFetch(
                         test,
@@ -190,7 +190,7 @@ window.onload =
         ]
         .forEach(function (template) {
             testCases.push({
-                description: "'" + template.initiator + " (Redirected): 1 second delay before 'redirectEnd', another 1 second delay before 'responseStart'.",
+                description: "'" + template.initiator + " (Redirected): " + serverStepDelay + "ms delay before 'redirectEnd', another " + serverStepDelay + "ms delay before 'responseStart'.",
                 test: function (test) {
                     initiateFetch(
                         test,
@@ -217,6 +217,86 @@ window.onload =
                                 entry.responseStart,
                                 entry.requestStart + serverStepDelay,
                                 "'responseStart' must be " + serverStepDelay + "ms later than 'requestStart'.");
+
+                            test.done();
+                        });
+                    }
+                });
+            });
+
+        // Ensure that responseStart only measures the time up to the first few
+        // bytes of the header response. This is tested by writing an HTTP 1.1
+        // status line, followed by a flush, then a pause before the end of the
+        // headers. The test makes sure that responseStart is not delayed by
+        // this pause.
+        [
+            { initiator: "iframe",         response: "(done)",    mime: mimeHtml },
+            { initiator: "xmlhttprequest", response: "(done)",    mime: mimeText },
+            { initiator: "script",         response: '"";',       mime: mimeScript },
+            { initiator: "link",           response: ".unused{}", mime: mimeCss },
+        ]
+        .forEach(function (template) {
+            testCases.push({
+                description: "'" + template.initiator + " " + serverStepDelay + "ms delay in headers does not affect responseStart'",
+                test: function (test) {
+                    initiateFetch(
+                        test,
+                        template.initiator,
+                        getSyntheticUrl("status:200"
+                                        + "&flush"
+                                        + "&" + serverStepDelay + "ms"
+                                        + "&mime:" + template.mime
+                                        + "&send:" + encodeURIComponent(template.response)),
+                        function (initiator, entry) {
+                            // Test that the delay between 'responseStart' and
+                            // 'responseEnd' includes the delay, which implies
+                            // that 'responseStart' was measured at the time of
+                            // status line receipt.
+                            assert_greater_than_equal(
+                                entry.responseEnd,
+                                entry.responseStart + serverStepDelay,
+                                "Delay after HTTP/1.1 status should not affect 'responseStart'.");
+
+                            test.done();
+                        });
+                    }
+                });
+            });
+
+        // Test that responseStart uses the timing of 1XX responses by
+        // synthesizing a delay between a 100 and 200 status, and verifying that
+        // this delay is included before responseEnd. If the delay is not
+        // included, this implies that the 200 status line was (incorrectly) used
+        // for responseStart timing, despite the 100 response arriving earlier.
+        //
+        // Source: "In the case where more than one response is available for a
+        // request, due to an Informational 1xx response, the reported
+        // responseStart value is that of the first response to the last
+        // request."
+        [
+            { initiator: "iframe",         response: "(done)",    mime: mimeHtml },
+            { initiator: "xmlhttprequest", response: "(done)",    mime: mimeText },
+            { initiator: "script",         response: '"";',       mime: mimeScript },
+            { initiator: "link",           response: ".unused{}", mime: mimeCss },
+        ]
+        .forEach(function (template) {
+            testCases.push({
+                description: "'" + template.initiator + " responseStart uses 1XX (first) response timings'",
+                test: function (test) {
+                    initiateFetch(
+                        test,
+                        template.initiator,
+                        getSyntheticUrl("status:100"
+                                        + "&flush"
+                                        + "&" + serverStepDelay + "ms"
+                                        + "&status:200"
+                                        + "&mime:" + template.mime
+                                        + "&send:" + encodeURIComponent(template.response)),
+                        function (initiator, entry) {
+                            assert_greater_than_equal(
+                                entry.responseEnd,
+                                entry.responseStart + serverStepDelay,
+                                "HTTP/1.1 1XX (first) response should determine 'responseStart' timing.");
 
                             test.done();
                         });
@@ -277,7 +357,7 @@ window.onload =
             // Per https://w3c.github.io/resource-timing/#performanceresourcetiming:
             //      "[If redirected, startTime] MUST return the same value as redirectStart. Otherwise,
             //      [startTime] MUST return the same value as fetchStart."
-            assert_true(actual.startTime == actual.redirectStart || actual.startTime == actual.fetchStart,
+            assert_in_array(actual.startTime, [actual.redirectStart, actual.fetchStart],
                 "startTime must be equal to redirectStart or fetchStart.");
 
             // redirectStart <= redirectEnd <= fetchStart <= domainLookupStart <= domainLookupEnd <= connectStart

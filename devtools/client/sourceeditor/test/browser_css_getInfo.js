@@ -120,28 +120,18 @@ const TEST_URI = "data:text/html;charset=UTF-8," + encodeURIComponent(
    "   <div></div>",
    "  </div>",
    " </body>",
-   " </html>"
+   " </html>",
   ].join("\n"));
 
-let doc = null;
-function test() {
-  waitForExplicitFinish();
-  gBrowser.selectedTab = gBrowser.addTab();
-  BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser).then(() => {
-    /* eslint-disable mozilla/no-cpows-in-tests */
-    doc = content.document;
-    /* eslint-enable mozilla/no-cpows-in-tests */
-    runTests();
-  });
-  gBrowser.loadURI(TEST_URI);
-}
+add_task(async function test() {
+  const tab = await addTab(TEST_URI);
+  const browser = tab.linkedBrowser;
 
-function runTests() {
-  let completer = new CSSCompleter({
-    cssProperties: getClientCssProperties()
+  const completer = new CSSCompleter({
+    cssProperties: getClientCssProperties(),
   });
-  let matches = (arr, toCheck) => !arr.some((x, i) => x != toCheck[i]);
-  let checkState = (expected, actual) => {
+  const matches = (arr, toCheck) => !arr.some((x, i) => x != toCheck[i]);
+  const checkState = (expected, actual) => {
     if (expected[0] == "null" && actual == null) {
       return true;
     } else if (expected[0] == actual.state && expected[0] == "selector" &&
@@ -160,14 +150,17 @@ function runTests() {
     return false;
   };
 
-  let progress = doc.getElementById("progress");
-  let progressDiv = doc.querySelector("#progress > div");
   let i = 0;
-  for (let expected of tests) {
-    let caret = expected.splice(0, 1)[0];
-    progress.dataset.progress = ++i;
-    progressDiv.style.width = 100 * i / tests.length + "%";
-    let actual = completer.getInfoAt(source, caret);
+  for (const expected of tests) {
+    ++i;
+    const caret = expected.splice(0, 1)[0];
+    await ContentTask.spawn(browser, [i, tests.length], function([idx, len]) {
+      const progress = content.document.getElementById("progress");
+      const progressDiv = content.document.querySelector("#progress > div");
+      progress.dataset.progress = idx;
+      progressDiv.style.width = 100 * idx / len + "%";
+    });
+    const actual = completer.getInfoAt(source, caret);
     if (checkState(expected, actual)) {
       ok(true, "Test " + i + " passed. ");
     } else {
@@ -175,9 +168,11 @@ function runTests() {
          "but found [" + actual.state + ", " +
          (actual.selector || actual.selectors) + ", " +
          actual.propertyName + ", " + actual.value + "].");
-      progress.classList.add("failed");
+      await ContentTask.spawn(browser, null, function() {
+        const progress = content.document.getElementById("progress");
+        progress.classList.add("failed");
+      });
     }
   }
   gBrowser.removeCurrentTab();
-  finish();
-}
+});

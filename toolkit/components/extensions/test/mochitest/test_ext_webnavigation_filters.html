@@ -3,7 +3,7 @@
 <head>
   <title>Test for simple WebExtension</title>
   <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/SpawnTask.js"></script>
+  <script type="text/javascript" src="/tests/SimpleTest/AddTask.js"></script>
   <script type="text/javascript" src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
   <script type="text/javascript" src="head.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
@@ -13,7 +13,7 @@
 <script type="text/javascript">
 "use strict";
 
-add_task(function* test_webnav_unresolved_uri_on_expected_URI_scheme() {
+add_task(async function test_webnav_unresolved_uri_on_expected_URI_scheme() {
   function background() {
     let listeners = [];
 
@@ -81,7 +81,7 @@ add_task(function* test_webnav_unresolved_uri_on_expected_URI_scheme() {
 
   let extension = ExtensionTestUtils.loadExtension(extensionData);
 
-  yield extension.startup();
+  await extension.startup();
 
   let win = window.open();
 
@@ -104,13 +104,13 @@ add_task(function* test_webnav_unresolved_uri_on_expected_URI_scheme() {
           failFilter: [{ports: [22, 23, [81, 100]]}],
         },
         // multiple criteria in a single filter:
-        // if one of the critera is not verified, the event should not be received.
+        // if one of the criteria is not verified, the event should not be received.
         {
           okFilter: [{schemes: ["http"], ports: [80, 22, 443]}],
           failFilter: [{schemes: ["http"], ports: [81, 82, 83]}],
         },
         // multiple urlFilters on the same listener
-        // if at least one of the critera is verified, the event should be received.
+        // if at least one of the criteria is verified, the event should be received.
         {
           okFilter: [{schemes: ["https"]}, {ports: [80, 22, 443]}],
           failFilter: [{schemes: ["https"]}, {ports: [81, 82, 83]}],
@@ -199,12 +199,12 @@ add_task(function* test_webnav_unresolved_uri_on_expected_URI_scheme() {
     win.location = "about:blank";
 
     extension.sendMessage("test-filters", EVENTS, data);
-    yield extension.awaitMessage("test-filter-ready");
+    await extension.awaitMessage("test-filter-ready");
 
     info(`Loading the test url: ${data.url}`);
     win.location = data.url;
 
-    yield extension.awaitMessage("test-filter-next");
+    await extension.awaitMessage("test-filter-next");
 
     info("Test scenario completed. Moving to the next test scenario.");
   }
@@ -222,37 +222,37 @@ add_task(function* test_webnav_unresolved_uri_on_expected_URI_scheme() {
   info(`Loading the initial test url: ${url}`);
   extension.sendMessage("test-filters", [event], data);
 
-  yield extension.awaitMessage("test-filter-ready");
+  await extension.awaitMessage("test-filter-ready");
   win.location = url;
-  yield extension.awaitMessage("test-filter-next");
+  await extension.awaitMessage("test-filter-next");
 
   event = "onReferenceFragmentUpdated";
   extension.sendMessage("test-filters", [event], data);
 
-  yield extension.awaitMessage("test-filter-ready");
+  await extension.awaitMessage("test-filter-ready");
   win.location = url + "#ref1";
-  yield extension.awaitMessage("test-filter-next");
+  await extension.awaitMessage("test-filter-next");
 
   info("WebNavigation event filters test onHistoryStateUpdated scenario starting...");
 
   event = "onHistoryStateUpdated";
   extension.sendMessage("test-filters", [event], data);
-  yield extension.awaitMessage("test-filter-ready");
+  await extension.awaitMessage("test-filter-ready");
 
   win.history.pushState({}, "", BASE + "/pushState_page3.html");
-  yield extension.awaitMessage("test-filter-next");
+  await extension.awaitMessage("test-filter-next");
 
   // TODO: add additional specific tests for the other webNavigation events:
   // onErrorOccurred (and onCreatedNavigationTarget on supported)
 
   info("WebNavigation event filters test scenarios completed.");
 
-  yield extension.unload();
+  await extension.unload();
 
   win.close();
 });
 
-add_task(function* test_webnav_empty_filter_validation_error() {
+add_task(async function test_webnav_empty_filter_validation_error() {
   function background() {
     let catchedException;
 
@@ -286,11 +286,11 @@ add_task(function* test_webnav_empty_filter_validation_error() {
     background,
   });
 
-  yield extension.startup();
+  await extension.startup();
 
-  yield extension.awaitFinish("webNav.emptyFilterValidationError");
+  await extension.awaitFinish("webNav.emptyFilterValidationError");
 
-  yield extension.unload();
+  await extension.unload();
 });
 
 </script>

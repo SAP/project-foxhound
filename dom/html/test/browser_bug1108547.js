@@ -26,11 +26,11 @@ function runPass(getterFile, finishedCallback) {
 
       Services.obs.removeObserver(onStartup, topic);
       executeSoon(callback);
-    }, topic, false);
+    }, topic);
   }
 
   // First, set the cookie in a normal window.
-  gBrowser.selectedTab = gBrowser.addTab(rootDir + "file_bug1108547-1.html");
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, rootDir + "file_bug1108547-1.html");
   BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser).then(afterOpenCookieSetter);
 
   function afterOpenCookieSetter() {
@@ -43,7 +43,7 @@ function runPass(getterFile, finishedCallback) {
 
   function afterPrivateWindowOpened() {
     // In the private window, open the getter file, and wait for a new tab to be opened.
-    privateWin.gBrowser.selectedTab = privateWin.gBrowser.addTab(rootDir + getterFile);
+    privateWin.gBrowser.selectedTab = BrowserTestUtils.addTab(privateWin.gBrowser, rootDir + getterFile);
     testBrowser = privateWin.gBrowser.selectedBrowser;
     privateWin.gBrowser.tabContainer.addEventListener("TabOpen", onNewTabOpened, true);
   }
@@ -77,7 +77,7 @@ function runPass(getterFile, finishedCallback) {
 
   function afterPrivateWindowOpened2() {
     // In the private window, open the setter file, and wait for it to load.
-    privateWin.gBrowser.selectedTab = privateWin.gBrowser.addTab(rootDir + "file_bug1108547-1.html");
+    privateWin.gBrowser.selectedTab = BrowserTestUtils.addTab(privateWin.gBrowser, rootDir + "file_bug1108547-1.html");
     BrowserTestUtils.browserLoaded(privateWin.gBrowser.selectedBrowser).then(afterOpenCookieSetter2);
   }
 
@@ -86,7 +86,7 @@ function runPass(getterFile, finishedCallback) {
     privateWin.close();
 
     // Now try to read the cookie in a normal window, and wait for a new tab to be opened.
-    gBrowser.selectedTab = gBrowser.addTab(rootDir + getterFile);
+    gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, rootDir + getterFile);
     testBrowser = gBrowser.selectedBrowser;
     gBrowser.tabContainer.addEventListener("TabOpen", onNewTabOpened2, true);
   }

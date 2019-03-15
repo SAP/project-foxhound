@@ -15,11 +15,9 @@
 
 #include "mozilla/Attributes.h"
 #include "nsXHTMLContentSerializer.h"
-#include "nsIEntityConverter.h"
 #include "nsString.h"
 
-class nsIContent;
-class nsIAtom;
+class nsAtom;
 
 class nsHTMLContentSerializer final : public nsXHTMLContentSerializer {
  public:
@@ -33,26 +31,23 @@ class nsHTMLContentSerializer final : public nsXHTMLContentSerializer {
   NS_IMETHOD AppendElementEnd(mozilla::dom::Element* aElement,
                               nsAString& aStr) override;
 
-  NS_IMETHOD AppendDocumentStart(nsIDocument *aDocument,
+  NS_IMETHOD AppendDocumentStart(mozilla::dom::Document* aDocument,
                                  nsAString& aStr) override;
- protected:
 
+ protected:
   MOZ_MUST_USE
-  virtual bool SerializeHTMLAttributes(nsIContent* aContent,
-                                       nsIContent *aOriginalElement,
+  virtual bool SerializeHTMLAttributes(mozilla::dom::Element* aContent,
+                                       mozilla::dom::Element* aOriginalElement,
                                        nsAString& aTagPrefix,
                                        const nsAString& aTagNamespaceURI,
-                                       nsIAtom* aTagName,
-                                       int32_t aNamespace,
+                                       nsAtom* aTagName, int32_t aNamespace,
                                        nsAString& aStr);
 
   MOZ_MUST_USE
   virtual bool AppendAndTranslateEntities(const nsAString& aStr,
                                           nsAString& aOutputStr) override;
-
 };
 
-nsresult
-NS_NewHTMLContentSerializer(nsIContentSerializer** aSerializer);
+nsresult NS_NewHTMLContentSerializer(nsIContentSerializer** aSerializer);
 
 #endif

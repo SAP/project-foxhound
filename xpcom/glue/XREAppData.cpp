@@ -9,9 +9,7 @@
 
 namespace mozilla {
 
-XREAppData&
-XREAppData::operator=(const StaticXREAppData& aOther)
-{
+XREAppData& XREAppData::operator=(const StaticXREAppData& aOther) {
   vendor = aOther.vendor;
   name = aOther.name;
   remotingName = aOther.remotingName;
@@ -25,13 +23,12 @@ XREAppData::operator=(const StaticXREAppData& aOther)
   crashReporterURL = aOther.crashReporterURL;
   profile = aOther.profile;
   UAName = aOther.UAName;
+  sourceURL = aOther.sourceURL;
 
   return *this;
 }
 
-XREAppData&
-XREAppData::operator=(const XREAppData& aOther)
-{
+XREAppData& XREAppData::operator=(const XREAppData& aOther) {
   directory = aOther.directory;
   vendor = aOther.vendor;
   name = aOther.name;
@@ -47,6 +44,7 @@ XREAppData::operator=(const XREAppData& aOther)
   crashReporterURL = aOther.crashReporterURL;
   profile = aOther.profile;
   UAName = aOther.UAName;
+  sourceURL = aOther.sourceURL;
 #if defined(XP_WIN) && defined(MOZ_SANDBOX)
   sandboxBrokerServices = aOther.sandboxBrokerServices;
   sandboxPermissionsService = aOther.sandboxPermissionsService;
@@ -54,4 +52,4 @@ XREAppData::operator=(const XREAppData& aOther)
   return *this;
 }
 
-} // namespace mozilla
+}  // namespace mozilla

@@ -2,9 +2,8 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-const BASE_URL = "http://mochi.test:8888/browser/browser/components/extensions/test/browser";
-const SOURCE_PAGE = `${BASE_URL}/webNav_createdTargetSource.html`;
-const OPENED_PAGE = `${BASE_URL}/webNav_createdTarget.html`;
+Services.scriptloader.loadSubScript(new URL("head_webNavigation.js", gTestPath).href,
+                                    this);
 
 async function background() {
   const tabs = await browser.tabs.query({active: true, currentWindow: true});
@@ -40,26 +39,8 @@ async function background() {
   });
 }
 
-async function runTestCase({extension, openNavTarget, expectedWebNavProps}) {
-  await openNavTarget();
-
-  const webNavMsg = await extension.awaitMessage("webNavOnCreated");
-  const createdTabId = await extension.awaitMessage("tabsOnCreated");
-  const completedNavMsg = await extension.awaitMessage("webNavOnCompleted");
-
-  let {sourceTabId, sourceFrameId, url} = expectedWebNavProps;
-
-  is(webNavMsg.tabId, createdTabId, "Got the expected tabId property");
-  is(webNavMsg.sourceTabId, sourceTabId, "Got the expected sourceTabId property");
-  is(webNavMsg.sourceFrameId, sourceFrameId, "Got the expected sourceFrameId property");
-  is(webNavMsg.url, url, "Got the expected url property");
-
-  is(completedNavMsg.tabId, createdTabId, "Got the expected webNavigation.onCompleted tabId property");
-  is(completedNavMsg.url, url, "Got the expected webNavigation.onCompleted url property");
-}
-
-add_task(function* test_on_created_navigation_target_from_window_open() {
-  const tab1 = yield BrowserTestUtils.openNewForegroundTab(gBrowser, SOURCE_PAGE);
+add_task(async function test_window_open() {
+  const tab1 = await BrowserTestUtils.openNewForegroundTab(gBrowser, SOURCE_PAGE);
 
   gBrowser.selectedTab = tab1;
 
@@ -70,13 +51,13 @@ add_task(function* test_on_created_navigation_target_from_window_open() {
     },
   });
 
-  yield extension.startup();
+  await extension.startup();
 
-  const expectedSourceTab = yield extension.awaitMessage("expectedSourceTab");
+  const expectedSourceTab = await extension.awaitMessage("expectedSourceTab");
 
-  info("open an url in a new tab from a window.open call");
+  info("open a url in a new tab from a window.open call");
 
-  yield runTestCase({
+  await runCreatedNavigationTargetTest({
     extension,
     openNavTarget() {
       extension.sendMessage({
@@ -91,9 +72,9 @@ add_task(function* test_on_created_navigation_target_from_window_open() {
     },
   });
 
-  info("open an url in a new window from a window.open call");
+  info("open a url in a new window from a window.open call");
 
-  yield runTestCase({
+  await runCreatedNavigationTargetTest({
     extension,
     openNavTarget() {
       extension.sendMessage({
@@ -108,62 +89,75 @@ add_task(function* test_on_created_navigation_target_from_window_open() {
     },
   });
 
-  yield BrowserTestUtils.removeTab(tab1);
+  assertNoPendingCreatedNavigationTargetData();
 
-  yield extension.unload();
+  BrowserTestUtils.removeTab(tab1);
+
+  await extension.unload();
 });
 
-add_task(function* test_on_created_navigation_target_from_window_open_subframe() {
-  const tab1 = yield BrowserTestUtils.openNewForegroundTab(gBrowser, SOURCE_PAGE);
+add_task(async function test_window_open_close_from_browserAction_popup() {
+  const tab1 = await BrowserTestUtils.openNewForegroundTab(gBrowser, SOURCE_PAGE);
 
   gBrowser.selectedTab = tab1;
+
+  function popup() {
+    window.open("", "_self").close();
+
+    browser.test.sendMessage("browserAction_popup_executed");
+  }
 
   const extension = ExtensionTestUtils.loadExtension({
     background,
     manifest: {
+      browser_action: {
+        default_popup: "popup.html",
+      },
       permissions: ["webNavigation", "tabs", "<all_urls>"],
     },
+    files: {
+      "popup.html": `<!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="utf-8">
+          </head>
+          <body>
+            <script src="popup.js"></script>
+          </body>
+        </html>
+      `,
+      "popup.js": popup,
+    },
   });
 
-  yield extension.startup();
+  await extension.startup();
 
-  const expectedSourceTab = yield extension.awaitMessage("expectedSourceTab");
+  const expectedSourceTab = await extension.awaitMessage("expectedSourceTab");
 
-  info("open an url in a new tab from subframe window.open call");
+  clickBrowserAction(extension);
 
-  yield runTestCase({
+  await extension.awaitMessage("browserAction_popup_executed");
+
+  info("open a url in a new tab from a window.open call");
+
+  await runCreatedNavigationTargetTest({
     extension,
     openNavTarget() {
       extension.sendMessage({
         type: "execute-contentscript",
-        code: `document.querySelector('iframe').contentWindow.open("${OPENED_PAGE}#new-tab-from-window-open-subframe"); true;`,
+        code: `window.open("${OPENED_PAGE}#new-tab-from-window-open"); true;`,
       });
     },
     expectedWebNavProps: {
       sourceTabId: expectedSourceTab.sourceTabId,
-      sourceFrameId: expectedSourceTab.sourceTabFrames[1].frameId,
-      url: `${OPENED_PAGE}#new-tab-from-window-open-subframe`,
+      sourceFrameId: 0,
+      url: `${OPENED_PAGE}#new-tab-from-window-open`,
     },
   });
 
-  info("open an url in a new window from subframe window.open call");
+  assertNoPendingCreatedNavigationTargetData();
 
-  yield runTestCase({
-    extension,
-    openNavTarget() {
-      extension.sendMessage({
-        type: "execute-contentscript",
-        code: `document.querySelector('iframe').contentWindow.open("${OPENED_PAGE}#new-win-from-window-open-subframe", "_blank", "toolbar=0"); true;`,
-      });
-    },
-    expectedWebNavProps: {
-      sourceTabId: expectedSourceTab.sourceTabId,
-      sourceFrameId: expectedSourceTab.sourceTabFrames[1].frameId,
-      url: `${OPENED_PAGE}#new-win-from-window-open-subframe`,
-    },
-  });
+  BrowserTestUtils.removeTab(tab1);
 
-  yield BrowserTestUtils.removeTab(tab1);
-
-  yield extension.unload();
+  await extension.unload();
 });

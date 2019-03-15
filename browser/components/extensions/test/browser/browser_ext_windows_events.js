@@ -4,7 +4,9 @@
 
 SimpleTest.requestCompleteLog();
 
-add_task(function* testWindowsEvents() {
+add_task(async function test_windows_events_not_allowed() {
+  let monitor = await startIncognitoMonitorExtension();
+
   function background() {
     browser.windows.onCreated.addListener(window => {
       browser.test.log(`onCreated: windowId=${window.id}`);
@@ -16,27 +18,18 @@ add_task(function* testWindowsEvents() {
       browser.test.sendMessage("window-created", window.id);
     });
 
-    let lastWindowId, os;
-    browser.windows.onFocusChanged.addListener(async windowId => {
-      browser.test.log(`onFocusChange: windowId=${windowId} lastWindowId=${lastWindowId}`);
+    let lastWindowId;
+    browser.windows.onFocusChanged.addListener(async eventWindowId => {
+      browser.test.log(`onFocusChange: windowId=${eventWindowId} lastWindowId=${lastWindowId}`);
 
-      if (windowId === browser.windows.WINDOW_ID_NONE && os === "linux") {
-        browser.test.log("Ignoring a superfluous WINDOW_ID_NONE (blur) event on Linux");
-        return;
-      }
-
-      browser.test.assertTrue(lastWindowId !== windowId,
+      browser.test.assertTrue(lastWindowId !== eventWindowId,
                               "onFocusChanged fired once for the given window");
-      lastWindowId = windowId;
+      lastWindowId = eventWindowId;
 
-      browser.test.assertTrue(Number.isInteger(windowId),
+      browser.test.assertTrue(Number.isInteger(eventWindowId),
                               "windowId is an integer");
-
       let window = await browser.windows.getLastFocused();
-
-      browser.test.assertEq(windowId, window.id,
-                            "Last focused window has the correct id");
-      browser.test.sendMessage(`window-focus-changed`, window.id);
+      browser.test.sendMessage("window-focus-changed", {winId: eventWindowId, lastFocusedWindowId: window.id});
     });
 
     browser.windows.onRemoved.addListener(windowId => {
@@ -44,74 +37,84 @@ add_task(function* testWindowsEvents() {
 
       browser.test.assertTrue(Number.isInteger(windowId),
                               "windowId is an integer");
-      browser.test.sendMessage(`window-removed`, windowId);
+      browser.test.sendMessage("window-removed", windowId);
       browser.test.notifyPass("windows.events");
     });
 
-    browser.runtime.getPlatformInfo(info => {
-      os = info.os;
-      browser.test.sendMessage("ready");
-    });
+    browser.test.sendMessage("ready", browser.windows.WINDOW_ID_NONE);
   }
 
   let extension = ExtensionTestUtils.loadExtension({
-    background: `(${background})()`,
+    manifest: {},
+    background,
   });
 
-  yield extension.startup();
-  yield extension.awaitMessage("ready");
+  await extension.startup();
+  const WINDOW_ID_NONE = await extension.awaitMessage("ready");
 
-  let {Management: {global: {windowTracker}}} = Cu.import("resource://gre/modules/Extension.jsm", {});
+  async function awaitFocusChanged() {
+    let windowInfo = await extension.awaitMessage("window-focus-changed");
+    if (windowInfo.winId === WINDOW_ID_NONE) {
+      info("Ignoring a superfluous WINDOW_ID_NONE (blur) event.");
+      windowInfo = await extension.awaitMessage("window-focus-changed");
+    }
+    is(windowInfo.winId, windowInfo.lastFocusedWindowId,
+       "Last focused window has the correct id");
+    return windowInfo.winId;
+  }
+
+  let {Management: {global: {windowTracker}}} = ChromeUtils.import("resource://gre/modules/Extension.jsm", {});
 
   let currentWindow = window;
   let currentWindowId = windowTracker.getId(currentWindow);
   info(`Current window ID: ${currentWindowId}`);
 
-  info(`Create browser window 1`);
-  let win1 = yield BrowserTestUtils.openNewBrowserWindow();
-  let win1Id = yield extension.awaitMessage("window-created");
+  info("Create browser window 1");
+  let win1 = await BrowserTestUtils.openNewBrowserWindow();
+  let win1Id = await extension.awaitMessage("window-created");
   info(`Window 1 ID: ${win1Id}`);
 
   // This shouldn't be necessary, but tests intermittently fail, so let's give
   // it a try.
   win1.focus();
 
-  let winId = yield extension.awaitMessage(`window-focus-changed`);
+  let winId = await awaitFocusChanged();
   is(winId, win1Id, "Got focus change event for the correct window ID.");
 
-  info(`Create browser window 2`);
-  let win2 = yield BrowserTestUtils.openNewBrowserWindow();
-  let win2Id = yield extension.awaitMessage("window-created");
+  info("Create browser window 2");
+  let win2 = await BrowserTestUtils.openNewBrowserWindow({private: true});
+  let win2Id = await extension.awaitMessage("window-created");
   info(`Window 2 ID: ${win2Id}`);
 
   win2.focus();
 
-  winId = yield extension.awaitMessage(`window-focus-changed`);
+  winId = await awaitFocusChanged();
   is(winId, win2Id, "Got focus change event for the correct window ID.");
 
-  info(`Focus browser window 1`);
-  yield focusWindow(win1);
+  info("Focus browser window 1");
+  await focusWindow(win1);
 
-  winId = yield extension.awaitMessage(`window-focus-changed`);
+  winId = await awaitFocusChanged();
   is(winId, win1Id, "Got focus change event for the correct window ID.");
 
-  info(`Close browser window 2`);
-  yield BrowserTestUtils.closeWindow(win2);
+  info("Close browser window 2");
+  await BrowserTestUtils.closeWindow(win2);
 
-  winId = yield extension.awaitMessage(`window-removed`);
+  winId = await extension.awaitMessage("window-removed");
   is(winId, win2Id, "Got removed event for the correct window ID.");
 
-  info(`Close browser window 1`);
-  yield BrowserTestUtils.closeWindow(win1);
+  info("Close browser window 1");
+  await BrowserTestUtils.closeWindow(win1);
 
   currentWindow.focus();
 
-  winId = yield extension.awaitMessage(`window-removed`);
+  winId = await extension.awaitMessage("window-removed");
   is(winId, win1Id, "Got removed event for the correct window ID.");
 
-  winId = yield extension.awaitMessage(`window-focus-changed`);
+  winId = await awaitFocusChanged();
   is(winId, currentWindowId, "Got focus change event for the correct window ID.");
 
-  yield extension.awaitFinish("windows.events");
-  yield extension.unload();
+  await extension.awaitFinish("windows.events");
+  await extension.unload();
+  await monitor.unload();
 });

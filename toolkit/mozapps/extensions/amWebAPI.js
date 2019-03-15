@@ -4,11 +4,9 @@
 
 "use strict";
 
-const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "Services",
+  "resource://gre/modules/Services.jsm");
 
 XPCOMUtils.defineLazyPreferenceGetter(this, "WEBEXT_PERMISSION_PROMPTS",
                                       "extensions.webextPermissionPrompts", false);
@@ -132,8 +130,8 @@ class APIObject {
     let win = this.window;
     let broker = this.broker;
     return new win.Promise((resolve, reject) => {
-      Task.spawn(function*() {
-        let result = yield broker.sendRequest(apiRequest, ...apiArgs);
+      (async function() {
+        let result = await broker.sendRequest(apiRequest, ...apiArgs);
         if ("reject" in result) {
           let err = new win.Error(result.reject.message);
           // We don't currently put any other properties onto Errors
@@ -148,7 +146,7 @@ class APIObject {
           obj = resultConverter(obj);
         }
         resolve(obj);
-      }).catch(err => {
+      })().catch(err => {
         Cu.reportError(err);
         reject(new win.Error("Unexpected internal error"));
       });
@@ -207,11 +205,7 @@ class WebAPI extends APIObject {
   }
 
   init(window) {
-    let mm = window
-        .QueryInterface(Ci.nsIInterfaceRequestor)
-        .getInterface(Ci.nsIDocShell)
-        .QueryInterface(Ci.nsIInterfaceRequestor)
-        .getInterface(Ci.nsIContentFrameMessageManager);
+    let mm = window.docShell.messageManager;
     let broker = new APIBroker(mm);
 
     super.init(window, broker, {});
@@ -232,7 +226,18 @@ class WebAPI extends APIObject {
   }
 
   createInstall(options) {
-    return this._apiTask("createInstall", [options], installInfo => {
+    if (!Services.prefs.getBoolPref("xpinstall.enabled", true)) {
+      throw new this.window.Error("Software installation is disabled.");
+    }
+    let installOptions = {
+      ...options,
+      // Provide the host from which the amWebAPI is being called
+      // (so that we can detect if the API is being used from the disco pane,
+      // AMO, testpilot or another unknown webpage).
+      sourceHost: this.window.document.nodePrincipal.URI &&
+        this.window.document.nodePrincipal.URI.host,
+    };
+    return this._apiTask("createInstall", [installOptions], installInfo => {
       if (!installInfo) {
         return null;
       }
@@ -246,7 +251,7 @@ class WebAPI extends APIObject {
     return WEBEXT_PERMISSION_PROMPTS;
   }
 
-  eventListenerWasAdded(type) {
+  eventListenerAdded(type) {
     if (this.listenerCount == 0) {
       this.broker.setAddonListener(data => {
         let event = new this.window.AddonEvent(data.event, data);
@@ -256,21 +261,13 @@ class WebAPI extends APIObject {
     this.listenerCount++;
   }
 
-  eventListenerWasRemoved(type) {
+  eventListenerRemoved(type) {
     this.listenerCount--;
     if (this.listenerCount == 0) {
       this.broker.setAddonListener(null);
     }
   }
-
-  QueryInterface(iid) {
-    if (iid.equals(WebAPI.classID) || iid.equals(Ci.nsISupports)
-        || iid.equals(Ci.nsIDOMGlobalPropertyInitializer)) {
-      return this;
-    }
-    return Cr.NS_ERROR_NO_INTERFACE;
-  }
 }
-
+WebAPI.prototype.QueryInterface = ChromeUtils.generateQI(["nsIDOMGlobalPropertyInitializer"]);
 WebAPI.prototype.classID = Components.ID("{8866d8e3-4ea5-48b7-a891-13ba0ac15235}");
 this.NSGetFactory = XPCOMUtils.generateNSGetFactory([WebAPI]);

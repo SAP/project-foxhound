@@ -4,15 +4,17 @@ import org.mozilla.gecko.R;
 import org.mozilla.gecko.Telemetry;
 import org.mozilla.gecko.TelemetryContract;
 import org.mozilla.gecko.menu.MenuItemSwitcherLayout;
+import org.mozilla.gecko.util.BitmapUtils;
 import org.mozilla.gecko.widget.GeckoActionProvider;
 
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.Resources;
+import android.graphics.drawable.AdaptiveIconDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.Bitmap;
 import android.graphics.drawable.BitmapDrawable;
-import android.support.v4.content.ContextCompat;
+import android.os.Build;
 import android.support.v4.view.ViewCompat;
 import android.support.v4.widget.TextViewCompat;
 import android.view.LayoutInflater;
@@ -104,7 +106,8 @@ public class PromptListAdapter extends ArrayAdapter<PromptListItem> {
     }
 
     private void maybeUpdateIcon(PromptListItem item, TextView t) {
-        if (item.getIcon() == null && !item.inGroup && !item.isParent) {
+        final Drawable icon = item.getIcon();
+        if (icon == null && !item.inGroup && !item.isParent) {
             TextViewCompat.setCompoundDrawablesRelativeWithIntrinsicBounds(t, null, null, null, null);
             return;
         }
@@ -113,11 +116,17 @@ public class PromptListAdapter extends ArrayAdapter<PromptListItem> {
         Resources res = getContext().getResources();
         // Set the padding between the icon and the text.
         t.setCompoundDrawablePadding(mIconTextPadding);
-        if (item.getIcon() != null) {
+        if (icon != null) {
             // We want the icon to be of a specific size. Some do not
             // follow this rule so we have to resize them.
-            Bitmap bitmap = ((BitmapDrawable) item.getIcon()).getBitmap();
-            d = new BitmapDrawable(res, Bitmap.createScaledBitmap(bitmap, mIconSize, mIconSize, true));
+            if (icon instanceof BitmapDrawable ||
+                    (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && icon instanceof AdaptiveIconDrawable)) {
+                Bitmap bitmap = BitmapUtils.getBitmapFromDrawable(icon);
+                d = new BitmapDrawable(res, Bitmap.createScaledBitmap(bitmap, mIconSize, mIconSize, true));
+            } else {
+                d = icon;
+            }
+
         } else if (item.inGroup) {
             // We don't currently support "indenting" items with icons
             d = getBlankDrawable(res);

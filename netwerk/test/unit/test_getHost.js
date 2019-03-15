@@ -1,7 +1,7 @@
 // Test getLocalHost/getLocalPort and getRemoteHost/getRemotePort.
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = new HttpServer();
 httpserver.start(-1);
@@ -17,31 +17,31 @@ CheckGetHostListener.prototype = {
 
     gotOnStartRequest = true;
 
-    request.QueryInterface(Components.interfaces.nsIHttpChannelInternal);
+    request.QueryInterface(Ci.nsIHttpChannelInternal);
     try {
-      do_check_eq(request.localAddress, "127.0.0.1");
-      do_check_eq(request.localPort > 0, true);
-      do_check_neq(request.localPort, PORT);
-      do_check_eq(request.remoteAddress, "127.0.0.1");
-      do_check_eq(request.remotePort, PORT);
+      Assert.equal(request.localAddress, "127.0.0.1");
+      Assert.equal(request.localPort > 0, true);
+      Assert.notEqual(request.localPort, PORT);
+      Assert.equal(request.remoteAddress, "127.0.0.1");
+      Assert.equal(request.remotePort, PORT);
     } catch (e) {
-      do_check_true(0, "Get local/remote host/port throws an error!");
+      Assert.ok(0, "Get local/remote host/port throws an error!");
     }
   },
 
   onStopRequest: function(request, context, statusCode) {
     dump("*** listener onStopRequest\n");
 
-    do_check_eq(gotOnStartRequest, true);
+    Assert.equal(gotOnStartRequest, true);
     httpserver.stop(do_test_finished);
   },
 
   QueryInterface: function(iid) {
-    if (iid.equals(Components.interfaces.nsIRequestObserver) ||
-        iid.equals(Components.interfaces.nsISupports)
+    if (iid.equals(Ci.nsIRequestObserver) ||
+        iid.equals(Ci.nsISupports)
         )
       return this;
-    throw Components.results.NS_NOINTERFACE;
+    throw Cr.NS_NOINTERFACE;
   },
 }
 
@@ -49,7 +49,7 @@ function make_channel(url) {
   return NetUtil.newChannel({
     uri: url,
     loadUsingSystemPrincipal: true
-  }).QueryInterface(Components.interfaces.nsIHttpChannel);
+  }).QueryInterface(Ci.nsIHttpChannel);
 }
 
 function test_handler(metadata, response) {

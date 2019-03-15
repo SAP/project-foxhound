@@ -3,6 +3,8 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+/* import-globals-from ../file.js */
+
 var disableWorkerTest = "FileHandle doesn't work in workers yet";
 
 var testGenerator = testSteps();
@@ -48,7 +50,7 @@ function* testSteps()
 
   fileHandle.location = 0;
   request = fileHandle.readAsText(testString.length);
-  location += testString.length
+  location += testString.length;
   is(fileHandle.location, location, "Correct location");
   request.onsuccess = grabEventAndContinueHandler;
   event = yield undefined;

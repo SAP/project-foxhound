@@ -8,13 +8,17 @@
 #ifndef SkSpecialSurface_DEFINED
 #define SkSpecialSurface_DEFINED
 
+#include "SkImageInfo.h"
 #include "SkRefCnt.h"
 #include "SkSurfaceProps.h"
 
+#if SK_SUPPORT_GPU
+#include "GrTypesPriv.h"
+#endif
+
 class GrContext;
-struct GrSurfaceDesc;
+class SkBitmap;
 class SkCanvas;
-struct SkImageInfo;
 class SkSpecialImage;
 
 /**
@@ -58,7 +62,8 @@ public:
     static sk_sp<SkSpecialSurface> MakeRenderTarget(GrContext*,
                                                     int width, int height,
                                                     GrPixelConfig config,
-                                                    sk_sp<SkColorSpace> colorSpace);
+                                                    sk_sp<SkColorSpace> colorSpace,
+                                                    const SkSurfaceProps* = nullptr);
 #endif
 
     /**

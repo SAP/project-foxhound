@@ -7,60 +7,46 @@
 
 "use strict";
 
-const { PromisesFront } = require("devtools/shared/fronts/promises");
-
-var events = require("sdk/event/core");
-
-add_task(function* () {
-  let client = yield startTestDebuggerServer("test-promises-dependentpromises");
-  let chromeActors = yield getChromeActors(client);
-  yield attachTab(client, chromeActors);
+add_task(async function() {
+  const { client, promisesFront } = await createMainProcessPromisesFront();
 
   ok(Promise.toString().includes("native code"), "Expect native DOM Promise.");
 
-  yield testGetDependentPromises(client, chromeActors, () => {
-    let p = new Promise(() => {});
+  await testGetDependentPromises(client, promisesFront, () => {
+    const p = new Promise(() => {});
     p.name = "p";
-    let q = p.then();
+    const q = p.then();
     q.name = "q";
-    let r = p.then(null, () => {});
+    const r = p.catch(() => {});
     r.name = "r";
 
     return p;
   });
-
-  let response = yield listTabs(client);
-  let targetTab = findTab(response.tabs, "test-promises-dependentpromises");
-  ok(targetTab, "Found our target tab.");
-  yield attachTab(client, targetTab);
-
-  yield testGetDependentPromises(client, targetTab, () => {
-    const debuggee =
-      DebuggerServer.getTestGlobal("test-promises-dependentpromises");
-
-    let p = new debuggee.Promise(() => {});
-    p.name = "p";
-    let q = p.then();
-    q.name = "q";
-    let r = p.then(null, () => {});
-    r.name = "r";
-
-    return p;
-  });
-
-  yield close(client);
 });
 
-function* testGetDependentPromises(client, form, makePromises) {
-  let front = PromisesFront(client, form);
+add_task(async function() {
+  const { debuggee, client, promisesFront } = await createTabPromisesFront();
 
-  yield front.attach();
-  yield front.listPromises();
+  await testGetDependentPromises(client, promisesFront, () => {
+    const p = new debuggee.Promise(() => {});
+    p.name = "p";
+    const q = p.then();
+    q.name = "q";
+    const r = p.catch(() => {});
+    r.name = "r";
+
+    return p;
+  });
+});
+
+async function testGetDependentPromises(client, front, makePromises) {
+  await front.attach();
+  await front.listPromises();
 
   // Get the grip for promise p
-  let onNewPromise = new Promise(resolve => {
-    events.on(front, "new-promises", promises => {
-      for (let p of promises) {
+  const onNewPromise = new Promise(resolve => {
+    front.on("new-promises", promises => {
+      for (const p of promises) {
         if (p.preview.ownProperties.name &&
             p.preview.ownProperties.name.value === "p") {
           resolve(p);
@@ -69,21 +55,21 @@ function* testGetDependentPromises(client, form, makePromises) {
     });
   });
 
-  let promise = makePromises();
+  const promise = makePromises();
 
-  let grip = yield onNewPromise;
+  const grip = await onNewPromise;
   ok(grip, "Found our promise p.");
 
-  let objectClient = new ObjectClient(client, grip);
+  const objectClient = new ObjectClient(client, grip);
   ok(objectClient, "Got Object Client.");
 
   // Get the dependent promises for promise p and assert that the list of
   // dependent promises is correct
-  yield new Promise(resolve => {
+  await new Promise(resolve => {
     objectClient.getDependentPromises(response => {
-      let dependentNames = response.promises.map(p =>
+      const dependentNames = response.promises.map(p =>
         p.preview.ownProperties.name.value);
-      let expectedDependentNames = ["q", "r"];
+      const expectedDependentNames = ["q", "r"];
 
       equal(dependentNames.length, expectedDependentNames.length,
         "Got expected number of dependent promises.");
@@ -93,7 +79,7 @@ function* testGetDependentPromises(client, form, makePromises) {
           "Got expected dependent name.");
       }
 
-      for (let p of response.promises) {
+      for (const p of response.promises) {
         equal(p.type, "object", "Expect type to be Object.");
         equal(p.class, "Promise", "Expect class to be Promise.");
         equal(typeof p.promiseState.creationTimestamp, "number",
@@ -106,7 +92,7 @@ function* testGetDependentPromises(client, form, makePromises) {
     });
   });
 
-  yield front.detach();
+  await front.detach();
   // Appease eslint
   void promise;
 }

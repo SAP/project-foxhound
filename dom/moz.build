@@ -15,32 +15,22 @@ JAR_MANIFESTS += ['jar.mn']
 
 interfaces = [
     'base',
-    'canvas',
-    'core',
     'html',
     'events',
-    'stylesheets',
     'sidebar',
-    'css',
-    'traversal',
-    'range',
-    'xbl',
-    'xpath',
     'xul',
     'security',
     'storage',
-    'json',
-    'offline',
     'geolocation',
     'notification',
-    'svg',
-    'smil',
     'push',
+    'payments',
 ]
 
 DIRS += ['interfaces/' + i for i in interfaces]
 
 DIRS += [
+    'abort',
     'animation',
     'base',
     'bindings',
@@ -48,7 +38,11 @@ DIRS += [
     'browser-element',
     'cache',
     'canvas',
+    'webgpu',
+    'chrome-webidl',
+    'clients',
     'commandhandler',
+    'credentialmanagement',
     'crypto',
     'encoding',
     'events',
@@ -56,16 +50,16 @@ DIRS += [
     'file',
     'filehandle',
     'filesystem',
-    'flyweb',
+    'flex',
     'gamepad',
     'geolocation',
     'grid',
     'html',
-    'json',
     'jsurl',
     'asmjscache',
     'mathml',
     'media',
+    'midi',
     'notification',
     'offline',
     'power',
@@ -74,7 +68,6 @@ DIRS += [
     'security',
     'storage',
     'svg',
-    'time',
     'locales',
     'network',
     'permission',
@@ -104,13 +97,20 @@ DIRS += [
     'webbrowserpersist',
     'xhr',
     'worklet',
+    'script',
+    'payments',
+    'websocket',
+    'serviceworkers',
+    'simpledb',
+    'reporting',
+    'localstorage',
 ]
+
+if CONFIG['MOZ_LIBPRIO']:
+    DIRS += ['prio']
 
 if CONFIG['OS_ARCH'] == 'WINNT':
     DIRS += ['plugins/ipc/hangui']
-
-if CONFIG['MOZ_SECUREELEMENT']:
-    DIRS += ['secureelement']
 
 DIRS += ['presentation']
 
@@ -119,6 +119,6 @@ TEST_DIRS += [
     'imptests',
 ]
 
-if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('gtk2', 'gtk3', 'cocoa', 'windows', 'android'):
+if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('gtk3', 'cocoa', 'windows'):
     TEST_DIRS += ['plugins/test']
 

@@ -8,21 +8,24 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_PACING_BITRATE_PROBER_H_
-#define WEBRTC_MODULES_PACING_BITRATE_PROBER_H_
+#ifndef MODULES_PACING_BITRATE_PROBER_H_
+#define MODULES_PACING_BITRATE_PROBER_H_
 
-#include <cstddef>
-#include <list>
+#include <queue>
 
-#include "webrtc/typedefs.h"
+#include "modules/include/module_common_types.h"
+#include "rtc_base/basictypes.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
+class RtcEventLog;
 
 // Note that this class isn't thread-safe by itself and therefore relies
 // on being protected by the caller.
 class BitrateProber {
  public:
   BitrateProber();
+  explicit BitrateProber(RtcEventLog* event_log);
 
   void SetEnabled(bool enable);
 
@@ -31,31 +34,77 @@ class BitrateProber {
   // TimeUntilNextProbe().
   bool IsProbing() const;
 
-  // Initializes a new probing session if the prober is allowed to probe.
-  void MaybeInitializeProbe(int bitrate_bps);
+  // Initializes a new probing session if the prober is allowed to probe. Does
+  // not initialize the prober unless the packet size is large enough to probe
+  // with.
+  void OnIncomingPacket(size_t packet_size);
 
-  // Returns the number of milliseconds until the next packet should be sent to
+  // Create a cluster used to probe for |bitrate_bps| with |num_probes| number
+  // of probes.
+  void CreateProbeCluster(int bitrate_bps, int64_t now_ms);
+
+  // Returns the number of milliseconds until the next probe should be sent to
   // get accurate probing.
   int TimeUntilNextProbe(int64_t now_ms);
 
-  // Returns the number of bytes that the prober recommends for the next probe
-  // packet.
-  size_t RecommendedPacketSize() const;
+  // Information about the current probing cluster.
+  PacedPacketInfo CurrentCluster() const;
 
-  // Called to report to the prober that a packet has been sent, which helps the
-  // prober know when to move to the next packet in a probe.
-  void PacketSent(int64_t now_ms, size_t packet_size);
+  // Returns the minimum number of bytes that the prober recommends for
+  // the next probe.
+  size_t RecommendedMinProbeSize() const;
+
+  // Called to report to the prober that a probe has been sent. In case of
+  // multiple packets per probe, this call would be made at the end of sending
+  // the last packet in probe. |probe_size| is the total size of all packets
+  // in probe.
+  void ProbeSent(int64_t now_ms, size_t probe_size);
 
  private:
-  enum ProbingState { kDisabled, kAllowedToProbe, kProbing, kWait };
+  enum class ProbingState {
+    // Probing will not be triggered in this state at all times.
+    kDisabled,
+    // Probing is enabled and ready to trigger on the first packet arrival.
+    kInactive,
+    // Probe cluster is filled with the set of data rates to be probed and
+    // probes are being sent.
+    kActive,
+    // Probing is enabled, but currently suspended until an explicit trigger
+    // to start probing again.
+    kSuspended,
+  };
+
+  // A probe cluster consists of a set of probes. Each probe in turn can be
+  // divided into a number of packets to accommodate the MTU on the network.
+  struct ProbeCluster {
+    PacedPacketInfo pace_info;
+
+    int sent_probes = 0;
+    int sent_bytes = 0;
+    int64_t time_created_ms = -1;
+    int64_t time_started_ms = -1;
+    int retries = 0;
+  };
+
+  // Resets the state of the prober and clears any cluster/timing data tracked.
+  void ResetState(int64_t now_ms);
+
+  int64_t GetNextProbeTime(const ProbeCluster& cluster);
 
   ProbingState probing_state_;
+
   // Probe bitrate per packet. These are used to compute the delta relative to
   // the previous probe packet based on the size and time when that packet was
   // sent.
-  std::list<int> probe_bitrates_;
-  size_t packet_size_last_send_;
-  int64_t time_last_send_ms_;
+  std::queue<ProbeCluster> clusters_;
+
+  // Time the next probe should be sent when in kActive state.
+  int64_t next_probe_time_ms_;
+
+  int next_cluster_id_;
+  RtcEventLog* const event_log_;
 };
+
 }  // namespace webrtc
-#endif  // WEBRTC_MODULES_PACING_BITRATE_PROBER_H_
+
+#endif  // MODULES_PACING_BITRATE_PROBER_H_

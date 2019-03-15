@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,8 +8,6 @@
 #define mozilla_layers_ScrollLinkedEffectDetector_h
 
 #include "mozilla/RefPtr.h"
-
-class nsIDocument;
 
 namespace mozilla {
 namespace layers {
@@ -21,23 +20,22 @@ namespace layers {
 // or work improperly with APZ enabled. This class helps us detect such an
 // effect so that we can warn the author and/or take other preventative
 // measures.
-class MOZ_STACK_CLASS ScrollLinkedEffectDetector
-{
-private:
+class MOZ_STACK_CLASS ScrollLinkedEffectDetector {
+ private:
   static uint32_t sDepth;
   static bool sFoundScrollLinkedEffect;
 
-public:
+ public:
   static void PositioningPropertyMutated();
 
-  explicit ScrollLinkedEffectDetector(nsIDocument* aDoc);
+  explicit ScrollLinkedEffectDetector(dom::Document*);
   ~ScrollLinkedEffectDetector();
 
-private:
-  RefPtr<nsIDocument> mDocument;
+ private:
+  RefPtr<dom::Document> mDocument;
 };
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla
 
 #endif /* mozilla_layers_ScrollLinkedEffectDetector_h */

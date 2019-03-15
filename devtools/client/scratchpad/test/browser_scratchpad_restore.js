@@ -5,13 +5,12 @@
 /* Call the iterator for each item in the list,
    calling the final callback with all the results
    after every iterator call has sent its result */
-function asyncMap(items, iterator, callback)
-{
-  let expected = items.length;
-  let results = [];
+function asyncMap(items, iterator, callback) {
+  const expected = items.length;
+  const results = [];
 
-  items.forEach(function (item) {
-    iterator(item, function (result) {
+  items.forEach(function(item) {
+    iterator(item, function(result) {
       results.push(result);
       if (results.length == expected) {
         callback(results);
@@ -20,42 +19,40 @@ function asyncMap(items, iterator, callback)
   });
 }
 
-function test()
-{
+function test() {
   waitForExplicitFinish();
   testRestore();
 }
 
-function testRestore()
-{
-  let states = [
+function testRestore() {
+  const states = [
     {
       filename: "testfile",
       text: "test1",
-      executionContext: 2
+      executionContext: 2,
     },
     {
       text: "text2",
-      executionContext: 1
+      executionContext: 1,
     },
     {
       text: "text3",
-      executionContext: 1
-    }
+      executionContext: 1,
+    },
   ];
 
-  asyncMap(states, function (state, done) {
+  asyncMap(states, function(state, done) {
     // Open some scratchpad windows
     openScratchpad(done, {state: state, noFocus: true});
-  }, function (wins) {
+  }, function(wins) {
     // Then save the windows to session store
     ScratchpadManager.saveOpenWindows();
 
     // Then get their states
-    let session = ScratchpadManager.getSessionState();
+    const session = ScratchpadManager.getSessionState();
 
     // Then close them
-    wins.forEach(function (win) {
+    wins.forEach(function(win) {
       win.close();
     });
 
@@ -63,17 +60,17 @@ function testRestore()
     ScratchpadManager.saveOpenWindows();
 
     // Then restore them
-    let restoredWins = ScratchpadManager.restoreSession(session);
+    const restoredWins = ScratchpadManager.restoreSession(session);
 
     is(restoredWins.length, 3, "Three scratchad windows restored");
 
-    asyncMap(restoredWins, function (restoredWin, done) {
-      openScratchpad(function (aWin) {
-        let state = aWin.Scratchpad.getState();
+    asyncMap(restoredWins, function(restoredWin, done) {
+      openScratchpad(function(aWin) {
+        const state = aWin.Scratchpad.getState();
         aWin.close();
         done(state);
       }, {window: restoredWin, noFocus: true});
-    }, function (restoredStates) {
+    }, function(restoredStates) {
       // Then make sure they were restored with the right states
       ok(statesMatch(restoredStates, states),
         "All scratchpad window states restored correctly");
@@ -84,10 +81,9 @@ function testRestore()
   });
 }
 
-function statesMatch(restoredStates, states)
-{
-  return states.every(function (state) {
-    return restoredStates.some(function (restoredState) {
+function statesMatch(restoredStates, states) {
+  return states.every(function(state) {
+    return restoredStates.some(function(restoredState) {
       return state.filename == restoredState.filename
         && state.text == restoredState.text
         && state.executionContext == restoredState.executionContext;

@@ -1,9 +1,19 @@
-commit d8d4e668ee1e6e10b728f0671a89b07d7c4d45be
-Merge: 79fb300 48b5e70
-Author: Florian Loitsch <florian@loitsch.com>
-Date:   Wed Nov 23 19:14:38 2016 +0100
+commit 4e8b3b553c58d6afa78cc212a80c830812431132
+Author: thomaslmiller <41446875+thomaslmiller@users.noreply.github.com>
+Date:   Thu Aug 2 01:32:25 2018 -0700
 
-    Merge pull request #39 from uburuntu/master
-    
-    Some small fixes: compilation, null ptr derefence and const qualifiers
+    Add support for Windows on ARM and ARM64 (#76)
 
+diff --git a/double-conversion/utils.h b/double-conversion/utils.h
+index 28bb694..98a2a11 100644
+--- a/double-conversion/utils.h
++++ b/double-conversion/utils.h
+@@ -68,7 +68,7 @@ inline void abort_noreturn() { abort(); }
+ // disabled.)
+ // On Linux,x86 89255e-22 != Div_double(89255.0/1e22)
+ #if defined(_M_X64) || defined(__x86_64__) || \
+-    defined(__ARMEL__) || defined(__avr32__) || \
++    defined(__ARMEL__) || defined(__avr32__) || defined(_M_ARM) || defined(_M_ARM64) || \
+     defined(__hppa__) || defined(__ia64__) || \
+     defined(__mips__) || \
+     defined(__powerpc__) || defined(__ppc__) || defined(__ppc64__) || \

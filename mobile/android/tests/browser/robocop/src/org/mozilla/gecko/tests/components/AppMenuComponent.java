@@ -20,6 +20,7 @@ import org.mozilla.gecko.tests.UITestContext;
 import org.mozilla.gecko.tests.helpers.DeviceHelper;
 import org.mozilla.gecko.tests.helpers.RobotiumHelper;
 import org.mozilla.gecko.tests.helpers.WaitHelper;
+import org.mozilla.gecko.toolbar.BrowserToolbar;
 
 import android.text.TextUtils;
 import android.view.View;
@@ -39,6 +40,7 @@ public class AppMenuComponent extends BaseComponent {
     public enum MenuItem {
         FORWARD(R.string.forward),
         NEW_TAB(R.string.new_tab),
+        NEW_PRIVATE_TAB(R.string.new_private_tab),
         PAGE(R.string.page),
         RELOAD(R.string.reload);
 
@@ -59,7 +61,8 @@ public class AppMenuComponent extends BaseComponent {
     };
 
     public enum PageMenuItem {
-        SAVE_AS_PDF(R.string.save_as_pdf);
+        SAVE_AS_PDF(R.string.save_as_pdf),
+        VIEW_PAGE_SOURCE(R.string.view_page_source);
 
         private static final MenuItem PARENT_MENU = MenuItem.PAGE;
 
@@ -117,7 +120,8 @@ public class AppMenuComponent extends BaseComponent {
     }
 
     private View getOverflowMenuButtonView() {
-        return mSolo.getView(R.id.menu);
+        final BrowserToolbar toolbar = (BrowserToolbar) mSolo.getView(R.id.browser_toolbar);
+        return toolbar.findViewById(R.id.menu);
     }
 
     /**

@@ -14,31 +14,27 @@ const { takeSnapshotAndCensus } = require("devtools/client/memory/actions/snapsh
 const { setCensusDisplayAndRefresh } = require("devtools/client/memory/actions/census-display");
 const { changeView } = require("devtools/client/memory/actions/view");
 
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* () {
-  let front = new StubbedMemoryFront();
-  let heapWorker = new HeapAnalysesClient();
-  yield front.attach();
-  let store = Store();
-  let { getState, dispatch } = store;
+add_task(async function() {
+  const front = new StubbedMemoryFront();
+  const heapWorker = new HeapAnalysesClient();
+  await front.attach();
+  const store = Store();
+  const { getState, dispatch } = store;
 
   dispatch(changeView(viewState.CENSUS));
 
-  yield dispatch(setCensusDisplayAndRefresh(heapWorker,
+  await dispatch(setCensusDisplayAndRefresh(heapWorker,
                                             censusDisplays.allocationStack));
 
   dispatch(takeSnapshotAndCensus(front, heapWorker));
-  yield waitUntilCensusState(store, s => s.census, [censusState.SAVED]);
+  await waitUntilCensusState(store, s => s.census, [censusState.SAVED]);
 
   ok(!getState().snapshots[0].census.display.inverted, "Snapshot is not inverted");
 
-  let census = getState().snapshots[0].census;
+  const census = getState().snapshots[0].census;
   let result = aggregate(census.report);
-  let totalBytes = result.bytes;
-  let totalCount = result.count;
+  const totalBytes = result.bytes;
+  const totalCount = result.count;
 
   ok(totalBytes > 0, "counted up bytes in the census");
   ok(totalCount > 0, "counted up count in the census");
@@ -50,8 +46,8 @@ add_task(function* () {
   dispatch(setCensusDisplayAndRefresh(heapWorker,
                                       censusDisplays.invertedAllocationStack));
 
-  yield waitUntilCensusState(store, s => s.census, [censusState.SAVING]);
-  yield waitUntilCensusState(store, s => s.census, [censusState.SAVED]);
+  await waitUntilCensusState(store, s => s.census, [censusState.SAVING]);
+  await waitUntilCensusState(store, s => s.census, [censusState.SAVED]);
   ok(getState().snapshots[0].census.display.inverted, "Snapshot is inverted");
 
   result = getSnapshotTotals(getState().snapshots[0].census);
@@ -64,8 +60,8 @@ add_task(function* () {
 function aggregate(report) {
   let totalBytes = report.bytes;
   let totalCount = report.count;
-  for (let child of (report.children || [])) {
-    let { bytes, count } = aggregate(child);
+  for (const child of (report.children || [])) {
+    const { bytes, count } = aggregate(child);
     totalBytes += bytes;
     totalCount += count;
   }

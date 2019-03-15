@@ -32,12 +32,8 @@ const gCertificateDialogs = {
     // We don't test anything that calls this method yet.
     ok(false, "getPKCS12FilePassword() should not have been called");
   },
-  viewCert: (ctx, cert) => {
-    // This shouldn't be called for import methods.
-    ok(false, "viewCert() should not have been called");
-  },
 
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsICertificateDialogs])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsICertificateDialogs]),
 };
 
 // Implements nsIInterfaceRequestor. Mostly serves to mock nsIPrompt.
@@ -53,7 +49,7 @@ const gInterfaceRequestor = {
     }
 
     throw new Error(Cr.NS_ERROR_NO_INTERFACE);
-  }
+  },
 };
 
 function getCertAsByteArray(certPath) {
@@ -68,15 +64,21 @@ function getCertAsByteArray(certPath) {
   return byteArray;
 }
 
-function findCertByCommonName(commonName) {
-  let certEnumerator = gCertDB.getCerts().getEnumerator();
-  while (certEnumerator.hasMoreElements()) {
-    let cert = certEnumerator.getNext().QueryInterface(Ci.nsIX509Cert);
-    if (cert.commonName == commonName) {
+function commonFindCertBy(propertyName, value) {
+  for (let cert of gCertDB.getCerts().getEnumerator()) {
+    if (cert[propertyName] == value) {
       return cert;
     }
   }
   return null;
+}
+
+function findCertByCommonName(commonName) {
+  return commonFindCertBy("commonName", commonName);
+}
+
+function findCertByEmailAddress(emailAddress) {
+  return commonFindCertBy("emailAddress", emailAddress);
 }
 
 function testImportCACert() {
@@ -99,21 +101,15 @@ function testImportCACert() {
 }
 
 function run_test() {
-  // We have to set a password and login before we attempt to import anything.
-  // In particular, the SQL NSS DB requires the user to be authenticated to set
-  // certificate trust settings, which we do when we import CA certs.
-  loginToDBWithDefaultPassword();
-
   let certificateDialogsCID =
     MockRegistrar.register("@mozilla.org/nsCertificateDialogs;1",
                            gCertificateDialogs);
-  do_register_cleanup(() => {
+  registerCleanupFunction(() => {
     MockRegistrar.unregister(certificateDialogsCID);
   });
 
   // Sanity check the e-mail cert is missing.
-  throws(() => gCertDB.findCertByEmailAddress(TEST_EMAIL_ADDRESS),
-         /NS_ERROR_FAILURE/,
+  equal(findCertByEmailAddress(TEST_EMAIL_ADDRESS), null,
          "E-mail cert should not be in the database before import");
 
   // Import the CA cert so that the e-mail import succeeds.
@@ -123,6 +119,11 @@ function run_test() {
   let emailArray = getCertAsByteArray("test_certDB_import/emailEE.pem");
   gCertDB.importEmailCertificate(emailArray, emailArray.length,
                                  gInterfaceRequestor);
-  notEqual(gCertDB.findCertByEmailAddress(TEST_EMAIL_ADDRESS), null,
-           "E-mail cert should now be found in the database");
+  let emailCert = findCertByEmailAddress(TEST_EMAIL_ADDRESS);
+  notEqual(emailCert, null, "E-mail cert should now be found in the database");
+  let bundle =
+    Services.strings.createBundle("chrome://pipnss/locale/pipnss.properties");
+  equal(emailCert.tokenName,
+        bundle.GetStringFromName("PrivateTokenDescription"),
+        "cert's tokenName should be the expected localized value");
 }

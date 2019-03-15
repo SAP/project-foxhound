@@ -2,7 +2,7 @@
 
 const SCALAR_ABOUT_HOME = "browser.engagement.navigation.about_home";
 
-add_task(function* setup() {
+add_task(async function setup() {
   // about:home uses IndexedDB. However, the test finishes too quickly and doesn't
   // allow it enougth time to save. So it throws. This disables all the uncaught
   // exception in this file and that's the reason why we split about:home tests
@@ -20,69 +20,70 @@ add_task(function* setup() {
 
   // Make the first engine the default search engine.
   let engineDefault = Services.search.getEngineByName("MozSearch");
-  let originalEngine = Services.search.currentEngine;
-  Services.search.currentEngine = engineDefault;
+  let originalEngine = Services.search.defaultEngine;
+  Services.search.defaultEngine = engineDefault;
 
   // Move the second engine at the beginning of the one-off list.
   let engineOneOff = Services.search.getEngineByName("MozSearch2");
   Services.search.moveEngine(engineOneOff, 0);
 
-  // Enable Extended Telemetry.
-  yield SpecialPowers.pushPrefEnv({"set": [["toolkit.telemetry.enabled", true]]});
+  // Enable local telemetry recording for the duration of the tests.
+  let oldCanRecord = Services.telemetry.canRecordExtended;
+  Services.telemetry.canRecordExtended = true;
 
   // Enable event recording for the events tested here.
   Services.telemetry.setEventRecordingEnabled("navigation", true);
 
   // Make sure to restore the engine once we're done.
-  registerCleanupFunction(function* () {
-    Services.search.currentEngine = originalEngine;
+  registerCleanupFunction(async function() {
+    Services.search.defaultEngine = originalEngine;
     Services.search.removeEngine(engineDefault);
     Services.search.removeEngine(engineOneOff);
-    yield PlacesTestUtils.clearHistory();
+    await PlacesUtils.history.clear();
     Services.telemetry.setEventRecordingEnabled("navigation", false);
+    Services.telemetry.canRecordExtended = oldCanRecord;
   });
 });
 
-add_task(function* test_abouthome_simpleQuery() {
+add_task(async function test_abouthome_activitystream_simpleQuery() {
   // Let's reset the counts.
   Services.telemetry.clearScalars();
   Services.telemetry.clearEvents();
-  let search_hist = getSearchCountsHistogram();
+  let search_hist = TelemetryTestUtils.getAndClearKeyedHistogram("SEARCH_COUNTS");
 
-  let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser);
-
-  info("Setup waiting for AboutHomeLoadSnippetsCompleted.");
-  let promiseAboutHomeLoaded = new Promise(resolve => {
-    tab.linkedBrowser.addEventListener("AboutHomeLoadSnippetsCompleted", function loadListener(event) {
-      tab.linkedBrowser.removeEventListener("AboutHomeLoadSnippetsCompleted", loadListener, true);
-      resolve();
-    }, true, true);
-  });
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
 
   info("Load about:home.");
-  tab.linkedBrowser.loadURI("about:home");
-  info("Wait for AboutHomeLoadSnippetsCompleted.");
-  yield promiseAboutHomeLoaded;
+  BrowserTestUtils.loadURI(tab.linkedBrowser, "about:home");
+  await BrowserTestUtils.browserStopped(tab.linkedBrowser, "about:home");
 
-  info("Trigger a simple serch, just test + enter.");
-  let p = BrowserTestUtils.browserLoaded(tab.linkedBrowser);
-  yield typeInSearchField(tab.linkedBrowser, "test query", "searchText");
-  yield BrowserTestUtils.synthesizeKey("VK_RETURN", {}, tab.linkedBrowser);
-  yield p;
+  info("Wait for ContentSearchUI search provider to initialize.");
+  await ContentTask.spawn(tab.linkedBrowser, null, async function() {
+    await ContentTaskUtils.waitForCondition(() => content.wrappedJSObject.gContentSearchController.defaultEngine);
+  });
+
+  info("Trigger a simple search, just test + enter.");
+  let p = BrowserTestUtils.browserStopped(tab.linkedBrowser, "http://example.com/?q=test+query");
+  await typeInSearchField(tab.linkedBrowser, "test query", "newtab-search-text");
+  await BrowserTestUtils.synthesizeKey("VK_RETURN", {}, tab.linkedBrowser);
+  await p;
 
   // Check if the scalars contain the expected values.
-  const scalars = getParentProcessScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, true, false);
-  checkKeyedScalar(scalars, SCALAR_ABOUT_HOME, "search_enter", 1);
+  const scalars = TelemetryTestUtils.getParentProcessScalars(
+    Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, true, false);
+  TelemetryTestUtils.assertKeyedScalar(scalars, SCALAR_ABOUT_HOME, "search_enter", 1);
   Assert.equal(Object.keys(scalars[SCALAR_ABOUT_HOME]).length, 1,
-               "This search must only increment one entry in the scalar.");
+    "This search must only increment one entry in the scalar.");
 
   // Make sure SEARCH_COUNTS contains identical values.
-  checkKeyedHistogram(search_hist, "other-MozSearch.abouthome", 1);
+  TelemetryTestUtils.assertKeyedHistogramSum(search_hist, "other-MozSearch.abouthome", 1);
 
   // Also check events.
-  let events = Services.telemetry.snapshotBuiltinEvents(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, false);
-  events = events.filter(e => e[1] == "navigation" && e[2] == "search");
-  checkEvents(events, [["navigation", "search", "about_home", "enter", {engine: "other-MozSearch"}]]);
+  let events = Services.telemetry.snapshotEvents(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, false);
+  events = (events.parent || []).filter(e => e[1] == "navigation" && e[2] == "search");
+  TelemetryTestUtils.assertEvents(events, [
+    ["navigation", "search", "about_home", "enter", {engine: "other-MozSearch"}],
+  ]);
 
-  yield BrowserTestUtils.removeTab(tab);
+  BrowserTestUtils.removeTab(tab);
 });

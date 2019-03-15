@@ -4,8 +4,6 @@
 
 package org.mozilla.gecko.fxa.login;
 
-import java.security.NoSuchAlgorithmException;
-
 import org.mozilla.gecko.background.fxa.FxAccountClient20.TwoKeys;
 import org.mozilla.gecko.background.fxa.FxAccountUtils;
 import org.mozilla.gecko.browserid.BrowserIDKeyPair;
@@ -17,6 +15,8 @@ import org.mozilla.gecko.fxa.login.FxAccountLoginTransition.RemoteError;
 import org.mozilla.gecko.fxa.login.FxAccountLoginTransition.Transition;
 import org.mozilla.gecko.sync.ExtendedJSONObject;
 import org.mozilla.gecko.sync.Utils;
+
+import java.security.NoSuchAlgorithmException;
 
 public class Engaged extends State {
   private static final String LOG_TAG = Engaged.class.getSimpleName();
@@ -57,13 +57,20 @@ public class Engaged extends State {
     delegate.getClient().keys(keyFetchToken, new BaseRequestDelegate<TwoKeys>(this, delegate) {
       @Override
       public void handleSuccess(TwoKeys result) {
-        byte[] kB;
+        final byte[] kB;
+        final byte[] kSync;
+        final String kXCS;
         try {
           kB = FxAccountUtils.unwrapkB(unwrapkB, result.wrapkB);
+          // Only the derived keys move forward.
+          kSync = FxAccountUtils.deriveSyncKey(kB);
+          kXCS = FxAccountUtils.computeClientState(kB);
           if (FxAccountUtils.LOG_PERSONAL_INFORMATION) {
             FxAccountUtils.pii(LOG_TAG, "Fetched kA: " + Utils.byte2Hex(result.kA));
             FxAccountUtils.pii(LOG_TAG, "And wrapkB: " + Utils.byte2Hex(result.wrapkB));
-            FxAccountUtils.pii(LOG_TAG, "Giving kB : " + Utils.byte2Hex(kB));
+            FxAccountUtils.pii(LOG_TAG, "Unwrapped kB: " + Utils.byte2Hex(kB));
+            FxAccountUtils.pii(LOG_TAG, "Giving derived kSync: " + Utils.byte2Hex(kSync));
+            FxAccountUtils.pii(LOG_TAG, "Giving derived kXCS: " + kXCS);
           }
         } catch (Exception e) {
           delegate.handleTransition(new RemoteError(e), new Separated(email, uid, verified));
@@ -72,7 +79,7 @@ public class Engaged extends State {
         Transition transition = verified
             ? new LogMessage("keys succeeded")
             : new AccountVerified();
-        delegate.handleTransition(transition, new Cohabiting(email, uid, sessionToken, result.kA, kB, keyPair));
+        delegate.handleTransition(transition, new Cohabiting(email, uid, sessionToken, kSync, kXCS, keyPair));
       }
     });
   }
@@ -85,6 +92,7 @@ public class Engaged extends State {
     return Action.None;
   }
 
+  @Override
   public byte[] getSessionToken() {
     return sessionToken;
   }

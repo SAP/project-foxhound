@@ -282,13 +282,11 @@ static const struct mechanismList mechanisms[] = {
     /* no diffie hellman yet */
     { CKM_DH_PKCS_KEY_PAIR_GEN, { DH_MIN_P_BITS, DH_MAX_P_BITS, CKF_GENERATE_KEY_PAIR }, PR_TRUE },
     { CKM_DH_PKCS_DERIVE, { DH_MIN_P_BITS, DH_MAX_P_BITS, CKF_DERIVE }, PR_TRUE },
-#ifndef NSS_DISABLE_ECC
     /* -------------------- Elliptic Curve Operations --------------------- */
     { CKM_EC_KEY_PAIR_GEN, { EC_MIN_KEY_BITS, EC_MAX_KEY_BITS, CKF_GENERATE_KEY_PAIR | CKF_EC_BPNU }, PR_TRUE },
     { CKM_ECDH1_DERIVE, { EC_MIN_KEY_BITS, EC_MAX_KEY_BITS, CKF_DERIVE | CKF_EC_BPNU }, PR_TRUE },
     { CKM_ECDSA, { EC_MIN_KEY_BITS, EC_MAX_KEY_BITS, CKF_SN_VR | CKF_EC_BPNU }, PR_TRUE },
     { CKM_ECDSA_SHA1, { EC_MIN_KEY_BITS, EC_MAX_KEY_BITS, CKF_SN_VR | CKF_EC_BPNU }, PR_TRUE },
-#endif /* NSS_DISABLE_ECC */
     /* ------------------------- RC2 Operations --------------------------- */
     { CKM_RC2_KEY_GEN, { 1, 128, CKF_GENERATE }, PR_TRUE },
     { CKM_RC2_ECB, { 1, 128, CKF_EN_DE_WR_UN }, PR_TRUE },
@@ -423,11 +421,20 @@ static const struct mechanismList mechanisms[] = {
 #endif
     /* --------------------- Secret Key Operations ------------------------ */
     { CKM_GENERIC_SECRET_KEY_GEN, { 1, 32, CKF_GENERATE }, PR_TRUE },
-    { CKM_CONCATENATE_BASE_AND_KEY, { 1, 32, CKF_GENERATE }, PR_FALSE },
-    { CKM_CONCATENATE_BASE_AND_DATA, { 1, 32, CKF_GENERATE }, PR_FALSE },
-    { CKM_CONCATENATE_DATA_AND_BASE, { 1, 32, CKF_GENERATE }, PR_FALSE },
-    { CKM_XOR_BASE_AND_DATA, { 1, 32, CKF_GENERATE }, PR_FALSE },
+    { CKM_CONCATENATE_BASE_AND_KEY, { 1, 32, CKF_DERIVE }, PR_FALSE },
+    { CKM_CONCATENATE_BASE_AND_DATA, { 1, 32, CKF_DERIVE }, PR_FALSE },
+    { CKM_CONCATENATE_DATA_AND_BASE, { 1, 32, CKF_DERIVE }, PR_FALSE },
+    { CKM_XOR_BASE_AND_DATA, { 1, 32, CKF_DERIVE }, PR_FALSE },
     { CKM_EXTRACT_KEY_FROM_KEY, { 1, 32, CKF_DERIVE }, PR_FALSE },
+    { CKM_DES3_ECB_ENCRYPT_DATA, { 1, 32, CKF_DERIVE }, PR_FALSE },
+    { CKM_DES3_CBC_ENCRYPT_DATA, { 1, 32, CKF_DERIVE }, PR_FALSE },
+    { CKM_AES_ECB_ENCRYPT_DATA, { 1, 32, CKF_DERIVE }, PR_FALSE },
+    { CKM_AES_CBC_ENCRYPT_DATA, { 1, 32, CKF_DERIVE }, PR_FALSE },
+    { CKM_CAMELLIA_ECB_ENCRYPT_DATA, { 1, 32, CKF_DERIVE }, PR_FALSE },
+    { CKM_CAMELLIA_CBC_ENCRYPT_DATA, { 1, 32, CKF_DERIVE }, PR_FALSE },
+    { CKM_SEED_ECB_ENCRYPT_DATA, { 1, 32, CKF_DERIVE }, PR_FALSE },
+    { CKM_SEED_CBC_ENCRYPT_DATA, { 1, 32, CKF_DERIVE }, PR_FALSE },
+
     /* ---------------------- SSL Key Derivations ------------------------- */
     { CKM_SSL3_PRE_MASTER_KEY_GEN, { 48, 48, CKF_GENERATE }, PR_FALSE },
     { CKM_SSL3_MASTER_KEY_DERIVE, { 48, 48, CKF_DERIVE }, PR_FALSE },
@@ -931,7 +938,6 @@ sftk_handlePublicKeyObject(SFTKSession *session, SFTKObject *object,
             recover = CK_FALSE;
             wrap = CK_FALSE;
             break;
-#ifndef NSS_DISABLE_ECC
         case CKK_EC:
             if (!sftk_hasAttribute(object, CKA_EC_PARAMS)) {
                 return CKR_TEMPLATE_INCOMPLETE;
@@ -945,7 +951,6 @@ sftk_handlePublicKeyObject(SFTKSession *session, SFTKObject *object,
             recover = CK_FALSE;
             wrap = CK_FALSE;
             break;
-#endif /* NSS_DISABLE_ECC */
         default:
             return CKR_ATTRIBUTE_VALUE_INVALID;
     }
@@ -1114,7 +1119,6 @@ sftk_handlePrivateKeyObject(SFTKSession *session, SFTKObject *object, CK_KEY_TYP
             recover = CK_FALSE;
             wrap = CK_FALSE;
             break;
-#ifndef NSS_DISABLE_ECC
         case CKK_EC:
             if (!sftk_hasAttribute(object, CKA_EC_PARAMS)) {
                 return CKR_TEMPLATE_INCOMPLETE;
@@ -1127,7 +1131,6 @@ sftk_handlePrivateKeyObject(SFTKSession *session, SFTKObject *object, CK_KEY_TYP
             recover = CK_FALSE;
             wrap = CK_FALSE;
             break;
-#endif /* NSS_DISABLE_ECC */
         case CKK_NSS_JPAKE_ROUND1:
             if (!sftk_hasAttribute(object, CKA_PRIME) ||
                 !sftk_hasAttribute(object, CKA_SUBPRIME) ||
@@ -1340,7 +1343,6 @@ sftk_handleSecretKeyObject(SFTKSession *session, SFTKObject *object,
     if (sftk_isTrue(object, CKA_TOKEN)) {
         SFTKSlot *slot = session->slot;
         SFTKDBHandle *keyHandle = sftk_getKeyDB(slot);
-        CK_RV crv;
 
         if (keyHandle == NULL) {
             return CKR_TOKEN_WRITE_PROTECTED;
@@ -1778,7 +1780,6 @@ sftk_GetPubKey(SFTKObject *object, CK_KEY_TYPE key_type,
             crv = sftk_Attribute2SSecItem(arena, &pubKey->u.dh.publicValue,
                                           object, CKA_VALUE);
             break;
-#ifndef NSS_DISABLE_ECC
         case CKK_EC:
             pubKey->keyType = NSSLOWKEYECKey;
             crv = sftk_Attribute2SSecItem(arena,
@@ -1837,7 +1838,6 @@ sftk_GetPubKey(SFTKObject *object, CK_KEY_TYPE key_type,
                 crv = CKR_ATTRIBUTE_VALUE_INVALID;
             }
             break;
-#endif /* NSS_DISABLE_ECC */
         default:
             crv = CKR_KEY_TYPE_INCONSISTENT;
             break;
@@ -1947,7 +1947,6 @@ sftk_mkPrivKey(SFTKObject *object, CK_KEY_TYPE key_type, CK_RV *crvp)
              * if we don't set it explicitly */
             break;
 
-#ifndef NSS_DISABLE_ECC
         case CKK_EC:
             privKey->keyType = NSSLOWKEYECKey;
             crv = sftk_Attribute2SSecItem(arena,
@@ -1992,7 +1991,6 @@ sftk_mkPrivKey(SFTKObject *object, CK_KEY_TYPE key_type, CK_RV *crvp)
 #endif
             }
             break;
-#endif /* NSS_DISABLE_ECC */
 
         default:
             crv = CKR_KEY_TYPE_INCONSISTENT;
@@ -2365,17 +2363,22 @@ sftk_SlotFromID(CK_SLOT_ID slotID, PRBool all)
     return slot;
 }
 
-SFTKSlot *
-sftk_SlotFromSessionHandle(CK_SESSION_HANDLE handle)
+CK_SLOT_ID
+sftk_SlotIDFromSessionHandle(CK_SESSION_HANDLE handle)
 {
     CK_ULONG slotIDIndex = (handle >> 24) & 0x7f;
     CK_ULONG moduleIndex = (handle >> 31) & 1;
 
     if (slotIDIndex >= nscSlotCount[moduleIndex]) {
-        return NULL;
+        return (CK_SLOT_ID)-1;
     }
+    return nscSlotList[moduleIndex][slotIDIndex];
+}
 
-    return sftk_SlotFromID(nscSlotList[moduleIndex][slotIDIndex], PR_FALSE);
+SFTKSlot *
+sftk_SlotFromSessionHandle(CK_SESSION_HANDLE handle)
+{
+    return sftk_SlotFromID(sftk_SlotIDFromSessionHandle(handle), PR_FALSE);
 }
 
 static CK_RV
@@ -3305,6 +3308,15 @@ NSC_GetSlotInfo(CK_SLOT_ID slotID, CK_SLOT_INFO_PTR pInfo)
         }
     }
 
+    /* If there is no key database, this is for example the case when NSS was
+     * initialized with NSS_NoDbInit(), then there won't be any point in
+     * requesting a PIN. Set the CKF_USER_PIN_INITIALIZED bit so that
+     * PK11_NeedUserInit() doesn't indicate that a PIN is needed.
+     */
+    if (slot->keyDB == NULL) {
+        pInfo->flags |= CKF_USER_PIN_INITIALIZED;
+    }
+
     /* ok we really should read it out of the keydb file. */
     /* pInfo->hardwareVersion.major = NSSLOWKEY_DB_FILE_VERSION; */
     pInfo->hardwareVersion.major = SOFTOKEN_VMAJOR;
@@ -3566,7 +3578,6 @@ NSC_InitToken(CK_SLOT_ID slotID, CK_CHAR_PTR pPin,
 {
     SFTKSlot *slot = sftk_SlotFromID(slotID, PR_FALSE);
     SFTKDBHandle *handle;
-    SFTKDBHandle *certHandle;
     SECStatus rv;
     unsigned int i;
     SFTKObject *object;
@@ -3614,19 +3625,16 @@ NSC_InitToken(CK_SLOT_ID slotID, CK_CHAR_PTR pPin,
     }
 
     rv = sftkdb_ResetKeyDB(handle);
+    /* clear the password */
+    sftkdb_ClearPassword(handle);
+    /* update slot->needLogin (should be true now since no password is set) */
+    sftk_checkNeedLogin(slot, handle);
     sftk_freeDB(handle);
     if (rv != SECSuccess) {
         return CKR_DEVICE_ERROR;
     }
 
-    /* finally  mark all the user certs as non-user certs */
-    certHandle = sftk_getCertDB(slot);
-    if (certHandle == NULL)
-        return CKR_OK;
-
-    sftk_freeDB(certHandle);
-
-    return CKR_OK; /*is this the right function for not implemented*/
+    return CKR_OK;
 }
 
 /* NSC_InitPIN initializes the normal user's PIN. */
@@ -3792,15 +3800,18 @@ NSC_SetPIN(CK_SESSION_HANDLE hSession, CK_CHAR_PTR pOldPin,
 
     /* Now update our local copy of the pin */
     if (rv == SECSuccess) {
+        PZ_Lock(slot->slotLock);
         slot->needLogin = (PRBool)(ulNewLen != 0);
+        slot->isLoggedIn = (PRBool)(sftkdb_PWCached(handle) == SECSuccess);
+        PZ_Unlock(slot->slotLock);
         /* Reset login flags. */
         if (ulNewLen == 0) {
-            PRBool tokenRemoved = PR_FALSE;
             PZ_Lock(slot->slotLock);
             slot->isLoggedIn = PR_FALSE;
             slot->ssoLoggedIn = PR_FALSE;
             PZ_Unlock(slot->slotLock);
 
+            tokenRemoved = PR_FALSE;
             rv = sftkdb_CheckPassword(handle, "", &tokenRemoved);
             if (tokenRemoved) {
                 sftk_CloseAllSessions(slot, PR_FALSE);
@@ -4410,6 +4421,44 @@ NSC_GetObjectSize(CK_SESSION_HANDLE hSession,
     return CKR_OK;
 }
 
+static CK_RV
+nsc_GetTokenAttributeValue(SFTKSession *session, CK_OBJECT_HANDLE hObject,
+                           CK_ATTRIBUTE_PTR pTemplate, CK_ULONG ulCount)
+{
+    SFTKSlot *slot = sftk_SlotFromSession(session);
+    SFTKDBHandle *dbHandle = sftk_getDBForTokenObject(slot, hObject);
+    SFTKDBHandle *keydb = NULL;
+    CK_RV crv;
+
+    if (dbHandle == NULL) {
+        return CKR_OBJECT_HANDLE_INVALID;
+    }
+
+    crv = sftkdb_GetAttributeValue(dbHandle, hObject, pTemplate, ulCount);
+
+    /* make sure we don't export any sensitive information */
+    keydb = sftk_getKeyDB(slot);
+    if (dbHandle == keydb) {
+        CK_ULONG i;
+        for (i = 0; i < ulCount; i++) {
+            if (sftk_isSensitive(pTemplate[i].type, CKO_PRIVATE_KEY)) {
+                crv = CKR_ATTRIBUTE_SENSITIVE;
+                if (pTemplate[i].pValue && (pTemplate[i].ulValueLen != -1)) {
+                    PORT_Memset(pTemplate[i].pValue, 0,
+                                pTemplate[i].ulValueLen);
+                }
+                pTemplate[i].ulValueLen = -1;
+            }
+        }
+    }
+
+    sftk_freeDB(dbHandle);
+    if (keydb) {
+        sftk_freeDB(keydb);
+    }
+    return crv;
+}
+
 /* NSC_GetAttributeValue obtains the value of one or more object attributes. */
 CK_RV
 NSC_GetAttributeValue(CK_SESSION_HANDLE hSession,
@@ -4438,37 +4487,8 @@ NSC_GetAttributeValue(CK_SESSION_HANDLE hSession,
 
     /* short circuit everything for token objects */
     if (sftk_isToken(hObject)) {
-        SFTKSlot *slot = sftk_SlotFromSession(session);
-        SFTKDBHandle *dbHandle = sftk_getDBForTokenObject(slot, hObject);
-        SFTKDBHandle *keydb = NULL;
-
-        if (dbHandle == NULL) {
-            sftk_FreeSession(session);
-            return CKR_OBJECT_HANDLE_INVALID;
-        }
-
-        crv = sftkdb_GetAttributeValue(dbHandle, hObject, pTemplate, ulCount);
-
-        /* make sure we don't export any sensitive information */
-        keydb = sftk_getKeyDB(slot);
-        if (dbHandle == keydb) {
-            for (i = 0; i < (int)ulCount; i++) {
-                if (sftk_isSensitive(pTemplate[i].type, CKO_PRIVATE_KEY)) {
-                    crv = CKR_ATTRIBUTE_SENSITIVE;
-                    if (pTemplate[i].pValue && (pTemplate[i].ulValueLen != -1)) {
-                        PORT_Memset(pTemplate[i].pValue, 0,
-                                    pTemplate[i].ulValueLen);
-                    }
-                    pTemplate[i].ulValueLen = -1;
-                }
-            }
-        }
-
+        crv = nsc_GetTokenAttributeValue(session, hObject, pTemplate, ulCount);
         sftk_FreeSession(session);
-        sftk_freeDB(dbHandle);
-        if (keydb) {
-            sftk_freeDB(keydb);
-        }
         return crv;
     }
 
@@ -4763,7 +4783,7 @@ sftk_pruneSearch(CK_ATTRIBUTE *pTemplate, CK_ULONG ulCount,
 static CK_RV
 sftk_searchTokenList(SFTKSlot *slot, SFTKSearchResults *search,
                      CK_ATTRIBUTE *pTemplate, CK_ULONG ulCount,
-                     PRBool *tokenOnly, PRBool isLoggedIn)
+                     PRBool isLoggedIn)
 {
     CK_RV crv = CKR_OK;
     CK_RV crv2;
@@ -4798,7 +4818,6 @@ NSC_FindObjectsInit(CK_SESSION_HANDLE hSession,
     SFTKSearchResults *search = NULL, *freeSearch = NULL;
     SFTKSession *session = NULL;
     SFTKSlot *slot = sftk_SlotFromSessionHandle(hSession);
-    PRBool tokenOnly = PR_FALSE;
     CK_RV crv = CKR_OK;
     PRBool isLoggedIn;
 
@@ -4829,18 +4848,15 @@ NSC_FindObjectsInit(CK_SESSION_HANDLE hSession,
     search->array_size = NSC_SEARCH_BLOCK_SIZE;
     isLoggedIn = (PRBool)((!slot->needLogin) || slot->isLoggedIn);
 
-    crv = sftk_searchTokenList(slot, search, pTemplate, ulCount, &tokenOnly,
-                               isLoggedIn);
+    crv = sftk_searchTokenList(slot, search, pTemplate, ulCount, isLoggedIn);
     if (crv != CKR_OK) {
         goto loser;
     }
 
     /* build list of found objects in the session */
-    if (!tokenOnly) {
-        crv = sftk_searchObjectList(search, slot->sessObjHashTable,
-                                    slot->sessObjHashSize, slot->objectLock,
-                                    pTemplate, ulCount, isLoggedIn);
-    }
+    crv = sftk_searchObjectList(search, slot->sessObjHashTable,
+                                slot->sessObjHashSize, slot->objectLock,
+                                pTemplate, ulCount, isLoggedIn);
     if (crv != CKR_OK) {
         goto loser;
     }

@@ -13,36 +13,36 @@ const EXPECTED_SHEETS = [
     sheetIndex: 0,
     name: /^simple.css$/,
     rules: 1,
-    active: true
+    active: true,
   }, {
     sheetIndex: 1,
     name: /^<.*>$/,
     rules: 3,
-    active: false
-  }
+    active: false,
+  },
 ];
 
-add_task(function* () {
+add_task(async function() {
   // Using the personal container.
-  let userContextId = 1;
-  let { tab } = yield* openTabInUserContext(TESTCASE_URI, userContextId);
-  let { ui } = yield openStyleEditor(tab);
+  const userContextId = 1;
+  const { tab } = await openTabInUserContext(TESTCASE_URI, userContextId);
+  const { ui } = await openStyleEditor(tab);
 
   is(ui.editors.length, 2, "The UI contains two style sheets.");
   checkSheet(ui.editors[0], EXPECTED_SHEETS[0]);
   checkSheet(ui.editors[1], EXPECTED_SHEETS[1]);
 });
 
-function* openTabInUserContext(uri, userContextId) {
+async function openTabInUserContext(uri, userContextId) {
   // Open the tab in the correct userContextId.
-  let tab = gBrowser.addTab(uri, {userContextId});
+  const tab = BrowserTestUtils.addTab(gBrowser, uri, {userContextId});
 
   // Select tab and make sure its browser is focused.
   gBrowser.selectedTab = tab;
   tab.ownerDocument.defaultView.focus();
 
-  let browser = gBrowser.getBrowserForTab(tab);
-  yield BrowserTestUtils.browserLoaded(browser);
+  const browser = gBrowser.getBrowserForTab(tab);
+  await BrowserTestUtils.browserLoaded(browser);
   return {tab, browser};
 }
 
@@ -50,12 +50,12 @@ function checkSheet(editor, expected) {
   is(editor.styleSheet.styleSheetIndex, expected.sheetIndex,
     "Style sheet has correct index.");
 
-  let summary = editor.summary;
-  let name = summary.querySelector(".stylesheet-name > label")
+  const summary = editor.summary;
+  const name = summary.querySelector(".stylesheet-name > label")
                     .getAttribute("value");
   ok(expected.name.test(name), "The name '" + name + "' is correct.");
 
-  let ruleCount = summary.querySelector(".stylesheet-rule-count").textContent;
+  const ruleCount = summary.querySelector(".stylesheet-rule-count").textContent;
   is(parseInt(ruleCount, 10), expected.rules, "the rule count is correct");
 
   is(summary.classList.contains("splitview-active"), expected.active,

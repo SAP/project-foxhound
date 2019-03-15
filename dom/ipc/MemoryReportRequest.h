@@ -11,58 +11,65 @@
 #include "mozilla/ipc/FileDescriptor.h"
 #include "nsISupports.h"
 
+#include <functional>
+
 class nsMemoryReporterManager;
 
 namespace mozilla {
 namespace dom {
 
 class MaybeFileDesc;
+class MemoryReport;
 
-class MemoryReportRequestHost final
-{
-public:
+class MemoryReportRequestHost final {
+ public:
   explicit MemoryReportRequestHost(uint32_t aGeneration);
   ~MemoryReportRequestHost();
 
   void RecvReport(const MemoryReport& aReport);
   void Finish(uint32_t aGeneration);
 
-private:
+ private:
   const uint32_t mGeneration;
   // Non-null if we haven't yet called EndProcessReport() on it.
   RefPtr<nsMemoryReporterManager> mReporterManager;
   bool mSuccess;
 };
 
-class MemoryReportRequestClient final : public nsIRunnable
-{
-public:
+class MemoryReportRequestClient final : public nsIRunnable {
+ public:
+  using ReportCallback = std::function<void(const MemoryReport&)>;
+  using FinishCallback = std::function<bool(const uint32_t&)>;
+
   NS_DECL_ISUPPORTS
 
-  static void Start(uint32_t aGeneration,
-                    bool aAnonymize,
-                    bool aMinimizeMemoryUsage,
-                    const MaybeFileDesc& aDMDFile,
-                    const nsACString& aProcessString);
+  static void Start(uint32_t aGeneration, bool aAnonymize,
+                    bool aMinimizeMemoryUsage, const MaybeFileDesc& aDMDFile,
+                    const nsACString& aProcessString,
+                    const ReportCallback& aReportCallback,
+                    const FinishCallback& aFinishCallback);
 
   NS_IMETHOD Run() override;
 
-private:
-  MemoryReportRequestClient(uint32_t aGeneration,
-                            bool aAnonymize,
+ private:
+  MemoryReportRequestClient(uint32_t aGeneration, bool aAnonymize,
                             const MaybeFileDesc& aDMDFile,
-                            const nsACString& aProcessString);
+                            const nsACString& aProcessString,
+                            const ReportCallback& aReportCallback,
+                            const FinishCallback& aFinishCallback);
 
-private:
+ private:
   ~MemoryReportRequestClient();
 
   uint32_t mGeneration;
   bool mAnonymize;
   mozilla::ipc::FileDescriptor mDMDFile;
   nsCString mProcessString;
+  ReportCallback mReportCallback;
+  FinishCallback mFinishCallback;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_MemoryReportRequest_h_
+#endif  // mozilla_dom_MemoryReportRequest_h_

@@ -24,18 +24,16 @@
 
 "use strict";
 
-var {classes: Cc, interfaces: Ci, utils: Cu} = Components; /*global Components */
-
-Cu.import("resource://gre/modules/Accounts.jsm"); /*global Accounts */
-Cu.import("resource://gre/modules/PromiseUtils.jsm"); /*global PromiseUtils */
-Cu.import("resource://gre/modules/Services.jsm"); /*global Services */
-Cu.import("resource://gre/modules/XPCOMUtils.jsm"); /*global XPCOMUtils */
+ChromeUtils.import("resource://gre/modules/Accounts.jsm");
+ChromeUtils.import("resource://gre/modules/PromiseUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 const ACTION_URL_PARAM = "action";
 
 const COMMAND_LOADED = "fxaccounts:loaded";
 
-const log = Cu.import("resource://gre/modules/AndroidLog.jsm", {}).AndroidLog.bind("FxAccounts");
+const log = ChromeUtils.import("resource://gre/modules/AndroidLog.jsm", {}).AndroidLog.bind("FxAccounts");
 
 XPCOMUtils.defineLazyServiceGetter(this, "ParentalControls",
   "@mozilla.org/parental-controls-service;1", "nsIParentalControlsService");
@@ -47,14 +45,14 @@ function show(id) {
   let allTop = document.querySelectorAll(".toplevel");
   for (let elt of allTop) {
     if (elt.getAttribute("id") == id) {
-      elt.style.display = 'block';
+      elt.style.display = "block";
     } else {
-      elt.style.display = 'none';
+      elt.style.display = "none";
     }
   }
-  if (id == 'spinner') {
-    document.getElementById('remote').style.display = 'block';
-    document.getElementById('remote').style.opacity = 0;
+  if (id == "spinner") {
+    document.getElementById("remote").style.display = "block";
+    document.getElementById("remote").style.opacity = 0;
   }
 }
 
@@ -65,57 +63,64 @@ var loadedDeferred = null;
 // We have a new load starting.  Replace the existing promise with a new one,
 // and queue up the transition to remote content.
 function deferTransitionToRemoteAfterLoaded() {
-  log.d('Waiting for LOADED message.');
+  log.d("Waiting for LOADED message.");
 
   loadedDeferred = PromiseUtils.defer();
   loadedDeferred.promise.then(() => {
-    log.d('Got LOADED message!');
+    log.d("Got LOADED message!");
     document.getElementById("remote").style.opacity = 0;
     show("remote");
     document.getElementById("remote").style.opacity = 1;
   })
   .catch((e) => {
-    log.w('Did not get LOADED message: ' + e.toString());
+    log.w("Did not get LOADED message: " + e.toString());
   });
 }
 
 function handleLoadedMessage(message) {
   loadedDeferred.resolve();
-};
+}
 
 var wrapper = {
   iframe: null,
 
   url: null,
 
-  init: function (url) {
+  init: function(url) {
     this.url = url;
     deferTransitionToRemoteAfterLoaded();
 
     let iframe = document.getElementById("remote");
     this.iframe = iframe;
-    this.iframe.QueryInterface(Ci.nsIFrameLoaderOwner);
     let docShell = this.iframe.frameLoader.docShell;
     docShell.QueryInterface(Ci.nsIWebProgress);
-    docShell.addProgressListener(this.iframeListener, Ci.nsIWebProgress.NOTIFY_STATE_DOCUMENT);
+    docShell.addProgressListener(this.iframeListener,
+                                 Ci.nsIWebProgress.NOTIFY_STATE_DOCUMENT |
+                                 Ci.nsIWebProgress.NOTIFY_LOCATION);
 
     // Set the iframe's location with loadURI/LOAD_FLAGS_BYPASS_HISTORY to
     // avoid having a new history entry being added.
     let webNav = iframe.frameLoader.docShell.QueryInterface(Ci.nsIWebNavigation);
-    webNav.loadURI(url, Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_HISTORY, null, null, null);
+    let loadURIOptions = {
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+      loadFlags: Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_HISTORY,
+    };
+    webNav.loadURI(url, loadURIOptions);
   },
 
-  retry: function () {
+  retry: function() {
     deferTransitionToRemoteAfterLoaded();
 
     let webNav = this.iframe.frameLoader.docShell.QueryInterface(Ci.nsIWebNavigation);
-    webNav.loadURI(this.url, Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_HISTORY, null, null, null);
+    let loadURIOptions = {
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+      loadFlags: Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_HISTORY,
+    };
+    webNav.loadURI(this.url, loadURIOptions);
   },
 
   iframeListener: {
-    QueryInterface: XPCOMUtils.generateQI([Ci.nsIWebProgressListener,
-                                         Ci.nsISupportsWeakReference,
-                                         Ci.nsISupports]),
+    QueryInterface: ChromeUtils.generateQI([Ci.nsIWebProgressListener, Ci.nsISupportsWeakReference]),
 
     onStateChange: function(aWebProgress, aRequest, aState, aStatus) {
       let failure = false;
@@ -128,15 +133,15 @@ var wrapper = {
           try {
             failure = aRequest.responseStatus != 200;
           } catch (e) {
-            failure = aStatus != Components.results.NS_OK;
+            failure = aStatus != Cr.NS_OK;
           }
         }
       }
 
       // Calling cancel() will raise some OnStateChange notifications by itself,
       // so avoid doing that more than once
-      if (failure && aStatus != Components.results.NS_BINDING_ABORTED) {
-        aRequest.cancel(Components.results.NS_BINDING_ABORTED);
+      if (failure && aStatus != Cr.NS_BINDING_ABORTED) {
+        aRequest.cancel(Cr.NS_BINDING_ABORTED);
         // Since after a promise is fulfilled, subsequent fulfillments are
         // treated as no-ops, we don't care that we might see multiple failures
         // due to multiple listener callbacks.  (It's not easy to extract this
@@ -149,16 +154,12 @@ var wrapper = {
 
     onLocationChange: function(aWebProgress, aRequest, aLocation, aFlags) {
       if (aRequest && aFlags & Ci.nsIWebProgressListener.LOCATION_CHANGE_ERROR_PAGE) {
-        aRequest.cancel(Components.results.NS_BINDING_ABORTED);
+        aRequest.cancel(Cr.NS_BINDING_ABORTED);
         // As above, we're not concerned by multiple listener callbacks.
         loadedDeferred.reject(new Error("Failed in onLocationChange!"));
         show("networkError");
       }
     },
-
-    onProgressChange: function() {},
-    onStatusChange: function() {},
-    onSecurityChange: function() {},
   },
 };
 
@@ -184,8 +185,8 @@ function getURLForAction(action, urlParams) {
   // The only service managed by Fennec, to date, is Firefox Sync.
   const SERVICE = "sync";
   urlParams = urlParams || new URLSearchParams("");
-  urlParams.set('service', SERVICE);
-  urlParams.set('context', CONTEXT);
+  urlParams.set("service", SERVICE);
+  urlParams.set("context", CONTEXT);
   // Ideally we'd just merge urlParams with new URL(url).searchParams, but our
   // URLSearchParams implementation doesn't support iteration (bug 1085284).
   let urlParamStr = urlParams.toString();
@@ -300,24 +301,18 @@ function init() {
 
 document.addEventListener("DOMContentLoaded", function() {
   init();
-  var buttonRetry = document.getElementById('buttonRetry');
-  buttonRetry.addEventListener('click', retry);
+  var buttonRetry = document.getElementById("buttonRetry");
+  buttonRetry.addEventListener("click", retry);
 
-  var buttonOpenPrefs = document.getElementById('buttonOpenPrefs');
-  buttonOpenPrefs.addEventListener('click', openPrefs);
+  var buttonOpenPrefs = document.getElementById("buttonOpenPrefs");
+  buttonOpenPrefs.addEventListener("click", openPrefs);
 }, {capture: true, once: true});
 
 // This window is contained in a XUL <browser> element.  Return the
 // messageManager of that <browser> element, or null.
 function getBrowserMessageManager() {
   let browser = window
-        .QueryInterface(Ci.nsIInterfaceRequestor)
-        .getInterface(Ci.nsIWebNavigation)
-        .QueryInterface(Ci.nsIDocShellTreeItem)
-        .rootTreeItem
-        .QueryInterface(Ci.nsIInterfaceRequestor)
-        .getInterface(Ci.nsIDOMWindow)
-        .QueryInterface(Ci.nsIDOMChromeWindow)
+        .docShell.rootTreeItem.domWindow
         .BrowserApp
         .getBrowserForDocument(document);
   if (browser) {
@@ -333,7 +328,7 @@ var mm = getBrowserMessageManager();
 if (mm) {
   mm.addMessageListener(COMMAND_LOADED, handleLoadedMessage);
 } else {
-  log.e('No messageManager, not listening for LOADED message!');
+  log.e("No messageManager, not listening for LOADED message!");
 }
 
 window.addEventListener("unload", function(event) {
@@ -345,6 +340,6 @@ window.addEventListener("unload", function(event) {
   } catch (e) {
     // This could fail if the page is being torn down, the tab is being
     // destroyed, etc.
-    log.w('Not removing listener for LOADED message: ' + e.toString());
+    log.w("Not removing listener for LOADED message: " + e.toString());
   }
 });

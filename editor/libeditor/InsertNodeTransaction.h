@@ -6,11 +6,12 @@
 #ifndef InsertNodeTransaction_h
 #define InsertNodeTransaction_h
 
-#include "mozilla/EditTransactionBase.h" // for EditTransactionBase, etc.
-#include "nsCOMPtr.h"                   // for nsCOMPtr
+#include "mozilla/EditTransactionBase.h"  // for EditTransactionBase, etc.
+#include "mozilla/EditorDOMPoint.h"       // for EditorDOMPoint
+#include "nsCOMPtr.h"                     // for nsCOMPtr
 #include "nsCycleCollectionParticipant.h"
-#include "nsIContent.h"                 // for nsIContent
-#include "nsISupportsImpl.h"            // for NS_DECL_ISUPPORTS_INHERITED
+#include "nsIContent.h"       // for nsIContent
+#include "nsISupportsImpl.h"  // for NS_DECL_ISUPPORTS_INHERITED
 
 namespace mozilla {
 
@@ -19,17 +20,31 @@ class EditorBase;
 /**
  * A transaction that inserts a single element
  */
-class InsertNodeTransaction final : public EditTransactionBase
-{
-public:
+class InsertNodeTransaction final : public EditTransactionBase {
+ protected:
+  template <typename PT, typename CT>
+  InsertNodeTransaction(EditorBase& aEditorBase, nsIContent& aContentToInsert,
+                        const EditorDOMPointBase<PT, CT>& aPointToInsert);
+
+ public:
   /**
-   * Initialize the transaction.
-   * @param aNode       The node to insert.
-   * @param aParent     The node to insert into.
-   * @param aOffset     The offset in aParent to insert aNode.
+   * Create a transaction for inserting aContentToInsert before the child
+   * at aPointToInsert.
+   *
+   * @param aEditorBase         The editor which manages the transaction.
+   * @param aContentToInsert    The node to be inserted.
+   * @param aPointToInsert      The insertion point of aContentToInsert.
+   *                            If this refers end of the container, the
+   *                            transaction will append the node to the
+   *                            container.  Otherwise, will insert the node
+   *                            before child node referred by this.
+   * @return                    A InsertNodeTranaction which was initialized
+   *                            with the arguments.
    */
-  InsertNodeTransaction(nsIContent& aNode, nsINode& aParent, int32_t aOffset,
-                        EditorBase& aEditorBase);
+  template <typename PT, typename CT>
+  static already_AddRefed<InsertNodeTransaction> Create(
+      EditorBase& aEditorBase, nsIContent& aContentToInsert,
+      const EditorDOMPointBase<PT, CT>& aPointToInsert);
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(InsertNodeTransaction,
@@ -37,22 +52,19 @@ public:
 
   NS_DECL_EDITTRANSACTIONBASE
 
-protected:
+ protected:
   virtual ~InsertNodeTransaction();
 
   // The element to insert.
-  nsCOMPtr<nsIContent> mNode;
+  nsCOMPtr<nsIContent> mContentToInsert;
 
-  // The node into which the new node will be inserted.
-  nsCOMPtr<nsINode> mParent;
-
-  // The index in mParent for the new node.
-  int32_t mOffset;
+  // The DOM point we will insert mContentToInsert.
+  EditorDOMPoint mPointToInsert;
 
   // The editor for this transaction.
-  EditorBase& mEditorBase;
+  RefPtr<EditorBase> mEditorBase;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // #ifndef InsertNodeTransaction_h
+#endif  // #ifndef InsertNodeTransaction_h

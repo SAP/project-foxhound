@@ -13,6 +13,7 @@ EXTRA_COMPONENTS += [
 ]
 
 EXTRA_JS_MODULES += [
+    'PushBroadcastService.jsm',
     'PushCrypto.jsm',
     'PushDB.jsm',
     'PushRecord.jsm',
@@ -62,7 +63,6 @@ include('/ipc/chromium/chromium-config.mozbuild')
 LOCAL_INCLUDES += [
     '../base',
     '../ipc',
-    '../workers',
 ]
 
 FINAL_LIBRARY = 'xul'

@@ -6,25 +6,24 @@
  * becomes available.
  */
 
-function* ifWebGLSupported() {
-  let { target, panel } = yield initShaderEditor(SIMPLE_CANVAS_URL);
-  let { gFront, ShadersEditorsView, EVENTS } = panel.panelWin;
+async function ifWebGLSupported() {
+  const { target, panel } = await initShaderEditor(SIMPLE_CANVAS_URL);
+  const { front, shadersEditorsView, EVENTS } = panel;
 
   reload(target);
-  yield promise.all([
-    once(gFront, "program-linked"),
-    once(panel.panelWin, EVENTS.SOURCES_SHOWN)
+  await promise.all([
+    once(front, "program-linked"),
+    once(panel, EVENTS.SOURCES_SHOWN),
   ]);
 
-  let vsEditor = yield ShadersEditorsView._getEditor("vs");
-  let fsEditor = yield ShadersEditorsView._getEditor("fs");
-
+  const vsEditor = await shadersEditorsView._getEditor("vs");
+  const fsEditor = await shadersEditorsView._getEditor("fs");
 
   is(vsEditor.getText().indexOf("gl_Position"), 170,
     "The vertex shader editor contains the correct text.");
   is(fsEditor.getText().indexOf("gl_FragColor"), 97,
     "The fragment shader editor contains the correct text.");
 
-  yield teardown(panel);
+  await teardown(panel);
   finish();
 }

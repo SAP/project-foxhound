@@ -20,49 +20,45 @@ namespace mozilla {
 namespace dom {
 
 IdleRequest::IdleRequest(IdleRequestCallback* aCallback, uint32_t aHandle)
-  : mCallback(aCallback)
-  , mHandle(aHandle)
-  , mTimeoutHandle(Nothing())
-{
+    : mCallback(aCallback), mHandle(aHandle), mTimeoutHandle(Nothing()) {
   MOZ_DIAGNOSTIC_ASSERT(mCallback);
 }
 
-IdleRequest::~IdleRequest()
-{
-}
+IdleRequest::~IdleRequest() {}
 
-NS_IMPL_CYCLE_COLLECTION(IdleRequest, mCallback)
+NS_IMPL_CYCLE_COLLECTION_CLASS(IdleRequest)
 
-NS_IMPL_CYCLE_COLLECTING_ADDREF(IdleRequest)
-NS_IMPL_CYCLE_COLLECTING_RELEASE(IdleRequest)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(IdleRequest)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mCallback)
+  if (tmp->isInList()) {
+    tmp->remove();
+  }
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(IdleRequest)
-NS_INTERFACE_MAP_END
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(IdleRequest)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCallback)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
-void
-IdleRequest::SetTimeoutHandle(int32_t aHandle)
-{
+NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(IdleRequest, AddRef)
+NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(IdleRequest, Release)
+
+void IdleRequest::SetTimeoutHandle(int32_t aHandle) {
   mTimeoutHandle = Some(aHandle);
 }
 
-uint32_t
-IdleRequest::GetTimeoutHandle() const
-{
+uint32_t IdleRequest::GetTimeoutHandle() const {
   MOZ_DIAGNOSTIC_ASSERT(mTimeoutHandle.isSome());
   return mTimeoutHandle.value();
 }
 
-nsresult
-IdleRequest::IdleRun(nsPIDOMWindowInner* aWindow,
-                     DOMHighResTimeStamp aDeadline,
-                     bool aDidTimeout)
-{
+nsresult IdleRequest::IdleRun(nsPIDOMWindowInner* aWindow,
+                              DOMHighResTimeStamp aDeadline, bool aDidTimeout) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_DIAGNOSTIC_ASSERT(mCallback);
 
   ErrorResult error;
   RefPtr<IdleDeadline> deadline =
-    new IdleDeadline(aWindow, aDidTimeout, aDeadline);
+      new IdleDeadline(aWindow, aDidTimeout, aDeadline);
   mCallback->Call(*deadline, error, "requestIdleCallback handler");
 
   mCallback = nullptr;
@@ -70,5 +66,5 @@ IdleRequest::IdleRun(nsPIDOMWindowInner* aWindow,
   return error.StealNSResult();
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

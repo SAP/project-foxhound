@@ -408,6 +408,10 @@ DecodePointer(void* dest,
 {
     const SEC_ASN1Template* ptrTemplate =
         SEC_ASN1GetSubtemplate(templateEntry, dest, PR_FALSE);
+    if (!ptrTemplate) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        return SECFailure;
+    }
     void* subdata = PORT_ArenaZAlloc(arena, ptrTemplate->size);
     *(void**)((char*)dest + templateEntry->offset) = subdata;
     if (subdata) {
@@ -516,8 +520,7 @@ DecodeGroup(void* dest,
         if (SECSuccess == rv) {
             /* allocate room for pointer array and entries */
             /* we want to allocate the array even if there is 0 entry */
-            entries = (void**)PORT_ArenaZAlloc(arena, sizeof(void*) *
-                                                              (totalEntries + 1) + /* the extra one is for NULL termination */
+            entries = (void**)PORT_ArenaZAlloc(arena, sizeof(void*) * (totalEntries + 1) + /* the extra one is for NULL termination */
                                                           subTemplate->size * totalEntries);
 
             if (entries) {

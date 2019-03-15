@@ -18,7 +18,7 @@ struct PRFileDesc;
 [ptr] native PRFileDescPtr(PRFileDesc);
 [ptr] native nsASocketHandlerPtr(nsASocketHandler);
 
-[scriptable, uuid(ad56b25f-e6bb-4db3-9f7b-5b7db33fd2b1)]
+[builtinclass, scriptable, uuid(ad56b25f-e6bb-4db3-9f7b-5b7db33fd2b1)]
 interface nsISocketTransportService : nsISupports 
 {
     /**
@@ -85,6 +85,20 @@ interface nsISocketTransportService : nsISupports
     nsISocketTransport createUnixDomainTransport(in nsIFile aPath);
 
     /**
+     * Create a transport built on a Unix domain socket that uses abstract
+     * address name.
+     *
+     * If abstract socket address isn't supported on System, this returns
+     * NS_ERROR_SOCKET_ADDRESS_NOT_SUPPORTED.
+     *
+     * @param aName
+     *        The name of abstract socket adress of the Unix domain socket to
+     *        which we should connect.
+     */
+    nsISocketTransport
+    createUnixDomainAbstractAddressTransport(in ACString aName);
+
+    /**
      * Adds a new socket to the list of controlled sockets.
      *
      * This will fail with the error code NS_ERROR_NOT_AVAILABLE if the maximum
@@ -119,7 +133,7 @@ interface nsISocketTransportService : nsISupports
     [noscript] void notifyWhenCanAttachSocket(in nsIRunnable aEvent);
 };
 
-[scriptable, uuid(c5204623-5b58-4a16-8b2e-67c34dd02e3f)]
+[builtinclass, scriptable, uuid(c5204623-5b58-4a16-8b2e-67c34dd02e3f)]
 interface nsIRoutedSocketTransportService : nsISocketTransportService
 {
     // use this instead of createTransport when you have a transport

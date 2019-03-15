@@ -8,30 +8,30 @@
 const TEST_PAGE_URL = URL_ROOT + "page_array.html";
 const TEST_ARRAY = [
   "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
-  "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"
+  "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
 ];
 
 /**
  * Basic test that checks content of the DOM panel.
  */
-add_task(function* () {
+add_task(async function() {
   info("Test DOM Panel Array Expansion started");
 
-  let { panel } = yield addTestTab(TEST_PAGE_URL);
+  const { panel } = await addTestTab(TEST_PAGE_URL);
 
   // Expand specified row and wait till children are displayed.
-  yield expandRow(panel, "_a");
+  await expandRow(panel, "_a");
 
   // Verify that children is displayed now.
-  let childRows = getAllRowsForLabel(panel, "_a");
+  const childRows = getAllRowsForLabel(panel, "_a");
 
-  let item = childRows.pop();
+  const item = childRows.pop();
   is(item.name, "length", "length property is correct");
   is(item.value, 26, "length property value is 26");
 
   let i = 0;
-  for (let name in childRows) {
-    let row = childRows[name];
+  for (const name in childRows) {
+    const row = childRows[name];
 
     is(name, i++, `index ${name} is correct and sorted into the correct position`);
     ok(typeof row.name === "number", "array index is displayed as a number");

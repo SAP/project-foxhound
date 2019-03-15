@@ -6,7 +6,6 @@
 // Implement shared vtbl methods.
 
 #include "xptcprivate.h"
-#include "xptiprivate.h"
 
 // The Linux/PPC64 ABI passes the first 8 integral
 // parameters and the first 13 floating point parameters in registers
@@ -28,7 +27,7 @@
 // - 'args[]' contains the arguments passed on stack
 // - 'gprData[]' contains the arguments passed in integer registers
 // - 'fprData[]' contains the arguments passed in floating point registers
-// 
+//
 // The parameters are mapped into an array of type 'nsXPTCMiniVariant'
 // and then the method gets called.
 #include <stdio.h>
@@ -44,7 +43,6 @@ PrepareAndDispatch(nsXPTCStubBase* self,
     const nsXPTMethodInfo* info;
     uint32_t paramCount;
     uint32_t i;
-    nsresult result = NS_ERROR_FAILURE;
 
     NS_ASSERTION(self,"no self");
 
@@ -65,22 +63,35 @@ PrepareAndDispatch(nsXPTCStubBase* self,
     if (! dispatchParams)
         return NS_ERROR_OUT_OF_MEMORY;
 
+    const uint8_t indexOfJSContext = info->IndexOfJSContext();
+
     uint64_t* ap = args;
+    uint32_t iCount = 0;
+    uint32_t fpCount = 0;
     uint64_t tempu64;
 
     for(i = 0; i < paramCount; i++) {
         const nsXPTParamInfo& param = info->GetParam(i);
         const nsXPTType& type = param.GetType();
         nsXPTCMiniVariant* dp = &dispatchParams[i];
-	
+
+        if (i == indexOfJSContext) {
+            if (iCount < GPR_COUNT)
+                iCount++;
+            else
+                ap++;
+        }
+
         if (!param.IsOut() && type == nsXPTType::T_DOUBLE) {
-            if (i < FPR_COUNT)
-                dp->val.d = fprData[i];
+            if (fpCount < FPR_COUNT) {
+                dp->val.d = fprData[fpCount++];
+            }
             else
                 dp->val.d = *(double*) ap;
         } else if (!param.IsOut() && type == nsXPTType::T_FLOAT) {
-            if (i < FPR_COUNT)
-                dp->val.f = (float) fprData[i]; // in registers floats are passed as doubles
+            if (fpCount < FPR_COUNT) {
+                dp->val.f = (float) fprData[fpCount++]; // in registers floats are passed as doubles
+            }
             else {
                 float *p = (float *)ap;
 #ifndef __LITTLE_ENDIAN__
@@ -89,8 +100,8 @@ PrepareAndDispatch(nsXPTCStubBase* self,
                 dp->val.f = *p;
             }
         } else { /* integer type or pointer */
-            if (i < GPR_COUNT)
-                tempu64 = gprData[i];
+            if (iCount < GPR_COUNT)
+                tempu64 = gprData[iCount];
             else
                 tempu64 = *ap;
 
@@ -122,12 +133,14 @@ PrepareAndDispatch(nsXPTCStubBase* self,
                 NS_ERROR("bad type");
         }
 
-        if (i >= 7)
+        if (iCount < GPR_COUNT)
+            iCount++;  // gprs are skipped for fp args, so this always needs inc
+        else
             ap++;
     }
 
-    result = self->mOuter->CallMethod((uint16_t) methodIndex, info,
-                                      dispatchParams);
+    nsresult result = self->mOuter->CallMethod((uint16_t) methodIndex, info,
+                                               dispatchParams);
 
     if (dispatchParams != paramBuffer)
         delete [] dispatchParams;

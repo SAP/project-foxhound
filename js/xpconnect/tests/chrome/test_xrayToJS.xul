@@ -18,11 +18,11 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
   <script type="application/javascript">
   <![CDATA[
 
+  SpecialPowers.pushPrefEnv({"set": [["security.allow_eval_with_system_principal",
+                                       true]]});
+
   /** Test for ES constructors on Xrayed globals. **/
   SimpleTest.waitForExplicitFinish();
-  const Cc = Components.classes;
-  const Ci = Components.interfaces;
-  const Cu = Components.utils;
   let global = Cu.getGlobalForObject.bind(Cu);
 
   function checkThrows(f, rgxp, msg) {
@@ -46,7 +46,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
   // In the former case, the constructor is invoked without any args; in the
   // latter case, it is invoked with `args` as the arguments list.
   simpleConstructors = ['Object', 'Function', 'Array', 'Boolean', 'Date', 'Number',
-                        'String', 'RegExp', 'ArrayBuffer', 'WeakMap', 'Map', 'Set',
+                        'String', 'RegExp', 'ArrayBuffer', 'WeakMap', 'WeakSet', 'Map', 'Set',
                         {name: 'Promise', args: [function(){}]}].concat(typedArrayClasses)
                                                                 .concat(errorObjectClasses);
 
@@ -114,10 +114,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
     ok(Cu.isXrayWrapper(foopyFunction), "Should be Xrays");
     is(foopyFunction.name, "namedFoopyFunction", ".name works over Xrays");
     is(foopyFunction.length, 3, ".length works over Xrays");
-    ok(Object.getOwnPropertyNames(foopyFunction).indexOf('length') >= 0, "Should list length");
-    ok(Object.getOwnPropertyNames(foopyFunction).indexOf('name') >= 0, "Should list name");
-    ok(Object.getOwnPropertyNames(foopyFunction).indexOf('prototype') == -1, "Should not list prototype");
-    ok(Object.getOwnPropertyNames(iwin.Array).indexOf('prototype') >= 0, "Should list prototype for standard constructor");
+    ok(Object.getOwnPropertyNames(foopyFunction).includes('length'), "Should list length");
+    ok(Object.getOwnPropertyNames(foopyFunction).includes('name'), "Should list name");
+    ok(!Object.getOwnPropertyNames(foopyFunction).includes('prototype'), "Should not list prototype");
+    ok(Object.getOwnPropertyNames(iwin.Array).includes('prototype'), "Should list prototype for standard constructor");
 
     // Test proxies.
     var targetObject = new iwin.Object();
@@ -152,10 +152,15 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
 
     testSet();
 
+    testWeakMap();
+
+    testWeakSet();
+
+    testProxy();
+
     testDataView();
 
-    // We could also test DataView and Iterator here for completeness, but it's
-    // more trouble than it's worth.
+    testNumber();
 
     SimpleTest.finish();
   }
@@ -182,32 +187,29 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
     "setYear", "setFullYear", "setUTCFullYear", "setMonth", "setUTCMonth",
     "setDate", "setUTCDate", "setHours", "setUTCHours", "setMinutes",
     "setUTCMinutes", "setSeconds", "setUTCSeconds", "setMilliseconds",
-    "setUTCMilliseconds", "toUTCString", "toLocaleFormat", "toLocaleString",
+    "setUTCMilliseconds", "toUTCString", "toLocaleString",
     "toLocaleDateString", "toLocaleTimeString", "toDateString", "toTimeString",
     "toISOString", "toJSON", "toSource", "toString", "valueOf", "constructor",
     "toGMTString", Symbol.toPrimitive];
   gConstructorProperties['Date'] = constructorProps(["UTC", "parse", "now"]);
   gPrototypeProperties['Object'] =
-    ["constructor", "toSource", "toString", "toLocaleString", "valueOf", "watch",
-     "unwatch", "hasOwnProperty", "isPrototypeOf", "propertyIsEnumerable",
+    ["constructor", "toSource", "toString", "toLocaleString", "valueOf",
+     "hasOwnProperty", "isPrototypeOf", "propertyIsEnumerable",
      "__defineGetter__", "__defineSetter__", "__lookupGetter__", "__lookupSetter__",
      "__proto__"];
   gConstructorProperties['Object'] =
     constructorProps(["setPrototypeOf", "getOwnPropertyDescriptor", "getOwnPropertyDescriptors",
                       "keys", "is", "defineProperty", "defineProperties", "create",
                       "getOwnPropertyNames", "getOwnPropertySymbols",
-                      "preventExtensions", "freeze", "isFrozen", "seal",
+                      "preventExtensions", "freeze", "fromEntries", "isFrozen", "seal",
                       "isSealed", "assign", "getPrototypeOf", "values",
-                      "entries", "isExtensible"])
+                      "entries", "isExtensible"]);
   gPrototypeProperties['Array'] =
     ["length", "toSource", "toString", "toLocaleString", "join", "reverse", "sort", "push",
       "pop", "shift", "unshift", "splice", "concat", "slice", "lastIndexOf", "indexOf",
       "includes", "forEach", "map", "reduce", "reduceRight", "filter", "some", "every", "find",
       "findIndex", "copyWithin", "fill", Symbol.iterator, Symbol.unscopables, "entries", "keys",
-      "constructor"];
-  if (isNightlyBuild) {
-    gPrototypeProperties['Array'].push("values");
-  }
+      "values", "constructor", "flat", "flatMap"];
   gConstructorProperties['Array'] =
     constructorProps(["join", "reverse", "sort", "push", "pop", "shift",
                       "unshift", "splice", "concat", "slice", "isArray",
@@ -235,13 +237,16 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
 
   gPrototypeProperties['Function'] =
     ["constructor", "toSource", "toString", "apply", "call", "bind",
-     "isGenerator", "length", "name", "arguments", "caller", Symbol.hasInstance];
+     "length", "name", "arguments", "caller", Symbol.hasInstance];
   gConstructorProperties['Function'] = constructorProps([])
 
   gPrototypeProperties['RegExp'] =
     ["constructor", "toSource", "toString", "compile", "exec", "test",
      Symbol.match, Symbol.replace, Symbol.search, Symbol.split,
      "flags", "global", "ignoreCase", "multiline", "source", "sticky", "unicode"];
+  if (isNightlyBuild) {
+    gPrototypeProperties['RegExp'].push(Symbol.matchAll);
+  }
   gConstructorProperties['RegExp'] =
     constructorProps(["input", "lastMatch", "lastParen",
                       "leftContext", "rightContext", "$1", "$2", "$3", "$4",
@@ -249,7 +254,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
                       "$`", "$'", Symbol.species])
 
   gPrototypeProperties['Promise'] =
-    ["constructor", "catch", "then", Symbol.toStringTag];
+    ["constructor", "catch", "then", "finally", Symbol.toStringTag];
   gConstructorProperties['Promise'] =
     constructorProps(["resolve", "reject", "all", "race", Symbol.species]);
 
@@ -258,12 +263,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
   gConstructorProperties['ArrayBuffer'] =
     constructorProps(["isView", Symbol.species]);
 
-  if (!isReleaseOrBeta) {
-    gPrototypeProperties['SharedArrayBuffer'] = ["constructor", "slice", "byteLength", Symbol.toStringTag];
-    gConstructorProperties['SharedArrayBuffer'] = constructorProps([Symbol.species]);
-  } else {
-    is(typeof SharedArrayBuffer, "undefined", "Enable tests!");
-  }
+  is(typeof SharedArrayBuffer, "undefined", "Enable tests!");
 
   gPrototypeProperties['Map'] =
     ["constructor", "size", Symbol.toStringTag, "get", "has", "set", "delete",
@@ -276,6 +276,16 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
      "keys", "values", "clear", "forEach", "entries", Symbol.iterator];
   gConstructorProperties['Set'] =
     constructorProps([Symbol.species]);
+
+  gPrototypeProperties['WeakMap'] =
+    ["constructor", Symbol.toStringTag, "get", "has", "set", "delete"];
+  gConstructorProperties['WeakMap'] =
+    constructorProps([]);
+
+  gPrototypeProperties['WeakSet'] =
+    ["constructor", Symbol.toStringTag, "has", "add", "delete"];
+  gConstructorProperties['WeakSet'] =
+    constructorProps([]);
 
   gPrototypeProperties['DataView'] =
     ["constructor", "buffer", "byteLength", "byteOffset", Symbol.toStringTag,
@@ -301,11 +311,11 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
     sortProperties(gConstructorProperties[c]);
 
   function filterOut(array, props) {
-    return array.filter(p => props.indexOf(p) == -1);
+    return array.filter(p => !props.includes(p));
   }
 
   function isTypedArrayClass(classname) {
-    return typedArrayClasses.indexOf(classname) >= 0;
+    return typedArrayClasses.includes(classname);
   }
 
   function propertyIsGetter(obj, name, classname) {
@@ -324,8 +334,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
         } while (!desc);
         return desc.get || desc.value;
       };
-      ok(xrayProto.hasOwnProperty(name), "proto should have the property as own");
-      ok(!xray.hasOwnProperty(name), "instance should not have the property as own");
+      ok(xrayProto.hasOwnProperty(name), `proto should have the property '${name}' as own`);
+      ok(!xray.hasOwnProperty(name), `instance should not have the property '${name}' as own`);
       let method = lookupCallable(xrayProto);
       is(typeof method, 'function', "Methods from Xrays are functions");
       is(global(method), window, "Methods from Xrays are local");
@@ -572,7 +582,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
                    get getterSetterProp() { return 3; },
                    set getterSetterProp(x) { },
                    callableProp: function() { },
-                   nonXrayableProp: new WeakMap()
+                   nonXrayableProp: new Map()[Symbol.iterator]()
                    ${symbolProps}
                  });
                  Object.defineProperty(o, "nonConfigurableGetterSetterProp",
@@ -612,7 +622,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=933681
                  Object.defineProperty(trickyArray, 'getterSetterProp', { get: function() { return 3; }, set: function(x) {}, configurable: true});
                  Object.defineProperty(trickyArray, 'nonConfigurableGetterSetterProp', { get: function() { return 5; }, set: function(x) {}});
                  trickyArray.callableProp = function() {};
-                 trickyArray.nonXrayableProp = new WeakMap();
+                 trickyArray.nonXrayableProp = new Map()[Symbol.iterator]();
                  ${symbolProps}
                  trickyArray;`);
 
@@ -924,10 +934,6 @@ for (var prop of props) {
   function testArrayBuffer() {
     let constructors = ['ArrayBuffer'];
 
-    if (!isReleaseOrBeta) {
-      constructors.push('SharedArrayBuffer');
-    }
-
     for (const c of constructors) {
       testXray(c, new iwin[c](0), new iwin[c](12));
 
@@ -996,6 +1002,62 @@ for (var prop of props) {
     is(t.size, 0, "Set is empty after calling clear");
   }
 
+  function testWeakMap() {
+    testXray('WeakMap', new iwin.WeakMap(), new iwin.WeakMap());
+
+    var key1 = iwin.eval(`var key1 = {}; key1`);
+    var key2 = iwin.eval(`var key2 = []; key2`);
+    var key3 = iwin.eval(`var key3 = /a/; key3`);
+    var key4 = {};
+    var key5 = [];
+    var t = iwin.eval(`new WeakMap([[key1, "a"], [key2, "b"]])`);
+    is(t.get(key1), "a", "key1 has the correct value");
+    is(t.get(key2), "b", "key2 has the correct value");
+    is(t.has(key1), true, "Has key1");
+    is(t.has(key3), false, "Doesn't have key3");
+    is(t.has(key5), false, "Doesn't have key5");
+    is(t.set(key4, 5).get(key4), 5, "Correctly sets key");
+    is(t.get(key1), "a", "key1 has the correct value after modification");
+    is(t.get(key2), "b", "key2 has the correct value after modification");
+    is(t.delete(key1), true, "key1 can be deleted");
+    is(t.delete(key2), true, "key2 can be deleted");
+    is(t.delete(key3), false, "key3 cannot be deleted");
+    is(t.delete(key4), true, "key4 can be deleted");
+    is(t.delete(key5), false, "key5 cannot be deleted");
+  }
+
+  function testWeakSet() {
+    testXray('WeakSet', new iwin.WeakSet(), new iwin.WeakSet());
+
+    var key1 = iwin.eval(`var key1 = {}; key1`);
+    var key2 = iwin.eval(`var key2 = []; key2`);
+    var key3 = iwin.eval(`var key3 = /a/; key3`);
+    var key4 = {};
+    var key5 = [];
+    var t = iwin.eval(`new WeakSet([key1, key2])`);
+    is(t.has(key1), true, "Has key1");
+    is(t.has(key2), true, "Has key2");
+    is(t.has(key3), false, "Doesn't have key3");
+    is(t.has(key5), false, "Doesn't have key5");
+    is(t.add(key4, 5).has(key4), true, "Can add value to set");
+    is(t.delete(key1), true, "key1 can be deleted");
+    is(t.delete(key2), true, "key2 can be deleted");
+    is(t.delete(key3), false, "key3 cannot be deleted");
+    is(t.delete(key4), true, "key4 can be deleted");
+    is(t.delete(key5), false, "key5 cannot be deleted");
+  }
+
+  function testProxy() {
+    let ProxyCtor = iwin.Proxy;
+    is(Object.getOwnPropertyNames(ProxyCtor).sort().toSource(),
+       ["length", "name"].sort().toSource(),
+       "Xrayed Proxy constructor should not have any properties");
+    is(ProxyCtor.prototype, undefined, "Proxy.prototype should not be set");
+    // Proxy.revocable can safely be exposed, but it is not.
+    // Until it is supported, check that the property is not set.
+    is(ProxyCtor.revocable, undefined, "Proxy.reflect is not set");
+  }
+
   function testDataView() {
     testXray('DataView', new iwin.DataView(new iwin.ArrayBuffer(4)),
              new iwin.DataView(new iwin.ArrayBuffer(8)));
@@ -1024,6 +1086,18 @@ for (var prop of props) {
         is(t[get[i]](0), 13, `${get[i]}(0) afer ${set[i]}(0, 13) is 13 for "${constructor}"`);
       }
     }
+  }
+
+  function testNumber() {
+    // We don't actually support Xrays to Number yet.  This is testing
+    // that case.  If we add such support, we might have to start
+    // using a different non-Xrayed class here, if we can find one.
+    let xrayCtor = iwin.Number;
+    is(Object.getOwnPropertyNames(xrayCtor).sort().toSource(),
+       Object.getOwnPropertyNames(function() {}).sort().toSource(),
+       "We should not have any static properties on a non-Xrayable constructor");
+    is(xrayCtor.noSuchProperty, undefined,
+       "Where did our noSuchProperty property come from?");
   }
 
   ]]>

@@ -10,31 +10,31 @@
 const {CubicBezierWidget} = require("devtools/client/shared/widgets/CubicBezierWidget");
 const {PREDEFINED} = require("devtools/client/shared/widgets/CubicBezierPresets");
 
-const TEST_URI = `data:text/html,<div id="cubic-bezier-container" />`;
+const TEST_URI = CHROME_URL_ROOT + "doc_cubic-bezier-01.html";
 
-add_task(function* () {
-  let [host,, doc] = yield createHost("bottom", TEST_URI);
+add_task(async function() {
+  const [host,, doc] = await createHost("bottom", TEST_URI);
 
-  let container = doc.querySelector("#cubic-bezier-container");
-  let w = new CubicBezierWidget(container, PREDEFINED.linear);
+  const container = doc.querySelector("#cubic-bezier-container");
+  const w = new CubicBezierWidget(container, PREDEFINED.linear);
 
-  yield previewDotReactsToChanges(w, [0.6, -0.28, 0.74, 0.05]);
-  yield previewDotReactsToChanges(w, [0.9, 0.03, 0.69, 0.22]);
-  yield previewDotReactsToChanges(w, [0.68, -0.55, 0.27, 1.55]);
-  yield previewDotReactsToChanges(w, PREDEFINED.ease, "ease");
-  yield previewDotReactsToChanges(w, PREDEFINED["ease-in-out"], "ease-in-out");
+  await previewDotReactsToChanges(w, [0.6, -0.28, 0.74, 0.05]);
+  await previewDotReactsToChanges(w, [0.9, 0.03, 0.69, 0.22]);
+  await previewDotReactsToChanges(w, [0.68, -0.55, 0.27, 1.55]);
+  await previewDotReactsToChanges(w, PREDEFINED.ease, "ease");
+  await previewDotReactsToChanges(w, PREDEFINED["ease-in-out"], "ease-in-out");
 
   w.destroy();
   host.destroy();
 });
 
-function* previewDotReactsToChanges(widget, coords, expectedEasing) {
-  let onUpdated = widget.once("updated");
+async function previewDotReactsToChanges(widget, coords, expectedEasing) {
+  const onUpdated = widget.once("updated");
   widget.coordinates = coords;
-  yield onUpdated;
+  await onUpdated;
 
-  let animatedDot = widget.timingPreview.dot;
-  let animations = animatedDot.getAnimations();
+  const animatedDot = widget.timingPreview.dot;
+  const animations = animatedDot.getAnimations();
 
   if (!expectedEasing) {
     expectedEasing =
@@ -43,11 +43,11 @@ function* previewDotReactsToChanges(widget, coords, expectedEasing) {
 
   is(animations.length, 1, "The dot is animated");
 
-  let goingToRight = animations[0].effect.getKeyframes()[2];
+  const goingToRight = animations[0].effect.getKeyframes()[2];
   is(goingToRight.easing, expectedEasing,
      `The easing when going to the right was set correctly to ${coords}`);
 
-  let goingToLeft = animations[0].effect.getKeyframes()[6];
+  const goingToLeft = animations[0].effect.getKeyframes()[6];
   is(goingToLeft.easing, expectedEasing,
      `The easing when going to the left was set correctly to ${coords}`);
 }

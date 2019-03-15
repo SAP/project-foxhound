@@ -12,20 +12,9 @@ debug("loaded");
 
 var BrowserElementIsReady;
 
-var { classes: Cc, interfaces: Ci, results: Cr, utils: Cu }  = Components;
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/BrowserElementPromptService.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
-
-XPCOMUtils.defineLazyServiceGetter(this, "acs",
-                                   "@mozilla.org/audiochannel/service;1",
-                                   "nsIAudioChannelService");
-XPCOMUtils.defineLazyModuleGetter(this, "ManifestFinder",
-                                  "resource://gre/modules/ManifestFinder.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "ManifestObtainer",
-                                  "resource://gre/modules/ManifestObtainer.jsm");
-
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/BrowserElementPromptService.jsm");
 
 var kLongestReturnedString = 128;
 
@@ -119,17 +108,6 @@ function BrowserElementChild() {
   // Maps outer window id --> weak ref to window.  Used by modal dialog code.
   this._windowIDDict = {};
 
-  // _forcedVisible corresponds to the visibility state our owner has set on us
-  // (via iframe.setVisible).  ownerVisible corresponds to whether the docShell
-  // whose window owns this element is visible.
-  //
-  // Our docShell is visible iff _forcedVisible and _ownerVisible are both
-  // true.
-  this._forcedVisible = true;
-  this._ownerVisible = true;
-
-  this._nextPaintHandler = null;
-
   this._isContentWindowCreated = false;
 
   this._init();
@@ -137,8 +115,8 @@ function BrowserElementChild() {
 
 BrowserElementChild.prototype = {
 
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIObserver,
-                                         Ci.nsISupportsWeakReference]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver,
+                                          Ci.nsISupportsWeakReference]),
 
   _init: function() {
     debug("Starting up.");
@@ -153,14 +131,16 @@ BrowserElementChild.prototype = {
 
     let webNavigation = docShell.QueryInterface(Ci.nsIWebNavigation);
     if (!webNavigation.sessionHistory) {
-      webNavigation.sessionHistory = Cc["@mozilla.org/browser/shistory;1"]
-                                       .createInstance(Ci.nsISHistory);
+      // XXX(nika): I don't think this code should ever be hit? We should run
+      // TabChild::Init before we run this code which will perform this setup
+      // for us.
+      docShell.initSessionHistory();
     }
 
     // This is necessary to get security web progress notifications.
     var securityUI = Cc['@mozilla.org/secure_browser_ui;1']
                        .createInstance(Ci.nsISecureBrowserUI);
-    securityUI.init(content);
+    securityUI.init(docShell);
 
     // A cache of the menuitem dom objects keyed by the id we generate
     // and pass to the embedder
@@ -188,7 +168,7 @@ BrowserElementChild.prototype = {
     });
 
     OBSERVED_EVENTS.forEach((aTopic) => {
-      Services.obs.addObserver(this, aTopic, false);
+      Services.obs.addObserver(this, aTopic);
     });
   },
 
@@ -210,8 +190,6 @@ BrowserElementChild.prototype = {
     LISTENED_EVENTS.forEach(event => {
       removeEventListener(event.type, this, event.useCapture, event.wantsUntrusted);
     });
-
-    this._deactivateNextPaintListener();
 
     removeMessageListener("browser-element-api:call", this);
 
@@ -286,20 +264,9 @@ BrowserElementChild.prototype = {
     let self = this;
 
     let mmCalls = {
-      "purge-history": this._recvPurgeHistory,
-      "get-screenshot": this._recvGetScreenshot,
-      "get-contentdimensions": this._recvGetContentDimensions,
-      "set-visible": this._recvSetVisible,
-      "get-visible": this._recvVisible,
       "send-mouse-event": this._recvSendMouseEvent,
-      "send-touch-event": this._recvSendTouchEvent,
       "get-can-go-back": this._recvCanGoBack,
       "get-can-go-forward": this._recvCanGoForward,
-      "mute": this._recvMute,
-      "unmute": this._recvUnmute,
-      "get-muted": this._recvGetMuted,
-      "set-volume": this._recvSetVolume,
-      "get-volume": this._recvGetVolume,
       "go-back": this._recvGoBack,
       "go-forward": this._recvGoForward,
       "reload": this._recvReload,
@@ -310,18 +277,6 @@ BrowserElementChild.prototype = {
       "owner-visibility-change": this._recvOwnerVisibilityChange,
       "entered-fullscreen": this._recvEnteredFullscreen,
       "exit-fullscreen": this._recvExitFullscreen,
-      "activate-next-paint-listener": this._activateNextPaintListener,
-      "deactivate-next-paint-listener": this._deactivateNextPaintListener,
-      "find-all": this._recvFindAll,
-      "find-next": this._recvFindNext,
-      "clear-match": this._recvClearMatch,
-      "execute-script": this._recvExecuteScript,
-      "get-audio-channel-volume": this._recvGetAudioChannelVolume,
-      "set-audio-channel-volume": this._recvSetAudioChannelVolume,
-      "get-audio-channel-muted": this._recvGetAudioChannelMuted,
-      "set-audio-channel-muted": this._recvSetAudioChannelMuted,
-      "get-is-audio-channel-active": this._recvIsAudioChannelActive,
-      "get-web-manifest": this._recvGetWebManifest,
     }
 
     if (message.data.msg_name in mmCalls) {
@@ -380,14 +335,11 @@ BrowserElementChild.prototype = {
   },
 
   get _windowUtils() {
-    return content.document.defaultView
-                  .QueryInterface(Ci.nsIInterfaceRequestor)
-                  .getInterface(Ci.nsIDOMWindowUtils);
+    return content.document.defaultView.windowUtils;
   },
 
   _tryGetInnerWindowID: function(win) {
-    let utils = win.QueryInterface(Ci.nsIInterfaceRequestor)
-                   .getInterface(Ci.nsIDOMWindowUtils);
+    let utils = win.windowUtils;
     try {
       return utils.currentInnerWindowID;
     }
@@ -400,8 +352,7 @@ BrowserElementChild.prototype = {
    * Show a modal prompt.  Called by BrowserElementPromptService.
    */
   showModalPrompt: function(win, args) {
-    let utils = win.QueryInterface(Ci.nsIInterfaceRequestor)
-                   .getInterface(Ci.nsIDOMWindowUtils);
+    let utils = win.windowUtils;
 
     args.windowID = { outer: utils.outerWindowID,
                       inner: this._tryGetInnerWindowID(win) };
@@ -422,8 +373,7 @@ BrowserElementChild.prototype = {
    */
   _waitForResult: function(win) {
     debug("_waitForResult(" + win + ")");
-    let utils = win.QueryInterface(Ci.nsIInterfaceRequestor)
-                   .getInterface(Ci.nsIDOMWindowUtils);
+    let utils = win.windowUtils;
 
     let outerWindowID = utils.outerWindowID;
     let innerWindowID = this._tryGetInnerWindowID(win);
@@ -449,20 +399,19 @@ BrowserElementChild.prototype = {
     win.modalDepth++;
     let origModalDepth = win.modalDepth;
 
-    let thread = Services.tm.currentThread;
     debug("Nested event loop - begin");
-    while (win.modalDepth == origModalDepth && !this._shuttingDown) {
+    Services.tm.spinEventLoopUntil(() => {
       // Bail out of the loop if the inner window changed; that means the
       // window navigated.  Bail out when we're shutting down because otherwise
       // we'll leak our window.
       if (this._tryGetInnerWindowID(win) !== innerWindowID) {
         debug("_waitForResult: Inner window ID changed " +
               "while in nested event loop.");
-        break;
+        return true;
       }
 
-      thread.processNextEvent(/* mayWait = */ true);
-    }
+      return win.modalDepth !== origModalDepth || this._shuttingDown;
+    });
     debug("Nested event loop - finish");
 
     if (win.modalDepth == 0) {
@@ -571,13 +520,6 @@ BrowserElementChild.prototype = {
 
   },
 
-  _manifestChangedHandler: function(e) {
-    debug('Got manifestchanged: (' + e.target.href + ')');
-    let manifest = { href: e.target.href };
-    sendAsyncMsg('manifestchange', manifest);
-
-  },
-
   // Processes the "rel" field in <link> tags and forward to specific handlers.
   _linkAddedHandler: function(e) {
     let win = e.target.ownerGlobal;
@@ -593,7 +535,6 @@ BrowserElementChild.prototype = {
       'apple-touch-icon': this._iconChangedHandler.bind(this),
       'apple-touch-icon-precomposed': this._iconChangedHandler.bind(this),
       'search': this._openSearchHandler,
-      'manifest': this._manifestChangedHandler
     };
 
     debug('Got linkAdded: (' + e.target.href + ') ' + e.target.rel);
@@ -692,9 +633,9 @@ BrowserElementChild.prototype = {
   _ClickHandler: function(e) {
 
     let isHTMLLink = node =>
-      ((node instanceof Ci.nsIDOMHTMLAnchorElement && node.href) ||
-       (node instanceof Ci.nsIDOMHTMLAreaElement && node.href) ||
-        node instanceof Ci.nsIDOMHTMLLinkElement);
+        ((ChromeUtils.getClassName(node) === "HTMLAnchorElement" && node.href) ||
+         (ChromeUtils.getClassName(node) === "HTMLAreaElement" && node.href) ||
+         ChromeUtils.getClassName(node) === "HTMLLinkElement");
 
     // Open in a new tab if middle click or ctrl/cmd-click,
     // and e.target is a link or inside a link.
@@ -737,27 +678,6 @@ BrowserElementChild.prototype = {
     return onMozAfterPaint;
   },
 
-  _removeMozAfterPaintHandler: function(listener) {
-    removeEventListener('MozAfterPaint', listener,
-                        /* useCapture = */ true);
-  },
-
-  _activateNextPaintListener: function(e) {
-    if (!this._nextPaintHandler) {
-      this._nextPaintHandler = this._addMozAfterPaintHandler(function () {
-        this._nextPaintHandler = null;
-        sendAsyncMsg('nextpaint');
-      }.bind(this));
-    }
-  },
-
-  _deactivateNextPaintListener: function(e) {
-    if (this._nextPaintHandler) {
-      this._removeMozAfterPaintHandler(this._nextPaintHandler);
-      this._nextPaintHandler = null;
-    }
-  },
-
   _windowCloseHandler: function(e) {
     let win = e.target;
     if (win != content || e.defaultPrevented) {
@@ -772,9 +692,7 @@ BrowserElementChild.prototype = {
   },
 
   _windowCreatedHandler: function(e) {
-    let targetDocShell = e.target.defaultView
-          .QueryInterface(Ci.nsIInterfaceRequestor)
-          .getInterface(Ci.nsIWebNavigation);
+    let targetDocShell = e.target.defaultView.docShell;
     if (targetDocShell != docShell) {
       return;
     }
@@ -881,32 +799,36 @@ BrowserElementChild.prototype = {
   _getSystemCtxMenuData: function(elem) {
     let documentURI =
       docShell.QueryInterface(Ci.nsIWebNavigation).currentURI.spec;
-    if ((elem instanceof Ci.nsIDOMHTMLAnchorElement && elem.href) ||
-        (elem instanceof Ci.nsIDOMHTMLAreaElement && elem.href)) {
+
+    if ((ChromeUtils.getClassName(elem) === "HTMLAnchorElement" && elem.href) ||
+        (ChromeUtils.getClassName(elem) === "HTMLAreaElement" && elem.href)) {
       return {uri: elem.href,
               documentURI: documentURI,
               text: elem.textContent.substring(0, kLongestReturnedString)};
     }
-    if (elem instanceof Ci.nsIImageLoadingContent && elem.currentURI) {
-      return {uri: elem.currentURI.spec, documentURI: documentURI};
+    if (elem instanceof Ci.nsIImageLoadingContent &&
+        (elem.currentRequestFinalURI || elem.currentURI)) {
+      let uri = elem.currentRequestFinalURI || elem.currentURI;
+      return {uri: uri.spec, documentURI: documentURI};
     }
-    if (elem instanceof Ci.nsIDOMHTMLImageElement) {
+    if (ChromeUtils.getClassName(elem) === "HTMLImageElement") {
       return {uri: elem.src, documentURI: documentURI};
     }
-    if (elem instanceof Ci.nsIDOMHTMLMediaElement) {
+    if (ChromeUtils.getClassName(elem) === "HTMLVideoElement" ||
+        ChromeUtils.getClassName(elem) === "HTMLAudioElement") {
       let hasVideo = !(elem.readyState >= elem.HAVE_METADATA &&
                        (elem.videoWidth == 0 || elem.videoHeight == 0));
       return {uri: elem.currentSrc || elem.src,
               hasVideo: hasVideo,
               documentURI: documentURI};
     }
-    if (elem instanceof Ci.nsIDOMHTMLInputElement &&
+    if (ChromeUtils.getClassName(elem) === "HTMLInputElement" &&
         elem.hasAttribute("name")) {
       // For input elements, we look for a parent <form> and if there is
       // one we return the form's method and action uri.
       let parent = elem.parentNode;
       while (parent) {
-        if (parent instanceof Ci.nsIDOMHTMLFormElement &&
+        if (ChromeUtils.getClassName(parent) === "HTMLFormElement" &&
             parent.hasAttribute("action")) {
           let actionHref = docShell.QueryInterface(Ci.nsIWebNavigation)
                                    .currentURI
@@ -937,138 +859,6 @@ BrowserElementChild.prototype = {
     sendAsyncMsg("scroll", { top: win.scrollY, left: win.scrollX });
   },
 
-  _recvPurgeHistory: function(data) {
-    debug("Received purgeHistory message: (" + data.json.id + ")");
-
-    let history = docShell.QueryInterface(Ci.nsIWebNavigation).sessionHistory;
-
-    try {
-      if (history && history.count) {
-        history.PurgeHistory(history.count);
-      }
-    } catch(e) {}
-
-    sendAsyncMsg('got-purge-history', { id: data.json.id, successRv: true });
-  },
-
-  _recvGetScreenshot: function(data) {
-    debug("Received getScreenshot message: (" + data.json.id + ")");
-
-    let self = this;
-    let maxWidth = data.json.args.width;
-    let maxHeight = data.json.args.height;
-    let mimeType = data.json.args.mimeType;
-    let domRequestID = data.json.id;
-
-    let takeScreenshotClosure = function() {
-      self._takeScreenshot(maxWidth, maxHeight, mimeType, domRequestID);
-    };
-
-    let maxDelayMS = 2000;
-    try {
-      maxDelayMS = Services.prefs.getIntPref('dom.browserElement.maxScreenshotDelayMS');
-    }
-    catch(e) {}
-
-    // Try to wait for the event loop to go idle before we take the screenshot,
-    // but once we've waited maxDelayMS milliseconds, go ahead and take it
-    // anyway.
-    Cc['@mozilla.org/message-loop;1'].getService(Ci.nsIMessageLoop).postIdleTask(
-      takeScreenshotClosure, maxDelayMS);
-  },
-
-  _recvExecuteScript: function(data) {
-    debug("Received executeScript message: (" + data.json.id + ")");
-
-    let domRequestID = data.json.id;
-
-    let sendError = errorMsg => sendAsyncMsg("execute-script-done", {
-      errorMsg,
-      id: domRequestID
-    });
-
-    let sendSuccess = successRv => sendAsyncMsg("execute-script-done", {
-      successRv,
-      id: domRequestID
-    });
-
-    let isJSON = obj => {
-      try {
-        JSON.stringify(obj);
-      } catch(e) {
-        return false;
-      }
-      return true;
-    }
-
-    let expectedOrigin = data.json.args.options.origin;
-    let expectedUrl = data.json.args.options.url;
-
-    if (expectedOrigin) {
-      if (expectedOrigin != content.location.origin) {
-        sendError("Origin mismatches");
-        return;
-      }
-    }
-
-    if (expectedUrl) {
-      let expectedURI
-      try {
-       expectedURI = Services.io.newURI(expectedUrl);
-      } catch(e) {
-        sendError("Malformed URL");
-        return;
-      }
-      let currentURI = docShell.QueryInterface(Ci.nsIWebNavigation).currentURI;
-      if (!currentURI.equalsExceptRef(expectedURI)) {
-        sendError("URL mismatches");
-        return;
-      }
-    }
-
-    let sandbox = new Cu.Sandbox([content], {
-      sandboxPrototype: content,
-      sandboxName: "browser-api-execute-script",
-      allowWaivers: false,
-      sameZoneAs: content
-    });
-
-    try {
-      let sandboxRv = Cu.evalInSandbox(data.json.args.script, sandbox, "1.8");
-      if (sandboxRv instanceof sandbox.Promise) {
-        sandboxRv.then(rv => {
-          if (isJSON(rv)) {
-            sendSuccess(rv);
-          } else {
-            sendError("Value returned (resolve) by promise is not a valid JSON object");
-          }
-        }, error => {
-          if (isJSON(error)) {
-            sendError(error);
-          } else {
-            sendError("Value returned (reject) by promise is not a valid JSON object");
-          }
-        });
-      } else {
-        if (isJSON(sandboxRv)) {
-          sendSuccess(sandboxRv);
-        } else {
-          sendError("Script last expression must be a promise or a JSON object");
-        }
-      }
-    } catch(e) {
-      sendError(e.toString());
-    }
-  },
-
-  _recvGetContentDimensions: function(data) {
-    debug("Received getContentDimensions message: (" + data.json.id + ")");
-    sendAsyncMsg('got-contentdimensions', {
-      id: data.json.id,
-      successRv: this._getContentDimensions()
-    });
-  },
-
   _mozScrollAreaChanged: function(e) {
     sendAsyncMsg('scrollareachanged', {
       width: e.width,
@@ -1088,105 +878,6 @@ BrowserElementChild.prototype = {
 
   _mozExitDomFullscreen: function(e) {
     sendAsyncMsg("exit-dom-fullscreen");
-  },
-
-  _getContentDimensions: function() {
-    return {
-      width: content.document.body.scrollWidth,
-      height: content.document.body.scrollHeight
-    }
-  },
-
-  /**
-   * Actually take a screenshot and foward the result up to our parent, given
-   * the desired maxWidth and maxHeight (in CSS pixels), and given the
-   * DOMRequest ID associated with the request from the parent.
-   */
-  _takeScreenshot: function(maxWidth, maxHeight, mimeType, domRequestID) {
-    // You can think of the screenshotting algorithm as carrying out the
-    // following steps:
-    //
-    // - Calculate maxWidth, maxHeight, and viewport's width and height in the
-    //   dimension of device pixels by multiply the numbers with
-    //   window.devicePixelRatio.
-    //
-    // - Let scaleWidth be the factor by which we'd need to downscale the
-    //   viewport pixel width so it would fit within maxPixelWidth.
-    //   (If the viewport's pixel width is less than maxPixelWidth, let
-    //   scaleWidth be 1.) Compute scaleHeight the same way.
-    //
-    // - Scale the viewport by max(scaleWidth, scaleHeight).  Now either the
-    //   viewport's width is no larger than maxWidth, the viewport's height is
-    //   no larger than maxHeight, or both.
-    //
-    // - Crop the viewport so its width is no larger than maxWidth and its
-    //   height is no larger than maxHeight.
-    //
-    // - Set mozOpaque to true and background color to solid white
-    //   if we are taking a JPEG screenshot, keep transparent if otherwise.
-    //
-    // - Return a screenshot of the page's viewport scaled and cropped per
-    //   above.
-    debug("Taking a screenshot: maxWidth=" + maxWidth +
-          ", maxHeight=" + maxHeight +
-          ", mimeType=" + mimeType +
-          ", domRequestID=" + domRequestID + ".");
-
-    if (!content) {
-      // If content is not loaded yet, bail out since even sendAsyncMessage
-      // fails...
-      debug("No content yet!");
-      return;
-    }
-
-    let devicePixelRatio = content.devicePixelRatio;
-
-    let maxPixelWidth = Math.round(maxWidth * devicePixelRatio);
-    let maxPixelHeight = Math.round(maxHeight * devicePixelRatio);
-
-    let contentPixelWidth = content.innerWidth * devicePixelRatio;
-    let contentPixelHeight = content.innerHeight * devicePixelRatio;
-
-    let scaleWidth = Math.min(1, maxPixelWidth / contentPixelWidth);
-    let scaleHeight = Math.min(1, maxPixelHeight / contentPixelHeight);
-
-    let scale = Math.max(scaleWidth, scaleHeight);
-
-    let canvasWidth =
-      Math.min(maxPixelWidth, Math.round(contentPixelWidth * scale));
-    let canvasHeight =
-      Math.min(maxPixelHeight, Math.round(contentPixelHeight * scale));
-
-    let transparent = (mimeType !== 'image/jpeg');
-
-    var canvas = content.document
-      .createElementNS("http://www.w3.org/1999/xhtml", "canvas");
-    if (!transparent)
-      canvas.mozOpaque = true;
-    canvas.width = canvasWidth;
-    canvas.height = canvasHeight;
-
-    let ctx = canvas.getContext("2d", { willReadFrequently: true });
-    ctx.scale(scale * devicePixelRatio, scale * devicePixelRatio);
-
-    let flags = ctx.DRAWWINDOW_DRAW_VIEW |
-                ctx.DRAWWINDOW_USE_WIDGET_LAYERS |
-                ctx.DRAWWINDOW_DO_NOT_FLUSH |
-                ctx.DRAWWINDOW_ASYNC_DECODE_IMAGES;
-    ctx.drawWindow(content, 0, 0, content.innerWidth, content.innerHeight,
-                   transparent ? "rgba(255,255,255,0)" : "rgb(255,255,255)",
-                   flags);
-
-    // Take a JPEG screenshot by default instead of PNG with alpha channel.
-    // This requires us to unpremultiply the alpha channel, which
-    // is expensive on ARM processors because they lack a hardware integer
-    // division instruction.
-    canvas.toBlob(function(blob) {
-      sendAsyncMsg('got-screenshot', {
-        id: domRequestID,
-        successRv: blob
-      });
-    }, mimeType);
   },
 
   _recvFireCtxCallback: function(data) {
@@ -1248,38 +939,15 @@ BrowserElementChild.prototype = {
     return menuObj;
   },
 
-  _recvSetVisible: function(data) {
-    debug("Received setVisible message: (" + data.json.visible + ")");
-    if (this._forcedVisible == data.json.visible) {
-      return;
-    }
-
-    this._forcedVisible = data.json.visible;
-    this._updateVisibility();
-  },
-
-  _recvVisible: function(data) {
-    sendAsyncMsg('got-visible', {
-      id: data.json.id,
-      successRv: docShell.isActive
-    });
-  },
-
   /**
    * Called when the window which contains this iframe becomes hidden or
    * visible.
    */
   _recvOwnerVisibilityChange: function(data) {
     debug("Received ownerVisibilityChange: (" + data.json.visible + ")");
-    this._ownerVisible = data.json.visible;
-    this._updateVisibility();
-  },
-
-  _updateVisibility: function() {
-    var visible = this._forcedVisible && this._ownerVisible;
+    var visible = data.json.visible;
     if (docShell && docShell.isActive !== visible) {
       docShell.isActive = visible;
-      sendAsyncMsg('visibilitychange', {visible: visible});
 
       // Ensure painting is not frozen if the app goes visible.
       if (visible && this._paintFrozenTimer) {
@@ -1290,20 +958,9 @@ BrowserElementChild.prototype = {
 
   _recvSendMouseEvent: function(data) {
     let json = data.json;
-    let utils = content.QueryInterface(Ci.nsIInterfaceRequestor)
-                       .getInterface(Ci.nsIDOMWindowUtils);
+    let utils = content.windowUtils;
     utils.sendMouseEventToWindow(json.type, json.x, json.y, json.button,
                                  json.clickCount, json.modifiers);
-  },
-
-  _recvSendTouchEvent: function(data) {
-    let json = data.json;
-    let utils = content.QueryInterface(Ci.nsIInterfaceRequestor)
-                       .getInterface(Ci.nsIDOMWindowUtils);
-    utils.sendTouchEventToWindow(json.type, json.identifiers, json.touchesX,
-                                 json.touchesY, json.radiisX, json.radiisY,
-                                 json.rotationAngles, json.forces, json.count,
-                                 json.modifiers);
   },
 
   _recvCanGoBack: function(data) {
@@ -1319,32 +976,6 @@ BrowserElementChild.prototype = {
     sendAsyncMsg('got-can-go-forward', {
       id: data.json.id,
       successRv: webNav.canGoForward
-    });
-  },
-
-  _recvMute: function(data) {
-    this._windowUtils.audioMuted = true;
-  },
-
-  _recvUnmute: function(data) {
-    this._windowUtils.audioMuted = false;
-  },
-
-  _recvGetMuted: function(data) {
-    sendAsyncMsg('got-muted', {
-      id: data.json.id,
-      successRv: this._windowUtils.audioMuted
-    });
-  },
-
-  _recvSetVolume: function(data) {
-    this._windowUtils.audioVolume = data.json.volume;
-  },
-
-  _recvGetVolume: function(data) {
-    sendAsyncMsg('got-volume', {
-      id: data.json.id,
-      successRv: this._windowUtils.audioVolume
     });
   },
 
@@ -1381,131 +1012,11 @@ BrowserElementChild.prototype = {
     webNav.stop(webNav.STOP_NETWORK);
   },
 
-  _recvZoom: function(data) {
-    docShell.contentViewer.fullZoom = data.json.zoom;
-  },
-
-  _recvGetAudioChannelVolume: function(data) {
-    debug("Received getAudioChannelVolume message: (" + data.json.id + ")");
-
-    let volume = acs.getAudioChannelVolume(content,
-                                           data.json.args.audioChannel);
-    sendAsyncMsg('got-audio-channel-volume', {
-      id: data.json.id, successRv: volume
-    });
-  },
-
-  _recvSetAudioChannelVolume: function(data) {
-    debug("Received setAudioChannelVolume message: (" + data.json.id + ")");
-
-    acs.setAudioChannelVolume(content,
-                              data.json.args.audioChannel,
-                              data.json.args.volume);
-    sendAsyncMsg('got-set-audio-channel-volume', {
-      id: data.json.id, successRv: true
-    });
-  },
-
-  _recvGetAudioChannelMuted: function(data) {
-    debug("Received getAudioChannelMuted message: (" + data.json.id + ")");
-
-    let muted = acs.getAudioChannelMuted(content, data.json.args.audioChannel);
-    sendAsyncMsg('got-audio-channel-muted', {
-      id: data.json.id, successRv: muted
-    });
-  },
-
-  _recvSetAudioChannelMuted: function(data) {
-    debug("Received setAudioChannelMuted message: (" + data.json.id + ")");
-
-    acs.setAudioChannelMuted(content, data.json.args.audioChannel,
-                             data.json.args.muted);
-    sendAsyncMsg('got-set-audio-channel-muted', {
-      id: data.json.id, successRv: true
-    });
-  },
-
-  _recvIsAudioChannelActive: function(data) {
-    debug("Received isAudioChannelActive message: (" + data.json.id + ")");
-
-    let active = acs.isAudioChannelActive(content, data.json.args.audioChannel);
-    sendAsyncMsg('got-is-audio-channel-active', {
-      id: data.json.id, successRv: active
-    });
-  },
-  _recvGetWebManifest: Task.async(function* (data) {
-    debug(`Received GetWebManifest message: (${data.json.id})`);
-    let manifest = null;
-    let hasManifest = ManifestFinder.contentHasManifestLink(content);
-    if (hasManifest) {
-      try {
-        manifest = yield ManifestObtainer.contentObtainManifest(content);
-      } catch (e) {
-        sendAsyncMsg('got-web-manifest', {
-          id: data.json.id,
-          errorMsg: `Error fetching web manifest: ${e}.`,
-        });
-        return;
-      }
-    }
-    sendAsyncMsg('got-web-manifest', {
-      id: data.json.id,
-      successRv: manifest
-    });
-  }),
-
-  _initFinder: function() {
-    if (!this._finder) {
-      let {Finder} = Components.utils.import("resource://gre/modules/Finder.jsm", {});
-      this._finder = new Finder(docShell);
-    }
-    let listener = {
-      onMatchesCountResult: (data) => {
-        sendAsyncMsg("findchange", {
-          active: true,
-          searchString: this._finder.searchString,
-          searchLimit: this._finder.matchesCountLimit,
-          activeMatchOrdinal: data.current,
-          numberOfMatches: data.total
-        });
-        this._finder.removeResultListener(listener);
-      }
-    };
-    this._finder.addResultListener(listener);
-  },
-
-  _recvFindAll: function(data) {
-    this._initFinder();
-    let searchString = data.json.searchString;
-    this._finder.caseSensitive = data.json.caseSensitive;
-    this._finder.fastFind(searchString, false, false);
-    this._finder.requestMatchesCount(searchString, this._finder.matchesCountLimit, false);
-  },
-
-  _recvFindNext: function(data) {
-    if (!this._finder) {
-      debug("findNext() called before findAll()");
-      return;
-    }
-    this._initFinder();
-    this._finder.findAgain(data.json.backward, false, false);
-    this._finder.requestMatchesCount(this._finder.searchString, this._finder.matchesCountLimit, false);
-  },
-
-  _recvClearMatch: function(data) {
-    if (!this._finder) {
-      debug("clearMach() called before findAll()");
-      return;
-    }
-    this._finder.removeSelection();
-    sendAsyncMsg("findchange", {active: false});
-  },
-
   // The docShell keeps a weak reference to the progress listener, so we need
   // to keep a strong ref to it ourselves.
   _progressListener: {
-    QueryInterface: XPCOMUtils.generateQI([Ci.nsIWebProgressListener,
-                                           Ci.nsISupportsWeakReference]),
+    QueryInterface: ChromeUtils.generateQI([Ci.nsIWebProgressListener,
+                                            Ci.nsISupportsWeakReference]),
     _seenLoadStart: false,
 
     onLocationChange: function(webProgress, request, location, flags) {
@@ -1587,6 +1098,9 @@ BrowserElementChild.prototype = {
           case Cr.NS_ERROR_MALWARE_URI :
             sendAsyncMsg('error', { type: 'malwareBlocked' });
             return;
+          case Cr.NS_ERROR_HARMFUL_URI :
+            sendAsyncMsg('error', { type: 'harmfulBlocked' });
+            return;
           case Cr.NS_ERROR_UNWANTED_URI :
             sendAsyncMsg('error', { type: 'unwantedBlocked' });
             return;
@@ -1636,6 +1150,9 @@ BrowserElementChild.prototype = {
           case Cr.NS_ERROR_CORRUPTED_CONTENT :
             sendAsyncMsg('error', { type: 'corruptedContentErrorv2' });
             return;
+          case Cr.NS_ERROR_BLOCKED_BY_POLICY :
+            sendAsyncMsg('error', { type: 'blockedByPolicy' });
+            return;
 
           default:
             // getErrorClass() will throw if the error code passed in is not a NSS
@@ -1649,10 +1166,7 @@ BrowserElementChild.prototype = {
                 // certerror? If yes, maybe we should add a property to the
                 // event to to indicate whether there is a custom page. That would
                 // let the embedder have more control over the desired behavior.
-                let errorPage = null;
-                try {
-                  errorPage = Services.prefs.getCharPref(CERTIFICATE_ERROR_PAGE_PREF);
-                } catch (e) {}
+                let errorPage = Services.prefs.getCharPref(CERTIFICATE_ERROR_PAGE_PREF, "");
 
                 if (errorPage == 'certerror') {
                   sendAsyncMsg('error', { type: 'certerror' });
@@ -1687,14 +1201,6 @@ BrowserElementChild.prototype = {
         securityStateDesc = '???';
       }
 
-      var trackingStateDesc;
-      if (state & Ci.nsIWebProgressListener.STATE_LOADED_TRACKING_CONTENT) {
-        trackingStateDesc = 'loaded_tracking_content';
-      }
-      else if (state & Ci.nsIWebProgressListener.STATE_BLOCKED_TRACKING_CONTENT) {
-        trackingStateDesc = 'blocked_tracking_content';
-      }
-
       var mixedStateDesc;
       if (state & Ci.nsIWebProgressListener.STATE_BLOCKED_MIXED_ACTIVE_CONTENT) {
         mixedStateDesc = 'blocked_mixed_active_content';
@@ -1705,26 +1211,17 @@ BrowserElementChild.prototype = {
       }
 
       var isEV = !!(state & Ci.nsIWebProgressListener.STATE_IDENTITY_EV_TOPLEVEL);
-      var isTrackingContent = !!(state &
-        (Ci.nsIWebProgressListener.STATE_BLOCKED_TRACKING_CONTENT |
-        Ci.nsIWebProgressListener.STATE_LOADED_TRACKING_CONTENT));
       var isMixedContent = !!(state &
         (Ci.nsIWebProgressListener.STATE_BLOCKED_MIXED_ACTIVE_CONTENT |
         Ci.nsIWebProgressListener.STATE_LOADED_MIXED_ACTIVE_CONTENT));
 
       sendAsyncMsg('securitychange', {
         state: securityStateDesc,
-        trackingState: trackingStateDesc,
         mixedState: mixedStateDesc,
         extendedValidation: isEV,
-        trackingContent: isTrackingContent,
         mixedContent: isMixedContent,
       });
     },
-
-    onStatusChange: function(webProgress, request, status, message) {},
-    onProgressChange: function(webProgress, request, curSelfProgress,
-                               maxSelfProgress, curTotalProgress, maxTotalProgress) {},
   },
 
   // Expose the message manager for WebApps and others.

@@ -10,13 +10,19 @@ const TEST_URI = "data:text/html;charset=utf-8," +
 // opened we make use of setTimeout() to create tool active times.
 const TOOL_DELAY = 200;
 
-add_task(function* () {
-  yield addTab(TEST_URI);
-  let Telemetry = loadTelemetryAndRecordLogs();
+add_task(async function() {
+  await addTab(TEST_URI);
+  startTelemetry();
 
-  yield openAndCloseToolbox(2, TOOL_DELAY, "webconsole");
-  checkTelemetryResults(Telemetry);
+  await openAndCloseToolbox(2, TOOL_DELAY, "webconsole");
+  checkResults();
 
-  stopRecordingTelemetryLogs(Telemetry);
   gBrowser.removeCurrentTab();
 });
+
+function checkResults() {
+  // For help generating these tests use generateTelemetryTests("DEVTOOLS_WEBCONSOLE_")
+  // here.
+  checkTelemetry("DEVTOOLS_WEBCONSOLE_OPENED_COUNT", "", {0: 2, 1: 0}, "array");
+  checkTelemetry("DEVTOOLS_WEBCONSOLE_TIME_ACTIVE_SECONDS", "", null, "hasentries");
+}

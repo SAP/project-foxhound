@@ -9,7 +9,6 @@ description: >
 includes: [propertyHelper.js]
 flags: [onlyStrict]
 ---*/
-
 var obj = {};
 Object.defineProperty(obj, 'a', {
   configurable: false

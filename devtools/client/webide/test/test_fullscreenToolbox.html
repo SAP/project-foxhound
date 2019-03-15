@@ -16,52 +16,55 @@
 
     <script type="application/javascript">
       function connectToLocal(win, docRuntime) {
-        let deferred = promise.defer();
-        win.AppManager.connection.once(
-            win.Connection.Events.CONNECTED,
-            () => deferred.resolve());
-        docRuntime.querySelectorAll(".runtime-panel-item-other")[1].click();
-        return deferred.promise;
+        return new Promise(resolve => {
+          win.AppManager.connection.once(
+              win.Connection.Events.CONNECTED,
+              resolve);
+          docRuntime.querySelectorAll(".runtime-panel-item-other")[1].click();
+        });
       }
 
       window.onload = function() {
         SimpleTest.waitForExplicitFinish();
 
-        Task.spawn(function* () {
-          let win = yield openWebIDE();
-          let docProject = getProjectDocument(win);
-          let docRuntime = getRuntimeDocument(win);
+        (async function() {
+          const win = await openWebIDE();
+          const docProject = getProjectDocument(win);
+          const docRuntime = getRuntimeDocument(win);
           win.AppManager.update("runtime-list");
 
-          yield connectToLocal(win, docRuntime);
+          const onGlobalActors = waitForUpdate(win, "runtime-global-actors");
+          const onRuntimeTargets = waitForUpdate(win, "runtime-targets");
+          connectToLocal(win, docRuntime);
+          await onGlobalActors;
+          await onRuntimeTargets;
 
           // Select main process
-          yield waitForUpdate(win, "runtime-targets");
           SimpleTest.executeSoon(() => {
             docProject.querySelectorAll("#project-panel-runtimeapps .panel-item")[0].click();
           });
 
-          yield waitForUpdate(win, "project");
+          await waitForUpdate(win, "project");
 
           ok(win.UI.toolboxPromise, "Toolbox promise exists");
-          yield win.UI.toolboxPromise;
+          await win.UI.toolboxPromise;
 
-          let nbox = win.document.querySelector("#notificationbox");
+          const nbox = win.document.getElementById("containerbox");
           ok(!nbox.hasAttribute("toolboxfullscreen"), "Toolbox is not fullscreen");
 
           win.Cmds.showRuntimeDetails();
 
           ok(!nbox.hasAttribute("toolboxfullscreen"), "Toolbox is not fullscreen");
 
-          yield win.Cmds.disconnectRuntime();
+          await win.Cmds.disconnectRuntime();
 
-          yield closeWebIDE(win);
+          await closeWebIDE(win);
 
           DebuggerServer.destroy();
 
           SimpleTest.finish();
-        });
-      }
+        })();
+      };
     </script>
   </body>
 </html>

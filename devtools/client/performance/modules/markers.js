@@ -53,6 +53,11 @@ const TIMELINE_BLUEPRINT = {
     label: L10N.getStr("marker.label.styles"),
     fields: Formatters.StylesFields,
   },
+  "StylesApplyChanges": {
+    group: 0,
+    colorName: "graphs-purple",
+    label: L10N.getStr("marker.label.stylesApplyChanges"),
+  },
   "Reflow": {
     group: 0,
     colorName: "graphs-purple",
@@ -85,18 +90,18 @@ const TIMELINE_BLUEPRINT = {
   "document::DOMContentLoaded": {
     group: 1,
     colorName: "graphs-full-red",
-    label: "DOMContentLoaded"
+    label: "DOMContentLoaded",
   },
   "document::Load": {
     group: 1,
     colorName: "graphs-full-blue",
-    label: "Load"
+    label: "Load",
   },
   "Javascript": {
     group: 1,
     colorName: "graphs-yellow",
     label: Formatters.JSLabel,
-    fields: Formatters.JSFields
+    fields: Formatters.JSFields,
   },
   "Parse HTML": {
     group: 1,
@@ -136,13 +141,13 @@ const TIMELINE_BLUEPRINT = {
     group: 1,
     colorName: "graphs-orange",
     label: L10N.getStr("marker.label.worker"),
-    fields: Formatters.WorkerFields
+    fields: Formatters.WorkerFields,
   },
   "MessagePort": {
     group: 1,
     colorName: "graphs-orange",
     label: L10N.getStr("marker.label.messagePort"),
-    fields: Formatters.MessagePortFields
+    fields: Formatters.MessagePortFields,
   },
 
   /* Group 2 - User Controlled */

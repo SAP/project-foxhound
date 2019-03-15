@@ -2,11 +2,13 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-const STORAGE_SYNC_PREF = "webextensions.storage.sync.enabled";
-Cu.import("resource://gre/modules/Preferences.jsm");
+ChromeUtils.defineModuleGetter(this, "ExtensionStorageIDB",
+                               "resource://gre/modules/ExtensionStorageIDB.jsm");
 
-add_task(function* setup() {
-  yield ExtensionTestUtils.startAddonManager();
+const STORAGE_SYNC_PREF = "webextensions.storage.sync.enabled";
+
+add_task(async function setup() {
+  await ExtensionTestUtils.startAddonManager();
 });
 
 /**
@@ -28,15 +30,21 @@ async function checkGetImpl(areaName, prop, value) {
 
   data = await storage.get(prop);
   browser.test.assertEq(value, data[prop], `string getter worked for ${prop} in ${areaName}`);
+  browser.test.assertEq(Object.keys(data).length, 1,
+                        `string getter should return an object with a single property`);
 
   data = await storage.get([prop]);
   browser.test.assertEq(value, data[prop], `array getter worked for ${prop} in ${areaName}`);
+  browser.test.assertEq(Object.keys(data).length, 1,
+                        `array getter with a single key should return an object with a single property`);
 
   data = await storage.get({[prop]: undefined});
   browser.test.assertEq(value, data[prop], `object getter worked for ${prop} in ${areaName}`);
+  browser.test.assertEq(Object.keys(data).length, 1,
+                        `object getter with a single key should return an object with a single property`);
 }
 
-add_task(function* test_local_cache_invalidation() {
+add_task(async function test_local_cache_invalidation() {
   function background(checkGet) {
     browser.test.onMessage.addListener(async msg => {
       if (msg === "set-initial") {
@@ -59,95 +67,129 @@ add_task(function* test_local_cache_invalidation() {
     background: `(${background})(${checkGetImpl})`,
   });
 
-  yield extension.startup();
-  yield extension.awaitMessage("ready");
+  await extension.startup();
+  await extension.awaitMessage("ready");
 
   extension.sendMessage("set-initial");
-  yield extension.awaitMessage("set-initial-done");
+  await extension.awaitMessage("set-initial-done");
 
-  Services.obs.notifyObservers(null, "extension-invalidate-storage-cache", "");
+  Services.obs.notifyObservers(null, "extension-invalidate-storage-cache");
 
   extension.sendMessage("check");
-  yield extension.awaitMessage("check-done");
+  await extension.awaitMessage("check-done");
 
-  yield extension.unload();
+  await extension.unload();
 });
 
-add_task(function* test_config_flag_needed() {
+add_task(async function test_single_initialization() {
+  // Grab access to this via the backstage pass to check if we're calling openConnection too often.
+  const {FirefoxAdapter} = ChromeUtils.import("resource://gre/modules/ExtensionStorageSync.jsm", {});
+  const origOpenConnection = FirefoxAdapter.openConnection;
+  let callCount = 0;
+  FirefoxAdapter.openConnection = function(...args) {
+    ++callCount;
+    return origOpenConnection.apply(this, args);
+  };
   function background() {
-    let promises = [];
-    let apiTests = [
-      {method: "get", args: ["foo"]},
-      {method: "set", args: [{foo: "bar"}]},
-      {method: "remove", args: ["foo"]},
-      {method: "clear", args: []},
-    ];
-    apiTests.forEach(testDef => {
-      promises.push(browser.test.assertRejects(
-        browser.storage.sync[testDef.method](...testDef.args),
-        "Please set webextensions.storage.sync.enabled to true in about:config",
-        `storage.sync.${testDef.method} is behind a flag`));
-    });
-
-    Promise.all(promises).then(() => browser.test.notifyPass("flag needed"));
+    let promises = ["foo", "bar", "baz", "quux"].map(key =>
+      browser.storage.sync.get(key));
+    Promise.all(promises).then(() => browser.test.notifyPass("initialize once"));
   }
-
-  Preferences.set(STORAGE_SYNC_PREF, false);
-  ok(!Preferences.get(STORAGE_SYNC_PREF));
-  let extension = ExtensionTestUtils.loadExtension({
-    manifest: {
-      permissions: ["storage"],
-    },
-    background: `(${background})(${checkGetImpl})`,
-  });
-
-  yield extension.startup();
-  yield extension.awaitFinish("flag needed");
-  yield extension.unload();
-  Preferences.reset(STORAGE_SYNC_PREF);
-});
-
-add_task(function* test_reloading_extensions_works() {
-  // Just some random extension ID that we can re-use
-  const extensionId = "my-extension-id@1";
-
-  function loadExtension() {
-    function background() {
-      browser.storage.sync.set({"a": "b"}).then(() => {
-        browser.test.notifyPass("set-works");
-      });
-    }
-
-    return ExtensionTestUtils.loadExtension({
+  try {
+    let extension = ExtensionTestUtils.loadExtension({
       manifest: {
         permissions: ["storage"],
       },
       background: `(${background})()`,
-    }, extensionId);
+    });
+
+    await extension.startup();
+    await extension.awaitFinish("initialize once");
+    await extension.unload();
+    equal(callCount, 1, "Initialized FirefoxAdapter connection and Kinto exactly once");
+  } finally {
+    FirefoxAdapter.openConnection = origOpenConnection;
+  }
+});
+
+add_task(function test_config_flag_needed() {
+  async function testFn() {
+    function background() {
+      let promises = [];
+      let apiTests = [
+        {method: "get", args: ["foo"]},
+        {method: "set", args: [{foo: "bar"}]},
+        {method: "remove", args: ["foo"]},
+        {method: "clear", args: []},
+      ];
+      apiTests.forEach(testDef => {
+        promises.push(browser.test.assertRejects(
+          browser.storage.sync[testDef.method](...testDef.args),
+          "Please set webextensions.storage.sync.enabled to true in about:config",
+          `storage.sync.${testDef.method} is behind a flag`));
+      });
+
+      Promise.all(promises).then(() => browser.test.notifyPass("flag needed"));
+    }
+
+    ok(!Services.prefs.getBoolPref(STORAGE_SYNC_PREF, false),
+       "The `${STORAGE_SYNC_PREF}` should be set to false");
+
+    let extension = ExtensionTestUtils.loadExtension({
+      manifest: {
+        permissions: ["storage"],
+      },
+      background: `(${background})(${checkGetImpl})`,
+    });
+
+    await extension.startup();
+    await extension.awaitFinish("flag needed");
+    await extension.unload();
   }
 
-  Preferences.set(STORAGE_SYNC_PREF, true);
-
-  let extension1 = loadExtension();
-
-  yield extension1.startup();
-  yield extension1.awaitFinish("set-works");
-  yield extension1.unload();
-
-  let extension2 = loadExtension();
-
-  yield extension2.startup();
-  yield extension2.awaitFinish("set-works");
-  yield extension2.unload();
-
-  Preferences.reset(STORAGE_SYNC_PREF);
+  return runWithPrefs([[STORAGE_SYNC_PREF, false]], testFn);
 });
 
-do_register_cleanup(() => {
-  Preferences.reset(STORAGE_SYNC_PREF);
+add_task(function test_reloading_extensions_works() {
+  async function testFn() {
+    // Just some random extension ID that we can re-use
+    const extensionId = "my-extension-id@1";
+
+    function loadExtension() {
+      function background() {
+        browser.storage.sync.set({"a": "b"}).then(() => {
+          browser.test.notifyPass("set-works");
+        });
+      }
+
+      return ExtensionTestUtils.loadExtension({
+        manifest: {
+          permissions: ["storage"],
+        },
+        background: `(${background})()`,
+      }, extensionId);
+    }
+
+    ok(Services.prefs.getBoolPref(STORAGE_SYNC_PREF, false),
+       "The `${STORAGE_SYNC_PREF}` should be set to true");
+
+    let extension1 = loadExtension();
+
+    await extension1.startup();
+    await extension1.awaitFinish("set-works");
+    await extension1.unload();
+
+    let extension2 = loadExtension();
+
+    await extension2.startup();
+    await extension2.awaitFinish("set-works");
+    await extension2.unload();
+  }
+
+  return runWithPrefs([[STORAGE_SYNC_PREF, true]], testFn);
 });
 
-add_task(function* test_backgroundScript() {
+async function test_background_page_storage(testAreaName) {
   async function backgroundScript(checkGet) {
     let globalChanges, gResolve;
     function clearGlobalChanges() {
@@ -158,7 +200,7 @@ add_task(function* test_backgroundScript() {
 
     browser.storage.onChanged.addListener((changes, areaName) => {
       browser.test.assertEq(expectedAreaName, areaName,
-        "Expected area name received by listener");
+                            "Expected area name received by listener");
       gResolve(changes);
     });
 
@@ -189,7 +231,8 @@ add_task(function* test_backgroundScript() {
       // Set some data and then test getters.
       try {
         await storage.set({"test-prop1": "value1", "test-prop2": "value2"});
-        await checkChanges(areaName,
+        await checkChanges(
+          areaName,
           {"test-prop1": {newValue: "value1"}, "test-prop2": {newValue: "value2"}},
           "set (a)");
 
@@ -222,7 +265,8 @@ add_task(function* test_backgroundScript() {
         browser.test.assertEq(data["test-prop2"], "value2", "prop2 correct (c)");
 
         await storage.remove(["test-prop1", "test-prop2"]);
-        await checkChanges(areaName,
+        await checkChanges(
+          areaName,
           {"test-prop1": {oldValue: "value1"}, "test-prop2": {oldValue: "value2"}},
           "remove array");
 
@@ -239,7 +283,8 @@ add_task(function* test_backgroundScript() {
         clearGlobalChanges();
         await storage.clear();
 
-        await checkChanges(areaName,
+        await checkChanges(
+          areaName,
           {"test-prop1": {oldValue: "value1"}, "test-prop2": {oldValue: "value2"}},
           "clear");
         data = await storage.get(["test-prop1", "test-prop2"]);
@@ -253,6 +298,8 @@ add_task(function* test_backgroundScript() {
         // Make sure the set() handler landed.
         await globalChanges;
 
+        let date = new Date(0);
+
         clearGlobalChanges();
         await storage.set({
           "test-prop1": {
@@ -262,14 +309,21 @@ add_task(function* test_backgroundScript() {
             undef: undefined,
             obj: {},
             arr: [1, 2],
-            date: new Date(0),
+            date,
             regexp: /regexp/,
-            func: function func() {},
-            window,
           },
         });
 
-        await storage.set({"test-prop2": function func() {}});
+        await browser.test.assertRejects(
+          storage.set({
+            window,
+          }),
+          /DataCloneError|cyclic object value/);
+
+        await browser.test.assertRejects(
+          storage.set({"test-prop2": function func() {}}),
+          /DataCloneError/);
+
         const recentChanges = await globalChanges;
 
         browser.test.assertEq("value1", recentChanges["test-prop1"].oldValue, "oldValue correct");
@@ -279,24 +333,26 @@ add_task(function* test_backgroundScript() {
         data = await storage.get({"test-prop1": undefined, "test-prop2": undefined});
         let obj = data["test-prop1"];
 
+        if (areaName === "local") {
+          browser.test.assertEq(String(date), String(obj.date), "date part correct");
+          browser.test.assertEq("/regexp/", obj.regexp.toSource(), "regexp part correct");
+        } else {
+          browser.test.assertEq("1970-01-01T00:00:00.000Z", String(obj.date), "date part correct");
+
+          browser.test.assertEq("object", typeof obj.regexp, "regexp part is an object");
+          browser.test.assertEq(0, Object.keys(obj.regexp).length, "regexp part is an empty object");
+        }
+
         browser.test.assertEq("hello", obj.str, "string part correct");
         browser.test.assertEq(true, obj.bool, "bool part correct");
         browser.test.assertEq(null, obj.null, "null part correct");
         browser.test.assertEq(undefined, obj.undef, "undefined part correct");
-        browser.test.assertEq(undefined, obj.func, "function part correct");
         browser.test.assertEq(undefined, obj.window, "window part correct");
-        browser.test.assertEq("1970-01-01T00:00:00.000Z", obj.date, "date part correct");
-        browser.test.assertEq("/regexp/", obj.regexp, "regexp part correct");
         browser.test.assertEq("object", typeof(obj.obj), "object part correct");
         browser.test.assertTrue(Array.isArray(obj.arr), "array part present");
         browser.test.assertEq(1, obj.arr[0], "arr[0] part correct");
         browser.test.assertEq(2, obj.arr[1], "arr[1] part correct");
         browser.test.assertEq(2, obj.arr.length, "arr.length part correct");
-
-        obj = data["test-prop2"];
-
-        browser.test.assertEq("[object Object]", {}.toString.call(obj), "function serialized as a plain object");
-        browser.test.assertEq(0, Object.keys(obj).length, "function serialized as an empty object");
       } catch (e) {
         browser.test.fail(`Error: ${e} :: ${e.stack}`);
         browser.test.notifyFail("storage");
@@ -323,49 +379,59 @@ add_task(function* test_backgroundScript() {
     },
   };
 
-  Preferences.set(STORAGE_SYNC_PREF, true);
-
   let extension = ExtensionTestUtils.loadExtension(extensionData);
-  yield extension.startup();
-  yield extension.awaitMessage("ready");
+  await extension.startup();
+  await extension.awaitMessage("ready");
 
-  extension.sendMessage("test-local");
-  yield extension.awaitMessage("test-finished");
+  extension.sendMessage(`test-${testAreaName}`);
+  await extension.awaitMessage("test-finished");
 
-  extension.sendMessage("test-sync");
-  yield extension.awaitMessage("test-finished");
+  await extension.unload();
+}
 
-  Preferences.reset(STORAGE_SYNC_PREF);
-  yield extension.unload();
+add_task(function test_storage_local_file_backend() {
+  return runWithPrefs([[ExtensionStorageIDB.BACKEND_ENABLED_PREF, false]],
+                      () => test_background_page_storage("local"));
 });
 
-add_task(function* test_storage_requires_real_id() {
-  async function backgroundScript() {
-    const EXCEPTION_MESSAGE =
-          "The storage API is not available with a temporary addon ID. " +
-          "Please add an explicit addon ID to your manifest. " +
-          "For more information see https://bugzil.la/1323228.";
+add_task(function test_storage_local_idb_backend() {
+  return runWithPrefs([[ExtensionStorageIDB.BACKEND_ENABLED_PREF, true]],
+                      () => test_background_page_storage("local"));
+});
 
-    await browser.test.assertRejects(browser.storage.sync.set({"foo": "bar"}),
-                                     EXCEPTION_MESSAGE);
+add_task(function test_storage_sync() {
+  return runWithPrefs([[STORAGE_SYNC_PREF, true]],
+                      () => test_background_page_storage("sync"));
+});
 
-    browser.test.notifyPass("exception correct");
+add_task(function test_storage_sync_requires_real_id() {
+  async function testFn() {
+    async function backgroundScript() {
+      const EXCEPTION_MESSAGE =
+              "The storage API is not available with a temporary addon ID. " +
+              "Please add an explicit addon ID to your manifest. " +
+              "For more information see https://bugzil.la/1323228.";
+
+      await browser.test.assertRejects(browser.storage.sync.set({"foo": "bar"}),
+                                       EXCEPTION_MESSAGE);
+
+      browser.test.notifyPass("exception correct");
+    }
+
+    let extensionData = {
+      background: `(${backgroundScript})(${checkGetImpl})`,
+      manifest: {
+        permissions: ["storage"],
+      },
+      useAddonManager: "temporary",
+    };
+
+    let extension = ExtensionTestUtils.loadExtension(extensionData);
+    await extension.startup();
+    await extension.awaitFinish("exception correct");
+
+    await extension.unload();
   }
 
-  let extensionData = {
-    background: `(${backgroundScript})(${checkGetImpl})`,
-    manifest: {
-      permissions: ["storage"],
-    },
-    useAddonManager: "temporary",
-  };
-
-  Preferences.set(STORAGE_SYNC_PREF, true);
-
-  let extension = ExtensionTestUtils.loadExtension(extensionData);
-  yield extension.startup();
-  yield extension.awaitFinish("exception correct");
-
-  Preferences.reset(STORAGE_SYNC_PREF);
-  yield extension.unload();
+  return runWithPrefs([[STORAGE_SYNC_PREF, true]], testFn);
 });

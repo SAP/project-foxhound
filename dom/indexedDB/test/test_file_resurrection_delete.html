@@ -82,7 +82,7 @@
       db.onerror = errorHandler;
 
       let trans = db.transaction([objectStoreName], READ_WRITE);
-      objectStore = trans.objectStore(objectStoreName);
+      let objectStore = trans.objectStore(objectStoreName);
 
       request = objectStore.get(fileData.key);
       request.onsuccess = grabEventAndContinueHandler;

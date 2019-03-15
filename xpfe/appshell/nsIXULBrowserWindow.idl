@@ -6,16 +6,18 @@
 
 #include "nsISupports.idl"
 #include "nsIURI.idl"
-#include "nsIDOMNode.idl"
 
 interface nsIBrowser;
 interface nsIRequest;
-interface nsIDOMElement;
 interface nsIInputStream;
 interface nsIDocShell;
+interface nsIFrameLoaderOwner;
 interface nsITabParent;
 interface nsIPrincipal;
 interface mozIDOMWindowProxy;
+
+webidl Element;
+webidl Node;
 
 /**
  * The nsIXULBrowserWindow supplies the methods that may be called from the
@@ -26,22 +28,17 @@ interface mozIDOMWindowProxy;
 interface nsIXULBrowserWindow : nsISupports
 {
   /**
-   * Sets the status according to JS' version of status.
-   */
-  void setJSStatus(in AString status);
-
-  /**
    * Tells the object implementing this function what link we are currently
    * over.
    */
-  void setOverLink(in AString link, in nsIDOMElement element);
+  void setOverLink(in AString link, in Element element);
 
   /**
    * Determines the appropriate target for a link.
    */
   AString onBeforeLinkTraversal(in AString originalTarget,
                                 in nsIURI linkURI,
-                                in nsIDOMNode linkNode,
+                                in Node linkNode,
                                 in boolean isAppTab);
 
   /**
@@ -49,7 +46,6 @@ interface nsIXULBrowserWindow : nsISupports
    * This can be used to ensure that there is a browser in a new window of the
    * correct type when it first spawns.
    */
-  void forceInitialBrowserRemote(in AString aRemoteType);
   void forceInitialBrowserNonRemote(in mozIDOMWindowProxy openerWindow);
 
   /**
@@ -76,7 +72,8 @@ interface nsIXULBrowserWindow : nsISupports
   /**
    * Show/hide a tooltip (when the user mouses over a link, say).
    */
-  void showTooltip(in long x, in long y, in AString tooltip, in AString direction);
+  void showTooltip(in long x, in long y, in AString tooltip, in AString direction,
+                   in nsIFrameLoaderOwner browser);
   void hideTooltip();
 
   /**

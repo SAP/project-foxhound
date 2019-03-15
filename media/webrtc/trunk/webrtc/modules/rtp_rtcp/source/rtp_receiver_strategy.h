@@ -8,17 +8,18 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_RTP_RTCP_SOURCE_RTP_RECEIVER_STRATEGY_H_
-#define WEBRTC_MODULES_RTP_RTCP_SOURCE_RTP_RECEIVER_STRATEGY_H_
+#ifndef MODULES_RTP_RTCP_SOURCE_RTP_RECEIVER_STRATEGY_H_
+#define MODULES_RTP_RTCP_SOURCE_RTP_RECEIVER_STRATEGY_H_
 
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
-#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_utility.h"
-#include "webrtc/system_wrappers/include/critical_section_wrapper.h"
-#include "webrtc/typedefs.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+#include "modules/rtp_rtcp/source/rtp_utility.h"
+#include "rtc_base/criticalsection.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
+
+struct CodecInst;
 
 class TelephoneEventHandler;
 
@@ -27,9 +28,7 @@ class TelephoneEventHandler;
 class RTPReceiverStrategy {
  public:
   static RTPReceiverStrategy* CreateVideoStrategy(RtpData* data_callback);
-  static RTPReceiverStrategy* CreateAudioStrategy(
-      RtpData* data_callback,
-      RtpAudioFeedback* incoming_messages_callback);
+  static RTPReceiverStrategy* CreateAudioStrategy(RtpData* data_callback);
 
   virtual ~RTPReceiverStrategy() {}
 
@@ -37,20 +36,15 @@ class RTPReceiverStrategy {
   // Implementations are encouraged to use the provided packet buffer and RTP
   // header as arguments to the callback; implementations are also allowed to
   // make changes in the data as necessary. The specific_payload argument
-  // provides audio or video-specific data. The is_first_packet argument is true
-  // if this packet is either the first packet ever or the first in its frame.
+  // provides audio or video-specific data.
   virtual int32_t ParseRtpPacket(WebRtcRTPHeader* rtp_header,
                                  const PayloadUnion& specific_payload,
                                  bool is_red,
                                  const uint8_t* payload,
                                  size_t payload_length,
-                                 int64_t timestamp_ms,
-                                 bool is_first_packet) = 0;
+                                 int64_t timestamp_ms) = 0;
 
   virtual TelephoneEventHandler* GetTelephoneEventHandler() = 0;
-
-  // Retrieves the last known applicable frequency.
-  virtual int GetPayloadTypeFrequency() const = 0;
 
   // Computes the current dead-or-alive state.
   virtual RTPAliveType ProcessDeadOrAlive(
@@ -60,12 +54,11 @@ class RTPReceiverStrategy {
   // TODO(phoglund): should move out of here along with other payload stuff.
   virtual bool ShouldReportCsrcChanges(uint8_t payload_type) const = 0;
 
-  // Notifies the strategy that we have created a new non-RED payload type in
-  // the payload registry.
+  // Notifies the strategy that we have created a new non-RED audio payload type
+  // in the payload registry.
   virtual int32_t OnNewPayloadTypeCreated(
-      const char payloadName[RTP_PAYLOAD_NAME_SIZE],
-      int8_t payloadType,
-      uint32_t frequency) = 0;
+      int payload_type,
+      const SdpAudioFormat& audio_format) = 0;
 
   // Invokes the OnInitializeDecoder callback in a media-specific way.
   virtual int32_t InvokeOnInitializeDecoder(
@@ -97,10 +90,10 @@ class RTPReceiverStrategy {
   // packet.
   explicit RTPReceiverStrategy(RtpData* data_callback);
 
-  rtc::scoped_ptr<CriticalSectionWrapper> crit_sect_;
-  PayloadUnion last_payload_;
+  rtc::CriticalSection crit_sect_;
+  rtc::Optional<PayloadUnion> last_payload_;
   RtpData* data_callback_;
 };
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_RTP_RTCP_SOURCE_RTP_RECEIVER_STRATEGY_H_
+#endif  // MODULES_RTP_RTCP_SOURCE_RTP_RECEIVER_STRATEGY_H_

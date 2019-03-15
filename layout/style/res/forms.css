@@ -8,10 +8,9 @@
 
 
 @namespace url(http://www.w3.org/1999/xhtml); /* set default namespace to HTML */
-@namespace xul url(http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul);
 
 *|*::-moz-fieldset-content {
-  display: block; /* nsRuleNode::ComputeDisplayData overrules this in some cases */
+  display: block; /* StyleAdjuster::adjust_for_fieldset_content overrides this in some cases */
   unicode-bidi: inherit;
   text-overflow: inherit;
   overflow: inherit;
@@ -56,13 +55,13 @@
 /* miscellaneous form elements */
 
 fieldset > legend {
-  padding-inline-start: 2px;
-  padding-inline-end: 2px;
   inline-size: -moz-fit-content;
 }
 
 legend {
   display: block;
+  padding-inline-start: 2px;
+  padding-inline-end: 2px;
 }
 
 fieldset {
@@ -70,11 +69,11 @@ fieldset {
   margin-inline-start: 2px;
   margin-inline-end: 2px;
   padding-block-start: 0.35em;
-  padding-block-end: 0.75em;
-  padding-inline-start: 0.625em;
-  padding-inline-end: 0.625em;
+  padding-block-end: 0.625em;
+  padding-inline-start: 0.75em;
+  padding-inline-end: 0.75em;
   border: 2px groove ThreeDLightShadow;
-  min-width: -moz-min-content;
+  min-inline-size: min-content;
 }
 
 label {
@@ -103,11 +102,10 @@ input {
   word-spacing: normal;
   letter-spacing: normal;
   cursor: text;
-  -moz-binding: url("chrome://global/content/platformHTMLBindings.xml#inputFields");
   text-indent: 0;
   -moz-user-select: text;
   text-shadow: none;
-  overflow-clip-box: content-box;
+  overflow-clip-box: padding-box content-box;
 }
 
 input > .anonymous-div,
@@ -117,21 +115,8 @@ input::placeholder {
   line-height: -moz-block-height;
 }
 
-@-moz-document url-prefix(chrome://) {
-  input.uri-element-right-align:-moz-locale-dir(rtl) {
-    direction: ltr !important;
-    text-align: right !important;
-  }
-
-  /* Make sure that the location bar's alignment in RTL mode changes according
-     to the input box direction if the user switches the text direction using
-     cmd_switchTextDirection (which applies a dir attribute to the <input>). */
-  input.uri-element-right-align[dir=ltr]:-moz-locale-dir(rtl) {
-    text-align: left !important;
-  }
-}
-
 textarea {
+  -moz-appearance: textarea;
   margin-block-start: 1px;
   margin-block-end: 1px;
   border: 2px inset ThreeDLightShadow;
@@ -142,21 +127,20 @@ textarea {
   color: -moz-FieldText;
   font: medium -moz-fixed;
   text-rendering: optimizeLegibility;
-  text-align: start;
-  text-transform: none;
-  word-spacing: normal;
-  letter-spacing: normal;
   vertical-align: text-bottom;
   cursor: text;
   resize: both;
-  -moz-binding: url("chrome://global/content/platformHTMLBindings.xml#textAreas");
-  -moz-appearance: textfield-multiline;
-  text-indent: 0;
   -moz-user-select: text;
-  text-shadow: none;
   white-space: pre-wrap;
   word-wrap: break-word;
   overflow-clip-box: content-box;
+  /* A few properties that we don't want to inherit by default: */
+  text-align: initial;
+  text-indent: initial;
+  text-shadow: initial;
+  text-transform: initial;
+  word-spacing: initial;
+  letter-spacing: initial;
 }
 
 textarea > scrollbar {
@@ -166,40 +150,41 @@ textarea > scrollbar {
 textarea > .anonymous-div,
 input > .anonymous-div,
 input::placeholder,
-textarea::placeholder {
+textarea::placeholder,
+input > .preview-div
+textarea > .preview-div {
   overflow: auto;
   border: 0px !important;
   padding: inherit !important;
   margin: 0px;
   text-decoration: inherit;
-  text-decoration-color: inherit;
-  text-decoration-style: inherit;
   display: inline-block;
   ime-mode: inherit;
   resize: inherit;
+  scrollbar-width: inherit;
   -moz-control-character-visibility: visible;
   overflow-clip-box: inherit;
 }
 
 input > .anonymous-div,
-input::placeholder {
+input::placeholder,
+input > .preview-div {
   white-space: pre;
 }
 
-input > .anonymous-div.wrap {
-  white-space: pre-wrap;
-}
-textarea > .anonymous-div.inherit-overflow,
-input > .anonymous-div.inherit-overflow {
-  overflow: inherit;
-}
-textarea > .anonymous-div.inherit-scroll-behavior,
-input > .anonymous-div.inherit-scroll-behavior {
+textarea > .anonymous-div {
   scroll-behavior: inherit;
+  overscroll-behavior: inherit;
+}
+
+textarea > .anonymous-div.inherit-overflow {
+  overflow: inherit;
 }
 
 input::placeholder,
-textarea::placeholder {
+textarea::placeholder,
+input > .preview-div,
+textarea > .preview-div {
   /*
    * Changing display to inline can leads to broken behaviour and will assert.
    */
@@ -213,15 +198,19 @@ textarea::placeholder {
   overflow: hidden !important;
 
   /*
-   * The placeholder should be ignored by pointer otherwise, we might have some
+   * The placeholder or preview should be ignored by pointer otherwise, we might have some
    * unexpected behavior like the resize handle not being selectable.
    */
   pointer-events: none !important;
+}
 
+input::placeholder,
+textarea::placeholder {
   opacity: 0.54;
 }
 
-textarea::placeholder {
+textarea::placeholder,
+textarea > .preview-div {
   white-space: pre-wrap !important;
 }
 
@@ -236,13 +225,7 @@ select {
   background-color: -moz-Combobox;
   color: -moz-ComboboxText;
   font: -moz-list;
-  /*
-   * Note that the "UA !important" tests in
-   * layout/style/test/test_animations.html depend on this rule, because
-   * they need some UA !important rule to test.  If this changes, use a
-   * different one there.
-   */
-  line-height: normal !important;
+  line-height: initial;
   white-space: nowrap !important;
   word-wrap: normal !important;
   text-align: start;
@@ -284,7 +267,7 @@ select[size="1"] {
   background-color: -moz-Combobox;
   color: -moz-ComboboxText;
   vertical-align: baseline;
-  padding: 0;
+  padding: unset;
   -moz-appearance: menulist;
 }
 
@@ -295,7 +278,7 @@ select > button {
   background-image: url("arrow.gif") !important;
   background-repeat: no-repeat !important;
   background-position: center !important;
-  -moz-appearance: menulist-button;
+  -moz-appearance: -moz-menulist-button;
 
   /* Make sure to size correctly if the combobox has a non-auto height. */
   block-size: 100% ! important;
@@ -329,10 +312,6 @@ select > button[orientation="right"]:active {
   background-image: url("arrowd-right.gif") !important;
 }
 
-select:empty {
-  inline-size: 2.5em;
-}
-
 *|*::-moz-display-comboboxcontrol-frame {
   overflow: -moz-hidden-unscrollable;
   /* This block-start/end padding plus the combobox block-start/end border need to
@@ -340,10 +319,10 @@ select:empty {
   padding-block-start: 1px;
   padding-block-end: 1px;
   padding-inline-start: 4px;
-  padding-inline-end: 0;
-  color: inherit;
+  padding-inline-end: 4px;
+  color: unset;
   white-space: nowrap;
-  text-align: inherit;
+  text-align: unset;
   -moz-user-select: none;
   /* Make sure to size correctly if the combobox has a non-auto block-size. */
   block-size: 100% ! important;
@@ -356,6 +335,12 @@ option {
   float: none !important;
   position: static !important;
   min-block-size: 1em;
+  /*
+   * Note that the "UA !important" tests in
+   * layout/style/test/test_animations.html depend on this rule, because
+   * they need some UA !important rule to test.  If this changes, use a
+   * different one there.
+   */
   line-height: normal !important;
   -moz-user-select: none;
   text-indent: 0;
@@ -390,7 +375,7 @@ optgroup {
   line-height: normal !important;
   font-style: italic;
   font-weight: bold;
-  font-size: inherit;
+  font-size: unset;
   -moz-user-select: none;
   text-indent: 0;
   white-space: nowrap !important;
@@ -426,6 +411,13 @@ optgroup:before {
   border-inline-start-width: 2px ! important;
 }
 
+@supports -moz-bool-pref("dom.select_popup_in_content.enabled") {
+  *|*::-moz-dropdown-list {
+    -moz-top-layer: top !important;
+    position: absolute !important;
+  }
+}
+
 input:disabled,
 textarea:disabled,
 option:disabled,
@@ -433,10 +425,9 @@ optgroup:disabled,
 select:disabled:disabled /* Need the pseudo-class twice to have the specificity
                             be at least the same as select[size][multiple] above */
 {
-  -moz-user-input: disabled;
   color: GrayText;
   background-color: ThreeDLightShadow;
-  cursor: inherit;
+  cursor: unset;
 }
 
 input:disabled,
@@ -453,27 +444,25 @@ optgroup:disabled {
 input[type="hidden"] {
   -moz-appearance: none;
   display: none !important;
-  padding: 0;
+  padding: unset;
   border: 0;
   cursor: auto;
   -moz-user-focus: ignore;
-  -moz-binding: none;
 }
 
 /* image buttons */
 input[type="image"] {
   -moz-appearance: none;
-  padding: 0;
+  padding: unset;
   border: none;
   background-color: transparent;
   font-family: sans-serif;
   font-size: small;
   cursor: pointer;
-  -moz-binding: none;
 }
 
 input[type="image"]:disabled {
-  cursor: inherit;
+  cursor: unset;
 }
 
 input[type="image"]:-moz-focusring {
@@ -484,47 +473,44 @@ input[type="image"]:-moz-focusring {
 /* file selector */
 input[type="file"] {
   display: inline-block;
-  white-space: nowrap;
+  white-space: nowrap !important;
   overflow: hidden;
   overflow-clip-box: padding-box;
-  color: inherit;
+  color: unset;
 
   /* Revert rules which apply on all inputs. */
   -moz-appearance: none;
-  -moz-binding: none;
   cursor: default;
 
   border: none;
   background-color: transparent;
-  padding: 0;
+  padding: unset;
 }
 
-input[type="file"] > xul|label {
+input[type="file"] > label {
+  display: inline-block;
   min-inline-size: 12em;
   padding-inline-start: 5px;
   text-align: match-parent;
 
-  color: inherit;
-  font-size: inherit;
-  letter-spacing: inherit;
+  color: unset;
+  font-size: unset;
+  letter-spacing: unset;
 
-  /*
-   * Force the text to have LTR directionality. Otherwise filenames containing
-   * RTL characters will be reordered with chaotic results.
-   */
-  direction: ltr !important;
+  -moz-user-select: none;
+  unicode-bidi: plaintext;
 }
 
 /* button part of file selector */
 input[type="file"] > button[type="button"] {
   block-size: inherit;
-  font-size: inherit;
-  letter-spacing: inherit;
-  cursor: inherit;
+  font-size: unset;
+  letter-spacing: unset;
+  cursor: unset;
 }
 
 /* colored part of the color selector button */
-input[type="color"]:-moz-system-metric(color-picker-available)::-moz-color-swatch {
+input[type="color"]::-moz-color-swatch {
   width: 100%;
   height: 100%;
   min-width: 3px;
@@ -534,14 +520,6 @@ input[type="color"]:-moz-system-metric(color-picker-available)::-moz-color-swatc
   box-sizing: border-box;
   border: 1px solid grey;
   display: block;
-}
-
-/* Try to make RTL <input type='file'> look nicer. */
-/* TODO: find a better solution than forcing direction: ltr on all file
-   input labels and remove this override -- bug 1161482 */
-input[type="file"]:dir(rtl) > xul|label {
-  padding-inline-start: 0px;
-  padding-inline-end: 5px;
 }
 
 /* radio buttons */
@@ -572,7 +550,6 @@ input[type="checkbox"] {
   cursor: default;
   /* unset some values from the general 'input' rule above: */
   padding: unset;
-  -moz-binding: unset;
   border: unset;
   background-color: unset;
   color: unset;
@@ -586,57 +563,8 @@ input[type="checkbox"]:disabled,
 input[type="checkbox"]:disabled:active,
 input[type="checkbox"]:disabled:hover,
 input[type="checkbox"]:disabled:hover:active {
-  cursor: inherit;
+  cursor: unset;
 }
-
-%if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_WIDGET_GONK)
-/*
- * These platforms doesn't have any theming support and thus -moz-appearance:none
- * is the same as any other appearance value.
- * XXX This is not web-compatible and should be fixed.
- */
-input[type="radio"] {
-  border-radius: 100%;
-}
-
-input[type="checkbox"] {
-  border-radius: 0;
-}
-
-/* NOTE: The width, height, border-width, and padding here must all
-   add up the way nsFormControlFrame::GetIntrinsic(Width|Height)
-   expects them to, or they will not come out with total width equal
-   to total height on sites that set their 'width' or 'height' to 'auto'.
-   (Should we maybe set !important on width and height, then?)  */
-input[type="radio"],
-input[type="checkbox"] {
-  inline-size: 13px;
-  block-size: 13px;
-  color: -moz-FieldText;
-  border: 2px inset ThreeDLightShadow;
-  background-repeat: no-repeat;
-  background-position: center;
-}
-
-input[type="radio"]:disabled,
-input[type="radio"]:disabled:active,
-input[type="radio"]:disabled:hover,
-input[type="radio"]:disabled:hover:active,
-input[type="checkbox"]:disabled,
-input[type="checkbox"]:disabled:active,
-input[type="checkbox"]:disabled:hover,
-input[type="checkbox"]:disabled:hover:active {
-  padding: 1px;
-  border: 1px inset ThreeDShadow;
-}
-
-input[type="checkbox"]:hover:active,
-input[type="radio"]:hover:active {
-  background-color: ThreeDFace ! important;
-  border-style: inset !important;
-}
-
-%endif /* defined(MOZ_WIDGET_ANDROID) || defined(MOZ_WIDGET_GONK) */
 
 % On Mac, the native theme takes care of this.
 % See nsNativeThemeCocoa::ThemeDrawsFocusForWidget.
@@ -660,7 +588,7 @@ input[type="search"] {
 /* Non text-related properties for buttons: these ones are shared with
    input[type="color"] */
 button,
-input[type="color"]:-moz-system-metric(color-picker-available),
+input[type="color"],
 input[type="reset"],
 input[type="button"],
 input[type="submit"] {
@@ -677,7 +605,6 @@ input[type="submit"] {
   cursor: default;
   box-sizing: border-box;
   -moz-user-select: none;
-  -moz-binding: none;
 }
 
 /* Text-related properties for buttons: these ones are not shared with
@@ -695,14 +622,14 @@ input[type="submit"] {
   overflow-clip-box: padding-box;
 }
 
-input[type="color"]:-moz-system-metric(color-picker-available) {
+input[type="color"] {
   inline-size: 64px;
   block-size: 23px;
 }
 
 button {
   /* Buttons should lay out like "normal" html, mostly */
-  white-space: inherit;
+  white-space: unset;
   text-indent: 0;
   /* But no text-decoration reaching inside, by default */
   display: inline-block;
@@ -743,7 +670,7 @@ button {
 }
 
 button:hover,
-input[type="color"]:-moz-system-metric(color-picker-available):hover,
+input[type="color"]:hover,
 input[type="reset"]:hover,
 input[type="button"]:hover,
 input[type="submit"]:hover {
@@ -758,7 +685,7 @@ input[type="submit"]:hover {
 }
 
 button:active:hover,
-input[type="color"]:-moz-system-metric(color-picker-available):active:hover,
+input[type="color"]:active:hover,
 input[type="reset"]:active:hover,
 input[type="button"]:active:hover,
 input[type="submit"]:active:hover {
@@ -780,7 +707,7 @@ input[type="submit"]:active:hover {
 }
 
 button::-moz-focus-inner,
-input[type="color"]:-moz-system-metric(color-picker-available)::-moz-focus-inner,
+input[type="color"]::-moz-focus-inner,
 input[type="reset"]::-moz-focus-inner,
 input[type="button"]::-moz-focus-inner,
 input[type="submit"]::-moz-focus-inner,
@@ -794,7 +721,7 @@ input[type="file"] > button[type="button"]::-moz-focus-inner {
 }
 
 button:-moz-focusring::-moz-focus-inner,
-input[type="color"]:-moz-system-metric(color-picker-available):-moz-focusring::-moz-focus-inner,
+input[type="color"]:-moz-focusring::-moz-focus-inner,
 input[type="reset"]:-moz-focusring::-moz-focus-inner,
 input[type="button"]:-moz-focusring::-moz-focus-inner,
 input[type="submit"]:-moz-focusring::-moz-focus-inner,
@@ -803,8 +730,8 @@ input[type="file"] > button[type="button"]:-moz-focusring::-moz-focus-inner {
 }
 
 button:disabled:active, button:disabled,
-input[type="color"]:-moz-system-metric(color-picker-available):disabled:active,
-input[type="color"]:-moz-system-metric(color-picker-available):disabled,
+input[type="color"]:disabled:active,
+input[type="color"]:disabled,
 input[type="reset"]:disabled:active,
 input[type="reset"]:disabled,
 input[type="button"]:disabled:active,
@@ -820,7 +747,7 @@ input[type="submit"]:disabled {
   padding-block-end: 0px;
   padding-inline-start: 8px;
   border: 2px outset ThreeDLightShadow;
-  cursor: inherit;
+  cursor: unset;
 }
 
 button:disabled:active, button:disabled,
@@ -888,17 +815,15 @@ output:-moz-ui-invalid {
 }
 
 progress {
-  -moz-appearance: progressbar;
+  -moz-appearance: progress-bar;
   display: inline-block;
   vertical-align: -0.2em;
 
   /* Default style in case of there is -moz-appearance: none; */
-  border: 2px solid;
+  border: 1px solid ThreeDShadow;
+  border-right-color: ThreeDHighlight;
+  border-bottom-color: ThreeDHighlight;
   /* #e6e6e6 is a light gray. */
-  -moz-border-top-colors: ThreeDShadow #e6e6e6;
-  -moz-border-right-colors: ThreeDHighlight #e6e6e6;
-  -moz-border-bottom-colors: ThreeDHighlight #e6e6e6;
-  -moz-border-left-colors: ThreeDShadow #e6e6e6;
   background-color: #e6e6e6;
 }
 
@@ -919,7 +844,7 @@ progress {
 }
 
 meter {
-  -moz-appearance: meterbar;
+  -moz-appearance: meter;
   display: inline-block;
   vertical-align: -0.2em;
 
@@ -954,40 +879,13 @@ meter {
 input[type=range] {
   -moz-appearance: range;
   display: inline-block;
-  inline-size: 12em;
-  block-size: 1.3em;
-  margin-inline-start: 0.7em;
-  margin-inline-end: 0.7em;
-  margin-block-start: 0;
-  margin-block-end: 0;
+  margin: 2px;
   /* Override some rules that apply on all input types: */
   cursor: default;
-  background: none;
-  border: none;
-  -moz-binding: none; /* we don't want any of platformHTMLBindings.xml#inputFields */
+  padding: unset;
+  border: unset;
   /* Prevent nsFrame::HandlePress setting mouse capture to this element. */
   -moz-user-select: none ! important;
-}
-
-input[type=range][orient=block] {
-  inline-size: 1.3em;
-  block-size: 12em;
-  margin-inline-start: 0;
-  margin-inline-end: 0;
-  margin-block-start: 0.7em;
-  margin-block-end: 0.7em;
-}
-
-input[type=range][orient=horizontal] {
-  width: 12em;
-  height: 1.3em;
-  margin: 0 0.7em;
-}
-
-input[type=range][orient=vertical] {
-  width: 1.3em;
-  height: 12em;
-  margin: 0.7em 0;
 }
 
 /**
@@ -1011,30 +909,14 @@ input[type=range]::-moz-focus-outer {
  */
 input[type=range]::-moz-range-track {
   /* Prevent styling that would change the type of frame we construct. */
-  display: inline-block !important;
+  display: block !important;
   float: none !important;
   position: static !important;
-  border: none;
-  background-color: #999;
-  inline-size: 100%;
+  writing-mode: unset !important;
+  direction: unset !important;
   block-size: 0.2em;
   /* Prevent nsFrame::HandlePress setting mouse capture to this element. */
   -moz-user-select: none ! important;
-}
-
-input[type=range][orient=block]::-moz-range-track {
-  inline-size: 0.2em;
-  block-size: 100%;
-}
-
-input[type=range][orient=horizontal]::-moz-range-track {
-  width: 100%;
-  height: 0.2em;
-}
-
-input[type=range][orient=vertical]::-moz-range-track {
-  width: 0.2em;
-  height: 100%;
 }
 
 /**
@@ -1047,9 +929,11 @@ input[type=range][orient=vertical]::-moz-range-track {
  */
 input[type=range]::-moz-range-progress {
   /* Prevent styling that would change the type of frame we construct. */
-  display: inline-block !important;
+  display: block !important;
   float: none !important;
   position: static !important;
+  writing-mode: unset !important;
+  direction: unset !important;
   /* Since one of width/height will be ignored, this just sets the "other"
      dimension.
    */
@@ -1071,9 +955,11 @@ input[type=range]::-moz-range-thumb {
    */
   -moz-appearance: range-thumb !important;
   /* Prevent styling that would change the type of frame we construct. */
-  display: inline-block !important;
+  display: block !important;
   float: none !important;
   position: static !important;
+  writing-mode: unset !important;
+  direction: unset !important;
   width: 1em;
   height: 1em;
   border: 0.1em solid #999;
@@ -1083,9 +969,13 @@ input[type=range]::-moz-range-thumb {
   -moz-user-select: none ! important;
 }
 
-/* As a temporary workaround until bug 677302 the rule for input[type=number]
- * has moved to number-control.css
- */
+input[type="number"] {
+  -moz-appearance: number-input;
+  /* Has to revert some properties applied by the generic input rule. */
+  inline-size: 20ch; /* It'd be nice if this matched the default inline-size
+                        of <input type=text>, but that's not easy to achieve
+                        due to platform differences. */
+}
 
 input[type=number]::-moz-number-wrapper {
   /* Prevent styling that would change the type of frame we construct. */
@@ -1108,10 +998,12 @@ input[type=number]::-moz-number-text {
    * above. We want to inherit its value from its <input type=number>
    * ancestor, not have that general CSS rule reset it.
    */
-  text-align: inherit;
+  text-align: unset;
+  text-decoration: inherit;
+  ime-mode: inherit;
   flex: 1;
   min-inline-size: 0;
-  padding: 0;
+  padding: unset;
   border: 0;
   margin: 0;
 }
@@ -1176,4 +1068,25 @@ input[type=number]::-moz-number-spin-down {
 input[type="number"] > div > div > div:hover {
   /* give some indication of hover state for the up/down buttons */
   background-color: lightblue;
+}
+
+input[type="date"],
+input[type="time"] {
+  overflow: hidden !important;
+  font-family: -moz-fixed;
+  cursor: default;
+}
+
+input[type="date"]:disabled,
+input[type="time"]:disabled,
+input[type="date"]:-moz-read-only,
+input[type="time"]:-moz-read-only {
+  color: GrayText;
+}
+
+:-moz-autofill, :-moz-autofill-preview {
+  filter: grayscale(21%) brightness(88%) contrast(161%) invert(10%) sepia(40%) saturate(206%);
+}
+:-moz-autofill-preview {
+  color: GrayText;
 }

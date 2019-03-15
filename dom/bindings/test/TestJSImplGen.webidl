@@ -41,12 +41,13 @@ interface TestJSImplInterface {
   void passNullableByte(byte? arg);
   void passOptionalNullableByte(optional byte? arg);
   void passVariadicByte(byte... arg);
-  [Cached, Pure]
-  readonly attribute byte cachedByte;
-  [Cached, Constant]
-  readonly attribute byte cachedConstantByte;
-  [Cached, Pure]
-  attribute byte cachedWritableByte;
+  // [Cached] is not supported in JS-implemented WebIDL.
+  //[Cached, Pure]
+  //readonly attribute byte cachedByte;
+  //[Cached, Constant]
+  //readonly attribute byte cachedConstantByte;
+  //[Cached, Pure]
+  //attribute byte cachedWritableByte;
   [Affects=Nothing]
   attribute byte sideEffectFreeByte;
   [Affects=Nothing, DependsOn=DOMState]
@@ -160,8 +161,9 @@ interface TestJSImplInterface {
   void passNullableSelf(TestJSImplInterface? arg);
   attribute TestJSImplInterface nonNullSelf;
   attribute TestJSImplInterface? nullableSelf;
-  [Cached, Pure]
-  readonly attribute TestJSImplInterface cachedSelf;
+  // [Cached] is not supported in JS-implemented WebIDL.
+  //[Cached, Pure]
+  //readonly attribute TestJSImplInterface cachedSelf;
   // Optional arguments
   void passOptionalSelf(optional TestJSImplInterface? arg);
   void passOptionalNonNullSelf(optional TestJSImplInterface arg);
@@ -230,16 +232,17 @@ interface TestJSImplInterface {
   void passConsequentialInterface(IndirectlyImplementedInterface arg);
 
   // Sequence types
-  [Cached, Pure]
-  readonly attribute sequence<long> readonlySequence;
-  [Cached, Pure]
-  readonly attribute sequence<Dict> readonlySequenceOfDictionaries;
-  [Cached, Pure]
-  readonly attribute sequence<Dict>? readonlyNullableSequenceOfDictionaries;
-  [Cached, Pure, Frozen]
-  readonly attribute sequence<long> readonlyFrozenSequence;
-  [Cached, Pure, Frozen]
-  readonly attribute sequence<long>? readonlyFrozenNullableSequence;
+  // [Cached] is not supported in JS-implemented WebIDL.
+  //[Cached, Pure]
+  //readonly attribute sequence<long> readonlySequence;
+  //[Cached, Pure]
+  //readonly attribute sequence<Dict> readonlySequenceOfDictionaries;
+  //[Cached, Pure]
+  //readonly attribute sequence<Dict>? readonlyNullableSequenceOfDictionaries;
+  //[Cached, Pure, Frozen]
+  //readonly attribute sequence<long> readonlyFrozenSequence;
+  //[Cached, Pure, Frozen]
+  //readonly attribute sequence<long>? readonlyFrozenNullableSequence;
   sequence<long> receiveSequence();
   sequence<long>? receiveNullableSequence();
   sequence<long?> receiveSequenceOfNullableInts();
@@ -602,18 +605,19 @@ interface TestJSImplInterface {
 
   void passDictionary(optional Dict x);
   void passDictionary2(Dict x);
-  [Cached, Pure]
-  readonly attribute Dict readonlyDictionary;
-  [Cached, Pure]
-  readonly attribute Dict? readonlyNullableDictionary;
-  [Cached, Pure]
-  attribute Dict writableDictionary;
-  [Cached, Pure, Frozen]
-  readonly attribute Dict readonlyFrozenDictionary;
-  [Cached, Pure, Frozen]
-  readonly attribute Dict? readonlyFrozenNullableDictionary;
-  [Cached, Pure, Frozen]
-  attribute Dict writableFrozenDictionary;
+  // [Cached] is not supported in JS-implemented WebIDL.
+  //[Cached, Pure]
+  //readonly attribute Dict readonlyDictionary;
+  //[Cached, Pure]
+  //readonly attribute Dict? readonlyNullableDictionary;
+  //[Cached, Pure]
+  //attribute Dict writableDictionary;
+  //[Cached, Pure, Frozen]
+  //readonly attribute Dict readonlyFrozenDictionary;
+  //[Cached, Pure, Frozen]
+  //readonly attribute Dict? readonlyFrozenNullableDictionary;
+  //[Cached, Pure, Frozen]
+  //attribute Dict writableFrozenDictionary;
   Dict receiveDictionary();
   Dict? receiveNullableDictionary();
   void passOtherDictionary(optional GrandparentDict x);
@@ -643,11 +647,11 @@ interface TestJSImplInterface {
   void exerciseTypedefInterfaces3(YetAnotherNameForTestJSImplInterface arg);
 
   // Deprecated methods and attributes
-  [Deprecated="GetAttributeNode"]
+  [Deprecated="EnablePrivilege"]
   attribute byte deprecatedAttribute;
-  [Deprecated="GetAttributeNode"]
+  [Deprecated="EnablePrivilege"]
   byte deprecatedMethod();
-  [Deprecated="GetAttributeNode"]
+  [Deprecated="EnablePrivilege"]
   void deprecatedMethodWithContext(any arg);
 
   // Static methods and attributes
@@ -658,11 +662,11 @@ interface TestJSImplInterface {
   static void staticMethodWithContext(any arg);
 
   // Deprecated static methods and attributes
-  [Deprecated="GetAttributeNode"]
+  [Deprecated="EnablePrivilege"]
   static attribute byte staticDeprecatedAttribute;
-  [Deprecated="GetAttributeNode"]
+  [Deprecated="EnablePrivilege"]
   static byte staticDeprecatedMethod();
-  [Deprecated="GetAttributeNode"]
+  [Deprecated="EnablePrivilege"]
   static byte staticDeprecatedMethodWithContext();
   */
 
@@ -801,6 +805,10 @@ interface TestJSImplInterface {
   [CanOOM] attribute boolean canOOMAttr;
   [GetterCanOOM] attribute boolean canOOMGetterAttr;
   [SetterCanOOM] attribute boolean canOOMSetterAttr;
+  [CEReactions] void ceReactionsMethod();
+  [CEReactions] void ceReactionsMethodOverload();
+  [CEReactions] void ceReactionsMethodOverload(DOMString bar);
+  [CEReactions] attribute boolean ceReactionsAttr;
   // NeedsSubjectPrincipal not supported on JS-implemented things for
   // now, because we always pass in the caller principal anyway.
   //  [NeedsSubjectPrincipal] void needsSubjectPrincipalMethod();
@@ -810,13 +818,25 @@ interface TestJSImplInterface {
                             optional TestInterface? arg2 = null,
                             optional Dict arg3, optional double arg4 = 5.0,
                             optional float arg5);
-  attribute any jsonifierShouldSkipThis;
-  attribute TestParentInterface jsonifierShouldSkipThis2;
-  attribute TestCallbackInterface jsonifierShouldSkipThis3;
-  jsonifier;
+  attribute any toJSONShouldSkipThis;
+  attribute TestParentInterface toJSONShouldSkipThis2;
+  attribute TestCallbackInterface toJSONShouldSkipThis3;
+  [Default] object toJSON();
 
   attribute byte dashed-attribute;
   void dashed-method();
+
+  // [NonEnumerable] tests
+  [NonEnumerable]
+  attribute boolean nonEnumerableAttr;
+  [NonEnumerable]
+  const boolean nonEnumerableConst = true;
+  [NonEnumerable]
+  void nonEnumerableMethod();
+
+  // [NeedsWindowsUndef] test generation
+  [NeedsWindowsUndef]
+  const unsigned long NO_ERROR = 0xffffffff;
 
   // If you add things here, add them to TestCodeGen as well
 };
@@ -838,6 +858,7 @@ interface TestCImplementedInterface2 {
 [NoInterfaceObject,
  JSImplementation="@mozilla.org/test-js-impl-interface;2"]
 interface TestJSImplNoInterfaceObject {
-  [Cached, Pure]
-  readonly attribute byte cachedByte;
+  // [Cached] is not supported in JS-implemented WebIDL.
+  //[Cached, Pure]
+  //readonly attribute byte cachedByte;
 };

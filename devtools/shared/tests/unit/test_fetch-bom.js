@@ -7,7 +7,7 @@
 
 const CC = Components.Constructor;
 
-const { HttpServer } = Cu.import("resource://testing-common/httpd.js", {});
+const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js", {});
 const BinaryOutputStream = CC("@mozilla.org/binaryoutputstream;1",
                               "nsIBinaryOutputStream", "setOutputStream");
 
@@ -39,10 +39,10 @@ function write16le(bos) {
 }
 
 function getHandler(writer) {
-  return function (request, response) {
+  return function(request, response) {
     response.setStatusLine(request.httpVersion, 200, "OK");
 
-    let bos = new BinaryOutputStream(response.bodyOutputStream);
+    const bos = new BinaryOutputStream(response.bodyOutputStream);
     writer(bos);
   };
 }
@@ -57,20 +57,20 @@ server.start(-1);
 const port = server.identity.primaryPort;
 const serverURL = "http://localhost:" + port;
 
-do_register_cleanup(() => {
+registerCleanupFunction(() => {
   return new Promise(resolve => server.stop(resolve));
 });
 
-add_task(function* () {
-  yield test_one(serverURL + "/u8", "UTF-8");
-  yield test_one(serverURL + "/u16be", "UTF-16BE");
-  yield test_one(serverURL + "/u16le", "UTF-16LE");
+add_task(async function() {
+  await test_one(serverURL + "/u8", "UTF-8");
+  await test_one(serverURL + "/u16be", "UTF-16BE");
+  await test_one(serverURL + "/u16le", "UTF-16LE");
 });
 
-function* test_one(url, encoding) {
+async function test_one(url, encoding) {
   // Be sure to set the encoding to something that will yield an
   // invalid result if BOM sniffing is not done.
-  yield DevToolsUtils.fetch(url, { charset: "ISO-8859-1" }).then(({content}) => {
-    do_check_eq(content, "hı", "The content looks correct for " + encoding);
+  await DevToolsUtils.fetch(url, { charset: "ISO-8859-1" }).then(({content}) => {
+    Assert.equal(content, "hı", "The content looks correct for " + encoding);
   });
 }

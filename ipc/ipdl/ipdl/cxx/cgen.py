@@ -5,7 +5,8 @@
 import sys
 
 from ipdl.cgen import CodePrinter
-from ipdl.cxx.ast import TypeArray, Visitor
+from ipdl.cxx.ast import MethodSpec, TypeArray, Visitor, DestructorDecl
+
 
 class CxxCodeGen(CodePrinter, Visitor):
     def __init__(self, outf=sys.stdout, indentCols=4):
@@ -21,14 +22,14 @@ class CxxCodeGen(CodePrinter, Visitor):
 
     def visitCppDirective(self, cd):
         if cd.rest:
-            self.println('#%s %s'% (cd.directive, cd.rest))
+            self.println('#%s %s' % (cd.directive, cd.rest))
         else:
-            self.println('#%s'% (cd.directive))
+            self.println('#%s' % (cd.directive))
 
     def visitNamespace(self, ns):
-        self.println('namespace '+ ns.name +' {')
+        self.println('namespace ' + ns.name + ' {')
         self.visitBlock(ns)
-        self.println('} // namespace '+ ns.name)
+        self.println('} // namespace ' + ns.name)
 
     def visitType(self, t):
         if t.const:
@@ -38,23 +39,38 @@ class CxxCodeGen(CodePrinter, Visitor):
 
         if t.T is not None:
             self.write('<')
-            t.T.accept(self)
+            if type(t.T) is list:
+                t.T[0].accept(self)
+                for tt in t.T[1:]:
+                    self.write(', ')
+                    tt.accept(self)
+            else:
+                t.T.accept(self)
             self.write('>')
 
-        ts = ''
-        if t.ptr:            ts += '*'
-        elif t.ptrconst:     ts += '* const'
-        elif t.ptrptr:       ts += '**'
-        elif t.ptrconstptr:  ts += '* const*'
+        if t.inner is not None:
+            self.write('::')
+            t.inner.accept(self)
 
-        ts += '&' * t.ref
+        ts = ''
+        if t.ptr:
+            ts += '*'
+        elif t.ptrptr:
+            ts += '**'
+        elif t.ptrconstptr:
+            ts += '* const*'
+
+        if t.ref:
+            ts += '&'
+        elif t.rvalref:
+            ts += '&&'
 
         self.write(ts)
 
     def visitTypeEnum(self, te):
         self.write('enum')
         if te.name:
-            self.write(' '+ te.name)
+            self.write(' ' + te.name)
         self.println(' {')
 
         self.indent()
@@ -62,7 +78,7 @@ class CxxCodeGen(CodePrinter, Visitor):
         for i, (id, num) in enumerate(te.idnums):
             self.printdent(id)
             if num:
-                self.write(' = '+ str(num))
+                self.write(' = ' + str(num))
             if i != (nids-1):
                 self.write(',')
             self.println()
@@ -72,7 +88,7 @@ class CxxCodeGen(CodePrinter, Visitor):
     def visitTypeUnion(self, u):
         self.write('union')
         if u.name:
-            self.write(' '+ u.name)
+            self.write(' ' + u.name)
         self.println(' {')
 
         self.indent()
@@ -84,10 +100,16 @@ class CxxCodeGen(CodePrinter, Visitor):
 
         self.printdent('}')
 
+    def visitTypeFunction(self, fn):
+        self.write('std::function<')
+        fn.ret.accept(self)
+        self.write('(')
+        self.writeDeclList(fn.params)
+        self.write(')>')
 
     def visitTypedef(self, td):
         if td.templateargs:
-            formals = ', '.join([ 'class ' + T for T in td.templateargs ])
+            formals = ', '.join(['class ' + T for T in td.templateargs])
             args = ', '.join(td.templateargs)
             self.printdent('template<' + formals + '> using ' + td.totypename + ' = ')
             td.fromtype.accept(self)
@@ -95,7 +117,7 @@ class CxxCodeGen(CodePrinter, Visitor):
         else:
             self.printdent('typedef ')
             td.fromtype.accept(self)
-            self.println(' '+ td.totypename +';')
+            self.println(' ' + td.totypename + ';')
 
     def visitUsing(self, us):
         self.printdent('using ')
@@ -103,8 +125,10 @@ class CxxCodeGen(CodePrinter, Visitor):
         self.println(';')
 
     def visitForwardDecl(self, fd):
-        if fd.cls:      self.printdent('class ')
-        elif fd.struct: self.printdent('struct ')
+        if fd.cls:
+            self.printdent('class ')
+        elif fd.struct:
+            self.printdent('struct ')
         self.write(str(fd.pqname))
         self.println(';')
 
@@ -116,7 +140,7 @@ class CxxCodeGen(CodePrinter, Visitor):
             d.type.accept(self)
 
         if d.name:
-            self.write(' '+ d.name)
+            self.write(' ' + d.name)
 
         if isinstance(d.type, TypeArray):
             self.write('[')
@@ -137,7 +161,7 @@ class CxxCodeGen(CodePrinter, Visitor):
             self.printdent('struct')
         else:
             self.printdent('class')
-        self.write(' '+ c.name)
+        self.write(' ' + c.name)
         if c.final:
             self.write(' final')
 
@@ -167,16 +191,13 @@ class CxxCodeGen(CodePrinter, Visitor):
         self.printdentln('};')
 
     def visitInherit(self, inh):
-        self.write(inh.viz +' ')
+        self.write(inh.viz + ' ')
         inh.type.accept(self)
 
     def visitFriendClassDecl(self, fcd):
-        self.printdentln('friend class '+ fcd.friend +';')
-
+        self.printdentln('friend class ' + fcd.friend + ';')
 
     def visitMethodDecl(self, md):
-        assert not (md.static and md.virtual)
-
         if md.T:
             self.write('template<')
             self.write('typename ')
@@ -186,14 +207,13 @@ class CxxCodeGen(CodePrinter, Visitor):
 
         if md.warn_unused:
             self.write('MOZ_MUST_USE ')
-        if md.inline:
-            self.write('inline ')
-        if md.never_inline:
-            self.write('MOZ_NEVER_INLINE ')
-        if md.static:
+
+        if md.methodspec == MethodSpec.STATIC:
             self.write('static ')
-        if md.virtual:
+        elif md.methodspec == MethodSpec.VIRTUAL or \
+                md.methodspec == MethodSpec.PURE:
             self.write('virtual ')
+
         if md.ret:
             if md.only_for_definition:
                 self.write('auto ')
@@ -201,10 +221,23 @@ class CxxCodeGen(CodePrinter, Visitor):
                 md.ret.accept(self)
                 self.println()
                 self.printdent()
+
+        if md.cls is not None:
+            assert md.only_for_definition
+
+            self.write(md.cls.name)
+            if md.cls.specializes is not None:
+                self.write('<')
+                md.cls.specializes.accept(self)
+                self.write('>')
+            self.write('::')
+
         if md.typeop is not None:
             self.write('operator ')
             md.typeop.accept(self)
         else:
+            if isinstance(md, DestructorDecl):
+                self.write('~')
             self.write(md.name)
 
         self.write('(')
@@ -216,12 +249,14 @@ class CxxCodeGen(CodePrinter, Visitor):
         if md.ret and md.only_for_definition:
             self.write(' -> ')
             md.ret.accept(self)
-        if md.pure:
+
+        if md.methodspec == MethodSpec.OVERRIDE:
+            self.write(' override')
+        elif md.methodspec == MethodSpec.PURE:
             self.write(' = 0')
 
-
     def visitMethodDefn(self, md):
-        if md.decl.pure:
+        if md.decl.methodspec == MethodSpec.PURE:
             return
 
         self.printdent()
@@ -233,7 +268,6 @@ class CxxCodeGen(CodePrinter, Visitor):
         self.visitBlock(md)
         self.dedent()
         self.printdentln('}')
-
 
     def visitConstructorDecl(self, cd):
         if cd.explicit:
@@ -265,18 +299,8 @@ class CxxCodeGen(CodePrinter, Visitor):
         self.dedent()
         self.printdentln('}')
 
-
     def visitDestructorDecl(self, dd):
-        if dd.inline:
-            self.write('inline ')
-        if dd.virtual:
-            self.write('virtual ')
-
-        # hack alert
-        parts = dd.name.split('::')
-        parts[-1] = '~'+ parts[-1]
-
-        self.write('::'.join(parts) +'()')
+        self.visitMethodDecl(dd)
 
     def visitDestructorDefn(self, dd):
         self.printdent()
@@ -290,7 +314,6 @@ class CxxCodeGen(CodePrinter, Visitor):
 
         self.dedent()
         self.printdentln('}')
-
 
     def visitExprLiteral(self, el):
         self.write(str(el))
@@ -307,22 +330,21 @@ class CxxCodeGen(CodePrinter, Visitor):
         self.write(')')
 
     def visitExprCast(self, c):
-        pfx, sfx = '', ''
-        if c.dynamic:        pfx, sfx = 'dynamic_cast<', '>'
-        elif c.static:       pfx, sfx = 'static_cast<', '>'
-        elif c.reinterpret:  pfx, sfx = 'reinterpret_cast<', '>'
-        elif c.const:        pfx, sfx = 'const_cast<', '>'
-        elif c.C:            pfx, sfx = '(', ')'
+        if c.static:
+            pfx, sfx = 'static_cast<', '>'
+        else:
+            assert c.const
+            pfx, sfx = 'const_cast<', '>'
         self.write(pfx)
         c.type.accept(self)
-        self.write(sfx +'(')
+        self.write(sfx + '(')
         c.expr.accept(self)
         self.write(')')
 
     def visitExprBinary(self, e):
         self.write('(')
         e.left.accept(self)
-        self.write(') '+ e.op +' (')
+        self.write(') ' + e.op + ' (')
         e.right.accept(self)
         self.write(')')
 
@@ -335,21 +357,16 @@ class CxxCodeGen(CodePrinter, Visitor):
         c.elsee.accept(self)
         self.write(')')
 
-    def visitExprIndex(self, ei):
-        ei.arr.accept(self)
-        self.write('[')
-        ei.idx.accept(self)
-        self.write(']')
-
     def visitExprSelect(self, es):
         self.write('(')
         es.obj.accept(self)
         self.write(')')
-        self.write(es.op + es.field)
+        self.write(es.op)
+        es.field.accept(self)
 
     def visitExprAssn(self, ea):
         ea.lhs.accept(self)
-        self.write(' '+ ea.op +' ')
+        self.write(' ' + ea.op + ' ')
         ea.rhs.accept(self)
 
     def visitExprCall(self, ec):
@@ -377,6 +394,24 @@ class CxxCodeGen(CodePrinter, Visitor):
         self.write('delete ')
         ed.obj.accept(self)
 
+    def visitExprLambda(self, l):
+        self.write('[')
+        ncaptures = len(l.captures)
+        for i, c in enumerate(l.captures):
+            c.accept(self)
+            if i != (ncaptures-1):
+                self.write(', ')
+        self.write('](')
+        self.writeDeclList(l.params)
+        self.write(')')
+        if l.ret:
+            self.write(' -> ')
+            l.ret.accept(self)
+        self.println(' {')
+        self.indent()
+        self.visitBlock(l)
+        self.dedent()
+        self.printdent('}')
 
     def visitStmtBlock(self, b):
         self.printdentln('{')
@@ -387,19 +422,18 @@ class CxxCodeGen(CodePrinter, Visitor):
 
     def visitLabel(self, label):
         self.dedent()           # better not be at global scope ...
-        self.printdentln(label.name +':')
+        self.printdentln(label.name + ':')
         self.indent()
 
     def visitCaseLabel(self, cl):
         self.dedent()
-        self.printdentln('case '+ cl.name +':')
+        self.printdentln('case ' + cl.name + ':')
         self.indent()
 
     def visitDefaultLabel(self, dl):
         self.dedent()
         self.printdentln('default:')
         self.indent()
-
 
     def visitStmtIf(self, si):
         self.printdent('if (')
@@ -416,7 +450,6 @@ class CxxCodeGen(CodePrinter, Visitor):
             si.elseb.accept(self)
             self.dedent()
             self.printdentln('}')
-
 
     def visitStmtFor(self, sf):
         self.printdent('for (')
@@ -435,7 +468,6 @@ class CxxCodeGen(CodePrinter, Visitor):
         self.dedent()
         self.printdentln('}')
 
-
     def visitStmtRangedFor(self, rf):
         self.printdent('for (auto& ')
         rf.var.accept(self)
@@ -447,7 +479,6 @@ class CxxCodeGen(CodePrinter, Visitor):
         self.visitBlock(rf)
         self.dedent()
         self.printdentln('}')
-
 
     def visitStmtSwitch(self, sw):
         self.printdent('switch (')
@@ -461,7 +492,6 @@ class CxxCodeGen(CodePrinter, Visitor):
     def visitStmtBreak(self, sb):
         self.printdentln('break;')
 
-
     def visitStmtDecl(self, sd):
         self.printdent()
         sd.decl.accept(self)
@@ -474,20 +504,17 @@ class CxxCodeGen(CodePrinter, Visitor):
             sd.init.accept(self)
         self.println(';')
 
-
     def visitStmtExpr(self, se):
         self.printdent()
         se.expr.accept(self)
         self.println(';')
 
-
     def visitStmtReturn(self, sr):
         self.printdent('return')
         if sr.expr:
-            self.write (' ')
+            self.write(' ')
             sr.expr.accept(self)
         self.println(';')
-
 
     def writeDeclList(self, decls):
         # FIXME/cjones: try to do nice formatting of these guys

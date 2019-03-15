@@ -155,7 +155,7 @@
 <pre id="test">
 <script type="application/javascript">
 function* test(testDriver) {
-  var elm = document.getElementsByClassName('inner')[0];
+  var elm = document.getElementsByClassName("inner")[0];
   elm.scrollTop = 0;
   yield flushApzRepaints(testDriver);
 
@@ -171,28 +171,28 @@ function* test(testDriver) {
   utils.advanceTimeAndRefresh(16);
   utils.advanceTimeAndRefresh(16);
   yield flushApzRepaints(testDriver);
-  ok(elm.scrollTop > 0, "APZ animation in progress", "scrollTop is now " + elm.scrollTop);
-  ok(elm.scrollTop < 200, "APZ animation not yet completed", "scrollTop is now " + elm.scrollTop);
+  ok(elm.scrollTop > 0, "APZ animation in progress, scrollTop is now " + elm.scrollTop);
+  ok(elm.scrollTop < 200, "APZ animation not yet completed, scrollTop is now " + elm.scrollTop);
 
   var frameReconstructionTriggered = 0;
   // Register the listener that triggers the frame reconstruction
   elm.onscroll = function() {
     // Do the reconstruction
-    elm.parentNode.classList.add('contentBefore');
+    elm.parentNode.classList.add("contentBefore");
     frameReconstructionTriggered++;
     // schedule a thing to undo the changes above
     setTimeout(function() {
-      elm.parentNode.classList.remove('contentBefore');
+      elm.parentNode.classList.remove("contentBefore");
     }, 0);
-  }
+  };
 
   // and do a few more frames of the animation, this should trigger the listener
   // and the frame reconstruction
   utils.advanceTimeAndRefresh(16);
   utils.advanceTimeAndRefresh(16);
   yield flushApzRepaints(testDriver);
-  ok(elm.scrollTop < 200, "APZ animation not yet completed", "scrollTop is now " + elm.scrollTop);
-  ok(frameReconstructionTriggered > 0, "Frame reconstruction triggered", "reconstruction triggered " + frameReconstructionTriggered + " times");
+  ok(elm.scrollTop < 200, "APZ animation not yet completed, scrollTop is now " + elm.scrollTop);
+  ok(frameReconstructionTriggered > 0, "Frame reconstruction triggered, reconstruction triggered " + frameReconstructionTriggered + " times");
 
   // and now run to completion
   for (var i = 0; i < 100; i++) {

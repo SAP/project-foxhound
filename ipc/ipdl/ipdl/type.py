@@ -3,7 +3,10 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import os, sys
+from __future__ import print_function
+
+import os
+import sys
 
 from ipdl.ast import CxxInclude, Decl, Loc, QualifiedId, StructDecl
 from ipdl.ast import TypeSpec, UnionDecl, UsingStmt, Visitor
@@ -20,8 +23,8 @@ class TypeVisitor:
         self.visited = set()
 
     def defaultVisit(self, node, *args):
-        raise Exception, "INTERNAL ERROR: no visitor for node type `%s'"% (
-            node.__class__.__name__)
+        raise Exception("INTERNAL ERROR: no visitor for node type `%s'" %
+                        (node.__class__.__name__))
 
     def visitVoidType(self, v, *args):
         pass
@@ -67,6 +70,9 @@ class TypeVisitor:
     def visitShmemType(self, s, *args):
         pass
 
+    def visitByteBufType(self, s, *args):
+        pass
+
     def visitShmemChmodType(self, c, *args):
         c.shmem.accept(self)
 
@@ -76,12 +82,18 @@ class TypeVisitor:
     def visitEndpointType(self, s, *args):
         pass
 
+    def visitUniquePtrType(self, s, *args):
+        pass
+
+
 class Type:
     def __cmp__(self, o):
         return cmp(self.fullname(), o.fullname())
+
     def __eq__(self, o):
         return (self.__class__ == o.__class__
                 and self.fullname() == o.fullname())
+
     def __hash__(self):
         return hash(self.fullname())
 
@@ -89,83 +101,130 @@ class Type:
     def isCxx(self):
         return False
     # Is this an IPDL type?
+
     def isIPDL(self):
         return False
     # Is this type neither compound nor an array?
+
     def isAtom(self):
         return False
+
+    def isUniquePtr(self):
+        return False
+
     def typename(self):
         return self.__class__.__name__
 
-    def name(self): raise Exception, 'NYI'
-    def fullname(self): raise Exception, 'NYI'
+    def name(self):
+        raise NotImplementedError
+
+    def fullname(self):
+        raise NotImplementedError
 
     def accept(self, visitor, *args):
-        visit = getattr(visitor, 'visit'+ self.__class__.__name__, None)
+        visit = getattr(visitor, 'visit' + self.__class__.__name__, None)
         if visit is None:
             return getattr(visitor, 'defaultVisit')(self, *args)
         return visit(self, *args)
 
+
 class VoidType(Type):
     def isCxx(self):
         return True
+
     def isIPDL(self):
         return False
+
     def isAtom(self):
         return True
 
+    def isRefcounted(self):
+        return False
+
     def name(self): return 'void'
+
     def fullname(self): return 'void'
+
 
 VOID = VoidType()
 
-##--------------------
+# --------------------
+
+
 class ImportedCxxType(Type):
-    def __init__(self, qname):
+    def __init__(self, qname, refcounted, moveonly):
         assert isinstance(qname, QualifiedId)
         self.loc = qname.loc
         self.qname = qname
+        self.refcounted = refcounted
+        self.moveonly = moveonly
+
     def isCxx(self):
         return True
+
     def isAtom(self):
         return True
 
+    def isRefcounted(self):
+        return self.refcounted
+
+    def isMoveonly(self):
+        return self.moveonly
+
     def name(self):
         return self.qname.baseid
+
     def fullname(self):
         return str(self.qname)
 
-##--------------------
+# --------------------
+
+
 class IPDLType(Type):
-    def isIPDL(self):  return True
+    def isIPDL(self): return True
+
     def isMessage(self): return False
+
     def isProtocol(self): return False
+
     def isActor(self): return False
+
     def isStruct(self): return False
+
     def isUnion(self): return False
+
     def isArray(self): return False
-    def isAtom(self):  return True
+
+    def isAtom(self): return True
+
     def isCompound(self): return False
+
     def isShmem(self): return False
+
+    def isByteBuf(self): return False
+
     def isFD(self): return False
+
     def isEndpoint(self): return False
 
     def isAsync(self): return self.sendSemantics == ASYNC
+
     def isSync(self): return self.sendSemantics == SYNC
+
     def isInterrupt(self): return self.sendSemantics is INTR
 
-    def hasReply(self):  return (self.isSync() or self.isInterrupt())
+    def hasReply(self): return (self.isSync() or self.isInterrupt())
 
     @classmethod
     def convertsTo(cls, lesser, greater):
         if (lesser.nestedRange[0] < greater.nestedRange[0] or
-            lesser.nestedRange[1] > greater.nestedRange[1]):
+                lesser.nestedRange[1] > greater.nestedRange[1]):
             return False
 
         # Protocols that use intr semantics are not allowed to use
         # message nesting.
         if (greater.isInterrupt() and
-            lesser.nestedRange != (NOT_NESTED, NOT_NESTED)):
+                lesser.nestedRange != (NOT_NESTED, NOT_NESTED)):
             return False
 
         if lesser.isAsync():
@@ -180,6 +239,7 @@ class IPDLType(Type):
     def needsMoreJuiceThan(self, o):
         return not IPDLType.convertsTo(self, o)
 
+
 class MessageType(IPDLType):
     def __init__(self, nested, prio, sendSemantics, direction,
                  ctor=False, dtor=False, cdtype=None, compress=False,
@@ -192,25 +252,33 @@ class MessageType(IPDLType):
         self.nestedRange = (nested, nested)
         self.sendSemantics = sendSemantics
         self.direction = direction
-        self.params = [ ]
-        self.returns = [ ]
+        self.params = []
+        self.returns = []
         self.ctor = ctor
         self.dtor = dtor
         self.cdtype = cdtype
         self.compress = compress
         self.verify = verify
+
     def isMessage(self): return True
 
     def isCtor(self): return self.ctor
+
     def isDtor(self): return self.dtor
-    def constructedType(self):  return self.cdtype
+
+    def constructedType(self): return self.cdtype
 
     def isIn(self): return self.direction is IN
+
     def isOut(self): return self.direction is OUT
+
     def isInout(self): return self.direction is INOUT
+
+    def hasReply(self): return len(self.returns) or IPDLType.hasReply(self)
 
     def hasImplicitActorParam(self):
         return self.isCtor() or self.isDtor()
+
 
 class ProtocolType(IPDLType):
     def __init__(self, qname, nested, sendSemantics):
@@ -218,13 +286,15 @@ class ProtocolType(IPDLType):
         self.nestedRange = (NOT_NESTED, nested)
         self.sendSemantics = sendSemantics
         self.managers = []           # ProtocolType
-        self.manages = [ ]
+        self.manages = []
         self.hasDelete = False
         self.hasReentrantDelete = False
+
     def isProtocol(self): return True
 
     def name(self):
         return self.qname.baseid
+
     def fullname(self):
         return str(self.qname)
 
@@ -256,39 +326,50 @@ class ProtocolType(IPDLType):
             if pt is managed:
                 return True
         return False
+
     def isManagedBy(self, pt):
         return pt in self.managers
 
     def isManager(self):
         return len(self.manages) > 0
+
     def isManaged(self):
         return 0 < len(self.managers)
+
     def isToplevel(self):
         return not self.isManaged()
 
     def manager(self):
         assert 1 == len(self.managers)
-        for mgr in self.managers: return mgr
+        for mgr in self.managers:
+            return mgr
+
 
 class ActorType(IPDLType):
-    def __init__(self, protocol, nullable=0):
+    def __init__(self, protocol, nullable=False):
         self.protocol = protocol
         self.nullable = nullable
+
     def isActor(self): return True
 
     def name(self):
         return self.protocol.name()
+
     def fullname(self):
         return self.protocol.fullname()
+
 
 class _CompoundType(IPDLType):
     def __init__(self):
         self.defined = False            # bool
         self.mutualRec = set()          # set(_CompoundType | ArrayType)
+
     def isAtom(self):
         return False
+
     def isCompound(self):
         return True
+
     def itercomponents(self):
         raise Exception('"pure virtual" method')
 
@@ -305,7 +386,8 @@ looks for such a cycle and returns True if found.'''
             return True
         elif t.isArray():
             isrec = self.mutuallyRecursiveWith(t.basetype, exploring)
-            if isrec:  self.mutualRec.add(t)
+            if isrec:
+                self.mutualRec.add(t)
             return isrec
         elif t in exploring:
             return False
@@ -319,19 +401,23 @@ looks for such a cycle and returns True if found.'''
 
         return False
 
+
 class StructType(_CompoundType):
     def __init__(self, qname, fields):
         _CompoundType.__init__(self)
         self.qname = qname
         self.fields = fields            # [ Type ]
 
-    def isStruct(self):   return True
+    def isStruct(self): return True
+
     def itercomponents(self):
         for f in self.fields:
             yield f
 
     def name(self): return self.qname.baseid
+
     def fullname(self): return str(self.qname)
+
 
 class UnionType(_CompoundType):
     def __init__(self, qname, components):
@@ -339,52 +425,94 @@ class UnionType(_CompoundType):
         self.qname = qname
         self.components = components    # [ Type ]
 
-    def isUnion(self):    return True
+    def isUnion(self): return True
+
     def itercomponents(self):
         for c in self.components:
             yield c
 
     def name(self): return self.qname.baseid
+
     def fullname(self): return str(self.qname)
+
 
 class ArrayType(IPDLType):
     def __init__(self, basetype):
         self.basetype = basetype
-    def isAtom(self):  return False
+
+    def isAtom(self): return False
+
     def isArray(self): return True
 
-    def name(self): return self.basetype.name() +'[]'
-    def fullname(self): return self.basetype.fullname() +'[]'
+    def name(self): return self.basetype.name() + '[]'
+
+    def fullname(self): return self.basetype.fullname() + '[]'
+
 
 class ShmemType(IPDLType):
     def __init__(self, qname):
         self.qname = qname
+
     def isShmem(self): return True
 
     def name(self):
         return self.qname.baseid
+
     def fullname(self):
         return str(self.qname)
+
+
+class ByteBufType(IPDLType):
+    def __init__(self, qname):
+        self.qname = qname
+
+    def isByteBuf(self): return True
+
+    def name(self):
+        return self.qname.baseid
+
+    def fullname(self):
+        return str(self.qname)
+
 
 class FDType(IPDLType):
     def __init__(self, qname):
         self.qname = qname
+
     def isFD(self): return True
 
     def name(self):
         return self.qname.baseid
+
     def fullname(self):
         return str(self.qname)
+
 
 class EndpointType(IPDLType):
     def __init__(self, qname):
         self.qname = qname
+
     def isEndpoint(self): return True
 
     def name(self):
         return self.qname.baseid
+
     def fullname(self):
         return str(self.qname)
+
+
+class UniquePtrType(Type):
+    def __init__(self, innertype):
+        self.innertype = innertype
+
+    def isUniquePtr(self): return True
+
+    def name(self):
+        return 'UniquePtr<' + self.innertype.fullname() + '>'
+
+    def fullname(self):
+        return 'mozilla::UniquePtr<' + self.innertype.fullname() + '>'
+
 
 def iteractortypes(t, visited=None):
     """Iterate over any actor(s) buried in |type|."""
@@ -405,19 +533,25 @@ def iteractortypes(t, visited=None):
             for actor in iteractortypes(c, visited):
                 yield actor
 
+
 def hasshmem(type):
     """Return true iff |type| is shmem or has it buried within."""
-    class found: pass
+    class found:
+        pass
+
     class findShmem(TypeVisitor):
-        def visitShmemType(self, s):  raise found()
+        def visitShmemType(self, s): raise found()
     try:
         type.accept(findShmem())
     except found:
         return True
     return False
 
-##--------------------
+
+# --------------------
 _builtinloc = Loc('<builtin>', 0)
+
+
 def makeBuiltinUsing(tname):
     quals = tname.split('::')
     base = quals.pop()
@@ -426,27 +560,33 @@ def makeBuiltinUsing(tname):
                      TypeSpec(_builtinloc,
                               QualifiedId(_builtinloc, base, quals)))
 
-builtinUsing = [ makeBuiltinUsing(t) for t in builtin.Types ]
-builtinHeaderIncludes = [ CxxInclude(_builtinloc, f) for f in builtin.HeaderIncludes ]
+
+builtinUsing = [makeBuiltinUsing(t) for t in builtin.Types]
+builtinHeaderIncludes = [CxxInclude(_builtinloc, f) for f in builtin.HeaderIncludes]
+
 
 def errormsg(loc, fmt, *args):
     while not isinstance(loc, Loc):
-        if loc is None:  loc = Loc.NONE
-        else:            loc = loc.loc
-    return '%s: error: %s'% (str(loc), fmt % args)
+        if loc is None:
+            loc = Loc.NONE
+        else:
+            loc = loc.loc
+    return '%s: error: %s' % (str(loc), fmt % args)
 
-##--------------------
+# --------------------
+
+
 class SymbolTable:
     def __init__(self, errors):
         self.errors = errors
-        self.scopes = [ { } ]   # stack({})
+        self.scopes = [{}]   # stack({})
         self.currentScope = self.scopes[0]
 
     def enterScope(self):
         assert isinstance(self.scopes[0], dict)
         assert isinstance(self.currentScope, dict)
 
-        self.scopes.append({ })
+        self.scopes.append({})
         self.currentScope = self.scopes[-1]
 
     def exitScope(self):
@@ -464,7 +604,8 @@ class SymbolTable:
         # |sym|
         for scope in self.scopes:
             decl = scope.get(sym, None)
-            if decl is not None:  return decl
+            if decl is not None:
+                return decl
         return None
 
     def declare(self, decl):
@@ -476,16 +617,19 @@ class SymbolTable:
             olddecl = self.lookup(name)
             if olddecl is not None:
                 self.errors.append(errormsg(
-                        decl.loc,
-                        "redeclaration of symbol `%s', first declared at %s",
-                        name, olddecl.loc))
+                    decl.loc,
+                    "redeclaration of symbol `%s', first declared at %s",
+                    name, olddecl.loc))
                 return
             self.currentScope[name] = decl
             decl.scope = self.currentScope
 
-        if decl.progname:  tryadd(decl.progname)
-        if decl.shortname: tryadd(decl.shortname)
-        if decl.fullname:  tryadd(decl.fullname)
+        if decl.progname:
+            tryadd(decl.progname)
+        if decl.shortname:
+            tryadd(decl.shortname)
+        if decl.fullname:
+            tryadd(decl.fullname)
 
 
 class TypeCheck:
@@ -498,7 +642,7 @@ With this information, it type checks the AST.'''
     def __init__(self):
         # NB: no IPDL compile will EVER print a warning.  A program has
         # one of two attributes: it is either well typed, or not well typed.
-        self.errors = [ ]       # [ string ]
+        self.errors = []       # [ string ]
 
     def check(self, tu, errout=sys.stderr):
         def runpass(tcheckpass):
@@ -521,7 +665,7 @@ With this information, it type checks the AST.'''
 
     def reportErrors(self, errout):
         for error in self.errors:
-            print >>errout, error
+            print(error, file=errout)
 
 
 class TcheckVisitor(Visitor):
@@ -530,6 +674,7 @@ class TcheckVisitor(Visitor):
 
     def error(self, loc, fmt, *args):
         self.errors.append(errormsg(loc, fmt, *args))
+
 
 class GatherDecls(TcheckVisitor):
     def __init__(self, builtinUsing, errors):
@@ -564,13 +709,13 @@ class GatherDecls(TcheckVisitor):
         # for everyone's sanity, enforce that the filename and tu name
         # match
         basefilename = os.path.basename(tu.filename)
-        expectedfilename = '%s.ipdl'% (tu.name)
+        expectedfilename = '%s.ipdl' % (tu.name)
         if not tu.protocol:
             # header
             expectedfilename += 'h'
         if basefilename != expectedfilename:
             self.error(tu.loc,
-                       "expected file for translation unit `%s' to be named `%s'; instead it's named `%s'",
+                       "expected file for translation unit `%s' to be named `%s'; instead it's named `%s'",  # NOQA: E501
                        tu.name, expectedfilename, basefilename)
 
         if tu.protocol:
@@ -593,11 +738,13 @@ class GatherDecls(TcheckVisitor):
 
             p.parentEndpointDecl = self.declare(
                 loc=p.loc,
-                type=EndpointType(QualifiedId(p.loc, 'Endpoint<' + fullname + 'Parent>', ['mozilla', 'ipc'])),
+                type=EndpointType(QualifiedId(p.loc, 'Endpoint<' +
+                                              fullname + 'Parent>', ['mozilla', 'ipc'])),
                 shortname='Endpoint<' + p.name + 'Parent>')
             p.childEndpointDecl = self.declare(
                 loc=p.loc,
-                type=EndpointType(QualifiedId(p.loc, 'Endpoint<' + fullname + 'Child>', ['mozilla', 'ipc'])),
+                type=EndpointType(QualifiedId(p.loc, 'Endpoint<' +
+                                              fullname + 'Child>', ['mozilla', 'ipc'])),
                 shortname='Endpoint<' + p.name + 'Child>')
 
             # XXX ugh, this sucks.  but we need this information to compute
@@ -641,10 +788,11 @@ class GatherDecls(TcheckVisitor):
             fullname = str(qname)
 
         if isinstance(su, StructDecl):
-            sutype = StructType(qname, [ ])
+            sutype = StructType(qname, [])
         elif isinstance(su, UnionDecl):
-            sutype = UnionType(qname, [ ])
-        else: assert 0 and 'unknown type'
+            sutype = UnionType(qname, [])
+        else:
+            assert 0 and 'unknown type'
 
         # XXX more suckage.  this time for pickling structs/unions
         # declared in headers.
@@ -655,7 +803,6 @@ class GatherDecls(TcheckVisitor):
             type=sutype,
             shortname=su.name,
             fullname=fullname)
-
 
     def visitInclude(self, inc):
         if inc.tu is None:
@@ -719,16 +866,27 @@ class GatherDecls(TcheckVisitor):
 
     def visitUsingStmt(self, using):
         fullname = str(using.type)
-        if using.type.basename() == fullname:
+        if (using.type.basename() == fullname) or using.type.uniqueptr:
+            # Prevent generation of typedefs.  If basename == fullname then
+            # there is nothing to typedef.  With UniquePtrs, basenames
+            # are generic so typedefs would be illegal.
             fullname = None
         if fullname == 'mozilla::ipc::Shmem':
             ipdltype = ShmemType(using.type.spec)
+        elif fullname == 'mozilla::ipc::ByteBuf':
+            ipdltype = ByteBufType(using.type.spec)
         elif fullname == 'mozilla::ipc::FileDescriptor':
             ipdltype = FDType(using.type.spec)
         else:
-            ipdltype = ImportedCxxType(using.type.spec)
+            ipdltype = ImportedCxxType(using.type.spec, using.isRefcounted(), using.isMoveonly())
             existingType = self.symtab.lookup(ipdltype.fullname())
             if existingType and existingType.fullname == ipdltype.fullname():
+                if ipdltype.isRefcounted() != existingType.type.isRefcounted():
+                    self.error(using.loc, "inconsistent refcounted status of type `%s`",
+                               str(using.type))
+                if ipdltype.isMoveonly() != existingType.type.isMoveonly():
+                    self.error(using.loc, "inconsistent moveonly status of type `%s`",
+                               str(using.type))
                 using.decl = existingType
                 return
         using.decl = self.declare(
@@ -773,16 +931,17 @@ class GatherDecls(TcheckVisitor):
                 "destructor declaration `%s(...)' required for managed protocol `%s'",
                 _DELETE_MSG, p.name)
 
-        p.decl.type.hasReentrantDelete = p.decl.type.hasDelete and self.symtab.lookup(_DELETE_MSG).type.isInterrupt()
+        p.decl.type.hasReentrantDelete = p.decl.type.hasDelete and self.symtab.lookup(
+            _DELETE_MSG).type.isInterrupt()
 
         for managed in p.managesStmts:
             mgdname = managed.name
-            ctordecl = self.symtab.lookup(mgdname +'Constructor')
+            ctordecl = self.symtab.lookup(mgdname + 'Constructor')
 
             if not (ctordecl and ctordecl.type.isCtor()):
                 self.error(
                     managed.loc,
-                    "constructor declaration required for managed protocol `%s' (managed by protocol `%s')",
+                    "constructor declaration required for managed protocol `%s' (managed by protocol `%s')",  # NOQA: E501
                     mgdname, p.name)
 
         # FIXME/cjones declare all the little C++ thingies that will
@@ -792,7 +951,6 @@ class GatherDecls(TcheckVisitor):
         # are allowed to obfuscate the error
 
         self.symtab.exitScope()
-
 
     def visitManager(self, mgr):
         mgrdecl = self.symtab.lookup(mgr.name)
@@ -810,12 +968,11 @@ class GatherDecls(TcheckVisitor):
         elif not isinstance(mgrdecl.type, ProtocolType):
             self.error(
                 loc,
-                "entity `%s' referenced as |manager| of `%s' is not of `protocol' type; instead it is of type `%s'",
+                "entity `%s' referenced as |manager| of `%s' is not of `protocol' type; instead it is of type `%s'",  # NOQA: E501
                 mgrname, pname, mgrdecl.type.typename())
         else:
             mgr.decl = mgrdecl
             pdecl.type.addManager(mgrdecl.type)
-
 
     def visitManagesStmt(self, mgs):
         mgsdecl = self.symtab.lookup(mgs.name)
@@ -837,7 +994,6 @@ class GatherDecls(TcheckVisitor):
         else:
             mgs.decl = mgsdecl
             pdecl.type.manages.append(mgsdecl.type)
-
 
     def visitMessageDecl(self, md):
         msgname = md.name
@@ -861,7 +1017,6 @@ class GatherDecls(TcheckVisitor):
         if _DELETE_MSG == msgname:
             isdtor = True
             cdtype = self.currentProtocolDecl.type
-
 
         # enter message scope
         self.symtab.enterScope()
@@ -906,7 +1061,6 @@ class GatherDecls(TcheckVisitor):
         md.protocolDecl = self.currentProtocolDecl
         md.decl._md = md
 
-
     def _canonicalType(self, itype, typespec):
         loc = typespec.loc
         if itype.isIPDL():
@@ -923,10 +1077,13 @@ class GatherDecls(TcheckVisitor):
         if typespec.array:
             itype = ArrayType(itype)
 
+        if typespec.uniqueptr:
+            itype = UniquePtrType(itype)
+
         return itype
 
 
-##-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 def checkcycles(p, stack=None):
     cycles = []
@@ -944,6 +1101,7 @@ def checkcycles(p, stack=None):
         cycles += checkcycles(cp, stack + [p])
 
     return cycles
+
 
 def formatcycles(cycles):
     r = []
@@ -984,8 +1142,10 @@ def fullyDefined(t, exploring=None):
             t.defined = True
             break
     else:
-        if t.isStruct():   t.defined = True
-        elif t.isUnion():  t.defined = False
+        if t.isStruct():
+            t.defined = True
+        elif t.isUnion():
+            t.defined = False
     exploring.remove(t)
 
     return t.defined
@@ -1004,7 +1164,6 @@ class CheckTypes(TcheckVisitor):
         if inc.tu.protocol:
             inc.tu.protocol.accept(self)
 
-
     def visitStructDecl(self, sd):
         if not fullyDefined(sd.decl.type):
             self.error(sd.decl.loc,
@@ -1014,7 +1173,6 @@ class CheckTypes(TcheckVisitor):
         if not fullyDefined(ud.decl.type):
             self.error(ud.decl.loc,
                        "union `%s' is only partially defined", ud.name)
-
 
     def visitProtocol(self, p):
         self.ptype = p.decl.type
@@ -1026,7 +1184,7 @@ class CheckTypes(TcheckVisitor):
             if mgrtype is not None and ptype.needsMoreJuiceThan(mgrtype):
                 self.error(
                     p.decl.loc,
-                    "protocol `%s' requires more powerful send semantics than its manager `%s' provides",
+                    "protocol `%s' requires more powerful send semantics than its manager `%s' provides",  # NOQA: E501
                     pname, mgrtype.name())
 
         if ptype.isToplevel():
@@ -1045,7 +1203,6 @@ class CheckTypes(TcheckVisitor):
 
         return Visitor.visitProtocol(self, p)
 
-
     def visitManagesStmt(self, mgs):
         pdecl = mgs.manager.decl
         ptype, pname = pdecl.type, pdecl.shortname
@@ -1062,9 +1219,8 @@ class CheckTypes(TcheckVisitor):
         if not mgstype.isManagedBy(ptype):
             self.error(
                 loc,
-                "|manages| declaration in protocol `%s' does not match any |manager| declaration in protocol `%s'",
+                "|manages| declaration in protocol `%s' does not match any |manager| declaration in protocol `%s'",  # NOQA: E501
                 pname, mgsname)
-
 
     def visitManager(self, mgr):
         pdecl = mgr.of.decl
@@ -1082,9 +1238,8 @@ class CheckTypes(TcheckVisitor):
         if not mgrtype.isManagerOf(ptype):
             self.error(
                 loc,
-                "|manager| declaration in protocol `%s' does not match any |manages| declaration in protocol `%s'",
+                "|manager| declaration in protocol `%s' does not match any |manages| declaration in protocol `%s'",  # NOQA: E501
                 pname, mgrname)
-
 
     def visitMessageDecl(self, md):
         mtype, mname = md.decl.type, md.decl.progname
@@ -1101,7 +1256,7 @@ class CheckTypes(TcheckVisitor):
         if mtype.nested == INSIDE_CPOW_NESTED and (mtype.isOut() or mtype.isInout()):
             self.error(
                 loc,
-                "inside_cpow nested parent-to-child messages are verboten (here, message `%s' in protocol `%s')",
+                "inside_cpow nested parent-to-child messages are verboten (here, message `%s' in protocol `%s')",  # NOQA: E501
                 mname, pname)
 
         # We allow inside_sync messages that are themselves sync to be sent from the
@@ -1116,24 +1271,23 @@ class CheckTypes(TcheckVisitor):
         if mtype.needsMoreJuiceThan(ptype):
             self.error(
                 loc,
-                "message `%s' requires more powerful send semantics than its protocol `%s' provides",
+                "message `%s' requires more powerful send semantics than its protocol `%s' provides",  # NOQA: E501
                 mname, pname)
 
-        if mtype.isAsync() and len(mtype.returns):
-            # XXX/cjones could modify grammar to disallow this ...
+        if (mtype.isCtor() or mtype.isDtor()) and mtype.isAsync() and mtype.returns:
             self.error(loc,
-                       "asynchronous message `%s' declares return values",
+                       "asynchronous ctor/dtor message `%s' declares return values",
                        mname)
 
         if (mtype.compress and
-            (not mtype.isAsync() or mtype.isCtor() or mtype.isDtor())):
+                (not mtype.isAsync() or mtype.isCtor() or mtype.isDtor())):
 
             if mtype.isCtor() or mtype.isDtor():
                 message_type = "constructor" if mtype.isCtor() else "destructor"
-                error_message = ("%s messages can't use compression (here, in protocol `%s'" %
+                error_message = ("%s messages can't use compression (here, in protocol `%s')" %
                                  (message_type, pname))
             else:
-                error_message = ("message `%s' in protocol `%s' requests compression but is not async" %
+                error_message = ("message `%s' in protocol `%s' requests compression but is not async" %  # NOQA: E501
                                  (mname, pname))
 
             self.error(loc, error_message)

@@ -4,19 +4,15 @@
 
 "use strict";
 
-Components.utils.import("resource://gre/modules/osfile.jsm");
-Components.utils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/osfile.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var Path = OS.Path;
 var profileDir;
 
-do_register_cleanup(function() {
+registerCleanupFunction(function() {
   Services.prefs.setBoolPref("toolkit.osfile.log", false);
 });
-
-function run_test() {
-  run_next_test();
-}
 
 /**
  * Test OS.File.makeDir
@@ -34,99 +30,99 @@ add_task(function init() {
  * Basic use
  */
 
-add_task(function* test_basic() {
+add_task(async function test_basic() {
   let dir = Path.join(profileDir, "directory");
 
   // Sanity checking for the test
-  do_check_false((yield OS.File.exists(dir)));
+  Assert.equal(false, (await OS.File.exists(dir)));
 
   // Make a directory
-  yield OS.File.makeDir(dir);
+  await OS.File.makeDir(dir);
 
-  //check if the directory exists
-  yield OS.File.stat(dir);
+  // check if the directory exists
+  await OS.File.stat(dir);
 
   // Make a directory that already exists, this should succeed
-  yield OS.File.makeDir(dir);
+  await OS.File.makeDir(dir);
 
   // Make a directory with ignoreExisting
-  yield OS.File.makeDir(dir, {ignoreExisting: true});
+  await OS.File.makeDir(dir, {ignoreExisting: true});
 
   // Make a directory with ignoreExisting false
   let exception = null;
   try {
-    yield OS.File.makeDir(dir, {ignoreExisting: false});
+    await OS.File.makeDir(dir, {ignoreExisting: false});
   } catch (ex) {
     exception = ex;
   }
 
-  do_check_true(!!exception);
-  do_check_true(exception instanceof OS.File.Error);
-  do_check_true(exception.becauseExists);
+  Assert.ok(!!exception);
+  Assert.ok(exception instanceof OS.File.Error);
+  Assert.ok(exception.becauseExists);
 });
 
 // Make a root directory that already exists
-add_task(function* test_root() {
+add_task(async function test_root() {
   if (OS.Constants.Win) {
-    yield OS.File.makeDir("C:");
-    yield OS.File.makeDir("C:\\");
+    await OS.File.makeDir("C:");
+    await OS.File.makeDir("C:\\");
   } else {
-    yield OS.File.makeDir("/");
+    await OS.File.makeDir("/");
   }
 });
 
 /**
  * Creating subdirectories
  */
-add_task(function* test_option_from() {
+add_task(async function test_option_from() {
   let dir = Path.join(profileDir, "a", "b", "c");
 
   // Sanity checking for the test
-  do_check_false((yield OS.File.exists(dir)));
+  Assert.equal(false, (await OS.File.exists(dir)));
 
   // Make a directory
-  yield OS.File.makeDir(dir, {from: profileDir});
+  await OS.File.makeDir(dir, {from: profileDir});
 
-  //check if the directory exists
-  yield OS.File.stat(dir);
+  // check if the directory exists
+  await OS.File.stat(dir);
 
   // Make a directory that already exists, this should succeed
-  yield OS.File.makeDir(dir);
+  await OS.File.makeDir(dir);
 
   // Make a directory with ignoreExisting
-  yield OS.File.makeDir(dir, {ignoreExisting: true});
+  await OS.File.makeDir(dir, {ignoreExisting: true});
 
   // Make a directory with ignoreExisting false
   let exception = null;
   try {
-    yield OS.File.makeDir(dir, {ignoreExisting: false});
+    await OS.File.makeDir(dir, {ignoreExisting: false});
   } catch (ex) {
     exception = ex;
   }
 
-  do_check_true(!!exception);
-  do_check_true(exception instanceof OS.File.Error);
-  do_check_true(exception.becauseExists);
+  Assert.ok(!!exception);
+  Assert.ok(exception instanceof OS.File.Error);
+  Assert.ok(exception.becauseExists);
 
   // Make a directory without |from| and fail
   let dir2 = Path.join(profileDir, "g", "h", "i");
   exception = null;
   try {
-    yield OS.File.makeDir(dir2);
+    await OS.File.makeDir(dir2);
   } catch (ex) {
     exception = ex;
   }
 
-  do_check_true(!!exception);
-  do_check_true(exception instanceof OS.File.Error);
-  do_check_true(exception.becauseNoSuchFile);
+  Assert.ok(!!exception);
+  Assert.ok(exception instanceof OS.File.Error);
+  Assert.ok(exception.becauseNoSuchFile);
 
   // Test edge cases on paths
 
   let dir3 = Path.join(profileDir, "d", "", "e", "f");
-  do_check_false((yield OS.File.exists(dir3)));
-  yield OS.File.makeDir(dir3, {from: profileDir});
-  do_check_true((yield OS.File.exists(dir3)));
+  Assert.equal(false, (await OS.File.exists(dir3)));
+  await OS.File.makeDir(dir3, {from: profileDir});
+  Assert.ok((await OS.File.exists(dir3)));
 
   let dir4;
   if (OS.Constants.Win) {
@@ -136,7 +132,7 @@ add_task(function* test_option_from() {
   } else {
     dir4 = profileDir + "////g";
   }
-  do_check_false((yield OS.File.exists(dir4)));
-  yield OS.File.makeDir(dir4, {from: profileDir});
-  do_check_true((yield OS.File.exists(dir4)));
+  Assert.equal(false, (await OS.File.exists(dir4)));
+  await OS.File.makeDir(dir4, {from: profileDir});
+  Assert.ok((await OS.File.exists(dir4)));
 });

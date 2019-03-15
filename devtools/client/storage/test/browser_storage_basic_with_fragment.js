@@ -34,16 +34,21 @@ const testCases = [
       getCookieId("c1", "test1.example.org", "/browser"),
       getCookieId("cs2", ".example.org", "/"),
       getCookieId("c3", "test1.example.org", "/"),
-      getCookieId("uc1", ".example.org", "/")
-    ]
+      getCookieId("uc1", ".example.org", "/"),
+      getCookieId("uc2", ".example.org", "/"),
+    ],
   ],
   [
     ["cookies", "https://sectest1.example.org"],
     [
       getCookieId("uc1", ".example.org", "/"),
+      getCookieId("uc2", ".example.org", "/"),
       getCookieId("cs2", ".example.org", "/"),
-      getCookieId("sc1", "sectest1.example.org", "/browser/devtools/client/storage/test/")
-    ]
+      getCookieId("sc1", "sectest1.example.org",
+        "/browser/devtools/client/storage/test/"),
+      getCookieId("sc2", "sectest1.example.org",
+        "/browser/devtools/client/storage/test/"),
+    ],
   ],
   [["localStorage", "http://test1.example.org"],
    ["ls1", "ls2"]],
@@ -90,30 +95,30 @@ const testCases = [
  * Test that the desired number of tree items are present
  */
 function testTree() {
-  let doc = gPanelWindow.document;
-  for (let [item] of testCases) {
+  const doc = gPanelWindow.document;
+  for (const [item] of testCases) {
     ok(doc.querySelector("[data-id='" + JSON.stringify(item) + "']"),
-       "Tree item " + item[0] + " should be present in the storage tree");
+      `Tree item ${item.toSource()} should be present in the storage tree`);
   }
 }
 
 /**
  * Test that correct table entries are shown for each of the tree item
  */
-function* testTables() {
-  let doc = gPanelWindow.document;
+async function testTables() {
+  const doc = gPanelWindow.document;
   // Expand all nodes so that the synthesized click event actually works
   gUI.tree.expandAll();
 
   // First tree item is already selected so no clicking and waiting for update
-  for (let id of testCases[0][1]) {
+  for (const id of testCases[0][1]) {
     ok(doc.querySelector(".table-widget-cell[data-id='" + id + "']"),
        "Table item " + id + " should be present");
   }
 
   // Click rest of the tree items and wait for the table to be updated
-  for (let [treeItem, items] of testCases.slice(1)) {
-    yield selectTreeItem(treeItem);
+  for (const [treeItem, items] of testCases.slice(1)) {
+    await selectTreeItem(treeItem);
 
     // Check whether correct number of items are present in the table
     is(doc.querySelectorAll(
@@ -121,19 +126,19 @@ function* testTables() {
        ).length, items.length, "Number of items in table is correct");
 
     // Check if all the desired items are present in the table
-    for (let id of items) {
+    for (const id of items) {
       ok(doc.querySelector(".table-widget-cell[data-id='" + id + "']"),
          "Table item " + id + " should be present");
     }
   }
 }
 
-add_task(function* () {
-  yield openTabAndSetupStorage(
+add_task(async function() {
+  await openTabAndSetupStorage(
     MAIN_DOMAIN + "storage-listings-with-fragment.html#abc");
 
   testTree();
-  yield testTables();
+  await testTables();
 
-  yield finishTests();
+  await finishTests();
 });

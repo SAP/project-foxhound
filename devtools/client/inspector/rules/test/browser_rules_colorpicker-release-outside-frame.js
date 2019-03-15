@@ -9,31 +9,31 @@
 
 const TEST_URI = "<body style='color: red'>Test page for bug 1160720";
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {view} = yield openRuleView();
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {view} = await openRuleView();
 
-  let cSwatch = getRuleViewProperty(view, "element", "color").valueSpan
+  const cSwatch = getRuleViewProperty(view, "element", "color").valueSpan
     .querySelector(".ruleview-colorswatch");
 
-  let picker = yield openColorPickerForSwatch(cSwatch, view);
-  let spectrum = picker.spectrum;
-  let change = spectrum.once("changed");
+  const picker = await openColorPickerForSwatch(cSwatch, view);
+  const spectrum = picker.spectrum;
+  const change = spectrum.once("changed");
 
   info("Pressing mouse down over color picker.");
-  let onRuleViewChanged = view.once("ruleview-changed");
+  const onRuleViewChanged = view.once("ruleview-changed");
   EventUtils.synthesizeMouseAtCenter(spectrum.dragger, {
     type: "mousedown",
   }, spectrum.dragger.ownerDocument.defaultView);
-  yield onRuleViewChanged;
+  await onRuleViewChanged;
 
-  let value = yield change;
+  const value = await change;
   info(`Color changed to ${value} on mousedown.`);
 
   // If the mousemove below fails to detect that the button is no longer pressed
   // the spectrum will update and emit changed event synchronously after calling
   // synthesizeMouse so this handler is executed before the test ends.
-  spectrum.once("changed", (event, newValue) => {
+  spectrum.once("changed", newValue => {
     is(newValue, value, "Value changed on mousemove without a button pressed.");
   });
 
@@ -50,16 +50,16 @@ add_task(function* () {
   }, spectrum.dragger.ownerDocument.defaultView);
 });
 
-function* openColorPickerForSwatch(swatch, view) {
-  let cPicker = view.tooltips.colorPicker;
+async function openColorPickerForSwatch(swatch, view) {
+  const cPicker = view.tooltips.getTooltip("colorPicker");
   ok(cPicker, "The rule-view has the expected colorPicker property");
 
-  let cPickerPanel = cPicker.tooltip.panel;
+  const cPickerPanel = cPicker.tooltip.panel;
   ok(cPickerPanel, "The XUL panel for the color picker exists");
 
-  let onColorPickerReady = cPicker.once("ready");
+  const onColorPickerReady = cPicker.once("ready");
   swatch.click();
-  yield onColorPickerReady;
+  await onColorPickerReady;
 
   ok(true, "The color picker was shown on click of the color swatch");
 

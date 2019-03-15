@@ -10,6 +10,7 @@
 
 #include "SkCanvas.h"
 
+class SkWStream;
 class SkXMLWriter;
 
 class SK_API SkSVGCanvas {
@@ -25,7 +26,10 @@ public:
      *  The 'bounds' parameter defines an initial SVG viewport (viewBox attribute on the root
      *  SVG element).
      */
-    static SkCanvas* Create(const SkRect& bounds, SkXMLWriter*);
+    static std::unique_ptr<SkCanvas> Make(const SkRect& bounds, SkWStream*);
+
+    // Internal only.
+    static std::unique_ptr<SkCanvas> Make(const SkRect& bounds, SkXMLWriter*);
 };
 
 #endif

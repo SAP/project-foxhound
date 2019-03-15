@@ -13,73 +13,89 @@
 #include "nsPIDOMWindow.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsIScriptContext.h"
-#include "nsIWeakReferenceUtils.h"
 #include "MainThreadUtils.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/EventListenerManager.h"
+#include "mozilla/LinkedList.h"
 #include "mozilla/dom/EventTarget.h"
-
-struct JSCompartment;
-class nsIDocument;
 
 namespace mozilla {
 
 class ErrorResult;
 
-#define NS_DOMEVENTTARGETHELPER_IID \
-{ 0xa28385c6, 0x9451, 0x4d7e, \
-  { 0xa3, 0xdd, 0xf4, 0xb6, 0x87, 0x2f, 0xa4, 0x76 } }
+namespace dom {
+class Document;
+class Event;
+}  // namespace dom
 
-class DOMEventTargetHelper : public dom::EventTarget
-{
-public:
-  DOMEventTargetHelper()
-    : mParentObject(nullptr)
-    , mOwnerWindow(nullptr)
-    , mHasOrHasHadOwnerWindow(false)
-  {
+#define NS_DOMEVENTTARGETHELPER_IID                  \
+  {                                                  \
+    0xa28385c6, 0x9451, 0x4d7e, {                    \
+      0xa3, 0xdd, 0xf4, 0xb6, 0x87, 0x2f, 0xa4, 0x76 \
+    }                                                \
   }
+
+class DOMEventTargetHelper : public dom::EventTarget,
+                             public LinkedListElement<DOMEventTargetHelper> {
+ public:
+  DOMEventTargetHelper()
+      : mParentObject(nullptr),
+        mOwnerWindow(nullptr),
+        mHasOrHasHadOwnerWindow(false),
+        mIsKeptAlive(false) {}
   explicit DOMEventTargetHelper(nsPIDOMWindowInner* aWindow)
-    : mParentObject(nullptr)
-    , mOwnerWindow(nullptr)
-    , mHasOrHasHadOwnerWindow(false)
-  {
-    BindToOwner(aWindow);
+      : mParentObject(nullptr),
+        mOwnerWindow(nullptr),
+        mHasOrHasHadOwnerWindow(false),
+        mIsKeptAlive(false) {
+    // Be careful not to call the virtual BindToOwner() in a
+    // constructor.
+    nsIGlobalObject* global = aWindow ? aWindow->AsGlobal() : nullptr;
+    BindToOwnerInternal(global);
   }
   explicit DOMEventTargetHelper(nsIGlobalObject* aGlobalObject)
-    : mParentObject(nullptr)
-    , mOwnerWindow(nullptr)
-    , mHasOrHasHadOwnerWindow(false)
-  {
-    BindToOwner(aGlobalObject);
+      : mParentObject(nullptr),
+        mOwnerWindow(nullptr),
+        mHasOrHasHadOwnerWindow(false),
+        mIsKeptAlive(false) {
+    // Be careful not to call the virtual BindToOwner() in a
+    // constructor.
+    BindToOwnerInternal(aGlobalObject);
   }
   explicit DOMEventTargetHelper(DOMEventTargetHelper* aOther)
-    : mParentObject(nullptr)
-    , mOwnerWindow(nullptr)
-    , mHasOrHasHadOwnerWindow(false)
-  {
-    BindToOwner(aOther);
+      : mParentObject(nullptr),
+        mOwnerWindow(nullptr),
+        mHasOrHasHadOwnerWindow(false),
+        mIsKeptAlive(false) {
+    // Be careful not to call the virtual BindToOwner() in a
+    // constructor.
+    if (!aOther) {
+      BindToOwnerInternal(static_cast<nsIGlobalObject*>(nullptr));
+      return;
+    }
+    BindToOwnerInternal(aOther->GetParentObject());
+    mHasOrHasHadOwnerWindow = aOther->HasOrHasHadOwner();
   }
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SKIPPABLE_SCRIPT_HOLDER_CLASS(DOMEventTargetHelper)
 
-  NS_DECL_NSIDOMEVENTTARGET
-
   virtual EventListenerManager* GetExistingListenerManager() const override;
   virtual EventListenerManager* GetOrCreateListenerManager() override;
 
-  using dom::EventTarget::RemoveEventListener;
-  virtual void AddEventListener(const nsAString& aType,
-                                dom::EventListener* aListener,
-                                const dom::AddEventListenerOptionsOrBoolean& aOptions,
-                                const dom::Nullable<bool>& aWantsUntrusted,
-                                ErrorResult& aRv) override;
+  bool ComputeDefaultWantsUntrusted(ErrorResult& aRv) override;
+
+  using EventTarget::DispatchEvent;
+  bool DispatchEvent(dom::Event& aEvent, dom::CallerType aCallerType,
+                     ErrorResult& aRv) override;
+
+  void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
+
+  nsresult PostHandleEvent(EventChainPostVisitor& aVisitor) override;
 
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_DOMEVENTTARGETHELPER_IID)
 
-  void GetParentObject(nsIScriptGlobalObject **aParentObject)
-  {
+  void GetParentObject(nsIScriptGlobalObject** aParentObject) {
     if (mParentObject) {
       CallQueryInterface(mParentObject, aParentObject);
     } else {
@@ -87,8 +103,7 @@ public:
     }
   }
 
-  static DOMEventTargetHelper* FromSupports(nsISupports* aSupports)
-  {
+  static DOMEventTargetHelper* FromSupports(nsISupports* aSupports) {
     dom::EventTarget* target = static_cast<dom::EventTarget*>(aSupports);
 #ifdef DEBUG
     {
@@ -104,31 +119,19 @@ public:
     return static_cast<DOMEventTargetHelper*>(target);
   }
 
-  bool HasListenersFor(const nsAString& aType)
-  {
+  bool HasListenersFor(const nsAString& aType) const {
     return mListenerManager && mListenerManager->HasListenersFor(aType);
   }
 
-  bool HasListenersFor(nsIAtom* aTypeWithOn)
-  {
+  bool HasListenersFor(nsAtom* aTypeWithOn) const {
     return mListenerManager && mListenerManager->HasListenersFor(aTypeWithOn);
   }
 
-  nsresult SetEventHandler(nsIAtom* aType,
-                           JSContext* aCx,
-                           const JS::Value& aValue);
-  using dom::EventTarget::SetEventHandler;
-  void GetEventHandler(nsIAtom* aType,
-                       JSContext* aCx,
-                       JS::Value* aValue);
-  using dom::EventTarget::GetEventHandler;
-  virtual nsPIDOMWindowOuter* GetOwnerGlobalForBindings() override
-  {
+  virtual nsPIDOMWindowOuter* GetOwnerGlobalForBindingsInternal() override {
     return nsPIDOMWindowOuter::GetFromCurrentInner(GetOwner());
   }
 
-  nsresult CheckInnerWindowCorrectness() const
-  {
+  nsresult CheckInnerWindowCorrectness() const {
     NS_ENSURE_STATE(!mHasOrHasHadOwnerWindow || mOwnerWindow);
     if (mOwnerWindow && !mOwnerWindow->IsCurrentInnerWindow()) {
       return NS_ERROR_FAILURE;
@@ -142,169 +145,89 @@ public:
   nsPIDOMWindowInner* GetWindowIfCurrent() const;
   // Returns the document associated with this event target, if that document is
   // the current document of its browsing context.  Will return null otherwise.
-  nsIDocument* GetDocumentIfCurrent() const;
-  void BindToOwner(nsIGlobalObject* aOwner);
+  mozilla::dom::Document* GetDocumentIfCurrent() const;
+
+  // DETH subclasses may override the BindToOwner(nsIGlobalObject*) method
+  // to take action when dynamically binding to a new global.  This is only
+  // called on rebind since virtual methods cannot be called from the
+  // constructor.  The other BindToOwner() methods will call into this
+  // method.
+  //
+  // NOTE: Any overrides of BindToOwner() *must* invoke
+  //       DOMEventTargetHelper::BindToOwner(aOwner).
+  virtual void BindToOwner(nsIGlobalObject* aOwner);
+
   void BindToOwner(nsPIDOMWindowInner* aOwner);
   void BindToOwner(DOMEventTargetHelper* aOther);
-  virtual void DisconnectFromOwner();                   
-  nsIGlobalObject* GetParentObject() const
-  {
-    return GetOwnerGlobal();
-  }
-  virtual nsIGlobalObject* GetOwnerGlobal() const override
-  {
-    nsCOMPtr<nsIGlobalObject> parentObject = do_QueryReferent(mParentObject);
-    return parentObject;
-  }
+
+  virtual void DisconnectFromOwner();
+  using EventTarget::GetParentObject;
+  nsIGlobalObject* GetOwnerGlobal() const final { return mParentObject; }
   bool HasOrHasHadOwner() { return mHasOrHasHadOwnerWindow; }
 
-  virtual void EventListenerAdded(nsIAtom* aType) override;
-  virtual void EventListenerRemoved(nsIAtom* aType) override;
-  virtual void EventListenerWasAdded(const nsAString& aType,
-                                     ErrorResult& aRv,
-                                     JSCompartment* aCompartment = nullptr) {}
-  virtual void EventListenerWasRemoved(const nsAString& aType,
-                                       ErrorResult& aRv,
-                                       JSCompartment* aCompartment = nullptr) {}
+  virtual void EventListenerAdded(nsAtom* aType) override;
+
+  virtual void EventListenerRemoved(nsAtom* aType) override;
 
   // Dispatch a trusted, non-cancellable and non-bubbling event to |this|.
   nsresult DispatchTrustedEvent(const nsAString& aEventName);
-protected:
+
+ protected:
   virtual ~DOMEventTargetHelper();
 
   nsresult WantsUntrusted(bool* aRetVal);
 
+  void MaybeUpdateKeepAlive();
+  void MaybeDontKeepAlive();
+
   // If this method returns true your object is kept alive until it returns
   // false. You can use this method instead using
   // NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_BEGIN macro.
-  virtual bool IsCertainlyAliveForCC() const
-  {
-    return false;
-  }
+  virtual bool IsCertainlyAliveForCC() const { return mIsKeptAlive; }
 
   RefPtr<EventListenerManager> mListenerManager;
   // Make |event| trusted and dispatch |aEvent| to |this|.
-  nsresult DispatchTrustedEvent(nsIDOMEvent* aEvent);
+  nsresult DispatchTrustedEvent(dom::Event* aEvent);
 
   virtual void LastRelease() {}
-private:
-  // Inner window or sandbox.
-  nsWeakPtr                  mParentObject;
+
+  void KeepAliveIfHasListenersFor(const nsAString& aType);
+  void KeepAliveIfHasListenersFor(nsAtom* aType);
+
+  void IgnoreKeepAliveIfHasListenersFor(const nsAString& aType);
+  void IgnoreKeepAliveIfHasListenersFor(nsAtom* aType);
+
+  void BindToOwnerInternal(nsIGlobalObject* aOwner);
+
+ private:
+  // The parent global object.  The global will clear this when
+  // it is destroyed by calling DisconnectFromOwner().
+  nsIGlobalObject* MOZ_NON_OWNING_REF mParentObject;
   // mParentObject pre QI-ed and cached (inner window)
   // (it is needed for off main thread access)
   // It is obtained in BindToOwner and reset in DisconnectFromOwner.
   nsPIDOMWindowInner* MOZ_NON_OWNING_REF mOwnerWindow;
-  bool                       mHasOrHasHadOwnerWindow;
+  bool mHasOrHasHadOwnerWindow;
+
+  struct {
+    nsTArray<nsString> mStrings;
+    nsTArray<RefPtr<nsAtom>> mAtoms;
+  } mKeepingAliveTypes;
+
+  bool mIsKeptAlive;
 };
 
-NS_DEFINE_STATIC_IID_ACCESSOR(DOMEventTargetHelper,
-                              NS_DOMEVENTTARGETHELPER_IID)
+NS_DEFINE_STATIC_IID_ACCESSOR(DOMEventTargetHelper, NS_DOMEVENTTARGETHELPER_IID)
 
-} // namespace mozilla
-
-// XPIDL event handlers
-#define NS_IMPL_EVENT_HANDLER(_class, _event)                                 \
-    NS_IMETHODIMP _class::GetOn##_event(JSContext* aCx,                       \
-                                        JS::MutableHandle<JS::Value> aValue)  \
-    {                                                                         \
-      GetEventHandler(nsGkAtoms::on##_event, aCx, aValue.address());          \
-      return NS_OK;                                                           \
-    }                                                                         \
-    NS_IMETHODIMP _class::SetOn##_event(JSContext* aCx,                       \
-                                        JS::Handle<JS::Value> aValue)         \
-    {                                                                         \
-      return SetEventHandler(nsGkAtoms::on##_event, aCx, aValue);             \
-    }
-
-#define NS_IMPL_FORWARD_EVENT_HANDLER(_class, _event, _baseclass)             \
-    NS_IMETHODIMP _class::GetOn##_event(JSContext* aCx,                       \
-                                        JS::MutableHandle<JS::Value> aValue)  \
-    {                                                                         \
-      return _baseclass::GetOn##_event(aCx, aValue);                          \
-    }                                                                         \
-    NS_IMETHODIMP _class::SetOn##_event(JSContext* aCx,                       \
-                                        JS::Handle<JS::Value> aValue)         \
-    {                                                                         \
-      return _baseclass::SetOn##_event(aCx, aValue);                          \
-    }
+}  // namespace mozilla
 
 // WebIDL event handlers
-#define IMPL_EVENT_HANDLER(_event)                                        \
-  inline mozilla::dom::EventHandlerNonNull* GetOn##_event()               \
-  {                                                                       \
-    if (NS_IsMainThread()) {                                              \
-      return GetEventHandler(nsGkAtoms::on##_event, EmptyString());       \
-    }                                                                     \
-    return GetEventHandler(nullptr, NS_LITERAL_STRING(#_event));          \
-  }                                                                       \
-  inline void SetOn##_event(mozilla::dom::EventHandlerNonNull* aCallback) \
-  {                                                                       \
-    if (NS_IsMainThread()) {                                              \
-      SetEventHandler(nsGkAtoms::on##_event, EmptyString(), aCallback);   \
-    } else {                                                              \
-      SetEventHandler(nullptr, NS_LITERAL_STRING(#_event), aCallback);    \
-    }                                                                     \
+#define IMPL_EVENT_HANDLER(_event)                                          \
+  inline mozilla::dom::EventHandlerNonNull* GetOn##_event() {               \
+    return GetEventHandler(nsGkAtoms::on##_event);                          \
+  }                                                                         \
+  inline void SetOn##_event(mozilla::dom::EventHandlerNonNull* aCallback) { \
+    SetEventHandler(nsGkAtoms::on##_event, aCallback);                      \
   }
 
-/* Use this macro to declare functions that forward the behavior of this
- * interface to another object.
- * This macro doesn't forward GetEventTargetParent because sometimes subclasses
- * want to override it.
- */
-#define NS_FORWARD_NSIDOMEVENTTARGET_NOGETEVENTTARGETPARENT(_to) \
-  NS_IMETHOD AddEventListener(const nsAString & type, nsIDOMEventListener *listener, bool useCapture, bool wantsUntrusted, uint8_t _argc) { \
-    return _to AddEventListener(type, listener, useCapture, wantsUntrusted, _argc); \
-  } \
-  NS_IMETHOD AddSystemEventListener(const nsAString & type, nsIDOMEventListener *listener, bool aUseCapture, bool aWantsUntrusted, uint8_t _argc) { \
-    return _to AddSystemEventListener(type, listener, aUseCapture, aWantsUntrusted, _argc); \
-  } \
-  NS_IMETHOD RemoveEventListener(const nsAString & type, nsIDOMEventListener *listener, bool useCapture) { \
-    return _to RemoveEventListener(type, listener, useCapture); \
-  } \
-  NS_IMETHOD RemoveSystemEventListener(const nsAString & type, nsIDOMEventListener *listener, bool aUseCapture) { \
-    return _to RemoveSystemEventListener(type, listener, aUseCapture); \
-  } \
-  NS_IMETHOD DispatchEvent(nsIDOMEvent *evt, bool *_retval) { \
-    return _to DispatchEvent(evt, _retval); \
-  } \
-  virtual mozilla::dom::EventTarget* GetTargetForDOMEvent() { \
-    return _to GetTargetForDOMEvent(); \
-  } \
-  virtual mozilla::dom::EventTarget* GetTargetForEventTargetChain() { \
-    return _to GetTargetForEventTargetChain(); \
-  } \
-  virtual nsresult WillHandleEvent( \
-                     mozilla::EventChainPostVisitor & aVisitor) { \
-    return _to WillHandleEvent(aVisitor); \
-  } \
-  virtual nsresult PostHandleEvent( \
-                     mozilla::EventChainPostVisitor & aVisitor) { \
-    return _to PostHandleEvent(aVisitor); \
-  } \
-  virtual nsresult DispatchDOMEvent(mozilla::WidgetEvent* aEvent, nsIDOMEvent* aDOMEvent, nsPresContext* aPresContext, nsEventStatus* aEventStatus) { \
-    return _to DispatchDOMEvent(aEvent, aDOMEvent, aPresContext, aEventStatus); \
-  } \
-  virtual mozilla::EventListenerManager* GetOrCreateListenerManager() { \
-    return _to GetOrCreateListenerManager(); \
-  } \
-  virtual mozilla::EventListenerManager* GetExistingListenerManager() const { \
-    return _to GetExistingListenerManager(); \
-  } \
-  virtual nsIScriptContext * GetContextForEventHandlers(nsresult *aRv) { \
-    return _to GetContextForEventHandlers(aRv); \
-  }
-
-#define NS_REALLY_FORWARD_NSIDOMEVENTTARGET(_class) \
-  using _class::AddEventListener;                   \
-  using _class::RemoveEventListener;                \
-  NS_FORWARD_NSIDOMEVENTTARGET(_class::)            \
-  virtual mozilla::EventListenerManager*            \
-  GetOrCreateListenerManager() override {           \
-    return _class::GetOrCreateListenerManager();    \
-  }                                                 \
-  virtual mozilla::EventListenerManager*            \
-  GetExistingListenerManager() const override {     \
-    return _class::GetExistingListenerManager();    \
-  }
-
-#endif // mozilla_DOMEventTargetHelper_h_
+#endif  // mozilla_DOMEventTargetHelper_h_

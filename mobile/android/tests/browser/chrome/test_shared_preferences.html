@@ -8,37 +8,18 @@ Migrated from Robocop: https://bugzilla.mozilla.org/show_bug.cgi?id=1184186
   <meta charset="utf-8">
   <title>Test for Bug 866271</title>
   <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SpawnTask.js"></script>
+  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/AddTask.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://global/skin"/>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
+  <script type="application/javascript" src="head.js"></script>
   <script type="application/javascript">
 
-  Components.utils.import("resource://gre/modules/SharedPreferences.jsm");
-  Components.utils.import("resource://gre/modules/Promise.jsm");
-  Components.utils.import("resource://gre/modules/Task.jsm");
+  ChromeUtils.import("resource://gre/modules/SharedPreferences.jsm");
+  ChromeUtils.import("resource://gre/modules/Promise.jsm");
 
   let _observerId = 0;
 
-  function makeObserver() {
-    let deferred = Promise.defer();
-
-    let ret = {
-      id: _observerId++,
-      count: 0,
-      promise: deferred.promise,
-      observe: function (subject, topic, data) {
-        ret.count += 1;
-        let msg = { subject: subject,
-                    topic: topic,
-                    data: data };
-        deferred.resolve(msg);
-      },
-    };
-
-    return ret;
-  };
-
-  add_task(function* test_get_set() {
+  add_task(async function test_get_set() {
     let branch = SharedPreferences.forAndroid("test");
 
     branch.setBoolPref("boolKey", true);
@@ -62,7 +43,7 @@ Migrated from Robocop: https://bugzilla.mozilla.org/show_bug.cgi?id=1184186
     is(typeof(branch.getIntPref("intKey")), "number");
   });
 
-  add_task(function* test_default() {
+  add_task(async function test_default() {
     let branch = SharedPreferences.forAndroid();
 
     branch.setBoolPref("boolKey", true);
@@ -86,7 +67,7 @@ Migrated from Robocop: https://bugzilla.mozilla.org/show_bug.cgi?id=1184186
     is(typeof(branch.getIntPref("intKey")), "number");
   });
 
-  add_task(function* test_multiple_branches() {
+  add_task(async function test_multiple_branches() {
     let branch1 = SharedPreferences.forAndroid("test1");
     let branch2 = SharedPreferences.forAndroid("test2");
 
@@ -103,20 +84,20 @@ Migrated from Robocop: https://bugzilla.mozilla.org/show_bug.cgi?id=1184186
     is(branch2.getCharPref("charKey"), "a different value");
   });
 
-  add_task(function* test_add_remove_observer() {
+  add_task(async function test_add_remove_observer() {
     let branch = SharedPreferences.forAndroid("test");
 
     branch.setBoolPref("boolKey", false);
     is(branch.getBoolPref("boolKey"), false);
 
-    let obs1 = makeObserver();
+    let obs1 = makeObserver(_observerId++);
     branch.addObserver("boolKey", obs1);
 
     try {
       branch.setBoolPref("boolKey", true);
       is(branch.getBoolPref("boolKey"), true);
 
-      let value1 = yield obs1.promise;
+      let value1 = await obs1.promise;
       is(obs1.count, 1);
 
       is(value1.subject, obs1);
@@ -133,14 +114,14 @@ Migrated from Robocop: https://bugzilla.mozilla.org/show_bug.cgi?id=1184186
     // depends, of course, on the order that observers are notified, but
     // is better than nothing.
 
-    let obs2 = makeObserver();
+    let obs2 = makeObserver(_observerId++);
     branch.addObserver("boolKey", obs2);
 
     try {
       branch.setBoolPref("boolKey", false);
       is(branch.getBoolPref("boolKey"), false);
 
-      let value2 = yield obs2.promise;
+      let value2 = await obs2.promise;
       is(obs2.count, 1);
 
       is(value2.subject, obs2);
@@ -155,13 +136,13 @@ Migrated from Robocop: https://bugzilla.mozilla.org/show_bug.cgi?id=1184186
     }
   });
 
-  add_task(function* test_observer_ignores() {
+  add_task(async function test_observer_ignores() {
     let branch = SharedPreferences.forAndroid("test");
 
     branch.setCharPref("charKey", "first value");
     is(branch.getCharPref("charKey"), "first value");
 
-    let obs = makeObserver();
+    let obs = makeObserver(_observerId++);
     branch.addObserver("charKey", obs);
 
     try {
@@ -172,7 +153,7 @@ Migrated from Robocop: https://bugzilla.mozilla.org/show_bug.cgi?id=1184186
       branch.setIntPref("intKey", 4000);
 
       branch.setCharPref("charKey", "a value");
-      let value = yield obs.promise;
+      let value = await obs.promise;
 
       // Observer should have been notified exactly once.
       is(obs.count, 1);
@@ -186,13 +167,13 @@ Migrated from Robocop: https://bugzilla.mozilla.org/show_bug.cgi?id=1184186
     }
   });
 
-  add_task(function* test_observer_ignores_branches() {
+  add_task(async function test_observer_ignores_branches() {
     let branch = SharedPreferences.forAndroid("test");
 
     branch.setCharPref("charKey", "first value");
     is(branch.getCharPref("charKey"), "first value");
 
-    let obs = makeObserver();
+    let obs = makeObserver(_observerId++);
     branch.addObserver("charKey", obs);
 
     try {
@@ -205,7 +186,7 @@ Migrated from Robocop: https://bugzilla.mozilla.org/show_bug.cgi?id=1184186
       // This should not be ignored.
       branch.setCharPref("charKey", "a value");
 
-      let value = yield obs.promise;
+      let value = await obs.promise;
 
       // Observer should have been notified exactly once.
       is(obs.count, 1);
@@ -219,7 +200,7 @@ Migrated from Robocop: https://bugzilla.mozilla.org/show_bug.cgi?id=1184186
     }
   });
 
-  add_task(function* test_scopes() {
+  add_task(async function test_scopes() {
     let forApp = SharedPreferences.forApp();
     let forProfile = SharedPreferences.forProfile();
     let forProfileName = SharedPreferences.forProfileName("testProfile");

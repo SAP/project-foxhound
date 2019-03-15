@@ -11,66 +11,63 @@ var MEDIA_PERMISSION = "media.navigator.permission.disabled";
 function waitForDeviceClosed() {
   info("Checking that getUserMedia streams are no longer in use.");
 
-  let temp = {};
-  Cu.import("resource:///modules/webrtcUI.jsm", temp);
-  let webrtcUI = temp.webrtcUI;
+  const temp = {};
+  ChromeUtils.import("resource:///modules/webrtcUI.jsm", temp);
+  const webrtcUI = temp.webrtcUI;
 
-  if (!webrtcUI.showGlobalIndicator)
+  if (!webrtcUI.showGlobalIndicator) {
     return Promise.resolve();
+  }
 
-  let deferred = Promise.defer();
-
-  const message = "webrtc:UpdateGlobalIndicators";
-  let ppmm = Cc["@mozilla.org/parentprocessmessagemanager;1"]
-               .getService(Ci.nsIMessageBroadcaster);
-  ppmm.addMessageListener(message, function listener(aMessage) {
-    info("Received " + message + " message");
-    if (!aMessage.data.showGlobalIndicator) {
-      ppmm.removeMessageListener(message, listener);
-      deferred.resolve();
-    }
+  return new Promise((resolve, reject) => {
+    const message = "webrtc:UpdateGlobalIndicators";
+    Services.ppmm.addMessageListener(message, function listener(aMessage) {
+      info("Received " + message + " message");
+      if (!aMessage.data.showGlobalIndicator) {
+        Services.ppmm.removeMessageListener(message, listener);
+        resolve();
+      }
+    });
   });
-
-  return deferred.promise;
 }
 
-add_task(function* () {
-  let { target, panel } = yield initWebAudioEditor(MEDIA_NODES_URL);
-  let { panelWin } = panel;
-  let { gFront, $, $$, EVENTS, PropertiesView } = panelWin;
-  let gVars = PropertiesView._propsView;
+add_task(async function() {
+  const { target, panel } = await initWebAudioEditor(MEDIA_NODES_URL);
+  const { panelWin } = panel;
+  const { gFront, $, $$, EVENTS, PropertiesView } = panelWin;
+  const gVars = PropertiesView._propsView;
 
   // Auto enable getUserMedia
-  let mediaPermissionPref = Services.prefs.getBoolPref(MEDIA_PERMISSION);
+  const mediaPermissionPref = Services.prefs.getBoolPref(MEDIA_PERMISSION);
   Services.prefs.setBoolPref(MEDIA_PERMISSION, true);
 
-  yield loadFrameScripts();
+  await loadFrameScriptUtils();
 
-  let events = Promise.all([
+  const events = Promise.all([
     getN(gFront, "create-node", 4),
-    waitForGraphRendered(panelWin, 4, 0)
+    waitForGraphRendered(panelWin, 4, 0),
   ]);
   reload(target);
-  let [actors] = yield events;
-  let nodeIds = actors.map(actor => actor.actorID);
+  const [actors] = await events;
+  const nodeIds = actors.map(actor => actor.actorID);
 
-  let types = [
+  const types = [
     "AudioDestinationNode", "MediaElementAudioSourceNode",
-    "MediaStreamAudioSourceNode", "MediaStreamAudioDestinationNode"
+    "MediaStreamAudioSourceNode", "MediaStreamAudioDestinationNode",
   ];
 
-  let defaults = yield Promise.all(types.map(type => nodeDefaultValues(type)));
+  const defaults = await Promise.all(types.map(type => nodeDefaultValues(type)));
 
   for (let i = 0; i < types.length; i++) {
     click(panelWin, findGraphNode(panelWin, nodeIds[i]));
-    yield waitForInspectorRender(panelWin, EVENTS);
+    await waitForInspectorRender(panelWin, EVENTS);
     checkVariableView(gVars, 0, defaults[i], types[i]);
   }
 
   // Reset permissions on getUserMedia
   Services.prefs.setBoolPref(MEDIA_PERMISSION, mediaPermissionPref);
 
-  yield teardown(target);
+  await teardown(target);
 
-  yield waitForDeviceClosed();
+  await waitForDeviceClosed();
 });

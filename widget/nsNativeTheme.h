@@ -6,13 +6,18 @@
 // This defines a common base class for nsITheme implementations, to reduce
 // code duplication.
 
+#ifndef _NSNATIVETHEME_H_
+#define _NSNATIVETHEME_H_
+
 #include "nsAlgorithm.h"
-#include "nsIAtom.h"
+#include "nsAtom.h"
+#include "nsColor.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"
 #include "nsMargin.h"
 #include "nsGkAtoms.h"
 #include "nsTArray.h"
+#include "nsINamed.h"
 #include "nsITimer.h"
 #include "nsIContent.h"
 
@@ -21,21 +26,23 @@ class nsIPresShell;
 class nsPresContext;
 
 namespace mozilla {
+class ComputedStyle;
+enum class StyleAppearance : uint8_t;
 class EventStates;
-} // namespace mozilla
+}  // namespace mozilla
 
-class nsNativeTheme : public nsITimerCallback
-{
+class nsNativeTheme : public nsITimerCallback, public nsINamed {
  protected:
   virtual ~nsNativeTheme() {}
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSITIMERCALLBACK
+  NS_DECL_NSINAMED
 
   enum ScrollbarButtonType {
-    eScrollbarButton_UpTop   = 0,
-    eScrollbarButton_Down    = 1 << 0,
-    eScrollbarButton_Bottom  = 1 << 1
+    eScrollbarButton_UpTop = 0,
+    eScrollbarButton_Down = 1 << 0,
+    eScrollbarButton_Bottom = 1 << 1
   };
 
   enum TreeSortDirection {
@@ -47,13 +54,14 @@ class nsNativeTheme : public nsITimerCallback
   nsNativeTheme();
 
   // Returns the content state (hover, focus, etc), see EventStateManager.h
-  mozilla::EventStates GetContentState(nsIFrame* aFrame, uint8_t aWidgetType);
+  mozilla::EventStates GetContentState(nsIFrame* aFrame,
+                                       mozilla::StyleAppearance aAppearance);
 
   // Returns whether the widget is already styled by content
   // Normally called from ThemeSupportsWidget to turn off native theming
   // for elements that are already styled.
   bool IsWidgetStyled(nsPresContext* aPresContext, nsIFrame* aFrame,
-                        uint8_t aWidgetType);                                              
+                      mozilla::StyleAppearance aAppearance);
 
   // Accessors to widget-specific state information
 
@@ -62,8 +70,8 @@ class nsNativeTheme : public nsITimerCallback
   // RTL chrome direction
   static bool IsFrameRTL(nsIFrame* aFrame);
 
-  bool IsHTMLContent(nsIFrame *aFrame);
-  
+  bool IsHTMLContent(nsIFrame* aFrame);
+
   // button:
   bool IsDefaultButton(nsIFrame* aFrame) {
     return CheckBooleanAttr(aFrame, nsGkAtoms::_default);
@@ -92,23 +100,25 @@ class nsNativeTheme : public nsITimerCallback
   bool IsSelectedTab(nsIFrame* aFrame) {
     return CheckBooleanAttr(aFrame, nsGkAtoms::visuallyselected);
   }
-  
+
   bool IsNextToSelectedTab(nsIFrame* aFrame, int32_t aOffset);
-  
+
   bool IsBeforeSelectedTab(nsIFrame* aFrame) {
     return IsNextToSelectedTab(aFrame, -1);
   }
-  
+
   bool IsAfterSelectedTab(nsIFrame* aFrame) {
     return IsNextToSelectedTab(aFrame, 1);
   }
 
   bool IsLeftToSelectedTab(nsIFrame* aFrame) {
-    return IsFrameRTL(aFrame) ? IsAfterSelectedTab(aFrame) : IsBeforeSelectedTab(aFrame);
+    return IsFrameRTL(aFrame) ? IsAfterSelectedTab(aFrame)
+                              : IsBeforeSelectedTab(aFrame);
   }
 
   bool IsRightToSelectedTab(nsIFrame* aFrame) {
-    return IsFrameRTL(aFrame) ? IsBeforeSelectedTab(aFrame) : IsAfterSelectedTab(aFrame);
+    return IsFrameRTL(aFrame) ? IsBeforeSelectedTab(aFrame)
+                              : IsAfterSelectedTab(aFrame);
   }
 
   // button / toolbarbutton:
@@ -134,7 +144,7 @@ class nsNativeTheme : public nsITimerCallback
   // tab:
   bool IsBottomTab(nsIFrame* aFrame);
   bool IsFirstTab(nsIFrame* aFrame);
-  
+
   bool IsHorizontal(nsIFrame* aFrame);
 
   // progressbar:
@@ -147,20 +157,19 @@ class nsNativeTheme : public nsITimerCallback
 
   // textfield:
   bool IsReadOnly(nsIFrame* aFrame) {
-      return CheckBooleanAttr(aFrame, nsGkAtoms::readonly);
+    return CheckBooleanAttr(aFrame, nsGkAtoms::readonly);
   }
 
   // menupopup:
   bool IsSubmenu(nsIFrame* aFrame, bool* aLeftOfParent);
 
   // True if it's not a menubar item or menulist item
-  bool IsRegularMenuItem(nsIFrame *aFrame);
+  bool IsRegularMenuItem(nsIFrame* aFrame);
 
-  bool IsMenuListEditable(nsIFrame *aFrame);
-
-  nsIPresShell *GetPresShell(nsIFrame* aFrame);
-  static bool CheckBooleanAttr(nsIFrame* aFrame, nsIAtom* aAtom);
-  static int32_t CheckIntAttr(nsIFrame* aFrame, nsIAtom* aAtom, int32_t defaultValue);
+  nsIPresShell* GetPresShell(nsIFrame* aFrame);
+  static bool CheckBooleanAttr(nsIFrame* aFrame, nsAtom* aAtom);
+  static int32_t CheckIntAttr(nsIFrame* aFrame, nsAtom* aAtom,
+                              int32_t defaultValue);
 
   // Helpers for progressbar.
   static double GetProgressValue(nsIFrame* aFrame);
@@ -170,7 +179,7 @@ class nsNativeTheme : public nsITimerCallback
   bool GetIndeterminate(nsIFrame* aFrame);
 
   bool QueueAnimatedContentForRefresh(nsIContent* aContent,
-                                        uint32_t aMinimumFrameRate);
+                                      uint32_t aMinimumFrameRate);
 
   nsIFrame* GetAdjacentSiblingFrameWithSameAppearance(nsIFrame* aFrame,
                                                       bool aNextSibling);
@@ -179,9 +188,14 @@ class nsNativeTheme : public nsITimerCallback
 
   // scrollbar
   bool IsDarkBackground(nsIFrame* aFrame);
+  // custom scrollbar
+  typedef nscolor (*AutoColorGetter)(mozilla::ComputedStyle*);
+  bool IsWidgetScrollbarPart(mozilla::StyleAppearance aAppearance);
 
  private:
   uint32_t mAnimatedContentTimeout;
   nsCOMPtr<nsITimer> mAnimatedContentTimer;
   AutoTArray<nsCOMPtr<nsIContent>, 20> mAnimatedContentList;
 };
+
+#endif  // _NSNATIVETHEME_H_

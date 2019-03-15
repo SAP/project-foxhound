@@ -14,12 +14,11 @@
 
 native nsSize (nsSize);
 
+webidl DataTransfer;
+webidl Document;
+webidl Node;
 
-interface nsIDOMDocument;
-interface nsIDOMNode;
-interface nsIDOMDataTransfer;
-
-[scriptable, uuid(25bce737-73f0-43c7-bc20-c71044a73c5a)]
+[scriptable, builtinclass, uuid(25bce737-73f0-43c7-bc20-c71044a73c5a)]
 interface nsIDragSession : nsISupports
 {
   /**
@@ -39,12 +38,6 @@ interface nsIDragSession : nsISupports
   attribute unsigned long dragAction;
   
   /**
-    * Sets the current width and height of the drag target area. 
-    * It will contain the current size of the Frame that the drag is currently in
-    */  
-  [noscript] attribute nsSize targetSize;
- 
-  /**
     * Get the number of items that were dropped
     */
   readonly attribute unsigned long numDropItems;
@@ -54,22 +47,32 @@ interface nsIDragSession : nsISupports
     * drag originated outside the application. Useful for determining if a drop
     * originated in the same document.
     */
-  readonly attribute nsIDOMDocument sourceDocument;
+  readonly attribute Document sourceDocument;
 
   /**
     * The dom node that was originally dragged to start the session, which will be null if the
     * drag originated outside the application.
     */
-  readonly attribute nsIDOMNode sourceNode;
+  readonly attribute Node sourceNode;
+
+  /**
+   * the triggering principal.  This may be different than sourceNode's
+   * principal when sourceNode is xul:browser and the drag is
+   * triggered in a browsing context inside it.
+   */
+  attribute nsIPrincipal triggeringPrincipal;
 
   /**
    * The data transfer object for the current drag.
    */
-  attribute nsIDOMDataTransfer dataTransfer;
+  [binaryname(DataTransferXPCOM)]
+  attribute DataTransfer dataTransfer;
+  [notxpcom, nostdcall] DataTransfer getDataTransfer();
+  [notxpcom, nostdcall] void setDataTransfer(in DataTransfer aDataTransfer);
 
   /**
     * Get data from a Drag&Drop. Can be called while the drag is in process
-    * or after the drop has completed.  
+    * or after the drop has completed.
     *
     * @param  aTransferable the transferable for the data to be put into
     * @param  aItemIndex which of multiple drag items, zero-based
@@ -92,7 +95,7 @@ interface nsIDragSession : nsISupports
 
   // Change the drag image, using similar arguments as
   // nsIDragService::InvokeDragSessionWithImage.
-  void updateDragImage(in nsIDOMNode aImage, in long aImageX, in long aImageY);
+  void updateDragImage(in Node aImage, in long aImageX, in long aImageY);
 };
 
 

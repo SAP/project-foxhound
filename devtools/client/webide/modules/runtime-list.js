@@ -8,15 +8,13 @@ const Services = require("Services");
 const {AppManager} = require("devtools/client/webide/modules/app-manager");
 const EventEmitter = require("devtools/shared/event-emitter");
 const {RuntimeScanners, WiFiScanner} = require("devtools/client/webide/modules/runtimes");
-const {Devices} = require("resource://devtools/shared/apps/Devices.jsm");
-const {Task} = require("devtools/shared/task");
-const utils = require("devtools/client/webide/modules/utils");
+const { adbAddon, ADB_ADDON_STATES } = require("devtools/shared/adb/adb-addon");
 
 const Strings = Services.strings.createBundle("chrome://devtools/locale/webide.properties");
 
 var RuntimeList;
 
-module.exports = RuntimeList = function (window, parentWindow) {
+module.exports = RuntimeList = function(window, parentWindow) {
   EventEmitter.decorate(this);
   this._doc = window.document;
   this._UI = parentWindow.UI;
@@ -38,7 +36,7 @@ RuntimeList.prototype = {
     return this._doc;
   },
 
-  appManagerUpdate: function (event, what, details) {
+  appManagerUpdate: function(what, details) {
     // Got a message from app-manager.js
     // See AppManager.update() for descriptions of what these events mean.
     switch (what) {
@@ -52,49 +50,57 @@ RuntimeList.prototype = {
     }
   },
 
-  onWebIDEUpdate: function (event, what, details) {
+  onWebIDEUpdate: function(what, details) {
     if (what == "busy" || what == "unbusy") {
       this.updateCommands();
     }
   },
 
-  takeScreenshot: function () {
+  takeScreenshot: function() {
     this._Cmds.takeScreenshot();
   },
 
-  showRuntimeDetails: function () {
+  showRuntimeDetails: function() {
     this._Cmds.showRuntimeDetails();
   },
 
-  showDevicePreferences: function () {
+  showDevicePreferences: function() {
     this._Cmds.showDevicePrefs();
   },
 
-  showSettings: function () {
+  showSettings: function() {
     this._Cmds.showSettings();
   },
 
-  showTroubleShooting: function () {
+  showPerformancePanel: function() {
+    this._Cmds.showPerformancePanel();
+  },
+
+  showTroubleShooting: function() {
     this._Cmds.showTroubleShooting();
   },
 
-  showAddons: function () {
+  showAddons: function() {
     this._Cmds.showAddons();
   },
 
-  refreshScanners: function () {
+  refreshScanners: function() {
     RuntimeScanners.scan();
   },
 
-  updateCommands: function () {
-    let doc = this._doc;
+  updateCommands: function() {
+    const doc = this._doc;
 
     // Runtime commands
-    let screenshotCmd = doc.querySelector("#runtime-screenshot");
-    let detailsCmd = doc.querySelector("#runtime-details");
-    let disconnectCmd = doc.querySelector("#runtime-disconnect");
-    let devicePrefsCmd = doc.querySelector("#runtime-preferences");
-    let settingsCmd = doc.querySelector("#runtime-settings");
+    const screenshotCmd = doc.querySelector("#runtime-screenshot");
+    const detailsCmd = doc.querySelector("#runtime-details");
+    const disconnectCmd = doc.querySelector("#runtime-disconnect");
+    const devicePrefsCmd = doc.querySelector("#runtime-preferences");
+    const settingsCmd = doc.querySelector("#runtime-settings");
+    const performanceCmd = doc.querySelector("#runtime-performance");
+
+    // Display the performance button only if the pref is enabled
+    performanceCmd.hidden = !Services.prefs.getBoolPref("devtools.performance.new-panel-enabled", false);
 
     if (AppManager.connected) {
       if (AppManager.deviceFront) {
@@ -105,18 +111,22 @@ RuntimeList.prototype = {
         devicePrefsCmd.removeAttribute("disabled");
       }
       disconnectCmd.removeAttribute("disabled");
+      if (AppManager.perfFront) {
+        performanceCmd.removeAttribute("disabled");
+      }
     } else {
       detailsCmd.setAttribute("disabled", "true");
       screenshotCmd.setAttribute("disabled", "true");
       disconnectCmd.setAttribute("disabled", "true");
       devicePrefsCmd.setAttribute("disabled", "true");
       settingsCmd.setAttribute("disabled", "true");
+      performanceCmd.setAttribute("disabled", "true");
     }
   },
 
-  update: function () {
-    let doc = this._doc;
-    let wifiHeaderNode = doc.querySelector("#runtime-header-wifi");
+  update: function() {
+    const doc = this._doc;
+    const wifiHeaderNode = doc.querySelector("#runtime-header-wifi");
 
     if (WiFiScanner.allowed) {
       wifiHeaderNode.removeAttribute("hidden");
@@ -124,46 +134,46 @@ RuntimeList.prototype = {
       wifiHeaderNode.setAttribute("hidden", "true");
     }
 
-    let usbListNode = doc.querySelector("#runtime-panel-usb");
-    let wifiListNode = doc.querySelector("#runtime-panel-wifi");
-    let simulatorListNode = doc.querySelector("#runtime-panel-simulator");
-    let otherListNode = doc.querySelector("#runtime-panel-other");
-    let noHelperNode = doc.querySelector("#runtime-panel-noadbhelper");
-    let noUSBNode = doc.querySelector("#runtime-panel-nousbdevice");
+    const usbListNode = doc.querySelector("#runtime-panel-usb");
+    const wifiListNode = doc.querySelector("#runtime-panel-wifi");
+    const otherListNode = doc.querySelector("#runtime-panel-other");
+    const noADBExtensionNode = doc.querySelector("#runtime-panel-noadbextension");
+    const noUSBNode = doc.querySelector("#runtime-panel-nousbdevice");
+    noADBExtensionNode.textContent =
+      Strings.formatStringFromName("runtimePanel_noadbextension", ["ADB Extension"], 1);
 
-    if (Devices.helperAddonInstalled) {
-      noHelperNode.setAttribute("hidden", "true");
+    if (adbAddon.status === ADB_ADDON_STATES.INSTALLED) {
+      noADBExtensionNode.setAttribute("hidden", "true");
     } else {
-      noHelperNode.removeAttribute("hidden");
+      noADBExtensionNode.removeAttribute("hidden");
     }
 
-    let runtimeList = AppManager.runtimeList;
+    const runtimeList = AppManager.runtimeList;
 
     if (!runtimeList) {
       return;
     }
 
-    if (runtimeList.usb.length === 0 && Devices.helperAddonInstalled) {
+    if (runtimeList.usb.length === 0 && adbAddon.status === ADB_ADDON_STATES.INSTALLED) {
       noUSBNode.removeAttribute("hidden");
     } else {
       noUSBNode.setAttribute("hidden", "true");
     }
 
-    for (let [type, parent] of [
+    for (const [type, parent] of [
       ["usb", usbListNode],
       ["wifi", wifiListNode],
-      ["simulator", simulatorListNode],
       ["other", otherListNode],
     ]) {
       while (parent.hasChildNodes()) {
         parent.firstChild.remove();
       }
-      for (let runtime of runtimeList[type]) {
-        let r = runtime;
-        let panelItemNode = doc.createElement(this._panelBoxEl);
+      for (const runtime of runtimeList[type]) {
+        const r = runtime;
+        const panelItemNode = doc.createElement(this._panelBoxEl);
         panelItemNode.className = "panel-item-complex";
 
-        let connectButton = doc.createElement(this._panelNodeEl);
+        const connectButton = doc.createElement(this._panelNodeEl);
         connectButton.className = "panel-item runtime-panel-item-" + type;
         connectButton.textContent = r.name;
 
@@ -174,7 +184,7 @@ RuntimeList.prototype = {
         panelItemNode.appendChild(connectButton);
 
         if (r.configure) {
-          let configButton = doc.createElement(this._panelNodeEl);
+          const configButton = doc.createElement(this._panelNodeEl);
           configButton.className = "configure-button";
           configButton.addEventListener("click", r.configure.bind(r), true);
           panelItemNode.appendChild(configButton);
@@ -185,7 +195,7 @@ RuntimeList.prototype = {
     }
   },
 
-  destroy: function () {
+  destroy: function() {
     this._doc = null;
     AppManager.off("app-manager-update", this.appManagerUpdate);
     this._UI.off("webide-update", this.onWebIDEUpdate);
@@ -193,5 +203,5 @@ RuntimeList.prototype = {
     this._Cmds = null;
     this._parentWindow = null;
     this._panelNodeEl = null;
-  }
+  },
 };

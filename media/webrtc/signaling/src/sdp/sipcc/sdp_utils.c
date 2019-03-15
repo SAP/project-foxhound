@@ -15,6 +15,13 @@
 
 static const char* logTag = "sdp_utils";
 
+// Actually checks for ASCII only unlike isdigit() on Windows.
+// Also avoids UB issues with isdigit() sign extension when
+// char is signed.
+int sdp_is_ascii_digit(const char c) {
+  return '0' <= c && c <= '9';
+}
+
 sdp_mca_t *sdp_alloc_mca (uint32_t line) {
     sdp_mca_t           *mca_p;
 
@@ -155,7 +162,7 @@ verify_sdescriptions_mki (char *buf, char *mkiVal, uint16_t *mkiLen)
 
     ptr = buf;
     /* MKI must begin with a digit */
-    if (!ptr || (!isdigit((int) *ptr))) {
+    if (!ptr || (!sdp_is_ascii_digit(*ptr))) {
         return FALSE;
     }
 
@@ -166,7 +173,7 @@ verify_sdescriptions_mki (char *buf, char *mkiVal, uint16_t *mkiLen)
             mkiValBuf[idx] = 0;
             ptr++;
             break;
-        } else if ((isdigit((int) *ptr) && (idx < SDP_SRTP_MAX_MKI_SIZE_BYTES-1))) {
+        } else if ((sdp_is_ascii_digit(*ptr) && (idx < SDP_SRTP_MAX_MKI_SIZE_BYTES-1))) {
              mkiValBuf[idx++] = *ptr;
         } else {
              return FALSE;
@@ -184,7 +191,7 @@ verify_sdescriptions_mki (char *buf, char *mkiVal, uint16_t *mkiLen)
 
     /* verify the mki length (max 3 digits) */
     while (*ptr) {
-        if (isdigit((int) *ptr) && (idx < 3)) {
+        if (sdp_is_ascii_digit(*ptr) && (idx < 3)) {
             mkiLenBuf[idx++] = *ptr;
         } else {
             return FALSE;
@@ -251,7 +258,7 @@ verify_sdescriptions_lifetime (char *buf)
                     return FALSE;
                 }
             }
-        } else if (!isdigit((int) *ptr)) {
+        } else if (!sdp_is_ascii_digit(*ptr)) {
                    return FALSE;
         }
 
@@ -282,13 +289,13 @@ sdp_validate_maxprate(const char *string_parm)
     tinybool retval = FALSE;
 
     if (string_parm && (*string_parm)) {
-        while (isdigit((int)*string_parm)) {
+        while (sdp_is_ascii_digit(*string_parm)) {
             string_parm++;
         }
 
         if (*string_parm == '.') {
             string_parm++;
-            while (isdigit((int)*string_parm)) {
+            while (sdp_is_ascii_digit(*string_parm)) {
                 string_parm++;
             }
         }
@@ -431,69 +438,6 @@ uint32_t sdp_getnextnumtok (const char *str, const char **str_end,
   return (uint32_t) numval;
 }
 
-
-/* See if the next token in a string is the choose character.  The delim
- * characters are passed in as a param.  The check also will not go past
- * a new line char or the end of the string.  Skip any delimiters before
- * the token.
- */
-tinybool sdp_getchoosetok (const char *str, const char **str_end,
-                           const char *delim, sdp_result_e *result)
-{
-    const char *b;
-    int   flag2moveon;
-
-    if ((str == NULL)  || (str_end == NULL)) {
-        *result = SDP_FAILURE;
-        return(FALSE);
-    }
-
-    /* Locate front of token, skipping any delimiters */
-    for ( ; ((*str != '\0') && (*str != '\n') && (*str != '\r')); str++) {
-        flag2moveon = 1;  /* Default to move on unless we find a delimiter */
-        for (b=delim; *b; b++) {
-            if (*str == *b) {
-                flag2moveon = 0;
-                break;
-            }
-        }
-        if( flag2moveon ) {
-            break;  /* We're at the beginning of the token */
-        }
-    }
-
-    /* Make sure there's really a token present. */
-    if ((*str == '\0') || (*str == '\n') || (*str == '\r')) {
-        *result = SDP_FAILURE;
-        *str_end = (char *)str;
-        return(FALSE);
-    }
-
-    /* See if the token is '$' followed by a delimiter char or end of str. */
-    if (*str == '$') {
-        str++;
-        if ((*str == '\0') || (*str == '\n') || (*str == '\r')) {
-            *result = SDP_SUCCESS;
-            /* skip the choose char in the string. */
-            *str_end = (char *)(str+1);
-            return(TRUE);
-        }
-        for (b=delim; *b; b++) {
-            if (*str == *b) {
-                *result = SDP_SUCCESS;
-                /* skip the choose char in the string. */
-                *str_end = (char *)(str+1);
-                return(TRUE);
-            }
-        }
-    }
-
-    /* If the token was not '$' followed by a delim, token is not choose */
-    *result = SDP_SUCCESS;
-    *str_end = (char *)str;
-    return(FALSE);
-
-}
 
 /*
  * SDP Crypto Utility Functions.

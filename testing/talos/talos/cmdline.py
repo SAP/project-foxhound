@@ -1,6 +1,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
+from __future__ import absolute_import, print_function
 
 import argparse
 import os
@@ -59,45 +60,51 @@ def create_parser(mach_interface=False):
                 help="path to executable we are testing")
     add_arg('-t', '--title', default='qm-pxp01',
             help="Title of the test run")
-    add_arg('--branchName', dest="branch_name", default='',
-            help="Name of the branch we are testing on")
     add_arg('--browserWait', dest='browser_wait', default=5, type=int,
             help="Amount of time allowed for the browser to cleanly close")
     add_arg('-a', '--activeTests',
-            help="List of tests to run, separated by ':' (ex. damp:cart)")
+            help="List of tests to run, separated by ':' (ex. damp:tart)")
     add_arg('--suite',
             help="Suite to use (instead of --activeTests)")
-    add_arg('--disable-e10s', dest='e10s',
-            action='store_false', default=True,
-            help="disable e10s")
-    add_arg('--noChrome', action='store_true',
-            help="do not run tests as chrome")
-    add_arg('--rss', action='store_true',
-            help="Collect RSS counters from pageloader instead of the"
-                 " operating system")
+    add_arg('--subtests',
+            help="Name of the subtest(s) to run (works only on DAMP)")
     add_arg('--mainthread', action='store_true',
             help="Collect mainthread IO data from the browser by setting"
                  " an environment variable")
     add_arg("--mozAfterPaint", action='store_true', dest="tpmozafterpaint",
             help="wait for MozAfterPaint event before recording the time")
+    add_arg("--firstPaint", action='store_true', dest="firstpaint",
+            help="Also report the first paint value in supported tests")
+    add_arg("--useHero", action='store_true', dest="tphero",
+            help="use Hero elementtiming attribute to record the time")
+    add_arg("--userReady", action='store_true', dest="userready",
+            help="Also report the user ready value in supported tests")
     add_arg('--spsProfile', action="store_true", dest="gecko_profile",
-            help="(Deprecated - Use --geckoProfile instead.) Profile the "
+            help="(Deprecated - Use --gecko-profile instead.) Profile the "
                  "run and output the results in $MOZ_UPLOAD_DIR.")
-    add_arg('--spsProfileInterval', dest='gecko_profile_interval', type=int,
-            help="(Deprecated - Use --geckoProfileInterval instead.) How "
+    add_arg('--spsProfileInterval', dest='gecko_profile_interval', type=float,
+            help="(Deprecated - Use --gecko-profile-interval instead.) How "
                  "frequently to take samples (ms)")
     add_arg('--spsProfileEntries', dest="gecko_profile_entries", type=int,
-            help="(Deprecated - Use --geckoProfileEntries instead.) How "
+            help="(Deprecated - Use --gecko-profile-entries instead.) How "
                  "many samples to take with the profiler")
     add_arg('--geckoProfile', action="store_true", dest="gecko_profile",
-            help="Profile the run and output the results in $MOZ_UPLOAD_DIR.")
-    add_arg('--geckoProfileInterval', dest='gecko_profile_interval', type=int,
-            help="How frequently to take samples (ms)")
+            help=argparse.SUPPRESS)
+    add_arg('--geckoProfileInterval', dest='gecko_profile_interval', type=float,
+            help=argparse.SUPPRESS)
     add_arg('--geckoProfileEntries', dest="gecko_profile_entries", type=int,
+            help=argparse.SUPPRESS)
+    add_arg('--gecko-profile', action="store_true", dest="gecko_profile",
+            help="Profile the run and output the results in $MOZ_UPLOAD_DIR. "
+                 "After talos is finished, perf-html.io will be launched in Firefox so you "
+                 "can analyze the local profiles. To disable auto-launching of perf-html.io "
+                 "set the DISABLE_PROFILE_LAUNCH=1 env var.")
+    add_arg('--gecko-profile-interval', dest='gecko_profile_interval', type=float,
+            help="How frequently to take samples (ms)")
+    add_arg('--gecko-profile-entries', dest="gecko_profile_entries", type=int,
             help="How many samples to take with the profiler")
     add_arg('--extension', dest='extensions', action='append',
-            default=['${talos}/talos-powers/talos-powers-signed.xpi',
-                     '${talos}/pageloader/pageloader-signed.xpi'],
+            default=['${talos}/talos-powers'],
             help="Extension to install while running")
     add_arg('--fast', action='store_true',
             help="Run tp tests as tp_fast")
@@ -111,11 +118,16 @@ def create_parser(mach_interface=False):
             default=os.path.abspath('browser_failures.txt'),
             help="Filename to store the errors found during the test."
                  " Currently used for xperf only.")
-    add_arg('--noShutdown', dest='shutdown', action='store_true',
-            help="Record time browser takes to shutdown after testing")
     add_arg('--setpref', action='append', default=[], dest="extraPrefs",
             metavar="PREF=VALUE",
             help="defines an extra user preference")
+    add_arg('--mitmproxy',
+            help='Test uses mitmproxy to serve the pages, specify the '
+                 'path and name of the mitmdump file to playback')
+    add_arg('--mitmdumpPath',
+            help="Path to mitmproxy's mitmdump playback tool")
+    add_arg("--firstNonBlankPaint", action='store_true', dest="fnbpaint",
+            help="Wait for firstNonBlankPaint event before recording the time")
     add_arg('--webServer', dest='webserver',
             help="DEPRECATED")
     if not mach_interface:
@@ -134,8 +146,6 @@ def create_parser(mach_interface=False):
     add_arg('--tppagecycles', type=int,
             help='number of pageloader cycles to run for each page in'
                  ' the manifest')
-    add_arg('--tpdelay', type=int,
-            help="length of the pageloader delay")
     add_arg('--no-download', action="store_true", dest="no_download",
             help="Do not download the talos test pagesets")
     add_arg('--sourcestamp',
@@ -154,6 +164,28 @@ def create_parser(mach_interface=False):
             help="print available tests")
     add_arg('--print-suites', action=_ListSuite,
             help="list available suites")
+    add_arg('--no-upload-results', action="store_true",
+            dest='no_upload_results',
+            help="If given, it disables uploading of talos results.")
+    add_arg('--stylo-threads', type=int,
+            dest='stylothreads',
+            help='If given, run Stylo with a certain number of threads')
+    add_arg('--profile', type=str, default=None,
+            help="Downloads a profile from TaskCluster and uses it")
+    debug_options = parser.add_argument_group('Command Arguments for debugging')
+    debug_options.add_argument('--debug', action='store_true',
+                               help='Enable the debugger. Not specifying a --debugger option will'
+                                    'result in the default debugger being used.')
+    debug_options.add_argument('--debugger', default=None,
+                               help='Name of debugger to use.')
+    debug_options.add_argument('--debugger-args', default=None, metavar='params',
+                               help='Command-line arguments to pass to the debugger itself; split'
+                                    'as the Bourne shell would.')
+    add_arg('--code-coverage', action="store_true",
+            dest='code_coverage',
+            help='Remove any existing ccov gcda output files after browser'
+                 ' initialization but before starting the tests. NOTE:'
+                 ' Currently only supported in production.')
 
     add_logging_group(parser)
     return parser

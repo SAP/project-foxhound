@@ -16,21 +16,19 @@ typedef media::Interval<uint8_t> ByteInterval;
 typedef media::Interval<int> IntInterval;
 typedef media::IntervalSet<int> IntIntervals;
 
-ByteInterval CreateByteInterval(int32_t aStart, int32_t aEnd)
-{
+ByteInterval CreateByteInterval(int32_t aStart, int32_t aEnd) {
   ByteInterval test(aStart, aEnd);
   return test;
 }
 
-media::IntervalSet<uint8_t> CreateByteIntervalSet(int32_t aStart, int32_t aEnd)
-{
+media::IntervalSet<uint8_t> CreateByteIntervalSet(int32_t aStart,
+                                                  int32_t aEnd) {
   media::IntervalSet<uint8_t> test;
   test += ByteInterval(aStart, aEnd);
   return test;
 }
 
-TEST(IntervalSet, Constructors)
-{
+TEST(IntervalSet, Constructors) {
   const int32_t start = 1;
   const int32_t end = 2;
   const int32_t fuzz = 0;
@@ -47,80 +45,91 @@ TEST(IntervalSet, Constructors)
   media::IntervalSet<uint8_t> blah3 = blah1 + test1;
   media::IntervalSet<uint8_t> blah4 = test1 + blah1;
   media::IntervalSet<uint8_t> blah5 = CreateByteIntervalSet(start, end);
-  (void)test1; (void)test2; (void)test3; (void)test4; (void)test5;
-  (void)blah1; (void)blah2; (void)blah3; (void)blah4; (void)blah5;
+  (void)test1;
+  (void)test2;
+  (void)test3;
+  (void)test4;
+  (void)test5;
+  (void)blah1;
+  (void)blah2;
+  (void)blah3;
+  (void)blah4;
+  (void)blah5;
 }
 
-media::TimeInterval CreateTimeInterval(int32_t aStart, int32_t aEnd)
-{
+media::TimeInterval CreateTimeInterval(int32_t aStart, int32_t aEnd) {
   // Copy constructor test
-  media::Microseconds startus(aStart);
-  media::TimeUnit start(startus);
+  media::TimeUnit start = media::TimeUnit::FromMicroseconds(aStart);
   media::TimeUnit end;
   // operator=  test
-  end = media::Microseconds(aEnd);
+  end = media::TimeUnit::FromMicroseconds(aEnd);
   media::TimeInterval ti(start, end);
   return ti;
 }
 
-media::TimeIntervals CreateTimeIntervals(int32_t aStart, int32_t aEnd)
-{
+media::TimeIntervals CreateTimeIntervals(int32_t aStart, int32_t aEnd) {
   media::TimeIntervals test;
   test += CreateTimeInterval(aStart, aEnd);
   return test;
 }
 
-TEST(IntervalSet, TimeIntervalsConstructors)
-{
-  const media::Microseconds start(1);
-  const media::Microseconds end(2);
-  const media::Microseconds fuzz;
+TEST(IntervalSet, TimeIntervalsConstructors) {
+  const auto start = media::TimeUnit::FromMicroseconds(1);
+  const auto end = media::TimeUnit::FromMicroseconds(2);
+  const media::TimeUnit fuzz;
 
   // Compiler exercise.
   media::TimeInterval test1(start, end);
   media::TimeInterval test2(test1);
   media::TimeInterval test3(start, end, fuzz);
   media::TimeInterval test4(test3);
-  media::TimeInterval test5 = CreateTimeInterval(start.mValue, end.mValue);
+  media::TimeInterval test5 =
+      CreateTimeInterval(start.ToMicroseconds(), end.ToMicroseconds());
 
   media::TimeIntervals blah1(test1);
   media::TimeIntervals blah2(blah1);
   media::TimeIntervals blah3 = blah1 + test1;
   media::TimeIntervals blah4 = test1 + blah1;
-  media::TimeIntervals blah5 = CreateTimeIntervals(start.mValue, end.mValue);
-  (void)test1; (void)test2; (void)test3; (void)test4; (void)test5;
-  (void)blah1; (void)blah2; (void)blah3; (void)blah4; (void)blah5;
+  media::TimeIntervals blah5 =
+      CreateTimeIntervals(start.ToMicroseconds(), end.ToMicroseconds());
+  (void)test1;
+  (void)test2;
+  (void)test3;
+  (void)test4;
+  (void)test5;
+  (void)blah1;
+  (void)blah2;
+  (void)blah3;
+  (void)blah4;
+  (void)blah5;
 
   media::TimeIntervals i0{media::TimeInterval(media::TimeUnit::FromSeconds(0),
                                               media::TimeUnit::FromSeconds(0))};
-  EXPECT_EQ(0u, i0.Length()); // Constructing with an empty time interval.
+  EXPECT_EQ(0u, i0.Length());  // Constructing with an empty time interval.
 }
 
-TEST(IntervalSet, Length)
-{
+TEST(IntervalSet, Length) {
   IntInterval i(15, 25);
   EXPECT_EQ(10, i.Length());
 }
 
-TEST(IntervalSet, Intersects)
-{
-  EXPECT_TRUE(IntInterval(1,5).Intersects(IntInterval(3,4)));
-  EXPECT_TRUE(IntInterval(1,5).Intersects(IntInterval(3,7)));
-  EXPECT_TRUE(IntInterval(1,5).Intersects(IntInterval(-1,3)));
-  EXPECT_TRUE(IntInterval(1,5).Intersects(IntInterval(-1,7)));
-  EXPECT_FALSE(IntInterval(1,5).Intersects(IntInterval(6,7)));
-  EXPECT_FALSE(IntInterval(1,5).Intersects(IntInterval(-1,0)));
+TEST(IntervalSet, Intersects) {
+  EXPECT_TRUE(IntInterval(1, 5).Intersects(IntInterval(3, 4)));
+  EXPECT_TRUE(IntInterval(1, 5).Intersects(IntInterval(3, 7)));
+  EXPECT_TRUE(IntInterval(1, 5).Intersects(IntInterval(-1, 3)));
+  EXPECT_TRUE(IntInterval(1, 5).Intersects(IntInterval(-1, 7)));
+  EXPECT_FALSE(IntInterval(1, 5).Intersects(IntInterval(6, 7)));
+  EXPECT_FALSE(IntInterval(1, 5).Intersects(IntInterval(-1, 0)));
   // End boundary is exclusive of the interval.
-  EXPECT_FALSE(IntInterval(1,5).Intersects(IntInterval(5,7)));
-  EXPECT_FALSE(IntInterval(1,5).Intersects(IntInterval(0,1)));
+  EXPECT_FALSE(IntInterval(1, 5).Intersects(IntInterval(5, 7)));
+  EXPECT_FALSE(IntInterval(1, 5).Intersects(IntInterval(0, 1)));
   // Empty identical interval do not intersect.
-  EXPECT_FALSE(IntInterval(1,1).Intersects(IntInterval(1,1)));
+  EXPECT_FALSE(IntInterval(1, 1).Intersects(IntInterval(1, 1)));
   // Empty interval do not intersect.
-  EXPECT_FALSE(IntInterval(1,1).Intersects(IntInterval(2,2)));
+  EXPECT_FALSE(IntInterval(1, 1).Intersects(IntInterval(2, 2)));
 }
 
-TEST(IntervalSet, Intersection)
-{
+TEST(IntervalSet, Intersection) {
   IntInterval i0(10, 20);
   IntInterval i1(15, 25);
   IntInterval i = i0.Intersection(i1);
@@ -136,8 +145,7 @@ TEST(IntervalSet, Intersection)
   EXPECT_TRUE(k.IsEmpty());
 }
 
-TEST(IntervalSet, Equals)
-{
+TEST(IntervalSet, Equals) {
   IntInterval i0(10, 20);
   IntInterval i1(10, 20);
   EXPECT_EQ(i0, i1);
@@ -149,8 +157,7 @@ TEST(IntervalSet, Equals)
   EXPECT_NE(i0, i2);
 }
 
-TEST(IntervalSet, IntersectionIntervalSet)
-{
+TEST(IntervalSet, IntersectionIntervalSet) {
   IntIntervals i0;
   i0 += IntInterval(5, 10);
   i0 += IntInterval(20, 25);
@@ -179,10 +186,9 @@ TEST(IntervalSet, IntersectionIntervalSet)
   EXPECT_EQ(57, i[3].mEnd);
 }
 
-template<typename T>
+template <typename T>
 static void Compare(const media::IntervalSet<T>& aI1,
-                    const media::IntervalSet<T>& aI2)
-{
+                    const media::IntervalSet<T>& aI2) {
   EXPECT_EQ(aI1.Length(), aI2.Length());
   if (aI1.Length() != aI2.Length()) {
     return;
@@ -193,9 +199,8 @@ static void Compare(const media::IntervalSet<T>& aI1,
   }
 }
 
-static void GeneratePermutations(IntIntervals aI1,
-                                 IntIntervals aI2)
-{
+static void GeneratePermutations(const IntIntervals& aI1,
+                                 const IntIntervals& aI2) {
   IntIntervals i_ref = media::Intersection(aI1, aI2);
   // Test all permutations possible
   std::vector<uint32_t> comb1;
@@ -227,8 +232,7 @@ static void GeneratePermutations(IntIntervals aI1,
   } while (std::next_permutation(comb1.begin(), comb1.end()));
 }
 
-TEST(IntervalSet, IntersectionNormalizedIntervalSet)
-{
+TEST(IntervalSet, IntersectionNormalizedIntervalSet) {
   IntIntervals i0;
   i0 += IntInterval(5, 10);
   i0 += IntInterval(20, 25);
@@ -243,8 +247,7 @@ TEST(IntervalSet, IntersectionNormalizedIntervalSet)
   GeneratePermutations(i0, i1);
 }
 
-TEST(IntervalSet, IntersectionUnorderedNonNormalizedIntervalSet)
-{
+TEST(IntervalSet, IntersectionUnorderedNonNormalizedIntervalSet) {
   IntIntervals i0;
   i0 += IntInterval(5, 10);
   i0 += IntInterval(8, 25);
@@ -259,8 +262,7 @@ TEST(IntervalSet, IntersectionUnorderedNonNormalizedIntervalSet)
   GeneratePermutations(i0, i1);
 }
 
-TEST(IntervalSet, IntersectionNonNormalizedInterval)
-{
+TEST(IntervalSet, IntersectionNonNormalizedInterval) {
   IntIntervals i0;
   i0 += IntInterval(5, 10);
   i0 += IntInterval(8, 25);
@@ -273,8 +275,7 @@ TEST(IntervalSet, IntersectionNonNormalizedInterval)
   EXPECT_EQ(i0[0].mEnd, i1.mEnd);
 }
 
-TEST(IntervalSet, IntersectionUnorderedNonNormalizedInterval)
-{
+TEST(IntervalSet, IntersectionUnorderedNonNormalizedInterval) {
   IntIntervals i0;
   i0 += IntInterval(1, 3);
   i0 += IntInterval(1, 10);
@@ -292,14 +293,12 @@ TEST(IntervalSet, IntersectionUnorderedNonNormalizedInterval)
   EXPECT_EQ(i0[0].mEnd, i1.mEnd);
 }
 
-static IntIntervals Duplicate(const IntIntervals& aValue)
-{
+static IntIntervals Duplicate(const IntIntervals& aValue) {
   IntIntervals value(aValue);
   return value;
 }
 
-TEST(IntervalSet, Normalize)
-{
+TEST(IntervalSet, Normalize) {
   IntIntervals i;
   // Test IntervalSet<T> + Interval<T> operator.
   i = i + IntInterval(20, 30);
@@ -328,36 +327,35 @@ TEST(IntervalSet, Normalize)
   ti += media::TimeInterval(media::TimeUnit::FromSeconds(3.203366),
                             media::TimeUnit::FromSeconds(10.010065));
   EXPECT_EQ(2u, ti.Length());
-  ti += media::TimeInterval(ti.Start(0), ti.End(0), media::TimeUnit::FromMicroseconds(35000));
+  ti += media::TimeInterval(ti.Start(0), ti.End(0),
+                            media::TimeUnit::FromMicroseconds(35000));
   EXPECT_EQ(1u, ti.Length());
 }
 
-TEST(IntervalSet, ContainValue)
-{
+TEST(IntervalSet, ContainValue) {
   IntIntervals i0;
   i0 += IntInterval(0, 10);
   i0 += IntInterval(15, 20);
   i0 += IntInterval(30, 50);
-  EXPECT_TRUE(i0.Contains(0)); // start is inclusive.
+  EXPECT_TRUE(i0.Contains(0));  // start is inclusive.
   EXPECT_TRUE(i0.Contains(17));
-  EXPECT_FALSE(i0.Contains(20)); // end boundary is exclusive.
+  EXPECT_FALSE(i0.Contains(20));  // end boundary is exclusive.
   EXPECT_FALSE(i0.Contains(25));
 }
 
-TEST(IntervalSet, ContainValueWithFuzz)
-{
+TEST(IntervalSet, ContainValueWithFuzz) {
   IntIntervals i0;
   i0 += IntInterval(0, 10);
   i0 += IntInterval(15, 20, 1);
   i0 += IntInterval(30, 50);
-  EXPECT_TRUE(i0.Contains(0)); // start is inclusive.
+  EXPECT_TRUE(i0.Contains(0));  // start is inclusive.
   EXPECT_TRUE(i0.Contains(17));
-  EXPECT_TRUE(i0.Contains(20)); // end boundary is exclusive but we have a fuzz of 1.
+  EXPECT_TRUE(
+      i0.Contains(20));  // end boundary is exclusive but we have a fuzz of 1.
   EXPECT_FALSE(i0.Contains(25));
 }
 
-TEST(IntervalSet, ContainInterval)
-{
+TEST(IntervalSet, ContainInterval) {
   IntIntervals i0;
   i0 += IntInterval(0, 10);
   i0 += IntInterval(15, 20);
@@ -372,8 +370,7 @@ TEST(IntervalSet, ContainInterval)
   EXPECT_FALSE(i0.Contains(IntInterval(30, 55)));
 }
 
-TEST(IntervalSet, ContainIntervalWithFuzz)
-{
+TEST(IntervalSet, ContainIntervalWithFuzz) {
   IntIntervals i0;
   i0 += IntInterval(0, 10);
   i0 += IntInterval(15, 20);
@@ -397,18 +394,16 @@ TEST(IntervalSet, ContainIntervalWithFuzz)
   EXPECT_TRUE(i1.Contains(IntInterval(15, 21)));
 }
 
-TEST(IntervalSet, Span)
-{
-  IntInterval i0(0,10);
-  IntInterval i1(20,30);
+TEST(IntervalSet, Span) {
+  IntInterval i0(0, 10);
+  IntInterval i1(20, 30);
   IntInterval i{i0.Span(i1)};
 
   EXPECT_EQ(i.mStart, 0);
   EXPECT_EQ(i.mEnd, 30);
 }
 
-TEST(IntervalSet, Union)
-{
+TEST(IntervalSet, Union) {
   IntIntervals i0;
   i0 += IntInterval(5, 10);
   i0 += IntInterval(20, 25);
@@ -434,8 +429,7 @@ TEST(IntervalSet, Union)
   EXPECT_EQ(60, i[2].mEnd);
 }
 
-TEST(IntervalSet, UnionNotOrdered)
-{
+TEST(IntervalSet, UnionNotOrdered) {
   IntIntervals i0;
   i0 += IntInterval(20, 25);
   i0 += IntInterval(40, 60);
@@ -461,8 +455,7 @@ TEST(IntervalSet, UnionNotOrdered)
   EXPECT_EQ(60, i[2].mEnd);
 }
 
-TEST(IntervalSet, NormalizeFuzz)
-{
+TEST(IntervalSet, NormalizeFuzz) {
   IntIntervals i0;
   i0 += IntInterval(11, 25, 0);
   i0 += IntInterval(5, 10, 1);
@@ -477,8 +470,7 @@ TEST(IntervalSet, NormalizeFuzz)
   EXPECT_EQ(60, i0[1].mEnd);
 }
 
-TEST(IntervalSet, UnionFuzz)
-{
+TEST(IntervalSet, UnionFuzz) {
   IntIntervals i0;
   i0 += IntInterval(5, 10, 1);
   i0 += IntInterval(11, 25, 0);
@@ -513,30 +505,34 @@ TEST(IntervalSet, UnionFuzz)
   EXPECT_EQ(60, i[1].mEnd);
 }
 
-TEST(IntervalSet, Contiguous)
-{
+TEST(IntervalSet, Contiguous) {
   EXPECT_FALSE(IntInterval(5, 10).Contiguous(IntInterval(11, 25)));
   EXPECT_TRUE(IntInterval(5, 10).Contiguous(IntInterval(10, 25)));
   EXPECT_TRUE(IntInterval(5, 10, 1).Contiguous(IntInterval(11, 25)));
   EXPECT_TRUE(IntInterval(5, 10).Contiguous(IntInterval(11, 25, 1)));
 }
 
-TEST(IntervalSet, TimeRangesSeconds)
-{
+TEST(IntervalSet, TimeRangesSeconds) {
   media::TimeIntervals i0;
-  i0 += media::TimeInterval(media::TimeUnit::FromSeconds(20), media::TimeUnit::FromSeconds(25));
-  i0 += media::TimeInterval(media::TimeUnit::FromSeconds(40), media::TimeUnit::FromSeconds(60));
-  i0 += media::TimeInterval(media::TimeUnit::FromSeconds(5), media::TimeUnit::FromSeconds(10));
+  i0 += media::TimeInterval(media::TimeUnit::FromSeconds(20),
+                            media::TimeUnit::FromSeconds(25));
+  i0 += media::TimeInterval(media::TimeUnit::FromSeconds(40),
+                            media::TimeUnit::FromSeconds(60));
+  i0 += media::TimeInterval(media::TimeUnit::FromSeconds(5),
+                            media::TimeUnit::FromSeconds(10));
 
   media::TimeIntervals i1;
-  i1.Add(media::TimeInterval(media::TimeUnit::FromSeconds(16), media::TimeUnit::FromSeconds(27)));
-  i1.Add(media::TimeInterval(media::TimeUnit::FromSeconds(7), media::TimeUnit::FromSeconds(15)));
-  i1.Add(media::TimeInterval(media::TimeUnit::FromSeconds(53), media::TimeUnit::FromSeconds(57)));
-  i1.Add(media::TimeInterval(media::TimeUnit::FromSeconds(45), media::TimeUnit::FromSeconds(50)));
+  i1.Add(media::TimeInterval(media::TimeUnit::FromSeconds(16),
+                             media::TimeUnit::FromSeconds(27)));
+  i1.Add(media::TimeInterval(media::TimeUnit::FromSeconds(7),
+                             media::TimeUnit::FromSeconds(15)));
+  i1.Add(media::TimeInterval(media::TimeUnit::FromSeconds(53),
+                             media::TimeUnit::FromSeconds(57)));
+  i1.Add(media::TimeInterval(media::TimeUnit::FromSeconds(45),
+                             media::TimeUnit::FromSeconds(50)));
 
   media::TimeIntervals i(i0 + i1);
-  RefPtr<dom::TimeRanges> tr = new dom::TimeRanges();
-  i.ToTimeRanges(tr);
+  RefPtr<dom::TimeRanges> tr = new dom::TimeRanges(i);
   EXPECT_EQ(tr->Length(), i.Length());
   for (dom::TimeRanges::index_type index = 0; index < tr->Length(); index++) {
     ErrorResult rv;
@@ -547,10 +543,10 @@ TEST(IntervalSet, TimeRangesSeconds)
   }
 }
 
-static void CheckTimeRanges(dom::TimeRanges* aTr, const media::TimeIntervals& aTi)
-{
+static void CheckTimeRanges(dom::TimeRanges* aTr,
+                            const media::TimeIntervals& aTi) {
   RefPtr<dom::TimeRanges> tr = new dom::TimeRanges;
-  tr->Union(aTr, 0); // This will normalize the time range.
+  tr->Union(aTr, 0);  // This will normalize the time range.
   EXPECT_EQ(tr->Length(), aTi.Length());
   for (dom::TimeRanges::index_type i = 0; i < tr->Length(); i++) {
     ErrorResult rv;
@@ -561,8 +557,7 @@ static void CheckTimeRanges(dom::TimeRanges* aTr, const media::TimeIntervals& aT
   }
 }
 
-TEST(IntervalSet, TimeRangesConversion)
-{
+TEST(IntervalSet, TimeRangesConversion) {
   RefPtr<dom::TimeRanges> tr = new dom::TimeRanges();
   tr->Add(20, 25);
   tr->Add(40, 60);
@@ -571,47 +566,37 @@ TEST(IntervalSet, TimeRangesConversion)
   tr->Add(53, 57);
   tr->Add(45, 50);
 
-  // explicit copy constructor
-  media::TimeIntervals i1(tr);
+  // explicit copy constructor and ToTimeIntervals.
+  media::TimeIntervals i1(tr->ToTimeIntervals());
   CheckTimeRanges(tr, i1);
 
-  // static FromTimeRanges
-  media::TimeIntervals i2 = media::TimeIntervals::FromTimeRanges(tr);
-  CheckTimeRanges(tr, i2);
-
-  media::TimeIntervals i3;
-  // operator=(TimeRanges*)
-  i3 = tr;
-  CheckTimeRanges(tr, i3);
-
-  // operator= test
-  i1 = tr.get();
-  CheckTimeRanges(tr, i1);
+  // ctor(const TimeIntervals&)
+  RefPtr<dom::TimeRanges> tr2 = new dom::TimeRanges(tr->ToTimeIntervals());
+  CheckTimeRanges(tr2, i1);
 }
 
-TEST(IntervalSet, TimeRangesMicroseconds)
-{
+TEST(IntervalSet, TimeRangesMicroseconds) {
   media::TimeIntervals i0;
 
-  // Test media::Microseconds and TimeUnit interchangeability (compilation only)
-  media::TimeUnit time1{media::Microseconds(5)};
-  media::Microseconds microseconds(5);
-  media::TimeUnit time2 = media::TimeUnit(microseconds);
-  EXPECT_EQ(time1, time2);
-
-  i0 += media::TimeInterval(media::Microseconds(20), media::Microseconds(25));
-  i0 += media::TimeInterval(media::Microseconds(40), media::Microseconds(60));
-  i0 += media::TimeInterval(media::Microseconds(5), media::Microseconds(10));
+  i0 += media::TimeInterval(media::TimeUnit::FromMicroseconds(20),
+                            media::TimeUnit::FromMicroseconds(25));
+  i0 += media::TimeInterval(media::TimeUnit::FromMicroseconds(40),
+                            media::TimeUnit::FromMicroseconds(60));
+  i0 += media::TimeInterval(media::TimeUnit::FromMicroseconds(5),
+                            media::TimeUnit::FromMicroseconds(10));
 
   media::TimeIntervals i1;
-  i1.Add(media::TimeInterval(media::Microseconds(16), media::Microseconds(27)));
-  i1.Add(media::TimeInterval(media::Microseconds(7), media::Microseconds(15)));
-  i1.Add(media::TimeInterval(media::Microseconds(53), media::Microseconds(57)));
-  i1.Add(media::TimeInterval(media::Microseconds(45), media::Microseconds(50)));
+  i1.Add(media::TimeInterval(media::TimeUnit::FromMicroseconds(16),
+                             media::TimeUnit::FromMicroseconds(27)));
+  i1.Add(media::TimeInterval(media::TimeUnit::FromMicroseconds(7),
+                             media::TimeUnit::FromMicroseconds(15)));
+  i1.Add(media::TimeInterval(media::TimeUnit::FromMicroseconds(53),
+                             media::TimeUnit::FromMicroseconds(57)));
+  i1.Add(media::TimeInterval(media::TimeUnit::FromMicroseconds(45),
+                             media::TimeUnit::FromMicroseconds(50)));
 
   media::TimeIntervals i(i0 + i1);
-  RefPtr<dom::TimeRanges> tr = new dom::TimeRanges();
-  i.ToTimeRanges(tr);
+  RefPtr<dom::TimeRanges> tr = new dom::TimeRanges(i);
   EXPECT_EQ(tr->Length(), i.Length());
   for (dom::TimeRanges::index_type index = 0; index < tr->Length(); index++) {
     ErrorResult rv;
@@ -635,9 +620,8 @@ TEST(IntervalSet, TimeRangesMicroseconds)
   tr = new dom::TimeRanges();
   tr->Add(0, 30);
   tr->Add(50, std::numeric_limits<double>::infinity());
-  media::TimeIntervals i_oo{media::TimeIntervals::FromTimeRanges(tr)};
-  RefPtr<dom::TimeRanges> tr2 = new dom::TimeRanges();
-  i_oo.ToTimeRanges(tr2);
+  media::TimeIntervals i_oo = tr->ToTimeIntervals();
+  RefPtr<dom::TimeRanges> tr2 = new dom::TimeRanges(i_oo);
   EXPECT_EQ(tr->Length(), tr2->Length());
   for (dom::TimeRanges::index_type index = 0; index < tr->Length(); index++) {
     ErrorResult rv;
@@ -646,60 +630,39 @@ TEST(IntervalSet, TimeRangesMicroseconds)
   }
 }
 
-template<typename T>
-class Foo
-{
-public:
-  Foo()
-    : mArg1(1)
-    , mArg2(2)
-    , mArg3(3)
-  {}
+template <typename T>
+class Foo {
+ public:
+  Foo() : mArg1(1), mArg2(2), mArg3(3) {}
 
-  Foo(T a1, T a2, T a3)
-    : mArg1(a1)
-    , mArg2(a2)
-    , mArg3(a3)
-  {}
+  Foo(T a1, T a2, T a3) : mArg1(a1), mArg2(a2), mArg3(a3) {}
 
-  Foo<T> operator+ (const Foo<T>& aOther) const
-  {
+  Foo<T> operator+(const Foo<T>& aOther) const {
     Foo<T> blah;
     blah.mArg1 += aOther.mArg1;
     blah.mArg2 += aOther.mArg2;
     blah.mArg3 += aOther.mArg3;
     return blah;
   }
-  Foo<T> operator- (const Foo<T>& aOther) const
-  {
+  Foo<T> operator-(const Foo<T>& aOther) const {
     Foo<T> blah;
     blah.mArg1 -= aOther.mArg1;
     blah.mArg2 -= aOther.mArg2;
     blah.mArg3 -= aOther.mArg3;
     return blah;
   }
-  bool operator< (const Foo<T>& aOther) const
-  {
-    return mArg1 < aOther.mArg1;
-  }
-  bool operator== (const Foo<T>& aOther) const
-  {
-    return mArg1 == aOther.mArg1;
-  }
-  bool operator<= (const Foo<T>& aOther) const
-  {
-    return mArg1 <= aOther.mArg1;
-  }
+  bool operator<(const Foo<T>& aOther) const { return mArg1 < aOther.mArg1; }
+  bool operator==(const Foo<T>& aOther) const { return mArg1 == aOther.mArg1; }
+  bool operator<=(const Foo<T>& aOther) const { return mArg1 <= aOther.mArg1; }
 
-private:
+ private:
   int32_t mArg1;
   int32_t mArg2;
   int32_t mArg3;
 };
 
-TEST(IntervalSet, FooIntervalSet)
-{
-  media::Interval<Foo<int>> i(Foo<int>(), Foo<int>(4,5,6));
+TEST(IntervalSet, FooIntervalSet) {
+  media::Interval<Foo<int>> i(Foo<int>(), Foo<int>(4, 5, 6));
   media::IntervalSet<Foo<int>> is;
   is += i;
   is += i;
@@ -708,19 +671,23 @@ TEST(IntervalSet, FooIntervalSet)
   is = i + is;
   EXPECT_EQ(1u, is.Length());
   EXPECT_EQ(Foo<int>(), is[0].mStart);
-  EXPECT_EQ(Foo<int>(4,5,6), is[0].mEnd);
+  EXPECT_EQ(Foo<int>(4, 5, 6), is[0].mEnd);
 }
 
-TEST(IntervalSet, StaticAssert)
-{
+TEST(IntervalSet, StaticAssert) {
   media::Interval<int> i;
 
-  static_assert(mozilla::IsSame<nsTArray_CopyChooser<IntIntervals>::Type, nsTArray_CopyWithConstructors<IntIntervals>>::value, "Must use copy constructor");
-  static_assert(mozilla::IsSame<nsTArray_CopyChooser<media::TimeIntervals>::Type, nsTArray_CopyWithConstructors<media::TimeIntervals>>::value, "Must use copy constructor");
+  static_assert(
+      mozilla::IsSame<nsTArray_CopyChooser<IntIntervals>::Type,
+                      nsTArray_CopyWithConstructors<IntIntervals>>::value,
+      "Must use copy constructor");
+  static_assert(mozilla::IsSame<
+                    nsTArray_CopyChooser<media::TimeIntervals>::Type,
+                    nsTArray_CopyWithConstructors<media::TimeIntervals>>::value,
+                "Must use copy constructor");
 }
 
-TEST(IntervalSet, Substraction)
-{
+TEST(IntervalSet, Substraction) {
   IntIntervals i0;
   i0 += IntInterval(5, 10);
   i0 += IntInterval(20, 25);

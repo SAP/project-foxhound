@@ -7,25 +7,30 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use libc::c_void;
+use std::os::raw::c_void;
 
-use base::CFTypeID;
+use base::{CFTypeID, CFAllocatorRef};
+use url::CFURLRef;
 use dictionary::CFDictionaryRef;
 use string::CFStringRef;
 
 #[repr(C)]
 pub struct __CFBundle(c_void);
 
-pub type CFBundleRef = *const __CFBundle;
+pub type CFBundleRef = *mut __CFBundle;
 
 extern {
     /*
      * CFBundle.h
      */
+    pub fn CFBundleCreate(allocator: CFAllocatorRef, bundleURL: CFURLRef) -> CFBundleRef;
+
     pub fn CFBundleGetBundleWithIdentifier(bundleID: CFStringRef) -> CFBundleRef;
     pub fn CFBundleGetFunctionPointerForName(bundle: CFBundleRef, function_name: CFStringRef) -> *const c_void;
     pub fn CFBundleGetMainBundle() -> CFBundleRef;
     pub fn CFBundleGetInfoDictionary(bundle: CFBundleRef) -> CFDictionaryRef;
 
     pub fn CFBundleGetTypeID() -> CFTypeID;
+    pub fn CFBundleCopyExecutableURL(bundle: CFBundleRef) -> CFURLRef;
+    pub fn CFBundleCopyPrivateFrameworksURL(bundle: CFBundleRef) -> CFURLRef;
 }

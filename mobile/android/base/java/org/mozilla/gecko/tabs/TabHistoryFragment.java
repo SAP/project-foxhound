@@ -7,9 +7,10 @@ package org.mozilla.gecko.tabs;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.mozilla.gecko.GeckoAppShell;
+import org.mozilla.gecko.EventDispatcher;
 import org.mozilla.gecko.GeckoApplication;
 import org.mozilla.gecko.R;
+import org.mozilla.gecko.util.GeckoBundle;
 
 import android.content.Context;
 import android.content.DialogInterface;
@@ -31,6 +32,7 @@ import android.widget.ListView;
 public class TabHistoryFragment extends Fragment implements OnItemClickListener, OnClickListener {
     private static final String ARG_LIST = "historyPageList";
     private static final String ARG_INDEX = "index";
+    private static final String ARG_PRIVATE_MODE = "private";
     private static final String BACK_STACK_ID = "backStateId";
 
     private List<TabHistoryPage> historyPageList;
@@ -44,11 +46,12 @@ public class TabHistoryFragment extends Fragment implements OnItemClickListener,
 
     }
 
-    public static TabHistoryFragment newInstance(List<TabHistoryPage> historyPageList, int toIndex) {
+    public static TabHistoryFragment newInstance(List<TabHistoryPage> historyPageList, int toIndex, boolean isPrivate) {
         final TabHistoryFragment fragment = new TabHistoryFragment();
         final Bundle args = new Bundle();
         args.putParcelableArrayList(ARG_LIST, (ArrayList<? extends Parcelable>) historyPageList);
         args.putInt(ARG_INDEX, toIndex);
+        args.putBoolean(ARG_PRIVATE_MODE, isPrivate);
         fragment.setArguments(args);
         return fragment;
     }
@@ -78,15 +81,17 @@ public class TabHistoryFragment extends Fragment implements OnItemClickListener,
         Bundle bundle = getArguments();
         historyPageList = bundle.getParcelableArrayList(ARG_LIST);
         toIndex = bundle.getInt(ARG_INDEX);
-        final ArrayAdapter<TabHistoryPage> urlAdapter = new TabHistoryAdapter(getActivity(), historyPageList);
+        boolean isPrivate = bundle.getBoolean(ARG_PRIVATE_MODE);
+        final ArrayAdapter<TabHistoryPage> urlAdapter = new TabHistoryAdapter(getActivity(), historyPageList, isPrivate);
         dialogList.setAdapter(urlAdapter);
         dialogList.setOnItemClickListener(this);
     }
 
     @Override
     public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-        String index = String.valueOf(toIndex - position);
-        GeckoAppShell.notifyObservers("Session:Navigate", index);
+        final GeckoBundle data = new GeckoBundle(1);
+        data.putInt("index", toIndex - position);
+        EventDispatcher.getInstance().dispatch("Session:Navigate", data);
         dismiss();
     }
 
@@ -100,13 +105,12 @@ public class TabHistoryFragment extends Fragment implements OnItemClickListener,
     @Override
     public void onPause() {
         super.onPause();
-        dismiss();
+        onDismiss();
     }
 
     @Override
     public void onDestroy() {
         super.onDestroy();
-        dismiss();
 
         GeckoApplication.watchReference(getActivity(), this);
     }
@@ -122,7 +126,7 @@ public class TabHistoryFragment extends Fragment implements OnItemClickListener,
     // This similar in functionality to DialogFragment.show() except that containerId is provided here.
     public void show(final int containerViewId, final FragmentTransaction transaction, final String tag) {
         dismissed = false;
-        transaction.add(containerViewId, this, tag);
+        transaction.replace(containerViewId, this, tag);
         transaction.addToBackStack(tag);
         // Populating the tab history requires a gecko call (which can be slow) - therefore the app
         // state by the time we try to show this fragment is unknown, and we could be in the
@@ -132,16 +136,19 @@ public class TabHistoryFragment extends Fragment implements OnItemClickListener,
 
     // Pop the fragment from backstack if it exists.
     public void dismiss() {
+        if (backStackId >= 0) {
+            getFragmentManager().popBackStackImmediate(backStackId, FragmentManager.POP_BACK_STACK_INCLUSIVE);
+            backStackId = -1;
+        }
+        onDismiss();
+    }
+
+    private void onDismiss() {
         if (dismissed) {
             return;
         }
 
         dismissed = true;
-
-        if (backStackId >= 0) {
-            getFragmentManager().popBackStackImmediate(backStackId, FragmentManager.POP_BACK_STACK_INCLUSIVE);
-            backStackId = -1;
-        }
 
         if (parent != null) {
             parent.setVisibility(View.GONE);
@@ -151,11 +158,13 @@ public class TabHistoryFragment extends Fragment implements OnItemClickListener,
     private static class TabHistoryAdapter extends ArrayAdapter<TabHistoryPage> {
         private final List<TabHistoryPage> pages;
         private final Context context;
+        private final boolean isPrivate;
 
-        public TabHistoryAdapter(Context context, List<TabHistoryPage> pages) {
+        public TabHistoryAdapter(Context context, List<TabHistoryPage> pages, boolean isPrivate) {
             super(context, R.layout.tab_history_item_row, pages);
             this.context = context;
             this.pages = pages;
+            this.isPrivate = isPrivate;
         }
 
         @Override
@@ -165,7 +174,7 @@ public class TabHistoryFragment extends Fragment implements OnItemClickListener,
                 row = new TabHistoryItemRow(context, null);
             }
 
-            row.update(pages.get(position), position == 0, position == pages.size() - 1);
+            row.update(pages.get(position), position == 0, position == pages.size() - 1, isPrivate);
             return row;
         }
     }

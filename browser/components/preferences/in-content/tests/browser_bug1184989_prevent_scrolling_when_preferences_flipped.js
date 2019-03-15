@@ -1,56 +1,46 @@
-const ss = Cc["@mozilla.org/browser/sessionstore;1"].getService(Ci.nsISessionStore);
-
-const {Utils} = Cu.import("resource://gre/modules/sessionstore/Utils.jsm", {});
+const {Utils} = ChromeUtils.import("resource://gre/modules/sessionstore/Utils.jsm", {});
 const triggeringPrincipal_base64 = Utils.SERIALIZED_SYSTEMPRINCIPAL;
 
-add_task(function* () {
+add_task(async function() {
   waitForExplicitFinish();
 
   const tabURL = getRootDirectory(gTestPath) + "browser_bug1184989_prevent_scrolling_when_preferences_flipped.xul";
 
-  yield BrowserTestUtils.withNewTab({ gBrowser, url: tabURL }, function* (browser) {
+  await BrowserTestUtils.withNewTab({ gBrowser, url: tabURL }, async function(browser) {
     let doc = browser.contentDocument;
     let container = doc.getElementById("container");
 
     // Test button
     let button = doc.getElementById("button");
     button.focus();
-    EventUtils.synthesizeKey(" ", {});
-    yield checkPageScrolling(container, "button");
+    EventUtils.sendString(" ");
+    await checkPageScrolling(container, "button");
 
     // Test checkbox
     let checkbox = doc.getElementById("checkbox");
     checkbox.focus();
-    EventUtils.synthesizeKey(" ", {});
+    EventUtils.sendString(" ");
     ok(checkbox.checked, "Checkbox is checked");
-    yield checkPageScrolling(container, "checkbox");
-
-    // Test listbox
-    let listbox = doc.getElementById("listbox");
-    let listitem = doc.getElementById("listitem");
-    listbox.focus();
-    EventUtils.synthesizeKey(" ", {});
-    ok(listitem.selected, "Listitem is selected");
-    yield checkPageScrolling(container, "listbox");
+    await checkPageScrolling(container, "checkbox");
 
     // Test radio
     let radiogroup = doc.getElementById("radiogroup");
     radiogroup.focus();
-    EventUtils.synthesizeKey(" ", {});
-    yield checkPageScrolling(container, "radio");
+    EventUtils.sendString(" ");
+    await checkPageScrolling(container, "radio");
   });
 
-  yield BrowserTestUtils.withNewTab({ gBrowser, url: "about:preferences#search" }, function* (browser) {
+  await BrowserTestUtils.withNewTab({ gBrowser, url: "about:preferences#search" }, async function(browser) {
     let doc = browser.contentDocument;
     let container = doc.getElementsByClassName("main-content")[0];
 
     // Test search
     let engineList = doc.getElementById("engineList");
     engineList.focus();
-    EventUtils.synthesizeKey(" ", {});
+    EventUtils.sendString(" ");
     is(engineList.view.selection.currentIndex, 0, "Search engineList is selected");
-    EventUtils.synthesizeKey(" ", {});
-    yield checkPageScrolling(container, "search engineList");
+    EventUtils.sendString(" ");
+    await checkPageScrolling(container, "search engineList");
   });
 
   // Test session restore
@@ -65,21 +55,21 @@ add_task(function* () {
   const TAB_SHENTRY = {url: TAB_URL, triggeringPrincipal_base64};
   const TAB_STATE = {entries: [TAB_SHENTRY], formdata: TAB_FORMDATA};
 
-  let tab = gBrowser.selectedTab = gBrowser.addTab("about:blank");
+  let tab = gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, "about:blank");
 
   // Fake a post-crash tab
-  ss.setTabState(tab, JSON.stringify(TAB_STATE));
+  SessionStore.setTabState(tab, JSON.stringify(TAB_STATE));
 
-  yield BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
   let doc = tab.linkedBrowser.contentDocument;
 
   // Make body scrollable
   doc.body.style.height = (doc.body.clientHeight + 100) + "px";
 
-  let tabList = doc.getElementById("tabList");
-  tabList.focus();
-  EventUtils.synthesizeKey(" ", {});
-  yield checkPageScrolling(doc.documentElement, "session restore");
+  let tabsToggle = doc.getElementById("tabsToggle");
+  tabsToggle.focus();
+  EventUtils.sendString(" ");
+  await checkPageScrolling(doc.documentElement, "session restore");
 
   gBrowser.removeCurrentTab();
   finish();

@@ -9,39 +9,53 @@
 
 #include "nsISupports.h"
 #include "mozilla/dom/EventTarget.h"
-#include "nsWeakReference.h"
 
 class nsPIDOMWindowOuter;
 class nsIControllers;
 class nsIController;
+class nsINode;
 
 namespace mozilla {
 namespace dom {
 class TabParent;
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#define NS_IWINDOWROOT_IID \
-{ 0xb8724c49, 0xc398, 0x4f9b, \
-  { 0x82, 0x59, 0x87, 0x27, 0xa6, 0x47, 0xdd, 0x0f } }
+#define NS_IWINDOWROOT_IID                           \
+  {                                                  \
+    0xb8724c49, 0xc398, 0x4f9b, {                    \
+      0x82, 0x59, 0x87, 0x27, 0xa6, 0x47, 0xdd, 0x0f \
+    }                                                \
+  }
 
-class nsPIWindowRoot : public mozilla::dom::EventTarget
-{
-public:
+class nsPIWindowRoot : public mozilla::dom::EventTarget {
+ public:
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_IWINDOWROOT_IID)
 
-  virtual nsPIDOMWindowOuter* GetWindow()=0;
+  virtual nsPIDOMWindowOuter* GetWindow() = 0;
 
   // get and set the node that is the context of a popup menu
-  virtual nsIDOMNode* GetPopupNode() = 0;
-  virtual void SetPopupNode(nsIDOMNode* aNode) = 0;
+  virtual already_AddRefed<nsINode> GetPopupNode() = 0;
+  virtual void SetPopupNode(nsINode* aNode) = 0;
 
-  virtual nsresult GetControllerForCommand(const char *aCommand,
+  /**
+   * @param aForVisibleWindow   true if caller needs controller which is
+   *                            associated with visible window.
+   */
+  virtual nsresult GetControllerForCommand(const char* aCommand,
+                                           bool aForVisibleWindow,
                                            nsIController** aResult) = 0;
-  virtual nsresult GetControllers(nsIControllers** aResult) = 0;
 
-  virtual void GetEnabledDisabledCommands(nsTArray<nsCString>& aEnabledCommands,
-                                          nsTArray<nsCString>& aDisabledCommands) = 0;
+  /**
+   * @param aForVisibleWindow   true if caller needs controllers which are
+   *                            associated with visible window.
+   */
+  virtual nsresult GetControllers(bool aForVisibleWindow,
+                                  nsIControllers** aResult) = 0;
+
+  virtual void GetEnabledDisabledCommands(
+      nsTArray<nsCString>& aEnabledCommands,
+      nsTArray<nsCString>& aDisabledCommands) = 0;
 
   virtual void SetParentTarget(mozilla::dom::EventTarget* aTarget) = 0;
   virtual mozilla::dom::EventTarget* GetParentTarget() = 0;
@@ -63,4 +77,4 @@ public:
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsPIWindowRoot, NS_IWINDOWROOT_IID)
 
-#endif // nsPIWindowRoot_h__
+#endif  // nsPIWindowRoot_h__

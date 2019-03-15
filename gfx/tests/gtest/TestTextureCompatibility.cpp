@@ -7,7 +7,6 @@
 #include "gfxConfig.h"
 #include "gfxPlatform.h"
 #include "gtest/gtest.h"
-#include "gtest/MozGTestBench.h"
 #include "MockWidget.h"
 #include "mozilla/layers/BasicCompositor.h"
 #include "mozilla/layers/Compositor.h"
@@ -15,6 +14,7 @@
 #include "mozilla/layers/TextureClient.h"
 #include "mozilla/layers/TextureHost.h"
 #include "mozilla/RefPtr.h"
+#include "TestLayers.h"
 #include "TextureHelper.h"
 
 using mozilla::gfx::Feature;
@@ -23,6 +23,7 @@ using mozilla::layers::BasicCompositor;
 using mozilla::layers::Compositor;
 using mozilla::layers::CompositorOptions;
 using mozilla::layers::LayersBackend;
+using mozilla::layers::TestSurfaceAllocator;
 using mozilla::layers::TextureClient;
 using mozilla::layers::TextureHost;
 using mozilla::widget::CompositorWidget;
@@ -32,19 +33,18 @@ using mozilla::widget::InProcessCompositorWidget;
  * This function will create the possible TextureClient and TextureHost pairs
  * according to the given backend.
  */
-void
-CreateTextureWithBackend(LayersBackend& aLayersBackend,
-                         nsTArray<RefPtr<TextureClient>>& aTextureClients,
-                         nsTArray<RefPtr<TextureHost>>& aTextureHosts)
-{
+static void CreateTextureWithBackend(
+    LayersBackend& aLayersBackend, ISurfaceAllocator* aDeallocator,
+    nsTArray<RefPtr<TextureClient>>& aTextureClients,
+    nsTArray<RefPtr<TextureHost>>& aTextureHosts) {
   aTextureClients.AppendElement(CreateTextureClientWithBackend(aLayersBackend));
 
   aTextureClients.AppendElement(
-    CreateYCbCrTextureClientWithBackend(aLayersBackend));
+      CreateYCbCrTextureClientWithBackend(aLayersBackend));
 
   for (uint32_t i = 0; i < aTextureClients.Length(); i++) {
-    aTextureHosts.AppendElement(
-      CreateTextureHostWithBackend(aTextureClients[i], aLayersBackend));
+    aTextureHosts.AppendElement(CreateTextureHostWithBackend(
+        aTextureClients[i], aDeallocator, aLayersBackend));
   }
 }
 
@@ -52,11 +52,12 @@ CreateTextureWithBackend(LayersBackend& aLayersBackend,
  * This will return the default list of backends that units test should run
  * against.
  */
-static void
-GetPlatformBackends(nsTArray<LayersBackend>& aBackends)
-{
-  gfxPlatform::GetPlatform()->GetCompositorBackends(
-    gfxConfig::IsEnabled(Feature::HW_COMPOSITING), aBackends);
+static void GetPlatformBackends(nsTArray<LayersBackend>& aBackends) {
+  gfxPlatform* platform = gfxPlatform::GetPlatform();
+  MOZ_ASSERT(platform);
+
+  platform->GetCompositorBackends(gfxConfig::IsEnabled(Feature::HW_COMPOSITING),
+                                  aBackends);
 
   if (aBackends.IsEmpty()) {
     aBackends.AppendElement(LayersBackend::LAYERS_BASIC);
@@ -66,16 +67,14 @@ GetPlatformBackends(nsTArray<LayersBackend>& aBackends)
 /**
  * This function will return a BasicCompositor to caller.
  */
-already_AddRefed<Compositor>
-CreateBasicCompositor()
-{
+already_AddRefed<Compositor> CreateBasicCompositor() {
   RefPtr<Compositor> compositor;
   // Init the platform.
   if (gfxPlatform::GetPlatform()) {
     RefPtr<MockWidget> widget = new MockWidget(256, 256);
-   CompositorOptions options;
-    RefPtr<CompositorWidget> proxy
-      = new InProcessCompositorWidget(options, widget);
+    CompositorOptions options;
+    RefPtr<CompositorWidget> proxy =
+        new InProcessCompositorWidget(options, widget);
     compositor = new BasicCompositor(nullptr, proxy);
   }
   return compositor.forget();
@@ -85,16 +84,14 @@ CreateBasicCompositor()
  * This function checks if the textures react correctly when setting them to
  * BasicCompositor.
  */
-void
-CheckCompatibilityWithBasicCompositor(LayersBackend aBackends,
-                                      nsTArray<RefPtr<TextureHost>>& aTextures)
-{
+void CheckCompatibilityWithBasicCompositor(
+    LayersBackend aBackends, nsTArray<RefPtr<TextureHost>>& aTextures) {
   RefPtr<Compositor> compositor = CreateBasicCompositor();
   for (uint32_t i = 0; i < aTextures.Length(); i++) {
     if (!aTextures[i]) {
       continue;
     }
-    aTextures[i]->SetCompositor(compositor);
+    aTextures[i]->SetTextureSourceProvider(compositor);
 
     // The lock function will fail if the texture is not compatible with
     // BasicCompositor.
@@ -110,16 +107,17 @@ CheckCompatibilityWithBasicCompositor(LayersBackend aBackends,
   }
 }
 
-TEST(Gfx, TestTextureCompatibility)
-{
+TEST(Gfx, TestTextureCompatibility) {
   nsTArray<LayersBackend> backendHints;
+  RefPtr<TestSurfaceAllocator> deallocator = new TestSurfaceAllocator();
 
   GetPlatformBackends(backendHints);
   for (uint32_t i = 0; i < backendHints.Length(); i++) {
     nsTArray<RefPtr<TextureClient>> textureClients;
     nsTArray<RefPtr<TextureHost>> textureHosts;
 
-    CreateTextureWithBackend(backendHints[i], textureClients, textureHosts);
+    CreateTextureWithBackend(backendHints[i], deallocator, textureClients,
+                             textureHosts);
     CheckCompatibilityWithBasicCompositor(backendHints[i], textureHosts);
   }
 }

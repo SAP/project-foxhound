@@ -13,7 +13,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=569988
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=569988">Mozilla Bug 569988</a>
 <p id="display"></p>
 <div id="content" style="display: none">
-  
+
 </div>
 <pre id="test">
 <script type="application/javascript">
@@ -24,22 +24,30 @@ SimpleTest.waitForExplicitFinish();
 SimpleTest.waitForFocus(runTest);
 
 
-function runTest()
-{
+function runTest() {
+  /* eslint-env mozilla/frame-script */
   var script = SpecialPowers.loadChromeScript(function() {
+    const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm", null);
     var gPromptInput = null;
-    var os = Components.classes["@mozilla.org/observer-service;1"]
-                       .getService(Components.interfaces.nsIObserverService);
+    var os = Services.obs;
 
-    os.addObserver(onPromptLoad, "common-dialog-loaded", false);
-    os.addObserver(onPromptLoad, "tabmodal-dialog-loaded", false);
+    os.addObserver(onPromptLoad, "common-dialog-loaded");
+    os.addObserver(onPromptLoad, "tabmodal-dialog-loaded");
 
     function onPromptLoad(subject, topic, data) {
+      let ui = subject.Dialog ? subject.Dialog.ui : undefined;
+      if (!ui) {
+        // subject is an tab prompt, find the elements ourselves
+        ui = {
+          loginTextbox: subject.querySelector(".tabmodalprompt-loginTextbox"),
+          button0: subject.querySelector(".tabmodalprompt-button0"),
+        };
+      }
       sendAsyncMessage("ok", [true, "onPromptLoad is called"]);
-      gPromptInput = subject.Dialog.ui.loginTextbox;
+      gPromptInput = ui.loginTextbox;
       gPromptInput.addEventListener("focus", onPromptFocus);
       // shift focus to ensure it fires.
-      subject.Dialog.ui.button0.focus();
+      ui.button0.focus();
       gPromptInput.focus();
     }
 
@@ -47,9 +55,7 @@ function runTest()
       sendAsyncMessage("ok", [true, "onPromptFocus is called"]);
       gPromptInput.removeEventListener("focus", onPromptFocus);
 
-      var listenerService =
-        Components.classes["@mozilla.org/eventlistenerservice;1"]
-                  .getService(Components.interfaces.nsIEventListenerService);
+      var listenerService = Services.els;
 
       var listener = {
         handleEvent: function _hv(aEvent) {
@@ -58,7 +64,7 @@ function runTest()
                            "ESC key event is prevented by editor"]);
           listenerService.removeSystemEventListener(gPromptInput, "keypress",
                                                     listener, false);
-        }
+        },
       };
       listenerService.addSystemEventListener(gPromptInput, "keypress",
                                              listener, false);
@@ -66,14 +72,13 @@ function runTest()
       sendAsyncMessage("info", "sending key");
       var EventUtils = {};
       EventUtils.window = {};
-      EventUtils._EU_Ci = Components.interfaces;
-      EventUtils._EU_Cc = Components.classes;
-      Components.classes['@mozilla.org/moz/jssubscript-loader;1']
-                .getService(Components.interfaces.mozIJSSubScriptLoader)
-                .loadSubScript("chrome://mochikit/content/tests/SimpleTest/EventUtils.js",
-                               EventUtils);
+      EventUtils._EU_Ci = Ci;
+      EventUtils._EU_Cc = Cc;
+      Services.scriptloader
+        .loadSubScript("chrome://mochikit/content/tests/SimpleTest/EventUtils.js",
+                       EventUtils);
       EventUtils.synthesizeKey("VK_ESCAPE", {},
-                               gPromptInput.ownerDocument.defaultView);
+                               gPromptInput.ownerGlobal);
     }
 
     addMessageListener("destroy", function() {

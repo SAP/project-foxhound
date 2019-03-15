@@ -5,37 +5,37 @@
  * Tests that program and shader actors are cached in the frontend.
  */
 
-function* ifWebGLSupported() {
-  let { target, debuggee, panel } = yield initShaderEditor(MULTIPLE_CONTEXTS_URL);
-  let { EVENTS, gFront, ShadersListView, ShadersEditorsView } = panel.panelWin;
+async function ifWebGLSupported() {
+  const { target, debuggee, panel } = await initShaderEditor(MULTIPLE_CONTEXTS_URL);
+  const { EVENTS, front, shadersListView, shadersEditorsView } = panel;
 
   reload(target);
-  let [[programActor]] = yield promise.all([
-    getPrograms(gFront, 1),
-    once(panel.panelWin, EVENTS.SOURCES_SHOWN)
+  const [[programActor]] = await promise.all([
+    getPrograms(front, 1),
+    once(panel, EVENTS.SOURCES_SHOWN),
   ]);
 
-  let programItem = ShadersListView.selectedItem;
+  const programItem = shadersListView.selectedItem;
 
   is(programItem.attachment.programActor, programActor,
     "The correct program actor is cached for the selected item.");
 
-  is((yield programActor.getVertexShader()),
-     (yield programItem.attachment.vs),
+  is((await programActor.getVertexShader()),
+     (await programItem.attachment.vs),
     "The cached vertex shader promise returns the correct actor.");
 
-  is((yield programActor.getFragmentShader()),
-     (yield programItem.attachment.fs),
+  is((await programActor.getFragmentShader()),
+     (await programItem.attachment.fs),
     "The cached fragment shader promise returns the correct actor.");
 
-  is((yield (yield programActor.getVertexShader()).getText()),
-     (yield (yield ShadersEditorsView._getEditor("vs")).getText()),
+  is((await (await programActor.getVertexShader()).getText()),
+     (await (await shadersEditorsView._getEditor("vs")).getText()),
     "The cached vertex shader promise returns the correct text.");
 
-  is((yield (yield programActor.getFragmentShader()).getText()),
-     (yield (yield ShadersEditorsView._getEditor("fs")).getText()),
+  is((await (await programActor.getFragmentShader()).getText()),
+     (await (await shadersEditorsView._getEditor("fs")).getText()),
     "The cached fragment shader promise returns the correct text.");
 
-  yield teardown(panel);
+  await teardown(panel);
   finish();
 }

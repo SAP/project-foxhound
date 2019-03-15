@@ -1,58 +1,38 @@
 "use strict";
 
-var SOURCE_URL = getFileUrl("setBreakpoint-on-column-in-gcd-script.js");
+const SOURCE_URL = getFileUrl("setBreakpoint-on-column-in-gcd-script.js");
 
-function run_test() {
-  return Task.spawn(function* () {
-    do_test_pending();
+add_task(threadClientTest(async ({ threadClient, debuggee, client, targetFront }) => {
+  const promise = waitForNewSource(threadClient, SOURCE_URL);
+  loadSubScriptWithOptions(SOURCE_URL, {target: debuggee, ignoreCache: true});
+  Cu.forceGC(); Cu.forceGC(); Cu.forceGC();
 
-    let global = testGlobal("test");
-    loadSubScript(SOURCE_URL, global);
-    Cu.forceGC(); Cu.forceGC(); Cu.forceGC();
+  const { source } = await promise;
+  const sourceClient = threadClient.source(source);
 
-    DebuggerServer.registerModule("xpcshell-test/testactors");
-    DebuggerServer.init(() => true);
-    DebuggerServer.addTestGlobal(global);
-    let client = new DebuggerClient(DebuggerServer.connectPipe());
-    yield connect(client);
+  const location = { line: 6, column: 17 };
+  let [packet, breakpointClient] = await setBreakpoint(sourceClient, location);
+  Assert.ok(packet.isPending);
+  Assert.equal(false, "actualLocation" in packet);
 
-    let { tabs } = yield listTabs(client);
-    let tab = findTab(tabs, "test");
-    let [, tabClient] = yield attachTab(client, tab);
-    let [, threadClient] = yield attachThread(tabClient);
-    yield resume(threadClient);
-
-    let { sources } = yield getSources(threadClient);
-    let source = findSource(sources, SOURCE_URL);
-    let sourceClient = threadClient.source(source);
-
-    let location = { line: 6, column: 17 };
-    let [packet, breakpointClient] = yield setBreakpoint(sourceClient, location);
-    do_check_true(packet.isPending);
-    do_check_false("actualLocation" in packet);
-
-    packet = yield executeOnNextTickAndWaitForPause(function () {
-      reload(tabClient).then(function () {
-        loadSubScript(SOURCE_URL, global);
-      });
-    }, client);
-    do_check_eq(packet.type, "paused");
-    let why = packet.why;
-    do_check_eq(why.type, "breakpoint");
-    do_check_eq(why.actors.length, 1);
-    do_check_eq(why.actors[0], breakpointClient.actor);
-    let frame = packet.frame;
-    let where = frame.where;
-    do_check_eq(where.source.actor, source.actor);
-    do_check_eq(where.line, location.line);
-    do_check_eq(where.column, location.column);
-    let variables = frame.environment.bindings.variables;
-    do_check_eq(variables.a.value, 1);
-    do_check_eq(variables.b.value.type, "undefined");
-    do_check_eq(variables.c.value.type, "undefined");
-    yield resume(threadClient);
-
-    yield close(client);
-    do_test_finished();
-  });
-}
+  packet = await executeOnNextTickAndWaitForPause(function() {
+    reload(targetFront).then(function() {
+      loadSubScriptWithOptions(SOURCE_URL, {target: debuggee, ignoreCache: true});
+    });
+  }, client);
+  Assert.equal(packet.type, "paused");
+  const why = packet.why;
+  Assert.equal(why.type, "breakpoint");
+  Assert.equal(why.actors.length, 1);
+  Assert.equal(why.actors[0], breakpointClient.actor);
+  const frame = packet.frame;
+  const where = frame.where;
+  Assert.equal(where.actor, source.actor);
+  Assert.equal(where.line, location.line);
+  Assert.equal(where.column, location.column);
+  const variables = frame.environment.bindings.variables;
+  Assert.equal(variables.a.value, 1);
+  Assert.equal(variables.b.value.type, "undefined");
+  Assert.equal(variables.c.value.type, "undefined");
+  await resume(threadClient);
+}, { doNotRunWorker: true }));

@@ -9,11 +9,10 @@
     // Evict bfcache and then go back.
     async function evictCache() {
       let shistory = SpecialPowers.wrap(window)
-                       .QueryInterface(SpecialPowers.Ci.nsIInterfaceRequestor)
-                       .getInterface(SpecialPowers.Ci.nsIWebNavigation)
+                       .docShell
+                       .QueryInterface(SpecialPowers.Ci.nsIWebNavigation)
                        .sessionHistory;
-      let shPrivate = shistory.QueryInterface(SpecialPowers.Ci.nsISHistoryInternal);
-      shPrivate.evictAllContentViewers();
+      shistory.legacySHistory.evictAllContentViewers();
       history.back();
     }
     </script>

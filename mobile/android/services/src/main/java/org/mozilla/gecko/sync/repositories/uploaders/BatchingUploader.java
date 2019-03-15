@@ -7,17 +7,16 @@ package org.mozilla.gecko.sync.repositories.uploaders;
 import android.net.Uri;
 import android.support.annotation.VisibleForTesting;
 
+import org.json.simple.JSONObject;
 import org.mozilla.gecko.background.common.log.Logger;
-import org.mozilla.gecko.sync.CollectionConcurrentModificationException;
+import org.mozilla.gecko.sync.CryptoRecord;
 import org.mozilla.gecko.sync.InfoConfiguration;
-import org.mozilla.gecko.sync.Server15PreviousPostFailedException;
 import org.mozilla.gecko.sync.net.AuthHeaderProvider;
 import org.mozilla.gecko.sync.repositories.RepositorySession;
 import org.mozilla.gecko.sync.repositories.delegates.RepositorySessionStoreDelegate;
 import org.mozilla.gecko.sync.repositories.domain.Record;
 
 import java.util.ArrayList;
-import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -91,15 +90,38 @@ public class BatchingUploader {
     // - buffers in the Payload object
     private final Object payloadLock = new Object();
 
+    // Maximum size of a BSO's payload field that server will accept during an upload.
+    // Our naming here is somewhat unfortunate, since we're calling two different things a "payload".
+    // In context of the uploader, a "payload" is an entirety of what gets POST-ed to the server in
+    // an individual request.
+    // In context of Sync Storage, "payload" is a BSO (basic storage object) field defined as: "a
+    // string containing the data of the record."
+    // Sync Storage servers place a hard limit on how large a payload _field_ might be, and so we
+    // maintain this limit for a single sanity check.
+    private final long maxPayloadFieldBytes;
+
+    // Depending on the 'shouldFailBatchOnFailure' flag below, "invalid" records (too large or fail
+    // to serialize correctly) will cause uploader to start ignoring any future records in the current
+    // flow.
+    private volatile boolean encounteredInvalidRecord = false;
+
+    // Whether or not we should set aborted if there are any issues with the record.
+    // This is used to prevent corruption with bookmark records, as uploading
+    // only a subset of the bookmarks is very likely to cause corruption, (e.g.
+    // uploading a parent without its children or vice versa).
+    @VisibleForTesting
+    protected final boolean shouldFailBatchOnFailure;
+
     public BatchingUploader(
             final RepositorySession repositorySession, final ExecutorService workQueue,
             final RepositorySessionStoreDelegate sessionStoreDelegate, final Uri baseCollectionUri,
             final Long localCollectionLastModified, final InfoConfiguration infoConfiguration,
-            final AuthHeaderProvider authHeaderProvider) {
+            final AuthHeaderProvider authHeaderProvider, final boolean shouldAbortOnFailure) {
         this.repositorySession = repositorySession;
         this.sessionStoreDelegate = sessionStoreDelegate;
         this.collectionUri = baseCollectionUri;
         this.authHeaderProvider = authHeaderProvider;
+        this.shouldFailBatchOnFailure = shouldAbortOnFailure;
 
         this.uploaderMeta = new UploaderMeta(
                 payloadLock, infoConfiguration.maxTotalBytes, infoConfiguration.maxTotalRecords);
@@ -107,6 +129,8 @@ public class BatchingUploader {
                 payloadLock, infoConfiguration.maxPostBytes, infoConfiguration.maxPostRecords);
 
         this.payloadDispatcher = createPayloadDispatcher(workQueue, localCollectionLastModified);
+
+        this.maxPayloadFieldBytes = infoConfiguration.maxPayloadBytes;
 
         this.executor = workQueue;
     }
@@ -116,27 +140,38 @@ public class BatchingUploader {
         final String guid = record.guid;
 
         // If store failed entirely, just bail out. We've already told our delegate that we failed.
-        if (payloadDispatcher.storeFailed) {
+        if (shouldIgnoreFurtherRecords()) {
             return;
         }
 
-        // If a record or a payload failed, we won't let subsequent requests proceed.'
-        // This means that we may bail much earlier.
-        if (payloadDispatcher.recordUploadFailed) {
-            sessionStoreDelegate.deferredStoreDelegate(executor).onRecordStoreFailed(
-                    new Server15PreviousPostFailedException(), guid
-            );
+        final JSONObject recordJSON = record.toJSONObject();
+
+        final String payloadField = (String) recordJSON.get(CryptoRecord.KEY_PAYLOAD);
+        if (payloadField == null) {
+            processInvalidRecord(new IllegalRecordException(), record, false);
             return;
         }
 
-        final byte[] recordBytes = record.toJSONBytes();
+        // We can't upload individual records whose payload fields exceed our payload field byte limit.
+        // UTF-8 uses 1 byte per character for the ASCII range. Contents of the payloadField are
+        // base64 and hex encoded, so character count is sufficient.
+        if (payloadField.length() > this.maxPayloadFieldBytes) {
+            processInvalidRecord(new PayloadTooLargeToUpload(), record, true);
+            return;
+        }
+
+        final byte[] recordBytes = Record.stringToJSONBytes(recordJSON.toJSONString());
+        if (recordBytes == null) {
+            processInvalidRecord(new IllegalRecordException(), record, false);
+            return;
+        }
+
         final long recordDeltaByteCount = recordBytes.length + PER_RECORD_OVERHEAD_BYTE_COUNT;
-
         Logger.debug(LOG_TAG, "Processing a record with guid: " + guid);
 
-        // We can't upload individual records which exceed our payload byte limit.
+        // We can't upload individual records which exceed our payload total byte limit.
         if ((recordDeltaByteCount + PER_PAYLOAD_OVERHEAD_BYTE_COUNT) > payload.maxBytes) {
-            sessionStoreDelegate.onRecordStoreFailed(new RecordTooLargeToUpload(), guid);
+            processInvalidRecord(new RecordTooLargeToUpload(), record, true);
             return;
         }
 
@@ -149,7 +184,7 @@ public class BatchingUploader {
                 Logger.debug(LOG_TAG, "Record fits into the current batch and payload");
                 addAndFlushIfNecessary(recordDeltaByteCount, recordBytes, guid);
 
-            // Payload won't fit the record.
+                // Payload won't fit the record.
             } else if (canFitRecordIntoBatch) {
                 Logger.debug(LOG_TAG, "Current payload won't fit incoming record, uploading payload.");
                 flush(false, false);
@@ -159,7 +194,7 @@ public class BatchingUploader {
                 // Keep track of the overflow record.
                 addAndFlushIfNecessary(recordDeltaByteCount, recordBytes, guid);
 
-            // Batch won't fit the record.
+                // Batch won't fit the record.
             } else {
                 Logger.debug(LOG_TAG, "Current batch won't fit incoming record, committing batch.");
                 flush(true, false);
@@ -186,6 +221,13 @@ public class BatchingUploader {
     }
 
     public void noMoreRecordsToUpload() {
+        // It's possible that we've hit a failure during an upload.
+        // If that's the case, bail out. Our delegate chain has already been notified.
+        if (shouldIgnoreFurtherRecords()) {
+            Logger.debug(LOG_TAG, "Ignoring 'no more records to upload' signal due to previous failure.");
+            return;
+        }
+
         Logger.debug(LOG_TAG, "Received 'no more records to upload' signal.");
 
         // If we have any pending records in the Payload, flush them!
@@ -206,8 +248,42 @@ public class BatchingUploader {
         });
     }
 
-    /* package-local */ void finished(AtomicLong lastModifiedTimestamp) {
-        sessionStoreDelegate.deferredStoreDelegate(executor).onStoreCompleted(lastModifiedTimestamp.get());
+
+    /* package-local */ void setLastStoreTimestamp(AtomicLong lastModifiedTimestamp) {
+        repositorySession.setLastStoreTimestamp(lastModifiedTimestamp.get());
+    }
+
+    /* package-local */ void finished() {
+        sessionStoreDelegate.deferredStoreDelegate(executor).onStoreCompleted();
+    }
+
+    private boolean shouldIgnoreFurtherRecords() {
+        return (shouldFailBatchOnFailure && encounteredInvalidRecord) || payloadDispatcher.storeFailed.get();
+    }
+
+    // Common handling for marking a record failure and calling our delegate's onRecordStoreFailed.
+    private void processInvalidRecord(final Exception e, final Record record, boolean sizeOverflow) {
+        encounteredInvalidRecord = true;
+
+        // There are three cases we're handling here. See bug 1362206 for some rationale here.
+        // 1. shouldFailBatchOnFailure is false, and it failed sanity checks for reasons other than
+        //    "it's too large" (say, `record`'s json is 0 bytes),
+        //     - Then mark record's store as 'failed' and continue uploading
+        // 2. shouldFailBatchOnFailure is false, and it failed sanity checks because it's too large,
+        //     - Continue uploading, and don't fail synchronization because of this one.
+        // 3. shouldFailBatchOnFailure is true, and it failed for any reason
+        //     - Stop uploading.
+        if (shouldFailBatchOnFailure) {
+            // case 3
+            Logger.debug(LOG_TAG, "Batch failed with exception: " + e.toString());
+            // Send off to our delegate that we failed.
+            sessionStoreDelegate.onRecordStoreFailed(e, record.guid);
+            payloadDispatcher.doStoreFailed(e);
+        } else if (!sizeOverflow) {
+            // case 1
+            sessionStoreDelegate.onRecordStoreFailed(e, record.guid);
+        }
+        // case 2 is an implicit empty else {} here.
     }
 
     // Will be called from a thread dispatched by PayloadDispatcher.
@@ -239,6 +315,10 @@ public class BatchingUploader {
         }
     }
 
+    /* package-local */ void abort() {
+        repositorySession.abort();
+    }
+
     /**
      * Allows tests to define their own PayloadDispatcher.
      */
@@ -247,7 +327,7 @@ public class BatchingUploader {
         return new PayloadDispatcher(workQueue, this, localCollectionLastModified);
     }
 
-    public static class BatchingUploaderException extends Exception {
+    /* package-local */ static class BatchingUploaderException extends Exception {
         private static final long serialVersionUID = 1L;
     }
     /* package-local */ static class LastModifiedDidNotChange extends BatchingUploaderException {
@@ -258,8 +338,19 @@ public class BatchingUploader {
     }
     /* package-local */ static class TokenModifiedException extends BatchingUploaderException {
         private static final long serialVersionUID = 1L;
-    };
+    }
+    // We may choose what to do about these failures upstream on the delegate level. For now, if a
+    // record is failed by the uploader, current sync stage will be aborted - although, uploader
+    // doesn't depend on this behaviour.
     private static class RecordTooLargeToUpload extends BatchingUploaderException {
+        private static final long serialVersionUID = 1L;
+    }
+    @VisibleForTesting
+    /* package-local */ static class PayloadTooLargeToUpload extends BatchingUploaderException {
+        private static final long serialVersionUID = 1L;
+    }
+    @VisibleForTesting
+    /* package-local */ static class IllegalRecordException extends BatchingUploaderException {
         private static final long serialVersionUID = 1L;
     }
 }

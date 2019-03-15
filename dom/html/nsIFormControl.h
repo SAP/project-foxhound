@@ -9,16 +9,15 @@
 #include "mozilla/EventForwards.h"
 #include "nsISupports.h"
 
-class nsIDOMHTMLFormElement;
-class nsPresState;
-
 namespace mozilla {
+class PresState;
 namespace dom {
 class Element;
 class HTMLFieldSetElement;
 class HTMLFormSubmission;
-} // namespace dom
-} // namespace mozilla
+class HTMLFormElement;
+}  // namespace dom
+}  // namespace mozilla
 
 enum FormControlsTypes {
   NS_FORM_FIELDSET = 1,
@@ -34,8 +33,8 @@ enum FormControlsTypes {
   // Elements with different types, the value is used as a mask.
   // When changing the order, adding or removing elements, be sure to update
   // the static_assert checks accordingly.
-  NS_FORM_BUTTON_ELEMENT = 0x40, // 0b01000000
-  NS_FORM_INPUT_ELEMENT  = 0x80  // 0b10000000
+  NS_FORM_BUTTON_ELEMENT = 0x40,  // 0b01000000
+  NS_FORM_INPUT_ELEMENT = 0x80    // 0b10000000
 };
 
 enum ButtonElementTypes : uint8_t {
@@ -72,26 +71,29 @@ enum InputElementTypes : uint8_t {
 };
 
 static_assert(static_cast<uint32_t>(eFormControlsWithoutSubTypesMax) <
-              static_cast<uint32_t>(NS_FORM_BUTTON_ELEMENT),
+                  static_cast<uint32_t>(NS_FORM_BUTTON_ELEMENT),
               "Too many FormControlsTypes without sub-types");
 static_assert(static_cast<uint32_t>(eButtonElementTypesMax) <
-              static_cast<uint32_t>(NS_FORM_INPUT_ELEMENT),
+                  static_cast<uint32_t>(NS_FORM_INPUT_ELEMENT),
               "Too many ButtonElementTypes");
-static_assert(static_cast<uint32_t>(eInputElementTypesMax) < 1<<8,
+static_assert(static_cast<uint32_t>(eInputElementTypesMax) < 1 << 8,
               "Too many form control types");
 
-#define NS_IFORMCONTROL_IID   \
-{ 0x4b89980c, 0x4dcd, 0x428f, \
-  { 0xb7, 0xad, 0x43, 0x5b, 0x93, 0x29, 0x79, 0xec } }
+#define NS_IFORMCONTROL_IID                          \
+  {                                                  \
+    0x4b89980c, 0x4dcd, 0x428f, {                    \
+      0xb7, 0xad, 0x43, 0x5b, 0x93, 0x29, 0x79, 0xec \
+    }                                                \
+  }
 
 /**
  * Interface which all form controls (e.g. buttons, checkboxes, text,
  * radio buttons, select, etc) implement in addition to their dom specific
  * interface.
  */
-class nsIFormControl : public nsISupports
-{
-public:
+class nsIFormControl : public nsISupports {
+ public:
+  nsIFormControl(uint8_t aType) : mType(aType) {}
 
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_IFORMCONTROL_IID)
 
@@ -99,13 +101,13 @@ public:
    * Get the fieldset for this form control.
    * @return the fieldset
    */
-  virtual mozilla::dom::HTMLFieldSetElement *GetFieldSet() = 0;
+  virtual mozilla::dom::HTMLFieldSetElement* GetFieldSet() = 0;
 
   /**
    * Get the form for this form control.
    * @return the form
    */
-  virtual mozilla::dom::Element *GetFormElement() = 0;
+  virtual mozilla::dom::Element* GetFormElement() = 0;
 
   /**
    * Set the form for this form control.
@@ -116,21 +118,23 @@ public:
    * so that it can be properly sorted with the other controls in the
    * form.
    */
-  virtual void SetForm(nsIDOMHTMLFormElement* aForm) = 0;
+  virtual void SetForm(mozilla::dom::HTMLFormElement* aForm) = 0;
 
   /**
    * Tell the control to forget about its form.
    *
    * @param aRemoveFromForm set false if you do not want this element removed
    *        from the form.  (Used by nsFormControlList::Clear())
+   * @param aUnbindOrDelete set true if the element is being deleted or unbound
+   *        from tree.
    */
-  virtual void ClearForm(bool aRemoveFromForm) = 0;
+  virtual void ClearForm(bool aRemoveFromForm, bool aUnbindOrDelete) = 0;
 
   /**
    * Get the type of this control as an int (see NS_FORM_* above)
    * @return the type of this control
    */
-  NS_IMETHOD_(uint32_t) GetType() const = 0 ;
+  uint32_t ControlType() const { return mType; }
 
   /**
    * Reset this form control (as it should be when the user clicks the Reset
@@ -163,7 +167,7 @@ public:
    * @return true if the form control was a checkbox and its
    *         checked state was restored, false otherwise.
    */
-  virtual bool RestoreState(nsPresState* aState) = 0;
+  virtual bool RestoreState(mozilla::PresState* aState) = 0;
 
   virtual bool AllowDrop() = 0;
 
@@ -196,6 +200,13 @@ public:
   inline bool IsSingleLineTextControl(bool aExcludePassword) const;
 
   /**
+   * Returns true if this is a single line text control or a number control.
+   * @param  aExcludePassword  to have NS_FORM_INPUT_PASSWORD returning false.
+   * @return true if this is a single line text control or a number control.
+   */
+  inline bool IsSingleLineTextOrNumberControl(bool aExcludePassword) const;
+
+  /**
    * Returns whether this is a submittable form control.
    * @return whether this is a submittable form control.
    */
@@ -207,107 +218,87 @@ public:
    */
   inline bool AllowDraggableChildren() const;
 
-  virtual bool IsDisabledForEvents(mozilla::EventMessage aMessage)
-  {
+  virtual bool IsDisabledForEvents(mozilla::WidgetEvent* aEvent) {
     return false;
   }
-protected:
 
+ protected:
   /**
    * Returns whether mType corresponds to a single line text control type.
    * @param aExcludePassword to have NS_FORM_INPUT_PASSWORD ignored.
    * @param aType the type to be tested.
    * @return whether mType corresponds to a single line text control type.
    */
-  inline static bool IsSingleLineTextControl(bool aExcludePassword, uint32_t aType);
+  inline static bool IsSingleLineTextControl(bool aExcludePassword,
+                                             uint32_t aType);
 
   /**
    * Returns whether this is a auto-focusable form control.
    * @return whether this is a auto-focusable form control.
    */
   inline bool IsAutofocusable() const;
+
+  uint8_t mType;
 };
 
-bool
-nsIFormControl::IsSubmitControl() const
-{
-  uint32_t type = GetType();
-  return type == NS_FORM_INPUT_SUBMIT ||
-         type == NS_FORM_INPUT_IMAGE ||
+bool nsIFormControl::IsSubmitControl() const {
+  uint32_t type = ControlType();
+  return type == NS_FORM_INPUT_SUBMIT || type == NS_FORM_INPUT_IMAGE ||
          type == NS_FORM_BUTTON_SUBMIT;
 }
 
-bool
-nsIFormControl::IsTextControl(bool aExcludePassword) const
-{
-  uint32_t type = GetType();
+bool nsIFormControl::IsTextControl(bool aExcludePassword) const {
+  uint32_t type = ControlType();
   return type == NS_FORM_TEXTAREA ||
          IsSingleLineTextControl(aExcludePassword, type);
 }
 
-bool
-nsIFormControl::IsTextOrNumberControl(bool aExcludePassword) const
-{
-  return IsTextControl(aExcludePassword) || GetType() == NS_FORM_INPUT_NUMBER;
+bool nsIFormControl::IsTextOrNumberControl(bool aExcludePassword) const {
+  return IsTextControl(aExcludePassword) ||
+         ControlType() == NS_FORM_INPUT_NUMBER;
 }
 
-bool
-nsIFormControl::IsSingleLineTextControl(bool aExcludePassword) const
-{
-  return IsSingleLineTextControl(aExcludePassword, GetType());
+bool nsIFormControl::IsSingleLineTextControl(bool aExcludePassword) const {
+  return IsSingleLineTextControl(aExcludePassword, ControlType());
+}
+
+bool nsIFormControl::IsSingleLineTextOrNumberControl(
+    bool aExcludePassword) const {
+  return IsSingleLineTextControl(aExcludePassword) ||
+         ControlType() == NS_FORM_INPUT_NUMBER;
 }
 
 /*static*/
-bool
-nsIFormControl::IsSingleLineTextControl(bool aExcludePassword, uint32_t aType)
-{
-  return aType == NS_FORM_INPUT_TEXT ||
-         aType == NS_FORM_INPUT_EMAIL ||
-         aType == NS_FORM_INPUT_SEARCH ||
-         aType == NS_FORM_INPUT_TEL ||
+bool nsIFormControl::IsSingleLineTextControl(bool aExcludePassword,
+                                             uint32_t aType) {
+  return aType == NS_FORM_INPUT_TEXT || aType == NS_FORM_INPUT_EMAIL ||
+         aType == NS_FORM_INPUT_SEARCH || aType == NS_FORM_INPUT_TEL ||
          aType == NS_FORM_INPUT_URL ||
          // TODO: those are temporary until bug 773205 is fixed.
-#if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_WIDGET_GONK)
-         // On Android/B2G, date/time input appears as a normal text box.
-         aType == NS_FORM_INPUT_TIME ||
-         aType == NS_FORM_INPUT_DATE ||
-#endif
-         aType == NS_FORM_INPUT_MONTH ||
-         aType == NS_FORM_INPUT_WEEK ||
+         aType == NS_FORM_INPUT_MONTH || aType == NS_FORM_INPUT_WEEK ||
          aType == NS_FORM_INPUT_DATETIME_LOCAL ||
          (!aExcludePassword && aType == NS_FORM_INPUT_PASSWORD);
 }
 
-bool
-nsIFormControl::IsSubmittableControl() const
-{
+bool nsIFormControl::IsSubmittableControl() const {
   // TODO: keygen should be in that list, see bug 101019.
-  uint32_t type = GetType();
-  return type == NS_FORM_OBJECT ||
-         type == NS_FORM_TEXTAREA ||
+  uint32_t type = ControlType();
+  return type == NS_FORM_OBJECT || type == NS_FORM_TEXTAREA ||
          type == NS_FORM_SELECT ||
          // type == NS_FORM_KEYGEN ||
-         type & NS_FORM_BUTTON_ELEMENT ||
-         type & NS_FORM_INPUT_ELEMENT;
+         type & NS_FORM_BUTTON_ELEMENT || type & NS_FORM_INPUT_ELEMENT;
 }
 
-bool
-nsIFormControl::AllowDraggableChildren() const
-{
-  uint32_t type = GetType();
-  return type == NS_FORM_OBJECT ||
-         type == NS_FORM_FIELDSET ||
+bool nsIFormControl::AllowDraggableChildren() const {
+  uint32_t type = ControlType();
+  return type == NS_FORM_OBJECT || type == NS_FORM_FIELDSET ||
          type == NS_FORM_OUTPUT;
 }
 
-bool
-nsIFormControl::IsAutofocusable() const
-{
-  uint32_t type = GetType();
-  return type & NS_FORM_INPUT_ELEMENT ||
-         type & NS_FORM_BUTTON_ELEMENT ||
-         type == NS_FORM_TEXTAREA ||
-         type == NS_FORM_SELECT;
+bool nsIFormControl::IsAutofocusable() const {
+  uint32_t type = ControlType();
+  return type & NS_FORM_INPUT_ELEMENT || type & NS_FORM_BUTTON_ELEMENT ||
+         type == NS_FORM_TEXTAREA || type == NS_FORM_SELECT;
 }
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIFormControl, NS_IFORMCONTROL_IID)

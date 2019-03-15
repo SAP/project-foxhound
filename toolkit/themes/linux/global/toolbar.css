@@ -8,13 +8,9 @@
 
 @namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
 
-/* ::::: toolbox ::::: */
-
 toolbox {
   -moz-appearance: toolbox;
 }
-
-/* ::::: menubar & toolbar ::::: */
 
 toolbar {
   -moz-appearance: toolbar;
@@ -23,7 +19,7 @@ toolbar {
   padding: 2px 0px;
 }
 
-menubar, toolbar[type="menubar"] {
+toolbar[type="menubar"] {
   -moz-appearance: menubar;
   color: -moz-menubartext;
   min-width: 1px;
@@ -31,18 +27,10 @@ menubar, toolbar[type="menubar"] {
   padding: 1px 0px;
 }
 
-menubar:-moz-lwtheme,
 toolbar:-moz-lwtheme {
   -moz-appearance: none;
   color: inherit;
 }
-
-/* in browser.xul, the menubar is inside a toolbar... */
-toolbaritem > menubar {
-  -moz-appearance: none;
-}
-
-/* ::::: toolbar decorations ::::: */
 
 toolbarseparator {
   -moz-appearance: separator;
@@ -54,44 +42,8 @@ toolbarspacer {
   width: 15px;
 }
 
-/* ::::: toolbarpaletteitem ::::: */
-
 toolbarpaletteitem {
   cursor: grab;
-}
-
-.toolbarpaletteitem-box[type="spacer"],
-.toolbarpaletteitem-box[type="spring"] {
-  border: 1px solid #808080;
-  background-color: #FFF !important;
-}
-
-toolbarpaletteitem[place="toolbar"] > toolbarspacer {
-  width: 11px;
-}
-
-.toolbarpaletteitem-box[type="spacer"][place="toolbar"],
-.toolbarpaletteitem-box[type="spring"][place="toolbar"] {
-  margin-top: 2px;
-  margin-bottom: 2px;
-  margin-inline-start: 0px;
-  margin-inline-end: 2px;
-}
-
-.toolbarpaletteitem-box[type="separator"][place="palette"] {
-  width: 2px;
-  height: 50px;
-}
-
-.toolbarpaletteitem-box[type="spacer"][place="palette"],
-.toolbarpaletteitem-box[type="spring"][place="palette"] {
-  margin-bottom: 2px;
-  width: 50px;
-  height: 50px;
-}
-
-.toolbarpaletteitem-box[type="spring"][place="palette"] {
-  background: url("chrome://global/skin/toolbar/spring.png") no-repeat center;
 }
 
 /* ..... drag and drop feedback ..... */

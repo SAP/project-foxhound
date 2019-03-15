@@ -1,3 +1,5 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,40 +14,31 @@ namespace dom {
 
 class MessagePortService;
 
-class MessagePortParent final : public PMessagePortParent
-{
-public:
+class MessagePortParent final : public PMessagePortParent {
+ public:
   explicit MessagePortParent(const nsID& aUUID);
   ~MessagePortParent();
 
-  bool Entangle(const nsID& aDestinationUUID,
-                const uint32_t& aSequenceID);
+  bool Entangle(const nsID& aDestinationUUID, const uint32_t& aSequenceID);
 
   bool Entangled(const nsTArray<ClonedMessageData>& aMessages);
 
   void Close();
   void CloseAndDelete();
 
-  bool CanSendData() const
-  {
-    return mCanSendData;
-  }
+  bool CanSendData() const { return mCanSendData; }
 
-  const nsID& ID() const
-  {
-    return mUUID;
-  }
+  const nsID& ID() const { return mUUID; }
 
-  static bool ForceClose(const nsID& aUUID,
-                         const nsID& aDestinationUUID,
+  static bool ForceClose(const nsID& aUUID, const nsID& aDestinationUUID,
                          const uint32_t& aSequenceID);
 
-private:
-  virtual mozilla::ipc::IPCResult RecvPostMessages(nsTArray<ClonedMessageData>&& aMessages)
-                                                                       override;
+ private:
+  virtual mozilla::ipc::IPCResult RecvPostMessages(
+      nsTArray<ClonedMessageData>&& aMessages) override;
 
-  virtual mozilla::ipc::IPCResult RecvDisentangle(nsTArray<ClonedMessageData>&& aMessages)
-                                                                       override;
+  virtual mozilla::ipc::IPCResult RecvDisentangle(
+      nsTArray<ClonedMessageData>&& aMessages) override;
 
   virtual mozilla::ipc::IPCResult RecvStopSendingData() override;
 
@@ -59,7 +52,7 @@ private:
   bool mCanSendData;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_MessagePortParent_h
+#endif  // mozilla_dom_MessagePortParent_h

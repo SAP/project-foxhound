@@ -4,46 +4,6 @@ dnl file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 dnl Add compiler specific options
 
-AC_DEFUN([MOZ_DEFAULT_COMPILER],
-[
-dnl set DEVELOPER_OPTIONS early; MOZ_DEFAULT_COMPILER is usually the first non-setup directive
-  if test -z "$MOZILLA_OFFICIAL"; then
-    DEVELOPER_OPTIONS=1
-  fi
-  MOZ_ARG_ENABLE_BOOL(release,
-  [  --enable-release        Build with more conservative, release engineering-oriented options.
-                          This may slow down builds.],
-      DEVELOPER_OPTIONS=,
-      DEVELOPER_OPTIONS=1)
-
-dnl Default to MSVC for win32 and gcc-4.2 for darwin
-dnl ==============================================================
-if test -z "$CROSS_COMPILE"; then
-case "$target" in
-*-mingw*)
-    if test -z "$CPP"; then CPP="$CC -E -nologo"; fi
-    if test -z "$CXXCPP"; then CXXCPP="$CXX -TP -E -nologo"; ac_cv_prog_CXXCPP="$CXXCPP"; fi
-    if test -z "$AS"; then
-        case "${target_cpu}" in
-        i*86)
-            AS=ml;
-            ;;
-        x86_64)
-            AS=ml64;
-            ;;
-        esac
-    fi
-    if test -z "$MIDL"; then MIDL=midl; fi
-
-    # need override this flag since we don't use $(LDFLAGS) for this.
-    if test -z "$HOST_LDFLAGS" ; then
-        HOST_LDFLAGS=" "
-    fi
-    ;;
-esac
-fi
-])
-
 dnl ============================================================================
 dnl C++ rtti
 dnl We don't use it in the code, but it can be usefull for debugging, so give
@@ -82,7 +42,7 @@ fi
 
 AC_SUBST(MOZ_NO_DEBUG_RTL)
 
-MOZ_DEBUG_ENABLE_DEFS="DEBUG TRACING"
+MOZ_DEBUG_ENABLE_DEFS="DEBUG"
 MOZ_ARG_WITH_STRING(debug-label,
 [  --with-debug-label=LABELS
                           Define DEBUG_<value> for each comma-separated
@@ -129,53 +89,18 @@ if test "$CLANG_CXX"; then
     _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Wno-unknown-warning-option -Wno-return-type-c-linkage"
 fi
 
-if test -n "$DEVELOPER_OPTIONS"; then
-    MOZ_FORCE_GOLD=1
-fi
-
-MOZ_ARG_ENABLE_BOOL(gold,
-[  --enable-gold           Enable GNU Gold Linker when it is not already the default],
-    MOZ_FORCE_GOLD=1,
-    MOZ_FORCE_GOLD=
-    )
-
-if test "$GNU_CC" -a -n "$MOZ_FORCE_GOLD"; then
-    dnl if the default linker is BFD ld, check if gold is available and try to use it
-    dnl for local builds only.
-    if $CC -Wl,--version 2>&1 | grep -q "GNU ld"; then
-        GOLD=$($CC -print-prog-name=ld.gold)
-        case "$GOLD" in
-        /*)
-            ;;
-        *)
-            GOLD=$(which $GOLD)
-            ;;
-        esac
-        if test -n "$GOLD"; then
-            mkdir -p $_objdir/build/unix/gold
-            rm -f $_objdir/build/unix/gold/ld
-            ln -s "$GOLD" $_objdir/build/unix/gold/ld
-            if $CC -B $_objdir/build/unix/gold -Wl,--version 2>&1 | grep -q "GNU gold"; then
-                LDFLAGS="$LDFLAGS -B $_objdir/build/unix/gold"
-            else
-                rm -rf $_objdir/build/unix/gold
-            fi
-        fi
-    fi
-fi
-if test "$GNU_CC"; then
-    if $CC $LDFLAGS -Wl,--version 2>&1 | grep -q "GNU ld"; then
-        LD_IS_BFD=1
-    fi
-fi
-
-AC_SUBST([LD_IS_BFD])
-
 if test "$GNU_CC"; then
     if test -z "$DEVELOPER_OPTIONS"; then
         CFLAGS="$CFLAGS -ffunction-sections -fdata-sections"
         CXXFLAGS="$CXXFLAGS -ffunction-sections -fdata-sections"
     fi
+
+    # For MinGW, we need big-obj otherwise we create too many sections in Unified builds
+    if test "${OS_ARCH}" = "WINNT"; then
+        CFLAGS="$CFLAGS -Wa,-mbig-obj"
+        CXXFLAGS="$CXXFLAGS -Wa,-mbig-obj"
+    fi
+
     CFLAGS="$CFLAGS -fno-math-errno"
     CXXFLAGS="$CXXFLAGS -fno-exceptions -fno-math-errno"
 fi
@@ -250,33 +175,8 @@ if test "$GNU_CC" -a "$GCC_USE_GNU_LD" -a -z "$DEVELOPER_OPTIONS"; then
     fi
 fi
 
-# bionic in Android < 4.1 doesn't support PIE
-# On OSX, the linker defaults to building PIE programs when targetting OSX 10.7+,
-# but not when targetting OSX < 10.7. OSX < 10.7 doesn't support running PIE
-# programs, so as long as support for OSX 10.6 is kept, we can't build PIE.
-# Even after dropping 10.6 support, MOZ_PIE would not be useful since it's the
-# default (and clang says the -pie option is not used).
-# On other Unix systems, some file managers (Nautilus) can't start PIE programs
-if test -n "$gonkdir" && test "$ANDROID_VERSION" -ge 16; then
-    MOZ_PIE=1
-else
-    MOZ_PIE=
-fi
-
-MOZ_ARG_ENABLE_BOOL(pie,
-[  --enable-pie           Enable Position Independent Executables],
-    MOZ_PIE=1,
-    MOZ_PIE= )
-
-if test "$GNU_CC" -a -n "$MOZ_PIE"; then
-    AC_MSG_CHECKING([for PIE support])
-    _SAVE_LDFLAGS=$LDFLAGS
-    LDFLAGS="$LDFLAGS $DSO_PIC_CFLAGS -pie"
-    AC_TRY_LINK(,,AC_MSG_RESULT([yes])
-                  [MOZ_PROGRAM_LDFLAGS="$MOZ_PROGRAM_LDFLAGS -pie"],
-                  AC_MSG_RESULT([no])
-                  AC_MSG_ERROR([--enable-pie requires PIE support from the linker.]))
-    LDFLAGS=$_SAVE_LDFLAGS
+if test "$GNU_CC$CLANG_CC"; then
+    MOZ_PROGRAM_LDFLAGS="$MOZ_PROGRAM_LDFLAGS -pie"
 fi
 
 AC_SUBST(MOZ_PROGRAM_LDFLAGS)

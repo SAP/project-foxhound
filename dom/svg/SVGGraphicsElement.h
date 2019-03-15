@@ -15,21 +15,26 @@ namespace dom {
 
 typedef SVGTransformableElement SVGGraphicsElementBase;
 
-class SVGGraphicsElement : public SVGGraphicsElementBase,
-                           public SVGTests
-{
-protected:
-  explicit SVGGraphicsElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+class SVGGraphicsElement : public SVGGraphicsElementBase, public SVGTests {
+ protected:
+  explicit SVGGraphicsElement(
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
   ~SVGGraphicsElement();
 
-public:
+ public:
   // interfaces:
   NS_DECL_ISUPPORTS_INHERITED
 
-  bool IsInChromeDoc() const override;
+  bool IsFocusableInternal(int32_t* aTabIndex, bool aWithMouse) override;
+  SVGElement* AsSVGElement() final { return this; }
+
+ protected:
+  // returns true if focusability has been definitively determined otherwise
+  // false
+  bool IsSVGFocusable(bool* aIsFocusable, int32_t* aTabIndex);
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_SVGGraphicsElement_h
+#endif  // mozilla_dom_SVGGraphicsElement_h

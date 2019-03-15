@@ -5,17 +5,19 @@
 
 package org.mozilla.gecko.notifications;
 
-import org.mozilla.gecko.GeckoApp;
-import org.mozilla.gecko.GeckoAppShell;
-import org.mozilla.gecko.GeckoThread;
-import org.mozilla.gecko.mozglue.SafeIntent;
-
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.util.Log;
+
+import org.mozilla.gecko.AppConstants;
+import org.mozilla.gecko.GeckoApp;
+import org.mozilla.gecko.GeckoAppShell;
+import org.mozilla.gecko.GeckoServicesCreatorService;
+import org.mozilla.gecko.GeckoThread;
+import org.mozilla.gecko.mozglue.SafeIntent;
 
 /**
  *  Broadcast receiver for Notifications. Will forward them to GeckoApp (and start Gecko) if they're clicked.
@@ -62,7 +64,17 @@ public class NotificationReceiver extends BroadcastReceiver {
     }
 
     private void forwardMessageToActivity(final Intent intent, final Context context) {
-        final ComponentName name = intent.getExtras().getParcelable(NotificationHelper.ORIGINAL_EXTRA_COMPONENT);
+        final ComponentName name =
+                intent.getExtras().getParcelable(NotificationHelper.ORIGINAL_EXTRA_COMPONENT);
+
+        if (!AppConstants.MOZ_ANDROID_BROWSER_INTENT_CLASS.equals(
+                name != null ? name.getClassName() : null)) {
+            // Don't try to start anything other than the browser Activity.
+            NotificationHelper.getInstance(context.getApplicationContext())
+                              .handleNotificationIntent(new SafeIntent(intent));
+            return;
+        }
+
         intent.setComponent(name);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         context.startActivity(intent);
@@ -77,7 +89,7 @@ public class NotificationReceiver extends BroadcastReceiver {
 
         if (persistentIntent != null) {
             // Go through GeckoService for persistent notifications.
-            context.startService(persistentIntent);
+            GeckoServicesCreatorService.enqueueWork(context, persistentIntent);
         }
 
         if (NotificationClient.CLICK_ACTION.equals(action)) {

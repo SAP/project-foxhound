@@ -5,7 +5,6 @@
 description: >
     The assertion fails when invoked with a single argument.
 ---*/
-
 var threw = false;
 
 try {

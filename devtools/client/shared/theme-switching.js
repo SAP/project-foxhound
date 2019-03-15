@@ -4,16 +4,16 @@
 
 /* eslint-env browser */
 "use strict";
-(function () {
-  const { utils: Cu } = Components;
-  const { require } = Cu.import("resource://devtools/shared/Loader.jsm", {});
+(function() {
+  const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
   const Services = require("Services");
   const { gDevTools } = require("devtools/client/framework/devtools");
-  const { watchCSS } = require("devtools/client/shared/css-reload");
-  let documentElement = document.documentElement;
+  const { appendStyleSheet } = require("devtools/client/shared/stylesheet-utils");
+
+  const documentElement = document.documentElement;
 
   let os;
-  let platform = navigator.platform;
+  const platform = navigator.platform;
   if (platform.startsWith("Win")) {
     os = "win";
   } else if (platform.startsWith("Mac")) {
@@ -30,52 +30,8 @@
     return;
   }
 
-  let devtoolsStyleSheets = new WeakMap();
+  const devtoolsStyleSheets = new WeakMap();
   let gOldTheme = "";
-
-  function forceStyle() {
-    let computedStyle = window.getComputedStyle(documentElement);
-    if (!computedStyle) {
-      // Null when documentElement is not ready. This method is anyways not
-      // required then as scrollbars would be in their state without flushing.
-      return;
-    }
-    // Save display value
-    let display = computedStyle.display;
-    documentElement.style.display = "none";
-    // Flush
-    window.getComputedStyle(documentElement).display;
-    // Restore
-    documentElement.style.display = display;
-  }
-
-  /*
-   * Append a new processing instruction and return an object with
-   *  - styleSheet: DOMNode
-   *  - loadPromise: Promise that resolves once the sheets loads or errors
-   */
-  function appendStyleSheet(url) {
-    let styleSheetAttr = `href="${url}" type="text/css"`;
-    let styleSheet = document.createProcessingInstruction(
-      "xml-stylesheet", styleSheetAttr);
-    let loadPromise = new Promise((resolve, reject) => {
-      function onload() {
-        styleSheet.removeEventListener("load", onload);
-        styleSheet.removeEventListener("error", onerror);
-        resolve();
-      }
-      function onerror() {
-        styleSheet.removeEventListener("load", onload);
-        styleSheet.removeEventListener("error", onerror);
-        reject("Failed to load theme file " + url);
-      }
-
-      styleSheet.addEventListener("load", onload);
-      styleSheet.addEventListener("error", onerror);
-    });
-    document.insertBefore(styleSheet, documentElement);
-    return {styleSheet, loadPromise};
-  }
 
   /*
    * Notify the window that a theme switch finished so tests can check the DOM
@@ -92,10 +48,10 @@
     if (newTheme === gOldTheme) {
       return;
     }
-    let oldTheme = gOldTheme;
+    const oldTheme = gOldTheme;
     gOldTheme = newTheme;
 
-    let oldThemeDef = gDevTools.getThemeDefinition(oldTheme);
+    const oldThemeDef = gDevTools.getThemeDefinition(oldTheme);
     let newThemeDef = gDevTools.getThemeDefinition(newTheme);
 
     // The theme might not be available anymore (e.g. uninstalled)
@@ -110,39 +66,21 @@
     // the window
     devtoolsStyleSheets.set(newThemeDef, []);
 
-    let loadEvents = [];
-    for (let url of newThemeDef.stylesheets) {
-      let {styleSheet, loadPromise} = appendStyleSheet(url);
+    const loadEvents = [];
+    for (const url of newThemeDef.stylesheets) {
+      const {styleSheet, loadPromise} = appendStyleSheet(document, url);
       devtoolsStyleSheets.get(newThemeDef).push(styleSheet);
       loadEvents.push(loadPromise);
-    }
-
-    try {
-      const StylesheetUtils = require("sdk/stylesheet/utils");
-      const SCROLLBARS_URL = "chrome://devtools/skin/floating-scrollbars-dark-theme.css";
-
-      // TODO: extensions might want to customize scrollbar styles too.
-      if (!Services.appShell.hiddenDOMWindow
-        .matchMedia("(-moz-overlay-scrollbars)").matches) {
-        if (newTheme == "dark") {
-          StylesheetUtils.loadSheet(window, SCROLLBARS_URL, "agent");
-        } else if (oldTheme == "dark") {
-          StylesheetUtils.removeSheet(window, SCROLLBARS_URL, "agent");
-        }
-        forceStyle();
-      }
-    } catch (e) {
-      console.warn("customize scrollbar styles is only supported in firefox");
     }
 
     Promise.all(loadEvents).then(() => {
       // Unload all stylesheets and classes from the old theme.
       if (oldThemeDef) {
-        for (let name of oldThemeDef.classList) {
+        for (const name of oldThemeDef.classList) {
           documentElement.classList.remove(name);
         }
 
-        for (let sheet of devtoolsStyleSheets.get(oldThemeDef) || []) {
+        for (const sheet of devtoolsStyleSheets.get(oldThemeDef) || []) {
           sheet.remove();
         }
 
@@ -152,7 +90,7 @@
       }
 
       // Load all stylesheets and classes from the new theme.
-      for (let name of newThemeDef.classList) {
+      for (const name of newThemeDef.classList) {
         documentElement.classList.add(name);
       }
 
@@ -163,7 +101,7 @@
       // Final notification for further theme-switching related logic.
       gDevTools.emit("theme-switched", window, newTheme, oldTheme);
       notifyWindow();
-    }, console.error.bind(console));
+    }, console.error);
   }
 
   function handlePrefChange() {
@@ -175,11 +113,9 @@
   } else {
     switchTheme(Services.prefs.getCharPref("devtools.theme"));
 
-    Services.prefs.addObserver("devtools.theme", handlePrefChange, false);
-    window.addEventListener("unload", function () {
+    Services.prefs.addObserver("devtools.theme", handlePrefChange);
+    window.addEventListener("unload", function() {
       Services.prefs.removeObserver("devtools.theme", handlePrefChange);
     }, { once: true });
   }
-
-  watchCSS(window);
 })();

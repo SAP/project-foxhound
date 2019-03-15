@@ -7,17 +7,20 @@
 #include "mozilla/ipc/IOThreadChild.h"
 
 #include "ContentProcess.h"
-#include "ContentPrefs.h"
+#include "base/shared_memory.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/recordreplay/ParentIPC.h"
 
 #if defined(XP_MACOSX) && defined(MOZ_CONTENT_SANDBOX)
-#include <stdlib.h>
+#  include <stdlib.h>
+#  include "mozilla/Sandbox.h"
 #endif
 
 #if (defined(XP_WIN) || defined(XP_MACOSX)) && defined(MOZ_CONTENT_SANDBOX)
-#include "mozilla/Preferences.h"
-#include "nsAppDirectoryServiceDefs.h"
-#include "nsDirectoryService.h"
-#include "nsDirectoryServiceDefs.h"
+#  include "mozilla/SandboxSettings.h"
+#  include "nsAppDirectoryServiceDefs.h"
+#  include "nsDirectoryService.h"
+#  include "nsDirectoryServiceDefs.h"
 #endif
 
 using mozilla::ipc::IOThreadChild;
@@ -26,17 +29,7 @@ namespace mozilla {
 namespace dom {
 
 #if defined(XP_WIN) && defined(MOZ_CONTENT_SANDBOX)
-static bool
-IsSandboxTempDirRequired()
-{
-  // On Windows, a sandbox-writable temp directory is only used
-  // when sandbox pref level >= 1.
-  return Preferences::GetInt("security.sandbox.content.level") >= 1;
-}
-
-static void
-SetTmpEnvironmentVariable(nsIFile* aValue)
-{
+static void SetTmpEnvironmentVariable(nsIFile* aValue) {
   // Save the TMP environment variable so that is is picked up by GetTempPath().
   // Note that we specifically write to the TMP variable, as that is the first
   // variable that is checked by GetTempPath() to determine its output.
@@ -52,42 +45,22 @@ SetTmpEnvironmentVariable(nsIFile* aValue)
 }
 #endif
 
-#if defined(XP_MACOSX) && defined(MOZ_CONTENT_SANDBOX)
-static bool
-IsSandboxTempDirRequired()
-{
-  // On OSX, use the sandbox-writable temp when the pref level >= 1.
-  return (Preferences::GetInt("security.sandbox.content.level") >= 1);
-}
+#if defined(XP_WIN) && defined(MOZ_CONTENT_SANDBOX)
+static void SetUpSandboxEnvironment() {
+  MOZ_ASSERT(
+      nsDirectoryService::gService,
+      "SetUpSandboxEnvironment relies on nsDirectoryService being initialized");
 
-static void
-SetTmpEnvironmentVariable(nsIFile* aValue)
-{
-  nsAutoCString fullTmpPath;
-  nsresult rv = aValue->GetNativePath(fullTmpPath);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return;
-  }
-  Unused << NS_WARN_IF(setenv("TMPDIR", fullTmpPath.get(), 1) != 0);
-}
-#endif
-
-#if (defined(XP_WIN) || defined(XP_MACOSX)) && defined(MOZ_CONTENT_SANDBOX)
-static void
-SetUpSandboxEnvironment()
-{
-  MOZ_ASSERT(nsDirectoryService::gService,
-    "SetUpSandboxEnvironment relies on nsDirectoryService being initialized");
-
-  if (!IsSandboxTempDirRequired()) {
+  // On Windows, a sandbox-writable temp directory is used whenever the sandbox
+  // is enabled.
+  if (!IsContentSandboxEnabled()) {
     return;
   }
 
   nsCOMPtr<nsIFile> sandboxedContentTemp;
-  nsresult rv =
-    nsDirectoryService::gService->Get(NS_APP_CONTENT_PROCESS_TEMP_DIR,
-                                      NS_GET_IID(nsIFile),
-                                      getter_AddRefs(sandboxedContentTemp));
+  nsresult rv = nsDirectoryService::gService->Get(
+      NS_APP_CONTENT_PROCESS_TEMP_DIR, NS_GET_IID(nsIFile),
+      getter_AddRefs(sandboxedContentTemp));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return;
   }
@@ -104,149 +77,129 @@ SetUpSandboxEnvironment()
 }
 #endif
 
-bool
-ContentProcess::Init(int aArgc, char* aArgv[])
-{
-  // If passed in grab the application path for xpcom init
-  bool foundAppdir = false;
-  bool foundChildID = false;
-  bool foundIsForBrowser = false;
-  bool foundIntPrefs = false;
-  bool foundBoolPrefs = false;
-  bool foundStringPrefs = false;
-
-  uint64_t childID;
-  bool isForBrowser;
-
+bool ContentProcess::Init(int aArgc, char* aArgv[]) {
+  Maybe<uint64_t> childID;
+  Maybe<bool> isForBrowser;
+  Maybe<const char*> parentBuildID;
+  char* prefsHandle = nullptr;
+  char* prefMapHandle = nullptr;
+  char* prefsLen = nullptr;
+  char* prefMapSize = nullptr;
 #if defined(XP_MACOSX) && defined(MOZ_CONTENT_SANDBOX)
-  // If passed in grab the profile path for sandboxing
-  bool foundProfile = false;
   nsCOMPtr<nsIFile> profileDir;
 #endif
 
-  InfallibleTArray<PrefSetting> prefsArray;
-  for (int idx = aArgc; idx > 0; idx--) {
-    if (!aArgv[idx]) {
+  for (int i = 1; i < aArgc; i++) {
+    if (!aArgv[i]) {
       continue;
     }
 
-    if (!strcmp(aArgv[idx], "-appdir")) {
-      MOZ_ASSERT(!foundAppdir);
-      if (foundAppdir) {
-        continue;
+    if (strcmp(aArgv[i], "-appdir") == 0) {
+      if (++i == aArgc) {
+        return false;
       }
-      nsCString appDir;
-      appDir.Assign(nsDependentCString(aArgv[idx+1]));
+      nsDependentCString appDir(aArgv[i]);
       mXREEmbed.SetAppDir(appDir);
-      foundAppdir = true;
-    } else if (!strcmp(aArgv[idx], "-childID")) {
-      MOZ_ASSERT(!foundChildID);
-      if (foundChildID) {
-        continue;
+
+    } else if (strcmp(aArgv[i], "-childID") == 0) {
+      if (++i == aArgc) {
+        return false;
       }
-      if (idx + 1 < aArgc) {
-        childID = strtoull(aArgv[idx + 1], nullptr, 10);
-        foundChildID = true;
+      char* str = aArgv[i];
+      childID = Some(strtoull(str, &str, 10));
+      if (str[0] != '\0') {
+        return false;
       }
-    } else if (!strcmp(aArgv[idx], "-isForBrowser") || !strcmp(aArgv[idx], "-notForBrowser")) {
-      MOZ_ASSERT(!foundIsForBrowser);
-      if (foundIsForBrowser) {
-        continue;
+
+    } else if (strcmp(aArgv[i], "-isForBrowser") == 0) {
+      isForBrowser = Some(true);
+
+    } else if (strcmp(aArgv[i], "-notForBrowser") == 0) {
+      isForBrowser = Some(false);
+
+#ifdef XP_WIN
+    } else if (strcmp(aArgv[i], "-prefsHandle") == 0) {
+      if (++i == aArgc) {
+        return false;
       }
-      isForBrowser = strcmp(aArgv[idx], "-notForBrowser");
-      foundIsForBrowser = true;
-    } else if (!strcmp(aArgv[idx], "-intPrefs")) {
-      SET_PREF_PHASE(BEGIN_INIT_PREFS);
-      char* str = aArgv[idx + 1];
-      while (*str) {
-        int32_t index = strtol(str, &str, 10);
-        MOZ_ASSERT(str[0] == ':');
-        str++;
-        MaybePrefValue value(PrefValue(static_cast<int32_t>(strtol(str, &str, 10))));
-        MOZ_ASSERT(str[0] == '|');
-        str++;
-        PrefSetting pref(nsCString(ContentPrefs::GetContentPref(index)), value, MaybePrefValue());
-        prefsArray.AppendElement(pref);
+      prefsHandle = aArgv[i];
+    } else if (strcmp(aArgv[i], "-prefMapHandle") == 0) {
+      if (++i == aArgc) {
+        return false;
       }
-      SET_PREF_PHASE(END_INIT_PREFS);
-      foundIntPrefs = true;
-    } else if (!strcmp(aArgv[idx], "-boolPrefs")) {
-      SET_PREF_PHASE(BEGIN_INIT_PREFS);
-      char* str = aArgv[idx + 1];
-      while (*str) {
-        int32_t index = strtol(str, &str, 10);
-        MOZ_ASSERT(str[0] == ':');
-        str++;
-        MaybePrefValue value(PrefValue(!!strtol(str, &str, 10)));
-        MOZ_ASSERT(str[0] == '|');
-        str++;
-        PrefSetting pref(nsCString(ContentPrefs::GetContentPref(index)), value, MaybePrefValue());
-        prefsArray.AppendElement(pref);
+      prefMapHandle = aArgv[i];
+#endif
+
+    } else if (strcmp(aArgv[i], "-prefsLen") == 0) {
+      if (++i == aArgc) {
+        return false;
       }
-      SET_PREF_PHASE(END_INIT_PREFS);
-      foundBoolPrefs = true;
-    } else if (!strcmp(aArgv[idx], "-stringPrefs")) {
-      SET_PREF_PHASE(BEGIN_INIT_PREFS);
-      char* str = aArgv[idx + 1];
-      while (*str) {
-        int32_t index = strtol(str, &str, 10);
-        MOZ_ASSERT(str[0] == ':');
-        str++;
-        int32_t length = strtol(str, &str, 10);
-        MOZ_ASSERT(str[0] == ';');
-        str++;
-        MaybePrefValue value(PrefValue(nsCString(str, length)));
-        PrefSetting pref(nsCString(ContentPrefs::GetContentPref(index)), value, MaybePrefValue());
-        prefsArray.AppendElement(pref);
-        str += length + 1;
-        MOZ_ASSERT(*(str - 1) == '|');
+      prefsLen = aArgv[i];
+    } else if (strcmp(aArgv[i], "-prefMapSize") == 0) {
+      if (++i == aArgc) {
+        return false;
       }
-      SET_PREF_PHASE(END_INIT_PREFS);
-      foundStringPrefs = true;
-    }
-    else if (!strcmp(aArgv[idx], "-safeMode")) {
+      prefMapSize = aArgv[i];
+    } else if (strcmp(aArgv[i], "-safeMode") == 0) {
       gSafeMode = true;
-    }
+
+    } else if (strcmp(aArgv[i], "-parentBuildID") == 0) {
+      if (++i == aArgc) {
+        return false;
+      }
+      parentBuildID = Some(aArgv[i]);
 
 #if defined(XP_MACOSX) && defined(MOZ_CONTENT_SANDBOX)
-    else if (!strcmp(aArgv[idx], "-profile")) {
-      MOZ_ASSERT(!foundProfile);
-      if (foundProfile) {
-        continue;
+    } else if (strcmp(aArgv[i], "-profile") == 0) {
+      if (++i == aArgc) {
+        return false;
       }
       bool flag;
-      nsresult rv = XRE_GetFileFromPath(aArgv[idx+1], getter_AddRefs(profileDir));
-      if (NS_FAILED(rv) ||
-          NS_FAILED(profileDir->Exists(&flag)) || !flag) {
+      nsresult rv = XRE_GetFileFromPath(aArgv[i], getter_AddRefs(profileDir));
+      if (NS_FAILED(rv) || NS_FAILED(profileDir->Exists(&flag)) || !flag) {
         NS_WARNING("Invalid profile directory passed to content process.");
         profileDir = nullptr;
       }
-      foundProfile = true;
-    }
 #endif /* XP_MACOSX && MOZ_CONTENT_SANDBOX */
-
-    bool allFound = foundAppdir && foundChildID && foundIsForBrowser && foundIntPrefs && foundBoolPrefs && foundStringPrefs;
-
-#if defined(XP_MACOSX) && defined(MOZ_CONTENT_SANDBOX)
-    allFound &= foundProfile;
-#endif
-
-    if (allFound) {
-      break;
     }
   }
-  Preferences::SetInitPreferences(&prefsArray);
-  mContent.Init(IOThreadChild::message_loop(),
-                ParentPid(),
-                IOThreadChild::channel(),
-                childID,
-                isForBrowser);
+
+  // Did we find all the mandatory flags?
+  if (childID.isNothing() || isForBrowser.isNothing() ||
+      parentBuildID.isNothing()) {
+    return false;
+  }
+
+  SharedPreferenceDeserializer deserializer;
+  if (!deserializer.DeserializeFromSharedMemory(prefsHandle, prefMapHandle,
+                                                prefsLen, prefMapSize)) {
+    return false;
+  }
+
+  if (recordreplay::IsMiddleman()) {
+    recordreplay::parent::InitializeMiddleman(aArgc, aArgv, ParentPid(),
+                                              deserializer.GetPrefsHandle(),
+                                              deserializer.GetPrefMapHandle());
+  }
+
+  mContent.Init(IOThreadChild::message_loop(), ParentPid(), *parentBuildID,
+                IOThreadChild::channel(), *childID, *isForBrowser);
+
   mXREEmbed.Start();
 #if (defined(XP_MACOSX)) && defined(MOZ_CONTENT_SANDBOX)
   mContent.SetProfileDir(profileDir);
-#endif
+#  if defined(DEBUG)
+  // For WebReplay middleman processes, the sandbox is
+  // started after receiving the SetProcessSandbox message.
+  if (IsContentSandboxEnabled() &&
+      Preferences::GetBool("security.sandbox.content.mac.earlyinit") &&
+      !recordreplay::IsMiddleman()) {
+    AssertMacSandboxEnabled();
+  }
+#  endif /* DEBUG */
+#endif   /* XP_MACOSX && MOZ_CONTENT_SANDBOX */
 
-#if (defined(XP_WIN) || defined(XP_MACOSX)) && defined(MOZ_CONTENT_SANDBOX)
+#if defined(XP_WIN) && defined(MOZ_CONTENT_SANDBOX)
   SetUpSandboxEnvironment();
 #endif
 
@@ -255,11 +208,7 @@ ContentProcess::Init(int aArgc, char* aArgv[])
 
 // Note: CleanUp() never gets called in non-debug builds because we exit early
 // in ContentChild::ActorDestroy().
-void
-ContentProcess::CleanUp()
-{
-  mXREEmbed.Stop();
-}
+void ContentProcess::CleanUp() { mXREEmbed.Stop(); }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

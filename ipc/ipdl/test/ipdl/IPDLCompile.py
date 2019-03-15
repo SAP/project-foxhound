@@ -1,16 +1,20 @@
-import copy, re, os, subprocess, sys, tempfile
+import copy
+import re
+import os
+import subprocess
+import tempfile
 
 # We test the compiler indirectly, rather than reaching into the ipdl/
 # module, to make the testing framework as general as possible.
 
+
 class IPDLCompile:
-    def __init__(self, specfilename, ipdlargv=[ 'python', 'ipdl.py' ]):
+    def __init__(self, specfilename, ipdlargv=['python', 'ipdl.py']):
         self.argv = copy.deepcopy(ipdlargv)
         self.specfilename = specfilename
         self.stdout = None
         self.stderr = None
         self.returncode = None
-
 
     def run(self):
         '''Run |self.specstring| through the IPDL compiler.'''
@@ -43,20 +47,18 @@ class IPDLCompile:
             if proc.returncode is None:
                 proc.kill()
 
-
     def completed(self):
         return (self.returncode is not None
                 and isinstance(self.stdout, str)
                 and isinstance(self.stderr, str))
 
-
-    def error(self):
+    def error(self, expectedError):
         '''Return True iff compiling self.specstring resulted in an
 IPDL compiler error.'''
         assert self.completed()
 
-        return None is not re.search(r'error:', self.stderr)
-
+        errorRe = re.compile(re.escape(expectedError))
+        return None is not re.search(errorRe, self.stderr)
 
     def exception(self):
         '''Return True iff compiling self.specstring resulted in a Python
@@ -71,5 +73,5 @@ exception being raised.'''
         assert self.completed()
 
         return (not self.exception()
-                and not self.error()
+                and not self.error("error:")
                 and (0 == self.returncode))

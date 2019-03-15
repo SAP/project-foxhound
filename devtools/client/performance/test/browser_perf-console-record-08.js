@@ -39,34 +39,34 @@ function hasBitFlag(expected, actual) {
   return !!(expected & actual);
 }
 
-add_task(function* () {
+add_task(async function() {
   // This test seems to take a very long time to finish on Linux VMs.
   requestLongerTimeout(4);
 
-  let { target, console } = yield initConsoleInNewTab({
+  const { target, console } = await initConsoleInNewTab({
     url: SIMPLE_URL,
-    win: window
+    win: window,
   });
 
-  let { panel } = yield initPerformanceInTab({ tab: target.tab });
-  let { EVENTS, PerformanceController, OverviewView } = panel.panelWin;
+  const { panel } = await initPerformanceInTab({ tab: target.tab });
+  const { EVENTS, PerformanceController, OverviewView } = panel.panelWin;
 
   info("Recording 1 - Starting console.profile()...");
   let started = waitForRecordingStartedEvents(panel, {
     // only emitted for manual recordings
-    skipWaitingForBackendReady: true
+    skipWaitingForBackendReady: true,
   });
-  yield console.profile("rust");
-  yield started;
+  await console.profile("rust");
+  await started;
   testRecordings(PerformanceController, [
-    CONSOLE + SELECTED + RECORDING
+    CONSOLE + SELECTED + RECORDING,
   ]);
 
   info("Recording 2 - Starting manual recording...");
-  yield startRecording(panel);
+  await startRecording(panel);
   testRecordings(PerformanceController, [
     CONSOLE + RECORDING,
-    MANUAL + RECORDING + SELECTED
+    MANUAL + RECORDING + SELECTED,
   ]);
 
   info("Recording 3 - Starting console.profile(\"3\")...");
@@ -79,12 +79,12 @@ add_task(function* () {
     // in-progress recording is selected, which won't happen
     skipWaitingForViewState: true,
   });
-  yield console.profile("3");
-  yield started;
+  await console.profile("3");
+  await started;
   testRecordings(PerformanceController, [
     CONSOLE + RECORDING,
     MANUAL + RECORDING + SELECTED,
-    CONSOLE + RECORDING
+    CONSOLE + RECORDING,
   ]);
 
   info("Recording 4 - Starting console.profile(\"4\")...");
@@ -97,13 +97,13 @@ add_task(function* () {
     // in-progress recording is selected, which won't happen
     skipWaitingForViewState: true,
   });
-  yield console.profile("4");
-  yield started;
+  await console.profile("4");
+  await started;
   testRecordings(PerformanceController, [
     CONSOLE + RECORDING,
     MANUAL + RECORDING + SELECTED,
     CONSOLE + RECORDING,
-    CONSOLE + RECORDING
+    CONSOLE + RECORDING,
   ]);
 
   info("Recording 4 - Ending console.profileEnd()...");
@@ -117,36 +117,36 @@ add_task(function* () {
     // finished recording is selected, which won't happen
     skipWaitingForViewState: true,
   });
-  yield console.profileEnd();
-  yield stopped;
+  await console.profileEnd();
+  await stopped;
   testRecordings(PerformanceController, [
     CONSOLE + RECORDING,
     MANUAL + RECORDING + SELECTED,
     CONSOLE + RECORDING,
-    CONSOLE
+    CONSOLE,
   ]);
 
   info("Recording 4 - Select last recording...");
   let recordingSelected = once(PerformanceController, EVENTS.RECORDING_SELECTED);
   setSelectedRecording(panel, 3);
-  yield recordingSelected;
+  await recordingSelected;
   testRecordings(PerformanceController, [
     CONSOLE + RECORDING,
     MANUAL + RECORDING,
     CONSOLE + RECORDING,
-    CONSOLE + SELECTED
+    CONSOLE + SELECTED,
   ]);
   ok(!OverviewView.isRendering(),
     "Stop rendering overview when a completed recording is selected.");
 
   info("Recording 2 - Stop manual recording.");
 
-  yield stopRecording(panel);
+  await stopRecording(panel);
   testRecordings(PerformanceController, [
     CONSOLE + RECORDING,
     MANUAL + SELECTED,
     CONSOLE + RECORDING,
-    CONSOLE
+    CONSOLE,
   ]);
   ok(!OverviewView.isRendering(),
     "Stop rendering overview when a completed recording is selected.");
@@ -154,19 +154,19 @@ add_task(function* () {
   info("Recording 1 - Select first recording.");
   recordingSelected = once(PerformanceController, EVENTS.RECORDING_SELECTED);
   setSelectedRecording(panel, 0);
-  yield recordingSelected;
+  await recordingSelected;
   testRecordings(PerformanceController, [
     CONSOLE + RECORDING + SELECTED,
     MANUAL,
     CONSOLE + RECORDING,
-    CONSOLE
+    CONSOLE,
   ]);
   ok(OverviewView.isRendering(),
     "Should be rendering overview a recording in progress is selected.");
 
   // Ensure overview is still rendering.
-  yield times(OverviewView, EVENTS.UI_OVERVIEW_RENDERED, 3, {
-    expectedArgs: { "1": Constants.FRAMERATE_GRAPH_LOW_RES_INTERVAL }
+  await times(OverviewView, EVENTS.UI_OVERVIEW_RENDERED, 3, {
+    expectedArgs: [Constants.FRAMERATE_GRAPH_LOW_RES_INTERVAL],
   });
 
   info("Ending console.profileEnd()...");
@@ -180,47 +180,47 @@ add_task(function* () {
     // finished recording is selected, which won't happen
     skipWaitingForViewState: true,
   });
-  yield console.profileEnd();
-  yield stopped;
+  await console.profileEnd();
+  await stopped;
   testRecordings(PerformanceController, [
     CONSOLE + RECORDING + SELECTED,
     MANUAL,
     CONSOLE,
-    CONSOLE
+    CONSOLE,
   ]);
   ok(OverviewView.isRendering(),
     "Should be rendering overview a recording in progress is selected.");
 
   // Ensure overview is still rendering.
-  yield times(OverviewView, EVENTS.UI_OVERVIEW_RENDERED, 3, {
-    expectedArgs: { "1": Constants.FRAMERATE_GRAPH_LOW_RES_INTERVAL }
+  await times(OverviewView, EVENTS.UI_OVERVIEW_RENDERED, 3, {
+    expectedArgs: [Constants.FRAMERATE_GRAPH_LOW_RES_INTERVAL],
   });
 
   info("Recording 5 - Start one more manual recording.");
-  yield startRecording(panel);
+  await startRecording(panel);
   testRecordings(PerformanceController, [
     CONSOLE + RECORDING,
     MANUAL,
     CONSOLE,
     CONSOLE,
-    MANUAL + RECORDING + SELECTED
+    MANUAL + RECORDING + SELECTED,
   ]);
   ok(OverviewView.isRendering(),
     "Should be rendering overview a recording in progress is selected.");
 
   // Ensure overview is still rendering.
-  yield times(OverviewView, EVENTS.UI_OVERVIEW_RENDERED, 3, {
-    expectedArgs: { "1": Constants.FRAMERATE_GRAPH_LOW_RES_INTERVAL }
+  await times(OverviewView, EVENTS.UI_OVERVIEW_RENDERED, 3, {
+    expectedArgs: [Constants.FRAMERATE_GRAPH_LOW_RES_INTERVAL],
   });
 
   info("Recording 5 - Stop manual recording.");
-  yield stopRecording(panel);
+  await stopRecording(panel);
   testRecordings(PerformanceController, [
     CONSOLE + RECORDING,
     MANUAL,
     CONSOLE,
     CONSOLE,
-    MANUAL + SELECTED
+    MANUAL + SELECTED,
   ]);
   ok(!OverviewView.isRendering(),
   "Stop rendering overview when a completed recording is selected.");
@@ -236,24 +236,24 @@ add_task(function* () {
     // in-progress recording is selected, which won't happen
     skipWaitingForViewState: true,
   });
-  yield console.profileEnd();
-  yield stopped;
+  await console.profileEnd();
+  await stopped;
   testRecordings(PerformanceController, [
     CONSOLE,
     MANUAL,
     CONSOLE,
     CONSOLE,
-    MANUAL + SELECTED
+    MANUAL + SELECTED,
   ]);
   ok(!OverviewView.isRendering(),
     "Stop rendering overview when a completed recording is selected.");
 
-  yield teardownToolboxAndRemoveTab(panel);
+  await teardownToolboxAndRemoveTab(panel);
 });
 
 function testRecordings(controller, expectedBitFlags) {
-  let recordings = controller.getRecordings();
-  let current = controller.getCurrentRecording();
+  const recordings = controller.getRecordings();
+  const current = controller.getCurrentRecording();
   is(recordings.length, expectedBitFlags.length, "Expected number of recordings.");
 
   recordings.forEach((recording, i) => {

@@ -11,6 +11,7 @@
 
 #include "base/macros.h"
 #include "base/strings/string16.h"
+#include "sandbox/win/src/nt_internals.h"
 
 namespace sandbox {
 
@@ -68,7 +69,10 @@ class SingletonBase {
 // Convert a short path (C:\path~1 or \\??\\c:\path~1) to the long version of
 // the path. If the path is not a valid filesystem path, the function returns
 // false and argument is not modified.
-bool ConvertToLongPath(base::string16* path);
+// - If passing in a short native device path (\Device\HarddiskVolumeX\path~1),
+//   a drive letter string (c:\) must also be provided.
+bool ConvertToLongPath(base::string16* path,
+                       const base::string16* drive_letter = nullptr);
 
 // Returns ERROR_SUCCESS if the path contains a reparse point,
 // ERROR_NOT_A_REPARSE_POINT if there's no reparse point in this path, or an
@@ -103,10 +107,19 @@ bool ResolveRegistryName(base::string16 name, base::string16* resolved_name);
 // |child_process|, at the specified |address|, preserving the original write
 // protection attributes. Returns true on success.
 bool WriteProtectedChildMemory(HANDLE child_process, void* address,
-                               const void* buffer, size_t length);
+                               const void* buffer, size_t length,
+                               DWORD writeProtection = PAGE_WRITECOPY);
 
 // Returns true if the provided path points to a pipe.
 bool IsPipe(const base::string16& path);
+
+// Converts a NTSTATUS code to a Win32 error code.
+DWORD GetLastErrorFromNtStatus(NTSTATUS status);
+
+// Returns the address of the main exe module in memory taking in account
+// address space layout randomization. This uses the process' PEB to extract
+// the base address. This should only be called on new, suspended processes.
+void* GetProcessBaseAddress(HANDLE process);
 
 }  // namespace sandbox
 

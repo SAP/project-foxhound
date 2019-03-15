@@ -1,8 +1,9 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+"use strict";
 
-this.EXPORTED_SYMBOLS = ["WebVTT"];
+var EXPORTED_SYMBOLS = ["WebVTT"];
 
 /**
  * Code below is vtt.js the JS WebVTT implementation.
@@ -26,8 +27,8 @@ this.EXPORTED_SYMBOLS = ["WebVTT"];
  * limitations under the License.
  */
 
-var Cu = Components.utils;
-Cu.import('resource://gre/modules/Services.jsm');
+ChromeUtils.import('resource://gre/modules/Services.jsm');
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 (function(global) {
 
@@ -124,9 +125,10 @@ Cu.import('resource://gre/modules/Services.jsm');
       for (var n = 0; n < a.length; ++n) {
         if (v === a[n]) {
           this.set(k, v);
-          break;
+          return true;
         }
       }
+      return false;
     },
     // Accept a setting if its a valid digits value (int or float)
     digitsValue: function(k, v) {
@@ -147,7 +149,13 @@ Cu.import('resource://gre/modules/Services.jsm');
         }
       }
       return false;
-    }
+    },
+    // Delete a setting
+    del: function (k) {
+      if (this.has(k)) {
+        delete this.values[k];
+      }
+    },
   };
 
   // Helper function to parse input into groups separated by 'groupDelim', and
@@ -186,7 +194,6 @@ Cu.import('resource://gre/modules/Services.jsm');
     // 4.4.2 WebVTT cue settings
     function consumeCueSettings(input, cue) {
       var settings = new Settings();
-
       parseOptions(input, function (k, v) {
         switch (k) {
         case "region":
@@ -213,9 +220,14 @@ Cu.import('resource://gre/modules/Services.jsm');
           break;
         case "position":
           vals = v.split(",");
-          settings.percent(k, vals[0]);
-          if (vals.length === 2) {
-            settings.alt("positionAlign", vals[1], ["line-left", "center", "line-right", "auto"]);
+          if (settings.percent(k, vals[0])) {
+            if (vals.length === 2) {
+              if (!settings.alt("positionAlign", vals[1], ["line-left", "center", "line-right"])) {
+                // Remove the "position" value because the "positionAlign" is not expected value.
+                // It will be set to default value below.
+                settings.del(k);
+              }
+            }
           }
           break;
         case "size":
@@ -225,9 +237,10 @@ Cu.import('resource://gre/modules/Services.jsm');
           settings.alt(k, v, ["start", "center", "end", "left", "right"]);
           break;
         }
-      }, /:/, /\s/);
+      }, /:/, /\t|\n|\f|\r| /); // groupDelim is ASCII whitespace
 
       // Apply default values for any missing fields.
+      // https://w3c.github.io/webvtt/#collect-a-webvtt-block step 11.4.1.3
       cue.region = settings.get("region", null);
       cue.vertical = settings.get("vertical", "");
       cue.line = settings.get("line", "auto");
@@ -236,7 +249,7 @@ Cu.import('resource://gre/modules/Services.jsm');
       cue.size = settings.get("size", 100);
       cue.align = settings.get("align", "center");
       cue.position = settings.get("position", "auto");
-      cue.positionAlign = settings.get("positionAlign", "center");
+      cue.positionAlign = settings.get("positionAlign", "auto");
     }
 
     function skipWhitespace() {
@@ -261,12 +274,12 @@ Cu.import('resource://gre/modules/Services.jsm');
     consumeCueSettings(input, cue);
   }
 
-  function onlyContainsWhiteSpaces(input) {
-    return /^[ \f\n\r\t]+$/.test(input);
+  function emptyOrOnlyContainsWhiteSpaces(input) {
+    return input == "" || /^[ \f\n\r\t]+$/.test(input);
   }
 
   function containsTimeDirectionSymbol(input) {
-    return input.indexOf("-->") !== -1;
+    return input.includes("-->");
   }
 
   function maybeIsTimeStampFormat(input) {
@@ -302,8 +315,14 @@ Cu.import('resource://gre/modules/Services.jsm');
     rt: "ruby"
   };
 
+  const PARSE_CONTENT_MODE = {
+    NORMAL_CUE: "normal_cue",
+    PSUEDO_CUE: "pseudo_cue",
+    DOCUMENT_FRAGMENT: "document_fragment",
+    REGION_CUE: "region_cue",
+  }
   // Parse content into a document fragment.
-  function parseContent(window, input, bReturnFrag) {
+  function parseContent(window, input, mode) {
     function nextToken() {
       // Check for end-of-string.
       if (!input) {
@@ -317,6 +336,10 @@ Cu.import('resource://gre/modules/Services.jsm');
       }
 
       var m = input.match(/^([^<]*)(<[^>]+>?)?/);
+      // The input doesn't contain a complete tag.
+      if (!m[0]) {
+        return null;
+      }
       // If there is some text before the next tag, return it, otherwise return
       // the tag.
       return consume(m[1] ? m[1] : m[2]);
@@ -345,7 +368,6 @@ Cu.import('resource://gre/modules/Services.jsm');
         return null;
       }
       var element = window.document.createElement(tagName);
-      element.localName = tagName;
       var name = TAG_ANNOTATION[type];
       if (name) {
         element[name] = annotation ? annotation.trim() : "";
@@ -379,11 +401,19 @@ Cu.import('resource://gre/modules/Services.jsm');
     }
 
     var root;
-    if (bReturnFrag) {
-      root = window.document.createDocumentFragment();
-    } else {
-      root = window.document.createElement("div");
+    switch (mode) {
+      case PARSE_CONTENT_MODE.PSUEDO_CUE:
+        root = window.document.createElement("div", {pseudo: "::cue"});
+        break;
+      case PARSE_CONTENT_MODE.NORMAL_CUE:
+      case PARSE_CONTENT_MODE.REGION_CUE:
+        root = window.document.createElement("div");
+        break;
+      case PARSE_CONTENT_MODE.DOCUMENT_FRAGMENT:
+        root = window.document.createDocumentFragment();
+        break;
     }
+
     var current = root,
         t,
         tagStack = [];
@@ -400,7 +430,7 @@ Cu.import('resource://gre/modules/Services.jsm');
           // Otherwise just ignore the end tag.
           continue;
         }
-        var ts = collectTimeStamp(t.substr(1, t.length - 2));
+        var ts = collectTimeStamp(t.substr(1, t.length - 1));
         var node;
         if (ts) {
           // Timestamps are lead nodes as well.
@@ -460,11 +490,17 @@ Cu.import('resource://gre/modules/Services.jsm');
     return val === 0 ? 0 : val + unit;
   };
 
+  XPCOMUtils.defineLazyPreferenceGetter(StyleBox.prototype, "supportPseudo",
+                                        "media.webvtt.pseudo.enabled", false);
+
   // Constructs the computed display state of the cue (a div). Places the div
   // into the overlay which should be a block level element (usually a div).
   function CueStyleBox(window, cue, styleOptions) {
     var isIE8 = (typeof navigator !== "undefined") &&
       (/MSIE\s8\.0/).test(navigator.userAgent);
+
+    var isFirefoxSupportPseudo = (/firefox/i.test(window.navigator.userAgent))
+          && this.supportPseudo;
     var color = "rgba(255, 255, 255, 1)";
     var backgroundColor = "rgba(0, 0, 0, 0.8)";
 
@@ -478,17 +514,24 @@ Cu.import('resource://gre/modules/Services.jsm');
 
     // Parse our cue's text into a DOM tree rooted at 'cueDiv'. This div will
     // have inline positioning and will function as the cue background box.
-    this.cueDiv = parseContent(window, cue.text, false);
+    if (isFirefoxSupportPseudo) {
+      this.cueDiv = parseContent(window, cue.text, PARSE_CONTENT_MODE.PSUEDO_CUE);
+    } else {
+      this.cueDiv = parseContent(window, cue.text, PARSE_CONTENT_MODE.NORMAL_CUE);
+    }
     var styles = {
       color: color,
       backgroundColor: backgroundColor,
-      position: "relative",
-      left: 0,
-      right: 0,
-      top: 0,
-      bottom: 0,
-      display: "inline"
+      display: "inline",
+      font: styleOptions.font,
+      whiteSpace: "pre-line",
     };
+    if (isFirefoxSupportPseudo) {
+      delete styles.color;
+      delete styles.backgroundColor;
+      delete styles.font;
+      delete styles.whiteSpace;
+    }
 
     if (!isIE8) {
       styles.writingMode = cue.vertical === "" ? "horizontal-tb"
@@ -500,13 +543,13 @@ Cu.import('resource://gre/modules/Services.jsm');
 
     // Create an absolutely positioned div that will be used to position the cue
     // div.
-    this.div = window.document.createElement("div");
     styles = {
+      position: "absolute",
       textAlign: cue.align,
       font: styleOptions.font,
-      whiteSpace: "pre-line",
-      position: "absolute"
     };
+
+    this.div = window.document.createElement("div");
     this.applyStyles(styles);
 
     this.div.appendChild(this.cueDiv);
@@ -514,17 +557,24 @@ Cu.import('resource://gre/modules/Services.jsm');
     // Calculate the distance from the reference edge of the viewport to the text
     // position of the cue box. The reference edge will be resolved later when
     // the box orientation styles are applied.
+    function convertCuePostionToPercentage(cuePosition) {
+      if (cuePosition === "auto") {
+        return 50;
+      }
+      return cuePosition;
+    }
     var textPos = 0;
+    let postionPercentage = convertCuePostionToPercentage(cue.position);
     switch (cue.computedPositionAlign) {
       // TODO : modify these fomula to follow the spec, see bug 1277437.
       case "line-left":
-        textPos = cue.position;
+        textPos = postionPercentage;
         break;
       case "center":
-        textPos = cue.position - (cue.size / 2);
+        textPos = postionPercentage - (cue.size / 2);
         break;
       case "line-right":
-        textPos = cue.position - cue.size;
+        textPos = postionPercentage - cue.size;
         break;
     }
 
@@ -559,6 +609,79 @@ Cu.import('resource://gre/modules/Services.jsm');
   }
   CueStyleBox.prototype = _objCreate(StyleBox.prototype);
   CueStyleBox.prototype.constructor = CueStyleBox;
+
+  function RegionNodeBox(window, region, container) {
+    StyleBox.call(this);
+
+    var boxLineHeight = container.height * 0.0533 // 0.0533vh ? 5.33vh
+    var boxHeight = boxLineHeight * region.lines;
+    var boxWidth = container.width * region.width / 100; // convert percentage to px
+
+    var regionNodeStyles = {
+      position: "absolute",
+      height: boxHeight + "px",
+      width: boxWidth + "px",
+      top: (region.viewportAnchorY * container.height / 100) - (region.regionAnchorY * boxHeight / 100) + "px",
+      left: (region.viewportAnchorX * container.width / 100) - (region.regionAnchorX * boxWidth / 100) + "px",
+      lineHeight: boxLineHeight + "px",
+      writingMode: "horizontal-tb",
+      backgroundColor: "rgba(0, 0, 0, 0.8)",
+      wordWrap: "break-word",
+      overflowWrap: "break-word",
+      font: (boxLineHeight/1.3) + "px sans-serif",
+      color: "rgba(255, 255, 255, 1)",
+      overflow: "hidden",
+      minHeight: "0px",
+      maxHeight: boxHeight + "px",
+      display: "inline-flex",
+      flexFlow: "column",
+      justifyContent: "flex-end",
+    };
+
+    this.div = window.document.createElement("div");
+    this.div.id = region.id; // useless?
+    this.applyStyles(regionNodeStyles);
+  }
+  RegionNodeBox.prototype = _objCreate(StyleBox.prototype);
+  RegionNodeBox.prototype.constructor = RegionNodeBox;
+
+  function RegionCueStyleBox(window, cue) {
+    StyleBox.call(this);
+    this.cueDiv = parseContent(window, cue.text, PARSE_CONTENT_MODE.REGION_CUE);
+
+    var regionCueStyles = {
+      position: "relative",
+      writingMode: "horizontal-tb",
+      unicodeBidi: "plaintext",
+      width: "auto",
+      height: "auto",
+      textAlign: cue.align,
+    };
+    // TODO: fix me, LTR and RTL ? using margin replace the "left/right"
+    // 6.1.14.3.3
+    var offset = cue.computedPosition * cue.region.width / 100;
+    // 6.1.14.3.4
+    switch (cue.align) {
+      case "start":
+      case "left":
+        regionCueStyles.left = offset + "%";
+        regionCueStyles.right = "auto";
+        break;
+      case "end":
+      case "right":
+        regionCueStyles.left = "auto";
+        regionCueStyles.right = offset + "%";
+        break;
+      case "middle":
+        break;
+    }
+
+    this.div = window.document.createElement("div");
+    this.applyStyles(regionCueStyles);
+    this.div.appendChild(this.cueDiv);
+  }
+  RegionCueStyleBox.prototype = _objCreate(StyleBox.prototype);
+  RegionCueStyleBox.prototype.constructor = RegionCueStyleBox;
 
   // Represents the co-ordinates of an Element in a way that we can easily
   // compute things with such as if it overlaps or intersects with another Element.
@@ -870,12 +993,11 @@ Cu.import('resource://gre/modules/Services.jsm');
     if (!window) {
       return null;
     }
-    return parseContent(window, cuetext, true);
+    return parseContent(window, cuetext, PARSE_CONTENT_MODE.DOCUMENT_FRAGMENT);
   };
 
   var FONT_SIZE_PERCENT = 0.05;
   var FONT_STYLE = "sans-serif";
-  var CUE_BACKGROUND_PADDING = "1.5%";
 
   // Runs the processing model over the cues and regions passed to it.
   // @param overlay A block level element (usually a div) that the computed cues
@@ -887,34 +1009,29 @@ Cu.import('resource://gre/modules/Services.jsm');
       return null;
     }
 
-    // Remove all previous children.
-    while (overlay.firstChild) {
-      overlay.removeChild(overlay.firstChild);
-    }
-
     var controlBar;
     var controlBarShown;
-
     if (controls) {
-      controlBar = controls.ownerDocument.getAnonymousElementByAttribute(
-        controls, "anonid", "controlBar");
+      if (controls.localName == "videocontrols") {
+        // controls is a NAC; The control bar is in a XBL binding.
+        controlBar = controls.ownerDocument.getAnonymousElementByAttribute(
+          controls, "anonid", "controlBar");
+      } else {
+        // controls is a <div> that is the children of the UA Widget Shadow Root.
+        controlBar = controls.parentNode.getElementById("controlBar");
+      }
       controlBarShown = controlBar ? !!controlBar.clientHeight : false;
+    } else {
+      // There is no controls element. This only happen to UA Widget because
+      // it is created lazily.
+      controlBarShown = false;
     }
-
-    var paddedOverlay = window.document.createElement("div");
-    paddedOverlay.style.position = "absolute";
-    paddedOverlay.style.left = "0";
-    paddedOverlay.style.right = "0";
-    paddedOverlay.style.top = "0";
-    paddedOverlay.style.bottom = "0";
-    paddedOverlay.style.margin = CUE_BACKGROUND_PADDING;
-    overlay.appendChild(paddedOverlay);
 
     // Determine if we need to compute the display states of the cues. This could
     // be the case if a cue's state has been changed since the last computation or
     // if it has not been computed yet.
     function shouldCompute(cues) {
-      if (controlBarShown) {
+      if (overlay.lastControlBarShownStatus != controlBarShown) {
         return true;
       }
 
@@ -928,42 +1045,90 @@ Cu.import('resource://gre/modules/Services.jsm');
 
     // We don't need to recompute the cues' display states. Just reuse them.
     if (!shouldCompute(cues)) {
-      for (var i = 0; i < cues.length; i++) {
-        paddedOverlay.appendChild(cues[i].displayState);
-      }
       return;
     }
+    overlay.lastControlBarShownStatus = controlBarShown;
+
+    // Remove all previous children.
+    while (overlay.firstChild) {
+      overlay.firstChild.remove();
+    }
+    var rootOfCues = window.document.createElement("div");
+    rootOfCues.style.position = "absolute";
+    rootOfCues.style.left = "0";
+    rootOfCues.style.right = "0";
+    rootOfCues.style.top = "0";
+    rootOfCues.style.bottom = "0";
+    overlay.appendChild(rootOfCues);
 
     var boxPositions = [],
-        containerBox = BoxPosition.getSimpleBoxPosition(paddedOverlay),
+        containerBox = BoxPosition.getSimpleBoxPosition(rootOfCues),
         fontSize = Math.round(containerBox.height * FONT_SIZE_PERCENT * 100) / 100;
     var styleOptions = {
       font: fontSize + "px " + FONT_STYLE
     };
 
     (function() {
-      var styleBox, cue;
+      var styleBox, cue, controlBarBox;
 
       if (controlBarShown) {
+        controlBarBox = BoxPosition.getSimpleBoxPosition(controlBar);
         // Add an empty output box that cover the same region as video control bar.
-        boxPositions.push(BoxPosition.getSimpleBoxPosition(controlBar));
+        boxPositions.push(controlBarBox);
       }
+
+      // https://w3c.github.io/webvtt/#processing-model 6.1.12.1
+      // Create regionNode
+      var regionNodeBoxes = {};
+      var regionNodeBox;
 
       for (var i = 0; i < cues.length; i++) {
         cue = cues[i];
+        if (cue.region != null) {
+         // 6.1.14.1
+          styleBox = new RegionCueStyleBox(window, cue);
 
-        // Compute the intial position and styles of the cue div.
-        styleBox = new CueStyleBox(window, cue, styleOptions);
-        paddedOverlay.appendChild(styleBox.div);
+          if (!regionNodeBoxes[cue.region.id]) {
+            // create regionNode
+            // Adjust the container hieght to exclude the controlBar
+            var adjustContainerBox = BoxPosition.getSimpleBoxPosition(rootOfCues);
+            if (controlBarShown) {
+              adjustContainerBox.height -= controlBarBox.height;
+              adjustContainerBox.bottom += controlBarBox.height;
+            }
+            regionNodeBox = new RegionNodeBox(window, cue.region, adjustContainerBox);
+            regionNodeBoxes[cue.region.id] = regionNodeBox;
+          }
+          // 6.1.14.3
+          var currentRegionBox = regionNodeBoxes[cue.region.id];
+          var currentRegionNodeDiv = currentRegionBox.div;
+          // 6.1.14.3.2
+          // TODO: fix me, it looks like the we need to set/change "top" attribute at the styleBox.div
+          // to do the "scroll up", however, we do not implement it yet?
+          if (cue.region.scroll == "up" && currentRegionNodeDiv.childElementCount > 0) {
+            styleBox.div.style.transitionProperty = "top";
+            styleBox.div.style.transitionDuration = "0.433s";
+          }
 
-        // Move the cue div to it's correct line position.
-        moveBoxToLinePosition(window, styleBox, containerBox, boxPositions);
+          currentRegionNodeDiv.appendChild(styleBox.div);
+          rootOfCues.appendChild(currentRegionNodeDiv);
+          cue.displayState = styleBox.div;
+          boxPositions.push(BoxPosition.getSimpleBoxPosition(currentRegionBox));
+        } else {
+          // Compute the intial position and styles of the cue div.
+          styleBox = new CueStyleBox(window, cue, styleOptions);
+          styleBox.cueDiv.style.setProperty("--cue-font-size", fontSize + "px");
+          rootOfCues.appendChild(styleBox.div);
 
-        // Remember the computed div so that we don't have to recompute it later
-        // if we don't have too.
-        cue.displayState = styleBox.div;
+          // Move the cue div to it's correct line position.
+          moveBoxToLinePosition(window, styleBox, containerBox, boxPositions);
 
-        boxPositions.push(BoxPosition.getSimpleBoxPosition(styleBox));
+          // Remember the computed div so that we don't have to recompute it later
+          // if we don't have too.
+          cue.displayState = styleBox.div;
+
+          boxPositions.push(BoxPosition.getSimpleBoxPosition(styleBox));
+        }
       }
     })();
   };
@@ -971,6 +1136,8 @@ Cu.import('resource://gre/modules/Services.jsm');
   WebVTT.Parser = function(window, decoder) {
     this.window = window;
     this.state = "INITIAL";
+    this.substate = "";
+    this.substatebuffer = "";
     this.buffer = "";
     this.decoder = decoder || new TextDecoder("utf8");
     this.regionList = [];
@@ -987,20 +1154,19 @@ Cu.import('resource://gre/modules/Services.jsm');
       }
     },
     parse: function (data) {
-      var self = this;
-
       // If there is no data then we won't decode it, but will just try to parse
       // whatever is in buffer already. This may occur in circumstances, for
       // example when flush() is called.
       if (data) {
         // Try to decode the data that we received.
-        self.buffer += self.decoder.decode(data, {stream: true});
+        this.buffer += this.decoder.decode(data, {stream: true});
       }
 
-      function collectNextLine() {
-        var buffer = self.buffer;
+      // This parser is line-based. Let's see if we have a line to parse.
+      while (/\r\n|\n|\r/.test(this.buffer)) {
+        var buffer = this.buffer;
         var pos = 0;
-        while (pos < buffer.length && buffer[pos] !== '\r' && buffer[pos] !== '\n') {
+        while (buffer[pos] !== '\r' && buffer[pos] !== '\n') {
           ++pos;
         }
         var line = buffer.substr(0, pos);
@@ -1011,10 +1177,20 @@ Cu.import('resource://gre/modules/Services.jsm');
         if (buffer[pos] === '\n') {
           ++pos;
         }
-        self.buffer = buffer.substr(pos);
+        this.buffer = buffer.substr(pos);
+
         // Spec defined replacement.
-        return line.replace(/[\u0000]/g, "\uFFFD");
+        line = line.replace(/[\u0000]/g, "\uFFFD");
+
+        if (!/^NOTE($|[ \t])/.test(line)) {
+          this.parseLine(line);
+        }
       }
+
+      return this;
+    },
+    parseLine: function(line) {
+      var self = this;
 
       function createCueIfNeeded() {
         if (!self.cue) {
@@ -1025,7 +1201,7 @@ Cu.import('resource://gre/modules/Services.jsm');
       // Parsing cue identifier and the identifier should be unique.
       // Return true if the input is a cue identifier.
       function parseCueIdentifier(input) {
-        if (maybeIsTimeStampFormat(line)) {
+        if (maybeIsTimeStampFormat(input)) {
           self.state = "CUE";
           return false;
         }
@@ -1055,7 +1231,6 @@ Cu.import('resource://gre/modules/Services.jsm');
       // 3.4 WebVTT region and WebVTT region settings syntax
       function parseRegion(input) {
         var settings = new Settings();
-
         parseOptions(input, function (k, v) {
           switch (k) {
           case "id":
@@ -1088,13 +1263,15 @@ Cu.import('resource://gre/modules/Services.jsm');
             settings.alt(k, v, ["up"]);
             break;
           }
-        }, /=/, /\s/);
+        }, /:/, /\t|\n|\f|\r| /); // groupDelim is ASCII whitespace
+        // https://infra.spec.whatwg.org/#ascii-whitespace, U+0009 TAB, U+000A LF, U+000C FF, U+000D CR, U+0020 SPACE
 
         // Create the region, using default values for any values that were not
         // specified.
         if (settings.has("id")) {
           try {
             var region = new self.window.VTTRegion();
+            region.id = settings.get("id", "");
             region.width = settings.get("width", 100);
             region.lines = settings.get("lines", 3);
             region.regionAnchorX = settings.get("regionanchorX", 0);
@@ -1120,8 +1297,7 @@ Cu.import('resource://gre/modules/Services.jsm');
 
       // Parsing the WebVTT signature, it contains parsing algo step1 to step9.
       // See spec, https://w3c.github.io/webvtt/#file-parsing
-      function parseSignatureMayThrow(input) {
-        let signature = collectNextLine();
+      function parseSignatureMayThrow(signature) {
         if (!/^WEBVTT([ \t].*)?$/.test(signature)) {
           throw new ParsingError(ParsingError.Errors.BadSignature);
         } else {
@@ -1129,6 +1305,16 @@ Cu.import('resource://gre/modules/Services.jsm');
         }
       }
 
+      function parseRegionOrStyle(input) {
+        switch (self.substate) {
+          case "REGION":
+            parseRegion(input);
+          break;
+          case "STYLE":
+            // TODO : not supported yet.
+          break;
+        }
+      }
       // Parsing the region and style information.
       // See spec, https://w3c.github.io/webvtt/#collect-a-webvtt-block
       //
@@ -1138,104 +1324,117 @@ Cu.import('resource://gre/modules/Services.jsm');
       //   3. Empty line
       //   4. Cue's timestamp
       // The case 4 happens when there is no line interval between the header
-      // and the cue blocks. In this case, we should preserve the line and
-      // return it for the next phase parsing.
-      function parseHeader() {
-        let line = null;
-        while (self.buffer && self.state === "HEADER") {
-          line = collectNextLine();
+      // and the cue blocks. In this case, we should preserve the line for the
+      // next phase parsing, returning "true".
+      function parseHeader(line) {
+        if (!self.substate && /^REGION|^STYLE/.test(line)) {
+          self.substate = /^REGION/.test(line) ? "REGION" : "STYLE";
+          return false;
+        }
 
-          if (/^REGION|^STYLE/i.test(line)) {
-            parseOptions(line, function (k, v) {
-              switch (k.toUpperCase()) {
-              case "REGION":
-                parseRegion(v);
-                break;
-              case "STYLE":
-                // TODO : not supported yet.
-                break;
-              }
-            }, ":");
-          } else if (maybeIsTimeStampFormat(line)) {
-            self.state = "CUE";
-            break;
-          } else if (!line ||
-                     onlyContainsWhiteSpaces(line) ||
-                     containsTimeDirectionSymbol(line)) {
-            // empty line, whitespaces or string contains "-->"
-            break;
+        if (self.substate === "REGION" || self.substate === "STYLE") {
+          if (maybeIsTimeStampFormat(line) ||
+              emptyOrOnlyContainsWhiteSpaces(line) ||
+              containsTimeDirectionSymbol(line)) {
+            parseRegionOrStyle(self.substatebuffer);
+            self.substatebuffer = "";
+            self.substate = null;
+
+            // This is the end of the region or style state.
+            return parseHeader(line);
           }
+
+          if (/^REGION|^STYLE/.test(line)) {
+            // The line is another REGION/STYLE, parse and reset substatebuffer.
+            // Don't break the while loop to parse the next REGION/STYLE.
+            parseRegionOrStyle(self.substatebuffer);
+            self.substatebuffer = "";
+            self.substate = /^REGION/.test(line) ? "REGION" : "STYLE";
+            return false;
+          }
+
+          // We weren't able to parse the line as a header. Accumulate and
+          // return.
+          self.substatebuffer += " " + line;
+          return false;
         }
 
-        // End parsing header part and doesn't see the timestamp.
-        if (self.state === "HEADER") {
-          self.state = "ID";
-          line = null
+        if (emptyOrOnlyContainsWhiteSpaces(line)) {
+          // empty line, whitespaces, nothing to do.
+          return false;
         }
-        return line;
+
+        if (maybeIsTimeStampFormat(line)) {
+          self.state = "CUE";
+          // We want to process the same line again.
+          return true;
+        }
+
+        // string contains "-->" or an ID
+        self.state = "ID";
+        return true;
       }
 
-      // 5.1 WebVTT file parsing.
       try {
+        // 5.1 WebVTT file parsing.
         if (self.state === "INITIAL") {
-          parseSignatureMayThrow();
+          parseSignatureMayThrow(line);
+          return;
         }
 
-        var line;
         if (self.state === "HEADER") {
-          line = parseHeader();
+          // parseHeader returns false if the same line doesn't need to be
+          // parsed again.
+          if (!parseHeader(line)) {
+            return;
+          }
         }
 
-        while (self.buffer) {
-          if (!line) {
-            // Since the data receiving is async, we need to wait until the
-            // buffer gets the full line.
-            if (!/\r\n|\n|\r/.test(self.buffer)) {
-              return this;
-            }
-            line = collectNextLine();
+        if (self.state === "ID") {
+          // If there is no cue identifier, read the next line.
+          if (line == "") {
+            return;
           }
 
-          switch (self.state) {
-          case "ID":
-            // Ignore NOTE and line terminator
-            if (/^NOTE($|[ \t])/.test(line) || !line) {
-              break;
-            }
-            // If there is no cue identifier, keep the line and reuse this line
-            // in next iteration.
-            if (!parseCueIdentifier(line)) {
-              continue;
-            }
-            break;
-          case "CUE":
-            parseCueMayThrow(line);
-            break;
-          case "CUETEXT":
-            // Report the cue when (1) get an empty line (2) get the "-->""
-            if (!line || containsTimeDirectionSymbol(line)) {
-              // We are done parsing self cue.
-              self.oncue && self.oncue(self.cue);
-              self.cue = null;
-              self.state = "ID";
-              // Keep the line and reuse this line in next iteration.
-              continue;
-            }
-            if (self.cue.text) {
-              self.cue.text += "\n";
-            }
-            self.cue.text += line;
-            break;
-          case "BADCUE": // BADCUE
-            // 54-62 - Collect and discard the remaining cue.
-            if (!line) {
-              self.state = "ID";
-            }
-            break;
+          // If there is no cue identifier, parse the line again.
+          if (!parseCueIdentifier(line)) {
+            return self.parseLine(line);
           }
-          // The line was already parsed, empty it to ensure we can get the
-          // new line in next iteration.
-          line = null;
+          return;
+        }
+
+        if (self.state === "CUE") {
+          parseCueMayThrow(line);
+          return;
+        }
+
+        if (self.state === "CUETEXT") {
+          // Report the cue when (1) get an empty line (2) get the "-->""
+          if (emptyOrOnlyContainsWhiteSpaces(line) ||
+              containsTimeDirectionSymbol(line)) {
+            // We are done parsing self cue.
+            self.oncue && self.oncue(self.cue);
+            self.cue = null;
+            self.state = "ID";
+
+            if (emptyOrOnlyContainsWhiteSpaces(line)) {
+              return;
+            }
+
+            // Reuse the same line.
+            return self.parseLine(line);
+          }
+          if (self.cue.text) {
+            self.cue.text += "\n";
+          }
+          self.cue.text += line;
+          return;
+        }
+
+        if (self.state === "BADCUE") {
+          // 54-62 - Collect and discard the remaining cue.
+          self.state = "ID";
+          return self.parseLine(line);
         }
       } catch (e) {
         self.reportOrThrowError(e);
@@ -1256,17 +1455,8 @@ Cu.import('resource://gre/modules/Services.jsm');
       try {
         // Finish decoding the stream.
         self.buffer += self.decoder.decode();
-        // Synthesize the end of the current cue or region.
-        if (self.cue || self.state === "HEADER") {
-          self.buffer += "\n\n";
-          self.parse();
-        }
-        // If we've flushed, parsed, and we're still on the INITIAL state then
-        // that means we don't have enough of the stream to parse the first
-        // line.
-        if (self.state === "INITIAL") {
-          throw new ParsingError(ParsingError.Errors.BadSignature);
-        }
+        self.buffer += "\n\n";
+        self.parse();
       } catch(e) {
         self.reportOrThrowError(e);
       }

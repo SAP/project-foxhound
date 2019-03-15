@@ -8,22 +8,24 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_VIDEO_CAPTURE_MAIN_SOURCE_LINUX_VIDEO_CAPTURE_LINUX_H_
-#define WEBRTC_MODULES_VIDEO_CAPTURE_MAIN_SOURCE_LINUX_VIDEO_CAPTURE_LINUX_H_
+#ifndef MODULES_VIDEO_CAPTURE_MAIN_SOURCE_LINUX_VIDEO_CAPTURE_LINUX_H_
+#define MODULES_VIDEO_CAPTURE_MAIN_SOURCE_LINUX_VIDEO_CAPTURE_LINUX_H_
 
-#include "webrtc/base/platform_thread.h"
-#include "webrtc/common_types.h"
-#include "webrtc/modules/video_capture/video_capture_impl.h"
+#include <memory>
+
+#include "common_types.h"  // NOLINT(build/include)
+#include "modules/video_capture/video_capture_impl.h"
+#include "rtc_base/criticalsection.h"
+#include "rtc_base/platform_thread.h"
 
 namespace webrtc
 {
-class CriticalSectionWrapper;
 namespace videocapturemodule
 {
 class VideoCaptureModuleV4L2: public VideoCaptureImpl
 {
 public:
-    VideoCaptureModuleV4L2(int32_t id);
+    VideoCaptureModuleV4L2();
     virtual ~VideoCaptureModuleV4L2();
     virtual int32_t Init(const char* deviceUniqueId);
     virtual int32_t StartCapture(const VideoCaptureCapability& capability);
@@ -39,9 +41,9 @@ private:
     bool AllocateVideoBuffers();
     bool DeAllocateVideoBuffers();
 
-    // TODO(pbos): Stop using scoped_ptr and resetting the thread.
-    rtc::scoped_ptr<rtc::PlatformThread> _captureThread;
-    CriticalSectionWrapper* _captureCritSect;
+    // TODO(pbos): Stop using unique_ptr and resetting the thread.
+    std::unique_ptr<rtc::PlatformThread> _captureThread;
+    rtc::CriticalSection _captureCritSect;
 
     int32_t _deviceId;
     int32_t _deviceFd;
@@ -51,7 +53,7 @@ private:
     int32_t _currentHeight;
     int32_t _currentFrameRate;
     bool _captureStarted;
-    RawVideoType _captureVideoType;
+    VideoType _captureVideoType;
     struct Buffer
     {
         void *start;
@@ -62,4 +64,4 @@ private:
 }  // namespace videocapturemodule
 }  // namespace webrtc
 
-#endif // WEBRTC_MODULES_VIDEO_CAPTURE_MAIN_SOURCE_LINUX_VIDEO_CAPTURE_LINUX_H_
+#endif // MODULES_VIDEO_CAPTURE_MAIN_SOURCE_LINUX_VIDEO_CAPTURE_LINUX_H_

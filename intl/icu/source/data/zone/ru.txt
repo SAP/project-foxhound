@@ -1,8 +1,17 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html#License
 ru{
-    Version{"2.1.29.20"}
+    Version{"2.1.45.15"}
     zoneStrings{
+        "Etc:UTC"{
+            ls{"Всемирное координированное время"}
+        }
+        "Europe:Dublin"{
+            ld{"Ирландия, стандартное время"}
+        }
+        "Europe:London"{
+            ld{"Великобритания, летнее время"}
+        }
         "meta:Acre"{
             ld{"Акри летнее время"}
             lg{"Акри время"}
@@ -51,9 +60,9 @@ ru{
             ls{"Восточная Америка, стандартное время"}
         }
         "meta:America_Mountain"{
-            ld{"Горное летнее время (США)"}
-            lg{"Горное время (США)"}
-            ls{"Горное стандартное время (США)"}
+            ld{"Летнее горное время (Северная Америка)"}
+            lg{"Горное время (Северная Америка)"}
+            ls{"Стандартное горное время (Северная Америка)"}
         }
         "meta:America_Pacific"{
             ld{"Тихоокеанское летнее время"}
@@ -595,9 +604,9 @@ ru{
             ls{"Трук"}
         }
         "meta:Turkmenistan"{
-            ld{"Туркмения, летнее время"}
-            lg{"Туркмения"}
-            ls{"Туркмения, стандартное время"}
+            ld{"Туркменистан, летнее время"}
+            lg{"Туркменистан"}
+            ls{"Туркменистан, стандартное время"}
         }
         "meta:Tuvalu"{
             ls{"Тувалу"}
@@ -654,7 +663,7 @@ ru{
         gmtZeroFormat{"GMT"}
         hourFormat{"+HH:mm;-HH:mm"}
         regionFormat{"{0}"}
-        regionFormatDaylight{"{0} (+1)"}
-        regionFormatStandard{"{0} (+0)"}
+        regionFormatDaylight{"{0}, летнее время"}
+        regionFormatStandard{"{0}, стандартное время"}
     }
 }

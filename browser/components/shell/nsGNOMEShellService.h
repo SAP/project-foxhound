@@ -7,13 +7,14 @@
 #define nsgnomeshellservice_h____
 
 #include "nsIGNOMEShellService.h"
+#include "nsToolkitShellService.h"
 #include "nsString.h"
 #include "mozilla/Attributes.h"
 
-class nsGNOMEShellService final : public nsIGNOMEShellService
-{
-public:
-  nsGNOMEShellService() : mAppIsInPath(false) { }
+class nsGNOMEShellService final : public nsIGNOMEShellService,
+                                  public nsToolkitShellService {
+ public:
+  nsGNOMEShellService() : mAppIsInPath(false) {}
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSISHELLSERVICE
@@ -21,16 +22,16 @@ public:
 
   nsresult Init();
 
-private:
+ private:
   ~nsGNOMEShellService() {}
 
-  bool KeyMatchesAppName(const char *aKeyValue) const;
+  bool KeyMatchesAppName(const char* aKeyValue) const;
   bool CheckHandlerMatchesAppName(const nsACString& handler) const;
 
   bool GetAppPathFromLauncher();
   bool mUseLocaleFilenames;
-  nsCString    mAppPath;
+  nsCString mAppPath;
   bool mAppIsInPath;
 };
 
-#endif // nsgnomeshellservice_h____
+#endif  // nsgnomeshellservice_h____

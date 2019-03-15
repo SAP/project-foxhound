@@ -8,7 +8,7 @@
 #ifndef SkGraphics_DEFINED
 #define SkGraphics_DEFINED
 
-#include "SkTypes.h"
+#include "SkRefCnt.h"
 
 class SkData;
 class SkImageGenerator;
@@ -71,6 +71,30 @@ public:
      *  it will automatically try to purge entries to meet the new limit.
      */
     static int SetFontCacheCountLimit(int count);
+
+    /*
+     *  Returns the maximum point size for text that may be cached.
+     *
+     *  Sizes above this will be drawn directly from the font's outline.
+     *  Setting this to a large value may speed up drawing larger text (repeatedly),
+     *  but could cause the cache to purge other sizes more often.
+     *
+     *  This value is a hint to the font engine, and the actual limit may be different due to
+     *  implementation specific details.
+     */
+    static int GetFontCachePointSizeLimit();
+
+    /*
+     *  Set the maximum point size for text that may be cached, returning the previous value.
+     *
+     *  Sizes above this will be drawn directly from the font's outline.
+     *  Setting this to a large value may speed up drawing larger text (repeatedly),
+     *  but could cause the cache to purge other sizes more often.
+     *
+     *  This value is a hint to the font engine, and the actual limit may be different due to
+     *  implementation specific details.
+     */
+    static int SetFontCachePointSizeLimit(int maxPointSize);
 
     /**
      *  For debugging purposes, this will attempt to purge the font cache. It
@@ -137,27 +161,8 @@ public:
      */
     static void SetFlags(const char* flags);
 
-    /**
-     *  Return the max number of bytes that should be used by the thread-local
-     *  font cache.
-     *  If the cache needs to allocate more, it will purge previous entries.
-     *  This max can be changed by calling SetFontCacheLimit().
-     *
-     *  If this thread has never called SetTLSFontCacheLimit, or has called it
-     *  with 0, then this thread is using the shared font cache. In that case,
-     *  this function will always return 0, and the caller may want to call
-     *  GetFontCacheLimit.
-     */
-    static size_t GetTLSFontCacheLimit();
-
-    /**
-     *  Specify the max number of bytes that should be used by the thread-local
-     *  font cache. If this value is 0, then this thread will use the shared
-     *  global font cache.
-     */
-    static void SetTLSFontCacheLimit(size_t bytes);
-
-    typedef SkImageGenerator* (*ImageGeneratorFromEncodedFactory)(SkData*);
+    typedef std::unique_ptr<SkImageGenerator>
+                                            (*ImageGeneratorFromEncodedDataFactory)(sk_sp<SkData>);
 
     /**
      *  To instantiate images from encoded data, first looks at this runtime function-ptr. If it
@@ -166,8 +171,8 @@ public:
      *
      *  Returns the previous factory (which could be NULL).
      */
-    static ImageGeneratorFromEncodedFactory
-           SetImageGeneratorFromEncodedFactory(ImageGeneratorFromEncodedFactory);
+    static ImageGeneratorFromEncodedDataFactory
+                    SetImageGeneratorFromEncodedDataFactory(ImageGeneratorFromEncodedDataFactory);
 };
 
 class SkAutoGraphics {

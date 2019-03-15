@@ -11,9 +11,8 @@ Test that arguments can be passed to dialogs.
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css">
 
   <script type="application/javascript">
-  const {utils: Cu, interfaces: Ci} = Components;
 
-  Cu.import("resource://gre/modules/Services.jsm");
+  ChromeUtils.import("resource://gre/modules/Services.jsm");
 
   const TEST_ITEM = Symbol("test-item");
 

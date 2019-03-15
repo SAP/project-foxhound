@@ -1,11 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+"use strict";
 
 // Test that the HeapAnalyses{Client,Worker} can get census individuals.
-
-function run_test() {
-  run_next_test();
-}
 
 const COUNT = { by: "count", count: true, bytes: true };
 
@@ -15,6 +12,7 @@ const CENSUS_BREAKDOWN = {
   strings: COUNT,
   scripts: COUNT,
   other: COUNT,
+  domNode: COUNT,
 };
 
 const LABEL_BREAKDOWN = {
@@ -24,28 +22,28 @@ const LABEL_BREAKDOWN = {
 
 const MAX_INDIVIDUALS = 10;
 
-add_task(function* () {
+add_task(async function() {
   const client = new HeapAnalysesClient();
 
   const snapshotFilePath = saveNewHeapSnapshot();
-  yield client.readHeapSnapshot(snapshotFilePath);
+  await client.readHeapSnapshot(snapshotFilePath);
   ok(true, "Should have read the heap snapshot");
 
-  const dominatorTreeId = yield client.computeDominatorTree(snapshotFilePath);
+  const dominatorTreeId = await client.computeDominatorTree(snapshotFilePath);
   ok(true, "Should have computed dominator tree");
 
-  const { report } = yield client.takeCensus(snapshotFilePath,
+  const { report } = await client.takeCensus(snapshotFilePath,
                                              { breakdown: CENSUS_BREAKDOWN },
                                              { asTreeNode: true });
   ok(report, "Should get a report");
 
   let nodesWithLeafIndicesFound = 0;
 
-  yield* (function* assertCanGetIndividuals(censusNode) {
+  await (async function assertCanGetIndividuals(censusNode) {
     if (censusNode.reportLeafIndex !== undefined) {
       nodesWithLeafIndicesFound++;
 
-      const response = yield client.getCensusIndividuals({
+      const response = await client.getCensusIndividuals({
         dominatorTreeId,
         indices: DevToolsUtils.isSet(censusNode.reportLeafIndex)
           ? censusNode.reportLeafIndex
@@ -62,7 +60,7 @@ add_task(function* () {
          "response.nodes.length === Math.min(MAX_INDIVIDUALS, censusNode.count)");
 
       let lastRetainedSize = Infinity;
-      for (let individual of response.nodes) {
+      for (const individual of response.nodes) {
         equal(typeof individual.nodeId, "number",
               "individual.nodeId should be a number");
         ok(individual.retainedSize <= lastRetainedSize,
@@ -77,8 +75,8 @@ add_task(function* () {
     }
 
     if (censusNode.children) {
-      for (let child of censusNode.children) {
-        yield* assertCanGetIndividuals(child);
+      for (const child of censusNode.children) {
+        await assertCanGetIndividuals(child);
       }
     }
   }(report));

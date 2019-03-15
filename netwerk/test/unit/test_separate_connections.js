@@ -1,6 +1,6 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpserv.identity.primaryPort;
@@ -43,7 +43,7 @@ Listener.prototype = {
     request.QueryInterface(Ci.nsIHttpChannel)
            .QueryInterface(Ci.nsIHttpChannelInternal);
 
-    do_check_eq(request.loadInfo.originAttributes.userContextId, this.userContextId);
+    Assert.equal(request.loadInfo.originAttributes.userContextId, this.userContextId);
 
     let hashKey = request.connectionInfoHashKey;
     if (gSecondRoundStarted) {
@@ -51,9 +51,9 @@ Listener.prototype = {
       // Hash keys should match if and only if their userContextId are the same.
       for (let userContextId = 0; userContextId < 3; userContextId++) {
         if (userContextId == this.userContextId) {
-          do_check_eq(hashKey, previousHashKeys[userContextId]);
+          Assert.equal(hashKey, previousHashKeys[userContextId]);
         } else {
-          do_check_neq(hashKey, previousHashKeys[userContextId]);
+          Assert.notEqual(hashKey, previousHashKeys[userContextId]);
         }
       }
     } else {

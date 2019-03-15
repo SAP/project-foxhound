@@ -9,38 +9,38 @@
 
 const TEST_URI = "<h1 style='color: red'>Header</h1>";
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {toolbox, inspector, view} = yield openRuleView();
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {toolbox, inspector, view} = await openRuleView();
 
   info("Test autocompletion for background-color");
-  yield runAutocompletionTest(toolbox, inspector, view);
+  await runAutocompletionTest(toolbox, inspector, view);
 });
 
-function* runAutocompletionTest(toolbox, inspector, view) {
+async function runAutocompletionTest(toolbox, inspector, view) {
   info("Selecting the test node");
-  yield selectNode("h1", inspector);
+  await selectNode("h1", inspector);
 
   info("Focusing the new property editable field");
-  let ruleEditor = getRuleViewRuleEditor(view, 0);
-  let editor = yield focusNewRuleViewProperty(ruleEditor);
+  const ruleEditor = getRuleViewRuleEditor(view, 0);
+  const editor = await focusNewRuleViewProperty(ruleEditor);
 
   info("Sending \"background\" to the editable field");
-  for (let key of "background") {
-    let onSuggest = editor.once("after-suggest");
+  for (const key of "background") {
+    const onSuggest = editor.once("after-suggest");
     EventUtils.synthesizeKey(key, {}, view.styleWindow);
-    yield onSuggest;
+    await onSuggest;
   }
 
   const itemIndex = 4;
 
-  let bgcItem = editor.popup.getItemAtIndex(itemIndex);
+  const bgcItem = editor.popup.getItemAtIndex(itemIndex);
   is(bgcItem.label, "background-color",
      "check the expected completion element");
 
   editor.popup.selectedIndex = itemIndex;
 
-  let node = editor.popup._list.childNodes[itemIndex];
+  const node = editor.popup._list.childNodes[itemIndex];
   EventUtils.synthesizeMouseAtCenter(node, {}, editor.popup._window);
 
   is(editor.input.value, "background-color", "Correct value is autocompleted");

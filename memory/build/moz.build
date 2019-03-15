@@ -5,6 +5,8 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 EXPORTS += [
+    'malloc_decls.h',
+    'mozjemalloc_types.h',
     'mozmemory.h',
     'mozmemory_wrap.h',
 ]
@@ -14,47 +16,43 @@ DEFINES['MOZ_MEMORY_IMPL'] = True
 
 if CONFIG['MOZ_REPLACE_MALLOC']:
     EXPORTS += [
-        'malloc_decls.h',
         'replace_malloc.h',
         'replace_malloc_bridge.h',
     ]
 
-SOURCES += [
-    'jemalloc_config.cpp',
-    'mozmemory_wrap.c',
-]
-
-if CONFIG['MOZ_JEMALLOC4']:
-    SOURCES += [
-        'mozjemalloc_compat.c',
+if CONFIG['MOZ_MEMORY']:
+    UNIFIED_SOURCES += [
+        'mozjemalloc.cpp',
+        'mozmemory_wrap.cpp',
     ]
-    LOCAL_INCLUDES += ['!../jemalloc/src/include']
-    if CONFIG['_MSC_VER']:
-        LOCAL_INCLUDES += ['/memory/jemalloc/src/include/msvc_compat']
-        if not CONFIG['HAVE_INTTYPES_H']:
-            LOCAL_INCLUDES += ['/memory/jemalloc/src/include/msvc_compat/C99']
-
-if CONFIG['MOZ_REPLACE_MALLOC']:
-    SOURCES += [
-        'replace_malloc.c',
+else:
+    UNIFIED_SOURCES += [
+        'fallback.cpp',
     ]
 
 if CONFIG['OS_TARGET'] == 'Darwin' and (CONFIG['MOZ_REPLACE_MALLOC'] or
-        CONFIG['MOZ_MEMORY'] and not CONFIG['MOZ_JEMALLOC4']):
+        CONFIG['MOZ_MEMORY']):
     SOURCES += [
         'zone.c',
     ]
 
 Library('memory')
 
-if CONFIG['MOZ_GLUE_IN_PROGRAM']:
-    DIST_INSTALL = True
+if CONFIG['OS_TARGET'] == 'Android' and CONFIG['CC_TYPE'] == 'clang':
+    CXXFLAGS += [
+        '-Wno-tautological-pointer-compare',
+    ]
 
-# Keep jemalloc separated when mozglue is statically linked
-if CONFIG['MOZ_MEMORY'] and (CONFIG['OS_TARGET'] in ('WINNT', 'Darwin', 'Android') or
-                             CONFIG['MOZ_SYSTEM_JEMALLOC']):
+if CONFIG['MOZ_BUILD_APP'] != 'memory':
     FINAL_LIBRARY = 'mozglue'
 
-if CONFIG['MOZ_REPLACE_MALLOC'] and CONFIG['OS_TARGET'] == 'Darwin':
-    # The zone allocator for OSX needs some jemalloc internal functions
-    LOCAL_INCLUDES += ['/memory/jemalloc/src/include']
+if CONFIG['CC_TYPE'] in ('msvc', 'clang-cl'):
+    CXXFLAGS += ['-wd4273'] # inconsistent dll linkage (bug 558163)
+
+if CONFIG['MOZ_REPLACE_MALLOC_STATIC']:
+    DEFINES['MOZ_REPLACE_MALLOC_STATIC'] = True
+
+DisableStlWrapping()
+
+if CONFIG['CC_TYPE'] == 'clang-cl':
+    AllowCompilerWarnings()  # workaround for bug 1090497

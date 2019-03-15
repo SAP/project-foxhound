@@ -5,23 +5,21 @@
 
 "use strict";
 
-const Cu = Components.utils;
-Cu.import("resource://gre/modules/IndexedDBHelper.jsm");
-Cu.import("resource://gre/modules/Preferences.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.importGlobalProperties(["indexedDB"]);
+ChromeUtils.import("resource://gre/modules/IndexedDBHelper.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+XPCOMUtils.defineLazyGlobalGetters(this, ["indexedDB"]);
 
-this.EXPORTED_SYMBOLS = ["PushDB"];
+var EXPORTED_SYMBOLS = ["PushDB"];
 
 XPCOMUtils.defineLazyGetter(this, "console", () => {
-  let {ConsoleAPI} = Cu.import("resource://gre/modules/Console.jsm", {});
+  let {ConsoleAPI} = ChromeUtils.import("resource://gre/modules/Console.jsm", {});
   return new ConsoleAPI({
     maxLogLevelPref: "dom.push.loglevel",
     prefix: "PushDB",
   });
 });
 
-this.PushDB = function PushDB(dbName, dbVersion, dbStoreName, keyPath, model) {
+function PushDB(dbName, dbVersion, dbStoreName, keyPath, model) {
   console.debug("PushDB()");
   this._dbStoreName = dbStoreName;
   this._keyPath = keyPath;
@@ -30,7 +28,7 @@ this.PushDB = function PushDB(dbName, dbVersion, dbStoreName, keyPath, model) {
   // set the indexeddb database
   this.initDBHelper(dbName, dbVersion,
                     [dbStoreName]);
-};
+}
 
 this.PushDB.prototype = {
   __proto__: IndexedDBHelper.prototype,

@@ -11,54 +11,21 @@
 
 namespace mozilla {
 
-CDMCaps::CDMCaps()
-  : mMonitor("CDMCaps")
-{
-}
+CDMCaps::CDMCaps() {}
 
-CDMCaps::~CDMCaps()
-{
-}
-
-void
-CDMCaps::Lock()
-{
-  mMonitor.Lock();
-}
-
-void
-CDMCaps::Unlock()
-{
-  mMonitor.Unlock();
-}
-
-CDMCaps::AutoLock::AutoLock(CDMCaps& aInstance)
-  : mData(aInstance)
-{
-  mData.Lock();
-}
-
-CDMCaps::AutoLock::~AutoLock()
-{
-  mData.Unlock();
-}
+CDMCaps::~CDMCaps() {}
 
 // Keys with MediaKeyStatus::Usable, MediaKeyStatus::Output_downscaled,
 // or MediaKeyStatus::Output_restricted status can be used by the CDM
 // to decrypt or decrypt-and-decode samples.
-static bool
-IsUsableStatus(dom::MediaKeyStatus aStatus)
-{
+static bool IsUsableStatus(dom::MediaKeyStatus aStatus) {
   return aStatus == dom::MediaKeyStatus::Usable ||
          aStatus == dom::MediaKeyStatus::Output_restricted ||
          aStatus == dom::MediaKeyStatus::Output_downscaled;
 }
 
-bool
-CDMCaps::AutoLock::IsKeyUsable(const CencKeyId& aKeyId)
-{
-  mData.mMonitor.AssertCurrentThreadOwns();
-  for (const KeyStatus& keyStatus : mData.mKeyStatuses) {
+bool CDMCaps::IsKeyUsable(const CencKeyId& aKeyId) {
+  for (const KeyStatus& keyStatus : mKeyStatuses) {
     if (keyStatus.mId == aKeyId) {
       return IsUsableStatus(keyStatus.mStatus);
     }
@@ -66,30 +33,24 @@ CDMCaps::AutoLock::IsKeyUsable(const CencKeyId& aKeyId)
   return false;
 }
 
-bool
-CDMCaps::AutoLock::SetKeyStatus(const CencKeyId& aKeyId,
-                                const nsString& aSessionId,
-                                const dom::Optional<dom::MediaKeyStatus>& aStatus)
-{
-  mData.mMonitor.AssertCurrentThreadOwns();
-
+bool CDMCaps::SetKeyStatus(const CencKeyId& aKeyId, const nsString& aSessionId,
+                           const dom::Optional<dom::MediaKeyStatus>& aStatus) {
   if (!aStatus.WasPassed()) {
     // Called from ForgetKeyStatus.
     // Return true if the element is found to notify key changes.
-    return mData.mKeyStatuses.RemoveElement(KeyStatus(aKeyId,
-                                                      aSessionId,
-                                                      dom::MediaKeyStatus::Internal_error));
+    return mKeyStatuses.RemoveElement(
+        KeyStatus(aKeyId, aSessionId, dom::MediaKeyStatus::Internal_error));
   }
 
   KeyStatus key(aKeyId, aSessionId, aStatus.Value());
-  auto index = mData.mKeyStatuses.IndexOf(key);
-  if (index != mData.mKeyStatuses.NoIndex) {
-    if (mData.mKeyStatuses[index].mStatus == aStatus.Value()) {
+  auto index = mKeyStatuses.IndexOf(key);
+  if (index != mKeyStatuses.NoIndex) {
+    if (mKeyStatuses[index].mStatus == aStatus.Value()) {
       // No change.
       return false;
     }
-    auto oldStatus = mData.mKeyStatuses[index].mStatus;
-    mData.mKeyStatuses[index].mStatus = aStatus.Value();
+    auto oldStatus = mKeyStatuses[index].mStatus;
+    mKeyStatuses[index].mStatus = aStatus.Value();
     // The old key status was one for which we can decrypt media. We don't
     // need to do the "notify usable" step below, as it should be impossible
     // for us to have anything waiting on this key to become usable, since it
@@ -98,7 +59,7 @@ CDMCaps::AutoLock::SetKeyStatus(const CencKeyId& aKeyId,
       return true;
     }
   } else {
-    mData.mKeyStatuses.AppendElement(key);
+    mKeyStatuses.AppendElement(key);
   }
 
   // Only call NotifyUsable() for a key when we are going from non-usable
@@ -107,7 +68,7 @@ CDMCaps::AutoLock::SetKeyStatus(const CencKeyId& aKeyId,
     return true;
   }
 
-  auto& waiters = mData.mWaitForKeys;
+  auto& waiters = mWaitForKeys;
   size_t i = 0;
   while (i < waiters.Length()) {
     auto& w = waiters[i];
@@ -121,50 +82,31 @@ CDMCaps::AutoLock::SetKeyStatus(const CencKeyId& aKeyId,
   return true;
 }
 
-void
-CDMCaps::AutoLock::NotifyWhenKeyIdUsable(const CencKeyId& aKey,
-                                         SamplesWaitingForKey* aListener)
-{
-  mData.mMonitor.AssertCurrentThreadOwns();
+void CDMCaps::NotifyWhenKeyIdUsable(const CencKeyId& aKey,
+                                    SamplesWaitingForKey* aListener) {
   MOZ_ASSERT(!IsKeyUsable(aKey));
   MOZ_ASSERT(aListener);
-  mData.mWaitForKeys.AppendElement(WaitForKeys(aKey, aListener));
+  mWaitForKeys.AppendElement(WaitForKeys(aKey, aListener));
 }
 
-void
-CDMCaps::AutoLock::GetKeyStatusesForSession(const nsAString& aSessionId,
-                                            nsTArray<KeyStatus>& aOutKeyStatuses)
-{
-  for (const KeyStatus& keyStatus : mData.mKeyStatuses) {
+void CDMCaps::GetKeyStatusesForSession(const nsAString& aSessionId,
+                                       nsTArray<KeyStatus>& aOutKeyStatuses) {
+  for (const KeyStatus& keyStatus : mKeyStatuses) {
     if (keyStatus.mSessionId.Equals(aSessionId)) {
       aOutKeyStatuses.AppendElement(keyStatus);
     }
   }
 }
 
-void
-CDMCaps::AutoLock::GetSessionIdsForKeyId(const CencKeyId& aKeyId,
-                                         nsTArray<nsCString>& aOutSessionIds)
-{
-  for (const KeyStatus& keyStatus : mData.mKeyStatuses) {
-    if (keyStatus.mId == aKeyId) {
-      aOutSessionIds.AppendElement(NS_ConvertUTF16toUTF8(keyStatus.mSessionId));
-    }
-  }
-}
-
-bool
-CDMCaps::AutoLock::RemoveKeysForSession(const nsString& aSessionId)
-{
+bool CDMCaps::RemoveKeysForSession(const nsString& aSessionId) {
   bool changed = false;
   nsTArray<KeyStatus> statuses;
   GetKeyStatusesForSession(aSessionId, statuses);
   for (const KeyStatus& status : statuses) {
-    changed |= SetKeyStatus(status.mId,
-                            aSessionId,
+    changed |= SetKeyStatus(status.mId, aSessionId,
                             dom::Optional<dom::MediaKeyStatus>());
   }
   return changed;
 }
 
-} // namespace mozilla
+}  // namespace mozilla

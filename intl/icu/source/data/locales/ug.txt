@@ -3,6 +3,7 @@
 ug{
     ExemplarCharacters{"[ئ ا ە ب پ ت ج چ خ د ر ز ژ س ش غ ف ق ك گ ڭ ل م ن ھ و ۇ ۆ ۈ ۋ ې ى ي]"}
     ExemplarCharactersIndex{"[ئ ا ە ب پ ت ج چ خ د ر ز ژ س ش غ ف ق ك گ ڭ ل م ن ھ و ۇ ۆ ۈ ۋ ې ى ي]"}
+    ExemplarCharactersNumbers{"[\\- , . % ‰ + 0 1 2 3 4 5 6 7 8 9]"}
     NumberElements{
         latn{
             miscPatterns{
@@ -133,9 +134,15 @@ ug{
                 superscriptingExponent{"×"}
             }
         }
+        minimalPairs{
+            plural{
+                one{"{0}  كىتاب"}
+                other{"{0} بېلىق كۆردۈم ۋە ئۇنى يەۋەتتىم."}
+            }
+        }
         native{"arabext"}
     }
-    Version{"2.1.28.76"}
+    Version{"2.1.44.88"}
     calendar{
         buddhist{
             eras{
@@ -399,8 +406,8 @@ ug{
                 yQQQ{"y QQQ"}
                 yQQQQ{"y QQQQ"}
                 yw{
-                    one{"y، w-ھەپتە"}
-                    other{"y، w-ھەپتە"}
+                    one{"Y، w-ھەپتە"}
+                    other{"Y، w-ھەپتە"}
                 }
             }
             dayNames{

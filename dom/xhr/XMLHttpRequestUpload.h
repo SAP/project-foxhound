@@ -8,43 +8,31 @@
 #define mozilla_dom_XMLHttpRequestUpload_h
 
 #include "mozilla/dom/XMLHttpRequestEventTarget.h"
-#include "nsIXMLHttpRequest.h"
 
 namespace mozilla {
 namespace dom {
 
-class XMLHttpRequestUpload final : public XMLHttpRequestEventTarget,
-                                   public nsIXMLHttpRequestUpload
-{
-public:
+class XMLHttpRequestUpload final : public XMLHttpRequestEventTarget {
+ public:
   explicit XMLHttpRequestUpload(DOMEventTargetHelper* aOwner)
-    : XMLHttpRequestEventTarget(aOwner)
-  {}
+      : XMLHttpRequestEventTarget(aOwner) {}
 
-  explicit XMLHttpRequestUpload()
-  {}
+  explicit XMLHttpRequestUpload() {}
 
   NS_DECL_ISUPPORTS_INHERITED
-  NS_FORWARD_NSIXMLHTTPREQUESTEVENTTARGET(XMLHttpRequestEventTarget::)
-  NS_REALLY_FORWARD_NSIDOMEVENTTARGET(XMLHttpRequestEventTarget)
-  NS_DECL_NSIXMLHTTPREQUESTUPLOAD
 
-  virtual JSObject*
-  WrapObject(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapObject(JSContext* cx,
+                               JS::Handle<JSObject*> aGivenProto) override;
 
-  bool HasListeners()
-  {
+  bool HasListeners() {
     return mListenerManager && mListenerManager->HasListeners();
   }
 
-private:
-  virtual ~XMLHttpRequestUpload()
-  {}
+ private:
+  virtual ~XMLHttpRequestUpload() {}
 };
 
+}  // namespace dom
+}  // namespace mozilla
 
-} // dom namespace
-} // mozilla namespace
-
-#endif // mozilla_dom_XMLHttpRequestUpload_h
-
+#endif  // mozilla_dom_XMLHttpRequestUpload_h

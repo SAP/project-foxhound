@@ -4,18 +4,14 @@
 
 "use strict";
 
-const { Task } = require("devtools/shared/task");
-const { getCssProperties } = require("devtools/shared/fronts/css-properties");
-const { ReflowFront } = require("devtools/shared/fronts/reflow");
-
-const { InplaceEditor } = require("devtools/client/shared/inplace-editor");
-
 const {
   updateGeometryEditorEnabled,
   updateLayout,
+  updateOffsetParent,
 } = require("./actions/box-model");
 
-const EditingSession = require("./utils/editing-session");
+loader.lazyRequireGetter(this, "EditingSession", "devtools/client/inspector/boxmodel/utils/editing-session");
+loader.lazyRequireGetter(this, "InplaceEditor", "devtools/client/shared/inplace-editor", true);
 
 const NUMERIC = /^-?[\d\.]+$/;
 
@@ -29,7 +25,6 @@ const NUMERIC = /^-?[\d\.]+$/;
  */
 function BoxModel(inspector, window) {
   this.document = window.document;
-  this.highlighters = inspector.highlighters;
   this.inspector = inspector;
   this.store = inspector.store;
 
@@ -59,16 +54,21 @@ BoxModel.prototype = {
     this.inspector.selection.off("new-node-front", this.onNewSelection);
     this.inspector.sidebar.off("select", this.onSidebarSelect);
 
-    if (this.reflowFront) {
-      this.untrackReflows();
-      this.reflowFront.destroy();
-      this.reflowFront = null;
-    }
+    this.untrackReflows();
 
+    this._highlighters = null;
     this.document = null;
-    this.highlighters = null;
     this.inspector = null;
     this.walker = null;
+  },
+
+  get highlighters() {
+    if (!this._highlighters) {
+      // highlighters is a lazy getter in the inspector.
+      this._highlighters = this.inspector.highlighters;
+    }
+
+    return this._highlighters;
   },
 
   /**
@@ -85,13 +85,12 @@ BoxModel.prototype = {
   },
 
   /**
-   * Returns true if the computed or layout panel is visible, and false otherwise.
+   * Returns true if the layout panel is visible, and false otherwise.
    */
   isPanelVisible() {
-    return this.inspector.toolbox.currentToolId === "inspector" &&
-           this.inspector.sidebar &&
-           (this.inspector.sidebar.getCurrentTabID() === "layoutview" ||
-            this.inspector.sidebar.getCurrentTabID() === "computedview");
+    return this.inspector.toolbox && this.inspector.sidebar &&
+           this.inspector.toolbox.currentToolId === "inspector" &&
+           (this.inspector.sidebar.getCurrentTabID() === "layoutview");
   },
 
   /**
@@ -108,30 +107,14 @@ BoxModel.prototype = {
    * Starts listening to reflows in the current tab.
    */
   trackReflows() {
-    if (!this.reflowFront) {
-      let { target } = this.inspector;
-      if (target.form.reflowActor) {
-        this.reflowFront = ReflowFront(target.client,
-                                       target.form);
-      } else {
-        return;
-      }
-    }
-
-    this.reflowFront.on("reflows", this.updateBoxModel);
-    this.reflowFront.start();
+    this.inspector.reflowTracker.trackReflows(this, this.updateBoxModel);
   },
 
   /**
    * Stops listening to reflows in the current tab.
    */
   untrackReflows() {
-    if (!this.reflowFront) {
-      return;
-    }
-
-    this.reflowFront.off("reflows", this.updateBoxModel);
-    this.reflowFront.stop();
+    this.inspector.reflowTracker.untrackReflows(this, this.updateBoxModel);
   },
 
   /**
@@ -146,26 +129,42 @@ BoxModel.prototype = {
       this._updateReasons.push(reason);
     }
 
-    let lastRequest = Task.spawn((function* () {
-      if (!(this.isPanelVisible() &&
-          this.inspector.selection.isConnected() &&
-          this.inspector.selection.isElementNode())) {
+    const lastRequest = ((async function() {
+      if (!this.inspector ||
+          !this.isPanelVisible() ||
+          !this.inspector.selection.isConnected() ||
+          !this.inspector.selection.isElementNode()) {
         return null;
       }
 
-      let node = this.inspector.selection.nodeFront;
-      let layout = yield this.inspector.pageStyle.getLayout(node, {
+      const node = this.inspector.selection.nodeFront;
+
+      let layout = await this.inspector.pageStyle.getLayout(node, {
         autoMargins: true,
       });
-      let styleEntries = yield this.inspector.pageStyle.getApplied(node, {});
+
+      const styleEntries = await this.inspector.pageStyle.getApplied(node, {
+        // We don't need styles applied to pseudo elements of the current node.
+        skipPseudo: true,
+      });
       this.elementRules = styleEntries.map(e => e.rule);
 
       // Update the layout properties with whether or not the element's position is
       // editable with the geometry editor.
-      let isPositionEditable = yield this.inspector.pageStyle.isPositionEditable(node);
+      const isPositionEditable = await this.inspector.pageStyle.isPositionEditable(node);
+
       layout = Object.assign({}, layout, {
         isPositionEditable,
       });
+
+      const actorCanGetOffSetParent =
+        await this.inspector.target.actorHasMethod("domwalker", "getOffsetParent");
+
+      if (actorCanGetOffSetParent) {
+        // Update the redux store with the latest offset parent DOM node
+        const offsetParent = await this.inspector.walker.getOffsetParent(node);
+        this.store.dispatch(updateOffsetParent(offsetParent));
+      }
 
       // Update the redux store with the latest layout properties and update the box
       // model view.
@@ -182,7 +181,12 @@ BoxModel.prototype = {
       this._updateReasons = [];
 
       return null;
-    }).bind(this)).catch(console.error);
+    }).bind(this))().catch(error => {
+      // If we failed because we were being destroyed while waiting for a request, ignore.
+      if (this.document) {
+        console.error(error);
+      }
+    });
 
     this._lastRequest = lastRequest;
   },
@@ -191,8 +195,11 @@ BoxModel.prototype = {
    * Hides the box-model highlighter on the currently selected element.
    */
   onHideBoxModelHighlighter() {
-    let toolbox = this.inspector.toolbox;
-    toolbox.highlighterUtils.unhighlight();
+    if (!this.inspector) {
+      return;
+    }
+
+    this.inspector.highlighter.unhighlight();
   },
 
   /**
@@ -200,12 +207,12 @@ BoxModel.prototype = {
    * geometry editor enabled state.
    */
   onHideGeometryEditor() {
-    let { markup, selection, toolbox } = this.inspector;
+    const { markup, selection, inspector } = this.inspector;
 
     this.highlighters.hideGeometryEditor();
     this.store.dispatch(updateGeometryEditorEnabled(false));
 
-    toolbox.off("picker-started", this.onHideGeometryEditor);
+    inspector.nodePicker.off("picker-started", this.onHideGeometryEditor);
     selection.off("new-node-front", this.onHideGeometryEditor);
     markup.off("leave", this.onMarkupViewLeave);
     markup.off("node-hover", this.onMarkupViewNodeHover);
@@ -217,14 +224,14 @@ BoxModel.prototype = {
    * on the markup view.
    */
   onMarkupViewLeave() {
-    let state = this.store.getState();
-    let enabled = state.boxModel.geometryEditorEnabled;
+    const state = this.store.getState();
+    const enabled = state.boxModel.geometryEditorEnabled;
 
     if (!enabled) {
       return;
     }
 
-    let nodeFront = this.inspector.selection.nodeFront;
+    const nodeFront = this.inspector.selection.nodeFront;
     this.highlighters.showGeometryEditor(nodeFront);
   },
 
@@ -264,19 +271,19 @@ BoxModel.prototype = {
    *         The name of the property.
    */
   onShowBoxModelEditor(element, event, property) {
-    let session = new EditingSession({
+    const session = new EditingSession({
       inspector: this.inspector,
       doc: this.document,
       elementRules: this.elementRules,
     });
-    let initialValue = session.getProperty(property);
+    const initialValue = session.getProperty(property);
 
-    let editor = new InplaceEditor({
+    const editor = new InplaceEditor({
       element: element,
       initial: initialValue,
       contentType: InplaceEditor.CONTENT_TYPES.CSS_VALUE,
       property: {
-        name: property
+        name: property,
       },
       start: self => {
         self.elt.parentNode.classList.add("boxmodel-editing");
@@ -286,38 +293,36 @@ BoxModel.prototype = {
           value += "px";
         }
 
-        let properties = [
-          { name: property, value: value }
+        const properties = [
+          { name: property, value: value },
         ];
 
         if (property.substring(0, 7) == "border-") {
-          let bprop = property.substring(0, property.length - 5) + "style";
-          let style = session.getProperty(bprop);
+          const bprop = property.substring(0, property.length - 5) + "style";
+          const style = session.getProperty(bprop);
           if (!style || style == "none" || style == "hidden") {
             properties.push({ name: bprop, value: "solid" });
           }
         }
 
-        session.setProperties(properties).catch(e => console.error(e));
+        if (property.substring(0, 9) == "position-") {
+          properties[0].name = property.substring(9);
+        }
+
+        session.setProperties(properties).catch(console.error);
       },
       done: (value, commit) => {
         editor.elt.parentNode.classList.remove("boxmodel-editing");
         if (!commit) {
           session.revert().then(() => {
             session.destroy();
-          }, e => console.error(e));
+          }, console.error);
           return;
         }
 
-        let node = this.inspector.selection.nodeFront;
-        this.inspector.pageStyle.getLayout(node, {
-          autoMargins: true,
-        }).then(layout => {
-          this.store.dispatch(updateLayout(layout));
-        }, e => console.error(e));
+        this.updateBoxModel("editable-value-change");
       },
-      contextMenu: this.inspector.onTextBoxContextMenu,
-      cssProperties: getCssProperties(this.inspector.toolbox)
+      cssProperties: this.inspector.cssProperties,
     }, event);
   },
 
@@ -328,17 +333,18 @@ BoxModel.prototype = {
    *         Options passed to the highlighter actor.
    */
   onShowBoxModelHighlighter(options = {}) {
-    let toolbox = this.inspector.toolbox;
-    let nodeFront = this.inspector.selection.nodeFront;
+    if (!this.inspector) {
+      return;
+    }
 
-    toolbox.highlighterUtils.highlightNodeFront(nodeFront, options);
+    const nodeFront = this.inspector.selection.nodeFront;
+    this.inspector.highlighter.highlight(nodeFront, options);
   },
 
   /**
-   * Handler for the inspector sidebar select event. Starts listening for
-   * "grid-layout-changed" if the layout panel is visible. Otherwise, stop
-   * listening for grid layout changes. Finally, refresh the layout view if
-   * it is visible.
+   * Handler for the inspector sidebar select event. Starts tracking reflows if the
+   * layout panel is visible. Otherwise, stop tracking reflows. Finally, refresh the box
+   * model view if it is visible.
    */
   onSidebarSelect() {
     if (!this.isPanelVisible()) {
@@ -359,23 +365,23 @@ BoxModel.prototype = {
    * toggle button is clicked.
    */
   onToggleGeometryEditor() {
-    let { markup, selection, toolbox } = this.inspector;
-    let nodeFront = this.inspector.selection.nodeFront;
-    let state = this.store.getState();
-    let enabled = !state.boxModel.geometryEditorEnabled;
+    const { markup, selection, inspector } = this.inspector;
+    const nodeFront = this.inspector.selection.nodeFront;
+    const state = this.store.getState();
+    const enabled = !state.boxModel.geometryEditorEnabled;
 
     this.highlighters.toggleGeometryHighlighter(nodeFront);
     this.store.dispatch(updateGeometryEditorEnabled(enabled));
 
     if (enabled) {
       // Hide completely the geometry editor if the picker is clicked or a new node front
-      toolbox.on("picker-started", this.onHideGeometryEditor);
+      inspector.nodePicker.on("picker-started", this.onHideGeometryEditor);
       selection.on("new-node-front", this.onHideGeometryEditor);
       // Temporary hide the geometry editor
       markup.on("leave", this.onMarkupViewLeave);
       markup.on("node-hover", this.onMarkupViewNodeHover);
     } else {
-      toolbox.off("picker-started", this.onHideGeometryEditor);
+      inspector.nodePicker.off("picker-started", this.onHideGeometryEditor);
       selection.off("new-node-front", this.onHideGeometryEditor);
       markup.off("leave", this.onMarkupViewLeave);
       markup.off("node-hover", this.onMarkupViewNodeHover);

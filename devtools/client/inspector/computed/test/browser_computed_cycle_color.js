@@ -15,57 +15,61 @@ const TEST_URI = `
   <span id="matches" class="matches">Some styled text</span>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openComputedView();
-  yield selectNode("#matches", inspector);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, view} = await openComputedView();
+  await selectNode("#matches", inspector);
 
   info("Checking the property itself");
   let container = getComputedViewPropertyView(view, "color").valueNode;
-  checkColorCycling(container, view);
+  await checkColorCycling(container, view);
 
   info("Checking matched selectors");
-  container = yield getComputedViewMatchedRules(view, "color");
-  yield checkColorCycling(container, view);
+  container = await getComputedViewMatchedRules(view, "color");
+  await checkColorCycling(container, view);
 });
 
-function* checkColorCycling(container, view) {
-  let valueNode = container.querySelector(".computedview-color");
-  let win = view.styleWindow;
+async function checkColorCycling(container, view) {
+  const valueNode = container.querySelector(".computed-color");
+  const win = view.styleWindow;
 
   // "Authored" (default; currently the computed value)
   is(valueNode.textContent, "rgb(255, 0, 0)",
                             "Color displayed as an RGB value.");
 
-  let tests = [{
+  const tests = [{
     value: "red",
-    comment: "Color displayed as a color name."
+    comment: "Color displayed as a color name.",
   }, {
     value: "#f00",
-    comment: "Color displayed as an authored value."
+    comment: "Color displayed as an authored value.",
   }, {
     value: "hsl(0, 100%, 50%)",
-    comment: "Color displayed as an HSL value again."
+    comment: "Color displayed as an HSL value again.",
   }, {
     value: "rgb(255, 0, 0)",
-    comment: "Color displayed as an RGB value again."
+    comment: "Color displayed as an RGB value again.",
   }];
 
-  for (let test of tests) {
-    yield checkSwatchShiftClick(container, win, test.value, test.comment);
+  for (const test of tests) {
+    await checkSwatchShiftClick(container, win, test.value, test.comment);
   }
 }
 
-function* checkSwatchShiftClick(container, win, expectedValue, comment) {
-  let swatch = container.querySelector(".computedview-colorswatch");
-  let valueNode = container.querySelector(".computedview-color");
+async function checkSwatchShiftClick(container, win, expectedValue, comment) {
+  const swatch = container.querySelector(".computed-colorswatch");
+  const valueNode = container.querySelector(".computed-color");
   swatch.scrollIntoView();
 
-  let onUnitChange = swatch.once("unit-change");
+  const onUnitChange = swatch.once("unit-change");
   EventUtils.synthesizeMouseAtCenter(swatch, {
     type: "mousedown",
-    shiftKey: true
+    shiftKey: true,
   }, win);
-  yield onUnitChange;
+  // we need to have the mouse up event in order to make sure that the platform
+  // lets go of the last container, and is not waiting for something to happen.
+  // Bug: https://bugzilla.mozilla.org/show_bug.cgi?id=1442153
+  EventUtils.synthesizeMouseAtCenter(swatch, {type: "mouseup"}, win);
+  await onUnitChange;
   is(valueNode.textContent, expectedValue, comment);
 }

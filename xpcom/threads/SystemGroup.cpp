@@ -6,92 +6,76 @@
 
 #include "SystemGroup.h"
 
+#include "mozilla/AbstractThread.h"
 #include "mozilla/Move.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "nsINamed.h"
 
 using namespace mozilla;
 
-class SystemGroupImpl final : public ValidatingDispatcher
-{
-public:
+class SystemGroupImpl final : public SchedulerGroup {
+ public:
   SystemGroupImpl();
-  ~SystemGroupImpl() {}
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(SystemGroupImpl, override)
 
   static void InitStatic();
   static void ShutdownStatic();
   static SystemGroupImpl* Get();
 
-  NS_METHOD_(MozExternalRefCountType) AddRef(void)
-  {
-    return 2;
-  }
-  NS_METHOD_(MozExternalRefCountType) Release(void)
-  {
-    return 1;
-  }
+  static bool Initialized() { return !!sSingleton; }
 
-private:
-  static UniquePtr<SystemGroupImpl> sSingleton;
+ private:
+  ~SystemGroupImpl() = default;
+  static StaticRefPtr<SystemGroupImpl> sSingleton;
 };
 
-UniquePtr<SystemGroupImpl> SystemGroupImpl::sSingleton;
+StaticRefPtr<SystemGroupImpl> SystemGroupImpl::sSingleton;
 
-SystemGroupImpl::SystemGroupImpl()
-{
+SystemGroupImpl::SystemGroupImpl() {
   CreateEventTargets(/* aNeedValidation = */ true);
 }
 
-/* static */ void
-SystemGroupImpl::InitStatic()
-{
+/* static */ void SystemGroupImpl::InitStatic() {
   MOZ_ASSERT(!sSingleton);
   MOZ_ASSERT(NS_IsMainThread());
-  sSingleton = MakeUnique<SystemGroupImpl>();
+  sSingleton = new SystemGroupImpl();
 }
 
-/* static */ void
-SystemGroupImpl::ShutdownStatic()
-{
-  sSingleton->Shutdown();
+/* static */ void SystemGroupImpl::ShutdownStatic() {
+  sSingleton->Shutdown(true);
   sSingleton = nullptr;
 }
 
-/* static */ SystemGroupImpl*
-SystemGroupImpl::Get()
-{
+/* static */ SystemGroupImpl* SystemGroupImpl::Get() {
   MOZ_ASSERT(sSingleton);
   return sSingleton.get();
 }
 
-void
-SystemGroup::InitStatic()
-{
-  SystemGroupImpl::InitStatic();
+void SystemGroup::InitStatic() { SystemGroupImpl::InitStatic(); }
+
+void SystemGroup::Shutdown() { SystemGroupImpl::ShutdownStatic(); }
+
+bool SystemGroup::Initialized() { return SystemGroupImpl::Initialized(); }
+
+/* static */ nsresult SystemGroup::Dispatch(
+    TaskCategory aCategory, already_AddRefed<nsIRunnable>&& aRunnable) {
+  if (!SystemGroupImpl::Initialized()) {
+    return NS_DispatchToMainThread(std::move(aRunnable));
+  }
+  return SystemGroupImpl::Get()->Dispatch(aCategory, std::move(aRunnable));
 }
 
-void
-SystemGroup::Shutdown()
-{
-  SystemGroupImpl::ShutdownStatic();
-}
-
-/* static */ nsresult
-SystemGroup::Dispatch(const char* aName,
-                      TaskCategory aCategory,
-                      already_AddRefed<nsIRunnable>&& aRunnable)
-{
-  return SystemGroupImpl::Get()->Dispatch(aName, aCategory, Move(aRunnable));
-}
-
-/* static */ nsIEventTarget*
-SystemGroup::EventTargetFor(TaskCategory aCategory)
-{
+/* static */ nsISerialEventTarget* SystemGroup::EventTargetFor(
+    TaskCategory aCategory) {
+  if (!SystemGroupImpl::Initialized()) {
+    return GetMainThreadSerialEventTarget();
+  }
   return SystemGroupImpl::Get()->EventTargetFor(aCategory);
 }
 
-/* static */ AbstractThread*
-SystemGroup::AbstractMainThreadFor(TaskCategory aCategory)
-{
+/* static */ AbstractThread* SystemGroup::AbstractMainThreadFor(
+    TaskCategory aCategory) {
+  MOZ_ASSERT(SystemGroupImpl::Initialized());
   return SystemGroupImpl::Get()->AbstractMainThreadFor(aCategory);
 }

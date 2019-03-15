@@ -7,25 +7,23 @@
 #include "PendingAnimationTracker.h"
 
 #include "mozilla/dom/AnimationTimeline.h"
+#include "mozilla/dom/Nullable.h"
 #include "nsIFrame.h"
 #include "nsIPresShell.h"
+#include "nsTransitionManager.h"  // For CSSTransition
 
-using namespace mozilla;
+using mozilla::dom::Nullable;
 
 namespace mozilla {
 
-NS_IMPL_CYCLE_COLLECTION(PendingAnimationTracker,
-                         mPlayPendingSet,
-                         mPausePendingSet,
-                         mDocument)
+NS_IMPL_CYCLE_COLLECTION(PendingAnimationTracker, mPlayPendingSet,
+                         mPausePendingSet, mDocument)
 
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(PendingAnimationTracker, AddRef)
 NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(PendingAnimationTracker, Release)
 
-void
-PendingAnimationTracker::AddPending(dom::Animation& aAnimation,
-                                    AnimationSet& aSet)
-{
+void PendingAnimationTracker::AddPending(dom::Animation& aAnimation,
+                                         AnimationSet& aSet) {
   aSet.PutEntry(&aAnimation);
 
   // Schedule a paint. Otherwise animations that don't trigger a paint by
@@ -34,26 +32,20 @@ PendingAnimationTracker::AddPending(dom::Animation& aAnimation,
   EnsurePaintIsScheduled();
 }
 
-void
-PendingAnimationTracker::RemovePending(dom::Animation& aAnimation,
-                                       AnimationSet& aSet)
-{
+void PendingAnimationTracker::RemovePending(dom::Animation& aAnimation,
+                                            AnimationSet& aSet) {
   aSet.RemoveEntry(&aAnimation);
 }
 
-bool
-PendingAnimationTracker::IsWaiting(const dom::Animation& aAnimation,
-                                   const AnimationSet& aSet) const
-{
+bool PendingAnimationTracker::IsWaiting(const dom::Animation& aAnimation,
+                                        const AnimationSet& aSet) const {
   return aSet.Contains(const_cast<dom::Animation*>(&aAnimation));
 }
 
-void
-PendingAnimationTracker::TriggerPendingAnimationsOnNextTick(const TimeStamp&
-                                                        aReadyTime)
-{
-  auto triggerAnimationsAtReadyTime = [aReadyTime](AnimationSet& aAnimationSet)
-  {
+void PendingAnimationTracker::TriggerPendingAnimationsOnNextTick(
+    const TimeStamp& aReadyTime) {
+  auto triggerAnimationsAtReadyTime = [aReadyTime](
+                                          AnimationSet& aAnimationSet) {
     for (auto iter = aAnimationSet.Iter(); !iter.Done(); iter.Next()) {
       dom::Animation* animation = iter.Get()->GetKey();
       dom::AnimationTimeline* timeline = animation->GetTimeline();
@@ -86,14 +78,11 @@ PendingAnimationTracker::TriggerPendingAnimationsOnNextTick(const TimeStamp&
   triggerAnimationsAtReadyTime(mPlayPendingSet);
   triggerAnimationsAtReadyTime(mPausePendingSet);
 
-  mHasPlayPendingGeometricAnimations = mPlayPendingSet.Count()
-                                       ? CheckState::Indeterminate
-                                       : CheckState::Absent;
+  mHasPlayPendingGeometricAnimations =
+      mPlayPendingSet.Count() ? CheckState::Indeterminate : CheckState::Absent;
 }
 
-void
-PendingAnimationTracker::TriggerPendingAnimationsNow()
-{
+void PendingAnimationTracker::TriggerPendingAnimationsNow() {
   auto triggerAndClearAnimations = [](AnimationSet& aAnimationSet) {
     for (auto iter = aAnimationSet.Iter(); !iter.Done(); iter.Next()) {
       iter.Get()->GetKey()->TriggerNow();
@@ -107,58 +96,79 @@ PendingAnimationTracker::TriggerPendingAnimationsNow()
   mHasPlayPendingGeometricAnimations = CheckState::Absent;
 }
 
-void
-PendingAnimationTracker::MarkAnimationsThatMightNeedSynchronization()
-{
-  // We only ever set mHasPlayPendingGeometricAnimations to 'present' in
-  // HasPlayPendingGeometricAnimations(). So, if it is 'present' already,
-  // (i.e. before calling HasPlayPendingGeometricAnimations()) we can assume
-  // that this method has already been called for the current set of
-  // play-pending animations and it is not necessary to run again.
-  //
-  // We can't make the same assumption about 'absent', but if this method
-  // was already called and the result was 'absent', then this method is
-  // a no-op anyway so it's ok to run again.
-  //
-  // Note that *without* this optimization, starting animations would become
-  // O(n^2) in that case where each animation is on a different element and
-  // contains a compositor-animatable property since we would end up iterating
-  // over all animations in the play-pending set for each target element.
-  if (mHasPlayPendingGeometricAnimations == CheckState::Present) {
-    return;
-  }
-
-  if (!HasPlayPendingGeometricAnimations()) {
-    return;
-  }
-
-  for (auto iter = mPlayPendingSet.Iter(); !iter.Done(); iter.Next()) {
-    iter.Get()->GetKey()->NotifyGeometricAnimationsStartingThisFrame();
-  }
+static bool IsTransition(const dom::Animation& aAnimation) {
+  const dom::CSSTransition* transition = aAnimation.AsCSSTransition();
+  return transition && transition->IsTiedToMarkup();
 }
 
-bool
-PendingAnimationTracker::HasPlayPendingGeometricAnimations()
-{
+void PendingAnimationTracker::MarkAnimationsThatMightNeedSynchronization() {
+  // We only set mHasPlayPendingGeometricAnimations to "present" in this method
+  // and nowhere else. After setting the state to "present", if there is any
+  // change to the set of play-pending animations we will reset
+  // mHasPlayPendingGeometricAnimations to either "indeterminate" or "absent".
+  //
+  // As a result, if mHasPlayPendingGeometricAnimations is "present", we can
+  // assume that this method has already been called for the current set of
+  // play-pending animations and it is not necessary to run this method again.
+  //
+  // If mHasPlayPendingGeometricAnimations is "absent", then we can also skip
+  // the body of this method since there are no notifications to be sent.
+  //
+  // Therefore, the only case we need to be concerned about is the
+  // "indeterminate" case. For all other cases we can return early.
+  //
+  // Note that *without* this optimization, starting animations would become
+  // O(n^2) in the case where each animation is on a different element and
+  // contains a compositor-animatable property since we would end up iterating
+  // over all animations in the play-pending set for each target element.
   if (mHasPlayPendingGeometricAnimations != CheckState::Indeterminate) {
-    return mHasPlayPendingGeometricAnimations == CheckState::Present;
+    return;
   }
+
+  // We only synchronize CSS transitions with other CSS transitions (and we only
+  // synchronize non-transition animations with non-transition animations)
+  // since typically the author will not trigger both CSS animations and
+  // CSS transitions simultaneously and expect them to be synchronized.
+  //
+  // If we try to synchronize CSS transitions with non-transitions then for some
+  // content we will end up degrading performance by forcing animations to run
+  // on the main thread that really don't need to.
 
   mHasPlayPendingGeometricAnimations = CheckState::Absent;
   for (auto iter = mPlayPendingSet.ConstIter(); !iter.Done(); iter.Next()) {
     auto animation = iter.Get()->GetKey();
     if (animation->GetEffect() && animation->GetEffect()->AffectsGeometry()) {
-      mHasPlayPendingGeometricAnimations = CheckState::Present;
-      break;
+      mHasPlayPendingGeometricAnimations &= ~CheckState::Absent;
+      mHasPlayPendingGeometricAnimations |= IsTransition(*animation)
+                                                ? CheckState::TransitionsPresent
+                                                : CheckState::AnimationsPresent;
+
+      // If we have both transitions and animations we don't need to look any
+      // further.
+      if (mHasPlayPendingGeometricAnimations ==
+          (CheckState::TransitionsPresent | CheckState::AnimationsPresent)) {
+        break;
+      }
     }
   }
 
-  return mHasPlayPendingGeometricAnimations == CheckState::Present;
+  if (mHasPlayPendingGeometricAnimations == CheckState::Absent) {
+    return;
+  }
+
+  for (auto iter = mPlayPendingSet.Iter(); !iter.Done(); iter.Next()) {
+    auto animation = iter.Get()->GetKey();
+    bool isTransition = IsTransition(*animation);
+    if ((isTransition &&
+         mHasPlayPendingGeometricAnimations & CheckState::TransitionsPresent) ||
+        (!isTransition &&
+         mHasPlayPendingGeometricAnimations & CheckState::AnimationsPresent)) {
+      animation->NotifyGeometricAnimationsStartingThisFrame();
+    }
+  }
 }
 
-void
-PendingAnimationTracker::EnsurePaintIsScheduled()
-{
+void PendingAnimationTracker::EnsurePaintIsScheduled() {
   if (!mDocument) {
     return;
   }
@@ -173,7 +183,7 @@ PendingAnimationTracker::EnsurePaintIsScheduled()
     return;
   }
 
-  rootFrame->SchedulePaint();
+  rootFrame->SchedulePaintWithoutInvalidatingObservers();
 }
 
-} // namespace mozilla
+}  // namespace mozilla

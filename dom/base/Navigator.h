@@ -12,14 +12,11 @@
 #include "mozilla/dom/Fetch.h"
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/ErrorResult.h"
-#include "nsIDOMNavigator.h"
-#include "nsIMozNavigatorNetwork.h"
 #include "nsWrapperCache.h"
 #include "nsHashKeys.h"
 #include "nsInterfaceHashtable.h"
 #include "nsString.h"
 #include "nsTArray.h"
-#include "nsWeakPtr.h"
 #include "mozilla/dom/MediaKeySystemAccessManager.h"
 
 class nsPluginArray;
@@ -40,11 +37,10 @@ class WakeLock;
 class ArrayBufferOrArrayBufferViewOrBlobOrFormDataOrUSVStringOrURLSearchParams;
 class ServiceWorkerContainer;
 class DOMRequest;
-struct FlyWebPublishOptions;
-struct FlyWebFilter;
-class WebAuthentication;
-} // namespace dom
-} // namespace mozilla
+class CredentialsContainer;
+class Clipboard;
+}  // namespace dom
+}  // namespace mozilla
 
 //*****************************************************************************
 // Navigator: Script "navigator" object
@@ -57,11 +53,10 @@ class Permissions;
 
 namespace battery {
 class BatteryManager;
-} // namespace battery
+}  // namespace battery
 
 class Promise;
 
-class DesktopNotificationCenter;
 class MozIdleObserver;
 class Gamepad;
 class GamepadServiceTest;
@@ -69,47 +64,30 @@ class NavigatorUserMediaSuccessCallback;
 class NavigatorUserMediaErrorCallback;
 class MozGetUserMediaDevicesSuccessCallback;
 
+struct MIDIOptions;
+
 namespace network {
 class Connection;
-} // namespace network
+}  // namespace network
 
-class PowerManager;
 class Presentation;
 class LegacyMozTCPSocket;
 class VRDisplay;
 class VRServiceTest;
 class StorageManager;
+class MediaCapabilities;
 
-namespace time {
-class TimeManager;
-} // namespace time
-
-namespace system {
-#ifdef MOZ_AUDIO_CHANNEL_MANAGER
-class AudioChannelManager;
-#endif
-} // namespace system
-
-class Navigator final : public nsIDOMNavigator
-                      , public nsIMozNavigatorNetwork
-                      , public nsWrapperCache
-{
-public:
+class Navigator final : public nsISupports, public nsWrapperCache {
+ public:
   explicit Navigator(nsPIDOMWindowInner* aInnerWindow);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(Navigator,
-                                                         nsIDOMNavigator)
-  NS_DECL_NSIDOMNAVIGATOR
-  NS_DECL_NSIMOZNAVIGATORNETWORK
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(Navigator)
 
   static void Init();
 
   void Invalidate();
-  nsPIDOMWindowInner *GetWindow() const
-  {
-    return mWindow;
-  }
+  nsPIDOMWindowInner* GetWindow() const { return mWindow; }
 
   void RefreshMIMEArray();
 
@@ -118,15 +96,15 @@ public:
   /**
    * For use during document.write where our inner window changes.
    */
-  void SetWindow(nsPIDOMWindowInner *aInnerWindow);
+  void SetWindow(nsPIDOMWindowInner* aInnerWindow);
 
   /**
    * Called when the inner window navigates to a new page.
    */
   void OnNavigation();
 
-  // The XPCOM GetProduct is OK
-  // The XPCOM GetLanguage is OK
+  void GetProduct(nsAString& aProduct);
+  void GetLanguage(nsAString& aLanguage);
   void GetAppName(nsAString& aAppName, CallerType aCallerType) const;
   void GetAppVersion(nsAString& aAppName, CallerType aCallerType,
                      ErrorResult& aRv) const;
@@ -135,6 +113,9 @@ public:
   void GetUserAgent(nsAString& aUserAgent, CallerType aCallerType,
                     ErrorResult& aRv) const;
   bool OnLine();
+  void CheckProtocolHandlerAllowed(const nsAString& aScheme,
+                                   nsIURI* aHandlerURI, nsIURI* aDocumentURI,
+                                   ErrorResult& aRv);
   void RegisterProtocolHandler(const nsAString& aScheme, const nsAString& aURL,
                                const nsAString& aTitle, ErrorResult& aRv);
   void RegisterContentHandler(const nsAString& aMIMEType, const nsAString& aURL,
@@ -142,13 +123,10 @@ public:
   nsMimeTypeArray* GetMimeTypes(ErrorResult& aRv);
   nsPluginArray* GetPlugins(ErrorResult& aRv);
   Permissions* GetPermissions(ErrorResult& aRv);
-  // The XPCOM GetDoNotTrack is ok
+  void GetDoNotTrack(nsAString& aResult);
   Geolocation* GetGeolocation(ErrorResult& aRv);
   Promise* GetBattery(ErrorResult& aRv);
 
-  already_AddRefed<Promise> PublishServer(const nsAString& aName,
-                                          const FlyWebPublishOptions& aOptions,
-                                          ErrorResult& aRv);
   static void AppName(nsAString& aAppName, bool aUsePrefOverriddenValue);
 
   static nsresult GetPlatform(nsAString& aPlatform,
@@ -158,166 +136,133 @@ public:
                                 bool aUsePrefOverriddenValue);
 
   static nsresult GetUserAgent(nsPIDOMWindowInner* aWindow,
-                               nsIURI* aURI,
-                               bool aIsCallerChrome,
-                               nsAString& aUserAgent);
+                               bool aIsCallerChrome, nsAString& aUserAgent);
 
   // Clears the user agent cache by calling:
-  // NavigatorBinding::ClearCachedUserAgentValue(this);
+  // Navigator_Binding::ClearCachedUserAgentValue(this);
   void ClearUserAgentCache();
 
   bool Vibrate(uint32_t aDuration);
   bool Vibrate(const nsTArray<uint32_t>& aDuration);
   void SetVibrationPermission(bool aPermitted, bool aPersistent);
-  uint32_t MaxTouchPoints();
-  void GetAppCodeName(nsString& aAppCodeName, ErrorResult& aRv)
-  {
-    aRv = GetAppCodeName(aAppCodeName);
-  }
+  uint32_t MaxTouchPoints(CallerType aCallerType);
+  void GetAppCodeName(nsAString& aAppCodeName, ErrorResult& aRv);
   void GetOscpu(nsAString& aOscpu, CallerType aCallerType,
                 ErrorResult& aRv) const;
-  // The XPCOM GetVendor is OK
-  // The XPCOM GetVendorSub is OK
-  // The XPCOM GetProductSub is OK
+  void GetVendorSub(nsAString& aVendorSub);
+  void GetVendor(nsAString& aVendor);
+  void GetProductSub(nsAString& aProductSub);
   bool CookieEnabled();
   void GetBuildID(nsAString& aBuildID, CallerType aCallerType,
                   ErrorResult& aRv) const;
-  PowerManager* GetMozPower(ErrorResult& aRv);
-  bool JavaEnabled(CallerType aCallerType, ErrorResult& aRv);
+  bool JavaEnabled() { return false; }
   uint64_t HardwareConcurrency();
-  bool CpuHasSSE2();
-  bool TaintEnabled()
-  {
-    return false;
-  }
+  bool TaintEnabled() { return false; }
   void AddIdleObserver(MozIdleObserver& aObserver, ErrorResult& aRv);
   void RemoveIdleObserver(MozIdleObserver& aObserver, ErrorResult& aRv);
-  already_AddRefed<WakeLock> RequestWakeLock(const nsAString &aTopic,
-                                             ErrorResult& aRv);
 
-  DesktopNotificationCenter* GetMozNotification(ErrorResult& aRv);
   already_AddRefed<LegacyMozTCPSocket> MozTCPSocket();
   network::Connection* GetConnection(ErrorResult& aRv);
   MediaDevices* GetMediaDevices(ErrorResult& aRv);
 
-  void GetGamepads(nsTArray<RefPtr<Gamepad> >& aGamepads, ErrorResult& aRv);
+  void GetGamepads(nsTArray<RefPtr<Gamepad>>& aGamepads, ErrorResult& aRv);
   GamepadServiceTest* RequestGamepadServiceTest();
   already_AddRefed<Promise> GetVRDisplays(ErrorResult& aRv);
   void GetActiveVRDisplays(nsTArray<RefPtr<VRDisplay>>& aDisplays) const;
   VRServiceTest* RequestVRServiceTest();
-#ifdef MOZ_TIME_MANAGER
-  time::TimeManager* GetMozTime(ErrorResult& aRv);
-#endif // MOZ_TIME_MANAGER
-#ifdef MOZ_AUDIO_CHANNEL_MANAGER
-  system::AudioChannelManager* GetMozAudioChannelManager(ErrorResult& aRv);
-#endif // MOZ_AUDIO_CHANNEL_MANAGER
+  bool IsWebVRContentDetected() const;
+  bool IsWebVRContentPresenting() const;
+  void RequestVRPresentation(VRDisplay& aDisplay);
+  already_AddRefed<Promise> RequestMIDIAccess(const MIDIOptions& aOptions,
+                                              ErrorResult& aRv);
 
   Presentation* GetPresentation(ErrorResult& aRv);
 
-  bool SendBeacon(const nsAString& aUrl,
-                  const Nullable<fetch::BodyInit>& aData,
+  bool SendBeacon(const nsAString& aUrl, const Nullable<fetch::BodyInit>& aData,
                   ErrorResult& aRv);
 
   void MozGetUserMedia(const MediaStreamConstraints& aConstraints,
                        NavigatorUserMediaSuccessCallback& aOnSuccess,
                        NavigatorUserMediaErrorCallback& aOnError,
-                       CallerType aCallerType,
-                       ErrorResult& aRv);
+                       CallerType aCallerType, ErrorResult& aRv);
   void MozGetUserMediaDevices(const MediaStreamConstraints& aConstraints,
                               MozGetUserMediaDevicesSuccessCallback& aOnSuccess,
                               NavigatorUserMediaErrorCallback& aOnError,
-                              uint64_t aInnerWindowID,
-                              const nsAString& aCallID,
+                              uint64_t aInnerWindowID, const nsAString& aCallID,
                               ErrorResult& aRv);
 
   already_AddRefed<ServiceWorkerContainer> ServiceWorker();
 
-  mozilla::dom::WebAuthentication* Authentication();
+  mozilla::dom::CredentialsContainer* Credentials();
+  dom::Clipboard* Clipboard();
+
+  static bool Webdriver();
 
   void GetLanguages(nsTArray<nsString>& aLanguages);
-
-  bool MozE10sEnabled();
 
   StorageManager* Storage();
 
   static void GetAcceptLanguages(nsTArray<nsString>& aLanguages);
 
+  dom::MediaCapabilities* MediaCapabilities();
+
   // WebIDL helper methods
-  static bool HasWakeLockSupport(JSContext* /* unused*/, JSObject* /*unused */);
-  static bool HasWifiManagerSupport(JSContext* /* unused */,
-                                  JSObject* aGlobal);
   static bool HasUserMediaSupport(JSContext* /* unused */,
                                   JSObject* /* unused */);
 
-  static bool IsE10sEnabled(JSContext* aCx, JSObject* aGlobal);
+  nsPIDOMWindowInner* GetParentObject() const { return GetWindow(); }
 
-  nsPIDOMWindowInner* GetParentObject() const
-  {
-    return GetWindow();
-  }
-
-  virtual JSObject* WrapObject(JSContext* cx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapObject(JSContext* cx,
+                               JS::Handle<JSObject*> aGivenProto) override;
 
   // GetWindowFromGlobal returns the inner window for this global, if
   // any, else null.
-  static already_AddRefed<nsPIDOMWindowInner> GetWindowFromGlobal(JSObject* aGlobal);
+  static already_AddRefed<nsPIDOMWindowInner> GetWindowFromGlobal(
+      JSObject* aGlobal);
 
-  already_AddRefed<Promise>
-  RequestMediaKeySystemAccess(const nsAString& aKeySystem,
-                              const Sequence<MediaKeySystemConfiguration>& aConfig,
-                              ErrorResult& aRv);
-private:
+  already_AddRefed<Promise> RequestMediaKeySystemAccess(
+      const nsAString& aKeySystem,
+      const Sequence<MediaKeySystemConfiguration>& aConfig, ErrorResult& aRv);
+
+ private:
   RefPtr<MediaKeySystemAccessManager> mMediaKeySystemAccessManager;
 
-public:
+ public:
   void NotifyVRDisplaysUpdated();
   void NotifyActiveVRDisplaysChanged();
 
-private:
+ private:
   virtual ~Navigator();
-
-  bool CheckPermission(const char* type);
-  static bool CheckPermission(nsPIDOMWindowInner* aWindow, const char* aType);
 
   // This enum helps SendBeaconInternal to apply different behaviors to body
   // types.
-  enum BeaconType {
-    eBeaconTypeBlob,
-    eBeaconTypeArrayBuffer,
-    eBeaconTypeOther
-  };
+  enum BeaconType { eBeaconTypeBlob, eBeaconTypeArrayBuffer, eBeaconTypeOther };
 
-  bool SendBeaconInternal(const nsAString& aUrl,
-                          BodyExtractorBase* aBody,
-                          BeaconType aType,
-                          ErrorResult& aRv);
+  bool SendBeaconInternal(const nsAString& aUrl, BodyExtractorBase* aBody,
+                          BeaconType aType, ErrorResult& aRv);
 
   RefPtr<nsMimeTypeArray> mMimeTypes;
   RefPtr<nsPluginArray> mPlugins;
   RefPtr<Permissions> mPermissions;
   RefPtr<Geolocation> mGeolocation;
-  RefPtr<DesktopNotificationCenter> mNotification;
   RefPtr<battery::BatteryManager> mBatteryManager;
   RefPtr<Promise> mBatteryPromise;
-  RefPtr<PowerManager> mPowerManager;
   RefPtr<network::Connection> mConnection;
-  RefPtr<WebAuthentication> mAuthentication;
-#ifdef MOZ_AUDIO_CHANNEL_MANAGER
-  RefPtr<system::AudioChannelManager> mAudioChannelManager;
-#endif
+  RefPtr<CredentialsContainer> mCredentials;
+  RefPtr<dom::Clipboard> mClipboard;
   RefPtr<MediaDevices> mMediaDevices;
-  RefPtr<time::TimeManager> mTimeManager;
   RefPtr<ServiceWorkerContainer> mServiceWorkerContainer;
   nsCOMPtr<nsPIDOMWindowInner> mWindow;
   RefPtr<Presentation> mPresentation;
   RefPtr<GamepadServiceTest> mGamepadServiceTest;
-  nsTArray<RefPtr<Promise> > mVRGetDisplaysPromises;
+  nsTArray<RefPtr<Promise>> mVRGetDisplaysPromises;
   RefPtr<VRServiceTest> mVRServiceTest;
   nsTArray<uint32_t> mRequestedVibrationPattern;
   RefPtr<StorageManager> mStorageManager;
+  RefPtr<dom::MediaCapabilities> mMediaCapabilities;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_Navigator_h
+#endif  // mozilla_dom_Navigator_h

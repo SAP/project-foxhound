@@ -34,7 +34,7 @@ html, body, #app, #memory-tool {
   --sidebar-width: 185px;
   /**
    * If --heap-tree-row-height changes, be sure to change HEAP_TREE_ROW_HEIGHT
-   * in `devtools/client/memory/components/heap.js`.
+   * in `devtools/client/memory/components/Heap.js`.
    */
   --heap-tree-row-height: 18px;
   --heap-tree-header-height: 18px;
@@ -209,18 +209,24 @@ html, body, #app, #memory-tool {
 
 .snapshot-list-item .delete {
   cursor: pointer;
+  background-color: transparent;
+  border: 0;
+  padding: 0;
   position: relative;
   min-height: 1em;
   min-width: 1.3em;
-}
-
-.snapshot-list-item.selected .delete::before {
-  filter: invert(1);
+  color: currentColor;
 }
 
 .snapshot-list-item .delete::before {
+  display: block;
+  width: 16px;
+  height: 16px;
+  content: "";
   background-image: url("chrome://devtools/skin/images/close.svg");
-  background-position: 0.2em 0;
+  background-repeat: no-repeat;
+  -moz-context-properties: fill;
+  fill: currentColor;
 }
 
 .snapshot-list-item > .snapshot-title {
@@ -483,10 +489,6 @@ html, body, #app, #memory-tool {
   vertical-align: middle;
 }
 
-.heap-tree-item-name .frame-link {
-  display: inline-block;
-}
-
 /**
  * Heap tree view subcolumns
  */
@@ -555,20 +557,16 @@ html, body, #app, #memory-tool {
 .error::before {
   content: "";
   display: inline-block;
+  vertical-align: -2px;
   width: 12px;
   height: 12px;
   max-height: 12px;
-  background-image: url(chrome://devtools/skin/images/webconsole.svg);
-  background-size: 72px 60px;
-  background-position: -24px -24px;
-  background-repeat: no-repeat;
-  margin: 0px;
-  margin-top: 2px;
   margin-inline-end: 5px;
-}
-
-.theme-light .error::before {
-  background-image: url(chrome://devtools/skin/images/webconsole.svg#light-icons);
+  background-image: url(chrome://devtools/skin/images/alert.svg);
+  background-repeat: no-repeat;
+  background-size: contain;
+  -moz-context-properties: fill;
+  fill: var(--yellow-60);
 }
 
 /**
@@ -601,7 +599,7 @@ html, body, #app, #memory-tool {
 
 svg {
   --arrow-color: var(--theme-splitter-color);
-  --text-color: var(--theme-body-color-alt);
+  --text-color: var(--theme-body-color);
 }
 
 .theme-dark svg {

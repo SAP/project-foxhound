@@ -9,36 +9,75 @@
  *
  */
 
-#include "webrtc/modules/video_coding/codecs/h264/include/h264.h"
+#include "modules/video_coding/codecs/h264/include/h264.h"
 
-#if defined(WEBRTC_IOS)
-#include "webrtc/modules/video_coding/codecs/h264/h264_video_toolbox_decoder.h"
-#include "webrtc/modules/video_coding/codecs/h264/h264_video_toolbox_encoder.h"
+#include "api/video_codecs/sdp_video_format.h"
+#include "media/base/h264_profile_level_id.h"
+
+#if defined(WEBRTC_USE_H264)
+#include "modules/video_coding/codecs/h264/h264_decoder_impl.h"
+#include "modules/video_coding/codecs/h264/h264_encoder_impl.h"
 #endif
 
-#include "webrtc/base/checks.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/ptr_util.h"
 
 namespace webrtc {
 
-// We need this file to be C++ only so it will compile properly for all
-// platforms. In order to write ObjC specific implementations we use private
-// externs. This function is defined in h264.mm.
-#if defined(WEBRTC_IOS)
-extern bool IsH264CodecSupportedObjC();
+namespace {
+
+#if defined(WEBRTC_USE_H264)
+bool g_rtc_use_h264 = true;
 #endif
 
+// If H.264 OpenH264/FFmpeg codec is supported.
 bool IsH264CodecSupported() {
-#if defined(WEBRTC_IOS)
-  return IsH264CodecSupportedObjC();
+#if defined(WEBRTC_USE_H264)
+  return g_rtc_use_h264;
 #else
   return false;
 #endif
 }
 
-H264Encoder* H264Encoder::Create() {
+SdpVideoFormat CreateH264Format(H264::Profile profile, H264::Level level) {
+  const rtc::Optional<std::string> profile_string =
+      H264::ProfileLevelIdToString(H264::ProfileLevelId(profile, level));
+  RTC_CHECK(profile_string);
+  return SdpVideoFormat(cricket::kH264CodecName,
+                        {{cricket::kH264FmtpProfileLevelId, *profile_string},
+                         {cricket::kH264FmtpLevelAsymmetryAllowed, "1"},
+                         {cricket::kH264FmtpPacketizationMode, "1"}});
+}
+
+}  // namespace
+
+void DisableRtcUseH264() {
+#if defined(WEBRTC_USE_H264)
+  g_rtc_use_h264 = false;
+#endif
+}
+
+std::vector<SdpVideoFormat> SupportedH264Codecs() {
+  if (!IsH264CodecSupported())
+    return std::vector<SdpVideoFormat>();
+  // We only support encoding Constrained Baseline Profile (CBP), but the
+  // decoder supports more profiles. We can list all profiles here that are
+  // supported by the decoder and that are also supersets of CBP, i.e. the
+  // decoder for that profile is required to be able to decode CBP. This means
+  // we can encode and send CBP even though we negotiated a potentially
+  // higher profile. See the H264 spec for more information.
+  return {CreateH264Format(H264::kProfileBaseline, H264::kLevel3_1),
+          CreateH264Format(H264::kProfileConstrainedBaseline, H264::kLevel3_1)};
+}
+
+std::unique_ptr<H264Encoder> H264Encoder::Create(
+    const cricket::VideoCodec& codec) {
   RTC_DCHECK(H264Encoder::IsSupported());
-#if defined(WEBRTC_IOS) && defined(WEBRTC_VIDEO_TOOLBOX_SUPPORTED)
-  return new H264VideoToolboxEncoder();
+#if defined(WEBRTC_USE_H264)
+  RTC_CHECK(g_rtc_use_h264);
+  RTC_LOG(LS_INFO) << "Creating H264EncoderImpl.";
+  return rtc::MakeUnique<H264EncoderImpl>(codec);
 #else
   RTC_NOTREACHED();
   return nullptr;
@@ -49,10 +88,12 @@ bool H264Encoder::IsSupported() {
   return IsH264CodecSupported();
 }
 
-H264Decoder* H264Decoder::Create() {
+std::unique_ptr<H264Decoder> H264Decoder::Create() {
   RTC_DCHECK(H264Decoder::IsSupported());
-#if defined(WEBRTC_IOS) && defined(WEBRTC_VIDEO_TOOLBOX_SUPPORTED)
-  return new H264VideoToolboxDecoder();
+#if defined(WEBRTC_USE_H264)
+  RTC_CHECK(g_rtc_use_h264);
+  RTC_LOG(LS_INFO) << "Creating H264DecoderImpl.";
+  return rtc::MakeUnique<H264DecoderImpl>();
 #else
   RTC_NOTREACHED();
   return nullptr;

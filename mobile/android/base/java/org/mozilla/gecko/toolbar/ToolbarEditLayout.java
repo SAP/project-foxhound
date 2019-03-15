@@ -10,7 +10,6 @@ import android.content.Intent;
 import android.graphics.drawable.Drawable;
 import android.speech.RecognizerIntent;
 import android.widget.Button;
-import android.widget.ImageButton;
 import org.mozilla.gecko.ActivityHandlerHelper;
 import org.mozilla.gecko.GeckoAppShell;
 import org.mozilla.gecko.GeckoSharedPrefs;
@@ -25,10 +24,13 @@ import org.mozilla.gecko.toolbar.BrowserToolbar.OnDismissListener;
 import org.mozilla.gecko.toolbar.BrowserToolbar.OnFilterListener;
 import org.mozilla.gecko.toolbar.BrowserToolbar.TabEditingState;
 import org.mozilla.gecko.util.ActivityResultHandler;
+import org.mozilla.gecko.util.ActivityUtils;
 import org.mozilla.gecko.util.DrawableUtil;
 import org.mozilla.gecko.util.HardwareUtils;
-import org.mozilla.gecko.util.StringUtils;
 import org.mozilla.gecko.util.InputOptionsUtils;
+import org.mozilla.gecko.util.StringUtils;
+import org.mozilla.gecko.util.ThreadUtils;
+import org.mozilla.gecko.widget.themed.ThemedImageButton;
 import org.mozilla.gecko.widget.themed.ThemedLinearLayout;
 
 import android.content.Context;
@@ -36,7 +38,6 @@ import android.util.AttributeSet;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
-import android.widget.ImageView;
 
 import java.util.List;
 
@@ -52,12 +53,12 @@ public class ToolbarEditLayout extends ThemedLinearLayout {
         public void onSearchStateChange(boolean isActive);
     }
 
-    private final ImageView mSearchIcon;
-
     private final ToolbarEditText mEditText;
+    private final ThemedLinearLayout mThemeBackground;
 
-    private final ImageButton mVoiceInput;
-    private final ImageButton mQrCode;
+    private final ThemedImageButton mSearchIcon;
+    private final ThemedImageButton mVoiceInput;
+    private final ThemedImageButton mQrCode;
 
     private OnFocusChangeListener mFocusChangeListener;
 
@@ -69,12 +70,13 @@ public class ToolbarEditLayout extends ThemedLinearLayout {
         setOrientation(HORIZONTAL);
 
         LayoutInflater.from(context).inflate(R.layout.toolbar_edit_layout, this);
-        mSearchIcon = (ImageView) findViewById(R.id.search_icon);
 
         mEditText = (ToolbarEditText) findViewById(R.id.url_edit_text);
+        mThemeBackground = (ThemedLinearLayout) findViewById(R.id.url_bar_title_bg);
 
-        mVoiceInput = (ImageButton) findViewById(R.id.mic);
-        mQrCode = (ImageButton) findViewById(R.id.qrcode);
+        mSearchIcon = (ThemedImageButton) findViewById(R.id.search_icon);
+        mVoiceInput = (ThemedImageButton) findViewById(R.id.mic);
+        mQrCode = (ThemedImageButton) findViewById(R.id.qrcode);
     }
 
     @Override
@@ -177,6 +179,10 @@ public class ToolbarEditLayout extends ThemedLinearLayout {
     public void setPrivateMode(boolean isPrivate) {
         super.setPrivateMode(isPrivate);
         mEditText.setPrivateMode(isPrivate);
+        mThemeBackground.setPrivateMode(isPrivate);
+        mSearchIcon.setPrivateMode(isPrivate);
+        mVoiceInput.setPrivateMode(isPrivate);
+        mQrCode.setPrivateMode(isPrivate);
     }
 
     /**
@@ -186,8 +192,7 @@ public class ToolbarEditLayout extends ThemedLinearLayout {
         if (showKeyboardOnFocus) {
             showKeyboardOnFocus = false;
 
-            Activity activity = GeckoAppShell.getGeckoInterface().getActivity();
-            activity.runOnUiThread(new Runnable() {
+            ThreadUtils.postToUiThread(new Runnable() {
                 public void run() {
                     mEditText.requestFocus();
                     showSoftInput();
@@ -289,7 +294,7 @@ public class ToolbarEditLayout extends ThemedLinearLayout {
         Telemetry.sendUIEvent(TelemetryContract.Event.ACTION, TelemetryContract.Method.ACTIONBAR, "voice_input_launch");
         final Intent intent = InputOptionsUtils.createVoiceRecognizerIntent(getResources().getString(R.string.voicesearch_prompt));
 
-        Activity activity = GeckoAppShell.getGeckoInterface().getActivity();
+        final Activity activity = ActivityUtils.getActivityFromContext(getContext());
         ActivityHandlerHelper.startIntentForActivity(activity, intent, new ActivityResultHandler() {
             @Override
             public void onActivityResult(int resultCode, Intent data) {
@@ -326,7 +331,7 @@ public class ToolbarEditLayout extends ThemedLinearLayout {
         Telemetry.sendUIEvent(TelemetryContract.Event.ACTION, TelemetryContract.Method.ACTIONBAR, "qrcode_input_launch");
         final Intent intent = InputOptionsUtils.createQRCodeReaderIntent();
 
-        Activity activity = GeckoAppShell.getGeckoInterface().getActivity();
+        final Activity activity = ActivityUtils.getActivityFromContext(getContext());
         ActivityHandlerHelper.startIntentForActivity(activity, intent, new ActivityResultHandler() {
             @Override
             public void onActivityResult(int resultCode, Intent intent) {

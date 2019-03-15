@@ -11,73 +11,116 @@
                 "inherit": false,
                 "readonly": false,
                 "idlType": {
-                    "sequence": false,
+                    "type": "attribute-type",
                     "generic": null,
                     "nullable": false,
-                    "array": false,
                     "union": true,
                     "idlType": [
                         {
-                            "sequence": false,
+                            "type": null,
                             "generic": null,
                             "nullable": false,
-                            "array": false,
                             "union": false,
-                            "idlType": "float"
+                            "idlType": "float",
+                            "extAttrs": []
                         },
                         {
-                            "sequence": false,
+                            "type": null,
                             "generic": null,
                             "nullable": false,
-                            "array": false,
                             "union": true,
                             "idlType": [
                                 {
-                                    "sequence": false,
+                                    "type": null,
                                     "generic": null,
                                     "nullable": false,
-                                    "array": false,
                                     "union": false,
-                                    "idlType": "Date"
+                                    "idlType": "Date",
+                                    "extAttrs": []
                                 },
                                 {
-                                    "sequence": false,
+                                    "type": null,
                                     "generic": null,
                                     "nullable": false,
-                                    "array": false,
                                     "union": false,
-                                    "idlType": "Event"
+                                    "idlType": "Event",
+                                    "extAttrs": []
                                 }
-                            ]
+                            ],
+                            "extAttrs": []
                         },
                         {
-                            "sequence": false,
+                            "type": null,
                             "generic": null,
                             "nullable": true,
-                            "array": false,
                             "union": true,
                             "idlType": [
                                 {
-                                    "sequence": false,
+                                    "type": null,
                                     "generic": null,
                                     "nullable": false,
-                                    "array": false,
                                     "union": false,
-                                    "idlType": "Node"
+                                    "idlType": "Node",
+                                    "extAttrs": []
                                 },
                                 {
-                                    "sequence": false,
+                                    "type": null,
                                     "generic": null,
                                     "nullable": false,
-                                    "array": false,
                                     "union": false,
-                                    "idlType": "DOMString"
+                                    "idlType": "DOMString",
+                                    "extAttrs": []
                                 }
-                            ]
+                            ],
+                            "extAttrs": []
                         }
-                    ]
+                    ],
+                    "extAttrs": []
                 },
                 "name": "test",
+                "escapedName": "test",
+                "extAttrs": []
+            },
+            {
+                "type": "attribute",
+                "static": false,
+                "stringifier": false,
+                "inherit": false,
+                "readonly": false,
+                "idlType": {
+                    "type": "attribute-type",
+                    "generic": null,
+                    "nullable": false,
+                    "union": true,
+                    "idlType": [
+                        {
+                            "type": null,
+                            "generic": null,
+                            "nullable": false,
+                            "union": false,
+                            "idlType": "long",
+                            "extAttrs": [
+                                {
+                                    "name": "EnforceRange",
+                                    "arguments": null,
+                                    "type": "extended-attribute",
+                                    "rhs": null
+                                }
+                            ]
+                        },
+                        {
+                            "type": null,
+                            "generic": null,
+                            "nullable": false,
+                            "union": false,
+                            "idlType": "Date",
+                            "extAttrs": []
+                        }
+                    ],
+                    "extAttrs": []
+                },
+                "name": "test2",
+                "escapedName": "test2",
                 "extAttrs": []
             }
         ],

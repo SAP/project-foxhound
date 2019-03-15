@@ -10,6 +10,20 @@
  * for more information.
  */
 
+/* defined by the harness */
+/* globals _HEAD_FILES, _HEAD_JS_PATH, _JSDEBUGGER_PORT, _JSCOV_DIR,
+    _MOZINFO_JS_PATH, _TEST_FILE, _TEST_NAME, _TESTING_MODULES_DIR:true,
+    _PREFS_FILE */
+
+/* defined by XPCShellImpl.cpp */
+/* globals load, sendCommand */
+
+/* must be defined by tests using do_await_remote_message/do_send_remote_message */
+/* globals Cc, Ci */
+
+/* may be defined in test files */
+/* globals run_test */
+
 var _quit = false;
 var _passed = true;
 var _tests_pending = 0;
@@ -17,17 +31,23 @@ var _cleanupFunctions = [];
 var _pendingTimers = [];
 var _profileInitialized = false;
 
+// Assigned in do_load_child_test_harness.
+var _XPCSHELL_PROCESS;
+
 // Register the testing-common resource protocol early, to have access to its
 // modules.
+var _Services = ChromeUtils.import("resource://gre/modules/Services.jsm", null).Services;
 _register_modules_protocol_handler();
 
-var _Promise = Components.utils.import("resource://gre/modules/Promise.jsm", {}).Promise;
-var _PromiseTestUtils = Components.utils.import("resource://testing-common/PromiseTestUtils.jsm", {}).PromiseTestUtils;
-var _Task = Components.utils.import("resource://gre/modules/Task.jsm", {}).Task;
-Components.utils.importGlobalProperties(["XMLHttpRequest"]);
+var _PromiseTestUtils = ChromeUtils.import("resource://testing-common/PromiseTestUtils.jsm", null).PromiseTestUtils;
+var _Task = ChromeUtils.import("resource://testing-common/Task.jsm", null).Task;
+
+let _NetUtil = ChromeUtils.import("resource://gre/modules/NetUtil.jsm", null).NetUtil;
+
+let _XPCOMUtils = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", null).XPCOMUtils;
 
 // Support a common assertion library, Assert.jsm.
-var AssertCls = Components.utils.import("resource://testing-common/Assert.jsm", null).Assert;
+var AssertCls = ChromeUtils.import("resource://testing-common/Assert.jsm", null).Assert;
 // Pass a custom report function for xpcshell-test style reporting.
 var Assert = new AssertCls(function(err, message, stack) {
   if (err) {
@@ -35,66 +55,63 @@ var Assert = new AssertCls(function(err, message, stack) {
   } else {
     do_report_result(true, message, stack);
   }
-});
+}, true);
 
+// Bug 1506134 for followup.  Some xpcshell tests use ContentTask.jsm, which
+// expects browser-test.js to have set a testScope that includes record.
+function record(condition, name, diag, stack) {
+  do_report_result(condition, name, stack);
+}
 
-var _add_params = function (params) {
+var _add_params = function(params) {
   if (typeof _XPCSHELL_PROCESS != "undefined") {
     params.xpcshell_process = _XPCSHELL_PROCESS;
   }
 };
 
-var _dumpLog = function (raw_msg) {
+var _dumpLog = function(raw_msg) {
   dump("\n" + JSON.stringify(raw_msg) + "\n");
-}
+};
 
-var _LoggerClass = Components.utils.import("resource://testing-common/StructuredLog.jsm", null).StructuredLogger;
+var _LoggerClass = ChromeUtils.import("resource://testing-common/StructuredLog.jsm", null).StructuredLogger;
 var _testLogger = new _LoggerClass("xpcshell/head.js", _dumpLog, [_add_params]);
 
 // Disable automatic network detection, so tests work correctly when
 // not connected to a network.
-{
-  let ios = Components.classes["@mozilla.org/network/io-service;1"]
-                      .getService(Components.interfaces.nsIIOService2);
-  ios.manageOfflineStatus = false;
-  ios.offline = false;
-}
+_Services.io.manageOfflineStatus = false;
+_Services.io.offline = false;
 
 // Determine if we're running on parent or child
 var runningInParent = true;
 try {
-  runningInParent = Components.classes["@mozilla.org/xre/runtime;1"].
-                    getService(Components.interfaces.nsIXULRuntime).processType
-                    == Components.interfaces.nsIXULRuntime.PROCESS_TYPE_DEFAULT;
-}
-catch (e) { }
+  // Don't use Services.appinfo here as it disables replacing appinfo with stubs
+  // for test usage.
+  // eslint-disable-next-line mozilla/use-services
+  runningInParent = Cc["@mozilla.org/xre/runtime;1"].
+                      getService(Ci.nsIXULRuntime).processType
+                      == Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT;
+} catch (e) { }
 
 // Only if building of places is enabled.
 if (runningInParent &&
-    "mozIAsyncHistory" in Components.interfaces) {
+    "mozIAsyncHistory" in Ci) {
   // Ensure places history is enabled for xpcshell-tests as some non-FF
   // apps disable it.
-  let prefs = Components.classes["@mozilla.org/preferences-service;1"]
-              .getService(Components.interfaces.nsIPrefBranch);
-  prefs.setBoolPref("places.history.enabled", true);
+  _Services.prefs.setBoolPref("places.history.enabled", true);
 }
 
 try {
   if (runningInParent) {
-    let prefs = Components.classes["@mozilla.org/preferences-service;1"]
-                .getService(Components.interfaces.nsIPrefBranch);
-
     // disable necko IPC security checks for xpcshell, as they lack the
     // docshells needed to pass them
-    prefs.setBoolPref("network.disable.ipc.security", true);
+    _Services.prefs.setBoolPref("network.disable.ipc.security", true);
 
     // Disable IPv6 lookups for 'localhost' on windows.
-    if ("@mozilla.org/windows-registry-key;1" in Components.classes) {
-      prefs.setCharPref("network.dns.ipv4OnlyDomains", "localhost");
+    if ("@mozilla.org/windows-registry-key;1" in Cc) {
+      _Services.prefs.setCharPref("network.dns.ipv4OnlyDomains", "localhost");
     }
   }
-}
-catch (e) { }
+} catch (e) { }
 
 // Configure crash reporting, if possible
 // We rely on the Python harness to set MOZ_CRASHREPORTER,
@@ -103,40 +120,40 @@ catch (e) { }
 // crashreporter component.
 try {
   if (runningInParent &&
-      "@mozilla.org/toolkit/crash-reporter;1" in Components.classes) {
+      "@mozilla.org/toolkit/crash-reporter;1" in Cc) {
     let crashReporter =
-          Components.classes["@mozilla.org/toolkit/crash-reporter;1"]
-          .getService(Components.interfaces.nsICrashReporter);
+          Cc["@mozilla.org/toolkit/crash-reporter;1"]
+          .getService(Ci.nsICrashReporter);
     crashReporter.UpdateCrashEventsDir();
     crashReporter.minidumpPath = do_get_minidumpdir();
   }
+} catch (e) { }
+
+if (runningInParent) {
+  _Services.prefs.setBoolPref("dom.push.connection.enabled", false);
 }
-catch (e) { }
 
 // Configure a console listener so messages sent to it are logged as part
 // of the test.
 try {
-  let levelNames = {}
+  let levelNames = {};
   for (let level of ["debug", "info", "warn", "error"]) {
-    levelNames[Components.interfaces.nsIConsoleMessage[level]] = level;
+    levelNames[Ci.nsIConsoleMessage[level]] = level;
   }
 
   let listener = {
-    QueryInterface : function(iid) {
-      if (!iid.equals(Components.interfaces.nsISupports) &&
-          !iid.equals(Components.interfaces.nsIConsoleListener)) {
-        throw Components.results.NS_NOINTERFACE;
-      }
-      return this;
+    QueryInterface: ChromeUtils.generateQI(["nsIConsoleListener"]),
+    observe(msg) {
+      if (typeof info === "function")
+        info("CONSOLE_MESSAGE: (" + levelNames[msg.logLevel] + ") " + msg.toString());
     },
-    observe : function (msg) {
-      if (typeof do_print === "function")
-        do_print("CONSOLE_MESSAGE: (" + levelNames[msg.logLevel] + ") " + msg.toString());
-    }
   };
-  Components.classes["@mozilla.org/consoleservice;1"]
-            .getService(Components.interfaces.nsIConsoleService)
-            .registerListener(listener);
+  // Don't use _Services.console here as it causes one of the devtools tests
+  // to fail, probably due to initializing Services.console too early.
+  // eslint-disable-next-line mozilla/use-services
+  Cc["@mozilla.org/consoleservice;1"]
+    .getService(Ci.nsIConsoleService)
+    .registerListener(listener);
 } catch (e) {}
 /**
  * Date.now() is not necessarily monotonically increasing (insert sob story
@@ -158,23 +175,17 @@ function _Timer(func, delay) {
   this._start = Date.now();
   this._delay = delay;
 
-  var timer = Components.classes["@mozilla.org/timer;1"]
-                        .createInstance(Components.interfaces.nsITimer);
+  var timer = Cc["@mozilla.org/timer;1"]
+                .createInstance(Ci.nsITimer);
   timer.initWithCallback(this, delay + _timerFuzz, timer.TYPE_ONE_SHOT);
 
   // Keep timer alive until it fires
   _pendingTimers.push(timer);
 }
 _Timer.prototype = {
-  QueryInterface: function(iid) {
-    if (iid.equals(Components.interfaces.nsITimerCallback) ||
-        iid.equals(Components.interfaces.nsISupports))
-      return this;
+  QueryInterface: ChromeUtils.generateQI(["nsITimerCallback"]),
 
-    throw Components.results.NS_ERROR_NO_INTERFACE;
-  },
-
-  notify: function(timer) {
+  notify(timer) {
     _pendingTimers.splice(_pendingTimers.indexOf(timer), 1);
 
     // The current nsITimer implementation can undershoot, but even if it
@@ -195,8 +206,12 @@ _Timer.prototype = {
     // undershoots.
     var newDelay = this._delay - elapsed;
     do_timeout(newDelay, this._func);
-  }
+  },
 };
+
+function _isGenerator(val) {
+  return typeof val === "object" && val && typeof val.next === "function";
+}
 
 function _do_main() {
   if (_quit)
@@ -204,14 +219,11 @@ function _do_main() {
 
   _testLogger.info("running event loop");
 
-  var thr = Components.classes["@mozilla.org/thread-manager;1"]
-                      .getService().currentThread;
+  var tm = Cc["@mozilla.org/thread-manager;1"].getService();
 
-  while (!_quit)
-    thr.processNextEvent(true);
+  tm.spinEventLoopUntil(() => _quit);
 
-  while (thr.hasPendingEvents())
-    thr.processNextEvent(true);
+  tm.spinEventLoopUntilEmpty();
 }
 
 function _do_quit() {
@@ -233,20 +245,19 @@ var _fakeIdleService = {
   get registrar() {
     delete this.registrar;
     return this.registrar =
-      Components.manager.QueryInterface(Components.interfaces.nsIComponentRegistrar);
+      Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
   },
   contractID: "@mozilla.org/widget/idleservice;1",
   get CID() {
     return this.registrar.contractIDToCID(this.contractID);
   },
 
-  activate: function FIS_activate()
-  {
+  activate: function FIS_activate() {
     if (!this.originalFactory) {
       // Save original factory.
       this.originalFactory =
-        Components.manager.getClassObject(Components.classes[this.contractID],
-                                          Components.interfaces.nsIFactory);
+        Components.manager.getClassObject(Cc[this.contractID],
+                                          Ci.nsIFactory);
       // Unregister original factory.
       this.registrar.unregisterFactory(this.CID, this.originalFactory);
       // Replace with the mock.
@@ -256,8 +267,7 @@ var _fakeIdleService = {
     }
   },
 
-  deactivate: function FIS_deactivate()
-  {
+  deactivate: function FIS_deactivate() {
     if (this.originalFactory) {
       // Unregister the mock.
       this.registrar.unregisterFactory(this.CID, this.factory);
@@ -270,44 +280,38 @@ var _fakeIdleService = {
 
   factory: {
     // nsIFactory
-    createInstance: function (aOuter, aIID)
-    {
+    createInstance(aOuter, aIID) {
       if (aOuter) {
-        throw Components.results.NS_ERROR_NO_AGGREGATION;
+        throw Components.Exception("", Cr.NS_ERROR_NO_AGGREGATION);
       }
       return _fakeIdleService.QueryInterface(aIID);
     },
-    lockFactory: function (aLock) {
-      throw Components.results.NS_ERROR_NOT_IMPLEMENTED;
+    lockFactory(aLock) {
+      throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
     },
-    QueryInterface: function(aIID) {
-      if (aIID.equals(Components.interfaces.nsIFactory) ||
-          aIID.equals(Components.interfaces.nsISupports)) {
-        return this;
-      }
-      throw Components.results.NS_ERROR_NO_INTERFACE;
-    }
+    QueryInterface: ChromeUtils.generateQI(["nsIFactory"]),
   },
 
   // nsIIdleService
   get idleTime() {
     return 0;
   },
-  addIdleObserver: function () {},
-  removeIdleObserver: function () {},
+  addIdleObserver() {},
+  removeIdleObserver() {},
 
-  QueryInterface: function(aIID) {
+  // eslint-disable-next-line mozilla/use-chromeutils-generateqi
+  QueryInterface(aIID) {
     // Useful for testing purposes, see test_get_idle.js.
-    if (aIID.equals(Components.interfaces.nsIFactory)) {
+    if (aIID.equals(Ci.nsIFactory)) {
       return this.factory;
     }
-    if (aIID.equals(Components.interfaces.nsIIdleService) ||
-        aIID.equals(Components.interfaces.nsISupports)) {
+    if (aIID.equals(Ci.nsIIdleService) ||
+        aIID.equals(Ci.nsISupports)) {
       return this;
     }
-    throw Components.results.NS_ERROR_NO_INTERFACE;
-  }
-}
+    throw Components.Exception("", Cr.NS_ERROR_NO_INTERFACE);
+  },
+};
 
 /**
  * Restores the idle service factory if needed and returns the service's handle.
@@ -315,20 +319,18 @@ var _fakeIdleService = {
  */
 function do_get_idle() {
   _fakeIdleService.deactivate();
-  return Components.classes[_fakeIdleService.contractID]
-                   .getService(Components.interfaces.nsIIdleService);
+  return Cc[_fakeIdleService.contractID]
+           .getService(Ci.nsIIdleService);
 }
 
 // Map resource://test/ to current working directory and
 // resource://testing-common/ to the shared test modules directory.
 function _register_protocol_handlers() {
-  let ios = Components.classes["@mozilla.org/network/io-service;1"]
-                      .getService(Components.interfaces.nsIIOService);
   let protocolHandler =
-    ios.getProtocolHandler("resource")
-       .QueryInterface(Components.interfaces.nsIResProtocolHandler);
+    _Services.io.getProtocolHandler("resource")
+                .QueryInterface(Ci.nsIResProtocolHandler);
 
-  let curDirURI = ios.newFileURI(do_get_cwd());
+  let curDirURI = _Services.io.newFileURI(do_get_cwd());
   protocolHandler.setSubstitution("test", curDirURI);
 
   _register_modules_protocol_handler();
@@ -341,14 +343,12 @@ function _register_modules_protocol_handler() {
                     "head.js is included.");
   }
 
-  let ios = Components.classes["@mozilla.org/network/io-service;1"]
-                      .getService(Components.interfaces.nsIIOService);
   let protocolHandler =
-    ios.getProtocolHandler("resource")
-       .QueryInterface(Components.interfaces.nsIResProtocolHandler);
+    _Services.io.getProtocolHandler("resource")
+                .QueryInterface(Ci.nsIResProtocolHandler);
 
-  let modulesFile = Components.classes["@mozilla.org/file/local;1"].
-                    createInstance(Components.interfaces.nsILocalFile);
+  let modulesFile = Cc["@mozilla.org/file/local;1"].
+                    createInstance(Ci.nsIFile);
   modulesFile.initWithPath(_TESTING_MODULES_DIR);
 
   if (!modulesFile.exists()) {
@@ -361,7 +361,7 @@ function _register_modules_protocol_handler() {
                     _TESTING_MODULES_DIR);
   }
 
-  let modulesURI = ios.newFileURI(modulesFile);
+  let modulesURI = _Services.io.newFileURI(modulesFile);
 
   protocolHandler.setSubstitution("testing-common", modulesURI);
 }
@@ -369,25 +369,22 @@ function _register_modules_protocol_handler() {
 /* Debugging support */
 // Used locally and by our self-tests.
 function _setupDebuggerServer(breakpointFiles, callback) {
-  let prefs = Components.classes["@mozilla.org/preferences-service;1"]
-              .getService(Components.interfaces.nsIPrefBranch);
-
   // Always allow remote debugging.
-  prefs.setBoolPref("devtools.debugger.remote-enabled", true);
+  _Services.prefs.setBoolPref("devtools.debugger.remote-enabled", true);
 
   // for debugging-the-debugging, let an env var cause log spew.
-  let env = Components.classes["@mozilla.org/process/environment;1"]
-                      .getService(Components.interfaces.nsIEnvironment);
+  let env = Cc["@mozilla.org/process/environment;1"]
+              .getService(Ci.nsIEnvironment);
   if (env.get("DEVTOOLS_DEBUGGER_LOG")) {
-    prefs.setBoolPref("devtools.debugger.log", true);
+    _Services.prefs.setBoolPref("devtools.debugger.log", true);
   }
   if (env.get("DEVTOOLS_DEBUGGER_LOG_VERBOSE")) {
-    prefs.setBoolPref("devtools.debugger.log.verbose", true);
+    _Services.prefs.setBoolPref("devtools.debugger.log.verbose", true);
   }
 
   let require;
   try {
-    ({ require } = Components.utils.import("resource://devtools/shared/Loader.jsm", {}));
+    ({ require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm", {}));
   } catch (e) {
     throw new Error("resource://devtools appears to be inaccessible from the " +
                     "xpcshell environment.\n" +
@@ -397,90 +394,80 @@ function _setupDebuggerServer(breakpointFiles, callback) {
                     "It is possible for this to alter test behevior by " +
                     "triggering additional browser code to run, so check " +
                     "test behavior after making this change.\n" +
-                    "See also https://bugzil.la/1215378.")
+                    "See also https://bugzil.la/1215378.");
   }
   let { DebuggerServer } = require("devtools/server/main");
-  let { OriginalLocation } = require("devtools/server/actors/common");
   DebuggerServer.init();
-  DebuggerServer.addBrowserActors();
-  DebuggerServer.addActors("resource://testing-common/dbg-actors.js");
+  DebuggerServer.registerAllActors();
+  let { createRootActor } = require("resource://testing-common/dbg-actors.js");
+  DebuggerServer.setRootActor(createRootActor);
   DebuggerServer.allowChromeProcess = true;
 
   // An observer notification that tells us when we can "resume" script
   // execution.
-  let obsSvc = Components.classes["@mozilla.org/observer-service;1"].
-               getService(Components.interfaces.nsIObserverService);
-
-  const TOPICS = ["devtools-thread-resumed", "xpcshell-test-devtools-shutdown"];
+  const TOPICS = ["devtools-thread-instantiated", "devtools-thread-resumed", "xpcshell-test-devtools-shutdown"];
   let observe = function(subject, topic, data) {
-    switch (topic) {
-      case "devtools-thread-resumed":
-        // Exceptions in here aren't reported and block the debugger from
-        // resuming, so...
-        try {
-          // Add a breakpoint for the first line in our test files.
-          let threadActor = subject.wrappedJSObject;
-          for (let file of breakpointFiles) {
-            // Pass an empty `source` object to workaround `source` function assertion
-            let sourceActor = threadActor.sources.source({originalUrl: file, source: {}});
-            sourceActor._getOrCreateBreakpointActor(new OriginalLocation(sourceActor, 1));
-          }
-        } catch (ex) {
-          do_print("Failed to initialize breakpoints: " + ex + "\n" + ex.stack);
-        }
-        break;
-      case "xpcshell-test-devtools-shutdown":
-        // the debugger has shutdown before we got a resume event - nothing
-        // special to do here.
-        break;
+    if (topic === "devtools-thread-instantiated") {
+      const threadActor = subject.wrappedJSObject;
+      threadActor.setBreakpointOnLoad(breakpointFiles);
+      return;
     }
+
     for (let topicToRemove of TOPICS) {
-      obsSvc.removeObserver(observe, topicToRemove);
+      _Services.obs.removeObserver(observe, topicToRemove);
     }
     callback();
   };
 
   for (let topic of TOPICS) {
-    obsSvc.addObserver(observe, topic, false);
+    _Services.obs.addObserver(observe, topic);
   }
-  return DebuggerServer;
+
+  const { SocketListener } = require("devtools/shared/security/socket");
+
+  return { DebuggerServer, SocketListener };
 }
 
 function _initDebugging(port) {
   let initialized = false;
-  let DebuggerServer = _setupDebuggerServer(_TEST_FILE, () => {initialized = true;});
+  const { DebuggerServer, SocketListener } =
+    _setupDebuggerServer(_TEST_FILE, () => { initialized = true; });
 
-  do_print("");
-  do_print("*******************************************************************");
-  do_print("Waiting for the debugger to connect on port " + port)
-  do_print("")
-  do_print("To connect the debugger, open a Firefox instance, select 'Connect'");
-  do_print("from the Developer menu and specify the port as " + port);
-  do_print("*******************************************************************");
-  do_print("")
+  info("");
+  info("*******************************************************************");
+  info("Waiting for the debugger to connect on port " + port);
+  info("");
+  info("To connect the debugger, open a Firefox instance, select 'Connect'");
+  info("from the Developer menu and specify the port as " + port);
+  info("*******************************************************************");
+  info("");
 
-  let AuthenticatorType = DebuggerServer.Authenticators.get("PROMPT");
-  let authenticator = new AuthenticatorType.Server();
+  const AuthenticatorType = DebuggerServer.Authenticators.get("PROMPT");
+  const authenticator = new AuthenticatorType.Server();
   authenticator.allowConnection = () => {
     return DebuggerServer.AuthenticationResult.ALLOW;
   };
+  const socketOptions = {
+    authenticator,
+    portOrPath: port,
+  };
 
-  let listener = DebuggerServer.createListener();
-  listener.portOrPath = port;
-  listener.authenticator = authenticator;
+  const listener = new SocketListener(DebuggerServer, socketOptions);
   listener.open();
 
   // spin an event loop until the debugger connects.
-  let thr = Components.classes["@mozilla.org/thread-manager;1"]
-              .getService().currentThread;
-  while (!initialized) {
-    do_print("Still waiting for debugger to connect...");
-    thr.processNextEvent(true);
-  }
+  const tm = Cc["@mozilla.org/thread-manager;1"].getService();
+  tm.spinEventLoopUntil(() => {
+    if (initialized) {
+      return true;
+    }
+    info("Still waiting for debugger to connect...");
+    return false;
+  });
   // NOTE: if you want to debug the harness itself, you can now add a 'debugger'
   // statement anywhere and it will stop - but we've already added a breakpoint
   // for the first line of the test scripts, so we just continue...
-  do_print("Debugger connected, starting test execution");
+  info("Debugger connected, starting test execution");
 }
 
 function _execute_test() {
@@ -502,11 +489,10 @@ function _execute_test() {
   _fakeIdleService.activate();
 
   _PromiseTestUtils.init();
-  _PromiseTestUtils.Assert = Assert;
 
   let coverageCollector = null;
-  if (typeof _JSCOV_DIR === 'string') {
-    let _CoverageCollector = Components.utils.import("resource://testing-common/CoverageUtils.jsm", {}).CoverageCollector;
+  if (typeof _JSCOV_DIR === "string") {
+    let _CoverageCollector = ChromeUtils.import("resource://testing-common/CoverageUtils.jsm", {}).CoverageCollector;
     coverageCollector = new _CoverageCollector(_JSCOV_DIR);
   }
 
@@ -521,10 +507,10 @@ function _execute_test() {
     this[func] = Assert[func].bind(Assert);
   }
 
-  if (_gTestHasOnly) {
-    _gTests = _gTests.filter(([props,]) => {
-      return ("_only" in props) && props._only;
-    });
+  const {PerTestCoverageUtils} = ChromeUtils.import("resource://testing-common/PerTestCoverageUtils.jsm", {});
+
+  if (runningInParent) {
+    PerTestCoverageUtils.beforeTestSync();
   }
 
   try {
@@ -538,13 +524,17 @@ function _execute_test() {
       run_next_test();
     }
 
+    do_test_finished("MAIN run_test");
+    _do_main();
+    _PromiseTestUtils.assertNoUncaughtRejections();
+
     if (coverageCollector != null) {
       coverageCollector.recordTestCoverage(_TEST_FILE[0]);
     }
 
-    do_test_finished("MAIN run_test");
-    _do_main();
-    _PromiseTestUtils.assertNoUncaughtRejections();
+    if (runningInParent) {
+      PerTestCoverageUtils.afterTestSync();
+    }
   } catch (e) {
     _passed = false;
     // do_check failures are already logged and set _quit to true and throw
@@ -553,7 +543,7 @@ function _execute_test() {
     // possible that this will mask an NS_ERROR_ABORT that happens after a
     // do_check failure though.
 
-    if (!_quit || e != Components.results.NS_ERROR_ABORT) {
+    if (!_quit || e.result != Cr.NS_ERROR_ABORT) {
       let extra = {};
       if (e.fileName) {
         extra.source_file = e.fileName;
@@ -583,7 +573,7 @@ function _execute_test() {
     } else {
       stack = Components.stack.caller;
     }
-    if (stack instanceof Components.interfaces.nsIStackFrame) {
+    if (stack instanceof Ci.nsIStackFrame) {
       filename = stack.filename;
     } else if (ex.fileName) {
       filename = ex.fileName;
@@ -591,27 +581,25 @@ function _execute_test() {
     _testLogger.error(_exception_message(ex),
                       {
                         stack: _format_stack(stack),
-                        source_file: filename
+                        source_file: filename,
                       });
   };
 
   let complete = _cleanupFunctions.length == 0;
-  _Task.spawn(function*() {
+  (async () => {
     for (let func of _cleanupFunctions.reverse()) {
       try {
-        yield func();
+        let result = await func();
+        if (_isGenerator(result)) {
+          Assert.ok(false, "Cleanup function returned a generator");
+        }
       } catch (ex) {
         reportCleanupError(ex);
       }
     }
     _cleanupFunctions = [];
-  }.bind(this)).catch(reportCleanupError)
-               .then(() => complete = true);
-  let thr = Components.classes["@mozilla.org/thread-manager;1"]
-                      .getService().currentThread;
-  while (!complete) {
-    thr.processNextEvent(true);
-  }
+  })().catch(reportCleanupError).then(() => complete = true);
+  _Services.tm.spinEventLoopUntil(() => complete);
 
   // Restore idle service to avoid leaks.
   _fakeIdleService.deactivate();
@@ -619,12 +607,10 @@ function _execute_test() {
   if (_profileInitialized) {
     // Since we have a profile, we will notify profile shutdown topics at
     // the end of the current test, to ensure correct cleanup on shutdown.
-    let obs = Components.classes["@mozilla.org/observer-service;1"]
-                        .getService(Components.interfaces.nsIObserverService);
-    obs.notifyObservers(null, "profile-change-net-teardown", null);
-    obs.notifyObservers(null, "profile-change-teardown", null);
-    obs.notifyObservers(null, "profile-before-change", null);
-    obs.notifyObservers(null, "profile-before-change-qm", null);
+    _Services.obs.notifyObservers(null, "profile-change-net-teardown");
+    _Services.obs.notifyObservers(null, "profile-change-teardown");
+    _Services.obs.notifyObservers(null, "profile-before-change");
+    _Services.obs.notifyObservers(null, "profile-before-change-qm");
 
     _profileInitialized = false;
   }
@@ -650,8 +636,8 @@ function _load_files(aFiles) {
       load(element);
     } catch (e) {
       let extra = {
-        source_file: element
-      }
+        source_file: element,
+      };
       if (e.stack) {
         extra.stack = _format_stack(e.stack);
       }
@@ -666,12 +652,12 @@ function _wrap_with_quotes_if_necessary(val) {
   return typeof val == "string" ? '"' + val + '"' : val;
 }
 
-/************** Functions to be used from the tests **************/
+/* ************* Functions to be used from the tests ************* */
 
 /**
  * Prints a message to the output log.
  */
-function do_print(msg, data) {
+function info(msg, data) {
   msg = _wrap_with_quotes_if_necessary(msg);
   data = data ? data : null;
   _testLogger.info(msg, data);
@@ -691,14 +677,12 @@ function do_timeout(delay, func) {
   new _Timer(func, Number(delay));
 }
 
-function do_execute_soon(callback, aName) {
+function executeSoon(callback, aName) {
   let funcName = (aName ? aName : callback.name);
   do_test_pending(funcName);
-  var tm = Components.classes["@mozilla.org/thread-manager;1"]
-                     .getService(Components.interfaces.nsIThreadManager);
 
-  tm.mainThread.dispatch({
-    run: function() {
+  _Services.tm.dispatchToMainThread({
+    run() {
       try {
         callback();
       } catch (e) {
@@ -707,22 +691,21 @@ function do_execute_soon(callback, aName) {
         // has already been logged so there is no need to log it again. It's
         // possible that this will mask an NS_ERROR_ABORT that happens after a
         // do_check failure though.
-        if (!_quit || e != Components.results.NS_ERROR_ABORT) {
+        if (!_quit || e.result != Cr.NS_ERROR_ABORT) {
           let stack = e.stack ? _format_stack(e.stack) : null;
           _testLogger.testStatus(_TEST_NAME,
                                  funcName,
-                                 'FAIL',
-                                 'PASS',
+                                 "FAIL",
+                                 "PASS",
                                  _exception_message(e),
                                  stack);
           _do_quit();
         }
-      }
-      finally {
+      } finally {
         do_test_finished(funcName);
       }
-    }
-  }, Components.interfaces.nsIThread.DISPATCH_NORMAL);
+    },
+  });
 }
 
 /**
@@ -738,7 +721,7 @@ function do_throw(error, stack) {
   // otherwise get it from our call context
   stack = stack || error.stack || Components.stack.caller;
 
-  if (stack instanceof Components.interfaces.nsIStackFrame)
+  if (stack instanceof Ci.nsIStackFrame)
     filename = stack.filename;
   else if (error.fileName)
     filename = error.fileName;
@@ -746,7 +729,7 @@ function do_throw(error, stack) {
   _testLogger.error(_exception_message(error),
                     {
                       source_file: filename,
-                      stack: _format_stack(stack)
+                      stack: _format_stack(stack),
                     });
   _abort_failed_test();
 }
@@ -755,12 +738,12 @@ function _abort_failed_test() {
   // Called to abort the test run after all failures are logged.
   _passed = false;
   _do_quit();
-  throw Components.results.NS_ERROR_ABORT;
+  throw Components.Exception("", Cr.NS_ERROR_ABORT);
 }
 
 function _format_stack(stack) {
   let normalized;
-  if (stack instanceof Components.interfaces.nsIStackFrame) {
+  if (stack instanceof Ci.nsIStackFrame) {
     let frames = [];
     for (let frame = stack; frame; frame = frame.caller) {
       frames.push(frame.filename + ":" + frame.name + ":" + frame.lineNumber);
@@ -803,10 +786,10 @@ function do_report_unexpected_exception(ex, text) {
   _testLogger.error(text + "Unexpected exception " + _exception_message(ex),
                     {
                       source_file: filename,
-                      stack: _format_stack(ex.stack)
+                      stack: _format_stack(ex.stack),
                     });
   _do_quit();
-  throw Components.results.NS_ERROR_ABORT;
+  throw Components.Exception("", Cr.NS_ERROR_ABORT);
 }
 
 function do_note_exception(ex, text) {
@@ -814,30 +797,14 @@ function do_note_exception(ex, text) {
   _testLogger.info(text + "Swallowed exception " + _exception_message(ex),
                    {
                      source_file: filename,
-                     stack: _format_stack(ex.stack)
+                     stack: _format_stack(ex.stack),
                    });
 }
 
-function _do_check_neq(left, right, stack, todo) {
-  Assert.notEqual(left, right);
-}
-
-function do_check_neq(left, right, stack) {
-  if (!stack)
-    stack = Components.stack.caller;
-
-  _do_check_neq(left, right, stack, false);
-}
-
-function todo_check_neq(left, right, stack) {
-  if (!stack)
-      stack = Components.stack.caller;
-
-  _do_check_neq(left, right, stack, true);
-}
-
 function do_report_result(passed, text, stack, todo) {
-  while (stack.filename.includes("head.js") && stack.caller) {
+  // Match names like head.js, head_foo.js, and foo_head.js, but not
+  // test_headache.js
+  while (/(\/head(_.+)?|head)\.js$/.test(stack.filename) && stack.caller) {
     stack = stack.caller;
   }
 
@@ -865,22 +832,20 @@ function do_report_result(passed, text, stack, todo) {
                              "PASS",
                              message);
     }
+  } else if (todo) {
+    _testLogger.testStatus(_TEST_NAME,
+                           name,
+                           "FAIL",
+                           "FAIL",
+                           message);
   } else {
-    if (todo) {
-      _testLogger.testStatus(_TEST_NAME,
-                             name,
-                             "FAIL",
-                             "FAIL",
-                             message);
-    } else {
-      _testLogger.testStatus(_TEST_NAME,
-                             name,
-                             "FAIL",
-                             "PASS",
-                             message,
-                             _format_stack(stack));
-      _abort_failed_test();
-    }
+    _testLogger.testStatus(_TEST_NAME,
+                           name,
+                           "FAIL",
+                           "PASS",
+                           message,
+                           _format_stack(stack));
+    _abort_failed_test();
   }
 }
 
@@ -893,19 +858,11 @@ function _do_check_eq(left, right, stack, todo) {
   do_report_result(left == right, text, stack, todo);
 }
 
-function do_check_eq(left, right, stack) {
-  Assert.equal(left, right);
-}
-
 function todo_check_eq(left, right, stack) {
   if (!stack)
       stack = Components.stack.caller;
 
   _do_check_eq(left, right, stack, true);
-}
-
-function do_check_true(condition, stack) {
-  Assert.ok(condition, stack);
 }
 
 function todo_check_true(condition, stack) {
@@ -915,10 +872,6 @@ function todo_check_true(condition, stack) {
   todo_check_eq(condition, true, stack);
 }
 
-function do_check_false(condition, stack) {
-  Assert.ok(!condition, stack);
-}
-
 function todo_check_false(condition, stack) {
   if (!stack)
     stack = Components.stack.caller;
@@ -926,24 +879,16 @@ function todo_check_false(condition, stack) {
   todo_check_eq(condition, false, stack);
 }
 
-function do_check_null(condition, stack) {
-  Assert.equal(condition, null);
-}
-
-function todo_check_null(condition, stack=Components.stack.caller) {
+function todo_check_null(condition, stack = Components.stack.caller) {
   todo_check_eq(condition, null, stack);
-}
-function do_check_matches(pattern, value) {
-  Assert.deepEqual(pattern, value);
 }
 
 // Check that |func| throws an nsIException that has
 // |Components.results[resultName]| as the value of its 'result' property.
 function do_check_throws_nsIException(func, resultName,
-                                      stack=Components.stack.caller, todo=false)
-{
-  let expected = Components.results[resultName];
-  if (typeof expected !== 'number') {
+                                      stack = Components.stack.caller, todo = false) {
+  let expected = Cr[resultName];
+  if (typeof expected !== "number") {
     do_throw("do_check_throws_nsIException requires a Components.results" +
              " property name, not " + uneval(resultName), stack);
   }
@@ -955,7 +900,7 @@ function do_check_throws_nsIException(func, resultName,
   try {
     func();
   } catch (ex) {
-    if (!(ex instanceof Components.interfaces.nsIException) ||
+    if (!(ex instanceof Ci.nsIException) ||
         ex.result !== expected) {
       do_report_result(false, msg + ", threw " + legible_exception(ex) +
                        " instead", stack, todo);
@@ -972,18 +917,17 @@ function do_check_throws_nsIException(func, resultName,
 
 // Produce a human-readable form of |exception|. This looks up
 // Components.results values, tries toString methods, and so on.
-function legible_exception(exception)
-{
+function legible_exception(exception) {
   switch (typeof exception) {
-    case 'object':
-    if (exception instanceof Components.interfaces.nsIException) {
+    case "object":
+    if (exception instanceof Ci.nsIException) {
       return "nsIException instance: " + uneval(exception.toString());
     }
     return exception.toString();
 
-    case 'number':
-    for (let name in Components.results) {
-      if (exception === Components.results[name]) {
+    case "number":
+    for (let name in Cr) {
+      if (exception === Cr[name]) {
         return "Components.results." + name;
       }
     }
@@ -995,14 +939,14 @@ function legible_exception(exception)
 }
 
 function do_check_instanceof(value, constructor,
-                             stack=Components.stack.caller, todo=false) {
+                             stack = Components.stack.caller, todo = false) {
   do_report_result(value instanceof constructor,
                    "value should be an instance of " + constructor.name,
                    stack, todo);
 }
 
 function todo_check_instanceof(value, constructor,
-                             stack=Components.stack.caller) {
+                             stack = Components.stack.caller) {
   do_check_instanceof(value, constructor, stack, true);
 }
 
@@ -1024,9 +968,7 @@ function do_test_finished(aName) {
 
 function do_get_file(path, allowNonexistent) {
   try {
-    let lf = Components.classes["@mozilla.org/file/directory_service;1"]
-      .getService(Components.interfaces.nsIProperties)
-      .get("CurWorkD", Components.interfaces.nsILocalFile);
+    let lf = _Services.dirsvc.get("CurWorkD", Ci.nsIFile);
 
     let bits = path.split("/");
     for (let i = 0; i < bits.length; i++) {
@@ -1047,8 +989,7 @@ function do_get_file(path, allowNonexistent) {
     }
 
     return lf;
-  }
-  catch (ex) {
+  } catch (ex) {
     do_throw(ex.toString(), Components.stack.caller);
   }
 
@@ -1062,8 +1003,8 @@ function do_get_cwd() {
 
 function do_load_manifest(path) {
   var lf = do_get_file(path);
-  const nsIComponentRegistrar = Components.interfaces.nsIComponentRegistrar;
-  do_check_true(Components.manager instanceof nsIComponentRegistrar);
+  const nsIComponentRegistrar = Ci.nsIComponentRegistrar;
+  Assert.ok(Components.manager instanceof nsIComponentRegistrar);
   // Previous do_check_true() is not a test check.
   Components.manager.autoRegister(lf);
 }
@@ -1074,7 +1015,7 @@ function do_load_manifest(path) {
  * @param aPath File path to the document.
  * @param aType Content type to use in DOMParser.
  *
- * @return nsIDOMDocument from the file.
+ * @return Document from the file.
  */
 function do_parse_document(aPath, aType) {
   switch (aType) {
@@ -1089,10 +1030,8 @@ function do_parse_document(aPath, aType) {
                Components.stack.caller);
   }
 
-  let file = do_get_file(aPath),
-      ios = Components.classes['@mozilla.org/network/io-service;1']
-            .getService(Components.interfaces.nsIIOService),
-      url = ios.newFileURI(file).spec;
+  let file = do_get_file(aPath);
+  let url = _Services.io.newFileURI(file).spec;
   file = null;
   return new Promise((resolve, reject) => {
     let xhr = new XMLHttpRequest();
@@ -1113,8 +1052,7 @@ function do_parse_document(aPath, aType) {
  * @param aFunction
  *        The function to be called when the test harness has finished running.
  */
-function do_register_cleanup(aFunction)
-{
+function registerCleanupFunction(aFunction) {
   _cleanupFunctions.push(aFunction);
 }
 
@@ -1122,15 +1060,15 @@ function do_register_cleanup(aFunction)
  * Returns the directory for a temp dir, which is created by the
  * test harness. Every test gets its own temp dir.
  *
- * @return nsILocalFile of the temporary directory
+ * @return nsIFile of the temporary directory
  */
 function do_get_tempdir() {
-  let env = Components.classes["@mozilla.org/process/environment;1"]
-                      .getService(Components.interfaces.nsIEnvironment);
+  let env = Cc["@mozilla.org/process/environment;1"]
+              .getService(Ci.nsIEnvironment);
   // the python harness sets this in the environment for us
   let path = env.get("XPCSHELL_TEST_TEMP_DIR");
-  let file = Components.classes["@mozilla.org/file/local;1"]
-                       .createInstance(Components.interfaces.nsILocalFile);
+  let file = Cc["@mozilla.org/file/local;1"]
+               .createInstance(Ci.nsIFile);
   file.initWithPath(path);
   return file;
 }
@@ -1138,29 +1076,28 @@ function do_get_tempdir() {
 /**
  * Returns the directory for crashreporter minidumps.
  *
- * @return nsILocalFile of the minidump directory
+ * @return nsIFile of the minidump directory
  */
 function do_get_minidumpdir() {
-  let env = Components.classes["@mozilla.org/process/environment;1"]
-                      .getService(Components.interfaces.nsIEnvironment);
+  let env = Cc["@mozilla.org/process/environment;1"]
+              .getService(Ci.nsIEnvironment);
   // the python harness may set this in the environment for us
   let path = env.get("XPCSHELL_MINIDUMP_DIR");
   if (path) {
-    let file = Components.classes["@mozilla.org/file/local;1"]
-                         .createInstance(Components.interfaces.nsILocalFile);
+    let file = Cc["@mozilla.org/file/local;1"]
+                 .createInstance(Ci.nsIFile);
     file.initWithPath(path);
     return file;
-  } else {
-    return do_get_tempdir();
   }
+  return do_get_tempdir();
 }
 
 /**
  * Registers a directory with the profile service,
- * and return the directory as an nsILocalFile.
+ * and return the directory as an nsIFile.
  *
  * @param notifyProfileAfterChange Whether to notify for "profile-after-change".
- * @return nsILocalFile of the profile directory.
+ * @return nsIFile of the profile directory.
  */
 function do_get_profile(notifyProfileAfterChange = false) {
   if (!runningInParent) {
@@ -1168,18 +1105,16 @@ function do_get_profile(notifyProfileAfterChange = false) {
     return null;
   }
 
-  let env = Components.classes["@mozilla.org/process/environment;1"]
-                      .getService(Components.interfaces.nsIEnvironment);
+  let env = Cc["@mozilla.org/process/environment;1"]
+              .getService(Ci.nsIEnvironment);
   // the python harness sets this in the environment for us
   let profd = env.get("XPCSHELL_TEST_PROFILE_DIR");
-  let file = Components.classes["@mozilla.org/file/local;1"]
-                       .createInstance(Components.interfaces.nsILocalFile);
+  let file = Cc["@mozilla.org/file/local;1"]
+               .createInstance(Ci.nsIFile);
   file.initWithPath(profd);
 
-  let dirSvc = Components.classes["@mozilla.org/file/directory_service;1"]
-                         .getService(Components.interfaces.nsIProperties);
   let provider = {
-    getFile: function(prop, persistent) {
+    getFile(prop, persistent) {
       persistent.value = true;
       if (prop == "ProfD" || prop == "ProfLD" || prop == "ProfDS" ||
           prop == "ProfLDS" || prop == "TmpD") {
@@ -1187,34 +1122,35 @@ function do_get_profile(notifyProfileAfterChange = false) {
       }
       return null;
     },
-    QueryInterface: function(iid) {
-      if (iid.equals(Components.interfaces.nsIDirectoryServiceProvider) ||
-          iid.equals(Components.interfaces.nsISupports)) {
-        return this;
-      }
-      throw Components.results.NS_ERROR_NO_INTERFACE;
-    }
+    QueryInterface: ChromeUtils.generateQI(["nsIDirectoryServiceProvider"]),
   };
-  dirSvc.QueryInterface(Components.interfaces.nsIDirectoryService)
-        .registerProvider(provider);
+  _Services.dirsvc.QueryInterface(Ci.nsIDirectoryService)
+           .registerProvider(provider);
 
-  let obsSvc = Components.classes["@mozilla.org/observer-service;1"].
-        getService(Components.interfaces.nsIObserverService);
+  try {
+    _Services.dirsvc.undefine("TmpD");
+  } catch (e) {
+    // This throws if the key is not already registered, but that
+    // doesn't matter.
+    if (e.result != Cr.NS_ERROR_FAILURE) {
+      throw e;
+    }
+  }
 
   // We need to update the crash events directory when the profile changes.
   if (runningInParent &&
-      "@mozilla.org/toolkit/crash-reporter;1" in Components.classes) {
+      "@mozilla.org/toolkit/crash-reporter;1" in Cc) {
     let crashReporter =
-        Components.classes["@mozilla.org/toolkit/crash-reporter;1"]
-                          .getService(Components.interfaces.nsICrashReporter);
+        Cc["@mozilla.org/toolkit/crash-reporter;1"]
+          .getService(Ci.nsICrashReporter);
     crashReporter.UpdateCrashEventsDir();
   }
 
   if (!_profileInitialized) {
-    obsSvc.notifyObservers(null, "profile-do-change", "xpcshell-do-get-profile");
+    _Services.obs.notifyObservers(null, "profile-do-change", "xpcshell-do-get-profile");
     _profileInitialized = true;
     if (notifyProfileAfterChange) {
-      obsSvc.notifyObservers(null, "profile-after-change", "xpcshell-do-get-profile");
+      _Services.obs.notifyObservers(null, "profile-after-change", "xpcshell-do-get-profile");
     }
   }
 
@@ -1222,9 +1158,7 @@ function do_get_profile(notifyProfileAfterChange = false) {
   // to avoid spurious leak reports.
   env = null;
   profd = null;
-  dirSvc = null;
   provider = null;
-  obsSvc = null;
   return file.clone();
 }
 
@@ -1236,8 +1170,7 @@ function do_get_profile(notifyProfileAfterChange = false) {
  * (Note that you may use sendCommand without calling this function first;  you
  * simply won't have any of the functions in this file available.)
  */
-function do_load_child_test_harness()
-{
+function do_load_child_test_harness() {
   // Make sure this isn't called from child process
   if (!runningInParent) {
     do_throw("run_test_in_child cannot be called from child!");
@@ -1257,9 +1190,9 @@ function do_load_child_test_harness()
       + "const _TEST_NAME=" + uneval(_TEST_NAME) + "; "
       // We'll need more magic to get the debugger working in the child
       + "const _JSDEBUGGER_PORT=0; "
-      + "const _XPCSHELL_PROCESS='child';";
+      + "_XPCSHELL_PROCESS='child';";
 
-  if (typeof _JSCOV_DIR === 'string') {
+  if (typeof _JSCOV_DIR === "string") {
     command += " const _JSCOV_DIR=" + uneval(_JSCOV_DIR) + ";";
   }
 
@@ -1284,12 +1217,11 @@ function do_load_child_test_harness()
  *        complete.  If provided, the function must call do_test_finished();
  * @return Promise Resolved when the test in the child is complete.
  */
-function run_test_in_child(testFile, optionalCallback)
-{
+function run_test_in_child(testFile, optionalCallback) {
   return new Promise((resolve) => {
     var callback = () => {
       resolve();
-      if (typeof optionalCallback == 'undefined') {
+      if (typeof optionalCallback == "undefined") {
         do_test_finished();
       } else {
         optionalCallback();
@@ -1317,28 +1249,27 @@ function run_test_in_child(testFile, optionalCallback)
  *        the function must call do_test_finished().
  * @return Promise Promise that is resolved when the message is received.
  */
-function do_await_remote_message(name, optionalCallback)
-{
+function do_await_remote_message(name, optionalCallback) {
   return new Promise((resolve) => {
     var listener = {
-      receiveMessage: function(message) {
+      receiveMessage(message) {
         if (message.name == name) {
           mm.removeMessageListener(name, listener);
-          resolve();
+          resolve(message.data);
           if (optionalCallback) {
-            optionalCallback();
+            optionalCallback(message.data);
           } else {
             do_test_finished();
           }
         }
-      }
+      },
     };
 
     var mm;
     if (runningInParent) {
-      mm = Cc["@mozilla.org/parentprocessmessagemanager;1"].getService(Ci.nsIMessageBroadcaster);
+      mm = Cc["@mozilla.org/parentprocessmessagemanager;1"].getService();
     } else {
-      mm = Cc["@mozilla.org/childprocessmessagemanager;1"].getService(Ci.nsISyncMessageSender);
+      mm = Cc["@mozilla.org/childprocessmessagemanager;1"].getService();
     }
     do_test_pending();
     mm.addMessageListener(name, listener);
@@ -1349,63 +1280,17 @@ function do_await_remote_message(name, optionalCallback)
  * Asynchronously send a message to all remote processes. Pairs with do_await_remote_message
  * or equivalent ProcessMessageManager listeners.
  */
-function do_send_remote_message(name) {
+function do_send_remote_message(name, data) {
   var mm;
   var sender;
   if (runningInParent) {
-    mm = Cc["@mozilla.org/parentprocessmessagemanager;1"].getService(Ci.nsIMessageBroadcaster);
-    sender = 'broadcastAsyncMessage';
+    mm = Cc["@mozilla.org/parentprocessmessagemanager;1"].getService();
+    sender = "broadcastAsyncMessage";
   } else {
-    mm = Cc["@mozilla.org/childprocessmessagemanager;1"].getService(Ci.nsISyncMessageSender);
-    sender = 'sendAsyncMessage';
+    mm = Cc["@mozilla.org/childprocessmessagemanager;1"].getService();
+    sender = "sendAsyncMessage";
   }
-  mm[sender](name);
-}
-
-/**
- * Helper function to add the _only property to add_task/add_test function when
- * running it as add_task.only(...).
- *
- * @param addFunc
- *        The parent function to call, e.g. add_task or add_test.
- * @param funcOrProperties
- *        A function to be run or an object represents test properties.
- * @param func
- *        A function to be run only if the funcOrProperies is not a function.
- */
-function _add_only(addFunc, funcOrProperties, func) {
-  _gTestHasOnly = true;
-  if (typeof funcOrProperties == "function") {
-    func = funcOrProperties;
-    funcOrProperties = {};
-  }
-
-  if (typeof funcOrProperties == "object") {
-    funcOrProperties._only = true;
-  }
-  return addFunc(funcOrProperties, func);
-}
-
-/**
- * Helper function to skip the test using e.g. add_task.skip(...)
- *
- * @param addFunc
- *        The parent function to call, e.g. add_task or add_test.
- * @param funcOrProperties
- *        A function to be run or an object represents test properties.
- * @param func
- *        A function to be run only if the funcOrProperies is not a function.
- */
-function _add_skip(addFunc, funcOrProperties, func) {
-  if (typeof funcOrProperties == "function") {
-    func = funcOrProperties;
-    funcOrProperties = {};
-  }
-
-  if (typeof funcOrProperties == "object") {
-    funcOrProperties.skip_if = () => true;
-  }
-  return addFunc(funcOrProperties, func);
+  mm[sender](name, data);
 }
 
 /**
@@ -1418,6 +1303,8 @@ function _add_skip(addFunc, funcOrProperties, func) {
  *                    evaluated whether the test is skipped or not.
  * @param func
  *        A function to be run only if the funcOrProperies is not a function.
+ * @param isTask
+ *        Optional flag that indicates whether `func` is a task. Defaults to `false`.
  *
  * Each test function must call run_next_test() when it's done. Test files
  * should call run_next_test() in their run_test function to execute all
@@ -1426,35 +1313,35 @@ function _add_skip(addFunc, funcOrProperties, func) {
  * @return the test function that was passed in.
  */
 var _gTests = [];
-function add_test(funcOrProperties, func) {
-  if (typeof funcOrProperties == "function") {
-    _gTests.push([{ _isTask: false }, funcOrProperties]);
-  } else if (typeof funcOrProperties == "object") {
-    funcOrProperties._isTask = false;
-    _gTests.push([funcOrProperties, func]);
+var _gRunOnlyThisTest = null;
+function add_test(properties, func = properties, isTask = false) {
+  if (typeof properties == "function") {
+    properties = { isTask };
+    _gTests.push([properties, func]);
+  } else if (typeof properties == "object") {
+    properties.isTask = isTask;
+    _gTests.push([properties, func]);
   } else {
     do_throw("add_test() should take a function or an object and a function");
   }
+  func.skip = () => properties.skip_if = () => true;
+  func.only = () => _gRunOnlyThisTest = func;
   return func;
 }
-add_test.only = _add_only.bind(undefined, add_test);
-add_test.skip = _add_skip.bind(undefined, add_test);
 
 /**
  * Add a test function which is a Task function.
  *
  * @param funcOrProperties
- *        A generator function to be run or an object represents test
- *        properties.
+ *        An async function to be run or an object represents test properties.
  *        Supported properties:
  *          skip_if : An arrow function which has an expression to be
  *                    evaluated whether the test is skipped or not.
  * @param func
- *        A generator function to be run only if the funcOrProperies is not a
- *        function.
+ *        An async function to be run only if the funcOrProperies is not a function.
  *
- * Task functions are functions fed into Task.jsm's Task.spawn(). They are
- * generators that emit promises.
+ * Task functions are functions fed into Task.jsm's Task.spawn(). They are async
+ * functions that emit promises.
  *
  * If an exception is thrown, a do_check_* comparison fails, or if a rejected
  * promise is yielded, the test function aborts immediately and the test is
@@ -1467,17 +1354,17 @@ add_test.skip = _add_skip.bind(undefined, add_test);
  *
  * Example usage:
  *
- * add_task(function* test() {
- *   let result = yield Promise.resolve(true);
+ * add_task(async function test() {
+ *   let result = await Promise.resolve(true);
  *
  *   do_check_true(result);
  *
- *   let secondary = yield someFunctionThatReturnsAPromise(result);
+ *   let secondary = await someFunctionThatReturnsAPromise(result);
  *   do_check_eq(secondary, "expected value");
  * });
  *
- * add_task(function* test_early_return() {
- *   let result = yield somethingThatReturnsAPromise();
+ * add_task(async function test_early_return() {
+ *   let result = await somethingThatReturnsAPromise();
  *
  *   if (!result) {
  *     // Test is ended immediately, with success.
@@ -1489,27 +1376,17 @@ add_test.skip = _add_skip.bind(undefined, add_test);
  *
  * add_task({
  *   skip_if: () => !("@mozilla.org/telephony/volume-service;1" in Components.classes),
- * }, function* test_volume_service() {
+ * }, async function test_volume_service() {
  *   let volumeService = Cc["@mozilla.org/telephony/volume-service;1"]
  *     .getService(Ci.nsIVolumeService);
  *   ...
  * });
  */
-function add_task(funcOrProperties, func) {
-  if (typeof funcOrProperties == "function") {
-    _gTests.push([{ _isTask: true }, funcOrProperties]);
-  } else if (typeof funcOrProperties == "object") {
-    funcOrProperties._isTask = true;
-    _gTests.push([funcOrProperties, func]);
-  } else {
-    do_throw("add_task() should take a function or an object and a function");
-  }
+function add_task(properties, func = properties) {
+  return add_test(properties, func, true);
 }
-add_task.only = _add_only.bind(undefined, add_task);
-add_task.skip = _add_skip.bind(undefined, add_task);
 
 _Task.Debugging.maintainStack = true;
-
 
 /**
  * Runs the next test function from the list of async tests.
@@ -1517,24 +1394,31 @@ _Task.Debugging.maintainStack = true;
 var _gRunningTest = null;
 var _gTestIndex = 0; // The index of the currently running test.
 var _gTaskRunning = false;
-var _gTestHasOnly = false;
-function run_next_test()
-{
+function run_next_test() {
   if (_gTaskRunning) {
     throw new Error("run_next_test() called from an add_task() test function. " +
                     "run_next_test() should not be called from inside add_task() " +
                     "under any circumstances!");
   }
 
-  function _run_next_test()
-  {
+  function _run_next_test() {
     if (_gTestIndex < _gTests.length) {
       // Check for uncaught rejections as early and often as possible.
       _PromiseTestUtils.assertNoUncaughtRejections();
       let _properties;
-      [_properties, _gRunningTest,] = _gTests[_gTestIndex++];
-      if (typeof(_properties.skip_if) == "function" && _properties.skip_if()) {
-        let _condition = _properties.skip_if.toSource().replace(/\(\)\s*=>\s*/, "");
+      [_properties, _gRunningTest ] = _gTests[_gTestIndex++];
+
+      // Must set to pending before we check for skip, so that we keep the
+      // running counts correct.
+      _testLogger.info(_TEST_NAME + " | Starting " + _gRunningTest.name);
+      do_test_pending(_gRunningTest.name);
+
+      if ((typeof(_properties.skip_if) == "function" && _properties.skip_if()) ||
+          (_gRunOnlyThisTest && _gRunningTest != _gRunOnlyThisTest)) {
+        let _condition = _gRunOnlyThisTest ? "only one task may run." :
+          _properties.skip_if.toSource().replace(/\(\)\s*=>\s*/, "");
+        if (_condition == "true")
+          _condition = "explicitly skipped.";
         let _message = _gRunningTest.name
           + " skipped because the following conditions were"
           + " met: (" + _condition + ")";
@@ -1543,16 +1427,17 @@ function run_next_test()
                                "SKIP",
                                "SKIP",
                                _message);
-        do_execute_soon(run_next_test);
+        executeSoon(run_next_test);
         return;
       }
-      _testLogger.info(_TEST_NAME + " | Starting " + _gRunningTest.name);
-      do_test_pending(_gRunningTest.name);
 
-      if (_properties._isTask) {
+      if (_properties.isTask) {
         _gTaskRunning = true;
-        _Task.spawn(_gRunningTest).then(() => {
+        (async () => _gRunningTest())().then(result => {
           _gTaskRunning = false;
+          if (_isGenerator(result)) {
+            Assert.ok(false, "Task returned a generator");
+          }
           run_next_test();
         }, ex => {
           _gTaskRunning = false;
@@ -1577,8 +1462,8 @@ function run_next_test()
   // For sane stacks during failures, we execute this code soon, but not now.
   // We do this now, before we call do_test_finished(), to ensure the pending
   // counter (_tests_pending) never reaches 0 while we still have tests to run
-  // (do_execute_soon bumps that counter).
-  do_execute_soon(_run_next_test, "run_next_test " + _gTestIndex);
+  // (executeSoon bumps that counter).
+  executeSoon(_run_next_test, "run_next_test " + _gTestIndex);
 
   if (_gRunningTest !== null) {
     // Close the previous test do_test_pending call.
@@ -1587,55 +1472,31 @@ function run_next_test()
 }
 
 try {
+  // Set global preferences
   if (runningInParent) {
-    // Always use network provider for geolocation tests
-    // so we bypass the OSX dialog raised by the corelocation provider
-    let prefs = Components.classes["@mozilla.org/preferences-service;1"]
-      .getService(Components.interfaces.nsIPrefBranch);
+    let prefsFile = Cc["@mozilla.org/file/local;1"]
+      .createInstance(Ci.nsIFile);
+    prefsFile.initWithPath(_PREFS_FILE);
+    _Services.prefs.readUserPrefsFromFile(prefsFile);
 
-    prefs.setBoolPref("geo.provider.testing", true);
+    // Make tests run consistently on DevEdition (which has a lightweight theme
+    // selected by default).
+    _Services.prefs.deleteBranch("lightweightThemes.selectedThemeID");
+    _Services.prefs.deleteBranch("browser.devedition.theme.enabled");
   }
-} catch (e) { }
-// We need to avoid hitting the network with certain components.
-try {
-  if (runningInParent) {
-    let prefs = Components.classes["@mozilla.org/preferences-service;1"]
-      .getService(Components.interfaces.nsIPrefBranch);
-
-    prefs.setCharPref("media.gmp-manager.url.override", "http://%(server)s/dummy-gmp-manager.xml");
-    prefs.setCharPref("media.gmp-manager.updateEnabled", false);
-    prefs.setCharPref("extensions.systemAddon.update.url", "http://%(server)s/dummy-system-addons.xml");
-    prefs.setCharPref("browser.selfsupport.url", "https://%(server)s/selfsupport-dummy/");
-    prefs.setCharPref("extensions.shield-recipe-client.api_url",
-                      "https://%(server)s/selfsupport-dummy/");
-    prefs.setCharPref("toolkit.telemetry.server", "https://%(server)s/telemetry-dummy");
-    prefs.setCharPref("browser.search.geoip.url", "https://%(server)s/geoip-dummy");
-    prefs.setCharPref("browser.safebrowsing.downloads.remote.url", "https://%(server)s/safebrowsing-dummy");
-  }
-} catch (e) { }
-
-// Make tests run consistently on DevEdition (which has a lightweight theme
-// selected by default).
-try {
-  if (runningInParent) {
-    let prefs = Components.classes["@mozilla.org/preferences-service;1"]
-      .getService(Components.interfaces.nsIPrefBranch);
-
-    prefs.deleteBranch("lightweightThemes.selectedThemeID");
-    prefs.deleteBranch("browser.devedition.theme.enabled");
-  }
-} catch (e) { }
+} catch (e) {
+  do_throw(e);
+}
 
 function _load_mozinfo() {
-  let mozinfoFile = Components.classes["@mozilla.org/file/local;1"]
-    .createInstance(Components.interfaces.nsIFile);
+  let mozinfoFile = Cc["@mozilla.org/file/local;1"]
+    .createInstance(Ci.nsIFile);
   mozinfoFile.initWithPath(_MOZINFO_JS_PATH);
-  let stream = Components.classes["@mozilla.org/network/file-input-stream;1"]
-    .createInstance(Components.interfaces.nsIFileInputStream);
+  let stream = Cc["@mozilla.org/network/file-input-stream;1"]
+    .createInstance(Ci.nsIFileInputStream);
   stream.init(mozinfoFile, -1, 0, 0);
-  let json = Components.classes["@mozilla.org/dom/json;1"]
-    .createInstance(Components.interfaces.nsIJSON);
-  let mozinfo = json.decodeFromStream(stream, stream.available());
+  let bytes = _NetUtil.readInputStream(stream, stream.available());
+  let mozinfo = JSON.parse((new TextDecoder()).decode(bytes));
   stream.close();
   return mozinfo;
 }
@@ -1646,8 +1507,8 @@ Object.defineProperty(this, "mozinfo", {
     let _mozinfo = _load_mozinfo();
     Object.defineProperty(this, "mozinfo", {
       configurable: false,
-      value: _mozinfo
+      value: _mozinfo,
     });
     return _mozinfo;
-  }
+  },
 });

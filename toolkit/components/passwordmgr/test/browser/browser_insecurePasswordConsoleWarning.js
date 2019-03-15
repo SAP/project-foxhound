@@ -2,19 +2,21 @@
 
 const WARNING_PATTERN = [{
   key: "INSECURE_FORM_ACTION",
-  msg: 'JavaScript Warning: "Password fields present in a form with an insecure (http://) form action. This is a security risk that allows user login credentials to be stolen."'
+  msg: 'JavaScript Warning: "Password fields present in a form with an insecure (http://) form action. This is a security risk that allows user login credentials to be stolen."',
 }, {
   key: "INSECURE_PAGE",
-  msg: 'JavaScript Warning: "Password fields present on an insecure (http://) page. This is a security risk that allows user login credentials to be stolen."'
+  msg: 'JavaScript Warning: "Password fields present on an insecure (http://) page. This is a security risk that allows user login credentials to be stolen."',
 }];
 
-add_task(function* testInsecurePasswordWarning() {
+add_task(async function testInsecurePasswordWarning() {
+  // By default, proxies don't apply to 127.0.0.1. We need them to for this test, though:
+  await SpecialPowers.pushPrefEnv({set: [["network.proxy.no_proxies_on", ""]]});
   let warningPatternHandler;
 
   function messageHandler(msgObj) {
     function findWarningPattern(msg) {
       return WARNING_PATTERN.find(patternPair => {
-        return msg.indexOf(patternPair.msg) !== -1;
+        return msg.includes(patternPair.msg);
       });
     }
 
@@ -76,10 +78,10 @@ add_task(function* testInsecurePasswordWarning() {
       };
     });
 
-    yield BrowserTestUtils.withNewTab({
+    await BrowserTestUtils.withNewTab({
       gBrowser,
-      url: testURL
-    }, function*() {
+      url: testURL,
+    }, function() {
       if (expectWarnings.length === 0) {
         info("All warnings are shown for URL:" + testURL);
         return Promise.resolve();

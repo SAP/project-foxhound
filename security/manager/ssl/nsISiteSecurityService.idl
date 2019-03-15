@@ -7,12 +7,12 @@
 interface nsIURI;
 interface nsIObserver;
 interface nsIHttpChannel;
-interface nsISSLStatus;
+interface nsITransportSecurityInfo;
 interface nsISimpleEnumerator;
 
 %{C++
+#include "nsStringFwd.h"
 #include "nsTArrayForwardDeclare.h"
-class nsCString;
 namespace mozilla
 {
   namespace pkix
@@ -29,12 +29,13 @@ namespace mozilla
 [scriptable, uuid(31313372-842c-4110-bdf1-6aea17c845ad), builtinclass]
 interface nsISiteSecurityState : nsISupports
 {
+  [must_use]
   readonly attribute ACString hostname;
   [infallible] readonly attribute long long expireTime;
   [infallible] readonly attribute short securityPropertyState;
   [infallible] readonly attribute boolean includeSubdomains;
 
-  [implicit_jscontext]
+  [implicit_jscontext, must_use]
   readonly attribute jsval originAttributes;
 
   /*
@@ -63,6 +64,7 @@ interface nsISiteHSTSState : nsISiteSecurityState
 [scriptable, uuid(ae395078-c7d0-474d-b147-f4aa203a9b2c), builtinclass]
 interface nsISiteHPKPState : nsISiteSecurityState
 {
+  [must_use]
   readonly attribute nsISimpleEnumerator sha256Keys;
 };
 
@@ -90,6 +92,15 @@ interface nsISiteSecurityService : nsISupports
     const uint32_t ERROR_ROOT_NOT_BUILT_IN = 14;
 
     /**
+     * nsISiteSecurityService::IsSecureURI can optionally return a flag
+     * indicating the source of the HSTS cache entry, if it comes from the
+     * preload list, was seen naturally, or is a result of HSTS priming.
+     */
+    const uint32_t SOURCE_UNKNOWN         = 0;
+    const uint32_t SOURCE_PRELOAD_LIST    = 1;
+    const uint32_t SOURCE_ORGANIC_REQUEST = 2;
+
+    /**
      * Parses a given HTTP header and records the results internally.
      * Currently two header types are supported: HSTS (aka STS) and HPKP
      * The format of the HSTS header is defined by the HSTS specification:
@@ -104,7 +115,7 @@ interface nsISiteSecurityService : nsISupports
      * @param aType the type of security header in question.
      * @param aSourceURI the URI of the resource with the HTTP header.
      * @param aHeader the HTTP response header specifying security data.
-     * @param aSSLStatus the SSLStatus of the current channel.
+     * @param aSecInfo the TransportSecurityInfo of the current channel.
      * @param aFlags  options for this request as defined in nsISocketProvider:
      *                  NO_PERMANENT_STORAGE
      * @param aOriginAttributes the origin attributes that isolate this origin,
@@ -112,6 +123,8 @@ interface nsISiteSecurityService : nsISupports
      *                          by userContextId because of the risk of man-in-
      *                          the-middle attacks before trust-on-second-use
      *                          happens).
+     * @param aSource the source of the header, whether it was from the preload
+     *                list, an organic header, or HSTS priming, or unknown.
      * @param aMaxAge the parsed max-age directive of the header.
      * @param aIncludeSubdomains the parsed includeSubdomains directive.
      * @param aFailureResult a more specific failure result if NS_ERROR_FAILURE
@@ -121,23 +134,26 @@ interface nsISiteSecurityService : nsISupports
      *         NS_SUCCESS_LOSS_OF_INSIGNIFICANT_DATA
      *                          if there are unrecognized tokens in the header.
      */
-    [binaryname(ProcessHeader), noscript]
+    [binaryname(ProcessHeader), noscript, must_use]
     void processHeaderNative(in uint32_t aType,
                              in nsIURI aSourceURI,
                              in ACString aHeader,
-                             in nsISSLStatus aSSLStatus,
+                             in nsITransportSecurityInfo aSecInfo,
                              in uint32_t aFlags,
+                             in uint32_t aSource,
                              in const_OriginAttributesRef aOriginAttributes,
                              [optional] out unsigned long long aMaxAge,
                              [optional] out boolean aIncludeSubdomains,
                              [optional] out uint32_t aFailureResult);
 
-    [binaryname(ProcessHeaderScriptable), implicit_jscontext, optional_argc]
+    [binaryname(ProcessHeaderScriptable), implicit_jscontext, optional_argc,
+     must_use]
     void processHeader(in uint32_t aType,
                        in nsIURI aSourceURI,
                        in ACString aHeader,
-                       in nsISSLStatus aSSLStatus,
+                       in nsITransportSecurityInfo aSecInfo,
                        in uint32_t aFlags,
+                       in uint32_t aSource,
                        [optional] in jsval aOriginAttributes,
                        [optional] out unsigned long long aMaxAge,
                        [optional] out boolean aIncludeSubdomains,
@@ -158,7 +174,7 @@ interface nsISiteSecurityService : nsISupports
      *                          the-middle attacks before trust-on-second-use
      *                          happens).
      */
-    [implicit_jscontext, optional_argc]
+    [implicit_jscontext, optional_argc, must_use]
     void removeState(in uint32_t aType,
                      in nsIURI aURI,
                      in uint32_t aFlags,
@@ -182,29 +198,37 @@ interface nsISiteSecurityService : nsISupports
      *                          by userContextId because of the risk of man-in-
      *                          the-middle attacks before trust-on-second-use
      *                          happens).
-     * @param aCached true if we have cached information regarding whether or not
-     *                  the host is HSTS, false otherwise.
+     * @param aCached true if we have cached information about this host, even
+     *                if the security state is false.
+     * @param aSource the source of the HSTS entry. One of SOURCE_PRELOAD_LIST,
+     *                SOURCE_ORGANIC_REQUEST, SOURCE_HSTS_PRIMING, or
+     *                SOURCE_UNKNOWN. Not implemented for HPKP.
      */
-    [binaryname(IsSecureURI), noscript]
+    [binaryname(IsSecureURI), noscript, must_use]
     boolean isSecureURINative(in uint32_t aType, in nsIURI aURI,
                               in uint32_t aFlags,
                               in const_OriginAttributesRef aOriginAttributes,
-                              [optional] out boolean aCached);
+                              [optional] out boolean aCached,
+                              [optional] out uint32_t aSource);
 
-    [binaryname(IsSecureURIScriptable), implicit_jscontext, optional_argc]
+    [binaryname(IsSecureURIScriptable), implicit_jscontext, optional_argc,
+     must_use]
     boolean isSecureURI(in uint32_t aType, in nsIURI aURI, in uint32_t aFlags,
                         [optional] in jsval aOriginAttributes,
-                        [optional] out boolean aCached);
+                        [optional] out boolean aCached,
+                        [optional] out uint32_t aSource);
 
     /**
      * Removes all non-preloaded security state by resetting to factory-original
      * settings.
      */
+    [must_use]
     void clearAll();
 
     /**
      * Removes all preloaded security state.
      */
+    [must_use]
     void clearPreloads();
 
     /**
@@ -225,7 +249,7 @@ interface nsISiteSecurityService : nsISupports
      * @param aIncludeSubdomains true if the pins apply to subdomains of the
      *        given domain
      */
-    [noscript] boolean getKeyPinsForHostname(
+    [noscript, must_use] boolean getKeyPinsForHostname(
       in ACString aHostname,
       in mozillaPkixTime evalTime,
       in const_OriginAttributesRef aOriginAttributes,
@@ -250,7 +274,7 @@ interface nsISiteSecurityService : nsISupports
      *                          the-middle attacks before trust-on-second-use
      *                          happens).
      */
-    [implicit_jscontext, optional_argc]
+    [implicit_jscontext, optional_argc, must_use]
     boolean setKeyPins(in ACString aHost, in boolean aIncludeSubdomains,
                        in int64_t aExpires, in unsigned long aPinCount,
                        [array, size_is(aPinCount)] in string aSha256Pins,
@@ -267,25 +291,10 @@ interface nsISiteSecurityService : nsISupports
      * @param aIncludeSubdomains whether this entry also applies to subdomains
      * @param aExpires the time this entry should expire (millis since epoch)
      */
+    [must_use]
     boolean setHSTSPreload(in ACString aHost,
                            in boolean aIncludesSubdomains,
                            in int64_t aExpires);
-
-    /**
-     * Mark a host as declining to provide a given security state so that features
-     * such as HSTS priming will not flood a server with requests.
-     *
-     * @param aURI the nsIURI that this applies to
-     * @param aMaxAge lifetime (in seconds) of this negative cache
-     * @param aOriginAttributes the origin attributes that isolate this origin,
-     *                          (note that this implementation does not isolate
-     *                          by userContextId because of the risk of man-in-
-     *                          the-middle attacks before trust-on-second-use
-     *                          happens).
-     */
-    [noscript] void cacheNegativeHSTSResult(
-      in nsIURI aURI, in unsigned long long aMaxAge,
-      in const_OriginAttributesRef aOriginAttributes);
 
     /**
      * Returns an enumerator of the nsISiteSecurityService storage. Each item in
@@ -296,6 +305,7 @@ interface nsISiteSecurityService : nsISupports
      *
      * @param aType the type of security state in question.
      */
+    [must_use]
     nsISimpleEnumerator enumerate(in uint32_t aType);
 };
 

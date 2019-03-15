@@ -7,10 +7,9 @@
 #include "Connection.h"
 #include "ConnectionMainThread.h"
 #include "ConnectionWorker.h"
-#include "nsIDOMClassInfo.h"
 #include "Constants.h"
 #include "mozilla/Telemetry.h"
-#include "WorkerPrivate.h"
+#include "mozilla/dom/WorkerPrivate.h"
 
 /**
  * We have to use macros here because our leak analysis tool things we are
@@ -21,37 +20,27 @@
 namespace mozilla {
 namespace dom {
 
-using namespace workers;
-
 namespace network {
-
-NS_IMPL_QUERY_INTERFACE_INHERITED(Connection, DOMEventTargetHelper,
-                                  nsINetworkProperties)
 
 // Don't use |Connection| alone, since that confuses nsTraceRefcnt since
 // we're not the only class with that name.
-NS_IMPL_ADDREF_INHERITED(dom::network::Connection, DOMEventTargetHelper)
-NS_IMPL_RELEASE_INHERITED(dom::network::Connection, DOMEventTargetHelper)
+NS_IMPL_ISUPPORTS_INHERITED0(dom::network::Connection, DOMEventTargetHelper)
 
 Connection::Connection(nsPIDOMWindowInner* aWindow)
-  : DOMEventTargetHelper(aWindow)
-  , mType(static_cast<ConnectionType>(kDefaultType))
-  , mIsWifi(kDefaultIsWifi)
-  , mDHCPGateway(kDefaultDHCPGateway)
-  , mBeenShutDown(false)
-{
+    : DOMEventTargetHelper(aWindow),
+      mType(static_cast<ConnectionType>(kDefaultType)),
+      mIsWifi(kDefaultIsWifi),
+      mDHCPGateway(kDefaultDHCPGateway),
+      mBeenShutDown(false) {
   Telemetry::Accumulate(Telemetry::NETWORK_CONNECTION_COUNT, 1);
 }
 
-Connection::~Connection()
-{
+Connection::~Connection() {
   NS_ASSERT_OWNINGTHREAD(Connection);
   MOZ_ASSERT(mBeenShutDown);
 }
 
-void
-Connection::Shutdown()
-{
+void Connection::Shutdown() {
   NS_ASSERT_OWNINGTHREAD(Connection);
 
   if (mBeenShutDown) {
@@ -62,36 +51,13 @@ Connection::Shutdown()
   ShutdownInternal();
 }
 
-NS_IMETHODIMP
-Connection::GetIsWifi(bool* aIsWifi)
-{
-  NS_ENSURE_ARG_POINTER(aIsWifi);
-  NS_ASSERT_OWNINGTHREAD(Connection);
-
-  *aIsWifi = mIsWifi;
-  return NS_OK;
+JSObject* Connection::WrapObject(JSContext* aCx,
+                                 JS::Handle<JSObject*> aGivenProto) {
+  return NetworkInformation_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-NS_IMETHODIMP
-Connection::GetDhcpGateway(uint32_t* aGW)
-{
-  NS_ENSURE_ARG_POINTER(aGW);
-  NS_ASSERT_OWNINGTHREAD(Connection);
-
-  *aGW = mDHCPGateway;
-  return NS_OK;
-}
-
-JSObject*
-Connection::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return NetworkInformationBinding::Wrap(aCx, this, aGivenProto);
-}
-
-void
-Connection::Update(ConnectionType aType, bool aIsWifi, bool aDHCPGateway,
-                   bool aNotify)
-{
+void Connection::Update(ConnectionType aType, bool aIsWifi,
+                        uint32_t aDHCPGateway, bool aNotify) {
   NS_ASSERT_OWNINGTHREAD(Connection);
 
   ConnectionType previousType = mType;
@@ -100,39 +66,25 @@ Connection::Update(ConnectionType aType, bool aIsWifi, bool aDHCPGateway,
   mIsWifi = aIsWifi;
   mDHCPGateway = aDHCPGateway;
 
-  if (aNotify && previousType != aType) {
+  if (aNotify && previousType != aType &&
+      !nsContentUtils::ShouldResistFingerprinting()) {
     DispatchTrustedEvent(CHANGE_EVENT_NAME);
   }
 }
 
-/* static */ bool
-Connection::IsEnabled(JSContext* aCx, JSObject* aObj)
-{
-  if (NS_IsMainThread()) {
-    return Preferences::GetBool("dom.netinfo.enabled");
-  }
-
-  WorkerPrivate* workerPrivate = GetWorkerPrivateFromContext(aCx);
-  MOZ_ASSERT(workerPrivate);
-  return workerPrivate->NetworkInformationEnabled();
-}
-
-/* static */ Connection*
-Connection::CreateForWindow(nsPIDOMWindowInner* aWindow)
-{
+/* static */ Connection* Connection::CreateForWindow(
+    nsPIDOMWindowInner* aWindow) {
   MOZ_ASSERT(aWindow);
   return new ConnectionMainThread(aWindow);
 }
 
-/* static */ already_AddRefed<Connection>
-Connection::CreateForWorker(workers::WorkerPrivate* aWorkerPrivate,
-                            ErrorResult& aRv)
-{
+/* static */ already_AddRefed<Connection> Connection::CreateForWorker(
+    WorkerPrivate* aWorkerPrivate, ErrorResult& aRv) {
   MOZ_ASSERT(aWorkerPrivate);
   aWorkerPrivate->AssertIsOnWorkerThread();
   return ConnectionWorker::Create(aWorkerPrivate, aRv);
 }
 
-} // namespace network
-} // namespace dom
-} // namespace mozilla
+}  // namespace network
+}  // namespace dom
+}  // namespace mozilla

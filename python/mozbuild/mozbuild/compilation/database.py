@@ -7,15 +7,15 @@
 import os
 import types
 
-from mozbuild.compilation import util
 from mozbuild.backend.common import CommonBackend
 from mozbuild.frontend.data import (
+    ComputedFlags,
     Sources,
     GeneratedSources,
     DirectoryTraversal,
-    Defines,
     Linkable,
     LocalInclude,
+    PerSourceFlag,
     VariablePassthru,
     SimpleProgram,
 )
@@ -33,8 +33,6 @@ from collections import (
 class CompileDBBackend(CommonBackend):
     def _init(self):
         CommonBackend._init(self)
-        if not util.check_top_objdir(self.environment.topobjdir):
-            raise Exception()
 
         # The database we're going to dump out to.
         self._db = OrderedDict()
@@ -43,22 +41,16 @@ class CompileDBBackend(CommonBackend):
         self._flags = {}
 
         self._envs = {}
-        self._includes = defaultdict(list)
-        self._defines = defaultdict(list)
         self._local_flags = defaultdict(dict)
-        self._extra_includes = defaultdict(list)
-        self._gyp_dirs = set()
-        self._dist_include_testing = '-I%s' % mozpath.join(
-            self.environment.topobjdir, 'dist', 'include', 'testing')
+        self._per_source_flags = defaultdict(list)
 
     def consume_object(self, obj):
         # Those are difficult directories, that will be handled later.
-        if obj.relativedir in (
+        if obj.relsrcdir in (
                 'build/unix/elfhack',
                 'build/unix/elfhack/inject',
                 'build/clang-plugin',
-                'build/clang-plugin/tests',
-                'toolkit/crashreporter/google-breakpad/src/common'):
+                'build/clang-plugin/tests'):
             return True
 
         consumed = CommonBackend.consume_object(self, obj)
@@ -68,47 +60,24 @@ class CompileDBBackend(CommonBackend):
 
         if isinstance(obj, DirectoryTraversal):
             self._envs[obj.objdir] = obj.config
-            for var in ('STL_FLAGS', 'VISIBILITY_FLAGS', 'WARNINGS_AS_ERRORS'):
-                value = obj.config.substs.get(var)
-                if value:
-                    self._local_flags[obj.objdir][var] = value
 
         elif isinstance(obj, (Sources, GeneratedSources)):
             # For other sources, include each source file.
             for f in obj.files:
-                self._build_db_line(obj.objdir, obj.relativedir, obj.config, f,
+                self._build_db_line(obj.objdir, obj.relsrcdir, obj.config, f,
                                     obj.canonical_suffix)
 
-        elif isinstance(obj, LocalInclude):
-            self._includes[obj.objdir].append('-I%s' % mozpath.normpath(
-                obj.path.full_path))
-
-        elif isinstance(obj, Linkable):
-            if isinstance(obj.defines, Defines): # As opposed to HostDefines
-                for d in obj.defines.get_defines():
-                    if d not in self._defines[obj.objdir]:
-                        self._defines[obj.objdir].append(d)
-            self._defines[obj.objdir].extend(obj.lib_defines.get_defines())
-            if isinstance(obj, SimpleProgram) and obj.is_unit_test:
-                if (self._dist_include_testing not in
-                        self._extra_includes[obj.objdir]):
-                    self._extra_includes[obj.objdir].append(
-                        self._dist_include_testing)
-
         elif isinstance(obj, VariablePassthru):
-            if obj.variables.get('IS_GYP_DIR'):
-                self._gyp_dirs.add(obj.objdir)
-            for var in ('MOZBUILD_CFLAGS', 'MOZBUILD_CXXFLAGS',
-                        'MOZBUILD_CMFLAGS', 'MOZBUILD_CMMFLAGS',
-                        'RTL_FLAGS', 'VISIBILITY_FLAGS'):
+            for var in ('MOZBUILD_CMFLAGS', 'MOZBUILD_CMMFLAGS'):
                 if var in obj.variables:
                     self._local_flags[obj.objdir][var] = obj.variables[var]
-            if (obj.variables.get('DISABLE_STL_WRAPPING') and
-                    'STL_FLAGS' in self._local_flags[obj.objdir]):
-                del self._local_flags[obj.objdir]['STL_FLAGS']
-            if (obj.variables.get('ALLOW_COMPILER_WARNINGS') and
-                    'WARNINGS_AS_ERRORS' in self._local_flags[obj.objdir]):
-                del self._local_flags[obj.objdir]['WARNINGS_AS_ERRORS']
+
+        elif isinstance(obj, PerSourceFlag):
+            self._per_source_flags[obj.file_name].extend(obj.flags)
+
+        elif isinstance(obj, ComputedFlags):
+            for var, flags in obj.get_flags():
+                self._local_flags[obj.objdir]['COMPUTED_%s' % var] = flags
 
         return True
 
@@ -124,23 +93,7 @@ class CompileDBBackend(CommonBackend):
                 cmd.append(filename)
             else:
                 cmd.append(unified)
-            local_extra = list(self._extra_includes[directory])
-            if directory not in self._gyp_dirs:
-                for var in (
-                    'NSPR_CFLAGS',
-                    'NSS_CFLAGS',
-                    'MOZ_JPEG_CFLAGS',
-                    'MOZ_PNG_CFLAGS',
-                    'MOZ_ZLIB_CFLAGS',
-                    'MOZ_PIXMAN_CFLAGS',
-                ):
-                    f = env.substs.get(var)
-                    if f:
-                        local_extra.extend(f)
             variables = {
-                'LOCAL_INCLUDES': self._includes[directory],
-                'DEFINES': self._defines[directory],
-                'EXTRA_INCLUDES': local_extra,
                 'DIST': mozpath.join(env.topobjdir, 'dist'),
                 'DEPTH': env.topobjdir,
                 'MOZILLA_DIR': env.topsrcdir,
@@ -157,10 +110,13 @@ class CompileDBBackend(CommonBackend):
                     c.append(a)
                 else:
                     c.extend(a)
+            per_source_flags = self._per_source_flags.get(filename)
+            if per_source_flags is not None:
+                c.extend(per_source_flags)
             db.append({
                 'directory': directory,
                 'command': ' '.join(shell_quote(a) for a in c),
-                'file': filename,
+                'file': mozpath.join(directory, filename),
             })
 
         import json
@@ -170,20 +126,26 @@ class CompileDBBackend(CommonBackend):
             json.dump(db, jsonout, indent=0)
 
     def _process_unified_sources(self, obj):
+        if not obj.have_unified_mapping:
+            for f in list(sorted(obj.files)):
+                self._build_db_line(obj.objdir, obj.relsrcdir, obj.config, f,
+                                    obj.canonical_suffix)
+            return
+
         # For unified sources, only include the unified source file.
         # Note that unified sources are never used for host sources.
         for f in obj.unified_source_mapping:
-            self._build_db_line(obj.objdir, obj.relativedir, obj.config, f[0],
+            self._build_db_line(obj.objdir, obj.relsrcdir, obj.config, f[0],
                                 obj.canonical_suffix)
             for entry in f[1]:
-                self._build_db_line(obj.objdir, obj.relativedir, obj.config,
+                self._build_db_line(obj.objdir, obj.relsrcdir, obj.config,
                                     entry, obj.canonical_suffix, unified=f[0])
 
     def _handle_idl_manager(self, idl_manager):
         pass
 
-    def _handle_ipdl_sources(self, ipdl_dir, sorted_ipdl_sources,
-                             unified_ipdl_cppsrcs_mapping):
+    def _handle_ipdl_sources(self, ipdl_dir, sorted_ipdl_sources, sorted_nonstatic_ipdl_sources,
+                             sorted_static_ipdl_sources, unified_ipdl_cppsrcs_mapping):
         for f in unified_ipdl_cppsrcs_mapping:
             self._build_db_line(ipdl_dir, None, self.environment, f[0],
                                 '.cpp')
@@ -226,30 +188,7 @@ class CompileDBBackend(CommonBackend):
                 value = value.split()
             db.extend(value)
 
-        if canonical_suffix in ('.mm', '.cpp'):
-            db.append('$(STL_FLAGS)')
-
-        db.extend((
-            '$(VISIBILITY_FLAGS)',
-            '$(DEFINES)',
-            '-I%s' % mozpath.join(cenv.topsrcdir, reldir),
-            '-I%s' % objdir,
-            '$(LOCAL_INCLUDES)',
-            '-I%s/dist/include' % cenv.topobjdir,
-            '$(EXTRA_INCLUDES)',
-        ))
-        append_var('DSO_CFLAGS')
-        append_var('DSO_PIC_CFLAGS')
-        if canonical_suffix in ('.c', '.cpp'):
-            db.append('$(RTL_FLAGS)')
-        append_var('OS_COMPILE_%s' % self.CFLAGS[canonical_suffix])
-        append_var('OS_CPPFLAGS')
-        append_var('OS_%s' % self.CFLAGS[canonical_suffix])
-        append_var('MOZ_DEBUG_FLAGS')
-        append_var('MOZ_OPTIMIZE_FLAGS')
-        append_var('MOZ_FRAMEPTR_FLAGS')
-        db.append('$(WARNINGS_AS_ERRORS)')
-        db.append('$(MOZBUILD_%s)' % self.CFLAGS[canonical_suffix])
+        db.append('$(COMPUTED_%s)' % self.CFLAGS[canonical_suffix])
         if canonical_suffix == '.m':
             append_var('OS_COMPILE_CMFLAGS')
             db.append('$(MOZBUILD_CMFLAGS)')

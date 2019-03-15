@@ -4,10 +4,8 @@
 
 /* globals dump */
 
+const { BrowserTestUtils } = require("resource://testing-common/BrowserTestUtils.jsm");
 const Services = require("Services");
-const tabs = require("sdk/tabs");
-const tabUtils = require("sdk/tabs/utils");
-const { viewFor } = require("sdk/view/core");
 const { waitForDelayedStartupFinished } = require("devtools/client/performance/test/helpers/wait-utils");
 const { gDevTools } = require("devtools/client/framework/devtools");
 
@@ -23,63 +21,33 @@ function getRandomInt(min, max) {
  * Adds a browser tab with the given url in the specified window and waits
  * for it to load.
  */
-exports.addTab = function ({ url, win }, options = {}) {
-  let id = getRandomInt(0, Number.MAX_SAFE_INTEGER - 1);
+exports.addTab = function({ url, win }, options = {}) {
+  const id = getRandomInt(0, Number.MAX_SAFE_INTEGER - 1);
   url += `#${id}`;
 
   dump(`Adding tab with url: ${url}.\n`);
 
-  return new Promise(resolve => {
-    let tab;
-
-    tabs.on("ready", function onOpen(model) {
-      if (tab != viewFor(model)) {
-        return;
-      }
-      dump(`Tab added and finished loading: ${model.url}.\n`);
-      tabs.off("ready", onOpen);
-      resolve(tab);
-    });
-
-    win.focus();
-    tab = tabUtils.openTab(win, url);
-
-    if (options.dontWaitForTabReady) {
-      resolve(tab);
-    }
-  });
+  const { gBrowser } = win || window;
+  return BrowserTestUtils.openNewForegroundTab(gBrowser, url,
+                                               !options.dontWaitForTabReady);
 };
 
 /**
  * Removes a browser tab from the specified window and waits for it to close.
  */
-exports.removeTab = function (tab, options = {}) {
-  dump(`Removing tab: ${tabUtils.getURI(tab)}.\n`);
+exports.removeTab = function(tab) {
+  dump(`Removing tab: ${tab.linkedBrowser.currentURI.spec}.\n`);
 
-  return new Promise(resolve => {
-    tabs.on("close", function onClose(model) {
-      if (tab != viewFor(model)) {
-        return;
-      }
-      dump(`Tab removed and finished closing: ${model.url}.\n`);
-      tabs.off("close", onClose);
-      resolve(tab);
-    });
-
-    tabUtils.closeTab(tab);
-
-    if (options.dontWaitForTabClose) {
-      resolve(tab);
-    }
-  });
+  BrowserTestUtils.removeTab(tab);
 };
 
 /**
  * Adds a browser window with the provided options.
  */
-exports.addWindow = function* (options) {
-  let { OpenBrowserWindow } = Services.wm.getMostRecentWindow(gDevTools.chromeWindowType);
-  let win = OpenBrowserWindow(options);
-  yield waitForDelayedStartupFinished(win);
+exports.addWindow = async function(options) {
+  const { OpenBrowserWindow } =
+    Services.wm.getMostRecentWindow(gDevTools.chromeWindowType);
+  const win = OpenBrowserWindow(options);
+  await waitForDelayedStartupFinished(win);
   return win;
 };

@@ -8,80 +8,95 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/rtp_rtcp/source/rtp_receiver_impl.h"
+#include "modules/rtp_rtcp/source/rtp_receiver_impl.h"
 
 #include <assert.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "webrtc/base/logging.h"
-#include "webrtc/modules/rtp_rtcp/include/rtp_payload_registry.h"
-#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_receiver_strategy.h"
+#include <set>
+#include <vector>
+
+#include "common_types.h"  // NOLINT(build/include)
+#include "modules/audio_coding/codecs/audio_format_conversion.h"
+#include "modules/include/module_common_types.h"
+#include "modules/rtp_rtcp/include/rtp_payload_registry.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+#include "modules/rtp_rtcp/source/rtp_receiver_strategy.h"
+#include "rtc_base/logging.h"
 
 namespace webrtc {
 
+namespace {
+bool InOrderPacket(const rtc::Optional<uint16_t>& latest_sequence_number,
+                   uint16_t current_sequence_number) {
+  if (!latest_sequence_number)
+    return true;
+
+  // We need to distinguish between a late or retransmitted packet,
+  // and a sequence number discontinuity.
+  if (IsNewerSequenceNumber(current_sequence_number, *latest_sequence_number)) {
+    return true;
+  } else {
+    // If we have a restart of the remote side this packet is still in order.
+    return !IsNewerSequenceNumber(
+        current_sequence_number,
+        *latest_sequence_number - kDefaultMaxReorderingThreshold);
+  }
+}
+
+}  // namespace
+
 using RtpUtility::Payload;
-using RtpUtility::StringCompare;
+
+// Only return the sources in the last 10 seconds.
+const int64_t kGetSourcesTimeoutMs = 10000;
 
 RtpReceiver* RtpReceiver::CreateVideoReceiver(
     Clock* clock,
     RtpData* incoming_payload_callback,
     RtpFeedback* incoming_messages_callback,
     RTPPayloadRegistry* rtp_payload_registry) {
-  if (!incoming_payload_callback)
-    incoming_payload_callback = NullObjectRtpData();
+  RTC_DCHECK(incoming_payload_callback != nullptr);
   if (!incoming_messages_callback)
     incoming_messages_callback = NullObjectRtpFeedback();
   return new RtpReceiverImpl(
-      clock, NullObjectRtpAudioFeedback(), incoming_messages_callback,
-      rtp_payload_registry,
+      clock, incoming_messages_callback, rtp_payload_registry,
       RTPReceiverStrategy::CreateVideoStrategy(incoming_payload_callback));
 }
 
 RtpReceiver* RtpReceiver::CreateAudioReceiver(
     Clock* clock,
-    RtpAudioFeedback* incoming_audio_feedback,
     RtpData* incoming_payload_callback,
     RtpFeedback* incoming_messages_callback,
     RTPPayloadRegistry* rtp_payload_registry) {
-  if (!incoming_audio_feedback)
-    incoming_audio_feedback = NullObjectRtpAudioFeedback();
-  if (!incoming_payload_callback)
-    incoming_payload_callback = NullObjectRtpData();
+  RTC_DCHECK(incoming_payload_callback != nullptr);
   if (!incoming_messages_callback)
     incoming_messages_callback = NullObjectRtpFeedback();
   return new RtpReceiverImpl(
-      clock, incoming_audio_feedback, incoming_messages_callback,
-      rtp_payload_registry,
-      RTPReceiverStrategy::CreateAudioStrategy(incoming_payload_callback,
-                                               incoming_audio_feedback));
+      clock, incoming_messages_callback, rtp_payload_registry,
+      RTPReceiverStrategy::CreateAudioStrategy(incoming_payload_callback));
 }
 
-RtpReceiverImpl::RtpReceiverImpl(
-    Clock* clock,
-    RtpAudioFeedback* incoming_audio_messages_callback,
-    RtpFeedback* incoming_messages_callback,
-    RTPPayloadRegistry* rtp_payload_registry,
-    RTPReceiverStrategy* rtp_media_receiver)
+int32_t RtpReceiver::RegisterReceivePayload(const CodecInst& audio_codec) {
+  return RegisterReceivePayload(audio_codec.pltype,
+                                CodecInstToSdp(audio_codec));
+}
+
+RtpReceiverImpl::RtpReceiverImpl(Clock* clock,
+                                 RtpFeedback* incoming_messages_callback,
+                                 RTPPayloadRegistry* rtp_payload_registry,
+                                 RTPReceiverStrategy* rtp_media_receiver)
     : clock_(clock),
       rtp_payload_registry_(rtp_payload_registry),
       rtp_media_receiver_(rtp_media_receiver),
       cb_rtp_feedback_(incoming_messages_callback),
-      critical_section_rtp_receiver_(
-          CriticalSectionWrapper::CreateCriticalSection()),
-      last_receive_time_(0),
-      last_received_payload_length_(0),
       ssrc_(0),
       num_csrcs_(0),
       current_remote_csrc_(),
       last_received_timestamp_(0),
-      last_received_frame_time_ms_(-1),
-      last_received_sequence_number_(0),
-      rid_(NULL),
-      nack_method_(kNackOff) {
-  assert(incoming_audio_messages_callback);
+      last_received_frame_time_ms_(-1) {
   assert(incoming_messages_callback);
 
   memset(current_remote_csrc_, 0, sizeof(current_remote_csrc_));
@@ -94,56 +109,46 @@ RtpReceiverImpl::~RtpReceiverImpl() {
 }
 
 int32_t RtpReceiverImpl::RegisterReceivePayload(
-    const char payload_name[RTP_PAYLOAD_NAME_SIZE],
-    const int8_t payload_type,
-    const uint32_t frequency,
-    const size_t channels,
-    const uint32_t rate) {
-  CriticalSectionScoped lock(critical_section_rtp_receiver_.get());
+    int payload_type,
+    const SdpAudioFormat& audio_format) {
+  rtc::CritScope lock(&critical_section_rtp_receiver_);
 
   // TODO(phoglund): Try to streamline handling of the RED codec and some other
   // cases which makes it necessary to keep track of whether we created a
   // payload or not.
   bool created_new_payload = false;
   int32_t result = rtp_payload_registry_->RegisterReceivePayload(
-      payload_name, payload_type, frequency, channels, rate,
-      &created_new_payload);
+      payload_type, audio_format, &created_new_payload);
   if (created_new_payload) {
-    if (rtp_media_receiver_->OnNewPayloadTypeCreated(payload_name, payload_type,
-                                                     frequency) != 0) {
-      LOG(LS_ERROR) << "Failed to register payload: " << payload_name << "/"
-                    << static_cast<int>(payload_type);
+    if (rtp_media_receiver_->OnNewPayloadTypeCreated(payload_type,
+                                                     audio_format) != 0) {
+      RTC_LOG(LS_ERROR) << "Failed to register payload: " << audio_format.name
+                        << "/" << payload_type;
       return -1;
     }
   }
   return result;
 }
 
+int32_t RtpReceiverImpl::RegisterReceivePayload(const VideoCodec& video_codec) {
+  rtc::CritScope lock(&critical_section_rtp_receiver_);
+  return rtp_payload_registry_->RegisterReceivePayload(video_codec);
+}
+
 int32_t RtpReceiverImpl::DeRegisterReceivePayload(
     const int8_t payload_type) {
-  CriticalSectionScoped lock(critical_section_rtp_receiver_.get());
+  rtc::CritScope lock(&critical_section_rtp_receiver_);
   return rtp_payload_registry_->DeRegisterReceivePayload(payload_type);
 }
 
-NACKMethod RtpReceiverImpl::NACK() const {
-  CriticalSectionScoped lock(critical_section_rtp_receiver_.get());
-  return nack_method_;
-}
-
-// Turn negative acknowledgment requests on/off.
-void RtpReceiverImpl::SetNACKStatus(const NACKMethod method) {
-  CriticalSectionScoped lock(critical_section_rtp_receiver_.get());
-  nack_method_ = method;
-}
-
 uint32_t RtpReceiverImpl::SSRC() const {
-  CriticalSectionScoped lock(critical_section_rtp_receiver_.get());
+  rtc::CritScope lock(&critical_section_rtp_receiver_);
   return ssrc_;
 }
 
 // Get remote CSRC.
 int32_t RtpReceiverImpl::CSRCs(uint32_t array_of_csrcs[kRtpCsrcSize]) const {
-  CriticalSectionScoped lock(critical_section_rtp_receiver_.get());
+  rtc::CritScope lock(&critical_section_rtp_receiver_);
 
   assert(num_csrcs_ <= kRtpCsrcSize);
 
@@ -153,12 +158,12 @@ int32_t RtpReceiverImpl::CSRCs(uint32_t array_of_csrcs[kRtpCsrcSize]) const {
   return num_csrcs_;
 }
 
-void RtpReceiverImpl::GetRID(char rid[256]) const {
-  CriticalSectionScoped lock(critical_section_rtp_receiver_.get());
-  if (rid_) {
-    strncpy(rid, rid_, 256);
+void RtpReceiverImpl::GetRID(char rtp_stream_id[256]) const {
+  rtc::CritScope lock(&critical_section_rtp_receiver_);
+  if (!rtp_stream_id_.empty()) {
+    strncpy(rtp_stream_id, rtp_stream_id_.data(), 256);
   } else {
-    rid[0] = '\0';
+    rtp_stream_id[0] = '\0';
   }
 }
 
@@ -167,12 +172,10 @@ int32_t RtpReceiverImpl::Energy(
   return rtp_media_receiver_->Energy(array_of_energy);
 }
 
-bool RtpReceiverImpl::IncomingRtpPacket(
-  const RTPHeader& rtp_header,
-  const uint8_t* payload,
-  size_t payload_length,
-  PayloadUnion payload_specific,
-  bool in_order) {
+bool RtpReceiverImpl::IncomingRtpPacket(const RTPHeader& rtp_header,
+                                        const uint8_t* payload,
+                                        size_t payload_length,
+                                        PayloadUnion payload_specific) {
   // Trigger our callbacks.
   CheckSSRCChanged(rtp_header);
 
@@ -185,7 +188,7 @@ bool RtpReceiverImpl::IncomingRtpPacket(
       // OK, keep-alive packet.
       return true;
     }
-    LOG(LS_WARNING) << "Receiving invalid payload type.";
+    RTC_LOG(LS_WARNING) << "Receiving invalid payload type.";
     return false;
   }
 
@@ -194,48 +197,42 @@ bool RtpReceiverImpl::IncomingRtpPacket(
   webrtc_rtp_header.header = rtp_header;
   CheckCSRC(webrtc_rtp_header);
 
-  size_t payload_data_length = payload_length - rtp_header.paddingLength;
-
-  bool is_first_packet_in_frame = false;
-  {
-    CriticalSectionScoped lock(critical_section_rtp_receiver_.get());
-    if (HaveReceivedFrame()) {
-      is_first_packet_in_frame =
-          last_received_sequence_number_ + 1 == rtp_header.sequenceNumber &&
-          last_received_timestamp_ != rtp_header.timestamp;
-    } else {
-      is_first_packet_in_frame = true;
-    }
-  }
+  auto audio_level =
+      rtp_header.extension.hasAudioLevel
+          ? rtc::Optional<uint8_t>(rtp_header.extension.audioLevel)
+          : rtc::nullopt;
+  UpdateSources(audio_level);
 
   int32_t ret_val = rtp_media_receiver_->ParseRtpPacket(
       &webrtc_rtp_header, payload_specific, is_red, payload, payload_length,
-      clock_->TimeInMilliseconds(), is_first_packet_in_frame);
+      clock_->TimeInMilliseconds());
 
   if (ret_val < 0) {
     return false;
   }
 
   {
-    CriticalSectionScoped lock(critical_section_rtp_receiver_.get());
+    rtc::CritScope lock(&critical_section_rtp_receiver_);
 
-    last_receive_time_ = clock_->TimeInMilliseconds();
-    last_received_payload_length_ = payload_data_length;
-    // RID rarely if ever changes
-    if (rtp_header.extension.hasRID &&
-        (!rid_ || strcmp(rtp_header.extension.rid, rid_) != 0)) {
-      delete [] rid_;
-      rid_ = new char[strlen(rtp_header.extension.rid)+1];
-      strcpy(rid_, rtp_header.extension.rid);
-    }
-    if (in_order) {
-      if (last_received_timestamp_ != rtp_header.timestamp) {
-        last_received_timestamp_ = rtp_header.timestamp;
-        last_received_frame_time_ms_ = clock_->TimeInMilliseconds();
+    // TODO(nisse): Do not rely on InOrderPacket for recovered packets, when
+    // packet is passed as RtpPacketReceived and that information is available.
+    // We should ideally never record timestamps for retransmitted or recovered
+    // packets.
+    if (InOrderPacket(last_received_sequence_number_,
+                      rtp_header.sequenceNumber)) {
+      last_received_sequence_number_.emplace(rtp_header.sequenceNumber);
+      last_received_timestamp_ = rtp_header.timestamp;
+      last_received_frame_time_ms_ = clock_->TimeInMilliseconds();
+
+      // RID rarely if ever changes
+      if (!rtp_header.extension.stream_id.empty() &&
+          (rtp_header.extension.stream_id != rtp_stream_id_)) {
+        rtp_stream_id_ = rtp_header.extension.stream_id;
+        RTC_LOG(LS_INFO) << "Received new RID value: " << rtp_stream_id_.data();
       }
-      last_received_sequence_number_ = rtp_header.sequenceNumber;
     }
   }
+
   return true;
 }
 
@@ -243,36 +240,59 @@ TelephoneEventHandler* RtpReceiverImpl::GetTelephoneEventHandler() {
   return rtp_media_receiver_->GetTelephoneEventHandler();
 }
 
-bool RtpReceiverImpl::Timestamp(uint32_t* timestamp) const {
-  CriticalSectionScoped lock(critical_section_rtp_receiver_.get());
-  if (!HaveReceivedFrame())
+std::vector<RtpSource> RtpReceiverImpl::GetSources() const {
+  rtc::CritScope lock(&critical_section_rtp_receiver_);
+
+  int64_t now_ms = clock_->TimeInMilliseconds();
+  std::vector<RtpSource> sources;
+
+  RTC_DCHECK(std::is_sorted(ssrc_sources_.begin(), ssrc_sources_.end(),
+                            [](const RtpSource& lhs, const RtpSource& rhs) {
+                              return lhs.timestamp_ms() < rhs.timestamp_ms();
+                            }));
+  RTC_DCHECK(std::is_sorted(csrc_sources_.begin(), csrc_sources_.end(),
+                            [](const RtpSource& lhs, const RtpSource& rhs) {
+                              return lhs.timestamp_ms() < rhs.timestamp_ms();
+                            }));
+
+  std::set<uint32_t> selected_ssrcs;
+  for (auto rit = ssrc_sources_.rbegin(); rit != ssrc_sources_.rend(); ++rit) {
+    if ((now_ms - rit->timestamp_ms()) > kGetSourcesTimeoutMs) {
+      break;
+    }
+    if (selected_ssrcs.insert(rit->source_id()).second) {
+      sources.push_back(*rit);
+    }
+  }
+
+  for (auto rit = csrc_sources_.rbegin(); rit != csrc_sources_.rend(); ++rit) {
+    if ((now_ms - rit->timestamp_ms()) > kGetSourcesTimeoutMs) {
+      break;
+    }
+    sources.push_back(*rit);
+  }
+  return sources;
+}
+
+bool RtpReceiverImpl::GetLatestTimestamps(uint32_t* timestamp,
+                                          int64_t* receive_time_ms) const {
+  rtc::CritScope lock(&critical_section_rtp_receiver_);
+  if (!last_received_sequence_number_)
     return false;
+
   *timestamp = last_received_timestamp_;
-  return true;
-}
-
-bool RtpReceiverImpl::LastReceivedTimeMs(int64_t* receive_time_ms) const {
-  CriticalSectionScoped lock(critical_section_rtp_receiver_.get());
-  if (!HaveReceivedFrame())
-    return false;
   *receive_time_ms = last_received_frame_time_ms_;
-  return true;
-}
 
-bool RtpReceiverImpl::HaveReceivedFrame() const {
-  return last_received_frame_time_ms_ >= 0;
+  return true;
 }
 
 // Implementation note: must not hold critsect when called.
 void RtpReceiverImpl::CheckSSRCChanged(const RTPHeader& rtp_header) {
   bool new_ssrc = false;
-  bool re_initialize_decoder = false;
-  char payload_name[RTP_PAYLOAD_NAME_SIZE];
-  size_t channels = 1;
-  uint32_t rate = 0;
+  rtc::Optional<AudioPayload> reinitialize_audio_payload;
 
   {
-    CriticalSectionScoped lock(critical_section_rtp_receiver_.get());
+    rtc::CritScope lock(&critical_section_rtp_receiver_);
 
     int8_t last_received_payload_type =
         rtp_payload_registry_->last_received_payload_type();
@@ -282,25 +302,22 @@ void RtpReceiverImpl::CheckSSRCChanged(const RTPHeader& rtp_header) {
       new_ssrc = true;
 
       last_received_timestamp_ = 0;
-      last_received_sequence_number_ = 0;
       last_received_frame_time_ms_ = -1;
 
       // Do we have a SSRC? Then the stream is restarted.
       if (ssrc_ != 0) {
         // Do we have the same codec? Then re-initialize coder.
         if (rtp_header.payloadType == last_received_payload_type) {
-          re_initialize_decoder = true;
-
-          const Payload* payload = rtp_payload_registry_->PayloadTypeToPayload(
+          const auto payload = rtp_payload_registry_->PayloadTypeToPayload(
               rtp_header.payloadType);
           if (!payload) {
             return;
           }
-          payload_name[RTP_PAYLOAD_NAME_SIZE - 1] = 0;
-          strncpy(payload_name, payload->name, RTP_PAYLOAD_NAME_SIZE - 1);
-          if (payload->audio) {
-            channels = payload->typeSpecific.Audio.channels;
-            rate = payload->typeSpecific.Audio.rate;
+          if (payload->typeSpecific.is_audio()) {
+            reinitialize_audio_payload.emplace(
+                payload->typeSpecific.audio_payload());
+          } else {
+            // OnInitializeDecoder() is only used for audio.
           }
         }
       }
@@ -314,14 +331,13 @@ void RtpReceiverImpl::CheckSSRCChanged(const RTPHeader& rtp_header) {
     cb_rtp_feedback_->OnIncomingSSRCChanged(rtp_header.ssrc);
   }
 
-  if (re_initialize_decoder) {
-    if (-1 ==
-        cb_rtp_feedback_->OnInitializeDecoder(
-            rtp_header.payloadType, payload_name,
-            rtp_header.payload_type_frequency, channels, rate)) {
+  if (reinitialize_audio_payload) {
+    if (-1 == cb_rtp_feedback_->OnInitializeDecoder(
+                  rtp_header.payloadType, reinitialize_audio_payload->format,
+                  reinitialize_audio_payload->rate)) {
       // New stream, same codec.
-      LOG(LS_ERROR) << "Failed to create decoder for payload type: "
-                    << static_cast<int>(rtp_header.payloadType);
+      RTC_LOG(LS_ERROR) << "Failed to create decoder for payload type: "
+                        << static_cast<int>(rtp_header.payloadType);
     }
   }
 }
@@ -343,7 +359,7 @@ int32_t RtpReceiverImpl::CheckPayloadChanged(const RTPHeader& rtp_header,
   int8_t payload_type = rtp_header.payloadType;
 
   {
-    CriticalSectionScoped lock(critical_section_rtp_receiver_.get());
+    rtc::CritScope lock(&critical_section_rtp_receiver_);
 
     int8_t last_received_payload_type =
         rtp_payload_registry_->last_received_payload_type();
@@ -379,7 +395,7 @@ int32_t RtpReceiverImpl::CheckPayloadChanged(const RTPHeader& rtp_header,
         return 0;
       }
 
-      const Payload* payload =
+      const auto payload =
           rtp_payload_registry_->PayloadTypeToPayload(payload_type);
       if (!payload) {
         // Not a registered payload type.
@@ -395,7 +411,7 @@ int32_t RtpReceiverImpl::CheckPayloadChanged(const RTPHeader& rtp_header,
       rtp_media_receiver_->SetLastMediaSpecificPayload(payload->typeSpecific);
       rtp_media_receiver_->GetLastMediaSpecificPayload(specific_payload);
 
-      if (!payload->audio) {
+      if (!payload->typeSpecific.is_audio()) {
         bool media_type_unchanged =
             rtp_payload_registry_->ReportMediaPayloadType(payload_type);
         if (media_type_unchanged) {
@@ -426,7 +442,7 @@ void RtpReceiverImpl::CheckCSRC(const WebRtcRTPHeader& rtp_header) {
   uint8_t old_num_csrcs = 0;
 
   {
-    CriticalSectionScoped lock(critical_section_rtp_receiver_.get());
+    rtc::CritScope lock(&critical_section_rtp_receiver_);
 
     if (!rtp_media_receiver_->ShouldReportCsrcChanges(
         rtp_header.header.payloadType)) {
@@ -499,6 +515,59 @@ void RtpReceiverImpl::CheckCSRC(const WebRtcRTPHeader& rtp_header) {
       cb_rtp_feedback_->OnIncomingCSRCChanged(0, false);
     }
   }
+}
+
+void RtpReceiverImpl::UpdateSources(
+    const rtc::Optional<uint8_t>& ssrc_audio_level) {
+  rtc::CritScope lock(&critical_section_rtp_receiver_);
+  int64_t now_ms = clock_->TimeInMilliseconds();
+
+  for (size_t i = 0; i < num_csrcs_; ++i) {
+    auto map_it = iterator_by_csrc_.find(current_remote_csrc_[i]);
+    if (map_it == iterator_by_csrc_.end()) {
+      // If it is a new CSRC, append a new object to the end of the list.
+      csrc_sources_.emplace_back(now_ms, current_remote_csrc_[i],
+                                 RtpSourceType::CSRC);
+    } else {
+      // If it is an existing CSRC, move the object to the end of the list.
+      map_it->second->update_timestamp_ms(now_ms);
+      csrc_sources_.splice(csrc_sources_.end(), csrc_sources_, map_it->second);
+    }
+    // Update the unordered_map.
+    iterator_by_csrc_[current_remote_csrc_[i]] = std::prev(csrc_sources_.end());
+  }
+
+  // If this is the first packet or the SSRC is changed, insert a new
+  // contributing source that uses the SSRC.
+  if (ssrc_sources_.empty() || ssrc_sources_.rbegin()->source_id() != ssrc_) {
+    ssrc_sources_.emplace_back(now_ms, ssrc_, RtpSourceType::SSRC);
+  } else {
+    ssrc_sources_.rbegin()->update_timestamp_ms(now_ms);
+  }
+
+  ssrc_sources_.back().set_audio_level(ssrc_audio_level);
+
+  RemoveOutdatedSources(now_ms);
+}
+
+void RtpReceiverImpl::RemoveOutdatedSources(int64_t now_ms) {
+  std::list<RtpSource>::iterator it;
+  for (it = csrc_sources_.begin(); it != csrc_sources_.end(); ++it) {
+    if ((now_ms - it->timestamp_ms()) <= kGetSourcesTimeoutMs) {
+      break;
+    }
+    iterator_by_csrc_.erase(it->source_id());
+  }
+  csrc_sources_.erase(csrc_sources_.begin(), it);
+
+  std::vector<RtpSource>::iterator vec_it;
+  for (vec_it = ssrc_sources_.begin(); vec_it != ssrc_sources_.end();
+       ++vec_it) {
+    if ((now_ms - vec_it->timestamp_ms()) <= kGetSourcesTimeoutMs) {
+      break;
+    }
+  }
+  ssrc_sources_.erase(ssrc_sources_.begin(), vec_it);
 }
 
 }  // namespace webrtc

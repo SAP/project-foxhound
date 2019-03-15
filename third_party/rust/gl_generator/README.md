@@ -1,7 +1,7 @@
 # gl_generator
 
 [![Version](https://img.shields.io/crates/v/gl_generator.svg)](https://crates.io/crates/gl_generator)
-[![License](https://img.shields.io/crates/l/gl_generator.svg)](https://github.com/bjz/gl-rs/blob/master/LICENSE)
+[![License](https://img.shields.io/crates/l/gl_generator.svg)](https://github.com/brendanzab/gl-rs/blob/master/LICENSE)
 [![Downloads](https://img.shields.io/crates/d/gl_generator.svg)](https://crates.io/crates/gl_generator)
 
 Code generators for creating bindings to the Khronos OpenGL APIs.
@@ -59,8 +59,8 @@ mod gl {
 fn main() {
     let window = ...;
 
-    // Assuming `window` is GLFW: initialize, and made current
-    gl::load_with(|s| window.get_proc_address(s));
+    // Assuming `window` is GLFW: initialize, and make current
+    gl::load_with(|s| window.get_proc_address(s) as *const _);
 }
 ```
 

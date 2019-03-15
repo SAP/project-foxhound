@@ -10,18 +10,45 @@
  * liability, trademark and document use rules apply.
  */
 
-[Func="nsDocument::IsWebComponentsEnabled"]
+// https://dom.spec.whatwg.org/#enumdef-shadowrootmode
+enum ShadowRootMode {
+  "open",
+  "closed"
+};
+
+// https://dom.spec.whatwg.org/#shadowroot
 interface ShadowRoot : DocumentFragment
 {
+  // Shadow DOM v1
+  readonly attribute ShadowRootMode mode;
+  readonly attribute Element host;
+
+  // [deprecated] Shadow DOM v0
   Element? getElementById(DOMString elementId);
   HTMLCollection getElementsByTagName(DOMString localName);
   HTMLCollection getElementsByTagNameNS(DOMString? namespace, DOMString localName);
   HTMLCollection getElementsByClassName(DOMString classNames);
-  [SetterThrows,TreatNullAs=EmptyString]
+  [CEReactions, SetterThrows, TreatNullAs=EmptyString]
   attribute DOMString innerHTML;
-  readonly attribute Element host;
-  readonly attribute ShadowRoot? olderShadowRoot;
-  attribute boolean applyAuthorStyles;
-  readonly attribute StyleSheetList styleSheets;
+
+  // When JS invokes importNode or createElement, the binding code needs to
+  // create a reflector, and so invoking those methods directly on the content
+  // document would cause the reflector to be created in the content scope,
+  // at which point it would be difficult to move into the UA Widget scope.
+  // As such, these methods allow UA widget code to simultaneously create nodes
+  // and associate them with the UA widget tree, so that the reflectors get
+  // created in the right scope.
+  [CEReactions, Throws, Func="IsChromeOrXBLOrUAWidget"]
+  Node importNodeAndAppendChildAt(Node parentNode, Node node, optional boolean deep = false);
+
+  [CEReactions, Throws, Func="IsChromeOrXBLOrUAWidget"]
+  Node createElementAndAppendChildAt(Node parentNode, DOMString localName);
+
+  // For triggering UA Widget scope in tests.
+  [ChromeOnly]
+  void setIsUAWidget();
+  [ChromeOnly]
+  boolean isUAWidget();
 };
 
+ShadowRoot implements DocumentOrShadowRoot;

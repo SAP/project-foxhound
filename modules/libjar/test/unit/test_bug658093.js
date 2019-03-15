@@ -2,10 +2,7 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cu = Components.utils;
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 // Check that we don't crash on reading a directory entry signature
 var ios = Cc["@mozilla.org/network/io-service;1"].
@@ -21,5 +18,5 @@ function run_test() {
   } catch (e) {
     failed = true;
   }
-  do_check_true(failed);
+  Assert.ok(failed);
 }

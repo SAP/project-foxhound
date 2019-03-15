@@ -22,6 +22,8 @@ import org.mozilla.gecko.distribution.Distribution;
 import org.mozilla.gecko.util.FileUtils;
 import org.mozilla.gecko.util.GeckoJarReader;
 import org.mozilla.gecko.util.HardwareUtils;
+import org.mozilla.gecko.util.IOUtils;
+import org.mozilla.gecko.util.ProxySelector;
 import org.mozilla.gecko.util.RawResource;
 import org.mozilla.gecko.util.StringUtils;
 import org.mozilla.gecko.util.ThreadUtils;
@@ -38,10 +40,12 @@ import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
 import java.lang.ref.WeakReference;
 import java.net.HttpURLConnection;
-import java.net.URL;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Locale;
+import org.json.JSONObject;
+import org.json.JSONArray;
 
 /**
  * This class is not thread-safe, except where otherwise noted.
@@ -61,10 +65,13 @@ public class SearchEngineManager implements SharedPreferences.OnSharedPreference
     private static final String PREF_DEFAULT_ENGINE_KEY = "search.engines.defaultname";
 
     // Key for shared preference that stores search region.
-    private static final String PREF_REGION_KEY = "search.region";
+    public static final String PREF_REGION_KEY = "search.region";
 
     // URL for the geo-ip location service. Keep in sync with "browser.search.geoip.url" perference in Gecko.
     private static final String GEOIP_LOCATION_URL = "https://location.services.mozilla.com/v1/country?key=" + AppConstants.MOZ_MOZILLA_API_KEY;
+
+    // The API we're using requires a file size, so set an arbitrarily large one
+    public static final int MAX_LISTJSON_SIZE = 8192;
 
     // This should go through GeckoInterface to get the UA, but the search activity
     // doesn't use a GeckoView yet. Until it does, get the UA directly.
@@ -382,8 +389,8 @@ public class SearchEngineManager implements SharedPreferences.OnSharedPreference
         try {
             String responseText = null;
 
-            URL url = new URL(GEOIP_LOCATION_URL);
-            HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
+            URI uri = new URI(GEOIP_LOCATION_URL);
+            HttpURLConnection urlConnection = (HttpURLConnection) ProxySelector.openConnectionWithProxy(uri);
             try {
                 // POST an empty JSON object.
                 final String message = "{}";
@@ -426,39 +433,57 @@ public class SearchEngineManager implements SharedPreferences.OnSharedPreference
      * @return search engine name.
      */
     private String getDefaultEngineNameFromLocale() {
+        final InputStream in = getInputStreamFromSearchPluginsJar("list.json");
+        if (in == null) {
+            Log.e(LOG_TAG, "Error missing list.json");
+            return null;
+        }
         try {
-            final JSONObject browsersearch = new JSONObject(RawResource.getAsString(context, R.raw.browsersearch));
-
-            // Get the region used to fence search engines.
-            String region = fetchCountryCode();
+            final JSONObject json = new JSONObject(FileUtils.readStringFromInputStreamAndCloseStream(in, MAX_LISTJSON_SIZE));
+            final String region = fetchCountryCode();
 
             // Store the result, even if it's empty. If we fail to get a region, we never
             // try to get it again, and we will always fallback to the non-region engine.
             GeckoSharedPrefs.forApp(context)
-                            .edit()
-                            .putString(PREF_REGION_KEY, (region == null ? "" : region))
-                            .apply();
+                    .edit()
+                    .putString(PREF_REGION_KEY, (region == null ? "" : region))
+                    .apply();
 
-            if (region != null) {
-                if (browsersearch.has("regions")) {
-                    final JSONObject regions = browsersearch.getJSONObject("regions");
-                    if (regions.has(region)) {
-                        final JSONObject regionData = regions.getJSONObject(region);
-                        Log.d(LOG_TAG, "Found region-specific default engine name in browsersearch.json.");
-                        return regionData.getString("default");
-                    }
+            return getDefaultEngineNameFromJSON(region, json);
+        } catch (IOException e) {
+            Log.e(LOG_TAG, "Error getting search engine name from list.json", e);
+        } catch (JSONException e) {
+            Log.e(LOG_TAG, "Error parsing list.json", e);
+        } finally {
+            IOUtils.safeStreamClose(in);
+        }
+        return null;
+    }
+
+    public static String getDefaultEngineNameFromJSON(String region, JSONObject json) {
+        try {
+            // Get the current language
+            final String languageTag = Locales.getLanguageTag(Locale.getDefault());
+
+            final JSONObject locales = json.getJSONObject("locales");
+
+            if (locales.has(languageTag)) {
+                final JSONObject regions = locales.getJSONObject(languageTag);
+                if (!regions.has(region)) {
+                    // Region doesn't exist, use default.
+                    // default always exists.
+                    region = "default";
+                }
+                final JSONObject regionData = regions.getJSONObject(region);
+                if (regionData.has("searchDefault")) {
+                    return regionData.getString("searchDefault");
                 }
             }
-
-            // Either we have no geoip region, or we didn't find the right region and we are falling back to the default.
-            if (browsersearch.has("default")) {
-                Log.d(LOG_TAG, "Found default engine name in browsersearch.json.");
-                return browsersearch.getString("default");
-            }
-        } catch (IOException e) {
-            Log.e(LOG_TAG, "Error getting search engine name from browsersearch.json", e);
+            // Falling back to the overall default
+            final JSONObject defaultData = json.getJSONObject("default");
+            return defaultData.getString("searchDefault");
         } catch (JSONException e) {
-            Log.e(LOG_TAG, "Error parsing browsersearch.json", e);
+            Log.e(LOG_TAG, "Error parsing list.json", e);
         }
         return null;
     }
@@ -559,7 +584,7 @@ public class SearchEngineManager implements SharedPreferences.OnSharedPreference
     /**
      * Creates a SearchEngine instance for a search plugin shipped in the locale.
      *
-     * This method reads the list of search plugin file names from list.txt, then
+     * This method reads the list of search plugin file names from list.json, then
      * iterates through the files, creating SearchEngine instances until it finds one
      * with the right name. Unfortunately, we need to do this because there is no
      * other way to map the search engine "name" to the file for the search plugin.
@@ -568,33 +593,83 @@ public class SearchEngineManager implements SharedPreferences.OnSharedPreference
      * @return SearchEngine instance for name.
      */
     private SearchEngine createEngineFromLocale(String name) {
-        final InputStream in = getInputStreamFromSearchPluginsJar("list.txt");
+        final InputStream in = getInputStreamFromSearchPluginsJar("list.json");
         if (in == null) {
             return null;
         }
-        final BufferedReader br = getBufferedReader(in);
-
+        JSONObject json;
         try {
-            String identifier;
-            while ((identifier = br.readLine()) != null) {
-                final InputStream pluginIn = getInputStreamFromSearchPluginsJar(identifier + ".xml");
-                // pluginIn can be null if the xml file doesn't exist which
-                // can happen with :hidden plugins
+            json = new JSONObject(FileUtils.readStringFromInputStreamAndCloseStream(in, MAX_LISTJSON_SIZE));
+        } catch (IOException e) {
+            Log.e(LOG_TAG, "Error reading list.json", e);
+            return null;
+        } catch (JSONException e) {
+            Log.e(LOG_TAG, "Error parsing list.json", e);
+            return null;
+        } finally {
+            IOUtils.safeStreamClose(in);
+        }
+        try {
+
+            ArrayList<String> engines = getEngineListFromJSON(fetchCountryCode(), json);
+
+            for (int i = 0; i < engines.size(); i++) {
+                final InputStream pluginIn = getInputStreamFromSearchPluginsJar(engines.get(i) + ".xml");
                 if (pluginIn != null) {
-                  final SearchEngine engine = createEngineFromInputStream(identifier, pluginIn);
-                  if (engine != null && engine.getName().equals(name)) {
-                      return engine;
-                  }
+                    final SearchEngine engine = createEngineFromInputStream(engines.get(i), pluginIn);
+                    if (engine != null && engine.getName().equals(name)) {
+                        return engine;
+                    }
                 }
             }
         } catch (Throwable e) {
             Log.e(LOG_TAG, "Error creating shipped search engine from name: " + name, e);
-        } finally {
-            try {
-                br.close();
-            } catch (IOException e) {
-                // Ignore.
+        }
+        return null;
+    }
+
+    public static ArrayList<String> getEngineListFromJSON(String originalRegion, JSONObject json) {
+        try {
+            final String languageTag = Locales.getLanguageTag(Locale.getDefault());
+
+            String region = originalRegion;
+
+            final JSONObject locales = json.getJSONObject("locales");
+
+            JSONArray jsonEngines;
+            if (locales.has(languageTag)) {
+                final JSONObject regions = locales.getJSONObject(languageTag);
+                if (!regions.has(originalRegion)) {
+                    // Region doesn't exist, use default.
+                    // default always exists.
+                    region = "default";
+                }
+                jsonEngines = regions.getJSONObject(region).getJSONArray("visibleDefaultEngines");
+            } else {
+                // Falling back to the overall default
+                jsonEngines = locales.getJSONObject("default").getJSONArray("visibleDefaultEngines");
             }
+
+            ArrayList<String> engines = new ArrayList<String>();
+
+            for (int i = 0; i < jsonEngines.length(); i++) {
+                engines.add(jsonEngines.getString(i));
+            }
+
+            if (json.getJSONObject("regionOverrides").has(originalRegion)) {
+                final JSONObject regionOverride = json.getJSONObject("regionOverrides").getJSONObject(originalRegion);
+                for (int i = 0; i < engines.size(); i++) {
+                    final String engineName = engines.get(i);
+                    if (regionOverride.has(engineName)) {
+                        engines.set(i, regionOverride.getString(engineName));
+                    }
+                }
+            }
+
+            return engines;
+
+        } catch (Throwable e) {
+            Log.e(LOG_TAG, "Error getting engine list", e);
         }
         return null;
     }
@@ -676,29 +751,8 @@ public class SearchEngineManager implements SharedPreferences.OnSharedPreference
      * @return InputStream for file.
      */
     private InputStream getInputStreamFromSearchPluginsJar(String fileName) {
-        final Locale locale = Locale.getDefault();
-
-        // First, try a file path for the full locale.
-        final String languageTag = Locales.getLanguageTag(locale);
-        String url = getSearchPluginsJarURL(context, languageTag, fileName);
-
-        InputStream in = GeckoJarReader.getStream(context, url);
-        if (in != null) {
-            return in;
-        }
-
-        // If that doesn't work, try a file path for just the language.
-        final String language = Locales.getLanguage(locale);
-        if (!languageTag.equals(language)) {
-            url = getSearchPluginsJarURL(context, language, fileName);
-            in = GeckoJarReader.getStream(context, url);
-            if (in != null) {
-                return in;
-            }
-        }
-
-        // Finally, fall back to default locale defined in chrome registry.
-        url = getSearchPluginsJarURL(context, getFallbackLocale(), fileName);
+        final String path = "chrome/chrome/searchplugins/" + fileName;
+        final String url =  GeckoJarReader.getJarURL(context, path);
         return GeckoJarReader.getStream(context, url);
     }
 
@@ -740,18 +794,6 @@ public class SearchEngineManager implements SharedPreferences.OnSharedPreference
             }
         }
         return fallbackLocale;
-    }
-
-    /**
-     * Gets the jar URL for a file in the searchplugins directory.
-     *
-     * @param locale String representing the Gecko locale (e.g. "en-US").
-     * @param fileName The name of the file to read.
-     * @return URL for jar file.
-     */
-    private static String getSearchPluginsJarURL(Context context, String locale, String fileName) {
-        final String path = "chrome/" + locale + "/locale/" + locale + "/browser/searchplugins/" + fileName;
-        return GeckoJarReader.getJarURL(context, path);
     }
 
     private BufferedReader getBufferedReader(InputStream in) {

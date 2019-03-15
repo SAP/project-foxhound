@@ -5,18 +5,18 @@
 
 #include "nsISupports.idl"
 
-interface nsIDOMDocument;
-interface nsIDOMRange;
-interface nsISelection;
-interface nsIDOMNode;
 interface nsIOutputStream;
+
+webidl Document;
+webidl Node;
+webidl Range;
+webidl Selection;
 
 %{ C++
 class nsINode;
-class nsIDocument;
+
 %}
 [ptr] native nsINodePtr(nsINode);
-[ptr] native nsIDocumentPtr(nsIDocument);
 
 [scriptable, uuid(3d9371d8-a2ad-403e-8b0e-8885ad3562e3)]
 interface nsIDocumentEncoderNodeFixup : nsISupports
@@ -32,7 +32,7 @@ interface nsIDocumentEncoderNodeFixup : nsISupports
    * instead of the children of the original node.
    * @return The resulting fixed up node.
    */
-  nsIDOMNode fixupNode(in nsIDOMNode aNode, out boolean aSerializeCloneKids);
+  Node fixupNode(in Node aNode, out boolean aSerializeCloneKids);
 };
 
 [scriptable, uuid(21f112df-d96f-47da-bfcb-5331273003d1)]
@@ -40,9 +40,9 @@ interface nsIDocumentEncoder : nsISupports
 {
   // Output methods flag bits. There are a frightening number of these,
   // because everyone wants something a little bit different
-   
 
-  /** 
+
+  /**
    * Output only the selection (as opposed to the whole document).
    */
   const unsigned long OutputSelectionOnly = (1 << 0);
@@ -63,7 +63,7 @@ interface nsIDocumentEncoder : nsISupports
    */
   const unsigned long OutputRaw           = (1 << 2);
 
-  /** 
+  /**
    * Do not print html head tags.
    * XHTML/HTML output only.
    */
@@ -107,15 +107,6 @@ interface nsIDocumentEncoder : nsISupports
   const unsigned long OutputAbsoluteLinks = (1 << 7);
 
   /**
-   * Attempt to encode entities standardized at W3C (HTML, MathML, etc).
-   * This is a catch-all flag for documents with mixed contents. Beware of
-   * interoperability issues. See below for other flags which might likely
-   * do what you want.
-   * HTML output only.
-   */
-  const unsigned long OutputEncodeW3CEntities = (1 << 8);
-
-  /** 
    * LineBreak processing: if this flag is set than CR line breaks will
    * be written. If neither this nor OutputLFLineBreak is set, then we
    * will use platform line breaks. The combination of the two flags will
@@ -123,7 +114,7 @@ interface nsIDocumentEncoder : nsISupports
    */
   const unsigned long OutputCRLineBreak = (1 << 9);
 
-  /** 
+  /**
    * LineBreak processing: if this flag is set than LF line breaks will
    * be written. If neither this nor OutputCRLineBreak is set, then we
    * will use platform line breaks. The combination of the two flags will
@@ -158,22 +149,6 @@ interface nsIDocumentEncoder : nsISupports
    * HTML output only.
    */
   const unsigned long OutputEncodeBasicEntities = (1 << 14);
-    
-  /**
-   * Encode entities when outputting to a string.
-   * The Latin1 entity set additionally includes 8bit accented letters
-   * between 128 and 255.
-   * HTML output only.
-   */
-  const unsigned long OutputEncodeLatin1Entities = (1 << 15);
-  
-  /**
-   * Encode entities when outputting to a string.
-   * The HTML entity set additionally includes accented letters, greek
-   * letters, and other special markup symbols as defined in HTML4.
-   * HTML output only.
-   */
-  const unsigned long OutputEncodeHTMLEntities = (1 << 16);
 
   /**
    * Normally &nbsp; is replaced with a space character when
@@ -184,26 +159,26 @@ interface nsIDocumentEncoder : nsISupports
   const unsigned long OutputPersistNBSP = (1 << 17);
 
   /**
-   * Normally when serializing the whole document using the HTML or 
+   * Normally when serializing the whole document using the HTML or
    * XHTML serializer, the encoding declaration is rewritten to match.
    * This flag suppresses that behavior.
    */
   const unsigned long OutputDontRewriteEncodingDeclaration = (1 << 18);
- 
+
   /**
    * When using the HTML or XHTML serializer, skip elements that are not
    * visible when this flag is set.  Elements are not visible when they
    * have CSS style display:none or visibility:collapse, for example.
    */
   const unsigned long SkipInvisibleContent = (1 << 19);
-  
+
   /**
    * Output for delsp=yes (RFC 3676). This is used with OutputFormatFlowed
    * when converting to text for mail sending.
    * PlainText output only.
    */
   const unsigned long OutputFormatDelSp  = (1 << 20);
- 
+
   /**
    * Drop <br> elements considered "invisible" by the editor. OutputPreformatted
    * implies this flag.
@@ -248,15 +223,22 @@ interface nsIDocumentEncoder : nsISupports
   const unsigned long OutputDisallowLineBreaking = (1 << 27);
 
   /**
+   * Release reference of Document after using encodeTo* method to recycle
+   * this encoder without holding Document. To use this encoder again,
+   * we have to call init again.
+   */
+  const unsigned long RequiresReinitAfterOutput = (1 << 28);
+
+  /**
    * Initialize with a pointer to the document and the mime type.
    * @param aDocument Document to encode.
    * @param aMimeType MimeType to use. May also be set by SetMimeType.
    * @param aFlags Flags to use while encoding. May also be set by SetFlags.
    */
-  void init(in nsIDOMDocument aDocument,
+  void init(in Document aDocument,
             in AString aMimeType,
             in unsigned long aFlags);
-  [noscript] void nativeInit(in nsIDocumentPtr aDocument,
+  [noscript] void nativeInit(in Document aDocument,
                              in AString aMimeType,
                              in unsigned long aFlags);
 
@@ -266,7 +248,7 @@ interface nsIDocumentEncoder : nsISupports
    *  document is encoded.
    * @param aSelection The selection to encode.
    */
-  void setSelection(in nsISelection aSelection);
+  void setSelection(in Selection aSelection);
 
   /**
    *  If the range is set to a non-null value, then the
@@ -274,7 +256,7 @@ interface nsIDocumentEncoder : nsISupports
    *  document or selection is encoded.
    * @param aRange The range to encode.
    */
-  void setRange(in nsIDOMRange aRange);
+  void setRange(in Range aRange);
 
   /**
    *  If the node is set to a non-null value, then the
@@ -282,8 +264,7 @@ interface nsIDocumentEncoder : nsISupports
    *  document or range or selection is encoded.
    * @param aNode The node to encode.
    */
-  void setNode(in nsIDOMNode aNode);
-  [noscript] void setNativeNode(in nsINodePtr aNode);
+  void setNode(in Node aNode);
 
   /**
    *  If the container is set to a non-null value, then its
@@ -291,8 +272,7 @@ interface nsIDocumentEncoder : nsISupports
    *  document or range or selection or node is encoded.
    *  @param aContainer The node which child nodes will be encoded.
    */
-  void setContainerNode(in nsIDOMNode aContainer);
-  [noscript] void setNativeContainerNode(in nsINodePtr aContainer);
+  void setContainerNode(in Node aContainer);
 
   /**
    *  Documents typically have an intrinsic character set,
@@ -319,7 +299,7 @@ interface nsIDocumentEncoder : nsISupports
    *  Call this AFTER Init() and SetSelection() have both been called.
    */
   readonly attribute AString mimeType;
-  
+
   /**
    *  Encode the document and send the result to the nsIOutputStream.
    *
@@ -344,7 +324,7 @@ interface nsIDocumentEncoder : nsISupports
    * @param [OUT] aInfoString The string where extra context info will
    *              be stored.
    * @return The document encoded as a string.
-   * 
+   *
    */
   AString encodeToStringWithContext( out AString aContextString,
                                      out AString aInfoString);
@@ -370,3 +350,14 @@ interface nsIDocumentEncoder : nsISupports
    */
   void setNodeFixup(in nsIDocumentEncoderNodeFixup aFixup);
 };
+
+%{ C++
+template<class T> struct already_AddRefed;
+
+bool
+do_getDocumentTypeSupportedForEncoding(const char* aContentType);
+already_AddRefed<nsIDocumentEncoder>
+do_createDocumentEncoder(const char* aContentType);
+already_AddRefed<nsIDocumentEncoder>
+do_createHTMLCopyEncoder();
+%}

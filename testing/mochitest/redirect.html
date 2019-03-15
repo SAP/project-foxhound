@@ -3,34 +3,27 @@
   <title>redirecting...</title>
 
   <script type="text/javascript">
-    function redirect(aURL)
-    {
+    function redirect(aURL) {
       // We create a listener for this event in browser-test.js which will
       // get picked up when specifying --flavor=chrome or --flavor=a11y
       var event = new CustomEvent("contentEvent", {
         bubbles: true,
         detail: {
           "data": aURL + location.search,
-          "type": "loadURI"
-        }
+          "type": "loadURI",
+        },
       });
       document.dispatchEvent(event);
     }
 
-    function redirectToHarness()
-    {
+    function redirectToHarness() {
       redirect("chrome://mochikit/content/harness.xul");
     }
 
     function onLoad() {
-      // Wait for MozAfterPaint, since the listener in browser-test.js is not
-      // added until then.
-      window.addEventListener("MozAfterPaint", function() {
-        setTimeout(redirectToHarness, 0);
-        // In case the listener was not ready, try again after a few seconds.
-        setTimeout(redirectToHarness, 5000);
-      }, {once: true});
-
+      setTimeout(redirectToHarness, 0);
+      // In case the listener is not ready, re-try periodically
+      setInterval(redirectToHarness, 5000);
     }
   </script>
 </head>

@@ -10,18 +10,18 @@ EXPORTS += [
 
 FINAL_LIBRARY = 'js'
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += [
         '-Wno-parentheses',
         '-Wno-sign-compare',
     ]
 
-if CONFIG['CLANG_CXX']:
+if CONFIG['CC_TYPE'] == 'clang':
     CXXFLAGS += [
         '-Wno-dangling-else',
     ]
 
-if CONFIG['_MSC_VER']:
+if CONFIG['CC_TYPE'] in ('msvc', 'clang-cl'):
     CXXFLAGS += [
         '-wd4018', # signed/unsigned mismatch
         '-wd4146', # unary minus operator applied to unsigned type
@@ -30,6 +30,8 @@ if CONFIG['_MSC_VER']:
         '-wd4756', # overflow in constant arithmetic
     ]
 
+# These sources can't be unified because there are too many conflicting global
+# variables (e.g. almost every source file defines a `one` and a `huge`).
 SOURCES += [
     'e_acos.cpp',
     'e_acosh.cpp',

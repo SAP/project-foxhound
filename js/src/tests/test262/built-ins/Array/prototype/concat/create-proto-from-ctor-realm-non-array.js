@@ -20,12 +20,13 @@ info: |
           i. If SameValue(C, realmC.[[Intrinsics]].[[%Array%]]) is true, let C
              be undefined.
     [...]
+features: [cross-realm, Symbol.species]
 ---*/
 
 var array = [];
 var callCount = 0;
 var CustomCtor = function() {};
-var OObject = $.createRealm().global.Object;
+var OObject = $262.createRealm().global.Object;
 var speciesDesc = {
   get: function() {
     callCount += 1;

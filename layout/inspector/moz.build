@@ -9,37 +9,27 @@ if CONFIG['ENABLE_TESTS']:
     MOCHITEST_MANIFESTS += ['tests/mochitest.ini']
 
 XPIDL_SOURCES += [
-    'inICSSValueSearch.idl',
     'inIDeepTreeWalker.idl',
-    'inIDOMUtils.idl',
-    'inIDOMView.idl',
-    'inISearchObserver.idl',
-    'inISearchProcess.idl',
-    'nsIDOMFontFace.idl',
-    'nsIDOMFontFaceList.idl',
 ]
 
 XPIDL_MODULE = 'inspector'
 
-EXPORTS += [
-    'nsFontFace.h',
-    'nsFontFaceList.h',
+EXPORTS.mozilla += [
+    'ServoStyleRuleMap.h',
+]
+
+EXPORTS.mozilla.dom += [
+    'InspectorFontFace.h',
+    'InspectorUtils.h',
 ]
 
 UNIFIED_SOURCES += [
-    'inCSSValueSearch.cpp',
     'inDeepTreeWalker.cpp',
-    'inDOMUtils.cpp',
     'inLayoutUtils.cpp',
-    'inSearchLoop.cpp',
-    'nsFontFace.cpp',
-    'nsFontFaceList.cpp',
+    'InspectorFontFace.cpp',
+    'InspectorUtils.cpp',
+    'ServoStyleRuleMap.cpp',
 ]
-
-if CONFIG['MOZ_XUL']:
-    UNIFIED_SOURCES += [
-        'inDOMView.cpp',
-    ]
 
 FINAL_LIBRARY = 'xul'
 LOCAL_INCLUDES += [

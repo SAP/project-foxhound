@@ -11,14 +11,16 @@
  */
 
 [Constructor(DOMString type, optional EventInit eventInitDict),
- Exposed=(Window,Worker,System), ProbablyShortLivingObject]
+ Exposed=(Window,Worker), ProbablyShortLivingWrapper]
 interface Event {
   [Pure]
   readonly attribute DOMString type;
-  [Pure]
+  [Pure, BindingAlias="srcElement"]
   readonly attribute EventTarget? target;
   [Pure]
   readonly attribute EventTarget? currentTarget;
+
+  sequence<EventTarget> composedPath();
 
   const unsigned short NONE = 0;
   const unsigned short CAPTURING_PHASE = 1;
@@ -35,6 +37,8 @@ interface Event {
   [Pure]
   readonly attribute boolean cancelable;
   [NeedsCallerType]
+  attribute boolean returnValue;
+  [NeedsCallerType]
   void preventDefault();
   [Pure, NeedsCallerType]
   readonly attribute boolean defaultPrevented;
@@ -50,7 +54,9 @@ interface Event {
   [Pure]
   readonly attribute DOMHighResTimeStamp timeStamp;
 
-  void initEvent(DOMString type, boolean bubbles, boolean cancelable);
+  void initEvent(DOMString type,
+                 optional boolean bubbles = false,
+                 optional boolean cancelable = false);
   attribute boolean cancelBubble;
 };
 
@@ -61,12 +67,23 @@ partial interface Event {
   const long SHIFT_MASK   = 0x00000004;
   const long META_MASK    = 0x00000008;
 
+  /** The original target of the event, before any retargetings. */
   readonly attribute EventTarget? originalTarget;
+  /**
+   * The explicit original target of the event.  If the event was retargeted
+   * for some reason other than an anonymous boundary crossing, this will be set
+   * to the target before the retargeting occurs.  For example, mouse events
+   * are retargeted to their parent node when they happen over text nodes (bug
+   * 185889), and in that case .target will show the parent and
+   * .explicitOriginalTarget will show the text node.
+   * .explicitOriginalTarget differs from .originalTarget in that it will never
+   * contain anonymous content.
+   */
   readonly attribute EventTarget? explicitOriginalTarget;
   [ChromeOnly] readonly attribute EventTarget? composedTarget;
+  [ChromeOnly] void preventMultipleActions();
   [ChromeOnly] readonly attribute boolean multipleActionsPrevented;
   [ChromeOnly] readonly attribute boolean isSynthesized;
-  boolean getPreventDefault();
 };
 
 dictionary EventInit {

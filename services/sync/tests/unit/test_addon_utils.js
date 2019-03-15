@@ -3,10 +3,10 @@
 
 "use strict";
 
-Cu.import("resource://gre/modules/Log.jsm");
-Cu.import("resource://gre/modules/Preferences.jsm");
-Cu.import("resource://services-sync/addonutils.js");
-Cu.import("resource://services-sync/util.js");
+ChromeUtils.import("resource://gre/modules/Log.jsm");
+ChromeUtils.import("resource://gre/modules/Preferences.jsm");
+ChromeUtils.import("resource://services-sync/addonutils.js");
+ChromeUtils.import("resource://services-sync/util.js");
 
 const HTTP_PORT = 8888;
 const SERVER_ADDRESS = "http://127.0.0.1:8888";
@@ -16,18 +16,19 @@ var prefs = new Preferences();
 prefs.set("extensions.getAddons.get.url",
           SERVER_ADDRESS + "/search/guid:%IDS%");
 
-loadAddonTestFunctions();
-startupManager();
+AddonTestUtils.init(this);
+AddonTestUtils.createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9.2");
+AddonTestUtils.awaitPromise(AddonTestUtils.promiseStartupManager());
 
 function createAndStartHTTPServer(port = HTTP_PORT) {
   try {
     let server = new HttpServer();
 
     server.registerFile("/search/guid:missing-sourceuri%40tests.mozilla.org",
-                        do_get_file("missing-sourceuri.xml"));
+                        do_get_file("missing-sourceuri.json"));
 
     server.registerFile("/search/guid:rewrite%40tests.mozilla.org",
-                        do_get_file("rewrite-search.xml"));
+                        do_get_file("rewrite-search.json"));
 
     server.start(port);
 
@@ -41,36 +42,31 @@ function createAndStartHTTPServer(port = HTTP_PORT) {
 }
 
 function run_test() {
-  initTestLogging("Trace");
+  syncTestLogging();
 
   run_next_test();
 }
 
-add_test(function test_handle_empty_source_uri() {
+add_task(async function test_handle_empty_source_uri() {
   _("Ensure that search results without a sourceURI are properly ignored.");
 
   let server = createAndStartHTTPServer();
 
   const ID = "missing-sourceuri@tests.mozilla.org";
 
-  let cb = Async.makeSpinningCallback();
-  AddonUtils.installAddons([{id: ID, requireSecureURI: false}], cb);
-  let result = cb.wait();
+  const result = await AddonUtils.installAddons([{id: ID, requireSecureURI: false}]);
 
-  do_check_true("installedIDs" in result);
-  do_check_eq(0, result.installedIDs.length);
+  Assert.ok("installedIDs" in result);
+  Assert.equal(0, result.installedIDs.length);
 
-  do_check_true("skipped" in result);
-  do_check_true(result.skipped.includes(ID));
+  Assert.ok("skipped" in result);
+  Assert.ok(result.skipped.includes(ID));
 
-  server.stop(run_next_test);
+  await promiseStopServer(server);
 });
 
 add_test(function test_ignore_untrusted_source_uris() {
   _("Ensures that source URIs from insecure schemes are rejected.");
-
-  let ioService = Cc["@mozilla.org/network/io-service;1"]
-                  .getService(Ci.nsIIOService);
 
   const bad = ["http://example.com/foo.xpi",
                "ftp://example.com/foo.xpi",
@@ -79,24 +75,24 @@ add_test(function test_ignore_untrusted_source_uris() {
   const good = ["https://example.com/foo.xpi"];
 
   for (let s of bad) {
-    let sourceURI = ioService.newURI(s);
+    let sourceURI = Services.io.newURI(s);
     let addon = {sourceURI, name: "bad", id: "bad"};
 
     let canInstall = AddonUtils.canInstallAddon(addon);
-    do_check_false(canInstall, "Correctly rejected a bad URL");
+    Assert.ok(!canInstall, "Correctly rejected a bad URL");
   }
 
   for (let s of good) {
-    let sourceURI = ioService.newURI(s);
+    let sourceURI = Services.io.newURI(s);
     let addon = {sourceURI, name: "good", id: "good"};
 
     let canInstall = AddonUtils.canInstallAddon(addon);
-    do_check_true(canInstall, "Correctly accepted a good URL");
+    Assert.ok(canInstall, "Correctly accepted a good URL");
   }
   run_next_test();
 });
 
-add_test(function test_source_uri_rewrite() {
+add_task(async function test_source_uri_rewrite() {
   _("Ensure that a 'src=api' query string is rewritten to 'src=sync'");
 
   // This tests for conformance with bug 708134 so server-side metrics aren't
@@ -107,34 +103,32 @@ add_test(function test_source_uri_rewrite() {
 
   let installCalled = false;
   AddonUtils.__proto__.installAddonFromSearchResult =
-    function testInstallAddon(addon, metadata, cb) {
+    async function testInstallAddon(addon, metadata) {
 
-    do_check_eq(SERVER_ADDRESS + "/require.xpi?src=sync",
-                addon.sourceURI.spec);
+    Assert.equal(SERVER_ADDRESS + "/require.xpi?src=sync",
+                 addon.sourceURI.spec);
 
     installCalled = true;
 
-    AddonUtils.getInstallFromSearchResult(addon, function(error, install) {
-      do_check_null(error);
-      do_check_eq(SERVER_ADDRESS + "/require.xpi?src=sync",
-                  install.sourceURI.spec);
+    const install = await AddonUtils.getInstallFromSearchResult(addon);
+    Assert.equal(SERVER_ADDRESS + "/require.xpi?src=sync",
+                 install.sourceURI.spec);
+    Assert.deepEqual(install.installTelemetryInfo, {source: "sync"},
+                     "Got the expected installTelemetryInfo");
 
-      cb(null, {id: addon.id, addon, install});
-    }, false);
+    return {id: addon.id, addon, install};
   };
 
   let server = createAndStartHTTPServer();
 
-  let installCallback = Async.makeSpinningCallback();
   let installOptions = {
     id: "rewrite@tests.mozilla.org",
     requireSecureURI: false,
-  }
-  AddonUtils.installAddons([installOptions], installCallback);
+  };
+  await AddonUtils.installAddons([installOptions]);
 
-  installCallback.wait();
-  do_check_true(installCalled);
+  Assert.ok(installCalled);
   AddonUtils.__proto__.installAddonFromSearchResult = oldFunction;
 
-  server.stop(run_next_test);
+  await promiseStopServer(server);
 });

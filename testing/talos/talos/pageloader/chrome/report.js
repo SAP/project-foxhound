@@ -4,8 +4,13 @@
 
 // given an array of strings, finds the longest common prefix
 function findCommonPrefixLength(strs) {
-  if (strs.length < 2)
-    return 0;
+  if (strs.length < 2) {
+    // only one page in the manifest
+    // i.e. http://localhost/tests/perf-reftest/bloom-basic.html
+    var place = strs[0].lastIndexOf("/");
+    if (place < 0) place = 0;
+    return place;
+  }
 
   var len = 0;
   do {
@@ -14,16 +19,16 @@ function findCommonPrefixLength(strs) {
     var failed = false;
     for (var i = 0; i < strs.length; i++) {
       if (newlen > strs[i].length) {
-	failed = true;
-	break;
+        failed = true;
+        break;
       }
 
       var s = strs[i].substr(0, newlen);
       if (newprefix == null) {
-	newprefix = s;
+        newprefix = s;
       } else if (newprefix != s) {
-	failed = true;
-	break;
+        failed = true;
+        break;
       }
     }
 
@@ -43,12 +48,12 @@ function Report() {
 }
 
 Report.prototype.pageNames = function() {
-  var retval = new Array();
+  var retval = [];
   for (var page in this.timeVals) {
     retval.push(page);
   }
   return retval;
-}
+};
 
 Report.prototype.getReport = function() {
 
@@ -61,10 +66,14 @@ Report.prototype.getReport = function() {
   report += "_x_x_mozilla_page_load_details\n";
   report += "|i|pagename|runs|\n";
 
-  for (var i=0; i < pages.length; i++) {
-    report += '|'+
-      i + ';'+
-      pages[i].substr(prefixLen) + ';'+
+  for (var i = 0; i < pages.length; i++) {
+    // don't report any measurements that were reported for about:blank
+    // some tests (like about-preferences) use it as a dummy test page
+    if (pages[i] == "about:blank")
+      continue;
+    report += "|" +
+      i + ";" +
+      pages[i].substr(prefixLen) + ";" +
       this.timeVals[pages[i]].join(";") +
       "\n";
   }
@@ -75,11 +84,11 @@ Report.prototype.getReport = function() {
     report += "_x_x_mozilla_cycle_collect," + this.totalCCTime + "\n";
     report += "__end_cc_report\n";
   }
-  var now = (new Date()).getTime();
-  report += "__startTimestamp" + now + "__endTimestamp\n"; //timestamp for determning shutdown time, used by talos
+  var now = (new Date()).getTime(); // eslint-disable-line mozilla/avoid-Date-timing
+  report += "__startTimestamp" + now + "__endTimestamp\n"; // timestamp for determning shutdown time, used by talos
 
   return report;
-}
+};
 
 Report.prototype.getReportSummary = function() {
 
@@ -124,19 +133,19 @@ Report.prototype.getReportSummary = function() {
   report += "------- Summary: start -------\n";
   report += "Number of tests: " + pages.length + "\n";
 
-  for (var i=0; i < pages.length; i++) {
+  for (var i = 0; i < pages.length; i++) {
     var results = this.timeVals[pages[i]].map(function(v) {
                                                 return Number(v);
                                               });
 
-    report += '\n[#'+ i + '] ' + pages[i].substr(prefixLen)
-            + '  Cycles:'  + results.length
-            + '  Average:' + average(results).toFixed(2)
-            + '  Median:'  + median(results).toFixed(2)
-            + '  stddev:'  + stddev(results).toFixed(2)
-            +     ' (' + (100 * stddev(results) / median(results)).toFixed(1) + '%)'
-            + (results.length < 5 ? '' : ('  stddev-sans-first:' + stddev(results.slice(1)).toFixed(2)))
-            + '\nValues: ' + results.map(function(v) {
+    report += "\n[#" + i + "] " + pages[i].substr(prefixLen)
+            + "  Cycles:" + results.length
+            + "  Average:" + average(results).toFixed(2)
+            + "  Median:" + median(results).toFixed(2)
+            + "  stddev:" + stddev(results).toFixed(2)
+            + " (" + (100 * stddev(results) / median(results)).toFixed(1) + "%)"
+            + (results.length < 5 ? "" : ("  stddev-sans-first:" + stddev(results.slice(1)).toFixed(2)))
+            + "\nValues: " + results.map(function(v) {
                                            return v.toFixed(1);
                                          }).join("  ")
             + "\n";
@@ -144,16 +153,16 @@ Report.prototype.getReportSummary = function() {
   report += "-------- Summary: end --------\n";
 
   return report;
-}
+};
 
 Report.prototype.recordTime = function(pageName, ms) {
   if (this.timeVals[pageName] == undefined) {
-    this.timeVals[pageName] = new Array();
+    this.timeVals[pageName] = [];
   }
   this.timeVals[pageName].push(ms);
-}
+};
 
 Report.prototype.recordCCTime = function(ms) {
   this.totalCCTime += ms;
   this.showTotalCCTime = true;
-}
+};

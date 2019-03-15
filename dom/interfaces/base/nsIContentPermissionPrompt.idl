@@ -6,8 +6,9 @@
 
 interface nsIPrincipal;
 interface mozIDOMWindow;
-interface nsIDOMElement;
 interface nsIArray;
+
+webidl Element;
 
 /**
  *  Interface provides the request type and its access.
@@ -19,12 +20,6 @@ interface nsIContentPermissionType : nsISupports {
    *  "geolocation".
    */
   readonly attribute ACString type;
-
-  /**
-   *  The access of the permission request, such as
-   *  "read".
-   */
-  readonly attribute ACString access;
 
   /**
    * The array of available options.
@@ -78,6 +73,11 @@ interface nsIContentPermissionRequest : nsISupports {
    */
   readonly attribute nsIPrincipal principal;
 
+  /*
+   *  The principal of the top-level page the permission request comes from.
+   */
+  readonly attribute nsIPrincipal topLevelPrincipal;
+
   /**
    *  The window or element that the permission request was
    *  originated in.  Typically the element will be non-null
@@ -85,7 +85,9 @@ interface nsIContentPermissionRequest : nsISupports {
    *  element can be null but not both.
    */
   readonly attribute mozIDOMWindow window;
-  readonly attribute nsIDOMElement element;
+  readonly attribute Element element;
+
+  readonly attribute boolean isHandlingUserInput;
 
   /**
    *  The requester to get the required information of

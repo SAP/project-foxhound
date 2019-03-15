@@ -3,9 +3,7 @@
 
 
 /*
- * test_nodb: Start search engine
- * - without search-metadata.json
- * - without search.sqlite
+ * test_nodb: Start search service without existing cache file.
  *
  * Ensure that :
  * - nothing explodes;
@@ -26,12 +24,12 @@ function run_test() {
   run_next_test();
 }
 
-add_task(function* test_nodb_pluschanges() {
-  let [engine1, engine2] = yield addTestEngines([
+add_task(async function test_nodb_pluschanges() {
+  let [engine1, engine2] = await addTestEngines([
     { name: "Test search engine", xmlFileName: "engine.xml" },
     { name: "A second test engine", xmlFileName: "engine2.xml"},
   ]);
-  yield promiseAfterCache();
+  await promiseAfterCache();
 
   let search = Services.search;
 
@@ -39,18 +37,18 @@ add_task(function* test_nodb_pluschanges() {
   search.moveEngine(engine2, 1);
 
   // This is needed to avoid some reentrency issues in nsSearchService.
-  do_print("Next step is forcing flush");
-  yield new Promise(resolve => do_execute_soon(resolve));
+  info("Next step is forcing flush");
+  await new Promise(resolve => executeSoon(resolve));
 
-  do_print("Forcing flush");
+  info("Forcing flush");
   let promiseCommit = promiseAfterCache();
   search.QueryInterface(Ci.nsIObserver)
         .observe(null, "quit-application", "");
-  yield promiseCommit;
-  do_print("Commit complete");
+  await promiseCommit;
+  info("Commit complete");
 
   // Check that the entries are placed as specified correctly
-  let metadata = yield promiseEngineMetadata();
-  do_check_eq(metadata["test-search-engine"].order, 1);
-  do_check_eq(metadata["a-second-test-engine"].order, 2);
+  let metadata = await promiseEngineMetadata();
+  Assert.equal(metadata["test-search-engine"].order, 1);
+  Assert.equal(metadata["a-second-test-engine"].order, 2);
 });

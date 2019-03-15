@@ -15,17 +15,17 @@ const LONG_TEXT = "I am a long text and I will not fit in a 300px container. " +
 // Test the inplace-editor behavior with a maxWidth configuration option
 // defined.
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8,inplace editor max width tests");
-  let [host, , doc] = yield createHost();
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8,inplace editor max width tests");
+  const [host, , doc] = await createHost();
 
   info("Testing the maxWidth option in pixels, to precisely check the size");
-  yield new Promise(resolve => {
+  await new Promise(resolve => {
     createInplaceEditorAndClick({
       multiline: true,
       maxWidth: MAX_WIDTH,
       start: testMaxWidth,
-      done: resolve
+      done: resolve,
     }, doc, START_TEXT);
   });
 
@@ -33,14 +33,14 @@ add_task(function* () {
   gBrowser.removeCurrentTab();
 });
 
-let testMaxWidth = Task.async(function* (editor) {
+const testMaxWidth = async function(editor) {
   is(editor.input.value, START_TEXT, "Span text content should be used");
   ok(editor.input.offsetWidth < MAX_WIDTH,
     "Input width should be strictly smaller than MAX_WIDTH");
   is(getLines(editor.input), 1, "Input should display 1 line of text");
 
   info("Check a text is on several lines if it does not fit MAX_WIDTH");
-  for (let key of LONG_TEXT) {
+  for (const key of LONG_TEXT) {
     EventUtils.sendChar(key);
     checkScrollbars(editor.input);
   }
@@ -86,7 +86,7 @@ let testMaxWidth = Task.async(function* (editor) {
 
   info("Leave the inplace-editor");
   EventUtils.sendKey("RETURN");
-});
+};
 
 /**
  * Retrieve the current number of lines displayed in the provided textarea.
@@ -95,10 +95,9 @@ let testMaxWidth = Task.async(function* (editor) {
  * @return {Number} the number of lines
  */
 function getLines(textarea) {
-  let win = textarea.ownerDocument.defaultView;
-  let style = win.getComputedStyle(textarea);
-  let lineHeight = style.getPropertyCSSValue("line-height").cssText;
-  return Math.floor(textarea.clientHeight / parseFloat(lineHeight));
+  const win = textarea.ownerDocument.defaultView;
+  const style = win.getComputedStyle(textarea);
+  return Math.floor(textarea.clientHeight / parseFloat(style.lineHeight));
 }
 
 /**

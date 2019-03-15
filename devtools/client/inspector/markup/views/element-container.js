@@ -4,19 +4,19 @@
 
 "use strict";
 
-const PREVIEW_MAX_DIM_PREF = "devtools.inspector.imagePreviewTooltipSize";
-
 const promise = require("promise");
 const Services = require("Services");
-const Heritage = require("sdk/core/heritage");
-const {Task} = require("devtools/shared/task");
-const nodeConstants = require("devtools/shared/dom-node-constants");
-const clipboardHelper = require("devtools/shared/platform/clipboard");
-const {setImageTooltip, setBrokenImageTooltip} =
-      require("devtools/client/shared/widgets/tooltip/ImageTooltipHelper");
-const {setEventTooltip} = require("devtools/client/shared/widgets/tooltip/EventTooltipHelper");
 const MarkupContainer = require("devtools/client/inspector/markup/views/markup-container");
 const ElementEditor = require("devtools/client/inspector/markup/views/element-editor");
+const {ELEMENT_NODE} = require("devtools/shared/dom-node-constants");
+const {extend} = require("devtools/shared/extend");
+
+loader.lazyRequireGetter(this, "setEventTooltip", "devtools/client/shared/widgets/tooltip/EventTooltipHelper", true);
+loader.lazyRequireGetter(this, "setImageTooltip", "devtools/client/shared/widgets/tooltip/ImageTooltipHelper", true);
+loader.lazyRequireGetter(this, "setBrokenImageTooltip", "devtools/client/shared/widgets/tooltip/ImageTooltipHelper", true);
+loader.lazyRequireGetter(this, "clipboardHelper", "devtools/shared/platform/clipboard");
+
+const PREVIEW_MAX_DIM_PREF = "devtools.inspector.imagePreviewTooltipSize";
 
 /**
  * An implementation of MarkupContainer for Elements that can contain
@@ -32,7 +32,7 @@ function MarkupElementContainer(markupView, node) {
   MarkupContainer.prototype.initialize.call(this, markupView, node,
     "elementcontainer");
 
-  if (node.nodeType === nodeConstants.ELEMENT_NODE) {
+  if (node.nodeType === ELEMENT_NODE) {
     this.editor = new ElementEditor(this, node);
   } else {
     throw new Error("Invalid node for MarkupElementContainer");
@@ -41,24 +41,45 @@ function MarkupElementContainer(markupView, node) {
   this.tagLine.appendChild(this.editor.elt);
 }
 
-MarkupElementContainer.prototype = Heritage.extend(MarkupContainer.prototype, {
-  _buildEventTooltipContent: Task.async(function* (target, tooltip) {
-    if (target.hasAttribute("data-event")) {
-      yield tooltip.hide();
-
-      let listenerInfo = yield this.node.getEventListenerInfo();
-
-      let toolbox = this.markup.toolbox;
-      setEventTooltip(tooltip, listenerInfo, toolbox);
-      // Disable the image preview tooltip while we display the event details
-      this.markup._disableImagePreviewTooltip();
-      tooltip.once("hidden", () => {
-        // Enable the image preview tooltip after closing the event details
-        this.markup._enableImagePreviewTooltip();
-      });
-      tooltip.show(target);
+MarkupElementContainer.prototype = extend(MarkupContainer.prototype, {
+  onContainerClick: function(event) {
+    if (!event.target.hasAttribute("data-event")) {
+      return;
     }
-  }),
+
+    this._buildEventTooltipContent(event.target);
+  },
+
+  async _buildEventTooltipContent(target) {
+    const tooltip = this.markup.eventDetailsTooltip;
+    await tooltip.hide();
+
+    const listenerInfo = await this.node.getEventListenerInfo();
+
+    const toolbox = this.markup.toolbox;
+
+    setEventTooltip(tooltip, listenerInfo, toolbox);
+    // Disable the image preview tooltip while we display the event details
+    this.markup._disableImagePreviewTooltip();
+    tooltip.once("hidden", () => {
+      // Enable the image preview tooltip after closing the event details
+      this.markup._enableImagePreviewTooltip();
+
+      // Allow clicks on the event badge to display the event popup again
+      // (but allow the currently queued click event to run first).
+      this.markup.win.setTimeout(() => {
+        if (this.editor._eventBadge) {
+          this.editor._eventBadge.style.pointerEvents = "auto";
+        }
+      }, 0);
+    });
+
+    // Prevent clicks on the event badge to display the event popup again.
+    if (this.editor._eventBadge) {
+      this.editor._eventBadge.style.pointerEvents = "none";
+    }
+    tooltip.show(target);
+  },
 
   /**
    * Generates the an image preview for this Element. The element must be an
@@ -73,7 +94,7 @@ MarkupElementContainer.prototype = Heritage.extend(MarkupContainer.prototype, {
    * If this element is not previewable or the preview cannot be generated for
    * some reason, the Promise is rejected.
    */
-  _getPreview: function () {
+  _getPreview: function() {
     if (!this.isPreviewable()) {
       return promise.reject("_getPreview called on a non-previewable element.");
     }
@@ -84,16 +105,16 @@ MarkupElementContainer.prototype = Heritage.extend(MarkupContainer.prototype, {
     }
 
     // Fetch the preview from the server.
-    this.tooltipDataPromise = Task.spawn(function* () {
-      let maxDim = Services.prefs.getIntPref(PREVIEW_MAX_DIM_PREF);
-      let preview = yield this.node.getImageData(maxDim);
-      let data = yield preview.data.string();
+    this.tooltipDataPromise = (async function() {
+      const maxDim = Services.prefs.getIntPref(PREVIEW_MAX_DIM_PREF);
+      const preview = await this.node.getImageData(maxDim);
+      const data = await preview.data.string();
 
       // Clear the pending preview request. We can't reuse the results later as
       // the preview contents might have changed.
       this.tooltipDataPromise = null;
       return { data, size: preview.size };
-    }.bind(this));
+    }.bind(this))();
 
     return this.tooltipDataPromise;
   },
@@ -107,7 +128,7 @@ MarkupElementContainer.prototype = Heritage.extend(MarkupContainer.prototype, {
    * @return {Promise} that resolves when the tooltip content is ready. Resolves
    * true if the tooltip should be displayed, false otherwise.
    */
-  isImagePreviewTarget: Task.async(function* (target, tooltip) {
+  async isImagePreviewTarget(target, tooltip) {
     // Is this Element previewable.
     if (!this.isPreviewable()) {
       return false;
@@ -116,19 +137,19 @@ MarkupElementContainer.prototype = Heritage.extend(MarkupContainer.prototype, {
     // If the Element has an src attribute, the tooltip is shown when hovering
     // over the src url. If not, the tooltip is shown when hovering over the tag
     // name.
-    let src = this.editor.getAttributeElement("src");
-    let expectedTarget = src ? src.querySelector(".link") : this.editor.tag;
+    const src = this.editor.getAttributeElement("src");
+    const expectedTarget = src ? src.querySelector(".link") : this.editor.tag;
     if (target !== expectedTarget) {
       return false;
     }
 
     try {
-      let { data, size } = yield this._getPreview();
+      const { data, size } = await this._getPreview();
       // The preview is ready.
-      let options = {
+      const options = {
         naturalWidth: size.naturalWidth,
         naturalHeight: size.naturalHeight,
-        maxDim: Services.prefs.getIntPref(PREVIEW_MAX_DIM_PREF)
+        maxDim: Services.prefs.getIntPref(PREVIEW_MAX_DIM_PREF),
       };
 
       setImageTooltip(tooltip, this.markup.doc, data, options);
@@ -137,9 +158,9 @@ MarkupElementContainer.prototype = Heritage.extend(MarkupContainer.prototype, {
       setBrokenImageTooltip(tooltip, this.markup.doc);
     }
     return true;
-  }),
+  },
 
-  copyImageDataUri: function () {
+  copyImageDataUri: function() {
     // We need to send again a request to gettooltipData even if one was sent
     // for the tooltip, because we want the full-size image
     this.node.getImageData().then(data => {
@@ -149,12 +170,12 @@ MarkupElementContainer.prototype = Heritage.extend(MarkupContainer.prototype, {
     });
   },
 
-  setInlineTextChild: function (inlineTextChild) {
+  setInlineTextChild: function(inlineTextChild) {
     this.inlineTextChild = inlineTextChild;
     this.editor.updateTextEditor();
   },
 
-  clearInlineTextChild: function () {
+  clearInlineTextChild: function() {
     this.inlineTextChild = undefined;
     this.editor.updateTextEditor();
   },
@@ -162,14 +183,14 @@ MarkupElementContainer.prototype = Heritage.extend(MarkupContainer.prototype, {
   /**
    * Trigger new attribute field for input.
    */
-  addAttribute: function () {
+  addAttribute: function() {
     this.editor.newAttr.editMode();
   },
 
   /**
    * Trigger attribute field for editing.
    */
-  editAttribute: function (attrName) {
+  editAttribute: function(attrName) {
     this.editor.attrElements.get(attrName).editMode();
   },
 
@@ -177,9 +198,9 @@ MarkupElementContainer.prototype = Heritage.extend(MarkupContainer.prototype, {
    * Remove attribute from container.
    * This is an undoable action.
    */
-  removeAttribute: function (attrName) {
-    let doMods = this.editor._startModifyingAttributes();
-    let undoMods = this.editor._startModifyingAttributes();
+  removeAttribute: function(attrName) {
+    const doMods = this.editor._startModifyingAttributes();
+    const undoMods = this.editor._startModifyingAttributes();
     this.editor._saveAttribute(attrName, undoMods);
     doMods.removeAttribute(attrName);
     this.undo.do(() => {
@@ -187,7 +208,7 @@ MarkupElementContainer.prototype = Heritage.extend(MarkupContainer.prototype, {
     }, () => {
       undoMods.apply();
     });
-  }
+  },
 });
 
 module.exports = MarkupElementContainer;

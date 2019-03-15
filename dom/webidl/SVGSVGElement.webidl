@@ -23,14 +23,6 @@ interface SVGSVGElement : SVGGraphicsElement {
   [Constant]
   readonly attribute SVGAnimatedLength height;
   // readonly attribute SVGRect viewport;
-  [Constant]
-  readonly attribute float pixelUnitToMillimeterX;
-  [Constant]
-  readonly attribute float pixelUnitToMillimeterY;
-  [Constant]
-  readonly attribute float screenPixelToMillimeterX;
-  [Constant]
-  readonly attribute float screenPixelToMillimeterY;
   readonly attribute boolean useCurrentView;
   // readonly attribute SVGViewSpec currentView;
   [UseCounter]
@@ -48,6 +40,7 @@ interface SVGSVGElement : SVGGraphicsElement {
   void pauseAnimations();
   void unpauseAnimations();
   boolean animationsPaused();
+  [BinaryName="getCurrentTimeAsFloat"]
   float getCurrentTime();
   void setCurrentTime(float seconds);
   // NodeList getIntersectionList(SVGRect rect, SVGElement referenceElement);

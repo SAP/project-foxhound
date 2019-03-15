@@ -6,9 +6,9 @@ const PREF_RESTORE_ON_DEMAND = "browser.sessionstore.restore_on_demand";
 
 requestLongerTimeout(2);
 
-add_task(function* test() {
+add_task(async function test() {
   Services.prefs.setBoolPref(PREF_RESTORE_ON_DEMAND, false);
-  registerCleanupFunction(function () {
+  registerCleanupFunction(function() {
     Services.prefs.clearUserPref(PREF_RESTORE_ON_DEMAND);
   });
 
@@ -20,9 +20,9 @@ add_task(function* test() {
         { entries: [{ url: "http://example.org#1", triggeringPrincipal_base64 }], extData: { "uniq": r() } },
         { entries: [{ url: "http://example.org#2", triggeringPrincipal_base64 }], extData: { "uniq": r() } },
         { entries: [{ url: "http://example.org#3", triggeringPrincipal_base64 }], extData: { "uniq": r() } },
-        { entries: [{ url: "http://example.org#4", triggeringPrincipal_base64 }], extData: { "uniq": r() } }
+        { entries: [{ url: "http://example.org#4", triggeringPrincipal_base64 }], extData: { "uniq": r() } },
       ],
-      selected: 1
+      selected: 1,
     },
     {
       tabs: [
@@ -31,8 +31,8 @@ add_task(function* test() {
         { entries: [{ url: "http://example.com#3", triggeringPrincipal_base64 }], extData: { "uniq": r() } },
         { entries: [{ url: "http://example.com#4", triggeringPrincipal_base64 }], extData: { "uniq": r() } },
       ],
-      selected: 3
-    }
+      selected: 3,
+    },
   ] };
   let state2 = { windows: [
     {
@@ -40,9 +40,9 @@ add_task(function* test() {
         { entries: [{ url: "http://example.org#5", triggeringPrincipal_base64 }], extData: { "uniq": r() } },
         { entries: [{ url: "http://example.org#6", triggeringPrincipal_base64 }], extData: { "uniq": r() } },
         { entries: [{ url: "http://example.org#7", triggeringPrincipal_base64 }], extData: { "uniq": r() } },
-        { entries: [{ url: "http://example.org#8", triggeringPrincipal_base64 }], extData: { "uniq": r() } }
+        { entries: [{ url: "http://example.org#8", triggeringPrincipal_base64 }], extData: { "uniq": r() } },
       ],
-      selected: 3
+      selected: 3,
     },
     {
       tabs: [
@@ -51,8 +51,8 @@ add_task(function* test() {
         { entries: [{ url: "http://example.com#7", triggeringPrincipal_base64 }], extData: { "uniq": r() } },
         { entries: [{ url: "http://example.com#8", triggeringPrincipal_base64 }], extData: { "uniq": r() } },
       ],
-      selected: 1
-    }
+      selected: 1,
+    },
   ] };
 
   // interruptedAfter will be set after the selected tab from each window have loaded.
@@ -63,7 +63,7 @@ add_task(function* test() {
 
   let loadCount = 0;
   let promiseRestoringTabs = new Promise(resolve => {
-    gProgressListener.setCallback(function (aBrowser, aNeedRestore, aRestoring, aRestored) {
+    gProgressListener.setCallback(function(aBrowser, aNeedRestore, aRestoring, aRestored) {
       loadCount++;
 
       if (aBrowser.currentURI.spec == state1.windows[0].tabs[2].entries[0].url)
@@ -104,9 +104,9 @@ add_task(function* test() {
 
   let backupState = ss.getBrowserState();
   ss.setBrowserState(JSON.stringify(state1));
-  yield promiseRestoringTabs;
+  await promiseRestoringTabs;
 
   // Cleanup.
-  yield promiseAllButPrimaryWindowClosed();
-  yield promiseBrowserState(backupState);
+  await promiseAllButPrimaryWindowClosed();
+  await promiseBrowserState(backupState);
 });

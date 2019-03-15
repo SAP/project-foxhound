@@ -28,60 +28,56 @@
 #ifndef nsHtml5UTF16Buffer_h
 #define nsHtml5UTF16Buffer_h
 
-#include "nsIAtom.h"
+#include "nsAtom.h"
 #include "nsHtml5AtomTable.h"
-#include "nsString.h"
+#include "nsHtml5String.h"
 #include "nsNameSpaceManager.h"
 #include "nsIContent.h"
 #include "nsTraceRefcnt.h"
 #include "jArray.h"
 #include "nsHtml5ArrayCopy.h"
 #include "nsAHtml5TreeBuilderState.h"
-#include "nsHtml5Atoms.h"
+#include "nsGkAtoms.h"
 #include "nsHtml5ByteReadable.h"
-#include "nsIUnicodeDecoder.h"
 #include "nsHtml5Macros.h"
 #include "nsIContentHandle.h"
+#include "nsHtml5Portability.h"
+#include "nsHtml5ContentCreatorFunction.h"
 
 #include "Taint.h"
 
 class nsHtml5StreamParser;
 
+class nsHtml5AttributeName;
+class nsHtml5ElementName;
 class nsHtml5Tokenizer;
 class nsHtml5TreeBuilder;
 class nsHtml5MetaScanner;
-class nsHtml5AttributeName;
-class nsHtml5ElementName;
-class nsHtml5HtmlAttributes;
 class nsHtml5StateSnapshot;
 class nsHtml5Portability;
 
-
 // TaintFox: extended to also carry taint information.
-class nsHtml5UTF16Buffer
-{
-  private:
-    char16_t* buffer;
-    StringTaint taint;
-    int32_t start;
-    int32_t end;
-  public:
-    int32_t getStart();
-    void setStart(int32_t start);
-    char16_t* getBuffer();
-    int32_t getEnd();
-    bool hasMore();
-    int32_t getLength();
-    void adjust(bool lastWasCR);
-    void setEnd(int32_t end);
-    const StringTaint& getTaint();
-    static void initializeStatics();
-    static void releaseStatics();
+class nsHtml5UTF16Buffer {
+ private:
+  char16_t* buffer;
+  StringTaint taint;
+  int32_t start;
+  int32_t end;
+
+ public:
+  int32_t getStart();
+  void setStart(int32_t start);
+  char16_t* getBuffer();
+  int32_t getEnd();
+  bool hasMore();
+  int32_t getLength();
+  void adjust(bool lastWasCR);
+  void setEnd(int32_t end);
+  const StringTaint& getTaint();
+  static void initializeStatics();
+  static void releaseStatics();
 
 #include "nsHtml5UTF16BufferHSupplement.h"
 };
 
-
-
 #endif
-

@@ -9,7 +9,6 @@ const Services = require("Services");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
 const { dumpv } = DevToolsUtils;
 const EventEmitter = require("devtools/shared/event-emitter");
-const defer = require("devtools/shared/defer");
 
 DevToolsUtils.defineLazyGetter(this, "IOUtil", () => {
   return Cc["@mozilla.org/io-util;1"].getService(Ci.nsIIOUtil);
@@ -56,7 +55,7 @@ const BUFFER_SIZE = 0x8000;
  *         (unexpected) errors occur.
  */
 function copyStream(input, output, length) {
-  let copier = new StreamCopier(input, output, length);
+  const copier = new StreamCopier(input, output, length);
   return copier.copy();
 }
 
@@ -75,7 +74,14 @@ function StreamCopier(input, output, length) {
   }
   this._length = length;
   this._amountLeft = length;
-  this._deferred = defer();
+  let _resolve;
+  let _reject;
+  this._deferred = new Promise((resolve, reject) => {
+    _resolve = resolve;
+    _reject = reject;
+  });
+  this._deferred.resolve = _resolve;
+  this._deferred.reject = _reject;
 
   this._copy = this._copy.bind(this);
   this._flush = this._flush.bind(this);
@@ -85,7 +91,7 @@ function StreamCopier(input, output, length) {
   // Allows the copier to offer a promise interface for the simple succeed or
   // fail scenarios, but also emit events (due to the EventEmitter) for other
   // states, like progress.
-  this.then = this._deferred.promise.then.bind(this._deferred.promise);
+  this.then = this._deferred.then.bind(this._deferred);
   this.then(this._destroy, this._destroy);
 
   // Stream ready callback starts as |_copy|, but may switch to |_flush| at end
@@ -96,22 +102,22 @@ StreamCopier._nextId = 0;
 
 StreamCopier.prototype = {
 
-  copy: function () {
+  copy: function() {
     // Dispatch to the next tick so that it's possible to attach a progress
     // event listener, even for extremely fast copies (like when testing).
-    Services.tm.currentThread.dispatch(() => {
+    Services.tm.dispatchToMainThread(() => {
       try {
         this._copy();
       } catch (e) {
         this._deferred.reject(e);
       }
-    }, 0);
+    });
     return this;
   },
 
-  _copy: function () {
-    let bytesAvailable = this.input.available();
-    let amountToCopy = Math.min(bytesAvailable, this._amountLeft);
+  _copy: function() {
+    const bytesAvailable = this.input.available();
+    const amountToCopy = Math.min(bytesAvailable, this._amountLeft);
     this._debug("Trying to copy: " + amountToCopy);
 
     let bytesCopied;
@@ -142,14 +148,14 @@ StreamCopier.prototype = {
     this.input.asyncWait(this, 0, 0, Services.tm.currentThread);
   },
 
-  _emitProgress: function () {
+  _emitProgress: function() {
     this.emit("progress", {
       bytesSent: this._length - this._amountLeft,
-      totalBytes: this._length
+      totalBytes: this._length,
     });
   },
 
-  _flush: function () {
+  _flush: function() {
     try {
       this.output.flush();
     } catch (e) {
@@ -166,7 +172,7 @@ StreamCopier.prototype = {
     this._deferred.resolve();
   },
 
-  _destroy: function () {
+  _destroy: function() {
     this._destroy = null;
     this._copy = null;
     this._flush = null;
@@ -175,20 +181,20 @@ StreamCopier.prototype = {
   },
 
   // nsIInputStreamCallback
-  onInputStreamReady: function () {
+  onInputStreamReady: function() {
     this._streamReadyCallback();
   },
 
   // nsIOutputStreamCallback
-  onOutputStreamReady: function () {
+  onOutputStreamReady: function() {
     this._streamReadyCallback();
   },
 
-  _debug: function (msg) {
+  _debug: function(msg) {
     // Prefix logs with the copier ID, which makes logs much easier to
     // understand when several copiers are running simultaneously
     dumpv("Copier: " + this._id + " " + msg);
-  }
+  },
 
 };
 
@@ -242,5 +248,5 @@ function delimitedRead(stream, delimiter, count) {
 
 module.exports = {
   copyStream: copyStream,
-  delimitedRead: delimitedRead
+  delimitedRead: delimitedRead,
 };

@@ -13,24 +13,17 @@ using layers::LayerManager;
 
 namespace image {
 
-NS_IMPL_ISUPPORTS_INHERITED0(FrozenImage, ImageWrapper)
-
-void
-FrozenImage::IncrementAnimationConsumers()
-{
+void FrozenImage::IncrementAnimationConsumers() {
   // Do nothing. This will prevent animation from starting if there are no other
   // instances of this image.
 }
 
-void
-FrozenImage::DecrementAnimationConsumers()
-{
+void FrozenImage::DecrementAnimationConsumers() {
   // Do nothing.
 }
 
 NS_IMETHODIMP
-FrozenImage::GetAnimated(bool* aAnimated)
-{
+FrozenImage::GetAnimated(bool* aAnimated) {
   bool dummy;
   nsresult rv = InnerImage()->GetAnimated(&dummy);
   if (NS_SUCCEEDED(rv)) {
@@ -40,29 +33,25 @@ FrozenImage::GetAnimated(bool* aAnimated)
 }
 
 NS_IMETHODIMP_(already_AddRefed<SourceSurface>)
-FrozenImage::GetFrame(uint32_t aWhichFrame,
-                      uint32_t aFlags)
-{
+FrozenImage::GetFrame(uint32_t aWhichFrame, uint32_t aFlags) {
   return InnerImage()->GetFrame(FRAME_FIRST, aFlags);
 }
 
 NS_IMETHODIMP_(already_AddRefed<SourceSurface>)
-FrozenImage::GetFrameAtSize(const IntSize& aSize,
-                            uint32_t aWhichFrame,
-                            uint32_t aFlags)
-{
+FrozenImage::GetFrameAtSize(const IntSize& aSize, uint32_t aWhichFrame,
+                            uint32_t aFlags) {
   return InnerImage()->GetFrameAtSize(aSize, FRAME_FIRST, aFlags);
 }
 
 NS_IMETHODIMP_(bool)
-FrozenImage::IsImageContainerAvailable(LayerManager* aManager, uint32_t aFlags)
-{
+FrozenImage::IsImageContainerAvailable(LayerManager* aManager,
+                                       uint32_t aFlags) {
   return false;
 }
 
 NS_IMETHODIMP_(already_AddRefed<ImageContainer>)
-FrozenImage::GetImageContainer(layers::LayerManager* aManager, uint32_t aFlags)
-{
+FrozenImage::GetImageContainer(layers::LayerManager* aManager,
+                               uint32_t aFlags) {
   // XXX(seth): GetImageContainer does not currently support anything but the
   // current frame. We work around this by always returning null, but if it ever
   // turns out that FrozenImage is widely used on codepaths that can actually
@@ -71,53 +60,66 @@ FrozenImage::GetImageContainer(layers::LayerManager* aManager, uint32_t aFlags)
   return nullptr;
 }
 
-NS_IMETHODIMP_(DrawResult)
-FrozenImage::Draw(gfxContext* aContext,
-                  const nsIntSize& aSize,
+NS_IMETHODIMP_(bool)
+FrozenImage::IsImageContainerAvailableAtSize(LayerManager* aManager,
+                                             const IntSize& aSize,
+                                             uint32_t aFlags) {
+  return false;
+}
+
+NS_IMETHODIMP_(ImgDrawResult)
+FrozenImage::GetImageContainerAtSize(layers::LayerManager* aManager,
+                                     const gfx::IntSize& aSize,
+                                     const Maybe<SVGImageContext>& aSVGContext,
+                                     uint32_t aFlags,
+                                     layers::ImageContainer** aOutContainer) {
+  // XXX(seth): GetImageContainer does not currently support anything but the
+  // current frame. We work around this by always returning null, but if it ever
+  // turns out that FrozenImage is widely used on codepaths that can actually
+  // benefit from GetImageContainer, it would be a good idea to fix that method
+  // for performance reasons.
+  return ImgDrawResult::NOT_SUPPORTED;
+}
+
+NS_IMETHODIMP_(ImgDrawResult)
+FrozenImage::Draw(gfxContext* aContext, const nsIntSize& aSize,
                   const ImageRegion& aRegion,
                   uint32_t /* aWhichFrame - ignored */,
                   SamplingFilter aSamplingFilter,
-                  const Maybe<SVGImageContext>& aSVGContext,
-                  uint32_t aFlags,
-                  float aOpacity)
-{
+                  const Maybe<SVGImageContext>& aSVGContext, uint32_t aFlags,
+                  float aOpacity) {
   return InnerImage()->Draw(aContext, aSize, aRegion, FRAME_FIRST,
                             aSamplingFilter, aSVGContext, aFlags, aOpacity);
 }
 
 NS_IMETHODIMP_(void)
-FrozenImage::RequestRefresh(const TimeStamp& aTime)
-{
+FrozenImage::RequestRefresh(const TimeStamp& aTime) {
   // Do nothing.
 }
 
 NS_IMETHODIMP
-FrozenImage::GetAnimationMode(uint16_t* aAnimationMode)
-{
+FrozenImage::GetAnimationMode(uint16_t* aAnimationMode) {
   *aAnimationMode = kNormalAnimMode;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-FrozenImage::SetAnimationMode(uint16_t aAnimationMode)
-{
+FrozenImage::SetAnimationMode(uint16_t aAnimationMode) {
   // Do nothing.
   return NS_OK;
 }
 
 NS_IMETHODIMP
-FrozenImage::ResetAnimation()
-{
+FrozenImage::ResetAnimation() {
   // Do nothing.
   return NS_OK;
 }
 
 NS_IMETHODIMP_(float)
-FrozenImage::GetFrameIndex(uint32_t aWhichFrame)
-{
+FrozenImage::GetFrameIndex(uint32_t aWhichFrame) {
   MOZ_ASSERT(aWhichFrame <= FRAME_MAX_VALUE, "Invalid argument");
   return 0;
 }
 
-} // namespace image
-} // namespace mozilla
+}  // namespace image
+}  // namespace mozilla

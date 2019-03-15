@@ -3,61 +3,56 @@
 
 "use strict";
 
-var {OS: {File, Path, Constants}} = Components.utils.import("resource://gre/modules/osfile.jsm", {});
-Components.utils.import("resource://gre/modules/Task.jsm");
+var {OS: {File, Path, Constants}} = ChromeUtils.import("resource://gre/modules/osfile.jsm", {});
 
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* testFileError_with_writeAtomic() {
+add_task(async function testFileError_with_writeAtomic() {
   let DEFAULT_CONTENTS = "default contents" + Math.random();
   let path = Path.join(Constants.Path.tmpDir,
                        "testFileError.tmp");
-  yield File.remove(path);
-  yield File.writeAtomic(path, DEFAULT_CONTENTS);
+  await File.remove(path);
+  await File.writeAtomic(path, DEFAULT_CONTENTS);
   let exception;
   try {
-    yield File.writeAtomic(path, DEFAULT_CONTENTS, { noOverwrite: true });
+    await File.writeAtomic(path, DEFAULT_CONTENTS, { noOverwrite: true });
   } catch (ex) {
     exception = ex;
   }
-  do_check_true(exception instanceof File.Error);
-  do_check_true(exception.path == path);
+  Assert.ok(exception instanceof File.Error);
+  Assert.ok(exception.path == path);
 });
 
-add_task(function* testFileError_with_makeDir() {
+add_task(async function testFileError_with_makeDir() {
   let path = Path.join(Constants.Path.tmpDir,
                        "directory");
-  yield File.removeDir(path);
-  yield File.makeDir(path);
+  await File.removeDir(path);
+  await File.makeDir(path);
   let exception;
   try {
-    yield File.makeDir(path, { ignoreExisting: false });
+    await File.makeDir(path, { ignoreExisting: false });
   } catch (ex) {
     exception = ex;
   }
-  do_check_true(exception instanceof File.Error);
-  do_check_true(exception.path == path);
+  Assert.ok(exception instanceof File.Error);
+  Assert.ok(exception.path == path);
 });
 
-add_task(function* testFileError_with_move() {
+add_task(async function testFileError_with_move() {
   let DEFAULT_CONTENTS = "default contents" + Math.random();
   let sourcePath = Path.join(Constants.Path.tmpDir,
                              "src.tmp");
   let destPath = Path.join(Constants.Path.tmpDir,
                            "dest.tmp");
-  yield File.remove(sourcePath);
-  yield File.remove(destPath);
-  yield File.writeAtomic(sourcePath, DEFAULT_CONTENTS);
-  yield File.writeAtomic(destPath, DEFAULT_CONTENTS);
+  await File.remove(sourcePath);
+  await File.remove(destPath);
+  await File.writeAtomic(sourcePath, DEFAULT_CONTENTS);
+  await File.writeAtomic(destPath, DEFAULT_CONTENTS);
   let exception;
   try {
-    yield File.move(sourcePath, destPath, { noOverwrite: true });
+    await File.move(sourcePath, destPath, { noOverwrite: true });
   } catch (ex) {
     exception = ex;
   }
-  do_print(exception);
-  do_check_true(exception instanceof File.Error);
-  do_check_true(exception.path == sourcePath);
+  info(exception);
+  Assert.ok(exception instanceof File.Error);
+  Assert.ok(exception.path == sourcePath);
 });

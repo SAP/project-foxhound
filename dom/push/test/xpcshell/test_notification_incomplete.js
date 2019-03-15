@@ -15,9 +15,9 @@ function run_test() {
   run_next_test();
 }
 
-add_task(function* test_notification_incomplete() {
+add_task(async function test_notification_incomplete() {
   let db = PushServiceWebSocket.newPushDB();
-  do_register_cleanup(() => {return db.drop().then(_ => db.close());});
+  registerCleanupFunction(() => {return db.drop().then(_ => db.close());});
   let records = [{
     channelID: '123',
     pushEndpoint: 'https://example.org/update/1',
@@ -48,15 +48,15 @@ add_task(function* test_notification_incomplete() {
     quota: Infinity,
   }];
   for (let record of records) {
-    yield db.put(record);
+    await db.put(record);
   }
 
   function observeMessage(subject, topic, data) {
     ok(false, 'Should not deliver malformed updates');
   }
-  do_register_cleanup(() =>
+  registerCleanupFunction(() =>
     Services.obs.removeObserver(observeMessage, PushServiceComponent.pushTopic));
-  Services.obs.addObserver(observeMessage, PushServiceComponent.pushTopic, false);
+  Services.obs.addObserver(observeMessage, PushServiceComponent.pushTopic);
 
   let notificationDone;
   let notificationPromise = new Promise(resolve => notificationDone = after(2, resolve));
@@ -107,9 +107,9 @@ add_task(function* test_notification_incomplete() {
     }
   });
 
-  yield notificationPromise;
+  await notificationPromise;
 
-  let storeRecords = yield db.getAllKeyIDs();
+  let storeRecords = await db.getAllKeyIDs();
   storeRecords.sort(({pushEndpoint: a}, {pushEndpoint: b}) =>
     compareAscending(a, b));
   recordsAreEqual(records, storeRecords);

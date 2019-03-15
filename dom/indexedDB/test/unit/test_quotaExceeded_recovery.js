@@ -38,7 +38,7 @@ function* testSteps()
 
     let request = indexedDB.openForPrincipal(getPrincipal(spec), name);
     request.onerror = errorHandler;
-    request.onupgradeneeded = grabEventAndContinueHandler;;
+    request.onupgradeneeded = grabEventAndContinueHandler;
     request.onsuccess = unexpectedSuccessHandler;
 
     yield undefined;
@@ -60,8 +60,8 @@ function* testSteps()
     ok(true, "Filling database");
 
     let obj = {
-      name: "foo"
-    }
+      name: "foo",
+    };
 
     if (!blobs) {
       obj.data = getRandomView(dataSize);
@@ -80,7 +80,7 @@ function* testSteps()
       request.onerror = function(event)
       {
         event.stopPropagation();
-      }
+      };
 
       trans.oncomplete = function(event) {
         if (iter == 1) {
@@ -88,11 +88,11 @@ function* testSteps()
         }
         j++;
         testGenerator.next(true);
-      }
+      };
       trans.onabort = function(event) {
         is(trans.error.name, "QuotaExceededError", "Reached quota limit");
         testGenerator.next(false);
-      }
+      };
 
       let completeFired = yield undefined;
       if (completeFired) {
@@ -126,10 +126,10 @@ function* testSteps()
             cursor.delete();
             cursor.continue();
           }
-        }
+        };
       }
 
-      trans.onabort = unexpectedSuccessHandler;;
+      trans.onabort = unexpectedSuccessHandler;
       trans.oncomplete = grabEventAndContinueHandler;
 
       yield undefined;

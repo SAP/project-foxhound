@@ -54,20 +54,21 @@ public:
     ~JpegDecoderMgr();
 
     /*
-     * Get the jump buffer in order to set an error return point
+     * Get the skjpeg_error_mgr in order to set an error return jmp_buf
      */
-    jmp_buf& getJmpBuf();
+    skjpeg_error_mgr* errorMgr() { return &fErrorMgr; }
 
     /*
      * Get function for the decompress info struct
      */
-    jpeg_decompress_struct* dinfo();
+    jpeg_decompress_struct* dinfo() { return &fDInfo; }
 
 private:
 
     jpeg_decompress_struct fDInfo;
     skjpeg_source_mgr      fSrcMgr;
     skjpeg_error_mgr       fErrorMgr;
+    jpeg_progress_mgr      fProgressMgr;
     bool                   fInit;
 };
 

@@ -4,401 +4,232 @@
 
 // Checks that we rebuild something sensible from a database with a bad schema
 
+var testserver = AddonTestUtils.createHttpServer({hosts: ["example.com"]});
 
-Components.utils.import("resource://testing-common/httpd.js");
-var testserver = new HttpServer();
-testserver.start(-1);
-gPort = testserver.identity.primaryPort;
-
-// register static files with server and interpolate port numbers in them
-mapFile("/data/test_corrupt.rdf", testserver);
+// register files with server
+testserver.registerDirectory("/data/", do_get_file("data"));
 
 // The test extension uses an insecure update url.
-Services.prefs.setBoolPref("extensions.checkUpdateSecurity", false);
+Services.prefs.setBoolPref(PREF_EM_CHECK_UPDATE_SECURITY, false);
 
-// Will be enabled
-var addon1 = {
-  id: "addon1@tests.mozilla.org",
-  version: "1.0",
-  name: "Test 1",
-  targetApplications: [{
-    id: "xpcshell@tests.mozilla.org",
-    minVersion: "2",
-    maxVersion: "2"
-  }]
+const ADDONS = {
+  "addon1@tests.mozilla.org": {
+    manifest: {
+      name: "Test 1",
+      applications: {
+        gecko: {
+          id: "addon1@tests.mozilla.org",
+          strict_min_version: "2",
+          strict_max_version: "2",
+        },
+      },
+    },
+    desiredValues: {
+      isActive: true,
+      userDisabled: false,
+      appDisabled: false,
+      pendingOperations: 0,
+    },
+  },
+
+  "addon2@tests.mozilla.org": {
+    manifest: {
+      name: "Test 2",
+      version: "1.0",
+      applications: {
+        gecko: {
+          id: "addon2@tests.mozilla.org",
+        },
+      },
+    },
+    initialState: {
+      userDisabled: true,
+    },
+    desiredValues: {
+      isActive: false,
+      userDisabled: true,
+      appDisabled: false,
+      pendingOperations: 0,
+    },
+  },
+
+  "addon3@tests.mozilla.org": {
+    manifest: {
+      name: "Test 3",
+      version: "1.0",
+      applications: {
+        gecko: {
+          id: "addon3@tests.mozilla.org",
+          update_url: "http://example.com/data/test_corrupt.json",
+          strict_min_version: "1",
+          strict_max_version: "1",
+        },
+      },
+    },
+    findUpdates: true,
+    desiredValues: {
+      isActive: true,
+      userDisabled: false,
+      appDisabled: false,
+      pendingOperations: 0,
+    },
+  },
+
+  "addon4@tests.mozilla.org": {
+    manifest: {
+      name: "Test 4",
+      version: "1.0",
+      applications: {
+        gecko: {
+          id: "addon4@tests.mozilla.org",
+          update_url: "http://example.com/data/test_corrupt.json",
+          strict_min_version: "1",
+          strict_max_version: "1",
+        },
+      },
+    },
+    initialState: {
+      userDisabled: true,
+    },
+    findUpdates: true,
+    desiredValues: {
+      isActive: false,
+      userDisabled: true,
+      appDisabled: false,
+      pendingOperations: 0,
+    },
+  },
+
+  "addon5@tests.mozilla.org": {
+    manifest: {
+      name: "Test 5",
+      version: "1.0",
+      applications: {
+        gecko: {
+          id: "addon5@tests.mozilla.org",
+          strict_min_version: "1",
+          strict_max_version: "1",
+        },
+      },
+    },
+    desiredValues: {
+      isActive: false,
+      userDisabled: false,
+      appDisabled: true,
+      pendingOperations: 0,
+    },
+  },
+
+  "theme1@tests.mozilla.org": {
+    manifest: {
+      manifest_version: 2,
+      name: "Theme 1",
+      version: "1.0",
+      theme: { images: { headerURL: "example.png" } },
+      applications: {
+        gecko: {
+          id: "theme1@tests.mozilla.org",
+        },
+      },
+    },
+    desiredValues: {
+      isActive: false,
+      userDisabled: true,
+      appDisabled: false,
+      pendingOperations: 0,
+    },
+  },
+
+  "theme2@tests.mozilla.org": {
+    manifest: {
+      manifest_version: 2,
+      name: "Theme 2",
+      version: "1.0",
+      theme: { images: { headerURL: "example.png" } },
+      applications: {
+        gecko: {
+          id: "theme2@tests.mozilla.org",
+        },
+      },
+    },
+    initialState: {
+      userDisabled: false,
+    },
+    desiredValues: {
+      isActive: true,
+      userDisabled: false,
+      appDisabled: false,
+      pendingOperations: 0,
+    },
+  },
 };
 
-// Will be disabled
-var addon2 = {
-  id: "addon2@tests.mozilla.org",
-  version: "1.0",
-  name: "Test 2",
-  targetApplications: [{
-    id: "xpcshell@tests.mozilla.org",
-    minVersion: "2",
-    maxVersion: "2"
-  }]
-};
+const IDS = Object.keys(ADDONS);
 
-// Will get a compatibility update and be enabled
-var addon3 = {
-  id: "addon3@tests.mozilla.org",
-  version: "1.0",
-  name: "Test 3",
-  updateURL: "http://localhost:" + gPort + "/data/test_corrupt.rdf",
-  targetApplications: [{
-    id: "xpcshell@tests.mozilla.org",
-    minVersion: "1",
-    maxVersion: "1"
-  }]
-};
+function promiseUpdates(addon) {
+  return new Promise(resolve => {
+    addon.findUpdates({onUpdateFinished: resolve},
+                      AddonManager.UPDATE_WHEN_PERIODIC_UPDATE);
+  });
+}
 
-// Will get a compatibility update and be disabled
-var addon4 = {
-  id: "addon4@tests.mozilla.org",
-  version: "1.0",
-  name: "Test 4",
-  updateURL: "http://localhost:" + gPort + "/data/test_corrupt.rdf",
-  targetApplications: [{
-    id: "xpcshell@tests.mozilla.org",
-    minVersion: "1",
-    maxVersion: "1"
-  }]
-};
-
-// Stays incompatible
-var addon5 = {
-  id: "addon5@tests.mozilla.org",
-  version: "1.0",
-  name: "Test 5",
-  targetApplications: [{
-    id: "xpcshell@tests.mozilla.org",
-    minVersion: "1",
-    maxVersion: "1"
-  }]
-};
-
-// Enabled bootstrapped
-var addon6 = {
-  id: "addon6@tests.mozilla.org",
-  version: "1.0",
-  name: "Test 6",
-  bootstrap: "true",
-  targetApplications: [{
-    id: "xpcshell@tests.mozilla.org",
-    minVersion: "2",
-    maxVersion: "2"
-  }]
-};
-
-// Disabled bootstrapped
-var addon7 = {
-  id: "addon7@tests.mozilla.org",
-  version: "1.0",
-  name: "Test 7",
-  bootstrap: "true",
-  targetApplications: [{
-    id: "xpcshell@tests.mozilla.org",
-    minVersion: "2",
-    maxVersion: "2"
-  }]
-};
-
-// The default theme
-var theme1 = {
-  id: "theme1@tests.mozilla.org",
-  version: "1.0",
-  name: "Theme 1",
-  internalName: "classic/1.0",
-  targetApplications: [{
-    id: "xpcshell@tests.mozilla.org",
-    minVersion: "2",
-    maxVersion: "2"
-  }]
-};
-
-// The selected theme
-var theme2 = {
-  id: "theme2@tests.mozilla.org",
-  version: "1.0",
-  name: "Theme 2",
-  internalName: "test/1.0",
-  targetApplications: [{
-    id: "xpcshell@tests.mozilla.org",
-    minVersion: "2",
-    maxVersion: "2"
-  }]
-};
-
-const profileDir = gProfD.clone();
-profileDir.append("extensions");
-
-function run_test() {
-  do_test_pending();
+add_task(async function setup() {
   createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "2", "2");
 
-  writeInstallRDFForExtension(addon1, profileDir);
-  writeInstallRDFForExtension(addon2, profileDir);
-  writeInstallRDFForExtension(addon3, profileDir);
-  writeInstallRDFForExtension(addon4, profileDir);
-  writeInstallRDFForExtension(addon5, profileDir);
-  writeInstallRDFForExtension(addon6, profileDir);
-  writeInstallRDFForExtension(addon7, profileDir);
-  writeInstallRDFForExtension(theme1, profileDir);
-  writeInstallRDFForExtension(theme2, profileDir);
+  for (let addon of Object.values(ADDONS)) {
+    let webext = createTempWebExtensionFile({manifest: addon.manifest});
+    await AddonTestUtils.manuallyInstall(webext);
+  }
 
-  // Create and configure the HTTP server.
-  testserver.registerDirectory("/addons/", do_get_file("addons"));
+  await promiseStartupManager();
 
-  // Startup the profile and setup the initial state
-  startupManager();
+  let addons = await getAddons(IDS);
+  for (let [id, addon] of Object.entries(ADDONS)) {
+    if (addon.initialState) {
+      await setInitialState(addons.get(id), addon.initialState);
+    }
+    if (addon.findUpdates) {
+      await promiseUpdates(addons.get(id));
+    }
+  }
+});
 
-  AddonManager.getAddonsByIDs(["addon2@tests.mozilla.org",
-                               "addon3@tests.mozilla.org",
-                               "addon4@tests.mozilla.org",
-                               "addon7@tests.mozilla.org",
-                               "theme2@tests.mozilla.org"], function([a2, a3, a4,
-                                                                      a7, t2]) {
-    // Set up the initial state
-    a2.userDisabled = true;
-    a4.userDisabled = true;
-    a7.userDisabled = true;
-    t2.userDisabled = false;
-    a3.findUpdates({
-      onUpdateFinished() {
-        a4.findUpdates({
-          onUpdateFinished() {
-            do_execute_soon(run_test_1);
-          }
-        }, AddonManager.UPDATE_WHEN_PERIODIC_UPDATE);
-      }
-    }, AddonManager.UPDATE_WHEN_PERIODIC_UPDATE);
-  });
-}
+add_task(async function test_after_restart() {
+  await promiseRestartManager();
 
-function end_test() {
-  testserver.stop(do_test_finished);
-}
+  info("Test add-on state after restart");
+  let addons = await getAddons(IDS);
+  for (let [id, addon] of Object.entries(ADDONS)) {
+    checkAddon(id, addons.get(id), addon.desiredValues);
+  }
 
-function run_test_1() {
-  restartManager();
+  await promiseShutdownManager();
+});
 
-  AddonManager.getAddonsByIDs(["addon1@tests.mozilla.org",
-                               "addon2@tests.mozilla.org",
-                               "addon3@tests.mozilla.org",
-                               "addon4@tests.mozilla.org",
-                               "addon5@tests.mozilla.org",
-                               "addon6@tests.mozilla.org",
-                               "addon7@tests.mozilla.org",
-                               "theme1@tests.mozilla.org",
-                               "theme2@tests.mozilla.org"], function([a1, a2, a3,
-                                                                      a4, a5, a6,
-                                                                      a7, t1, t2]) {
-    do_check_neq(a1, null);
-    do_check_true(a1.isActive);
-    do_check_false(a1.userDisabled);
-    do_check_false(a1.appDisabled);
-    do_check_eq(a1.pendingOperations, AddonManager.PENDING_NONE);
+add_task(async function test_after_schema_version_change() {
+  // After restarting the database won't be open so we can alter
+  // the schema
+  await changeXPIDBVersion(100);
 
-    do_check_neq(a2, null);
-    do_check_false(a2.isActive);
-    do_check_true(a2.userDisabled);
-    do_check_false(a2.appDisabled);
-    do_check_eq(a2.pendingOperations, AddonManager.PENDING_NONE);
+  await promiseStartupManager();
 
-    do_check_neq(a3, null);
-    do_check_true(a3.isActive);
-    do_check_false(a3.userDisabled);
-    do_check_false(a3.appDisabled);
-    do_check_eq(a3.pendingOperations, AddonManager.PENDING_NONE);
+  info("Test add-on state after schema version change");
+  let addons = await getAddons(IDS);
+  for (let [id, addon] of Object.entries(ADDONS)) {
+    checkAddon(id, addons.get(id), addon.desiredValues);
+  }
 
-    do_check_neq(a4, null);
-    do_check_false(a4.isActive);
-    do_check_true(a4.userDisabled);
-    do_check_false(a4.appDisabled);
-    do_check_eq(a4.pendingOperations, AddonManager.PENDING_NONE);
+  await promiseShutdownManager();
+});
 
-    do_check_neq(a5, null);
-    do_check_false(a5.isActive);
-    do_check_false(a5.userDisabled);
-    do_check_true(a5.appDisabled);
-    do_check_eq(a5.pendingOperations, AddonManager.PENDING_NONE);
+add_task(async function test_after_second_restart() {
+  await promiseStartupManager();
 
-    do_check_neq(a6, null);
-    do_check_true(a6.isActive);
-    do_check_false(a6.userDisabled);
-    do_check_false(a6.appDisabled);
-    do_check_eq(a6.pendingOperations, AddonManager.PENDING_NONE);
+  info("Test add-on state after second restart");
+  let addons = await getAddons(IDS);
+  for (let [id, addon] of Object.entries(ADDONS)) {
+    checkAddon(id, addons.get(id), addon.desiredValues);
+  }
 
-    do_check_neq(a7, null);
-    do_check_false(a7.isActive);
-    do_check_true(a7.userDisabled);
-    do_check_false(a7.appDisabled);
-    do_check_eq(a7.pendingOperations, AddonManager.PENDING_NONE);
-
-    do_check_neq(t1, null);
-    do_check_false(t1.isActive);
-    do_check_true(t1.userDisabled);
-    do_check_false(t1.appDisabled);
-    do_check_eq(t1.pendingOperations, AddonManager.PENDING_NONE);
-
-    do_check_neq(t2, null);
-    do_check_true(t2.isActive);
-    do_check_false(t2.userDisabled);
-    do_check_false(t2.appDisabled);
-    do_check_eq(t2.pendingOperations, AddonManager.PENDING_NONE);
-
-    do_execute_soon(run_test_1_modified_db);
-  });
-}
-
-
-function run_test_1_modified_db() {
-    // After restarting the database won't be open so we can alter
-    // the schema
-    shutdownManager();
-    changeXPIDBVersion(100);
-    startupManager();
-
-    // Accessing the add-ons should open and recover the database. Since
-    // migration occurs everything should be recovered correctly
-    AddonManager.getAddonsByIDs(["addon1@tests.mozilla.org",
-                                 "addon2@tests.mozilla.org",
-                                 "addon3@tests.mozilla.org",
-                                 "addon4@tests.mozilla.org",
-                                 "addon5@tests.mozilla.org",
-                                 "addon6@tests.mozilla.org",
-                                 "addon7@tests.mozilla.org",
-                                 "theme1@tests.mozilla.org",
-                                 "theme2@tests.mozilla.org"], function([a1, a2, a3,
-                                                                        a4, a5, a6,
-                                                                        a7, t1, t2]) {
-      do_check_neq(a1, null);
-      do_check_true(a1.isActive);
-      do_check_false(a1.userDisabled);
-      do_check_false(a1.appDisabled);
-      do_check_eq(a1.pendingOperations, AddonManager.PENDING_NONE);
-
-      do_check_neq(a2, null);
-      do_check_false(a2.isActive);
-      do_check_true(a2.userDisabled);
-      do_check_false(a2.appDisabled);
-      do_check_eq(a2.pendingOperations, AddonManager.PENDING_NONE);
-
-      do_check_neq(a3, null);
-      do_check_true(a3.isActive);
-      do_check_false(a3.userDisabled);
-      do_check_false(a3.appDisabled);
-      do_check_eq(a3.pendingOperations, AddonManager.PENDING_NONE);
-
-      do_check_neq(a4, null);
-      do_check_false(a4.isActive);
-      do_check_true(a4.userDisabled);
-      do_check_false(a4.appDisabled);
-      do_check_eq(a4.pendingOperations, AddonManager.PENDING_NONE);
-
-      do_check_neq(a5, null);
-      do_check_false(a5.isActive);
-      do_check_false(a5.userDisabled);
-      do_check_true(a5.appDisabled);
-      do_check_eq(a5.pendingOperations, AddonManager.PENDING_NONE);
-
-      do_check_neq(a6, null);
-      do_check_true(a6.isActive);
-      do_check_false(a6.userDisabled);
-      do_check_false(a6.appDisabled);
-      do_check_eq(a6.pendingOperations, AddonManager.PENDING_NONE);
-
-      do_check_neq(a7, null);
-      do_check_false(a7.isActive);
-      do_check_true(a7.userDisabled);
-      do_check_false(a7.appDisabled);
-      do_check_eq(a7.pendingOperations, AddonManager.PENDING_NONE);
-
-      do_check_neq(t1, null);
-      do_check_false(t1.isActive);
-      do_check_true(t1.userDisabled);
-      do_check_false(t1.appDisabled);
-      do_check_eq(t1.pendingOperations, AddonManager.PENDING_NONE);
-
-      do_check_neq(t2, null);
-      do_check_true(t2.isActive);
-      do_check_false(t2.userDisabled);
-      do_check_false(t2.appDisabled);
-      do_check_eq(t2.pendingOperations, AddonManager.PENDING_NONE);
-
-      do_execute_soon(run_test_1_after_rebuild);
-    });
-}
-
-function run_test_1_after_rebuild() {
-      restartManager();
-
-      AddonManager.getAddonsByIDs(["addon1@tests.mozilla.org",
-                                   "addon2@tests.mozilla.org",
-                                   "addon3@tests.mozilla.org",
-                                   "addon4@tests.mozilla.org",
-                                   "addon5@tests.mozilla.org",
-                                   "addon6@tests.mozilla.org",
-                                   "addon7@tests.mozilla.org",
-                                   "theme1@tests.mozilla.org",
-                                   "theme2@tests.mozilla.org"], function([a1, a2, a3,
-                                                                          a4, a5, a6,
-                                                                          a7, t1, t2]) {
-        do_check_neq(a1, null);
-        do_check_true(a1.isActive);
-        do_check_false(a1.userDisabled);
-        do_check_false(a1.appDisabled);
-        do_check_eq(a1.pendingOperations, AddonManager.PENDING_NONE);
-
-        do_check_neq(a2, null);
-        do_check_false(a2.isActive);
-        do_check_true(a2.userDisabled);
-        do_check_false(a2.appDisabled);
-        do_check_eq(a2.pendingOperations, AddonManager.PENDING_NONE);
-
-        do_check_neq(a3, null);
-        do_check_true(a3.isActive);
-        do_check_false(a3.userDisabled);
-        do_check_false(a3.appDisabled);
-        do_check_eq(a3.pendingOperations, AddonManager.PENDING_NONE);
-
-        do_check_neq(a4, null);
-        do_check_false(a4.isActive);
-        do_check_true(a4.userDisabled);
-        do_check_false(a4.appDisabled);
-        do_check_eq(a4.pendingOperations, AddonManager.PENDING_NONE);
-
-        do_check_neq(a5, null);
-        do_check_false(a5.isActive);
-        do_check_false(a5.userDisabled);
-        do_check_true(a5.appDisabled);
-        do_check_eq(a5.pendingOperations, AddonManager.PENDING_NONE);
-
-        do_check_neq(a6, null);
-        do_check_true(a6.isActive);
-        do_check_false(a6.userDisabled);
-        do_check_false(a6.appDisabled);
-        do_check_eq(a6.pendingOperations, AddonManager.PENDING_NONE);
-
-        do_check_neq(a7, null);
-        do_check_false(a7.isActive);
-        do_check_true(a7.userDisabled);
-        do_check_false(a7.appDisabled);
-        do_check_eq(a7.pendingOperations, AddonManager.PENDING_NONE);
-
-        do_check_neq(t1, null);
-        do_check_false(t1.isActive);
-        do_check_true(t1.userDisabled);
-        do_check_false(t1.appDisabled);
-        do_check_eq(t1.pendingOperations, AddonManager.PENDING_NONE);
-
-        do_check_neq(t2, null);
-        do_check_true(t2.isActive);
-        do_check_false(t2.userDisabled);
-        do_check_false(t2.appDisabled);
-        do_check_eq(t2.pendingOperations, AddonManager.PENDING_NONE);
-
-        end_test();
-      });
-}
+  await promiseShutdownManager();
+});

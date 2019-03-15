@@ -8,7 +8,7 @@ with Files("browser/**"):
     BUG_COMPONENT = ("Core", "DOM")
 
 with Files("browser/*onsole*"):
-    BUG_COMPONENT = ("Firefox", "Developer Tools")
+    BUG_COMPONENT = ("DevTools", "General")
 
 with Files("browser/*autofocus*"):
     BUG_COMPONENT = ("Core", "DOM: Core & HTML")
@@ -30,9 +30,6 @@ with Files("browser/browser_cancel_keydown_keypress_event.js"):
 
 with Files("browser/*local*"):
     BUG_COMPONENT = ("Core", "DOM")
-
-with Files("browser/*prerender*"):
-    BUG_COMPONENT = ("Core", "Document Navigation")
 
 with Files("browser/browser_test_focus_after_modal_state.js"):
     BUG_COMPONENT = ("Core", "Event Handling")
@@ -83,25 +80,25 @@ with Files("mochitest/geolocation/**"):
     BUG_COMPONENT = ("Core", "Geolocation")
 
 with Files("mochitest/localstorage/**"):
-    BUG_COMPONENT = ("Core", "DOM")
-
-with Files("mochitest/notification/**"):
-    BUG_COMPONENT = ("Core", "DOM")
+    BUG_COMPONENT = ("Core", "DOM: Web Storage")
 
 with Files("mochitest/orientation/**"):
     BUG_COMPONENT = ("Core", "DOM: Device Interfaces")
 
 with Files("mochitest/orientation/*507902*"):
-    BUG_COMPONENT = ("Core", "Layout: Images")
+    BUG_COMPONENT = ("Core", "Layout: Images, Video, and HTML Frames")
 
 with Files("mochitest/pointerlock/**"):
     BUG_COMPONENT = ("Core", "DOM")
 
-with Files("mochitest/sessionstorage/**"):
+with Files("mochitest/script/**"):
     BUG_COMPONENT = ("Core", "DOM: Core & HTML")
 
+with Files("mochitest/sessionstorage/**"):
+    BUG_COMPONENT = ("Core", "DOM: Web Storage")
+
 with Files("mochitest/storageevent/**"):
-    BUG_COMPONENT = ("Core", "DOM")
+    BUG_COMPONENT = ("Core", "DOM: Web Storage")
 
 with Files("mochitest/webcomponents/**"):
     BUG_COMPONENT = ("Core", "DOM")
@@ -165,10 +162,11 @@ MOCHITEST_MANIFESTS += [
     'mochitest/gamepad/mochitest.ini',
     'mochitest/general/mochitest.ini',
     'mochitest/geolocation/mochitest.ini',
+    'mochitest/keyhandling/mochitest.ini',
     'mochitest/localstorage/mochitest.ini',
-    'mochitest/notification/mochitest.ini',
     'mochitest/orientation/mochitest.ini',
     'mochitest/pointerlock/mochitest.ini',
+    'mochitest/script/mochitest.ini',
     'mochitest/sessionstorage/mochitest.ini',
     'mochitest/storageevent/mochitest.ini',
     'mochitest/webcomponents/mochitest.ini',
@@ -180,6 +178,7 @@ MOCHITEST_CHROME_MANIFESTS += [
     'mochitest/chrome/chrome.ini',
     'mochitest/general/chrome.ini',
     'mochitest/geolocation/chrome.ini',
+    'mochitest/keyhandling/chrome.ini',
     'mochitest/localstorage/chrome.ini',
     'mochitest/sessionstorage/chrome.ini',
     'mochitest/webcomponents/chrome.ini',
@@ -187,7 +186,8 @@ MOCHITEST_CHROME_MANIFESTS += [
 ]
 
 XPCSHELL_TESTS_MANIFESTS += ['unit/xpcshell.ini']
-BROWSER_CHROME_MANIFESTS += ['browser/browser.ini']
+BROWSER_CHROME_MANIFESTS += ['browser/browser.ini', 'browser/perfmetrics/browser.ini',
+                             'mochitest/ajax/offline/browser.ini']
 
 TEST_HARNESS_FILES.testing.mochitest.tests.dom.tests.mochitest.ajax.lib += [
     'mochitest/ajax/lib/AJAX_setup.js',

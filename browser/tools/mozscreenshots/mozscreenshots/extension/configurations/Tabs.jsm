@@ -4,62 +4,77 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["Tabs"];
+var EXPORTED_SYMBOLS = ["Tabs"];
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
+const CUST_TAB = "chrome://browser/skin/customize.svg";
+const PREFS_TAB = "chrome://browser/skin/settings.svg";
+const DEFAULT_FAVICON_TAB = `data:text/html,<meta%20charset="utf-8"><title>No%20favicon</title>`;
 
-const CUST_TAB = "chrome://browser/skin/customizableui/customizeFavicon.ico";
-const PREFS_TAB = "chrome://browser/skin/preferences/in-content/favicon.ico";
-const DEFAULT_FAVICON_TAB = `data:text/html,<meta charset="utf-8">
-<title>No favicon</title>`;
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Timer.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://testing-common/TestUtils.jsm");
+ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
-Cu.import("resource://gre/modules/Timer.jsm");
+XPCOMUtils.defineLazyGlobalGetters(this, ["InspectorUtils"]);
 
-this.Tabs = {
+var Tabs = {
   init(libDir) {},
 
   configurations: {
     fiveTabs: {
-      applyConfig: Task.async(function*() {
+      selectors: ["#tabbrowser-tabs"],
+      async applyConfig() {
         fiveTabsHelper();
         let browserWindow = Services.wm.getMostRecentWindow("navigator:browser");
         hoverTab(browserWindow.gBrowser.tabs[3]);
-        yield new Promise((resolve, reject) => {
+        await new Promise((resolve, reject) => {
           setTimeout(resolve, 3000);
         });
-      }),
+        await allTabTitlesDisplayed(browserWindow);
+      },
     },
 
     fourPinned: {
-      applyConfig: Task.async(function*() {
+      selectors: ["#tabbrowser-tabs"],
+      async applyConfig() {
         fiveTabsHelper();
         let browserWindow = Services.wm.getMostRecentWindow("navigator:browser");
-        let tab = browserWindow.gBrowser.addTab(PREFS_TAB);
+        let tab = browserWindow.gBrowser.addTab(PREFS_TAB, {
+          triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+        });
         browserWindow.gBrowser.pinTab(tab);
-        tab = browserWindow.gBrowser.addTab(CUST_TAB);
+        tab = browserWindow.gBrowser.addTab(CUST_TAB, {
+          triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+        });
         browserWindow.gBrowser.pinTab(tab);
-        tab = browserWindow.gBrowser.addTab("about:privatebrowsing");
+        tab = browserWindow.gBrowser.addTab("about:privatebrowsing", {
+          triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+        });
         browserWindow.gBrowser.pinTab(tab);
-        tab = browserWindow.gBrowser.addTab("about:home");
+        tab = browserWindow.gBrowser.addTab("about:home", {
+          triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+        });
         browserWindow.gBrowser.pinTab(tab);
         browserWindow.gBrowser.selectTabAtIndex(5);
         hoverTab(browserWindow.gBrowser.tabs[2]);
         // also hover the new tab button
         let newTabButton = browserWindow.document.getAnonymousElementByAttribute(browserWindow.
-                           gBrowser.tabContainer, "class", "tabs-newtab-button");
+                           gBrowser.tabContainer, "anonid", "tabs-newtab-button");
         hoverTab(newTabButton);
         browserWindow.gBrowser.tabs[browserWindow.gBrowser.tabs.length - 1].
                       setAttribute("beforehovered", true);
-        yield new Promise((resolve, reject) => {
+
+        await new Promise((resolve, reject) => {
           setTimeout(resolve, 3000);
         });
-      }),
+        await allTabTitlesDisplayed(browserWindow);
+      },
     },
 
     twoPinnedWithOverflow: {
-      applyConfig: Task.async(function*() {
+      selectors: ["#tabbrowser-tabs"],
+      async applyConfig() {
         fiveTabsHelper();
 
         let browserWindow = Services.wm.getMostRecentWindow("navigator:browser");
@@ -93,21 +108,62 @@ this.Tabs = {
           "about:home",
           DEFAULT_FAVICON_TAB,
           "about:newtab",
-        ], true, true);
+         ],
+         {
+           inBackground: true,
+           replace: true,
+           triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+        });
         browserWindow.gBrowser.pinTab(browserWindow.gBrowser.tabs[1]);
         browserWindow.gBrowser.pinTab(browserWindow.gBrowser.tabs[2]);
         browserWindow.gBrowser.selectTabAtIndex(3);
         hoverTab(browserWindow.gBrowser.tabs[5]);
-        yield new Promise((resolve, reject) => {
+
+        await new Promise((resolve, reject) => {
           setTimeout(resolve, 3000);
         });
-      }),
+        // Make sure the tabstrip is scrolled all the way to the left.
+        let scrolled = BrowserTestUtils.waitForEvent(browserWindow.gBrowser.tabContainer, "scrollend");
+        browserWindow.gBrowser.tabContainer.arrowScrollbox.scrollByIndex(-100);
+        await scrolled;
+
+        await allTabTitlesDisplayed(browserWindow);
+      },
     },
   },
 };
 
 
 /* helpers */
+
+async function allTabTitlesDisplayed(browserWindow) {
+  let specToTitleMap = {
+    "about:home": "New Tab",
+    "about:newtab": "New Tab",
+    "about:addons": "Add-ons Manager",
+    "about:privatebrowsing": "about:privatebrowsing",
+  };
+  specToTitleMap[PREFS_TAB] = "browser/skin/settings.svg";
+  specToTitleMap[CUST_TAB] = "browser/skin/customize.svg";
+  specToTitleMap[DEFAULT_FAVICON_TAB] = "No favicon";
+
+  let tabTitlePromises = [];
+  for (let tab of browserWindow.gBrowser.tabs) {
+    function tabTitleLoaded(spec) {
+      return () => {
+        return spec ? tab.label == specToTitleMap[spec] : false;
+      };
+    }
+    let spec = tab.linkedBrowser &&
+               tab.linkedBrowser.documentURI &&
+               tab.linkedBrowser.documentURI.spec;
+    let promise =
+      TestUtils.waitForCondition(tabTitleLoaded(spec), `Tab (${spec}) should be showing "${specToTitleMap[spec]}". Got "${tab.label}"`);
+    tabTitlePromises.push(promise);
+  }
+
+  return Promise.all(tabTitlePromises);
+}
 
 function fiveTabsHelper() {
   // some with no favicon and some with. Selected tab in middle.
@@ -120,7 +176,12 @@ function fiveTabsHelper() {
     DEFAULT_FAVICON_TAB,
     "about:newtab",
     CUST_TAB,
-  ], true, true);
+  ],
+  {
+    inBackground: true,
+    replace: true,
+    triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+  });
   browserWindow.gBrowser.selectTabAtIndex(1);
 }
 
@@ -130,19 +191,20 @@ function closeAllButOneTab(url = "about:blank") {
   // Close all tabs except the last so we don't quit the browser.
   while (gBrowser.tabs.length > 1)
     gBrowser.removeTab(gBrowser.selectedTab, {animate: false});
-  gBrowser.selectedBrowser.loadURI(url);
+  gBrowser.selectedBrowser.loadURI(url, {
+    triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+  });
   if (gBrowser.selectedTab.pinned)
     gBrowser.unpinTab(gBrowser.selectedTab);
-  let newTabButton = browserWindow.document.getAnonymousElementByAttribute(browserWindow.gBrowser.tabContainer, "class", "tabs-newtab-button");
+  let newTabButton = browserWindow.document.getAnonymousElementByAttribute(browserWindow.gBrowser.tabContainer, "class", "tabs-newtab-button toolbarbutton-1");
   hoverTab(newTabButton, false);
 }
 
 function hoverTab(tab, hover = true) {
-  const inIDOMUtils = Cc["@mozilla.org/inspector/dom-utils;1"].getService(Ci.inIDOMUtils);
   if (hover) {
-    inIDOMUtils.addPseudoClassLock(tab, ":hover");
+    InspectorUtils.addPseudoClassLock(tab, ":hover");
   } else {
-    inIDOMUtils.clearPseudoClassLocks(tab);
+    InspectorUtils.clearPseudoClassLocks(tab);
   }
   // XXX TODO: this isn't necessarily testing what we ship
   if (tab.nextElementSibling)

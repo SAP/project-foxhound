@@ -10,7 +10,7 @@
 const { assert } = require("devtools/shared/DevToolsUtils");
 const { MemoryFront } = require("devtools/shared/fronts/memory");
 const HeapAnalysesClient = require("devtools/shared/heapsnapshot/HeapAnalysesClient");
-const { PropTypes } = require("devtools/client/shared/vendor/react");
+const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const {
   snapshotState: states,
   diffingState,
@@ -41,7 +41,7 @@ const {
  *     });
  */
 function catchAndIgnore(fn) {
-  return function (...args) {
+  return function(...args) {
     try {
       fn(...args);
     } catch (err) {
@@ -63,7 +63,7 @@ const censusDisplayModel = exports.censusDisplay = PropTypes.shape({
   inverted: PropTypes.bool.isRequired,
   breakdown: PropTypes.shape({
     by: PropTypes.string.isRequired,
-  })
+  }),
 });
 
 /**
@@ -78,7 +78,7 @@ const labelDisplayModel = exports.labelDisplay = PropTypes.shape({
   tooltip: PropTypes.string.isRequired,
   breakdown: PropTypes.shape({
     by: PropTypes.string.isRequired,
-  })
+  }),
 });
 
 /**
@@ -92,7 +92,7 @@ const treeMapDisplayModel = exports.treeMapDisplay = PropTypes.shape({
   inverted: PropTypes.bool.isRequired,
   breakdown: PropTypes.shape({
     by: PropTypes.string.isRequired,
-  })
+  }),
 });
 
 /**
@@ -104,7 +104,7 @@ const treeMapModel = exports.treeMapModel = PropTypes.shape({
   // The display data used to generate the current census.
   display: treeMapDisplayModel,
   // The current treeMapState this is in
-  state: catchAndIgnore(function (treeMap) {
+  state: catchAndIgnore(function(treeMap) {
     switch (treeMap.state) {
       case treeMapState.SAVING:
         assert(!treeMap.report, "Should not have a report");
@@ -123,10 +123,10 @@ const treeMapModel = exports.treeMapModel = PropTypes.shape({
       default:
         assert(false, `Unexpected treeMap state: ${treeMap.state}`);
     }
-  })
+  }),
 });
 
-let censusModel = exports.censusModel = PropTypes.shape({
+const censusModel = exports.censusModel = PropTypes.shape({
   // The current census report data.
   report: PropTypes.object,
   // The parent map for the report.
@@ -138,7 +138,7 @@ let censusModel = exports.censusModel = PropTypes.shape({
   filter: PropTypes.string,
   // The Immutable.Set<CensusTreeNode.id> of expanded node ids in the report
   // tree.
-  expanded: catchAndIgnore(function (census) {
+  expanded: catchAndIgnore(function(census) {
     if (census.report) {
       assert(census.expanded,
              "If we have a report, we should also have the set of expanded nodes");
@@ -147,7 +147,7 @@ let censusModel = exports.censusModel = PropTypes.shape({
   // If a node is currently focused in the report tree, then this is it.
   focused: PropTypes.object,
   // The censusModelState that this census is currently in.
-  state: catchAndIgnore(function (census) {
+  state: catchAndIgnore(function(census) {
     switch (census.state) {
       case censusState.SAVING:
         assert(!census.report, "Should not have a report");
@@ -171,13 +171,13 @@ let censusModel = exports.censusModel = PropTypes.shape({
       default:
         assert(false, `Unexpected census state: ${census.state}`);
     }
-  })
+  }),
 });
 
 /**
  * Dominator tree model.
  */
-let dominatorTreeModel = exports.dominatorTreeModel = PropTypes.shape({
+const dominatorTreeModel = exports.dominatorTreeModel = PropTypes.shape({
   // The id of this dominator tree.
   dominatorTreeId: PropTypes.number,
 
@@ -206,7 +206,7 @@ let dominatorTreeModel = exports.dominatorTreeModel = PropTypes.shape({
   activeFetchRequestCount: PropTypes.number,
 
   // The dominatorTreeState that this domintor tree is currently in.
-  state: catchAndIgnore(function (dominatorTree) {
+  state: catchAndIgnore(function(dominatorTree) {
     switch (dominatorTree.state) {
       case dominatorTreeState.COMPUTING:
         assert(dominatorTree.dominatorTreeId == null,
@@ -259,9 +259,9 @@ let dominatorTreeModel = exports.dominatorTreeModel = PropTypes.shape({
 /**
  * Snapshot model.
  */
-let stateKeys = Object.keys(states).map(state => states[state]);
+const stateKeys = Object.keys(states).map(state => states[state]);
 const snapshotId = PropTypes.number;
-let snapshotModel = exports.snapshot = PropTypes.shape({
+const snapshotModel = exports.snapshot = PropTypes.shape({
   // Unique ID for a snapshot
   id: snapshotId.isRequired,
   // Whether or not this snapshot is currently selected.
@@ -285,10 +285,10 @@ let snapshotModel = exports.snapshot = PropTypes.shape({
   creationTime: PropTypes.number,
   // The current state the snapshot is in.
   // @see ./constants.js
-  state: catchAndIgnore(function (snapshot, propName) {
-    let current = snapshot.state;
-    let shouldHavePath = [states.IMPORTING, states.SAVED, states.READ];
-    let shouldHaveCreationTime = [states.READ];
+  state: catchAndIgnore(function(snapshot, propName) {
+    const current = snapshot.state;
+    const shouldHavePath = [states.IMPORTING, states.SAVED, states.READ];
+    const shouldHaveCreationTime = [states.READ];
 
     if (!stateKeys.includes(current)) {
       throw new Error(`Snapshot state must be one of ${stateKeys}.`);
@@ -302,7 +302,7 @@ let snapshotModel = exports.snapshot = PropTypes.shape({
   }),
 });
 
-let allocationsModel = exports.allocations = PropTypes.shape({
+const allocationsModel = exports.allocations = PropTypes.shape({
   // True iff we are recording allocation stacks right now.
   recording: PropTypes.bool.isRequired,
   // True iff we are in the process of toggling the recording of allocation
@@ -310,12 +310,12 @@ let allocationsModel = exports.allocations = PropTypes.shape({
   togglingInProgress: PropTypes.bool.isRequired,
 });
 
-let diffingModel = exports.diffingModel = PropTypes.shape({
+const diffingModel = exports.diffingModel = PropTypes.shape({
   // The id of the first snapshot to diff.
   firstSnapshotId: snapshotId,
 
   // The id of the second snapshot to diff.
-  secondSnapshotId: catchAndIgnore(function (diffing, propName) {
+  secondSnapshotId: catchAndIgnore(function(diffing, propName) {
     if (diffing.secondSnapshotId && !diffing.firstSnapshotId) {
       throw new Error("Cannot have second snapshot without already having " +
                       "first snapshot");
@@ -332,7 +332,7 @@ let diffingModel = exports.diffingModel = PropTypes.shape({
 
   // The current state the diffing is in.
   // @see ./constants.js
-  state: catchAndIgnore(function (diffing) {
+  state: catchAndIgnore(function(diffing) {
     switch (diffing.state) {
       case diffingState.TOOK_DIFF:
         assert(diffing.census, "If we took a diff, we should have a census");
@@ -355,8 +355,8 @@ let diffingModel = exports.diffingModel = PropTypes.shape({
   }),
 });
 
-let previousViewModel = exports.previousView = PropTypes.shape({
-  state: catchAndIgnore(function (previous) {
+const previousViewModel = exports.previousView = PropTypes.shape({
+  state: catchAndIgnore(function(previous) {
     switch (previous.state) {
       case viewState.DIFFING:
         assert(previous.diffing, "Should have previous diffing state.");
@@ -382,9 +382,9 @@ let previousViewModel = exports.previousView = PropTypes.shape({
   selected: snapshotId,
 });
 
-let viewModel = exports.view = PropTypes.shape({
+exports.view = PropTypes.shape({
   // The current view state.
-  state: catchAndIgnore(function (view) {
+  state: catchAndIgnore(function(view) {
     switch (view.state) {
       case viewState.DIFFING:
       case viewState.CENSUS:
@@ -419,7 +419,7 @@ const individualsModel = exports.individuals = PropTypes.shape({
 
   focused: PropTypes.object,
 
-  state: catchAndIgnore(function (individuals) {
+  state: catchAndIgnore(function(individuals) {
     switch (individuals.state) {
       case individualsState.COMPUTING_DOMINATOR_TREE:
       case individualsState.FETCHING:
@@ -485,10 +485,8 @@ exports.app = {
   individuals: individualsModel,
 
   // The current type of view.
-  view: function (app) {
-    viewModel.isRequired(app, "view");
-
-    catchAndIgnore(function (app) {
+  view: function(app) {
+    catchAndIgnore(function(app) {
       switch (app.view.state) {
         case viewState.DIFFING:
           assert(app.diffing, "Should be diffing");
@@ -506,7 +504,7 @@ exports.app = {
       }
     })(app);
 
-    catchAndIgnore(function (app) {
+    catchAndIgnore(function(app) {
       switch (app.view.state) {
         case viewState.INDIVIDUALS:
           assert(app.individuals, "Should have individuals state");

@@ -6,15 +6,9 @@
 
 XPIDL_SOURCES += [
     'nsIBFCacheEntry.idl',
-    'nsIGroupedSHistory.idl',
-    'nsIPartialSHistory.idl',
-    'nsIPartialSHistoryListener.idl',
-    'nsISHContainer.idl',
     'nsISHEntry.idl',
     'nsISHistory.idl',
-    'nsISHistoryInternal.idl',
     'nsISHistoryListener.idl',
-    'nsISHTransaction.idl',
 ]
 
 XPIDL_MODULE = 'shistory'
@@ -23,18 +17,27 @@ EXPORTS += [
     'nsSHEntryShared.h',
 ]
 
+EXPORTS.mozilla.dom += [
+    'ChildSHistory.h',
+    'ParentSHistory.h',
+]
+
 UNIFIED_SOURCES += [
+    'ChildSHistory.cpp',
     'nsSHEntry.cpp',
     'nsSHEntryShared.cpp',
     'nsSHistory.cpp',
-    'nsSHTransaction.cpp',
+    'ParentSHistory.cpp',
 ]
 
 LOCAL_INCLUDES += [
     '/docshell/base',
+    '/dom/base',
 ]
 
 FINAL_LIBRARY = 'xul'
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
+
+include('/ipc/chromium/chromium-config.mozbuild')

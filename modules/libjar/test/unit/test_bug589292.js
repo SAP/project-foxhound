@@ -1,9 +1,6 @@
 // Make sure we behave appropriately when asking for content-disposition
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cu = Components.utils;
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 const path = "data/test_bug589292.zip";
 
@@ -16,10 +13,10 @@ function run_test() {
   var val;
   try {
     val = channel.contentDisposition;
-    do_check_true(false, "The channel has content disposition?!");
+    Assert.ok(false, "The channel has content disposition?!");
   } catch (e) {
     // This is what we want to happen - there's no underlying channel, so no
     // content-disposition header is available
-    do_check_true(true, "How are you reading this?!");
+    Assert.ok(true, "How are you reading this?!");
   }
 }

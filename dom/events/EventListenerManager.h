@@ -18,14 +18,14 @@
 #include "nsTObserverArray.h"
 
 class nsIDocShell;
-class nsIDOMEvent;
 class nsIEventListenerInfo;
 class nsPIDOMWindowInner;
 class JSTracer;
 
 struct EventTypeData;
 
-template<class T> class nsCOMArray;
+template <class T>
+class nsCOMArray;
 
 namespace mozilla {
 
@@ -33,22 +33,23 @@ class ELMCreationDetector;
 class EventListenerManager;
 
 namespace dom {
+class Event;
 class EventTarget;
 class Element;
-} // namespace dom
+}  // namespace dom
 
-typedef dom::CallbackObjectHolder<dom::EventListener,
-                                  nsIDOMEventListener> EventListenerHolder;
+typedef dom::CallbackObjectHolder<dom::EventListener, nsIDOMEventListener>
+    EventListenerHolder;
 
-struct EventListenerFlags
-{
+struct EventListenerFlags {
   friend class EventListenerManager;
-private:
+
+ private:
   // If mListenerIsJSListener is true, the listener is implemented by JS.
   // Otherwise, it's implemented by native code or JS but it's wrapped.
   bool mListenerIsJSListener : 1;
 
-public:
+ public:
   // If mCapture is true, it means the listener captures the event.  Otherwise,
   // it's listening at bubbling phase.
   bool mCapture : 1;
@@ -65,84 +66,75 @@ public:
   // is invoked, so that it would only be invoked once.
   bool mOnce : 1;
 
-  EventListenerFlags() :
-    mListenerIsJSListener(false),
-    mCapture(false), mInSystemGroup(false), mAllowUntrustedEvents(false),
-    mPassive(false), mOnce(false)
-  {
-  }
+  EventListenerFlags()
+      : mListenerIsJSListener(false),
+        mCapture(false),
+        mInSystemGroup(false),
+        mAllowUntrustedEvents(false),
+        mPassive(false),
+        mOnce(false) {}
 
-  bool EqualsForAddition(const EventListenerFlags& aOther) const
-  {
+  bool EqualsForAddition(const EventListenerFlags& aOther) const {
     return (mCapture == aOther.mCapture &&
             mInSystemGroup == aOther.mInSystemGroup &&
             mListenerIsJSListener == aOther.mListenerIsJSListener &&
             mAllowUntrustedEvents == aOther.mAllowUntrustedEvents);
-            // Don't compare mPassive or mOnce
+    // Don't compare mPassive or mOnce
   }
 
-  bool EqualsForRemoval(const EventListenerFlags& aOther) const
-  {
+  bool EqualsForRemoval(const EventListenerFlags& aOther) const {
     return (mCapture == aOther.mCapture &&
             mInSystemGroup == aOther.mInSystemGroup &&
             mListenerIsJSListener == aOther.mListenerIsJSListener);
-            // Don't compare mAllowUntrustedEvents, mPassive, or mOnce
+    // Don't compare mAllowUntrustedEvents, mPassive, or mOnce
   }
 };
 
-inline EventListenerFlags TrustedEventsAtBubble()
-{
+inline EventListenerFlags TrustedEventsAtBubble() {
   EventListenerFlags flags;
   return flags;
 }
 
-inline EventListenerFlags TrustedEventsAtCapture()
-{
+inline EventListenerFlags TrustedEventsAtCapture() {
   EventListenerFlags flags;
   flags.mCapture = true;
   return flags;
 }
 
-inline EventListenerFlags AllEventsAtBubble()
-{
+inline EventListenerFlags AllEventsAtBubble() {
   EventListenerFlags flags;
   flags.mAllowUntrustedEvents = true;
   return flags;
 }
 
-inline EventListenerFlags AllEventsAtCapture()
-{
+inline EventListenerFlags AllEventsAtCapture() {
   EventListenerFlags flags;
   flags.mCapture = true;
   flags.mAllowUntrustedEvents = true;
   return flags;
 }
 
-inline EventListenerFlags TrustedEventsAtSystemGroupBubble()
-{
+inline EventListenerFlags TrustedEventsAtSystemGroupBubble() {
   EventListenerFlags flags;
   flags.mInSystemGroup = true;
   return flags;
 }
 
-inline EventListenerFlags TrustedEventsAtSystemGroupCapture()
-{
+inline EventListenerFlags TrustedEventsAtSystemGroupCapture() {
   EventListenerFlags flags;
   flags.mCapture = true;
   flags.mInSystemGroup = true;
   return flags;
 }
 
-inline EventListenerFlags AllEventsAtSystemGroupBubble()
-{
+inline EventListenerFlags AllEventsAtSystemGroupBubble() {
   EventListenerFlags flags;
   flags.mInSystemGroup = true;
   flags.mAllowUntrustedEvents = true;
   return flags;
 }
 
-inline EventListenerFlags AllEventsAtSystemGroupCapture()
-{
+inline EventListenerFlags AllEventsAtSystemGroupCapture() {
   EventListenerFlags flags;
   flags.mCapture = true;
   flags.mInSystemGroup = true;
@@ -150,9 +142,8 @@ inline EventListenerFlags AllEventsAtSystemGroupCapture()
   return flags;
 }
 
-class EventListenerManagerBase
-{
-protected:
+class EventListenerManagerBase {
+ protected:
   EventListenerManagerBase();
 
   EventMessage mNoListenerForEvent;
@@ -165,33 +156,33 @@ protected:
   uint16_t mMayHavePointerEnterLeaveEventListener : 1;
   uint16_t mMayHaveKeyEventListener : 1;
   uint16_t mMayHaveInputOrCompositionEventListener : 1;
+  uint16_t mMayHaveSelectionChangeEventListener : 1;
   uint16_t mClearingListeners : 1;
   uint16_t mIsMainThreadELM : 1;
-  // uint16_t mUnused : 5;
+  // uint16_t mUnused : 4;
 };
 
 /*
  * Event listener manager
  */
 
-class EventListenerManager final : public EventListenerManagerBase
-{
+class EventListenerManager final : public EventListenerManagerBase {
   ~EventListenerManager();
 
-public:
-  struct Listener
-  {
+ public:
+  struct Listener {
     EventListenerHolder mListener;
-    nsCOMPtr<nsIAtom> mTypeAtom; // for the main thread
-    nsString mTypeString; // for non-main-threads
+    RefPtr<nsAtom> mTypeAtom;
     EventMessage mEventMessage;
 
-    enum ListenerType : uint8_t
-    {
+    enum ListenerType : uint8_t {
+      // No listener.
       eNoListener,
+      // A generic C++ implementation of nsIDOMEventListener.
       eNativeListener,
+      // An event handler attribute using JSEventHandler.
       eJSEventListener,
-      eWrappedJSListener,
+      // A scripted EventListener.
       eWebIDLListener,
     };
     ListenerType mListenerType;
@@ -203,35 +194,29 @@ public:
 
     EventListenerFlags mFlags;
 
-    JSEventHandler* GetJSEventHandler() const
-    {
-      return (mListenerType == eJSEventListener) ?
-        static_cast<JSEventHandler*>(mListener.GetXPCOMCallback()) :
-        nullptr;
+    JSEventHandler* GetJSEventHandler() const {
+      return (mListenerType == eJSEventListener)
+                 ? static_cast<JSEventHandler*>(mListener.GetXPCOMCallback())
+                 : nullptr;
     }
 
     Listener()
-      : mEventMessage(eVoidEvent)
-      , mListenerType(eNoListener)
-      , mListenerIsHandler(false)
-      , mHandlerIsString(false)
-      , mAllEvents(false)
-      , mIsChrome(false)
-    {
-    }
+        : mEventMessage(eVoidEvent),
+          mListenerType(eNoListener),
+          mListenerIsHandler(false),
+          mHandlerIsString(false),
+          mAllEvents(false),
+          mIsChrome(false) {}
 
     Listener(Listener&& aOther)
-      : mListener(Move(aOther.mListener))
-      , mTypeAtom(aOther.mTypeAtom.forget())
-      , mTypeString(aOther.mTypeString)
-      , mEventMessage(aOther.mEventMessage)
-      , mListenerType(aOther.mListenerType)
-      , mListenerIsHandler(aOther.mListenerIsHandler)
-      , mHandlerIsString(aOther.mHandlerIsString)
-      , mAllEvents(aOther.mAllEvents)
-      , mIsChrome(aOther.mIsChrome)
-    {
-      aOther.mTypeString.Truncate();
+        : mListener(std::move(aOther.mListener)),
+          mTypeAtom(aOther.mTypeAtom.forget()),
+          mEventMessage(aOther.mEventMessage),
+          mListenerType(aOther.mListenerType),
+          mListenerIsHandler(aOther.mListenerIsHandler),
+          mHandlerIsString(aOther.mHandlerIsString),
+          mAllEvents(aOther.mAllEvents),
+          mIsChrome(aOther.mIsChrome) {
       aOther.mEventMessage = eVoidEvent;
       aOther.mListenerType = eNoListener;
       aOther.mListenerIsHandler = false;
@@ -240,16 +225,14 @@ public:
       aOther.mIsChrome = false;
     }
 
-    ~Listener()
-    {
+    ~Listener() {
       if ((mListenerType == eJSEventListener) && mListener) {
-        static_cast<JSEventHandler*>(
-          mListener.GetXPCOMCallback())->Disconnect();
+        static_cast<JSEventHandler*>(mListener.GetXPCOMCallback())
+            ->Disconnect();
       }
     }
 
-    MOZ_ALWAYS_INLINE bool IsListening(const WidgetEvent* aEvent) const
-    {
+    MOZ_ALWAYS_INLINE bool IsListening(const WidgetEvent* aEvent) const {
       if (mFlags.mInSystemGroup != aEvent->mFlags.mInSystemGroup) {
         return false;
       }
@@ -267,60 +250,58 @@ public:
 
   NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(EventListenerManager)
 
-  void AddEventListener(const nsAString& aType,
-                        nsIDOMEventListener* aListener,
-                        bool aUseCapture,
-                        bool aWantsUntrusted)
-  {
-    AddEventListener(aType, EventListenerHolder(aListener),
-                     aUseCapture, aWantsUntrusted);
+  void AddEventListener(const nsAString& aType, nsIDOMEventListener* aListener,
+                        bool aUseCapture, bool aWantsUntrusted) {
+    AddEventListener(aType, EventListenerHolder(aListener), aUseCapture,
+                     aWantsUntrusted);
   }
-  void AddEventListener(const nsAString& aType,
-                        dom::EventListener* aListener,
+  void AddEventListener(const nsAString& aType, dom::EventListener* aListener,
                         const dom::AddEventListenerOptionsOrBoolean& aOptions,
-                        bool aWantsUntrusted)
-  {
-    AddEventListener(aType, EventListenerHolder(aListener),
-                     aOptions, aWantsUntrusted);
+                        bool aWantsUntrusted) {
+    AddEventListener(aType, EventListenerHolder(aListener), aOptions,
+                     aWantsUntrusted);
   }
   void RemoveEventListener(const nsAString& aType,
-                           nsIDOMEventListener* aListener,
-                           bool aUseCapture)
-  {
+                           nsIDOMEventListener* aListener, bool aUseCapture) {
     RemoveEventListener(aType, EventListenerHolder(aListener), aUseCapture);
   }
   void RemoveEventListener(const nsAString& aType,
                            dom::EventListener* aListener,
-                           const dom::EventListenerOptionsOrBoolean& aOptions)
-  {
+                           const dom::EventListenerOptionsOrBoolean& aOptions) {
     RemoveEventListener(aType, EventListenerHolder(aListener), aOptions);
   }
 
-  void AddListenerForAllEvents(nsIDOMEventListener* aListener,
-                               bool aUseCapture,
-                               bool aWantsUntrusted,
-                               bool aSystemEventGroup);
-  void RemoveListenerForAllEvents(nsIDOMEventListener* aListener,
-                                  bool aUseCapture,
-                                  bool aSystemEventGroup);
+  void AddListenerForAllEvents(dom::EventListener* aListener, bool aUseCapture,
+                               bool aWantsUntrusted, bool aSystemEventGroup);
+  void RemoveListenerForAllEvents(dom::EventListener* aListener,
+                                  bool aUseCapture, bool aSystemEventGroup);
 
   /**
-  * Sets events listeners of all types. 
-  * @param an event listener
-  */
-  void AddEventListenerByType(nsIDOMEventListener *aListener,
+   * Sets events listeners of all types.
+   * @param an event listener
+   */
+  void AddEventListenerByType(nsIDOMEventListener* aListener,
                               const nsAString& type,
-                              const EventListenerFlags& aFlags)
-  {
+                              const EventListenerFlags& aFlags) {
     AddEventListenerByType(EventListenerHolder(aListener), type, aFlags);
   }
-  void AddEventListenerByType(EventListenerHolder aListener,
+  void AddEventListenerByType(dom::EventListener* aListener,
                               const nsAString& type,
-                              const EventListenerFlags& aFlags);
-  void RemoveEventListenerByType(nsIDOMEventListener *aListener,
+                              const EventListenerFlags& aFlags) {
+    AddEventListenerByType(EventListenerHolder(aListener), type, aFlags);
+  }
+  void AddEventListenerByType(
+      EventListenerHolder aListener, const nsAString& type,
+      const EventListenerFlags& aFlags,
+      const dom::Optional<bool>& aPassive = dom::Optional<bool>());
+  void RemoveEventListenerByType(nsIDOMEventListener* aListener,
                                  const nsAString& type,
-                                 const EventListenerFlags& aFlags)
-  {
+                                 const EventListenerFlags& aFlags) {
+    RemoveEventListenerByType(EventListenerHolder(aListener), type, aFlags);
+  }
+  void RemoveEventListenerByType(dom::EventListener* aListener,
+                                 const nsAString& type,
+                                 const EventListenerFlags& aFlags) {
     RemoveEventListenerByType(EventListenerHolder(aListener), type, aFlags);
   }
   void RemoveEventListenerByType(EventListenerHolder aListener,
@@ -337,22 +318,17 @@ public:
    */
   // XXXbz does that play correctly with nodes being adopted across
   // documents?  Need to double-check the spec here.
-  nsresult SetEventHandler(nsIAtom *aName,
-                           const nsAString& aFunc,
-                           bool aDeferCompilation,
-                           bool aPermitUntrustedEvents,
+  nsresult SetEventHandler(nsAtom* aName, const nsAString& aFunc,
+                           bool aDeferCompilation, bool aPermitUntrustedEvents,
                            dom::Element* aElement);
   /**
    * Remove the current "inline" event listener for aName.
    */
-  void RemoveEventHandler(nsIAtom *aName, const nsAString& aTypeString);
+  void RemoveEventHandler(nsAtom* aName);
 
-  void HandleEvent(nsPresContext* aPresContext,
-                   WidgetEvent* aEvent, 
-                   nsIDOMEvent** aDOMEvent,
-                   dom::EventTarget* aCurrentTarget,
-                   nsEventStatus* aEventStatus)
-  {
+  void HandleEvent(nsPresContext* aPresContext, WidgetEvent* aEvent,
+                   dom::Event** aDOMEvent, dom::EventTarget* aCurrentTarget,
+                   nsEventStatus* aEventStatus, bool aItemInShadowTree) {
     if (mListeners.IsEmpty() || aEvent->PropagationStopped()) {
       return;
     }
@@ -372,7 +348,7 @@ public:
       return;
     }
     HandleEventInternal(aPresContext, aEvent, aDOMEvent, aCurrentTarget,
-                        aEventStatus);
+                        aEventStatus, aItemInShadowTree);
   }
 
   /**
@@ -404,18 +380,18 @@ public:
   /**
    * Returns true if there is at least one event listener for aEventName.
    */
-  bool HasListenersFor(const nsAString& aEventName);
+  bool HasListenersFor(const nsAString& aEventName) const;
 
   /**
    * Returns true if there is at least one event listener for aEventNameWithOn.
    * Note that aEventNameWithOn must start with "on"!
    */
-  bool HasListenersFor(nsIAtom* aEventNameWithOn);
+  bool HasListenersFor(nsAtom* aEventNameWithOn) const;
 
   /**
    * Returns true if there is at least one event listener.
    */
-  bool HasListeners();
+  bool HasListeners() const;
 
   /**
    * Sets aList to the list of nsIEventListenerInfo objects representing the
@@ -423,9 +399,7 @@ public:
    */
   nsresult GetListenerInfo(nsCOMArray<nsIEventListenerInfo>* aList);
 
-  uint32_t GetIdentifierForEvent(nsIAtom* aEvent);
-
-  static void Shutdown();
+  uint32_t GetIdentifierForEvent(nsAtom* aEvent);
 
   /**
    * Returns true if there may be a paint event listener registered,
@@ -439,8 +413,15 @@ public:
    */
   bool MayHaveTouchEventListener() { return mMayHaveTouchEventListener; }
 
-  bool MayHaveMouseEnterLeaveEventListener() { return mMayHaveMouseEnterLeaveEventListener; }
-  bool MayHavePointerEnterLeaveEventListener() { return mMayHavePointerEnterLeaveEventListener; }
+  bool MayHaveMouseEnterLeaveEventListener() {
+    return mMayHaveMouseEnterLeaveEventListener;
+  }
+  bool MayHavePointerEnterLeaveEventListener() {
+    return mMayHavePointerEnterLeaveEventListener;
+  }
+  bool MayHaveSelectionChangeEventListener() {
+    return mMayHaveSelectionChangeEventListener;
+  }
 
   /**
    * Returns true if there may be a key event listener (keydown, keypress,
@@ -453,14 +434,13 @@ public:
    * compositionstart, compositionupdate, or compositionend) registered,
    * or false if there definitely isn't.
    */
-  bool MayHaveInputOrCompositionEventListener() { return mMayHaveInputOrCompositionEventListener; }
+  bool MayHaveInputOrCompositionEventListener() {
+    return mMayHaveInputOrCompositionEventListener;
+  }
 
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const;
 
-  uint32_t ListenerCount() const
-  {
-    return mListeners.Length();
-  }
+  uint32_t ListenerCount() const { return mListeners.Length(); }
 
   void MarkForCC();
 
@@ -468,19 +448,20 @@ public:
 
   dom::EventTarget* GetTarget() { return mTarget; }
 
+  bool HasNonSystemGroupListenersForUntrustedKeyEvents();
+  bool HasNonPassiveNonSystemGroupListenersForUntrustedKeyEvents();
+
   bool HasApzAwareListeners();
   bool IsApzAwareListener(Listener* aListener);
-  bool IsApzAwareEvent(nsIAtom* aEvent);
+  bool IsApzAwareEvent(nsAtom* aEvent);
 
-protected:
-  void HandleEventInternal(nsPresContext* aPresContext,
-                           WidgetEvent* aEvent,
-                           nsIDOMEvent** aDOMEvent,
+ protected:
+  void HandleEventInternal(nsPresContext* aPresContext, WidgetEvent* aEvent,
+                           dom::Event** aDOMEvent,
                            dom::EventTarget* aCurrentTarget,
-                           nsEventStatus* aEventStatus);
+                           nsEventStatus* aEventStatus, bool aItemInShadowTree);
 
-  nsresult HandleEventSubType(Listener* aListener,
-                              nsIDOMEvent* aDOMEvent,
+  nsresult HandleEventSubType(Listener* aListener, dom::Event* aDOMEvent,
                               dom::EventTarget* aCurrentTarget);
 
   /**
@@ -489,6 +470,17 @@ protected:
    * returns the passed-in EventMessage.
    */
   EventMessage GetLegacyEventMessage(EventMessage aEventMessage) const;
+
+  /**
+   * Get the event message for the given event name.
+   */
+  EventMessage GetEventMessage(nsAtom* aEventName) const;
+
+  /**
+   * Get the event message and atom for the given event type.
+   */
+  EventMessage GetEventMessageAndAtomForListener(const nsAString& aType,
+                                                 nsAtom** aAtom);
 
   void ProcessApzAwareEventListenerAdd();
 
@@ -505,9 +497,7 @@ protected:
   /**
    * Find the Listener for the "inline" event listener for aTypeAtom.
    */
-  Listener* FindEventHandler(EventMessage aEventMessage,
-                             nsIAtom* aTypeAtom,
-                             const nsAString& aTypeString);
+  Listener* FindEventHandler(EventMessage aEventMessage, nsAtom* aTypeAtom);
 
   /**
    * Set the "inline" event listener for aName to aHandler.  aHandler may be
@@ -516,8 +506,7 @@ protected:
    * aScopeGlobal must be non-null.  Otherwise, aContext and aScopeGlobal are
    * allowed to be null.
    */
-  Listener* SetEventHandlerInternal(nsIAtom* aName,
-                                    const nsAString& aTypeString,
+  Listener* SetEventHandlerInternal(nsAtom* aName,
                                     const TypedEventHandler& aHandler,
                                     bool aPermitUntrustedEvents);
 
@@ -525,14 +514,12 @@ protected:
   void EnableDevice(EventMessage aEventMessage);
   void DisableDevice(EventMessage aEventMessage);
 
-public:
+ public:
   /**
    * Set the "inline" event listener for aEventName to aHandler.  If
    * aHandler is null, this will actually remove the event listener
    */
-  void SetEventHandler(nsIAtom* aEventName,
-                       const nsAString& aTypeString,
-                       dom::EventHandlerNonNull* aHandler);
+  void SetEventHandler(nsAtom* aEventName, dom::EventHandlerNonNull* aHandler);
   void SetEventHandler(dom::OnErrorEventHandlerNonNull* aHandler);
   void SetEventHandler(dom::OnBeforeUnloadEventHandlerNonNull* aHandler);
 
@@ -545,74 +532,62 @@ public:
    * OnErrorEventHandlerNonNull for some event targets and EventHandlerNonNull
    * for others.
    */
-  dom::EventHandlerNonNull* GetEventHandler(nsIAtom* aEventName,
-                                            const nsAString& aTypeString)
-  {
-    const TypedEventHandler* typedHandler =
-      GetTypedEventHandler(aEventName, aTypeString);
+  dom::EventHandlerNonNull* GetEventHandler(nsAtom* aEventName) {
+    const TypedEventHandler* typedHandler = GetTypedEventHandler(aEventName);
     return typedHandler ? typedHandler->NormalEventHandler() : nullptr;
   }
 
-  dom::OnErrorEventHandlerNonNull* GetOnErrorEventHandler()
-  {
-    const TypedEventHandler* typedHandler = mIsMainThreadELM ?
-      GetTypedEventHandler(nsGkAtoms::onerror, EmptyString()) :
-      GetTypedEventHandler(nullptr, NS_LITERAL_STRING("error"));
+  dom::OnErrorEventHandlerNonNull* GetOnErrorEventHandler() {
+    const TypedEventHandler* typedHandler =
+        GetTypedEventHandler(nsGkAtoms::onerror);
     return typedHandler ? typedHandler->OnErrorEventHandler() : nullptr;
   }
 
-  dom::OnBeforeUnloadEventHandlerNonNull* GetOnBeforeUnloadEventHandler()
-  {
+  dom::OnBeforeUnloadEventHandlerNonNull* GetOnBeforeUnloadEventHandler() {
     const TypedEventHandler* typedHandler =
-      GetTypedEventHandler(nsGkAtoms::onbeforeunload, EmptyString());
+        GetTypedEventHandler(nsGkAtoms::onbeforeunload);
     return typedHandler ? typedHandler->OnBeforeUnloadEventHandler() : nullptr;
   }
 
-protected:
+ private:
+  already_AddRefed<nsPIDOMWindowInner> WindowFromListener(
+      Listener* aListener, bool aItemInShadowTree);
+
+ protected:
   /**
    * Helper method for implementing the various Get*EventHandler above.  Will
    * return null if we don't have an event handler for this event name.
    */
-  const TypedEventHandler* GetTypedEventHandler(nsIAtom* aEventName,
-                                                const nsAString& aTypeString);
+  const TypedEventHandler* GetTypedEventHandler(nsAtom* aEventName);
 
-  void AddEventListener(const nsAString& aType,
-                        EventListenerHolder aListener,
+  void AddEventListener(const nsAString& aType, EventListenerHolder aListener,
                         const dom::AddEventListenerOptionsOrBoolean& aOptions,
                         bool aWantsUntrusted);
-  void AddEventListener(const nsAString& aType,
-                        EventListenerHolder aListener,
-                        bool aUseCapture,
-                        bool aWantsUntrusted);
+  void AddEventListener(const nsAString& aType, EventListenerHolder aListener,
+                        bool aUseCapture, bool aWantsUntrusted);
   void RemoveEventListener(const nsAString& aType,
                            EventListenerHolder aListener,
                            const dom::EventListenerOptionsOrBoolean& aOptions);
   void RemoveEventListener(const nsAString& aType,
-                           EventListenerHolder aListener,
-                           bool aUseCapture);
+                           EventListenerHolder aListener, bool aUseCapture);
 
   void AddEventListenerInternal(EventListenerHolder aListener,
-                                EventMessage aEventMessage,
-                                nsIAtom* aTypeAtom,
-                                const nsAString& aTypeString,
+                                EventMessage aEventMessage, nsAtom* aTypeAtom,
                                 const EventListenerFlags& aFlags,
-                                bool aHandler = false,
-                                bool aAllEvents = false);
+                                bool aHandler = false, bool aAllEvents = false);
   void RemoveEventListenerInternal(EventListenerHolder aListener,
                                    EventMessage aEventMessage,
-                                   nsIAtom* aUserType,
-                                   const nsAString& aTypeString,
+                                   nsAtom* aUserType,
                                    const EventListenerFlags& aFlags,
                                    bool aAllEvents = false);
   void RemoveAllListeners();
-  void NotifyEventListenerRemoved(nsIAtom* aUserType);
+  void NotifyEventListenerRemoved(nsAtom* aUserType);
   const EventTypeData* GetTypeDataForIID(const nsIID& aIID);
-  const EventTypeData* GetTypeDataForEventName(nsIAtom* aName);
+  const EventTypeData* GetTypeDataForEventName(nsAtom* aName);
   nsPIDOMWindowInner* GetInnerWindowForTarget();
   already_AddRefed<nsPIDOMWindowInner> GetTargetAsInnerWindow() const;
 
-  bool ListenerCanHandle(const Listener* aListener,
-                         const WidgetEvent* aEvent,
+  bool ListenerCanHandle(const Listener* aListener, const WidgetEvent* aEvent,
                          EventMessage aEventMessage) const;
 
   // BE AWARE, a lot of instances of EventListenerManager will be created.
@@ -620,39 +595,17 @@ protected:
   // members, please add them to EventListemerManagerBase and check the size
   // at build time.
 
-  already_AddRefed<nsIScriptGlobalObject>
-  GetScriptGlobalAndDocument(nsIDocument** aDoc);
+  already_AddRefed<nsIScriptGlobalObject> GetScriptGlobalAndDocument(
+      mozilla::dom::Document** aDoc);
 
   nsAutoTObserverArray<Listener, 2> mListeners;
   dom::EventTarget* MOZ_NON_OWNING_REF mTarget;
-  nsCOMPtr<nsIAtom> mNoListenerForEventAtom;
+  RefPtr<nsAtom> mNoListenerForEventAtom;
 
   friend class ELMCreationDetector;
   static uint32_t sMainThreadCreatedCount;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-/**
- * NS_AddSystemEventListener() is a helper function for implementing
- * EventTarget::AddSystemEventListener().
- */
-inline nsresult
-NS_AddSystemEventListener(mozilla::dom::EventTarget* aTarget,
-                          const nsAString& aType,
-                          nsIDOMEventListener *aListener,
-                          bool aUseCapture,
-                          bool aWantsUntrusted)
-{
-  mozilla::EventListenerManager* listenerManager =
-    aTarget->GetOrCreateListenerManager();
-  NS_ENSURE_STATE(listenerManager);
-  mozilla::EventListenerFlags flags;
-  flags.mInSystemGroup = true;
-  flags.mCapture = aUseCapture;
-  flags.mAllowUntrustedEvents = aWantsUntrusted;
-  listenerManager->AddEventListenerByType(aListener, aType, flags);
-  return NS_OK;
-}
-
-#endif // mozilla_EventListenerManager_h_
+#endif  // mozilla_EventListenerManager_h_

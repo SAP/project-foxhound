@@ -8,7 +8,6 @@
 
 const {Cc, Ci} = require("chrome");
 const Services = require("Services");
-const {LocalizationHelper} = require("devtools/shared/l10n");
 
 // Match the function name from the result of toString() or toSource().
 //
@@ -24,10 +23,12 @@ const CONSOLE_ENTRY_THRESHOLD = 5;
 exports.CONSOLE_WORKER_IDS = [
   "SharedWorker",
   "ServiceWorker",
-  "Worker"
+  "Worker",
 ];
 
 var WebConsoleUtils = {
+
+  CONSOLE_ENTRY_THRESHOLD,
 
   /**
    * Wrap a string in an nsISupportsString object.
@@ -35,8 +36,8 @@ var WebConsoleUtils = {
    * @param string string
    * @return nsISupportsString
    */
-  supportsString: function (string) {
-    let str = Cc["@mozilla.org/supports-string;1"]
+  supportsString: function(string) {
+    const str = Cc["@mozilla.org/supports-string;1"]
               .createInstance(Ci.nsISupportsString);
     str.data = string;
     return str;
@@ -58,7 +59,7 @@ var WebConsoleUtils = {
    * @return object
    *         The cloned object.
    */
-  cloneObject: function (object, recursive, filter) {
+  cloneObject: function(object, recursive, filter) {
     if (typeof object != "object") {
       return object;
     }
@@ -67,15 +68,15 @@ var WebConsoleUtils = {
 
     if (Array.isArray(object)) {
       temp = [];
-      Array.forEach(object, function (value, index) {
+      Array.forEach(object, function(value, index) {
         if (!filter || filter(index, value, object)) {
           temp.push(recursive ? WebConsoleUtils.cloneObject(value) : value);
         }
       });
     } else {
       temp = {};
-      for (let key in object) {
-        let value = object[key];
+      for (const key in object) {
+        const value = object[key];
         if (object.hasOwnProperty(key) &&
             (!filter || filter(key, value, object))) {
           temp[key] = recursive ? WebConsoleUtils.cloneObject(value) : value;
@@ -89,18 +90,18 @@ var WebConsoleUtils = {
   /**
    * Copies certain style attributes from one element to another.
    *
-   * @param nsIDOMNode from
+   * @param Node from
    *        The target node.
-   * @param nsIDOMNode to
+   * @param Node to
    *        The destination node.
    */
-  copyTextStyles: function (from, to) {
-    let win = from.ownerDocument.defaultView;
-    let style = win.getComputedStyle(from);
-    to.style.fontFamily = style.getPropertyCSSValue("font-family").cssText;
-    to.style.fontSize = style.getPropertyCSSValue("font-size").cssText;
-    to.style.fontWeight = style.getPropertyCSSValue("font-weight").cssText;
-    to.style.fontStyle = style.getPropertyCSSValue("font-style").cssText;
+  copyTextStyles: function(from, to) {
+    const win = from.ownerDocument.defaultView;
+    const style = win.getComputedStyle(from);
+    to.style.fontFamily = style.fontFamily;
+    to.style.fontSize = style.fontSize;
+    to.style.fontWeight = style.fontWeight;
+    to.style.fontStyle = style.fontStyle;
   },
 
   /**
@@ -113,10 +114,10 @@ var WebConsoleUtils = {
    * @return boolean
    *         True if the content is mixed, false if not.
    */
-  isMixedHTTPSRequest: function (request, location) {
+  isMixedHTTPSRequest: function(request, location) {
     try {
-      let requestURI = Services.io.newURI(request);
-      let contentURI = Services.io.newURI(location);
+      const requestURI = Services.io.newURI(request);
+      const contentURI = Services.io.newURI(location);
       return (contentURI.scheme == "https" && requestURI.scheme != "https");
     } catch (ex) {
       return false;
@@ -126,12 +127,12 @@ var WebConsoleUtils = {
   /**
    * Helper function to deduce the name of the provided function.
    *
-   * @param funtion function
+   * @param function function
    *        The function whose name will be returned.
    * @return string
    *         Function name.
    */
-  getFunctionName: function (func) {
+  getFunctionName: function(func) {
     let name = null;
     if (func.name) {
       name = func.name;
@@ -148,7 +149,7 @@ var WebConsoleUtils = {
     }
     if (!name) {
       try {
-        let str = (func.toString() || func.toSource()) + "";
+        const str = (func.toString() || func.toSource()) + "";
         name = (str.match(REGEX_MATCH_FUNCTION_NAME) || [])[1];
       } catch (ex) {
         // Ignore.
@@ -166,7 +167,7 @@ var WebConsoleUtils = {
    * @return string
    *         The object class name.
    */
-  getObjectClassName: function (object) {
+  getObjectClassName: function(object) {
     if (object === null) {
       return "null";
     }
@@ -174,7 +175,7 @@ var WebConsoleUtils = {
       return "undefined";
     }
 
-    let type = typeof object;
+    const type = typeof object;
     if (type != "object") {
       // Grip class names should start with an uppercase letter.
       return type.charAt(0).toUpperCase() + type.substr(1);
@@ -206,7 +207,7 @@ var WebConsoleUtils = {
    * @return boolean
    *         True if the given value is a grip with an actor.
    */
-  isActorGrip: function (grip) {
+  isActorGrip: function(grip) {
     return grip && typeof (grip) == "object" && grip.actor;
   },
 
@@ -237,13 +238,13 @@ var WebConsoleUtils = {
    * The inputNode "paste" event handler generator. Helps prevent
    * self-xss attacks
    *
-   * @param nsIDOMElement inputField
-   * @param nsIDOMElement notificationBox
+   * @param Element inputField
+   * @param Element notificationBox
    * @returns A function to be added as a handler to 'paste' and
    *'drop' events on the input field
    */
-  pasteHandlerGen: function (inputField, notificationBox, msg, okstring) {
-    let handler = function (event) {
+  pasteHandlerGen: function(inputField, notificationBox, msg, okstring) {
+    const handler = function(event) {
       if (WebConsoleUtils.usageCount >= CONSOLE_ENTRY_THRESHOLD) {
         inputField.removeEventListener("paste", handler);
         inputField.removeEventListener("drop", handler);
@@ -255,10 +256,10 @@ var WebConsoleUtils = {
         return false;
       }
 
-      let notification = notificationBox.appendNotification(msg,
+      const notification = notificationBox.appendNotification(msg,
         "selfxss-notification", null,
         notificationBox.PRIORITY_WARNING_HIGH, null,
-        function (eventType) {
+        function(eventType) {
           // Cleanup function if notification is dismissed
           if (eventType == "removed") {
             inputField.removeEventListener("keyup", pasteKeyUpHandler);
@@ -266,7 +267,7 @@ var WebConsoleUtils = {
         });
 
       function pasteKeyUpHandler(event2) {
-        let value = inputField.value || inputField.textContent;
+        const value = inputField.value || inputField.textContent;
         if (value.includes(okstring)) {
           notificationBox.removeNotification(notification);
           inputField.removeEventListener("keyup", pasteKeyUpHandler);
@@ -285,65 +286,3 @@ var WebConsoleUtils = {
 
 exports.Utils = WebConsoleUtils;
 
-// Localization
-
-WebConsoleUtils.L10n = function (bundleURI) {
-  this._helper = new LocalizationHelper(bundleURI);
-};
-
-WebConsoleUtils.L10n.prototype = {
-  /**
-   * Generates a formatted timestamp string for displaying in console messages.
-   *
-   * @param integer [milliseconds]
-   *        Optional, allows you to specify the timestamp in milliseconds since
-   *        the UNIX epoch.
-   * @return string
-   *         The timestamp formatted for display.
-   */
-  timestampString: function (milliseconds) {
-    let d = new Date(milliseconds ? milliseconds : null);
-    let hours = d.getHours(), minutes = d.getMinutes();
-    let seconds = d.getSeconds();
-    milliseconds = d.getMilliseconds();
-    let parameters = [hours, minutes, seconds, milliseconds];
-    return this.getFormatStr("timestampFormat", parameters);
-  },
-
-  /**
-   * Retrieve a localized string.
-   *
-   * @param string name
-   *        The string name you want from the Web Console string bundle.
-   * @return string
-   *         The localized string.
-   */
-  getStr: function (name) {
-    try {
-      return this._helper.getStr(name);
-    } catch (ex) {
-      console.error("Failed to get string: " + name);
-      throw ex;
-    }
-  },
-
-  /**
-   * Retrieve a localized string formatted with values coming from the given
-   * array.
-   *
-   * @param string name
-   *        The string name you want from the Web Console string bundle.
-   * @param array array
-   *        The array of values you want in the formatted string.
-   * @return string
-   *         The formatted local string.
-   */
-  getFormatStr: function (name, array) {
-    try {
-      return this._helper.getFormatStr(name, ...array);
-    } catch (ex) {
-      console.error("Failed to format string: " + name);
-      throw ex;
-    }
-  },
-};

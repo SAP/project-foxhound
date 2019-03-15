@@ -7,80 +7,77 @@
 #define GMPUtils_h_
 
 #include "mozilla/UniquePtr.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/AbstractThread.h"
+#include "nsStringFwd.h"
 #include "nsTArray.h"
 #include "nsCOMPtr.h"
 #include "nsClassHashtable.h"
 
+#define CHROMIUM_CDM_API_BACKWARD_COMPAT "chromium-cdm9-host4"
+#define CHROMIUM_CDM_API "chromium-cdm10-host4"
+
 class nsIFile;
-class nsCString;
-class nsISimpleEnumerator;
+class nsIDirectoryEnumerator;
 
 namespace mozilla {
 
-template<typename T>
-struct DestroyPolicy
-{
-  void operator()(T* aGMPObject) const {
-    aGMPObject->Destroy();
-  }
+template <typename T>
+struct DestroyPolicy {
+  void operator()(T* aGMPObject) const { aGMPObject->Destroy(); }
 };
 
-template<typename T>
+template <typename T>
 using GMPUniquePtr = mozilla::UniquePtr<T, DestroyPolicy<T>>;
 
-void
-SplitAt(const char* aDelims,
-        const nsACString& aInput,
-        nsTArray<nsCString>& aOutTokens);
+void SplitAt(const char* aDelims, const nsACString& aInput,
+             nsTArray<nsCString>& aOutTokens);
 
-nsCString
-ToHexString(const nsTArray<uint8_t>& aBytes);
+nsCString ToHexString(const nsTArray<uint8_t>& aBytes);
 
-nsCString
-ToHexString(const uint8_t* aBytes, uint32_t aLength);
+nsCString ToHexString(const uint8_t* aBytes, uint32_t aLength);
 
-bool
-FileExists(nsIFile* aFile);
+bool FileExists(nsIFile* aFile);
 
 // Enumerate directory entries for a specified path.
 class DirectoryEnumerator {
-public:
-
+ public:
   enum Mode {
-    DirsOnly, // Enumeration only includes directories.
-    FilesAndDirs // Enumeration includes directories and non-directory files.
+    DirsOnly,     // Enumeration only includes directories.
+    FilesAndDirs  // Enumeration includes directories and non-directory files.
   };
 
   DirectoryEnumerator(nsIFile* aPath, Mode aMode);
 
   already_AddRefed<nsIFile> Next();
 
-private:
+ private:
   Mode mMode;
-  nsCOMPtr<nsISimpleEnumerator> mIter;
+  nsCOMPtr<nsIDirectoryEnumerator> mIter;
 };
 
 class GMPInfoFileParser {
-public:
+ public:
   bool Init(nsIFile* aFile);
   bool Contains(const nsCString& aKey) const;
   nsCString Get(const nsCString& aKey) const;
-private:
+
+ private:
   nsClassHashtable<nsCStringHashKey, nsCString> mValues;
 };
 
-bool
-ReadIntoString(nsIFile* aFile,
-               nsCString& aOutDst,
-               size_t aMaxLength);
+bool ReadIntoString(nsIFile* aFile, nsCString& aOutDst, size_t aMaxLength);
 
-bool
-HaveGMPFor(const nsCString& aAPI,
-           nsTArray<nsCString>&& aTags);
+bool HaveGMPFor(const nsCString& aAPI, nsTArray<nsCString>&& aTags);
 
-void
-LogToConsole(const nsAString& aMsg);
+void LogToConsole(const nsAString& aMsg);
 
-} // namespace mozilla
+RefPtr<AbstractThread> GetGMPAbstractThread();
+
+// Returns the number of bytes required to store an aWidth x aHeight image in
+// I420 format, padded so that the width and height are multiples of 16.
+size_t I420FrameBufferSizePadded(int32_t aWidth, int32_t aHeight);
+
+}  // namespace mozilla
 
 #endif

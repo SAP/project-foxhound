@@ -6,21 +6,23 @@
 #include "GMPCrashHelper.h"
 #include "runnable_utils.h"
 #include "nsThreadUtils.h"
+#include "SystemGroup.h"
 
 namespace mozilla {
 
 NS_IMPL_ADDREF(GMPCrashHelper)
 NS_IMPL_RELEASE_WITH_DESTROY(GMPCrashHelper, Destroy())
 
-void
-GMPCrashHelper::Destroy()
-{
+void GMPCrashHelper::Destroy() {
   if (NS_IsMainThread()) {
     delete this;
   } else {
     // Don't addref, as then we'd end up releasing after the detele runs!
-    NS_DispatchToMainThread(mozilla::NewNonOwningRunnableMethod(this, &GMPCrashHelper::Destroy));
+    SystemGroup::Dispatch(
+        TaskCategory::Other,
+        NewNonOwningRunnableMethod("GMPCrashHelper::Destroy", this,
+                                   &GMPCrashHelper::Destroy));
   }
 }
 
-} // namespace mozilla
+}  // namespace mozilla

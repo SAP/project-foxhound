@@ -1,0 +1,18 @@
+.ds-section-title {
+  text-align: center;
+  margin-top: 24px;
+
+  .title {
+    line-height: 48px;
+    font-size: 36px;
+    font-weight: 300;
+    color: $grey-90;
+  }
+
+  .subtitle {
+    line-height: 24px;
+    font-size: 14px;
+    color: $grey-50;
+    margin-top: 4px;
+  }
+}

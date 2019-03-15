@@ -1,4 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty('Intl')) -- needs Intl
 // Copyright (C) 2016 André Bargull. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -6,7 +5,7 @@
 esid: sec-Intl.DateTimeFormat
 description: >
   Intl.DateTimeFormat.name is "DateTimeFormat".
-info: >
+info: |
   12.2.1 Intl.DateTimeFormat ([ locales [ , options ]])
 
   17 ECMAScript Standard Built-in Objects:

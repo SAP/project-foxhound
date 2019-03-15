@@ -1,3 +1,4 @@
+// For documentation of the format, see README in this directory.
 var browserTests = [
 ["foo[]bar",
     [["delete",""]],
@@ -517,6 +518,11 @@ var browserTests = [
 ["<div style=white-space:nowrap>foo  []bar</div>",
     [["delete",""]],
     "<div style=\"white-space:nowrap\">foo[]bar</div>",
+    [true],
+    {"delete":[false,false,"",false,false,""]}],
+["foo<table><tr><td>b[]</table>baz",
+    [["delete",""]],
+    "foo<table><tbody><tr><td>[]<br></td></tr></tbody></table>baz",
     [true],
     {"delete":[false,false,"",false,false,""]}],
 ["foo<table><tr><td>[]bar</table>baz",

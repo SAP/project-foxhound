@@ -31,7 +31,7 @@ var cert;
  */
 function openClientAuthDialog(cert) {
   let certList = Cc["@mozilla.org/array;1"].createInstance(Ci.nsIMutableArray);
-  certList.appendElement(cert, false);
+  certList.appendElement(cert);
 
   let returnVals = Cc["@mozilla.org/hash-property-bag;1"]
                      .createInstance(Ci.nsIWritablePropertyBag2);
@@ -40,7 +40,7 @@ function openClientAuthDialog(cert) {
                               TEST_PORT, certList, returnVals);
   return new Promise((resolve, reject) => {
     win.addEventListener("load", function() {
-      resolve([win, returnVals]);
+      executeSoon(() => resolve([win, returnVals]));
     }, {once: true});
   });
 }
@@ -59,13 +59,11 @@ function checkDialogContents(win, notBefore, notAfter) {
   Assert.equal(win.document.getElementById("hostname").textContent,
                `${TEST_HOSTNAME}:${TEST_PORT}`,
                "Actual and expected hostname and port should be equal");
-  // “ and ” don't seem to work when embedded in the following literals, which
-  // is why escape codes are used instead.
   Assert.equal(win.document.getElementById("organization").textContent,
-               `Organization: \u201C${TEST_ORG}\u201D`,
+               `Organization: “${TEST_ORG}”`,
                "Actual and expected organization should be equal");
   Assert.equal(win.document.getElementById("issuer").textContent,
-               `Issued Under: \u201C${TEST_ISSUER_ORG}\u201D`,
+               `Issued Under: “${TEST_ISSUER_ORG}”`,
                "Actual and expected issuer organization should be equal");
 
   Assert.equal(win.document.getElementById("nicknames").label,
@@ -82,17 +80,15 @@ function checkDialogContents(win, notBefore, notAfter) {
   Assert.equal(validity, `Valid from ${notBefore} to ${notAfter}`,
                "Actual and expected validity should be equal");
   Assert.equal(issuer,
-               "Issued by: CN=Temporary Certificate Authority,O=Mozilla " +
-               "Testing,OU=Profile Guided Optimization",
+               "Issued by: OU=Profile Guided Optimization,O=Mozilla Testing," +
+               "CN=Temporary Certificate Authority",
                "Actual and expected issuer should be equal");
   Assert.equal(tokenName, "Stored on: Software Security Device",
                "Actual and expected token name should be equal");
 }
 
 function findCertByCommonName(commonName) {
-  let certEnumerator = certDB.getCerts().getEnumerator();
-  while (certEnumerator.hasMoreElements()) {
-    let cert = certEnumerator.getNext().QueryInterface(Ci.nsIX509Cert);
+  for (let cert of certDB.getCerts().getEnumerator()) {
     if (cert.commonName == commonName) {
       return cert;
     }
@@ -100,27 +96,27 @@ function findCertByCommonName(commonName) {
   return null;
 }
 
-add_task(function* setup() {
+add_task(async function setup() {
   cert = findCertByCommonName("Mochitest client");
   Assert.notEqual(cert, null, "Should be able to find the test client cert");
 });
 
 // Test that the contents of the dialog correspond to the details of the
 // provided cert.
-add_task(function* testContents() {
-  let [win, retVals] = yield openClientAuthDialog(cert);
+add_task(async function testContents() {
+  let [win] = await openClientAuthDialog(cert);
   checkDialogContents(win, cert.validity.notBeforeLocalTime,
                       cert.validity.notAfterLocalTime);
-  yield BrowserTestUtils.closeWindow(win);
+  await BrowserTestUtils.closeWindow(win);
 });
 
 // Test that the right values are returned when the dialog is accepted.
-add_task(function* testAcceptDialogReturnValues() {
-  let [win, retVals] = yield openClientAuthDialog(cert);
+add_task(async function testAcceptDialogReturnValues() {
+  let [win, retVals] = await openClientAuthDialog(cert);
   win.document.getElementById("rememberBox").checked = true;
   info("Accepting dialog");
   win.document.getElementById("certAuthAsk").acceptDialog();
-  yield BrowserTestUtils.windowClosed(win);
+  await BrowserTestUtils.windowClosed(win);
 
   Assert.ok(retVals.get("certChosen"),
             "Return value should signal user chose a certificate");
@@ -132,12 +128,12 @@ add_task(function* testAcceptDialogReturnValues() {
 });
 
 // Test that the right values are returned when the dialog is canceled.
-add_task(function* testCancelDialogReturnValues() {
-  let [win, retVals] = yield openClientAuthDialog(cert);
+add_task(async function testCancelDialogReturnValues() {
+  let [win, retVals] = await openClientAuthDialog(cert);
   win.document.getElementById("rememberBox").checked = false;
   info("Canceling dialog");
   win.document.getElementById("certAuthAsk").cancelDialog();
-  yield BrowserTestUtils.windowClosed(win);
+  await BrowserTestUtils.windowClosed(win);
 
   Assert.ok(!retVals.get("certChosen"),
             "Return value should signal user did not choose a certificate");

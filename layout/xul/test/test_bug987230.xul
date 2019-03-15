@@ -51,16 +51,12 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=987230
 
   SimpleTest.requestCompleteLog();
 
-  const Ci = Components.interfaces;
-  const Cc = Components.classes;
-
   let platform = navigator.platform.toLowerCase();
   let isWindows = platform.startsWith("win");
   let mouseDown = isWindows ? 2 : 1;
   let mouseUp = isWindows ? 4 : 2;
   let mouseMove = isWindows ? 1 : 5;
-  let utils = window.QueryInterface(Ci.nsIInterfaceRequestor)
-                    .getInterface(Ci.nsIDOMWindowUtils);
+  let utils = window.windowUtils;
   let scale = utils.screenPixelsPerCSSPixel;
 
 

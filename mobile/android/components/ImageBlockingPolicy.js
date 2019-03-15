@@ -2,27 +2,29 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { classes: Cc, interfaces: Ci, manager: Cm, utils: Cu, results: Cr } = Components;
+const Cm = Components.manager;
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Timer.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
-////////////////////////////////////////////////////////////////////////////////
-//// Constants
+XPCOMUtils.defineLazyGlobalGetters(this, ["XMLHttpRequest"]);
 
-//// SVG placeholder image for blocked image content
+// //////////////////////////////////////////////////////////////////////////////
+// // Constants
+
+// // SVG placeholder image for blocked image content
 const PLACEHOLDER_IMG = "chrome://browser/skin/images/placeholder_image.svg";
 
-//// Telemetry
+// // Telemetry
 const TELEMETRY_TAP_TO_LOAD_ENABLED = "TAP_TO_LOAD_ENABLED";
 const TELEMETRY_SHOW_IMAGE_SIZE = "TAP_TO_LOAD_IMAGE_SIZE";
 const TOPIC_GATHER_TELEMETRY = "gather-telemetry";
 
-//// Gecko preference
+// // Gecko preference
 const PREF_IMAGEBLOCKING = "browser.image_blocking";
 
-//// Enabled options
+// // Enabled options
 const OPTION_NEVER = 0;
 const OPTION_ALWAYS = 1;
 const OPTION_WIFI_ONLY = 2;
@@ -32,18 +34,21 @@ const OPTION_WIFI_ONLY = 2;
  * Content policy for blocking images
  */
 function ImageBlockingPolicy() {
-  Services.obs.addObserver(this, TOPIC_GATHER_TELEMETRY, false);
+  Services.obs.addObserver(this, TOPIC_GATHER_TELEMETRY);
 }
 
 ImageBlockingPolicy.prototype = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIContentPolicy, Ci.nsIObserver]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIContentPolicy, Ci.nsIObserver]),
   classDescription: "Click-To-Play Image",
   classID: Components.ID("{f55f77f9-d33d-4759-82fc-60db3ee0bb91}"),
   contractID: "@mozilla.org/browser/blockimages-policy;1",
   xpcom_categories: [{category: "content-policy", service: true}],
 
   // nsIContentPolicy interface implementation
-  shouldLoad: function(contentType, contentLocation, requestOrigin, node, mimeTypeGuess, extra) {
+  shouldLoad: function(contentLocation, loadInfo, mimeTypeGuess) {
+    let contentType = loadInfo.externalContentPolicyType;
+    let node = loadInfo.loadingContext;
+
     // When enabled or when on cellular, and option for cellular-only is selected
     if (this._enabled() == OPTION_NEVER || (this._enabled() == OPTION_WIFI_ONLY && this._usingCellular())) {
       if (contentType === Ci.nsIContentPolicy.TYPE_IMAGE || contentType === Ci.nsIContentPolicy.TYPE_IMAGESET) {
@@ -52,7 +57,7 @@ ImageBlockingPolicy.prototype = {
           return Ci.nsIContentPolicy.ACCEPT;
         }
 
-        if (node instanceof Ci.nsIDOMHTMLImageElement) {
+        if (ChromeUtils.getClassName(node) === "HTMLImageElement") {
           // Accept if the user has asked to view the image
           if (node.getAttribute("data-ctv-show") == "true") {
             sendImageSizeTelemetry(node.getAttribute("data-ctv-src"));
@@ -71,7 +76,7 @@ ImageBlockingPolicy.prototype = {
         }
 
         // Reject any image that is not associated with a DOM element
-        return Ci.nsIContentPolicy.REJECT;
+        return Ci.nsIContentPolicy.REJECT_REQUEST;
       }
     }
 
@@ -79,7 +84,7 @@ ImageBlockingPolicy.prototype = {
     return Ci.nsIContentPolicy.ACCEPT;
   },
 
-  shouldProcess: function(contentType, contentLocation, requestOrigin, node, mimeTypeGuess, extra) {
+  shouldProcess: function(contentLocation, loadInfo, mimeTypeGuess) {
     return Ci.nsIContentPolicy.ACCEPT;
   },
 
@@ -87,7 +92,7 @@ ImageBlockingPolicy.prototype = {
     let network = Cc["@mozilla.org/network/network-link-service;1"].getService(Ci.nsINetworkLinkService);
     return !(network.linkType == Ci.nsINetworkLinkService.LINK_TYPE_UNKNOWN ||
         network.linkType == Ci.nsINetworkLinkService.LINK_TYPE_ETHERNET ||
-        network.linkType == Ci.nsINetworkLinkService.LINK_TYPE_USB  ||
+        network.linkType == Ci.nsINetworkLinkService.LINK_TYPE_USB ||
         network.linkType == Ci.nsINetworkLinkService.LINK_TYPE_WIFI);
   },
 
@@ -95,7 +100,7 @@ ImageBlockingPolicy.prototype = {
     return Services.prefs.getIntPref(PREF_IMAGEBLOCKING);
   },
 
-  observe : function (subject, topic, data) {
+  observe: function(subject, topic, data) {
     if (topic == TOPIC_GATHER_TELEMETRY) {
       Services.telemetry.getHistogramById(TELEMETRY_TAP_TO_LOAD_ENABLED).add(this._enabled());
     }
@@ -103,9 +108,9 @@ ImageBlockingPolicy.prototype = {
 };
 
 function sendImageSizeTelemetry(imageURL) {
-  let xhr = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"].createInstance(Ci.nsIXMLHttpRequest);
+  let xhr = new XMLHttpRequest();
   xhr.open("HEAD", imageURL, true);
-  xhr.onreadystatechange = function (e) {
+  xhr.onreadystatechange = function(e) {
     if (xhr.readyState != 4) {
       return;
     }

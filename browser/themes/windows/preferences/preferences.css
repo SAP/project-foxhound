@@ -23,49 +23,9 @@
 }
 
 /* Modeless Window Dialogs */
-.windowDialog,
-.windowDialog prefpane {
-  padding: 0;
-}
-
-.contentPane {
-  margin: 9px 8px 5px;
-}
 
 .actionButtons {
-  margin: 0 3px 6px !important;
-}
-
-/* Cookies Manager */
-#cookiesChildren::-moz-tree-image(domainCol) {
-  width: 16px;
-  height: 16px;
-  margin: 0 2px;
-  list-style-image: url("chrome://mozapps/skin/places/defaultFavicon.png") !important;
-}
-
-#cookiesChildren::-moz-tree-image(domainCol, container) {
-  list-style-image: url("chrome://global/skin/icons/folder-item.png") !important;
-  -moz-image-region: rect(0, 32px, 16px, 16px);
-}
-
-#cookiesChildren::-moz-tree-image(domainCol, container, open) {
-  -moz-image-region: rect(16px, 32px, 32px, 16px);
-}
-
-#cookieInfoBox {
-  border: 1px solid ThreeDShadow;
-  border-radius: 0;
-  margin: 4px;
-  padding: 0;
-}
-
-/* Advanced Pane */
-
-/* bottom-most box containing a groupbox in a prefpane. Prevents the bottom
-   of the groupbox from being cutoff */
-.bottomBox {
-  padding-bottom: 4px;
+  margin: 0 3px 6px;
 }
 
 /* Sync Pane */

@@ -8,9 +8,8 @@ menu,
 menuitem,
 menucaption {
   -moz-appearance: menuitem;
+  -moz-font-smoothing-background-color: -moz-mac-menuitem;
   -moz-box-align: center;
-  color: MenuText;
-  font: -moz-pull-down-menu;
   list-style-image: none;
   -moz-image-region: auto;
   padding: 0 21px 2px;
@@ -20,6 +19,13 @@ menu[disabled="true"], menuitem[disabled="true"],
 menu[_moz-menuactive="true"][disabled="true"],
 menuitem[_moz-menuactive="true"][disabled="true"] {
   color: -moz-mac-menutextdisable;
+  -moz-font-smoothing-background-color: -moz-mac-menuitem;
+}
+
+menuitem[default="true"],
+menuitem.spell-suggestion,
+menucaption {
+  font-weight: bold;
 }
 
 /* ..... internal content .... */
@@ -29,23 +35,6 @@ menuitem[_moz-menuactive="true"][disabled="true"] {
 .menu-accel,
 .menu-iconic-accel {
   margin: 0 !important;
-}
-
-.menu-text,
-.menu-iconic-text {
-  font-weight: inherit;
-  color: inherit;
-}
-
-menucaption > .menu-text,
-menucaption > .menu-iconic-text {
-  font-weight: bold;
-}
-
-.menu-description {
-  font-style: italic;
-  color: -moz-mac-menutextdisable;
-  margin-inline-start: 1ex !important;
 }
 
 .menu-iconic-icon {
@@ -106,6 +95,7 @@ menubar > menu[_moz-menuactive="true"] {
 
 menubar > menu[_moz-menuactive="true"][open="true"] {
   -moz-appearance: menuitem;
+  -moz-font-smoothing-background-color: -moz-mac-active-menuitem;
   color: -moz-mac-menutextselect;
 }
 
@@ -113,15 +103,17 @@ menubar > menu[_moz-menuactive="true"][open="true"] {
 
 .menubar-left {
   margin: 0 2px;
-  color: inherit;
 }
 
 .menubar-text {
   margin: 0 1px !important;
-  color: inherit;
 }
 
 /* ::::: menu/menuitems in popups ::::: */
+
+menupopup {
+  font: -moz-pull-down-menu;
+}
 
 menupopup > menu,
 menupopup > menuitem,
@@ -131,6 +123,7 @@ menupopup > menucaption {
 
 menu[_moz-menuactive="true"],
 menuitem[_moz-menuactive="true"] {
+  -moz-font-smoothing-background-color: -moz-mac-active-menuitem;
   color: -moz-mac-menutextselect;
   background-color: Highlight;
 }
@@ -143,23 +136,15 @@ menuitem[customoptionstyling="true"] {
 
 /* ::::: menu/menuitems in menulist popups ::::: */
 
+menulist > menupopup {
+  font: inherit;
+}
+
 menulist > menupopup > menuitem,
 menulist > menupopup > menucaption,
 menulist > menupopup > menu {
   max-width: none;
-  font: inherit;
   color: -moz-FieldText;
-}
-
-/* ::::: menuitems in editable menulist popups ::::: */
-
-menulist[editable="true"] > menupopup > menuitem,
-menulist[editable="true"] > menupopup > menucaption {
-  -moz-appearance: none;
-}
-
-menulist[editable="true"] > menupopup > :-moz-any(menuitem, menucaption) > .menu-iconic-left {
-  display: none;
 }
 
 /* ::::: checked menuitems ::::: */
@@ -169,8 +154,8 @@ menulist[editable="true"] > menupopup > :-moz-any(menuitem, menucaption) > .menu
   -moz-appearance: checkmenuitem;
 }
 
-menulist:not([editable="true"]) > menupopup > menuitem[checked="true"]::before,
-menulist:not([editable="true"]) > menupopup > menuitem[selected="true"]::before {
+menulist > menupopup > menuitem[checked="true"]::before,
+menulist > menupopup > menuitem[selected="true"]::before {
   content: '\2713'; /* a checkmark */
   display: block;
   width: 15px;
@@ -183,11 +168,4 @@ menuseparator {
   -moz-appearance: menuseparator;
   margin: 5px 0;
   padding: 1px 0;
-}
-
-/* ::::: autocomplete ::::: */
-
-.autocomplete-history-popup > menuitem {
-  max-width: none !important;
-  font: message-box;
 }

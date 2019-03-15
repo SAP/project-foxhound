@@ -13,9 +13,7 @@
 namespace mozilla {
 namespace dom {
 
-nsresult
-BlobSet::AppendVoidPtr(const void* aData, uint32_t aLength)
-{
+nsresult BlobSet::AppendVoidPtr(const void* aData, uint32_t aLength) {
   NS_ENSURE_ARG_POINTER(aData);
   if (!aLength) {
     return NS_OK;
@@ -29,15 +27,14 @@ BlobSet::AppendVoidPtr(const void* aData, uint32_t aLength)
   memcpy((char*)data, aData, aLength);
 
   RefPtr<BlobImpl> blobImpl = new MemoryBlobImpl(data, aLength, EmptyString());
-  mBlobImpls.AppendElement(blobImpl);
-
-  return NS_OK;
+  return AppendBlobImpl(blobImpl);
 }
 
-nsresult
-BlobSet::AppendString(const nsAString& aString, bool nativeEOL, JSContext* aCx)
-{
-  nsCString utf8Str = NS_ConvertUTF16toUTF8(aString);
+nsresult BlobSet::AppendString(const nsAString& aString, bool nativeEOL) {
+  nsCString utf8Str;
+  if (NS_WARN_IF(!AppendUTF16toUTF8(aString, utf8Str, mozilla::fallible))) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
 
   if (nativeEOL) {
     if (utf8Str.Contains('\r')) {
@@ -49,17 +46,33 @@ BlobSet::AppendString(const nsAString& aString, bool nativeEOL, JSContext* aCx)
 #endif
   }
 
-  return AppendVoidPtr((void*)utf8Str.Data(),
-                       utf8Str.Length());
+  RefPtr<StringBlobImpl> blobImpl =
+      StringBlobImpl::Create(utf8Str, EmptyString());
+  return AppendBlobImpl(blobImpl);
 }
 
-nsresult
-BlobSet::AppendBlobImpl(BlobImpl* aBlobImpl)
-{
+nsresult BlobSet::AppendBlobImpl(BlobImpl* aBlobImpl) {
   NS_ENSURE_ARG_POINTER(aBlobImpl);
-  mBlobImpls.AppendElement(aBlobImpl);
+
+  // If aBlobImpl is a MultipartBlobImpl, let's append the sub-blobImpls
+  // instead.
+  const nsTArray<RefPtr<BlobImpl>>* subBlobs = aBlobImpl->GetSubBlobImpls();
+  if (subBlobs) {
+    for (BlobImpl* subBlob : *subBlobs) {
+      nsresult rv = AppendBlobImpl(subBlob);
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return rv;
+      }
+    }
+
+    return NS_OK;
+  }
+
+  if (NS_WARN_IF(!mBlobImpls.AppendElement(aBlobImpl, fallible))) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
   return NS_OK;
 }
 
-} // dom namespace
-} // mozilla namespace
+}  // namespace dom
+}  // namespace mozilla

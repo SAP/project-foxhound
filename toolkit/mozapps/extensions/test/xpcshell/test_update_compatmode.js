@@ -5,180 +5,88 @@
 // This verifies that add-on update check correctly fills in the
 // %COMPATIBILITY_MODE% token in the update URL.
 
-
 // The test extension uses an insecure update url.
 Services.prefs.setBoolPref(PREF_EM_CHECK_UPDATE_SECURITY, false);
 
-Components.utils.import("resource://testing-common/httpd.js");
-var testserver = new HttpServer();
-testserver.start(-1);
-gPort = testserver.identity.primaryPort;
-mapFile("/data/test_updatecompatmode_ignore.rdf", testserver);
-mapFile("/data/test_updatecompatmode_normal.rdf", testserver);
-mapFile("/data/test_updatecompatmode_strict.rdf", testserver);
-testserver.registerDirectory("/addons/", do_get_file("addons"));
+let testserver = createHttpServer({hosts: ["example.com"]});
 
-const profileDir = gProfD.clone();
-profileDir.append("extensions");
+let lastMode;
+testserver.registerPathHandler("/update.json", (request, response) => {
+  let params = new URLSearchParams(request.queryString);
+  lastMode = params.get("mode");
 
-function run_test() {
-  do_test_pending();
+  response.setHeader("content-type", "application/json", true);
+  response.write(JSON.stringify({addons: {}}));
+});
+
+const ID_NORMAL = "compatmode@tests.mozilla.org";
+const ID_STRICT = "compatmode-strict@tests.mozilla.org";
+
+add_task(async function setup() {
   createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9.2");
 
-  writeInstallRDFForExtension({
-    id: "compatmode-normal@tests.mozilla.org",
-    version: "1.0",
-    updateURL: "http://localhost:" + gPort + "/data/test_updatecompatmode_%COMPATIBILITY_MODE%.rdf",
+  let xpi = await createAddon({
+    id: ID_NORMAL,
+    updateURL: "http://example.com/update.json?mode=%COMPATIBILITY_MODE%",
     targetApplications: [{
       id: "xpcshell@tests.mozilla.org",
       minVersion: "1",
-      maxVersion: "1"
+      maxVersion: "1",
     }],
-    name: "Test Addon - normal"
-  }, profileDir);
+  });
+  await manuallyInstall(xpi, AddonTestUtils.profileExtensions, ID_NORMAL);
 
-  writeInstallRDFForExtension({
-    id: "compatmode-strict@tests.mozilla.org",
-    version: "1.0",
-    updateURL: "http://localhost:" + gPort + "/data/test_updatecompatmode_%COMPATIBILITY_MODE%.rdf",
+  xpi = await createAddon({
+    id: ID_STRICT,
+    updateURL: "http://example.com/update.json?mode=%COMPATIBILITY_MODE%",
+    strictCompatibility: true,
     targetApplications: [{
       id: "xpcshell@tests.mozilla.org",
       minVersion: "1",
-      maxVersion: "1"
+      maxVersion: "1",
     }],
-    name: "Test Addon - strict"
-  }, profileDir);
+  });
+  await manuallyInstall(xpi, AddonTestUtils.profileExtensions, ID_STRICT);
 
-  writeInstallRDFForExtension({
-    id: "compatmode-strict-optin@tests.mozilla.org",
-    version: "1.0",
-    updateURL: "http://localhost:" + gPort + "/data/test_updatecompatmode_%COMPATIBILITY_MODE%.rdf",
-    targetApplications: [{
-      id: "xpcshell@tests.mozilla.org",
-      minVersion: "1",
-      maxVersion: "1"
-    }],
-    name: "Test Addon - strict opt-in",
-    strictCompatibility: true
-  }, profileDir);
-
-  writeInstallRDFForExtension({
-    id: "compatmode-ignore@tests.mozilla.org",
-    version: "1.0",
-    updateURL: "http://localhost:" + gPort + "/data/test_updatecompatmode_%COMPATIBILITY_MODE%.rdf",
-    targetApplications: [{
-      id: "xpcshell@tests.mozilla.org",
-      minVersion: "1",
-      maxVersion: "1"
-    }],
-    name: "Test Addon - ignore",
-  }, profileDir);
-
-  startupManager();
-  run_test_1();
-}
-
-function end_test() {
-  testserver.stop(do_test_finished);
-}
-
+  await promiseStartupManager();
+});
 
 // Strict compatibility checking disabled.
-function run_test_1() {
-  do_print("Testing with strict compatibility checking disabled");
+add_task(async function test_strict_disabled() {
   Services.prefs.setBoolPref(PREF_EM_STRICT_COMPATIBILITY, false);
-  AddonManager.getAddonByID("compatmode-normal@tests.mozilla.org", function(addon) {
-    do_check_neq(addon, null);
-    addon.findUpdates({
-      onCompatibilityUpdateAvailable() {
-        do_throw("Should have not have seen compatibility information");
-      },
+  let addon = await AddonManager.getAddonByID(ID_NORMAL);
+  Assert.notEqual(addon, null);
 
-      onNoUpdateAvailable() {
-        do_throw("Should have seen an available update");
-      },
-
-      onUpdateAvailable(unused, install) {
-        do_check_eq(install.version, "2.0")
-      },
-
-      onUpdateFinished() {
-        run_test_2();
-      }
-    }, AddonManager.UPDATE_WHEN_USER_REQUESTED);
-  });
-}
+  await promiseFindAddonUpdates(addon, AddonManager.UPDATE_WHEN_USER_REQUESTED);
+  Assert.equal(lastMode, "normal", "COMPATIBIILITY_MODE normal was set correctly");
+});
 
 // Strict compatibility checking enabled.
-function run_test_2() {
-  do_print("Testing with strict compatibility checking enabled");
+add_task(async function test_strict_enabled() {
   Services.prefs.setBoolPref(PREF_EM_STRICT_COMPATIBILITY, true);
-  AddonManager.getAddonByID("compatmode-strict@tests.mozilla.org", function(addon) {
-    do_check_neq(addon, null);
-    addon.findUpdates({
-      onCompatibilityUpdateAvailable() {
-        do_throw("Should have not have seen compatibility information");
-      },
+  let addon = await AddonManager.getAddonByID(ID_NORMAL);
+  Assert.notEqual(addon, null);
 
-      onNoUpdateAvailable() {
-        do_throw("Should have seen an available update");
-      },
-
-      onUpdateAvailable(unused, install) {
-        do_check_eq(install.version, "2.0")
-      },
-
-      onUpdateFinished() {
-        run_test_3();
-      }
-    }, AddonManager.UPDATE_WHEN_USER_REQUESTED);
-  });
-}
+  await promiseFindAddonUpdates(addon, AddonManager.UPDATE_WHEN_USER_REQUESTED);
+  Assert.equal(lastMode, "strict", "COMPATIBILITY_MODE strict was set correctly");
+});
 
 // Strict compatibility checking opt-in.
-function run_test_3() {
-  do_print("Testing with strict compatibility disabled, but addon opt-in");
+add_task(async function test_strict_optin() {
   Services.prefs.setBoolPref(PREF_EM_STRICT_COMPATIBILITY, false);
-  AddonManager.getAddonByID("compatmode-strict-optin@tests.mozilla.org", function(addon) {
-    do_check_neq(addon, null);
-    addon.findUpdates({
-      onCompatibilityUpdateAvailable() {
-        do_throw("Should have not have seen compatibility information");
-      },
+  let addon = await AddonManager.getAddonByID(ID_STRICT);
+  Assert.notEqual(addon, null);
 
-      onUpdateAvailable() {
-        do_throw("Should not have seen an available update");
-      },
-
-      onUpdateFinished() {
-        run_test_4();
-      }
-    }, AddonManager.UPDATE_WHEN_USER_REQUESTED);
-  });
-}
+  await promiseFindAddonUpdates(addon, AddonManager.UPDATE_WHEN_USER_REQUESTED);
+  Assert.equal(lastMode, "normal", "COMPATIBILITY_MODE is normal even for an addon with strictCompatibility");
+});
 
 // Compatibility checking disabled.
-function run_test_4() {
-  do_print("Testing with all compatibility checking disabled");
+add_task(async function test_compat_disabled() {
   AddonManager.checkCompatibility = false;
-  AddonManager.getAddonByID("compatmode-ignore@tests.mozilla.org", function(addon) {
-    do_check_neq(addon, null);
-    addon.findUpdates({
-      onCompatibilityUpdateAvailable() {
-        do_throw("Should have not have seen compatibility information");
-      },
+  let addon = await AddonManager.getAddonByID(ID_NORMAL);
+  Assert.notEqual(addon, null);
 
-      onNoUpdateAvailable() {
-        do_throw("Should have seen an available update");
-      },
-
-      onUpdateAvailable(unused, install) {
-        do_check_eq(install.version, "2.0")
-      },
-
-      onUpdateFinished() {
-        end_test();
-      }
-    }, AddonManager.UPDATE_WHEN_USER_REQUESTED);
-  });
-}
+  await promiseFindAddonUpdates(addon, AddonManager.UPDATE_WHEN_USER_REQUESTED);
+  Assert.equal(lastMode, "ignore", "COMPATIBILITY_MODE ignore was set correctly");
+});

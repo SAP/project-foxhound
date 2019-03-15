@@ -11,53 +11,48 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css">
   <script type="application/javascript" src="inspector-helpers.js"></script>
   <script type="application/javascript">
-const inspector = require("devtools/shared/fronts/inspector");
+"use strict";
 
 window.onload = function() {
   SimpleTest.waitForExplicitFinish();
   runNextTest();
-}
+};
 
-var gWalker = null;
-var gClient = null;
+let gWalker = null;
+let gInspectee = null;
 
-addTest(function setup() {
-  let url = document.getElementById("inspectorContent").href;
-  attachURL(url, function(err, client, tab, doc) {
-    gInspectee = doc;
-    let {InspectorFront} = require("devtools/shared/fronts/inspector");
-    let inspector = InspectorFront(client, tab);
-    promiseDone(inspector.getWalker().then(walker => {
-      ok(walker, "getWalker() should return an actor.");
-      gClient = client;
-      gWalker = walker;
-    }).then(runNextTest));
-  });
+addTest(async function setup() {
+  const url = document.getElementById("inspectorContent").href;
+  const { target, doc } = await attachURL(url);
+  const inspector = await target.getInspector();
+  gInspectee = doc;
+  gWalker = inspector.walker;
+  runNextTest();
 });
 
 addTest(function testRearrange() {
   let listFront = null;
-  let listNode = gInspectee.querySelector("#longlist");
+  const listNode = gInspectee.querySelector("#longlist");
 
   promiseDone(gWalker.querySelector(gWalker.rootNode, "#longlist").then(front => {
     listFront = front;
   }).then(() => {
-    let computed = gInspectee.defaultView.getComputedStyle(listNode);
-    ok(computed.visibility, "visible", "Node should be visible to start with");
+    const computed = gInspectee.defaultView.getComputedStyle(listNode);
+    is(computed.visibility, "visible", "Node should be visible to start with");
     return gWalker.hideNode(listFront);
   }).then(response => {
-    let computed = gInspectee.defaultView.getComputedStyle(listNode);
-    ok(computed.visibility, "hidden", "Node should be hidden");
+    const computed = gInspectee.defaultView.getComputedStyle(listNode);
+    is(computed.visibility, "hidden", "Node should be hidden");
     return gWalker.unhideNode(listFront);
   }).then(() => {
-    let computed = gInspectee.defaultView.getComputedStyle(listNode);
-    ok(computed.visibility, "visible", "Node should be visible again.");
+    const computed = gInspectee.defaultView.getComputedStyle(listNode);
+    is(computed.visibility, "visible", "Node should be visible again.");
   }).then(runNextTest));
 });
 
 addTest(function cleanup() {
-  delete gWalker;
-  delete gClient;
+  gWalker = null;
+  gInspectee = null;
   runNextTest();
 });
 

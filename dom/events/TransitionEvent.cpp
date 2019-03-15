@@ -14,32 +14,20 @@ namespace dom {
 TransitionEvent::TransitionEvent(EventTarget* aOwner,
                                  nsPresContext* aPresContext,
                                  InternalTransitionEvent* aEvent)
-  : Event(aOwner, aPresContext,
-          aEvent ? aEvent : new InternalTransitionEvent(false, eVoidEvent))
-{
+    : Event(aOwner, aPresContext,
+            aEvent ? aEvent : new InternalTransitionEvent(false, eVoidEvent)) {
   if (aEvent) {
     mEventIsInternal = false;
-  }
-  else {
+  } else {
     mEventIsInternal = true;
     mEvent->mTime = PR_Now();
   }
 }
 
-NS_INTERFACE_MAP_BEGIN(TransitionEvent)
-  NS_INTERFACE_MAP_ENTRY(nsIDOMTransitionEvent)
-NS_INTERFACE_MAP_END_INHERITING(Event)
-
-NS_IMPL_ADDREF_INHERITED(TransitionEvent, Event)
-NS_IMPL_RELEASE_INHERITED(TransitionEvent, Event)
-
 // static
-already_AddRefed<TransitionEvent>
-TransitionEvent::Constructor(const GlobalObject& aGlobal,
-                             const nsAString& aType,
-                             const TransitionEventInit& aParam,
-                             ErrorResult& aRv)
-{
+already_AddRefed<TransitionEvent> TransitionEvent::Constructor(
+    const GlobalObject& aGlobal, const nsAString& aType,
+    const TransitionEventInit& aParam, ErrorResult& aRv) {
   nsCOMPtr<EventTarget> t = do_QueryInterface(aGlobal.GetAsSupports());
   RefPtr<TransitionEvent> e = new TransitionEvent(t, nullptr, nullptr);
   bool trusted = e->Init(t);
@@ -56,45 +44,28 @@ TransitionEvent::Constructor(const GlobalObject& aGlobal,
   return e.forget();
 }
 
-NS_IMETHODIMP
-TransitionEvent::GetPropertyName(nsAString& aPropertyName)
-{
+void TransitionEvent::GetPropertyName(nsAString& aPropertyName) const {
   aPropertyName = mEvent->AsTransitionEvent()->mPropertyName;
-  return NS_OK;
 }
 
-NS_IMETHODIMP
-TransitionEvent::GetElapsedTime(float* aElapsedTime)
-{
-  *aElapsedTime = ElapsedTime();
-  return NS_OK;
-}
-
-float
-TransitionEvent::ElapsedTime()
-{
+float TransitionEvent::ElapsedTime() {
   return mEvent->AsTransitionEvent()->mElapsedTime;
 }
 
-NS_IMETHODIMP
-TransitionEvent::GetPseudoElement(nsAString& aPseudoElement)
-{
+void TransitionEvent::GetPseudoElement(nsAString& aPseudoElement) const {
   aPseudoElement = mEvent->AsTransitionEvent()->mPseudoElement;
-  return NS_OK;
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 using namespace mozilla;
 using namespace mozilla::dom;
 
-already_AddRefed<TransitionEvent>
-NS_NewDOMTransitionEvent(EventTarget* aOwner,
-                         nsPresContext* aPresContext,
-                         InternalTransitionEvent* aEvent)
-{
+already_AddRefed<TransitionEvent> NS_NewDOMTransitionEvent(
+    EventTarget* aOwner, nsPresContext* aPresContext,
+    InternalTransitionEvent* aEvent) {
   RefPtr<TransitionEvent> it =
-    new TransitionEvent(aOwner, aPresContext, aEvent);
+      new TransitionEvent(aOwner, aPresContext, aEvent);
   return it.forget();
 }

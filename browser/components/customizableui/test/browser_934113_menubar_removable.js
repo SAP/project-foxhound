@@ -5,15 +5,15 @@
 "use strict";
 
 // Attempting to drag the menubar to the navbar shouldn't work.
-add_task(function*() {
-  yield startCustomizing();
+add_task(async function() {
+  await startCustomizing();
   let menuItems = document.getElementById("menubar-items");
   let navbar = document.getElementById("nav-bar");
   let menubar = document.getElementById("toolbar-menubar");
   // Force the menu to be shown.
   const kAutohide = menubar.getAttribute("autohide");
   menubar.setAttribute("autohide", "false");
-  simulateItemDrag(menuItems, navbar.customizationTarget);
+  simulateItemDrag(menuItems, CustomizableUI.getCustomizationTarget(navbar));
 
   is(getAreaWidgetIds("nav-bar").indexOf("menubar-items"), -1, "Menu bar shouldn't be in the navbar.");
   ok(!navbar.querySelector("#menubar-items"), "Shouldn't find menubar items in the navbar.");
@@ -21,10 +21,10 @@ add_task(function*() {
   isnot(getAreaWidgetIds("toolbar-menubar").indexOf("menubar-items"), -1,
         "Menubar items shouldn't be missing from the navbar.");
   menubar.setAttribute("autohide", kAutohide);
-  yield endCustomizing();
+  await endCustomizing();
 });
 
-add_task(function* asyncCleanup() {
-  yield endCustomizing();
-  yield resetCustomization();
+add_task(async function asyncCleanup() {
+  await endCustomizing();
+  await resetCustomization();
 });

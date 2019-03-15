@@ -8,12 +8,11 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_PROCESSING_COMMON_H_
-#define WEBRTC_MODULES_AUDIO_PROCESSING_COMMON_H_
+#ifndef MODULES_AUDIO_PROCESSING_COMMON_H_
+#define MODULES_AUDIO_PROCESSING_COMMON_H_
 
-#include <assert.h>
-
-#include "webrtc/modules/audio_processing/include/audio_processing.h"
+#include "modules/audio_processing/include/audio_processing.h"
+#include "rtc_base/checks.h"
 
 namespace webrtc {
 
@@ -26,10 +25,10 @@ static inline size_t ChannelsFromLayout(AudioProcessing::ChannelLayout layout) {
     case AudioProcessing::kStereoAndKeyboard:
       return 2;
   }
-  assert(false);
+  RTC_NOTREACHED();
   return 0;
 }
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_AUDIO_PROCESSING_COMMON_H_
+#endif  // MODULES_AUDIO_PROCESSING_COMMON_H_

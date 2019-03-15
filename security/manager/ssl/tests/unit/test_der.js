@@ -5,7 +5,9 @@
 
 // Tests DER.jsm functionality.
 
-var { DER } = Cu.import("resource://gre/modules/psm/DER.jsm", {});
+// Until DER.jsm is actually used in production code, this is where we have to
+// import it from.
+var { DER } = ChromeUtils.import("resource://testing-common/psm/DER.jsm", {});
 
 function run_simple_tests() {
   throws(() => new DER.DER("this is not an array"), /invalid input/,
@@ -161,7 +163,7 @@ function run_compound_tests() {
           0x02, 0x03, 0x45, 0x46, 0x47, //     INTEGER
         0x30, 0x06,                     //   SEQUENCE
           0x02, 0x02, 0x00, 0xff,       //     INTEGER
-          0x05, 0x00 ];                 //     NULL
+          0x05, 0x00 ]; //     NULL
   let der = new DER.DER(derBytes);
   let contents = new DER.DER(der.readTagAndGetContents(DER.SEQUENCE));
   let firstINTEGER = contents.readTagAndGetContents(DER.INTEGER);
@@ -197,7 +199,7 @@ function run_compound_tests() {
         0x30, 0x02,   //   SEQUENCE
           0x02, 0x01, //     INTEGER (missing data)
         0x05, 0x00,   //   NULL
-      0x00, 0x00 ];   // (extra data)
+      0x00, 0x00 ]; // (extra data)
   let invalidDER = new DER.DER(invalidDERBytes);
   let invalidContents = new DER.DER(
     invalidDER.readTagAndGetContents(DER.SEQUENCE));

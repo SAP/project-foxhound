@@ -1,7 +1,3 @@
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cr = Components.results;
-
 const GCONF_BG_COLOR_KEY = "/desktop/gnome/background/primary_color";
 
 var gShell;
@@ -45,7 +41,7 @@ function checkGConfToShellColor(aGConfColor, aExpectedShellColor) {
   gGConf.setString(GCONF_BG_COLOR_KEY, aGConfColor);
   var shellColor = colorToHex(gShell.desktopBackgroundColor);
 
-  do_check_eq(shellColor, aExpectedShellColor);
+  Assert.equal(shellColor, aExpectedShellColor);
 }
 
 /**
@@ -58,7 +54,7 @@ function checkShellToGConfColor(aShellColor, aExpectedGConfColor) {
   gShell.desktopBackgroundColor = hexToColor(aShellColor);
   var gconfColor = gGConf.getString(GCONF_BG_COLOR_KEY);
 
-  do_check_eq(gconfColor, aExpectedGConfColor);
+  Assert.equal(gconfColor, aExpectedGConfColor);
 }
 
 function run_test() {

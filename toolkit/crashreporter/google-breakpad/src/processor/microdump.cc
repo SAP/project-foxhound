@@ -44,6 +44,7 @@
 #include "google_breakpad/common/minidump_cpu_arm.h"
 #include "google_breakpad/processor/code_module.h"
 #include "processor/basic_code_module.h"
+#include "processor/convert_old_arm64_context.h"
 #include "processor/linked_ptr.h"
 #include "processor/logging.h"
 #include "processor/range_map-inl.h"
@@ -54,6 +55,7 @@ static const char kMicrodumpBegin[] = "-----BEGIN BREAKPAD MICRODUMP-----";
 static const char kMicrodumpEnd[] = "-----END BREAKPAD MICRODUMP-----";
 static const char kOsKey[] = ": O ";
 static const char kCpuKey[] = ": C ";
+static const char kCrashReasonKey[] = ": R ";
 static const char kGpuKey[] = ": G ";
 static const char kMmapKey[] = ": M ";
 static const char kStackKey[] = ": S ";
@@ -212,7 +214,9 @@ Microdump::Microdump(const string& contents)
   : context_(new MicrodumpContext()),
     stack_region_(new MicrodumpMemoryRegion()),
     modules_(new MicrodumpModules()),
-    system_info_(new SystemInfo()) {
+    system_info_(new SystemInfo()),
+    crash_reason_(),
+    crash_address_(0u) {
   assert(!contents.empty());
 
   bool in_microdump = false;
@@ -308,15 +312,22 @@ Microdump::Microdump(const string& contents)
         memcpy(arm, &cpu_state_raw[0], cpu_state_raw.size());
         context_->SetContextARM(arm);
       } else if (strcmp(arch.c_str(), kArm64Architecture) == 0) {
-        if (cpu_state_raw.size() != sizeof(MDRawContextARM64)) {
+        if (cpu_state_raw.size() == sizeof(MDRawContextARM64)) {
+          MDRawContextARM64* arm = new MDRawContextARM64();
+          memcpy(arm, &cpu_state_raw[0], cpu_state_raw.size());
+          context_->SetContextARM64(arm);
+        } else if (cpu_state_raw.size() == sizeof(MDRawContextARM64_Old)) {
+          MDRawContextARM64_Old old_arm;
+          memcpy(&old_arm, &cpu_state_raw[0], cpu_state_raw.size());
+          MDRawContextARM64* new_arm = new MDRawContextARM64();
+          ConvertOldARM64Context(old_arm, new_arm);
+          context_->SetContextARM64(new_arm);
+        } else {
           std::cerr << "Malformed CPU context. Got " << cpu_state_raw.size()
                     << " bytes instead of " << sizeof(MDRawContextARM64)
                     << std::endl;
           continue;
         }
-        MDRawContextARM64* arm = new MDRawContextARM64();
-        memcpy(arm, &cpu_state_raw[0], cpu_state_raw.size());
-        context_->SetContextARM64(arm);
       } else if (strcmp(arch.c_str(), kX86Architecture) == 0) {
         if (cpu_state_raw.size() != sizeof(MDRawContextX86)) {
           std::cerr << "Malformed CPU context. Got " << cpu_state_raw.size()
@@ -350,6 +361,15 @@ Microdump::Microdump(const string& contents)
       } else {
         std::cerr << "Unsupported architecture: " << arch << std::endl;
       }
+    } else if ((pos = line.find(kCrashReasonKey)) != string::npos) {
+      string crash_reason_str(line, pos + strlen(kCrashReasonKey));
+      std::istringstream crash_reason_tokens(crash_reason_str);
+      string signal;
+      string address;
+      crash_reason_tokens >> signal;
+      crash_reason_tokens >> crash_reason_;
+      crash_reason_tokens >> address;
+      crash_address_ = HexStrToL<uint64_t>(address);
     } else if ((pos = line.find(kGpuKey)) != string::npos) {
       string gpu_str(line, pos + strlen(kGpuKey));
       if (strcmp(gpu_str.c_str(), kGpuUnknown) != 0) {
@@ -382,4 +402,3 @@ Microdump::Microdump(const string& contents)
 }
 
 }  // namespace google_breakpad
-

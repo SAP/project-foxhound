@@ -12,51 +12,47 @@ namespace mozilla {
 namespace dom {
 
 ImageBitmapRenderingContext::ImageBitmapRenderingContext()
-  : mWidth(0)
-  , mHeight(0)
-{
-}
+    : mWidth(0), mHeight(0) {}
 
-ImageBitmapRenderingContext::~ImageBitmapRenderingContext()
-{
+ImageBitmapRenderingContext::~ImageBitmapRenderingContext() {
   RemovePostRefreshObserver();
 }
 
-JSObject*
-ImageBitmapRenderingContext::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return ImageBitmapRenderingContextBinding::Wrap(aCx, this, aGivenProto);
+JSObject* ImageBitmapRenderingContext::WrapObject(
+    JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
+  return ImageBitmapRenderingContext_Binding::Wrap(aCx, this, aGivenProto);
 }
 
 already_AddRefed<layers::Image>
-ImageBitmapRenderingContext::ClipToIntrinsicSize()
-{
+ImageBitmapRenderingContext::ClipToIntrinsicSize() {
   if (!mImage) {
     return nullptr;
   }
 
-  // If image is larger than canvas intrinsic size, clip it to the intrinsic size.
+  // If image is larger than canvas intrinsic size, clip it to the intrinsic
+  // size.
   RefPtr<gfx::SourceSurface> surface;
   RefPtr<layers::Image> result;
-  if (mWidth < mImage->GetSize().width ||
-      mHeight < mImage->GetSize().height) {
+  if (mWidth < mImage->GetSize().width || mHeight < mImage->GetSize().height) {
     surface = MatchWithIntrinsicSize();
   } else {
     surface = mImage->GetAsSourceSurface();
   }
-  result = new layers::SourceSurfaceImage(gfx::IntSize(mWidth, mHeight), surface);
+  if (!surface) {
+    return nullptr;
+  }
+  result =
+      new layers::SourceSurfaceImage(gfx::IntSize(mWidth, mHeight), surface);
   return result.forget();
 }
 
-void
-ImageBitmapRenderingContext::TransferImageBitmap(ImageBitmap& aImageBitmap)
-{
+void ImageBitmapRenderingContext::TransferImageBitmap(
+    ImageBitmap& aImageBitmap) {
   TransferFromImageBitmap(aImageBitmap);
 }
 
-void
-ImageBitmapRenderingContext::TransferFromImageBitmap(ImageBitmap& aImageBitmap)
-{
+void ImageBitmapRenderingContext::TransferFromImageBitmap(
+    ImageBitmap& aImageBitmap) {
   Reset();
   mImage = aImageBitmap.TransferAsImage();
 
@@ -64,42 +60,31 @@ ImageBitmapRenderingContext::TransferFromImageBitmap(ImageBitmap& aImageBitmap)
     return;
   }
 
+  if (aImageBitmap.IsWriteOnly() && mCanvasElement) {
+    mCanvasElement->SetWriteOnly();
+  }
+
   Redraw(gfxRect(0, 0, mWidth, mHeight));
 }
 
-int32_t
-ImageBitmapRenderingContext::GetWidth() const
-{
-  return mWidth;
-}
-
-int32_t
-ImageBitmapRenderingContext::GetHeight() const
-{
-  return mHeight;
-}
-
 NS_IMETHODIMP
-ImageBitmapRenderingContext::SetDimensions(int32_t aWidth, int32_t aHeight)
-{
+ImageBitmapRenderingContext::SetDimensions(int32_t aWidth, int32_t aHeight) {
   mWidth = aWidth;
   mHeight = aHeight;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-ImageBitmapRenderingContext::InitializeWithDrawTarget(nsIDocShell* aDocShell,
-                                                      NotNull<gfx::DrawTarget*> aTarget)
-{
+ImageBitmapRenderingContext::InitializeWithDrawTarget(
+    nsIDocShell* aDocShell, NotNull<gfx::DrawTarget*> aTarget) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 already_AddRefed<DataSourceSurface>
-ImageBitmapRenderingContext::MatchWithIntrinsicSize()
-{
+ImageBitmapRenderingContext::MatchWithIntrinsicSize() {
   RefPtr<SourceSurface> surface = mImage->GetAsSourceSurface();
-  RefPtr<DataSourceSurface> temp =
-    Factory::CreateDataSourceSurface(IntSize(mWidth, mHeight), surface->GetFormat());
+  RefPtr<DataSourceSurface> temp = Factory::CreateDataSourceSurface(
+      IntSize(mWidth, mHeight), surface->GetFormat());
   if (!temp) {
     return nullptr;
   }
@@ -109,30 +94,26 @@ ImageBitmapRenderingContext::MatchWithIntrinsicSize()
     return nullptr;
   }
 
-  RefPtr<DrawTarget> dt =
-    Factory::CreateDrawTargetForData(BackendType::CAIRO,
-                                     map.GetData(),
-                                     temp->GetSize(),
-                                     map.GetStride(),
-                                     temp->GetFormat());
+  RefPtr<DrawTarget> dt = Factory::CreateDrawTargetForData(
+      gfxPlatform::GetPlatform()->GetSoftwareBackend(), map.GetData(),
+      temp->GetSize(), map.GetStride(), temp->GetFormat());
   if (!dt || !dt->IsValid()) {
-    gfxWarning() << "ImageBitmapRenderingContext::MatchWithIntrinsicSize failed";
+    gfxWarning()
+        << "ImageBitmapRenderingContext::MatchWithIntrinsicSize failed";
     return nullptr;
   }
 
-
   dt->ClearRect(Rect(0, 0, mWidth, mHeight));
-  dt->CopySurface(surface,
-                  IntRect(0, 0, surface->GetSize().width,
-                                surface->GetSize().height),
-                  IntPoint(0, 0));
+  dt->CopySurface(
+      surface,
+      IntRect(0, 0, surface->GetSize().width, surface->GetSize().height),
+      IntPoint(0, 0));
 
   return temp.forget();
 }
 
-mozilla::UniquePtr<uint8_t[]>
-ImageBitmapRenderingContext::GetImageBuffer(int32_t* aFormat)
-{
+mozilla::UniquePtr<uint8_t[]> ImageBitmapRenderingContext::GetImageBuffer(
+    int32_t* aFormat) {
   *aFormat = 0;
 
   if (!mImage) {
@@ -147,6 +128,9 @@ ImageBitmapRenderingContext::GetImageBuffer(int32_t* aFormat)
 
   if (data->GetSize() != IntSize(mWidth, mHeight)) {
     data = MatchWithIntrinsicSize();
+    if (!data) {
+      return nullptr;
+    }
   }
 
   *aFormat = imgIEncoder::INPUT_FORMAT_HOSTARGB;
@@ -156,8 +140,7 @@ ImageBitmapRenderingContext::GetImageBuffer(int32_t* aFormat)
 NS_IMETHODIMP
 ImageBitmapRenderingContext::GetInputStream(const char* aMimeType,
                                             const char16_t* aEncoderOptions,
-                                            nsIInputStream** aStream)
-{
+                                            nsIInputStream** aStream) {
   nsCString enccid("@mozilla.org/image/encoder;2?type=");
   enccid += aMimeType;
   nsCOMPtr<imgIEncoder> encoder = do_CreateInstance(enccid.get());
@@ -171,19 +154,21 @@ ImageBitmapRenderingContext::GetInputStream(const char* aMimeType,
     return NS_ERROR_FAILURE;
   }
 
-  return ImageEncoder::GetInputStream(mWidth, mHeight, imageBuffer.get(), format,
-                                      encoder, aEncoderOptions, aStream);
+  return ImageEncoder::GetInputStream(mWidth, mHeight, imageBuffer.get(),
+                                      format, encoder, aEncoderOptions,
+                                      aStream);
 }
 
 already_AddRefed<mozilla::gfx::SourceSurface>
-ImageBitmapRenderingContext::GetSurfaceSnapshot(bool* aPremultAlpha)
-{
+ImageBitmapRenderingContext::GetSurfaceSnapshot(
+    gfxAlphaType* const aOutAlphaType) {
   if (!mImage) {
     return nullptr;
   }
 
-  if (aPremultAlpha) {
-    *aPremultAlpha = true;
+  if (aOutAlphaType) {
+    *aOutAlphaType =
+        (GetIsOpaque() ? gfxAlphaType::Opaque : gfxAlphaType::Premult);
   }
 
   RefPtr<SourceSurface> surface = mImage->GetAsSourceSurface();
@@ -194,21 +179,15 @@ ImageBitmapRenderingContext::GetSurfaceSnapshot(bool* aPremultAlpha)
   return surface.forget();
 }
 
-NS_IMETHODIMP
-ImageBitmapRenderingContext::SetIsOpaque(bool aIsOpaque)
-{
-  return NS_OK;
+void ImageBitmapRenderingContext::SetOpaqueValueFromOpaqueAttr(
+    bool aOpaqueAttrValue) {
+  // ignored
 }
 
-bool
-ImageBitmapRenderingContext::GetIsOpaque()
-{
-  return false;
-}
+bool ImageBitmapRenderingContext::GetIsOpaque() { return false; }
 
 NS_IMETHODIMP
-ImageBitmapRenderingContext::Reset()
-{
+ImageBitmapRenderingContext::Reset() {
   if (mCanvasElement) {
     mCanvasElement->InvalidateCanvas();
   }
@@ -218,17 +197,8 @@ ImageBitmapRenderingContext::Reset()
   return NS_OK;
 }
 
-already_AddRefed<Layer>
-ImageBitmapRenderingContext::GetCanvasLayer(nsDisplayListBuilder* aBuilder,
-                                            Layer* aOldLayer,
-                                            LayerManager* aManager,
-                                            bool aMirror /* = false */)
-{
-  if (aMirror) {
-    // Not supported for ImageBitmapRenderingContext
-    return nullptr;
-  }
-
+already_AddRefed<Layer> ImageBitmapRenderingContext::GetCanvasLayer(
+    nsDisplayListBuilder* aBuilder, Layer* aOldLayer, LayerManager* aManager) {
   if (!mImage) {
     // No DidTransactionCallback will be received, so mark the context clean
     // now so future invalidations will be dispatched.
@@ -246,26 +216,25 @@ ImageBitmapRenderingContext::GetCanvasLayer(nsDisplayListBuilder* aBuilder,
 
   RefPtr<ImageContainer> imageContainer = imageLayer->GetContainer();
   if (!imageContainer) {
-    imageContainer = aManager->CreateImageContainer();
+    imageContainer = LayerManager::CreateImageContainer();
     imageLayer->SetContainer(imageContainer);
   }
 
   AutoTArray<ImageContainer::NonOwningImage, 1> imageList;
   RefPtr<layers::Image> image = ClipToIntrinsicSize();
+  if (!image) {
+    return nullptr;
+  }
   imageList.AppendElement(ImageContainer::NonOwningImage(image));
   imageContainer->SetCurrentImages(imageList);
 
   return imageLayer.forget();
 }
 
-void
-ImageBitmapRenderingContext::MarkContextClean()
-{
-}
+void ImageBitmapRenderingContext::MarkContextClean() {}
 
 NS_IMETHODIMP
-ImageBitmapRenderingContext::Redraw(const gfxRect& aDirty)
-{
+ImageBitmapRenderingContext::Redraw(const gfxRect& aDirty) {
   if (!mCanvasElement) {
     return NS_OK;
   }
@@ -276,24 +245,13 @@ ImageBitmapRenderingContext::Redraw(const gfxRect& aDirty)
 }
 
 NS_IMETHODIMP
-ImageBitmapRenderingContext::SetIsIPC(bool aIsIPC)
-{
-  return NS_OK;
-}
+ImageBitmapRenderingContext::SetIsIPC(bool aIsIPC) { return NS_OK; }
 
-void
-ImageBitmapRenderingContext::DidRefresh()
-{
-}
+void ImageBitmapRenderingContext::DidRefresh() {}
 
-void
-ImageBitmapRenderingContext::MarkContextCleanForFrameCapture()
-{
-}
+void ImageBitmapRenderingContext::MarkContextCleanForFrameCapture() {}
 
-bool
-ImageBitmapRenderingContext::IsContextCleanForFrameCapture()
-{
+bool ImageBitmapRenderingContext::IsContextCleanForFrameCapture() {
   return true;
 }
 
@@ -301,8 +259,7 @@ NS_IMPL_CYCLE_COLLECTING_ADDREF(ImageBitmapRenderingContext)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(ImageBitmapRenderingContext)
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(ImageBitmapRenderingContext,
-  mCanvasElement,
-  mOffscreenCanvas)
+                                      mCanvasElement, mOffscreenCanvas)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(ImageBitmapRenderingContext)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
@@ -310,5 +267,5 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(ImageBitmapRenderingContext)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
-}
-}
+}  // namespace dom
+}  // namespace mozilla

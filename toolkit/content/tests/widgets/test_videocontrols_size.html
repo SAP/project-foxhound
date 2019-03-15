@@ -33,11 +33,13 @@
   const videoElems = [...document.getElementsByTagName("video")];
   const testCases = [];
 
-  const buttonWidth = 30;
-  const minSrubberWidth = 48;
-  const minControlBarHeight = 40;
-  const minControlBarWidth = 48;
-  const minClickToPlaySize = 48;
+  const isTouchControl = navigator.appVersion.includes("Android");
+
+  const buttonWidth = isTouchControl ? 40 : 30;
+  const minSrubberWidth = isTouchControl ? 64 : 48;
+  const minControlBarHeight = isTouchControl ? 52 : 40;
+  const minControlBarWidth = isTouchControl ? 58 : 48;
+  const minClickToPlaySize = isTouchControl ? 64 : 48;
 
   function getElementName(elem) {
     return elem.getAttribute("anonid") || elem.getAttribute("class");
@@ -73,15 +75,15 @@
     const videoWidth = video.clientWidth;
 
     const videoSizeMsg = `size:${videoRect.width}x${videoRect.height} -`;
-    const controlBar = getAnonElementWithinVideoByAttribute(video, "anonid", "controlBar");
-    const playBtn = getAnonElementWithinVideoByAttribute(video, "anonid", "playButton");
-    const scrubber = getAnonElementWithinVideoByAttribute(video, "anonid", "scrubberStack");
-    const positionDurationBox = getAnonElementWithinVideoByAttribute(video, "anonid", "positionDurationBox");
+    const controlBar = getElementWithinVideo(video, "controlBar");
+    const playBtn = getElementWithinVideo(video, "playButton");
+    const scrubber = getElementWithinVideo(video, "scrubberStack");
+    const positionDurationBox = getElementWithinVideo(video, "positionDurationBox");
     const durationLabel = positionDurationBox.getElementsByTagName("span")[0];
-    const muteBtn = getAnonElementWithinVideoByAttribute(video, "anonid", "muteButton");
-    const volumeStack = getAnonElementWithinVideoByAttribute(video, "anonid", "volumeStack");
-    const fullscreenBtn = getAnonElementWithinVideoByAttribute(video, "anonid", "fullscreenButton");
-    const clickToPlay = getAnonElementWithinVideoByAttribute(video, "anonid", "clickToPlay");
+    const muteBtn = getElementWithinVideo(video, "muteButton");
+    const volumeStack = getElementWithinVideo(video, "volumeStack");
+    const fullscreenBtn = getElementWithinVideo(video, "fullscreenButton");
+    const clickToPlay = getElementWithinVideo(video, "clickToPlay");
 
 
     // Controls should show/hide according to the priority
@@ -92,7 +94,7 @@
       positionDurationBox,
       scrubber,
       durationLabel,
-      volumeStack
+      volumeStack,
     ];
 
     let stopAppend = false;
@@ -109,7 +111,7 @@
       positionDurationBox,
       muteBtn,
       volumeStack,
-      fullscreenBtn
+      fullscreenBtn,
     ];
 
     let widthSum = 0;

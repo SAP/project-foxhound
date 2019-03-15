@@ -17,7 +17,7 @@ const colorCoarseType = require("./color-coarse-type");
 const {
   hslToStyle,
   formatAbbreviatedBytes,
-  L10N
+  L10N,
 } = require("devtools/client/memory/utils");
 
 // A constant fully zoomed out dragZoom object for the main canvas
@@ -26,7 +26,7 @@ const NO_SCROLL = {
   translateY: 0,
   zoom: 0,
   offsetX: 0,
-  offsetY: 0
+  offsetY: 0,
 };
 
 // Drawing constants
@@ -51,8 +51,8 @@ const COUNT_LABEL = L10N.getStr("tree-map.node-count");
  *         A DragZoom object representing the current state of the dragging
  *         and zooming behavior
  */
-exports.setupDraw = function (report, canvases, dragZoom) {
-  let getTreemap = configureD3Treemap.bind(null, canvases.main.canvas);
+exports.setupDraw = function(report, canvases, dragZoom) {
+  const getTreemap = configureD3Treemap.bind(null, canvases.main.canvas);
 
   let treemap, nodes;
 
@@ -79,15 +79,15 @@ exports.setupDraw = function (report, canvases, dragZoom) {
  * @param  {HTMLCanvasElement} canvas
  * @return {Function}
  */
-const configureD3Treemap = exports.configureD3Treemap = function (canvas) {
-  let window = canvas.ownerDocument.defaultView;
-  let ratio = window.devicePixelRatio;
-  let treemap = window.d3.layout.treemap()
+const configureD3Treemap = exports.configureD3Treemap = function(canvas) {
+  const window = canvas.ownerDocument.defaultView;
+  const ratio = window.devicePixelRatio;
+  const treemap = window.d3.layout.treemap()
     .size([
       // The d3 layout includes the padding around everything, add some
       // extra padding to the size to compensate for thi
       canvas.width + (PADDING[1] + PADDING[3]) * ratio,
-      canvas.height + (PADDING[0] + PADDING[2]) * ratio
+      canvas.height + (PADDING[0] + PADDING[2]) * ratio,
     ])
     .sticky(true)
     .padding([
@@ -116,7 +116,7 @@ const configureD3Treemap = exports.configureD3Treemap = function (canvas) {
    *         dy - the y-extent of the node position.
    */
   return function depthSortedNodes(report) {
-    let nodes = treemap(report);
+    const nodes = treemap(report);
     nodes.sort((a, b) => a.depth - b.depth);
     return nodes;
   };
@@ -135,11 +135,11 @@ const configureD3Treemap = exports.configureD3Treemap = function (canvas) {
  *         the inner width of the containing treemap cell
  * @param  {Text} name
  */
-const drawTruncatedName = exports.drawTruncatedName = function (ctx, x, y,
+const drawTruncatedName = exports.drawTruncatedName = function(ctx, x, y,
                                                                innerWidth,
                                                                name) {
-  let truncated = name.substr(0, Math.floor(name.length / 2));
-  let formatted = truncated + ELLIPSIS;
+  const truncated = name.substr(0, Math.floor(name.length / 2));
+  const formatted = truncated + ELLIPSIS;
 
   if (ctx.measureText(formatted).width > innerWidth) {
     drawTruncatedName(ctx, x, y, innerWidth, truncated);
@@ -164,21 +164,21 @@ const drawTruncatedName = exports.drawTruncatedName = function (ctx, x, y,
  * @param  {Object} dragZoom
  * @param  {Array}  padding
  */
-const drawText = exports.drawText = function (ctx, node, borderWidth, ratio,
+const drawText = exports.drawText = function(ctx, node, borderWidth, ratio,
                                               dragZoom, padding) {
   let { dx, dy, name, totalBytes, totalCount } = node;
-  let scale = dragZoom.zoom + 1;
+  const scale = dragZoom.zoom + 1;
   dx *= scale;
   dy *= scale;
 
   // Start checking to see how much text we can fit in, optimizing for the
   // common case of lots of small leaf nodes
   if (FONT_SIZE * FONT_LINE_HEIGHT < dy) {
-    let margin = borderWidth(node) * 1.5 + ratio * TEXT_MARGIN;
-    let x = margin + (node.x - padding[0]) * scale - dragZoom.offsetX;
-    let y = margin + (node.y - padding[1]) * scale - dragZoom.offsetY;
-    let innerWidth = dx - margin * 2;
-    let nameSize = ctx.measureText(name).width;
+    const margin = borderWidth(node) * 1.5 + ratio * TEXT_MARGIN;
+    const x = margin + (node.x - padding[0]) * scale - dragZoom.offsetX;
+    const y = margin + (node.y - padding[1]) * scale - dragZoom.offsetY;
+    const innerWidth = dx - margin * 2;
+    const nameSize = ctx.measureText(name).width;
 
     if (ctx.measureText(ELLIPSIS).width > innerWidth) {
       return;
@@ -190,11 +190,11 @@ const drawText = exports.drawText = function (ctx, node, borderWidth, ratio,
       // The name is too long - halve the name as an expediant way to shorten it
       drawTruncatedName(ctx, x, y, innerWidth, name);
     } else {
-      let bytesFormatted = formatAbbreviatedBytes(totalBytes);
-      let countFormatted = `${totalCount} ${COUNT_LABEL}`;
-      let byteSize = ctx.measureText(bytesFormatted).width;
-      let countSize = ctx.measureText(countFormatted).width;
-      let spaceSize = ctx.measureText(" ").width;
+      const bytesFormatted = formatAbbreviatedBytes(totalBytes);
+      const countFormatted = `${totalCount} ${COUNT_LABEL}`;
+      const byteSize = ctx.measureText(bytesFormatted).width;
+      const countSize = ctx.measureText(countFormatted).width;
+      const spaceSize = ctx.measureText(" ").width;
 
       if (nameSize + byteSize + countSize + spaceSize * 3 > innerWidth) {
         // The full name will fit
@@ -220,18 +220,18 @@ const drawText = exports.drawText = function (ctx, node, borderWidth, ratio,
  * @param  {Object} dragZoom
  * @param  {Array}  padding
  */
-const drawBox = exports.drawBox = function (ctx, node, borderWidth, dragZoom,
+const drawBox = exports.drawBox = function(ctx, node, borderWidth, dragZoom,
                                            padding) {
-  let border = borderWidth(node);
-  let fillHSL = colorCoarseType(node);
-  let strokeHSL = [fillHSL[0], fillHSL[1], fillHSL[2] * 0.5];
-  let scale = 1 + dragZoom.zoom;
+  const border = borderWidth(node);
+  const fillHSL = colorCoarseType(node);
+  const strokeHSL = [fillHSL[0], fillHSL[1], fillHSL[2] * 0.5];
+  const scale = 1 + dragZoom.zoom;
 
   // Offset the draw so that box strokes don't overlap
-  let x = scale * (node.x - padding[0]) - dragZoom.offsetX + border / 2;
-  let y = scale * (node.y - padding[1]) - dragZoom.offsetY + border / 2;
-  let dx = scale * node.dx - border;
-  let dy = scale * node.dy - border;
+  const x = scale * (node.x - padding[0]) - dragZoom.offsetX + border / 2;
+  const y = scale * (node.y - padding[1]) - dragZoom.offsetY + border / 2;
+  const dx = scale * node.dx - border;
+  const dy = scale * node.dy - border;
 
   ctx.fillStyle = hslToStyle(...fillHSL);
   ctx.fillRect(x, y, dx, dy);
@@ -249,25 +249,25 @@ const drawBox = exports.drawBox = function (ctx, node, borderWidth, dragZoom,
  * @param  {Array} nodes
  * @param  {Objbect} dragZoom
  */
-const drawTreemap = exports.drawTreemap = function ({canvas, ctx}, nodes,
+const drawTreemap = exports.drawTreemap = function({canvas, ctx}, nodes,
                                                    dragZoom) {
-  let window = canvas.ownerDocument.defaultView;
-  let ratio = window.devicePixelRatio;
-  let canvasArea = canvas.width * canvas.height;
+  const window = canvas.ownerDocument.defaultView;
+  const ratio = window.devicePixelRatio;
+  const canvasArea = canvas.width * canvas.height;
   // Subtract the outer padding from the tree map layout.
-  let padding = [PADDING[3] * ratio, PADDING[0] * ratio];
+  const padding = [PADDING[3] * ratio, PADDING[0] * ratio];
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.font = `${FONT_SIZE * ratio}px sans-serif`;
   ctx.textBaseline = "top";
 
   function borderWidth(node) {
-    let areaRatio = Math.sqrt(node.area / canvasArea);
+    const areaRatio = Math.sqrt(node.area / canvasArea);
     return ratio * Math.max(1, LINE_WIDTH * areaRatio);
   }
 
   for (let i = 0; i < nodes.length; i++) {
-    let node = nodes[i];
+    const node = nodes[i];
     if (node.parent === undefined) {
       continue;
     }
@@ -285,10 +285,10 @@ const drawTreemap = exports.drawTreemap = function ({canvas, ctx}, nodes,
  * @param  {HTMLCanvasElement} canvas
  * @param  {Object} dragZoom
  */
-const positionZoomedCanvas = function (canvas, dragZoom) {
-  let scale = 1 / (1 + dragZoom.zoom);
-  let x = -dragZoom.translateX;
-  let y = -dragZoom.translateY;
+const positionZoomedCanvas = function(canvas, dragZoom) {
+  const scale = 1 / (1 + dragZoom.zoom);
+  const x = -dragZoom.translateX;
+  const y = -dragZoom.translateY;
   canvas.style.transform = `scale(${scale}) translate(${x}px, ${y}px)`;
 };
 

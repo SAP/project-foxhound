@@ -4,15 +4,13 @@
 
 /* eslint-env mozilla/frame-script */
 
-var { utils: Cu, interfaces: Ci, classes: Cc } = Components;
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "BrowserUtils",
-  "resource://gre/modules/BrowserUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "DeferredTask",
+ChromeUtils.defineModuleGetter(this, "DeferredTask",
   "resource://gre/modules/DeferredTask.jsm");
+
+XPCOMUtils.defineLazyGlobalGetters(this, ["NodeFilter"]);
 
 const NS_XHTML = "http://www.w3.org/1999/xhtml";
 const BUNDLE_URL = "chrome://global/locale/viewSource.properties";
@@ -33,24 +31,14 @@ var global = this;
  */
 var ViewSourceContent = {
   /**
-   * We'll act as an nsISelectionListener as well so that we can send
-   * updates to the view source window's status bar.
-   */
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsISelectionListener]),
-
-  /**
    * These are the messages that ViewSourceContent is prepared to listen
    * for. If you need ViewSourceContent to handle more messages, add them
    * here.
    */
   messages: [
     "ViewSource:LoadSource",
-    "ViewSource:LoadSourceDeprecated",
     "ViewSource:LoadSourceWithSelection",
     "ViewSource:GoToLine",
-    "ViewSource:ToggleWrapping",
-    "ViewSource:ToggleSyntaxHighlighting",
-    "ViewSource:SetCharacterSet",
   ],
 
   /**
@@ -60,20 +48,9 @@ var ViewSourceContent = {
    */
   needsDrawSelection: false,
 
-  /**
-   * ViewSourceContent is attached as an nsISelectionListener on pageshow,
-   * and removed on pagehide. When the initial about:blank is transitioned
-   * away from, a pagehide is fired without us having attached ourselves
-   * first. We use this boolean to keep track of whether or not we're
-   * attached, so we don't attempt to remove our listener when it's not
-   * yet there (which throws).
-   */
-  selectionListenerAttached: false,
-
   get isViewSource() {
     let uri = content.document.documentURI;
-    return uri.startsWith("view-source:") ||
-           (uri.startsWith("data:") && uri.includes("MathML"));
+    return uri.startsWith("view-source:");
   },
 
   get isAboutBlank() {
@@ -111,11 +88,6 @@ var ViewSourceContent = {
     removeEventListener("unload", this);
 
     Services.els.removeSystemEventListener(global, "contextmenu", this, false);
-
-    // Cancel any pending toolbar updates.
-    if (this.updateStatusTask) {
-      this.updateStatusTask.disarm();
-    }
   },
 
   /**
@@ -127,30 +99,16 @@ var ViewSourceContent = {
       return;
     }
     let data = msg.data;
-    let objects = msg.objects;
     switch (msg.name) {
       case "ViewSource:LoadSource":
         this.viewSource(data.URL, data.outerWindowID, data.lineNumber,
                         data.shouldWrap);
-        break;
-      case "ViewSource:LoadSourceDeprecated":
-        this.viewSourceDeprecated(data.URL, objects.pageDescriptor, data.lineNumber,
-                                  data.forcedCharSet);
         break;
       case "ViewSource:LoadSourceWithSelection":
         this.viewSourceWithSelection(data.URL, data.drawSelection, data.baseURI);
         break;
       case "ViewSource:GoToLine":
         this.goToLine(data.lineNumber);
-        break;
-      case "ViewSource:ToggleWrapping":
-        this.toggleWrapping();
-        break;
-      case "ViewSource:ToggleSyntaxHighlighting":
-        this.toggleSyntaxHighlighting();
-        break;
-      case "ViewSource:SetCharacterSet":
-        this.setCharacterSet(data.charset, data.doPageLoad);
         break;
     }
   },
@@ -226,48 +184,20 @@ var ViewSourceContent = {
 
     if (outerWindowID) {
       let contentWindow = Services.wm.getOuterWindowWithId(outerWindowID);
-      let requestor = contentWindow.QueryInterface(Ci.nsIInterfaceRequestor);
+      let otherDocShell = contentWindow.docShell;
 
       try {
-        let otherWebNav = requestor.getInterface(Ci.nsIWebNavigation);
-        pageDescriptor = otherWebNav.QueryInterface(Ci.nsIWebPageDescriptor)
-                                    .currentDescriptor;
+        pageDescriptor = otherDocShell.QueryInterface(Ci.nsIWebPageDescriptor)
+                                      .currentDescriptor;
       } catch (e) {
         // We couldn't get the page descriptor, so we'll probably end up re-retrieving
         // this document off of the network.
       }
 
-      let utils = requestor.getInterface(Ci.nsIDOMWindowUtils);
+      let utils = contentWindow.windowUtils;
       let doc = contentWindow.document;
       forcedCharSet = utils.docCharsetIsForced ? doc.characterSet
                                                : null;
-    }
-
-    this.loadSource(URL, pageDescriptor, lineNumber, forcedCharSet);
-  },
-
-  /**
-   * Called when the parent is using the deprecated API for viewSource.xul.
-   * This function will throw if it's called on a remote browser.
-   *
-   * @param URL (required)
-   *        The URL string of the source to be shown.
-   * @param pageDescriptor (optional)
-   *        The currentDescriptor off of an nsIWebPageDescriptor, in the
-   *        event that the caller wants to try to load the source out of
-   *        the network cache.
-   * @param lineNumber (optional)
-   *        The line number to focus as soon as the source has finished
-   *        loading.
-   * @param forcedCharSet (optional)
-   *        The document character set to use instead of the default one.
-   */
-  viewSourceDeprecated(URL, pageDescriptor, lineNumber, forcedCharSet) {
-    // This should not be called if this frame script is running
-    // in a content process!
-    if (Services.appinfo.processType != Services.appinfo.PROCESS_TYPE_DEFAULT) {
-      throw new Error("ViewSource deprecated API should not be used with " +
-                      "remote browsers.");
     }
 
     this.loadSource(URL, pageDescriptor, lineNumber, forcedCharSet);
@@ -330,15 +260,15 @@ var ViewSourceContent = {
     let shEntrySource = pageDescriptor.QueryInterface(Ci.nsISHEntry);
     let shEntry = Cc["@mozilla.org/browser/session-history-entry;1"]
                     .createInstance(Ci.nsISHEntry);
-    shEntry.setURI(BrowserUtils.makeURI(viewSrcURL, null, null));
-    shEntry.setTitle(viewSrcURL);
+    shEntry.URI = Services.io.newURI(viewSrcURL);
+    shEntry.title = viewSrcURL;
     let systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
     shEntry.triggeringPrincipal = systemPrincipal;
-    shEntry.loadType = Ci.nsIDocShellLoadInfo.loadHistory;
+    shEntry.setLoadTypeAsHistory();
     shEntry.cacheKey = shEntrySource.cacheKey;
     docShell.QueryInterface(Ci.nsIWebNavigation)
             .sessionHistory
-            .QueryInterface(Ci.nsISHistoryInternal)
+            .legacySHistory
             .addEntry(shEntry, true);
   },
 
@@ -351,7 +281,11 @@ var ViewSourceContent = {
   loadSourceFromURL(URL) {
     let loadFlags = Ci.nsIWebNavigation.LOAD_FLAGS_NONE;
     let webNav = docShell.QueryInterface(Ci.nsIWebNavigation);
-    webNav.loadURI(URL, loadFlags, null, null, null);
+    let loadURIOptions = {
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+      loadFlags,
+    };
+    webNav.loadURI(URL, loadURIOptions);
   },
 
   /**
@@ -382,21 +316,9 @@ var ViewSourceContent = {
     if (/^about:blocked/.test(errorDoc.documentURI)) {
       // The event came from a button on a malware/phishing block page
 
-      if (target == errorDoc.getElementById("getMeOutButton")) {
+      if (target == errorDoc.getElementById("goBackButton")) {
         // Instead of loading some safe page, just close the window
         sendAsyncMessage("ViewSource:Close");
-      } else if (target == errorDoc.getElementById("reportButton")) {
-        // This is the "Why is this site blocked" button. We redirect
-        // to the generic page describing phishing/malware protection.
-        let URL = Services.urlFormatter.formatURLPref("app.support.baseURL");
-        sendAsyncMessage("ViewSource:OpenURL", { URL })
-      } else if (target == errorDoc.getElementById("ignoreWarningButton")) {
-        // Allow users to override and continue through to the site
-        docShell.QueryInterface(Ci.nsIWebNavigation)
-                .loadURIWithOptions(content.location.href,
-                                    Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_CLASSIFIER,
-                                    null, Ci.nsIHttpChannel.REFERRER_POLICY_UNSET,
-                                    null, null, null);
       }
     }
   },
@@ -408,12 +330,6 @@ var ViewSourceContent = {
    *        The pageshow event being handled.
    */
   onPageShow(event) {
-    let selection = content.getSelection();
-    if (selection) {
-      selection.QueryInterface(Ci.nsISelectionPrivate)
-               .addSelectionListener(this);
-      this.selectionListenerAttached = true;
-    }
     content.focus();
 
     // If we need to draw the selection, wait until an actual view source page
@@ -438,28 +354,10 @@ var ViewSourceContent = {
    *        The pagehide event being handled.
    */
   onPageHide(event) {
-    // The initial about:blank will fire pagehide before we
-    // ever set a selectionListener, so we have a boolean around
-    // to keep track of when the listener is attached.
-    if (this.selectionListenerAttached) {
-      content.getSelection()
-             .QueryInterface(Ci.nsISelectionPrivate)
-             .removeSelectionListener(this);
-      this.selectionListenerAttached = false;
-    }
     sendAsyncMessage("ViewSource:SourceUnloaded");
   },
 
   onContextMenu(event) {
-    let addonInfo = {};
-    let subject = {
-      event,
-      addonInfo,
-    };
-
-    subject.wrappedJSObject = subject;
-    Services.obs.notifyObservers(subject, "content-contextmenu", null);
-
     let node = event.target;
 
     let result = {
@@ -533,8 +431,7 @@ var ViewSourceContent = {
     // In our case, the range's startOffset is after "\n" on the previous line.
     // Tune the selection at the beginning of the next line and do some tweaking
     // to position the focusNode and the caret at the beginning of the line.
-    selection.QueryInterface(Ci.nsISelectionPrivate)
-      .interlinePosition = true;
+    selection.interlinePosition = true;
 
     selection.addRange(result.range);
 
@@ -599,7 +496,7 @@ var ViewSourceContent = {
 
     // Walk through each of the text nodes and count newlines.
     let treewalker = content.document
-        .createTreeWalker(pre, Ci.nsIDOMNodeFilter.SHOW_TEXT, null);
+        .createTreeWalker(pre, NodeFilter.SHOW_TEXT, null);
 
     // The column number of the first character in the current text node.
     let firstCol = 1;
@@ -694,74 +591,6 @@ var ViewSourceContent = {
   },
 
   /**
-   * Called when the parent has changed the character set to view the
-   * source with.
-   *
-   * @param charset
-   *        The character set to use.
-   * @param doPageLoad
-   *        Whether or not we should reload the page ourselves with the
-   *        nsIWebPageDescriptor. Part of a workaround for bug 136322.
-   */
-  setCharacterSet(charset, doPageLoad) {
-    docShell.charset = charset;
-    if (doPageLoad) {
-      this.reload();
-    }
-  },
-
-  /**
-   * Reloads the content.
-   */
-  reload() {
-    let pageLoader = docShell.QueryInterface(Ci.nsIWebPageDescriptor);
-    try {
-      pageLoader.loadPage(pageLoader.currentDescriptor,
-                          Ci.nsIWebPageDescriptor.DISPLAY_NORMAL);
-    } catch (e) {
-      let webNav = docShell.QueryInterface(Ci.nsIWebNavigation);
-      webNav.reload(Ci.nsIWebNavigation.LOAD_FLAGS_NONE);
-    }
-  },
-
-  /**
-   * A reference to a DeferredTask that is armed every time the
-   * selection changes.
-   */
-  updateStatusTask: null,
-
-  /**
-   * Called once the DeferredTask fires. Sends a message up to the
-   * parent to update the status bar text.
-   */
-  updateStatus() {
-    let selection = content.getSelection();
-
-    if (!selection.focusNode) {
-      sendAsyncMessage("ViewSource:UpdateStatus", { label: "" });
-      return;
-    }
-    if (selection.focusNode.nodeType != Ci.nsIDOMNode.TEXT_NODE) {
-      return;
-    }
-
-    let selCon = this.selectionController;
-    selCon.setDisplaySelection(Ci.nsISelectionController.SELECTION_ON);
-    selCon.setCaretVisibilityDuringSelection(true);
-
-    let interlinePosition = selection.QueryInterface(Ci.nsISelectionPrivate)
-                                     .interlinePosition;
-
-    let result = {};
-    this.findLocation(null, -1,
-        selection.focusNode, selection.focusOffset, interlinePosition, result);
-
-    let label = this.bundle.formatStringFromName("statusBarLineCol",
-                                                 [result.line, result.col], 2);
-    sendAsyncMessage("ViewSource:UpdateStatus", { label });
-  },
-
-  /**
    * Loads a view source selection showing the given view-source url and
    * highlight the selection.
    *
@@ -776,29 +605,13 @@ var ViewSourceContent = {
     let loadFlags = Ci.nsIWebNavigation.LOAD_FLAGS_NONE;
     let referrerPolicy = Ci.nsIHttpChannel.REFERRER_POLICY_UNSET;
     let webNav = docShell.QueryInterface(Ci.nsIWebNavigation);
-    webNav.loadURIWithOptions(uri, loadFlags,
-                              null, referrerPolicy,  // referrer
-                              null, null,  // postData, headers
-                              Services.io.newURI(baseURI));
-  },
-
-  /**
-   * nsISelectionListener
-   */
-
-  /**
-   * Gets called every time the selection is changed. Coalesces frequent
-   * changes, and calls updateStatus after 100ms of no selection change
-   * activity.
-   */
-  notifySelectionChanged(doc, sel, reason) {
-    if (!this.updateStatusTask) {
-      this.updateStatusTask = new DeferredTask(() => {
-        this.updateStatus();
-      }, 100);
-    }
-
-    this.updateStatusTask.arm();
+    let loadURIOptions = {
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+      loadFlags,
+      referrerPolicy,
+      baseURI: Services.io.newURI(baseURI),
+    };
+    webNav.loadURI(uri, loadURIOptions);
   },
 
   /**
@@ -904,7 +717,7 @@ var ViewSourceContent = {
       accesskey: true,
       handler() {
         sendAsyncMessage("ViewSource:PromptAndGoToLine");
-      }
+      },
     },
     {
       id: "wrapLongLines",
@@ -913,7 +726,7 @@ var ViewSourceContent = {
       },
       handler() {
         this.toggleWrapping();
-      }
+      },
     },
     {
       id: "highlightSyntax",
@@ -922,7 +735,7 @@ var ViewSourceContent = {
       },
       handler() {
         this.toggleSyntaxHighlighting();
-      }
+      },
     },
   ],
 
@@ -950,7 +763,7 @@ var ViewSourceContent = {
       if (itemSpec.accesskey) {
         let accesskeyName = `context_${itemSpec.id}_accesskey`;
         item.setAttribute("accesskey",
-                          this.bundle.GetStringFromName(accesskeyName))
+                          this.bundle.GetStringFromName(accesskeyName));
       }
       menu.appendChild(item);
     });

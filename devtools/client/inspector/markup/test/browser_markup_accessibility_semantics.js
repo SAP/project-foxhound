@@ -9,23 +9,23 @@
 
 const TOP_CONTAINER_LEVEL = 3;
 
-add_task(function* () {
-  let {inspector} = yield openInspectorForURL(`
+add_task(async function() {
+  const {inspector} = await openInspectorForURL(`
     data:text/html;charset=utf-8,
     <h1>foo</h1>
     <span>bar</span>
     <ul>
       <li></li>
     </ul>`);
-  let markup = inspector.markup;
-  let doc = markup.doc;
-  let win = doc.defaultView;
+  const markup = inspector.markup;
+  const doc = markup.doc;
+  const win = doc.defaultView;
 
-  let rootElt = markup.getContainer(markup._rootNode).elt;
-  let bodyContainer = yield getContainerForSelector("body", inspector);
-  let spanContainer = yield getContainerForSelector("span", inspector);
-  let headerContainer = yield getContainerForSelector("h1", inspector);
-  let listContainer = yield getContainerForSelector("ul", inspector);
+  const rootElt = markup.getContainer(markup._rootNode).elt;
+  const bodyContainer = await getContainerForSelector("body", inspector);
+  const spanContainer = await getContainerForSelector("span", inspector);
+  const headerContainer = await getContainerForSelector("h1", inspector);
+  const listContainer = await getContainerForSelector("ul", inspector);
 
   // Focus on the tree element.
   rootElt.focus();
@@ -41,7 +41,7 @@ add_task(function* () {
   is(bodyContainer.tagLine.getAttribute("aria-level"), TOP_CONTAINER_LEVEL - 1,
     "Body container tagLine should have nested level up to date");
   [spanContainer, headerContainer, listContainer].forEach(container => {
-    let treeitem = container.tagLine;
+    const treeitem = container.tagLine;
     is(treeitem.getAttribute("role"), "treeitem",
       "Child container tagLine elements should have tree item semantics");
     is(treeitem.getAttribute("aria-level"), TOP_CONTAINER_LEVEL,
@@ -71,17 +71,16 @@ add_task(function* () {
     "Closed tree item should have aria-expanded unset");
 
   info("Selecting and expanding list container");
-  let updated = waitForMultipleChildrenUpdates(inspector);
-  yield selectNode("ul", inspector);
+  await selectNode("ul", inspector);
   EventUtils.synthesizeKey("VK_RIGHT", {}, win);
-  yield updated;
+  await waitForMultipleChildrenUpdates(inspector);
 
   is(rootElt.getAttribute("aria-activedescendant"),
     listContainer.tagLine.getAttribute("id"),
     "Active descendant should not be set to list container tagLine");
   is(listContainer.tagLine.getAttribute("aria-expanded"), "true",
     "Open tree item should have aria-expanded set");
-  let listItemContainer = yield getContainerForSelector("li", inspector);
+  const listItemContainer = await getContainerForSelector("li", inspector);
   is(listItemContainer.tagLine.getAttribute("aria-level"),
     TOP_CONTAINER_LEVEL + 1,
     "Grand child container tagLine should have nested level up to date");
@@ -90,9 +89,8 @@ add_task(function* () {
     "accessibility");
 
   info("Collapsing list container");
-  updated = waitForMultipleChildrenUpdates(inspector);
   EventUtils.synthesizeKey("VK_LEFT", {}, win);
-  yield updated;
+  await waitForMultipleChildrenUpdates(inspector);
 
   is(listContainer.tagLine.getAttribute("aria-expanded"), "false",
     "Closed tree item should have aria-expanded unset");

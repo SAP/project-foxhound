@@ -6,14 +6,14 @@
  * respective to their recorded animation frame.
  */
 
-function* ifTestingSupported() {
-  let { target, panel } = yield initCanvasDebuggerFrontend(SIMPLE_CANVAS_URL);
-  let { window, $, EVENTS, SnapshotsListView, CallsListView } = panel.panelWin;
+async function ifTestingSupported() {
+  const { target, panel } = await initCanvasDebuggerFrontend(SIMPLE_CANVAS_URL);
+  const { window, $, EVENTS, SnapshotsListView, CallsListView } = panel.panelWin;
 
-  yield reload(target);
+  await reload(target);
 
   SnapshotsListView._onRecordButtonClick();
-  let snapshotTarget = SnapshotsListView.getItemAtIndex(0).target;
+  const snapshotTarget = SnapshotsListView.getItemAtIndex(0).target;
 
   EventUtils.sendMouseEvent({ type: "mousedown" }, snapshotTarget, window);
   EventUtils.sendMouseEvent({ type: "mousedown" }, snapshotTarget, window);
@@ -21,10 +21,10 @@ function* ifTestingSupported() {
 
   ok(true, "clicking in-progress snapshot does not fail");
 
-  let finished = once(window, EVENTS.SNAPSHOT_RECORDING_FINISHED);
+  const finished = once(window, EVENTS.SNAPSHOT_RECORDING_FINISHED);
   SnapshotsListView._onRecordButtonClick();
-  yield finished;
+  await finished;
 
-  yield teardown(panel);
+  await teardown(panel);
   finish();
 }

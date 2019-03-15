@@ -5,16 +5,17 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["RokuApp"];
+var EXPORTED_SYMBOLS = ["RokuApp"];
 
-const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/AppConstants.jsm");
+XPCOMUtils.defineLazyGlobalGetters(this, ["XMLHttpRequest"]);
 
-function log(msg) {
-  // Services.console.logStringMessage(msg);
-}
+// function log(msg) {
+//   Services.console.logStringMessage(msg);
+// }
 
 const PROTOCOL_VERSION = 1;
 
@@ -34,12 +35,12 @@ RokuApp.prototype = {
     // We have no way to know if the app is running, so just return "unknown"
     // but we use this call to fetch the mediaAppID for the given app name
     let url = this.resourceURL + "query/apps";
-    let xhr = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"].createInstance(Ci.nsIXMLHttpRequest);
+    let xhr = new XMLHttpRequest();
     xhr.open("GET", url, true);
     xhr.channel.loadFlags |= Ci.nsIRequest.INHIBIT_CACHING;
     xhr.overrideMimeType("text/xml");
 
-    xhr.addEventListener("load", (function() {
+    xhr.addEventListener("load", () => {
       if (xhr.status == 200) {
         let doc = xhr.responseXML;
         let apps = doc.querySelectorAll("app");
@@ -54,7 +55,7 @@ RokuApp.prototype = {
       if (callback) {
         callback({ state: "unknown" });
       }
-    }).bind(this));
+    });
 
     xhr.addEventListener("error", (function() {
       if (callback) {
@@ -68,7 +69,7 @@ RokuApp.prototype = {
   start: function start(callback) {
     // We need to make sure we have cached the mediaAppID
     if (this.mediaAppID == -1) {
-      this.status(function() {
+      this.status(() => {
         // If we found the mediaAppID, use it to make a new start call
         if (this.mediaAppID != -1) {
           this.start(callback);
@@ -76,14 +77,14 @@ RokuApp.prototype = {
           // We failed to start the app, so let the caller know
           callback(false);
         }
-      }.bind(this));
+      });
       return;
     }
 
     // Start a given app with any extra query data. Each app uses it's own data scheme.
     // NOTE: Roku will also pass "source=external-control" as a param
     let url = this.resourceURL + "launch/" + this.mediaAppID + "?version=" + parseInt(PROTOCOL_VERSION);
-    let xhr = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"].createInstance(Ci.nsIXMLHttpRequest);
+    let xhr = new XMLHttpRequest();
     xhr.open("POST", url, true);
     xhr.overrideMimeType("text/plain");
 
@@ -106,7 +107,7 @@ RokuApp.prototype = {
     // Roku doesn't seem to support stopping an app, so let's just go back to
     // the Home screen
     let url = this.resourceURL + "keypress/Home";
-    let xhr = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"].createInstance(Ci.nsIXMLHttpRequest);
+    let xhr = new XMLHttpRequest();
     xhr.open("POST", url, true);
     xhr.overrideMimeType("text/plain");
 
@@ -133,8 +134,8 @@ RokuApp.prototype = {
     } else if (callback) {
       callback();
     }
-  }
-}
+  },
+};
 
 /* RemoteMedia provides a wrapper for using TCP socket to control Roku apps.
  * The server implementation must be built into the Roku receiver app.
@@ -152,7 +153,7 @@ function RemoteMedia(url, listener) {
 
   this._inputStream = this._socket.openInputStream(0, 0, 0);
   this._pump = Cc["@mozilla.org/network/input-stream-pump;1"].createInstance(Ci.nsIInputStreamPump);
-  this._pump.init(this._inputStream, -1, -1, 0, 0, true);
+  this._pump.init(this._inputStream, 0, 0, true);
   this._pump.asyncRead(this, null);
 }
 
@@ -196,7 +197,7 @@ RemoteMedia.prototype = {
       return;
 
     // Add the protocol version
-    data["_v"] = PROTOCOL_VERSION;
+    data._v = PROTOCOL_VERSION;
 
     let raw = JSON.stringify(data);
     this._outputStream.write(raw, raw.length);
@@ -226,5 +227,5 @@ RemoteMedia.prototype = {
 
   get status() {
     return this._status;
-  }
-}
+  },
+};

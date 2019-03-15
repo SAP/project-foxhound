@@ -6,11 +6,13 @@
 #include "nsIContentPolicy.idl"
 
 interface nsIURI;
-interface nsIChannel;
 interface nsIDocShell;
-interface nsIDOMDocument;
+interface nsIEventTarget;
 interface nsIPrincipal;
-interface nsIURI;
+interface nsICSPEventListener;
+
+webidl Element;
+webidl Document;
 
 /**
  * nsIContentSecurityPolicy
@@ -54,13 +56,13 @@ interface nsIContentSecurityPolicy : nsISerializable
   const unsigned short REFLECTED_XSS_DIRECTIVE        = 12;
   const unsigned short BASE_URI_DIRECTIVE             = 13;
   const unsigned short FORM_ACTION_DIRECTIVE          = 14;
-  const unsigned short REFERRER_DIRECTIVE             = 15;
-  const unsigned short WEB_MANIFEST_SRC_DIRECTIVE     = 16;
-  const unsigned short UPGRADE_IF_INSECURE_DIRECTIVE  = 17;
-  const unsigned short CHILD_SRC_DIRECTIVE            = 18;
-  const unsigned short BLOCK_ALL_MIXED_CONTENT        = 19;
-  const unsigned short REQUIRE_SRI_FOR                = 20;
-  const unsigned short SANDBOX_DIRECTIVE              = 21;
+  const unsigned short WEB_MANIFEST_SRC_DIRECTIVE     = 15;
+  const unsigned short UPGRADE_IF_INSECURE_DIRECTIVE  = 16;
+  const unsigned short CHILD_SRC_DIRECTIVE            = 17;
+  const unsigned short BLOCK_ALL_MIXED_CONTENT        = 18;
+  const unsigned short REQUIRE_SRI_FOR                = 19;
+  const unsigned short SANDBOX_DIRECTIVE              = 20;
+  const unsigned short WORKER_SRC_DIRECTIVE           = 21;
 
   /**
    * Accessor method for a read-only string version of the policy at a given
@@ -98,19 +100,9 @@ interface nsIContentSecurityPolicy : nsISerializable
   readonly attribute bool blockAllMixedContent;
 
   /**
-   * Obtains the referrer policy (as integer) for this browsing context as
-   * specified in CSP.  If there are multiple policies and...
-   *  - only one sets a referrer policy: that policy is returned
-   *  - more than one sets different referrer policies: no-referrer is returned
-   *  - more than one set equivalent policies: that policy is returned
-   * For the enumeration of policies see ReferrerPolicy.h and nsIHttpChannel.
-   *
-   * @param aPolicy
-   *        The referrer policy to use for the protected resource.
-   * @return
-   *        true if a referrer policy is specified, false if it's unspecified.
+   * Returns whether this policy enforces the frame-ancestors directive.
    */
-  bool getReferrerPolicy(out unsigned long policy);
+  readonly attribute bool enforcesFrameAncestors;
 
   /**
    * Parse and install a CSP policy.
@@ -132,9 +124,14 @@ interface nsIContentSecurityPolicy : nsISerializable
    * @param aContentPolicyType Either TYPE_SCRIPT or TYPE_STYLESHEET
    * @param aNonce The nonce string to check against the policy
    * @param aParserCreated If the script element was created by the HTML Parser
-   * @param aContent  The content of the inline resource to hash
-   *        (and compare to the hashes listed in the policy)
+   * @param aTriggeringElement The script element of the inline resource to
+   *        hash. It can be null.
+   * @param aContentOfPseudoScript The content of the psuedo-script to compare
+   *                               to hash (and compare to the hashes listed in
+   *                               the policy)
    * @param aLineNumber The line number of the inline resource
+   *        (used for reporting)
+   * @param aColumnNumber The column number of the inline resource
    *        (used for reporting)
    * @return
    *     Whether or not the effects of the inline style should be allowed
@@ -143,8 +140,11 @@ interface nsIContentSecurityPolicy : nsISerializable
   boolean getAllowsInline(in nsContentPolicyType aContentPolicyType,
                           in AString aNonce,
                           in boolean aParserCreated,
-                          in AString aContent,
-                          in unsigned long aLineNumber);
+                          in Element aTriggeringElement,
+                          in nsICSPEventListener aCSPEventListener,
+                          in AString aContentOfPseudoScript,
+                          in unsigned long aLineNumber,
+                          in unsigned long aColumnNumber);
 
   /**
    * whether this policy allows eval and eval-like functions
@@ -178,12 +178,16 @@ interface nsIContentSecurityPolicy : nsISerializable
    *
    * @param violationType
    *     one of the VIOLATION_TYPE_* constants, e.g. inline-script or eval
+   * @param triggeringElement
+   *     the element that triggers this CSP violation. It can be null.
    * @param sourceFile
    *     name of the source file containing the violation (if available)
    * @param contentSample
    *     sample of the violating content (to aid debugging)
    * @param lineNum
    *     source line number of the violation (if available)
+   * @param columnNum
+   *     source column number of the violation (if available)
    * @param aNonce
    *     (optional) If this is a nonce violation, include the nonce so we can
    *     recheck to determine which policies were violated and send the
@@ -195,9 +199,12 @@ interface nsIContentSecurityPolicy : nsISerializable
    *     reports.
    */
   void logViolationDetails(in unsigned short violationType,
+                           in Element triggeringElement,
+                           in nsICSPEventListener aCSPEventListener,
                            in AString sourceFile,
                            in AString scriptSample,
                            in int32_t lineNum,
+                           in int32_t columnNum,
                            [optional] in AString nonce,
                            [optional] in AString content);
 
@@ -217,9 +224,13 @@ interface nsIContentSecurityPolicy : nsISerializable
    *  * aDocument (preferred), or if no document is available, then provide
    *  * aPrincipal
    */
-  void setRequestContext(in nsIDOMDocument aDocument,
+  void setRequestContext(in Document aDocument,
                          in nsIPrincipal aPrincipal);
 
+  /**
+   *  Ensure we have a nsIEventTarget to use to label CSPReportSenderRunnable
+   */
+  [noscript] void ensureEventTarget(in nsIEventTarget aEventTarget);
 
   /*
    * Checks if a CSP requires Subresource Integrity (SRI)
@@ -249,6 +260,8 @@ interface nsIContentSecurityPolicy : nsISerializable
    * NOTE: Calls to this may trigger violation reports when queried, so the
    * return value should not be cached.
    *
+   * @param aTriggeringElement
+   *        The element that triggers this CSP check. It can be null.
    * @param aURI
    *    The URI about to be loaded or used.
    * @param aDir
@@ -264,7 +277,11 @@ interface nsIContentSecurityPolicy : nsISerializable
    *    Whether or not the provided URI is allowed by CSP under the given
    *    directive. (block the pending operation if false).
    */
-  boolean permits(in nsIURI aURI, in CSPDirective aDir, in boolean aSpecific);
+  boolean permits(in Element aTriggeringElement,
+                  in nsICSPEventListener aCSPEventListener,
+                  in nsIURI aURI,
+                  in CSPDirective aDir,
+                  in boolean aSpecific);
 
   /**
    * Delegate method called by the service when sub-elements of the protected
@@ -273,13 +290,19 @@ interface nsIContentSecurityPolicy : nsISerializable
    *
    * Calls to this may trigger violation reports when queried, so
    * this value should not be cached.
+   *
+   * aOriginalURIIfRedirect must be passed only if this loading is the result
+   * of a redirect. In this case, aOriginalURIIfRedirect must be the original
+   * URL.
    */
   short shouldLoad(in nsContentPolicyType aContentType,
+                   in nsICSPEventListener aCSPEventListener,
                    in nsIURI          aContentLocation,
                    in nsIURI          aRequestOrigin,
                    in nsISupports     aContext,
                    in ACString        aMimeTypeGuess,
-                   in nsISupports     aExtra);
+                   in nsIURI          aOriginalURIIfRedirect,
+                   in bool            aSendViolationReports);
 
 %{ C++
 // nsIObserver topic to fire when the policy encounters a violation.
@@ -291,4 +314,12 @@ interface nsIContentSecurityPolicy : nsISerializable
    */
   AString toJSON();
 
+};
+
+/* Listener for security policy violation event */
+[function, scriptable, uuid(c3163b14-3a8f-46dd-a4af-bd04680364cd)]
+interface nsICSPEventListener : nsISupports
+{
+  // aJSON is the JSON format of SecurityPolicyViolationEventInit dictionary.
+  void onCSPViolationEvent(in AString aJSON);
 };

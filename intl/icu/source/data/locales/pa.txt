@@ -16,6 +16,7 @@ pa{
         "ਧ ਨ ਪ ਫ {ਫ\u0A3C} ਬ ਭ ਮ ਯ ਰ ਲ ਵ ੜ \u0A4D ਾ ਿ ੀ \u0A41 \u0A42 \u0A47 \u0A48 "
         "\u0A4B \u0A4C]"
     }
+    ExemplarCharactersNumbers{"[\\- , . % ‰ + 0੦ 1੧ 2੨ 3੩ 4੪ 5੫ 6੬ 7੭ 8੮ 9੯]"}
     ExemplarCharactersPunctuation{"[\\- ‐ – — , ; \\: ! ? . ' ‘ ’ \u0022 “ ” ( ) \\[ \\] / \\& ′ ″]"}
     MoreInformation{"?"}
     NumberElements{
@@ -44,6 +45,7 @@ pa{
         guru{
             patterns{
                 currencyFormat{"¤ #,##,##0.00"}
+                decimalFormat{"#,##,##0.###"}
                 percentFormat{"#,##,##0%"}
                 scientificFormat{"[#E0]"}
             }
@@ -62,7 +64,9 @@ pa{
         }
         latn{
             miscPatterns{
+                approximately{"~{0}"}
                 atLeast{"{0}+"}
+                atMost{"≤{0}"}
                 range{"{0}–{1}"}
             }
             patterns{
@@ -240,11 +244,288 @@ pa{
                 timeSeparator{":"}
             }
         }
+        minimalPairs{
+            ordinal{
+                other{"ਸਜੇ ਪਾਸੇ {0} ਮੋੜ ਲਵੋ"}
+            }
+            plural{
+                one{"{0} ਘੰਟਾ"}
+                other{"{0} ਘੰਟੇ"}
+            }
+        }
         minimumGroupingDigits{"1"}
         native{"guru"}
     }
-    Version{"2.1.28.79"}
+    Version{"2.1.43.65"}
     calendar{
+        buddhist{
+            DateTimePatterns{
+                "h:mm:ss a zzzz",
+                "h:mm:ss a z",
+                "h:mm:ss a",
+                "h:mm a",
+                "EEEE, dd MMMM y G",
+                "d MMMM y G",
+                "d MMM y G",
+                "dd/MM/y GGGGG",
+                "{1}, {0}",
+                "{0} ਵਿਖੇ {1}",
+                "{0} ਵਿਖੇ {1}",
+                "{1}, {0}",
+                "{1}, {0}",
+            }
+            eras{
+                abbreviated{
+                    "ਈਸਵੀ ਪੂਰਵ",
+                }
+                narrow{
+                    "ਈ. ਪੂ.",
+                }
+                wide{
+                    "ਈਸਵੀ ਪੂਰਵ",
+                }
+            }
+            intervalFormats{
+                fallback{"{0} – {1}"}
+            }
+        }
+        coptic{
+            eras{
+                abbreviated{
+                    "ਕਾਲ0",
+                    "ਕਾਲ1",
+                }
+                narrow{
+                    "ਕਾਲ0",
+                    "ਕਾਲ1",
+                }
+                wide{
+                    "ਕਾਲ0",
+                    "ਕਾਲ1",
+                }
+            }
+            monthNames{
+                format{
+                    abbreviated{
+                        "ਟੋਉਟ",
+                        "ਬਾਬਾ",
+                        "ਹੇਟਰ",
+                        "ਕੀਅਕ",
+                        "ਤੋਬਾ",
+                        "ਅਮਸ਼ੀਰ",
+                        "ਬ੍ਰਾਮਹਟ",
+                        "ਬਾਰਾਮੂਡਾ",
+                        "ਬਾਸ਼ਨਸ",
+                        "ਪਾਓਨਾ",
+                        "ਅਪੈਪ",
+                        "ਮੈਸਰਾ",
+                        "ਨੇਜ਼ੀ",
+                    }
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
+                        "13",
+                    }
+                    wide{
+                        "ਟੋਉਟ",
+                        "ਬਾਬਾ",
+                        "ਹੇਟਰ",
+                        "ਕੀਅਕ",
+                        "ਤੋਬਾ",
+                        "ਅਮਸ਼ੀਰ",
+                        "ਬ੍ਰਾਮਹਟ",
+                        "ਬਾਰਾਮੂਡਾ",
+                        "ਬਾਸ਼ਨਸ",
+                        "ਪਾਓਨਾ",
+                        "ਅਪੈਪ",
+                        "ਮੈਸਰਾ",
+                        "ਨੇਜ਼ੀ",
+                    }
+                }
+                stand-alone{
+                    abbreviated{
+                        "ਟੋਉਟ",
+                        "ਬਾਬਾ",
+                        "ਹੇਟਰ",
+                        "ਕੀਅਕ",
+                        "ਤੋਬਾ",
+                        "ਅਮਸ਼ੀਰ",
+                        "ਬ੍ਰਾਮਹਟ",
+                        "ਬਾਰਾਮੂਡਾ",
+                        "ਬਾਸ਼ਨਸ",
+                        "ਪਾਓਨਾ",
+                        "ਅਪੈਪ",
+                        "ਮੈਸਰਾ",
+                        "ਨੇਜ਼ੀ",
+                    }
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
+                        "13",
+                    }
+                    wide{
+                        "ਟੋਉਟ",
+                        "ਬਾਬਾ",
+                        "ਹੇਟਰ",
+                        "ਕੀਅਕ",
+                        "ਤੋਬਾ",
+                        "ਅਮਸ਼ੀਰ",
+                        "ਬ੍ਰਾਮਹਟ",
+                        "ਬਾਰਾਮੂਡਾ",
+                        "ਬਾਸ਼ਨਸ",
+                        "ਪਾਓਨਾ",
+                        "ਅਪੈਪ",
+                        "ਮੈਸਰਾ",
+                        "ਨੇਜ਼ੀ",
+                    }
+                }
+            }
+        }
+        ethiopic{
+            eras{
+                abbreviated{
+                    "ਕਾਲ0",
+                    "ਕਾਲ1",
+                }
+                narrow{
+                    "ਕਾਲ0",
+                    "ਕਾਲ1",
+                }
+                wide{
+                    "ਕਾਲ0",
+                    "ਕਾਲ1",
+                }
+            }
+            monthNames{
+                format{
+                    abbreviated{
+                        "ਮੇਸਕੇਰੇਮ",
+                        "ਟੇਕੇਮਟ",
+                        "ਹੈਡਰ",
+                        "ਤਾਹਸਸ",
+                        "ਟਰ",
+                        "ਯਕੇਟਿਤ",
+                        "ਮੇਗਾਬਿਟ",
+                        "ਮਿਆਜਿਆ",
+                        "ਜੇਨਬੋਟ",
+                        "ਸੀਨ",
+                        "ਹਮਲੇ",
+                        "ਨੇਹਾਸੇ",
+                        "ਪਾਗੂਮੇਨ",
+                    }
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
+                        "13",
+                    }
+                    wide{
+                        "ਮੇਸਕੇਰੇਮ",
+                        "ਟੇਕੇਮਟ",
+                        "ਹੈਡਰ",
+                        "ਤਾਹਸਸ",
+                        "ਟਰ",
+                        "ਯਕੇਟਿਤ",
+                        "ਮੇਗਾਬਿਟ",
+                        "ਮਿਆਜਿਆ",
+                        "ਜੇਨਬੋਟ",
+                        "ਸੀਨ",
+                        "ਹਮਲੇ",
+                        "ਨੇਹਾਸੇ",
+                        "ਪਾਗੂਮੇਨ",
+                    }
+                }
+                stand-alone{
+                    abbreviated{
+                        "ਮੇਸਕੇਰੇਮ",
+                        "ਟੇਕੇਮਟ",
+                        "ਹੈਡਰ",
+                        "ਤਾਹਸਸ",
+                        "ਟਰ",
+                        "ਯਕੇਟਿਤ",
+                        "ਮੇਗਾਬਿਟ",
+                        "ਮਿਆਜਿਆ",
+                        "ਜੇਨਬੋਟ",
+                        "ਸੀਨ",
+                        "ਹਮਲੇ",
+                        "ਨੇਹਾਸੇ",
+                        "ਪਾਗੂਮੇਨ",
+                    }
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
+                        "13",
+                    }
+                    wide{
+                        "ਮੇਸਕੇਰੇਮ",
+                        "ਟੇਕੇਮਟ",
+                        "ਹੈਡਰ",
+                        "ਤਾਹਸਸ",
+                        "ਟਰ",
+                        "ਯਕੇਟਿਤ",
+                        "ਮੇਗਾਬਿਟ",
+                        "ਮਿਆਜਿਆ",
+                        "ਜੇਨਬੋਟ",
+                        "ਸੀਨ",
+                        "ਹਮਲੇ",
+                        "ਨੇਹਾਸੇ",
+                        "Pagumen",
+                    }
+                }
+            }
+        }
+        ethiopic-amete-alem{
+            eras{
+                abbreviated{
+                    "ERA0",
+                }
+                narrow{
+                    "ERA0",
+                }
+                wide{
+                    "ERA0",
+                }
+            }
+        }
         generic{
             DateTimePatterns{
                 "h:mm:ss a zzzz",
@@ -262,12 +543,23 @@ pa{
                 "{1}, {0}",
             }
             availableFormats{
+                Bh{"h B"}
+                Bhm{"h:mm B"}
+                Bhms{"h:mm:ss B"}
                 E{"ccc"}
+                EBhm{"E h:mm B"}
+                EBhms{"E h:mm:ss B"}
+                EHm{"E HH:mm"}
+                EHms{"E HH:mm:ss"}
                 Ed{"E, d"}
+                Ehm{"E h:mm a"}
+                Ehms{"E h:mm:ss a"}
                 Gy{"G y"}
                 GyMMM{"MMM y G"}
                 GyMMMEd{"E, d MMM y G"}
                 GyMMMd{"d MMM,y G"}
+                H{"HH"}
+                Hm{"HH:mm"}
                 Hms{"HH:mm:ss"}
                 M{"L"}
                 MEd{"E, d/M"}
@@ -277,6 +569,9 @@ pa{
                 MMMd{"d MMM"}
                 Md{"d/M"}
                 d{"d"}
+                h{"h a"}
+                hm{"h:mm a"}
+                hms{"h:mm:ss a"}
                 ms{"mm:ss"}
                 y{"y G"}
                 yMMM{"MMM y G"}
@@ -286,13 +581,27 @@ pa{
                 yyyyMEd{"E, d/M/y GGGGG"}
                 yyyyMMM{"MMM y G"}
                 yyyyMMMEd{"E, d MMM y G"}
-                yyyyMMMM{"G y MMMM"}
+                yyyyMMMM{"MMMM y G"}
                 yyyyMMMd{"d MMM y G"}
                 yyyyMd{"d/M/y GGGGG"}
                 yyyyQQQ{"QQQ y G"}
                 yyyyQQQQ{"QQQQ y G"}
             }
             intervalFormats{
+                H{
+                    H{"HH–HH"}
+                }
+                Hm{
+                    H{"HH:mm–HH:mm"}
+                    m{"HH:mm–HH:mm"}
+                }
+                Hmv{
+                    H{"HH:mm–HH:mm v"}
+                    m{"HH:mm–HH:mm v"}
+                }
+                Hv{
+                    H{"HH–HH v"}
+                }
                 M{
                     M{"MM–MM"}
                 }
@@ -319,6 +628,24 @@ pa{
                     d{"d – d"}
                 }
                 fallback{"{0} – {1}"}
+                h{
+                    a{"h a – h a"}
+                    h{"h–h a"}
+                }
+                hm{
+                    a{"h:mm a – h:mm a"}
+                    h{"h:mm–h:mm a"}
+                    m{"h:mm–h:mm a"}
+                }
+                hmv{
+                    a{"h:mm a – h:mm a v"}
+                    h{"h:mm–h:mm a v"}
+                    m{"h:mm–h:mm a v"}
+                }
+                hv{
+                    a{"h a – h a v"}
+                    h{"h–h a v"}
+                }
                 y{
                     y{"y – y G"}
                 }
@@ -388,7 +715,12 @@ pa{
                 Timezone{"{0} {1}"}
             }
             availableFormats{
+                Bh{"h B"}
+                Bhm{"h:mm B"}
+                Bhms{"h:mm:ss B"}
                 E{"ccc"}
+                EBhm{"E h:mm B"}
+                EBhms{"E h:mm:ss B"}
                 EHm{"E HH:mm"}
                 EHms{"E HH:mm:ss"}
                 Ed{"d, E"}
@@ -427,14 +759,14 @@ pa{
                 yMEd{"E, d/M/y"}
                 yMMM{"MMM y"}
                 yMMMEd{"E, d MMM y"}
-                yMMMM{"y MMMM"}
+                yMMMM{"MMMM y"}
                 yMMMd{"d MMM y"}
                 yMd{"d/M/y"}
                 yQQQ{"QQQ y"}
                 yQQQQ{"QQQQ y"}
                 yw{
-                    one{"y ਦਾ w ਹਫ਼ਤਾ"}
-                    other{"y ਦਾ w ਹਫ਼ਤਾ"}
+                    one{"Y ਦਾ w ਹਫ਼ਤਾ"}
+                    other{"Y ਦਾ w ਹਫ਼ਤਾ"}
                 }
             }
             dayNames{
@@ -823,9 +1155,130 @@ pa{
                 }
             }
         }
+        hebrew{
+            eras{
+                abbreviated{
+                    "AM",
+                }
+                narrow{
+                    "AM",
+                }
+                wide{
+                    "AM",
+                }
+            }
+            monthNames{
+                format{
+                    abbreviated{
+                        "ਤਿਸ਼ਰੀ",
+                        "ਹੇਸ਼ਵਨ",
+                        "ਕਿਸਲੇਵ",
+                        "ਟੇਵਟ",
+                        "ਸ਼ੇਵਟ",
+                        "ਅਦਰ I",
+                        "ਅਦਰ",
+                        "ਨਿਸਾਨ",
+                        "ਅਇਯਰ",
+                        "ਸਿਵਾਨ",
+                        "ਤਾਮੁਜ਼",
+                        "ਅਵ",
+                        "ਏਲੁਲ",
+                        "ਅਦਰ II",
+                    }
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
+                        "13",
+                        "7",
+                    }
+                    wide{
+                        "ਤਿਸ਼ਰੀ",
+                        "ਹੇਸ਼ਵਨ",
+                        "ਕਿਸਲੇਵ",
+                        "ਟੇਵਟ",
+                        "ਸ਼ੇਵਟ",
+                        "ਅਦਰ I",
+                        "ਅਦਰ",
+                        "ਨਿਸਾਨ",
+                        "ਅਇਯਰ",
+                        "ਸਿਵਾਨ",
+                        "ਤਾਮੁਜ਼",
+                        "ਅਵ",
+                        "ਏਲੁਲ",
+                        "ਅਦਰ II",
+                    }
+                }
+                stand-alone{
+                    abbreviated{
+                        "ਤਿਸ਼ਰੀ",
+                        "ਹੇਸ਼ਵਨ",
+                        "ਕਿਸਲੇਵ",
+                        "ਟੇਵਟ",
+                        "ਸ਼ੇਵਟ",
+                        "ਅਦਰ I",
+                        "ਅਦਰ",
+                        "ਨਿਸਾਨ",
+                        "ਅਇਯਰ",
+                        "ਸਿਵਾਨ",
+                        "ਤਾਮੁਜ਼",
+                        "Av",
+                        "Elul",
+                        "ਅਦਰ II",
+                    }
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
+                        "13",
+                        "7",
+                    }
+                    wide{
+                        "ਤਿਸ਼ਰੀ",
+                        "ਹੇਸ਼ਵਨ",
+                        "ਕਿਸਲੇਵ",
+                        "ਟੇਵਟ",
+                        "ਸ਼ੇਵਟ",
+                        "ਅਦਰ I",
+                        "ਅਦਰ",
+                        "ਨਿਸਾਨ",
+                        "ਅਇਯਰ",
+                        "ਸਿਵਾਨ",
+                        "ਤਾਮੁਜ਼",
+                        "ਅਵ",
+                        "ਏਲੁਲ",
+                        "ਅਦਰ II",
+                    }
+                }
+            }
+        }
         indian{
             eras{
                 abbreviated{
+                    "ਸਾਕਾ",
+                }
+                narrow{
+                    "ਸਾਕਾ",
+                }
+                wide{
                     "ਸਾਕਾ",
                 }
             }
@@ -920,13 +1373,238 @@ pa{
                 }
             }
         }
+        islamic{
+            eras{
+                abbreviated{
+                    "AH",
+                }
+                narrow{
+                    "AH",
+                }
+                wide{
+                    "AH",
+                }
+            }
+            intervalFormats{
+                fallback{"{0} – {1}"}
+            }
+            monthNames{
+                format{
+                    abbreviated{
+                        "ਮੁਹੱ.",
+                        "ਸਫ.",
+                        "ਰਬ. I",
+                        "ਰਬ. II",
+                        "ਜੁਮ. I",
+                        "ਜੁਮ. II",
+                        "ਰਾਜ.",
+                        "ਸ਼ਾ.",
+                        "ਰਾਮ.",
+                        "ਸ਼ਅ.",
+                        "ਦੂ-ਅਲ-ਕੀ.",
+                        "ਦੂ-ਅਲ-ਹਿ.",
+                    }
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
+                    }
+                    wide{
+                        "ਮੁਹੱਰਮ",
+                        "ਸਫਰ",
+                        "ਰਬੀ ʻ I",
+                        "ਰਬੀ ʻ II",
+                        "ਜੁਮਾਦਾ I",
+                        "ਜੁਮਾਦਾ II",
+                        "ਰਜਬ",
+                        "ਸ਼ਬਾਨ",
+                        "ਰਮਜ਼ਾਨ",
+                        "ਸ਼ਵਾਲ",
+                        "ਦੂ-ਅਲ-ਕੀਦਾਹ",
+                        "ਦੂ-ਅਲ-ਹਿਜ੍ਹਾ",
+                    }
+                }
+                stand-alone{
+                    abbreviated{
+                        "ਮੁਹੱ.",
+                        "ਸਫ.",
+                        "ਰਬ. I",
+                        "ਰਬ. II",
+                        "ਜੁਮ. I",
+                        "ਜੁਮ. II",
+                        "ਰਾਜ.",
+                        "ਸ਼ਾ.",
+                        "ਰਾਮ.",
+                        "ਸ਼ਅ.",
+                        "ਦੂ-ਅਲ-ਕੀ.",
+                        "ਦੂ-ਅਲ-ਹਿ.",
+                    }
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
+                    }
+                    wide{
+                        "ਮੁਹੱਰਮ",
+                        "ਸਫਰ",
+                        "ਰਬੀʻ I",
+                        "ਰਬੀʻ II",
+                        "ਜੁਮਾਦਾ I",
+                        "ਜੁਮਾਦਾ II",
+                        "ਰਜਬ",
+                        "ਸ਼ਬਾਨ",
+                        "ਰਮਜ਼ਾਨ",
+                        "ਸ਼ਵਾਲ",
+                        "ਦੂ-ਅਲ-ਕੀਦਾਹ",
+                        "ਦੂ-ਅਲ-ਹਿਜ੍ਹਾ",
+                    }
+                }
+            }
+        }
+        persian{
+            eras{
+                abbreviated{
+                    "AP",
+                }
+                narrow{
+                    "AP",
+                }
+                wide{
+                    "AP",
+                }
+            }
+            monthNames{
+                format{
+                    abbreviated{
+                        "ਫਾਰਵਰਡੀਨ",
+                        "ਔਰਡਾਈਬਹੈਸ਼ਟ",
+                        "ਖੋਡਰਡ",
+                        "ਟਿਰ",
+                        "ਮੋਰਡਾਦ",
+                        "ਸ਼ਰਾਇਵਰ",
+                        "ਮੇਹਰ",
+                        "ਅਬਾਨ",
+                        "ਅਜ਼ਾਰ",
+                        "ਡੇਅ",
+                        "ਬਾਹਮਨ",
+                        "ਐਸਫੰਡ",
+                    }
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
+                    }
+                    wide{
+                        "ਫਾਰਵਰਡੀਨ",
+                        "ਔਰਡਾਈਬਹੈਸ਼ਟ",
+                        "ਖੋਡਰਡ",
+                        "ਟਿਰ",
+                        "ਮੋਰਡਾਦ",
+                        "ਸ਼ਰਾਇਵਰ",
+                        "ਮੇਹਰ",
+                        "ਅਬਾਨ",
+                        "ਅਜ਼ਾਰ",
+                        "ਡੇਅ",
+                        "ਬਾਹਮਨ",
+                        "ਐਸਫੰਡ",
+                    }
+                }
+                stand-alone{
+                    abbreviated{
+                        "ਫਾਰਵਰਡੀਨ",
+                        "ਔਰਡਾਈਬਹੈਸ਼ਟ",
+                        "ਖੋਡਰਡ",
+                        "ਟਿਰ",
+                        "ਮੋਰਡਾਦ",
+                        "ਸ਼ਰਾਇਵਰ",
+                        "ਮੇਹਰ",
+                        "ਅਬਾਨ",
+                        "ਅਜ਼ਾਰ",
+                        "ਡੇਅ",
+                        "ਬਾਹਮਨ",
+                        "ਐਸਫੰਡ",
+                    }
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
+                    }
+                    wide{
+                        "ਫਾਰਵਰਡੀਨ",
+                        "ਔਰਡਾਈਬਹੈਸ਼ਟ",
+                        "ਖੋਡਰਡ",
+                        "ਟਿਰ",
+                        "ਮੋਰਡਾਦ",
+                        "ਸ਼ਰਾਇਵਰ",
+                        "ਮੇਹਰ",
+                        "ਅਬਾਨ",
+                        "ਅਜ਼ਾਰ",
+                        "ਡੇਅ",
+                        "ਬਾਹਮਨ",
+                        "ਐਸਫੰਡ",
+                    }
+                }
+            }
+        }
+        roc{
+            eras{
+                abbreviated{
+                    "ਆਰ.ਓ.ਸੀ ਤੋਂ ਪਹਿਲਾਂ",
+                    "ਮਿੰਗ",
+                }
+                narrow{
+                    "ਆਰ.ਓ.ਸੀ ਤੋਂ ਪਹਿਲਾਂ",
+                    "ਮਿੰਗ",
+                }
+                wide{
+                    "ਚੀਨ ਦੇ ਗਣਰਾਜ ਤੋਂ ਪਹਿਲਾਂ",
+                    "ਮਿੰਗ",
+                }
+            }
+        }
     }
     characterLabel{
-        activities{"ਸਰਗਰਮੀਆਂ"}
-        african_scripts{"ਅਫਰੀਕਨ ਲਿੱਪੀਆਂ"}
-        american_scripts{"ਅਮਰੀਕੀ ਲਿੱਪੀਆਂ"}
+        activities{"ਸਰਗਰਮੀ"}
+        african_scripts{"ਅਫਰੀਕੀ ਲਿਪੀ"}
+        american_scripts{"ਅਮਰੀਕੀ ਲਿਪੀ"}
         animal{"ਜਾਨਵਰ"}
-        animals_nature{"ਪਸ਼ੂ ਅਤੇ ਕੁਦਰਤ"}
+        animals_nature{"ਜਾਨਵਰ ਜਾਂ ਕੁਦਰਤ"}
         arrows{"ਤੀਰ"}
         body{"ਸਰੀਰ"}
         box_drawing{"ਬਾਕਸ ਡਰਾਇੰਗ"}
@@ -935,15 +1613,15 @@ pa{
         bullets_stars{"ਬਿੰਦੀਆਂ/ਤਾਰੇ"}
         consonantal_jamo{"ਵਿਅੰਜਨਾਤਮਕ ਜਾਮੋ"}
         currency_symbols{"ਮੁਦਰਾ ਚਿੰਨ੍ਹ"}
-        dash_connector{"ਡੈਸ਼/ਕਨੈਕਟਰ"}
+        dash_connector{"ਡੈਸ਼ ਜਾਂ ਕਨੈਕਟਰ"}
         digits{"ਅੰਕ"}
-        dingbats{"ਡਿੰਗਬੈਟਸ"}
+        dingbats{"ਡਿੰਗਬੈਟ"}
         divination_symbols{"ਭਵਿੱਖਬਾਣੀ ਚਿੰਨ੍ਹ"}
         downwards_arrows{"ਹੇਠਾਂ ਨੂੰ ਤੀਰ"}
         downwards_upwards_arrows{"ਹੇਠ ਉੱਪਰ ਵੱਲ ਤੀਰ"}
-        east_asian_scripts{"ਪੂਰਬੀ ਏਸ਼ੀਆਈ ਲਿੱਪੀਆਂ"}
+        east_asian_scripts{"ਪੂਰਬੀ ਏਸ਼ੀਆਈ ਲਿਪੀ"}
         emoji{"ਇਮੋਜੀ"}
-        european_scripts{"ਯੂਰਪੀ ਲਿੱਪੀਆਂ"}
+        european_scripts{"ਯੂਰਪੀ ਲਿਪੀ"}
         female{"ਔਰਤ"}
         flag{"ਝੰਡਾ"}
         flags{"ਝੰਡੇ"}
@@ -951,18 +1629,18 @@ pa{
         format{"ਬਣਤਰ"}
         format_whitespace{"ਬਣਤਰ ਅਤੇ ਖਾਲੀ ਸਥਾਨ"}
         full_width_form_variant{"ਪੂਰਨ-ਚੌੜਾਈ ਰੂਪੀ ਰੂਪਾਂਤਰ"}
-        geometric_shapes{"ਜਿਆਮਿਤੀ ਆਕ੍ਰਿਤੀਆਂ"}
+        geometric_shapes{"ਜਿਆਮਿਤੀ ਸ਼ਕਲ"}
         half_width_form_variant{"ਅਰਧ-ਚੌੜਾਈ ਰੂਪੀ ਰੂਪਾਂਤਰ"}
         han_characters{"ਹਾਨ ਅੱਖਰ"}
         han_radicals{"ਹਾਨ ਮੂਲ ਸ਼ਬਦ"}
         hanja{"ਹਾਂਜਾ"}
         hanzi_simplified{"ਹਾਂਜ਼ੀ (ਸਰਲ)"}
-        hanzi_traditional{"ਹਾਂਜ਼ੀ (ਰਿਵਾਇਤੀ)"}
+        hanzi_traditional{"ਹਾਂਜ਼ੀ (ਰਵਾਇਤੀ)"}
         heart{"ਦਿਲ"}
-        historic_scripts{"ਇਤਿਹਾਸਕ ਲਿੱਪੀਆਂ"}
+        historic_scripts{"ਇਤਿਹਾਸਕ ਲਿਪੀ"}
         ideographic_desc_characters{"ਇਡਿਓਗ੍ਰਾਫਿਕ ਵੇਰਵਾ ਅੱਖਰ"}
         japanese_kana{"ਜਪਾਨੀ ਕਾਨਾ"}
-        kanbun{"ਕਾਨਬੁਨ (ਚੀਨੀ ਕਲਾਸਿਕ)"}
+        kanbun{"ਕਾਨਬੁਨ"}
         kanji{"ਕਾਂਜੀ"}
         keycap{"ਕੀਕੈਪ"}
         leftwards_arrows{"ਖੱਬੇ ਪਾਸੇ ਵੱਲ ਤੀਰ"}
@@ -971,9 +1649,9 @@ pa{
         limited_use{"ਸੀਮਿਤ ਵਰਤੋਂ"}
         male{"ਪੁਰਸ਼"}
         math_symbols{"ਗਣਿਤ ਚਿੰਨ੍ਹ"}
-        middle_eastern_scripts{"ਮੱਧ ਪੂਰਬੀ ਲਿੱਪੀਆਂ"}
+        middle_eastern_scripts{"ਮੱਧ ਪੂਰਬੀ ਲਿਪੀ"}
         miscellaneous{"ਫੁਟਕਲ"}
-        modern_scripts{"ਆਧੁਨਿਕ ਲਿੱਪੀਆਂ"}
+        modern_scripts{"ਆਧੁਨਿਕ ਲਿਪੀ"}
         modifier{"ਵਿਸ਼ੇਸ਼ਕ"}
         musical_symbols{"ਸੰਗੀਤ ਚਿੰਨ੍ਹ"}
         nature{"ਕੁਦਰਤ"}
@@ -993,20 +1671,20 @@ pa{
         small_form_variant{"ਛੋਟੇ ਰੂਪ ਦੇ ਰੂਪਾਂਤਰ"}
         smiley{"ਸਮਾਈਲੀ"}
         smileys_people{"ਸਮਾਇਲੀ ਅਤੇ ਲੋਕ"}
-        south_asian_scripts{"ਦੱਖਣੀ ਏਸ਼ੀਆਈ ਲਿੱਪੀਆਂ"}
-        southeast_asian_scripts{"ਦੱਖਣ-ਪੂਰਬੀ ਏਸ਼ੀਆਈ ਲਿੱਪੀਆਂ"}
+        south_asian_scripts{"ਦੱਖਣੀ ਏਸ਼ੀਆਈ ਲਿਪੀ"}
+        southeast_asian_scripts{"ਦੱਖਣ-ਪੂਰਬੀ ਏਸ਼ੀਆਈ ਲਿਪੀ"}
         spacing{"ਵਿੱਥ"}
         sport{"ਖੇਡ"}
         symbols{"ਚਿੰਨ੍ਹ"}
         technical_symbols{"ਤਕਨੀਕੀ ਚਿੰਨ੍ਹ"}
         tone_marks{"ਧੁਨੀ ਨਿਸ਼ਾਨ"}
         travel{"ਯਾਤਰਾ"}
-        travel_places{"ਯਾਤਰਾ ਅਤੇ ਸਥਾਨ"}
+        travel_places{"ਸਫਰ ਜਾਂ ਥਾਂ"}
         upwards_arrows{"ਉੱਪਰ ਵੱਲ ਤੀਰ"}
         variant_forms{"ਭਿੰਨ ਰੂਪ"}
         vocalic_jamo{"ਵੋਕੈਲਿਕ ਜਾਮੋ"}
         weather{"ਮੌਸਮ"}
-        western_asian_scripts{"ਪੱਛਮੀ ਏਸ਼ੀਆਈ ਲਿੱਪੀਆਂ"}
+        western_asian_scripts{"ਪੱਛਮੀ ਏਸ਼ੀਆਈ ਲਿਪੀ"}
         whitespace{"ਵ੍ਹਾਈਟ ਸਪੇਸ"}
     }
     delimiters{
@@ -1036,6 +1714,11 @@ pa{
         }
         day-narrow{
             dn{"ਦਿਨ"}
+            relative{
+                "-1"{"ਬੀਤਿਆ ਕੱਲ੍ਹ"}
+                "0"{"ਅੱਜ"}
+                "1"{"ਭਲਕੇ"}
+            }
             relativeTime{
                 future{
                     one{"{0} ਦਿਨ ਵਿੱਚ"}
@@ -1049,6 +1732,11 @@ pa{
         }
         day-short{
             dn{"ਦਿਨ"}
+            relative{
+                "-1"{"ਬੀਤਿਆ ਕੱਲ੍ਹ"}
+                "0"{"ਅੱਜ"}
+                "1"{"ਭਲਕੇ"}
+            }
             relativeTime{
                 future{
                     one{"{0} ਦਿਨ ਵਿੱਚ"}
@@ -1060,10 +1748,31 @@ pa{
                 }
             }
         }
+        dayOfYear{
+            dn{"ਸਾਲ ਦਾ ਦਿਨ"}
+        }
+        dayOfYear-narrow{
+            dn{"ਸਾਲ ਦਾ ਦਿਨ"}
+        }
+        dayOfYear-short{
+            dn{"ਸਾਲ ਦਾ ਦਿਨ"}
+        }
         dayperiod{
             dn{"ਪੂ.ਦੁ./ਬਾ.ਦੁ."}
         }
+        dayperiod-narrow{
+            dn{"ਪੂ.ਦੁ./ਬਾ.ਦੁ."}
+        }
+        dayperiod-short{
+            dn{"ਪੂ.ਦੁ./ਬਾ.ਦੁ."}
+        }
         era{
+            dn{"ਸੰਮਤ"}
+        }
+        era-narrow{
+            dn{"ਸੰਮਤ"}
+        }
+        era-short{
             dn{"ਸੰਮਤ"}
         }
         fri{
@@ -1135,6 +1844,9 @@ pa{
         }
         hour-narrow{
             dn{"ਘੰ"}
+            relative{
+                "0"{"ਇਸ ਘੰਟੇ"}
+            }
             relativeTime{
                 future{
                     one{"{0} ਘੰਟੇ ਵਿੱਚ"}
@@ -1148,6 +1860,9 @@ pa{
         }
         hour-short{
             dn{"ਘੰਟਾ"}
+            relative{
+                "0"{"ਇਸ ਘੰਟੇ"}
+            }
             relativeTime{
                 future{
                     one{"{0} ਘੰਟੇ ਵਿੱਚ"}
@@ -1177,6 +1892,9 @@ pa{
         }
         minute-narrow{
             dn{"ਮਿੰਟ"}
+            relative{
+                "0"{"ਇਸ ਮਿੰਟ"}
+            }
             relativeTime{
                 future{
                     one{"{0} ਮਿੰਟ ਵਿੱਚ"}
@@ -1190,6 +1908,9 @@ pa{
         }
         minute-short{
             dn{"ਮਿੰਟ"}
+            relative{
+                "0"{"ਇਸ ਮਿੰਟ"}
+            }
             relativeTime{
                 future{
                     one{"{0} ਮਿੰਟ ਵਿੱਚ"}
@@ -1226,7 +1947,7 @@ pa{
             }
             relativeTime{
                 future{
-                    one{"{0} ਸੋਮਵਾਰਾਂ ਵਿੱਚ"}
+                    one{"{0} ਸੋਮਵਾਰ ਵਿੱਚ"}
                     other{"{0} ਸੋਮਵਾਰਾਂ ਵਿੱਚ"}
                 }
                 past{
@@ -1243,7 +1964,7 @@ pa{
             }
             relativeTime{
                 future{
-                    one{"{0} ਸੋਮਵਾਰਾਂ ਵਿੱਚ"}
+                    one{"{0} ਸੋਮਵਾਰ ਵਿੱਚ"}
                     other{"{0} ਸੋਮਵਾਰਾਂ ਵਿੱਚ"}
                 }
                 past{
@@ -1333,11 +2054,11 @@ pa{
             }
             relativeTime{
                 future{
-                    one{"{0} ਤਿਮਾਹੀਆਂ ਵਿੱਚ"}
+                    one{"{0} ਤਿਮਾਹੀ ਵਿੱਚ"}
                     other{"{0} ਤਿਮਾਹੀਆਂ ਵਿੱਚ"}
                 }
                 past{
-                    one{"{0} ਤਿਮਾਹੀਆਂ ਪਹਿਲਾਂ"}
+                    one{"{0} ਤਿਮਾਹੀ ਪਹਿਲਾਂ"}
                     other{"{0} ਤਿਮਾਹੀਆਂ ਪਹਿਲਾਂ"}
                 }
             }
@@ -1429,6 +2150,9 @@ pa{
         }
         second-narrow{
             dn{"ਸਕਿੰਟ"}
+            relative{
+                "0"{"ਹੁਣ"}
+            }
             relativeTime{
                 future{
                     one{"{0} ਸਕਿੰਟ ਵਿੱਚ"}
@@ -1442,6 +2166,9 @@ pa{
         }
         second-short{
             dn{"ਸਕਿੰਟ"}
+            relative{
+                "0"{"ਹੁਣ"}
+            }
             relativeTime{
                 future{
                     one{"{0} ਸਕਿੰਟ ਵਿੱਚ"}
@@ -1478,7 +2205,7 @@ pa{
             }
             relativeTime{
                 future{
-                    one{"{0} ਐਤਵਾਰਾਂ ਵਿੱਚ"}
+                    one{"{0} ਐਤਵਾਰ ਵਿੱਚ"}
                     other{"{0} ਐਤਵਾਰਾਂ ਵਿੱਚ"}
                 }
                 past{
@@ -1580,7 +2307,7 @@ pa{
             }
             relativeTime{
                 future{
-                    one{"{0} ਮੰਗਲਵਾਰਾਂ ਵਿੱਚ"}
+                    one{"{0} ਮੰਗਲਵਾਰ ਵਿੱਚ"}
                     other{"{0} ਮੰਗਲਵਾਰਾਂ ਵਿੱਚ"}
                 }
                 past{
@@ -1597,7 +2324,7 @@ pa{
             }
             relativeTime{
                 future{
-                    one{"{0} ਮੰਗਲਵਾਰਾਂ ਵਿੱਚ"}
+                    one{"{0} ਮੰਗਲਵਾਰ ਵਿੱਚ"}
                     other{"{0} ਮੰਗਲਵਾਰਾਂ ਵਿੱਚ"}
                 }
                 past{
@@ -1631,7 +2358,7 @@ pa{
             }
             relativeTime{
                 future{
-                    one{"{0} ਬੁੱਧਵਾਰਾਂ ਵਿੱਚ"}
+                    one{"{0} ਬੁੱਧਵਾਰ ਵਿੱਚ"}
                     other{"{0} ਬੁੱਧਵਾਰਾਂ ਵਿੱਚ"}
                 }
                 past{
@@ -1648,7 +2375,7 @@ pa{
             }
             relativeTime{
                 future{
-                    one{"{0} ਬੁੱਧਵਾਰਾਂ ਵਿੱਚ"}
+                    one{"{0} ਬੁੱਧਵਾਰ ਵਿੱਚ"}
                     other{"{0} ਬੁੱਧਵਾਰਾਂ ਵਿੱਚ"}
                 }
                 past{
@@ -1714,8 +2441,32 @@ pa{
                 }
             }
         }
+        weekOfMonth{
+            dn{"ਮਹੀਨੇ ਦਾ ਹਫ਼ਤਾ"}
+        }
+        weekOfMonth-narrow{
+            dn{"ਮਹੀਨੇ ਦਾ ਹਫ਼ਤਾ"}
+        }
+        weekOfMonth-short{
+            dn{"ਮਹੀਨੇ ਦਾ ਹਫ਼ਤਾ"}
+        }
         weekday{
             dn{"ਹਫ਼ਤੇ ਦਾ ਦਿਨ"}
+        }
+        weekday-narrow{
+            dn{"ਹਫ਼ਤੇ ਦਾ ਦਿਨ"}
+        }
+        weekday-short{
+            dn{"ਹਫ਼ਤੇ ਦਾ ਦਿਨ"}
+        }
+        weekdayOfMonth{
+            dn{"ਮਹੀਨੇ ਦਾ ਹਫ਼ਤੇ ਦਾ ਦਿਨ"}
+        }
+        weekdayOfMonth-narrow{
+            dn{"ਮਹੀਨੇ ਦਾ ਹਫ਼ਤੇ ਦਾ ਦਿਨ"}
+        }
+        weekdayOfMonth-short{
+            dn{"ਮਹੀਨੇ ਦਾ ਹਫ਼ਤੇ ਦਾ ਦਿਨ"}
         }
         year{
             dn{"ਸਾਲ"}
@@ -1774,8 +2525,20 @@ pa{
         zone{
             dn{"ਇਲਾਕਾਈ ਵੇਲਾ"}
         }
+        zone-narrow{
+            dn{"ਇਲਾਕਾਈ ਵੇਲਾ"}
+        }
+        zone-short{
+            dn{"ਇਲਾਕਾਈ ਵੇਲਾ"}
+        }
     }
     listPattern{
+        or{
+            2{"{0} ਜਾਂ {1}"}
+            end{"{0}, or {1}"}
+            middle{"{0}, {1}"}
+            start{"{0}, {1}"}
+        }
         standard{
             2{"{0} ਅਤੇ {1}"}
             end{"{0} ਅਤੇ {1}"}
@@ -1811,5 +2574,37 @@ pa{
         UK{"ਯੂ. ਕੇ."}
         US{"ਯੂ. ਐਸ."}
         metric{"ਮੀਟਰਿਕ"}
+    }
+    parse{
+        date{
+            lenient{
+                "[\\--/]",
+                "[\\:∶]",
+            }
+        }
+        general{
+            lenient{
+                "[.․。︒﹒．｡]",
+                "['ʼ՚᾽᾿’＇]",
+                "[%٪﹪％]",
+                "[؉‰]",
+                "[\$﹩＄$]",
+                "[£₤]",
+                "[¥￥]",
+                "[₩￦]",
+                "[₨₹{Rp}{Rs}]",
+            }
+        }
+        number{
+            lenient{
+                "[\\-‒⁻₋−➖﹣－]",
+                "[,،٫、︐︑﹐﹑，､]",
+                "[+⁺₊➕﬩﹢＋]",
+            }
+            stricter{
+                "[,٫︐﹐，]",
+                "[.․﹒．｡]",
+            }
+        }
     }
 }

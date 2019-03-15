@@ -2,15 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const {Cu} = require("chrome");
-
 const EventEmitter = require("devtools/shared/event-emitter");
 const Services = require("Services");
 const Strings = Services.strings.createBundle("chrome://devtools/locale/webide.properties");
 
 var ConfigView;
 
-module.exports = ConfigView = function (window) {
+module.exports = ConfigView = function(window) {
   EventEmitter.decorate(this);
   this._doc = window.document;
   this._keys = [];
@@ -18,7 +16,7 @@ module.exports = ConfigView = function (window) {
 };
 
 ConfigView.prototype = {
-  _renderByType: function (input, name, value, customType) {
+  _renderByType: function(input, name, value, customType) {
     value = customType || typeof value;
 
     switch (value) {
@@ -62,13 +60,13 @@ ConfigView.prototype = {
     this._includeTypeName = include;
   },
 
-  search: function (event) {
+  search: function(event) {
     if (event.target.value.length) {
-      let stringMatch = new RegExp(event.target.value, "i");
+      const stringMatch = new RegExp(event.target.value, "i");
 
       for (let i = 0; i < this._keys.length; i++) {
-        let key = this._keys[i];
-        let row = this._doc.getElementById("row-" + key);
+        const key = this._keys[i];
+        const row = this._doc.getElementById("row-" + key);
         if (key.match(stringMatch)) {
           row.classList.remove("hide");
         } else if (row) {
@@ -76,7 +74,7 @@ ConfigView.prototype = {
         }
       }
     } else {
-      var trs = this._doc.getElementById("device-fields").querySelectorAll("tr");
+      const trs = this._doc.getElementById("device-fields").querySelectorAll("tr");
 
       for (let i = 0; i < trs.length; i++) {
         trs[i].classList.remove("hide");
@@ -84,26 +82,26 @@ ConfigView.prototype = {
     }
   },
 
-  generateDisplay: function (json) {
-    let deviceItems = Object.keys(json);
+  generateDisplay: function(json) {
+    const deviceItems = Object.keys(json);
     deviceItems.sort();
     this.keys = deviceItems;
     for (let i = 0; i < this.keys.length; i++) {
-      let key = this.keys[i];
+      const key = this.keys[i];
       this.generateField(key, json[key].value, json[key].hasUserValue);
     }
   },
 
-  generateField: function (name, value, hasUserValue, customType, newRow) {
-    let table = this._doc.querySelector("table");
-    let sResetDefault = Strings.GetStringFromName("device_reset_default");
+  generateField: function(name, value, hasUserValue, customType, newRow) {
+    const table = this._doc.querySelector("table");
+    const sResetDefault = Strings.GetStringFromName("device_reset_default");
 
-    if (this._keys.indexOf(name) === -1) {
+    if (!this._keys.includes(name)) {
       this._keys.push(name);
     }
 
     let input = this._doc.createElement("input");
-    let tr = this._doc.createElement("tr");
+    const tr = this._doc.createElement("tr");
     tr.setAttribute("id", "row-" + name);
     tr.classList.add("edit-row");
     let td = this._doc.createElement("td");
@@ -133,7 +131,7 @@ ConfigView.prototype = {
     td = this._doc.createElement("td");
     td.setAttribute("id", "td-" + name);
 
-    let button = this._doc.createElement("button");
+    const button = this._doc.createElement("button");
     button.setAttribute("data-id", name);
     button.setAttribute("id", "btn-" + name);
     button.classList.add("reset");
@@ -148,7 +146,7 @@ ConfigView.prototype = {
 
     // If this is a new field, add it to the top of the table.
     if (newRow) {
-      let existing = table.querySelector("#" + name);
+      const existing = table.querySelector("#" + name);
 
       if (!existing) {
         table.insertBefore(tr, newRow);
@@ -160,18 +158,18 @@ ConfigView.prototype = {
     }
   },
 
-  resetTable: function () {
-    let table = this._doc.querySelector("table");
-    let trs = table.querySelectorAll("tr:not(#add-custom-field)");
+  resetTable: function() {
+    const table = this._doc.querySelector("table");
+    const trs = table.querySelectorAll("tr:not(#add-custom-field)");
 
-    for (var i = 0; i < trs.length; i++) {
+    for (let i = 0; i < trs.length; i++) {
       table.removeChild(trs[i]);
     }
 
     return table;
   },
 
-  _getCallType: function (type, name) {
+  _getCallType: function(type, name) {
     let frontName = "get";
 
     if (this._includeTypeName) {
@@ -181,7 +179,7 @@ ConfigView.prototype = {
     return this._front[frontName + this._kind](name);
   },
 
-  _setCallType: function (type, name, value) {
+  _setCallType: function(type, name, value) {
     let frontName = "set";
 
     if (this._includeTypeName) {
@@ -191,11 +189,11 @@ ConfigView.prototype = {
     return this._front[frontName + this._kind](name, value);
   },
 
-  _saveByType: function (options) {
-    let fieldName = options.id;
-    let inputType = options.type;
+  _saveByType: function(options) {
+    const fieldName = options.id;
+    const inputType = options.type;
     let value = options.value;
-    let input = this._doc.getElementById(fieldName);
+    const input = this._doc.getElementById(fieldName);
 
     switch (inputType) {
       case "boolean":
@@ -216,15 +214,15 @@ ConfigView.prototype = {
     }
   },
 
-  updateField: function (event) {
+  updateField: function(event) {
     if (event.target) {
-      let inputType = event.target.getAttribute("data-type");
+      const inputType = event.target.getAttribute("data-type");
       let inputValue = event.target.checked || event.target.value;
 
       if (event.target.nodeName == "input" &&
           event.target.validity.valid &&
           event.target.classList.contains("editable")) {
-        let id = event.target.id;
+        const id = event.target.id;
         if (inputType === "boolean") {
           if (event.target.checked) {
             inputValue = true;
@@ -236,17 +234,17 @@ ConfigView.prototype = {
         this._saveByType({
           id: id,
           type: inputType,
-          value: inputValue
+          value: inputValue,
         });
         this._doc.getElementById("btn-" + id).classList.remove("hide");
       }
     }
   },
 
-  _resetToDefault: function (name, input, button) {
+  _resetToDefault: function(name, input, button) {
     this._front["clearUser" + this._kind](name);
-    let dataType = input.getAttribute("data-type");
-    let tr = this._doc.getElementById("row-" + name);
+    const dataType = input.getAttribute("data-type");
+    const tr = this._doc.getElementById("row-" + name);
 
     switch (dataType) {
       case "boolean":
@@ -287,19 +285,18 @@ ConfigView.prototype = {
     button.classList.add("hide");
   },
 
-  checkReset: function (event) {
+  checkReset: function(event) {
     if (event.target.classList.contains("reset")) {
-      let btnId = event.target.getAttribute("data-id");
-      let input = this._doc.getElementById(btnId);
+      const btnId = event.target.getAttribute("data-id");
+      const input = this._doc.getElementById(btnId);
       this._resetToDefault(btnId, input, event.target);
     }
   },
 
-  updateFieldType: function () {
-    let table = this._doc.querySelector("table");
-    let customValueType = table.querySelector("#custom-value-type").value;
-    let customTextEl = table.querySelector("#custom-value-text");
-    let customText = customTextEl.value;
+  updateFieldType: function() {
+    const table = this._doc.querySelector("table");
+    const customValueType = table.querySelector("#custom-value-type").value;
+    const customTextEl = table.querySelector("#custom-value-text");
 
     if (customValueType.length === 0) {
       return false;
@@ -308,10 +305,8 @@ ConfigView.prototype = {
     switch (customValueType) {
       case "boolean":
         customTextEl.type = "checkbox";
-        customText = customTextEl.checked;
         break;
       case "number":
-        customText = parseInt(customText, 10) || 0;
         customTextEl.type = "number";
         break;
       default:
@@ -322,9 +317,9 @@ ConfigView.prototype = {
     return customValueType;
   },
 
-  clearNewFields: function () {
-    let table = this._doc.querySelector("table");
-    let customTextEl = table.querySelector("#custom-value-text");
+  clearNewFields: function() {
+    const table = this._doc.querySelector("table");
+    const customTextEl = table.querySelector("#custom-value-text");
     if (customTextEl.checked) {
       customTextEl.checked = false;
     } else {
@@ -334,17 +329,17 @@ ConfigView.prototype = {
     this.updateFieldType();
   },
 
-  updateNewField: function () {
-    let table = this._doc.querySelector("table");
-    let customValueType = this.updateFieldType();
+  updateNewField: function() {
+    const table = this._doc.querySelector("table");
+    const customValueType = this.updateFieldType();
 
     if (!customValueType) {
       return;
     }
 
-    let customRow = table.querySelector("tr:nth-of-type(2)");
-    let customTextEl = table.querySelector("#custom-value-text");
-    let customTextNameEl = table.querySelector("#custom-value-name");
+    const customRow = table.querySelector("tr:nth-of-type(2)");
+    const customTextEl = table.querySelector("#custom-value-text");
+    const customTextNameEl = table.querySelector("#custom-value-name");
 
     if (customTextEl.validity.valid) {
       let customText = customTextEl.value;
@@ -353,21 +348,21 @@ ConfigView.prototype = {
         customText = customTextEl.checked;
       }
 
-      let customTextName = customTextNameEl.value.replace(/[^A-Za-z0-9\.\-_]/gi, "");
+      const customTextName = customTextNameEl.value.replace(/[^A-Za-z0-9\.\-_]/gi, "");
       this.generateField(customTextName, customText, true, customValueType, customRow);
       this._saveByType({
         id: customTextName,
         type: customValueType,
-        value: customText
+        value: customText,
       });
       customTextNameEl.value = "";
       this.clearNewFields();
     }
   },
 
-  checkNewFieldSubmit: function (event) {
+  checkNewFieldSubmit: function(event) {
     if (event.keyCode === 13) {
       this._doc.getElementById("custom-value").click();
     }
-  }
+  },
 };

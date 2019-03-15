@@ -13,12 +13,11 @@
 #include "mozilla/FileLocation.h"
 
 void ParseManifest(NSLocationType aType, mozilla::FileLocation& aFile,
-                   char* aBuf, bool aChromeOnly, bool aXPTOnly = false);
+                   char* aBuf, bool aChromeOnly);
 
 void LogMessage(const char* aMsg, ...) MOZ_FORMAT_PRINTF(1, 2);
 
-void LogMessageWithContext(mozilla::FileLocation& aFile,
-                           uint32_t aLineNumber, const char* aMsg, ...)
-  MOZ_FORMAT_PRINTF(3, 4);
+void LogMessageWithContext(mozilla::FileLocation& aFile, uint32_t aLineNumber,
+                           const char* aMsg, ...) MOZ_FORMAT_PRINTF(3, 4);
 
-#endif // ManifestParser_h
+#endif  // ManifestParser_h

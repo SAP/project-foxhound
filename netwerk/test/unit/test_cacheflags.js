@@ -1,6 +1,6 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var httpserver = new HttpServer();
 httpserver.start(-1);
@@ -17,33 +17,7 @@ var nostorePath = "/nostore" + suffix;
 var test410Path = "/test410" + suffix;
 var test404Path = "/test404" + suffix;
 
-// We attach this to channel when we want to test Private Browsing mode
-function LoadContext(usePrivateBrowsing) {
-  this.usePrivateBrowsing = usePrivateBrowsing;
-  this.originAttributes.privateBrowsingId = usePrivateBrowsing ? 1 : 0;
-}
-
-LoadContext.prototype = {
-  originAttributes: {
-    privateBrowsingId : 0
-  },
-  usePrivateBrowsing: false,
-  // don't bother defining rest of nsILoadContext fields: don't need 'em
-
-  QueryInterface: function(iid) {
-    if (iid.equals(Ci.nsILoadContext))
-      return this;
-    throw Cr.NS_ERROR_NO_INTERFACE;
-  },
-
-  getInterface: function(iid) {
-    if (iid.equals(Ci.nsILoadContext))
-      return this;
-    throw Cr.NS_ERROR_NO_INTERFACE;
-  },
-};
-
-var PrivateBrowsingLoadContext = new LoadContext(true);
+var PrivateBrowsingLoadContext = Cu.createPrivateLoadContext();
 
 function make_channel(url, flags, usePrivateBrowsing) {
   var securityFlags = Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL;
@@ -84,11 +58,11 @@ Test.prototype = {
   _isFromCache: false,
 
   QueryInterface: function(iid) {
-    if (iid.equals(Components.interfaces.nsIStreamListener) ||
-        iid.equals(Components.interfaces.nsIRequestObserver) ||
-        iid.equals(Components.interfaces.nsISupports))
+    if (iid.equals(Ci.nsIStreamListener) ||
+        iid.equals(Ci.nsIRequestObserver) ||
+        iid.equals(Ci.nsISupports))
       return this;
-    throw Components.results.NS_ERROR_NO_INTERFACE;
+    throw Cr.NS_ERROR_NO_INTERFACE;
   },
 
   onStartRequest: function(request, context) {
@@ -101,9 +75,9 @@ Test.prototype = {
   },
 
   onStopRequest: function(request, context, status) {
-    do_check_eq(Components.isSuccessCode(status), this.expectSuccess);
-    do_check_eq(this._isFromCache, this.readFromCache);
-    do_check_eq(gHitServer, this.hitServer);
+    Assert.equal(Components.isSuccessCode(status), this.expectSuccess);
+    Assert.equal(this._isFromCache, this.readFromCache);
+    Assert.equal(gHitServer, this.hitServer);
 
     do_timeout(0, run_next_test);
   },

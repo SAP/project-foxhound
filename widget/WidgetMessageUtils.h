@@ -7,25 +7,23 @@
 
 #include "ipc/IPCMessageUtils.h"
 #include "mozilla/LookAndFeel.h"
+#include "nsIWidget.h"
 
 namespace IPC {
 
-template<>
-struct ParamTraits<LookAndFeelInt>
-{
+template <>
+struct ParamTraits<LookAndFeelInt> {
   typedef LookAndFeelInt paramType;
 
-  static void Write(Message* aMsg, const paramType& aParam)
-  {
+  static void Write(Message* aMsg, const paramType& aParam) {
     WriteParam(aMsg, aParam.id);
     WriteParam(aMsg, aParam.value);
   }
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter, paramType* aResult)
-  {
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   paramType* aResult) {
     int32_t id, value;
-    if (ReadParam(aMsg, aIter, &id) &&
-        ReadParam(aMsg, aIter, &value)) {
+    if (ReadParam(aMsg, aIter, &id) && ReadParam(aMsg, aIter, &value)) {
       aResult->id = id;
       aResult->value = value;
       return true;
@@ -34,6 +32,17 @@ struct ParamTraits<LookAndFeelInt>
   }
 };
 
-} // namespace IPC
+template <>
+struct ParamTraits<nsTransparencyMode>
+    : public ContiguousEnumSerializerInclusive<nsTransparencyMode,
+                                               eTransparencyOpaque,
+                                               eTransparencyBorderlessGlass> {};
 
-#endif // WidgetMessageUtils_h
+template <>
+struct ParamTraits<nsCursor>
+    : public ContiguousEnumSerializer<nsCursor, eCursor_standard,
+                                      eCursorCount> {};
+
+}  // namespace IPC
+
+#endif  // WidgetMessageUtils_h

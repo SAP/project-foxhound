@@ -6,7 +6,7 @@ const TESTROOT = "http://example.com/browser/" + RELATIVE_DIR;
 
 function test() {
   var oldAction = changeMimeHandler(Ci.nsIHandlerInfo.useSystemDefault, true);
-  var tab = gBrowser.addTab(TESTROOT + "file_pdfjs_test.pdf");
+  var tab = BrowserTestUtils.addTab(gBrowser, TESTROOT + "file_pdfjs_test.pdf");
   // Test: "Open with" dialog comes up when pdf.js is not selected as the default
   // handler.
   addWindowListener("chrome://mozapps/content/downloads/unknownContentType.xul", finish);
@@ -29,7 +29,8 @@ function changeMimeHandler(preferredAction, alwaysAskBeforeHandling) {
   handlerInfo.preferredAction = preferredAction;
   handlerService.store(handlerInfo);
 
-  Services.obs.notifyObservers(null, "pdfjs:handlerChanged", null);
+  Services.obs.notifyObservers(null, "pdfjs:handlerChanged");
+  Services.ppmm.sharedData.flush();
 
   // Refresh data
   handlerInfo = mimeService.getFromTypeAndExtension("application/pdf", "pdf");
@@ -47,8 +48,7 @@ function addWindowListener(aURL, aCallback) {
       info("window opened, waiting for focus");
       Services.wm.removeListener(this);
 
-      var domwindow = aXULWindow.QueryInterface(Ci.nsIInterfaceRequestor)
-                                .getInterface(Ci.nsIDOMWindow);
+      var domwindow = aXULWindow.docShell.domWindow;
       waitForFocus(function() {
         is(domwindow.document.location.href, aURL, "should have seen the right window open");
         domwindow.close();
@@ -56,6 +56,5 @@ function addWindowListener(aURL, aCallback) {
       }, domwindow);
     },
     onCloseWindow(aXULWindow) { },
-    onWindowTitleChange(aXULWindow, aNewTitle) { }
   });
 }

@@ -3,11 +3,9 @@
 
 "use strict";
 
-var {classes: Cc, interfaces: Ci, utils: Cu} = Components;
+ChromeUtils.import("resource://gre/modules/ServiceRequest.jsm");
 
-Cu.import("resource://gre/modules/ServiceRequest.jsm");
-
-add_task(function* test_tls_conservative() {
+add_task(async function test_tls_conservative() {
   const request = new ServiceRequest();
   request.open("GET", "http://example.com", false);
 

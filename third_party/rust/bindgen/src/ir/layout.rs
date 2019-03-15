@@ -1,9 +1,12 @@
 //! Intermediate representation for the physical layout of some type.
 
-use super::context::BindgenContext;
-use super::derive::{CanDeriveCopy, CanDeriveDebug, CanDeriveDefault};
-use super::ty::RUST_DERIVE_IN_ARRAY_LIMIT;
-use std::{cmp, mem};
+use super::derive::{CanTriviallyDeriveCopy, CanTriviallyDeriveDebug,
+                    CanTriviallyDeriveDefault, CanTriviallyDeriveHash,
+                    CanTriviallyDerivePartialEqOrPartialOrd, CanDerive};
+use super::ty::{RUST_DERIVE_IN_ARRAY_LIMIT, Type, TypeKind};
+use ir::context::BindgenContext;
+use clang;
+use std::cmp;
 
 /// A type that represents the struct layout of a type.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -18,27 +21,48 @@ pub struct Layout {
 
 #[test]
 fn test_layout_for_size() {
+    use std::mem;
+
     let ptr_size = mem::size_of::<*mut ()>();
-    assert_eq!(Layout::for_size(ptr_size), Layout::new(ptr_size, ptr_size));
-    assert_eq!(Layout::for_size(3 * ptr_size), Layout::new(3 * ptr_size, ptr_size));
+    assert_eq!(
+        Layout::for_size_internal(ptr_size, ptr_size),
+        Layout::new(ptr_size, ptr_size)
+    );
+    assert_eq!(
+        Layout::for_size_internal(ptr_size, 3 * ptr_size),
+        Layout::new(3 * ptr_size, ptr_size)
+    );
 }
 
 impl Layout {
+    /// Gets the integer type name for a given known size.
+    pub fn known_type_for_size(
+        ctx: &BindgenContext,
+        size: usize,
+    ) -> Option<&'static str> {
+        Some(match size {
+            16 if ctx.options().rust_features.i128_and_u128 => "u128",
+            8 => "u64",
+            4 => "u32",
+            2 => "u16",
+            1 => "u8",
+            _ => return None,
+        })
+    }
+
     /// Construct a new `Layout` with the given `size` and `align`. It is not
     /// packed.
     pub fn new(size: usize, align: usize) -> Self {
         Layout {
-            size: size,
-            align: align,
+            size,
+            align,
             packed: false,
         }
     }
 
-    /// Creates a non-packed layout for a given size, trying to use the maximum
-    /// alignment possible.
-    pub fn for_size(size: usize) -> Self {
+    fn for_size_internal(ptr_size: usize, size: usize) -> Self {
         let mut next_align = 2;
-        while size % next_align == 0 && next_align <= 2 * mem::size_of::<*mut ()>() {
+        while size % next_align == 0 && next_align <= ptr_size {
             next_align *= 2;
         }
         Layout {
@@ -46,6 +70,12 @@ impl Layout {
             align: next_align / 2,
             packed: false,
         }
+    }
+
+    /// Creates a non-packed layout for a given size, trying to use the maximum
+    /// alignment possible.
+    pub fn for_size(ctx: &BindgenContext, size: usize) -> Self {
+        Self::for_size_internal(ctx.target_pointer_size(), size)
     }
 
     /// Is this a zero-sized layout?
@@ -65,59 +95,76 @@ impl Layout {
 }
 
 /// When we are treating a type as opaque, it is just a blob with a `Layout`.
+#[derive(Clone, Debug, PartialEq)]
 pub struct Opaque(pub Layout);
 
 impl Opaque {
+    /// Construct a new opaque type from the given clang type.
+    pub fn from_clang_ty(ty: &clang::Type) -> Type {
+        let layout = Layout::new(ty.size(), ty.align());
+        let ty_kind = TypeKind::Opaque;
+        let is_const = ty.is_const();
+        Type::new(None, Some(layout), ty_kind, is_const)
+    }
+
     /// Return the known rust type we should use to create a correctly-aligned
     /// field with this layout.
-    pub fn known_rust_type_for_array(&self) -> Option<&'static str> {
-        Some(match self.0.align {
-            8 => "u64",
-            4 => "u32",
-            2 => "u16",
-            1 => "u8",
-            _ => return None,
-        })
+    pub fn known_rust_type_for_array(&self,ctx: &BindgenContext) -> Option<&'static str> {
+        Layout::known_type_for_size(ctx, self.0.align)
     }
 
     /// Return the array size that an opaque type for this layout should have if
     /// we know the correct type for it, or `None` otherwise.
-    pub fn array_size(&self) -> Option<usize> {
-        if self.known_rust_type_for_array().is_some() {
+    pub fn array_size(&self, ctx: &BindgenContext) -> Option<usize> {
+        if self.known_rust_type_for_array(ctx).is_some() {
             Some(self.0.size / cmp::max(self.0.align, 1))
         } else {
             None
         }
     }
-}
 
-impl CanDeriveDebug for Opaque {
-    type Extra = ();
-
-    fn can_derive_debug(&self, _: &BindgenContext, _: ()) -> bool {
-        self.array_size()
-            .map_or(false, |size| size <= RUST_DERIVE_IN_ARRAY_LIMIT)
+    /// Return `true` if this opaque layout's array size will fit within the
+    /// maximum number of array elements that Rust allows deriving traits
+    /// with. Return `false` otherwise.
+    pub fn array_size_within_derive_limit(&self, ctx: &BindgenContext) -> bool {
+        self.array_size(ctx).map_or(false, |size| {
+            size <= RUST_DERIVE_IN_ARRAY_LIMIT
+        })
     }
 }
 
-impl CanDeriveDefault for Opaque {
-    type Extra = ();
-
-    fn can_derive_default(&self, _: &BindgenContext, _: ()) -> bool {
-        self.array_size()
-            .map_or(false, |size| size <= RUST_DERIVE_IN_ARRAY_LIMIT)
+impl CanTriviallyDeriveDebug for Opaque {
+    fn can_trivially_derive_debug(&self, ctx: &BindgenContext) -> bool {
+        self.array_size_within_derive_limit(ctx)
     }
 }
 
-impl<'a> CanDeriveCopy<'a> for Opaque {
-    type Extra = ();
-
-    fn can_derive_copy(&self, _: &BindgenContext, _: ()) -> bool {
-        self.array_size()
-            .map_or(false, |size| size <= RUST_DERIVE_IN_ARRAY_LIMIT)
+impl CanTriviallyDeriveDefault for Opaque {
+    fn can_trivially_derive_default(&self, ctx: &BindgenContext) -> bool {
+        self.array_size_within_derive_limit(ctx)
     }
+}
 
-    fn can_derive_copy_in_array(&self, ctx: &BindgenContext, _: ()) -> bool {
-        self.can_derive_copy(ctx, ())
+impl CanTriviallyDeriveCopy for Opaque {
+    fn can_trivially_derive_copy(&self, ctx: &BindgenContext) -> bool {
+        self.array_size_within_derive_limit(ctx)
+    }
+}
+
+impl CanTriviallyDeriveHash for Opaque {
+    fn can_trivially_derive_hash(&self, ctx: &BindgenContext) -> bool {
+        self.array_size_within_derive_limit(ctx)
+    }
+}
+
+impl CanTriviallyDerivePartialEqOrPartialOrd for Opaque {
+    fn can_trivially_derive_partialeq_or_partialord(&self, ctx: &BindgenContext) -> CanDerive {
+        // TODO(emilio): This is inconsistent with the rest of the
+        // CanTriviallyDerive* traits.
+        if self.array_size_within_derive_limit(ctx) {
+            CanDerive::Yes
+        } else {
+            CanDerive::ArrayTooLarge
+        }
     }
 }

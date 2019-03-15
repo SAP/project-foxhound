@@ -9,52 +9,41 @@
 #include "mozilla/EventForwards.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/TransitionEventBinding.h"
-#include "nsIDOMTransitionEvent.h"
-
-class nsAString;
+#include "nsStringFwd.h"
 
 namespace mozilla {
 namespace dom {
 
-class TransitionEvent : public Event,
-                        public nsIDOMTransitionEvent
-{
-public:
-  TransitionEvent(EventTarget* aOwner,
-                  nsPresContext* aPresContext,
+class TransitionEvent : public Event {
+ public:
+  TransitionEvent(EventTarget* aOwner, nsPresContext* aPresContext,
                   InternalTransitionEvent* aEvent);
 
-  NS_DECL_ISUPPORTS_INHERITED
-  NS_FORWARD_TO_EVENT
-  NS_DECL_NSIDOMTRANSITIONEVENT
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(TransitionEvent, Event)
 
-  static already_AddRefed<TransitionEvent>
-  Constructor(const GlobalObject& aGlobal,
-              const nsAString& aType,
-              const TransitionEventInit& aParam,
-              ErrorResult& aRv);
+  static already_AddRefed<TransitionEvent> Constructor(
+      const GlobalObject& aGlobal, const nsAString& aType,
+      const TransitionEventInit& aParam, ErrorResult& aRv);
 
-  virtual JSObject* WrapObjectInternal(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override
-  {
-    return TransitionEventBinding::Wrap(aCx, this, aGivenProto);
+  virtual JSObject* WrapObjectInternal(
+      JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override {
+    return TransitionEvent_Binding::Wrap(aCx, this, aGivenProto);
   }
 
-  // xpidl implementation
-  // GetPropertyName(nsAString& aPropertyName)
-  // GetPseudoElement(nsAString& aPreudoElement)
+  void GetPropertyName(nsAString& aPropertyName) const;
+  void GetPseudoElement(nsAString& aPreudoElement) const;
 
   float ElapsedTime();
 
-protected:
+ protected:
   ~TransitionEvent() {}
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-already_AddRefed<mozilla::dom::TransitionEvent>
-NS_NewDOMTransitionEvent(mozilla::dom::EventTarget* aOwner,
-                         nsPresContext* aPresContext,
-                         mozilla::InternalTransitionEvent* aEvent);
+already_AddRefed<mozilla::dom::TransitionEvent> NS_NewDOMTransitionEvent(
+    mozilla::dom::EventTarget* aOwner, nsPresContext* aPresContext,
+    mozilla::InternalTransitionEvent* aEvent);
 
-#endif // mozilla_dom_TransitionEvent_h_
+#endif  // mozilla_dom_TransitionEvent_h_

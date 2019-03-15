@@ -16,37 +16,38 @@
 namespace mozilla {
 namespace dom {
 
-class HTMLProgressElement final : public nsGenericHTMLElement
-{
-public:
-  explicit HTMLProgressElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+class HTMLProgressElement final : public nsGenericHTMLElement {
+ public:
+  explicit HTMLProgressElement(
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
   EventStates IntrinsicState() const override;
 
-  nsresult Clone(mozilla::dom::NodeInfo* aNodeInfo, nsINode** aResult) const override;
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
-  bool ParseAttribute(int32_t aNamespaceID, nsIAtom* aAttribute,
-                        const nsAString& aValue, nsAttrValue& aResult) override;
+  virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                              const nsAString& aValue,
+                              nsIPrincipal* aMaybeScriptedPrincipal,
+                              nsAttrValue& aResult) override;
 
   // WebIDL
   double Value() const;
-  void SetValue(double aValue, ErrorResult& aRv)
-  {
+  void SetValue(double aValue, ErrorResult& aRv) {
     SetDoubleAttr(nsGkAtoms::value, aValue, aRv);
   }
   double Max() const;
-  void SetMax(double aValue, ErrorResult& aRv)
-  {
+  void SetMax(double aValue, ErrorResult& aRv) {
     SetDoubleAttr(nsGkAtoms::max, aValue, aRv);
   }
   double Position() const;
 
-protected:
+ protected:
   virtual ~HTMLProgressElement();
 
-  virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapNode(JSContext* aCx,
+                             JS::Handle<JSObject*> aGivenProto) override;
 
-protected:
+ protected:
   /**
    * Returns whethem the progress element is in the indeterminate state.
    * A progress element is in the indeterminate state if its value is ommited
@@ -61,7 +62,7 @@ protected:
   static const double kDefaultMax;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_HTMLProgressElement_h
+#endif  // mozilla_dom_HTMLProgressElement_h

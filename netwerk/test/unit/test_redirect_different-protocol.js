@@ -1,5 +1,5 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpServer.identity.primaryPort;
@@ -35,7 +35,7 @@ function redirectHandler(metadata, response)
 
 function finish_test(request, buffer)
 {
-  do_check_eq(buffer, redirectTargetBody);
+  Assert.equal(buffer, redirectTargetBody);
   httpServer.stop(do_test_finished);
 }
 

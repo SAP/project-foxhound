@@ -7,47 +7,41 @@
 #include "mozilla/dom/SVGStopElement.h"
 #include "mozilla/dom/SVGStopElementBinding.h"
 
-NS_IMPL_NS_NEW_NAMESPACED_SVG_ELEMENT(Stop)
+NS_IMPL_NS_NEW_SVG_ELEMENT(Stop)
 
 namespace mozilla {
 namespace dom {
 
-JSObject*
-SVGStopElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return SVGStopElementBinding::Wrap(aCx, this, aGivenProto);
+JSObject* SVGStopElement::WrapNode(JSContext* aCx,
+                                   JS::Handle<JSObject*> aGivenProto) {
+  return SVGStopElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-nsSVGElement::NumberInfo SVGStopElement::sNumberInfo =
-{ &nsGkAtoms::offset, 0, true };
+SVGElement::NumberInfo SVGStopElement::sNumberInfo = {nsGkAtoms::offset, 0,
+                                                      true};
 
 //----------------------------------------------------------------------
 // Implementation
 
-SVGStopElement::SVGStopElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-  : SVGStopElementBase(aNodeInfo)
-{
-}
+SVGStopElement::SVGStopElement(
+    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : SVGStopElementBase(std::move(aNodeInfo)) {}
 
 //----------------------------------------------------------------------
-// nsIDOMNode methods
+// nsINode methods
 
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGStopElement)
 
 //----------------------------------------------------------------------
 
-already_AddRefed<SVGAnimatedNumber>
-SVGStopElement::Offset()
-{
+already_AddRefed<SVGAnimatedNumber> SVGStopElement::Offset() {
   return mOffset.ToDOMAnimatedNumber(this);
 }
 
 //----------------------------------------------------------------------
 // sSVGElement methods
 
-nsSVGElement::NumberAttributesInfo
-SVGStopElement::GetNumberInfo()
-{
+SVGElement::NumberAttributesInfo SVGStopElement::GetNumberInfo() {
   return NumberAttributesInfo(&mOffset, &sNumberInfo, 1);
 }
 
@@ -55,16 +49,12 @@ SVGStopElement::GetNumberInfo()
 // nsIContent methods
 
 NS_IMETHODIMP_(bool)
-SVGStopElement::IsAttributeMapped(const nsIAtom* name) const
-{
-  static const MappedAttributeEntry* const map[] = {
-    sGradientStopMap
-  };
+SVGStopElement::IsAttributeMapped(const nsAtom* name) const {
+  static const MappedAttributeEntry* const map[] = {sGradientStopMap};
 
   return FindAttributeDependence(name, map) ||
-    SVGStopElementBase::IsAttributeMapped(name);
+         SVGStopElementBase::IsAttributeMapped(name);
 }
 
-} // namespace dom
-} // namespace mozilla
-
+}  // namespace dom
+}  // namespace mozilla

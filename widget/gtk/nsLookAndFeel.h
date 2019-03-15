@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim:expandtab:shiftwidth=4:tabstop=4:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -8,81 +8,95 @@
 #ifndef __nsLookAndFeel
 #define __nsLookAndFeel
 
+#include "X11UndefineNone.h"
 #include "nsXPLookAndFeel.h"
 #include "nsCOMPtr.h"
 #include "gfxFont.h"
 
 struct _GtkStyle;
 
-class nsLookAndFeel: public nsXPLookAndFeel {
-public:
-    nsLookAndFeel();
-    virtual ~nsLookAndFeel();
+class nsLookAndFeel final : public nsXPLookAndFeel {
+ public:
+  nsLookAndFeel();
+  virtual ~nsLookAndFeel();
 
-    virtual nsresult NativeGetColor(ColorID aID, nscolor &aResult);
-    virtual nsresult GetIntImpl(IntID aID, int32_t &aResult);
-    virtual nsresult GetFloatImpl(FloatID aID, float &aResult);
-    virtual bool GetFontImpl(FontID aID, nsString& aFontName,
-                             gfxFontStyle& aFontStyle,
-                             float aDevPixPerCSSPixel);
+  void NativeInit() final;
+  virtual void RefreshImpl() override;
+  virtual nsresult NativeGetColor(ColorID aID, nscolor &aResult) override;
+  virtual nsresult GetIntImpl(IntID aID, int32_t &aResult) override;
+  virtual nsresult GetFloatImpl(FloatID aID, float &aResult) override;
+  virtual bool GetFontImpl(FontID aID, nsString &aFontName,
+                           gfxFontStyle &aFontStyle,
+                           float aDevPixPerCSSPixel) override;
 
-    virtual void RefreshImpl();
-    virtual char16_t GetPasswordCharacterImpl();
-    virtual bool GetEchoPasswordImpl();
+  virtual char16_t GetPasswordCharacterImpl() override;
+  virtual bool GetEchoPasswordImpl() override;
 
-protected:
-#if (MOZ_WIDGET_GTK == 2)
-    struct _GtkStyle *mStyle;
-#endif
+  bool IsCSDAvailable() const { return mCSDAvailable; }
 
-    // Cached fonts
-    bool mDefaultFontCached;
-    bool mButtonFontCached;
-    bool mFieldFontCached;
-    bool mMenuFontCached;
-    nsString mDefaultFontName;
-    nsString mButtonFontName;
-    nsString mFieldFontName;
-    nsString mMenuFontName;
-    gfxFontStyle mDefaultFontStyle;
-    gfxFontStyle mButtonFontStyle;
-    gfxFontStyle mFieldFontStyle;
-    gfxFontStyle mMenuFontStyle;
+ protected:
+  // Cached fonts
+  bool mDefaultFontCached;
+  bool mButtonFontCached;
+  bool mFieldFontCached;
+  bool mMenuFontCached;
+  nsString mDefaultFontName;
+  nsString mButtonFontName;
+  nsString mFieldFontName;
+  nsString mMenuFontName;
+  gfxFontStyle mDefaultFontStyle;
+  gfxFontStyle mButtonFontStyle;
+  gfxFontStyle mFieldFontStyle;
+  gfxFontStyle mMenuFontStyle;
 
-    // Cached colors
-    nscolor sInfoBackground;
-    nscolor sInfoText;
-    nscolor sMenuBackground;
-    nscolor sMenuBarText;
-    nscolor sMenuBarHoverText;
-    nscolor sMenuText;
-    nscolor sMenuTextInactive;
-    nscolor sMenuHover;
-    nscolor sMenuHoverText;
-    nscolor sButtonText;
-    nscolor sButtonHoverText;
-    nscolor sButtonBackground;
-    nscolor sFrameOuterLightBorder;
-    nscolor sFrameInnerDarkBorder;
-    nscolor sOddCellBackground;
-    nscolor sNativeHyperLinkText;
-    nscolor sComboBoxText;
-    nscolor sComboBoxBackground;
-    nscolor sMozFieldText;
-    nscolor sMozFieldBackground;
-    nscolor sMozWindowText;
-    nscolor sMozWindowBackground;
-    nscolor sTextSelectedText;
-    nscolor sTextSelectedBackground;
-    nscolor sMozScrollbar;
-#if (MOZ_WIDGET_GTK == 3)
-    nscolor sInfoBarText;
-#endif
-    char16_t sInvisibleCharacter;
-    float   sCaretRatio;
-    bool    sMenuSupportsDrag;
+  // Cached colors
+  nscolor mInfoBackground;
+  nscolor mInfoText;
+  nscolor mMenuBackground;
+  nscolor mMenuBarText;
+  nscolor mMenuBarHoverText;
+  nscolor mMenuText;
+  nscolor mMenuTextInactive;
+  nscolor mMenuHover;
+  nscolor mMenuHoverText;
+  nscolor mButtonDefault;
+  nscolor mButtonText;
+  nscolor mButtonHoverText;
+  nscolor mButtonHoverFace;
+  nscolor mFrameOuterLightBorder;
+  nscolor mFrameInnerDarkBorder;
+  nscolor mOddCellBackground;
+  nscolor mNativeHyperLinkText;
+  nscolor mComboBoxText;
+  nscolor mComboBoxBackground;
+  nscolor mMozFieldText;
+  nscolor mMozFieldBackground;
+  nscolor mMozWindowText;
+  nscolor mMozWindowBackground;
+  nscolor mMozWindowActiveBorder;
+  nscolor mMozWindowInactiveBorder;
+  nscolor mMozWindowInactiveCaption;
+  nscolor mMozCellHighlightBackground;
+  nscolor mMozCellHighlightText;
+  nscolor mTextSelectedText;
+  nscolor mTextSelectedBackground;
+  nscolor mMozScrollbar;
+  nscolor mInfoBarText;
+  char16_t mInvisibleCharacter;
+  float mCaretRatio;
+  bool mMenuSupportsDrag;
+  bool mCSDAvailable;
+  bool mCSDHideTitlebarByDefault;
+  bool mCSDMaximizeButton;
+  bool mCSDMinimizeButton;
+  bool mCSDCloseButton;
+  bool mCSDReversedPlacement;
+  bool mInitialized;
 
-    void Init();
+  void EnsureInit();
+
+ private:
+  nsresult InitCellHighlightColors();
 };
 
 #endif

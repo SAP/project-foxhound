@@ -15,7 +15,7 @@ var intervalID;
 function test() {
   waitForExplicitFinish();
 
-  gBrowser.selectedTab = gBrowser.addTab();
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
   gBrowser.selectedBrowser.addEventListener("load", test1Setup, true);
   content.location = testPage;
 }
@@ -29,7 +29,7 @@ function test1Setup() {
   gBrowser.selectedBrowser.removeEventListener("load", test1Setup, true);
 
   var badFrame = content.frames[1];
-  document.popupNode = badFrame.document.firstChild;
+  document.popupNode = badFrame.document.firstElementChild;
 
   var contentAreaContextMenu = document.getElementById("contentAreaContextMenu");
   var contextMenu = new nsContextMenu(contentAreaContextMenu);
@@ -66,14 +66,14 @@ function test2Setup() {
   // Now let's do the whole thing again, but this time for "Open frame in new tab"
   var badFrame = content.frames[1];
 
-  document.popupNode = badFrame.document.firstChild;
+  document.popupNode = badFrame.document.firstElementChild;
 
   var contentAreaContextMenu = document.getElementById("contentAreaContextMenu");
   var contextMenu = new nsContextMenu(contentAreaContextMenu);
 
-  gBrowser.tabContainer.addEventListener("TabOpen", function(event) {
+  gBrowser.tabContainer.addEventListener("TabOpen", function listener(event) {
     test2tab = event.target;
-    gBrowser.tabContainer.removeEventListener("TabOpen", arguments.callee);
+    gBrowser.tabContainer.removeEventListener("TabOpen", listener);
   });
   contextMenu.openFrameInTab();
   ok(test2tab, "openFrameInTab() opened a tab");
@@ -102,15 +102,15 @@ function testOpenFrameInTab() {
 function test3Setup() {
   // One more time, for "Open frame in new window"
   var badFrame = content.frames[1];
-  document.popupNode = badFrame.document.firstChild;
+  document.popupNode = badFrame.document.firstElementChild;
 
   var contentAreaContextMenu = document.getElementById("contentAreaContextMenu");
   var contextMenu = new nsContextMenu(contentAreaContextMenu);
 
-  Services.ww.registerNotification(function(aSubject, aTopic, aData) {
+  Services.ww.registerNotification(function notification(aSubject, aTopic, aData) {
     if (aTopic == "domwindowopened")
       test3window = aSubject;
-    Services.ww.unregisterNotification(arguments.callee);
+    Services.ww.unregisterNotification(notification);
   });
 
   contextMenu.openFrame();

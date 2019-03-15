@@ -11,6 +11,7 @@
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const { editableField } = require("devtools/client/shared/inplace-editor");
+const {colorUtils} = require("devtools/shared/css/color");
 
 /**
  * Create an inplace editor linked to a span element and click on the span to
@@ -23,8 +24,8 @@ const { editableField } = require("devtools/client/shared/inplace-editor");
  * @param {String} textContent
  *        (optional) String that will be used as the text content of the span.
  */
-const createInplaceEditorAndClick = Task.async(function* (options, doc, textContent) {
-  let span = options.element = createSpan(doc);
+const createInplaceEditorAndClick = async function(options, doc, textContent) {
+  const span = options.element = createSpan(doc);
   if (textContent) {
     span.textContent = textContent;
   }
@@ -34,7 +35,7 @@ const createInplaceEditorAndClick = Task.async(function* (options, doc, textCont
 
   info("Clicking on the inplace-editor field to turn to edit mode");
   span.click();
-});
+};
 
 /**
  * Helper to create a span in the provided document.
@@ -45,8 +46,8 @@ const createInplaceEditorAndClick = Task.async(function* (options, doc, textCont
  */
 function createSpan(doc) {
   info("Creating a new span element");
-  let div = doc.createElementNS(HTML_NS, "div");
-  let span = doc.createElementNS(HTML_NS, "span");
+  const div = doc.createElementNS(HTML_NS, "div");
+  const span = doc.createElementNS(HTML_NS, "span");
   span.setAttribute("tabindex", "0");
   span.style.fontSize = "11px";
   span.style.display = "inline-block";
@@ -58,7 +59,7 @@ function createSpan(doc) {
   div.style.position = "absolute";
   div.appendChild(span);
 
-  let parent = doc.querySelector("window") || doc.body;
+  const parent = doc.querySelector("window") || doc.body;
   parent.appendChild(div);
   return span;
 }
@@ -72,15 +73,18 @@ function createSpan(doc) {
  *        - {String} completion, the expected value of the auto-completion
  *        - {Number} index, the index of the selected suggestion in the popup
  *        - {Number} total, the total number of suggestions in the popup
+ *        - {String} postLabel, the expected post label for the selected suggestion
+ *        - {Boolean} colorSwatch, if there is a swatch of color expected to be visible
  * @param {InplaceEditor} editor
  *        The InplaceEditor instance being tested
  */
-function* testCompletion([key, completion, index, total], editor) {
+async function testCompletion([key, completion, index, total,
+    postLabel, colorSwatch], editor) {
   info("Pressing key " + key);
   info("Expecting " + completion);
 
   let onVisibilityChange = null;
-  let open = total > 0;
+  const open = total > 0;
   if (editor.popup.isOpen != open) {
     onVisibilityChange = editor.popup.once(open ? "popup-opened" : "popup-closed");
   }
@@ -97,14 +101,37 @@ function* testCompletion([key, completion, index, total], editor) {
   info("Synthesizing key " + key);
   EventUtils.synthesizeKey(key, {}, editor.input.defaultView);
 
-  yield onSuggest;
-  yield onVisibilityChange;
-  yield waitForTick();
+  await onSuggest;
+  await onVisibilityChange;
+  await waitForTime(5);
 
   info("Checking the state");
   if (completion !== null) {
     is(editor.input.value, completion, "Correct value is autocompleted");
   }
+
+  if (postLabel) {
+    const selectedItem = editor.popup.getItems()[index];
+    const selectedElement = editor.popup.elements.get(selectedItem);
+    ok(selectedElement.textContent.includes(postLabel),
+      "Selected popup element contains the expected post-label");
+
+    // Determines if there is a color swatch attached to the label
+    // and if the color swatch's background color matches the post label
+    const swatchSpan = selectedElement.getElementsByClassName(
+      "autocomplete-swatch autocomplete-colorswatch");
+    if (colorSwatch) {
+      ok(swatchSpan.length === 1, "Displayed the expected color swatch");
+      const color = new colorUtils.CssColor(swatchSpan[0].style.backgroundColor);
+      const swatchColor = color.rgba;
+      color.newColor(postLabel);
+      const postColor = color.rgba;
+      ok(swatchColor == postColor, "Color swatch matches postLabel value");
+    } else {
+      ok(swatchSpan.length === 0, "As expected no swatches were available");
+    }
+  }
+
   if (total === 0) {
     ok(!(editor.popup && editor.popup.isOpen), "Popup is closed");
   } else {

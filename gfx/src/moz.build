@@ -6,7 +6,6 @@
 
 XPIDL_SOURCES += [
     'nsIFontEnumerator.idl',
-    'nsIScriptableRegion.idl',
 ]
 
 XPIDL_MODULE = 'gfx'
@@ -31,13 +30,11 @@ EXPORTS += [
     'nsMargin.h',
     'nsPoint.h',
     'nsRect.h',
+    'nsRectAbsolute.h',
     'nsRegion.h',
     'nsRegionFwd.h',
-    'nsRenderingContext.h',
     'nsSize.h',
-    'nsThemeConstants.h',
     'nsTransform2D.h',
-    'PingPongRegion.h',
     'RegionBuilder.h',
     'X11UndefineNone.h'
 ]
@@ -45,9 +42,12 @@ EXPORTS += [
 EXPORTS.mozilla += [
     'AppUnits.h',
     'ArrayView.h',
+    'FontPropertyTypes.h',
+    'RelativeLuminanceUtils.h',
 ]
 
 EXPORTS.mozilla.gfx += [
+    'CompositorHitTestInfo.h',
     'TiledRegion.h',
 ]
 
@@ -67,7 +67,6 @@ UNIFIED_SOURCES += [
     'nsFontMetrics.cpp',
     'nsRect.cpp',
     'nsRegion.cpp',
-    'nsScriptableRegion.cpp',
     'nsThebesFontEnumerator.cpp',
     'nsThebesGfxFactory.cpp',
     'nsTransform2D.cpp',

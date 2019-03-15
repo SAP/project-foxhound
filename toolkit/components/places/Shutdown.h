@@ -28,13 +28,13 @@ class Database;
 
  * PHASE 2 (Modern clients shutdown)
  * Modern clients should instead register as a blocker by passing a promise to
- * nsPIPlacesDatabase::shutdownClient (for example see sanitize.js), so they
+ * nsINavHistoryService::shutdownClient (for example see Sanitizer.jsm), so they
  * block Places shutdown until the promise is resolved.
  * When profile-change-teardown is observed by async shutdown, it calls
  * ClientsShutdownBlocker::BlockShutdown. This class is registered as a teardown
  * phase blocker in Database::Init (see Database::mClientsShutdown).
  * ClientsShutdownBlocker::BlockShudown waits for all the clients registered
- * through nsPIPlacesDatabase::shutdownClient. When all the clients are done,
+ * through nsINavHistoryService::shutdownClient. When all the clients are done,
  * its `Done` method is invoked, and it stops blocking the shutdown phase, so
  * that it can continue.
  *
@@ -43,10 +43,6 @@ class Database;
  * Database::Init (see Database::mConnectionShutdown).
  * When profile-before-change is observer by async shutdown, it calls
  * ConnectionShutdownBlocker::BlockShutdown.
- * This is the last chance for any Places internal work, like privacy cleanups,
- * before the connection is closed. This a places-will-close-connection
- * notification is sent to legacy clients that must complete any operation in
- * the same tick, since we won't wait for them.
  * Then the control is passed to Database::Shutdown, that executes some sanity
  * checks, clears cached statements and proceeds with asyncClose.
  * Once the connection is definitely closed, Database will call back
@@ -57,21 +53,22 @@ class Database;
 /**
  * A base AsyncShutdown blocker in charge of shutting down Places.
  */
-class PlacesShutdownBlocker : public nsIAsyncShutdownBlocker
-{
-public:
+class PlacesShutdownBlocker : public nsIAsyncShutdownBlocker,
+                              public nsIAsyncShutdownCompletionCallback {
+ public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIASYNCSHUTDOWNBLOCKER
+  NS_DECL_NSIASYNCSHUTDOWNCOMPLETIONCALLBACK
 
   explicit PlacesShutdownBlocker(const nsString& aName);
+
+  already_AddRefed<nsIAsyncShutdownClient> GetClient();
 
   /**
    * `true` if we have not started shutdown, i.e.  if
    * `BlockShutdown()` hasn't been called yet, false otherwise.
    */
-  static bool IsStarted() {
-    return sIsStarted;
-  }
+  static bool IsStarted() { return sIsStarted; }
 
   // The current state, used internally and for forensics/debugging purposes.
   // Not all the states make sense for all the derived classes.
@@ -98,11 +95,9 @@ public:
     // d. We have notified observers that Places has closed the connection.
     NOTIFIED_OBSERVERS_PLACES_CONNECTION_CLOSED,
   };
-  States State() {
-    return mState;
-  }
+  States State() { return mState; }
 
-protected:
+ protected:
   // The blocker name, also used as barrier name.
   nsString mName;
   // The current state, see States.
@@ -125,38 +120,33 @@ protected:
 /**
  * Blocker also used to wait for clients, through an owned barrier.
  */
-class ClientsShutdownBlocker final : public PlacesShutdownBlocker
-                                   , public nsIAsyncShutdownCompletionCallback
-{
-public:
-  NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_NSIASYNCSHUTDOWNCOMPLETIONCALLBACK
+class ClientsShutdownBlocker final : public PlacesShutdownBlocker {
+ public:
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(ClientsShutdownBlocker,
+                                       PlacesShutdownBlocker)
 
   explicit ClientsShutdownBlocker();
 
-  NS_IMETHOD BlockShutdown(nsIAsyncShutdownClient* aParentClient) override;
+  NS_IMETHOD Done() override;
 
-  already_AddRefed<nsIAsyncShutdownClient> GetClient();
-
-private:
+ private:
   ~ClientsShutdownBlocker() {}
 };
 
 /**
  * Blocker used to wait when closing the database connection.
  */
-class ConnectionShutdownBlocker final : public PlacesShutdownBlocker
-                                      , public mozIStorageCompletionCallback
-{
-public:
+class ConnectionShutdownBlocker final : public PlacesShutdownBlocker,
+                                        public mozIStorageCompletionCallback {
+ public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_MOZISTORAGECOMPLETIONCALLBACK
 
-  NS_IMETHOD BlockShutdown(nsIAsyncShutdownClient* aParentClient) override;
-
   explicit ConnectionShutdownBlocker(mozilla::places::Database* aDatabase);
 
-private:
+  NS_IMETHOD Done() override;
+
+ private:
   ~ConnectionShutdownBlocker() {}
 
   // The owning database.
@@ -165,7 +155,7 @@ private:
   RefPtr<mozilla::places::Database> mDatabase;
 };
 
-} // namespace places
-} // namespace mozilla
+}  // namespace places
+}  // namespace mozilla
 
-#endif // mozilla_places_Shutdown_h_
+#endif  // mozilla_places_Shutdown_h_

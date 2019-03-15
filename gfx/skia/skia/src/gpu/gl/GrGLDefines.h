@@ -408,30 +408,129 @@
 #define GR_GL_LINE_WIDTH_GRANULARITY         0x0B23
 #define GR_GL_LINE_WIDTH_RANGE               0x0B22
 
-/* PixelFormat */
+/* PolygonMode */
+#define GR_GL_POINT                          0x1B00
+#define GR_GL_LINE                           0x1B01
+#define GR_GL_FILL                           0x1B02
+
+/* Unsized formats */
+#define GR_GL_STENCIL_INDEX                  0x1901
 #define GR_GL_DEPTH_COMPONENT                0x1902
+#define GR_GL_DEPTH_STENCIL                  0x84F9
 #define GR_GL_RED                            0x1903
+#define GR_GL_RED_INTEGER                    0x8D94
 #define GR_GL_GREEN                          0x1904
 #define GR_GL_BLUE                           0x1905
 #define GR_GL_ALPHA                          0x1906
-#define GR_GL_RGB                            0x1907
-#define GR_GL_RGBA                           0x1908
-#define GR_GL_BGRA                           0x80E1
 #define GR_GL_LUMINANCE                      0x1909
 #define GR_GL_LUMINANCE_ALPHA                0x190A
-#define GR_GL_PALETTE8_RGBA8                 0x8B96
-#define GR_GL_ALPHA8                         0x803C
+#define GR_GL_RG_INTEGER                     0x8228
+#define GR_GL_RGB                            0x1907
+#define GR_GL_RGB_INTEGER                    0x8D98
+#define GR_GL_SRGB                           0x8C40
+#define GR_GL_RGBA                           0x1908
+#define GR_GL_RG                             0x8227
+#define GR_GL_SRGB_ALPHA                     0x8C42
+#define GR_GL_RGBA_INTEGER                   0x8D99
+#define GR_GL_BGRA                           0x80E1
 
+/* Stencil index sized formats */
+#define GR_GL_STENCIL_INDEX4                 0x8D47
+#define GR_GL_STENCIL_INDEX8                 0x8D48
+#define GR_GL_STENCIL_INDEX16                0x8D49
+
+/* Depth component sized formats */
+#define GR_GL_DEPTH_COMPONENT16              0x81A5
+
+/* Depth stencil sized formats */
+#define GR_GL_DEPTH24_STENCIL8               0x88F0
+
+/* Red sized formats */
 #define GR_GL_R8                             0x8229
+#define GR_GL_R16                            0x822A
 #define GR_GL_R16F                           0x822D
-#define GR_GL_RGBA16F                        0x881A
+#define GR_GL_R32F                           0x822E
+
+/* Red integer sized formats */
+#define GR_GL_R8I                            0x8231
+#define GR_GL_R8UI                           0x8232
+#define GR_GL_R16I                           0x8233
+#define GR_GL_R16UI                          0x8234
+#define GR_GL_R32I                           0x8235
+#define GR_GL_R32UI                          0x8236
+
+/* Luminance sized formats */
+#define GR_GL_LUMINANCE8                     0x8040
+
+/* Alpha sized formats */
+#define GR_GL_ALPHA8                         0x803C
+#define GR_GL_ALPHA16                        0x803E
 #define GR_GL_ALPHA16F                       0x881C
+#define GR_GL_ALPHA32F                       0x8816
+
+/* Alpha integer sized formats */
+#define GR_GL_ALPHA8I                        0x8D90
+#define GR_GL_ALPHA8UI                       0x8D7E
+#define GR_GL_ALPHA16I                       0x8D8A
+#define GR_GL_ALPHA16UI                      0x8D78
+#define GR_GL_ALPHA32I                       0x8D84
+#define GR_GL_ALPHA32UI                      0x8D72
+
+/* RG sized formats */
+#define GR_GL_RG8                            0x822B
+#define GR_GL_RG16                           0x822C
+#define GR_GL_R16F                           0x822D
+#define GR_GL_R32F                           0x822E
+
+/* RG sized integer formats */
+#define GR_GL_RG8I                           0x8237
+#define GR_GL_RG8UI                          0x8238
+#define GR_GL_RG16I                          0x8239
+#define GR_GL_RG16UI                         0x823A
+#define GR_GL_RG32I                          0x823B
+#define GR_GL_RG32UI                         0x823C
+
+/* RGB sized formats */
+#define GR_GL_RGB5                           0x8050
+#define GR_GL_RGB565                         0x8D62
+#define GR_GL_RGB8                           0x8051
+#define GR_GL_SRGB8                          0x8C41
+
+/* RGB integer sized formats */
+#define GR_GL_RGB8I                          0x8D8F
+#define GR_GL_RGB8UI                         0x8D7D
+#define GR_GL_RGB16I                         0x8D89
+#define GR_GL_RGB16UI                        0x8D77
+#define GR_GL_RGB32I                         0x8D83
+#define GR_GL_RGB32UI                        0x8D71
+
+/* RGBA sized formats */
+#define GR_GL_RGBA4                          0x8056
+#define GR_GL_RGB5_A1                        0x8057
+#define GR_GL_RGBA8                          0x8058
+#define GR_GL_RGB10_A2                       0x8059
+#define GR_GL_SRGB8_ALPHA8                   0x8C43
+#define GR_GL_RGBA16F                        0x881A
+#define GR_GL_RGBA32F                        0x8814
+#define GR_GL_RG32F                          0x8230
+
+/* RGBA integer sized formats */
+#define GR_GL_RGBA8I                         0x8D8E
+#define GR_GL_RGBA8UI                        0x8D7C
+#define GR_GL_RGBA16I                        0x8D88
+#define GR_GL_RGBA16UI                       0x8D76
+#define GR_GL_RGBA32I                        0x8D82
+#define GR_GL_RGBA32UI                       0x8D70
+
+/* BGRA sized formats */
+#define GR_GL_BGRA8                          0x93A1
 
 /* PixelType */
 /*      GL_UNSIGNED_BYTE */
 #define GR_GL_UNSIGNED_SHORT_4_4_4_4         0x8033
 #define GR_GL_UNSIGNED_SHORT_5_5_5_1         0x8034
 #define GR_GL_UNSIGNED_SHORT_5_6_5           0x8363
+#define GR_GL_UNSIGNED_INT_2_10_10_10_REV    0x8368
 
 /* Shaders */
 #define GR_GL_FRAGMENT_SHADER                          0x8B30
@@ -459,6 +558,7 @@
 #define GR_GL_MAX_FRAGMENT_UNIFORM_COMPONENTS          0x8B49
 #define GR_GL_MAX_VERTEX_UNIFORM_COMPONENTS            0x8B4A
 #define GR_GL_MAX_SHADER_PIXEL_LOCAL_STORAGE_FAST_SIZE 0x8F63
+#define GR_GL_SHADER_BINARY_FORMATS                    0x8DF8
 
 /* StencilFunction */
 #define GR_GL_NEVER                          0x0200
@@ -509,17 +609,12 @@
 /* TextureUsage */
 #define GR_GL_FRAMEBUFFER_ATTACHMENT         0x93A3
 
-/* TextureSRGBDecode */
-#define GR_GL_DECODE_EXT                     0x8A49
-#define GR_GL_SKIP_DECODE_EXT                0x8A4A
-
 /* TextureParameterName */
 #define GR_GL_TEXTURE_MAG_FILTER             0x2800
 #define GR_GL_TEXTURE_MIN_FILTER             0x2801
 #define GR_GL_TEXTURE_WRAP_S                 0x2802
 #define GR_GL_TEXTURE_WRAP_T                 0x2803
 #define GR_GL_TEXTURE_USAGE                  0x93A2
-#define GR_GL_TEXTURE_SRGB_DECODE_EXT        0x8A48
 
 /* TextureTarget */
 /*      GL_TEXTURE_2D */
@@ -727,10 +822,12 @@
 #define GR_GL_T2F_N3F_V3F                        0x2A2B
 #define GR_GL_T2F_C4F_N3F_V3F                    0x2A2C
 #define GR_GL_T4F_C4F_N3F_V4F                    0x2A2D
+#define GR_GL_PRIMITIVE_RESTART_FIXED_INDEX      0x8D69
 
 /* Buffer Object */
 #define GR_GL_READ_ONLY                          0x88B8
 #define GR_GL_WRITE_ONLY                         0x88B9
+#define GR_GL_READ_WRITE                         0x88BA
 #define GR_GL_BUFFER_MAPPED                      0x88BC
 
 #define GR_GL_MAP_READ_BIT                       0x0001
@@ -753,6 +850,9 @@
 /* Shader Binary */
 #define GR_GL_SHADER_BINARY_FORMATS          0x8DF8
 #define GR_GL_NUM_SHADER_BINARY_FORMATS      0x8DF9
+
+/* Program Binary */
+#define GR_GL_NUM_PROGRAM_BINARY_FORMATS     0x87FE
 
 /* Shader Precision-Specified Types */
 #define GR_GL_LOW_FLOAT                      0x8DF0
@@ -781,26 +881,6 @@
 #define GR_GL_DRAW_FRAMEBUFFER               0x8CA9
 
 #define GR_GL_RENDERBUFFER                   0x8D41
-
-#define GR_GL_RGBA4                          0x8056
-#define GR_GL_RGB5_A1                        0x8057
-#define GR_GL_RGB565                         0x8D62
-#define GR_GL_RGBA8                          0x8058
-#define GR_GL_RGBA32F                        0x8814
-#define GR_GL_RGB5                           0x8050
-#define GR_GL_RGB8                           0x8051
-#define GR_GL_BGRA8                          0x93A1
-#define GR_GL_SRGB                           0x8C40
-#define GR_GL_SRGB8                          0x8C41
-#define GR_GL_SRGB_ALPHA                     0x8C42
-#define GR_GL_SRGB8_ALPHA8                   0x8C43
-#define GR_GL_DEPTH_COMPONENT16              0x81A5
-#define GR_GL_STENCIL_INDEX                  0x1901
-#define GR_GL_STENCIL_INDEX4                 0x8D47
-#define GR_GL_STENCIL_INDEX8                 0x8D48
-#define GR_GL_STENCIL_INDEX16                0x8D49
-#define GR_GL_DEPTH_STENCIL                  0x84F9
-#define GR_GL_DEPTH24_STENCIL8               0x88F0
 
 #define GR_GL_MAX_SAMPLES                    0x8D57
 // GL_IMG_multisampled_render_to_texture uses a different value for GL_MAX_SAMPLES
@@ -959,7 +1039,7 @@
 /* GL_OES_EGL_image_external */
 #define GR_GL_TEXTURE_EXTERNAL                              0x8D65
 
-/* GL_ARB_texture_rectangle */
+/* GL_ARB_texture_rectangle or GL_ANGLE_texture_rectangle */
 #define GR_GL_TEXTURE_RECTANGLE                             0x84F5
 
 /* GL_EXT_window_rectangles */
@@ -974,6 +1054,13 @@
 #define GR_GL_CONDITION_SATISFIED                           0x911C
 #define GR_GL_WAIT_FAILED                                   0x911D
 #define GR_GL_SYNC_FLUSH_COMMANDS_BIT                       0x00000001
+#define GR_GL_TIMEOUT_IGNORED                               0xFFFFFFFFFFFFFFFFull
+
+/* GL_EXT_geometry_shader */
+#define GR_GL_LINES_ADJACENCY                               0x000A
+
+/* GL_ARB_internalformat_query */
+#define GR_GL_NUM_SAMPLE_COUNTS                             0x9380
 
 /* EGL Defines */
 #define GR_EGL_NO_DISPLAY                                   ((GrEGLDisplay)0)
@@ -985,5 +1072,9 @@
 #define GR_EGL_TRUE                                         0x1
 #define GR_EGL_NONE                                         0x3038
 #define GR_EGL_NO_IMAGE                                    ((GrEGLImage)0)
+
+/* Programs */
+#define GR_GL_PROGRAM_BINARY_RETRIEVABLE_HINT               0x8257
+#define GL_PROGRAM_BINARY_LENGTH                            0x8741
 
 #endif

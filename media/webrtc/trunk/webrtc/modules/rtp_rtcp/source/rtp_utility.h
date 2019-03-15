@@ -8,36 +8,35 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_RTP_RTCP_SOURCE_RTP_UTILITY_H_
-#define WEBRTC_MODULES_RTP_RTCP_SOURCE_RTP_UTILITY_H_
+#ifndef MODULES_RTP_RTCP_SOURCE_RTP_UTILITY_H_
+#define MODULES_RTP_RTCP_SOURCE_RTP_UTILITY_H_
 
+#include <cstring>
 #include <map>
 
-#include "webrtc/base/deprecation.h"
-#include "webrtc/modules/rtp_rtcp/include/receive_statistics.h"
-#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_header_extension.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_rtcp_config.h"
-#include "webrtc/typedefs.h"
+#include "modules/rtp_rtcp/include/receive_statistics.h"
+#include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+#include "modules/rtp_rtcp/source/rtp_rtcp_config.h"
+#include "rtc_base/deprecation.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
 const uint8_t kRtpMarkerBitMask = 0x80;
 
-RtpData* NullObjectRtpData();
 RtpFeedback* NullObjectRtpFeedback();
-RtpAudioFeedback* NullObjectRtpAudioFeedback();
-ReceiveStatistics* NullObjectReceiveStatistics();
 
 namespace RtpUtility {
 
 struct Payload {
+  Payload(const char* name, const PayloadUnion& pu) : typeSpecific(pu) {
+    std::strncpy(this->name, name, sizeof(this->name) - 1);
+    this->name[sizeof(this->name) - 1] = '\0';
+  }
   char name[RTP_PAYLOAD_NAME_SIZE];
-  bool audio;
   PayloadUnion typeSpecific;
 };
-
-typedef std::map<int8_t, Payload*> PayloadTypeMap;
 
 bool StringCompare(const char* str1, const char* str2, const uint32_t length);
 
@@ -52,12 +51,8 @@ class RtpHeaderParser {
   bool RTCP() const;
   bool ParseRtcp(RTPHeader* header) const;
   bool Parse(RTPHeader* parsedPacket,
-             RtpHeaderExtensionMap* ptrExtensionMap = nullptr) const;
-  RTC_DEPRECATED bool Parse(
-      RTPHeader& parsedPacket,  // NOLINT(runtime/references)
-      RtpHeaderExtensionMap* ptrExtensionMap = nullptr) const {
-    return Parse(&parsedPacket, ptrExtensionMap);
-  }
+             RtpHeaderExtensionMap* ptrExtensionMap = nullptr,
+             bool secured = false) const;
 
  private:
   void ParseOneByteExtensionHeader(RTPHeader* parsedPacket,
@@ -65,13 +60,10 @@ class RtpHeaderParser {
                                    const uint8_t* ptrRTPDataExtensionEnd,
                                    const uint8_t* ptr) const;
 
-  uint8_t ParsePaddingBytes(const uint8_t* ptrRTPDataExtensionEnd,
-                            const uint8_t* ptr) const;
-
   const uint8_t* const _ptrRTPDataBegin;
   const uint8_t* const _ptrRTPDataEnd;
 };
 }  // namespace RtpUtility
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_RTP_RTCP_SOURCE_RTP_UTILITY_H_
+#endif  // MODULES_RTP_RTCP_SOURCE_RTP_UTILITY_H_

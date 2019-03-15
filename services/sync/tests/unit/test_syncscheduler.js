@@ -1,18 +1,16 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Cu.import("resource://services-sync/browserid_identity.js");
-Cu.import("resource://services-sync/constants.js");
-Cu.import("resource://services-sync/engines.js");
-Cu.import("resource://services-sync/engines/clients.js");
-Cu.import("resource://services-sync/policies.js");
-Cu.import("resource://services-sync/record.js");
-Cu.import("resource://services-sync/service.js");
-Cu.import("resource://services-sync/status.js");
-Cu.import("resource://services-sync/util.js");
-Cu.import("resource://testing-common/services/sync/utils.js");
-
-Service.engineManager.clear();
+ChromeUtils.import("resource://gre/modules/FxAccounts.jsm");
+ChromeUtils.import("resource://services-sync/browserid_identity.js");
+ChromeUtils.import("resource://services-sync/constants.js");
+ChromeUtils.import("resource://services-sync/engines.js");
+ChromeUtils.import("resource://services-sync/engines/clients.js");
+ChromeUtils.import("resource://services-sync/policies.js");
+ChromeUtils.import("resource://services-sync/record.js");
+ChromeUtils.import("resource://services-sync/service.js");
+ChromeUtils.import("resource://services-sync/status.js");
+ChromeUtils.import("resource://services-sync/util.js");
 
 function CatapultEngine() {
   SyncEngine.call(this, "Catapult", Service);
@@ -20,27 +18,21 @@ function CatapultEngine() {
 CatapultEngine.prototype = {
   __proto__: SyncEngine.prototype,
   exception: null, // tests fill this in
-  _sync: function _sync() {
+  async _sync() {
     throw this.exception;
-  }
+  },
 };
 
-Service.engineManager.register(CatapultEngine);
-
 var scheduler = new SyncScheduler(Service);
-var clientsEngine = Service.clientsEngine;
+let clientsEngine;
 
-// Don't remove stale clients when syncing. This is a test-only workaround
-// that lets us add clients directly to the store, without losing them on
-// the next sync.
-clientsEngine._removeRemoteClient = id => {};
-
-function sync_httpd_setup() {
+async function sync_httpd_setup() {
+  let clientsSyncID = await clientsEngine.resetLocalSyncID();
   let global = new ServerWBO("global", {
     syncID: Service.syncID,
     storageVersion: STORAGE_VERSION,
     engines: {clients: {version: clientsEngine.version,
-                        syncID: clientsEngine.syncID}}
+                        syncID: clientsSyncID}},
   });
   let clientsColl = new ServerCollection({}, true);
 
@@ -53,85 +45,91 @@ function sync_httpd_setup() {
     "/1.1/johndoe@mozilla.com/info/collections": collectionsHelper.handler,
     "/1.1/johndoe@mozilla.com/storage/crypto/keys":
       upd("crypto", (new ServerWBO("keys")).handler()),
-    "/1.1/johndoe@mozilla.com/storage/clients": upd("clients", clientsColl.handler())
+    "/1.1/johndoe@mozilla.com/storage/clients": upd("clients", clientsColl.handler()),
   });
 }
 
 async function setUp(server) {
   await configureIdentity({username: "johndoe@mozilla.com"}, server);
 
-  generateNewKeys(Service.collectionKeys);
+  await generateNewKeys(Service.collectionKeys);
   let serverKeys = Service.collectionKeys.asWBO("crypto", "keys");
-  serverKeys.encrypt(Service.identity.syncKeyBundle);
-  let result = serverKeys.upload(Service.resource(Service.cryptoKeysURL)).success;
+  await serverKeys.encrypt(Service.identity.syncKeyBundle);
+  let result = (await serverKeys.upload(Service.resource(Service.cryptoKeysURL))).success;
   return result;
 }
 
 async function cleanUpAndGo(server) {
-  await promiseNextTick();
-  clientsEngine._store.wipe();
-  Service.startOver();
+  await Async.promiseYield();
+  await clientsEngine._store.wipe();
+  await Service.startOver();
+  // Re-enable logging, which we just disabled.
+  syncTestLogging();
   if (server) {
     await promiseStopServer(server);
   }
 }
 
-function run_test() {
-  initTestLogging("Trace");
+add_task(async function setup() {
+  await Service.promiseInitialized;
+  clientsEngine = Service.clientsEngine;
+  // Don't remove stale clients when syncing. This is a test-only workaround
+  // that lets us add clients directly to the store, without losing them on
+  // the next sync.
+  clientsEngine._removeRemoteClient = async (id) => {};
+  await Service.engineManager.clear();
 
-  Log.repository.getLogger("Sync.Service").level = Log.Level.Trace;
-  Log.repository.getLogger("Sync.scheduler").level = Log.Level.Trace;
   validate_all_future_pings();
 
   scheduler.setDefaults();
 
-  run_next_test();
-}
+  await Service.engineManager.register(CatapultEngine);
+});
 
 add_test(function test_prefAttributes() {
   _("Test various attributes corresponding to preferences.");
 
-  const INTERVAL = 42 * 60 * 1000;   // 42 minutes
+  const INTERVAL = 42 * 60 * 1000; // 42 minutes
   const THRESHOLD = 3142;
   const SCORE = 2718;
   const TIMESTAMP1 = 1275493471649;
 
   _("The 'nextSync' attribute stores a millisecond timestamp rounded down to the nearest second.");
-  do_check_eq(scheduler.nextSync, 0);
+  Assert.equal(scheduler.nextSync, 0);
   scheduler.nextSync = TIMESTAMP1;
-  do_check_eq(scheduler.nextSync, Math.floor(TIMESTAMP1 / 1000) * 1000);
+  Assert.equal(scheduler.nextSync, Math.floor(TIMESTAMP1 / 1000) * 1000);
 
   _("'syncInterval' defaults to singleDeviceInterval.");
-  do_check_eq(Svc.Prefs.get("syncInterval"), undefined);
-  do_check_eq(scheduler.syncInterval, scheduler.singleDeviceInterval);
+  Assert.equal(Svc.Prefs.get("syncInterval"), undefined);
+  Assert.equal(scheduler.syncInterval, scheduler.singleDeviceInterval);
 
   _("'syncInterval' corresponds to a preference setting.");
   scheduler.syncInterval = INTERVAL;
-  do_check_eq(scheduler.syncInterval, INTERVAL);
-  do_check_eq(Svc.Prefs.get("syncInterval"), INTERVAL);
+  Assert.equal(scheduler.syncInterval, INTERVAL);
+  Assert.equal(Svc.Prefs.get("syncInterval"), INTERVAL);
 
   _("'syncThreshold' corresponds to preference, defaults to SINGLE_USER_THRESHOLD");
-  do_check_eq(Svc.Prefs.get("syncThreshold"), undefined);
-  do_check_eq(scheduler.syncThreshold, SINGLE_USER_THRESHOLD);
+  Assert.equal(Svc.Prefs.get("syncThreshold"), undefined);
+  Assert.equal(scheduler.syncThreshold, SINGLE_USER_THRESHOLD);
   scheduler.syncThreshold = THRESHOLD;
-  do_check_eq(scheduler.syncThreshold, THRESHOLD);
+  Assert.equal(scheduler.syncThreshold, THRESHOLD);
 
   _("'globalScore' corresponds to preference, defaults to zero.");
-  do_check_eq(Svc.Prefs.get("globalScore"), 0);
-  do_check_eq(scheduler.globalScore, 0);
+  Assert.equal(Svc.Prefs.get("globalScore"), 0);
+  Assert.equal(scheduler.globalScore, 0);
   scheduler.globalScore = SCORE;
-  do_check_eq(scheduler.globalScore, SCORE);
-  do_check_eq(Svc.Prefs.get("globalScore"), SCORE);
+  Assert.equal(scheduler.globalScore, SCORE);
+  Assert.equal(Svc.Prefs.get("globalScore"), SCORE);
 
   _("Intervals correspond to default preferences.");
-  do_check_eq(scheduler.singleDeviceInterval,
-              Svc.Prefs.get("scheduler.fxa.singleDeviceInterval") * 1000);
-  do_check_eq(scheduler.idleInterval,
-              Svc.Prefs.get("scheduler.idleInterval") * 1000);
-  do_check_eq(scheduler.activeInterval,
-              Svc.Prefs.get("scheduler.activeInterval") * 1000);
-  do_check_eq(scheduler.immediateInterval,
-              Svc.Prefs.get("scheduler.immediateInterval") * 1000);
+  Assert.equal(scheduler.singleDeviceInterval,
+               Svc.Prefs.get("scheduler.fxa.singleDeviceInterval") * 1000);
+  Assert.equal(scheduler.idleInterval,
+               Svc.Prefs.get("scheduler.idleInterval") * 1000);
+  Assert.equal(scheduler.activeInterval,
+               Svc.Prefs.get("scheduler.activeInterval") * 1000);
+  Assert.equal(scheduler.immediateInterval,
+               Svc.Prefs.get("scheduler.immediateInterval") * 1000);
 
   _("Custom values for prefs will take effect after a restart.");
   Svc.Prefs.set("scheduler.fxa.singleDeviceInterval", 420);
@@ -139,10 +137,10 @@ add_test(function test_prefAttributes() {
   Svc.Prefs.set("scheduler.activeInterval", 180);
   Svc.Prefs.set("scheduler.immediateInterval", 31415);
   scheduler.setDefaults();
-  do_check_eq(scheduler.idleInterval, 230000);
-  do_check_eq(scheduler.singleDeviceInterval, 420000);
-  do_check_eq(scheduler.activeInterval, 180000);
-  do_check_eq(scheduler.immediateInterval, 31415000);
+  Assert.equal(scheduler.idleInterval, 230000);
+  Assert.equal(scheduler.singleDeviceInterval, 420000);
+  Assert.equal(scheduler.activeInterval, 180000);
+  Assert.equal(scheduler.immediateInterval, 31415000);
 
   _("Custom values for interval prefs can't be less than 60 seconds.");
   Svc.Prefs.set("scheduler.fxa.singleDeviceInterval", 42);
@@ -150,10 +148,10 @@ add_test(function test_prefAttributes() {
   Svc.Prefs.set("scheduler.activeInterval", 50);
   Svc.Prefs.set("scheduler.immediateInterval", 10);
   scheduler.setDefaults();
-  do_check_eq(scheduler.idleInterval, 60000);
-  do_check_eq(scheduler.singleDeviceInterval, 60000);
-  do_check_eq(scheduler.activeInterval, 60000);
-  do_check_eq(scheduler.immediateInterval, 60000);
+  Assert.equal(scheduler.idleInterval, 60000);
+  Assert.equal(scheduler.singleDeviceInterval, 60000);
+  Assert.equal(scheduler.activeInterval, 60000);
+  Assert.equal(scheduler.immediateInterval, 60000);
 
   Svc.Prefs.resetBranch("");
   scheduler.setDefaults();
@@ -162,32 +160,32 @@ add_test(function test_prefAttributes() {
 
 add_task(async function test_updateClientMode() {
   _("Test updateClientMode adjusts scheduling attributes based on # of clients appropriately");
-  do_check_eq(scheduler.syncThreshold, SINGLE_USER_THRESHOLD);
-  do_check_eq(scheduler.syncInterval, scheduler.singleDeviceInterval);
-  do_check_false(scheduler.numClients > 1);
-  do_check_false(scheduler.idle);
+  Assert.equal(scheduler.syncThreshold, SINGLE_USER_THRESHOLD);
+  Assert.equal(scheduler.syncInterval, scheduler.singleDeviceInterval);
+  Assert.equal(false, scheduler.numClients > 1);
+  Assert.ok(!scheduler.idle);
 
   // Trigger a change in interval & threshold by noting there are multiple clients.
   Svc.Prefs.set("clients.devices.desktop", 1);
   Svc.Prefs.set("clients.devices.mobile", 1);
   scheduler.updateClientMode();
 
-  do_check_eq(scheduler.syncThreshold, MULTI_DEVICE_THRESHOLD);
-  do_check_eq(scheduler.syncInterval, scheduler.activeInterval);
-  do_check_true(scheduler.numClients > 1);
-  do_check_false(scheduler.idle);
+  Assert.equal(scheduler.syncThreshold, MULTI_DEVICE_THRESHOLD);
+  Assert.equal(scheduler.syncInterval, scheduler.activeInterval);
+  Assert.ok(scheduler.numClients > 1);
+  Assert.ok(!scheduler.idle);
 
   // Resets the number of clients to 0.
-  clientsEngine.resetClient();
+  await clientsEngine.resetClient();
   Svc.Prefs.reset("clients.devices.mobile");
   scheduler.updateClientMode();
 
   // Goes back to single user if # clients is 1.
-  do_check_eq(scheduler.numClients, 1);
-  do_check_eq(scheduler.syncThreshold, SINGLE_USER_THRESHOLD);
-  do_check_eq(scheduler.syncInterval, scheduler.singleDeviceInterval);
-  do_check_false(scheduler.numClients > 1);
-  do_check_false(scheduler.idle);
+  Assert.equal(scheduler.numClients, 1);
+  Assert.equal(scheduler.syncThreshold, SINGLE_USER_THRESHOLD);
+  Assert.equal(scheduler.syncInterval, scheduler.singleDeviceInterval);
+  Assert.equal(false, scheduler.numClients > 1);
+  Assert.ok(!scheduler.idle);
 
   await cleanUpAndGo();
 });
@@ -207,23 +205,23 @@ add_task(async function test_masterpassword_locked_retry_interval() {
   let oldScheduleAtInterval = SyncScheduler.prototype.scheduleAtInterval;
   SyncScheduler.prototype.scheduleAtInterval = function(interval) {
     rescheduleInterval = true;
-    do_check_eq(interval, MASTER_PASSWORD_LOCKED_RETRY_INTERVAL);
+    Assert.equal(interval, MASTER_PASSWORD_LOCKED_RETRY_INTERVAL);
   };
 
   let oldVerifyLogin = Service.verifyLogin;
-  Service.verifyLogin = function() {
+  Service.verifyLogin = async function() {
     Status.login = MASTER_PASSWORD_LOCKED;
     return false;
   };
 
-  let server = sync_httpd_setup();
+  let server = await sync_httpd_setup();
   await setUp(server);
 
-  Service.sync();
+  await Service.sync();
 
-  do_check_true(loginFailed);
-  do_check_eq(Status.login, MASTER_PASSWORD_LOCKED);
-  do_check_true(rescheduleInterval);
+  Assert.ok(loginFailed);
+  Assert.equal(Status.login, MASTER_PASSWORD_LOCKED);
+  Assert.ok(rescheduleInterval);
 
   Service.verifyLogin = oldVerifyLogin;
   SyncScheduler.prototype.scheduleAtInterval = oldScheduleAtInterval;
@@ -232,7 +230,7 @@ add_task(async function test_masterpassword_locked_retry_interval() {
 });
 
 add_task(async function test_calculateBackoff() {
-  do_check_eq(Status.backoffInterval, 0);
+  Assert.equal(Status.backoffInterval, 0);
 
   // Test no interval larger than the maximum backoff is used if
   // Status.backoffInterval is smaller.
@@ -240,7 +238,7 @@ add_task(async function test_calculateBackoff() {
   let backoffInterval = Utils.calculateBackoff(50, MAXIMUM_BACKOFF_INTERVAL,
                                                Status.backoffInterval);
 
-  do_check_eq(backoffInterval, MAXIMUM_BACKOFF_INTERVAL);
+  Assert.equal(backoffInterval, MAXIMUM_BACKOFF_INTERVAL);
 
   // Test Status.backoffInterval is used if it is
   // larger than MAXIMUM_BACKOFF_INTERVAL.
@@ -248,7 +246,7 @@ add_task(async function test_calculateBackoff() {
   backoffInterval = Utils.calculateBackoff(50, MAXIMUM_BACKOFF_INTERVAL,
                                            Status.backoffInterval);
 
-  do_check_eq(backoffInterval, MAXIMUM_BACKOFF_INTERVAL + 10);
+  Assert.equal(backoffInterval, MAXIMUM_BACKOFF_INTERVAL + 10);
 
   await cleanUpAndGo();
 });
@@ -258,7 +256,7 @@ add_task(async function test_scheduleNextSync_nowOrPast() {
 
   let promiseObserved = promiseOneObserver("weave:service:sync:finish");
 
-  let server = sync_httpd_setup();
+  let server = await sync_httpd_setup();
   await setUp(server);
 
   // We're late for a sync...
@@ -272,7 +270,7 @@ add_task(async function test_scheduleNextSync_future_noBackoff() {
 
   _("scheduleNextSync() uses the current syncInterval if no interval is provided.");
   // Test backoffInterval is 0 as expected.
-  do_check_eq(Status.backoffInterval, 0);
+  Assert.equal(Status.backoffInterval, 0);
 
   _("Test setting sync interval when nextSync == 0");
   scheduler.nextSync = 0;
@@ -280,9 +278,9 @@ add_task(async function test_scheduleNextSync_future_noBackoff() {
 
   // nextSync - Date.now() might be smaller than expectedInterval
   // since some time has passed since we called scheduleNextSync().
-  do_check_true(scheduler.nextSync - Date.now()
-                <= scheduler.syncInterval);
-  do_check_eq(scheduler.syncTimer.delay, scheduler.syncInterval);
+  Assert.ok(scheduler.nextSync - Date.now()
+            <= scheduler.syncInterval);
+  Assert.equal(scheduler.syncTimer.delay, scheduler.syncInterval);
 
   _("Test setting sync interval when nextSync != 0");
   scheduler.nextSync = Date.now() + scheduler.singleDeviceInterval;
@@ -290,9 +288,9 @@ add_task(async function test_scheduleNextSync_future_noBackoff() {
 
   // nextSync - Date.now() might be smaller than expectedInterval
   // since some time has passed since we called scheduleNextSync().
-  do_check_true(scheduler.nextSync - Date.now()
-                <= scheduler.syncInterval);
-  do_check_true(scheduler.syncTimer.delay <= scheduler.syncInterval);
+  Assert.ok(scheduler.nextSync - Date.now()
+            <= scheduler.syncInterval);
+  Assert.ok(scheduler.syncTimer.delay <= scheduler.syncInterval);
 
   _("Scheduling requests for intervals larger than the current one will be ignored.");
   // Request a sync at a longer interval. The sync that's already scheduled
@@ -301,19 +299,19 @@ add_task(async function test_scheduleNextSync_future_noBackoff() {
   let timerDelay = scheduler.syncTimer.delay;
   let requestedInterval = scheduler.syncInterval * 10;
   scheduler.scheduleNextSync(requestedInterval);
-  do_check_eq(scheduler.nextSync, nextSync);
-  do_check_eq(scheduler.syncTimer.delay, timerDelay);
+  Assert.equal(scheduler.nextSync, nextSync);
+  Assert.equal(scheduler.syncTimer.delay, timerDelay);
 
   // We can schedule anything we want if there isn't a sync scheduled.
   scheduler.nextSync = 0;
   scheduler.scheduleNextSync(requestedInterval);
-  do_check_true(scheduler.nextSync <= Date.now() + requestedInterval);
-  do_check_eq(scheduler.syncTimer.delay, requestedInterval);
+  Assert.ok(scheduler.nextSync <= Date.now() + requestedInterval);
+  Assert.equal(scheduler.syncTimer.delay, requestedInterval);
 
   // Request a sync at the smallest possible interval (0 triggers now).
   scheduler.scheduleNextSync(1);
-  do_check_true(scheduler.nextSync <= Date.now() + 1);
-  do_check_eq(scheduler.syncTimer.delay, 1);
+  Assert.ok(scheduler.nextSync <= Date.now() + 1);
+  Assert.equal(scheduler.syncTimer.delay, 1);
 
   await cleanUpAndGo();
 });
@@ -332,9 +330,9 @@ add_task(async function test_scheduleNextSync_future_backoff() {
 
   // nextSync - Date.now() might be smaller than expectedInterval
   // since some time has passed since we called scheduleNextSync().
-  do_check_true(scheduler.nextSync - Date.now()
-                <= Status.backoffInterval);
-  do_check_eq(scheduler.syncTimer.delay, Status.backoffInterval);
+  Assert.ok(scheduler.nextSync - Date.now()
+            <= Status.backoffInterval);
+  Assert.equal(scheduler.syncTimer.delay, Status.backoffInterval);
 
   _("Test setting sync interval when nextSync != 0");
   scheduler.nextSync = Date.now() + scheduler.singleDeviceInterval;
@@ -342,30 +340,30 @@ add_task(async function test_scheduleNextSync_future_backoff() {
 
   // nextSync - Date.now() might be smaller than expectedInterval
   // since some time has passed since we called scheduleNextSync().
-  do_check_true(scheduler.nextSync - Date.now()
-                <= Status.backoffInterval);
-  do_check_true(scheduler.syncTimer.delay <= Status.backoffInterval);
+  Assert.ok(scheduler.nextSync - Date.now()
+            <= Status.backoffInterval);
+  Assert.ok(scheduler.syncTimer.delay <= Status.backoffInterval);
 
   // Request a sync at a longer interval. The sync that's already scheduled
   // for sooner takes precedence.
   let nextSync = scheduler.nextSync;
   let timerDelay = scheduler.syncTimer.delay;
   let requestedInterval = scheduler.syncInterval * 10;
-  do_check_true(requestedInterval > Status.backoffInterval);
+  Assert.ok(requestedInterval > Status.backoffInterval);
   scheduler.scheduleNextSync(requestedInterval);
-  do_check_eq(scheduler.nextSync, nextSync);
-  do_check_eq(scheduler.syncTimer.delay, timerDelay);
+  Assert.equal(scheduler.nextSync, nextSync);
+  Assert.equal(scheduler.syncTimer.delay, timerDelay);
 
   // We can schedule anything we want if there isn't a sync scheduled.
   scheduler.nextSync = 0;
   scheduler.scheduleNextSync(requestedInterval);
-  do_check_true(scheduler.nextSync <= Date.now() + requestedInterval);
-  do_check_eq(scheduler.syncTimer.delay, requestedInterval);
+  Assert.ok(scheduler.nextSync <= Date.now() + requestedInterval);
+  Assert.equal(scheduler.syncTimer.delay, requestedInterval);
 
   // Request a sync at the smallest possible interval (0 triggers now).
   scheduler.scheduleNextSync(1);
-  do_check_true(scheduler.nextSync <= Date.now() + Status.backoffInterval);
-  do_check_eq(scheduler.syncTimer.delay, Status.backoffInterval);
+  Assert.ok(scheduler.nextSync <= Date.now() + Status.backoffInterval);
+  Assert.equal(scheduler.syncTimer.delay, Status.backoffInterval);
 
   await cleanUpAndGo();
 });
@@ -373,58 +371,58 @@ add_task(async function test_scheduleNextSync_future_backoff() {
 add_task(async function test_handleSyncError() {
   enableValidationPrefs();
 
-  let server = sync_httpd_setup();
+  let server = await sync_httpd_setup();
   await setUp(server);
 
   // Force sync to fail.
   Svc.Prefs.set("firstSync", "notReady");
 
   _("Ensure expected initial environment.");
-  do_check_eq(scheduler._syncErrors, 0);
-  do_check_false(Status.enforceBackoff);
-  do_check_eq(scheduler.syncInterval, scheduler.singleDeviceInterval);
-  do_check_eq(Status.backoffInterval, 0);
+  Assert.equal(scheduler._syncErrors, 0);
+  Assert.ok(!Status.enforceBackoff);
+  Assert.equal(scheduler.syncInterval, scheduler.singleDeviceInterval);
+  Assert.equal(Status.backoffInterval, 0);
 
   // Trigger sync with an error several times & observe
   // functionality of handleSyncError()
   _("Test first error calls scheduleNextSync on default interval");
-  Service.sync();
-  do_check_true(scheduler.nextSync <= Date.now() + scheduler.singleDeviceInterval);
-  do_check_eq(scheduler.syncTimer.delay, scheduler.singleDeviceInterval);
-  do_check_eq(scheduler._syncErrors, 1);
-  do_check_false(Status.enforceBackoff);
+  await Service.sync();
+  Assert.ok(scheduler.nextSync <= Date.now() + scheduler.singleDeviceInterval);
+  Assert.equal(scheduler.syncTimer.delay, scheduler.singleDeviceInterval);
+  Assert.equal(scheduler._syncErrors, 1);
+  Assert.ok(!Status.enforceBackoff);
   scheduler.syncTimer.clear();
 
   _("Test second error still calls scheduleNextSync on default interval");
-  Service.sync();
-  do_check_true(scheduler.nextSync <= Date.now() + scheduler.singleDeviceInterval);
-  do_check_eq(scheduler.syncTimer.delay, scheduler.singleDeviceInterval);
-  do_check_eq(scheduler._syncErrors, 2);
-  do_check_false(Status.enforceBackoff);
+  await Service.sync();
+  Assert.ok(scheduler.nextSync <= Date.now() + scheduler.singleDeviceInterval);
+  Assert.equal(scheduler.syncTimer.delay, scheduler.singleDeviceInterval);
+  Assert.equal(scheduler._syncErrors, 2);
+  Assert.ok(!Status.enforceBackoff);
   scheduler.syncTimer.clear();
 
   _("Test third error sets Status.enforceBackoff and calls scheduleAtInterval");
-  Service.sync();
+  await Service.sync();
   let maxInterval = scheduler._syncErrors * (2 * MINIMUM_BACKOFF_INTERVAL);
-  do_check_eq(Status.backoffInterval, 0);
-  do_check_true(scheduler.nextSync <= (Date.now() + maxInterval));
-  do_check_true(scheduler.syncTimer.delay <= maxInterval);
-  do_check_eq(scheduler._syncErrors, 3);
-  do_check_true(Status.enforceBackoff);
+  Assert.equal(Status.backoffInterval, 0);
+  Assert.ok(scheduler.nextSync <= (Date.now() + maxInterval));
+  Assert.ok(scheduler.syncTimer.delay <= maxInterval);
+  Assert.equal(scheduler._syncErrors, 3);
+  Assert.ok(Status.enforceBackoff);
 
   // Status.enforceBackoff is false but there are still errors.
   Status.resetBackoff();
-  do_check_false(Status.enforceBackoff);
-  do_check_eq(scheduler._syncErrors, 3);
+  Assert.ok(!Status.enforceBackoff);
+  Assert.equal(scheduler._syncErrors, 3);
   scheduler.syncTimer.clear();
 
   _("Test fourth error still calls scheduleAtInterval even if enforceBackoff was reset");
-  Service.sync();
+  await Service.sync();
   maxInterval = scheduler._syncErrors * (2 * MINIMUM_BACKOFF_INTERVAL);
-  do_check_true(scheduler.nextSync <= Date.now() + maxInterval);
-  do_check_true(scheduler.syncTimer.delay <= maxInterval);
-  do_check_eq(scheduler._syncErrors, 4);
-  do_check_true(Status.enforceBackoff);
+  Assert.ok(scheduler.nextSync <= Date.now() + maxInterval);
+  Assert.ok(scheduler.syncTimer.delay <= maxInterval);
+  Assert.equal(scheduler._syncErrors, 4);
+  Assert.ok(Status.enforceBackoff);
   scheduler.syncTimer.clear();
 
   _("Arrange for a successful sync to reset the scheduler error count");
@@ -438,40 +436,40 @@ add_task(async function test_handleSyncError() {
 add_task(async function test_client_sync_finish_updateClientMode() {
   enableValidationPrefs();
 
-  let server = sync_httpd_setup();
+  let server = await sync_httpd_setup();
   await setUp(server);
 
   // Confirm defaults.
-  do_check_eq(scheduler.syncThreshold, SINGLE_USER_THRESHOLD);
-  do_check_eq(scheduler.syncInterval, scheduler.singleDeviceInterval);
-  do_check_false(scheduler.idle);
+  Assert.equal(scheduler.syncThreshold, SINGLE_USER_THRESHOLD);
+  Assert.equal(scheduler.syncInterval, scheduler.singleDeviceInterval);
+  Assert.ok(!scheduler.idle);
 
   // Trigger a change in interval & threshold by adding a client.
-  clientsEngine._store.create(
+  await clientsEngine._store.create(
     { id: "foo", cleartext: { os: "mobile", version: "0.01", type: "desktop" } }
   );
-  do_check_false(scheduler.numClients > 1);
+  Assert.equal(false, scheduler.numClients > 1);
   scheduler.updateClientMode();
-  Service.sync();
+  await Service.sync();
 
-  do_check_eq(scheduler.syncThreshold, MULTI_DEVICE_THRESHOLD);
-  do_check_eq(scheduler.syncInterval, scheduler.activeInterval);
-  do_check_true(scheduler.numClients > 1);
-  do_check_false(scheduler.idle);
+  Assert.equal(scheduler.syncThreshold, MULTI_DEVICE_THRESHOLD);
+  Assert.equal(scheduler.syncInterval, scheduler.activeInterval);
+  Assert.ok(scheduler.numClients > 1);
+  Assert.ok(!scheduler.idle);
 
   // Resets the number of clients to 0.
-  clientsEngine.resetClient();
+  await clientsEngine.resetClient();
   // Also re-init the server, or we suck our "foo" client back down.
   await setUp(server);
 
-  Service.sync();
+  await Service.sync();
 
   // Goes back to single user if # clients is 1.
-  do_check_eq(scheduler.numClients, 1);
-  do_check_eq(scheduler.syncThreshold, SINGLE_USER_THRESHOLD);
-  do_check_eq(scheduler.syncInterval, scheduler.singleDeviceInterval);
-  do_check_false(scheduler.numClients > 1);
-  do_check_false(scheduler.idle);
+  Assert.equal(scheduler.numClients, 1);
+  Assert.equal(scheduler.syncThreshold, SINGLE_USER_THRESHOLD);
+  Assert.equal(scheduler.syncInterval, scheduler.singleDeviceInterval);
+  Assert.equal(false, scheduler.numClients > 1);
+  Assert.ok(!scheduler.idle);
 
   await cleanUpAndGo(server);
 });
@@ -482,7 +480,7 @@ add_task(async function test_autoconnect_nextSync_past() {
   let promiseObserved = promiseOneObserver("weave:service:sync:finish");
   // nextSync will be 0 by default, so it's way in the past.
 
-  let server = sync_httpd_setup();
+  let server = await sync_httpd_setup();
   await setUp(server);
 
   scheduler.delayedAutoConnect(0);
@@ -509,15 +507,15 @@ add_task(async function test_autoconnect_nextSync_future() {
   scheduler.delayedAutoConnect(0);
   await promiseZeroTimer();
 
-  do_check_eq(scheduler.nextSync, expectedSync);
-  do_check_true(scheduler.syncTimer.delay >= expectedInterval);
+  Assert.equal(scheduler.nextSync, expectedSync);
+  Assert.ok(scheduler.syncTimer.delay >= expectedInterval);
 
   Svc.Obs.remove("weave:service:login:start", onLoginStart);
   await cleanUpAndGo();
 });
 
 add_task(async function test_autoconnect_mp_locked() {
-  let server = sync_httpd_setup();
+  let server = await sync_httpd_setup();
   await setUp(server);
 
   // Pretend user did not unlock master password.
@@ -529,9 +527,16 @@ add_task(async function test_autoconnect_mp_locked() {
   Utils.ensureMPUnlocked = () => {
     _("Faking Master Password entry cancelation.");
     return false;
-  }
-  let origCanFetchKeys = Service.identity._canFetchKeys;
-  Service.identity._canFetchKeys = () => false;
+  };
+  let origFxA = Service.identity._fxaService;
+  Service.identity._fxaService = new FxAccounts({
+    canGetKeys() {
+      return false;
+    },
+    getSignedInUser() {
+      return origFxA.getSignedInUser();
+    },
+  });
 
   // A locked master password will still trigger a sync, but then we'll hit
   // MASTER_PASSWORD_LOCKED and hence MASTER_PASSWORD_LOCKED_RETRY_INTERVAL.
@@ -540,19 +545,19 @@ add_task(async function test_autoconnect_mp_locked() {
   scheduler.delayedAutoConnect(0);
   await promiseObserved;
 
-  await promiseNextTick();
+  await Async.promiseYield();
 
-  do_check_eq(Status.login, MASTER_PASSWORD_LOCKED);
+  Assert.equal(Status.login, MASTER_PASSWORD_LOCKED);
 
   Utils.mpLocked = origLocked;
   Utils.ensureMPUnlocked = origEnsureMPUnlocked;
-  Service.identity._canFetchKeys = origCanFetchKeys;
+  Service.identity._fxaService = origFxA;
 
   await cleanUpAndGo(server);
 });
 
 add_task(async function test_no_autoconnect_during_wizard() {
-  let server = sync_httpd_setup();
+  let server = await sync_httpd_setup();
   await setUp(server);
 
   // Simulate the Sync setup wizard.
@@ -571,7 +576,7 @@ add_task(async function test_no_autoconnect_during_wizard() {
 });
 
 add_task(async function test_no_autoconnect_status_not_ok() {
-  let server = sync_httpd_setup();
+  let server = await sync_httpd_setup();
   Status.__authManager = Service.identity = new BrowserIDManager();
 
   // Ensure we don't actually try to sync (or log in for that matter).
@@ -584,8 +589,8 @@ add_task(async function test_no_autoconnect_status_not_ok() {
   await promiseZeroTimer();
   Svc.Obs.remove("weave:service:login:start", onLoginStart);
 
-  do_check_eq(Status.service, CLIENT_NOT_CONFIGURED);
-  do_check_eq(Status.login, LOGIN_FAILED_NO_USERNAME);
+  Assert.equal(Status.service, CLIENT_NOT_CONFIGURED);
+  Assert.equal(Status.login, LOGIN_FAILED_NO_USERNAME);
 
   await cleanUpAndGo(server);
 });
@@ -597,26 +602,26 @@ add_task(async function test_autoconnectDelay_pref() {
 
   Svc.Prefs.set("autoconnectDelay", 1);
 
-  let server = sync_httpd_setup();
+  let server = await sync_httpd_setup();
   await setUp(server);
 
   Svc.Obs.notify("weave:service:ready");
 
   // autoconnectDelay pref is multiplied by 1000.
-  do_check_eq(scheduler._autoTimer.delay, 1000);
-  do_check_eq(Status.service, STATUS_OK);
+  Assert.equal(scheduler._autoTimer.delay, 1000);
+  Assert.equal(Status.service, STATUS_OK);
   await promiseObserved;
   await cleanUpAndGo(server);
 });
 
 add_task(async function test_idle_adjustSyncInterval() {
   // Confirm defaults.
-  do_check_eq(scheduler.idle, false);
+  Assert.equal(scheduler.idle, false);
 
   // Single device: nothing changes.
   scheduler.observe(null, "idle", Svc.Prefs.get("scheduler.idleTime"));
-  do_check_eq(scheduler.idle, true);
-  do_check_eq(scheduler.syncInterval, scheduler.singleDeviceInterval);
+  Assert.equal(scheduler.idle, true);
+  Assert.equal(scheduler.syncInterval, scheduler.singleDeviceInterval);
 
   // Multiple devices: switch to idle interval.
   scheduler.idle = false;
@@ -624,22 +629,22 @@ add_task(async function test_idle_adjustSyncInterval() {
   Svc.Prefs.set("clients.devices.mobile", 1);
   scheduler.updateClientMode();
   scheduler.observe(null, "idle", Svc.Prefs.get("scheduler.idleTime"));
-  do_check_eq(scheduler.idle, true);
-  do_check_eq(scheduler.syncInterval, scheduler.idleInterval);
+  Assert.equal(scheduler.idle, true);
+  Assert.equal(scheduler.syncInterval, scheduler.idleInterval);
 
   await cleanUpAndGo();
 });
 
 add_task(async function test_back_triggersSync() {
   // Confirm defaults.
-  do_check_false(scheduler.idle);
-  do_check_eq(Status.backoffInterval, 0);
+  Assert.ok(!scheduler.idle);
+  Assert.equal(Status.backoffInterval, 0);
 
   // Set up: Define 2 clients and put the system in idle.
   Svc.Prefs.set("clients.devices.desktop", 1);
   Svc.Prefs.set("clients.devices.mobile", 1);
   scheduler.observe(null, "idle", Svc.Prefs.get("scheduler.idleTime"));
-  do_check_true(scheduler.idle);
+  Assert.ok(scheduler.idle);
 
   // We don't actually expect the sync (or the login, for that matter) to
   // succeed. We just want to ensure that it was attempted.
@@ -653,7 +658,7 @@ add_task(async function test_back_triggersSync() {
 
 add_task(async function test_active_triggersSync_observesBackoff() {
   // Confirm defaults.
-  do_check_false(scheduler.idle);
+  Assert.ok(!scheduler.idle);
 
   // Set up: Set backoff, define 2 clients and put the system in idle.
   const BACKOFF = 7337;
@@ -661,7 +666,7 @@ add_task(async function test_active_triggersSync_observesBackoff() {
   Svc.Prefs.set("clients.devices.desktop", 1);
   Svc.Prefs.set("clients.devices.mobile", 1);
   scheduler.observe(null, "idle", Svc.Prefs.get("scheduler.idleTime"));
-  do_check_eq(scheduler.idle, true);
+  Assert.equal(scheduler.idle, true);
 
   function onLoginStart() {
     do_throw("Shouldn't have kicked off a sync!");
@@ -675,8 +680,8 @@ add_task(async function test_active_triggersSync_observesBackoff() {
   await promiseTimer;
   Svc.Obs.remove("weave:service:login:start", onLoginStart);
 
-  do_check_true(scheduler.nextSync <= Date.now() + Status.backoffInterval);
-  do_check_eq(scheduler.syncTimer.delay, Status.backoffInterval);
+  Assert.ok(scheduler.nextSync <= Date.now() + Status.backoffInterval);
+  Assert.equal(scheduler.syncTimer.delay, Status.backoffInterval);
 
   await cleanUpAndGo();
 });
@@ -685,13 +690,13 @@ add_task(async function test_back_debouncing() {
   _("Ensure spurious back-then-idle events, as observed on OS X, don't trigger a sync.");
 
   // Confirm defaults.
-  do_check_eq(scheduler.idle, false);
+  Assert.equal(scheduler.idle, false);
 
   // Set up: Define 2 clients and put the system in idle.
   Svc.Prefs.set("clients.devices.desktop", 1);
   Svc.Prefs.set("clients.devices.mobile", 1);
   scheduler.observe(null, "idle", Svc.Prefs.get("scheduler.idleTime"));
-  do_check_eq(scheduler.idle, true);
+  Assert.equal(scheduler.idle, true);
 
   function onLoginStart() {
     do_throw("Shouldn't have kicked off a sync!");
@@ -712,20 +717,20 @@ add_task(async function test_no_sync_node() {
 
   // Test when Status.sync == NO_SYNC_NODE_FOUND
   // it is not overwritten on sync:finish
-  let server = sync_httpd_setup();
+  let server = await sync_httpd_setup();
   await setUp(server);
 
-  let oldfc = Service._clusterManager._findCluster;
-  Service._clusterManager._findCluster = () => null;
+  let oldfc = Service.identity._findCluster;
+  Service.identity._findCluster = () => null;
   Service.clusterURL = "";
   try {
-    Service.sync();
-    do_check_eq(Status.sync, NO_SYNC_NODE_FOUND);
-    do_check_eq(scheduler.syncTimer.delay, NO_SYNC_NODE_INTERVAL);
+    await Service.sync();
+    Assert.equal(Status.sync, NO_SYNC_NODE_FOUND);
+    Assert.equal(scheduler.syncTimer.delay, NO_SYNC_NODE_INTERVAL);
 
     await cleanUpAndGo(server);
   } finally {
-    Service._clusterManager._findCluster = oldfc;
+    Service.identity._findCluster = oldfc;
   }
 });
 
@@ -734,27 +739,58 @@ add_task(async function test_sync_failed_partial_500s() {
 
   _("Test a 5xx status calls handleSyncError.");
   scheduler._syncErrors = MAX_ERROR_COUNT_BEFORE_BACKOFF;
-  let server = sync_httpd_setup();
+  let server = await sync_httpd_setup();
 
   let engine = Service.engineManager.get("catapult");
   engine.enabled = true;
   engine.exception = {status: 500};
 
-  do_check_eq(Status.sync, SYNC_SUCCEEDED);
+  Assert.equal(Status.sync, SYNC_SUCCEEDED);
 
-  do_check_true(await setUp(server));
+  Assert.ok(await setUp(server));
 
-  Service.sync();
+  await Service.sync();
 
-  do_check_eq(Status.service, SYNC_FAILED_PARTIAL);
+  Assert.equal(Status.service, SYNC_FAILED_PARTIAL);
 
   let maxInterval = scheduler._syncErrors * (2 * MINIMUM_BACKOFF_INTERVAL);
-  do_check_eq(Status.backoffInterval, 0);
-  do_check_true(Status.enforceBackoff);
-  do_check_eq(scheduler._syncErrors, 4);
-  do_check_true(scheduler.nextSync <= (Date.now() + maxInterval));
-  do_check_true(scheduler.syncTimer.delay <= maxInterval);
+  Assert.equal(Status.backoffInterval, 0);
+  Assert.ok(Status.enforceBackoff);
+  Assert.equal(scheduler._syncErrors, 4);
+  Assert.ok(scheduler.nextSync <= (Date.now() + maxInterval));
+  Assert.ok(scheduler.syncTimer.delay <= maxInterval);
 
+  await cleanUpAndGo(server);
+});
+
+add_task(async function test_sync_failed_partial_noresync() {
+  enableValidationPrefs();
+  let server = await sync_httpd_setup();
+
+  let engine = Service.engineManager.get("catapult");
+  engine.enabled = true;
+  engine.exception = "Bad news";
+  engine._tracker._score = 10;
+
+  Assert.equal(Status.sync, SYNC_SUCCEEDED);
+
+  Assert.ok(await setUp(server));
+
+  let resyncDoneObserver = promiseOneObserver("weave:service:resyncs-finished");
+
+  await Service.sync();
+
+  Assert.equal(Status.service, SYNC_FAILED_PARTIAL);
+
+  function onSyncStarted() {
+    do_throw("Should not start resync when previous sync failed");
+  }
+
+  Svc.Obs.add("weave:service:sync:start", onSyncStarted);
+  await resyncDoneObserver;
+
+  Svc.Obs.remove("weave:service:sync:start", onSyncStarted);
+  engine._tracker._store = 0;
   await cleanUpAndGo(server);
 });
 
@@ -763,31 +799,31 @@ add_task(async function test_sync_failed_partial_400s() {
 
   _("Test a non-5xx status doesn't call handleSyncError.");
   scheduler._syncErrors = MAX_ERROR_COUNT_BEFORE_BACKOFF;
-  let server = sync_httpd_setup();
+  let server = await sync_httpd_setup();
 
   let engine = Service.engineManager.get("catapult");
   engine.enabled = true;
   engine.exception = {status: 400};
 
   // Have multiple devices for an active interval.
-  clientsEngine._store.create(
+  await clientsEngine._store.create(
     { id: "foo", cleartext: { os: "mobile", version: "0.01", type: "desktop" } }
   );
 
-  do_check_eq(Status.sync, SYNC_SUCCEEDED);
+  Assert.equal(Status.sync, SYNC_SUCCEEDED);
 
-  do_check_true(await setUp(server));
+  Assert.ok(await setUp(server));
 
-  Service.sync();
+  await Service.sync();
 
-  do_check_eq(Status.service, SYNC_FAILED_PARTIAL);
-  do_check_eq(scheduler.syncInterval, scheduler.activeInterval);
+  Assert.equal(Status.service, SYNC_FAILED_PARTIAL);
+  Assert.equal(scheduler.syncInterval, scheduler.activeInterval);
 
-  do_check_eq(Status.backoffInterval, 0);
-  do_check_false(Status.enforceBackoff);
-  do_check_eq(scheduler._syncErrors, 0);
-  do_check_true(scheduler.nextSync <= (Date.now() + scheduler.activeInterval));
-  do_check_true(scheduler.syncTimer.delay <= scheduler.activeInterval);
+  Assert.equal(Status.backoffInterval, 0);
+  Assert.ok(!Status.enforceBackoff);
+  Assert.equal(scheduler._syncErrors, 0);
+  Assert.ok(scheduler.nextSync <= (Date.now() + scheduler.activeInterval));
+  Assert.ok(scheduler.syncTimer.delay <= scheduler.activeInterval);
 
   await cleanUpAndGo(server);
 });
@@ -795,7 +831,7 @@ add_task(async function test_sync_failed_partial_400s() {
 add_task(async function test_sync_X_Weave_Backoff() {
   enableValidationPrefs();
 
-  let server = sync_httpd_setup();
+  let server = await sync_httpd_setup();
   await setUp(server);
 
   // Use an odd value on purpose so that it doesn't happen to coincide with one
@@ -816,37 +852,37 @@ add_task(async function test_sync_X_Weave_Backoff() {
 
   // Pretend we have two clients so that the regular sync interval is
   // sufficiently low.
-  clientsEngine._store.create(
+  await clientsEngine._store.create(
     { id: "foo", cleartext: { os: "mobile", version: "0.01", type: "desktop" } }
   );
-  let rec = clientsEngine._store.createRecord("foo", "clients");
-  rec.encrypt(Service.collectionKeys.keyForCollection("clients"));
-  rec.upload(Service.resource(clientsEngine.engineURL + rec.id));
+  let rec = await clientsEngine._store.createRecord("foo", "clients");
+  await rec.encrypt(Service.collectionKeys.keyForCollection("clients"));
+  await rec.upload(Service.resource(clientsEngine.engineURL + rec.id));
 
   // Sync once to log in and get everything set up. Let's verify our initial
   // values.
-  Service.sync();
-  do_check_eq(Status.backoffInterval, 0);
-  do_check_eq(Status.minimumNextSync, 0);
-  do_check_eq(scheduler.syncInterval, scheduler.activeInterval);
-  do_check_true(scheduler.nextSync <=
-                Date.now() + scheduler.syncInterval);
+  await Service.sync();
+  Assert.equal(Status.backoffInterval, 0);
+  Assert.equal(Status.minimumNextSync, 0);
+  Assert.equal(scheduler.syncInterval, scheduler.activeInterval);
+  Assert.ok(scheduler.nextSync <=
+            Date.now() + scheduler.syncInterval);
   // Sanity check that we picked the right value for BACKOFF:
-  do_check_true(scheduler.syncInterval < BACKOFF * 1000);
+  Assert.ok(scheduler.syncInterval < BACKOFF * 1000);
 
   // Turn on server maintenance and sync again.
   serverBackoff = true;
-  Service.sync();
+  await Service.sync();
 
-  do_check_true(Status.backoffInterval >= BACKOFF * 1000);
-  // Allowing 3 seconds worth of of leeway between when Status.minimumNextSync
+  Assert.ok(Status.backoffInterval >= BACKOFF * 1000);
+  // Allowing 20 seconds worth of of leeway between when Status.minimumNextSync
   // was set and when this line gets executed.
-  let minimumExpectedDelay = (BACKOFF - 3) * 1000;
-  do_check_true(Status.minimumNextSync >= Date.now() + minimumExpectedDelay);
+  let minimumExpectedDelay = (BACKOFF - 20) * 1000;
+  Assert.ok(Status.minimumNextSync >= Date.now() + minimumExpectedDelay);
 
   // Verify that the next sync is actually going to wait that long.
-  do_check_true(scheduler.nextSync >= Date.now() + minimumExpectedDelay);
-  do_check_true(scheduler.syncTimer.delay >= minimumExpectedDelay);
+  Assert.ok(scheduler.nextSync >= Date.now() + minimumExpectedDelay);
+  Assert.ok(scheduler.syncTimer.delay >= minimumExpectedDelay);
 
   await cleanUpAndGo(server);
 });
@@ -854,7 +890,7 @@ add_task(async function test_sync_X_Weave_Backoff() {
 add_task(async function test_sync_503_Retry_After() {
   enableValidationPrefs();
 
-  let server = sync_httpd_setup();
+  let server = await sync_httpd_setup();
   await setUp(server);
 
   // Use an odd value on purpose so that it doesn't happen to coincide with one
@@ -877,39 +913,39 @@ add_task(async function test_sync_503_Retry_After() {
 
   // Pretend we have two clients so that the regular sync interval is
   // sufficiently low.
-  clientsEngine._store.create(
+  await clientsEngine._store.create(
     { id: "foo", cleartext: { os: "mobile", version: "0.01", type: "desktop" } }
   );
-  let rec = clientsEngine._store.createRecord("foo", "clients");
-  rec.encrypt(Service.collectionKeys.keyForCollection("clients"));
-  rec.upload(Service.resource(clientsEngine.engineURL + rec.id));
+  let rec = await clientsEngine._store.createRecord("foo", "clients");
+  await rec.encrypt(Service.collectionKeys.keyForCollection("clients"));
+  await rec.upload(Service.resource(clientsEngine.engineURL + rec.id));
 
   // Sync once to log in and get everything set up. Let's verify our initial
   // values.
-  Service.sync();
-  do_check_false(Status.enforceBackoff);
-  do_check_eq(Status.backoffInterval, 0);
-  do_check_eq(Status.minimumNextSync, 0);
-  do_check_eq(scheduler.syncInterval, scheduler.activeInterval);
-  do_check_true(scheduler.nextSync <=
-                Date.now() + scheduler.syncInterval);
+  await Service.sync();
+  Assert.ok(!Status.enforceBackoff);
+  Assert.equal(Status.backoffInterval, 0);
+  Assert.equal(Status.minimumNextSync, 0);
+  Assert.equal(scheduler.syncInterval, scheduler.activeInterval);
+  Assert.ok(scheduler.nextSync <=
+            Date.now() + scheduler.syncInterval);
   // Sanity check that we picked the right value for BACKOFF:
-  do_check_true(scheduler.syncInterval < BACKOFF * 1000);
+  Assert.ok(scheduler.syncInterval < BACKOFF * 1000);
 
   // Turn on server maintenance and sync again.
   serverMaintenance = true;
-  Service.sync();
+  await Service.sync();
 
-  do_check_true(Status.enforceBackoff);
-  do_check_true(Status.backoffInterval >= BACKOFF * 1000);
+  Assert.ok(Status.enforceBackoff);
+  Assert.ok(Status.backoffInterval >= BACKOFF * 1000);
   // Allowing 3 seconds worth of of leeway between when Status.minimumNextSync
   // was set and when this line gets executed.
   let minimumExpectedDelay = (BACKOFF - 3) * 1000;
-  do_check_true(Status.minimumNextSync >= Date.now() + minimumExpectedDelay);
+  Assert.ok(Status.minimumNextSync >= Date.now() + minimumExpectedDelay);
 
   // Verify that the next sync is actually going to wait that long.
-  do_check_true(scheduler.nextSync >= Date.now() + minimumExpectedDelay);
-  do_check_true(scheduler.syncTimer.delay >= minimumExpectedDelay);
+  Assert.ok(scheduler.nextSync >= Date.now() + minimumExpectedDelay);
+  Assert.ok(scheduler.syncTimer.delay >= minimumExpectedDelay);
 
   await cleanUpAndGo(server);
 });
@@ -933,24 +969,24 @@ add_task(async function test_loginError_recoverable_reschedules() {
   Svc.Obs.add("weave:service:sync:start", onSyncStart);
 
   // Sanity check.
-  do_check_eq(scheduler.syncTimer, null);
-  do_check_eq(Status.checkSetup(), STATUS_OK);
-  do_check_eq(Status.login, LOGIN_SUCCEEDED);
+  Assert.equal(scheduler.syncTimer, null);
+  Assert.equal(Status.checkSetup(), STATUS_OK);
+  Assert.equal(Status.login, LOGIN_SUCCEEDED);
 
   scheduler.scheduleNextSync(0);
   await promiseObserved;
-  await promiseNextTick();
+  await Async.promiseYield();
 
-  do_check_eq(Status.login, LOGIN_FAILED_NETWORK_ERROR);
+  Assert.equal(Status.login, LOGIN_FAILED_NETWORK_ERROR);
 
   let expectedNextSync = Date.now() + scheduler.syncInterval;
-  do_check_true(scheduler.nextSync > Date.now());
-  do_check_true(scheduler.nextSync <= expectedNextSync);
-  do_check_true(scheduler.syncTimer.delay > 0);
-  do_check_true(scheduler.syncTimer.delay <= scheduler.syncInterval);
+  Assert.ok(scheduler.nextSync > Date.now());
+  Assert.ok(scheduler.nextSync <= expectedNextSync);
+  Assert.ok(scheduler.syncTimer.delay > 0);
+  Assert.ok(scheduler.syncTimer.delay <= scheduler.syncInterval);
 
   Svc.Obs.remove("weave:service:sync:start", onSyncStart);
-  await cleanUpAndGo()
+  await cleanUpAndGo();
 });
 
 add_task(async function test_loginError_fatal_clearsTriggers() {
@@ -958,7 +994,7 @@ add_task(async function test_loginError_fatal_clearsTriggers() {
   await configureIdentity({username: "johndoe@mozilla.com"});
 
   let server = httpd_setup({
-    "/1.1/johndoe@mozilla.com/info/collections": httpd_handler(401, "Unauthorized")
+    "/1.1/johndoe@mozilla.com/info/collections": httpd_handler(401, "Unauthorized"),
   });
 
   Service.clusterURL = server.baseURI + "/";
@@ -967,21 +1003,21 @@ add_task(async function test_loginError_fatal_clearsTriggers() {
   let promiseObserved = promiseOneObserver("weave:service:login:error");
 
   // Sanity check.
-  do_check_eq(scheduler.nextSync, 0);
-  do_check_eq(scheduler.syncTimer, null);
-  do_check_eq(Status.checkSetup(), STATUS_OK);
-  do_check_eq(Status.login, LOGIN_SUCCEEDED);
+  Assert.equal(scheduler.nextSync, 0);
+  Assert.equal(scheduler.syncTimer, null);
+  Assert.equal(Status.checkSetup(), STATUS_OK);
+  Assert.equal(Status.login, LOGIN_SUCCEEDED);
 
   scheduler.scheduleNextSync(0);
   await promiseObserved;
-  await promiseNextTick();
+  await Async.promiseYield();
 
   // For the FxA identity, a 401 on info/collections means a transient
   // error, probably due to an inability to fetch a token.
-  do_check_eq(Status.login, LOGIN_FAILED_NETWORK_ERROR);
+  Assert.equal(Status.login, LOGIN_FAILED_NETWORK_ERROR);
   // syncs should still be scheduled.
-  do_check_true(scheduler.nextSync > Date.now());
-  do_check_true(scheduler.syncTimer.delay > 0);
+  Assert.ok(scheduler.nextSync > Date.now());
+  Assert.ok(scheduler.syncTimer.delay > 0);
 
   await cleanUpAndGo(server);
 });
@@ -991,7 +1027,7 @@ add_task(async function test_proper_interval_on_only_failing() {
 
   // If an engine reports that no records succeeded, we shouldn't decrease the
   // sync interval.
-  do_check_false(scheduler.hasIncomingItems);
+  Assert.ok(!scheduler.hasIncomingItems);
   const INTERVAL = 10000000;
   scheduler.syncInterval = INTERVAL;
 
@@ -1000,11 +1036,33 @@ add_task(async function test_proper_interval_on_only_failing() {
     succeeded: 0,
     failed: 2,
     newFailed: 2,
-    reconciled: 0
+    reconciled: 0,
   });
 
-  await promiseNextTick();
+  await Async.promiseYield();
   scheduler.adjustSyncInterval();
-  do_check_false(scheduler.hasIncomingItems);
-  do_check_eq(scheduler.syncInterval, scheduler.singleDeviceInterval);
+  Assert.ok(!scheduler.hasIncomingItems);
+  Assert.equal(scheduler.syncInterval, scheduler.singleDeviceInterval);
+});
+
+add_task(async function test_link_status_change() {
+  _("Check that we only attempt to sync when link status is up");
+  try {
+    sinon.spy(scheduler, "scheduleNextSync");
+
+    Svc.Obs.notify("network:link-status-changed", null, "down");
+    equal(scheduler.scheduleNextSync.callCount, 0);
+
+    Svc.Obs.notify("network:link-status-changed", null, "change");
+    equal(scheduler.scheduleNextSync.callCount, 0);
+
+    Svc.Obs.notify("network:link-status-changed", null, "up");
+    equal(scheduler.scheduleNextSync.callCount, 1);
+
+    Svc.Obs.notify("network:link-status-changed", null, "change");
+    equal(scheduler.scheduleNextSync.callCount, 1);
+
+  } finally {
+    scheduler.scheduleNextSync.restore();
+  }
 });

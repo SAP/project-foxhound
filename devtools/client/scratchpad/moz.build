@@ -5,12 +5,12 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 DevToolsModules(
-    'scratchpad-commands.js',
+    'panel.js',
     'scratchpad-manager.jsm',
-    'scratchpad-panel.js',
+    'scratchpad.js',
 )
 
 BROWSER_CHROME_MANIFESTS += ['test/browser.ini']
 
 with Files('**'):
-    BUG_COMPONENT = ('Firefox', 'Developer Tools: Scratchpad')
+    BUG_COMPONENT = ('DevTools', 'Scratchpad')

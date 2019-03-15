@@ -1,6 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+"use strict";
+
 /**
  * Make sure that releasing a pause-lifetime actorin a releaseMany returns an
  * error, but releases all the thread-lifetime actors.
@@ -11,51 +13,53 @@ var gClient;
 var gThreadClient;
 var gPauseGrip;
 
-function run_test()
-{
+function run_test() {
+  Services.prefs.setBoolPref("security.allow_eval_with_system_principal", true);
+  registerCleanupFunction(() => {
+    Services.prefs.clearUserPref("security.allow_eval_with_system_principal");
+  });
   initTestDebuggerServer();
   gDebuggee = addTestGlobal("test-grips");
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
-  gClient.connect().then(function () {
-    attachTestTabAndResume(gClient, "test-grips", function (aResponse, aTabClient, aThreadClient) {
-      gThreadClient = aThreadClient;
-      test_thread_lifetime();
-    });
+  gClient.connect().then(function() {
+    attachTestTabAndResume(gClient, "test-grips",
+                           function(response, targetFront, threadClient) {
+                             gThreadClient = threadClient;
+                             test_thread_lifetime();
+                           });
   });
   do_test_pending();
 }
 
-function arg_grips(aFrameArgs, aOnResponse) {
-  let grips = [];
-  let handler = function (aResponse) {
-    if (aResponse.error) {
-      grips.push(aResponse.error);
+function arg_grips(frameArgs, onResponse) {
+  const grips = [];
+  const handler = function(response) {
+    if (response.error) {
+      grips.push(response.error);
     } else {
-      grips.push(aResponse.from);
+      grips.push(response.from);
     }
-    if (grips.length == aFrameArgs.length) {
-      aOnResponse(grips);
+    if (grips.length == frameArgs.length) {
+      onResponse(grips);
     }
   };
-  for (let i = 0; i < aFrameArgs.length; i++) {
-    gClient.request({ to: aFrameArgs[i].actor, type: "threadGrip" },
+  for (let i = 0; i < frameArgs.length; i++) {
+    gClient.request({ to: frameArgs[i].actor, type: "threadGrip" },
                     handler);
   }
 }
 
-function test_thread_lifetime()
-{
+function test_thread_lifetime() {
   // Get two thread-lifetime grips.
-  gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-
-    let frameArgs = [ aPacket.frame.arguments[0], aPacket.frame.arguments[1] ];
-    gPauseGrip = aPacket.frame.arguments[2];
-    arg_grips(frameArgs, function (aGrips) {
-      release_grips(frameArgs, aGrips);
+  gThreadClient.addOneTimeListener("paused", function(event, packet) {
+    const frameArgs = [ packet.frame.arguments[0], packet.frame.arguments[1] ];
+    gPauseGrip = packet.frame.arguments[2];
+    arg_grips(frameArgs, function(grips) {
+      release_grips(frameArgs, grips);
     });
   });
 
-  gDebuggee.eval("(" + function () {
+  gDebuggee.eval("(" + function() {
     function stopMe(arg1, arg2, arg3) {
       debugger;
     }
@@ -63,19 +67,17 @@ function test_thread_lifetime()
   } + ")()");
 }
 
-
-function release_grips(aFrameArgs, aThreadGrips)
-{
+function release_grips(frameArgs, threadGrips) {
   // Release all actors with releaseMany...
-  let release = [aThreadGrips[0], aThreadGrips[1], gPauseGrip.actor];
-  gThreadClient.releaseMany(release, function (aResponse) {
-    do_check_eq(aResponse.error, "notReleasable");
+  const release = [threadGrips[0], threadGrips[1], gPauseGrip.actor];
+  gThreadClient.releaseMany(release, function(response) {
+    Assert.equal(response.error, "notReleasable");
     // Now ask for thread grips again, they should not exist.
-    arg_grips(aFrameArgs, function (aNewGrips) {
-      for (let i = 0; i < aNewGrips.length; i++) {
-        do_check_eq(aNewGrips[i], "noSuchActor");
+    arg_grips(frameArgs, function(newGrips) {
+      for (let i = 0; i < newGrips.length; i++) {
+        Assert.equal(newGrips[i], "noSuchActor");
       }
-      gThreadClient.resume(function () {
+      gThreadClient.resume(function() {
         finishClient(gClient);
       });
     });

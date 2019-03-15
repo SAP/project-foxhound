@@ -2,18 +2,14 @@
 
 const global = this;
 
-Cu.import("resource://gre/modules/Timer.jsm");
+ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
-Cu.import("resource://gre/modules/ExtensionCommon.jsm");
-Cu.import("resource://gre/modules/ExtensionUtils.jsm");
+ChromeUtils.import("resource://gre/modules/ExtensionCommon.jsm");
 
 var {
   BaseContext,
+  EventManager,
 } = ExtensionCommon;
-
-var {
-  SingletonEventManager,
-} = ExtensionUtils;
 
 class StubContext extends BaseContext {
   constructor() {
@@ -25,10 +21,14 @@ class StubContext extends BaseContext {
   get cloneScope() {
     return this.sandbox;
   }
+
+  get principal() {
+    return Cu.getObjectPrincipal(this.sandbox);
+  }
 }
 
 
-add_task(function* test_post_unload_promises() {
+add_task(async function test_post_unload_promises() {
   let context = new StubContext();
 
   let fail = result => {
@@ -41,7 +41,7 @@ add_task(function* test_post_unload_promises() {
     context.wrapPromise(Promise.reject({message: ""})).catch(() => {}),
   ];
 
-  yield Promise.all(promises);
+  await Promise.all(promises);
 
   // Make sure promises that resolve after unload do not trigger
   // resolution handlers.
@@ -57,19 +57,23 @@ add_task(function* test_post_unload_promises() {
   // The `setTimeout` ensures that we return to the event loop after
   // promise resolution, which means we're guaranteed to return after
   // any micro-tasks that get enqueued by the resolution handlers above.
-  yield new Promise(resolve => setTimeout(resolve, 0));
+  await new Promise(resolve => setTimeout(resolve, 0));
 });
 
 
-add_task(function* test_post_unload_listeners() {
+add_task(async function test_post_unload_listeners() {
   let context = new StubContext();
 
-  let fireSingleton;
-  let onSingleton = new SingletonEventManager(context, "onSingleton", fire => {
-    fireSingleton = () => {
-      fire.async();
-    };
-    return () => {};
+  let fire;
+  let manager = new EventManager({
+    context,
+    name: "EventManager",
+    register: _fire => {
+      fire = () => {
+        _fire.async();
+      };
+      return () => {};
+    },
   });
 
   let fail = event => {
@@ -77,40 +81,40 @@ add_task(function* test_post_unload_listeners() {
   };
 
   // Check that event listeners isn't called after it has been removed.
-  onSingleton.addListener(fail);
+  manager.addListener(fail);
 
-  let promise = new Promise(resolve => onSingleton.addListener(resolve));
+  let promise = new Promise(resolve => manager.addListener(resolve));
 
-  fireSingleton("onSingleton");
+  fire();
 
   // The `fireSingleton` call ia dispatched asynchronously, so it won't
   // have fired by this point. The `fail` listener that we remove now
   // should not be called, even though the event has already been
   // enqueued.
-  onSingleton.removeListener(fail);
+  manager.removeListener(fail);
 
   // Wait for the remaining listener to be called, which should always
   // happen after the `fail` listener would normally be called.
-  yield promise;
+  await promise;
 
   // Check that the event listener isn't called after the context has
   // unloaded.
-  onSingleton.addListener(fail);
+  manager.addListener(fail);
 
   // The `fire` callback always dispatches events
   // asynchronously, so we need to test that any pending event callbacks
   // aren't fired after the context unloads. We also need to test that
   // any `fire` calls that happen *after* the context is unloaded also
   // do not trigger callbacks.
-  fireSingleton("onSingleton");
-  Promise.resolve("onSingleton").then(fireSingleton);
+  fire();
+  Promise.resolve().then(fire);
 
   context.unload();
 
   // The `setTimeout` ensures that we return to the event loop after
   // promise resolution, which means we're guaranteed to return after
   // any micro-tasks that get enqueued by the resolution handlers above.
-  yield new Promise(resolve => setTimeout(resolve, 0));
+  await new Promise(resolve => setTimeout(resolve, 0));
 });
 
 class Context extends BaseContext {
@@ -134,7 +138,7 @@ const PRINCIPAL1 = ssm.createCodebasePrincipalFromOrigin("http://www.example.org
 const PRINCIPAL2 = ssm.createCodebasePrincipalFromOrigin("http://www.somethingelse.org");
 
 // Test that toJSON() works in the json sandbox
-add_task(function* test_stringify_toJSON() {
+add_task(async function test_stringify_toJSON() {
   let context = new Context(PRINCIPAL1);
   let obj = Cu.evalInSandbox("({hidden: true, toJSON() { return {visible: true}; } })", context.sandbox);
 
@@ -144,7 +148,7 @@ add_task(function* test_stringify_toJSON() {
 });
 
 // Test that stringifying in inaccessible property throws
-add_task(function* test_stringify_inaccessible() {
+add_task(async function test_stringify_inaccessible() {
   let context = new Context(PRINCIPAL1);
   let sandbox = context.sandbox;
   let sandbox2 = Cu.Sandbox(PRINCIPAL2);
@@ -153,10 +157,10 @@ add_task(function* test_stringify_inaccessible() {
   let obj = Cu.evalInSandbox("({ local: true, nested: subobj })", sandbox);
   Assert.throws(() => {
     context.jsonStringify(obj);
-  });
+  }, /Permission denied to access property "toJSON"/);
 });
 
-add_task(function* test_stringify_accessible() {
+add_task(async function test_stringify_accessible() {
   // Test that an accessible property from another global is included
   let principal = Cu.getObjectPrincipal(Cu.Sandbox([PRINCIPAL1, PRINCIPAL2]));
   let context = new Context(principal);
@@ -170,4 +174,3 @@ add_task(function* test_stringify_accessible() {
   let expected = JSON.stringify({local: true, nested: {subobject: true}});
   equal(stringified, expected, "Stringified object with accessible property is as expected");
 });
-

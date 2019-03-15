@@ -1,10 +1,10 @@
 "use strict";
 
-Components.utils.import("resource://gre/modules/osfile.jsm");
+ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
 // We want the actual global to get at the internals since Scheduler is not
 // exported.
-var AsyncFrontGlobal = Components.utils.import(
+var AsyncFrontGlobal = ChromeUtils.import(
                          "resource://gre/modules/osfile/osfile_async_front.jsm",
                           null);
 var Scheduler = AsyncFrontGlobal.Scheduler;
@@ -54,15 +54,15 @@ var Scheduler = AsyncFrontGlobal.Scheduler;
  * eat rejections, there is an important difference between the value of
  * `queue` and the value returned by the first OS.File request.)
  */
-add_task(function* test_kill_race() {
+add_task(async function test_kill_race() {
   // Ensure the worker has been created and that SET_DEBUG has taken effect.
   // We have chosen OS.File.exists for our tests because it does not trigger
   // a rejection and we absolutely do not care what the operation is other
   // than it does not invoke a native fast-path.
-  yield OS.File.exists('foo.foo');
+  await OS.File.exists("foo.foo");
 
-  do_print('issuing first request');
-  let firstRequest = OS.File.exists('foo.bar');
+  info("issuing first request");
+  let firstRequest = OS.File.exists("foo.bar"); // eslint-disable-line no-unused-vars
   let secondRequest;
   let secondResolved = false;
 
@@ -72,29 +72,25 @@ add_task(function* test_kill_race() {
   // before we issue the kill request means we will get run before the `kill`
   // task resumes and allow us to precisely create the desired race.
   Scheduler.queue.then(function() {
-    do_print('issuing second request');
-    secondRequest = OS.File.exists('foo.baz');
+    info("issuing second request");
+    secondRequest = OS.File.exists("foo.baz");
     secondRequest.then(function() {
       secondResolved = true;
     });
   });
 
-  do_print('issuing kill request');
+  info("issuing kill request");
   let killRequest = Scheduler.kill({ reset: true, shutdown: false });
 
   // Wait on the killRequest so that we can schedule a new OS.File request
   // after it completes...
-  yield killRequest;
+  await killRequest;
   // ...because our ordering guarantee ensures that there is at most one
   // worker (and this usage here should not be vulnerable even with the
   // bug present), so when this completes the secondRequest has either been
   // resolved or lost.
-  yield OS.File.exists('foo.goz');
+  await OS.File.exists("foo.goz");
 
   ok(secondResolved,
-     'The second request was resolved so we avoided the bug. Victory!');
+     "The second request was resolved so we avoided the bug. Victory!");
 });
-
-function run_test() {
-  run_next_test();
-}

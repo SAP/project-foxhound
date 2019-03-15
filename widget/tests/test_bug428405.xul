@@ -23,6 +23,7 @@
   </tabbox>
 
   <script type="application/javascript"><![CDATA[
+    ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
 
     SimpleTest.waitForExplicitFinish();
 
@@ -39,8 +40,8 @@
     }
 
     function setGlobals() {
-      var wm = Components.classes["@mozilla.org/appshell/window-mediator;1"].
-                          getService(Components.interfaces.nsIWindowMediator);
+      var wm = Cc["@mozilla.org/appshell/window-mediator;1"].
+                  getService(Ci.nsIWindowMediator);
       gChromeWindow = wm.getMostRecentWindow("navigator:browser");
       // For some reason, a global <key> element's oncommand handler only gets
       // invoked if the focus is outside both of the <browser> elements
@@ -56,7 +57,7 @@
     // 6) Start reloading first tab.
     function loadFirstTab() {
       var browser = document.getElementById("tab1browser");
-      browser.loadURI("data:text/html;charset=utf-8,<body><h2>First Tab</h2><p><input type='submit' value='Button' id='button1'/></body>", null, null);
+      BrowserTestUtils.loadURI(browser, "data:text/html;charset=utf-8,<body><h2>First Tab</h2><p><input type='submit' value='Button' id='button1'/></body>");
     }
 
     function configureFirstTab() {
@@ -81,7 +82,7 @@
     // 8) Start loading second tab.
     function loadSecondTab() {
       var browser = document.getElementById("tab2browser");
-      browser.loadURI("data:text/html;charset=utf-8,<body><h2>Second Tab</h2><p><input type='submit' value='Button' id='button1'/></body>", null, null);
+      BrowserTestUtils.loadURI(browser, "data:text/html;charset=utf-8,<body><h2>Second Tab</h2><p><input type='submit' value='Button' id='button1'/></body>");
     }
 
     function configureSecondTab() {

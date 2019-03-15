@@ -3,7 +3,7 @@
     <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
   </head>
   <body onload="start()">
-    <div onfocus="done()" contenteditable>foo<div contenteditable="false"><a href="#">bar</a></div>baz</div>
+    <div onfocus="setTimeout(done, 0)" contenteditable>foo<div contenteditable="false"><a href="#">bar</a></div>baz</div>
     <script>
       var div = document.querySelector("div");
       function start() {
@@ -13,8 +13,8 @@
         var sel = getSelection();
         sel.collapse(div, 0);
         // Press Right four times to set the caret right before "baz"
-        for (var i = 0; i < 5; ++i) {
-          synthesizeKey("VK_RIGHT", {});
+        for (var i = 0; i < 4; ++i) {
+          synthesizeKey("KEY_ArrowRight");
         }
         document.documentElement.removeAttribute("class");
       }

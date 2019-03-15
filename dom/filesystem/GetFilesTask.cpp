@@ -11,12 +11,11 @@
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FileSystemBase.h"
 #include "mozilla/dom/FileSystemUtils.h"
+#include "mozilla/dom/IPCBlobUtils.h"
 #include "mozilla/dom/PFileSystemParams.h"
 #include "mozilla/dom/Promise.h"
-#include "mozilla/dom/ipc/BlobChild.h"
-#include "mozilla/dom/ipc/BlobParent.h"
 #include "nsIFile.h"
-#include "nsStringGlue.h"
+#include "nsString.h"
 
 namespace mozilla {
 namespace dom {
@@ -25,27 +24,22 @@ namespace dom {
  * GetFilesTaskChild
  */
 
-/* static */ already_AddRefed<GetFilesTaskChild>
-GetFilesTaskChild::Create(FileSystemBase* aFileSystem,
-                          Directory* aDirectory,
-                          nsIFile* aTargetPath,
-                          bool aRecursiveFlag,
-                          ErrorResult& aRv)
-{
+/* static */ already_AddRefed<GetFilesTaskChild> GetFilesTaskChild::Create(
+    FileSystemBase* aFileSystem, Directory* aDirectory, nsIFile* aTargetPath,
+    bool aRecursiveFlag, ErrorResult& aRv) {
   MOZ_ASSERT(aFileSystem);
   MOZ_ASSERT(aDirectory);
   aFileSystem->AssertIsOnOwningThread();
 
   nsCOMPtr<nsIGlobalObject> globalObject =
-    do_QueryInterface(aFileSystem->GetParentObject());
+      do_QueryInterface(aFileSystem->GetParentObject());
   if (NS_WARN_IF(!globalObject)) {
     aRv.Throw(NS_ERROR_FAILURE);
     return nullptr;
   }
 
-  RefPtr<GetFilesTaskChild> task =
-    new GetFilesTaskChild(aFileSystem, aDirectory, aTargetPath,
-                          aRecursiveFlag);
+  RefPtr<GetFilesTaskChild> task = new GetFilesTaskChild(
+      globalObject, aFileSystem, aDirectory, aTargetPath, aRecursiveFlag);
 
   // aTargetPath can be null. In this case SetError will be called.
 
@@ -57,36 +51,30 @@ GetFilesTaskChild::Create(FileSystemBase* aFileSystem,
   return task.forget();
 }
 
-GetFilesTaskChild::GetFilesTaskChild(FileSystemBase* aFileSystem,
+GetFilesTaskChild::GetFilesTaskChild(nsIGlobalObject* aGlobalObject,
+                                     FileSystemBase* aFileSystem,
                                      Directory* aDirectory,
-                                     nsIFile* aTargetPath,
-                                     bool aRecursiveFlag)
-  : FileSystemTaskChildBase(aFileSystem)
-  , mDirectory(aDirectory)
-  , mTargetPath(aTargetPath)
-  , mRecursiveFlag(aRecursiveFlag)
-{
+                                     nsIFile* aTargetPath, bool aRecursiveFlag)
+    : FileSystemTaskChildBase(aGlobalObject, aFileSystem),
+      mDirectory(aDirectory),
+      mTargetPath(aTargetPath),
+      mRecursiveFlag(aRecursiveFlag) {
   MOZ_ASSERT(aFileSystem);
   MOZ_ASSERT(aDirectory);
   aFileSystem->AssertIsOnOwningThread();
 }
 
-GetFilesTaskChild::~GetFilesTaskChild()
-{
+GetFilesTaskChild::~GetFilesTaskChild() {
   mFileSystem->AssertIsOnOwningThread();
 }
 
-already_AddRefed<Promise>
-GetFilesTaskChild::GetPromise()
-{
+already_AddRefed<Promise> GetFilesTaskChild::GetPromise() {
   mFileSystem->AssertIsOnOwningThread();
   return RefPtr<Promise>(mPromise).forget();
 }
 
-FileSystemParams
-GetFilesTaskChild::GetRequestParams(const nsString& aSerializedDOMPath,
-                                    ErrorResult& aRv) const
-{
+FileSystemParams GetFilesTaskChild::GetRequestParams(
+    const nsString& aSerializedDOMPath, ErrorResult& aRv) const {
   mFileSystem->AssertIsOnOwningThread();
 
   nsAutoString path;
@@ -105,13 +93,11 @@ GetFilesTaskChild::GetRequestParams(const nsString& aSerializedDOMPath,
                                   mRecursiveFlag);
 }
 
-void
-GetFilesTaskChild::SetSuccessRequestResult(const FileSystemResponseValue& aValue,
-                                           ErrorResult& aRv)
-{
+void GetFilesTaskChild::SetSuccessRequestResult(
+    const FileSystemResponseValue& aValue, ErrorResult& aRv) {
   mFileSystem->AssertIsOnOwningThread();
   MOZ_ASSERT(aValue.type() ==
-               FileSystemResponseValue::TFileSystemFilesResponse);
+             FileSystemResponseValue::TFileSystemFilesResponse);
 
   FileSystemFilesResponse r = aValue;
 
@@ -122,17 +108,14 @@ GetFilesTaskChild::SetSuccessRequestResult(const FileSystemResponseValue& aValue
 
   for (uint32_t i = 0; i < r.data().Length(); ++i) {
     const FileSystemFileResponse& data = r.data()[i];
-    RefPtr<BlobImpl> blobImpl =
-      static_cast<BlobChild*>(data.blobChild())->GetBlobImpl();
+    RefPtr<BlobImpl> blobImpl = IPCBlobUtils::Deserialize(data.blob());
     MOZ_ASSERT(blobImpl);
 
     mTargetData[i] = File::Create(mFileSystem->GetParentObject(), blobImpl);
   }
 }
 
-void
-GetFilesTaskChild::HandlerCallback()
-{
+void GetFilesTaskChild::HandlerCallback() {
   mFileSystem->AssertIsOnOwningThread();
   if (mFileSystem->IsShutdown()) {
     mPromise = nullptr;
@@ -153,18 +136,15 @@ GetFilesTaskChild::HandlerCallback()
  * GetFilesTaskParent
  */
 
-/* static */ already_AddRefed<GetFilesTaskParent>
-GetFilesTaskParent::Create(FileSystemBase* aFileSystem,
-                           const FileSystemGetFilesParams& aParam,
-                           FileSystemRequestParent* aParent,
-                           ErrorResult& aRv)
-{
+/* static */ already_AddRefed<GetFilesTaskParent> GetFilesTaskParent::Create(
+    FileSystemBase* aFileSystem, const FileSystemGetFilesParams& aParam,
+    FileSystemRequestParent* aParent, ErrorResult& aRv) {
   MOZ_ASSERT(XRE_IsParentProcess(), "Only call from parent process!");
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(aFileSystem);
 
   RefPtr<GetFilesTaskParent> task =
-    new GetFilesTaskParent(aFileSystem, aParam, aParent);
+      new GetFilesTaskParent(aFileSystem, aParam, aParent);
 
   aRv = NS_NewLocalFile(aParam.realPath(), true,
                         getter_AddRefs(task->mTargetPath));
@@ -178,34 +158,35 @@ GetFilesTaskParent::Create(FileSystemBase* aFileSystem,
 GetFilesTaskParent::GetFilesTaskParent(FileSystemBase* aFileSystem,
                                        const FileSystemGetFilesParams& aParam,
                                        FileSystemRequestParent* aParent)
-  : FileSystemTaskParentBase(aFileSystem, aParam, aParent)
-  , GetFilesHelperBase(aParam.recursiveFlag())
-  , mDirectoryDOMPath(aParam.domPath())
-{
+    : FileSystemTaskParentBase(aFileSystem, aParam, aParent),
+      GetFilesHelperBase(aParam.recursiveFlag()),
+      mDirectoryDOMPath(aParam.domPath()) {
   MOZ_ASSERT(XRE_IsParentProcess(), "Only call from parent process!");
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(aFileSystem);
 }
 
-FileSystemResponseValue
-GetFilesTaskParent::GetSuccessRequestResult(ErrorResult& aRv) const
-{
+FileSystemResponseValue GetFilesTaskParent::GetSuccessRequestResult(
+    ErrorResult& aRv) const {
   AssertIsOnBackgroundThread();
-
-  InfallibleTArray<PBlobParent*> blobs;
 
   FallibleTArray<FileSystemFileResponse> inputs;
   if (!inputs.SetLength(mTargetBlobImplArray.Length(), mozilla::fallible_t())) {
-    aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
     FileSystemFilesResponse response;
+    aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
     return response;
   }
 
   for (unsigned i = 0; i < mTargetBlobImplArray.Length(); i++) {
-    BlobParent* blobParent =
-      BlobParent::GetOrCreate(mRequestParent->Manager(),
-                              mTargetBlobImplArray[i]);
-    inputs[i] = FileSystemFileResponse(blobParent, nullptr);
+    IPCBlob ipcBlob;
+    aRv = IPCBlobUtils::Serialize(mTargetBlobImplArray[i],
+                                  mRequestParent->Manager(), ipcBlob);
+    if (NS_WARN_IF(aRv.Failed())) {
+      FileSystemFilesResponse response;
+      return response;
+    }
+
+    inputs[i] = FileSystemFileResponse(ipcBlob);
   }
 
   FileSystemFilesResponse response;
@@ -213,11 +194,8 @@ GetFilesTaskParent::GetSuccessRequestResult(ErrorResult& aRv) const
   return response;
 }
 
-nsresult
-GetFilesTaskParent::IOWork()
-{
-  MOZ_ASSERT(XRE_IsParentProcess(),
-             "Only call from parent process!");
+nsresult GetFilesTaskParent::IOWork() {
+  MOZ_ASSERT(XRE_IsParentProcess(), "Only call from parent process!");
   MOZ_ASSERT(!NS_IsMainThread(), "Only call on I/O thread!");
 
   if (mFileSystem->IsShutdown()) {
@@ -253,11 +231,9 @@ GetFilesTaskParent::IOWork()
   return NS_OK;
 }
 
-nsresult
-GetFilesTaskParent::GetTargetPath(nsAString& aPath) const
-{
+nsresult GetFilesTaskParent::GetTargetPath(nsAString& aPath) const {
   return mTargetPath->GetPath(aPath);
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

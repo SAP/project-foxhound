@@ -4,14 +4,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WebVTTListener.h"
+#include "mozilla/CycleCollectedJSContext.h"
+#include "mozilla/dom/HTMLTrackElement.h"
 #include "mozilla/dom/TextTrackCue.h"
 #include "mozilla/dom/TextTrackRegion.h"
 #include "mozilla/dom/VTTRegionBinding.h"
-#include "mozilla/dom/HTMLTrackElement.h"
-#include "nsIInputStream.h"
-#include "nsIWebVTTParserWrapper.h"
 #include "nsComponentManagerUtils.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
+#include "nsIInputStream.h"
+#include "nsIWebVTTParserWrapper.h"
 
 namespace mozilla {
 namespace dom {
@@ -30,40 +31,36 @@ NS_IMPL_CYCLE_COLLECTING_ADDREF(WebVTTListener)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(WebVTTListener)
 
 LazyLogModule gTextTrackLog("TextTrack");
-# define VTT_LOG(...) MOZ_LOG(gTextTrackLog, LogLevel::Debug, (__VA_ARGS__))
+#define VTT_LOG(...) MOZ_LOG(gTextTrackLog, LogLevel::Debug, (__VA_ARGS__))
 
 WebVTTListener::WebVTTListener(HTMLTrackElement* aElement)
-  : mElement(aElement)
-{
+    : mElement(aElement), mParserWrapperError(NS_OK) {
   MOZ_ASSERT(mElement, "Must pass an element to the callback");
   VTT_LOG("WebVTTListener created.");
+  MOZ_DIAGNOSTIC_ASSERT(
+      CycleCollectedJSContext::Get() &&
+      !CycleCollectedJSContext::Get()->IsInStableOrMetaStableState());
+  mParserWrapper = do_CreateInstance(NS_WEBVTTPARSERWRAPPER_CONTRACTID,
+                                     &mParserWrapperError);
+  if (NS_SUCCEEDED(mParserWrapperError)) {
+    nsPIDOMWindowInner* window = mElement->OwnerDoc()->GetInnerWindow();
+    mParserWrapperError = mParserWrapper->LoadParser(window);
+  }
+  if (NS_SUCCEEDED(mParserWrapperError)) {
+    mParserWrapperError = mParserWrapper->Watch(this);
+  }
 }
 
-WebVTTListener::~WebVTTListener()
-{
-  VTT_LOG("WebVTTListener destroyed.");
-}
+WebVTTListener::~WebVTTListener() { VTT_LOG("WebVTTListener destroyed."); }
 
 NS_IMETHODIMP
-WebVTTListener::GetInterface(const nsIID &aIID,
-                             void** aResult)
-{
+WebVTTListener::GetInterface(const nsIID& aIID, void** aResult) {
   return QueryInterface(aIID, aResult);
 }
 
-nsresult
-WebVTTListener::LoadResource()
-{
-  nsresult rv;
-  mParserWrapper = do_CreateInstance(NS_WEBVTTPARSERWRAPPER_CONTRACTID, &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsPIDOMWindowInner* window = mElement->OwnerDoc()->GetInnerWindow();
-  rv = mParserWrapper->LoadParser(window);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  rv = mParserWrapper->Watch(this);
-  NS_ENSURE_SUCCESS(rv, rv);
+nsresult WebVTTListener::LoadResource() {
+  // Exit if we failed to create the WebVTTParserWrapper (vtt.jsm)
+  NS_ENSURE_SUCCESS(mParserWrapperError, mParserWrapperError);
 
   mElement->SetReadyState(TextTrackReadyState::Loading);
   return NS_OK;
@@ -71,10 +68,8 @@ WebVTTListener::LoadResource()
 
 NS_IMETHODIMP
 WebVTTListener::AsyncOnChannelRedirect(nsIChannel* aOldChannel,
-                                       nsIChannel* aNewChannel,
-                                       uint32_t aFlags,
-                                       nsIAsyncVerifyRedirectCallback* cb)
-{
+                                       nsIChannel* aNewChannel, uint32_t aFlags,
+                                       nsIAsyncVerifyRedirectCallback* cb) {
   if (mElement) {
     mElement->OnChannelRedirect(aOldChannel, aNewChannel, aFlags);
   }
@@ -83,18 +78,14 @@ WebVTTListener::AsyncOnChannelRedirect(nsIChannel* aOldChannel,
 }
 
 NS_IMETHODIMP
-WebVTTListener::OnStartRequest(nsIRequest* aRequest,
-                               nsISupports* aContext)
-{
+WebVTTListener::OnStartRequest(nsIRequest* aRequest, nsISupports* aContext) {
   VTT_LOG("WebVTTListener::OnStartRequest\n");
   return NS_OK;
 }
 
 NS_IMETHODIMP
-WebVTTListener::OnStopRequest(nsIRequest* aRequest,
-                              nsISupports* aContext,
-                              nsresult aStatus)
-{
+WebVTTListener::OnStopRequest(nsIRequest* aRequest, nsISupports* aContext,
+                              nsresult aStatus) {
   VTT_LOG("WebVTTListener::OnStopRequest\n");
   if (NS_FAILED(aStatus)) {
     mElement->SetReadyState(TextTrackReadyState::FailedToLoad);
@@ -110,11 +101,10 @@ WebVTTListener::OnStopRequest(nsIRequest* aRequest,
   return aStatus;
 }
 
-nsresult
-WebVTTListener::ParseChunk(nsIInputStream* aInStream, void* aClosure,
-                           const char* aFromSegment, uint32_t aToOffset,
-                           uint32_t aCount, uint32_t* aWriteCount)
-{
+nsresult WebVTTListener::ParseChunk(nsIInputStream* aInStream, void* aClosure,
+                                    const char* aFromSegment,
+                                    uint32_t aToOffset, uint32_t aCount,
+                                    uint32_t* aWriteCount) {
   nsCString buffer(aFromSegment, aCount);
   WebVTTListener* listener = static_cast<WebVTTListener*>(aClosure);
 
@@ -129,12 +119,9 @@ WebVTTListener::ParseChunk(nsIInputStream* aInStream, void* aClosure,
 }
 
 NS_IMETHODIMP
-WebVTTListener::OnDataAvailable(nsIRequest* aRequest,
-                                nsISupports* aContext,
-                                nsIInputStream* aStream,
-                                uint64_t aOffset,
-                                uint32_t aCount)
-{
+WebVTTListener::OnDataAvailable(nsIRequest* aRequest, nsISupports* aContext,
+                                nsIInputStream* aStream, uint64_t aOffset,
+                                uint32_t aCount) {
   VTT_LOG("WebVTTListener::OnDataAvailable\n");
   uint32_t count = aCount;
   while (count > 0) {
@@ -151,14 +138,14 @@ WebVTTListener::OnDataAvailable(nsIRequest* aRequest,
 }
 
 NS_IMETHODIMP
-WebVTTListener::OnCue(JS::Handle<JS::Value> aCue, JSContext* aCx)
-{
+WebVTTListener::OnCue(JS::Handle<JS::Value> aCue, JSContext* aCx) {
   if (!aCue.isObject()) {
     return NS_ERROR_FAILURE;
   }
 
+  JS::Rooted<JSObject*> obj(aCx, &aCue.toObject());
   TextTrackCue* cue = nullptr;
-  nsresult rv = UNWRAP_OBJECT(VTTCue, &aCue.toObject(), cue);
+  nsresult rv = UNWRAP_OBJECT(VTTCue, &obj, cue);
   NS_ENSURE_SUCCESS(rv, rv);
 
   cue->SetTrackElement(mElement);
@@ -167,17 +154,14 @@ WebVTTListener::OnCue(JS::Handle<JS::Value> aCue, JSContext* aCx)
   return NS_OK;
 }
 
-
 NS_IMETHODIMP
-WebVTTListener::OnRegion(JS::Handle<JS::Value> aRegion, JSContext* aCx)
-{
+WebVTTListener::OnRegion(JS::Handle<JS::Value> aRegion, JSContext* aCx) {
   // Nothing for this callback to do.
   return NS_OK;
 }
 
 NS_IMETHODIMP
-WebVTTListener::OnParsingError(int32_t errorCode, JSContext* cx)
-{
+WebVTTListener::OnParsingError(int32_t errorCode, JSContext* cx) {
   // We only care about files that have a bad WebVTT file signature right now
   // as that means the file failed to load.
   if (errorCode == ErrorCodes::BadSignature) {
@@ -186,5 +170,5 @@ WebVTTListener::OnParsingError(int32_t errorCode, JSContext* cx)
   return NS_OK;
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

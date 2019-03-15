@@ -4,15 +4,11 @@
 
 "use strict";
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cr = Components.results;
-
 const XPI_CONTENT_TYPE = "application/x-xpinstall";
 const MSG_INSTALL_ADDON = "WebInstallerInstallAddonFromWebpage";
 
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-Components.utils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function amContentHandler() {
 }
@@ -46,14 +42,27 @@ amContentHandler.prototype = {
 
     aRequest.cancel(Cr.NS_BINDING_ABORTED);
 
+    const {triggeringPrincipal} = aRequest.loadInfo;
+
+    let sourceHost;
+
+    try {
+      sourceHost = triggeringPrincipal.URI.host;
+    } catch (err) {
+      // Ignore errors when retrieving the host for the principal (e.g. null principals raise
+      // an NS_ERROR_FAILURE when principal.URI.host is accessed).
+    }
+
     let install = {
       uri: uri.spec,
       hash: null,
       name: null,
       icon: null,
       mimetype: XPI_CONTENT_TYPE,
-      triggeringPrincipal: aRequest.loadInfo.triggeringPrincipal,
-      callbackID: -1
+      triggeringPrincipal,
+      callbackID: -1,
+      method: "link",
+      sourceHost,
     };
 
     if (Services.appinfo.processType == Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT) {
@@ -66,35 +75,30 @@ amContentHandler.prototype = {
         element = element.ownerGlobal.frameElement;
 
       if (element) {
-        let listener = Cc["@mozilla.org/addons/integration;1"].
-                       getService(Ci.nsIMessageListener);
+        let listener = Cc["@mozilla.org/addons/integration;1"].getService();
         listener.wrappedJSObject.receiveMessage({
           name: MSG_INSTALL_ADDON,
           target: element,
-          data: install
+          data: install,
         });
         return;
       }
     }
 
     // Fall back to sending through the message manager
-    let messageManager = window.QueryInterface(Ci.nsIInterfaceRequestor)
-                               .getInterface(Ci.nsIDocShell)
-                               .QueryInterface(Ci.nsIInterfaceRequestor)
-                               .getInterface(Ci.nsIContentFrameMessageManager);
+    let messageManager = window.docShell.messageManager;
 
     messageManager.sendAsyncMessage(MSG_INSTALL_ADDON, install);
   },
 
   classID: Components.ID("{7beb3ba8-6ec3-41b4-b67c-da89b8518922}"),
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIContentHandler]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIContentHandler]),
 
   log(aMsg) {
     let msg = "amContentHandler.js: " + (aMsg.join ? aMsg.join("") : aMsg);
-    Cc["@mozilla.org/consoleservice;1"].getService(Ci.nsIConsoleService).
-      logStringMessage(msg);
+    Services.console.logStringMessage(msg);
     dump(msg + "\n");
-  }
+  },
 };
 
 this.NSGetFactory = XPCOMUtils.generateNSGetFactory([amContentHandler]);

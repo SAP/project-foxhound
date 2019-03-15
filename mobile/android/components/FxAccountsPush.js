@@ -3,35 +3,31 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cu = Components.utils;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Messaging.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Messaging.jsm");
 const {
   PushCrypto,
   getCryptoParams,
-} = Cu.import("resource://gre/modules/PushCrypto.jsm", {});
+} = ChromeUtils.import("resource://gre/modules/PushCrypto.jsm", {});
 
 XPCOMUtils.defineLazyServiceGetter(this, "PushService",
   "@mozilla.org/push/Service;1", "nsIPushService");
 XPCOMUtils.defineLazyGetter(this, "_decoder", () => new TextDecoder());
 
 const FXA_PUSH_SCOPE = "chrome://fxa-push";
-const Log = Cu.import("resource://gre/modules/AndroidLog.jsm", {}).AndroidLog.bind("FxAccountsPush");
+const Log = ChromeUtils.import("resource://gre/modules/AndroidLog.jsm", {}).AndroidLog.bind("FxAccountsPush");
 
 function FxAccountsPush() {
-  Services.obs.addObserver(this, "FxAccountsPush:ReceivedPushMessageToDecode", false);
+  Services.obs.addObserver(this, "FxAccountsPush:ReceivedPushMessageToDecode");
 
   EventDispatcher.instance.sendRequestForResult({
-    type: "FxAccountsPush:Initialized"
+    type: "FxAccountsPush:Initialized",
   });
 }
 
 FxAccountsPush.prototype = {
-  observe: function (subject, topic, data) {
+  observe: function(subject, topic, data) {
     switch (topic) {
       case "android-push-service":
         if (data === "android-fxa-subscribe") {
@@ -60,7 +56,9 @@ FxAccountsPush.prototype = {
             resolve(subscription);
           } else {
             Log.w("FxAccountsPush failed to subscribe", result);
-            reject(new Error("FxAccountsPush failed to subscribe"));
+            const err = new Error("FxAccountsPush failed to subscribe");
+            err.result = result;
+            reject(err);
           }
         });
     })
@@ -69,13 +67,17 @@ FxAccountsPush.prototype = {
         type: "FxAccountsPush:Subscribe:Response",
         subscription: {
           pushCallback: subscription.endpoint,
-          pushPublicKey: urlsafeBase64Encode(subscription.getKey('p256dh')),
-          pushAuthKey: urlsafeBase64Encode(subscription.getKey('auth'))
-        }
+          pushPublicKey: urlsafeBase64Encode(subscription.getKey("p256dh")),
+          pushAuthKey: urlsafeBase64Encode(subscription.getKey("auth")),
+        },
       });
     })
     .catch(err => {
       Log.i("Error when registering FxA push endpoint " + err);
+      EventDispatcher.instance.sendRequest({
+        type: "FxAccountsPush:Subscribe:Response",
+        error: err.result.toString(), // Convert to string because the GeckoBundle can't getLong();
+      });
     });
   },
 
@@ -109,6 +111,9 @@ FxAccountsPush.prototype = {
       PushService.getSubscription(FXA_PUSH_SCOPE,
         Services.scriptSecurityManager.getSystemPrincipal(),
         (result, subscription) => {
+          if (!Components.isSuccessCode(result)) {
+            return reject(new Error(`Error getting subscription (${result})`));
+          }
           if (!subscription) {
             return reject(new Error("No subscription found"));
           }
@@ -124,11 +129,15 @@ FxAccountsPush.prototype = {
       let decryptedMessage = plaintext ? _decoder.decode(plaintext) : "";
       EventDispatcher.instance.sendRequestForResult({
         type: "FxAccountsPush:ReceivedPushMessageToDecode:Response",
-        message: decryptedMessage
+        message: decryptedMessage,
       });
     })
     .catch(err => {
       Log.d("Error while decoding incoming message : " + err);
+      EventDispatcher.instance.sendRequestForResult({
+        type: "FxAccountsPush:ReceivedPushMessageToDecode:Response",
+        error: err.message || "",
+      });
     });
   },
 
@@ -154,9 +163,9 @@ FxAccountsPush.prototype = {
     return { headers, message };
   },
 
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIObserver]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver]),
 
-  classID: Components.ID("{d1bbb0fd-1d47-4134-9c12-d7b1be20b721}")
+  classID: Components.ID("{d1bbb0fd-1d47-4134-9c12-d7b1be20b721}"),
 };
 
 function urlsafeBase64Encode(key) {

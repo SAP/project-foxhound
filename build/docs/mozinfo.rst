@@ -54,7 +54,7 @@ bits
 
    Universal Mac builds do not have this key defined.
 
-   Unkown processor architectures (see ``processor`` below) may not have
+   Unknown processor architectures (see ``processor`` below) may not have
    this key defined.
 
    Optional.
@@ -63,7 +63,7 @@ buildapp
    The path to the XUL application being built.
 
    For desktop Firefox, this is ``browser``. For Fennec, it's
-   ``mobile/android``. For B2G, it's ``b2g``.
+   ``mobile/android``.
 
 crashreporter
    Whether the crash reporter is enabled for this build.
@@ -81,6 +81,13 @@ datareporting
 
 debug
    Whether this is a debug build.
+
+   Values are ``true`` and ``false``.
+
+   Always defined.
+
+devedition
+   Whether this is a devedition build.
 
    Values are ``true`` and ``false``.
 
@@ -107,7 +114,7 @@ nightly_build
 
 os
    The operating system the build is produced for. Values for tier-1
-   supported platforms are ``linux``, ``win``, ``mac``, ``b2g``, and
+   supported platforms are ``linux``, ``win``, ``mac``, and
    ``android``. For other platforms, the value is the lowercase version
    of the ``OS_TARGET`` variable from ``config.status``.
 
@@ -158,19 +165,5 @@ toolkit
 
 topsrcdir
    The path to the source directory the build came from.
-
-   Always defined.
-
-wave
-   Whether Wave audio support is enabled.
-
-   Values are ``true`` and ``false``.
-
-   Always defined.
-
-webm
-   Whether WebM support is enabled.
-
-   Values are ``true`` and ``false``.
 
    Always defined.

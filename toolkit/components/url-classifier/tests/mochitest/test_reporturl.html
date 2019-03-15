@@ -16,20 +16,12 @@
 <pre id="test">
 
 <script class="testbody" type="text/javascript">
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
+ChromeUtils.import("resource://testing-common/ContentTask.jsm");
+ChromeUtils.import("resource://testing-common/TestUtils.jsm");
 
-const Ci = Components.interfaces;
-const Cu = Components.utils;
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://testing-common/BrowserTestUtils.jsm");
-Cu.import("resource://testing-common/ContentTask.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
-
-var mainWindow = window.QueryInterface(Ci.nsIInterfaceRequestor)
-                    .getInterface(Ci.nsIWebNavigation)
-                    .QueryInterface(Ci.nsIDocShellTreeItem)
-                    .rootTreeItem
-                    .QueryInterface(Ci.nsIInterfaceRequestor)
-                    .getInterface(Ci.nsIDOMWindow);
+var mainWindow = window.docShell.rootTreeItem.domWindow;
 const SJS = "mochi.test:8888/chrome/toolkit/components/url-classifier/tests/mochitest/report.sjs";
 const BASE_URL = "http://" + SJS + "?";
 
@@ -66,26 +58,18 @@ function setupTestData(data) {
   return Promise.all(promises);
 }
 
-function whenDelayedStartupFinished(aWindow, aCallback) {
-  Services.obs.addObserver(function observer(aSubject, aTopic) {
-    if (aWindow == aSubject) {
-      Services.obs.removeObserver(observer, aTopic);
-      setTimeout(aCallback, 0);
-    }
-  }, "browser-delayed-startup-finished", false);
-}
-
 function testOnWindow(aTestData, aCallback, aTestCreater) {
-  return new Promise(resolve  => {
+  return new Promise(resolve => {
     let win = mainWindow.OpenBrowserWindow();
 
-    Task.spawn(function* () {
-      yield new Promise(resolve => whenDelayedStartupFinished(win, resolve));
+    (async function() {
+      await TestUtils.topicObserved("browser-delayed-startup-finished",
+                                    subject => subject == win);
 
       let browser = win.gBrowser.selectedBrowser;
       aTestCreater(win, browser, aTestData.topUrl, aTestData.testUrl);
 
-      let notification = yield BrowserTestUtils.waitForNotificationBar(win.gBrowser, browser, "blocked-badware-page");
+      let notification = await BrowserTestUtils.waitForNotificationBar(win.gBrowser, browser, "blocked-badware-page");
       ok(notification, "Notification box should be displayed");
 
       let buttons = notification.getElementsByTagName("button");
@@ -100,49 +84,49 @@ function testOnWindow(aTestData, aCallback, aTestCreater) {
       button.click();
 
       let newTabBrowser = win.gBrowser.selectedTab.linkedBrowser;
-      yield BrowserTestUtils.browserLoaded(newTabBrowser);
+      await BrowserTestUtils.browserLoaded(newTabBrowser);
 
       aCallback(newTabBrowser);
       win.close();
       resolve();
-    });
+    })();
   });
 }
 
 var createBlockedIframe = function(aWindow, aBrowser, aTopUrl, aUrl) {
-  Task.spawn(function* () {
-    yield BrowserTestUtils.loadURI(aBrowser, aTopUrl);
-    yield BrowserTestUtils.browserLoaded(aBrowser);
+  (async function() {
+    await BrowserTestUtils.loadURI(aBrowser, aTopUrl);
+    await BrowserTestUtils.browserLoaded(aBrowser);
 
-    yield ContentTask.spawn(aBrowser, aUrl, function* (aUrl) {
+    await ContentTask.spawn(aBrowser, aUrl, async function(url) {
       return new Promise(resolve => {
         let listener = e => {
-          removeEventListener('AboutBlockedLoaded', listener, false, true);
+          removeEventListener("AboutBlockedLoaded", listener, false, true);
           resolve();
         };
-        addEventListener('AboutBlockedLoaded', listener, false, true);
+        addEventListener("AboutBlockedLoaded", listener, false, true);
         let frame = content.document.getElementById("phishingFrame");
-        frame.setAttribute('src', "http://" + aUrl);
+        frame.setAttribute("src", "http://" + url);
       });
     });
 
-    let doc = aWindow.gBrowser.contentDocument.getElementsByTagName('iframe')[0].contentDocument;
-    let ignoreButton = doc.getElementById("ignoreWarningButton");
-    ok(ignoreButton, "ignoreWarningButton should exist");
-    ignoreButton.click();
-  });
+    let doc = aWindow.gBrowser.contentDocument.getElementsByTagName("iframe")[0].contentDocument;
+    let ignoreWarningLink = doc.getElementById("ignore_warning_link");
+    ok(ignoreWarningLink, "Ignore warning link should exist");
+    ignoreWarningLink.click();
+  })();
 };
 
 var createBlockedPage = function(aWindow, aBrowser, aTopUrl, aUrl) {
-  Task.spawn(function* () {
-    yield BrowserTestUtils.loadURI(aBrowser, aTopUrl);
-    yield BrowserTestUtils.waitForContentEvent(aBrowser, "DOMContentLoaded")
+  (async function() {
+    await BrowserTestUtils.loadURI(aBrowser, aTopUrl);
+    await BrowserTestUtils.waitForContentEvent(aBrowser, "DOMContentLoaded");
 
     let doc = aWindow.gBrowser.contentDocument;
-    let ignoreButton = doc.getElementById("ignoreWarningButton");
-    ok(ignoreButton, "ignoreWarningButton should exist");
-    ignoreButton.click();
-  });
+    let ignoreWarningLink = doc.getElementById("ignore_warning_link");
+    ok(ignoreWarningLink, "Ignore warning link should exist");
+    ignoreWarningLink.click();
+  })();
 };
 
 function checkReportURL(aReportBrowser, aUrl) {
@@ -155,8 +139,8 @@ var testDatas = [
     testUrl: "itisaphishingsite.org/phishing.html",
     list: "mochi1-phish-simple",
     provider: "google",
-    blockCreater : createBlockedPage,
-    expectedReportUri: "http://itisaphishingsite.org/phishing.html"
+    blockCreater: createBlockedPage,
+    expectedReportUri: "http://itisaphishingsite.org/phishing.html",
   },
 
   // Non-google provider, no report button is showed.
@@ -166,7 +150,7 @@ var testDatas = [
     testUrl: "fakeitisaphishingsite.org/phishing.html",
     list: "fake-phish-simple",
     provider: "mozilla",
-    blockCreater : createBlockedPage
+    blockCreater: createBlockedPage,
   },
 
   // Iframe case:
@@ -178,8 +162,8 @@ var testDatas = [
     testUrl: "phishing.example.com/test.html",
     list: "mochi2-phish-simple",
     provider: "google4",
-    blockCreater : createBlockedIframe,
-    expectedReportUri: "http://phishing.example.com/test.html"
+    blockCreater: createBlockedIframe,
+    expectedReportUri: "http://phishing.example.com/test.html",
   },
 
   // Redirect case:
@@ -191,33 +175,33 @@ var testDatas = [
     testUrl: "prefixexample.com/chrome/toolkit/components/url-classifier/tests/mochitest/report.sjs?action=create-blocked-redirect",
     list: "mochi3-phish-simple",
     provider: "google4",
-    blockCreater : createBlockedPage,
-    expectedReportUri: "http://prefixexample.com/chrome/toolkit/components/url-classifier/tests/mochitest/report.sjs"
+    blockCreater: createBlockedPage,
+    expectedReportUri: "http://prefixexample.com/chrome/toolkit/components/url-classifier/tests/mochitest/report.sjs",
   },
 
 ];
 
 SpecialPowers.pushPrefEnv(
-  {"set" : [["browser.safebrowsing.provider.google.reportPhishMistakeURL", BASE_URL + "action=reporturl&reporturl="],
-            ["browser.safebrowsing.provider.google4.reportPhishMistakeURL", BASE_URL + "action=reporturl&reporturl="],
-            ["browser.safebrowsing.phishing.enabled", true]]},
+  {"set": [["browser.safebrowsing.provider.google.reportPhishMistakeURL", BASE_URL + "action=reporturl&reporturl="],
+           ["browser.safebrowsing.provider.google4.reportPhishMistakeURL", BASE_URL + "action=reporturl&reporturl="],
+           ["browser.safebrowsing.phishing.enabled", true]]},
   test);
 
 function test() {
-  Task.spawn(function* () {
-    yield classifierHelper.waitForInit();
+  (async function() {
+    await classifierHelper.waitForInit();
 
     for (let testData of testDatas) {
-      yield setupTestData(testData);
-      yield testOnWindow(testData, function(browser) {
+      await setupTestData(testData);
+      await testOnWindow(testData, function(browser) {
         checkReportURL(browser, testData.expectedReportUri);
       }, testData.blockCreater);
 
-      yield classifierHelper._cleanup();
+      await classifierHelper._cleanup();
     }
 
     SimpleTest.finish();
-  });
+  })();
 }
 
 SimpleTest.waitForExplicitFinish();

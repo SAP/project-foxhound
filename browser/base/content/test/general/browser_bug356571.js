@@ -1,6 +1,5 @@
 // Bug 356571 - loadOneOrMoreURIs gives up if one of the URLs has an unknown protocol
 
-var Cr = Components.results;
 var Cm = Components.manager;
 
 // Set to true when docShell alerts for unknown protocol error
@@ -19,14 +18,14 @@ var fakePromptServiceFactory = {
     if (aOuter != null)
       throw Cr.NS_ERROR_NO_AGGREGATION;
     return promptService.QueryInterface(aIid);
-  }
+  },
 };
 
 var promptService = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIPromptService]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIPromptService]),
   alert() {
     didFail = true;
-  }
+  },
 };
 
 /* FIXME
@@ -57,8 +56,8 @@ var gProgressListener = {
       ok(gBrowser.tabs.length == kURIs.length, "Correctly opened all expected tabs");
       finishTest();
     }
-  }
-}
+  },
+};
 
 function test() {
   todo(false, "temp. disabled");

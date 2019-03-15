@@ -7,29 +7,25 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
-#include "webrtc/test/video_renderer.h"
+#include "test/video_renderer.h"
 
 // TODO(pbos): Android renderer
 
-#include "webrtc/typedefs.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 namespace test {
 
 class NullRenderer : public VideoRenderer {
-  void RenderFrame(const VideoFrame& video_frame,
-                   int time_to_render_ms) override {}
-  bool IsTextureSupported() const override { return false; }
+  void OnFrame(const VideoFrame& video_frame) override {}
 };
 
 VideoRenderer* VideoRenderer::Create(const char* window_title,
                                      size_t width,
                                      size_t height) {
   VideoRenderer* renderer = CreatePlatformRenderer(window_title, width, height);
-  if (renderer != NULL) {
-    // TODO(mflodman) Add a warning log.
+  if (renderer != nullptr)
     return renderer;
-  }
 
   return new NullRenderer();
 }

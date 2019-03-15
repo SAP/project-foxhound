@@ -22,139 +22,139 @@ const TEST_DATA = [
   {
     desc: "Guides and infobar should be shown by default",
     options: {},
-    checkHighlighter: function* (testActor) {
-      let hidden = yield testActor.getHighlighterNodeAttribute(
+    checkHighlighter: async function(testActor) {
+      let hidden = await testActor.getHighlighterNodeAttribute(
         "box-model-infobar-container", "hidden");
       ok(!hidden, "Node infobar is visible");
 
-      hidden = yield testActor.getHighlighterNodeAttribute(
+      hidden = await testActor.getHighlighterNodeAttribute(
         "box-model-elements", "hidden");
       ok(!hidden, "SVG container is visible");
 
-      for (let side of ["top", "right", "bottom", "left"]) {
-        hidden = yield testActor.getHighlighterNodeAttribute(
+      for (const side of ["top", "right", "bottom", "left"]) {
+        hidden = await testActor.getHighlighterNodeAttribute(
           "box-model-guide-" + side, "hidden");
         ok(!hidden, side + " guide is visible");
       }
-    }
+    },
   },
   {
     desc: "All regions should be shown by default",
     options: {},
-    checkHighlighter: function* (testActor) {
-      for (let region of ["margin", "border", "padding", "content"]) {
-        let {d} = yield testActor.getHighlighterRegionPath(region);
+    checkHighlighter: async function(testActor) {
+      for (const region of ["margin", "border", "padding", "content"]) {
+        const {d} = await testActor.getHighlighterRegionPath(region);
         ok(d, "Region " + region + " has set coordinates");
       }
-    }
+    },
   },
   {
     desc: "Guides can be hidden",
     options: {hideGuides: true},
-    checkHighlighter: function* (testActor) {
-      for (let side of ["top", "right", "bottom", "left"]) {
-        let hidden = yield testActor.getHighlighterNodeAttribute(
+    checkHighlighter: async function(testActor) {
+      for (const side of ["top", "right", "bottom", "left"]) {
+        const hidden = await testActor.getHighlighterNodeAttribute(
           "box-model-guide-" + side, "hidden");
         is(hidden, "true", side + " guide has been hidden");
       }
-    }
+    },
   },
   {
     desc: "Infobar can be hidden",
     options: {hideInfoBar: true},
-    checkHighlighter: function* (testActor) {
-      let hidden = yield testActor.getHighlighterNodeAttribute(
+    checkHighlighter: async function(testActor) {
+      const hidden = await testActor.getHighlighterNodeAttribute(
         "box-model-infobar-container", "hidden");
       is(hidden, "true", "infobar has been hidden");
-    }
+    },
   },
   {
     desc: "One region only can be shown (1)",
     options: {showOnly: "content"},
-    checkHighlighter: function* (testActor) {
-      let {d} = yield testActor.getHighlighterRegionPath("margin");
+    checkHighlighter: async function(testActor) {
+      let {d} = await testActor.getHighlighterRegionPath("margin");
       ok(!d, "margin region is hidden");
 
-      ({d} = yield testActor.getHighlighterRegionPath("border"));
+      ({d} = await testActor.getHighlighterRegionPath("border"));
       ok(!d, "border region is hidden");
 
-      ({d} = yield testActor.getHighlighterRegionPath("padding"));
+      ({d} = await testActor.getHighlighterRegionPath("padding"));
       ok(!d, "padding region is hidden");
 
-      ({d} = yield testActor.getHighlighterRegionPath("content"));
+      ({d} = await testActor.getHighlighterRegionPath("content"));
       ok(d, "content region is shown");
-    }
+    },
   },
   {
     desc: "One region only can be shown (2)",
     options: {showOnly: "margin"},
-    checkHighlighter: function* (testActor) {
-      let {d} = yield testActor.getHighlighterRegionPath("margin");
+    checkHighlighter: async function(testActor) {
+      let {d} = await testActor.getHighlighterRegionPath("margin");
       ok(d, "margin region is shown");
 
-      ({d} = yield testActor.getHighlighterRegionPath("border"));
+      ({d} = await testActor.getHighlighterRegionPath("border"));
       ok(!d, "border region is hidden");
 
-      ({d} = yield testActor.getHighlighterRegionPath("padding"));
+      ({d} = await testActor.getHighlighterRegionPath("padding"));
       ok(!d, "padding region is hidden");
 
-      ({d} = yield testActor.getHighlighterRegionPath("content"));
+      ({d} = await testActor.getHighlighterRegionPath("content"));
       ok(!d, "content region is hidden");
-    }
+    },
   },
   {
     desc: "Guides can be drawn around a given region (1)",
     options: {region: "padding"},
-    checkHighlighter: function* (testActor) {
-      let topY1 = yield testActor.getHighlighterNodeAttribute(
+    checkHighlighter: async function(testActor) {
+      const topY1 = await testActor.getHighlighterNodeAttribute(
         "box-model-guide-top", "y1");
-      let rightX1 = yield testActor.getHighlighterNodeAttribute(
+      const rightX1 = await testActor.getHighlighterNodeAttribute(
         "box-model-guide-right", "x1");
-      let bottomY1 = yield testActor.getHighlighterNodeAttribute(
+      const bottomY1 = await testActor.getHighlighterNodeAttribute(
         "box-model-guide-bottom", "y1");
-      let leftX1 = yield testActor.getHighlighterNodeAttribute(
+      const leftX1 = await testActor.getHighlighterNodeAttribute(
         "box-model-guide-left", "x1");
 
-      let {points} = yield testActor.getHighlighterRegionPath("padding");
+      let {points} = await testActor.getHighlighterRegionPath("padding");
       points = points[0];
 
-      is(Math.ceil(topY1), points[0][1], "Top guide's y1 is correct");
-      is(Math.floor(rightX1), points[1][0], "Right guide's x1 is correct");
-      is(Math.floor(bottomY1), points[2][1], "Bottom guide's y1 is correct");
-      is(Math.ceil(leftX1), points[3][0], "Left guide's x1 is correct");
-    }
+      is(topY1, points[0][1], "Top guide's y1 is correct");
+      is(rightX1, points[1][0] - 1, "Right guide's x1 is correct");
+      is(bottomY1, points[2][1] - 1, "Bottom guide's y1 is correct");
+      is(leftX1, points[3][0], "Left guide's x1 is correct");
+    },
   },
   {
     desc: "Guides can be drawn around a given region (2)",
     options: {region: "margin"},
-    checkHighlighter: function* (testActor) {
-      let topY1 = yield testActor.getHighlighterNodeAttribute(
+    checkHighlighter: async function(testActor) {
+      const topY1 = await testActor.getHighlighterNodeAttribute(
         "box-model-guide-top", "y1");
-      let rightX1 = yield testActor.getHighlighterNodeAttribute(
+      const rightX1 = await testActor.getHighlighterNodeAttribute(
         "box-model-guide-right", "x1");
-      let bottomY1 = yield testActor.getHighlighterNodeAttribute(
+      const bottomY1 = await testActor.getHighlighterNodeAttribute(
         "box-model-guide-bottom", "y1");
-      let leftX1 = yield testActor.getHighlighterNodeAttribute(
+      const leftX1 = await testActor.getHighlighterNodeAttribute(
         "box-model-guide-left", "x1");
 
-      let {points} = yield testActor.getHighlighterRegionPath("margin");
+      let {points} = await testActor.getHighlighterRegionPath("margin");
       points = points[0];
 
-      is(Math.ceil(topY1), points[0][1], "Top guide's y1 is correct");
-      is(Math.floor(rightX1), points[1][0], "Right guide's x1 is correct");
-      is(Math.floor(bottomY1), points[2][1], "Bottom guide's y1 is correct");
-      is(Math.ceil(leftX1), points[3][0], "Left guide's x1 is correct");
-    }
+      is(topY1, points[0][1], "Top guide's y1 is correct");
+      is(rightX1, points[1][0] - 1, "Right guide's x1 is correct");
+      is(bottomY1, points[2][1] - 1, "Bottom guide's y1 is correct");
+      is(leftX1, points[3][0], "Left guide's x1 is correct");
+    },
   },
   {
     desc: "When showOnly is used, other regions can be faded",
     options: {showOnly: "margin", onlyRegionArea: true},
-    checkHighlighter: function* (testActor) {
-      for (let region of ["margin", "border", "padding", "content"]) {
-        let {d} = yield testActor.getHighlighterRegionPath(region);
+    checkHighlighter: async function(testActor) {
+      for (const region of ["margin", "border", "padding", "content"]) {
+        const {d} = await testActor.getHighlighterRegionPath(region);
         ok(d, "Region " + region + " is shown (it has a d attribute)");
 
-        let faded = yield testActor.getHighlighterNodeAttribute(
+        const faded = await testActor.getHighlighterNodeAttribute(
                           "box-model-" + region, "faded");
         if (region === "margin") {
           ok(!faded, "The margin region is not faded");
@@ -162,17 +162,17 @@ const TEST_DATA = [
           is(faded, "true", "Region " + region + " is faded");
         }
       }
-    }
+    },
   },
   {
     desc: "When showOnly is used, other regions can be faded (2)",
     options: {showOnly: "padding", onlyRegionArea: true},
-    checkHighlighter: function* (testActor) {
-      for (let region of ["margin", "border", "padding", "content"]) {
-        let {d} = yield testActor.getHighlighterRegionPath(region);
+    checkHighlighter: async function(testActor) {
+      for (const region of ["margin", "border", "padding", "content"]) {
+        const {d} = await testActor.getHighlighterRegionPath(region);
         ok(d, "Region " + region + " is shown (it has a d attribute)");
 
-        let faded = yield testActor.getHighlighterNodeAttribute(
+        const faded = await testActor.getHighlighterNodeAttribute(
                           "box-model-" + region, "faded");
         if (region === "padding") {
           ok(!faded, "The padding region is not faded");
@@ -180,25 +180,25 @@ const TEST_DATA = [
           is(faded, "true", "Region " + region + " is faded");
         }
       }
-    }
-  }
+    },
+  },
 ];
 
-add_task(function* () {
-  let {inspector, testActor} = yield openInspectorForURL(
+add_task(async function() {
+  const {inspector, testActor} = await openInspectorForURL(
     "data:text/html;charset=utf-8," + encodeURI(TEST_URL));
 
-  let divFront = yield getNodeFront("div", inspector);
+  const divFront = await getNodeFront("div", inspector);
 
-  for (let {desc, options, checkHighlighter} of TEST_DATA) {
+  for (const {desc, options, checkHighlighter} of TEST_DATA) {
     info("Running test: " + desc);
 
     info("Show the box-model highlighter with options " + options);
-    yield inspector.highlighter.showBoxModel(divFront, options);
+    await inspector.highlighter.showBoxModel(divFront, options);
 
-    yield checkHighlighter(testActor);
+    await checkHighlighter(testActor);
 
     info("Hide the box-model highlighter");
-    yield inspector.highlighter.hideBoxModel();
+    await inspector.highlighter.hideBoxModel();
   }
 });

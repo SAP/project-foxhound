@@ -10,17 +10,20 @@ function run_test() {
   // or convert it to something that *is* valid (in UTF8).  So we measure
   // its length to make sure this hasn't happened.
   var badMimeType = "text/plainÿ";
-  do_check_eq(badMimeType.length, 11);
+  Assert.equal(badMimeType.length, 11);
 
   try {
     var type = Cc["@mozilla.org/mime;1"].
                getService(Ci.nsIMIMEService).
                getFromTypeAndExtension(badMimeType, "txt");
-  } catch (e if (e instanceof Ci.nsIException &&
-                 e.result == Cr.NS_ERROR_NOT_AVAILABLE)) {
+  } catch (e) {
+    if (!(e instanceof Ci.nsIException) ||
+        e.result != Cr.NS_ERROR_NOT_AVAILABLE) {
+      throw e;
+    }
     // This is an expected exception, thrown if the type can't be determined
   } finally {
   }
   // Not crashing is good enough
-  do_check_eq(true, true);
+  Assert.equal(true, true);
 }

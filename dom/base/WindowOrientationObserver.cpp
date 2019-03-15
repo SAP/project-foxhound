@@ -12,16 +12,15 @@
 using namespace mozilla::dom;
 
 /**
- * This class is used by nsGlobalWindow to implement window.orientation
+ * This class is used by nsGlobalWindowInner to implement window.orientation
  * and window.onorientationchange. This class is defined in its own file
  * because Hal.h pulls in windows.h and can't be included from
  * nsGlobalWindow.cpp
  */
 WindowOrientationObserver::WindowOrientationObserver(
-  nsGlobalWindow* aGlobalWindow)
-  : mWindow(aGlobalWindow)
-{
-  MOZ_ASSERT(aGlobalWindow && aGlobalWindow->IsInnerWindow());
+    nsGlobalWindowInner* aGlobalWindow)
+    : mWindow(aGlobalWindow) {
+  MOZ_ASSERT(aGlobalWindow);
   hal::RegisterScreenConfigurationObserver(this);
 
   hal::ScreenConfiguration config;
@@ -29,25 +28,21 @@ WindowOrientationObserver::WindowOrientationObserver(
   mAngle = config.angle();
 }
 
-WindowOrientationObserver::~WindowOrientationObserver()
-{
+WindowOrientationObserver::~WindowOrientationObserver() {
   hal::UnregisterScreenConfigurationObserver(this);
 }
 
-void
-WindowOrientationObserver::Notify(
-  const mozilla::hal::ScreenConfiguration& aConfiguration)
-{
+void WindowOrientationObserver::Notify(
+    const mozilla::hal::ScreenConfiguration& aConfiguration) {
   uint16_t currentAngle = aConfiguration.angle();
   if (mAngle != currentAngle && mWindow->AsInner()->IsCurrentInnerWindow()) {
     mAngle = currentAngle;
-    mWindow->GetOuterWindow()->DispatchCustomEvent(NS_LITERAL_STRING("orientationchange"));
+    mWindow->GetOuterWindow()->DispatchCustomEvent(
+        NS_LITERAL_STRING("orientationchange"));
   }
 }
 
-/* static */ int16_t
-WindowOrientationObserver::OrientationAngle()
-{
+/* static */ int16_t WindowOrientationObserver::OrientationAngle() {
   hal::ScreenConfiguration config;
   hal::GetCurrentScreenConfiguration(&config);
   int16_t angle = static_cast<int16_t>(config.angle());

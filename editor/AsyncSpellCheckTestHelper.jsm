@@ -2,14 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-this.EXPORTED_SYMBOLS = [
+var EXPORTED_SYMBOLS = [
   "onSpellCheck",
 ];
 
 const SPELL_CHECK_ENDED_TOPIC = "inlineSpellChecker-spellCheck-ended";
 const SPELL_CHECK_STARTED_TOPIC = "inlineSpellChecker-spellCheck-started";
-
-const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 
 /**
  * Waits until spell checking has stopped on the given element.
@@ -32,11 +30,7 @@ function onSpellCheck(editableElement, callback) {
   let editor = editableElement.editor;
   if (!editor) {
     let win = editableElement.ownerGlobal;
-    editor = win.QueryInterface(Ci.nsIInterfaceRequestor).
-                 getInterface(Ci.nsIWebNavigation).
-                 QueryInterface(Ci.nsIInterfaceRequestor).
-                 getInterface(Ci.nsIEditingSession).
-                 getEditorForWindow(win);
+    editor = win.docShell.editingSession.getEditorForWindow(win);
   }
   if (!editor)
     throw new Error("Unable to find editor for element " + editableElement);
@@ -45,8 +39,7 @@ function onSpellCheck(editableElement, callback) {
     // False is important here.  Pass false so that the inline spell checker
     // isn't created if it doesn't already exist.
     var isc = editor.getInlineSpellChecker(false);
-  }
-  catch (err) {
+  } catch (err) {
     // getInlineSpellChecker throws if spell checking is not enabled instead of
     // just returning null, which seems kind of lame.  (Spell checking is not
     // enabled on Android.)  The point here is only to determine whether spell
@@ -67,10 +60,11 @@ function onSpellCheck(editableElement, callback) {
     waitingForEnded = !waitingForEnded;
   }
 
+  // eslint-disable-next-line mozilla/use-services
   let os = Cc["@mozilla.org/observer-service;1"].
            getService(Ci.nsIObserverService);
-  os.addObserver(observe, SPELL_CHECK_STARTED_TOPIC, false);
-  os.addObserver(observe, SPELL_CHECK_ENDED_TOPIC, false);
+  os.addObserver(observe, SPELL_CHECK_STARTED_TOPIC);
+  os.addObserver(observe, SPELL_CHECK_ENDED_TOPIC);
 
   let timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
   timer.init(function tick() {
@@ -83,4 +77,4 @@ function onSpellCheck(editableElement, callback) {
     os.removeObserver(observe, SPELL_CHECK_ENDED_TOPIC);
     callback();
   }, 0, Ci.nsITimer.TYPE_REPEATING_SLACK);
-};
+}

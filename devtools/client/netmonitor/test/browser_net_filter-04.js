@@ -29,28 +29,28 @@ const REQUESTS_WITH_MEDIA_AND_FLASH_AND_WS = REQUESTS_WITH_MEDIA_AND_FLASH.conca
   { url: "sjs_content-type-test-server.sjs?fmt=ws" },
 ]);
 
-add_task(function* () {
+add_task(async function() {
   Services.prefs.setCharPref("devtools.netmonitor.filters",
                              '["bogus", "js", "alsobogus"]');
 
-  let { monitor } = yield initNetMonitor(FILTERING_URL);
+  const { monitor } = await initNetMonitor(FILTERING_URL);
   info("Starting test... ");
 
-  let { document, gStore, windowRequire } = monitor.panelWin;
-  let Actions = windowRequire("devtools/client/netmonitor/actions/index");
-  let { Prefs } = windowRequire("devtools/client/netmonitor/utils/prefs");
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
+  const { Prefs } = windowRequire("devtools/client/netmonitor/src/utils/prefs");
 
-  gStore.dispatch(Actions.batchEnable(false));
+  store.dispatch(Actions.batchEnable(false));
 
   is(Prefs.filters.length, 3,
     "All the filter types should be loaded.");
   is(Prefs.filters[0], "bogus",
     "The first filter type is invalid, but loaded anyway.");
 
-  let wait = waitForNetworkEvents(monitor, 9);
-  loadCommonFrameScript();
-  yield performRequestsInContent(REQUESTS_WITH_MEDIA_AND_FLASH_AND_WS);
-  yield wait;
+  const wait = waitForNetworkEvents(monitor, 9);
+  loadFrameScriptUtils();
+  await performRequestsInContent(REQUESTS_WITH_MEDIA_AND_FLASH_AND_WS);
+  await wait;
 
   testFilterButtons(monitor, "js");
   ok(true, "Only the correct filter type was taken into consideration.");
@@ -58,10 +58,10 @@ add_task(function* () {
   EventUtils.sendMouseEvent({ type: "click" },
     document.querySelector(".requests-list-filter-html-button"));
 
-  let filters = Services.prefs.getCharPref("devtools.netmonitor.filters");
+  const filters = Services.prefs.getCharPref("devtools.netmonitor.filters");
   is(filters, '["html","js"]',
     "The filters preferences were saved directly after the click and only" +
     " with the valid.");
 
-  yield teardown(monitor);
+  await teardown(monitor);
 });

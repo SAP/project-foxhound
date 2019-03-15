@@ -32,7 +32,7 @@ final class GeckoBackgroundThread extends Thread {
 
         synchronized (GeckoBackgroundThread.class) {
             handler = new Handler();
-            GeckoBackgroundThread.class.notify();
+            GeckoBackgroundThread.class.notifyAll();
         }
 
         if (initialRunnable != null) {
@@ -72,5 +72,9 @@ final class GeckoBackgroundThread extends Thread {
             return;
         }
         getHandler().post(runnable);
+    }
+
+    /*package*/ static void postDelayed(final Runnable runnable, final long timeout) {
+        getHandler().postDelayed(runnable, timeout);
     }
 }

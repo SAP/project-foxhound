@@ -23,21 +23,17 @@ const {
   selectSnapshotForDiffingAndRefresh,
 } = require("devtools/client/memory/actions/diffing");
 
-function run_test() {
-  run_next_test();
-}
-
 const EXPECTED_INDIVIDUAL_STATES = [
   individualsState.COMPUTING_DOMINATOR_TREE,
   individualsState.FETCHING,
   individualsState.FETCHED,
 ];
 
-add_task(function* () {
-  let front = new StubbedMemoryFront();
-  let heapWorker = new HeapAnalysesClient();
-  yield front.attach();
-  let store = Store();
+add_task(async function() {
+  const front = new StubbedMemoryFront();
+  const heapWorker = new HeapAnalysesClient();
+  await front.attach();
+  const store = Store();
   const { getState, dispatch } = store;
 
   dispatch(changeView(viewState.CENSUS));
@@ -46,14 +42,14 @@ add_task(function* () {
 
   dispatch(takeSnapshotAndCensus(front, heapWorker));
   dispatch(takeSnapshotAndCensus(front, heapWorker));
-  yield waitUntilCensusState(store, s => s.census,
+  await waitUntilCensusState(store, s => s.census,
                              [censusState.SAVED, censusState.SAVED]);
 
   dispatch(changeView(viewState.DIFFING));
   dispatch(selectSnapshotForDiffingAndRefresh(heapWorker, getState().snapshots[0]));
   dispatch(selectSnapshotForDiffingAndRefresh(heapWorker, getState().snapshots[1]));
 
-  yield waitUntilState(store, state => {
+  await waitUntilState(store, state => {
     return state.diffing &&
            state.diffing.state === diffingState.TOOK_DIFF;
   });
@@ -76,8 +72,8 @@ add_task(function* () {
   dispatch(fetchIndividuals(heapWorker, snapshotId, breakdown,
                             reportLeafIndex));
 
-  for (let state of EXPECTED_INDIVIDUAL_STATES) {
-    yield waitUntilState(store, s => {
+  for (const state of EXPECTED_INDIVIDUAL_STATES) {
+    await waitUntilState(store, s => {
       return s.view.state === viewState.INDIVIDUALS &&
              s.individuals &&
              s.individuals.state === state;
@@ -94,7 +90,7 @@ add_task(function* () {
 
   dispatch(popViewAndRefresh(heapWorker));
 
-  yield waitUntilState(store, state => {
+  await waitUntilState(store, state => {
     return state.diffing &&
       state.diffing.state === diffingState.TOOK_DIFF;
   });
@@ -103,5 +99,5 @@ add_task(function* () {
      "We have our census diff again after popping back to the last view");
 
   heapWorker.destroy();
-  yield front.detach();
+  await front.detach();
 });

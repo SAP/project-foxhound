@@ -4,19 +4,22 @@
     <title>Testing Selection Events</title>
     <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
     <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
-    <script type="text/javascript" src="/tests/SimpleTest/SpawnTask.js"></script>
+    <script type="text/javascript" src="/tests/SimpleTest/AddTask.js"></script>
     <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   </head>
 
   <body>
     <iframe width="500"></iframe>
     <script>
-      add_task(function* () {
+      add_task(async function() {
         // Push the correct preferences for the test
-        yield SpecialPowers.pushPrefEnv({'set': [['dom.select_events.enabled', true]]});
+        await SpecialPowers.pushPrefEnv({'set': [
+                                          ['dom.select_events.enabled', true],
+                                          ['dom.select_events.textcontrols.enabled', true],
+                                        ]});
 
         // Start the actual test
-        yield new Promise((done) => {
+        await new Promise((done) => {
           var iframe = document.querySelector('iframe');
           iframe.addEventListener('load', done);
           iframe.setAttribute('src', 'frameSelectEvents.html');

@@ -8,19 +8,18 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_AUDIO_ENCODER_ISAC_T_IMPL_H_
-#define WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_AUDIO_ENCODER_ISAC_T_IMPL_H_
+#ifndef MODULES_AUDIO_CODING_CODECS_ISAC_AUDIO_ENCODER_ISAC_T_IMPL_H_
+#define MODULES_AUDIO_CODING_CODECS_ISAC_AUDIO_ENCODER_ISAC_T_IMPL_H_
 
-#include "webrtc/modules/audio_coding/codecs/isac/main/include/audio_encoder_isac.h"
-
-#include "webrtc/base/checks.h"
+#include "common_types.h"  // NOLINT(build/include)
+#include "rtc_base/checks.h"
 
 namespace webrtc {
 
 template <typename T>
 typename AudioEncoderIsacT<T>::Config CreateIsacConfig(
     const CodecInst& codec_inst,
-    LockedIsacBandwidthInfo* bwinfo) {
+    const rtc::scoped_refptr<LockedIsacBandwidthInfo>& bwinfo) {
   typename AudioEncoderIsacT<T>::Config config;
   config.bwinfo = bwinfo;
   config.payload_type = codec_inst.pltype;
@@ -68,18 +67,14 @@ AudioEncoderIsacT<T>::AudioEncoderIsacT(const Config& config) {
 }
 
 template <typename T>
-AudioEncoderIsacT<T>::AudioEncoderIsacT(const CodecInst& codec_inst,
-                                        LockedIsacBandwidthInfo* bwinfo)
+AudioEncoderIsacT<T>::AudioEncoderIsacT(
+    const CodecInst& codec_inst,
+    const rtc::scoped_refptr<LockedIsacBandwidthInfo>& bwinfo)
     : AudioEncoderIsacT(CreateIsacConfig<T>(codec_inst, bwinfo)) {}
 
 template <typename T>
 AudioEncoderIsacT<T>::~AudioEncoderIsacT() {
   RTC_CHECK_EQ(0, T::Free(isac_state_));
-}
-
-template <typename T>
-size_t AudioEncoderIsacT<T>::MaxEncodedBytes() const {
-  return kSufficientEncodeBufferSizeBytes;
 }
 
 template <typename T>
@@ -113,11 +108,10 @@ int AudioEncoderIsacT<T>::GetTargetBitrate() const {
 }
 
 template <typename T>
-AudioEncoder::EncodedInfo AudioEncoderIsacT<T>::EncodeInternal(
+AudioEncoder::EncodedInfo AudioEncoderIsacT<T>::EncodeImpl(
     uint32_t rtp_timestamp,
     rtc::ArrayView<const int16_t> audio,
-    size_t max_encoded_bytes,
-    uint8_t* encoded) {
+    rtc::Buffer* encoded) {
   if (!packet_in_progress_) {
     // Starting a new packet; remember the timestamp for later.
     packet_in_progress_ = true;
@@ -127,24 +121,29 @@ AudioEncoder::EncodedInfo AudioEncoderIsacT<T>::EncodeInternal(
     IsacBandwidthInfo bwinfo = bwinfo_->Get();
     T::SetBandwidthInfo(isac_state_, &bwinfo);
   }
-  int r = T::Encode(isac_state_, audio.data(), encoded);
-  RTC_CHECK_GE(r, 0) << "Encode failed (error code "
-                     << T::GetErrorCode(isac_state_) << ")";
 
-  // T::Encode doesn't allow us to tell it the size of the output
-  // buffer. All we can do is check for an overrun after the fact.
-  RTC_CHECK_LE(static_cast<size_t>(r), max_encoded_bytes);
+  size_t encoded_bytes = encoded->AppendData(
+      kSufficientEncodeBufferSizeBytes,
+      [&] (rtc::ArrayView<uint8_t> encoded) {
+        int r = T::Encode(isac_state_, audio.data(), encoded.data());
 
-  if (r == 0)
+        RTC_CHECK_GE(r, 0) << "Encode failed (error code "
+                           << T::GetErrorCode(isac_state_) << ")";
+
+        return static_cast<size_t>(r);
+      });
+
+  if (encoded_bytes == 0)
     return EncodedInfo();
 
   // Got enough input to produce a packet. Return the saved timestamp from
   // the first chunk of input that went into the packet.
   packet_in_progress_ = false;
   EncodedInfo info;
-  info.encoded_bytes = r;
+  info.encoded_bytes = encoded_bytes;
   info.encoded_timestamp = packet_timestamp_;
   info.payload_type = config_.payload_type;
+  info.encoder_type = CodecType::kIsac;
   return info;
 }
 
@@ -187,4 +186,4 @@ void AudioEncoderIsacT<T>::RecreateEncoderInstance(const Config& config) {
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_AUDIO_ENCODER_ISAC_T_IMPL_H_
+#endif  // MODULES_AUDIO_CODING_CODECS_ISAC_AUDIO_ENCODER_ISAC_T_IMPL_H_

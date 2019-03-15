@@ -6,8 +6,8 @@
 
 "use strict";
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Integration.jsm", this);
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Integration.jsm", this);
 
 XPCOMUtils.defineLazyServiceGetter(this, "ContentPermissionPrompt",
                                    "@mozilla.org/content-permission/prompt;1",
@@ -26,7 +26,7 @@ function MockContentPermissionType(type) {
 }
 
 MockContentPermissionType.prototype = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIContentPermissionType]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIContentPermissionType]),
   // We expose the wrappedJSObject so that we can be sure
   // in some of our tests that we're passing the right
   // nsIContentPermissionType around.
@@ -44,12 +44,12 @@ MockContentPermissionType.prototype = {
 function MockContentPermissionRequest(typesArray) {
   this.types = Cc["@mozilla.org/array;1"].createInstance(Ci.nsIMutableArray);
   for (let type of typesArray) {
-    this.types.appendElement(type, false);
+    this.types.appendElement(type);
   }
 }
 
 MockContentPermissionRequest.prototype = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIContentPermissionRequest]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIContentPermissionRequest]),
   // We expose the wrappedJSObject so that we can be sure
   // in some of our tests that we're passing the right
   // nsIContentPermissionRequest around.
@@ -61,6 +61,7 @@ MockContentPermissionRequest.prototype = {
     this.cancelled = true;
   },
   cancelled: false,
+  principal: Services.scriptSecurityManager.getSystemPrincipal(),
 };
 
 /**
@@ -68,7 +69,7 @@ MockContentPermissionRequest.prototype = {
  * types array, that NS_ERROR_UNEXPECTED is thrown, and the
  * request is cancelled.
  */
-add_task(function* test_empty_types() {
+add_task(async function test_empty_types() {
   let mockRequest = new MockContentPermissionRequest([]);
   Assert.throws(() => { ContentPermissionPrompt.prompt(mockRequest); },
                 /NS_ERROR_UNEXPECTED/,
@@ -81,7 +82,7 @@ add_task(function* test_empty_types() {
  * one type, that NS_ERROR_UNEXPECTED is thrown, and the request
  * is cancelled.
  */
-add_task(function* test_multiple_types() {
+add_task(async function test_multiple_types() {
   let mockRequest = new MockContentPermissionRequest([
     new MockContentPermissionType("test1"),
     new MockContentPermissionType("test2"),
@@ -97,9 +98,9 @@ add_task(function* test_multiple_types() {
  * does not implement nsIContentPermissionType that NS_NOINTERFACE
  * is thrown, and the request is cancelled.
  */
-add_task(function* test_not_permission_type() {
+add_task(async function test_not_permission_type() {
   let mockRequest = new MockContentPermissionRequest([
-    { QueryInterface: XPCOMUtils.generateQI([Ci.nsISupports]) },
+    { QueryInterface: ChromeUtils.generateQI([]) },
   ]);
 
   Assert.throws(() => { ContentPermissionPrompt.prompt(mockRequest); },
@@ -112,7 +113,7 @@ add_task(function* test_not_permission_type() {
  * that is not recognized, that NS_ERROR_FAILURE is thrown and
  * the request is cancelled.
  */
-add_task(function* test_unrecognized_type() {
+add_task(async function test_unrecognized_type() {
   let mockRequest = new MockContentPermissionRequest([
     new MockContentPermissionType("test1"),
   ]);
@@ -128,7 +129,7 @@ add_task(function* test_unrecognized_type() {
  * ContentPermissionIntegration's createPermissionPrompt
  * method.
  */
-add_task(function* test_working_request() {
+add_task(async function test_working_request() {
   let mockType = new MockContentPermissionType("test-permission-type");
   let mockRequest = new MockContentPermissionRequest([mockType]);
 
@@ -140,7 +141,7 @@ add_task(function* test_working_request() {
   let mockPermissionPrompt = {
     prompt() {
       didPrompt = true;
-    }
+    },
   };
 
   let integration = (base) => ({

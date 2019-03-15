@@ -1,11 +1,13 @@
-////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////
 // Role constants
 
 const ROLE_ALERT = nsIAccessibleRole.ROLE_ALERT;
+const ROLE_ARTICLE = nsIAccessibleRole.ROLE_ARTICLE;
 const ROLE_ANIMATION = nsIAccessibleRole.ROLE_ANIMATION;
 const ROLE_APPLICATION = nsIAccessibleRole.ROLE_APPLICATION;
 const ROLE_APP_ROOT = nsIAccessibleRole.ROLE_APP_ROOT;
 const ROLE_AUTOCOMPLETE = nsIAccessibleRole.ROLE_AUTOCOMPLETE;
+const ROLE_BLOCKQUOTE = nsIAccessibleRole.ROLE_BLOCKQUOTE;
 const ROLE_BUTTONDROPDOWNGRID = nsIAccessibleRole.ROLE_BUTTONDROPDOWNGRID;
 const ROLE_CANVAS = nsIAccessibleRole.ROLE_CANVAS;
 const ROLE_CAPTION = nsIAccessibleRole.ROLE_CAPTION;
@@ -13,23 +15,29 @@ const ROLE_CELL = nsIAccessibleRole.ROLE_CELL;
 const ROLE_CHECKBUTTON = nsIAccessibleRole.ROLE_CHECKBUTTON;
 const ROLE_CHECK_MENU_ITEM = nsIAccessibleRole.ROLE_CHECK_MENU_ITEM;
 const ROLE_CHROME_WINDOW = nsIAccessibleRole.ROLE_CHROME_WINDOW;
+const ROLE_COLUMNHEADER = nsIAccessibleRole.ROLE_COLUMNHEADER;
 const ROLE_COMBOBOX = nsIAccessibleRole.ROLE_COMBOBOX;
 const ROLE_COMBOBOX_LIST = nsIAccessibleRole.ROLE_COMBOBOX_LIST;
 const ROLE_COMBOBOX_OPTION = nsIAccessibleRole.ROLE_COMBOBOX_OPTION;
-const ROLE_COLUMNHEADER = nsIAccessibleRole.ROLE_COLUMNHEADER;
+const ROLE_CONTENT_DELETION = nsIAccessibleRole.ROLE_CONTENT_DELETION;
+const ROLE_CONTENT_INSERTION = nsIAccessibleRole.ROLE_CONTENT_INSERTION;
+const ROLE_DATE_EDITOR = nsIAccessibleRole.ROLE_DATE_EDITOR;
 const ROLE_DEFINITION = nsIAccessibleRole.ROLE_DEFINITION;
 const ROLE_DEFINITION_LIST = nsIAccessibleRole.ROLE_DEFINITION_LIST;
 const ROLE_DETAILS = nsIAccessibleRole.ROLE_DETAILS;
 const ROLE_DIAGRAM = nsIAccessibleRole.ROLE_DIAGRAM;
 const ROLE_DIALOG = nsIAccessibleRole.ROLE_DIALOG;
 const ROLE_DOCUMENT = nsIAccessibleRole.ROLE_DOCUMENT;
+const ROLE_EDITCOMBOBOX = nsIAccessibleRole.ROLE_EDITCOMBOBOX;
 const ROLE_EMBEDDED_OBJECT = nsIAccessibleRole.ROLE_EMBEDDED_OBJECT;
 const ROLE_ENTRY = nsIAccessibleRole.ROLE_ENTRY;
 const ROLE_EQUATION = nsIAccessibleRole.ROLE_EQUATION;
 const ROLE_FIGURE = nsIAccessibleRole.ROLE_FIGURE;
 const ROLE_FOOTER = nsIAccessibleRole.ROLE_FOOTER;
+const ROLE_FOOTNOTE = nsIAccessibleRole.ROLE_FOOTNOTE;
 const ROLE_FLAT_EQUATION = nsIAccessibleRole.ROLE_FLAT_EQUATION;
 const ROLE_FORM = nsIAccessibleRole.ROLE_FORM;
+const ROLE_FORM_LANDMARK = nsIAccessibleRole.ROLE_FORM_LANDMARK;
 const ROLE_GRAPHIC = nsIAccessibleRole.ROLE_GRAPHIC;
 const ROLE_GRID_CELL = nsIAccessibleRole.ROLE_GRID_CELL;
 const ROLE_GROUPING = nsIAccessibleRole.ROLE_GROUPING;
@@ -38,6 +46,7 @@ const ROLE_HEADING = nsIAccessibleRole.ROLE_HEADING;
 const ROLE_IMAGE_MAP = nsIAccessibleRole.ROLE_IMAGE_MAP;
 const ROLE_INTERNAL_FRAME = nsIAccessibleRole.ROLE_INTERNAL_FRAME;
 const ROLE_LABEL = nsIAccessibleRole.ROLE_LABEL;
+const ROLE_LANDMARK = nsIAccessibleRole.ROLE_LANDMARK;
 const ROLE_LINK = nsIAccessibleRole.ROLE_LINK;
 const ROLE_LIST = nsIAccessibleRole.ROLE_LIST;
 const ROLE_LISTBOX = nsIAccessibleRole.ROLE_LISTBOX;
@@ -79,6 +88,8 @@ const ROLE_MATHML_STACK_LINE = nsIAccessibleRole.ROLE_MATHML_STACK_LINE;
 const ROLE_MENUBAR = nsIAccessibleRole.ROLE_MENUBAR;
 const ROLE_MENUITEM = nsIAccessibleRole.ROLE_MENUITEM;
 const ROLE_MENUPOPUP = nsIAccessibleRole.ROLE_MENUPOPUP;
+const ROLE_NAVIGATION = nsIAccessibleRole.ROLE_NAVIGATION;
+const ROLE_NON_NATIVE_DOCUMENT = nsIAccessibleRole.ROLE_NON_NATIVE_DOCUMENT;
 const ROLE_NOTHING = nsIAccessibleRole.ROLE_NOTHING;
 const ROLE_NOTE = nsIAccessibleRole.ROLE_NOTE;
 const ROLE_OPTION = nsIAccessibleRole.ROLE_OPTION;
@@ -96,6 +107,7 @@ const ROLE_PUSHBUTTON = nsIAccessibleRole.ROLE_PUSHBUTTON;
 const ROLE_RADIOBUTTON = nsIAccessibleRole.ROLE_RADIOBUTTON;
 const ROLE_RADIO_GROUP = nsIAccessibleRole.ROLE_RADIO_GROUP;
 const ROLE_RADIO_MENU_ITEM = nsIAccessibleRole.ROLE_RADIO_MENU_ITEM;
+const ROLE_REGION = nsIAccessibleRole.ROLE_REGION;
 const ROLE_RICH_OPTION = nsIAccessibleRole.ROLE_RICH_OPTION;
 const ROLE_ROW = nsIAccessibleRole.ROLE_ROW;
 const ROLE_ROWHEADER = nsIAccessibleRole.ROLE_ROWHEADER;
@@ -119,7 +131,7 @@ const ROLE_TOOLTIP = nsIAccessibleRole.ROLE_TOOLTIP;
 const ROLE_TREE_TABLE = nsIAccessibleRole.ROLE_TREE_TABLE;
 const ROLE_WHITESPACE = nsIAccessibleRole.ROLE_WHITESPACE;
 
-////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////
 // Public methods
 
 /**
@@ -128,8 +140,7 @@ const ROLE_WHITESPACE = nsIAccessibleRole.ROLE_WHITESPACE;
  * @param aAccOrElmOrID  the accessible, DOM element or ID to be tested.
  * @param aRole  The role that is to be expected.
  */
-function testRole(aAccOrElmOrID, aRole)
-{
+function testRole(aAccOrElmOrID, aRole) {
   var role = getRole(aAccOrElmOrID);
   is(role, aRole, "Wrong role for " + prettyName(aAccOrElmOrID) + "!");
 }
@@ -141,8 +152,7 @@ function testRole(aAccOrElmOrID, aRole)
  * @param aAccOrElmOrID  [in] The accessible, DOM element or element ID the
  *                       accessible role is being requested for.
  */
-function getRole(aAccOrElmOrID)
-{
+function getRole(aAccOrElmOrID) {
   var acc = getAccessible(aAccOrElmOrID);
   if (!acc)
     return -1;
@@ -150,7 +160,7 @@ function getRole(aAccOrElmOrID)
   var role = -1;
   try {
     role = acc.role;
-  } catch(e) {
+  } catch (e) {
     ok(false, "Role for " + aAccOrElmOrID + " could not be retrieved!");
   }
 
@@ -160,10 +170,9 @@ function getRole(aAccOrElmOrID)
 /**
  * Analogy of SimpleTest.is function used to check the role.
  */
-function isRole(aIdentifier, aRole, aMsg)
-{
+function isRole(aIdentifier, aRole, aMsg) {
   var role = getRole(aIdentifier);
-  if (role == - 1)
+  if (role == -1)
     return;
 
   if (role == aRole) {

@@ -13,21 +13,15 @@ let gSetPasswordShownCount = 0;
 const gTokenPasswordDialogs = {
   setPassword(ctx, tokenName) {
     gSetPasswordShownCount++;
-    do_print(`setPassword() called; shown ${gSetPasswordShownCount} times`);
-    do_print(`tokenName: ${tokenName}`);
+    info(`setPassword() called; shown ${gSetPasswordShownCount} times`);
+    info(`tokenName: ${tokenName}`);
     return false; // Returning false means "the user didn't cancel".
   },
 
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsITokenPasswordDialogs])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsITokenPasswordDialogs]),
 };
 
-function run_test() {
-  // We have to set a password and login before we attempt to encrypt anything.
-  // In particular, failing to do so will cause the Encrypt() implementation to
-  // pop up a dialog asking for a password to be set. This won't work in the
-  // xpcshell environment and will lead to an assertion.
-  loginToDBWithDefaultPassword();
-
+add_task(function testEncryptString() {
   let sdr = Cc["@mozilla.org/security/sdr;1"]
               .getService(Ci.nsISecretDecoderRing);
 
@@ -74,7 +68,7 @@ function run_test() {
     let tokenPasswordDialogsCID =
       MockRegistrar.register("@mozilla.org/nsTokenPasswordDialogs;1",
                              gTokenPasswordDialogs);
-    do_register_cleanup(() => {
+    registerCleanupFunction(() => {
       MockRegistrar.unregister(tokenPasswordDialogsCID);
     });
 
@@ -84,4 +78,42 @@ function run_test() {
     equal(gSetPasswordShownCount, 1,
           "changePassword() dialog should have been shown exactly once");
   }
-}
+});
+
+add_task(async function testAsyncEncryptStrings() {
+  let sdr = Cc["@mozilla.org/security/sdr;1"]
+              .getService(Ci.nsISecretDecoderRing);
+
+  // Test valid inputs for encryptString() and decryptString().
+  let inputs = [
+    "",
+    " ", // First printable latin1 character (code point 32).
+    "foo",
+    "1234567890`~!@#$%^&*()-_=+{[}]|\\:;'\",<.>/?",
+    "¡äöüÿ", // Misc + last printable latin1 character (code point 255).
+    "aaa 一二三", // Includes Unicode with code points outside [0, 255].
+  ];
+
+  let encrypteds = await sdr.asyncEncryptStrings(inputs.length, inputs);
+  for (let i = 0; i < inputs.length; i++) {
+    let encrypted = encrypteds[i];
+    let input = inputs[i];
+    let converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"]
+                      .createInstance(Ci.nsIScriptableUnicodeConverter);
+    converter.charset = "UTF-8";
+
+    let convertedInput = converter.ConvertFromUnicode(input);
+    convertedInput += converter.Finish();
+    notEqual(convertedInput, encrypted,
+             "Encrypted input should not just be the input itself");
+
+    try {
+      atob(encrypted);
+    } catch (e) {
+      ok(false, `encryptString() should have returned Base64: ${e}`);
+    }
+
+    equal(convertedInput, sdr.decryptString(encrypted),
+          "decryptString(encryptString(input)) should return input");
+  }
+});

@@ -71,25 +71,11 @@ li.error > .stylesheet-info > .stylesheet-more  > .stylesheet-error-message {
   -moz-box-flex: 1;
 }
 
-.theme-dark .stylesheet-title,
-.theme-dark .stylesheet-name {
-  color: var(--theme-selection-color);
-}
-
-.theme-dark .stylesheet-rule-count,
-.theme-dark .stylesheet-linked-file,
-.theme-dark .stylesheet-saveButton {
-  color: var(--theme-body-color-alt);
-}
-
-.theme-light .stylesheet-title,
-.theme-light .stylesheet-name {
-  color: var(--theme-body-color-alt);
-}
-
-.theme-light .stylesheet-rule-count,
-.theme-light .stylesheet-linked-file,
-.theme-light .stylesheet-saveButton {
+.stylesheet-title,
+.stylesheet-name,
+.stylesheet-rule-count,
+.stylesheet-linked-file,
+.stylesheet-saveButton {
   color: var(--theme-body-color);
 }
 
@@ -187,21 +173,14 @@ li.error > .stylesheet-info > .stylesheet-more  > .stylesheet-error-message {
   background-size: 16px;
   width: 24px;
   height: 40px;
-  filter: var(--icon-filter);
+
+  /* The icon color should always match the text color. */
+  -moz-context-properties: fill;
+  fill: currentColor;
 }
 
 .disabled > .stylesheet-enabled {
   opacity: 0.3;
-}
-
-/* Invert the toggle icon in the active row for light theme */
-.theme-light .splitview-nav > li.splitview-active .stylesheet-enabled {
-  filter: invert(1);
-}
-
-.splitview-nav > li > .stylesheet-enabled:focus,
-.splitview-nav > li:hover > .stylesheet-enabled {
-  outline: 0;
 }
 
 .stylesheet-linked-file:not(:empty){
@@ -277,12 +256,7 @@ h3 {
 
   .stylesheet-enabled {
     padding: 0;
-    background-position: 0 0;
     height: 24px;
-  }
-
-  .disabled > .stylesheet-enabled {
-    background-position: -24px 0;
   }
 
   .splitview-nav > li > hgroup.stylesheet-info {

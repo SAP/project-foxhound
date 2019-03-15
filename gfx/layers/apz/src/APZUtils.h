@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,39 +7,39 @@
 #ifndef mozilla_layers_APZUtils_h
 #define mozilla_layers_APZUtils_h
 
-#include <stdint.h>                     // for uint32_t
+#include <stdint.h>  // for uint32_t
+#include "FrameMetrics.h"
 #include "LayersTypes.h"
 #include "UnitTransforms.h"
+#include "mozilla/gfx/CompositorHitTestInfo.h"
 #include "mozilla/gfx/Point.h"
+#include "mozilla/DefineEnum.h"
+#include "mozilla/EnumSet.h"
 #include "mozilla/FloatingPoint.h"
 
 namespace mozilla {
 namespace layers {
 
-enum HitTestResult {
-  HitNothing,
-  HitLayer,
-  HitLayerTouchActionNone,
-  HitLayerTouchActionPanX,
-  HitLayerTouchActionPanY,
-  HitLayerTouchActionPanXY,
-  HitDispatchToContentRegion,
-};
+class AsyncPanZoomController;
 
 enum CancelAnimationFlags : uint32_t {
-  Default = 0x0,            /* Cancel all animations */
-  ExcludeOverscroll = 0x1,  /* Don't clear overscroll */
-  ScrollSnap = 0x2,         /* Snap to snap points */
-  ExcludeWheel = 0x4,       /* Don't stop wheel smooth-scroll animations */
+  Default = 0x0,             /* Cancel all animations */
+  ExcludeOverscroll = 0x1,   /* Don't clear overscroll */
+  ScrollSnap = 0x2,          /* Snap to snap points */
+  ExcludeWheel = 0x4,        /* Don't stop wheel smooth-scroll animations */
+  TriggeredExternally = 0x8, /* Cancellation was not triggered by APZ in
+                                response to an input event */
 };
 
-inline CancelAnimationFlags
-operator|(CancelAnimationFlags a, CancelAnimationFlags b)
-{
-  return static_cast<CancelAnimationFlags>(static_cast<int>(a)
-                                         | static_cast<int>(b));
+inline CancelAnimationFlags operator|(CancelAnimationFlags a,
+                                      CancelAnimationFlags b) {
+  return static_cast<CancelAnimationFlags>(static_cast<int>(a) |
+                                           static_cast<int>(b));
 }
 
+typedef EnumSet<ScrollDirection> ScrollDirections;
+
+// clang-format off
 enum class ScrollSource {
   // scrollTo() or something similar.
   DOM,
@@ -48,10 +48,17 @@ enum class ScrollSource {
   Touch,
 
   // Mouse wheel.
-  Wheel
+  Wheel,
+
+  // Keyboard
+  Keyboard,
 };
 
-typedef uint32_t TouchBehaviorFlags;
+MOZ_DEFINE_ENUM_CLASS_WITH_BASE(APZWheelAction, uint8_t, (
+    Scroll,
+    PinchZoom
+))
+// clang-format on
 
 // Epsilon to be used when comparing 'float' coordinate values
 // with FuzzyEqualsAdditive. The rationale is that 'float' has 7 decimal
@@ -62,23 +69,83 @@ typedef uint32_t TouchBehaviorFlags;
 const float COORDINATE_EPSILON = 0.01f;
 
 template <typename Units>
-static bool IsZero(const gfx::PointTyped<Units>& aPoint)
-{
-  return FuzzyEqualsAdditive(aPoint.x, 0.0f, COORDINATE_EPSILON)
-      && FuzzyEqualsAdditive(aPoint.y, 0.0f, COORDINATE_EPSILON);
+static bool IsZero(const gfx::PointTyped<Units>& aPoint) {
+  return FuzzyEqualsAdditive(aPoint.x, 0.0f, COORDINATE_EPSILON) &&
+         FuzzyEqualsAdditive(aPoint.y, 0.0f, COORDINATE_EPSILON);
 }
 
 // Deem an AsyncTransformComponentMatrix (obtained by multiplying together
 // one or more AsyncTransformComponentMatrix objects) as constituting a
 // complete async transform.
-inline AsyncTransformMatrix
-CompleteAsyncTransform(const AsyncTransformComponentMatrix& aMatrix)
-{
-  return ViewAs<AsyncTransformMatrix>(aMatrix,
-      PixelCastJustification::MultipleAsyncTransforms);
+inline AsyncTransformMatrix CompleteAsyncTransform(
+    const AsyncTransformComponentMatrix& aMatrix) {
+  return ViewAs<AsyncTransformMatrix>(
+      aMatrix, PixelCastJustification::MultipleAsyncTransforms);
 }
 
-} // namespace layers
-} // namespace mozilla
+struct TargetConfirmationFlags {
+  explicit TargetConfirmationFlags(bool aTargetConfirmed)
+      : mTargetConfirmed(aTargetConfirmed),
+        mRequiresTargetConfirmation(false) {}
 
-#endif // mozilla_layers_APZUtils_h
+  explicit TargetConfirmationFlags(
+      const gfx::CompositorHitTestInfo& aHitTestInfo)
+      : mTargetConfirmed(
+            (aHitTestInfo != gfx::CompositorHitTestInvisibleToHit) &&
+            !aHitTestInfo.contains(
+                gfx::CompositorHitTestFlags::eDispatchToContent)),
+        mRequiresTargetConfirmation(aHitTestInfo.contains(
+            gfx::CompositorHitTestFlags::eRequiresTargetConfirmation)) {}
+
+  bool mTargetConfirmed : 1;
+  bool mRequiresTargetConfirmation : 1;
+};
+
+/**
+ * An RAII class to temporarily apply async test attributes to the provided
+ * AsyncPanZoomController.
+ */
+class MOZ_RAII AutoApplyAsyncTestAttributes {
+ public:
+  explicit AutoApplyAsyncTestAttributes(AsyncPanZoomController*);
+  ~AutoApplyAsyncTestAttributes();
+
+ private:
+  AsyncPanZoomController* mApzc;
+  FrameMetrics mPrevFrameMetrics;
+};
+
+namespace apz {
+
+/**
+ * Initializes the global state used in AsyncPanZoomController.
+ * This is normally called when it is first needed in the constructor
+ * of APZCTreeManager, but can be called manually to force it to be
+ * initialized earlier.
+ */
+void InitializeGlobalState();
+
+/**
+ * See AsyncPanZoomController::CalculatePendingDisplayPort. This
+ * function simply delegates to that one, so that non-layers code
+ * never needs to include AsyncPanZoomController.h
+ */
+const ScreenMargin CalculatePendingDisplayPort(
+    const FrameMetrics& aFrameMetrics, const ParentLayerPoint& aVelocity);
+
+/**
+ * Is aAngle within the given threshold of the horizontal axis?
+ * @param aAngle an angle in radians in the range [0, pi]
+ * @param aThreshold an angle in radians in the range [0, pi/2]
+ */
+bool IsCloseToHorizontal(float aAngle, float aThreshold);
+
+// As above, but for the vertical axis.
+bool IsCloseToVertical(float aAngle, float aThreshold);
+
+}  // namespace apz
+
+}  // namespace layers
+}  // namespace mozilla
+
+#endif  // mozilla_layers_APZUtils_h

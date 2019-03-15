@@ -9,41 +9,33 @@
 
 #include "nsWrapperCache.h"
 
-#include "nsSVGElement.h"
+#include "SVGElement.h"
 
 namespace mozilla {
 namespace dom {
 
-class SVGAnimatedEnumeration : public nsISupports
-                             , public nsWrapperCache
-{
-public:
+class SVGAnimatedEnumeration : public nsISupports, public nsWrapperCache {
+ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(SVGAnimatedEnumeration)
 
-  nsSVGElement* GetParentObject() const
-  {
-    return mSVGElement;
-  }
+  SVGElement* GetParentObject() const { return mSVGElement; }
 
-  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-    override final;
+  JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) final;
 
   virtual uint16_t BaseVal() = 0;
   virtual void SetBaseVal(uint16_t aBaseVal, ErrorResult& aRv) = 0;
   virtual uint16_t AnimVal() = 0;
 
-protected:
-  explicit SVGAnimatedEnumeration(nsSVGElement* aSVGElement)
-    : mSVGElement(aSVGElement)
-  {
-  }
-  virtual ~SVGAnimatedEnumeration() {};
+ protected:
+  explicit SVGAnimatedEnumeration(SVGElement* aSVGElement)
+      : mSVGElement(aSVGElement) {}
+  virtual ~SVGAnimatedEnumeration(){};
 
-  RefPtr<nsSVGElement> mSVGElement;
+  RefPtr<SVGElement> mSVGElement;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_SVGAnimatedEnumeration_h
+#endif  // mozilla_dom_SVGAnimatedEnumeration_h

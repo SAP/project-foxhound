@@ -5,14 +5,17 @@
  * found in the LICENSE file.
  */
 
+#include "SkOTUtils.h"
+
+#include "SkAdvancedTypefaceMetrics.h"
 #include "SkData.h"
 #include "SkEndian.h"
-#include "SkSFNTHeader.h"
-#include "SkStream.h"
+#include "SkOTTableTypes.h"
 #include "SkOTTable_head.h"
 #include "SkOTTable_name.h"
-#include "SkOTTableTypes.h"
-#include "SkOTUtils.h"
+#include "SkSFNTHeader.h"
+#include "SkStream.h"
+#include "SkTo.h"
 
 extern const uint8_t SK_OT_GlyphData_NoOutline[] = {
     0x0,0x0, //SkOTTableGlyphData::numberOfContours
@@ -160,23 +163,32 @@ SkData* SkOTUtils::RenameFont(SkStreamAsset* fontData, const char* fontName, int
     return rewrittenFontData.release();
 }
 
-
-SkOTUtils::LocalizedStrings_NameTable*
-SkOTUtils::LocalizedStrings_NameTable::CreateForFamilyNames(const SkTypeface& typeface) {
+sk_sp<SkOTUtils::LocalizedStrings_NameTable>
+SkOTUtils::LocalizedStrings_NameTable::Make(const SkTypeface& typeface,
+                                            SK_OT_USHORT types[],
+                                            int typesCount)
+{
     static const SkFontTableTag nameTag = SkSetFourByteTag('n','a','m','e');
     size_t nameTableSize = typeface.getTableSize(nameTag);
     if (0 == nameTableSize) {
         return nullptr;
     }
-    SkAutoTDeleteArray<uint8_t> nameTableData(new uint8_t[nameTableSize]);
+    std::unique_ptr<uint8_t[]> nameTableData(new uint8_t[nameTableSize]);
     size_t copied = typeface.getTableData(nameTag, 0, nameTableSize, nameTableData.get());
     if (copied != nameTableSize) {
         return nullptr;
     }
 
-    return new SkOTUtils::LocalizedStrings_NameTable((SkOTTableName*)nameTableData.release(),
-        SkOTUtils::LocalizedStrings_NameTable::familyNameTypes,
-        SK_ARRAY_COUNT(SkOTUtils::LocalizedStrings_NameTable::familyNameTypes));
+    return sk_sp<SkOTUtils::LocalizedStrings_NameTable>(
+        new SkOTUtils::LocalizedStrings_NameTable(std::move(nameTableData), nameTableSize,
+                                                  types, typesCount));
+}
+
+sk_sp<SkOTUtils::LocalizedStrings_NameTable>
+SkOTUtils::LocalizedStrings_NameTable::MakeForFamilyNames(const SkTypeface& typeface) {
+    return Make(typeface,
+                SkOTUtils::LocalizedStrings_NameTable::familyNameTypes,
+                SK_ARRAY_COUNT(SkOTUtils::LocalizedStrings_NameTable::familyNameTypes));
 }
 
 bool SkOTUtils::LocalizedStrings_NameTable::next(SkTypeface::LocalizedString* localizedString) {
@@ -195,9 +207,22 @@ bool SkOTUtils::LocalizedStrings_NameTable::next(SkTypeface::LocalizedString* lo
     } while (true);
 }
 
-SkOTTableName::Record::NameID::Predefined::Value
-SkOTUtils::LocalizedStrings_NameTable::familyNameTypes[3] = {
+SK_OT_USHORT SkOTUtils::LocalizedStrings_NameTable::familyNameTypes[3] = {
     SkOTTableName::Record::NameID::Predefined::FontFamilyName,
     SkOTTableName::Record::NameID::Predefined::PreferredFamily,
     SkOTTableName::Record::NameID::Predefined::WWSFamilyName,
 };
+
+void SkOTUtils::SetAdvancedTypefaceFlags(SkOTTableOS2_V4::Type fsType,
+                                         SkAdvancedTypefaceMetrics* info) {
+    SkASSERT(info);
+    // The logic should be identical to SkTypeface_FreeType::onGetAdvancedMetrics().
+    if (fsType.raw.value != 0) {
+        if (SkToBool(fsType.field.Restricted) || SkToBool(fsType.field.Bitmap)) {
+            info->fFlags |= SkAdvancedTypefaceMetrics::kNotEmbeddable_FontFlag;
+        }
+        if (SkToBool(fsType.field.NoSubsetting)) {
+            info->fFlags |= SkAdvancedTypefaceMetrics::kNotSubsettable_FontFlag;
+        }
+    }
+}

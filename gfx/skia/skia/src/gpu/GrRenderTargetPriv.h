@@ -21,24 +21,18 @@ public:
     /**
      * GrStencilAttachment is not part of the public API.
      */
-    GrStencilAttachment* getStencilAttachment() const { return fRenderTarget->fStencilAttachment; }
+    GrStencilAttachment* getStencilAttachment() const {
+        return fRenderTarget->fStencilAttachment.get();
+    }
 
     /**
      * Attaches the GrStencilAttachment onto the render target. If stencil is a nullptr then the
      * currently attached GrStencilAttachment will be removed if one was previously attached. This
      * function returns false if there were any failure in attaching the GrStencilAttachment.
      */
-    bool attachStencilAttachment(GrStencilAttachment* stencil);
+    void attachStencilAttachment(sk_sp<GrStencilAttachment> stencil);
 
     int numStencilBits() const;
-
-    const GrGpu::MultisampleSpecs& getMultisampleSpecs(const GrStencilSettings& stencil) const;
-    uint8_t& accessMultisampleSpecsID() { return fRenderTarget->fMultisampleSpecsID; }
-
-    typedef GrRenderTarget::Flags Flags;
-
-    Flags flags() const { return fRenderTarget->fFlags; }
-    int maxWindowRectangles() const;
 
 private:
     explicit GrRenderTargetPriv(GrRenderTarget* renderTarget) : fRenderTarget(renderTarget) {}

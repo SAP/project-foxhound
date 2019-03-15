@@ -5,29 +5,29 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 <?xml-stylesheet href="chrome://browser/content/places/places.css"?>
-<?xml-stylesheet href="chrome://browser/content/places/organizer.css"?>
 
 <?xml-stylesheet href="chrome://global/skin/"?>
-<?xml-stylesheet href="chrome://browser/skin/places/places.css"?>
+<?xml-stylesheet href="chrome://browser/skin/places/tree-icons.css"?>
 <?xml-stylesheet href="chrome://browser/skin/places/organizer.css"?>
+<?xml-stylesheet href="chrome://browser/skin/places/editBookmark.css"?>
 
-<?xul-overlay href="chrome://browser/content/places/editBookmarkOverlay.xul"?>
-
-#ifdef XP_MACOSX
-<?xul-overlay href="chrome://browser/content/macBrowserOverlay.xul"?>
-#else
-<?xul-overlay href="chrome://browser/content/baseMenuOverlay.xul"?>
-<?xul-overlay href="chrome://global/content/editMenuOverlay.xul"?>
-<?xul-overlay href="chrome://browser/content/places/placesOverlay.xul"?>
-#endif
+<?xml-stylesheet href="chrome://browser/content/downloads/downloads.css"?>
+<?xml-stylesheet href="chrome://browser/skin/downloads/allDownloadsView.css"?>
 
 <!DOCTYPE window [
 <!ENTITY % placesDTD SYSTEM "chrome://browser/locale/places/places.dtd">
 %placesDTD;
+<!ENTITY % downloadsDTD SYSTEM "chrome://browser/locale/downloads/downloads.dtd">
+%downloadsDTD;
 <!ENTITY % editMenuOverlayDTD SYSTEM "chrome://global/locale/editMenuOverlay.dtd">
 %editMenuOverlayDTD;
 <!ENTITY % browserDTD SYSTEM "chrome://browser/locale/browser.dtd">
 %browserDTD;
+<!ENTITY % editBookmarkOverlayDTD SYSTEM "chrome://browser/locale/places/editBookmarkOverlay.dtd">
+%editBookmarkOverlayDTD;
+#ifdef XP_MACOSX
+#include ../../../base/content/browser-doctype.inc
+#endif
 ]>
 
 <window id="places"
@@ -44,20 +44,33 @@
 
   <script type="application/javascript"
           src="chrome://browser/content/places/places.js"/>
+#ifndef XP_MACOSX
+  <!-- On Mac, this is included via macWindow.inc.xul -> global-scripts.inc -> browser.js -> defineLazyScriptGetter -->
   <script type="application/javascript"
-          src="chrome://browser/content/places/editBookmarkOverlay.js"/>
+          src="chrome://browser/content/places/editBookmark.js"/>
+  <!-- On Mac, thes are included via macWindow.inc.xul -> global-scripts.inc -->
+  <script type="application/javascript"
+          src="chrome://global/content/globalOverlay.js"/>
+  <script type="application/javascript"
+          src="chrome://browser/content/utilityOverlay.js"/>
+#endif
 
   <stringbundleset id="placesStringSet">
     <stringbundle id="brandStrings" src="chrome://branding/locale/brand.properties"/>
   </stringbundleset>
 
-
 #ifdef XP_MACOSX
-#include ../../../base/content/browserMountPoints.inc
+#include ../../../base/content/macWindow.inc.xul
 #else
-  <commandset id="editMenuCommands"/>
-  <commandset id="placesCommands"/>
+#include ../../../../toolkit/content/editMenuCommands.inc.xul
+#include placesCommands.inc.xul
 #endif
+
+  <!-- This must be included after macWindow.inc.xul to override DownloadsView -->
+  <script type="application/javascript"
+          src="chrome://browser/content/downloads/allDownloadsView.js"/>
+  <script type="application/javascript"
+          src="chrome://global/content/contentAreaUtils.js"/>
 
   <commandset id="organizerCommandSet">
     <command id="OrganizerCommand_find:all"
@@ -81,7 +94,8 @@
     <command id="OrganizerCommand:Forward"
              oncommand="PlacesOrganizer.forward();"/>
   </commandset>
-
+#include ../../downloads/content/downloadsCommands.inc.xul
+#include ../../downloads/content/downloadsStrings.inc.xul
 
   <keyset id="placesOrganizerKeyset">
     <!-- Instantiation Keys -->
@@ -126,17 +140,19 @@
 #endif
   </keyset>
 
-  <keyset id="editMenuKeys">
+#include ../../../../toolkit/content/editMenuKeys.inc.xul
 #ifdef XP_MACOSX
+  <keyset id="editMenuKeysExtra">
     <key id="key_delete2" keycode="VK_BACK" command="cmd_delete"/>
-#endif
   </keyset>
+#endif
 
   <popupset id="placesPopupset">
-    <menupopup id="placesContext"/>
+#include placesContextMenu.inc.xul
     <menupopup id="placesColumnsContext"
                onpopupshowing="ViewMenu.fillWithColumns(event, null, null, 'checkbox', null);"
                oncommand="ViewMenu.showHideColumn(event.target); event.stopPropagation();"/>
+#include ../../downloads/content/downloadsContextMenu.inc.xul
   </popupset>
 
   <toolbox id="placesToolbox">
@@ -174,7 +190,15 @@
                       label="&cmd.new_separator.label;"
                       accesskey="&cmd.new_separator.accesskey;"/>
 
-#ifndef XP_MACOSX
+#ifdef XP_MACOSX
+            <menuseparator id="orgDeleteSeparator"/>
+
+            <menuitem id="orgDelete"
+                      command="cmd_delete"
+                      label="&deleteCmd.label;"
+                      key="key_delete"
+                      accesskey="&deleteCmd.accesskey;"/>
+#else
             <menuseparator id="orgUndoSeparator"/>
 
             <menuitem id="orgUndo"
@@ -222,20 +246,6 @@
                       key="key_selectAll"
                       accesskey="&selectAllCmd.accesskey;"/>
 
-#endif
-            <menuseparator id="orgMoveSeparator"/>
-
-            <menuitem id="orgMoveBookmarks"
-                      command="placesCmd_moveBookmarks"
-                      label="&cmd.moveBookmarks.label;"
-                      accesskey="&cmd.moveBookmarks.accesskey;"/>
-#ifdef XP_MACOSX
-            <menuitem id="orgDelete"
-                      command="cmd_delete"
-                      label="&deleteCmd.label;"
-                      key="key_delete"
-                      accesskey="&deleteCmd.accesskey;"/>
-#else
             <menuseparator id="orgCloseSeparator"/>
 
             <menuitem id="orgClose"
@@ -327,12 +337,20 @@
       <spacer id="libraryToolbarSpacer" flex="1"/>
 
       <textbox id="searchFilter"
-               clickSelectsAll="true"
+               flex="1"
                type="search"
                aria-controls="placeContent"
                oncommand="PlacesSearchBox.search(this.value);"
                collection="bookmarks">
       </textbox>
+      <toolbarbutton id="clearDownloadsButton"
+#ifdef XP_MACOSX
+                     class="tabbable"
+#endif
+                     insertbefore="libraryToolbarSpacer"
+                     label="&clearDownloadsButton.label;"
+                     command="downloadsCmd_clearDownloads"
+                     tooltiptext="&clearDownloadsButton.tooltip;"/>
     </toolbar>
   </toolbox>
 
@@ -388,9 +406,6 @@
             <treecol label="&col.visitcount.label;" id="placesContentVisitCount" anonid="visitCount" flex="1" hidden="true"
                       persist="width hidden ordinal sortActive sortDirection"/>
             <splitter class="tree-splitter"/>
-            <treecol label="&col.description.label;" id="placesContentDescription" anonid="description" flex="1" hidden="true"
-                      persist="width hidden ordinal sortActive sortDirection"/>
-            <splitter class="tree-splitter"/>
             <treecol label="&col.dateadded.label;" id="placesContentDateAdded" anonid="dateAdded" flex="1" hidden="true"
                       persist="width hidden ordinal sortActive sortDirection"/>
             <splitter class="tree-splitter"/>
@@ -399,6 +414,7 @@
           </treecols>
           <treechildren flex="1" onclick="ContentTree.onClick(event);"/>
         </tree>
+#include ../../downloads/content/downloadsRichListBox.inc.xul
       </deck>
       <deck id="detailsDeck" style="height: 11em;">
         <vbox id="itemsCountBox" align="center">
@@ -410,25 +426,8 @@
           </description>
           <spacer flex="3"/>
         </vbox>
-        <vbox id="infoBox" minimal="true">
-          <vbox id="editBookmarkPanelContent" flex="1"/>
-          <hbox id="infoBoxExpanderWrapper" align="center">
-
-            <button type="image" id="infoBoxExpander"
-                    class="expander-down"
-                    oncommand="PlacesOrganizer.toggleAdditionalInfoFields();"
-                    observes="paneElementsBroadcaster"/>
-
-            <label id="infoBoxExpanderLabel"
-                    lesslabel="&detailsPane.less.label;"
-                    lessaccesskey="&detailsPane.less.accesskey;"
-                    morelabel="&detailsPane.more.label;"
-                    moreaccesskey="&detailsPane.more.accesskey;"
-                    value="&detailsPane.more.label;"
-                    accesskey="&detailsPane.more.accesskey;"
-                    control="infoBoxExpander"/>
-
-          </hbox>
+        <vbox id="infoBox">
+#include editBookmarkPanel.inc.xul
         </vbox>
       </deck>
     </vbox>

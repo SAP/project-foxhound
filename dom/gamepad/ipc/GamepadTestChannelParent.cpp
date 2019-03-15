@@ -1,3 +1,5 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,40 +12,44 @@
 namespace mozilla {
 namespace dom {
 
-mozilla::ipc::IPCResult
-GamepadTestChannelParent::RecvGamepadTestEvent(const uint32_t& aID,
-                                               const GamepadChangeEvent& aEvent)
-{
+mozilla::ipc::IPCResult GamepadTestChannelParent::RecvGamepadTestEvent(
+    const uint32_t& aID, const GamepadChangeEvent& aEvent) {
   mozilla::ipc::AssertIsOnBackgroundThread();
-  RefPtr<GamepadPlatformService>  service =
-    GamepadPlatformService::GetParentService();
+  RefPtr<GamepadPlatformService> service =
+      GamepadPlatformService::GetParentService();
   MOZ_ASSERT(service);
-  if (aEvent.type() == GamepadChangeEvent::TGamepadAdded) {
-    const GamepadAdded& a = aEvent.get_GamepadAdded();
+  const uint32_t index = aEvent.index();
+  const GamepadChangeEventBody& body = aEvent.body();
+  if (body.type() == GamepadChangeEventBody::TGamepadAdded) {
+    const GamepadAdded& a = body.get_GamepadAdded();
     nsCString gamepadID;
     LossyCopyUTF16toASCII(a.id(), gamepadID);
-    uint32_t index = service->AddGamepad(gamepadID.get(),
-                                         static_cast<GamepadMappingType>(a.mapping()),
-                                         a.num_buttons(),
-                                         a.num_axes());
+    uint32_t index = service->AddGamepad(
+        gamepadID.get(), static_cast<GamepadMappingType>(a.mapping()), a.hand(),
+        a.num_buttons(), a.num_axes(), a.num_haptics());
     if (!mShuttingdown) {
       Unused << SendReplyGamepadIndex(aID, index);
     }
     return IPC_OK();
   }
-  if (aEvent.type() == GamepadChangeEvent::TGamepadRemoved) {
-    const GamepadRemoved& a = aEvent.get_GamepadRemoved();
-    service->RemoveGamepad(a.index());
+  if (body.type() == GamepadChangeEventBody::TGamepadRemoved) {
+    service->RemoveGamepad(index);
     return IPC_OK();
   }
-  if (aEvent.type() == GamepadChangeEvent::TGamepadButtonInformation) {
-    const GamepadButtonInformation& a = aEvent.get_GamepadButtonInformation();
-    service->NewButtonEvent(a.index(), a.button(), a.pressed(), a.value());
+  if (body.type() == GamepadChangeEventBody::TGamepadButtonInformation) {
+    const GamepadButtonInformation& a = body.get_GamepadButtonInformation();
+    service->NewButtonEvent(index, a.button(), a.pressed(), a.touched(),
+                            a.value());
     return IPC_OK();
   }
-  if (aEvent.type() == GamepadChangeEvent::TGamepadAxisInformation) {
-    const GamepadAxisInformation& a = aEvent.get_GamepadAxisInformation();
-    service->NewAxisMoveEvent(a.index(), a.axis(), a.value());
+  if (body.type() == GamepadChangeEventBody::TGamepadAxisInformation) {
+    const GamepadAxisInformation& a = body.get_GamepadAxisInformation();
+    service->NewAxisMoveEvent(index, a.axis(), a.value());
+    return IPC_OK();
+  }
+  if (body.type() == GamepadChangeEventBody::TGamepadPoseInformation) {
+    const GamepadPoseInformation& a = body.get_GamepadPoseInformation();
+    service->NewPoseEvent(index, a.pose_state());
     return IPC_OK();
   }
 
@@ -51,13 +57,11 @@ GamepadTestChannelParent::RecvGamepadTestEvent(const uint32_t& aID,
   return IPC_FAIL_NO_REASON(this);
 }
 
-mozilla::ipc::IPCResult
-GamepadTestChannelParent::RecvShutdownChannel()
-{
+mozilla::ipc::IPCResult GamepadTestChannelParent::RecvShutdownChannel() {
   mShuttingdown = true;
   Unused << Send__delete__(this);
   return IPC_OK();
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

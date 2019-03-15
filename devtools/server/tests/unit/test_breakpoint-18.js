@@ -1,82 +1,66 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+"use strict";
+
 /**
  * Check that we only break on offsets that are entry points for the line we are
  * breaking on. Bug 907278.
  */
 
-var gDebuggee;
-var gClient;
-var gThreadClient;
-var gCallback;
+add_task(threadClientTest(({ threadClient, debuggee, client }) => {
+  return new Promise(resolve => {
+    // Expose console as the test script uses it
+    debuggee.console = { log: x => void x };
 
-function run_test()
-{
-  run_test_with_server(DebuggerServer, function () {
-    run_test_with_server(WorkerDebuggerServer, do_test_finished);
+    // Inline all paused listeners as promises won't resolve when paused
+    client.addOneTimeListener("paused", async (event1, packet1) => {
+      await setBreakpoint(packet1, threadClient, client);
+
+      client.addOneTimeListener("paused", (event2, { why }) => {
+        Assert.equal(why.type, "breakpoint");
+
+        client.addOneTimeListener("paused", (event3, packet3) => {
+          testDbgStatement(packet3);
+          resolve();
+        });
+        threadClient.resume();
+      });
+      debuggee.test();
+    });
+
+    Cu.evalInSandbox(
+      "debugger;\n" +
+      function test() {
+        console.log("foo bar");
+        debugger;
+      },
+      debuggee,
+      "1.8",
+      "http://example.com/",
+      1
+    );
   });
-  do_test_pending();
-}
+}));
 
-function run_test_with_server(aServer, aCallback)
-{
-  gCallback = aCallback;
-  initTestDebuggerServer(aServer);
-  gDebuggee = addTestGlobal("test-breakpoints", aServer);
-  gDebuggee.console = { log: x => void x };
-  gClient = new DebuggerClient(aServer.connectPipe());
-  gClient.connect().then(function () {
-    attachTestTabAndResume(gClient,
-                           "test-breakpoints",
-                           function (aResponse, aTabClient, aThreadClient) {
-                             gThreadClient = aThreadClient;
-                             setUpCode();
-                           });
-  });
-}
+function setBreakpoint(packet, threadClient, client) {
+  return new Promise(async resolve => {
+    const source = await getSourceById(
+      threadClient,
+      packet.frame.where.actor
+    );
+    client.addOneTimeListener("resumed", resolve);
 
-function setUpCode() {
-  gClient.addOneTimeListener("paused", setBreakpoint);
-  Cu.evalInSandbox(
-    "debugger;\n" +
-    function test() {
-      console.log("foo bar");
-      debugger;
-    },
-    gDebuggee,
-    "1.8",
-    "http://example.com/",
-    1
-  );
-}
-
-function setBreakpoint(aEvent, aPacket) {
-  let source = gThreadClient.source(aPacket.frame.where.source);
-  gClient.addOneTimeListener("resumed", runCode);
-
-  source.setBreakpoint({ line: 2 }, ({ error }) => {
-    do_check_true(!error);
-    gThreadClient.resume();
+    source.setBreakpoint({ line: 2 }).then(() => {
+      threadClient.resume();
+    });
   });
 }
 
-function runCode() {
-  gClient.addOneTimeListener("paused", testBPHit);
-  gDebuggee.test();
-}
-
-function testBPHit(event, { why }) {
-  do_check_eq(why.type, "breakpoint");
-  gClient.addOneTimeListener("paused", testDbgStatement);
-  gThreadClient.resume();
-}
-
-function testDbgStatement(event, { why }) {
+function testDbgStatement({ why }) {
   // Should continue to the debugger statement.
-  do_check_eq(why.type, "debuggerStatement");
+  Assert.equal(why.type, "debuggerStatement");
   // Not break on another offset from the same line (that isn't an entry point
   // to the line)
-  do_check_neq(why.type, "breakpoint");
-  gClient.close().then(gCallback);
+  Assert.notEqual(why.type, "breakpoint");
 }

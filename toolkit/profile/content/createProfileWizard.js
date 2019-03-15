@@ -2,10 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const C = Components.classes;
-const I = Components.interfaces;
+const C = Cc;
+const I = Ci;
 
-Components.utils.import("resource://gre/modules/AppConstants.jsm");
+ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const ToolkitProfileService = "@mozilla.org/toolkit/profile-service;1";
 
@@ -26,8 +27,7 @@ function initWizard() {
     gProfileService = C[ToolkitProfileService].getService(I.nsIToolkitProfileService);
     gProfileManagerBundle = document.getElementById("bundle_profileManager");
 
-    var dirService = C["@mozilla.org/file/directory_service;1"].getService(I.nsIProperties);
-    gDefaultProfileParent = dirService.get("DefProfRt", I.nsIFile);
+    gDefaultProfileParent = Services.dirsvc.get("DefProfRt", I.nsIFile);
 
     // Initialize the profile location display.
     gProfileDisplay = document.getElementById("profileDisplay").firstChild;
@@ -86,16 +86,17 @@ function chooseProfileFolder() {
   // default to the Profiles folder
   dirChooser.displayDirectory = gDefaultProfileParent;
 
-  dirChooser.show();
-  newProfileRoot = dirChooser.file;
+  dirChooser.open(() => {
+    newProfileRoot = dirChooser.file;
 
-  // Disable the "Default Folder..." button when the default profile folder
-  // was selected manually in the File Picker.
-  document.getElementById("useDefault").disabled =
-    (newProfileRoot.parent.equals(gDefaultProfileParent));
+    // Disable the "Default Folder..." button when the default profile folder
+    // was selected manually in the File Picker.
+    document.getElementById("useDefault").disabled =
+      (newProfileRoot.parent.equals(gDefaultProfileParent));
 
-  gProfileRoot = newProfileRoot;
-  updateProfileDisplay();
+    gProfileRoot = newProfileRoot;
+    updateProfileDisplay();
+  });
 }
 
 // Checks the current user input for validity and triggers an error message accordingly.
@@ -155,9 +156,7 @@ function checkProfileName(profileNameToCheck) {
 }
 
 function profileExists(aName) {
-  var profiles = gProfileService.profiles;
-  while (profiles.hasMoreElements()) {
-    var profile = profiles.getNext().QueryInterface(I.nsIToolkitProfile);
+  for (let profile of gProfileService.profiles) {
     if (profile.name.toLowerCase() == aName.toLowerCase())
       return true;
   }
@@ -182,10 +181,8 @@ function onFinish() {
       gProfileManagerBundle.getString("profileCreationFailed");
     var profileCreationFailedTitle =
       gProfileManagerBundle.getString("profileCreationFailedTitle");
-    var promptService = C["@mozilla.org/embedcomp/prompt-service;1"].
-      getService(I.nsIPromptService);
-    promptService.alert(window, profileCreationFailedTitle,
-                        profileCreationFailed + "\n" + e);
+    Services.prompt.alert(window, profileCreationFailedTitle,
+                          profileCreationFailed + "\n" + e);
 
     return false;
   }
@@ -200,7 +197,7 @@ function onFinish() {
     var profileLock = profile.lock(null);
 
     var dialogParams = window.arguments[0].QueryInterface(I.nsIDialogParamBlock);
-    dialogParams.objects.insertElementAt(profileLock, 0, false);
+    dialogParams.objects.insertElementAt(profileLock, 0);
   }
 
   // Exit the wizard.

@@ -2,12 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var Ci = Components.interfaces;
-var Cu = Components.utils;
 const PREF_DEPRECATION_WARNINGS = "devtools.errorconsole.deprecation_warnings";
 
-Cu.import("resource://gre/modules/Services.jsm", this);
-Cu.import("resource://gre/modules/Deprecated.jsm", this);
+ChromeUtils.import("resource://gre/modules/Services.jsm", this);
+ChromeUtils.import("resource://gre/modules/Deprecated.jsm", this);
 
 // Using this named functions to test deprecation and the properly logged
 // callstacks.
@@ -18,7 +16,7 @@ function basicDeprecatedFunction() {
 
 function deprecationFunctionBogusCallstack() {
   Deprecated.warning("this method is deprecated.", "http://example.com", {
-    caller: {}
+    caller: {},
   });
   return true;
 }
@@ -41,7 +39,7 @@ var tests = [
     testAMessage(aMessage);
     ok(aMessage.errorMessage.indexOf("basicDeprecatedFunction") > 0,
       "Callstack is correctly logged.");
-  }
+  },
 },
 // Test a reported error when URL to documentation is not passed.
 {
@@ -52,7 +50,7 @@ var tests = [
   expectedObservation(aMessage) {
     ok(aMessage.errorMessage.indexOf("must provide a URL") > 0,
       "Deprecation warning logged an empty URL argument.");
-  }
+  },
 },
 // Test deprecation with a bogus callstack passed as an argument (it will be
 // replaced with the current call stack).
@@ -62,14 +60,14 @@ var tests = [
     testAMessage(aMessage);
     ok(aMessage.errorMessage.indexOf("deprecationFunctionBogusCallstack") > 0,
       "Callstack is correctly logged.");
-  }
+  },
 },
 // When pref is unset Deprecated.warning should not log anything.
 {
   deprecatedFunction: basicDeprecatedFunction,
   expectedObservation: null,
   // Set pref to false.
-  logWarnings: false
+  logWarnings: false,
 },
 // Test deprecation with a valid custom callstack passed as an argument.
 {
@@ -80,7 +78,7 @@ var tests = [
       "Callstack is correctly logged.");
   },
   // Set pref to true.
-  logWarnings: true
+  logWarnings: true,
 }];
 
 // Which test are we running now?
@@ -127,8 +125,8 @@ function nextTest() {
       if (!(aMessage instanceof Ci.nsIScriptError)) {
         return;
       }
-      if (aMessage.errorMessage.indexOf("DEPRECATION WARNING: ") < 0 &&
-          aMessage.errorMessage.indexOf("must provide a URL") < 0) {
+      if (!aMessage.errorMessage.includes("DEPRECATION WARNING: ") &&
+          !aMessage.errorMessage.includes("must provide a URL")) {
         return;
       }
       ok(aMessage instanceof Ci.nsIScriptError,
@@ -143,7 +141,7 @@ function nextTest() {
 
       Services.console.unregisterListener(consoleListener);
       executeSoon(nextTest);
-    }
+    },
   };
   Services.console.registerListener(consoleListener);
   test.deprecatedFunction();

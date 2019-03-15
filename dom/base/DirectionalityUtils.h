@@ -8,26 +8,35 @@
 #define DirectionalityUtils_h___
 
 #include "nscore.h"
+#include "nsStringFwd.h"
 
 class nsIContent;
-class nsAString;
 class nsAttrValue;
 class nsTextNode;
 
 namespace mozilla {
 namespace dom {
 class Element;
-} // namespace dom
-} // namespace mozilla
+class HTMLSlotElement;
+}  // namespace dom
+}  // namespace mozilla
 
 namespace mozilla {
 
-enum Directionality : uint8_t {
-  eDir_NotSet,
-  eDir_RTL,
-  eDir_LTR,
-  eDir_Auto
-};
+enum Directionality : uint8_t { eDir_NotSet, eDir_RTL, eDir_LTR, eDir_Auto };
+
+/**
+ * Various methods for returning the directionality of a string using the
+ * first-strong algorithm defined in http://unicode.org/reports/tr9/#P2
+ *
+ * @param[out] aFirstStrong the offset to the first character in the string with
+ *             strong directionality, or UINT32_MAX if there is none (return
+               value is eDir_NotSet).
+ * @return the directionality of the string
+ */
+Directionality GetDirectionFromText(const char16_t* aText,
+                                    const uint32_t aLength,
+                                    uint32_t* aFirstStrong = nullptr);
 
 /**
  * Set the directionality of an element according to the algorithm defined at
@@ -47,16 +56,21 @@ Directionality RecomputeDirectionality(mozilla::dom::Element* aElement,
  * the much more common case of getting the element's directionality.
  */
 void SetDirectionalityOnDescendants(mozilla::dom::Element* aElement,
-                                    Directionality aDir,
-                                    bool aNotify = true);
+                                    Directionality aDir, bool aNotify = true);
 
 /**
  * Walk the descendants of a node in tree order and, for any text node
  * descendant that determines the directionality of some element and is not a
  * descendant of another descendant of the original node with dir=auto,
  * redetermine that element's directionality
-  */
+ */
 void WalkDescendantsResetAutoDirection(mozilla::dom::Element* aElement);
+
+/**
+ * In case a slot element was added or removed or its assigned nodes changed,
+ * it may change the directionality of ancestors or assigned nodes.
+ */
+void SlotStateChanged(mozilla::dom::HTMLSlotElement* aSlot);
 
 /**
  * After setting dir=auto on an element, walk its descendants in tree order.
@@ -74,7 +88,7 @@ void WalkDescendantsSetDirAuto(mozilla::dom::Element* aElement,
  * skipping any that have dir=auto themselves, and unset the
  * NODE_ANCESTOR_HAS_DIR_AUTO flag
  */
-void WalkDescendantsClearAncestorDirAuto(mozilla::dom::Element* aElement);
+void WalkDescendantsClearAncestorDirAuto(nsIContent* aContent);
 
 /**
  * When the contents of a text node are about to change, retrieve the current
@@ -111,8 +125,7 @@ void ResetDirectionSetByTextNode(nsTextNode* aTextNode);
  * text in aValue
  */
 void SetDirectionalityFromValue(mozilla::dom::Element* aElement,
-                                const nsAString& aValue,
-                                bool aNotify);
+                                const nsAString& aValue, bool aNotify);
 
 /**
  * Called when setting the dir attribute on an element, immediately after
@@ -122,11 +135,8 @@ void SetDirectionalityFromValue(mozilla::dom::Element* aElement,
  * and in BeforeSetAttr we can't do the walk because this element hasn't had the
  * value set yet so the results will be wrong.
  */
-void OnSetDirAttr(mozilla::dom::Element* aElement,
-                  const nsAttrValue* aNewValue,
-                  bool hadValidDir,
-                  bool hadDirAuto,
-                  bool aNotify);
+void OnSetDirAttr(mozilla::dom::Element* aElement, const nsAttrValue* aNewValue,
+                  bool hadValidDir, bool hadDirAuto, bool aNotify);
 
 /**
  * Called when binding a new element to the tree, to set the
@@ -141,6 +151,6 @@ void SetDirOnBind(mozilla::dom::Element* aElement, nsIContent* aParent);
  * clean up any entries in nsTextDirectionalityMap that refer to it.
  */
 void ResetDir(mozilla::dom::Element* aElement);
-} // end namespace mozilla
+}  // end namespace mozilla
 
 #endif /* DirectionalityUtils_h___ */

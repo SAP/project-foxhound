@@ -7,8 +7,6 @@
         href="chrome://mochikit/content/tests/SimpleTest/test.css" />
 
   <script type="application/javascript"
-          src="chrome://mochikit/content/MochiKit/packed.js"></script>
-  <script type="application/javascript"
           src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <script type="application/javascript"
           src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
@@ -25,17 +23,16 @@
           src="../text.js"></script>
 
   <script type="application/javascript">
-    //gA11yEventDumpToConsole = true; // debugging
+    // gA11yEventDumpToConsole = true; // debugging
 
-    function traverseTextByLines(aQueue, aID, aLines)
-    {
+    function traverseTextByLines(aQueue, aID, aLines) {
       var wholeText = "";
       for (var i = 0; i < aLines.length ; i++)
         wholeText += aLines[i][0] + aLines[i][1];
 
       var baseInvokerFunc = synthClick;
       var charIter = new charIterator(wholeText, aLines);
-      //charIter.debugOffset = 10; // enable to run tests at given offset only
+      // charIter.debugOffset = 10; // enable to run tests at given offset only
 
       while (charIter.next()) {
         aQueue.push(new tmpl_moveTo(aID, baseInvokerFunc, wholeText, charIter));
@@ -46,10 +43,8 @@
     /**
      * Used to get test list for each traversed character.
      */
-    function charIterator(aWholeText, aLines)
-    {
-      this.next = function charIterator_next()
-      {
+    function charIterator(aWholeText, aLines) {
+      this.next = function charIterator_next() {
         // Don't increment offset if we are at end of the wrapped line
         // (offset is shared between end of this line and start of next line).
         if (this.mAtWrappedLineEnd) {
@@ -71,21 +66,18 @@
         }
 
         return true;
-      }
+      };
 
-      Object.defineProperty(this, "offset", { get: function()
-        { return this.mOffset; }
+      Object.defineProperty(this, "offset", { get() { return this.mOffset; },
       });
 
-      Object.defineProperty(this, "offsetDescr", { get: function()
-        {
+      Object.defineProperty(this, "offsetDescr", { get() {
           return this.mOffset + " offset (" + this.mLine.number + " line, " +
             (this.mOffset - this.mLine.start) + " offset on the line)";
-        }
+        },
       });
 
-      Object.defineProperty(this, "tests", { get: function()
-        {
+      Object.defineProperty(this, "tests", { get() {
           // Line boundary tests.
           var cLine = this.mLine;
           var pLine = cLine.prevLine;
@@ -99,7 +91,7 @@
             [ testTextAtOffset, BOUNDARY_LINE_START, cLine.start, nLine.start],
             [ testTextAtOffset, BOUNDARY_LINE_END, pLine.end, cLine.end],
             [ testTextAfterOffset, BOUNDARY_LINE_START, nLine.start, nnLine.start],
-            [ testTextAfterOffset, BOUNDARY_LINE_END, cLine.end, nLine.end]
+            [ testTextAfterOffset, BOUNDARY_LINE_END, cLine.end, nLine.end],
           ];
 
           // Word boundary tests.
@@ -145,7 +137,7 @@
               nWord.start, nnWord.start ],
             [ testTextAfterOffset, BOUNDARY_WORD_END,
               (isAfterWordEnd ? nWord : cWord).end,
-              (isAfterWordEnd ? nnWord : nWord).end ]
+              (isAfterWordEnd ? nnWord : nWord).end ],
           ];
 
           // Character boundary tests.
@@ -163,21 +155,20 @@
               this.mAtWrappedLineEnd ? this.offset : nextOffset ],
             [ testTextAfterOffset, BOUNDARY_CHAR,
               this.mAtWrappedLineEnd ? this.offset : nextOffset,
-              this.mAtWrappedLineEnd ? nextOffset : nextAfterNextOffset ]
+              this.mAtWrappedLineEnd ? nextOffset : nextAfterNextOffset ],
           ];
 
           return lineTests.concat(wordTests.concat(charTests));
-        }
+        },
       });
 
-      Object.defineProperty(this, "failures", { get: function()
-        {
+      Object.defineProperty(this, "failures", { get() {
           if (this.mOffset == this.mLine.start)
             return this.mLine.lineStartFailures;
           if (this.mOffset == this.mLine.end)
             return this.mLine.lineEndFailures;
           return [];
-        }
+        },
       });
 
       this.mOffset = -1;
@@ -189,21 +180,17 @@
     /**
      * A line object. Allows to navigate by lines and by words.
      */
-    function line(aWholeText, aLines, aIndex)
-    {
-      Object.defineProperty(this, "prevLine", { get: function()
-        {
+    function line(aWholeText, aLines, aIndex) {
+      Object.defineProperty(this, "prevLine", { get() {
           return new line(aWholeText, aLines, aIndex - 1);
-        }
-      }); 
-      Object.defineProperty(this, "nextLine", { get: function()
-        {
+        },
+      });
+      Object.defineProperty(this, "nextLine", { get() {
           return new line(aWholeText, aLines, aIndex + 1);
-        }
+        },
       });
 
-      Object.defineProperty(this, "start", { get: function()
-        {
+      Object.defineProperty(this, "start", { get() {
           if (aIndex < 0)
             return 0;
 
@@ -211,10 +198,9 @@
             return aWholeText.length;
 
           return aLines[aIndex][2];
-        }
+        },
       });
-      Object.defineProperty(this, "end", { get: function()
-        {
+      Object.defineProperty(this, "end", { get() {
           if (aIndex < 0)
             return 0;
 
@@ -222,22 +208,18 @@
             return aWholeText.length;
 
           return aLines[aIndex][3];
-        }
+        },
       });
 
-      Object.defineProperty(this, "number", { get: function()
-        { return aIndex; }
+      Object.defineProperty(this, "number", { get() { return aIndex; },
       });
-      Object.defineProperty(this, "wholeText", { get: function()
-        { return aWholeText; }
+      Object.defineProperty(this, "wholeText", { get() { return aWholeText; },
       });
-      this.isFakeLine = function line_isFakeLine()
-      {
+      this.isFakeLine = function line_isFakeLine() {
         return aIndex < 0 || aIndex >= aLines.length;
-      }
+      };
 
-      Object.defineProperty(this, "lastWord", { get: function()
-        {
+      Object.defineProperty(this, "lastWord", { get() {
           if (aIndex < 0)
             return new word(this, [], -1);
           if (aIndex >= aLines.length)
@@ -245,10 +227,9 @@
 
           var words = aLines[aIndex][4].words;
           return new word(this, words, words.length - 2);
-        }
+        },
       });
-      Object.defineProperty(this, "firstWord", { get: function()
-        {
+      Object.defineProperty(this, "firstWord", { get() {
           if (aIndex < 0)
             return new word(this, [], -1);
           if (aIndex >= aLines.length)
@@ -256,40 +237,35 @@
 
           var words = aLines[aIndex][4].words;
           return new word(this, words, 0);
-        }
+        },
       });
 
-      this.isLastWord = function line_isLastWord(aWord)
-      {
+      this.isLastWord = function line_isLastWord(aWord) {
         var lastWord = this.lastWord;
         return lastWord.start == aWord.start && lastWord.end == aWord.end;
-      }
+      };
 
-      Object.defineProperty(this, "lineStartFailures", { get: function()
-        {
+      Object.defineProperty(this, "lineStartFailures", { get() {
           if (aIndex < 0 || aIndex >= aLines.length)
             return [];
 
           return aLines[aIndex][4].lsf || [];
-        }
+        },
       });
-      Object.defineProperty(this, "lineEndFailures", { get: function()
-        {
+      Object.defineProperty(this, "lineEndFailures", { get() {
           if (aIndex < 0 || aIndex >= aLines.length)
             return [];
 
           return aLines[aIndex][4].lef || [];
-        }
+        },
       });
     }
 
     /**
      * A word object. Allows to navigate by words.
      */
-    function word(aLine, aWords, aIndex)
-    {
-      Object.defineProperty(this, "prevWord", { get: function()
-        {
+    function word(aLine, aWords, aIndex) {
+      Object.defineProperty(this, "prevWord", { get() {
           if (aIndex >= 2)
             return new word(aLine, aWords, aIndex - 2);
 
@@ -297,10 +273,9 @@
           if (this.start == prevLineLastWord.start && !this.isFakeStartWord())
             return prevLineLastWord.prevWord;
           return prevLineLastWord;
-        }
+        },
       });
-      Object.defineProperty(this, "nextWord", { get: function()
-        {
+      Object.defineProperty(this, "nextWord", { get() {
           if (aIndex + 2 < aWords.length)
             return new word(aLine, aWords, aIndex + 2);
 
@@ -308,53 +283,48 @@
           if (this.end == nextLineFirstWord.end && !this.isFakeEndWord())
             return nextLineFirstWord.nextWord;
           return nextLineFirstWord;
-        }
+        },
       });
 
-      Object.defineProperty(this, "line", { get: function() { return aLine; } });
+      Object.defineProperty(this, "line", { get() { return aLine; } });
 
-      Object.defineProperty(this, "start", { get: function()
-        {
+      Object.defineProperty(this, "start", { get() {
           if (this.isFakeStartWord())
             return 0;
 
           if (this.isFakeEndWord())
             return aLine.end;
            return aWords[aIndex];
-        }
+        },
       });
-      Object.defineProperty(this, "end", { get: function()
-        {
+      Object.defineProperty(this, "end", { get() {
           if (this.isFakeStartWord())
             return 0;
 
           return this.isFakeEndWord() ? aLine.end : aWords[aIndex + 1];
-        }
+        },
       });
 
-      this.toString = function word_toString()
-      {
+      this.toString = function word_toString() {
         var start = this.start, end = this.end;
         return "'" + aLine.wholeText.substring(start, end) +
           "' at [" + start + ", " + end + "]";
-      }
+      };
 
-      this.isFakeStartWord = function() { return aIndex < 0; }
-      this.isFakeEndWord = function() { return aIndex >= aWords.length; }
+      this.isFakeStartWord = function() { return aIndex < 0; };
+      this.isFakeEndWord = function() { return aIndex >= aWords.length; };
     }
 
     /**
      * A template invoker to move through the text.
      */
-    function tmpl_moveTo(aID, aInvokerFunc, aWholeText, aCharIter)
-    {
+    function tmpl_moveTo(aID, aInvokerFunc, aWholeText, aCharIter) {
       this.offset = aCharIter.offset;
 
       var checker = new caretMoveChecker(this.offset, aID);
       this.__proto__ = new (aInvokerFunc)(aID, checker);
 
-      this.finalCheck = function genericMoveTo_finalCheck()
-      {
+      this.finalCheck = function genericMoveTo_finalCheck() {
         if (this.noTests())
           return;
 
@@ -368,7 +338,7 @@
           var isOk1 = kOk, isOk2 = kOk, isOk3 = kOk;
           for (var fIdx = 0; fIdx < this.failures.length; fIdx++) {
             var failure = this.failures[fIdx];
-            if (func.name.indexOf(failure[0]) != -1 && boundary == failure[1]) {
+            if (func.name.includes(failure[0]) && boundary == failure[1]) {
               isOk1 = failure[2];
               isOk2 = failure[3];
               isOk3 = failure[4];
@@ -378,18 +348,16 @@
           func.call(null, kCaretOffset, boundary, text, startOffset, endOffset,
                     aID, isOk1, isOk2, isOk3);
         }
-      }
+      };
 
-      this.getID = function genericMoveTo_getID()
-      {
+      this.getID = function genericMoveTo_getID() {
         return "move to " + this.offsetDescr;
-      }
+      };
 
-      this.noTests = function tmpl_moveTo_noTests()
-      {
+      this.noTests = function tmpl_moveTo_noTests() {
         return ("debugOffset" in aCharIter) &&
           (aCharIter.debugOffset != this.offset);
-      }
+      };
 
       this.offsetDescr = aCharIter.offsetDescr;
       this.tests = this.noTests() ? null : aCharIter.tests;
@@ -397,8 +365,7 @@
     }
 
     var gQueue = null;
-    function doTest()
-    {
+    function doTest() {
       gQueue = new eventQueue();
 
       // __a__w__o__r__d__\n
@@ -411,21 +378,21 @@
       traverseTextByLines(gQueue, "textarea",
                           [ [ "aword", "\n", 0, 5, { words: [ 0, 5 ] } ],
                             [ "two ", "", 6, 10, { words: [ 6, 9 ] } ],
-                            [ "words", "", 10, 15, { words: [ 10, 15 ] } ]
+                            [ "words", "", 10, 15, { words: [ 10, 15 ] } ],
                           ] );
 
       var line4 = [ // "riend "
         [ "TextBeforeOffset", BOUNDARY_WORD_END, kTodo, kTodo, kTodo ],
-        [ "TextAfterOffset", BOUNDARY_WORD_END, kTodo, kTodo, kTodo ]
+        [ "TextAfterOffset", BOUNDARY_WORD_END, kTodo, kTodo, kTodo ],
       ];
-      traverseTextByLines(gQueue, "ta_wrapped", 
+      traverseTextByLines(gQueue, "ta_wrapped",
                           [ [ "hi ", "", 0, 3, { words: [ 0, 2 ] } ],
                             [ "hello ", "", 3, 9, { words: [ 3, 8 ] } ],
                             [ "my ", "", 9, 12, { words: [ 9, 11 ] } ],
                             [ "longf", "", 12, 17, { words: [ 12, 17 ] } ],
                             [ "riend ", "", 17, 23, { words: [ 17, 22 ], lsf: line4 } ],
                             [ "t sq ", "", 23, 28, { words: [ 23, 24, 25, 27 ] } ],
-                            [ "t", "", 28, 29, { words: [ 28, 29 ] } ]
+                            [ "t", "", 28, 29, { words: [ 28, 29 ] } ],
                           ] );
 
       gQueue.invoke(); // will call SimpleTest.finish();

@@ -4,30 +4,29 @@
 var testPath = "http://mochi.test:8888/browser/dom/html/test/";
 var popup;
 
-var {LoadContextInfo} = Cu.import("resource://gre/modules/LoadContextInfo.jsm", null);
-var {Services} = Cu.import("resource://gre/modules/Services.jsm", null);
+var {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm", null);
 
 function checkCache(url, inMemory, shouldExist, cb)
 {
   var cache = Services.cache2;
-  var storage = cache.diskCacheStorage(LoadContextInfo.default, false);
+  var storage = cache.diskCacheStorage(Services.loadContextInfo.default, false);
 
   function CheckCacheListener(inMemory, shouldExist)
   {
     this.inMemory = inMemory;
     this.shouldExist = shouldExist;
     this.onCacheEntryCheck = function() {
-      return Components.interfaces.nsICacheEntryOpenCallback.ENTRY_WANTED;
+      return Ci.nsICacheEntryOpenCallback.ENTRY_WANTED;
     };
 
     this.onCacheEntryAvailable = function oCEA(entry, isNew, appCache, status) {
       if (shouldExist) {
         ok(entry, "Entry not found");
         is(this.inMemory, !entry.persistent, "Entry is " + (inMemory ? "" : " not ") + " in memory as expected");
-        is(status, Components.results.NS_OK, "Entry not found");
+        is(status, Cr.NS_OK, "Entry not found");
       } else {
         ok(!entry, "Entry found");
-        is(status, Components.results.NS_ERROR_CACHE_KEY_NOT_FOUND,
+        is(status, Cr.NS_ERROR_CACHE_KEY_NOT_FOUND,
            "Invalid error code");
       }
 
@@ -36,15 +35,15 @@ function checkCache(url, inMemory, shouldExist, cb)
   };
 
   storage.asyncOpenURI(Services.io.newURI(url), "",
-                       Components.interfaces.nsICacheStorage.OPEN_READONLY,
+                       Ci.nsICacheStorage.OPEN_READONLY,
                        new CheckCacheListener(inMemory, shouldExist));
 }
 function getPopupURL() {
-  var sh = popup.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
-                .getInterface(Components.interfaces.nsIWebNavigation)
+  var sh = popup.docShell
+                .QueryInterface(Ci.nsIWebNavigation)
                 .sessionHistory;
 
-  return sh.getEntryAtIndex(sh.index, false).URI.spec;
+  return sh.legacySHistory.getEntryAtIndex(sh.index).URI.spec;
 }
 
 var wyciwygURL;

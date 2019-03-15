@@ -14,10 +14,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <memory>
 #include <string.h>
 #include "cubeb/cubeb.h"
-#include "common.h"
 #include <string>
+
+//#define ENABLE_NORMAL_LOG
+//#define ENABLE_VERBOSE_LOG
+#include "common.h"
 
 using namespace std;
 
@@ -75,20 +79,6 @@ long data_cb(cubeb_stream * /*stream*/, void * user, const void * /*inputbuffer*
   return nframes;
 }
 
-struct CubebCleaner
-{
-  CubebCleaner(cubeb* ctx_) : ctx(ctx_) {}
-  ~CubebCleaner() { cubeb_destroy(ctx); }
-  cubeb* ctx;
-};
-
-struct CubebStreamCleaner
-{
-  CubebStreamCleaner(cubeb_stream* ctx_) : ctx(ctx_) {}
-  ~CubebStreamCleaner() { cubeb_stream_destroy(ctx); }
-  cubeb_stream* ctx;
-};
-
 void state_cb_audio(cubeb_stream * /*stream*/, void * /*user*/, cubeb_state /*state*/)
 {
 }
@@ -100,12 +90,6 @@ int supports_float32(string backend_id)
     && backend_id != "audiotrack";
 }
 
-/* The WASAPI backend only supports float. */
-int supports_int16(string backend_id)
-{
-  return backend_id != "wasapi";
-}
-
 /* Some backends don't have code to deal with more than mono or stereo. */
 int supports_channel_count(string backend_id, int nchannels)
 {
@@ -113,35 +97,36 @@ int supports_channel_count(string backend_id, int nchannels)
     (backend_id != "opensl" && backend_id != "audiotrack");
 }
 
-int run_test(int num_channels, layout_info layout, int sampling_rate, int is_float)
+int run_test(int num_channels, int sampling_rate, int is_float)
 {
   int r = CUBEB_OK;
 
   cubeb *ctx = NULL;
 
-  r = cubeb_init(&ctx, "Cubeb audio test: channels");
+  r = common_init(&ctx, "Cubeb audio test: channels");
   if (r != CUBEB_OK) {
     fprintf(stderr, "Error initializing cubeb library\n");
     return r;
   }
-  CubebCleaner cleanup_cubeb_at_exit(ctx);
+  std::unique_ptr<cubeb, decltype(&cubeb_destroy)>
+    cleanup_cubeb_at_exit(ctx, cubeb_destroy);
 
   const char * backend_id = cubeb_get_backend_id(ctx);
 
   if ((is_float && !supports_float32(backend_id)) ||
-      (!is_float && !supports_int16(backend_id)) ||
       !supports_channel_count(backend_id, num_channels)) {
     /* don't treat this as a test failure. */
     return CUBEB_OK;
   }
 
-  fprintf(stderr, "Testing %d channel(s), layout: %s, %d Hz, %s (%s)\n", num_channels, layout.name, sampling_rate, is_float ? "float" : "short", cubeb_get_backend_id(ctx));
+  fprintf(stderr, "Testing %d channel(s), %d Hz, %s (%s)\n", num_channels, sampling_rate, is_float ? "float" : "short", cubeb_get_backend_id(ctx));
 
   cubeb_stream_params params;
   params.format = is_float ? CUBEB_SAMPLE_FLOAT32NE : CUBEB_SAMPLE_S16NE;
   params.rate = sampling_rate;
   params.channels = num_channels;
-  params.layout = layout.layout;
+  params.layout = CUBEB_LAYOUT_UNDEFINED;
+  params.prefs = CUBEB_STREAM_PREF_NONE;
 
   synth_state synth(params.channels, params.rate);
 
@@ -153,7 +138,8 @@ int run_test(int num_channels, layout_info layout, int sampling_rate, int is_flo
     return r;
   }
 
-  CubebStreamCleaner cleanup_stream_at_exit(stream);
+  std::unique_ptr<cubeb_stream, decltype(&cubeb_stream_destroy)>
+    cleanup_stream_at_exit(stream, cubeb_stream_destroy);
 
   cubeb_stream_start(stream);
   delay(200);
@@ -168,18 +154,18 @@ int run_panning_volume_test(int is_float)
 
   cubeb *ctx = NULL;
 
-  r = cubeb_init(&ctx, "Cubeb audio test");
+  r = common_init(&ctx, "Cubeb audio test");
   if (r != CUBEB_OK) {
     fprintf(stderr, "Error initializing cubeb library\n");
     return r;
   }
 
-  CubebCleaner cleanup_cubeb_at_exit(ctx);
+  std::unique_ptr<cubeb, decltype(&cubeb_destroy)>
+    cleanup_cubeb_at_exit(ctx, cubeb_destroy);
 
   const char * backend_id = cubeb_get_backend_id(ctx);
 
-  if ((is_float && !supports_float32(backend_id)) ||
-      (!is_float && !supports_int16(backend_id))) {
+  if ((is_float && !supports_float32(backend_id))) {
     /* don't treat this as a test failure. */
     return CUBEB_OK;
   }
@@ -189,6 +175,7 @@ int run_panning_volume_test(int is_float)
   params.rate = 44100;
   params.channels = 2;
   params.layout = CUBEB_LAYOUT_STEREO;
+  params.prefs = CUBEB_STREAM_PREF_NONE;
 
   synth_state synth(params.channels, params.rate);
 
@@ -201,7 +188,8 @@ int run_panning_volume_test(int is_float)
     return r;
   }
 
-  CubebStreamCleaner cleanup_stream_at_exit(stream);
+  std::unique_ptr<cubeb_stream, decltype(&cubeb_stream_destroy)>
+    cleanup_stream_at_exit(stream, cubeb_stream_destroy);
 
   fprintf(stderr, "Testing: volume\n");
   for(int i=0;i <= 4; ++i)
@@ -261,12 +249,8 @@ TEST(cubeb, run_channel_rate_test)
     for(auto freq : freq_values) {
       ASSERT_TRUE(channels < MAX_NUM_CHANNELS);
       fprintf(stderr, "--------------------------\n");
-      for (auto layout : layout_infos) {
-        if (layout.channels == channels) {
-          ASSERT_EQ(run_test(channels, layout, freq, 0), CUBEB_OK);
-          ASSERT_EQ(run_test(channels, layout, freq, 1), CUBEB_OK);
-        }
-      }
+      ASSERT_EQ(run_test(channels, freq, 0), CUBEB_OK);
+      ASSERT_EQ(run_test(channels, freq, 1), CUBEB_OK);
     }
   }
 }

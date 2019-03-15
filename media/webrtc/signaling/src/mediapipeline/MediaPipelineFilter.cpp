@@ -11,10 +11,14 @@
 
 #include "webrtc/common_types.h"
 
+#include "mozilla/Logging.h"
+
+// defined in MediaPipeline.cpp
+extern mozilla::LazyLogModule gMediaPipelineLog;
+
 namespace mozilla {
 
-MediaPipelineFilter::MediaPipelineFilter() : correlator_(0) {
-}
+MediaPipelineFilter::MediaPipelineFilter() : correlator_(0) {}
 
 bool MediaPipelineFilter::Filter(const webrtc::RTPHeader& header,
                                  uint32_t correlator) {
@@ -29,6 +33,17 @@ bool MediaPipelineFilter::Filter(const webrtc::RTPHeader& header,
     // we don't have that SSRC in our filter any more.
     remote_ssrc_set_.erase(header.ssrc);
     return false;
+  }
+
+  if (!header.extension.stream_id.empty() && !remote_rid_set_.empty() &&
+      remote_rid_set_.count(header.extension.stream_id.data())) {
+    return true;
+  }
+  if (!header.extension.stream_id.empty()) {
+    MOZ_LOG(gMediaPipelineLog, LogLevel::Debug,
+            ("MediaPipelineFilter ignoring seq# %u ssrc: %u RID: %s",
+             header.sequenceNumber, header.ssrc,
+             header.extension.stream_id.data()));
   }
 
   if (remote_ssrc_set_.count(header.ssrc)) {
@@ -48,6 +63,10 @@ bool MediaPipelineFilter::Filter(const webrtc::RTPHeader& header,
 
 void MediaPipelineFilter::AddRemoteSSRC(uint32_t ssrc) {
   remote_ssrc_set_.insert(ssrc);
+}
+
+void MediaPipelineFilter::AddRemoteRtpStreamId(const std::string& rtp_strm_id) {
+  remote_rid_set_.insert(rtp_strm_id);
 }
 
 void MediaPipelineFilter::AddUniquePT(uint8_t payload_type) {
@@ -70,27 +89,4 @@ void MediaPipelineFilter::Update(const MediaPipelineFilter& filter_update) {
   correlator_ = filter_update.correlator_;
 }
 
-bool
-MediaPipelineFilter::FilterSenderReport(const unsigned char* data,
-                                        size_t len) const {
-  if (len < FIRST_SSRC_OFFSET + 4) {
-    return false;
-  }
-
-  uint8_t payload_type = data[PT_OFFSET];
-
-  if (payload_type != SENDER_REPORT_T) {
-    return false;
-  }
-
-  uint32_t ssrc = 0;
-  ssrc += (uint32_t)data[FIRST_SSRC_OFFSET] << 24;
-  ssrc += (uint32_t)data[FIRST_SSRC_OFFSET + 1] << 16;
-  ssrc += (uint32_t)data[FIRST_SSRC_OFFSET + 2] << 8;
-  ssrc += (uint32_t)data[FIRST_SSRC_OFFSET + 3];
-
-  return !!remote_ssrc_set_.count(ssrc);
-}
-
-} // end namespace mozilla
-
+}  // end namespace mozilla

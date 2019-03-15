@@ -28,13 +28,9 @@ full-update:: complete-patch
 ifeq ($(OS_TARGET), WINNT)
 MOZ_PKG_FORMAT	:= SFX7Z
 UNPACKAGE	= '$(subst $(DIST),$(ABS_DIST),$(INSTALLER_PACKAGE))'
-ifdef AB_CD
-UNPACKAGE	= '$(PACKAGE_BASE_DIR)/$(PACKAGE)'
-endif
 endif
 
 include $(topsrcdir)/config/rules.mk
-include $(topsrcdir)/toolkit/mozapps/installer/signing.mk
 include $(topsrcdir)/toolkit/mozapps/installer/packager.mk
 
 ifdef MOZ_EXTERNAL_SIGNING_FORMAT
@@ -43,22 +39,28 @@ MOZ_EXTERNAL_SIGNING_FORMAT := $(filter-out sha2signcode,$(MOZ_EXTERNAL_SIGNING_
 MOZ_EXTERNAL_SIGNING_FORMAT := mar $(MOZ_EXTERNAL_SIGNING_FORMAT)
 endif
 
+ifndef MAR_OLD_FORMAT
+MAR_SIGN_FORMAT=mar_sha384
+else
+MAR_SIGN_FORMAT=mar
+endif
+
 dir-stage := $(call mkdir_deps,$(STAGE_DIR))
 
 complete-patch:: $(dir-stage)
+# unpack the windows installer, unless we're an l10n repack, we just packed this
+ifndef IS_LANGUAGE_REPACK
 ifeq ($(OS_TARGET), WINNT)
 	test -f $(UNPACKAGE)
 	$(RM) -rf '$(PACKAGE_DIR)'
 	cd $(PACKAGE_BASE_DIR) && $(INNER_UNMAKE_PACKAGE)
+endif
 endif
 	MAR=$(MAR_BIN) \
 	MOZ_PRODUCT_VERSION=$(MOZ_APP_VERSION) \
 	  $(srcdir)/make_full_update.sh \
 	  '$(DIST)/$(COMPLETE_MAR)' \
 	  '$(PACKAGE_DIR)'
-ifdef MOZ_SIGN_CMD
-	$(MOZ_SIGN_CMD) -f mar '$(DIST)/$(COMPLETE_MAR)'
-endif
 
 partial-patch:: $(dir-stage)
 	MAR=$(MAR_BIN) \
@@ -68,6 +70,3 @@ partial-patch:: $(dir-stage)
 	  '$(STAGE_DIR)/$(PKG_UPDATE_BASENAME).partial.$(SRC_BUILD_ID)-$(DST_BUILD_ID).mar' \
 	  '$(SRC_BUILD)' \
 	  '$(DST_BUILD)'
-ifdef MOZ_SIGN_CMD
-	$(MOZ_SIGN_CMD) -f mar '$(STAGE_DIR)/$(PKG_UPDATE_BASENAME).partial.$(SRC_BUILD_ID)-$(DST_BUILD_ID).mar'
-endif

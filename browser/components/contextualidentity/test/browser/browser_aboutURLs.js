@@ -4,17 +4,23 @@
 // See Bug 1270998.
 requestLongerTimeout(2);
 
-add_task(function* () {
+add_task(async function() {
   let aboutURLs = [];
 
-  // List of about: URLs that will initiate network requests.
-  let networkURLs = [
+  // List of about: URLs that may cause problem, so we skip them in this test.
+  let skipURLs = [
+    // about:credits will initiate network request.
     "credits",
-    "telemetry" // about:telemetry will fetch Telemetry asynchrounously and takes
-                // longer, we skip this for now.
+    // about:telemetry will fetch Telemetry asynchronously and takes longer,
+    // so we skip this for now.
+    "telemetry",
+    // about:downloads causes a shutdown leak with stylo-chrome. bug 1419943.
+    "downloads",
+    // about:debugging requires specific wait code for internal pending RDP requests.
+    "debugging",
+    "debugging-new",
   ];
 
-  let ios = Cc["@mozilla.org/network/io-service;1"].getService(Ci.nsIIOService);
   for (let cid in Cc) {
     let result = cid.match(/@mozilla.org\/network\/protocol\/about;1\?what\=(.*)$/);
     if (!result) {
@@ -25,10 +31,10 @@ add_task(function* () {
     let contract = "@mozilla.org/network/protocol/about;1?what=" + aboutType;
     try {
       let am = Cc[contract].getService(Ci.nsIAboutModule);
-      let uri = ios.newURI("about:" + aboutType);
+      let uri = Services.io.newURI("about:" + aboutType);
       let flags = am.getURIFlags(uri);
       if (!(flags & Ci.nsIAboutModule.HIDE_FROM_ABOUTABOUT) &&
-          networkURLs.indexOf(aboutType) == -1) {
+          !skipURLs.includes(aboutType)) {
         aboutURLs.push(aboutType);
       }
     } catch (e) {
@@ -39,11 +45,11 @@ add_task(function* () {
 
   for (let url of aboutURLs) {
     info("Loading about:" + url);
-    let tab = gBrowser.addTab("about:" + url, {userContextId: 1});
-    yield BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+    let tab = BrowserTestUtils.addTab(gBrowser, "about:" + url, {userContextId: 1});
+    await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
     ok(true, "Done loading about:" + url);
 
-    yield BrowserTestUtils.removeTab(tab);
+    BrowserTestUtils.removeTab(tab);
   }
 });

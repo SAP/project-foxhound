@@ -12,12 +12,12 @@ function test() {
   var triggers = encodeURIComponent(JSON.stringify({
     "Unsigned XPI": {
       URL: TESTROOT + "amosigned.xpi",
-      Hash: "sha1:36ffb0acfd9c6e9682473aaebaab394d38b473c9",
-      toString() { return this.URL; }
-    }
+      Hash: "sha1:ee95834ad862245a9ef99ccecc2a857cadc16404",
+      toString() { return this.URL; },
+    },
   }));
-  gBrowser.selectedTab = gBrowser.addTab();
-  gBrowser.loadURI(TESTROOT + "installtrigger.html?" + triggers);
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
+  BrowserTestUtils.loadURI(gBrowser, TESTROOT + "installtrigger.html?" + triggers);
 }
 
 function install_ended(install, addon) {

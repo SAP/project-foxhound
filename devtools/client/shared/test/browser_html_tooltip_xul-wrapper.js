@@ -9,18 +9,7 @@
  */
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
-const TEST_URI = `data:text/xml;charset=UTF-8,<?xml version="1.0"?>
-  <?xml-stylesheet href="chrome://global/skin/global.css"?>
-  <?xml-stylesheet href="chrome://devtools/skin/tooltips.css"?>
-  <window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
-   title="Tooltip test">
-    <vbox flex="1">
-      <hbox id="box1" style="height: 50px">test1</hbox>
-      <hbox id="box2" style="height: 50px">test2</hbox>
-      <hbox id="box3" style="height: 50px">test3</hbox>
-      <hbox id="box4" style="height: 50px">test4</hbox>
-    </vbox>
-  </window>`;
+const TEST_URI = CHROME_URL_ROOT + "doc_html_tooltip-05.xul";
 
 const {HTMLTooltip} = require("devtools/client/shared/widgets/tooltip/HTMLTooltip");
 loadHelperScript("helper_html_tooltip.js");
@@ -31,49 +20,56 @@ loadHelperScript("helper_html_tooltip.js");
 const TOOLTIP_HEIGHT = 160;
 const TOOLTIP_WIDTH = 200;
 
-add_task(function* () {
+add_task(async function() {
   // Force the toolbox to be 200px high;
-  yield pushPref("devtools.toolbox.footer.height", 200);
+  await pushPref("devtools.toolbox.footer.height", 200);
 
-  let [, win, doc] = yield createHost("bottom", TEST_URI);
+  const [, win, doc] = await createHost("bottom", TEST_URI);
 
-  info("Resizing window to have some space below the window.");
-  let originalWidth = win.top.outerWidth;
-  let originalHeight = win.top.outerHeight;
-  win.top.resizeBy(0, -100);
+  info("Resize and move the window to have space below.");
+  const originalWidth = win.top.outerWidth;
+  const originalHeight = win.top.outerHeight;
+  win.top.resizeBy(-100, -200);
+  const originalTop = win.top.screenTop;
+  const originalLeft = win.top.screenLeft;
+  win.top.moveTo(100, 100);
+
+  registerCleanupFunction(() => {
+    info("Restore original window dimensions and position.");
+    win.top.resizeTo(originalWidth, originalHeight);
+    win.top.moveTo(originalTop, originalLeft);
+  });
 
   info("Create HTML tooltip");
-  let tooltip = new HTMLTooltip(doc, {useXulWrapper: true});
-  let div = doc.createElementNS(HTML_NS, "div");
+  const tooltip = new HTMLTooltip(doc, {useXulWrapper: true});
+  const div = doc.createElementNS(HTML_NS, "div");
   div.style.height = "200px";
   div.style.background = "red";
-  tooltip.setContent(div, {width: TOOLTIP_WIDTH, height: TOOLTIP_HEIGHT});
+  tooltip.panel.appendChild(div);
+  tooltip.setContentSize({width: TOOLTIP_WIDTH, height: TOOLTIP_HEIGHT});
 
-  let box1 = doc.getElementById("box1");
+  const box1 = doc.getElementById("box1");
 
   // Above box1: check that the tooltip can overflow onto the content page.
   info("Display the tooltip above box1.");
-  yield showTooltip(tooltip, box1, {position: "top"});
+  await showTooltip(tooltip, box1, {position: "top"});
   checkTooltip(tooltip, "top", TOOLTIP_HEIGHT);
-  yield hideTooltip(tooltip);
+  await hideTooltip(tooltip);
 
   // Below box1: check that the tooltip can overflow out of the browser window.
   info("Display the tooltip below box1.");
-  yield showTooltip(tooltip, box1, {position: "bottom"});
+  await showTooltip(tooltip, box1, {position: "bottom"});
   checkTooltip(tooltip, "bottom", TOOLTIP_HEIGHT);
-  yield hideTooltip(tooltip);
+  await hideTooltip(tooltip);
 
   is(tooltip.isVisible(), false, "Tooltip is not visible");
 
   tooltip.destroy();
-
-  info("Restore original window dimensions.");
-  win.top.resizeTo(originalWidth, originalHeight);
 });
 
 function checkTooltip(tooltip, position, height) {
   is(tooltip.position, position, "Actual tooltip position is " + position);
-  let rect = tooltip.container.getBoundingClientRect();
+  const rect = tooltip.container.getBoundingClientRect();
   is(rect.height, height, "Actual tooltip height is " + height);
   // Testing the actual left/top offsets is not relevant here as it is handled by the XUL
   // panel.

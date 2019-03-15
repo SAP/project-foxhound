@@ -8,12 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_PROCESSING_TRANSIENT_MOVING_MOMENTS_H_
-#define WEBRTC_MODULES_AUDIO_PROCESSING_TRANSIENT_MOVING_MOMENTS_H_
+#ifndef MODULES_AUDIO_PROCESSING_TRANSIENT_MOVING_MOMENTS_H_
+#define MODULES_AUDIO_PROCESSING_TRANSIENT_MOVING_MOMENTS_H_
+
+#include <stddef.h>
 
 #include <queue>
-
-#include "webrtc/base/scoped_ptr.h"
 
 namespace webrtc {
 
@@ -49,4 +49,4 @@ class MovingMoments {
 }  // namespace webrtc
 
 
-#endif  // WEBRTC_MODULES_AUDIO_PROCESSING_TRANSIENT_MOVING_MOMENTS_H_
+#endif  // MODULES_AUDIO_PROCESSING_TRANSIENT_MOVING_MOMENTS_H_

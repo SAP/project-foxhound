@@ -1,40 +1,38 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=99: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "VsyncBridgeParent.h"
+#include "mozilla/layers/CompositorBridgeParent.h"
 #include "mozilla/layers/CompositorThread.h"
+
+using mozilla::layers::CompositorBridgeParent;
+using mozilla::layers::CompositorThreadHolder;
 
 namespace mozilla {
 namespace gfx {
 
-RefPtr<VsyncBridgeParent>
-VsyncBridgeParent::Start(Endpoint<PVsyncBridgeParent>&& aEndpoint)
-{
+RefPtr<VsyncBridgeParent> VsyncBridgeParent::Start(
+    Endpoint<PVsyncBridgeParent>&& aEndpoint) {
   RefPtr<VsyncBridgeParent> parent = new VsyncBridgeParent();
 
   RefPtr<Runnable> task = NewRunnableMethod<Endpoint<PVsyncBridgeParent>&&>(
-    parent, &VsyncBridgeParent::Open, Move(aEndpoint));
+      "gfx::VsyncBridgeParent::Open", parent, &VsyncBridgeParent::Open,
+      std::move(aEndpoint));
   CompositorThreadHolder::Loop()->PostTask(task.forget());
 
   return parent;
 }
 
-VsyncBridgeParent::VsyncBridgeParent()
- : mOpen(false)
-{
+VsyncBridgeParent::VsyncBridgeParent() : mOpen(false) {
   MOZ_COUNT_CTOR(VsyncBridgeParent);
+  mCompositorThreadRef = CompositorThreadHolder::GetSingleton();
 }
 
-VsyncBridgeParent::~VsyncBridgeParent()
-{
-  MOZ_COUNT_DTOR(VsyncBridgeParent);
-}
+VsyncBridgeParent::~VsyncBridgeParent() { MOZ_COUNT_DTOR(VsyncBridgeParent); }
 
-void
-VsyncBridgeParent::Open(Endpoint<PVsyncBridgeParent>&& aEndpoint)
-{
+void VsyncBridgeParent::Open(Endpoint<PVsyncBridgeParent>&& aEndpoint) {
   if (!aEndpoint.Bind(this)) {
     // We can't recover from this.
     MOZ_CRASH("Failed to bind VsyncBridgeParent to endpoint");
@@ -43,45 +41,36 @@ VsyncBridgeParent::Open(Endpoint<PVsyncBridgeParent>&& aEndpoint)
   mOpen = true;
 }
 
-mozilla::ipc::IPCResult
-VsyncBridgeParent::RecvNotifyVsync(const TimeStamp& aTimeStamp, const uint64_t& aLayersId)
-{
-  CompositorBridgeParent::NotifyVsync(aTimeStamp, aLayersId);
+mozilla::ipc::IPCResult VsyncBridgeParent::RecvNotifyVsync(
+    const VsyncEvent& aVsync, const LayersId& aLayersId) {
+  CompositorBridgeParent::NotifyVsync(aVsync, aLayersId);
   return IPC_OK();
 }
 
-void
-VsyncBridgeParent::Shutdown()
-{
+void VsyncBridgeParent::Shutdown() {
   MessageLoop* ccloop = CompositorThreadHolder::Loop();
   if (MessageLoop::current() != ccloop) {
-    ccloop->PostTask(NewRunnableMethod(this, &VsyncBridgeParent::ShutdownImpl));
+    ccloop->PostTask(NewRunnableMethod("gfx::VsyncBridgeParent::ShutdownImpl",
+                                       this, &VsyncBridgeParent::ShutdownImpl));
     return;
   }
 
   ShutdownImpl();
 }
 
-void
-VsyncBridgeParent::ShutdownImpl()
-{
+void VsyncBridgeParent::ShutdownImpl() {
   if (mOpen) {
     Close();
     mOpen = false;
   }
 }
 
-void
-VsyncBridgeParent::ActorDestroy(ActorDestroyReason aWhy)
-{
+void VsyncBridgeParent::ActorDestroy(ActorDestroyReason aWhy) {
   mOpen = false;
+  mCompositorThreadRef = nullptr;
 }
 
-void
-VsyncBridgeParent::DeallocPVsyncBridgeParent()
-{
-  Release();
-}
+void VsyncBridgeParent::DeallocPVsyncBridgeParent() { Release(); }
 
-} // namespace gfx
-} // namespace mozilla
+}  // namespace gfx
+}  // namespace mozilla

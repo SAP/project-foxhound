@@ -3,17 +3,17 @@
 
 "use strict";
 
-add_task(function* () {
-  let tab = gBrowser.addTab("about:blank");
-  yield promiseBrowserLoaded(tab.linkedBrowser);
+add_task(async function() {
+  let tab = BrowserTestUtils.addTab(gBrowser, "about:blank");
+  await promiseBrowserLoaded(tab.linkedBrowser);
 
   is(tab.linkedBrowser.currentURI.spec, "about:blank",
      "we will be removing an about:blank tab");
 
   let r = `rand-${Math.random()}`;
-  ss.setTabValue(tab, "foobar", r);
+  ss.setCustomTabValue(tab, "foobar", r);
 
-  yield promiseRemoveTab(tab);
+  await promiseRemoveTabAndSessionState(tab);
   let closedTabData = ss.getClosedTabData(window);
   ok(!closedTabData.includes(r), "tab not stored in _closedTabs");
 });

@@ -8,38 +8,55 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/desktop_capture/cropped_desktop_frame.h"
+#include <memory>
+
+#include "modules/desktop_capture/cropped_desktop_frame.h"
+
+#include "rtc_base/checks.h"
+#include "rtc_base/constructormagic.h"
 
 namespace webrtc {
 
 // A DesktopFrame that is a sub-rect of another DesktopFrame.
 class CroppedDesktopFrame : public DesktopFrame {
  public:
-  CroppedDesktopFrame(DesktopFrame* frame, const DesktopRect& rect);
+  CroppedDesktopFrame(std::unique_ptr<DesktopFrame> frame,
+                      const DesktopRect& rect);
 
  private:
-  rtc::scoped_ptr<DesktopFrame> frame_;
+  const std::unique_ptr<DesktopFrame> frame_;
 
   RTC_DISALLOW_COPY_AND_ASSIGN(CroppedDesktopFrame);
 };
 
-DesktopFrame*
-CreateCroppedDesktopFrame(DesktopFrame* frame, const DesktopRect& rect) {
+std::unique_ptr<DesktopFrame> CreateCroppedDesktopFrame(
+    std::unique_ptr<DesktopFrame> frame,
+    const DesktopRect& rect) {
+  RTC_DCHECK(frame);
+
   if (!DesktopRect::MakeSize(frame->size()).ContainsRect(rect)) {
-    delete frame;
-    return NULL;
+    return nullptr;
   }
 
-  return new CroppedDesktopFrame(frame, rect);
+  if (frame->size().equals(rect.size())) {
+    return frame;
+  }
+
+  return std::unique_ptr<DesktopFrame>(
+      new CroppedDesktopFrame(std::move(frame), rect));
 }
 
-CroppedDesktopFrame::CroppedDesktopFrame(DesktopFrame* frame,
+CroppedDesktopFrame::CroppedDesktopFrame(std::unique_ptr<DesktopFrame> frame,
                                          const DesktopRect& rect)
     : DesktopFrame(rect.size(),
                    frame->stride(),
                    frame->GetFrameDataAtPos(rect.top_left()),
                    frame->shared_memory()),
-      frame_(frame) {
+      frame_(std::move(frame)) {
+  MoveFrameInfoFrom(frame_.get());
+  set_top_left(frame_->top_left().add(rect.top_left()));
+  mutable_updated_region()->IntersectWith(rect);
+  mutable_updated_region()->Translate(-rect.left(), -rect.top());
 }
 
 }  // namespace webrtc

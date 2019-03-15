@@ -43,7 +43,7 @@ registerCleanupFunction(() => {
  *   yield addTab(TEST_URI);
  *   let {toolbox, inspector} = yield openInspector();
  *   inspector.sidebar.select(viewId);
- *   let view = inspector[viewId].view;
+ *   let view = inspector.getPanel(viewId).view;
  *   yield selectNode("#test", inspector);
  *   yield someAsyncTestFunction(view);
  * });
@@ -79,10 +79,10 @@ registerCleanupFunction(() => {
  * script, so they can run on remote targets too.
  */
 var _addTab = addTab;
-addTab = function (url) {
+addTab = function(url) {
   return _addTab(url).then(tab => {
     info("Loading the helper frame script " + FRAME_SCRIPT_URL);
-    let browser = tab.linkedBrowser;
+    const browser = tab.linkedBrowser;
     browser.messageManager.loadFrameScript(FRAME_SCRIPT_URL, false);
     return tab;
   });
@@ -102,19 +102,17 @@ addTab = function (url) {
  * if the timeout is reached
  */
 function waitForSuccess(validatorFn, name = "untitled") {
-  let def = defer();
-
-  function wait(validator) {
-    if (validator()) {
-      ok(true, "Validator function " + name + " returned true");
-      def.resolve();
-    } else {
-      setTimeout(() => wait(validator), 200);
+  return new Promise(resolve => {
+    function wait(validator) {
+      if (validator()) {
+        ok(true, "Validator function " + name + " returned true");
+        resolve();
+      } else {
+        setTimeout(() => wait(validator), 200);
+      }
     }
-  }
-  wait(validatorFn);
-
-  return def.promise;
+    wait(validatorFn);
+  });
 }
 
 /**
@@ -126,13 +124,13 @@ function waitForSuccess(validatorFn, name = "untitled") {
  *        The NodeActor that will used to retrieve the dataURL for the
  *        font family tooltip contents.
  */
-var getFontFamilyDataURL = Task.async(function* (font, nodeFront) {
-  let fillStyle = getThemeColor("body-color");
+var getFontFamilyDataURL = async function(font, nodeFront) {
+  const fillStyle = getThemeColor("body-color");
 
-  let {data} = yield nodeFront.getFontFamilyDataURL(font, fillStyle);
-  let dataURL = yield data.string();
+  const {data} = await nodeFront.getFontFamilyDataURL(font, fillStyle);
+  const dataURL = await data.string();
   return dataURL;
-});
+};
 
 /* *********************************************
  * RULE-VIEW
@@ -158,27 +156,27 @@ var getFontFamilyDataURL = Task.async(function* (font, nodeFront) {
  *          - {String} value The expected style value
  * The style will be checked like so: getComputedStyle(element)[name] === value
  */
-var simulateColorPickerChange = Task.async(function* (ruleView, colorPicker,
+var simulateColorPickerChange = async function(ruleView, colorPicker,
     newRgba, expectedChange) {
-  let onRuleViewChanged = ruleView.once("ruleview-changed");
+  const onRuleViewChanged = ruleView.once("ruleview-changed");
   info("Getting the spectrum colorpicker object");
-  let spectrum = yield colorPicker.spectrum;
+  const spectrum = await colorPicker.spectrum;
   info("Setting the new color");
   spectrum.rgb = newRgba;
   info("Applying the change");
   spectrum.updateUI();
   spectrum.onChange();
   info("Waiting for rule-view to update");
-  yield onRuleViewChanged;
+  await onRuleViewChanged;
 
   if (expectedChange) {
     info("Waiting for the style to be applied on the page");
-    yield waitForSuccess(() => {
-      let {element, name, value} = expectedChange;
+    await waitForSuccess(() => {
+      const {element, name, value} = expectedChange;
       return content.getComputedStyle(element)[name] === value;
     }, "Color picker change applied on the page");
   }
-});
+};
 
 /* *********************************************
  * COMPUTED-VIEW
@@ -199,12 +197,12 @@ var simulateColorPickerChange = Task.async(function* (ruleView, colorPicker,
  */
 function getComputedViewProperty(view, name) {
   let prop;
-  for (let property of view.styleDocument.querySelectorAll(".property-view")) {
-    let nameSpan = property.querySelector(".property-name");
-    let valueSpan = property.querySelector(".property-value");
+  for (const property of view.styleDocument.querySelectorAll(".computed-property-view")) {
+    const nameSpan = property.querySelector(".computed-property-name");
+    const valueSpan = property.querySelector(".computed-property-value");
 
-    if (nameSpan.textContent === name) {
-      prop = {nameSpan: nameSpan, valueSpan: valueSpan};
+    if (nameSpan.firstChild.textContent === name) {
+      prop = {nameSpan, valueSpan};
       break;
     }
   }
@@ -222,6 +220,5 @@ function getComputedViewProperty(view, name) {
  * @return {String} The property value
  */
 function getComputedViewPropertyValue(view, name, propertyName) {
-  return getComputedViewProperty(view, name, propertyName)
-    .valueSpan.textContent;
+  return getComputedViewProperty(view, name, propertyName).valueSpan.textContent;
 }

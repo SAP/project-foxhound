@@ -13,21 +13,21 @@ Test all-tabs menu.
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css">
   <link rel="stylesheet" type="text/css" href="resource://devtools/client/themes/variables.css">
   <link rel="stylesheet" type="text/css" href="resource://devtools/client/themes/common.css">
-  <link rel="stylesheet" type="text/css" href="resource://devtools/client/themes/light-theme.css">
-  <link rel="stylesheet" type="text/css" href="resource://devtools/client/shared/components/tabs/tabs.css">
-  <link rel="stylesheet" type="text/css" href="resource://devtools/client/shared/components/tabs/tabbar.css">
+  <link rel="stylesheet" type="text/css" href="resource://devtools/client/shared/components/tabs/Tabs.css">
+  <link rel="stylesheet" type="text/css" href="resource://devtools/client/shared/components/tabs/TabBar.css">
   <link rel="stylesheet" type="text/css" href="resource://devtools/client/inspector/components/side-panel.css">
-  <link rel="stylesheet" type="text/css" href="resource://devtools/client/inspector/components/inspector-tab-panel.css">
+  <link rel="stylesheet" type="text/css" href="resource://devtools/client/inspector/components/InspectorTabPanel.css">
 </head>
 <body>
 <pre id="test">
 <script src="head.js" type="application/javascript"></script>
 <script type="application/javascript">
-window.onload = Task.async(function* () {
+window.onload = async function () {
   try {
     const ReactDOM = browserRequire("devtools/client/shared/vendor/react-dom");
-    const React = browserRequire("devtools/client/shared/vendor/react");
-    const Tabbar = React.createFactory(browserRequire("devtools/client/shared/components/tabs/tabbar"));
+    const { Component, createFactory } = browserRequire("devtools/client/shared/vendor/react");
+    const dom = require("devtools/client/shared/vendor/react-dom-factories");
+    const Tabbar = createFactory(browserRequire("devtools/client/shared/components/tabs/TabBar"));
 
     // Create container for the TabBar. Set smaller width
     // to ensure that tabs won't fit and the all-tabs menu
@@ -45,19 +45,21 @@ window.onload = Task.async(function* () {
 
     const tabbarReact = ReactDOM.render(tabbar, tabBarBox);
 
-    // Test panel.
-    let TabPanel = React.createFactory(React.createClass({
-      render: function () {
-        return React.DOM.div({}, "content");
+    class TabPanelClass extends Component {
+      render() {
+        return dom.div({}, "content");
       }
-    }));
+    }
+
+    // Test panel.
+    let TabPanel = createFactory(TabPanelClass);
 
     // Create a few panels.
-    yield addTabWithPanel(1);
-    yield addTabWithPanel(2);
-    yield addTabWithPanel(3);
-    yield addTabWithPanel(4);
-    yield addTabWithPanel(5);
+    await addTabWithPanel(1);
+    await addTabWithPanel(2);
+    await addTabWithPanel(3);
+    await addTabWithPanel(4);
+    await addTabWithPanel(5);
 
     // Make sure the all-tabs menu is there.
     const allTabsMenu = tabBarBox.querySelector(".all-tabs-menu");
@@ -74,7 +76,7 @@ window.onload = Task.async(function* () {
   } finally {
     SimpleTest.finish();
   }
-});
+};
 </script>
 </pre>
 </body>

@@ -5,6 +5,7 @@
  * found in the LICENSE file.
  */
 
+#include "SkArenaAlloc.h"
 #include "SkMatrix.h"
 #include "SkOpEdgeBuilder.h"
 #include "SkPathPriv.h"
@@ -12,10 +13,9 @@
 #include "SkPathOpsCommon.h"
 
 static bool one_contour(const SkPath& path) {
-    SkChunkAlloc allocator(256);
+    SkSTArenaAlloc<256> allocator;
     int verbCount = path.countVerbs();
-    uint8_t* verbs = (uint8_t*) allocator.alloc(sizeof(uint8_t) * verbCount,
-            SkChunkAlloc::kThrow_AllocFailType);
+    uint8_t* verbs = (uint8_t*) allocator.makeArrayDefault<uint8_t>(verbCount);
     (void) path.getVerbs(verbs, verbCount);
     for (int index = 1; index < verbCount; ++index) {
         if (verbs[index] == SkPath::kMove_Verb) {
@@ -25,7 +25,17 @@ static bool one_contour(const SkPath& path) {
     return true;
 }
 
-bool FixWinding(SkPath* path) {
+void SkOpBuilder::ReversePath(SkPath* path) {
+    SkPath temp;
+    SkPoint lastPt;
+    SkAssertResult(path->getLastPt(&lastPt));
+    temp.moveTo(lastPt);
+    temp.reversePathTo(*path);
+    temp.close();
+    *path = temp;
+}
+
+bool SkOpBuilder::FixWinding(SkPath* path) {
     SkPath::FillType fillType = path->getFillType();
     if (fillType == SkPath::kInverseEvenOdd_FillType) {
         fillType = SkPath::kInverseWinding_FillType;
@@ -35,14 +45,12 @@ bool FixWinding(SkPath* path) {
     SkPathPriv::FirstDirection dir;
     if (one_contour(*path) && SkPathPriv::CheapComputeFirstDirection(*path, &dir)) {
         if (dir != SkPathPriv::kCCW_FirstDirection) {
-            SkPath temp;
-            temp.reverseAddPath(*path);
-            *path = temp;
+            ReversePath(path);
         }
         path->setFillType(fillType);
         return true;
     }
-    SkChunkAlloc allocator(4096);
+    SkSTArenaAlloc<4096> allocator;
     SkOpContourHead contourHead;
     SkOpGlobalState globalState(&contourHead, &allocator  SkDEBUGPARAMS(false)
             SkDEBUGPARAMS(nullptr));
@@ -84,6 +92,9 @@ bool FixWinding(SkPath* path) {
     SkPathWriter woundPath(empty);
     SkOpContour* test = &contourHead;
     do {
+        if (!test->count()) {
+            continue;
+        }
         if (test->reversed()) {
             test->toReversePath(&woundPath);
         } else {
@@ -133,9 +144,7 @@ bool SkOpBuilder::resolve(SkPath* result) {
             if (firstDir == SkPathPriv::kUnknown_FirstDirection) {
                 firstDir = dir;
             } else if (firstDir != dir) {
-                SkPath temp;
-                temp.reverseAddPath(*test);
-                *test = temp;
+                ReversePath(test);
             }
             continue;
         }

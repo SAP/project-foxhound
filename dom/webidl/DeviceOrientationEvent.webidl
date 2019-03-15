@@ -4,7 +4,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-[Constructor(DOMString type, optional DeviceOrientationEventInit eventInitDict), LegacyEventInit]
+[Pref="device.sensors.orientation.enabled", Func="nsGlobalWindowInner::DeviceSensorsEnabled", Constructor(DOMString type, optional DeviceOrientationEventInit eventInitDict), LegacyEventInit]
 interface DeviceOrientationEvent : Event
 {
   readonly attribute double? alpha;
@@ -14,12 +14,12 @@ interface DeviceOrientationEvent : Event
 
   // initDeviceOrientationEvent is a Gecko specific deprecated method.
   void initDeviceOrientationEvent(DOMString type,
-                                  boolean canBubble,
-                                  boolean cancelable,
-                                  double? alpha,
-                                  double? beta,
-                                  double? gamma,
-                                  boolean absolute);
+                                  optional boolean canBubble = false,
+                                  optional boolean cancelable = false,
+                                  optional double? alpha = null,
+                                  optional double? beta = null,
+                                  optional double? gamma = null,
+                                  optional boolean absolute = false);
 };
 
 dictionary DeviceOrientationEventInit : EventInit

@@ -1,6 +1,3 @@
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-
 function run_test() {
   var tld = Cc["@mozilla.org/network/effective-tld-service;1"]
               .getService(Ci.nsIEffectiveTLDService);
@@ -20,9 +17,9 @@ function run_test() {
   tests.forEach(function(test) {
     try {
       var r = tld.getNextSubDomain(test.data);
-      do_check_eq(r, test.result);
+      Assert.equal(r, test.result);
     } catch (e) {
-      do_check_true(test.throw);
+      Assert.ok(test.throw);
     }
   });
 }

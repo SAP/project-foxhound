@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set shiftwidth=2 tabstop=8 autoindent cindent expandtab: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -47,9 +47,9 @@ namespace layout {
  */
 
 class ScrollVelocityQueue final {
-public:
-  explicit ScrollVelocityQueue(nsPresContext *aPresContext)
-    : mPresContext(aPresContext) {}
+ public:
+  explicit ScrollVelocityQueue(nsPresContext* aPresContext)
+      : mPresContext(aPresContext) {}
 
   // Sample() is to be called periodically when scroll movement occurs, to
   // record samples of scroll position used later by GetVelocity().
@@ -61,7 +61,8 @@ public:
 
   // Get scroll velocity averaged from recent movement, in appunits / second
   nsPoint GetVelocity();
-private:
+
+ private:
   // A queue of (duration, velocity) pairs; these are the historical average
   // velocities over the given durations.  Durations are in milliseconds,
   // velocities are in app units per second.
@@ -86,7 +87,7 @@ private:
   void TrimQueue();
 };
 
-} // namespace layout
-} // namespace mozilla
+}  // namespace layout
+}  // namespace mozilla
 
-#endif  /* !defined(ScrollVelocityQueue_h_) */
+#endif /* !defined(ScrollVelocityQueue_h_) */

@@ -11,6 +11,10 @@ style, script, symbol {
  display: none;
 }
 
+symbol:-moz-use-shadow-tree-root {
+  display: inline !important;
+}
+
 switch {
  -moz-binding: none !important;
 }
@@ -81,26 +85,9 @@ foreignObject {
   outline: 1px dotted;
 }
 
-/* nsDocumentViewer::CreateStyleSet doesn't load ua.css.
- * A few styles are common to html and SVG though
- * so we copy the rules below from that file.
- */
-
-/* Links */
-
-*|*:any-link {
-  cursor: pointer;
+/* Make SVG shapes unselectable to avoid triggering AccessibleCaret on tap.
+   <mesh> will be supported in bug 1238882. */
+circle, ellipse, line, mesh, path, polygon, polyline, rect {
+  -moz-user-select: none;
 }
 
-*|*:any-link:-moz-focusring {
-  /* Don't specify the outline-color, we should always use initial value. */
-  outline: 1px dotted;
-}
-
-/*
- * SVG-as-an-image needs this rule
- */
-*|*::-moz-viewport, *|*::-moz-viewport-scroll, *|*::-moz-canvas, *|*::-moz-scrolled-canvas {
-  display: block !important;
-  background-color: inherit;
-}

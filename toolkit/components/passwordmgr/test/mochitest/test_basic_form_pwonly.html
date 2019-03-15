@@ -12,10 +12,7 @@ Login Manager test: forms and logins without a username.
 <script>
 runChecksAfterCommonInit(() => startTest());
 runInParent(() => {
-  const { classes: Cc, interfaces: Ci, results: Cr, utils: Cu } = Components;
-  var pwmgr = Cc["@mozilla.org/login-manager;1"]
-              .getService(Ci.nsILoginManager);
-
+  const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm", {});
   var nsLoginInfo = Components.Constructor("@mozilla.org/login-manager/loginInfo;1", Ci.nsILoginInfo);
 
   // pwlogin1 uses a unique formSubmitURL, to check forms where no other logins
@@ -34,8 +31,8 @@ runInParent(() => {
                 "", "1234", "uname", "pword");
 
 
-  pwmgr.addLogin(pwlogin1);
-  pwmgr.addLogin(pwlogin2);
+  Services.logins.addLogin(pwlogin1);
+  Services.logins.addLogin(pwlogin2);
 });
 </script>
 <p id="display"></p>
@@ -186,28 +183,27 @@ password-only, the other is username+password)
 /** Test for Login Manager: password-only logins **/
 function startTest() {
 
-    checkForm(1, "1234");
-    checkForm(2, "1234", "");
-    checkForm(3, "1234", "", "");
-    checkUnmodifiedForm(4);
+  checkForm(1, "1234");
+  checkForm(2, "1234", "");
+  checkForm(3, "1234", "", "");
+  checkUnmodifiedForm(4);
 
-    checkForm(5, "", "1234");
-    checkForm(6, "someuser", "");
+  checkForm(5, "", "1234");
+  checkForm(6, "someuser", "");
 
-    checkForm(7, "testuser", "testpass");
-    checkForm(8, "someuser", "");
+  checkForm(7, "testuser", "testpass");
+  checkForm(8, "someuser", "");
 
-    checkForm(9, "", "1234");
-    checkForm(10, "", "1234");
-    checkForm(11, "", "1234");
+  checkForm(9, "", "1234");
+  checkForm(10, "", "1234");
+  checkForm(11, "", "1234");
 
-    checkUnmodifiedForm(12);
-    checkUnmodifiedForm(13);
+  checkUnmodifiedForm(12);
+  checkUnmodifiedForm(13);
 
-    SimpleTest.finish();
+  SimpleTest.finish();
 }
 </script>
 </pre>
 </body>
 </html>
-

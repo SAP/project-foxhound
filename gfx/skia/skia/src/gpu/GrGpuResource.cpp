@@ -7,6 +7,7 @@
 
 #include "GrGpuResource.h"
 #include "GrContext.h"
+#include "GrContextPriv.h"
 #include "GrResourceCache.h"
 #include "GrGpu.h"
 #include "GrGpuResourcePriv.h"
@@ -15,13 +16,12 @@
 static inline GrResourceCache* get_resource_cache(GrGpu* gpu) {
     SkASSERT(gpu);
     SkASSERT(gpu->getContext());
-    SkASSERT(gpu->getContext()->getResourceCache());
-    return gpu->getContext()->getResourceCache();
+    SkASSERT(gpu->getContext()->contextPriv().getResourceCache());
+    return gpu->getContext()->contextPriv().getResourceCache();
 }
 
 GrGpuResource::GrGpuResource(GrGpu* gpu)
-    : fExternalFlushCntWhenBecamePurgeable(0)
-    , fGpu(gpu)
+    : fGpu(gpu)
     , fGpuMemorySize(kInvalidGpuMemorySize)
     , fBudgeted(SkBudgeted::kNo)
     , fRefsWrappedObjects(false)
@@ -68,20 +68,37 @@ void GrGpuResource::abandon() {
 }
 
 void GrGpuResource::dumpMemoryStatistics(SkTraceMemoryDump* traceMemoryDump) const {
-    // Dump resource as "skia/gpu_resources/resource_#".
-    SkString dumpName("skia/gpu_resources/resource_");
-    dumpName.appendS32(this->uniqueID());
-
-    traceMemoryDump->dumpNumericValue(dumpName.c_str(), "size", "bytes", this->gpuMemorySize());
-
-    if (this->isPurgeable()) {
-        traceMemoryDump->dumpNumericValue(dumpName.c_str(), "purgeable_size", "bytes",
-                                          this->gpuMemorySize());
+    if (this->fRefsWrappedObjects && !traceMemoryDump->shouldDumpWrappedObjects()) {
+        return;
     }
 
-    // Call setMemoryBacking to allow sub-classes with implementation specific backings (such as GL
-    // objects) to provide additional information.
-    this->setMemoryBacking(traceMemoryDump, dumpName);
+    this->dumpMemoryStatisticsPriv(traceMemoryDump, this->getResourceName(),
+                                   this->getResourceType(), this->gpuMemorySize());
+}
+
+void GrGpuResource::dumpMemoryStatisticsPriv(SkTraceMemoryDump* traceMemoryDump,
+                                             const SkString& resourceName,
+                                             const char* type, size_t size) const {
+    const char* tag = "Scratch";
+    if (fUniqueKey.isValid()) {
+        tag = (fUniqueKey.tag() != nullptr) ? fUniqueKey.tag() : "Other";
+    }
+
+    traceMemoryDump->dumpNumericValue(resourceName.c_str(), "size", "bytes", size);
+    traceMemoryDump->dumpStringValue(resourceName.c_str(), "type", type);
+    traceMemoryDump->dumpStringValue(resourceName.c_str(), "category", tag);
+    if (this->isPurgeable()) {
+        traceMemoryDump->dumpNumericValue(resourceName.c_str(), "purgeable_size", "bytes", size);
+    }
+
+    this->setMemoryBacking(traceMemoryDump, resourceName);
+}
+
+SkString GrGpuResource::getResourceName() const {
+    // Dump resource as "skia/gpu_resources/resource_#".
+    SkString resourceName("skia/gpu_resources/resource_");
+    resourceName.appendU32(this->uniqueID().asUInt());
+    return resourceName;
 }
 
 const GrContext* GrGpuResource::getContext() const {
@@ -100,17 +117,6 @@ GrContext* GrGpuResource::getContext() {
     }
 }
 
-void GrGpuResource::didChangeGpuMemorySize() const {
-    if (this->wasDestroyed()) {
-        return;
-    }
-
-    size_t oldSize = fGpuMemorySize;
-    SkASSERT(kInvalidGpuMemorySize != oldSize);
-    fGpuMemorySize = kInvalidGpuMemorySize;
-    get_resource_cache(fGpu)->resourceAccess().didChangeGpuMemorySize(this, oldSize);
-}
-
 void GrGpuResource::removeUniqueKey() {
     if (this->wasDestroyed()) {
         return;
@@ -123,8 +129,11 @@ void GrGpuResource::setUniqueKey(const GrUniqueKey& key) {
     SkASSERT(this->internalHasRef());
     SkASSERT(key.isValid());
 
-    // Wrapped and uncached resources can never have a unique key.
-    if (SkBudgeted::kNo == this->resourcePriv().isBudgeted()) {
+    // Uncached resources can never have a unique key, unless they're wrapped resources. Wrapped
+    // resources are a special case: the unique keys give us a weak ref so that we can reuse the
+    // same resource (rather than re-wrapping). When a wrapped resource is no longer referenced,
+    // it will always be released - it is never converted to a scratch resource.
+    if (SkBudgeted::kNo == this->resourcePriv().isBudgeted() && !this->fRefsWrappedObjects) {
         return;
     }
 
@@ -158,8 +167,7 @@ bool GrGpuResource::notifyRefCountIsZero() const {
     }
 
     GrGpuResource* mutableThis = const_cast<GrGpuResource*>(this);
-    uint32_t flags =
-        GrResourceCache::ResourceAccess::kRefCntReachedZero_RefNotificationFlag;
+    uint32_t flags = GrResourceCache::ResourceAccess::kRefCntReachedZero_RefNotificationFlag;
     if (!this->internalHasPendingIO()) {
         flags |= GrResourceCache::ResourceAccess::kAllCntsReachedZero_RefNotificationFlag;
     }

@@ -20,20 +20,18 @@ var phases = { "phase1": "profile1",
 var bookmarks_initial = {
   "menu": [
     { uri: "http://www.google.com",
-      loadInSidebar: true,
       tags: ["google", "computers", "internet", "www"],
       changes: {
         title: "Google",
-        loadInSidebar: false,
         tags: ["google", "computers", "misc"],
-      }
+      },
     },
     { uri: "http://bugzilla.mozilla.org/show_bug.cgi?id=%s",
       title: "Bugzilla",
       keyword: "bz",
       changes: {
-        keyword: "bugzilla"
-      }
+        keyword: "bugzilla",
+      },
     },
     { folder: "foldera" },
     { uri: "http://www.mozilla.com" },
@@ -44,22 +42,15 @@ var bookmarks_initial = {
     { uri: "http://www.yahoo.com",
       title: "testing Yahoo",
       changes: {
-        location: "menu/folderb"
-      }
+        location: "menu/folderb",
+      },
     },
     { uri: "http://www.cnn.com",
       description: "This is a description of the site a at www.cnn.com",
       changes: {
         uri: "http://money.cnn.com",
         description: "new description",
-      }
-    },
-    { livemark: "Livemark1",
-      feedUri: "http://rss.wunderground.com/blog/JeffMasters/rss.xml",
-      siteUri: "http://www.wunderground.com/blog/JeffMasters/show.html",
-      changes: {
-        livemark: "LivemarkOne"
-      }
+      },
     },
   ],
   "menu/folderb": [
@@ -70,15 +61,15 @@ var bookmarks_initial = {
         title: "iPhone",
         location: "menu",
         position: "Google",
-        tags: []
-      }
-    }
+        tags: [],
+      },
+    },
   ],
   toolbar: [
     { uri: "place:queryType=0&sort=8&maxResults=10&beginTimeRef=1&beginTime=0",
-      title: "Visited Today"
-    }
-  ]
+      title: "Visited Today",
+    },
+  ],
 };
 
 // the state of bookmarks after the first 'modify' action has been performed
@@ -88,16 +79,15 @@ var bookmarks_after_first_modify = {
     { uri: "http://www.apple.com/iphone/",
       title: "iPhone",
       before: "Google",
-      tags: []
+      tags: [],
     },
     { uri: "http://www.google.com",
       title: "Google",
-      loadInSidebar: false,
-      tags: [ "google", "computers", "misc"]
+      tags: [ "google", "computers", "misc"],
     },
     { uri: "http://bugzilla.mozilla.org/show_bug.cgi?id=%s",
       title: "Bugzilla",
-      keyword: "bugzilla"
+      keyword: "bugzilla",
     },
     { folder: "foldera" },
     { uri: "http://www.mozilla.com" },
@@ -106,30 +96,26 @@ var bookmarks_after_first_modify = {
       changes: {
         location: "menu/foldera",
         folder: "Folder B",
-        description: "folder description"
-      }
-    }
+        description: "folder description",
+      },
+    },
   ],
   "menu/foldera": [
     { uri: "http://money.cnn.com",
       title: "http://www.cnn.com",
-      description: "new description"
+      description: "new description",
     },
-    { livemark: "LivemarkOne",
-      feedUri: "http://rss.wunderground.com/blog/JeffMasters/rss.xml",
-      siteUri: "http://www.wunderground.com/blog/JeffMasters/show.html"
-    }
   ],
   "menu/folderb": [
     { uri: "http://www.yahoo.com",
-      title: "testing Yahoo"
-    }
+      title: "testing Yahoo",
+    },
   ],
   "toolbar": [
     { uri: "place:queryType=0&sort=8&maxResults=10&beginTimeRef=1&beginTime=0",
-      title: "Visited Today"
-    }
-  ]
+      title: "Visited Today",
+    },
+  ],
 };
 
 // a list of bookmarks to delete during a 'delete' action
@@ -137,10 +123,9 @@ var bookmarks_to_delete = {
   "menu": [
     { uri: "http://www.google.com",
       title: "Google",
-      loadInSidebar: false,
-      tags: [ "google", "computers", "misc" ]
-    }
-  ]
+      tags: [ "google", "computers", "misc" ],
+    },
+  ],
 };
 
 // the state of bookmarks after the second 'modify' action has been performed
@@ -148,11 +133,11 @@ var bookmarks_to_delete = {
 var bookmarks_after_second_modify = {
   "menu": [
     { uri: "http://www.apple.com/iphone/",
-      title: "iPhone"
+      title: "iPhone",
     },
     { uri: "http://bugzilla.mozilla.org/show_bug.cgi?id=%s",
       title: "Bugzilla",
-      keyword: "bugzilla"
+      keyword: "bugzilla",
     },
     { folder: "foldera" },
     { uri: "http://www.mozilla.com" },
@@ -161,21 +146,17 @@ var bookmarks_after_second_modify = {
   "menu/foldera": [
     { uri: "http://money.cnn.com",
       title: "http://www.cnn.com",
-      description: "new description"
-    },
-    { livemark: "LivemarkOne",
-      feedUri: "http://rss.wunderground.com/blog/JeffMasters/rss.xml",
-      siteUri: "http://www.wunderground.com/blog/JeffMasters/show.html"
+      description: "new description",
     },
     { folder: "Folder B",
-      description: "folder description"
-    }
+      description: "folder description",
+    },
   ],
   "menu/foldera/Folder B": [
     { uri: "http://www.yahoo.com",
-      title: "testing Yahoo"
-    }
-  ]
+      title: "testing Yahoo",
+    },
+  ],
 };
 
 // a list of bookmarks which should not be present after the last
@@ -183,11 +164,11 @@ var bookmarks_after_second_modify = {
 var bookmarks_absent = {
   "menu": [
     { uri: "http://www.google.com",
-      title: "Google"
+      title: "Google",
     },
     { folder: "folderb" },
-    { folder: "Folder B" }
-  ]
+    { folder: "Folder B" },
+  ],
 };
 
 /*
@@ -201,22 +182,22 @@ var history_initial = [
     title: "Google",
     visits: [
       { type: 1, date: 0 },
-      { type: 2, date: -1 }
-    ]
+      { type: 2, date: -1 },
+    ],
   },
   { uri: "http://www.cnn.com/",
     title: "CNN",
     visits: [
       { type: 1, date: -1 },
-      { type: 2, date: -36 }
-    ]
+      { type: 2, date: -36 },
+    ],
   },
   { uri: "http://www.google.com/language_tools?hl=en",
     title: "Language Tools",
     visits: [
       { type: 1, date: 0 },
-      { type: 2, date: -40 }
-    ]
+      { type: 2, date: -40 },
+    ],
   },
   { uri: "http://www.mozilla.com/",
     title: "Mozilla",
@@ -224,9 +205,9 @@ var history_initial = [
       { type: 1, date: 0 },
       { type: 1, date: -1 },
       { type: 1, date: -20 },
-      { type: 2, date: -36 }
-    ]
-  }
+      { type: 2, date: -36 },
+    ],
+  },
 ];
 
 // a list of history entries to delete during a 'delete' action
@@ -234,7 +215,7 @@ var history_to_delete = [
   { uri: "http://www.cnn.com/" },
   { begin: -24,
     end: -1 },
-  { host: "www.google.com" }
+  { host: "www.google.com" },
 ];
 
 // the expected history entries after the first 'delete' action
@@ -243,13 +224,13 @@ var history_after_delete = [
     title: "Mozilla",
     visits: [
       { type: 1,
-        date: 0
+        date: 0,
       },
       { type: 2,
-        date: -36
-      }
-    ]
-  }
+        date: -36,
+      },
+    ],
+  },
 ];
 
 // history entries expected to not exist after a 'delete' action
@@ -258,46 +239,46 @@ var history_absent = [
     title: "Google",
     visits: [
       { type: 1,
-        date: 0
+        date: 0,
       },
       { type: 2,
-        date: -1
-      }
-    ]
+        date: -1,
+      },
+    ],
   },
   { uri: "http://www.cnn.com/",
     title: "CNN",
     visits: [
       { type: 1,
-        date: -1
+        date: -1,
       },
       { type: 2,
-        date: -36
-      }
-    ]
+        date: -36,
+      },
+    ],
   },
   { uri: "http://www.google.com/language_tools?hl=en",
     title: "Language Tools",
     visits: [
       { type: 1,
-        date: 0
+        date: 0,
       },
       { type: 2,
-        date: -40
-      }
-    ]
+        date: -40,
+      },
+    ],
   },
   { uri: "http://www.mozilla.com/",
     title: "Mozilla",
     visits: [
       { type: 1,
-        date: -1
+        date: -1,
       },
       { type: 1,
-        date: -20
-      }
-    ]
-  }
+        date: -20,
+      },
+    ],
+  },
 ];
 
 /*
@@ -314,14 +295,14 @@ var passwords_initial = [
     usernameField: "uname",
     passwordField: "pword",
     changes: {
-      password: "zippity-do-dah"
-    }
+      password: "zippity-do-dah",
+    },
   },
   { hostname: "http://www.example.com",
     realm: "login",
     username: "joe",
-    password: "secretlogin"
-  }
+    password: "secretlogin",
+  },
 ];
 
 // the expected state of passwords after the first 'modify' action
@@ -331,13 +312,13 @@ var passwords_after_first_modify = [
     username: "joe",
     password: "zippity-do-dah",
     usernameField: "uname",
-    passwordField: "pword"
+    passwordField: "pword",
   },
   { hostname: "http://www.example.com",
     realm: "login",
     username: "joe",
-    password: "secretlogin"
-  }
+    password: "secretlogin",
+  },
 ];
 
 // a list of passwords to delete during a 'delete' action
@@ -345,8 +326,8 @@ var passwords_to_delete = [
   { hostname: "http://www.example.com",
     realm: "login",
     username: "joe",
-    password: "secretlogin"
-  }
+    password: "secretlogin",
+  },
 ];
 
 // a list of passwords expected to be absent after 'delete' and 'modify'
@@ -355,8 +336,8 @@ var passwords_absent = [
   { hostname: "http://www.example.com",
     realm: "login",
     username: "joe",
-    password: "secretlogin"
-  }
+    password: "secretlogin",
+  },
 ];
 
 // the expected state of passwords after the seconds 'modify' action
@@ -366,8 +347,8 @@ var passwords_after_second_modify = [
     username: "joe",
     password: "zippity-do-dah",
     usernameField: "uname",
-    passwordField: "pword"
-  }
+    passwordField: "pword",
+  },
 ];
 
 /*
@@ -420,5 +401,3 @@ Phase("phase4", [
   [Passwords.verifyNot, passwords_absent],
   [History.verifyNot, history_absent],
 ]);
-
-

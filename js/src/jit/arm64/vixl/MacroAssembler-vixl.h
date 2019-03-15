@@ -142,6 +142,21 @@ enum BranchType {
 
 enum DiscardMoveMode { kDontDiscardForSameWReg, kDiscardForSameWReg };
 
+// The macro assembler supports moving automatically pre-shifted immediates for
+// arithmetic and logical instructions, and then applying a post shift in the
+// instruction to undo the modification, in order to reduce the code emitted for
+// an operation. For example:
+//
+//  Add(x0, x0, 0x1f7de) => movz x16, 0xfbef; add x0, x0, x16, lsl #1.
+//
+// This optimisation can be only partially applied when the stack pointer is an
+// operand or destination, so this enumeration is used to control the shift.
+enum PreShiftImmMode {
+  kNoShift,          // Don't pre-shift.
+  kLimitShiftForSP,  // Limit pre-shift for add/sub extend use.
+  kAnyShift          // Allow any pre-shift.
+};
+
 
 class MacroAssembler : public js::jit::Assembler {
  public:
@@ -272,7 +287,9 @@ class MacroAssembler : public js::jit::Assembler {
   // into dst is not necessarily equal to imm; it may have had a shifting
   // operation applied to it that will be subsequently undone by the shift
   // applied in the Operand.
-  Operand MoveImmediateForShiftedOp(const Register& dst, int64_t imm);
+  Operand MoveImmediateForShiftedOp(const Register& dst,
+		                    int64_t imm,
+				    PreShiftImmMode mode);
 
   // Synthesises the address represented by a MemOperand into a register.
   void ComputeAddress(const Register& dst, const MemOperand& mem_op);
@@ -639,8 +656,12 @@ class MacroAssembler : public js::jit::Assembler {
              const Register& rm,
              Condition cond) {
     VIXL_ASSERT(!rd.IsZero());
-    VIXL_ASSERT(!rn.IsZero());
-    VIXL_ASSERT(!rm.IsZero());
+    // The VIXL source code contains these assertions, but the AArch64 ISR
+    // explicitly permits the use of zero registers. CSET itself is defined
+    // in terms of CSINC with WZR/XZR.
+    //
+    // VIXL_ASSERT(!rn.IsZero());
+    // VIXL_ASSERT(!rm.IsZero());
     VIXL_ASSERT((cond != al) && (cond != nv));
     SingleEmissionCheckScope guard(this);
     csinc(rd, rn, rm, cond);
@@ -1106,6 +1127,10 @@ class MacroAssembler : public js::jit::Assembler {
     SingleEmissionCheckScope guard(this);
     nop();
   }
+  void Csdb() {
+    SingleEmissionCheckScope guard(this);
+    csdb();
+  }
   void Rbit(const Register& rd, const Register& rn) {
     VIXL_ASSERT(!rd.IsZero());
     VIXL_ASSERT(!rn.IsZero());
@@ -1463,9 +1488,25 @@ class MacroAssembler : public js::jit::Assembler {
 #ifdef JS_SIMULATOR_ARM64
     hlt(kUnreachableOpcode);
 #else
-    // Branch to 0 to generate a segfault.
-    // lr - kInstructionSize is the address of the offending instruction.
-    blr(xzr);
+    // A couple of strategies we can use here.  There are no unencoded
+    // instructions in the instruction set that are guaranteed to remain that
+    // way.  However there are some currently (as of 2018) unencoded
+    // instructions that are good candidates.
+    //
+    // Ideally, unencoded instructions should be non-destructive to the register
+    // state, and should be unencoded at all exception levels.
+    //
+    // At the trap the pc will hold the address of the offending instruction.
+
+    // Some candidates for unencoded instructions:
+    //
+    // 0xd4a00000 (essentially dcps0, a good one since it is nonsensical and may
+    //             remain unencoded in the future for that reason)
+    // 0x33000000 (bfm variant)
+    // 0xd67f0000 (br variant)
+    // 0x5ac00c00 (rbit variant)
+
+    Emit(0xd4a00000);		// "dcps0", also has 16-bit payload if needed
 #endif
   }
   void Uxtb(const Register& rd, const Register& rn) {
@@ -2224,12 +2265,8 @@ class MacroAssembler : public js::jit::Assembler {
     return sp_;
   }
 
-  const js::jit::Register getStackPointer() const {
-    int code = sp_.code();
-    if (code == kSPRegInternalCode) {
-      code = 31;
-    }
-    return js::jit::Register::FromCode(code);
+  const js::jit::RegisterOrSP getStackPointer() const {
+      return js::jit::RegisterOrSP(sp_.code());
   }
 
   CPURegList* TmpList() { return &tmp_list_; }

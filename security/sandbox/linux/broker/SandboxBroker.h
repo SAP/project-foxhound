@@ -35,16 +35,14 @@ class FileDescriptor;
 //
 // See also ../SandboxBrokerClient.h for the corresponding client.
 
-class SandboxBroker final
-  : private SandboxBrokerCommon
-  , public PlatformThread::Delegate
-{
+class SandboxBroker final : private SandboxBrokerCommon,
+                            public PlatformThread::Delegate {
  public:
   enum Perms {
-    MAY_ACCESS    = 1 << 0,
-    MAY_READ      = 1 << 1,
-    MAY_WRITE     = 1 << 2,
-    MAY_CREATE    = 1 << 3,
+    MAY_ACCESS = 1 << 0,
+    MAY_READ = 1 << 1,
+    MAY_WRITE = 1 << 2,
+    MAY_CREATE = 1 << 3,
     // This flag is for testing policy changes -- when the client is
     // used with the seccomp-bpf integration, an access to this file
     // will invoke a crash dump with the context of the syscall.
@@ -52,18 +50,30 @@ class SandboxBroker final
     CRASH_INSTEAD = 1 << 4,
     // Applies to everything below this path, including subdirs created
     // at runtime
-    RECURSIVE     = 1 << 5,
+    RECURSIVE = 1 << 5,
+    // Allow Unix-domain socket connections to a path
+    MAY_CONNECT = 1 << 6,
   };
   // Bitwise operations on enum values return ints, so just use int in
   // the hash table type (and below) to avoid cluttering code with casts.
-  typedef nsDataHashtable<nsCStringHashKey, int> PathMap;
+  typedef nsDataHashtable<nsCStringHashKey, int> PathPermissionMap;
 
   class Policy {
-    PathMap mMap;
-  public:
+    PathPermissionMap mMap;
+
+   public:
     Policy();
     Policy(const Policy& aOther);
     ~Policy();
+
+    // Add permissions from AddDir/AddDynamic rules to any rules that
+    // exist for their descendents, and remove any descendent rules
+    // made redundant by this process.
+    //
+    // Call this after adding rules and before using the policy to
+    // prevent the descendent rules from shadowing the ancestor rules
+    // and removing permissions that we expect the file to have.
+    void FixRecursivePermissions();
 
     enum AddCondition {
       AddIfExistsNow,
@@ -86,6 +96,10 @@ class SandboxBroker final
     void AddPrefix(int aPerms, const char* aPath);
     // Adds a file or dir (end with /) if it exists, and a prefix otherwhise.
     void AddDynamic(int aPerms, const char* aPath);
+    // Adds permissions on all ancestors of a path.  (This doesn't
+    // include the root directory, but if the path is given with a
+    // trailing slash it includes the path without the slash.)
+    void AddAncestors(const char* aPath, int aPerms = MAY_ACCESS);
     // Default: add file if it exists when creating policy or if we're
     // conferring permission to create it (log files, etc.).
     void AddPath(int aPerms, const char* aPath) {
@@ -96,7 +110,8 @@ class SandboxBroker final
     int Lookup(const char* aPath) const {
       return Lookup(nsDependentCString(aPath));
     }
-  private:
+
+   private:
     // ValidatePath checks |path| and returns true if these conditions are met
     // * Greater than 0 length
     // * Is an absolute path
@@ -109,9 +124,9 @@ class SandboxBroker final
   // Constructing a broker involves creating a socketpair and a
   // background thread to handle requests, so it can fail.  If this
   // returns nullptr, do not use the value of aClientFdOut.
-  static UniquePtr<SandboxBroker>
-    Create(UniquePtr<const Policy> aPolicy, int aChildPid,
-           ipc::FileDescriptor& aClientFdOut);
+  static UniquePtr<SandboxBroker> Create(UniquePtr<const Policy> aPolicy,
+                                         int aChildPid,
+                                         ipc::FileDescriptor& aClientFdOut);
   virtual ~SandboxBroker();
 
  private:
@@ -119,20 +134,32 @@ class SandboxBroker final
   int mFileDesc;
   const int mChildPid;
   const UniquePtr<const Policy> mPolicy;
+  nsCString mTempPath;
 
-  SandboxBroker(UniquePtr<const Policy> aPolicy, int aChildPid,
-                int& aClientFd);
+  typedef nsDataHashtable<nsCStringHashKey, nsCString> PathMap;
+  PathMap mSymlinkMap;
+
+  SandboxBroker(UniquePtr<const Policy> aPolicy, int aChildPid, int& aClientFd);
   void ThreadMain(void) override;
   void AuditPermissive(int aOp, int aFlags, int aPerms, const char* aPath);
   void AuditDenial(int aOp, int aFlags, int aPerms, const char* aPath);
   // Remap relative paths to absolute paths.
-  size_t ConvertToRealPath(char* aPath, size_t aBufSize, size_t aPathLen);
+  size_t ConvertRelativePath(char* aPath, size_t aBufSize, size_t aPathLen);
+  size_t RealPath(char* aPath, size_t aBufSize, size_t aPathLen);
+  // Remap references to /tmp and friends to the content process tempdir
+  size_t RemapTempDirs(char* aPath, size_t aBufSize, size_t aPathLen);
+  nsCString ReverseSymlinks(const nsACString& aPath);
+  // Retrieves permissions for the path the original symlink sits in.
+  int SymlinkPermissions(const char* aPath, const size_t aPathLen);
+  // In SandboxBrokerRealPath.cpp
+  char* SymlinkPath(const Policy* aPolicy, const char* __restrict aPath,
+                    char* __restrict aResolved, int* aPermission);
 
   // Holding a UniquePtr should disallow copying, but to make that explicit:
   SandboxBroker(const SandboxBroker&) = delete;
   void operator=(const SandboxBroker&) = delete;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_SandboxBroker_h
+#endif  // mozilla_SandboxBroker_h

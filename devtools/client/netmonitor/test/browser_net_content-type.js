@@ -7,31 +7,34 @@
  * Tests if different response content types are handled correctly.
  */
 
-add_task(function* () {
-  let { L10N } = require("devtools/client/netmonitor/utils/l10n");
-
-  let { tab, monitor } = yield initNetMonitor(CONTENT_TYPE_WITHOUT_CACHE_URL);
+add_task(async function() {
+  const { tab, monitor } = await initNetMonitor(CONTENT_TYPE_WITHOUT_CACHE_URL);
   info("Starting test... ");
 
-  let { document, gStore, windowRequire } = monitor.panelWin;
-  let Actions = windowRequire("devtools/client/netmonitor/actions/index");
-  let {
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
+  const { L10N } = windowRequire("devtools/client/netmonitor/src/utils/l10n");
+  const {
     getDisplayedRequests,
     getSortedRequests,
-  } = windowRequire("devtools/client/netmonitor/selectors/index");
+  } = windowRequire("devtools/client/netmonitor/src/selectors/index");
 
-  gStore.dispatch(Actions.batchEnable(false));
+  store.dispatch(Actions.batchEnable(false));
 
-  let wait = waitForNetworkEvents(monitor, CONTENT_TYPE_WITHOUT_CACHE_REQUESTS);
-  yield ContentTask.spawn(tab.linkedBrowser, {}, function* () {
-    content.wrappedJSObject.performRequests();
-  });
-  yield wait;
+  // Execute requests.
+  await performRequests(monitor, tab, CONTENT_TYPE_WITHOUT_CACHE_REQUESTS);
+
+  for (const requestItem of document.querySelectorAll(".request-list-item")) {
+    const requestsListStatus = requestItem.querySelector(".status-code");
+    requestItem.scrollIntoView();
+    EventUtils.sendMouseEvent({ type: "mouseover" }, requestsListStatus);
+    await waitUntil(() => requestsListStatus.title);
+  }
 
   verifyRequestItemTarget(
     document,
-    getDisplayedRequests(gStore.getState()),
-    getSortedRequests(gStore.getState()).get(0),
+    getDisplayedRequests(store.getState()),
+    getSortedRequests(store.getState()).get(0),
     "GET",
     CONTENT_TYPE_SJS + "?fmt=xml",
     {
@@ -40,13 +43,13 @@ add_task(function* () {
       type: "xml",
       fullMimeType: "text/xml; charset=utf-8",
       size: L10N.getFormatStrWithNumbers("networkMenu.sizeB", 42),
-      time: true
+      time: true,
     }
   );
   verifyRequestItemTarget(
     document,
-    getDisplayedRequests(gStore.getState()),
-    getSortedRequests(gStore.getState()).get(1),
+    getDisplayedRequests(store.getState()),
+    getSortedRequests(store.getState()).get(1),
     "GET",
     CONTENT_TYPE_SJS + "?fmt=css",
     {
@@ -55,13 +58,13 @@ add_task(function* () {
       type: "css",
       fullMimeType: "text/css; charset=utf-8",
       size: L10N.getFormatStrWithNumbers("networkMenu.sizeB", 34),
-      time: true
+      time: true,
     }
   );
   verifyRequestItemTarget(
     document,
-    getDisplayedRequests(gStore.getState()),
-    getSortedRequests(gStore.getState()).get(2),
+    getDisplayedRequests(store.getState()),
+    getSortedRequests(store.getState()).get(2),
     "GET",
     CONTENT_TYPE_SJS + "?fmt=js",
     {
@@ -70,13 +73,13 @@ add_task(function* () {
       type: "js",
       fullMimeType: "application/javascript; charset=utf-8",
       size: L10N.getFormatStrWithNumbers("networkMenu.sizeB", 34),
-      time: true
+      time: true,
     }
   );
   verifyRequestItemTarget(
     document,
-    getDisplayedRequests(gStore.getState()),
-    getSortedRequests(gStore.getState()).get(3),
+    getDisplayedRequests(store.getState()),
+    getSortedRequests(store.getState()).get(3),
     "GET",
     CONTENT_TYPE_SJS + "?fmt=json",
     {
@@ -85,13 +88,13 @@ add_task(function* () {
       type: "json",
       fullMimeType: "application/json; charset=utf-8",
       size: L10N.getFormatStrWithNumbers("networkMenu.sizeB", 29),
-      time: true
+      time: true,
     }
   );
   verifyRequestItemTarget(
     document,
-    getDisplayedRequests(gStore.getState()),
-    getSortedRequests(gStore.getState()).get(4),
+    getDisplayedRequests(store.getState()),
+    getSortedRequests(store.getState()).get(4),
     "GET",
     CONTENT_TYPE_SJS + "?fmt=bogus",
     {
@@ -100,13 +103,13 @@ add_task(function* () {
       type: "html",
       fullMimeType: "text/html; charset=utf-8",
       size: L10N.getFormatStrWithNumbers("networkMenu.sizeB", 24),
-      time: true
+      time: true,
     }
   );
   verifyRequestItemTarget(
     document,
-    getDisplayedRequests(gStore.getState()),
-    getSortedRequests(gStore.getState()).get(5),
+    getDisplayedRequests(store.getState()),
+    getSortedRequests(store.getState()).get(5),
     "GET",
     TEST_IMAGE,
     {
@@ -116,13 +119,13 @@ add_task(function* () {
       type: "png",
       fullMimeType: "image/png",
       size: L10N.getFormatStrWithNumbers("networkMenu.sizeB", 580),
-      time: true
+      time: true,
     }
   );
   verifyRequestItemTarget(
     document,
-    getDisplayedRequests(gStore.getState()),
-    getSortedRequests(gStore.getState()).get(6),
+    getDisplayedRequests(store.getState()),
+    getSortedRequests(store.getState()).get(6),
     "GET",
     CONTENT_TYPE_SJS + "?fmt=gzip",
     {
@@ -130,48 +133,48 @@ add_task(function* () {
       statusText: "OK",
       type: "plain",
       fullMimeType: "text/plain",
-      transferred: L10N.getFormatStrWithNumbers("networkMenu.sizeB", 73),
+      transferred: L10N.getFormatStrWithNumbers("networkMenu.sizeB", 324),
       size: L10N.getFormatStrWithNumbers("networkMenu.sizeKB", 10.73),
-      time: true
+      time: true,
     }
   );
 
-  yield selectIndexAndWaitForEditor(0);
-  yield testResponseTab("xml");
+  await selectIndexAndWaitForSourceEditor(monitor, 0);
+  await testResponseTab("xml");
 
-  yield selectIndexAndWaitForEditor(1);
-  yield testResponseTab("css");
+  await selectIndexAndWaitForSourceEditor(monitor, 1);
+  await testResponseTab("css");
 
-  yield selectIndexAndWaitForEditor(2);
-  yield testResponseTab("js");
+  await selectIndexAndWaitForSourceEditor(monitor, 2);
+  await testResponseTab("js");
 
-  yield selectIndexAndWaitForJSONView(3);
-  yield testResponseTab("json");
+  await selectIndexAndWaitForJSONView(3);
+  await testResponseTab("json");
 
-  yield selectIndexAndWaitForEditor(4);
-  yield testResponseTab("html");
+  await selectIndexAndWaitForSourceEditor(monitor, 4);
+  await testResponseTab("html");
 
-  yield selectIndexAndWaitForImageView(5);
-  yield testResponseTab("png");
+  await selectIndexAndWaitForImageView(5);
+  await testResponseTab("png");
 
-  yield selectIndexAndWaitForEditor(6);
-  yield testResponseTab("gzip");
+  await selectIndexAndWaitForSourceEditor(monitor, 6);
+  await testResponseTab("gzip");
 
-  yield teardown(monitor);
+  await teardown(monitor);
 
-  function* testResponseTab(type) {
-    let tabpanel = document.querySelector("#response-panel");
+  function testResponseTab(type) {
+    const tabpanel = document.querySelector("#response-panel");
 
     function checkVisibility(box) {
       is(tabpanel.querySelector(".response-error-header") === null,
         true,
         "The response error header doesn't display");
-      let jsonView = tabpanel.querySelector(".tree-section .treeLabel") || {};
+      const jsonView = tabpanel.querySelector(".tree-section .treeLabel") || {};
       is(jsonView.textContent !== L10N.getStr("jsonScopeName"),
         box != "json",
         "The response json view doesn't display");
-      is(tabpanel.querySelector(".editor-mount") === null,
-        box != "textarea",
+      is(tabpanel.querySelector(".CodeMirror-code") === null,
+        (box !== "textarea" && box !== "json"),
         "The response editor doesn't display");
       is(tabpanel.querySelector(".response-image-box") === null,
         box != "image",
@@ -182,8 +185,7 @@ add_task(function* () {
       case "xml": {
         checkVisibility("textarea");
 
-        let editor = tabpanel.querySelector(".editor-mount iframe");
-        let text = editor.contentDocument .querySelector(".CodeMirror-line").textContent;
+        const text = document.querySelector(".CodeMirror-line").textContent;
 
         is(text, "<label value='greeting'>Hello XML!</label>",
           "The text shown in the source editor is incorrect for the xml request.");
@@ -192,8 +194,7 @@ add_task(function* () {
       case "css": {
         checkVisibility("textarea");
 
-        let editor = tabpanel.querySelector(".editor-mount iframe");
-        let text = editor.contentDocument.querySelector(".CodeMirror-line").textContent;
+        const text = document.querySelector(".CodeMirror-line").textContent;
 
         is(text, "body:pre { content: 'Hello CSS!' }",
           "The text shown in the source editor is incorrect for the css request.");
@@ -202,8 +203,7 @@ add_task(function* () {
       case "js": {
         checkVisibility("textarea");
 
-        let editor = tabpanel.querySelector(".editor-mount iframe");
-        let text = editor.contentDocument.querySelector(".CodeMirror-line").textContent;
+        const text = document.querySelector(".CodeMirror-line").textContent;
 
         is(text, "function() { return 'Hello JS!'; }",
           "The text shown in the source editor is incorrect for the js request.");
@@ -212,8 +212,8 @@ add_task(function* () {
       case "json": {
         checkVisibility("json");
 
-        is(tabpanel.querySelectorAll(".tree-section").length, 1,
-          "There should be 1 tree sections displayed in this tabpanel.");
+        is(tabpanel.querySelectorAll(".tree-section").length, 2,
+          "There should be 2 tree sections displayed in this tabpanel.");
         is(tabpanel.querySelectorAll(".empty-notice").length, 0,
           "The empty notice should not be displayed in this tabpanel.");
 
@@ -221,22 +221,21 @@ add_task(function* () {
           L10N.getStr("jsonScopeName"),
           "The json view section doesn't have the correct title.");
 
-        let labels = tabpanel
+        const labels = tabpanel
           .querySelectorAll("tr:not(.tree-section) .treeLabelCell .treeLabel");
-        let values = tabpanel
+        const values = tabpanel
           .querySelectorAll("tr:not(.tree-section) .treeValueCell .objectBox");
 
         is(labels[0].textContent, "greeting",
           "The first json property name was incorrect.");
         is(values[0].textContent,
-          "\"Hello JSON!\"", "The first json property value was incorrect.");
+          "Hello JSON!", "The first json property value was incorrect.");
         break;
       }
       case "html": {
         checkVisibility("textarea");
 
-        let editor = document.querySelector(".editor-mount iframe");
-        let text = editor.contentDocument.querySelector(".CodeMirror-line").textContent;
+        const text = document.querySelector(".CodeMirror-line").textContent;
 
         is(text, "<blink>Not Found</blink>",
           "The text shown in the source editor is incorrect for the html request.");
@@ -245,7 +244,7 @@ add_task(function* () {
       case "png": {
         checkVisibility("image");
 
-        let [name, dimensions, mime] = tabpanel
+        const [name, dimensions, mime] = tabpanel
           .querySelectorAll(".response-image-box .tabpanel-summary-value");
 
         is(name.textContent, "test-image.png",
@@ -259,8 +258,7 @@ add_task(function* () {
       case "gzip": {
         checkVisibility("textarea");
 
-        let editor = tabpanel.querySelector(".editor-mount iframe");
-        let text = editor.contentDocument.querySelector(".CodeMirror-line").textContent;
+        const text = document.querySelector(".CodeMirror-line").textContent;
 
         is(text, new Array(1000).join("Hello gzip!"),
           "The text shown in the source editor is incorrect for the gzip request.");
@@ -269,33 +267,26 @@ add_task(function* () {
     }
   }
 
-  function* selectIndexAndWaitForEditor(index) {
-    let editor = document.querySelector("#response-panel .editor-mount iframe");
-    if (!editor) {
-      let waitDOM = waitForDOM(document, "#response-panel .editor-mount iframe");
-      gStore.dispatch(Actions.selectRequestByIndex(index));
-      document.querySelector("#response-tab").click();
-      [editor] = yield waitDOM;
-      yield once(editor, "DOMContentLoaded");
-    } else {
-      gStore.dispatch(Actions.selectRequestByIndex(index));
-    }
+  async function selectIndexAndWaitForJSONView(index) {
+    const onResponseContent = monitor.panelWin.api.once(EVENTS.RECEIVED_RESPONSE_CONTENT);
+    const tabpanel = document.querySelector("#response-panel");
+    const waitDOM = waitForDOM(tabpanel, ".treeTable");
+    store.dispatch(Actions.selectRequestByIndex(index));
+    await waitDOM;
+    await onResponseContent;
 
-    yield waitForDOM(editor.contentDocument, ".CodeMirror-code");
+    // Waiting for RECEIVED_RESPONSE_CONTENT isn't enough.
+    // DOM may not be fully updated yet and checkVisibility(json) may still fail.
+    await waitForTick();
   }
 
-  function* selectIndexAndWaitForJSONView(index) {
-    let tabpanel = document.querySelector("#response-panel");
-    let waitDOM = waitForDOM(tabpanel, ".treeTable");
-    gStore.dispatch(Actions.selectRequestByIndex(index));
-    yield waitDOM;
-  }
-
-  function* selectIndexAndWaitForImageView(index) {
-    let tabpanel = document.querySelector("#response-panel");
-    let waitDOM = waitForDOM(tabpanel, ".response-image");
-    gStore.dispatch(Actions.selectRequestByIndex(index));
-    let [imageNode] = yield waitDOM;
-    yield once(imageNode, "load");
+  async function selectIndexAndWaitForImageView(index) {
+    const onResponseContent = monitor.panelWin.api.once(EVENTS.RECEIVED_RESPONSE_CONTENT);
+    const tabpanel = document.querySelector("#response-panel");
+    const waitDOM = waitForDOM(tabpanel, ".response-image");
+    store.dispatch(Actions.selectRequestByIndex(index));
+    const [imageNode] = await waitDOM;
+    await once(imageNode, "load");
+    await onResponseContent;
   }
 });

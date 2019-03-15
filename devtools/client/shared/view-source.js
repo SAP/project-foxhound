@@ -4,11 +4,8 @@
 
 "use strict";
 
-var { Task } = require("devtools/shared/task");
-
 var Services = require("Services");
 var { gDevTools } = require("devtools/client/framework/devtools");
-var { getSourceText } = require("devtools/client/debugger/content/queries");
 
 /**
  * Tries to open a Stylesheet file in the Style Editor. If the file is not
@@ -23,19 +20,19 @@ var { getSourceText } = require("devtools/client/debugger/content/queries");
  *
  * @return {Promise<boolean>}
  */
-exports.viewSourceInStyleEditor = Task.async(function* (toolbox, sourceURL,
+exports.viewSourceInStyleEditor = async function(toolbox, sourceURL,
                                                         sourceLine) {
-  let panel = yield toolbox.loadTool("styleeditor");
+  const panel = await toolbox.loadTool("styleeditor");
 
   try {
-    yield panel.selectStyleSheet(sourceURL, sourceLine);
-    yield toolbox.selectTool("styleeditor");
+    await panel.selectStyleSheet(sourceURL, sourceLine);
+    await toolbox.selectTool("styleeditor");
     return true;
   } catch (e) {
     exports.viewSource(toolbox, sourceURL, sourceLine);
     return false;
   }
-});
+};
 
 /**
  * Tries to open a JavaScript file in the Debugger. If the file is not found,
@@ -47,80 +44,23 @@ exports.viewSourceInStyleEditor = Task.async(function* (toolbox, sourceURL,
  * @param {Toolbox} toolbox
  * @param {string} sourceURL
  * @param {number} sourceLine
+ * @param {string} [reason=unknown]
  *
  * @return {Promise<boolean>}
  */
-exports.viewSourceInDebugger = Task.async(function* (toolbox, sourceURL, sourceLine) {
-  // If the Debugger was already open, switch to it and try to show the
-  // source immediately. Otherwise, initialize it and wait for the sources
-  // to be added first.
-  let debuggerAlreadyOpen = toolbox.getPanel("jsdebugger");
-  let dbg = yield toolbox.loadTool("jsdebugger");
-
-  // New debugger frontend
-  if (Services.prefs.getBoolPref("devtools.debugger.new-debugger-frontend")) {
-    const source = dbg._selectors().getSourceByURL(dbg._getState(), sourceURL);
-    if (source) {
-      yield toolbox.selectTool("jsdebugger");
-      dbg._actions().selectSourceURL(sourceURL, { line: sourceLine });
-      return true;
-    }
-
-    exports.viewSource(toolbox, sourceURL, sourceLine);
-    return false;
-  }
-
-  const win = dbg.panelWin;
-
-  // Old debugger frontend
-  if (!debuggerAlreadyOpen) {
-    yield win.DebuggerController.waitForSourcesLoaded();
-  }
-
-  let { DebuggerView } = win;
-  let { Sources } = DebuggerView;
-
-  let item = Sources.getItemForAttachment(a => a.source.url === sourceURL);
-  if (item) {
-    yield toolbox.selectTool("jsdebugger");
-
-    // Determine if the source has already finished loading. There's two cases
-    // in which we need to wait for the source to be shown:
-    // 1) The requested source is not yet selected and will be shown once it is
-    //    selected and loaded
-    // 2) The requested source is selected BUT the source text is still loading.
-    const { actor } = item.attachment.source;
-    const state = win.DebuggerController.getState();
-
-    // (1) Is the source selected?
-    const selected = state.sources.selectedSource;
-    const isSelected = selected === actor;
-
-    // (2) Has the source text finished loading?
-    let isLoading = false;
-
-    // Only check if the source is loading when the source is already selected.
-    // If the source is not selected, we will select it below and the already
-    // pending load will be cancelled and this check is useless.
-    if (isSelected) {
-      const sourceTextInfo = getSourceText(state, selected);
-      isLoading = sourceTextInfo && sourceTextInfo.loading;
-    }
-
-    // Select the requested source
-    DebuggerView.setEditorLocation(actor, sourceLine, { noDebug: true });
-
-    // Wait for it to load
-    if (!isSelected || isLoading) {
-      yield win.DebuggerController.waitForSourceShown(sourceURL);
-    }
+exports.viewSourceInDebugger = async function(toolbox, sourceURL, sourceLine,
+                                              reason = "unknown") {
+  const dbg = await toolbox.loadTool("jsdebugger");
+  const source = dbg.getSource(sourceURL);
+  if (source) {
+    await toolbox.selectTool("jsdebugger", reason);
+    dbg.selectSource(sourceURL, sourceLine);
     return true;
   }
 
-  // If not found, still attempt to open in View Source
   exports.viewSource(toolbox, sourceURL, sourceLine);
   return false;
-});
+};
 
 /**
  * Tries to open a JavaScript file in the corresponding Scratchpad.
@@ -130,13 +70,9 @@ exports.viewSourceInDebugger = Task.async(function* (toolbox, sourceURL, sourceL
  *
  * @return {Promise}
  */
-exports.viewSourceInScratchpad = Task.async(function* (sourceURL, sourceLine) {
+exports.viewSourceInScratchpad = async function(sourceURL, sourceLine) {
   // Check for matching top level scratchpad window.
-  let wins = Services.wm.getEnumerator("devtools:scratchpad");
-
-  while (wins.hasMoreElements()) {
-    let win = wins.getNext();
-
+  for (const win of Services.wm.getEnumerator("devtools:scratchpad")) {
     if (!win.closed && win.Scratchpad.uniqueName === sourceURL) {
       win.focus();
       win.Scratchpad.editor.setCursor({ line: sourceLine, ch: 0 });
@@ -145,10 +81,10 @@ exports.viewSourceInScratchpad = Task.async(function* (sourceURL, sourceLine) {
   }
 
   // For scratchpads within toolbox
-  for (let [, toolbox] of gDevTools) {
-    let scratchpadPanel = toolbox.getPanel("scratchpad");
+  for (const toolbox of gDevTools.getToolboxes()) {
+    const scratchpadPanel = toolbox.getPanel("scratchpad");
     if (scratchpadPanel) {
-      let { scratchpad } = scratchpadPanel;
+      const { scratchpad } = scratchpadPanel;
       if (scratchpad.uniqueName === sourceURL) {
         toolbox.selectTool("scratchpad");
         toolbox.raise();
@@ -158,7 +94,7 @@ exports.viewSourceInScratchpad = Task.async(function* (sourceURL, sourceLine) {
       }
     }
   }
-});
+};
 
 /**
  * Open a link in Firefox's View Source.
@@ -169,17 +105,10 @@ exports.viewSourceInScratchpad = Task.async(function* (sourceURL, sourceLine) {
  *
  * @return {Promise}
  */
-exports.viewSource = Task.async(function* (toolbox, sourceURL, sourceLine) {
-  // Attempt to access view source via a browser first, which may display it in
-  // a tab, if enabled.
-  let browserWin = Services.wm.getMostRecentWindow(gDevTools.chromeWindowType);
-  if (browserWin && browserWin.BrowserViewSourceOfDocument) {
-    return browserWin.BrowserViewSourceOfDocument({
-      URL: sourceURL,
-      lineNumber: sourceLine
-    });
-  }
-  let utils = toolbox.gViewSourceUtils;
-  utils.viewSource(sourceURL, null, toolbox.doc, sourceLine || 0);
-  return null;
-});
+exports.viewSource = async function(toolbox, sourceURL, sourceLine) {
+  const utils = toolbox.gViewSourceUtils;
+  utils.viewSource({
+    URL: sourceURL,
+    lineNumber: sourceLine || 0,
+  });
+};

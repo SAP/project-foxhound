@@ -1,4 +1,4 @@
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var testpath = "/bug1054739";
 
@@ -22,6 +22,8 @@ function run_test() {
     ["de,en-us,en",     "de,en-US;q=0.7,en;q=0.3"],
     ["en-US, en",       "en-US,en;q=0.5"],
     ["EN-US;q=0.2, EN", "en-US,en;q=0.5"],
+    ["en ;q=0.8, de  ", "en,de;q=0.5"],
+    [",en,",            "en"],
   ];
 
   for (let i = 0; i < testData.length; i++) {

@@ -12,53 +12,55 @@
  */
 
 interface nsIEditor;
-interface MozControllers;
+interface XULControllers;
 
 [HTMLConstructor]
 interface HTMLTextAreaElement : HTMLElement {
-           // attribute DOMString autocomplete;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
+           attribute DOMString autocomplete;
+  [CEReactions, SetterThrows, Pure]
            attribute boolean autofocus;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute unsigned long cols;
            // attribute DOMString dirName;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute boolean disabled;
   [Pure]
   readonly attribute HTMLFormElement? form;
            // attribute DOMString inputMode;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute long maxLength;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute long minLength;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString name;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString placeholder;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute boolean readOnly;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute boolean required;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute unsigned long rows;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString wrap;
 
   [Constant]
   readonly attribute DOMString type;
-  [SetterThrows, Pure]
+  [CEReactions, Throws, Pure]
            attribute DOMString defaultValue;
-  [TreatNullAs=EmptyString] attribute DOMString value;
+  [CEReactions, SetterThrows, TreatNullAs=EmptyString] attribute DOMString value;
   readonly attribute unsigned long textLength;
 
   readonly attribute boolean willValidate;
   readonly attribute ValidityState validity;
+  [Throws]
   readonly attribute DOMString validationMessage;
   boolean checkValidity();
   boolean reportValidity();
   void setCustomValidity(DOMString error);
 
-  // readonly attribute NodeList labels;
+  readonly attribute NodeList labels;
 
   void select();
   [Throws]
@@ -77,24 +79,15 @@ interface HTMLTextAreaElement : HTMLElement {
 };
 
 partial interface HTMLTextAreaElement {
-  // Mirrored chrome-only Mozilla extensions to nsIDOMHTMLTextAreaElement.
-  // Please make sure to update this list of nsIDOMHTMLTextAreaElement changes.
+  // Chrome-only Mozilla extensions
 
   [Throws, ChromeOnly]
-  readonly attribute MozControllers controllers;
+  readonly attribute XULControllers controllers;
 };
 
+HTMLTextAreaElement implements MozEditableElement;
+
 partial interface HTMLTextAreaElement {
-  // Mirrored chrome-only nsIDOMNSEditableElement methods.  Please make sure
-  // to update this list if nsIDOMNSEditableElement changes.
-
   [ChromeOnly]
-  readonly attribute nsIEditor? editor;
-
-  // This is similar to set .value on nsIDOMInput/TextAreaElements, but
-  // handling of the value change is closer to the normal user input, so
-  // 'change' event for example will be dispatched when focusing out the
-  // element.
-  [ChromeOnly]
-  void setUserInput(DOMString input);
+  attribute DOMString previewValue;
 };

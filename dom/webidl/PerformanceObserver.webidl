@@ -9,15 +9,17 @@
 
 dictionary PerformanceObserverInit {
   required sequence<DOMString> entryTypes;
+  boolean buffered = false;
 };
 
-callback PerformanceObserverCallback = void (PerformanceObserverEntryList entries, PerformanceObserver observer);
+callback PerformanceObserverCallback = void (PerformanceObserverEntryList entries,
+                                             PerformanceObserver observer);
 
-[Func="Performance::IsObserverEnabled",
+[Func="mozilla::dom::DOMPrefs::dom_enable_performance_observer",
  Constructor(PerformanceObserverCallback callback),
  Exposed=(Window,Worker)]
 interface PerformanceObserver {
-  [Throws]
-  void observe(PerformanceObserverInit options);
-  void disconnect();
+    void observe(PerformanceObserverInit options);
+    void disconnect();
+    PerformanceEntryList takeRecords();
 };

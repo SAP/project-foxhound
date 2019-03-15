@@ -107,46 +107,41 @@ function SourceBufferListToString(sbl)
   return "SourceBufferList[" + sbl.map(SourceBufferToString).join(", ") + "]";
 }
 
+function GenerateClearKeyLicense(licenseRequest, keyStore)
+{
+  var msgStr = ArrayBufferToString(licenseRequest);
+  var msg = JSON.parse(msgStr);
+
+  var keys = [];
+  for (var i = 0; i < msg.kids.length; i++) {
+    var id64 = msg.kids[i];
+    var idHex = Base64ToHex(msg.kids[i]).toLowerCase();
+    var key = keyStore[idHex];
+
+    if (key) {
+      keys.push({
+        "kty": "oct",
+        "kid": id64,
+        "k": HexToBase64(key)
+      });
+    }
+  }
+
+  return new TextEncoder().encode(JSON.stringify({
+    "keys" : keys,
+    "type" : msg.type || "temporary"
+  }));
+}
+
 function UpdateSessionFunc(test, token, sessionType, resolve, reject) {
   return function(ev) {
-    var msgStr = ArrayBufferToString(ev.message);
-    var msg = JSON.parse(msgStr);
-
-    Log(token, "got message from CDM: " + msgStr);
-    is(msg.type, sessionType, TimeStamp(token) + " key session type should match");
-    ok(msg.kids, TimeStamp(token) + " message event should contain key ID array");
-
-    var outKeys = [];
-
-    for (var i = 0; i < msg.kids.length; i++) {
-      var id64 = msg.kids[i];
-      var idHex = Base64ToHex(msg.kids[i]).toLowerCase();
-      var key = test.keys[idHex];
-
-      if (key) {
-        Log(token, "found key " + key + " for key id " + idHex);
-        outKeys.push({
-          "kty":"oct",
-          "kid":id64,
-          "k":HexToBase64(key)
-        });
-      } else {
-        bail(token + " couldn't find key for key id " + idHex)("No such key");
-      }
-    }
-
-    var update = JSON.stringify({
-      "keys" : outKeys,
-      "type" : msg.type
-    });
-    Log(token, "sending update message to CDM: " + update);
-
-    ev.target.update(StringToArrayBuffer(update)).then(function() {
+    var license = GenerateClearKeyLicense(ev.message, test.keys);
+    Log(token, "sending update message to CDM: " + (new TextDecoder().decode(license)));
+    ev.target.update(license).then(function() {
       Log(token, "MediaKeySession update ok!");
       resolve(ev.target);
     }).catch(function(reason) {
-      bail(token + " MediaKeySession update failed")(reason);
-      reject();
+      reject(`${token} MediaKeySession update failed: ${reason}`);
     });
   }
 }
@@ -154,13 +149,13 @@ function UpdateSessionFunc(test, token, sessionType, resolve, reject) {
 function MaybeCrossOriginURI(test, uri)
 {
   if (test.crossOrigin) {
-    return "http://test2.mochi.test:8888/tests/dom/media/test/allowed.sjs?" + uri;
+    return "https://example.com:443/tests/dom/media/test/allowed.sjs?" + uri;
   } else {
     return uri;
   }
 }
 
-function AppendTrack(test, ms, track, token, loadParams)
+function AppendTrack(test, ms, track, token)
 {
   return new Promise(function(resolve, reject) {
     var sb;
@@ -168,10 +163,6 @@ function AppendTrack(test, ms, track, token, loadParams)
     var resolved = false;
     var fragments = track.fragments;
     var fragmentFile;
-
-    if (loadParams && loadParams.onlyLoadFirstFragments) {
-      fragments = fragments.slice(0, loadParams.onlyLoadFirstFragments);
-    }
 
     function addNextFragment() {
       if (curFragment >= fragments.length) {
@@ -192,8 +183,12 @@ function AppendTrack(test, ms, track, token, loadParams)
         sb.appendBuffer(new Uint8Array(req.response));
       });
 
-      req.addEventListener("error", function(){info(token + " error fetching " + fragmentFile);});
-      req.addEventListener("abort", function(){info(token + " aborted fetching " + fragmentFile);});
+      req.addEventListener("error", function() {
+        reject(`${token} - ${track.name}: error fetching ${fragmentFile}`);
+      });
+      req.addEventListener("abort", function() {
+        reject(`${token} - ${track.name}: aborted fetching ${fragmentFile}`);
+      });
 
       Log(token, track.name + ": addNextFragment() fetching next fragment " + fragmentFile);
       req.send(null);
@@ -202,21 +197,6 @@ function AppendTrack(test, ms, track, token, loadParams)
     Log(token, track.name + ": addSourceBuffer(" + track.type + ")");
     sb = ms.addSourceBuffer(track.type);
     sb.addEventListener("updateend", function() {
-      if (ms.readyState == "ended") {
-        /* We can get another updateevent as a result of calling ms.endOfStream() if
-           the highest end time of our source buffers is different from that of the
-           media source duration. Due to bug 1065207 this can happen because of
-           inaccuracies in the frame duration calculations. Check if we are already
-           "ended" and ignore the update event */
-        Log(token, track.name + ": updateend when readyState already 'ended'");
-        if (!resolved) {
-          // Needed if decoder knows this was the last fragment and ended by itself.
-          Log(token, track.name + ": but promise not resolved yet -> end of track");
-          resolve();
-          resolved = true;
-        }
-        return;
-      }
       Log(token, track.name + ": updateend for " + fragmentFile + ", " + SourceBufferToString(sb));
       addNextFragment();
     });
@@ -227,7 +207,7 @@ function AppendTrack(test, ms, track, token, loadParams)
 
 //Returns a promise that is resolved when the media element is ready to have
 //its play() function called; when it's loaded MSE fragments.
-function LoadTest(test, elem, token, loadParams)
+function LoadTest(test, elem, token, endOfStream = true)
 {
   if (!test.tracks) {
     ok(false, token + " test does not have a tracks list");
@@ -236,31 +216,21 @@ function LoadTest(test, elem, token, loadParams)
 
   var ms = new MediaSource();
   elem.src = URL.createObjectURL(ms);
+  elem.crossOrigin = test.crossOrigin || false;
 
   return new Promise(function (resolve, reject) {
-    var firstOpen = true;
     ms.addEventListener("sourceopen", function () {
-      if (!firstOpen) {
-        Log(token, "sourceopen again?");
-        return;
-      }
-
-      firstOpen = false;
       Log(token, "sourceopen");
-      return Promise.all(test.tracks.map(function(track) {
-        return AppendTrack(test, ms, track, token, loadParams);
+      Promise.all(test.tracks.map(function(track) {
+        return AppendTrack(test, ms, track, token);
       })).then(function() {
-        if (loadParams && loadParams.noEndOfStream) {
-          Log(token, "Tracks loaded");
-        } else {
-          Log(token, "Tracks loaded, calling MediaSource.endOfStream()");
+        Log(token, "Tracks loaded, calling MediaSource.endOfStream()");
+        if (endOfStream) {
           ms.endOfStream();
         }
         resolve();
-      }).catch(function() {
-        Log(token, "error while loading tracks");
-      });
-    })
+      }).catch(reject);
+    }, {once: true});
   });
 }
 
@@ -272,192 +242,166 @@ function EMEPromise() {
   });
 }
 
-// Finish |token| when all promises are resolved or any one promise is
-// rejected. It also clean up the media element to release resources.
-function EMEPromiseAll(v, token, promises) {
-  Promise.all(promises).then(values => {
-    removeNodeAndSource(v);
-    manager.finished(token);
-  }, reason => {
-    ok(false, TimeStamp(token) + " - Error during load: " + reason);
-    removeNodeAndSource(v);
-    manager.finished(token);
-  });
-}
-
-function SetupEME(test, token, params)
-{
-  var v = document.createElement("video");
-  v.crossOrigin = test.crossOrigin || false;
-  v.sessions = [];
-
-  v.closeSessions = function() {
-    return Promise.all(v.sessions.map(s => s.close().then(() => s.closed))).then(
-      () => {
-        v.setMediaKeys(null);
-        if (v.parentNode) {
-          v.remove();
-        }
-        v.onerror = null;
-        v.src = null;
-      });
-  };
-
-  // Log events dispatched to make debugging easier...
-  [ "canplay", "canplaythrough", "ended", "error", "loadeddata",
-    "loadedmetadata", "loadstart", "pause", "play", "playing", "progress",
-    "stalled", "suspend", "waiting", "waitingforkey",
-  ].forEach(function (e) {
-    v.addEventListener(e, function(event) {
-      Log(token, "" + e);
-    });
-  });
-
-  // Finish the test when error is encountered.
-  v.onerror = bail(token + " got error event");
-
-  var onSetKeysFail = (params && params.onSetKeysFail)
-    ? params.onSetKeysFail
-    : bail(token + " Failed to set MediaKeys on <video> element");
-
-  // null: No session management in progress, just go ahead and update the session.
-  // [...]: Session management in progress, add {initDataType, initData} to
-  //        this queue to get it processed when possible.
-  var initDataQueue = [];
-  function pushInitData(ev)
-  {
-    if (initDataQueue === null) {
-      initDataQueue = [];
-    }
-    initDataQueue.push(ev);
-    if (params && params.onInitDataQueued) {
-      params.onInitDataQueued(ev, ev.initDataType, StringToHex(ArrayBufferToString(ev.initData)));
-    }
-  }
-
-  function processInitDataQueue()
-  {
-    function maybeResolveInitDataPromise() {
-      if (params && params.initDataPromise) {
-        params.initDataPromise.resolve();
-      }
-    }
-    if (initDataQueue === null) {
-      maybeResolveInitDataPromise();
-      return;
-    }
-    // If we're processed all our init data null the queue to indicate encrypted event handled.
-    if (initDataQueue.length === 0) {
-      initDataQueue = null;
-      maybeResolveInitDataPromise();
-      return;
-    }
-    var ev = initDataQueue.shift();
-
-    var sessionType = (params && params.sessionType) ? params.sessionType : "temporary";
-    Log(token, "createSession(" + sessionType + ") for (" + ev.initDataType + ", " + StringToHex(ArrayBufferToString(ev.initData)) + ")");
-    var session = v.mediaKeys.createSession(sessionType);
-    if (params && params.onsessioncreated) {
-      params.onsessioncreated(session);
-    }
-    v.sessions.push(session);
-
-    return new Promise(function (resolve, reject) {
-      session.addEventListener("message", UpdateSessionFunc(test, token, sessionType, resolve, reject));
-      Log(token, "session[" + session.sessionId + "].generateRequest(" + ev.initDataType + ", " + StringToHex(ArrayBufferToString(ev.initData)) + ")");
-      session.generateRequest(ev.initDataType, ev.initData).catch(function(reason) {
-        // Reject the promise if generateRequest() failed. Otherwise it will
-        // be resolve in UpdateSessionFunc().
-        bail(token + ": session[" + session.sessionId + "].generateRequest(" + ev.initDataType + ", " + StringToHex(ArrayBufferToString(ev.initData)) + ") failed")(reason);
-        reject();
-      });
-    })
-
-    .then(function(aSession) {
-      Log(token, "session[" + session.sessionId + "].generateRequest(" + ev.initDataType + ", " + StringToHex(ArrayBufferToString(ev.initData)) + ") succeeded");
-      if (params && params.onsessionupdated) {
-        params.onsessionupdated(aSession);
-      }
-      processInitDataQueue();
-    });
-  }
+/*
+ * Create a new MediaKeys object.
+ * Return a promise which will be resolved with a new MediaKeys object,
+ * or will be rejected with a string that describes the failure.
+ */
+function CreateMediaKeys(v, test, token) {
+  let p = new EMEPromise;
 
   function streamType(type) {
     var x = test.tracks.find(o => o.name == type);
     return x ? x.type : undefined;
   }
 
-  // If sessions are to be delayed we won't peform any processing until the
-  // callback the assigned here is called by the test.
-  if (params && params.delaySessions) {
-    params.ProcessSessions = processInitDataQueue;
+  function onencrypted(ev) {
+    var options = { initDataTypes: [ev.initDataType] };
+    if (streamType("video")) {
+      options.videoCapabilities = [{contentType: streamType("video")}];
+    }
+    if (streamType("audio")) {
+      options.audioCapabilities = [{contentType: streamType("audio")}];
+    }
+    navigator.requestMediaKeySystemAccess(CLEARKEY_KEYSYSTEM, [options])
+    .then(keySystemAccess => {
+      keySystemAccess.createMediaKeys().then(
+        p.resolve,
+        () => p.reject(`${token} Failed to create MediaKeys object.`)
+      );
+    }, () => p.reject(`${token} Failed to request key system access.`));
   }
 
-  // Is this the first piece of init data we're processing?
-  var firstInitData = true;
-  v.addEventListener("encrypted", function(ev) {
-    if (firstInitData) {
-      Log(token, "got first encrypted(" + ev.initDataType + ", " + StringToHex(ArrayBufferToString(ev.initData)) + "), setup session");
-      firstInitData = false;
-      pushInitData(ev);
+  v.addEventListener("encrypted", onencrypted, {once: true});
+  return p.promise;
+}
 
-      function chain(promise, onReject) {
-        return promise.then(function(value) {
-          return Promise.resolve(value);
-        }).catch(function(reason) {
-          onReject(reason);
-          return Promise.reject();
-        })
-      }
+/*
+ * Create a new MediaKeys object and provide it to the media element.
+ * Return a promise which will be resolved if succeeded, or will be rejected
+ * with a string that describes the failure.
+ */
+function CreateAndSetMediaKeys(v, test, token) {
+  let p = new EMEPromise;
 
-      var options = { initDataTypes: [ev.initDataType] };
-      if (streamType("video")) {
-        options.videoCapabilities = [{contentType: streamType("video")}];
-      }
-      if (streamType("audio")) {
-        options.audioCapabilities = [{contentType: streamType("audio")}];
-      }
+  CreateMediaKeys(v, test, token).then(mediaKeys => {
+    v.setMediaKeys(mediaKeys).then(
+      p.resolve,
+      () => p.reject(`${token} Failed to set MediaKeys on <video> element.`)
+    );
+  }, p.reject)
 
-      var p = navigator.requestMediaKeySystemAccess(CLEARKEY_KEYSYSTEM, [options]);
-      var r = bail(token + " Failed to request key system access.");
-      chain(p, r)
-      .then(function(keySystemAccess) {
-        var p = keySystemAccess.createMediaKeys();
-        var r = bail(token +  " Failed to create MediaKeys object");
-        return chain(p, r);
-      })
+  return p.promise;
+}
 
-      .then(function(mediaKeys) {
-        Log(token, "created MediaKeys object ok");
-        mediaKeys.sessions = [];
-        var p = v.setMediaKeys(mediaKeys);
-        return chain(p, onSetKeysFail);
-      })
+/*
+ * Collect the init data from 'encrypted' events.
+ * Return a promise which will be resolved with the init data when collection
+ * is completed (specified by test.sessionCount).
+ */
+function LoadInitData(v, test, token) {
+  let p = new EMEPromise;
+  let initDataQueue = [];
 
-      .then(function() {
-        Log(token, "set MediaKeys on <video> element ok");
-        if (params && params.onMediaKeysSet) {
-          params.onMediaKeysSet();
-        }
-        if (!(params && params.delaySessions)) {
-          processInitDataQueue();
-        }
-      })
-    } else {
-      if (params && params.delaySessions) {
-        Log(token, "got encrypted(" + ev.initDataType + ", " + StringToHex(ArrayBufferToString(ev.initData)) + ") event, queue it in because we're delaying sessions");
-        pushInitData(ev);
-      } else if (initDataQueue !== null) {
-        Log(token, "got encrypted(" + ev.initDataType + ", " + StringToHex(ArrayBufferToString(ev.initData)) + ") event, queue it for later session update");
-        pushInitData(ev);
-      } else {
-        Log(token, "got encrypted(" + ev.initDataType + ", " + StringToHex(ArrayBufferToString(ev.initData)) + ") event, update session now");
-        pushInitData(ev);
-        processInitDataQueue();
-      }
+  // Call SimpleTest._originalSetTimeout() to bypass the flaky timeout checker.
+  let timer = SimpleTest._originalSetTimeout.call(window, () => {
+    p.reject(`${token} Timed out in waiting for the init data.`);
+  }, 60000);
+
+  function onencrypted(ev) {
+    initDataQueue.push(ev);
+    Log(token, `got encrypted(${ev.initDataType}, ` +
+        `${StringToHex(ArrayBufferToString(ev.initData))}) event.`);
+    if (test.sessionCount == initDataQueue.length) {
+      p.resolve(initDataQueue);
+      clearTimeout(timer);
     }
+  }
+
+  v.addEventListener("encrypted", onencrypted);
+  return p.promise;
+}
+
+/*
+ * Generate a license request and update the session.
+ * Return a promsise which will be resolved with the updated session
+ * or rejected with a string that describes the failure.
+ */
+function MakeRequest(test, token, ev, session, sessionType) {
+  sessionType = sessionType || "temporary";
+  let p = new EMEPromise;
+  let str = `session[${session.sessionId}].generateRequest(` +
+    `${ev.initDataType}, ${StringToHex(ArrayBufferToString(ev.initData))})`;
+
+  session.addEventListener("message",
+    UpdateSessionFunc(test, token, sessionType, p.resolve, p.reject));
+
+  Log(token, str);
+  session.generateRequest(ev.initDataType, ev.initData)
+  .catch(reason => {
+    // Reject the promise if generateRequest() failed.
+    // Otherwise it will be resolved in UpdateSessionFunc().
+    p.reject(`${token}: ${str} failed; ${reason}`);
   });
-  return v;
+
+  return p.promise;
+}
+
+/*
+ * Process the init data by calling MakeRequest().
+ * Return a promise which will be resolved with the updated sessions
+ * when all init data are processed or rejected if any failure.
+ */
+function ProcessInitData(v, test, token, initData, sessionType) {
+  return Promise.all(
+    initData.map(ev => {
+      let session = v.mediaKeys.createSession(sessionType);
+      return MakeRequest(test, token, ev, session, sessionType);
+    })
+  );
+}
+
+/*
+ * Clean up the |v| element.
+ */
+function CleanUpMedia(v) {
+  v.setMediaKeys(null);
+  v.remove();
+  v.removeAttribute("src");
+  v.load();
+}
+
+/*
+ * Close all sessions and clean up the |v| element.
+ */
+function CloseSessions(v, sessions) {
+  return Promise.all(sessions.map(s => s.close()))
+  .then(CleanUpMedia(v));
+}
+
+/*
+ * Set up media keys and source buffers for the media element.
+ * Return a promise resolved when all key sessions are updated or rejected
+ * if any failure.
+ */
+function SetupEME(v, test, token) {
+  let p = new EMEPromise;
+
+  v.onerror = function() {
+    p.reject(`${token} got an error event.`);
+  }
+
+  Promise.all([
+    LoadInitData(v, test, token),
+    CreateAndSetMediaKeys(v, test, token),
+    LoadTest(test, v, token)])
+  .then(values => {
+    let initData = values[0];
+    return ProcessInitData(v, test, token, initData);
+  })
+  .then(p.resolve, p.reject);
+
+  return p.promise;
 }
 
 function SetupEMEPref(callback) {

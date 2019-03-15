@@ -8,36 +8,36 @@
 const SERVICE_WORKER = URL_ROOT + "service-workers/empty-sw.js";
 const TAB_URL = URL_ROOT + "service-workers/empty-sw.html";
 
-add_task(function* () {
-  yield enableServiceWorkerDebugging();
+add_task(async function() {
+  await enableServiceWorkerDebugging();
 
-  let { tab, document } = yield openAboutDebugging("workers");
+  const { tab, document } = await openAboutDebugging("workers");
 
-  let swTab = yield addTab(TAB_URL);
+  const swTab = await addTab(TAB_URL);
 
-  let serviceWorkersElement = getServiceWorkerList(document);
+  const serviceWorkersElement = getServiceWorkerList(document);
 
-  yield waitForMutation(serviceWorkersElement, { childList: true });
-
-  // Check that the service worker appears in the UI
-  let names = [...document.querySelectorAll("#service-workers .target-name")];
-  names = names.map(element => element.textContent);
-  ok(names.includes(SERVICE_WORKER),
-    "The service worker url appears in the list: " + names);
+  await waitUntil(() => {
+    // Check that the service worker appears in the UI
+    let names = [...document.querySelectorAll("#service-workers .target-name")];
+    names = names.map(element => element.textContent);
+    return names.includes(SERVICE_WORKER);
+  });
+  info("The service worker url appears in the list");
 
   try {
-    yield unregisterServiceWorker(swTab, serviceWorkersElement);
+    await unregisterServiceWorker(swTab, serviceWorkersElement);
     ok(true, "Service worker registration unregistered");
   } catch (e) {
     ok(false, "SW not unregistered; " + e);
   }
 
   // Check that the service worker disappeared from the UI
-  names = [...document.querySelectorAll("#service-workers .target-name")];
+  let names = [...document.querySelectorAll("#service-workers .target-name")];
   names = names.map(element => element.textContent);
   ok(!names.includes(SERVICE_WORKER),
     "The service worker url is no longer in the list: " + names);
 
-  yield removeTab(swTab);
-  yield closeAboutDebugging(tab);
+  await removeTab(swTab);
+  await closeAboutDebugging(tab);
 });

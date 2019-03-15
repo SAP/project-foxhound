@@ -1,6 +1,6 @@
 // This is just a crashtest for a url that is rejected at parse time (port 80,000)
 
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 function run_test()
 {
@@ -10,8 +10,7 @@ function run_test()
           uri: "http://localhost:80000/",
           loadUsingSystemPrincipal: true
         });
-    }, "invalid port");
+    }, /NS_ERROR_MALFORMED_URI/, "invalid port");
 
     do_test_finished();
 }
-

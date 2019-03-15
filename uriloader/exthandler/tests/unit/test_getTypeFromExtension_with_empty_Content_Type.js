@@ -12,13 +12,11 @@ function run_test() {
   // --- Preliminary platform check ---
 
   // If this test is not running on the Windows platform, stop now, before
-  // calling XPCOMUtils.generateQI during the MockWindowsRegKey declaration.
+  // calling ChromeUtils.generateQI during the MockWindowsRegKey declaration.
   if (mozinfo.os != "win")
     return;
 
   // --- Modified nsIWindowsRegKey implementation ---
-
-  Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
   /**
    * Constructs a new mock registry key by wrapping the provided object.
@@ -57,7 +55,7 @@ function run_test() {
   MockWindowsRegKey.prototype = {
     // --- Overridden nsISupports interface functions ---
 
-    QueryInterface: XPCOMUtils.generateQI([Ci.nsIWindowsRegKey]),
+    QueryInterface: ChromeUtils.generateQI([Ci.nsIWindowsRegKey]),
 
     // --- Overridden nsIWindowsRegKey interface functions ---
 
@@ -176,8 +174,11 @@ function run_test() {
     var type = Cc["@mozilla.org/mime;1"].
                getService(Ci.nsIMIMEService).
                getTypeFromExtension(".txt");
-  } catch (e if (e instanceof Ci.nsIException &&
-                 e.result == Cr.NS_ERROR_NOT_AVAILABLE)) {
+  } catch (e) {
+    if (!(e instanceof Ci.nsIException) ||
+        e.result != Cr.NS_ERROR_NOT_AVAILABLE) {
+      throw e;
+    }
     // This is an expected exception, thrown if the type can't be determined
   } finally {
     // Ensure we restore the original factory when the test is finished

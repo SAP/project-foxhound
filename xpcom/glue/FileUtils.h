@@ -7,14 +7,15 @@
 #ifndef mozilla_FileUtils_h
 #define mozilla_FileUtils_h
 
-#include "nscore.h" // nullptr
+#include "nscore.h"  // nullptr
 
 #if defined(XP_UNIX)
-# include <unistd.h>
+#  include <unistd.h>
 #elif defined(XP_WIN)
-# include <io.h>
+#  include <io.h>
 #endif
 #include "prio.h"
+#include "prlink.h"
 
 #include "mozilla/Scoped.h"
 #include "nsIFile.h"
@@ -36,12 +37,10 @@ typedef const char* pathstr_t;
  *
  * Instances |close()| their fds when they go out of scope.
  */
-struct ScopedCloseFDTraits
-{
+struct ScopedCloseFDTraits {
   typedef int type;
   static type empty() { return -1; }
-  static void release(type aFd)
-  {
+  static void release(type aFd) {
     if (aFd != -1) {
       while (close(aFd) == -1 && errno == EINTR) {
       }
@@ -57,12 +56,10 @@ typedef Scoped<ScopedCloseFDTraits> ScopedClose;
  *
  * Instances |PR_Close| their fds when they go out of scope.
  **/
-struct ScopedClosePRFDTraits
-{
+struct ScopedClosePRFDTraits {
   typedef PRFileDesc* type;
   static type empty() { return nullptr; }
-  static void release(type aFd)
-  {
+  static void release(type aFd) {
     if (aFd) {
       PR_Close(aFd);
     }
@@ -71,12 +68,10 @@ struct ScopedClosePRFDTraits
 typedef Scoped<ScopedClosePRFDTraits> AutoFDClose;
 
 /* RAII wrapper for FILE descriptors */
-struct ScopedCloseFileTraits
-{
+struct ScopedCloseFileTraits {
   typedef FILE* type;
   static type empty() { return nullptr; }
-  static void release(type aFile)
-  {
+  static void release(type aFile) {
     if (aFile) {
       fclose(aFile);
     }
@@ -85,9 +80,9 @@ struct ScopedCloseFileTraits
 typedef Scoped<ScopedCloseFileTraits> ScopedCloseFile;
 
 /**
- * Fallocate efficiently and continuously allocates files via fallocate-type APIs.
- * This is useful for avoiding fragmentation.
- * On sucess the file be padded with zeros to grow to aLength.
+ * Fallocate efficiently and continuously allocates files via fallocate-type
+ * APIs. This is useful for avoiding fragmentation. On sucess the file be padded
+ * with zeros to grow to aLength.
  *
  * @param aFD file descriptor.
  * @param aLength length of file to grow to.
@@ -119,7 +114,13 @@ void ReadAheadFile(nsIFile* aFile, const size_t aOffset = 0,
                    const size_t aCount = SIZE_MAX,
                    filedesc_t* aOutFd = nullptr);
 
-#endif // MOZILLA_INTERNAL_API
+/*
+ * Wrappers for PR_GetLibraryName and PR_GetLibraryFilePathname.
+ */
+PathString GetLibraryName(pathstr_t aDirectory, const char* aLib);
+PathString GetLibraryFilePathname(pathstr_t aName, PRFuncPtr aAddr);
+
+#endif  // MOZILLA_INTERNAL_API
 
 /**
  * Use readahead to preload shared libraries into the file cache before loading.
@@ -160,61 +161,17 @@ void ReadAheadFile(pathstr_t aFilePath, const size_t aOffset = 0,
 void ReadAhead(filedesc_t aFd, const size_t aOffset = 0,
                const size_t aCount = SIZE_MAX);
 
-
-#if defined(MOZ_WIDGET_GONK) || defined(XP_UNIX)
-#define MOZ_TEMP_FAILURE_RETRY(exp) (__extension__({ \
-  typeof (exp) _rc; \
-  do { \
-    _rc = (exp); \
-  } while (_rc == -1 && errno == EINTR); \
-  _rc; \
-}))
+#if defined(XP_UNIX)
+#  define MOZ_TEMP_FAILURE_RETRY(exp)        \
+    (__extension__({                         \
+      typeof(exp) _rc;                       \
+      do {                                   \
+        _rc = (exp);                         \
+      } while (_rc == -1 && errno == EINTR); \
+      _rc;                                   \
+    }))
 #endif
 
-/* Define ReadSysFile() and WriteSysFile() only on GONK to avoid unnecessary
- * libxul bloat. Also define it in debug builds, so that unit tests for it can
- * be written and run in non-GONK builds. */
-#if (defined(MOZ_WIDGET_GONK) || defined(DEBUG)) && defined(XP_UNIX)
-
-#ifndef ReadSysFile_PRESENT
-#define ReadSysFile_PRESENT
-#endif /* ReadSysFile_PRESENT */
-
-#ifndef WriteSysFile_PRESENT
-#define WriteSysFile_PRESENT
-#endif /* WriteSysFile_PRESENT */
-
-/**
- * Read the contents of a file.
- * This function is intended for reading a single-lined text files from
- * /sys/. If the file ends with a newline ('\n') then it will be discarded.
- * The output buffer will always be '\0'-terminated on successful completion.
- * If aBufSize == 0, then this function will return true if the file exists
- * and is readable (it will not attempt to read anything from it).
- * On failure the contents of aBuf after this call will be undefined and the
- * value of the global variable errno will be set accordingly.
- * @return true on success, notice that less than requested bytes could have
- * been read if the file was smaller
- */
-bool ReadSysFile(const char* aFilename, char* aBuf, size_t aBufSize);
-
-/**
- * Parse the contents of a file, assuming it contains a decimal integer.
- * @return true on success
- */
-bool ReadSysFile(const char* aFilename, int* aVal);
-
-/**
- * Parse the contents of a file, assuming it contains a boolean value
- * (either 0 or 1).
- * @return true on success
- */
-bool ReadSysFile(const char* aFilename, bool* aVal);
-
-bool WriteSysFile(const char* aFilename, const char* aBuf);
-
-#endif /* (MOZ_WIDGET_GONK || DEBUG) && XP_UNIX */
-
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif

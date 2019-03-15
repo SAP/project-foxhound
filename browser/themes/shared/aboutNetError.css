@@ -4,16 +4,12 @@
 
 @import url("chrome://browser/skin/error-pages.css");
 
-body {
-  background-image: linear-gradient(-45deg, #eeeeee,     #eeeeee 33%,
-                                            #fbfbfb 33%, #fbfbfb 66%,
-                                            #eeeeee 66%, #eeeeee);
+:root {
+  --exception-button-container-background: #F5F5F7;
 }
 
 body.certerror {
-  background-image: linear-gradient(-45deg, #f0d000,     #f0d000 33%,
-                                            #fedc00 33%, #fedc00 66%,
-                                            #f0d000 66%, #f0d000);
+  justify-content: normal;
 }
 
 body.captiveportal .title {
@@ -22,6 +18,10 @@ body.captiveportal .title {
 
 body.certerror .title {
   background-image: url("cert-error.svg");
+}
+
+body.blocked .title {
+  background-image: url("chrome://global/skin/icons/blocked.svg");
 }
 
 #errorContainer {
@@ -55,13 +55,16 @@ body:not(.neterror) #netErrorButtonContainer {
   display: none;
 }
 
-#errorTryAgain {
-  margin-top: 1.2em;
-  min-width: 150px;
+#advancedPanelErrorTryAgain {
+  display: none;
 }
 
-#returnButton {
-  min-width: 250px;
+#moreInformationButton {
+  display: none;
+}
+
+#errorTryAgain {
+  margin-top: 1.2em;
 }
 
 #advancedButton {
@@ -88,14 +91,10 @@ body:not(.neterror) #advancedButton {
   display: none;
 }
 
-.container {
-  position: relative;
-}
-
 #advancedPanelContainer {
   position: absolute;
-  padding: 24px 0;
   width: 100%;
+  left: 0;
 }
 
 .advanced-panel {
@@ -103,11 +102,9 @@ body:not(.neterror) #advancedButton {
   display: none;
   background-color: white;
   border: 1px lightgray solid;
-  /* Don't use top padding because the default p style has top padding, and it
-   * makes the overall div look uneven */
-  padding: 0 12px 12px 12px;
-  box-shadow: 0 0 4px #ddd;
-  font-size: 0.9em;
+  margin: 48px auto;
+  min-width: var(--in-content-container-min-width);
+  max-width: var(--in-content-container-max-width);
 }
 
 #overrideWeakCryptoPanel {
@@ -139,6 +136,7 @@ span#hostname {
 }
 
 #badCertTechnicalInfo {
+  margin: 3em;
   overflow: auto;
   white-space: pre-wrap;
 }
@@ -152,14 +150,84 @@ span#hostname {
   background-color: var(--in-content-box-background-hover) !important;
   border-top: 1px solid var(--in-content-border-color);
   position: absolute;
-  left: 0%;
-  top: 100%;
-  width: 65%;
+  width: 100%;
   padding: 1em 17.5%;
+  box-sizing: border-box;
 }
 
 #certificateErrorText {
   font-family: monospace;
   white-space: pre-wrap;
   padding: 1em 0;
+}
+
+#cert_domain_link:not([href]) {
+  color: var(--in-content-page-color);
+  text-decoration: none;
+}
+
+.exceptionDialogButtonContainer {
+  background-color: var(--exception-button-container-background);
+  display: flex;
+  justify-content: end;
+  padding: 10px;
+}
+
+.exceptionDialogButtonContainer[hidden] {
+  display: none;
+}
+
+.illustrated #errorPageContainer {
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+  background-position: left center;
+}
+
+.illustrated[dir="rtl"] #errorPageContainer {
+  background-position: right center;
+}
+
+.illustrated .title {
+  background: none;
+  padding-inline-start: 0;
+  margin-inline-start: 0;
+}
+
+.illustrated #text-container {
+  margin: auto;
+  padding-inline-start: 38%;
+}
+
+.illustrated #errorPageContainer {
+  background-repeat: no-repeat;
+  background-size: 38%;
+}
+
+.connectionFailure #errorPageContainer,
+.netInterrupt #errorPageContainer,
+.netTimeout #errorPageContainer,
+.netReset #errorPageContainer,
+.netOffline #errorPageContainer {
+  background-image: url("chrome://browser/content/illustrations/error-connection-failure.svg");
+}
+
+.dnsNotFound #errorPageContainer {
+  background-image: url("chrome://browser/content/illustrations/error-server-not-found.svg");
+}
+
+.malformedURI #errorPageContainer {
+  background-image: url("chrome://browser/content/illustrations/error-malformed-url.svg");
+}
+
+.malformedURI #errorTryAgain {
+  display: none;
+}
+
+#wrongSystemTimePanel {
+  display: none;
+}
+
+#wrongSystemTimeWithoutReferencePanel {
+  display: none;
 }

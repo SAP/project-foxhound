@@ -9,56 +9,45 @@
  */
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
-const TEST_URI = `data:text/xml;charset=UTF-8,<?xml version="1.0"?>
-  <?xml-stylesheet href="chrome://global/skin/global.css"?>
-  <?xml-stylesheet href="resource://devtools/client/themes/variables.css"?>
-  <?xml-stylesheet href="chrome://devtools/skin/tooltips.css"?>
-  <window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
-   class="theme-light" title="Tooltip hover test">
-    <vbox id="container" flex="1">
-      <hbox id="box1" flex="1"><label>test1</label></hbox>
-      <hbox id="box2" flex="1"><label>test2</label></hbox>
-      <hbox id="box3" flex="1"><label>test3</label></hbox>
-      <hbox id="box4" flex="1"><label>test4</label></hbox>
-    </vbox>
-  </window>`;
+const TEST_URI = CHROME_URL_ROOT + "doc_html_tooltip_hover.xul";
 
 const {HTMLTooltip} = require("devtools/client/shared/widgets/tooltip/HTMLTooltip");
 loadHelperScript("helper_html_tooltip.js");
 
-add_task(function* () {
-  let [,, doc] = yield createHost("bottom", TEST_URI);
+add_task(async function() {
+  const [,, doc] = await createHost("bottom", TEST_URI);
   // Wait for full page load before synthesizing events on the page.
-  yield waitUntil(() => doc.readyState === "complete");
+  await waitUntil(() => doc.readyState === "complete");
 
-  let width = 100, height = 50;
-  let tooltipContent = doc.createElementNS(HTML_NS, "div");
+  const width = 100, height = 50;
+  const tooltipContent = doc.createElementNS(HTML_NS, "div");
   tooltipContent.textContent = "tooltip";
-  let tooltip = new HTMLTooltip(doc, {useXulWrapper: false});
-  tooltip.setContent(tooltipContent, {width, height});
+  const tooltip = new HTMLTooltip(doc, {useXulWrapper: false});
+  tooltip.panel.appendChild(tooltipContent);
+  tooltip.setContentSize({width, height});
 
-  let container = doc.getElementById("container");
+  const container = doc.getElementById("container");
   tooltip.startTogglingOnHover(container, () => true);
 
   info("Hover on each of the 4 boxes, expect the tooltip to appear");
-  function* showAndCheck(boxId, position) {
+  async function showAndCheck(boxId, position) {
     info(`Show tooltip on ${boxId}`);
-    let box = doc.getElementById(boxId);
-    let shown = tooltip.once("shown");
+    const box = doc.getElementById(boxId);
+    const shown = tooltip.once("shown");
     EventUtils.synthesizeMouseAtCenter(box, { type: "mousemove" }, doc.defaultView);
-    yield shown;
+    await shown;
     checkTooltipGeometry(tooltip, box, {position, width, height});
   }
 
-  yield showAndCheck("box1", "bottom");
-  yield showAndCheck("box2", "bottom");
-  yield showAndCheck("box3", "top");
-  yield showAndCheck("box4", "top");
+  await showAndCheck("box1", "bottom");
+  await showAndCheck("box2", "bottom");
+  await showAndCheck("box3", "top");
+  await showAndCheck("box4", "top");
 
   info("Move out of the container");
-  let hidden = tooltip.once("hidden");
-  EventUtils.synthesizeMouseAtCenter(container, { type: "mouseout" }, doc.defaultView);
-  yield hidden;
+  const hidden = tooltip.once("hidden");
+  EventUtils.synthesizeMouseAtCenter(container, { type: "mousemove" }, doc.defaultView);
+  await hidden;
 
   info("Destroy the tooltip and finish");
   tooltip.destroy();

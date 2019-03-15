@@ -22,8 +22,10 @@ function parseOptions(opts) {
   }
 
   // Parse platforms.
-  let allPlatforms = ["linux", "linux64", "linux64-asan", "win64",
-                      "linux64-gyp", "linux64-fuzz", "aarch64"];
+  let allPlatforms = ["linux", "linux64", "linux64-asan", "linux64-fips",
+                      "win", "win64", "win-make", "win64-make",
+                      "linux64-make", "linux-make", "linux-fuzz",
+                      "linux64-fuzz", "aarch64", "mac"];
   let platforms = intersect(opts.platform.split(/\s*,\s*/), allPlatforms);
 
   // If the given value is nonsense or "none" default to all platforms.
@@ -35,7 +37,7 @@ function parseOptions(opts) {
   let aliases = {"gtests": "gtest"};
   let allUnitTests = ["bogo", "crmf", "chains", "cipher", "db", "ec", "fips",
                       "gtest", "interop", "lowhash", "merge", "sdr", "smime", "tools",
-                      "ssl", "mpi", "scert", "spki"];
+                      "ssl", "mpi", "scert", "spki", "policy", "tlsfuzzer"];
   let unittests = intersect(opts.unittests.split(/\s*,\s*/).map(t => {
     return aliases[t] || t;
   }), allUnitTests);
@@ -49,7 +51,7 @@ function parseOptions(opts) {
   }
 
   // Parse tools.
-  let allTools = ["clang-format", "scan-build"];
+  let allTools = ["clang-format", "scan-build", "hacl", "saw", "abi", "coverage"];
   let tools = intersect(opts.tools.split(/\s*,\s*/), allTools);
 
   // If the given value is "all" run all tools.
@@ -75,18 +77,21 @@ function filter(opts) {
     // are not affected by platform or build type selectors.
     if (task.platform == "nss-tools") {
       return opts.tools.some(tool => {
-        return task.symbol.toLowerCase().startsWith(tool);
+        return task.symbol.toLowerCase().startsWith(tool) ||
+               (task.group && task.group.toLowerCase().startsWith(tool));
       });
     }
 
     // Filter unit tests.
     if (task.tests) {
       let found = opts.unittests.some(test => {
-        // TODO: think of something more intelligent here.
-        if (task.symbol.toLowerCase().startsWith("mpi") && test == "mpi") {
+        if (task.group && task.group.toLowerCase() == "ssl" && test == "ssl") {
           return true;
         }
-        return (task.group || task.symbol).toLowerCase().startsWith(test);
+        if (task.group && task.group.toLowerCase() == "cipher" && test == "cipher") {
+          return true;
+        }
+        return task.symbol.toLowerCase().startsWith(test);
       });
 
       if (!found) {
@@ -105,10 +110,16 @@ function filter(opts) {
     let found = opts.platforms.some(platform => {
       let aliases = {
         "linux": "linux32",
+        "linux-fuzz": "linux32",
         "linux64-asan": "linux64",
+        "linux64-fips": "linux64",
         "linux64-fuzz": "linux64",
-        "linux64-gyp": "linux64",
-        "win64": "windows2012-64"
+        "linux64-make": "linux64",
+        "linux-make": "linux32",
+        "win64-make": "windows2012-64",
+        "win-make": "windows2012-32",
+        "win64": "windows2012-64",
+        "win": "windows2012-32"
       };
 
       // Check the platform name.
@@ -117,9 +128,12 @@ function filter(opts) {
       // Additional checks.
       if (platform == "linux64-asan") {
         keep &= coll("asan");
-      } else if (platform == "linux64-gyp") {
-        keep &= coll("gyp");
-      } else if (platform == "linux64-fuzz") {
+      } else if (platform == "linux64-fips") {
+        keep &= coll("fips");
+      } else if (platform == "linux64-make" || platform == "linux-make" ||
+                 platform == "win64-make" || platform == "win-make") {
+        keep &= coll("make");
+      } else if (platform == "linux64-fuzz" || platform == "linux-fuzz") {
         keep &= coll("fuzz");
       } else {
         keep &= coll("opt") || coll("debug");
@@ -133,7 +147,7 @@ function filter(opts) {
     }
 
     // Finally, filter by build type.
-    let isDebug = coll("debug") || coll("asan") || coll("gyp") ||
+    let isDebug = coll("debug") || coll("asan") || coll("make") ||
                   coll("fuzz");
     return (isDebug && opts.builds.includes("d")) ||
            (!isDebug && opts.builds.includes("o"));

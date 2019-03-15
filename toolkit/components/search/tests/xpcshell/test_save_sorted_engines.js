@@ -2,11 +2,7 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 /*
- * test_save_sorted_engines: Start search engine
- * - without search-metadata.json
- * - without search.sqlite
- *
- * Ensure that search-metadata.json is correct after:
+ * Ensure that metadata are stored correctly on disk after:
  * - moving an engine
  * - removing an engine
  * - adding a new engine
@@ -23,12 +19,12 @@ function run_test() {
   run_next_test();
 }
 
-add_task(function* test_save_sorted_engines() {
-  let [engine1, engine2] = yield addTestEngines([
+add_task(async function test_save_sorted_engines() {
+  let [engine1, engine2] = await addTestEngines([
     { name: "Test search engine", xmlFileName: "engine.xml" },
     { name: "A second test engine", xmlFileName: "engine2.xml"},
   ]);
-  yield promiseAfterCache();
+  await promiseAfterCache();
 
   let search = Services.search;
 
@@ -37,30 +33,30 @@ add_task(function* test_save_sorted_engines() {
   search.moveEngine(engine2, 1);
 
   // Changes should be commited immediately
-  yield promiseAfterCache();
-  do_print("Commit complete after moveEngine");
+  await promiseAfterCache();
+  info("Commit complete after moveEngine");
 
   // Check that the entries are placed as specified correctly
-  let metadata = yield promiseEngineMetadata();
-  do_check_eq(metadata["test-search-engine"].order, 1);
-  do_check_eq(metadata["a-second-test-engine"].order, 2);
+  let metadata = await promiseEngineMetadata();
+  Assert.equal(metadata["test-search-engine"].order, 1);
+  Assert.equal(metadata["a-second-test-engine"].order, 2);
 
   // Test removing an engine
   search.removeEngine(engine1);
-  yield promiseAfterCache();
-  do_print("Commit complete after removeEngine");
+  await promiseAfterCache();
+  info("Commit complete after removeEngine");
 
   // Check that the order of the remaining engine was updated correctly
-  metadata = yield promiseEngineMetadata();
-  do_check_eq(metadata["a-second-test-engine"].order, 1);
+  metadata = await promiseEngineMetadata();
+  Assert.equal(metadata["a-second-test-engine"].order, 1);
 
   // Test adding a new engine
   search.addEngineWithDetails("foo", "", "foo", "", "GET",
                               "http://searchget/?search={searchTerms}");
-  yield promiseAfterCache();
-  do_print("Commit complete after addEngineWithDetails");
+  await promiseAfterCache();
+  info("Commit complete after addEngineWithDetails");
 
-  metadata = yield promiseEngineMetadata();
-  do_check_eq(metadata["foo"].alias, "foo");
-  do_check_true(metadata["foo"].order > 0);
+  metadata = await promiseEngineMetadata();
+  Assert.equal(metadata.foo.alias, "foo");
+  Assert.ok(metadata.foo.order > 0);
 });

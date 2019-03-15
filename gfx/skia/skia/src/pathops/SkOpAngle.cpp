@@ -120,30 +120,32 @@ bool SkOpAngle::after(SkOpAngle* test) {
          */
         lrOrder = lrGap > 20 ? 0 : lrGap > 11 ? -1 : 1;
     } else {
-        lrOrder = (int) lh->orderable(rh);
-        if (!ltrOverlap) {
+        lrOrder = lh->orderable(rh);
+        if (!ltrOverlap && lrOrder >= 0) {
             return COMPARE_RESULT(5, !lrOrder);
         }
     }
     int ltOrder;
-    SkASSERT((lh->fSectorMask & fSectorMask) || (rh->fSectorMask & fSectorMask));
+    SkASSERT((lh->fSectorMask & fSectorMask) || (rh->fSectorMask & fSectorMask) || -1 == lrOrder);
     if (lh->fSectorMask & fSectorMask) {
-        ltOrder = (int) lh->orderable(this);
+        ltOrder = lh->orderable(this);
     } else {
         int ltGap = (fSectorStart - lh->fSectorStart + 32) & 0x1f;
         ltOrder = ltGap > 20 ? 0 : ltGap > 11 ? -1 : 1;
     }
     int trOrder;
     if (rh->fSectorMask & fSectorMask) {
-        trOrder = (int) orderable(rh);
+        trOrder = this->orderable(rh);
     } else {
         int trGap = (rh->fSectorStart - fSectorStart + 32) & 0x1f;
         trOrder = trGap > 20 ? 0 : trGap > 11 ? -1 : 1;
     }
+    this->alignmentSameSide(lh, &ltOrder);
+    this->alignmentSameSide(rh, &trOrder);
     if (lrOrder >= 0 && ltOrder >= 0 && trOrder >= 0) {
         return COMPARE_RESULT(7, lrOrder ? (ltOrder & trOrder) : (ltOrder | trOrder));
     }
-    SkASSERT(lrOrder >= 0 || ltOrder >= 0 || trOrder >= 0);
+//    SkASSERT(lrOrder >= 0 || ltOrder >= 0 || trOrder >= 0);
 // There's not enough information to sort. Get the pairs of angles in opposite planes.
 // If an order is < 0, the pair is already in an opposite plane. Check the remaining pairs.
     // FIXME : once all variants are understood, rewrite this more simply
@@ -152,7 +154,7 @@ bool SkOpAngle::after(SkOpAngle* test) {
         // FIXME : once this is verified to work, remove one opposite angle call
         SkDEBUGCODE(bool lrOpposite = lh->oppositePlanes(rh));
         bool ltOpposite = lh->oppositePlanes(this);
-        SkASSERT(lrOpposite != ltOpposite);
+        SkOPASSERT(lrOpposite != ltOpposite);
         return COMPARE_RESULT(8, ltOpposite);
     } else if (ltOrder == 1 && trOrder == 0) {
         SkASSERT(lrOrder < 0);
@@ -160,10 +162,46 @@ bool SkOpAngle::after(SkOpAngle* test) {
         return COMPARE_RESULT(9, trOpposite);
     } else if (lrOrder == 1 && trOrder == 1) {
         SkASSERT(ltOrder < 0);
-        SkDEBUGCODE(bool trOpposite = oppositePlanes(rh));
+//        SkDEBUGCODE(bool trOpposite = oppositePlanes(rh));
         bool lrOpposite = lh->oppositePlanes(rh);
-        SkASSERT(lrOpposite != trOpposite);
+//        SkASSERT(lrOpposite != trOpposite);
         return COMPARE_RESULT(10, lrOpposite);
+    }
+    // If a pair couldn't be ordered, there's not enough information to determine the sort.
+    // Refer to:  https://docs.google.com/drawings/d/1KV-8SJTedku9fj4K6fd1SB-8divuV_uivHVsSgwXICQ
+    if (fUnorderable || lh->fUnorderable || rh->fUnorderable) {
+        // limit to lines; should work with curves, but wait for a failing test to verify
+        if (!fPart.isCurve() && !lh->fPart.isCurve() && !rh->fPart.isCurve()) {
+            // see if original raw data is orderable
+            // if two share a point, check if third has both points in same half plane
+            int ltShare = lh->fOriginalCurvePart[0] == fOriginalCurvePart[0];
+            int lrShare = lh->fOriginalCurvePart[0] == rh->fOriginalCurvePart[0];
+            int trShare = fOriginalCurvePart[0] == rh->fOriginalCurvePart[0];
+            // if only one pair are the same, the third point touches neither of the pair
+            if (ltShare + lrShare + trShare == 1) {
+                if (lrShare) {
+                    int ltOOrder = lh->allOnOriginalSide(this);
+                    int rtOOrder = rh->allOnOriginalSide(this);
+                    if ((rtOOrder ^ ltOOrder) == 1) {
+                        return ltOOrder;
+                    }
+                } else if (trShare) {
+                    int tlOOrder = this->allOnOriginalSide(lh);
+                    int rlOOrder = rh->allOnOriginalSide(lh);
+                    if ((tlOOrder ^ rlOOrder) == 1) {
+                        return rlOOrder;
+                    }
+                } else {
+                    SkASSERT(ltShare);
+                    int trOOrder = rh->allOnOriginalSide(this);
+                    int lrOOrder = lh->allOnOriginalSide(rh);
+                    // result must be 0 and 1 or 1 and 0 to be valid
+                    if ((lrOOrder ^ trOOrder) == 1) {
+                        return trOOrder;
+                    }
+                }
+            }
+        }
     }
     if (lrOrder < 0) {
         if (ltOrder < 0) {
@@ -210,6 +248,72 @@ int SkOpAngle::allOnOneSide(const SkOpAngle* test) {
     }
     fUnorderable = true;
     return -1;
+}
+
+// experiment works only with lines for now
+int SkOpAngle::allOnOriginalSide(const SkOpAngle* test) {
+    SkASSERT(!fPart.isCurve());
+    SkASSERT(!test->fPart.isCurve());
+    SkDPoint origin = fOriginalCurvePart[0];
+    SkDVector line = fOriginalCurvePart[1] - origin;
+    double dots[2];
+    double crosses[2];
+    const SkDCurve& testCurve = test->fOriginalCurvePart;
+    for (int index = 0; index < 2; ++index) {
+        SkDVector testLine = testCurve[index] - origin;
+        double xy1 = line.fX * testLine.fY;
+        double xy2 = line.fY * testLine.fX;
+        dots[index] = line.fX * testLine.fX + line.fY * testLine.fY;
+        crosses[index] = AlmostBequalUlps(xy1, xy2) ? 0 : xy1 - xy2;
+    }
+    if (crosses[0] * crosses[1] < 0) {
+        return -1;
+    }
+    if (crosses[0]) {
+        return crosses[0] < 0;
+    }
+    if (crosses[1]) {
+        return crosses[1] < 0;
+    }
+    if ((!dots[0] && dots[1] < 0) || (dots[0] < 0 && !dots[1])) {
+        return 2;  // 180 degrees apart
+    }
+    fUnorderable = true;
+    return -1;
+}
+
+// To sort the angles, all curves are translated to have the same starting point.
+// If the curve's control point in its original position is on one side of a compared line,
+// and translated is on the opposite side, reverse the previously computed order.
+void SkOpAngle::alignmentSameSide(const SkOpAngle* test, int* order) const {
+    if (*order < 0) {
+        return;
+    }
+    if (fPart.isCurve()) {
+        // This should support all curve types, but only bug that requires this has lines
+        // Turning on for curves causes existing tests to fail
+        return;
+    }
+    if (test->fPart.isCurve()) {
+        return;
+    }
+    const SkDPoint& xOrigin = test->fPart.fCurve.fLine[0];
+    const SkDPoint& oOrigin = test->fOriginalCurvePart.fLine[0];
+    if (xOrigin == oOrigin) {
+        return;
+    }
+    int iMax = SkPathOpsVerbToPoints(this->segment()->verb());
+    SkDVector xLine = test->fPart.fCurve.fLine[1] - xOrigin;
+    SkDVector oLine = test->fOriginalCurvePart.fLine[1] - oOrigin;
+    for (int index = 1; index <= iMax; ++index) {
+        const SkDPoint& testPt = fPart.fCurve[index];
+        double xCross = oLine.crossCheck(testPt - xOrigin);
+        double oCross = xLine.crossCheck(testPt - oOrigin);
+        if (oCross * xCross < 0) {
+            *order ^= 1;
+            break;
+        }
+    }
 }
 
 bool SkOpAngle::checkCrossesZero() const {
@@ -320,7 +424,7 @@ recomputeSector:
     return !fUnorderable;
 }
 
-int SkOpAngle::convexHullOverlaps(const SkOpAngle* rh) const {
+int SkOpAngle::convexHullOverlaps(const SkOpAngle* rh) {
     const SkDVector* sweep = this->fPart.fSweep;
     const SkDVector* tweep = rh->fPart.fSweep;
     double s0xs1 = sweep[0].crossCheck(sweep[1]);
@@ -593,20 +697,20 @@ SkOpGlobalState* SkOpAngle::globalState() const {
 
 // OPTIMIZE: if this loops to only one other angle, after first compare fails, insert on other side
 // OPTIMIZE: return where insertion succeeded. Then, start next insertion on opposite side
-void SkOpAngle::insert(SkOpAngle* angle) {
+bool SkOpAngle::insert(SkOpAngle* angle) {
     if (angle->fNext) {
         if (loopCount() >= angle->loopCount()) {
             if (!merge(angle)) {
-                return;
+                return true;
             }
         } else if (fNext) {
             if (!angle->merge(this)) {
-                return;
+                return true;
             }
         } else {
             angle->insert(this);
         }
-        return;
+        return true;
     }
     bool singleton = nullptr == fNext;
     if (singleton) {
@@ -622,20 +726,27 @@ void SkOpAngle::insert(SkOpAngle* angle) {
             angle->fNext = this;
         }
         debugValidateNext();
-        return;
+        return true;
     }
     SkOpAngle* last = this;
+    bool flipAmbiguity = false;
     do {
         SkASSERT(last->fNext == next);
-        if (angle->after(last)) {
+        if (angle->after(last) ^ (angle->tangentsAmbiguous() & flipAmbiguity)) {
             last->fNext = angle;
             angle->fNext = next;
             debugValidateNext();
-            return;
+            return true;
         }
         last = next;
+        if (last == this) {
+            FAIL_IF(flipAmbiguity);
+            // We're in a loop. If a sort was ambiguous, flip it to end the loop.
+            flipAmbiguity = true;
+        }
         next = next->fNext;
     } while (true);
+    return true;
 }
 
 SkOpSpanBase* SkOpAngle::lastMarked() const {
@@ -751,7 +862,7 @@ bool SkOpAngle::oppositePlanes(const SkOpAngle* rh) const {
     return startSpan >= 8;
 }
 
-bool SkOpAngle::orderable(SkOpAngle* rh) {
+int SkOpAngle::orderable(SkOpAngle* rh) {
     int result;
     if (!fPart.isCurve()) {
         if (!rh->fPart.isCurve()) {
@@ -763,12 +874,12 @@ bool SkOpAngle::orderable(SkOpAngle* rh) {
             double rx_y = rightX * leftY;
             if (x_ry == rx_y) {
                 if (leftX * rightX < 0 || leftY * rightY < 0) {
-                    return true;  // exactly 180 degrees apart
+                    return 1;  // exactly 180 degrees apart
                 }
                 goto unorderable;
             }
             SkASSERT(x_ry != rx_y); // indicates an undetected coincidence -- worth finding earlier
-            return x_ry < rx_y;
+            return x_ry < rx_y ? 1 : 0;
         }
         if ((result = this->allOnOneSide(rh)) >= 0) {
             return result;
@@ -778,7 +889,7 @@ bool SkOpAngle::orderable(SkOpAngle* rh) {
         }
     } else if (!rh->fPart.isCurve()) {
         if ((result = rh->allOnOneSide(this)) >= 0) {
-            return !result;
+            return result ? 0 : 1;
         }
         if (rh->fUnorderable || approximately_zero(fSide)) {
             goto unorderable;
@@ -786,11 +897,11 @@ bool SkOpAngle::orderable(SkOpAngle* rh) {
     } else if ((result = this->convexHullOverlaps(rh)) >= 0) {
         return result;
     }
-    return this->endsIntersect(rh);
+    return this->endsIntersect(rh) ? 1 : 0;
 unorderable:
     fUnorderable = true;
     rh->fUnorderable = true;
-    return true;
+    return -1;
 }
 
 // OPTIMIZE: if this shows up in a profile, add a previous pointer
@@ -815,7 +926,7 @@ void SkOpAngle::set(SkOpSpanBase* start, SkOpSpanBase* end) {
     fComputedEnd = fEnd = end;
     SkASSERT(start != end);
     fNext = nullptr;
-    fComputeSector = fComputedSector = fCheckCoincidence = false;
+    fComputeSector = fComputedSector = fCheckCoincidence = fTangentsAmbiguous = false;
     setSpans();
     setSector();
     SkDEBUGCODE(fID = start ? start->globalState()->nextAngleID() : -1);
@@ -966,7 +1077,7 @@ SkOpSpan* SkOpAngle::starter() {
     return fStart->starter(fEnd);
 }
 
-bool SkOpAngle::tangentsDiverge(const SkOpAngle* rh, double s0xt0) const {
+bool SkOpAngle::tangentsDiverge(const SkOpAngle* rh, double s0xt0) {
     if (s0xt0 == 0) {
         return false;
     }
@@ -991,5 +1102,6 @@ bool SkOpAngle::tangentsDiverge(const SkOpAngle* rh, double s0xt0) const {
     double tDist = tweep[0].length() * m;
     bool useS = fabs(sDist) < fabs(tDist);
     double mFactor = fabs(useS ? this->distEndRatio(sDist) : rh->distEndRatio(tDist));
+    fTangentsAmbiguous = mFactor >= 50 && mFactor < 200;
     return mFactor < 50;   // empirically found limit
 }

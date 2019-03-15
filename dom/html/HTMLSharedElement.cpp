@@ -12,7 +12,8 @@
 #include "mozilla/dom/HTMLParamElementBinding.h"
 #include "mozilla/dom/HTMLQuoteElementBinding.h"
 
-#include "mozilla/GenericSpecifiedValuesInlines.h"
+#include "mozilla/AsyncEventDispatcher.h"
+#include "mozilla/MappedDeclarations.h"
 #include "nsAttrValueInlines.h"
 #include "nsStyleConsts.h"
 #include "nsMappedAttributes.h"
@@ -27,80 +28,55 @@ namespace dom {
 
 extern nsAttrValue::EnumTable kListTypeTable[];
 
-HTMLSharedElement::~HTMLSharedElement()
-{
-}
-
-NS_IMPL_ADDREF_INHERITED(HTMLSharedElement, Element)
-NS_IMPL_RELEASE_INHERITED(HTMLSharedElement, Element)
-
-// QueryInterface implementation for HTMLSharedElement
-NS_INTERFACE_MAP_BEGIN(HTMLSharedElement)
-  NS_INTERFACE_MAP_ENTRY_IF_TAG(nsIDOMHTMLBaseElement, base)
-  NS_INTERFACE_MAP_ENTRY_IF_TAG(nsIDOMHTMLDirectoryElement, dir)
-  NS_INTERFACE_MAP_ENTRY_IF_TAG(nsIDOMHTMLQuoteElement, q)
-  NS_INTERFACE_MAP_ENTRY_IF_TAG(nsIDOMHTMLQuoteElement, blockquote)
-  NS_INTERFACE_MAP_ENTRY_IF_TAG(nsIDOMHTMLHeadElement, head)
-  NS_INTERFACE_MAP_ENTRY_IF_TAG(nsIDOMHTMLHtmlElement, html)
-NS_INTERFACE_MAP_END_INHERITING(nsGenericHTMLElement)
-
+HTMLSharedElement::~HTMLSharedElement() {}
 
 NS_IMPL_ELEMENT_CLONE(HTMLSharedElement)
 
-// nsIDOMHTMLQuoteElement
-NS_IMPL_URI_ATTR(HTMLSharedElement, Cite, cite)
-
-// nsIDOMHTMLHeadElement
-// Empty
-
-// nsIDOMHTMLHtmlElement
-NS_IMPL_STRING_ATTR(HTMLSharedElement, Version, version)
-
-// nsIDOMHTMLBaseElement
-NS_IMPL_STRING_ATTR(HTMLSharedElement, Target, target)
-
-NS_IMETHODIMP
-HTMLSharedElement::GetHref(nsAString& aValue)
-{
+void HTMLSharedElement::GetHref(nsAString& aValue) {
   MOZ_ASSERT(mNodeInfo->Equals(nsGkAtoms::base),
              "This should only get called for <base> elements");
   nsAutoString href;
   GetAttr(kNameSpaceID_None, nsGkAtoms::href, href);
 
   nsCOMPtr<nsIURI> uri;
-  nsIDocument* doc = OwnerDoc();
-  nsContentUtils::NewURIWithDocumentCharset(
-    getter_AddRefs(uri), href, doc, doc->GetFallbackBaseURI());
+  Document* doc = OwnerDoc();
+  nsContentUtils::NewURIWithDocumentCharset(getter_AddRefs(uri), href, doc,
+                                            doc->GetFallbackBaseURI());
 
   if (!uri) {
     aValue = href;
-    return NS_OK;
+    return;
   }
-  
+
   nsAutoCString spec;
   uri->GetSpec(spec);
   CopyUTF8toUTF16(spec, aValue);
-
-  return NS_OK;
 }
 
-NS_IMETHODIMP
-HTMLSharedElement::SetHref(const nsAString& aValue)
-{
-  return SetAttrHelper(nsGkAtoms::href, aValue);
+void HTMLSharedElement::DoneAddingChildren(bool aHaveNotified) {
+  if (mNodeInfo->Equals(nsGkAtoms::head)) {
+    nsCOMPtr<Document> doc = GetUncomposedDoc();
+    if (doc) {
+      doc->OnL10nResourceContainerParsed();
+    }
+
+    RefPtr<AsyncEventDispatcher> asyncDispatcher = new AsyncEventDispatcher(
+        this, NS_LITERAL_STRING("DOMHeadElementParsed"), CanBubble::eYes,
+        ChromeOnlyDispatch::eYes);
+    // Always run async in order to avoid running script when the content
+    // sink isn't expecting it.
+    asyncDispatcher->PostDOMEvent();
+  }
 }
 
-
-bool
-HTMLSharedElement::ParseAttribute(int32_t aNamespaceID,
-                                  nsIAtom* aAttribute,
-                                  const nsAString& aValue,
-                                  nsAttrValue& aResult)
-{
-  if (aNamespaceID == kNameSpaceID_None &&
-      mNodeInfo->Equals(nsGkAtoms::dir)) {
+bool HTMLSharedElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                                       const nsAString& aValue,
+                                       nsIPrincipal* aMaybeScriptedPrincipal,
+                                       nsAttrValue& aResult) {
+  if (aNamespaceID == kNameSpaceID_None && mNodeInfo->Equals(nsGkAtoms::dir)) {
     if (aAttribute == nsGkAtoms::type) {
-      return aResult.ParseEnumValue(aValue, mozilla::dom::kListTypeTable, false);
+      return aResult.ParseEnumValue(aValue, mozilla::dom::kListTypeTable,
+                                    false);
     }
     if (aAttribute == nsGkAtoms::start) {
       return aResult.ParseIntWithBounds(aValue, 1);
@@ -108,43 +84,39 @@ HTMLSharedElement::ParseAttribute(int32_t aNamespaceID,
   }
 
   return nsGenericHTMLElement::ParseAttribute(aNamespaceID, aAttribute, aValue,
-                                              aResult);
+                                              aMaybeScriptedPrincipal, aResult);
 }
 
-static void
-DirectoryMapAttributesIntoRule(const nsMappedAttributes* aAttributes,
-                               GenericSpecifiedValues* aData)
-{
-  if (aData->ShouldComputeStyleStruct(NS_STYLE_INHERIT_BIT(List))) {
-    if (!aData->PropertyIsSet(eCSSProperty_list_style_type)) {
-      // type: enum
-      const nsAttrValue* value = aAttributes->GetAttr(nsGkAtoms::type);
-      if (value) {
-        if (value->Type() == nsAttrValue::eEnum) {
-          aData->SetKeywordValue(eCSSProperty_list_style_type, value->GetEnumValue());
-        } else {
-          aData->SetKeywordValue(eCSSProperty_list_style_type, NS_STYLE_LIST_STYLE_DISC);
-        }
+static void DirectoryMapAttributesIntoRule(
+    const nsMappedAttributes* aAttributes, MappedDeclarations& aDecls) {
+  if (!aDecls.PropertyIsSet(eCSSProperty_list_style_type)) {
+    // type: enum
+    const nsAttrValue* value = aAttributes->GetAttr(nsGkAtoms::type);
+    if (value) {
+      if (value->Type() == nsAttrValue::eEnum) {
+        aDecls.SetKeywordValue(eCSSProperty_list_style_type,
+                               value->GetEnumValue());
+      } else {
+        aDecls.SetKeywordValue(eCSSProperty_list_style_type,
+                               NS_STYLE_LIST_STYLE_DISC);
       }
     }
   }
 
-  nsGenericHTMLElement::MapCommonAttributesInto(aAttributes, aData);
+  nsGenericHTMLElement::MapCommonAttributesInto(aAttributes, aDecls);
 }
 
 NS_IMETHODIMP_(bool)
-HTMLSharedElement::IsAttributeMapped(const nsIAtom* aAttribute) const
-{
+HTMLSharedElement::IsAttributeMapped(const nsAtom* aAttribute) const {
   if (mNodeInfo->Equals(nsGkAtoms::dir)) {
     static const MappedAttributeEntry attributes[] = {
-      { &nsGkAtoms::type },
-      // { &nsGkAtoms::compact }, // XXX
-      { nullptr} 
-    };
-  
+        {nsGkAtoms::type},
+        // { nsGkAtoms::compact }, // XXX
+        {nullptr}};
+
     static const MappedAttributeEntry* const map[] = {
-      attributes,
-      sCommonAttributeMap,
+        attributes,
+        sCommonAttributeMap,
     };
 
     return FindAttributeDependence(aAttribute, map);
@@ -153,15 +125,14 @@ HTMLSharedElement::IsAttributeMapped(const nsIAtom* aAttribute) const
   return nsGenericHTMLElement::IsAttributeMapped(aAttribute);
 }
 
-static void
-SetBaseURIUsingFirstBaseWithHref(nsIDocument* aDocument, nsIContent* aMustMatch)
-{
-  NS_PRECONDITION(aDocument, "Need a document!");
+static void SetBaseURIUsingFirstBaseWithHref(Document* aDocument,
+                                             nsIContent* aMustMatch) {
+  MOZ_ASSERT(aDocument, "Need a document!");
 
   for (nsIContent* child = aDocument->GetFirstChild(); child;
        child = child->GetNextNode()) {
     if (child->IsHTMLElement(nsGkAtoms::base) &&
-        child->HasAttr(kNameSpaceID_None, nsGkAtoms::href)) {
+        child->AsElement()->HasAttr(kNameSpaceID_None, nsGkAtoms::href)) {
       if (aMustMatch && child != aMustMatch) {
         return;
       }
@@ -169,12 +140,12 @@ SetBaseURIUsingFirstBaseWithHref(nsIDocument* aDocument, nsIContent* aMustMatch)
       // Resolve the <base> element's href relative to our document's
       // fallback base URI.
       nsAutoString href;
-      child->GetAttr(kNameSpaceID_None, nsGkAtoms::href, href);
+      child->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::href, href);
 
       nsCOMPtr<nsIURI> newBaseURI;
       nsContentUtils::NewURIWithDocumentCharset(
-        getter_AddRefs(newBaseURI), href, aDocument,
-        aDocument->GetFallbackBaseURI());
+          getter_AddRefs(newBaseURI), href, aDocument,
+          aDocument->GetFallbackBaseURI());
 
       // Check if CSP allows this base-uri
       nsCOMPtr<nsIContentSecurityPolicy> csp;
@@ -190,8 +161,10 @@ SetBaseURIUsingFirstBaseWithHref(nsIDocument* aDocument, nsIContent* aMustMatch)
         // policy - do *not* consult default-src, see:
         // http://www.w3.org/TR/CSP2/#directive-default-src
         bool cspPermitsBaseURI = true;
-        rv = csp->Permits(newBaseURI, nsIContentSecurityPolicy::BASE_URI_DIRECTIVE,
-                          true, &cspPermitsBaseURI);
+        rv = csp->Permits(child->AsElement(), nullptr /* nsICSPEventListener */,
+                          newBaseURI,
+                          nsIContentSecurityPolicy::BASE_URI_DIRECTIVE, true,
+                          &cspPermitsBaseURI);
         if (NS_FAILED(rv) || !cspPermitsBaseURI) {
           newBaseURI = nullptr;
         }
@@ -205,22 +178,20 @@ SetBaseURIUsingFirstBaseWithHref(nsIDocument* aDocument, nsIContent* aMustMatch)
   aDocument->SetBaseURI(nullptr);
 }
 
-static void
-SetBaseTargetUsingFirstBaseWithTarget(nsIDocument* aDocument,
-                                      nsIContent* aMustMatch)
-{
-  NS_PRECONDITION(aDocument, "Need a document!");
+static void SetBaseTargetUsingFirstBaseWithTarget(Document* aDocument,
+                                                  nsIContent* aMustMatch) {
+  MOZ_ASSERT(aDocument, "Need a document!");
 
   for (nsIContent* child = aDocument->GetFirstChild(); child;
        child = child->GetNextNode()) {
     if (child->IsHTMLElement(nsGkAtoms::base) &&
-        child->HasAttr(kNameSpaceID_None, nsGkAtoms::target)) {
+        child->AsElement()->HasAttr(kNameSpaceID_None, nsGkAtoms::target)) {
       if (aMustMatch && child != aMustMatch) {
         return;
       }
 
       nsString target;
-      child->GetAttr(kNameSpaceID_None, nsGkAtoms::target, target);
+      child->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::target, target);
       aDocument->SetBaseTarget(target);
       return;
     }
@@ -229,69 +200,45 @@ SetBaseTargetUsingFirstBaseWithTarget(nsIDocument* aDocument,
   aDocument->SetBaseTarget(EmptyString());
 }
 
-nsresult
-HTMLSharedElement::SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
-                           nsIAtom* aPrefix, const nsAString& aValue,
-                           bool aNotify)
-{
-  nsresult rv = nsGenericHTMLElement::SetAttr(aNameSpaceID, aName, aPrefix,
-                                              aValue, aNotify);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // If the href attribute of a <base> tag is changing, we may need to update
-  // the document's base URI, which will cause all the links on the page to be
-  // re-resolved given the new base.  If the target attribute is changing, we
-  // similarly need to change the base target.
-  if (mNodeInfo->Equals(nsGkAtoms::base) &&
-      aNameSpaceID == kNameSpaceID_None &&
-      IsInUncomposedDoc()) {
+nsresult HTMLSharedElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                         const nsAttrValue* aValue,
+                                         const nsAttrValue* aOldValue,
+                                         nsIPrincipal* aSubjectPrincipal,
+                                         bool aNotify) {
+  if (aNamespaceID == kNameSpaceID_None) {
     if (aName == nsGkAtoms::href) {
-      SetBaseURIUsingFirstBaseWithHref(GetUncomposedDoc(), this);
+      // If the href attribute of a <base> tag is changing, we may need to
+      // update the document's base URI, which will cause all the links on the
+      // page to be re-resolved given the new base.
+      // If the href is being unset (aValue is null), we will need to find a new
+      // <base>.
+      if (mNodeInfo->Equals(nsGkAtoms::base) && IsInUncomposedDoc()) {
+        SetBaseURIUsingFirstBaseWithHref(GetUncomposedDoc(),
+                                         aValue ? this : nullptr);
+      }
     } else if (aName == nsGkAtoms::target) {
-      SetBaseTargetUsingFirstBaseWithTarget(GetUncomposedDoc(), this);
+      // The target attribute is in pretty much the same situation as the href
+      // attribute, above.
+      if (mNodeInfo->Equals(nsGkAtoms::base) && IsInUncomposedDoc()) {
+        SetBaseTargetUsingFirstBaseWithTarget(GetUncomposedDoc(),
+                                              aValue ? this : nullptr);
+      }
     }
   }
 
-  return NS_OK;
+  return nsGenericHTMLElement::AfterSetAttr(
+      aNamespaceID, aName, aValue, aOldValue, aSubjectPrincipal, aNotify);
 }
 
-nsresult
-HTMLSharedElement::UnsetAttr(int32_t aNameSpaceID, nsIAtom* aName,
-                             bool aNotify)
-{
-  nsresult rv = nsGenericHTMLElement::UnsetAttr(aNameSpaceID, aName, aNotify);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // If we're the first <base> with an href and our href attribute is being
-  // unset, then we're no longer the first <base> with an href, and we need to
-  // find the new one.  Similar for target.
-  if (mNodeInfo->Equals(nsGkAtoms::base) &&
-      aNameSpaceID == kNameSpaceID_None &&
-      IsInUncomposedDoc()) {
-    if (aName == nsGkAtoms::href) {
-      SetBaseURIUsingFirstBaseWithHref(GetUncomposedDoc(), nullptr);
-    } else if (aName == nsGkAtoms::target) {
-      SetBaseTargetUsingFirstBaseWithTarget(GetUncomposedDoc(), nullptr);
-    }
-  }
-
-  return NS_OK;
-}
-
-nsresult
-HTMLSharedElement::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent,
-                              bool aCompileEventHandlers)
-{
-  nsresult rv = nsGenericHTMLElement::BindToTree(aDocument, aParent,
-                                                 aBindingParent,
-                                                 aCompileEventHandlers);
+nsresult HTMLSharedElement::BindToTree(Document* aDocument, nsIContent* aParent,
+                                       nsIContent* aBindingParent) {
+  nsresult rv =
+      nsGenericHTMLElement::BindToTree(aDocument, aParent, aBindingParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // The document stores a pointer to its base URI and base target, which we may
   // need to update here.
-  if (mNodeInfo->Equals(nsGkAtoms::base) &&
-      aDocument) {
+  if (mNodeInfo->Equals(nsGkAtoms::base) && aDocument) {
     if (HasAttr(kNameSpaceID_None, nsGkAtoms::href)) {
       SetBaseURIUsingFirstBaseWithHref(aDocument, this);
     }
@@ -303,10 +250,8 @@ HTMLSharedElement::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
   return NS_OK;
 }
 
-void
-HTMLSharedElement::UnbindFromTree(bool aDeep, bool aNullParent)
-{
-  nsIDocument* doc = GetUncomposedDoc();
+void HTMLSharedElement::UnbindFromTree(bool aDeep, bool aNullParent) {
+  Document* doc = GetUncomposedDoc();
 
   nsGenericHTMLElement::UnbindFromTree(aDeep, aNullParent);
 
@@ -322,9 +267,8 @@ HTMLSharedElement::UnbindFromTree(bool aDeep, bool aNullParent)
   }
 }
 
-nsMapRuleToAttributesFunc
-HTMLSharedElement::GetAttributeMappingFunction() const
-{
+nsMapRuleToAttributesFunc HTMLSharedElement::GetAttributeMappingFunction()
+    const {
   if (mNodeInfo->Equals(nsGkAtoms::dir)) {
     return &DirectoryMapAttributesIntoRule;
   }
@@ -332,28 +276,27 @@ HTMLSharedElement::GetAttributeMappingFunction() const
   return nsGenericHTMLElement::GetAttributeMappingFunction();
 }
 
-JSObject*
-HTMLSharedElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
-{
+JSObject* HTMLSharedElement::WrapNode(JSContext* aCx,
+                                      JS::Handle<JSObject*> aGivenProto) {
   if (mNodeInfo->Equals(nsGkAtoms::param)) {
-    return HTMLParamElementBinding::Wrap(aCx, this, aGivenProto);
+    return HTMLParamElement_Binding::Wrap(aCx, this, aGivenProto);
   }
   if (mNodeInfo->Equals(nsGkAtoms::base)) {
-    return HTMLBaseElementBinding::Wrap(aCx, this, aGivenProto);
+    return HTMLBaseElement_Binding::Wrap(aCx, this, aGivenProto);
   }
   if (mNodeInfo->Equals(nsGkAtoms::dir)) {
-    return HTMLDirectoryElementBinding::Wrap(aCx, this, aGivenProto);
+    return HTMLDirectoryElement_Binding::Wrap(aCx, this, aGivenProto);
   }
   if (mNodeInfo->Equals(nsGkAtoms::q) ||
       mNodeInfo->Equals(nsGkAtoms::blockquote)) {
-    return HTMLQuoteElementBinding::Wrap(aCx, this, aGivenProto);
+    return HTMLQuoteElement_Binding::Wrap(aCx, this, aGivenProto);
   }
   if (mNodeInfo->Equals(nsGkAtoms::head)) {
-    return HTMLHeadElementBinding::Wrap(aCx, this, aGivenProto);
+    return HTMLHeadElement_Binding::Wrap(aCx, this, aGivenProto);
   }
   MOZ_ASSERT(mNodeInfo->Equals(nsGkAtoms::html));
-  return HTMLHtmlElementBinding::Wrap(aCx, this, aGivenProto);
+  return HTMLHtmlElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

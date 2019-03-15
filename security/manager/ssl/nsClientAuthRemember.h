@@ -7,6 +7,8 @@
 #ifndef __NSCLIENTAUTHREMEMBER_H__
 #define __NSCLIENTAUTHREMEMBER_H__
 
+#include "mozilla/HashFunctions.h"
+#include "mozilla/Move.h"
 #include "mozilla/ReentrantMonitor.h"
 #include "nsTHashtable.h"
 #include "nsIObserver.h"
@@ -17,26 +19,20 @@
 #include "mozilla/Attributes.h"
 
 namespace mozilla {
-  class OriginAttributes;
+class OriginAttributes;
 }
 
 using mozilla::OriginAttributes;
 
-class nsClientAuthRemember
-{
-public:
+class nsClientAuthRemember {
+ public:
+  nsClientAuthRemember() {}
 
-  nsClientAuthRemember()
-  {
-  }
-
-  nsClientAuthRemember(const nsClientAuthRemember& aOther)
-  {
+  nsClientAuthRemember(const nsClientAuthRemember& aOther) {
     this->operator=(aOther);
   }
 
-  nsClientAuthRemember& operator=(const nsClientAuthRemember& aOther)
-  {
+  nsClientAuthRemember& operator=(const nsClientAuthRemember& aOther) {
     mAsciiHost = aOther.mAsciiHost;
     mFingerprint = aOther.mFingerprint;
     mDBKey = aOther.mDBKey;
@@ -48,72 +44,51 @@ public:
   nsCString mDBKey;
 };
 
-
 // hash entry class
-class nsClientAuthRememberEntry final : public PLDHashEntryHdr
-{
-  public:
-    // Hash methods
-    typedef const char* KeyType;
-    typedef const char* KeyTypePointer;
+class nsClientAuthRememberEntry final : public PLDHashEntryHdr {
+ public:
+  // Hash methods
+  typedef const char* KeyType;
+  typedef const char* KeyTypePointer;
 
-    // do nothing with aHost - we require mHead to be set before we're live!
-    explicit nsClientAuthRememberEntry(KeyTypePointer aHostWithCertUTF8)
-    {
-    }
+  // do nothing with aHost - we require mHead to be set before we're live!
+  explicit nsClientAuthRememberEntry(KeyTypePointer aHostWithCertUTF8) {}
 
-    nsClientAuthRememberEntry(const nsClientAuthRememberEntry& aToCopy)
-    {
-      mSettings = aToCopy.mSettings;
-    }
+  nsClientAuthRememberEntry(nsClientAuthRememberEntry&& aToMove)
+      : PLDHashEntryHdr(std::move(aToMove)),
+        mSettings(std::move(aToMove.mSettings)),
+        mEntryKey(std::move(aToMove.mEntryKey)) {}
 
-    ~nsClientAuthRememberEntry()
-    {
-    }
+  ~nsClientAuthRememberEntry() {}
 
-    KeyType GetKey() const
-    {
-      return EntryKeyPtr();
-    }
+  KeyType GetKey() const { return EntryKeyPtr(); }
 
-    KeyTypePointer GetKeyPointer() const
-    {
-      return EntryKeyPtr();
-    }
+  KeyTypePointer GetKeyPointer() const { return EntryKeyPtr(); }
 
-    bool KeyEquals(KeyTypePointer aKey) const
-    {
-      return !strcmp(EntryKeyPtr(), aKey);
-    }
+  bool KeyEquals(KeyTypePointer aKey) const {
+    return !strcmp(EntryKeyPtr(), aKey);
+  }
 
-    static KeyTypePointer KeyToPointer(KeyType aKey)
-    {
-      return aKey;
-    }
+  static KeyTypePointer KeyToPointer(KeyType aKey) { return aKey; }
 
-    static PLDHashNumber HashKey(KeyTypePointer aKey)
-    {
-      return PLDHashTable::HashStringKey(aKey);
-    }
+  static PLDHashNumber HashKey(KeyTypePointer aKey) {
+    return mozilla::HashString(aKey);
+  }
 
-    enum { ALLOW_MEMMOVE = false };
+  enum { ALLOW_MEMMOVE = false };
 
-    // get methods
-    inline const nsCString& GetEntryKey() const { return mEntryKey; }
+  // get methods
+  inline const nsCString& GetEntryKey() const { return mEntryKey; }
 
-    inline KeyTypePointer EntryKeyPtr() const
-    {
-      return mEntryKey.get();
-    }
+  inline KeyTypePointer EntryKeyPtr() const { return mEntryKey.get(); }
 
-    nsClientAuthRemember mSettings;
-    nsCString mEntryKey;
+  nsClientAuthRemember mSettings;
+  nsCString mEntryKey;
 };
 
 class nsClientAuthRememberService final : public nsIObserver,
-                                          public nsSupportsWeakReference
-{
-public:
+                                          public nsSupportsWeakReference {
+ public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIOBSERVER
 
@@ -139,17 +114,17 @@ public:
   void ClearRememberedDecisions();
   static void ClearAllRememberedDecisions();
 
-protected:
-    ~nsClientAuthRememberService();
+ protected:
+  ~nsClientAuthRememberService();
 
-    mozilla::ReentrantMonitor monitor;
-    nsTHashtable<nsClientAuthRememberEntry> mSettingsTable;
+  mozilla::ReentrantMonitor monitor;
+  nsTHashtable<nsClientAuthRememberEntry> mSettingsTable;
 
-    void RemoveAllFromMemory();
-    nsresult AddEntryToList(const nsACString& aHost,
-                            const OriginAttributes& aOriginAttributes,
-                            const nsACString& aServerFingerprint,
-                            const nsACString& aDBKey);
+  void RemoveAllFromMemory();
+  nsresult AddEntryToList(const nsACString& aHost,
+                          const OriginAttributes& aOriginAttributes,
+                          const nsACString& aServerFingerprint,
+                          const nsACString& aDBKey);
 };
 
 #endif

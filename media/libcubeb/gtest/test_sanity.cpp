@@ -13,22 +13,21 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+
+//#define ENABLE_NORMAL_LOG
+//#define ENABLE_VERBOSE_LOG
 #include "common.h"
 
 #define STREAM_RATE 44100
 #define STREAM_LATENCY 100 * STREAM_RATE / 1000
 #define STREAM_CHANNELS 1
 #define STREAM_LAYOUT CUBEB_LAYOUT_MONO
-#if (defined(_WIN32) || defined(__WIN32__))
-#define STREAM_FORMAT CUBEB_SAMPLE_FLOAT32LE
-#else
 #define STREAM_FORMAT CUBEB_SAMPLE_S16LE
-#endif
 
 int is_windows_7()
 {
 #ifdef __MINGW32__
-  printf("Warning: this test was built with MinGW.\n"
+  fprintf(stderr, "Warning: this test was built with MinGW.\n"
          "MinGW does not contain necessary version checking infrastructure. Claiming to be Windows 7, even if we're not.\n");
   return 1;
 #endif
@@ -61,11 +60,7 @@ test_data_callback(cubeb_stream * stm, void * user_ptr, const void * /*inputbuff
 {
   EXPECT_TRUE(stm && user_ptr == &dummy && outputbuffer && nframes > 0);
   assert(outputbuffer);
-#if (defined(_WIN32) || defined(__WIN32__))
-  memset(outputbuffer, 0, nframes * sizeof(float));
-#else
   memset(outputbuffer, 0, nframes * sizeof(short));
-#endif
 
   total_frames_written += nframes;
   if (delay_callback) {
@@ -85,7 +80,7 @@ TEST(cubeb, init_destroy_context)
   cubeb * ctx;
   char const* backend_id;
 
-  r = cubeb_init(&ctx, "test_sanity");
+  r = common_init(&ctx, "test_sanity");
   ASSERT_EQ(r, CUBEB_OK);
   ASSERT_NE(ctx, nullptr);
 
@@ -106,7 +101,7 @@ TEST(cubeb, init_destroy_multiple_contexts)
   ASSERT_EQ(ARRAY_LENGTH(ctx), ARRAY_LENGTH(order));
 
   for (i = 0; i < ARRAY_LENGTH(ctx); ++i) {
-    r = cubeb_init(&ctx[i], NULL);
+    r = common_init(&ctx[i], NULL);
     ASSERT_EQ(r, CUBEB_OK);
     ASSERT_NE(ctx[i], nullptr);
   }
@@ -124,7 +119,7 @@ TEST(cubeb, context_variables)
   uint32_t value;
   cubeb_stream_params params;
 
-  r = cubeb_init(&ctx, "test_context_variables");
+  r = common_init(&ctx, "test_context_variables");
   ASSERT_EQ(r, CUBEB_OK);
   ASSERT_NE(ctx, nullptr);
 
@@ -132,10 +127,9 @@ TEST(cubeb, context_variables)
   params.format = STREAM_FORMAT;
   params.rate = STREAM_RATE;
   params.layout = STREAM_LAYOUT;
-#if defined(__ANDROID__)
-  params.stream_type = CUBEB_STREAM_TYPE_MUSIC;
-#endif
-  r = cubeb_get_min_latency(ctx, params, &value);
+  params.prefs = CUBEB_STREAM_PREF_NONE;
+
+  r = cubeb_get_min_latency(ctx, &params, &value);
   ASSERT_TRUE(r == CUBEB_OK || r == CUBEB_ERROR_NOT_SUPPORTED);
   if (r == CUBEB_OK) {
     ASSERT_TRUE(value > 0);
@@ -157,7 +151,7 @@ TEST(cubeb, init_destroy_stream)
   cubeb_stream * stream;
   cubeb_stream_params params;
 
-  r = cubeb_init(&ctx, "test_sanity");
+  r = common_init(&ctx, "test_sanity");
   ASSERT_EQ(r, CUBEB_OK);
   ASSERT_NE(ctx, nullptr);
 
@@ -165,9 +159,7 @@ TEST(cubeb, init_destroy_stream)
   params.rate = STREAM_RATE;
   params.channels = STREAM_CHANNELS;
   params.layout = STREAM_LAYOUT;
-#if defined(__ANDROID__)
-  params.stream_type = CUBEB_STREAM_TYPE_MUSIC;
-#endif
+  params.prefs = CUBEB_STREAM_PREF_NONE;
 
   r = cubeb_stream_init(ctx, &stream, "test", NULL, NULL, NULL, &params, STREAM_LATENCY,
                         test_data_callback, test_state_callback, &dummy);
@@ -186,7 +178,7 @@ TEST(cubeb, init_destroy_multiple_streams)
   cubeb_stream * stream[8];
   cubeb_stream_params params;
 
-  r = cubeb_init(&ctx, "test_sanity");
+  r = common_init(&ctx, "test_sanity");
   ASSERT_EQ(r, CUBEB_OK);
   ASSERT_NE(ctx, nullptr);
 
@@ -194,9 +186,7 @@ TEST(cubeb, init_destroy_multiple_streams)
   params.rate = STREAM_RATE;
   params.channels = STREAM_CHANNELS;
   params.layout = STREAM_LAYOUT;
-#if defined(__ANDROID__)
-  params.stream_type = CUBEB_STREAM_TYPE_MUSIC;
-#endif
+  params.prefs = CUBEB_STREAM_PREF_NONE;
 
   for (i = 0; i < ARRAY_LENGTH(stream); ++i) {
     r = cubeb_stream_init(ctx, &stream[i], "test", NULL, NULL, NULL, &params, STREAM_LATENCY,
@@ -219,7 +209,7 @@ TEST(cubeb, configure_stream)
   cubeb_stream * stream;
   cubeb_stream_params params;
 
-  r = cubeb_init(&ctx, "test_sanity");
+  r = common_init(&ctx, "test_sanity");
   ASSERT_EQ(r, CUBEB_OK);
   ASSERT_NE(ctx, nullptr);
 
@@ -227,9 +217,7 @@ TEST(cubeb, configure_stream)
   params.rate = STREAM_RATE;
   params.channels = 2; // panning
   params.layout = CUBEB_LAYOUT_STEREO;
-#if defined(__ANDROID__)
-  params.stream_type = CUBEB_STREAM_TYPE_MUSIC;
-#endif
+  params.prefs = CUBEB_STREAM_PREF_NONE;
 
   r = cubeb_stream_init(ctx, &stream, "test", NULL, NULL, NULL, &params, STREAM_LATENCY,
                         test_data_callback, test_state_callback, &dummy);
@@ -246,6 +234,40 @@ TEST(cubeb, configure_stream)
   cubeb_destroy(ctx);
 }
 
+TEST(cubeb, configure_stream_undefined_layout)
+{
+  int r;
+  cubeb * ctx;
+  cubeb_stream * stream;
+  cubeb_stream_params params;
+
+  r = common_init(&ctx, "test_sanity");
+  ASSERT_EQ(r, CUBEB_OK);
+  ASSERT_NE(ctx, nullptr);
+
+  params.format = STREAM_FORMAT;
+  params.rate = STREAM_RATE;
+  params.channels = 2; // panning
+  params.layout = CUBEB_LAYOUT_UNDEFINED;
+  params.prefs = CUBEB_STREAM_PREF_NONE;
+
+  r = cubeb_stream_init(ctx, &stream, "test", NULL, NULL, NULL, &params, STREAM_LATENCY,
+                        test_data_callback, test_state_callback, &dummy);
+  ASSERT_EQ(r, CUBEB_OK);
+  ASSERT_NE(stream, nullptr);
+
+  r = cubeb_stream_start(stream);
+  ASSERT_EQ(r, CUBEB_OK);
+
+  delay(100);
+
+  r = cubeb_stream_stop(stream);
+  ASSERT_EQ(r, CUBEB_OK);
+
+  cubeb_stream_destroy(stream);
+  cubeb_destroy(ctx);
+}
+
 static void
 test_init_start_stop_destroy_multiple_streams(int early, int delay_ms)
 {
@@ -255,7 +277,7 @@ test_init_start_stop_destroy_multiple_streams(int early, int delay_ms)
   cubeb_stream * stream[8];
   cubeb_stream_params params;
 
-  r = cubeb_init(&ctx, "test_sanity");
+  r = common_init(&ctx, "test_sanity");
   ASSERT_EQ(r, CUBEB_OK);
   ASSERT_NE(ctx, nullptr);
 
@@ -263,9 +285,7 @@ test_init_start_stop_destroy_multiple_streams(int early, int delay_ms)
   params.rate = STREAM_RATE;
   params.channels = STREAM_CHANNELS;
   params.layout = STREAM_LAYOUT;
-#if defined(__ANDROID__)
-  params.stream_type = CUBEB_STREAM_TYPE_MUSIC;
-#endif
+  params.prefs = CUBEB_STREAM_PREF_NONE;
 
   for (i = 0; i < ARRAY_LENGTH(stream); ++i) {
     r = cubeb_stream_init(ctx, &stream[i], "test", NULL, NULL, NULL, &params, STREAM_LATENCY,
@@ -350,12 +370,10 @@ TEST(cubeb, init_destroy_multiple_contexts_and_streams)
   params.rate = STREAM_RATE;
   params.channels = STREAM_CHANNELS;
   params.layout = STREAM_LAYOUT;
-#if defined(__ANDROID__)
-  params.stream_type = CUBEB_STREAM_TYPE_MUSIC;
-#endif
+  params.prefs = CUBEB_STREAM_PREF_NONE;
 
   for (i = 0; i < ARRAY_LENGTH(ctx); ++i) {
-    r = cubeb_init(&ctx[i], "test_sanity");
+    r = common_init(&ctx[i], "test_sanity");
     ASSERT_EQ(r, CUBEB_OK);
     ASSERT_NE(ctx[i], nullptr);
 
@@ -382,8 +400,9 @@ TEST(cubeb, basic_stream_operations)
   cubeb_stream * stream;
   cubeb_stream_params params;
   uint64_t position;
+  uint32_t latency;
 
-  r = cubeb_init(&ctx, "test_sanity");
+  r = common_init(&ctx, "test_sanity");
   ASSERT_EQ(r, CUBEB_OK);
   ASSERT_NE(ctx, nullptr);
 
@@ -391,32 +410,39 @@ TEST(cubeb, basic_stream_operations)
   params.rate = STREAM_RATE;
   params.channels = STREAM_CHANNELS;
   params.layout = STREAM_LAYOUT;
-#if defined(__ANDROID__)
-  params.stream_type = CUBEB_STREAM_TYPE_MUSIC;
-#endif
+  params.prefs = CUBEB_STREAM_PREF_NONE;
 
   r = cubeb_stream_init(ctx, &stream, "test", NULL, NULL, NULL, &params, STREAM_LATENCY,
                         test_data_callback, test_state_callback, &dummy);
   ASSERT_EQ(r, CUBEB_OK);
   ASSERT_NE(stream, nullptr);
 
-  /* position and volume before stream has started */
+  /* position and latency before stream has started */
   r = cubeb_stream_get_position(stream, &position);
   ASSERT_EQ(r, CUBEB_OK);
   ASSERT_EQ(position, 0u);
 
+  r = cubeb_stream_get_latency(stream, &latency);
+  ASSERT_EQ(r, CUBEB_OK);
+
   r = cubeb_stream_start(stream);
   ASSERT_EQ(r, CUBEB_OK);
 
-  /* position and volume after while stream running */
+  /* position and latency after while stream running */
   r = cubeb_stream_get_position(stream, &position);
+  ASSERT_EQ(r, CUBEB_OK);
+
+  r = cubeb_stream_get_latency(stream, &latency);
   ASSERT_EQ(r, CUBEB_OK);
 
   r = cubeb_stream_stop(stream);
   ASSERT_EQ(r, CUBEB_OK);
 
-  /* position and volume after stream has stopped */
+  /* position and latency after stream has stopped */
   r = cubeb_stream_get_position(stream, &position);
+  ASSERT_EQ(r, CUBEB_OK);
+
+  r = cubeb_stream_get_latency(stream, &latency);
   ASSERT_EQ(r, CUBEB_OK);
 
   cubeb_stream_destroy(stream);
@@ -434,7 +460,7 @@ TEST(cubeb, stream_position)
 
   total_frames_written = 0;
 
-  r = cubeb_init(&ctx, "test_sanity");
+  r = common_init(&ctx, "test_sanity");
   ASSERT_EQ(r, CUBEB_OK);
   ASSERT_NE(ctx, nullptr);
 
@@ -442,9 +468,7 @@ TEST(cubeb, stream_position)
   params.rate = STREAM_RATE;
   params.channels = STREAM_CHANNELS;
   params.layout = STREAM_LAYOUT;
-#if defined(__ANDROID__)
-  params.stream_type = CUBEB_STREAM_TYPE_MUSIC;
-#endif
+  params.prefs = CUBEB_STREAM_PREF_NONE;
 
   r = cubeb_stream_init(ctx, &stream, "test", NULL, NULL, NULL, &params, STREAM_LATENCY,
                         test_data_callback, test_state_callback, &dummy);
@@ -545,11 +569,7 @@ test_drain_data_callback(cubeb_stream * stm, void * user_ptr, const void * /*inp
   }
   /* once drain has started, callback must never be called again */
   EXPECT_TRUE(do_drain != 2);
-#if (defined(_WIN32) || defined(__WIN32__))
-  memset(outputbuffer, 0, nframes * sizeof(float));
-#else
   memset(outputbuffer, 0, nframes * sizeof(short));
-#endif
   total_frames_written += nframes;
   return nframes;
 }
@@ -574,7 +594,7 @@ TEST(cubeb, drain)
   delay_callback = 0;
   total_frames_written = 0;
 
-  r = cubeb_init(&ctx, "test_sanity");
+  r = common_init(&ctx, "test_sanity");
   ASSERT_EQ(r, CUBEB_OK);
   ASSERT_NE(ctx, nullptr);
 
@@ -582,9 +602,7 @@ TEST(cubeb, drain)
   params.rate = STREAM_RATE;
   params.channels = STREAM_CHANNELS;
   params.layout = STREAM_LAYOUT;
-#if defined(__ANDROID__)
-  params.stream_type = CUBEB_STREAM_TYPE_MUSIC;
-#endif
+  params.prefs = CUBEB_STREAM_PREF_NONE;
 
   r = cubeb_stream_init(ctx, &stream, "test", NULL, NULL, NULL, &params, STREAM_LATENCY,
                         test_drain_data_callback, test_drain_state_callback, &dummy);
@@ -632,4 +650,43 @@ TEST(cubeb, DISABLED_eos_during_prefill)
 TEST(cubeb, DISABLED_stream_destroy_pending_drain)
 {
   // This test needs to be implemented.
+}
+
+TEST(cubeb, stable_devid)
+{
+  /* Test that the devid field of cubeb_device_info is stable
+   * (ie. compares equal) over two invocations of
+   * cubeb_enumerate_devices(). */
+
+  int r;
+  cubeb * ctx;
+  cubeb_device_collection first;
+  cubeb_device_collection second;
+  cubeb_device_type all_devices =
+    (cubeb_device_type) (CUBEB_DEVICE_TYPE_INPUT | CUBEB_DEVICE_TYPE_OUTPUT);
+  size_t n;
+
+  r = common_init(&ctx, "test_sanity");
+  ASSERT_EQ(r, CUBEB_OK);
+  ASSERT_NE(ctx, nullptr);
+
+  r = cubeb_enumerate_devices(ctx, all_devices, &first);
+  if (r == CUBEB_ERROR_NOT_SUPPORTED)
+    return;
+
+  ASSERT_EQ(r, CUBEB_OK);
+
+  r = cubeb_enumerate_devices(ctx, all_devices, &second);
+  ASSERT_EQ(r, CUBEB_OK);
+
+  ASSERT_EQ(first.count, second.count);
+  for (n = 0; n < first.count; n++) {
+    ASSERT_EQ(first.device[n].devid, second.device[n].devid);
+  }
+
+  r = cubeb_device_collection_destroy(ctx, &first);
+  ASSERT_EQ(r, CUBEB_OK);
+  r = cubeb_device_collection_destroy(ctx, &second);
+  ASSERT_EQ(r, CUBEB_OK);
+  cubeb_destroy(ctx);
 }

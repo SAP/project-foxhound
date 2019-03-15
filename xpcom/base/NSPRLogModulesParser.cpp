@@ -13,10 +13,9 @@ const char kAdditionalWordChars[] = "_-";
 
 namespace mozilla {
 
-void
-NSPRLogModulesParser(const char* aLogModules,
-                     std::function<void(const char*, LogLevel, int32_t)> aCallback)
-{
+void NSPRLogModulesParser(
+    const char* aLogModules,
+    const std::function<void(const char*, LogLevel, int32_t)>& aCallback) {
   if (!aLogModules) {
     return;
   }
@@ -30,17 +29,11 @@ NSPRLogModulesParser(const char* aLogModules,
     LogLevel logLevel = LogLevel::Error;
     int32_t levelValue = 0;
     if (parser.CheckChar(':')) {
-      // Check if a negative value is provided.
-      int32_t multiplier = 1;
-      if (parser.CheckChar([](const char aChar) { return aChar == '-'; })) {
-        multiplier = -1;
-      }
-
       // NB: If a level isn't provided after the ':' we assume the default
       //     Error level is desired. This differs from NSPR which will stop
       //     processing the log module string in this case.
-      if (parser.ReadInteger(&levelValue)) {
-        logLevel = ToLogLevel(levelValue * multiplier);
+      if (parser.ReadSignedInteger(&levelValue)) {
+        logLevel = ToLogLevel(levelValue);
       }
     }
 
@@ -51,4 +44,4 @@ NSPRLogModulesParser(const char* aLogModules,
   }
 }
 
-} // namespace mozilla
+}  // namespace mozilla

@@ -6,23 +6,15 @@
 #include "nsISupports.idl"
 #include "domstubs.idl"
 
-interface nsIAtom;
 interface nsIContent;
 interface nsIArray;
-interface nsISelection;
-interface nsIContentFilter;
 
-%{C++
-namespace mozilla {
-namespace dom {
-class Element;
-}
-}
-%}
+webidl Document;
+webidl Element;
+webidl Node;
+webidl Selection;
 
-[ptr] native Element (mozilla::dom::Element);
-
-[scriptable, uuid(87ee993e-985f-4a43-a974-0d9512da2fb0)]
+[scriptable, builtinclass, uuid(87ee993e-985f-4a43-a974-0d9512da2fb0)]
 interface nsIHTMLEditor : nsISupports
 {
 %{C++
@@ -38,43 +30,6 @@ interface nsIHTMLEditor : nsISupports
 
   /* ------------ Inline property methods -------------- */
 
-
-  /**
-   * AddDefaultProperty() registers a default style property with the editor
-   *
-   * @param aProperty   the property to set by default
-   * @param aAttribute  the attribute of the property, if applicable.
-   *                    May be null.
-   *                    Example: aProperty="font", aAttribute="color"
-   * @param aValue      if aAttribute is not null, the value of the attribute.
-   *                    Example: aProperty="font", aAttribute="color",
-   *                             aValue="0x00FFFF"
-   */
-  void addDefaultProperty(in nsIAtom aProperty,
-                          in AString aAttribute,
-                          in AString aValue);
-
-  /**
-   * RemoveDefaultProperty() unregisters a default style property with the editor
-   *
-   * @param aProperty   the property to remove from defaults
-   * @param aAttribute  the attribute of the property, if applicable.
-   *                    May be null.
-   *                    Example: aProperty="font", aAttribute="color"
-   * @param aValue      if aAttribute is not null, the value of the attribute.
-   *                    Example: aProperty="font", aAttribute="color",
-   *                             aValue="0x00FFFF"
-   */
-  void removeDefaultProperty(in nsIAtom aProperty,
-                             in AString aAttribute,
-                             in AString aValue);
-
-  /**
-   * RemoveAllDefaultProperties() unregisters all default style properties with the editor
-   *
-   */
-  void removeAllDefaultProperties();
-
   /**
    * SetInlineProperty() sets the aggregate properties on the current selection
    *
@@ -87,7 +42,7 @@ interface nsIHTMLEditor : nsISupports
    *                    Example: aProperty="font", aAttribute="color",
    *                             aValue="0x00FFFF"
    */
-  void setInlineProperty(in nsIAtom aProperty,
+  void setInlineProperty(in AString aProperty,
                          in AString aAttribute,
                          in AString aValue);
 
@@ -111,19 +66,19 @@ interface nsIHTMLEditor : nsISupports
    * @param aAll        [OUT] PR_TRUE if all of the text nodes in the
    *                          selection have the property
    */
-  void getInlineProperty(in nsIAtom aProperty,
-                         in AString  aAttribute,
-                         in AString  aValue,
+  void getInlineProperty(in AString aProperty,
+                         in AString aAttribute,
+                         in AString aValue,
                          out boolean aFirst,
                          out boolean aAny,
                          out boolean aAll);
 
-  AString getInlinePropertyWithAttrValue(in nsIAtom aProperty,
-                                           in AString  aAttribute,
-                                           in AString  aValue,
-                                           out boolean aFirst,
-                                           out boolean aAny,
-                                           out boolean aAll);
+  AString getInlinePropertyWithAttrValue(in AString aProperty,
+                                         in AString aAttribute,
+                                         in AString aValue,
+                                         out boolean aFirst,
+                                         out boolean aAny,
+                                         out boolean aAll);
 
   /**
    * removeAllInlineProperties() deletes all the inline properties from all
@@ -133,23 +88,19 @@ interface nsIHTMLEditor : nsISupports
 
 
   /**
-   * removeInlineProperty() deletes the properties from all text in the current
-   * selection.  If aProperty is not set on the selection, nothing is done.
+   * removeInlineProperty() removes a property which changes inline style of
+   * text.  E.g., bold, italic, super and sub.
    *
-   * @param aProperty   the property to remove from the selection
-   *                    All atoms are for normal HTML tags (e.g.:
-   *                    nsIEditorProperty::font) except when you want to
-   *                    remove just links and not named anchors.
-   *                    For that, use nsIEditorProperty::href
-   * @param aAttribute  the attribute of the property, if applicable.
-   *                    May be null.
-   *                    Example: aProperty=nsIEditorProptery::font,
-   *                    aAttribute="color"
-   *                    nsIEditProperty::allAttributes is special.
-   *                    It indicates that all content-based text properties
-   *                    are to be removed from the selection.
+   * @param aProperty   Tag name whcih represents the inline style you want to
+   *                    remove.  E.g., "strong", "b", etc.
+   *                    If "href", <a> element which has href attribute will be
+   *                    removed.
+   *                    If "name", <a> element which has non-empty name
+   *                    attribute will be removed.
+   * @param aAttribute  If aProperty is "font", aAttribute should be "face",
+   *                    "size", "color" or "bgcolor".
    */
-  void removeInlineProperty(in nsIAtom aProperty, in AString  aAttribute);
+  void removeInlineProperty(in AString aProperty, in AString aAttribute);
 
   /**
    *  Increase font size for text in selection by 1 HTML unit
@@ -173,7 +124,7 @@ interface nsIHTMLEditor : nsISupports
    *
    * @param aNode      the node to test
    */
-  boolean nodeIsBlock(in nsIDOMNode node);
+  boolean nodeIsBlock(in Node node);
 
   /**
    * Insert some HTML source at the current location
@@ -198,30 +149,6 @@ interface nsIHTMLEditor : nsISupports
   void rebuildDocumentFromSource(in AString aSourceString);
 
   /**
-   * Insert some HTML source, interpreting
-   * the string argument according to the given context.
-   *
-   * @param aInputString   the string to be inserted
-   * @param aContextStr    Context of insertion
-   * @param aInfoStr       Related info to aInputString
-   * @param aFlavor        Transferable flavor, can be ""
-   * @param aSourceDoc          document where input was dragged from (may be null)
-   * @param aDestinationNode    location for insertion (such as when dropped)
-   * @param aDestinationOffset  used with aDestNode to determine insert location
-   * @param aDeleteSelection    used with aDestNode during drag&drop
-   * @param aCollapseSelection  used with aDestNode during drag&drop
-   */
-  void insertHTMLWithContext(in AString aInputString,
-                             in AString aContextStr,
-                             in AString aInfoStr,
-                             in AString aFlavor,
-                             in nsIDOMDocument aSourceDoc,
-                             in nsIDOMNode aDestinationNode,
-                             in long aDestinationOffset,
-                             in boolean aDeleteSelection);
-
-
-  /**
     * Insert an element, which may have child nodes, at the selection
     * Used primarily to insert a new element for various insert element dialogs,
     *   but it enforces the HTML 4.0 DTD "CanContain" rules, so it should
@@ -233,7 +160,7 @@ interface nsIHTMLEditor : nsISupports
     *     after the end of the selection for all element except
     *     Named Anchors, which insert before the selection
     */
-  void insertElementAtSelection(in nsIDOMElement aElement,
+  void insertElementAtSelection(in Element aElement,
                                 in boolean aDeleteSelection);
 
   /**
@@ -247,14 +174,14 @@ interface nsIHTMLEditor : nsISupports
 
 
   /* ------------ Selection manipulation -------------- */
-  /* Should these be moved to nsISelection? */
+  /* Should these be moved to Selection? */
 
   /**
     * Set the selection at the suppled element
     *
     * @param aElement   An element in the document
     */
-  void selectElement(in nsIDOMElement aElement);
+  void selectElement(in Element aElement);
 
   /**
     * Create a collapsed selection just after aElement
@@ -268,7 +195,7 @@ interface nsIHTMLEditor : nsISupports
     *
     * @param aElement  An element in the document
     */
-  void setCaretAfterElement(in nsIDOMElement aElement);
+  void setCaretAfterElement(in Element aElement);
 
   /**
    * SetParagraphFormat       Insert a block paragraph tag around selection
@@ -293,14 +220,7 @@ interface nsIHTMLEditor : nsISupports
   AString getFontFaceState(out boolean aMixed);
 
   /**
-   * getFontColorState returns what font face is in the selection.
-   * @param aMixed     True if there is more than one font color
-   * @return           Color string. "" is returned for none.
-   */
-  AString getFontColorState(out boolean aMixed);
-
-  /**
-   * getFontColorState returns what font face is in the selection.
+   * getBackgroundColorState returns what the background color of the selection.
    * @param aMixed     True if there is more than one font color
    * @return           Color string. "" is returned for none.
    */
@@ -349,18 +269,14 @@ interface nsIHTMLEditor : nsISupports
    * Document me!
    *
    */
-  void getIndentState(out boolean aCanIndent, out boolean aCanOutdent);
-
-  /**
-   * Document me!
-   *
-   */
   void makeOrChangeList(in AString aListType, in boolean entireList,
                         in AString aBulletType);
 
   /**
-   * Document me!
+   * removeList removes list items (<li>, <dd>, and <dt>) and list structures
+   * (<ul>, <ol>, and <dl>).
    *
+   * @param aListType  Unused.
    */
   void removeList(in AString aListType);
 
@@ -377,58 +293,48 @@ interface nsIHTMLEditor : nsISupports
   void  align(in AString aAlign);
 
   /**
-   * Return the input node or a parent matching the given aTagName,
-   *   starting the search at the supplied node.
-   * An example of use is for testing if a node is in a table cell
-   *   given a selection anchor node.
+   * GetElementOrParentByTagName() looks for an element node whose name matches
+   * aTagName from aNode or anchor node of Selection to <body> element.
    *
-   * @param aTagName  The HTML tagname
-   *  Special input values:
-   *    Use "href" to get a link node
-   *      (an "A" tag with the "href" attribute set)
-   *    Use "anchor" or "namedanchor" to get a named anchor node
-   *      (an "A" tag with the "name" attribute set)
-   *    Use "list" to get an OL, UL, or DL list node
-   *    Use "td" to get either a TD or TH cell node
-   *
-   * @param aNode    The node in the document to start the search.
-   *     If it is null, the anchor node of the current selection is used.
-   * @return         NS_EDITOR_ELEMENT_NOT_FOUND if an element is not found
-   *                 (passes NS_SUCCEEDED macro)
+   * @param aTagName        The tag name which you want to look for.
+   *                        Must not be empty string.
+   *                        If "list", the result may be <ul>, <ol> or <dl>
+   *                        element.
+   *                        If "td", the result may be <td> or <th>.
+   *                        If "href", the result may be <a> element
+   *                        which has "href" attribute with non-empty value.
+   *                        If "anchor", the result may be <a> which has
+   *                        "name" attribute with non-empty value.
+   * @param aNode           If non-null, this starts to look for the result
+   *                        from it.  Otherwise, i.e., null, starts from
+   *                        anchor node of Selection.
+   * @return                If an element which matches aTagName, returns
+   *                        an Element.  Otherwise, nullptr.
    */
-  nsIDOMElement getElementOrParentByTagName(in AString aTagName,
-                                            in nsIDOMNode aNode);
+  Element getElementOrParentByTagName(in AString aTagName,
+                                      in Node aNode);
 
   /**
-   * Return an element only if it is the only node selected,
-   *    such as an image, horizontal rule, etc.
-   * The exception is a link, which is more like a text attribute:
-   *    The Anchor tag is returned if the selection is within the textnode(s)
-   *    that are children of the "A" node.
-   *    This could be a collapsed selection, i.e., a caret
-   *    within the link text.
+   * getSelectedElement() returns a "selected" element node.  "selected" means:
+   * - there is only one selection range
+   * - the range starts from an element node or in an element
+   * - the range ends at immediately after same element
+   * - and the range does not include any other element nodes.
+   * Additionally, only when aTagName is "href", this thinks that an <a>
+   * element which has non-empty "href" attribute includes the range, the
+   * <a> element is selected.
    *
-   * @param aTagName  The HTML tagname or and empty string
-   *       to get any element (but only if it is the only element selected)
-   *    Special input values for Links and Named anchors:
-   *    Use "href" to get a link node
-   *      (an "A" tag with the "href" attribute set)
-   *    Use "anchor" or "namedanchor" to get a named anchor node
-   *      (an "A" tag with the "name" attribute set)
-   * @return          NS_EDITOR_ELEMENT_NOT_FOUND if an element is not found
-   *                  (passes NS_SUCCEEDED macro)
+   * @param aTagName    Case-insensitive element name.
+   *                    If empty string, this returns any element node or null.
+   *                    If "href", this returns an <a> element which has
+   *                    non-empty "href" attribute or null.
+   *                    If "anchor", this returns an <a> element which has
+   *                    non-empty "name" attribute or null.
+   *                    Otherwise, returns an element node whose name is
+   *                    same as aTagName or null.
+   * @return            A "selected" element.
    */
-  nsIDOMElement getSelectedElement(in AString aTagName);
-
-  /**
-   * Output the contents of the <HEAD> section as text/HTML format
-   */
-  AString getHeadContentsAsHTML();
-
-  /**
-   * Replace all children of <HEAD> with string of HTML source
-   */
-  void replaceHeadContentsWithHTML(in AString aSourceToInsert);
+  nsISupports getSelectedElement(in AString aTagName);
 
   /**
    * Return a new element with default attribute values
@@ -447,14 +353,14 @@ interface nsIHTMLEditor : nsISupports
    *      (an "A" tag with the "name" attribute set)
    * @return          The new element created.
    */
-  nsIDOMElement createElementWithDefaults(in AString aTagName);
+  Element createElementWithDefaults(in AString aTagName);
 
   /**
    * Insert an link element as the parent of the current selection
    *
    * @param aElement   An "A" element with a non-empty "href" attribute
    */
-  void insertLinkAroundSelection(in nsIDOMElement aAnchorElement);
+  void insertLinkAroundSelection(in Element aAnchorElement);
 
   /**
    * Set the value of the "bgcolor" attribute on the document's <body> element
@@ -462,18 +368,6 @@ interface nsIHTMLEditor : nsISupports
    * @param aColor  The HTML color string, such as "#ffccff" or "yellow"
    */
   void setBackgroundColor(in AString aColor);
-
-
-  /**
-   * Set an attribute on the document's <body> element
-   *    such as text, link, background colors
-   *
-   * 8/31/00 THIS ISN'T BEING USED? SHOULD WE DROP IT?
-   *
-   * @param aAttr   The attribute to be set
-   * @param aValue  The value of the attribute
-   */
-  void setBodyAttribute(in AString aAttr, in AString aValue);
 
   /**
    * Find all the nodes in the document which contain references
@@ -493,31 +387,15 @@ interface nsIHTMLEditor : nsISupports
   attribute boolean isCSSEnabled;
 
   /**
-   * Add listener for insertion override
-   * @param inFilter  function which callers want called during insertion
+   * checkSelectionStateForAnonymousButtons() may refresh editing UI such as
+   * resizers, inline-table-editing UI, absolute positioning UI for current
+   * Selection and focus state.  When this method shows or hides UI, the
+   * editor (and/or its document/window) could be broken by mutation observers.
+   * FYI: Current user in script is only BlueGriffon.
    */
-  void addInsertionListener(in nsIContentFilter inFilter);
+  void checkSelectionStateForAnonymousButtons();
 
-  /**
-   * Remove listener for insertion override
-   * @param inFilter  function which callers do not want called during insertion
-   */
-  void removeInsertionListener(in nsIContentFilter inFilter);
-
-  /**
-   * returns the deepest container of the selection
-   * @return a DOM Element
-   */
-  nsIDOMElement getSelectionContainer();
-
-  /**
-   * Checks if the anonymous nodes created by the HTML editor have to be
-   * refreshed or hidden depending on a possible new state of the selection
-   * @param aSelection [IN] a selection
-   */
-  void checkSelectionStateForAnonymousButtons(in nsISelection aSelection);
-
-  boolean isAnonymousElement(in nsIDOMElement aElement);
+  boolean isAnonymousElement(in Element aElement);
 
   /**
    * A boolean indicating if a return key pressed in a paragraph creates
@@ -526,11 +404,5 @@ interface nsIHTMLEditor : nsISupports
    * @return    true if CR in a paragraph creates a new paragraph
    */
   attribute boolean returnInParagraphCreatesNewParagraph;
-
-  /**
-   * Get an active editor's editing host in DOM window.  If this editor isn't
-   * active in the DOM window, this returns NULL.
-   */
-  [noscript, notxpcom] Element GetActiveEditingHost();
 };
 

@@ -2,7 +2,7 @@
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
-info: >
+info: |
     Function.constructor
     Function.prototype
     Array.prototype
@@ -18,7 +18,7 @@ description: >
     (Error.prototype)
 ---*/
 
-  var e = Object.isExtensible(Error.prototype);
+var e = Object.isExtensible(Error.prototype);
 
 assert.sameValue(e, true, 'e');
 

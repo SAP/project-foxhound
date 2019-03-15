@@ -1,0 +1,65 @@
+{
+  "applications": {
+    "gecko": {
+      "id": "raptor@mozilla.org"
+    }
+  },
+  "manifest_version": 2,
+  "name": "Raptor",
+  "version": "0.1",
+  "description": "Performance measurement framework prototype",
+  "background": {
+    "scripts": ["auto_gen_test_config.js", "runner.js"]
+  },
+  "content_scripts": [
+    {
+      "matches": [
+                  "*://*.apple.com/*",
+                  "*://*.amazon.com/*",
+                  "*://*.bing.com/*",
+                  "*://*.ebay.com/*",
+                  "*://*.facebook.com/*",
+                  "*://*.google.com/*",
+                  "*://*.imdb.com/*",
+                  "*://*.imgur.com/*",
+                  "*://*.instagram.com/*",
+                  "*://*.microsoft.com/*",
+                  "*://*.paypal.com/*",
+                  "*://*.pinterest.com/*",
+                  "*://*.reddit.com/*",
+                  "*://*.twitter.com/*",
+                  "*://*.vice.com/*",
+                  "*://*.wikia.com/*",
+                  "*://*.wikipedia.org/*",
+                  "*://*.yahoo.com/*",
+                  "*://*.youtube.com/*",
+                  "*://*.yandex.ru/*"
+                  ],
+      "js": ["measure.js"]
+    },
+    {
+      "matches": ["*://*/Speedometer/index.html*",
+                  "*://*/StyleBench/*",
+                  "*://*/MotionMark/*",
+                  "*://*/SunSpider/*",
+                  "*://*/webaudio/*",
+                  "*://*/unity-webgl/index.html*",
+                  "*://*/wasm-misc/index.html*",
+                  "*://*/wasm-godot/index.html*",
+                  "*://*/assorted-dom/assorted/results.html*"],
+      "js": ["benchmark-relay.js"]
+    }
+  ],
+  "browser_action": {
+    "browser_style": true,
+    "default_icon": "icon.png",
+    "default_title": "Raptor LOADED"
+  },
+  "permissions": [
+    "<all_urls>",
+    "tabs",
+    "storage",
+    "alarms",
+    "geckoProfiler"
+  ]
+}

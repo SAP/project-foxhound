@@ -2,53 +2,205 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-.hidden {
-  display: none;
-}
+@import url("chrome://global/skin/in-content/common.css");
 
 html {
-  background-color: -moz-Dialog;
-  color: -moz-DialogText;
-  font: message-box;
+  height: 100%;
 }
 
 body {
-  padding: 0px;
-  margin: 0px;
+  display: flex;
+  height: 100%;
 }
 
-h2 {
-  font-size: medium;
+#categories {
+  padding-top: 0px;
+  overflow-y: auto;
+  margin-bottom: 42px;
+  -moz-user-select: none;
+}
+
+.main-content.search > section > *:not(.data) {
+  display: none;
+}
+
+.main-content {
+  flex: 1;
+  line-height: 1.6;
+}
+
+#home-section {
+  font-size: 18px;
+}
+
+#category-raw {
+  background-color: var(--in-content-page-background);
+  position: absolute;
+  bottom: 0;
+  left: 0;
+}
+
+body[dir=rtl] #category-raw{
+  right: 0;
+}
+
+.heading {
+  display: flex;
+  flex-direction: column;
+  font-size: 17px;
+  font-weight: 600;
+  pointer-events: none;
+  padding: 12px 8px;
+}
+
+.header {
+  display: flex;
+}
+
+.header select {
+  margin-left: 4px;
+}
+
+#sectionTitle {
+  flex-grow: 1;
+}
+
+.heading > h3 {
+  margin: 0;
+  padding-bottom: 12px;
+}
+
+#ping-type {
+  flex-grow: 1;
+  text-align: center;
+  pointer-events: all;
+  cursor: pointer;
+}
+
+#older-ping, #newer-ping, #ping-date {
+  pointer-events: all;
+  -moz-user-select: none;
+  cursor: pointer;
+  text-align: center;
+}
+
+.dropdown {
+  background-image: url(chrome://global/skin/icons/arrow-dropdown-16.svg);
+  background-position: right 8px center;
+  background-repeat: no-repeat;
+  -moz-context-properties: fill;
+  fill: currentColor;
+}
+
+body[dir=rtl] .dropdown {
+  background-position-x: left 8px;
+}
+
+#controls {
+  display: flex;
+  margin-top: 4px;
+  justify-content: space-between;
+}
+
+.category:not(.has-data) {
+  display: none;
+}
+
+.category {
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  min-height: 42px;
+}
+
+.category-name {
+  padding: 9px 0px;
+  vertical-align: middle;
+}
+
+.category-subsection {
+  color: var(--in-content-text-color);
+  padding: 8px 0px;
+  padding-inline-start: 16px;
+  display: none;
+}
+
+.category-subsection.selected {
+  color: inherit;
+}
+
+.category-subsection::first-letter {
+  text-transform: uppercase;
+}
+
+.category.selected > .category-subsection {
+  display: block;
+}
+
+.category-name {
+  pointer-events: none;
+}
+
+section:not(.active) {
+  display: none;
 }
 
 #page-description {
   border: 1px solid threedshadow;
   margin: 0px;
   padding: 10px;
+  line-height: 1.2;
 }
 
-#settings {
-  border: 1px solid lightgrey;
-  padding: 5px;
+#ping-explanation > span {
+  cursor: pointer;
+  border-bottom-width: 2px;
+  border-bottom-style: solid;
 }
 
-.description-enabled,
-.description-disabled {
-  margin: 0px;
+#no-search-results {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%,-50%);
+  display: flex;
+  align-items: center;
+  flex-direction: column;
 }
 
-.description-enabled > span {
-  color: green;
+#no-search-results-text {
+  font-size: 17px;
+  margin-bottom: 2em;
 }
 
-.description-disabled > span {
-  color: red;
+.no-search-results-image {
+  background-image: url("chrome://browser/skin/preferences/in-content/no-search-results.svg");
+  width: 380px;
+  height: 293px;
+}
+
+.hidden {
+  display: none !important;
 }
 
 #ping-picker {
-  margin-top: 10px;
-  border: 1px solid lightgrey;
-  padding: 5px;
+  min-width: 300px;
+  position: fixed;
+  z-index: 2;
+  top: 32px;
+  left: 12px;
+  border-radius: 2px;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.25);
+  display: flex;
+  padding: 24px;
+  flex-direction: column;
+  background-color: white;
+  border: 1px solid var(--in-content-box-border-color);
+  margin: 12px 0px;
+}
+
+#ping-picker .title {
+  margin: 4px 0px;
 }
 
 #ping-source-picker {
@@ -56,63 +208,9 @@ h2 {
   margin-bottom: 10px;
 }
 
-.data-section,
-.data-subsection {
-  background-color: -moz-Field;
-  color: -moz-FieldText;
-  border-top: 1px solid threedshadow;
-  border-bottom: 1px solid threedshadow;
-  margin: 0px;
-  padding: 10px;
+#ping-source-archive-container.disabled {
+  opacity: 0.5;
 }
-
-.data-section:not(.has-data),
-.data-subsection:not(.has-subdata) {
-  color: gray;
-}
-
-
-.section-name {
-  font-size: x-large;
-  display: inline;
-}
-
-.has-data .section-name {
-  cursor: pointer;
-}
-
-
-.toggle-caption {
-  font-style: italic;
-  cursor: pointer;
-}
-
-.data-section:not(.has-data) .toggle-caption,
-.data-subsection:not(.has-subdata) .toggle-caption {
-  display: none;
-}
-
-
-.empty-caption {
-  font-style: italic;
-}
-
-.has-data .empty-caption,
-.has-subdata .empty-caption {
-  display: none; /* invisible when has-data */
-}
-
-.data,
-.subdata {
-  margin: 15px;
-  display: none;
-}
-
-.has-data.expanded .data,
-.has-subdata.expanded .subdata {
-  display: block;
-}
-
 
 .stack-title {
   font-size: medium;
@@ -120,17 +218,23 @@ h2 {
   text-decoration: underline;
 }
 
-#histograms, #addon-histograms, #thread-hang-stats>div {
+#histograms, #thread-hang-stats>div {
   overflow: hidden;
 }
 
 .histogram {
   float: left;
-  border: 1px solid gray;
   white-space: nowrap;
   padding: 10px;
   position: relative; /* required for position:absolute of the contained .copy-node */
+  padding: 12px 20px 12px 20px;
+  border: 1px solid var(--in-content-box-border-color);
+  border-radius: 2px;
+  margin-bottom: 24px;
+  margin-right: 24px;
+  min-height: 17.5em;
 }
+
 
 body[dir="rtl"] .histogram {
   float: right;
@@ -141,27 +245,34 @@ body[dir="rtl"] .histogram {
   width: 100%;
   white-space: nowrap;
   overflow: hidden;
+  font-size: 17px
+}
+
+.histogram-stats {
+  font-size: 13px;
 }
 
 .keyed-histogram {
   white-space: nowrap;
-  padding: 15px;
   position: relative; /* required for position:absolute of the contained .copy-node */
-  display: block;
   overflow: hidden;
+  margin-bottom: 1em;
 }
 
-.keyed-histogram-title {
+.keyed-scalar, .sub-section {
+  margin-bottom: 1em;
+}
+
+
+.keyed-title {
   text-overflow: ellipsis;
-  width: 100%;
-  margin: 10px;
-  font-weight: bold;
-  font-size: 120%;
+  margin: 12px 0;
+  font-size: 17px;
   white-space: nowrap;
 }
 
-
 .bar {
+  font-size: 17px;
   width: 2em;
   margin: 2px;
   text-align: center;
@@ -174,14 +285,40 @@ body[dir="rtl"] .bar {
 }
 
 .bar-inner {
-  background-color: DeepSkyBlue;
-  border: 1px solid #0000b0;
+  background-color: #0a84ff;
+  border: 1px solid #0060df;
+  border-radius: 2px;
+}
+
+.bar:nth-child(even) .long-label  {
+  margin-bottom: 1em;
+}
+
+th, td, table {
+  text-align: start;
+  word-break: break-all;
+  border-collapse: collapse;
+}
+
+table {
+  table-layout: fixed;
+  width: 100%;
+  font-size: 15px;
+}
+
+td {
+  padding-bottom: 0.25em;
+  border-bottom: 1px solid var(--in-content-box-border-color);
+}
+
+tr:not(:first-child):hover {
+  background-color: rgba(0, 0, 0, 0.05);
 }
 
 th {
-  font-weight: bold;
+  font-size: 13px;
   white-space: nowrap;
-  text-align: left;
+  padding: 0.5em 0;
 }
 
 body[dir="rtl"] th {
@@ -189,10 +326,9 @@ body[dir="rtl"] th {
 }
 
 caption {
-  font-weight: bold;
-  white-space: nowrap;
   text-align: left;
-  font-size: large;
+  font-size: 22px;
+  margin: 0.5em 0 0.5em 0;
 }
 
 body[dir="rtl"] caption {
@@ -214,58 +350,10 @@ body[dir="rtl"] .copy-node {
   visibility: visible;
 }
 
-
-.statebox {
-  display: none;
-}
-
-
-.filter-ui {
-  padding-inline-start: 10em;
-  display: none;
-}
-
-.has-data.expanded .filter-ui {
-  display: inline;
-}
-
-.processes-ui {
-  display: none;
-}
-
-.has-data.expanded .processes-ui {
-  display: initial;
-}
-
-.filter-blocked {
-  display: none;
-}
-
-#raw-ping-data-section {
-  width: 100%;
-  height: 100%;
-  background-color:-moz-Dialog;
-}
-
 #raw-ping-data {
-  background-color:white;
-  margin: 0px;
+  font-size: 15px;
 }
 
-#hide-raw-ping {
-  float: right;
-  cursor: pointer;
-  font-size: 20px;
-  background-color:#d8d8d8;
-  padding: 5px 10px;
-}
-
-/* addon subsection style */
-.addon-caption {
-  font-size: larger;
-  margin: 5px 0;
-}
-
-.process-picker {
-  margin: 0 0.5em;
+.clearfix {
+  clear: both;
 }

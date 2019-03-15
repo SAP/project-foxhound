@@ -21,59 +21,9 @@ try {
                 `being run, then it needs to be fixed.`, error);
   db = {
     CSS_PROPERTIES: {},
-    PSEUDO_ELEMENTS: []
+    PSEUDO_ELEMENTS: [],
   };
 }
-
-/**
- * All CSS types that properties can support. This list can be manually edited.
- */
-exports.CSS_TYPES = {
-  "ANGLE": 1,
-  "COLOR": 2,
-  "FREQUENCY": 3,
-  "GRADIENT": 4,
-  "IMAGE_RECT": 5,
-  "LENGTH": 6,
-  "NUMBER": 7,
-  "PERCENTAGE": 8,
-  "TIME": 9,
-  "TIMING_FUNCTION": 10,
-  "URL": 11,
-};
-
-/**
- * All CSS <angle> types that properties can support. This list can be manually edited.
- */
-exports.CSS_ANGLEUNIT = {
-  "deg": "deg",
-  "rad": "rad",
-  "grad": "grad",
-  "turn": "turn"
-};
-
-/**
- * All cubic-bezier CSS timing-function names. This list can be manually edited.
- */
-exports.BEZIER_KEYWORDS = ["linear", "ease-in-out", "ease-in", "ease-out", "ease"];
-
-/**
- * Functions that accept a color argument. This list can be manually edited.
- */
-exports.COLOR_TAKING_FUNCTIONS = ["linear-gradient", "-moz-linear-gradient",
-                                  "repeating-linear-gradient",
-                                  "-moz-repeating-linear-gradient", "radial-gradient",
-                                  "-moz-radial-gradient", "repeating-radial-gradient",
-                                  "-moz-repeating-radial-gradient", "drop-shadow"];
-
-/**
- * Functions that accept an angle argument. This list can be manually edited.
- */
-exports.ANGLE_TAKING_FUNCTIONS = ["linear-gradient", "-moz-linear-gradient",
-                                  "repeating-linear-gradient",
-                                  "-moz-repeating-linear-gradient", "rotate", "rotateX",
-                                  "rotateY", "rotateZ", "rotate3d", "skew", "skewX",
-                                  "skewY", "hue-rotate"];
 
 /**
  * The list of all CSS Pseudo Elements.
@@ -96,5 +46,5 @@ exports.CSS_PROPERTIES = db.CSS_PROPERTIES;
 
 exports.CSS_PROPERTIES_DB = {
   properties: db.CSS_PROPERTIES,
-  pseudoElements: db.PSEUDO_ELEMENTS
+  pseudoElements: db.PSEUDO_ELEMENTS,
 };

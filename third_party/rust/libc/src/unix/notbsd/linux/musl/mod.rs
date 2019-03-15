@@ -5,7 +5,9 @@ pub type ino_t = u64;
 pub type off_t = i64;
 pub type blkcnt_t = i64;
 
-pub type blksize_t = c_long;
+pub type shmatt_t = ::c_ulong;
+pub type msgqnum_t = ::c_ulong;
+pub type msglen_t = ::c_ulong;
 pub type fsblkcnt_t = ::c_ulonglong;
 pub type fsfilcnt_t = ::c_ulonglong;
 pub type rlim_t = ::c_ulonglong;
@@ -35,19 +37,27 @@ s! {
         pub sa_sigaction: ::sighandler_t,
         pub sa_mask: ::sigset_t,
         pub sa_flags: ::c_int,
-        _restorer: *mut ::c_void,
+        pub sa_restorer: ::dox::Option<extern fn()>,
     }
 
-    pub struct ipc_perm {
-        pub __ipc_perm_key: ::key_t,
-        pub uid: ::uid_t,
-        pub gid: ::gid_t,
-        pub cuid: ::uid_t,
-        pub cgid: ::gid_t,
-        pub mode: ::mode_t,
-        pub __seq: ::c_int,
-        __unused1: ::c_long,
-        __unused2: ::c_long
+    pub struct statvfs {
+        pub f_bsize: ::c_ulong,
+        pub f_frsize: ::c_ulong,
+        pub f_blocks: ::fsblkcnt_t,
+        pub f_bfree: ::fsblkcnt_t,
+        pub f_bavail: ::fsblkcnt_t,
+        pub f_files: ::fsfilcnt_t,
+        pub f_ffree: ::fsfilcnt_t,
+        pub f_favail: ::fsfilcnt_t,
+        #[cfg(target_endian = "little")]
+        pub f_fsid: ::c_ulong,
+        #[cfg(target_pointer_width = "32")]
+        __f_unused: ::c_int,
+        #[cfg(target_endian = "big")]
+        pub f_fsid: ::c_ulong,
+        pub f_flag: ::c_ulong,
+        pub f_namemax: ::c_ulong,
+        __f_spare: [::c_int; 6],
     }
 
     pub struct termios {
@@ -87,15 +97,14 @@ s! {
     }
 }
 
-pub const CLONE_NEWCGROUP: ::c_int = 0x02000000;
-
 pub const SFD_CLOEXEC: ::c_int = 0x080000;
 
 pub const NCCS: usize = 32;
 
 pub const O_TRUNC: ::c_int = 512;
-
+pub const O_NOATIME: ::c_int = 0o1000000;
 pub const O_CLOEXEC: ::c_int = 0x80000;
+pub const O_TMPFILE: ::c_int = 0o20000000 | O_DIRECTORY;
 
 pub const EBFONT: ::c_int = 59;
 pub const ENOSTR: ::c_int = 60;
@@ -124,6 +133,9 @@ pub const EFD_CLOEXEC: ::c_int = 0x80000;
 pub const BUFSIZ: ::c_uint = 1024;
 pub const TMP_MAX: ::c_uint = 10000;
 pub const FOPEN_MAX: ::c_uint = 1000;
+pub const O_PATH: ::c_int = 0o10000000;
+pub const O_EXEC: ::c_int = 0o10000000;
+pub const O_SEARCH: ::c_int = 0o10000000;
 pub const O_ACCMODE: ::c_int = 0o10000003;
 pub const O_NDELAY: ::c_int = O_NONBLOCK;
 pub const NI_MAXHOST: ::socklen_t = 255;
@@ -135,9 +147,11 @@ pub const POSIX_MADV_DONTNEED: ::c_int = 4;
 
 pub const RLIM_INFINITY: ::rlim_t = !0;
 pub const RLIMIT_RTTIME: ::c_int = 15;
-pub const RLIMIT_NLIMITS: ::c_int = 16;
 
 pub const MAP_ANONYMOUS: ::c_int = MAP_ANON;
+
+pub const SOCK_DCCP: ::c_int = 6;
+pub const SOCK_PACKET: ::c_int = 10;
 
 pub const TCP_COOKIE_TRANSACTIONS: ::c_int = 15;
 pub const TCP_THIN_LINEAR_TIMEOUTS: ::c_int = 16;
@@ -152,15 +166,11 @@ pub const TCP_TIMESTAMP: ::c_int = 24;
 
 pub const SIGUNUSED: ::c_int = ::SIGSYS;
 
-pub const FALLOC_FL_KEEP_SIZE: ::c_int = 0x01;
-pub const FALLOC_FL_PUNCH_HOLE: ::c_int = 0x02;
-
 pub const __SIZEOF_PTHREAD_CONDATTR_T: usize = 4;
 pub const __SIZEOF_PTHREAD_MUTEXATTR_T: usize = 4;
+pub const __SIZEOF_PTHREAD_RWLOCKATTR_T: usize = 8;
 
 pub const CPU_SETSIZE: ::c_int = 128;
-
-pub const QFMT_VFS_V1: ::c_int = 4;
 
 pub const PTRACE_TRACEME: ::c_int = 0;
 pub const PTRACE_PEEKTEXT: ::c_int = 1;
@@ -172,8 +182,14 @@ pub const PTRACE_POKEUSER: ::c_int = 6;
 pub const PTRACE_CONT: ::c_int = 7;
 pub const PTRACE_KILL: ::c_int = 8;
 pub const PTRACE_SINGLESTEP: ::c_int = 9;
+pub const PTRACE_GETREGS: ::c_int = 12;
+pub const PTRACE_SETREGS: ::c_int = 13;
+pub const PTRACE_GETFPREGS: ::c_int = 14;
+pub const PTRACE_SETFPREGS: ::c_int = 15;
 pub const PTRACE_ATTACH: ::c_int = 16;
 pub const PTRACE_DETACH: ::c_int = 17;
+pub const PTRACE_GETFPXREGS: ::c_int = 18;
+pub const PTRACE_SETFPXREGS: ::c_int = 19;
 pub const PTRACE_SYSCALL: ::c_int = 24;
 pub const PTRACE_SETOPTIONS: ::c_int = 0x4200;
 pub const PTRACE_GETEVENTMSG: ::c_int = 0x4201;
@@ -186,33 +202,7 @@ pub const PTRACE_INTERRUPT: ::c_int = 0x4207;
 pub const PTRACE_LISTEN: ::c_int = 0x4208;
 pub const PTRACE_PEEKSIGINFO: ::c_int = 0x4209;
 
-pub const PTRACE_O_EXITKILL: ::c_int = 1048576;
-pub const PTRACE_O_TRACECLONE: ::c_int = 8;
-pub const PTRACE_O_TRACEEXEC: ::c_int = 16;
-pub const PTRACE_O_TRACEEXIT: ::c_int = 64;
-pub const PTRACE_O_TRACEFORK: ::c_int = 2;
-pub const PTRACE_O_TRACESYSGOOD: ::c_int = 1;
-pub const PTRACE_O_TRACEVFORK: ::c_int = 4;
-pub const PTRACE_O_TRACEVFORKDONE: ::c_int = 32;
-pub const PTRACE_O_SUSPEND_SECCOMP: ::c_int = 2097152;
-
-pub const MADV_DODUMP: ::c_int = 17;
-pub const MADV_DONTDUMP: ::c_int = 16;
-
 pub const EPOLLWAKEUP: ::c_int = 0x20000000;
-
-pub const POLLRDNORM: ::c_short = 0x040;
-pub const POLLRDBAND: ::c_short = 0x080;
-
-pub const MADV_HUGEPAGE: ::c_int = 14;
-pub const MADV_NOHUGEPAGE: ::c_int = 15;
-
-pub const PTRACE_GETFPREGS: ::c_uint = 14;
-pub const PTRACE_SETFPREGS: ::c_uint = 15;
-pub const PTRACE_GETFPXREGS: ::c_uint = 18;
-pub const PTRACE_SETFPXREGS: ::c_uint = 19;
-pub const PTRACE_GETREGS: ::c_uint = 12;
-pub const PTRACE_SETREGS: ::c_uint = 13;
 
 pub const EFD_NONBLOCK: ::c_int = ::O_NONBLOCK;
 
@@ -222,8 +212,6 @@ pub const TCSANOW: ::c_int = 0;
 pub const TCSADRAIN: ::c_int = 1;
 pub const TCSAFLUSH: ::c_int = 2;
 
-pub const TIOCINQ: ::c_int = ::FIONREAD;
-
 pub const RTLD_GLOBAL: ::c_int = 0x100;
 pub const RTLD_NOLOAD: ::c_int = 0x4;
 
@@ -232,67 +220,48 @@ pub const RTLD_NOLOAD: ::c_int = 0x4;
 pub const CLOCK_SGI_CYCLE: ::clockid_t = 10;
 pub const CLOCK_TAI: ::clockid_t = 11;
 
-pub const MCL_CURRENT: ::c_int = 0x0001;
-pub const MCL_FUTURE: ::c_int = 0x0002;
+pub const B0: ::speed_t = 0o000000;
+pub const B50: ::speed_t = 0o000001;
+pub const B75: ::speed_t = 0o000002;
+pub const B110: ::speed_t = 0o000003;
+pub const B134: ::speed_t = 0o000004;
+pub const B150: ::speed_t = 0o000005;
+pub const B200: ::speed_t = 0o000006;
+pub const B300: ::speed_t = 0o000007;
+pub const B600: ::speed_t = 0o000010;
+pub const B1200: ::speed_t = 0o000011;
+pub const B1800: ::speed_t = 0o000012;
+pub const B2400: ::speed_t = 0o000013;
+pub const B4800: ::speed_t = 0o000014;
+pub const B9600: ::speed_t = 0o000015;
+pub const B19200: ::speed_t = 0o000016;
+pub const B38400: ::speed_t = 0o000017;
+pub const EXTA: ::speed_t = B19200;
+pub const EXTB: ::speed_t = B38400;
 
-pub const SIGSTKSZ: ::size_t = 8192;
-pub const CBAUD: ::tcflag_t = 0o0010017;
-pub const TAB1: ::c_int = 0x00000800;
-pub const TAB2: ::c_int = 0x00001000;
-pub const TAB3: ::c_int = 0x00001800;
-pub const CR1: ::c_int  = 0x00000200;
-pub const CR2: ::c_int  = 0x00000400;
-pub const CR3: ::c_int  = 0x00000600;
-pub const FF1: ::c_int  = 0x00008000;
-pub const BS1: ::c_int  = 0x00002000;
-pub const VT1: ::c_int  = 0x00004000;
-pub const VWERASE: usize = 14;
-pub const VREPRINT: usize = 12;
-pub const VSUSP: usize = 10;
-pub const VSTART: usize = 8;
-pub const VSTOP: usize = 9;
-pub const VDISCARD: usize = 13;
-pub const VTIME: usize = 5;
-pub const IXON: ::tcflag_t = 0x00000400;
-pub const IXOFF: ::tcflag_t = 0x00001000;
-pub const ONLCR: ::tcflag_t = 0x4;
-pub const CSIZE: ::tcflag_t = 0x00000030;
-pub const CS6: ::tcflag_t = 0x00000010;
-pub const CS7: ::tcflag_t = 0x00000020;
-pub const CS8: ::tcflag_t = 0x00000030;
-pub const CSTOPB: ::tcflag_t = 0x00000040;
-pub const CREAD: ::tcflag_t = 0x00000080;
-pub const PARENB: ::tcflag_t = 0x00000100;
-pub const PARODD: ::tcflag_t = 0x00000200;
-pub const HUPCL: ::tcflag_t = 0x00000400;
-pub const CLOCAL: ::tcflag_t = 0x00000800;
-pub const ECHOKE: ::tcflag_t = 0x00000800;
-pub const ECHOE: ::tcflag_t = 0x00000010;
-pub const ECHOK: ::tcflag_t = 0x00000020;
-pub const ECHONL: ::tcflag_t = 0x00000040;
-pub const ECHOPRT: ::tcflag_t = 0x00000400;
-pub const ECHOCTL: ::tcflag_t = 0x00000200;
-pub const ISIG: ::tcflag_t = 0x00000001;
-pub const ICANON: ::tcflag_t = 0x00000002;
-pub const PENDIN: ::tcflag_t = 0x00004000;
-pub const NOFLSH: ::tcflag_t = 0x00000080;
+pub const SO_BINDTODEVICE: ::c_int = 25;
+pub const SO_TIMESTAMP: ::c_int = 29;
+pub const SO_MARK: ::c_int = 36;
+pub const SO_RXQ_OVFL: ::c_int = 40;
+pub const SO_PEEK_OFF: ::c_int = 42;
+pub const SO_BUSY_POLL: ::c_int = 46;
 
 extern {
-    pub fn ioctl(fd: ::c_int, request: ::c_int, ...) -> ::c_int;
     pub fn ptrace(request: ::c_int, ...) -> ::c_long;
     pub fn getpriority(which: ::c_int, who: ::id_t) -> ::c_int;
     pub fn setpriority(which: ::c_int, who: ::id_t, prio: ::c_int) -> ::c_int;
 }
 
 cfg_if! {
-    if #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))] {
+    if #[cfg(any(target_arch = "x86_64",
+                 target_arch = "aarch64",
+                 target_arch = "powerpc64"))] {
         mod b64;
         pub use self::b64::*;
     } else if #[cfg(any(target_arch = "x86",
                         target_arch = "mips",
                         target_arch = "arm",
-                        target_arch = "asmjs",
-                        target_arch = "wasm32"))] {
+                        target_arch = "powerpc"))] {
         mod b32;
         pub use self::b32::*;
     } else { }

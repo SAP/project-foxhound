@@ -4,12 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cr = Components.results;
+/* eslint no-unused-vars: ["error", { "varsIgnorePattern": "unusedVariable" }] */
 
-function run_test()
-{
+function run_test() {
   test1();
   test2();
   test3();
@@ -20,16 +17,15 @@ function run_test()
  * Checks that getting an input stream from a storage stream which has never had
  * anything written to it throws a not-initialized exception.
  */
-function test1()
-{
+function test1() {
   var ss = Cc["@mozilla.org/storagestream;1"]
              .createInstance(Ci.nsIStorageStream);
   ss.init(1024, 1024, null);
 
-  var out = ss.getOutputStream(0);
+  var unusedVariable = ss.getOutputStream(0);
   var inp2 = ss.newInputStream(0);
-  do_check_eq(inp2.available(), 0);
-  do_check_true(inp2.isNonBlocking());
+  Assert.equal(inp2.available(), 0);
+  Assert.ok(inp2.isNonBlocking());
 
   var sis =
       Cc["@mozilla.org/scriptableinputstream;1"]
@@ -39,30 +35,30 @@ function test1()
   var threw = false;
   try {
     sis.read(1);
-  } catch (ex if ex.result == Cr.NS_BASE_STREAM_WOULD_BLOCK) {
-    threw = true;
+  } catch (ex) {
+    if (ex.result == Cr.NS_BASE_STREAM_WOULD_BLOCK) {
+      threw = true;
+    } else {
+      throw ex;
+    }
   }
-  do_check_true(threw);
+  Assert.ok(threw);
 }
 
 /**
  * Checks that getting an input stream from a storage stream to which 0 bytes of
  * data have been explicitly written doesn't throw an exception.
  */
-function test2()
-{
+function test2() {
   var ss = Cc["@mozilla.org/storagestream;1"]
              .createInstance(Ci.nsIStorageStream);
   ss.init(1024, 1024, null);
 
   var out = ss.getOutputStream(0);
   out.write("", 0);
-  try
-  {
-    var inp2 = ss.newInputStream(0);
-  }
-  catch (e)
-  {
+  try {
+    ss.newInputStream(0);
+  } catch (e) {
     do_throw("shouldn't throw exception when new input stream created");
   }
 }
@@ -71,47 +67,39 @@ function test2()
  * Checks that reading any non-zero amount of data from a storage stream
  * which has had 0 bytes written to it explicitly works correctly.
  */
-function test3()
-{
+function test3() {
   var ss = Cc["@mozilla.org/storagestream;1"]
              .createInstance(Ci.nsIStorageStream);
   ss.init(1024, 1024, null);
 
   var out = ss.getOutputStream(0);
   out.write("", 0);
-  try
-  {
+  try {
     var inp = ss.newInputStream(0);
-  }
-  catch (e)
-  {
+  } catch (e) {
     do_throw("newInputStream(0) shouldn't throw if write() is called: " + e);
   }
 
-  do_check_true(inp.isNonBlocking(), "next test expects a non-blocking stream");
+  Assert.ok(inp.isNonBlocking(), "next test expects a non-blocking stream");
 
-  try
-  {
+  try {
     var threw = false;
     var bis = BIS(inp);
-    var dummy = bis.readByteArray(5);
-  }
-  catch (e)
-  {
+    bis.readByteArray(5);
+  } catch (e) {
     if (e.result != Cr.NS_BASE_STREAM_WOULD_BLOCK)
       do_throw("wrong error thrown: " + e);
     threw = true;
   }
-  do_check_true(threw,
-                "should have thrown (nsStorageInputStream is nonblocking)");
+  Assert.ok(threw,
+            "should have thrown (nsStorageInputStream is nonblocking)");
 }
 
 /**
  * Basic functionality test for storagestream: write data to it, get an input
  * stream, and read the data back to see that it matches.
  */
-function test4()
-{
+function test4() {
   var bytes = [65, 66, 67, 68, 69, 70, 71, 72, 73, 74];
 
   var ss = Cc["@mozilla.org/storagestream;1"]
@@ -131,19 +119,15 @@ function test4()
   var bis = BIS(inp);
 
   var count = 0;
-  while (count < bytes.length)
-  {
+  while (count < bytes.length) {
     var data = bis.read8(1);
-    do_check_eq(data, bytes[count++]);
+    Assert.equal(data, bytes[count++]);
   }
 
   var threw = false;
-  try
-  {
+  try {
     data = bis.read8(1);
-  }
-  catch (e)
-  {
+  } catch (e) {
     if (e.result != Cr.NS_ERROR_FAILURE)
       do_throw("wrong error thrown: " + e);
     threw = true;
@@ -153,8 +137,7 @@ function test4()
 }
 
 
-function BIS(input)
-{
+function BIS(input) {
   var bis = Cc["@mozilla.org/binaryinputstream;1"]
               .createInstance(Ci.nsIBinaryInputStream);
   bis.setInputStream(input);

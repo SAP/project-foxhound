@@ -9,54 +9,11 @@
    xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
    xmlns:html="http://www.w3.org/1999/xhtml">
 
-  <!-- bound to <description>s -->
-  <binding id="text-base" role="xul:text">
-    <implementation implements="nsIDOMXULDescriptionElement">
-      <property name="disabled" onset="if (val) this.setAttribute('disabled', 'true');
-                                       else this.removeAttribute('disabled');
-                                       return val;"
-                                onget="return this.getAttribute('disabled') == 'true';"/>
-      <property name="value" onget="return this.getAttribute('value');"
-                             onset="this.setAttribute('value', val); return val;"/>
-      <property name="crop" onget="return this.getAttribute('crop');"
-                            onset="this.setAttribute('crop', val); return val;"/>
-    </implementation>
-  </binding>
-
-  <binding id="text-label" extends="chrome://global/content/bindings/text.xml#text-base">
-    <implementation implements="nsIDOMXULLabelElement">
-      <property name="accessKey">
-        <getter>
-          <![CDATA[
-            var accessKey = this.getAttribute("accesskey");
-            return accessKey ? accessKey[0] : null;
-          ]]>
-        </getter>
-        <setter>
-          <![CDATA[
-            this.setAttribute("accesskey", val);
-            return val;
-          ]]>
-        </setter>
-      </property>
-
-      <property name="control" onget="return getAttribute('control');">
-        <setter>
-          <![CDATA[
-            // After this gets set, the label will use the binding #label-control
-            this.setAttribute("control", val);
-            return val;
-          ]]>
-        </setter>
-      </property>
-    </implementation>
-  </binding>
-
-  <binding id="label-control" extends="chrome://global/content/bindings/text.xml#text-label">
+  <binding id="label-control">
     <content>
       <children/><html:span anonid="accessKeyParens"></html:span>
     </content>
-    <implementation implements="nsIDOMXULLabelElement">
+    <implementation>
       <constructor>
         <![CDATA[
           this.formatAccessKey(true);
@@ -70,12 +27,16 @@
             var control = this.labeledControlElement;
             if (!control) {
               var bindingParent = document.getBindingParent(this);
-              if (bindingParent instanceof Components.interfaces.nsIDOMXULLabeledControlElement) {
+              if ("accessKey" in bindingParent) {
                 control = bindingParent; // For controls that make the <label> an anon child
               }
             }
             if (control) {
               control.labelElement = this;
+              var controlAccessKey = control.getAttribute("accesskey");
+              if (controlAccessKey) {
+                this.setAttribute("accesskey", controlAccessKey);
+              }
             }
 
             var accessKey = this.accessKey;
@@ -85,12 +46,12 @@
 
             if (this.mInsertSeparator === undefined) {
               try {
-                var prefs = Components.classes["@mozilla.org/preferences-service;1"].
-                                       getService(Components.interfaces.nsIPrefBranch);
+                var prefs = Cc["@mozilla.org/preferences-service;1"].
+                                       getService(Ci.nsIPrefBranch);
                 this.mUnderlineAccesskey = (prefs.getIntPref("ui.key.menuAccessKey") != 0);
 
                 const nsIPrefLocalizedString =
-                  Components.interfaces.nsIPrefLocalizedString;
+                  Ci.nsIPrefLocalizedString;
 
                 const prefNameInsertSeparator =
                   "intl.menuitems.insertseparatorbeforeaccesskeys";
@@ -137,6 +98,8 @@
                 accessKeyIndex =
                   labelText.toUpperCase().indexOf(accessKey.toUpperCase());
               }
+            } else if (labelText.endsWith(`(${accessKey.toUpperCase()})`)) {
+              accessKeyIndex = labelText.length - (1 + accessKey.length); // = index of accessKey.
             }
 
             const HTML_NS = "http://www.w3.org/1999/xhtml";
@@ -214,7 +177,7 @@
         <body>
           <![CDATA[
             if (element.previousSibling instanceof Text) {
-              element.previousSibling.appendData(element.textContent)
+              element.previousSibling.appendData(element.textContent);
             } else {
               element.parentNode.insertBefore(element.firstChild, element);
             }
@@ -232,14 +195,7 @@
       <property name="accessKey">
         <getter>
           <![CDATA[
-            var accessKey = null;
-            var labeledEl = this.labeledControlElement;
-            if (labeledEl) {
-              accessKey = labeledEl.getAttribute("accesskey");
-            }
-            if (!accessKey) {
-              accessKey = this.getAttribute("accesskey");
-            }
+            var accessKey = this.getAttribute("accesskey");
             return accessKey ? accessKey[0] : null;
           ]]>
         </getter>
@@ -275,19 +231,33 @@
           ]]>
         </setter>
       </property>
-
     </implementation>
 
     <handlers>
-      <handler event="click" action="if (this.disabled) return;
-                                     var controlElement = this.labeledControlElement;
-                                     if(controlElement)
-                                       controlElement.focus();
-                                    "/>
+      <handler event="click"><![CDATA[
+        if (this.disabled) {
+          return;
+        }
+        var controlElement = this.labeledControlElement;
+        if (!controlElement) {
+          return;
+        }
+        controlElement.focus();
+        const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
+
+        if (controlElement.namespaceURI != XUL_NS) {
+          return;
+        }
+        if (controlElement.localName == "checkbox") {
+          controlElement.checked = !controlElement.checked;
+        } else if (controlElement.localName == "radio") {
+          controlElement.control.selectedItem = controlElement;
+        }
+      ]]></handler>
     </handlers>
   </binding>
 
-  <binding id="text-link" extends="chrome://global/content/bindings/text.xml#text-label" role="xul:link">
+  <binding id="text-link">
     <implementation>
       <property name="href" onget="return this.getAttribute('href');"
                             onset="this.setAttribute('href', val); return val;" />
@@ -301,14 +271,14 @@
 
           var uri = null;
           try {
-            const nsISSM = Components.interfaces.nsIScriptSecurityManager;
+            const nsISSM = Ci.nsIScriptSecurityManager;
             const secMan =
-                     Components.classes["@mozilla.org/scriptsecuritymanager;1"]
-                               .getService(nsISSM);
+                     Cc["@mozilla.org/scriptsecuritymanager;1"]
+                       .getService(nsISSM);
 
             const ioService =
-                     Components.classes["@mozilla.org/network/io-service;1"]
-                               .getService(Components.interfaces.nsIIOService);
+                     Cc["@mozilla.org/network/io-service;1"]
+                       .getService(Ci.nsIIOService);
 
             uri = ioService.newURI(href);
 
@@ -324,24 +294,24 @@
             } catch (ex) {
               var msg = "Error: Cannot open a " + uri.scheme + ": link using \
                          the text-link binding.";
-              Components.utils.reportError(msg);
+              Cu.reportError(msg);
               return;
             }
 
             const cID = "@mozilla.org/uriloader/external-protocol-service;1";
-            const nsIEPS = Components.interfaces.nsIExternalProtocolService;
-            var protocolSvc = Components.classes[cID].getService(nsIEPS);
+            const nsIEPS = Ci.nsIExternalProtocolService;
+            var protocolSvc = Cc[cID].getService(nsIEPS);
 
             // if the scheme is not an exposed protocol, then opening this link
             // should be deferred to the system's external protocol handler
             if (!protocolSvc.isExposedProtocol(uri.scheme)) {
-              protocolSvc.loadUrl(uri);
-              aEvent.preventDefault()
+              protocolSvc.loadURI(uri);
+              aEvent.preventDefault();
               return;
             }
 
           } catch (ex) {
-            Components.utils.reportError(ex);
+            Cu.reportError(ex);
           }
 
           aEvent.preventDefault();
@@ -349,20 +319,20 @@
 
           // Try handing off the link to the host application, e.g. for
           // opening it in a tabbed browser.
-          var linkHandled = Components.classes["@mozilla.org/supports-PRBool;1"]
-                                      .createInstance(Components.interfaces.nsISupportsPRBool);
+          var linkHandled = Cc["@mozilla.org/supports-PRBool;1"]
+                              .createInstance(Ci.nsISupportsPRBool);
           linkHandled.data = false;
           let {shiftKey, ctrlKey, metaKey, altKey, button} = aEvent;
           let data = {shiftKey, ctrlKey, metaKey, altKey, button, href};
-          Components.classes["@mozilla.org/observer-service;1"]
-                    .getService(Components.interfaces.nsIObserverService)
-                    .notifyObservers(linkHandled, "handle-xul-text-link", JSON.stringify(data));
+          Cc["@mozilla.org/observer-service;1"]
+            .getService(Ci.nsIObserverService)
+            .notifyObservers(linkHandled, "handle-xul-text-link", JSON.stringify(data));
           if (linkHandled.data)
             return;
 
           // otherwise, fall back to opening the anchor directly
           var win = window;
-          if (window instanceof Components.interfaces.nsIDOMChromeWindow) {
+          if (window.isChromeWindow) {
             while (win.opener && !win.opener.closed)
               win = win.opener;
           }

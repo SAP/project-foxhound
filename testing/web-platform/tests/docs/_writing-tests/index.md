@@ -40,6 +40,9 @@ first two, and it is at times advisable to use testharness.js tests
 for things which would typically be tested using reftests but for
 which it would be overly cumbersome.
 
+See [file names][] for test types and features determined by the file names,
+and [server features][] for advanced testing features.
+
 In addition to the four main test types, there are also WebDriver
 tests, which are used exclusively for testing the WebDriver protocol
 itself. There is currently no documentation about these tests,
@@ -47,13 +50,15 @@ however.
 
 ## Submitting Tests
 
-Once you're written tests, please submit them using
+Once you've written tests, please submit them using
 the [typical GitHub Pull Request workflow][submission-process]; please
 make sure you run the [`lint` script][lint-tool] before opening a pull request!
 
 [introduction]: {{ site.baseurl }}{% link introduction.md %}
+[file names]: {{ site.baseurl }}{% link _writing-tests/file-names.md %}
 [general guidelines]: {{ site.baseurl }}{% link _writing-tests/general-guidelines.md %}
 [reftests]: {{ site.baseurl }}{% link _writing-tests/reftests.md %}
+[server features]: {{ site.baseurl }}{% link _writing-tests/server-features.md %}
 [testharness.js]: {{ site.baseurl }}{% link _writing-tests/testharness.md %}
 [visual]: {{ site.baseurl }}{% link _writing-tests/visual.md %}
 [manual]: {{ site.baseurl }}{% link _writing-tests/manual.md %}

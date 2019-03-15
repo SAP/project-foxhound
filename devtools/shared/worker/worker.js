@@ -6,26 +6,25 @@
 
 /* global ChromeWorker */
 
-(function (factory) {
-  if (this.module && module.id.indexOf("worker") >= 0) {
+(function(factory) {
+  if (this.module && module.id.includes("worker")) {
     // require
     const { Cc, Ci, Cu, ChromeWorker } = require("chrome");
     const dumpn = require("devtools/shared/DevToolsUtils").dumpn;
     factory.call(this, require, exports, module, { Cc, Ci, Cu }, ChromeWorker, dumpn);
   } else {
     // Cu.import
-    const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
-    const { require } = Cu.import("resource://devtools/shared/Loader.jsm", {});
+    const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
     this.isWorker = false;
-    this.Promise = Cu.import("resource://gre/modules/Promise.jsm", {}).Promise;
-    this.console = Cu.import("resource://gre/modules/Console.jsm", {}).console;
+    this.Promise = require("resource://gre/modules/Promise.jsm").Promise;
+    this.console = console;
     factory.call(
       this, require, this, { exports: this },
       { Cc, Ci, Cu }, ChromeWorker, null
     );
     this.EXPORTED_SYMBOLS = ["DevToolsWorker"];
   }
-}).call(this, function (require, exports, module, { Ci, Cc }, ChromeWorker, dumpn) {
+}).call(this, function(require, exports, module, { Ci, Cc }, ChromeWorker, dumpn) {
   let MESSAGE_COUNTER = 0;
 
   /**
@@ -61,15 +60,17 @@
    *        The name of the task to execute in the worker.
    * @param {any} data
    *        Data to be passed into the task implemented by the worker.
+   * @param {undefined|Array} transfer
+   *        Optional array of transferable objects to transfer ownership of.
    * @return {Promise}
    */
-  DevToolsWorker.prototype.performTask = function (task, data) {
+  DevToolsWorker.prototype.performTask = function(task, data, transfer) {
     if (this._destroyed) {
       return Promise.reject("Cannot call performTask on a destroyed DevToolsWorker");
     }
-    let worker = this._worker;
-    let id = ++MESSAGE_COUNTER;
-    let payload = { task, id, data };
+    const worker = this._worker;
+    const id = ++MESSAGE_COUNTER;
+    const payload = { task, id, data };
 
     if (this._verbose && dumpn) {
       dumpn("Sending message to worker" +
@@ -77,10 +78,10 @@
             ": " +
             JSON.stringify(payload, null, 2));
     }
-    worker.postMessage(payload);
+    worker.postMessage(payload, transfer);
 
     return new Promise((resolve, reject) => {
-      let listener = ({ data: result }) => {
+      const listener = ({ data: result }) => {
         if (this._verbose && dumpn) {
           dumpn("Received message from worker" +
                 (this._name ? (" (" + this._name + ")") : "") +
@@ -106,13 +107,13 @@
   /**
    * Terminates the underlying worker. Use when no longer needing the worker.
    */
-  DevToolsWorker.prototype.destroy = function () {
+  DevToolsWorker.prototype.destroy = function() {
     this._worker.terminate();
     this._worker = null;
     this._destroyed = true;
   };
 
-  DevToolsWorker.prototype.onError = function ({ message, filename, lineno }) {
+  DevToolsWorker.prototype.onError = function({ message, filename, lineno }) {
     dump(new Error(message + " @ " + filename + ":" + lineno) + "\n");
   };
 
@@ -139,18 +140,18 @@
     console.warn("`workerify` should only be used in tests or measuring performance. " +
                  "This creates an object URL on the browser window, and should not be " +
                  "used in production.");
-    // Fetch via window/utils here as we don't want to include
-    // this module normally.
-    let { getMostRecentBrowserWindow } = require("sdk/window/utils");
-    let { URL, Blob } = getMostRecentBrowserWindow();
-    let stringifiedFn = createWorkerString(fn);
-    let blob = new Blob([stringifiedFn]);
-    let url = URL.createObjectURL(blob);
-    let worker = new DevToolsWorker(url);
+    // Fetch modules here as we don't want to include it normally.
+    const Services = require("Services");
+    const { URL, Blob } = Services.wm.getMostRecentWindow("navigator:browser");
+    const stringifiedFn = createWorkerString(fn);
+    const blob = new Blob([stringifiedFn]);
+    const url = URL.createObjectURL(blob);
+    const worker = new DevToolsWorker(url);
 
-    let wrapperFn = data => worker.performTask("workerifiedTask", data);
+    const wrapperFn = (data, transfer) =>
+      worker.performTask("workerifiedTask", data, transfer);
 
-    wrapperFn.destroy = function () {
+    wrapperFn.destroy = function() {
       URL.revokeObjectURL(url);
       worker.destroy();
     };

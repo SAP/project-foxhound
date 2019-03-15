@@ -5,7 +5,7 @@
 es6id: B.2.3.14
 description: >
   String.prototype.sup.name is "sup".
-info: >
+info: |
   String.prototype.sup ( )
 
   17 ECMAScript Standard Built-in Objects:
@@ -19,10 +19,11 @@ info: >
 includes: [propertyHelper.js]
 ---*/
 
-assert.sameValue(String.prototype.sup.name, "sup");
-
-verifyNotEnumerable(String.prototype.sup, "name");
-verifyNotWritable(String.prototype.sup, "name");
-verifyConfigurable(String.prototype.sup, "name");
+verifyProperty(String.prototype.sup, "name", {
+  enumerable: false,
+  writable: false,
+  configurable: true,
+  value: "sup"
+});
 
 reportCompare(0, 0);

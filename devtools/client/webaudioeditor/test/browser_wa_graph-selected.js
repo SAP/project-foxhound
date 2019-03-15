@@ -5,20 +5,20 @@
  * Tests that SVG nodes and edges were created for the Graph View.
  */
 
-add_task(function* () {
-  let { target, panel } = yield initWebAudioEditor(SIMPLE_CONTEXT_URL);
-  let { panelWin } = panel;
-  let { gFront, $, $$, EVENTS } = panelWin;
+add_task(async function() {
+  const { target, panel } = await initWebAudioEditor(SIMPLE_CONTEXT_URL);
+  const { panelWin } = panel;
+  const { gFront, $, $$, EVENTS } = panelWin;
 
-  let started = once(gFront, "start-context");
+  const started = once(gFront, "start-context");
 
-  let events = Promise.all([
+  const events = Promise.all([
     get3(gFront, "create-node"),
-    waitForGraphRendered(panelWin, 3, 2)
+    waitForGraphRendered(panelWin, 3, 2),
   ]);
   reload(target);
-  let [actors] = yield events;
-  let [destId, oscId, gainId] = actors.map(actor => actor.actorID);
+  const [actors] = await events;
+  const [destId, oscId, gainId] = actors.map(actor => actor.actorID);
 
   ok(!findGraphNode(panelWin, destId).classList.contains("selected"),
     "No nodes selected on start. (destination)");
@@ -27,7 +27,7 @@ add_task(function* () {
   ok(!findGraphNode(panelWin, gainId).classList.contains("selected"),
     "No nodes selected on start. (gain)");
 
-  yield clickGraphNode(panelWin, oscId);
+  await clickGraphNode(panelWin, oscId);
 
   ok(findGraphNode(panelWin, oscId).classList.contains("selected"),
     "Selected node has class 'selected'.");
@@ -36,7 +36,7 @@ add_task(function* () {
   ok(!findGraphNode(panelWin, gainId).classList.contains("selected"),
     "Non-selected nodes do not have class 'selected'.");
 
-  yield clickGraphNode(panelWin, gainId);
+  await clickGraphNode(panelWin, gainId);
 
   ok(!findGraphNode(panelWin, oscId).classList.contains("selected"),
     "Previously selected node no longer has class 'selected'.");
@@ -45,5 +45,5 @@ add_task(function* () {
   ok(findGraphNode(panelWin, gainId).classList.contains("selected"),
     "Newly selected node now has class 'selected'.");
 
-  yield teardown(target);
+  await teardown(target);
 });

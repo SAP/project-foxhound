@@ -1,9 +1,8 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
 
 #ifndef _nsDiskCacheStreams_h_
 #define _nsDiskCacheStreams_h_
@@ -21,50 +20,58 @@
 class nsDiskCacheDevice;
 
 class nsDiskCacheStreamIO : public nsIOutputStream {
-public:
-    explicit nsDiskCacheStreamIO(nsDiskCacheBinding *   binding);
-    
-    NS_DECL_THREADSAFE_ISUPPORTS
-    NS_DECL_NSIOUTPUTSTREAM
+ public:
+  explicit nsDiskCacheStreamIO(nsDiskCacheBinding* binding);
 
-    nsresult    GetInputStream(uint32_t offset, nsIInputStream ** inputStream);
-    nsresult    GetOutputStream(uint32_t offset, nsIOutputStream ** outputStream);
+  NS_DECL_THREADSAFE_ISUPPORTS
+  NS_DECL_NSIOUTPUTSTREAM
 
-    nsresult    ClearBinding();
-    
-    void        IncrementInputStreamCount() { mInStreamCount++; }
-    void        DecrementInputStreamCount()
-                {
-                    mInStreamCount--;
-                    NS_ASSERTION(mInStreamCount >= 0, "mInStreamCount has gone negative");
-                }
+  nsresult GetInputStream(uint32_t offset, nsIInputStream** inputStream);
+  nsresult GetOutputStream(uint32_t offset, nsIOutputStream** outputStream);
 
-    size_t     SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf);
+  nsresult ClearBinding();
 
-    // GCC 2.95.2 requires this to be defined, although we never call it.
-    // and OS/2 requires that it not be private
-    nsDiskCacheStreamIO() { NS_NOTREACHED("oops"); }
+  void IncrementInputStreamCount() { mInStreamCount++; }
+  void DecrementInputStreamCount() {
+    mInStreamCount--;
+    NS_ASSERTION(mInStreamCount >= 0, "mInStreamCount has gone negative");
+  }
 
-private:
-    virtual ~nsDiskCacheStreamIO();
+  size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf);
 
-    nsresult    OpenCacheFile(int flags, PRFileDesc ** fd);
-    nsresult    ReadCacheBlocks(uint32_t bufferSize);
-    nsresult    FlushBufferToFile();
-    void        UpdateFileSize();
-    void        DeleteBuffer();
-    nsresult    CloseOutputStream();
-    nsresult    SeekAndTruncate(uint32_t offset);
+  // GCC 2.95.2 requires this to be defined, although we never call it.
+  // and OS/2 requires that it not be private
+  nsDiskCacheStreamIO()
+      : mBinding(nullptr),
+        mDevice(nullptr),
+        mFD(nullptr),
+        mStreamEnd(0),
+        mBufSize(0),
+        mBuffer(nullptr),
+        mOutputStreamIsOpen(false) {
+    MOZ_ASSERT_UNREACHABLE("oops");
+  }
 
-    nsDiskCacheBinding *        mBinding;       // not an owning reference
-    nsDiskCacheDevice *         mDevice;
-    mozilla::Atomic<int32_t>                     mInStreamCount;
-    PRFileDesc *                mFD;
+ private:
+  virtual ~nsDiskCacheStreamIO();
 
-    uint32_t                    mStreamEnd;     // current size of data
-    uint32_t                    mBufSize;       // current end of buffer
-    char *                      mBuffer;
-    bool                        mOutputStreamIsOpen;
+  nsresult OpenCacheFile(int flags, PRFileDesc** fd);
+  nsresult ReadCacheBlocks(uint32_t bufferSize);
+  nsresult FlushBufferToFile();
+  void UpdateFileSize();
+  void DeleteBuffer();
+  nsresult CloseOutputStream();
+  nsresult SeekAndTruncate(uint32_t offset);
+
+  nsDiskCacheBinding* mBinding;  // not an owning reference
+  nsDiskCacheDevice* mDevice;
+  mozilla::Atomic<int32_t> mInStreamCount;
+  PRFileDesc* mFD;
+
+  uint32_t mStreamEnd;  // current size of data
+  uint32_t mBufSize;    // current end of buffer
+  char* mBuffer;
+  bool mOutputStreamIsOpen;
 };
 
-#endif // _nsDiskCacheStreams_h_
+#endif  // _nsDiskCacheStreams_h_

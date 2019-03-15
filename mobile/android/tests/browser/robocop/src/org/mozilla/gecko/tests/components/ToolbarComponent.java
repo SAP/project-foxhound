@@ -15,7 +15,9 @@ import org.mozilla.gecko.tests.helpers.DeviceHelper;
 import org.mozilla.gecko.tests.helpers.NavigationHelper;
 import org.mozilla.gecko.tests.helpers.WaitHelper;
 import org.mozilla.gecko.toolbar.PageActionLayout;
+import org.mozilla.gecko.toolbar.TabCounter;
 
+import android.net.Uri;
 import android.view.View;
 import android.widget.EditText;
 import android.widget.ImageButton;
@@ -24,12 +26,13 @@ import android.widget.TextView;
 import com.robotium.solo.Condition;
 import com.robotium.solo.Solo;
 
+import java.net.IDN;
+
 /**
  * A class representing any interactions that take place on the Toolbar.
  */
 public class ToolbarComponent extends BaseComponent {
-
-    private static final String URL_HTTP_PREFIX = "http://";
+    public static final String URL_HTTP_PREFIX = "http://";
 
     // We are waiting up to 30 seconds instead of the default waiting time because reader mode
     // parsing can take quite some time on slower devices (Bug 1142699)
@@ -71,7 +74,7 @@ public class ToolbarComponent extends BaseComponent {
 
     public ToolbarComponent assertUrl(final String expected) {
         assertIsEditing();
-        fAssertEquals("The Toolbar url is " + expected, expected, getUrlEditText().getText());
+        fAssertEquals("The Toolbar url is " + expected, expected, getUrlEditText().getText().toString());
         return this;
     }
 
@@ -87,6 +90,12 @@ public class ToolbarComponent extends BaseComponent {
 
     public ToolbarComponent assertBackButtonIsNotEnabled() {
         fAssertFalse("The back button is not enabled", isBackButtonEnabled());
+        return this;
+    }
+
+    public ToolbarComponent assertTabCount(final int expectedTabCount) {
+        assertIsNotEditing();
+        fAssertEquals("The correct number of tabs are opened", expectedTabCount, getTabsCount());
         return this;
     }
 
@@ -108,6 +117,15 @@ public class ToolbarComponent extends BaseComponent {
 
     private TextView getUrlTitleText() {
         return (TextView) getToolbarView().findViewById(R.id.url_bar_title);
+    }
+
+    private TabCounter getTabsCounter() {
+        return (TabCounter) getToolbarView().findViewById(R.id.tabs_counter);
+    }
+
+    private int getTabsCount() {
+        String tabsCountText = getTabsCounter().getText().toString();
+        return Integer.parseInt(tabsCountText);
     }
 
     private ImageButton getBackButton() {
@@ -164,7 +182,7 @@ public class ToolbarComponent extends BaseComponent {
     /**
      * Returns the title of the page. Note that this makes no assertions to Toolbar state and
      * may return a value that may never be visible to the user. Callers likely want to use
-     * {@link assertTitle} instead.
+     * {@link #assertTitle} instead.
      */
     public String getPotentiallyInconsistentTitle() {
         return getTitleHelper(false);
@@ -240,8 +258,11 @@ public class ToolbarComponent extends BaseComponent {
         fAssertTrue("The UrlEditText is the input method target",
                 urlEditText.isInputMethodTarget());
 
+        // Solo doesn't handle typing text with Unicode characters, so if the input looks like a
+        // genuine URL, we work around this by converting it to Punycode beforehand.
+        final String textToType = url.contains("://") ? convertUrlToPunycode(url) : url;
         mSolo.clearEditText(urlEditText);
-        mSolo.typeText(urlEditText, url);
+        mSolo.typeText(urlEditText, textToType);
 
         return this;
     }
@@ -322,5 +343,12 @@ public class ToolbarComponent extends BaseComponent {
 
     private boolean isBackButtonEnabled() {
         return getBackButton().isEnabled();
+    }
+
+    private String convertUrlToPunycode(final String url) {
+        final Uri uri = Uri.parse(url);
+        final Uri.Builder uriBuilder = uri.buildUpon();
+        uriBuilder.encodedAuthority(IDN.toASCII(uri.getAuthority()));
+        return uriBuilder.toString();
     }
 }

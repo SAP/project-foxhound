@@ -1,17 +1,17 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
-/* This Source Code is subject to the terms of the Mozilla Public License
- * version 2.0 (the "License"). You can obtain a copy of the License at
- * http://mozilla.org/MPL/2.0/. */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* rendering object for CSS "display: ruby-base" */
 
 #include "nsRubyBaseFrame.h"
 
+#include "mozilla/ComputedStyle.h"
 #include "mozilla/WritingModes.h"
 #include "nsLineLayout.h"
 #include "nsPresContext.h"
-#include "nsStyleContext.h"
 
 using namespace mozilla;
 
@@ -26,29 +26,18 @@ NS_QUERYFRAME_TAIL_INHERITING(nsRubyContentFrame)
 
 NS_IMPL_FRAMEARENA_HELPERS(nsRubyBaseFrame)
 
-nsContainerFrame*
-NS_NewRubyBaseFrame(nsIPresShell* aPresShell,
-                    nsStyleContext* aContext)
-{
-  return new (aPresShell) nsRubyBaseFrame(aContext);
+nsContainerFrame* NS_NewRubyBaseFrame(nsIPresShell* aPresShell,
+                                      ComputedStyle* aStyle) {
+  return new (aPresShell) nsRubyBaseFrame(aStyle);
 }
-
 
 //----------------------------------------------------------------------
 
 // nsRubyBaseFrame Method Implementations
 // ======================================
 
-nsIAtom*
-nsRubyBaseFrame::GetType() const
-{
-  return nsGkAtoms::rubyBaseFrame;
-}
-
 #ifdef DEBUG_FRAME_DUMP
-nsresult
-nsRubyBaseFrame::GetFrameName(nsAString& aResult) const
-{
+nsresult nsRubyBaseFrame::GetFrameName(nsAString& aResult) const {
   return MakeFrameName(NS_LITERAL_STRING("RubyBase"), aResult);
 }
 #endif

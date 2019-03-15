@@ -8,25 +8,56 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/desktop_capture/screen_capturer.h"
-
+#include <memory>
 #include <utility>
 
-#include "webrtc/modules/desktop_capture/desktop_capture_options.h"
-#include "webrtc/modules/desktop_capture/win/screen_capturer_win_gdi.h"
-#include "webrtc/modules/desktop_capture/win/screen_capturer_win_magnifier.h"
+#include "modules/desktop_capture/blank_detector_desktop_capturer_wrapper.h"
+#include "modules/desktop_capture/desktop_capturer.h"
+#include "modules/desktop_capture/desktop_capture_options.h"
+#include "modules/desktop_capture/fallback_desktop_capturer_wrapper.h"
+#include "modules/desktop_capture/rgba_color.h"
+#include "modules/desktop_capture/win/screen_capturer_win_directx.h"
+#include "modules/desktop_capture/win/screen_capturer_win_gdi.h"
+#include "modules/desktop_capture/win/screen_capturer_win_magnifier.h"
 
 namespace webrtc {
 
+namespace {
+
+std::unique_ptr<DesktopCapturer> CreateScreenCapturerWinDirectx() {
+  std::unique_ptr<DesktopCapturer> capturer(
+      new ScreenCapturerWinDirectx());
+  capturer.reset(new BlankDetectorDesktopCapturerWrapper(
+      std::move(capturer), RgbaColor(0, 0, 0, 0)));
+  return capturer;
+}
+
+}  // namespace
+
 // static
-ScreenCapturer* ScreenCapturer::Create(const DesktopCaptureOptions& options) {
-  rtc::scoped_ptr<ScreenCapturer> gdi_capturer(
-      new ScreenCapturerWinGdi(options));
+std::unique_ptr<DesktopCapturer> DesktopCapturer::CreateRawScreenCapturer(
+    const DesktopCaptureOptions& options) {
+  std::unique_ptr<DesktopCapturer> capturer(new ScreenCapturerWinGdi(options));
+  if (options.allow_directx_capturer()) {
+    // |dxgi_duplicator_controller| should be alive in this scope to ensure it
+    // won't unload DxgiDuplicatorController.
+    auto dxgi_duplicator_controller = DxgiDuplicatorController::Instance();
+    if (ScreenCapturerWinDirectx::IsSupported()) {
+      capturer.reset(new FallbackDesktopCapturerWrapper(
+          CreateScreenCapturerWinDirectx(), std::move(capturer)));
+    }
+  }
 
-  if (options.allow_use_magnification_api())
-    return new ScreenCapturerWinMagnifier(std::move(gdi_capturer));
+  if (options.allow_use_magnification_api()) {
+    // ScreenCapturerWinMagnifier cannot work on Windows XP or earlier, as well
+    // as 64-bit only Windows, and it may randomly crash on multi-screen
+    // systems. So we may need to fallback to use original capturer.
+    capturer.reset(new FallbackDesktopCapturerWrapper(
+        std::unique_ptr<DesktopCapturer>(new ScreenCapturerWinMagnifier()),
+        std::move(capturer)));
+  }
 
-  return gdi_capturer.release();
+  return capturer;
 }
 
 }  // namespace webrtc

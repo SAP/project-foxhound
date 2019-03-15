@@ -13,7 +13,7 @@ const server = createTestHTTPServer();
 server.registerContentType("gif", "image/gif");
 function onPageResourceRequest() {
   return new Promise(done => {
-    server.registerPathHandler("/slow.gif", function (metadata, response) {
+    server.registerPathHandler("/slow.gif", function(metadata, response) {
       info("Image has been requested");
       response.processAsync();
       done(response);
@@ -31,33 +31,33 @@ const TEST_URL = "data:text/html," +
   "</body>" +
   "</html>";
 
-add_task(function* () {
-  let {inspector, tab} = yield openInspectorForURL("about:blank");
+add_task(async function() {
+  const {inspector, tab} = await openInspectorForURL("about:blank");
 
-  let domContentLoaded = waitForLinkedBrowserEvent(tab, "DOMContentLoaded");
-  let pageLoaded = waitForLinkedBrowserEvent(tab, "load");
+  const domContentLoaded = waitForLinkedBrowserEvent(tab, "DOMContentLoaded");
+  const pageLoaded = waitForLinkedBrowserEvent(tab, "load");
 
-  let markupLoaded = inspector.once("markuploaded");
-  let onRequest = onPageResourceRequest();
+  const markupLoaded = inspector.once("markuploaded");
+  const onRequest = onPageResourceRequest();
 
   info("Navigate to the slow loading page");
-  let activeTab = inspector.toolbox.target.activeTab;
-  yield activeTab.navigateTo(TEST_URL);
+  const activeTab = inspector.toolbox.target.activeTab;
+  await activeTab.navigateTo({ url: TEST_URL });
 
   info("Wait for request made to the image");
-  let response = yield onRequest;
+  const response = await onRequest;
 
   // The request made to the image shouldn't block the DOMContentLoaded event
   info("Wait for DOMContentLoaded");
-  yield domContentLoaded;
+  await domContentLoaded;
 
   // Nor does it prevent the inspector from loading
   info("Wait for markup-loaded");
-  yield markupLoaded;
+  await markupLoaded;
 
   ok(inspector.markup, "There is a markup view");
   is(inspector.markup._elt.children.length, 1, "The markup view is rendering");
-  is(yield contentReadyState(tab), "interactive",
+  is(await contentReadyState(tab), "interactive",
      "Page is still loading but the inspector is ready");
 
   // Ends page load by unblocking the image request
@@ -65,19 +65,15 @@ add_task(function* () {
 
   // We should then receive the page load event
   info("Wait for load");
-  yield pageLoaded;
+  await pageLoaded;
 });
 
 function waitForLinkedBrowserEvent(tab, event) {
-  let def = defer();
-  tab.linkedBrowser.addEventListener(event, function () {
-    def.resolve();
-  }, {capture: true, once: true});
-  return def.promise;
+  return BrowserTestUtils.waitForContentEvent(tab.linkedBrowser, event, true);
 }
 
 function contentReadyState(tab) {
-  return ContentTask.spawn(tab.linkedBrowser, null, function () {
+  return ContentTask.spawn(tab.linkedBrowser, null, function() {
     return content.document.readyState;
   });
 }

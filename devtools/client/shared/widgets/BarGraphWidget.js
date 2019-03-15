@@ -1,6 +1,7 @@
 "use strict";
 
-const { Heritage, setNamedTimeout, clearNamedTimeout } = require("devtools/client/shared/widgets/view-helpers");
+const { extend } = require("devtools/shared/extend");
+const { setNamedTimeout, clearNamedTimeout } = require("devtools/client/shared/widgets/view-helpers");
 const { AbstractCanvasGraph, CanvasGraphUtils } = require("devtools/client/shared/widgets/Graphs");
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
@@ -62,10 +63,10 @@ const GRAPH_LEGEND_MOUSEOVER_DEBOUNCE = 50;
  * where each item in the array represents a "bar", for which every value
  * represents a "block" inside that "bar", plotted at the "delta" position.
  *
- * @param nsIDOMNode parent
+ * @param Node parent
  *        The parent node holding the graph.
  */
-this.BarGraphWidget = function (parent, ...args) {
+this.BarGraphWidget = function(parent, ...args) {
   AbstractCanvasGraph.apply(this, [parent, "bar-graph", ...args]);
 
   this.once("ready", () => {
@@ -77,7 +78,7 @@ this.BarGraphWidget = function (parent, ...args) {
   });
 };
 
-BarGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
+BarGraphWidget.prototype = extend(AbstractCanvasGraph.prototype, {
   clipheadLineColor: GRAPH_CLIPHEAD_LINE_COLOR,
   selectionLineColor: GRAPH_SELECTION_LINE_COLOR,
   selectionBackgroundColor: GRAPH_SELECTION_BACKGROUND_COLOR,
@@ -125,12 +126,12 @@ BarGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
    * Renders the graph's background.
    * @see AbstractCanvasGraph.prototype.buildBackgroundImage
    */
-  buildBackgroundImage: function () {
-    let { canvas, ctx } = this._getNamedCanvas("bar-graph-background");
-    let width = this._width;
-    let height = this._height;
+  buildBackgroundImage: function() {
+    const { canvas, ctx } = this._getNamedCanvas("bar-graph-background");
+    const width = this._width;
+    const height = this._height;
 
-    let gradient = ctx.createLinearGradient(0, 0, 0, height);
+    const gradient = ctx.createLinearGradient(0, 0, 0, height);
     gradient.addColorStop(0, GRAPH_BACKGROUND_GRADIENT_START);
     gradient.addColorStop(1, GRAPH_BACKGROUND_GRADIENT_END);
     ctx.fillStyle = gradient;
@@ -143,28 +144,28 @@ BarGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
    * Renders the graph's data source.
    * @see AbstractCanvasGraph.prototype.buildGraphImage
    */
-  buildGraphImage: function () {
+  buildGraphImage: function() {
     if (!this.format || !this.format.length) {
       throw new Error("The graph format traits are mandatory to style " +
                       "the data source.");
     }
-    let { canvas, ctx } = this._getNamedCanvas("bar-graph-data");
-    let width = this._width;
-    let height = this._height;
+    const { canvas, ctx } = this._getNamedCanvas("bar-graph-data");
+    const width = this._width;
+    const height = this._height;
 
-    let totalTypes = this.format.length;
-    let totalTicks = this._data.length;
-    let lastTick = this._data[totalTicks - 1].delta;
+    const totalTypes = this.format.length;
+    const totalTicks = this._data.length;
+    const lastTick = this._data[totalTicks - 1].delta;
 
-    let minBarsWidth = this.minBarsWidth * this._pixelRatio;
-    let minBlocksHeight = this.minBlocksHeight * this._pixelRatio;
+    const minBarsWidth = this.minBarsWidth * this._pixelRatio;
+    const minBlocksHeight = this.minBlocksHeight * this._pixelRatio;
 
-    let duration = this.dataDuration || lastTick;
-    let dataScaleX = this.dataScaleX = width / (duration - this.dataOffsetX);
-    let dataScaleY = this.dataScaleY = height / this._calcMaxHeight({
+    const duration = this.dataDuration || lastTick;
+    const dataScaleX = this.dataScaleX = width / (duration - this.dataOffsetX);
+    const dataScaleY = this.dataScaleY = height / this._calcMaxHeight({
       data: this._data,
       dataScaleX: dataScaleX,
-      minBarsWidth: minBarsWidth
+      minBarsWidth: minBarsWidth,
     }) * this.dampenValuesFactor;
 
     // Draw the graph.
@@ -174,9 +175,9 @@ BarGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
     // information about the data source, and how a "bar" contains "blocks".
 
     this._blocksBoundingRects = [];
-    let prevHeight = [];
-    let scaledMarginEnd = GRAPH_BARS_MARGIN_END * this._pixelRatio;
-    let scaledMarginTop = GRAPH_BARS_MARGIN_TOP * this._pixelRatio;
+    const prevHeight = [];
+    const scaledMarginEnd = GRAPH_BARS_MARGIN_END * this._pixelRatio;
+    const scaledMarginTop = GRAPH_BARS_MARGIN_TOP * this._pixelRatio;
 
     for (let type = 0; type < totalTypes; type++) {
       ctx.fillStyle = this.format[type].color || "#000";
@@ -187,21 +188,21 @@ BarGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
       let skippedHeight = 0;
 
       for (let tick = 0; tick < totalTicks; tick++) {
-        let delta = this._data[tick].delta;
-        let value = this._data[tick].values[type] || 0;
-        let blockRight = (delta - this.dataOffsetX) * dataScaleX;
-        let blockHeight = value * dataScaleY;
+        const delta = this._data[tick].delta;
+        const value = this._data[tick].values[type] || 0;
+        const blockRight = (delta - this.dataOffsetX) * dataScaleX;
+        const blockHeight = value * dataScaleY;
 
-        let blockWidth = blockRight - prevRight;
+        const blockWidth = blockRight - prevRight;
         if (blockWidth < minBarsWidth) {
           skippedCount++;
           skippedHeight += blockHeight;
           continue;
         }
 
-        let averageHeight = (blockHeight + skippedHeight) / (skippedCount + 1);
+        const averageHeight = (blockHeight + skippedHeight) / (skippedCount + 1);
         if (averageHeight >= minBlocksHeight) {
-          let bottom = height - ~~prevHeight[tick];
+          const bottom = height - ~~prevHeight[tick];
           ctx.moveTo(prevRight, bottom);
           ctx.lineTo(prevRight, bottom - averageHeight);
           ctx.lineTo(blockRight, bottom - averageHeight);
@@ -213,7 +214,7 @@ BarGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
             start: prevRight,
             end: blockRight,
             top: bottom - averageHeight,
-            bottom: bottom
+            bottom: bottom,
           });
 
           if (prevHeight[tick] === undefined) {
@@ -241,7 +242,7 @@ BarGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
     while (this._legendNode.hasChildNodes()) {
       this._legendNode.firstChild.remove();
     }
-    for (let { color, label } of this.format) {
+    for (const { color, label } of this.format) {
       this._createLegendItem(color, label);
     }
 
@@ -262,7 +263,7 @@ BarGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
    * @param function unpack [optional]
    *        @see AbstractCanvasGraph.prototype.getMappedSelection
    */
-  buildMaskImage: function (highlights, inPixels = false,
+  buildMaskImage: function(highlights, inPixels = false,
                             unpack = e => e.delta) {
     // A null `highlights` array is used to clear the mask. An empty array
     // will mask the entire graph.
@@ -273,37 +274,37 @@ BarGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
     // Get a render target for the highlights. It will be overlaid on top of
     // the existing graph, masking the areas that aren't highlighted.
 
-    let { canvas, ctx } = this._getNamedCanvas("graph-highlights");
-    let width = this._width;
-    let height = this._height;
+    const { canvas, ctx } = this._getNamedCanvas("graph-highlights");
+    const width = this._width;
+    const height = this._height;
 
     // Draw the background mask.
 
-    let pattern = AbstractCanvasGraph.getStripePattern({
+    const pattern = AbstractCanvasGraph.getStripePattern({
       ownerDocument: this._document,
       backgroundColor: GRAPH_HIGHLIGHTS_MASK_BACKGROUND,
-      stripesColor: GRAPH_HIGHLIGHTS_MASK_STRIPES
+      stripesColor: GRAPH_HIGHLIGHTS_MASK_STRIPES,
     });
     ctx.fillStyle = pattern;
     ctx.fillRect(0, 0, width, height);
 
     // Clear highlighted areas.
 
-    let totalTicks = this._data.length;
-    let firstTick = unpack(this._data[0]);
-    let lastTick = unpack(this._data[totalTicks - 1]);
+    const totalTicks = this._data.length;
+    const firstTick = unpack(this._data[0]);
+    const lastTick = unpack(this._data[totalTicks - 1]);
 
     for (let { start, end, top, bottom } of highlights) {
       if (!inPixels) {
         start = CanvasGraphUtils.map(start, firstTick, lastTick, 0, width);
         end = CanvasGraphUtils.map(end, firstTick, lastTick, 0, width);
       }
-      let firstSnap = findFirst(this._blocksBoundingRects,
+      const firstSnap = findFirst(this._blocksBoundingRects,
                                 e => e.start >= start);
-      let lastSnap = findLast(this._blocksBoundingRects,
+      const lastSnap = findLast(this._blocksBoundingRects,
                               e => e.start >= start && e.end <= end);
 
-      let x1 = firstSnap ? firstSnap.start : start;
+      const x1 = firstSnap ? firstSnap.start : start;
       let x2;
       if (lastSnap) {
         x2 = lastSnap.end;
@@ -311,8 +312,8 @@ BarGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
         x2 = firstSnap ? firstSnap.end : end;
       }
 
-      let y1 = top || 0;
-      let y2 = bottom || height;
+      const y1 = top || 0;
+      const y2 = bottom || height;
       ctx.clearRect(x1, y1, x2 - x1, y2 - y1);
     }
 
@@ -335,25 +336,25 @@ BarGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
    * @return number
    *         The tallest bar height in this graph.
    */
-  _calcMaxHeight: function ({ data, dataScaleX, minBarsWidth }) {
+  _calcMaxHeight: function({ data, dataScaleX, minBarsWidth }) {
     let maxHeight = 0;
     let prevRight = 0;
     let skippedCount = 0;
     let skippedHeight = 0;
-    let scaledMarginEnd = GRAPH_BARS_MARGIN_END * this._pixelRatio;
+    const scaledMarginEnd = GRAPH_BARS_MARGIN_END * this._pixelRatio;
 
-    for (let { delta, values } of data) {
-      let barRight = (delta - this.dataOffsetX) * dataScaleX;
-      let barHeight = values.reduce((a, b) => a + b, 0);
+    for (const { delta, values } of data) {
+      const barRight = (delta - this.dataOffsetX) * dataScaleX;
+      const barHeight = values.reduce((a, b) => a + b, 0);
 
-      let barWidth = barRight - prevRight;
+      const barWidth = barRight - prevRight;
       if (barWidth < minBarsWidth) {
         skippedCount++;
         skippedHeight += barHeight;
         continue;
       }
 
-      let averageHeight = (barHeight + skippedHeight) / (skippedCount + 1);
+      const averageHeight = (barHeight + skippedHeight) / (skippedCount + 1);
       maxHeight = Math.max(averageHeight, maxHeight);
 
       prevRight += barWidth + scaledMarginEnd;
@@ -367,8 +368,8 @@ BarGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
   /**
    * Creates the legend container when constructing this graph.
    */
-  _createLegend: function () {
-    let legendNode = this._legendNode = this._document.createElementNS(HTML_NS,
+  _createLegend: function() {
+    const legendNode = this._legendNode = this._document.createElementNS(HTML_NS,
                                                                        "div");
     legendNode.className = "bar-graph-widget-legend";
     this._container.appendChild(legendNode);
@@ -377,11 +378,11 @@ BarGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
   /**
    * Creates a legend item when constructing this graph.
    */
-  _createLegendItem: function (color, label) {
-    let itemNode = this._document.createElementNS(HTML_NS, "div");
+  _createLegendItem: function(color, label) {
+    const itemNode = this._document.createElementNS(HTML_NS, "div");
     itemNode.className = "bar-graph-widget-legend-item";
 
-    let colorNode = this._document.createElementNS(HTML_NS, "span");
+    const colorNode = this._document.createElementNS(HTML_NS, "span");
     colorNode.setAttribute("view", "color");
     colorNode.setAttribute("data-index", this._legendNode.childNodes.length);
     colorNode.style.backgroundColor = color;
@@ -390,7 +391,7 @@ BarGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
     colorNode.addEventListener("mousedown", this._onLegendMouseDown);
     colorNode.addEventListener("mouseup", this._onLegendMouseUp);
 
-    let labelNode = this._document.createElementNS(HTML_NS, "span");
+    const labelNode = this._document.createElementNS(HTML_NS, "span");
     labelNode.setAttribute("view", "label");
     labelNode.textContent = label;
 
@@ -402,13 +403,13 @@ BarGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
   /**
    * Invoked whenever a color node in the legend is hovered.
    */
-  _onLegendMouseOver: function (ev) {
+  _onLegendMouseOver: function(ev) {
     setNamedTimeout(
       "bar-graph-debounce",
       GRAPH_LEGEND_MOUSEOVER_DEBOUNCE,
       () => {
-        let type = ev.target.dataset.index;
-        let rects = this._blocksBoundingRects.filter(e => e.type == type);
+        const type = ev.target.dataset.index;
+        const rects = this._blocksBoundingRects.filter(e => e.type == type);
 
         this._originalHighlights = this._mask;
         this._hasCustomHighlights = true;
@@ -422,7 +423,7 @@ BarGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
   /**
    * Invoked whenever a color node in the legend is unhovered.
    */
-  _onLegendMouseOut: function () {
+  _onLegendMouseOut: function() {
     clearNamedTimeout("bar-graph-debounce");
 
     if (this._hasCustomHighlights) {
@@ -437,14 +438,14 @@ BarGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
   /**
    * Invoked whenever a color node in the legend is pressed.
    */
-  _onLegendMouseDown: function (ev) {
+  _onLegendMouseDown: function(ev) {
     ev.preventDefault();
     ev.stopPropagation();
 
-    let type = ev.target.dataset.index;
-    let rects = this._blocksBoundingRects.filter(e => e.type == type);
-    let leftmost = rects[0];
-    let rightmost = rects[rects.length - 1];
+    const type = ev.target.dataset.index;
+    const rects = this._blocksBoundingRects.filter(e => e.type == type);
+    const leftmost = rects[0];
+    const rightmost = rects[rects.length - 1];
     if (!leftmost || !rightmost) {
       this.dropSelection();
     } else {
@@ -457,10 +458,10 @@ BarGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
   /**
    * Invoked whenever a color node in the legend is released.
    */
-  _onLegendMouseUp: function (e) {
+  _onLegendMouseUp: function(e) {
     e.preventDefault();
     e.stopPropagation();
-  }
+  },
 });
 
 /**
@@ -471,7 +472,7 @@ BarGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
  */
 function findFirst(array, predicate) {
   for (let i = 0, len = array.length; i < len; i++) {
-    let element = array[i];
+    const element = array[i];
     if (predicate(element)) {
       return element;
     }
@@ -487,7 +488,7 @@ function findFirst(array, predicate) {
  */
 function findLast(array, predicate) {
   for (let i = array.length - 1; i >= 0; i--) {
-    let element = array[i];
+    const element = array[i];
     if (predicate(element)) {
       return element;
     }

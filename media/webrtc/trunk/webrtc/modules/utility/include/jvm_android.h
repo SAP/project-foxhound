@@ -8,15 +8,16 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_UTILITY_INCLUDE_JVM_ANDROID_H_
-#define WEBRTC_MODULES_UTILITY_INCLUDE_JVM_ANDROID_H_
+#ifndef MODULES_UTILITY_INCLUDE_JVM_ANDROID_H_
+#define MODULES_UTILITY_INCLUDE_JVM_ANDROID_H_
 
 #include <jni.h>
+
+#include <memory>
 #include <string>
 
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/base/thread_checker.h"
-#include "webrtc/modules/utility/include/helpers_android.h"
+#include "modules/utility/include/helpers_android.h"
+#include "rtc_base/thread_checker.h"
 
 namespace webrtc {
 
@@ -63,6 +64,7 @@ class JavaClass {
   jmethodID GetMethodId(const char* name, const char* signature);
   jmethodID GetStaticMethodId(const char* name, const char* signature);
   jobject CallStaticObjectMethod(jmethodID methodID, ...);
+  jint CallStaticIntMethod(jmethodID methodID, ...);
 
  protected:
   JNIEnv* const jni_;
@@ -76,7 +78,7 @@ class NativeRegistration : public JavaClass {
   NativeRegistration(JNIEnv* jni, jclass clazz);
   ~NativeRegistration();
 
-  rtc::scoped_ptr<GlobalRef> NewObject(
+  std::unique_ptr<GlobalRef> NewObject(
       const char* name, const char* signature, ...);
 
  private:
@@ -96,7 +98,7 @@ class JNIEnvironment {
   // Note that the class name must be one of the names in the static
   // |loaded_classes| array defined in jvm_android.cc.
   // This method must be called on the construction thread.
-  rtc::scoped_ptr<NativeRegistration> RegisterNatives(
+  std::unique_ptr<NativeRegistration> RegisterNatives(
       const char* name, const JNINativeMethod *methods, int num_methods);
 
   // Converts from Java string to std::string.
@@ -116,13 +118,12 @@ class JNIEnvironment {
 //   JNIEnv* jni = ::base::android::AttachCurrentThread();
 //   JavaVM* jvm = NULL;
 //   jni->GetJavaVM(&jvm);
-//   jobject context = ::base::android::GetApplicationContext();
-//   webrtc::JVM::Initialize(jvm, context);
+//   webrtc::JVM::Initialize(jvm);
 //
 //   // Header (.h) file of example class called User.
-//   rtc::scoped_ptr<JNIEnvironment> env;
-//   rtc::scoped_ptr<NativeRegistration> reg;
-//   rtc::scoped_ptr<GlobalRef> obj;
+//   std::unique_ptr<JNIEnvironment> env;
+//   std::unique_ptr<NativeRegistration> reg;
+//   std::unique_ptr<GlobalRef> obj;
 //
 //   // Construction (in .cc file) of User class.
 //   User::User() {
@@ -143,8 +144,12 @@ class JNIEnvironment {
 //   JVM::Uninitialize();
 class JVM {
  public:
-  // Stores global handles to the Java VM interface and the application context.
+  // Stores global handles to the Java VM interface.
   // Should be called once on a thread that is attached to the JVM.
+  static void Initialize(JavaVM* jvm);
+  // Like the method above but also passes the context to the ContextUtils
+  // class. This method should be used by pure-C++ Android users that can't call
+  // ContextUtils.initialize directly.
   static void Initialize(JavaVM* jvm, jobject context);
   // Clears handles stored in Initialize(). Must be called on same thread as
   // Initialize().
@@ -156,7 +161,7 @@ class JVM {
   // Creates a JNIEnvironment object.
   // This method returns a NULL pointer if AttachCurrentThread() has not been
   // called successfully. Use the AttachCurrentThreadIfNeeded class if needed.
-  rtc::scoped_ptr<JNIEnvironment> environment();
+  std::unique_ptr<JNIEnvironment> environment();
 
   // Returns a JavaClass object given class |name|.
   // Note that the class name must be one of the names in the static
@@ -166,10 +171,9 @@ class JVM {
 
   // TODO(henrika): can we make these private?
   JavaVM* jvm() const { return jvm_; }
-  jobject context() const { return context_; }
 
  protected:
-  JVM(JavaVM* jvm, jobject context);
+  JVM(JavaVM* jvm);
   ~JVM();
 
  private:
@@ -177,9 +181,8 @@ class JVM {
 
   rtc::ThreadChecker thread_checker_;
   JavaVM* const jvm_;
-  jobject context_;
 };
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_UTILITY_INCLUDE_JVM_ANDROID_H_
+#endif  // MODULES_UTILITY_INCLUDE_JVM_ANDROID_H_

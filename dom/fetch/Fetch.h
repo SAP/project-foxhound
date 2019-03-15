@@ -8,7 +8,6 @@
 #define mozilla_dom_Fetch_h
 
 #include "nsAutoPtr.h"
-#include "nsIInputStreamPump.h"
 #include "nsIStreamLoader.h"
 
 #include "nsCOMPtr.h"
@@ -18,60 +17,96 @@
 
 #include "mozilla/DebugOnly.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/dom/AbortSignal.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/dom/FetchStreamReader.h"
 #include "mozilla/dom/RequestBinding.h"
-#include "mozilla/dom/workers/bindings/WorkerHolder.h"
 
 class nsIGlobalObject;
+class nsIEventTarget;
 
 namespace mozilla {
 namespace dom {
 
 class BlobOrArrayBufferViewOrArrayBufferOrFormDataOrURLSearchParamsOrUSVString;
+class
+    BlobOrArrayBufferViewOrArrayBufferOrFormDataOrURLSearchParamsOrReadableStreamOrUSVString;
 class BlobImpl;
 class InternalRequest;
-class OwningBlobOrArrayBufferViewOrArrayBufferOrFormDataOrURLSearchParamsOrUSVString;
+class
+    OwningBlobOrArrayBufferViewOrArrayBufferOrFormDataOrURLSearchParamsOrUSVString;
+struct ReadableStream;
 class RequestOrUSVString;
+class WorkerPrivate;
+
 enum class CallerType : uint32_t;
 
-namespace workers {
-class WorkerPrivate;
-} // namespace workers
+already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
+                                       const RequestOrUSVString& aInput,
+                                       const RequestInit& aInit,
+                                       CallerType aCallerType,
+                                       ErrorResult& aRv);
 
-already_AddRefed<Promise>
-FetchRequest(nsIGlobalObject* aGlobal, const RequestOrUSVString& aInput,
-             const RequestInit& aInit, CallerType aCallerType,
-             ErrorResult& aRv);
-
-nsresult
-UpdateRequestReferrer(nsIGlobalObject* aGlobal, InternalRequest* aRequest);
+nsresult UpdateRequestReferrer(nsIGlobalObject* aGlobal,
+                               InternalRequest* aRequest);
 
 namespace fetch {
-typedef BlobOrArrayBufferViewOrArrayBufferOrFormDataOrURLSearchParamsOrUSVString BodyInit;
-typedef OwningBlobOrArrayBufferViewOrArrayBufferOrFormDataOrURLSearchParamsOrUSVString OwningBodyInit;
-};
+typedef BlobOrArrayBufferViewOrArrayBufferOrFormDataOrURLSearchParamsOrUSVString
+    BodyInit;
+typedef BlobOrArrayBufferViewOrArrayBufferOrFormDataOrURLSearchParamsOrReadableStreamOrUSVString
+    ResponseBodyInit;
+typedef OwningBlobOrArrayBufferViewOrArrayBufferOrFormDataOrURLSearchParamsOrUSVString
+    OwningBodyInit;
+};  // namespace fetch
 
 /*
  * Creates an nsIInputStream based on the fetch specifications 'extract a byte
  * stream algorithm' - http://fetch.spec.whatwg.org/#concept-bodyinit-extract.
  * Stores content type in out param aContentType.
  */
-nsresult
-ExtractByteStreamFromBody(const fetch::OwningBodyInit& aBodyInit,
-                          nsIInputStream** aStream,
-                          nsCString& aContentType,
-                          uint64_t& aContentLength);
+nsresult ExtractByteStreamFromBody(const fetch::OwningBodyInit& aBodyInit,
+                                   nsIInputStream** aStream,
+                                   nsCString& aContentType,
+                                   uint64_t& aContentLength);
 
 /*
  * Non-owning version.
  */
-nsresult
-ExtractByteStreamFromBody(const fetch::BodyInit& aBodyInit,
-                          nsIInputStream** aStream,
-                          nsCString& aContentType,
-                          uint64_t& aContentLength);
+nsresult ExtractByteStreamFromBody(const fetch::BodyInit& aBodyInit,
+                                   nsIInputStream** aStream,
+                                   nsCString& aContentType,
+                                   uint64_t& aContentLength);
 
-template <class Derived> class FetchBodyWorkerHolder;
+/*
+ * Non-owning version. This method should go away when BodyInit will contain
+ * ReadableStream.
+ */
+nsresult ExtractByteStreamFromBody(const fetch::ResponseBodyInit& aBodyInit,
+                                   nsIInputStream** aStream,
+                                   nsCString& aContentType,
+                                   uint64_t& aContentLength);
+
+template <class Derived>
+class FetchBodyConsumer;
+
+enum FetchConsumeType {
+  CONSUME_ARRAYBUFFER,
+  CONSUME_BLOB,
+  CONSUME_FORMDATA,
+  CONSUME_JSON,
+  CONSUME_TEXT,
+};
+
+class FetchStreamHolder {
+ public:
+  NS_INLINE_DECL_PURE_VIRTUAL_REFCOUNTING
+
+  virtual void NullifyStream() = 0;
+
+  virtual void MarkAsRead() = 0;
+
+  virtual JSObject* ReadableStreamBody() = 0;
+};
 
 /*
  * FetchBody's body consumption uses nsIInputStreamPump to read from the
@@ -82,7 +117,8 @@ template <class Derived> class FetchBodyWorkerHolder;
  * Use of the nsIInputStreamPump complicates things on the worker thread.
  * The solution used here is similar to WebSockets.
  * The difference is that we are only interested in completion and not data
- * events, and nsIInputStreamPump can only deliver completion on the main thread.
+ * events, and nsIInputStreamPump can only deliver completion on the main
+ * thread.
  *
  * Before starting the pump on the main thread, we addref the FetchBody to keep
  * it alive. Then we add a feature, to track the status of the worker.
@@ -107,135 +143,143 @@ template <class Derived> class FetchBodyWorkerHolder;
  * The pump is always released on the main thread.
  */
 template <class Derived>
-class FetchBody {
-public:
-  bool
-  BodyUsed() const { return mBodyUsed; }
+class FetchBody : public FetchStreamHolder, public AbortFollower {
+ public:
+  friend class FetchBodyConsumer<Derived>;
 
-  already_AddRefed<Promise>
-  ArrayBuffer(ErrorResult& aRv)
-  {
-    return ConsumeBody(CONSUME_ARRAYBUFFER, aRv);
+  bool GetBodyUsed(ErrorResult& aRv) const;
+
+  // For use in assertions. On success, returns true if the body is used, false
+  // if not. On error, this sweeps the error under the rug and returns true.
+  bool CheckBodyUsed() const;
+
+  already_AddRefed<Promise> ArrayBuffer(JSContext* aCx, ErrorResult& aRv) {
+    return ConsumeBody(aCx, CONSUME_ARRAYBUFFER, aRv);
   }
 
-  already_AddRefed<Promise>
-  Blob(ErrorResult& aRv)
-  {
-    return ConsumeBody(CONSUME_BLOB, aRv);
+  already_AddRefed<Promise> Blob(JSContext* aCx, ErrorResult& aRv) {
+    return ConsumeBody(aCx, CONSUME_BLOB, aRv);
   }
 
-  already_AddRefed<Promise>
-  FormData(ErrorResult& aRv)
-  {
-    return ConsumeBody(CONSUME_FORMDATA, aRv);
+  already_AddRefed<Promise> FormData(JSContext* aCx, ErrorResult& aRv) {
+    return ConsumeBody(aCx, CONSUME_FORMDATA, aRv);
   }
 
-  already_AddRefed<Promise>
-  Json(ErrorResult& aRv)
-  {
-    return ConsumeBody(CONSUME_JSON, aRv);
+  already_AddRefed<Promise> Json(JSContext* aCx, ErrorResult& aRv) {
+    return ConsumeBody(aCx, CONSUME_JSON, aRv);
   }
 
-  already_AddRefed<Promise>
-  Text(ErrorResult& aRv)
-  {
-    return ConsumeBody(CONSUME_TEXT, aRv);
+  already_AddRefed<Promise> Text(JSContext* aCx, ErrorResult& aRv) {
+    return ConsumeBody(aCx, CONSUME_TEXT, aRv);
   }
+
+  void GetBody(JSContext* aCx, JS::MutableHandle<JSObject*> aBodyOut,
+               ErrorResult& aRv);
+
+  const nsACString& BodyBlobURISpec() const;
+
+  const nsAString& BodyLocalPath() const;
+
+  // If the body contains a ReadableStream body object, this method produces a
+  // tee() of it.
+  void MaybeTeeReadableStreamBody(JSContext* aCx,
+                                  JS::MutableHandle<JSObject*> aBodyOut,
+                                  FetchStreamReader** aStreamReader,
+                                  nsIInputStream** aInputStream,
+                                  ErrorResult& aRv);
 
   // Utility public methods accessed by various runnables.
-  void
-  BeginConsumeBodyMainThread();
 
-  void
-  ContinueConsumeBody(nsresult aStatus, uint32_t aLength, uint8_t* aResult);
+  // This method _must_ be called in order to set the body as used. If the body
+  // is a ReadableStream, this method will start reading the stream.
+  // More in details, this method does:
+  // 1) It uses an internal flag to track if the body is used.  This is tracked
+  // separately from the ReadableStream disturbed state due to purely native
+  // streams.
+  // 2) If there is a ReadableStream reflector for the native stream it is
+  // Locked.
+  // 3) If there is a JS ReadableStream then we begin pumping it into the native
+  // body stream.  This effectively locks and disturbs the stream.
+  //
+  // Note that JSContext is used only if there is a ReadableStream (this can
+  // happen because the body is a ReadableStream or because attribute body has
+  // already been used by content). If something goes wrong using
+  // ReadableStream, errors will be reported via ErrorResult and not as JS
+  // exceptions in JSContext. This is done in order to have a centralized error
+  // reporting way.
+  //
+  // Exceptions generated when reading from the ReadableStream are directly sent
+  // to the Console.
+  void SetBodyUsed(JSContext* aCx, ErrorResult& aRv);
 
-  void
-  ContinueConsumeBlobBody(BlobImpl* aBlobImpl);
+  const nsCString& MimeType() const { return mMimeType; }
 
-  void
-  CancelPump();
-
-  void
-  SetBodyUsed()
-  {
-    mBodyUsed = true;
+  // FetchStreamHolder
+  void NullifyStream() override {
+    mReadableStreamBody = nullptr;
+    mReadableStreamReader = nullptr;
+    mFetchStreamReader = nullptr;
   }
 
+  JSObject* ReadableStreamBody() override {
+    MOZ_ASSERT(mReadableStreamBody);
+    return mReadableStreamBody;
+  }
+
+  void MarkAsRead() override { mBodyUsed = true; }
+
+  virtual AbortSignalImpl* GetSignalImpl() const = 0;
+
+  // AbortFollower
+  void Abort() override;
+
+  already_AddRefed<Promise> ConsumeBody(JSContext* aCx, FetchConsumeType aType,
+                                        ErrorResult& aRv);
+
+ protected:
+  nsCOMPtr<nsIGlobalObject> mOwner;
+
   // Always set whenever the FetchBody is created on the worker thread.
-  workers::WorkerPrivate* mWorkerPrivate;
+  WorkerPrivate* mWorkerPrivate;
 
-  // Set when consuming the body is attempted on a worker.
-  // Unset when consumption is done/aborted.
-  nsAutoPtr<workers::WorkerHolder> mWorkerHolder;
+  // This is the ReadableStream exposed to content. It's underlying source is a
+  // FetchStream object.
+  JS::Heap<JSObject*> mReadableStreamBody;
 
-protected:
-  FetchBody();
+  // This is the Reader used to retrieve data from the body.
+  JS::Heap<JSObject*> mReadableStreamReader;
+  RefPtr<FetchStreamReader> mFetchStreamReader;
+
+  explicit FetchBody(nsIGlobalObject* aOwner);
 
   virtual ~FetchBody();
 
-  void
-  SetMimeType();
-private:
-  enum ConsumeType
-  {
-    CONSUME_ARRAYBUFFER,
-    CONSUME_BLOB,
-    CONSUME_FORMDATA,
-    CONSUME_JSON,
-    CONSUME_TEXT,
-  };
+  void SetMimeType();
 
-  Derived*
-  DerivedClass() const
-  {
+  void OverrideMimeType(const nsACString& aMimeType);
+
+  void SetReadableStreamBody(JSContext* aCx, JSObject* aBody);
+
+ private:
+  Derived* DerivedClass() const {
     return static_cast<Derived*>(const_cast<FetchBody*>(this));
   }
 
-  nsresult
-  BeginConsumeBody();
+  void LockStream(JSContext* aCx, JS::HandleObject aStream, ErrorResult& aRv);
 
-  already_AddRefed<Promise>
-  ConsumeBody(ConsumeType aType, ErrorResult& aRv);
+  bool IsOnTargetThread() { return NS_IsMainThread() == !mWorkerPrivate; }
 
-  bool
-  AddRefObject();
-
-  void
-  ReleaseObject();
-
-  bool
-  RegisterWorkerHolder();
-
-  void
-  UnregisterWorkerHolder();
-
-  bool
-  IsOnTargetThread()
-  {
-    return NS_IsMainThread() == !mWorkerPrivate;
-  }
-
-  void
-  AssertIsOnTargetThread()
-  {
-    MOZ_ASSERT(IsOnTargetThread());
-  }
+  void AssertIsOnTargetThread() { MOZ_ASSERT(IsOnTargetThread()); }
 
   // Only ever set once, always on target thread.
   bool mBodyUsed;
   nsCString mMimeType;
 
-  // Only touched on target thread.
-  ConsumeType mConsumeType;
-  RefPtr<Promise> mConsumePromise;
-#ifdef DEBUG
-  bool mReadDone;
-#endif
-
-  nsMainThreadPtrHandle<nsIInputStreamPump> mConsumeBodyPump;
+  // The main-thread event target for runnable dispatching.
+  nsCOMPtr<nsIEventTarget> mMainThreadEventTarget;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_Fetch_h
+#endif  // mozilla_dom_Fetch_h

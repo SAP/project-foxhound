@@ -6,8 +6,10 @@
 "use strict";
 
 /* exported Process */
-/* globals BaseProcess, BasePipe */
 
+/* import-globals-from subprocess_shared.js */
+/* import-globals-from subprocess_shared_unix.js */
+/* import-globals-from subprocess_worker_common.js */
 importScripts("resource://gre/modules/subprocess/subprocess_shared.js",
               "resource://gre/modules/subprocess/subprocess_shared_unix.js",
               "resource://gre/modules/subprocess/subprocess_worker_common.js");
@@ -463,19 +465,25 @@ class Process extends BaseProcess {
     let status = ctypes.int();
 
     let res = libc.waitpid(this.pid, status.address(), LIBC.WNOHANG);
-    if (res == this.pid) {
-      let sig = unix.WTERMSIG(status.value);
-      if (sig) {
-        this.exitCode = -sig;
-      } else {
-        this.exitCode = unix.WEXITSTATUS(status.value);
-      }
-
-      this.fd.dispose();
-      io.updatePollFds();
-      this.resolveExit(this.exitCode);
-      return this.exitCode;
+    // If there's a failure here and we get any errno other than EINTR, it
+    // means that the process has been reaped by another thread (most likely
+    // the nspr process wait thread), and its actual exit status is not
+    // available to us. In that case, we have to assume success.
+    if (res == 0 || (res == -1 && ctypes.errno == LIBC.EINTR)) {
+      return null;
     }
+
+    let sig = unix.WTERMSIG(status.value);
+    if (sig) {
+      this.exitCode = -sig;
+    } else {
+      this.exitCode = unix.WEXITSTATUS(status.value);
+    }
+
+    this.fd.dispose();
+    io.updatePollFds();
+    this.resolveExit(this.exitCode);
+    return this.exitCode;
   }
 }
 
@@ -490,6 +498,8 @@ io = {
   messageCount: 0,
 
   running: true,
+
+  polling: false,
 
   init(details) {
     this.signal = new Signal(details.signalFd);
@@ -537,6 +547,16 @@ io = {
 
     handlers = handlers.filter(handler => handler.pollEvents);
 
+    // Our poll loop is only useful if we've got at least 1 thing to poll other than our own
+    // signal.
+    if (handlers.length == 1) {
+      this.polling = false;
+    } else if (!this.polling && this.running) {
+      // Restart the poll loop if necessary:
+      setTimeout(this.loop.bind(this), 0);
+      this.polling = true;
+    }
+
     let pollfds = unix.pollfd.array(handlers.length)();
 
     for (let [i, handler] of handlers.entries()) {
@@ -553,7 +573,7 @@ io = {
 
   loop() {
     this.poll();
-    if (this.running) {
+    if (this.running && this.polling) {
       setTimeout(this.loop.bind(this), 0);
     }
   },

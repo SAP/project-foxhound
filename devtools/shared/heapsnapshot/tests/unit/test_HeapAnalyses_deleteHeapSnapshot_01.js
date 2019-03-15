@@ -1,11 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+"use strict";
 
 // Test that the HeapAnalyses{Client,Worker} can delete heap snapshots.
-
-function run_test() {
-  run_next_test();
-}
 
 const breakdown = {
   by: "coarseType",
@@ -15,24 +12,24 @@ const breakdown = {
   other: { by: "count", count: true, bytes: true },
 };
 
-add_task(function* () {
+add_task(async function() {
   const client = new HeapAnalysesClient();
 
   const snapshotFilePath = saveNewHeapSnapshot();
-  yield client.readHeapSnapshot(snapshotFilePath);
+  await client.readHeapSnapshot(snapshotFilePath);
   ok(true, "Should have read the heap snapshot");
 
-  let dominatorTreeId = yield client.computeDominatorTree(snapshotFilePath);
+  const dominatorTreeId = await client.computeDominatorTree(snapshotFilePath);
   ok(true, "Should have computed the dominator tree");
 
-  yield client.deleteHeapSnapshot(snapshotFilePath);
+  await client.deleteHeapSnapshot(snapshotFilePath);
   ok(true, "Should have deleted the snapshot");
 
   let threw = false;
   try {
-    yield client.getDominatorTree({
+    await client.getDominatorTree({
       dominatorTreeId: dominatorTreeId,
-      breakdown
+      breakdown,
     });
   } catch (_) {
     threw = true;
@@ -41,7 +38,7 @@ add_task(function* () {
 
   threw = false;
   try {
-    yield client.computeDominatorTree(snapshotFilePath);
+    await client.computeDominatorTree(snapshotFilePath);
   } catch (_) {
     threw = true;
   }
@@ -49,7 +46,7 @@ add_task(function* () {
 
   threw = false;
   try {
-    yield client.takeCensus(snapshotFilePath);
+    await client.takeCensus(snapshotFilePath);
   } catch (_) {
     threw = true;
   }

@@ -33,8 +33,11 @@ def attributeParamName(a):
     return "a" + firstCap(a.name)
 
 
-def attributeParamNames(a):
-    l = [attributeParamName(a)]
+def attributeParamNames(a, getter):
+    if getter and a.notxpcom:
+        l = []
+    else:
+        l = [attributeParamName(a)]
     if a.implicit_jscontext:
         l.insert(0, "cx")
     return ", ".join(l)
@@ -45,33 +48,47 @@ def attributeNativeName(a, getter):
     return "%s%s" % (getter and 'Get' or 'Set', binaryname)
 
 
-def attributeReturnType(a, macro):
+def attributeReturnType(a, getter, macro):
     """macro should be NS_IMETHOD or NS_IMETHODIMP"""
-    if a.nostdcall:
-        ret = macro == "NS_IMETHOD" and "virtual nsresult" or "nsresult"
+    # Pick the type to be returned from the getter/setter.
+    if a.notxpcom:
+        ret = a.realtype.nativeType('in').strip() if getter else "void"
     else:
-        ret = macro
+        ret = "nsresult"
+
+    # Set calling convention and virtual-ness
+    if a.nostdcall:
+        if macro == "NS_IMETHOD":
+            # This is the declaration.
+            ret = "virtual %s" % ret
+    else:
+        if ret == "nsresult":
+            ret = macro
+        else:
+            ret = "%s_(%s)" % (macro, ret)
+
     if a.must_use:
         ret = "MOZ_MUST_USE " + ret
     return ret
 
 
 def attributeParamlist(a, getter):
-    l = ["%s%s" % (a.realtype.nativeType(getter and 'out' or 'in'),
-                   attributeParamName(a))]
+    if getter and a.notxpcom:
+        l = []
+    else:
+        l = ["%s%s" % (a.realtype.nativeType(getter and 'out' or 'in'),
+                       attributeParamName(a))]
     if a.implicit_jscontext:
         l.insert(0, "JSContext* cx")
 
     return ", ".join(l)
 
 
-def attributeAsNative(a, getter, declType = 'NS_IMETHOD'):
-        deprecated = a.deprecated and "NS_DEPRECATED " or ""
-        params = {'deprecated': deprecated,
-                  'returntype': attributeReturnType(a, declType),
-                  'binaryname': attributeNativeName(a, getter),
-                  'paramlist': attributeParamlist(a, getter)}
-        return "%(deprecated)s%(returntype)s %(binaryname)s(%(paramlist)s)" % params
+def attributeAsNative(a, getter, declType='NS_IMETHOD'):
+    params = {'returntype': attributeReturnType(a, getter, declType),
+              'binaryname': attributeNativeName(a, getter),
+              'paramlist': attributeParamlist(a, getter)}
+    return "%(returntype)s %(binaryname)s(%(paramlist)s)" % params
 
 
 def methodNativeName(m):
@@ -80,21 +97,28 @@ def methodNativeName(m):
 
 def methodReturnType(m, macro):
     """macro should be NS_IMETHOD or NS_IMETHODIMP"""
-    if m.nostdcall and m.notxpcom:
-        ret = "%s%s" % (macro == "NS_IMETHOD" and "virtual " or "",
-                        m.realtype.nativeType('in').strip())
-    elif m.nostdcall:
-        ret = "%snsresult" % (macro == "NS_IMETHOD" and "virtual " or "")
-    elif m.notxpcom:
-        ret = "%s_(%s)" % (macro, m.realtype.nativeType('in').strip())
+    if m.notxpcom:
+        ret = m.realtype.nativeType('in').strip()
     else:
-        ret = macro
+        ret = "nsresult"
+
+    # Set calling convention and virtual-ness
+    if m.nostdcall:
+        if macro == "NS_IMETHOD":
+            # This is the declaration
+            ret = "virtual %s" % ret
+    else:
+        if ret == "nsresult":
+            ret = macro
+        else:
+            ret = "%s_(%s)" % (macro, ret)
+
     if m.must_use:
         ret = "MOZ_MUST_USE " + ret
     return ret
 
 
-def methodAsNative(m, declType = 'NS_IMETHOD'):
+def methodAsNative(m, declType='NS_IMETHOD'):
     return "%s %s(%s)" % (methodReturnType(m, declType),
                           methodNativeName(m),
                           paramlistAsNative(m))
@@ -125,7 +149,7 @@ def paramlistAsNative(m, empty='void'):
                 m.params[paramIter].paramtype == "out"):
             t = m.params[paramIter].type
             # Strings can't be optional, so this shouldn't happen, but let's make sure:
-            if t == "AString" or t == "ACString" or t == "DOMString" or t == "AUTF8String":
+            if t == "AString" or t == "ACString" or t == "AUTF8String":
                 break
             l[paramIter] += " = nullptr"
             paramIter -= 1
@@ -136,9 +160,22 @@ def paramlistAsNative(m, empty='void'):
     return ", ".join(l)
 
 
+def memberCanRunScript(member):
+    # This can only happen if the member is scriptable and its interface is not builtinclass.
+    return member.isScriptable() and not member.iface.attributes.builtinclass
+
+
+def runScriptAnnotation(member):
+    return "JS_HAZ_CAN_RUN_SCRIPT " if memberCanRunScript(member) else ""
+
+
 def paramAsNative(p):
-    return "%s%s" % (p.nativeType(),
-                     p.name)
+    default_spec = ''
+    if p.default_value:
+        default_spec = " = " + p.default_value
+    return "%s%s%s" % (p.nativeType(),
+                       p.name,
+                       default_spec)
 
 
 def paramlistNames(m):
@@ -156,6 +193,7 @@ def paramlistNames(m):
     if len(names) == 0:
         return ''
     return ', '.join(names)
+
 
 header = """/*
  * DO NOT EDIT.  THIS FILE IS GENERATED FROM %(filename)s
@@ -176,8 +214,13 @@ jsvalue_include = """
 """
 
 infallible_includes = """
+#include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/DebugOnly.h"
+"""
+
+can_run_script_includes = """
+#include "js/GCAnnotations.h"
 """
 
 header_end = """/* For IDL files that don't want to include root IDL files. */
@@ -215,11 +258,22 @@ def print_header(idl, fd, filename):
         fd.write(jsvalue_include)
 
     # Include some extra files if any attributes are infallible.
-    for iface in [p for p in idl.productions if p.kind == 'interface']:
-        for attr in [m for m in iface.members if isinstance(m, xpidl.Attribute)]:
+    interfaces = [p for p in idl.productions if p.kind == 'interface']
+    wroteRunScriptIncludes = False
+    for iface in interfaces:
+        attrs = [m for m in iface.members if isinstance(m, xpidl.Attribute)]
+        for attr in attrs:
             if attr.infallible:
                 fd.write(infallible_includes)
                 break
+
+        if not wroteRunScriptIncludes:
+            methods = [m for m in iface.members if isinstance(m, xpidl.Method)]
+            for member in itertools.chain(attrs, methods):
+                if memberCanRunScript(member):
+                    fd.write(can_run_script_includes)
+                    wroteRunScriptIncludes = True
+                    break
 
     fd.write('\n')
     fd.write(header_end)
@@ -231,6 +285,9 @@ def print_header(idl, fd, filename):
             fd.write(p.data)
             continue
 
+        if p.kind == 'webidl':
+            write_webidl(p, fd)
+            continue
         if p.kind == 'forward':
             fd.write(forward_decl % {'name': p.name})
             continue
@@ -243,6 +300,17 @@ def print_header(idl, fd, filename):
                                              p.name))
 
     fd.write(footer % {'basename': idl_basename(filename)})
+
+
+def write_webidl(p, fd):
+    path = p.native.split('::')
+    for seg in path[:-1]:
+        fd.write("namespace %s {\n" % seg)
+    fd.write("class %s; /* webidl %s */\n" % (path[-1], p.name))
+    for seg in reversed(path[:-1]):
+        fd.write("} // namespace %s\n" % seg)
+    fd.write("\n")
+
 
 iface_header = r"""
 /* starting interface:    %(name)s */
@@ -283,67 +351,33 @@ iface_nonvirtual = """
 iface_forward = """
 
 /* Use this macro to declare functions that forward the behavior of this interface to another object. */
-#define NS_FORWARD_%(macroname)s(_to) """
+#define NS_FORWARD_%(macroname)s(_to) """  # NOQA: E501
 
 iface_forward_safe = """
 
 /* Use this macro to declare functions that forward the behavior of this interface to another object in a safe way. */
-#define NS_FORWARD_SAFE_%(macroname)s(_to) """
+#define NS_FORWARD_SAFE_%(macroname)s(_to) """  # NOQA: E501
 
-iface_template_prolog = """
-
-#if 0
-/* Use the code below as a template for the implementation class for this interface. */
-
-/* Header file */
-class %(implclass)s : public %(name)s
-{
-public:
-  NS_DECL_ISUPPORTS
-  NS_DECL_%(macroname)s
-
-  %(implclass)s();
-
-private:
-  ~%(implclass)s();
-
-protected:
-  /* additional members */
-};
-
-/* Implementation file */
-NS_IMPL_ISUPPORTS(%(implclass)s, %(name)s)
-
-%(implclass)s::%(implclass)s()
-{
-  /* member initializers and constructor code */
-}
-
-%(implclass)s::~%(implclass)s()
-{
-  /* destructor code */
-}
-
-"""
-
-example_tmpl = """%(returntype)s %(implclass)s::%(nativeName)s(%(paramList)s)
-{
-    return NS_ERROR_NOT_IMPLEMENTED;
-}
-"""
-
-iface_template_epilog = """/* End of implementation class template. */
-#endif
-
-"""
-
-attr_infallible_tmpl = """\
+attr_builtin_infallible_tmpl = """\
   inline %(realtype)s%(nativename)s(%(args)s)
   {
     %(realtype)sresult;
     mozilla::DebugOnly<nsresult> rv = %(nativename)s(%(argnames)s&result);
     MOZ_ASSERT(NS_SUCCEEDED(rv));
     return result;
+  }
+"""
+
+# NOTE: We don't use RefPtr::forget here because we don't want to need the
+# definition of %(realtype)s in scope, which we would need for the
+# AddRef/Release calls.
+attr_refcnt_infallible_tmpl = """\
+  inline already_AddRefed<%(realtype)s>%(nativename)s(%(args)s)
+  {
+    %(realtype)s* result = nullptr;
+    mozilla::DebugOnly<nsresult> rv = %(nativename)s(%(argnames)s&result);
+    MOZ_ASSERT(NS_SUCCEEDED(rv));
+    return already_AddRefed<%(realtype)s>(result);
   }
 """
 
@@ -354,6 +388,7 @@ def write_interface(iface, fd):
 
     # Confirm that no names of methods will overload in this interface
     names = set()
+
     def record_name(name):
         if name in names:
             raise Exception("Unexpected overloaded virtual method %s in interface %s"
@@ -381,27 +416,43 @@ def write_interface(iface, fd):
         fd.write(",\n".join(enums))
         fd.write("\n  };\n\n")
 
+    def write_cenum_decl(b):
+        fd.write("  enum %s : uint%d_t {\n" % (b.basename, b.width))
+        for var in b.variants:
+            fd.write("    %s = %s,\n" % (var.name, var.value))
+        fd.write("  };\n\n")
+
     def write_method_decl(m):
         printComments(fd, m.doccomments, '  ')
 
         fd.write("  /* %s */\n" % m.toIDL())
-        fd.write("  %s = 0;\n\n" % methodAsNative(m))
+        fd.write("  %s%s = 0;\n\n" % (runScriptAnnotation(m),
+                                      methodAsNative(m)))
 
     def write_attr_decl(a):
         printComments(fd, a.doccomments, '  ')
 
         fd.write("  /* %s */\n" % a.toIDL())
 
-        fd.write("  %s = 0;\n" % attributeAsNative(a, True))
+        fd.write("  %s%s = 0;\n" % (runScriptAnnotation(a),
+                                    attributeAsNative(a, True)))
         if a.infallible:
-            fd.write(attr_infallible_tmpl %
-                     {'realtype': a.realtype.nativeType('in'),
-                      'nativename': attributeNativeName(a, getter=True),
-                      'args': '' if not a.implicit_jscontext else 'JSContext* cx',
-                      'argnames': '' if not a.implicit_jscontext else 'cx, '})
+            realtype = a.realtype.nativeType('in')
+            tmpl = attr_builtin_infallible_tmpl
+
+            if a.realtype.kind != 'builtin' and a.realtype.kind != 'cenum':
+                assert realtype.endswith(' *'), "bad infallible type"
+                tmpl = attr_refcnt_infallible_tmpl
+                realtype = realtype[:-2]  # strip trailing pointer
+
+            fd.write(tmpl % {'realtype': realtype,
+                             'nativename': attributeNativeName(a, getter=True),
+                             'args': '' if not a.implicit_jscontext else 'JSContext* cx',
+                             'argnames': '' if not a.implicit_jscontext else 'cx, '})
 
         if not a.readonly:
-            fd.write("  %s = 0;\n" % attributeAsNative(a, False))
+            fd.write("  %s%s = 0;\n" % (runScriptAnnotation(a),
+                                        attributeAsNative(a, False)))
         fd.write("\n")
 
     defname = iface.name.upper()
@@ -436,8 +487,6 @@ def write_interface(iface, fd):
     if not foundcdata:
         fd.write("NS_NO_VTABLE ")
 
-    if iface.attributes.deprecated:
-        fd.write("MOZ_DEPRECATED ")
     fd.write(iface.name)
     if iface.base:
         fd.write(" : public %s" % iface.base)
@@ -454,6 +503,8 @@ def write_interface(iface, fd):
                     write_method_decl(member)
                 elif key == xpidl.CDATA:
                     fd.write(" %s" % member.data)
+                elif key == xpidl.CEnum:
+                    write_cenum_decl(member)
                 else:
                     raise Exception("Unexpected interface member: %s" % member)
 
@@ -465,7 +516,8 @@ def write_interface(iface, fd):
         for member in iface.members:
             if isinstance(member, xpidl.Attribute):
                 if member.infallible:
-                    fd.write("\\\n  using %s::%s; " % (iface.name, attributeNativeName(member, True)))
+                    fd.write("\\\n  using %s::%s; " %
+                             (iface.name, attributeNativeName(member, True)))
                 fd.write("\\\n  %s%s; " % (attributeAsNative(member, True, declType), suffix))
                 if not member.readonly:
                     fd.write("\\\n  %s%s; " % (attributeAsNative(member, False, declType), suffix))
@@ -473,12 +525,12 @@ def write_interface(iface, fd):
                 fd.write("\\\n  %s%s; " % (methodAsNative(member, declType), suffix))
         if len(iface.members) == 0:
             fd.write('\\\n  /* no methods! */')
-        elif not member.kind in ('attribute', 'method'):
+        elif member.kind not in ('attribute', 'method'):
             fd.write('\\')
 
-    writeDeclaration(fd, iface, True);
+    writeDeclaration(fd, iface, True)
     fd.write(iface_nonvirtual % names)
-    writeDeclaration(fd, iface, False);
+    writeDeclaration(fd, iface, False)
     fd.write(iface_forward % names)
 
     def emitTemplate(forward_infallible, tmpl, tmpl_notxpcom=None):
@@ -487,14 +539,16 @@ def write_interface(iface, fd):
         for member in iface.members:
             if isinstance(member, xpidl.Attribute):
                 if forward_infallible and member.infallible:
-                    fd.write("\\\n  using %s::%s; " % (iface.name, attributeNativeName(member, True)))
-                fd.write(tmpl % {'asNative': attributeAsNative(member, True),
-                                 'nativeName': attributeNativeName(member, True),
-                                 'paramList': attributeParamNames(member)})
+                    fd.write("\\\n  using %s::%s; " %
+                             (iface.name, attributeNativeName(member, True)))
+                attr_tmpl = tmpl_notxpcom if member.notxpcom else tmpl
+                fd.write(attr_tmpl % {'asNative': attributeAsNative(member, True),
+                                      'nativeName': attributeNativeName(member, True),
+                                      'paramList': attributeParamNames(member, True)})
                 if not member.readonly:
-                    fd.write(tmpl % {'asNative': attributeAsNative(member, False),
-                                     'nativeName': attributeNativeName(member, False),
-                                     'paramList': attributeParamNames(member)})
+                    fd.write(attr_tmpl % {'asNative': attributeAsNative(member, False),
+                                          'nativeName': attributeNativeName(member, False),
+                                          'paramList': attributeParamNames(member, False)})
             elif isinstance(member, xpidl.Method):
                 if member.notxpcom:
                     fd.write(tmpl_notxpcom % {'asNative': methodAsNative(member),
@@ -506,7 +560,7 @@ def write_interface(iface, fd):
                                      'paramList': paramlistNames(member)})
         if len(iface.members) == 0:
             fd.write('\\\n  /* no methods! */')
-        elif not member.kind in ('attribute', 'method'):
+        elif member.kind not in ('attribute', 'method'):
             fd.write('\\')
 
     emitTemplate(True,
@@ -518,33 +572,10 @@ def write_interface(iface, fd):
     # sensible default error return.  Instead, the caller will have to
     # implement them.
     emitTemplate(False,
-                 "\\\n  %(asNative)s override { return !_to ? NS_ERROR_NULL_POINTER : _to->%(nativeName)s(%(paramList)s); } ",
+                 "\\\n  %(asNative)s override { return !_to ? NS_ERROR_NULL_POINTER : _to->%(nativeName)s(%(paramList)s); } ",  # NOQA: E501
                  "\\\n  %(asNative)s override; ")
 
-    fd.write(iface_template_prolog % names)
-
-    for member in iface.members:
-        if isinstance(member, xpidl.ConstMember) or isinstance(member, xpidl.CDATA):
-            continue
-        fd.write("/* %s */\n" % member.toIDL())
-        if isinstance(member, xpidl.Attribute):
-            fd.write(example_tmpl % {'implclass': implclass,
-                                     'returntype': attributeReturnType(member, 'NS_IMETHODIMP'),
-                                     'nativeName': attributeNativeName(member, True),
-                                     'paramList': attributeParamlist(member, True)})
-            if not member.readonly:
-                fd.write(example_tmpl % {'implclass': implclass,
-                                         'returntype': attributeReturnType(member, 'NS_IMETHODIMP'),
-                                         'nativeName': attributeNativeName(member, False),
-                                         'paramList': attributeParamlist(member, False)})
-        elif isinstance(member, xpidl.Method):
-            fd.write(example_tmpl % {'implclass': implclass,
-                                     'returntype': methodReturnType(member, 'NS_IMETHODIMP'),
-                                     'nativeName': methodNativeName(member),
-                                     'paramList': paramlistAsNative(member, empty='')})
-        fd.write('\n')
-
-    fd.write(iface_template_epilog)
+    fd.write('\n\n')
 
 
 def main(outputfile):
@@ -560,7 +591,8 @@ def main(outputfile):
             os.remove(filename)
 
     # Instantiate the parser.
-    p = xpidl.IDLParser(outputdir=cachedir)
+    xpidl.IDLParser(outputdir=cachedir)
+
 
 if __name__ == '__main__':
     main(None)

@@ -1,8 +1,8 @@
 /* verify that certain invalid URIs are not parsed by the resource
    protocol handler */
 
-Cu.import("resource://gre/modules/NetUtil.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const specs = [
   "resource://res-test//",
@@ -66,7 +66,7 @@ function get_channel(spec)
 
 function check_safe_resolution(spec, rootURI)
 {
-  do_print(`Testing URL "${spec}"`);
+  info(`Testing URL "${spec}"`);
 
   let channel = get_channel(spec);
 
@@ -80,7 +80,7 @@ function check_resolution_error(spec)
     get_channel(spec);
     ok(false, "Expected an error");
   } catch (e) {
-    equal(e.result, Components.results.NS_ERROR_MALFORMED_URI,
+    equal(e.result, Cr.NS_ERROR_MALFORMED_URI,
           "Expected a malformed URI error");
   }
 }
@@ -94,9 +94,14 @@ function run_test() {
   let rootFile = Services.dirsvc.get("GreD", Ci.nsIFile);
   let rootURI = Services.io.newFileURI(rootFile);
 
+  rootFile.append("directory-that-does-not-exist");
+  let inexistentURI = Services.io.newFileURI(rootFile);
+
   resProto.setSubstitution("res-test", rootURI);
-  do_register_cleanup(() => {
+  resProto.setSubstitution("res-inexistent", inexistentURI);
+  registerCleanupFunction(() => {
     resProto.setSubstitution("res-test", null);
+    resProto.setSubstitution("res-inexistent", null);
   });
 
   let baseRoot = resProto.resolveURI(Services.io.newURI("resource:///"));
@@ -104,6 +109,7 @@ function run_test() {
 
   for (var spec of specs) {
     check_safe_resolution(spec, rootURI.spec);
+    check_safe_resolution(spec.replace("res-test", "res-inexistent"), inexistentURI.spec);
     check_safe_resolution(spec.replace("res-test", ""), baseRoot);
     check_safe_resolution(spec.replace("res-test", "gre"), greRoot);
   }

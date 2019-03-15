@@ -3,12 +3,9 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-var { classes: Cc, interfaces: Ci, utils: Cu } = Components;
-
-Cu.import("resource://gre/modules/AddonManager.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/AddonManager.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 const wdm = Cc["@mozilla.org/dom/workers/workerdebuggermanager;1"].
             getService(Ci.nsIWorkerDebuggerManager);
@@ -41,12 +38,8 @@ function assertThrows(fun, message) {
   ok(throws, message);
 }
 
-function* generateDebuggers() {
-  let e = wdm.getWorkerDebuggerEnumerator();
-  while (e.hasMoreElements()) {
-    let dbg = e.getNext().QueryInterface(Ci.nsIWorkerDebugger);
-    yield dbg;
-  }
+function generateDebuggers() {
+  return wdm.getWorkerDebuggerEnumerator();
 }
 
 function findDebugger(url) {

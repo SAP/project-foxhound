@@ -296,3 +296,41 @@ SEC_ASN1DecoderSetMaximumElementSize;
 ;+    local:
 ;+       *;
 ;+};
+;+NSSUTIL_3.31 {         # NSS Utilities 3.31 release
+;+    global:
+PK11URI_CreateURI;
+PK11URI_ParseURI;
+PK11URI_FormatURI;
+PK11URI_DestroyURI;
+PK11URI_GetPathAttribute;
+PK11URI_GetQueryAttribute;
+;+    local:
+;+       *;
+;+};
+;+NSSUTIL_3.33 {         # NSS Utilities 3.33 release
+;+    global:
+PORT_ZAllocAligned_Util;
+PORT_ZAllocAlignedOffset_Util;
+NSS_SecureMemcmpZero;
+;+    local:
+;+       *;
+;+};
+;-NSSUTIL_3.35 {         # NSS Utilities 3.35 release
+;-    global:
+;-# private exports for softoken
+_NSSUTIL_UTF8ToWide;-
+_NSSUTIL_Access;-
+;-    local:
+;-       *;
+;+NSSUTIL_3.38 {         # NSS Utilities 3.38 release
+;+    global:
+SECITEM_MakeItem;
+;+    local:
+;+       *;
+;+};
+;+NSSUTIL_3.39 {         # NSS Utilities 3.39 release
+;+    global:
+NSSUTIL_AddNSSFlagToModuleSpec;
+;+    local:
+;+       *;
+;+};

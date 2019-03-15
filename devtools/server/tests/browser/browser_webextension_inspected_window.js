@@ -4,65 +4,63 @@
 
 "use strict";
 
-const {
-  WebExtensionInspectedWindowFront
-} = require("devtools/shared/fronts/webextension-inspected-window");
-
 const TEST_RELOAD_URL = `${MAIN_DOMAIN}/inspectedwindow-reload-target.sjs`;
 
-const FAKE_CALLER_INFO = {
-  url: "moz-extension://fake-webextension-uuid/fake-caller-script.js",
-  lineNumber: 1,
-  addonId: "fake-webextension-uuid",
-};
+async function setup(pageUrl) {
+  const extension = ExtensionTestUtils.loadExtension({
+    background() {
+      // This is just an empty extension used to ensure that the caller extension uuid
+      // actually exists.
+    },
+  });
 
-function* setup(pageUrl) {
-  yield addTab(pageUrl);
-  initDebuggerServer();
+  await extension.startup();
 
-  const client = new DebuggerClient(DebuggerServer.connectPipe());
-  const form = yield connectDebuggerClient(client);
+  const fakeExtCallerInfo = {
+    url: WebExtensionPolicy.getByID(extension.id).getURL("fake-caller-script.js"),
+    lineNumber: 1,
+    addonId: extension.id,
+  };
 
-  const [, tabClient] = yield client.attachTab(form.actor);
+  const target = await addTabTarget(pageUrl);
 
-  const [, consoleClient] = yield client.attachConsole(form.consoleActor, []);
+  await target.attach();
 
-  const inspectedWindowFront = new WebExtensionInspectedWindowFront(client, form);
+  const { client } = target;
+  const targetFront = target.activeTab;
+  const consoleClient = target.activeConsole;
+  const inspectedWindowFront = await target.getFront("webExtensionInspectedWindow");
 
   return {
-    client, form,
-    tabClient, consoleClient,
+    client,
+    targetFront, consoleClient,
     inspectedWindowFront,
+    extension, fakeExtCallerInfo,
   };
 }
 
-function* teardown({client}) {
-  yield client.close();
+async function teardown({client, extension}) {
+  await client.close();
   DebuggerServer.destroy();
   gBrowser.removeCurrentTab();
+  await extension.unload();
 }
 
-function waitForNextTabNavigated(client) {
+function waitForNextTabNavigated(targetFront) {
   return new Promise(resolve => {
-    client.addListener("tabNavigated", function tabNavigatedListener(evt, pkt) {
-      if (pkt.state == "stop" && pkt.isFrameSwitching == false) {
-        client.removeListener("tabNavigated", tabNavigatedListener);
+    targetFront.on("tabNavigated", function tabNavigatedListener(pkt) {
+      if (pkt.state == "stop" && !pkt.isFrameSwitching) {
+        targetFront.off("tabNavigated", tabNavigatedListener);
         resolve();
       }
     });
   });
 }
 
-function consoleEvalJS(consoleClient, jsCode) {
-  return new Promise(resolve => {
-    consoleClient.evaluateJS(jsCode, resolve);
-  });
-}
-
 // Script used as the injectedScript option in the inspectedWindow.reload tests.
 function injectedScript() {
   if (!window.pageScriptExecutedFirst) {
-    window.addEventListener("DOMContentLoaded", function () {
+    window.addEventListener("DOMContentLoaded", function() {
       if (document.querySelector("pre")) {
         document.querySelector("pre").textContent = "injected script executed first";
       }
@@ -73,7 +71,7 @@ function injectedScript() {
 // Script evaluated in the target tab, to collect the results of injectedScript
 // evaluation in the inspectedWindow.reload tests.
 function collectEvalResults() {
-  let results = [];
+  const results = [];
   let iframeDoc = document;
 
   while (iframeDoc) {
@@ -86,9 +84,14 @@ function collectEvalResults() {
   return JSON.stringify(results);
 }
 
-add_task(function* test_successfull_inspectedWindowEval_result() {
-  const {client, inspectedWindowFront} = yield setup(MAIN_DOMAIN);
-  const result = yield inspectedWindowFront.eval(FAKE_CALLER_INFO, "window.location", {});
+add_task(async function test_successfull_inspectedWindowEval_result() {
+  const {
+    client, inspectedWindowFront,
+    extension, fakeExtCallerInfo,
+  } = await setup(MAIN_DOMAIN);
+
+  const result = await inspectedWindowFront.eval(fakeExtCallerInfo,
+                                                 "window.location", {});
 
   ok(result.value, "Got a result from inspectedWindow eval");
   is(result.value.href, MAIN_DOMAIN,
@@ -96,12 +99,58 @@ add_task(function* test_successfull_inspectedWindowEval_result() {
   is(result.value.protocol, "http:",
      "Got the expected window.location.protocol property value");
 
-  yield teardown({client});
+  await teardown({client, extension});
 });
 
-add_task(function* test_error_inspectedWindowEval_result() {
-  const {client, inspectedWindowFront} = yield setup(MAIN_DOMAIN);
-  const result = yield inspectedWindowFront.eval(FAKE_CALLER_INFO, "window", {});
+add_task(async function test_successfull_inspectedWindowEval_resultAsGrip() {
+  const {
+    client, inspectedWindowFront,
+    extension, fakeExtCallerInfo,
+    consoleClient,
+  } = await setup(MAIN_DOMAIN);
+
+  let result = await inspectedWindowFront.eval(fakeExtCallerInfo, "window", {
+    evalResultAsGrip: true,
+    toolboxConsoleActorID: consoleClient.actor,
+  });
+
+  ok(result.valueGrip, "Got a result from inspectedWindow eval");
+  ok(result.valueGrip.actor, "Got a object actor as expected");
+  is(result.valueGrip.type, "object", "Got a value grip of type object");
+  is(result.valueGrip.class, "Window", "Got a value grip which is instanceof Location");
+
+  // Test invalid evalResultAsGrip request.
+  result = await inspectedWindowFront.eval(
+    fakeExtCallerInfo, "window", {evalResultAsGrip: true}
+  );
+
+  ok(!result.value && !result.valueGrip,
+     "Got a null result from the invalid inspectedWindow eval call");
+  ok(result.exceptionInfo.isError, "Got an API Error result from inspectedWindow eval");
+  ok(!result.exceptionInfo.isException, "An error isException is false as expected");
+  is(result.exceptionInfo.code, "E_PROTOCOLERROR",
+     "Got the expected 'code' property in the error result");
+  is(result.exceptionInfo.description, "Inspector protocol error: %s - %s",
+     "Got the expected 'description' property in the error result");
+  is(result.exceptionInfo.details.length, 2,
+     "The 'details' array property should contains 1 element");
+  is(result.exceptionInfo.details[0],
+     "Unexpected invalid sidebar panel expression request",
+     "Got the expected content in the error results's details");
+  is(result.exceptionInfo.details[1],
+     "missing toolboxConsoleActorID",
+     "Got the expected content in the error results's details");
+
+  await teardown({client, extension});
+});
+
+add_task(async function test_error_inspectedWindowEval_result() {
+  const {
+    client, inspectedWindowFront,
+    extension, fakeExtCallerInfo,
+  } = await setup(MAIN_DOMAIN);
+
+  const result = await inspectedWindowFront.eval(fakeExtCallerInfo, "window", {});
 
   ok(!result.value, "Got a null result from inspectedWindow eval");
   ok(result.exceptionInfo.isError, "Got an API Error result from inspectedWindow eval");
@@ -115,12 +164,16 @@ add_task(function* test_error_inspectedWindowEval_result() {
   ok(result.exceptionInfo.details[0].includes("cyclic object value"),
      "Got the expected content in the error results's details");
 
-  yield teardown({client});
+  await teardown({client, extension});
 });
 
-add_task(function* test_system_principal_denied_error_inspectedWindowEval_result() {
-  const {client, inspectedWindowFront} = yield setup("about:addons");
-  const result = yield inspectedWindowFront.eval(FAKE_CALLER_INFO, "window", {});
+add_task(async function test_system_principal_denied_error_inspectedWindowEval_result() {
+  const {
+    client, inspectedWindowFront,
+    extension, fakeExtCallerInfo,
+  } = await setup("about:addons");
+
+  const result = await inspectedWindowFront.eval(fakeExtCallerInfo, "window", {});
 
   ok(!result.value, "Got a null result from inspectedWindow eval");
   ok(result.exceptionInfo.isError,
@@ -135,13 +188,17 @@ add_task(function* test_system_principal_denied_error_inspectedWindowEval_result
      "This target has a system principal. inspectedWindow.eval denied.",
      "Got the expected content in the error results's details");
 
-  yield teardown({client});
+  await teardown({client, extension});
 });
 
-add_task(function* test_exception_inspectedWindowEval_result() {
-  const {client, inspectedWindowFront} = yield setup(MAIN_DOMAIN);
-  const result = yield inspectedWindowFront.eval(
-    FAKE_CALLER_INFO, "throw Error('fake eval error');", {});
+add_task(async function test_exception_inspectedWindowEval_result() {
+  const {
+    client, inspectedWindowFront,
+    extension, fakeExtCallerInfo,
+  } = await setup(MAIN_DOMAIN);
+
+  const result = await inspectedWindowFront.eval(
+    fakeExtCallerInfo, "throw Error('fake eval error');", {});
 
   ok(result.exceptionInfo.isException, "Got an exception as expected");
   ok(!result.value, "Got an undefined eval value");
@@ -150,7 +207,7 @@ add_task(function* test_exception_inspectedWindowEval_result() {
      "Got the expected exception message");
 
   const expectedCallerInfo =
-    `called from ${FAKE_CALLER_INFO.url}:${FAKE_CALLER_INFO.lineNumber}`;
+    `called from ${fakeExtCallerInfo.url}:${fakeExtCallerInfo.lineNumber}`;
   ok(result.exceptionInfo.value.includes(expectedCallerInfo),
      "Got the expected caller info in the exception message");
 
@@ -158,177 +215,178 @@ add_task(function* test_exception_inspectedWindowEval_result() {
   ok(result.exceptionInfo.value.includes(expectedStack),
      "Got the expected stack trace in the exception message");
 
-  yield teardown({client});
+  await teardown({client, extension});
 });
 
-add_task(function* test_exception_inspectedWindowReload() {
+add_task(async function test_exception_inspectedWindowReload() {
   const {
     client, consoleClient, inspectedWindowFront,
-  } = yield setup(`${TEST_RELOAD_URL}?test=cache`);
+    extension, fakeExtCallerInfo, targetFront,
+  } = await setup(`${TEST_RELOAD_URL}?test=cache`);
 
   // Test reload with bypassCache=false.
 
-  const waitForNoBypassCacheReload = waitForNextTabNavigated(client);
-  const reloadResult = yield inspectedWindowFront.reload(FAKE_CALLER_INFO,
+  const waitForNoBypassCacheReload = waitForNextTabNavigated(targetFront);
+  const reloadResult = await inspectedWindowFront.reload(fakeExtCallerInfo,
                                                          {ignoreCache: false});
 
   ok(!reloadResult, "Got the expected undefined result from inspectedWindow reload");
 
-  yield waitForNoBypassCacheReload;
+  await waitForNoBypassCacheReload;
 
-  const noBypassCacheEval = yield consoleEvalJS(consoleClient,
-                                                "document.body.textContent");
+  const noBypassCacheEval = await consoleClient.evaluateJS("document.body.textContent");
 
   is(noBypassCacheEval.result, "empty cache headers",
      "Got the expected result with reload forceBypassCache=false");
 
   // Test reload with bypassCache=true.
 
-  const waitForForceBypassCacheReload = waitForNextTabNavigated(client);
-  yield inspectedWindowFront.reload(FAKE_CALLER_INFO, {ignoreCache: true});
+  const waitForForceBypassCacheReload = waitForNextTabNavigated(targetFront);
+  await inspectedWindowFront.reload(fakeExtCallerInfo, {ignoreCache: true});
 
-  yield waitForForceBypassCacheReload;
+  await waitForForceBypassCacheReload;
 
-  const forceBypassCacheEval = yield consoleEvalJS(consoleClient,
-                                                   "document.body.textContent");
+  const forceBypassCacheEval =
+    await consoleClient.evaluateJS("document.body.textContent");
 
   is(forceBypassCacheEval.result, "no-cache:no-cache",
      "Got the expected result with reload forceBypassCache=true");
 
-  yield teardown({client});
+  await teardown({client, extension});
 });
 
-add_task(function* test_exception_inspectedWindowReload_customUserAgent() {
+add_task(async function test_exception_inspectedWindowReload_customUserAgent() {
   const {
     client, consoleClient, inspectedWindowFront,
-  } = yield setup(`${TEST_RELOAD_URL}?test=user-agent`);
+    extension, fakeExtCallerInfo, targetFront,
+  } = await setup(`${TEST_RELOAD_URL}?test=user-agent`);
 
   // Test reload with custom userAgent.
 
-  const waitForCustomUserAgentReload = waitForNextTabNavigated(client);
-  yield inspectedWindowFront.reload(FAKE_CALLER_INFO,
+  const waitForCustomUserAgentReload = waitForNextTabNavigated(targetFront);
+  await inspectedWindowFront.reload(fakeExtCallerInfo,
                                     {userAgent: "Customized User Agent"});
 
-  yield waitForCustomUserAgentReload;
+  await waitForCustomUserAgentReload;
 
-  const customUserAgentEval = yield consoleEvalJS(consoleClient,
-                                                  "document.body.textContent");
+  const customUserAgentEval = await consoleClient.evaluateJS("document.body.textContent");
 
   is(customUserAgentEval.result, "Customized User Agent",
      "Got the expected result on reload with a customized userAgent");
 
   // Test reload with no custom userAgent.
 
-  const waitForNoCustomUserAgentReload = waitForNextTabNavigated(client);
-  yield inspectedWindowFront.reload(FAKE_CALLER_INFO, {});
+  const waitForNoCustomUserAgentReload = waitForNextTabNavigated(targetFront);
+  await inspectedWindowFront.reload(fakeExtCallerInfo, {});
 
-  yield waitForNoCustomUserAgentReload;
+  await waitForNoCustomUserAgentReload;
 
-  const noCustomUserAgentEval = yield consoleEvalJS(consoleClient,
-                                                    "document.body.textContent");
+  const noCustomUserAgentEval =
+    await consoleClient.evaluateJS("document.body.textContent");
 
   is(noCustomUserAgentEval.result, window.navigator.userAgent,
      "Got the expected result with reload without a customized userAgent");
 
-  yield teardown({client});
+  await teardown({client, extension});
 });
 
-add_task(function* test_exception_inspectedWindowReload_injectedScript() {
+add_task(async function test_exception_inspectedWindowReload_injectedScript() {
   const {
     client, consoleClient, inspectedWindowFront,
-  } = yield setup(`${TEST_RELOAD_URL}?test=injected-script&frames=3`);
+    extension, fakeExtCallerInfo, targetFront,
+  } = await setup(`${TEST_RELOAD_URL}?test=injected-script&frames=3`);
 
   // Test reload with an injectedScript.
 
-  const waitForInjectedScriptReload = waitForNextTabNavigated(client);
-  yield inspectedWindowFront.reload(FAKE_CALLER_INFO,
+  const waitForInjectedScriptReload = waitForNextTabNavigated(targetFront);
+  await inspectedWindowFront.reload(fakeExtCallerInfo,
                                     {injectedScript: `new ${injectedScript}`});
-  yield waitForInjectedScriptReload;
+  await waitForInjectedScriptReload;
 
-  const injectedScriptEval = yield consoleEvalJS(consoleClient,
-                                                 `(${collectEvalResults})()`);
+  const injectedScriptEval = await consoleClient.evaluateJS(`(${collectEvalResults})()`);
 
-  const expectedResult = (new Array(4)).fill("injected script executed first");
+  const expectedResult = (new Array(5)).fill("injected script executed first");
 
   SimpleTest.isDeeply(JSON.parse(injectedScriptEval.result), expectedResult,
      "Got the expected result on reload with an injected script");
 
   // Test reload without an injectedScript.
 
-  const waitForNoInjectedScriptReload = waitForNextTabNavigated(client);
-  yield inspectedWindowFront.reload(FAKE_CALLER_INFO, {});
-  yield waitForNoInjectedScriptReload;
+  const waitForNoInjectedScriptReload = waitForNextTabNavigated(targetFront);
+  await inspectedWindowFront.reload(fakeExtCallerInfo, {});
+  await waitForNoInjectedScriptReload;
 
-  const noInjectedScriptEval = yield consoleEvalJS(consoleClient,
-                                                   `(${collectEvalResults})()`);
+  const noInjectedScriptEval =
+    await consoleClient.evaluateJS(`(${collectEvalResults})()`);
 
-  const newExpectedResult = (new Array(4)).fill("injected script NOT executed");
+  const newExpectedResult = (new Array(5)).fill("injected script NOT executed");
 
   SimpleTest.isDeeply(JSON.parse(noInjectedScriptEval.result), newExpectedResult,
                       "Got the expected result on reload with no injected script");
 
-  yield teardown({client});
+  await teardown({client, extension});
 });
 
-add_task(function* test_exception_inspectedWindowReload_multiple_calls() {
+add_task(async function test_exception_inspectedWindowReload_multiple_calls() {
   const {
     client, consoleClient, inspectedWindowFront,
-  } = yield setup(`${TEST_RELOAD_URL}?test=user-agent`);
+    extension, fakeExtCallerInfo, targetFront,
+  } = await setup(`${TEST_RELOAD_URL}?test=user-agent`);
 
   // Test reload with custom userAgent three times (and then
   // check that only the first one has affected the page reload.
 
-  const waitForCustomUserAgentReload = waitForNextTabNavigated(client);
+  const waitForCustomUserAgentReload = waitForNextTabNavigated(targetFront);
 
-  inspectedWindowFront.reload(FAKE_CALLER_INFO, {userAgent: "Customized User Agent 1"});
-  inspectedWindowFront.reload(FAKE_CALLER_INFO, {userAgent: "Customized User Agent 2"});
+  inspectedWindowFront.reload(fakeExtCallerInfo, {userAgent: "Customized User Agent 1"});
+  inspectedWindowFront.reload(fakeExtCallerInfo, {userAgent: "Customized User Agent 2"});
 
-  yield waitForCustomUserAgentReload;
+  await waitForCustomUserAgentReload;
 
-  const customUserAgentEval = yield consoleEvalJS(consoleClient,
-                                                  "document.body.textContent");
+  const customUserAgentEval = await consoleClient.evaluateJS("document.body.textContent");
 
   is(customUserAgentEval.result, "Customized User Agent 1",
      "Got the expected result on reload with a customized userAgent");
 
   // Test reload with no custom userAgent.
 
-  const waitForNoCustomUserAgentReload = waitForNextTabNavigated(client);
-  yield inspectedWindowFront.reload(FAKE_CALLER_INFO, {});
+  const waitForNoCustomUserAgentReload = waitForNextTabNavigated(targetFront);
+  await inspectedWindowFront.reload(fakeExtCallerInfo, {});
 
-  yield waitForNoCustomUserAgentReload;
+  await waitForNoCustomUserAgentReload;
 
-  const noCustomUserAgentEval = yield consoleEvalJS(consoleClient,
-                                                    "document.body.textContent");
+  const noCustomUserAgentEval =
+    await consoleClient.evaluateJS("document.body.textContent");
 
   is(noCustomUserAgentEval.result, window.navigator.userAgent,
      "Got the expected result with reload without a customized userAgent");
 
-  yield teardown({client});
+  await teardown({client, extension});
 });
 
-add_task(function* test_exception_inspectedWindowReload_stopped() {
+add_task(async function test_exception_inspectedWindowReload_stopped() {
   const {
     client, consoleClient, inspectedWindowFront,
-  } = yield setup(`${TEST_RELOAD_URL}?test=injected-script&frames=3`);
+    extension, fakeExtCallerInfo, targetFront,
+  } = await setup(`${TEST_RELOAD_URL}?test=injected-script&frames=3`);
 
   // Test reload on a page that calls window.stop() immediately during the page loading
 
-  const waitForPageLoad = waitForNextTabNavigated(client);
-  yield inspectedWindowFront.eval(FAKE_CALLER_INFO,
+  const waitForPageLoad = waitForNextTabNavigated(targetFront);
+  await inspectedWindowFront.eval(fakeExtCallerInfo,
                                   "window.location += '&stop=windowStop'");
 
   info("Load a webpage that calls 'window.stop()' while is still loading");
-  yield waitForPageLoad;
+  await waitForPageLoad;
 
   info("Starting a reload with an injectedScript");
-  const waitForInjectedScriptReload = waitForNextTabNavigated(client);
-  yield inspectedWindowFront.reload(FAKE_CALLER_INFO,
+  const waitForInjectedScriptReload = waitForNextTabNavigated(targetFront);
+  await inspectedWindowFront.reload(fakeExtCallerInfo,
                                     {injectedScript: `new ${injectedScript}`});
-  yield waitForInjectedScriptReload;
+  await waitForInjectedScriptReload;
 
-  const injectedScriptEval = yield consoleEvalJS(consoleClient,
-                                                 `(${collectEvalResults})()`);
+  const injectedScriptEval =
+    await consoleClient.evaluateJS(`(${collectEvalResults})()`);
 
   // The page should have stopped during the reload and only one injected script
   // is expected.
@@ -340,12 +398,12 @@ add_task(function* test_exception_inspectedWindowReload_stopped() {
   // Reload again with no options.
 
   info("Reload the tab again without any reload options");
-  const waitForNoInjectedScriptReload = waitForNextTabNavigated(client);
-  yield inspectedWindowFront.reload(FAKE_CALLER_INFO, {});
-  yield waitForNoInjectedScriptReload;
+  const waitForNoInjectedScriptReload = waitForNextTabNavigated(targetFront);
+  await inspectedWindowFront.reload(fakeExtCallerInfo, {});
+  await waitForNoInjectedScriptReload;
 
-  const noInjectedScriptEval = yield consoleEvalJS(consoleClient,
-                                                   `(${collectEvalResults})()`);
+  const noInjectedScriptEval =
+    await consoleClient.evaluateJS(`(${collectEvalResults})()`);
 
   // The page should have stopped during the reload and no injected script should
   // have been executed during this second reload (or it would mean that the previous
@@ -357,7 +415,7 @@ add_task(function* test_exception_inspectedWindowReload_stopped() {
     "No injectedScript should have been evaluated during the second reload"
   );
 
-  yield teardown({client});
+  await teardown({client, extension});
 });
 
 // TODO: check eval with $0 binding once implemented (Bug 1300590)

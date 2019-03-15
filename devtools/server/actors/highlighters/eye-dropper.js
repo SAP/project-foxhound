@@ -18,7 +18,7 @@ const {getCurrentZoom, getFrameOffsets} = require("devtools/shared/layout/utils"
 loader.lazyGetter(this, "clipboardHelper",
   () => Cc["@mozilla.org/widget/clipboardhelper;1"].getService(Ci.nsIClipboardHelper));
 loader.lazyGetter(this, "l10n",
-  () => Services.strings.createBundle("chrome://devtools/locale/eyedropper.properties"));
+  () => Services.strings.createBundle("chrome://devtools-shared/locale/eyedropper.properties"));
 
 const ZOOM_LEVEL_PREF = "devtools.eyedropper.zoom";
 const FORMAT_PREF = "devtools.defaultColorUnit";
@@ -60,19 +60,19 @@ EyeDropper.prototype = {
 
   _buildMarkup() {
     // Highlighter main container.
-    let container = createNode(this.win, {
-      attributes: {"class": "highlighter-container"}
+    const container = createNode(this.win, {
+      attributes: {"class": "highlighter-container"},
     });
 
     // Wrapper element.
-    let wrapper = createNode(this.win, {
+    const wrapper = createNode(this.win, {
       parent: container,
       attributes: {
         "id": "root",
         "class": "root",
-        "hidden": "true"
+        "hidden": "true",
       },
-      prefix: this.ID_CLASS_PREFIX
+      prefix: this.ID_CLASS_PREFIX,
     });
 
     // The magnifier canvas element.
@@ -83,28 +83,28 @@ EyeDropper.prototype = {
         "id": "canvas",
         "class": "canvas",
         "width": MAGNIFIER_WIDTH,
-        "height": MAGNIFIER_HEIGHT
+        "height": MAGNIFIER_HEIGHT,
       },
-      prefix: this.ID_CLASS_PREFIX
+      prefix: this.ID_CLASS_PREFIX,
     });
 
     // The color label element.
-    let colorLabelContainer = createNode(this.win, {
+    const colorLabelContainer = createNode(this.win, {
       parent: wrapper,
       attributes: {"class": "color-container"},
-      prefix: this.ID_CLASS_PREFIX
+      prefix: this.ID_CLASS_PREFIX,
     });
     createNode(this.win, {
       nodeType: "div",
       parent: colorLabelContainer,
       attributes: {"id": "color-preview", "class": "color-preview"},
-      prefix: this.ID_CLASS_PREFIX
+      prefix: this.ID_CLASS_PREFIX,
     });
     createNode(this.win, {
       nodeType: "div",
       parent: colorLabelContainer,
       attributes: {"id": "color-value", "class": "color-value"},
-      prefix: this.ID_CLASS_PREFIX
+      prefix: this.ID_CLASS_PREFIX,
     });
 
     return container;
@@ -142,7 +142,7 @@ EyeDropper.prototype = {
     this.prepareImageCapture();
 
     // Start listening for user events.
-    let {pageListenerTarget} = this.highlighterEnv;
+    const {pageListenerTarget} = this.highlighterEnv;
     pageListenerTarget.addEventListener("mousemove", this);
     pageListenerTarget.addEventListener("click", this, true);
     pageListenerTarget.addEventListener("keydown", this);
@@ -164,6 +164,10 @@ EyeDropper.prototype = {
     // Focus the content so the keyboard can be used.
     this.win.focus();
 
+    // Make sure we receive mouse events when the debugger has paused execution
+    // in the page.
+    this.win.document.setSuppressedEventListener(this);
+
     return true;
   },
 
@@ -177,22 +181,27 @@ EyeDropper.prototype = {
 
     this.pageImage = null;
 
-    let {pageListenerTarget} = this.highlighterEnv;
-    pageListenerTarget.removeEventListener("mousemove", this);
-    pageListenerTarget.removeEventListener("click", this, true);
-    pageListenerTarget.removeEventListener("keydown", this);
-    pageListenerTarget.removeEventListener("DOMMouseScroll", this);
-    pageListenerTarget.removeEventListener("FullZoomChange", this);
+    const {pageListenerTarget} = this.highlighterEnv;
+
+    if (pageListenerTarget) {
+      pageListenerTarget.removeEventListener("mousemove", this);
+      pageListenerTarget.removeEventListener("click", this, true);
+      pageListenerTarget.removeEventListener("keydown", this);
+      pageListenerTarget.removeEventListener("DOMMouseScroll", this);
+      pageListenerTarget.removeEventListener("FullZoomChange", this);
+    }
 
     this.getElement("root").setAttribute("hidden", "true");
     this.getElement("root").removeAttribute("drawn");
 
     this.emit("hidden");
+
+    this.win.document.setSuppressedEventListener(null);
   },
 
   prepareImageCapture() {
     // Get the image data from the content window.
-    let imageData = getWindowAsImageData(this.win);
+    const imageData = getWindowAsImageData(this.win);
 
     // We need to transform imageData to something drawWindow will consume. An ImageBitmap
     // works well. We could have used an Image, but doing so results in errors if the page
@@ -238,8 +247,8 @@ EyeDropper.prototype = {
    * Get color of center cell in the grid.
    */
   get centerColor() {
-    let pos = (this.centerCell * this.cellSize) + (this.cellSize / 2);
-    let rgb = this.ctx.getImageData(pos, pos, 1, 1).data;
+    const pos = (this.centerCell * this.cellSize) + (this.cellSize / 2);
+    const rgb = this.ctx.getImageData(pos, pos, 1, 1).data;
     return rgb;
   },
 
@@ -249,15 +258,15 @@ EyeDropper.prototype = {
       return;
     }
 
-    let {width, height, x, y} = this.magnifiedArea;
+    const {width, height, x, y} = this.magnifiedArea;
 
-    let zoomedWidth = width / this.eyeDropperZoomLevel;
-    let zoomedHeight = height / this.eyeDropperZoomLevel;
+    const zoomedWidth = width / this.eyeDropperZoomLevel;
+    const zoomedHeight = height / this.eyeDropperZoomLevel;
 
-    let sx = x - (zoomedWidth / 2);
-    let sy = y - (zoomedHeight / 2);
-    let sw = zoomedWidth;
-    let sh = zoomedHeight;
+    const sx = x - (zoomedWidth / 2);
+    const sy = y - (zoomedHeight / 2);
+    const sw = zoomedWidth;
+    const sh = zoomedHeight;
 
     this.ctx.drawImage(this.pageImage, sx, sy, sw, sh, 0, 0, width, height);
 
@@ -269,7 +278,7 @@ EyeDropper.prototype = {
     this.drawCrosshair();
 
     // Update the color preview and value.
-    let rgb = this.centerColor;
+    const rgb = this.centerColor;
     this.getElement("color-preview").setAttribute("style",
       `background-color:${toColorString(rgb, "rgb")};`);
     this.getElement("color-value").setTextContent(toColorString(rgb, this.format));
@@ -279,7 +288,7 @@ EyeDropper.prototype = {
    * Draw a grid on the canvas representing pixel boundaries.
    */
   drawGrid() {
-    let {width, height} = this.magnifiedArea;
+    const {width, height} = this.magnifiedArea;
 
     this.ctx.lineWidth = 1;
     this.ctx.strokeStyle = "rgba(143, 143, 143, 0.2)";
@@ -301,7 +310,7 @@ EyeDropper.prototype = {
    * Draw a box on the canvas to highlight the center cell.
    */
   drawCrosshair() {
-    let pos = this.centerCell * this.cellSize;
+    const pos = this.centerCell * this.cellSize;
 
     this.ctx.lineWidth = 1;
     this.ctx.lineJoin = "miter";
@@ -316,9 +325,9 @@ EyeDropper.prototype = {
     switch (e.type) {
       case "mousemove":
         // We might be getting an event from a child frame, so account for the offset.
-        let [xOffset, yOffset] = getFrameOffsets(this.win, e.target);
-        let x = xOffset + e.pageX - this.win.scrollX;
-        let y = yOffset + e.pageY - this.win.scrollY;
+        const [xOffset, yOffset] = getFrameOffsets(this.win, e.target);
+        const x = xOffset + e.pageX - this.win.scrollX;
+        const y = yOffset + e.pageY - this.win.scrollY;
         // Update the zoom area.
         this.magnifiedArea.x = x * this.pageZoom;
         this.magnifiedArea.y = y * this.pageZoom;
@@ -327,7 +336,10 @@ EyeDropper.prototype = {
         // And move the eye-dropper's UI so it follows the mouse.
         this.moveTo(x, y);
         break;
+      // Note: when events are suppressed we will only get mousedown/mouseup and
+      // not any click events.
       case "click":
+      case "mouseup":
         this.selectColor();
         break;
       case "keydown":
@@ -348,7 +360,7 @@ EyeDropper.prototype = {
   },
 
   moveTo(x, y) {
-    let root = this.getElement("root");
+    const root = this.getElement("root");
     root.setAttribute("style", `top:${y}px;left:${x}px;`);
 
     // Move the label container to the top if the magnifier is close to the bottom edge.
@@ -380,7 +392,7 @@ EyeDropper.prototype = {
     }
 
     this.emit("selected", toColorString(this.centerColor, this.format));
-    onColorSelected.then(() => this.hide(), e => console.error(e));
+    onColorSelected.then(() => this.hide(), console.error);
   },
 
   /**
@@ -450,7 +462,7 @@ EyeDropper.prototype = {
    */
   copyColor() {
     // Copy to the clipboard.
-    let color = toColorString(this.centerColor, this.format);
+    const color = toColorString(this.centerColor, this.format);
     clipboardHelper.copyString(color);
 
     // Provide some feedback.
@@ -462,7 +474,7 @@ EyeDropper.prototype = {
     return new Promise(resolve => {
       this._copyTimeout = setTimeout(resolve, CLOSE_DELAY);
     });
-  }
+  },
 };
 
 exports.EyeDropper = EyeDropper;
@@ -473,15 +485,15 @@ exports.EyeDropper = EyeDropper;
  * @return {ImageData} The image data for the window.
  */
 function getWindowAsImageData(win) {
-  let canvas = win.document.createElementNS("http://www.w3.org/1999/xhtml", "canvas");
-  let scale = getCurrentZoom(win);
-  let width = win.innerWidth;
-  let height = win.innerHeight;
+  const canvas = win.document.createElementNS("http://www.w3.org/1999/xhtml", "canvas");
+  const scale = getCurrentZoom(win);
+  const width = win.innerWidth;
+  const height = win.innerHeight;
   canvas.width = width * scale;
   canvas.height = height * scale;
   canvas.mozOpaque = true;
 
-  let ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d");
 
   ctx.scale(scale, scale);
   ctx.drawWindow(win, win.scrollX, win.scrollY, width, height, "#fff");
@@ -496,7 +508,7 @@ function getWindowAsImageData(win) {
  * @return {string} Formatted color value, e.g. "#FFF" or "hsl(20, 10%, 10%)".
  */
 function toColorString(rgb, format) {
-  let [r, g, b] = rgb;
+  const [r, g, b] = rgb;
 
   switch (format) {
     case "hex":
@@ -504,15 +516,10 @@ function toColorString(rgb, format) {
     case "rgb":
       return "rgb(" + r + ", " + g + ", " + b + ")";
     case "hsl":
-      let [h, s, l] = rgbToHsl(rgb);
+      const [h, s, l] = rgbToHsl(rgb);
       return "hsl(" + h + ", " + s + "%, " + l + "%)";
     case "name":
-      let str;
-      try {
-        str = rgbToColorName(r, g, b);
-      } catch (e) {
-        str = hexString(rgb);
-      }
+      const str = rgbToColorName(r, g, b) || hexString(rgb);
       return str;
     default:
       return hexString(rgb);
@@ -525,8 +532,8 @@ function toColorString(rgb, format) {
  * @return {string} Hex formatted string for color, e.g. "#FFEE00".
  */
 function hexString([r, g, b]) {
-  let val = (1 << 24) + (r << 16) + (g << 8) + (b << 0);
-  return "#" + val.toString(16).substr(-6).toUpperCase();
+  const val = (1 << 24) + (r << 16) + (g << 8) + (b << 0);
+  return "#" + val.toString(16).substr(-6);
 }
 
 function cap(value, min, max) {

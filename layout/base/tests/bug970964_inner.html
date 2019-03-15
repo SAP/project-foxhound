@@ -58,7 +58,7 @@ function sendTouchEvent(windowUtils, aType, aEvent, aModifiers) {
 
   for (var touchType of ["touches", "changedTouches", "targetTouches"]) {
     for (var i = 0; i < aEvent[touchType].length; i++) {
-      if (ids.indexOf(aEvent[touchType][i].identifier) == -1) {
+      if (!ids.includes(aEvent[touchType][i].identifier)) {
         ids.push(aEvent[touchType][i].identifier);
         xs.push(aEvent[touchType][i].page.x);
         ys.push(aEvent[touchType][i].page.y);
@@ -330,7 +330,7 @@ function finishTest() {
   // Let window.onerror have a chance to fire
   setTimeout(function() {
     setTimeout(function() {
-      window.parent.postMessage("SimpleTest.finish();", "*");
+      window.parent.postMessage("run next", "*");
     }, 0);
   }, 0);
 }
@@ -339,11 +339,10 @@ window.onload = function () {
   SpecialPowers.pushPrefEnv({
     "set": [
       ["dom.w3c_pointer_events.enabled", true],
+      ["dom.w3c_pointer_events.implicit_capture", false]
     ]
   }, runTests);
 }
-
-SimpleTest.waitForExplicitFinish();
 
 </script>
 </pre>

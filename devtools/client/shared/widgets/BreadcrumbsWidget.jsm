@@ -5,11 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const Cu = Components.utils;
-
 const ENSURE_SELECTION_VISIBLE_DELAY = 50; // ms
 
-const { require } = Cu.import("resource://devtools/shared/Loader.jsm", {});
+const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
 const { ViewHelpers, setNamedTimeout } = require("devtools/client/shared/widgets/view-helpers");
 const EventEmitter = require("devtools/shared/event-emitter");
 
@@ -21,7 +19,7 @@ this.EXPORTED_SYMBOLS = ["BreadcrumbsWidget"];
  * Note: this widget should be used in tandem with the WidgetMethods in
  * view-helpers.js.
  *
- * @param nsIDOMNode aNode
+ * @param Node aNode
  *        The element associated with the widget.
  * @param Object aOptions
  *        - smoothScroll: specifies if smooth scrolling on selection is enabled.
@@ -38,7 +36,7 @@ this.BreadcrumbsWidget = function BreadcrumbsWidget(aNode, aOptions = {}) {
   this._list.setAttribute("orient", "horizontal");
   this._list.setAttribute("clicktoscroll", "true");
   this._list.setAttribute("smoothscroll", !!aOptions.smoothScroll);
-  this._list.addEventListener("keypress", e => this.emit("keyPress", e));
+  this._list.addEventListener("keydown", e => this.emit("keyDown", e));
   this._list.addEventListener("mousedown", e => this.emit("mousePress", e));
   this._parent.appendChild(this._list);
 
@@ -64,14 +62,14 @@ BreadcrumbsWidget.prototype = {
    *
    * @param number aIndex
    *        The position in the container intended for this item.
-   * @param nsIDOMNode aContents
+   * @param Node aContents
    *        The node displayed in the container.
-   * @return nsIDOMNode
+   * @return Node
    *         The element associated with the displayed item.
    */
-  insertItemAt: function (aIndex, aContents) {
-    let list = this._list;
-    let breadcrumb = new Breadcrumb(this, aContents);
+  insertItemAt: function(aIndex, aContents) {
+    const list = this._list;
+    const breadcrumb = new Breadcrumb(this, aContents);
     return list.insertBefore(breadcrumb._target, list.childNodes[aIndex]);
   },
 
@@ -80,20 +78,20 @@ BreadcrumbsWidget.prototype = {
    *
    * @param number aIndex
    *        The position in the container intended for this item.
-   * @return nsIDOMNode
+   * @return Node
    *         The element associated with the displayed item.
    */
-  getItemAtIndex: function (aIndex) {
+  getItemAtIndex: function(aIndex) {
     return this._list.childNodes[aIndex];
   },
 
   /**
    * Removes the specified child node from this container.
    *
-   * @param nsIDOMNode aChild
+   * @param Node aChild
    *        The element associated with the displayed item.
    */
-  removeChild: function (aChild) {
+  removeChild: function(aChild) {
     this._list.removeChild(aChild);
 
     if (this._selectedItem == aChild) {
@@ -104,8 +102,8 @@ BreadcrumbsWidget.prototype = {
   /**
    * Removes all of the child nodes from this container.
    */
-  removeAllItems: function () {
-    let list = this._list;
+  removeAllItems: function() {
+    const list = this._list;
 
     while (list.hasChildNodes()) {
       list.firstChild.remove();
@@ -116,7 +114,7 @@ BreadcrumbsWidget.prototype = {
 
   /**
    * Gets the currently selected child node in this container.
-   * @return nsIDOMNode
+   * @return Node
    */
   get selectedItem() {
     return this._selectedItem;
@@ -124,15 +122,15 @@ BreadcrumbsWidget.prototype = {
 
   /**
    * Sets the currently selected child node in this container.
-   * @param nsIDOMNode aChild
+   * @param Node aChild
    */
   set selectedItem(aChild) {
-    let childNodes = this._list.childNodes;
+    const childNodes = this._list.childNodes;
 
     if (!aChild) {
       this._selectedItem = null;
     }
-    for (let node of childNodes) {
+    for (const node of childNodes) {
       if (node == aChild) {
         node.setAttribute("checked", "");
         this._selectedItem = node;
@@ -150,19 +148,23 @@ BreadcrumbsWidget.prototype = {
    * @return string
    *         The current attribute value.
    */
-  getAttribute: function (aName) {
-    if (aName == "scrollPosition") return this._list.scrollPosition;
-    if (aName == "scrollWidth") return this._list.scrollWidth;
+  getAttribute: function(aName) {
+    if (aName == "scrollPosition") {
+      return this._list.scrollPosition;
+    }
+    if (aName == "scrollWidth") {
+      return this._list.scrollWidth;
+    }
     return this._parent.getAttribute(aName);
   },
 
   /**
    * Ensures the specified element is visible.
    *
-   * @param nsIDOMNode aElement
+   * @param Node aElement
    *        The element to make visible.
    */
-  ensureElementIsVisible: function (aElement) {
+  ensureElementIsVisible: function(aElement) {
     if (!aElement) {
       return;
     }
@@ -179,7 +181,7 @@ BreadcrumbsWidget.prototype = {
   /**
    * The underflow and overflow listener for the arrowscrollbox container.
    */
-  _onUnderflow: function ({ target }) {
+  _onUnderflow: function({ target }) {
     if (target != this._list) {
       return;
     }
@@ -191,7 +193,7 @@ BreadcrumbsWidget.prototype = {
   /**
    * The underflow and overflow listener for the arrowscrollbox container.
    */
-  _onOverflow: function ({ target }) {
+  _onOverflow: function({ target }) {
     if (target != this._list) {
       return;
     }
@@ -204,7 +206,7 @@ BreadcrumbsWidget.prototype = {
   document: null,
   _parent: null,
   _list: null,
-  _selectedItem: null
+  _selectedItem: null,
 };
 
 /**
@@ -212,7 +214,7 @@ BreadcrumbsWidget.prototype = {
  *
  * @param BreadcrumbsWidget aWidget
  *        The widget to contain this breadcrumb.
- * @param nsIDOMNode aContents
+ * @param Node aContents
  *        The node displayed in the container.
  */
 function Breadcrumb(aWidget, aContents) {
@@ -230,7 +232,7 @@ Breadcrumb.prototype = {
   /**
    * Sets the contents displayed in this item's view.
    *
-   * @param string | nsIDOMNode aContents
+   * @param string | Node aContents
    *        The string or node displayed in the container.
    */
   set contents(aContents) {
@@ -246,5 +248,5 @@ Breadcrumb.prototype = {
   window: null,
   document: null,
   ownerView: null,
-  _target: null
+  _target: null,
 };

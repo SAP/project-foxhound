@@ -7,61 +7,62 @@
 #ifndef mozilla_dom_SVGFEBlendElement_h
 #define mozilla_dom_SVGFEBlendElement_h
 
-#include "nsSVGFilters.h"
-#include "nsSVGEnum.h"
+#include "SVGEnum.h"
+#include "SVGFilters.h"
 
-nsresult NS_NewSVGFEBlendElement(nsIContent **aResult,
-                                 already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+nsresult NS_NewSVGFEBlendElement(
+    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 namespace mozilla {
 namespace dom {
 
-typedef nsSVGFE SVGFEBlendElementBase;
+typedef SVGFE SVGFEBlendElementBase;
 
-class SVGFEBlendElement : public SVGFEBlendElementBase
-{
-  friend nsresult (::NS_NewSVGFEBlendElement(nsIContent **aResult,
-                                             already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
-protected:
-  explicit SVGFEBlendElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-    : SVGFEBlendElementBase(aNodeInfo)
-  {
+class SVGFEBlendElement : public SVGFEBlendElementBase {
+  friend nsresult(::NS_NewSVGFEBlendElement(
+      nsIContent** aResult,
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
+
+ protected:
+  explicit SVGFEBlendElement(
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+      : SVGFEBlendElementBase(std::move(aNodeInfo)) {}
+  virtual JSObject* WrapNode(JSContext* cx,
+                             JS::Handle<JSObject*> aGivenProto) override;
+
+ public:
+  virtual FilterPrimitiveDescription GetPrimitiveDescription(
+      nsSVGFilterInstance* aInstance, const IntRect& aFilterSubregion,
+      const nsTArray<bool>& aInputsAreTainted,
+      nsTArray<RefPtr<SourceSurface>>& aInputImages) override;
+  virtual bool AttributeAffectsRendering(int32_t aNameSpaceID,
+                                         nsAtom* aAttribute) const override;
+  virtual SVGString& GetResultImageName() override {
+    return mStringAttributes[RESULT];
   }
-  virtual JSObject* WrapNode(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual void GetSourceImageNames(nsTArray<SVGStringInfo>& aSources) override;
 
-public:
-  virtual FilterPrimitiveDescription
-    GetPrimitiveDescription(nsSVGFilterInstance* aInstance,
-                            const IntRect& aFilterSubregion,
-                            const nsTArray<bool>& aInputsAreTainted,
-                            nsTArray<RefPtr<SourceSurface>>& aInputImages) override;
-  virtual bool AttributeAffectsRendering(
-          int32_t aNameSpaceID, nsIAtom* aAttribute) const override;
-  virtual nsSVGString& GetResultImageName() override { return mStringAttributes[RESULT]; }
-  virtual void GetSourceImageNames(nsTArray<nsSVGStringInfo>& aSources) override;
-
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // WebIDL
   already_AddRefed<SVGAnimatedString> In1();
   already_AddRefed<SVGAnimatedString> In2();
   already_AddRefed<SVGAnimatedEnumeration> Mode();
 
-protected:
-
+ protected:
   virtual EnumAttributesInfo GetEnumInfo() override;
   virtual StringAttributesInfo GetStringInfo() override;
 
   enum { MODE };
-  nsSVGEnum mEnumAttributes[1];
-  static nsSVGEnumMapping sModeMap[];
+  SVGEnum mEnumAttributes[1];
+  static SVGEnumMapping sModeMap[];
   static EnumInfo sEnumInfo[1];
 
   enum { RESULT, IN1, IN2 };
-  nsSVGString mStringAttributes[3];
+  SVGString mStringAttributes[3];
   static StringInfo sStringInfo[3];
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_SVGFEBlendElement_h
+#endif  // mozilla_dom_SVGFEBlendElement_h

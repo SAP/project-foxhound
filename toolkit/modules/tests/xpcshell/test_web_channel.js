@@ -3,10 +3,8 @@
 
 "use strict";
 
-var Cu = Components.utils;
-
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/WebChannel.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/WebChannel.jsm");
 
 const ERROR_ID_ORIGIN_REQUIRED = "WebChannel id and originOrPermission are required.";
 const VALID_WEB_CHANNEL_ID = "id";
@@ -22,13 +20,9 @@ var MockWebChannelBroker = {
     }
   },
   unregisterChannel(channelToRemove) {
-    this._channelMap.delete(channelToRemove)
-  }
+    this._channelMap.delete(channelToRemove);
+  },
 };
-
-function run_test() {
-  run_next_test();
-}
 
 /**
  * Web channel tests
@@ -40,23 +34,23 @@ function run_test() {
 add_task(function test_web_channel_listen() {
   return new Promise((resolve, reject) => {
     let channel = new WebChannel(VALID_WEB_CHANNEL_ID, VALID_WEB_CHANNEL_ORIGIN, {
-      broker: MockWebChannelBroker
+      broker: MockWebChannelBroker,
     });
     let delivered = 0;
-    do_check_eq(channel.id, VALID_WEB_CHANNEL_ID);
-    do_check_eq(channel._originOrPermission.spec, VALID_WEB_CHANNEL_ORIGIN.spec);
-    do_check_eq(channel._deliverCallback, null);
+    Assert.equal(channel.id, VALID_WEB_CHANNEL_ID);
+    Assert.equal(channel._originOrPermission.spec, VALID_WEB_CHANNEL_ORIGIN.spec);
+    Assert.equal(channel._deliverCallback, null);
 
     channel.listen(function(id, message, target) {
-      do_check_eq(id, VALID_WEB_CHANNEL_ID);
-      do_check_true(message);
-      do_check_true(message.command);
-      do_check_true(target.sender);
+      Assert.equal(id, VALID_WEB_CHANNEL_ID);
+      Assert.ok(message);
+      Assert.ok(message.command);
+      Assert.ok(target.sender);
       delivered++;
       // 2 messages should be delivered
       if (delivered === 2) {
         channel.stopListening();
-        do_check_eq(channel._deliverCallback, null);
+        Assert.equal(channel._deliverCallback, null);
         resolve();
       }
     });
@@ -65,15 +59,15 @@ add_task(function test_web_channel_listen() {
     channel.deliver({
       id: VALID_WEB_CHANNEL_ID,
       message: {
-        command: "one"
-      }
+        command: "one",
+      },
     }, { sender: true });
 
     channel.deliver({
       id: VALID_WEB_CHANNEL_ID,
       message: {
-        command: "two"
-      }
+        command: "two",
+      },
     }, { sender: true });
   });
 });
@@ -85,25 +79,25 @@ add_task(function test_web_channel_listen_permission() {
   return new Promise((resolve, reject) => {
     // add a new permission
     Services.perms.add(VALID_WEB_CHANNEL_ORIGIN, TEST_PERMISSION_NAME, Services.perms.ALLOW_ACTION);
-    do_register_cleanup(() => Services.perms.remove(VALID_WEB_CHANNEL_ORIGIN, TEST_PERMISSION_NAME));
+    registerCleanupFunction(() => Services.perms.remove(VALID_WEB_CHANNEL_ORIGIN, TEST_PERMISSION_NAME));
     let channel = new WebChannel(VALID_WEB_CHANNEL_ID, TEST_PERMISSION_NAME, {
-      broker: MockWebChannelBroker
+      broker: MockWebChannelBroker,
     });
     let delivered = 0;
-    do_check_eq(channel.id, VALID_WEB_CHANNEL_ID);
-    do_check_eq(channel._originOrPermission, TEST_PERMISSION_NAME);
-    do_check_eq(channel._deliverCallback, null);
+    Assert.equal(channel.id, VALID_WEB_CHANNEL_ID);
+    Assert.equal(channel._originOrPermission, TEST_PERMISSION_NAME);
+    Assert.equal(channel._deliverCallback, null);
 
     channel.listen(function(id, message, target) {
-      do_check_eq(id, VALID_WEB_CHANNEL_ID);
-      do_check_true(message);
-      do_check_true(message.command);
-      do_check_true(target.sender);
+      Assert.equal(id, VALID_WEB_CHANNEL_ID);
+      Assert.ok(message);
+      Assert.ok(message.command);
+      Assert.ok(target.sender);
       delivered++;
       // 2 messages should be delivered
       if (delivered === 2) {
         channel.stopListening();
-        do_check_eq(channel._deliverCallback, null);
+        Assert.equal(channel._deliverCallback, null);
         resolve();
       }
     });
@@ -112,15 +106,15 @@ add_task(function test_web_channel_listen_permission() {
     channel.deliver({
       id: VALID_WEB_CHANNEL_ID,
       message: {
-        command: "one"
-      }
+        command: "one",
+      },
     }, { sender: true });
 
     channel.deliver({
       id: VALID_WEB_CHANNEL_ID,
       message: {
-        command: "two"
-      }
+        command: "two",
+      },
     }, { sender: true });
   });
 });
@@ -130,11 +124,11 @@ add_task(function test_web_channel_listen_permission() {
  * Test constructor
  */
 add_test(function test_web_channel_constructor() {
-  do_check_eq(constructorTester(), ERROR_ID_ORIGIN_REQUIRED);
-  do_check_eq(constructorTester(undefined), ERROR_ID_ORIGIN_REQUIRED);
-  do_check_eq(constructorTester(undefined, VALID_WEB_CHANNEL_ORIGIN), ERROR_ID_ORIGIN_REQUIRED);
-  do_check_eq(constructorTester(VALID_WEB_CHANNEL_ID, undefined), ERROR_ID_ORIGIN_REQUIRED);
-  do_check_false(constructorTester(VALID_WEB_CHANNEL_ID, VALID_WEB_CHANNEL_ORIGIN));
+  Assert.equal(constructorTester(), ERROR_ID_ORIGIN_REQUIRED);
+  Assert.equal(constructorTester(undefined), ERROR_ID_ORIGIN_REQUIRED);
+  Assert.equal(constructorTester(undefined, VALID_WEB_CHANNEL_ORIGIN), ERROR_ID_ORIGIN_REQUIRED);
+  Assert.equal(constructorTester(VALID_WEB_CHANNEL_ID, undefined), ERROR_ID_ORIGIN_REQUIRED);
+  Assert.ok(!constructorTester(VALID_WEB_CHANNEL_ID, VALID_WEB_CHANNEL_ORIGIN));
 
   run_next_test();
 });

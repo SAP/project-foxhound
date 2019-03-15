@@ -5,42 +5,42 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/SVGLineElement.h"
+#include "mozilla/dom/SVGLengthBinding.h"
 #include "mozilla/dom/SVGLineElementBinding.h"
 #include "mozilla/gfx/2D.h"
 
-NS_IMPL_NS_NEW_NAMESPACED_SVG_ELEMENT(Line)
+NS_IMPL_NS_NEW_SVG_ELEMENT(Line)
 
 using namespace mozilla::gfx;
 
 namespace mozilla {
 namespace dom {
 
-JSObject*
-SVGLineElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return SVGLineElementBinding::Wrap(aCx, this, aGivenProto);
+JSObject* SVGLineElement::WrapNode(JSContext* aCx,
+                                   JS::Handle<JSObject*> aGivenProto) {
+  return SVGLineElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-nsSVGElement::LengthInfo SVGLineElement::sLengthInfo[4] =
-{
-  { &nsGkAtoms::x1, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::X },
-  { &nsGkAtoms::y1, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::Y },
-  { &nsGkAtoms::x2, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::X },
-  { &nsGkAtoms::y2, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::Y },
+SVGElement::LengthInfo SVGLineElement::sLengthInfo[4] = {
+    {nsGkAtoms::x1, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
+     SVGContentUtils::X},
+    {nsGkAtoms::y1, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
+     SVGContentUtils::Y},
+    {nsGkAtoms::x2, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
+     SVGContentUtils::X},
+    {nsGkAtoms::y2, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
+     SVGContentUtils::Y},
 };
 
 //----------------------------------------------------------------------
 // Implementation
 
-SVGLineElement::SVGLineElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-  : SVGLineElementBase(aNodeInfo)
-{
-}
+SVGLineElement::SVGLineElement(
+    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : SVGLineElementBase(std::move(aNodeInfo)) {}
 
-void
-SVGLineElement::MaybeAdjustForZeroLength(float aX1, float aY1,
-                                         float& aX2, float aY2)
-{
+void SVGLineElement::MaybeAdjustForZeroLength(float aX1, float aY1, float& aX2,
+                                              float aY2) {
   if (aX1 == aX2 && aY1 == aY2) {
     SVGContentUtils::AutoStrokeOptions strokeOptions;
     SVGContentUtils::GetStrokeOptions(&strokeOptions, this, nullptr, nullptr,
@@ -48,40 +48,32 @@ SVGLineElement::MaybeAdjustForZeroLength(float aX1, float aY1,
 
     if (strokeOptions.mLineCap != CapStyle::BUTT) {
       float tinyLength =
-        strokeOptions.mLineWidth / SVG_ZERO_LENGTH_PATH_FIX_FACTOR;
+          strokeOptions.mLineWidth / SVG_ZERO_LENGTH_PATH_FIX_FACTOR;
       aX2 += tinyLength;
     }
   }
 }
 
 //----------------------------------------------------------------------
-// nsIDOMNode methods
+// nsINode methods
 
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGLineElement)
 
 //----------------------------------------------------------------------
 
-already_AddRefed<SVGAnimatedLength>
-SVGLineElement::X1()
-{
+already_AddRefed<SVGAnimatedLength> SVGLineElement::X1() {
   return mLengthAttributes[ATTR_X1].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedLength>
-SVGLineElement::Y1()
-{
+already_AddRefed<SVGAnimatedLength> SVGLineElement::Y1() {
   return mLengthAttributes[ATTR_Y1].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedLength>
-SVGLineElement::X2()
-{
+already_AddRefed<SVGAnimatedLength> SVGLineElement::X2() {
   return mLengthAttributes[ATTR_X2].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedLength>
-SVGLineElement::Y2()
-{
+already_AddRefed<SVGAnimatedLength> SVGLineElement::Y2() {
   return mLengthAttributes[ATTR_Y2].ToDOMAnimatedLength(this);
 }
 
@@ -89,22 +81,17 @@ SVGLineElement::Y2()
 // nsIContent methods
 
 NS_IMETHODIMP_(bool)
-SVGLineElement::IsAttributeMapped(const nsIAtom* name) const
-{
-  static const MappedAttributeEntry* const map[] = {
-    sMarkersMap
-  };
+SVGLineElement::IsAttributeMapped(const nsAtom* name) const {
+  static const MappedAttributeEntry* const map[] = {sMarkersMap};
 
   return FindAttributeDependence(name, map) ||
-    SVGLineElementBase::IsAttributeMapped(name);
+         SVGLineElementBase::IsAttributeMapped(name);
 }
 
 //----------------------------------------------------------------------
-// nsSVGElement methods
+// SVGElement methods
 
-nsSVGElement::LengthAttributesInfo
-SVGLineElement::GetLengthInfo()
-{
+SVGElement::LengthAttributesInfo SVGLineElement::GetLengthInfo() {
   return LengthAttributesInfo(mLengthAttributes, sLengthInfo,
                               ArrayLength(sLengthInfo));
 }
@@ -112,21 +99,18 @@ SVGLineElement::GetLengthInfo()
 //----------------------------------------------------------------------
 // SVGGeometryElement methods
 
-void
-SVGLineElement::GetMarkPoints(nsTArray<nsSVGMark> *aMarks) {
+void SVGLineElement::GetMarkPoints(nsTArray<SVGMark>* aMarks) {
   float x1, y1, x2, y2;
 
   GetAnimatedLengthValues(&x1, &y1, &x2, &y2, nullptr);
 
   float angle = atan2(y2 - y1, x2 - x1);
 
-  aMarks->AppendElement(nsSVGMark(x1, y1, angle, nsSVGMark::eStart));
-  aMarks->AppendElement(nsSVGMark(x2, y2, angle, nsSVGMark::eEnd));
+  aMarks->AppendElement(SVGMark(x1, y1, angle, SVGMark::eStart));
+  aMarks->AppendElement(SVGMark(x2, y2, angle, SVGMark::eEnd));
 }
 
-void
-SVGLineElement::GetAsSimplePath(SimplePath* aSimplePath)
-{
+void SVGLineElement::GetAsSimplePath(SimplePath* aSimplePath) {
   float x1, y1, x2, y2;
   GetAnimatedLengthValues(&x1, &y1, &x2, &y2, nullptr);
 
@@ -134,9 +118,7 @@ SVGLineElement::GetAsSimplePath(SimplePath* aSimplePath)
   aSimplePath->SetLine(x1, y1, x2, y2);
 }
 
-already_AddRefed<Path>
-SVGLineElement::BuildPath(PathBuilder* aBuilder)
-{
+already_AddRefed<Path> SVGLineElement::BuildPath(PathBuilder* aBuilder) {
   float x1, y1, x2, y2;
   GetAnimatedLengthValues(&x1, &y1, &x2, &y2, nullptr);
 
@@ -147,12 +129,10 @@ SVGLineElement::BuildPath(PathBuilder* aBuilder)
   return aBuilder->Finish();
 }
 
-bool
-SVGLineElement::GetGeometryBounds(Rect* aBounds,
-                                  const StrokeOptions& aStrokeOptions,
-                                  const Matrix& aToBoundsSpace,
-                                  const Matrix* aToNonScalingStrokeSpace)
-{
+bool SVGLineElement::GetGeometryBounds(Rect* aBounds,
+                                       const StrokeOptions& aStrokeOptions,
+                                       const Matrix& aToBoundsSpace,
+                                       const Matrix* aToNonScalingStrokeSpace) {
   float x1, y1, x2, y2;
   GetAnimatedLengthValues(&x1, &y1, &x2, &y2, nullptr);
 
@@ -242,8 +222,8 @@ SVGLineElement::GetGeometryBounds(Rect* aBounds,
     }
   }
 
-  const Matrix& toBoundsSpace = aToNonScalingStrokeSpace ?
-    nonScalingToBounds : aToBoundsSpace;
+  const Matrix& toBoundsSpace =
+      aToNonScalingStrokeSpace ? nonScalingToBounds : aToBoundsSpace;
 
   *aBounds = Rect(toBoundsSpace.TransformPoint(points[0]), Size());
   for (uint32_t i = 1; i < 4; ++i) {
@@ -253,5 +233,5 @@ SVGLineElement::GetGeometryBounds(Rect* aBounds,
   return true;
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

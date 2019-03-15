@@ -30,19 +30,14 @@ import android.content.Context;
 public class Synchronizer implements SynchronizerSessionDelegate {
   public static final String LOG_TAG = "SyncDelSDelegate";
 
-  protected String configSyncID; // Used to pass syncID from load() back into save().
+  private String configSyncID; // Used to pass syncID from load() back into save().
 
-  protected SynchronizerDelegate synchronizerDelegate;
+  private SynchronizerDelegate synchronizerDelegate;
 
   protected SynchronizerSession session = null;
 
   public SynchronizerSession getSynchronizerSession() {
     return session;
-  }
-
-  @Override
-  public void onInitialized(SynchronizerSession session) {
-    session.synchronize();
   }
 
   @Override
@@ -83,7 +78,7 @@ public class Synchronizer implements SynchronizerSessionDelegate {
   public void synchronize(Context context, SynchronizerDelegate delegate) {
     this.synchronizerDelegate = delegate;
     this.session = newSynchronizerSession();
-    this.session.init(context, bundleA, bundleB);
+    this.session.initAndSynchronize(context, bundleA, bundleB);
   }
 
   public SynchronizerConfiguration save() {

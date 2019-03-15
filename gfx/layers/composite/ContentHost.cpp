@@ -1,20 +1,21 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/layers/ContentHost.h"
-#include "LayersLogging.h"              // for AppendToString
-#include "gfx2DGlue.h"                  // for ContentForFormat
-#include "mozilla/gfx/Point.h"          // for IntSize
-#include "mozilla/Assertions.h"         // for MOZ_ASSERT, etc
-#include "mozilla/gfx/BaseRect.h"       // for BaseRect
-#include "mozilla/layers/Compositor.h"  // for Compositor
-#include "mozilla/layers/Effects.h"     // for TexturedEffect, Effect, etc
+#include "LayersLogging.h"                  // for AppendToString
+#include "gfx2DGlue.h"                      // for ContentForFormat
+#include "mozilla/gfx/Point.h"              // for IntSize
+#include "mozilla/Assertions.h"             // for MOZ_ASSERT, etc
+#include "mozilla/gfx/BaseRect.h"           // for BaseRect
+#include "mozilla/layers/Compositor.h"      // for Compositor
+#include "mozilla/layers/Effects.h"         // for TexturedEffect, Effect, etc
 #include "mozilla/layers/LayersMessages.h"  // for ThebesBufferData
 #include "nsAString.h"
-#include "nsPrintfCString.h"            // for nsPrintfCString
-#include "nsString.h"                   // for nsAutoCString
+#include "nsPrintfCString.h"                // for nsPrintfCString
+#include "nsString.h"                       // for nsAutoCString
 #include "mozilla/layers/TextureHostOGL.h"  // for TextureHostOGL
 
 namespace mozilla {
@@ -23,24 +24,15 @@ using namespace gfx;
 namespace layers {
 
 ContentHostBase::ContentHostBase(const TextureInfo& aTextureInfo)
-  : ContentHost(aTextureInfo)
-  , mInitialised(false)
-{}
+    : ContentHost(aTextureInfo), mInitialised(false) {}
 
-ContentHostBase::~ContentHostBase()
-{
-}
+ContentHostBase::~ContentHostBase() {}
 
-void
-ContentHostTexture::Composite(LayerComposite* aLayer,
-                              EffectChain& aEffectChain,
-                              float aOpacity,
-                              const gfx::Matrix4x4& aTransform,
-                              const SamplingFilter aSamplingFilter,
-                              const IntRect& aClipRect,
-                              const nsIntRegion* aVisibleRegion,
-                              const Maybe<gfx::Polygon>& aGeometry)
-{
+void ContentHostTexture::Composite(
+    Compositor* aCompositor, LayerComposite* aLayer, EffectChain& aEffectChain,
+    float aOpacity, const gfx::Matrix4x4& aTransform,
+    const SamplingFilter aSamplingFilter, const IntRect& aClipRect,
+    const nsIntRegion* aVisibleRegion, const Maybe<gfx::Polygon>& aGeometry) {
   NS_ASSERTION(aVisibleRegion, "Requires a visible region");
 
   AutoLockCompositableHost lock(this);
@@ -56,13 +48,13 @@ ContentHostTexture::Composite(LayerComposite* aLayer,
   if (!mTextureHostOnWhite) {
     mTextureSourceOnWhite = nullptr;
   }
-  if (mTextureHostOnWhite && !mTextureHostOnWhite->BindTextureSource(mTextureSourceOnWhite)) {
+  if (mTextureHostOnWhite &&
+      !mTextureHostOnWhite->BindTextureSource(mTextureSourceOnWhite)) {
     return;
   }
 
-  RefPtr<TexturedEffect> effect = CreateTexturedEffect(mTextureSource.get(),
-                                                       mTextureSourceOnWhite.get(),
-                                                       aSamplingFilter, true);
+  RefPtr<TexturedEffect> effect = CreateTexturedEffect(
+      mTextureSource.get(), mTextureSourceOnWhite.get(), aSamplingFilter, true);
   if (!effect) {
     return;
   }
@@ -122,7 +114,8 @@ ContentHostTexture::Composite(LayerComposite* aLayer,
 
   if (mTextureSourceOnWhite) {
     iterOnWhite = mTextureSourceOnWhite->AsBigImageIterator();
-    MOZ_ASSERT(!bigImgIter || bigImgIter->GetTileCount() == iterOnWhite->GetTileCount(),
+    MOZ_ASSERT(!bigImgIter ||
+                   bigImgIter->GetTileCount() == iterOnWhite->GetTileCount(),
                "Tile count mismatch on component alpha texture");
     if (iterOnWhite) {
       iterOnWhite->BeginBigImageIteration();
@@ -137,9 +130,7 @@ ContentHostTexture::Composite(LayerComposite* aLayer,
     }
 
     IntRect texRect = bigImgIter ? bigImgIter->GetTileRect()
-                                 : IntRect(0, 0,
-                                             texSize.width,
-                                             texSize.height);
+                                 : IntRect(0, 0, texSize.width, texSize.height);
 
     // Draw texture. If we're using tiles, we do repeating manually, as texture
     // repeat would cause each individual tile to repeat instead of the
@@ -167,30 +158,31 @@ ContentHostTexture::Composite(LayerComposite* aLayer,
             tileScreenRect = tileScreenRect.Intersect(currentTileRect);
             tileScreenRect.MoveBy(origin);
 
-            if (tileScreenRect.IsEmpty())
-              continue;
+            if (tileScreenRect.IsEmpty()) continue;
 
             tileRegionRect = regionRect.Intersect(currentTileRect);
             tileRegionRect.MoveBy(-currentTileRect.TopLeft());
           }
-          gfx::Rect rect(tileScreenRect.x, tileScreenRect.y,
-                         tileScreenRect.width, tileScreenRect.height);
+          gfx::Rect rect(tileScreenRect.X(), tileScreenRect.Y(),
+                         tileScreenRect.Width(), tileScreenRect.Height());
 
-          effect->mTextureCoords = Rect(Float(tileRegionRect.x) / texRect.width,
-                                        Float(tileRegionRect.y) / texRect.height,
-                                        Float(tileRegionRect.width) / texRect.width,
-                                        Float(tileRegionRect.height) / texRect.height);
+          effect->mTextureCoords =
+              Rect(Float(tileRegionRect.X()) / texRect.Width(),
+                   Float(tileRegionRect.Y()) / texRect.Height(),
+                   Float(tileRegionRect.Width()) / texRect.Width(),
+                   Float(tileRegionRect.Height()) / texRect.Height());
 
-          GetCompositor()->DrawGeometry(rect, aClipRect, aEffectChain,
-                                        aOpacity, aTransform, aGeometry);
+          aCompositor->DrawGeometry(rect, aClipRect, aEffectChain, aOpacity,
+                                    aTransform, aGeometry);
 
           if (usingTiles) {
-            DiagnosticFlags diagnostics = DiagnosticFlags::CONTENT | DiagnosticFlags::BIGIMAGE;
+            DiagnosticFlags diagnostics =
+                DiagnosticFlags::CONTENT | DiagnosticFlags::BIGIMAGE;
             if (iterOnWhite) {
               diagnostics |= DiagnosticFlags::COMPONENT_ALPHA;
             }
-            GetCompositor()->DrawDiagnostics(diagnostics, rect, aClipRect,
-                                             aTransform, mFlashCounter);
+            aCompositor->DrawDiagnostics(diagnostics, rect, aClipRect,
+                                         aTransform, mFlashCounter);
           }
         }
       }
@@ -212,19 +204,33 @@ ContentHostTexture::Composite(LayerComposite* aLayer,
   if (iterOnWhite) {
     diagnostics |= DiagnosticFlags::COMPONENT_ALPHA;
   }
-  GetCompositor()->DrawDiagnostics(diagnostics, nsIntRegion(mBufferRect), aClipRect,
-                                   aTransform, mFlashCounter);
+  aCompositor->DrawDiagnostics(diagnostics, nsIntRegion(mBufferRect), aClipRect,
+                               aTransform, mFlashCounter);
 }
 
-void
-ContentHostTexture::UseTextureHost(const nsTArray<TimedTexture>& aTextures)
-{
+RefPtr<TextureSource> ContentHostTexture::AcquireTextureSource() {
+  if (!mTextureHost || !mTextureHost->AcquireTextureSource(mTextureSource)) {
+    return nullptr;
+  }
+  return mTextureSource.get();
+}
+
+RefPtr<TextureSource> ContentHostTexture::AcquireTextureSourceOnWhite() {
+  if (!mTextureHostOnWhite ||
+      !mTextureHostOnWhite->AcquireTextureSource(mTextureSourceOnWhite)) {
+    return nullptr;
+  }
+  return mTextureSourceOnWhite.get();
+}
+
+void ContentHostTexture::UseTextureHost(
+    const nsTArray<TimedTexture>& aTextures) {
   ContentHostBase::UseTextureHost(aTextures);
   MOZ_ASSERT(aTextures.Length() == 1);
   const TimedTexture& t = aTextures[0];
   MOZ_ASSERT(t.mPictureRect.IsEqualInterior(
-      nsIntRect(nsIntPoint(0, 0), nsIntSize(t.mTexture->GetSize()))),
-      "Only default picture rect supported");
+                 nsIntRect(nsIntPoint(0, 0), nsIntSize(t.mTexture->GetSize()))),
+             "Only default picture rect supported");
 
   if (t.mTexture != mTextureHost) {
     mReceivedNewHost = true;
@@ -238,10 +244,8 @@ ContentHostTexture::UseTextureHost(const nsTArray<TimedTexture>& aTextures)
   }
 }
 
-void
-ContentHostTexture::UseComponentAlphaTextures(TextureHost* aTextureOnBlack,
-                                              TextureHost* aTextureOnWhite)
-{
+void ContentHostTexture::UseComponentAlphaTextures(
+    TextureHost* aTextureOnBlack, TextureHost* aTextureOnWhite) {
   ContentHostBase::UseComponentAlphaTextures(aTextureOnBlack, aTextureOnWhite);
   mTextureHost = aTextureOnBlack;
   mTextureHostOnWhite = aTextureOnWhite;
@@ -253,23 +257,19 @@ ContentHostTexture::UseComponentAlphaTextures(TextureHost* aTextureOnBlack,
   }
 }
 
-void
-ContentHostTexture::SetCompositor(Compositor* aCompositor)
-{
-  ContentHostBase::SetCompositor(aCompositor);
+void ContentHostTexture::SetTextureSourceProvider(
+    TextureSourceProvider* aProvider) {
+  ContentHostBase::SetTextureSourceProvider(aProvider);
   if (mTextureHost) {
-    mTextureHost->SetCompositor(aCompositor);
+    mTextureHost->SetTextureSourceProvider(aProvider);
   }
   if (mTextureHostOnWhite) {
-    mTextureHostOnWhite->SetCompositor(aCompositor);
+    mTextureHostOnWhite->SetTextureSourceProvider(aProvider);
   }
 }
 
-void
-ContentHostTexture::Dump(std::stringstream& aStream,
-                         const char* aPrefix,
-                         bool aDumpHtml)
-{
+void ContentHostTexture::Dump(std::stringstream& aStream, const char* aPrefix,
+                              bool aDumpHtml) {
 #ifdef MOZ_DUMP_PAINTING
   if (aDumpHtml) {
     aStream << "<ul>";
@@ -308,25 +308,22 @@ ContentHostTexture::Dump(std::stringstream& aStream,
 #endif
 }
 
-static inline void
-AddWrappedRegion(const nsIntRegion& aInput, nsIntRegion& aOutput,
-                 const IntSize& aSize, const nsIntPoint& aShift)
-{
+static inline void AddWrappedRegion(const nsIntRegion& aInput,
+                                    nsIntRegion& aOutput, const IntSize& aSize,
+                                    const nsIntPoint& aShift) {
   nsIntRegion tempRegion;
   tempRegion.And(IntRect(aShift, aSize), aInput);
   tempRegion.MoveBy(-aShift);
   aOutput.Or(aOutput, tempRegion);
 }
 
-bool
-ContentHostSingleBuffered::UpdateThebes(const ThebesBufferData& aData,
-                                        const nsIntRegion& aUpdated,
-                                        const nsIntRegion& aOldValidRegionBack)
-{
+bool ContentHostSingleBuffered::UpdateThebes(
+    const ThebesBufferData& aData, const nsIntRegion& aUpdated,
+    const nsIntRegion& aOldValidRegionBack) {
   if (!mTextureHost) {
     mInitialised = false;
-    return true; // FIXME should we return false? Returning true for now
-  }              // to preserve existing behavior of NOT causing IPC errors.
+    return true;  // FIXME should we return false? Returning true for now
+  }               // to preserve existing behavior of NOT causing IPC errors.
 
   // updated is in screen coordinates. Convert it to buffer coordinates.
   nsIntRegion destRegion(aUpdated);
@@ -338,8 +335,8 @@ ContentHostSingleBuffered::UpdateThebes(const ThebesBufferData& aData,
   destRegion.MoveBy(-aData.rect().TopLeft());
 
   if (!aData.rect().Contains(aUpdated.GetBounds()) ||
-      aData.rotation().x > aData.rect().width ||
-      aData.rotation().y > aData.rect().height) {
+      aData.rotation().x > aData.rect().Width() ||
+      aData.rotation().y > aData.rect().Height()) {
     NS_ERROR("Invalid update data");
     return false;
   }
@@ -360,11 +357,15 @@ ContentHostSingleBuffered::UpdateThebes(const ThebesBufferData& aData,
 
   // For each of the overlap areas (right, bottom-right, bottom), select those
   // pixels and wrap them around to the opposite edge of the buffer rect.
-  AddWrappedRegion(destRegion, finalRegion, bufferSize, nsIntPoint(aData.rect().width, 0));
-  AddWrappedRegion(destRegion, finalRegion, bufferSize, nsIntPoint(aData.rect().width, aData.rect().height));
-  AddWrappedRegion(destRegion, finalRegion, bufferSize, nsIntPoint(0, aData.rect().height));
+  AddWrappedRegion(destRegion, finalRegion, bufferSize,
+                   nsIntPoint(aData.rect().Width(), 0));
+  AddWrappedRegion(destRegion, finalRegion, bufferSize,
+                   nsIntPoint(aData.rect().Width(), aData.rect().Height()));
+  AddWrappedRegion(destRegion, finalRegion, bufferSize,
+                   nsIntPoint(0, aData.rect().Height()));
 
-  MOZ_ASSERT(IntRect(0, 0, aData.rect().width, aData.rect().height).Contains(finalRegion.GetBounds()));
+  MOZ_ASSERT(IntRect(0, 0, aData.rect().Width(), aData.rect().Height())
+                 .Contains(finalRegion.GetBounds()));
 
   mTextureHost->Updated(&finalRegion);
   if (mTextureHostOnWhite) {
@@ -378,11 +379,9 @@ ContentHostSingleBuffered::UpdateThebes(const ThebesBufferData& aData,
   return true;
 }
 
-bool
-ContentHostDoubleBuffered::UpdateThebes(const ThebesBufferData& aData,
-                                        const nsIntRegion& aUpdated,
-                                        const nsIntRegion& aOldValidRegionBack)
-{
+bool ContentHostDoubleBuffered::UpdateThebes(
+    const ThebesBufferData& aData, const nsIntRegion& aUpdated,
+    const nsIntRegion& aOldValidRegionBack) {
   if (!mTextureHost) {
     mInitialised = false;
     return true;
@@ -412,9 +411,8 @@ ContentHostDoubleBuffered::UpdateThebes(const ThebesBufferData& aData,
   return true;
 }
 
-void
-ContentHostTexture::PrintInfo(std::stringstream& aStream, const char* aPrefix)
-{
+void ContentHostTexture::PrintInfo(std::stringstream& aStream,
+                                   const char* aPrefix) {
   aStream << aPrefix;
   aStream << nsPrintfCString("ContentHost (0x%p)", this).get();
 
@@ -433,10 +431,8 @@ ContentHostTexture::PrintInfo(std::stringstream& aStream, const char* aPrefix)
   }
 }
 
-
-already_AddRefed<TexturedEffect>
-ContentHostTexture::GenEffect(const gfx::SamplingFilter aSamplingFilter)
-{
+already_AddRefed<TexturedEffect> ContentHostTexture::GenEffect(
+    const gfx::SamplingFilter aSamplingFilter) {
   if (!mTextureHost) {
     return nullptr;
   }
@@ -446,17 +442,15 @@ ContentHostTexture::GenEffect(const gfx::SamplingFilter aSamplingFilter)
   if (!mTextureHostOnWhite) {
     mTextureSourceOnWhite = nullptr;
   }
-  if (mTextureHostOnWhite && !mTextureHostOnWhite->BindTextureSource(mTextureSourceOnWhite)) {
+  if (mTextureHostOnWhite &&
+      !mTextureHostOnWhite->BindTextureSource(mTextureSourceOnWhite)) {
     return nullptr;
   }
-  return CreateTexturedEffect(mTextureSource.get(),
-                              mTextureSourceOnWhite.get(),
+  return CreateTexturedEffect(mTextureSource.get(), mTextureSourceOnWhite.get(),
                               aSamplingFilter, true);
 }
 
-already_AddRefed<gfx::DataSourceSurface>
-ContentHostTexture::GetAsSurface()
-{
+already_AddRefed<gfx::DataSourceSurface> ContentHostTexture::GetAsSurface() {
   if (!mTextureHost) {
     return nullptr;
   }
@@ -464,6 +458,5 @@ ContentHostTexture::GetAsSurface()
   return mTextureHost->GetAsSurface();
 }
 
-
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla

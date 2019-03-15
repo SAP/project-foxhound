@@ -8,31 +8,35 @@
 #define mozilla_dom_MutableBlobStreamListener_h
 
 #include "nsIStreamListener.h"
+#include "nsIThreadRetargetableStreamListener.h"
 #include "mozilla/dom/MutableBlobStorage.h"
+
+class nsIEventTarget;
 
 namespace mozilla {
 namespace dom {
 
-// This class is main-thread only.
-class MutableBlobStreamListener final : public nsIStreamListener
-{
-public:
-  NS_DECL_ISUPPORTS
+class MutableBlobStreamListener final
+    : public nsIStreamListener,
+      public nsIThreadRetargetableStreamListener {
+ public:
+  NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSISTREAMLISTENER
+  NS_DECL_NSITHREADRETARGETABLESTREAMLISTENER
   NS_DECL_NSIREQUESTOBSERVER
 
   MutableBlobStreamListener(MutableBlobStorage::MutableBlobStorageType aType,
                             nsISupports* aParent,
                             const nsACString& aContentType,
-                            MutableBlobStorageCallback* aCallback);
+                            MutableBlobStorageCallback* aCallback,
+                            nsIEventTarget* aEventTarget = nullptr);
 
-private:
+ private:
   ~MutableBlobStreamListener();
 
-  static nsresult
-  WriteSegmentFun(nsIInputStream* aWriter, void* aClosure,
-                  const char* aFromSegment, uint32_t aOffset,
-                  uint32_t aCount, uint32_t* aWriteCount);
+  static nsresult WriteSegmentFun(nsIInputStream* aWriter, void* aClosure,
+                                  const char* aFromSegment, uint32_t aOffset,
+                                  uint32_t aCount, uint32_t* aWriteCount);
 
   RefPtr<MutableBlobStorage> mStorage;
   RefPtr<MutableBlobStorageCallback> mCallback;
@@ -40,9 +44,10 @@ private:
   nsCOMPtr<nsISupports> mParent;
   MutableBlobStorage::MutableBlobStorageType mStorageType;
   nsCString mContentType;
+  nsCOMPtr<nsIEventTarget> mEventTarget;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_MutableBlobStreamListener_h
+#endif  // mozilla_dom_MutableBlobStreamListener_h

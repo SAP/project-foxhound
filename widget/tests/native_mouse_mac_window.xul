@@ -116,8 +116,7 @@
       printDebug("sending event: " + x + ", " + y + " (" + msg + ")\n");
       gCurrentMouseX = x;
       gCurrentMouseY = y;
-      var utils = win.QueryInterface(Components.interfaces.nsIInterfaceRequestor).
-                                     getInterface(Components.interfaces.nsIDOMWindowUtils);
+      var utils = win.windowUtils;
       var callbackFunc = function() {
         clearExpectedEvents();
         callback();
@@ -381,7 +380,7 @@
         [400, 180, NSLeftMouseUp, null, right, [
         ]],
         function verifyPopupClosed2(callback) {
-          is(gPopup.popupBoxObject.popupState, "closed", "popup should have closed when clicking");
+          is(gPopup.state, "closed", "popup should have closed when clicking");
           callback();
         },
         // Now the right window is active; click it again, just for fun.
@@ -401,8 +400,7 @@
           eventListenOnce(rightElem, "popupshown", callback);
           gCurrentMouseX = 410;
           gCurrentMouseY = 180;
-          var utils = right.QueryInterface(Components.interfaces.nsIInterfaceRequestor).
-                               getInterface(Components.interfaces.nsIDOMWindowUtils);
+          var utils = right.windowUtils;
           utils.sendNativeMouseEvent(410, 180, NSMouseMoved, 0, null);
         },
         // Now the tooltip is visible.
@@ -635,7 +633,7 @@
           { type: "click", target: rightElem },
         ]],
         function verifyPopupClosed2(callback) {
-          is(gPopup.popupBoxObject.popupState, "closed", "popup should have closed when clicking");
+          is(gPopup.state, "closed", "popup should have closed when clicking");
           callback();
         },
         // Now the right window is active; click it again, just for fun.
@@ -655,8 +653,7 @@
           eventListenOnce(rightElem, "popupshown", callback);
           gCurrentMouseX = 410;
           gCurrentMouseY = 180;
-          var utils = right.QueryInterface(Components.interfaces.nsIInterfaceRequestor).
-                               getInterface(Components.interfaces.nsIDOMWindowUtils);
+          var utils = right.windowUtils;
           utils.sendNativeMouseEvent(410, 180, NSMouseMoved, 0, null);
         },
         // Now the tooltip is visible.

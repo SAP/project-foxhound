@@ -10,78 +10,21 @@
 namespace mozilla {
 namespace widget {
 
-void
-AndroidCompositorWidget::SetFirstPaintViewport(const LayerIntPoint& aOffset,
-                                               const CSSToLayerScale& aZoom,
-                                               const CSSRect& aCssPageRect)
-{
-    auto layerClient = static_cast<nsWindow*>(RealWidget())->GetLayerClient();
-    if (!layerClient) {
-        return;
-    }
-
-    layerClient->SetFirstPaintViewport(
-            float(aOffset.x), float(aOffset.y), aZoom.scale, aCssPageRect.x,
-            aCssPageRect.y, aCssPageRect.XMost(), aCssPageRect.YMost());
-}
-
-void
-AndroidCompositorWidget::SyncFrameMetrics(const ParentLayerPoint& aScrollOffset,
-                                          const CSSToParentLayerScale& aZoom,
-                                          const CSSRect& aCssPageRect,
-                                          const CSSRect& aDisplayPort,
-                                          const CSSToLayerScale& aPaintedResolution,
-                                          bool aLayersUpdated,
-                                          int32_t aPaintSyncId,
-                                          ScreenMargin& aFixedLayerMargins)
-{
-    auto layerClient = static_cast<nsWindow*>(RealWidget())->GetLayerClient();
-    if (!layerClient) {
-        return;
-    }
-
-    // convert the displayport rect from document-relative CSS pixels to
-    // document-relative device pixels
-    LayerIntRect dp = gfx::RoundedToInt(aDisplayPort * aPaintedResolution);
-
-    java::ViewTransform::LocalRef viewTransform = layerClient->SyncFrameMetrics(
-            aScrollOffset.x, aScrollOffset.y, aZoom.scale,
-            aCssPageRect.x, aCssPageRect.y,
-            aCssPageRect.XMost(), aCssPageRect.YMost(),
-            dp.x, dp.y, dp.width, dp.height,
-            aPaintedResolution.scale, aLayersUpdated, aPaintSyncId);
-
-    MOZ_ASSERT(viewTransform, "No view transform object!");
-
-    aFixedLayerMargins.top = viewTransform->FixedLayerMarginTop();
-    aFixedLayerMargins.right = viewTransform->FixedLayerMarginRight();
-    aFixedLayerMargins.bottom = viewTransform->FixedLayerMarginBottom();
-    aFixedLayerMargins.left = viewTransform->FixedLayerMarginLeft();
-}
-
-EGLNativeWindowType
-AndroidCompositorWidget::GetEGLNativeWindow()
-{
+EGLNativeWindowType AndroidCompositorWidget::GetEGLNativeWindow() {
   return (EGLNativeWindowType)mWidget->GetNativeData(NS_JAVA_SURFACE);
 }
 
-EGLNativeWindowType
-AndroidCompositorWidget::GetPresentationEGLSurface()
-{
+EGLNativeWindowType AndroidCompositorWidget::GetPresentationEGLSurface() {
   return (EGLNativeWindowType)mWidget->GetNativeData(NS_PRESENTATION_SURFACE);
 }
 
-void
-AndroidCompositorWidget::SetPresentationEGLSurface(EGLSurface aVal)
-{
+void AndroidCompositorWidget::SetPresentationEGLSurface(EGLSurface aVal) {
   mWidget->SetNativeData(NS_PRESENTATION_SURFACE, (uintptr_t)aVal);
 }
 
-ANativeWindow*
-AndroidCompositorWidget::GetPresentationANativeWindow()
-{
+ANativeWindow* AndroidCompositorWidget::GetPresentationANativeWindow() {
   return (ANativeWindow*)mWidget->GetNativeData(NS_PRESENTATION_WINDOW);
 }
 
-} // namespace widget
-} // namespace mozilla
+}  // namespace widget
+}  // namespace mozilla

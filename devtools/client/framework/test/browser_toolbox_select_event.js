@@ -9,50 +9,50 @@ const PAGE_URL = "data:text/html;charset=utf-8,test select events";
 
 requestLongerTimeout(2);
 
-add_task(function* () {
-  let tab = yield addTab(PAGE_URL);
+add_task(async function() {
+  const tab = await addTab(PAGE_URL);
 
-  let toolbox = yield openToolboxForTab(tab, "webconsole", "bottom");
-  yield testSelectEvent("inspector");
-  yield testSelectEvent("webconsole");
-  yield testSelectEvent("styleeditor");
-  yield testSelectEvent("inspector");
-  yield testSelectEvent("webconsole");
-  yield testSelectEvent("styleeditor");
+  let toolbox = await openToolboxForTab(tab, "webconsole", "bottom");
+  await testSelectEvent("inspector");
+  await testSelectEvent("webconsole");
+  await testSelectEvent("styleeditor");
+  await testSelectEvent("inspector");
+  await testSelectEvent("webconsole");
+  await testSelectEvent("styleeditor");
 
-  yield testToolSelectEvent("inspector");
-  yield testToolSelectEvent("webconsole");
-  yield testToolSelectEvent("styleeditor");
-  yield toolbox.destroy();
+  await testToolSelectEvent("inspector");
+  await testToolSelectEvent("webconsole");
+  await testToolSelectEvent("styleeditor");
+  await toolbox.destroy();
 
-  toolbox = yield openToolboxForTab(tab, "webconsole", "side");
-  yield testSelectEvent("inspector");
-  yield testSelectEvent("webconsole");
-  yield testSelectEvent("styleeditor");
-  yield testSelectEvent("inspector");
-  yield testSelectEvent("webconsole");
-  yield testSelectEvent("styleeditor");
-  yield toolbox.destroy();
+  toolbox = await openToolboxForTab(tab, "webconsole", "right");
+  await testSelectEvent("inspector");
+  await testSelectEvent("webconsole");
+  await testSelectEvent("styleeditor");
+  await testSelectEvent("inspector");
+  await testSelectEvent("webconsole");
+  await testSelectEvent("styleeditor");
+  await toolbox.destroy();
 
-  toolbox = yield openToolboxForTab(tab, "webconsole", "window");
-  yield testSelectEvent("inspector");
-  yield testSelectEvent("webconsole");
-  yield testSelectEvent("styleeditor");
-  yield testSelectEvent("inspector");
-  yield testSelectEvent("webconsole");
-  yield testSelectEvent("styleeditor");
-  yield toolbox.destroy();
+  toolbox = await openToolboxForTab(tab, "webconsole", "window");
+  await testSelectEvent("inspector");
+  await testSelectEvent("webconsole");
+  await testSelectEvent("styleeditor");
+  await testSelectEvent("inspector");
+  await testSelectEvent("webconsole");
+  await testSelectEvent("styleeditor");
+  await toolbox.destroy();
 
-  yield testSelectToolRace();
+  await testSelectToolRace();
 
   /**
    * Assert that selecting the given toolId raises a select event
    * @param {toolId} Id of the tool to test
    */
-  function* testSelectEvent(toolId) {
-    let onSelect = toolbox.once("select");
+  async function testSelectEvent(toolId) {
+    const onSelect = toolbox.once("select");
     toolbox.selectTool(toolId);
-    let id = yield onSelect;
+    const id = await onSelect;
     is(id, toolId, toolId + " selected");
   }
 
@@ -61,20 +61,20 @@ add_task(function* () {
    * selected event
    * @param {toolId} Id of the tool to test
    */
-  function* testToolSelectEvent(toolId) {
-    let onSelected = toolbox.once(toolId + "-selected");
+  async function testToolSelectEvent(toolId) {
+    const onSelected = toolbox.once(toolId + "-selected");
     toolbox.selectTool(toolId);
-    yield onSelected;
+    await onSelected;
     is(toolbox.currentToolId, toolId, toolId + " tool selected");
   }
 
   /**
    * Assert that two calls to selectTool won't race
    */
-  function* testSelectToolRace() {
-    let toolbox = yield openToolboxForTab(tab, "webconsole");
+  async function testSelectToolRace() {
+    const toolbox = await openToolboxForTab(tab, "webconsole");
     let selected = false;
-    let onSelect = (event, id) => {
+    const onSelect = (event, id) => {
       if (selected) {
         ok(false, "Got more than one 'select' event");
       } else {
@@ -82,20 +82,20 @@ add_task(function* () {
       }
     };
     toolbox.once("select", onSelect);
-    let p1 = toolbox.selectTool("inspector")
-    let p2 = toolbox.selectTool("inspector");
+    const p1 = toolbox.selectTool("inspector");
+    const p2 = toolbox.selectTool("inspector");
     // Check that both promises don't resolve too early
-    let checkSelectToolResolution = panel => {
+    const checkSelectToolResolution = panel => {
       ok(selected, "selectTool resolves only after 'select' event is fired");
-      let inspector = toolbox.getPanel("inspector");
+      const inspector = toolbox.getPanel("inspector");
       is(panel, inspector, "selecTool resolves to the panel instance");
     };
     p1.then(checkSelectToolResolution);
     p2.then(checkSelectToolResolution);
-    yield p1;
-    yield p2;
+    await p1;
+    await p2;
 
-    yield toolbox.destroy();
+    await toolbox.destroy();
   }
 });
 

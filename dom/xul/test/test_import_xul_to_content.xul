@@ -17,7 +17,7 @@
   <script type="application/javascript">
   <![CDATA[
 
-  Components.utils.import("resource://gre/modules/Services.jsm");
+  ChromeUtils.import("resource://gre/modules/Services.jsm");
 
   SimpleTest.waitForExplicitFinish();
 
@@ -30,7 +30,7 @@
     var msgs = Services.console.getMessageArray();
     for (var i = 0; i < msgs.length; i++) {
       var msg = msgs[i];
-      if (!msg || !(msg instanceof Components.interfaces.nsIScriptError)) {
+      if (!msg || !(msg instanceof Ci.nsIScriptError)) {
         continue;
       }
 

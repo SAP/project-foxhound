@@ -1,6 +1,7 @@
 /* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+/* eslint-disable mozilla/no-arbitrary-setTimeout */
 
 "use strict";
 
@@ -9,15 +10,15 @@
 // still, so we want the AnimationsActor to preserve the corresponding
 // AnimationPlayerActor.
 
-add_task(function* () {
-  let {client, walker, animations} =
-    yield initAnimationsFrontForUrl(MAIN_DOMAIN + "animation.html");
+add_task(async function() {
+  const {target, walker, animations} =
+    await initAnimationsFrontForUrl(MAIN_DOMAIN + "animation.html");
 
   info("Retrieve a non-animated node");
-  let node = yield walker.querySelector(walker.rootNode, ".not-animated");
+  const node = await walker.querySelector(walker.rootNode, ".not-animated");
 
   info("Retrieve the animation player for the node");
-  let players = yield animations.getAnimationPlayersForNode(node);
+  let players = await animations.getAnimationPlayersForNode(node);
   is(players.length, 0, "The node has no animation players");
 
   info("Listen for new animations");
@@ -28,14 +29,14 @@ add_task(function* () {
   animations.on("mutations", onMutations);
 
   info("Add a short animation on the node");
-  yield node.modifyAttributes([
-    {attributeName: "class", newValue: "short-animation"}
+  await node.modifyAttributes([
+    {attributeName: "class", newValue: "short-animation"},
   ]);
 
   info("Wait for longer than the animation's duration");
-  yield wait(2000);
+  await wait(2000);
 
-  players = yield animations.getAnimationPlayersForNode(node);
+  players = await animations.getAnimationPlayersForNode(node);
   is(players.length, 0, "The added animation is surely finished");
 
   is(reportedMutations.length, 1, "Only one mutation was reported");
@@ -43,7 +44,7 @@ add_task(function* () {
 
   animations.off("mutations", onMutations);
 
-  yield client.close();
+  await target.destroy();
   gBrowser.removeCurrentTab();
 });
 

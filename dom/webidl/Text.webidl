@@ -18,4 +18,12 @@ interface Text : CharacterData {
   readonly attribute DOMString wholeText;
 };
 
+partial interface Text {
+  [BinaryName="assignedSlotByMode"]
+  readonly attribute HTMLSlotElement? assignedSlot;
+
+  [ChromeOnly, BinaryName="assignedSlot"]
+  readonly attribute HTMLSlotElement? openOrClosedAssignedSlot;
+};
+
 Text implements GeometryUtils;

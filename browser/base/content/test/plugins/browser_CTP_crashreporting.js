@@ -17,9 +17,7 @@ const PLUGIN_SMALL_PAGE = gTestRoot + "plugin_small.html";
  */
 function convertPropertyBag(aBag) {
   let result = {};
-  let enumerator = aBag.enumerator;
-  while (enumerator.hasMoreElements()) {
-    let { name, value } = enumerator.getNext().QueryInterface(Ci.nsIProperty);
+  for (let { name, value } of aBag.enumerator) {
     if (value instanceof Ci.nsIPropertyBag) {
       value = convertPropertyBag(value);
     }
@@ -28,7 +26,7 @@ function convertPropertyBag(aBag) {
   return result;
 }
 
-add_task(function* setup() {
+add_task(async function setup() {
   setTestPluginEnabledState(Ci.nsIPluginTag.STATE_CLICKTOPLAY, "Test Plug-in");
 
   // The test harness sets MOZ_CRASHREPORTER_NO_REPORT, which disables plugin
@@ -37,7 +35,7 @@ add_task(function* setup() {
   // crashreporter/test/Makefile.in.  Assign its URL to MOZ_CRASHREPORTER_URL,
   // which CrashSubmit.jsm uses as a server override.
   let env = Cc["@mozilla.org/process/environment;1"].
-            getService(Components.interfaces.nsIEnvironment);
+            getService(Ci.nsIEnvironment);
   let noReport = env.get("MOZ_CRASHREPORTER_NO_REPORT");
   let serverURL = env.get("MOZ_CRASHREPORTER_URL");
   env.set("MOZ_CRASHREPORTER_NO_REPORT", "");
@@ -61,21 +59,21 @@ add_task(function* setup() {
  * Test that plugin crash submissions still work properly after
  * click-to-play activation.
  */
-add_task(function*() {
-  yield BrowserTestUtils.withNewTab({
+add_task(async function() {
+  await BrowserTestUtils.withNewTab({
     gBrowser,
     url: PLUGIN_PAGE,
-  }, function* (browser) {
+  }, async function(browser) {
     // Work around for delayed PluginBindingAttached
-    yield promiseUpdatePluginBindings(browser);
+    await promiseUpdatePluginBindings(browser);
 
-    let pluginInfo = yield promiseForPluginInfo("test", browser);
+    let pluginInfo = await promiseForPluginInfo("test", browser);
     ok(!pluginInfo.activated, "Plugin should not be activated");
 
     // Simulate clicking the "Allow Always" button.
     let notification = PopupNotifications.getNotification("click-to-play-plugins", browser);
-    yield promiseForNotificationShown(notification, browser);
-    PopupNotifications.panel.firstChild._primaryButton.click();
+    await promiseForNotificationShown(notification, browser);
+    PopupNotifications.panel.firstElementChild.button.click();
 
     // Prepare a crash report topic observer that only returns when
     // the crash report has been successfully sent.
@@ -85,30 +83,28 @@ add_task(function*() {
     let crashReportPromise = TestUtils.topicObserved("crash-report-status",
                                                      crashReportChecker);
 
-    yield ContentTask.spawn(browser, null, function*() {
+    await ContentTask.spawn(browser, null, async function() {
       let plugin = content.document.getElementById("test");
       plugin.QueryInterface(Ci.nsIObjectLoadingContent);
 
-      yield ContentTaskUtils.waitForCondition(() => {
+      await ContentTaskUtils.waitForCondition(() => {
         return plugin.activated;
       }, "Waited too long for plugin to activate.");
 
       try {
-        Components.utils.waiveXrays(plugin).crash();
+        Cu.waiveXrays(plugin).crash();
       } catch (e) {
       }
 
-      let doc = plugin.ownerDocument;
-
-      let getUI = (anonid) => {
-        return doc.getAnonymousElementByAttribute(plugin, "anonid", anonid);
+      let getUI = (id) => {
+        return plugin.openOrClosedShadowRoot.getElementById(id);
       };
 
       // Now wait until the plugin crash report UI shows itself, which is
       // asynchronous.
       let statusDiv;
 
-      yield ContentTaskUtils.waitForCondition(() => {
+      await ContentTaskUtils.waitForCondition(() => {
         statusDiv = getUI("submitStatus");
         return statusDiv.getAttribute("status") == "please";
       }, "Waited too long for plugin to show crash report UI");
@@ -133,13 +129,14 @@ add_task(function*() {
       getUI("submitButton").click();
 
       // And wait for the parent to say that the crash report was submitted
-      // successfully.
-      yield ContentTaskUtils.waitForCondition(() => {
+      // successfully. This can take time on debug builds.
+      await ContentTaskUtils.waitForCondition(() => {
         return statusDiv.getAttribute("status") == "success";
-      }, "Timed out waiting for plugin binding to be in success state");
+      }, "Timed out waiting for plugin binding to be in success state",
+      100, 200);
     });
 
-    let [subject, ] = yield crashReportPromise;
+    let [subject ] = await crashReportPromise;
 
     ok(subject instanceof Ci.nsIPropertyBag,
        "The crash report subject should be an nsIPropertyBag.");
@@ -149,7 +146,7 @@ add_task(function*() {
 
     // Remove the submitted report file after ensuring it exists.
     let file = Cc["@mozilla.org/file/local;1"]
-                 .createInstance(Ci.nsILocalFile);
+                 .createInstance(Ci.nsIFile);
     file.initWithPath(Services.crashmanager._submittedDumpsDir);
     file.append(crashData.serverCrashID + ".txt");
     ok(file.exists(), "Submitted report file should exist");
@@ -168,15 +165,15 @@ add_task(function*() {
  * Test that plugin crash submissions still work properly after
  * click-to-play with the notification bar.
  */
-add_task(function*() {
-  yield BrowserTestUtils.withNewTab({
+add_task(async function() {
+  await BrowserTestUtils.withNewTab({
     gBrowser,
     url: PLUGIN_SMALL_PAGE,
-  }, function* (browser) {
+  }, async function(browser) {
     // Work around for delayed PluginBindingAttached
-    yield promiseUpdatePluginBindings(browser);
+    await promiseUpdatePluginBindings(browser);
 
-    let pluginInfo = yield promiseForPluginInfo("test", browser);
+    let pluginInfo = await promiseForPluginInfo("test", browser);
     ok(pluginInfo.activated, "Plugin should be activated from previous test");
 
     // Prepare a crash report topic observer that only returns when
@@ -187,21 +184,21 @@ add_task(function*() {
     let crashReportPromise = TestUtils.topicObserved("crash-report-status",
                                                      crashReportChecker);
 
-    yield ContentTask.spawn(browser, null, function*() {
+    await ContentTask.spawn(browser, null, async function() {
       let plugin = content.document.getElementById("test");
       plugin.QueryInterface(Ci.nsIObjectLoadingContent);
 
-      yield ContentTaskUtils.waitForCondition(() => {
+      await ContentTaskUtils.waitForCondition(() => {
         return plugin.activated;
       }, "Waited too long for plugin to activate.");
 
       try {
-        Components.utils.waiveXrays(plugin).crash();
+        Cu.waiveXrays(plugin).crash();
       } catch (e) {}
     });
 
     // Wait for the notification bar to be displayed.
-    let notification = yield waitForNotificationBar("plugin-crashed", browser);
+    let notification = await waitForNotificationBar("plugin-crashed", browser);
 
     // Then click the button to submit the crash report.
     let buttons = notification.querySelectorAll(".notification-button");
@@ -211,7 +208,7 @@ add_task(function*() {
     let submitButton = buttons[1];
     submitButton.click();
 
-    let [subject, ] = yield crashReportPromise;
+    let [subject ] = await crashReportPromise;
 
     ok(subject instanceof Ci.nsIPropertyBag,
        "The crash report subject should be an nsIPropertyBag.");
@@ -221,7 +218,7 @@ add_task(function*() {
 
     // Remove the submitted report file after ensuring it exists.
     let file = Cc["@mozilla.org/file/local;1"]
-                 .createInstance(Ci.nsILocalFile);
+                 .createInstance(Ci.nsIFile);
     file.initWithPath(Services.crashmanager._submittedDumpsDir);
     file.append(crashData.serverCrashID + ".txt");
     ok(file.exists(), "Submitted report file should exist");

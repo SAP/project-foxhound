@@ -1,7 +1,8 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
-* This Source Code Form is subject to the terms of the Mozilla Public
-* License, v. 2.0. If a copy of the MPL was not distributed with this
-* file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef MOZILLA_GFX_TEXTURECLIENTPOOL_H
 #define MOZILLA_GFX_TEXTURECLIENTPOOL_H
@@ -21,11 +22,11 @@ class ISurfaceAllocator;
 class TextureForwarder;
 class TextureReadLock;
 
-class TextureClientAllocator
-{
-protected:
+class TextureClientAllocator {
+ protected:
   virtual ~TextureClientAllocator() {}
-public:
+
+ public:
   NS_INLINE_DECL_REFCOUNTING(TextureClientAllocator)
 
   virtual already_AddRefed<TextureClient> GetTextureClient() = 0;
@@ -39,21 +40,16 @@ public:
   virtual void ReportClientLost() = 0;
 };
 
-class TextureClientPool final : public TextureClientAllocator
-{
-  ~TextureClientPool();
+class TextureClientPool final : public TextureClientAllocator {
+  virtual ~TextureClientPool();
 
-public:
-  TextureClientPool(LayersBackend aBackend,
-                    int32_t aMaxTextureSize,
-                    gfx::SurfaceFormat aFormat,
-                    gfx::IntSize aSize,
-                    TextureFlags aFlags,
-                    uint32_t aShrinkTimeoutMsec,
-                    uint32_t aClearTimeoutMsec,
-                    uint32_t aInitialPoolSize,
-                    uint32_t aPoolUnusedSize,
-                    TextureForwarder* aAllocator);
+ public:
+  TextureClientPool(LayersBackend aBackend, bool aSupportsTextureDirectMapping,
+                    int32_t aMaxTextureSize, gfx::SurfaceFormat aFormat,
+                    gfx::IntSize aSize, TextureFlags aFlags,
+                    uint32_t aShrinkTimeoutMsec, uint32_t aClearTimeoutMsec,
+                    uint32_t aInitialPoolSize, uint32_t aPoolUnusedSize,
+                    TextureForwarder *aAllocator);
 
   /**
    * Gets an allocated TextureClient of size and format that are determined
@@ -94,7 +90,7 @@ public:
    * Report that a client retrieved via GetTextureClient() has become
    * unusable, so that it will no longer be tracked.
    */
-  virtual void ReportClientLost() override;
+  void ReportClientLost() override;
 
   /**
    * Calling this will cause the pool to attempt to relinquish any unused
@@ -108,11 +104,12 @@ public:
   TextureFlags GetFlags() const { return mFlags; }
 
   /**
-   * Clear the pool and put it in a state where it won't recycle any new texture.
+   * Clear the pool and put it in a state where it won't recycle any new
+   * texture.
    */
   void Destroy();
 
-private:
+ private:
   void ReturnUnlockedClients();
 
   /// Allocate a single TextureClient to be returned from the pool.
@@ -157,21 +154,23 @@ private:
   /// existence is always mOutstandingClients + the size of mTextureClients.
   uint32_t mOutstandingClients;
 
-  std::stack<RefPtr<TextureClient> > mTextureClients;
+  std::stack<RefPtr<TextureClient>> mTextureClients;
 
   std::list<RefPtr<TextureClient>> mTextureClientsDeferred;
   RefPtr<nsITimer> mShrinkTimer;
   RefPtr<nsITimer> mClearTimer;
   // This mSurfaceAllocator owns us, so no need to hold a ref to it
-  TextureForwarder* mSurfaceAllocator;
+  TextureForwarder *mSurfaceAllocator;
 
   // Keep track of whether this pool has been destroyed or not. If it has,
   // we won't accept returns of TextureClients anymore, and the refcounting
   // should take care of their destruction.
   bool mDestroyed;
+
+  bool mSupportsTextureDirectMapping;
 };
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla
 
 #endif /* MOZILLA_GFX_TEXTURECLIENTPOOL_H */

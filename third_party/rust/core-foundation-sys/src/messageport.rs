@@ -7,7 +7,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use libc::c_void;
+use std::os::raw::c_void;
 
 use base::{CFAllocatorRef, CFIndex, CFTypeID, Boolean};
 use data::CFDataRef;
@@ -38,7 +38,7 @@ pub type CFMessagePortInvalidationCallBack = Option<
 
 #[repr(C)]
 pub struct __CFMessagePort(c_void);
-pub type CFMessagePortRef = *const __CFMessagePort;
+pub type CFMessagePortRef = *mut __CFMessagePort;
 
 extern {
     /*

@@ -1,8 +1,13 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Components.utils.import("resource://services-sync/bookmark_validator.js");
-Components.utils.import("resource://services-sync/util.js");
+ChromeUtils.import("resource://services-sync/bookmark_validator.js");
+ChromeUtils.import("resource://services-sync/util.js");
+
+function run_test() {
+  do_get_profile();
+  run_next_test();
+}
 
 async function inspectServerRecords(data) {
   let validator = new BookmarkValidator();
@@ -37,8 +42,8 @@ add_task(async function test_isr_cycles() {
   ])).problemData;
 
   equal(c.cycles.length, 1);
-  ok(c.cycles[0].indexOf("A") >= 0);
-  ok(c.cycles[0].indexOf("B") >= 0);
+  ok(c.cycles[0].includes("A"));
+  ok(c.cycles[0].includes("B"));
 });
 
 add_task(async function test_isr_orphansMultiParents() {
@@ -49,9 +54,9 @@ add_task(async function test_isr_orphansMultiParents() {
 
   ])).problemData;
   deepEqual(c.orphans, [{ id: "A", parent: "D" }]);
-  equal(c.multipleParents.length, 1)
-  ok(c.multipleParents[0].parents.indexOf("B") >= 0);
-  ok(c.multipleParents[0].parents.indexOf("C") >= 0);
+  equal(c.multipleParents.length, 1);
+  ok(c.multipleParents[0].parents.includes("B"));
+  ok(c.multipleParents[0].parents.includes("C"));
 });
 
 add_task(async function test_isr_orphansMultiParents2() {
@@ -67,7 +72,7 @@ add_task(async function test_isr_orphansMultiParents2() {
 add_task(async function test_isr_deletedParents() {
   let c = (await inspectServerRecords([
     { id: "A", type: "bookmark", parentid: "B" },
-    { id: "B", type: "folder", parentid: "places", children: ["A"]},
+    { id: "C", type: "folder", parentid: "places", children: ["A"]},
     { id: "B", type: "item", deleted: true},
   ])).problemData;
   deepEqual(c.deletedParents, ["A"]);
@@ -76,9 +81,9 @@ add_task(async function test_isr_deletedParents() {
 add_task(async function test_isr_badChildren() {
   let c = (await inspectServerRecords([
     { id: "A", type: "bookmark", parentid: "places", children: ["B", "C"] },
-    { id: "C", type: "bookmark", parentid: "A" }
+    { id: "C", type: "bookmark", parentid: "A" },
   ])).problemData;
-  deepEqual(c.childrenOnNonFolder, ["A"])
+  deepEqual(c.childrenOnNonFolder, ["A"]);
   deepEqual(c.missingChildren, [{parent: "A", child: "B"}]);
   deepEqual(c.parentNotFolder, ["C"]);
 });
@@ -87,7 +92,7 @@ add_task(async function test_isr_badChildren() {
 add_task(async function test_isr_parentChildMismatches() {
   let c = (await inspectServerRecords([
     { id: "A", type: "folder", parentid: "places", children: [] },
-    { id: "B", type: "bookmark", parentid: "A" }
+    { id: "B", type: "bookmark", parentid: "A" },
   ])).problemData;
   deepEqual(c.parentChildMismatches, [{parent: "A", child: "B"}]);
 });
@@ -96,7 +101,7 @@ add_task(async function test_isr_duplicatesAndMissingIDs() {
   let c = (await inspectServerRecords([
     {id: "A", type: "folder", parentid: "places", children: []},
     {id: "A", type: "folder", parentid: "places", children: []},
-    {type: "folder", parentid: "places", children: []}
+    {type: "folder", parentid: "places", children: []},
   ])).problemData;
   equal(c.missingIDs, 1);
   deepEqual(c.duplicates, ["A"]);
@@ -120,7 +125,7 @@ function getDummyServerAndClient() {
       type: "folder",
       parentName: "",
       title: "foo",
-      children: ["bbbbbbbbbbbb", "cccccccccccc"]
+      children: ["bbbbbbbbbbbb", "cccccccccccc"],
     },
     {
       id: "bbbbbbbbbbbb",
@@ -128,7 +133,7 @@ function getDummyServerAndClient() {
       parentid: "menu",
       parentName: "foo",
       title: "bar",
-      bmkUri: "http://baz.com"
+      bmkUri: "http://baz.com",
     },
     {
       id: "cccccccccccc",
@@ -136,8 +141,8 @@ function getDummyServerAndClient() {
       parentName: "foo",
       title: "",
       type: "query",
-      bmkUri: "place:type=6&sort=14&maxResults=10"
-    }
+      bmkUri: "place:type=6&sort=14&maxResults=10",
+    },
   ];
 
   let client = {
@@ -157,24 +162,18 @@ function getDummyServerAndClient() {
             "title": "bar",
             "id": 1001,
             "type": "text/x-moz-place",
-            "uri": "http://baz.com"
+            "uri": "http://baz.com",
           },
           {
             "guid": "cccccccccccc",
             "title": "",
             "id": 1002,
-            "annos": [{
-              "name": "Places/SmartBookmark",
-              "flags": 0,
-              "expires": 4,
-              "value": "RecentTags"
-            }],
             "type": "text/x-moz-place",
-            "uri": "place:type=6&sort=14&maxResults=10"
-          }
-        ]
-      }
-    ]
+            "uri": "place:type=6&sort=14&maxResults=10",
+          },
+        ],
+      },
+    ],
   };
   return {server, client};
 }
@@ -275,35 +274,13 @@ add_task(async function test_cswc_serverUnexpected() {
     "guid": "dddddddddddd",
     "title": "",
     "id": 2000,
-    "annos": [{
-      "name": "places/excludeFromBackup",
-      "flags": 0,
-      "expires": 4,
-      "value": 1
-    }, {
-      "name": "PlacesOrganizer/OrganizerFolder",
-      "flags": 0,
-      "expires": 4,
-      "value": 7
-    }],
     "type": "text/x-moz-place-container",
     "children": [{
       "guid": "eeeeeeeeeeee",
       "title": "History",
-      "annos": [{
-        "name": "places/excludeFromBackup",
-        "flags": 0,
-        "expires": 4,
-        "value": 1
-      }, {
-        "name": "PlacesOrganizer/OrganizerQuery",
-        "flags": 0,
-        "expires": 4,
-        "value": "History"
-      }],
       "type": "text/x-moz-place",
-      "uri": "place:type=3&sort=4"
-    }]
+      "uri": "place:type=3&sort=4",
+    }],
   });
   server.push({
     id: "dddddddddddd",
@@ -311,14 +288,14 @@ add_task(async function test_cswc_serverUnexpected() {
     parentName: "",
     title: "",
     type: "folder",
-    children: ["eeeeeeeeeeee"]
+    children: ["eeeeeeeeeeee"],
   }, {
     id: "eeeeeeeeeeee",
     parentid: "dddddddddddd",
     parentName: "",
     title: "History",
     type: "query",
-    bmkUri: "place:type=3&sort=4"
+    bmkUri: "place:type=3&sort=4",
   });
 
   let c = (await compareServerWithClient(server, client)).problemData;
@@ -326,6 +303,76 @@ add_task(async function test_cswc_serverUnexpected() {
   equal(c.serverMissing.length, 0);
   equal(c.serverUnexpected.length, 2);
   deepEqual(c.serverUnexpected, ["dddddddddddd", "eeeeeeeeeeee"]);
+});
+
+add_task(async function test_cswc_clientCycles() {
+  await PlacesUtils.bookmarks.insertTree({
+    guid: PlacesUtils.bookmarks.menuGuid,
+    children: [{
+      // A query for the menu, referenced by its local ID instead of
+      // `BOOKMARKS_MENU`. This should be reported as a cycle.
+      guid: "dddddddddddd",
+      url: `place:folder=${PlacesUtils.bookmarksMenuFolderId}`,
+      title: "Bookmarks Menu",
+    }, {
+      // A query that references the menu, but excludes itself, so it can't
+      // form a cycle.
+      guid: "iiiiiiiiiiii",
+      url: `place:folder=BOOKMARKS_MENU&folder=UNFILED_BOOKMARKS&` +
+           `folder=TOOLBAR&queryType=1&sort=12&maxResults=10&` +
+           `excludeQueries=1`,
+      title: "Recently Bookmarked",
+    }],
+  });
+
+  await PlacesUtils.bookmarks.insertTree({
+    guid: PlacesUtils.bookmarks.toolbarGuid,
+    children: [{
+      guid: "eeeeeeeeeeee",
+      type: PlacesUtils.bookmarks.TYPE_FOLDER,
+      children: [{
+        // A query for the toolbar in a subfolder. This should still be reported
+        // as a cycle.
+        guid: "ffffffffffff",
+        url: "place:folder=TOOLBAR&sort=3",
+        title: "Bookmarks Toolbar",
+      }],
+    }],
+  });
+
+  await PlacesUtils.bookmarks.insertTree({
+    guid: PlacesUtils.bookmarks.unfiledGuid,
+    children: [{
+      // A query for the menu. This shouldn't be reported as a cycle, since it
+      // references a different root.
+      guid: "gggggggggggg",
+      url: "place:folder=BOOKMARKS_MENU&sort=5",
+      title: "Bookmarks Menu",
+    }],
+  });
+
+  await PlacesUtils.bookmarks.insertTree({
+    guid: PlacesUtils.bookmarks.mobileGuid,
+    children: [{
+      // A query referencing multiple roots, one of which forms a cycle by
+      // referencing mobile. This is extremely unlikely, but it's cheap to
+      // detect, so we still report it.
+      guid: "hhhhhhhhhhhh",
+      url: "place:folder=TOOLBAR&folder=MOBILE_BOOKMARKS&folder=UNFILED_BOOKMARKS&sort=1",
+      title: "Toolbar, Mobile, Unfiled",
+    }],
+  });
+
+  let clientTree = await PlacesUtils.promiseBookmarksTree("", {
+    includeItemIds: true,
+  });
+
+  let c = (await compareServerWithClient([], clientTree)).problemData;
+  deepEqual(c.clientCycles, [
+    ["menu", "dddddddddddd"],
+    ["toolbar", "eeeeeeeeeeee", "ffffffffffff"],
+    ["mobile", "hhhhhhhhhhhh"],
+  ]);
 });
 
 async function validationPing(server, client, duration) {
@@ -359,7 +406,7 @@ add_task(async function test_telemetry_integration() {
   let bme = ping.engines.find(e => e.name === "bookmarks");
   ok(bme);
   ok(bme.validation);
-  ok(bme.validation.problems)
+  ok(bme.validation.problems);
   equal(bme.validation.checked, server.length);
   equal(bme.validation.took, duration);
   bme.validation.problems.sort((a, b) => String(a.name).localeCompare(b.name));

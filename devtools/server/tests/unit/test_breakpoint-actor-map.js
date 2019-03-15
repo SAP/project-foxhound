@@ -6,7 +6,7 @@
 
 // Test the functionality of the BreakpointActorMap object.
 
-const { BreakpointActorMap } = require("devtools/server/actors/script");
+const { BreakpointActorMap } = require("devtools/server/actors/utils/breakpoint-actor-map");
 
 function run_test() {
   test_get_actor();
@@ -17,164 +17,169 @@ function run_test() {
 }
 
 function test_get_actor() {
-  let bpStore = new BreakpointActorMap();
-  let location = {
-    originalSourceActor: { actor: "actor1" },
-    originalLine: 3
+  const bpStore = new BreakpointActorMap();
+  const location = {
+    generatedSourceActor: { actor: "actor1" },
+    generatedLine: 3,
   };
-  let columnLocation = {
-    originalSourceActor: { actor: "actor2" },
-    originalLine: 5,
-    originalColumn: 15
+  const columnLocation = {
+    generatedSourceActor: { actor: "actor2" },
+    generatedLine: 5,
+    generatedColumn: 15,
   };
 
   // Shouldn't have breakpoint
-  do_check_eq(null, bpStore.getActor(location),
-              "Breakpoint not added and shouldn't exist.");
+  Assert.equal(null, bpStore.getActor(location),
+               "Breakpoint not added and shouldn't exist.");
 
   bpStore.setActor(location, {});
-  do_check_true(!!bpStore.getActor(location),
-                "Breakpoint added but not found in Breakpoint Store.");
+  Assert.ok(!!bpStore.getActor(location),
+            "Breakpoint added but not found in Breakpoint Store.");
 
   bpStore.deleteActor(location);
-  do_check_eq(null, bpStore.getActor(location),
-              "Breakpoint removed but still exists.");
+  Assert.equal(null, bpStore.getActor(location),
+               "Breakpoint removed but still exists.");
 
   // Same checks for breakpoint with a column
-  do_check_eq(null, bpStore.getActor(columnLocation),
-              "Breakpoint with column not added and shouldn't exist.");
+  Assert.equal(null, bpStore.getActor(columnLocation),
+               "Breakpoint with column not added and shouldn't exist.");
 
   bpStore.setActor(columnLocation, {});
-  do_check_true(!!bpStore.getActor(columnLocation),
-                "Breakpoint with column added but not found in Breakpoint Store.");
+  Assert.ok(!!bpStore.getActor(columnLocation),
+            "Breakpoint with column added but not found in Breakpoint Store.");
 
   bpStore.deleteActor(columnLocation);
-  do_check_eq(null, bpStore.getActor(columnLocation),
-              "Breakpoint with column removed but still exists in Breakpoint Store.");
+  Assert.equal(null, bpStore.getActor(columnLocation),
+               "Breakpoint with column removed but still exists in Breakpoint Store.");
 }
 
 function test_set_actor() {
   // Breakpoint with column
-  let bpStore = new BreakpointActorMap();
+  const bpStore = new BreakpointActorMap();
   let location = {
-    originalSourceActor: { actor: "actor1" },
-    originalLine: 10,
-    originalColumn: 9
+    generatedSourceActor: { actor: "actor1" },
+    generatedLine: 10,
+    generatedColumn: 9,
   };
   bpStore.setActor(location, {});
-  do_check_true(!!bpStore.getActor(location),
-                "We should have the column breakpoint we just added");
+  Assert.ok(!!bpStore.getActor(location),
+            "We should have the column breakpoint we just added");
 
   // Breakpoint without column (whole line breakpoint)
   location = {
-    originalSourceActor: { actor: "actor2" },
-    originalLine: 103
+    generatedSourceActor: { actor: "actor2" },
+    generatedLine: 103,
   };
   bpStore.setActor(location, {});
-  do_check_true(!!bpStore.getActor(location),
-                "We should have the whole line breakpoint we just added");
+  Assert.ok(!!bpStore.getActor(location),
+            "We should have the whole line breakpoint we just added");
 }
 
 function test_delete_actor() {
   // Breakpoint with column
-  let bpStore = new BreakpointActorMap();
+  const bpStore = new BreakpointActorMap();
   let location = {
-    originalSourceActor: { actor: "actor1" },
-    originalLine: 10,
-    originalColumn: 9
+    generatedSourceActor: { actor: "actor1" },
+    generatedLine: 10,
+    generatedColumn: 9,
   };
   bpStore.setActor(location, {});
   bpStore.deleteActor(location);
-  do_check_eq(bpStore.getActor(location), null,
-              "We should not have the column breakpoint anymore");
+  Assert.equal(bpStore.getActor(location), null,
+               "We should not have the column breakpoint anymore");
 
   // Breakpoint without column (whole line breakpoint)
   location = {
-    originalSourceActor: { actor: "actor2" },
-    originalLine: 103
+    generatedSourceActor: { actor: "actor2" },
+    generatedLine: 103,
   };
   bpStore.setActor(location, {});
   bpStore.deleteActor(location);
-  do_check_eq(bpStore.getActor(location), null,
-              "We should not have the whole line breakpoint anymore");
+  Assert.equal(bpStore.getActor(location), null,
+               "We should not have the whole line breakpoint anymore");
 }
 
 function test_find_actors() {
-  let bps = [
-    { originalSourceActor: { actor: "actor1" }, originalLine: 10 },
-    { originalSourceActor: { actor: "actor1" }, originalLine: 10, originalColumn: 3 },
-    { originalSourceActor: { actor: "actor1" }, originalLine: 10, originalColumn: 10 },
-    { originalSourceActor: { actor: "actor1" }, originalLine: 23, originalColumn: 89 },
-    { originalSourceActor: { actor: "actor2" }, originalLine: 10, originalColumn: 1 },
-    { originalSourceActor: { actor: "actor2" }, originalLine: 20, originalColumn: 5 },
-    { originalSourceActor: { actor: "actor2" }, originalLine: 30, originalColumn: 34 },
-    { originalSourceActor: { actor: "actor2" }, originalLine: 40, originalColumn: 56 }
+  const bps = [
+    { generatedSourceActor: { actor: "actor1" }, generatedLine: 10 },
+    { generatedSourceActor: { actor: "actor1" }, generatedLine: 10, generatedColumn: 3 },
+    { generatedSourceActor: { actor: "actor1" }, generatedLine: 10, generatedColumn: 10 },
+    { generatedSourceActor: { actor: "actor1" }, generatedLine: 23, generatedColumn: 89 },
+    { generatedSourceActor: { actor: "actor2" }, generatedLine: 10, generatedColumn: 1 },
+    { generatedSourceActor: { actor: "actor2" }, generatedLine: 20, generatedColumn: 5 },
+    { generatedSourceActor: { actor: "actor2" }, generatedLine: 30, generatedColumn: 34 },
+    { generatedSourceActor: { actor: "actor2" }, generatedLine: 40, generatedColumn: 56 },
   ];
 
-  let bpStore = new BreakpointActorMap();
+  const bpStore = new BreakpointActorMap();
 
-  for (let bp of bps) {
+  for (const bp of bps) {
     bpStore.setActor(bp, bp);
   }
 
   // All breakpoints
 
   let bpSet = new Set(bps);
-  for (let bp of bpStore.findActors()) {
+  for (const bp of bpStore.findActors()) {
     bpSet.delete(bp);
   }
-  do_check_eq(bpSet.size, 0,
-              "Should be able to iterate over all breakpoints");
+  Assert.equal(bpSet.size, 0,
+               "Should be able to iterate over all breakpoints");
 
   // Breakpoints by URL
 
-  bpSet = new Set(bps.filter(bp => { return bp.originalSourceActor.actorID === "actor1"; }));
-  for (let bp of bpStore.findActors({ originalSourceActor: { actorID: "actor1" } })) {
+  bpSet = new Set(bps.filter(bp => {
+    return bp.generatedSourceActor.actorID === "actor1";
+  }));
+  for (const bp of bpStore.findActors({ generatedSourceActor: { actorID: "actor1" } })) {
     bpSet.delete(bp);
   }
-  do_check_eq(bpSet.size, 0,
-              "Should be able to filter the iteration by url");
+  Assert.equal(bpSet.size, 0,
+               "Should be able to filter the iteration by url");
 
   // Breakpoints by URL and line
 
-  bpSet = new Set(bps.filter(bp => { return bp.originalSourceActor.actorID === "actor1" && bp.originalLine === 10; }));
+  bpSet = new Set(bps.filter(bp => {
+    return bp.generatedSourceActor.actorID === "actor1" && bp.generatedLine === 10;
+  }));
   let first = true;
-  for (let bp of bpStore.findActors({ originalSourceActor: { actorID: "actor1" }, originalLine: 10 })) {
+  for (const bp of bpStore.findActors({ generatedSourceActor: { actorID: "actor1" },
+                                        generatedLine: 10 })) {
     if (first) {
-      do_check_eq(bp.originalColumn, undefined,
-                  "Should always get the whole line breakpoint first");
+      Assert.equal(bp.generatedColumn, undefined,
+                   "Should always get the whole line breakpoint first");
       first = false;
     } else {
-      do_check_neq(bp.originalColumn, undefined,
-                   "Should not get the whole line breakpoint any time other than first.");
+      Assert.notEqual(bp.generatedColumn, undefined,
+        "Should not get the whole line breakpoint any time other than first.");
     }
     bpSet.delete(bp);
   }
-  do_check_eq(bpSet.size, 0,
-              "Should be able to filter the iteration by url and line");
+  Assert.equal(bpSet.size, 0,
+               "Should be able to filter the iteration by url and line");
 }
 
 function test_duplicate_actors() {
-  let bpStore = new BreakpointActorMap();
+  const bpStore = new BreakpointActorMap();
 
   // Breakpoint with column
   let location = {
-    originalSourceActor: { actorID: "foo-actor" },
-    originalLine: 10,
-    originalColumn: 9
+    generatedSourceActor: { actorID: "foo-actor" },
+    generatedLine: 10,
+    generatedColumn: 9,
   };
   bpStore.setActor(location, {});
   bpStore.setActor(location, {});
-  do_check_eq(bpStore.size, 1, "We should have only 1 column breakpoint");
+  Assert.equal(bpStore.size, 1, "We should have only 1 column breakpoint");
   bpStore.deleteActor(location);
 
   // Breakpoint without column (whole line breakpoint)
   location = {
-    originalSourceActor: { actorID: "foo-actor" },
-    originalLine: 15
+    generatedSourceActor: { actorID: "foo-actor" },
+    generatedLine: 15,
   };
   bpStore.setActor(location, {});
   bpStore.setActor(location, {});
-  do_check_eq(bpStore.size, 1, "We should have only 1 whole line breakpoint");
+  Assert.equal(bpStore.size, 1, "We should have only 1 whole line breakpoint");
   bpStore.deleteActor(location);
 }

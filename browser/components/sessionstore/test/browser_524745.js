@@ -10,10 +10,10 @@ function test() {
 
   waitForExplicitFinish();
 
-  whenNewWindowLoaded({ private: false }, function (window_B) {
+  whenNewWindowLoaded({ private: false }, function(window_B) {
     waitForFocus(function() {
       // Add identifying information to window_B
-      ss.setWindowValue(window_B, uniqKey, uniqVal);
+      ss.setCustomWindowValue(window_B, uniqKey, uniqVal);
       let state = JSON.parse(ss.getBrowserState());
       let selectedWindow = state.windows[state.selectedWindow - 1];
       is(selectedWindow.extData && selectedWindow.extData[uniqKey], uniqVal,

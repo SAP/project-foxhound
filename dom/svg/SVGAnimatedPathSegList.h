@@ -9,18 +9,19 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/SMILAttr.h"
+#include "mozilla/UniquePtr.h"
 #include "nsAutoPtr.h"
-#include "nsISMILAttr.h"
 #include "SVGPathData.h"
-
-class nsSMILValue;
-class nsSVGElement;
 
 namespace mozilla {
 
+class SMILValue;
+
 namespace dom {
 class SVGAnimationElement;
-} // namespace dom
+class SVGElement;
+}  // namespace dom
 
 /**
  * Class SVGAnimatedPathSegList
@@ -37,13 +38,12 @@ class SVGAnimationElement;
  * DOMSVGPathSegList::InternalListWillChangeTo) and frees consumers from having
  * to know or worry about wrappers (or forget about them!) for the most part.
  */
-class SVGAnimatedPathSegList final
-{
+class SVGAnimatedPathSegList final {
   // friends so that they can get write access to mBaseVal and mAnimVal
   friend class DOMSVGPathSeg;
   friend class DOMSVGPathSegList;
 
-public:
+ public:
   SVGAnimatedPathSegList() {}
 
   /**
@@ -52,9 +52,7 @@ public:
    * DOMSVGPathSegList::InternalListWillChangeTo), this method returns a const
    * reference. Only our friend classes may get mutable references to mBaseVal.
    */
-  const SVGPathData& GetBaseValue() const {
-    return mBaseVal;
-  }
+  const SVGPathData& GetBaseValue() const { return mBaseVal; }
 
   nsresult SetBaseValueString(const nsAString& aValue);
 
@@ -67,33 +65,29 @@ public:
     return mAnimVal ? *mAnimVal : mBaseVal;
   }
 
-  nsresult SetAnimValue(const SVGPathData& aValue,
-                        nsSVGElement *aElement);
+  nsresult SetAnimValue(const SVGPathData& aValue, dom::SVGElement* aElement);
 
-  void ClearAnimValue(nsSVGElement *aElement);
+  void ClearAnimValue(dom::SVGElement* aElement);
+
+  /**
+   * Empty paths are not rendered.
+   */
+  bool IsRendered() const;
 
   /**
    * Needed for correct DOM wrapper construction since GetAnimValue may
    * actually return the baseVal!
    */
-  void *GetBaseValKey() const {
-    return (void*)&mBaseVal;
-  }
-  void *GetAnimValKey() const {
-    return (void*)&mAnimVal;
-  }
-  
-  bool IsAnimating() const {
-    return !!mAnimVal;
-  }
+  void* GetBaseValKey() const { return (void*)&mBaseVal; }
+  void* GetAnimValKey() const { return (void*)&mAnimVal; }
 
-  /// Callers own the returned nsISMILAttr
-  nsISMILAttr* ToSMILAttr(nsSVGElement* aElement);
+  bool IsAnimating() const { return !!mAnimVal; }
+
+  UniquePtr<SMILAttr> ToSMILAttr(dom::SVGElement* aElement);
 
   size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const;
 
-private:
-
+ private:
   // mAnimVal is a pointer to allow us to determine if we're being animated or
   // not. Making it a non-pointer member and using mAnimVal.IsEmpty() to check
   // if we're animating is not an option, since that would break animation *to*
@@ -102,32 +96,28 @@ private:
   SVGPathData mBaseVal;
   nsAutoPtr<SVGPathData> mAnimVal;
 
-  struct SMILAnimatedPathSegList : public nsISMILAttr
-  {
-  public:
+  struct SMILAnimatedPathSegList : public SMILAttr {
+   public:
     SMILAnimatedPathSegList(SVGAnimatedPathSegList* aVal,
-                            nsSVGElement* aElement)
-      : mVal(aVal)
-      , mElement(aElement)
-    {}
+                            dom::SVGElement* aElement)
+        : mVal(aVal), mElement(aElement) {}
 
-    // These will stay alive because a nsISMILAttr only lives as long
+    // These will stay alive because a SMILAttr only lives as long
     // as the Compositing step, and DOM elements don't get a chance to
     // die during that.
-    SVGAnimatedPathSegList *mVal;
-    nsSVGElement *mElement;
+    SVGAnimatedPathSegList* mVal;
+    dom::SVGElement* mElement;
 
-    // nsISMILAttr methods
-    virtual nsresult ValueFromString(const nsAString& aStr,
-                                     const dom::SVGAnimationElement* aSrcElement,
-                                     nsSMILValue& aValue,
-                                     bool& aPreventCachingOfSandwich) const override;
-    virtual nsSMILValue GetBaseValue() const override;
+    // SMILAttr methods
+    virtual nsresult ValueFromString(
+        const nsAString& aStr, const dom::SVGAnimationElement* aSrcElement,
+        SMILValue& aValue, bool& aPreventCachingOfSandwich) const override;
+    virtual SMILValue GetBaseValue() const override;
     virtual void ClearAnimValue() override;
-    virtual nsresult SetAnimValue(const nsSMILValue& aValue) override;
+    virtual nsresult SetAnimValue(const SMILValue& aValue) override;
   };
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // MOZILLA_SVGANIMATEDPATHSEGLIST_H__
+#endif  // MOZILLA_SVGANIMATEDPATHSEGLIST_H__

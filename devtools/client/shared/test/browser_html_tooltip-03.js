@@ -5,109 +5,42 @@
 "use strict";
 
 /**
- * Test the HTMLTooltip autofocus configuration option.
+ * This is the sanity test for the HTMLTooltip focus
  */
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
-const TEST_URI = `data:text/xml;charset=UTF-8,<?xml version="1.0"?>
-  <?xml-stylesheet href="chrome://global/skin/global.css"?>
-  <?xml-stylesheet href="chrome://devtools/skin/tooltips.css"?>
-  <window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
-   title="Tooltip test">
-    <vbox flex="1">
-      <hbox id="box1" flex="1">
-        <textbox></textbox>
-      </hbox>
-      <hbox id="box2" flex="1">test2</hbox>
-      <hbox id="box3" flex="1">
-        <textbox id="box3-input"></textbox>
-      </hbox>
-      <hbox id="box4" flex="1">
-        <textbox id="box4-input"></textbox>
-      </hbox>
-    </vbox>
-  </window>`;
+const TEST_URI = CHROME_URL_ROOT + "doc_html_tooltip-03.xul";
 
 const {HTMLTooltip} = require("devtools/client/shared/widgets/tooltip/HTMLTooltip");
 loadHelperScript("helper_html_tooltip.js");
 
 let useXulWrapper;
 
-add_task(function* () {
-  yield addTab("about:blank");
-  let [, , doc] = yield createHost("bottom", TEST_URI);
+add_task(async function() {
+  await addTab("about:blank");
+  const [, , doc] = await createHost("bottom", TEST_URI);
 
   info("Run tests for a Tooltip without using a XUL panel");
   useXulWrapper = false;
-  yield runTests(doc);
+  await runTests(doc);
 
   info("Run tests for a Tooltip with a XUL panel");
   useXulWrapper = true;
-  yield runTests(doc);
+  await runTests(doc);
 });
 
-function* runTests(doc) {
-  yield testNoAutoFocus(doc);
-  yield testAutoFocus(doc);
-  yield testAutoFocusPreservesFocusChange(doc);
-}
-
-function* testNoAutoFocus(doc) {
-  yield focusNode(doc, "#box4-input");
+async function runTests(doc) {
+  await focusNode(doc, "#box4-input");
   ok(doc.activeElement.closest("#box4-input"), "Focus is in the #box4-input");
 
-  info("Test a tooltip without autofocus will not take focus");
-  let tooltip = yield createTooltip(doc, false);
+  info("Test a tooltip will not take focus");
+  const tooltip = await createTooltip(doc);
 
-  yield showTooltip(tooltip, doc.getElementById("box1"));
+  await showTooltip(tooltip, doc.getElementById("box1"));
   ok(doc.activeElement.closest("#box4-input"), "Focus is still in the #box4-input");
 
-  yield hideTooltip(tooltip);
-  yield blurNode(doc, "#box4-input");
-
-  tooltip.destroy();
-}
-
-function* testAutoFocus(doc) {
-  yield focusNode(doc, "#box4-input");
-  ok(doc.activeElement.closest("#box4-input"), "Focus is in the #box4-input");
-
-  info("Test autofocus tooltip takes focus when displayed, " +
-    "and restores the focus when hidden");
-  let tooltip = yield createTooltip(doc, true);
-
-  yield showTooltip(tooltip, doc.getElementById("box1"));
-  ok(doc.activeElement.closest(".tooltip-content"), "Focus is in the tooltip");
-
-  yield hideTooltip(tooltip);
-  ok(doc.activeElement.closest("#box4-input"), "Focus is in the #box4-input");
-
-  info("Blur the textbox before moving to the next test to reset the state.");
-  yield blurNode(doc, "#box4-input");
-
-  tooltip.destroy();
-}
-
-function* testAutoFocusPreservesFocusChange(doc) {
-  yield focusNode(doc, "#box4-input");
-  ok(doc.activeElement.closest("#box4-input"), "Focus is still in the #box3-input");
-
-  info("Test autofocus tooltip takes focus when displayed, " +
-    "but does not try to restore the active element if it is not focused when hidden");
-  let tooltip = yield createTooltip(doc, true);
-
-  yield showTooltip(tooltip, doc.getElementById("box1"));
-  ok(doc.activeElement.closest(".tooltip-content"), "Focus is in the tooltip");
-
-  info("Move the focus to #box3-input while the tooltip is displayed");
-  yield focusNode(doc, "#box3-input");
-  ok(doc.activeElement.closest("#box3-input"), "Focus moved to the #box3-input");
-
-  yield hideTooltip(tooltip);
-  ok(doc.activeElement.closest("#box3-input"), "Focus is still in the #box3-input");
-
-  info("Blur the textbox before moving to the next test to reset the state.");
-  yield blurNode(doc, "#box3-input");
+  await hideTooltip(tooltip);
+  await blurNode(doc, "#box4-input");
 
   tooltip.destroy();
 }
@@ -117,8 +50,8 @@ function* testAutoFocusPreservesFocusChange(doc) {
  * a promise that will resolve when receiving the focus event on the node.
  */
 function focusNode(doc, selector) {
-  let node = doc.querySelector(selector);
-  let onFocus = once(node, "focus");
+  const node = doc.querySelector(selector);
+  const onFocus = once(node, "focus");
   node.focus();
   return onFocus;
 }
@@ -128,28 +61,31 @@ function focusNode(doc, selector) {
  * a promise that will resolve when receiving the blur event on the node.
  */
 function blurNode(doc, selector) {
-  let node = doc.querySelector(selector);
-  let onBlur = once(node, "blur");
+  const node = doc.querySelector(selector);
+  const onBlur = once(node, "blur");
   node.blur();
   return onBlur;
 }
 
 /**
- * Create an HTMLTooltip instance with the provided autofocus setting.
+ * Create an HTMLTooltip instance.
  *
  * @param {Document} doc
  *        Document in which the tooltip should be created
- * @param {Boolean} autofocus
  * @return {Promise} promise that will resolve the HTMLTooltip instance created when the
  *         tooltip content will be ready.
  */
-function* createTooltip(doc, autofocus) {
-  let tooltip = new HTMLTooltip(doc, {autofocus, useXulWrapper});
-  let div = doc.createElementNS(HTML_NS, "div");
+function createTooltip(doc) {
+  const tooltip = new HTMLTooltip(doc, {useXulWrapper});
+  const div = doc.createElementNS(HTML_NS, "div");
   div.classList.add("tooltip-content");
   div.style.height = "50px";
-  div.innerHTML = '<input type="text"></input>';
 
-  tooltip.setContent(div, {width: 150, height: 50});
+  const input = doc.createElementNS(HTML_NS, "input");
+  input.setAttribute("type", "text");
+  div.appendChild(input);
+
+  tooltip.panel.appendChild(div);
+  tooltip.setContentSize({width: 150, height: 50});
   return tooltip;
 }

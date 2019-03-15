@@ -20,11 +20,12 @@ class TlsRecordHeader;
 class AeadCipher {
  public:
   AeadCipher(CK_MECHANISM_TYPE mech) : mech_(mech), key_(nullptr) {}
-  ~AeadCipher();
+  virtual ~AeadCipher();
 
   bool Init(PK11SymKey *key, const uint8_t *iv);
-  virtual bool Aead(bool decrypt, uint64_t seq, const uint8_t *in, size_t inlen,
-                    uint8_t *out, size_t *outlen, size_t maxlen) = 0;
+  virtual bool Aead(bool decrypt, const uint8_t *hdr, size_t hdr_len,
+                    uint64_t seq, const uint8_t *in, size_t inlen, uint8_t *out,
+                    size_t *outlen, size_t maxlen) = 0;
 
  protected:
   void FormatNonce(uint64_t seq, uint8_t *nonce);
@@ -42,8 +43,9 @@ class AeadCipherChacha20Poly1305 : public AeadCipher {
   AeadCipherChacha20Poly1305() : AeadCipher(CKM_NSS_CHACHA20_POLY1305) {}
 
  protected:
-  bool Aead(bool decrypt, uint64_t seq, const uint8_t *in, size_t inlen,
-            uint8_t *out, size_t *outlen, size_t maxlen);
+  bool Aead(bool decrypt, const uint8_t *hdr, size_t hdr_len, uint64_t seq,
+            const uint8_t *in, size_t inlen, uint8_t *out, size_t *outlen,
+            size_t maxlen);
 };
 
 class AeadCipherAesGcm : public AeadCipher {
@@ -51,23 +53,27 @@ class AeadCipherAesGcm : public AeadCipher {
   AeadCipherAesGcm() : AeadCipher(CKM_AES_GCM) {}
 
  protected:
-  bool Aead(bool decrypt, uint64_t seq, const uint8_t *in, size_t inlen,
-            uint8_t *out, size_t *outlen, size_t maxlen);
+  bool Aead(bool decrypt, const uint8_t *hdr, size_t hdr_len, uint64_t seq,
+            const uint8_t *in, size_t inlen, uint8_t *out, size_t *outlen,
+            size_t maxlen);
 };
 
 // Our analog of ssl3CipherSpec
 class TlsCipherSpec {
  public:
-  TlsCipherSpec() : aead_() {}
+  TlsCipherSpec() : epoch_(0), aead_() {}
 
-  bool Init(SSLCipherAlgorithm cipher, PK11SymKey *key, const uint8_t *iv);
+  bool Init(uint16_t epoch, SSLCipherAlgorithm cipher, PK11SymKey *key,
+            const uint8_t *iv);
 
   bool Protect(const TlsRecordHeader &header, const DataBuffer &plaintext,
                DataBuffer *ciphertext);
   bool Unprotect(const TlsRecordHeader &header, const DataBuffer &ciphertext,
                  DataBuffer *plaintext);
+  uint16_t epoch() const { return epoch_; }
 
  private:
+  uint16_t epoch_;
   std::unique_ptr<AeadCipher> aead_;
 };
 

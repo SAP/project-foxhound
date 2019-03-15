@@ -6,11 +6,13 @@
 
 #include "AddonManagerWebAPI.h"
 
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/dom/Navigator.h"
 #include "mozilla/dom/NavigatorBinding.h"
 
 #include "mozilla/Preferences.h"
 #include "nsGlobalWindow.h"
+#include "xpcpublic.h"
 
 #include "nsIDocShell.h"
 #include "nsIScriptObjectPrincipal.h"
@@ -18,27 +20,18 @@
 namespace mozilla {
 using namespace mozilla::dom;
 
-static bool
-IsValidHost(const nsACString& host) {
-  // This is ugly, but Preferences.h doesn't have support
-  // for default prefs or locked prefs
-  nsCOMPtr<nsIPrefService> prefService (do_GetService(NS_PREFSERVICE_CONTRACTID));
-  nsCOMPtr<nsIPrefBranch> prefs;
-  if (prefService) {
-    prefService->GetDefaultBranch(nullptr, getter_AddRefs(prefs));
-    bool isEnabled;
-    if (NS_SUCCEEDED(prefs->GetBoolPref("xpinstall.enabled", &isEnabled)) && !isEnabled) {
-      bool isLocked;
-      prefs->PrefIsLocked("xpinstall.enabled", &isLocked);
-      if (isLocked) {
-        return false;
-      }
-    }
+static bool IsValidHost(const nsACString& host) {
+  // This hidden pref allows users to disable mozAddonManager entirely if they
+  // want for fingerprinting resistance. Someone like Tor browser will use this
+  // pref.
+  if (Preferences::GetBool(
+          "privacy.resistFingerprinting.block_mozAddonManager")) {
+    return false;
   }
 
-  if (host.Equals("addons.mozilla.org") ||
-      host.Equals("discovery.addons.mozilla.org") ||
-      host.Equals("testpilot.firefox.com")) {
+  if (host.EqualsLiteral("addons.mozilla.org") ||
+      host.EqualsLiteral("discovery.addons.mozilla.org") ||
+      host.EqualsLiteral("testpilot.firefox.com")) {
     return true;
   }
 
@@ -60,9 +53,7 @@ IsValidHost(const nsACString& host) {
 
 // Checks if the given uri is secure and matches one of the hosts allowed to
 // access the API.
-bool
-AddonManagerWebAPI::IsValidSite(nsIURI* uri)
-{
+bool AddonManagerWebAPI::IsValidSite(nsIURI* uri) {
   if (!uri) {
     return false;
   }
@@ -70,7 +61,10 @@ AddonManagerWebAPI::IsValidSite(nsIURI* uri)
   bool isSecure;
   nsresult rv = uri->SchemeIs("https", &isSecure);
   if (NS_FAILED(rv) || !isSecure) {
-    return false;
+    if (!(xpc::IsInAutomation() &&
+          Preferences::GetBool("extensions.webapi.testing.http", false))) {
+      return false;
+    }
   }
 
   nsAutoCString host;
@@ -82,10 +76,9 @@ AddonManagerWebAPI::IsValidSite(nsIURI* uri)
   return IsValidHost(host);
 }
 
-bool
-AddonManagerWebAPI::IsAPIEnabled(JSContext* cx, JSObject* obj)
-{
-  nsGlobalWindow* global = xpc::WindowGlobalOrNull(obj);
+bool AddonManagerWebAPI::IsAPIEnabled(JSContext* aCx, JSObject* aGlobal) {
+  MOZ_DIAGNOSTIC_ASSERT(JS_IsGlobalObject(aGlobal));
+  nsGlobalWindowInner* global = xpc::WindowOrNull(aGlobal);
   if (!global) {
     return false;
   }
@@ -110,7 +103,7 @@ AddonManagerWebAPI::IsAPIEnabled(JSContext* cx, JSObject* obj)
 
     // Reaching a window with a system principal means we have reached
     // privileged UI of some kind so stop at this point and allow access.
-    if (principal->GetIsSystemPrincipal()) {
+    if (principal->IsSystemPrincipal()) {
       return true;
     }
 
@@ -138,7 +131,7 @@ AddonManagerWebAPI::IsAPIEnabled(JSContext* cx, JSObject* obj)
       return true;
     }
 
-    nsIDocument* doc = win->GetDoc();
+    Document* doc = win->GetDoc();
     if (!doc) {
       return false;
     }
@@ -149,7 +142,6 @@ AddonManagerWebAPI::IsAPIEnabled(JSContext* cx, JSObject* obj)
       return false;
     }
 
-
     win = doc->GetInnerWindow();
   }
 
@@ -159,13 +151,11 @@ AddonManagerWebAPI::IsAPIEnabled(JSContext* cx, JSObject* obj)
 
 namespace dom {
 
-bool
-AddonManagerPermissions::IsHostPermitted(const GlobalObject& /*unused*/, const nsAString& host)
-{
+bool AddonManagerPermissions::IsHostPermitted(const GlobalObject& /*unused*/,
+                                              const nsAString& host) {
   return IsValidHost(NS_ConvertUTF16toUTF8(host));
 }
 
-} // namespace mozilla::dom
+}  // namespace dom
 
-
-} // namespace mozilla
+}  // namespace mozilla

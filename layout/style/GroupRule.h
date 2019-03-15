@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,13 +14,10 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/IncrementalClearCOMRuleArray.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/ServoCSSRuleList.h"
 #include "mozilla/css/Rule.h"
 #include "nsCycleCollectionParticipant.h"
-
-class nsPresContext;
-class nsMediaQueryResultCacheKey;
 
 namespace mozilla {
 
@@ -27,95 +25,71 @@ class StyleSheet;
 
 namespace dom {
 class CSSRuleList;
-} // namespace dom
+}  // namespace dom
 
 namespace css {
 
-class GroupRuleRuleList;
-
 // inherits from Rule so it can be shared between
 // MediaRule and DocumentRule
-class GroupRule : public Rule
-{
-protected:
-  GroupRule(uint32_t aLineNumber, uint32_t aColumnNumber);
-  GroupRule(const GroupRule& aCopy);
+class GroupRule : public Rule {
+ protected:
+  GroupRule(already_AddRefed<ServoCssRules> aRules, StyleSheet* aSheet,
+            Rule* aParentRule, uint32_t aLineNumber, uint32_t aColumnNumber);
+  GroupRule(const GroupRule& aCopy) = delete;
   virtual ~GroupRule();
-public:
 
+ public:
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(GroupRule, Rule)
   NS_DECL_ISUPPORTS_INHERITED
   virtual bool IsCCLeaf() const override;
 
 #ifdef DEBUG
-  virtual void List(FILE* out = stdout, int32_t aIndent = 0) const override;
+  void List(FILE* out = stdout, int32_t aIndent = 0) const override;
 #endif
-  virtual void SetStyleSheet(StyleSheet* aSheet) override;
+  void DropSheetReference() override;
 
-public:
-  void AppendStyleRule(Rule* aRule);
+ public:
+  int32_t StyleRuleCount() const { return mRuleList->Length(); }
 
-  int32_t StyleRuleCount() const { return mRules.Count(); }
-  Rule* GetStyleRuleAt(int32_t aIndex) const;
-
-  typedef bool (*RuleEnumFunc)(Rule* aElement, void* aData);
-  bool EnumerateRulesForwards(RuleEnumFunc aFunc, void * aData) const;
+  Rule* GetStyleRuleAt(int32_t aIndex) const {
+    return mRuleList->GetRule(aIndex);
+  }
 
   /*
-   * The next three methods should never be called unless you have first
-   * called WillDirty() on the parent stylesheet.  After they are
-   * called, DidDirty() needs to be called on the sheet.
+   * The next method should never be called unless you have first called
+   * WillDirty() on the parent stylesheet.
    */
-  nsresult DeleteStyleRuleAt(uint32_t aIndex);
-  nsresult InsertStyleRuleAt(uint32_t aIndex, Rule* aRule);
-
-  virtual bool UseForPresentation(nsPresContext* aPresContext,
-                                    nsMediaQueryResultCacheKey& aKey) = 0;
+  nsresult DeleteStyleRuleAt(uint32_t aIndex) {
+    return mRuleList->DeleteRule(aIndex);
+  }
 
   // non-virtual -- it is only called by subclasses
   size_t SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
-  virtual size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const override = 0;
+  virtual size_t SizeOfIncludingThis(
+      mozilla::MallocSizeOf aMallocSizeOf) const override = 0;
 
   // WebIDL API
-  dom::CSSRuleList* CssRules();
+  dom::CSSRuleList* CssRules() { return mRuleList; }
   uint32_t InsertRule(const nsAString& aRule, uint32_t aIndex,
                       ErrorResult& aRv);
   void DeleteRule(uint32_t aIndex, ErrorResult& aRv);
 
-protected:
-  // to help implement nsIDOMCSSRule
-  void AppendRulesToCssText(nsAString& aCssText) const;
-
-  // to implement common methods on nsIDOMCSSMediaRule and
-  // nsIDOMCSSMozDocumentRule
-  nsresult GetCssRules(nsIDOMCSSRuleList* *aRuleList);
-  nsresult InsertRule(const nsAString & aRule, uint32_t aIndex,
-                      uint32_t* _retval);
-  nsresult DeleteRule(uint32_t aIndex);
-
-  IncrementalClearCOMRuleArray mRules;
-  RefPtr<GroupRuleRuleList> mRuleCollection; // lazily constructed
+ private:
+  RefPtr<ServoCSSRuleList> mRuleList;
 };
 
 // Implementation of WebIDL CSSConditionRule.
-class ConditionRule : public GroupRule
-{
-protected:
-  ConditionRule(uint32_t aLineNumber, uint32_t aColumnNumber);
-  ConditionRule(const ConditionRule& aCopy);
-  virtual ~ConditionRule();
+class ConditionRule : public GroupRule {
+ protected:
+  using GroupRule::GroupRule;
 
-public:
-
-  // GetConditionText signature matches nsIDOMCSSConditionRule, so subclasses
-  // can implement this easily.  The implementations should never return
-  // anything other than NS_OK.
-  NS_IMETHOD GetConditionText(nsAString& aConditionText) = 0;
+ public:
+  virtual void GetConditionText(nsAString& aConditionText) = 0;
   virtual void SetConditionText(const nsAString& aConditionText,
                                 ErrorResult& aRv) = 0;
 };
 
-} // namespace css
-} // namespace mozilla
+}  // namespace css
+}  // namespace mozilla
 
 #endif /* mozilla_css_GroupRule_h__ */

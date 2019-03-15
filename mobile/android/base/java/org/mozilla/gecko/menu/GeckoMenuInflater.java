@@ -6,7 +6,6 @@ package org.mozilla.gecko.menu;
 
 import java.io.IOException;
 
-import org.mozilla.gecko.AppConstants.Versions;
 import org.mozilla.gecko.R;
 import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
@@ -14,6 +13,7 @@ import org.xmlpull.v1.XmlPullParserException;
 import android.content.Context;
 import android.content.res.TypedArray;
 import android.content.res.XmlResourceParser;
+import android.support.annotation.XmlRes;
 import android.util.AttributeSet;
 import android.util.Xml;
 import android.view.InflateException;
@@ -30,7 +30,7 @@ public class GeckoMenuInflater extends MenuInflater {
     private final Context mContext;
 
     // Private class to hold the parsed menu item.
-    private class ParsedItem {
+    private static final class ParsedItem {
         public int id;
         public int order;
         public CharSequence title;
@@ -41,6 +41,7 @@ public class GeckoMenuInflater extends MenuInflater {
         public boolean enabled;
         public int showAsAction;
         public boolean hasSubMenu;
+        public int itemType;
     }
 
     public GeckoMenuInflater(Context context) {
@@ -49,7 +50,7 @@ public class GeckoMenuInflater extends MenuInflater {
     }
 
     @Override
-    public void inflate(int menuRes, Menu menu) {
+    public void inflate(@XmlRes int menuRes, Menu menu) {
 
         // This does not check for a well-formed XML.
 
@@ -131,6 +132,7 @@ public class GeckoMenuInflater extends MenuInflater {
         item.hasSubMenu = false;
         item.iconRes = a.getResourceId(R.styleable.MenuItem_android_icon, 0);
         item.showAsAction = a.getInt(R.styleable.MenuItem_android_showAsAction, 0);
+        item.itemType = a.getInt(R.styleable.MenuItem_itemType, GeckoMenuItem.ITEM_TYPE_DEFAULT);
 
         a.recycle();
     }
@@ -144,6 +146,7 @@ public class GeckoMenuInflater extends MenuInflater {
 
         if (geckoItem != null) {
             geckoItem.stopDispatchingChanges();
+            geckoItem.setItemType(item.itemType);
         }
 
         menuItem.setChecked(item.checked)

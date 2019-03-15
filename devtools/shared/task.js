@@ -87,7 +87,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //// Globals
 
-const Promise = require("promise");
 const defer = require("devtools/shared/defer");
 
 // The following error types are considered programmer errors, which should be
@@ -112,7 +111,7 @@ var gMaintainStack = false;
  * @return Iterator<string>
  */
 function* linesOf(string) {
-  let reLine = /([^\r\n])+/g;
+  const reLine = /([^\r\n])+/g;
   let match;
   while ((match = reLine.exec(string))) {
     yield [match[0], match.index];
@@ -157,7 +156,7 @@ var Task = {
    * @return A promise object where you can register completion callbacks to be
    *         called when the task terminates.
    */
-  spawn: function (task) {
+  spawn: function(task) {
     return createAsyncFunction(task)();
   },
 
@@ -199,7 +198,7 @@ var Task = {
    *
    * @return A function that starts the task function and returns its promise.
    */
-  async: function (task) {
+  async: function(task) {
     if (typeof (task) != "function") {
       throw new TypeError("task argument must be a function");
     }
@@ -214,13 +213,13 @@ var Task = {
    *
    * Example: throw new Task.Result("Value");
    */
-  Result: function (value) {
+  Result: function(value) {
     this.value = value;
-  }
+  },
 };
 
 function createAsyncFunction(task) {
-  let asyncFunction = function () {
+  const asyncFunction = function() {
     let result = task;
     if (task && typeof (task) == "function") {
       if (task.isAsyncFunction) {
@@ -302,13 +301,13 @@ TaskImpl.prototype = {
    * @param sendValue
    *        Resolution result or rejection exception, if any.
    */
-  _run: function (sendResolved, sendValue) {
+  _run: function(sendResolved, sendValue) {
     try {
       gCurrentTask = this;
 
       if (this._isStarGenerator) {
         try {
-          let result = sendResolved ? this._iterator.next(sendValue)
+          const result = sendResolved ? this._iterator.next(sendValue)
                                     : this._iterator.throw(sendValue);
 
           if (result.done) {
@@ -324,7 +323,7 @@ TaskImpl.prototype = {
         }
       } else {
         try {
-          let yielded = sendResolved ? this._iterator.send(sendValue)
+          const yielded = sendResolved ? this._iterator.send(sendValue)
                                      : this._iterator.throw(sendValue);
           this._handleResultValue(yielded);
         } catch (ex) {
@@ -372,7 +371,7 @@ TaskImpl.prototype = {
    * @param value
    *        The yielded value to handle.
    */
-  _handleResultValue: function (value) {
+  _handleResultValue: function(value) {
     // If our task yielded an iterator resulting from calling another
     // generator function, automatically spawn a task from it, effectively
     // turning it into a promise that is fulfilled on task completion.
@@ -399,7 +398,7 @@ TaskImpl.prototype = {
    * @param exception
    *        The uncaught exception to handle.
    */
-  _handleException: function (exception) {
+  _handleException: function(exception) {
     gCurrentTask = this;
 
     if (exception && typeof exception == "object" && "stack" in exception) {
@@ -410,7 +409,7 @@ TaskImpl.prototype = {
           typeof stack == "string") {
         // Rewrite the stack for more readability.
 
-        let bottomStack = this._stack;
+        const bottomStack = this._stack;
 
         stack = Task.Debugging.generateReadableStack(stack);
 
@@ -424,7 +423,7 @@ TaskImpl.prototype = {
       }
 
       if ("name" in exception &&
-          ERRORS_TO_REPORT.indexOf(exception.name) != -1) {
+          ERRORS_TO_REPORT.includes(exception.name)) {
         // We suspect that the exception is a programmer error, so we now
         // display it using dump().  Note that we do not use Cu.reportError as
         // we assume that this is a programming error, so we do not want end
@@ -445,13 +444,13 @@ TaskImpl.prototype = {
   get callerStack() {
     // Cut `this._stack` at the last line of the first block that
     // contains task.js, keep the tail.
-    for (let [line, index] of linesOf(this._stack || "")) {
-      if (line.indexOf("/task.js:") == -1) {
+    for (const [line, index] of linesOf(this._stack || "")) {
+      if (!line.includes("/task.js:")) {
         return this._stack.substring(index);
       }
     }
     return "";
-  }
+  },
 };
 
 Task.Debugging = {
@@ -487,15 +486,15 @@ Task.Debugging = {
    * @param {string} topStack The stack provided by the error.
    * @param {string=} prefix Optionally, a prefix for each line.
    */
-  generateReadableStack: function (topStack, prefix = "") {
+  generateReadableStack: function(topStack, prefix = "") {
     if (!gCurrentTask) {
       return topStack;
     }
 
     // Cut `topStack` at the first line that contains task.js, keep the head.
-    let lines = [];
-    for (let [line] of linesOf(topStack)) {
-      if (line.indexOf("/task.js:") != -1) {
+    const lines = [];
+    for (const [line] of linesOf(topStack)) {
+      if (line.includes("/task.js:")) {
         break;
       }
       lines.push(prefix + line);
@@ -503,13 +502,13 @@ Task.Debugging = {
     if (!prefix) {
       lines.push(gCurrentTask.callerStack);
     } else {
-      for (let [line] of linesOf(gCurrentTask.callerStack)) {
+      for (const [line] of linesOf(gCurrentTask.callerStack)) {
         lines.push(prefix + line);
       }
     }
 
     return lines.join("\n");
-  }
+  },
 };
 
 exports.Task = Task;

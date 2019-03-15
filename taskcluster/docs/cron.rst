@@ -27,13 +27,52 @@ The mach subcommand reads ``.cron.yml``, then consults the current time
 (actually the time the cron task was created, rounded down to the nearest 15
 minutes) and creates tasks for any cron jobs scheduled at that time.
 
-Each cron job in ``.cron.yml`` specifies a ``job.using``, corresponding to a
+Each cron job in ``.cron.yml`` specifies a ``job.type``, corresponding to a
 function responsible for creating TaskCluster tasks when the job runs.
+
+Describing Time
+---------------
+
+This cron implementation understands the following directives when
+describing when to run:
+
+* ``minute``: The minute in which to run, must be in 15 minute increments (see above)
+* ``hour``: The hour of the day in which to run, in 24 hour time.
+* ``day``: The day of the month as an integer, such as `1`, `16`. Be cautious above `28`, remember February.
+* ``weekday``: The day of the week, `Monday`, `Tuesday`, etc. Full length ISO compliant words.
+
+Setting both 'day' and 'weekday' will result in a cron job that won't run very often,
+and so is undesirable.
+
+*Examples*
+
+.. code-block:: yaml
+
+    # Never
+    when: []
+
+    # 4 AM and 4 PM, on the hour, every day.
+    when:
+        - {hour: 16, minute: 0}
+        - {hour: 4, minute: 0}
+
+    # The same as above, on a single line
+    when: [{hour: 16, minute: 0}, {hour: 4, minute: 0}]
+
+    # 4 AM on the second day of every month.
+    when:
+        - {day: 2, hour: 4, minute: 0}
+
+    # Mondays and Thursdays at 10 AM
+    when:
+        - {weekday: 'Monday', hour: 10, minute: 0}
+        - {weekday: 'Thursday', hour: 10, minute: 0}
+
 
 Decision Tasks
 ..............
 
-For ``job.using`` "decision-task", tasks are created based on
+For ``job.type`` "decision-task", tasks are created based on
 ``.taskcluster.yml`` just like the decision tasks that result from a push to a
 repository.  They run with a distinct ``taskGroupId``, and are free to create
 additional tasks comprising a task graph.
@@ -55,4 +94,4 @@ tasks with scopes for that particular job, by name.  For example, the
     job from using any of the scopes afforded to the cron task itself (the
     ``..cron:*`` scope).  This is simply because the cron task runs arbitrary
     code from the repo, and that code can be easily modified to create tasks
-    with any scopes that it posesses.
+    with any scopes that it possesses.

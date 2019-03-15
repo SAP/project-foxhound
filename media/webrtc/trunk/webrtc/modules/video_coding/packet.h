@@ -8,12 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_VIDEO_CODING_PACKET_H_
-#define WEBRTC_MODULES_VIDEO_CODING_PACKET_H_
+#ifndef MODULES_VIDEO_CODING_PACKET_H_
+#define MODULES_VIDEO_CODING_PACKET_H_
 
-#include "webrtc/modules/include/module_common_types.h"
-#include "webrtc/modules/video_coding/jitter_buffer_common.h"
-#include "webrtc/typedefs.h"
+#include "modules/include/module_common_types.h"
+#include "modules/video_coding/jitter_buffer_common.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -23,11 +23,6 @@ class VCMPacket {
   VCMPacket(const uint8_t* ptr,
             const size_t size,
             const WebRtcRTPHeader& rtpHeader);
-  VCMPacket(const uint8_t* ptr,
-            size_t size,
-            uint16_t seqNum,
-            uint32_t timestamp,
-            bool markerBit);
 
   void Reset();
 
@@ -39,21 +34,24 @@ class VCMPacket {
   const uint8_t* dataPtr;
   size_t sizeBytes;
   bool markerBit;
+  int timesNacked;
 
   FrameType frameType;
   VideoCodecType codec;
 
-  bool isFirstPacket;                // Is this first packet in a frame.
+  bool is_first_packet_in_frame;
   VCMNaluCompleteness completeNALU;  // Default is kNaluIncomplete.
   bool insertStartCode;  // True if a start code should be inserted before this
                          // packet.
   int width;
   int height;
-  RTPVideoHeader codecSpecificHeader;
+  RTPVideoHeader video_header;
+
+  int64_t receive_time_ms;
 
  protected:
   void CopyCodecSpecifics(const RTPVideoHeader& videoHeader);
 };
 
 }  // namespace webrtc
-#endif  // WEBRTC_MODULES_VIDEO_CODING_PACKET_H_
+#endif  // MODULES_VIDEO_CODING_PACKET_H_

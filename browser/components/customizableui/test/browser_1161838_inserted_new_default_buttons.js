@@ -4,9 +4,9 @@
 // don't try this at home, kids.
 function test() {
   // Customize something to make sure stuff changed:
-  CustomizableUI.addWidgetToArea("feed-button", CustomizableUI.AREA_NAVBAR);
+  CustomizableUI.addWidgetToArea("save-page-button", CustomizableUI.AREA_NAVBAR);
 
-  let CustomizableUIBSPass = Cu.import("resource:///modules/CustomizableUI.jsm", {});
+  let CustomizableUIBSPass = ChromeUtils.import("resource:///modules/CustomizableUI.jsm", {});
 
   is(CustomizableUIBSPass.gFuturePlacements.size, 0,
      "All future placements should be dealt with by now.");
@@ -17,7 +17,7 @@ function test() {
   CustomizableUIInternal.saveState();
   CustomizableUIInternal.loadSavedState();
 
-  CustomizableUIInternal._introduceNewBuiltinWidgets();
+  CustomizableUIInternal._updateForNewVersion();
   is(gFuturePlacements.size, 0,
      "No change to future placements initially.");
 
@@ -44,7 +44,7 @@ function test() {
 
   let savedPlacements = CustomizableUIBSPass.gSavedState.placements[CustomizableUI.AREA_NAVBAR];
   // Then call the re-init routine so we re-add the builtin widgets
-  CustomizableUIInternal._introduceNewBuiltinWidgets();
+  CustomizableUIInternal._updateForNewVersion();
   is(gFuturePlacements.size, 1,
      "Should have 1 more future placement");
   let futureNavbarPlacements = gFuturePlacements.get(CustomizableUI.AREA_NAVBAR);

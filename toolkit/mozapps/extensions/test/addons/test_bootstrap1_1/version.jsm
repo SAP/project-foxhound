@@ -1,3 +1,0 @@
-this.EXPORTED_SYMBOLS = ["VERSION"];
-
-this.VERSION = 1;

@@ -20,69 +20,45 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(GridLine)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
-GridLine::GridLine(GridLines *aParent)
-  : mParent(aParent)
-  , mStart(0.0)
-  , mBreadth(0.0)
-  , mType(GridDeclaration::Implicit)
-  , mNumber(0)
-{
+GridLine::GridLine(GridLines* aParent)
+    : mParent(aParent),
+      mStart(0.0),
+      mBreadth(0.0),
+      mType(GridDeclaration::Implicit),
+      mNumber(0),
+      mNegativeNumber(0) {
   MOZ_ASSERT(aParent, "Should never be instantiated with a null GridLines");
 }
 
-GridLine::~GridLine()
-{
+GridLine::~GridLine() {}
+
+void GridLine::GetNames(nsTArray<nsString>& aNames) const { aNames = mNames; }
+
+JSObject* GridLine::WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) {
+  return GridLine_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-void
-GridLine::GetNames(nsTArray<nsString>& aNames) const
-{
-  aNames = mNames;
-}
+double GridLine::Start() const { return mStart; }
 
-JSObject*
-GridLine::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return GridLineBinding::Wrap(aCx, this, aGivenProto);
-}
+double GridLine::Breadth() const { return mBreadth; }
 
-double
-GridLine::Start() const
-{
-  return mStart;
-}
+GridDeclaration GridLine::Type() const { return mType; }
 
-double
-GridLine::Breadth() const
-{
-  return mBreadth;
-}
+uint32_t GridLine::Number() const { return mNumber; }
 
-GridDeclaration
-GridLine::Type() const
-{
-  return mType;
-}
+int32_t GridLine::NegativeNumber() const { return mNegativeNumber; }
 
-uint32_t
-GridLine::Number() const
-{
-  return mNumber;
-}
-
-void
-GridLine::SetLineValues(const nsTArray<nsString>& aNames,
-                        double aStart,
-                        double aBreadth,
-                        uint32_t aNumber,
-                        GridDeclaration aType)
-{
+void GridLine::SetLineValues(const nsTArray<nsString>& aNames, double aStart,
+                             double aBreadth, uint32_t aNumber,
+                             int32_t aNegativeNumber, GridDeclaration aType) {
   mNames = aNames;
   mStart = aStart;
   mBreadth = aBreadth;
   mNumber = aNumber;
+  mNegativeNumber = aNegativeNumber;
   mType = aType;
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

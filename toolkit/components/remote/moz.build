@@ -4,6 +4,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files('**'):
+    BUG_COMPONENT = ('Toolkit', 'Startup and Profile System')
+
 XPIDL_SOURCES += [
     'nsIRemoteService.idl',
 ]
@@ -17,7 +20,13 @@ SOURCES += [
 if 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
     SOURCES += [
         'nsGTKRemoteService.cpp',
+        'nsRemoteService.cpp',
     ]
+    if CONFIG['MOZ_ENABLE_DBUS']:
+        SOURCES += [
+            'nsDBusRemoteService.cpp',
+        ]
+        CXXFLAGS += CONFIG['MOZ_DBUS_GLIB_CFLAGS']
 
 FINAL_LIBRARY = 'xul'
 

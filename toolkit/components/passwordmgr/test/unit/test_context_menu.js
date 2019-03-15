@@ -4,8 +4,8 @@
 
 "use strict";
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/LoginManagerContextMenu.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/LoginManagerContextMenu.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "_stringBundle", function() {
   return Services.strings.
@@ -15,7 +15,7 @@ XPCOMUtils.defineLazyGetter(this, "_stringBundle", function() {
 /**
  * Prepare data for the following tests.
  */
-add_task(function* test_initialize() {
+add_task(async function test_initialize() {
   for (let login of loginList()) {
     Services.logins.addLogin(login);
   }
@@ -24,7 +24,7 @@ add_task(function* test_initialize() {
 /**
  * Tests if the LoginManagerContextMenu returns the correct login items.
  */
-add_task(function* test_contextMenuAddAndRemoveLogins() {
+add_task(async function test_contextMenuAddAndRemoveLogins() {
   const DOCUMENT_CONTENT = "<form><input id='pw' type=password></form>";
   const INPUT_QUERY = "input[type='password']";
 
@@ -36,7 +36,7 @@ add_task(function* test_contextMenuAddAndRemoveLogins() {
   ];
 
   for (let hostname of testHostnames) {
-    do_print("test for hostname: " + hostname);
+    info("test for hostname: " + hostname);
     // Get expected logins for this test.
     let logins = getExpectedLogins(hostname);
 
@@ -73,8 +73,9 @@ function createLoginsFragment(url, content, elementQuery) {
   MockDocument.mockOwnerDocumentProperty(inputElement, document, url);
 
   // We also need a simple mock Browser object for this test.
+  document.createXULElement = document.createElement.bind(document);
   let browser = {
-    ownerDocument: document
+    ownerDocument: document,
   };
 
   let URI = Services.io.newURI(url);
@@ -102,8 +103,8 @@ function checkLoginItems(logins, items) {
   }
   let duplicates = findDuplicates(logins);
 
-  let dateAndTimeFormatter = new Intl.DateTimeFormat(undefined,
-                             { day: "numeric", month: "short", year: "numeric" });
+  let dateAndTimeFormatter = new Services.intl.DateTimeFormat(undefined,
+                                                              { dateStyle: "medium" });
   for (let login of logins) {
     if (login.username && !duplicates.has(login.username)) {
       // If login is not duplicate and we can't find an item for it, fail.
@@ -132,34 +133,34 @@ function checkLoginItems(logins, items) {
  * Gets the list of expected logins for a hostname.
  */
 function getExpectedLogins(hostname) {
-  return Services.logins.getAllLogins().filter(entry => entry["hostname"] === hostname);
+  return Services.logins.getAllLogins().filter(entry => entry.hostname === hostname);
 }
 
 function loginList() {
   return [
-      new LoginInfo("http://www.example.com", "http://www.example.com", null,
-                    "username1", "password",
-                    "form_field_username", "form_field_password"),
+    new LoginInfo("http://www.example.com", "http://www.example.com", null,
+                  "username1", "password",
+                  "form_field_username", "form_field_password"),
 
-      new LoginInfo("http://www.example.com", "http://www.example.com", null,
-                    "username2", "password",
-                    "form_field_username", "form_field_password"),
+    new LoginInfo("http://www.example.com", "http://www.example.com", null,
+                  "username2", "password",
+                  "form_field_username", "form_field_password"),
 
-      new LoginInfo("http://www2.example.com", "http://www.example.com", null,
-                    "username", "password",
-                    "form_field_username", "form_field_password"),
-      new LoginInfo("http://www2.example.com", "http://www2.example.com", null,
-                    "username", "password2",
-                    "form_field_username", "form_field_password"),
-      new LoginInfo("http://www2.example.com", "http://www2.example.com", null,
-                    "username2", "password2",
-                    "form_field_username", "form_field_password"),
+    new LoginInfo("http://www2.example.com", "http://www.example.com", null,
+                  "username", "password",
+                  "form_field_username", "form_field_password"),
+    new LoginInfo("http://www2.example.com", "http://www2.example.com", null,
+                  "username", "password2",
+                  "form_field_username", "form_field_password"),
+    new LoginInfo("http://www2.example.com", "http://www2.example.com", null,
+                  "username2", "password2",
+                  "form_field_username", "form_field_password"),
 
-      new LoginInfo("http://www3.example.com", "http://www.example.com", null,
-                    "", "password",
-                    "form_field_username", "form_field_password"),
-      new LoginInfo("http://www3.example.com", "http://www3.example.com", null,
-                    "", "password2",
-                    "form_field_username", "form_field_password"),
+    new LoginInfo("http://www3.example.com", "http://www.example.com", null,
+                  "", "password",
+                  "form_field_username", "form_field_password"),
+    new LoginInfo("http://www3.example.com", "http://www3.example.com", null,
+                  "", "password2",
+                  "form_field_username", "form_field_password"),
   ];
 }

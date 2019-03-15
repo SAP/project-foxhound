@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,47 +12,35 @@
 #include "mozilla/Attributes.h"
 #include "nsBlockFrame.h"
 
-#ifndef MOZ_XUL
-#error "This file should not be included"
-#endif
-
-class nsXULLabelFrame : public nsBlockFrame
-{
-public:
-  NS_DECL_FRAMEARENA_HELPERS
+class nsXULLabelFrame final : public nsBlockFrame {
+ public:
+  NS_DECL_FRAMEARENA_HELPERS(nsXULLabelFrame)
 
   friend nsIFrame* NS_NewXULLabelFrame(nsIPresShell* aPresShell,
-                                       nsStyleContext *aContext);
-  
+                                       ComputedStyle* aStyle);
+
   // nsIFrame
-  virtual void Init(nsIContent*       aContent,
-                    nsContainerFrame* aParent,
-                    nsIFrame*         aPrevInFlow) override;
+  virtual void Init(nsIContent* aContent, nsContainerFrame* aParent,
+                    nsIFrame* aPrevInFlow) override;
 
-  virtual void DestroyFrom(nsIFrame* aDestructRoot) override;
+  virtual void DestroyFrom(nsIFrame* aDestructRoot,
+                           PostDestroyData& aPostDestroyData) override;
 
-  virtual nsresult AttributeChanged(int32_t aNameSpaceID,
-                                    nsIAtom* aAttribute,
+  virtual nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
                                     int32_t aModType) override;
 
-  /**
-   * Get the "type" of the frame
-   *
-   * @see nsGkAtoms::XULLabelFrame
-   */
-  virtual nsIAtom* GetType() const override;
-  
 #ifdef DEBUG_FRAME_DUMP
   virtual nsresult GetFrameName(nsAString& aResult) const override;
 #endif
 
-protected:
-  explicit nsXULLabelFrame(nsStyleContext *aContext) : nsBlockFrame(aContext) {}
+ protected:
+  explicit nsXULLabelFrame(ComputedStyle* aStyle)
+      : nsBlockFrame(aStyle, kClassID) {}
 
   nsresult RegUnregAccessKey(bool aDoReg);
 };
 
-nsIFrame*
-NS_NewXULLabelFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
+nsIFrame* NS_NewXULLabelFrame(nsIPresShell* aPresShell,
+                              mozilla::ComputedStyle* aStyle);
 
 #endif /* !defined(nsXULLabelFrame_h_) */

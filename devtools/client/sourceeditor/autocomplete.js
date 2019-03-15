@@ -11,7 +11,7 @@ const {KeyCodes} = require("devtools/client/shared/keycodes");
 
 const CM_TERN_SCRIPTS = [
   "chrome://devtools/content/sourceeditor/codemirror/addon/tern/tern.js",
-  "chrome://devtools/content/sourceeditor/codemirror/addon/hint/show-hint.js"
+  "chrome://devtools/content/sourceeditor/codemirror/addon/hint/show-hint.js",
 ];
 
 const autocompleteMap = new WeakMap();
@@ -20,19 +20,19 @@ const autocompleteMap = new WeakMap();
  * Prepares an editor instance for autocompletion.
  */
 function initializeAutoCompletion(ctx, options = {}) {
-  let { cm, ed, Editor } = ctx;
+  const { cm, ed, Editor } = ctx;
   if (autocompleteMap.has(ed)) {
     return;
   }
 
-  let win = ed.container.contentWindow.wrappedJSObject;
-  let { CodeMirror, document } = win;
+  const win = ed.container.contentWindow.wrappedJSObject;
+  const { CodeMirror, document } = win;
 
   let completer = null;
-  let autocompleteKey = "Ctrl-" +
+  const autocompleteKey = "Ctrl-" +
                         Editor.keyFor("autocompletion", { noaccel: true });
   if (ed.config.mode == Editor.modes.js) {
-    let defs = [
+    const defs = [
       require("./tern/browser"),
       require("./tern/ecma5"),
     ];
@@ -41,11 +41,11 @@ function initializeAutoCompletion(ctx, options = {}) {
     win.tern = require("./tern/tern");
     cm.tern = new CodeMirror.TernServer({
       defs: defs,
-      typeTip: function (data) {
-        let tip = document.createElement("span");
+      typeTip: function(data) {
+        const tip = document.createElement("span");
         tip.className = "CodeMirror-Tern-information";
-        let tipType = document.createElement("strong");
-        let tipText = document.createTextNode(data.type ||
+        const tipType = document.createElement("strong");
+        const tipText = document.createTextNode(data.type ||
           cm.l10n("autocompletion.notFound"));
         tipType.appendChild(tipText);
         tip.appendChild(tipType);
@@ -56,7 +56,7 @@ function initializeAutoCompletion(ctx, options = {}) {
 
         if (data.url) {
           tip.appendChild(document.createTextNode(" "));
-          let docLink = document.createElement("a");
+          const docLink = document.createElement("a");
           docLink.textContent = "[" + cm.l10n("autocompletion.docsLink") + "]";
           docLink.href = data.url;
           docLink.className = "theme-link";
@@ -65,11 +65,11 @@ function initializeAutoCompletion(ctx, options = {}) {
         }
 
         return tip;
-      }
+      },
     });
 
-    let keyMap = {};
-    let updateArgHintsCallback = cm.tern.updateArgHints.bind(cm.tern, cm);
+    const keyMap = {};
+    const updateArgHintsCallback = cm.tern.updateArgHints.bind(cm.tern, cm);
     cm.on("cursorActivity", updateArgHintsCallback);
 
     keyMap[autocompleteKey] = cmArg => {
@@ -88,7 +88,7 @@ function initializeAutoCompletion(ctx, options = {}) {
     };
     cm.addKeyMap(keyMap);
 
-    let destroyTern = function () {
+    const destroyTern = function() {
       ed.off("destroy", destroyTern);
       cm.off("cursorActivity", updateArgHintsCallback);
       cm.removeKeyMap(keyMap);
@@ -99,7 +99,7 @@ function initializeAutoCompletion(ctx, options = {}) {
     ed.on("destroy", destroyTern);
 
     autocompleteMap.set(ed, {
-      destroy: destroyTern
+      destroy: destroyTern,
     });
 
     // TODO: Integrate tern autocompletion with this autocomplete API.
@@ -110,7 +110,7 @@ function initializeAutoCompletion(ctx, options = {}) {
   }
 
   function insertSelectedPopupItem() {
-    let autocompleteState = autocompleteMap.get(ed);
+    const autocompleteState = autocompleteMap.get(ed);
     if (!popup || !popup.isOpen || !autocompleteState) {
       return false;
     }
@@ -132,13 +132,13 @@ function initializeAutoCompletion(ctx, options = {}) {
 
   let popup = new AutocompletePopup(win.parent.document, {
     position: "bottom",
-    theme: "auto",
     autoSelect: true,
-    onClick: insertSelectedPopupItem
+    onClick: insertSelectedPopupItem,
   });
 
-  let cycle = reverse => {
+  const cycle = reverse => {
     if (popup && popup.isOpen) {
+      // eslint-disable-next-line mozilla/no-compare-against-boolean-literals
       cycleSuggestions(ed, reverse == true);
       return null;
     }
@@ -152,13 +152,13 @@ function initializeAutoCompletion(ctx, options = {}) {
     "Shift-Tab": cycle.bind(null, true),
     "Up": cycle.bind(null, true),
     "Enter": () => {
-      let wasHandled = insertSelectedPopupItem();
+      const wasHandled = insertSelectedPopupItem();
       return wasHandled ? true : CodeMirror.Pass;
-    }
+    },
   };
 
-  let autoCompleteCallback = autoComplete.bind(null, ctx);
-  let keypressCallback = onEditorKeypress.bind(null, ctx);
+  const autoCompleteCallback = autoComplete.bind(null, ctx);
+  const keypressCallback = onEditorKeypress.bind(null, ctx);
   keyMap[autocompleteKey] = autoCompleteCallback;
   cm.addKeyMap(keyMap);
 
@@ -182,7 +182,7 @@ function initializeAutoCompletion(ctx, options = {}) {
     keyMap: keyMap,
     destroy: destroy,
     insertingSuggestion: false,
-    suggestionInsertedOnce: false
+    suggestionInsertedOnce: false,
   });
 }
 
@@ -190,12 +190,12 @@ function initializeAutoCompletion(ctx, options = {}) {
  * Destroy autocompletion on an editor instance.
  */
 function destroyAutoCompletion(ctx) {
-  let { ed } = ctx;
+  const { ed } = ctx;
   if (!autocompleteMap.has(ed)) {
     return;
   }
 
-  let {destroy} = autocompleteMap.get(ed);
+  const {destroy} = autocompleteMap.get(ed);
   destroy();
 }
 
@@ -203,14 +203,14 @@ function destroyAutoCompletion(ctx) {
  * Provides suggestions to autocomplete the current token/word being typed.
  */
 function autoComplete({ ed, cm }) {
-  let autocompleteOpts = autocompleteMap.get(ed);
-  let { completer, popup } = autocompleteOpts;
+  const autocompleteOpts = autocompleteMap.get(ed);
+  const { completer, popup } = autocompleteOpts;
   if (!completer || autocompleteOpts.insertingSuggestion ||
       autocompleteOpts.doNotAutocomplete) {
     autocompleteOpts.insertingSuggestion = false;
     return;
   }
-  let cur = ed.getCursor();
+  const cur = ed.getCursor();
   completer.complete(cm.getRange({line: 0, ch: 0}, cur), cur).then(suggestions => {
     if (!suggestions || !suggestions.length || suggestions[0].preLabel == null) {
       autocompleteOpts.suggestionInsertedOnce = false;
@@ -224,10 +224,10 @@ function autoComplete({ ed, cm }) {
     // The cursor is at the end of the currently entered part of the token,
     // like "backgr|" but we need to open the popup at the beginning of the
     // character "b". Thus we need to calculate the width of the entered part
-    // of the token ("backgr" here). 4 comes from the popup's left padding.
+    // of the token ("backgr" here).
 
-    let cursorElement = cm.display.cursorDiv.querySelector(".CodeMirror-cursor");
-    let left = suggestions[0].preLabel.length * cm.defaultCharWidth() + 4;
+    const cursorElement = cm.display.cursorDiv.querySelector(".CodeMirror-cursor");
+    const left = suggestions[0].preLabel.length * cm.defaultCharWidth();
     popup.hidePopup();
     popup.setItems(suggestions);
 
@@ -237,7 +237,7 @@ function autoComplete({ ed, cm }) {
     });
     popup.openPopup(cursorElement, -1 * left, 0);
     autocompleteOpts.suggestionInsertedOnce = false;
-  }).then(null, e => console.error(e));
+  }).catch(console.error);
 }
 
 /**
@@ -245,11 +245,11 @@ function autoComplete({ ed, cm }) {
  * in the editor.
  */
 function insertPopupItem(ed, popupItem) {
-  let {preLabel, text} = popupItem;
-  let cur = ed.getCursor();
-  let textBeforeCursor = ed.getText(cur.line).substring(0, cur.ch);
-  let backwardsTextBeforeCursor = textBeforeCursor.split("").reverse().join("");
-  let backwardsPreLabel = preLabel.split("").reverse().join("");
+  const {preLabel, text} = popupItem;
+  const cur = ed.getCursor();
+  const textBeforeCursor = ed.getText(cur.line).substring(0, cur.ch);
+  const backwardsTextBeforeCursor = textBeforeCursor.split("").reverse().join("");
+  const backwardsPreLabel = preLabel.split("").reverse().join("");
 
   // If there is additional text in the preLabel vs the line, then
   // just insert the entire autocomplete text.  An example:
@@ -267,9 +267,9 @@ function insertPopupItem(ed, popupItem) {
  * when `reverse` is not true. Opposite otherwise.
  */
 function cycleSuggestions(ed, reverse) {
-  let autocompleteOpts = autocompleteMap.get(ed);
-  let { popup } = autocompleteOpts;
-  let cur = ed.getCursor();
+  const autocompleteOpts = autocompleteMap.get(ed);
+  const { popup } = autocompleteOpts;
+  const cur = ed.getCursor();
   autocompleteOpts.insertingSuggestion = true;
   if (!autocompleteOpts.suggestionInsertedOnce) {
     autocompleteOpts.suggestionInsertedOnce = true;
@@ -289,9 +289,9 @@ function cycleSuggestions(ed, reverse) {
     }
     insertPopupItem(ed, firstItem);
   } else {
-    let fromCur = {
+    const fromCur = {
       line: cur.line,
-      ch: cur.ch - popup.selectedItem.text.length
+      ch: cur.ch - popup.selectedItem.text.length,
     };
     if (reverse) {
       popup.selectPreviousItem();
@@ -309,7 +309,7 @@ function cycleSuggestions(ed, reverse) {
  * keypresses.
  */
 function onEditorKeypress({ ed, Editor }, cm, event) {
-  let autocompleteOpts = autocompleteMap.get(ed);
+  const autocompleteOpts = autocompleteMap.get(ed);
 
   // Do not try to autocomplete with multiple selections.
   if (ed.hasMultipleSelections()) {
@@ -379,7 +379,7 @@ function getPopup({ ed }) {
  */
 function getInfoAt({ ed }, caret) {
   if (autocompleteMap.has(ed)) {
-    let completer = autocompleteMap.get(ed).completer;
+    const completer = autocompleteMap.get(ed).completer;
     if (completer && completer.getInfoAt) {
       return completer.getInfoAt(ed.getText(), caret);
     }

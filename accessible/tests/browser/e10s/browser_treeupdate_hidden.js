@@ -2,29 +2,28 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-'use strict';
+"use strict";
 
-/* global EVENT_REORDER */
+/* import-globals-from ../../mochitest/role.js */
+loadScripts({ name: "role.js", dir: MOCHITESTS_DIR });
 
-loadScripts({ name: 'role.js', dir: MOCHITESTS_DIR });
-
-function* setHidden(browser, value) {
-  let onReorder = waitForEvent(EVENT_REORDER, 'container');
-  yield invokeSetAttribute(browser, 'child', 'hidden', value);
-  yield onReorder;
+async function setHidden(browser, value) {
+  let onReorder = waitForEvent(EVENT_REORDER, "container");
+  await invokeSetAttribute(browser, "child", "hidden", value);
+  await onReorder;
 }
 
 addAccessibleTask('<div id="container"><input id="child"></div>',
-  function*(browser, accDoc) {
-    let container = findAccessibleChildByID(accDoc, 'container');
+  async function(browser, accDoc) {
+    let container = findAccessibleChildByID(accDoc, "container");
 
     testAccessibleTree(container, { SECTION: [ { ENTRY: [ ] } ] });
 
     // Set @hidden attribute
-    yield setHidden(browser, 'true');
+    await setHidden(browser, "true");
     testAccessibleTree(container, { SECTION: [ ] });
 
     // Remove @hidden attribute
-    yield setHidden(browser);
+    await setHidden(browser);
     testAccessibleTree(container, { SECTION: [ { ENTRY: [ ] } ] });
   });

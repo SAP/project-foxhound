@@ -8,10 +8,10 @@ function onTabModalDialogLoaded(node) {
   expectingDialog = false;
   if (wantToClose) {
     // This accepts the dialog, closing it
-    node.Dialog.ui.button0.click();
+    node.querySelector(".tabmodalprompt-button0").click();
   } else {
     // This keeps the page open
-    node.Dialog.ui.button1.click();
+    node.querySelector(".tabmodalprompt-button1").click();
   }
   if (resolveDialogPromise) {
     resolveDialogPromise();
@@ -21,56 +21,56 @@ function onTabModalDialogLoaded(node) {
 SpecialPowers.pushPrefEnv({"set": [["dom.require_user_interaction_for_beforeunload", false]]});
 
 // Listen for the dialog being created
-Services.obs.addObserver(onTabModalDialogLoaded, "tabmodal-dialog-loaded", false);
+Services.obs.addObserver(onTabModalDialogLoaded, "tabmodal-dialog-loaded");
 registerCleanupFunction(() => {
   Services.prefs.clearUserPref("browser.tabs.warnOnClose");
   Services.obs.removeObserver(onTabModalDialogLoaded, "tabmodal-dialog-loaded");
 });
 
-add_task(function* closeLastTabInWindow() {
-  let newWin = yield promiseOpenAndLoadWindow({}, true);
+add_task(async function closeLastTabInWindow() {
+  let newWin = await promiseOpenAndLoadWindow({}, true);
   let firstTab = newWin.gBrowser.selectedTab;
-  yield promiseTabLoadEvent(firstTab, TEST_PAGE);
-  let windowClosedPromise = promiseWindowWillBeClosed(newWin);
+  await promiseTabLoadEvent(firstTab, TEST_PAGE);
+  let windowClosedPromise = BrowserTestUtils.domWindowClosed(newWin);
   expectingDialog = true;
   // close tab:
   document.getAnonymousElementByAttribute(firstTab, "anonid", "close-button").click();
-  yield windowClosedPromise;
+  await windowClosedPromise;
   ok(!expectingDialog, "There should have been a dialog.");
   ok(newWin.closed, "Window should be closed.");
 });
 
-add_task(function* closeWindowWithMultipleTabsIncludingOneBeforeUnload() {
+add_task(async function closeWindowWithMultipleTabsIncludingOneBeforeUnload() {
   Services.prefs.setBoolPref("browser.tabs.warnOnClose", false);
-  let newWin = yield promiseOpenAndLoadWindow({}, true);
+  let newWin = await promiseOpenAndLoadWindow({}, true);
   let firstTab = newWin.gBrowser.selectedTab;
-  yield promiseTabLoadEvent(firstTab, TEST_PAGE);
-  yield promiseTabLoadEvent(newWin.gBrowser.addTab(), "http://example.com/");
-  let windowClosedPromise = promiseWindowWillBeClosed(newWin);
+  await promiseTabLoadEvent(firstTab, TEST_PAGE);
+  await promiseTabLoadEvent(BrowserTestUtils.addTab(newWin.gBrowser), "http://example.com/");
+  let windowClosedPromise = BrowserTestUtils.domWindowClosed(newWin);
   expectingDialog = true;
   newWin.BrowserTryToCloseWindow();
-  yield windowClosedPromise;
+  await windowClosedPromise;
   ok(!expectingDialog, "There should have been a dialog.");
   ok(newWin.closed, "Window should be closed.");
   Services.prefs.clearUserPref("browser.tabs.warnOnClose");
 });
 
-add_task(function* closeWindoWithSingleTabTwice() {
-  let newWin = yield promiseOpenAndLoadWindow({}, true);
+add_task(async function closeWindoWithSingleTabTwice() {
+  let newWin = await promiseOpenAndLoadWindow({}, true);
   let firstTab = newWin.gBrowser.selectedTab;
-  yield promiseTabLoadEvent(firstTab, TEST_PAGE);
-  let windowClosedPromise = promiseWindowWillBeClosed(newWin);
+  await promiseTabLoadEvent(firstTab, TEST_PAGE);
+  let windowClosedPromise = BrowserTestUtils.domWindowClosed(newWin);
   expectingDialog = true;
   wantToClose = false;
   let firstDialogShownPromise = new Promise((resolve, reject) => { resolveDialogPromise = resolve; });
   document.getAnonymousElementByAttribute(firstTab, "anonid", "close-button").click();
-  yield firstDialogShownPromise;
+  await firstDialogShownPromise;
   info("Got initial dialog, now trying again");
   expectingDialog = true;
   wantToClose = true;
   resolveDialogPromise = null;
   document.getAnonymousElementByAttribute(firstTab, "anonid", "close-button").click();
-  yield windowClosedPromise;
+  await windowClosedPromise;
   ok(!expectingDialog, "There should have been a dialog.");
   ok(newWin.closed, "Window should be closed.");
 });

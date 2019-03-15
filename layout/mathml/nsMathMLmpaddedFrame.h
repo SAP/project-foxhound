@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,14 +11,15 @@
 #include "nsMathMLContainerFrame.h"
 
 //
-// <mpadded> -- adjust space around content  
+// <mpadded> -- adjust space around content
 //
 
-class nsMathMLmpaddedFrame : public nsMathMLContainerFrame {
-public:
-  NS_DECL_FRAMEARENA_HELPERS
+class nsMathMLmpaddedFrame final : public nsMathMLContainerFrame {
+ public:
+  NS_DECL_FRAMEARENA_HELPERS(nsMathMLmpaddedFrame)
 
-  friend nsIFrame* NS_NewMathMLmpaddedFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
+  friend nsIFrame* NS_NewMathMLmpaddedFrame(nsIPresShell* aPresShell,
+                                            ComputedStyle* aStyle);
 
   NS_IMETHOD
   InheritAutomaticData(nsIFrame* aParent) override;
@@ -27,80 +29,65 @@ public:
     return TransmitAutomaticDataForMrowLikeElement();
   }
 
-  virtual void
-  Reflow(nsPresContext*          aPresContext,
-         ReflowOutput&     aDesiredSize,
-         const ReflowInput& aReflowInput,
-         nsReflowStatus&          aStatus) override;
-  
-  virtual nsresult
-  Place(DrawTarget*          aDrawTarget,
-        bool                 aPlaceOrigin,
-        ReflowOutput& aDesiredSize) override;
+  virtual void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
+                      const ReflowInput& aReflowInput,
+                      nsReflowStatus& aStatus) override;
 
-  bool
-  IsMrowLike() override {
-    return mFrames.FirstChild() != mFrames.LastChild() ||
-           !mFrames.FirstChild();
+  virtual nsresult Place(DrawTarget* aDrawTarget, bool aPlaceOrigin,
+                         ReflowOutput& aDesiredSize) override;
+
+  bool IsMrowLike() override {
+    return mFrames.FirstChild() != mFrames.LastChild() || !mFrames.FirstChild();
   }
 
-protected:
-  explicit nsMathMLmpaddedFrame(nsStyleContext* aContext)
-    : nsMathMLContainerFrame(aContext)
-    , mWidthSign(0)
-    , mHeightSign(0)
-    , mDepthSign(0)
-    , mLeadingSpaceSign(0)
-    , mVerticalOffsetSign(0)
-    , mWidthPseudoUnit(0)
-    , mHeightPseudoUnit(0)
-    , mDepthPseudoUnit(0)
-    , mLeadingSpacePseudoUnit(0)
-    , mVerticalOffsetPseudoUnit(0)
-  {}
+ protected:
+  explicit nsMathMLmpaddedFrame(ComputedStyle* aStyle)
+      : nsMathMLContainerFrame(aStyle, kClassID),
+        mWidthSign(0),
+        mHeightSign(0),
+        mDepthSign(0),
+        mLeadingSpaceSign(0),
+        mVerticalOffsetSign(0),
+        mWidthPseudoUnit(0),
+        mHeightPseudoUnit(0),
+        mDepthPseudoUnit(0),
+        mLeadingSpacePseudoUnit(0),
+        mVerticalOffsetPseudoUnit(0) {}
 
   virtual ~nsMathMLmpaddedFrame();
 
-  virtual nsresult
-  MeasureForWidth(DrawTarget* aDrawTarget,
-                  ReflowOutput& aDesiredSize) override;
+  virtual nsresult MeasureForWidth(DrawTarget* aDrawTarget,
+                                   ReflowOutput& aDesiredSize) override;
 
-private:
+ private:
   nsCSSValue mWidth;
   nsCSSValue mHeight;
   nsCSSValue mDepth;
   nsCSSValue mLeadingSpace;
   nsCSSValue mVerticalOffset;
 
-  int32_t    mWidthSign;
-  int32_t    mHeightSign;
-  int32_t    mDepthSign;
-  int32_t    mLeadingSpaceSign;
-  int32_t    mVerticalOffsetSign;
+  int32_t mWidthSign;
+  int32_t mHeightSign;
+  int32_t mDepthSign;
+  int32_t mLeadingSpaceSign;
+  int32_t mVerticalOffsetSign;
 
-  int32_t    mWidthPseudoUnit;
-  int32_t    mHeightPseudoUnit;
-  int32_t    mDepthPseudoUnit;
-  int32_t    mLeadingSpacePseudoUnit;
-  int32_t    mVerticalOffsetPseudoUnit;
+  int32_t mWidthPseudoUnit;
+  int32_t mHeightPseudoUnit;
+  int32_t mDepthPseudoUnit;
+  int32_t mLeadingSpacePseudoUnit;
+  int32_t mVerticalOffsetPseudoUnit;
 
   // helpers to process the attributes
-  void
-  ProcessAttributes();
+  void ProcessAttributes();
 
-  static bool
-  ParseAttribute(nsString&   aString,
-                 int32_t&    aSign,
-                 nsCSSValue& aCSSValue,
-                 int32_t&    aPseudoUnit);
+  static bool ParseAttribute(nsString& aString, int32_t& aSign,
+                             nsCSSValue& aCSSValue, int32_t& aPseudoUnit);
 
-  void
-  UpdateValue(int32_t                  aSign,
-              int32_t                  aPseudoUnit,
-              const nsCSSValue&        aCSSValue,
-              const ReflowOutput& aDesiredSize,
-              nscoord&                 aValueToUpdate,
-              float                    aFontSizeInflation) const;
+  void UpdateValue(int32_t aSign, int32_t aPseudoUnit,
+                   const nsCSSValue& aCSSValue,
+                   const ReflowOutput& aDesiredSize, nscoord& aValueToUpdate,
+                   float aFontSizeInflation) const;
 };
 
 #endif /* nsMathMLmpaddedFrame_h___ */

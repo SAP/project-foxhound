@@ -4,16 +4,10 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-[JSImplementation="@mozilla.org/sidebar;1"]
+[NoInterfaceObject, JSImplementation="@mozilla.org/sidebar;1"]
 interface External
 {
-  [UnsafeInPrerendering] void AddSearchProvider(DOMString aDescriptionURL);
-  unsigned long IsSearchProviderInstalled(DOMString aSearchURL);
-};
-
-// Mozilla extension
-partial interface External {
-  [UnsafeInPrerendering, UseCounter]
-  void addSearchEngine(DOMString engineURL, DOMString iconURL,
-                       DOMString suggestedTitle, DOMString suggestedCategory);
+  [Deprecated="External_AddSearchProvider"]
+  void AddSearchProvider(DOMString aDescriptionURL);
+  void IsSearchProviderInstalled();
 };

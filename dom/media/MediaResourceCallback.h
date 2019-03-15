@@ -7,13 +7,18 @@
 #ifndef MediaResourceCallback_h_
 #define MediaResourceCallback_h_
 
+#include "DecoderDoctorLogger.h"
 #include "nsError.h"
 #include "nsISupportsImpl.h"
+#include "MediaResult.h"
 
 namespace mozilla {
 
+class AbstractThread;
 class MediaDecoderOwner;
 class MediaResource;
+
+DDLoggedTypeDeclName(MediaResourceCallback);
 
 /**
  * A callback used by MediaResource (sub-classes like FileMediaResource,
@@ -24,27 +29,22 @@ class MediaResource;
  * gtests for the readers without using a mock MediaResource when you don't
  * care about the events notified by the MediaResource.
  */
-class MediaResourceCallback {
-public:
+class MediaResourceCallback
+    : public DecoderDoctorLifeLogger<MediaResourceCallback> {
+ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MediaResourceCallback);
+
+  // Return an abstract thread on which to run main thread runnables.
+  virtual AbstractThread* AbstractMainThread() const { return nullptr; }
 
   // Returns a weak reference to the media decoder owner.
   virtual MediaDecoderOwner* GetMediaOwner() const { return nullptr; }
 
-  // Notify is duration is known to this MediaResource.
-  virtual void SetInfinite(bool aInfinite) {}
-
   // Notify that a network error is encountered.
-  virtual void NotifyNetworkError() {}
-
-  // Notify that decoding has failed.
-  virtual void NotifyDecodeError() {}
+  virtual void NotifyNetworkError(const MediaResult& aError) {}
 
   // Notify that data arrives on the stream and is read into the cache.
   virtual void NotifyDataArrived() {}
-
-  // Notify that MediaResource has received some data.
-  virtual void NotifyBytesDownloaded() {}
 
   // Notify download is ended.
   // NOTE: this can be called with the media cache lock held, so don't
@@ -55,15 +55,12 @@ public:
   virtual void NotifyPrincipalChanged() {}
 
   // Notify that the "cache suspended" status of MediaResource changes.
-  virtual void NotifySuspendedStatusChanged() {}
+  virtual void NotifySuspendedStatusChanged(bool aSuspendedByCache) {}
 
-  // Notify the number of bytes read from the resource.
-  virtual void NotifyBytesConsumed(int64_t aBytes, int64_t aOffset) {}
-
-protected:
+ protected:
   virtual ~MediaResourceCallback() {}
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif //MediaResourceCallback_h_
+#endif  // MediaResourceCallback_h_

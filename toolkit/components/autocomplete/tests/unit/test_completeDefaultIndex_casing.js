@@ -15,23 +15,21 @@ function AutoCompleteInput(aSearches) {
 }
 AutoCompleteInput.prototype = Object.create(AutoCompleteInputBase.prototype);
 
-function run_test() {
-  run_next_test();
-}
-
 add_test(function test_keyNavigation() {
   doSearch("MOZ", "mozilla", function(aController) {
-    do_check_eq(aController.input.textValue, "MOZilla");
-    aController.handleKeyNavigation(Ci.nsIDOMKeyEvent.DOM_VK_RIGHT);
-    do_check_eq(aController.input.textValue, "mozilla");
+    Assert.equal(aController.input.textValue, "MOZilla");
+    // Hardcode KeyboardEvent.DOM_VK_RIGHT, because we can't easily
+    // include KeyboardEvent here.
+    aController.handleKeyNavigation(0x27 /* KeyboardEvent.DOM_VK_RIGHT */ );
+    Assert.equal(aController.input.textValue, "mozilla");
   });
 });
 
 add_test(function test_handleEnter() {
   doSearch("MOZ", "mozilla", function(aController) {
-    do_check_eq(aController.input.textValue, "MOZilla");
+    Assert.equal(aController.input.textValue, "MOZilla");
     aController.handleEnter(false);
-    do_check_eq(aController.input.textValue, "mozilla");
+    Assert.equal(aController.input.textValue, "mozilla");
   });
 });
 

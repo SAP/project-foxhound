@@ -11,26 +11,30 @@
 #include "TableCellAccessible.h"
 
 class nsITableCellLayout;
+class nsTableCellFrame;
 
 namespace mozilla {
+
+enum class TableSelection : uint32_t;
+
 namespace a11y {
 
 /**
  * HTML table cell accessible (html:td).
  */
 class HTMLTableCellAccessible : public HyperTextAccessibleWrap,
-                                public TableCellAccessible
-{
-public:
+                                public TableCellAccessible {
+ public:
   HTMLTableCellAccessible(nsIContent* aContent, DocAccessible* aDoc);
 
   // nsISupports
-  NS_DECL_ISUPPORTS_INHERITED
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(HTMLTableCellAccessible,
+                                       HyperTextAccessibleWrap)
 
   // Accessible
   virtual TableCellAccessible* AsTableCell() override { return this; }
-  virtual a11y::role NativeRole() override;
-  virtual uint64_t NativeState() override;
+  virtual a11y::role NativeRole() const override;
+  virtual uint64_t NativeState() const override;
   virtual uint64_t NativeInteractiveState() const override;
   virtual already_AddRefed<nsIPersistentProperties> NativeAttributes() override;
   virtual mozilla::a11y::GroupPos GroupPosition() override;
@@ -45,7 +49,7 @@ public:
   virtual void RowHeaderCells(nsTArray<Accessible*>* aCells) override;
   virtual bool Selected() override;
 
-protected:
+ protected:
   virtual ~HTMLTableCellAccessible() {}
 
   /**
@@ -54,48 +58,48 @@ protected:
   nsITableCellLayout* GetCellLayout() const;
 
   /**
+   * Return the table cell frame.
+   */
+  nsTableCellFrame* GetCellFrame() const;
+
+  /**
    * Return row and column indices of the cell.
    */
   nsresult GetCellIndexes(int32_t& aRowIdx, int32_t& aColIdx) const;
 };
 
-
 /**
  * HTML table row/column header accessible (html:th or html:td@scope).
  */
-class HTMLTableHeaderCellAccessible : public HTMLTableCellAccessible
-{
-public:
+class HTMLTableHeaderCellAccessible : public HTMLTableCellAccessible {
+ public:
   HTMLTableHeaderCellAccessible(nsIContent* aContent, DocAccessible* aDoc);
 
   // Accessible
-  virtual a11y::role NativeRole() override;
+  virtual a11y::role NativeRole() const override;
 };
-
 
 /**
  * HTML table row accessible (html:tr).
  */
-class HTMLTableRowAccessible : public AccessibleWrap
-{
-public:
-  HTMLTableRowAccessible(nsIContent* aContent, DocAccessible* aDoc) :
-    AccessibleWrap(aContent, aDoc)
-  {
+class HTMLTableRowAccessible : public HyperTextAccessibleWrap {
+ public:
+  HTMLTableRowAccessible(nsIContent* aContent, DocAccessible* aDoc)
+      : HyperTextAccessibleWrap(aContent, aDoc) {
     mType = eHTMLTableRowType;
     mGenericTypes |= eTableRow;
   }
 
-  NS_DECL_ISUPPORTS_INHERITED
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(HTMLTableRowAccessible,
+                                       HyperTextAccessibleWrap)
 
   // Accessible
-  virtual a11y::role NativeRole() override;
+  virtual a11y::role NativeRole() const override;
   virtual mozilla::a11y::GroupPos GroupPosition() override;
 
-protected:
-  virtual ~HTMLTableRowAccessible() { }
+ protected:
+  virtual ~HTMLTableRowAccessible() {}
 };
-
 
 /**
  * HTML table accessible (html:table).
@@ -106,25 +110,25 @@ protected:
 // data vs. layout heuristic
 // #define SHOW_LAYOUT_HEURISTIC
 
-class HTMLTableAccessible : public AccessibleWrap,
-                            public TableAccessible
-{
-public:
-  HTMLTableAccessible(nsIContent* aContent, DocAccessible* aDoc) :
-    AccessibleWrap(aContent, aDoc)
-  {
+class HTMLTableAccessible : public HyperTextAccessibleWrap,
+                            public TableAccessible {
+ public:
+  HTMLTableAccessible(nsIContent* aContent, DocAccessible* aDoc)
+      : HyperTextAccessibleWrap(aContent, aDoc) {
     mType = eHTMLTableType;
     mGenericTypes |= eTable;
   }
 
-  NS_DECL_ISUPPORTS_INHERITED
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(HTMLTableAccessible,
+                                       HyperTextAccessibleWrap)
 
   // TableAccessible
   virtual Accessible* Caption() const override;
   virtual void Summary(nsString& aSummary) override;
-  virtual uint32_t ColCount() override;
+  virtual uint32_t ColCount() const override;
   virtual uint32_t RowCount() override;
-  virtual Accessible* CellAt(uint32_t aRowIndex, uint32_t aColumnIndex) override;
+  virtual Accessible* CellAt(uint32_t aRowIndex,
+                             uint32_t aColumnIndex) override;
   virtual int32_t CellIndexAt(uint32_t aRowIdx, uint32_t aColIdx) override;
   virtual int32_t ColIndexAt(uint32_t aCellIdx) override;
   virtual int32_t RowIndexAt(uint32_t aCellIdx) override;
@@ -146,24 +150,23 @@ public:
   virtual void SelectRow(uint32_t aRowIdx) override;
   virtual void UnselectCol(uint32_t aColIdx) override;
   virtual void UnselectRow(uint32_t aRowIdx) override;
-  virtual bool IsProbablyLayoutTable() override;
   virtual Accessible* AsAccessible() override { return this; }
 
   // Accessible
   virtual TableAccessible* AsTable() override { return this; }
   virtual void Description(nsString& aDescription) override;
-  virtual a11y::role NativeRole() override;
-  virtual uint64_t NativeState() override;
+  virtual a11y::role NativeRole() const override;
+  virtual uint64_t NativeState() const override;
   virtual already_AddRefed<nsIPersistentProperties> NativeAttributes() override;
-  virtual Relation RelationByType(RelationType aRelationType) override;
+  virtual Relation RelationByType(RelationType aRelationType) const override;
 
   virtual bool InsertChildAt(uint32_t aIndex, Accessible* aChild) override;
 
-protected:
+ protected:
   virtual ~HTMLTableAccessible() {}
 
   // Accessible
-  virtual ENameValueFlag NativeName(nsString& aName) override;
+  virtual ENameValueFlag NativeName(nsString& aName) const override;
 
   // HTMLTableAccessible
 
@@ -171,10 +174,10 @@ protected:
    * Add row or column to selection.
    *
    * @param aIndex   [in] index of row or column to be selected
-   * @param aTarget  [in] indicates what should be selected, either row or column
-   *                  (see nsISelectionPrivate)
+   * @param aTarget  [in] indicates what should be selected, either row or
+   * column (see nsFrameSelection)
    */
-  nsresult AddRowOrColumnToSelection(int32_t aIndex, uint32_t aTarget);
+  nsresult AddRowOrColumnToSelection(int32_t aIndex, TableSelection aTarget);
 
   /**
    * Removes rows or columns at the given index or outside it from selection.
@@ -186,17 +189,8 @@ protected:
    *                    should be unselected only
    */
   nsresult RemoveRowsOrColumnsFromSelection(int32_t aIndex,
-                                            uint32_t aTarget,
+                                            TableSelection aTarget,
                                             bool aIsOuter);
-
-  /**
-   * Return true if table has an element with the given tag name.
-   *
-   * @param  aTagName     [in] tag name of searched element
-   * @param  aAllowEmpty  [in, optional] points if found element can be empty
-   *                       or contain whitespace text only.
-   */
-  bool HasDescendant(const nsAString& aTagName, bool aAllowEmpty = true);
 
 #ifdef SHOW_LAYOUT_HEURISTIC
   nsString mLayoutHeuristic;
@@ -206,21 +200,22 @@ protected:
 /**
  * HTML caption accessible (html:caption).
  */
-class HTMLCaptionAccessible : public HyperTextAccessibleWrap
-{
-public:
-  HTMLCaptionAccessible(nsIContent* aContent, DocAccessible* aDoc) :
-    HyperTextAccessibleWrap(aContent, aDoc) { mType = eHTMLCaptionType; }
+class HTMLCaptionAccessible : public HyperTextAccessibleWrap {
+ public:
+  HTMLCaptionAccessible(nsIContent* aContent, DocAccessible* aDoc)
+      : HyperTextAccessibleWrap(aContent, aDoc) {
+    mType = eHTMLCaptionType;
+  }
 
   // Accessible
-  virtual a11y::role NativeRole() override;
-  virtual Relation RelationByType(RelationType aRelationType) override;
+  virtual a11y::role NativeRole() const override;
+  virtual Relation RelationByType(RelationType aRelationType) const override;
 
-protected:
-  virtual ~HTMLCaptionAccessible() { }
+ protected:
+  virtual ~HTMLCaptionAccessible() {}
 };
 
-} // namespace a11y
-} // namespace mozilla
+}  // namespace a11y
+}  // namespace mozilla
 
 #endif

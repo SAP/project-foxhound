@@ -24,110 +24,123 @@
 #include "gtest/MozGtestFriend.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/UniquePtr.h"
+#include "nsClassHashtable.h"
+#include "mozilla/Variant.h"
+#include "nsTArray.h"
 
-#define PROFILE_BUFFER_ENTRY_KIND_LIST(_) \
-    _(Category,        int)               \
-    _(CodeLocation,    const char *)      \
-    _(EmbeddedString,  void *)            \
-    _(FrameNumber,     int)               \
-    _(JitReturnAddr,   void *)            \
-    _(LineNumber,      int)               \
-    _(NativeLeafAddr,  void *)            \
-    _(Marker,          ProfilerMarker *)  \
-    _(ResidentMemory,  double)            \
-    _(Responsiveness,  double)            \
-    _(Sample,          const char *)      \
-    _(ThreadId,        int)               \
-    _(Time,            double)            \
-    _(UnsharedMemory,  double)
+class ProfilerMarker;
+
+// NOTE!  If you add entries, you need to verify if they need to be added to the
+// switch statement in DuplicateLastSample!
+#define FOR_EACH_PROFILE_BUFFER_ENTRY_KIND(MACRO)                   \
+  MACRO(Category, int)                                              \
+  MACRO(CollectionStart, double)                                    \
+  MACRO(CollectionEnd, double)                                      \
+  MACRO(Label, const char*)                                         \
+  MACRO(FrameFlags, uint64_t)                                       \
+  MACRO(DynamicStringFragment, char*) /* char[kNumChars], really */ \
+  MACRO(JitReturnAddr, void*)                                       \
+  MACRO(LineNumber, int)                                            \
+  MACRO(ColumnNumber, int)                                          \
+  MACRO(NativeLeafAddr, void*)                                      \
+  MACRO(Marker, ProfilerMarker*)                                    \
+  MACRO(Pause, double)                                              \
+  MACRO(Responsiveness, double)                                     \
+  MACRO(Resume, double)                                             \
+  MACRO(ThreadId, int)                                              \
+  MACRO(Time, double)                                               \
+  MACRO(ResidentMemory, uint64_t)                                   \
+  MACRO(UnsharedMemory, uint64_t)                                   \
+  MACRO(CounterId, void*)                                           \
+  MACRO(CounterKey, uint64_t)                                       \
+  MACRO(Number, uint64_t)                                           \
+  MACRO(Count, int64_t)
 
 // NB: Packing this structure has been shown to cause SIGBUS issues on ARM.
 #if !defined(GP_ARCH_arm)
-#pragma pack(push, 1)
+#  pragma pack(push, 1)
 #endif
 
-class ProfileBufferEntry
-{
-public:
+class ProfileBufferEntry {
+ public:
   enum class Kind : uint8_t {
     INVALID = 0,
-#   define DEF_ENUM_(k, t) k,
-    PROFILE_BUFFER_ENTRY_KIND_LIST(DEF_ENUM_)
-#   undef DEF_ENUM_
-    LIMIT
+#define KIND(k, t) k,
+    FOR_EACH_PROFILE_BUFFER_ENTRY_KIND(KIND)
+#undef KIND
+        LIMIT
   };
 
   ProfileBufferEntry();
 
-private:
-  // aTagData must not need release (i.e. be a string from the text segment)
-  ProfileBufferEntry(Kind aKind, const char *aTagData);
-  ProfileBufferEntry(Kind aKind, void *aTagPtr);
-  ProfileBufferEntry(Kind aKind, ProfilerMarker *aTagMarker);
-  ProfileBufferEntry(Kind aKind, double aTagDouble);
-  ProfileBufferEntry(Kind aKind, uintptr_t aTagOffset);
-  ProfileBufferEntry(Kind aKind, Address aTagAddress);
-  ProfileBufferEntry(Kind aKind, int aTagLine);
-  ProfileBufferEntry(Kind aKind, char aTagChar);
+  // This is equal to sizeof(double), which is the largest non-char variant in
+  // |u|.
+  static const size_t kNumChars = 8;
 
-public:
-# define DEF_MAKE_(k, t) \
-    static ProfileBufferEntry k(t val) { \
-      return ProfileBufferEntry(Kind::k, val); \
-    }
-  PROFILE_BUFFER_ENTRY_KIND_LIST(DEF_MAKE_)
-# undef DEF_MAKE_
+ private:
+  // aString must be a static string.
+  ProfileBufferEntry(Kind aKind, const char* aString);
+  ProfileBufferEntry(Kind aKind, char aChars[kNumChars]);
+  ProfileBufferEntry(Kind aKind, void* aPtr);
+  ProfileBufferEntry(Kind aKind, ProfilerMarker* aMarker);
+  ProfileBufferEntry(Kind aKind, double aDouble);
+  ProfileBufferEntry(Kind aKind, int64_t aInt64);
+  ProfileBufferEntry(Kind aKind, uint64_t aUint64);
+  ProfileBufferEntry(Kind aKind, int aInt);
 
-  Kind kind() const { return mKind; }
-  bool hasKind(Kind k) const { return kind() == k; }
-
-# define DEF_METHODS_(k, t) \
-    bool is##k() const { return hasKind(Kind::k); }
-  PROFILE_BUFFER_ENTRY_KIND_LIST(DEF_METHODS_)
-# undef DEF_METHODS_
-
-  const ProfilerMarker* getMarker() {
-    MOZ_ASSERT(isMarker());
-    return mTagMarker;
+ public:
+#define CTOR(k, t)                            \
+  static ProfileBufferEntry k(t aVal) {       \
+    return ProfileBufferEntry(Kind::k, aVal); \
   }
+  FOR_EACH_PROFILE_BUFFER_ENTRY_KIND(CTOR)
+#undef CTOR
 
-private:
-  FRIEND_TEST(ThreadProfile, InsertOneTag);
-  FRIEND_TEST(ThreadProfile, InsertOneTagWithTinyBuffer);
-  FRIEND_TEST(ThreadProfile, InsertTagsNoWrap);
-  FRIEND_TEST(ThreadProfile, InsertTagsWrap);
+  Kind GetKind() const { return mKind; }
+
+#define IS_KIND(k, t) \
+  bool Is##k() const { return mKind == Kind::k; }
+  FOR_EACH_PROFILE_BUFFER_ENTRY_KIND(IS_KIND)
+#undef IS_KIND
+
+ private:
+  FRIEND_TEST(ThreadProfile, InsertOneEntry);
+  FRIEND_TEST(ThreadProfile, InsertOneEntryWithTinyBuffer);
+  FRIEND_TEST(ThreadProfile, InsertEntriesNoWrap);
+  FRIEND_TEST(ThreadProfile, InsertEntriesWrap);
   FRIEND_TEST(ThreadProfile, MemoryMeasure);
   friend class ProfileBuffer;
-  union {
-    const char* mTagData;
-    char        mTagChars[sizeof(void*)];
-    void*       mTagPtr;
-    ProfilerMarker* mTagMarker;
-    double      mTagDouble;
-    Address     mTagAddress;
-    uintptr_t   mTagOffset;
-    int         mTagInt;
-    char        mTagChar;
-  };
+
   Kind mKind;
+  union {
+    const char* mString;
+    char mChars[kNumChars];
+    void* mPtr;
+    ProfilerMarker* mMarker;
+    double mDouble;
+    int mInt;
+    int64_t mInt64;
+    uint64_t mUint64;
+  } u;
 };
 
 #if !defined(GP_ARCH_arm)
-#pragma pack(pop)
+// Packed layout: 1 byte for the tag + 8 bytes for the value.
+static_assert(sizeof(ProfileBufferEntry) == 9, "bad ProfileBufferEntry size");
+#  pragma pack(pop)
 #endif
 
-class UniqueJSONStrings
-{
-public:
-  UniqueJSONStrings() {
-    mStringTableWriter.StartBareList();
-  }
+class UniqueJSONStrings {
+ public:
+  UniqueJSONStrings();
+  explicit UniqueJSONStrings(const UniqueJSONStrings& aOther);
 
   void SpliceStringTableElements(SpliceableJSONWriter& aWriter) {
     aWriter.TakeAndSplice(mStringTableWriter.WriteFunc());
   }
 
-  void WriteProperty(mozilla::JSONWriter& aWriter, const char* aName, const char* aStr) {
+  void WriteProperty(mozilla::JSONWriter& aWriter, const char* aName,
+                     const char* aStr) {
     aWriter.IntProperty(aName, GetOrAddIndex(aStr));
   }
 
@@ -137,185 +150,188 @@ public:
 
   uint32_t GetOrAddIndex(const char* aStr);
 
-  struct StringKey {
-
-    explicit StringKey(const char* aStr)
-     : mStr(strdup(aStr))
-    {
-      mHash = mozilla::HashString(mStr);
-    }
-
-    StringKey(const StringKey& aOther)
-      : mStr(strdup(aOther.mStr))
-    {
-      mHash = aOther.mHash;
-    }
-
-    ~StringKey() {
-      free(mStr);
-    }
-
-    uint32_t Hash() const;
-    bool operator==(const StringKey& aOther) const {
-      return strcmp(mStr, aOther.mStr) == 0;
-    }
-    bool operator<(const StringKey& aOther) const {
-      return mHash < aOther.mHash;
-    }
-
-  private:
-    uint32_t mHash;
-    char* mStr;
-  };
-private:
+ private:
   SpliceableChunkedJSONWriter mStringTableWriter;
-  std::map<StringKey, uint32_t> mStringToIndexMap;
+  nsDataHashtable<nsCStringHashKey, uint32_t> mStringToIndexMap;
 };
 
-class UniqueStacks
-{
-public:
+// Contains all the information about JIT frames that is needed to stream stack
+// frames for JitReturnAddr entries in the profiler buffer.
+// Every return address (void*) is mapped to one or more JITFrameKeys, and
+// every JITFrameKey is mapped to a JSON string for that frame.
+// mRangeStart and mRangeEnd describe the range in the buffer for which this
+// mapping is valid. Only JitReturnAddr entries within that buffer range can be
+// processed using this JITFrameInfoForBufferRange object.
+struct JITFrameInfoForBufferRange final {
+  JITFrameInfoForBufferRange Clone() const;
+
+  uint64_t mRangeStart;
+  uint64_t mRangeEnd;  // mRangeEnd marks the first invalid index.
+
+  struct JITFrameKey {
+    uint32_t Hash() const;
+    bool operator==(const JITFrameKey& aOther) const;
+    bool operator!=(const JITFrameKey& aOther) const {
+      return !(*this == aOther);
+    }
+
+    void* mCanonicalAddress;
+    uint32_t mDepth;
+  };
+  nsClassHashtable<nsPtrHashKey<void>, nsTArray<JITFrameKey>>
+      mJITAddressToJITFramesMap;
+  nsClassHashtable<nsGenericHashKey<JITFrameKey>, nsCString>
+      mJITFrameToFrameJSONMap;
+};
+
+// Contains JITFrameInfoForBufferRange objects for multiple profiler buffer
+// ranges.
+struct JITFrameInfo final {
+  JITFrameInfo() : mUniqueStrings(mozilla::MakeUnique<UniqueJSONStrings>()) {}
+
+  MOZ_IMPLICIT JITFrameInfo(const JITFrameInfo& aOther);
+
+  // Creates a new JITFrameInfoForBufferRange object in mRanges by looking up
+  // information about the provided JIT return addresses using aCx.
+  // Addresses are provided like this:
+  // The caller of AddInfoForRange supplies a function in aJITAddressProvider.
+  // This function will be called once, synchronously, with an
+  // aJITAddressConsumer argument, which is a function that needs to be called
+  // for every address. That function can be called multiple times for the same
+  // address.
+  void AddInfoForRange(
+      uint64_t aRangeStart, uint64_t aRangeEnd, JSContext* aCx,
+      const std::function<void(const std::function<void(void*)>&)>&
+          aJITAddressProvider);
+
+  // Returns whether the information stored in this object is still relevant
+  // for any entries in the buffer.
+  bool HasExpired(uint64_t aCurrentBufferRangeStart) const {
+    if (mRanges.IsEmpty()) {
+      // No information means no relevant information. Allow this object to be
+      // discarded.
+      return true;
+    }
+    return mRanges.LastElement().mRangeEnd <= aCurrentBufferRangeStart;
+  }
+
+  // The array of ranges of JIT frame information, sorted by buffer position.
+  // Ranges are non-overlapping.
+  // The JSON of the cached frames can contain string indexes, which refer
+  // to strings in mUniqueStrings.
+  nsTArray<JITFrameInfoForBufferRange> mRanges;
+
+  // The string table which contains strings used in the frame JSON that's
+  // cached in mRanges.
+  mozilla::UniquePtr<UniqueJSONStrings> mUniqueStrings;
+};
+
+class UniqueStacks {
+ public:
   struct FrameKey {
-    // This cannot be a std::string, as it is not memmove compatible, which
-    // is used by nsHashTable
-    nsCString mLocation;
-    mozilla::Maybe<unsigned> mLine;
-    mozilla::Maybe<unsigned> mCategory;
-    mozilla::Maybe<void*> mJITAddress;
-    mozilla::Maybe<uint32_t> mJITDepth;
-
     explicit FrameKey(const char* aLocation)
-     : mLocation(aLocation)
-    {
-      mHash = Hash();
-    }
+        : mData(NormalFrameData{nsCString(aLocation), false, mozilla::Nothing(),
+                                mozilla::Nothing()}) {}
 
-    FrameKey(const FrameKey& aToCopy)
-     : mLocation(aToCopy.mLocation)
-     , mLine(aToCopy.mLine)
-     , mCategory(aToCopy.mCategory)
-     , mJITAddress(aToCopy.mJITAddress)
-     , mJITDepth(aToCopy.mJITDepth)
-    {
-      mHash = Hash();
-    }
+    FrameKey(nsCString&& aLocation, bool aRelevantForJS,
+             const mozilla::Maybe<unsigned>& aLine,
+             const mozilla::Maybe<unsigned>& aColumn,
+             const mozilla::Maybe<unsigned>& aCategory)
+        : mData(NormalFrameData{aLocation, aRelevantForJS, aLine, aColumn,
+                                aCategory}) {}
 
-    FrameKey(void* aJITAddress, uint32_t aJITDepth)
-     : mJITAddress(mozilla::Some(aJITAddress))
-     , mJITDepth(mozilla::Some(aJITDepth))
-    {
-      mHash = Hash();
-    }
+    FrameKey(void* aJITAddress, uint32_t aJITDepth, uint32_t aRangeIndex)
+        : mData(JITFrameData{aJITAddress, aJITDepth, aRangeIndex}) {}
+
+    FrameKey(const FrameKey& aToCopy) = default;
 
     uint32_t Hash() const;
-    bool operator==(const FrameKey& aOther) const;
-    bool operator<(const FrameKey& aOther) const {
-      return mHash < aOther.mHash;
+    bool operator==(const FrameKey& aOther) const {
+      return mData == aOther.mData;
     }
 
-  private:
-    uint32_t mHash;
-  };
+    struct NormalFrameData {
+      bool operator==(const NormalFrameData& aOther) const;
 
-  // A FrameKey that holds a scoped reference to a JIT FrameHandle.
-  struct MOZ_STACK_CLASS OnStackFrameKey : public FrameKey {
-    explicit OnStackFrameKey(const char* aLocation)
-      : FrameKey(aLocation)
-      , mJITFrameHandle(nullptr)
-    { }
+      nsCString mLocation;
+      bool mRelevantForJS;
+      mozilla::Maybe<unsigned> mLine;
+      mozilla::Maybe<unsigned> mColumn;
+      mozilla::Maybe<unsigned> mCategory;
+    };
+    struct JITFrameData {
+      bool operator==(const JITFrameData& aOther) const;
 
-    OnStackFrameKey(const OnStackFrameKey& aToCopy)
-      : FrameKey(aToCopy)
-      , mJITFrameHandle(aToCopy.mJITFrameHandle)
-    { }
-
-    const JS::ForEachProfiledFrameOp::FrameHandle* mJITFrameHandle;
-
-    OnStackFrameKey(void* aJITAddress, unsigned aJITDepth)
-      : FrameKey(aJITAddress, aJITDepth)
-      , mJITFrameHandle(nullptr)
-    { }
-
-    OnStackFrameKey(void* aJITAddress, unsigned aJITDepth,
-                    const JS::ForEachProfiledFrameOp::FrameHandle& aJITFrameHandle)
-      : FrameKey(aJITAddress, aJITDepth)
-      , mJITFrameHandle(&aJITFrameHandle)
-    { }
+      void* mCanonicalAddress;
+      uint32_t mDepth;
+      uint32_t mRangeIndex;
+    };
+    mozilla::Variant<NormalFrameData, JITFrameData> mData;
   };
 
   struct StackKey {
-    mozilla::Maybe<uint32_t> mPrefixHash;
-    mozilla::Maybe<uint32_t> mPrefix;
-    uint32_t mFrame;
+    mozilla::Maybe<uint32_t> mPrefixStackIndex;
+    uint32_t mFrameIndex;
 
     explicit StackKey(uint32_t aFrame)
-     : mFrame(aFrame)
-    {
-      mHash = Hash();
+        : mFrameIndex(aFrame), mHash(mozilla::HashGeneric(aFrame)) {}
+
+    StackKey(const StackKey& aPrefix, uint32_t aPrefixStackIndex,
+             uint32_t aFrame)
+        : mPrefixStackIndex(mozilla::Some(aPrefixStackIndex)),
+          mFrameIndex(aFrame),
+          mHash(mozilla::AddToHash(aPrefix.mHash, aFrame)) {}
+
+    uint32_t Hash() const { return mHash; }
+
+    bool operator==(const StackKey& aOther) const {
+      return mPrefixStackIndex == aOther.mPrefixStackIndex &&
+             mFrameIndex == aOther.mFrameIndex;
     }
 
-    uint32_t Hash() const;
-    bool operator==(const StackKey& aOther) const;
-    bool operator<(const StackKey& aOther) const {
-      return mHash < aOther.mHash;
-    }
-
-    void UpdateHash(uint32_t aPrefixHash, uint32_t aPrefix, uint32_t aFrame) {
-      mPrefixHash = mozilla::Some(aPrefixHash);
-      mPrefix = mozilla::Some(aPrefix);
-      mFrame = aFrame;
-      mHash = Hash();
-    }
-
-  private:
+   private:
     uint32_t mHash;
   };
 
-  class Stack {
-  public:
-    Stack(UniqueStacks& aUniqueStacks, const OnStackFrameKey& aRoot);
+  explicit UniqueStacks(JITFrameInfo&& aJITFrameInfo);
 
-    void AppendFrame(const OnStackFrameKey& aFrame);
-    uint32_t GetOrAddIndex() const;
+  // Return a StackKey for aFrame as the stack's root frame (no prefix).
+  MOZ_MUST_USE StackKey BeginStack(const FrameKey& aFrame);
 
-  private:
-    UniqueStacks& mUniqueStacks;
-    StackKey mStack;
-  };
+  // Return a new StackKey that is obtained by appending aFrame to aStack.
+  MOZ_MUST_USE StackKey AppendFrame(const StackKey& aStack,
+                                    const FrameKey& aFrame);
 
-  explicit UniqueStacks(JSContext* aContext);
+  // Look up frame keys for the given JIT address, and ensure that our frame
+  // table has entries for the returned frame keys. The JSON for these frames
+  // is taken from mJITInfoRanges.
+  // aBufferPosition is needed in order to look up the correct JIT frame info
+  // object in mJITInfoRanges.
+  MOZ_MUST_USE mozilla::Maybe<nsTArray<UniqueStacks::FrameKey>>
+  LookupFramesForJITAddressFromBufferPos(void* aJITAddress,
+                                         uint64_t aBufferPosition);
 
-  Stack BeginStack(const OnStackFrameKey& aRoot);
-  uint32_t LookupJITFrameDepth(void* aAddr);
-  void AddJITFrameDepth(void* aAddr, unsigned depth);
+  MOZ_MUST_USE uint32_t GetOrAddFrameIndex(const FrameKey& aFrame);
+  MOZ_MUST_USE uint32_t GetOrAddStackIndex(const StackKey& aStack);
+
   void SpliceFrameTableElements(SpliceableJSONWriter& aWriter);
   void SpliceStackTableElements(SpliceableJSONWriter& aWriter);
 
-private:
-  uint32_t GetOrAddFrameIndex(const OnStackFrameKey& aFrame);
-  uint32_t GetOrAddStackIndex(const StackKey& aStack);
-  void StreamFrame(const OnStackFrameKey& aFrame);
+ private:
+  void StreamNonJITFrame(const FrameKey& aFrame);
   void StreamStack(const StackKey& aStack);
 
-public:
-  UniqueJSONStrings mUniqueStrings;
+ public:
+  mozilla::UniquePtr<UniqueJSONStrings> mUniqueStrings;
 
-private:
-  JSContext* mContext;
-
-  // To avoid incurring JitcodeGlobalTable lookup costs for every JIT frame,
-  // we cache the depth of frames keyed by JIT code address. If an address a
-  // maps to a depth d, then frames keyed by a for depths 0 to d are
-  // guaranteed to be in mFrameToIndexMap.
-  std::map<void*, uint32_t> mJITFrameDepthMap;
-
-  uint32_t mFrameCount;
+ private:
   SpliceableChunkedJSONWriter mFrameTableWriter;
   nsDataHashtable<nsGenericHashKey<FrameKey>, uint32_t> mFrameToIndexMap;
 
   SpliceableChunkedJSONWriter mStackTableWriter;
-
   nsDataHashtable<nsGenericHashKey<StackKey>, uint32_t> mStackToIndexMap;
+
+  nsTArray<JITFrameInfoForBufferRange> mJITInfoRanges;
 };
 
 //
@@ -342,16 +358,13 @@ private:
 //   {
 //     "schema":
 //     {
-//       "stack": 0,           /* index into stackTable */
-//       "time": 1,            /* number */
-//       "responsiveness": 2,  /* number */
-//       "rss": 3,             /* number */
-//       "uss": 4,             /* number */
-//       "frameNumber": 5      /* number */
+//       "stack": 0,          /* index into stackTable */
+//       "time": 1,           /* number */
+//       "responsiveness": 2, /* number */
 //     },
 //     "data":
 //     [
-//       [ 1, 0.0, 0.0 ]       /* { stack: 1, time: 0.0, responsiveness: 0.0 } */
+//       [ 1, 0.0, 0.0 ]      /* { stack: 1, time: 0.0, responsiveness: 0.0 } */
 //     ]
 //   },
 //
@@ -359,13 +372,13 @@ private:
 //   {
 //     "schema":
 //     {
-//       "name": 0,            /* index into stringTable */
-//       "time": 1,            /* number */
-//       "data": 2             /* arbitrary JSON */
+//       "name": 0,           /* index into stringTable */
+//       "time": 1,           /* number */
+//       "data": 2            /* arbitrary JSON */
 //     },
 //     "data":
 //     [
-//       [ 3, 0.1 ]            /* { name: 'example marker', time: 0.1 } */
+//       [ 3, 0.1 ]           /* { name: 'example marker', time: 0.1 } */
 //     ]
 //   },
 //
@@ -373,13 +386,13 @@ private:
 //   {
 //     "schema":
 //     {
-//       "prefix": 0,          /* index into stackTable */
-//       "frame": 1            /* index into frameTable */
+//       "prefix": 0,         /* index into stackTable */
+//       "frame": 1           /* index into frameTable */
 //     },
 //     "data":
 //     [
-//       [ null, 0 ],          /* (root) */
-//       [ 0,    1 ]           /* (root) > foo.js */
+//       [ null, 0 ],         /* (root) */
+//       [ 0,    1 ]          /* (root) > foo.js */
 //     ]
 //   },
 //
@@ -387,16 +400,18 @@ private:
 //   {
 //     "schema":
 //     {
-//       "location": 0,        /* index into stringTable */
-//       "implementation": 1,  /* index into stringTable */
-//       "optimizations": 2,   /* arbitrary JSON */
-//       "line": 3,            /* number */
-//       "category": 4         /* number */
+//       "location": 0,       /* index into stringTable */
+//       "implementation": 1, /* index into stringTable */
+//       "optimizations": 2,  /* arbitrary JSON */
+//       "line": 3,           /* number */
+//       "column": 4,         /* number */
+//       "category": 5        /* number */
 //     },
 //     "data":
 //     [
-//       [ 0 ],                /* { location: '(root)' } */
-//       [ 1, 2 ]              /* { location: 'foo.js', implementation: 'baseline' } */
+//       [ 0 ],               /* { location: '(root)' } */
+//       [ 1, 2 ]             /* { location: 'foo.js',
+//                                 implementation: 'baseline' } */
 //     ]
 //   },
 //
@@ -409,5 +424,62 @@ private:
 //   ]
 // }
 //
-
+// Process:
+// {
+//   "name": "Bar",
+//   "pid": 24,
+//   "threads":
+//   [
+//     <0-N threads from above>
+//   ],
+//   "counters": /* includes the memory counter */
+//   [
+//     {
+//       "name": "qwerty",
+//       "category": "uiop",
+//       "description": "this is qwerty uiop",
+//       "sample_groups:
+//       [
+//         {
+//           "id": 42, /* number (thread id, or object identifier (tab), etc) */
+//           "samples:
+//           {
+//             "schema":
+//             {
+//               "time": 1,   /* number */
+//               "number": 2, /* number (of times the counter was touched) */
+//               "count": 3   /* number (total for the counter) */
+//             },
+//             "data":
+//             [
+//               [ 0.1, 1824,
+//                 454622 ]   /* { time: 0.1, number: 1824, count: 454622 } */
+//             ]
+//           },
+//         },
+//         /* more sample-group objects with different id's */
+//       ]
+//     },
+//     /* more counters */
+//   ],
+//   "memory":
+//   {
+//     "initial_heap": 12345678,
+//     "samples:
+//     {
+//       "schema":
+//       {
+//         "time": 1,            /* number */
+//         "rss": 2,             /* number */
+//         "uss": 3              /* number */
+//       },
+//       "data":
+//       [
+//         /* { time: 0.1, rss: 12345678, uss: 87654321} */
+//         [ 0.1, 12345678, 87654321 ]
+//       ]
+//     },
+//   },
+// }
+//
 #endif /* ndef ProfileBufferEntry_h */

@@ -2,8 +2,6 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-Components.utils.import("resource://testing-common/MockRegistrar.jsm");
-
 const WindowWatcher = {
   getNewPrompter: function WW_getNewPrompter(aParent) {
     Assert.ok(!aParent,
@@ -19,12 +17,12 @@ const WindowWatcher = {
         Assert.equal(aText, text,
                      "the ui string for message" + MSG_SHOULD_EQUAL);
 
-        doTestFinish();
-      }
+        executeSoon(doTestFinish);
+      },
     };
   },
 
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIWindowWatcher])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIWindowWatcher]),
 };
 
 function run_test() {
@@ -41,18 +39,16 @@ function run_test() {
   let windowWatcherCID =
     MockRegistrar.register("@mozilla.org/embedcomp/window-watcher;1",
                            WindowWatcher);
-  do_register_cleanup(() => {
+  registerCleanupFunction(() => {
     MockRegistrar.unregister(windowWatcherCID);
   });
 
   standardInit();
 
-  writeUpdatesToXMLFile(getLocalUpdatesXMLString(""), false);
-  let url = URL_HOST + "/" + FILE_COMPLETE_MAR;
-  let patches = getLocalPatchString("complete", url, null, null, null, null,
-                                    STATE_FAILED);
-  let updates = getLocalUpdateString(patches, null, null, "version 1.0", "1.0",
-                                     null, null, null, null, url);
+  let patchProps = {url: URL_HOST + "/" + FILE_COMPLETE_MAR,
+                    state: STATE_FAILED};
+  let patches = getLocalPatchString(patchProps);
+  let updates = getLocalUpdateString({}, patches);
   writeUpdatesToXMLFile(getLocalUpdatesXMLString(updates), true);
   writeStatusFile(STATE_FAILED);
 

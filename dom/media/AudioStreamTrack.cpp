@@ -5,16 +5,18 @@
 
 #include "AudioStreamTrack.h"
 
-#include "mozilla/dom/AudioStreamTrackBinding.h"
+#include "nsContentUtils.h"
 
 namespace mozilla {
 namespace dom {
 
-JSObject*
-AudioStreamTrack::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return AudioStreamTrackBinding::Wrap(aCx, this, aGivenProto);
+void AudioStreamTrack::GetLabel(nsAString& aLabel, CallerType aCallerType) {
+  if (nsContentUtils::ResistFingerprinting(aCallerType)) {
+    aLabel.AssignLiteral("Internal Microphone");
+    return;
+  }
+  MediaStreamTrack::GetLabel(aLabel, aCallerType);
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

@@ -4,15 +4,17 @@
 "use strict";
 
 // Test that we can save full runtime heap snapshots when attached to the
-// ChromeActor or a ChildProcessActor.
+// ParentProcessTargetActor or a ContentProcessTargetActor.
 
 const { OS } = require("resource://gre/modules/osfile.jsm");
 
-const run_test = makeFullRuntimeMemoryActorTest(function* (client, memoryFront) {
-  const snapshotFilePath = yield memoryFront.saveHeapSnapshot();
-  ok(!!(yield OS.File.stat(snapshotFilePath)),
+add_task(async () => {
+  const { memoryFront } = await createMainProcessMemoryFront();
+
+  const snapshotFilePath = await memoryFront.saveHeapSnapshot();
+  ok(!!(await OS.File.stat(snapshotFilePath)),
      "Should have the heap snapshot file");
-  const snapshot = ThreadSafeChromeUtils.readHeapSnapshot(snapshotFilePath);
+  const snapshot = ChromeUtils.readHeapSnapshot(snapshotFilePath);
   ok(snapshot instanceof HeapSnapshot,
      "And we should be able to read a HeapSnapshot instance from the file");
 });

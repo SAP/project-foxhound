@@ -1,3 +1,5 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -70,15 +72,15 @@
 #include "build/build_config.h"
 
 #if defined(OS_POSIX)
-#include <pthread.h>
+#  include <pthread.h>
 #endif
 
 #if defined(OS_WIN)
-#include <windows.h>
+#  include <windows.h>
 #endif
 
 namespace base {
-  class TimeDelta;
+class TimeDelta;
 }
 
 class ConditionVariable {
@@ -101,7 +103,6 @@ class ConditionVariable {
   void Signal();
 
  private:
-
 #if defined(OS_WIN)
   CONDITION_VARIABLE cv_;
   SRWLOCK* const srwlock_;

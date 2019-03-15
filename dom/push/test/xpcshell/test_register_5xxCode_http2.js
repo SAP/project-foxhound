@@ -3,8 +3,8 @@
 
 'use strict';
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
 
 const {PushDB, PushService, PushServiceHttp2} = serviceExports;
 
@@ -36,7 +36,7 @@ function subscribe5xxCodeHandler(metadata, response) {
 }
 
 function listenSuccessHandler(metadata, response) {
-  do_check_true(true, "New listener point");
+  Assert.ok(true, "New listener point");
   ok(retries == 2, "Should try 2 times.");
   do_test_finished();
   response.setHeader("Retry-After", '10');
@@ -61,10 +61,10 @@ function run_test() {
   run_next_test();
 }
 
-add_task(function* test1() {
+add_task(async function test1() {
 
   let db = PushServiceHttp2.newPushDB();
-  do_register_cleanup(() => {
+  registerCleanupFunction(() => {
     return db.drop().then(_ => db.close());
   });
 
@@ -84,7 +84,7 @@ add_task(function* test1() {
     appId: Ci.nsIScriptSecurityManager.NO_APP_ID,
     inIsolatedMozBrowser: false,
   });
-  let newRecord = yield PushService.register({
+  let newRecord = await PushService.register({
     scope: 'https://example.com/retry5xxCode',
     originAttributes: originAttributes,
   });
@@ -98,7 +98,7 @@ add_task(function* test1() {
   equal(newRecord.pushReceiptEndpoint, pushReceiptEndpoint,
     'Wrong push endpoint receipt in registration record');
 
-  let record = yield db.getByKeyID(subscriptionUri);
+  let record = await db.getByKeyID(subscriptionUri);
   equal(record.subscriptionUri, subscriptionUri,
     'Wrong subscription ID in database record');
   equal(record.pushEndpoint, pushEndpoint,

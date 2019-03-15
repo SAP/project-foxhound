@@ -2,9 +2,13 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import, print_function
+
 import re
 import sys
 import traceback
+
+from six import reraise
 
 __all__ = ['parse', 'ParseError', 'ExpressionParser']
 
@@ -168,6 +172,7 @@ class string_token(literal_token):
     def __init__(self, scanner, value):
         literal_token.__init__(self, scanner, value[1:-1])
 
+
 precedence = [(end_token, rparen_token),
               (or_op_token,),
               (and_op_token,),
@@ -301,13 +306,11 @@ class ExpressionParser(object):
             self.iter = self._tokenize()
             self.token = self.iter.next()
             return self.expression()
-        except:
+        except Exception:
             extype, ex, tb = sys.exc_info()
             formatted = ''.join(traceback.format_exception_only(extype, ex))
-            raise ParseError("could not parse: "
-                             "%s\nexception: %svariables: %s" % (self.text,
-                                                                 formatted,
-                                                                 self.valuemapping)), None, tb
+            reraise(ParseError("could not parse: %s\nexception: %svariables: %s" %
+                    (self.text, formatted, self.valuemapping)), None, tb)
 
     __call__ = parse
 

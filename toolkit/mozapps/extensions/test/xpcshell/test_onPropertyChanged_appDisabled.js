@@ -1,66 +1,45 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const profileDir = gProfD.clone();
-profileDir.append("extensions");
-
-function run_test() {
-  do_test_pending();
+const ID = "addon1@tests.mozilla.org";
+add_task(async function run_test() {
   createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9.2");
 
-  writeInstallRDFForExtension({
-    id: "addon1@tests.mozilla.org",
-    version: "1.0",
-    name: "Test 1",
+  let xpi = createAddon({
+    id: ID,
     targetApplications: [{
       id: "xpcshell@tests.mozilla.org",
       minVersion: "0.1",
-      maxVersion: "0.2"
-    }]
-  }, profileDir);
-
-  startupManager();
+      maxVersion: "0.2",
+    }],
+  });
+  await manuallyInstall(xpi, AddonTestUtils.profileExtensions, ID);
 
   AddonManager.strictCompatibility = false;
+  await promiseStartupManager();
 
-  AddonManager.getAddonByID("addon1@tests.mozilla.org", function(aAddon) {
-    do_check_neq(aAddon, null);
-    aAddon.userDisabled = true;
-    do_execute_soon(run_test_1);
-  });
-}
+  let addon = await AddonManager.getAddonByID(ID);
+  Assert.notEqual(addon, null);
+  await addon.disable();
 
-function run_test_1() {
-  restartManager();
-  AddonManager.getAddonByID("addon1@tests.mozilla.org", function(aAddon) {
-    do_check_neq(aAddon, null);
-    do_check_true(aAddon.userDisabled);
-    do_check_false(aAddon.isActive);
-    do_check_false(aAddon.appDisabled);
+  Assert.ok(addon.userDisabled);
+  Assert.ok(!addon.isActive);
+  Assert.ok(!addon.appDisabled);
 
-    prepare_test({
-      "addon1@tests.mozilla.org": [
-        ["onPropertyChanged", ["appDisabled"]]
-      ]
-    }, [], run_test_2);
+  let promise = promiseAddonEvent("onPropertyChanged");
+  AddonManager.strictCompatibility = true;
+  let [, properties] = await promise;
 
-    AddonManager.strictCompatibility = true;
-  });
-}
+  Assert.deepEqual(properties, ["appDisabled"],
+                   "Got onPropertyChanged for appDisabled");
+  Assert.ok(addon.appDisabled);
 
-function run_test_2() {
-  AddonManager.getAddonByID("addon1@tests.mozilla.org", function(aAddon) {
-    do_check_neq(aAddon, null);
-    do_check_true(aAddon.userDisabled);
-    do_check_false(aAddon.isActive);
-    do_check_true(aAddon.appDisabled);
+  promise = promiseAddonEvent("onPropertyChanged");
+  AddonManager.strictCompatibility = false;
+  [, properties] = await promise;
 
-    prepare_test({
-      "addon1@tests.mozilla.org": [
-        ["onPropertyChanged", ["appDisabled"]]
-      ]
-    }, [], callback_soon(do_test_finished));
+  Assert.deepEqual(properties, ["appDisabled"],
+                   "Got onPropertyChanged for appDisabled");
+  Assert.ok(!addon.appDisabled);
+});
 
-    AddonManager.strictCompatibility = false;
-  });
-}

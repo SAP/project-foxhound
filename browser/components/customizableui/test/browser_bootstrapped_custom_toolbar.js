@@ -9,15 +9,15 @@ requestLongerTimeout(2);
 const kTestBarID = "testBar";
 const kWidgetID = "characterencoding-button";
 
-function createTestBar(aLegacy) {
-  let testBar = document.createElement("toolbar");
+function createTestBar() {
+  let testBar = document.createXULElement("toolbar");
   testBar.id = kTestBarID;
   testBar.setAttribute("customizable", "true");
   CustomizableUI.registerArea(kTestBarID, {
     type: CustomizableUI.TYPE_TOOLBAR,
-    legacy: aLegacy,
   });
   gNavToolbox.appendChild(testBar);
+  CustomizableUI.registerToolbarNode(testBar);
   return testBar;
 }
 
@@ -25,8 +25,7 @@ function createTestBar(aLegacy) {
  * Helper function that does the following:
  *
  * 1) Creates a custom toolbar and registers it
- *    with CustomizableUI. Sets the legacy attribute
- *    of the object passed to registerArea to aLegacy.
+ *    with CustomizableUI.
  * 2) Adds the widget with ID aWidgetID to that new
  *    toolbar.
  * 3) Enters customize mode and makes sure that the
@@ -41,9 +40,9 @@ function createTestBar(aLegacy) {
  * 8) Exits customize mode, removes and de-registers the
  *    toolbar, and resets the toolbars to default.
  */
-function checkRestoredPresence(aWidgetID, aLegacy) {
-  return Task.spawn(function* () {
-    let testBar = createTestBar(aLegacy);
+function checkRestoredPresence(aWidgetID) {
+  return (async function() {
+    let testBar = createTestBar();
     CustomizableUI.addWidgetToArea(aWidgetID, kTestBarID);
     let placement = CustomizableUI.getPlacementOfWidget(aWidgetID);
     is(placement.area, kTestBarID,
@@ -55,27 +54,22 @@ function checkRestoredPresence(aWidgetID, aLegacy) {
     placement = CustomizableUI.getPlacementOfWidget(aWidgetID);
     is(placement, null, "Expected " + aWidgetID + " to be in the palette");
 
-    testBar = createTestBar(aLegacy);
+    testBar = createTestBar();
 
-    yield startCustomizing();
+    await startCustomizing();
     placement = CustomizableUI.getPlacementOfWidget(aWidgetID);
     is(placement.area, kTestBarID,
        "Expected " + aWidgetID + " to be in the test toolbar");
-    yield endCustomizing();
+    await endCustomizing();
 
     CustomizableUI.unregisterArea(testBar.id);
     testBar.remove();
 
-    yield resetCustomization();
-  });
+    await resetCustomization();
+  })();
 }
 
-add_task(function* () {
-  yield checkRestoredPresence("downloads-button", false);
-  yield checkRestoredPresence("downloads-button", true);
-});
-
-add_task(function* () {
-  yield checkRestoredPresence("characterencoding-button", false);
-  yield checkRestoredPresence("characterencoding-button", true);
+add_task(async function() {
+  await checkRestoredPresence("downloads-button");
+  await checkRestoredPresence("characterencoding-button");
 });

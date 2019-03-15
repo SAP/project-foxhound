@@ -9,22 +9,22 @@
 
 const TEST_URI = "<div>Test Element</div>";
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
-  yield selectNode("div", inspector);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, view} = await openRuleView();
+  await selectNode("div", inspector);
 
-  let ruleEditor = getRuleViewRuleEditor(view, 0);
+  const ruleEditor = getRuleViewRuleEditor(view, 0);
   // Note that we wait for a markup mutation here because this new rule will end
   // up creating a style attribute on the node shown in the markup-view.
   // (we also wait for the rule-view to refresh).
-  let onMutation = inspector.once("markupmutation");
-  let onRuleViewChanged = view.once("ruleview-changed");
-  yield createNewRuleViewProperty(ruleEditor,
+  const onMutation = inspector.once("markupmutation");
+  const onRuleViewChanged = view.once("ruleview-changed");
+  await createNewRuleViewProperty(ruleEditor,
     "color:red;color:orange;color:yellow;color:green;color:blue;color:indigo;" +
     "color:violet;");
-  yield onMutation;
-  yield onRuleViewChanged;
+  await onMutation;
+  await onRuleViewChanged;
 
   is(ruleEditor.rule.textProps.length, 7,
     "Should have created new text properties.");

@@ -19,15 +19,8 @@ class SkString;
 ////////////////////////////////////////////////////////////////////////////////
 // Factory
 
-#ifndef SK_HAS_DWRITE_1_H
-#define SK_HAS_DWRITE_1_H (WINVER_MAXVER >= 0x0602)
-#endif
-
-#ifndef SK_HAS_DWRITE_2_H
-#define SK_HAS_DWRITE_2_H (WINVER_MAXVER >= 0x0603)
-#endif
-
 IDWriteFactory* sk_get_dwrite_factory();
+IDWriteRenderingParams* sk_get_dwrite_default_rendering_params();
 
 ////////////////////////////////////////////////////////////////////////////////
 // String conversion
@@ -46,8 +39,8 @@ HRESULT sk_wchar_to_skstring(WCHAR* name, int nameLen, SkString* skname);
 ////////////////////////////////////////////////////////////////////////////////
 // Locale
 
-void sk_get_locale_string(IDWriteLocalizedStrings* names, const WCHAR* preferedLocale,
-                       SkString* skname);
+HRESULT sk_get_locale_string(IDWriteLocalizedStrings* names, const WCHAR* preferedLocale,
+                             SkString* skname);
 
 typedef int (WINAPI *SkGetUserDefaultLocaleNameProc)(LPWSTR, int);
 HRESULT SkGetGetUserDefaultLocaleNameProc(SkGetUserDefaultLocaleNameProc* proc);

@@ -1,13 +1,21 @@
 "use strict";
 
-Components.utils.import("resource://gre/modules/ExtensionCommon.jsm");
-Components.utils.import("resource://gre/modules/Schemas.jsm");
+ChromeUtils.import("resource://gre/modules/ExtensionCommon.jsm");
+ChromeUtils.import("resource://gre/modules/Schemas.jsm");
 
 let {BaseContext, LocalAPIImplementation} = ExtensionCommon;
 
 let schemaJson = [
   {
     namespace: "testnamespace",
+    types: [{
+      id: "Widget",
+      type: "object",
+      properties: {
+        size: {type: "integer"},
+        colour: {type: "string", optional: true},
+      },
+    }],
     functions: [{
       name: "one_required",
       type: "function",
@@ -43,6 +51,18 @@ let schemaJson = [
         type: "function",
         parameters: [],
         optional: true,
+      }],
+    }, {
+      name: "async_result",
+      type: "function",
+      async: "callback",
+      parameters: [{
+        name: "callback",
+        type: "function",
+        parameters: [{
+          name: "widget",
+          $ref: "Widget",
+        }],
       }],
     }],
   },
@@ -85,27 +105,27 @@ function generateAPIs(extraWrapper, apiObj) {
   return root.testnamespace;
 }
 
-add_task(function* testParameterValidation() {
-  yield Schemas.load("data:," + JSON.stringify(schemaJson));
+add_task(async function testParameterValidation() {
+  await Schemas.load("data:," + JSON.stringify(schemaJson));
 
   let testnamespace;
   function assertThrows(name, ...args) {
     Assert.throws(() => testnamespace[name](...args),
-        /Incorrect argument types/,
-        `Expected testnamespace.${name}(${args.map(String).join(", ")}) to throw.`);
+                  /Incorrect argument types/,
+                  `Expected testnamespace.${name}(${args.map(String).join(", ")}) to throw.`);
   }
   function assertNoThrows(name, ...args) {
     try {
       testnamespace[name](...args);
     } catch (e) {
-      do_print(`testnamespace.${name}(${args.map(String).join(", ")}) unexpectedly threw.`);
+      info(`testnamespace.${name}(${args.map(String).join(", ")}) unexpectedly threw.`);
       throw new Error(e);
     }
   }
   let cb = () => {};
 
   for (let isChromeCompat of [true, false]) {
-    do_print(`Testing API validation with isChromeCompat=${isChromeCompat}`);
+    info(`Testing API validation with isChromeCompat=${isChromeCompat}`);
     testnamespace = generateAPIs({
       isChromeCompat,
     }, {
@@ -147,61 +167,92 @@ add_task(function* testParameterValidation() {
   }
 });
 
-add_task(function* testAsyncResults() {
-  yield Schemas.load("data:," + JSON.stringify(schemaJson));
-  function* runWithCallback(func) {
-    do_print(`Calling testnamespace.${func.name}, expecting callback with result`);
-    return yield new Promise(resolve => {
+add_task(async function testCheckAsyncResults() {
+  await Schemas.load("data:," + JSON.stringify(schemaJson));
+
+  const complete = generateAPIs({}, {
+    async_result: async () => ({size: 5, colour: "green"}),
+  });
+
+  const optional = generateAPIs({}, {
+    async_result: async () => ({size: 6}),
+  });
+
+  const invalid = generateAPIs({}, {
+    async_result: async () => ({}),
+  });
+
+  deepEqual(await complete.async_result(), {size: 5, colour: "green"});
+
+  deepEqual(await optional.async_result(), {size: 6},
+            "Missing optional properties is allowed");
+
+  if (AppConstants.DEBUG) {
+    await Assert.rejects(
+      invalid.async_result(),
+      /Type error for widget value \(Property "size" is required\)/,
+      "Should throw for invalid callback argument in DEBUG builds");
+  } else {
+    deepEqual(await invalid.async_result(), {},
+              "Invalid callback argument doesn't throw in release builds");
+  }
+});
+
+add_task(async function testAsyncResults() {
+  await Schemas.load("data:," + JSON.stringify(schemaJson));
+  function runWithCallback(func) {
+    info(`Calling testnamespace.${func.name}, expecting callback with result`);
+    return new Promise(resolve => {
       let result = "uninitialized value";
       let returnValue = func(reply => {
         result = reply;
         resolve(result);
       });
       // When a callback is given, the return value must be missing.
-      do_check_eq(returnValue, undefined);
+      Assert.equal(returnValue, undefined);
       // Callback must be called asynchronously.
-      do_check_eq(result, "uninitialized value");
+      Assert.equal(result, "uninitialized value");
     });
   }
 
-  function* runFailCallback(func) {
-    do_print(`Calling testnamespace.${func.name}, expecting callback with error`);
-    return yield new Promise(resolve => {
+  function runFailCallback(func) {
+    info(`Calling testnamespace.${func.name}, expecting callback with error`);
+    return new Promise(resolve => {
       func(reply => {
-        do_check_eq(reply, undefined);
+        Assert.equal(reply, undefined);
         resolve(context.lastError.message); // eslint-disable-line no-undef
       });
     });
   }
 
   for (let isChromeCompat of [true, false]) {
-    do_print(`Testing API invocation with isChromeCompat=${isChromeCompat}`);
+    info(`Testing API invocation with isChromeCompat=${isChromeCompat}`);
     let testnamespace = generateAPIs({
       isChromeCompat,
     }, {
       async_required(cb) {
-        do_check_eq(cb, undefined);
+        Assert.equal(cb, undefined);
         return Promise.resolve(1);
       },
       async_optional(cb) {
-        do_check_eq(cb, undefined);
+        Assert.equal(cb, undefined);
         return Promise.resolve(2);
       },
     });
-    if (!isChromeCompat) {  // No promises for chrome.
-      do_print("testnamespace.async_required should be a Promise");
+    if (!isChromeCompat) { // No promises for chrome.
+      info("testnamespace.async_required should be a Promise");
       let promise = testnamespace.async_required();
-      do_check_true(promise instanceof context.cloneScope.Promise);
-      do_check_eq(yield promise, 1);
+      Assert.ok(promise instanceof context.cloneScope.Promise);
+      Assert.equal(await promise, 1);
 
-      do_print("testnamespace.async_optional should be a Promise");
+      info("testnamespace.async_optional should be a Promise");
       promise = testnamespace.async_optional();
-      do_check_true(promise instanceof context.cloneScope.Promise);
-      do_check_eq(yield promise, 2);
+      Assert.ok(promise instanceof context.cloneScope.Promise);
+      Assert.equal(await promise, 2);
     }
 
-    do_check_eq(yield* runWithCallback(testnamespace.async_required), 1);
-    do_check_eq(yield* runWithCallback(testnamespace.async_optional), 2);
+    Assert.equal(await runWithCallback(testnamespace.async_required), 1);
+    Assert.equal(await runWithCallback(testnamespace.async_optional), 2);
 
     let otherSandbox = Cu.Sandbox(null, {});
     let errorFactories = [
@@ -211,7 +262,7 @@ add_task(function* testAsyncResults() {
       msg => Cu.evalInSandbox(`Promise.reject({message: "${msg}"})`, otherSandbox),
     ];
     for (let makeError of errorFactories) {
-      do_print(`Testing callback/promise with error caused by: ${makeError}`);
+      info(`Testing callback/promise with error caused by: ${makeError}`);
       testnamespace = generateAPIs({
         isChromeCompat,
       }, {
@@ -219,15 +270,17 @@ add_task(function* testAsyncResults() {
         async_optional() { return makeError("TWO"); },
       });
 
-      if (!isChromeCompat) {  // No promises for chrome.
-        yield Assert.rejects(testnamespace.async_required(), /ONE/,
-            "should reject testnamespace.async_required()").catch(() => {});
-        yield Assert.rejects(testnamespace.async_optional(), /TWO/,
-            "should reject testnamespace.async_optional()").catch(() => {});
+      if (!isChromeCompat) { // No promises for chrome.
+        await Assert.rejects(
+          testnamespace.async_required(), /ONE/,
+          "should reject testnamespace.async_required()");
+        await Assert.rejects(
+          testnamespace.async_optional(), /TWO/,
+          "should reject testnamespace.async_optional()");
       }
 
-      do_check_eq(yield* runFailCallback(testnamespace.async_required), "ONE");
-      do_check_eq(yield* runFailCallback(testnamespace.async_optional), "TWO");
+      Assert.equal(await runFailCallback(testnamespace.async_required), "ONE");
+      Assert.equal(await runFailCallback(testnamespace.async_optional), "TWO");
     }
   }
 });

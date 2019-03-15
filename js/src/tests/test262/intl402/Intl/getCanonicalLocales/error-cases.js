@@ -1,4 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty('Intl')) -- needs Intl
 // Copyright 2016 Mozilla Corporation. All rights reserved.
 // This code is governed by the license found in the LICENSE file.
 
@@ -34,6 +33,7 @@ var typeErrorCases =
   [
     null,
     [null],
+    [undefined],
     [true],
     [NaN],
     [2],

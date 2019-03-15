@@ -6,7 +6,7 @@
 // downloaded, and allows the trust of the cert to be specified.
 
 const { MockRegistrar } =
-  Cu.import("resource://testing-common/MockRegistrar.jsm", {});
+  ChromeUtils.import("resource://testing-common/MockRegistrar.jsm", {});
 
 /**
  * @typedef {TestCase}
@@ -50,54 +50,24 @@ function openCertDownloadDialog(cert) {
                               "", cert, returnVals);
   return new Promise((resolve, reject) => {
     win.addEventListener("load", function() {
-      resolve([win, returnVals]);
+      executeSoon(() => resolve([win, returnVals]));
     }, {once: true});
   });
 }
 
-// Mock implementation of nsICertificateDialogs.
-const gCertificateDialogs = {
-  expectedCert: null,
-  viewCertCallCount: 0,
-  confirmDownloadCACert(ctx, cert, trust) {
-    Assert.ok(false, "confirmDownloadCACert() should not have been called");
-  },
-  setPKCS12FilePassword(ctx, password) {
-    Assert.ok(false, "setPKCS12FilePassword() should not have been called");
-  },
-  getPKCS12FilePassword(ctx, password) {
-    Assert.ok(false, "getPKCS12FilePassword() should not have been called");
-  },
-  viewCert(ctx, cert) {
-    this.viewCertCallCount++;
-    Assert.notEqual(cert, null, "Cert to view should not be null");
-    Assert.equal(cert, this.expectedCert,
-                 "Actual and expected cert should match");
-  },
-
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsICertificateDialogs])
-};
-
-add_task(function* setup() {
+add_task(async function setup() {
   for (let testCase of TEST_CASES) {
-    testCase.cert = yield readCertificate(testCase.certFilename, ",,");
+    testCase.cert = await readCertificate(testCase.certFilename, ",,");
     Assert.notEqual(testCase.cert, null,
                     `'${testCase.certFilename}' should have been read`);
   }
-
-  let certificateDialogsCID =
-    MockRegistrar.register("@mozilla.org/nsCertificateDialogs;1",
-                           gCertificateDialogs);
-  registerCleanupFunction(() => {
-    MockRegistrar.unregister(certificateDialogsCID);
-  });
 });
 
 // Test that the trust header message corresponds to the provided cert, and that
 // the View Cert button launches the cert viewer for the provided cert.
-add_task(function* testTrustHeaderAndViewCertButton() {
+add_task(async function testTrustHeaderAndViewCertButton() {
   for (let testCase of TEST_CASES) {
-    let [win, retVals] = yield openCertDownloadDialog(testCase.cert);
+    let [win] = await openCertDownloadDialog(testCase.cert);
     let expectedTrustHeaderString =
       `Do you want to trust \u201C${testCase.expectedDisplayString}\u201D ` +
       "for the following purposes?";
@@ -106,26 +76,18 @@ add_task(function* testTrustHeaderAndViewCertButton() {
                  "Actual and expected trust header text should match for " +
                  `${testCase.certFilename}`);
 
-    gCertificateDialogs.viewCertCallCount = 0;
-    gCertificateDialogs.expectedCert = testCase.cert;
-    info("Pressing View Cert button");
-    win.document.getElementById("viewC-button").doCommand();
-    Assert.equal(gCertificateDialogs.viewCertCallCount, 1,
-                 "viewCert() should've been called once");
-
-    yield BrowserTestUtils.closeWindow(win);
+    await BrowserTestUtils.closeWindow(win);
   }
 });
 
 // Test that the right values are returned when the dialog is accepted.
-add_task(function* testAcceptDialogReturnValues() {
-  let [win, retVals] = yield openCertDownloadDialog(TEST_CASES[0].cert);
+add_task(async function testAcceptDialogReturnValues() {
+  let [win, retVals] = await openCertDownloadDialog(TEST_CASES[0].cert);
   win.document.getElementById("trustSSL").checked = true;
   win.document.getElementById("trustEmail").checked = false;
-  win.document.getElementById("trustObjSign").checked = true;
   info("Accepting dialog");
   win.document.getElementById("download_cert").acceptDialog();
-  yield BrowserTestUtils.windowClosed(win);
+  await BrowserTestUtils.windowClosed(win);
 
   Assert.ok(retVals.get("importConfirmed"),
             "Return value should signal user chose to import the cert");
@@ -133,16 +95,14 @@ add_task(function* testAcceptDialogReturnValues() {
             "Return value should signal SSL trust checkbox was checked");
   Assert.ok(!retVals.get("trustForEmail"),
             "Return value should signal E-mail trust checkbox was unchecked");
-  Assert.ok(retVals.get("trustForObjSign"),
-            "Return value should signal Obj Sign trust checkbox was checked");
 });
 
 // Test that the right values are returned when the dialog is canceled.
-add_task(function* testCancelDialogReturnValues() {
-  let [win, retVals] = yield openCertDownloadDialog(TEST_CASES[0].cert);
+add_task(async function testCancelDialogReturnValues() {
+  let [win, retVals] = await openCertDownloadDialog(TEST_CASES[0].cert);
   info("Canceling dialog");
   win.document.getElementById("download_cert").cancelDialog();
-  yield BrowserTestUtils.windowClosed(win);
+  await BrowserTestUtils.windowClosed(win);
 
   Assert.ok(!retVals.get("importConfirmed"),
             "Return value should signal user chose not to import the cert");

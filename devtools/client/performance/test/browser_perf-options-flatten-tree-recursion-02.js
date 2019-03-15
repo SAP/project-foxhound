@@ -13,35 +13,35 @@ const { initPerformanceInNewTab, teardownToolboxAndRemoveTab } = require("devtoo
 const { startRecording, stopRecording } = require("devtools/client/performance/test/helpers/actions");
 const { once } = require("devtools/client/performance/test/helpers/event-utils");
 
-add_task(function* () {
-  let { panel } = yield initPerformanceInNewTab({
+add_task(async function() {
+  const { panel } = await initPerformanceInNewTab({
     url: SIMPLE_URL,
-    win: window
+    win: window,
   });
 
-  let {
+  const {
     EVENTS,
     PerformanceController,
     DetailsView,
     MemoryFlameGraphView,
     RecordingUtils,
-    FlameGraphUtils
+    FlameGraphUtils,
   } = panel.panelWin;
 
   // Enable memory to test
   Services.prefs.setBoolPref(UI_ENABLE_ALLOCATIONS_PREF, true);
   Services.prefs.setBoolPref(UI_FLATTEN_RECURSION_PREF, true);
 
-  yield startRecording(panel);
-  yield stopRecording(panel);
+  await startRecording(panel);
+  await stopRecording(panel);
 
   let rendered = once(MemoryFlameGraphView, EVENTS.UI_MEMORY_FLAMEGRAPH_RENDERED);
-  yield DetailsView.selectView("memory-flamegraph");
-  yield rendered;
+  await DetailsView.selectView("memory-flamegraph");
+  await rendered;
 
-  let allocations1 = PerformanceController.getCurrentRecording().getAllocations();
-  let thread1 = RecordingUtils.getProfileThreadFromAllocations(allocations1);
-  let rendering1 = FlameGraphUtils._cache.get(thread1);
+  const allocations1 = PerformanceController.getCurrentRecording().getAllocations();
+  const thread1 = RecordingUtils.getProfileThreadFromAllocations(allocations1);
+  const rendering1 = FlameGraphUtils._cache.get(thread1);
 
   ok(allocations1,
     "The allocations were retrieved from the controller.");
@@ -52,12 +52,12 @@ add_task(function* () {
 
   rendered = once(MemoryFlameGraphView, EVENTS.UI_MEMORY_FLAMEGRAPH_RENDERED);
   Services.prefs.setBoolPref(UI_FLATTEN_RECURSION_PREF, false);
-  yield rendered;
+  await rendered;
   ok(true, "MemoryFlameGraphView rerendered when toggling flatten-tree-recursion.");
 
-  let allocations2 = PerformanceController.getCurrentRecording().getAllocations();
-  let thread2 = RecordingUtils.getProfileThreadFromAllocations(allocations2);
-  let rendering2 = FlameGraphUtils._cache.get(thread2);
+  const allocations2 = PerformanceController.getCurrentRecording().getAllocations();
+  const thread2 = RecordingUtils.getProfileThreadFromAllocations(allocations2);
+  const rendering2 = FlameGraphUtils._cache.get(thread2);
 
   is(allocations1, allocations2,
     "The same allocations data should be retrieved from the controller (1).");
@@ -68,12 +68,12 @@ add_task(function* () {
 
   rendered = once(MemoryFlameGraphView, EVENTS.UI_MEMORY_FLAMEGRAPH_RENDERED);
   Services.prefs.setBoolPref(UI_FLATTEN_RECURSION_PREF, true);
-  yield rendered;
+  await rendered;
   ok(true, "MemoryFlameGraphView rerendered when toggling back flatten-tree-recursion.");
 
-  let allocations3 = PerformanceController.getCurrentRecording().getAllocations();
-  let thread3 = RecordingUtils.getProfileThreadFromAllocations(allocations3);
-  let rendering3 = FlameGraphUtils._cache.get(thread3);
+  const allocations3 = PerformanceController.getCurrentRecording().getAllocations();
+  const thread3 = RecordingUtils.getProfileThreadFromAllocations(allocations3);
+  const rendering3 = FlameGraphUtils._cache.get(thread3);
 
   is(allocations2, allocations3,
     "The same allocations data should be retrieved from the controller (2).");
@@ -82,5 +82,5 @@ add_task(function* () {
   isnot(rendering2, rendering3,
     "The rendering data should be different because other options were used (2).");
 
-  yield teardownToolboxAndRemoveTab(panel);
+  await teardownToolboxAndRemoveTab(panel);
 });

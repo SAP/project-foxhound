@@ -2,6 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/* globals JSZip */
+
+/* eslint-disable no-nested-ternary */
+
 // base: relative or absolute path (http[s] or file, untested with ftp)
 // files: array of file names relative to base to include at the zip
 // callbacks: object with optional functions:
@@ -11,19 +15,11 @@ function createXpiDataUri(base, files, callbacks) {
   // Synchronous XHR for http[s]/file (untested ftp), throws on any error
   // Note that on firefox, file:// XHR can't access files outside base dir
   function readBinFile(url) {
-    // The DOM will qualify the URI for us if it's relative (not IE6)
-    function isFileUri(uri) {
-      var a = document.createElement("a");
-      a.href = uri;
-      return a.href.toLowerCase().indexOf("file://") == 0;
-    }
-
     var r =  new XMLHttpRequest();
     r.open("GET", url, false);
     r.requestType = "arraybuffer";
     r.overrideMimeType("text/plain; charset=x-user-defined");
-    try { r.send(); }
-    catch (e) { throw "FileNotRetrieved: " + url + " - " + e; }
+    try { r.send(); } catch (e) { throw "FileNotRetrieved: " + url + " - " + e; }
     // For 'file://' Firefox sets status=0 on success or throws otherwise
     // In Firefox 34-ish onwards, success status is 200.
     if (!(r.readyState == 4 && (r.status == 0 || r.status == 200)))
@@ -35,7 +31,7 @@ function createXpiDataUri(base, files, callbacks) {
   // Create base64 string for a binary array (btoa fails on arbitrary binary data)
   function base64EncArr(aBytes) {
     // From https://developer.mozilla.org/en-US/docs/Web/JavaScript/Base64_encoding_and_decoding
-    "use strict;"
+    "use strict;";
     function uint6ToB64(nUint6) {
       return nUint6 < 26 ? nUint6 + 65 : nUint6 < 52 ? nUint6 + 71 : nUint6 < 62 ?
           nUint6 - 4 : nUint6 === 62 ? 43 : nUint6 === 63 ? 47 : 65;
@@ -53,14 +49,14 @@ function createXpiDataUri(base, files, callbacks) {
       }
     }
 
-    return sB64Enc.substr(0, sB64Enc.length - 2 + nMod3) + (nMod3 === 2 ? '' : nMod3 === 1 ? '=' : '==');
+    return sB64Enc.substr(0, sB64Enc.length - 2 + nMod3) + (nMod3 === 2 ? "" : nMod3 === 1 ? "=" : "==");
   }
 
   // Create the zip/xpi
   try {
     function dummy() {}
-    var onsuccess  = callbacks.onsuccess  || dummy;
-    var onerror    = callbacks.onerror    || dummy;
+    var onsuccess  = callbacks.onsuccess || dummy;
+    var onerror    = callbacks.onerror || dummy;
     var onprogress = callbacks.onprogress || dummy;
 
     var zip = new JSZip();

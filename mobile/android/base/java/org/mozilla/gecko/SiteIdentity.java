@@ -12,7 +12,7 @@ import java.util.Locale;
 import android.text.TextUtils;
 
 public class SiteIdentity {
-    private final String LOGTAG = "GeckoSiteIdentity";
+    private static final String LOGTAG = "GeckoSiteIdentity";
     private SecurityMode mSecurityMode;
     private boolean mSecure;
     private MixedMode mMixedModeActive;
@@ -26,8 +26,6 @@ public class SiteIdentity {
     private String mVerifier;
     private String mOrigin;
 
-    // The order of the items here relate to image levels in
-    // site_security_level.xml
     public enum SecurityMode {
         UNKNOWN,
         IDENTIFIED,
@@ -35,16 +33,12 @@ public class SiteIdentity {
         CHROMEUI
     }
 
-    // The order of the items here relate to image levels in
-    // site_security_level.xml
     public enum MixedMode {
         UNKNOWN,
         BLOCKED,
         LOADED
     }
 
-    // The order of the items here relate to image levels in
-    // site_security_level.xml
     public enum TrackingMode {
         UNKNOWN,
         TRACKING_CONTENT_BLOCKED,
@@ -97,8 +91,6 @@ public class SiteIdentity {
                 MixedMode.class, mode.getString("mixed_display"), MixedMode.UNKNOWN);
         mMixedModeActive = getEnumValue(
                 MixedMode.class, mode.getString("mixed_active"), MixedMode.UNKNOWN);
-        mTrackingMode = getEnumValue(
-                TrackingMode.class, mode.getString("tracking"), TrackingMode.UNKNOWN);
 
         if (!mode.containsKey("identity") || !identityData.containsKey("origin")) {
             resetIdentity();
@@ -116,6 +108,10 @@ public class SiteIdentity {
         mVerifier = identityData.getString("verifier");
         mSecure = identityData.getBoolean("secure");
         mSecurityException = identityData.getBoolean("securityException");
+    }
+
+    /* package */ void updateTrackingMode(final String trackingEvent) {
+        mTrackingMode = getEnumValue(TrackingMode.class, trackingEvent, TrackingMode.UNKNOWN);
     }
 
     public SecurityMode getSecurityMode() {

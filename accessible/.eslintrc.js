@@ -1,17 +1,16 @@
 "use strict";
 
 module.exports = {
-  "extends": [
-    "../.eslintrc.js"
-  ],
-  "globals": {
-    "Cc": true,
-    "Ci": true,
-    "Components": true,
-    "console": true,
-    "Cu": true,
-    "dump": true,
-    "Services": true,
-    "XPCOMUtils": true
+  "rules": {
+    // Warn about cyclomatic complexity in functions.
+    "complexity": ["error", 47],
+
+    // XXX These are rules that are enabled in the recommended configuration, but
+    // disabled here due to failures when initially implemented. They should be
+    // removed (and hence enabled) at some stage.
+    "consistent-return": "off",
+    "no-unexpected-multiline": "off",
+    "no-unsafe-finally": "off",
+    "no-useless-call": "off",
   }
 };

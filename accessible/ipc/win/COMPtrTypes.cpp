@@ -6,45 +6,69 @@
 
 #include "mozilla/a11y/COMPtrTypes.h"
 
+#include "Accessible2_3.h"
 #include "MainThreadUtils.h"
 #include "mozilla/a11y/Accessible.h"
+#include "mozilla/a11y/Platform.h"
+#include "mozilla/a11y/HandlerProvider.h"
+#include "mozilla/Assertions.h"
 #include "mozilla/Move.h"
 #include "mozilla/mscom/MainThreadHandoff.h"
+#include "mozilla/mscom/Utils.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/RefPtr.h"
+#include "nsXULAppAPI.h"
 
 using mozilla::mscom::MainThreadHandoff;
+using mozilla::mscom::ProxyUniquePtr;
 using mozilla::mscom::STAUniquePtr;
 
 namespace mozilla {
 namespace a11y {
 
-IAccessibleHolder
-CreateHolderFromAccessible(Accessible* aAccToWrap)
-{
-  MOZ_ASSERT(aAccToWrap && NS_IsMainThread());
-  if (!aAccToWrap) {
+IAccessibleHolder CreateHolderFromAccessible(NotNull<Accessible*> aAccToWrap) {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  STAUniquePtr<IAccessible> iaToProxy;
+  aAccToWrap->GetNativeInterface(mscom::getter_AddRefs(iaToProxy));
+  MOZ_DIAGNOSTIC_ASSERT(iaToProxy);
+  if (!iaToProxy) {
     return nullptr;
   }
 
-  IAccessible* rawNative = nullptr;
-  aAccToWrap->GetNativeInterface((void**)&rawNative);
-  MOZ_ASSERT(rawNative);
-  if (!rawNative) {
-    return nullptr;
+  static const bool useHandler =
+      Preferences::GetBool("accessibility.handler.enabled", false) &&
+      IsHandlerRegistered();
+
+  RefPtr<HandlerProvider> payload;
+  if (useHandler) {
+    payload = new HandlerProvider(IID_IAccessible,
+                                  mscom::ToInterceptorTargetPtr(iaToProxy));
   }
 
-  STAUniquePtr<IAccessible> iaToProxy(rawNative);
-
-  IAccessible* rawIntercepted = nullptr;
-  HRESULT hr = MainThreadHandoff::WrapInterface(Move(iaToProxy), &rawIntercepted);
+  ProxyUniquePtr<IAccessible> intercepted;
+  HRESULT hr = MainThreadHandoff::WrapInterface(
+      std::move(iaToProxy), payload,
+      (IAccessible**)mscom::getter_AddRefs(intercepted));
   MOZ_ASSERT(SUCCEEDED(hr));
   if (FAILED(hr)) {
     return nullptr;
   }
 
-  IAccessibleHolder::COMPtrType iaIntercepted(rawIntercepted);
-  return IAccessibleHolder(Move(iaIntercepted));
+  return IAccessibleHolder(std::move(intercepted));
 }
 
-} // namespace a11y
-} // namespace mozilla
+IHandlerControlHolder CreateHolderFromHandlerControl(
+    mscom::ProxyUniquePtr<IHandlerControl> aHandlerControl) {
+  MOZ_ASSERT(aHandlerControl);
+  MOZ_ASSERT(XRE_IsContentProcess());
+  MOZ_ASSERT(NS_IsMainThread());
+  if (!aHandlerControl) {
+    return nullptr;
+  }
+
+  return IHandlerControlHolder(std::move(aHandlerControl));
+}
+
+}  // namespace a11y
+}  // namespace mozilla

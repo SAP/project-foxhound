@@ -2,6 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+// This file is loaded into the browser window scope.
+/* eslint-env mozilla/browser-window */
+
 var gSafeBrowsing = {
 
   setReportPhishingMenu() {
@@ -15,26 +18,29 @@ var gSafeBrowsing = {
       docURI && docURI.spec.startsWith("about:blocked?e=deceptiveBlocked");
 
     // Show/hide the appropriate menu item.
-    document.getElementById("menu_HelpPopup_reportPhishingtoolmenu")
-            .hidden = isPhishingPage;
-    document.getElementById("menu_HelpPopup_reportPhishingErrortoolmenu")
-            .hidden = !isPhishingPage;
-
-    var broadcasterId = isPhishingPage
-                        ? "reportPhishingErrorBroadcaster"
-                        : "reportPhishingBroadcaster";
-
-    var broadcaster = document.getElementById(broadcasterId);
-    if (!broadcaster)
-      return;
+    const reportMenu = document.getElementById("menu_HelpPopup_reportPhishingtoolmenu");
+    reportMenu.hidden = isPhishingPage;
+    const reportErrorMenu = document.getElementById("menu_HelpPopup_reportPhishingErrortoolmenu");
+    reportErrorMenu.hidden = !isPhishingPage;
 
     // Now look at the currentURI to learn which page we were trying
     // to browse to.
-    let uri = gBrowser.currentURI;
-    if (uri && (uri.schemeIs("http") || uri.schemeIs("https")))
-      broadcaster.removeAttribute("disabled");
-    else
-      broadcaster.setAttribute("disabled", true);
+    const uri = gBrowser.currentURI;
+    const isReportablePage = uri && (uri.schemeIs("http") || uri.schemeIs("https"));
+
+    const disabledByPolicy = !Services.policies.isAllowed("feedbackCommands");
+
+    if (disabledByPolicy || isPhishingPage || !isReportablePage) {
+      reportMenu.setAttribute("disabled", "true");
+    } else {
+      reportMenu.removeAttribute("disabled");
+    }
+
+    if (disabledByPolicy || !isPhishingPage || !isReportablePage) {
+      reportErrorMenu.setAttribute("disabled", "true");
+    } else {
+      reportErrorMenu.removeAttribute("disabled");
+    }
   },
 
   /**
@@ -51,15 +57,17 @@ var gSafeBrowsing = {
   getReportURL(name, info) {
     let reportInfo = info;
     if (!reportInfo) {
-      let pageUri = gBrowser.currentURI.clone();
+      let pageUri = gBrowser.currentURI;
 
       // Remove the query to avoid including potentially sensitive data
       if (pageUri instanceof Ci.nsIURL) {
-        pageUri.query = "";
+        pageUri = pageUri.mutate()
+                         .setQuery("")
+                         .finalize();
       }
 
       reportInfo = { uri: pageUri.asciiSpec };
     }
     return SafeBrowsing.getReportURL(name, reportInfo);
-  }
-}
+  },
+};

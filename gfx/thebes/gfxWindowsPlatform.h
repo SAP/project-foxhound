@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,9 +6,8 @@
 #ifndef GFX_WINDOWS_PLATFORM_H
 #define GFX_WINDOWS_PLATFORM_H
 
-
 /**
- * XXX to get CAIRO_HAS_D2D_SURFACE, CAIRO_HAS_DWRITE_FONT
+ * XXX to get CAIRO_HAS_DWRITE_FONT
  * and cairo_win32_scaled_font_select_font
  */
 #include "cairo-win32.h"
@@ -37,10 +36,10 @@
 // This header is available in the June 2010 SDK and in the Win8 SDK
 #include <d3dcommon.h>
 // Win 8.0 SDK types we'll need when building using older sdks.
-#if !defined(D3D_FEATURE_LEVEL_11_1) // defined in the 8.0 SDK only
-#define D3D_FEATURE_LEVEL_11_1 static_cast<D3D_FEATURE_LEVEL>(0xb100)
-#define D3D_FL9_1_REQ_TEXTURE2D_U_OR_V_DIMENSION 2048
-#define D3D_FL9_3_REQ_TEXTURE2D_U_OR_V_DIMENSION 4096
+#if !defined(D3D_FEATURE_LEVEL_11_1)  // defined in the 8.0 SDK only
+#  define D3D_FEATURE_LEVEL_11_1 static_cast<D3D_FEATURE_LEVEL>(0xb100)
+#  define D3D_FL9_1_REQ_TEXTURE2D_U_OR_V_DIMENSION 2048
+#  define D3D_FL9_3_REQ_TEXTURE2D_U_OR_V_DIMENSION 4096
 #endif
 
 namespace mozilla {
@@ -48,12 +47,11 @@ namespace gfx {
 class DrawTarget;
 class FeatureState;
 class DeviceManagerDx;
-}
+}  // namespace gfx
 namespace layers {
-class DeviceManagerD3D9;
 class ReadbackManagerD3D11;
 }
-}
+}  // namespace mozilla
 struct IDirect3DDevice9;
 struct ID3D11Device;
 struct IDXGIAdapter1;
@@ -63,210 +61,210 @@ struct IDXGIAdapter1;
  * not backed by a HDC this will get the HDC for the screen device context
  * instead.
  */
-class MOZ_STACK_CLASS DCFromDrawTarget final
-{
-public:
-    explicit DCFromDrawTarget(mozilla::gfx::DrawTarget& aDrawTarget);
+class MOZ_STACK_CLASS DCForMetrics final {
+ public:
+  explicit DCForMetrics();
 
-    ~DCFromDrawTarget() {
-        if (mNeedsRelease) {
-            ReleaseDC(nullptr, mDC);
-        } else {
-            RestoreDC(mDC, -1);
-        }
-    }
+  ~DCForMetrics() { ReleaseDC(nullptr, mDC); }
 
-    operator HDC () {
-        return mDC;
-    }
+  operator HDC() { return mDC; }
 
-private:
-    HDC mDC;
-    bool mNeedsRelease;
+ private:
+  HDC mDC;
 };
 
 // ClearType parameters set by running ClearType tuner
 struct ClearTypeParameterInfo {
-    ClearTypeParameterInfo() :
-        gamma(-1), pixelStructure(-1), clearTypeLevel(-1), enhancedContrast(-1)
-    { }
+  ClearTypeParameterInfo()
+      : gamma(-1),
+        pixelStructure(-1),
+        clearTypeLevel(-1),
+        enhancedContrast(-1) {}
 
-    nsString    displayName;  // typically just 'DISPLAY1'
-    int32_t     gamma;
-    int32_t     pixelStructure;
-    int32_t     clearTypeLevel;
-    int32_t     enhancedContrast;
+  nsString displayName;  // typically just 'DISPLAY1'
+  int32_t gamma;
+  int32_t pixelStructure;
+  int32_t clearTypeLevel;
+  int32_t enhancedContrast;
 };
 
-class gfxWindowsPlatform : public gfxPlatform
-{
+class gfxWindowsPlatform : public gfxPlatform {
   friend class mozilla::gfx::DeviceManagerDx;
 
-public:
-    enum TextRenderingMode {
-        TEXT_RENDERING_NO_CLEARTYPE,
-        TEXT_RENDERING_NORMAL,
-        TEXT_RENDERING_GDI_CLASSIC,
-        TEXT_RENDERING_COUNT
-    };
+ public:
+  enum TextRenderingMode {
+    TEXT_RENDERING_NO_CLEARTYPE,
+    TEXT_RENDERING_NORMAL,
+    TEXT_RENDERING_GDI_CLASSIC,
+    TEXT_RENDERING_COUNT
+  };
 
-    gfxWindowsPlatform();
-    virtual ~gfxWindowsPlatform();
-    static gfxWindowsPlatform *GetPlatform() {
-        return (gfxWindowsPlatform*) gfxPlatform::GetPlatform();
-    }
+  gfxWindowsPlatform();
+  virtual ~gfxWindowsPlatform();
+  static gfxWindowsPlatform* GetPlatform() {
+    return (gfxWindowsPlatform*)gfxPlatform::GetPlatform();
+  }
 
-    virtual gfxPlatformFontList* CreatePlatformFontList() override;
+  virtual void EnsureDevicesInitialized() override;
+  virtual bool DevicesInitialized() override;
 
-    virtual already_AddRefed<gfxASurface>
-      CreateOffscreenSurface(const IntSize& aSize,
-                             gfxImageFormat aFormat) override;
+  virtual gfxPlatformFontList* CreatePlatformFontList() override;
 
-    virtual already_AddRefed<mozilla::gfx::ScaledFont>
-      GetScaledFontForFont(mozilla::gfx::DrawTarget* aTarget, gfxFont *aFont) override;
+  virtual already_AddRefed<gfxASurface> CreateOffscreenSurface(
+      const IntSize& aSize, gfxImageFormat aFormat) override;
 
-    enum RenderMode {
-        /* Use GDI and windows surfaces */
-        RENDER_GDI = 0,
+  enum RenderMode {
+    /* Use GDI and windows surfaces */
+    RENDER_GDI = 0,
 
-        /* Use 32bpp image surfaces and call StretchDIBits */
-        RENDER_IMAGE_STRETCH32,
+    /* Use 32bpp image surfaces and call StretchDIBits */
+    RENDER_IMAGE_STRETCH32,
 
-        /* Use 32bpp image surfaces, and do 32->24 conversion before calling StretchDIBits */
-        RENDER_IMAGE_STRETCH24,
+    /* Use 32bpp image surfaces, and do 32->24 conversion before calling
+       StretchDIBits */
+    RENDER_IMAGE_STRETCH24,
 
-        /* Use Direct2D rendering */
-        RENDER_DIRECT2D,
+    /* Use Direct2D rendering */
+    RENDER_DIRECT2D,
 
-        /* max */
-        RENDER_MODE_MAX
-    };
+    /* max */
+    RENDER_MODE_MAX
+  };
 
-    bool IsDirect2DBackend();
+  bool IsDirect2DBackend();
 
-    /**
-     * Updates render mode with relation to the current preferences and
-     * available devices.
-     */
-    void UpdateRenderMode();
+  /**
+   * Updates render mode with relation to the current preferences and
+   * available devices.
+   */
+  void UpdateRenderMode();
 
-    /**
-     * Verifies a D2D device is present and working, will attempt to create one
-     * it is non-functional or non-existant.
-     *
-     * \param aAttemptForce Attempt to force D2D cairo device creation by using
-     * cairo device creation routines.
-     */
-    void VerifyD2DDevice(bool aAttemptForce);
+  /**
+   * Verifies a D2D device is present and working, will attempt to create one
+   * it is non-functional or non-existant.
+   *
+   * \param aAttemptForce Attempt to force D2D cairo device creation by using
+   * cairo device creation routines.
+   */
+  void VerifyD2DDevice(bool aAttemptForce);
 
-    virtual void GetCommonFallbackFonts(uint32_t aCh, uint32_t aNextCh,
-                                        Script aRunScript,
-                                        nsTArray<const char*>& aFontList) override;
+  virtual void GetCommonFallbackFonts(
+      uint32_t aCh, uint32_t aNextCh, Script aRunScript,
+      nsTArray<const char*>& aFontList) override;
 
-    gfxFontGroup*
-    CreateFontGroup(const mozilla::FontFamilyList& aFontFamilyList,
-                    const gfxFontStyle *aStyle,
-                    gfxTextPerfMetrics* aTextPerf,
-                    gfxUserFontSet *aUserFontSet,
-                    gfxFloat aDevToCssSize) override;
+  gfxFontGroup* CreateFontGroup(const mozilla::FontFamilyList& aFontFamilyList,
+                                const gfxFontStyle* aStyle,
+                                gfxTextPerfMetrics* aTextPerf,
+                                gfxUserFontSet* aUserFontSet,
+                                gfxFloat aDevToCssSize) override;
 
-    virtual bool CanUseHardwareVideoDecoding() override;
+  virtual bool CanUseHardwareVideoDecoding() override;
 
-    /**
-     * Check whether format is supported on a platform or not (if unclear, returns true)
-     */
-    virtual bool IsFontFormatSupported(nsIURI *aFontURI, uint32_t aFormatFlags) override;
+  virtual void CompositorUpdated() override;
 
-    virtual void CompositorUpdated() override;
+  bool DidRenderingDeviceReset(
+      DeviceResetReason* aResetReason = nullptr) override;
+  void SchedulePaintIfDeviceReset() override;
+  void CheckForContentOnlyDeviceReset();
 
-    bool DidRenderingDeviceReset(DeviceResetReason* aResetReason = nullptr) override;
-    void SchedulePaintIfDeviceReset() override;
+  bool AllowOpenGLCanvas() override;
 
-    mozilla::gfx::BackendType GetContentBackendFor(mozilla::layers::LayersBackend aLayers) override;
+  mozilla::gfx::BackendType GetContentBackendFor(
+      mozilla::layers::LayersBackend aLayers) override;
 
-    static void GetDLLVersion(char16ptr_t aDLLPath, nsAString& aVersion);
+  mozilla::gfx::BackendType GetPreferredCanvasBackend() override;
 
-    // returns ClearType tuning information for each display
-    static void GetCleartypeParams(nsTArray<ClearTypeParameterInfo>& aParams);
+  static void GetDLLVersion(char16ptr_t aDLLPath, nsAString& aVersion);
 
-    virtual void FontsPrefsChanged(const char *aPref) override;
+  // returns ClearType tuning information for each display
+  static void GetCleartypeParams(nsTArray<ClearTypeParameterInfo>& aParams);
 
-    void SetupClearTypeParams();
+  virtual void FontsPrefsChanged(const char* aPref) override;
 
-    IDWriteFactory *GetDWriteFactory() { return mDWriteFactory; }
-    inline bool DWriteEnabled() { return !!mDWriteFactory; }
-    inline DWRITE_MEASURING_MODE DWriteMeasuringMode() { return mMeasuringMode; }
+  void SetupClearTypeParams();
 
-    IDWriteRenderingParams *GetRenderingParams(TextRenderingMode aRenderMode)
-    { return mRenderingParams[aRenderMode]; }
+  inline bool DWriteEnabled() const {
+    return !!mozilla::gfx::Factory::GetDWriteFactory();
+  }
+  inline DWRITE_MEASURING_MODE DWriteMeasuringMode() { return mMeasuringMode; }
 
-public:
-    bool DwmCompositionEnabled();
+  IDWriteRenderingParams* GetRenderingParams(TextRenderingMode aRenderMode) {
+    return mRenderingParams[aRenderMode];
+  }
 
-    mozilla::layers::ReadbackManagerD3D11* GetReadbackManager();
+ public:
+  bool DwmCompositionEnabled();
 
-    static bool IsOptimus();
+  mozilla::layers::ReadbackManagerD3D11* GetReadbackManager();
 
-    bool SupportsApzWheelInput() const override {
-      return true;
-    }
+  static bool IsOptimus();
 
-    // Recreate devices as needed for a device reset. Returns true if a device
-    // reset occurred.
-    bool HandleDeviceReset();
-    void UpdateBackendPrefs();
+  bool SupportsApzWheelInput() const override { return true; }
 
-    virtual already_AddRefed<mozilla::gfx::VsyncSource> CreateHardwareVsyncSource() override;
-    static mozilla::Atomic<size_t> sD3D11SharedTextures;
-    static mozilla::Atomic<size_t> sD3D9SharedTextures;
+  // Recreate devices as needed for a device reset. Returns true if a device
+  // reset occurred.
+  bool HandleDeviceReset();
+  void UpdateBackendPrefs();
 
-    bool SupportsPluginDirectBitmapDrawing() override {
-      return true;
-    }
-    bool SupportsPluginDirectDXGIDrawing();
+  virtual already_AddRefed<mozilla::gfx::VsyncSource>
+  CreateHardwareVsyncSource() override;
+  static mozilla::Atomic<size_t> sD3D11SharedTextures;
+  static mozilla::Atomic<size_t> sD3D9SharedTextures;
 
-    static void RecordContentDeviceFailure(mozilla::gfx::TelemetryDeviceCode aDevice);
+  bool SupportsPluginDirectBitmapDrawing() override { return true; }
+  bool SupportsPluginDirectDXGIDrawing();
 
-protected:
-    bool AccelerateLayersByDefault() override {
-      return true;
-    }
-    void GetAcceleratedCompositorBackends(nsTArray<mozilla::layers::LayersBackend>& aBackends) override;
-    virtual void GetPlatformCMSOutputProfile(void* &mem, size_t &size) override;
+  static void RecordContentDeviceFailure(
+      mozilla::gfx::TelemetryDeviceCode aDevice);
 
-    void ImportGPUDeviceData(const mozilla::gfx::GPUDeviceData& aData) override;
-    void ImportContentDeviceData(const mozilla::gfx::ContentDeviceData& aData) override;
-    void BuildContentDeviceData(mozilla::gfx::ContentDeviceData* aOut) override;
+ protected:
+  bool AccelerateLayersByDefault() override { return true; }
+  void GetAcceleratedCompositorBackends(
+      nsTArray<mozilla::layers::LayersBackend>& aBackends) override;
+  virtual void GetPlatformCMSOutputProfile(void*& mem, size_t& size) override;
 
-protected:
-    RenderMode mRenderMode;
+  void ImportGPUDeviceData(const mozilla::gfx::GPUDeviceData& aData) override;
+  void ImportContentDeviceData(
+      const mozilla::gfx::ContentDeviceData& aData) override;
+  void BuildContentDeviceData(mozilla::gfx::ContentDeviceData* aOut) override;
 
-private:
-    void Init();
-    void InitAcceleration() override;
+  BackendPrefsData GetBackendPrefs() const override;
 
-    void InitializeDevices();
-    void InitializeD3D11();
-    void InitializeD2D();
-    bool InitDWriteSupport();
-    bool InitGPUProcessSupport();
+  bool CheckVariationFontSupport() override;
 
-    void DisableD2D(mozilla::gfx::FeatureStatus aStatus, const char* aMessage,
-                    const nsACString& aFailureId);
+ protected:
+  RenderMode mRenderMode;
 
-    void InitializeConfig();
-    void InitializeD3D9Config();
-    void InitializeD3D11Config();
-    void InitializeD2DConfig();
-    void InitializeDirectDrawConfig();
+ private:
+  bool HasBattery() override;
 
-    RefPtr<IDWriteFactory> mDWriteFactory;
-    RefPtr<IDWriteRenderingParams> mRenderingParams[TEXT_RENDERING_COUNT];
-    DWRITE_MEASURING_MODE mMeasuringMode;
+  void Init();
+  void InitAcceleration() override;
+  void InitWebRenderConfig() override;
 
-    RefPtr<mozilla::layers::ReadbackManagerD3D11> mD3D11ReadbackManager;
+  void InitializeDevices();
+  void InitializeD3D11();
+  void InitializeD2D();
+  bool InitDWriteSupport();
+  bool InitGPUProcessSupport();
 
-    nsTArray<D3D_FEATURE_LEVEL> mFeatureLevels;
+  void DisableD2D(mozilla::gfx::FeatureStatus aStatus, const char* aMessage,
+                  const nsACString& aFailureId);
+
+  void InitializeConfig();
+  void InitializeD3D9Config();
+  void InitializeD3D11Config();
+  void InitializeD2DConfig();
+  void InitializeDirectDrawConfig();
+  void InitializeAdvancedLayersConfig();
+
+  void RecordStartupTelemetry();
+
+  RefPtr<IDWriteRenderingParams> mRenderingParams[TEXT_RENDERING_COUNT];
+  DWRITE_MEASURING_MODE mMeasuringMode;
+
+  RefPtr<mozilla::layers::ReadbackManagerD3D11> mD3D11ReadbackManager;
+  bool mInitializedDevices = false;
 };
 
 #endif /* GFX_WINDOWS_PLATFORM_H */

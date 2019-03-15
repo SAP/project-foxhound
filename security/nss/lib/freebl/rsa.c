@@ -190,12 +190,12 @@ cleanup:
     }
     return rv;
 }
-static SECStatus
+
+SECStatus
 generate_prime(mp_int *prime, int primeLen)
 {
     mp_err err = MP_OKAY;
     SECStatus rv = SECSuccess;
-    unsigned long counter = 0;
     int piter;
     unsigned char *pb = NULL;
     pb = PORT_Alloc(primeLen);
@@ -208,7 +208,7 @@ generate_prime(mp_int *prime, int primeLen)
         pb[0] |= 0xC0;            /* set two high-order bits */
         pb[primeLen - 1] |= 0x01; /* set low-order bit       */
         CHECK_MPI_OK(mp_read_unsigned_octets(prime, pb, primeLen));
-        err = mpp_make_prime(prime, primeLen * 8, PR_FALSE, &counter);
+        err = mpp_make_prime(prime, primeLen * 8, PR_FALSE);
         if (err != MP_NO)
             goto cleanup;
         /* keep going while err == MP_NO */
@@ -276,7 +276,10 @@ RSAPrivateKey *
 RSA_NewKey(int keySizeInBits, SECItem *publicExponent)
 {
     unsigned int primeLen;
-    mp_int p, q, e, d;
+    mp_int p = { 0, 0, 0, NULL };
+    mp_int q = { 0, 0, 0, NULL };
+    mp_int e = { 0, 0, 0, NULL };
+    mp_int d = { 0, 0, 0, NULL };
     int kiter;
     int max_attempts;
     mp_err err = MP_OKAY;
@@ -290,38 +293,49 @@ RSA_NewKey(int keySizeInBits, SECItem *publicExponent)
         PORT_SetError(SEC_ERROR_INVALID_ARGS);
         return NULL;
     }
-    /* 1. Allocate arena & key */
+    /* 1.  Set the public exponent and check if it's uneven and greater than 2.*/
+    MP_DIGITS(&e) = 0;
+    CHECK_MPI_OK(mp_init(&e));
+    SECITEM_TO_MPINT(*publicExponent, &e);
+    if (mp_iseven(&e) || !(mp_cmp_d(&e, 2) > 0)) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        goto cleanup;
+    }
+#ifndef NSS_FIPS_DISABLED
+    /* Check that the exponent is not smaller than 65537  */
+    if (mp_cmp_d(&e, 0x10001) < 0) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        goto cleanup;
+    }
+#endif
+
+    /* 2. Allocate arena & key */
     arena = PORT_NewArena(NSS_FREEBL_DEFAULT_CHUNKSIZE);
     if (!arena) {
         PORT_SetError(SEC_ERROR_NO_MEMORY);
-        return NULL;
+        goto cleanup;
     }
     key = PORT_ArenaZNew(arena, RSAPrivateKey);
     if (!key) {
         PORT_SetError(SEC_ERROR_NO_MEMORY);
-        PORT_FreeArena(arena, PR_TRUE);
-        return NULL;
+        goto cleanup;
     }
     key->arena = arena;
     /* length of primes p and q (in bytes) */
     primeLen = keySizeInBits / (2 * PR_BITS_PER_BYTE);
     MP_DIGITS(&p) = 0;
     MP_DIGITS(&q) = 0;
-    MP_DIGITS(&e) = 0;
     MP_DIGITS(&d) = 0;
     CHECK_MPI_OK(mp_init(&p));
     CHECK_MPI_OK(mp_init(&q));
-    CHECK_MPI_OK(mp_init(&e));
     CHECK_MPI_OK(mp_init(&d));
-    /* 2.  Set the version number (PKCS1 v1.5 says it should be zero) */
+    /* 3.  Set the version number (PKCS1 v1.5 says it should be zero) */
     SECITEM_AllocItem(arena, &key->version, 1);
     key->version.data[0] = 0;
-    /* 3.  Set the public exponent */
-    SECITEM_TO_MPINT(*publicExponent, &e);
+
     kiter = 0;
     max_attempts = 5 * (keySizeInBits / 2); /* FIPS 186-4 B.3.3 steps 4.7 and 5.8 */
     do {
-        prerr = 0;
         PORT_SetError(0);
         CHECK_SEC_OK(generate_prime(&p, primeLen));
         CHECK_SEC_OK(generate_prime(&q, primeLen));
@@ -348,8 +362,7 @@ RSA_NewKey(int keySizeInBits, SECItem *publicExponent)
         kiter++;
         /* loop until have primes */
     } while (prerr == SEC_ERROR_NEED_RANDOM && kiter < max_attempts);
-    if (prerr)
-        goto cleanup;
+
 cleanup:
     mp_clear(&p);
     mp_clear(&q);
@@ -1551,7 +1564,7 @@ cleanup:
     return rv;
 }
 
-static SECStatus
+SECStatus
 RSA_Init(void)
 {
     if (PR_CallOnce(&coBPInit, init_blinding_params_list) != PR_SUCCESS) {
@@ -1559,12 +1572,6 @@ RSA_Init(void)
         return SECFailure;
     }
     return SECSuccess;
-}
-
-SECStatus
-BL_Init(void)
-{
-    return RSA_Init();
 }
 
 /* cleanup at shutdown */

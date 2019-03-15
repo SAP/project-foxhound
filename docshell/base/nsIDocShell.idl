@@ -10,8 +10,22 @@
 
 %{ C++
 #include "js/TypeDecls.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/NotNull.h"
+#include "mozilla/UniquePtr.h"
+#include "nsCOMPtr.h"
+#include "nsIURI.h"
 class nsPresContext;
 class nsIPresShell;
+class nsDocShellLoadState;
+namespace mozilla {
+class Encoding;
+class HTMLEditor;
+namespace dom {
+class BrowsingContext;
+class ClientSource;
+} // namespace dom
+}
 %}
 
 /**
@@ -20,11 +34,13 @@ class nsIPresShell;
 
 [ptr] native nsPresContext(nsPresContext);
 [ptr] native nsIPresShell(nsIPresShell);
+[ref] native MaybeURI(mozilla::Maybe<nsCOMPtr<nsIURI>>);
+[ref] native Encoding(const mozilla::Encoding*);
+      native UniqueClientSource(mozilla::UniquePtr<mozilla::dom::ClientSource>);
 
 interface nsIURI;
 interface nsIChannel;
 interface nsIContentViewer;
-interface nsIDOMEventTarget;
 interface nsIDocShellLoadInfo;
 interface nsIEditor;
 interface nsIEditingSession;
@@ -45,7 +61,13 @@ interface nsITabParent;
 interface nsITabChild;
 interface nsICommandManager;
 interface nsICommandParams;
+interface nsILoadURIDelegate;
 native TabChildRef(already_AddRefed<nsITabChild>);
+native nsDocShellLoadStatePtr(nsDocShellLoadState*);
+
+webidl BrowsingContext;
+webidl ContentFrameMessageManager;
+webidl EventTarget;
 
 [scriptable, builtinclass, uuid(049234fe-da10-478b-bc5d-bc6f9a1ba63d)]
 interface nsIDocShell : nsIDocShellTreeItem
@@ -56,158 +78,17 @@ interface nsIDocShell : nsIDocShellTreeItem
    * however, the URL dispatcher will go through its normal process of content
    * loading.
    *
-   * @param uri        - The URI to load.
-   * @param loadInfo   - This is the extended load info for this load.  This
-   *                     most often will be null, but if you need to do
-   *                     additional setup for this load you can get a loadInfo
-   *                     object by calling createLoadInfo.  Once you have this
-   *                     object you can set the needed properties on it and
-   *                     then pass it to loadURI.
-   * @param aLoadFlags - Flags to modify load behaviour. Flags are defined in
-   *                     nsIWebNavigation.  Note that using flags outside
-   *                     LOAD_FLAGS_MASK is only allowed if passing in a
-   *                     non-null loadInfo.  And even some of those might not
-   *                     be allowed.  Use at your own risk.
+   * @param loadState   - This is the extended load info for this load.
    */
-  [noscript]void loadURI(in nsIURI uri,
-                         in nsIDocShellLoadInfo loadInfo,
-                         in unsigned long aLoadFlags,
-                         in boolean firstParty);
-
-  /**
-   * Loads a given stream. This will give priority to loading the requested
-   * stream in the object implementing this interface. If it can't be loaded
-   * here however, the URL dispatched will go through its normal process of
-   * content loading.
-   *
-   * @param aStream         - The input stream that provides access to the data
-   *                          to be loaded.  This must be a blocking, threadsafe
-   *                          stream implementation.
-   * @param aURI            - The URI representing the stream, or null.
-   * @param aContentType    - The type (MIME) of data being loaded (empty if unknown).
-   * @param aContentCharset - The charset of the data being loaded (empty if unknown).
-   * @param aLoadInfo       - This is the extended load info for this load.  This
-   *                          most often will be null, but if you need to do
-   *                          additional setup for this load you can get a
-   *                          loadInfo object by calling createLoadInfo.  Once
-   *                          you have this object you can set the needed
-   *                          properties on it and then pass it to loadStream.
-   */
-  [noscript]void loadStream(in nsIInputStream aStream,
-                            in nsIURI aURI,
-                            in ACString aContentType,
-                            in ACString aContentCharset,
-                            in nsIDocShellLoadInfo aLoadInfo);
-
-  const long INTERNAL_LOAD_FLAGS_NONE                    = 0x0;
-  const long INTERNAL_LOAD_FLAGS_INHERIT_PRINCIPAL       = 0x1;
-  const long INTERNAL_LOAD_FLAGS_DONT_SEND_REFERRER      = 0x2;
-  const long INTERNAL_LOAD_FLAGS_ALLOW_THIRD_PARTY_FIXUP = 0x4;
-
-  // This flag marks the first load in this object
-  // @see nsIWebNavigation::LOAD_FLAGS_FIRST_LOAD
-  const long INTERNAL_LOAD_FLAGS_FIRST_LOAD              = 0x8;
-
-  const long INTERNAL_LOAD_FLAGS_BYPASS_CLASSIFIER       = 0x10;
-  const long INTERNAL_LOAD_FLAGS_FORCE_ALLOW_COOKIES     = 0x20;
-
-  // Whether the load should be treated as srcdoc load, rather than a URI one.
-  const long INTERNAL_LOAD_FLAGS_IS_SRCDOC               = 0x40;
-
-  const long INTERNAL_LOAD_FLAGS_NO_OPENER               = 0x100;
-
-  // NB: 0x80 is available.
-
-  /**
-   * Loads the given URI.  This method is identical to loadURI(...) except
-   * that its parameter list is broken out instead of being packaged inside
-   * of an nsIDocShellLoadInfo object...
-   *
-   * @param aURI                 - The URI to load.
-   * @param aOriginalURI         - The URI to set as the originalURI on the channel
-   *                               that does the load. If null, aURI will be set as
-   *                               the originalURI.
-   * @param aLoadReplace         - If set LOAD_REPLACE flag will be set on the
-   *                               channel. aOriginalURI is null, this argument is
-   *                               ignored.
-   * @param aReferrer            - Referring URI
-   * @param aReferrerPolicy      - Referrer policy
-   * @param aTriggeringPrincipal - A non-null principal that initiated that load.
-   *                               Please note that this is the principal that is
-   *                               used for security checks. If the argument aURI
-   *                               is provided by the web, then please do not pass
-   *                               a SystemPrincipal as the triggeringPrincipal.
-   * @param aPrincipalToInherit  - Principal to be inherited for that load. If this
-   *                               argument is null then principalToInherit is
-   *                               computed as follows:
-   *                               a) If INTERNAL_LOAD_FLAGS_INHERIT_PRINCIPAL, and
-   *                                  aLoadType is not LOAD_NORMAL_EXTERNAL, and the
-   *                                  URI would normally inherit a principal, then
-   *                                  principalToInherit is set to the current
-   *                                  document's principal, or parent document if
-   *                                  there is not a current document.
-   *                               b) If principalToInherit is still null (e.g. if
-   *                                  some of the conditions of (a) were not satisfied),
-   *                                  then no inheritance of any sort will happen: the
-   *                                  load will just get a principal based on the URI
-   *                                  being loaded.
-   * @param aFlags               - Any of the load flags defined within above.
-   * @param aStopActiveDoc       - Flag indicating whether loading the current
-   *                               document should be stopped.
-   * @param aWindowTarget        - Window target for the load.
-   * @param aTypeHint            - A hint as to the content-type of the resulting
-   *                               data.  May be null or empty if no hint.
-   * @param aFileName            - Non-null when the link should be downloaded as
-                                   the given filename.
-   * @param aPostDataStream      - Post data stream (if POSTing)
-   * @param aHeadersStream       - Stream containing "extra" request headers...
-   * @param aLoadFlags           - Flags to modify load behaviour. Flags are defined
-   *                               in nsIWebNavigation.
-   * @param aSHEntry             - Active Session History entry (if loading from SH)
-   * @param aSrcdoc                When INTERNAL_LOAD_FLAGS_IS_SRCDOC is set, the
-   *                               contents of this parameter will be loaded instead
-   *                               of aURI.
-   * @param aSourceDocShell      - The source browsing context for the navigation.
-   * @param aBaseURI             - The base URI to be used for the load.  Set in
-   *                               srcdoc loads as it cannot otherwise be inferred
-   *                               in certain situations such as view-source.
-   */
-  [noscript]void internalLoad(in nsIURI aURI,
-                              in nsIURI aOriginalURI,
-                              in boolean aLoadReplace,
-                              in nsIURI aReferrer,
-                              in unsigned long aReferrerPolicy,
-                              in nsIPrincipal aTriggeringPrincipal,
-                              in nsIPrincipal aPrincipalToInherit,
-                              in uint32_t aFlags,
-                              in AString aWindowTarget,
-                              in string aTypeHint,
-                              in AString aFileName,
-                              in nsIInputStream aPostDataStream,
-                              in nsIInputStream aHeadersStream,
-                              in unsigned long aLoadFlags,
-                              in nsISHEntry aSHEntry,
-                              in boolean aFirstParty,
-                              in AString aSrcdoc,
-                              in nsIDocShell aSourceDocShell,
-                              in nsIURI aBaseURI,
-                              in boolean aCheckForPrerender,
-                              out nsIDocShell aDocShell,
-                              out nsIRequest aRequest);
+  [noscript]void loadURI(in nsDocShellLoadStatePtr loadState);
 
   /**
    * Do either a history.pushState() or history.replaceState() operation,
    * depending on the value of aReplace.
    */
   [implicit_jscontext]
-  void addState(in jsval aData, in DOMString aTitle,
-                in DOMString aURL, in boolean aReplace);
-
-  /**
-   * Creates a DocShellLoadInfo object that you can manipulate and then pass
-   * to loadURI.
-   */
-  void createLoadInfo(out nsIDocShellLoadInfo loadInfo);
+  void addState(in jsval aData, in AString aTitle,
+                in AString aURL, in boolean aReplace);
 
   /**
    * Reset state to a new content model within the current document and the document
@@ -236,18 +117,18 @@ interface nsIDocShell : nsIDocShellTreeItem
   /**
    * Presentation context for the currently loaded document.  This may be null.
    */
-  [noscript] readonly attribute nsPresContext presContext;
+  [notxpcom,nostdcall] readonly attribute nsPresContext presContext;
 
   /**
    * Presentation shell for the currently loaded document.  This may be null.
    */
-  [noscript,notxpcom] nsIPresShell GetPresShell();
+  [notxpcom,nostdcall] readonly attribute nsIPresShell presShell;
 
   /**
    * Presentation shell for the oldest document, if this docshell is
    * currently transitioning between documents.
    */
-  [noscript] readonly attribute nsIPresShell eldestPresShell;
+  [notxpcom,nostdcall] readonly attribute nsIPresShell eldestPresShell;
 
   /**
    * Content Viewer that is currently loaded for this DocShell.  This may
@@ -256,15 +137,25 @@ interface nsIDocShell : nsIDocShellTreeItem
   readonly attribute nsIContentViewer contentViewer;
 
   /**
+   * Get the id of the outer window that is or will be in this docshell.
+   */
+  [infallible] readonly attribute unsigned long long outerWindowID;
+
+  /**
    * This attribute allows chrome to tie in to handle DOM events that may
    * be of interest to chrome.
    */
-  attribute nsIDOMEventTarget chromeEventHandler;
+  attribute EventTarget chromeEventHandler;
 
   /**
-    * This allows chrome to set a custom User agent on a specific docshell
-    */
-  attribute DOMString customUserAgent;
+   * This allows chrome to set a custom User agent on a specific docshell
+   */
+  attribute AString customUserAgent;
+
+  /**
+   * Whether CSS error reporting is enabled.
+   */
+  attribute boolean cssErrorReportingEnabled;
 
   /**
    * Whether to allow plugin execution
@@ -339,23 +230,32 @@ interface nsIDocShell : nsIDocShellTreeItem
    * @param aDirection - Whether to enumerate forwards or backwards.
    */
 
-  const long ENUMERATE_FORWARDS  = 0;
-  const long ENUMERATE_BACKWARDS = 1;
+  cenum DocShellEnumeratorDirection : 8 {
+    ENUMERATE_FORWARDS  = 0,
+    ENUMERATE_BACKWARDS = 1
+  };
 
   nsISimpleEnumerator getDocShellEnumerator(in long aItemType,
-                                            in long aDirection);
+                                            in nsIDocShell_DocShellEnumeratorDirection aDirection);
 
   /**
-   * The type of application that created this window
+   * The type of application that created this window.
+   *
+   * DO NOT DELETE, see bug 176166. For firefox, this value will always be
+   * UNKNOWN. However, it is used heavily in Thunderbird/comm-central and we
+   * don't really have a great replacement at the moment, so we'll just leave it
+   * here.
    */
-  const unsigned long APP_TYPE_UNKNOWN  = 0;
-  const unsigned long APP_TYPE_MAIL     = 1;
-  const unsigned long APP_TYPE_EDITOR   = 2;
+  cenum AppType : 8 {
+    APP_TYPE_UNKNOWN = 0,
+    APP_TYPE_MAIL    = 1,
+    APP_TYPE_EDITOR  = 2
+  };
 
-  attribute unsigned long appType;
+  [infallible] attribute nsIDocShell_AppType appType;
 
   /**
-   * certain dochshells (like the message pane)
+   * certain docshells (like the message pane)
    * should not throw up auth dialogs
    * because it can act as a password trojan
    */
@@ -373,7 +273,7 @@ interface nsIDocShell : nsIDocShellTreeItem
 
   /*
    * The size, in CSS pixels, of the horizontal margins for the <body> of an
-   * HTML document in this docshel; used to implement the marginwidth attribute
+   * HTML document in this docshell; used to implement the marginwidth attribute
    * on HTML <frame>/<iframe> elements.  A value smaller than zero indicates
    * that the attribute was not set.
    */
@@ -381,7 +281,7 @@ interface nsIDocShell : nsIDocShellTreeItem
 
   /*
    * The size, in CSS pixels, of the vertical margins for the <body> of an HTML
-   * document in this docshel; used to implement the marginheight attribute on
+   * document in this docshell; used to implement the marginheight attribute on
    * HTML <frame>/<iframe> elements.  A value smaller than zero indicates that
    * the attribute was not set.
    */
@@ -400,25 +300,30 @@ interface nsIDocShell : nsIDocShellTreeItem
   /**
    * Current busy state for DocShell
    */
-  const unsigned long BUSY_FLAGS_NONE             = 0;
-  const unsigned long BUSY_FLAGS_BUSY             = 1;
-  const unsigned long BUSY_FLAGS_BEFORE_PAGE_LOAD = 2;
-  const unsigned long BUSY_FLAGS_PAGE_LOADING     = 4;
+  cenum BusyFlags : 8 {
+    BUSY_FLAGS_NONE             = 0,
+    BUSY_FLAGS_BUSY             = 1,
+    BUSY_FLAGS_BEFORE_PAGE_LOAD = 2,
+    BUSY_FLAGS_PAGE_LOADING     = 4,
+  };
+
+  [infallible] readonly attribute nsIDocShell_BusyFlags busyFlags;
 
   /**
    * Load commands for the document
    */
-  const unsigned long LOAD_CMD_NORMAL  = 0x1;   // Normal load
-  const unsigned long LOAD_CMD_RELOAD  = 0x2;   // Reload
-  const unsigned long LOAD_CMD_HISTORY = 0x4;   // Load from history
-  const unsigned long LOAD_CMD_PUSHSTATE = 0x8; // History.pushState()
-
-  readonly attribute unsigned long busyFlags;
+  cenum LoadCommand : 8 {
+    LOAD_CMD_NORMAL  = 0x1,   // Normal load
+    LOAD_CMD_RELOAD  = 0x2,   // Reload
+    LOAD_CMD_HISTORY = 0x4,   // Load from history
+    LOAD_CMD_PUSHSTATE = 0x8, // History.pushState()
+  };
 
   /*
-   * attribute to access the loadtype  for the document
+   * Attribute to access the loadtype for the document. LoadType Enum is
+   * defined in nsDocShellLoadTypes.h
    */
-  attribute unsigned long  loadType;
+  [infallible] attribute unsigned long loadType;
 
   /*
    * Default load flags (as defined in nsIRequest) that will be set on all
@@ -449,6 +354,13 @@ interface nsIDocShell : nsIDocShellTreeItem
    * <browser> or nsWebBrowser for their root docshell.
    */
   attribute nsISecureBrowserUI securityUI;
+
+  /**
+   * Object used to delegate URI loading to an upper context.
+   * Currently only set for GeckoView to allow handling of load requests
+   * at the application level.
+   */
+  attribute nsILoadURIDelegate loadURIDelegate;
 
   /**
    * Cancel the XPCOM timers for each meta-refresh URI in this docshell,
@@ -514,12 +426,12 @@ interface nsIDocShell : nsIDocShellTreeItem
   readonly attribute nsIChannel failedChannel;
 
   /**
-   * Keeps track of the previous SHTransaction index and the current
-   * SHTransaction index at the time that the doc shell begins to load.
+   * Keeps track of the previous nsISHEntry index and the current
+   * nsISHEntry index at the time that the doc shell begins to load.
    * Used for ContentViewer eviction.
    */
-  readonly attribute long previousTransIndex;
-  readonly attribute long loadedTransIndex;
+  readonly attribute long previousEntryIndex;
+  readonly attribute long loadedEntryIndex;
 
   /**
    * Notification that entries have been removed from the beginning of a
@@ -537,22 +449,16 @@ interface nsIDocShell : nsIDocShellTreeItem
   readonly attribute nsIChannel currentDocumentChannel;
 
   /**
-   * Set the offset of this child in its container.
+   * The original offset of this child in its container. This property is -1 for
+   * dynamically added docShells.
    */
-  [noscript] void setChildOffset(in unsigned long offset);
+  [notxpcom,nostdcall] attribute long childOffset;
 
   /**
    * Find out whether the docshell is currently in the middle of a page
    * transition. This is set just before the pagehide/unload events fire.
    */
   readonly attribute boolean isInUnload;
-
-  /**
-   * Find out if the currently loaded document came from a suspicious channel
-   * (such as a JAR channel where the server-returned content type isn't a
-   * known JAR type).
-   */
-  readonly attribute boolean channelIsUnsafe;
 
   /**
    * This attribute determines whether Mixed Active Content is loaded on the
@@ -593,19 +499,6 @@ interface nsIDocShell : nsIDocShellTreeItem
    */
   [infallible] readonly attribute boolean hasMixedDisplayContentBlocked;
 
-   /**
-   * This attribute determines whether a document has Tracking Content
-   * that has been blocked from loading.
-   */
-   [infallible] readonly attribute boolean hasTrackingContentBlocked;
-
-   /**
-   * This attribute determines whether Tracking Content is loaded on the
-   * document. When it is true, tracking content was not blocked and has
-   * loaded (or is about to load) on the page.
-   */
-  [infallible] readonly attribute boolean hasTrackingContentLoaded;
-
   /**
    * Disconnects this docshell's editor from its window, and stores the
    * editor data in the open document's session history entry.  This
@@ -619,6 +512,12 @@ interface nsIDocShell : nsIDocShellTreeItem
    * and should be treated accordingly.
    **/
   attribute boolean isOffScreenBrowser;
+
+  /**
+   * Allows nsDocumentViewer to tell the top-level same-type docshell that
+   * one of the documents under it is printing.
+   */
+  void setIsPrinting(in boolean aIsPrinting);
 
   /**
    * If the current content viewer isn't initialized for print preview,
@@ -640,17 +539,6 @@ interface nsIDocShell : nsIDocShellTreeItem
    * like image frame discarding. Docshells are active unless told otherwise.
    */
   attribute boolean isActive;
-
-  /**
-   * Puts the docshell in prerendering mode. noscript because we want only
-   * native code to be able to put a docshell in prerendering.
-   */
-  [noscript] void SetIsPrerendered();
-
-  /**
-   * Whether this docshell is in prerender mode.
-   */
-  [infallible] readonly attribute boolean isPrerendered;
 
   /**
    * The ID of the docshell in the session history.
@@ -676,13 +564,6 @@ interface nsIDocShell : nsIDocShellTreeItem
   void createAboutBlankContentViewer(in nsIPrincipal aPrincipal);
 
   /**
-   * Like createAboutBlankContentViewer, but don't check for permit unload.
-   * Only used by special session history operation.
-   * @param aPrincipal the principal to use for the new document.
-   */
-  [noscript] void forceCreateAboutBlankContentViewer(in nsIPrincipal aPrincipal);
-
-  /**
    * Upon getting, returns the canonical encoding label of the document
    * currently loaded into this docshell.
    *
@@ -706,11 +587,11 @@ interface nsIDocShell : nsIDocShellTreeItem
    * In a child docshell, this is the charset of the parent docshell
    */
   [noscript, notxpcom, nostdcall] void setParentCharset(
-    in ACString parentCharset,
+    in Encoding parentCharset,
     in int32_t parentCharsetSource,
     in nsIPrincipal parentCharsetPrincipal);
   [noscript, notxpcom, nostdcall] void getParentCharset(
-    out ACString parentCharset,
+    out Encoding parentCharset,
     out int32_t parentCharsetSource,
     out nsIPrincipal parentCharsetPrincipal);
 
@@ -784,10 +665,11 @@ interface nsIDocShell : nsIDocShellTreeItem
   /**
    * The type of iframe that this docshell lives.
    */
-  const unsigned long FRAME_TYPE_REGULAR = 0;
-  const unsigned long FRAME_TYPE_BROWSER = 1;
-
-  [infallible] attribute unsigned long frameType;
+  cenum FrameType : 8 {
+    FRAME_TYPE_REGULAR = 0,
+    FRAME_TYPE_BROWSER = 1,
+  };
+  [infallible] attribute nsIDocShell_FrameType frameType;
 
   /**
    * Returns true if this docshell corresponds to an <iframe mozbrowser>.
@@ -990,7 +872,7 @@ interface nsIDocShell : nsIDocShellTreeItem
   /**
    * Set when an iframe/frame is added dynamically.
    */
-  attribute boolean createdDynamically;
+  [infallible] attribute boolean createdDynamically;
 
   /**
    * Returns false for mLSHE, true for mOSHE
@@ -1012,7 +894,7 @@ interface nsIDocShell : nsIDocShellTreeItem
    * at construction time, to avoid any painting activity.
    */
   [noscript, notxpcom] bool IsInvisible();
-  [noscript, notxpcom] void SetInvisible(in bool aIsInvisibleDochsell);
+  [noscript, notxpcom] void SetInvisible(in bool aIsInvisibleDocshell);
 
 /**
  * Get the script global for the document in this docshell.
@@ -1052,6 +934,8 @@ interface nsIDocShell : nsIDocShellTreeItem
                                                                   in jsval asyncStack,
                                                                   in string asyncCause);
   [noscript,notxpcom,nostdcall] void notifyJSRunToCompletionStop();
+
+  [noscript] void GetOSHEId(out uint32_t aSHEntryId);
 
   /**
    * This attribute determines whether a document which is not about:blank has
@@ -1094,23 +978,51 @@ interface nsIDocShell : nsIDocShellTreeItem
 
   [noscript,nostdcall,notxpcom] nsICommandManager GetCommandManager();
 
+  cenum TouchEventsOverride: 8 {
+    /**
+     * Override platform/pref default behaviour and force-disable touch events.
+     */
+    TOUCHEVENTS_OVERRIDE_DISABLED = 0,
+    /**
+     * Override platform/pref default behaviour and force-enable touch events.
+     */
+    TOUCHEVENTS_OVERRIDE_ENABLED = 1,
+    /**
+     * Don't override the platform/pref default behaviour for touch events.
+     */
+    TOUCHEVENTS_OVERRIDE_NONE = 2,
+  };
+
   /**
    * This allows chrome to override the default choice of whether touch events
    * are available on a specific docshell. Possible values are listed below.
    */
-  attribute unsigned long touchEventsOverride;
+  [infallible] attribute nsIDocShell_TouchEventsOverride touchEventsOverride;
+
+  cenum MetaViewportOverride: 8 {
+    /**
+     * Override platform/pref default behaviour and force-disable support for
+     * <meta name="viewport">.
+     */
+    META_VIEWPORT_OVERRIDE_DISABLED = 0,
+    /**
+     * Override platform/pref default behaviour and force-enable support for
+     * <meta name="viewport">.
+     */
+    META_VIEWPORT_OVERRIDE_ENABLED = 1,
+    /**
+     * Don't override the platform/pref default behaviour for support for
+     * <meta name="viewport">.
+     */
+    META_VIEWPORT_OVERRIDE_NONE = 2,
+  };
+
   /**
-   * Override platform/pref default behaviour and force-disable touch events.
+   * This allows chrome to override the default choice of whether the
+   * <meta name="viewport"> tag is respected in a specific docshell.
+   * Possible values are listed above.
    */
-  const unsigned long TOUCHEVENTS_OVERRIDE_DISABLED = 0;
-  /**
-   * Override platform/pref default behaviour and force-enable touch events.
-   */
-  const unsigned long TOUCHEVENTS_OVERRIDE_ENABLED = 1;
-  /**
-   * Don't override the platform/pref default behaviour for touch events.
-   */
-  const unsigned long TOUCHEVENTS_OVERRIDE_NONE = 2;
+  [infallible] attribute nsIDocShell_MetaViewportOverride metaViewportOverride;
 
   /**
    * This value is `true` if its corresponding unit of related browsing contexts
@@ -1136,4 +1048,80 @@ interface nsIDocShell : nsIDocShellTreeItem
    * Attribute that determines whether tracking protection is enabled.
    */
   attribute boolean useTrackingProtection;
+
+ /**
+  * Fire a dummy location change event asynchronously.
+  */
+  [noscript] void dispatchLocationChangeEvent();
+
+  /**
+   * Take ownership of the ClientSource representing an initial about:blank
+   * document that was never needed.  As an optimization we avoid creating
+   * this document if no code calls GetDocument(), but we still need a
+   * ClientSource object to represent the about:blank window.  This may return
+   * nullptr; for example if the docshell has created a real window and document
+   * already.
+   */
+  [noscript, nostdcall, notxpcom]
+  UniqueClientSource TakeInitialClientSource();
+
+  void setColorMatrix([array, size_is(aMatrixLen)] in float aMatrix,
+                      [optional] in unsigned long aMatrixLen);
+
+  void getColorMatrix([optional] out unsigned long aMatrixLen,
+                      [array, size_is(aMatrixLen), retval] out float aMatrix);
+
+  /**
+   * Initialize session history for this docshell. The docshell must be the root
+   * docshell.
+   */
+  void initSessionHistory();
+
+%{C++
+  /**
+   * These methods call nsDocShell::GetHTMLEditorInternal() and
+   * nsDocShell::SetHTMLEditorInternal() with static_cast.
+   */
+  mozilla::HTMLEditor* GetHTMLEditor();
+  nsresult SetHTMLEditor(mozilla::HTMLEditor* aHTMLEditor);
+%}
+
+  /**
+   * BrowsingContext associated with the DocShell.
+   */
+  readonly attribute BrowsingContext browsingContext;
+
+  /**
+   * Allowed CSS display modes. This needs to be kept in
+   * sync with similar values in ServoStyleConsts.h
+   */
+  cenum DisplayMode: 8 {
+    DISPLAY_MODE_BROWSER = 0,
+    DISPLAY_MODE_MINIMAL_UI = 1,
+    DISPLAY_MODE_STANDALONE = 2,
+    DISPLAY_MODE_FULLSCREEN = 3,
+  };
+
+  /**
+   * Display mode for this docshell. Defaults to DISPLAY_MODE_BROWSER.
+   * Media queries only look at the value in the top-most docshell.
+   */
+  [infallible] attribute nsIDocShell_DisplayMode displayMode;
+
+  /**
+   * The message manager for this docshell.  This does not throw, but
+   * can return null if the docshell has no message manager.
+   */
+  [infallible] readonly attribute ContentFrameMessageManager messageManager;
+
+  /**
+   * Asynchronously retrieve a JSON string representing a log of the
+   * content blocking events happened so far in the current tab from the
+   * content process.
+   *
+   * This returns a Promise which resolves to a string on success, and is
+   * rejected on failure.  For documentation on the string format, please
+   * see nsISecureBrowserUI.contentBlockingLogJSON.
+   */
+  Promise getContentBlockingLog();
 };

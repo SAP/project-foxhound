@@ -19,9 +19,15 @@
  * HAVING YOUR CHANGES REVIEWED BY enndeakin@gmail.com
  */
 
+@import url("chrome://global/skin/tooltip.css");
+
 @namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"); /* set default namespace to XUL */
 @namespace html url("http://www.w3.org/1999/xhtml"); /* namespace for HTML elements */
 @namespace xbl url("http://www.mozilla.org/xbl"); /* namespace for XBL elements */
+
+:root {
+  --animation-easing-function: cubic-bezier(.07, .95, 0, 1);
+}
 
 /* ::::::::::
    :: Rules for 'hiding' portions of the chrome for special
@@ -67,7 +73,6 @@ xbl|children {
 
 button,
 checkbox,
-colorpicker[type="button"],
 datepicker[type="grid"],
 menulist,
 radiogroup,
@@ -76,10 +81,6 @@ browser,
 editor,
 iframe {
   -moz-user-focus: normal;
-}
-
-menulist[editable="true"] {
-  -moz-user-focus: ignore;
 }
 
 /******** window & page ******/
@@ -96,8 +97,19 @@ vbox {
   -moz-box-orient: vertical;
 }
 
-bbox {
-  -moz-box-align: baseline;
+/********** label **********/
+
+label.text-link, label[onclick] {
+  -moz-binding: url("chrome://global/content/bindings/text.xml#text-link");
+  -moz-user-focus: normal;
+}
+
+label[control], label.radio-label, label.checkbox-label, label.toolbarbutton-multiline-text {
+  -moz-binding: url("chrome://global/content/bindings/text.xml#label-control");
+}
+
+label html|span.accesskey {
+  text-decoration: underline;
 }
 
 /********** button **********/
@@ -106,16 +118,8 @@ button {
   -moz-binding: url("chrome://global/content/bindings/button.xml#button");
 }
 
-button[type="repeat"] {
-  -moz-binding: url("chrome://global/content/bindings/button.xml#button-repeat");
-}
-
-button[type="menu"], button[type="panel"] {
+button[type="menu"] {
   -moz-binding: url("chrome://global/content/bindings/button.xml#menu");
-}
-
-button[type="menu-button"] {
-  -moz-binding: url("chrome://global/content/bindings/button.xml#menu-button");
 }
 
 /********** toolbarbutton **********/
@@ -134,29 +138,22 @@ toolbarbutton.badged-button {
   display: none;
 }
 
-toolbarbutton[type="menu"],
-toolbarbutton[type="panel"] {
+toolbarbutton[type="menu"] {
   -moz-binding: url("chrome://global/content/bindings/toolbarbutton.xml#menu");
 }
 
-toolbarbutton.badged-button[type="menu"],
-toolbarbutton.badged-button[type="panel"] {
+toolbarbutton.badged-button[type="menu"] {
   -moz-binding: url("chrome://global/content/bindings/toolbarbutton.xml#toolbarbutton-badged-menu");
 }
 
-toolbarbutton[type="menu-button"] {
-  -moz-binding: url("chrome://global/content/bindings/toolbarbutton.xml#menu-button");
-}
-
+toolbarbutton:not([type="menu"]) > .toolbarbutton-menu-dropmarker,
 toolbar[mode="icons"] .toolbarbutton-text,
 toolbar[mode="icons"] .toolbarbutton-multiline-text,
-toolbar[mode="text"] .toolbarbutton-icon {
-  display: none;
-}
-
+toolbar[mode="text"] .toolbarbutton-icon,
 .toolbarbutton-multiline-text:not([wrap="true"]),
 .toolbarbutton-text[wrap="true"] {
   display: none;
+  -moz-binding: none;
 }
 
 /******** browser, editor, iframe ********/
@@ -167,36 +164,12 @@ iframe {
   display: inline;
 }
 
-browser {
-  -moz-binding: url("chrome://global/content/bindings/browser.xml#browser");
-}
-
-browser[remote=true]:not(.lightweight) {
-  -moz-binding: url("chrome://global/content/bindings/remote-browser.xml#remote-browser");
-}
-
-editor {
-  -moz-binding: url("chrome://global/content/bindings/editor.xml#editor");
-}
-
-iframe {
-  -moz-binding: url("chrome://global/content/bindings/general.xml#iframe");
-}
-
-/********** notifications **********/
-
-notificationbox {
-  -moz-binding: url("chrome://global/content/bindings/notification.xml#notificationbox");
-  -moz-box-orient: vertical;
-}
-
-.notificationbox-stack {
-  overflow: -moz-hidden-unscrollable;
-}
-
-notification {
-  -moz-binding: url("chrome://global/content/bindings/notification.xml#notification");
-  transition: margin-top 300ms, opacity 300ms;
+@supports -moz-bool-pref("layout.css.emulate-moz-box-with-flex") {
+  browser,
+  editor,
+  iframe {
+    display: block;
+  }
 }
 
 /*********** popup notification ************/
@@ -208,12 +181,6 @@ popupnotification {
   display: none;
 }
 
-/********** image **********/
-
-image {
-  -moz-binding: url("chrome://global/content/bindings/general.xml#image");
-}
-
 /********** checkbox **********/
 
 checkbox {
@@ -223,7 +190,6 @@ checkbox {
 /********** radio **********/
 
 radiogroup {
-  -moz-binding: url("chrome://global/content/bindings/radio.xml#radiogroup");
   -moz-box-orient: vertical;
 }
 
@@ -234,40 +200,27 @@ radio {
 /******** groupbox *********/
 
 groupbox {
-  -moz-binding: url("chrome://global/content/bindings/groupbox.xml#groupbox");
-  display: -moz-groupbox;
-}
-
-caption {
-  -moz-binding: url("chrome://global/content/bindings/groupbox.xml#caption");
-}
-
-.groupbox-body {
-  -moz-box-pack: inherit;
-  -moz-box-align: inherit;
   -moz-box-orient: vertical;
 }
 
 /******** draggable elements *********/
 
-%ifdef XP_MACOSX
+%ifndef MOZ_WIDGET_GTK
 titlebar,
-toolbar:not([nowindowdrag="true"]):not([customizing="true"]),
-statusbar:not([nowindowdrag="true"]),
-%endif
-windowdragbox {
+toolbar:not([nowindowdrag="true"]):not([customizing="true"]) {
   -moz-window-dragging: drag;
 }
+%endif
 
 /* The list below is non-comprehensive and will probably need some tweaking. */
 toolbaritem,
 toolbarbutton,
+toolbarseparator,
 button,
 textbox,
 tab,
 radio,
 splitter,
-scale,
 menulist {
   -moz-window-dragging: no-drag;
 }
@@ -275,12 +228,7 @@ menulist {
 /******* toolbar *******/
 
 toolbox {
-  -moz-binding: url("chrome://global/content/bindings/toolbar.xml#toolbox");
   -moz-box-orient: vertical;
-}
-
-toolbar {
-  -moz-binding: url("chrome://global/content/bindings/toolbar.xml#toolbar");
 }
 
 toolbar[customizing="true"][collapsed="true"] {
@@ -300,46 +248,10 @@ toolbar[type="menubar"] {
   min-height: 0 !important;
   border: 0 !important;
 }
-%else
-toolbar[type="menubar"][autohide="true"] {
-  -moz-binding: url("chrome://global/content/bindings/toolbar.xml#toolbar-menubar-autohide");
-  overflow: hidden;
-}
-
-toolbar[type="menubar"][autohide="true"][inactive="true"]:not([customizing="true"]) {
-  min-height: 0 !important;
-  height: 0 !important;
-  -moz-appearance: none !important;
-  border-style: none !important;
-}
 %endif
 
-toolbarseparator {
-  -moz-binding: url("chrome://global/content/bindings/toolbar.xml#toolbardecoration");
-}
-
-toolbarspacer {
-  -moz-binding: url("chrome://global/content/bindings/toolbar.xml#toolbardecoration");
-}
-
 toolbarspring {
-  -moz-binding: url("chrome://global/content/bindings/toolbar.xml#toolbardecoration");
   -moz-box-flex: 1000;
-}
-
-toolbarpaletteitem {
-  -moz-binding: url("chrome://global/content/bindings/toolbar.xml#toolbarpaletteitem");
-}
-
-toolbarpaletteitem[place="palette"] {
-  -moz-box-orient: vertical;
-  -moz-binding: url("chrome://global/content/bindings/toolbar.xml#toolbarpaletteitem-palette");
-}
-
-/********* menubar ***********/
-
-menubar {
-  -moz-binding: url("chrome://global/content/bindings/toolbar.xml#menubar");
 }
 
 /********* menu ***********/
@@ -374,17 +286,9 @@ menuitem.menuitem-iconic {
   -moz-binding: url("chrome://global/content/bindings/menu.xml#menuitem-iconic");
 }
 
-menuitem[description] {
-  -moz-binding: url("chrome://global/content/bindings/menu.xml#menuitem-iconic-desc-noaccel");
-}
-
 menuitem[type="checkbox"],
 menuitem[type="radio"] {
   -moz-binding: url("chrome://global/content/bindings/menu.xml#menuitem-iconic");
-}
-
-menuitem.menuitem-non-iconic {
-  -moz-binding: url("chrome://global/content/bindings/menu.xml#menubutton-item");
 }
 
 menucaption {
@@ -393,12 +297,6 @@ menucaption {
 
 .menu-text {
   -moz-box-flex: 1;
-}
-
-/********* menuseparator ***********/
-
-menuseparator {
-  -moz-binding: url("chrome://global/content/bindings/menu.xml#menuseparator");
 }
 
 /********* popup & menupopup ***********/
@@ -426,7 +324,6 @@ tooltip {
 }
 
 tooltip {
-  -moz-binding: url("chrome://global/content/bindings/popup.xml#tooltip");
   -moz-box-orient: vertical;
   white-space: pre-wrap;
   margin-top: 21px;
@@ -436,76 +333,76 @@ panel[type="arrow"] {
   -moz-binding: url("chrome://global/content/bindings/popup.xml#arrowpanel");
 }
 
-%ifndef MOZ_WIDGET_GTK
+%ifdef MOZ_WIDGET_COCOA
 
-panel[type="arrow"]:not([animate="false"]) {
-  transform: scale(.4);
+/* On Mac, use the properties "-moz-window-transform" and "-moz-window-opacity"
+   instead of "transform" and "opacity" for these animations.
+   The -moz-window* properties apply to the whole window including the window's
+   shadow, and they don't affect the window's "shape", so the system doesn't
+   have to recompute the shadow shape during the animation. This makes them a
+   lot faster. In fact, Gecko no longer triggers shadow shape recomputations
+   for repaints.
+   These properties are not implemented on other platforms. */
+panel[type="arrow"][side]:not([animate="false"]) {
+  -moz-window-opacity: 0;
+  -moz-window-transform: translateY(-70px);
+  transition-property: -moz-window-transform, -moz-window-opacity;
+  transition-duration: 0.18s, 0.18s;
+  transition-timing-function:
+    var(--animation-easing-function), ease-out;
+}
+
+panel[type="arrow"][side="bottom"]:not([animate="false"]) {
+  -moz-window-transform: translateY(70px);
+}
+
+panel[type="arrow"][side][animate="open"] {
+  -moz-window-opacity: 1.0;
+  transition-duration: 0.18s, 0.18s;
+  -moz-window-transform: none;
+  transition-timing-function:
+    var(--animation-easing-function), ease-in-out;
+}
+
+panel[type="arrow"][side][animate="cancel"] {
+  -moz-window-transform: none;
+}
+
+%elifndef MOZ_WIDGET_GTK
+
+panel[type="arrow"][side] {
+  will-change: transform, opacity; /* workaround for bug 1414033 */
+}
+
+panel[type="arrow"][side]:not([animate="false"]) {
   opacity: 0;
+  transform: translateY(-70px);
   transition-property: transform, opacity;
-  transition-duration: 0.15s;
-  transition-timing-function: ease-out;
+  transition-duration: 0.18s, 0.18s;
+  transition-timing-function:
+    var(--animation-easing-function), ease-out;
 }
 
-panel[type="arrow"][animate="open"] {
-  transform: none;
+panel[type="arrow"][side="bottom"]:not([animate="false"]) {
+  transform: translateY(70px);
+}
+
+panel[type="arrow"][side][animate="open"] {
   opacity: 1.0;
+  transition-duration: 0.18s, 0.18s;
+  transform: none;
+  transition-timing-function:
+    var(--animation-easing-function), ease-in-out;
 }
 
-panel[type="arrow"][animate="cancel"] {
+panel[type="arrow"][side][animate="cancel"] {
   transform: none;
 }
 
-panel[arrowposition="after_start"]:-moz-locale-dir(ltr),
-panel[arrowposition="after_end"]:-moz-locale-dir(rtl) {
-  transform-origin: 20px top;
-}
-
-panel[arrowposition="after_end"]:-moz-locale-dir(ltr),
-panel[arrowposition="after_start"]:-moz-locale-dir(rtl) {
-  transform-origin: calc(100% - 20px) top;
-}
-
-panel[arrowposition="before_start"]:-moz-locale-dir(ltr),
-panel[arrowposition="before_end"]:-moz-locale-dir(rtl) {
-  transform-origin: 20px bottom;
-}
-
-panel[arrowposition="before_end"]:-moz-locale-dir(ltr),
-panel[arrowposition="before_start"]:-moz-locale-dir(rtl) {
-  transform-origin: calc(100% - 20px) bottom;
-}
-
-panel[arrowposition="start_before"]:-moz-locale-dir(ltr),
-panel[arrowposition="end_before"]:-moz-locale-dir(rtl) {
-  transform-origin: right 20px;
-}
-
-panel[arrowposition="start_after"]:-moz-locale-dir(ltr),
-panel[arrowposition="end_after"]:-moz-locale-dir(rtl) {
-  transform-origin: right calc(100% - 20px);
-}
-
-panel[arrowposition="end_before"]:-moz-locale-dir(ltr),
-panel[arrowposition="start_before"]:-moz-locale-dir(rtl) {
-  transform-origin: left 20px;
-}
-
-panel[arrowposition="end_after"]:-moz-locale-dir(ltr),
-panel[arrowposition="start_after"]:-moz-locale-dir(rtl) {
-  transform-origin: left calc(100% - 20px);
-}
-
 %endif
-
-%ifdef XP_MACOSX
-.statusbar-resizerpanel {
-  display: none;
+panel[type="arrow"][animating] {
+  pointer-events: none;
 }
-%else
-window[sizemode="maximized"] statusbarpanel.statusbar-resizerpanel {
-  visibility: collapse;
-}
-%endif
 
 /******** grid **********/
 
@@ -531,141 +428,20 @@ column {
   -moz-box-orient: vertical;
 }
 
-/******** listbox **********/
-
-listbox {
-  -moz-binding: url("chrome://global/content/bindings/listbox.xml#listbox");
-}
-
-listhead {
-  -moz-binding: url("chrome://global/content/bindings/listbox.xml#listhead");
-}
-
-listrows {
-  -moz-binding: url("chrome://global/content/bindings/listbox.xml#listrows");
-}
-
-listitem {
-  -moz-binding: url("chrome://global/content/bindings/listbox.xml#listitem");
-}
-
-listitem[type="checkbox"] {
-  -moz-binding: url("chrome://global/content/bindings/listbox.xml#listitem-checkbox");
-}
-
-listheader {
-  -moz-binding: url("chrome://global/content/bindings/listbox.xml#listheader");
-  -moz-box-ordinal-group: 2147483646;
-}
-
-listcell {
-  -moz-binding: url("chrome://global/content/bindings/listbox.xml#listcell");
-}
-
-listcell[type="checkbox"] {
-  -moz-binding: url("chrome://global/content/bindings/listbox.xml#listcell-checkbox");
-}
-
-.listitem-iconic {
-  -moz-binding: url("chrome://global/content/bindings/listbox.xml#listitem-iconic");
-}
-
-listitem[type="checkbox"].listitem-iconic {
-  -moz-binding: url("chrome://global/content/bindings/listbox.xml#listitem-checkbox-iconic");
-}
-
-.listcell-iconic {
-  -moz-binding: url("chrome://global/content/bindings/listbox.xml#listcell-iconic");
-}
-
-listcell[type="checkbox"].listcell-iconic {
-  -moz-binding: url("chrome://global/content/bindings/listbox.xml#listcell-checkbox-iconic");
-}
-
-listbox {
-  display: -moz-grid;
-}
-
-listbox[rows] {
-  height: auto;
-}
-
-listcols, listhead, listrows, listboxbody {
-  display: -moz-grid-group;
-}
-
-listcol, listitem, listheaditem {
-  display: -moz-grid-line;
-}
-
-listbox {
-  -moz-user-focus: normal;
-  -moz-box-orient: vertical;
-  min-width: 0px;
-  min-height: 0px;
-  width: 200px;
-  height: 200px;
-}
-
-listhead {
-  -moz-box-orient: vertical;
-}
-
-listrows {
-  -moz-box-orient: vertical;
-  -moz-box-flex: 1;
-}
-
-listboxbody {
-  -moz-box-orient: vertical;
-  -moz-box-flex: 1;
-  /* Don't permit a horizontal scrollbar. See bug 285449 */
-  overflow-x: hidden !important;
-  overflow-y: auto;
-  min-height: 0px;
-}
-
-listcol {
-  -moz-box-orient: vertical;
-  min-width: 16px;
-}
-
-listcell {
-  -moz-box-align: center;
-}
-
 /******** tree ******/
 
 tree {
   -moz-binding: url("chrome://global/content/bindings/tree.xml#tree");
 }
 
-treecols {
-  -moz-binding: url("chrome://global/content/bindings/tree.xml#treecols");
-}
-
-treecol {
-  -moz-binding: url("chrome://global/content/bindings/tree.xml#treecol");
+treecolpicker {
   -moz-box-ordinal-group: 2147483646;
-}
-
-treecol.treecol-image {
-  -moz-binding: url("chrome://global/content/bindings/tree.xml#treecol-image");
 }
 
 tree > treechildren {
   display: -moz-box;
-  -moz-binding: url("chrome://global/content/bindings/tree.xml#treebody");
   -moz-user-select: none;
   -moz-box-flex: 1;
-}
-
-treerows {
-  -moz-binding: url("chrome://global/content/bindings/tree.xml#treerows");
-}
-
-treecolpicker {
-  -moz-binding: url("chrome://global/content/bindings/tree.xml#columnpicker");
 }
 
 tree {
@@ -689,11 +465,6 @@ treecol[hidden="true"] {
   display: -moz-box;
 }
 
-.tree-scrollable-columns {
-  /* Yes, Virginia, this makes it scrollable */
-  overflow: hidden;
-}
-
 /* ::::: lines connecting cells ::::: */
 tree:not([treelines="true"]) > treechildren::-moz-tree-line {
   visibility: hidden;
@@ -707,17 +478,15 @@ treechildren::-moz-tree-cell(ltr) {
 
 deck {
   display: -moz-deck;
-  -moz-binding: url("chrome://global/content/bindings/general.xml#deck");
 }
 
-stack, bulletinboard {
+stack {
   display: -moz-stack;
 }
 
 /********** tabbox *********/
 
 tabbox {
-  -moz-binding: url("chrome://global/content/bindings/tabbox.xml#tabbox");
   -moz-box-orient: vertical;
 }
 
@@ -737,14 +506,14 @@ tab[selected="true"]:not([ignorefocus="true"]) {
 }
 
 tabpanels {
-  -moz-binding: url("chrome://global/content/bindings/tabbox.xml#tabpanels");
   display: -moz-deck;
 }
 
-/********** progressmeter **********/
+/********** tooltip *********/
 
-progressmeter {
-  -moz-binding: url("chrome://global/content/bindings/progressmeter.xml#progressmeter");
+tooltip[titletip="true"] {
+  /* The width of the tooltip isn't limited on cropped <tree> cells. */
+  max-width: none;
 }
 
 /********** basic rule for anonymous content that needs to pass box properties through
@@ -769,32 +538,25 @@ textbox[multiline="true"] {
   -moz-binding: url("chrome://global/content/bindings/textbox.xml#textarea");
 }
 
-.textbox-input-box {
-  -moz-binding: url("chrome://global/content/bindings/textbox.xml#input-box");
-}
-
 html|textarea.textbox-textarea {
   resize: none;
 }
 
-textbox[resizable="true"] > .textbox-input-box > html|textarea.textbox-textarea {
+textbox[resizable="true"] > moz-input-box > html|textarea.textbox-textarea {
   resize: both;
-}
-
-.textbox-input-box[spellcheck="true"] {
-  -moz-binding: url("chrome://global/content/bindings/textbox.xml#input-box-spell");
-}
-
-textbox[type="timed"] {
-  -moz-binding: url("chrome://global/content/bindings/textbox.xml#timed-textbox");
 }
 
 textbox[type="search"] {
   -moz-binding: url("chrome://global/content/bindings/textbox.xml#search-textbox");
 }
 
-textbox[type="number"] {
-  -moz-binding: url("chrome://global/content/bindings/numberbox.xml#numberbox");
+@supports -moz-bool-pref("layout.css.emulate-moz-box-with-flex") {
+  html|*.textbox-input,
+  html|*.textbox-textarea {
+    /* Be block-level, so that -moz-box-flex can take effect, when we are an item
+       in a -moz-box being emulated by modified modern flex. */
+    display: block;
+  }
 }
 
 .textbox-contextmenu:-moz-locale-dir(rtl) {
@@ -803,79 +565,19 @@ textbox[type="number"] {
 
 /********** autocomplete textbox **********/
 
-/* SeaMonkey does not use the new toolkit's autocomplete widget */
-%ifdef MOZ_SUITE
-
-textbox[type="autocomplete"] {
-  -moz-binding: url("chrome://global/content/autocomplete.xml#autocomplete");
-}
-
-panel[type="autocomplete"] {
-  -moz-binding: url("chrome://global/content/autocomplete.xml#autocomplete-result-popup");
-}
-
-.autocomplete-history-popup {
-  -moz-binding: url("chrome://global/content/autocomplete.xml#autocomplete-history-popup");
-}
-
-.autocomplete-treebody {
-  -moz-binding: url("chrome://global/content/autocomplete.xml#autocomplete-treebody");
-}
-
-.autocomplete-history-dropmarker {
-  -moz-binding: url("chrome://global/content/autocomplete.xml#history-dropmarker");
-}
-
-panel[type="autocomplete-richlistbox"] {
-  -moz-binding: url("chrome://global/content/bindings/autocomplete.xml#autocomplete-rich-result-popup");
-}
-
-.autocomplete-richlistbox {
-  -moz-binding: url("chrome://global/content/bindings/autocomplete.xml#autocomplete-richlistbox");
-  -moz-user-focus: ignore;
-}
-
-.autocomplete-richlistbox > scrollbox {
-  overflow-x: hidden !important;
-}
-
-.autocomplete-richlistitem {
-  -moz-binding: url("chrome://global/content/bindings/autocomplete.xml#autocomplete-richlistitem");
-  -moz-box-orient: vertical;
-  overflow: -moz-hidden-unscrollable;
-}
-
-%else
+/* SeaMonkey uses its own autocomplete and the toolkit's autocomplete widget */
+%ifndef MOZ_SUITE
 
 textbox[type="autocomplete"] {
   -moz-binding: url("chrome://global/content/bindings/autocomplete.xml#autocomplete");
 }
 
-panel[type="autocomplete"] {
-  -moz-binding: url("chrome://global/content/bindings/autocomplete.xml#autocomplete-result-popup");
-}
-
 panel[type="autocomplete-richlistbox"] {
   -moz-binding: url("chrome://global/content/bindings/autocomplete.xml#autocomplete-rich-result-popup");
 }
 
-/* FIXME: bug 616258 */
-
-.autocomplete-tree {
-  -moz-binding: url("chrome://global/content/bindings/autocomplete.xml#autocomplete-tree");
-  -moz-user-focus: ignore;
-}
-
-.autocomplete-treebody {
-  -moz-binding: url("chrome://global/content/bindings/autocomplete.xml#autocomplete-treebody");
-}
-
 .autocomplete-richlistbox {
-  -moz-binding: url("chrome://global/content/bindings/autocomplete.xml#autocomplete-richlistbox");
   -moz-user-focus: ignore;
-}
-
-.autocomplete-richlistbox > scrollbox {
   overflow-x: hidden !important;
 }
 
@@ -885,26 +587,7 @@ panel[type="autocomplete-richlistbox"] {
   overflow: -moz-hidden-unscrollable;
 }
 
-.autocomplete-treerows {
-  -moz-binding: url("chrome://global/content/bindings/autocomplete.xml#autocomplete-treerows");
-}
-
-.autocomplete-history-dropmarker {
-  display: none;
-}
-
-.autocomplete-history-dropmarker[enablehistory="true"] {
-  display: -moz-box;
-  -moz-binding: url("chrome://global/content/bindings/autocomplete.xml#history-dropmarker");
-}
-
 %endif
-
-/* the C++ implementation of widgets is too eager to make popups visible.
-   this causes problems (bug 120155 and others), thus this workaround: */
-popup[type="autocomplete"][hidden="true"] {
-  visibility: hidden;
-}
 
 /* The following rule is here to fix bug 96899 (and now 117952).
    Somehow trees create a situation
@@ -918,20 +601,6 @@ popup[type="autocomplete"][hidden="true"] {
   min-height: 0%;
 }
 
-/********** colorpicker **********/
-
-colorpicker {
-  -moz-binding: url("chrome://global/content/bindings/colorpicker.xml#colorpicker");
-}
-
-colorpicker[type="button"] {
-  -moz-binding: url("chrome://global/content/bindings/colorpicker.xml#colorpicker-button");
-}
-
-.colorpickertile {
-  -moz-binding: url("chrome://global/content/bindings/colorpicker.xml#colorpickertile");
-}
-
 /********** menulist **********/
 
 menulist {
@@ -943,38 +612,30 @@ menulist[popuponly="true"] {
   -moz-appearance: none !important;
   margin: 0 !important;
   height: 0 !important;
+  min-height: 0 !important;
   border: 0 !important;
-}
-
-menulist[editable="true"] {
-  -moz-binding: url("chrome://global/content/bindings/menulist.xml#menulist-editable");
-}
-
-menulist[type="description"] {
-  -moz-binding: url("chrome://global/content/bindings/menulist.xml#menulist-description");
 }
 
 menulist > menupopup > menuitem {
   -moz-binding: url("chrome://global/content/bindings/menu.xml#menuitem-iconic-noaccel");
 }
 
-menulist > menupopup > menucaption {
-  -moz-binding: url("chrome://global/content/bindings/menu.xml#menucaption-inmenulist");
+menulist > menupopup > .popup-internal-box > .scrollbutton-up,
+menulist > menupopup > .popup-internal-box > .arrowscrollbox-overflow-start-indicator,
+menulist > menupopup > .popup-internal-box > .arrowscrollbox-overflow-end-indicator,
+menulist > menupopup > .popup-internal-box > .scrollbutton-down {
+  display: none;
 }
 
-dropmarker {
-  -moz-binding: url("chrome://global/content/bindings/general.xml#dropmarker");
+menulist > menupopup > .popup-internal-box > .arrowscrollbox-scrollbox {
+  overflow: auto;
+}
+
+dropmarker > .dropmarker-icon {
+  pointer-events: none;
 }
 
 /********** splitter **********/
-
-splitter {
-  -moz-binding: url("chrome://global/content/bindings/splitter.xml#splitter");
-}
-
-grippy {
-  -moz-binding: url("chrome://global/content/bindings/splitter.xml#grippy");
-}
 
 .tree-splitter {
   width: 0px;
@@ -995,68 +656,23 @@ slider {
 /******** scrollbox ********/
 
 scrollbox {
-  -moz-binding: url("chrome://global/content/bindings/scrollbox.xml#scrollbox");
   /* This makes it scrollable! */
   overflow: hidden;
+}
+
+scrollbox[smoothscroll=true] {
+  scroll-behavior: smooth;
 }
 
 arrowscrollbox {
   -moz-binding: url("chrome://global/content/bindings/scrollbox.xml#arrowscrollbox");
 }
 
-arrowscrollbox[clicktoscroll="true"] {
-  -moz-binding: url("chrome://global/content/bindings/scrollbox.xml#arrowscrollbox-clicktoscroll");
-}
-
-autorepeatbutton {
-  -moz-binding: url("chrome://global/content/bindings/scrollbox.xml#autorepeatbutton");
-}
-
-/********** statusbar **********/
-
-statusbar {
-  -moz-binding: url("chrome://global/content/bindings/general.xml#statusbar");
-%ifdef XP_MACOSX
-  padding-right: 14px;
-%endif
-}
-
-statusbarpanel {
-  -moz-binding: url("chrome://global/content/bindings/general.xml#statusbarpanel");
-}
-
-.statusbarpanel-iconic {
-  -moz-binding: url("chrome://global/content/bindings/general.xml#statusbarpanel-iconic");
-}
-
-.statusbarpanel-iconic-text {
-  -moz-binding: url("chrome://global/content/bindings/general.xml#statusbarpanel-iconic-text");
-}
-
-.statusbarpanel-menu-iconic {
-  -moz-binding: url("chrome://global/content/bindings/general.xml#statusbarpanel-menu-iconic");
-}
-
-/********** spinbuttons ***********/
-
-spinbuttons {
-  -moz-binding: url("chrome://global/content/bindings/spinbuttons.xml#spinbuttons");
-}
-
-.spinbuttons-button {
-  -moz-user-focus: ignore;
-}
-
 /********** stringbundle **********/
 
+stringbundle,
 stringbundleset {
-  -moz-binding: url("chrome://global/content/bindings/stringbundle.xml#stringbundleset");
-  visibility: collapse;
-}
-
-stringbundle {
-  -moz-binding: url("chrome://global/content/bindings/stringbundle.xml#stringbundle");
-  visibility: collapse;
+  display: none;
 }
 
 /********** dialog **********/
@@ -1065,10 +681,6 @@ dialog,
 dialog:root /* override :root from above */ {
   -moz-binding: url("chrome://global/content/bindings/dialog.xml#dialog");
   -moz-box-orient: vertical;
-}
-
-dialogheader {
-  -moz-binding: url("chrome://global/content/bindings/dialog.xml#dialogheader");
 }
 
 /********* page ************/
@@ -1101,68 +713,9 @@ wizardpage {
   -moz-binding: url("chrome://global/content/bindings/wizard.xml#wizard-buttons");
 }
 
-/********** preferences ********/
-
-prefwindow,
-prefwindow:root /* override :root from above */ {
-  -moz-binding: url("chrome://global/content/bindings/preferences.xml#prefwindow");
-  -moz-box-orient: vertical;
-}
-
-prefpane {
-  -moz-binding: url("chrome://global/content/bindings/preferences.xml#prefpane");
-  -moz-box-orient: vertical;
-}
-
-prefwindow > .paneDeckContainer {
-  overflow: hidden;
-}
-
-prefpane > .content-box {
-  overflow: hidden;
-}
-
-prefwindow[type="child"] > .paneDeckContainer {
-  overflow: -moz-hidden-unscrollable;
-}
-
-prefwindow[type="child"] > prefpane > .content-box {
-  -moz-box-flex: 1;
-  overflow: -moz-hidden-unscrollable;
-}
-
-preferences {
-  -moz-binding: url("chrome://global/content/bindings/preferences.xml#preferences");
-  visibility: collapse;
-}
-
-preference {
-  -moz-binding: url("chrome://global/content/bindings/preferences.xml#preference");
-  visibility: collapse;
-}
-
-radio[pane] {
-  -moz-binding: url("chrome://global/content/bindings/preferences.xml#panebutton") !important;
-  -moz-box-orient: vertical;
-  -moz-box-align: center;
-}
-
-prefwindow[chromehidden~="toolbar"] .chromeclass-toolbar {
-  display: none;
-}
-
-/********** expander ********/
-
-expander {
-  -moz-binding: url("chrome://global/content/bindings/expander.xml#expander");
-  -moz-box-orient: vertical;
-}
-
-
 /********** Rich Listbox ********/
 
 richlistbox {
-  -moz-binding: url('chrome://global/content/bindings/richlistbox.xml#richlistbox');
   -moz-user-focus: normal;
   -moz-box-orient: vertical;
 }
@@ -1171,47 +724,71 @@ richlistitem {
   -moz-binding: url('chrome://global/content/bindings/richlistbox.xml#richlistitem');
 }
 
-richlistbox > listheader {
-  -moz-box-ordinal-group: 1;
-}
-
-/********** datepicker and timepicker ********/
-
-datepicker {
-  -moz-binding: url('chrome://global/content/bindings/datetimepicker.xml#datepicker');
-}
-
-datepicker[type="popup"] {
-  -moz-binding: url('chrome://global/content/bindings/datetimepicker.xml#datepicker-popup');
-}
-
-datepicker[type="grid"] {
-  -moz-binding: url('chrome://global/content/bindings/datetimepicker.xml#datepicker-grid');
-}
-
-timepicker {
-  -moz-binding: url('chrome://global/content/bindings/datetimepicker.xml#timepicker');
-}
-
 
 /*********** findbar ************/
 findbar {
-  -moz-binding: url('chrome://global/content/bindings/findbar.xml#findbar');
-}
-
-.findbar-textbox {
-  -moz-binding: url("chrome://global/content/bindings/findbar.xml#findbar-textbox");
-}
-
-
-/*********** filefield ************/
-filefield {
-  -moz-binding: url("chrome://global/content/bindings/filefield.xml#filefield");
+  overflow-x: hidden;
 }
 
 /*********** tabmodalprompt ************/
 tabmodalprompt {
-  -moz-binding: url("chrome://global/content/tabprompts.xml#tabmodalprompt");
   overflow: hidden;
   text-shadow: none;
+}
+
+.button-highlightable-text:not([highlightable="true"]),
+.button-text[highlightable="true"],
+.menulist-highlightable-label:not([highlightable="true"]),
+.menulist-label[highlightable="true"],
+.menu-iconic-highlightable-text:not([highlightable="true"]),
+.menu-iconic-text[highlightable="true"] {
+  display: none;
+}
+
+@supports -moz-bool-pref("layout.css.emulate-moz-box-with-flex") {
+  /* Support common XUL attributes in the emulated flex mode so we can
+     test the browser in this configuration without mass-changing existing
+     markup and CSS. */
+  [orient="vertical"] { -moz-box-orient: vertical; }
+  [orient="horizontal"] { -moz-box-orient: horizontal; }
+
+  [dir="reverse"] { -moz-box-direction: reverse; }
+
+  [align="start"] { -moz-box-align: start; }
+  [align="center"] { -moz-box-align: center; }
+  [align="end"] { -moz-box-align: end; }
+  [align="baseline"] { -moz-box-align: baseline; }
+  [align="stretch"] { -moz-box-align: stretch; }
+
+  [pack="start"] { -moz-box-pack: start; }
+  [pack="center"] { -moz-box-pack: center; }
+  [pack="end"] { -moz-box-pack: end; }
+
+  /* This isn't a real solution for [flex] and [ordinal], but it covers enough
+     cases to render the browser chrome. If we get attr() in Bug 435426 this could
+     work for all cases. */
+  [flex="1"] { -moz-box-flex: 1; }
+  [flex="2"] { -moz-box-flex: 2; }
+  [flex="3"] { -moz-box-flex: 3; }
+  [flex="4"] { -moz-box-flex: 4; }
+  [flex="5"] { -moz-box-flex: 5; }
+  [flex="6"] { -moz-box-flex: 6; }
+  [flex="7"] { -moz-box-flex: 7; }
+  [flex="8"] { -moz-box-flex: 8; }
+  [flex="9"] { -moz-box-flex: 9; }
+  [flex="100"] { -moz-box-flex: 100; }
+  [flex="400"] { -moz-box-flex: 400; }
+  [flex="1000"] { -moz-box-flex: 1000; }
+  [flex="10000"] { -moz-box-flex: 10000; }
+
+  [ordinal="1"] { -moz-box-ordinal-group: 1; }
+  [ordinal="2"] { -moz-box-ordinal-group: 2; }
+  [ordinal="3"] { -moz-box-ordinal-group: 3; }
+  [ordinal="4"] { -moz-box-ordinal-group: 4; }
+  [ordinal="5"] { -moz-box-ordinal-group: 5; }
+  [ordinal="6"] { -moz-box-ordinal-group: 6; }
+  [ordinal="7"] { -moz-box-ordinal-group: 7; }
+  [ordinal="8"] { -moz-box-ordinal-group: 8; }
+  [ordinal="9"] { -moz-box-ordinal-group: 9; }
+  [ordinal="1000"] { -moz-box-ordinal-group: 1000; }
 }

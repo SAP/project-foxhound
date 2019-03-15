@@ -1,7 +1,4 @@
-String.prototype.has = function(s) { return this.indexOf(s) != -1; }
-
-var Cc = Components.classes;
-var Ci = Components.interfaces;
+String.prototype.has = function(s) { return this.includes(s); }
 
 function dt(locale) {
   var date = new Date("2008-06-30T13:56:34");
@@ -50,5 +47,5 @@ function run_test()
     for (var i = 0; i < tests.length; ++i) {
         one_test(tests[i][0], tests[i][1]);
     }
-    do_check_true(all_passed);
+    Assert.ok(all_passed);
 }

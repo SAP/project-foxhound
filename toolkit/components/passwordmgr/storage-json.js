@@ -8,20 +8,17 @@
 
 "use strict";
 
-const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "LoginHelper",
-                                  "resource://gre/modules/LoginHelper.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "LoginImport",
-                                  "resource://gre/modules/LoginImport.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "LoginStore",
-                                  "resource://gre/modules/LoginStore.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "OS",
-                                  "resource://gre/modules/osfile.jsm");
+ChromeUtils.defineModuleGetter(this, "LoginHelper",
+                               "resource://gre/modules/LoginHelper.jsm");
+ChromeUtils.defineModuleGetter(this, "LoginImport",
+                               "resource://gre/modules/LoginImport.jsm");
+ChromeUtils.defineModuleGetter(this, "LoginStore",
+                               "resource://gre/modules/LoginStore.jsm");
+ChromeUtils.defineModuleGetter(this, "OS",
+                               "resource://gre/modules/osfile.jsm");
 
 XPCOMUtils.defineLazyServiceGetter(this, "gUUIDGenerator",
                                    "@mozilla.org/uuid-generator;1",
@@ -31,13 +28,16 @@ this.LoginManagerStorage_json = function() {};
 
 this.LoginManagerStorage_json.prototype = {
   classID: Components.ID("{c00c432d-a0c9-46d7-bef6-9c45b4d07341}"),
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsILoginManagerStorage]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsILoginManagerStorage]),
+
+  _xpcom_factory: XPCOMUtils.generateSingletonFactory(this.LoginManagerStorage_json),
 
   __crypto: null,  // nsILoginManagerCrypto service
   get _crypto() {
-    if (!this.__crypto)
+    if (!this.__crypto) {
       this.__crypto = Cc["@mozilla.org/login-manager/crypto/SDR;1"].
                       getService(Ci.nsILoginManagerCrypto);
+    }
     return this.__crypto;
   },
 
@@ -52,10 +52,10 @@ this.LoginManagerStorage_json.prototype = {
                                   "logins.json");
       this._store = new LoginStore(jsonPath);
 
-      return Task.spawn(function* () {
+      return (async () => {
         // Load the data asynchronously.
         this.log("Opening database at", this._store.path);
-        yield this._store.load();
+        await this._store.load();
 
         // The import from previous versions operates the first time
         // that this built-in storage back-end is used.  This may be
@@ -72,19 +72,19 @@ this.LoginManagerStorage_json.prototype = {
         // Import only happens asynchronously.
         let sqlitePath = OS.Path.join(OS.Constants.Path.profileDir,
                                       "signons.sqlite");
-        if (yield OS.File.exists(sqlitePath)) {
+        if (await OS.File.exists(sqlitePath)) {
           let loginImport = new LoginImport(this._store, sqlitePath);
           // Failures during import, for example due to a corrupt
           // file or a schema version that is too old, will not
           // prevent us from marking the operation as completed.
           // At the next startup, we will not try the import again.
-          yield loginImport.import().catch(Cu.reportError);
+          await loginImport.import().catch(Cu.reportError);
           this._store.saveSoon();
         }
 
         // We won't attempt import again on next startup.
         Services.prefs.setBoolPref("signon.importedFromSqlite", true);
-      }.bind(this)).catch(Cu.reportError);
+      })().catch(Cu.reportError);
     } catch (e) {
       this.log("Initialization failed:", e);
       throw new Error("Initialization failed");
@@ -100,13 +100,15 @@ this.LoginManagerStorage_json.prototype = {
     return this._store._save();
   },
 
-  addLogin(login) {
+  addLogin(login, preEncrypted = false) {
     this._store.ensureDataReady();
 
     // Throws if there are bogus values.
     LoginHelper.checkLoginValues(login);
 
-    let [encUsername, encPassword, encType] = this._encryptLogin(login);
+    let [encUsername, encPassword, encType] = preEncrypted ?
+      [login.username, login.password, this._crypto.defaultEncType] :
+      this._encryptLogin(login);
 
     // Clone the login, so we don't modify the caller's object.
     let loginClone = login.clone();
@@ -114,22 +116,41 @@ this.LoginManagerStorage_json.prototype = {
     // Initialize the nsILoginMetaInfo fields, unless the caller gave us values
     loginClone.QueryInterface(Ci.nsILoginMetaInfo);
     if (loginClone.guid) {
-      if (!this._isGuidUnique(loginClone.guid))
-        throw new Error("specified GUID already exists");
+      let guid = loginClone.guid;
+      if (!this._isGuidUnique(guid)) {
+        // We have an existing GUID, but it's possible that entry is unable
+        // to be decrypted - if that's the case we remove the existing one
+        // and allow this one to be added.
+        let existing = this._searchLogins({guid})[0];
+        if (this._decryptLogins(existing).length) {
+          // Existing item is good, so it's an error to try and re-add it.
+          throw new Error("specified GUID already exists");
+        }
+        // find and remove the existing bad entry.
+        let foundIndex = this._store.data.logins.findIndex(l => l.guid == guid);
+        if (foundIndex == -1) {
+          throw new Error("can't find a matching GUID to remove");
+        }
+        this._store.data.logins.splice(foundIndex, 1);
+      }
     } else {
       loginClone.guid = gUUIDGenerator.generateUUID().toString();
     }
 
     // Set timestamps
     let currentTime = Date.now();
-    if (!loginClone.timeCreated)
+    if (!loginClone.timeCreated) {
       loginClone.timeCreated = currentTime;
-    if (!loginClone.timeLastUsed)
+    }
+    if (!loginClone.timeLastUsed) {
       loginClone.timeLastUsed = currentTime;
-    if (!loginClone.timePasswordChanged)
+    }
+    if (!loginClone.timePasswordChanged) {
       loginClone.timePasswordChanged = currentTime;
-    if (!loginClone.timesUsed)
+    }
+    if (!loginClone.timesUsed) {
       loginClone.timesUsed = 1;
+    }
 
     this._store.data.logins.push({
       id:                  this._store.data.nextId++,
@@ -145,7 +166,7 @@ this.LoginManagerStorage_json.prototype = {
       timeCreated:         loginClone.timeCreated,
       timeLastUsed:        loginClone.timeLastUsed,
       timePasswordChanged: loginClone.timePasswordChanged,
-      timesUsed:           loginClone.timesUsed
+      timesUsed:           loginClone.timesUsed,
     });
     this._store.saveSoon();
 
@@ -158,8 +179,9 @@ this.LoginManagerStorage_json.prototype = {
     this._store.ensureDataReady();
 
     let [idToDelete, storedLogin] = this._getIdForLogin(login);
-    if (!idToDelete)
+    if (!idToDelete) {
       throw new Error("No matching logins");
+    }
 
     let foundIndex = this._store.data.logins.findIndex(l => l.id == idToDelete);
     if (foundIndex != -1) {
@@ -174,8 +196,9 @@ this.LoginManagerStorage_json.prototype = {
     this._store.ensureDataReady();
 
     let [idToModify, oldStoredLogin] = this._getIdForLogin(oldLogin);
-    if (!idToModify)
+    if (!idToModify) {
       throw new Error("No matching logins");
+    }
 
     let newLogin = LoginHelper.buildModifiedLogin(oldStoredLogin, newLoginData);
 
@@ -191,8 +214,9 @@ this.LoginManagerStorage_json.prototype = {
                                    newLogin.formSubmitURL,
                                    newLogin.httpRealm);
 
-      if (logins.some(login => newLogin.matches(login, true)))
+      if (logins.some(login => newLogin.matches(login, true))) {
         throw new Error("This login already exists.");
+      }
     }
 
     // Get the encrypted value of the username and password.
@@ -231,8 +255,9 @@ this.LoginManagerStorage_json.prototype = {
     logins = this._decryptLogins(logins);
 
     this.log("_getAllLogins: returning", logins.length, "logins.");
-    if (count)
-      count.value = logins.length; // needed for XPCOM
+    if (count) {
+      count.value = logins.length;
+    } // needed for XPCOM
     return logins;
   },
 
@@ -246,9 +271,7 @@ this.LoginManagerStorage_json.prototype = {
     let realMatchData = {};
     let options = {};
     // Convert nsIPropertyBag to normal JS object
-    let propEnum = matchData.enumerator;
-    while (propEnum.hasMoreElements()) {
-      let prop = propEnum.getNext().QueryInterface(Ci.nsIProperty);
+    for (let prop of matchData.enumerator) {
       switch (prop.name) {
         // Some property names aren't field names but are special options to affect the search.
         case "schemeUpgrades": {
@@ -379,12 +402,14 @@ this.LoginManagerStorage_json.prototype = {
     let loginData = {
       hostname,
       formSubmitURL,
-      httpRealm
+      httpRealm,
     };
     let matchData = { };
-    for (let field of ["hostname", "formSubmitURL", "httpRealm"])
-      if (loginData[field] != "")
+    for (let field of ["hostname", "formSubmitURL", "httpRealm"]) {
+      if (loginData[field] != "") {
         matchData[field] = loginData[field];
+      }
+    }
     let [logins, ids] = this._searchLogins(matchData);
 
     // Decrypt entries found for the caller.
@@ -399,12 +424,14 @@ this.LoginManagerStorage_json.prototype = {
     let loginData = {
       hostname,
       formSubmitURL,
-      httpRealm
+      httpRealm,
     };
     let matchData = { };
-    for (let field of ["hostname", "formSubmitURL", "httpRealm"])
-      if (loginData[field] != "")
+    for (let field of ["hostname", "formSubmitURL", "httpRealm"]) {
+      if (loginData[field] != "") {
         matchData[field] = loginData[field];
+      }
+    }
     let [logins, ids] = this._searchLogins(matchData);
 
     this.log("_countLogins: counted logins:", logins.length);
@@ -426,9 +453,11 @@ this.LoginManagerStorage_json.prototype = {
    */
   _getIdForLogin(login) {
     let matchData = { };
-    for (let field of ["hostname", "formSubmitURL", "httpRealm"])
-      if (login[field] != "")
+    for (let field of ["hostname", "formSubmitURL", "httpRealm"]) {
+      if (login[field] != "") {
         matchData[field] = login[field];
+      }
+    }
     let [logins, ids] = this._searchLogins(matchData);
 
     let id = null;
@@ -441,8 +470,9 @@ this.LoginManagerStorage_json.prototype = {
     for (let i = 0; i < logins.length; i++) {
       let [decryptedLogin] = this._decryptLogins([logins[i]]);
 
-      if (!decryptedLogin || !decryptedLogin.equals(login))
+      if (!decryptedLogin || !decryptedLogin.equals(login)) {
         continue;
+      }
 
       // We've found a match, set id and break
       foundLogin = decryptedLogin;
@@ -495,8 +525,9 @@ this.LoginManagerStorage_json.prototype = {
       } catch (e) {
         // If decryption failed (corrupt entry?), just skip it.
         // Rethrow other errors (like canceling entry of a master pw)
-        if (e.result == Cr.NS_ERROR_FAILURE)
+        if (e.result == Cr.NS_ERROR_FAILURE) {
           continue;
+        }
         throw e;
       }
       result.push(login);

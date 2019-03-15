@@ -5,14 +5,13 @@
 
 "use strict";
 
-const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
-const { require, DevToolsLoader } = Cu.import("resource://devtools/shared/Loader.jsm", {});
+const { require, DevToolsLoader } = ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
+const Services = require("Services");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
-const flags = require("devtools/shared/flags");
 
-flags.testing = true;
-do_register_cleanup(() => {
-  flags.testing = false;
+Services.prefs.setBoolPref("devtools.testing", true);
+registerCleanupFunction(() => {
+  Services.prefs.clearUserPref("devtools.testing");
 });
 
 // Register a console listener, so console messages don't just disappear
@@ -22,8 +21,11 @@ do_register_cleanup(() => {
 // failures, set this to true.
 var ALLOW_CONSOLE_ERRORS = false;
 
+// XXX This listener is broken, see bug 1456634, for now turn off no-undef here,
+// this needs turning back on!
+/* eslint-disable no-undef */
 var listener = {
-  observe: function (message) {
+  observe: function(message) {
     let string;
     try {
       message.QueryInterface(Ci.nsIScriptError);
@@ -49,8 +51,8 @@ var listener = {
     if (!ALLOW_CONSOLE_ERRORS) {
       do_throw("head_devtools.js got console message: " + string + "\n");
     }
-  }
+  },
 };
+/* eslint-enable no-undef */
 
-var consoleService = Cc["@mozilla.org/consoleservice;1"].getService(Ci.nsIConsoleService);
-consoleService.registerListener(listener);
+Services.console.registerListener(listener);

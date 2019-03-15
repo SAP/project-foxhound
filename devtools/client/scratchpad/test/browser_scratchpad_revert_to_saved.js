@@ -12,17 +12,14 @@ var gFile;
 // Temporary file name.
 var gFileName = "testFileForBug751744.tmp";
 
-
 // Content for the temporary file.
 var gFileContent = "/* this file is already saved */\n" +
                    "function foo() { alert('bar') }";
-var gLength = gFileContent.length;
 
 // Reference to the menu entry.
 var menu;
 
-function startTest()
-{
+function startTest() {
   gScratchpad = gScratchpadWindow.Scratchpad;
   menu = gScratchpadWindow.document.getElementById("sp-cmd-revert");
   createAndLoadTemporaryFile();
@@ -88,46 +85,43 @@ function testAfterSecondRevert() {
   finish();
 }
 
-function createAndLoadTemporaryFile()
-{
+function createAndLoadTemporaryFile() {
   // Create a temporary file.
   gFile = FileUtils.getFile("TmpD", [gFileName]);
   gFile.createUnique(Ci.nsIFile.NORMAL_FILE_TYPE, 0o666);
 
   // Write the temporary file.
-  let fout = Cc["@mozilla.org/network/file-output-stream;1"].
-             createInstance(Ci.nsIFileOutputStream);
-  fout.init(gFile.QueryInterface(Ci.nsILocalFile), 0x02 | 0x08 | 0x20,
+  const fout = Cc["@mozilla.org/network/file-output-stream;1"]
+             .createInstance(Ci.nsIFileOutputStream);
+  fout.init(gFile.QueryInterface(Ci.nsIFile), 0x02 | 0x08 | 0x20,
             0o644, fout.DEFER_OPEN);
 
-  let converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"].
-                  createInstance(Ci.nsIScriptableUnicodeConverter);
+  const converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"]
+                  .createInstance(Ci.nsIScriptableUnicodeConverter);
   converter.charset = "UTF-8";
-  let fileContentStream = converter.convertToInputStream(gFileContent);
+  const fileContentStream = converter.convertToInputStream(gFileContent);
 
   NetUtil.asyncCopy(fileContentStream, fout, tempFileSaved);
 }
 
-function tempFileSaved(aStatus)
-{
+function tempFileSaved(aStatus) {
   ok(Components.isSuccessCode(aStatus),
      "the temporary file was saved successfully");
 
   // Import the file into Scratchpad.
   gScratchpad.setFilename(gFile.path);
-  gScratchpad.importFromFile(gFile.QueryInterface(Ci.nsILocalFile), true,
+  gScratchpad.importFromFile(gFile.QueryInterface(Ci.nsIFile), true,
                              testAfterSaved);
 }
 
-function test()
-{
+function test() {
   waitForExplicitFinish();
 
-  gBrowser.selectedTab = gBrowser.addTab();
-  gBrowser.selectedBrowser.addEventListener("load", function () {
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
+  BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser).then(function() {
     openScratchpad(startTest);
-  }, {capture: true, once: true});
+  });
 
-  content.location = "data:text/html,<p>test reverting to last saved state of" +
-                     " a file </p>";
+  BrowserTestUtils.loadURI(gBrowser, "data:text/html,<p>test reverting to last saved state of" +
+                   " a file </p>");
 }

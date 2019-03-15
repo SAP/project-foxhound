@@ -1,18 +1,3 @@
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cu = Components.utils;
-var Cr = Components.results;
-
-function newCacheBackEndUsed()
-{
-  var cache1srv = Components.classes["@mozilla.org/network/cache-service;1"]
-                            .getService(Components.interfaces.nsICacheService);
-  var cache2srv = Components.classes["@mozilla.org/netwerk/cache-storage-service;1"]
-                            .getService(Components.interfaces.nsICacheStorageService);
-
-  return cache1srv.cacheIOTarget != cache2srv.ioTarget;
-}
-
 var callbacks = new Array();
 
 // Expect an existing entry
@@ -68,7 +53,7 @@ function pumpReadStream(inputStream, goon)
     // non-blocking stream, must read via pump
     var pump = Cc["@mozilla.org/network/input-stream-pump;1"]
                .createInstance(Ci.nsIInputStreamPump);
-    pump.init(inputStream, -1, -1, 0, 0, true);
+    pump.init(inputStream, 0, 0, true);
     var data = "";
     pump.asyncRead({
       onStartRequest: function (aRequest, aContext) { },
@@ -84,7 +69,7 @@ function pumpReadStream(inputStream, goon)
       onStopRequest: function (aRequest, aContext, aStatusCode)
       {
         LOG_C2("done reading data: " + aStatusCode);
-        do_check_eq(aStatusCode, Cr.NS_OK);
+        Assert.equal(aStatusCode, Cr.NS_OK);
         goon(data);
       },
     }, null);
@@ -103,12 +88,12 @@ OpenCallback.prototype =
         iid.equals(Ci.nsICacheEntryOpenCallback)) {
       return this;
     }
-    throw Components.results.NS_ERROR_NO_INTERFACE;
+    throw Cr.NS_ERROR_NO_INTERFACE;
   },
   onCacheEntryCheck: function(entry, appCache)
   {
     LOG_C2(this, "onCacheEntryCheck");
-    do_check_true(!this.onCheckPassed);
+    Assert.ok(!this.onCheckPassed);
     this.onCheckPassed = true;
 
     if (this.behavior & NOTVALID) {
@@ -121,10 +106,10 @@ OpenCallback.prototype =
       return Ci.nsICacheEntryOpenCallback.ENTRY_NOT_WANTED;
     }
 
-    do_check_eq(entry.getMetaDataElement("meto"), this.workingMetadata);
+    Assert.equal(entry.getMetaDataElement("meto"), this.workingMetadata);
 
     // check for sane flag combination
-    do_check_neq(this.behavior & (REVAL|PARTIAL), REVAL|PARTIAL);
+    Assert.notEqual(this.behavior & (REVAL|PARTIAL), REVAL|PARTIAL);
 
     if (this.behavior & (REVAL|PARTIAL)) {
       LOG_C2(this, "onCacheEntryCheck DONE, return ENTRY_NEEDS_REVALIDATION");
@@ -133,17 +118,15 @@ OpenCallback.prototype =
 
     if (this.behavior & COMPLETE) {
       LOG_C2(this, "onCacheEntryCheck DONE, return RECHECK_AFTER_WRITE_FINISHED");
-      if (newCacheBackEndUsed()) {
-        // Specific to the new backend because of concurrent read/write:
-        // when a consumer returns RECHECK_AFTER_WRITE_FINISHED from onCacheEntryCheck
-        // the cache calls this callback again after the entry write has finished.
-        // This gives the consumer a chance to recheck completeness of the entry
-        // again.
-        // Thus, we reset state as onCheck would have never been called.
-        this.onCheckPassed = false;
-        // Don't return RECHECK_AFTER_WRITE_FINISHED on second call of onCacheEntryCheck.
-        this.behavior &= ~COMPLETE;
-      }
+      // Specific to the new backend because of concurrent read/write:
+      // when a consumer returns RECHECK_AFTER_WRITE_FINISHED from onCacheEntryCheck
+      // the cache calls this callback again after the entry write has finished.
+      // This gives the consumer a chance to recheck completeness of the entry
+      // again.
+      // Thus, we reset state as onCheck would have never been called.
+      this.onCheckPassed = false;
+      // Don't return RECHECK_AFTER_WRITE_FINISHED on second call of onCacheEntryCheck.
+      this.behavior &= ~COMPLETE;
       return Ci.nsICacheEntryOpenCallback.RECHECK_AFTER_WRITE_FINISHED;
     }
 
@@ -157,24 +140,24 @@ OpenCallback.prototype =
     }
 
     LOG_C2(this, "onCacheEntryAvailable, " + this.behavior);
-    do_check_true(!this.onAvailPassed);
+    Assert.ok(!this.onAvailPassed);
     this.onAvailPassed = true;
 
-    do_check_eq(isnew, !!(this.behavior & NEW));
+    Assert.equal(isnew, !!(this.behavior & NEW));
 
     if (this.behavior & (NOTFOUND|NOTWANTED)) {
-      do_check_eq(status, Cr.NS_ERROR_CACHE_KEY_NOT_FOUND);
-      do_check_false(!!entry);
+      Assert.equal(status, Cr.NS_ERROR_CACHE_KEY_NOT_FOUND);
+      Assert.ok(!entry);
       if (this.behavior & THROWAVAIL)
         this.throwAndNotify(entry);
       this.goon(entry);
     }
     else if (this.behavior & (NEW|RECREATE)) {
-      do_check_true(!!entry);
+      Assert.ok(!!entry);
 
       if (this.behavior & RECREATE) {
         entry = entry.recreate();
-        do_check_true(!!entry);
+        Assert.ok(!!entry);
       }
 
       if (this.behavior & THROWAVAIL)
@@ -186,18 +169,18 @@ OpenCallback.prototype =
       if (!(this.behavior & PARTIAL)) {
         try {
           entry.getMetaDataElement("meto");
-          do_check_true(false);
+          Assert.ok(false);
         }
         catch (ex) {}
       }
 
       if (this.behavior & DONTFILL) {
-        do_check_false(this.behavior & WAITFORWRITE);
+        Assert.equal(false, this.behavior & WAITFORWRITE);
         return;
       }
 
       var self = this;
-      do_execute_soon(function() { // emulate network latency
+      executeSoon(function() { // emulate network latency
         entry.setMetaDataElement("meto", self.workingMetadata);
         entry.metaDataReady();
         if (self.behavior & METAONLY) {
@@ -211,17 +194,17 @@ OpenCallback.prototype =
 
           return;
         }
-        do_execute_soon(function() { // emulate more network latency
+        executeSoon(function() { // emulate more network latency
           if (self.behavior & DOOMED) {
             LOG_C2(self, "checking doom state");
             try {
-              var os = entry.openOutputStream(0);
+              var os = entry.openOutputStream(0, -1);
               // Unfortunately, in the undetermined state we cannot even check whether the entry
               // is actually doomed or not.
               os.close();
-              do_check_true(!!(self.behavior & MAYBE_NEW));
+              Assert.ok(!!(self.behavior & MAYBE_NEW));
             } catch (ex) {
-              do_check_true(true);
+              Assert.ok(true);
             }
             if (self.behavior & WAITFORWRITE)
               self.goon(entry);
@@ -232,10 +215,10 @@ OpenCallback.prototype =
             ? entry.dataSize
             : 0;
           LOG_C2(self, "openOutputStream @ " + offset);
-          var os = entry.openOutputStream(offset);
+          var os = entry.openOutputStream(offset, -1);
           LOG_C2(self, "writing data");
           var wrt = os.write(self.workingData, self.workingData.length);
-          do_check_eq(wrt, self.workingData.length);
+          Assert.equal(wrt, self.workingData.length);
           os.close();
           if (self.behavior & WAITFORWRITE)
             self.goon(entry);
@@ -245,8 +228,8 @@ OpenCallback.prototype =
       })
     }
     else { // NORMAL
-      do_check_true(!!entry);
-      do_check_eq(entry.getMetaDataElement("meto"), this.workingMetadata);
+      Assert.ok(!!entry);
+      Assert.equal(entry.getMetaDataElement("meto"), this.workingMetadata);
       if (this.behavior & THROWAVAIL)
         this.throwAndNotify(entry);
       if (this.behavior & NOTIFYBEFOREREAD)
@@ -256,7 +239,7 @@ OpenCallback.prototype =
                     createInstance(Ci.nsIScriptableInputStream);
       var self = this;
       pumpReadStream(entry.openInputStream(0), function(data) {
-        do_check_eq(data, self.workingData);
+        Assert.equal(data, self.workingData);
         self.onDataCheckPassed = true;
         LOG_C2(self, "entry read done");
         self.goon(entry);
@@ -268,15 +251,15 @@ OpenCallback.prototype =
   {
     LOG_C2(this, "selfCheck");
 
-    do_check_true(this.onCheckPassed || (this.behavior & MAYBE_NEW));
-    do_check_true(this.onAvailPassed);
-    do_check_true(this.onDataCheckPassed || (this.behavior & MAYBE_NEW));
+    Assert.ok(this.onCheckPassed || (this.behavior & MAYBE_NEW));
+    Assert.ok(this.onAvailPassed);
+    Assert.ok(this.onDataCheckPassed || (this.behavior & MAYBE_NEW));
   },
   throwAndNotify: function(entry)
   {
     LOG_C2(this, "Throwing");
     var self = this;
-    do_execute_soon(function() {
+    executeSoon(function() {
       LOG_C2(self, "Notifying");
       self.goon(entry);
     });
@@ -304,16 +287,13 @@ VisitCallback.prototype =
         iid.equals(Ci.nsICacheStorageVisitor)) {
       return this;
     }
-    throw Components.results.NS_ERROR_NO_INTERFACE;
+    throw Cr.NS_ERROR_NO_INTERFACE;
   },
   onCacheStorageInfo: function(num, consumption)
   {
     LOG_C2(this, "onCacheStorageInfo: num=" + num + ", size=" + consumption);
-    do_check_eq(this.num, num);
-    if (newCacheBackEndUsed()) {
-      // Consumption is as expected only in the new backend
-      do_check_eq(this.consumption, consumption);
-    }
+    Assert.equal(this.num, num);
+    Assert.equal(this.consumption, consumption);
     if (!this.entries)
       this.notify();
   },
@@ -336,10 +316,10 @@ VisitCallback.prototype =
       return false;
     }
 
-    do_check_true(!!this.entries);
+    Assert.ok(!!this.entries);
 
     var index = this.entries.findIndex(findCacheIndex);
-    do_check_true(index > -1);
+    Assert.ok(index > -1);
 
     this.entries.splice(index, 1);
   },
@@ -347,19 +327,19 @@ VisitCallback.prototype =
   {
     LOG_C2(this, "onCacheEntryVisitCompleted");
     if (this.entries)
-      do_check_eq(this.entries.length, 0);
+      Assert.equal(this.entries.length, 0);
     this.notify();
   },
   notify: function()
   {
-    do_check_true(!!this.goon);
+    Assert.ok(!!this.goon);
     var goon = this.goon;
     this.goon = null;
-    do_execute_soon(goon);
+    executeSoon(goon);
   },
   selfCheck: function()
   {
-    do_check_true(!this.entries || !this.entries.length);
+    Assert.ok(!this.entries || !this.entries.length);
   }
 };
 
@@ -380,11 +360,11 @@ EvictionCallback.prototype =
         iid.equals(Ci.nsICacheEntryDoomCallback)) {
       return this;
     }
-    throw Components.results.NS_ERROR_NO_INTERFACE;
+    throw Cr.NS_ERROR_NO_INTERFACE;
   },
   onCacheEntryDoomed: function(result)
   {
-    do_check_eq(this.expectedSuccess, result == Cr.NS_OK);
+    Assert.equal(this.expectedSuccess, result == Cr.NS_OK);
     this.goon();
   },
   selfCheck: function() {}
@@ -406,7 +386,7 @@ MultipleCallbacks.prototype =
     {
       var self = this;
       if (this.delayed)
-        do_execute_soon(function() { self.goon(); });
+        executeSoon(function() { self.goon(); });
       else
         this.goon();
     }

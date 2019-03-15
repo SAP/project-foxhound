@@ -5,15 +5,21 @@
 package org.mozilla.gecko.sync.synchronizer;
 
 
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.mozilla.gecko.background.common.log.Logger;
+import org.mozilla.gecko.sync.ReflowIsNecessaryException;
+import org.mozilla.gecko.sync.SyncException;
+import org.mozilla.gecko.sync.synchronizer.StoreBatchTracker.Batch;
+import org.mozilla.gecko.sync.repositories.FetchFailedException;
 import org.mozilla.gecko.sync.repositories.InactiveSessionException;
 import org.mozilla.gecko.sync.repositories.InvalidSessionTransitionException;
 import org.mozilla.gecko.sync.repositories.RepositorySession;
 import org.mozilla.gecko.sync.repositories.RepositorySessionBundle;
-import org.mozilla.gecko.sync.repositories.delegates.DeferrableRepositorySessionCreationDelegate;
+import org.mozilla.gecko.sync.repositories.StoreFailedException;
 import org.mozilla.gecko.sync.repositories.delegates.DeferredRepositorySessionFinishDelegate;
 import org.mozilla.gecko.sync.repositories.delegates.RepositorySessionFinishDelegate;
 
@@ -25,6 +31,14 @@ import android.content.Context;
  *
  * I flow records twice: first from A to B, and then from B to A. I provide
  * fine-grained feedback by calling my delegate's callback methods.
+ *
+ * I handle failure cases during flows as follows (in the order they will occur during a sync):
+ * <ul>
+ * <li>Remote fetch failures abort.</li>
+ * <li>Local store failures are ignored.</li>
+ * <li>Local fetch failures abort.</li>
+ * <li>Remote store failures abort.</li>
+ * </ul>
  *
  * Initialize me by creating me with a Synchronizer and a
  * SynchronizerSessionDelegate. Kick things off by calling `init` with two
@@ -46,10 +60,7 @@ import android.content.Context;
  * I always call exactly one of my delegate's `onSynchronized` or
  * `onSynchronizeFailed` callback methods if I have not seen an error.
  */
-public class SynchronizerSession
-extends DeferrableRepositorySessionCreationDelegate
-implements RecordsChannelDelegate,
-           RepositorySessionFinishDelegate {
+public class SynchronizerSession implements RecordsChannelDelegate, RepositorySessionFinishDelegate {
 
   protected static final String LOG_TAG = "SynchronizerSession";
   protected Synchronizer synchronizer;
@@ -64,10 +75,12 @@ implements RecordsChannelDelegate,
   private RepositorySessionBundle bundleA;
   private RepositorySessionBundle bundleB;
 
-  // Bug 726054: just like desktop, we track our last interaction with the server,
-  // not the last record timestamp that we fetched. This ensures that we don't re-
-  // download the records we just uploaded, at the cost of skipping any records
-  // that a concurrently syncing client has uploaded.
+  // Bug 1392505: for each "side" of the channel, we keep track of lastFetch and lastStore timestamps.
+  // For local repositories these timestamps represent our last interactions with local data.
+  // For the remote repository these timestamps represent server collection's last-modified
+  // timestamp after a corresponding operation (GET or POST) finished. We obtain these from server's
+  // response headers.
+  // It's important that we never compare timestamps which originated from different clocks.
   private long pendingATimestamp = -1;
   private long pendingBTimestamp = -1;
   private long storeEndATimestamp = -1;
@@ -75,8 +88,19 @@ implements RecordsChannelDelegate,
   private boolean flowAToBCompleted = false;
   private boolean flowBToACompleted = false;
 
-  protected final AtomicInteger numInboundRecords = new AtomicInteger(-1);
-  protected final AtomicInteger numOutboundRecords = new AtomicInteger(-1);
+  private final AtomicInteger numInboundRecords = new AtomicInteger(-1);
+  private final AtomicInteger numInboundRecordsStored = new AtomicInteger(-1);
+  private final AtomicInteger numInboundRecordsFailed = new AtomicInteger(-1);
+  private final AtomicInteger numInboundRecordsReconciled = new AtomicInteger(-1);
+  private final AtomicInteger numOutboundRecords = new AtomicInteger(-1);
+  private final AtomicInteger numOutboundRecordsStored = new AtomicInteger(-1);
+  private final AtomicInteger numOutboundRecordsFailed = new AtomicInteger(-1);
+  // Doesn't need to be ConcurrentLinkedQueue or anything like that since we don't do partial
+  // changes to it.
+  private final AtomicReference<List<Batch>> outboundBatches = new AtomicReference<>();
+
+  private Exception fetchFailedCauseException;
+  private Exception storeFailedCauseException;
 
   /*
    * Public API: constructor, init, synchronize.
@@ -94,12 +118,63 @@ implements RecordsChannelDelegate,
     this.synchronizer = synchronizer;
   }
 
-  public void init(Context context, RepositorySessionBundle bundleA, RepositorySessionBundle bundleB) {
+  public void initAndSynchronize(Context context, RepositorySessionBundle bundleA, RepositorySessionBundle bundleB) {
     this.context = context;
     this.bundleA = bundleA;
     this.bundleB = bundleB;
-    // Begin sessionA and sessionB, call onInitialized in callbacks.
-    this.getSynchronizer().repositoryA.createSession(this, context);
+
+    try {
+      this.sessionA = this.getSynchronizer().repositoryA.createSession(context);
+    } catch (SyncException e) {
+      // We no longer need a reference to our context.
+      this.context = null;
+      this.delegate.onSynchronizeFailed(this, e, "Failed to create session");
+      return;
+    }
+
+    try {
+      this.sessionA.unbundle(bundleA);
+    } catch (Exception e) {
+      this.delegate.onSynchronizeFailed(this, new UnbundleError(e, sessionA), "Failed to unbundle first session.");
+      return;
+    }
+
+    try {
+      this.sessionB = this.getSynchronizer().repositoryB.createSession(context);
+    } catch (final SyncException createException) {
+      // We no longer need a reference to our context.
+      this.context = null;
+      // Finish already created sessionA.
+      try {
+        this.sessionA.finish(new RepositorySessionFinishDelegate() {
+          @Override
+          public void onFinishFailed(Exception ex) {
+            SynchronizerSession.this.delegate.onSynchronizeFailed(SynchronizerSession.this, createException, "Failed to create second session.");
+          }
+
+          @Override
+          public void onFinishSucceeded(RepositorySession session, RepositorySessionBundle bundle) {
+            SynchronizerSession.this.delegate.onSynchronizeFailed(SynchronizerSession.this, createException, "Failed to create second session.");
+          }
+
+          @Override
+          public RepositorySessionFinishDelegate deferredFinishDelegate(ExecutorService executor) {
+            return new DeferredRepositorySessionFinishDelegate(this, executor);
+          }
+        });
+      } catch (InactiveSessionException finishException) {
+        SynchronizerSession.this.delegate.onSynchronizeFailed(SynchronizerSession.this, createException, "Failed to create second session.");
+      }
+      return;
+    }
+
+    try {
+      this.sessionB.unbundle(bundleB);
+    } catch (Exception e) {
+      this.delegate.onSynchronizeFailed(this, new UnbundleError(e, sessionA), "Failed to unbundle second session.");
+    }
+
+    synchronize();
   }
 
   /**
@@ -114,6 +189,23 @@ implements RecordsChannelDelegate,
     return numInboundRecords.get();
   }
 
+  public int getInboundCountStored() {
+    return numInboundRecordsStored.get();
+  }
+
+  public int getInboundCountFailed() {
+    return numInboundRecordsFailed.get();
+  }
+
+  public int getInboundCountReconciled() {
+    return numInboundRecordsReconciled.get();
+  }
+
+  // Returns outboundBatches.
+  public List<Batch> getOutboundBatches() {
+    return outboundBatches.get();
+  }
+
   /**
    * Get the number of records fetched from the second repository (usually the
    * local store, hence outbound).
@@ -126,6 +218,22 @@ implements RecordsChannelDelegate,
     return numOutboundRecords.get();
   }
 
+  public int getOutboundCountStored() {
+    return numOutboundRecordsStored.get();
+  }
+
+  public int getOutboundCountFailed() {
+    return numOutboundRecordsFailed.get();
+  }
+
+  public Exception getFetchFailedCauseException() {
+    return fetchFailedCauseException;
+  }
+
+  public Exception getStoreFailedCauseException() {
+    return storeFailedCauseException;
+  }
+
   // These are accessed by `abort` and `synchronize`, both of which are synchronized.
   // Guarded by `this`.
   protected RecordsChannel channelAToB;
@@ -134,9 +242,15 @@ implements RecordsChannelDelegate,
   /**
    * Please don't call this until you've been notified with onInitialized.
    */
-  public synchronized void synchronize() {
+  private synchronized void synchronize() {
     numInboundRecords.set(-1);
+    numInboundRecordsStored.set(-1);
+    numInboundRecordsFailed.set(-1);
+    numInboundRecordsReconciled.set(-1);
     numOutboundRecords.set(-1);
+    numOutboundRecordsStored.set(-1);
+    numOutboundRecordsFailed.set(-1);
+    outboundBatches.set(null);
 
     // First thing: decide whether we should.
     if (sessionA.shouldSkip() ||
@@ -154,13 +268,13 @@ implements RecordsChannelDelegate,
 
     // This is the *second* record channel to flow.
     // I, SynchronizerSession, am the delegate for the *second* flow.
-    channelBToA = new RecordsChannel(this.sessionB, this.sessionA, this);
+    channelBToA = getRecordsChannel(this.sessionB, this.sessionA, this);
 
     // This is the delegate for the *first* flow.
     RecordsChannelDelegate channelAToBDelegate = new RecordsChannelDelegate() {
       @Override
-      public void onFlowCompleted(RecordsChannel recordsChannel, long fetchEnd, long storeEnd) {
-        session.onFirstFlowCompleted(recordsChannel, fetchEnd, storeEnd);
+      public void onFlowCompleted(RecordsChannel recordsChannel) {
+        session.onFirstFlowCompleted(recordsChannel);
       }
 
       @Override
@@ -172,22 +286,21 @@ implements RecordsChannelDelegate,
       @Override
       public void onFlowFetchFailed(RecordsChannel recordsChannel, Exception ex) {
         Logger.warn(LOG_TAG, "First RecordsChannel onFlowFetchFailed. Logging remote fetch error.", ex);
+        fetchFailedCauseException = ex;
       }
 
       @Override
       public void onFlowStoreFailed(RecordsChannel recordsChannel, Exception ex, String recordGuid) {
         Logger.warn(LOG_TAG, "First RecordsChannel onFlowStoreFailed. Logging local store error.", ex);
-      }
-
-      @Override
-      public void onFlowFinishFailed(RecordsChannel recordsChannel, Exception ex) {
-        Logger.warn(LOG_TAG, "First RecordsChannel onFlowFinishedFailed. Logging session error.", ex);
-        session.delegate.onSynchronizeFailed(session, ex, "Failed to finish first flow.");
+        // Currently we're just recording the very last exception which occurred. This is a reasonable
+        // approach, but ideally we'd want to categorize the exceptions and count them for the purposes
+        // of better telemetry. See Bug 1362208.
+        storeFailedCauseException = ex;
       }
     };
 
     // This is the *first* channel to flow.
-    channelAToB = new RecordsChannel(this.sessionA, this.sessionB, channelAToBDelegate);
+    channelAToB = getRecordsChannel(this.sessionA, this.sessionB, channelAToBDelegate);
 
     Logger.trace(LOG_TAG, "Starting A to B flow. Channel is " + channelAToB);
     try {
@@ -197,20 +310,52 @@ implements RecordsChannelDelegate,
     }
   }
 
+  protected RecordsChannel getRecordsChannel(RepositorySession sink, RepositorySession source, RecordsChannelDelegate delegate) {
+    return new RecordsChannel(sink, source, delegate);
+  }
+
   /**
    * Called after the first flow completes.
    * <p>
    * By default, any fetch and store failures are ignored.
    * @param recordsChannel the <code>RecordsChannel</code> (for error testing).
-   * @param fetchEnd timestamp when fetches completed.
-   * @param storeEnd timestamp when stores completed.
    */
-  public void onFirstFlowCompleted(RecordsChannel recordsChannel, long fetchEnd, long storeEnd) {
+  public void onFirstFlowCompleted(RecordsChannel recordsChannel) {
+    // If a "reflow exception" was thrown, consider this synchronization failed.
+    final ReflowIsNecessaryException reflowException = recordsChannel.getReflowException();
+    if (reflowException != null) {
+      final String message = "Reflow is necessary: " + reflowException;
+      Logger.warn(LOG_TAG, message + " Aborting session.");
+      delegate.onSynchronizeFailed(this, reflowException, message);
+      return;
+    }
+
+    // Fetch failures always abort.
+    if (recordsChannel.didFetchFail()) {
+      final String message = "Saw failures fetching remote records!";
+      Logger.warn(LOG_TAG, message + " Aborting session.");
+      delegate.onSynchronizeFailed(this, new FetchFailedException(), message);
+      return;
+    }
+    Logger.trace(LOG_TAG, "No failures fetching remote records.");
+
+    // Local store failures are ignored.
+    int numLocalStoreFailed = recordsChannel.getStoreFailureCount();
+    if (numLocalStoreFailed > 0) {
+      final String message = "Got " + numLocalStoreFailed + " failures storing local records!";
+      Logger.warn(LOG_TAG, message + " Ignoring local store failures and continuing synchronizer session.");
+    } else {
+      Logger.trace(LOG_TAG, "No failures storing local records.");
+    }
+
     Logger.trace(LOG_TAG, "First RecordsChannel onFlowCompleted.");
-    Logger.debug(LOG_TAG, "Fetch end is " + fetchEnd + ". Store end is " + storeEnd + ". Starting next.");
-    pendingATimestamp = fetchEnd;
-    storeEndBTimestamp = storeEnd;
+    pendingATimestamp = sessionA.getLastFetchTimestamp();
+    storeEndBTimestamp = sessionB.getLastStoreTimestamp();
+    Logger.debug(LOG_TAG, "Fetch end is " + pendingATimestamp + ". Store end is " + storeEndBTimestamp + ". Starting next.");
     numInboundRecords.set(recordsChannel.getFetchCount());
+    numInboundRecordsStored.set(recordsChannel.getStoreAcceptedCount());
+    numInboundRecordsFailed.set(recordsChannel.getStoreFailureCount());
+    numInboundRecordsReconciled.set(recordsChannel.getStoreReconciledCount());
     flowAToBCompleted = true;
     channelBToA.flow();
   }
@@ -220,16 +365,44 @@ implements RecordsChannelDelegate,
    * <p>
    * By default, any fetch and store failures are ignored.
    * @param recordsChannel the <code>RecordsChannel</code> (for error testing).
-   * @param fetchEnd timestamp when fetches completed.
-   * @param storeEnd timestamp when stores completed.
    */
-  public void onSecondFlowCompleted(RecordsChannel recordsChannel, long fetchEnd, long storeEnd) {
-    Logger.trace(LOG_TAG, "Second RecordsChannel onFlowCompleted.");
-    Logger.debug(LOG_TAG, "Fetch end is " + fetchEnd + ". Store end is " + storeEnd + ". Finishing.");
+  public void onSecondFlowCompleted(RecordsChannel recordsChannel) {
+    // If a "reflow exception" was thrown, consider this synchronization failed.
+    final ReflowIsNecessaryException reflowException = recordsChannel.getReflowException();
+    if (reflowException != null) {
+      final String message = "Reflow is necessary: " + reflowException;
+      Logger.warn(LOG_TAG, message + " Aborting session.");
+      delegate.onSynchronizeFailed(this, reflowException, message);
+      return;
+    }
 
-    pendingBTimestamp = fetchEnd;
-    storeEndATimestamp = storeEnd;
+    // Fetch failures always abort.
+    if (recordsChannel.didFetchFail()) {
+      final String message = "Saw failures fetching local records!";
+      Logger.warn(LOG_TAG, message + " Aborting session.");
+      delegate.onSynchronizeFailed(this, new FetchFailedException(), message);
+      return;
+    }
+    Logger.trace(LOG_TAG, "No failures fetching local records.");
+
+    // Remote store failures abort!
+    int numRemoteStoreFailed = recordsChannel.getStoreFailureCount();
+    if (numRemoteStoreFailed > 0) {
+      final String message = "Got " + numRemoteStoreFailed + " failures storing remote records!";
+      Logger.warn(LOG_TAG, message + " Aborting session.");
+      delegate.onSynchronizeFailed(this, new StoreFailedException(), message);
+      return;
+    }
+    Logger.trace(LOG_TAG, "No failures storing remote records.");
+
+    Logger.trace(LOG_TAG, "Second RecordsChannel onFlowCompleted.");
+    pendingBTimestamp = sessionB.getLastFetchTimestamp();
+    storeEndATimestamp = sessionA.getLastStoreTimestamp();
+    Logger.debug(LOG_TAG, "Fetch end is " + pendingBTimestamp + ". Store end is " + storeEndATimestamp + ". Finishing.");
     numOutboundRecords.set(recordsChannel.getFetchCount());
+    numOutboundRecordsStored.set(recordsChannel.getStoreAcceptedCount());
+    numOutboundRecordsFailed.set(recordsChannel.getStoreFailureCount());
+    outboundBatches.set(recordsChannel.getStoreBatches());
     flowBToACompleted = true;
 
     // Finish the two sessions.
@@ -242,8 +415,8 @@ implements RecordsChannelDelegate,
   }
 
   @Override
-  public void onFlowCompleted(RecordsChannel recordsChannel, long fetchEnd, long storeEnd) {
-    onSecondFlowCompleted(recordsChannel, fetchEnd, storeEnd);
+  public void onFlowCompleted(RecordsChannel recordsChannel) {
+    onSecondFlowCompleted(recordsChannel);
   }
 
   @Override
@@ -260,88 +433,6 @@ implements RecordsChannelDelegate,
   @Override
   public void onFlowStoreFailed(RecordsChannel recordsChannel, Exception ex, String recordGuid) {
     Logger.warn(LOG_TAG, "Second RecordsChannel onFlowStoreFailed. Logging remote store error.", ex);
-  }
-
-  @Override
-  public void onFlowFinishFailed(RecordsChannel recordsChannel, Exception ex) {
-    Logger.warn(LOG_TAG, "Second RecordsChannel onFlowFinishedFailed. Logging session error.", ex);
-    this.delegate.onSynchronizeFailed(this, ex, "Failed to finish second flow.");
-  }
-
-  /*
-   * RepositorySessionCreationDelegate methods.
-   */
-
-  /**
-   * I could be called twice: once for sessionA and once for sessionB.
-   *
-   * I try to clean up sessionA if it is not null, since the creation of
-   * sessionB must have failed.
-   */
-  @Override
-  public void onSessionCreateFailed(Exception ex) {
-    // Attempt to finish the first session, if the second is the one that failed.
-    if (this.sessionA != null) {
-      try {
-        // We no longer need a reference to our context.
-        this.context = null;
-        this.sessionA.finish(this);
-      } catch (Exception e) {
-        // Never mind; best-effort finish.
-      }
-    }
-    // We no longer need a reference to our context.
-    this.context = null;
-    this.delegate.onSynchronizeFailed(this, ex, "Failed to create session");
-  }
-
-  /**
-   * I should be called twice: first for sessionA and second for sessionB.
-   *
-   * If I am called for sessionB, I call my delegate's `onInitialized` callback
-   * method because my repository sessions are correctly initialized.
-   */
-  // TODO: some of this "finish and clean up" code can be refactored out.
-  @Override
-  public void onSessionCreated(RepositorySession session) {
-    if (session == null ||
-        this.sessionA == session) {
-      // TODO: clean up sessionA.
-      this.delegate.onSynchronizeFailed(this, new UnexpectedSessionException(session), "Failed to create session.");
-      return;
-    }
-    if (this.sessionA == null) {
-      this.sessionA = session;
-
-      // Unbundle.
-      try {
-        this.sessionA.unbundle(this.bundleA);
-      } catch (Exception e) {
-        this.delegate.onSynchronizeFailed(this, new UnbundleError(e, sessionA), "Failed to unbundle first session.");
-        // TODO: abort
-        return;
-      }
-      this.getSynchronizer().repositoryB.createSession(this, this.context);
-      return;
-    }
-    if (this.sessionB == null) {
-      this.sessionB = session;
-      // We no longer need a reference to our context.
-      this.context = null;
-
-      // Unbundle. We unbundled sessionA when that session was created.
-      try {
-        this.sessionB.unbundle(this.bundleB);
-      } catch (Exception e) {
-        this.delegate.onSynchronizeFailed(this, new UnbundleError(e, sessionA), "Failed to unbundle second session.");
-        return;
-      }
-
-      this.delegate.onInitialized(this);
-      return;
-    }
-    // TODO: need a way to make sure we don't call any more delegate methods.
-    this.delegate.onSynchronizeFailed(this, new UnexpectedSessionException(session), "Failed to create session.");
   }
 
   /*

@@ -24,17 +24,17 @@
 // %-directives instead of crashing.  See also the moz.build files,
 // which apply NDEBUG to the .cc file.
 #ifndef NDEBUG
-#define NDEBUG 1
-#include "base/strings/safe_sprintf.h"
-#undef NDEBUG
+#  define NDEBUG 1
+#  include "base/strings/safe_sprintf.h"
+#  undef NDEBUG
 #else
-#include "base/strings/safe_sprintf.h"
+#  include "base/strings/safe_sprintf.h"
 #endif
 
 namespace mozilla {
 // Logs the formatted string (marked with "error" severity, if supported).
 void SandboxLogError(const char* aMessage);
-}
+}  // namespace mozilla
 
 #define SANDBOX_LOG_LEN 256
 
@@ -43,10 +43,11 @@ void SandboxLogError(const char* aMessage);
 // Note that SafeSPrintf doesn't accept size modifiers or %u; all
 // decimal integers are %d, because it uses C++11 variadic templates
 // to use the actual argument type.
-#define SANDBOX_LOG_ERROR(fmt, args...) do {                          \
-  char _sandboxLogBuf[SANDBOX_LOG_LEN];                               \
-  ::base::strings::SafeSPrintf(_sandboxLogBuf, fmt, ## args);         \
-  ::mozilla::SandboxLogError(_sandboxLogBuf);                         \
-} while(0)
+#define SANDBOX_LOG_ERROR(fmt, args...)                        \
+  do {                                                         \
+    char _sandboxLogBuf[SANDBOX_LOG_LEN];                      \
+    ::base::strings::SafeSPrintf(_sandboxLogBuf, fmt, ##args); \
+    ::mozilla::SandboxLogError(_sandboxLogBuf);                \
+  } while (0)
 
-#endif // mozilla_SandboxLogging_h
+#endif  // mozilla_SandboxLogging_h

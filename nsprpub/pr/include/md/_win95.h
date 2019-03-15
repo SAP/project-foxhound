@@ -26,6 +26,8 @@
 #define _PR_SI_ARCHITECTURE   "ia64"
 #elif defined(_M_ARM) || defined(_ARM_)
 #define _PR_SI_ARCHITECTURE   "arm"
+#elif defined(_M_ARM64)
+#define _PR_SI_ARCHITECTURE   "aarch64"
 #else
 #error unknown processor architecture
 #endif
@@ -290,6 +292,9 @@ extern void _MD_MakeNonblock(PRFileDesc *f);
 extern PRInt32 _MD_CloseSocket(PROsfd osfd);
 #define _MD_CLOSE_SOCKET              _MD_CloseSocket
 #define _MD_SENDTO                    _PR_MD_SENDTO
+#ifdef _WIN64
+#define _MD_TCPSENDTO                 _PR_MD_TCPSENDTO
+#endif
 #define _MD_RECVFROM                  _PR_MD_RECVFROM
 #define _MD_SOCKETPAIR(s, type, proto, sv) -1
 #define _MD_GETSOCKNAME               _PR_MD_GETSOCKNAME

@@ -5,16 +5,14 @@
 
 "use strict";
 
-const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-Cu.import('resource://gre/modules/XPCOMUtils.jsm');
-Cu.import('resource://gre/modules/Services.jsm');
+ChromeUtils.defineModuleGetter(this, "Prompt",
+                               "resource://gre/modules/Prompt.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "Prompt",
-                                  "resource://gre/modules/Prompt.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "UITelemetry",
-                                  "resource://gre/modules/UITelemetry.jsm");
+ChromeUtils.defineModuleGetter(this, "UITelemetry",
+                               "resource://gre/modules/UITelemetry.jsm");
 
 const kPRESENTATIONDEVICEPROMPT_CONTRACTID = "@mozilla.org/presentation-device/prompt;1";
 const kPRESENTATIONDEVICEPROMPT_CID        = Components.ID("{388bd149-c919-4a43-b646-d7ec57877689}");
@@ -32,7 +30,7 @@ PresentationDevicePrompt.prototype = {
   classID: kPRESENTATIONDEVICEPROMPT_CID,
   contractID: kPRESENTATIONDEVICEPROMPT_CONTRACTID,
   classDescription: "Fennec Presentation Device Prompt",
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIPresentationDevicePrompt]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIPresentationDevicePrompt]),
 
   _devices: [],   // Store all available presentation devices
   _request: null, // Store the request from presentation api
@@ -69,10 +67,11 @@ PresentationDevicePrompt.prototype = {
     });
   },
 
-  _getPrompt: function(aTitle, aMenu) {
+  _getPrompt: function(aTitle, aMenu, aWindow) {
     debug("_getPrompt");
 
     let p = new Prompt({
+      window: aWindow,
       title: aTitle,
     });
 
@@ -97,10 +96,10 @@ PresentationDevicePrompt.prototype = {
       return;
     }
 
-    if (aIndex < 0) {                    // Cancel request if no selected device,
+    if (aIndex < 0) { // Cancel request if no selected device,
       this._request.cancel(Cr.NS_ERROR_DOM_NOT_ALLOWED_ERR);
       return;
-    } else if (!this._devices.length) {  // or there is no available devices
+    } else if (!this._devices.length) { // or there is no available devices
       this._request.cancel(Cr.NS_ERROR_DOM_NOT_FOUND_ERR);
       return;
     }
@@ -123,7 +122,9 @@ PresentationDevicePrompt.prototype = {
     this._request = aRequest;
 
     let prompt = this._getPrompt(this._getString("deviceMenu.title"),
-                                 this._getPromptMenu(this._devices));
+                                 this._getPromptMenu(this._devices),
+                                 aRequest.chromeEventHandler &&
+                                   aRequest.chromeEventHandler.ownerGlobal);
 
     this._showPrompt(prompt, this._selectDevice.bind(this));
 

@@ -4,20 +4,14 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["ExtensionStorageEngine"];
+var EXPORTED_SYMBOLS = ["ExtensionStorageEngine"];
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
-
-Cu.import("resource://services-sync/constants.js");
-Cu.import("resource://services-sync/engines.js");
-Cu.import("resource://services-sync/util.js");
-Cu.import("resource://services-common/async.js");
-XPCOMUtils.defineLazyModuleGetter(this, "extensionStorageSync",
-                                  "resource://gre/modules/ExtensionStorageSync.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "fxAccounts",
-                                  "resource://gre/modules/FxAccounts.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Task",
-                                  "resource://gre/modules/Task.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://services-sync/constants.js");
+ChromeUtils.import("resource://services-sync/engines.js");
+ChromeUtils.import("resource://services-sync/util.js");
+ChromeUtils.defineModuleGetter(this, "extensionStorageSync",
+                               "resource://gre/modules/ExtensionStorageSync.jsm");
 
 /**
  * The Engine that manages syncing for the web extension "storage"
@@ -27,9 +21,9 @@ XPCOMUtils.defineLazyModuleGetter(this, "Task",
  * for syncing that we do not need to integrate in the Firefox Sync
  * framework, so this is something of a stub.
  */
-this.ExtensionStorageEngine = function ExtensionStorageEngine(service) {
+function ExtensionStorageEngine(service) {
   SyncEngine.call(this, "Extension-Storage", service);
-};
+}
 ExtensionStorageEngine.prototype = {
   __proto__: SyncEngine.prototype,
   _trackerObj: ExtensionStorageTracker,
@@ -40,8 +34,8 @@ ExtensionStorageEngine.prototype = {
   syncPriority: 10,
   allowSkippedRecord: false,
 
-  _sync() {
-    return Async.promiseSpinningly(extensionStorageSync.syncAll());
+  async _sync() {
+    return extensionStorageSync.syncAll();
   },
 
   get enabled() {
@@ -57,6 +51,11 @@ ExtensionStorageEngine.prototype = {
     }
     return Svc.Prefs.get("engine.addons", false);
   },
+
+  _wipeClient() {
+    return extensionStorageSync.clearAll();
+  },
+
 };
 
 function ExtensionStorageTracker(name, engine) {
@@ -65,17 +64,15 @@ function ExtensionStorageTracker(name, engine) {
 ExtensionStorageTracker.prototype = {
   __proto__: Tracker.prototype,
 
-  startTracking() {
-    Svc.Obs.add("ext.storage.sync-changed", this);
+  onStart() {
+    Svc.Obs.add("ext.storage.sync-changed", this.asyncObserver);
   },
 
-  stopTracking() {
-    Svc.Obs.remove("ext.storage.sync-changed", this);
+  onStop() {
+    Svc.Obs.remove("ext.storage.sync-changed", this.asyncObserver);
   },
 
-  observe(subject, topic, data) {
-    Tracker.prototype.observe.call(this, subject, topic, data);
-
+  async observe(subject, topic, data) {
     if (this.ignoreAll) {
       return;
     }

@@ -5,12 +5,11 @@
 
 #include "TestHarness.h"
 
+#include "nsGlobalWindowOuter.h"
 #include "nsIAppShell.h"
 #include "nsIAppShellService.h"
-#include "nsIDocument.h"
-#include "nsIDOMEvent.h"
+#include "mozilla/dom/Document.h"
 #include "nsIDOMEventListener.h"
-#include "nsIDOMEventTarget.h"
 #include "nsIDOMWindow.h"
 #include "nsIDOMWindowUtils.h"
 #include "nsIInterfaceRequestor.h"
@@ -24,9 +23,11 @@
 #include "nsNetUtil.h"
 #include "nsThreadUtils.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/dom/Event.h"
+#include "mozilla/dom/EventTarget.h"
 
 #ifdef XP_WIN
-#include <windows.h>
+#  include <windows.h>
 #endif
 
 using namespace mozilla;
@@ -35,28 +36,21 @@ typedef void (*TestFunc)(nsIAppShell*);
 
 bool gStableStateEventHasRun = false;
 
-class ExitAppShellRunnable : public Runnable
-{
+class ExitAppShellRunnable : public Runnable {
   nsCOMPtr<nsIAppShell> mAppShell;
 
-public:
+ public:
   explicit ExitAppShellRunnable(nsIAppShell* aAppShell)
-  : mAppShell(aAppShell)
-  { }
+      : mAppShell(aAppShell) {}
 
   NS_IMETHOD
-  Run() override
-  {
-    return mAppShell->Exit();
-  }
+  Run() override { return mAppShell->Exit(); }
 };
 
-class StableStateRunnable : public Runnable
-{
-public:
+class StableStateRunnable : public Runnable {
+ public:
   NS_IMETHOD
-  Run() override
-  {
+  Run() override {
     if (gStableStateEventHasRun) {
       fail("StableStateRunnable already ran");
     }
@@ -65,18 +59,15 @@ public:
   }
 };
 
-class CheckStableStateRunnable : public Runnable
-{
+class CheckStableStateRunnable : public Runnable {
   bool mShouldHaveRun;
 
-public:
+ public:
   explicit CheckStableStateRunnable(bool aShouldHaveRun)
-  : mShouldHaveRun(aShouldHaveRun)
-  { }
+      : mShouldHaveRun(aShouldHaveRun) {}
 
   NS_IMETHOD
-  Run() override
-  {
+  Run() override {
     if (mShouldHaveRun == gStableStateEventHasRun) {
       passed("StableStateRunnable state correct (%s)",
              mShouldHaveRun ? "true" : "false");
@@ -87,19 +78,16 @@ public:
   }
 };
 
-class ScheduleStableStateRunnable : public CheckStableStateRunnable
-{
-protected:
+class ScheduleStableStateRunnable : public CheckStableStateRunnable {
+ protected:
   nsCOMPtr<nsIAppShell> mAppShell;
 
-public:
+ public:
   explicit ScheduleStableStateRunnable(nsIAppShell* aAppShell)
-  : CheckStableStateRunnable(false), mAppShell(aAppShell)
-  { }
+      : CheckStableStateRunnable(false), mAppShell(aAppShell) {}
 
   NS_IMETHOD
-  Run() override
-  {
+  Run() override {
     CheckStableStateRunnable::Run();
 
     nsCOMPtr<nsIRunnable> runnable = new StableStateRunnable();
@@ -112,28 +100,22 @@ public:
   }
 };
 
-class NextTestRunnable : public Runnable
-{
+class NextTestRunnable : public Runnable {
   nsCOMPtr<nsIAppShell> mAppShell;
 
-public:
-  explicit NextTestRunnable(nsIAppShell* aAppShell)
-  : mAppShell(aAppShell)
-  { }
+ public:
+  explicit NextTestRunnable(nsIAppShell* aAppShell) : mAppShell(aAppShell) {}
 
-  NS_IMETHOD Run();
+  NS_IMETHOD Run() override;
 };
 
-class ScheduleNestedStableStateRunnable : public ScheduleStableStateRunnable
-{
-public:
+class ScheduleNestedStableStateRunnable : public ScheduleStableStateRunnable {
+ public:
   explicit ScheduleNestedStableStateRunnable(nsIAppShell* aAppShell)
-  : ScheduleStableStateRunnable(aAppShell)
-  { }
+      : ScheduleStableStateRunnable(aAppShell) {}
 
   NS_IMETHOD
-  Run() override
-  {
+  Run() override {
     ScheduleStableStateRunnable::Run();
 
     nsCOMPtr<nsIRunnable> runnable = new CheckStableStateRunnable(false);
@@ -159,8 +141,7 @@ public:
   }
 };
 
-class EventListener final : public nsIDOMEventListener
-{
+class EventListener final : public nsIDOMEventListener {
   nsCOMPtr<nsIAppShell> mAppShell;
 
   static nsIDOMWindowUtils* sWindowUtils;
@@ -168,16 +149,13 @@ class EventListener final : public nsIDOMEventListener
 
   ~EventListener() {}
 
-public:
+ public:
   NS_DECL_ISUPPORTS
 
-  explicit EventListener(nsIAppShell* aAppShell)
-  : mAppShell(aAppShell)
-  { }
+  explicit EventListener(nsIAppShell* aAppShell) : mAppShell(aAppShell) {}
 
   NS_IMETHOD
-  HandleEvent(nsIDOMEvent* aEvent) override
-  {
+  HandleEvent(dom::Event* aEvent) override {
     nsString type;
     if (NS_FAILED(aEvent->GetType(type))) {
       fail("Failed to get event type");
@@ -187,29 +165,20 @@ public:
     if (type.EqualsLiteral("load")) {
       passed("Got load event");
 
-      nsCOMPtr<nsIDOMEventTarget> target;
-      if (NS_FAILED(aEvent->GetTarget(getter_AddRefs(target)))) {
-        fail("Failed to get event type");
-        return NS_ERROR_FAILURE;
-      }
-
-      nsCOMPtr<nsIDocument> document = do_QueryInterface(target);
+      nsCOMPtr<dom::Document> document = do_QueryInterface(aEvent->GetTarget());
       if (!document) {
-        fail("Failed to QI to nsIDocument!");
+        fail("Failed to QI to Document!");
         return NS_ERROR_FAILURE;
       }
 
-      nsCOMPtr<nsPIDOMWindow> window = document->GetWindow();
+      nsCOMPtr<nsPIDOMWindowOuter> window = document->GetWindow();
       if (!window) {
         fail("Failed to get window from document!");
         return NS_ERROR_FAILURE;
       }
 
-      nsCOMPtr<nsIDOMWindowUtils> utils = do_GetInterface(window);
-      if (!utils) {
-        fail("Failed to get DOMWindowUtils!");
-        return NS_ERROR_FAILURE;
-      }
+      nsCOMPtr<nsIDOMWindowUtils> utils =
+          nsGlobalWindowOuter::Cast(window)->WindowUtils();
 
       if (!ScheduleTimer(utils)) {
         return NS_ERROR_FAILURE;
@@ -236,9 +205,8 @@ public:
   }
 
 #ifdef XP_WIN
-  static VOID CALLBACK
-  TimerCallback(HWND hwnd, UINT uMsg, UINT idEvent, DWORD dwTime)
-  {
+  static VOID CALLBACK TimerCallback(HWND hwnd, UINT uMsg, UINT idEvent,
+                                     DWORD dwTime) {
     if (sWindowUtils) {
       nsCOMPtr<nsIDOMWindowUtils> utils = dont_AddRef(sWindowUtils);
       sWindowUtils = nullptr;
@@ -249,11 +217,12 @@ public:
         passed("StableStateRunnable state correct (false)");
       }
 
-      int32_t layout = 0x409; // US
-      int32_t keyCode = 0x41; // VK_A
+      int32_t layout = 0x409;  // US
+      int32_t keyCode = 0x41;  // VK_A
       NS_NAMED_LITERAL_STRING(a, "a");
 
-      if (NS_FAILED(utils->SendNativeKeyEvent(layout, keyCode, 0, a, a, nullptr))) {
+      if (NS_FAILED(
+              utils->SendNativeKeyEvent(layout, keyCode, 0, a, a, nullptr))) {
         fail("Failed to synthesize native event");
       }
 
@@ -274,13 +243,10 @@ public:
     if (NS_FAILED(NS_DispatchToCurrentThread(runnable))) {
       fail("Failed to dispatch next test runnable");
     }
-
   }
 #endif
 
-  bool
-  ScheduleTimer(nsIDOMWindowUtils* aWindowUtils)
-  {
+  bool ScheduleTimer(nsIDOMWindowUtils* aWindowUtils) {
 #ifdef XP_WIN
     UINT_PTR timerId = SetTimer(nullptr, 0, 1000, (TIMERPROC)TimerCallback);
     if (!timerId) {
@@ -306,12 +272,8 @@ nsIAppShell* EventListener::sAppShell = nullptr;
 
 NS_IMPL_ISUPPORTS(EventListener, nsIDOMEventListener)
 
-already_AddRefed<nsIAppShell>
-GetAppShell()
-{
-  static const char* platforms[] = {
-    "android", "mac", "gonk", "gtk", "qt", "win"
-  };
+already_AddRefed<nsIAppShell> GetAppShell() {
+  static const char* platforms[] = {"android", "mac", "gtk", "qt", "win"};
 
   NS_NAMED_LITERAL_CSTRING(contractPrefix, "@mozilla.org/widget/appshell/");
   NS_NAMED_LITERAL_CSTRING(contractSuffix, ";1");
@@ -330,9 +292,7 @@ GetAppShell()
   return nullptr;
 }
 
-void
-Test1(nsIAppShell* aAppShell)
-{
+void Test1(nsIAppShell* aAppShell) {
   // Schedule stable state runnable to be run before next event.
 
   nsCOMPtr<nsIRunnable> runnable = new StableStateRunnable();
@@ -351,9 +311,7 @@ Test1(nsIAppShell* aAppShell)
   }
 }
 
-void
-Test2(nsIAppShell* aAppShell)
-{
+void Test2(nsIAppShell* aAppShell) {
   // Schedule stable state runnable to be run before next event from another
   // runnable.
 
@@ -373,27 +331,23 @@ Test2(nsIAppShell* aAppShell)
   }
 }
 
-void
-Test3(nsIAppShell* aAppShell)
-{
+void Test3(nsIAppShell* aAppShell) {
   // Schedule steadystate runnable to be run before next event with nested loop.
 
   nsCOMPtr<nsIRunnable> runnable =
-    new ScheduleNestedStableStateRunnable(aAppShell);
+      new ScheduleNestedStableStateRunnable(aAppShell);
   if (NS_FAILED(NS_DispatchToCurrentThread(runnable))) {
     fail("Failed to dispatch schedule runnable");
   }
 }
 
-bool
-Test4Internal(nsIAppShell* aAppShell)
-{
+bool Test4Internal(nsIAppShell* aAppShell) {
 #ifndef XP_WIN
   // Not sure how to test on other platforms.
   return false;
 #else
   nsCOMPtr<nsIAppShellService> appService =
-    do_GetService(NS_APPSHELLSERVICE_CONTRACTID);
+      do_GetService(NS_APPSHELLSERVICE_CONTRACTID);
   if (!appService) {
     fail("Failed to get appshell service!");
     return false;
@@ -408,8 +362,8 @@ Test4Internal(nsIAppShell* aAppShell)
   uint32_t flags = nsIWebBrowserChrome::CHROME_DEFAULT;
 
   nsCOMPtr<nsIXULWindow> xulWindow;
-  if (NS_FAILED(appService->CreateTopLevelWindow(nullptr, uri, flags, 100, 100, nullptr,
-                                                 getter_AddRefs(xulWindow)))) {
+  if (NS_FAILED(appService->CreateTopLevelWindow(
+          nullptr, uri, flags, 100, 100, nullptr, getter_AddRefs(xulWindow)))) {
     fail("Failed to create new window");
     return false;
   }
@@ -420,9 +374,9 @@ Test4Internal(nsIAppShell* aAppShell)
     return false;
   }
 
-  nsCOMPtr<nsIDOMEventTarget> target = do_QueryInterface(window);
+  RefPTr<dom::EventTarget> target = do_QueryInterface(window);
   if (!target) {
-    fail("Can't QI to nsIDOMEventTarget!");
+    fail("Can't QI to EventTarget!");
     return false;
   }
 
@@ -439,9 +393,7 @@ Test4Internal(nsIAppShell* aAppShell)
 #endif
 }
 
-void
-Test4(nsIAppShell* aAppShell)
-{
+void Test4(nsIAppShell* aAppShell) {
   if (!Test4Internal(aAppShell)) {
     nsCOMPtr<nsIRunnable> runnable = new NextTestRunnable(aAppShell);
     if (NS_FAILED(NS_DispatchToCurrentThread(runnable))) {
@@ -450,15 +402,12 @@ Test4(nsIAppShell* aAppShell)
   }
 }
 
-const TestFunc gTests[] = {
-  Test1, Test2, Test3, Test4
-};
+const TestFunc gTests[] = {Test1, Test2, Test3, Test4};
 
 size_t gTestIndex = 0;
 
 NS_IMETHODIMP
-NextTestRunnable::Run()
-{
+NextTestRunnable::Run() {
   if (gTestIndex > 0) {
     passed("Finished test %u", gTestIndex);
   }
@@ -467,8 +416,7 @@ NextTestRunnable::Run()
 
   if (gTestIndex < ArrayLength(gTests)) {
     gTests[gTestIndex++](mAppShell);
-  }
-  else {
+  } else {
     nsCOMPtr<nsIRunnable> exitRunnable = new ExitAppShellRunnable(mAppShell);
 
     nsresult rv = NS_DispatchToCurrentThread(exitRunnable);
@@ -480,8 +428,7 @@ NextTestRunnable::Run()
   return NS_OK;
 }
 
-int main(int argc, char** argv)
-{
+int main(int argc, char** argv) {
   ScopedLogging log;
   ScopedXPCOM xpcom("TestAppShellSteadyState");
 

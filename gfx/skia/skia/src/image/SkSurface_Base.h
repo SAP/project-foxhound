@@ -19,13 +19,8 @@ public:
     SkSurface_Base(const SkImageInfo&, const SkSurfaceProps*);
     virtual ~SkSurface_Base();
 
-    virtual GrBackendObject onGetTextureHandle(BackendHandleAccess) {
-        return 0;
-    }
-
-    virtual bool onGetRenderTargetHandle(GrBackendObject*, BackendHandleAccess) {
-        return false;
-    }
+    virtual GrBackendTexture onGetBackendTexture(BackendHandleAccess);
+    virtual GrBackendRenderTarget onGetBackendRenderTarget(BackendHandleAccess);
 
     /**
      *  Allocate a canvas that will draw into this surface. We will cache this
@@ -43,7 +38,9 @@ public:
      *  must faithfully represent the current contents, even if the surface
      *  is changed after this called (e.g. it is drawn to via its canvas).
      */
-    virtual sk_sp<SkImage> onNewImageSnapshot(SkBudgeted, SkCopyPixelsMode) = 0;
+    virtual sk_sp<SkImage> onNewImageSnapshot() = 0;
+
+    virtual void onWritePixels(const SkPixmap&, int x, int y) = 0;
 
     /**
      *  Default implementation:
@@ -77,11 +74,28 @@ public:
 
     /**
      * Issue any pending surface IO to the current backend 3D API and resolve any surface MSAA.
+     * Inserts the requested number of semaphores for the gpu to signal when work is complete on the
+     * gpu and inits the array of GrBackendSemaphores with the signaled semaphores.
      */
-    virtual void onPrepareForExternalIO() {}
+    virtual GrSemaphoresSubmitted onFlush(int numSemaphores,
+                                          GrBackendSemaphore signalSemaphores[]) {
+        return GrSemaphoresSubmitted::kNo;
+    }
+
+    /**
+     * Caused the current backend 3D API to wait on the passed in semaphores before executing new
+     * commands on the gpu. Any previously submitting commands will not be blocked by these
+     * semaphores.
+     */
+    virtual bool onWait(int numSemaphores, const GrBackendSemaphore* waitSemaphores) {
+        return false;
+    }
+
+    virtual bool onCharacterize(SkSurfaceCharacterization*) const { return false; }
+    virtual bool onDraw(const SkDeferredDisplayList*) { return false; }
 
     inline SkCanvas* getCachedCanvas();
-    inline sk_sp<SkImage> refCachedImage(SkBudgeted, ForceUnique);
+    inline sk_sp<SkImage> refCachedImage();
 
     bool hasCachedImage() const { return fCachedImage != nullptr; }
 
@@ -89,8 +103,8 @@ public:
     uint32_t newGenerationID();
 
 private:
-    SkCanvas*   fCachedCanvas;
-    SkImage*    fCachedImage;
+    std::unique_ptr<SkCanvas>   fCachedCanvas;
+    sk_sp<SkImage>              fCachedImage;
 
     void aboutToDraw(ContentChangeMode mode);
 
@@ -106,31 +120,23 @@ private:
 
 SkCanvas* SkSurface_Base::getCachedCanvas() {
     if (nullptr == fCachedCanvas) {
-        fCachedCanvas = this->onNewCanvas();
+        fCachedCanvas = std::unique_ptr<SkCanvas>(this->onNewCanvas());
         if (fCachedCanvas) {
             fCachedCanvas->setSurfaceBase(this);
         }
     }
-    return fCachedCanvas;
+    return fCachedCanvas.get();
 }
 
-sk_sp<SkImage> SkSurface_Base::refCachedImage(SkBudgeted budgeted, ForceUnique unique) {
-    SkImage* snap = fCachedImage;
-    if (kYes_ForceUnique == unique && snap && !snap->unique()) {
-        snap = nullptr;
+sk_sp<SkImage> SkSurface_Base::refCachedImage() {
+    if (fCachedImage) {
+        return fCachedImage;
     }
-    if (snap) {
-        return sk_ref_sp(snap);
-    }
-    SkCopyPixelsMode cpm = (kYes_ForceUnique == unique) ? kAlways_SkCopyPixelsMode :
-                                                          kIfMutable_SkCopyPixelsMode;
-    snap = this->onNewImageSnapshot(budgeted, cpm).release();
-    if (kNo_ForceUnique == unique) {
-        SkASSERT(!fCachedImage);
-        fCachedImage = SkSafeRef(snap);
-    }
+
+    fCachedImage = this->onNewImageSnapshot();
+
     SkASSERT(!fCachedCanvas || fCachedCanvas->getSurfaceBase() == this);
-    return sk_sp<SkImage>(snap);
+    return fCachedImage;
 }
 
 #endif

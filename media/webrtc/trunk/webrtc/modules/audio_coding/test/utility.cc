@@ -15,11 +15,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "testing/gtest/include/gtest/gtest.h"
-#include "webrtc/common.h"
-#include "webrtc/common_types.h"
-#include "webrtc/modules/audio_coding/include/audio_coding_module.h"
-#include "webrtc/modules/audio_coding/acm2/acm_common_defs.h"
+#include "common_types.h"  // NOLINT(build/include)
+#include "modules/audio_coding/include/audio_coding_module.h"
+#include "test/gtest.h"
 
 #define NUM_CODECS_WITH_FIXED_PAYLOAD_TYPE 13
 
@@ -136,6 +134,8 @@ void PrintCodecs() {
   }
 
 }
+
+namespace test {
 
 CircularBuffer::CircularBuffer(uint32_t len)
     : _buff(NULL),
@@ -265,6 +265,8 @@ int16_t CircularBuffer::Variance(double& var) {
     }
   }
 }
+
+}  // namespace test
 
 bool FixedPayloadTypeCodec(const char* payloadName) {
   char fixPayloadTypeCodecs[NUM_CODECS_WITH_FIXED_PAYLOAD_TYPE][32] = { "PCMU",

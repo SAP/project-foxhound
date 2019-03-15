@@ -14,30 +14,29 @@ namespace a11y {
 /**
  * Used for XUL comboboxes like xul:menulist and autocomplete textbox.
  */
-class XULComboboxAccessible : public AccessibleWrap
-{
-public:
+class XULComboboxAccessible : public AccessibleWrap {
+ public:
   enum { eAction_Click = 0 };
 
   XULComboboxAccessible(nsIContent* aContent, DocAccessible* aDoc);
 
   // Accessible
   virtual void Description(nsString& aDescription) override;
-  virtual void Value(nsString& aValue) override;
-  virtual a11y::role NativeRole() override;
-  virtual uint64_t NativeState() override;
+  virtual void Value(nsString& aValue) const override;
+  virtual a11y::role NativeRole() const override;
+  virtual uint64_t NativeState() const override;
 
   // ActionAccessible
-  virtual uint8_t ActionCount() override;
+  virtual uint8_t ActionCount() const override;
   virtual void ActionNameAt(uint8_t aIndex, nsAString& aName) override;
-  virtual bool DoAction(uint8_t aIndex) override;
+  virtual bool DoAction(uint8_t aIndex) const override;
 
   // Widgets
   virtual bool IsActiveWidget() const override;
   virtual bool AreItemsOperable() const override;
 };
 
-} // namespace a11y
-} // namespace mozilla
+}  // namespace a11y
+}  // namespace mozilla
 
 #endif

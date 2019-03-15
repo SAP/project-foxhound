@@ -9,7 +9,7 @@
 "use strict";
 const {
   ManifestObtainer
-} = Cu.import("resource://gre/modules/ManifestObtainer.jsm", {});
+} = ChromeUtils.import("resource://gre/modules/ManifestObtainer.jsm", {});
 const path = "/tests/dom/security/test/csp/";
 const testFile = `${path}file_web_manifest.html`;
 const remoteFile = `${path}file_web_manifest_remote.html`;
@@ -177,7 +177,7 @@ const tests = [
 ];
 
 //jscs:disable
-add_task(function* () {
+add_task(async function() {
   //jscs:enable
   const testPromises = tests.map((test) => {
     const tabOptions = {
@@ -187,38 +187,38 @@ add_task(function* () {
     };
     return BrowserTestUtils.withNewTab(tabOptions, (browser) => testObtainingManifest(browser, test));
   });
-  yield Promise.all(testPromises);
+  await Promise.all(testPromises);
 });
 
-function* testObtainingManifest(aBrowser, aTest) {
-  const waitForObserver = waitForNetObserver(aTest);
+async function testObtainingManifest(aBrowser, aTest) {
+  const waitForObserver = waitForNetObserver(aBrowser, aTest);
   // Expect an exception (from promise rejection) if there a content policy
   // that is violated.
   try {
-    const manifest = yield ManifestObtainer.browserObtainManifest(aBrowser);
+    const manifest = await ManifestObtainer.browserObtainManifest(aBrowser);
     aTest.run(manifest);
   } catch (e) {
     const wasBlocked = e.message.includes("NetworkError when attempting to fetch resource");
     ok(wasBlocked, `Expected promise rejection obtaining ${aTest.tabURL}: ${e.message}`);
   } finally {
-    yield waitForObserver;
+    await waitForObserver;
   }
 }
 
 // Helper object used to observe policy violations when blocking is expected.
-function waitForNetObserver(aTest) {
-  return new Promise((resolve) => {
-    // We don't need to wait for violation, so just resolve
-    if (!aTest.expected.includes("block")){
-      return resolve();
-    }
-    const observer = {
-      observe(subject, topic) {
-        SpecialPowers.removeObserver(observer, "csp-on-violate-policy");
-        aTest.run(topic);
+function waitForNetObserver(aBrowser, aTest) {
+  // We don't need to wait for violation, so just resolve
+  if (!aTest.expected.includes("block")){
+    return Promise.resolve();
+  }
+
+  return ContentTask.spawn(aBrowser, null, () => {
+    return new Promise(resolve => {
+      function observe(subject, topic) {
+        Services.obs.removeObserver(observe, "csp-on-violate-policy");
         resolve();
-      },
-    };
-    SpecialPowers.addObserver(observer, "csp-on-violate-policy", false);
-  });
+      };
+      Services.obs.addObserver(observe, "csp-on-violate-policy");
+    });
+  }).then(() => aTest.run("csp-on-violate-policy"));
 }

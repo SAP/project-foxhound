@@ -2,7 +2,7 @@
  * Bug 1278037 - A Test case for checking whether forgetting APIs are working for the quota manager.
  */
 
-const { classes: Cc, Constructor: CC, interfaces: Ci, utils: Cu } = Components;
+const CC = Components.Constructor;
 
 const TEST_HOST = "example.com";
 const TEST_URL = "http://" + TEST_HOST + "/browser/browser/components/contextualidentity/test/browser/";
@@ -16,22 +16,22 @@ const USER_CONTEXTS = [
 // Support functions.
 //
 
-function* openTabInUserContext(uri, userContextId) {
+async function openTabInUserContext(uri, userContextId) {
   // Open the tab in the correct userContextId.
-  let tab = gBrowser.addTab(uri, {userContextId});
+  let tab = BrowserTestUtils.addTab(gBrowser, uri, {userContextId});
 
   // Select tab and make sure its browser is focused.
   gBrowser.selectedTab = tab;
   tab.ownerGlobal.focus();
 
   let browser = gBrowser.getBrowserForTab(tab);
-  yield BrowserTestUtils.browserLoaded(browser);
+  await BrowserTestUtils.browserLoaded(browser);
   return {tab, browser};
 }
 
 // Setup an entry for the indexedDB.
-function* setupIndexedDB(browser) {
-  yield ContentTask.spawn(browser, { input: "TestForgetAPIs" }, function* (arg) {
+async function setupIndexedDB(browser) {
+  await ContentTask.spawn(browser, { input: "TestForgetAPIs" }, async function(arg) {
     let request = content.indexedDB.open("idb", 1);
 
     request.onerror = function() {
@@ -44,7 +44,7 @@ function* setupIndexedDB(browser) {
       store.createIndex("userContext", "userContext", { unique: false });
     };
 
-    let db = yield new Promise(resolve => {
+    let db = await new Promise(resolve => {
       request.onsuccess = event => {
         resolve(event.target.result);
       };
@@ -55,7 +55,7 @@ function* setupIndexedDB(browser) {
     let store = transaction.objectStore("obj");
     store.add({id: 1, userContext: arg.input});
 
-    yield new Promise(resolve => {
+    await new Promise(resolve => {
       transaction.oncomplete = () => {
         resolve();
       };
@@ -65,7 +65,7 @@ function* setupIndexedDB(browser) {
     transaction = db.transaction(["obj"], "readonly");
     store = transaction.objectStore("obj");
     let getRequest = store.get(1);
-    yield new Promise(resolve => {
+    await new Promise(resolve => {
       getRequest.onsuccess = () => {
         let res = getRequest.result;
         is(res.userContext, arg.input, "Check the indexedDB value");
@@ -76,11 +76,11 @@ function* setupIndexedDB(browser) {
 }
 
 // Check whether the indexedDB has been cleared.
-function* checkIndexedDB(browser) {
-  yield ContentTask.spawn(browser, null, function* () {
+async function checkIndexedDB(browser) {
+  await ContentTask.spawn(browser, null, async function() {
     let request = content.indexedDB.open("idb", 1);
 
-    let db = yield new Promise(done => {
+    let db = await new Promise(done => {
       request.onsuccess = event => {
         done(event.target.result);
       };
@@ -92,6 +92,10 @@ function* checkIndexedDB(browser) {
     } catch (e) {
       is(e.name, "NotFoundError", "The indexedDB does not exist as expected");
     }
+
+    db.close();
+
+    content.indexedDB.deleteDatabase("idb");
   });
 }
 
@@ -99,49 +103,49 @@ function* checkIndexedDB(browser) {
 // Test functions.
 //
 
-add_task(function* setup() {
+add_task(async function setup() {
   // Make sure userContext is enabled.
-  yield SpecialPowers.pushPrefEnv({"set": [
+  await SpecialPowers.pushPrefEnv({"set": [
       [ "privacy.userContext.enabled", true ],
   ]});
 });
 
-add_task(function* test_quota_clearStoragesForPrincipal() {
+add_task(async function test_quota_clearStoragesForPrincipal() {
   let tabs = [];
 
   for (let userContextId of Object.keys(USER_CONTEXTS)) {
     // Open our tab in the given user context.
-    tabs[userContextId] = yield* openTabInUserContext(TEST_URL + "empty_file.html", userContextId);
+    tabs[userContextId] = await openTabInUserContext(TEST_URL + "empty_file.html", userContextId);
 
     // Setup an entry for the indexedDB.
-    yield setupIndexedDB(tabs[userContextId].browser);
+    await setupIndexedDB(tabs[userContextId].browser);
 
     // Close this tab.
-    yield BrowserTestUtils.removeTab(tabs[userContextId].tab);
+    BrowserTestUtils.removeTab(tabs[userContextId].tab);
   }
 
   // Using quota manager to clear all indexed DB for a given domain.
-  let qms = Cc["@mozilla.org/dom/quota-manager-service;1"].
-              getService(Ci.nsIQuotaManagerService);
-
   let caUtils = {};
-  let scriptLoader = Cc["@mozilla.org/moz/jssubscript-loader;1"].
-                       getService(Ci.mozIJSSubScriptLoader);
-  scriptLoader.loadSubScript("chrome://global/content/contentAreaUtils.js",
-                             caUtils);
+  Services.scriptloader.loadSubScript("chrome://global/content/contentAreaUtils.js",
+                                      caUtils);
   let httpURI = caUtils.makeURI("http://" + TEST_HOST);
   let httpPrincipal = Services.scriptSecurityManager
                               .createCodebasePrincipal(httpURI, {});
-  qms.clearStoragesForPrincipal(httpPrincipal, null, true);
+  let clearRequest = Services.qms.clearStoragesForPrincipal(httpPrincipal, null, null, true);
+  await new Promise(resolve => {
+    clearRequest.callback = () => {
+      resolve();
+    };
+  });
 
   for (let userContextId of Object.keys(USER_CONTEXTS)) {
     // Open our tab in the given user context.
-    tabs[userContextId] = yield* openTabInUserContext(TEST_URL + "empty_file.html", userContextId);
+    tabs[userContextId] = await openTabInUserContext(TEST_URL + "empty_file.html", userContextId);
 
     // Check whether indexed DB has been cleared.
-    yield checkIndexedDB(tabs[userContextId].browser);
+    await checkIndexedDB(tabs[userContextId].browser);
 
     // Close this tab.
-    yield BrowserTestUtils.removeTab(tabs[userContextId].tab);
+    BrowserTestUtils.removeTab(tabs[userContextId].tab);
   }
 });

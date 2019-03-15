@@ -1,5 +1,6 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -19,8 +20,14 @@ namespace mozilla {
 namespace gfx {
 class DrawTarget;
 class Path;
-} // namespace gfx
-} // namespace mozilla
+}  // namespace gfx
+namespace layers {
+class StackingContextHelper;
+}  // namespace layers
+namespace wr {
+struct ComplexClipRegion;
+}  // namespace wr
+}  // namespace mozilla
 
 namespace mozilla {
 
@@ -35,10 +42,10 @@ class DisplayItemClip {
   typedef mozilla::gfx::DrawTarget DrawTarget;
   typedef mozilla::gfx::Path Path;
 
-public:
+ public:
   struct RoundedRect {
     nsRect mRect;
-    // Indices into mRadii are the NS_CORNER_* constants in nsStyleConsts.h
+    // Indices into mRadii are the HalfCorner values in gfx/2d/Types.h
     nscoord mRadii[8];
 
     RoundedRect operator+(const nsPoint& aOffset) const {
@@ -68,14 +75,14 @@ public:
 
   void SetTo(const nsRect& aRect);
   void SetTo(const nsRect& aRect, const nscoord* aRadii);
-  void SetTo(const nsRect& aRect, const nsRect& aRoundedRect, const nscoord* aRadii);
+  void SetTo(const nsRect& aRect, const nsRect& aRoundedRect,
+             const nscoord* aRadii);
   void IntersectWith(const DisplayItemClip& aOther);
 
   // Apply this |DisplayItemClip| to the given gfxContext.  Any saving of state
   // or clearing of other clips must be done by the caller.
   // See aBegin/aEnd note on ApplyRoundedRectsTo.
-  void ApplyTo(gfxContext* aContext, nsPresContext* aPresContext,
-               uint32_t aBegin = 0, uint32_t aEnd = UINT32_MAX);
+  void ApplyTo(gfxContext* aContext, int32_t A2D) const;
 
   void ApplyRectTo(gfxContext* aContext, int32_t A2D) const;
   // Applies the rounded rects in this Clip to aContext
@@ -87,13 +94,11 @@ public:
   // Draw (fill) the rounded rects in this clip to aContext
   void FillIntersectionOfRoundedRectClips(gfxContext* aContext,
                                           const Color& aColor,
-                                          int32_t aAppUnitsPerDevPixel,
-                                          uint32_t aBegin,
-                                          uint32_t aEnd) const;
+                                          int32_t aAppUnitsPerDevPixel) const;
   // 'Draw' (create as a path, does not stroke or fill) aRoundRect to aContext
-  already_AddRefed<Path> MakeRoundedRectPath(DrawTarget& aDrawTarget,
-                                                  int32_t A2D,
-                                                  const RoundedRect &aRoundRect) const;
+  already_AddRefed<Path> MakeRoundedRectPath(
+      DrawTarget& aDrawTarget, int32_t A2D,
+      const RoundedRect& aRoundRect) const;
 
   // Returns true if the intersection of aRect and this clip region is
   // non-empty. This is precise for DisplayItemClips with at most one
@@ -114,9 +119,8 @@ public:
    * The result is stored in aCombined. If the result would be infinite
    * (because one or both of the clips does no clipping), returns false.
    */
-  bool ComputeRegionInClips(DisplayItemClip* aOldClip,
-                            const nsPoint& aShift,
-                            nsRegion* aCombined) const;
+  bool ComputeRegionInClips(const DisplayItemClip* aOldClip,
+                            const nsPoint& aShift, nsRegion* aCombined) const;
 
   // Returns false if aRect is definitely not clipped by a rounded corner in
   // this clip. Returns true if aRect is clipped by a rounded corner in this
@@ -127,7 +131,8 @@ public:
   // Returns false if aRect is definitely not clipped by anything in this clip.
   // Fast but not necessarily accurate.
   bool IsRectAffectedByClip(const nsRect& aRect) const;
-  bool IsRectAffectedByClip(const nsIntRect& aRect, float aXScale, float aYScale, int32_t A2D) const;
+  bool IsRectAffectedByClip(const nsIntRect& aRect, float aXScale,
+                            float aYScale, int32_t A2D) const;
 
   // Intersection of all rects in this clip ignoring any rounded corners.
   nsRect NonRoundedIntersection() const;
@@ -141,8 +146,10 @@ public:
 
   // Adds the difference between Intersect(*this + aPoint, aBounds) and
   // Intersect(aOther, aOtherBounds) to aDifference (or a bounding-box thereof).
-  void AddOffsetAndComputeDifference(uint32_t aStart, const nsPoint& aPoint, const nsRect& aBounds,
-                                     const DisplayItemClip& aOther, uint32_t aOtherStart, const nsRect& aOtherBounds,
+  void AddOffsetAndComputeDifference(const nsPoint& aPoint,
+                                     const nsRect& aBounds,
+                                     const DisplayItemClip& aOther,
+                                     const nsRect& aOtherBounds,
                                      nsRegion* aDifference);
 
   bool operator==(const DisplayItemClip& aOther) const {
@@ -155,30 +162,27 @@ public:
   }
 
   bool HasClip() const { return mHaveClipRect; }
-  const nsRect& GetClipRect() const
-  {
+  const nsRect& GetClipRect() const {
     NS_ASSERTION(HasClip(), "No clip rect!");
     return mClipRect;
   }
 
-  void MoveBy(nsPoint aPoint);
+  void MoveBy(const nsPoint& aPoint);
 
   nsCString ToString() const;
 
-  /**
-   * Find the largest N such that the first N rounded rects in 'this' are
-   * equal to the first N rounded rects in aOther, and N <= aMax.
-   */
-  uint32_t GetCommonRoundedRectCount(const DisplayItemClip& aOther,
-                                     uint32_t aMax) const;
   uint32_t GetRoundedRectCount() const { return mRoundedClipRects.Length(); }
-  void AppendRoundedRects(nsTArray<RoundedRect>* aArray, uint32_t aCount) const;
+  void AppendRoundedRects(nsTArray<RoundedRect>* aArray) const;
+
+  void ToComplexClipRegions(int32_t aAppUnitsPerDevPixel,
+                            const layers::StackingContextHelper& aSc,
+                            nsTArray<wr::ComplexClipRegion>& aOutArray) const;
 
   static const DisplayItemClip& NoClip();
 
   static void Shutdown();
 
-private:
+ private:
   nsRect mClipRect;
   nsTArray<RoundedRect> mRoundedClipRects;
   // If mHaveClipRect is false then this object represents no clipping at all
@@ -186,6 +190,6 @@ private:
   bool mHaveClipRect;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif /* DISPLAYITEMCLIP_H_ */

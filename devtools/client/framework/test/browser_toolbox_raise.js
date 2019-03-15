@@ -10,12 +10,12 @@ var {Toolbox} = require("devtools/client/framework/toolbox");
 var toolbox, tab1, tab2;
 
 function test() {
-  addTab(TEST_URL).then(tab => {
-    tab2 = gBrowser.addTab();
-    let target = TargetFactory.forTab(tab);
+  addTab(TEST_URL).then(async (tab) => {
+    tab2 = BrowserTestUtils.addTab(gBrowser);
+    const target = await TargetFactory.forTab(tab);
     gDevTools.showToolbox(target)
              .then(testBottomHost, console.error)
-             .then(null, console.error);
+             .catch(console.error);
   });
 }
 
@@ -24,13 +24,13 @@ function testBottomHost(aToolbox) {
 
   // switch to another tab and test toolbox.raise()
   gBrowser.selectedTab = tab2;
-  executeSoon(function () {
+  executeSoon(function() {
     is(gBrowser.selectedTab, tab2, "Correct tab is selected before calling raise");
     toolbox.raise();
-    executeSoon(function () {
+    executeSoon(function() {
       is(gBrowser.selectedTab, tab1, "Correct tab was selected after calling raise");
 
-      toolbox.switchHost(Toolbox.HostType.WINDOW).then(testWindowHost).then(null, console.error);
+      toolbox.switchHost(Toolbox.HostType.WINDOW).then(testWindowHost).catch(console.error);
     });
   });
 }
@@ -41,7 +41,7 @@ function testWindowHost() {
 
   // Need to wait for focus  as otherwise window.focus() is overridden by
   // toolbox window getting focused first on Linux and Mac.
-  let onToolboxFocus = () => {
+  const onToolboxFocus = () => {
     toolbox.win.parent.removeEventListener("focus", onToolboxFocus, true);
     info("focusing main window.");
     window.focus();
@@ -55,7 +55,7 @@ function onFocus() {
   window.removeEventListener("focus", onFocus, true);
 
   // Check if toolbox window got focus.
-  let onToolboxFocusAgain = () => {
+  const onToolboxFocusAgain = () => {
     toolbox.win.parent.removeEventListener("focus", onToolboxFocusAgain);
     ok(true, "Toolbox window is the focused window after calling toolbox.raise()");
     cleanup();
@@ -69,7 +69,7 @@ function onFocus() {
 function cleanup() {
   Services.prefs.setCharPref("devtools.toolbox.host", Toolbox.HostType.BOTTOM);
 
-  toolbox.destroy().then(function () {
+  toolbox.destroy().then(function() {
     toolbox = null;
     gBrowser.removeCurrentTab();
     gBrowser.removeCurrentTab();

@@ -9,6 +9,9 @@
  * be executed only on a worker thread.
  */
 
+/* eslint-env node */
+/* global OS */
+
 if (typeof Components != "undefined") {
   throw new Error("osfile_shared_front.jsm cannot be used from the main thread");
 }
@@ -19,7 +22,7 @@ var SharedAll =
 var Path = require("resource://gre/modules/osfile/ospath.jsm");
 var Lz4 =
   require("resource://gre/modules/lz4.js");
-var LOG = SharedAll.LOG.bind(SharedAll, "Shared front-end");
+SharedAll.LOG.bind(SharedAll, "Shared front-end");
 var clone = SharedAll.clone;
 
 /**
@@ -81,9 +84,9 @@ AbstractFile.prototype = {
     }
     if (pos == bytes) {
       return buffer;
-    } else {
-      return buffer.subarray(0, pos);
     }
+      return buffer.subarray(0, pos);
+
   },
 
   /**
@@ -112,7 +115,7 @@ AbstractFile.prototype = {
       pos += chunkSize;
     }
     return pos;
-  }
+  },
 };
 
 /**
@@ -132,12 +135,12 @@ AbstractFile.prototype = {
  */
 AbstractFile.openUnique = function openUnique(path, options = {}) {
   let mode = {
-    create : true
+    create: true,
   };
 
   let dirName = Path.dirname(path);
   let leafName = Path.basename(path);
-  let lastDotCharacter = leafName.lastIndexOf('.');
+  let lastDotCharacter = leafName.lastIndexOf(".");
   let fileName = leafName.substring(0, lastDotCharacter != -1 ? lastDotCharacter : leafName.length);
   let suffix = (lastDotCharacter != -1 ? leafName.substring(lastDotCharacter) : "");
   let uniquePath = "";
@@ -149,27 +152,34 @@ AbstractFile.openUnique = function openUnique(path, options = {}) {
 
   try {
     return {
-      path: path,
-      file: OS.File.open(path, mode)
+      path,
+      file: OS.File.open(path, mode),
     };
-  } catch (ex if ex instanceof OS.File.Error && ex.becauseExists) {
-    for (let i = 0; i < maxAttempts; ++i) {
-      try {
-        if (humanReadable) {
-          uniquePath = Path.join(dirName, fileName + "-" + (i + 1) + suffix);
-        } else {
-          let hexNumber = Math.floor(Math.random() * MAX_HEX_NUMBER).toString(HEX_RADIX);
-          uniquePath = Path.join(dirName, fileName + "-" + hexNumber + suffix);
+  } catch (ex) {
+    if (ex instanceof OS.File.Error && ex.becauseExists) {
+      for (let i = 0; i < maxAttempts; ++i) {
+        try {
+          if (humanReadable) {
+            uniquePath = Path.join(dirName, fileName + "-" + (i + 1) + suffix);
+          } else {
+            let hexNumber = Math.floor(Math.random() * MAX_HEX_NUMBER).toString(HEX_RADIX);
+            uniquePath = Path.join(dirName, fileName + "-" + hexNumber + suffix);
+          }
+          return {
+            path: uniquePath,
+            file: OS.File.open(uniquePath, mode),
+          };
+        } catch (ex) {
+          if (ex instanceof OS.File.Error && ex.becauseExists) {
+            // keep trying ...
+          } else {
+            throw ex;
+          }
         }
-        return {
-          path: uniquePath,
-          file: OS.File.open(uniquePath, mode)
-        };
-      } catch (ex if ex instanceof OS.File.Error && ex.becauseExists) {
-        // keep trying ...
       }
+      throw OS.File.Error.exists("could not find an unused file name.", path);
     }
-    throw OS.File.Error.exists("could not find an unused file name.", path);
+    throw ex;
   }
 };
 
@@ -180,9 +190,9 @@ AbstractFile.AbstractIterator = function AbstractIterator() {
 };
 AbstractFile.AbstractIterator.prototype = {
   /**
-   * Allow iterating with |for|
+   * Allow iterating with |for-of|
    */
-  __iterator__: function __iterator__() {
+  [Symbol.iterator]() {
     return this;
   },
   /**
@@ -197,7 +207,7 @@ AbstractFile.AbstractIterator.prototype = {
    */
   forEach: function forEach(cb) {
     let index = 0;
-    for (let entry in this) {
+    for (let entry of this) {
       cb(entry, index++, this);
     }
   },
@@ -215,14 +225,14 @@ AbstractFile.AbstractIterator.prototype = {
   nextBatch: function nextBatch(length) {
     let array = [];
     let i = 0;
-    for (let entry in this) {
+    for (let entry of this) {
       array.push(entry);
       if (++i >= length) {
         return array;
       }
     }
     return array;
-  }
+  },
 };
 
 /**
@@ -247,7 +257,7 @@ AbstractFile.normalizeOpenMode = function normalizeOpenMode(mode) {
     trunc: false,
     create: false,
     existing: false,
-    append: true
+    append: true,
   };
   for (let key in mode) {
     let val = !!mode[key]; // bool cast.
@@ -339,8 +349,12 @@ AbstractFile.read = function read(path, bytes, options = {}) {
     let decoder;
     try {
       decoder = new TextDecoder(options.encoding);
-    } catch (ex if ex instanceof RangeError) {
-      throw OS.File.Error.invalidArgument("Decode");
+    } catch (ex) {
+      if (ex instanceof RangeError) {
+        throw OS.File.Error.invalidArgument("Decode");
+      } else {
+        throw ex;
+      }
     }
     return decoder.decode(buffer);
   } finally {
@@ -425,8 +439,12 @@ AbstractFile.writeAtomic =
     if (options.backupTo) {
       try {
         OS.File.move(path, options.backupTo, {noCopy: true});
-      } catch (ex if ex.becauseNoSuchFile) {
-        // The file doesn't exist, nothing to backup.
+      } catch (ex) {
+        if (ex.becauseNoSuchFile) {
+          // The file doesn't exist, nothing to backup.
+        } else {
+          throw ex;
+        }
       }
     }
     // Just write, without any renaming trick
@@ -458,8 +476,12 @@ AbstractFile.writeAtomic =
   if (options.backupTo) {
     try {
       OS.File.move(path, options.backupTo, {noCopy: true});
-    } catch (ex if ex.becauseNoSuchFile) {
-      // The file doesn't exist, nothing to backup.
+    } catch (ex) {
+     if (ex.becauseNoSuchFile) {
+        // The file doesn't exist, nothing to backup.
+      } else {
+        throw ex;
+      }
     }
   }
 
@@ -481,7 +503,7 @@ AbstractFile.removeRecursive = function(path, options = {}) {
   }
 
   try {
-    for (let entry in iterator) {
+    for (let entry of iterator) {
       if (entry.isDir) {
         if (entry.isLink) {
           // Unlike Unix symlinks, NTFS junctions or NTFS symlinks to
@@ -548,8 +570,8 @@ AbstractFile.makeDir = function(path, options = {}) {
   }
   let innerOptions = Object.create(options, {
     ignoreExisting: {
-      value: true
-    }
+      value: true,
+    },
   });
   // Compute the elements that appear in |path| but not in |from|.
   let items = Path.split(path).components.slice(Path.split(from).components.length);

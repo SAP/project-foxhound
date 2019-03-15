@@ -1,4 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty('Intl')) -- needs Intl
 // Copyright (C) 2016 André Bargull. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -6,7 +5,7 @@
 esid: sec-Intl.Collator.prototype.compare
 description: >
   The bound Collator compare function is an anonymous function.
-info: >
+info: |
   10.3.3 get Intl.Collator.prototype.compare
 
   ...

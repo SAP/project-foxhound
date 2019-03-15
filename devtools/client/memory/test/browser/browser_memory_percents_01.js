@@ -14,14 +14,14 @@ const TEST_URL = "http://example.com/browser/devtools/client/memory/test/browser
 function checkCells(cells) {
   ok(cells.length > 1, "Should have found some");
   // Ignore the first header cell.
-  for (let cell of cells.slice(1)) {
+  for (const cell of cells.slice(1)) {
     const percent = cell.querySelector(".heap-tree-percent");
     ok(percent, "should have a percent cell");
     ok(percent.textContent.match(/^\d?\d%$/), "should be of the form nn% or n%");
   }
 }
 
-this.test = makeMemoryTest(TEST_URL, function* ({ tab, panel }) {
+this.test = makeMemoryTest(TEST_URL, async function({ tab, panel }) {
   const heapWorker = panel.panelWin.gHeapAnalysesClient;
   const front = panel.panelWin.gFront;
   const { getState, dispatch } = panel.panelWin.gStore;
@@ -29,7 +29,7 @@ this.test = makeMemoryTest(TEST_URL, function* ({ tab, panel }) {
 
   dispatch(changeView(viewState.CENSUS));
 
-  yield dispatch(takeSnapshotAndCensus(front, heapWorker));
+  await dispatch(takeSnapshotAndCensus(front, heapWorker));
   is(getState().censusDisplay.breakdown.by, "coarseType",
      "Should be using coarse type breakdown");
 

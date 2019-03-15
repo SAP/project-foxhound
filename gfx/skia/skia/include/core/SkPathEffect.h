@@ -1,11 +1,9 @@
-
 /*
  * Copyright 2006 The Android Open Source Project
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
 
 #ifndef SkPathEffect_DEFINED
 #define SkPathEffect_DEFINED
@@ -29,6 +27,23 @@ class SkStrokeRec;
 class SK_API SkPathEffect : public SkFlattenable {
 public:
     /**
+     *  Returns a patheffect that apples each effect (first and second) to the original path,
+     *  and returns a path with the sum of these.
+     *
+     *  result = first(path) + second(path)
+     *
+     */
+    static sk_sp<SkPathEffect> MakeSum(sk_sp<SkPathEffect> first, sk_sp<SkPathEffect> second);
+
+    /**
+     *  Returns a patheffect that applies the inner effect to the path, and then applies the
+     *  outer effect to the result of the inner's.
+     *
+     *  result = outer(inner(path))
+     */
+    static sk_sp<SkPathEffect> MakeCompose(sk_sp<SkPathEffect> outer, sk_sp<SkPathEffect> inner);
+
+    /**
      *  Given a src path (input) and a stroke-rec (input and output), apply
      *  this effect to the src path, returning the new path in dst, and return
      *  true. If this effect cannot be applied, return false and ignore dst
@@ -43,14 +58,13 @@ public:
      *  If this method returns true, the caller will apply (as needed) the
      *  resulting stroke-rec to dst and then draw.
      */
-    virtual bool filterPath(SkPath* dst, const SkPath& src,
-                            SkStrokeRec*, const SkRect* cullR) const = 0;
+    bool filterPath(SkPath* dst, const SkPath& src, SkStrokeRec*, const SkRect* cullR) const;
 
     /**
      *  Compute a conservative bounds for its effect, given the src bounds.
      *  The baseline implementation just assigns src to dst.
      */
-    virtual void computeFastBounds(SkRect* dst, const SkRect& src) const;
+    void computeFastBounds(SkRect* dst, const SkRect& src) const;
 
     /** \class PointData
 
@@ -61,7 +75,7 @@ public:
     public:
         PointData()
             : fFlags(0)
-            , fPoints(NULL)
+            , fPoints(nullptr)
             , fNumPoints(0) {
             fSize.set(SK_Scalar1, SK_Scalar1);
             // 'asPoints' needs to initialize/fill-in 'fClipRect' if it sets
@@ -97,7 +111,7 @@ public:
      *  Does applying this path effect to 'src' yield a set of points? If so,
      *  optionally return the points in 'results'.
      */
-    virtual bool asPoints(PointData* results, const SkPath& src,
+    bool asPoints(PointData* results, const SkPath& src,
                           const SkStrokeRec&, const SkMatrix&,
                           const SkRect* cullR) const;
 
@@ -117,7 +131,7 @@ public:
     };
 
     struct DashInfo {
-        DashInfo() : fIntervals(NULL), fCount(0), fPhase(0) {}
+        DashInfo() : fIntervals(nullptr), fCount(0), fPhase(0) {}
         DashInfo(SkScalar* intervals, int32_t count, SkScalar phase)
             : fIntervals(intervals), fCount(count), fPhase(phase) {}
 
@@ -128,10 +142,24 @@ public:
                                         //   mod the sum of all intervals
     };
 
-    virtual DashType asADash(DashInfo* info) const;
+    DashType asADash(DashInfo* info) const;
 
-    SK_TO_STRING_PUREVIRT()
-    SK_DEFINE_FLATTENABLE_TYPE(SkPathEffect)
+    static void InitializeFlattenables();
+
+    static SkFlattenable::Type GetFlattenableType() {
+        return kSkPathEffect_Type;
+    }
+
+    SkFlattenable::Type getFlattenableType() const override {
+        return kSkPathEffect_Type;
+    }
+
+    static sk_sp<SkPathEffect> Deserialize(const void* data, size_t size,
+                                          const SkDeserialProcs* procs = nullptr) {
+        return sk_sp<SkPathEffect>(static_cast<SkPathEffect*>(
+                                  SkFlattenable::Deserialize(
+                                  kSkPathEffect_Type, data, size, procs).release()));
+    }
 
 #ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
     /// Override for subclasses as appropriate.
@@ -141,133 +169,24 @@ public:
 protected:
     SkPathEffect() {}
 
+    virtual bool onFilterPath(SkPath*, const SkPath&, SkStrokeRec*, const SkRect*) const = 0;
+    virtual SkRect onComputeFastBounds(const SkRect& src) const {
+        return src;
+    }
+    virtual bool onAsPoints(PointData*, const SkPath&, const SkStrokeRec&, const SkMatrix&,
+                            const SkRect*) const {
+        return false;
+    }
+    virtual DashType onAsADash(DashInfo*) const {
+        return kNone_DashType;
+    }
+
 private:
     // illegal
     SkPathEffect(const SkPathEffect&);
     SkPathEffect& operator=(const SkPathEffect&);
 
     typedef SkFlattenable INHERITED;
-};
-
-/** \class SkPairPathEffect
-
-    Common baseclass for Compose and Sum. This subclass manages two pathEffects,
-    including flattening them. It does nothing in filterPath, and is only useful
-    for managing the lifetimes of its two arguments.
-*/
-class SK_API SkPairPathEffect : public SkPathEffect {
-protected:
-    SkPairPathEffect(sk_sp<SkPathEffect> pe0, sk_sp<SkPathEffect> pe1);
-
-    void flatten(SkWriteBuffer&) const override;
-
-    // these are visible to our subclasses
-    sk_sp<SkPathEffect> fPE0;
-    sk_sp<SkPathEffect> fPE1;
-
-    SK_TO_STRING_OVERRIDE()
-
-private:
-    typedef SkPathEffect INHERITED;
-};
-
-/** \class SkComposePathEffect
-
-    This subclass of SkPathEffect composes its two arguments, to create
-    a compound pathEffect.
-*/
-class SK_API SkComposePathEffect : public SkPairPathEffect {
-public:
-    /** Construct a pathEffect whose effect is to apply first the inner pathEffect
-        and the the outer pathEffect (e.g. outer(inner(path)))
-        The reference counts for outer and inner are both incremented in the constructor,
-        and decremented in the destructor.
-    */
-    static sk_sp<SkPathEffect> Make(sk_sp<SkPathEffect> outer, sk_sp<SkPathEffect> inner) {
-        if (!outer) {
-            return inner;
-        }
-        if (!inner) {
-            return outer;
-        }
-        return sk_sp<SkPathEffect>(new SkComposePathEffect(outer, inner));
-    }
-
-#ifdef SK_SUPPORT_LEGACY_PATHEFFECT_PTR
-    static SkPathEffect* Create(SkPathEffect* outer, SkPathEffect* inner) {
-        return Make(sk_ref_sp(outer), sk_ref_sp(inner)).release();
-    }
-#endif
-
-    virtual bool filterPath(SkPath* dst, const SkPath& src,
-                            SkStrokeRec*, const SkRect*) const override;
-
-    SK_TO_STRING_OVERRIDE()
-    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkComposePathEffect)
-
-#ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
-    bool exposedInAndroidJavaAPI() const override { return true; }
-#endif
-
-protected:
-    SkComposePathEffect(sk_sp<SkPathEffect> outer, sk_sp<SkPathEffect> inner)
-        : INHERITED(outer, inner) {}
-
-private:
-    // illegal
-    SkComposePathEffect(const SkComposePathEffect&);
-    SkComposePathEffect& operator=(const SkComposePathEffect&);
-
-    typedef SkPairPathEffect INHERITED;
-};
-
-/** \class SkSumPathEffect
-
-    This subclass of SkPathEffect applies two pathEffects, one after the other.
-    Its filterPath() returns true if either of the effects succeeded.
-*/
-class SK_API SkSumPathEffect : public SkPairPathEffect {
-public:
-    /** Construct a pathEffect whose effect is to apply two effects, in sequence.
-        (e.g. first(path) + second(path))
-        The reference counts for first and second are both incremented in the constructor,
-        and decremented in the destructor.
-    */
-    static sk_sp<SkPathEffect> Make(sk_sp<SkPathEffect> first, sk_sp<SkPathEffect> second) {
-        if (!first) {
-            return second;
-        }
-        if (!second) {
-            return first;
-        }
-        return sk_sp<SkPathEffect>(new SkSumPathEffect(first, second));
-    }
-
-#ifdef SK_SUPPORT_LEGACY_PATHEFFECT_PTR
-    static SkPathEffect* Create(SkPathEffect* first, SkPathEffect* second) {
-        return Make(sk_ref_sp(first), sk_ref_sp(second)).release();
-    }
-#endif
-    virtual bool filterPath(SkPath* dst, const SkPath& src,
-                            SkStrokeRec*, const SkRect*) const override;
-
-    SK_TO_STRING_OVERRIDE()
-    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkSumPathEffect)
-
-#ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
-    bool exposedInAndroidJavaAPI() const override { return true; }
-#endif
-
-protected:
-    SkSumPathEffect(sk_sp<SkPathEffect> first, sk_sp<SkPathEffect> second)
-        : INHERITED(first, second) {}
-
-private:
-    // illegal
-    SkSumPathEffect(const SkSumPathEffect&);
-    SkSumPathEffect& operator=(const SkSumPathEffect&);
-
-    typedef SkPairPathEffect INHERITED;
 };
 
 #endif

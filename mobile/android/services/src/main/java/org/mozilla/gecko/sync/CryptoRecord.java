@@ -5,7 +5,6 @@
 package org.mozilla.gecko.sync;
 
 import java.io.IOException;
-import java.io.UnsupportedEncodingException;
 
 import org.json.simple.JSONObject;
 import org.mozilla.apache.commons.codec.binary.Base64;
@@ -41,7 +40,8 @@ public class CryptoRecord extends Record {
   // JSON related constants.
   private static final String KEY_ID         = "id";
   private static final String KEY_COLLECTION = "collection";
-  private static final String KEY_PAYLOAD    = "payload";
+  // We need to pluck out payload for size checks during upload to a Sync Storage server.
+  public static final String KEY_PAYLOAD    = "payload";
   private static final String KEY_MODIFIED   = "modified";
   private static final String KEY_SORTINDEX  = "sortindex";
   private static final String KEY_TTL        = "ttl";
@@ -55,11 +55,10 @@ public class CryptoRecord extends Record {
    * Input: JSONObject containing a valid payload (cipherText, IV, HMAC),
    * KeyBundle with keys for decryption. Output: byte[] clearText
    * @throws CryptoException
-   * @throws UnsupportedEncodingException
    */
-  private static byte[] decryptPayload(ExtendedJSONObject payload, KeyBundle keybundle) throws CryptoException, UnsupportedEncodingException {
-    byte[] ciphertext = Base64.decodeBase64(((String) payload.get(KEY_CIPHERTEXT)).getBytes("UTF-8"));
-    byte[] iv         = Base64.decodeBase64(((String) payload.get(KEY_IV)).getBytes("UTF-8"));
+  private static byte[] decryptPayload(ExtendedJSONObject payload, KeyBundle keybundle) throws CryptoException {
+    byte[] ciphertext = Base64.decodeBase64(((String) payload.get(KEY_CIPHERTEXT)).getBytes(StringUtils.UTF_8));
+    byte[] iv         = Base64.decodeBase64(((String) payload.get(KEY_IV)).getBytes(StringUtils.UTF_8));
     byte[] hmac       = Utils.hex2Byte((String) payload.get(KEY_HMAC));
 
     return CryptoInfo.decrypt(ciphertext, iv, hmac, keybundle).getMessage();
@@ -130,7 +129,7 @@ public class CryptoRecord extends Record {
    */
   public static CryptoRecord fromJSONRecord(String jsonRecord)
       throws NonObjectJSONException, IOException, RecordParseException {
-    byte[] bytes = jsonRecord.getBytes("UTF-8");
+    byte[] bytes = jsonRecord.getBytes(StringUtils.UTF_8);
     ExtendedJSONObject object = ExtendedJSONObject.parseUTF8AsJSONObject(bytes);
 
     return CryptoRecord.fromJSONRecord(object);
@@ -200,7 +199,7 @@ public class CryptoRecord extends Record {
     return this;
   }
 
-  public CryptoRecord encrypt() throws CryptoException, UnsupportedEncodingException {
+  public CryptoRecord encrypt() throws CryptoException {
     if (this.keyBundle == null) {
       throw new NoKeyBundleException();
     }
@@ -239,6 +238,7 @@ public class CryptoRecord extends Record {
   }
 
   // TODO: this only works with encrypted object, and has other limitations.
+  @Override
   public JSONObject toJSONObject() {
     ExtendedJSONObject o = new ExtendedJSONObject();
     o.put(KEY_PAYLOAD, payload.toJSONString());

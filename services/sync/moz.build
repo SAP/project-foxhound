@@ -5,7 +5,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 with Files('**'):
-    BUG_COMPONENT = ('Mozilla Services', 'Firefox Sync: Backend')
+    BUG_COMPONENT = ('Firefox', 'Sync')
 
 DIRS += ['locales']
 
@@ -24,6 +24,7 @@ EXTRA_JS_MODULES['services-sync'] += [
     'modules/browserid_identity.js',
     'modules/collection_repair.js',
     'modules/collection_validator.js',
+    'modules/constants.js',
     'modules/doctor.js',
     'modules/engines.js',
     'modules/keys.js',
@@ -31,21 +32,14 @@ EXTRA_JS_MODULES['services-sync'] += [
     'modules/policies.js',
     'modules/record.js',
     'modules/resource.js',
-    'modules/rest.js',
     'modules/service.js',
     'modules/status.js',
+    'modules/SyncDisconnect.jsm',
     'modules/SyncedTabs.jsm',
     'modules/telemetry.js',
+    'modules/UIState.jsm',
     'modules/util.js',
 ]
-
-EXTRA_PP_JS_MODULES['services-sync'] += [
-    'modules/constants.js',
-]
-
-# Definitions used by constants.js
-DEFINES['weave_version'] = '1.56.0'
-DEFINES['weave_id'] = '{340c2bbc-ce74-4362-90b5-7c26312808ef}'
 
 EXTRA_JS_MODULES['services-sync'].engines += [
     'modules/engines/addons.js',

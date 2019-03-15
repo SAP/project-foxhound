@@ -13,49 +13,52 @@
 #include "nsCOMPtr.h"
 
 #include "mozilla/dom/Element.h"
-#include "nsIDOMElement.h"
-#include "nsIDOMMouseEvent.h"
 #include "nsIDOMEventListener.h"
 #include "nsCycleCollectionParticipant.h"
 
-class nsXULPopupListener : public nsIDOMEventListener
-{
-public:
-    // aElement is the element that the popup is attached to. If aIsContext is
-    // false, the popup opens on left click on aElement or a descendant. If
-    // aIsContext is true, the popup is a context menu which opens on a
-    // context menu event.
-    nsXULPopupListener(mozilla::dom::Element* aElement, bool aIsContext);
+namespace mozilla {
+namespace dom {
+class MouseEvent;
+}  // namespace dom
+}  // namespace mozilla
 
-    // nsISupports
-    NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-    NS_DECL_CYCLE_COLLECTION_SKIPPABLE_CLASS(nsXULPopupListener)
-    NS_DECL_NSIDOMEVENTLISTENER
+class nsXULPopupListener : public nsIDOMEventListener {
+ public:
+  // aElement is the element that the popup is attached to. If aIsContext is
+  // false, the popup opens on left click on aElement or a descendant. If
+  // aIsContext is true, the popup is a context menu which opens on a
+  // context menu event.
+  nsXULPopupListener(mozilla::dom::Element* aElement, bool aIsContext);
 
-protected:
-    virtual ~nsXULPopupListener(void);
+  // nsISupports
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTION_SKIPPABLE_CLASS(nsXULPopupListener)
+  NS_DECL_NSIDOMEVENTLISTENER
 
-    // open the popup. aEvent is the event that triggered the popup such as
-    // a mouse click and aTargetContent is the target of this event.
-    virtual nsresult LaunchPopup(nsIDOMEvent* aEvent, nsIContent* aTargetContent);
+ protected:
+  virtual ~nsXULPopupListener(void);
 
-    // close the popup when the listener goes away
-    virtual void ClosePopup();
+  // open the popup. aEvent is the event that triggered the popup such as
+  // a mouse click and aTargetContent is the target of this event.
+  virtual nsresult LaunchPopup(mozilla::dom::MouseEvent* aEvent);
 
-private:
+  // close the popup when the listener goes away
+  virtual void ClosePopup();
+
+ private:
 #ifndef NS_CONTEXT_MENU_IS_MOUSEUP
-    // When a context menu is opened, focus the target of the contextmenu event.
-    nsresult FireFocusOnTargetContent(nsIDOMNode* aTargetNode, bool aIsTouch);
+  // When a context menu is opened, focus the target of the contextmenu event.
+  nsresult FireFocusOnTargetContent(nsIContent* aTargetContent, bool aIsTouch);
 #endif
 
-    // |mElement| is the node to which this listener is attached.
-    nsCOMPtr<mozilla::dom::Element> mElement;
+  // |mElement| is the node to which this listener is attached.
+  RefPtr<mozilla::dom::Element> mElement;
 
-    // The popup that is getting shown on top of mElement.
-    nsCOMPtr<nsIContent> mPopupContent; 
+  // The popup that is getting shown on top of mElement.
+  RefPtr<mozilla::dom::Element> mPopupContent;
 
-    // true if a context popup
-    bool mIsContext;
+  // true if a context popup
+  bool mIsContext;
 };
 
-#endif // nsXULPopupListener_h___
+#endif  // nsXULPopupListener_h___

@@ -11,16 +11,16 @@ const TEST_URI = "data:text/html;charset=utf-8,<head>" +
   "ets.css'></head><body><div></div><span></span></body>";
 const {TreeWidget} = require("devtools/client/shared/widgets/TreeWidget");
 
-add_task(function* () {
-  yield addTab("about:blank");
-  let [host,, doc] = yield createHost("bottom", TEST_URI);
+add_task(async function() {
+  await addTab("about:blank");
+  const [host,, doc] = await createHost("bottom", TEST_URI);
 
-  let tree = new TreeWidget(doc.querySelector("div"), {
-    defaultType: "store"
+  const tree = new TreeWidget(doc.querySelector("div"), {
+    defaultType: "store",
   });
 
   populateTree(tree, doc);
-  yield testMouseInteraction(tree);
+  await testMouseInteraction(tree);
 
   tree.destroy();
   host.destroy();
@@ -30,74 +30,74 @@ add_task(function* () {
 function populateTree(tree, doc) {
   tree.add([{
     id: "level1",
-    label: "Level 1"
+    label: "Level 1",
   }, {
     id: "level2-1",
-    label: "Level 2"
+    label: "Level 2",
   }, {
     id: "level3-1",
     label: "Level 3 - Child 1",
-    type: "dir"
+    type: "dir",
   }]);
   tree.add(["level1", "level2-1", { id: "level3-2", label: "Level 3 - Child 2"}]);
   tree.add(["level1", "level2-1", { id: "level3-3", label: "Level 3 - Child 3"}]);
   tree.add(["level1", {
     id: "level2-2",
-    label: "Level 2.1"
+    label: "Level 2.1",
   }, {
     id: "level3-1",
-    label: "Level 3.1"
+    label: "Level 3.1",
   }]);
   tree.add([{
     id: "level1",
-    label: "Level 1"
+    label: "Level 1",
   }, {
     id: "level2",
-    label: "Level 2"
+    label: "Level 2",
   }, {
     id: "level3",
     label: "Level 3",
-    type: "js"
+    type: "js",
   }]);
   tree.add(["level1.1", "level2", {id: "level3", type: "url"}]);
 
   // Adding a new non text item in the tree.
-  let node = doc.createElement("div");
+  const node = doc.createElement("div");
   node.textContent = "Foo Bar";
   node.className = "foo bar";
   tree.add([{
     id: "level1.2",
     node: node,
     attachment: {
-      foo: "bar"
-    }
+      foo: "bar",
+    },
   }]);
 }
 
 // Sends a click event on the passed DOM node in an async manner
 function click(node) {
-  let win = node.ownerDocument.defaultView;
+  const win = node.ownerDocument.defaultView;
   executeSoon(() => EventUtils.synthesizeMouseAtCenter(node, {}, win));
 }
 
 /**
  * Tests if clicking the tree items does the expected behavior
  */
-function* testMouseInteraction(tree) {
+async function testMouseInteraction(tree) {
   info("Testing mouse interaction with the tree");
   let event;
-  let pass = (e, d, a) => event.resolve([e, d, a]);
+  const pass = (d, a) => event.resolve([d, a]);
 
   ok(!tree.selectedItem, "Nothing should be selected beforehand");
 
   tree.once("select", pass);
-  let node = tree.root.children.firstChild.firstChild;
+  const node = tree.root.children.firstChild.firstChild;
   info("clicking on first top level item");
   event = defer();
   ok(!node.classList.contains("theme-selected"),
      "Node should not have selected class before clicking");
   click(node);
-  let [, data, attachment] = yield event.promise;
+  let [data, attachment] = await event.promise;
   ok(node.classList.contains("theme-selected"),
      "Node has selected class after click");
   is(data[0], "level1.2", "Correct tree path is emitted");
@@ -105,7 +105,7 @@ function* testMouseInteraction(tree) {
   is(attachment.foo, "bar", "Correct attachment value is emitted");
 
   info("clicking second top level item with children to check if it expands");
-  let node2 = tree.root.children.firstChild.nextSibling.firstChild;
+  const node2 = tree.root.children.firstChild.nextSibling.firstChild;
   event = defer();
   // node should not have selected class
   ok(!node2.classList.contains("theme-selected"),
@@ -113,7 +113,7 @@ function* testMouseInteraction(tree) {
   ok(!node2.hasAttribute("expanded"), "New node is not expanded before clicking");
   tree.once("select", pass);
   click(node2);
-  [, data, attachment] = yield event.promise;
+  [data, attachment] = await event.promise;
   ok(node2.classList.contains("theme-selected"),
      "New node has selected class after clicking");
   is(data[0], "level1", "Correct tree path is emitted for new node");
@@ -130,6 +130,6 @@ function* testMouseInteraction(tree) {
     executeSoon(() => event.resolve(null));
   }, { once: true });
   click(node2);
-  yield event.promise;
+  await event.promise;
   ok(!node2.hasAttribute("expanded"), "New node collapsed after click again");
 }

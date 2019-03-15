@@ -4,45 +4,60 @@
 
 "use strict";
 
-// <video> is used for top-level audio documents as well
-let videoElement = document.getElementsByTagName("video")[0];
+// Hide our variables from the web content, even though the spec allows them
+// (and the DOM) to be accessible (see bug 1474832)
+{
+  // <video> is used for top-level audio documents as well
+  let videoElement = document.getElementsByTagName("video")[0];
 
-// 1. Handle fullscreen mode;
-// 2. Send keystrokes to the video element if the body element is focused,
-//    to be received by the event listener in videocontrols.xml.
-document.addEventListener("keypress", ev => {
-  if (ev.synthetic) // prevent recursion
-    return;
-
-  // Maximize the standalone video when pressing F11,
-  // but ignore audio elements
-  if (ev.key == "F11" && videoElement.videoWidth != 0 && videoElement.videoHeight != 0) {
-    // If we're in browser fullscreen mode, it means the user pressed F11
-    // while browser chrome or another tab had focus.
-    // Don't break leaving that mode, so do nothing here.
-    if (window.fullScreen) {
+  let setFocusToVideoElement = function(e) {
+    // We don't want to retarget focus if it goes to the controls in
+    // the video element. Because they're anonymous content, the target
+    // will be the video element in that case. Avoid calling .focus()
+    // for those events:
+    if (e && e.target == videoElement) {
       return;
     }
+    videoElement.focus();
+  };
 
-    // If we're not in broser fullscreen mode, prevent entering into that,
-    // so we don't end up there after pressing Esc.
-    ev.preventDefault();
-    ev.stopPropagation();
+  // Redirect focus to the video element whenever the document receives
+  // focus.
+  document.addEventListener("focus", setFocusToVideoElement, true);
 
-    if (!document.mozFullScreenElement) {
-      videoElement.mozRequestFullScreen();
-    } else {
-      document.mozCancelFullScreen();
+  // Focus on the video in the newly created document.
+  setFocusToVideoElement();
+
+  // Opt out of moving focus away if the DOM tree changes (from add-on or web content)
+  let observer = new MutationObserver(
+    () => {
+      observer.disconnect();
+      document.removeEventListener("focus", setFocusToVideoElement, true);
+    });
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+
+  // Handle fullscreen mode
+  document.addEventListener("keypress", ev => {
+    // Maximize the standalone video when pressing F11,
+    // but ignore audio elements
+    if (ev.key == "F11" && videoElement.videoWidth != 0 && videoElement.videoHeight != 0) {
+      // If we're in browser fullscreen mode, it means the user pressed F11
+      // while browser chrome or another tab had focus.
+      // Don't break leaving that mode, so do nothing here.
+      if (window.fullScreen) {
+        return;
+      }
+
+      // If we're not in browser fullscreen mode, prevent entering into that,
+      // so we don't end up there after pressing Esc.
+      ev.preventDefault();
+      ev.stopPropagation();
+
+      if (!document.mozFullScreenElement) {
+        videoElement.mozRequestFullScreen();
+      } else {
+        document.mozCancelFullScreen();
+      }
     }
-    return;
-  }
-
-  // Check if the video element is focused, so it already receives
-  // keystrokes, and don't send it another one from here.
-  if (document.activeElement == videoElement)
-    return;
-
-  let newEvent = new KeyboardEvent("keypress", ev);
-  newEvent.synthetic = true;
-  videoElement.dispatchEvent(newEvent);
-});
+  });
+}

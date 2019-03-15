@@ -6,79 +6,92 @@
 
 // Test dynamic updates in the storage inspector for sessionStorage.
 
-add_task(function* () {
-  yield openTabAndSetupStorage(MAIN_DOMAIN + "storage-updates.html");
+add_task(async function() {
+  await openTabAndSetupStorage(MAIN_DOMAIN + "storage-updates.html");
 
   gUI.tree.expandAll();
 
   ok(gUI.sidebar.hidden, "Sidebar is initially hidden");
 
-  yield checkState([
+  await checkState([
     [
       ["sessionStorage", "http://test1.example.org"],
-      ["ss1", "ss2", "ss3"]
+      ["ss1", "ss2", "ss3"],
     ],
   ]);
 
-  gWindow.sessionStorage.setItem("ss4", "new-item");
+  await setSessionStorageItem("ss4", "new-item");
 
-  yield gUI.once("store-objects-updated");
-  yield gUI.once("store-objects-updated");
+  await gUI.once("store-objects-edit");
 
-  yield checkState([
+  await checkState([
     [
       ["sessionStorage", "http://test1.example.org"],
-      ["ss1", "ss2", "ss3", "ss4"]
+      ["ss1", "ss2", "ss3", "ss4"],
     ],
   ]);
 
   // deleting item
 
-  gWindow.sessionStorage.removeItem("ss3");
+  await removeSessionStorageItem("ss3");
 
-  yield gUI.once("store-objects-updated");
+  await gUI.once("store-objects-edit");
 
-  gWindow.sessionStorage.removeItem("ss1");
+  await removeSessionStorageItem("ss1");
 
-  yield gUI.once("store-objects-updated");
+  await gUI.once("store-objects-edit");
 
-  yield checkState([
+  await checkState([
     [
       ["sessionStorage", "http://test1.example.org"],
-      ["ss2", "ss4"]
+      ["ss2", "ss4"],
     ],
   ]);
 
-  yield selectTableItem("ss2");
+  await selectTableItem("ss2");
 
   ok(!gUI.sidebar.hidden, "sidebar is visible");
 
   // Checking for correct value in sidebar before update
-  yield findVariableViewProperties([{name: "ss2", value: "foobar"}]);
+  await findVariableViewProperties([{name: "ss2", value: "foobar"}]);
 
-  gWindow.sessionStorage.setItem("ss2", "changed=ss2");
+  await setSessionStorageItem("ss2", "changed=ss2");
 
-  yield gUI.once("sidebar-updated");
+  await gUI.once("sidebar-updated");
 
   checkCell("ss2", "value", "changed=ss2");
 
-  yield findVariableViewProperties([{name: "ss2", value: "changed=ss2"}]);
+  await findVariableViewProperties([{name: "ss2", value: "changed=ss2"}]);
 
-  // Clearing items. Bug 1233497 makes it so that we can no longer yield
-  // CPOWs from Tasks. We work around this by calling clear via a ContentTask
-  // instead.
-  yield ContentTask.spawn(gBrowser.selectedBrowser, null, function* () {
-    return Task.spawn(content.wrappedJSObject.clear);
+  // Clearing items.
+  await ContentTask.spawn(gBrowser.selectedBrowser, null, function() {
+    content.wrappedJSObject.clear();
   });
 
-  yield gUI.once("store-objects-cleared");
+  await gUI.once("store-objects-cleared");
 
-  yield checkState([
+  await checkState([
     [
       ["sessionStorage", "http://test1.example.org"],
-      [ ]
+      [ ],
     ],
   ]);
 
-  yield finishTests();
+  await finishTests();
 });
+
+async function setSessionStorageItem(key, value) {
+  await ContentTask.spawn(gBrowser.selectedBrowser, [key, value],
+    ([innerKey, innerValue]) => {
+      content.wrappedJSObject.sessionStorage.setItem(innerKey, innerValue);
+    }
+  );
+}
+
+async function removeSessionStorageItem(key) {
+  await ContentTask.spawn(gBrowser.selectedBrowser, key,
+    innerKey => {
+      content.wrappedJSObject.sessionStorage.removeItem(innerKey);
+    }
+  );
+}

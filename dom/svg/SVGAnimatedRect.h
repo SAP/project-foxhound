@@ -8,45 +8,40 @@
 #define mozilla_dom_SVGAnimatedRect_h
 
 #include "nsCycleCollectionParticipant.h"
+#include "mozilla/dom/SVGElement.h"
 #include "mozilla/dom/SVGRectBinding.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ErrorResult.h"
 #include "nsWrapperCache.h"
-#include "nsSVGElement.h"
-
-class nsSVGViewBox;
 
 namespace mozilla {
+class SVGViewBox;
 namespace dom {
 
-class SVGAnimatedRect final : public nsWrapperCache
-{
-public:
+class SVGAnimatedRect final : public nsWrapperCache {
+ public:
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(SVGAnimatedRect)
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(SVGAnimatedRect)
 
-  SVGAnimatedRect(nsSVGViewBox* aVal, nsSVGElement* aSVGElement);
+  SVGAnimatedRect(SVGViewBox* aVal, SVGElement* aSVGElement);
 
-  nsSVGElement* GetParentObject() const
-  {
-    return mSVGElement;
-  }
+  SVGElement* GetParentObject() const { return mSVGElement; }
 
-  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override;
 
   already_AddRefed<SVGIRect> GetBaseVal();
 
   already_AddRefed<SVGIRect> GetAnimVal();
 
-private:
+ private:
   virtual ~SVGAnimatedRect();
 
-  nsSVGViewBox* mVal; // kept alive because it belongs to content
-  RefPtr<nsSVGElement> mSVGElement;
+  SVGViewBox* mVal;  // kept alive because it belongs to content
+  RefPtr<SVGElement> mSVGElement;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_SVGAnimatedRect_h
-
+#endif  // mozilla_dom_SVGAnimatedRect_h

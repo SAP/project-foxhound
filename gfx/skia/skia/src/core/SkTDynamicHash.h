@@ -241,8 +241,17 @@ private:
     }
 
     void maybeGrow() {
-        if (100 * (fCount + fDeleted + 1) > fCapacity * kGrowPercent) {
-            this->resize(fCapacity > 0 ? fCapacity * 2 : 4);
+        if (100 * (int64_t(fCount + fDeleted) + 1) > int64_t(fCapacity) * kGrowPercent) {
+            auto newCapacity = fCapacity > 0 ? fCapacity : 4;
+
+            // Only grow the storage when most non-empty entries are
+            // in active use.  Otherwise, just purge the tombstones.
+            if (fCount > fDeleted) {
+                SkASSERT_RELEASE(newCapacity <= std::numeric_limits<int>::max() / 2);
+                newCapacity *= 2;
+            }
+            SkASSERT(newCapacity > fCount + 1);
+            this->resize(newCapacity);
         }
     }
 
@@ -253,7 +262,7 @@ private:
 
         fCount = fDeleted = 0;
         fCapacity = newCapacity;
-        fArray = (T**)sk_calloc_throw(sizeof(T*) * fCapacity);
+        fArray = (T**)sk_calloc_throw(fCapacity, sizeof(T*));
 
         for (int i = 0; i < oldCapacity; i++) {
             T* entry = oldArray[i];

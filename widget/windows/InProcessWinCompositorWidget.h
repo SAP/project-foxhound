@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef widget_windows_InProcessCompositorWidgetParent_h
-#define widget_windows_InProcessCompositorWidgetParent_h
+#ifndef widget_windows_InProcessWinCompositorWidget_h
+#define widget_windows_InProcessWinCompositorWidget_h
 
 #include "WinCompositorWidget.h"
 
@@ -17,21 +17,24 @@ namespace widget {
 // the most part it only requires an HWND, however it maintains extra state
 // for transparent windows, as well as for synchronizing WM_SETTEXT messages
 // with the compositor.
-class InProcessWinCompositorWidget final : public WinCompositorWidget
-{
-public:
-  InProcessWinCompositorWidget(const CompositorWidgetInitData& aInitData,
+class InProcessWinCompositorWidget final : public WinCompositorWidget {
+ public:
+  InProcessWinCompositorWidget(const WinCompositorWidgetInitData& aInitData,
                                const layers::CompositorOptions& aOptions,
                                nsWindow* aWindow);
+
+  void OnDestroyWindow() override;
+  void UpdateTransparency(nsTransparencyMode aMode) override;
+  void ClearTransparentWindow() override;
 
   void ObserveVsync(VsyncObserver* aObserver) override;
   nsIWidget* RealWidget() override;
 
-private:
+ private:
   nsWindow* mWindow;
 };
 
-} // namespace widget
-} // namespace mozilla
+}  // namespace widget
+}  // namespace mozilla
 
-#endif // widget_windows_InProcessCompositorWidgetParent_h
+#endif  // widget_windows_InProcessWinCompositorWidget_h

@@ -17,14 +17,14 @@ function run_test() {
   run_next_test();
 }
 
-add_task(function* test_register_timeout() {
+add_task(async function test_register_timeout() {
   let handshakes = 0;
   let timeoutDone;
   let timeoutPromise = new Promise(resolve => timeoutDone = resolve);
   let registers = 0;
 
   let db = PushServiceWebSocket.newPushDB();
-  do_register_cleanup(() => {return db.drop().then(_ => db.close());});
+  registerCleanupFunction(() => {return db.drop().then(_ => db.close());});
 
   PushServiceWebSocket._generateID = () => channelID;
   PushService.init({
@@ -70,18 +70,19 @@ add_task(function* test_register_timeout() {
     }
   });
 
-  yield rejects(
+  await rejects(
     PushService.register({
       scope: 'https://example.net/page/timeout',
       originAttributes: ChromeUtils.originAttributesToSuffix(
         { appId: Ci.nsIScriptSecurityManager.NO_APP_ID, inIsolatedMozBrowser: false }),
     }),
+    /Registration error/,
     'Expected error for request timeout'
   );
 
-  let record = yield db.getByKeyID(channelID);
+  let record = await db.getByKeyID(channelID);
   ok(!record, 'Should not store records for timed-out responses');
 
-  yield timeoutPromise;
+  await timeoutPromise;
   equal(registers, 1, 'Should not handle timed-out register requests');
 });

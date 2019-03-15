@@ -3,54 +3,30 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsHtml5AtomTable.h"
-#include "nsHtml5Atom.h"
 #include "nsThreadUtils.h"
 
-nsHtml5AtomEntry::nsHtml5AtomEntry(KeyTypePointer aStr)
-  : nsStringHashKey(aStr)
-  , mAtom(new nsHtml5Atom(*aStr))
-{
-}
-
-nsHtml5AtomEntry::nsHtml5AtomEntry(const nsHtml5AtomEntry& aOther)
-  : nsStringHashKey(aOther)
-  , mAtom(nullptr)
-{
-  NS_NOTREACHED("nsHtml5AtomTable is broken and tried to copy an entry");
-}
-
-nsHtml5AtomEntry::~nsHtml5AtomEntry()
-{
-}
-
-nsHtml5AtomTable::nsHtml5AtomTable()
-{
+nsHtml5AtomTable::nsHtml5AtomTable() : mRecentlyUsedParserAtoms{} {
 #ifdef DEBUG
-  NS_GetMainThread(getter_AddRefs(mPermittedLookupThread));
+  mPermittedLookupEventTarget = mozilla::GetCurrentThreadSerialEventTarget();
 #endif
 }
 
-nsHtml5AtomTable::~nsHtml5AtomTable()
-{
-}
+nsHtml5AtomTable::~nsHtml5AtomTable() {}
 
-nsIAtom*
-nsHtml5AtomTable::GetAtom(const nsAString& aKey)
-{
+nsAtom* nsHtml5AtomTable::GetAtom(const nsAString& aKey) {
 #ifdef DEBUG
-  {
-    nsCOMPtr<nsIThread> currentThread;
-    NS_GetCurrentThread(getter_AddRefs(currentThread));
-    NS_ASSERTION(mPermittedLookupThread == currentThread, "Wrong thread!");
-  }
+  MOZ_ASSERT(mPermittedLookupEventTarget->IsOnCurrentThread());
 #endif
-  nsIAtom* atom = NS_GetStaticAtom(aKey);
-  if (atom) {
-    return atom;
+
+  uint32_t index = mozilla::HashString(aKey) % RECENTLY_USED_PARSER_ATOMS_SIZE;
+  if (nsAtom* atom = mRecentlyUsedParserAtoms[index]) {
+    if (atom->Equals(aKey)) {
+      return atom;
+    }
   }
-  nsHtml5AtomEntry* entry = mTable.PutEntry(aKey);
-  if (!entry) {
-    return nullptr;
-  }
-  return entry->GetAtom();
+
+  RefPtr<nsAtom> atom = NS_Atomize(aKey);
+  nsAtom* ret = atom.get();
+  mRecentlyUsedParserAtoms[index] = atom.forget();
+  return ret;
 }

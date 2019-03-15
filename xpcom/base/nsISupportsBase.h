@@ -9,13 +9,12 @@
 #define nsISupportsBase_h__
 
 #ifndef nscore_h___
-#include "nscore.h"
+#  include "nscore.h"
 #endif
 
 #ifndef nsID_h__
-#include "nsID.h"
+#  include "nsID.h"
 #endif
-
 
 /*@{*/
 /**
@@ -25,9 +24,12 @@
  * To maintain binary compatibility with COM's IUnknown, we define the IID
  * of nsISupports to be the same as that of COM's IUnknown.
  */
-#define NS_ISUPPORTS_IID                                                      \
-  { 0x00000000, 0x0000, 0x0000,                                               \
-    {0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46} }
+#define NS_ISUPPORTS_IID                             \
+  {                                                  \
+    0x00000000, 0x0000, 0x0000, {                    \
+      0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46 \
+    }                                                \
+  }
 
 /**
  * Basic component object model interface. Objects which implement
@@ -35,10 +37,8 @@
  * and a reference counted memory model (AddRef/Release). This is
  * modelled after the win32 IUnknown API.
  */
-class NS_NO_VTABLE nsISupports
-{
-public:
-
+class NS_NO_VTABLE nsISupports {
+ public:
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_ISUPPORTS_IID)
 
   /**

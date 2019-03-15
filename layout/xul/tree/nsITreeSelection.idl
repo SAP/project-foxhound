@@ -3,10 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-interface nsITreeBoxObject;
-interface nsITreeColumn;
-
 #include "nsISupports.idl"
+
+webidl XULTreeElement;
 
 [scriptable, uuid(ab6fe746-300b-4ab4-abb9-1c0e3977874c)]
 interface nsITreeSelection : nsISupports
@@ -14,7 +13,7 @@ interface nsITreeSelection : nsISupports
   /**
    * The tree widget for this selection.
    */
-  attribute nsITreeBoxObject tree;
+  attribute XULTreeElement tree;
 
   /**
    * This attribute is a boolean indicating single selection.
@@ -33,7 +32,7 @@ interface nsITreeSelection : nsISupports
   boolean isSelected(in long index);
 
   /**
-   * Deselect all rows and select the row at the specified index. 
+   * Deselect all rows and select the row at the specified index.
    */
   void select(in long index);
 
@@ -94,7 +93,7 @@ interface nsITreeSelection : nsISupports
    * This attribute is a boolean indicating whether or not the
    * "select" event should fire when the selection is changed using
    * one of our methods.  A view can use this to temporarily suppress
-   * the selection while manipulating all of the indices, e.g., on 
+   * the selection while manipulating all of the indices, e.g., on
    * a sort.
    * Note: setting this attribute to false will fire a select event.
    */
@@ -105,11 +104,6 @@ interface nsITreeSelection : nsISupports
    * selected).
    */
   attribute long currentIndex;
-
-  /**
-   * The current column.
-   */
-  attribute nsITreeColumn currentColumn;
 
   /**
    * The selection "pivot".  This is the first item the user selected as

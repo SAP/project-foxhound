@@ -13,25 +13,18 @@
 #include "nsClassHashtable.h"
 #include "nsHashKeys.h"
 
-class nsErrorService final : public nsIErrorService
-{
-public:
+class nsErrorService final : public nsIErrorService {
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIERRORSERVICE
 
-  nsErrorService()
-  {
-  }
+  static already_AddRefed<nsIErrorService> GetOrCreate();
 
-  static nsresult
-  Create(nsISupports* aOuter, const nsIID& aIID, void** aInstancePtr);
-
-private:
-  ~nsErrorService()
-  {
-  }
+ private:
+  nsErrorService() = default;
+  ~nsErrorService() = default;
 
   nsClassHashtable<nsUint32HashKey, nsCString> mErrorStringBundleURLMap;
 };
 
-#endif // nsErrorService_h__
+#endif  // nsErrorService_h__

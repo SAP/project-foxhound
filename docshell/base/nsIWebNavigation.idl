@@ -5,11 +5,23 @@
 
 #include "nsISupports.idl"
 
-interface nsIDOMDocument;
 interface nsIInputStream;
 interface nsISHistory;
 interface nsIURI;
 interface nsIPrincipal;
+interface nsIChildSHistory;
+webidl Document;
+
+%{ C++
+#include "mozilla/dom/ChildSHistory.h"
+namespace mozilla {
+namespace dom {
+struct LoadURIOptions;
+} // namespace dom
+} // namespace mozilla
+%}
+
+[ref] native LoadURIOptionsRef(const mozilla::dom::LoadURIOptions);
 
 /**
  * The nsIWebNavigation interface defines an interface for navigating the web.
@@ -182,11 +194,8 @@ interface nsIWebNavigation : nsISupports
 
   /**
    * Prevent the owner principal from being inherited for this load.
-   * Note: Within Gecko we use the term principal rather than owners
-   *       but some legacy addons might still rely on the outdated term.
    */
   const unsigned long LOAD_FLAGS_DISALLOW_INHERIT_PRINCIPAL = 0x40000;
-  const unsigned long LOAD_FLAGS_DISALLOW_INHERIT_OWNER     = 0x40000;
 
   /**
    * Overwrite the returned error code with a specific result code
@@ -207,41 +216,15 @@ interface nsIWebNavigation : nsISupports
   const unsigned long LOAD_FLAGS_FIXUP_SCHEME_TYPOS = 0x200000;
 
   /**
-   * Loads a given URI.  This will give priority to loading the requested URI
-   * in the object implementing	this interface.  If it can't be loaded here
-   * however, the URI dispatcher will go through its normal process of content
-   * loading.
-   *
-   * @param aURI
-   *        The URI string to load.  For HTTP and FTP URLs and possibly others,
-   *        characters above U+007F will be converted to UTF-8 and then URL-
-   *        escaped per the rules of RFC 2396.
-   * @param aLoadFlags
-   *        Flags modifying load behaviour.  This parameter is a bitwise
-   *        combination of the load flags defined above.  (Undefined bits are
-   *        reserved for future use.)  Generally you will pass LOAD_FLAGS_NONE
-   *        for this parameter.
-   * @param aReferrer
-   *        The referring URI.  If this argument is null, then the referring
-   *        URI will be inferred internally.
-   * @param aPostData
-   *        If the URI corresponds to a HTTP request, then this stream is
-   *        appended directly to the HTTP request headers.  It may be prefixed
-   *        with additional HTTP headers.  This stream must contain a "\r\n"
-   *        sequence separating any HTTP headers from the HTTP request body.
-   *        This parameter is optional and may be null.
-   * @param aHeaders
-   *        If the URI corresponds to a HTTP request, then any HTTP headers
-   *        contained in this stream are set on the HTTP request.  The HTTP
-   *        header stream is formatted as:
-   *            ( HEADER "\r\n" )*
-   *        This parameter is optional and may be null.
+   * Allows a top-level data: navigation to occur. E.g. view-image
+   * is an explicit user action which should be allowed.
    */
-  void loadURI(in wstring        aURI,
-               in unsigned long  aLoadFlags,
-               in nsIURI         aReferrer,
-               in nsIInputStream aPostData,
-               in nsIInputStream aHeaders);
+  const unsigned long LOAD_FLAGS_FORCE_ALLOW_DATA_URI = 0x400000;
+
+  /**
+   * This load is the result of an HTTP redirect.
+   */
+  const unsigned long LOAD_FLAGS_IS_REDIRECT = 0x800000;
 
   /**
    * Loads a given URI.  This will give priority to loading the requested URI
@@ -249,54 +232,24 @@ interface nsIWebNavigation : nsISupports
    * however, the URI dispatcher will go through its normal process of content
    * loading.
    *
-   * Behaves like loadURI, but allows passing of additional parameters.
-   *
    * @param aURI
    *        The URI string to load.  For HTTP and FTP URLs and possibly others,
    *        characters above U+007F will be converted to UTF-8 and then URL-
    *        escaped per the rules of RFC 2396.
-   * @param aLoadFlags
-   *        Flags modifying load behaviour.  This parameter is a bitwise
-   *        combination of the load flags defined above.  (Undefined bits are
-   *        reserved for future use.)  Generally you will pass LOAD_FLAGS_NONE
-   *        for this parameter.
-   * @param aReferrer
-   *        The referring URI.  If this argument is null, then the referring
-   *        URI will be inferred internally.
-   * @param aReferrerPolicy
-   *        One of the REFERRER_POLICY_* constants from nsIHttpChannel.
-   *        Normal case is REFERRER_POLICY_NO_REFERRER_WHEN_DOWNGRADE.
-   * @param aPostData
-   *        If the URI corresponds to a HTTP request, then this stream is
-   *        appended directly to the HTTP request headers.  It may be prefixed
-   *        with additional HTTP headers.  This stream must contain a "\r\n"
-   *        sequence separating any HTTP headers from the HTTP request body.
-   *        This parameter is optional and may be null.
-   * @param aHeaders
-   *        If the URI corresponds to a HTTP request, then any HTTP headers
-   *        contained in this stream are set on the HTTP request.  The HTTP
-   *        header stream is formatted as:
-   *            ( HEADER "\r\n" )*
-   *        This parameter is optional and may be null.
-   * @param aBaseURI
-   *        Set to indicate a base URI to be associated with the load. Note
-   *        that at present this argument is only used with view-source aURIs
-   *        and cannot be used to resolve aURI.
-   *        This parameter is optional and may be null.
-   * @param aTriggeringPrincipal
-   *        The principal that initiated the load of aURI. If omitted docShell
-   *        tries to create a codeBasePrincipal from aReferrer if not null. If
-   *        aReferrer is also null docShell peforms a load using the
-   *        SystemPrincipal as the triggeringPrincipal.
+   * @param aLoadURIOptions
+   *        A JSObject defined in LoadURIOptions.webidl holding info like e.g.
+   *        the triggeringPrincipal, the referrer URI, the referrer policy.
    */
-  void loadURIWithOptions(in wstring                  aURI,
-                          in unsigned long            aLoadFlags,
-                          in nsIURI                   aReferrer,
-                          in unsigned long            aReferrerPolicy,
-                          in nsIInputStream           aPostData,
-                          in nsIInputStream           aHeaders,
-                          in nsIURI                   aBaseURI,
-                          [optional] in nsIPrincipal  aTriggeringPrincipal);
+  [implicit_jscontext, binaryname(LoadURIFromScript)]
+  void loadURI(in AString aURI,
+               in jsval   aLoadURIOptions);
+
+  /**
+   * A C++ friendly version of loadURI
+   */
+  [nostdcall, binaryname(LoadURI)]
+  void binaryLoadURI(in AString           aURI,
+                     in LoadURIOptionsRef aLoadURIOptions);
 
   /**
    * Tells the Object to reload the current page.  There may be cases where the
@@ -349,7 +302,7 @@ interface nsIWebNavigation : nsISupports
    * blank document if there is none.  This attribute never returns null except
    * for unexpected error situations.
    */
-  readonly attribute nsIDOMDocument document;
+  readonly attribute Document document;
 
   /**
    * The currently loaded URI or null.
@@ -362,13 +315,38 @@ interface nsIWebNavigation : nsISupports
   readonly attribute nsIURI referringURI;
 
   /**
-   * The session history object used by this web navigation instance.
+   * The session history object used by this web navigation instance. This
+   * object will be a mozilla::dom::ChildSHistory object, but is returned as
+   * nsISupports so it can be called from JS code.
    */
-  attribute nsISHistory sessionHistory;
+  [binaryname(SessionHistoryXPCOM)]
+  readonly attribute nsISupports sessionHistory;
+
+  %{ C++
+  /**
+   * Get the session history object used by this nsIWebNavigation instance.
+   * Use this method instead of the XPCOM method when getting the
+   * SessionHistory from C++ code.
+   */
+  already_AddRefed<mozilla::dom::ChildSHistory>
+  GetSessionHistory()
+  {
+    nsCOMPtr<nsISupports> history;
+    GetSessionHistoryXPCOM(getter_AddRefs(history));
+    return history.forget()
+      .downcast<mozilla::dom::ChildSHistory>();
+  }
+  %}
 
   /**
    * Set an OriginAttributes dictionary in the docShell. This can be done only
    * before loading any content.
    */
+  [implicit_jscontext]
   void setOriginAttributesBeforeLoading(in jsval originAttributes);
+
+  /**
+   * Resume a load which has been redirected from another process.
+   */
+  void resumeRedirectedLoad(in unsigned long long aLoadIdentifier);
 };

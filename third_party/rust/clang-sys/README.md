@@ -27,6 +27,14 @@ To target a version of `libclang`, enable one of the following Cargo features:
   ([Documentation](https://kylemayes.github.io/clang-sys/3_8/clang_sys))
 * `clang_3_9` - requires `libclang` 3.9 or later
   ([Documentation](https://kylemayes.github.io/clang-sys/3_9/clang_sys))
+* `clang_4_0` - requires `libclang` 4.0 or later
+  ([Documentation](https://kylemayes.github.io/clang-sys/4_0/clang_sys))
+* `clang_5_0` - requires `libclang` 5.0 or later
+  ([Documentation](https://kylemayes.github.io/clang-sys/5_0/clang_sys))
+* `clang_6_0` - requires `libclang` 6.0 or later
+  ([Documentation](https://kylemayes.github.io/clang-sys/6_0/clang_sys))
+* `clang_7_0` - requires `libclang` 7.0 or later
+  ([Documentation](https://kylemayes.github.io/clang-sys/7_0/clang_sys))
 
 If you do not enable one of these features, the API provided by `libclang` 3.5 will be available by
 default.
@@ -43,34 +51,52 @@ the `runtime` Cargo feature.
 These libraries can be either be installed as a part of Clang or downloaded
 [here](http://llvm.org/releases/download.html).
 
-**Note:** Installing `libclang` through a package manager might install the `libclang` shared
-library as something like `libclang.so.1` instead of `libclang.so`. In this case, you need to make a
-symbolic link from the versioned shared library to `libclang.so`.
-
 **Note:** The downloads for LLVM and Clang 3.8 and later do not include the `libclang.a` static
 library. This means you cannot link to any of these versions of `libclang` statically unless you
 build it from source.
+
+### Versioned Dependencies
+
+This crate supports finding versioned instances of `libclang.so` (e.g.,`libclang-3.9.so`).
+In the case where there are multiple instances to choose from, this crate will prefer instances with
+higher versions. For example, the following instances of `libclang.so` are listed in descending
+order of preference:
+
+1. `libclang-4.0.so`
+2. `libclang-4.so`
+3. `libclang-3.9.so`
+4. `libclang-3.so`
+5. `libclang.so`
+
+**Note:** On BSD distributions, versioned instances of `libclang.so` matching the pattern
+`libclang.so.*` (e.g., `libclang.so.7.0`) are also included.
+
+**Note:** On Linux distributions when the `runtime` features is enabled, versioned instances of
+`libclang.so` matching the pattern `libclang.so.*` (e.g., `libclang.so.1`) are also included.
 
 ## Environment Variables
 
 The following environment variables, if set, are used by this crate to find the required libraries
 and executables:
 
-* `LLVM_CONFIG_PATH` **(compile time)** - provides a path to an `llvm-config` executable
-* `LIBCLANG_PATH` **(compile time)** - provides a path to a directory containing a `libclang` shared
+* `LLVM_CONFIG_PATH` **(compiletime)** - provides a path to an `llvm-config` executable
+* `LIBCLANG_PATH` **(compiletime)** - provides a path to a directory containing a `libclang` shared
   library
-* `LIBCLANG_STATIC_PATH` **(compile time)** - provides a path to a directory containing LLVM and
+* `LIBCLANG_STATIC_PATH` **(compiletime)** - provides a path to a directory containing LLVM and
   Clang static libraries
-* `CLANG_PATH` **(run time)** - provides a path to a `clang` executable
+* `CLANG_PATH` **(runtime)** - provides a path to a `clang` executable
 
 ## Linking
 
 ### Dynamic
 
-First, the `libclang` shared library will be searched for in the directory provided by the
-`LIBCLANG_PATH` environment variable if it was set. If this fails, the directory returned by
-`llvm-config --libdir` will be searched. If neither of these approaches is successful, a list of
-likely directories will be searched (e.g., `/usr/local/lib` on Linux).
+`libclang` shared libraries will be searched for in the following directories:
+
+* the directory provided by the `LIBCLANG_PATH` environment variable
+* the `bin` and `lib` directories in the directory provided by `llvm-config --libdir`
+* the directories provided by `LD_LIBRARY_PATH` environment variable
+* a list of likely directories for the target platform (e.g., `/usr/local/lib` on Linux)
+* **macOS only:** the toolchain directory in the directory provided by `xcode-select --print-path`
 
 On Linux, running an executable that has been dynamically linked to `libclang` may require you to
 add a path to `libclang.so` to the `LD_LIBRARY_PATH` environment variable. The same is true on OS
@@ -84,8 +110,8 @@ On Windows, running an executable that has been dynamically linked to `libclang`
 
 The availability of `llvm-config` is not optional for static linking. Ensure that an instance of
 this executable can be found on your system's path or set the `LLVM_CONFIG_PATH` environment
-variable. The required LLVM and Clang static libraries will be searched for in the same way as the
-shared library is searched for, except the `LIBCLANG_STATIC_PATH` environment variable is used in
+variable. The required LLVM and Clang static libraries will be searched for in the same way as
+shared libraries are searched for, except the `LIBCLANG_STATIC_PATH` environment variable is used in
 place of the `LIBCLANG_PATH` environment variable.
 
 ### Runtime

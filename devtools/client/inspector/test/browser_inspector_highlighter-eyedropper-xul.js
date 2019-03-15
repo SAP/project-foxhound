@@ -10,32 +10,34 @@ const TEST_URL = URL_ROOT + "doc_inspector_highlighter_xbl.xul";
 const TEST_URL_2 =
   "data:text/html;charset=utf-8,<h1 style='color:red'>HTML test page</h1>";
 
-add_task(function* () {
-  let {inspector} = yield openInspectorForURL(TEST_URL);
+add_task(async function() {
+  const {inspector} = await openInspectorForURL(TEST_URL);
 
   info("Check the inspector toolbar");
   let button = inspector.panelDoc.querySelector("#inspector-eyedropper-toggle");
   ok(isDisabled(button), "The button is hidden in the toolbar");
 
   info("Check the color picker");
-  yield selectNode("#scale", inspector);
+  await selectNode("#tree", inspector);
 
   // Find the color swatch in the rule-view.
-  let ruleView = inspector.ruleview.view;
+  let ruleView = inspector.getPanel("ruleview").view;
   let ruleViewDocument = ruleView.styleDocument;
   let swatchEl = ruleViewDocument.querySelector(".ruleview-colorswatch");
 
   info("Open the color picker");
-  let cPicker = ruleView.tooltips.colorPicker;
+  let cPicker = ruleView.tooltips.getTooltip("colorPicker");
   let onColorPickerReady = cPicker.once("ready");
   swatchEl.click();
-  yield onColorPickerReady;
+  await onColorPickerReady;
 
-  button = cPicker.tooltip.doc.querySelector("#eyedropper-button");
+  button = cPicker.tooltip.container.querySelector("#eyedropper-button");
   ok(isDisabled(button), "The button is disabled in the color picker");
 
   info("Navigate to a HTML document");
-  yield navigateTo(inspector, TEST_URL_2);
+  const toolbarUpdated = inspector.once("inspector-toolbar-updated");
+  await navigateTo(inspector, TEST_URL_2);
+  await toolbarUpdated;
 
   info("Check the inspector toolbar in HTML document");
   button = inspector.panelDoc.querySelector("#inspector-eyedropper-toggle");
@@ -43,19 +45,19 @@ add_task(function* () {
 
   info("Check the color picker in HTML document");
   // Find the color swatch in the rule-view.
-  yield selectNode("h1", inspector);
+  await selectNode("h1", inspector);
 
-  ruleView = inspector.ruleview.view;
+  ruleView = inspector.getPanel("ruleview").view;
   ruleViewDocument = ruleView.styleDocument;
   swatchEl = ruleViewDocument.querySelector(".ruleview-colorswatch");
 
   info("Open the color picker in HTML document");
-  cPicker = ruleView.tooltips.colorPicker;
+  cPicker = ruleView.tooltips.getTooltip("colorPicker");
   onColorPickerReady = cPicker.once("ready");
   swatchEl.click();
-  yield onColorPickerReady;
+  await onColorPickerReady;
 
-  button = cPicker.tooltip.doc.querySelector("#eyedropper-button");
+  button = cPicker.tooltip.container.querySelector("#eyedropper-button");
   ok(!isDisabled(button), "The button is enabled in the color picker");
 });
 

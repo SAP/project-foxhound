@@ -26,10 +26,6 @@
 
   "use strict";
 
-  const Cc = Components.classes;
-  const Ci = Components.interfaces;
-  const Cr = Components.results;
-
   const NONHEAP = Ci.nsIMemoryReporter.KIND_NONHEAP;
   const HEAP    = Ci.nsIMemoryReporter.KIND_HEAP;
   const OTHER   = Ci.nsIMemoryReporter.KIND_OTHER;
@@ -73,7 +69,11 @@
     shortStrings.push(str);
   }
 
-  let mySandbox = Components.utils.Sandbox(document.nodePrincipal,
+  // Strings in the nursery are not reported, so make sure the above test
+  // strings are tenured.
+  Cu.forceGC();
+
+  let mySandbox = Cu.Sandbox(document.nodePrincipal,
                     { sandboxName: "this-is-a-sandbox-name" });
 
   function handleReportNormal(aProcess, aPath, aKind, aUnits, aAmount,
@@ -93,18 +93,16 @@
       storageSqliteAmounts.push(aAmount);
 
     // Check the presence of some other notable reporters.
-    } else if (aPath.search(/^explicit\/js-non-window\/.*compartment\(/) >= 0) {
-      present.jsNonWindowCompartments = true;
-    } else if (aPath.search(/^explicit\/window-objects\/top\(.*\/js-compartment\(/) >= 0) {
-      present.windowObjectsJsCompartments = true;
+    } else if (aPath.search(/^explicit\/js-non-window\/.*realm\(/) >= 0) {
+      present.jsNonWindowRealms = true;
+    } else if (aPath.search(/^explicit\/window-objects\/top\(.*\/js-realm\(/) >= 0) {
+      present.windowObjectsJsRealms = true;
     } else if (aPath.search(/^explicit\/storage\/sqlite\/places.sqlite/) >= 0) {
       present.places = true;
     } else if (aPath.search(/^explicit\/images/) >= 0) {
       present.images = true;
-    } else if (aPath.search(/^explicit\/xpti-working-set$/) >= 0) {
-      present.xptiWorkingSet = true;
-    } else if (aPath.search(/^explicit\/atom-tables\/main$/) >= 0) {
-      present.atomTablesMain = true;
+    } else if (aPath.search(/^explicit\/atoms\/dynamic-objects-and-chars$/) >= 0) {
+      present.dynamicObjectsAndChars = true;
     } else if (/\[System Principal\].*this-is-a-sandbox-name/.test(aPath)) {
       // A system compartment with a location (such as a sandbox) should
       // show that location.
@@ -142,6 +140,11 @@
 
   let mgr = Cc["@mozilla.org/memory-reporter-manager;1"].
             getService(Ci.nsIMemoryReporterManager);
+  let socketProcessRunning = 0;
+  if (SpecialPowers.getBoolPref("network.process.enabled")) {
+    socketProcessRunning = 1;
+  }
+
 
   let amounts = [
     "vsize",
@@ -154,11 +157,12 @@
     "heapOverheadFraction",
     "JSMainRuntimeGCHeap",
     "JSMainRuntimeTemporaryPeak",
-    "JSMainRuntimeCompartmentsSystem",
-    "JSMainRuntimeCompartmentsUser",
+    "JSMainRuntimeRealmsSystem",
+    "JSMainRuntimeRealmsUser",
     "imagesContentUsedUncompressed",
     "storageSQLite",
     "lowMemoryEventsVirtual",
+    "lowMemoryEventsCommitSpace",
     "lowMemoryEventsPhysical",
     "ghostWindows",
     "pageFaultsHard",
@@ -228,7 +232,8 @@
 
   function checkSpecialReport(aName, aAmounts, aCanBeUnreasonable)
   {
-    ok(aAmounts.length == 1, aName + " has " + aAmounts.length + " report");
+    ok(aAmounts.length == (1 + socketProcessRunning),
+       aName + " has " + aAmounts.length + " report");
     let n = aAmounts[0];
     if (!aCanBeUnreasonable) {
       checkSizeReasonable(aName, n);
@@ -256,12 +261,11 @@
     checkSizeReasonable("js-main-runtime-gc-heap-committed/used/gc-things",
                         jsGcHeapUsedGcThingsTotal);
 
-    ok(present.jsNonWindowCompartments,     "js-non-window compartments are present");
-    ok(present.windowObjectsJsCompartments, "window-objects/.../js compartments are present");
+    ok(present.jsNonWindowRealms,           "js-non-window realms are present");
+    ok(present.windowObjectsJsRealms,       "window-objects/.../js realms are present");
     ok(present.places,                      "places is present");
     ok(present.images,                      "images is present");
-    ok(present.xptiWorkingSet,              "xpti-working-set is present");
-    ok(present.atomTablesMain,              "atom-tables/main is present");
+    ok(present.dynamicObjectsAndChars,      "dynamic-objects-and-chars is present");
     ok(present.sandboxLocation,             "sandbox locations are present");
     ok(present.bigString,                   "large string is present");
     ok(present.smallString1,                "small string 1 is present");
@@ -340,7 +344,7 @@
         }
       }
     },
-    // nsIMemoryReporterCallback
+    // nsIHandleReportCallback
     callback: function(process, path, kind, units, amount, data) {
       if (path in this.tests) {
         this.seen++;
@@ -409,7 +413,7 @@
       ok(false, "Shouldn't be allowed to register a JS component (WrappedJS)");
     }
     catch (ex) {
-      ok(ex.message.indexOf("NS_ERROR_") >= 0,
+      ok(ex.message.includes("NS_ERROR_"),
          "WrappedJS reporter got rejected: " + ex);
     }
 

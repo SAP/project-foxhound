@@ -84,8 +84,8 @@ var PROFILER_DATA = (function () {
   return data;
 })();
 
-var test = Task.async(function* () {
-  let { target, panel, toolbox } = yield initPerformance(SIMPLE_URL);
+var test = async function () {
+  let { target, panel, toolbox } = await initPerformance(SIMPLE_URL);
   let { $, EVENTS, PerformanceController, DetailsView, JsCallTreeView } = panel.panelWin;
 
   let profilerData = {
@@ -98,23 +98,23 @@ var test = Task.async(function* () {
 
   let file = FileUtils.getFile("TmpD", ["tmpprofile.json"]);
   file.createUnique(Ci.nsIFile.NORMAL_FILE_TYPE, parseInt("666", 8));
-  yield asyncCopy(profilerData, file);
+  await asyncCopy(profilerData, file);
 
   // Import recording.
 
   let calltreeRendered = once(JsCallTreeView, EVENTS.UI_JS_CALL_TREE_RENDERED);
   let imported = once(PerformanceController, EVENTS.RECORDING_IMPORTED);
-  yield PerformanceController.importRecording("", file);
+  await PerformanceController.importRecording("", file);
 
-  yield imported;
+  await imported;
   ok(true, "The profiler data appears to have been successfully imported.");
 
-  yield calltreeRendered;
+  await calltreeRendered;
   ok(true, "The imported data was re-rendered.");
 
-  yield teardown(panel);
+  await teardown(panel);
   finish();
-});
+};
 
 function getUnicodeConverter() {
   let className = "@mozilla.org/intl/scriptableunicodeconverter";
@@ -124,19 +124,17 @@ function getUnicodeConverter() {
 }
 
 function asyncCopy(data, file) {
-  let deferred = Promise.defer();
-
   let string = JSON.stringify(data);
   let inputStream = getUnicodeConverter().convertToInputStream(string);
   let outputStream = FileUtils.openSafeFileOutputStream(file);
 
-  NetUtil.asyncCopy(inputStream, outputStream, status => {
-    if (!Components.isSuccessCode(status)) {
-      deferred.reject(new Error("Could not save data to file."));
-    }
-    deferred.resolve();
+  return new Promise((resolve, reject) => {
+    NetUtil.asyncCopy(inputStream, outputStream, status => {
+      if (!Components.isSuccessCode(status)) {
+        reject(new Error("Could not save data to file."));
+      }
+      resolve();
+    });
   });
-
-  return deferred.promise;
 }
 /* eslint-enable */

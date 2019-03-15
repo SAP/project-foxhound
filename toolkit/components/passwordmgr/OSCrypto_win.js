@@ -4,12 +4,10 @@
 
 "use strict";
 
-var { classes: Cc, interfaces: Ci, results: Cr, utils: Cu } = Components;
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "ctypes", "resource://gre/modules/ctypes.jsm");
+ChromeUtils.defineModuleGetter(this, "ctypes", "resource://gre/modules/ctypes.jsm");
 
 const FLAGS_NOT_SET = 0;
 
@@ -31,7 +29,7 @@ function OSCrypto() {
   this._structs.DATA_BLOB = new ctypes.StructType("DATA_BLOB",
                                                   [
                                                     {cbData: wintypes.DWORD},
-                                                    {pbData: wintypes.PVOID}
+                                                    {pbData: wintypes.PVOID},
                                                   ]);
 
   try {
@@ -113,14 +111,17 @@ OSCrypto.prototype = {
 
     // the data needs to be encoded in null terminated UTF-16
     data += "\0";
-    let converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"].
-                    createInstance(Ci.nsIScriptableUnicodeConverter);
-    converter.charset = "UTF-16";
-    // result is an out parameter,
-    // result.value will contain the array length
-    let result = {};
+
     // dataArray is an array of bytes
-    let dataArray = converter.convertToByteArray(data, result);
+    let dataArray = new Array(data.length * 2);
+    for (let i = 0; i < data.length; i++) {
+      let c = data.charCodeAt(i);
+      let lo = c & 0xFF;
+      let hi = (c & 0xFF00) >> 8;
+      dataArray[i * 2] = lo;
+      dataArray[i * 2 + 1] = hi;
+    }
+
     // calculation of SHA1 hash value
     let cryptoHash = Cc["@mozilla.org/security/hash;1"].
                      createInstance(Ci.nsICryptoHash);
@@ -166,9 +167,9 @@ OSCrypto.prototype = {
     }
 
     let status = this._functions.get("CryptUnprotectData")(inData.address(), null,
-                                     entropyParam,
-                                     null, null, FLAGS_NOT_SET,
-                                     outData.address());
+                                                           entropyParam,
+                                                           null, null, FLAGS_NOT_SET,
+                                                           outData.address());
     if (status === 0) {
       throw new Error("decryptData failed: " + status);
     }
@@ -183,7 +184,7 @@ OSCrypto.prototype = {
 
     this._functions.get("LocalFree")(outData.pbData);
     return decryptedData;
- },
+  },
 
   /**
    * Encrypt a string using the windows CryptProtectData API.

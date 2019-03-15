@@ -17,6 +17,21 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=475214
 <pre id="test">
 <script type="application/javascript">
 
+/* Helper copied from property_database.js */
+function IsCSSPropertyPrefEnabled(prefName)
+{
+  try {
+    if (SpecialPowers.getBoolPref(prefName)) {
+      return true;
+    }
+  } catch (ex) {
+    ok(false, "Failed to look up property-controlling pref '" +
+       prefName + "' (" + ex + ")");
+  }
+
+  return false;
+}
+
 /** Test for Bug 475214 **/
 
 var e = document.getElementById("content");
@@ -42,15 +57,27 @@ e.setAttribute("style", "font: menu; font-weight: -moz-use-system-font");
 is(e.style.cssText, "font: menu;", "serialize system font alone");
 is(e.style.font, "menu", "font getter returns value");
 
-e.setAttribute("style", "font: menu; font-weight: -moz-use-system-font !important");
-is(e.style.cssText, "font: menu; font-weight: -moz-use-system-font !important;", "serialize system font and subproperty that is important");
-is(e.style.font, "", "font getter returns nothing");
-
 e.setAttribute("style", "font: inherit; font-family: Helvetica;");
-
-var cssTextStr = "font-style: inherit; font-weight: inherit; font-size: inherit; line-height: inherit; font-size-adjust: inherit; font-stretch: inherit; font-feature-settings: inherit; font-language-override: inherit; font-kerning: inherit; font-synthesis: inherit; font-variant: inherit;";
-
-is(e.style.cssText, cssTextStr + " font-family: Helvetica;", "don't serialize system font for font:inherit");
+EXPECTED_DECLS = [
+  "font-family: Helvetica;",
+  "font-feature-settings: inherit;",
+  "font-kerning: inherit;",
+  "font-language-override: inherit;",
+  "font-size-adjust: inherit;",
+  "font-size: inherit;",
+  "font-stretch: inherit;",
+  "font-style: inherit;",
+  "font-variant: inherit;",
+  "font-weight: inherit;",
+  "line-height: inherit;",
+];
+if (IsCSSPropertyPrefEnabled("layout.css.font-variations.enabled")) {
+  EXPECTED_DECLS.push("font-optical-sizing: inherit;");
+  EXPECTED_DECLS.push("font-variation-settings: inherit;");
+}
+EXPECTED_DECLS = EXPECTED_DECLS.sort().join(" ");
+let sortedDecls = e.style.cssText.split(/ (?=font-|line-)/).sort().join(" ");
+is(sortedDecls, EXPECTED_DECLS, "don't serialize system font for font:inherit");
 is(e.style.font, "", "font getter returns nothing");
 
 </script>

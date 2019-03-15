@@ -9,17 +9,31 @@
 #define GrGLSLUniformHandler_DEFINED
 
 #include "GrGLSLProgramDataManager.h"
-#include "GrGLSLShaderVar.h"
+#include "GrShaderVar.h"
+#include "GrSwizzle.h"
+
+// variable names beginning with this prefix will not be mangled
+#define GR_NO_MANGLE_PREFIX "sk_"
 
 class GrGLSLProgramBuilder;
-class GrGLSLSampler;
+
+// Handles for program uniforms (other than per-effect uniforms)
+struct GrGLSLBuiltinUniformHandles {
+    GrGLSLProgramDataManager::UniformHandle fRTAdjustmentUni;
+    // Render target width, used to implement sk_Width
+    GrGLSLProgramDataManager::UniformHandle fRTWidthUni;
+    // Render target height, used to implement sk_Height and to calculate sk_FragCoord when
+    // origin_upper_left is not supported.
+    GrGLSLProgramDataManager::UniformHandle fRTHeightUni;
+};
 
 class GrGLSLUniformHandler {
 public:
     virtual ~GrGLSLUniformHandler() {}
 
-    typedef GrGLSLProgramDataManager::UniformHandle UniformHandle;
-    typedef GrGLSLProgramDataManager::UniformHandle SamplerHandle;
+    using UniformHandle = GrGLSLProgramDataManager::UniformHandle;
+
+    GR_DEFINE_RESOURCE_HANDLE_CLASS(SamplerHandle);
 
     /** Add a uniform variable to the current program, that has visibility in one or more shaders.
         visibility is a bitfield of GrShaderFlag values indicating from which shaders the uniform
@@ -36,6 +50,13 @@ public:
         return this->addUniformArray(visibility, type, precision, name, 0, outName);
     }
 
+    UniformHandle addUniform(uint32_t visibility,
+                             GrSLType type,
+                             const char* name,
+                             const char** outName = nullptr) {
+        return this->addUniform(visibility, type, kDefault_GrSLPrecision, name, outName);
+    }
+
     UniformHandle addUniformArray(uint32_t visibility,
                                   GrSLType type,
                                   GrSLPrecision precision,
@@ -43,11 +64,23 @@ public:
                                   int arrayCount,
                                   const char** outName = nullptr) {
         SkASSERT(!GrSLTypeIsCombinedSamplerType(type));
-        return this->internalAddUniformArray(visibility, type, precision, name, true, arrayCount,
+        bool mangle = strncmp(name, GR_NO_MANGLE_PREFIX, strlen(GR_NO_MANGLE_PREFIX));
+        return this->internalAddUniformArray(visibility, type, precision, name, mangle, arrayCount,
                                              outName);
     }
 
-    virtual const GrGLSLShaderVar& getUniformVariable(UniformHandle u) const = 0;
+    UniformHandle addUniformArray(uint32_t visibility,
+                                  GrSLType type,
+                                  const char* name,
+                                  int arrayCount,
+                                  const char** outName = nullptr) {
+        SkASSERT(!GrSLTypeIsCombinedSamplerType(type));
+        bool mangle = strncmp(name, GR_NO_MANGLE_PREFIX, strlen(GR_NO_MANGLE_PREFIX));
+        return this->internalAddUniformArray(visibility, type, kDefault_GrSLPrecision, name, mangle,
+                                             arrayCount, outName);
+    }
+
+    virtual const GrShaderVar& getUniformVariable(UniformHandle u) const = 0;
 
     /**
      * Shortcut for getUniformVariable(u).c_str()
@@ -61,22 +94,10 @@ protected:
     GrGLSLProgramBuilder* fProgramBuilder;
 
 private:
-    virtual int numSamplers() const = 0;
-    virtual const GrGLSLSampler& getSampler(SamplerHandle handle) const = 0;
+    virtual const GrShaderVar& samplerVariable(SamplerHandle) const = 0;
+    virtual GrSwizzle samplerSwizzle(SamplerHandle) const = 0;
 
-    SamplerHandle addSampler(uint32_t visibility,
-                             GrPixelConfig config,
-                             GrSLType type,
-                             GrSLPrecision precision,
-                             const char* name) {
-        return this->internalAddSampler(visibility, config, type, precision, name);
-    }
-
-    virtual SamplerHandle internalAddSampler(uint32_t visibility,
-                                             GrPixelConfig config,
-                                             GrSLType type,
-                                             GrSLPrecision precision,
-                                             const char* name) = 0;
+    virtual SamplerHandle addSampler(GrSwizzle, GrTextureType, GrSLPrecision, const char* name) = 0;
 
     virtual UniformHandle internalAddUniformArray(uint32_t visibility,
                                                   GrSLType type,

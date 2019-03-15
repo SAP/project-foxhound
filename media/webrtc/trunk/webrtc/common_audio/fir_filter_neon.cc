@@ -8,15 +8,22 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/common_audio/fir_filter_neon.h"
+#include "common_audio/fir_filter_neon.h"
 
+#if defined(_MSC_VER) && !defined(__clang__)
+#include <arm64_neon.h>
+#else
 #include <arm_neon.h>
-#include <assert.h>
+#endif
 #include <string.h>
 
-#include "webrtc/system_wrappers/include/aligned_malloc.h"
+#include "rtc_base/checks.h"
+#include "system_wrappers/include/aligned_malloc.h"
 
 namespace webrtc {
+
+FIRFilterNEON::~FIRFilterNEON() {
+}
 
 FIRFilterNEON::FIRFilterNEON(const float* coefficients,
                              size_t coefficients_length,
@@ -43,7 +50,7 @@ FIRFilterNEON::FIRFilterNEON(const float* coefficients,
 }
 
 void FIRFilterNEON::Filter(const float* in, size_t length, float* out) {
-  assert(length > 0);
+  RTC_DCHECK_GT(length, 0);
 
   memcpy(&state_[state_length_], in, length * sizeof(*in));
 

@@ -1,5 +1,5 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = new HttpServer();
 var index = 0;
@@ -28,7 +28,7 @@ function startIter() {
 }
 
 function completeIter(request, data, ctx) {
-    do_check_true(data.length == tests[index].datalen);
+    Assert.ok(data.length == tests[index].datalen);
     if (++index < tests.length) {
 	startIter();
     } else {

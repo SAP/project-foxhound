@@ -9,6 +9,7 @@
 
 #include <stdint.h>
 #include "mozilla/Attributes.h"
+#include "mozilla/UniquePtrExtensions.h"
 #include "nsCOMPtr.h"
 #include "nsCRTGlue.h"
 #include "nsIFile.h"
@@ -21,7 +22,7 @@ namespace mozilla {
 namespace sandboxing {
 class PermissionsService;
 }
-}
+}  // namespace mozilla
 #endif
 
 namespace mozilla {
@@ -31,66 +32,44 @@ struct StaticXREAppData;
 /**
  * Application-specific data needed to start the apprunner.
  */
-class XREAppData
-{
-public:
-  XREAppData() { }
-  ~XREAppData() { }
-  XREAppData(const XREAppData& aOther)
-  {
-    *this = aOther;
-  }
+class XREAppData {
+ public:
+  XREAppData() {}
+  ~XREAppData() {}
+  XREAppData(const XREAppData& aOther) { *this = aOther; }
 
-  explicit XREAppData(const StaticXREAppData& aOther)
-  {
-    *this = aOther;
-  }
+  explicit XREAppData(const StaticXREAppData& aOther) { *this = aOther; }
 
   XREAppData& operator=(const StaticXREAppData& aOther);
   XREAppData& operator=(const XREAppData& aOther);
   XREAppData& operator=(XREAppData&& aOther) = default;
 
-  struct NSFreePolicy
-  {
-    void operator()(const void* ptr) {
-      NS_Free(const_cast<void*>(ptr));
-    }
-  };
-
   // Lots of code reads these fields directly like a struct, so rather
   // than using UniquePtr directly, use an auto-converting wrapper.
-  class CharPtr
-  {
-  public:
+  class CharPtr {
+   public:
     explicit CharPtr() = default;
-    explicit CharPtr(const char* v)
-    {
-      *this = v;
-    }
+    explicit CharPtr(const char* v) { *this = v; }
     CharPtr(CharPtr&&) = default;
     ~CharPtr() = default;
 
-    CharPtr& operator=(const char* v)
-    {
+    CharPtr& operator=(const char* v) {
       if (v) {
-        mValue.reset(NS_strdup(v));
+        mValue.reset(NS_xstrdup(v));
       } else {
         mValue = nullptr;
       }
       return *this;
     }
-    CharPtr& operator=(const CharPtr& v)
-    {
-      *this = (const char*) v;
+    CharPtr& operator=(const CharPtr& v) {
+      *this = (const char*)v;
       return *this;
     }
 
-    operator const char*() const {
-      return mValue.get();
-    }
+    operator const char*() const { return mValue.get(); }
 
-  private:
-    UniquePtr<const char, NSFreePolicy> mValue;
+   private:
+    UniqueFreePtr<const char> mValue;
   };
 
   /**
@@ -194,6 +173,11 @@ public:
    */
   CharPtr UAName;
 
+  /**
+   * The URL to the source revision for this build of the application.
+   */
+  CharPtr sourceURL;
+
 #if defined(XP_WIN) && defined(MOZ_SANDBOX)
   /**
    * Chromium sandbox BrokerServices.
@@ -220,8 +204,7 @@ public:
  *
  * This structure is initialized into and matches nsXREAppData
  */
-struct StaticXREAppData
-{
+struct StaticXREAppData {
   const char* vendor;
   const char* name;
   const char* remotingName;
@@ -235,8 +218,9 @@ struct StaticXREAppData
   const char* crashReporterURL;
   const char* profile;
   const char* UAName;
+  const char* sourceURL;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // XREAppData_h
+#endif  // XREAppData_h

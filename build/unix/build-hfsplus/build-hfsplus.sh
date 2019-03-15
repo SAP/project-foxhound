@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# hfsplus needs to be rebuilt when changing the clang version used to build it.
+# Until bug 1471905 is addressed, increase the following number
+# when that happens: 1
+
+set -e
 set -x
 
 hfplus_version=540.1.linux3
@@ -23,13 +28,26 @@ echo "${md5sum} *${TMPDIR}/${filename}" > $TMPDIR/hfsplus.MD5
 # Most-upstream is https://opensource.apple.com/source/diskdev_cmds/
 
 # Download the source of the specified version of hfsplus
-wget -c -P $TMPDIR http://pkgs.fedoraproject.org/repo/pkgs/hfsplus-tools/${filename}/${md5sum}/${filename} || exit 1
+wget -c --progress=dot:mega -P $TMPDIR https://src.fedoraproject.org/repo/pkgs/hfsplus-tools/${filename}/${md5sum}/${filename} || exit 1
 md5sum -c $TMPDIR/hfsplus.MD5 || exit 1
 mkdir hfsplus-source
 tar xzf $TMPDIR/${filename} -C hfsplus-source --strip-components=1
 
 # Build
 cd hfsplus-source
+# We want to statically link against libcrypto. On CentOS, that requires zlib
+# and libdl, because of FIPS functions pulling in more than necessary from
+# libcrypto (only SHA1 functions are used), but not on Debian, thus
+# --as-needed.
+patch -p1 << 'EOF'
+--- a/newfs_hfs.tproj/Makefile.lnx
++++ b/newfs_hfs.tproj/Makefile.lnx
+@@ -6,3 +6,3 @@
+ newfs_hfs: $(OFILES)
+-	${CC} ${CFLAGS} ${LDFLAGS} -o newfs_hfs ${OFILES} -lcrypto
++	${CC} ${CFLAGS} ${LDFLAGS} -o newfs_hfs ${OFILES} -Wl,-Bstatic -lcrypto -Wl,-Bdynamic,--as-needed,-lz,-ldl
+ 
+EOF
 make $make_flags || exit 1
 cd ..
 

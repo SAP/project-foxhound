@@ -11,9 +11,9 @@
  *
  */
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpServer.identity.primaryPort + "/content";
@@ -60,7 +60,7 @@ function run_test()
   var chan = make_channel(URL);
 
   var cc = chan.QueryInterface(Ci.nsICacheInfoChannel);
-  cc.preferAlternativeDataType(altContentType);
+  cc.preferAlternativeDataType(altContentType, "");
 
   chan.asyncOpen2(new ChannelListener(readServerContent, null));
   do_test_pending();
@@ -73,15 +73,15 @@ function readServerContent(request, buffer)
 {
   var cc = request.QueryInterface(Ci.nsICacheInfoChannel);
 
-  do_check_eq(buffer, responseContent);
-  do_check_eq(cc.alternativeDataType, "");
+  Assert.equal(buffer, responseContent);
+  Assert.equal(cc.alternativeDataType, "");
 
-  do_execute_soon(() => {
-    os = cc.openAlternativeOutputStream(altContentType);
+  executeSoon(() => {
+    os = cc.openAlternativeOutputStream(altContentType, altContent.length);
     // Write a quarter of the alt data content
     os.write(altContent, firstChunkSize);
 
-    do_execute_soon(openAltChannel);
+    executeSoon(openAltChannel);
   });
 }
 
@@ -89,7 +89,7 @@ function openAltChannel()
 {
   var chan = make_channel(URL);
   var cc = chan.QueryInterface(Ci.nsICacheInfoChannel);
-  cc.preferAlternativeDataType(altContentType);
+  cc.preferAlternativeDataType(altContentType, "");
 
   chan.asyncOpen2(listener);
 }
@@ -112,9 +112,9 @@ var listener = {
   },
   onStopRequest: function(request, context, status) {
     var cc = request.QueryInterface(Ci.nsICacheInfoChannel);
-    do_check_eq(cc.alternativeDataType, altContentType);
-    do_check_eq(this.buffer.length, altContent.length);
-    do_check_eq(this.buffer, altContent);
+    Assert.equal(cc.alternativeDataType, altContentType);
+    Assert.equal(this.buffer.length, altContent.length);
+    Assert.equal(this.buffer, altContent);
     httpServer.stop(do_test_finished);
   },
 };

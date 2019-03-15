@@ -126,6 +126,13 @@ interface nsIScriptSecurityManager : nsISupports
                                       in AUTF8String uri,
                                       in unsigned long flags);
 
+    /**
+     * Returns true if the URI is from a domain that is allow-listed through
+     * prefs to be allowed to use file:// URIs.
+     * @param aUri the URI to be tested
+     */
+    bool inFileURIAllowlist(in nsIURI aUri);
+
     ///////////////// Principals ///////////////////////
 
     /**
@@ -134,48 +141,26 @@ interface nsIScriptSecurityManager : nsISupports
     nsIPrincipal getSystemPrincipal();
 
     /**
-     * Returns a principal that has the given information.
-     * @param appId is the app id of the principal. It can't be UNKNOWN_APP_ID.
-     * @param inMozBrowser is true if the principal has to be considered as
-     * inside a mozbrowser frame.
-     *
-     * @deprecated use createCodebasePrincipal instead.
-     */
-    [deprecated] nsIPrincipal getAppCodebasePrincipal(in nsIURI uri,
-                                                      in unsigned long appId,
-                                                      in boolean inMozBrowser);
-
-    /**
-     * Returns a principal that has the appId and inMozBrowser of the load
-     * context.
-     * @param loadContext to get appId/inMozBrowser from.
+     * Returns a principal that has the OriginAttributes of the load context.
+     * @param loadContext to get the OriginAttributes from.
      */
     nsIPrincipal getLoadContextCodebasePrincipal(in nsIURI uri,
                                                  in nsILoadContext loadContext);
 
     /**
-     * Returns a principal that has the appId and inMozBrowser of the docshell
-     * inside a mozbrowser frame.
-     * @param docShell to get appId/inMozBrowser from.
+     * Returns a principal that has the OriginAttributes of the docshell.
+     * @param docShell to get the OriginAttributes from.
      */
     nsIPrincipal getDocShellCodebasePrincipal(in nsIURI uri,
                                               in nsIDocShell docShell);
 
     /**
-     * Returns a principal with that has the same origin as uri and is not part
-     * of an appliction.
-     * The returned principal will have appId = NO_APP_ID.
-     *
-     * @deprecated use createCodebasePrincipal instead.
+     * If this is a codebase principal, return a copy with different
+     * origin attributes.
      */
-    [deprecated] nsIPrincipal getNoAppCodebasePrincipal(in nsIURI uri);
-
-    /**
-     * Legacy method for getting a principal with no origin attributes.
-     *
-     * @deprecated use createCodebasePrincipal instead.
-     */
-    [deprecated] nsIPrincipal getCodebasePrincipal(in nsIURI uri);
+    [implicit_jscontext]
+    nsIPrincipal principalWithOA(in nsIPrincipal principal,
+                                 in jsval originAttributes);
 
     /**
      * Returns a principal whose origin is composed of |uri| and |originAttributes|.
@@ -205,10 +190,13 @@ interface nsIScriptSecurityManager : nsISupports
      * (scheme, host, and port).
      * ReportError flag suppresses error reports for functions that
      * don't need reporting.
+     * FromPrivateWindow indicates whether the error occurs in a private
+     * window or not.
      */
     void checkSameOriginURI(in nsIURI aSourceURI,
                             in nsIURI aTargetURI,
-                            in boolean reportError);
+                            in boolean reportError,
+                            in boolean fromPrivateWindow);
     /**
      * Get the principal for the given channel.  This will typically be the
      * channel owner if there is one, and the codebase principal for the
@@ -244,6 +232,10 @@ interface nsIScriptSecurityManager : nsISupports
      * Check whether a given principal is a system principal.  This allows us
      * to avoid handing back the system principal to script while allowing
      * script to check whether a given principal is system.
+     *
+     * @deprecated use nsIPrincipal's accessors for this boolean.
+     * https://bugzilla.mozilla.org/show_bug.cgi?id=1517483 tracks removing
+     * this.
      */
     boolean isSystemPrincipal(in nsIPrincipal aPrincipal);
 %{C++
@@ -294,7 +286,7 @@ interface nsIScriptSecurityManager : nsISupports
      *
      * If domainPolicyEnabled is false, this simply returns the current value
      * of javascript.enabled. Otherwise, it returns the same value, but taking
-     * the various blacklist/whitelist exceptions into account.
+     * the various blocklist/allowlist exceptions into account.
      */
     bool policyAllowsScript(in nsIURI aDomain);
 };

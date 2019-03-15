@@ -18,6 +18,8 @@
 #include "secerr.h"
 #include "hasht.h"
 
+static ECPointEncoding pk11_ECGetPubkeyEncoding(const SECKEYPublicKey *pubKey);
+
 static void
 pk11_EnterKeyMonitor(PK11SymKey *symKey)
 {
@@ -179,6 +181,10 @@ PK11_FreeSymKey(PK11SymKey *symKey)
 {
     PK11SlotInfo *slot;
     PRBool freeit = PR_TRUE;
+
+    if (!symKey) {
+        return;
+    }
 
     if (PR_ATOMIC_DECREMENT(&symKey->refCount) == 0) {
         PK11SymKey *parent = symKey->parent;
@@ -2005,7 +2011,7 @@ PK11_PubDerive(SECKEYPrivateKey *privKey, SECKEYPublicKey *pubKey,
 
             /* old PKCS #11 spec was ambiguous on what needed to be passed,
              * try this again with and encoded public key */
-            if (crv != CKR_OK) {
+            if (crv != CKR_OK && pk11_ECGetPubkeyEncoding(pubKey) != ECPoint_XOnly) {
                 SECItem *pubValue = SEC_ASN1EncodeItem(NULL, NULL,
                                                        &pubKey->u.ec.publicValue,
                                                        SEC_ASN1_GET(SEC_OctetStringTemplate));
@@ -2211,6 +2217,11 @@ pk11_PubDeriveECKeyWithKDF(
     /* old PKCS #11 spec was ambiguous on what needed to be passed,
      * try this again with an encoded public key */
     if (crv != CKR_OK) {
+        /* For curves that only use X as public value and no encoding we don't
+         * have to try again. (Currently only Curve25519) */
+        if (pk11_ECGetPubkeyEncoding(pubKey) == ECPoint_XOnly) {
+            goto loser;
+        }
         SECItem *pubValue = SEC_ASN1EncodeItem(NULL, NULL,
                                                &pubKey->u.ec.publicValue,
                                                SEC_ASN1_GET(SEC_OctetStringTemplate));

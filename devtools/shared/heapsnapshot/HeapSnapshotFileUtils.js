@@ -37,8 +37,8 @@ function getHeapSnapshotFileTemplate() {
  *
  * @returns String
  */
-exports.getNewUniqueHeapSnapshotTempFilePath = function () {
-  let file = new FileUtils.File(getHeapSnapshotFileTemplate());
+exports.getNewUniqueHeapSnapshotTempFilePath = function() {
+  const file = new FileUtils.File(getHeapSnapshotFileTemplate());
   // The call to createUnique will append "-N" after the leaf name (but before
   // the extension) until a new file is found and create it. This guarantees we
   // won't accidentally choose the same file twice.
@@ -57,7 +57,7 @@ function isValidSnapshotFileId(snapshotId) {
  *
  * @returns String | null
  */
-exports.getHeapSnapshotTempFilePath = function (snapshotId) {
+exports.getHeapSnapshotTempFilePath = function(snapshotId) {
   // Don't want anyone sneaking "../../../.." strings into the snapshot id and
   // trying to make us open arbitrary files.
   if (!isValidSnapshotFileId(snapshotId)) {
@@ -72,7 +72,7 @@ exports.getHeapSnapshotTempFilePath = function (snapshotId) {
  *
  * @returns Promise<Boolean>
  */
-exports.haveHeapSnapshotTempFile = function (snapshotId) {
+exports.haveHeapSnapshotTempFile = function(snapshotId) {
   const path = exports.getHeapSnapshotTempFilePath(snapshotId);
   if (!path) {
     return Promise.resolve(false);
@@ -80,16 +80,4 @@ exports.haveHeapSnapshotTempFile = function (snapshotId) {
 
   return OS.File.stat(path).then(() => true,
                                  () => false);
-};
-
-/**
- * Given a heap snapshot's file path, extricate the snapshot id.
- *
- * @param {String} path
- *
- * @returns String
- */
-exports.getSnapshotIdFromPath = function (path) {
-  return path.slice(OS.Constants.Path.tmpDir.length + 1,
-                    path.length - ".fxsnapshot".length);
 };

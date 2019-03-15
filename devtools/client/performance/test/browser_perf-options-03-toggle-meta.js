@@ -10,17 +10,17 @@ const { SIMPLE_URL } = require("devtools/client/performance/test/helpers/urls");
 const { UI_EXPERIMENTAL_PREF } = require("devtools/client/performance/test/helpers/prefs");
 const { initPerformanceInNewTab, teardownToolboxAndRemoveTab } = require("devtools/client/performance/test/helpers/panel-utils");
 
-add_task(function* () {
+add_task(async function() {
   Services.prefs.setBoolPref(UI_EXPERIMENTAL_PREF, false);
 
-  let { panel } = yield initPerformanceInNewTab({
+  const { panel } = await initPerformanceInNewTab({
     url: SIMPLE_URL,
-    win: window
+    win: window,
   });
 
-  let { $ } = panel.panelWin;
-  let $body = $(".theme-body");
-  let $menu = $("#performance-options-menupopup");
+  const { $ } = panel.panelWin;
+  const $body = $(".theme-body");
+  const $menu = $("#performance-options-menupopup");
 
   ok(!$body.classList.contains("experimental-enabled"),
     "The body node does not have `experimental-enabled` on start.");
@@ -34,5 +34,5 @@ add_task(function* () {
   ok($menu.classList.contains("experimental-enabled"),
     "The menu popup has `experimental-enabled` after toggle.");
 
-  yield teardownToolboxAndRemoveTab(panel);
+  await teardownToolboxAndRemoveTab(panel);
 });

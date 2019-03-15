@@ -1,11 +1,15 @@
 /* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* vim: set sts=2 sw=2 et tw=80: */
+/* eslint-disable mozilla/no-arbitrary-setTimeout */
 "use strict";
 
 let scriptPage = url => `<html><head><meta charset="utf-8"><script src="${url}"></script></head><body>${url}</body></html>`;
 
-add_task(function* testBrowserActionClickCanceled() {
-  let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, "http://example.com/");
+add_task(async function testBrowserActionClickCanceled() {
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, "http://example.com/");
+
+  // Make sure the mouse isn't hovering over the browserAction widget.
+  EventUtils.synthesizeMouseAtCenter(gURLBar, {type: "mouseover"}, window);
 
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
@@ -21,9 +25,9 @@ add_task(function* testBrowserActionClickCanceled() {
     },
   });
 
-  yield extension.startup();
+  await extension.startup();
 
-  const {GlobalManager, Management: {global: {browserActionFor}}} = Cu.import("resource://gre/modules/Extension.jsm", {});
+  const {GlobalManager, Management: {global: {browserActionFor}}} = ChromeUtils.import("resource://gre/modules/Extension.jsm", {});
 
   let ext = GlobalManager.extensionMap.get(extension.id);
   let browserAction = browserActionFor(ext);
@@ -68,20 +72,23 @@ add_task(function* testBrowserActionClickCanceled() {
 
   EventUtils.synthesizeMouseAtCenter(widget.node, {type: "mouseup", button: 0}, window);
 
-  yield mouseUpPromise;
+  await mouseUpPromise;
 
   is(browserAction.pendingPopup, null, "Pending popup was cleared");
   is(browserAction.pendingPopupTimeout, null, "Pending popup timeout was cleared");
 
-  yield promisePopupShown(getBrowserActionPopup(extension));
-  yield closeBrowserAction(extension);
+  await promisePopupShown(getBrowserActionPopup(extension));
+  await closeBrowserAction(extension);
 
-  yield extension.unload();
+  await extension.unload();
 
-  yield BrowserTestUtils.removeTab(tab);
+  BrowserTestUtils.removeTab(tab);
 });
 
-add_task(function* testBrowserActionDisabled() {
+add_task(async function testBrowserActionDisabled() {
+  // Make sure the mouse isn't hovering over the browserAction widget.
+  EventUtils.synthesizeMouseAtCenter(gURLBar, {type: "mouseover"}, window);
+
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       "browser_action": {
@@ -103,11 +110,12 @@ add_task(function* testBrowserActionDisabled() {
     },
   });
 
-  yield extension.startup();
+  await extension.startup();
 
-  yield extension.awaitMessage("browserAction-disabled");
+  await extension.awaitMessage("browserAction-disabled");
+  await promiseAnimationFrame();
 
-  const {GlobalManager, Management: {global: {browserActionFor}}} = Cu.import("resource://gre/modules/Extension.jsm", {});
+  const {GlobalManager, Management: {global: {browserActionFor}}} = ChromeUtils.import("resource://gre/modules/Extension.jsm", {});
 
   let ext = GlobalManager.extensionMap.get(extension.id);
   let browserAction = browserActionFor(ext);
@@ -146,19 +154,19 @@ add_task(function* testBrowserActionDisabled() {
 
   EventUtils.synthesizeMouseAtCenter(widget.node, {type: "mouseup", button: 0}, window);
 
-  yield mouseUpPromise;
+  await mouseUpPromise;
 
   is(browserAction.pendingPopup, null, "Have no pending popup");
   is(browserAction.pendingPopupTimeout, null, "Have no pending popup timeout");
 
   // Give the popup a chance to load and trigger a failure, if it was
   // erroneously opened.
-  yield new Promise(resolve => setTimeout(resolve, 250));
+  await new Promise(resolve => setTimeout(resolve, 250));
 
-  yield extension.unload();
+  await extension.unload();
 });
 
-add_task(function* testBrowserActionTabPopulation() {
+add_task(async function testBrowserActionTabPopulation() {
   // Note: This test relates to https://bugzilla.mozilla.org/show_bug.cgi?id=1310019
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
@@ -182,19 +190,82 @@ add_task(function* testBrowserActionTabPopulation() {
     },
   });
 
-  let win = yield BrowserTestUtils.openNewBrowserWindow();
-  yield BrowserTestUtils.loadURI(win.gBrowser.selectedBrowser, "http://example.com/");
-  yield BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser);
+  let win = await BrowserTestUtils.openNewBrowserWindow();
+  await BrowserTestUtils.loadURI(win.gBrowser.selectedBrowser, "http://example.com/");
+  await BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser);
 
-  yield extension.startup();
+  // Make sure the mouse isn't hovering over the browserAction widget.
+  EventUtils.synthesizeMouseAtCenter(win.gURLBar, {type: "mouseover"}, win);
+
+  await extension.startup();
 
   let widget = getBrowserActionWidget(extension).forWindow(win);
   EventUtils.synthesizeMouseAtCenter(widget.node, {type: "mousedown", button: 0}, win);
 
-  yield extension.awaitMessage("tabTitle");
+  await new Promise(resolve => setTimeout(resolve, 100));
 
   EventUtils.synthesizeMouseAtCenter(widget.node, {type: "mouseup", button: 0}, win);
 
-  yield extension.unload();
-  yield BrowserTestUtils.closeWindow(win);
+  await extension.awaitMessage("tabTitle");
+
+  await extension.unload();
+  await BrowserTestUtils.closeWindow(win);
+});
+
+add_task(async function testClosePopupDuringPreload() {
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      "browser_action": {
+        "default_popup": "popup.html",
+        "browser_style": true,
+      },
+    },
+
+    files: {
+      "popup.html": scriptPage("popup.js"),
+      "popup.js": function() {
+        browser.test.sendMessage("popup_loaded");
+        window.close();
+      },
+    },
+  });
+
+  // Make sure the mouse isn't hovering over the browserAction widget.
+  EventUtils.synthesizeMouseAtCenter(gURLBar, {type: "mouseover"}, window);
+
+  await extension.startup();
+
+  const {GlobalManager, Management: {global: {browserActionFor}}} = ChromeUtils.import("resource://gre/modules/Extension.jsm", {});
+
+  let ext = GlobalManager.extensionMap.get(extension.id);
+  let browserAction = browserActionFor(ext);
+
+  let widget = getBrowserActionWidget(extension).forWindow(window);
+
+  EventUtils.synthesizeMouseAtCenter(widget.node, {type: "mousedown", button: 0}, window);
+
+  isnot(browserAction.pendingPopup, null, "Have pending popup");
+  is(browserAction.pendingPopup.window, window, "Have pending popup for the correct window");
+
+  await extension.awaitMessage("popup_loaded");
+  try {
+    await browserAction.pendingPopup.browserLoaded;
+  } catch (e) {
+    is(e.message, "Popup destroyed", "Popup content should have been destroyed");
+  }
+
+  let promiseViewShowing =
+    BrowserTestUtils.waitForEvent(document, "ViewShowing", false,
+                                  ev => ev.target.id === browserAction.viewId);
+  EventUtils.synthesizeMouseAtCenter(widget.node, {type: "mouseup", button: 0}, window);
+
+  // The popup panel may become visible after the ViewShowing event. Wait a bit
+  // to ensure that the popup is not shown when window.close() was used.
+  await promiseViewShowing;
+  await new Promise(resolve => setTimeout(resolve, 50));
+
+  let panel = getBrowserActionPopup(extension);
+  is(panel, null, "Popup panel should have been closed");
+
+  await extension.unload();
 });

@@ -24,7 +24,7 @@ from mozpack.mozjar import JarReader
 import mozpack.path as mozpath
 
 
-def package_fennec_apk(inputs=[], omni_ja=None, classes_dex=None,
+def package_fennec_apk(inputs=[], omni_ja=None,
                        lib_dirs=[],
                        assets_dirs=[],
                        features_dirs=[],
@@ -33,11 +33,34 @@ def package_fennec_apk(inputs=[], omni_ja=None, classes_dex=None,
     jarrer = Jarrer(optimize=False)
 
     # First, take input files.  The contents of the later files overwrites the
-    # content of earlier files.
+    # content of earlier files.  Multidexing requires special care: we want a
+    # coherent set of classesN.dex files, so we only take DEX files from a
+    # single input.  This avoids taking, say, classes{1,2,3}.dex from the first
+    # input and only classes{1,2}.dex from the second input, leading to
+    # (potentially) duplicated symbols at runtime.
+    last_input_with_dex_files = None
     for input in inputs:
         jar = JarReader(input)
         for file in jar:
             path = file.filename
+
+            if mozpath.match(path, '/classes*.dex'):
+                last_input_with_dex_files = input
+                continue
+
+            if jarrer.contains(path):
+                jarrer.remove(path)
+            jarrer.add(path, DeflatedFile(file), compress=file.compressed)
+
+    # If we have an input with DEX files, take them all here.
+    if last_input_with_dex_files:
+        jar = JarReader(last_input_with_dex_files)
+        for file in jar:
+            path = file.filename
+
+            if not mozpath.match(path, '/classes*.dex'):
+                continue
+
             if jarrer.contains(path):
                 jarrer.remove(path)
             jarrer.add(path, DeflatedFile(file), compress=file.compressed)
@@ -61,34 +84,7 @@ def package_fennec_apk(inputs=[], omni_ja=None, classes_dex=None,
     for assets_dir in assets_dirs:
         finder = FileFinder(assets_dir)
         for p, f in finder.find('**'):
-            compress = None  # Take default from Jarrer.
-            if p.endswith('.so'):
-                # Asset libraries are special.
-                if f.open().read(5)[1:] == '7zXZ':
-                    print('%s is already compressed' % p)
-                    # We need to store (rather than deflate) compressed libraries
-                    # (even if we don't compress them ourselves).
-                    compress = False
-                elif buildconfig.substs.get('XZ'):
-                    cmd = [buildconfig.substs.get('XZ'), '-zkf',
-                           mozpath.join(finder.base, p)]
-
-                    bcj = None
-                    if buildconfig.substs.get('MOZ_THUMB2'):
-                        bcj = '--armthumb'
-                    elif buildconfig.substs.get('CPU_ARCH') == 'arm':
-                        bcj = '--arm'
-                    elif buildconfig.substs.get('CPU_ARCH') == 'x86':
-                        bcj = '--x86'
-
-                    if bcj:
-                        cmd.extend([bcj, '--lzma2'])
-                    print('xz-compressing %s with %s' % (p, ' '.join(cmd)))
-                    subprocess.check_output(cmd)
-                    os.rename(f.path + '.xz', f.path)
-                    compress = False
-
-            add(mozpath.join('assets', p), f, compress=compress)
+            add(mozpath.join('assets', p), f)
 
     for lib_dir in lib_dirs:
         finder = FileFinder(lib_dir)
@@ -100,9 +96,6 @@ def package_fennec_apk(inputs=[], omni_ja=None, classes_dex=None,
 
     if omni_ja:
         add(mozpath.join('assets', 'omni.ja'), File(omni_ja), compress=False)
-
-    if classes_dex:
-        add('classes.dex', File(classes_dex))
 
     return jarrer
 
@@ -117,8 +110,6 @@ def main(args):
                         help='Output APK file.')
     parser.add_argument('--omnijar', default=None,
                         help='Optional omni.ja to pack into APK file.')
-    parser.add_argument('--classes-dex', default=None,
-                        help='Optional classes.dex to pack into APK file.')
     parser.add_argument('--lib-dirs', nargs='*', default=[],
                         help='Optional lib/ dirs to pack into APK file.')
     parser.add_argument('--assets-dirs', nargs='*', default=[],
@@ -130,12 +121,11 @@ def main(args):
     args = parser.parse_args(args)
 
     if buildconfig.substs.get('OMNIJAR_NAME') != 'assets/omni.ja':
-        raise ValueError("Don't know how package Fennec APKs when "
+        raise ValueError("Don't know how to package Fennec APKs when "
                          " OMNIJAR_NAME is not 'assets/omni.jar'.")
 
     jarrer = package_fennec_apk(inputs=args.inputs,
                                 omni_ja=args.omnijar,
-                                classes_dex=args.classes_dex,
                                 lib_dirs=args.lib_dirs,
                                 assets_dirs=args.assets_dirs,
                                 features_dirs=args.features_dirs,

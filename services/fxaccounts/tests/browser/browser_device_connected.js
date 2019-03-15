@@ -1,39 +1,33 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/FxAccounts.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-const { MockRegistrar } =
-  Cu.import("resource://testing-common/MockRegistrar.jsm", {});
-
-let accountsBundle = Services.strings.createBundle(
+const gBrowserGlue = Cc["@mozilla.org/browser/browserglue;1"]
+                     .getService(Ci.nsIObserver);
+const accountsBundle = Services.strings.createBundle(
   "chrome://browser/locale/accounts.properties"
 );
+const DEVICES_URL = "http://localhost/devices";
 
 let expectedBody;
 
 add_task(async function setup() {
-  const alertsService = {
-    QueryInterface: XPCOMUtils.generateQI([Ci.nsIAlertsService, Ci.nsISupports]),
-    showAlertNotification: (image, title, text, clickable, cookie, clickCallback) => {
-      // We can't simulate a click on the alert popup,
-      // so instead we call the click listener ourselves directly
-      clickCallback.observe(null, "alertclickcallback", null);
-      Assert.equal(text, expectedBody);
-    }
-  };
-  let alertsServiceCID = MockRegistrar.register("@mozilla.org/alerts-service;1", alertsService);
-  registerCleanupFunction(() => {
-    MockRegistrar.unregister(alertsServiceCID);
+  const origManageDevicesURI = FxAccounts.config.promiseManageDevicesURI;
+  FxAccounts.config.promiseManageDevicesURI = () => Promise.resolve(DEVICES_URL);
+  setupMockAlertsService();
+
+  registerCleanupFunction(function() {
+    FxAccounts.config.promiseManageDevicesURI = origManageDevicesURI;
+    delete window.FxAccounts;
   });
 });
 
 async function testDeviceConnected(deviceName) {
   info("testDeviceConnected with deviceName=" + deviceName);
-  gBrowser.selectedBrowser.loadURI("about:robots");
+  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "about:robots");
   await waitForDocLoadComplete();
-
-  Preferences.set("identity.fxaccounts.settings.devices.uri", "http://localhost/devices");
 
   let waitForTabPromise = BrowserTestUtils.waitForNewTab(gBrowser);
 
@@ -42,11 +36,9 @@ async function testDeviceConnected(deviceName) {
   let tab = await waitForTabPromise;
   Assert.ok("Tab successfully opened");
 
-  let expectedURI = Preferences.get("identity.fxaccounts.settings.devices.uri",
-                                    "prefundefined");
-  Assert.equal(tab.linkedBrowser.currentURI.spec, expectedURI);
+  Assert.equal(tab.linkedBrowser.currentURI.spec, DEVICES_URL);
 
-  await BrowserTestUtils.removeTab(tab);
+  BrowserTestUtils.removeTab(tab);
 }
 
 add_task(async function() {

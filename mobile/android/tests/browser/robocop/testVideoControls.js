@@ -5,10 +5,8 @@
 
 "use strict";
 
-var { classes: Cc, interfaces: Ci, utils: Cu } = Components;
-
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/SimpleServiceDiscovery.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/SimpleServiceDiscovery.jsm");
 
 // The chrome window
 var chromeWin;
@@ -39,7 +37,7 @@ add_test(function setup_browser() {
     video = contentDocument.getElementById("video");
     ok(video, "Found the video element");
 
-    Services.tm.mainThread.dispatch(run_next_test, Ci.nsIThread.DISPATCH_NORMAL);
+    Services.tm.dispatchToMainThread(run_next_test);
   }, {capture: true, once: true});
 });
 
@@ -47,19 +45,22 @@ add_test(function test_webm() {
   // Load the test video
   video.src = "http://mochi.test:8888/tests/robocop/video-pattern.webm";
 
-  Services.tm.mainThread.dispatch(testLoad, Ci.nsIThread.DISPATCH_NORMAL);
+  Services.tm.dispatchToMainThread(testLoad);
 });
 
 add_test(function test_ogg() {
   // Load the test video
   video.src = "http://mochi.test:8888/tests/robocop/video-pattern.ogg";
 
-  Services.tm.mainThread.dispatch(testLoad, Ci.nsIThread.DISPATCH_NORMAL);
+  Services.tm.dispatchToMainThread(testLoad);
 });
 
 function getButtonByAttribute(aName, aValue) {
-  let domUtil = Cc["@mozilla.org/inspector/dom-utils;1"].getService(Ci.inIDOMUtils);
-  let kids = domUtil.getChildrenForNode(video, true);
+  if (video.openOrClosedShadowRoot) {
+    return video.openOrClosedShadowRoot.firstChild.querySelector(`[${aName}="${aValue}"]`);
+  }
+
+  let kids = InspectorUtils.getChildrenForNode(video, true);
   let videocontrols = kids[1];
   return contentDocument.getAnonymousElementByAttribute(videocontrols, aName, aValue);
 }
@@ -71,7 +72,7 @@ function getPixelColor(aCanvas, aX, aY) {
     r: pixel.data[0],
     g: pixel.data[1],
     b: pixel.data[2],
-    a: pixel.data[3]
+    a: pixel.data[3],
   };
 }
 
@@ -88,7 +89,7 @@ function testLoad() {
 function testPlay(aEvent) {
   video.removeEventListener("play", testPlay);
   let playButton = getButtonByAttribute("class", "playButton");
-  ok(playButton.hasAttribute("paused") == false, "Play button is not paused");
+  ok(!playButton.hasAttribute("paused"), "Play button is not paused");
 
   // Let the video play for 2 seconds, then pause it
   chromeWin.setTimeout(function() {

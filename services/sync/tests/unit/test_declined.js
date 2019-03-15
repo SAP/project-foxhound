@@ -1,15 +1,11 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Cu.import("resource://services-sync/stages/declined.js");
-Cu.import("resource://services-sync/stages/enginesync.js");
-Cu.import("resource://services-sync/engines.js");
-Cu.import("resource://services-sync/service.js");
-Cu.import("resource://services-common/observers.js");
-
-function run_test() {
-  run_next_test();
-}
+ChromeUtils.import("resource://services-sync/stages/declined.js");
+ChromeUtils.import("resource://services-sync/stages/enginesync.js");
+ChromeUtils.import("resource://services-sync/engines.js");
+ChromeUtils.import("resource://services-sync/service.js");
+ChromeUtils.import("resource://services-common/observers.js");
 
 function PetrolEngine() {}
 PetrolEngine.prototype.name = "petrol";
@@ -21,7 +17,7 @@ function DummyEngine() {}
 DummyEngine.prototype.name = "dummy";
 
 function ActualEngine() {}
-ActualEngine.prototype = {__proto__: Engine.prototype,
+ActualEngine.prototype = {__proto__: SyncEngine.prototype,
                           name: "actual"};
 
 function getEngineManager() {
@@ -46,7 +42,7 @@ function getEngineManager() {
  * declined, and a notification is sent for our locally disabled-but-not-
  * declined engines.
  */
-add_test(function testOldMeta() {
+add_task(async function testOldMeta() {
   let meta = {
     payload: {
       engines: {
@@ -63,12 +59,12 @@ add_test(function testOldMeta() {
 
   // Update enabled from meta/global.
   let engineSync = new EngineSynchronizer(Service);
-  engineSync._updateEnabledFromMeta(meta, 3, manager);
+  await engineSync._updateEnabledFromMeta(meta, 3, manager);
 
-  Assert.ok(manager._engines["petrol"].enabled, "'petrol' locally enabled.");
-  Assert.ok(manager._engines["diesel"].enabled, "'diesel' locally enabled.");
+  Assert.ok(manager._engines.petrol.enabled, "'petrol' locally enabled.");
+  Assert.ok(manager._engines.diesel.enabled, "'diesel' locally enabled.");
   Assert.ok(!("nonlocal" in manager._engines), "We don't know anything about the 'nonlocal' engine.");
-  Assert.ok(!manager._engines["actual"].enabled, "'actual' not locally enabled.");
+  Assert.ok(!manager._engines.actual.enabled, "'actual' not locally enabled.");
   Assert.ok(!manager.isDeclined("actual"), "'actual' not declined, though.");
 
   let declinedEngines = new DeclinedEngines(Service);
@@ -96,7 +92,7 @@ add_test(function testOldMeta() {
  * record is marked as changed and includes all declined
  * engines.
  */
-add_test(function testDeclinedMeta() {
+add_task(async function testDeclinedMeta() {
   let meta = {
     payload: {
       engines: {
@@ -111,12 +107,12 @@ add_test(function testDeclinedMeta() {
   _("Record: " + JSON.stringify(meta));
 
   let manager = getEngineManager();
-  manager._engines["petrol"].enabled = true;
-  manager._engines["diesel"].enabled = true;
-  manager._engines["dummy"].enabled = true;
-  manager._engines["actual"].enabled = false;   // Disabled but not declined.
+  manager._engines.petrol.enabled = true;
+  manager._engines.diesel.enabled = true;
+  manager._engines.dummy.enabled = true;
+  manager._engines.actual.enabled = false; // Disabled but not declined.
 
-  manager.decline(["localdecline"]);            // Declined and not supported.
+  manager.decline(["localdecline"]); // Declined and not supported.
 
   let declinedEngines = new DeclinedEngines(Service);
 
@@ -142,8 +138,6 @@ add_test(function testDeclinedMeta() {
     Assert.ok(0 <= meta.payload.declined.indexOf("nonexistent"), "meta/global's declined contains 'nonexistent'.");
     Assert.ok(0 <= meta.payload.declined.indexOf("localdecline"), "meta/global's declined contains 'localdecline'.");
     Assert.strictEqual(true, meta.changed, "meta/global was changed.");
-
-    run_next_test();
   }
 
   Observers.add("weave:engines:notdeclined", onNotDeclined);

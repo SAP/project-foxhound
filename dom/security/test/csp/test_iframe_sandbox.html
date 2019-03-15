@@ -67,7 +67,7 @@ Bug 671389 - Implement CSP sandbox directive
 
       var cs = [];
       as.forEach(function(a) {
-        if (a && bs.indexOf(a) != -1)
+        if (a && bs.includes(a))
           cs.push(a);
       });
       return cs;
@@ -89,9 +89,10 @@ Bug 671389 - Implement CSP sandbox directive
       try {
         var actual = getSandboxFlags(SpecialPowers.wrap(iframe).contentDocument);
         ok(eqFlags(actual, this_.expected),
-           this_.desc, 'expected: "' + this_.expected + '", got: "' + actual + '"');
+           this_.desc + ' - expected: "' + this_.expected + '", got: "' + actual + '"');
       } catch (e) {
-        ok(false, this_.desc, 'expected: "' + this_.expected + '", failed with: "' + e + '"');
+        ok(false,
+           this_.desc + ' - expected: "' + this_.expected + '", failed with: "' + e + '"');
       }
       runNextTest();
      };

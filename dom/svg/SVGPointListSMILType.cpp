@@ -5,10 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SVGPointListSMILType.h"
-#include "nsSMILValue.h"
-#include "SVGPointList.h"
-#include "nsMathUtils.h"
+
 #include "mozilla/FloatingPoint.h"
+#include "mozilla/SMILValue.h"
+#include "nsMathUtils.h"
+#include "SVGPointList.h"
 #include <math.h>
 
 namespace mozilla {
@@ -18,9 +19,7 @@ namespace mozilla {
 //----------------------------------------------------------------------
 // nsISMILType implementation
 
-void
-SVGPointListSMILType::Init(nsSMILValue &aValue) const
-{
+void SVGPointListSMILType::Init(SMILValue& aValue) const {
   MOZ_ASSERT(aValue.IsNull(), "Unexpected value type");
 
   SVGPointListAndInfo* pointList = new SVGPointListAndInfo();
@@ -29,53 +28,43 @@ SVGPointListSMILType::Init(nsSMILValue &aValue) const
   aValue.mType = this;
 }
 
-void
-SVGPointListSMILType::Destroy(nsSMILValue& aValue) const
-{
-  NS_PRECONDITION(aValue.mType == this, "Unexpected SMIL value type");
+void SVGPointListSMILType::Destroy(SMILValue& aValue) const {
+  MOZ_ASSERT(aValue.mType == this, "Unexpected SMIL value type");
   delete static_cast<SVGPointListAndInfo*>(aValue.mU.mPtr);
   aValue.mU.mPtr = nullptr;
-  aValue.mType = nsSMILNullType::Singleton();
+  aValue.mType = SMILNullType::Singleton();
 }
 
-nsresult
-SVGPointListSMILType::Assign(nsSMILValue& aDest,
-                              const nsSMILValue& aSrc) const
-{
-  NS_PRECONDITION(aDest.mType == aSrc.mType, "Incompatible SMIL types");
-  NS_PRECONDITION(aDest.mType == this, "Unexpected SMIL value");
+nsresult SVGPointListSMILType::Assign(SMILValue& aDest,
+                                      const SMILValue& aSrc) const {
+  MOZ_ASSERT(aDest.mType == aSrc.mType, "Incompatible SMIL types");
+  MOZ_ASSERT(aDest.mType == this, "Unexpected SMIL value");
 
   const SVGPointListAndInfo* src =
-    static_cast<const SVGPointListAndInfo*>(aSrc.mU.mPtr);
-  SVGPointListAndInfo* dest =
-    static_cast<SVGPointListAndInfo*>(aDest.mU.mPtr);
+      static_cast<const SVGPointListAndInfo*>(aSrc.mU.mPtr);
+  SVGPointListAndInfo* dest = static_cast<SVGPointListAndInfo*>(aDest.mU.mPtr);
 
   return dest->CopyFrom(*src);
 }
 
-bool
-SVGPointListSMILType::IsEqual(const nsSMILValue& aLeft,
-                               const nsSMILValue& aRight) const
-{
-  NS_PRECONDITION(aLeft.mType == aRight.mType, "Incompatible SMIL types");
-  NS_PRECONDITION(aLeft.mType == this, "Unexpected type for SMIL value");
+bool SVGPointListSMILType::IsEqual(const SMILValue& aLeft,
+                                   const SMILValue& aRight) const {
+  MOZ_ASSERT(aLeft.mType == aRight.mType, "Incompatible SMIL types");
+  MOZ_ASSERT(aLeft.mType == this, "Unexpected type for SMIL value");
 
   return *static_cast<const SVGPointListAndInfo*>(aLeft.mU.mPtr) ==
          *static_cast<const SVGPointListAndInfo*>(aRight.mU.mPtr);
 }
 
-nsresult
-SVGPointListSMILType::Add(nsSMILValue& aDest,
-                          const nsSMILValue& aValueToAdd,
-                          uint32_t aCount) const
-{
-  NS_PRECONDITION(aDest.mType == this, "Unexpected SMIL type");
-  NS_PRECONDITION(aValueToAdd.mType == this, "Incompatible SMIL type");
+nsresult SVGPointListSMILType::Add(SMILValue& aDest,
+                                   const SMILValue& aValueToAdd,
+                                   uint32_t aCount) const {
+  MOZ_ASSERT(aDest.mType == this, "Unexpected SMIL type");
+  MOZ_ASSERT(aValueToAdd.mType == this, "Incompatible SMIL type");
 
-  SVGPointListAndInfo& dest =
-    *static_cast<SVGPointListAndInfo*>(aDest.mU.mPtr);
+  SVGPointListAndInfo& dest = *static_cast<SVGPointListAndInfo*>(aDest.mU.mPtr);
   const SVGPointListAndInfo& valueToAdd =
-    *static_cast<const SVGPointListAndInfo*>(aValueToAdd.mU.mPtr);
+      *static_cast<const SVGPointListAndInfo*>(aValueToAdd.mU.mPtr);
 
   MOZ_ASSERT(dest.Element() || valueToAdd.Element(),
              "Target element propagation failure");
@@ -90,7 +79,7 @@ SVGPointListSMILType::Add(nsSMILValue& aDest,
     for (uint32_t i = 0; i < dest.Length(); ++i) {
       dest[i] = aCount * valueToAdd[i];
     }
-    dest.SetInfo(valueToAdd.Element()); // propagate target element info!
+    dest.SetInfo(valueToAdd.Element());  // propagate target element info!
     return NS_OK;
   }
   MOZ_ASSERT(dest.Element() == valueToAdd.Element(),
@@ -103,22 +92,20 @@ SVGPointListSMILType::Add(nsSMILValue& aDest,
   for (uint32_t i = 0; i < dest.Length(); ++i) {
     dest[i] += aCount * valueToAdd[i];
   }
-  dest.SetInfo(valueToAdd.Element()); // propagate target element info!
+  dest.SetInfo(valueToAdd.Element());  // propagate target element info!
   return NS_OK;
 }
 
-nsresult
-SVGPointListSMILType::ComputeDistance(const nsSMILValue& aFrom,
-                                      const nsSMILValue& aTo,
-                                      double& aDistance) const
-{
-  NS_PRECONDITION(aFrom.mType == this, "Unexpected SMIL type");
-  NS_PRECONDITION(aTo.mType == this, "Incompatible SMIL type");
+nsresult SVGPointListSMILType::ComputeDistance(const SMILValue& aFrom,
+                                               const SMILValue& aTo,
+                                               double& aDistance) const {
+  MOZ_ASSERT(aFrom.mType == this, "Unexpected SMIL type");
+  MOZ_ASSERT(aTo.mType == this, "Incompatible SMIL type");
 
   const SVGPointListAndInfo& from =
-    *static_cast<const SVGPointListAndInfo*>(aFrom.mU.mPtr);
+      *static_cast<const SVGPointListAndInfo*>(aFrom.mU.mPtr);
   const SVGPointListAndInfo& to =
-    *static_cast<const SVGPointListAndInfo*>(aTo.mU.mPtr);
+      *static_cast<const SVGPointListAndInfo*>(aTo.mU.mPtr);
 
   if (from.Length() != to.Length()) {
     // Lists in the 'values' attribute must have the same length.
@@ -145,30 +132,27 @@ SVGPointListSMILType::ComputeDistance(const nsSMILValue& aFrom,
   return NS_OK;
 }
 
-nsresult
-SVGPointListSMILType::Interpolate(const nsSMILValue& aStartVal,
-                                  const nsSMILValue& aEndVal,
-                                  double aUnitDistance,
-                                  nsSMILValue& aResult) const
-{
-  NS_PRECONDITION(aStartVal.mType == aEndVal.mType,
-                  "Trying to interpolate different types");
-  NS_PRECONDITION(aStartVal.mType == this,
-                  "Unexpected types for interpolation");
-  NS_PRECONDITION(aResult.mType == this, "Unexpected result type");
+nsresult SVGPointListSMILType::Interpolate(const SMILValue& aStartVal,
+                                           const SMILValue& aEndVal,
+                                           double aUnitDistance,
+                                           SMILValue& aResult) const {
+  MOZ_ASSERT(aStartVal.mType == aEndVal.mType,
+             "Trying to interpolate different types");
+  MOZ_ASSERT(aStartVal.mType == this, "Unexpected types for interpolation");
+  MOZ_ASSERT(aResult.mType == this, "Unexpected result type");
 
   const SVGPointListAndInfo& start =
-    *static_cast<const SVGPointListAndInfo*>(aStartVal.mU.mPtr);
+      *static_cast<const SVGPointListAndInfo*>(aStartVal.mU.mPtr);
   const SVGPointListAndInfo& end =
-    *static_cast<const SVGPointListAndInfo*>(aEndVal.mU.mPtr);
+      *static_cast<const SVGPointListAndInfo*>(aEndVal.mU.mPtr);
   SVGPointListAndInfo& result =
-    *static_cast<SVGPointListAndInfo*>(aResult.mU.mPtr);
+      *static_cast<SVGPointListAndInfo*>(aResult.mU.mPtr);
 
   MOZ_ASSERT(end.Element(), "Can't propagate target element");
   MOZ_ASSERT(start.Element() == end.Element() || !start.Element(),
              "Different target elements");
 
-  if (start.Element() && // 'start' is not an "identity" value
+  if (start.Element() &&  // 'start' is not an "identity" value
       start.Length() != end.Length()) {
     // For now we only support animation between lists of the same length.
     // SVGContentUtils::ReportToConsole
@@ -178,7 +162,7 @@ SVGPointListSMILType::Interpolate(const nsSMILValue& aStartVal,
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
-  result.SetInfo(end.Element()); // propagate target element info!
+  result.SetInfo(end.Element());  // propagate target element info!
 
   if (start.Length() != end.Length()) {
     MOZ_ASSERT(start.Length() == 0, "Not an identity value");
@@ -193,4 +177,4 @@ SVGPointListSMILType::Interpolate(const nsSMILValue& aStartVal,
   return NS_OK;
 }
 
-} // namespace mozilla
+}  // namespace mozilla

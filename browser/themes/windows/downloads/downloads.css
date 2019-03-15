@@ -6,14 +6,12 @@
 
 /*** Panel and outer controls ***/
 
-@keyfocus@ #downloadsSummary:focus,
-@keyfocus@ .downloadsPanelFooterButton:focus {
-  outline: 1px -moz-dialogtext dotted;
-  outline-offset: -1px;
+#downloadsSummary:-moz-focusring {
+  outline-offset: -5px;
 }
 
-@keyfocus@ #downloadsSummary:focus {
-  outline-offset: -5px;
+@notKeyfocus@ #downloadsSummary:-moz-focusring {
+  outline: none;
 }
 
 /*** List items and similar elements in the summary ***/
@@ -24,28 +22,27 @@
   --downloads-item-details-opacity: 0.6;
 }
 
-.downloadButton > .button-box {
-  border: 1px solid transparent;
-}
-
-@keyfocus@ .downloadButton:focus > .button-box {
-  border: 1px dotted ThreeDDarkShadow;
+@notKeyfocus@ .downloadButton:-moz-focusring {
+  outline: none;
 }
 
 @media (-moz-windows-default-theme) {
-  @item@[verdict="Malware"] {
+  @item@[verdict="Malware"]:not(:hover) {
     color: #aa1b08;
   }
 
+  :root[lwt-popup-brighttext] @item@[verdict="Malware"]:not(:hover) {
+    color: #ff0039;
+  }
+
   /* Use unified color for the progressbar on default theme */
-  .downloadProgress > .progress-bar {
+  .downloadProgress::-moz-progress-bar {
     background-color: #3c9af8;
   }
 
-  .downloadProgress[paused="true"] > .progress-bar {
+  .downloadProgress[paused]::-moz-progress-bar {
     background-color: #a6a6a6;
   }
-
 }
 
 /*** Highlighted list items ***/

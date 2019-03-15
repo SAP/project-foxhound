@@ -51,24 +51,12 @@ AutoCompleteInput.prototype = {
     invalidate() {},
 
     // nsISupports implementation
-    QueryInterface(iid) {
-      if (iid.equals(Ci.nsISupports) ||
-          iid.equals(Ci.nsIAutoCompletePopup))
-        return this;
-
-      throw Components.results.NS_ERROR_NO_INTERFACE;
-    }
+    QueryInterface: ChromeUtils.generateQI(["nsIAutoCompletePopup"]),
   },
 
   // nsISupports implementation
-  QueryInterface(iid) {
-    if (iid.equals(Ci.nsISupports) ||
-        iid.equals(Ci.nsIAutoCompleteInput))
-      return this;
-
-    throw Components.results.NS_ERROR_NO_INTERFACE;
-  }
-}
+  QueryInterface: ChromeUtils.generateQI(["nsIAutoCompleteInput"]),
+};
 
 
 
@@ -83,7 +71,7 @@ function AutoCompleteResult(aValues, aComments, aStyles) {
   if (this._values.length > 0) {
     this.searchResult = Ci.nsIAutoCompleteResult.RESULT_SUCCESS;
   } else {
-    this.searchResult = Ci.nsIAutoCompleteResult.NOMATCH;
+    this.searchResult = Ci.nsIAutoCompleteResult.RESULT_NOMATCH;
   }
 }
 AutoCompleteResult.prototype = {
@@ -130,14 +118,8 @@ AutoCompleteResult.prototype = {
   removeValueAt(aRowIndex, aRemoveFromDb) {},
 
   // nsISupports implementation
-  QueryInterface(iid) {
-    if (iid.equals(Ci.nsISupports) ||
-        iid.equals(Ci.nsIAutoCompleteResult))
-      return this;
-
-    throw Components.results.NS_ERROR_NO_INTERFACE;
-  }
-}
+  QueryInterface: ChromeUtils.generateQI(["nsIAutoCompleteResult"]),
+};
 
 
 
@@ -156,7 +138,7 @@ AutoCompleteSearch.prototype = {
   name: null,
 
   // AutoCompleteResult
-  _result:null,
+  _result: null,
 
 
   /**
@@ -172,20 +154,13 @@ AutoCompleteSearch.prototype = {
   stopSearch() {},
 
   // nsISupports implementation
-  QueryInterface(iid) {
-    if (iid.equals(Ci.nsISupports) ||
-        iid.equals(Ci.nsIFactory) ||
-        iid.equals(Ci.nsIAutoCompleteSearch))
-      return this;
-
-    throw Components.results.NS_ERROR_NO_INTERFACE;
-  },
+  QueryInterface: ChromeUtils.generateQI(["nsIFactory", "nsIAutoCompleteSearch"]),
 
   // nsIFactory implementation
   createInstance(outer, iid) {
     return this.QueryInterface(iid);
-  }
-}
+  },
+};
 
 
 
@@ -241,8 +216,8 @@ function run_test() {
   registerAutoCompleteSearch(emptySearch);
   registerAutoCompleteSearch(regularSearch);
 
-  var controller = Components.classes["@mozilla.org/autocomplete/controller;1"].
-                   getService(Components.interfaces.nsIAutoCompleteController);
+  var controller = Cc["@mozilla.org/autocomplete/controller;1"].
+                   getService(Ci.nsIAutoCompleteController);
 
   // Make an AutoCompleteInput that uses our searches
   // and confirms results on search complete
@@ -251,20 +226,20 @@ function run_test() {
 
   input.onSearchBegin = function() {
     numSearchesStarted++;
-    do_check_eq(numSearchesStarted, 1);
+    Assert.equal(numSearchesStarted, 1);
   };
 
   input.onSearchComplete = function() {
 
-    do_check_eq(numSearchesStarted, 1);
+    Assert.equal(numSearchesStarted, 1);
 
-    do_check_eq(controller.searchStatus,
-                Ci.nsIAutoCompleteController.STATUS_COMPLETE_MATCH);
-    do_check_eq(controller.matchCount, 2);
+    Assert.equal(controller.searchStatus,
+                 Ci.nsIAutoCompleteController.STATUS_COMPLETE_MATCH);
+    Assert.equal(controller.matchCount, 2);
 
     // Confirm expected result values
     for (var i = 0; i < expectedValues.length; i++) {
-      do_check_eq(expectedValues[i], controller.getValueAt(i));
+      Assert.equal(expectedValues[i], controller.getValueAt(i));
     }
 
     // Unregister searches
@@ -281,4 +256,3 @@ function run_test() {
 
   controller.startSearch("test");
 }
-

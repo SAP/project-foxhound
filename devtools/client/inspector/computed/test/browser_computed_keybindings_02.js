@@ -32,35 +32,36 @@ const TEST_URI = `
   </div>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openComputedView();
-  yield selectNode("span", inspector);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const {inspector, view} = await openComputedView();
+  await selectNode("span", inspector);
 
   info("Selecting the first computed style in the list");
-  let firstStyle = view.styleDocument.querySelector(".property-view");
+  const firstStyle = view.styleDocument.querySelector(
+    "#computed-container .computed-property-view");
   ok(firstStyle, "First computed style found in panel");
   firstStyle.focus();
 
   info("Tab to select the 2nd style and press return");
   let onExpanded = inspector.once("computed-view-property-expanded");
-  EventUtils.synthesizeKey("VK_TAB", {});
-  EventUtils.synthesizeKey("VK_RETURN", {});
-  yield onExpanded;
+  EventUtils.synthesizeKey("KEY_Tab");
+  EventUtils.synthesizeKey("KEY_Enter");
+  await onExpanded;
 
   info("Verify the 2nd style has been expanded");
-  let secondStyleSelectors = view.styleDocument.querySelectorAll(
-    ".property-content .matchedselectors")[1];
+  const secondStyleSelectors = view.styleDocument.querySelectorAll(
+    ".computed-property-content .matchedselectors")[1];
   ok(secondStyleSelectors.childNodes.length > 0, "Matched selectors expanded");
 
   info("Tab back up and test the same thing, with space");
   onExpanded = inspector.once("computed-view-property-expanded");
-  EventUtils.synthesizeKey("VK_TAB", {shiftKey: true});
-  EventUtils.synthesizeKey("VK_SPACE", {});
-  yield onExpanded;
+  EventUtils.synthesizeKey("KEY_Tab", {shiftKey: true});
+  EventUtils.synthesizeKey(" ");
+  await onExpanded;
 
   info("Verify the 1st style has been expanded too");
-  let firstStyleSelectors = view.styleDocument.querySelectorAll(
-    ".property-content .matchedselectors")[0];
+  const firstStyleSelectors = view.styleDocument.querySelectorAll(
+    ".computed-property-content .matchedselectors")[0];
   ok(firstStyleSelectors.childNodes.length > 0, "Matched selectors expanded");
 });

@@ -4,8 +4,9 @@
 
 "use strict";
 
-const { addons, createClass, createFactory, DOM: dom, PropTypes } =
-  require("devtools/client/shared/vendor/react");
+const { createFactory, PureComponent } = require("devtools/client/shared/vendor/react");
+const dom = require("devtools/client/shared/vendor/react-dom-factories");
+const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 
 const BoxModelInfo = createFactory(require("./BoxModelInfo"));
 const BoxModelMain = createFactory(require("./BoxModelMain"));
@@ -13,51 +14,81 @@ const BoxModelProperties = createFactory(require("./BoxModelProperties"));
 
 const Types = require("../types");
 
-module.exports = createClass({
+class BoxModel extends PureComponent {
+  static get propTypes() {
+    return {
+      boxModel: PropTypes.shape(Types.boxModel).isRequired,
+      onHideBoxModelHighlighter: PropTypes.func.isRequired,
+      onShowBoxModelEditor: PropTypes.func.isRequired,
+      onShowBoxModelHighlighter: PropTypes.func.isRequired,
+      onShowBoxModelHighlighterForNode: PropTypes.func.isRequired,
+      onToggleGeometryEditor: PropTypes.func.isRequired,
+      showBoxModelProperties: PropTypes.bool.isRequired,
+      setSelectedNode: PropTypes.func.isRequired,
+    };
+  }
 
-  displayName: "BoxModel",
+  constructor(props) {
+    super(props);
+    this.onKeyDown = this.onKeyDown.bind(this);
+  }
 
-  propTypes: {
-    boxModel: PropTypes.shape(Types.boxModel).isRequired,
-    showBoxModelProperties: PropTypes.bool.isRequired,
-    onHideBoxModelHighlighter: PropTypes.func.isRequired,
-    onShowBoxModelEditor: PropTypes.func.isRequired,
-    onShowBoxModelHighlighter: PropTypes.func.isRequired,
-    onToggleGeometryEditor: PropTypes.func.isRequired,
-  },
+  onKeyDown(event) {
+    const { target } = event;
 
-  mixins: [ addons.PureRenderMixin ],
+    if (target == this.boxModelContainer) {
+      this.boxModelMain.onKeyDown(event);
+    }
+  }
 
   render() {
-    let {
+    const {
       boxModel,
-      showBoxModelProperties,
       onHideBoxModelHighlighter,
       onShowBoxModelEditor,
       onShowBoxModelHighlighter,
+      onShowBoxModelHighlighterForNode,
       onToggleGeometryEditor,
+      setSelectedNode,
+      showBoxModelProperties,
     } = this.props;
 
-    return dom.div(
-      {
-        className: "boxmodel-container",
-      },
-      BoxModelMain({
-        boxModel,
-        onHideBoxModelHighlighter,
-        onShowBoxModelEditor,
-        onShowBoxModelHighlighter,
-      }),
-      BoxModelInfo({
-        boxModel,
-        onToggleGeometryEditor,
-      }),
-      showBoxModelProperties ?
-        BoxModelProperties({
+    return (
+      dom.div(
+        {
+          className: "boxmodel-container",
+          tabIndex: 0,
+          ref: div => {
+            this.boxModelContainer = div;
+          },
+          onKeyDown: this.onKeyDown,
+        },
+        BoxModelMain({
           boxModel,
-        })
-        :
-        null
+          boxModelContainer: this.boxModelContainer,
+          ref: boxModelMain => {
+            this.boxModelMain = boxModelMain;
+          },
+          onHideBoxModelHighlighter,
+          onShowBoxModelEditor,
+          onShowBoxModelHighlighter,
+        }),
+        BoxModelInfo({
+          boxModel,
+          onToggleGeometryEditor,
+        }),
+        showBoxModelProperties ?
+          BoxModelProperties({
+            boxModel,
+            setSelectedNode,
+            onHideBoxModelHighlighter,
+            onShowBoxModelHighlighterForNode,
+          })
+          :
+          null
+      )
     );
-  },
-});
+  }
+}
+
+module.exports = BoxModel;

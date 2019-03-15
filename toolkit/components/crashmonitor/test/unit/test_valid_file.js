@@ -6,15 +6,15 @@
 /**
  * Test with sessionCheckpoints.json containing valid data
  */
-add_task(function* test_valid_file() {
+add_task(async function test_valid_file() {
   // Write valid data to checkpoint file
   let data = JSON.stringify({"final-ui-startup": true});
-  yield OS.File.writeAtomic(sessionCheckpointsPath, data,
+  await OS.File.writeAtomic(sessionCheckpointsPath, data,
                             {tmpPath: sessionCheckpointsPath + ".tmp"});
 
   CrashMonitor.init();
-  let checkpoints = yield CrashMonitor.previousCheckpoints;
+  let checkpoints = await CrashMonitor.previousCheckpoints;
 
-  do_check_true(checkpoints["final-ui-startup"]);
-  do_check_eq(Object.keys(checkpoints).length, 1);
+  Assert.ok(checkpoints["final-ui-startup"]);
+  Assert.equal(Object.keys(checkpoints).length, 1);
 });

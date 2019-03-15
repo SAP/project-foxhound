@@ -6,22 +6,23 @@ package org.mozilla.gecko.text;
 
 import android.annotation.TargetApi;
 import android.app.Activity;
+import android.graphics.Matrix;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.os.Build;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.ActionMode;
 
 import org.mozilla.gecko.EventDispatcher;
-import org.mozilla.gecko.GeckoApp;
-import org.mozilla.gecko.GeckoAppShell;
 import org.mozilla.gecko.Telemetry;
 import org.mozilla.gecko.TelemetryContract;
-import org.mozilla.gecko.gfx.LayerView;
+import org.mozilla.gecko.util.ActivityUtils;
 import org.mozilla.gecko.util.BundleEventListener;
 import org.mozilla.gecko.util.EventCallback;
 import org.mozilla.gecko.util.GeckoBundle;
 import org.mozilla.gecko.util.ThreadUtils;
+import org.mozilla.geckoview.GeckoView;
 
 import java.util.List;
 
@@ -36,8 +37,7 @@ public class FloatingToolbarTextSelection implements TextSelection, BundleEventL
     // floating toolbar overlays the bottom handle(s).
     private static final int HANDLES_OFFSET_DP = 20;
 
-    private final Activity activity;
-    private final LayerView layerView;
+    /* package */ final GeckoView geckoView;
     private final int[] locationInWindow;
     private final float handlesOffset;
 
@@ -46,13 +46,12 @@ public class FloatingToolbarTextSelection implements TextSelection, BundleEventL
     private int selectionID;
     /* package-private */ Rect contentRect;
 
-    public FloatingToolbarTextSelection(Activity activity, LayerView layerView) {
-        this.activity = activity;
-        this.layerView = layerView;
+    public FloatingToolbarTextSelection(final GeckoView geckoView) {
+        this.geckoView = geckoView;
         this.locationInWindow = new int[2];
 
         this.handlesOffset = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP,
-                HANDLES_OFFSET_DP, activity.getResources().getDisplayMetrics());
+                HANDLES_OFFSET_DP, geckoView.getContext().getResources().getDisplayMetrics());
     }
 
     @Override
@@ -72,7 +71,7 @@ public class FloatingToolbarTextSelection implements TextSelection, BundleEventL
 
         final GeckoBundle data = new GeckoBundle(1);
         data.putInt("selectionID", selectionID);
-        GeckoApp.getEventDispatcher().dispatch("TextSelection:End", data);
+        geckoView.getEventDispatcher().dispatch("TextSelection:End", data);
     }
 
     @Override
@@ -86,7 +85,7 @@ public class FloatingToolbarTextSelection implements TextSelection, BundleEventL
     }
 
     private void registerForEvents() {
-        GeckoApp.getEventDispatcher().registerUiThreadListener(this,
+        geckoView.getEventDispatcher().registerUiThreadListener(this,
                 "TextSelection:ActionbarInit",
                 "TextSelection:ActionbarStatus",
                 "TextSelection:ActionbarUninit",
@@ -94,7 +93,7 @@ public class FloatingToolbarTextSelection implements TextSelection, BundleEventL
     }
 
     private void unregisterFromEvents() {
-        GeckoApp.getEventDispatcher().unregisterUiThreadListener(this,
+        geckoView.getEventDispatcher().unregisterUiThreadListener(this,
                 "TextSelection:ActionbarInit",
                 "TextSelection:ActionbarStatus",
                 "TextSelection:ActionbarUninit",
@@ -139,6 +138,11 @@ public class FloatingToolbarTextSelection implements TextSelection, BundleEventL
             return;
         }
 
+        final Activity activity =
+                ActivityUtils.getActivityFromContext(geckoView.getContext());
+        if (activity == null) {
+            return;
+        }
         actionModeCallback = new FloatingActionModeCallback(this, actions);
         actionMode = activity.startActionMode(actionModeCallback, ActionMode.TYPE_FLOATING);
     }
@@ -166,19 +170,23 @@ public class FloatingToolbarTextSelection implements TextSelection, BundleEventL
     }
 
     private void updateRect(final GeckoBundle message) {
-        final double x = message.getDouble("x");
-        final double y = (int) message.getDouble("y");
-        final double width = (int) message.getDouble("width");
-        final double height = (int) message.getDouble("height");
+        final float x = (float) message.getDouble("x");
+        final float y = (float) message.getDouble("y");
+        final float width = (float) message.getDouble("width");
+        final float height = (float) message.getDouble("height");
 
-        final float zoomFactor = layerView.getZoomFactor();
-        layerView.getLocationInWindow(locationInWindow);
+        final Matrix matrix = new Matrix();
+        final RectF rect = new RectF(x, y, x + width, y + height);
+        geckoView.getSession().getClientToScreenMatrix(matrix);
+        matrix.mapRect(rect);
 
-        contentRect = new Rect(
-                (int) (x * zoomFactor + locationInWindow[0]),
-                (int) (y * zoomFactor + locationInWindow[1]),
-                (int) ((x + width) * zoomFactor + locationInWindow[0]),
-                (int) ((y + height) * zoomFactor + locationInWindow[1] +
-                       (height > 0 ? handlesOffset : 0)));
+        if ((int) height > 0) {
+            rect.bottom += handlesOffset;
+        }
+
+        if (contentRect == null) {
+            contentRect = new Rect();
+        }
+        rect.round(contentRect);
     }
 }

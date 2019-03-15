@@ -9,6 +9,7 @@
 #define GrAutoLocaleSetter_DEFINED
 
 #include "GrTypes.h"
+#include "SkNoncopyable.h"
 
 #if defined(SK_BUILD_FOR_WIN)
 #include "SkString.h"
@@ -20,9 +21,13 @@
 
 #if defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
 #include <xlocale.h>
+#include <cstring>
+#define HAVE_XLOCALE 1
+#else
+#define HAVE_XLOCALE 0
 #endif
 
-#if defined(SK_BUILD_FOR_ANDROID) || defined(__UCLIBC__) || defined(_NEWLIB_VERSION)
+#if defined(SK_BUILD_FOR_ANDROID) || defined(__UCLIBC__) || defined(_NEWLIB_VERSION) || defined(__NetBSD__)
 #define HAVE_LOCALE_T 0
 #else
 #define HAVE_LOCALE_T 1
@@ -45,11 +50,17 @@ public:
             fShouldRestoreLocale = false;
         }
 #elif HAVE_LOCALE_T
-        fLocale = newlocale(LC_ALL, name, 0);
+#if HAVE_XLOCALE
+        // In xlocale nullptr means the C locale.
+        if (0 == strcmp(name, "C")) {
+            name = nullptr;
+        }
+#endif
+        fLocale = newlocale(LC_ALL_MASK, name, nullptr);
         if (fLocale) {
             fOldLocale = uselocale(fLocale);
         } else {
-            fOldLocale = static_cast<locale_t>(0);
+            fOldLocale = static_cast<locale_t>(nullptr);
         }
 #else
         (void) name; // suppress unused param warning.
@@ -82,5 +93,6 @@ private:
 };
 
 #undef HAVE_LOCALE_T
+#undef HAVE_XLOCALE
 
 #endif

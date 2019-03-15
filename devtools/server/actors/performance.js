@@ -4,13 +4,9 @@
 
 "use strict";
 
-const { Task } = require("devtools/shared/task");
 const { Actor, ActorClassWithSpec } = require("devtools/shared/protocol");
 const { actorBridgeWithSpec } = require("devtools/server/actors/common");
 const { performanceSpec } = require("devtools/shared/specs/performance");
-
-loader.lazyRequireGetter(this, "events", "sdk/event/core");
-loader.lazyRequireGetter(this, "extend", "sdk/util/object", true);
 
 loader.lazyRequireGetter(this, "PerformanceRecorder",
   "devtools/server/performance/recorder", true);
@@ -19,11 +15,11 @@ loader.lazyRequireGetter(this, "normalizePerformanceFeatures",
 
 const PIPE_TO_FRONT_EVENTS = new Set([
   "recording-started", "recording-stopping", "recording-stopped",
-  "profiler-status", "timeline-data", "console-profile-start"
+  "profiler-status", "timeline-data", "console-profile-start",
 ]);
 
 const RECORDING_STATE_CHANGE_EVENTS = new Set([
-  "recording-started", "recording-stopping", "recording-stopped"
+  "recording-started", "recording-stopping", "recording-stopped",
 ]);
 
 /**
@@ -45,39 +41,58 @@ var PerformanceActor = ActorClassWithSpec(performanceSpec, {
     },
   },
 
-  initialize: function (conn, tabActor) {
+  initialize: function(conn, targetActor) {
     Actor.prototype.initialize.call(this, conn);
-    this._onRecorderEvent = this._onRecorderEvent.bind(this);
-    this.bridge = new PerformanceRecorder(conn, tabActor);
-    events.on(this.bridge, "*", this._onRecorderEvent);
+
+    this._onRecordingStarted = this._onRecordingStarted.bind(this);
+    this._onRecordingStopping = this._onRecordingStopping.bind(this);
+    this._onRecordingStopped = this._onRecordingStopped.bind(this);
+    this._onProfilerStatus = this._onProfilerStatus.bind(this);
+    this._onTimelineData = this._onTimelineData.bind(this);
+    this._onConsoleProfileStart = this._onConsoleProfileStart.bind(this);
+
+    this.bridge = new PerformanceRecorder(conn, targetActor);
+
+    this.bridge.on("recording-started", this._onRecordingStarted);
+    this.bridge.on("recording-stopping", this._onRecordingStopping);
+    this.bridge.on("recording-stopped", this._onRecordingStopped);
+    this.bridge.on("profiler-status", this._onProfilerStatus);
+    this.bridge.on("timeline-data", this._onTimelineData);
+    this.bridge.on("console-profile-start", this._onConsoleProfileStart);
   },
 
-  destroy: function () {
-    events.off(this.bridge, "*", this._onRecorderEvent);
+  destroy: function() {
+    this.bridge.off("recording-started", this._onRecordingStarted);
+    this.bridge.off("recording-stopping", this._onRecordingStopping);
+    this.bridge.off("recording-stopped", this._onRecordingStopped);
+    this.bridge.off("profiler-status", this._onProfilerStatus);
+    this.bridge.off("timeline-data", this._onTimelineData);
+    this.bridge.off("console-profile-start", this._onConsoleProfileStart);
+
     this.bridge.destroy();
     Actor.prototype.destroy.call(this);
   },
 
-  connect: function (config) {
+  connect: function(config) {
     this.bridge.connect({ systemClient: config.systemClient });
     return { traits: this.traits };
   },
 
-  canCurrentlyRecord: function () {
+  canCurrentlyRecord: function() {
     return this.bridge.canCurrentlyRecord();
   },
 
-  startRecording: Task.async(function* (options = {}) {
+  async startRecording(options = {}) {
     if (!this.bridge.canCurrentlyRecord().success) {
       return null;
     }
 
-    let normalizedOptions = normalizePerformanceFeatures(options, this.traits.features);
-    let recording = yield this.bridge.startRecording(normalizedOptions);
+    const normalizedOptions = normalizePerformanceFeatures(options, this.traits.features);
+    const recording = await this.bridge.startRecording(normalizedOptions);
     this.manage(recording);
 
     return recording;
-  }),
+  },
 
   stopRecording: actorBridgeWithSpec("stopRecording"),
   isRecording: actorBridgeWithSpec("isRecording"),
@@ -88,18 +103,42 @@ var PerformanceActor = ActorClassWithSpec(performanceSpec, {
   /**
    * Filter which events get piped to the front.
    */
-  _onRecorderEvent: function (eventName, ...data) {
+  _onRecordingStarted: function(...data) {
+    this._onRecorderEvent("recording-started", data);
+  },
+
+  _onRecordingStopping: function(...data) {
+    this._onRecorderEvent("recording-stopping", data);
+  },
+
+  _onRecordingStopped: function(...data) {
+    this._onRecorderEvent("recording-stopped", data);
+  },
+
+  _onProfilerStatus: function(...data) {
+    this._onRecorderEvent("profiler-status", data);
+  },
+
+  _onTimelineData: function(...data) {
+    this._onRecorderEvent("timeline-data", data);
+  },
+
+  _onConsoleProfileStart: function(...data) {
+    this._onRecorderEvent("console-profile-start", data);
+  },
+
+  _onRecorderEvent: function(eventName, data) {
     // If this is a recording state change, call
     // a method on the related PerformanceRecordingActor so it can
     // update its internal state.
     if (RECORDING_STATE_CHANGE_EVENTS.has(eventName)) {
-      let recording = data[0];
-      let extraData = data[1];
+      const recording = data[0];
+      const extraData = data[1];
       recording._setState(eventName, extraData);
     }
 
     if (PIPE_TO_FRONT_EVENTS.has(eventName)) {
-      events.emit(this, eventName, ...data);
+      this.emit(eventName, ...data);
     }
   },
 });

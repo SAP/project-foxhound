@@ -23,90 +23,84 @@ class nsIMutableArray;
 namespace mozilla {
 namespace dom {
 class EventTarget;
-} // namespace dom
+}  // namespace dom
 
-template<typename T>
+template <typename T>
 class Maybe;
 
-class EventListenerChange final : public nsIEventListenerChange
-{
-public:
+class EventListenerChange final : public nsIEventListenerChange {
+ public:
   explicit EventListenerChange(dom::EventTarget* aTarget);
 
-  void AddChangedListenerName(nsIAtom* aEventName);
+  void AddChangedListenerName(nsAtom* aEventName);
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSIEVENTLISTENERCHANGE
 
-protected:
+ protected:
   virtual ~EventListenerChange();
   nsCOMPtr<dom::EventTarget> mTarget;
-  nsCOMPtr<nsIMutableArray> mChangedListenerNames;
-
+  nsTArray<RefPtr<nsAtom>> mChangedListenerNames;
 };
 
-class EventListenerInfo final : public nsIEventListenerInfo
-{
-public:
+class EventListenerInfo final : public nsIEventListenerInfo {
+ public:
   EventListenerInfo(const nsAString& aType,
-                    already_AddRefed<nsIDOMEventListener> aListener,
-                    bool aCapturing,
-                    bool aAllowsUntrusted,
-                    bool aInSystemEventGroup)
-    : mType(aType)
-    , mListener(aListener)
-    , mCapturing(aCapturing)
-    , mAllowsUntrusted(aAllowsUntrusted)
-    , mInSystemEventGroup(aInSystemEventGroup)
-  {
-  }
+                    JS::Handle<JSObject*> aScriptedListener,
+                    JS::Handle<JSObject*> aScriptedListenerGlobal,
+                    bool aCapturing, bool aAllowsUntrusted,
+                    bool aInSystemEventGroup);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_CLASS(EventListenerInfo)
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(EventListenerInfo)
   NS_DECL_NSIEVENTLISTENERINFO
 
-protected:
-  virtual ~EventListenerInfo() {}
+ protected:
+  virtual ~EventListenerInfo();
 
-  bool GetJSVal(JSContext* aCx,
-                Maybe<JSAutoCompartment>& aAc,
+  bool GetJSVal(JSContext* aCx, Maybe<JSAutoRealm>& aAr,
                 JS::MutableHandle<JS::Value> aJSVal);
 
   nsString mType;
-  // nsReftPtr because that is what nsListenerStruct uses too.
-  RefPtr<nsIDOMEventListener> mListener;
+  JS::Heap<JSObject*> mScriptedListener;  // May be null.
+  // mScriptedListener may be a cross-compartment wrapper so we cannot use it
+  // with JSAutoRealm because CCWs are not associated with a single realm. We
+  // use this global instead (must be same-compartment with mScriptedListener
+  // and must be non-null if mScriptedListener is non-null).
+  JS::Heap<JSObject*> mScriptedListenerGlobal;
   bool mCapturing;
   bool mAllowsUntrusted;
   bool mInSystemEventGroup;
 };
 
-class EventListenerService final : public nsIEventListenerService
-{
+class EventListenerService final : public nsIEventListenerService {
   ~EventListenerService();
-public:
+
+ public:
   EventListenerService();
   NS_DECL_ISUPPORTS
   NS_DECL_NSIEVENTLISTENERSERVICE
 
   static void NotifyAboutMainThreadListenerChange(dom::EventTarget* aTarget,
-                                                  nsIAtom* aName)
-  {
+                                                  nsAtom* aName) {
     if (sInstance) {
       sInstance->NotifyAboutMainThreadListenerChangeInternal(aTarget, aName);
     }
   }
 
   void NotifyPendingChanges();
-private:
+
+ private:
   void NotifyAboutMainThreadListenerChangeInternal(dom::EventTarget* aTarget,
-                                                   nsIAtom* aName);
+                                                   nsAtom* aName);
   nsTObserverArray<nsCOMPtr<nsIListenerChangeListener>> mChangeListeners;
   nsCOMPtr<nsIMutableArray> mPendingListenerChanges;
-  nsDataHashtable<nsISupportsHashKey, RefPtr<EventListenerChange>> mPendingListenerChangesSet;
+  nsDataHashtable<nsISupportsHashKey, RefPtr<EventListenerChange>>
+      mPendingListenerChangesSet;
 
   static EventListenerService* sInstance;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_EventListenerService_h_
+#endif  // mozilla_EventListenerService_h_

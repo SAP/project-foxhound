@@ -9,6 +9,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <unistd.h>  // write(), only for testing LUL
 
 #include <algorithm>  // std::sort
 #include <string>
@@ -18,7 +19,10 @@
 #include "mozilla/CheckedInt.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/MemoryChecking.h"
+#include "mozilla/Move.h"
 #include "mozilla/Sprintf.h"
+#include "mozilla/UniquePtr.h"
+#include "mozilla/Unused.h"
 
 #include "LulCommonExt.h"
 #include "LulElfExt.h"
@@ -32,13 +36,13 @@
 
 namespace lul {
 
-using std::string;
-using std::vector;
-using std::pair;
 using mozilla::CheckedInt;
 using mozilla::DebugOnly;
 using mozilla::MallocSizeOf;
-
+using mozilla::Unused;
+using std::pair;
+using std::string;
+using std::vector;
 
 // WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING
 //
@@ -50,37 +54,57 @@ using mozilla::MallocSizeOf;
 //
 // WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING
 
-
 ////////////////////////////////////////////////////////////////
 // RuleSet                                                    //
 ////////////////////////////////////////////////////////////////
 
-static const char* 
-NameOf_DW_REG(int16_t aReg)
-{
+static const char* NameOf_DW_REG(int16_t aReg) {
   switch (aReg) {
-    case DW_REG_CFA:       return "cfa";
+    case DW_REG_CFA:
+      return "cfa";
 #if defined(GP_ARCH_amd64) || defined(GP_ARCH_x86)
-    case DW_REG_INTEL_XBP: return "xbp";
-    case DW_REG_INTEL_XSP: return "xsp";
-    case DW_REG_INTEL_XIP: return "xip";
+    case DW_REG_INTEL_XBP:
+      return "xbp";
+    case DW_REG_INTEL_XSP:
+      return "xsp";
+    case DW_REG_INTEL_XIP:
+      return "xip";
 #elif defined(GP_ARCH_arm)
-    case DW_REG_ARM_R7:    return "r7";
-    case DW_REG_ARM_R11:   return "r11";
-    case DW_REG_ARM_R12:   return "r12";
-    case DW_REG_ARM_R13:   return "r13";
-    case DW_REG_ARM_R14:   return "r14";
-    case DW_REG_ARM_R15:   return "r15";
+    case DW_REG_ARM_R7:
+      return "r7";
+    case DW_REG_ARM_R11:
+      return "r11";
+    case DW_REG_ARM_R12:
+      return "r12";
+    case DW_REG_ARM_R13:
+      return "r13";
+    case DW_REG_ARM_R14:
+      return "r14";
+    case DW_REG_ARM_R15:
+      return "r15";
+#elif defined(GP_ARCH_arm64)
+    case DW_REG_AARCH64_X29:
+      return "x29";
+    case DW_REG_AARCH64_X30:
+      return "x30";
+    case DW_REG_AARCH64_SP:
+      return "sp";
+#elif defined(GP_ARCH_mips64)
+    case DW_REG_MIPS_SP:
+      return "sp";
+    case DW_REG_MIPS_FP:
+      return "fp";
+    case DW_REG_MIPS_PC:
+      return "pc";
 #else
-# error "Unsupported arch"
+#  error "Unsupported arch"
 #endif
-    default: return "???";
+    default:
+      return "???";
   }
 }
 
-string
-LExpr::ShowRule(const char* aNewReg) const
-{
+string LExpr::ShowRule(const char* aNewReg) const {
   char buf[64];
   string res = string(aNewReg) + "=";
   switch (mHow) {
@@ -88,13 +112,11 @@ LExpr::ShowRule(const char* aNewReg) const
       res += "Unknown";
       break;
     case NODEREF:
-      SprintfLiteral(buf, "%s+%d",
-                     NameOf_DW_REG(mReg), (int)mOffset);
+      SprintfLiteral(buf, "%s+%d", NameOf_DW_REG(mReg), (int)mOffset);
       res += buf;
       break;
     case DEREF:
-      SprintfLiteral(buf, "*(%s+%d)",
-                     NameOf_DW_REG(mReg), (int)mOffset);
+      SprintfLiteral(buf, "*(%s+%d)", NameOf_DW_REG(mReg), (int)mOffset);
       res += buf;
       break;
     case PFXEXPR:
@@ -108,12 +130,9 @@ LExpr::ShowRule(const char* aNewReg) const
   return res;
 }
 
-void
-RuleSet::Print(void(*aLog)(const char*)) const
-{
+void RuleSet::Print(void (*aLog)(const char*)) const {
   char buf[96];
-  SprintfLiteral(buf, "[%llx .. %llx]: let ",
-                 (unsigned long long int)mAddr,
+  SprintfLiteral(buf, "[%llx .. %llx]: let ", (unsigned long long int)mAddr,
                  (unsigned long long int)(mAddr + mLen - 1));
   string res = string(buf);
   res += mCfaExpr.ShowRule("cfa");
@@ -125,47 +144,77 @@ RuleSet::Print(void(*aLog)(const char*)) const
   res += mXbpExpr.ShowRule(" BP");
 #elif defined(GP_ARCH_arm)
   res += mR15expr.ShowRule(" R15");
-  res += mR7expr .ShowRule(" R7" );
+  res += mR7expr.ShowRule(" R7");
   res += mR11expr.ShowRule(" R11");
   res += mR12expr.ShowRule(" R12");
   res += mR13expr.ShowRule(" R13");
   res += mR14expr.ShowRule(" R14");
+#elif defined(GP_ARCH_arm64)
+  res += mX29expr.ShowRule(" X29");
+  res += mX30expr.ShowRule(" X30");
+  res += mSPexpr.ShowRule(" SP");
+#elif defined(GP_ARCH_mips64)
+  res += mPCexpr.ShowRule(" PC");
+  res += mSPexpr.ShowRule(" SP");
+  res += mFPexpr.ShowRule(" FP");
 #else
-# error "Unsupported arch"
+#  error "Unsupported arch"
 #endif
   aLog(res.c_str());
 }
 
-LExpr*
-RuleSet::ExprForRegno(DW_REG_NUMBER aRegno) {
+LExpr* RuleSet::ExprForRegno(DW_REG_NUMBER aRegno) {
   switch (aRegno) {
-    case DW_REG_CFA: return &mCfaExpr;
-#   if defined(GP_ARCH_amd64) || defined(GP_ARCH_x86)
-    case DW_REG_INTEL_XIP: return &mXipExpr;
-    case DW_REG_INTEL_XSP: return &mXspExpr;
-    case DW_REG_INTEL_XBP: return &mXbpExpr;
-#   elif defined(GP_ARCH_arm)
-    case DW_REG_ARM_R15:   return &mR15expr;
-    case DW_REG_ARM_R14:   return &mR14expr;
-    case DW_REG_ARM_R13:   return &mR13expr;
-    case DW_REG_ARM_R12:   return &mR12expr;
-    case DW_REG_ARM_R11:   return &mR11expr;
-    case DW_REG_ARM_R7:    return &mR7expr;
-#   else
-#     error "Unknown arch"
-#   endif
-    default: return nullptr;
+    case DW_REG_CFA:
+      return &mCfaExpr;
+#if defined(GP_ARCH_amd64) || defined(GP_ARCH_x86)
+    case DW_REG_INTEL_XIP:
+      return &mXipExpr;
+    case DW_REG_INTEL_XSP:
+      return &mXspExpr;
+    case DW_REG_INTEL_XBP:
+      return &mXbpExpr;
+#elif defined(GP_ARCH_arm)
+    case DW_REG_ARM_R15:
+      return &mR15expr;
+    case DW_REG_ARM_R14:
+      return &mR14expr;
+    case DW_REG_ARM_R13:
+      return &mR13expr;
+    case DW_REG_ARM_R12:
+      return &mR12expr;
+    case DW_REG_ARM_R11:
+      return &mR11expr;
+    case DW_REG_ARM_R7:
+      return &mR7expr;
+#elif defined(GP_ARCH_arm64)
+    case DW_REG_AARCH64_X29:
+      return &mX29expr;
+    case DW_REG_AARCH64_X30:
+      return &mX30expr;
+    case DW_REG_AARCH64_SP:
+      return &mSPexpr;
+#elif defined(GP_ARCH_mips64)
+    case DW_REG_MIPS_SP:
+      return &mSPexpr;
+    case DW_REG_MIPS_FP:
+      return &mFPexpr;
+    case DW_REG_MIPS_PC:
+      return &mPCexpr;
+#else
+#  error "Unknown arch"
+#endif
+    default:
+      return nullptr;
   }
 }
 
-RuleSet::RuleSet()
-{
+RuleSet::RuleSet() {
   mAddr = 0;
-  mLen  = 0;
+  mLen = 0;
   // The only other fields are of type LExpr and those are initialised
   // by LExpr::LExpr().
 }
-
 
 ////////////////////////////////////////////////////////////////
 // SecMap                                                     //
@@ -173,20 +222,13 @@ RuleSet::RuleSet()
 
 // See header file LulMainInt.h for comments about invariants.
 
-SecMap::SecMap(void(*aLog)(const char*))
-  : mSummaryMinAddr(1)
-  , mSummaryMaxAddr(0)
-  , mUsable(true)
-  , mLog(aLog)
-{}
+SecMap::SecMap(void (*aLog)(const char*))
+    : mSummaryMinAddr(1), mSummaryMaxAddr(0), mUsable(true), mLog(aLog) {}
 
-SecMap::~SecMap() {
-  mRuleSets.clear();
-}
+SecMap::~SecMap() { mRuleSets.clear(); }
 
 // RUNS IN NO-MALLOC CONTEXT
-RuleSet*
-SecMap::FindRuleSet(uintptr_t ia) {
+RuleSet* SecMap::FindRuleSet(uintptr_t ia) {
   // Binary search mRuleSets to find one that brackets |ia|.
   // lo and hi need to be signed, else the loop termination tests
   // don't work properly.  Note that this works correctly even when
@@ -203,12 +245,18 @@ SecMap::FindRuleSet(uintptr_t ia) {
       // not found
       return nullptr;
     }
-    long int  mid         = lo + ((hi - lo) / 2);
-    RuleSet*  mid_ruleSet = &mRuleSets[mid];
+    long int mid = lo + ((hi - lo) / 2);
+    RuleSet* mid_ruleSet = &mRuleSets[mid];
     uintptr_t mid_minAddr = mid_ruleSet->mAddr;
     uintptr_t mid_maxAddr = mid_minAddr + mid_ruleSet->mLen - 1;
-    if (ia < mid_minAddr) { hi = mid-1; continue; }
-    if (ia > mid_maxAddr) { lo = mid+1; continue; }
+    if (ia < mid_minAddr) {
+      hi = mid - 1;
+      continue;
+    }
+    if (ia > mid_maxAddr) {
+      lo = mid + 1;
+      continue;
+    }
     MOZ_ASSERT(mid_minAddr <= ia && ia <= mid_maxAddr);
     return mid_ruleSet;
   }
@@ -217,32 +265,26 @@ SecMap::FindRuleSet(uintptr_t ia) {
 
 // Add a RuleSet to the collection.  The rule is copied in.  Calling
 // this makes the map non-searchable.
-void
-SecMap::AddRuleSet(const RuleSet* rs) {
+void SecMap::AddRuleSet(const RuleSet* rs) {
   mUsable = false;
   mRuleSets.push_back(*rs);
 }
 
 // Add a PfxInstr to the vector of such instrs, and return the index
 // in the vector.  Calling this makes the map non-searchable.
-uint32_t
-SecMap::AddPfxInstr(PfxInstr pfxi) {
+uint32_t SecMap::AddPfxInstr(PfxInstr pfxi) {
   mUsable = false;
   mPfxInstrs.push_back(pfxi);
   return mPfxInstrs.size() - 1;
 }
 
-
-static bool
-CmpRuleSetsByAddrLE(const RuleSet& rs1, const RuleSet& rs2) {
+static bool CmpRuleSetsByAddrLE(const RuleSet& rs1, const RuleSet& rs2) {
   return rs1.mAddr < rs2.mAddr;
 }
 
 // Prepare the map for searching.  Completely remove any which don't
 // fall inside the specified range [start, +len).
-void
-SecMap::PrepareRuleSets(uintptr_t aStart, size_t aLen)
-{
+void SecMap::PrepareRuleSets(uintptr_t aStart, size_t aLen) {
   if (mRuleSets.empty()) {
     return;
   }
@@ -281,17 +323,16 @@ SecMap::PrepareRuleSets(uintptr_t aStart, size_t aLen)
     }
 
     for (i = 1; i < n; ++i) {
-      RuleSet* prev = &mRuleSets[i-1];
+      RuleSet* prev = &mRuleSets[i - 1];
       RuleSet* here = &mRuleSets[i];
       MOZ_ASSERT(prev->mAddr <= here->mAddr);
       if (prev->mAddr + prev->mLen > here->mAddr) {
         prev->mLen = here->mAddr - prev->mAddr;
       }
-      if (prev->mLen == 0)
-        nZeroLen++;
+      if (prev->mLen == 0) nZeroLen++;
     }
 
-    if (mRuleSets[n-1].mLen == 0) {
+    if (mRuleSets[n - 1].mLen == 0) {
       nZeroLen++;
     }
 
@@ -329,7 +370,7 @@ SecMap::PrepareRuleSets(uintptr_t aStart, size_t aLen)
   if (n > 0) {
     MOZ_ASSERT(mRuleSets[0].mLen > 0);
     for (size_t i = 1; i < n; ++i) {
-      RuleSet* prev = &mRuleSets[i-1];
+      RuleSet* prev = &mRuleSets[i - 1];
       RuleSet* here = &mRuleSets[i];
       MOZ_ASSERT(prev->mAddr < here->mAddr);
       MOZ_ASSERT(here->mLen > 0);
@@ -345,14 +386,13 @@ SecMap::PrepareRuleSets(uintptr_t aStart, size_t aLen)
     mSummaryMaxAddr = 0;
   } else {
     mSummaryMinAddr = mRuleSets[0].mAddr;
-    mSummaryMaxAddr = mRuleSets[n-1].mAddr + mRuleSets[n-1].mLen - 1;
+    mSummaryMaxAddr = mRuleSets[n - 1].mAddr + mRuleSets[n - 1].mLen - 1;
   }
   char buf[150];
-  SprintfLiteral(buf,
-                 "PrepareRuleSets: %d entries, smin/smax 0x%llx, 0x%llx\n",
+  SprintfLiteral(buf, "PrepareRuleSets: %d entries, smin/smax 0x%llx, 0x%llx\n",
                  (int)n, (unsigned long long int)mSummaryMinAddr,
-                         (unsigned long long int)mSummaryMaxAddr);
-  buf[sizeof(buf)-1] = 0;
+                 (unsigned long long int)mSummaryMaxAddr);
+  buf[sizeof(buf) - 1] = 0;
   mLog(buf);
 
   // Is now usable for binary search.
@@ -368,13 +408,9 @@ SecMap::PrepareRuleSets(uintptr_t aStart, size_t aLen)
   }
 }
 
-bool SecMap::IsEmpty() {
-  return mRuleSets.empty();
-}
+bool SecMap::IsEmpty() { return mRuleSets.empty(); }
 
-size_t
-SecMap::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const
-{
+size_t SecMap::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const {
   size_t n = aMallocSizeOf(this);
 
   // It's conceivable that these calls would be unsafe with some
@@ -399,7 +435,6 @@ SecMap::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const
 // SegArrays are used to keep track of which parts of the address
 // space are known to contain instructions.
 class SegArray {
-
  public:
   void add(uintptr_t lo, uintptr_t hi, bool val) {
     if (lo > hi) {
@@ -407,7 +442,7 @@ class SegArray {
     }
     split_at(lo);
     if (hi < UINTPTR_MAX) {
-      split_at(hi+1);
+      split_at(hi + 1);
     }
     std::vector<Seg>::size_type iLo, iHi, i;
     iLo = find(lo);
@@ -419,8 +454,8 @@ class SegArray {
   }
 
   // RUNS IN NO-MALLOC CONTEXT
-  bool getBoundingCodeSegment(/*OUT*/uintptr_t* rx_min,
-                              /*OUT*/uintptr_t* rx_max, uintptr_t addr) {
+  bool getBoundingCodeSegment(/*OUT*/ uintptr_t* rx_min,
+                              /*OUT*/ uintptr_t* rx_max, uintptr_t addr) {
     std::vector<Seg>::size_type i = find(addr);
     if (!mSegs[i].val) {
       return false;
@@ -445,13 +480,12 @@ class SegArray {
 
   void preen() {
     for (std::vector<Seg>::iterator iter = mSegs.begin();
-         iter < mSegs.end()-1;
-         ++iter) {
+         iter < mSegs.end() - 1; ++iter) {
       if (iter[0].val != iter[1].val) {
         continue;
       }
       iter[0].hi = iter[1].hi;
-      mSegs.erase(iter+1);
+      mSegs.erase(iter + 1);
       // Back up one, so as not to miss an opportunity to merge
       // with the entry after this one.
       --iter;
@@ -468,11 +502,17 @@ class SegArray {
         // Not found.  This can't happen.
         return (std::vector<Seg>::size_type)(-1);
       }
-      long int  mid    = lo + ((hi - lo) / 2);
+      long int mid = lo + ((hi - lo) / 2);
       uintptr_t mid_lo = mSegs[mid].lo;
       uintptr_t mid_hi = mSegs[mid].hi;
-      if (a < mid_lo) { hi = mid-1; continue; }
-      if (a > mid_hi) { lo = mid+1; continue; }
+      if (a < mid_lo) {
+        hi = mid - 1;
+        continue;
+      }
+      if (a > mid_hi) {
+        lo = mid + 1;
+        continue;
+      }
       return (std::vector<Seg>::size_type)mid;
     }
   }
@@ -482,18 +522,16 @@ class SegArray {
     if (mSegs[i].lo == a) {
       return;
     }
-    mSegs.insert( mSegs.begin()+i+1, mSegs[i] );
-    mSegs[i].hi = a-1;
-    mSegs[i+1].lo = a;
+    mSegs.insert(mSegs.begin() + i + 1, mSegs[i]);
+    mSegs[i].hi = a - 1;
+    mSegs[i + 1].lo = a;
   }
 
   void show() {
     printf("<< %d entries:\n", (int)mSegs.size());
-    for (std::vector<Seg>::iterator iter = mSegs.begin();
-         iter < mSegs.end();
+    for (std::vector<Seg>::iterator iter = mSegs.begin(); iter < mSegs.end();
          ++iter) {
-      printf("  %016llx  %016llx  %s\n",
-             (unsigned long long int)(*iter).lo,
+      printf("  %016llx  %016llx  %s\n", (unsigned long long int)(*iter).lo,
              (unsigned long long int)(*iter).hi,
              (*iter).val ? "true" : "false");
     }
@@ -503,39 +541,24 @@ class SegArray {
   std::vector<Seg> mSegs;
 };
 
-
 ////////////////////////////////////////////////////////////////
 // PriMap                                                     //
 ////////////////////////////////////////////////////////////////
 
 class PriMap {
  public:
-  explicit PriMap(void (*aLog)(const char*))
-    : mLog(aLog)
-  {}
-
-  ~PriMap() {
-    for (std::vector<SecMap*>::iterator iter = mSecMaps.begin();
-         iter != mSecMaps.end();
-         ++iter) {
-      delete *iter;
-    }
-    mSecMaps.clear();
-  }
+  explicit PriMap(void (*aLog)(const char*)) : mLog(aLog) {}
 
   // RUNS IN NO-MALLOC CONTEXT
-  pair<const RuleSet*, const vector<PfxInstr>*>
-  Lookup(uintptr_t ia)
-  {
+  pair<const RuleSet*, const vector<PfxInstr>*> Lookup(uintptr_t ia) {
     SecMap* sm = FindSecMap(ia);
-    return pair<const RuleSet*, const vector<PfxInstr>*>
-             (sm ? sm->FindRuleSet(ia) : nullptr,
-              sm ? sm->GetPfxInstrs() : nullptr);
+    return pair<const RuleSet*, const vector<PfxInstr>*>(
+        sm ? sm->FindRuleSet(ia) : nullptr, sm ? sm->GetPfxInstrs() : nullptr);
   }
 
   // Add a secondary map.  No overlaps allowed w.r.t. existing
   // secondary maps.
-  void AddSecMap(SecMap* aSecMap) {
+  void AddSecMap(mozilla::UniquePtr<SecMap>&& aSecMap) {
     // We can't add an empty SecMap to the PriMap.  But that's OK
     // since we'd never be able to find anything in it anyway.
     if (aSecMap->IsEmpty()) {
@@ -552,7 +575,7 @@ class PriMap {
     size_t num_secMaps = mSecMaps.size();
     uintptr_t i;
     for (i = 0; i < num_secMaps; ++i) {
-      SecMap* sm_i = mSecMaps[i];
+      mozilla::UniquePtr<SecMap>& sm_i = mSecMaps[i];
       MOZ_ASSERT(sm_i->mSummaryMinAddr <= sm_i->mSummaryMaxAddr);
       if (aSecMap->mSummaryMinAddr < sm_i->mSummaryMaxAddr) {
         // |aSecMap| needs to be inserted immediately before mSecMaps[i].
@@ -562,15 +585,16 @@ class PriMap {
     MOZ_ASSERT(i <= num_secMaps);
     if (i == num_secMaps) {
       // It goes at the end.
-      mSecMaps.push_back(aSecMap);
+      mSecMaps.push_back(std::move(aSecMap));
     } else {
-      std::vector<SecMap*>::iterator iter = mSecMaps.begin() + i;
-      mSecMaps.insert(iter, aSecMap);
+      std::vector<mozilla::UniquePtr<SecMap>>::iterator iter =
+          mSecMaps.begin() + i;
+      mSecMaps.insert(iter, std::move(aSecMap));
     }
     char buf[100];
     SprintfLiteral(buf, "AddSecMap: now have %d SecMaps\n",
                    (int)mSecMaps.size());
-    buf[sizeof(buf)-1] = 0;
+    buf[sizeof(buf) - 1] = 0;
     mLog(buf);
   }
 
@@ -585,8 +609,8 @@ class PriMap {
       // that the special case where |avma_min| and |avma_max| denote
       // the entire address space, can be completed in time proportional
       // to the number of elements in the map.
-      for (i = (intptr_t)num_secMaps-1; i >= 0; i--) {
-        SecMap* sm_i = mSecMaps[i];
+      for (i = (intptr_t)num_secMaps - 1; i >= 0; i--) {
+        mozilla::UniquePtr<SecMap>& sm_i = mSecMaps[i];
         if (sm_i->mSummaryMaxAddr < avma_min ||
             avma_max < sm_i->mSummaryMinAddr) {
           // There's no overlap.  Move on.
@@ -595,209 +619,12 @@ class PriMap {
         // We need to remove mSecMaps[i] and slide all those above it
         // downwards to cover the hole.
         mSecMaps.erase(mSecMaps.begin() + i);
-        delete sm_i;
       }
     }
   }
 
   // Return the number of currently contained SecMaps.
-  size_t CountSecMaps() {
-    return mSecMaps.size();
-  }
-
-  // Assess heuristically whether the given address is an instruction
-  // immediately following a call instruction.
-  // RUNS IN NO-MALLOC CONTEXT
-  bool MaybeIsReturnPoint(TaggedUWord aInstrAddr, SegArray* aSegArray) {
-    if (!aInstrAddr.Valid()) {
-      return false;
-    }
-
-    uintptr_t ia = aInstrAddr.Value();
-
-    // Assume that nobody would be crazy enough to put code in the
-    // first or last page.
-    if (ia < 4096 || ((uintptr_t)(-ia)) < 4096) {
-      return false;
-    }
-
-    // See if it falls inside a known r-x mapped area.  Poking around
-    // outside such places risks segfaulting.
-    uintptr_t insns_min, insns_max;
-    bool b = aSegArray->getBoundingCodeSegment(&insns_min, &insns_max, ia);
-    if (!b) {
-      // no code (that we know about) at this address
-      return false;
-    }
-
-    // |ia| falls within an r-x range.  So we can
-    // safely poke around in [insns_min, insns_max].
-
-#if defined(GP_ARCH_amd64) || defined(GP_ARCH_x86)
-    // Is the previous instruction recognisably a CALL?  This is
-    // common for the 32- and 64-bit versions, except for the
-    // simm32(%rip) case, which is 64-bit only.
-    //
-    // For all other cases, the 64 bit versions are either identical
-    // to the 32 bit versions, or have an optional extra leading REX.W
-    // byte (0x41).  Since the extra 0x41 is optional we have to
-    // ignore it, with the convenient result that the same matching
-    // logic works for both 32- and 64-bit cases.
-
-    uint8_t* p = (uint8_t*)ia;
-#   if defined(GP_ARCH_amd64)
-    // CALL simm32(%rip)  == FF15 simm32
-    if (ia - 6 >= insns_min && p[-6] == 0xFF && p[-5] == 0x15) {
-      return true;
-    }
-#   endif
-    // CALL rel32  == E8 rel32  (both 32- and 64-bit)
-    if (ia - 5 >= insns_min && p[-5] == 0xE8) {
-      return true;
-    }
-    // CALL *%eax .. CALL *%edi  ==   FFD0 ..   FFD7  (32-bit)
-    // CALL *%rax .. CALL *%rdi  ==   FFD0 ..   FFD7  (64-bit)
-    // CALL *%r8  .. CALL *%r15  == 41FFD0 .. 41FFD7  (64-bit)
-    if (ia - 2 >= insns_min &&
-        p[-2] == 0xFF && p[-1] >= 0xD0 && p[-1] <= 0xD7) {
-      return true;
-    }
-    // Almost all of the remaining cases that occur in practice are
-    // of the form CALL *simm8(reg) or CALL *simm32(reg).
-    //
-    // 64 bit cases:
-    //
-    // call  *simm8(%rax)         FF50   simm8
-    // call  *simm8(%rcx)         FF51   simm8
-    // call  *simm8(%rdx)         FF52   simm8
-    // call  *simm8(%rbx)         FF53   simm8
-    // call  *simm8(%rsp)         FF5424 simm8
-    // call  *simm8(%rbp)         FF55   simm8
-    // call  *simm8(%rsi)         FF56   simm8
-    // call  *simm8(%rdi)         FF57   simm8
-    //
-    // call  *simm8(%r8)        41FF50   simm8
-    // call  *simm8(%r9)        41FF51   simm8
-    // call  *simm8(%r10)       41FF52   simm8
-    // call  *simm8(%r11)       41FF53   simm8
-    // call  *simm8(%r12)       41FF5424 simm8
-    // call  *simm8(%r13)       41FF55   simm8
-    // call  *simm8(%r14)       41FF56   simm8
-    // call  *simm8(%r15)       41FF57   simm8
-    //
-    // call  *simm32(%rax)        FF90   simm32
-    // call  *simm32(%rcx)        FF91   simm32
-    // call  *simm32(%rdx)        FF92   simm32
-    // call  *simm32(%rbx)        FF93   simm32
-    // call  *simm32(%rsp)        FF9424 simm32
-    // call  *simm32(%rbp)        FF95   simm32
-    // call  *simm32(%rsi)        FF96   simm32
-    // call  *simm32(%rdi)        FF97   simm32
-    //
-    // call  *simm32(%r8)       41FF90   simm32
-    // call  *simm32(%r9)       41FF91   simm32
-    // call  *simm32(%r10)      41FF92   simm32
-    // call  *simm32(%r11)      41FF93   simm32
-    // call  *simm32(%r12)      41FF9424 simm32
-    // call  *simm32(%r13)      41FF95   simm32
-    // call  *simm32(%r14)      41FF96   simm32
-    // call  *simm32(%r15)      41FF97   simm32
-    //
-    // 32 bit cases:
-    //
-    // call  *simm8(%eax)         FF50   simm8
-    // call  *simm8(%ecx)         FF51   simm8
-    // call  *simm8(%edx)         FF52   simm8
-    // call  *simm8(%ebx)         FF53   simm8
-    // call  *simm8(%esp)         FF5424 simm8
-    // call  *simm8(%ebp)         FF55   simm8
-    // call  *simm8(%esi)         FF56   simm8
-    // call  *simm8(%edi)         FF57   simm8
-    //
-    // call  *simm32(%eax)        FF90   simm32
-    // call  *simm32(%ecx)        FF91   simm32
-    // call  *simm32(%edx)        FF92   simm32
-    // call  *simm32(%ebx)        FF93   simm32
-    // call  *simm32(%esp)        FF9424 simm32
-    // call  *simm32(%ebp)        FF95   simm32
-    // call  *simm32(%esi)        FF96   simm32
-    // call  *simm32(%edi)        FF97   simm32
-    if (ia - 3 >= insns_min &&
-        p[-3] == 0xFF &&
-        (p[-2] >= 0x50 && p[-2] <= 0x57 && p[-2] != 0x54)) {
-      // imm8 case, not including %esp/%rsp
-      return true;
-    }
-    if (ia - 4 >= insns_min &&
-        p[-4] == 0xFF && p[-3] == 0x54 && p[-2] == 0x24) {
-      // imm8 case for %esp/%rsp
-      return true;
-    }
-    if (ia - 6 >= insns_min &&
-        p[-6] == 0xFF &&
-        (p[-5] >= 0x90 && p[-5] <= 0x97 && p[-5] != 0x94)) {
-      // imm32 case, not including %esp/%rsp
-      return true;
-    }
-    if (ia - 7 >= insns_min &&
-        p[-7] == 0xFF && p[-6] == 0x94 && p[-5] == 0x24) {
-      // imm32 case for %esp/%rsp
-      return true;
-    }
-
-#elif defined(GP_ARCH_arm)
-    if (ia & 1) {
-      uint16_t w0 = 0, w1 = 0;
-      // The return address has its lowest bit set, indicating a return
-      // to Thumb code.
-      ia &= ~(uintptr_t)1;
-      if (ia - 2 >= insns_min && ia - 1 <= insns_max) {
-        w1 = *(uint16_t*)(ia - 2);
-      }
-      if (ia - 4 >= insns_min && ia - 1 <= insns_max) {
-        w0 = *(uint16_t*)(ia - 4);
-      }
-      // Is it a 32-bit Thumb call insn?
-      // BL  simm26 (Encoding T1)
-      if ((w0 & 0xF800) == 0xF000 && (w1 & 0xC000) == 0xC000) {
-        return true;
-      }
-      // BLX simm26 (Encoding T2)
-      if ((w0 & 0xF800) == 0xF000 && (w1 & 0xC000) == 0xC000) {
-        return true;
-      }
-      // Other possible cases:
-      // (BLX Rm, Encoding T1).
-      // BLX Rm (encoding T1, 16 bit, inspect w1 and ignore w0.)
-      // 0100 0111 1 Rm 000
-    } else {
-      // Returning to ARM code.
-      uint32_t a0 = 0;
-      if ((ia & 3) == 0 && ia - 4 >= insns_min && ia - 1 <= insns_max) {
-        a0 = *(uint32_t*)(ia - 4);
-      }
-      // Leading E forces unconditional only -- fix.  It could be
-      // anything except F, which is the deprecated NV code.
-      // BL simm26 (Encoding A1)
-      if ((a0 & 0xFF000000) == 0xEB000000) {
-        return true;
-      }
-      // Other possible cases:
-      // BLX simm26 (Encoding A2)
-      //if ((a0 & 0xFE000000) == 0xFA000000)
-      //  return true;
-      // BLX (register) (A1): BLX <c> <Rm>
-      // cond 0001 0010 1111 1111 1111 0011 Rm
-      // again, cond can be anything except NV (0xF)
-    }
-
-#else
-# error "Unsupported arch"
-#endif
-
-    // Not an insn we recognise.
-    return false;
-  }
+  size_t CountSecMaps() { return mSecMaps.size(); }
 
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const {
     size_t n = aMallocSizeOf(this);
@@ -827,55 +654,56 @@ class PriMap {
         // not found
         return nullptr;
       }
-      long int  mid         = lo + ((hi - lo) / 2);
-      SecMap*   mid_secMap  = mSecMaps[mid];
+      long int mid = lo + ((hi - lo) / 2);
+      mozilla::UniquePtr<SecMap>& mid_secMap = mSecMaps[mid];
       uintptr_t mid_minAddr = mid_secMap->mSummaryMinAddr;
       uintptr_t mid_maxAddr = mid_secMap->mSummaryMaxAddr;
-      if (ia < mid_minAddr) { hi = mid-1; continue; }
-      if (ia > mid_maxAddr) { lo = mid+1; continue; }
+      if (ia < mid_minAddr) {
+        hi = mid - 1;
+        continue;
+      }
+      if (ia > mid_maxAddr) {
+        lo = mid + 1;
+        continue;
+      }
       MOZ_ASSERT(mid_minAddr <= ia && ia <= mid_maxAddr);
-      return mid_secMap;
+      return mid_secMap.get();
     }
     // NOTREACHED
   }
 
  private:
   // sorted array of per-object ranges, non overlapping, non empty
-  std::vector<SecMap*> mSecMaps;
+  std::vector<mozilla::UniquePtr<SecMap>> mSecMaps;
 
   // a logging sink, for debugging.
   void (*mLog)(const char*);
 };
 
-
 ////////////////////////////////////////////////////////////////
 // LUL                                                        //
 ////////////////////////////////////////////////////////////////
 
-#define LUL_LOG(_str) \
-  do { \
-    char buf[200]; \
-    SprintfLiteral(buf, \
-                   "LUL: pid %d tid %d lul-obj %p: %s", \
-                   getpid(), gettid(), this, (_str));   \
-    buf[sizeof(buf)-1] = 0; \
-    mLog(buf); \
+#define LUL_LOG(_str)                                                  \
+  do {                                                                 \
+    char buf[200];                                                     \
+    SprintfLiteral(buf, "LUL: pid %d tid %d lul-obj %p: %s", getpid(), \
+                   gettid(), this, (_str));                            \
+    buf[sizeof(buf) - 1] = 0;                                          \
+    mLog(buf);                                                         \
   } while (0)
 
 LUL::LUL(void (*aLog)(const char*))
-  : mLog(aLog)
-  , mAdminMode(true)
-  , mAdminThreadId(gettid())
-  , mPriMap(new PriMap(aLog))
-  , mSegArray(new SegArray())
-  , mUSU(new UniqueStringUniverse())
-{
+    : mLog(aLog),
+      mAdminMode(true),
+      mAdminThreadId(gettid()),
+      mPriMap(new PriMap(aLog)),
+      mSegArray(new SegArray()),
+      mUSU(new UniqueStringUniverse()) {
   LUL_LOG("LUL::LUL: Created object");
 }
 
-
-LUL::~LUL()
-{
+LUL::~LUL() {
   LUL_LOG("LUL::~LUL: Destroyed object");
   delete mPriMap;
   delete mSegArray;
@@ -883,35 +711,29 @@ LUL::~LUL()
   delete mUSU;
 }
 
-
-void
-LUL::MaybeShowStats()
-{
+void LUL::MaybeShowStats() {
   // This is racey in the sense that it can't guarantee that
   //   n_new == n_new_Context + n_new_CFI + n_new_Scanned
   // if it should happen that mStats is updated by some other thread
-  // in between computation of n_new and n_new_{Context,CFI,Scanned}.
+  // in between computation of n_new and n_new_{Context,CFI,FP}.
   // But it's just stats printing, so we don't really care.
   uint32_t n_new = mStats - mStatsPrevious;
   if (n_new >= 5000) {
     uint32_t n_new_Context = mStats.mContext - mStatsPrevious.mContext;
-    uint32_t n_new_CFI     = mStats.mCFI     - mStatsPrevious.mCFI;
-    uint32_t n_new_Scanned = mStats.mScanned - mStatsPrevious.mScanned;
+    uint32_t n_new_CFI = mStats.mCFI - mStatsPrevious.mCFI;
+    uint32_t n_new_FP = mStats.mFP - mStatsPrevious.mFP;
     mStatsPrevious = mStats;
     char buf[200];
     SprintfLiteral(buf,
                    "LUL frame stats: TOTAL %5u"
-                   "    CTX %4u    CFI %4u    SCAN %4u",
-                   n_new, n_new_Context, n_new_CFI, n_new_Scanned);
-    buf[sizeof(buf)-1] = 0;
+                   "    CTX %4u    CFI %4u    FP %4u",
+                   n_new, n_new_Context, n_new_CFI, n_new_FP);
+    buf[sizeof(buf) - 1] = 0;
     mLog(buf);
   }
 }
 
-
-size_t
-LUL::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const
-{
+size_t LUL::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const {
   size_t n = aMallocSizeOf(this);
   n += mPriMap->SizeOfIncludingThis(aMallocSizeOf);
 
@@ -923,63 +745,54 @@ LUL::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const
   return n;
 }
 
-
-void
-LUL::EnableUnwinding()
-{
+void LUL::EnableUnwinding() {
   LUL_LOG("LUL::EnableUnwinding");
   // Don't assert for Admin mode here.  That is, tolerate a call here
   // if we are already in Unwinding mode.
-  MOZ_ASSERT(gettid() == mAdminThreadId);
+  MOZ_RELEASE_ASSERT(gettid() == mAdminThreadId);
 
   mAdminMode = false;
 }
 
-
-void
-LUL::NotifyAfterMap(uintptr_t aRXavma, size_t aSize,
-                    const char* aFileName, const void* aMappedImage)
-{
-  MOZ_ASSERT(mAdminMode);
-  MOZ_ASSERT(gettid() == mAdminThreadId);
+void LUL::NotifyAfterMap(uintptr_t aRXavma, size_t aSize, const char* aFileName,
+                         const void* aMappedImage) {
+  MOZ_RELEASE_ASSERT(mAdminMode);
+  MOZ_RELEASE_ASSERT(gettid() == mAdminThreadId);
 
   mLog(":\n");
   char buf[200];
   SprintfLiteral(buf, "NotifyMap %llx %llu %s\n",
                  (unsigned long long int)aRXavma, (unsigned long long int)aSize,
                  aFileName);
-  buf[sizeof(buf)-1] = 0;
+  buf[sizeof(buf) - 1] = 0;
   mLog(buf);
 
   // Ignore obviously-stupid notifications.
   if (aSize > 0) {
-
     // Here's a new mapping, for this object.
-    SecMap* smap = new SecMap(mLog);
+    mozilla::UniquePtr<SecMap> smap = mozilla::MakeUnique<SecMap>(mLog);
 
     // Read CFI or EXIDX unwind data into |smap|.
     if (!aMappedImage) {
-      (void)lul::ReadSymbolData(
-              string(aFileName), std::vector<string>(), smap,
-              (void*)aRXavma, aSize, mUSU, mLog);
+      (void)lul::ReadSymbolData(string(aFileName), std::vector<string>(),
+                                smap.get(), (void*)aRXavma, aSize, mUSU, mLog);
     } else {
       (void)lul::ReadSymbolDataInternal(
-              (const uint8_t*)aMappedImage,
-              string(aFileName), std::vector<string>(), smap,
-              (void*)aRXavma, aSize, mUSU, mLog);
+          (const uint8_t*)aMappedImage, string(aFileName),
+          std::vector<string>(), smap.get(), (void*)aRXavma, aSize, mUSU, mLog);
     }
 
     mLog("NotifyMap .. preparing entries\n");
 
     smap->PrepareRuleSets(aRXavma, aSize);
 
-    SprintfLiteral(buf,
-                   "NotifyMap got %lld entries\n", (long long int)smap->Size());
-    buf[sizeof(buf)-1] = 0;
+    SprintfLiteral(buf, "NotifyMap got %lld entries\n",
+                   (long long int)smap->Size());
+    buf[sizeof(buf) - 1] = 0;
     mLog(buf);
 
     // Add it to the primary map (the top level set of mapped objects).
-    mPriMap->AddSecMap(smap);
+    mPriMap->AddSecMap(std::move(smap));
 
     // Tell the segment array about the mapping, so that the stack
     // scan and __kernel_syscall mechanisms know where valid code is.
@@ -987,18 +800,16 @@ LUL::NotifyAfterMap(uintptr_t aRXavma, size_t aSize,
   }
 }
 
-
-void
-LUL::NotifyExecutableArea(uintptr_t aRXavma, size_t aSize)
-{
-  MOZ_ASSERT(mAdminMode);
-  MOZ_ASSERT(gettid() == mAdminThreadId);
+void LUL::NotifyExecutableArea(uintptr_t aRXavma, size_t aSize) {
+  MOZ_RELEASE_ASSERT(mAdminMode);
+  MOZ_RELEASE_ASSERT(gettid() == mAdminThreadId);
 
   mLog(":\n");
   char buf[200];
   SprintfLiteral(buf, "NotifyExecutableArea %llx %llu\n",
-                   (unsigned long long int)aRXavma, (unsigned long long int)aSize);
-  buf[sizeof(buf)-1] = 0;
+                 (unsigned long long int)aRXavma,
+                 (unsigned long long int)aSize);
+  buf[sizeof(buf) - 1] = 0;
   mLog(buf);
 
   // Ignore obviously-stupid notifications.
@@ -1009,19 +820,16 @@ LUL::NotifyExecutableArea(uintptr_t aRXavma, size_t aSize)
   }
 }
 
-
-void
-LUL::NotifyBeforeUnmap(uintptr_t aRXavmaMin, uintptr_t aRXavmaMax)
-{
-  MOZ_ASSERT(mAdminMode);
-  MOZ_ASSERT(gettid() == mAdminThreadId);
+void LUL::NotifyBeforeUnmap(uintptr_t aRXavmaMin, uintptr_t aRXavmaMax) {
+  MOZ_RELEASE_ASSERT(mAdminMode);
+  MOZ_RELEASE_ASSERT(gettid() == mAdminThreadId);
 
   mLog(":\n");
   char buf[100];
   SprintfLiteral(buf, "NotifyUnmap %016llx-%016llx\n",
                  (unsigned long long int)aRXavmaMin,
                  (unsigned long long int)aRXavmaMax);
-  buf[sizeof(buf)-1] = 0;
+  buf[sizeof(buf) - 1] = 0;
   mLog(buf);
 
   MOZ_ASSERT(aRXavmaMin <= aRXavmaMax);
@@ -1036,25 +844,19 @@ LUL::NotifyBeforeUnmap(uintptr_t aRXavmaMin, uintptr_t aRXavmaMax)
 
   SprintfLiteral(buf, "NotifyUnmap: now have %d SecMaps\n",
                  (int)mPriMap->CountSecMaps());
-  buf[sizeof(buf)-1] = 0;
+  buf[sizeof(buf) - 1] = 0;
   mLog(buf);
 }
 
-
-size_t
-LUL::CountMappings()
-{
-  MOZ_ASSERT(mAdminMode);
-  MOZ_ASSERT(gettid() == mAdminThreadId);
+size_t LUL::CountMappings() {
+  MOZ_RELEASE_ASSERT(mAdminMode);
+  MOZ_RELEASE_ASSERT(gettid() == mAdminThreadId);
 
   return mPriMap->CountSecMaps();
 }
 
-
 // RUNS IN NO-MALLOC CONTEXT
-static
-TaggedUWord DerefTUW(TaggedUWord aAddr, const StackImage* aStackImg)
-{
+static TaggedUWord DerefTUW(TaggedUWord aAddr, const StackImage* aStackImg) {
   if (!aAddr.Valid()) {
     return TaggedUWord();
   }
@@ -1071,101 +873,118 @@ TaggedUWord DerefTUW(TaggedUWord aAddr, const StackImage* aStackImg)
   // avoid overflow.  In particular if |aAddr| is 0xFFF...FFF or the
   // 3/7 values below that, then we will get overflow.  See bug #1245477.
   typedef CheckedInt<uintptr_t> CheckedUWord;
-  CheckedUWord highest_requested_plus_one
-    = CheckedUWord(aAddr.Value()) + CheckedUWord(sizeof(uintptr_t));
-  CheckedUWord highest_available_plus_one
-    = CheckedUWord(aStackImg->mStartAvma) + CheckedUWord(aStackImg->mLen);
+  CheckedUWord highest_requested_plus_one =
+      CheckedUWord(aAddr.Value()) + CheckedUWord(sizeof(uintptr_t));
+  CheckedUWord highest_available_plus_one =
+      CheckedUWord(aStackImg->mStartAvma) + CheckedUWord(aStackImg->mLen);
   if (!highest_requested_plus_one.isValid()     // overflow?
       || !highest_available_plus_one.isValid()  // overflow?
-      || (highest_requested_plus_one.value()
-          > highest_available_plus_one.value())) { // in range?
+      || (highest_requested_plus_one.value() >
+          highest_available_plus_one.value())) {  // in range?
     return TaggedUWord();
   }
 
-  return TaggedUWord(*(uintptr_t*)(aStackImg->mContents + aAddr.Value()
-                                   - aStackImg->mStartAvma));
+  return TaggedUWord(
+      *(uintptr_t*)(&aStackImg
+                         ->mContents[aAddr.Value() - aStackImg->mStartAvma]));
 }
 
 // RUNS IN NO-MALLOC CONTEXT
-static
-TaggedUWord EvaluateReg(int16_t aReg, const UnwindRegs* aOldRegs,
-                        TaggedUWord aCFA)
-{
+static TaggedUWord EvaluateReg(int16_t aReg, const UnwindRegs* aOldRegs,
+                               TaggedUWord aCFA) {
   switch (aReg) {
-    case DW_REG_CFA:       return aCFA;
+    case DW_REG_CFA:
+      return aCFA;
 #if defined(GP_ARCH_amd64) || defined(GP_ARCH_x86)
-    case DW_REG_INTEL_XBP: return aOldRegs->xbp;
-    case DW_REG_INTEL_XSP: return aOldRegs->xsp;
-    case DW_REG_INTEL_XIP: return aOldRegs->xip;
+    case DW_REG_INTEL_XBP:
+      return aOldRegs->xbp;
+    case DW_REG_INTEL_XSP:
+      return aOldRegs->xsp;
+    case DW_REG_INTEL_XIP:
+      return aOldRegs->xip;
 #elif defined(GP_ARCH_arm)
-    case DW_REG_ARM_R7:    return aOldRegs->r7;
-    case DW_REG_ARM_R11:   return aOldRegs->r11;
-    case DW_REG_ARM_R12:   return aOldRegs->r12;
-    case DW_REG_ARM_R13:   return aOldRegs->r13;
-    case DW_REG_ARM_R14:   return aOldRegs->r14;
-    case DW_REG_ARM_R15:   return aOldRegs->r15;
+    case DW_REG_ARM_R7:
+      return aOldRegs->r7;
+    case DW_REG_ARM_R11:
+      return aOldRegs->r11;
+    case DW_REG_ARM_R12:
+      return aOldRegs->r12;
+    case DW_REG_ARM_R13:
+      return aOldRegs->r13;
+    case DW_REG_ARM_R14:
+      return aOldRegs->r14;
+    case DW_REG_ARM_R15:
+      return aOldRegs->r15;
+#elif defined(GP_ARCH_arm64)
+    case DW_REG_AARCH64_X29:
+      return aOldRegs->x29;
+    case DW_REG_AARCH64_X30:
+      return aOldRegs->x30;
+    case DW_REG_AARCH64_SP:
+      return aOldRegs->sp;
+#elif defined(GP_ARCH_mips64)
+    case DW_REG_MIPS_SP:
+      return aOldRegs->sp;
+    case DW_REG_MIPS_FP:
+      return aOldRegs->fp;
+    case DW_REG_MIPS_PC:
+      return aOldRegs->pc;
 #else
-# error "Unsupported arch"
+#  error "Unsupported arch"
 #endif
-    default: MOZ_ASSERT(0); return TaggedUWord();
+    default:
+      MOZ_ASSERT(0);
+      return TaggedUWord();
   }
 }
 
 // RUNS IN NO-MALLOC CONTEXT
 // See prototype for comment.
-TaggedUWord EvaluatePfxExpr(int32_t start,
-                            const UnwindRegs* aOldRegs,
+TaggedUWord EvaluatePfxExpr(int32_t start, const UnwindRegs* aOldRegs,
                             TaggedUWord aCFA, const StackImage* aStackImg,
-                            const vector<PfxInstr>& aPfxInstrs)
-{
+                            const vector<PfxInstr>& aPfxInstrs) {
   // A small evaluation stack, and a stack pointer, which points to
   // the highest numbered in-use element.
   const int N_STACK = 10;
   TaggedUWord stack[N_STACK];
   int stackPointer = -1;
-  for (int i = 0; i < N_STACK; i++)
-    stack[i] = TaggedUWord();
+  for (int i = 0; i < N_STACK; i++) stack[i] = TaggedUWord();
 
-# define PUSH(_tuw) \
-    do { \
-      if (stackPointer >= N_STACK-1) goto fail; /* overflow */ \
-      stack[++stackPointer] = (_tuw); \
-    } while (0)
+#define PUSH(_tuw)                                             \
+  do {                                                         \
+    if (stackPointer >= N_STACK - 1) goto fail; /* overflow */ \
+    stack[++stackPointer] = (_tuw);                            \
+  } while (0)
 
-# define POP(_lval) \
-    do { \
-      if (stackPointer < 0) goto fail; /* underflow */ \
-     _lval = stack[stackPointer--]; \
-   } while (0)
+#define POP(_lval)                                   \
+  do {                                               \
+    if (stackPointer < 0) goto fail; /* underflow */ \
+    _lval = stack[stackPointer--];                   \
+  } while (0)
 
   // Cursor in the instruction sequence.
   size_t curr = start + 1;
 
   // Check the start point is sane.
   size_t nInstrs = aPfxInstrs.size();
-  if (start < 0 || (size_t)start >= nInstrs)
-    goto fail;
+  if (start < 0 || (size_t)start >= nInstrs) goto fail;
 
   {
     // The instruction sequence must start with PX_Start.  If not,
     // something is seriously wrong.
     PfxInstr first = aPfxInstrs[start];
-    if (first.mOpcode != PX_Start)
-      goto fail;
+    if (first.mOpcode != PX_Start) goto fail;
 
     // Push the CFA on the stack to start with (or not), as required by
     // the original DW_OP_*expression* CFI.
-    if (first.mOperand != 0)
-      PUSH(aCFA);
+    if (first.mOperand != 0) PUSH(aCFA);
   }
 
   while (true) {
-    if (curr >= nInstrs)
-      goto fail; // ran off the end of the sequence
+    if (curr >= nInstrs) goto fail;  // ran off the end of the sequence
 
     PfxInstr pfxi = aPfxInstrs[curr++];
-    if (pfxi.mOpcode == PX_End)
-      break; // we're done
+    if (pfxi.mOpcode == PX_End) break;  // we're done
 
     switch (pfxi.mOpcode) {
       case PX_Start:
@@ -1192,39 +1011,51 @@ TaggedUWord EvaluatePfxExpr(int32_t start,
       }
       case PX_Add: {
         TaggedUWord x, y;
-        POP(x); POP(y); PUSH(y + x);
+        POP(x);
+        POP(y);
+        PUSH(y + x);
         break;
       }
       case PX_Sub: {
         TaggedUWord x, y;
-        POP(x); POP(y); PUSH(y - x);
+        POP(x);
+        POP(y);
+        PUSH(y - x);
         break;
       }
       case PX_And: {
         TaggedUWord x, y;
-        POP(x); POP(y); PUSH(y & x);
+        POP(x);
+        POP(y);
+        PUSH(y & x);
         break;
       }
       case PX_Or: {
         TaggedUWord x, y;
-        POP(x); POP(y); PUSH(y | x);
+        POP(x);
+        POP(y);
+        PUSH(y | x);
         break;
       }
       case PX_CmpGES: {
         TaggedUWord x, y;
-        POP(x); POP(y); PUSH(y.CmpGEs(x));
+        POP(x);
+        POP(y);
+        PUSH(y.CmpGEs(x));
         break;
       }
       case PX_Shl: {
         TaggedUWord x, y;
-        POP(x); POP(y); PUSH(y << x);
+        POP(x);
+        POP(y);
+        PUSH(y << x);
         break;
       }
       default:
         MOZ_ASSERT(0);
         goto fail;
     }
-  } // while (true)
+  }  // while (true)
 
   // Evaluation finished.  The top value on the stack is the result.
   if (stackPointer >= 0) {
@@ -1232,18 +1063,17 @@ TaggedUWord EvaluatePfxExpr(int32_t start,
   }
   // Else fall through
 
- fail:
+fail:
   return TaggedUWord();
 
-# undef PUSH
-# undef POP
+#undef PUSH
+#undef POP
 }
 
 // RUNS IN NO-MALLOC CONTEXT
-TaggedUWord LExpr::EvaluateExpr(const UnwindRegs* aOldRegs,
-                                TaggedUWord aCFA, const StackImage* aStackImg,
-                                const vector<PfxInstr>* aPfxInstrs) const
-{
+TaggedUWord LExpr::EvaluateExpr(const UnwindRegs* aOldRegs, TaggedUWord aCFA,
+                                const StackImage* aStackImg,
+                                const vector<PfxInstr>* aPfxInstrs) const {
   switch (mHow) {
     case UNKNOWN:
       return TaggedUWord();
@@ -1271,11 +1101,8 @@ TaggedUWord LExpr::EvaluateExpr(const UnwindRegs* aOldRegs,
 }
 
 // RUNS IN NO-MALLOC CONTEXT
-static
-void UseRuleSet(/*MOD*/UnwindRegs* aRegs,
-                const StackImage* aStackImg, const RuleSet* aRS,
-                const vector<PfxInstr>* aPfxInstrs)
-{
+static void UseRuleSet(/*MOD*/ UnwindRegs* aRegs, const StackImage* aStackImg,
+                       const RuleSet* aRS, const vector<PfxInstr>* aPfxInstrs) {
   // Take a copy of regs, since we'll need to refer to the old values
   // whilst computing the new ones.
   UnwindRegs old_regs = *aRegs;
@@ -1290,12 +1117,21 @@ void UseRuleSet(/*MOD*/UnwindRegs* aRegs,
   aRegs->xsp = TaggedUWord();
   aRegs->xip = TaggedUWord();
 #elif defined(GP_ARCH_arm)
-  aRegs->r7  = TaggedUWord();
+  aRegs->r7 = TaggedUWord();
   aRegs->r11 = TaggedUWord();
   aRegs->r12 = TaggedUWord();
   aRegs->r13 = TaggedUWord();
   aRegs->r14 = TaggedUWord();
   aRegs->r15 = TaggedUWord();
+#elif defined(GP_ARCH_arm64)
+  aRegs->x29 = TaggedUWord();
+  aRegs->x30 = TaggedUWord();
+  aRegs->sp = TaggedUWord();
+  aRegs->pc = TaggedUWord();
+#elif defined(GP_ARCH_mips64)
+  aRegs->sp = TaggedUWord();
+  aRegs->fp = TaggedUWord();
+  aRegs->pc = TaggedUWord();
 #else
 #  error "Unsupported arch"
 #endif
@@ -1304,9 +1140,8 @@ void UseRuleSet(/*MOD*/UnwindRegs* aRegs,
   const TaggedUWord inval = TaggedUWord();
 
   // First, compute the CFA.
-  TaggedUWord cfa
-    = aRS->mCfaExpr.EvaluateExpr(&old_regs,
-                                 inval/*old cfa*/, aStackImg, aPfxInstrs);
+  TaggedUWord cfa = aRS->mCfaExpr.EvaluateExpr(&old_regs, inval /*old cfa*/,
+                                               aStackImg, aPfxInstrs);
 
   // If we didn't manage to compute the CFA, well .. that's ungood,
   // but keep going anyway.  It'll be OK provided none of the register
@@ -1314,27 +1149,36 @@ void UseRuleSet(/*MOD*/UnwindRegs* aRegs,
   // for each register that we're tracking.
 
 #if defined(GP_ARCH_amd64) || defined(GP_ARCH_x86)
-  aRegs->xbp
-    = aRS->mXbpExpr.EvaluateExpr(&old_regs, cfa, aStackImg, aPfxInstrs);
-  aRegs->xsp
-    = aRS->mXspExpr.EvaluateExpr(&old_regs, cfa, aStackImg, aPfxInstrs);
-  aRegs->xip
-    = aRS->mXipExpr.EvaluateExpr(&old_regs, cfa, aStackImg, aPfxInstrs);
+  aRegs->xbp =
+      aRS->mXbpExpr.EvaluateExpr(&old_regs, cfa, aStackImg, aPfxInstrs);
+  aRegs->xsp =
+      aRS->mXspExpr.EvaluateExpr(&old_regs, cfa, aStackImg, aPfxInstrs);
+  aRegs->xip =
+      aRS->mXipExpr.EvaluateExpr(&old_regs, cfa, aStackImg, aPfxInstrs);
 #elif defined(GP_ARCH_arm)
-  aRegs->r7
-    = aRS->mR7expr .EvaluateExpr(&old_regs, cfa, aStackImg, aPfxInstrs);
-  aRegs->r11
-    = aRS->mR11expr.EvaluateExpr(&old_regs, cfa, aStackImg, aPfxInstrs);
-  aRegs->r12
-    = aRS->mR12expr.EvaluateExpr(&old_regs, cfa, aStackImg, aPfxInstrs);
-  aRegs->r13
-    = aRS->mR13expr.EvaluateExpr(&old_regs, cfa, aStackImg, aPfxInstrs);
-  aRegs->r14
-    = aRS->mR14expr.EvaluateExpr(&old_regs, cfa, aStackImg, aPfxInstrs);
-  aRegs->r15
-    = aRS->mR15expr.EvaluateExpr(&old_regs, cfa, aStackImg, aPfxInstrs);
+  aRegs->r7 = aRS->mR7expr.EvaluateExpr(&old_regs, cfa, aStackImg, aPfxInstrs);
+  aRegs->r11 =
+      aRS->mR11expr.EvaluateExpr(&old_regs, cfa, aStackImg, aPfxInstrs);
+  aRegs->r12 =
+      aRS->mR12expr.EvaluateExpr(&old_regs, cfa, aStackImg, aPfxInstrs);
+  aRegs->r13 =
+      aRS->mR13expr.EvaluateExpr(&old_regs, cfa, aStackImg, aPfxInstrs);
+  aRegs->r14 =
+      aRS->mR14expr.EvaluateExpr(&old_regs, cfa, aStackImg, aPfxInstrs);
+  aRegs->r15 =
+      aRS->mR15expr.EvaluateExpr(&old_regs, cfa, aStackImg, aPfxInstrs);
+#elif defined(GP_ARCH_arm64)
+  aRegs->x29 =
+      aRS->mX29expr.EvaluateExpr(&old_regs, cfa, aStackImg, aPfxInstrs);
+  aRegs->x30 =
+      aRS->mX30expr.EvaluateExpr(&old_regs, cfa, aStackImg, aPfxInstrs);
+  aRegs->sp = aRS->mSPexpr.EvaluateExpr(&old_regs, cfa, aStackImg, aPfxInstrs);
+#elif defined(GP_ARCH_mips64)
+  aRegs->sp = aRS->mSPexpr.EvaluateExpr(&old_regs, cfa, aStackImg, aPfxInstrs);
+  aRegs->fp = aRS->mFPexpr.EvaluateExpr(&old_regs, cfa, aStackImg, aPfxInstrs);
+  aRegs->pc = aRS->mPCexpr.EvaluateExpr(&old_regs, cfa, aStackImg, aPfxInstrs);
 #else
-# error "Unsupported arch"
+#  error "Unsupported arch"
 #endif
 
   // We're done.  Any regs for which we didn't manage to compute a
@@ -1342,56 +1186,68 @@ void UseRuleSet(/*MOD*/UnwindRegs* aRegs,
 }
 
 // RUNS IN NO-MALLOC CONTEXT
-void
-LUL::Unwind(/*OUT*/uintptr_t* aFramePCs,
-            /*OUT*/uintptr_t* aFrameSPs,
-            /*OUT*/size_t* aFramesUsed, 
-            /*OUT*/size_t* aScannedFramesAcquired,
-            size_t aFramesAvail,
-            size_t aScannedFramesAllowed,
-            UnwindRegs* aStartRegs, StackImage* aStackImg)
-{
-  MOZ_ASSERT(!mAdminMode);
+void LUL::Unwind(/*OUT*/ uintptr_t* aFramePCs,
+                 /*OUT*/ uintptr_t* aFrameSPs,
+                 /*OUT*/ size_t* aFramesUsed,
+                 /*OUT*/ size_t* aFramePointerFramesAcquired,
+                 size_t aFramesAvail, UnwindRegs* aStartRegs,
+                 StackImage* aStackImg) {
+  MOZ_RELEASE_ASSERT(!mAdminMode);
 
   /////////////////////////////////////////////////////////
   // BEGIN UNWIND
 
   *aFramesUsed = 0;
 
-  UnwindRegs  regs          = *aStartRegs;
+  UnwindRegs regs = *aStartRegs;
   TaggedUWord last_valid_sp = TaggedUWord();
 
-  // Stack-scan control
-  unsigned int n_scanned_frames      = 0;  // # s-s frames recovered so far
-  static const int NUM_SCANNED_WORDS = 50; // max allowed scan length
-
   while (true) {
-
     if (DEBUG_MAIN) {
       char buf[300];
       mLog("\n");
 #if defined(GP_ARCH_amd64) || defined(GP_ARCH_x86)
-      SprintfLiteral(buf,
-                     "LoopTop: rip %d/%llx  rsp %d/%llx  rbp %d/%llx\n",
-                     (int)regs.xip.Valid(), (unsigned long long int)regs.xip.Value(),
-                     (int)regs.xsp.Valid(), (unsigned long long int)regs.xsp.Value(),
-                     (int)regs.xbp.Valid(), (unsigned long long int)regs.xbp.Value());
-      buf[sizeof(buf)-1] = 0;
+      SprintfLiteral(
+          buf, "LoopTop: rip %d/%llx  rsp %d/%llx  rbp %d/%llx\n",
+          (int)regs.xip.Valid(), (unsigned long long int)regs.xip.Value(),
+          (int)regs.xsp.Valid(), (unsigned long long int)regs.xsp.Value(),
+          (int)regs.xbp.Valid(), (unsigned long long int)regs.xbp.Value());
+      buf[sizeof(buf) - 1] = 0;
       mLog(buf);
 #elif defined(GP_ARCH_arm)
-      SprintfLiteral(buf,
-                     "LoopTop: r15 %d/%llx  r7 %d/%llx  r11 %d/%llx"
-                     "  r12 %d/%llx  r13 %d/%llx  r14 %d/%llx\n",
-                     (int)regs.r15.Valid(), (unsigned long long int)regs.r15.Value(),
-                     (int)regs.r7.Valid(),  (unsigned long long int)regs.r7.Value(),
-                     (int)regs.r11.Valid(), (unsigned long long int)regs.r11.Value(),
-                     (int)regs.r12.Valid(), (unsigned long long int)regs.r12.Value(),
-                     (int)regs.r13.Valid(), (unsigned long long int)regs.r13.Value(),
-                     (int)regs.r14.Valid(), (unsigned long long int)regs.r14.Value());
-      buf[sizeof(buf)-1] = 0;
+      SprintfLiteral(
+          buf,
+          "LoopTop: r15 %d/%llx  r7 %d/%llx  r11 %d/%llx"
+          "  r12 %d/%llx  r13 %d/%llx  r14 %d/%llx\n",
+          (int)regs.r15.Valid(), (unsigned long long int)regs.r15.Value(),
+          (int)regs.r7.Valid(), (unsigned long long int)regs.r7.Value(),
+          (int)regs.r11.Valid(), (unsigned long long int)regs.r11.Value(),
+          (int)regs.r12.Valid(), (unsigned long long int)regs.r12.Value(),
+          (int)regs.r13.Valid(), (unsigned long long int)regs.r13.Value(),
+          (int)regs.r14.Valid(), (unsigned long long int)regs.r14.Value());
+      buf[sizeof(buf) - 1] = 0;
+      mLog(buf);
+#elif defined(GP_ARCH_arm64)
+      SprintfLiteral(
+          buf,
+          "LoopTop: pc %d/%llx  x29 %d/%llx  x30 %d/%llx"
+          "  sp %d/%llx\n",
+          (int)regs.pc.Valid(), (unsigned long long int)regs.pc.Value(),
+          (int)regs.x29.Valid(), (unsigned long long int)regs.x29.Value(),
+          (int)regs.x30.Valid(), (unsigned long long int)regs.x30.Value(),
+          (int)regs.sp.Valid(), (unsigned long long int)regs.sp.Value());
+      buf[sizeof(buf) - 1] = 0;
+      mLog(buf);
+#elif defined(GP_ARCH_mips64)
+      SprintfLiteral(
+          buf, "LoopTop: pc %d/%llx  sp %d/%llx  fp %d/%llx\n",
+          (int)regs.pc.Valid(), (unsigned long long int)regs.pc.Value(),
+          (int)regs.sp.Valid(), (unsigned long long int)regs.sp.Value(),
+          (int)regs.fp.Valid(), (unsigned long long int)regs.fp.Value());
+      buf[sizeof(buf) - 1] = 0;
       mLog(buf);
 #else
-# error "Unsupported arch"
+#  error "Unsupported arch"
 #endif
     }
 
@@ -1401,8 +1257,14 @@ LUL::Unwind(/*OUT*/uintptr_t* aFramePCs,
 #elif defined(GP_ARCH_arm)
     TaggedUWord ia = (*aFramesUsed == 0 ? regs.r15 : regs.r14);
     TaggedUWord sp = regs.r13;
+#elif defined(GP_ARCH_arm64)
+    TaggedUWord ia = (*aFramesUsed == 0 ? regs.pc : regs.x30);
+    TaggedUWord sp = regs.sp;
+#elif defined(GP_ARCH_mips64)
+    TaggedUWord ia = regs.pc;
+    TaggedUWord sp = regs.sp;
 #else
-# error "Unsupported arch"
+#  error "Unsupported arch"
 #endif
 
     if (*aFramesUsed >= aFramesAvail) {
@@ -1449,8 +1311,8 @@ LUL::Unwind(/*OUT*/uintptr_t* aFramePCs,
       ia = ia + TaggedUWord((uintptr_t)(-1));
     }
 
-    pair<const RuleSet*, const vector<PfxInstr>*> ruleset_and_pfxinstrs
-      = mPriMap->Lookup(ia.Value());
+    pair<const RuleSet*, const vector<PfxInstr>*> ruleset_and_pfxinstrs =
+        mPriMap->Lookup(ia.Value());
     const RuleSet* ruleset = ruleset_and_pfxinstrs.first;
     const vector<PfxInstr>* pfxinstrs = ruleset_and_pfxinstrs.second;
 
@@ -1458,10 +1320,11 @@ LUL::Unwind(/*OUT*/uintptr_t* aFramePCs,
       char buf[100];
       SprintfLiteral(buf, "ruleset for 0x%llx = %p\n",
                      (unsigned long long int)ia.Value(), ruleset);
-      buf[sizeof(buf)-1] = 0;
+      buf[sizeof(buf) - 1] = 0;
       mLog(buf);
     }
 
+#if defined(GP_PLAT_x86_android) || defined(GP_PLAT_x86_linux)
     /////////////////////////////////////////////
     ////
     // On 32 bit x86-linux, syscalls are often done via the VDSO
@@ -1503,7 +1366,6 @@ LUL::Unwind(/*OUT*/uintptr_t* aFramePCs,
     // hasn't been rescheduled.  The code below doesn't handle that;
     // it could easily be made to.
     //
-#if defined(GP_PLAT_x86_android) || defined(GP_PLAT_x86_linux)
     if (!ruleset && *aFramesUsed == 1 && ia.Valid() && sp.Valid()) {
       uintptr_t insns_min, insns_max;
       uintptr_t eip = ia.Value();
@@ -1512,7 +1374,7 @@ LUL::Unwind(/*OUT*/uintptr_t* aFramePCs,
         uint8_t* eipC = (uint8_t*)eip;
         if (eipC[-2] == 0xCD && eipC[-1] == 0x80 && eipC[0] == 0x5D &&
             eipC[1] == 0x5A && eipC[2] == 0x59 && eipC[3] == 0xC3) {
-          TaggedUWord sp_plus_0  = sp;
+          TaggedUWord sp_plus_0 = sp;
           TaggedUWord sp_plus_12 = sp;
           TaggedUWord sp_plus_16 = sp;
           sp_plus_12 = sp_plus_12 + TaggedUWord(12);
@@ -1529,144 +1391,96 @@ LUL::Unwind(/*OUT*/uintptr_t* aFramePCs,
         }
       }
     }
-#endif
     ////
     /////////////////////////////////////////////
+#endif  // defined(GP_PLAT_x86_android) || defined(GP_PLAT_x86_linux)
 
     // So, do we have a ruleset for this address?  If so, use it now.
     if (ruleset) {
-
       if (DEBUG_MAIN) {
-        ruleset->Print(mLog); mLog("\n");
+        ruleset->Print(mLog);
+        mLog("\n");
       }
       // Use the RuleSet to compute the registers for the previous
       // frame.  |regs| is modified in-place.
       UseRuleSet(&regs, aStackImg, ruleset, pfxinstrs);
-
-    } else {
-
-      // There's no RuleSet for the specified address, so see if
-      // it's possible to get anywhere by stack-scanning.
-
-      // Use stack scanning frugally.
-      if (n_scanned_frames++ >= aScannedFramesAllowed) {
-        break;
-      }
-
-      // We can't scan the stack without a valid, aligned stack pointer.
-      if (!sp.IsAligned()) {
-        break;
-      }
-
-      bool scan_succeeded = false;
-      for (int i = 0; i < NUM_SCANNED_WORDS; ++i) {
-        TaggedUWord aWord = DerefTUW(sp, aStackImg);
-        // aWord is something we fished off the stack.  It should be
-        // valid, unless we overran the stack bounds.
-        if (!aWord.Valid()) {
-          break;
-        }
-
-        // Now, does aWord point inside a text section and immediately
-        // after something that looks like a call instruction?
-        if (mPriMap->MaybeIsReturnPoint(aWord, mSegArray)) {
-          // Yes it does.  Update the unwound registers heuristically,
-          // using the same schemes as Breakpad does.
-          scan_succeeded = true;
-          (*aScannedFramesAcquired)++;
-
-#if defined(GP_ARCH_amd64) || defined(GP_ARCH_x86)
-          // The same logic applies for the 32- and 64-bit cases.
-          // Register names of the form xsp etc refer to (eg) esp in
-          // the 32-bit case and rsp in the 64-bit case.
-#         if defined(GP_ARCH_amd64)
-          const int wordSize = 8;
-#         else
-          const int wordSize = 4;
-#         endif
-          // The return address -- at XSP -- will have been pushed by
-          // the CALL instruction.  So the caller's XSP value
-          // immediately before and after that CALL instruction is the
-          // word above XSP.
-          regs.xsp = sp + TaggedUWord(wordSize);
-
-          // aWord points at the return point, so back up one byte
-          // to put it in the calling instruction.
-          regs.xip = aWord + TaggedUWord((uintptr_t)(-1));
-
-          // Computing a new value from the frame pointer is more tricky.
-          if (regs.xbp.Valid() &&
-              sp.Valid() && regs.xbp.Value() == sp.Value() - wordSize) {
-            // One possibility is that the callee begins with the standard
-            // preamble "push %xbp; mov %xsp, %xbp".  In which case, the
-            // (1) caller's XBP value will be at the word below XSP, and
-            // (2) the current (callee's) XBP will point at that word:
-            regs.xbp = DerefTUW(regs.xbp, aStackImg);
-          } else if (regs.xbp.Valid() &&
-                     sp.Valid() && regs.xbp.Value() >= sp.Value() + wordSize) {
-            // If that didn't work out, maybe the callee didn't change
-            // XBP, so it still holds the caller's value.  For that to
-            // be plausible, XBP will need to have a value at least
-            // higher than XSP since that holds the purported return
-            // address.  In which case do nothing, since XBP already
-            // holds the "right" value.
-          } else {
-            // Mark XBP as invalid, so that subsequent unwind iterations
-            // don't assume it holds valid data.
-            regs.xbp = TaggedUWord();
-          }
-
-          // Move on to the next word up the stack
-          sp = sp + TaggedUWord(wordSize);
-
-#elif defined(GP_ARCH_arm)
-          // Set all registers to be undefined, except for SP(R13) and
-          // PC(R15).
-
-          // aWord points either at the return point, if returning to
-          // ARM code, or one insn past the return point if returning
-          // to Thumb code.  In both cases, aWord-2 is guaranteed to
-          // fall within the calling instruction.
-          regs.r15 = aWord + TaggedUWord((uintptr_t)(-2));
-
-          // Make SP be the word above the location where the return
-          // address was found.
-          regs.r13 = sp + TaggedUWord(4);
-
-          // All other regs are undefined.
-          regs.r7 = regs.r11 = regs.r12 = regs.r14 = TaggedUWord();
-
-          // Move on to the next word up the stack
-          sp = sp + TaggedUWord(4);
-
-#else
-# error "Unknown plat"
-#endif
-
-          break;
-        }
-
-      } // for (int i = 0; i < NUM_SCANNED_WORDS; i++)
-
-      // We tried to make progress by scanning the stack, but failed.
-      // So give up -- fall out of the top level unwind loop.
-      if (!scan_succeeded) {
-        break;
-      }
+      continue;
     }
 
-  } // top level unwind loop
+#if defined(GP_PLAT_amd64_linux) || defined(GP_PLAT_x86_linux)
+    // There's no RuleSet for the specified address.  On amd64/x86_linux, see if
+    // it's possible to recover the caller's frame by using the frame pointer.
+
+    // We seek to compute (new_IP, new_SP, new_BP) from (old_BP, stack image),
+    // and assume the following layout:
+    //
+    //                 <--- new_SP
+    //   +----------+
+    //   |  new_IP  |  (return address)
+    //   +----------+
+    //   |  new_BP  |  <--- old_BP
+    //   +----------+
+    //   |   ....   |
+    //   |   ....   |
+    //   |   ....   |
+    //   +----------+  <---- old_SP (arbitrary, but must be <= old_BP)
+
+    const size_t wordSzB = sizeof(uintptr_t);
+    TaggedUWord old_xsp = regs.xsp;
+
+    // points at new_BP ?
+    TaggedUWord old_xbp = regs.xbp;
+    // points at new_IP ?
+    TaggedUWord old_xbp_plus1 = regs.xbp + TaggedUWord(1 * wordSzB);
+    // is the new_SP ?
+    TaggedUWord old_xbp_plus2 = regs.xbp + TaggedUWord(2 * wordSzB);
+
+    if (old_xbp.Valid() && old_xbp.IsAligned() && old_xsp.Valid() &&
+        old_xsp.IsAligned() && old_xsp.Value() <= old_xbp.Value()) {
+      // We don't need to do any range, alignment or validity checks for
+      // addresses passed to DerefTUW, since that performs them itself, and
+      // returns an invalid value on failure.  Any such value will poison
+      // subsequent uses, and we do a final check for validity before putting
+      // the computed values into |regs|.
+      TaggedUWord new_xbp = DerefTUW(old_xbp, aStackImg);
+      if (new_xbp.Valid() && new_xbp.IsAligned() &&
+          old_xbp.Value() < new_xbp.Value()) {
+        TaggedUWord new_xip = DerefTUW(old_xbp_plus1, aStackImg);
+        TaggedUWord new_xsp = old_xbp_plus2;
+        if (new_xbp.Valid() && new_xip.Valid() && new_xsp.Valid()) {
+          regs.xbp = new_xbp;
+          regs.xip = new_xip;
+          regs.xsp = new_xsp;
+          (*aFramePointerFramesAcquired)++;
+          continue;
+        }
+      }
+    }
+#endif  // defined(GP_PLAT_amd64_linux) || defined(GP_PLAT_x86_linux)
+
+    // We failed to recover a frame either using CFI or FP chasing, and we
+    // have no other ways to recover the frame.  So we have to give up.
+    break;
+
+  }  // top level unwind loop
 
   // END UNWIND
   /////////////////////////////////////////////////////////
 }
 
-
 ////////////////////////////////////////////////////////////////
 // LUL Unit Testing                                           //
 ////////////////////////////////////////////////////////////////
 
-static const int LUL_UNIT_TEST_STACK_SIZE = 16384;
+static const int LUL_UNIT_TEST_STACK_SIZE = 32768;
+
+#if defined(GP_ARCH_mips64)
+static __attribute__((noinline)) unsigned long __getpc(void) {
+  unsigned long rtaddr;
+  __asm__ volatile("move %0, $31" : "=r"(rtaddr));
+  return rtaddr;
+}
+#endif
 
 // This function is innermost in the test call sequence.  It uses LUL
 // to unwind, and compares the result with the sequence specified in
@@ -1680,9 +1494,8 @@ static const int LUL_UNIT_TEST_STACK_SIZE = 16384;
 // cause the expected-vs-actual backtrace consistency checking to
 // fail.  Prints summary results to |aLUL|'s logging sink and also
 // returns a boolean indicating whether or not the test passed.
-static __attribute__((noinline))
-bool GetAndCheckStackTrace(LUL* aLUL, const char* dstring)
-{
+static __attribute__((noinline)) bool GetAndCheckStackTrace(
+    LUL* aLUL, const char* dstring) {
   // Get hold of the current unwind-start registers.
   UnwindRegs startRegs;
   memset(&startRegs, 0, sizeof(startRegs));
@@ -1690,12 +1503,17 @@ bool GetAndCheckStackTrace(LUL* aLUL, const char* dstring)
   volatile uintptr_t block[3];
   MOZ_ASSERT(sizeof(block) == 24);
   __asm__ __volatile__(
-    "leaq 0(%%rip), %%r15"   "\n\t"
-    "movq %%r15, 0(%0)"      "\n\t"
-    "movq %%rsp, 8(%0)"      "\n\t"
-    "movq %%rbp, 16(%0)"     "\n"
-    : : "r"(&block[0]) : "memory", "r15"
-  );
+      "leaq 0(%%rip), %%r15"
+      "\n\t"
+      "movq %%r15, 0(%0)"
+      "\n\t"
+      "movq %%rsp, 8(%0)"
+      "\n\t"
+      "movq %%rbp, 16(%0)"
+      "\n"
+      :
+      : "r"(&block[0])
+      : "memory", "r15");
   startRegs.xip = TaggedUWord(block[0]);
   startRegs.xsp = TaggedUWord(block[1]);
   startRegs.xbp = TaggedUWord(block[2]);
@@ -1705,56 +1523,104 @@ bool GetAndCheckStackTrace(LUL* aLUL, const char* dstring)
   volatile uintptr_t block[3];
   MOZ_ASSERT(sizeof(block) == 12);
   __asm__ __volatile__(
-    ".byte 0xE8,0x00,0x00,0x00,0x00"/*call next insn*/  "\n\t"
-    "popl %%edi"             "\n\t"
-    "movl %%edi, 0(%0)"      "\n\t"
-    "movl %%esp, 4(%0)"      "\n\t"
-    "movl %%ebp, 8(%0)"      "\n"
-    : : "r"(&block[0]) : "memory", "edi"
-  );
+      ".byte 0xE8,0x00,0x00,0x00,0x00" /*call next insn*/
+      "\n\t"
+      "popl %%edi"
+      "\n\t"
+      "movl %%edi, 0(%0)"
+      "\n\t"
+      "movl %%esp, 4(%0)"
+      "\n\t"
+      "movl %%ebp, 8(%0)"
+      "\n"
+      :
+      : "r"(&block[0])
+      : "memory", "edi");
   startRegs.xip = TaggedUWord(block[0]);
   startRegs.xsp = TaggedUWord(block[1]);
   startRegs.xbp = TaggedUWord(block[2]);
   const uintptr_t REDZONE_SIZE = 0;
   uintptr_t start = block[1] - REDZONE_SIZE;
-#elif defined(GP_PLAT_arm_android)
+#elif defined(GP_PLAT_arm_linux) || defined(GP_PLAT_arm_android)
   volatile uintptr_t block[6];
   MOZ_ASSERT(sizeof(block) == 24);
   __asm__ __volatile__(
-    "mov r0, r15"            "\n\t"
-    "str r0,  [%0, #0]"      "\n\t"
-    "str r14, [%0, #4]"      "\n\t"
-    "str r13, [%0, #8]"      "\n\t"
-    "str r12, [%0, #12]"     "\n\t"
-    "str r11, [%0, #16]"     "\n\t"
-    "str r7,  [%0, #20]"     "\n"
-    : : "r"(&block[0]) : "memory", "r0"
-  );
+      "mov r0, r15"
+      "\n\t"
+      "str r0,  [%0, #0]"
+      "\n\t"
+      "str r14, [%0, #4]"
+      "\n\t"
+      "str r13, [%0, #8]"
+      "\n\t"
+      "str r12, [%0, #12]"
+      "\n\t"
+      "str r11, [%0, #16]"
+      "\n\t"
+      "str r7,  [%0, #20]"
+      "\n"
+      :
+      : "r"(&block[0])
+      : "memory", "r0");
   startRegs.r15 = TaggedUWord(block[0]);
   startRegs.r14 = TaggedUWord(block[1]);
   startRegs.r13 = TaggedUWord(block[2]);
   startRegs.r12 = TaggedUWord(block[3]);
   startRegs.r11 = TaggedUWord(block[4]);
-  startRegs.r7  = TaggedUWord(block[5]);
+  startRegs.r7 = TaggedUWord(block[5]);
+  const uintptr_t REDZONE_SIZE = 0;
+  uintptr_t start = block[1] - REDZONE_SIZE;
+#elif defined(GP_ARCH_arm64)
+  volatile uintptr_t block[4];
+  MOZ_ASSERT(sizeof(block) == 32);
+  __asm__ __volatile__(
+      "adr x0, . \n\t"
+      "str x0, [%0, #0] \n\t"
+      "str x29, [%0, #8] \n\t"
+      "str x30, [%0, #16] \n\t"
+      "mov x0, sp \n\t"
+      "str x0, [%0, #24] \n\t"
+      :
+      : "r"(&block[0])
+      : "memory", "x0");
+  startRegs.pc = TaggedUWord(block[0]);
+  startRegs.x29 = TaggedUWord(block[1]);
+  startRegs.x30 = TaggedUWord(block[2]);
+  startRegs.sp = TaggedUWord(block[3]);
+  const uintptr_t REDZONE_SIZE = 0;
+  uintptr_t start = block[1] - REDZONE_SIZE;
+#elif defined(GP_ARCH_mips64)
+  volatile uintptr_t block[3];
+  MOZ_ASSERT(sizeof(block) == 24);
+  __asm__ __volatile__(
+      "sd $29, 8(%0)     \n"
+      "sd $30, 16(%0)    \n"
+      :
+      : "r"(block)
+      : "memory");
+  block[0] = __getpc();
+  startRegs.pc = TaggedUWord(block[0]);
+  startRegs.sp = TaggedUWord(block[1]);
+  startRegs.fp = TaggedUWord(block[2]);
   const uintptr_t REDZONE_SIZE = 0;
   uintptr_t start = block[1] - REDZONE_SIZE;
 #else
-# error "Unsupported platform"
+#  error "Unsupported platform"
 #endif
 
   // Get hold of the innermost LUL_UNIT_TEST_STACK_SIZE bytes of the
   // stack.
   uintptr_t end = start + LUL_UNIT_TEST_STACK_SIZE;
-  uintptr_t ws  = sizeof(void*);
-  start &= ~(ws-1);
-  end   &= ~(ws-1);
+  uintptr_t ws = sizeof(void*);
+  start &= ~(ws - 1);
+  end &= ~(ws - 1);
   uintptr_t nToCopy = end - start;
   if (nToCopy > lul::N_STACK_BYTES) {
     nToCopy = lul::N_STACK_BYTES;
   }
   MOZ_ASSERT(nToCopy <= lul::N_STACK_BYTES);
   StackImage* stackImg = new StackImage();
-  stackImg->mLen       = nToCopy;
+  stackImg->mLen = nToCopy;
   stackImg->mStartAvma = start;
   if (nToCopy > 0) {
     MOZ_MAKE_MEM_DEFINED((void*)start, nToCopy);
@@ -1766,17 +1632,14 @@ bool GetAndCheckStackTrace(LUL* aLUL, const char* dstring)
   uintptr_t framePCs[MAX_TEST_FRAMES];
   uintptr_t frameSPs[MAX_TEST_FRAMES];
   size_t framesAvail = mozilla::ArrayLength(framePCs);
-  size_t framesUsed  = 0;
-  size_t scannedFramesAllowed = 0;
-  size_t scannedFramesAcquired = 0;
-  aLUL->Unwind( &framePCs[0], &frameSPs[0],
-                &framesUsed, &scannedFramesAcquired,
-                framesAvail, scannedFramesAllowed,
-                &startRegs, stackImg );
+  size_t framesUsed = 0;
+  size_t framePointerFramesAcquired = 0;
+  aLUL->Unwind(&framePCs[0], &frameSPs[0], &framesUsed,
+               &framePointerFramesAcquired, framesAvail, &startRegs, stackImg);
 
   delete stackImg;
 
-  //if (0) {
+  // if (0) {
   //  // Show what we have.
   //  fprintf(stderr, "Got %d frames:\n", (int)framesUsed);
   //  for (size_t i = 0; i < framesUsed; i++) {
@@ -1824,10 +1687,9 @@ bool GetAndCheckStackTrace(LUL* aLUL, const char* dstring)
   // will always be one less than the length of the director string
   // (not including its terminating zero).
   size_t frameIx;
-  for (cursor = cursor-2, frameIx = 2;
-       cursor >= dstring && frameIx < framesUsed;
-       cursor--, frameIx++) {
-    char      c  = *cursor;
+  for (cursor = cursor - 2, frameIx = 2;
+       cursor >= dstring && frameIx < framesUsed; cursor--, frameIx++) {
+    char c = *cursor;
     uintptr_t pc = framePCs[frameIx];
     // If this doesn't hold, the director string is ill-formed.
     MOZ_ASSERT(c >= '1' && c <= '8');
@@ -1848,23 +1710,21 @@ bool GetAndCheckStackTrace(LUL* aLUL, const char* dstring)
   }
 
   // So, did we succeed?
-  bool passed = nConsistent+1 == strlen(dstring);
+  bool passed = nConsistent + 1 == strlen(dstring);
 
   // Show the results.
   char buf[200];
   SprintfLiteral(buf, "LULUnitTest:   dstring = %s\n", dstring);
-  buf[sizeof(buf)-1] = 0;
+  buf[sizeof(buf) - 1] = 0;
   aLUL->mLog(buf);
-  SprintfLiteral(buf,
-                 "LULUnitTest:     %d consistent, %d in dstring: %s\n",
+  SprintfLiteral(buf, "LULUnitTest:     %d consistent, %d in dstring: %s\n",
                  (int)nConsistent, (int)strlen(dstring),
                  passed ? "PASS" : "FAIL");
-  buf[sizeof(buf)-1] = 0;
+  buf[sizeof(buf) - 1] = 0;
   aLUL->mLog(buf);
 
   return passed;
 }
-
 
 // Macro magic to create a set of 8 mutually recursive functions with
 // varying frame sizes.  These will recurse amongst themselves as
@@ -1877,43 +1737,73 @@ bool GetAndCheckStackTrace(LUL* aLUL, const char* dstring)
 #define DECL_TEST_FN(NAME) \
   bool NAME(LUL* aLUL, const char* strPorig, const char* strP);
 
-#define GEN_TEST_FN(NAME, FRAMESIZE) \
-  bool NAME(LUL* aLUL, const char* strPorig, const char* strP) { \
-    volatile char space[FRAMESIZE]; \
-    memset((char*)&space[0], 0, sizeof(space)); \
-    if (*strP == '\0') { \
-      /* We've come to the end of the director string. */ \
-      /* Take a stack snapshot. */ \
-      return GetAndCheckStackTrace(aLUL, strPorig); \
-    } else { \
-      /* Recurse onwards.  This is a bit subtle.  The obvious */ \
-      /* thing to do here is call onwards directly, from within the */ \
-      /* arms of the case statement.  That gives a problem in that */ \
-      /* there will be multiple return points inside each function when */ \
-      /* unwinding, so it will be difficult to check for consistency */ \
-      /* against the director string.  Instead, we make an indirect */ \
-      /* call, so as to guarantee that there is only one call site */ \
-      /* within each function.  This does assume that the compiler */ \
-      /* won't transform it back to the simple direct-call form. */ \
-      /* To discourage it from doing so, the call is bracketed with */ \
-      /* __asm__ __volatile__ sections so as to make it not-movable. */ \
-      bool (*nextFn)(LUL*, const char*, const char*) = NULL; \
-      switch (*strP) { \
-        case '1': nextFn = TestFn1; break; \
-        case '2': nextFn = TestFn2; break; \
-        case '3': nextFn = TestFn3; break; \
-        case '4': nextFn = TestFn4; break; \
-        case '5': nextFn = TestFn5; break; \
-        case '6': nextFn = TestFn6; break; \
-        case '7': nextFn = TestFn7; break; \
-        case '8': nextFn = TestFn8; break; \
-        default:  nextFn = TestFn8; break; \
-      } \
-      __asm__ __volatile__("":::"cc","memory"); \
-      bool passed = nextFn(aLUL, strPorig, strP+1); \
-      __asm__ __volatile__("":::"cc","memory"); \
-      return passed; \
-    } \
+#define GEN_TEST_FN(NAME, FRAMESIZE)                                          \
+  bool NAME(LUL* aLUL, const char* strPorig, const char* strP) {              \
+    /* Create a frame of size (at least) FRAMESIZE, so that the */            \
+    /* 8 functions created by this macro offer some variation in frame */     \
+    /* sizes.  This isn't as simple as it might seem, since a clever */       \
+    /* optimizing compiler (eg, clang-5) detects that the array is unused */  \
+    /* and removes it.  We try to defeat this by passing it to a function */  \
+    /* in a different compilation unit, and hoping that clang does not */     \
+    /* notice that the call is a no-op. */                                    \
+    char space[FRAMESIZE];                                                    \
+    Unused << write(1, space, 0); /* write zero bytes of |space| to stdout */ \
+                                                                              \
+    if (*strP == '\0') {                                                      \
+      /* We've come to the end of the director string. */                     \
+      /* Take a stack snapshot. */                                            \
+      return GetAndCheckStackTrace(aLUL, strPorig);                           \
+    } else {                                                                  \
+      /* Recurse onwards.  This is a bit subtle.  The obvious */              \
+      /* thing to do here is call onwards directly, from within the */        \
+      /* arms of the case statement.  That gives a problem in that */         \
+      /* there will be multiple return points inside each function when */    \
+      /* unwinding, so it will be difficult to check for consistency */       \
+      /* against the director string.  Instead, we make an indirect */        \
+      /* call, so as to guarantee that there is only one call site */         \
+      /* within each function.  This does assume that the compiler */         \
+      /* won't transform it back to the simple direct-call form. */           \
+      /* To discourage it from doing so, the call is bracketed with */        \
+      /* __asm__ __volatile__ sections so as to make it not-movable. */       \
+      bool (*nextFn)(LUL*, const char*, const char*) = NULL;                  \
+      switch (*strP) {                                                        \
+        case '1':                                                             \
+          nextFn = TestFn1;                                                   \
+          break;                                                              \
+        case '2':                                                             \
+          nextFn = TestFn2;                                                   \
+          break;                                                              \
+        case '3':                                                             \
+          nextFn = TestFn3;                                                   \
+          break;                                                              \
+        case '4':                                                             \
+          nextFn = TestFn4;                                                   \
+          break;                                                              \
+        case '5':                                                             \
+          nextFn = TestFn5;                                                   \
+          break;                                                              \
+        case '6':                                                             \
+          nextFn = TestFn6;                                                   \
+          break;                                                              \
+        case '7':                                                             \
+          nextFn = TestFn7;                                                   \
+          break;                                                              \
+        case '8':                                                             \
+          nextFn = TestFn8;                                                   \
+          break;                                                              \
+        default:                                                              \
+          nextFn = TestFn8;                                                   \
+          break;                                                              \
+      }                                                                       \
+      /* "use" |space| immediately after the recursive call, */               \
+      /* so as to dissuade clang from deallocating the space while */         \
+      /* the call is active, or otherwise messing with the stack frame. */    \
+      __asm__ __volatile__("" ::: "cc", "memory");                            \
+      bool passed = nextFn(aLUL, strPorig, strP + 1);                         \
+      Unused << write(1, space, 0);                                           \
+      __asm__ __volatile__("" ::: "cc", "memory");                            \
+      return passed;                                                          \
+    }                                                                         \
   }
 
 // The test functions are mutually recursive, so it is necessary to
@@ -1936,7 +1826,6 @@ GEN_TEST_FN(TestFn6, 117)
 GEN_TEST_FN(TestFn7, 1)
 GEN_TEST_FN(TestFn8, 99)
 
-
 // This starts the test sequence going.  Call here to generate a
 // sequence of calls as directed by the string |dstring|.  The call
 // sequence will, from its innermost frame, finish by calling
@@ -1945,10 +1834,9 @@ GEN_TEST_FN(TestFn8, 99)
 // of those results against |dstring|, and print a pass/fail message
 // to aLUL's logging sink.  It also updates the counters in *aNTests
 // and aNTestsPassed.
-__attribute__((noinline)) void
-TestUnw(/*OUT*/int* aNTests, /*OUT*/int*aNTestsPassed,
-        LUL* aLUL, const char* dstring)
-{
+__attribute__((noinline)) void TestUnw(/*OUT*/ int* aNTests,
+                                       /*OUT*/ int* aNTestsPassed, LUL* aLUL,
+                                       const char* dstring) {
   // Ensure that the stack has at least this much space on it.  This
   // makes it safe to saw off the top LUL_UNIT_TEST_STACK_SIZE bytes
   // and hand it to LUL.  Safe in the sense that no segfault can
@@ -1972,7 +1860,7 @@ TestUnw(/*OUT*/int* aNTests, /*OUT*/int*aNTestsPassed,
   int sum = 0;
   for (i = 0; i < LUL_UNIT_TEST_STACK_SIZE; i++) {
     // If this doesn't fool LLVM, I don't know what will.
-    sum += space[i] - 3*i;
+    sum += space[i] - 3 * i;
   }
   __asm__ __volatile__("" : : "r"(sum));
 
@@ -1983,10 +1871,8 @@ TestUnw(/*OUT*/int* aNTests, /*OUT*/int*aNTestsPassed,
   }
 }
 
-
-void
-RunLulUnitTests(/*OUT*/int* aNTests, /*OUT*/int*aNTestsPassed, LUL* aLUL)
-{
+void RunLulUnitTests(/*OUT*/ int* aNTests, /*OUT*/ int* aNTestsPassed,
+                     LUL* aLUL) {
   aLUL->mLog(":\n");
   aLUL->mLog("LULUnitTest: BEGIN\n");
   *aNTests = *aNTestsPassed = 0;
@@ -2001,5 +1887,4 @@ RunLulUnitTests(/*OUT*/int* aNTests, /*OUT*/int*aNTestsPassed, LUL* aLUL)
   aLUL->mLog(":\n");
 }
 
-
-} // namespace lul
+}  // namespace lul

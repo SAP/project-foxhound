@@ -15,13 +15,8 @@
       let opener = window.opener;
       let SimpleTest = opener.wrappedJSObject.SimpleTest;
 
-      let Ci = Components.interfaces;
-
       function getDocShellType(frame) {
-        return frame.contentWindow.QueryInterface(Ci.nsIInterfaceRequestor)
-                                  .getInterface(Ci.nsIDocShell)
-                                  .QueryInterface(Ci.nsIDocShellTreeItem)
-                                  .itemType;
+        return frame.contentWindow.docShell.itemType;
       }
 
       var normalFrame = document.getElementById("normalFrame");
@@ -35,8 +30,8 @@
       SimpleTest.executeSoon(function () {
         // First focus the parent window and then close this one.
         SimpleTest.waitForFocus(function() {
-          let ww = Components.classes["@mozilla.org/embedcomp/window-watcher;1"]
-                       .getService(Components.interfaces.nsIWindowWatcher);
+          let ww = Cc["@mozilla.org/embedcomp/window-watcher;1"]
+                       .getService(Ci.nsIWindowWatcher);
           ww.registerNotification(function windowObs(subject, topic, data) {
             if (topic == "domwindowclosed") {
               ww.unregisterNotification(windowObs);

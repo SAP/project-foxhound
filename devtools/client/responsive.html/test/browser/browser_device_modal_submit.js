@@ -21,25 +21,24 @@ const addedDevice = {
 const TEST_URL = "data:text/html;charset=utf-8,";
 const Types = require("devtools/client/responsive.html/types");
 
-addRDMTask(TEST_URL, function* ({ ui }) {
-  let { store, document } = ui.toolWindow;
-  let modal = document.querySelector("#device-modal-wrapper");
-  let select = document.querySelector(".viewport-device-selector");
-  let submitButton = document.querySelector("#device-submit-button");
+addRDMTask(TEST_URL, async function({ ui }) {
+  const { toolWindow } = ui;
+  const { document, store } = toolWindow;
+  const deviceSelector = document.getElementById("device-selector");
 
   // Wait until the viewport has been added and the device list has been loaded
-  yield waitUntilState(store, state => state.viewports.length == 1
-    && state.devices.listState == Types.deviceListState.LOADED);
+  await waitUntilState(store, state => state.viewports.length == 1
+    && state.devices.listState == Types.loadableState.LOADED);
 
-  openDeviceModal(ui);
+  await openDeviceModal(ui);
 
   info("Checking displayed device checkboxes are checked in the device modal.");
-  let checkedCbs = [...document.querySelectorAll(".device-input-checkbox")]
+  const checkedCbs = [...document.querySelectorAll(".device-input-checkbox")]
     .filter(cb => cb.checked);
 
-  let remoteList = yield getDevices();
+  const remoteList = await getDevices();
 
-  let featuredCount = remoteList.TYPES.reduce((total, type) => {
+  const featuredCount = remoteList.TYPES.reduce((total, type) => {
     return total + remoteList[type].reduce((subtotal, device) => {
       return subtotal + ((device.os != "fxos" && device.featured) ? 1 : 0);
     }, 0);
@@ -48,60 +47,64 @@ addRDMTask(TEST_URL, function* ({ ui }) {
   is(featuredCount, checkedCbs.length,
     "Got expected number of displayed devices.");
 
-  for (let cb of checkedCbs) {
+  for (const cb of checkedCbs) {
     ok(Object.keys(remoteList).filter(type => remoteList[type][cb.value]),
       cb.value + " is correctly checked.");
   }
 
   // Tests where the user adds a non-featured device
   info("Check the first unchecked device and submit new device list.");
-  let uncheckedCb = [...document.querySelectorAll(".device-input-checkbox")]
+  const uncheckedCb = [...document.querySelectorAll(".device-input-checkbox")]
     .filter(cb => !cb.checked)[0];
-  let value = uncheckedCb.value;
+  const value = uncheckedCb.value;
   uncheckedCb.click();
-  submitButton.click();
+  document.getElementById("device-submit-button").click();
 
-  ok(modal.classList.contains("closed") && !modal.classList.contains("opened"),
-    "The device modal is closed on submit.");
+  ok(!store.getState().devices.isModalOpen, "The device modal is closed on submit.");
 
   info("Checking that the new device is added to the user preference list.");
   let preferredDevices = _loadPreferredDevices();
   ok(preferredDevices.added.has(value), value + " in user added list.");
 
   info("Checking new device is added to the device selector.");
-  let options = [...select.options];
-  is(options.length - 2, featuredCount + 1,
-    "Got expected number of devices in device selector.");
-  ok(options.filter(o => o.value === value)[0],
-    value + " added to the device selector.");
+  await testMenuItems(toolWindow, deviceSelector, menuItems => {
+    is(menuItems.length - 2, featuredCount + 1,
+      "Got expected number of devices in device selector.");
+
+    const menuItem = menuItems.find(item => item.getAttribute("label") === name);
+    ok(menuItem, value + " added to the device selector.");
+  });
 
   info("Reopen device modal and check new device is correctly checked");
-  openDeviceModal(ui);
+  await openDeviceModal(ui);
+
   ok([...document.querySelectorAll(".device-input-checkbox")]
     .filter(cb => cb.checked && cb.value === value)[0],
     value + " is checked in the device modal.");
 
   // Tests where the user removes a featured device
   info("Uncheck the first checked device different than the previous one");
-  let checkedCb = [...document.querySelectorAll(".device-input-checkbox")]
+  const checkedCb = [...document.querySelectorAll(".device-input-checkbox")]
     .filter(cb => cb.checked && cb.value != value)[0];
-  let checkedVal = checkedCb.value;
+  const checkedVal = checkedCb.value;
   checkedCb.click();
-  submitButton.click();
+  document.getElementById("device-submit-button").click();
 
   info("Checking that the device is removed from the user preference list.");
   preferredDevices = _loadPreferredDevices();
   ok(preferredDevices.removed.has(checkedVal), checkedVal + " in removed list");
 
   info("Checking that the device is not in the device selector.");
-  options = [...select.options];
-  is(options.length - 2, featuredCount,
-    "Got expected number of devices in device selector.");
-  ok(!options.filter(o => o.value === checkedVal)[0],
-    checkedVal + " removed from the device selector.");
+  await testMenuItems(toolWindow, deviceSelector, menuItems => {
+    is(menuItems.length - 2, featuredCount,
+      "Got expected number of devices in device selector.");
+
+    const menuItem = menuItems.find(item => item.getAttribute("label") === checkedVal);
+    ok(!menuItem, checkedVal + " removed from the device selector.");
+  });
 
   info("Reopen device modal and check device is correctly unchecked");
-  openDeviceModal(ui);
+  await openDeviceModal(ui);
   ok([...document.querySelectorAll(".device-input-checkbox")]
     .filter(cb => !cb.checked && cb.value === checkedVal)[0],
     checkedVal + " is unchecked in the device modal.");
@@ -110,37 +113,43 @@ addRDMTask(TEST_URL, function* ({ ui }) {
   addDeviceForTest(addedDevice);
 });
 
-addRDMTask(TEST_URL, function* ({ ui }) {
-  let { store, document } = ui.toolWindow;
-  let select = document.querySelector(".viewport-device-selector");
+addRDMTask(TEST_URL, async function({ ui }) {
+  const { toolWindow } = ui;
+  const { document, store } = toolWindow;
 
   // Wait until the viewport has been added and the device list has been loaded
-  yield waitUntilState(store, state => state.viewports.length == 1
-    && state.devices.listState == Types.deviceListState.LOADED);
+  await waitUntilState(store, state => state.viewports.length == 1
+    && state.devices.listState == Types.loadableState.LOADED);
 
-  openDeviceModal(ui);
+  await openDeviceModal(ui);
 
-  let remoteList = yield getDevices();
-  let featuredCount = remoteList.TYPES.reduce((total, type) => {
+  const remoteList = await getDevices();
+  const featuredCount = remoteList.TYPES.reduce((total, type) => {
     return total + remoteList[type].reduce((subtotal, device) => {
       return subtotal + ((device.os != "fxos" && device.featured) ? 1 : 0);
     }, 0);
   }, 0);
-  let preferredDevices = _loadPreferredDevices();
+  const preferredDevices = _loadPreferredDevices();
 
   // Tests to prove that reloading the RDM didn't break our device list
   info("Checking new featured device appears in the device selector.");
-  let options = [...select.options];
-  is(options.length - 2, featuredCount
-    - preferredDevices.removed.size + preferredDevices.added.size,
-    "Got expected number of devices in device selector.");
+  const deviceSelector = document.getElementById("device-selector");
+  await testMenuItems(toolWindow, deviceSelector, items => {
+    is(items.length - 2, featuredCount
+      - preferredDevices.removed.size + preferredDevices.added.size,
+      "Got expected number of devices in device selector.");
 
-  ok(options.filter(o => o.value === addedDevice.name)[0],
-    "dummy device added to the device selector.");
+    const added = items.find(i => i.getAttribute("label") === addedDevice.name);
+    ok(added, "Dummy device added to the device selector.");
 
-  ok(options.filter(o => preferredDevices.added.has(o.value))[0],
-    "device added by user still in the device selector.");
+    for (const name of preferredDevices.added.keys()) {
+      const menuItem = items.find(item => item.getAttribute("label") === name);
+      ok(menuItem, "Device added by user still in the device selector.");
+    }
 
-  ok(!options.filter(o => preferredDevices.removed.has(o.value))[0],
-    "device removed by user not in the device selector.");
+    for (const name of preferredDevices.removed.keys()) {
+      const menuItem = items.find(item => item.getAttribute("label") === name);
+      ok(!menuItem, "Device removed by user not in the device selector.");
+    }
+  });
 });

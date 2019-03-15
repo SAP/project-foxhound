@@ -5,7 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
- * Implementation of DOM Core's nsIDOMDocumentType node.
+ * Implementation of DOM Core's DocumentType node.
  */
 
 #include "mozilla/dom/DocumentType.h"
@@ -18,127 +18,67 @@
 #include "nsWrapperCacheInlines.h"
 #include "mozilla/dom/DocumentTypeBinding.h"
 
-nsresult
-NS_NewDOMDocumentType(nsIDOMDocumentType** aDocType,
-                      nsNodeInfoManager *aNodeInfoManager,
-                      nsIAtom *aName,
-                      const nsAString& aPublicId,
-                      const nsAString& aSystemId,
-                      const nsAString& aInternalSubset)
-{
-  NS_ENSURE_ARG_POINTER(aDocType);
-  mozilla::ErrorResult rv;
-  *aDocType = NS_NewDOMDocumentType(aNodeInfoManager, aName, aPublicId,
-                                    aSystemId, aInternalSubset, rv).take();
-  return rv.StealNSResult();
-}
+already_AddRefed<mozilla::dom::DocumentType> NS_NewDOMDocumentType(
+    nsNodeInfoManager* aNodeInfoManager, nsAtom* aName,
+    const nsAString& aPublicId, const nsAString& aSystemId,
+    const nsAString& aInternalSubset) {
+  MOZ_ASSERT(aName, "Must have a name");
 
-already_AddRefed<mozilla::dom::DocumentType>
-NS_NewDOMDocumentType(nsNodeInfoManager* aNodeInfoManager,
-                      nsIAtom *aName,
-                      const nsAString& aPublicId,
-                      const nsAString& aSystemId,
-                      const nsAString& aInternalSubset,
-                      mozilla::ErrorResult& rv)
-{
-  if (!aName) {
-    rv.Throw(NS_ERROR_INVALID_POINTER);
-    return nullptr;
-  }
+  RefPtr<mozilla::dom::NodeInfo> ni = aNodeInfoManager->GetNodeInfo(
+      nsGkAtoms::documentTypeNodeName, nullptr, kNameSpaceID_None,
+      nsINode::DOCUMENT_TYPE_NODE, aName);
 
-  already_AddRefed<mozilla::dom::NodeInfo> ni =
-    aNodeInfoManager->GetNodeInfo(nsGkAtoms::documentTypeNodeName, nullptr,
-                                  kNameSpaceID_None,
-                                  nsIDOMNode::DOCUMENT_TYPE_NODE,
-                                  aName);
-
-  RefPtr<mozilla::dom::DocumentType> docType =
-    new mozilla::dom::DocumentType(ni, aPublicId, aSystemId, aInternalSubset);
+  RefPtr<mozilla::dom::DocumentType> docType = new mozilla::dom::DocumentType(
+      ni.forget(), aPublicId, aSystemId, aInternalSubset);
   return docType.forget();
 }
 
 namespace mozilla {
 namespace dom {
 
-JSObject*
-DocumentType::WrapNode(JSContext *cx, JS::Handle<JSObject*> aGivenProto)
-{
-  return DocumentTypeBinding::Wrap(cx, this, aGivenProto);
+JSObject* DocumentType::WrapNode(JSContext* cx,
+                                 JS::Handle<JSObject*> aGivenProto) {
+  return DocumentType_Binding::Wrap(cx, this, aGivenProto);
 }
 
-DocumentType::DocumentType(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo,
+DocumentType::DocumentType(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
                            const nsAString& aPublicId,
                            const nsAString& aSystemId,
-                           const nsAString& aInternalSubset) :
-  DocumentTypeForward(aNodeInfo),
-  mPublicId(aPublicId),
-  mSystemId(aSystemId),
-  mInternalSubset(aInternalSubset)
-{
-  MOZ_ASSERT(mNodeInfo->NodeType() == nsIDOMNode::DOCUMENT_TYPE_NODE,
+                           const nsAString& aInternalSubset)
+    : CharacterData(std::move(aNodeInfo)),
+      mPublicId(aPublicId),
+      mSystemId(aSystemId),
+      mInternalSubset(aInternalSubset) {
+  MOZ_ASSERT(mNodeInfo->NodeType() == DOCUMENT_TYPE_NODE,
              "Bad NodeType in aNodeInfo");
+  MOZ_ASSERT(!IsCharacterData());
 }
 
-DocumentType::~DocumentType()
-{
-}
+DocumentType::~DocumentType() = default;
 
-NS_IMPL_ISUPPORTS_INHERITED(DocumentType, nsGenericDOMDataNode, nsIDOMNode,
-                            nsIDOMDocumentType)
+bool DocumentType::IsNodeOfType(uint32_t aFlags) const { return false; }
 
-bool
-DocumentType::IsNodeOfType(uint32_t aFlags) const
-{
-  // Don't claim to be eDATA_NODE since we're just inheriting
-  // nsGenericDOMDataNode for convinience. Doctypes aren't really
-  // data nodes (they have a null .nodeValue and don't implement
-  // nsIDOMCharacterData)
-  return !(aFlags & ~eCONTENT);
-}
+const nsTextFragment* DocumentType::GetText() { return nullptr; }
 
-const nsTextFragment*
-DocumentType::GetText()
-{
-  return nullptr;
-}
+void DocumentType::GetName(nsAString& aName) const { aName = NodeName(); }
 
-NS_IMETHODIMP    
-DocumentType::GetName(nsAString& aName)
-{
-  aName = NodeName();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-DocumentType::GetPublicId(nsAString& aPublicId)
-{
+void DocumentType::GetPublicId(nsAString& aPublicId) const {
   aPublicId = mPublicId;
-
-  return NS_OK;
 }
 
-NS_IMETHODIMP
-DocumentType::GetSystemId(nsAString& aSystemId)
-{
+void DocumentType::GetSystemId(nsAString& aSystemId) const {
   aSystemId = mSystemId;
-
-  return NS_OK;
 }
 
-NS_IMETHODIMP
-DocumentType::GetInternalSubset(nsAString& aInternalSubset)
-{
+void DocumentType::GetInternalSubset(nsAString& aInternalSubset) const {
   aInternalSubset = mInternalSubset;
-  return NS_OK;
 }
 
-nsGenericDOMDataNode*
-DocumentType::CloneDataNode(mozilla::dom::NodeInfo *aNodeInfo, bool aCloneText) const
-{
-  already_AddRefed<mozilla::dom::NodeInfo> ni = RefPtr<mozilla::dom::NodeInfo>(aNodeInfo).forget();
-  return new DocumentType(ni, mPublicId, mSystemId, mInternalSubset);
+already_AddRefed<CharacterData> DocumentType::CloneDataNode(
+    mozilla::dom::NodeInfo* aNodeInfo, bool aCloneText) const {
+  return do_AddRef(new DocumentType(do_AddRef(aNodeInfo), mPublicId, mSystemId,
+                                    mInternalSubset));
 }
 
-} // namespace dom
-} // namespace mozilla
-
+}  // namespace dom
+}  // namespace mozilla

@@ -1,11 +1,13 @@
 # lint_ignore=E501
 config = {
     "shipped-locales-url": "https://hg.mozilla.org/%(repo)s/raw-file/%(revision)s/browser/locales/shipped-locales",
+    "bouncer_prefix": "https://download.mozilla.org/",
     "products": {
         "installer": {
             "product-name": "Firefox-%(version)s",
             "check_uptake": True,
-            "alias": "firefox-esr-latest",
+            # convert to firefox-esr-latest when ESR52 stops
+            "alias": "firefox-esr-next-latest",
             "ssl-only": True,
             "add-locales": True,
             "paths": {
@@ -34,6 +36,8 @@ config = {
         "installer-ssl": {
             "product-name": "Firefox-%(version)s-SSL",
             "check_uptake": True,
+            # convert to firefox-esr-latest-ssl when ESR52 stops
+            "alias": "firefox-esr-next-latest-ssl",
             "ssl-only": True,
             "add-locales": True,
             "paths": {
@@ -59,17 +63,20 @@ config = {
                 },
             },
         },
-        "sha1-installer": {
-            "product-name": "Firefox-%(version)s-sha1",
+        "msi": {
+            "product-name": "Firefox-%(version)s-msi-SSL",
             "check_uptake": True,
-            # XP/Vista Release users are redicted to ESR52
-            "alias": "firefox-sha1",
+            "alias": "firefox-esr-msi-latest-ssl",
             "ssl-only": True,
             "add-locales": True,
             "paths": {
                 "win32": {
-                    "path": "/firefox/releases/%(version)s/win32-sha1/:lang/Firefox%%20Setup%%20%(version)s.exe",
+                    "path": "/firefox/releases/%(version)s/win32/:lang/Firefox%%20Setup%%20%(version)s.msi",
                     "bouncer-platform": "win",
+                },
+                "win64": {
+                    "path": "/firefox/releases/%(version)s/win64/:lang/Firefox%%20Setup%%20%(version)s.msi",
+                    "bouncer-platform": "win64",
                 },
             },
         },

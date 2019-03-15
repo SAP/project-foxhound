@@ -16,12 +16,12 @@ function* testSteps()
 
   const indexData = [
     { name: "", keyPath: "name", options: { unique: true } },
-    { name: null, keyPath: "height", options: { } }
+    { name: null, keyPath: "height", options: { } },
   ];
 
   const data = [
     { ss: "237-23-7732", name: "Ann", height: 60 },
-    { ss: "237-23-7733", name: "Bob", height: 65 }
+    { ss: "237-23-7733", name: "Bob", height: 65 },
   ];
 
   let request = indexedDB.open(this.window ? window.location.pathname : "Splendid Test", 1);
@@ -40,9 +40,9 @@ function* testSteps()
                                            objectStoreInfo.options);
     for (let indexIndex in indexData) {
       const indexInfo = indexData[indexIndex];
-      let index = objectStore.createIndex(indexInfo.name,
-                                          indexInfo.keyPath,
-                                          indexInfo.options);
+      objectStore.createIndex(indexInfo.name,
+                              indexInfo.keyPath,
+                              indexInfo.options);
     }
   }
   yield undefined;
@@ -95,16 +95,16 @@ function* testSteps()
           cursor.update(obj).onsuccess = function(event) {
             ok(true, "Object updated");
             cursor.continue();
-            keyIndex++
-          }
+            keyIndex++;
+          };
           return;
         }
 
         cursor.delete().onsuccess = function(event) {
           ok(true, "Object deleted");
           cursor.continue();
-          keyIndex++
-        }
+          keyIndex++;
+        };
       };
       yield undefined;
 

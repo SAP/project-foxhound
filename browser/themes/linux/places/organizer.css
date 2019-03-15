@@ -8,8 +8,10 @@
   -moz-appearance: menubar;
 }
 
-#placesToolbar:-moz-system-metric(menubar-drag) {
-  -moz-binding: url("chrome://global/content/bindings/toolbar.xml#toolbar-drag");
+@media (-moz-menubar-drag) {
+  #placesToolbar {
+    -moz-window-dragging: drag;
+  }
 }
 
 #placesToolbar > toolbarbutton {
@@ -57,11 +59,6 @@
 }
 
 /* Menu */
-#placesMenu {
-  -moz-appearance: none;
-  border: none;
-}
-
 #placesMenu > menu {
   padding-inline-start: 4px;
   -moz-binding: url("chrome://browser/skin/places/organizer.xml#toolbarbutton-dropdown");

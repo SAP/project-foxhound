@@ -34,10 +34,10 @@ The following properties make execution of ``moz.build`` files special:
    files.
 
 The limited subset of Python is actually an extremely limited subset.
-Only a few symbols from ``__builtins__`` are exposed. These include
-``True``, ``False``, and ``None``. Global functions like ``import``,
-``print``, and ``open`` aren't available. Without these, ``moz.build``
-files can do very little. *This is by design*.
+Only a few symbols from ``__builtin__`` are exposed. These include
+``True``, ``False``, ``None``, ``sorted``, ``int``, and ``set``. Global
+functions like ``import``, ``print``, and ``open`` aren't available.
+Without these, ``moz.build`` files can do very little. *This is by design*.
 
 The execution sandbox treats all ``UPPERCASE`` variables specially. Any
 ``UPPERCASE`` variable must be known to the sandbox before the script
@@ -147,7 +147,7 @@ The code for reading ``moz.build`` files lives in
 (:py:class:`mozbuild.frontend.context.Context`) are passed into
 :py:mod:`mozbuild.frontend.emitter`, which converts them to classes defined
 in :py:mod:`mozbuild.frontend.data`. Each class in this module defines a
-domain-specific component of tree metdata. e.g. there will be separate
+domain-specific component of tree metadata. e.g. there will be separate
 classes that represent a JavaScript file vs a compiled C++ file or test
 manifests. This means downstream consumers of this data can filter on class
 types to only consume what they are interested in.

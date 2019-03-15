@@ -8,27 +8,27 @@
 #ifndef GrVkResourceProvider_DEFINED
 #define GrVkResourceProvider_DEFINED
 
-#include "GrGpu.h"
 #include "GrResourceHandle.h"
 #include "GrVkDescriptorPool.h"
 #include "GrVkDescriptorSetManager.h"
-#include "GrVkPipelineState.h"
+#include "GrVkPipelineStateBuilder.h"
 #include "GrVkRenderPass.h"
 #include "GrVkResource.h"
 #include "GrVkUtil.h"
+#include "SkLRUCache.h"
 #include "SkTArray.h"
 #include "SkTDynamicHash.h"
-#include "SkTHash.h"
 #include "SkTInternalLList.h"
 
 #include "vk/GrVkDefines.h"
 
 class GrPipeline;
 class GrPrimitiveProcessor;
-class GrTextureParams;
+class GrSamplerState;
 class GrVkCopyPipeline;
 class GrVkGpu;
 class GrVkPipeline;
+class GrVkPipelineState;
 class GrVkPrimaryCommandBuffer;
 class GrVkRenderTarget;
 class GrVkSampler;
@@ -43,12 +43,13 @@ public:
     // Set up any initial vk objects
     void init();
 
-    GrVkPipeline* createPipeline(const GrPipeline& pipeline,
-                                 const GrPrimitiveProcessor& primProc,
+    GrVkPipeline* createPipeline(const GrPrimitiveProcessor& primProc,
+                                 const GrPipeline& pipeline,
+                                 const GrStencilSettings& stencil,
                                  VkPipelineShaderStageCreateInfo* shaderStageInfo,
                                  int shaderStageCount,
                                  GrPrimitiveType primitiveType,
-                                 const GrVkRenderPass& renderPass,
+                                 VkRenderPass compatibleRenderPass,
                                  VkPipelineLayout layout);
 
     GrVkCopyPipeline* findOrCreateCopyPipeline(const GrVkRenderTarget* dst,
@@ -96,18 +97,20 @@ public:
     //       of our cache of GrVkDescriptorPools.
     GrVkDescriptorPool* findOrCreateCompatibleDescriptorPool(VkDescriptorType type, uint32_t count);
 
-    // Finds or creates a compatible GrVkSampler based on the GrTextureParams.
+    // Finds or creates a compatible GrVkSampler based on the GrSamplerState.
     // The refcount is incremented and a pointer returned.
-    GrVkSampler* findOrCreateCompatibleSampler(const GrTextureParams&, uint32_t mipLevels);
+    GrVkSampler* findOrCreateCompatibleSampler(const GrSamplerState&, uint32_t maxMipLevel);
 
-    sk_sp<GrVkPipelineState> findOrCreateCompatiblePipelineState(const GrPipeline&,
-                                                                 const GrPrimitiveProcessor&,
-                                                                 GrPrimitiveType,
-                                                                 const GrVkRenderPass& renderPass);
+    GrVkPipelineState* findOrCreateCompatiblePipelineState(const GrPipeline&,
+                                                           const GrPrimitiveProcessor&,
+                                                           GrPrimitiveType,
+                                                           VkRenderPass compatibleRenderPass);
 
-    void getSamplerDescriptorSetHandle(const GrVkUniformHandler&,
+    void getSamplerDescriptorSetHandle(VkDescriptorType type,
+                                       const GrVkUniformHandler&,
                                        GrVkDescriptorSetManager::Handle* handle);
-    void getSamplerDescriptorSetHandle(const SkTArray<uint32_t>& visibilities,
+    void getSamplerDescriptorSetHandle(VkDescriptorType type,
+                                       const SkTArray<uint32_t>& visibilities,
                                        GrVkDescriptorSetManager::Handle* handle);
 
     // Returns the compatible VkDescriptorSetLayout to use for uniform buffers. The caller does not
@@ -147,7 +150,9 @@ public:
     // The assumption is that all queues are idle and all command buffers are finished.
     // For resource tracing to work properly, this should be called after unrefing all other
     // resource usages.
-    void destroyResources();
+    // If deviceLost is true, then resources will not be checked to see if they've finished
+    // before deleting (see section 4.2.4 of the Vulkan spec).
+    void destroyResources(bool deviceLost);
 
     // Abandon any cached resources. To be used when the context/VkDevice is lost.
     // For resource tracing to work properly, this should be called after unrefing all other
@@ -166,10 +171,10 @@ private:
 
         void abandon();
         void release();
-        sk_sp<GrVkPipelineState> refPipelineState(const GrPipeline&,
-                                                  const GrPrimitiveProcessor&,
-                                                  GrPrimitiveType,
-                                                  const GrVkRenderPass& renderPass);
+        GrVkPipelineState* refPipelineState(const GrPrimitiveProcessor&,
+                                            const GrPipeline&,
+                                            GrPrimitiveType,
+                                            VkRenderPass compatibleRenderPass);
 
     private:
         enum {
@@ -180,11 +185,13 @@ private:
 
         struct Entry;
 
-        void reset();
+        struct DescHash {
+            uint32_t operator()(const GrProgramDesc& desc) const {
+                return SkOpts::hash_fn(desc.asKey(), desc.keyLength(), 0);
+            }
+        };
 
-        int                         fCount;
-        SkTHashTable<Entry*, const GrVkPipelineState::Desc&, Entry> fHashTable;
-        SkTInternalLList<Entry> fLRUList;
+        SkLRUCache<const GrVkPipelineStateBuilder::Desc, std::unique_ptr<Entry>, DescHash> fMap;
 
         GrVkGpu*                    fGpu;
 
@@ -250,7 +257,7 @@ private:
     // Cache of GrVkPipelineStates
     PipelineStateCache* fPipelineStateCache;
 
-    SkSTArray<4, GrVkDescriptorSetManager, true> fDescriptorSetManagers;
+    SkSTArray<4, std::unique_ptr<GrVkDescriptorSetManager>> fDescriptorSetManagers;
 
     GrVkDescriptorSetManager::Handle fUniformDSHandle;
 };

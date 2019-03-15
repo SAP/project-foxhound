@@ -1,31 +1,24 @@
-var Cc = Components.classes;
-var Ci = Components.interfaces;
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var addedTopic = "xpcom-category-entry-added";
 var removedTopic = "xpcom-category-entry-removed";
 var testCategory = "bug-test-category";
 var testEntry = "@mozilla.org/bug-test-entry;1";
 
-var testValue= "check validity";
+var testValue = "check validity";
 var result = "";
 var expected = "add remove add remove ";
 var timer;
 
 var observer = {
-  QueryInterface: function(iid) {
-    if (iid.equals(Ci.nsISupports) || iid.equals(Ci.nsIObserver))
-      return this;
+  QueryInterface: ChromeUtils.generateQI(["nsIObserver"]),
 
-    throw Components.results.NS_ERROR_NO_INTERFACE;
-  },
-
-  observe: function(subject, topic, data) {
+  observe(subject, topic, data) {
     if (topic == "timer-callback") {
-      do_check_eq(result, expected);
+      Assert.equal(result, expected);
 
-      var observerService = Cc["@mozilla.org/observer-service;1"].getService(Ci.nsIObserverService);
-      observerService.removeObserver(this, addedTopic);
-      observerService.removeObserver(this, removedTopic);
+      Services.obs.removeObserver(this, addedTopic);
+      Services.obs.removeObserver(this, removedTopic);
 
       do_test_finished();
 
@@ -39,20 +32,18 @@ var observer = {
       result += "add ";
     else if (topic == removedTopic)
       result += "remove ";
-  }
+  },
 };
 
 function run_test() {
   do_test_pending();
 
-  var observerService = Cc["@mozilla.org/observer-service;1"].getService(Ci.nsIObserverService);
-  observerService.addObserver(observer, addedTopic, false);
-  observerService.addObserver(observer, removedTopic, false);
+  Services.obs.addObserver(observer, addedTopic);
+  Services.obs.addObserver(observer, removedTopic);
 
-  var categoryManager = Cc["@mozilla.org/categorymanager;1"].getService(Ci.nsICategoryManager);
-  categoryManager.addCategoryEntry(testCategory, testEntry, testValue, false, true);
-  categoryManager.addCategoryEntry(testCategory, testEntry, testValue, false, true);
-  categoryManager.deleteCategoryEntry(testCategory, testEntry, false);
+  Services.catMan.addCategoryEntry(testCategory, testEntry, testValue, false, true);
+  Services.catMan.addCategoryEntry(testCategory, testEntry, testValue, false, true);
+  Services.catMan.deleteCategoryEntry(testCategory, testEntry, false);
 
   timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
   timer.init(observer, 0, timer.TYPE_ONE_SHOT);

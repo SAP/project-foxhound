@@ -1,8 +1,8 @@
-const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr, Constructor: CC } = Components;
+const CC = Components.Constructor;
 
 Cu.import("resource://gre/modules/Timer.jsm");
 
-const LocalFile = CC("@mozilla.org/file/local;1", "nsILocalFile",
+const LocalFile = CC("@mozilla.org/file/local;1", "nsIFile",
                      "initWithPath");
 
 const FileInputStream = CC("@mozilla.org/network/file-input-stream;1",

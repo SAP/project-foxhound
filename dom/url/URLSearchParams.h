@@ -13,8 +13,7 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
 #include "nsISupports.h"
-#include "nsIUnicodeDecoder.h"
-#include "nsIXMLHttpRequest.h"
+#include "nsIInputStream.h"
 
 namespace mozilla {
 namespace dom {
@@ -22,9 +21,8 @@ namespace dom {
 class URLSearchParams;
 class USVStringSequenceSequenceOrUSVStringUSVStringRecordOrUSVString;
 
-class URLSearchParamsObserver : public nsISupports
-{
-public:
+class URLSearchParamsObserver : public nsISupports {
+ public:
   virtual ~URLSearchParamsObserver() {}
 
   virtual void URLSearchParamsUpdated(URLSearchParams* aFromThis) = 0;
@@ -34,37 +32,24 @@ public:
 // attributes are kept in the correct order. If this changes, please, update
 // BasePrincipal code.
 
-class URLParams final
-{
-public:
+class URLParams final {
+ public:
   URLParams() {}
 
-  ~URLParams()
-  {
-    DeleteAll();
-  }
+  ~URLParams() { DeleteAll(); }
 
-  class ForEachIterator
-  {
-  public:
-    virtual bool
-    URLParamsIterator(const nsString& aName, const nsString& aValue) = 0;
+  class ForEachIterator {
+   public:
+    virtual bool URLParamsIterator(const nsAString& aName,
+                                   const nsAString& aValue) = 0;
   };
 
-  void
-  ParseInput(const nsACString& aInput);
+  static bool Parse(const nsACString& aInput, ForEachIterator& aIterator);
 
-  bool
-  ForEach(ForEachIterator& aIterator) const
-  {
-    for (uint32_t i = 0; i < mParams.Length(); ++i) {
-      if (!aIterator.URLParamsIterator(mParams[i].mKey, mParams[i].mValue)) {
-        return false;
-      }
-    }
+  static bool Extract(const nsACString& aInput, const nsAString& aName,
+                      nsAString& aValue);
 
-    return true;
-  }
+  void ParseInput(const nsACString& aInput);
 
   void Serialize(nsAString& aValue) const;
 
@@ -78,80 +63,61 @@ public:
 
   bool Has(const nsAString& aName);
 
-  // Returns true if aName was found and deleted, false otherwise.
-  bool Delete(const nsAString& aName);
+  void Delete(const nsAString& aName);
 
-  void DeleteAll()
-  {
-    mParams.Clear();
-  }
+  void DeleteAll() { mParams.Clear(); }
 
-  uint32_t Length() const
-  {
-    return mParams.Length();
-  }
+  uint32_t Length() const { return mParams.Length(); }
 
-  const nsAString& GetKeyAtIndex(uint32_t aIndex) const
-  {
+  const nsAString& GetKeyAtIndex(uint32_t aIndex) const {
     MOZ_ASSERT(aIndex < mParams.Length());
     return mParams[aIndex].mKey;
   }
 
-  const nsAString& GetValueAtIndex(uint32_t aIndex) const
-  {
+  const nsAString& GetValueAtIndex(uint32_t aIndex) const {
     MOZ_ASSERT(aIndex < mParams.Length());
     return mParams[aIndex].mValue;
   }
 
   nsresult Sort();
 
-  bool
-  ReadStructuredClone(JSStructuredCloneReader* aReader);
+  bool ReadStructuredClone(JSStructuredCloneReader* aReader);
 
-  bool
-  WriteStructuredClone(JSStructuredCloneWriter* aWriter) const;
+  bool WriteStructuredClone(JSStructuredCloneWriter* aWriter) const;
 
-private:
-  void DecodeString(const nsACString& aInput, nsAString& aOutput);
-  void ConvertString(const nsACString& aInput, nsAString& aOutput);
+ private:
+  static void DecodeString(const nsACString& aInput, nsAString& aOutput);
+  static void ConvertString(const nsACString& aInput, nsAString& aOutput);
 
-  struct Param
-  {
+  struct Param {
     nsString mKey;
     nsString mValue;
   };
 
   nsTArray<Param> mParams;
-  nsCOMPtr<nsIUnicodeDecoder> mDecoder;
 };
 
-class URLSearchParams final : public nsIXHRSendable,
-                              public nsWrapperCache
-{
+class URLSearchParams final : public nsISupports, public nsWrapperCache {
   ~URLSearchParams();
 
-public:
-  NS_DECL_NSIXHRSENDABLE
-
+ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(URLSearchParams)
 
   explicit URLSearchParams(nsISupports* aParent,
-                           URLSearchParamsObserver* aObserver=nullptr);
+                           URLSearchParamsObserver* aObserver = nullptr);
 
   // WebIDL methods
-  nsISupports* GetParentObject() const
-  {
-    return mParent;
-  }
+  nsISupports* GetParentObject() const { return mParent; }
 
-  virtual JSObject*
-  WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override;
 
-  static already_AddRefed<URLSearchParams>
-  Constructor(const GlobalObject& aGlobal,
-              const USVStringSequenceSequenceOrUSVStringUSVStringRecordOrUSVString& aInit,
-              ErrorResult& aRv);
+  static already_AddRefed<URLSearchParams> Constructor(
+      const GlobalObject& aGlobal,
+      const USVStringSequenceSequenceOrUSVStringUSVStringRecordOrUSVString&
+          aInit,
+      ErrorResult& aRv);
 
   void ParseInput(const nsACString& aInput);
 
@@ -175,28 +141,17 @@ public:
 
   void Sort(ErrorResult& aRv);
 
-  void Stringify(nsString& aRetval) const
-  {
-    Serialize(aRetval);
-  }
+  void Stringify(nsString& aRetval) const { Serialize(aRetval); }
 
-  typedef URLParams::ForEachIterator ForEachIterator;
+  bool ReadStructuredClone(JSStructuredCloneReader* aReader);
 
-  bool
-  ForEach(ForEachIterator& aIterator) const
-  {
-    return mParams->ForEach(aIterator);
+  bool WriteStructuredClone(JSStructuredCloneWriter* aWriter) const;
 
-    return true;
-  }
+  nsresult GetSendInfo(nsIInputStream** aBody, uint64_t* aContentLength,
+                       nsACString& aContentTypeWithCharset,
+                       nsACString& aCharset) const;
 
-  bool
-  ReadStructuredClone(JSStructuredCloneReader* aReader);
-
-  bool
-  WriteStructuredClone(JSStructuredCloneWriter* aWriter) const;
-
-private:
+ private:
   void AppendInternal(const nsAString& aName, const nsAString& aValue);
 
   void DeleteAll();
@@ -208,7 +163,7 @@ private:
   RefPtr<URLSearchParamsObserver> mObserver;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif /* mozilla_dom_URLSearchParams_h */

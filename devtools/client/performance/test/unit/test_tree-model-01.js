@@ -6,17 +6,13 @@
  * Tests if a call tree model can be correctly computed from a samples array.
  */
 
-function run_test() {
-  run_next_test();
-}
-
 add_task(function test() {
   const { ThreadNode } = require("devtools/client/performance/modules/logic/tree-model");
 
   // Create a root node from a given samples array.
 
-  let threadNode = new ThreadNode(gThread, { startTime: 0, endTime: 20 });
-  let root = getFrameNodePath(threadNode, "(root)");
+  const threadNode = new ThreadNode(gThread, { startTime: 0, endTime: 20 });
+  const root = getFrameNodePath(threadNode, "(root)");
 
   // Test the root node.
 
@@ -127,24 +123,24 @@ var gThread = synthesizeProfileForTest([{
     { location: "(root)" },
     { location: "A" },
     { location: "B" },
-    { location: "C" }
-  ]
+    { location: "C" },
+  ],
 }, {
   time: 5 + 6,
   frames: [
     { location: "(root)" },
     { location: "A" },
     { location: "B" },
-    { location: "D" }
-  ]
+    { location: "D" },
+  ],
 }, {
   time: 5 + 6 + 7,
   frames: [
     { location: "(root)" },
     { location: "A" },
     { location: "E" },
-    { location: "F" }
-  ]
+    { location: "F" },
+  ],
 }, {
   time: 20,
   frames: [
@@ -155,6 +151,6 @@ var gThread = synthesizeProfileForTest([{
     { location: "D" },
     { location: "E" },
     { location: "F" },
-    { location: "G" }
-  ]
+    { location: "G" },
+  ],
 }]);

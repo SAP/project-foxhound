@@ -5,23 +5,22 @@
 
 package org.mozilla.gecko.home;
 
-import java.lang.ref.WeakReference;
 import java.util.concurrent.Future;
 
 import android.content.Context;
 import android.database.Cursor;
+import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 import android.support.v4.view.ViewCompat;
 import android.support.v4.widget.TextViewCompat;
+import android.text.Spannable;
 import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.ImageView;
-import android.widget.LinearLayout;
-import android.widget.TextView;
 
-import org.mozilla.gecko.AboutPages;
 import org.mozilla.gecko.R;
 import org.mozilla.gecko.Tab;
 import org.mozilla.gecko.Tabs;
@@ -35,14 +34,16 @@ import org.mozilla.gecko.icons.Icons;
 import org.mozilla.gecko.reader.ReaderModeUtils;
 import org.mozilla.gecko.reader.SavedReaderViewHelper;
 import org.mozilla.gecko.widget.FaviconView;
+import org.mozilla.gecko.widget.themed.ThemedLinearLayout;
+import org.mozilla.gecko.widget.themed.ThemedTextView;
 
-public class TwoLinePageRow extends LinearLayout
+public class TwoLinePageRow extends ThemedLinearLayout
                             implements Tabs.OnTabsChangedListener {
 
     protected static final int NO_ICON = 0;
 
-    private final TextView mTitle;
-    private final TextView mUrl;
+    private final ThemedTextView mTitle;
+    private final ThemedTextView mUrl;
     private final ImageView mStatusIcon;
 
     private int mSwitchToTabIconId;
@@ -57,6 +58,8 @@ public class TwoLinePageRow extends LinearLayout
 
     private boolean mHasReaderCacheItem;
 
+    private TitleFormatter mTitleFormatter;
+
     public TwoLinePageRow(Context context) {
         this(context, null);
     }
@@ -67,11 +70,9 @@ public class TwoLinePageRow extends LinearLayout
         setGravity(Gravity.CENTER_VERTICAL);
 
         LayoutInflater.from(context).inflate(R.layout.two_line_page_row, this);
-        // Merge layouts lose their padding, so set it dynamically.
-        ViewCompat.setPaddingRelative(this, 0, 0, (int) getResources().getDimension(R.dimen.page_row_edge_padding), 0);
 
-        mTitle = (TextView) findViewById(R.id.title);
-        mUrl = (TextView) findViewById(R.id.url);
+        mTitle = (ThemedTextView) findViewById(R.id.title);
+        mUrl = (ThemedTextView) findViewById(R.id.url);
         mStatusIcon = (ImageView) findViewById(R.id.status_icon_bookmark);
 
         mSwitchToTabIconId = NO_ICON;
@@ -143,7 +144,7 @@ public class TwoLinePageRow extends LinearLayout
         }
     }
 
-    private void setTitle(String text) {
+    private void setTitle(CharSequence text) {
         mTitle.setText(text);
     }
 
@@ -203,14 +204,11 @@ public class TwoLinePageRow extends LinearLayout
      * selected tab.
      */
     protected void updateDisplayedUrl() {
-        final Tab selectedTab = Tabs.getInstance().getSelectedTab();
-        final boolean isPrivate = (selectedTab != null) && (selectedTab.isPrivate());
-
         // We always want to display the underlying page url, however for readermode pages
         // we navigate to the about:reader equivalent, hence we need to use that url when finding
         // existing tabs
         final String navigationUrl = mHasReaderCacheItem ? ReaderModeUtils.getAboutReaderForUrl(mPageUrl) : mPageUrl;
-        Tab tab = Tabs.getInstance().getFirstTabForUrl(navigationUrl, isPrivate);
+        Tab tab = Tabs.getInstance().getFirstTabForUrl(navigationUrl, isCurrentTabInPrivateMode());
 
 
         if (!mShowIcons || tab == null) {
@@ -251,7 +249,12 @@ public class TwoLinePageRow extends LinearLayout
 
         // Use the URL instead of an empty title for consistency with the normal URL
         // bar view - this is the equivalent of getDisplayTitle() in Tab.java
-        setTitle(TextUtils.isEmpty(title) ? url : title);
+        final String titleToShow = TextUtils.isEmpty(title) ? url : title;
+        if (mTitleFormatter != null) {
+            setTitle(mTitleFormatter.format(titleToShow));
+        } else {
+            setTitle(titleToShow);
+        }
 
         // No point updating the below things if URL has not changed. Prevents evil Favicon flicker.
         if (url.equals(mPageUrl)) {
@@ -274,6 +277,7 @@ public class TwoLinePageRow extends LinearLayout
         } else if (bookmarkId < BrowserContract.Bookmarks.FAKE_PARTNER_BOOKMARKS_START) {
             mOngoingIconLoad = Icons.with(getContext())
                     .pageUrl(pageURL)
+                    .setPrivateMode(isCurrentTabInPrivateMode())
                     .skipNetwork()
                     .privileged(true)
                     .icon(IconDescriptor.createGenericIcon(
@@ -283,6 +287,7 @@ public class TwoLinePageRow extends LinearLayout
         } else {
             mOngoingIconLoad = Icons.with(getContext())
                     .pageUrl(pageURL)
+                    .setPrivateMode(isCurrentTabInPrivateMode())
                     .skipNetwork()
                     .build()
                     .execute(mFavicon.createIconCallback());
@@ -290,6 +295,23 @@ public class TwoLinePageRow extends LinearLayout
         }
 
         updateDisplayedUrl(url, hasReaderCacheItem);
+    }
+
+    @Override
+    public void setPrivateMode(boolean isPrivate) {
+        super.setPrivateMode(isPrivate);
+
+        mTitle.setPrivateMode(isPrivate);
+        mUrl.setPrivateMode(isPrivate);
+    }
+
+    /**
+     * @return true if this view is shown inside a private tab, independent of whether
+     * a private mode theme is applied via <code>setPrivateMode(true)</code>.
+     */
+    private boolean isCurrentTabInPrivateMode() {
+        final Tab tab = Tabs.getInstance().getSelectedTab();
+        return tab != null && tab.isPrivate();
     }
 
     /**
@@ -322,5 +344,14 @@ public class TwoLinePageRow extends LinearLayout
         final boolean hasReaderCacheItem = rch.isURLCached(url);
 
         update(title, url, bookmarkId, hasReaderCacheItem);
+    }
+
+    public void setTitleFormatter(TitleFormatter formatter) {
+        mTitleFormatter = formatter;
+    }
+
+    // Use this interface to decorate content in title view.
+    interface TitleFormatter {
+        CharSequence format(@NonNull CharSequence title);
     }
 }

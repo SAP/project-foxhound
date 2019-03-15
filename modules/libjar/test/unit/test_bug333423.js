@@ -7,9 +7,6 @@
 // Regression test for bug 333423 - crash enumerating entries of a 
 // closed nsIZipReader
 function run_test() {
-  const Cc = Components.classes;
-  const Ci = Components.interfaces;
-
   // the build script have created the zip we can test on in the current dir.
   var file = do_get_file("data/test_bug333423.zip");
 
@@ -18,5 +15,5 @@ function run_test() {
   zipreader.open(file);
   zipreader.close();
   var entries = zipreader.findEntries('*.*');
-  do_check_true(!entries.hasMore()); // this shouldn't crash
+  Assert.ok(!entries.hasMore()); // this shouldn't crash
 }

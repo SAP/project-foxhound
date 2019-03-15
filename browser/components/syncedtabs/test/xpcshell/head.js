@@ -1,29 +1,16 @@
-const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "FxAccountsCommon", function() {
-  return Components.utils.import("resource://gre/modules/FxAccountsCommon.js", {});
+  return ChromeUtils.import("resource://gre/modules/FxAccountsCommon.js", {});
 });
-
-Cu.import("resource://gre/modules/Timer.jsm");
 
 do_get_profile(); // fxa needs a profile directory for storage.
 
-// Create a window polyfill so sinon can load
-let window = {
-  document: {},
-  location: {},
-  setTimeout,
-  setInterval,
-  clearTimeout,
-  clearInterval,
-};
-let self = window;
-
+// ================================================
 // Load mocking/stubbing library, sinon
-// docs: http://sinonjs.org/docs/
-/* global sinon */
-let loader = Cc["@mozilla.org/moz/jssubscript-loader;1"].getService(Ci.mozIJSSubScriptLoader);
-loader.loadSubScript("resource://testing-common/sinon-1.16.1.js");
+// docs: http://sinonjs.org/releases/v2.3.2/
+ChromeUtils.import("resource://gre/modules/Timer.jsm");
+Services.scriptloader.loadSubScript("resource://testing-common/sinon-2.3.2.js", this);
+/* globals sinon */
+// ================================================

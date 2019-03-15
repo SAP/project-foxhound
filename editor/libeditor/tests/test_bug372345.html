@@ -13,7 +13,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=372345
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=372345">Mozilla Bug 372345</a>
 <p id="display"></p>
 <div id="content">
-  <iframe src="data:text/html,<body>"></iframe>
+  <iframe srcdoc="<body>"></iframe>
 </div>
 <pre id="test">
 <script type="application/javascript">
@@ -24,7 +24,6 @@ addLoadEvent(function() {
   var iframe = document.querySelector("iframe");
   var doc = iframe.contentDocument;
   var content = doc.body;
-  var link = content.querySelector("a");
   function testCursor(post) {
     setTimeout(function() {
       var link = document.createElement("a");

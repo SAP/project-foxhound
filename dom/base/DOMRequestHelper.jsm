@@ -16,21 +16,12 @@
  * to the child side of frame and process message manager and removing them
  * when needed.
  */
-const Cu = Components.utils;
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cr = Components.results;
+var EXPORTED_SYMBOLS = ["DOMRequestIpcHelper"];
 
-this.EXPORTED_SYMBOLS = ["DOMRequestIpcHelper"];
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-
-XPCOMUtils.defineLazyServiceGetter(this, "cpmm",
-                                   "@mozilla.org/childprocessmessagemanager;1",
-                                   "nsIMessageListenerManager");
-
-this.DOMRequestIpcHelper = function DOMRequestIpcHelper() {
+function DOMRequestIpcHelper() {
   // _listeners keeps a list of messages for which we added a listener and the
   // kind of listener that we added (strong or weak). It's an object of this
   // form:
@@ -51,8 +42,8 @@ DOMRequestIpcHelper.prototype = {
    * An object which "inherits" from DOMRequestIpcHelper and declares its own
    * queryInterface method MUST implement Ci.nsISupportsWeakReference.
    */
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsISupportsWeakReference,
-                                         Ci.nsIObserver]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsISupportsWeakReference,
+                                          Ci.nsIObserver]),
 
    /**
    *  'aMessages' is expected to be an array of either:
@@ -94,8 +85,8 @@ DOMRequestIpcHelper.prototype = {
         }
       }
 
-      aMsg.weakRef ? cpmm.addWeakMessageListener(name, this)
-                   : cpmm.addMessageListener(name, this);
+      aMsg.weakRef ? Services.cpmm.addWeakMessageListener(name, this)
+                   : Services.cpmm.addMessageListener(name, this);
       this._listeners[name] = {
         weakRef: !!aMsg.weakRef,
         count: 1
@@ -125,8 +116,8 @@ DOMRequestIpcHelper.prototype = {
       // be waiting on a message.
       if (!--this._listeners[aName].count) {
         this._listeners[aName].weakRef ?
-            cpmm.removeWeakMessageListener(aName, this)
-          : cpmm.removeMessageListener(aName, this);
+            Services.cpmm.removeWeakMessageListener(aName, this)
+          : Services.cpmm.removeMessageListener(aName, this);
         delete this._listeners[aName];
       }
     });
@@ -164,8 +155,7 @@ DOMRequestIpcHelper.prototype = {
     this._window = aWindow;
     if (this._window) {
       // We don't use this.innerWindowID, but other classes rely on it.
-      let util = this._window.QueryInterface(Ci.nsIInterfaceRequestor)
-                             .getInterface(Ci.nsIDOMWindowUtils);
+      let util = this._window.windowUtils;
       this.innerWindowID = util.currentInnerWindowID;
     }
 
@@ -186,8 +176,9 @@ DOMRequestIpcHelper.prototype = {
 
     if (this._listeners) {
       Object.keys(this._listeners).forEach((aName) => {
-        this._listeners[aName].weakRef ? cpmm.removeWeakMessageListener(aName, this)
-                                       : cpmm.removeMessageListener(aName, this);
+        this._listeners[aName].weakRef ?
+            Services.cpmm.removeWeakMessageListener(aName, this)
+          : Services.cpmm.removeMessageListener(aName, this);
       });
     }
 
@@ -303,10 +294,10 @@ DOMRequestIpcHelper.prototype = {
    * which is immediately called with the generated resolverId.
    */
   createPromiseWithId: function(aCallback) {
-    return this.createPromise(function(aResolve, aReject) {
+    return this.createPromise((aResolve, aReject) => {
       let resolverId = this.getPromiseResolverId({ resolve: aResolve, reject: aReject });
       aCallback(resolverId);
-    }.bind(this));
+    });
   },
 
   forEachRequest: function(aCallback) {

@@ -1,4 +1,4 @@
-// Copyright (C) 2016 and later: Unicode, Inc. and others.
+// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
 /*
 *****************************************************************************
@@ -165,12 +165,20 @@ typedef enum UDateAbsoluteUnit {
      */
     UDAT_ABSOLUTE_NOW,
 
+#ifndef U_HIDE_DRAFT_API
+    /**
+     * Quarter
+     * @draft ICU 63
+     */
+    UDAT_ABSOLUTE_QUARTER,
+#endif // U_HIDE_DRAFT_API
+
 #ifndef U_HIDE_DEPRECATED_API
     /**
      * One more than the highest normal UDateAbsoluteUnit value.
      * @deprecated ICU 58 The numeric value may change over time, see ICU ticket #12420.
      */
-    UDAT_ABSOLUTE_UNIT_COUNT
+    UDAT_ABSOLUTE_UNIT_COUNT = UDAT_ABSOLUTE_NOW + 2
 #endif  // U_HIDE_DEPRECATED_API
 } UDateAbsoluteUnit;
 
@@ -230,6 +238,7 @@ typedef enum UDateDirection {
 
 U_NAMESPACE_BEGIN
 
+class BreakIterator;
 class RelativeDateTimeCacheData;
 class SharedNumberFormat;
 class SharedPluralRules;
@@ -327,7 +336,7 @@ public:
      * @param nfToAdopt Constructed object takes ownership of this pointer.
      *   It is an error for caller to delete this pointer or change its
      *   contents after calling this constructor.
-     * @status Any error is returned here.
+     * @param status Any error is returned here.
      * @stable ICU 53
      */
     RelativeDateTimeFormatter(
@@ -345,7 +354,7 @@ public:
      * @param style the format style. The UDAT_RELATIVE bit field has no effect.
      * @param capitalizationContext A value from UDisplayContext that pertains to
      * capitalization.
-     * @status Any error is returned here. 
+     * @param status Any error is returned here.
      * @stable ICU 54
      */
     RelativeDateTimeFormatter(
@@ -414,7 +423,6 @@ public:
             UnicodeString& appendTo,
             UErrorCode& status) const;
 
-#ifndef U_HIDE_DRAFT_API
     /**
      * Format a combination of URelativeDateTimeUnit and numeric offset
      * using a numeric style, e.g. "1 week ago", "in 1 week",
@@ -430,7 +438,7 @@ public:
      *                  appended.
      * @param status    ICU error code returned here.
      * @return          appendTo
-     * @draft ICU 57
+     * @stable ICU 57
      */
     UnicodeString& formatNumeric(
             double offset,
@@ -453,14 +461,13 @@ public:
      *                  appended.
      * @param status    ICU error code returned here.
      * @return          appendTo
-     * @draft ICU 57
+     * @stable ICU 57
      */
     UnicodeString& format(
             double offset,
             URelativeDateTimeUnit unit,
             UnicodeString& appendTo,
             UErrorCode& status) const;
-#endif  /* U_HIDE_DRAFT_API */
 
     /**
      * Combines a relative date string and a time string in this object's

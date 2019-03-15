@@ -7,36 +7,36 @@ function test() {
 
   waitForExplicitFinish();
 
-  gPrefService.setBoolPref("browser.zoom.updateBackgroundTabs", true);
-  gPrefService.setBoolPref("browser.zoom.siteSpecific", true);
+  Services.prefs.setBoolPref("browser.zoom.updateBackgroundTabs", true);
+  Services.prefs.setBoolPref("browser.zoom.siteSpecific", true);
 
   let uri = "http://example.org/browser/browser/base/content/test/general/dummy_page.html";
 
-  Task.spawn(function* () {
-    tab = gBrowser.addTab();
-    yield FullZoomHelper.load(tab, uri);
+  (async function() {
+    tab = BrowserTestUtils.addTab(gBrowser);
+    await FullZoomHelper.load(tab, uri);
 
     // -------------------------------------------------------------------
     // Test - Trigger a tab switch that should update the zoom level
-    yield FullZoomHelper.selectTabAndWaitForLocationChange(tab);
+    await FullZoomHelper.selectTabAndWaitForLocationChange(tab);
     ok(true, "applyPrefToSetting was called");
-  }).then(endTest, FullZoomHelper.failAndContinue(endTest));
+  })().then(endTest, FullZoomHelper.failAndContinue(endTest));
 }
 
 // -------------
 // Test clean-up
 function endTest() {
-  Task.spawn(function* () {
-    yield FullZoomHelper.removeTabAndWaitForLocationChange(tab);
+  (async function() {
+    await FullZoomHelper.removeTabAndWaitForLocationChange(tab);
 
     tab = null;
 
-    if (gPrefService.prefHasUserValue("browser.zoom.updateBackgroundTabs"))
-      gPrefService.clearUserPref("browser.zoom.updateBackgroundTabs");
+    if (Services.prefs.prefHasUserValue("browser.zoom.updateBackgroundTabs"))
+      Services.prefs.clearUserPref("browser.zoom.updateBackgroundTabs");
 
-    if (gPrefService.prefHasUserValue("browser.zoom.siteSpecific"))
-      gPrefService.clearUserPref("browser.zoom.siteSpecific");
+    if (Services.prefs.prefHasUserValue("browser.zoom.siteSpecific"))
+      Services.prefs.clearUserPref("browser.zoom.siteSpecific");
 
     finish();
-  });
+  })();
 }

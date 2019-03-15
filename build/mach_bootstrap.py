@@ -8,7 +8,6 @@ import errno
 import json
 import os
 import platform
-import random
 import subprocess
 import sys
 import uuid
@@ -32,106 +31,41 @@ Press ENTER/RETURN to continue or CTRL+c to abort.
 '''.lstrip()
 
 
-# TODO Bug 794506 Integrate with the in-tree virtualenv configuration.
-SEARCH_PATHS = [
-    'python/mach',
-    'python/mozboot',
-    'python/mozbuild',
-    'python/mozlint',
-    'python/mozversioncontrol',
-    'python/blessings',
-    'python/compare-locales',
-    'python/configobj',
-    'python/dlmanager',
-    'python/futures',
-    'python/jsmin',
-    'python/psutil',
-    'python/pylru',
-    'python/which',
-    'python/pystache',
-    'python/pyyaml/lib',
-    'python/requests',
-    'python/slugid',
-    'python/py',
-    'python/pytest',
-    'python/pytoml',
-    'python/redo',
-    'python/voluptuous',
-    'build',
-    'build/pymake',
-    'config',
-    'dom/bindings',
-    'dom/bindings/parser',
-    'dom/media/test/external',
-    'layout/tools/reftest',
-    'other-licenses/ply',
-    'taskcluster',
-    'testing',
-    'testing/firefox-ui/harness',
-    'testing/marionette/client',
-    'testing/marionette/harness',
-    'testing/marionette/harness/marionette_harness/runner/mixins/browsermob-proxy-py',
-    'testing/marionette/puppeteer/firefox',
-    'testing/mozbase/mozcrash',
-    'testing/mozbase/mozdebug',
-    'testing/mozbase/mozdevice',
-    'testing/mozbase/mozfile',
-    'testing/mozbase/mozhttpd',
-    'testing/mozbase/mozinfo',
-    'testing/mozbase/mozinstall',
-    'testing/mozbase/mozleak',
-    'testing/mozbase/mozlog',
-    'testing/mozbase/moznetwork',
-    'testing/mozbase/mozprocess',
-    'testing/mozbase/mozprofile',
-    'testing/mozbase/mozrunner',
-    'testing/mozbase/mozsystemmonitor',
-    'testing/mozbase/mozscreenshot',
-    'testing/mozbase/moztest',
-    'testing/mozbase/mozversion',
-    'testing/mozbase/manifestparser',
-    'testing/taskcluster',
-    'testing/tools/autotry',
-    'testing/web-platform',
-    'testing/web-platform/harness',
-    'testing/web-platform/tests/tools/wptserve',
-    'testing/web-platform/tests/tools/six',
-    'testing/xpcshell',
-    'xpcom/idl-parser',
-]
-
 # Individual files providing mach commands.
 MACH_MODULES = [
-    'addon-sdk/mach_commands.py',
     'build/valgrind/mach_commands.py',
     'devtools/shared/css/generated/mach_commands.py',
     'dom/bindings/mach_commands.py',
-    'dom/media/test/external/mach_commands.py',
     'layout/tools/reftest/mach_commands.py',
     'python/mach_commands.py',
+    'python/safety/mach_commands.py',
     'python/mach/mach/commands/commandinfo.py',
     'python/mach/mach/commands/settings.py',
-    'python/compare-locales/mach_commands.py',
     'python/mozboot/mozboot/mach_commands.py',
     'python/mozbuild/mozbuild/mach_commands.py',
     'python/mozbuild/mozbuild/backend/mach_commands.py',
     'python/mozbuild/mozbuild/compilation/codecomplete.py',
     'python/mozbuild/mozbuild/frontend/mach_commands.py',
-    'services/common/tests/mach_commands.py',
+    'python/mozrelease/mozrelease/mach_commands.py',
     'taskcluster/mach_commands.py',
     'testing/awsy/mach_commands.py',
     'testing/firefox-ui/mach_commands.py',
+    'testing/geckodriver/mach_commands.py',
     'testing/mach_commands.py',
     'testing/marionette/mach_commands.py',
     'testing/mochitest/mach_commands.py',
     'testing/mozharness/mach_commands.py',
+    'testing/raptor/mach_commands.py',
+    'testing/tps/mach_commands.py',
     'testing/talos/mach_commands.py',
     'testing/web-platform/mach_commands.py',
     'testing/xpcshell/mach_commands.py',
+    'tools/compare-locales/mach_commands.py',
     'tools/docs/mach_commands.py',
     'tools/lint/mach_commands.py',
     'tools/mach_commands.py',
     'tools/power/mach_commands.py',
+    'tools/tryselect/mach_commands.py',
     'mobile/android/mach_commands.py',
 ]
 
@@ -155,7 +89,7 @@ CATEGORIES = {
     'ci': {
         'short': 'CI',
         'long': 'Taskcluster commands',
-        'priority': 59
+        'priority': 59,
     },
     'devenv': {
         'short': 'Development Environment',
@@ -172,16 +106,59 @@ CATEGORIES = {
         'long': 'Potent potables and assorted snacks.',
         'priority': 10,
     },
+    'release': {
+        'short': 'Release automation',
+        'long': 'Commands for used in release automation.',
+        'priority': 5,
+    },
     'disabled': {
         'short': 'Disabled',
-        'long': 'The disabled commands are hidden by default. Use -v to display them. These commands are unavailable for your current context, run "mach <command>" to see why.',
+        'long': 'The disabled commands are hidden by default. Use -v to display them. '
+        'These commands are unavailable for your current context, '
+        'run "mach <command>" to see why.',
         'priority': 0,
-    }
+    },
 }
 
 
-# We submit data to telemetry approximately every this many mach invocations
-TELEMETRY_SUBMISSION_FREQUENCY = 10
+def search_path(mozilla_dir, packages_txt):
+    with open(os.path.join(mozilla_dir, packages_txt)) as f:
+        packages = [line.rstrip().split(':') for line in f]
+
+    def handle_package(package):
+        if package[0] == 'optional':
+            try:
+                for path in handle_package(package[1:]):
+                    yield path
+            except Exception:
+                pass
+
+        if package[0] in ('windows', '!windows'):
+            for_win = not package[0].startswith('!')
+            is_win = sys.platform == 'win32'
+            if is_win == for_win:
+                for path in handle_package(package[1:]):
+                    yield path
+
+        if package[0] in ('python2', 'python3'):
+            for_python3 = package[0].endswith('3')
+            is_python3 = sys.version_info[0] > 2
+            if is_python3 == for_python3:
+                for path in handle_package(package[1:]):
+                    yield path
+
+        if package[0] == 'packages.txt':
+            assert len(package) == 2
+            for p in search_path(mozilla_dir, package[1]):
+                yield os.path.join(mozilla_dir, p)
+
+        if package[0].endswith('.pth'):
+            assert len(package) == 2
+            yield os.path.join(mozilla_dir, package[1])
+
+    for package in packages:
+        for path in handle_package(package):
+            yield path
 
 
 def bootstrap(topsrcdir, mozilla_dir=None):
@@ -204,101 +181,119 @@ def bootstrap(topsrcdir, mozilla_dir=None):
     # case. For default behavior, we educate users and give them an opportunity
     # to react. We always exit after creating the directory because users don't
     # like surprises.
-    sys.path[0:0] = [os.path.join(mozilla_dir, path) for path in SEARCH_PATHS]
+    sys.path[0:0] = [os.path.join(mozilla_dir, path)
+                     for path in search_path(mozilla_dir,
+                                             'build/virtualenv_packages.txt')]
+    import mach.base
     import mach.main
     from mozboot.util import get_state_dir
 
     from mozbuild.util import patch_main
     patch_main()
 
-    def telemetry_handler(context, data):
-        # We have not opted-in to telemetry
-        if 'BUILD_SYSTEM_TELEMETRY' not in os.environ:
-            return
+    def resolve_repository():
+        import mozversioncontrol
 
-        telemetry_dir = os.path.join(get_state_dir()[0], 'telemetry')
         try:
-            os.mkdir(telemetry_dir)
-        except OSError as e:
-            if e.errno != errno.EEXIST:
-                raise
-        outgoing_dir = os.path.join(telemetry_dir, 'outgoing')
-        try:
-            os.mkdir(outgoing_dir)
-        except OSError as e:
-            if e.errno != errno.EEXIST:
-                raise
+            # This API doesn't respect the vcs binary choices from configure.
+            # If we ever need to use the VCS binary here, consider something
+            # more robust.
+            return mozversioncontrol.get_repository_object(path=mozilla_dir)
+        except (mozversioncontrol.InvalidRepoPath,
+                mozversioncontrol.MissingVCSTool):
+            return None
 
-        # Add common metadata to help submit sorted data later on.
-        data['argv'] = sys.argv
-        data.setdefault('system', {}).update(dict(
-            architecture=list(platform.architecture()),
-            machine=platform.machine(),
-            python_version=platform.python_version(),
-            release=platform.release(),
-            system=platform.system(),
-            version=platform.version(),
-        ))
-
-        if platform.system() == 'Linux':
-            dist = list(platform.linux_distribution())
-            data['system']['linux_distribution'] = dist
-        elif platform.system() == 'Windows':
-            win32_ver=list((platform.win32_ver())),
-            data['system']['win32_ver'] = win32_ver
-        elif platform.system() == 'Darwin':
-            # mac version is a special Cupertino snowflake
-            r, v, m = platform.mac_ver()
-            data['system']['mac_ver'] = [r, list(v), m]
-
-        with open(os.path.join(outgoing_dir, str(uuid.uuid4()) + '.json'),
-                  'w') as f:
-            json.dump(data, f, sort_keys=True)
-
-    def should_skip_dispatch(context, handler):
+    def should_skip_telemetry_submission(handler):
         # The user is performing a maintenance command.
-        if handler.name in ('bootstrap', 'doctor', 'mach-commands', 'mercurial-setup'):
+        if handler.name in ('bootstrap', 'doctor', 'mach-commands', 'vcs-setup',
+                            # We call mach environment in client.mk which would cause the
+                            # data submission to block the forward progress of make.
+                            'environment'):
             return True
 
-        # We are running in automation.
-        if 'MOZ_AUTOMATION' in os.environ or 'TASK_ID' in os.environ:
-            return True
-
-        # The environment is likely a machine invocation.
-        if sys.stdin.closed or not sys.stdin.isatty():
+        # Never submit data when running in automation or when running tests.
+        if any(e in os.environ for e in ('MOZ_AUTOMATION', 'TASK_ID', 'MACH_TELEMETRY_NO_SUBMIT')):
             return True
 
         return False
 
-    def post_dispatch_handler(context, handler, args):
+    def post_dispatch_handler(context, handler, instance, result,
+                              start_time, end_time, depth, args):
         """Perform global operations after command dispatch.
 
 
         For now,  we will use this to handle build system telemetry.
         """
-        # Don't do anything when...
-        if should_skip_dispatch(context, handler):
+        # Don't write telemetry data if this mach command was invoked as part of another
+        # mach command.
+        if depth != 1 or os.environ.get('MACH_MAIN_PID') != str(os.getpid()):
             return
 
-        # We call mach environment in client.mk which would cause the
-        # data submission below to block the forward progress of make.
-        if handler.name in ('environment'):
+        # Don't write telemetry data for 'mach' when 'DISABLE_TELEMETRY' is set.
+        if os.environ.get('DISABLE_TELEMETRY') == '1':
             return
 
         # We have not opted-in to telemetry
-        if 'BUILD_SYSTEM_TELEMETRY' not in os.environ:
+        if not context.settings.build.telemetry:
             return
 
-        # Every n-th operation
-        if random.randint(1, TELEMETRY_SUBMISSION_FREQUENCY) != 1:
-            return
+        from mozbuild.telemetry import gather_telemetry
+        from mozbuild.base import MozbuildObject
+        import mozpack.path as mozpath
 
+        if not isinstance(instance, MozbuildObject):
+            instance = MozbuildObject.from_environment()
+
+        try:
+            substs = instance.substs
+        except Exception:
+            substs = {}
+
+        # We gather telemetry for every operation.
+        paths = {
+            instance.topsrcdir: '$topsrcdir/',
+            instance.topobjdir: '$topobjdir/',
+            mozpath.normpath(os.path.expanduser('~')): '$HOME/',
+        }
+        # This might override one of the existing entries, that's OK.
+        # We don't use a sigil here because we treat all arguments as potentially relative
+        # paths, so we'd like to get them back as they were specified.
+        paths[mozpath.normpath(os.getcwd())] = ''
+        data = gather_telemetry(command=handler.name, success=(result == 0),
+                                start_time=start_time, end_time=end_time,
+                                mach_context=context, substs=substs,
+                                paths=paths)
+        if data:
+            telemetry_dir = os.path.join(get_state_dir()[0], 'telemetry')
+            try:
+                os.mkdir(telemetry_dir)
+            except OSError as e:
+                if e.errno != errno.EEXIST:
+                    raise
+            outgoing_dir = os.path.join(telemetry_dir, 'outgoing')
+            try:
+                os.mkdir(outgoing_dir)
+            except OSError as e:
+                if e.errno != errno.EEXIST:
+                    raise
+
+            with open(os.path.join(outgoing_dir, str(uuid.uuid4()) + '.json'),
+                      'w') as f:
+                json.dump(data, f, sort_keys=True)
+
+        if should_skip_telemetry_submission(handler):
+            return True
+
+        state_dir, _ = get_state_dir()
+
+        machpath = os.path.join(instance.topsrcdir, 'mach')
         with open(os.devnull, 'wb') as devnull:
-            subprocess.Popen([sys.executable,
+            subprocess.Popen([sys.executable, machpath, 'python',
+                              '--no-virtualenv',
                               os.path.join(topsrcdir, 'build',
                                            'submit_telemetry_data.py'),
-                              get_state_dir()[0]],
-                              stdout=devnull, stderr=devnull)
+                              state_dir],
+                             stdout=devnull, stderr=devnull)
 
     def populate_context(context, key=None):
         if key is None:
@@ -312,11 +307,12 @@ def bootstrap(topsrcdir, mozilla_dir=None):
                     os.makedirs(state_dir, mode=0o770)
             else:
                 if not os.path.exists(state_dir):
-                    print(STATE_DIR_FIRST_RUN.format(userdir=state_dir))
-                    try:
-                        sys.stdin.readline()
-                    except KeyboardInterrupt:
-                        sys.exit(1)
+                    if not os.environ.get('MOZ_AUTOMATION'):
+                        print(STATE_DIR_FIRST_RUN.format(userdir=state_dir))
+                        try:
+                            sys.stdin.readline()
+                        except KeyboardInterrupt:
+                            sys.exit(1)
 
                     print('\nCreating default state directory: %s' % state_dir)
                     os.makedirs(state_dir, mode=0o770)
@@ -326,31 +322,44 @@ def bootstrap(topsrcdir, mozilla_dir=None):
         if key == 'topdir':
             return topsrcdir
 
-        if key == 'telemetry_handler':
-            return telemetry_handler
-
         if key == 'post_dispatch_handler':
             return post_dispatch_handler
 
+        if key == 'repository':
+            return resolve_repository()
+
         raise AttributeError(key)
 
-    mach = mach.main.Mach(os.getcwd())
-    mach.populate_context_handler = populate_context
+    # Note which process is top-level so that recursive mach invocations can avoid writing
+    # telemetry data.
+    if 'MACH_MAIN_PID' not in os.environ:
+        os.environ[b'MACH_MAIN_PID'] = str(os.getpid()).encode('ascii')
 
-    if not mach.settings_paths:
+    driver = mach.main.Mach(os.getcwd())
+    driver.populate_context_handler = populate_context
+
+    if not driver.settings_paths:
         # default global machrc location
-        mach.settings_paths.append(get_state_dir()[0])
+        driver.settings_paths.append(get_state_dir()[0])
     # always load local repository configuration
-    mach.settings_paths.append(mozilla_dir)
+    driver.settings_paths.append(mozilla_dir)
 
     for category, meta in CATEGORIES.items():
-        mach.define_category(category, meta['short'], meta['long'],
-            meta['priority'])
+        driver.define_category(category, meta['short'], meta['long'],
+                               meta['priority'])
+
+    repo = resolve_repository()
 
     for path in MACH_MODULES:
-        mach.load_commands_from_file(os.path.join(mozilla_dir, path))
+        # Sparse checkouts may not have all mach_commands.py files. Ignore
+        # errors from missing files.
+        try:
+            driver.load_commands_from_file(os.path.join(mozilla_dir, path))
+        except mach.base.MissingFileError:
+            if not repo or not repo.sparse_checkout_present():
+                raise
 
-    return mach
+    return driver
 
 
 # Hook import such that .pyc/.pyo files without a corresponding .py file in

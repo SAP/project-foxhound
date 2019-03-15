@@ -12,52 +12,42 @@
  * types don't need to be exported outside the SVG module.
  */
 
-#include "nsStringGlue.h"
+#include "nsString.h"
 
-class nsSVGAngle;
-class nsSVGIntegerPair;
 class nsSVGLength2;
-class nsSVGNumberPair;
-class nsSVGViewBox;
 
 namespace mozilla {
+class SVGAngle;
+class SVGIntegerPair;
 class SVGLengthList;
 class SVGNumberList;
+class SVGNumberPair;
 class SVGPathData;
 class SVGPointList;
 class SVGAnimatedPreserveAspectRatio;
 class SVGStringList;
 class SVGTransformList;
-} // namespace mozilla
+class SVGViewBox;
 
-namespace mozilla {
-
-class SVGAttrValueWrapper
-{
-public:
-  static void ToString(const nsSVGAngle* aAngle, nsAString& aResult);
-  static void ToString(const nsSVGIntegerPair* aIntegerPair,
-                       nsAString& aResult);
+class SVGAttrValueWrapper {
+ public:
+  static void ToString(const SVGAngle* aAngle, nsAString& aResult);
+  static void ToString(const SVGIntegerPair* aIntegerPair, nsAString& aResult);
   static void ToString(const nsSVGLength2* aLength, nsAString& aResult);
-  static void ToString(const mozilla::SVGLengthList* aLengthList,
-                       nsAString& aResult);
-  static void ToString(const mozilla::SVGNumberList* aNumberList,
-                       nsAString& aResult);
-  static void ToString(const nsSVGNumberPair* aNumberPair, nsAString& aResult);
-  static void ToString(const mozilla::SVGPathData* aPathData,
-                       nsAString& aResult);
-  static void ToString(const mozilla::SVGPointList* aPointList,
-                       nsAString& aResult);
+  static void ToString(const SVGLengthList* aLengthList, nsAString& aResult);
+  static void ToString(const SVGNumberList* aNumberList, nsAString& aResult);
+  static void ToString(const SVGNumberPair* aNumberPair, nsAString& aResult);
+  static void ToString(const SVGPathData* aPathData, nsAString& aResult);
+  static void ToString(const SVGPointList* aPointList, nsAString& aResult);
   static void ToString(
-    const mozilla::SVGAnimatedPreserveAspectRatio* aPreserveAspectRatio,
-    nsAString& aResult);
-  static void ToString(const mozilla::SVGStringList* aStringList,
+      const SVGAnimatedPreserveAspectRatio* aPreserveAspectRatio,
+      nsAString& aResult);
+  static void ToString(const SVGStringList* aStringList, nsAString& aResult);
+  static void ToString(const SVGTransformList* aTransformList,
                        nsAString& aResult);
-  static void ToString(const mozilla::SVGTransformList* aTransformList,
-                       nsAString& aResult);
-  static void ToString(const nsSVGViewBox* aViewBox, nsAString& aResult);
+  static void ToString(const SVGViewBox* aViewBox, nsAString& aResult);
 };
 
 } /* namespace mozilla */
 
-#endif // MOZILLA_SVGATTRVALUEWRAPPER_H__
+#endif  // MOZILLA_SVGATTRVALUEWRAPPER_H__

@@ -9,6 +9,7 @@
 #include "SkDiscretePathEffect.h"
 #include "SkFixed.h"
 #include "SkPathMeasure.h"
+#include "SkPointPriv.h"
 #include "SkReadBuffer.h"
 #include "SkStrokeRec.h"
 #include "SkWriteBuffer.h"
@@ -26,7 +27,7 @@ sk_sp<SkPathEffect> SkDiscretePathEffect::Make(SkScalar segLength, SkScalar devi
 
 static void Perterb(SkPoint* p, const SkVector& tangent, SkScalar scale) {
     SkVector normal = tangent;
-    normal.rotateCCW();
+    SkPointPriv::RotateCCW(&normal);
     normal.setLength(scale);
     *p += normal;
 }
@@ -80,8 +81,8 @@ private:
     uint32_t fSeed;
 };
 
-bool SkDiscretePathEffect::filterPath(SkPath* dst, const SkPath& src,
-                                      SkStrokeRec* rec, const SkRect*) const {
+bool SkDiscretePathEffect::onFilterPath(SkPath* dst, const SkPath& src,
+                                        SkStrokeRec* rec, const SkRect*) const {
     bool doFill = rec->isFillStyle();
 
     SkPathMeasure   meas(src, doFill);
@@ -101,6 +102,8 @@ bool SkDiscretePathEffect::filterPath(SkPath* dst, const SkPath& src,
             meas.getSegment(0, length, dst, true);  // to short for us to mangle
         } else {
             int         n = SkScalarRoundToInt(length / fSegLength);
+            constexpr int kMaxReasonableIterations = 100000;
+            n = SkTMin(n, kMaxReasonableIterations);
             SkScalar    delta = length / n;
             SkScalar    distance = 0;
 
@@ -110,13 +113,13 @@ bool SkDiscretePathEffect::filterPath(SkPath* dst, const SkPath& src,
             }
 
             if (meas.getPosTan(distance, &p, &v)) {
-                Perterb(&p, v, SkScalarMul(rand.nextSScalar1(), scale));
+                Perterb(&p, v, rand.nextSScalar1() * scale);
                 dst->moveTo(p);
             }
             while (--n >= 0) {
                 distance += delta;
                 if (meas.getPosTan(distance, &p, &v)) {
-                    Perterb(&p, v, SkScalarMul(rand.nextSScalar1(), scale));
+                    Perterb(&p, v, rand.nextSScalar1() * scale);
                     dst->lineTo(p);
                 }
             }
@@ -140,11 +143,3 @@ void SkDiscretePathEffect::flatten(SkWriteBuffer& buffer) const {
     buffer.writeScalar(fPerterb);
     buffer.writeUInt(fSeedAssist);
 }
-
-#ifndef SK_IGNORE_TO_STRING
-void SkDiscretePathEffect::toString(SkString* str) const {
-    str->appendf("SkDiscretePathEffect: (");
-    str->appendf("segLength: %.2f deviation: %.2f seed %d", fSegLength, fPerterb, fSeedAssist);
-    str->append(")");
-}
-#endif

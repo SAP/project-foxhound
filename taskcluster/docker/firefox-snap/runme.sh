@@ -1,60 +1,85 @@
-#!/bin/sh
+#!/bin/bash
 
 set -xe
 
 # Required env variables
-test $VERSION
-test $BUILD_NUMBER
-test $CANDIDATES_DIR
+test "$VERSION"
+test "$BUILD_NUMBER"
+test "$CANDIDATES_DIR"
+test "$L10N_CHANGESETS"
 
 # Optional env variables
-: WORKSPACE                     ${WORKSPACE:=/home/worker/workspace}
-: ARTIFACTS_DIR                 ${ARTIFACTS_DIR:=/home/worker/artifacts}
+: WORKSPACE                     "${WORKSPACE:=/home/worker/workspace}"
+: ARTIFACTS_DIR                 "${ARTIFACTS_DIR:=/home/worker/artifacts}"
+: PUSH_TO_CHANNEL               ""
 
+SCRIPT_DIRECTORY="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-TARGET="firefox-${VERSION}.snap"
+TARGET="target.snap"
+TARGET_FULL_PATH="$ARTIFACTS_DIR/$TARGET"
+SOURCE_DEST="${WORKSPACE}/source"
 
 mkdir -p "$ARTIFACTS_DIR"
-rm -rf "${WORKSPACE}/source" && mkdir -p "${WORKSPACE}/source/opt" "${WORKSPACE}/source/usr/bin"
+rm -rf "$SOURCE_DEST" && mkdir -p "$SOURCE_DEST"
 
 CURL="curl --location --retry 10 --retry-delay 10"
 
 # Download and extract en-US linux64 binary
 $CURL -o "${WORKSPACE}/firefox.tar.bz2" \
     "${CANDIDATES_DIR}/${VERSION}-candidates/build${BUILD_NUMBER}/linux-x86_64/en-US/firefox-${VERSION}.tar.bz2"
+tar -C "$SOURCE_DEST" -xf "${WORKSPACE}/firefox.tar.bz2" --strip-components=1
 
-tar -C "${WORKSPACE}/source/opt" -xf "${WORKSPACE}/firefox.tar.bz2"
-mkdir -p "${WORKSPACE}/source/opt/firefox/distribution/extensions"
-cp -v distribution.ini "${WORKSPACE}/source/opt/firefox/distribution/"
+# Get Ubuntu configuration
+PARTNER_CONFIG_DIR="$WORKSPACE/partner_config"
+git clone https://github.com/mozilla-partners/canonical.git "$PARTNER_CONFIG_DIR"
 
-# Use release-specific list of locales to fetch L10N XPIs
-$CURL -o "${WORKSPACE}/l10n_changesets.txt" "${CANDIDATES_DIR}/${VERSION}-candidates/build${BUILD_NUMBER}/l10n_changesets.txt"
-cat "${WORKSPACE}/l10n_changesets.txt"
+DISTRIBUTION_DIR="$SOURCE_DEST/distribution"
+mv "$PARTNER_CONFIG_DIR/desktop/ubuntu/distribution" "$DISTRIBUTION_DIR"
+cp -v "$SCRIPT_DIRECTORY/firefox.desktop" "$DISTRIBUTION_DIR"
 
-for locale in $(grep -v ja-JP-mac "${WORKSPACE}/l10n_changesets.txt" | awk '{print $1}'); do
-    $CURL -o "${WORKSPACE}/source/opt/firefox/distribution/extensions/langpack-${locale}@firefox.mozilla.org.xpi" \
+# Use list of locales to fetch L10N XPIs
+$CURL -o "${WORKSPACE}/l10n_changesets.json" "$L10N_CHANGESETS"
+locales=$(python3 "$SCRIPT_DIRECTORY/extract_locales_from_l10n_json.py" "${WORKSPACE}/l10n_changesets.json")
+
+mkdir -p "$DISTRIBUTION_DIR/extensions"
+for locale in $locales; do
+    $CURL -o "$SOURCE_DEST/distribution/extensions/langpack-${locale}@firefox.mozilla.org.xpi" \
         "$CANDIDATES_DIR/${VERSION}-candidates/build${BUILD_NUMBER}/linux-x86_64/xpi/${locale}.xpi"
 done
 
-# Symlink firefox binary to /usr/bin to make it available in PATH
-ln -s ../../opt/firefox/firefox "${WORKSPACE}/source/usr/bin"
+# Extract gtk30.mo from Ubuntu language packs
+apt download language-pack-gnome-*-base
+for i in *.deb; do
+    # shellcheck disable=SC2086
+    dpkg-deb --fsys-tarfile $i | tar xv -C "$SOURCE_DEST" --wildcards "./usr/share/locale-langpack/*/LC_MESSAGES/gtk30.mo" || true
+done
 
 # Generate snapcraft manifest
-sed -e "s/@VERSION@/${VERSION}/g" -e "s/@BUILD_NUMBER@/${BUILD_NUMBER}/g" snapcraft.yaml.in > ${WORKSPACE}/snapcraft.yaml
-cd ${WORKSPACE}
+sed -e "s/@VERSION@/${VERSION}/g" -e "s/@BUILD_NUMBER@/${BUILD_NUMBER}/g" snapcraft.yaml.in > "${WORKSPACE}/snapcraft.yaml"
+cp -v "$SCRIPT_DIRECTORY/mimeapps.list" "$WORKSPACE"
+cd "${WORKSPACE}"
+
+# Make sure snapcraft knows we're building amd64, even though we may not be on this arch.
+export SNAP_ARCH='amd64'
+
+# When a snap is built, snapcraft fetches deb packages from ubuntu.com. They may bump packages
+# there and remove the old ones. Updating the database allows snapcraft to find the latest packages.
+# For more context, see 1448239
+apt-get update
+
 snapcraft
 
-mv *.snap "$ARTIFACTS_DIR/$TARGET"
+mv -- *.snap "$TARGET_FULL_PATH"
 
-cd $ARTIFACTS_DIR
+cd "$ARTIFACTS_DIR"
 
 # Generate checksums file
-size=$(stat --printf="%s" $ARTIFACTS_DIR/$TARGET)
-sha=$(sha512sum $ARTIFACTS_DIR/$TARGET | awk '{print $1}')
-echo "$sha sha512 $size $TARGET" > $TARGET.checksums
+size=$(stat --printf="%s" "$TARGET_FULL_PATH")
+sha=$(sha512sum "$TARGET_FULL_PATH" | awk '{print $1}')
+echo "$sha sha512 $size $TARGET" > "$TARGET.checksums"
 
 echo "Generating signing manifest"
-hash=$(sha512sum $TARGET.checksums | awk '{print $1}')
+hash=$(sha512sum "$TARGET.checksums" | awk '{print $1}')
 
 cat << EOF > signing_manifest.json
 [{"file_to_sign": "$TARGET.checksums", "hash": "$hash"}]
@@ -62,5 +87,5 @@ EOF
 
 # For posterity
 find . -ls
-cat $TARGET.checksums
+cat "$TARGET.checksums"
 cat signing_manifest.json

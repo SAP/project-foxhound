@@ -13,7 +13,7 @@ namespace base {
 //-----------------------------------------------------------------------------
 
 class ObjectWatcher::Watch : public mozilla::Runnable {
-public:
+ public:
   ObjectWatcher* watcher;    // The associated ObjectWatcher instance
   HANDLE object;             // The object being watched
   HANDLE wait_object;        // Returned by RegisterWaitForSingleObject
@@ -21,11 +21,12 @@ public:
   Delegate* delegate;        // Delegate to notify when signaled
   bool did_signal;           // DoneWaiting was called
 
+  Watch() : mozilla::Runnable("ObjectWatcher::Watch") {}
+
   NS_IMETHOD Run() override {
     // The watcher may have already been torn down, in which case we need to
     // just get out of dodge.
-    if (!watcher)
-      return NS_OK;
+    if (!watcher) return NS_OK;
 
     DCHECK(did_signal);
     watcher->StopWatching();
@@ -38,12 +39,9 @@ public:
 
 //-----------------------------------------------------------------------------
 
-ObjectWatcher::ObjectWatcher() : watch_(nullptr) {
-}
+ObjectWatcher::ObjectWatcher() : watch_(nullptr) {}
 
-ObjectWatcher::~ObjectWatcher() {
-  StopWatching();
-}
+ObjectWatcher::~ObjectWatcher() { StopWatching(); }
 
 bool ObjectWatcher::StartWatching(HANDLE object, Delegate* delegate) {
   if (watch_) {
@@ -77,8 +75,7 @@ bool ObjectWatcher::StartWatching(HANDLE object, Delegate* delegate) {
 }
 
 bool ObjectWatcher::StopWatching() {
-  if (!watch_)
-    return false;
+  if (!watch_) return false;
 
   // Make sure ObjectWatcher is used in a single-threaded fashion.
   DCHECK(watch_->origin_loop == MessageLoop::current());
@@ -106,8 +103,7 @@ bool ObjectWatcher::StopWatching() {
 }
 
 HANDLE ObjectWatcher::GetWatchedObject() {
-  if (!watch_)
-    return NULL;
+  if (!watch_) return NULL;
 
   return watch_->object;
 }
@@ -125,7 +121,9 @@ void CALLBACK ObjectWatcher::DoneWaiting(void* param, BOOLEAN timed_out) {
   // We rely on the locking in PostTask() to ensure that a memory barrier is
   // provided, which in turn ensures our change to did_signal can be observed
   // on the target thread.
-  watch->origin_loop->PostTask(addrefedWatch.forget());
+  if (watch->origin_loop->IsAcceptingTasks()) {
+    watch->origin_loop->PostTask(addrefedWatch.forget());
+  }
 }
 
 void ObjectWatcher::WillDestroyCurrentMessageLoop() {

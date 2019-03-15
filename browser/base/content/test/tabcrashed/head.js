@@ -21,10 +21,10 @@
  * @returns Promise
  */
 function promiseCrashReport(expectedExtra = {}) {
-  return Task.spawn(function*() {
+  return (async function() {
     info("Starting wait on crash-report-status");
-    let [subject, ] =
-      yield TestUtils.topicObserved("crash-report-status", (unused, data) => {
+    let [subject ] =
+      await TestUtils.topicObserved("crash-report-status", (unused, data) => {
         return data == "success";
       });
     info("Topic observed!");
@@ -39,7 +39,7 @@ function promiseCrashReport(expectedExtra = {}) {
     }
 
     let file = Cc["@mozilla.org/file/local;1"]
-                 .createInstance(Ci.nsILocalFile);
+                 .createInstance(Ci.nsIFile);
     file.initWithPath(Services.crashmanager._submittedDumpsDir);
     file.append(remoteID + ".txt");
     if (!file.exists()) {
@@ -54,9 +54,7 @@ function promiseCrashReport(expectedExtra = {}) {
     }
 
     info("Iterating crash report extra keys");
-    let enumerator = extra.enumerator;
-    while (enumerator.hasMoreElements()) {
-      let key = enumerator.getNext().QueryInterface(Ci.nsIProperty).name;
+    for (let {name: key} of extra.enumerator) {
       let value = extra.getPropertyAsAString(key);
       if (key in expectedExtra) {
         if (expectedExtra[key] == null) {
@@ -67,7 +65,7 @@ function promiseCrashReport(expectedExtra = {}) {
         }
       }
     }
-  });
+  })();
 }
 
 
@@ -95,4 +93,41 @@ function getPropertyBagValue(bag, key) {
   }
 
   return null;
+}
+
+/**
+ * Sets up the browser to send crash reports to the local crash report
+ * testing server.
+ */
+async function setupLocalCrashReportServer() {
+  const SERVER_URL = "http://example.com/browser/toolkit/crashreporter/test/browser/crashreport.sjs";
+
+  // The test harness sets MOZ_CRASHREPORTER_NO_REPORT, which disables crash
+  // reports.  This test needs them enabled.  The test also needs a mock
+  // report server, and fortunately one is already set up by toolkit/
+  // crashreporter/test/Makefile.in.  Assign its URL to MOZ_CRASHREPORTER_URL,
+  // which CrashSubmit.jsm uses as a server override.
+  let env = Cc["@mozilla.org/process/environment;1"]
+              .getService(Ci.nsIEnvironment);
+  let noReport = env.get("MOZ_CRASHREPORTER_NO_REPORT");
+  let serverUrl = env.get("MOZ_CRASHREPORTER_URL");
+  env.set("MOZ_CRASHREPORTER_NO_REPORT", "");
+  env.set("MOZ_CRASHREPORTER_URL", SERVER_URL);
+
+  registerCleanupFunction(function() {
+    env.set("MOZ_CRASHREPORTER_NO_REPORT", noReport);
+    env.set("MOZ_CRASHREPORTER_URL", serverUrl);
+  });
+}
+
+/**
+ * Monkey patches TabCrashHandler.getDumpID to return null in order to test
+ * about:tabcrashed when a dump is not available.
+ */
+function prepareNoDump() {
+  let originalGetDumpID = TabCrashHandler.getDumpID;
+  TabCrashHandler.getDumpID = function(browser) { return null; };
+  registerCleanupFunction(() => {
+    TabCrashHandler.getDumpID = originalGetDumpID;
+  });
 }

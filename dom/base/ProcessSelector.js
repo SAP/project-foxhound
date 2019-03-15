@@ -2,10 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import('resource://gre/modules/Services.jsm');
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import('resource://gre/modules/Services.jsm');
 
 // Fills up aProcesses until max and then selects randomly from the available
 // ones.
@@ -14,7 +12,7 @@ function RandomSelector() {
 
 RandomSelector.prototype = {
   classID:          Components.ID("{c616fcfd-9737-41f1-aa74-cee72a38f91b}"),
-  QueryInterface:   XPCOMUtils.generateQI([Ci.nsIContentProcessProvider]),
+  QueryInterface:   ChromeUtils.generateQI([Ci.nsIContentProcessProvider]),
 
   provideProcess(aType, aOpener, aProcesses, aCount, aMaxCount) {
     if (aCount < aMaxCount) {
@@ -43,7 +41,7 @@ function MinTabSelector() {
 
 MinTabSelector.prototype = {
   classID:          Components.ID("{2dc08eaf-6eef-4394-b1df-a3a927c1290b}"),
-  QueryInterface:   XPCOMUtils.generateQI([Ci.nsIContentProcessProvider]),
+  QueryInterface:   ChromeUtils.generateQI([Ci.nsIContentProcessProvider]),
 
   provideProcess(aType, aOpener, aProcesses, aCount, aMaxCount) {
     if (aCount < aMaxCount) {

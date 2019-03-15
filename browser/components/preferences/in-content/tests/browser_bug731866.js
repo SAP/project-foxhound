@@ -1,8 +1,10 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Components.utils.import("resource://gre/modules/PlacesUtils.jsm");
-Components.utils.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/PlacesUtils.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+
+const browserContainersGroupDisabled = !SpecialPowers.getBoolPref("privacy.userContext.ui.enabled");
 
 function test() {
   waitForExplicitFinish();
@@ -13,13 +15,19 @@ var gElements;
 
 function checkElements(expectedPane) {
   for (let element of gElements) {
-    // keyset and preferences elements fail is_element_visible checks because they are never visible.
+    // keyset elements fail is_element_visible checks because they are never visible.
     // special-case the drmGroup item because its visibility depends on pref + OS version
     if (element.nodeName == "keyset" ||
-        element.nodeName == "preferences" ||
         element.id === "drmGroup") {
       continue;
     }
+
+    // The browserContainersGroup is still only pref-on on Nightly
+    if (element.id == "browserContainersGroup" && browserContainersGroupDisabled) {
+      is_element_hidden(element, "Disabled browserContainersGroup should be hidden");
+      continue;
+    }
+
     let attributeValue = element.getAttribute("data-category");
     let suffix = " (id=" + element.id + ")";
     if (attributeValue == "pane" + expectedPane) {
@@ -37,8 +45,8 @@ function runTest(win) {
   gElements = tab.getElementById("mainPrefPane").children;
 
   let panes = [
-    "General", "Search", "Content", "Applications",
-    "Privacy", "Security", "Sync", "Advanced",
+    "General", "Search",
+    "Privacy", "Sync",
   ];
 
   for (let pane of panes) {

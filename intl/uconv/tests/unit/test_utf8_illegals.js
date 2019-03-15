@@ -1,10 +1,8 @@
 // Tests illegal UTF-8 sequences
 
 var Cc = Components.Constructor;
-var Ci = Components.interfaces;
-var Cu = Components.utils;
 
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 const tests = [
 { inStrings: ["%80",                 // Illegal or incomplete sequences
@@ -122,8 +120,8 @@ function testCaseInputStream(inStr, expected)
   } while (more);
 
   dump(outStr + "; expected=" + expected + "\n");
-  do_check_eq(outStr, expected);
-  do_check_eq(outStr.length, expected.length);
+  Assert.equal(outStr, expected);
+  Assert.equal(outStr.length, expected.length);
 }
 
 function run_test() {

@@ -2,7 +2,7 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-add_task(function* testPageActionPopupResize() {
+add_task(async function testPageActionPopupResize() {
   let browser;
 
   let extension = ExtensionTestUtils.loadExtension({
@@ -28,22 +28,22 @@ add_task(function* testPageActionPopupResize() {
     },
   });
 
-  yield extension.startup();
-  yield extension.awaitMessage("action-shown");
+  await extension.startup();
+  await extension.awaitMessage("action-shown");
 
   clickPageAction(extension, window);
 
-  browser = yield awaitExtensionPanel(extension);
+  browser = await awaitExtensionPanel(extension);
 
-  function* checkSize(expected) {
-    let dims = yield promiseContentDimensions(browser);
+  async function checkSize(expected) {
+    let dims = await promiseContentDimensions(browser);
     let {body, root} = dims;
 
     is(dims.window.innerHeight, expected, `Panel window should be ${expected}px tall`);
     is(body.clientHeight, body.scrollHeight,
-      "Panel body should be tall enough to fit its contents");
+       "Panel body should be tall enough to fit its contents");
     is(root.clientHeight, root.scrollHeight,
-      "Panel root should be tall enough to fit its contents");
+       "Panel root should be tall enough to fit its contents");
 
     // Tolerate if it is 1px too wide, as that may happen with the current resizing method.
     ok(Math.abs(dims.window.innerWidth - expected) <= 1, `Panel window should be ${expected}px wide`);
@@ -51,13 +51,11 @@ add_task(function* testPageActionPopupResize() {
        "Panel body should be wide enough to fit its contents");
   }
 
-  /* eslint-disable mozilla/no-cpows-in-tests */
   function setSize(size) {
-    let elem = content.document.body.firstChild;
+    let elem = content.document.body.firstElementChild;
     elem.style.height = `${size}px`;
     elem.style.width = `${size}px`;
   }
-  /* eslint-enable mozilla/no-cpows-in-tests */
 
   let sizes = [
     200,
@@ -66,11 +64,11 @@ add_task(function* testPageActionPopupResize() {
   ];
 
   for (let size of sizes) {
-    yield alterContent(browser, setSize, size);
-    yield checkSize(size);
+    await alterContent(browser, setSize, size);
+    await checkSize(size);
   }
 
-  let dims = yield alterContent(browser, setSize, 1400);
+  let dims = await alterContent(browser, setSize, 1400);
   let {body, root} = dims;
 
   is(dims.window.innerWidth, 800, "Panel window width");
@@ -81,10 +79,10 @@ add_task(function* testPageActionPopupResize() {
   ok(root.clientHeight <= 600, `Panel root height (${root.clientHeight}px) is less than 600px`);
   is(root.scrollHeight, 1400, "Panel root scroll height");
 
-  yield extension.unload();
+  await extension.unload();
 });
 
-add_task(function* testPageActionPopupReflow() {
+add_task(async function testPageActionPopupReflow() {
   let browser;
 
   let extension = ExtensionTestUtils.loadExtension({
@@ -117,20 +115,18 @@ add_task(function* testPageActionPopupReflow() {
     },
   });
 
-  yield extension.startup();
-  yield extension.awaitMessage("action-shown");
+  await extension.startup();
+  await extension.awaitMessage("action-shown");
 
   clickPageAction(extension, window);
 
-  browser = yield awaitExtensionPanel(extension);
+  browser = await awaitExtensionPanel(extension);
 
-  /* eslint-disable mozilla/no-cpows-in-tests */
   function setSize(size) {
     content.document.body.style.fontSize = `${size}px`;
   }
-  /* eslint-enable mozilla/no-cpows-in-tests */
 
-  let dims = yield alterContent(browser, setSize, 18);
+  let dims = await alterContent(browser, setSize, 18);
 
   is(dims.window.innerWidth, 800, "Panel window should be 800px wide");
   is(dims.body.clientWidth, 800, "Panel body should be 800px wide");
@@ -141,9 +137,9 @@ add_task(function* testPageActionPopupReflow() {
      `Panel window height (${dims.window.innerHeight}px) should be taller than two lines of text.`);
 
   is(dims.body.clientHeight, dims.body.scrollHeight,
-    "Panel body should be tall enough to fit its contents");
+     "Panel body should be tall enough to fit its contents");
   is(dims.root.clientHeight, dims.root.scrollHeight,
-    "Panel root should be tall enough to fit its contents");
+     "Panel root should be tall enough to fit its contents");
 
-  yield extension.unload();
+  await extension.unload();
 });

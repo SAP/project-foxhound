@@ -11,13 +11,6 @@ interface nsIVariant;
 [scriptable, uuid(9759bd0e-78e2-4421-9ed1-c676e1af3513)]
 interface nsITaggingService : nsISupports
 {
-
-  /**
-   * Defines the maximal length of a tag. Related to the bug 407821 
-   * (https://bugzilla.mozilla.org/show_bug.cgi?id=407821) 
-   */
-  const unsigned long MAX_TAG_LENGTH = 100;
-
   /**
    * Tags a URL with the given set of tags. Current tags set for the URL
    * persist. Tags in aTags which are already set for the given URL are
@@ -56,15 +49,6 @@ interface nsITaggingService : nsISupports
                 [optional] in unsigned short aSource);
 
   /**
-   * Retrieves all URLs tagged with the given tag.
-   *
-   * @param aTag
-   *        tag name
-   * @returns Array of uris tagged with aTag.
-   */
-  nsIVariant getURIsForTag(in AString aTag);
-
-  /**
    * Retrieves all tags set for the given URL.
    *
    * @param aURI
@@ -75,17 +59,6 @@ interface nsITaggingService : nsISupports
                      [optional] out unsigned long length,
                      [retval, array, size_is(length)] out wstring aTags);
 
-  /**
-   * Retrieves all tags used to tag URIs in the data-base (sorted by name).
-   */
-  readonly attribute nsIVariant allTags;
-
-  /**
-   * Whether any tags exist.
-   *
-   * @note This is faster than allTags.length, since doesn't need to sort tags.
-   */
-  readonly attribute boolean hasTags;
 };
 
 %{C++

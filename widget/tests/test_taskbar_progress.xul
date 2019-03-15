@@ -10,10 +10,7 @@
           src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js" />
   <script class="testbody" type="application/javascript">
   <![CDATA[
-    let Cc = Components.classes;
-    let Ci = Components.interfaces;
-    let Cu = Components.utils;
-    Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+    ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
     
     let TP = Ci.nsITaskbarProgress;
     
@@ -43,7 +40,7 @@
       // HACK from mconnor:
       var wm = Cc["@mozilla.org/appshell/window-mediator;1"].getService(Ci.nsIWindowMediator);
       let win = wm.getMostRecentWindow("navigator:browser");
-      let docShell = win.document.docShell;
+      let docShell = win.docShell;
 
       let progress = taskbar.getTaskbarProgress(docShell);
       isnot(progress, null, "Progress is not null");

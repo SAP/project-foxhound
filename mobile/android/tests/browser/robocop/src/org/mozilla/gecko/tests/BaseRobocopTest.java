@@ -7,6 +7,7 @@ package org.mozilla.gecko.tests;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
+import android.os.Bundle;
 import android.os.PowerManager;
 import android.test.ActivityInstrumentationTestCase2;
 import android.text.TextUtils;
@@ -17,17 +18,17 @@ import com.robotium.solo.Solo;
 import org.mozilla.gecko.Actions;
 import org.mozilla.gecko.AppConstants;
 import org.mozilla.gecko.Assert;
-import org.mozilla.gecko.BrowserApp;
 import org.mozilla.gecko.Driver;
 import org.mozilla.gecko.FennecInstrumentationTestRunner;
 import org.mozilla.gecko.FennecMochitestAssert;
 import org.mozilla.gecko.FennecNativeActions;
 import org.mozilla.gecko.FennecNativeDriver;
 import org.mozilla.gecko.FennecTalosAssert;
-import org.mozilla.gecko.GeckoAppShell;
 import org.mozilla.gecko.GeckoProfile;
+import org.mozilla.gecko.firstrun.OnboardingHelper;
 import org.mozilla.gecko.updater.UpdateServiceHelper;
 
+import java.lang.reflect.Method;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.Map;
@@ -126,7 +127,7 @@ public abstract class BaseRobocopTest extends ActivityInstrumentationTestCase2<A
         final Intent intent = new Intent(Intent.ACTION_MAIN);
         intent.putExtra("args", "-no-remote -profile " + config.get("profile"));
         // Don't show the first run experience.
-        intent.putExtra(BrowserApp.EXTRA_SKIP_STARTPANE, true);
+        intent.putExtra(OnboardingHelper.EXTRA_SKIP_STARTPANE, true);
 
         final String envString = config.get("envvars");
         if (!TextUtils.isEmpty(envString)) {
@@ -174,8 +175,7 @@ public abstract class BaseRobocopTest extends ActivityInstrumentationTestCase2<A
         // Set up Robotium.solo and Driver objects
         Activity tempActivity = getActivity();
 
-        StringHelper.initialize(tempActivity.getResources());
-        mStringHelper = StringHelper.get();
+        mStringHelper = StringHelper.initialize(tempActivity.getResources());
 
         mSolo = new Solo(getInstrumentation(), tempActivity);
         mDriver = new FennecNativeDriver(tempActivity, mSolo, mRootPath);
@@ -199,6 +199,23 @@ public abstract class BaseRobocopTest extends ActivityInstrumentationTestCase2<A
         }
     }
 
+    private void generateCoverageReport(String coverageFilePath) {
+        Log.i(LOGTAG, "Starting dump of code coverage report to " + coverageFilePath + ".");
+        java.io.File coverageFile = new java.io.File(coverageFilePath);
+        try {
+            Class<?> emmaRTClass = Class.forName("com.vladium.emma.rt.RT");
+            Method dumpCoverageMethod = emmaRTClass.getMethod("dumpCoverageData",
+                    coverageFile.getClass(), boolean.class, boolean.class);
+
+            dumpCoverageMethod.invoke(null, coverageFile, false, false);
+            Log.i(LOGTAG, "Code coverage report dump finished.");
+        } catch (ClassNotFoundException e) {
+            Log.e(LOGTAG, "Is JaCoCo jar on classpath?", e);
+        } catch (Exception e) {
+            Log.e(LOGTAG, "Failed to generate coverage report.", e);
+        }
+    }
+
     @Override
     public void tearDown() throws Exception {
         try {
@@ -212,9 +229,16 @@ public abstract class BaseRobocopTest extends ActivityInstrumentationTestCase2<A
             // manually inspect an activity's state after a test
             // run. runtestsremote.py sets this to "1".  Testers running via an
             // IDE will not have this set at all.
-            final String quitAndFinish = FennecInstrumentationTestRunner.getFennecArguments()
-                    .getString("quit_and_finish"); // null means not specified.
+            final Bundle arguments = FennecInstrumentationTestRunner.getFennecArguments();
+            // null means not specified
+            final String quitAndFinish = arguments.getString("quit_and_finish");
+            final String coverage = arguments.getString("coverage");
+            final String coverageFile = arguments.getString("coverageFile");
             if ("1".equals(quitAndFinish)) {
+                // Dump code coverage reports before quitting.
+                if ("true".equals(coverage)) {
+                    generateCoverageReport(coverageFile);
+                }
                 // Request the browser force quit and wait for it to take effect.
                 Log.i(LOGTAG, "Requesting force quit.");
                 mActions.sendGlobalEvent("Robocop:Quit", null);
@@ -249,7 +273,7 @@ public abstract class BaseRobocopTest extends ActivityInstrumentationTestCase2<A
         // rawURL to test fetching from. This should be a raw (IP) URL, not an alias
         // (like mochi.test). We can't (easily) test fetching from the aliases, since
         // those are managed by Fennec's proxy settings.
-        final String rawUrl = ((String) mConfig.get("rawhost")).replaceAll("(/$)", "");
+        final String rawUrl = mConfig.get("rawhost").replaceAll("(/$)", "");
 
         HttpURLConnection urlConnection = null;
 

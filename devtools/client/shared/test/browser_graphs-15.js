@@ -14,10 +14,10 @@ const TEST_DATA = [];
 const INTERVAL = 100;
 const DURATION = 5000;
 var t = 0;
-for (let frameRate of FRAMES) {
+for (const frameRate of FRAMES) {
   for (let i = 0; i < frameRate; i++) {
     // Duration between frames at this rate
-    let delta = Math.floor(1000 / frameRate);
+    const delta = Math.floor(1000 / frameRate);
     t += delta;
     TEST_DATA.push(t);
   }
@@ -25,25 +25,25 @@ for (let frameRate of FRAMES) {
 
 const LineGraphWidget = require("devtools/client/shared/widgets/LineGraphWidget");
 
-add_task(function* () {
-  yield addTab("about:blank");
-  yield performTest();
+add_task(async function() {
+  await addTab("about:blank");
+  await performTest();
   gBrowser.removeCurrentTab();
 });
 
-function* performTest() {
-  let [host,, doc] = yield createHost();
-  let graph = new LineGraphWidget(doc.body, "fps");
+async function performTest() {
+  const [host,, doc] = await createHost();
+  const graph = new LineGraphWidget(doc.body, "fps");
 
-  yield testGraph(graph);
+  await testGraph(graph);
 
-  yield graph.destroy();
+  await graph.destroy();
   host.destroy();
 }
 
-function* testGraph(graph) {
+async function testGraph(graph) {
   console.log("test data", TEST_DATA);
-  yield graph.setDataFromTimestamps(TEST_DATA, INTERVAL, DURATION);
+  await graph.setDataFromTimestamps(TEST_DATA, INTERVAL, DURATION);
   is(graph._avgTooltip.querySelector("[text=value]").textContent, "50",
     "The average tooltip displays the correct value.");
 }

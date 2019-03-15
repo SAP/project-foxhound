@@ -41,6 +41,14 @@ import mock
 import rsa
 import sys
 
+# "constants" to make it easier for consumers to specify hash algorithms
+HASH_MD5 = 'hash:md5'
+HASH_SHA1 = 'hash:sha1'
+HASH_SHA256 = 'hash:sha256'
+HASH_SHA384 = 'hash:sha384'
+HASH_SHA512 = 'hash:sha512'
+
+
 def byteStringToHexifiedBitString(string):
     """Takes a string of bytes and returns a hex string representing
     those bytes for use with pyasn1.type.univ.BitString. It must be of
@@ -48,8 +56,10 @@ def byteStringToHexifiedBitString(string):
     pyasn1 that the input is a hex string."""
     return "'%s'H" % binascii.hexlify(string)
 
+
 class UnknownBaseError(Exception):
     """Base class for handling unexpected input in this module."""
+
     def __init__(self, value):
         super(UnknownBaseError, self).__init__()
         self.value = value
@@ -65,6 +75,26 @@ class UnknownKeySpecificationError(UnknownBaseError):
     def __init__(self, value):
         UnknownBaseError.__init__(self, value)
         self.category = 'key specification'
+
+
+class UnknownHashAlgorithmError(UnknownBaseError):
+    """Helper exception type to handle unknown key specifications."""
+
+    def __init__(self, value):
+        UnknownBaseError.__init__(self, value)
+        self.category = 'hash algorithm'
+
+
+class UnsupportedHashAlgorithmError(Exception):
+    """Helper exception type for unsupported hash algorithms."""
+
+    def __init__(self, value):
+        super(UnsupportedHashAlgorithmError, self).__init__()
+        self.value = value
+
+    def __str__(self):
+        return 'Unsupported hash algorithm "%s"' % repr(self.value)
+
 
 class RSAPublicKey(univ.Sequence):
     """Helper type for encoding an RSA public key"""
@@ -509,23 +539,25 @@ class RSAKey(object):
 
     def toDER(self):
         privateKeyInfo = PrivateKeyInfo()
-        privateKeyInfo.setComponentByName('version', 0)
+        privateKeyInfo['version'] = 0
         algorithmIdentifier = rfc2459.AlgorithmIdentifier()
-        algorithmIdentifier.setComponentByName('algorithm', rfc2459.rsaEncryption)
-        algorithmIdentifier.setComponentByName('parameters', univ.Null())
-        privateKeyInfo.setComponentByName('privateKeyAlgorithm', algorithmIdentifier)
+        algorithmIdentifier['algorithm'] = rfc2459.rsaEncryption
+        # Directly setting parameters to univ.Null doesn't currently work.
+        nullEncapsulated = encoder.encode(univ.Null())
+        algorithmIdentifier['parameters'] = univ.Any(nullEncapsulated)
+        privateKeyInfo['privateKeyAlgorithm'] = algorithmIdentifier
         rsaPrivateKey = RSAPrivateKey()
-        rsaPrivateKey.setComponentByName('version', 0)
-        rsaPrivateKey.setComponentByName('modulus', self.RSA_N)
-        rsaPrivateKey.setComponentByName('publicExponent', self.RSA_E)
-        rsaPrivateKey.setComponentByName('privateExponent', self.RSA_D)
-        rsaPrivateKey.setComponentByName('prime1', self.RSA_P)
-        rsaPrivateKey.setComponentByName('prime2', self.RSA_Q)
-        rsaPrivateKey.setComponentByName('exponent1', self.RSA_exp1)
-        rsaPrivateKey.setComponentByName('exponent2', self.RSA_exp2)
-        rsaPrivateKey.setComponentByName('coefficient', self.RSA_coef)
+        rsaPrivateKey['version'] = 0
+        rsaPrivateKey['modulus'] = self.RSA_N
+        rsaPrivateKey['publicExponent'] = self.RSA_E
+        rsaPrivateKey['privateExponent'] = self.RSA_D
+        rsaPrivateKey['prime1'] = self.RSA_P
+        rsaPrivateKey['prime2'] = self.RSA_Q
+        rsaPrivateKey['exponent1'] = self.RSA_exp1
+        rsaPrivateKey['exponent2'] = self.RSA_exp2
+        rsaPrivateKey['coefficient'] = self.RSA_coef
         rsaPrivateKeyEncoded = encoder.encode(rsaPrivateKey)
-        privateKeyInfo.setComponentByName('privateKey', univ.OctetString(rsaPrivateKeyEncoded))
+        privateKeyInfo['privateKey'] = univ.OctetString(rsaPrivateKeyEncoded)
         return encoder.encode(privateKeyInfo)
 
     def toPEM(self):
@@ -535,28 +567,43 @@ class RSAKey(object):
         while b64:
             output += '\n' + b64[:64]
             b64 = b64[64:]
-        output += '\n-----END PRIVATE KEY-----'
+        output += '\n-----END PRIVATE KEY-----\n'
         return output
 
     def asSubjectPublicKeyInfo(self):
         """Returns a subject public key info representing
         this key for use by pyasn1."""
         algorithmIdentifier = rfc2459.AlgorithmIdentifier()
-        algorithmIdentifier.setComponentByName('algorithm', rfc2459.rsaEncryption)
-        algorithmIdentifier.setComponentByName('parameters', univ.Null())
+        algorithmIdentifier['algorithm'] = rfc2459.rsaEncryption
+        # Directly setting parameters to univ.Null doesn't currently work.
+        nullEncapsulated = encoder.encode(univ.Null())
+        algorithmIdentifier['parameters'] = univ.Any(nullEncapsulated)
         spki = rfc2459.SubjectPublicKeyInfo()
-        spki.setComponentByName('algorithm', algorithmIdentifier)
+        spki['algorithm'] = algorithmIdentifier
         rsaKey = RSAPublicKey()
-        rsaKey.setComponentByName('N', univ.Integer(self.RSA_N))
-        rsaKey.setComponentByName('E', univ.Integer(self.RSA_E))
+        rsaKey['N'] = univ.Integer(self.RSA_N)
+        rsaKey['E'] = univ.Integer(self.RSA_E)
         subjectPublicKey = univ.BitString(byteStringToHexifiedBitString(encoder.encode(rsaKey)))
-        spki.setComponentByName('subjectPublicKey', subjectPublicKey)
+        spki['subjectPublicKey'] = subjectPublicKey
         return spki
 
-    def sign(self, data, hashAlgorithmName):
+    def sign(self, data, hashAlgorithm):
         """Returns a hexified bit string representing a
         signature by this key over the specified data.
         Intended for use with pyasn1.type.univ.BitString"""
+        hashAlgorithmName = None
+        if hashAlgorithm == HASH_MD5:
+            hashAlgorithmName = "MD5"
+        elif hashAlgorithm == HASH_SHA1:
+            hashAlgorithmName = "SHA-1"
+        elif hashAlgorithm == HASH_SHA256:
+            hashAlgorithmName = "SHA-256"
+        elif hashAlgorithm == HASH_SHA384:
+            hashAlgorithmName = "SHA-384"
+        elif hashAlgorithm == HASH_SHA512:
+            hashAlgorithmName = "SHA-512"
+        else:
+            raise UnknownHashAlgorithmError(hashAlgorithm)
         rsaPrivateKey = rsa.PrivateKey(self.RSA_N, self.RSA_E, self.RSA_D, self.RSA_P, self.RSA_Q)
         signature = rsa.sign(data, rsaPrivateKey, hashAlgorithmName)
         return byteStringToHexifiedBitString(signature)
@@ -581,46 +628,49 @@ secp256k1Params = (long('fffffffffffffffffffffffffffffffffffffffffffffffffffffff
                    long('79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798', 16),
                    long('483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8', 16))
 
+
 def longToEvenLengthHexString(val):
     h = format(val, 'x')
     if not len(h) % 2 == 0:
         h = '0' + h
     return h
 
+
 def notRandom(n):
     return n * '\x04'
 
+
 class ECCKey(object):
     secp256k1Encoded = str('08fd87b04fba98090100004035ee7c7289d8fef7a8'
-        '6afe5da66d8bc2ebb6a8543fd2fead089f45ce7acd0fa64382a9500c41dad'
-        '770ffd4b511bf4b492eb1238800c32c4f76c73a3f3294e7c5002067cebc20'
-        '8a5fa3df16ec2bb34acc59a42ab4abb0538575ca99b92b6a2149a04f')
+                           '6afe5da66d8bc2ebb6a8543fd2fead089f45ce7acd0fa64382a9500c41dad'
+                           '770ffd4b511bf4b492eb1238800c32c4f76c73a3f3294e7c5002067cebc20'
+                           '8a5fa3df16ec2bb34acc59a42ab4abb0538575ca99b92b6a2149a04f')
 
     secp224r1Encoded = str('0ee5587c4d18526f00e00038668d72cca6fd6a1b35'
-        '57b5366104d84408ecb637f08e8c86bbff82cc00e88f0066d7af63c3298ba'
-        '377348a1202b03b37fd6b1ff415aa311e001c04389459926c3296c242b83e'
-        '10a6cd2011c8fe2dae1b772ea5b21067')
+                           '57b5366104d84408ecb637f08e8c86bbff82cc00e88f0066d7af63c3298ba'
+                           '377348a1202b03b37fd6b1ff415aa311e001c04389459926c3296c242b83e'
+                           '10a6cd2011c8fe2dae1b772ea5b21067')
 
     secp256r1Encoded = str('cb872ac99cd31827010000404fbfbbbb61e0f8f9b1'
-        'a60a59ac8704e2ec050b423e3cf72e923f2c4f794b455c2a69d233456c36c'
-        '4119d0706e00eedc8d19390d7991b7b2d07a304eaa04aa6c000202191403d'
-        '5710bf15a265818cd42ed6fedf09add92d78b18e7a1e9feb95524702')
+                           'a60a59ac8704e2ec050b423e3cf72e923f2c4f794b455c2a69d233456c36c'
+                           '4119d0706e00eedc8d19390d7991b7b2d07a304eaa04aa6c000202191403d'
+                           '5710bf15a265818cd42ed6fedf09add92d78b18e7a1e9feb95524702')
 
     secp384r1Encoded = str('d3103f5ac81741e801800060a1687243362b5c7b18'
-        '89f379154615a1c73fb48dee863e022915db608e252de4b7132da8ce98e83'
-        '1534e6a9c0c0b09c8d639ade83206e5ba813473a11fa330e05da8c96e4383'
-        'fe27873da97103be2888cff002f05af71a1fddcc8374aa6ea9ce0030035c7'
-        'a1b10d9fafe837b64ad92f22f5ced0789186538669b5c6d872cec3d926122'
-        'b393772b57602ff31365efe1393246')
+                           '89f379154615a1c73fb48dee863e022915db608e252de4b7132da8ce98e83'
+                           '1534e6a9c0c0b09c8d639ade83206e5ba813473a11fa330e05da8c96e4383'
+                           'fe27873da97103be2888cff002f05af71a1fddcc8374aa6ea9ce0030035c7'
+                           'a1b10d9fafe837b64ad92f22f5ced0789186538669b5c6d872cec3d926122'
+                           'b393772b57602ff31365efe1393246')
 
     secp521r1Encoded = str('77f4b0ac81948ddc02090084014cdc9cacc4794109'
-        '6bc9cc66752ec27f597734fa66c62b792f88c519d6d37f0d16ea1c483a182'
-        '7a010b9128e3a08070ca33ef5f57835b7c1ba251f6cc3521dc42b01065345'
-        '1981b445d343eed3782a35d6cff0ff484f5a883d209f1b9042b726703568b'
-        '2f326e18b833bdd8aa0734392bcd19501e10d698a79f53e11e0a22bdd2aad'
-        '900042014f3284fa698dd9fe1118dd331851cdfaac5a3829278eb8994839d'
-        'e9471c940b858c69d2d05e8c01788a7d0b6e235aa5e783fc1bee807dcc386'
-        '5f920e12cf8f2d29')
+                           '6bc9cc66752ec27f597734fa66c62b792f88c519d6d37f0d16ea1c483a182'
+                           '7a010b9128e3a08070ca33ef5f57835b7c1ba251f6cc3521dc42b01065345'
+                           '1981b445d343eed3782a35d6cff0ff484f5a883d209f1b9042b726703568b'
+                           '2f326e18b833bdd8aa0734392bcd19501e10d698a79f53e11e0a22bdd2aad'
+                           '900042014f3284fa698dd9fe1118dd331851cdfaac5a3829278eb8994839d'
+                           'e9471c940b858c69d2d05e8c01788a7d0b6e235aa5e783fc1bee807dcc386'
+                           '5f920e12cf8f2d29')
 
     def __init__(self, specification=None):
         if specification == 'secp256k1':
@@ -645,10 +695,10 @@ class ECCKey(object):
         """Returns a subject public key info representing
         this key for use by pyasn1."""
         algorithmIdentifier = rfc2459.AlgorithmIdentifier()
-        algorithmIdentifier.setComponentByName('algorithm', ecPublicKey)
-        algorithmIdentifier.setComponentByName('parameters', self.keyOID)
+        algorithmIdentifier['algorithm'] = ecPublicKey
+        algorithmIdentifier['parameters'] = self.keyOID
         spki = rfc2459.SubjectPublicKeyInfo()
-        spki.setComponentByName('algorithm', algorithmIdentifier)
+        spki['algorithm'] = algorithmIdentifier
         # We need to extract the point that represents this key.
         # The library encoding of the key is an 8-byte id, followed by 2
         # bytes for the key length in bits, followed by the point on the
@@ -661,29 +711,38 @@ class ECCKey(object):
         hexifiedBitString = "'%s%s%s'H" % ('04', longToEvenLengthHexString(points[0]),
                                            longToEvenLengthHexString(points[1]))
         subjectPublicKey = univ.BitString(hexifiedBitString)
-        spki.setComponentByName('subjectPublicKey', subjectPublicKey)
+        spki['subjectPublicKey'] = subjectPublicKey
         return spki
 
-    def sign(self, data, hashAlgorithmName):
-        """Returns a hexified bit string representing a
-        signature by this key over the specified data.
-        Intended for use with pyasn1.type.univ.BitString"""
+    def signRaw(self, data, hashAlgorithm):
+        """Performs the ECDSA signature algorithm over the given data.
+        The returned value is a string representing the bytes of the
+        resulting point when encoded by left-padding each of (r, s) to
+        the key size and concatenating them.
+        """
         # There is some non-determinism in ECDSA signatures. Work around
         # this by patching ecc.ecdsa.urandom to not be random.
         with mock.patch('ecc.ecdsa.urandom', side_effect=notRandom):
-            # For some reason Key.sign returns an encoded point.
-            # Decode it so we can encode it as a BITSTRING consisting
-            # of a SEQUENCE of two INTEGERs.
-            # Also patch in secp256k1 if applicable.
+            # Patch in secp256k1 if applicable.
             if self.keyOID == secp256k1:
                 with mock.patch('ecc.curves.DOMAINS', {256: secp256k1Params}):
-                    x, y = encoding.dec_point(self.key.sign(data, hashAlgorithmName))
+                    return self.key.sign(data, hashAlgorithm.split(':')[-1])
             else:
-                x, y = encoding.dec_point(self.key.sign(data, hashAlgorithmName))
-            point = ECPoint()
-            point.setComponentByName('x', x)
-            point.setComponentByName('y', y)
-            return byteStringToHexifiedBitString(encoder.encode(point))
+                return self.key.sign(data, hashAlgorithm.split(':')[-1])
+
+    def sign(self, data, hashAlgorithm):
+        """Returns a hexified bit string representing a
+        signature by this key over the specified data.
+        Intended for use with pyasn1.type.univ.BitString"""
+        # ecc.Key.sign returns an encoded point, which is useful in some
+        # situations. However, for signatures on X509 certificates, we
+        # need to decode it so we can encode it as a BITSTRING
+        # consisting of a SEQUENCE of two INTEGERs.
+        x, y = encoding.dec_point(self.signRaw(data, hashAlgorithm))
+        point = ECPoint()
+        point['x'] = x
+        point['y'] = y
+        return byteStringToHexifiedBitString(encoder.encode(point))
 
 
 def keyFromSpecification(specification):
@@ -696,11 +755,14 @@ def keyFromSpecification(specification):
 # The build harness will call this function with an output file-like
 # object and a path to a file containing a specification. This will
 # read the specification and output the key as ASCII-encoded PKCS #8.
+
+
 def main(output, inputPath):
     with open(inputPath) as configStream:
         output.write(keyFromSpecification(configStream.read().strip()).toPEM())
 
+
 # When run as a standalone program, this will read a specification from
 # stdin and output the certificate as PEM to stdout.
 if __name__ == '__main__':
-    print keyFromSpecification(sys.stdin.read()).toPEM()
+    print keyFromSpecification(sys.stdin.read().strip()).toPEM()

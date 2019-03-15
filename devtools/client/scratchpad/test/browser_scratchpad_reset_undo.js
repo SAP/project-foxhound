@@ -20,20 +20,18 @@ var gFileBContent = "// File B ** Goodbye All";
 // Help track if one or both files are saved
 var gFirstFileSaved = false;
 
-function test()
-{
+function test() {
   waitForExplicitFinish();
 
-  gBrowser.selectedTab = gBrowser.addTab();
-  gBrowser.selectedBrowser.addEventListener("load", function () {
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
+  BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser).then(function() {
     openScratchpad(runTests);
-  }, {capture: true, once: true});
+  });
 
-  content.location = "data:text/html,<p>test that undo get's reset after file load in Scratchpad";
+  BrowserTestUtils.loadURI(gBrowser, "data:text/html,<p>test that undo get's reset after file load in Scratchpad");
 }
 
-function runTests()
-{
+function runTests() {
   gScratchpad = gScratchpadWindow.Scratchpad;
 
   // Create a temporary file.
@@ -44,50 +42,46 @@ function runTests()
   gFileB.createUnique(Ci.nsIFile.NORMAL_FILE_TYPE, 0o666);
 
   // Write the temporary file.
-  let foutA = Cc["@mozilla.org/network/file-output-stream;1"].
-             createInstance(Ci.nsIFileOutputStream);
-  foutA.init(gFileA.QueryInterface(Ci.nsILocalFile), 0x02 | 0x08 | 0x20,
+  const foutA = Cc["@mozilla.org/network/file-output-stream;1"]
+             .createInstance(Ci.nsIFileOutputStream);
+  foutA.init(gFileA.QueryInterface(Ci.nsIFile), 0x02 | 0x08 | 0x20,
             0o644, foutA.DEFER_OPEN);
 
-  let foutB = Cc["@mozilla.org/network/file-output-stream;1"].
-             createInstance(Ci.nsIFileOutputStream);
-  foutB.init(gFileB.QueryInterface(Ci.nsILocalFile), 0x02 | 0x08 | 0x20,
+  const foutB = Cc["@mozilla.org/network/file-output-stream;1"]
+             .createInstance(Ci.nsIFileOutputStream);
+  foutB.init(gFileB.QueryInterface(Ci.nsIFile), 0x02 | 0x08 | 0x20,
             0o644, foutB.DEFER_OPEN);
 
-  let converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"].
-                  createInstance(Ci.nsIScriptableUnicodeConverter);
+  const converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"]
+                  .createInstance(Ci.nsIScriptableUnicodeConverter);
   converter.charset = "UTF-8";
-  let fileContentStreamA = converter.convertToInputStream(gFileAContent);
-  let fileContentStreamB = converter.convertToInputStream(gFileBContent);
+  const fileContentStreamA = converter.convertToInputStream(gFileAContent);
+  const fileContentStreamB = converter.convertToInputStream(gFileBContent);
 
   NetUtil.asyncCopy(fileContentStreamA, foutA, tempFileSaved);
   NetUtil.asyncCopy(fileContentStreamB, foutB, tempFileSaved);
 }
 
-function tempFileSaved(aStatus)
-{
-  let success = Components.isSuccessCode(aStatus);
+function tempFileSaved(aStatus) {
+  const success = Components.isSuccessCode(aStatus);
 
   ok(success, "a temporary file was saved successfully");
 
-  if (!success)
-  {
+  if (!success) {
     finish();
     return;
   }
 
-  if (gFirstFileSaved && success)
-  {
+  if (gFirstFileSaved && success) {
     ok((gFirstFileSaved && success), "Both files loaded");
     // Import the file A into Scratchpad.
-    gScratchpad.importFromFile(gFileA.QueryInterface(Ci.nsILocalFile), true,
+    gScratchpad.importFromFile(gFileA.QueryInterface(Ci.nsIFile), true,
                               fileAImported);
   }
   gFirstFileSaved = success;
 }
 
-function fileAImported(aStatus, aFileContent)
-{
+function fileAImported(aStatus, aFileContent) {
   ok(Components.isSuccessCode(aStatus),
      "the temporary file A was imported successfully with Scratchpad");
 
@@ -105,12 +99,11 @@ function fileAImported(aStatus, aFileContent)
   is(gScratchpad.getText(), gFileAContent + "new text", "redo works");
 
   // Import the file B into Scratchpad.
-  gScratchpad.importFromFile(gFileB.QueryInterface(Ci.nsILocalFile), true,
+  gScratchpad.importFromFile(gFileB.QueryInterface(Ci.nsIFile), true,
                             fileBImported);
 }
 
-function fileBImported(aStatus, aFileContent)
-{
+function fileBImported(aStatus, aFileContent) {
   ok(Components.isSuccessCode(aStatus),
      "the temporary file B was imported successfully with Scratchpad");
 
@@ -139,14 +132,12 @@ function fileBImported(aStatus, aFileContent)
   finish();
 }
 
-registerCleanupFunction(function () {
-  if (gFileA && gFileA.exists())
-  {
+registerCleanupFunction(function() {
+  if (gFileA && gFileA.exists()) {
     gFileA.remove(false);
     gFileA = null;
   }
-  if (gFileB && gFileB.exists())
-  {
+  if (gFileB && gFileB.exists()) {
     gFileB.remove(false);
     gFileB = null;
   }

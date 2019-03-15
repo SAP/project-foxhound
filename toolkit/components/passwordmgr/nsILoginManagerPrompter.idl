@@ -6,8 +6,9 @@
 #include "nsISupports.idl"
 
 interface nsILoginInfo;
-interface nsIDOMElement;
 interface nsIDOMWindow;
+
+webidl Element;
 
 [scriptable, uuid(425f73b9-b2db-4e8a-88c5-9ac2512934ce)]
 interface nsILoginManagerPrompter : nsISupports {
@@ -34,15 +35,14 @@ interface nsILoginManagerPrompter : nsISupports {
    * The browser this prompter is being created for.
    * This is required if the init function received a chrome window as argument.
    */
-  attribute nsIDOMElement browser;
+  attribute Element browser;
 
   /**
-   * The opener that was used to open the window passed to init.
+   * The opener browser that was used to open the window passed to init.
    * The opener can be used to determine in which window the prompt
-   * should be shown. Must be a content window that is not a frame window,
-   * make sure to pass the top window using e.g. window.top.
+   * should be shown.
    */
-  attribute nsIDOMWindow opener;
+  attribute Element openerBrowser;
 
   /**
    * Ask the user if they want to save a login (Yes, Never, Not Now)

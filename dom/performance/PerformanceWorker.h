@@ -12,75 +12,66 @@
 namespace mozilla {
 namespace dom {
 
-namespace workers {
 class WorkerPrivate;
-}
 
-class PerformanceWorker final : public Performance
-{
-public:
-  explicit PerformanceWorker(workers::WorkerPrivate* aWorkerPrivate);
+class PerformanceWorker final : public Performance {
+ public:
+  explicit PerformanceWorker(WorkerPrivate* aWorkerPrivate);
 
-  virtual PerformanceTiming* Timing() override
-  {
+  PerformanceStorage* AsPerformanceStorage() override {
     MOZ_CRASH("This should not be called on workers.");
     return nullptr;
   }
 
-  virtual PerformanceNavigation* Navigation() override
-  {
+  virtual PerformanceTiming* Timing() override {
     MOZ_CRASH("This should not be called on workers.");
     return nullptr;
   }
 
-  virtual void AddEntry(nsIHttpChannel* channel,
-                        nsITimedChannel* timedChannel) override
-  {
+  virtual PerformanceNavigation* Navigation() override {
     MOZ_CRASH("This should not be called on workers.");
+    return nullptr;
   }
 
   TimeStamp CreationTimeStamp() const override;
 
   DOMHighResTimeStamp CreationTime() const override;
 
-  virtual void GetMozMemory(JSContext *aCx,
-                            JS::MutableHandle<JSObject*> aObj) override
-  {
+  virtual void GetMozMemory(JSContext* aCx,
+                            JS::MutableHandle<JSObject*> aObj) override {
     MOZ_CRASH("This should not be called on workers.");
   }
 
-  virtual nsDOMNavigationTiming* GetDOMTiming() const override
-  {
+  virtual nsDOMNavigationTiming* GetDOMTiming() const override {
     MOZ_CRASH("This should not be called on workers.");
     return nullptr;
   }
 
-  virtual nsITimedChannel* GetChannel() const override
-  {
+  virtual uint64_t GetRandomTimelineSeed() override;
+
+  virtual nsITimedChannel* GetChannel() const override {
     MOZ_CRASH("This should not be called on workers.");
     return nullptr;
   }
 
-protected:
+  void QueueNavigationTimingEntry() override {
+    MOZ_CRASH("This should not be called on workers.");
+  }
+
+ protected:
   ~PerformanceWorker();
-
-  nsISupports* GetAsISupports() override
-  {
-    return nullptr;
-  }
 
   void InsertUserEntry(PerformanceEntry* aEntry) override;
 
-  void DispatchBufferFullEvent() override
-  {
-    MOZ_CRASH("This should not be called on workers.");
+  void DispatchBufferFullEvent() override {
+    // Nothing to do here. See bug 1432758.
   }
 
-private:
-  workers::WorkerPrivate* mWorkerPrivate;
+ private:
+  WorkerPrivate* mWorkerPrivate;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_PerformanceWorker_h
+#endif  // mozilla_dom_PerformanceWorker_h

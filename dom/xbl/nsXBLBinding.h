@@ -10,7 +10,6 @@
 #include "nsXBLService.h"
 #include "nsCOMPtr.h"
 #include "nsINodeList.h"
-#include "nsIStyleRuleProcessor.h"
 #include "nsClassHashtable.h"
 #include "nsTArray.h"
 #include "nsCycleCollectionParticipant.h"
@@ -19,28 +18,24 @@
 
 class nsXBLPrototypeBinding;
 class nsIContent;
-class nsIAtom;
-class nsIDocument;
+class nsAtom;
+struct RawServoAuthorStyles;
 
 namespace mozilla {
 namespace dom {
-
-class ShadowRoot;
+class Document;
 class XBLChildrenElement;
-
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 class nsAnonymousContentList;
 
 // *********************************************************************/
 // The XBLBinding class
 
-class nsXBLBinding final
-{
-public:
+class nsXBLBinding final {
+ public:
   explicit nsXBLBinding(nsXBLPrototypeBinding* aProtoBinding);
-  nsXBLBinding(mozilla::dom::ShadowRoot* aShadowRoot, nsXBLPrototypeBinding* aProtoBinding);
 
   /**
    * XBLBindings are refcounted.  They are held onto in 3 ways:
@@ -61,10 +56,10 @@ public:
   nsXBLBinding* GetBindingWithContent();
 
   nsXBLBinding* GetBaseBinding() const { return mNextBinding; }
-  void SetBaseBinding(nsXBLBinding *aBinding);
+  void SetBaseBinding(nsXBLBinding* aBinding);
 
-  nsIContent* GetBoundElement() { return mBoundElement; }
-  void SetBoundElement(nsIContent *aElement);
+  mozilla::dom::Element* GetBoundElement() { return mBoundElement; }
+  void SetBoundElement(mozilla::dom::Element* aElement);
 
   /*
    * Does a lookup for a method or attribute provided by one of the bindings'
@@ -82,8 +77,7 @@ public:
    */
   bool HasField(nsString& aName);
 
-protected:
-
+ protected:
   ~nsXBLBinding();
 
   /*
@@ -94,8 +88,7 @@ protected:
                             JS::MutableHandle<JS::PropertyDescriptor> aDesc,
                             JS::Handle<JSObject*> aXBLScope);
 
-public:
-
+ public:
   void MarkForDeath();
   bool MarkedForDeath() const { return mMarkedForDeath; }
 
@@ -104,10 +97,11 @@ public:
   bool ImplementsInterface(REFNSIID aIID) const;
 
   void GenerateAnonymousContent();
-  void InstallAnonymousContent(nsIContent* aAnonParent, nsIContent* aElement,
-                               bool aNativeAnon);
-  static void UninstallAnonymousContent(nsIDocument* aDocument,
-                                        nsIContent* aAnonParent);
+  void BindAnonymousContent(nsIContent* aAnonParent, nsIContent* aElement,
+                            bool aNativeAnon);
+  static void UnbindAnonymousContent(mozilla::dom::Document* aDocument,
+                                     nsIContent* aAnonParent,
+                                     bool aNullParent = true);
   void InstallEventHandlers();
   nsresult InstallImplementation();
 
@@ -115,22 +109,23 @@ public:
   void ExecuteDetachedHandler();
   void UnhookEventHandlers();
 
-  nsIAtom* GetBaseTag(int32_t* aNameSpaceID);
+  nsAtom* GetBaseTag(int32_t* aNameSpaceID);
   nsXBLBinding* RootBinding();
 
   // Resolve all the fields for this binding and all ancestor bindings on the
   // object |obj|.  False return means a JS exception was set.
-  bool ResolveAllFields(JSContext *cx, JS::Handle<JSObject*> obj) const;
+  bool ResolveAllFields(JSContext* cx, JS::Handle<JSObject*> obj) const;
 
-  void AttributeChanged(nsIAtom* aAttribute, int32_t aNameSpaceID,
+  void AttributeChanged(nsAtom* aAttribute, int32_t aNameSpaceID,
                         bool aRemoveFlag, bool aNotify);
 
-  void ChangeDocument(nsIDocument* aOldDocument, nsIDocument* aNewDocument);
+  void ChangeDocument(mozilla::dom::Document* aOldDocument,
+                      mozilla::dom::Document* aNewDocument);
 
-  void WalkRules(nsIStyleRuleProcessor::EnumFunc aFunc, void* aData);
+  const RawServoAuthorStyles* GetServoStyles() const;
 
-  static nsresult DoInitJSClass(JSContext *cx, JS::Handle<JSObject*> obj,
-                                const nsAFlatString& aClassName,
+  static nsresult DoInitJSClass(JSContext* cx, JS::Handle<JSObject*> obj,
+                                const nsString& aClassName,
                                 nsXBLPrototypeBinding* aProtoBinding,
                                 JS::MutableHandle<JSObject*> aClassObject,
                                 bool* aNew);
@@ -139,13 +134,9 @@ public:
 
   mozilla::dom::XBLChildrenElement* FindInsertionPointFor(nsIContent* aChild);
 
-  bool HasFilteredInsertionPoints()
-  {
-    return !mInsertionPoints.IsEmpty();
-  }
+  bool HasFilteredInsertionPoints() { return !mInsertionPoints.IsEmpty(); }
 
-  mozilla::dom::XBLChildrenElement* GetDefaultInsertionPoint()
-  {
+  mozilla::dom::XBLChildrenElement* GetDefaultInsertionPoint() {
     return mDefaultInsertionPoint;
   }
 
@@ -156,20 +147,22 @@ public:
   // by this binding.
   nsAnonymousContentList* GetAnonymousNodeList();
 
- nsIURI* GetSourceDocURI();
+  nsIURI* GetSourceDocURI();
 
-// MEMBER VARIABLES
-protected:
-
+  // MEMBER VARIABLES
+ protected:
   bool mMarkedForDeath;
   bool mUsingContentXBLScope;
-  bool mIsShadowRootBinding;
 
-  nsXBLPrototypeBinding* mPrototypeBinding; // Weak, but we're holding a ref to the docinfo
-  nsCOMPtr<nsIContent> mContent; // Strong. Our anonymous content stays around with us.
-  RefPtr<nsXBLBinding> mNextBinding; // Strong. The derived binding owns the base class bindings.
+  nsXBLPrototypeBinding*
+      mPrototypeBinding;  // Weak, but we're holding a ref to the docinfo
+  nsCOMPtr<nsIContent>
+      mContent;  // Strong. Our anonymous content stays around with us.
+  RefPtr<nsXBLBinding> mNextBinding;  // Strong. The derived binding owns the
+                                      // base class bindings.
 
-  nsIContent* mBoundElement; // [WEAK] We have a reference, but we don't own it.
+  mozilla::dom::Element*
+      mBoundElement;  // [WEAK] We have a reference, but we don't own it.
 
   // The <xbl:children> elements that we found in our <xbl:content> when we
   // processed this binding. The default insertion point has no includes
@@ -181,7 +174,8 @@ protected:
   nsTArray<RefPtr<mozilla::dom::XBLChildrenElement> > mInsertionPoints;
   RefPtr<nsAnonymousContentList> mAnonymousContentList;
 
-  mozilla::dom::XBLChildrenElement* FindInsertionPointForInternal(nsIContent* aChild);
+  mozilla::dom::XBLChildrenElement* FindInsertionPointForInternal(
+      nsIContent* aChild);
 };
 
-#endif // nsXBLBinding_h_
+#endif  // nsXBLBinding_h_

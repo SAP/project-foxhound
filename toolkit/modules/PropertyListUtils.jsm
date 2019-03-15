@@ -55,25 +55,22 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["PropertyListUtils"];
+var EXPORTED_SYMBOLS = ["PropertyListUtils"];
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cu = Components.utils;
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-Cu.importGlobalProperties(["File", "FileReader"]);
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+XPCOMUtils.defineLazyGlobalGetters(this, ["DOMParser", "File", "FileReader"]);
 
-XPCOMUtils.defineLazyModuleGetter(this, "ctypes",
-                                  "resource://gre/modules/ctypes.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Services",
-                                  "resource://gre/modules/Services.jsm");
+ChromeUtils.defineModuleGetter(this, "ctypes",
+                               "resource://gre/modules/ctypes.jsm");
+ChromeUtils.defineModuleGetter(this, "Services",
+                               "resource://gre/modules/Services.jsm");
 
-this.PropertyListUtils = Object.freeze({
+var PropertyListUtils = Object.freeze({
   /**
    * Asynchronously reads a file as a property list.
    *
-   * @param aFile (nsIDOMBlob/nsILocalFile)
+   * @param aFile (Blob/nsIFile)
    *        the file to be read as a property list.
    * @param aCallback
    *        If the property list is read successfully, aPropertyListRoot is set
@@ -83,14 +80,14 @@ this.PropertyListUtils = Object.freeze({
    *        The reaon for failure is reported to the Error Console.
    */
   read: function PLU_read(aFile, aCallback) {
-    if (!(aFile instanceof Ci.nsILocalFile || aFile instanceof File))
+    if (!(aFile instanceof Ci.nsIFile || aFile instanceof File))
       throw new Error("aFile is not a file object");
     if (typeof(aCallback) != "function")
       throw new Error("Invalid value for aCallback");
 
     // We guarantee not to throw directly for any other exceptions, and always
     // call aCallback.
-    Services.tm.mainThread.dispatch(function() {
+    Services.tm.dispatchToMainThread(() => {
       let self = this;
       function readDOMFile(aFile) {
         let fileReader = new FileReader();
@@ -105,13 +102,13 @@ this.PropertyListUtils = Object.freeze({
           } finally {
             aCallback(root);
           }
-        }
+        };
         fileReader.addEventListener("loadend", onLoadEnd);
         fileReader.readAsArrayBuffer(aFile);
       }
 
       try {
-        if (aFile instanceof Ci.nsILocalFile) {
+        if (aFile instanceof Ci.nsIFile) {
           if (!aFile.exists()) {
             throw new Error("The file pointed by aFile does not exist");
           }
@@ -126,7 +123,7 @@ this.PropertyListUtils = Object.freeze({
         aCallback(null);
         throw ex;
       }
-    }.bind(this), Ci.nsIThread.DISPATCH_NORMAL);
+    });
   },
 
   /**
@@ -139,12 +136,10 @@ this.PropertyListUtils = Object.freeze({
       return new BinaryPropertyListReader(aBuffer).root;
 
     // Convert the buffer into an XML tree.
-    let domParser = Cc["@mozilla.org/xmlextras/domparser;1"].
-                    createInstance(Ci.nsIDOMParser);
+    let domParser = new DOMParser();
     let bytesView = new Uint8Array(aBuffer);
     try {
-      let doc = domParser.parseFromBuffer(bytesView, bytesView.length,
-                                          "application/xml");
+      let doc = domParser.parseFromBuffer(bytesView, "application/xml");
       return new XMLPropertyListReader(doc).root;
     } catch (ex) {
       throw new Error("aBuffer cannot be parsed as a DOM document: " + ex);
@@ -203,10 +198,13 @@ this.PropertyListUtils = Object.freeze({
     if (typeof(aPrimitive) != "string" && typeof(aPrimitive) != "number")
       throw new Error("aPrimitive should be a string primitive");
 
+    // The function converts string or number to object
+    // So eslint rule is disabled
+    // eslint-disable-next-line no-new-wrappers
     let wrapped = new String(aPrimitive);
     Object.defineProperty(wrapped, "__INT_64_WRAPPER__", { value: true });
     return wrapped;
-  }
+  },
 });
 
 /**
@@ -316,7 +314,7 @@ BinaryPropertyListReader.prototype = {
     UID:                     parseInt("1000", 2),
     ARRAY:                   parseInt("1010", 2),
     SET:                     parseInt("1100", 2),
-    DICTIONARY:              parseInt("1101", 2)
+    DICTIONARY:              parseInt("1101", 2),
   },
 
   ADDITIONAL_INFO_BITS: {
@@ -329,7 +327,7 @@ BinaryPropertyListReader.prototype = {
     DATE:                    parseInt("0011", 2),
     // Applies to OBJECT_TYPE_BITS.DATA, ASCII_STRING, UNICODE_STRING, ARRAY,
     // SET and DICTIONARY.
-    LENGTH_INT_SIZE_FOLLOWS: parseInt("1111", 2)
+    LENGTH_INT_SIZE_FOLLOWS: parseInt("1111", 2),
   },
 
   /**
@@ -491,7 +489,7 @@ BinaryPropertyListReader.prototype = {
           return array[objIndex] = readObjectBound(ref);
         },
         configurable: true,
-        enumerable: true
+        enumerable: true,
       });
     }, this);
     return array;
@@ -636,7 +634,7 @@ BinaryPropertyListReader.prototype = {
     }
 
     return this._objects[aObjectIndex] = value;
-  }
+  },
 };
 
 /**
@@ -756,11 +754,11 @@ XMLPropertyListReader.prototype = {
           return array[elemIndex] = readObjectBound(elem);
         },
         configurable: true,
-        enumerable: true
+        enumerable: true,
       });
     });
     return array;
-  }
+  },
 };
 
 /**
@@ -812,6 +810,6 @@ function LazyMapProxyHandler() {
         default:
           return target[name];
       }
-    }
-  }
+    },
+  };
 }

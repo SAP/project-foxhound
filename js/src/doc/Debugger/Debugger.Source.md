@@ -73,14 +73,21 @@ from its prototype:
     `FunctionDeclaration`, or `FunctionExpression` productions in the
     ECMAScript standard.
 
-    **If the instance refers to WebAssembly code**, the serialized text
-    representation. The format is yet to be specified in the WebAssembly
-    standard. Currently, the text is an s-expression based syntax.
+    **If the instance refers to WebAssembly code**, the `"[wasm]"` value will
+    be returned.
+
+`binary`
+:   **If the instance refers to WebAssembly code**, a Uint8Array that contains
+    the WebAssembly bytecode.
 
 `url`
-:   **If the instance refers to JavaScript source**, the URL from which this
-    source was loaded, if this source was loaded from a URL. Otherwise, this
-    is `undefined`. Source may be loaded from a URL in the following ways:
+:   **If the instance refers to JavaScript source**, the filename or URL from
+    which this script's code was loaded. For scripts created by `eval` or the
+    `Function` constructor, this may be a synthesized filename, starting with a
+    valid URL and followed by information tracking how the code was introduced
+    into the system; the entire string is not a valid URL. For
+    `Function.prototype`'s script, this is `null`. Source may be loaded from a
+    URL in the following ways:
 
     * The URL may appear as the `src` attribute of a `<script>` element
       in markup text.
@@ -111,11 +118,16 @@ from its prototype:
 
     This property is writable, so you can change the source map URL by
     setting it. All Debugger.Source objects referencing the same
-    source will see the change. Setting an empty string has no affect
+    source will see the change. Setting an empty string has no effect
     and will not change existing value.
 
     **If the instance refers to WebAssembly code**, `null`. Attempts to write
     to this property throw a `TypeError`.
+
+`displayURL`
+:   If the script had a special `//# sourceURL` comment, as described in
+    the source maps specification, then this property's value holds
+    the string that was given.  Otherwise, this is `null`.
 
 `element`
 :   The [`Debugger.Object`][object] instance referring to the DOM element to which

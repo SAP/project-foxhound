@@ -14,18 +14,17 @@
           src="../role.js"></script>
 
   <script type="application/javascript">
-  function doTest()
-  {
+  function doTest() {
     // Menuitem with no popup.
     tree =
       { SECTION: [ // container
         { MENUPOPUP: [ // menu
           { MENUITEM: [
             { STATICTEXT: [] }, // bullet
-            { TEXT_LEAF: [] }
-          ] }
-        ] }
-      ] }
+            { TEXT_LEAF: [] },
+          ] },
+        ] },
+      ] };
     testAccessibleTree("menu", tree);
 
     // Menuitem with explicit no popup.
@@ -34,10 +33,10 @@
         { MENUPOPUP: [ // menu
           { MENUITEM: [
             { STATICTEXT: [] }, // bullet
-            { TEXT_LEAF: [] }
-          ] }
-        ] }
-      ] }
+            { TEXT_LEAF: [] },
+          ] },
+        ] },
+      ] };
     testAccessibleTree("menu_nopopup", tree);
 
     // Menuitem with popup.
@@ -46,10 +45,10 @@
         { MENUPOPUP: [ // menu
           { PARENT_MENUITEM: [ // menuitem with aria-haspopup="true"
             { STATICTEXT: [] }, // bullet
-            { TEXT_LEAF: [] }
-          ] }
-        ] }
-      ] }
+            { TEXT_LEAF: [] },
+          ] },
+        ] },
+      ] };
     testAccessibleTree("menu_popup", tree);
 
     SimpleTest.finish();

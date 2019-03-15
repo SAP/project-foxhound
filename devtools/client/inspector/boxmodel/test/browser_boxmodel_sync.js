@@ -8,37 +8,30 @@
 
 const TEST_URI = "<p>hello</p>";
 
-add_task(function* () {
-  yield addTab("data:text/html," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openBoxModelView();
+add_task(async function() {
+  await addTab("data:text/html," + encodeURIComponent(TEST_URI));
+  const {inspector, boxmodel} = await openLayoutView();
 
   info("When a property is edited, it should sync in the rule view");
 
-  yield selectNode("p", inspector);
+  await selectNode("p", inspector);
 
   info("Modify padding-bottom in box model view");
-  let span = view.document.querySelector(".boxmodel-padding.boxmodel-bottom > span");
-  EventUtils.synthesizeMouseAtCenter(span, {}, view.document.defaultView);
-  let editor = view.document.querySelector(".styleinspector-propertyeditor");
+  const span =
+    boxmodel.document.querySelector(".boxmodel-padding.boxmodel-bottom > span");
+  EventUtils.synthesizeMouseAtCenter(span, {}, boxmodel.document.defaultView);
+  const editor = boxmodel.document.querySelector(".styleinspector-propertyeditor");
 
-  EventUtils.synthesizeKey("7", {}, view.document.defaultView);
-  yield waitForUpdate(inspector);
+  const onRuleViewRefreshed = once(inspector, "rule-view-refreshed");
+  EventUtils.synthesizeKey("7", {}, boxmodel.document.defaultView);
+  await waitForUpdate(inspector);
+  await onRuleViewRefreshed;
   is(editor.value, "7", "Should have the right value in the editor.");
-  EventUtils.synthesizeKey("VK_RETURN", {}, view.document.defaultView);
+  EventUtils.synthesizeKey("VK_RETURN", {}, boxmodel.document.defaultView);
 
-  let onRuleViewRefreshed = once(inspector, "rule-view-refreshed");
-  let onRuleViewSelected = once(inspector.sidebar, "ruleview-selected");
-  info("Select the rule view and check that the property was synced there");
-  let ruleView = selectRuleView(inspector);
-
-  info("Wait for the rule view to be selected");
-  yield onRuleViewSelected;
-
-  info("Wait for the rule view to be refreshed");
-  yield onRuleViewRefreshed;
-  ok(true, "The rule view was refreshed");
-
-  let ruleEditor = getRuleViewRuleEditor(ruleView, 0);
-  let textProp = ruleEditor.rule.textProps[0];
+  info("Check that the property was synced with the rule view");
+  const ruleView = selectRuleView(inspector);
+  const ruleEditor = getRuleViewRuleEditor(ruleView, 0);
+  const textProp = ruleEditor.rule.textProps[0];
   is(textProp.value, "7px", "The property has the right value");
 });

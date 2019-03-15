@@ -1,9 +1,11 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
+/* eslint-env mozilla/chrome-worker, node */
+
 "use strict";
 
-importScripts('worker_test_osfile_shared.js');
+importScripts("worker_test_osfile_shared.js");
 
 // The set of samples for communications test. Declare as a global
 // variable to prevent this from being garbage-collected too early.
@@ -64,7 +66,7 @@ self.onmessage = function(msg) {
           is(cast.contents, i % 256, prefix + "Checking that the contents of the C array were preserved, index " + i);
           cast = cast.increment();
         }
-      }
+      },
     },
     { typename: "OS.File.Error",
       valuedescr: "OS Error",
@@ -81,8 +83,8 @@ self.onmessage = function(msg) {
         } catch (x) {
           ok(false, prefix + ".toString() fails " + x);
         }
-      }
-    }
+      },
+    },
   ];
   samples.forEach(function test(sample) {
     let type = sample.type;
@@ -130,7 +132,7 @@ self.onmessage = function(msg) {
     // 4. Test sending serialized
     info("Attempting to send message");
     try {
-      self.postMessage({kind:"value",
+      self.postMessage({kind: "value",
         typename: sample.typename,
         value: serialized,
         check: check.toSource()});

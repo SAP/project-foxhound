@@ -21,14 +21,14 @@ function* testSteps()
   for (let autoIncrement of [false, true]) {
     let objectStore =
       db.createObjectStore(autoIncrement, { keyPath: "id",
-                                            autoIncrement: autoIncrement });
+                                            autoIncrement });
 
     for (let i = 0; i < 10; i++) {
       objectStore.add({ id: i, index: i });
     }
 
     for (let unique of [false, true]) {
-      objectStore.createIndex(unique, "index", { unique: unique });
+      objectStore.createIndex(unique, "index", { unique });
     }
 
     for (let i = 10; i < 20; i++) {
@@ -75,12 +75,12 @@ function* testSteps()
           cursor.value.index = unique ? 30 : 35;
           cursor.update(cursor.value).onsuccess = function(event) {
             cursor.continue();
-          }
+          };
         }
         else {
           continueToNextStep();
         }
-      }
+      };
       yield undefined;
 
       is(sawEntry, true, "Saw entry for key value " + modifiedEntry);
@@ -110,12 +110,12 @@ function* testSteps()
           cursor.update(cursor.value).onsuccess = function(event) {
             indexCount--;
             cursor.continue();
-          }
+          };
         }
         else {
           continueToNextStep();
         }
-      }
+      };
       yield undefined;
 
       is(sawEntry, true, "Saw entry for key value " + modifiedEntry);

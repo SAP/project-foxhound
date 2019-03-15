@@ -18,7 +18,20 @@ using namespace mozilla;
 using namespace mozilla::a11y;
 using namespace mozilla::dom;
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_0(AccessibleNode)
+bool AccessibleNode::IsAOMEnabled(JSContext* aCx, JSObject* /*unused*/) {
+  static bool sPrefCached = false;
+  static bool sPrefCacheValue = false;
+
+  if (!sPrefCached) {
+    sPrefCached = true;
+    Preferences::AddBoolVarCache(&sPrefCacheValue, "accessibility.AOM.enabled");
+  }
+
+  return nsContentUtils::IsSystemCaller(aCx) || sPrefCacheValue;
+}
+
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(AccessibleNode, mRelationProperties,
+                                      mIntl, mDOMNode, mStates)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(AccessibleNode)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
@@ -28,59 +41,65 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTING_ADDREF(AccessibleNode)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(AccessibleNode)
 
-AccessibleNode::AccessibleNode(nsINode* aNode) : mDOMNode(aNode)
-{
-  DocAccessible* doc =
-    GetOrCreateAccService()->GetDocAccessible(mDOMNode->OwnerDoc());
+AccessibleNode::AccessibleNode(nsINode* aNode)
+    : mDoubleProperties(3),
+      mIntProperties(3),
+      mUIntProperties(6),
+      mBooleanProperties(0),
+      mRelationProperties(3),
+      mStringProperties(16),
+      mDOMNode(aNode) {
+  nsAccessibilityService* accService = GetOrCreateAccService();
+  if (!accService) {
+    return;
+  }
+
+  DocAccessible* doc = accService->GetDocAccessible(mDOMNode->OwnerDoc());
   if (doc) {
     mIntl = doc->GetAccessible(mDOMNode);
   }
 }
 
-AccessibleNode::~AccessibleNode()
-{
+AccessibleNode::~AccessibleNode() {}
+
+/* virtual */ JSObject* AccessibleNode::WrapObject(
+    JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
+  return AccessibleNode_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-/* virtual */ JSObject*
-AccessibleNode::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return AccessibleNodeBinding::Wrap(aCx, this, aGivenProto);
-}
-
-/* virtual */ ParentObject
-AccessibleNode::GetParentObject() const
-{
+/* virtual */ ParentObject AccessibleNode::GetParentObject() const {
   return mDOMNode->GetParentObject();
 }
 
-void
-AccessibleNode::GetRole(nsAString& aRole)
-{
+void AccessibleNode::GetComputedRole(nsAString& aRole) {
   if (mIntl) {
-    GetOrCreateAccService()->GetStringRole(mIntl->Role(), aRole);
-    return;
+    nsAccessibilityService* accService = GetOrCreateAccService();
+    if (accService) {
+      accService->GetStringRole(mIntl->Role(), aRole);
+      return;
+    }
   }
 
   aRole.AssignLiteral("unknown");
 }
 
-void
-AccessibleNode::GetStates(nsTArray<nsString>& aStates)
-{
-  if (mIntl) {
-    if (!mStates) {
-      mStates = GetOrCreateAccService()->GetStringStates(mIntl->State());
-    }
+void AccessibleNode::GetStates(nsTArray<nsString>& aStates) {
+  nsAccessibilityService* accService = GetOrCreateAccService();
+  if (!mIntl || !accService) {
+    aStates.AppendElement(NS_LITERAL_STRING("defunct"));
+    return;
+  }
+
+  if (mStates) {
     aStates = mStates->StringArray();
     return;
   }
 
-  aStates.AppendElement(NS_LITERAL_STRING("defunct"));
+  mStates = accService->GetStringStates(mIntl->State());
+  aStates = mStates->StringArray();
 }
 
-void
-AccessibleNode::GetAttributes(nsTArray<nsString>& aAttributes)
-{
+void AccessibleNode::GetAttributes(nsTArray<nsString>& aAttributes) {
   if (!mIntl) {
     return;
   }
@@ -103,12 +122,12 @@ AccessibleNode::GetAttributes(nsTArray<nsString>& aAttributes)
   }
 }
 
-bool
-AccessibleNode::Is(const Sequence<nsString>& aFlavors)
-{
-  if (!mIntl) {
+bool AccessibleNode::Is(const Sequence<nsString>& aFlavors) {
+  nsAccessibilityService* accService = GetOrCreateAccService();
+  if (!mIntl || !accService) {
     for (const auto& flavor : aFlavors) {
-      if (!flavor.EqualsLiteral("unknown") && !flavor.EqualsLiteral("defunct")) {
+      if (!flavor.EqualsLiteral("unknown") &&
+          !flavor.EqualsLiteral("defunct")) {
         return false;
       }
     }
@@ -116,10 +135,10 @@ AccessibleNode::Is(const Sequence<nsString>& aFlavors)
   }
 
   nsAutoString role;
-  GetOrCreateAccService()->GetStringRole(mIntl->Role(), role);
+  accService->GetStringRole(mIntl->Role(), role);
 
   if (!mStates) {
-    mStates = GetOrCreateAccService()->GetStringStates(mIntl->State());
+    mStates = accService->GetStringStates(mIntl->State());
   }
 
   for (const auto& flavor : aFlavors) {
@@ -130,9 +149,7 @@ AccessibleNode::Is(const Sequence<nsString>& aFlavors)
   return true;
 }
 
-bool
-AccessibleNode::Has(const Sequence<nsString>& aAttributes)
-{
+bool AccessibleNode::Has(const Sequence<nsString>& aAttributes) {
   if (!mIntl) {
     return false;
   }
@@ -147,13 +164,12 @@ AccessibleNode::Has(const Sequence<nsString>& aAttributes)
   return true;
 }
 
-void
-AccessibleNode::Get(JSContext* aCX, const nsAString& aAttribute,
-                    JS::MutableHandle<JS::Value> aValue,
-                    ErrorResult& aRv)
-{
+void AccessibleNode::Get(JSContext* aCX, const nsAString& aAttribute,
+                         JS::MutableHandle<JS::Value> aValue,
+                         ErrorResult& aRv) {
   if (!mIntl) {
     aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+    return;
   }
 
   nsCOMPtr<nsIPersistentProperties> attrs = mIntl->Attributes();
@@ -163,13 +179,10 @@ AccessibleNode::Get(JSContext* aCX, const nsAString& aAttribute,
   JS::Rooted<JS::Value> jsval(aCX);
   if (!ToJSValue(aCX, value, &jsval)) {
     aRv.Throw(NS_ERROR_UNEXPECTED);
+    return;
   }
 
   aValue.set(jsval);
 }
 
-nsINode*
-AccessibleNode::GetDOMNode()
-{
-  return mDOMNode;
-}
+nsINode* AccessibleNode::GetDOMNode() { return mDOMNode; }

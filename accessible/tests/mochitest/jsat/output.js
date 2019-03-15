@@ -1,8 +1,7 @@
-var Cu = Components.utils;
 const PREF_UTTERANCE_ORDER = "accessibility.accessfu.utterance";
 
-Cu.import('resource://gre/modules/accessibility/Utils.jsm');
-Cu.import("resource://gre/modules/accessibility/OutputGenerator.jsm", this);
+ChromeUtils.import("resource://gre/modules/accessibility/Utils.jsm");
+ChromeUtils.import("resource://gre/modules/accessibility/OutputGenerator.jsm", this);
 
 /**
  * Test context output generation.
@@ -20,7 +19,7 @@ Cu.import("resource://gre/modules/accessibility/OutputGenerator.jsm", this);
 function testContextOutput(expected, aAccOrElmOrID, aOldAccOrElmOrID, aGenerator) {
   var accessible = getAccessible(aAccOrElmOrID);
   var oldAccessible = aOldAccOrElmOrID !== null ?
-	getAccessible(aOldAccOrElmOrID || 'root') : null;
+    getAccessible(aOldAccOrElmOrID || "root") : null;
   var context = new PivotContext(accessible, oldAccessible);
   var output = aGenerator.genForContext(context);
 
@@ -29,7 +28,7 @@ function testContextOutput(expected, aAccOrElmOrID, aOldAccOrElmOrID, aGenerator
   // because of the changing nature of the test (different window names), or strings
   // that are inaccessible to us, like the title of parent documents.
   var masked_output = [];
-  for (var i=0; i < output.length; i++) {
+  for (var i = 0; i < output.length; i++) {
     if (expected[i] === null) {
       masked_output.push(null);
     } else {
@@ -60,6 +59,7 @@ function testObjectOutput(aAccOrElmOrID, aGenerator) {
   var context = new PivotContext(accessible);
   var output = aGenerator.genForObject(accessible, context);
   var outputOrder;
+  // eslint-disable-next-line mozilla/use-default-preference-values
   try {
     outputOrder = SpecialPowers.getIntPref(PREF_UTTERANCE_ORDER);
   } catch (ex) {
@@ -84,26 +84,21 @@ function testObjectOutput(aAccOrElmOrID, aGenerator) {
  *                         the |aAccOrElmOrID|.
  * @param aOutputKind      the type of output
  */
-function testOutput(expected, aAccOrElmOrID, aOldAccOrElmOrID, aOutputKind) {
-  var generator;
-  if (aOutputKind === 1) {
-    generator = UtteranceGenerator;
-  } else {
-    generator = BrailleGenerator;
-  }
-  testContextOutput(expected, aAccOrElmOrID, aOldAccOrElmOrID, generator);
+function testOutput(expected, aAccOrElmOrID, aOldAccOrElmOrID) {
+  testContextOutput(expected, aAccOrElmOrID, aOldAccOrElmOrID,
+    UtteranceGenerator);
   // Just need to test object output for individual
   // accOrElmOrID.
   if (aOldAccOrElmOrID) {
     return;
   }
-  testObjectOutput(aAccOrElmOrID, generator);
+  testObjectOutput(aAccOrElmOrID, UtteranceGenerator);
 }
 
 function testHints(expected, aAccOrElmOrID, aOldAccOrElmOrID) {
   var accessible = getAccessible(aAccOrElmOrID);
   var oldAccessible = aOldAccOrElmOrID !== null ?
-  getAccessible(aOldAccOrElmOrID || 'root') : null;
+  getAccessible(aOldAccOrElmOrID || "root") : null;
   var context = new PivotContext(accessible, oldAccessible);
   var hints = context.interactionHints;
 

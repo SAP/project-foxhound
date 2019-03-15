@@ -24,6 +24,7 @@ common-tests:
     - jittest
     - jsreftest
     - marionette
+    - marionette-headless
     - mochitest
     - mochitest-a11y
     - mochitest-browser-chrome
@@ -31,11 +32,15 @@ common-tests:
     - mochitest-clipboard
     - mochitest-devtools-chrome
     - mochitest-gpu
-    - mochitest-jetpack
     - mochitest-media
-    - mochitest-webgl
+    - mochitest-webgl1-core
+    - mochitest-webgl1-ext
     - reftest
     - reftest-no-accel
+    - telemetry-tests-client
+    - test-verify
+    - test-verify-gpu
+    - test-verify-wpt
     - xpcshell
 
 web-platform-tests:
@@ -43,110 +48,181 @@ web-platform-tests:
     - web-platform-tests-reftests
     - web-platform-tests-wdspec
 
-external-media-tests:
-    - external-media-tests-base
-    - external-media-tests-youtube
-
-external-media-tests-slow:
-    # twitch tests are too slow and stall under debug, give them their own special set
-    - external-media-tests-twitch
+web-platform-tests-headless:
+    - web-platform-tests-headless
+    - web-platform-tests-reftests-headless
+    - web-platform-tests-wdspec-headless
 
 opt-only-tests:
     - mochitest-valgrind
 
 talos:
+    - talos-bcv
     - talos-chrome
+    - talos-damp
     - talos-dromaeojs
     - talos-g1
-    - talos-g2
     - talos-g3
     - talos-g4
+    - talos-g5
     - talos-other
+    - talos-sessionrestore-many-windows
     - talos-svgr
     - talos-tp5o
+    - talos-perf-reftest
+    - talos-perf-reftest-singletons
+    - talos-tp6-stylo-threads
+    - talos-tps
+    # - talos-h1 Bug 1487031 - Disabled for not finding actionable regressions
+    # - talos-h2 Bug 1487031 - Disabled for not finding actionable regressions
+
+talos-ux:
+    - talos-g4
+
+raptor-firefox:
+    - raptor-tp6-1-firefox
+    - raptor-tp6-2-firefox
+    - raptor-tp6-3-firefox
+    - raptor-tp6-4-firefox
+    - raptor-tp6-5-firefox
+    - raptor-tp6-6-firefox
+    - raptor-tp6-7-firefox
+    - raptor-tp6-8-firefox
+    - raptor-tp6-9-firefox
+    - raptor-tp6-10-firefox
+    - raptor-speedometer-firefox
+    - raptor-stylebench-firefox
+    - raptor-motionmark-htmlsuite-firefox
+    - raptor-motionmark-animometer-firefox
+    - raptor-webaudio-firefox
+    - raptor-sunspider-firefox
+    - raptor-wasm-godot-firefox
+
+raptor-profiling:
+    - raptor-tp6-1-firefox-profiling
+    - raptor-tp6-2-firefox-profiling
+    - raptor-tp6-3-firefox-profiling
+    - raptor-tp6-4-firefox-profiling
+    - raptor-tp6-5-firefox-profiling
+    - raptor-tp6-6-firefox-profiling
+    - raptor-tp6-7-firefox-profiling
+    - raptor-tp6-8-firefox-profiling
+    - raptor-tp6-9-firefox-profiling
+    - raptor-tp6-10-firefox-profiling
+    - raptor-speedometer-firefox-profiling
+    - raptor-stylebench-firefox-profiling
+    - raptor-motionmark-htmlsuite-firefox-profiling
+    - raptor-motionmark-animometer-firefox-profiling
+    - raptor-webaudio-firefox-profiling
+    - raptor-sunspider-firefox-profiling
+    - raptor-wasm-godot-firefox-profiling
+
+raptor-chrome:
+    - raptor-tp6-1-chrome
+    - raptor-tp6-2-chrome
+    - raptor-tp6-3-chrome
+    - raptor-tp6-4-chrome
+    - raptor-tp6-5-chrome
+    - raptor-tp6-6-chrome
+    - raptor-tp6-7-chrome
+    - raptor-tp6-8-chrome
+    - raptor-tp6-9-chrome
+    - raptor-tp6-10-chrome
+    - raptor-speedometer-chrome
+    - raptor-stylebench-chrome
+    - raptor-motionmark-htmlsuite-chrome
+    - raptor-motionmark-animometer-chrome
+    - raptor-webaudio-chrome
+    - raptor-sunspider-chrome
+    - raptor-wasm-godot-chrome
+
+# Fetch tasks are only supported on Linux for now,
+# so these need to be separate sets.
+raptor-fetch-firefox:
+    - raptor-unity-webgl-firefox
+    - raptor-wasm-misc-firefox
+    - raptor-wasm-misc-baseline-firefox
+    - raptor-wasm-misc-ion-firefox
+    - raptor-wasm-godot-baseline-firefox
+    - raptor-wasm-godot-ion-firefox
+    - raptor-assorted-dom-firefox
+
+raptor-fetch-profiling:
+    - raptor-unity-webgl-firefox-profiling
+    - raptor-wasm-misc-firefox-profiling
+    - raptor-wasm-misc-baseline-firefox-profiling
+    - raptor-wasm-misc-ion-firefox-profiling
+    - raptor-wasm-godot-baseline-firefox-profiling
+    - raptor-wasm-godot-ion-firefox-profiling
+    - raptor-assorted-dom-firefox-profiling
+
+raptor-fetch-geckoview:
+    - raptor-unity-webgl-geckoview
+
+raptor-fetch-chrome:
+    - raptor-unity-webgl-chrome
+    - raptor-wasm-misc-chrome
+    - raptor-assorted-dom-chrome
 
 awsy:
     - awsy
+    - awsy-base
+    - awsy-dmd
+    - awsy-base-dmd
+
+awsy-stylo-sequential:
+    - awsy-stylo-sequential
 
 ##
 # Limited test sets for specific platforms
 
-stylo-tests:
-    - cppunit
-    - crashtest
-    - reftest-stylo
-    - mochitest-style
-
-qr-tests:
+linux-qr-tests:
     - cppunit
     - crashtest
     - gtest
     - jittest
     - jsreftest
+    - mochitest
     - mochitest-a11y
     - mochitest-gpu
-    - mochitest-webgl
+    - mochitest-media
+    - mochitest-webgl1-core
+    - mochitest-webgl1-ext
     - reftest
-    - reftest-no-accel
     - xpcshell
+
+linux-talos-flex:
+    - talos-flex
+
+windows-qr-tests:
+    - crashtest
+    - mochitest
+    - mochitest-gpu
+    - mochitest-media
+    - mochitest-webgl1-core
+    - mochitest-webgl1-ext
+    - mochitest-webgl2-core
+    - mochitest-webgl2-ext
+    - reftest
+    - web-platform-tests-reftests
 
 ccov-code-coverage-tests:
-    - crashtest
-    - gtest
-    - jsreftest
-    - marionette
-    - mochitest
-    - mochitest-browser-chrome
-    - mochitest-devtools-chrome
-    - reftest
-    - web-platform-tests
-    - xpcshell
+    - test-coverage
+    - test-coverage-wpt
 
-jsdcov-code-coverage-tests:
-    - mochitest
-    - mochitest-browser-chrome
-    - mochitest-devtools-chrome
-    - xpcshell
+windows-reftest-gpu:
+    - reftest-gpu
 
-##
-# Test sets still being greened up in various ways
-
-windows-vm-tests:
-    - cppunit
-    #- crashtest
-    #- gtest
-    #- jittest
-    - jsreftest
-    #- marionette
-    #- mochitest
-    #- mochitest-browser-chrome
-    - mochitest-devtools-chrome
-    - mochitest-jetpack
-    #- mochitest-media
-    #- web-platform-tests
-    - web-platform-tests-reftests
-    #- xpcshell
-
-# windows-gpu-tests:
-#    - reftest
-#    - reftest-no-accel
-#    - mochitest-webgl
-
-# these tests currently run on hardware, but may migrate above when validated
-#    - mochitest-a11y
-#    - mochitest-chrome
-#    - mochitest-clipboard
-#    - mochitest-gpu
-
-macosx64-tests-debug:
+windows-tests:
     - cppunit
     - crashtest
-    - external-media-tests-base
-    - external-media-tests-youtube
+    - firefox-ui-functional-local
+    - firefox-ui-functional-remote
     - gtest
     - jittest
     - jsreftest
     - marionette
+    - marionette-headless
     - mochitest
     - mochitest-a11y
     - mochitest-browser-chrome
@@ -154,23 +230,91 @@ macosx64-tests-debug:
     - mochitest-clipboard
     - mochitest-devtools-chrome
     - mochitest-gpu
-    - mochitest-jetpack
     - mochitest-media
-    - mochitest-webgl
+    - mochitest-webgl1-core
+    - mochitest-webgl1-ext
+    - mochitest-webgl2-core
+    - mochitest-webgl2-ext
     - reftest
-    - web-platform-tests
-    - web-platform-tests-reftests
+    - reftest-no-accel
+    - test-verify
+    - test-verify-gpu
+    - test-verify-wpt
     - xpcshell
 
-macosx64-tests-talos:
+windows-talos:
+    - talos-bcv
     - talos-chrome
+    - talos-damp
     - talos-dromaeojs
     - talos-g1
-    - talos-g2
     - talos-g4
+    - talos-g5
     - talos-other
+    - talos-sessionrestore-many-windows
+    - talos-perf-reftest
+    - talos-perf-reftest-singletons
     - talos-svgr
     - talos-tp5o
+    - talos-xperf
+    - talos-tps
+    # - talos-h1 Bug 1487031 - Disabled for not finding actionable regressions
+
+marionette-gpu-tests:
+    - marionette-gpu
+
+macosx64-tests:
+    - cppunit
+    - crashtest
+    - firefox-ui-functional-local
+    - firefox-ui-functional-remote
+    - gtest
+    - jittest
+    - jsreftest
+    - marionette
+    - marionette-headless
+    - mochitest
+    - mochitest-a11y
+    - mochitest-browser-chrome
+    - mochitest-chrome
+    - mochitest-clipboard
+    - mochitest-devtools-chrome
+    - mochitest-gpu
+    - mochitest-media
+    - mochitest-webgl1-core
+    - mochitest-webgl1-ext
+    - mochitest-webgl2-core
+    # - mochitest-webgl2-ext test timeouts
+    - reftest
+    - test-verify
+    - test-verify-gpu
+    - test-verify-wpt
+    - web-platform-tests
+    - web-platform-tests-reftests
+    - web-platform-tests-wdspec
+    - xpcshell
+
+macosx64-talos:
+    - talos-bcv
+    - talos-chrome
+    - talos-damp
+    - talos-dromaeojs
+    - talos-g1
+    - talos-g4
+    - talos-g5
+    - talos-other
+    - talos-sessionrestore-many-windows
+    - talos-svgr
+    - talos-tp5o
+    - talos-perf-reftest
+    - talos-perf-reftest-singletons
+    - talos-tp6-stylo-threads
+    # - talos-tps # Bug 1453007 times out
+    # - talos-h1 # too long to unpack profile- Bug 1442893
+
+macosx64-qr-tests:
+    - crashtest
+    - reftest
 
 linux32-tests:
     - cppunit
@@ -187,13 +331,13 @@ linux32-tests:
     - mochitest-chrome
     - mochitest-clipboard
     - mochitest-gpu
-    - mochitest-jetpack
     - mochitest-media
-    - mochitest-webgl
+    - mochitest-webgl1-core
     - reftest
     - reftest-no-accel
     - web-platform-tests
     - web-platform-tests-reftests
+    - web-platform-tests-wdspec
     - xpcshell
 
 linux32-opt-tests:
@@ -201,32 +345,87 @@ linux32-opt-tests:
     - mochitest-devtools-chrome
 
 desktop-screenshot-capture:
-    - mochitest-browser-screenshots
+    - browser-screenshots
+
+desktop-instrumentation:
+    - browser-instrumentation
 
 android-common-tests:
     - cppunit
     - crashtest
+    - geckoview-junit
+    # - jittest # not ready yet: bug 1098508
     - jsreftest
+    - marionette
     - mochitest
     - mochitest-chrome
     - mochitest-clipboard
     - mochitest-gpu
     - mochitest-media
-    - mochitest-webgl
+    # - mochitest-webgl1-core
+    # - mochitest-webgl1-ext
+    # - mochitest-webgl2-core
+    # - mochitest-webgl2-ext
     - reftest
+    - test-verify
     - xpcshell
-
-android-debug-tests:
-    # Marionette only available on Fennec debug builds as a security precaution
-    - marionette
 
 android-opt-tests:
+    # Robocop tests often fail on Debug builds
     - robocop
 
-android-gradle-tests:
-    - mochitest-chrome
+android-x86-kvm-tests:
+    - crashtest
+    - geckoview-junit
+    - jsreftest
+    # - mochitest
+    # - mochitest-chrome
+    - mochitest-clipboard
+    - mochitest-gpu
+    # - mochitest-media
+    # - mochitest-webgl1-core
+    # - reftest
+    # - test-verify
+    - web-platform-tests
+    - web-platform-tests-reftests
+    # - web-platform-tests-wdspec
+
+android-ccov-tests:
+    - geckoview-junit
     - robocop
 
-android-x86-tests:
-    - mochitest-chrome
-    - xpcshell
+devtools-tests:
+    - mochitest-devtools-chrome
+
+mochitest-headless:
+    - mochitest-plain-headless
+
+android-hw-arm7-opt-unittests:
+    - jittest
+    - mochitest-media
+
+android-hw-arm7-debug-unittests:
+    - mochitest-media
+
+android-hw-aarch64-opt-unittests:
+    - jittest
+
+android-hw-arm7-raptor:
+    - raptor-speedometer-geckoview
+    - raptor-tp6m-1-geckoview
+
+android-hw-aarch64-raptor:
+    - raptor-speedometer-geckoview
+    - raptor-tp6m-1-geckoview
+
+android-hw-arm7-raptor-power:
+    - raptor-speedometer-geckoview-power
+
+android-hw-aarch64-raptor-power:
+    - raptor-speedometer-geckoview-power
+
+android-hw-arm7-raptor-nightly:
+    - raptor-speedometer-fennec
+
+android-hw-aarch64-raptor-nightly:
+    - raptor-speedometer-fennec

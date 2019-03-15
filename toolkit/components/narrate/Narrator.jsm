@@ -4,14 +4,10 @@
 
 "use strict";
 
-const { interfaces: Ci, utils: Cu } = Components;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "Services",
+ChromeUtils.defineModuleGetter(this, "Services",
   "resource://gre/modules/Services.jsm");
 
-this.EXPORTED_SYMBOLS = [ "Narrator" ];
+var EXPORTED_SYMBOLS = [ "Narrator" ];
 
 // Maximum time into paragraph when pressing "skip previous" will go
 // to previous paragraph and not the start of current one.
@@ -42,8 +38,7 @@ Narrator.prototype = {
 
   get _treeWalker() {
     if (!this._treeWalkerRef) {
-      let wu = this._win.QueryInterface(
-        Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils);
+      let wu = this._win.windowUtils;
       let nf = this._win.NodeFilter;
 
       let filter = {
@@ -80,7 +75,7 @@ Narrator.prototype = {
           }
 
           return nf.FILTER_SKIP;
-        }
+        },
       };
 
       this._treeWalkerRef = new WeakMap();
@@ -89,7 +84,7 @@ Narrator.prototype = {
       // are no other strong references, and it will be GC'ed. Instead,
       // we rely on the window's lifetime and use it as a weak reference.
       this._treeWalkerRef.set(this._win,
-        this._doc.createTreeWalker(this._doc.getElementById("container"),
+        this._doc.createTreeWalker(this._doc.querySelector(".container"),
           nf.SHOW_ELEMENT, filter, false));
     }
 
@@ -183,7 +178,7 @@ Narrator.prototype = {
             voice: utterance.chosenVoiceURI,
             rate: utterance.rate,
             paragraph: paragraph.textContent,
-            tag: paragraph.localName
+            tag: paragraph.localName,
           });
         }
       });
@@ -225,7 +220,7 @@ Narrator.prototype = {
           if (this._inTest) {
             this._sendTestEvent("wordhighlight", {
               start: e.charIndex,
-              end: e.charIndex + e.charLength
+              end: e.charIndex + e.charLength,
             });
           }
         }
@@ -238,7 +233,7 @@ Narrator.prototype = {
   start(speechOptions) {
     this._speechOptions = {
       rate: speechOptions.rate,
-      voice: this._getVoice(speechOptions.voice)
+      voice: this._getVoice(speechOptions.voice),
     };
 
     this._stopped = false;
@@ -297,13 +292,13 @@ Narrator.prototype = {
       }
     }
     this._win.speechSynthesis.cancel();
-  }
+  },
 };
 
 /**
  * The Highlighter class is used to highlight a range of text in a container.
  *
- * @param {nsIDOMElement} container a text container
+ * @param {Element} container a text container
  */
 function Highlighter(container) {
   this.container = container;
@@ -337,7 +332,7 @@ Highlighter.prototype = {
         "top": `${r.top - containerRect.top + r.height / 2}px`,
         "left": `${r.left - containerRect.left + r.width / 2}px`,
         "width": `${r.width}px`,
-        "height": `${r.height}px`
+        "height": `${r.height}px`,
       }, textStyle);
 
       // Enables us to vary the CSS transition on a line change.
@@ -436,5 +431,5 @@ Highlighter.prototype = {
    */
   get _nodes() {
     return this.container.querySelectorAll(".narrate-word-highlight");
-  }
+  },
 };

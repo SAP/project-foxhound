@@ -15,10 +15,16 @@
 [Global=(Worker,DedicatedWorker),
  Exposed=DedicatedWorker]
 interface DedicatedWorkerGlobalScope : WorkerGlobalScope {
+  [Replaceable]
+  readonly attribute DOMString name;
+
   [Throws]
-  void postMessage(any message, optional sequence<object> transfer = []);
+  void postMessage(any message, sequence<object> transfer);
+  [Throws]
+  void postMessage(any message, optional PostMessageOptions options);
 
   void close();
 
   attribute EventHandler onmessage;
+  attribute EventHandler onmessageerror;
 };

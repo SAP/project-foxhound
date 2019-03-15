@@ -22,7 +22,6 @@ namespace dom {
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(Crypto)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
   NS_INTERFACE_MAP_ENTRY(nsISupports)
-  NS_INTERFACE_MAP_ENTRY(nsIDOMCrypto)
 NS_INTERFACE_MAP_END
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(Crypto)
@@ -30,37 +29,24 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(Crypto)
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(Crypto, mParent, mSubtle)
 
-Crypto::Crypto()
-{
+Crypto::Crypto(nsIGlobalObject* aParent) : mParent(aParent) {}
+
+Crypto::~Crypto() {}
+
+/* virtual */ JSObject* Crypto::WrapObject(JSContext* aCx,
+                                           JS::Handle<JSObject*> aGivenProto) {
+  return Crypto_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-Crypto::~Crypto()
-{
-}
-
-void
-Crypto::Init(nsIGlobalObject* aParent)
-{
-  mParent = do_QueryInterface(aParent);
-  MOZ_ASSERT(mParent);
-}
-
-/* virtual */ JSObject*
-Crypto::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return CryptoBinding::Wrap(aCx, this, aGivenProto);
-}
-
-void
-Crypto::GetRandomValues(JSContext* aCx, const ArrayBufferView& aArray,
-                        JS::MutableHandle<JSObject*> aRetval,
-                        ErrorResult& aRv)
-{
+void Crypto::GetRandomValues(JSContext* aCx, const ArrayBufferView& aArray,
+                             JS::MutableHandle<JSObject*> aRetval,
+                             ErrorResult& aRv) {
   JS::Rooted<JSObject*> view(aCx, aArray.Obj());
 
   if (JS_IsTypedArrayObject(view) && JS_GetTypedArraySharedness(view)) {
     // Throw if the object is mapping shared memory (must opt in).
-    aRv.ThrowTypeError<MSG_TYPEDARRAY_IS_SHARED>(NS_LITERAL_STRING("Argument of Crypto.getRandomValues"));
+    aRv.ThrowTypeError<MSG_TYPEDARRAY_IS_SHARED>(
+        NS_LITERAL_STRING("Argument of Crypto.getRandomValues"));
     return;
   }
 
@@ -92,7 +78,7 @@ Crypto::GetRandomValues(JSContext* aCx, const ArrayBufferView& aArray,
   }
 
   nsCOMPtr<nsIRandomGenerator> randomGenerator =
-    do_GetService("@mozilla.org/security/random-generator;1");
+      do_GetService("@mozilla.org/security/random-generator;1");
   if (!randomGenerator) {
     aRv.Throw(NS_ERROR_DOM_OPERATION_ERR);
     return;
@@ -112,14 +98,12 @@ Crypto::GetRandomValues(JSContext* aCx, const ArrayBufferView& aArray,
   aRetval.set(view);
 }
 
-SubtleCrypto*
-Crypto::Subtle()
-{
-  if(!mSubtle) {
+SubtleCrypto* Crypto::Subtle() {
+  if (!mSubtle) {
     mSubtle = new SubtleCrypto(GetParentObject());
   }
   return mSubtle;
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

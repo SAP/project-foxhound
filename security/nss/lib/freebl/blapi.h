@@ -801,8 +801,7 @@ SEED_Decrypt(SEEDContext *cx, unsigned char *output,
 ** Create a new AES context suitable for AES encryption/decryption.
 **  "key" raw key data
 **  "keylen" the number of bytes of key data (16, 24, or 32)
-**      "blocklen" is the blocksize to use (16, 24, or 32)
-**                        XXX currently only blocksize==16 has been tested!
+**  "blocklen" is the blocksize to use. NOTE: only 16 is supported!
 */
 extern AESContext *
 AES_CreateContext(const unsigned char *key, const unsigned char *iv,
@@ -1403,6 +1402,84 @@ TLS_P_hash(HASH_HashType hashAlg, const SECItem *secret, const char *label,
 
 /******************************************/
 /*
+** Implements the Blake2b hash function.
+*/
+
+/*
+** Hash a null terminated string "src" into "dest" using Blake2b
+*/
+extern SECStatus BLAKE2B_Hash(unsigned char *dest, const char *src);
+
+/*
+** Hash a non-null terminated string "src" into "dest" using Blake2b
+*/
+extern SECStatus BLAKE2B_HashBuf(unsigned char *output,
+                                 const unsigned char *input, PRUint32 inlen);
+
+extern SECStatus BLAKE2B_MAC_HashBuf(unsigned char *output,
+                                     const unsigned char *input,
+                                     unsigned int inlen,
+                                     const unsigned char *key,
+                                     unsigned int keylen);
+
+/*
+** Create a new Blake2b context
+*/
+extern BLAKE2BContext *BLAKE2B_NewContext();
+
+/*
+** Destroy a Blake2b secure hash context.
+**  "ctx" the context
+**  "freeit" if PR_TRUE then free the object as well as its sub-objects
+*/
+extern void BLAKE2B_DestroyContext(BLAKE2BContext *ctx, PRBool freeit);
+
+/*
+** Reset a Blake2b context, preparing it for a fresh round of hashing
+*/
+extern SECStatus BLAKE2B_Begin(BLAKE2BContext *ctx);
+
+extern SECStatus BLAKE2B_MAC_Begin(BLAKE2BContext *ctx, const PRUint8 *key,
+                                   const size_t keylen);
+
+/*
+** Update the Blake hash function with more data.
+*/
+extern SECStatus BLAKE2B_Update(BLAKE2BContext *ctx, const unsigned char *in,
+                                unsigned int inlen);
+
+/*
+** Finish the Blake hash function. Produce the digested results in "digest"
+*/
+extern SECStatus BLAKE2B_End(BLAKE2BContext *ctx, unsigned char *out,
+                             unsigned int *digestLen, size_t maxDigestLen);
+
+/*
+ * Return the size of a buffer needed to flatten the Blake2b Context into
+ *    "ctx" the context
+ *  returns size;
+ */
+extern unsigned int BLAKE2B_FlattenSize(BLAKE2BContext *ctx);
+
+/*
+ * Flatten the Blake2b Context into a buffer:
+ *    "ctx" the context
+ *    "space" the buffer to flatten to
+ *  returns status;
+ */
+extern SECStatus BLAKE2B_Flatten(BLAKE2BContext *ctx, unsigned char *space);
+
+/*
+ * Resurrect a flattened context into a Blake2b Context
+ *    "space" the buffer of the flattend buffer
+ *    "arg" ptr to void used by cryptographic resurrect
+ *  returns resurected context
+ */
+extern BLAKE2BContext *BLAKE2B_Resurrect(unsigned char *space, void *arg);
+extern void BLAKE2B_Clone(BLAKE2BContext *dest, BLAKE2BContext *src);
+
+/******************************************/
+/*
 ** Pseudo Random Number Generation.  FIPS compliance desirable.
 */
 
@@ -1428,8 +1505,6 @@ extern SECStatus RNG_RandomUpdate(const void *data, size_t bytes);
 ** object.
 */
 extern SECStatus RNG_GenerateGlobalRandomBytes(void *dest, size_t len);
-
-extern SECStatus RNG_ResetForFuzzing(void);
 
 /* Destroy the global RNG context.  After a call to RNG_RNGShutdown()
 ** a call to RNG_RNGInit() is required in order to use the generator again,

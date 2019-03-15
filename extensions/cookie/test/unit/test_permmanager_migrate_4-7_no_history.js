@@ -13,9 +13,9 @@ var factory = {
     throw new Error("There is no history service");
   },
   lockFactory: function() {
-    throw Components.results.NS_ERROR_NOT_IMPLEMENTED;
+    throw Cr.NS_ERROR_NOT_IMPLEMENTED;
   },
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIFactory])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIFactory])
 };
 
 var newClassID = Cc["@mozilla.org/uuid-generator;1"].getService(Ci.nsIUUIDGenerator).generateUUID();
@@ -42,20 +42,17 @@ function GetPermissionsFile(profile)
  * Done nsINavHistoryService code
  */
 
-function run_test() {
-  run_next_test();
-}
-
 add_task(function test() {
   /* Create and set up the permissions database */
   let profile = do_get_profile();
+  Services.prefs.setCharPref("permissions.manager.defaultsUrl", "");
 
   // Make sure that we can't resolve the nsINavHistoryService
   try {
     Cc['@mozilla.org/browser/nav-history-service;1'].getService(Ci.nsINavHistoryService);
-    do_check_true(false, "There shouldn't have been a nsINavHistoryService");
+    Assert.ok(false, "There shouldn't have been a nsINavHistoryService");
   } catch (e) {
-    do_check_true(true, "There wasn't a nsINavHistoryService");
+    Assert.ok(true, "There wasn't a nsINavHistoryService");
   }
 
   let db = Services.storage.openDatabase(GetPermissionsFile(profile));
@@ -96,7 +93,11 @@ add_task(function test() {
     stmtInsert.bindByName("appId", appId);
     stmtInsert.bindByName("isInBrowserElement", isInBrowserElement);
 
-    stmtInsert.execute();
+    try {
+      stmtInsert.execute();
+    } finally {
+      stmtInsert.reset();
+    }
 
     return {
       id: thisId,
@@ -176,9 +177,7 @@ add_task(function test() {
   let found = expected.map((it) => 0);
 
   // Force initialization of the nsPermissionManager
-  let enumerator = Services.perms.enumerator;
-  while (enumerator.hasMoreElements()) {
-    let permission = enumerator.getNext().QueryInterface(Ci.nsIPermission);
+  for (let permission of Services.perms.enumerator) {
     let isExpected = false;
 
     expected.forEach((it, i) => {
@@ -192,32 +191,36 @@ add_task(function test() {
       }
     });
 
-    do_check_true(isExpected,
-                  "Permission " + (isExpected ? "should" : "shouldn't") +
-                  " be in permission database: " +
-                  permission.principal.origin + ", " +
-                  permission.type + ", " +
-                  permission.capability + ", " +
-                  permission.expireType + ", " +
-                  permission.expireTime);
+    Assert.ok(isExpected,
+              "Permission " + (isExpected ? "should" : "shouldn't") +
+              " be in permission database: " +
+              permission.principal.origin + ", " +
+              permission.type + ", " +
+              permission.capability + ", " +
+              permission.expireType + ", " +
+              permission.expireTime);
   }
 
   found.forEach((count, i) => {
-    do_check_true(count == 1, "Expected count = 1, got count = " + count + " for permission " + expected[i]);
+    Assert.ok(count == 1, "Expected count = 1, got count = " + count + " for permission " + expected[i]);
   });
 
   // Check to make sure that all of the tables which we care about are present
   {
     let db = Services.storage.openDatabase(GetPermissionsFile(profile));
-    do_check_true(db.tableExists("moz_perms"));
-    do_check_true(db.tableExists("moz_hosts"));
-    do_check_false(db.tableExists("moz_hosts_is_backup"));
-    do_check_false(db.tableExists("moz_perms_v6"));
+    Assert.ok(db.tableExists("moz_perms"));
+    Assert.ok(db.tableExists("moz_hosts"));
+    Assert.ok(!db.tableExists("moz_hosts_is_backup"));
+    Assert.ok(!db.tableExists("moz_perms_v6"));
 
     // The moz_hosts table should still exist but be empty
     let mozHostsCount = db.createStatement("SELECT count(*) FROM moz_hosts");
-    mozHostsCount.executeStep();
-    do_check_eq(mozHostsCount.getInt64(0), 0);
+    try {
+      mozHostsCount.executeStep();
+      Assert.equal(mozHostsCount.getInt64(0), 0);
+    } finally {
+      mozHostsCount.finalize();
+    }
 
     db.close();
   }

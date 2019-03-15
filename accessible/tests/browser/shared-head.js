@@ -2,30 +2,35 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-'use strict';
+"use strict";
 
-/* exported Logger, MOCHITESTS_DIR, isDefunct, invokeSetAttribute, invokeFocus,
-            invokeSetStyle, findAccessibleChildByID, getAccessibleDOMNodeID,
-            CURRENT_CONTENT_DIR, loadScripts, loadFrameScripts, Cc, Cu */
+/* import-globals-from ../mochitest/common.js */
+/* import-globals-from events.js */
 
-const { interfaces: Ci, utils: Cu, classes: Cc } = Components;
+/* exported Logger, MOCHITESTS_DIR, invokeSetAttribute, invokeFocus,
+            invokeSetStyle, getAccessibleDOMNodeID, getAccessibleTagName,
+            addAccessibleTask, findAccessibleChildByID, isDefunct,
+            CURRENT_CONTENT_DIR, loadScripts, loadFrameScripts, snippetToURL,
+            Cc, Cu, arrayFromChildren, forceGC */
 
 /**
  * Current browser test directory path used to load subscripts.
  */
 const CURRENT_DIR =
-  'chrome://mochitests/content/browser/accessible/tests/browser/';
+  "chrome://mochitests/content/browser/accessible/tests/browser/";
 /**
  * A11y mochitest directory where we find common files used in both browser and
  * plain tests.
  */
 const MOCHITESTS_DIR =
-  'chrome://mochitests/content/a11y/accessible/tests/mochitest/';
+  "chrome://mochitests/content/a11y/accessible/tests/mochitest/";
 /**
  * A base URL for test files used in content.
  */
 const CURRENT_CONTENT_DIR =
-  'http://example.com/browser/accessible/tests/browser/';
+  "http://example.com/browser/accessible/tests/browser/";
+
+const LOADED_FRAMESCRIPTS = new Map();
 
 /**
  * Used to dump debug information.
@@ -76,27 +81,6 @@ let Logger = {
     }
   }
 };
-
-/**
- * Check if an accessible object has a defunct test.
- * @param  {nsIAccessible}  accessible object to test defunct state for
- * @return {Boolean}        flag indicating defunct state
- */
-function isDefunct(accessible) {
-  let defunct = false;
-  try {
-    let extState = {};
-    accessible.getState({}, extState);
-    defunct = extState.value & Ci.nsIAccessibleStates.EXT_STATE_DEFUNCT;
-  } catch (x) {
-    defunct = true;
-  } finally {
-    if (defunct) {
-      Logger.log(`Defunct accessible: ${prettyName(accessible)}`);
-    }
-  }
-  return defunct;
-}
 
 /**
  * Asynchronously set or remove content element's attribute (in content process
@@ -163,31 +147,11 @@ function invokeFocus(browser, id) {
   Logger.log(`Setting focus on a node with id: ${id}`);
   return ContentTask.spawn(browser, id, contentId => {
     let elm = content.document.getElementById(contentId);
-    if (elm instanceof Ci.nsIDOMNSEditableElement && elm.editor ||
-        elm instanceof Ci.nsIDOMXULTextBoxElement) {
+    if (elm.editor || elm.localName == "textbox") {
       elm.selectionStart = elm.selectionEnd = elm.value.length;
     }
     elm.focus();
   });
-}
-
-/**
- * Traverses the accessible tree starting from a given accessible as a root and
- * looks for an accessible that matches based on its DOMNode id.
- * @param  {nsIAccessible}  accessible root accessible
- * @param  {String}         id         id to look up accessible for
- * @return {nsIAccessible?}            found accessible if any
- */
-function findAccessibleChildByID(accessible, id) {
-  if (getAccessibleDOMNodeID(accessible) === id) {
-    return accessible;
-  }
-  for (let i = 0; i < accessible.children.length; ++i) {
-    let found = findAccessibleChildByID(accessible.getChildAt(i), id);
-    if (found) {
-      return found;
-    }
-  }
 }
 
 /**
@@ -196,7 +160,7 @@ function findAccessibleChildByID(accessible, id) {
  */
 function loadScripts(...scripts) {
   for (let script of scripts) {
-    let path = typeof script === 'string' ? `${CURRENT_DIR}${script}` :
+    let path = typeof script === "string" ? `${CURRENT_DIR}${script}` :
       `${script.dir}${script.name}`;
     Services.scriptloader.loadSubScript(path, this);
   }
@@ -211,8 +175,8 @@ function loadFrameScripts(browser, ...scripts) {
   let mm = browser.messageManager;
   for (let script of scripts) {
     let frameScript;
-    if (typeof script === 'string') {
-      if (script.includes('.js')) {
+    if (typeof script === "string") {
+      if (script.includes(".js")) {
         // If script string includes a .js extention, assume it is a script
         // path.
         frameScript = `${CURRENT_DIR}${script}`;
@@ -224,6 +188,184 @@ function loadFrameScripts(browser, ...scripts) {
       // Script is a object that has { dir, name } format.
       frameScript = `${script.dir}${script.name}`;
     }
+
+    let loadedScriptSet = LOADED_FRAMESCRIPTS.get(frameScript);
+    if (!loadedScriptSet) {
+      loadedScriptSet = new WeakSet();
+      LOADED_FRAMESCRIPTS.set(frameScript, loadedScriptSet);
+    } else if (loadedScriptSet.has(browser)) {
+      continue;
+    }
+
     mm.loadFrameScript(frameScript, false, true);
+    loadedScriptSet.add(browser);
   }
+}
+
+/**
+ * Takes an HTML snippet and returns an encoded URI for a full document
+ * with the snippet.
+ * @param {String} snippet   a markup snippet.
+ * @param {Object} bodyAttrs extra attributes to use in the body tag. Default is
+ *                           { id: "body "}.
+ * @return {String} a base64 encoded data url of the document container the
+ *                  snippet.
+ **/
+function snippetToURL(snippet, bodyAttrs = {}) {
+  let attrs = Object.assign({}, { id: "body" }, bodyAttrs);
+  let attrsString = Object.entries(attrs).map(
+    ([attr, value]) => `${attr}=${JSON.stringify(value)}`).join(" ");
+  let encodedDoc = encodeURIComponent(
+    `<html>
+      <head>
+        <meta charset="utf-8"/>
+        <title>Accessibility Test</title>
+      </head>
+      <body ${attrsString}>${snippet}</body>
+    </html>`);
+
+  return `data:text/html;charset=utf-8,${encodedDoc}`;
+}
+
+/**
+ * A wrapper around browser test add_task that triggers an accessible test task
+ * as a new browser test task with given document, data URL or markup snippet.
+ * @param  {String}                 doc  URL (relative to current directory) or
+ *                                       data URL or markup snippet that is used
+ *                                       to test content with
+ * @param  {Function|AsyncFunction} task a generator or a function with tests to
+ *                                       run
+ */
+function addAccessibleTask(doc, task) {
+  add_task(async function() {
+    let url;
+    if (doc.includes("doc_")) {
+      url = `${CURRENT_CONTENT_DIR}e10s/${doc}`;
+    } else {
+      url = snippetToURL(doc);
+    }
+
+    registerCleanupFunction(() => {
+      for (let observer of Services.obs.enumerateObservers("accessible-event")) {
+        Services.obs.removeObserver(observer, "accessible-event");
+      }
+    });
+
+    let onDocLoad = waitForEvent(EVENT_DOCUMENT_LOAD_COMPLETE, "body");
+
+    await BrowserTestUtils.withNewTab({
+      gBrowser,
+      url: url
+    }, async function(browser) {
+      registerCleanupFunction(() => {
+        if (browser) {
+          let tab = gBrowser.getTabForBrowser(browser);
+          if (tab && !tab.closing && tab.linkedBrowser) {
+            gBrowser.removeTab(tab);
+          }
+        }
+      });
+
+      await SimpleTest.promiseFocus(browser);
+
+      loadFrameScripts(browser,
+        "let { document, window, navigator } = content;",
+        { name: "common.js", dir: MOCHITESTS_DIR });
+
+      Logger.log(
+        `e10s enabled: ${Services.appinfo.browserTabsRemoteAutostart}`);
+      Logger.log(`Actually remote browser: ${browser.isRemoteBrowser}`);
+
+      let event = await onDocLoad;
+      await task(browser, event.accessible);
+    });
+  });
+}
+
+/**
+ * Check if an accessible object has a defunct test.
+ * @param  {nsIAccessible}  accessible object to test defunct state for
+ * @return {Boolean}        flag indicating defunct state
+ */
+function isDefunct(accessible) {
+  let defunct = false;
+  try {
+    let extState = {};
+    accessible.getState({}, extState);
+    defunct = extState.value & Ci.nsIAccessibleStates.EXT_STATE_DEFUNCT;
+  } catch (x) {
+    defunct = true;
+  } finally {
+    if (defunct) {
+      Logger.log(`Defunct accessible: ${prettyName(accessible)}`);
+    }
+  }
+  return defunct;
+}
+
+/**
+ * Get the DOM tag name for a given accessible.
+ * @param  {nsIAccessible}  accessible accessible
+ * @return {String?}                   tag name of associated DOM node, or null.
+ */
+function getAccessibleTagName(acc) {
+  try {
+    return acc.attributes.getStringProperty("tag");
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Traverses the accessible tree starting from a given accessible as a root and
+ * looks for an accessible that matches based on its DOMNode id.
+ * @param  {nsIAccessible}  accessible root accessible
+ * @param  {String}         id         id to look up accessible for
+ * @param  {Array?}         interfaces the interface or an array interfaces
+ *                                     to query it/them from obtained accessible
+ * @return {nsIAccessible?}            found accessible if any
+ */
+function findAccessibleChildByID(accessible, id, interfaces) {
+  if (getAccessibleDOMNodeID(accessible) === id) {
+    return queryInterfaces(accessible, interfaces);
+  }
+  for (let i = 0; i < accessible.children.length; ++i) {
+    let found = findAccessibleChildByID(accessible.getChildAt(i), id);
+    if (found) {
+      return queryInterfaces(found, interfaces);
+    }
+  }
+}
+
+function queryInterfaces(accessible, interfaces) {
+  if (!interfaces) {
+    return accessible;
+  }
+
+  for (let iface of interfaces.filter(i => !(accessible instanceof i))) {
+    try {
+      accessible.QueryInterface(iface);
+    } catch (e) {
+      ok(false, "Can't query " + iface);
+    }
+  }
+
+  return accessible;
+}
+
+function arrayFromChildren(accessible) {
+  return Array.from({ length: accessible.childCount }, (c, i) =>
+    accessible.getChildAt(i));
+}
+
+/**
+ * Force garbage collection.
+ */
+function forceGC() {
+  SpecialPowers.gc();
+  SpecialPowers.forceShrinkingGC();
+  SpecialPowers.forceCC();
+  SpecialPowers.gc();
+  SpecialPowers.forceShrinkingGC();
+  SpecialPowers.forceCC();
 }

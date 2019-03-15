@@ -6,32 +6,32 @@
 
 const TEST_URIs = [
   "http://www.mozilla.org/test1",
-  "http://www.mozilla.org/test2"
+  "http://www.mozilla.org/test2",
 ];
 
 // This test makes sure that the Forget This Site command is hidden for multiple
 // selections.
-add_task(function* () {
+add_task(async function() {
   // Add a history entry.
   ok(PlacesUtils, "checking PlacesUtils, running in chrome context?");
 
   let places = [];
   let transition = PlacesUtils.history.TRANSITION_TYPED;
-  TEST_URIs.forEach(uri => places.push({uri: PlacesUtils._uri(uri), transition}));
+  TEST_URIs.forEach(uri => places.push({uri: Services.io.newURI(uri), transition}));
 
-  yield PlacesTestUtils.addVisits(places);
-  yield testForgetThisSiteVisibility(1);
-  yield testForgetThisSiteVisibility(2);
+  await PlacesTestUtils.addVisits(places);
+  await testForgetThisSiteVisibility(1);
+  await testForgetThisSiteVisibility(2);
 
   // Cleanup.
-  yield PlacesTestUtils.clearHistory();
+  await PlacesUtils.history.clear();
 });
 
-var testForgetThisSiteVisibility = Task.async(function* (selectionCount) {
-  let organizer = yield promiseLibrary();
+var testForgetThisSiteVisibility = async function(selectionCount) {
+  let organizer = await promiseLibrary();
 
   // Select History in the left pane.
-  organizer.PlacesOrganizer.selectLeftPaneQuery("History");
+  organizer.PlacesOrganizer.selectLeftPaneBuiltIn("History");
   let PO = organizer.PlacesOrganizer;
   let histContainer = PO._places.selectedNode.QueryInterface(Ci.nsINavHistoryContainerResultNode);
   histContainer.containerOpen = true;
@@ -50,10 +50,10 @@ var testForgetThisSiteVisibility = Task.async(function* (selectionCount) {
   let popupShown = promisePopupShown(contextmenu);
 
   // Get cell coordinates.
-  let rect = tree.treeBoxObject.getCoordsForCellItem(0, tree.columns[0], "text");
+  let rect = tree.getCoordsForCellItem(0, tree.columns[0], "text");
   // Initiate a context menu for the selected cell.
   EventUtils.synthesizeMouse(tree.body, rect.x + rect.width / 2, rect.y + rect.height / 2, {type: "contextmenu", button: 2}, organizer);
-  yield popupShown;
+  await popupShown;
 
   let forgetThisSite = doc.getElementById("placesContext_deleteHost");
   let hideForgetThisSite = (selectionCount != 1);
@@ -65,8 +65,8 @@ var testForgetThisSiteVisibility = Task.async(function* (selectionCount) {
   contextmenu.hidePopup();
 
   // Close the library window.
-  yield promiseLibraryClosed(organizer);
-});
+  await promiseLibraryClosed(organizer);
+};
 
 function promisePopupShown(popup) {
   return new Promise(resolve => {

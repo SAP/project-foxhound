@@ -1,14 +1,12 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Cu.import("resource://services-sync/record.js");
-Cu.import("resource://services-sync/resource.js");
-Cu.import("resource://services-sync/service.js");
-Cu.import("resource://services-sync/util.js");
-Cu.import("resource://testing-common/services/sync/utils.js");
+ChromeUtils.import("resource://services-sync/record.js");
+ChromeUtils.import("resource://services-sync/resource.js");
+ChromeUtils.import("resource://services-sync/service.js");
+ChromeUtils.import("resource://services-sync/util.js");
 
-
-function test_toJSON() {
+add_test(function test_toJSON() {
   _("Create a record, for now without a TTL.");
   let wbo = new WBORecord("coll", "a_record");
   wbo.modified = 12345;
@@ -17,19 +15,20 @@ function test_toJSON() {
 
   _("Verify that the JSON representation contains the WBO properties, but not TTL.");
   let json = JSON.parse(JSON.stringify(wbo));
-  do_check_eq(json.modified, 12345);
-  do_check_eq(json.sortindex, 42);
-  do_check_eq(json.payload, "{}");
-  do_check_false("ttl" in json);
+  Assert.equal(json.modified, 12345);
+  Assert.equal(json.sortindex, 42);
+  Assert.equal(json.payload, "{}");
+  Assert.equal(false, "ttl" in json);
 
   _("Set a TTL, make sure it's present in the JSON representation.");
   wbo.ttl = 30 * 60;
   json = JSON.parse(JSON.stringify(wbo));
-  do_check_eq(json.ttl, 30 * 60);
-}
+  Assert.equal(json.ttl, 30 * 60);
+  run_next_test();
+});
 
 
-function test_fetch() {
+add_task(async function test_fetch() {
   let record = {id: "asdf-1234-asdf-1234",
                 modified: 2454725.98283,
                 payload: JSON.stringify({cheese: "roquefort"})};
@@ -44,41 +43,33 @@ function test_fetch() {
   let server = httpd_setup({
     "/record":  httpd_handler(200, "OK", JSON.stringify(record)),
     "/record2": httpd_handler(200, "OK", JSON.stringify(record2)),
-    "/coll":    httpd_handler(200, "OK", JSON.stringify(coll))
+    "/coll":    httpd_handler(200, "OK", JSON.stringify(coll)),
   });
-  do_test_pending();
 
   try {
     _("Fetching a WBO record");
     let rec = new WBORecord("coll", "record");
-    rec.fetch(Service.resource(server.baseURI + "/record"));
-    do_check_eq(rec.id, "asdf-1234-asdf-1234"); // NOT "record"!
+    await rec.fetch(Service.resource(server.baseURI + "/record"));
+    Assert.equal(rec.id, "asdf-1234-asdf-1234"); // NOT "record"!
 
-    do_check_eq(rec.modified, 2454725.98283);
-    do_check_eq(typeof(rec.payload), "object");
-    do_check_eq(rec.payload.cheese, "roquefort");
+    Assert.equal(rec.modified, 2454725.98283);
+    Assert.equal(typeof(rec.payload), "object");
+    Assert.equal(rec.payload.cheese, "roquefort");
 
     _("Fetching a WBO record using the record manager");
-    let rec2 = Service.recordManager.get(server.baseURI + "/record2");
-    do_check_eq(rec2.id, "record2");
-    do_check_eq(rec2.modified, 2454725.98284);
-    do_check_eq(typeof(rec2.payload), "object");
-    do_check_eq(rec2.payload.cheese, "gruyere");
-    do_check_eq(Service.recordManager.response.status, 200);
+    let rec2 = await Service.recordManager.get(server.baseURI + "/record2");
+    Assert.equal(rec2.id, "record2");
+    Assert.equal(rec2.modified, 2454725.98284);
+    Assert.equal(typeof(rec2.payload), "object");
+    Assert.equal(rec2.payload.cheese, "gruyere");
+    Assert.equal(Service.recordManager.response.status, 200);
 
     // Testing collection extraction.
     _("Extracting collection.");
-    let rec3 = new WBORecord("tabs", "foo");   // Create through constructor.
-    do_check_eq(rec3.collection, "tabs");
+    let rec3 = new WBORecord("tabs", "foo"); // Create through constructor.
+    Assert.equal(rec3.collection, "tabs");
 
   } finally {
-    server.stop(do_test_finished);
+    await promiseStopServer(server);
   }
-}
-
-function run_test() {
-  initTestLogging("Trace");
-
-  test_toJSON();
-  test_fetch();
-}
+});

@@ -18,43 +18,41 @@
       window.onload = function() {
         SimpleTest.waitForExplicitFinish();
 
-        Task.spawn(function* () {
-          if (!DebuggerServer.initialized) {
-            DebuggerServer.init();
-            DebuggerServer.addBrowserActors();
-          }
+        (async function() {
+          DebuggerServer.init();
+          DebuggerServer.registerAllActors();
 
-          let win = yield openWebIDE();
+          const win = await openWebIDE();
 
-          let prefIframe = win.document.querySelector("#deck-panel-devicepreferences");
-          let docRuntime = getRuntimeDocument(win);
+          const prefIframe = win.document.querySelector("#deck-panel-devicepreferences");
+          const docRuntime = getRuntimeDocument(win);
 
           win.AppManager.update("runtime-list");
 
-          yield connectToLocalRuntime(win);
+          await connectToLocalRuntime(win);
 
-          let prefs = docRuntime.querySelector("#runtime-preferences");
+          const prefs = docRuntime.querySelector("#runtime-preferences");
 
           ok(!prefs.hasAttribute("disabled"), "device prefs cmd enabled");
 
-          let deck = win.document.querySelector("#deck");
+          const deck = win.document.querySelector("#deck");
 
           win.Cmds.showDevicePrefs();
           is(deck.selectedPanel, prefIframe, "device preferences iframe selected");
 
-          yield nextTick();
+          await nextTick();
 
-          yield lazyIframeIsLoaded(prefIframe);
+          await lazyIframeIsLoaded(prefIframe);
 
-          yield prefIframe.contentWindow.getAllPrefs;
+          await prefIframe.contentWindow.getAllPrefs;
 
           setDocument(prefIframe);
 
-          let fields = doc.querySelectorAll(".editable");
+          const fields = doc.querySelectorAll(".editable");
 
           addNewField();
 
-          let preference = "accessibility.accesskeycausesactivation";
+          const preference = "accessibility.accesskeycausesactivation";
 
           fieldChange(fields, preference);
 
@@ -64,9 +62,9 @@
 
           addNewFieldInteger();
 
-          yield editFieldInteger();
+          await editFieldInteger();
 
-          yield resetExistingField("accessibility.accesskeycausesactivation");
+          await resetExistingField("accessibility.accesskeycausesactivation");
 
           addNewFieldBoolean();
 
@@ -74,14 +72,14 @@
 
           DebuggerServer.destroy();
 
-          yield closeWebIDE(win);
+          await closeWebIDE(win);
 
           SimpleTest.finish();
-        }).then(null, e => {
+        })().catch(e => {
           ok(false, "Exception: " + e);
           SimpleTest.finish();
         });
-      }
+      };
     </script>
   </body>
 </html>

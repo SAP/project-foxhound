@@ -4,6 +4,84 @@
 
 var sdputils = {
 
+// Finds the codec id / payload type given a codec format
+// (e.g., "VP8", "VP9/90000"). `offset` tells us which one to use in case of
+// multiple matches.
+findCodecId: function(sdp, format, offset = 0) {
+  let regex = new RegExp("rtpmap:\([0-9]+\) " + format, "gi");
+  let match;
+  for (let i = 0; i <= offset; ++i) {
+    match = regex.exec(sdp);
+    if (!match) {
+      throw new Error("Couldn't find offset " + i + " of codec " + format
+        + " while looking for offset " + offset + " in sdp:\n" + sdp);
+    }
+  }
+  // match[0] is the full matched string
+  // match[1] is the first parenthesis group
+  return match[1];
+},
+
+// Finds all the extmap ids in the given sdp.  Note that this does NOT
+// consider m-sections, so a more generic version would need to
+// look at each m-section separately.
+findExtmapIds: function(sdp) {
+  var sdpExtmapIds = [];
+  extmapRegEx = /^a=extmap:([0-9+])/gm;
+  // must call exec on the regex to get each match in the string
+  while ((searchResults = extmapRegEx.exec(sdp))
+         !== null) {
+    // returned array has the matched text as the first item,
+    // and then one item for each capturing parenthesis that
+    // matched containing the text that was captured.
+    sdpExtmapIds.push(searchResults[1]);
+  }
+  return sdpExtmapIds;
+},
+
+findExtmapIdsUrnsDirections: function(sdp) {
+  var sdpExtmap = [];
+  extmapRegEx = /^a=extmap:([0-9+])([A-Za-z/]*) ([A-Za-z0-9_:\-\/\.]+)/gm;
+  // must call exec on the regex to get each match in the string
+  while ((searchResults = extmapRegEx.exec(sdp))
+         !== null) {
+    // returned array has the matched text as the first item,
+    // and then one item for each capturing parenthesis that
+    // matched containing the text that was captured.
+    var idUrn = [];
+    idUrn.push(searchResults[1]);
+    idUrn.push(searchResults[3]);
+    idUrn.push(searchResults[2].slice(1));
+    sdpExtmap.push(idUrn);
+  }
+  return sdpExtmap;
+},
+
+verify_unique_extmap_ids: function(sdp) {
+  const sdpExtmapIds = sdputils.findExtmapIdsUrnsDirections(sdp);
+
+  return sdpExtmapIds.reduce(function(result, item, index) {
+    const [id, urn, dir] = item;
+    ok((!(id in result)) ||
+      ((result[id][0] === urn) && (result[id][1] === dir)),
+        "ID " + id + " is unique ID for " + urn + " and direction " + dir);
+    result[id] = [urn, dir];
+    return result;
+  }, {});
+},
+
+getMSections: function(sdp) {
+  return sdp.split(new RegExp('^m=', 'gm')).slice(1);
+},
+
+getAudioMSections: function(sdp) {
+  return this.getMSections(sdp).filter(section => section.startsWith('audio'))
+},
+
+getVideoMSections: function(sdp) {
+  return this.getMSections(sdp).filter(section => section.startsWith('video'))
+},
+
 checkSdpAfterEndOfTrickle: function(sdp, testOptions, label) {
   info("EOC-SDP: " + JSON.stringify(sdp));
 
@@ -30,7 +108,7 @@ checkSdpCLineNotDefault: function(sdpStr, label) {
 },
 
 // Note, we don't bother removing the fmtp lines, which makes a good test
-// for some SDP parsing issues.  It would be good to have a "removeAllButCodec(sdp, codec)" too.
+// for some SDP parsing issues. 
 removeCodec: function(sdp, codec) {
     var updated_sdp = sdp.replace(new RegExp("a=rtpmap:" + codec + ".*\\/90000\\r\\n",""),"");
     updated_sdp = updated_sdp.replace(new RegExp("(RTP\\/SAVPF.*)( " + codec + ")(.*\\r\\n)",""),"$1$3");
@@ -38,6 +116,15 @@ removeCodec: function(sdp, codec) {
     updated_sdp = updated_sdp.replace(new RegExp("a=rtcp-fb:" + codec + " nack pli\\r\\n",""),"");
     updated_sdp = updated_sdp.replace(new RegExp("a=rtcp-fb:" + codec + " ccm fir\\r\\n",""),"");
   return updated_sdp;
+},
+
+removeAllButPayloadType: function(sdp, pt) {
+  return sdp.replace(new RegExp("m=(\\w+ \\w+) UDP/TLS/RTP/SAVPF .*" + pt + ".*\\r\\n", "gi"),
+                     "m=$1 UDP/TLS/RTP/SAVPF " + pt + "\r\n");
+},
+
+removeRtpMapForPayloadType: function(sdp, pt) {
+  return sdp.replace(new RegExp("a=rtpmap:" + pt + ".*\\r\\n", "gi"), "");
 },
 
 removeRtcpMux: function(sdp) {
@@ -72,6 +159,12 @@ reduceAudioMLineToDynamicPtAndOpus: function(sdp) {
 
 addTiasBps: function(sdp, bps) {
   return sdp.replace(/c=IN (.*)\r\n/g, "c=IN $1\r\nb=TIAS:" + bps + "\r\n");
+},
+
+removeSimulcastProperties: function(sdp) {
+  return sdp.replace(/a=simulcast:.*\r\n/g, "")
+            .replace(/a=rid:.*\r\n/g, "")
+            .replace(/a=extmap:[^\s]* urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id.*\r\n/g, "");
 },
 
 transferSimulcastProperties: function(offer_sdp, answer_sdp) {
@@ -139,7 +232,8 @@ verifySdp: function(desc, expectedType, offerConstraintsList, offerOptions,
   } else {
     ok(desc.sdp.includes("m=video"), "video m-line is present in SDP");
     if (testOptions.h264) {
-      ok(desc.sdp.includes("a=rtpmap:126 H264/90000"), "H.264 codec is present in SDP");
+      ok(desc.sdp.includes("a=rtpmap:126 H264/90000") ||
+         desc.sdp.includes("a=rtpmap:97 H264/90000"), "H.264 codec is present in SDP");
     } else {
 	ok(desc.sdp.includes("a=rtpmap:120 VP8/90000") ||
 	   desc.sdp.includes("a=rtpmap:121 VP9/90000"), "VP8 or VP9 codec is present in SDP");

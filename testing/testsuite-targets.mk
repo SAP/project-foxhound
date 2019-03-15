@@ -32,7 +32,7 @@ RUN_REFTEST = rm -f ./$@.log && $(PYTHON) _tests/reftest/runreftest.py \
   $(SYMBOLS_PATH) $(EXTRA_TEST_ARGS) $(1) | tee ./$@.log
 
 REMOTE_REFTEST = rm -f ./$@.log && $(PYTHON) _tests/reftest/remotereftest.py \
-  --dm_trans=$(DM_TRANS) --ignore-window-size \
+  --ignore-window-size \
   --app=$(TEST_PACKAGE_NAME) --deviceIP=${TEST_DEVICE} --xre-path=${MOZ_HOST_BIN} \
   --httpd-path=_tests/modules --suite reftest \
   --extra-profile-file=$(topsrcdir)/mobile/android/fonts \
@@ -53,7 +53,6 @@ reftest:
 	$(CHECK_TEST_ERROR)
 
 reftest-remote: TEST_PATH?=layout/reftests/reftest.list
-reftest-remote: DM_TRANS?=adb
 reftest-remote:
 	@if [ '${MOZ_HOST_BIN}' = '' ]; then \
         echo 'environment variable MOZ_HOST_BIN must be set to a directory containing host xpcshell'; \
@@ -61,8 +60,6 @@ reftest-remote:
         echo 'MOZ_HOST_BIN does not specify a directory'; \
     elif [ ! -f ${MOZ_HOST_BIN}/xpcshell ]; then \
         echo 'xpcshell not found in MOZ_HOST_BIN'; \
-    elif [ '${TEST_DEVICE}' = '' -a '$(DM_TRANS)' != 'adb' ]; then \
-        echo 'please prepare your host with the environment variable TEST_DEVICE'; \
     else \
         ln -s $(abspath $(topsrcdir)) _tests/reftest/tests; \
         $(call REMOTE_REFTEST,'tests/$(TEST_PATH)'); \
@@ -87,24 +84,12 @@ REMOTE_CPPUNITTESTS = \
 	$(PYTHON) -u $(topsrcdir)/testing/remotecppunittests.py \
 	  --xre-path=$(DEPTH)/dist/bin \
 	  --localLib=$(DEPTH)/dist/fennec \
-	  --dm_trans=$(DM_TRANS) \
 	  --deviceIP=${TEST_DEVICE} \
 	  $(TEST_PATH) $(EXTRA_TEST_ARGS)
 
 # Usage: |make [TEST_PATH=...] [EXTRA_TEST_ARGS=...] cppunittests-remote|.
-cppunittests-remote: DM_TRANS?=adb
 cppunittests-remote:
-	@if [ '${TEST_DEVICE}' != '' -o '$(DM_TRANS)' = 'adb' ]; \
-          then $(call REMOTE_CPPUNITTESTS); \
-        else \
-          echo 'please prepare your host with environment variables for TEST_DEVICE'; \
-        fi
-
-jetpack-tests:
-	cd $(topsrcdir)/addon-sdk/source && $(PYTHON) bin/cfx -b $(abspath $(browser_path)) --parseable testpkgs
-
-pgo-profile-run:
-	$(PYTHON) $(topsrcdir)/build/pgo/profileserver.py $(EXTRA_TEST_ARGS)
+	$(call REMOTE_CPPUNITTESTS);
 
 # Package up the tests and test harnesses
 include $(topsrcdir)/toolkit/mozapps/installer/package-name.mk
@@ -117,7 +102,6 @@ stage-all: \
   stage-extensions \
   stage-mochitest \
   stage-jstests \
-  stage-jetpack \
   test-packages-manifest \
   $(NULL)
 ifdef MOZ_WEBRTC
@@ -128,23 +112,25 @@ ifdef COMPILE_ENVIRONMENT
 stage-all: stage-cppunittests
 endif
 
-TEST_PKGS := \
+TEST_PKGS_TARGZ := \
   common \
   cppunittest \
   mochitest \
   reftest \
   talos \
+  raptor \
   awsy \
-  web-platform \
   xpcshell \
+  web-platform \
+  updater-dep \
   $(NULL)
 
 ifdef LINK_GTEST_DURING_COMPILE
 stage-all: stage-gtest
-TEST_PKGS += gtest
+TEST_PKGS_TARGZ += gtest
 endif
 
-PKG_ARG = --$(1) '$(PKG_BASENAME).$(1).tests.zip'
+PKG_ARG = --$(1) '$(PKG_BASENAME).$(1).tests.$(2)'
 
 test-packages-manifest:
 	@rm -f $(MOZ_TEST_PACKAGES_FILE)
@@ -152,26 +138,33 @@ test-packages-manifest:
 	$(PYTHON) $(topsrcdir)/build/gen_test_packages_manifest.py \
       --jsshell $(JSSHELL_NAME) \
       --dest-file '$(MOZ_TEST_PACKAGES_FILE)' \
-      $(call PKG_ARG,common) \
-      $(foreach pkg,$(TEST_PKGS),$(call PKG_ARG,$(pkg)))
+      $(call PKG_ARG,common,zip) \
+      $(foreach pkg,$(TEST_PKGS_TARGZ),$(call PKG_ARG,$(pkg),tar.gz))
+
+ifdef UPLOAD_PATH
+test_archive_dir = $(UPLOAD_PATH)
+else
+test_archive_dir = $(DIST)/$(PKG_PATH)
+endif
 
 package-tests-prepare-dest:
-	@rm -f '$(DIST)/$(PKG_PATH)$(TEST_PACKAGE)'
-	$(NSINSTALL) -D $(DIST)/$(PKG_PATH)
+	$(NSINSTALL) -D $(test_archive_dir)
+
+download-wpt-manifest:
+	$(call py_action,download_wpt_manifest)
 
 define package_archive
-package-tests-$(1): stage-all package-tests-prepare-dest
+package-tests-$(1): stage-all package-tests-prepare-dest download-wpt-manifest
 	$$(call py_action,test_archive, \
 		$(1) \
-		'$$(abspath $$(DIST))/$$(PKG_PATH)/$$(PKG_BASENAME).$(1).tests.zip')
+		'$$(abspath $$(test_archive_dir))/$$(PKG_BASENAME).$(1).tests.$(2)')
 package-tests: package-tests-$(1)
 endef
 
-$(foreach name,$(TEST_PKGS),$(eval $(call package_archive,$(name))))
+$(foreach name,$(TEST_PKGS_TARGZ),$(eval $(call package_archive,$(name),tar.gz)))
 
 ifeq ($(MOZ_BUILD_APP),mobile/android)
 stage-all: stage-android
-stage-all: stage-instrumentation-tests
 endif
 
 # Prepare _tests before any of the other staging/packaging steps.
@@ -183,7 +176,6 @@ make-stage-dir: install-test-files
 	$(NSINSTALL) -D $(PKG_STAGE)/bin/components
 	$(NSINSTALL) -D $(PKG_STAGE)/certs
 	$(NSINSTALL) -D $(PKG_STAGE)/config
-	$(NSINSTALL) -D $(PKG_STAGE)/jetpack
 	$(NSINSTALL) -D $(PKG_STAGE)/modules
 	$(NSINSTALL) -D $(PKG_STAGE)/tools/mach
 
@@ -196,10 +188,7 @@ stage-mach: make-stage-dir
 	cp $(topsrcdir)/testing/tools/mach_test_package_bootstrap.py $(PKG_STAGE)/tools/mach_bootstrap.py
 	cp $(topsrcdir)/mach $(PKG_STAGE)
 
-stage-mochitest: make-stage-dir
-ifeq ($(MOZ_BUILD_APP),mobile/android)
-	$(MAKE) -C $(DEPTH)/testing/mochitest stage-package
-endif
+stage-mochitest: make-stage-dir ;
 
 stage-jstests: make-stage-dir
 	$(MAKE) -C $(DEPTH)/js/src/tests stage-package
@@ -232,9 +221,8 @@ endif
 stage-android: make-stage-dir
 	$(NSINSTALL) $(topsrcdir)/mobile/android/fonts $(DEPTH)/_tests/reftest
 	$(NSINSTALL) $(topsrcdir)/mobile/android/fonts $(DEPTH)/_tests/testing/mochitest
-
-stage-jetpack: make-stage-dir
-	$(MAKE) -C $(DEPTH)/addon-sdk stage-tests-package
+	$(NSINSTALL) -D $(DEPTH)/_tests/reftest/hyphenation
+	$(NSINSTALL) $(wildcard $(topsrcdir)/intl/locales/*/hyphenation/*.dic) $(DEPTH)/_tests/reftest/hyphenation
 
 CPP_UNIT_TEST_BINS=$(wildcard $(DIST)/cppunittests/*)
 
@@ -255,10 +243,7 @@ stage-steeplechase: make-stage-dir
 	$(NSINSTALL) -D $(PKG_STAGE)/steeplechase/
 	cp -RL $(DEPTH)/_tests/steeplechase $(PKG_STAGE)/steeplechase/tests
 	cp -RL $(DIST)/xpi-stage/specialpowers $(PKG_STAGE)/steeplechase
-	cp -RL $(topsrcdir)/testing/profiles/prefs_general.js $(PKG_STAGE)/steeplechase
-
-stage-instrumentation-tests: make-stage-dir
-	$(MAKE) -C $(DEPTH)/testing/instrumentation stage-package
+	cp -RL $(topsrcdir)/testing/profiles/common/user.js $(PKG_STAGE)/steeplechase/prefs_general.js
 
 TEST_EXTENSIONS := \
     specialpowers@mozilla.org.xpi \
@@ -282,6 +267,7 @@ check::
   xpcshell-tests \
   jstestbrowser \
   package-tests \
+  download-wpt-manifest \
   package-tests-prepare-dest \
   package-tests-common \
   make-stage-dir \
@@ -290,9 +276,7 @@ check::
   stage-mochitest \
   stage-jstests \
   stage-android \
-  stage-jetpack \
   stage-steeplechase \
-  stage-instrumentation-tests \
   test-packages-manifest \
   check \
   $(NULL)

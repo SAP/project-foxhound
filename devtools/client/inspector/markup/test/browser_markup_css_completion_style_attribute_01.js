@@ -66,11 +66,11 @@ const TEST_DATA = [
   ["VK_RIGHT", "style=\"display:  inherit; color :chartreuse !important; ",
    55, 55, false],
   ["VK_RETURN", "style=\"display:  inherit; color :chartreuse !important;\"",
-   -1, -1, false]
+   -1, -1, false],
 ];
 
-add_task(function* () {
-  let {inspector} = yield openInspectorForURL(TEST_URL);
+add_task(async function() {
+  const {inspector} = await openInspectorForURL(TEST_URL);
 
-  yield runStyleAttributeAutocompleteTests(inspector, TEST_DATA);
+  await runStyleAttributeAutocompleteTests(inspector, TEST_DATA);
 });

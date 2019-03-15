@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* vim: set ts=8 sts=4 et sw=4 tw=99: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,72 +28,43 @@
 using namespace JS;
 
 // static
-void
-XPCStringConvert::FreeZoneCache(JS::Zone* zone)
-{
-    // Put the zone user data into an AutoPtr (which will do the cleanup for us),
-    // and null out the user data (which may already be null).
-    nsAutoPtr<ZoneStringCache> cache(static_cast<ZoneStringCache*>(JS_GetZoneUserData(zone)));
-    JS_SetZoneUserData(zone, nullptr);
-}
+void XPCStringConvert::FinalizeLiteral(const JSStringFinalizer* fin,
+                                       char16_t* chars) {}
+
+const JSStringFinalizer XPCStringConvert::sLiteralFinalizer = {
+    XPCStringConvert::FinalizeLiteral};
 
 // static
-void
-XPCStringConvert::ClearZoneCache(JS::Zone* zone)
-{
-    // Although we clear the cache in FinalizeDOMString if needed, we also clear
-    // the cache here to avoid a dangling JSString* pointer when compacting GC
-    // moves the external string in memory.
-
-    ZoneStringCache* cache = static_cast<ZoneStringCache*>(JS_GetZoneUserData(zone));
-    if (cache) {
-        cache->mBuffer = nullptr;
-        cache->mLength = 0;
-        cache->mString = nullptr;
-    }
+void XPCStringConvert::FinalizeDOMString(const JSStringFinalizer* fin,
+                                         char16_t* chars) {
+  nsStringBuffer* buf = nsStringBuffer::FromData(chars);
+  buf->Release();
 }
+
+const JSStringFinalizer XPCStringConvert::sDOMStringFinalizer = {
+    XPCStringConvert::FinalizeDOMString};
 
 // static
-void
-XPCStringConvert::FinalizeLiteral(JS::Zone* zone, const JSStringFinalizer* fin, char16_t* chars)
-{
+void XPCStringConvert::FinalizeDynamicAtom(const JSStringFinalizer* fin,
+                                           char16_t* chars) {
+  nsDynamicAtom* atom = nsDynamicAtom::FromChars(chars);
+  // nsDynamicAtom::Release is always-inline and defined in a translation unit
+  // we can't get to here.  So we need to go through nsAtom::Release to call
+  // it.
+  static_cast<nsAtom*>(atom)->Release();
 }
 
-const JSStringFinalizer XPCStringConvert::sLiteralFinalizer =
-    { XPCStringConvert::FinalizeLiteral };
-
-// static
-void
-XPCStringConvert::FinalizeDOMString(JS::Zone* zone, const JSStringFinalizer* fin, char16_t* chars)
-{
-    nsStringBuffer* buf = nsStringBuffer::FromData(chars);
-
-    // Clear the ZoneStringCache if needed, as this can be called outside GC
-    // when flattening an external string.
-    ZoneStringCache* cache = static_cast<ZoneStringCache*>(JS_GetZoneUserData(zone));
-    if (cache && cache->mBuffer == buf) {
-        cache->mBuffer = nullptr;
-        cache->mLength = 0;
-        cache->mString = nullptr;
-    }
-
-    buf->Release();
-}
-
-const JSStringFinalizer XPCStringConvert::sDOMStringFinalizer =
-    { XPCStringConvert::FinalizeDOMString };
+const JSStringFinalizer XPCStringConvert::sDynamicAtomFinalizer = {
+    XPCStringConvert::FinalizeDynamicAtom};
 
 // convert a readable to a JSString, copying string data
 // static
-bool
-XPCStringConvert::ReadableToJSVal(JSContext* cx,
-                                  const nsAString& readable,
-                                  nsStringBuffer** sharedBuffer,
-                                  MutableHandleValue vp)
-{
-    *sharedBuffer = nullptr;
+bool XPCStringConvert::ReadableToJSVal(JSContext* cx, const nsAString& readable,
+                                       nsStringBuffer** sharedBuffer,
+                                       MutableHandleValue vp) {
+  *sharedBuffer = nullptr;
 
-    uint32_t length = readable.Length();
+  uint32_t length = readable.Length();
 
     if (readable.IsLiteral()) {
         JSString* str = JS_NewExternalString(cx,
@@ -120,6 +91,11 @@ XPCStringConvert::ReadableToJSVal(JSContext* cx,
 
         return true;
     }
+    if (shared) {
+      *sharedBuffer = buf;
+    }
+    return true;
+  }
 
     // blech, have to copy.
     JSString* str = JS_NewUCStringCopyN(cx, readable.BeginReading(), length);
@@ -137,19 +113,19 @@ XPCStringConvert::ReadableToJSVal(JSContext* cx,
 
 namespace xpc {
 
-bool
-NonVoidStringToJsval(JSContext* cx, nsAString& str, MutableHandleValue rval)
-{
-    nsStringBuffer* sharedBuffer;
-    if (!XPCStringConvert::ReadableToJSVal(cx, str, &sharedBuffer, rval))
-      return false;
+bool NonVoidStringToJsval(JSContext* cx, nsAString& str,
+                          MutableHandleValue rval) {
+  nsStringBuffer* sharedBuffer;
+  if (!XPCStringConvert::ReadableToJSVal(cx, str, &sharedBuffer, rval)) {
+    return false;
+  }
 
-    if (sharedBuffer) {
-        // The string was shared but ReadableToJSVal didn't addref it.
-        // Move the ownership from str to jsstr.
-        str.ForgetSharedBuffer();
-    }
-    return true;
+  if (sharedBuffer) {
+    // The string was shared but ReadableToJSVal didn't addref it.
+    // Move the ownership from str to jsstr.
+    str.ForgetSharedBuffer();
+  }
+  return true;
 }
 
-} // namespace xpc
+}  // namespace xpc

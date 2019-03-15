@@ -11,13 +11,9 @@
 namespace mozilla {
 namespace dom {
 
-CommandEvent::CommandEvent(EventTarget* aOwner,
-                           nsPresContext* aPresContext,
+CommandEvent::CommandEvent(EventTarget* aOwner, nsPresContext* aPresContext,
                            WidgetCommandEvent* aEvent)
-  : Event(aOwner, aPresContext,
-          aEvent ? aEvent :
-                   new WidgetCommandEvent(false, nullptr, nullptr, nullptr))
-{
+    : Event(aOwner, aPresContext, aEvent ? aEvent : new WidgetCommandEvent()) {
   mEvent->mTime = PR_Now();
   if (aEvent) {
     mEventIsInternal = false;
@@ -26,51 +22,24 @@ CommandEvent::CommandEvent(EventTarget* aOwner,
   }
 }
 
-NS_INTERFACE_MAP_BEGIN(CommandEvent)
-  NS_INTERFACE_MAP_ENTRY(nsIDOMCommandEvent)
-NS_INTERFACE_MAP_END_INHERITING(Event)
-
-NS_IMPL_ADDREF_INHERITED(CommandEvent, Event)
-NS_IMPL_RELEASE_INHERITED(CommandEvent, Event)
-
-NS_IMETHODIMP
-CommandEvent::GetCommand(nsAString& aCommand)
-{
-  nsIAtom* command = mEvent->AsCommandEvent()->mCommand;
+void CommandEvent::GetCommand(nsAString& aCommand) {
+  nsAtom* command = mEvent->AsCommandEvent()->mCommand;
   if (command) {
     command->ToString(aCommand);
   } else {
     aCommand.Truncate();
   }
-  return NS_OK;
 }
 
-NS_IMETHODIMP
-CommandEvent::InitCommandEvent(const nsAString& aTypeArg,
-                               bool aCanBubbleArg,
-                               bool aCancelableArg,
-                               const nsAString& aCommand)
-{
-  NS_ENSURE_TRUE(!mEvent->mFlags.mIsBeingDispatched, NS_OK);
-
-  Event::InitEvent(aTypeArg, aCanBubbleArg, aCancelableArg);
-
-  mEvent->AsCommandEvent()->mCommand = NS_Atomize(aCommand);
-  return NS_OK;
-}
-
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 using namespace mozilla;
 using namespace mozilla::dom;
 
-already_AddRefed<CommandEvent>
-NS_NewDOMCommandEvent(EventTarget* aOwner,
-                      nsPresContext* aPresContext,
-                      WidgetCommandEvent* aEvent)
-{
-  RefPtr<CommandEvent> it =
-    new CommandEvent(aOwner, aPresContext, aEvent);
+already_AddRefed<CommandEvent> NS_NewDOMCommandEvent(
+    EventTarget* aOwner, nsPresContext* aPresContext,
+    WidgetCommandEvent* aEvent) {
+  RefPtr<CommandEvent> it = new CommandEvent(aOwner, aPresContext, aEvent);
   return it.forget();
 }

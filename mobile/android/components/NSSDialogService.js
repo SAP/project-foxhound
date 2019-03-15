@@ -2,15 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const Ci = Components.interfaces;
-const Cu = Components.utils;
-const Cc = Components.classes;
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "Prompt",
-                                  "resource://gre/modules/Prompt.jsm");
+ChromeUtils.defineModuleGetter(this, "Prompt",
+                               "resource://gre/modules/Prompt.jsm");
 
 // -----------------------------------------------------------------------
 // NSS Dialog Service
@@ -20,7 +16,7 @@ function NSSDialogs() { }
 
 NSSDialogs.prototype = {
   classID: Components.ID("{cbc08081-49b6-4561-9c18-a7707a50bda1}"),
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsICertificateDialogs, Ci.nsIClientAuthDialogs]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsICertificateDialogs, Ci.nsIClientAuthDialogs]),
 
   /**
    * Escapes the given input via HTML entity encoding. Used to prevent HTML
@@ -56,8 +52,14 @@ NSSDialogs.prototype = {
                                             escapedArgList.length);
   },
 
-  getPrompt: function(aTitle, aText, aButtons) {
+  getPrompt: function(aTitle, aText, aButtons, aCtx) {
+    let win = null;
+    try {
+      win = aCtx.getInterface(Ci.nsIDOMWindow);
+    } catch (e) {
+    }
     return new Prompt({
+      window: win,
       title: aTitle,
       text: aText,
       buttons: aButtons,
@@ -71,9 +73,7 @@ NSSDialogs.prototype = {
     });
 
     // Spin this thread while we wait for a result
-    let thread = Services.tm.currentThread;
-    while (response === null)
-      thread.processNextEvent(true);
+    Services.tm.spinEventLoopUntil(() => response != null);
 
     return response;
   },
@@ -84,12 +84,11 @@ NSSDialogs.prototype = {
                                   this.getString("downloadCert.message1"),
                                   [ this.getString("nssdialogs.ok.label"),
                                     this.getString("downloadCert.viewCert.label"),
-                                    this.getString("nssdialogs.cancel.label")
-                                  ]);
+                                    this.getString("nssdialogs.cancel.label"),
+                                  ], aCtx);
 
       prompt.addCheckbox({ id: "trustSSL", label: this.getString("downloadCert.trustSSL"), checked: false })
-            .addCheckbox({ id: "trustEmail", label: this.getString("downloadCert.trustEmail"), checked: false })
-            .addCheckbox({ id: "trustSign", label: this.getString("downloadCert.trustObjSign"), checked: false });
+            .addCheckbox({ id: "trustEmail", label: this.getString("downloadCert.trustEmail"), checked: false });
       let response = this.showPrompt(prompt);
 
       // they hit the "view cert" button, so show the cert and try again
@@ -103,7 +102,6 @@ NSSDialogs.prototype = {
       aTrust.value = Ci.nsIX509CertDB.UNTRUSTED;
       if (response.trustSSL) aTrust.value |= Ci.nsIX509CertDB.TRUSTED_SSL;
       if (response.trustEmail) aTrust.value |= Ci.nsIX509CertDB.TRUSTED_EMAIL;
-      if (response.trustSign) aTrust.value |= Ci.nsIX509CertDB.TRUSTED_OBJSIGN;
       return true;
     }
   },
@@ -118,8 +116,8 @@ NSSDialogs.prototype = {
     let prompt = this.getPrompt(this.getString("pkcs12.getpassword.title"),
                                 this.getString("pkcs12.getpassword.message"),
                                 [ this.getString("nssdialogs.ok.label"),
-                                  this.getString("nssdialogs.cancel.label")
-                                ]).addPassword({id: "pw"});
+                                  this.getString("nssdialogs.cancel.label"),
+                                ], aCtx).addPassword({id: "pw"});
     let response = this.showPrompt(prompt);
     if (response.button != 0) {
       return false;
@@ -150,7 +148,7 @@ NSSDialogs.prototype = {
   viewCert: function(aCtx, aCert) {
     let p = this.getPrompt(this.getString("certmgr.title"), "", [
                              this.getString("nssdialogs.ok.label"),
-                           ]);
+                           ], aCtx);
     p.addLabel({ label: this.certInfoSection("certmgr.subjectinfo.label",
                           ["certdetail.cn", aCert.commonName,
                            "certdetail.o", aCert.organization,
@@ -204,10 +202,10 @@ NSSDialogs.prototype = {
     return detailLines.join("<br/>");
   },
 
-  viewCertDetails: function(details) {
+  viewCertDetails: function(details, ctx) {
     let p = this.getPrompt(this.getString("clientAuthAsk.message3"),
-                    '',
-                    [ this.getString("nssdialogs.ok.label") ]);
+                    "",
+                    [ this.getString("nssdialogs.ok.label") ], ctx);
     p.addLabel({ label: details });
     this.showPrompt(p);
   },
@@ -242,7 +240,7 @@ NSSDialogs.prototype = {
       ];
       let prompt = this.getPrompt(this.getString("clientAuthAsk.title"),
                                   this.getString("clientAuthAsk.message1"),
-                                  buttons)
+                                  buttons, ctx)
       .addLabel({ id: "requestedDetails", label: serverRequestedDetails } )
       .addMenulist({
         id: "nicknames",
@@ -252,15 +250,15 @@ NSSDialogs.prototype = {
       }).addCheckbox({
         id: "rememberBox",
         label: this.getString("clientAuthAsk.remember.label"),
-        checked: rememberSetting
+        checked: rememberSetting,
       });
       let response = this.showPrompt(prompt);
       selectedIndex.value = response.nicknames;
       if (response.button == 1 /* buttons[1] */) {
-        this.viewCertDetails(certDetailsList[selectedIndex.value]);
+        this.viewCertDetails(certDetailsList[selectedIndex.value], ctx);
         continue;
       } else if (response.button == 0 /* buttons[0] */) {
-        if (response.rememberBox == true) {
+        if (response.rememberBox) {
           let caud = ctx.QueryInterface(Ci.nsIClientAuthUserDecision);
           if (caud) {
             caud.rememberClientAuthCertificate = true;
@@ -270,7 +268,7 @@ NSSDialogs.prototype = {
       }
       return false;
     }
-  }
+  },
 };
 
 this.NSGetFactory = XPCOMUtils.generateNSGetFactory([NSSDialogs]);

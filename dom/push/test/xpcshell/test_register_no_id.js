@@ -18,7 +18,7 @@ function run_test() {
   run_next_test();
 }
 
-add_task(function* test_register_no_id() {
+add_task(async function test_register_no_id() {
   let registers = 0;
   let helloDone;
   let helloPromise = new Promise(resolve => helloDone = after(2, resolve));
@@ -48,15 +48,16 @@ add_task(function* test_register_no_id() {
     }
   });
 
-  yield rejects(
+  await rejects(
     PushService.register({
       scope: 'https://example.com/incomplete',
       originAttributes: ChromeUtils.originAttributesToSuffix(
         { appId: Ci.nsIScriptSecurityManager.NO_APP_ID, inIsolatedMozBrowser: false }),
     }),
+    /Registration error/,
     'Expected error for incomplete register response'
   );
 
-  yield helloPromise;
+  await helloPromise;
   equal(registers, 1, 'Wrong register count');
 });

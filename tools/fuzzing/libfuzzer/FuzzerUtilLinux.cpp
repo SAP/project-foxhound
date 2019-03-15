@@ -1,4 +1,4 @@
-//===- FuzzerUtilLinux.cpp - Misc utils -----------------------------------===//
+//===- FuzzerUtilLinux.cpp - Misc utils for Linux. ------------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -9,11 +9,18 @@
 // Misc utils for Linux.
 //===----------------------------------------------------------------------===//
 #include "FuzzerDefs.h"
-#if LIBFUZZER_LINUX
+#if LIBFUZZER_LINUX || LIBFUZZER_NETBSD || LIBFUZZER_FREEBSD
+#include "FuzzerCommand.h"
+
 #include <stdlib.h>
+
 namespace fuzzer {
-int ExecuteCommand(const std::string &Command) {
-  return system(Command.c_str());
+
+int ExecuteCommand(const Command &Cmd) {
+  std::string CmdLine = Cmd.toString();
+  return system(CmdLine.c_str());
 }
-}
-#endif // LIBFUZZER_LINUX
+
+} // namespace fuzzer
+
+#endif // LIBFUZZER_LINUX || LIBFUZZER_NETBSD || LIBFUZZER_FREEBSD

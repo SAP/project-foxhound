@@ -3,7 +3,8 @@
 
 /* eslint-env mozilla/frame-script */
 
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 XPCOMUtils.defineLazyServiceGetter(this, "MediaManagerService",
                                    "@mozilla.org/mediaManagerService;1",
                                    "nsIMediaManagerService");
@@ -14,7 +15,7 @@ const kObservedTopics = [
   "getUserMedia:response:deny",
   "getUserMedia:request",
   "recording-device-events",
-  "recording-window-ended"
+  "recording-window-ended",
 ];
 
 var gObservedTopics = {};
@@ -22,8 +23,8 @@ var gObservedTopics = {};
 function ignoreEvent(aSubject, aTopic, aData) {
   // With e10s disabled, our content script receives notifications for the
   // preview displayed in our screen sharing permission prompt; ignore them.
-  const kBrowserURL = "chrome://browser/content/browser.xul";
-  const nsIPropertyBag = Components.interfaces.nsIPropertyBag;
+  const kBrowserURL = AppConstants.BROWSER_CHROME_URL;
+  const nsIPropertyBag = Ci.nsIPropertyBag;
   if (aTopic == "recording-device-events" &&
       aSubject.QueryInterface(nsIPropertyBag).getProperty("requestURL") == kBrowserURL) {
     return true;
@@ -48,14 +49,15 @@ function observer(aSubject, aTopic, aData) {
 }
 
 kObservedTopics.forEach(topic => {
-  Services.obs.addObserver(observer, topic, false);
+  Services.obs.addObserver(observer, topic);
 });
 
-addMessageListener("Test:ExpectObserverCalled", ({data}) => {
+addMessageListener("Test:ExpectObserverCalled", ({ data: { topic, count } }) => {
   sendAsyncMessage("Test:ExpectObserverCalled:Reply",
-                   {count: gObservedTopics[data]});
-  if (data in gObservedTopics)
-    --gObservedTopics[data];
+                   {count: gObservedTopics[topic]});
+  if (topic in gObservedTopics) {
+    gObservedTopics[topic] -= count;
+  }
 });
 
 addMessageListener("Test:ExpectNoObserverCalled", data => {
@@ -64,29 +66,30 @@ addMessageListener("Test:ExpectNoObserverCalled", data => {
 });
 
 function _getMediaCaptureState() {
-  let hasVideo = {};
-  let hasAudio = {};
+  let hasCamera = {};
+  let hasMicrophone = {};
   let hasScreenShare = {};
   let hasWindowShare = {};
   let hasAppShare = {};
   let hasBrowserShare = {};
-  MediaManagerService.mediaCaptureWindowState(content, hasVideo, hasAudio,
+  MediaManagerService.mediaCaptureWindowState(content,
+                                              hasCamera, hasMicrophone,
                                               hasScreenShare, hasWindowShare,
                                               hasAppShare, hasBrowserShare);
   let result = {};
 
-  if (hasVideo.value)
+  if (hasCamera.value != MediaManagerService.STATE_NOCAPTURE)
     result.video = true;
-  if (hasAudio.value)
+  if (hasMicrophone.value != MediaManagerService.STATE_NOCAPTURE)
     result.audio = true;
 
-  if (hasScreenShare.value)
+  if (hasScreenShare.value != MediaManagerService.STATE_NOCAPTURE)
     result.screen = "Screen";
-  else if (hasWindowShare.value)
+  else if (hasWindowShare.value != MediaManagerService.STATE_NOCAPTURE)
     result.screen = "Window";
-  else if (hasAppShare.value)
+  else if (hasAppShare.value != MediaManagerService.STATE_NOCAPTURE)
     result.screen = "Application";
-  else if (hasBrowserShare.value)
+  else if (hasBrowserShare.value != MediaManagerService.STATE_NOCAPTURE)
     result.screen = "Browser";
 
   return result;
@@ -111,17 +114,27 @@ addMessageListener("Test:WaitForObserverCall", ({data}) => {
     sendAsyncMessage("Test:ObserverCalled", topic);
     Services.obs.removeObserver(obs, topic);
 
-    if (kObservedTopics.indexOf(topic) != -1) {
+    if (kObservedTopics.includes(topic)) {
       if (!(topic in gObservedTopics))
         gObservedTopics[topic] = -1;
       else
         --gObservedTopics[topic];
     }
-  }, topic, false);
+  }, topic);
 });
 
+function messageListener({data}) {
+  sendAsyncMessage("Test:MessageReceived", data);
+}
+
 addMessageListener("Test:WaitForMessage", () => {
-  content.addEventListener("message", ({data}) => {
-    sendAsyncMessage("Test:MessageReceived", data);
-  }, {once: true});
+  content.addEventListener("message", messageListener, {once: true});
+});
+
+addMessageListener("Test:WaitForMultipleMessages", () => {
+  content.addEventListener("message", messageListener);
+});
+
+addMessageListener("Test:StopWaitForMultipleMessages", () => {
+  content.removeEventListener("message", messageListener);
 });

@@ -2,15 +2,26 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/* import-globals-from extensionControlled.js */
 /* import-globals-from preferences.js */
 
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
-                                  "resource://gre/modules/PlacesUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Task",
-                                  "resource://gre/modules/Task.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "PlacesUtils",
+                               "resource://gre/modules/PlacesUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "ExtensionSettingsStore",
+                               "resource://gre/modules/ExtensionSettingsStore.jsm");
+
+Preferences.addAll([
+  { id: "browser.search.suggest.enabled", type: "bool" },
+  { id: "browser.urlbar.suggest.searches", type: "bool" },
+  { id: "browser.search.hiddenOneOffs", type: "unichar" },
+  { id: "browser.search.widget.inNavBar", type: "bool" },
+  { id: "browser.urlbar.matchBuckets", type: "string" },
+]);
 
 const ENGINE_FLAVOR = "text/x-moz-search-engine";
+const SEARCH_TYPE = "default_search";
+const SEARCH_KEY = "defaultSearch";
 
 var gEngineView = null;
 
@@ -20,8 +31,8 @@ var gSearchPane = {
    * Initialize autocomplete to ensure prefs are in sync.
    */
   _initAutocomplete() {
-    Components.classes["@mozilla.org/autocomplete/search;1?name=unifiedcomplete"]
-              .getService(Components.interfaces.mozIPlacesAutoComplete);
+    Cc["@mozilla.org/autocomplete/search;1?name=unifiedcomplete"]
+      .getService(Ci.mozIPlacesAutoComplete);
   },
 
   init() {
@@ -29,10 +40,15 @@ var gSearchPane = {
     document.getElementById("engineList").view = gEngineView;
     this.buildDefaultEngineDropDown();
 
-    let addEnginesLink = document.getElementById("addEngines");
-    let searchEnginesURL = Services.wm.getMostRecentWindow("navigator:browser")
-                                      .BrowserSearch.searchEnginesURL;
-    addEnginesLink.setAttribute("href", searchEnginesURL);
+    if (Services.policies &&
+        !Services.policies.isAllowed("installSearchEngine")) {
+      document.getElementById("addEnginesBox").hidden = true;
+    } else {
+      let addEnginesLink = document.getElementById("addEngines");
+      let searchEnginesURL = Services.wm.getMostRecentWindow("navigator:browser")
+                                        .BrowserSearch.searchEnginesURL;
+      addEnginesLink.setAttribute("href", searchEnginesURL);
+    }
 
     window.addEventListener("click", this);
     window.addEventListener("command", this);
@@ -41,34 +57,87 @@ var gSearchPane = {
     window.addEventListener("select", this);
     window.addEventListener("blur", this, true);
 
-    Services.obs.addObserver(this, "browser-search-engine-modified", false);
+    Services.obs.addObserver(this, "browser-search-engine-modified");
     window.addEventListener("unload", () => {
       Services.obs.removeObserver(this, "browser-search-engine-modified");
     });
 
     this._initAutocomplete();
 
-    let suggestsPref =
-      document.getElementById("browser.search.suggest.enabled");
-    suggestsPref.addEventListener("change", () => {
-      this.updateSuggestsCheckbox();
+    let suggestsPref = Preferences.get("browser.search.suggest.enabled");
+    let urlbarSuggestsPref = Preferences.get("browser.urlbar.suggest.searches");
+    let updateSuggestionCheckboxes = this._updateSuggestionCheckboxes.bind(this);
+    suggestsPref.on("change", updateSuggestionCheckboxes);
+    urlbarSuggestsPref.on("change", updateSuggestionCheckboxes);
+    let urlbarSuggests = document.getElementById("urlBarSuggestion");
+    urlbarSuggests.addEventListener("command", () => {
+      urlbarSuggestsPref.value = urlbarSuggests.checked;
     });
-    this.updateSuggestsCheckbox();
+
+    this._initShowSearchSuggestionsFirst();
+    this._updateSuggestionCheckboxes();
   },
 
-  updateSuggestsCheckbox() {
-    let suggestsPref =
-      document.getElementById("browser.search.suggest.enabled");
+  _initShowSearchSuggestionsFirst() {
+    this._urlbarSuggestionsPosPref = Preferences.get("browser.urlbar.matchBuckets");
+    let checkbox =
+      document.getElementById("showSearchSuggestionsFirstCheckbox");
+
+    this._urlbarSuggestionsPosPref.on("change", () => {
+      this._syncFromShowSearchSuggestionsFirstPref(checkbox);
+    });
+    this._syncFromShowSearchSuggestionsFirstPref(checkbox);
+
+    checkbox.addEventListener("command", () => {
+      this._syncToShowSearchSuggestionsFirstPref(checkbox.checked);
+    });
+  },
+
+  _syncFromShowSearchSuggestionsFirstPref(checkbox) {
+    if (!this._urlbarSuggestionsPosPref.value) {
+      // The pref is cleared, meaning search suggestions are shown first.
+      checkbox.checked = true;
+      return;
+    }
+    // The pref has a value.  If the first bucket in the pref is search
+    // suggestions, then check the checkbox.
+    let buckets = PlacesUtils.convertMatchBucketsStringToArray(this._urlbarSuggestionsPosPref.value);
+    checkbox.checked = buckets[0] && buckets[0][0] == "suggestion";
+  },
+
+  _syncToShowSearchSuggestionsFirstPref(checked) {
+    if (checked) {
+      // Show search suggestions first, so clear the pref since that's the
+      // default.
+      this._urlbarSuggestionsPosPref.reset();
+      return;
+    }
+    // Show history first.
+    this._urlbarSuggestionsPosPref.value = "general:5,suggestion:Infinity";
+  },
+
+  _updateSuggestionCheckboxes() {
+    let suggestsPref = Preferences.get("browser.search.suggest.enabled");
     let permanentPB =
       Services.prefs.getBoolPref("browser.privatebrowsing.autostart");
     let urlbarSuggests = document.getElementById("urlBarSuggestion");
+    let positionCheckbox =
+      document.getElementById("showSearchSuggestionsFirstCheckbox");
+
     urlbarSuggests.disabled = !suggestsPref.value || permanentPB;
 
-    let urlbarSuggestsPref =
-      document.getElementById("browser.urlbar.suggest.searches");
+    let urlbarSuggestsPref = Preferences.get("browser.urlbar.suggest.searches");
     urlbarSuggests.checked = urlbarSuggestsPref.value;
     if (urlbarSuggests.disabled) {
       urlbarSuggests.checked = false;
+    }
+
+    if (urlbarSuggests.checked) {
+      positionCheckbox.disabled = false;
+      this._syncFromShowSearchSuggestionsFirstPref(positionCheckbox);
+    } else {
+      positionCheckbox.disabled = true;
+      positionCheckbox.checked = false;
     }
 
     let permanentPBLabel =
@@ -80,7 +149,7 @@ var gSearchPane = {
     // This is called each time something affects the list of engines.
     let list = document.getElementById("defaultEngine");
     // Set selection to the current default engine.
-    let currentEngine = Services.search.currentEngine.name;
+    let currentEngine = Services.search.defaultEngine.name;
 
     // If the current engine isn't in the list any more, select the first item.
     let engines = gEngineView._engineStore._engines;
@@ -98,6 +167,17 @@ var gSearchPane = {
       item.engine = e;
       if (e.name == currentEngine)
         list.selectedItem = item;
+    });
+
+    handleControllingExtension(SEARCH_TYPE, SEARCH_KEY);
+    let searchEngineListener = {
+      observe(subject, topic, data) {
+        handleControllingExtension(SEARCH_TYPE, SEARCH_KEY);
+      },
+    };
+    Services.obs.addObserver(searchEngineListener, "browser-search-engine-modified");
+    window.addEventListener("unload", () => {
+      Services.obs.removeObserver(searchEngineListener, "browser-search-engine-modified");
     });
   },
 
@@ -165,7 +245,7 @@ var gSearchPane = {
 
   observe(aEngine, aTopic, aVerb) {
     if (aTopic == "browser-search-engine-modified") {
-      aEngine.QueryInterface(Components.interfaces.nsISearchEngine);
+      aEngine.QueryInterface(Ci.nsISearchEngine);
       switch (aVerb) {
       case "engine-added":
         gEngineView._engineStore.addEngine(aEngine);
@@ -257,19 +337,21 @@ var gSearchPane = {
     document.getElementById("engineList").focus();
   },
 
-  editKeyword: Task.async(function* (aEngine, aNewKeyword) {
+  async editKeyword(aEngine, aNewKeyword) {
     let keyword = aNewKeyword.trim();
     if (keyword) {
       let eduplicate = false;
       let dupName = "";
 
       // Check for duplicates in Places keywords.
-      let bduplicate = !!(yield PlacesUtils.keywords.fetch(keyword));
+      let bduplicate = !!(await PlacesUtils.keywords.fetch(keyword));
 
       // Check for duplicates in changes we haven't committed yet
       let engines = gEngineView._engineStore.engines;
+      let lc_keyword = keyword.toLocaleLowerCase();
       for (let engine of engines) {
-        if (engine.alias == keyword &&
+        if (engine.alias &&
+            engine.alias.toLocaleLowerCase() == lc_keyword &&
             engine.name != aEngine.name) {
           eduplicate = true;
           dupName = engine.name;
@@ -279,12 +361,16 @@ var gSearchPane = {
 
       // Notify the user if they have chosen an existing engine/bookmark keyword
       if (eduplicate || bduplicate) {
-        let strings = document.getElementById("engineManagerBundle");
-        let dtitle = strings.getString("duplicateTitle");
-        let bmsg = strings.getString("duplicateBookmarkMsg");
-        let emsg = strings.getFormattedString("duplicateEngineMsg", [dupName]);
+        let msgids = [{id: "search-keyword-warning-title"}];
+        if (eduplicate) {
+          msgids.push({id: "search-keyword-warning-engine", args: { name: dupName }});
+        } else {
+          msgids.push({id: "search-keyword-warning-bookmark"});
+        }
 
-        Services.prompt.alert(window, dtitle, eduplicate ? emsg : bmsg);
+        let [dtitle, msg] = await document.l10n.formatValues(msgids);
+
+        Services.prompt.alert(window, dtitle, msg);
         return false;
       }
     }
@@ -292,7 +378,7 @@ var gSearchPane = {
     gEngineView._engineStore.changeEngine(aEngine, "alias", keyword);
     gEngineView.invalidate();
     return true;
-  }),
+  },
 
   saveOneClickEnginesList() {
     let hiddenList = [];
@@ -300,22 +386,22 @@ var gSearchPane = {
       if (!engine.shown)
         hiddenList.push(engine.name);
     }
-    document.getElementById("browser.search.hiddenOneOffs").value =
+    Preferences.get("browser.search.hiddenOneOffs").value =
       hiddenList.join(",");
   },
 
   setDefaultEngine() {
-    Services.search.currentEngine =
+    Services.search.defaultEngine =
       document.getElementById("defaultEngine").selectedItem.engine;
-  }
+    ExtensionSettingsStore.setByUser(SEARCH_TYPE, SEARCH_KEY);
+  },
 };
 
 function onDragEngineStart(event) {
   var selectedIndex = gEngineView.selectedIndex;
   var tree = document.getElementById("engineList");
-  var row = { }, col = { }, child = { };
-  tree.treeBoxObject.getCellAt(event.clientX, event.clientY, row, col, child);
-  if (selectedIndex >= 0 && !gEngineView.isCheckBox(row.value, col.value)) {
+  let cell = tree.getCellAt(event.clientX, event.clientY);
+  if (selectedIndex >= 0 && !gEngineView.isCheckBox(cell.row, cell.col)) {
     event.dataTransfer.setData(ENGINE_FLAVOR, selectedIndex.toString());
     event.dataTransfer.effectAllowed = "move";
   }
@@ -323,7 +409,7 @@ function onDragEngineStart(event) {
 
 
 function EngineStore() {
-  let pref = document.getElementById("browser.search.hiddenOneOffs").value;
+  let pref = Preferences.get("browser.search.hiddenOneOffs").value;
   this.hiddenList = pref ? pref.split(",") : [];
 
   this._engines = Services.search.getVisibleEngines().map(this._cloneEngine, this);
@@ -358,7 +444,7 @@ EngineStore.prototype = {
     for (var i in aEngine)
       clonedObj[i] = aEngine[i];
     clonedObj.originalEngine = aEngine;
-    clonedObj.shown = this.hiddenList.indexOf(clonedObj.name) == -1;
+    clonedObj.shown = !this.hiddenList.includes(clonedObj.name);
     return clonedObj;
   },
 
@@ -449,7 +535,7 @@ EngineStore.prototype = {
     this._engines.forEach(function(e) {
       e.uri = e.originalEngine.uri;
     });
-  }
+  },
 };
 
 function EngineView(aEngineStore) {
@@ -541,7 +627,7 @@ EngineView.prototype = {
     var sourceIndex = this.getSourceIndexFromDrag(dataTransfer);
     var sourceEngine = this._engineStore.engines[sourceIndex];
 
-    const nsITreeView = Components.interfaces.nsITreeView;
+    const nsITreeView = Ci.nsITreeView;
     if (dropIndex > sourceIndex) {
       if (orientation == nsITreeView.DROP_BEFORE)
         dropIndex--;
@@ -570,7 +656,6 @@ EngineView.prototype = {
   getParentIndex(index) { return -1; },
   hasNextSibling(parentIndex, index) { return false; },
   getLevel(index) { return 0; },
-  getProgressMode(index, column) { },
   getCellValue(index, column) {
     if (column.id == "engineShown")
       return this._engineStore.engines[index].shown;
@@ -581,7 +666,6 @@ EngineView.prototype = {
   selectionChanged() { },
   cycleCell(row, column) { },
   isEditable(index, column) { return column.id != "engineName"; },
-  isSelectable(index, column) { return false; },
   setCellValue(index, column, value) {
     if (column.id == "engineShown") {
       this._engineStore.engines[index].shown = value == "true";
@@ -600,5 +684,5 @@ EngineView.prototype = {
   },
   performAction(action) { },
   performActionOnRow(action, index) { },
-  performActionOnCell(action, index, column) { }
+  performActionOnCell(action, index, column) { },
 };

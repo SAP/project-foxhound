@@ -1,11 +1,9 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-"use strict"
+"use strict";
 
-var { classes: Cc, interfaces: Ci, results: Cr, utils: Cu } = Components;
-
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // Import common head.
 {
@@ -17,31 +15,34 @@ Cu.import("resource://gre/modules/Services.jsm");
 
 // Put any other stuff relative to this test folder below.
 
-const DB_FILENAME = "places.sqlite";
+const CURRENT_SCHEMA_VERSION = 52;
+const FIRST_UPGRADABLE_SCHEMA_VERSION = 30;
 
-/**
- * Sets the database to use for the given test.  This should be the very first
- * thing in the test, otherwise this database will not be used!
- *
- * @param aFileName
- *        The filename of the database to use.  This database must exist in
- *        toolkit/components/places/tests/migration!
- * @return {Promise}
- */
-var setupPlacesDatabase = Task.async(function* (aFileName) {
-  let currentDir = yield OS.File.getCurrentDirectory();
+async function assertAnnotationsRemoved(db, expectedAnnos) {
+  for (let anno of expectedAnnos) {
+    let rows = await db.execute(`
+      SELECT id FROM moz_anno_attributes
+      WHERE name = :anno
+    `, {anno});
 
-  let src = OS.Path.join(currentDir, aFileName);
-  Assert.ok((yield OS.File.exists(src)), "Database file found");
+    Assert.equal(rows.length, 0, `${anno} should not exist in the database`);
+  }
+}
 
-  // Ensure that our database doesn't already exist.
-  let dest = OS.Path.join(OS.Constants.Path.profileDir, DB_FILENAME);
-  Assert.ok(!(yield OS.File.exists(dest)), "Database file should not exist yet");
+async function assertNoOrphanAnnotations(db) {
+  let rows = await db.execute(`
+    SELECT item_id FROM moz_items_annos
+    WHERE item_id NOT IN (SELECT id from moz_bookmarks)
+  `);
 
-  yield OS.File.copy(src, dest);
-});
+  Assert.equal(rows.length, 0,
+    `Should have no orphan annotations.`);
 
-// This works provided all tests in this folder use add_task.
-function run_test() {
-  run_next_test();
+  rows = await db.execute(`
+    SELECT id FROM moz_anno_attributes
+    WHERE id NOT IN (SELECT id from moz_items_annos)
+  `);
+
+  Assert.equal(rows.length, 0,
+    `Should have no orphan annotation attributes.`);
 }

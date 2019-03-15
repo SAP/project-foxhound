@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 import urllib
 
 from marionette_driver.by import By
@@ -41,7 +43,7 @@ class TestSelect(SelectTestCase):
         options[1].click()
         self.assertSelected(options[1])
 
-    def test_deselect(self):
+    def test_deselect_others(self):
         self.marionette.navigate(inline("""
           <select>
             <option>first
@@ -59,6 +61,22 @@ class TestSelect(SelectTestCase):
         self.assertSelected(options[2])
         options[0].click()
         self.assertSelected(options[0])
+
+    def test_select_self(self):
+        self.marionette.navigate(inline("""
+          <select>
+            <option>first
+            <option>second
+          </select>"""))
+        select = self.marionette.find_element(By.TAG_NAME, "select")
+        options = self.marionette.find_elements(By.TAG_NAME, "option")
+        self.assertSelected(options[0])
+        self.assertNotSelected(options[1])
+
+        options[1].click()
+        self.assertSelected(options[1])
+        options[1].click()
+        self.assertSelected(options[1])
 
     def test_out_of_view(self):
         self.marionette.navigate(inline("""

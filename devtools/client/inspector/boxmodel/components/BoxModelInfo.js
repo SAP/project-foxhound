@@ -4,9 +4,10 @@
 
 "use strict";
 
+const { PureComponent } = require("devtools/client/shared/vendor/react");
+const dom = require("devtools/client/shared/vendor/react-dom-factories");
+const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const { LocalizationHelper } = require("devtools/shared/l10n");
-const { addons, createClass, DOM: dom, PropTypes } =
-  require("devtools/client/shared/vendor/react");
 
 const Types = require("../types");
 
@@ -16,29 +17,31 @@ const BOXMODEL_L10N = new LocalizationHelper(BOXMODEL_STRINGS_URI);
 const SHARED_STRINGS_URI = "devtools/client/locales/shared.properties";
 const SHARED_L10N = new LocalizationHelper(SHARED_STRINGS_URI);
 
-module.exports = createClass({
+class BoxModelInfo extends PureComponent {
+  static get propTypes() {
+    return {
+      boxModel: PropTypes.shape(Types.boxModel).isRequired,
+      onToggleGeometryEditor: PropTypes.func.isRequired,
+    };
+  }
 
-  displayName: "BoxModelInfo",
-
-  propTypes: {
-    boxModel: PropTypes.shape(Types.boxModel).isRequired,
-    onToggleGeometryEditor: PropTypes.func.isRequired,
-  },
-
-  mixins: [ addons.PureRenderMixin ],
+  constructor(props) {
+    super(props);
+    this.onToggleGeometryEditor = this.onToggleGeometryEditor.bind(this);
+  }
 
   onToggleGeometryEditor(e) {
     this.props.onToggleGeometryEditor();
-  },
+  }
 
   render() {
-    let { boxModel } = this.props;
-    let { geometryEditorEnabled, layout } = boxModel;
-    let {
-      height,
+    const { boxModel } = this.props;
+    const { geometryEditorEnabled, layout } = boxModel;
+    const {
+      height = "-",
       isPositionEditable,
       position,
-      width,
+      width = "-",
     } = layout;
 
     let buttonClass = "layout-geometry-editor devtools-button";
@@ -46,36 +49,25 @@ module.exports = createClass({
       buttonClass += " checked";
     }
 
-    return dom.div(
-      {
-        className: "boxmodel-info",
-      },
-      dom.span(
-        {
-          className: "boxmodel-element-size",
-        },
-        SHARED_L10N.getFormatStr("dimensions", width, height)
-      ),
-      dom.section(
-        {
-          className: "boxmodel-position-group",
-        },
-        isPositionEditable ?
-          dom.button({
-            className: buttonClass,
-            title: BOXMODEL_L10N.getStr("boxmodel.geometryButton.tooltip"),
-            onClick: this.onToggleGeometryEditor,
-          })
-          :
-          null,
-        dom.span(
-          {
-            className: "boxmodel-element-position",
-          },
-          position
+    return (
+      dom.div({ className: "boxmodel-info" },
+        dom.span({ className: "boxmodel-element-size" },
+          SHARED_L10N.getFormatStr("dimensions", width, height)
+        ),
+        dom.section({ className: "boxmodel-position-group" },
+          isPositionEditable ?
+            dom.button({
+              className: buttonClass,
+              title: BOXMODEL_L10N.getStr("boxmodel.geometryButton.tooltip"),
+              onClick: this.onToggleGeometryEditor,
+            })
+            :
+            null,
+          dom.span({ className: "boxmodel-element-position" }, position)
         )
       )
     );
-  },
+  }
+}
 
-});
+module.exports = BoxModelInfo;

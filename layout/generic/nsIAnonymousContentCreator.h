@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,8 +12,9 @@
 #ifndef nsIAnonymousContentCreator_h___
 #define nsIAnonymousContentCreator_h___
 
+#include "mozilla/ComputedStyle.h"
+
 #include "nsQueryFrame.h"
-#include "nsStyleContext.h"
 #include "nsTArrayForwardDeclare.h"
 
 class nsIContent;
@@ -24,18 +26,14 @@ class nsIFrame;
  *
  * @see nsCSSFrameConstructor
  */
-class nsIAnonymousContentCreator
-{
-public:
+class nsIAnonymousContentCreator {
+ public:
   NS_DECL_QUERYFRAME_TARGET(nsIAnonymousContentCreator)
 
   struct ContentInfo {
-    explicit ContentInfo(nsIContent* aContent) :
-      mContent(aContent)
-    {}
+    explicit ContentInfo(nsIContent* aContent) : mContent(aContent) {}
 
     nsIContent* mContent;
-    nsTArray<ContentInfo> mChildren;
   };
 
   /**
@@ -50,12 +48,8 @@ public:
    *       responsible for calling UnbindFromTree on the elements it returned
    *       from CreateAnonymousContent when appropriate (i.e. before releasing
    *       them).
-   *
-   * @note Implementations of this method that add items to mChildren must not
-   *       hook them up to any parent since frame construction takes care of
-   *       that.
    */
-  virtual nsresult CreateAnonymousContent(nsTArray<ContentInfo>& aElements)=0;
+  virtual nsresult CreateAnonymousContent(nsTArray<ContentInfo>& aElements) = 0;
 
   /**
    * Appends "native" anonymous children created by CreateAnonymousContent()
@@ -70,4 +64,3 @@ public:
 };
 
 #endif
-

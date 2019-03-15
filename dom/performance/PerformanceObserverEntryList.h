@@ -11,6 +11,7 @@
 #include "nsISupports.h"
 #include "nsTArray.h"
 #include "nsWrapperCache.h"
+#include "mozilla/dom/DOMPrefs.h"
 #include "mozilla/dom/PerformanceEntryBinding.h"
 
 namespace mozilla {
@@ -18,26 +19,19 @@ namespace dom {
 
 struct PerformanceEntryFilterOptions;
 class PerformanceEntry;
-template<typename T> class Optional;
+template <typename T>
+class Optional;
 
 class PerformanceObserverEntryList final : public nsISupports,
-                                           public nsWrapperCache
-{
+                                           public nsWrapperCache {
   ~PerformanceObserverEntryList();
 
-public:
+ public:
   PerformanceObserverEntryList(nsISupports* aOwner,
-                               nsTArray<RefPtr<PerformanceEntry>>&
-                               aEntries)
-    : mOwner(aOwner)
-    , mEntries(aEntries)
-  {
-  }
+                               nsTArray<RefPtr<PerformanceEntry>>& aEntries)
+      : mOwner(aOwner), mEntries(aEntries) {}
 
-  nsISupports* GetParentObject() const
-  {
-    return mOwner;
-  }
+  nsISupports* GetParentObject() const { return mOwner; }
 
   virtual JSObject* WrapObject(JSContext* aCx,
                                JS::Handle<JSObject*> aGivenProto) override;
@@ -53,13 +47,12 @@ public:
                         const Optional<nsAString>& aEntryType,
                         nsTArray<RefPtr<PerformanceEntry>>& aRetval);
 
-private:
+ private:
   nsCOMPtr<nsISupports> mOwner;
   nsTArray<RefPtr<PerformanceEntry>> mEntries;
 };
 
-} // namespace dom
-} // namespace mozilla
-
+}  // namespace dom
+}  // namespace mozilla
 
 #endif

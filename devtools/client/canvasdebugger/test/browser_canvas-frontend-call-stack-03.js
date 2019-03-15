@@ -6,20 +6,20 @@
  * on a function call item.
  */
 
-function* ifTestingSupported() {
-  let { target, panel } = yield initCanvasDebuggerFrontend(SIMPLE_CANVAS_DEEP_STACK_URL);
-  let { window, $, $all, EVENTS, SnapshotsListView, CallsListView } = panel.panelWin;
+async function ifTestingSupported() {
+  const { target, panel } = await initCanvasDebuggerFrontend(SIMPLE_CANVAS_DEEP_STACK_URL);
+  const { window, $, $all, EVENTS, SnapshotsListView, CallsListView } = panel.panelWin;
 
-  yield reload(target);
+  await reload(target);
 
-  let recordingFinished = once(window, EVENTS.SNAPSHOT_RECORDING_FINISHED);
-  let callListPopulated = once(window, EVENTS.CALL_LIST_POPULATED);
+  const recordingFinished = once(window, EVENTS.SNAPSHOT_RECORDING_FINISHED);
+  const callListPopulated = once(window, EVENTS.CALL_LIST_POPULATED);
   SnapshotsListView._onRecordButtonClick();
-  yield promise.all([recordingFinished, callListPopulated]);
+  await Promise.all([recordingFinished, callListPopulated]);
 
-  let callItem = CallsListView.getItemAtIndex(2);
-  let view = $(".call-item-view", callItem.target);
-  let contents = $(".call-item-contents", callItem.target);
+  const callItem = CallsListView.getItemAtIndex(2);
+  const view = $(".call-item-view", callItem.target);
+  const contents = $(".call-item-contents", callItem.target);
 
   is(view.hasAttribute("call-stack-populated"), false,
     "The call item's view should not have the stack populated yet.");
@@ -28,9 +28,9 @@ function* ifTestingSupported() {
   is($(".call-item-stack", callItem.target), null,
     "There should be no stack container available yet for the draw call.");
 
-  let callStackDisplayed = once(window, EVENTS.CALL_STACK_DISPLAYED);
+  const callStackDisplayed = once(window, EVENTS.CALL_STACK_DISPLAYED);
   EventUtils.sendMouseEvent({ type: "dblclick" }, contents, window);
-  yield callStackDisplayed;
+  await callStackDisplayed;
 
   is(view.hasAttribute("call-stack-populated"), true,
     "The call item's view should have the stack populated now.");
@@ -60,6 +60,6 @@ function* ifTestingSupported() {
   ok($all(".call-item-stack-fn", callItem.target).length >= 4,
      "There should still be at least 4 functions on the stack for the draw call.");
 
-  yield teardown(panel);
+  await teardown(panel);
   finish();
 }

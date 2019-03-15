@@ -8,15 +8,16 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_processing/vad/pole_zero_filter.h"
+#include "modules/audio_processing/vad/pole_zero_filter.h"
 
 #include <math.h>
 #include <stdio.h>
 
-#include "testing/gtest/include/gtest/gtest.h"
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/modules/audio_processing/vad/vad_audio_proc_internal.h"
-#include "webrtc/test/testsupport/fileutils.h"
+#include <memory>
+
+#include "modules/audio_processing/vad/vad_audio_proc_internal.h"
+#include "test/gtest.h"
+#include "test/testsupport/fileutils.h"
 
 namespace webrtc {
 
@@ -58,7 +59,7 @@ class PoleZeroFilterTest : public ::testing::Test {
 
  private:
   void TestClean();
-  rtc::scoped_ptr<PoleZeroFilter> my_filter_;
+  std::unique_ptr<PoleZeroFilter> my_filter_;
 };
 
 void PoleZeroFilterTest::FilterSubframes(int num_subframes) {

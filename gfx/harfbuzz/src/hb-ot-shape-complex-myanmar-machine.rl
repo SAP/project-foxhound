@@ -27,7 +27,7 @@
 #ifndef HB_OT_SHAPE_COMPLEX_MYANMAR_MACHINE_HH
 #define HB_OT_SHAPE_COMPLEX_MYANMAR_MACHINE_HH
 
-#include "hb-private.hh"
+#include "hb.hh"
 
 %%{
   machine myanmar_syllable_machine;
@@ -41,7 +41,7 @@
 A    = 10;
 As   = 18;
 C    = 1;
-D    = 19;
+D    = 32;
 D0   = 20;
 DB   = 3;
 GB   = 11;
@@ -62,6 +62,7 @@ ZWJ  = 6;
 ZWNJ = 5;
 Ra   = 16;
 P    = 31;
+CS   = 19;
 
 j = ZWJ|ZWNJ;			# Joiners
 k = (Ra As H);			# Kinzi
@@ -69,14 +70,14 @@ k = (Ra As H);			# Kinzi
 c = C|Ra;			# is_consonant
 
 medial_group = MY? MR? MW? MH? As?;
-main_vowel_group = VPre* VAbv* VBlw* A* (DB As?)?;
+main_vowel_group = (VPre.VS?)* VAbv* VBlw* A* (DB As?)?;
 post_vowel_group = VPst MH? As* VAbv* A* (DB As?)?;
 pwo_tone_group = PT A* DB? As?;
 
 complex_syllable_tail = As* medial_group main_vowel_group post_vowel_group* pwo_tone_group* V* j?;
 syllable_tail = (H | complex_syllable_tail);
 
-consonant_syllable =	k? (c|IV|D|GB).VS? (H (c|IV).VS?)* syllable_tail;
+consonant_syllable =	(k|CS)? (c|IV|D|GB).VS? (H (c|IV).VS?)* syllable_tail;
 punctuation_cluster = 	P V;
 broken_cluster =	k? VS? syllable_tail;
 other =			any;
@@ -94,10 +95,9 @@ main := |*
 
 #define found_syllable(syllable_type) \
   HB_STMT_START { \
-    if (0) fprintf (stderr, "syllable %d..%d %s\n", last, p+1, #syllable_type); \
-    for (unsigned int i = last; i < p+1; i++) \
+    if (0) fprintf (stderr, "syllable %d..%d %s\n", ts, te, #syllable_type); \
+    for (unsigned int i = ts; i < te; i++) \
       info[i].syllable() = (syllable_serial << 4) | syllable_type; \
-    last = p+1; \
     syllable_serial++; \
     if (unlikely (syllable_serial == 16)) syllable_serial = 1; \
   } HB_STMT_END
@@ -105,7 +105,7 @@ main := |*
 static void
 find_syllables (hb_buffer_t *buffer)
 {
-  unsigned int p, pe, eof, ts HB_UNUSED, te HB_UNUSED, act HB_UNUSED;
+  unsigned int p, pe, eof, ts, te, act HB_UNUSED;
   int cs;
   hb_glyph_info_t *info = buffer->info;
   %%{
@@ -116,7 +116,6 @@ find_syllables (hb_buffer_t *buffer)
   p = 0;
   pe = eof = buffer->len;
 
-  unsigned int last = 0;
   unsigned int syllable_serial = 1;
   %%{
     write exec;

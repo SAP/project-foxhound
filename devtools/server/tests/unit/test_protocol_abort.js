@@ -1,14 +1,15 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+"use strict";
+
 /**
  * Outstanding requests should be rejected when the connection aborts
  * unexpectedly.
  */
 
 var protocol = require("devtools/shared/protocol");
-var {Arg, Option, RetVal} = protocol;
-var events = require("sdk/event/core");
+var {RetVal} = protocol;
 
 function simpleHello() {
   return {
@@ -23,14 +24,14 @@ const rootSpec = protocol.generateActorSpec({
 
   methods: {
     simpleReturn: {
-      response: { value: RetVal() }
-    }
-  }
+      response: { value: RetVal() },
+    },
+  },
 });
 
 var RootActor = protocol.ActorClassWithSpec(rootSpec, {
   typeName: "root",
-  initialize: function (conn) {
+  initialize: function(conn) {
     protocol.Actor.prototype.initialize.call(this, conn);
     // Root actor owns itself.
     this.manage(this);
@@ -40,36 +41,36 @@ var RootActor = protocol.ActorClassWithSpec(rootSpec, {
 
   sayHello: simpleHello,
 
-  simpleReturn: function () {
+  simpleReturn: function() {
     return this.sequence++;
-  }
+  },
 });
 
-var RootFront = protocol.FrontClassWithSpec(rootSpec, {
-  initialize: function (client) {
+class RootFront extends protocol.FrontClassWithSpec(rootSpec) {
+  constructor(client) {
+    super(client);
     this.actorID = "root";
-    protocol.Front.prototype.initialize.call(this, client);
     // Root owns itself.
     this.manage(this);
   }
-});
+}
 
 function run_test() {
   DebuggerServer.createRootActor = RootActor;
   DebuggerServer.init();
 
-  let trace = connectPipeTracing();
-  let client = new DebuggerClient(trace);
-  let rootClient;
+  const trace = connectPipeTracing();
+  const client = new DebuggerClient(trace);
+  let rootFront;
 
   client.connect().then(([applicationType, traits]) => {
-    rootClient = RootFront(client);
+    rootFront = new RootFront(client);
 
-    rootClient.simpleReturn().then(() => {
+    rootFront.simpleReturn().then(() => {
       ok(false, "Connection was aborted, request shouldn't resolve");
       do_test_finished();
     }, e => {
-      let error = e.toString();
+      const error = e.toString();
       ok(true, "Connection was aborted, request rejected correctly");
       ok(error.includes("Request stack:"), "Error includes request stack");
       ok(error.includes("test_protocol_abort.js"), "Stack includes this test");

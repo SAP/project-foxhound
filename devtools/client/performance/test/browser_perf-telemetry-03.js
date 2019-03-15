@@ -12,45 +12,46 @@ const { initPerformanceInNewTab, teardownToolboxAndRemoveTab } = require("devtoo
 const { startRecording, stopRecording } = require("devtools/client/performance/test/helpers/actions");
 const { once } = require("devtools/client/performance/test/helpers/event-utils");
 
-add_task(function* () {
-  let { panel } = yield initPerformanceInNewTab({
+add_task(async function() {
+  startTelemetry();
+
+  const { panel } = await initPerformanceInNewTab({
     url: SIMPLE_URL,
-    win: window
+    win: window,
   });
 
-  let {
+  const {
     EVENTS,
-    PerformanceController,
     DetailsView,
     JsCallTreeView,
-    JsFlameGraphView
+    JsFlameGraphView,
   } = panel.panelWin;
 
-  let telemetry = PerformanceController._telemetry;
-  let logs = telemetry.getLogs();
-  let VIEWS = "DEVTOOLS_PERFTOOLS_SELECTED_VIEW_MS";
+  await startRecording(panel);
+  await stopRecording(panel);
 
-  yield startRecording(panel);
-  yield stopRecording(panel);
-
-  let calltreeRendered = once(JsCallTreeView, EVENTS.UI_JS_CALL_TREE_RENDERED);
-  let flamegraphRendered = once(JsFlameGraphView, EVENTS.UI_JS_FLAMEGRAPH_RENDERED);
+  const calltreeRendered = once(JsCallTreeView, EVENTS.UI_JS_CALL_TREE_RENDERED);
+  const flamegraphRendered = once(JsFlameGraphView, EVENTS.UI_JS_FLAMEGRAPH_RENDERED);
 
   // Go through some views to check later.
-  yield DetailsView.selectView("js-calltree");
-  yield calltreeRendered;
+  await DetailsView.selectView("js-calltree");
+  await calltreeRendered;
 
-  yield DetailsView.selectView("js-flamegraph");
-  yield flamegraphRendered;
+  await DetailsView.selectView("js-flamegraph");
+  await flamegraphRendered;
 
-  yield teardownToolboxAndRemoveTab(panel);
+  await teardownToolboxAndRemoveTab(panel);
 
-  // Check views after destruction to ensure `js-flamegraph` gets called
-  // with a time during destruction.
-  ok(logs[VIEWS].find(r => r[0] === "waterfall" && typeof r[1] === "number"),
-     `${VIEWS} for waterfall view and time.`);
-  ok(logs[VIEWS].find(r => r[0] === "js-calltree" && typeof r[1] === "number"),
-     `${VIEWS} for js-calltree view and time.`);
-  ok(logs[VIEWS].find(r => r[0] === "js-flamegraph" && typeof r[1] === "number"),
-     `${VIEWS} for js-flamegraph view and time.`);
+  checkResults();
 });
+
+function checkResults() {
+  // For help generating these tests use generateTelemetryTests("DEVTOOLS_PERFTOOLS_")
+  // here.
+  checkTelemetry(
+    "DEVTOOLS_PERFTOOLS_SELECTED_VIEW_MS", "js-calltree", null, "hasentries");
+  checkTelemetry(
+    "DEVTOOLS_PERFTOOLS_SELECTED_VIEW_MS", "js-flamegraph", null, "hasentries");
+  checkTelemetry(
+    "DEVTOOLS_PERFTOOLS_SELECTED_VIEW_MS", "waterfall", null, "hasentries");
+}

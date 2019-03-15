@@ -2,44 +2,44 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 
-add_task(function*() {
+add_task(async function() {
   // Note that head_autocomplete.js has already added a MozSearch engine.
   // Here we add another engine with a search alias.
   Services.search.addEngineWithDetails("AliasedMozSearch", "", "doit", "",
                                        "GET", "http://s.example.com/search");
 
-  do_print("search engine");
-  yield check_autocomplete({
+  info("search engine");
+  await check_autocomplete({
     search: "mozilla",
     searchParam: "enable-actions",
-    matches: [ makeSearchMatch("mozilla", { heuristic: true }) ]
+    matches: [ makeSearchMatch("mozilla", { heuristic: true }) ],
   });
 
-  do_print("search engine, uri-like input");
-  yield check_autocomplete({
+  info("search engine, uri-like input");
+  await check_autocomplete({
     search: "http:///",
     searchParam: "enable-actions",
-    matches: [ makeSearchMatch("http:///", { heuristic: true }) ]
+    matches: [ makeSearchMatch("http:///", { heuristic: true }) ],
   });
 
-  do_print("search engine, multiple words");
-  yield check_autocomplete({
+  info("search engine, multiple words");
+  await check_autocomplete({
     search: "mozzarella cheese",
     searchParam: "enable-actions",
-    matches: [ makeSearchMatch("mozzarella cheese", { heuristic: true }) ]
+    matches: [ makeSearchMatch("mozzarella cheese", { heuristic: true }) ],
   });
 
-  do_print("search engine, after current engine has changed");
+  info("search engine, after current engine has changed");
   Services.search.addEngineWithDetails("MozSearch2", "", "", "", "GET",
                                        "http://s.example.com/search2");
   let engine = Services.search.getEngineByName("MozSearch2");
-  notEqual(Services.search.currentEngine, engine, "New engine shouldn't be the current engine yet");
-  Services.search.currentEngine = engine;
-  yield check_autocomplete({
+  notEqual(Services.search.defaultEngine, engine, "New engine shouldn't be the current engine yet");
+  Services.search.defaultEngine = engine;
+  await check_autocomplete({
     search: "mozilla",
     searchParam: "enable-actions",
-    matches: [ makeSearchMatch("mozilla", { engineName: "MozSearch2", heuristic: true }) ]
+    matches: [ makeSearchMatch("mozilla", { engineName: "MozSearch2", heuristic: true }) ],
   });
 
-  yield cleanup();
+  await cleanup();
 });

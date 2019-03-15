@@ -1,6 +1,6 @@
-Components.utils.import("resource:///modules/RecentWindow.jsm");
+ChromeUtils.import("resource:///modules/BrowserWindowTracker.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "CaptivePortalWatcher",
+ChromeUtils.defineModuleGetter(this, "CaptivePortalWatcher",
   "resource:///modules/CaptivePortalWatcher.jsm");
 
 XPCOMUtils.defineLazyServiceGetter(this, "cps",
@@ -12,51 +12,42 @@ const CANONICAL_URL = "data:text/plain;charset=utf-8," + CANONICAL_CONTENT;
 const CANONICAL_URL_REDIRECTED = "data:text/plain;charset=utf-8,redirected";
 const PORTAL_NOTIFICATION_VALUE = "captive-portal-detected";
 
-function* setupPrefsAndRecentWindowBehavior() {
-  yield SpecialPowers.pushPrefEnv({
+async function setupPrefsAndRecentWindowBehavior() {
+  await SpecialPowers.pushPrefEnv({
     set: [["captivedetect.canonicalURL", CANONICAL_URL],
           ["captivedetect.canonicalContent", CANONICAL_CONTENT]],
   });
   // We need to test behavior when a portal is detected when there is no browser
   // window, but we can't close the default window opened by the test harness.
   // Instead, we deactivate CaptivePortalWatcher in the default window and
-  // exclude it from RecentWindow.getMostRecentBrowserWindow in an attempt to
-  // mask its presence.
+  // exclude it using an attribute to mask its presence.
   window.CaptivePortalWatcher.uninit();
-  let getMostRecentBrowserWindowCopy = RecentWindow.getMostRecentBrowserWindow;
-  let defaultWindow = window;
-  RecentWindow.getMostRecentBrowserWindow = () => {
-    let win = getMostRecentBrowserWindowCopy();
-    if (win == defaultWindow) {
-      return null;
-    }
-    return win;
-  };
+  window.document.documentElement.setAttribute("ignorecaptiveportal", "true");
 
-  registerCleanupFunction(function* cleanUp() {
-    RecentWindow.getMostRecentBrowserWindow = getMostRecentBrowserWindowCopy;
+  registerCleanupFunction(function cleanUp() {
     window.CaptivePortalWatcher.init();
+    window.document.documentElement.removeAttribute("ignorecaptiveportal");
   });
 }
 
-function* portalDetected() {
-  Services.obs.notifyObservers(null, "captive-portal-login", null);
-  yield BrowserTestUtils.waitForCondition(() => {
+async function portalDetected() {
+  Services.obs.notifyObservers(null, "captive-portal-login");
+  await BrowserTestUtils.waitForCondition(() => {
     return cps.state == cps.LOCKED_PORTAL;
   }, "Waiting for Captive Portal Service to update state after portal detected.");
 }
 
-function* freePortal(aSuccess) {
+async function freePortal(aSuccess) {
   Services.obs.notifyObservers(null,
-    "captive-portal-login-" + (aSuccess ? "success" : "abort"), null);
-  yield BrowserTestUtils.waitForCondition(() => {
+    "captive-portal-login-" + (aSuccess ? "success" : "abort"));
+  await BrowserTestUtils.waitForCondition(() => {
     return cps.state != cps.LOCKED_PORTAL;
   }, "Waiting for Captive Portal Service to update state after portal freed.");
 }
 
 // If a window is provided, it will be focused. Otherwise, a new window
 // will be opened and focused.
-function* focusWindowAndWaitForPortalUI(aLongRecheck, win) {
+async function focusWindowAndWaitForPortalUI(aLongRecheck, win) {
   // CaptivePortalWatcher triggers a recheck when a window gains focus. If
   // the time taken for the check to complete is under PORTAL_RECHECK_DELAY_MS,
   // a tab with the login page is opened and selected. If it took longer,
@@ -64,19 +55,21 @@ function* focusWindowAndWaitForPortalUI(aLongRecheck, win) {
   // so use a delay threshold of -1 to simulate a long recheck (so that any
   // amount of time is considered excessive), and a very large threshold to
   // simulate a short recheck.
-  Preferences.set("captivedetect.portalRecheckDelayMS", aLongRecheck ? -1 : 1000000);
+  Services.prefs.setIntPref("captivedetect.portalRecheckDelayMS", aLongRecheck ? -1 : 1000000);
 
   if (!win) {
-    win = yield BrowserTestUtils.openNewBrowserWindow();
+    win = await BrowserTestUtils.openNewBrowserWindow();
   }
-  yield SimpleTest.promiseFocus(win);
+  let windowActivePromise = waitForBrowserWindowActive(win);
+  win.focus();
+  await windowActivePromise;
 
   // After a new window is opened, CaptivePortalWatcher asks for a recheck, and
   // waits for it to complete. We need to manually tell it a recheck completed.
-  yield BrowserTestUtils.waitForCondition(() => {
+  await BrowserTestUtils.waitForCondition(() => {
     return win.CaptivePortalWatcher._waitingForRecheck;
   }, "Waiting for CaptivePortalWatcher to trigger a recheck.");
-  Services.obs.notifyObservers(null, "captive-portal-check-complete", null);
+  Services.obs.notifyObservers(null, "captive-portal-check-complete");
 
   let notification = ensurePortalNotification(win);
 
@@ -89,7 +82,7 @@ function* focusWindowAndWaitForPortalUI(aLongRecheck, win) {
   let tab = win.gBrowser.tabs[1];
   if (tab.linkedBrowser.currentURI.spec != CANONICAL_URL) {
     // The tab should load the canonical URL, wait for it.
-    yield BrowserTestUtils.waitForLocationChange(win.gBrowser, CANONICAL_URL);
+    await BrowserTestUtils.waitForLocationChange(win.gBrowser, CANONICAL_URL);
   }
   is(win.gBrowser.selectedTab, tab,
     "The captive portal tab should be open and selected in the new window.");
@@ -105,9 +98,8 @@ function ensurePortalTab(win) {
 }
 
 function ensurePortalNotification(win) {
-  let notificationBox =
-    win.document.getElementById("high-priority-global-notificationbox");
-  let notification = notificationBox.getNotificationWithValue(PORTAL_NOTIFICATION_VALUE)
+  let notification = win.gHighPriorityNotificationBox.getNotificationWithValue(
+                                                  PORTAL_NOTIFICATION_VALUE);
   isnot(notification, null,
     "There should be a captive portal notification in the window.");
   return notification;
@@ -129,34 +121,42 @@ function ensureNoPortalTab(win) {
 }
 
 function ensureNoPortalNotification(win) {
-  let notificationBox =
-    win.document.getElementById("high-priority-global-notificationbox");
-  is(notificationBox.getNotificationWithValue(PORTAL_NOTIFICATION_VALUE), null,
+  is(win.gHighPriorityNotificationBox
+    .getNotificationWithValue(PORTAL_NOTIFICATION_VALUE), null,
     "There should be no captive portal notification in the window.");
 }
 
 /**
  * Some tests open a new window and close it later. When the window is closed,
- * the original window opened by mochitest gains focus, generating a
- * xul-window-visible notification. If the next test also opens a new window
- * before this notification has a chance to fire, CaptivePortalWatcher picks
+ * the original window opened by mochitest gains focus, generating an
+ * activate event. If the next test also opens a new window
+ * before this event has a chance to fire, CaptivePortalWatcher picks
  * up the first one instead of the one from the new window. To avoid this
- * unfortunate intermittent timing issue, we wait for the notification from
+ * unfortunate intermittent timing issue, we wait for the event from
  * the original window every time we close a window that we opened.
  */
-function waitForXulWindowVisible() {
+function waitForBrowserWindowActive(win) {
   return new Promise(resolve => {
-    Services.obs.addObserver(function observe() {
-      Services.obs.removeObserver(observe, "xul-window-visible");
+    if (Services.focus.activeWindow == win) {
       resolve();
-    }, "xul-window-visible", false);
+    } else {
+      win.addEventListener("activate", () => {
+        resolve();
+      }, { once: true });
+    }
   });
 }
 
-function* closeWindowAndWaitForXulWindowVisible(win) {
-  let p = waitForXulWindowVisible();
-  yield BrowserTestUtils.closeWindow(win);
-  yield p;
+async function closeWindowAndWaitForWindowActivate(win) {
+  let activationPromises = [];
+  for (let w of BrowserWindowTracker.orderedWindows) {
+    if (w != win &&
+        !win.document.documentElement.getAttribute("ignorecaptiveportal")) {
+      activationPromises.push(waitForBrowserWindowActive(win));
+    }
+  }
+  await BrowserTestUtils.closeWindow(win);
+  await Promise.race(activationPromises);
 }
 
 /**
@@ -164,18 +164,8 @@ function* closeWindowAndWaitForXulWindowVisible(win) {
  * opened window has received focus when the promise resolves, so we
  * have to manually wait every time.
  */
-function* openWindowAndWaitForFocus() {
-  let win = yield BrowserTestUtils.openNewBrowserWindow();
-  yield SimpleTest.promiseFocus(win);
+async function openWindowAndWaitForFocus() {
+  let win = await BrowserTestUtils.openNewBrowserWindow();
+  await waitForBrowserWindowActive(win);
   return win;
-}
-
-function waitForCertErrorLoad(browser) {
-  return new Promise(resolve => {
-    info("Waiting for DOMContentLoaded event");
-    browser.addEventListener("DOMContentLoaded", function load() {
-      browser.removeEventListener("DOMContentLoaded", load, false, true);
-      resolve();
-    }, false, true);
-  });
 }

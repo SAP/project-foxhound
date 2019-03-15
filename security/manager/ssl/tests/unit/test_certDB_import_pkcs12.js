@@ -10,43 +10,71 @@ do_get_profile();
 const gCertDB = Cc["@mozilla.org/security/x509certdb;1"]
                   .getService(Ci.nsIX509CertDB);
 
+const PKCS12_FILE = "test_certDB_import/cert_from_windows.pfx";
+const PKCS12_FILE_EMPTY_PASS =
+        "test_certDB_import/cert_from_windows_emptypass.pfx";
+const PKCS12_FILE_NO_PASS = "test_certDB_import/cert_from_windows_nopass.pfx";
 const CERT_COMMON_NAME = "test_cert_from_windows";
 const TEST_CERT_PASSWORD = "黒い";
 
-let gGetPKCS12Password = false;
+// Has getPKCS12FilePassword been called since we last reset this?
+let gGetPKCS12FilePasswordCalled = false;
+let gCurrentTestcase = null;
 
-// Mock implementation of nsICertificateDialogs.
-const gCertificateDialogs = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsICertificateDialogs]),
-
-  getPKCS12FilePassword: (ctx, password) => {
-    ok(!gGetPKCS12Password,
-       "getPKCS12FilePassword should be called only once.");
-
-    password.value = TEST_CERT_PASSWORD;
-    do_print("getPKCS12FilePassword() is called");
-    gGetPKCS12Password = true;
-    return true;
+let gTestcases = [
+  // Test that importing a PKCS12 file with the wrong password fails.
+  {
+    name: "import using incorrect password",
+    filename: PKCS12_FILE,
+    passwordToUse: "this is the wrong password",
+    successExpected: false,
+    errorCode: Ci.nsIX509CertDB.ERROR_BAD_PASSWORD,
+    checkCertExist: true,
   },
-};
-
-const gPrompt = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIPrompt]),
-  alert: (title, text) => {
-    do_print("alert('" + text + "')");
+  // Test that importing something that isn't a PKCS12 file fails.
+  {
+    name: "import non-PKCS12 file",
+    filename: "test_certDB_import_pkcs12.js",
+    passwordToUse: TEST_CERT_PASSWORD,
+    successExpected: false,
+    errorCode: Ci.nsIX509CertDB.ERROR_DECODE_ERROR,
+    checkCertExist: true,
   },
-};
-
-const gPromptFactory = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIPromptFactory]),
-  getPrompt: (aWindow, aIID) => gPrompt,
-};
+  // Test that importing a PKCS12 file with the correct password succeeds.
+  // This needs to be last because currently there isn't a way to delete the
+  // imported certificate (and thus reset the test state) that doesn't depend on
+  // the garbage collector running.
+  {
+    name: "import PKCS12 file",
+    filename: PKCS12_FILE,
+    passwordToUse: TEST_CERT_PASSWORD,
+    successExpected: true,
+    errorCode: Ci.nsIX509CertDB.Success,
+    checkCertExist: true,
+  },
+  // Same cert file protected with empty string password
+  {
+    name: "import PKCS12 file empty password",
+    filename: PKCS12_FILE_EMPTY_PASS,
+    passwordToUse: "",
+    successExpected: true,
+    errorCode: Ci.nsIX509CertDB.Success,
+    checkCertExist: false,
+  },
+  // Same cert file protected with no password
+  {
+    name: "import PKCS12 file no password",
+    filename: PKCS12_FILE_NO_PASS,
+    passwordToUse: null,
+    successExpected: true,
+    errorCode: Ci.nsIX509CertDB.Success,
+    checkCertExist: false,
+  },
+];
 
 function doesCertExist(commonName) {
   let allCerts = gCertDB.getCerts();
-  let enumerator = allCerts.getEnumerator();
-  while (enumerator.hasMoreElements()) {
-    let cert = enumerator.getNext().QueryInterface(Ci.nsIX509Cert);
+  for (let cert of allCerts.getEnumerator()) {
     if (cert.isBuiltInRoot) {
       continue;
     }
@@ -58,35 +86,26 @@ function doesCertExist(commonName) {
   return false;
 }
 
-function testImportPKCS12Cert() {
-  ok(!doesCertExist(CERT_COMMON_NAME),
-     "Cert should not be in the database before import");
+function runOneTestcase(testcase) {
+  info(`running ${testcase.name}`);
+  if (testcase.checkCertExist) {
+    ok(!doesCertExist(CERT_COMMON_NAME),
+       "cert should not be in the database before import");
+  }
 
-  // Import and check for success.
-  let certFile = do_get_file("test_certDB_import/cert_from_windows.pfx");
-  gCertDB.importPKCS12File(certFile);
-
-  ok(gGetPKCS12Password, "PKCS12 password should be asked");
-
-  ok(doesCertExist(CERT_COMMON_NAME),
-     "Cert should now be found in the database");
+  // Import and check for failure.
+  let certFile = do_get_file(testcase.filename);
+  ok(certFile, `${testcase.filename} should exist`);
+  gGetPKCS12FilePasswordCalled = false;
+  gCurrentTestcase = testcase;
+  let errorCode = gCertDB.importPKCS12File(certFile, testcase.passwordToUse);
+  equal(errorCode, testcase.errorCode, `verifying error code`);
+  equal(doesCertExist(CERT_COMMON_NAME), testcase.successExpected,
+        `cert should${testcase.successExpected ? "" : " not"} be found now`);
 }
 
 function run_test() {
-  // We have to set a password and login before we attempt to import anything.
-  loginToDBWithDefaultPassword();
-
-  let certificateDialogsCID =
-    MockRegistrar.register("@mozilla.org/nsCertificateDialogs;1",
-                           gCertificateDialogs);
-  let promptFactoryCID =
-    MockRegistrar.register("@mozilla.org/prompter;1", gPromptFactory);
-
-  do_register_cleanup(() => {
-    MockRegistrar.unregister(certificateDialogsCID);
-    MockRegistrar.unregister(promptFactoryCID);
-  });
-
-  // Import PKCS12 file with utf-8 password
-  testImportPKCS12Cert();
+  for (let testcase of gTestcases) {
+    runOneTestcase(testcase);
+  }
 }

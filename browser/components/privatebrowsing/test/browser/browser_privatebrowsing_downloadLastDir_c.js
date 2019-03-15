@@ -7,9 +7,9 @@ function test() {
   waitForExplicitFinish();
 
   let FileUtils =
-    Cu.import("resource://gre/modules/FileUtils.jsm", {}).FileUtils;
+    ChromeUtils.import("resource://gre/modules/FileUtils.jsm", {}).FileUtils;
   let DownloadLastDir =
-    Cu.import("resource://gre/modules/DownloadLastDir.jsm", {}).DownloadLastDir;
+    ChromeUtils.import("resource://gre/modules/DownloadLastDir.jsm", {}).DownloadLastDir;
   let MockFilePicker = SpecialPowers.MockFilePicker;
 
   MockFilePicker.init(window);
@@ -41,7 +41,7 @@ function test() {
     contentType: "text/plain",
     saveMode: SAVEMODE_FILEONLY,
     saveAsType: kSaveAsType_Complete,
-    file: null
+    file: null,
   };
 
   prefs.setComplexValue("lastDir", Ci.nsIFile, tmpDir);
@@ -78,7 +78,7 @@ function test() {
       gDownloadLastDir.cleanupPrivateFile();
       aWin.close();
       aCallback();
-    }).then(null, function() { ok(false); });
+    }).catch(function() { ok(false); });
   }
 
   testOnWindow(false, function(win, downloadDir) {

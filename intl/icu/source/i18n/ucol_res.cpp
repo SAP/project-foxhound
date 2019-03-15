@@ -1,4 +1,4 @@
-// Copyright (C) 2016 and later: Unicode, Inc. and others.
+// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
 /*
 *******************************************************************************
@@ -6,7 +6,7 @@
 *   Corporation and others.  All Rights Reserved.
 *******************************************************************************
 *   file name:  ucol_res.cpp
-*   encoding:   US-ASCII
+*   encoding:   UTF-8
 *   tab size:   8 (not used)
 *   indentation:4
 *
@@ -62,7 +62,7 @@ namespace {
 static const UChar *rootRules = NULL;
 static int32_t rootRulesLength = 0;
 static UResourceBundle *rootBundle = NULL;
-static UInitOnce gInitOnce = U_INITONCE_INITIALIZER;
+static UInitOnce gInitOnceUcolRes = U_INITONCE_INITIALIZER;
 
 }  // namespace
 
@@ -74,7 +74,7 @@ ucol_res_cleanup() {
     rootRulesLength = 0;
     ures_close(rootBundle);
     rootBundle = NULL;
-    gInitOnce.reset();
+    gInitOnceUcolRes.reset();
     return TRUE;
 }
 
@@ -97,7 +97,7 @@ U_CDECL_END
 void
 CollationLoader::appendRootRules(UnicodeString &s) {
     UErrorCode errorCode = U_ZERO_ERROR;
-    umtx_initOnce(gInitOnce, CollationLoader::loadRootRules, errorCode);
+    umtx_initOnce(gInitOnceUcolRes, CollationLoader::loadRootRules, errorCode);
     if(U_SUCCESS(errorCode)) {
         s.append(rootRules, rootRulesLength);
     }
@@ -110,7 +110,7 @@ CollationLoader::loadRules(const char *localeID, const char *collationType,
     U_ASSERT(collationType != NULL && *collationType != 0);
     // Copy the type for lowercasing.
     char type[16];
-    int32_t typeLength = uprv_strlen(collationType);
+    int32_t typeLength = static_cast<int32_t>(uprv_strlen(collationType));
     if(typeLength >= UPRV_LENGTHOF(type)) {
         errorCode = U_ILLEGAL_ARGUMENT_ERROR;
         return;
@@ -318,7 +318,7 @@ CollationLoader::loadFromCollations(UErrorCode &errorCode) {
     // Load the collations/type tailoring, with type fallback.
     LocalUResourceBundlePointer localData(
             ures_getByKeyWithFallback(collations, type, NULL, &errorCode));
-    int32_t typeLength = uprv_strlen(type);
+    int32_t typeLength = static_cast<int32_t>(uprv_strlen(type));
     if(errorCode == U_MISSING_RESOURCE_ERROR) {
         errorCode = U_USING_DEFAULT_WARNING;
         typeFallback = TRUE;
@@ -400,11 +400,11 @@ CollationLoader::loadFromData(UErrorCode &errorCode) {
     // Try to fetch the optional rules string.
     {
         UErrorCode internalErrorCode = U_ZERO_ERROR;
-        int32_t length;
-        const UChar *s = ures_getStringByKey(data, "Sequence", &length,
+        int32_t len;
+        const UChar *s = ures_getStringByKey(data, "Sequence", &len,
                                              &internalErrorCode);
         if(U_SUCCESS(internalErrorCode)) {
-            t->rules.setTo(TRUE, s, length);
+            t->rules.setTo(TRUE, s, len);
         }
     }
 
@@ -426,10 +426,10 @@ CollationLoader::loadFromData(UErrorCode &errorCode) {
         LocalUResourceBundlePointer def(
                 ures_getByKeyWithFallback(actualBundle.getAlias(), "collations/default", NULL,
                                           &internalErrorCode));
-        int32_t length;
-        const UChar *s = ures_getString(def.getAlias(), &length, &internalErrorCode);
-        if(U_SUCCESS(internalErrorCode) && length < UPRV_LENGTHOF(defaultType)) {
-            u_UCharsToChars(s, defaultType, length + 1);
+        int32_t len;
+        const UChar *s = ures_getString(def.getAlias(), &len, &internalErrorCode);
+        if(U_SUCCESS(internalErrorCode) && len < UPRV_LENGTHOF(defaultType)) {
+            u_UCharsToChars(s, defaultType, len + 1);
         } else {
             uprv_strcpy(defaultType, "standard");
         }
@@ -451,6 +451,7 @@ CollationLoader::loadFromData(UErrorCode &errorCode) {
     const CollationCacheEntry *entry = new CollationCacheEntry(validLocale, t.getAlias());
     if(entry == NULL) {
         errorCode = U_MEMORY_ALLOCATION_ERROR;
+        return nullptr;
     } else {
         t.orphan();
     }

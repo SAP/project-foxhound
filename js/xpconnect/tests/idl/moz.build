@@ -7,6 +7,7 @@
 XPIDL_SOURCES += [
     'xpctest_attributes.idl',
     'xpctest_bug809674.idl',
+    'xpctest_cenums.idl',
     'xpctest_interfaces.idl',
     'xpctest_params.idl',
     'xpctest_returncode.idl',
@@ -14,12 +15,3 @@ XPIDL_SOURCES += [
 ]
 
 XPIDL_MODULE = 'xpctest'
-
-# XXX: This relies on xpctest.xpt being created in dist/bin/components/ during
-# the export tier AND TEST_HARNESS_FILES being processed after that.
-TEST_HARNESS_FILES.xpcshell.js.xpconnect.tests.components.native.components += [
-    '!/dist/bin/components/xpctest.xpt',
-]
-TEST_HARNESS_FILES.xpcshell.js.xpconnect.tests.components.js += [
-    '!/dist/bin/components/xpctest.xpt',
-]

@@ -1,5 +1,5 @@
-/* -*- Mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 40 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,10 +14,10 @@
 namespace mozilla {
 namespace dom {
 
-class PresentationBuilderParent final: public PPresentationBuilderParent
-                                     , public nsIPresentationDataChannelSessionTransportBuilder
-{
-public:
+class PresentationBuilderParent final
+    : public PPresentationBuilderParent,
+      public nsIPresentationDataChannelSessionTransportBuilder {
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIPRESENTATIONSESSIONTRANSPORTBUILDER
   NS_DECL_NSIPRESENTATIONDATACHANNELSESSIONTRANSPORTBUILDER
@@ -28,7 +28,8 @@ public:
 
   virtual mozilla::ipc::IPCResult RecvSendAnswer(const nsString& aSDP) override;
 
-  virtual mozilla::ipc::IPCResult RecvSendIceCandidate(const nsString& aCandidate) override;
+  virtual mozilla::ipc::IPCResult RecvSendIceCandidate(
+      const nsString& aCandidate) override;
 
   virtual mozilla::ipc::IPCResult RecvClose(const nsresult& aReason) override;
 
@@ -36,9 +37,10 @@ public:
 
   virtual mozilla::ipc::IPCResult RecvOnSessionTransport() override;
 
-  virtual mozilla::ipc::IPCResult RecvOnSessionTransportError(const nsresult& aReason) override;
+  virtual mozilla::ipc::IPCResult RecvOnSessionTransportError(
+      const nsresult& aReason) override;
 
-private:
+ private:
   virtual ~PresentationBuilderParent();
   bool mNeedDestroyActor = false;
   RefPtr<PresentationParent> mParent;
@@ -46,7 +48,7 @@ private:
   nsCOMPtr<nsIPresentationSessionTransport> mIPCSessionTransport;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_PresentationBuilderParent_h__
+#endif  // mozilla_dom_PresentationBuilderParent_h__

@@ -1,45 +1,44 @@
+/* eslint-disable mozilla/no-arbitrary-setTimeout */
 
 let tempFile;
-add_task(function* setup() {
-  yield SpecialPowers.pushPrefEnv({"set": [["ui.tooltipDelay", 0]]});
+add_task(async function setup() {
+  await SpecialPowers.pushPrefEnv({"set": [["ui.tooltipDelay", 0]]});
   tempFile = createTempFile();
   registerCleanupFunction(function() {
     tempFile.remove(true);
   });
 });
 
-add_task(function* test_singlefile_selected() {
-  yield do_test({value: true, result: "testfile_bug1251809"});
+add_task(async function test_singlefile_selected() {
+  await do_test({value: true, result: "testfile_bug1251809"});
 });
 
-add_task(function* test_title_set() {
-  yield do_test({title: "foo", result: "foo"});
+add_task(async function test_title_set() {
+  await do_test({title: "foo", result: "foo"});
 });
 
-add_task(function* test_nofile_selected() {
-  yield do_test({result: "No file selected."});
+add_task(async function test_nofile_selected() {
+  await do_test({result: "No file selected."});
 });
 
-add_task(function* test_multipleset_nofile_selected() {
-  yield do_test({multiple: true, result: "No files selected."});
+add_task(async function test_multipleset_nofile_selected() {
+  await do_test({multiple: true, result: "No files selected."});
 });
 
-add_task(function* test_requiredset() {
-  yield do_test({required: true, result: "Please select a file."});
+add_task(async function test_requiredset() {
+  await do_test({required: true, result: "Please select a file."});
 });
 
-function* do_test(test) {
+async function do_test(test) {
   info(`starting test ${JSON.stringify(test)}`);
 
-  let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser);
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
 
   info("Moving mouse out of the way.");
-  yield new Promise(resolve => {
-    EventUtils.synthesizeNativeMouseMove(tab.linkedBrowser, 300, 300, resolve);
-  });
+  await EventUtils.synthesizeAndWaitNativeMouseMove(tab.linkedBrowser, 300, 300);
 
   info("creating input field");
-  yield ContentTask.spawn(tab.linkedBrowser, test, function*(test) {
+  await ContentTask.spawn(tab.linkedBrowser, test, async function(test) {
     let doc = content.document;
     let input = doc.createElement("input");
     doc.body.appendChild(input);
@@ -69,11 +68,11 @@ function* do_test(test) {
     try {
       // Open the File Picker dialog (MockFilePicker) to select
       // the files for the test.
-      yield BrowserTestUtils.synthesizeMouseAtCenter("#test_input", {}, tab.linkedBrowser);
+      await BrowserTestUtils.synthesizeMouseAtCenter("#test_input", {}, tab.linkedBrowser);
       info("Waiting for the input to have the requisite files");
-      yield ContentTask.spawn(tab.linkedBrowser, {}, function*() {
+      await ContentTask.spawn(tab.linkedBrowser, {}, async function() {
         let input = content.document.querySelector("#test_input");
-        yield ContentTaskUtils.waitForCondition(() => input.files.length,
+        await ContentTaskUtils.waitForCondition(() => input.files.length,
           "The input should have at least one file selected");
         info(`The input has ${input.files.length} file(s) selected.`);
       });
@@ -92,22 +91,18 @@ function* do_test(test) {
     }, {once: true});
   });
   info("Initial mouse move");
-  yield new Promise(resolve => {
-    EventUtils.synthesizeNativeMouseMove(tab.linkedBrowser, 50, 5, resolve);
-  });
+  await EventUtils.synthesizeAndWaitNativeMouseMove(tab.linkedBrowser, 50, 5);
   info("Waiting");
-  yield new Promise(resolve => setTimeout(resolve, 400));
+  await new Promise(resolve => setTimeout(resolve, 400));
   info("Second mouse move");
-  yield new Promise(resolve => {
-    EventUtils.synthesizeNativeMouseMove(tab.linkedBrowser, 70, 5, resolve);
-  });
+  await EventUtils.synthesizeAndWaitNativeMouseMove(tab.linkedBrowser, 70, 5);
   info("Waiting for tooltip to open");
-  let tooltip = yield awaitTooltipOpen;
+  let tooltip = await awaitTooltipOpen;
 
   is(tooltip.getAttribute("label"), test.result, "tooltip label should match expectation");
 
   info("Closing tab");
-  yield BrowserTestUtils.removeTab(tab);
+  BrowserTestUtils.removeTab(tab);
 }
 
 function createTempFile() {

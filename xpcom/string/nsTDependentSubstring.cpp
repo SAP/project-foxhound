@@ -4,12 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-void
-nsTDependentSubstring_CharT::Rebind(const substring_type& str,
-                                    uint32_t startPos, uint32_t length)
-{
+#include "nsTDependentSubstring.h"
+
+template <typename T>
+void nsTDependentSubstring<T>::Rebind(const substring_type& str,
+                                      uint32_t startPos, uint32_t length) {
   // If we currently own a buffer, release it.
-  Finalize();
+  this->Finalize();
 
   size_type strLength = str.Length();
 
@@ -17,66 +18,82 @@ nsTDependentSubstring_CharT::Rebind(const substring_type& str,
     startPos = strLength;
   }
 
-  mData = const_cast<char_type*>(static_cast<const char_type*>(str.Data())) + startPos;
-  mLength = XPCOM_MIN(length, strLength - startPos);
-
-  SetDataFlags(F_NONE);
-
+  char_type* newData =
+      const_cast<char_type*>(static_cast<const char_type*>(str.Data())) +
+      startPos;
+  size_type newLength = XPCOM_MIN(length, strLength - startPos);
+  DataFlags newDataFlags = DataFlags(0);
+  this->SetData(newData, newLength, newDataFlags, EmptyTaint);
   // TaintFox: propagate taint.
   AssignTaint(str.Taint());
 }
 
-void
-nsTDependentSubstring_CharT::Rebind(const char_type* data, size_type length)
-{
+template <typename T>
+void nsTDependentSubstring<T>::Rebind(const char_type* data, size_type length) {
   NS_ASSERTION(data, "nsTDependentSubstring must wrap a non-NULL buffer");
 
   // If we currently own a buffer, release it.
-  Finalize();
+  this->Finalize();
 
-  mData = const_cast<char_type*>(static_cast<const char_type*>(data));
-  mLength = length;
-  SetDataFlags(F_NONE);
+  char_type* newData =
+      const_cast<char_type*>(static_cast<const char_type*>(data));
+  size_type newLength = length;
+  DataFlags newDataFlags = DataFlags(0);
+  this->SetData(newData, newLength, newDataFlags);
 }
 
-void
-nsTDependentSubstring_CharT::Rebind(const char_type* aStart, const char_type* aEnd)
-{
+template <typename T>
+void nsTDependentSubstring<T>::Rebind(const char_type* aStart,
+                                      const char_type* aEnd) {
   MOZ_RELEASE_ASSERT(aStart <= aEnd, "Overflow!");
-  Rebind(aStart, size_type(aEnd - aStart));
+  this->Rebind(aStart, size_type(aEnd - aStart));
 }
 
-nsTDependentSubstring_CharT::nsTDependentSubstring_CharT(const char_type* aStart,
-                                                         const char_type* aEnd)
-  : substring_type(const_cast<char_type*>(aStart), uint32_t(aEnd - aStart),
-                   F_NONE)
-{
+template <typename T>
+nsTDependentSubstring<T>::nsTDependentSubstring(const char_type* aStart,
+                                                const char_type* aEnd)
+    : substring_type(const_cast<char_type*>(aStart), uint32_t(aEnd - aStart),
+                     DataFlags(0), ClassFlags(0)) {
   MOZ_RELEASE_ASSERT(aStart <= aEnd, "Overflow!");
 }
 
-#if defined(CharT_is_PRUnichar) && defined(MOZ_USE_CHAR16_WRAPPER)
-nsTDependentSubstring_CharT::nsTDependentSubstring_CharT(char16ptr_t aStart,
-                                                         char16ptr_t aEnd)
-  : nsTDependentSubstring_CharT(static_cast<const char16_t*>(aStart),
-                                static_cast<const char16_t*>(aEnd))
-{
+#if defined(MOZ_USE_CHAR16_WRAPPER)
+template <typename T>
+template <typename Q, typename EnableIfChar16>
+nsTDependentSubstring<T>::nsTDependentSubstring(char16ptr_t aStart,
+                                                char16ptr_t aEnd)
+    : substring_type(static_cast<const char16_t*>(aStart),
+                     static_cast<const char16_t*>(aEnd)) {
   MOZ_RELEASE_ASSERT(static_cast<const char16_t*>(aStart) <=
-                     static_cast<const char16_t*>(aEnd),
+                         static_cast<const char16_t*>(aEnd),
                      "Overflow!");
 }
 #endif
 
-nsTDependentSubstring_CharT::nsTDependentSubstring_CharT(const const_iterator& aStart,
-                                                         const const_iterator& aEnd)
-  : substring_type(const_cast<char_type*>(aStart.get()),
-                   uint32_t(aEnd.get() - aStart.get()), F_NONE)
-{
+template <typename T>
+nsTDependentSubstring<T>::nsTDependentSubstring(const const_iterator& aStart,
+                                                const const_iterator& aEnd)
+    : substring_type(const_cast<char_type*>(aStart.get()),
+                     uint32_t(aEnd.get() - aStart.get()), DataFlags(0),
+                     ClassFlags(0)) {
   MOZ_RELEASE_ASSERT(aStart.get() <= aEnd.get(), "Overflow!");
 }
 
-const nsTDependentSubstring_CharT
-Substring(const CharT* aStart, const CharT* aEnd)
-{
+template <typename T>
+const nsTDependentSubstring<T> Substring(const T* aStart, const T* aEnd) {
   MOZ_RELEASE_ASSERT(aStart <= aEnd, "Overflow!");
-  return nsTDependentSubstring_CharT(aStart, aEnd);
+  return nsTDependentSubstring<T>(aStart, aEnd);
 }
+
+#if defined(MOZ_USE_CHAR16_WRAPPER)
+const nsTDependentSubstring<char16_t> Substring(char16ptr_t aData,
+                                                uint32_t aLength) {
+  return nsTDependentSubstring<char16_t>(aData, aLength);
+}
+
+const nsTDependentSubstring<char16_t> Substring(char16ptr_t aStart,
+                                                char16ptr_t aEnd) {
+  return Substring(static_cast<const char16_t*>(aStart),
+                   static_cast<const char16_t*>(aEnd));
+}
+#endif

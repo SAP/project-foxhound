@@ -6,14 +6,14 @@
 
 #include "mozilla/PRemoteSpellcheckEngineParent.h"
 #include "nsCOMPtr.h"
+#include "nsTArray.h"
 
-class nsISpellChecker;
+class mozSpellChecker;
 
 namespace mozilla {
 
-class RemoteSpellcheckEngineParent : public PRemoteSpellcheckEngineParent
-{
-public:
+class RemoteSpellcheckEngineParent : public PRemoteSpellcheckEngineParent {
+ public:
   RemoteSpellcheckEngineParent();
 
   virtual ~RemoteSpellcheckEngineParent();
@@ -23,17 +23,24 @@ public:
   virtual mozilla::ipc::IPCResult RecvSetDictionary(const nsString& aDictionary,
                                                     bool* success) override;
 
-  virtual mozilla::ipc::IPCResult RecvCheck(const nsString& aWord, bool* aIsMisspelled) override;
+  virtual mozilla::ipc::IPCResult RecvSetDictionaryFromList(
+      nsTArray<nsString>&& aList,
+      SetDictionaryFromListResolver&& aResolve) override;
 
-  virtual mozilla::ipc::IPCResult RecvCheckAndSuggest(const nsString& aWord,
-                                                      bool* aIsMisspelled,
-                                                      InfallibleTArray<nsString>* aSuggestions)
-      override;
+  virtual mozilla::ipc::IPCResult RecvCheck(const nsString& aWord,
+                                            bool* aIsMisspelled) override;
 
-private:
-  nsCOMPtr<nsISpellChecker> mSpellChecker;
+  virtual mozilla::ipc::IPCResult RecvCheckAsync(
+      nsTArray<nsString>&& aWord, CheckAsyncResolver&& aResolve) override;
+
+  virtual mozilla::ipc::IPCResult RecvCheckAndSuggest(
+      const nsString& aWord, bool* aIsMisspelled,
+      InfallibleTArray<nsString>* aSuggestions) override;
+
+ private:
+  RefPtr<mozSpellChecker> mSpellChecker;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif

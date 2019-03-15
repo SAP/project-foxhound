@@ -6,48 +6,41 @@
 
 /* exported ProductAddonChecker */
 
-const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
-
-const LOCAL_EME_SOURCES = [{
+const LOCAL_GMP_SOURCES = [{
   "id": "gmp-gmpopenh264",
-  "src": "chrome://global/content/gmp-sources/openh264.json"
+  "src": "chrome://global/content/gmp-sources/openh264.json",
 }, {
   "id": "gmp-widevinecdm",
-  "src": "chrome://global/content/gmp-sources/widevinecdm.json"
+  "src": "chrome://global/content/gmp-sources/widevinecdm.json",
 }];
 
-this.EXPORTED_SYMBOLS = [ "ProductAddonChecker" ];
+var EXPORTED_SYMBOLS = [ "ProductAddonChecker" ];
 
-Cu.importGlobalProperties(["XMLHttpRequest"]);
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Log.jsm");
+ChromeUtils.import("resource://gre/modules/CertUtils.jsm");
+ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
-Cu.import("resource://gre/modules/Log.jsm");
-Cu.import("resource://gre/modules/CertUtils.jsm");
-/* globals checkCert, BadCertHandler*/
-Cu.import("resource://gre/modules/FileUtils.jsm");
-Cu.import("resource://gre/modules/NetUtil.jsm");
-Cu.import("resource://gre/modules/osfile.jsm");
+XPCOMUtils.defineLazyGlobalGetters(this, ["XMLHttpRequest"]);
 
 /* globals GMPPrefs */
-XPCOMUtils.defineLazyModuleGetter(this, "GMPPrefs",
-                                  "resource://gre/modules/GMPUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "GMPPrefs",
+                               "resource://gre/modules/GMPUtils.jsm");
 
 /* globals OS */
 
-XPCOMUtils.defineLazyModuleGetter(this, "UpdateUtils",
-                                  "resource://gre/modules/UpdateUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "UpdateUtils",
+                               "resource://gre/modules/UpdateUtils.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "ServiceRequest",
-                                  "resource://gre/modules/ServiceRequest.jsm");
+ChromeUtils.defineModuleGetter(this, "ServiceRequest",
+                               "resource://gre/modules/ServiceRequest.jsm");
 
 // This exists so that tests can override the XHR behaviour for downloading
 // the addon update XML file.
 var CreateXHR = function() {
-  return Cc["@mozilla.org/xmlextras/xmlhttprequest;1"].
-    createInstance(Ci.nsISupports);
-}
+  return new XMLHttpRequest();
+};
 
 var logger = Log.repository.getLogger("addons.productaddons");
 
@@ -107,7 +100,7 @@ function downloadXML(url, allowNonBuiltIn = false, allowedCerts = null) {
       request = request.wrappedJSObject;
     }
     request.open("GET", url, true);
-    request.channel.notificationCallbacks = new BadCertHandler(allowNonBuiltIn);
+    request.channel.notificationCallbacks = new CertUtils.BadCertHandler(allowNonBuiltIn);
     // Prevent the request from reading from the cache.
     request.channel.loadFlags |= Ci.nsIRequest.LOAD_BYPASS_CACHE;
     // Prevent the request from writing to the cache.
@@ -143,7 +136,7 @@ function downloadXML(url, allowNonBuiltIn = false, allowedCerts = null) {
       let request = event.target;
 
       try {
-        checkCert(request.channel, allowNonBuiltIn, allowedCerts);
+        CertUtils.checkCert(request.channel, allowNonBuiltIn, allowedCerts);
       } catch (ex) {
         logger.error("Request failed certificate checks: " + ex);
         ex.status = getRequestStatus(request);
@@ -223,7 +216,7 @@ function parseXML(document) {
 
   return {
     usedFallback: false,
-    gmpAddons: results
+    gmpAddons: results,
   };
 }
 
@@ -233,12 +226,12 @@ function parseXML(document) {
  */
 function downloadLocalConfig() {
 
-  if (!GMPPrefs.get(GMPPrefs.KEY_UPDATE_ENABLED, true)) {
+  if (!GMPPrefs.getBool(GMPPrefs.KEY_UPDATE_ENABLED, true)) {
     logger.info("Updates are disabled via media.gmp-manager.updateEnabled");
     return Promise.resolve({usedFallback: true, gmpAddons: []});
   }
 
-  return Promise.all(LOCAL_EME_SOURCES.map(conf => {
+  return Promise.all(LOCAL_GMP_SOURCES.map(conf => {
     return downloadJSON(conf.src).then(addons => {
 
       let platforms = addons.vendors[conf.id].platforms;
@@ -268,7 +261,7 @@ function downloadLocalConfig() {
         "hashFunction": addons.hashFunction,
         "hashValue": details.hashValue,
         "version": addons.vendors[conf.id].version,
-        "size": details.filesize
+        "size": details.filesize,
       };
     });
   })).then(addons => {
@@ -279,7 +272,7 @@ function downloadLocalConfig() {
 
     return {
       usedFallback: true,
-      gmpAddons: addons
+      gmpAddons: addons,
     };
   });
 }
@@ -301,14 +294,14 @@ function downloadFile(url) {
         reject(Components.Exception("File download failed", xhr.status));
         return;
       }
-      Task.spawn(function* () {
-        let f = yield OS.File.openUnique(OS.Path.join(OS.Constants.Path.tmpDir, "tmpaddon"));
+      (async function() {
+        let f = await OS.File.openUnique(OS.Path.join(OS.Constants.Path.tmpDir, "tmpaddon"));
         let path = f.path;
         logger.info(`Downloaded file will be saved to ${path}`);
-        yield f.file.close();
-        yield OS.File.writeAtomic(path, new Uint8Array(xhr.response));
+        await f.file.close();
+        await OS.File.writeAtomic(path, new Uint8Array(xhr.response));
         return path;
-      }).then(resolve, reject);
+      })().then(resolve, reject);
     };
 
     let fail = (event) => {
@@ -363,8 +356,8 @@ function binaryToHex(input) {
  * @return a promise that resolves to hash of the file or rejects with a JS
  *         exception in case of error.
  */
-var computeHash = Task.async(function*(hashFunction, path) {
-  let file = yield OS.File.open(path, { existing: true, read: true });
+var computeHash = async function(hashFunction, path) {
+  let file = await OS.File.open(path, { existing: true, read: true });
   try {
     let hasher = Cc["@mozilla.org/security/hash;1"].
                  createInstance(Ci.nsICryptoHash);
@@ -372,30 +365,30 @@ var computeHash = Task.async(function*(hashFunction, path) {
 
     let bytes;
     do {
-      bytes = yield file.read(HASH_CHUNK_SIZE);
+      bytes = await file.read(HASH_CHUNK_SIZE);
       hasher.update(bytes, bytes.length);
     } while (bytes.length == HASH_CHUNK_SIZE);
 
     return binaryToHex(hasher.finish(false));
   } finally {
-    yield file.close();
+    await file.close();
   }
-});
+};
 
 /**
  * Verifies that a downloaded file matches what was expected.
  *
  * @param  properties
- *         The properties to check, `size` and `hashFunction` with `hashValue`
+ *         The properties to check, `hashFunction` with `hashValue`
  *         are supported. Any properties missing won't be checked.
  * @param  path
  *         The path of the file to check.
  * @return a promise that resolves if the file matched or rejects with a JS
  *         exception in case of error.
  */
-var verifyFile = Task.async(function*(properties, path) {
+var verifyFile = async function(properties, path) {
   if (properties.size !== undefined) {
-    let stat = yield OS.File.stat(path);
+    let stat = await OS.File.stat(path);
     if (stat.size != properties.size) {
       throw new Error("Downloaded file was " + stat.size + " bytes but expected " + properties.size + " bytes.");
     }
@@ -403,12 +396,12 @@ var verifyFile = Task.async(function*(properties, path) {
 
   if (properties.hashFunction !== undefined) {
     let expectedDigest = properties.hashValue.toLowerCase();
-    let digest = yield computeHash(properties.hashFunction, path);
+    let digest = await computeHash(properties.hashFunction, path);
     if (digest != expectedDigest) {
       throw new Error("Hash was `" + digest + "` but expected `" + expectedDigest + "`.");
     }
   }
-});
+};
 
 const ProductAddonChecker = {
   /**
@@ -427,7 +420,7 @@ const ProductAddonChecker = {
    *         exception in case of error.
    */
   getProductAddonList(url, allowNonBuiltIn = false, allowedCerts = null) {
-    if (!GMPPrefs.get(GMPPrefs.KEY_UPDATE_ENABLED, true)) {
+    if (!GMPPrefs.getBool(GMPPrefs.KEY_UPDATE_ENABLED, true)) {
       logger.info("Updates are disabled via media.gmp-manager.updateEnabled");
       return Promise.resolve({usedFallback: true, gmpAddons: []});
     }
@@ -446,14 +439,14 @@ const ProductAddonChecker = {
    * @return a promise that resolves to the temporary file downloaded or rejects
    *         with a JS exception in case of error.
    */
-  downloadAddon: Task.async(function*(addon) {
-    let path = yield downloadFile(addon.URL);
+  async downloadAddon(addon) {
+    let path = await downloadFile(addon.URL);
     try {
-      yield verifyFile(addon, path);
+      await verifyFile(addon, path);
       return path;
     } catch (e) {
-      yield OS.File.remove(path);
+      await OS.File.remove(path);
       throw e;
     }
-  })
-}
+  },
+};

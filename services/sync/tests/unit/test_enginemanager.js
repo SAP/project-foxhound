@@ -1,12 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Cu.import("resource://services-sync/engines.js");
-Cu.import("resource://services-sync/service.js");
-
-function run_test() {
-  run_next_test();
-}
+ChromeUtils.import("resource://services-sync/engines.js");
+ChromeUtils.import("resource://services-sync/service.js");
 
 function PetrolEngine() {}
 PetrolEngine.prototype.name = "petrol";
@@ -20,98 +16,211 @@ function DummyEngine() {}
 DummyEngine.prototype.name = "dummy";
 DummyEngine.prototype.finalize = async function() {};
 
-function ActualEngine() {}
-ActualEngine.prototype = {__proto__: Engine.prototype,
-                          name: "actual"};
+class ActualEngine extends SyncEngine {
+  constructor(service) {
+    super("Actual", service);
+  }
+}
 
-add_test(function test_basics() {
+add_task(async function test_basics() {
   _("We start out with a clean slate");
 
   let manager = new EngineManager(Service);
 
-  let engines = manager.getAll();
-  do_check_eq(engines.length, 0);
-  do_check_eq(manager.get("dummy"), undefined);
+  let engines = await manager.getAll();
+  Assert.equal(engines.length, 0);
+  Assert.equal((await manager.get("dummy")), undefined);
 
   _("Register an engine");
-  manager.register(DummyEngine);
-  let dummy = manager.get("dummy");
-  do_check_true(dummy instanceof DummyEngine);
+  await manager.register(DummyEngine);
+  let dummy = await manager.get("dummy");
+  Assert.ok(dummy instanceof DummyEngine);
 
-  engines = manager.getAll();
-  do_check_eq(engines.length, 1);
-  do_check_eq(engines[0], dummy);
+  engines = await manager.getAll();
+  Assert.equal(engines.length, 1);
+  Assert.equal(engines[0], dummy);
 
   _("Register an already registered engine is ignored");
-  manager.register(DummyEngine);
-  do_check_eq(manager.get("dummy"), dummy);
+  await manager.register(DummyEngine);
+  Assert.equal((await manager.get("dummy")), dummy);
 
   _("Register multiple engines in one go");
-  manager.register([PetrolEngine, DieselEngine]);
-  let petrol = manager.get("petrol");
-  let diesel = manager.get("diesel");
-  do_check_true(petrol instanceof PetrolEngine);
-  do_check_true(diesel instanceof DieselEngine);
+  await manager.register([PetrolEngine, DieselEngine]);
+  let petrol = await manager.get("petrol");
+  let diesel = await manager.get("diesel");
+  Assert.ok(petrol instanceof PetrolEngine);
+  Assert.ok(diesel instanceof DieselEngine);
 
-  engines = manager.getAll();
-  do_check_eq(engines.length, 3);
-  do_check_neq(engines.indexOf(petrol), -1);
-  do_check_neq(engines.indexOf(diesel), -1);
+  engines = await manager.getAll();
+  Assert.equal(engines.length, 3);
+  Assert.notEqual(engines.indexOf(petrol), -1);
+  Assert.notEqual(engines.indexOf(diesel), -1);
 
   _("Retrieve multiple engines in one go");
-  engines = manager.get(["dummy", "diesel"]);
-  do_check_eq(engines.length, 2);
-  do_check_neq(engines.indexOf(dummy), -1);
-  do_check_neq(engines.indexOf(diesel), -1);
+  engines = await manager.get(["dummy", "diesel"]);
+  Assert.equal(engines.length, 2);
+  Assert.notEqual(engines.indexOf(dummy), -1);
+  Assert.notEqual(engines.indexOf(diesel), -1);
 
   _("getEnabled() only returns enabled engines");
-  engines = manager.getEnabled();
-  do_check_eq(engines.length, 0);
+  engines = await manager.getEnabled();
+  Assert.equal(engines.length, 0);
 
   petrol.enabled = true;
-  engines = manager.getEnabled();
-  do_check_eq(engines.length, 1);
-  do_check_eq(engines[0], petrol);
+  engines = await manager.getEnabled();
+  Assert.equal(engines.length, 1);
+  Assert.equal(engines[0], petrol);
 
   dummy.enabled = true;
   diesel.enabled = true;
-  engines = manager.getEnabled();
-  do_check_eq(engines.length, 3);
+  engines = await manager.getEnabled();
+  Assert.equal(engines.length, 3);
 
   _("getEnabled() returns enabled engines in sorted order");
   petrol.syncPriority = 1;
   dummy.syncPriority = 2;
   diesel.syncPriority = 3;
 
-  engines = manager.getEnabled();
+  engines = await manager.getEnabled();
 
-  do_check_array_eq(engines, [petrol, dummy, diesel]);
+  Assert.deepEqual(engines, [petrol, dummy, diesel]);
 
   _("Changing the priorities should change the order in getEnabled()");
 
   dummy.syncPriority = 4;
 
-  engines = manager.getEnabled();
+  engines = await manager.getEnabled();
 
-  do_check_array_eq(engines, [petrol, diesel, dummy]);
+  Assert.deepEqual(engines, [petrol, diesel, dummy]);
 
   _("Unregister an engine by name");
-  manager.unregister("dummy");
-  do_check_eq(manager.get("dummy"), undefined);
-  engines = manager.getAll();
-  do_check_eq(engines.length, 2);
-  do_check_eq(engines.indexOf(dummy), -1);
+  await manager.unregister("dummy");
+  Assert.equal((await manager.get("dummy")), undefined);
+  engines = await manager.getAll();
+  Assert.equal(engines.length, 2);
+  Assert.equal(engines.indexOf(dummy), -1);
 
   _("Unregister an engine by value");
   // manager.unregister() checks for instanceof Engine, so let's make one:
-  manager.register(ActualEngine);
-  let actual = manager.get("actual");
-  do_check_true(actual instanceof ActualEngine);
-  do_check_true(actual instanceof Engine);
+  await manager.register(ActualEngine);
+  let actual = await manager.get("actual");
+  Assert.ok(actual instanceof ActualEngine);
+  Assert.ok(actual instanceof SyncEngine);
 
-  manager.unregister(actual);
-  do_check_eq(manager.get("actual"), undefined);
+  await manager.unregister(actual);
+  Assert.equal((await manager.get("actual")), undefined);
+});
 
-  run_next_test();
+class AutoEngine {
+  constructor(type) {
+    this.name = "automobile";
+    this.type = type;
+    this.initializeCalled = false;
+    this.finalizeCalled = false;
+    this.isActive = false;
+  }
+
+  async initialize() {
+    Assert.ok(!this.initializeCalled);
+    Assert.equal(AutoEngine.current, undefined);
+    this.initializeCalled = true;
+    this.isActive = true;
+    AutoEngine.current = this;
+  }
+
+  async finalize() {
+    Assert.equal(AutoEngine.current, this);
+    Assert.ok(!this.finalizeCalled);
+    Assert.ok(this.isActive);
+    this.finalizeCalled = true;
+    this.isActive = false;
+    AutoEngine.current = undefined;
+  }
+}
+
+class GasolineEngine extends AutoEngine {
+  constructor() { super("gasoline"); }
+}
+
+class ElectricEngine extends AutoEngine {
+  constructor() { super("electric"); }
+}
+
+add_task(async function test_alternates() {
+  let manager = new EngineManager(Service);
+  let engines = await manager.getAll();
+  Assert.equal(engines.length, 0);
+
+  const prefName = "services.sync.engines.automobile.electric";
+  Services.prefs.clearUserPref(prefName);
+
+  await manager.registerAlternatives("automobile",
+                                     prefName,
+                                     ElectricEngine,
+                                     GasolineEngine);
+
+  let gasEngine = manager.get("automobile");
+  Assert.equal(gasEngine.type, "gasoline");
+
+  Assert.ok(gasEngine.isActive);
+  Assert.ok(gasEngine.initializeCalled);
+  Assert.ok(!gasEngine.finalizeCalled);
+  Assert.equal(AutoEngine.current, gasEngine);
+
+  _("Check that setting the controlling pref to false makes no difference");
+  Services.prefs.setBoolPref(prefName, false);
+  Assert.equal(manager.get("automobile"), gasEngine);
+  Assert.ok(gasEngine.isActive);
+  Assert.ok(gasEngine.initializeCalled);
+  Assert.ok(!gasEngine.finalizeCalled);
+
+  _("Even after the call to switchAlternatives");
+  await manager.switchAlternatives();
+  Assert.equal(manager.get("automobile"), gasEngine);
+  Assert.ok(gasEngine.isActive);
+  Assert.ok(gasEngine.initializeCalled);
+  Assert.ok(!gasEngine.finalizeCalled);
+
+  _("Set the pref to true, we still shouldn't switch yet");
+  Services.prefs.setBoolPref(prefName, true);
+  Assert.equal(manager.get("automobile"), gasEngine);
+  Assert.ok(gasEngine.isActive);
+  Assert.ok(gasEngine.initializeCalled);
+  Assert.ok(!gasEngine.finalizeCalled);
+
+  _("Now we expect to switch from gas to electric");
+  await manager.switchAlternatives();
+  let elecEngine = manager.get("automobile");
+  Assert.equal(elecEngine.type, "electric");
+  Assert.ok(elecEngine.isActive);
+  Assert.ok(elecEngine.initializeCalled);
+  Assert.ok(!elecEngine.finalizeCalled);
+  Assert.equal(AutoEngine.current, elecEngine);
+
+  Assert.ok(!gasEngine.isActive);
+  Assert.ok(gasEngine.finalizeCalled);
+
+  _("Switch back, and ensure we get a new instance that got initialized again");
+  Services.prefs.setBoolPref(prefName, false);
+  await manager.switchAlternatives();
+
+  // First make sure we deactivated the electric engine as we should
+  Assert.ok(!elecEngine.isActive);
+  Assert.ok(elecEngine.initializeCalled);
+  Assert.ok(elecEngine.finalizeCalled);
+
+  let newGasEngine = manager.get("automobile");
+  Assert.notEqual(newGasEngine, gasEngine);
+  Assert.equal(newGasEngine.type, "gasoline");
+
+  Assert.ok(newGasEngine.isActive);
+  Assert.ok(newGasEngine.initializeCalled);
+  Assert.ok(!newGasEngine.finalizeCalled);
+
+  _("Make sure unregister removes the alt info too");
+  await manager.unregister("automobile");
+  Assert.equal(manager.get("automobile"), null);
+  Assert.ok(newGasEngine.finalizeCalled);
+  Assert.deepEqual(Object.keys(manager._altEngineInfo), []);
 });
 

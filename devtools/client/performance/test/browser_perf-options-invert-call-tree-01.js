@@ -12,32 +12,32 @@ const { initPerformanceInNewTab, teardownToolboxAndRemoveTab } = require("devtoo
 const { startRecording, stopRecording } = require("devtools/client/performance/test/helpers/actions");
 const { once } = require("devtools/client/performance/test/helpers/event-utils");
 
-add_task(function* () {
-  let { panel } = yield initPerformanceInNewTab({
+add_task(async function() {
+  const { panel } = await initPerformanceInNewTab({
     url: SIMPLE_URL,
-    win: window
+    win: window,
   });
 
-  let { EVENTS, DetailsView, JsCallTreeView } = panel.panelWin;
+  const { EVENTS, DetailsView, JsCallTreeView } = panel.panelWin;
 
   Services.prefs.setBoolPref(UI_INVERT_CALL_TREE_PREF, true);
 
-  yield startRecording(panel);
-  yield stopRecording(panel);
+  await startRecording(panel);
+  await stopRecording(panel);
 
   let rendered = once(JsCallTreeView, EVENTS.UI_JS_CALL_TREE_RENDERED);
-  yield DetailsView.selectView("js-calltree");
-  yield rendered;
+  await DetailsView.selectView("js-calltree");
+  await rendered;
 
   rendered = once(JsCallTreeView, EVENTS.UI_JS_CALL_TREE_RENDERED);
   Services.prefs.setBoolPref(UI_INVERT_CALL_TREE_PREF, false);
-  yield rendered;
+  await rendered;
   ok(true, "JsCallTreeView rerendered when toggling invert-call-tree.");
 
   rendered = once(JsCallTreeView, EVENTS.UI_JS_CALL_TREE_RENDERED);
   Services.prefs.setBoolPref(UI_INVERT_CALL_TREE_PREF, true);
-  yield rendered;
+  await rendered;
   ok(true, "JsCallTreeView rerendered when toggling back invert-call-tree.");
 
-  yield teardownToolboxAndRemoveTab(panel);
+  await teardownToolboxAndRemoveTab(panel);
 });

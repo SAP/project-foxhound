@@ -17,44 +17,31 @@ namespace plugins {
 class PluginInstanceChild;
 class StreamNotifyChild;
 
-class BrowserStreamChild : public PBrowserStreamChild, public AStream
-{
-public:
-  BrowserStreamChild(PluginInstanceChild* instance,
-                     const nsCString& url,
-                     const uint32_t& length,
-                     const uint32_t& lastmodified,
-                     StreamNotifyChild* notifyData,
-                     const nsCString& headers);
+class BrowserStreamChild : public PBrowserStreamChild, public AStream {
+ public:
+  BrowserStreamChild(PluginInstanceChild* instance, const nsCString& url,
+                     const uint32_t& length, const uint32_t& lastmodified,
+                     StreamNotifyChild* notifyData, const nsCString& headers);
   virtual ~BrowserStreamChild();
 
   virtual bool IsBrowserStream() override { return true; }
 
-  NPError StreamConstructed(
-            const nsCString& mimeType,
-            const bool& seekable,
-            uint16_t* stype);
+  NPError StreamConstructed(const nsCString& mimeType, const bool& seekable,
+                            uint16_t* stype);
 
   virtual mozilla::ipc::IPCResult RecvWrite(const int32_t& offset,
                                             const uint32_t& newsize,
                                             const Buffer& data) override;
-  virtual mozilla::ipc::IPCResult RecvNPP_StreamAsFile(const nsCString& fname) override;
-  virtual mozilla::ipc::IPCResult RecvNPP_DestroyStream(const NPReason& reason) override;
+  virtual mozilla::ipc::IPCResult RecvNPP_DestroyStream(
+      const NPReason& reason) override;
   virtual mozilla::ipc::IPCResult Recv__delete__() override;
 
-  void EnsureCorrectInstance(PluginInstanceChild* i)
-  {
-    if (i != mInstance)
-      MOZ_CRASH("Incorrect stream instance");
+  void EnsureCorrectInstance(PluginInstanceChild* i) {
+    if (i != mInstance) MOZ_CRASH("Incorrect stream instance");
   }
-  void EnsureCorrectStream(NPStream* s)
-  {
-    if (s != &mStream)
-      MOZ_CRASH("Incorrect stream data");
+  void EnsureCorrectStream(NPStream* s) {
+    if (s != &mStream) MOZ_CRASH("Incorrect stream data");
   }
-
-  NPError NPN_RequestRead(NPByteRange* aRangeList);
-  void NPN_DestroyStream(NPReason reason);
 
   void NotifyPending() {
     NS_ASSERTION(!mNotifyPending, "Pending twice?");
@@ -68,8 +55,7 @@ public:
    * @return false if we are already in the DELETING state.
    */
   bool InstanceDying() {
-    if (DELETING == mState)
-      return false;
+    if (DELETING == mState) return false;
 
     mInstanceDying = true;
     return true;
@@ -83,9 +69,8 @@ public:
     NS_ASSERTION(!mStreamNotify, "Didn't deliver NPN_URLNotify?");
   }
 
-private:
+ private:
   friend class StreamNotifyChild;
-  using PBrowserStreamChild::SendNPN_DestroyStream;
 
   /**
    * Post an event to ensure delivery of pending data/destroy/urlnotify events
@@ -116,7 +101,7 @@ private:
   /**
    * The plugin's notion of whether a stream has been "closed" (no more
    * data delivery) differs from the plugin host due to asynchronous delivery
-   * of data and NPN_DestroyStream. While the plugin-visible stream is open,
+   * of data and stream destruction. While the plugin-visible stream is open,
    * mStreamStatus should be kStreamOpen (-1). mStreamStatus will be a
    * failure code if either the parent or child indicates stream failure.
    */
@@ -127,30 +112,23 @@ private:
    * all data has been delivered.
    */
   enum {
-    NOT_DESTROYED, // NPP_DestroyStream not yet received
-    DESTROY_PENDING, // NPP_DestroyStream received, not yet delivered
-    DESTROYED // NPP_DestroyStream delivered, NPP_URLNotify may still be pending
+    NOT_DESTROYED,    // NPP_DestroyStream not yet received
+    DESTROY_PENDING,  // NPP_DestroyStream received, not yet delivered
+    DESTROYED         // NPP_DestroyStream delivered, NPP_URLNotify may still be
+                      // pending
   } mDestroyPending;
   bool mNotifyPending;
-  bool mStreamAsFilePending;
-  nsCString mStreamAsFileName;
 
   // When NPP_Destroy is called for our instance (manager), this flag is set
   // cancels the stream and avoids sending StreamDestroyed.
   bool mInstanceDying;
 
-  enum {
-    CONSTRUCTING,
-    ALIVE,
-    DYING,
-    DELETING
-  } mState;
+  enum { CONSTRUCTING, ALIVE, DYING, DELETING } mState;
   nsCString mURL;
   nsCString mHeaders;
   StreamNotifyChild* mStreamNotify;
 
-  struct PendingData
-  {
+  struct PendingData {
     int32_t offset;
     Buffer data;
     int32_t curpos;
@@ -167,7 +145,7 @@ private:
   base::RepeatingTimer<BrowserStreamChild> mSuspendedTimer;
 };
 
-} // namespace plugins
-} // namespace mozilla
+}  // namespace plugins
+}  // namespace mozilla
 
 #endif /* mozilla_plugins_BrowserStreamChild_h */

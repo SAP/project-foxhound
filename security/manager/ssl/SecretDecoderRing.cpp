@@ -10,6 +10,8 @@
 #include "mozilla/Base64.h"
 #include "mozilla/Casting.h"
 #include "mozilla/Services.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/dom/Promise.h"
 #include "nsCOMPtr.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
@@ -18,37 +20,50 @@
 #include "nsITokenPasswordDialogs.h"
 #include "nsNSSComponent.h"
 #include "nsNSSHelper.h"
+#include "nsPK11TokenDB.h"
 #include "pk11func.h"
-#include "pk11sdr.h" // For PK11SDR_Encrypt, PK11SDR_Decrypt
-#include "ssl.h" // For SSL_ClearSessionCache
+#include "pk11sdr.h"  // For PK11SDR_Encrypt, PK11SDR_Decrypt
+#include "ssl.h"      // For SSL_ClearSessionCache
 
 using namespace mozilla;
+using dom::Promise;
 
-// NOTE: Should these be the thread-safe versions?
 NS_IMPL_ISUPPORTS(SecretDecoderRing, nsISecretDecoderRing)
 
-SecretDecoderRing::SecretDecoderRing()
-{
-}
+void BackgroundSdrEncryptStrings(const nsTArray<nsCString>& plaintexts,
+                                 RefPtr<Promise>& aPromise) {
+  nsCOMPtr<nsISecretDecoderRing> sdrService =
+      do_GetService(NS_SECRETDECODERRING_CONTRACTID);
+  InfallibleTArray<nsString> cipherTexts(plaintexts.Length());
 
-SecretDecoderRing::~SecretDecoderRing()
-{
-  nsNSSShutDownPreventionLock locker;
-  if (isAlreadyShutDown()) {
-    return;
+  nsresult rv = NS_ERROR_FAILURE;
+  for (uint32_t i = 0; i < plaintexts.Length(); ++i) {
+    const nsCString& plaintext = plaintexts[i];
+    nsCString cipherText;
+    rv = sdrService->EncryptString(plaintext, cipherText);
+
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      break;
+    }
+
+    cipherTexts.AppendElement(NS_ConvertASCIItoUTF16(cipherText));
   }
 
-  shutdown(ShutdownCalledFrom::Object);
+  nsCOMPtr<nsIRunnable> runnable(
+      NS_NewRunnableFunction("BackgroundSdrEncryptStringsResolve",
+                             [rv, aPromise = std::move(aPromise),
+                              cipherTexts = std::move(cipherTexts)]() {
+                               if (NS_FAILED(rv)) {
+                                 aPromise->MaybeReject(rv);
+                               } else {
+                                 aPromise->MaybeResolve(cipherTexts);
+                               }
+                             }));
+  NS_DispatchToMainThread(runnable.forget());
 }
 
-nsresult
-SecretDecoderRing::Encrypt(const nsACString& data, /*out*/ nsACString& result)
-{
-  nsNSSShutDownPreventionLock locker;
-  if (isAlreadyShutDown()) {
-    return NS_ERROR_NOT_AVAILABLE;
-  }
-
+nsresult SecretDecoderRing::Encrypt(const nsACString& data,
+                                    /*out*/ nsACString& result) {
   UniquePK11SlotInfo slot(PK11_GetInternalKeySlot());
   if (!slot) {
     return NS_ERROR_NOT_AVAILABLE;
@@ -56,7 +71,7 @@ SecretDecoderRing::Encrypt(const nsACString& data, /*out*/ nsACString& result)
 
   /* Make sure token is initialized. */
   nsCOMPtr<nsIInterfaceRequestor> ctx = new PipUIContext();
-  nsresult rv = setPassword(slot.get(), ctx, locker);
+  nsresult rv = setPassword(slot.get(), ctx);
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -82,14 +97,8 @@ SecretDecoderRing::Encrypt(const nsACString& data, /*out*/ nsACString& result)
   return NS_OK;
 }
 
-nsresult
-SecretDecoderRing::Decrypt(const nsACString& data, /*out*/ nsACString& result)
-{
-  nsNSSShutDownPreventionLock locker;
-  if (isAlreadyShutDown()) {
-    return NS_ERROR_NOT_AVAILABLE;
-  }
-
+nsresult SecretDecoderRing::Decrypt(const nsACString& data,
+                                    /*out*/ nsACString& result) {
   /* Find token with SDR key */
   UniquePK11SlotInfo slot(PK11_GetInternalKeySlot());
   if (!slot) {
@@ -116,8 +125,7 @@ SecretDecoderRing::Decrypt(const nsACString& data, /*out*/ nsACString& result)
 
 NS_IMETHODIMP
 SecretDecoderRing::EncryptString(const nsACString& text,
-                         /*out*/ nsACString& encryptedBase64Text)
-{
+                                 /*out*/ nsACString& encryptedBase64Text) {
   nsAutoCString encryptedText;
   nsresult rv = Encrypt(text, encryptedText);
   if (NS_FAILED(rv)) {
@@ -133,9 +141,49 @@ SecretDecoderRing::EncryptString(const nsACString& text,
 }
 
 NS_IMETHODIMP
+SecretDecoderRing::AsyncEncryptStrings(uint32_t plaintextsCount,
+                                       const char16_t** plaintexts,
+                                       JSContext* aCx, Promise** aPromise) {
+  MOZ_RELEASE_ASSERT(NS_IsMainThread());
+  NS_ENSURE_ARG(plaintextsCount);
+  NS_ENSURE_ARG_POINTER(plaintexts);
+  NS_ENSURE_ARG_POINTER(aCx);
+
+  nsIGlobalObject* globalObject = xpc::CurrentNativeGlobal(aCx);
+  if (NS_WARN_IF(!globalObject)) {
+    return NS_ERROR_UNEXPECTED;
+  }
+
+  ErrorResult result;
+  RefPtr<Promise> promise = Promise::Create(globalObject, result);
+  if (NS_WARN_IF(result.Failed())) {
+    return result.StealNSResult();
+  }
+
+  InfallibleTArray<nsCString> plaintextsUtf8(plaintextsCount);
+  for (uint32_t i = 0; i < plaintextsCount; ++i) {
+    plaintextsUtf8.AppendElement(NS_ConvertUTF16toUTF8(plaintexts[i]));
+  }
+  nsCOMPtr<nsIRunnable> runnable(NS_NewRunnableFunction(
+      "BackgroundSdrEncryptStrings",
+      [promise, plaintextsUtf8 = std::move(plaintextsUtf8)]() mutable {
+        BackgroundSdrEncryptStrings(plaintextsUtf8, promise);
+      }));
+
+  nsCOMPtr<nsIThread> encryptionThread;
+  nsresult rv = NS_NewNamedThread("AsyncSDRThread",
+                                  getter_AddRefs(encryptionThread), runnable);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  promise.forget(aPromise);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 SecretDecoderRing::DecryptString(const nsACString& encryptedBase64Text,
-                         /*out*/ nsACString& decryptedText)
-{
+                                 /*out*/ nsACString& decryptedText) {
   nsAutoCString encryptedText;
   nsresult rv = Base64Decode(encryptedBase64Text, encryptedText);
   if (NS_FAILED(rv)) {
@@ -151,19 +199,15 @@ SecretDecoderRing::DecryptString(const nsACString& encryptedBase64Text,
 }
 
 NS_IMETHODIMP
-SecretDecoderRing::ChangePassword()
-{
-  nsNSSShutDownPreventionLock locker;
-  if (isAlreadyShutDown()) {
-    return NS_ERROR_NOT_AVAILABLE;
-  }
-
+SecretDecoderRing::ChangePassword() {
   UniquePK11SlotInfo slot(PK11_GetInternalKeySlot());
   if (!slot) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  NS_ConvertUTF8toUTF16 tokenName(PK11_GetTokenName(slot.get()));
+  // nsPK11Token::nsPK11Token takes its own reference to slot, so we pass a
+  // non-owning pointer here.
+  nsCOMPtr<nsIPK11Token> token = new nsPK11Token(slot.get());
 
   nsCOMPtr<nsITokenPasswordDialogs> dialogs;
   nsresult rv = getNSSDialogs(getter_AddRefs(dialogs),
@@ -174,51 +218,28 @@ SecretDecoderRing::ChangePassword()
   }
 
   nsCOMPtr<nsIInterfaceRequestor> ctx = new PipUIContext();
-  bool canceled; // Ignored
-  return dialogs->SetPassword(ctx, tokenName.get(), &canceled);
+  bool canceled;  // Ignored
+  return dialogs->SetPassword(ctx, token, &canceled);
 }
 
 NS_IMETHODIMP
-SecretDecoderRing::Logout()
-{
-  static NS_DEFINE_CID(kNSSComponentCID, NS_NSSCOMPONENT_CID);
-
-  nsresult rv;
-  nsCOMPtr<nsINSSComponent> nssComponent(do_GetService(kNSSComponentCID, &rv));
-  if (NS_FAILED(rv))
-    return rv;
-
-  {
-    nsNSSShutDownPreventionLock locker;
-    if (isAlreadyShutDown()) {
-      return NS_ERROR_NOT_AVAILABLE;
-    }
-
-    PK11_LogoutAll();
-    SSL_ClearSessionCache();
-  }
-
+SecretDecoderRing::Logout() {
+  PK11_LogoutAll();
+  SSL_ClearSessionCache();
   return NS_OK;
 }
 
 NS_IMETHODIMP
-SecretDecoderRing::LogoutAndTeardown()
-{
+SecretDecoderRing::LogoutAndTeardown() {
   static NS_DEFINE_CID(kNSSComponentCID, NS_NSSCOMPONENT_CID);
+
+  PK11_LogoutAll();
+  SSL_ClearSessionCache();
 
   nsresult rv;
   nsCOMPtr<nsINSSComponent> nssComponent(do_GetService(kNSSComponentCID, &rv));
-  if (NS_FAILED(rv))
+  if (NS_FAILED(rv)) {
     return rv;
-
-  {
-    nsNSSShutDownPreventionLock locker;
-    if (isAlreadyShutDown()) {
-      return NS_ERROR_NOT_AVAILABLE;
-    }
-
-    PK11_LogoutAll();
-    SSL_ClearSessionCache();
   }
 
   rv = nssComponent->LogoutAuthenticatedPK11();
@@ -227,8 +248,9 @@ SecretDecoderRing::LogoutAndTeardown()
   // sure that all connections that should be stopped, are stopped. See
   // bug 517584.
   nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
-  if (os)
+  if (os) {
     os->NotifyObservers(nullptr, "net:prune-dead-connections", nullptr);
+  }
 
   return rv;
 }

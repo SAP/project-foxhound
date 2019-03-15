@@ -21,34 +21,10 @@ mozharness.mozilla.blob_upload module
     :undoc-members:
     :show-inheritance:
 
-mozharness.mozilla.buildbot module
+mozharness.mozilla.automation module
 ----------------------------------
 
-.. automodule:: mozharness.mozilla.buildbot
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
-mozharness.mozilla.gaia module
-------------------------------
-
-.. automodule:: mozharness.mozilla.gaia
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
-mozharness.mozilla.mapper module
---------------------------------
-
-.. automodule:: mozharness.mozilla.mapper
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
-mozharness.mozilla.mock module
-------------------------------
-
-.. automodule:: mozharness.mozilla.mock
+.. automodule:: mozharness.mozilla.automation
     :members:
     :undoc-members:
     :show-inheritance:
@@ -65,30 +41,6 @@ mozharness.mozilla.purge module
 -------------------------------
 
 .. automodule:: mozharness.mozilla.purge
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
-mozharness.mozilla.release module
----------------------------------
-
-.. automodule:: mozharness.mozilla.release
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
-mozharness.mozilla.repo_manifest module
----------------------------------------
-
-.. automodule:: mozharness.mozilla.repo_manifest
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
-mozharness.mozilla.signing module
----------------------------------
-
-.. automodule:: mozharness.mozilla.signing
     :members:
     :undoc-members:
     :show-inheritance:

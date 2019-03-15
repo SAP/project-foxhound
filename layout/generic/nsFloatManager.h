@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-// vim:cindent:ts=2:et:sw=2:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,10 +10,11 @@
 #define nsFloatManager_h_
 
 #include "mozilla/Attributes.h"
+#include "mozilla/TypedEnumBits.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WritingModes.h"
 #include "nsCoord.h"
-#include "nsFrameList.h" // for DEBUG_FRAME_DUMP
+#include "nsFrameList.h"  // for DEBUG_FRAME_DUMP
 #include "nsIntervalSet.h"
 #include "nsPoint.h"
 #include "nsTArray.h"
@@ -24,28 +25,44 @@ class nsPresContext;
 namespace mozilla {
 struct ReflowInput;
 class StyleBasicShape;
-} // namespace mozilla
+}  // namespace mozilla
+
+enum class nsFlowAreaRectFlags : uint32_t {
+  NO_FLAGS = 0,
+  HAS_FLOATS = 1 << 0,
+  MAY_WIDEN = 1 << 1
+};
+MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(nsFlowAreaRectFlags)
 
 /**
  * The available space for content not occupied by floats is divided
  * into a sequence of rectangles in the block direction.  However, we
  * need to know not only the rectangle, but also whether it was reduced
  * (from the content rectangle) by floats that actually intruded into
- * the content rectangle.
+ * the content rectangle. If it has been reduced by floats, then we also
+ * track whether the flow area might widen as the floats narrow in the
+ * block direction.
  */
 struct nsFlowAreaRect {
   mozilla::LogicalRect mRect;
-  bool mHasFloats;
 
-  nsFlowAreaRect(mozilla::WritingMode aWritingMode,
-                 nscoord aICoord, nscoord aBCoord,
-                 nscoord aISize, nscoord aBSize,
-                 bool aHasFloats)
-    : mRect(aWritingMode, aICoord, aBCoord, aISize, aBSize)
-    , mHasFloats(aHasFloats) {}
+  nsFlowAreaRectFlags mAreaFlags;
+
+  nsFlowAreaRect(mozilla::WritingMode aWritingMode, nscoord aICoord,
+                 nscoord aBCoord, nscoord aISize, nscoord aBSize,
+                 nsFlowAreaRectFlags aAreaFlags)
+      : mRect(aWritingMode, aICoord, aBCoord, aISize, aBSize),
+        mAreaFlags(aAreaFlags) {}
+
+  bool HasFloats() const {
+    return (bool)(mAreaFlags & nsFlowAreaRectFlags::HAS_FLOATS);
+  }
+  bool MayWiden() const {
+    return (bool)(mAreaFlags & nsFlowAreaRectFlags::MAY_WIDEN);
+  }
 };
 
-#define NS_FLOAT_MANAGER_CACHE_SIZE 4
+#define NS_FLOAT_MANAGER_CACHE_SIZE 64
 
 /**
  * nsFloatManager is responsible for implementing CSS's rules for
@@ -74,7 +91,7 @@ struct nsFlowAreaRect {
  * [2] https://drafts.csswg.org/css-writing-modes/#logical-to-physical
  */
 class nsFloatManager {
-public:
+ public:
   explicit nsFloatManager(nsIPresShell* aPresShell, mozilla::WritingMode aWM);
   ~nsFloatManager();
 
@@ -99,25 +116,30 @@ public:
    * and/or bottom must be zeroed by the caller.
    */
   static mozilla::LogicalRect CalculateRegionFor(
-                                mozilla::WritingMode aWM,
-                                nsIFrame* aFloatFrame,
-                                const mozilla::LogicalMargin& aMargin,
-                                const nsSize& aContainerSize);
+      mozilla::WritingMode aWM, nsIFrame* aFloatFrame,
+      const mozilla::LogicalMargin& aMargin, const nsSize& aContainerSize);
   /**
    * Store the float region on the frame. The region is stored
    * as a delta against the mRect, so repositioning the frame will
    * also reposition the float region.
    */
-  static void StoreRegionFor(mozilla::WritingMode aWM,
-                             nsIFrame* aFloat,
+  static void StoreRegionFor(mozilla::WritingMode aWM, nsIFrame* aFloat,
                              const mozilla::LogicalRect& aRegion,
                              const nsSize& aContainerSize);
 
   // Structure that stores the current state of a float manager for
   // Save/Restore purposes.
   struct SavedState {
-    explicit SavedState() {}
-  private:
+    explicit SavedState()
+        : mFloatInfoCount(0),
+          mLineLeft(0),
+          mBlockStart(0),
+          mPushedLeftFloatPastBreak(false),
+          mPushedRightFloatPastBreak(false),
+          mSplitLeftFloatAcrossBreak(false),
+          mSplitRightFloatAcrossBreak(false) {}
+
+   private:
     uint32_t mFloatInfoCount;
     nscoord mLineLeft, mBlockStart;
     bool mPushedLeftFloatPastBreak;
@@ -133,8 +155,7 @@ public:
    * creates a new local coordinate space relative to the current
    * coordinate space.
    */
-  void Translate(nscoord aLineLeft, nscoord aBlockStart)
-  {
+  void Translate(nscoord aLineLeft, nscoord aBlockStart) {
     mLineLeft += aLineLeft;
     mBlockStart += aBlockStart;
   }
@@ -144,8 +165,7 @@ public:
    * world coordinate space. This represents the accumulated calls to
    * Translate().
    */
-  void GetTranslation(nscoord& aLineLeft, nscoord& aBlockStart) const
-  {
+  void GetTranslation(nscoord& aLineLeft, nscoord& aBlockStart) const {
     aLineLeft = mLineLeft;
     aBlockStart = mBlockStart;
   }
@@ -194,9 +214,9 @@ public:
    */
   enum class BandInfoType { BandFromPoint, WidthWithinHeight };
   enum class ShapeType { Margin, ShapeOutside };
-  nsFlowAreaRect GetFlowArea(mozilla::WritingMode aWM,
-                             nscoord aBCoord, nscoord aBSize,
-                             BandInfoType aBandInfoType, ShapeType aShapeType,
+  nsFlowAreaRect GetFlowArea(mozilla::WritingMode aWM, nscoord aBCoord,
+                             nscoord aBSize, BandInfoType aBandInfoType,
+                             ShapeType aShapeType,
                              mozilla::LogicalRect aContentArea,
                              SavedState* aState,
                              const nsSize& aContainerSize) const;
@@ -209,8 +229,7 @@ public:
    * aMarginRect is relative to the current translation.  The caller
    * must ensure aMarginRect.height >= 0 and aMarginRect.width >= 0.
    */
-  void AddFloat(nsIFrame* aFloatFrame,
-                const mozilla::LogicalRect& aMarginRect,
+  void AddFloat(nsIFrame* aFloatFrame, const mozilla::LogicalRect& aMarginRect,
                 mozilla::WritingMode aWM, const nsSize& aContainerSize);
 
   /**
@@ -220,20 +239,16 @@ public:
    * top of a float cannot be above the top of an earlier float.  It
    * also means that any clear needs to continue to the next column.)
    */
-  void SetPushedLeftFloatPastBreak()
-    { mPushedLeftFloatPastBreak = true; }
-  void SetPushedRightFloatPastBreak()
-    { mPushedRightFloatPastBreak = true; }
+  void SetPushedLeftFloatPastBreak() { mPushedLeftFloatPastBreak = true; }
+  void SetPushedRightFloatPastBreak() { mPushedRightFloatPastBreak = true; }
 
   /**
    * Notify that we split a float, with part of it needing to be pushed
    * to the next page/column.  (This means that any 'clear' needs to
    * continue to the next page/column.)
    */
-  void SetSplitLeftFloatAcrossBreak()
-    { mSplitLeftFloatAcrossBreak = true; }
-  void SetSplitRightFloatAcrossBreak()
-    { mSplitRightFloatAcrossBreak = true; }
+  void SetSplitLeftFloatAcrossBreak() { mSplitLeftFloatAcrossBreak = true; }
+  void SetSplitRightFloatAcrossBreak() { mSplitRightFloatAcrossBreak = true; }
 
   /**
    * Remove the regions associated with this floating frame and its
@@ -251,19 +266,14 @@ public:
    * Methods for dealing with the propagation of float damage during
    * reflow.
    */
-  bool HasFloatDamage() const
-  {
-    return !mFloatDamage.IsEmpty();
-  }
+  bool HasFloatDamage() const { return !mFloatDamage.IsEmpty(); }
 
-  void IncludeInDamage(nscoord aIntervalBegin, nscoord aIntervalEnd)
-  {
+  void IncludeInDamage(nscoord aIntervalBegin, nscoord aIntervalEnd) {
     mFloatDamage.IncludeInterval(aIntervalBegin + mBlockStart,
                                  aIntervalEnd + mBlockStart);
   }
 
-  bool IntersectsDamage(nscoord aIntervalBegin, nscoord aIntervalEnd) const
-  {
+  bool IntersectsDamage(nscoord aIntervalBegin, nscoord aIntervalEnd) const {
     return mFloatDamage.Intersects(aIntervalBegin + mBlockStart,
                                    aIntervalEnd + mBlockStart);
   }
@@ -304,7 +314,7 @@ public:
   enum {
     // Tell ClearFloats not to push to nscoord_MAX when floats have been
     // pushed to the next page/column.
-    DONT_CLEAR_PUSHED_FLOATS = (1<<0)
+    DONT_CLEAR_PUSHED_FLOATS = (1 << 0)
   };
   nscoord ClearFloats(nscoord aBCoord, mozilla::StyleClear aBreakType,
                       uint32_t aFlags = 0) const;
@@ -315,20 +325,16 @@ public:
    */
   bool ClearContinues(mozilla::StyleClear aBreakType) const;
 
-  void AssertStateMatches(SavedState *aState) const
-  {
-    NS_ASSERTION(aState->mLineLeft == mLineLeft &&
-                 aState->mBlockStart == mBlockStart &&
-                 aState->mPushedLeftFloatPastBreak ==
-                   mPushedLeftFloatPastBreak &&
-                 aState->mPushedRightFloatPastBreak ==
-                   mPushedRightFloatPastBreak &&
-                 aState->mSplitLeftFloatAcrossBreak ==
-                   mSplitLeftFloatAcrossBreak &&
-                 aState->mSplitRightFloatAcrossBreak ==
-                   mSplitRightFloatAcrossBreak &&
-                 aState->mFloatInfoCount == mFloats.Length(),
-                 "float manager state should match saved state");
+  void AssertStateMatches(SavedState* aState) const {
+    NS_ASSERTION(
+        aState->mLineLeft == mLineLeft && aState->mBlockStart == mBlockStart &&
+            aState->mPushedLeftFloatPastBreak == mPushedLeftFloatPastBreak &&
+            aState->mPushedRightFloatPastBreak == mPushedRightFloatPastBreak &&
+            aState->mSplitLeftFloatAcrossBreak == mSplitLeftFloatAcrossBreak &&
+            aState->mSplitRightFloatAcrossBreak ==
+                mSplitRightFloatAcrossBreak &&
+            aState->mFloatInfoCount == mFloats.Length(),
+        "float manager state should match saved state");
   }
 
 #ifdef DEBUG_FRAME_DUMP
@@ -338,172 +344,22 @@ public:
   nsresult List(FILE* out) const;
 #endif
 
-private:
-
-  // ShapeInfo is an abstract class for implementing all the shapes in CSS
-  // Shapes Module. A subclass needs to override all the methods to adjust
-  // the flow area with respect to its shape.
-  class ShapeInfo
-  {
-  public:
-    virtual ~ShapeInfo() {}
-
-    virtual nscoord LineLeft(mozilla::WritingMode aWM,
-                             const nscoord aBStart,
-                             const nscoord aBEnd) const = 0;
-    virtual nscoord LineRight(mozilla::WritingMode aWM,
-                              const nscoord aBStart,
-                              const nscoord aBEnd) const = 0;
-    virtual nscoord BStart() const = 0;
-    virtual nscoord BEnd() const = 0;
-    virtual bool IsEmpty() const = 0;
-
-    // Translate the current origin by the specified offsets.
-    virtual void Translate(nscoord aLineLeft, nscoord aBlockStart) = 0;
-
-    static mozilla::LogicalRect ComputeShapeBoxRect(
-      const mozilla::StyleShapeSource& aShapeOutside,
-      nsIFrame* const aFrame,
-      const mozilla::LogicalRect& aMarginRect,
-      mozilla::WritingMode aWM);
-
-    // Convert the LogicalRect to the special logical coordinate space used
-    // in float manager.
-    static nsRect ConvertToFloatLogical(const mozilla::LogicalRect& aRect,
-                                        mozilla::WritingMode aWM,
-                                        const nsSize& aContainerSize)
-    {
-      return nsRect(aRect.LineLeft(aWM, aContainerSize), aRect.BStart(aWM),
-                    aRect.ISize(aWM), aRect.BSize(aWM));
-    }
-
-    static mozilla::UniquePtr<ShapeInfo> CreateShapeBox(
-      nsIFrame* const aFrame,
-      const mozilla::LogicalRect& aShapeBoxRect,
-      mozilla::WritingMode aWM,
-      const nsSize& aContainerSize);
-
-    static mozilla::UniquePtr<ShapeInfo> CreateInset(
-      mozilla::StyleBasicShape* const aBasicShape,
-      const mozilla::LogicalRect& aShapeBoxRect,
-      mozilla::WritingMode aWM,
-      const nsSize& aContainerSize);
-
-    static mozilla::UniquePtr<ShapeInfo> CreateCircleOrEllipse(
-      mozilla::StyleBasicShape* const aBasicShape,
-      const mozilla::LogicalRect& aShapeBoxRect,
-      mozilla::WritingMode aWM,
-      const nsSize& aContainerSize);
-
-  protected:
-    // Compute the minimum line-axis difference between the bounding shape
-    // box and its rounded corner within the given band (block-axis region).
-    // This is used as a helper function to compute the LineRight() and
-    // LineLeft(). See the picture in the implementation for an example.
-    // RadiusL and RadiusB stand for radius on the line-axis and block-axis.
-    //
-    // Returns radius-x diff on the line-axis, or 0 if there's no rounded
-    // corner within the given band.
-    static nscoord ComputeEllipseLineInterceptDiff(
-      const nscoord aShapeBoxBStart, const nscoord aShapeBoxBEnd,
-      const nscoord aBStartCornerRadiusL, const nscoord aBStartCornerRadiusB,
-      const nscoord aBEndCornerRadiusL, const nscoord aBEndCornerRadiusB,
-      const nscoord aBandBStart, const nscoord aBandBEnd);
-
-    static nscoord XInterceptAtY(const nscoord aY, const nscoord aRadiusX,
-                                 const nscoord aRadiusY);
-
-    // Convert the physical point to the special logical coordinate space
-    // used in float manager.
-    static nsPoint ConvertToFloatLogical(const nsPoint& aPoint,
-                                         mozilla::WritingMode aWM,
-                                         const nsSize& aContainerSize);
-
-    // Convert the half corner radii (nscoord[8]) to the special logical
-    // coordinate space used in float manager.
-    static mozilla::UniquePtr<nscoord[]> ConvertToFloatLogical(
-      const nscoord aRadii[8],
-      mozilla::WritingMode aWM);
-  };
-
-  // Implements shape-outside: <shape-box> and shape-outside: inset().
-  class RoundedBoxShapeInfo final : public ShapeInfo
-  {
-  public:
-    RoundedBoxShapeInfo(const nsRect& aRect,
-                        mozilla::UniquePtr<nscoord[]> aRadii)
-      : mRect(aRect)
-      , mRadii(Move(aRadii))
-    {}
-
-    nscoord LineLeft(mozilla::WritingMode aWM,
-                     const nscoord aBStart,
-                     const nscoord aBEnd) const override;
-    nscoord LineRight(mozilla::WritingMode aWM,
-                      const nscoord aBStart,
-                      const nscoord aBEnd) const override;
-    nscoord BStart() const override { return mRect.y; }
-    nscoord BEnd() const override { return mRect.YMost(); }
-    bool IsEmpty() const override { return mRect.IsEmpty(); };
-
-    void Translate(nscoord aLineLeft, nscoord aBlockStart) override
-    {
-      mRect.MoveBy(aLineLeft, aBlockStart);
-    }
-
-  private:
-    // The rect of the rounded box shape in the float manager's coordinate
-    // space.
-    nsRect mRect;
-    // The half corner radii of the reference box. It's an nscoord[8] array
-    // in the float manager's coordinate space. If there are no radii, it's
-    // nullptr.
-    mozilla::UniquePtr<nscoord[]> mRadii;
-  };
-
-  // Implements shape-outside: circle() and shape-outside: ellipse().
-  class EllipseShapeInfo : public ShapeInfo
-  {
-  public:
-    EllipseShapeInfo(const nsPoint& aCenter,
-                     const nsSize& aRadii)
-      : mCenter(aCenter)
-      , mRadii(aRadii)
-    {}
-
-    nscoord LineLeft(mozilla::WritingMode aWM,
-                     const nscoord aBStart,
-                     const nscoord aBEnd) const override;
-    nscoord LineRight(mozilla::WritingMode aWM,
-                      const nscoord aBStart,
-                      const nscoord aBEnd) const override;
-    nscoord BStart() const override { return mCenter.y - mRadii.height; }
-    nscoord BEnd() const override { return mCenter.y + mRadii.height; }
-    bool IsEmpty() const override { return mRadii.IsEmpty(); };
-
-    void Translate(nscoord aLineLeft, nscoord aBlockStart) override
-    {
-      mCenter.MoveBy(aLineLeft, aBlockStart);
-    }
-
-  protected:
-    // The position of the center of the ellipse. The coordinate space is the
-    // same as FloatInfo::mRect.
-    nsPoint mCenter;
-    // The radii of the ellipse in app units. The width and height represent
-    // the line-axis and block-axis radii of the ellipse.
-    nsSize mRadii;
-  };
+ private:
+  class ShapeInfo;
+  class RoundedBoxShapeInfo;
+  class EllipseShapeInfo;
+  class PolygonShapeInfo;
+  class ImageShapeInfo;
 
   struct FloatInfo {
-    nsIFrame *const mFrame;
+    nsIFrame* const mFrame;
     // The lowest block-ends of left/right floats up to and including
     // this one.
     nscoord mLeftBEnd, mRightBEnd;
 
     FloatInfo(nsIFrame* aFrame, nscoord aLineLeft, nscoord aBlockStart,
-              const mozilla::LogicalRect& aMarginRect,
-              mozilla::WritingMode aWM, const nsSize& aContainerSize);
+              const mozilla::LogicalRect& aMarginRect, mozilla::WritingMode aWM,
+              const nsSize& aContainerSize);
 
     nscoord LineLeft() const { return mRect.x; }
     nscoord LineRight() const { return mRect.XMost(); }
@@ -516,13 +372,14 @@ private:
     // aBStart and aBEnd are the starting and ending coordinate of a band.
     // LineLeft() and LineRight() return the innermost line-left extent and
     // line-right extent within the given band, respectively.
-    nscoord LineLeft(mozilla::WritingMode aWM, ShapeType aShapeType,
-                     const nscoord aBStart, const nscoord aBEnd) const;
-    nscoord LineRight(mozilla::WritingMode aWM, ShapeType aShapeType,
-                      const nscoord aBStart, const nscoord aBEnd) const;
+    nscoord LineLeft(ShapeType aShapeType, const nscoord aBStart,
+                     const nscoord aBEnd) const;
+    nscoord LineRight(ShapeType aShapeType, const nscoord aBStart,
+                      const nscoord aBEnd) const;
     nscoord BStart(ShapeType aShapeType) const;
     nscoord BEnd(ShapeType aShapeType) const;
     bool IsEmpty(ShapeType aShapeType) const;
+    bool MayNarrowInBlockDirection(ShapeType aShapeType) const;
 
 #ifdef NS_BUILD_REFCNT_LOGGING
     FloatInfo(FloatInfo&& aOther);
@@ -549,8 +406,10 @@ private:
 
   // Translation from local to global coordinate space.
   nscoord mLineLeft, mBlockStart;
-  nsTArray<FloatInfo> mFloats;
-  nsIntervalSet   mFloatDamage;
+  // We use 11 here in order to fill up the jemalloc allocatoed chunk nicely,
+  // see https://bugzilla.mozilla.org/show_bug.cgi?id=1362876#c6.
+  AutoTArray<FloatInfo, 11> mFloats;
+  nsIntervalSet mFloatDamage;
 
   // Did we try to place a float that could not fit at all and had to be
   // pushed to the next page/column?  If so, we can't place any more
@@ -582,11 +441,9 @@ private:
 class nsAutoFloatManager {
   using ReflowInput = mozilla::ReflowInput;
 
-public:
+ public:
   explicit nsAutoFloatManager(ReflowInput& aReflowInput)
-    : mReflowInput(aReflowInput)
-    , mOld(nullptr)
-  {}
+      : mReflowInput(aReflowInput), mOld(nullptr) {}
 
   ~nsAutoFloatManager();
 
@@ -595,11 +452,10 @@ public:
    * `remember' the old float manager, and install the new float
    * manager in the reflow input.
    */
-  void
-  CreateFloatManager(nsPresContext *aPresContext);
+  void CreateFloatManager(nsPresContext* aPresContext);
 
-protected:
-  ReflowInput &mReflowInput;
+ protected:
+  ReflowInput& mReflowInput;
   mozilla::UniquePtr<nsFloatManager> mNew;
 
   // A non-owning pointer, which points to the object owned by

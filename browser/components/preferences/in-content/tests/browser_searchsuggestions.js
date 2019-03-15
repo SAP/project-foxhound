@@ -1,43 +1,56 @@
-var original = Services.prefs.getBoolPref("browser.search.suggest.enabled");
+const SUGGEST_PREF_NAME = "browser.search.suggest.enabled";
+const URLBAR_SUGGEST_PREF_NAME = "browser.urlbar.suggest.searches";
+var original = Services.prefs.getBoolPref(SUGGEST_PREF_NAME);
 
 registerCleanupFunction(() => {
-  Services.prefs.setBoolPref("browser.search.suggest.enabled", original);
+  Services.prefs.setBoolPref(SUGGEST_PREF_NAME, original);
 });
 
 // Open with suggestions enabled
-add_task(function*() {
-  Services.prefs.setBoolPref("browser.search.suggest.enabled", true);
+add_task(async function() {
+  Services.prefs.setBoolPref(SUGGEST_PREF_NAME, true);
+  const INITIAL_URLBAR_SUGGEST_VALUE = Services.prefs.getBoolPref(URLBAR_SUGGEST_PREF_NAME);
 
-  yield openPreferencesViaOpenPreferencesAPI("search", undefined, { leaveOpen: true });
+  await openPreferencesViaOpenPreferencesAPI("search", { leaveOpen: true });
 
   let doc = gBrowser.selectedBrowser.contentDocument;
   let urlbarBox = doc.getElementById("urlBarSuggestion");
   ok(!urlbarBox.disabled, "Checkbox should be enabled");
+  is(urlbarBox.checked, INITIAL_URLBAR_SUGGEST_VALUE,
+     "Checkbox should match initial pref value: " + INITIAL_URLBAR_SUGGEST_VALUE);
 
-  Services.prefs.setBoolPref("browser.search.suggest.enabled", false);
+  await BrowserTestUtils.synthesizeMouseAtCenter("#urlBarSuggestion", {}, gBrowser.selectedBrowser);
+  is(urlbarBox.checked, !INITIAL_URLBAR_SUGGEST_VALUE,
+     "Checkbox should be flipped after clicking it");
+  let prefValue = Services.prefs.getBoolPref(URLBAR_SUGGEST_PREF_NAME);
+  is(prefValue, urlbarBox.checked, "Pref should match checkbox. Pref: " + prefValue);
 
+  await BrowserTestUtils.synthesizeMouseAtCenter("#urlBarSuggestion", {}, gBrowser.selectedBrowser);
+  is(urlbarBox.checked, INITIAL_URLBAR_SUGGEST_VALUE,
+     "Checkbox should be back to initial value after clicking it");
+  prefValue = Services.prefs.getBoolPref(URLBAR_SUGGEST_PREF_NAME);
+  is(prefValue, urlbarBox.checked, "Pref should match checkbox. Pref: " + prefValue);
+
+  Services.prefs.setBoolPref(SUGGEST_PREF_NAME, false);
+  ok(!urlbarBox.checked, "Checkbox should now be unchecked");
   ok(urlbarBox.disabled, "Checkbox should be disabled");
 
   gBrowser.removeCurrentTab();
 });
 
 // Open with suggestions disabled
-add_task(function*() {
-  Services.prefs.setBoolPref("browser.search.suggest.enabled", false);
+add_task(async function() {
+  Services.prefs.setBoolPref(SUGGEST_PREF_NAME, false);
 
-  yield openPreferencesViaOpenPreferencesAPI("search", undefined, { leaveOpen: true });
+  await openPreferencesViaOpenPreferencesAPI("search", { leaveOpen: true });
 
   let doc = gBrowser.selectedBrowser.contentDocument;
   let urlbarBox = doc.getElementById("urlBarSuggestion");
   ok(urlbarBox.disabled, "Checkbox should be disabled");
 
-  Services.prefs.setBoolPref("browser.search.suggest.enabled", true);
+  Services.prefs.setBoolPref(SUGGEST_PREF_NAME, true);
 
   ok(!urlbarBox.disabled, "Checkbox should be enabled");
 
   gBrowser.removeCurrentTab();
-});
-
-add_task(function*() {
-  Services.prefs.setBoolPref("browser.search.suggest.enabled", original);
 });

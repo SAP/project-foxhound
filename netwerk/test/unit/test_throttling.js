@@ -1,7 +1,7 @@
 // Test nsIThrottledInputChannel interface.
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 function test_handler(metadata, response) {
   const originalBody = "the response";
@@ -31,7 +31,6 @@ function run_test() {
                createInstance(Ci.nsIMIMEInputStream);
   mime.addHeader("Content-Type", "multipart/form-data; boundary=zzzzz");
   mime.setData(sstream);
-  mime.addContentLength = true;
 
   let tq = Cc["@mozilla.org/network/throttlequeue;1"]
       .createInstance(Ci.nsIInputChannelThrottleQueue);

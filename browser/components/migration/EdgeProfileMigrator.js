@@ -4,21 +4,17 @@
 
 "use strict";
 
-const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
+ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+ChromeUtils.import("resource://gre/modules/osfile.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource:///modules/MigrationUtils.jsm");
+ChromeUtils.import("resource:///modules/MSMigrationUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "PlacesUtils",
+                               "resource://gre/modules/PlacesUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "ESEDBReader",
+                               "resource:///modules/ESEDBReader.jsm");
 
-Cu.import("resource://gre/modules/AppConstants.jsm");
-Cu.import("resource://gre/modules/osfile.jsm"); /* globals OS */
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource:///modules/MigrationUtils.jsm"); /* globals MigratorPrototype */
-Cu.import("resource:///modules/MSMigrationUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
-                                  "resource://gre/modules/PlacesUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "ESEDBReader",
-                                  "resource:///modules/ESEDBReader.jsm");
-
-Cu.importGlobalProperties(["URL"]);
+XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
 
 const kEdgeRegistryRoot = "SOFTWARE\\Classes\\Local Settings\\Software\\" +
   "Microsoft\\Windows\\CurrentVersion\\AppContainer\\Storage\\" +
@@ -55,14 +51,14 @@ XPCOMUtils.defineLazyGetter(this, "gEdgeDatabase", function() {
  *                                      (see ESEDBReader.jsm) or a function that
  *                                      generates them based on the database
  *                                      reference once opened.
- * @param {function}          filterFn  a function that is called for each row.
- *                                      Only rows for which it returns a truthy
- *                                      value are included in the result.
  * @param {nsIFile}           dbFile    the database file to use. Defaults to
  *                                      the main Edge database.
+ * @param {function}          filterFn  Optional. A function that is called for each row.
+ *                                      Only rows for which it returns a truthy
+ *                                      value are included in the result.
  * @returns {Array} An array of row objects.
  */
-function readTableFromEdgeDB(tableName, columns, filterFn, dbFile = gEdgeDatabase) {
+function readTableFromEdgeDB(tableName, columns, dbFile = gEdgeDatabase, filterFn = null) {
   let database;
   let rows = [];
   try {
@@ -76,7 +72,7 @@ function readTableFromEdgeDB(tableName, columns, filterFn, dbFile = gEdgeDatabas
 
     let tableReader = database.tableItems(tableName, columns);
     for (let row of tableReader) {
-      if (filterFn(row)) {
+      if (!filterFn || filterFn(row)) {
         rows.push(row);
       }
     }
@@ -112,12 +108,12 @@ EdgeTypedURLMigrator.prototype = {
 
   migrate(aCallback) {
     let typedURLs = this._typedURLs;
-    let places = [];
+    let pageInfos = [];
     for (let [urlString, time] of typedURLs) {
-      let uri;
+      let url;
       try {
-        uri = Services.io.newURI(urlString);
-        if (["http", "https", "ftp"].indexOf(uri.scheme) == -1) {
+        url = new URL(urlString);
+        if (!["http:", "https:", "ftp:"].includes(url.protocol)) {
           continue;
         }
       } catch (ex) {
@@ -125,29 +121,103 @@ EdgeTypedURLMigrator.prototype = {
         continue;
       }
 
-      // Note that the time will be in microseconds (PRTime),
-      // and Date.now() returns milliseconds. Places expects PRTime,
-      // so we multiply the Date.now return value to make up the difference.
-      let visitDate = time || (Date.now() * 1000);
-      places.push({
-        uri,
-        visits: [{ transitionType: Ci.nsINavHistoryService.TRANSITION_TYPED,
-                   visitDate}]
+      pageInfos.push({
+        url,
+        visits: [{
+          transition: PlacesUtils.history.TRANSITIONS.TYPED,
+          date: time ? PlacesUtils.toDate(time) : new Date(),
+        }],
       });
     }
 
-    if (places.length == 0) {
+    if (pageInfos.length == 0) {
       aCallback(typedURLs.size == 0);
       return;
     }
 
-    MigrationUtils.insertVisitsWrapper(places, {
-      ignoreErrors: true,
-      ignoreResults: true,
-      handleCompletion(updatedCount) {
-        aCallback(updatedCount > 0);
+    MigrationUtils.insertVisitsWrapper(pageInfos).then(
+      () => aCallback(true),
+      () => aCallback(false));
+  },
+};
+
+function EdgeTypedURLDBMigrator() {
+}
+
+EdgeTypedURLDBMigrator.prototype = {
+  type: MigrationUtils.resourceTypes.HISTORY,
+
+  get db() { return gEdgeDatabase; },
+
+  get exists() {
+    return !!this.db;
+  },
+
+  migrate(callback) {
+    this._migrateTypedURLsFromDB().then(
+      () => callback(true),
+      ex => {
+        Cu.reportError(ex);
+        callback(false);
       }
-    });
+    );
+  },
+
+  async _migrateTypedURLsFromDB() {
+    if (await ESEDBReader.dbLocked(this.db)) {
+      throw new Error("Edge seems to be running - its database is locked.");
+    }
+    let columns = [
+      {name: "URL", type: "string"},
+      {name: "AccessDateTimeUTC", type: "date"},
+    ];
+
+    let typedUrls = [];
+    try {
+      typedUrls = readTableFromEdgeDB("TypedUrls", columns, this.db);
+    } catch (ex) {
+      // Maybe the table doesn't exist (older versions of Win10).
+      // Just fall through and we'll return because there's no data.
+      // The `readTableFromEdgeDB` helper will report errors to the
+      // console anyway.
+    }
+    if (!typedUrls.length) {
+      return;
+    }
+
+    let pageInfos = [];
+    // Sometimes the values are bogus (e.g. 0 becomes some date in 1600),
+    // and places will throw *everything* away, not just the bogus ones,
+    // so deal with that by having a cutoff date. Also, there's not much
+    // point importing really old entries. The cut-off date is related to
+    // Edge's launch date.
+    const kDateCutOff = new Date("2016", 0, 1);
+    for (let typedUrlInfo of typedUrls) {
+      try {
+        let url = new URL(typedUrlInfo.URL);
+        if (!["http:", "https:", "ftp:"].includes(url.protocol)) {
+          continue;
+        }
+
+        let date = typedUrlInfo.AccessDateTimeUTC;
+        if (!date) {
+          date = kDateCutOff;
+        } else if (date < kDateCutOff) {
+          continue;
+        }
+
+        pageInfos.push({
+          url,
+          visits: [{
+            transition: PlacesUtils.history.TRANSITIONS.TYPED,
+            date,
+          }],
+        });
+      } catch (ex) {
+        Cu.reportError(ex);
+      }
+    }
+    await MigrationUtils.insertVisitsWrapper(pageInfos);
   },
 };
 
@@ -158,7 +228,7 @@ function EdgeReadingListMigrator(dbOverride) {
 EdgeReadingListMigrator.prototype = {
   type: MigrationUtils.resourceTypes.BOOKMARKS,
 
-  get db() { return this.dbOverride || gEdgeDatabase },
+  get db() { return this.dbOverride || gEdgeDatabase; },
 
   get exists() {
     return !!this.db;
@@ -174,15 +244,15 @@ EdgeReadingListMigrator.prototype = {
     );
   },
 
-  _migrateReadingList: Task.async(function*(parentGuid) {
-    if (yield ESEDBReader.dbLocked(this.db)) {
+  async _migrateReadingList(parentGuid) {
+    if (await ESEDBReader.dbLocked(this.db)) {
       throw new Error("Edge seems to be running - its database is locked.");
     }
     let columnFn = db => {
       let columns = [
         {name: "URL", type: "string"},
         {name: "Title", type: "string"},
-        {name: "AddedDate", type: "date"}
+        {name: "AddedDate", type: "date"},
       ];
 
       // Later versions have an IsDeleted column:
@@ -197,12 +267,12 @@ EdgeReadingListMigrator.prototype = {
       return !row.IsDeleted;
     };
 
-    let readingListItems = readTableFromEdgeDB("ReadingList", columnFn, filterFn, this.db);
+    let readingListItems = readTableFromEdgeDB("ReadingList", columnFn, this.db, filterFn);
     if (!readingListItems.length) {
       return;
     }
 
-    let destFolderGuid = yield this._ensureReadingListFolder(parentGuid);
+    let destFolderGuid = await this._ensureReadingListFolder(parentGuid);
     let bookmarks = [];
     for (let item of readingListItems) {
       let dateAdded = item.AddedDate || new Date();
@@ -214,17 +284,17 @@ EdgeReadingListMigrator.prototype = {
       }
       bookmarks.push({ url: item.URL, title: item.Title, dateAdded });
     }
-    yield MigrationUtils.insertManyBookmarksWrapper(bookmarks, destFolderGuid);
-  }),
+    await MigrationUtils.insertManyBookmarksWrapper(bookmarks, destFolderGuid);
+  },
 
-  _ensureReadingListFolder: Task.async(function*(parentGuid) {
+  async _ensureReadingListFolder(parentGuid) {
     if (!this.__readingListFolderGuid) {
       let folderTitle = MigrationUtils.getLocalizedString("importedEdgeReadingList");
       let folderSpec = {type: PlacesUtils.bookmarks.TYPE_FOLDER, parentGuid, title: folderTitle};
-      this.__readingListFolderGuid = (yield MigrationUtils.insertBookmarkWrapper(folderSpec)).guid;
+      this.__readingListFolderGuid = (await MigrationUtils.insertBookmarkWrapper(folderSpec)).guid;
     }
     return this.__readingListFolderGuid;
-  }),
+  },
 };
 
 function EdgeBookmarksMigrator(dbOverride) {
@@ -234,9 +304,9 @@ function EdgeBookmarksMigrator(dbOverride) {
 EdgeBookmarksMigrator.prototype = {
   type: MigrationUtils.resourceTypes.BOOKMARKS,
 
-  get db() { return this.dbOverride || gEdgeDatabase },
+  get db() { return this.dbOverride || gEdgeDatabase; },
 
-  get TABLE_NAME() { return "Favorites" },
+  get TABLE_NAME() { return "Favorites"; },
 
   get exists() {
     if (!("_exists" in this)) {
@@ -255,26 +325,26 @@ EdgeBookmarksMigrator.prototype = {
     );
   },
 
-  _migrateBookmarks: Task.async(function*() {
-    if (yield ESEDBReader.dbLocked(this.db)) {
+  async _migrateBookmarks() {
+    if (await ESEDBReader.dbLocked(this.db)) {
       throw new Error("Edge seems to be running - its database is locked.");
     }
     let {toplevelBMs, toolbarBMs} = this._fetchBookmarksFromDB();
     if (toplevelBMs.length) {
       let parentGuid = PlacesUtils.bookmarks.menuGuid;
       if (!MigrationUtils.isStartupMigration) {
-        parentGuid = yield MigrationUtils.createImportedBookmarksFolder("Edge", parentGuid);
+        parentGuid = await MigrationUtils.createImportedBookmarksFolder("Edge", parentGuid);
       }
-      yield MigrationUtils.insertManyBookmarksWrapper(toplevelBMs, parentGuid);
+      await MigrationUtils.insertManyBookmarksWrapper(toplevelBMs, parentGuid);
     }
     if (toolbarBMs.length) {
       let parentGuid = PlacesUtils.bookmarks.toolbarGuid;
       if (!MigrationUtils.isStartupMigration) {
-        parentGuid = yield MigrationUtils.createImportedBookmarksFolder("Edge", parentGuid);
+        parentGuid = await MigrationUtils.createImportedBookmarksFolder("Edge", parentGuid);
       }
-      yield MigrationUtils.insertManyBookmarksWrapper(toolbarBMs, parentGuid);
+      await MigrationUtils.insertManyBookmarksWrapper(toolbarBMs, parentGuid);
     }
-  }),
+  },
 
   _fetchBookmarksFromDB() {
     let folderMap = new Map();
@@ -285,7 +355,7 @@ EdgeBookmarksMigrator.prototype = {
       {name: "IsFolder", type: "boolean"},
       {name: "IsDeleted", type: "boolean"},
       {name: "ParentId", type: "guid"},
-      {name: "ItemId", type: "guid"}
+      {name: "ItemId", type: "guid"},
     ];
     let filterFn = row => {
       if (row.IsDeleted) {
@@ -296,7 +366,7 @@ EdgeBookmarksMigrator.prototype = {
       }
       return true;
     };
-    let bookmarks = readTableFromEdgeDB(this.TABLE_NAME, columns, filterFn, this.db);
+    let bookmarks = readTableFromEdgeDB(this.TABLE_NAME, columns, this.db, filterFn);
     let toplevelBMs = [], toolbarBMs = [];
     for (let bookmark of bookmarks) {
       let bmToInsert;
@@ -366,6 +436,7 @@ EdgeProfileMigrator.prototype.getResources = function() {
     new EdgeBookmarksMigrator(),
     MSMigrationUtils.getCookiesMigrator(MSMigrationUtils.MIGRATION_TYPE_EDGE),
     new EdgeTypedURLMigrator(),
+    new EdgeTypedURLDBMigrator(),
     new EdgeReadingListMigrator(),
   ];
   let windowsVaultFormPasswordsMigrator =
@@ -375,10 +446,11 @@ EdgeProfileMigrator.prototype.getResources = function() {
   return resources.filter(r => r.exists);
 };
 
-EdgeProfileMigrator.prototype.getLastUsedDate = function() {
+EdgeProfileMigrator.prototype.getLastUsedDate = async function() {
   // Don't do this if we don't have a single profile (see the comment for
   // sourceProfiles) or if we can't find the database file:
-  if (this.sourceProfiles !== null || !gEdgeDatabase) {
+  let sourceProfiles = await this.getSourceProfiles();
+  if (sourceProfiles !== null || !gEdgeDatabase) {
     return Promise.resolve(new Date(0));
   }
   let logFilePath = OS.Path.join(gEdgeDatabase.parent.path, "LogFiles", "edb.log");
@@ -396,7 +468,8 @@ EdgeProfileMigrator.prototype.getLastUsedDate = function() {
       typedURLs = MSMigrationUtils.getTypedURLs(kEdgeRegistryRoot);
     } catch (ex) {}
     let times = [0, ...typedURLs.values()];
-    resolve(Math.max.apply(Math, times));
+    // dates is an array of PRTimes, which are in microseconds - convert to milliseconds
+    resolve(Math.max.apply(Math, times) / 1000);
   }));
   return Promise.all(datePromises).then(dates => {
     return new Date(Math.max.apply(Math, dates));
@@ -408,10 +481,10 @@ EdgeProfileMigrator.prototype.getLastUsedDate = function() {
  * - |[]| to indicate "There are no profiles" (on <=win8.1) which will avoid using this migrator.
  * See MigrationUtils.jsm for slightly more info on how sourceProfiles is used.
  */
-EdgeProfileMigrator.prototype.__defineGetter__("sourceProfiles", function() {
+EdgeProfileMigrator.prototype.getSourceProfiles = function() {
   let isWin10OrHigher = AppConstants.isPlatformAndVersionAtLeast("win", "10");
   return isWin10OrHigher ? null : [];
-});
+};
 
 EdgeProfileMigrator.prototype.__defineGetter__("sourceLocked", function() {
   // There is an exclusive lock on some databases. Assume they are locked for now.

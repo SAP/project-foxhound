@@ -1,8 +1,8 @@
 /* Test to ensure our 64-bit content length implementation works, at least for
    a simple HTTP case */
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 // This C-L is significantly larger than (U)INT32_MAX, to make sure we do
 // 64-bit properly.
@@ -15,7 +15,7 @@ var listener = {
   },
 
   onDataAvailable: function (req, ctx, stream, off, count) {
-    do_check_eq(req.getResponseHeader("Content-Length"), CONTENT_LENGTH);
+    Assert.equal(req.getResponseHeader("Content-Length"), CONTENT_LENGTH);
 
     // We're done here, cancel the channel
     req.cancel(NS_BINDING_ABORT);

@@ -1,19 +1,12 @@
-const LOAD_IN_SIDEBAR_ANNO = "bookmarkProperties/loadInSidebar";
-const DESCRIPTION_ANNO = "bookmarkProperties/description";
-
 var tagData = [
   { uri: uri("http://slint.us"), tags: ["indie", "kentucky", "music"] },
-  { uri: uri("http://en.wikipedia.org/wiki/Diplodocus"), tags: ["dinosaur", "dj", "rad word"] }
+  { uri: uri("http://en.wikipedia.org/wiki/Diplodocus"), tags: ["dinosaur", "dj", "rad word"] },
 ];
 
 var bookmarkData = [
   { uri: uri("http://slint.us"), title: "indie, kentucky, music" },
-  { uri: uri("http://en.wikipedia.org/wiki/Diplodocus"), title: "dinosaur, dj, rad word" }
+  { uri: uri("http://en.wikipedia.org/wiki/Diplodocus"), title: "dinosaur, dj, rad word" },
 ];
-
-function run_test() {
-  run_next_test();
-}
 
 /*
   HTML+FEATURES SUMMARY:
@@ -26,61 +19,65 @@ function run_test() {
   - tag multiple URIs with multiple tags
   - export as json, import, test
 */
-add_task(function* () {
+add_task(async function() {
   // Remove eventual bookmarks.exported.json.
   let jsonFile = OS.Path.join(OS.Constants.Path.profileDir, "bookmarks.exported.json");
-  if ((yield OS.File.exists(jsonFile)))
-    yield OS.File.remove(jsonFile);
+  if ((await OS.File.exists(jsonFile)))
+    await OS.File.remove(jsonFile);
 
   // Test importing a pre-Places canonical bookmarks file.
   // Note: we do not empty the db before this import to catch bugs like 380999
   let htmlFile = OS.Path.join(do_get_cwd().path, "bookmarks.preplaces.html");
-  yield BookmarkHTMLUtils.importFromFile(htmlFile, true);
+  await BookmarkHTMLUtils.importFromFile(htmlFile, { replace: true });
 
   // Populate the database.
   for (let { uri, tags } of tagData) {
     PlacesUtils.tagging.tagURI(uri, tags);
   }
   for (let { uri, title } of bookmarkData) {
-    yield PlacesUtils.bookmarks.insert({ parentGuid: PlacesUtils.bookmarks.unfiledGuid,
+    await PlacesUtils.bookmarks.insert({ parentGuid: PlacesUtils.bookmarks.unfiledGuid,
                                          url: uri,
                                          title });
   }
   for (let { uri, title } of bookmarkData) {
-    yield PlacesUtils.bookmarks.insert({ parentGuid: PlacesUtils.bookmarks.toolbarGuid,
+    await PlacesUtils.bookmarks.insert({ parentGuid: PlacesUtils.bookmarks.toolbarGuid,
                                          url: uri,
                                          title });
   }
 
-  yield validate();
+  await validate("initial database");
 
   // Test exporting a Places canonical json file.
   // 1. export to bookmarks.exported.json
-  yield BookmarkJSONUtils.exportToFile(jsonFile);
-  do_print("exported json");
+  await BookmarkJSONUtils.exportToFile(jsonFile);
+  info("exported json");
 
   // 2. empty bookmarks db
   // 3. import bookmarks.exported.json
-  yield BookmarkJSONUtils.importFromFile(jsonFile, true);
-  do_print("imported json");
+  await BookmarkJSONUtils.importFromFile(jsonFile, { replace: true });
+  info("imported json");
 
   // 4. run the test-suite
-  yield validate();
-  do_print("validated import");
+  await validate("re-imported json");
+  info("validated import");
 });
 
-function* validate() {
-  yield testMenuBookmarks();
-  yield testToolbarBookmarks();
+async function validate(infoMsg) {
+  info(`Validating ${infoMsg}: testMenuBookmarks`);
+  await testMenuBookmarks();
+  info(`Validating ${infoMsg}: testToolbarBookmarks`);
+  await testToolbarBookmarks();
+  info(`Validating ${infoMsg}: testUnfiledBookmarks`);
   testUnfiledBookmarks();
+  info(`Validating ${infoMsg}: testTags`);
   testTags();
-  yield PlacesTestUtils.promiseAsyncUpdates();
+  await PlacesTestUtils.promiseAsyncUpdates();
 }
 
 // Tests a bookmarks datastore that has a set of bookmarks, etc
 // that flex each supported field and feature.
-function* testMenuBookmarks() {
-  let root = PlacesUtils.getFolderContents(PlacesUtils.bookmarksMenuFolderId).root;
+async function testMenuBookmarks() {
+  let root = PlacesUtils.getFolderContents(PlacesUtils.bookmarks.menuGuid).root;
   Assert.equal(root.childCount, 3);
 
   let separatorNode = root.getChild(1);
@@ -89,14 +86,10 @@ function* testMenuBookmarks() {
   let folderNode = root.getChild(2);
   Assert.equal(folderNode.type, folderNode.RESULT_TYPE_FOLDER);
   Assert.equal(folderNode.title, "test");
-  let folder = yield PlacesUtils.bookmarks.fetch(folderNode.bookmarkGuid);
+  let folder = await PlacesUtils.bookmarks.fetch(folderNode.bookmarkGuid);
   Assert.equal(folder.dateAdded.getTime(), 1177541020000);
 
   Assert.equal(PlacesUtils.asQuery(folderNode).hasChildren, true);
-
-  Assert.equal("folder test comment",
-              PlacesUtils.annotations.getItemAnnotation(folderNode.itemId,
-                                                        DESCRIPTION_ANNO));
 
   // open test folder, and test the children
   folderNode.containerOpen = true;
@@ -105,38 +98,34 @@ function* testMenuBookmarks() {
   let bookmarkNode = folderNode.getChild(0);
   Assert.equal("http://test/post", bookmarkNode.uri);
   Assert.equal("test post keyword", bookmarkNode.title);
-  Assert.ok(PlacesUtils.annotations.itemHasAnnotation(bookmarkNode.itemId,
-                                                      LOAD_IN_SIDEBAR_ANNO));
   Assert.equal(bookmarkNode.dateAdded, 1177375336000000);
 
-  let entry = yield PlacesUtils.keywords.fetch({ url: bookmarkNode.uri });
+  let entry = await PlacesUtils.keywords.fetch({ url: bookmarkNode.uri });
   Assert.equal("test", entry.keyword);
   Assert.equal("hidden1%3Dbar&text1%3D%25s", entry.postData);
 
-  Assert.equal("ISO-8859-1",
-               (yield PlacesUtils.getCharsetForURI(NetUtil.newURI(bookmarkNode.uri))));
-  Assert.equal("item description",
-              PlacesUtils.annotations.getItemAnnotation(bookmarkNode.itemId,
-                                                        DESCRIPTION_ANNO));
+  let pageInfo = await PlacesUtils.history.fetch(bookmarkNode.uri, {includeAnnotations: true});
+  Assert.equal(pageInfo.annotations.get(PlacesUtils.CHARSET_ANNO), "ISO-8859-1",
+    "Should have the correct charset");
 
   folderNode.containerOpen = false;
   root.containerOpen = false;
 }
 
-function* testToolbarBookmarks() {
-  let root = PlacesUtils.getFolderContents(PlacesUtils.toolbarFolderId).root;
+async function testToolbarBookmarks() {
+  let root = PlacesUtils.getFolderContents(PlacesUtils.bookmarks.toolbarGuid).root;
 
-  // child count (add 2 for pre-existing items)
+  // child count (add 2 for pre-existing items, one of the feeds is skipped
+  // because it doesn't have href)
   Assert.equal(root.childCount, bookmarkData.length + 2);
 
-  let livemarkNode = root.getChild(1);
-  Assert.equal("Latest Headlines", livemarkNode.title);
-
-  let livemark = yield PlacesUtils.livemarks.getLivemark({ id: livemarkNode.itemId });
+  // Livemarks are no more supported but may still exist in old html files.
+  let legacyLivemarkNode = root.getChild(1);
+  Assert.equal("Latest Headlines", legacyLivemarkNode.title);
   Assert.equal("http://en-us.fxfeeds.mozilla.com/en-US/firefox/livebookmarks/",
-               livemark.siteURI.spec);
-  Assert.equal("http://en-us.fxfeeds.mozilla.com/en-US/firefox/headlines.xml",
-               livemark.feedURI.spec);
+               legacyLivemarkNode.uri);
+  Assert.equal(legacyLivemarkNode.type,
+               Ci.nsINavHistoryResultNode.RESULT_TYPE_URI);
 
   // test added bookmark data
   let bookmarkNode = root.getChild(2);
@@ -150,7 +139,7 @@ function* testToolbarBookmarks() {
 }
 
 function testUnfiledBookmarks() {
-  let root = PlacesUtils.getFolderContents(PlacesUtils.unfiledBookmarksFolderId).root;
+  let root = PlacesUtils.getFolderContents(PlacesUtils.bookmarks.unfiledGuid).root;
   // child count (add 1 for pre-existing item)
   Assert.equal(root.childCount, bookmarkData.length + 1);
   for (let i = 1; i < root.childCount; ++i) {
@@ -165,7 +154,7 @@ function testUnfiledBookmarks() {
 
 function testTags() {
   for (let { uri, tags } of tagData) {
-    do_print("Test tags for " + uri.spec + ": " + tags + "\n");
+    info("Test tags for " + uri.spec + ": " + tags + "\n");
     let foundTags = PlacesUtils.tagging.getTagsForURI(uri);
     Assert.equal(foundTags.length, tags.length);
     Assert.ok(tags.every(tag => foundTags.includes(tag)));

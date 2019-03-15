@@ -5,6 +5,7 @@
 from __future__ import absolute_import, unicode_literals
 
 import argparse
+import logging
 import os
 import sys
 
@@ -19,6 +20,9 @@ from mach.decorators import (
     CommandProvider,
     Command,
 )
+
+import mozinfo
+
 
 def setup_awsy_argument_parser():
     from marionette_harness.runtests import MarionetteArguments
@@ -64,10 +68,19 @@ class MachCommands(MachCommandBase):
             kwargs['perTabPause'] = 1
             kwargs['settleWaitTime'] = 1
 
+        if 'single_stylo_traversal' in kwargs and kwargs['single_stylo_traversal']:
+            os.environ['STYLO_THREADS'] = '1'
+        else:
+            os.environ['STYLO_THREADS'] = '4'
+
+        if 'enable_webrender' in kwargs and kwargs['enable_webrender']:
+            os.environ['MOZ_WEBRENDER'] = '1'
+            os.environ['MOZ_ACCELERATED'] = '1'
+
         runtime_testvars = {}
         for arg in ('webRootDir', 'pageManifest', 'resultsDir', 'entities', 'iterations',
-                    'perTabPause', 'settleWaitTime', 'maxTabs'):
-            if kwargs[arg]:
+                    'perTabPause', 'settleWaitTime', 'maxTabs', 'dmd'):
+            if arg in kwargs and kwargs[arg] is not None:
                 runtime_testvars[arg] = kwargs[arg]
 
         if 'webRootDir' not in runtime_testvars:
@@ -102,14 +115,10 @@ class MachCommands(MachCommandBase):
                                      'tp5n-pageset.manifest')
         tooltool_args = {'args': [
             sys.executable,
-            os.path.join(self.topsrcdir,
-                         'taskcluster',
-                         'docker',
-                         'recipes',
-                         'tooltool.py'),
-            '--manifest=%s' % manifest_file,
-            '--cache-folder=%s' % os.path.join(self.topsrcdir, 'tooltool-cache'),
-            'fetch'
+            os.path.join(self.topsrcdir, 'mach'),
+            'artifact', 'toolchain', '-v',
+            '--tooltool-manifest=%s' % manifest_file,
+            '--cache-dir=%s' % os.path.join(self.topsrcdir, 'tooltool-cache'),
         ]}
         self.run_process(cwd=page_load_test_dir, **tooltool_args)
         tp5nzip = os.path.join(page_load_test_dir, 'tp5n.zip')
@@ -122,7 +131,45 @@ class MachCommands(MachCommandBase):
                 tp5nzip,
                 '-d',
                 page_load_test_dir]}
-            self.run_process(**unzip_args)
+            try:
+                self.run_process(**unzip_args)
+            except Exception as exc:
+                troubleshoot = ''
+                if mozinfo.os == 'win':
+                    troubleshoot = ' Try using --web-root to specify a ' \
+                                   'directory closer to the drive root.'
+
+                self.log(logging.ERROR, 'awsy',
+                         {'directory': page_load_test_dir, 'exception': exc},
+                         'Failed to unzip `tp5n.zip` into '
+                         '`{directory}` with `{exception}`.' + troubleshoot)
+                raise exc
+
+        # If '--preferences' was not specified supply our default set.
+        if not kwargs['prefs_files']:
+            kwargs['prefs_files'] = [os.path.join(awsy_source_dir, 'conf', 'prefs.json')]
+
+        # Setup DMD env vars if necessary.
+        if kwargs['dmd']:
+            bin_dir = os.path.dirname(binary)
+
+            if 'DMD' not in os.environ:
+                os.environ['DMD'] = '1'
+
+            # Work around a startup crash with DMD on windows
+            if mozinfo.os == 'win':
+                kwargs['pref'] = 'security.sandbox.content.level:0'
+                self.log(logging.WARNING, 'awsy', {},
+                         'Forcing \'security.sandbox.content.level\' = 0 because DMD is enabled.')
+            elif mozinfo.os == 'mac':
+                # On mac binary is in MacOS and dmd.py is in Resources, ie:
+                #   Name.app/Contents/MacOS/libdmd.dylib
+                #   Name.app/Contents/Resources/dmd.py
+                bin_dir = os.path.join(bin_dir, "../Resources/")
+
+            # Also add the bin dir to the python path so we can use dmd.py
+            if bin_dir not in sys.path:
+                sys.path.append(bin_dir)
 
         for k, v in kwargs.iteritems():
             setattr(args, k, v)
@@ -139,9 +186,9 @@ class MachCommands(MachCommandBase):
             return 0
 
     @Command('awsy-test', category='testing',
-        description='Run Are We Slim Yet (AWSY) memory usage testing using marionette.',
-        parser=setup_awsy_argument_parser,
-    )
+             description='Run Are We Slim Yet (AWSY) memory usage testing using marionette.',
+             parser=setup_awsy_argument_parser,
+             )
     @CommandArgumentGroup('AWSY')
     @CommandArgument('--web-root', group='AWSY', action='store', type=str,
                      dest='webRootDir',
@@ -182,6 +229,15 @@ class MachCommands(MachCommandBase):
                      dest='settleWaitTime',
                      help='Seconds to wait for things to settled down. '
                      'Defaults to %s.' % SETTLE_WAIT_TIME)
+    @CommandArgument('--single-stylo-traversal', group='AWSY', action='store_true',
+                     dest='single_stylo_traversal', default=False,
+                     help='Set STYLO_THREADS=1.')
+    @CommandArgument('--enable-webrender', group='AWSY', action='store_true',
+                     dest='enable_webrender', default=False,
+                     help='Enable WebRender.')
+    @CommandArgument('--dmd', group='AWSY', action='store_true',
+                     dest='dmd', default=False,
+                     help='Enable DMD during testing. Requires a DMD-enabled build.')
     def run_awsy_test(self, tests, **kwargs):
         """mach awsy-test runs the in-tree version of the Are We Slim Yet
         (AWSY) tests.

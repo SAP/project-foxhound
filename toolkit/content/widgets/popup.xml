@@ -11,236 +11,7 @@
    xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
    xmlns:xbl="http://www.mozilla.org/xbl">
 
-  <binding id="popup-base">
-    <resources>
-      <stylesheet src="chrome://global/skin/popup.css"/>
-    </resources>
-
-    <implementation implements="nsIDOMXULPopupElement">
-      <property name="label" onget="return this.getAttribute('label');"
-                             onset="this.setAttribute('label', val); return val;"/>
-      <property name="position" onget="return this.getAttribute('position');"
-                                onset="this.setAttribute('position', val); return val;"/>
-      <property name="popupBoxObject">
-        <getter>
-          return this.boxObject;
-        </getter>
-      </property>
-
-      <property name="state" readonly="true"
-                onget="return this.popupBoxObject.popupState"/>
-
-      <property name="triggerNode" readonly="true"
-                onget="return this.popupBoxObject.triggerNode"/>
-
-      <property name="anchorNode" readonly="true"
-                onget="return this.popupBoxObject.anchorNode"/>
-
-      <method name="openPopup">
-        <parameter name="aAnchorElement"/>
-        <parameter name="aPosition"/>
-        <parameter name="aX"/>
-        <parameter name="aY"/>
-        <parameter name="aIsContextMenu"/>
-        <parameter name="aAttributesOverride"/>
-        <parameter name="aTriggerEvent"/>
-        <body>
-        <![CDATA[
-          try {
-            var popupBox = this.popupBoxObject;
-            if (popupBox)
-              popupBox.openPopup(aAnchorElement, aPosition, aX, aY,
-                                 aIsContextMenu, aAttributesOverride, aTriggerEvent);
-          } catch (e) {}
-        ]]>
-        </body>
-      </method>
-
-      <method name="openPopupAtScreen">
-        <parameter name="aX"/>
-        <parameter name="aY"/>
-        <parameter name="aIsContextMenu"/>
-        <parameter name="aTriggerEvent"/>
-        <body>
-        <![CDATA[
-          try {
-            var popupBox = this.popupBoxObject;
-            if (popupBox)
-              popupBox.openPopupAtScreen(aX, aY, aIsContextMenu, aTriggerEvent);
-          } catch (e) {}
-        ]]>
-        </body>
-      </method>
-
-      <method name="openPopupAtScreenRect">
-        <parameter name="aPosition"/>
-        <parameter name="aX"/>
-        <parameter name="aY"/>
-        <parameter name="aWidth"/>
-        <parameter name="aHeight"/>
-        <parameter name="aIsContextMenu"/>
-        <parameter name="aAttributesOverride"/>
-        <parameter name="aTriggerEvent"/>
-        <body>
-        <![CDATA[
-          try {
-            var popupBox = this.popupBoxObject;
-            if (popupBox)
-              popupBox.openPopupAtScreenRect(aPosition, aX, aY, aWidth, aHeight,
-                                             aIsContextMenu, aAttributesOverride, aTriggerEvent);
-          } catch (e) {}
-        ]]>
-        </body>
-      </method>
-
-      <method name="showPopup">
-        <parameter name="element"/>
-        <parameter name="xpos"/>
-        <parameter name="ypos"/>
-        <parameter name="popuptype"/>
-        <parameter name="anchoralignment"/>
-        <parameter name="popupalignment"/>
-        <body>
-        <![CDATA[
-          var popupBox = null;
-          var menuBox = null;
-          try {
-            popupBox = this.popupBoxObject;
-          } catch (e) {}
-          try {
-            menuBox = this.parentNode.boxObject;
-          } catch (e) {}
-          if (menuBox instanceof MenuBoxObject)
-            menuBox.openMenu(true);
-          else if (popupBox)
-            popupBox.showPopup(element, this, xpos, ypos, popuptype, anchoralignment, popupalignment);
-        ]]>
-        </body>
-      </method>
-
-      <method name="hidePopup">
-        <parameter name="cancel"/>
-        <body>
-        <![CDATA[
-          var popupBox = null;
-          var menuBox = null;
-          try {
-            popupBox = this.popupBoxObject;
-          } catch (e) {}
-          try {
-            menuBox = this.parentNode.boxObject;
-          } catch (e) {}
-          if (menuBox instanceof MenuBoxObject)
-            menuBox.openMenu(false);
-          else if (popupBox instanceof PopupBoxObject)
-            popupBox.hidePopup(cancel);
-        ]]>
-        </body>
-      </method>
-
-      <property name="autoPosition">
-        <getter>
-        <![CDATA[
-          return this.popupBoxObject.autoPosition;
-        ]]>
-        </getter>
-        <setter>
-        <![CDATA[
-          return this.popupBoxObject.autoPosition = val;
-        ]]>
-        </setter>
-      </property>
-
-      <property name="alignmentPosition" readonly="true">
-        <getter>
-        <![CDATA[
-          return this.popupBoxObject.alignmentPosition;
-        ]]>
-        </getter>
-      </property>
-
-      <property name="alignmentOffset" readonly="true">
-        <getter>
-        <![CDATA[
-          return this.popupBoxObject.alignmentOffset;
-        ]]>
-        </getter>
-      </property>
-
-      <method name="enableKeyboardNavigator">
-        <parameter name="aEnableKeyboardNavigator"/>
-        <body>
-        <![CDATA[
-          this.popupBoxObject.enableKeyboardNavigator(aEnableKeyboardNavigator);
-        ]]>
-        </body>
-      </method>
-
-      <method name="enableRollup">
-        <parameter name="aEnableRollup"/>
-        <body>
-        <![CDATA[
-          this.popupBoxObject.enableRollup(aEnableRollup);
-        ]]>
-        </body>
-      </method>
-
-      <method name="sizeTo">
-        <parameter name="aWidth"/>
-        <parameter name="aHeight"/>
-        <body>
-        <![CDATA[
-          this.popupBoxObject.sizeTo(aWidth, aHeight);
-        ]]>
-        </body>
-      </method>
-
-      <method name="moveTo">
-        <parameter name="aLeft"/>
-        <parameter name="aTop"/>
-        <body>
-        <![CDATA[
-          this.popupBoxObject.moveTo(aLeft, aTop);
-        ]]>
-        </body>
-      </method>
-
-      <method name="moveToAnchor">
-        <parameter name="aAnchorElement"/>
-        <parameter name="aPosition"/>
-        <parameter name="aX"/>
-        <parameter name="aY"/>
-        <parameter name="aAttributesOverride"/>
-        <body>
-        <![CDATA[
-          this.popupBoxObject.moveToAnchor(aAnchorElement, aPosition, aX, aY, aAttributesOverride);
-        ]]>
-        </body>
-      </method>
-
-      <method name="getOuterScreenRect">
-        <body>
-        <![CDATA[
-          return this.popupBoxObject.getOuterScreenRect();
-        ]]>
-        </body>
-      </method>
-
-      <method name="setConstraintRect">
-        <parameter name="aRect"/>
-        <body>
-        <![CDATA[
-          this.popupBoxObject.setConstraintRect(aRect);
-        ]]>
-        </body>
-      </method>
-    </implementation>
-
-  </binding>
-
-  <binding id="popup" role="xul:menupopup"
-           extends="chrome://global/content/bindings/popup.xml#popup-base">
-
+  <binding id="popup">
     <content>
       <xul:arrowscrollbox class="popup-internal-box" flex="1" orient="vertical"
                           smoothscroll="false">
@@ -252,6 +23,133 @@
       <field name="scrollBox" readonly="true">
         document.getAnonymousElementByAttribute(this, "class", "popup-internal-box");
       </field>
+
+      <field name="AUTOSCROLL_INTERVAL">25</field>
+      <field name="NOT_DRAGGING">0</field>
+      <field name="DRAG_OVER_BUTTON">-1</field>
+      <field name="DRAG_OVER_POPUP">1</field>
+
+      <field name="_draggingState">this.NOT_DRAGGING</field>
+      <field name="_scrollTimer">0</field>
+
+      <method name="_enableDragScrolling">
+        <!-- when overItem is true, drag started over menuitem; when false, drag
+             started while the popup was opening.
+          -->
+        <parameter name="overItem"/>
+        <body>
+        <![CDATA[
+          if (!this._draggingState) {
+            this.setCaptureAlways();
+            this._draggingState = overItem ? this.DRAG_OVER_POPUP : this.DRAG_OVER_BUTTON;
+          }
+        ]]>
+        </body>
+      </method>
+
+      <method name="_clearScrollTimer">
+        <body>
+        <![CDATA[
+          if (this._scrollTimer) {
+            this.ownerGlobal.clearInterval(this._scrollTimer);
+            this._scrollTimer = 0;
+          }
+        ]]>
+        </body>
+      </method>
+
+      <constructor><![CDATA[
+        // Enable the drag-to-scroll events only in menulist popups.
+        if (!this.parentNode || this.parentNode.localName != "menulist") {
+          return;
+        }
+
+        // XBL bindings might be constructed more than once.
+        if (this.eventListenersAdded) {
+          return;
+        }
+        this.eventListenersAdded = true;
+
+        this.addEventListener("popupshown", () => {
+          // Enable drag scrolling even when the mouse wasn't used. The
+          // mousemove handler will remove it if the mouse isn't down.
+          this._enableDragScrolling(false);
+        });
+
+        this.addEventListener("popuphidden", () => {
+          this._draggingState = this.NOT_DRAGGING;
+          this._clearScrollTimer();
+          this.releaseCapture();
+        });
+
+        this.addEventListener("mousedown", event => {
+          if (event.button != 0) {
+            return;
+          }
+
+          if (this.state == "open" &&
+            (event.target.localName == "menuitem" ||
+              event.target.localName == "menu" ||
+              event.target.localName == "menucaption")) {
+            this._enableDragScrolling(true);
+          }
+        });
+
+        this.addEventListener("mouseup", event => {
+          if (event.button != 0) {
+            return;
+          }
+
+          this._draggingState = this.NOT_DRAGGING;
+          this._clearScrollTimer();
+        });
+
+        this.addEventListener("mousemove", event => {
+          if (!this._draggingState) {
+            return;
+          }
+
+          this._clearScrollTimer();
+
+          // If the user released the mouse before the popup opens, we will
+          // still be capturing, so check that the button is still pressed. If
+          // not, release the capture and do nothing else. This also handles if
+          // the dropdown was opened via the keyboard.
+          if (!(event.buttons & 1)) {
+            this._draggingState = this.NOT_DRAGGING;
+            this.releaseCapture();
+            return;
+          }
+
+          // If dragging outside the top or bottom edge of the popup, but within
+          // the popup area horizontally, scroll the list in that direction. The
+          // _draggingState flag is used to ensure that scrolling does not start
+          // until the mouse has moved over the popup first, preventing
+          // scrolling while over the dropdown button.
+          let popupRect = this.getOuterScreenRect();
+          if (event.screenX >= popupRect.left &&
+              event.screenX <= popupRect.right) {
+            if (this._draggingState == this.DRAG_OVER_BUTTON) {
+              if (event.screenY > popupRect.top &&
+                  event.screenY < popupRect.bottom) {
+                this._draggingState = this.DRAG_OVER_POPUP;
+              }
+            }
+
+            if (this._draggingState == this.DRAG_OVER_POPUP &&
+                (event.screenY <= popupRect.top ||
+                 event.screenY >= popupRect.bottom)) {
+              let scrollAmount = event.screenY <= popupRect.top ? -1 : 1;
+              this.scrollBox.scrollByIndex(scrollAmount, true);
+
+              let win = this.ownerGlobal;
+              this._scrollTimer = win.setInterval(() => {
+                this.scrollBox.scrollByIndex(scrollAmount, true);
+              }, this.AUTOSCROLL_INTERVAL);
+            }
+          }
+        });
+      ]]></constructor>
     </implementation>
 
     <handlers>
@@ -259,7 +157,7 @@
         <![CDATA[
           var array = [];
           var width = 0;
-          for (var menuitem = this.firstChild; menuitem; menuitem = menuitem.nextSibling) {
+          for (var menuitem = this.firstElementChild; menuitem; menuitem = menuitem.nextElementSibling) {
             if (menuitem.localName == "menuitem" && menuitem.hasAttribute("acceltext")) {
               var accel = document.getAnonymousElementByAttribute(menuitem, "anonid", "accel");
               if (accel && accel.boxObject) {
@@ -276,39 +174,22 @@
     </handlers>
   </binding>
 
-  <binding id="panel" role="xul:panel"
-           extends="chrome://global/content/bindings/popup.xml#popup-base">
-    <implementation implements="nsIDOMXULPopupElement">
+  <binding id="panel">
+    <implementation>
       <field name="_prevFocus">0</field>
-      <field name="_dragBindingAlive">true</field>
-      <constructor>
-      <![CDATA[
-        if (this.getAttribute("backdrag") == "true" && !this._draggableStarted) {
-          this._draggableStarted = true;
-          try {
-            let tmp = {};
-            Components.utils.import("resource://gre/modules/WindowDraggingUtils.jsm", tmp);
-            let draghandle = new tmp.WindowDraggingElement(this);
-            draghandle.mouseDownCheck = function() {
-              return this._dragBindingAlive;
-            }
-          } catch (e) {}
-        }
-      ]]>
-      </constructor>
     </implementation>
 
     <handlers>
       <handler event="popupshowing"><![CDATA[
         // Capture the previous focus before has a chance to get set inside the panel
         try {
-          this._prevFocus = Components.utils
+          this._prevFocus = Cu
                             .getWeakReference(document.commandDispatcher.focusedElement);
           if (this._prevFocus.get())
             return;
         } catch (ex) { }
 
-        this._prevFocus = Components.utils.getWeakReference(document.activeElement);
+        this._prevFocus = Cu.getWeakReference(document.activeElement);
       ]]></handler>
       <handler event="popupshown"><![CDATA[
         // Fire event for accessibility APIs
@@ -328,8 +209,8 @@
           // Focus was set on an element inside this panel,
           // so we need to move it back to where it was previously
           try {
-            let fm = Components.classes["@mozilla.org/focus-manager;1"]
-                               .getService(Components.interfaces.nsIFocusManager);
+            let fm = Cc["@mozilla.org/focus-manager;1"]
+                       .getService(Ci.nsIFocusManager);
             fm.setFocus(prevFocus, fm.FLAG_NOSCROLL);
           } catch (e) {
             prevFocus.focus();
@@ -376,6 +257,11 @@
   </binding>
 
   <binding id="arrowpanel" extends="chrome://global/content/bindings/popup.xml#panel">
+    <resources>
+      <!-- Fixes an issue with the "test_arrowpanel.xul" animation on Mac, see bug 1470880. -->
+      <stylesheet src="data:text/css,"/>
+    </resources>
+
     <content flip="both" side="top" position="bottomcenter topleft" consumeoutsideclicks="false">
       <xul:vbox anonid="container" class="panel-arrowcontainer" flex="1"
                xbl:inherits="side,panelopen">
@@ -389,30 +275,6 @@
     </content>
     <implementation>
       <field name="_fadeTimer">null</field>
-      <method name="sizeTo">
-        <parameter name="aWidth"/>
-        <parameter name="aHeight"/>
-        <body>
-        <![CDATA[
-          this.popupBoxObject.sizeTo(aWidth, aHeight);
-          if (this.state == "open") {
-            this.adjustArrowPosition();
-          }
-        ]]>
-        </body>
-      </method>
-      <method name="moveToAnchor">
-        <parameter name="aAnchorElement"/>
-        <parameter name="aPosition"/>
-        <parameter name="aX"/>
-        <parameter name="aY"/>
-        <parameter name="aAttributesOverride"/>
-        <body>
-        <![CDATA[
-          this.popupBoxObject.moveToAnchor(aAnchorElement, aPosition, aX, aY, aAttributesOverride);
-        ]]>
-        </body>
-      </method>
       <method name="adjustArrowPosition">
         <body>
         <![CDATA[
@@ -479,10 +341,11 @@
         document.getAnonymousElementByAttribute(this, "anonid", "arrowbox")
                 .style.removeProperty("transform");
 
-        this.adjustArrowPosition();
-
         if (this.getAttribute("animate") != "false") {
           this.setAttribute("animate", "open");
+          // the animating attribute prevents user interaction during transition
+          // it is removed when popupshown fires
+          this.setAttribute("animating", "true");
         }
 
         // set fading
@@ -512,6 +375,7 @@
         }
       </handler>
       <handler event="popupshown" phase="target">
+        this.removeAttribute("animating");
         this.setAttribute("panelopen", "true");
       </handler>
       <handler event="popuphidden" phase="target">
@@ -525,236 +389,4 @@
       </handler>
     </handlers>
   </binding>
-
-  <binding id="tooltip" role="xul:tooltip"
-           extends="chrome://global/content/bindings/popup.xml#popup-base">
-    <content>
-      <children>
-        <xul:label class="tooltip-label" xbl:inherits="xbl:text=label" flex="1"/>
-      </children>
-    </content>
-
-    <implementation>
-      <field name="_mouseOutCount">0</field>
-      <field name="_isMouseOver">false</field>
-
-      <property name="label"
-                onget="return this.getAttribute('label');"
-                onset="this.setAttribute('label', val); return val;"/>
-
-      <property name="page" onset="if (val) this.setAttribute('page', 'true');
-                                   else this.removeAttribute('page');
-                                   return val;"
-                            onget="return this.getAttribute('page') == 'true';"/>
-      <property name="textProvider"
-                readonly="true">
-        <getter>
-        <![CDATA[
-          if (!this._textProvider) {
-            this._textProvider = Components.classes["@mozilla.org/embedcomp/default-tooltiptextprovider;1"]
-                                 .getService(Components.interfaces.nsITooltipTextProvider);
-          }
-          return this._textProvider;
-        ]]>
-        </getter>
-      </property>
-
-      <!-- Given the supplied element within a page, set the tooltip's text to the text
-           for that element. Returns true if text was assigned, and false if the no text
-           is set, which normally would be used to cancel tooltip display.
-        -->
-      <method name="fillInPageTooltip">
-        <parameter name="tipElement"/>
-        <body>
-        <![CDATA[
-          let tttp = this.textProvider;
-          let textObj = {}, dirObj = {};
-          let shouldChangeText = tttp.getNodeText(tipElement, textObj, dirObj);
-          if (shouldChangeText) {
-            this.style.direction = dirObj.value;
-            this.label = textObj.value;
-          }
-          return shouldChangeText;
-        ]]>
-        </body>
-      </method>
-    </implementation>
-
-    <handlers>
-      <handler event="mouseover"><![CDATA[
-        var rel = event.relatedTarget;
-        if (!rel)
-          return;
-
-        // find out if the node we entered from is one of our anonymous children
-        while (rel) {
-          if (rel == this)
-            break;
-          rel = rel.parentNode;
-        }
-
-        // if the exited node is not a descendant of ours, we are entering for the first time
-        if (rel != this)
-          this._isMouseOver = true;
-      ]]></handler>
-
-      <handler event="mouseout"><![CDATA[
-        var rel = event.relatedTarget;
-
-        // relatedTarget is null when the titletip is first shown: a mouseout event fires
-        // because the mouse is exiting the main window and entering the titletip "window".
-        // relatedTarget is also null when the mouse exits the main window completely,
-        // so count how many times relatedTarget was null after titletip is first shown
-        // and hide popup the 2nd time
-        if (!rel) {
-          ++this._mouseOutCount;
-          if (this._mouseOutCount > 1)
-            this.hidePopup();
-          return;
-        }
-
-        // find out if the node we are entering is one of our anonymous children
-        while (rel) {
-          if (rel == this)
-            break;
-          rel = rel.parentNode;
-        }
-
-        // if the entered node is not a descendant of ours, hide the tooltip
-        if (rel != this && this._isMouseOver) {
-          this.hidePopup();
-        }
-      ]]></handler>
-
-      <handler event="popupshowing"><![CDATA[
-        if (this.page && !this.fillInPageTooltip(this.triggerNode)) {
-          event.preventDefault();
-        }
-      ]]></handler>
-
-      <handler event="popuphiding"><![CDATA[
-        this._isMouseOver = false;
-        this._mouseOutCount = 0;
-      ]]></handler>
-    </handlers>
-  </binding>
-
-  <binding id="popup-scrollbars" extends="chrome://global/content/bindings/popup.xml#popup">
-    <content>
-      <xul:scrollbox class="popup-internal-box" flex="1" orient="vertical" style="overflow: auto;">
-        <children/>
-      </xul:scrollbox>
-    </content>
-    <implementation>
-      <field name="AUTOSCROLL_INTERVAL">25</field>
-      <field name="NOT_DRAGGING">0</field>
-      <field name="DRAG_OVER_BUTTON">-1</field>
-      <field name="DRAG_OVER_POPUP">1</field>
-
-      <field name="_draggingState">this.NOT_DRAGGING</field>
-      <field name="_scrollTimer">0</field>
-
-      <method name="enableDragScrolling">
-        <!-- when overItem is true, drag started over menuitem; when false, drag
-             started while the popup was opening.
-          -->
-        <parameter name="overItem"/>
-        <body>
-        <![CDATA[
-          if (!this._draggingState) {
-            this.setCaptureAlways();
-            this._draggingState = overItem ? this.DRAG_OVER_POPUP : this.DRAG_OVER_BUTTON;
-          }
-        ]]>
-        </body>
-      </method>
-      <method name="_clearScrollTimer">
-        <body>
-        <![CDATA[
-          if (this._scrollTimer) {
-            this.ownerGlobal.clearInterval(this._scrollTimer);
-            this._scrollTimer = 0;
-          }
-        ]]>
-        </body>
-      </method>
-    </implementation>
-    <handlers>
-      <handler event="popupshown">
-        // Enable drag scrolling even when the mouse wasn't used. The mousemove
-        // handler will remove it if the mouse isn't down.
-        this.enableDragScrolling(false);
-      </handler>
-
-      <handler event="popuphidden">
-      <![CDATA[
-        this._draggingState = this.NOT_DRAGGING;
-        this._clearScrollTimer();
-        this.releaseCapture();
-      ]]>
-      </handler>
-
-      <handler event="mousedown" button="0">
-      <![CDATA[
-        if (this.state == "open" &&
-            (event.target.localName == "menuitem" ||
-             event.target.localName == "menu" ||
-             event.target.localName == "menucaption")) {
-          this.enableDragScrolling(true);
-        }
-      ]]>
-      </handler>
-      <handler event="mouseup" button="0">
-      <![CDATA[
-        this._draggingState = this.NOT_DRAGGING;
-        this._clearScrollTimer();
-      ]]>
-      </handler>
-      <handler event="mousemove">
-      <![CDATA[
-        if (!this._draggingState) {
-          return;
-        }
-
-        this._clearScrollTimer();
-
-        // If the user released the mouse before the popup opens, we will
-        // still be capturing, so check that the button is still pressed. If
-        // not, release the capture and do nothing else. This also handles if
-        // the dropdown was opened via the keyboard.
-        if (!(event.buttons & 1)) {
-          this._draggingState = this.NOT_DRAGGING;
-          this.releaseCapture();
-          return;
-        }
-
-        // If dragging outside the top or bottom edge of the popup, but within
-        // the popup area horizontally, scroll the list in that direction. The
-        // _draggingState flag is used to ensure that scrolling does not start
-        // until the mouse has moved over the popup first, preventing scrolling
-        // while over the dropdown button.
-        let popupRect = this.getOuterScreenRect();
-        if (event.screenX >= popupRect.left && event.screenX <= popupRect.right) {
-          if (this._draggingState == this.DRAG_OVER_BUTTON) {
-            if (event.screenY > popupRect.top && event.screenY < popupRect.bottom) {
-              this._draggingState = this.DRAG_OVER_POPUP;
-            }
-          }
-
-          if (this._draggingState == this.DRAG_OVER_POPUP &&
-              (event.screenY <= popupRect.top || event.screenY >= popupRect.bottom)) {
-            let scrollAmount = event.screenY <= popupRect.top ? -1 : 1;
-            this.scrollBox.scrollByIndex(scrollAmount);
-
-            let win = this.ownerGlobal;
-            this._scrollTimer = win.setInterval(() => {
-              this.scrollBox.scrollByIndex(scrollAmount);
-            }, this.AUTOSCROLL_INTERVAL);
-          }
-        }
-      ]]>
-      </handler>
-    </handlers>
-  </binding>
-
 </bindings>

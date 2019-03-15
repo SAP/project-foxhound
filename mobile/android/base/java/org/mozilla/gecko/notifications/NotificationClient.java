@@ -5,26 +5,27 @@
 
 package org.mozilla.gecko.notifications;
 
+import android.annotation.SuppressLint;
+import android.app.Activity;
 import android.app.Notification;
 import android.app.PendingIntent;
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.net.Uri;
+import android.support.annotation.NonNull;
 import android.support.v4.app.NotificationCompat;
 import android.support.v4.app.NotificationManagerCompat;
-import android.util.Log;
-
-import java.util.HashMap;
 
 import org.mozilla.gecko.AppConstants;
-import org.mozilla.gecko.GeckoApp;
+import org.mozilla.gecko.GeckoActivityMonitor;
 import org.mozilla.gecko.GeckoAppShell;
 import org.mozilla.gecko.GeckoService;
 import org.mozilla.gecko.NotificationListener;
 import org.mozilla.gecko.R;
-import org.mozilla.gecko.gfx.BitmapUtils;
+import org.mozilla.gecko.util.BitmapUtils;
+
+import java.util.HashMap;
 
 /**
  * Client for posting notifications.
@@ -75,13 +76,13 @@ public final class NotificationClient implements NotificationListener {
                                   String persistentData) {
         // Put the strings into the intent as an URI
         // "alert:?name=<name>&cookie=<cookie>"
-        String packageName = AppConstants.ANDROID_PACKAGE_NAME;
+        String packageName = mContext.getPackageName();
         String className = AppConstants.MOZ_ANDROID_BROWSER_INTENT_CLASS;
-        if (GeckoAppShell.getGeckoInterface() != null) {
-            final ComponentName comp = GeckoAppShell.getGeckoInterface()
-                                                    .getActivity().getComponentName();
-            packageName = comp.getPackageName();
-            className = comp.getClassName();
+
+        final Activity currentActivity =
+                GeckoActivityMonitor.getInstance().getCurrentActivity();
+        if (currentActivity != null) {
+            className = currentActivity.getClass().getName();
         }
         final Uri dataUri = (new Uri.Builder())
                 .scheme("moz-notification")
@@ -97,7 +98,7 @@ public final class NotificationClient implements NotificationListener {
 
         if (persistentData != null) {
             final Intent persistentIntent = GeckoService.getIntentToCreateServices(
-                    mContext, "persistent-notification-click", persistentData);
+                    "persistent-notification-click", persistentData);
             clickIntent.putExtra(PERSISTENT_INTENT_EXTRA, persistentIntent);
         }
 
@@ -110,7 +111,7 @@ public final class NotificationClient implements NotificationListener {
 
         if (persistentData != null) {
             final Intent persistentIntent = GeckoService.getIntentToCreateServices(
-                    mContext, "persistent-notification-close", persistentData);
+                    "persistent-notification-close", persistentData);
             closeIntent.putExtra(PERSISTENT_INTENT_EXTRA, persistentIntent);
         }
 
@@ -137,6 +138,7 @@ public final class NotificationClient implements NotificationListener {
      * @param contentIntent  Intent used when the notification is clicked
      * @param deleteIntent   Intent used when the notification is closed
      */
+    @SuppressLint("NewApi")
     private void add(final String name, final String imageUrl, final String host,
                      final String alertTitle, final String alertText,
                      final PendingIntent contentIntent, final PendingIntent deleteIntent) {
@@ -147,9 +149,15 @@ public final class NotificationClient implements NotificationListener {
                 .setContentIntent(contentIntent)
                 .setDeleteIntent(deleteIntent)
                 .setAutoCancel(true)
+                .setDefaults(Notification.DEFAULT_SOUND)
                 .setStyle(new NotificationCompat.BigTextStyle()
                         .bigText(alertText)
                         .setSummaryText(host));
+
+        if (!AppConstants.Versions.preO) {
+            builder.setChannelId(NotificationHelper.getInstance(mContext)
+                    .getNotificationChannel(NotificationHelper.Channel.SITE_NOTIFICATIONS).getId());
+        }
 
         // Fetch icon.
         if (!imageUrl.isEmpty()) {
@@ -179,7 +187,7 @@ public final class NotificationClient implements NotificationListener {
         if (ongoing != isOngoing(mNotifications.get(name))) {
             // In order to change notification from ongoing to non-ongoing, or vice versa,
             // we have to remove the previous notification, because ongoing notifications
-            // use a different id value than non-ongoing notifications.
+            // might use a different id value than non-ongoing notifications.
             onNotificationClose(name);
         }
 
@@ -197,6 +205,8 @@ public final class NotificationClient implements NotificationListener {
             // Shortcut to update the current foreground notification, instead of
             // going through the service.
             mNotificationManager.notify(R.id.foregroundNotification, notification);
+        } else {
+            mNotificationManager.notify(name, 0, notification);
         }
     }
 
@@ -208,6 +218,7 @@ public final class NotificationClient implements NotificationListener {
      * @param progressMax   max progress of item being updated
      * @param alertText     text of the notification
      */
+    @SuppressLint("NewApi")
     public void update(final String name, final long progress,
                        final long progressMax, final String alertText) {
         Notification notification;
@@ -218,14 +229,19 @@ public final class NotificationClient implements NotificationListener {
             return;
         }
 
-        notification = new NotificationCompat.Builder(mContext)
+        final Notification.Builder notificationBuilder = new Notification.Builder(mContext)
                 .setContentText(alertText)
                 .setSmallIcon(notification.icon)
                 .setWhen(notification.when)
                 .setContentIntent(notification.contentIntent)
-                .setProgress((int) progressMax, (int) progress, false)
-                .build();
+                .setOnlyAlertOnce(true)
+                .setProgress((int) progressMax, (int) progress, false);
 
+        if (!AppConstants.Versions.preO) {
+            notificationBuilder.setChannelId(notification.getChannelId());
+        }
+
+        notification = notificationBuilder.build();
         add(name, notification);
     }
 
@@ -294,13 +310,35 @@ public final class NotificationClient implements NotificationListener {
         return false;
     }
 
-    private void setForegroundNotificationLocked(final String name,
-                                                 final Notification notification) {
+    private void setForegroundNotificationLocked(@NonNull final String name,
+                                                 @NonNull final Notification notification) {
         mForegroundNotification = name;
 
         final Intent intent = new Intent(mContext, NotificationService.class);
         intent.putExtra(NotificationService.EXTRA_NOTIFICATION, notification);
-        mContext.startService(intent);
+        toggleForegroundService(intent);
+    }
+
+    private void removeForegroundNotificationLocked() {
+        mForegroundNotification = null;
+
+        final Intent intent = new Intent(mContext, NotificationService.class);
+        intent.putExtra(NotificationService.EXTRA_ACTION_STOP, true);
+        toggleForegroundService(intent);
+    }
+
+    /**
+     * Method used to toggle the NotificationService.
+     * When the intent is passed with {@link NotificationService#EXTRA_ACTION_STOP} we are queueing a stopSelf action.
+     * @param intent
+     */
+    @SuppressLint("NewApi")
+    private void toggleForegroundService(Intent intent) {
+        if (AppConstants.Versions.preO) {
+            mContext.startService(intent);
+        } else {
+            mContext.startForegroundService(intent);
+        }
     }
 
     private void updateForegroundNotificationLocked(final String oldName) {
@@ -314,11 +352,15 @@ public final class NotificationClient implements NotificationListener {
         for (final String name : mNotifications.keySet()) {
             final Notification notification = mNotifications.get(name);
             if (isOngoing(notification)) {
+                // The same reasoning as above applies - the current foreground notification
+                // uses a special ID, so we need to close its old instantiation and then
+                // re-add it with the new ID through the NotificationService.
+                onNotificationClose(name);
                 setForegroundNotificationLocked(name, notification);
                 return;
             }
         }
 
-        setForegroundNotificationLocked(null, null);
+        removeForegroundNotificationLocked();
     }
 }

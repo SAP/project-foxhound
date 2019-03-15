@@ -6,27 +6,27 @@
 
 #include "URLClassifierParent.h"
 #include "nsComponentManagerUtils.h"
+#include "mozilla/net/UrlClassifierFeatureResult.h"
 #include "mozilla/Unused.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
 
+/////////////////////////////////////////////////////////////////////
+// URLClassifierParent.
+
 NS_IMPL_ISUPPORTS(URLClassifierParent, nsIURIClassifierCallback)
 
-mozilla::ipc::IPCResult
-URLClassifierParent::StartClassify(nsIPrincipal* aPrincipal,
-                                   bool aUseTrackingProtection,
-                                   bool* aSuccess)
-{
+mozilla::ipc::IPCResult URLClassifierParent::StartClassify(
+    nsIPrincipal* aPrincipal, bool* aSuccess) {
   *aSuccess = false;
   nsresult rv = NS_OK;
   // Note that in safe mode, the URL classifier service isn't available, so we
   // should handle the service not being present gracefully.
   nsCOMPtr<nsIURIClassifier> uriClassifier =
-    do_GetService(NS_URICLASSIFIERSERVICE_CONTRACTID, &rv);
+      do_GetService(NS_URICLASSIFIERSERVICE_CONTRACTID, &rv);
   if (NS_SUCCEEDED(rv)) {
-    rv = uriClassifier->Classify(aPrincipal, aUseTrackingProtection,
-                                 this, aSuccess);
+    rv = uriClassifier->Classify(aPrincipal, nullptr, this, aSuccess);
   }
   if (NS_FAILED(rv) || !*aSuccess) {
     // We treat the case where we fail to classify and the case where the
@@ -41,33 +41,139 @@ URLClassifierParent::StartClassify(nsIPrincipal* aPrincipal,
   return IPC_OK();
 }
 
-nsresult
-URLClassifierParent::OnClassifyComplete(nsresult aErrorCode,
-                                        const nsACString& aList,
-                                        const nsACString& aProvider,
-                                        const nsACString& aPrefix)
-{
-  if (mIPCOpen) {
-    ClassifierInfo info;
-    info.list() = aList;
-    info.prefix() = aPrefix;
-    info.provider() = aProvider;
+/////////////////////////////////////////////////////////////////////
+// URLClassifierLocalParent.
 
-    Unused << Send__delete__(this, info, aErrorCode);
+namespace {
+
+// This class implements a nsIUrlClassifierFeature on the parent side, starting
+// from an IPC data struct.
+class IPCFeature final : public nsIUrlClassifierFeature {
+ public:
+  NS_DECL_ISUPPORTS
+
+  IPCFeature(nsIURI* aURI, const IPCURLClassifierFeature& aFeature)
+      : mURI(aURI), mIPCFeature(aFeature) {}
+
+  NS_IMETHOD
+  GetName(nsACString& aName) override {
+    aName = mIPCFeature.featureName();
+    return NS_OK;
+  }
+
+  NS_IMETHOD
+  GetTables(nsIUrlClassifierFeature::listType,
+            nsTArray<nsCString>& aTables) override {
+    aTables.AppendElements(mIPCFeature.tables());
+    return NS_OK;
+  }
+
+  NS_IMETHOD
+  HasTable(const nsACString& aTable, nsIUrlClassifierFeature::listType,
+           bool* aResult) override {
+    NS_ENSURE_ARG_POINTER(aResult);
+    *aResult = mIPCFeature.tables().Contains(aTable);
+    return NS_OK;
+  }
+
+  NS_IMETHOD
+  HasHostInPreferences(const nsACString& aHost,
+                       nsIUrlClassifierFeature::listType,
+                       nsACString& aTableName, bool* aResult) override {
+    NS_ENSURE_ARG_POINTER(aResult);
+    *aResult = false;
+    return NS_OK;
+  }
+
+  NS_IMETHOD
+  GetSkipHostList(nsACString& aList) override {
+    aList = mIPCFeature.skipHostList();
+    return NS_OK;
+  }
+
+  NS_IMETHOD
+  ProcessChannel(nsIChannel* aChannel, const nsACString& aList,
+                 bool* aShouldContinue) override {
+    NS_ENSURE_ARG_POINTER(aShouldContinue);
+    *aShouldContinue = true;
+
+    // Nothing to do here.
+    return NS_OK;
+  }
+
+  NS_IMETHOD
+  GetURIByListType(nsIChannel* aChannel,
+                   nsIUrlClassifierFeature::listType aListType,
+                   nsIURI** aURI) override {
+    NS_ENSURE_ARG_POINTER(aURI);
+
+    // This method should not be called, but we have a URI, let's return it.
+    nsCOMPtr<nsIURI> uri = mURI;
+    uri.forget(aURI);
+    return NS_OK;
+  }
+
+ private:
+  ~IPCFeature() = default;
+
+  nsCOMPtr<nsIURI> mURI;
+  IPCURLClassifierFeature mIPCFeature;
+};
+
+NS_IMPL_ISUPPORTS(IPCFeature, nsIUrlClassifierFeature)
+
+}  // namespace
+
+NS_IMPL_ISUPPORTS(URLClassifierLocalParent, nsIUrlClassifierFeatureCallback)
+
+mozilla::ipc::IPCResult URLClassifierLocalParent::StartClassify(
+    nsIURI* aURI, const nsTArray<IPCURLClassifierFeature>& aFeatures) {
+  MOZ_ASSERT(aURI);
+
+  nsresult rv = NS_OK;
+  // Note that in safe mode, the URL classifier service isn't available, so we
+  // should handle the service not being present gracefully.
+  nsCOMPtr<nsIURIClassifier> uriClassifier =
+      do_GetService(NS_URICLASSIFIERSERVICE_CONTRACTID, &rv);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    OnClassifyComplete(nsTArray<RefPtr<nsIUrlClassifierFeatureResult>>());
+    return IPC_OK();
+  }
+
+  nsTArray<RefPtr<nsIUrlClassifierFeature>> features;
+  for (const IPCURLClassifierFeature& feature : aFeatures) {
+    features.AppendElement(new IPCFeature(aURI, feature));
+  }
+
+  // Doesn't matter if we pass blacklist, whitelist or any other list.
+  // IPCFeature returns always the same values.
+  rv = uriClassifier->AsyncClassifyLocalWithFeatures(
+      aURI, features, nsIUrlClassifierFeature::blacklist, this);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    OnClassifyComplete(nsTArray<RefPtr<nsIUrlClassifierFeatureResult>>());
+    return IPC_OK();
+  }
+
+  return IPC_OK();
+}
+
+NS_IMETHODIMP
+URLClassifierLocalParent::OnClassifyComplete(
+    const nsTArray<RefPtr<nsIUrlClassifierFeatureResult>>& aResults) {
+  if (mIPCOpen) {
+    nsTArray<URLClassifierLocalResult> ipcResults;
+    for (nsIUrlClassifierFeatureResult* result : aResults) {
+      URLClassifierLocalResult* ipcResult = ipcResults.AppendElement();
+
+      net::UrlClassifierFeatureResult* r =
+          static_cast<net::UrlClassifierFeatureResult*>(result);
+
+      ipcResult->uri() = r->URI();
+      r->Feature()->GetName(ipcResult->featureName());
+      ipcResult->matchingList() = r->List();
+    }
+
+    Unused << Send__delete__(this, ipcResults);
   }
   return NS_OK;
-}
-
-void
-URLClassifierParent::ClassificationFailed()
-{
-  if (mIPCOpen) {
-    Unused << Send__delete__(this, void_t(), NS_ERROR_FAILURE);
-  }
-}
-
-void
-URLClassifierParent::ActorDestroy(ActorDestroyReason aWhy)
-{
-  mIPCOpen = false;
 }

@@ -6,17 +6,20 @@
 
 package org.mozilla.gecko.util;
 
+import android.annotation.TargetApi;
 import android.content.ComponentName;
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
 import android.support.annotation.CheckResult;
 import android.support.annotation.NonNull;
 import android.text.TextUtils;
 
-import org.mozilla.gecko.AppConstants;
 import org.mozilla.gecko.mozglue.SafeIntent;
 
+import java.net.URISyntaxException;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -32,12 +35,9 @@ public class IntentUtils {
 
     /**
      * Returns a list of environment variables and their values. These are parsed from an Intent extra
-     * with the key -> value format:
-     *   env# -> ENV_VAR=VALUE
+     * with the key -&gt; value format: env# -&gt; ENV_VAR=VALUE, where # is an integer starting at 0.
      *
-     * # in env# is expected to be increasing from 0.
-     *
-     * @return A Map of environment variable name to value, e.g. ENV_VAR -> VALUE
+     * @return A Map of environment variable name to value, e.g. ENV_VAR -&gt; VALUE
      */
     public static HashMap<String, String> getEnvVarMap(@NonNull final SafeIntent intent) {
         // Optimization: get matcher for re-use. Pattern.matcher creates a new object every time so it'd be great
@@ -110,18 +110,111 @@ public class IntentUtils {
     }
 
     /**
-     * Checks whether the target of the passed intent will result in us opening one
-     * of our own activities or not.
+     * Return a Uri instance which is equivalent to uri,
+     * but with a guaranteed-lowercase scheme as if the API level 16 method
+     * Uri.normalizeScheme had been called.
      *
-     * @param intent The intent to be checked.
-     * @return True if the intent target is within our app.
+     * @param uri The URI string to normalize.
+     * @return The corresponding normalized Uri.
      */
-    public static boolean checkIfGeckoActivity(Intent intent) {
-        // Whenever we call our own activity, the component and its package name is set.
-        // If we call an activity from another package, or an open intent (leaving android to resolve)
-        // component has a different package name or it is null.
-        ComponentName component = intent.getComponent();
-        return (component != null &&
-                AppConstants.ANDROID_PACKAGE_NAME.equals(component.getPackageName()));
+    private static Uri normalizeUriScheme(final Uri uri) {
+        final String scheme = uri.getScheme();
+        final String lower  = scheme.toLowerCase(Locale.US);
+        if (lower.equals(scheme)) {
+            return uri;
+        }
+
+        // Otherwise, return a new URI with a normalized scheme.
+        return uri.buildUpon().scheme(lower).build();
     }
+
+
+    /**
+     * Return a normalized Uri instance that corresponds to the given URI string
+     * with cross-API-level compatibility.
+     *
+     * @param aUri The URI string to normalize.
+     * @return The corresponding normalized Uri.
+     */
+    public static Uri normalizeUri(final String aUri) {
+        final Uri normUri = normalizeUriScheme(
+            aUri.indexOf(':') >= 0
+            ? Uri.parse(aUri)
+            : new Uri.Builder().scheme(aUri).build());
+        return normUri;
+    }
+
+    public static boolean isUriSafeForScheme(final String aUri) {
+        return isUriSafeForScheme(normalizeUri(aUri));
+    }
+
+    /**
+     * Verify whether the given URI is considered safe to load in respect to
+     * its scheme.
+     * Unsafe URIs should be blocked from further handling.
+     *
+     * @param aUri The URI instance to test.
+     * @return Whether the provided URI is considered safe in respect to its
+     *         scheme.
+     */
+    public static boolean isUriSafeForScheme(final Uri aUri) {
+        final String scheme = aUri.getScheme();
+        if ("tel".equals(scheme) || "sms".equals(scheme)) {
+            // Bug 794034 - We don't want to pass MWI or USSD codes to the
+            // dialer, and ensure the Uri class doesn't parse a URI
+            // containing a fragment ('#')
+            final String number = aUri.getSchemeSpecificPart();
+            if (number.contains("#") || number.contains("*") ||
+                aUri.getFragment() != null) {
+                return false;
+            }
+        }
+
+        if (("intent".equals(scheme) || "android-app".equals(scheme))) {
+            // Bug 1356893 - Rject intents with file data schemes.
+            return getSafeIntent(aUri) != null;
+        }
+
+        return true;
+    }
+
+    /**
+     * Create a safe intent for the given URI.
+     * Intents with file data schemes are considered unsafe.
+     *
+     * @param aUri The URI for the intent.
+     * @return A safe intent for the given URI or null if URI is considered
+     *         unsafe.
+     */
+    public static Intent getSafeIntent(final Uri aUri) {
+        final Intent intent;
+        try {
+            intent = Intent.parseUri(aUri.toString(), 0);
+        } catch (final URISyntaxException e) {
+            return null;
+        }
+
+        final Uri data = intent.getData();
+        if (data != null &&
+            "file".equals(normalizeUriScheme(data).getScheme())) {
+            return null;
+        }
+
+        // Only open applications which can accept arbitrary data from a browser.
+        intent.addCategory(Intent.CATEGORY_BROWSABLE);
+
+        // Prevent site from explicitly opening our internal activities,
+        // which can leak data.
+        intent.setComponent(null);
+        nullIntentSelector(intent);
+
+        return intent;
+    }
+
+    // We create a separate method to better encapsulate the @TargetApi use.
+    @TargetApi(15)
+    private static void nullIntentSelector(final Intent intent) {
+        intent.setSelector(null);
+    }
+
 }

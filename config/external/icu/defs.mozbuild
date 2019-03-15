@@ -15,7 +15,6 @@ DEFINES.update(
     UCONFIG_NO_LEGACY_CONVERSION = True,
     UCONFIG_NO_TRANSLITERATION = True,
     UCONFIG_NO_REGULAR_EXPRESSIONS = True,
-    UCONFIG_NO_BREAK_ITERATION = True,
 
     # We don't need to pass data to and from legacy char* APIs.
     U_CHARSET_IS_UTF8 = True,
@@ -28,17 +27,20 @@ if CONFIG['MOZ_DEBUG']:
     DEFINES['U_DEBUG'] = 1
 
 # ICU requires RTTI
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-frtti']
 elif CONFIG['OS_TARGET'] == 'WINNT':
-    CXXFLAGS += ['-GR']
+    # Remove the -GR- flag so we don't get a bunch of warning spam.
+    COMPILE_FLAGS['OS_CXXFLAGS'] = [
+        f for f in COMPILE_FLAGS['OS_CXXFLAGS'] if f != '-GR-'
+    ] + ['-GR']
 
-DISABLE_STL_WRAPPING = True
-ALLOW_COMPILER_WARNINGS = True
+DisableStlWrapping()
+AllowCompilerWarnings()
 
 # We allow compiler warnings, but we can at least cut down on spammy
 # warnings that get triggered for every file.
-if CONFIG['CLANG_CL']:
+if CONFIG['CC_TYPE'] == 'clang-cl':
     CFLAGS += [
         '-Wno-macro-redefined',
         '-Wno-microsoft-include',
@@ -46,4 +48,15 @@ if CONFIG['CLANG_CL']:
     CXXFLAGS += [
         '-Wno-macro-redefined',
         '-Wno-microsoft-include',
+    ]
+
+if CONFIG['CC_TYPE'] == 'msvc':
+    CFLAGS += [
+        '-wd4005', # 'WIN32_LEAN_AND_MEAN' : macro redefinition
+        '-wd4996', # The compiler encountered a deprecated declaration.
+    ]
+    CXXFLAGS += [
+        '-wd4005', # 'WIN32_LEAN_AND_MEAN' : macro redefinition
+        '-wd4333', # '>>' : right shift by too large amount, data loss
+        '-wd4996', # The compiler encountered a deprecated declaration.
     ]

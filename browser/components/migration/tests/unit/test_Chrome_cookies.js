@@ -1,12 +1,12 @@
 "use strict";
 
-Cu.import("resource://gre/modules/ForgetAboutSite.jsm");
+ChromeUtils.import("resource://gre/modules/ForgetAboutSite.jsm");
 
-add_task(function* () {
+add_task(async function() {
   registerFakePath("ULibDir", do_get_file("Library/"));
-  let migrator = MigrationUtils.getMigrator("chrome");
+  let migrator = await MigrationUtils.getMigrator("chrome");
 
-  Assert.ok(migrator.sourceExists, "Sanity check the source exists");
+  Assert.ok(await migrator.isSourceAvailable(), "Sanity check the source exists");
 
   const COOKIE = {
     expiry: 2145934800,
@@ -28,7 +28,7 @@ add_task(function* () {
   };
 
   // Migrate unencrypted cookies.
-  yield promiseMigration(migrator, MigrationUtils.resourceTypes.COOKIES, PROFILE);
+  await promiseMigration(migrator, MigrationUtils.resourceTypes.COOKIES, PROFILE);
 
   Assert.equal(Services.cookies.countCookiesFromHost(COOKIE.host), 1,
                "Migrated the expected number of unencrypted cookies");
@@ -45,7 +45,7 @@ add_task(function* () {
   }
 
   // Cleanup.
-  ForgetAboutSite.removeDataFromDomain(COOKIE.host);
+  await ForgetAboutSite.removeDataFromDomain(COOKIE.host);
   Assert.equal(Services.cookies.countCookiesFromHost(COOKIE.host), 0,
                "There are no cookies after cleanup");
 });

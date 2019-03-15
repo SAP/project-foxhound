@@ -8,8 +8,10 @@
     'alghmac.c',
     'arcfive.c',
     'arcfour.c',
+    'blake2b.c',
     'camellia.c',
     'chacha20poly1305.c',
+    'crypto_primitives.c',
     'ctr.c',
     'cts.c',
     'des.c',
@@ -21,7 +23,6 @@
     'ecdecode.c',
     'ecl/ec_naf.c',
     'ecl/ecl.c',
-    'ecl/ecl_curve.c',
     'ecl/ecl_gf.c',
     'ecl/ecl_mult.c',
     'ecl/ecp_25519.c',
@@ -34,6 +35,7 @@
     'ecl/ecp_jm.c',
     'ecl/ecp_mont.c',
     'fipsfreebl.c',
+    'blinit.c',
     'freeblver.c',
     'gcm.c',
     'hmacct.c',
@@ -57,7 +59,7 @@
     'sha_fast.c',
     'shvfy.c',
     'sysrand.c',
-    'tlsprfalg.c'
+    'tlsprfalg.c',
   ],
   'conditions': [
     [ 'OS=="linux" or OS=="android"', {
@@ -65,14 +67,12 @@
         [ 'target_arch=="x64"', {
           'sources': [
             'arcfour-amd64-gas.s',
-            'intel-aes.s',
-            'intel-gcm.s',
             'mpi/mpi_amd64.c',
             'mpi/mpi_amd64_gas.s',
             'mpi/mp_comba.c',
           ],
           'conditions': [
-            [ 'cc_is_clang==1', {
+            [ 'cc_is_clang==1 and fuzz!=1', {
               'cflags': [
                 '-no-integrated-as',
               ],
@@ -98,15 +98,11 @@
       ],
     }],
     [ 'OS=="win"', {
-      'sources': [
-        #TODO: building with mingw should not need this.
-        'ecl/uint128.c',
-      ],
       'libraries': [
         'advapi32.lib',
       ],
       'conditions': [
-        [ 'target_arch=="x64"', {
+        [ 'cc_use_gnu_ld!=1 and target_arch=="x64"', {
           'sources': [
             'arcfour-amd64-masm.asm',
             'mpi/mpi_amd64.c',
@@ -115,12 +111,17 @@
             'intel-aes-x64-masm.asm',
             'intel-gcm-x64-masm.asm',
           ],
-        }, {
-          # not x64
+        }],
+        [ 'cc_use_gnu_ld!=1 and target_arch=="ia32"', {
           'sources': [
             'mpi/mpi_x86_asm.c',
             'intel-aes-x86-masm.asm',
             'intel-gcm-x86-masm.asm',
+          ],
+        }],
+        [ 'cc_use_gnu_ld==1', {
+          # mingw
+          'sources': [
           ],
         }],
         [ 'cc_is_clang!=1', {
@@ -131,43 +132,61 @@
         }],
       ],
     }],
-    ['target_arch=="ia32" or target_arch=="x64"', {
+    ['target_arch=="ia32" or target_arch=="x64" or target_arch=="arm64" or target_arch=="aarch64"', {
       'sources': [
-        # All intel architectures get the 64 bit version
+        # All intel and 64-bit ARM architectures get the 64 bit version.
         'ecl/curve25519_64.c',
+        'verified/Hacl_Curve25519.c',
       ],
     }, {
       'sources': [
-        # All non intel architectures get the generic 32 bit implementation (slow!)
+        # All other architectures get the generic 32 bit implementation (slow!)
         'ecl/curve25519_32.c',
       ],
     }],
-    #TODO uint128.c
     [ 'disable_chachapoly==0', {
+      # The ChaCha20 code is linked in through the static ssse3-crypto lib on
+      # all platforms that support SSSE3. There are runtime checks in place to
+      # choose the correct ChaCha implementation at runtime.
+      'sources': [
+        'verified/Hacl_Chacha20.c',
+      ],
       'conditions': [
-        [ 'OS!="win" and target_arch=="x64"', {
-          'sources': [
-            'chacha20_vec.c',
-            'poly1305-donna-x64-sse2-incremental-source.c',
+        [ 'OS!="win"', {
+          'conditions': [
+            [ 'target_arch=="x64"', {
+              'sources': [
+                'verified/Hacl_Poly1305_64.c',
+              ],
+            }, {
+              # !Windows & !x64
+              'conditions': [
+                [ 'target_arch=="arm64" or target_arch=="aarch64"', {
+                  'sources': [
+                    'verified/Hacl_Poly1305_64.c',
+                  ],
+                }, {
+                  # !Windows & !x64 & !arm64 & !aarch64
+                  'sources': [
+                    'verified/Hacl_Poly1305_32.c',
+                  ],
+                }],
+              ],
+            }],
           ],
         }, {
-          # not x64
+          # Windows
           'sources': [
-            'chacha20.c',
-            'poly1305.c',
+            'verified/Hacl_Poly1305_32.c',
           ],
         }],
       ],
     }],
-    [ 'fuzz_oss==1', {
-      'defines': [
-        'UNSAFE_RNG_NO_URANDOM_SEED',
-      ],
+    [ 'fuzz==1', {
+      'sources!': [ 'drbg.c' ],
+      'sources': [ 'det_rng.c' ],
     }],
     [ 'fuzz_tls==1', {
-      'sources': [
-        'det_rng.c',
-      ],
       'defines': [
         'UNSAFE_FUZZER_MODE',
       ],
@@ -176,6 +195,11 @@
       'defines': [
         'CT_VERIF',
       ],
+    }],
+    [ 'only_dev_random==1', {
+      'defines': [
+        'SEED_ONLY_DEV_URANDOM',
+      ]
     }],
     [ 'OS=="mac"', {
       'conditions': [
@@ -191,6 +215,9 @@
           ],
         }],
       ],
+    }],
+    [ 'have_int128_support==0', {
+        'sources': [ 'verified/FStar.c' ],
     }],
   ],
  'ldflags': [

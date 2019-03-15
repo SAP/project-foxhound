@@ -1,3 +1,14 @@
+random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == bug1375518.html bug1375518-ref.html # Bug 1392106
+random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == bug1375518-2.html bug1375518-ref.html # Bug 1392106
+random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == bug1375518-3.html bug1375518-ref.html # Bug 1392106
+random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == bug1375518-4.html bug1375518-4-ref.html # Bug 1392106
+random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == bug1375518-5.html bug1375518-5-ref.html # Bug 1392106
+== bug1379306.html bug1379306-ref.html
+== bug1394226.html bug1394226-ref.html
+!= bug1394226.html bug1394226-notref.html
+== bug1405929.html bug1405929-ref.html
+== bug1405929-2.html bug1405929-2-ref.html
+== bug1421887.html bug1421887-ref.html
 == bc_dyn_cell1.html bc_dyn_cell1_ref.html
 == bc_dyn_cell2.html bc_dyn_cell2_ref.html
 == bc_dyn_cell3.html bc_dyn_cell3_ref.html
@@ -96,12 +107,14 @@
 == empty-toprow.html empty-toprow-ref.html
 == double_borders.html double_borders_ref.html
 == border-collapse-rtl.html border-collapse-rtl-ref.html
-# Fuzzy because for some reason the corner beveling is antialiased differently.
+# Fuzzy because border-collapsed borders are not antialiased, since each segment is painted separately.
 # So get 40 pixels of fuzz, 20 at each beveled corner (because the border width
 # is 20px).
-fuzzy(255,40) == border-style-outset-becomes-groove.html border-style-outset-becomes-groove-ref.html
-# Fuzzy because for some reason the corner beveling is antialiased differently.
+fuzzy(0-255,0-40) == border-style-outset-becomes-groove.html border-style-outset-becomes-groove-ref.html
+# Fuzzy because border-collapsed borders are not antialiased, since each segment is painted separately.
 # So get 40 pixels of fuzz, 20 at each beveled corner (because the border width
 # is 20px).
-fuzzy(255,40) == border-style-inset-becomes-ridge.html border-style-inset-becomes-ridge-ref.html
-fuzzy(2,8301) == 1324524.html 1324524-ref.html
+fuzzy(0-255,0-40) == border-style-inset-becomes-ridge.html border-style-inset-becomes-ridge-ref.html
+fuzzy(0-2,0-11000) == 1324524.html 1324524-ref.html
+== 1384602-1a.html 1384602-1-ref.html
+== 1384602-1b.html 1384602-1-ref.html

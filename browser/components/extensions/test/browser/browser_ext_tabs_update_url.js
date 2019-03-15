@@ -2,7 +2,12 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-function* testTabsUpdateURL(existentTabURL, tabsUpdateURL, isErrorExpected) {
+ChromeUtils.defineModuleGetter(this, "SessionStore",
+                               "resource:///modules/sessionstore/SessionStore.jsm");
+ChromeUtils.defineModuleGetter(this, "TabStateFlusher",
+                               "resource:///modules/sessionstore/TabStateFlusher.jsm");
+
+async function testTabsUpdateURL(existentTabURL, tabsUpdateURL, isErrorExpected) {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       "permissions": ["tabs"],
@@ -43,9 +48,9 @@ function* testTabsUpdateURL(existentTabURL, tabsUpdateURL, isErrorExpected) {
     },
   });
 
-  yield extension.startup();
+  await extension.startup();
 
-  let mozExtTabURL = yield extension.awaitMessage("ready");
+  let mozExtTabURL = await extension.awaitMessage("ready");
 
   if (tabsUpdateURL == "self") {
     tabsUpdateURL = mozExtTabURL;
@@ -53,16 +58,16 @@ function* testTabsUpdateURL(existentTabURL, tabsUpdateURL, isErrorExpected) {
 
   info(`tab.update URL "${tabsUpdateURL}" on tab with URL "${existentTabURL}"`);
 
-  let tab1 = yield BrowserTestUtils.openNewForegroundTab(gBrowser, existentTabURL);
+  let tab1 = await BrowserTestUtils.openNewForegroundTab(gBrowser, existentTabURL);
 
   extension.sendMessage("start", tabsUpdateURL, isErrorExpected);
-  yield extension.awaitMessage("done");
+  await extension.awaitMessage("done");
 
-  yield BrowserTestUtils.removeTab(tab1);
-  yield extension.unload();
+  BrowserTestUtils.removeTab(tab1);
+  await extension.unload();
 }
 
-add_task(function* () {
+add_task(async function() {
   info("Start testing tabs.update on javascript URLs");
 
   let dataURLPage = `data:text/html,
@@ -103,8 +108,78 @@ add_task(function* () {
         .map((check) => Object.assign({}, check, {existentTabURL: "about:blank"}));
 
   for (let {existentTabURL, tabsUpdateURL, isErrorExpected} of testCases) {
-    yield* testTabsUpdateURL(existentTabURL, tabsUpdateURL, isErrorExpected);
+    await testTabsUpdateURL(existentTabURL, tabsUpdateURL, isErrorExpected);
   }
 
   info("done");
+});
+
+add_task(async function test_update_reload() {
+  const URL = "https://example.com/";
+
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      "permissions": ["tabs", "history"],
+    },
+
+    background() {
+      browser.test.onMessage.addListener(async (cmd, ...args) => {
+        const result = await browser.tabs[cmd](...args);
+        browser.test.sendMessage("result", result);
+      });
+
+      browser.history.onVisited.addListener(data => {
+        browser.test.sendMessage("historyAdded");
+      });
+    },
+  });
+
+  let win = await BrowserTestUtils.openNewBrowserWindow();
+  let tabBrowser = win.gBrowser.selectedBrowser;
+  await BrowserTestUtils.loadURI(tabBrowser, URL);
+  await BrowserTestUtils.browserLoaded(tabBrowser, false, URL);
+  let tab = win.gBrowser.selectedTab;
+
+  async function getTabHistory() {
+    await TabStateFlusher.flush(tabBrowser);
+    return JSON.parse(SessionStore.getTabState(tab));
+  }
+
+  await extension.startup();
+  extension.sendMessage("query", {url: URL});
+  let tabs = await extension.awaitMessage("result");
+  let tabId = tabs[0].id;
+
+  let history = await getTabHistory();
+  is(history.entries.length, 1,
+     "Tab history contains the expected number of entries.");
+  is(history.entries[0].url, URL,
+     `Tab history contains the expected entry: URL.`);
+
+  extension.sendMessage("update", tabId, {url: `${URL}1/`});
+  await Promise.all([
+    extension.awaitMessage("result"),
+    extension.awaitMessage("historyAdded"),
+  ]);
+
+  history = await getTabHistory();
+  is(history.entries.length, 2,
+     "Tab history contains the expected number of entries.");
+  is(history.entries[1].url, `${URL}1/`,
+     `Tab history contains the expected entry: ${URL}1/.`);
+
+  extension.sendMessage("update", tabId, {url: `${URL}2/`, loadReplace: true});
+  await Promise.all([
+    extension.awaitMessage("result"),
+    extension.awaitMessage("historyAdded"),
+  ]);
+
+  history = await getTabHistory();
+  is(history.entries.length, 2,
+     "Tab history contains the expected number of entries.");
+  is(history.entries[1].url, `${URL}2/`,
+     `Tab history contains the expected entry: ${URL}2/.`);
+
+  await extension.unload();
+  await BrowserTestUtils.closeWindow(win);
 });

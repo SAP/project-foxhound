@@ -4,63 +4,56 @@ var gTestTab;
 var gContentAPI;
 var gContentWindow;
 
-var hasWebIDE = Services.prefs.getBoolPref("devtools.webide.widget.enabled");
 var hasPocket = Services.prefs.getBoolPref("extensions.pocket.enabled");
+var hasQuit = AppConstants.platform != "macosx";
 
 requestLongerTimeout(2);
-add_task(setup_UITourTest);
 
-add_UITour_task(function* test_availableTargets() {
-  let data = yield getConfigurationPromise("availableTargets");
-  ok_targets(data, [
+function getExpectedTargets() {
+  return [
     "accountStatus",
     "addons",
     "appMenu",
     "backForward",
-    "bookmarks",
     "customize",
+    "devtools",
     "help",
     "home",
-    "devtools",
+    "library",
+    "pageActionButton",
+    "pageAction-bookmark",
+    "pageAction-copyURL",
+    "pageAction-emailLink",
+    "pageAction-sendToDevice",
       ...(hasPocket ? ["pocket"] : []),
     "privateWindow",
-    "quit",
+      ...(hasQuit ? ["quit"] : []),
     "readerMode-urlBar",
-    "search",
-    "searchIcon",
+    "screenshots",
     "trackingProtection",
     "urlbar",
-      ...(hasWebIDE ? ["webide"] : [])
-  ]);
+  ];
+}
 
+add_task(setup_UITourTest);
+
+add_UITour_task(async function test_availableTargets() {
+  await ensureScreenshotsEnabled();
+  let data = await getConfigurationPromise("availableTargets");
+  let expecteds = getExpectedTargets();
+  ok_targets(data, expecteds);
   ok(UITour.availableTargetsCache.has(window),
      "Targets should now be cached");
 });
 
-add_UITour_task(function* test_availableTargets_changeWidgets() {
-  CustomizableUI.removeWidgetFromArea("bookmarks-menu-button");
+add_UITour_task(async function test_availableTargets_changeWidgets() {
+  CustomizableUI.addWidgetToArea("bookmarks-menu-button", CustomizableUI.AREA_NAVBAR, 0);
   ok(!UITour.availableTargetsCache.has(window),
      "Targets should be evicted from cache after widget change");
-  let data = yield getConfigurationPromise("availableTargets");
-  ok_targets(data, [
-    "accountStatus",
-    "addons",
-    "appMenu",
-    "backForward",
-    "customize",
-    "help",
-    "devtools",
-    "home",
-      ...(hasPocket ? ["pocket"] : []),
-    "privateWindow",
-    "quit",
-    "readerMode-urlBar",
-    "search",
-    "searchIcon",
-    "trackingProtection",
-    "urlbar",
-      ...(hasWebIDE ? ["webide"] : [])
-  ]);
+  let data = await getConfigurationPromise("availableTargets");
+  let expecteds = getExpectedTargets();
+  expecteds = ["bookmarks", ...expecteds];
+  ok_targets(data, expecteds);
 
   ok(UITour.availableTargetsCache.has(window),
      "Targets should now be cached again");
@@ -69,46 +62,101 @@ add_UITour_task(function* test_availableTargets_changeWidgets() {
      "Targets should not be cached after reset");
 });
 
-add_UITour_task(function* test_availableTargets_exceptionFromGetTarget() {
-  // The query function for the "search" target will throw if it's not found.
-  // Make sure the callback still fires with the other available targets.
-  CustomizableUI.removeWidgetFromArea("search-container");
-  let data = yield getConfigurationPromise("availableTargets");
-  // Default minus "search" and "searchIcon"
-  ok_targets(data, [
-    "accountStatus",
-    "addons",
-    "appMenu",
-    "backForward",
-    "bookmarks",
-    "customize",
-    "help",
-    "home",
-    "devtools",
-      ...(hasPocket ? ["pocket"] : []),
-    "privateWindow",
-    "quit",
-    "readerMode-urlBar",
-    "trackingProtection",
-    "urlbar",
-      ...(hasWebIDE ? ["webide"] : [])
-  ]);
+add_UITour_task(async function test_availableTargets_search() {
+  Services.prefs.setBoolPref("browser.search.widget.inNavBar", true);
+  try {
+    let data = await getConfigurationPromise("availableTargets");
+    let expecteds = getExpectedTargets();
+    expecteds = ["search", "searchIcon", ...expecteds];
+    ok_targets(data, expecteds);
+  } finally {
+    Services.prefs.clearUserPref("browser.search.widget.inNavBar");
+  }
+});
 
-  CustomizableUI.reset();
+add_UITour_task(async function test_availableTargets_removeUrlbarPageActionsAll() {
+  pageActionsHelper.setActionsUrlbarState(false);
+  UITour.clearAvailableTargetsCache();
+  let data = await getConfigurationPromise("availableTargets");
+  let expecteds = getExpectedTargets();
+  ok_targets(data, expecteds);
+  let expectedActions = [
+    [ "pocket", "pageAction-panel-pocket" ],
+    [ "screenshots", "pageAction-panel-screenshots_mozilla_org" ],
+    [ "pageAction-bookmark", "pageAction-panel-bookmark" ],
+    [ "pageAction-copyURL", "pageAction-panel-copyURL" ],
+    [ "pageAction-emailLink", "pageAction-panel-emailLink" ],
+    [ "pageAction-sendToDevice", "pageAction-panel-sendToDevice" ],
+  ];
+  for (let [ targetName, expectedNodeId ] of expectedActions) {
+    await assertTargetNode(targetName, expectedNodeId);
+  }
+  pageActionsHelper.restoreActionsUrlbarState();
+});
+
+add_UITour_task(async function test_availableTargets_addUrlbarPageActionsAll() {
+  pageActionsHelper.setActionsUrlbarState(true);
+  UITour.clearAvailableTargetsCache();
+  let data = await getConfigurationPromise("availableTargets");
+  let expecteds = getExpectedTargets();
+  ok_targets(data, expecteds);
+  let expectedActions = [
+    [ "pocket", "pocket-button-box" ],
+    [ "screenshots", "pageAction-panel-screenshots_mozilla_org" ],
+    [ "pageAction-bookmark", "star-button-box" ],
+    [ "pageAction-copyURL", "pageAction-urlbar-copyURL" ],
+    [ "pageAction-emailLink", "pageAction-urlbar-emailLink" ],
+    [ "pageAction-sendToDevice", "pageAction-urlbar-sendToDevice" ],
+  ];
+  for (let [ targetName, expectedNodeId ] of expectedActions) {
+    await assertTargetNode(targetName, expectedNodeId);
+  }
+  pageActionsHelper.restoreActionsUrlbarState();
 });
 
 function ok_targets(actualData, expectedTargets) {
   // Depending on how soon after page load this is called, the selected tab icon
-  // may or may not be showing the loading throbber.  Check for its presence and
-  // insert it into expectedTargets if it's visible.
-  let selectedTabIcon =
-    document.getAnonymousElementByAttribute(gBrowser.selectedTab,
-                                            "anonid",
-                                            "tab-icon-image");
-  if (selectedTabIcon && UITour.isElementVisible(selectedTabIcon))
-    expectedTargets.push("selectedTabIcon");
+  // may or may not be showing the loading throbber.  We can't be sure whether
+  // it appears in the list of targets, so remove it.
+  let index = actualData.targets.indexOf("selectedTabIcon");
+  if (index != -1)
+    actualData.targets.splice(index, 1);
 
   ok(Array.isArray(actualData.targets), "data.targets should be an array");
   is(actualData.targets.sort().toString(), expectedTargets.sort().toString(),
      "Targets should be as expected");
+}
+
+async function assertTargetNode(targetName, expectedNodeId) {
+  let target = await UITour.getTarget(window, targetName);
+  is(target.node.id, expectedNodeId, "UITour should get the right target node");
+}
+
+var pageActionsHelper = {
+  setActionsUrlbarState(inUrlbar) {
+    this._originalStates = [];
+    PageActions._actionsByID.forEach(action => {
+      this._originalStates.push([ action, action.pinnedToUrlbar ]);
+      action.pinnedToUrlbar = inUrlbar;
+    });
+  },
+
+  restoreActionsUrlbarState() {
+    if (!this._originalStates) {
+      return;
+    }
+    for (let [ action, originalState] of this._originalStates) {
+      action.pinnedToUrlbar = originalState;
+    }
+    this._originalStates = null;
+  },
+};
+
+function ensureScreenshotsEnabled() {
+  SpecialPowers.pushPrefEnv({ set: [
+    [ "extensions.screenshots.disabled", false ],
+  ]});
+  return BrowserTestUtils.waitForCondition(() => {
+    return PageActions.actionForID("screenshots_mozilla_org");
+  }, "Should enable Screenshots");
 }

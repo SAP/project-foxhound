@@ -1,190 +1,272 @@
 //! Helpers for code generation that don't need macro expansion.
 
-use aster;
+use ir::context::BindgenContext;
 use ir::layout::Layout;
-use syntax::ast;
-use syntax::ptr::P;
-
+use quote;
+use proc_macro2::{Term, Span};
 
 pub mod attributes {
-    use aster;
-    use syntax::ast;
+    use quote;
+    use proc_macro2::{Term, Span};
 
-    pub fn repr(which: &str) -> ast::Attribute {
-        aster::AstBuilder::new().attr().list("repr").words(&[which]).build()
+    pub fn repr(which: &str) -> quote::Tokens {
+        let which = Term::new(which, Span::call_site());
+        quote! {
+            #[repr( #which )]
+        }
     }
 
-    pub fn repr_list(which_ones: &[&str]) -> ast::Attribute {
-        aster::AstBuilder::new().attr().list("repr").words(which_ones).build()
+    pub fn repr_list(which_ones: &[&str]) -> quote::Tokens {
+        let which_ones = which_ones.iter().cloned().map(|one| Term::new(one, Span::call_site()));
+        quote! {
+            #[repr( #( #which_ones ),* )]
+        }
     }
 
-    pub fn derives(which_ones: &[&str]) -> ast::Attribute {
-        aster::AstBuilder::new().attr().list("derive").words(which_ones).build()
+    pub fn derives(which_ones: &[&str]) -> quote::Tokens {
+        let which_ones = which_ones.iter().cloned().map(|one| Term::new(one, Span::call_site()));
+        quote! {
+            #[derive( #( #which_ones ),* )]
+        }
     }
 
-    pub fn inline() -> ast::Attribute {
-        aster::AstBuilder::new().attr().word("inline")
+    pub fn inline() -> quote::Tokens {
+        quote! {
+            #[inline]
+        }
     }
 
-    pub fn doc(comment: &str) -> ast::Attribute {
-        aster::AstBuilder::new().attr().doc(comment)
+    pub fn doc(comment: String) -> quote::Tokens {
+        // Doc comments are already preprocessed into nice `///` formats by the
+        // time they get here. Just make sure that we have newlines around it so
+        // that nothing else gets wrapped into the comment.
+        let mut tokens = quote! {};
+        tokens.append(Term::new("\n", Span::call_site()));
+        tokens.append(Term::new(&comment, Span::call_site()));
+        tokens.append(Term::new("\n", Span::call_site()));
+        tokens
     }
 
-    pub fn link_name(name: &str) -> ast::Attribute {
-        aster::AstBuilder::new().attr().name_value("link_name").str(name)
+    pub fn link_name(name: &str) -> quote::Tokens {
+        // LLVM mangles the name by default but it's already mangled.
+        // Prefixing the name with \u{1} should tell LLVM to not mangle it.
+        let name = format!("\u{1}{}", name);
+        quote! {
+            #[link_name = #name]
+        }
     }
 }
 
 /// Generates a proper type for a field or type with a given `Layout`, that is,
 /// a type with the correct size and alignment restrictions.
-pub struct BlobTyBuilder {
-    layout: Layout,
+pub fn blob(ctx: &BindgenContext, layout: Layout) -> quote::Tokens {
+    let opaque = layout.opaque();
+
+    // FIXME(emilio, #412): We fall back to byte alignment, but there are
+    // some things that legitimately are more than 8-byte aligned.
+    //
+    // Eventually we should be able to `unwrap` here, but...
+    let ty_name = match opaque.known_rust_type_for_array(ctx) {
+        Some(ty) => ty,
+        None => {
+            warn!("Found unknown alignment on code generation!");
+            "u8"
+        }
+    };
+
+    let ty_name = Term::new(ty_name, Span::call_site());
+
+    let data_len = opaque.array_size(ctx).unwrap_or(layout.size);
+
+    if data_len == 1 {
+        quote! {
+            #ty_name
+        }
+    } else {
+        quote! {
+            [ #ty_name ; #data_len ]
+        }
+    }
 }
 
-impl BlobTyBuilder {
-    pub fn new(layout: Layout) -> Self {
-        BlobTyBuilder {
-            layout: layout,
-        }
+/// Integer type of the same size as the given `Layout`.
+pub fn integer_type(ctx: &BindgenContext, layout: Layout) -> Option<quote::Tokens> {
+    let name = Layout::known_type_for_size(ctx, layout.size)?;
+    let name = Term::new(name, Span::call_site());
+    Some(quote! { #name })
+}
+
+/// Generates a bitfield allocation unit type for a type with the given `Layout`.
+pub fn bitfield_unit(ctx: &BindgenContext, layout: Layout) -> quote::Tokens {
+    let mut tokens = quote! {};
+
+    if ctx.options().enable_cxx_namespaces {
+        tokens.append_all(quote! { root:: });
     }
 
-    pub fn build(self) -> P<ast::Ty> {
-        let opaque = self.layout.opaque();
+    let align = match layout.align {
+        n if n >= 8 => quote! { u64 },
+        4 => quote! { u32 },
+        2 => quote! { u16 },
+        _ => quote! { u8  },
+    };
 
-        // FIXME(emilio, #412): We fall back to byte alignment, but there are
-        // some things that legitimately are more than 8-byte aligned.
-        //
-        // Eventually we should be able to `unwrap` here, but...
-        let ty_name = match opaque.known_rust_type_for_array() {
-            Some(ty) => ty,
-            None => {
-                warn!("Found unknown alignment on code generation!");
-                "u8"
-            }
-        };
+    let size = layout.size;
+    tokens.append_all(quote! {
+        __BindgenBitfieldUnit<[u8; #size], #align>
+    });
 
-        let data_len = opaque.array_size().unwrap_or(self.layout.size);
-
-        let inner_ty = aster::AstBuilder::new().ty().path().id(ty_name).build();
-        if data_len == 1 {
-            inner_ty
-        } else {
-            aster::ty::TyBuilder::new().array(data_len).build(inner_ty)
-        }
-    }
+    tokens
 }
 
 pub mod ast_ty {
-    use aster;
     use ir::context::BindgenContext;
     use ir::function::FunctionSig;
+    use ir::layout::Layout;
     use ir::ty::FloatKind;
-    use syntax::ast;
-    use syntax::ptr::P;
+    use quote;
+    use proc_macro2;
 
-    pub fn raw_type(ctx: &BindgenContext, name: &str) -> P<ast::Ty> {
-        let ident = ctx.rust_ident_raw(&name);
+    pub fn raw_type(ctx: &BindgenContext, name: &str) -> quote::Tokens {
+        let ident = ctx.rust_ident_raw(name);
         match ctx.options().ctypes_prefix {
             Some(ref prefix) => {
-                let prefix = ctx.rust_ident_raw(prefix);
-                quote_ty!(ctx.ext_cx(), $prefix::$ident)
+                let prefix = ctx.rust_ident_raw(prefix.as_str());
+                quote! {
+                    #prefix::#ident
+                }
             }
-            None => quote_ty!(ctx.ext_cx(), ::std::os::raw::$ident),
+            None => quote! {
+                ::std::os::raw::#ident
+            },
         }
     }
 
-    pub fn float_kind_rust_type(ctx: &BindgenContext,
-                                fk: FloatKind)
-                                -> P<ast::Ty> {
-        // TODO: we probably should just take the type layout into
-        // account?
+    pub fn float_kind_rust_type(
+        ctx: &BindgenContext,
+        fk: FloatKind,
+        layout: Option<Layout>,
+    ) -> quote::Tokens {
+        // TODO: we probably should take the type layout into account more
+        // often?
         //
         // Also, maybe this one shouldn't be the default?
-        //
-        // FIXME: `c_longdouble` doesn't seem to be defined in some
-        // systems, so we use `c_double` directly.
         match (fk, ctx.options().convert_floats) {
-            (FloatKind::Float, true) => aster::ty::TyBuilder::new().f32(),
-            (FloatKind::Double, true) |
-            (FloatKind::LongDouble, true) => aster::ty::TyBuilder::new().f64(),
+            (FloatKind::Float, true) => quote! { f32 },
+            (FloatKind::Double, true) => quote! { f64 },
             (FloatKind::Float, false) => raw_type(ctx, "c_float"),
-            (FloatKind::Double, false) |
-            (FloatKind::LongDouble, false) => raw_type(ctx, "c_double"),
+            (FloatKind::Double, false) => raw_type(ctx, "c_double"),
+            (FloatKind::LongDouble, _) => {
+                match layout {
+                    Some(layout) => {
+                        match layout.size {
+                            4 => quote! { f32 },
+                            8 => quote! { f64 },
+                            // TODO(emilio): If rust ever gains f128 we should
+                            // use it here and below.
+                            _ => super::integer_type(ctx, layout).unwrap_or(quote! { f64 }),
+                        }
+                    }
+                    None => {
+                        debug_assert!(
+                            false,
+                            "How didn't we know the layout for a primitive type?"
+                        );
+                        quote! { f64 }
+                    }
+                }
+            }
             (FloatKind::Float128, _) => {
-                aster::ty::TyBuilder::new().array(16).u8()
+                if ctx.options().rust_features.i128_and_u128 {
+                    quote! { u128 }
+                } else {
+                    quote! { [u64; 2] }
+                }
             }
         }
     }
 
-    pub fn int_expr(val: i64) -> P<ast::Expr> {
-        use std::i64;
-        let expr = aster::AstBuilder::new().expr();
-
-        // This is not representable as an i64 if it's negative, so we
-        // special-case it.
-        //
-        // Fix in aster incoming.
-        if val == i64::MIN {
-            expr.neg().uint(1u64 << 63)
-        } else {
-            expr.int(val)
-        }
+    pub fn int_expr(val: i64) -> quote::Tokens {
+        // Don't use quote! { #val } because that adds the type suffix.
+        let val = proc_macro2::Literal::i64_unsuffixed(val);
+        quote!(#val)
     }
 
-    pub fn bool_expr(val: bool) -> P<ast::Expr> {
-        aster::AstBuilder::new().expr().bool(val)
+    pub fn uint_expr(val: u64) -> quote::Tokens {
+        // Don't use quote! { #val } because that adds the type suffix.
+        let val = proc_macro2::Literal::u64_unsuffixed(val);
+        quote!(#val)
     }
 
-    pub fn byte_array_expr(bytes: &[u8]) -> P<ast::Expr> {
-        let mut vec = Vec::with_capacity(bytes.len() + 1);
-        for byte in bytes {
-            vec.push(int_expr(*byte as i64));
-        }
-        vec.push(int_expr(0));
-
-        let kind = ast::ExprKind::Vec(vec);
-
-        aster::AstBuilder::new().expr().build_expr_kind(kind)
+    pub fn byte_array_expr(bytes: &[u8]) -> quote::Tokens {
+        let mut bytes: Vec<_> = bytes.iter().cloned().collect();
+        bytes.push(0);
+        quote! { [ #(#bytes),* ] }
     }
 
-    pub fn cstr_expr(mut string: String) -> P<ast::Expr> {
+    pub fn cstr_expr(mut string: String) -> quote::Tokens {
         string.push('\0');
-        aster::AstBuilder::new()
-            .expr()
-            .build_lit(aster::AstBuilder::new().lit().byte_str(string))
+        let b = proc_macro2::Literal::byte_string(&string.as_bytes());
+        quote! {
+            #b
+        }
     }
 
-    pub fn float_expr(f: f64) -> P<ast::Expr> {
-        use aster::symbol::ToSymbol;
-        let mut string = f.to_string();
+    pub fn float_expr(
+        ctx: &BindgenContext,
+        f: f64,
+    ) -> Result<quote::Tokens, ()> {
+        if f.is_finite() {
+            let val = proc_macro2::Literal::f64_unsuffixed(f);
 
-        // So it gets properly recognised as a floating point constant.
-        if !string.contains('.') {
-            string.push('.');
+            return Ok(quote!(#val));
         }
 
-        let kind = ast::LitKind::FloatUnsuffixed(string.as_str().to_symbol());
-        aster::AstBuilder::new().expr().lit().build_lit(kind)
+        let prefix = ctx.trait_prefix();
+
+        if f.is_nan() {
+            return Ok(quote! {
+                ::#prefix::f64::NAN
+            });
+        }
+
+        if f.is_infinite() {
+            return Ok(if f.is_sign_positive() {
+                quote! {
+                    ::#prefix::f64::INFINITY
+                }
+            } else {
+                quote! {
+                    ::#prefix::f64::NEG_INFINITY
+                }
+            });
+        }
+
+        warn!("Unknown non-finite float number: {:?}", f);
+        return Err(());
     }
 
-    pub fn arguments_from_signature(signature: &FunctionSig,
-                                    ctx: &BindgenContext)
-                                    -> Vec<P<ast::Expr>> {
-        // TODO: We need to keep in sync the argument names, so we should unify
-        // this with the other loop that decides them.
+    pub fn arguments_from_signature(
+        signature: &FunctionSig,
+        ctx: &BindgenContext,
+    ) -> Vec<quote::Tokens> {
         let mut unnamed_arguments = 0;
-        signature.argument_types()
+        signature
+            .argument_types()
             .iter()
             .map(|&(ref name, _ty)| {
-                let arg_name = match *name {
-                    Some(ref name) => ctx.rust_mangle(name).into_owned(),
+                match *name {
+                    Some(ref name) => {
+                        let name = ctx.rust_ident(name);
+                        quote! { #name }
+                    }
                     None => {
                         unnamed_arguments += 1;
-                        format!("arg{}", unnamed_arguments)
+                        let name = ctx.rust_ident(format!("arg{}", unnamed_arguments));
+                        quote! { #name }
                     }
-                };
-                aster::expr::ExprBuilder::new().id(arg_name)
+                }
             })
-            .collect::<Vec<_>>()
+            .collect()
     }
 }

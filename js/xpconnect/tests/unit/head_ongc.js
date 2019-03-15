@@ -1,9 +1,5 @@
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cu = Components.utils;
-
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/jsdebugger.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/jsdebugger.jsm");
 
 const testingFunctions = Cu.getJSTestingFunctions();
 const systemPrincipal = Cc["@mozilla.org/systemprincipal;1"].createInstance(Ci.nsIPrincipal);
@@ -12,7 +8,7 @@ function addTestingFunctionsToGlobal(global) {
   for (let k in testingFunctions) {
     global[k] = testingFunctions[k];
   }
-  global.print = do_print;
+  global.print = info;
   global.newGlobal = newGlobal;
   addDebuggerToGlobal(global);
 }
@@ -26,8 +22,7 @@ function newGlobal() {
 addTestingFunctionsToGlobal(this);
 
 function executeSoon(f) {
-  Services.tm.mainThread.dispatch({ run: f },
-                                  Ci.nsIThread.DISPATCH_NORMAL);
+  Services.tm.dispatchToMainThread({ run: f });
 }
 
 // The onGarbageCollection tests don't play well gczeal settings and lead to

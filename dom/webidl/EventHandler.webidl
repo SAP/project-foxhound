@@ -68,7 +68,7 @@ interface GlobalEventHandlers {
            attribute EventHandler onmouseout;
            attribute EventHandler onmouseover;
            attribute EventHandler onmouseup;
-           //(Not implemented)attribute EventHandler onmousewheel;
+           attribute EventHandler onwheel;
            attribute EventHandler onpause;
            attribute EventHandler onplay;
            attribute EventHandler onplaying;
@@ -118,7 +118,9 @@ interface GlobalEventHandlers {
 
            // Mozilla-specific handlers. Unprefixed handlers live in
            // Document rather than here.
+           [Deprecated="MozfullscreenchangeDeprecatedPrefix"]
            attribute EventHandler onmozfullscreenchange;
+           [Deprecated="MozfullscreenerrorDeprecatedPrefix"]
            attribute EventHandler onmozfullscreenerror;
 
            // CSS-Animation and CSS-Transition handlers.
@@ -147,6 +149,7 @@ interface WindowEventHandlers {
            attribute EventHandler onhashchange;
            attribute EventHandler onlanguagechange;
            attribute EventHandler onmessage;
+           attribute EventHandler onmessageerror;
            attribute EventHandler onoffline;
            attribute EventHandler ononline;
            attribute EventHandler onpagehide;

@@ -16,22 +16,17 @@
    We use <limits> to get the libstdc++ version. */
 #include <limits>
 #if __GLIBCXX__ <= 20070719
-#ifndef __EXCEPTIONS
-#define __EXCEPTIONS
-#endif
+#  ifndef __EXCEPTIONS
+#    define __EXCEPTIONS
+#  endif
 #endif
 
 #include "nsMenuItemIconX.h"
 #include "nsObjCExceptions.h"
 #include "nsIContent.h"
-#include "nsIDocument.h"
+#include "mozilla/dom/Document.h"
 #include "nsNameSpaceManager.h"
 #include "nsGkAtoms.h"
-#include "nsIDOMElement.h"
-#include "nsICSSDeclaration.h"
-#include "nsIDOMCSSValue.h"
-#include "nsIDOMCSSPrimitiveValue.h"
-#include "nsIDOMRect.h"
 #include "nsThreadUtils.h"
 #include "nsToolkit.h"
 #include "nsNetUtil.h"
@@ -43,6 +38,9 @@
 #include "nsCocoaUtils.h"
 #include "nsContentUtils.h"
 #include "nsIContentPolicy.h"
+#include "nsComputedDOMStyle.h"
+
+using namespace mozilla;
 
 using mozilla::dom::Element;
 using mozilla::gfx::SourceSurface;
@@ -50,36 +48,29 @@ using mozilla::gfx::SourceSurface;
 static const uint32_t kIconWidth = 16;
 static const uint32_t kIconHeight = 16;
 
-typedef NS_STDCALL_FUNCPROTO(nsresult, GetRectSideMethod, nsIDOMRect,
-                             GetBottom, (nsIDOMCSSPrimitiveValue**));
-
 NS_IMPL_ISUPPORTS(nsMenuItemIconX, imgINotificationObserver)
 
-nsMenuItemIconX::nsMenuItemIconX(nsMenuObjectX* aMenuItem,
-                                 nsIContent*    aContent,
-                                 NSMenuItem*    aNativeMenuItem)
-: mContent(aContent)
-, mLoadingPrincipal(aContent->NodePrincipal())
-, mContentType(nsIContentPolicy::TYPE_INTERNAL_IMAGE)
-, mMenuObject(aMenuItem)
-, mLoadedIcon(false)
-, mSetIcon(false)
-, mNativeMenuItem(aNativeMenuItem)
-{
-  //  printf("Creating icon for menu item %d, menu %d, native item is %d\n", aMenuItem, aMenu, aNativeMenuItem);
+nsMenuItemIconX::nsMenuItemIconX(nsMenuObjectX* aMenuItem, nsIContent* aContent,
+                                 NSMenuItem* aNativeMenuItem)
+    : mContent(aContent),
+      mTriggeringPrincipal(aContent->NodePrincipal()),
+      mContentType(nsIContentPolicy::TYPE_INTERNAL_IMAGE),
+      mMenuObject(aMenuItem),
+      mLoadedIcon(false),
+      mSetIcon(false),
+      mNativeMenuItem(aNativeMenuItem) {
+  //  printf("Creating icon for menu item %d, menu %d, native item is %d\n", aMenuItem, aMenu,
+  //  aNativeMenuItem);
 }
 
-nsMenuItemIconX::~nsMenuItemIconX()
-{
-  if (mIconRequest)
-    mIconRequest->CancelAndForgetObserver(NS_BINDING_ABORTED);
+nsMenuItemIconX::~nsMenuItemIconX() {
+  if (mIconRequest) mIconRequest->CancelAndForgetObserver(NS_BINDING_ABORTED);
 }
 
 // Called from mMenuObjectX's destructor, to prevent us from outliving it
 // (as might otherwise happen if calls to our imgINotificationObserver methods
 // are still outstanding).  mMenuObjectX owns our nNativeMenuItem.
-void nsMenuItemIconX::Destroy()
-{
+void nsMenuItemIconX::Destroy() {
   if (mIconRequest) {
     mIconRequest->CancelAndForgetObserver(NS_BINDING_ABORTED);
     mIconRequest = nullptr;
@@ -88,9 +79,7 @@ void nsMenuItemIconX::Destroy()
   mNativeMenuItem = nil;
 }
 
-nsresult
-nsMenuItemIconX::SetupIcon()
-{
+nsresult nsMenuItemIconX::SetupIcon() {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
   // Still don't have one, then something is wrong, get out of here.
@@ -121,33 +110,8 @@ nsMenuItemIconX::SetupIcon()
   NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
 }
 
-static int32_t
-GetDOMRectSide(nsIDOMRect* aRect, GetRectSideMethod aMethod)
-{
-  nsCOMPtr<nsIDOMCSSPrimitiveValue> dimensionValue;
-  (aRect->*aMethod)(getter_AddRefs(dimensionValue));
-  if (!dimensionValue)
-    return -1;
-
-  uint16_t primitiveType;
-  nsresult rv = dimensionValue->GetPrimitiveType(&primitiveType);
-  if (NS_FAILED(rv) || primitiveType != nsIDOMCSSPrimitiveValue::CSS_PX)
-    return -1;
-
-  float dimension = 0;
-  rv = dimensionValue->GetFloatValue(nsIDOMCSSPrimitiveValue::CSS_PX,
-                                     &dimension);
-  if (NS_FAILED(rv))
-    return -1;
-
-  return NSToIntRound(dimension);
-}
-
-nsresult
-nsMenuItemIconX::GetIconURI(nsIURI** aIconURI)
-{
-  if (!mMenuObject)
-    return NS_ERROR_FAILURE;
+nsresult nsMenuItemIconX::GetIconURI(nsIURI** aIconURI) {
+  if (!mMenuObject) return NS_ERROR_FAILURE;
 
   // Mac native menu items support having both a checkmark and an icon
   // simultaneously, but this is unheard of in the cross-platform toolkit,
@@ -157,64 +121,46 @@ nsMenuItemIconX::GetIconURI(nsIURI** aIconURI)
   // by pretending that no icon exists if this is a checkable menu item.
   if (mMenuObject->MenuObjectType() == eMenuItemObjectType) {
     nsMenuItemX* menuItem = static_cast<nsMenuItemX*>(mMenuObject);
-    if (menuItem->GetMenuItemType() != eRegularMenuItemType)
-      return NS_ERROR_FAILURE;
+    if (menuItem->GetMenuItemType() != eRegularMenuItemType) return NS_ERROR_FAILURE;
   }
 
-  if (!mContent)
-    return NS_ERROR_FAILURE;
+  if (!mContent) return NS_ERROR_FAILURE;
 
   // First, look at the content node's "image" attribute.
   nsAutoString imageURIString;
-  bool hasImageAttr = mContent->GetAttr(kNameSpaceID_None,
-                                        nsGkAtoms::image,
-                                        imageURIString);
+  bool hasImageAttr =
+      mContent->IsElement() &&
+      mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::image, imageURIString);
 
   nsresult rv;
-  nsCOMPtr<nsIDOMCSSValue> cssValue;
-  nsCOMPtr<nsICSSDeclaration> cssStyleDecl;
-  nsCOMPtr<nsIDOMCSSPrimitiveValue> primitiveValue;
-  uint16_t primitiveType;
+  RefPtr<ComputedStyle> sc;
+  nsCOMPtr<nsIURI> iconURI;
   if (!hasImageAttr) {
     // If the content node has no "image" attribute, get the
     // "list-style-image" property from CSS.
-    nsCOMPtr<nsIDocument> document = mContent->GetComposedDoc();
-    if (!document)
+    RefPtr<mozilla::dom::Document> document = mContent->GetComposedDoc();
+    if (!document || !mContent->IsElement()) {
       return NS_ERROR_FAILURE;
+    }
 
-    nsCOMPtr<nsPIDOMWindowInner> window = document->GetInnerWindow();
-    if (!window)
+    sc = nsComputedDOMStyle::GetComputedStyle(mContent->AsElement(), nullptr);
+    if (!sc) {
       return NS_ERROR_FAILURE;
+    }
 
-    nsCOMPtr<Element> domElement = do_QueryInterface(mContent);
-    if (!domElement)
+    iconURI = sc->StyleList()->GetListStyleImageURI();
+    if (!iconURI) {
       return NS_ERROR_FAILURE;
-
-    ErrorResult dummy;
-    cssStyleDecl = window->GetComputedStyle(*domElement, EmptyString(), dummy);
-    dummy.SuppressException();
-    if (!cssStyleDecl)
-      return NS_ERROR_FAILURE;
-
-    NS_NAMED_LITERAL_STRING(listStyleImage, "list-style-image");
-    rv = cssStyleDecl->GetPropertyCSSValue(listStyleImage,
-                                           getter_AddRefs(cssValue));
-    if (NS_FAILED(rv)) return rv;
-
-    primitiveValue = do_QueryInterface(cssValue);
-    if (!primitiveValue) return NS_ERROR_FAILURE;
-
-    rv = primitiveValue->GetPrimitiveType(&primitiveType);
-    if (NS_FAILED(rv)) return rv;
-    if (primitiveType != nsIDOMCSSPrimitiveValue::CSS_URI)
-      return NS_ERROR_FAILURE;
-
-    rv = primitiveValue->GetStringValue(imageURIString);
-    if (NS_FAILED(rv)) return rv;
+    }
   } else {
-    nsContentUtils::GetContentPolicyTypeForUIImageLoading(mContent,
-                                                          getter_AddRefs(mLoadingPrincipal),
-                                                          mContentType);
+    uint64_t dummy = 0;
+    nsContentUtils::GetContentPolicyTypeForUIImageLoading(
+        mContent, getter_AddRefs(mTriggeringPrincipal), mContentType, &dummy);
+
+    // If this menu item shouldn't have an icon, the string will be empty,
+    // and NS_NewURI will fail.
+    rv = NS_NewURI(getter_AddRefs(iconURI), imageURIString);
+    if (NS_FAILED(rv)) return rv;
   }
 
   // Empty the mImageRegionRect initially as the image region CSS could
@@ -222,58 +168,30 @@ nsMenuItemIconX::GetIconURI(nsIURI** aIconURI)
   // last GetIconURI call.
   mImageRegionRect.SetEmpty();
 
-  // If this menu item shouldn't have an icon, the string will be empty,
-  // and NS_NewURI will fail.
-  nsCOMPtr<nsIURI> iconURI;
-  rv = NS_NewURI(getter_AddRefs(iconURI), imageURIString);
-  if (NS_FAILED(rv)) return rv;
-
-  *aIconURI = iconURI;
-  NS_ADDREF(*aIconURI);
+  iconURI.forget(aIconURI);
 
   if (!hasImageAttr) {
     // Check if the icon has a specified image region so that it can be
     // cropped appropriately before being displayed.
-    NS_NAMED_LITERAL_STRING(imageRegion, "-moz-image-region");
-    rv = cssStyleDecl->GetPropertyCSSValue(imageRegion,
-                                           getter_AddRefs(cssValue));
-    // Just return NS_OK if there if there is a failure due to no
-    // moz-image region specified so the whole icon will be drawn anyway.
-    if (NS_FAILED(rv)) return NS_OK;
+    const nsRect& r = sc->StyleList()->mImageRegion;
 
-    primitiveValue = do_QueryInterface(cssValue);
-    if (!primitiveValue) return NS_OK;
+    // Return NS_ERROR_FAILURE if the image region is invalid so the image
+    // is not drawn, and behavior is similar to XUL menus.
+    if (r.X() < 0 || r.Y() < 0 || r.Width() < 0 || r.Height() < 0) {
+      return NS_ERROR_FAILURE;
+    }
 
-    rv = primitiveValue->GetPrimitiveType(&primitiveType);
-    if (NS_FAILED(rv)) return NS_OK;
-    if (primitiveType != nsIDOMCSSPrimitiveValue::CSS_RECT)
-      return NS_OK;
-
-    nsCOMPtr<nsIDOMRect> imageRegionRect;
-    rv = primitiveValue->GetRectValue(getter_AddRefs(imageRegionRect));
-    if (NS_FAILED(rv)) return NS_OK;
-
-    if (imageRegionRect) {
-      // Return NS_ERROR_FAILURE if the image region is invalid so the image
-      // is not drawn, and behavior is similar to XUL menus.
-      int32_t bottom = GetDOMRectSide(imageRegionRect, &nsIDOMRect::GetBottom);
-      int32_t right = GetDOMRectSide(imageRegionRect, &nsIDOMRect::GetRight);
-      int32_t top = GetDOMRectSide(imageRegionRect, &nsIDOMRect::GetTop);
-      int32_t left = GetDOMRectSide(imageRegionRect, &nsIDOMRect::GetLeft);
-
-      if (top < 0 || left < 0 || bottom <= top || right <= left)
-        return NS_ERROR_FAILURE;
-
-      mImageRegionRect.SetRect(left, top, right - left, bottom - top);
+    // 'auto' is represented by a [0, 0, 0, 0] rect. Only set mImageRegionRect
+    // if we have some other value.
+    if (!r.IsEmpty()) {
+      mImageRegionRect = r.ToNearestPixels(mozilla::AppUnitsPerCSSPixel());
     }
   }
 
   return NS_OK;
 }
 
-nsresult
-nsMenuItemIconX::LoadIcon(nsIURI* aIconURI)
-{
+nsresult nsMenuItemIconX::LoadIcon(nsIURI* aIconURI) {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
   if (mIconRequest) {
@@ -286,7 +204,7 @@ nsMenuItemIconX::LoadIcon(nsIURI* aIconURI)
 
   if (!mContent) return NS_ERROR_FAILURE;
 
-  nsCOMPtr<nsIDocument> document = mContent->OwnerDoc();
+  RefPtr<mozilla::dom::Document> document = mContent->OwnerDoc();
 
   nsCOMPtr<nsILoadGroup> loadGroup = document->GetDocumentLoadGroup();
   if (!loadGroup) return NS_ERROR_FAILURE;
@@ -311,16 +229,13 @@ nsMenuItemIconX::LoadIcon(nsIURI* aIconURI)
 
     if (!sPlaceholderIconImage) return NS_ERROR_FAILURE;
 
-    if (mNativeMenuItem)
-      [mNativeMenuItem setImage:sPlaceholderIconImage];
+    if (mNativeMenuItem) [mNativeMenuItem setImage:sPlaceholderIconImage];
   }
 
-  nsresult rv = loader->LoadImage(aIconURI, nullptr, nullptr,
-                                  mozilla::net::RP_Unset,
-                                  mLoadingPrincipal, loadGroup, this,
-                                  mContent, document, nsIRequest::LOAD_NORMAL, nullptr,
-                                  mContentType, EmptyString(),
-                                  getter_AddRefs(mIconRequest));
+  nsresult rv = loader->LoadImage(
+      aIconURI, nullptr, nullptr, mozilla::net::RP_Unset, mTriggeringPrincipal, 0, loadGroup, this,
+      mContent, document, nsIRequest::LOAD_NORMAL, nullptr, mContentType, EmptyString(),
+      /* aUseUrgentStartForChannel */ false, getter_AddRefs(mIconRequest));
   if (NS_FAILED(rv)) return rv;
 
   return NS_OK;
@@ -333,15 +248,11 @@ nsMenuItemIconX::LoadIcon(nsIURI* aIconURI)
 //
 
 NS_IMETHODIMP
-nsMenuItemIconX::Notify(imgIRequest* aRequest,
-                        int32_t aType,
-                        const nsIntRect* aData)
-{
+nsMenuItemIconX::Notify(imgIRequest* aRequest, int32_t aType, const nsIntRect* aData) {
   if (aType == imgINotificationObserver::LOAD_COMPLETE) {
     // Make sure the image loaded successfully.
     uint32_t status = imgIRequest::STATUS_ERROR;
-    if (NS_FAILED(aRequest->GetImageStatus(&status)) ||
-        (status & imgIRequest::STATUS_ERROR)) {
+    if (NS_FAILED(aRequest->GetImageStatus(&status)) || (status & imgIRequest::STATUS_ERROR)) {
       mIconRequest->Cancel(NS_BINDING_ABORTED);
       mIconRequest = nullptr;
       return NS_ERROR_FAILURE;
@@ -355,7 +266,7 @@ nsMenuItemIconX::Notify(imgIRequest* aRequest,
     int32_t width = 0, height = 0;
     image->GetWidth(&width);
     image->GetHeight(&height);
-    image->RequestDecodeForSize(nsIntSize(width, height), imgIContainer::FLAG_NONE);
+    image->RequestDecodeForSize(nsIntSize(width, height), imgIContainer::FLAG_HIGH_QUALITY_SCALING);
   }
 
   if (aType == imgINotificationObserver::FRAME_COMPLETE) {
@@ -372,20 +283,15 @@ nsMenuItemIconX::Notify(imgIRequest* aRequest,
   return NS_OK;
 }
 
-nsresult
-nsMenuItemIconX::OnFrameComplete(imgIRequest* aRequest)
-{
+nsresult nsMenuItemIconX::OnFrameComplete(imgIRequest* aRequest) {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
-  if (aRequest != mIconRequest)
-    return NS_ERROR_FAILURE;
+  if (aRequest != mIconRequest) return NS_ERROR_FAILURE;
 
   // Only support one frame.
-  if (mLoadedIcon)
-    return NS_OK;
+  if (mLoadedIcon) return NS_OK;
 
-  if (!mNativeMenuItem)
-    return NS_ERROR_FAILURE;
+  if (!mNativeMenuItem) return NS_ERROR_FAILURE;
 
   nsCOMPtr<imgIContainer> imageContainer;
   aRequest->GetImage(getter_AddRefs(imageContainer));
@@ -401,8 +307,7 @@ nsMenuItemIconX::OnFrameComplete(imgIRequest* aRequest)
   // If the image region is invalid, don't draw the image to almost match
   // the behavior of other platforms.
   if (!mImageRegionRect.IsEmpty() &&
-      (mImageRegionRect.XMost() > origWidth ||
-       mImageRegionRect.YMost() > origHeight)) {
+      (mImageRegionRect.XMost() > origWidth || mImageRegionRect.YMost() > origHeight)) {
     [mNativeMenuItem setImage:nil];
     return NS_ERROR_FAILURE;
   }
@@ -412,32 +317,31 @@ nsMenuItemIconX::OnFrameComplete(imgIRequest* aRequest)
   }
 
   RefPtr<SourceSurface> surface =
-    imageContainer->GetFrame(imgIContainer::FRAME_CURRENT,
-                             imgIContainer::FLAG_SYNC_DECODE);
+      imageContainer->GetFrame(imgIContainer::FRAME_CURRENT, imgIContainer::FLAG_SYNC_DECODE);
   if (!surface) {
     [mNativeMenuItem setImage:nil];
     return NS_ERROR_FAILURE;
   }
 
   CGImageRef origImage = NULL;
-  nsresult rv = nsCocoaUtils::CreateCGImageFromSurface(surface, &origImage);
+  bool isEntirelyBlack = false;
+  nsresult rv = nsCocoaUtils::CreateCGImageFromSurface(surface, &origImage, &isEntirelyBlack);
   if (NS_FAILED(rv) || !origImage) {
     [mNativeMenuItem setImage:nil];
     return NS_ERROR_FAILURE;
   }
 
-  bool createSubImage = !(mImageRegionRect.x == 0 && mImageRegionRect.y == 0 &&
-                            mImageRegionRect.width == origWidth && mImageRegionRect.height == origHeight);
+  bool createSubImage =
+      !(mImageRegionRect.x == 0 && mImageRegionRect.y == 0 && mImageRegionRect.width == origWidth &&
+        mImageRegionRect.height == origHeight);
 
   CGImageRef finalImage = origImage;
   if (createSubImage) {
     // if mImageRegionRect is set using CSS, we need to slice a piece out of the overall
     // image to use as the icon
-    finalImage = ::CGImageCreateWithImageInRect(origImage,
-                                                ::CGRectMake(mImageRegionRect.x,
-                                                mImageRegionRect.y,
-                                                mImageRegionRect.width,
-                                                mImageRegionRect.height));
+    finalImage = ::CGImageCreateWithImageInRect(
+        origImage, ::CGRectMake(mImageRegionRect.x, mImageRegionRect.y, mImageRegionRect.width,
+                                mImageRegionRect.height));
     ::CGImageRelease(origImage);
     if (!finalImage) {
       [mNativeMenuItem setImage:nil];
@@ -445,13 +349,21 @@ nsMenuItemIconX::OnFrameComplete(imgIRequest* aRequest)
     }
   }
 
-  NSImage *newImage = nil;
+  NSImage* newImage = nil;
   rv = nsCocoaUtils::CreateNSImageFromCGImage(finalImage, &newImage);
   if (NS_FAILED(rv) || !newImage) {
     [mNativeMenuItem setImage:nil];
     ::CGImageRelease(finalImage);
     return NS_ERROR_FAILURE;
   }
+
+  // If all the color channels in the image are black, treat the image as a
+  // template. This will cause macOS to use the image's alpha channel as a mask
+  // and it will fill it with a color that looks good in the context that it's
+  // used in. For example, for regular menu items, the image will be black, but
+  // when the menu item is hovered (and its background is blue), it will be
+  // filled with white.
+  [newImage setTemplate:isEntirelyBlack];
 
   [newImage setSize:NSMakeSize(kIconWidth, kIconHeight)];
   [mNativeMenuItem setImage:newImage];

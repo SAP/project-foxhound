@@ -36,7 +36,7 @@ if ("MozMutationObserver" in window) {
 function log(str) {
   var d = document.createElement("div");
   d.textContent = str;
-  if (str.indexOf("PASSED") >= 0) {
+  if (str.includes("PASSED")) {
     d.setAttribute("style", "color: green;");
   } else {
     d.setAttribute("style", "color: red;");
@@ -149,9 +149,6 @@ function runTest() {
       m = null;
     });
   m.observe(div, { attributes: true, attributeFilter: ["foo"] });
-  is(SpecialPowers.wrap(div).getBoundMutationObservers()[0].getObservingInfo()[0].attributes, true);
-  is(SpecialPowers.wrap(div).getBoundMutationObservers()[0].getObservingInfo()[0].attributeFilter.length, 1)
-  is(SpecialPowers.wrap(div).getBoundMutationObservers()[0].getObservingInfo()[0].attributeFilter[0], "foo")
   div.setAttribute("foo", "bar");
 }
 
@@ -180,9 +177,6 @@ function testThisBind() {
       m = null;
     }).bind(window));
   m.observe(div, { attributes: true, attributeOldValue: true, subtree: true });
-  is(SpecialPowers.wrap(div).getBoundMutationObservers()[0].getObservingInfo()[0].attributes, true)
-  is(SpecialPowers.wrap(div).getBoundMutationObservers()[0].getObservingInfo()[0].attributeOldValue, true)
-  is(SpecialPowers.wrap(div).getBoundMutationObservers()[0].getObservingInfo()[0].subtree, true)
   div.setAttribute("foo", "bar2");
   div.removeAttribute("foo");
   div.removeChild(child);
@@ -226,10 +220,6 @@ function testCharacterData() {
   m3.observe(div, { characterData: true, subtree: true });
   m3.observe(div, { characterData: true, subtree: false });
   m4.observe(div.firstChild, { characterData: true, subtree: false });
-  
-  is(SpecialPowers.wrap(div).getBoundMutationObservers().length, 3)
-  is(SpecialPowers.wrap(div).getBoundMutationObservers()[2].getObservingInfo()[0].characterData, true)
-  is(SpecialPowers.wrap(div).getBoundMutationObservers()[2].getObservingInfo()[0].subtree, false)
 
   div.firstChild.data = "bar";
 }
@@ -246,7 +236,7 @@ function testChildList() {
       m = null;
     });
   m.observe(div, { childList: true});
-  div.removeChild(div.firstChild);
+  div.firstChild.remove();
 }
 
 function testChildList2() {
@@ -303,18 +293,12 @@ function testChildList4() {
     };
   m = new M(callback);
   m.observe(df, { childList: true, characterData: true, characterDataOldValue: true, subtree: true });
-  is(SpecialPowers.wrap(df).getBoundMutationObservers()[0].getObservingInfo()[0].childList, true)
-  is(SpecialPowers.wrap(df).getBoundMutationObservers()[0].getObservingInfo()[0].characterData, true)
-  is(SpecialPowers.wrap(df).getBoundMutationObservers()[0].getObservingInfo()[0].characterDataOldValue, true)
-  is(SpecialPowers.wrap(df).getBoundMutationObservers()[0].getObservingInfo()[0].subtree, true)
-  ok(SpecialPowers.compare(SpecialPowers.wrap(df).getBoundMutationObservers()[0].mutationCallback, callback))
   m.observe(div, { childList: true });
-  is(SpecialPowers.wrap(df).getBoundMutationObservers()[0].getObservingInfo().length, 2)
-  
+
   // Make sure transient observers aren't leaked.
   var leakTest = new M(function(){});
   leakTest.observe(div, { characterData: true, subtree: true });
-  
+
   div.insertBefore(df, s2);
   s1.firstChild.data = "bar"; // This should *not* create a record.
   t1.data = "Hello the whole "; // This should create a record.
@@ -362,7 +346,7 @@ function testChildList5() {
       is(records[5].previousSibling, c3, "");
       is(records[5].nextSibling, c5, "");
       observer.disconnect();
-      then(testAdoptNode);
+      then(testNestedMutations);
       m = null;
     });
   m.observe(div, { childList: true, subtree: true });
@@ -373,6 +357,37 @@ function testChildList5() {
   div.appendChild(c5);
   div.replaceChild(df, c4);
   div.appendChild(emptyDF); // empty document shouldn't cause mutation records
+}
+
+function testNestedMutations() {
+  div.textContent = null;
+  div.appendChild(document.createTextNode("foo"));
+  var m2WasCalled = false;
+  m = new M(function(records, observer) {
+    is(records[0].type, "characterData", "Should have got characterData");
+    observer.disconnect();
+    m = null;
+    m3 = new M(function(records, observer) {
+      ok(m2WasCalled, "m2 should have been called before m3!");
+      is(records[0].type, "characterData", "Should have got characterData");
+      observer.disconnect();
+      then(testAdoptNode);
+      m3 = null;
+    });
+    m3.observe(div, { characterData: true, subtree: true});
+    div.firstChild.data = "foo";
+  });
+  m2 = new M(function(records, observer) {
+    m2WasCalled = true;
+    is(records[0].type, "characterData", "Should have got characterData");
+    observer.disconnect();
+    m2 = null;
+  });
+  m2.observe(div, { characterData: true, subtree: true});
+  div.appendChild(document.createTextNode("foo"));
+  m.observe(div, { characterData: true, subtree: true });
+
+  div.firstChild.data = "bar";
 }
 
 function testAdoptNode() {
@@ -484,28 +499,6 @@ function testSyncXHR() {
 
 function testSyncXHR2() {
   ok(callbackHandled, "Should have called the mutation callback!");
-  then(testModalDialog);
-}
-
-function testModalDialog() {
-  var didHandleCallback = false;
-  div.innerHTML = "<span>1</span><span>2</span>";
-  m = new M(function(records, observer) {
-      is(records[0].type, "childList", "Should have got childList");
-      is(records[0].removedNodes.length, 2, "Should have got removedNodes");
-      is(records[0].addedNodes.length, 1, "Should have got addedNodes");
-      observer.disconnect();
-      m = null;
-      didHandleCallback = true;
-    });
-  m.observe(div, { childList: true });
-  div.innerHTML = "<span><span>foo</span></span>";
-  try {
-    window.showModalDialog("mutationobserver_dialog.html");
-    ok(didHandleCallback, "Should have called the callback while showing modal dialog!");
-  } catch(e) {
-    todo(false, "showModalDialog not implemented on this platform");
-  }
   then(testTakeRecords);
 }
 
@@ -569,8 +562,6 @@ function testTakeRecords() {
       m = null;
     });
   m.observe(div, { attributes: true, attributeOldValue: true });
-  // Note, [0] points to a mutation observer which is there for a leak test!
-  ok(SpecialPowers.compare(SpecialPowers.wrap(div).getBoundMutationObservers()[1], m));
   var mutationEventCount = 0;
   div.addEventListener("DOMAttrModified", mutationListener);
   div.setAttribute("foo", "bar");
@@ -599,11 +590,17 @@ function testExpandos() {
 }
 
 function testOutsideShadowDOM() {
+  if (!div.attachShadow) {
+    todo(false, "Skipping testOutsideShadowDOM and testInsideShadowDOM " +
+         "because attachShadow is not supported");
+    then(testMarquee);
+    return;
+  }
   var m = new M(function(records, observer) {
     is(records.length, 1);
     is(records[0].type, "attributes", "Should have got attributes");
     observer.disconnect();
-    then(testInsideShadowDOM);
+    then(testMarquee);
   });
   m.observe(div, {
       attributes: true,
@@ -611,38 +608,12 @@ function testOutsideShadowDOM() {
       characterData: true,
       subtree: true
     })
-  var sr = div.createShadowRoot();
+  var sr = div.attachShadow({ mode: "open" });
   sr.innerHTML = "<div" + ">text</" + "div>";
   sr.firstChild.setAttribute("foo", "bar");
   sr.firstChild.firstChild.data = "text2";
   sr.firstChild.appendChild(document.createElement("div"));
   div.setAttribute("foo", "bar");
-}
-
-function testInsideShadowDOM() {
-  var m = new M(function(records, observer) {
-    is(records.length, 4);
-    is(records[0].type, "childList");
-    is(records[1].type, "attributes");
-    is(records[2].type, "characterData");
-    is(records[3].type, "childList");
-    observer.disconnect();
-    then(testMarquee);
-  });
-  var sr = div.createShadowRoot();
-  m.observe(sr, {
-      attributes: true,
-      childList: true,
-      characterData: true,
-      subtree: true
-    });
-
-  sr.innerHTML = "<div" + ">text</" + "div>";
-  sr.firstChild.setAttribute("foo", "bar");
-  sr.firstChild.firstChild.data = "text2";
-  sr.firstChild.appendChild(document.createElement("div"));
-  div.setAttribute("foo", "bar2");
-
 }
 
 function testMarquee() {

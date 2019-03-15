@@ -29,10 +29,9 @@
 
 #include "mozilla/Vector.h"
 
-#include "jsalloc.h"
-
 #include "jit/arm64/vixl/Globals-vixl.h"
 #include "jit/arm64/vixl/Instructions-vixl.h"
+#include "js/AllocPolicy.h"
 
 
 // List macro containing all visitors needed by the decoder class.
@@ -151,9 +150,11 @@ class Decoder {
 
   // Top-level wrappers around the actual decoding function.
   void Decode(const Instruction* instr) {
+#ifdef DEBUG
     for (auto visitor : visitors_) {
       VIXL_ASSERT(visitor->IsConstVisitor());
     }
+#endif
     DecodeInstruction(instr);
   }
   void Decode(Instruction* instr) {

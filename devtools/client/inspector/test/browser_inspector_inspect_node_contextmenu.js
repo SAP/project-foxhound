@@ -1,9 +1,9 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 /* globals getTestActorWithoutToolbox */
+
 "use strict";
 
 // Tests for inspect node in browser context menu
@@ -17,22 +17,60 @@ const HTML = `
 
 const TEST_URI = "data:text/html;charset=utf-8," + encodeURI(HTML);
 
-add_task(function* () {
-  let tab = yield addTab(TEST_URI);
-  let testActor = yield getTestActorWithoutToolbox(tab);
+add_task(async function() {
+  Services.prefs.setBoolPref("devtools.command-button-frames.enabled", true);
+  registerCleanupFunction(() => {
+    Services.prefs.clearUserPref("devtools.command-button-frames.enabled");
+  });
 
-  yield testContextMenuWithinIframe(testActor);
+  const tab = await addTab(TEST_URI);
+  const testActor = await getTestActorWithoutToolbox(tab);
+
+  // Use context menu with root frame selected in toolbox
+  await testContextMenuWithinIframe(testActor, async inspector => {
+    return getNodeFrontInFrame("#in-frame", "iframe", inspector);
+  });
+
+  // Use context menu with inner frame selected in toolbox
+  await changeToolboxToInnerFrame();
+  await testContextMenuWithinIframe(testActor, async inspector => {
+    return getNodeFront("#in-frame", inspector);
+  });
 });
 
-function* testContextMenuWithinIframe(testActor) {
+async function testContextMenuWithinIframe(testActor, nodeFrontGetter) {
   info("Opening inspector via 'Inspect Element' context menu item within an iframe");
-  let selector = ["iframe", "#in-frame"];
-  yield clickOnInspectMenuItem(testActor, selector);
+  const selector = ["iframe", "#in-frame"];
+  await clickOnInspectMenuItem(testActor, selector);
 
   info("Checking inspector state.");
-  let inspector = getActiveInspector();
-  let nodeFront = yield getNodeFrontInFrame("#in-frame", "iframe", inspector);
+  const inspector = await getActiveInspector();
+  const nodeFront = await nodeFrontGetter(inspector);
 
   is(inspector.selection.nodeFront, nodeFront,
      "Right node is selected in the markup view");
+}
+
+async function changeToolboxToInnerFrame() {
+  const { toolbox } = await getActiveInspector();
+
+  const btn = toolbox.doc.getElementById("command-button-frames");
+  const panel = toolbox.doc.getElementById("command-button-frames-panel");
+  btn.click();
+  ok(panel, "popup panel has created.");
+  await waitUntil(() => panel.classList.contains("tooltip-visible"));
+
+  info("Select the iframe in the frame list.");
+  const menuList = toolbox.doc.getElementById("toolbox-frame-menu");
+  const frames = Array.from(menuList.querySelectorAll(".command"));
+  is(frames.length, 2, "Two frames shown in the switcher");
+
+  const innerFrameButton =
+        frames.filter(b => b.querySelector(".label").textContent === FRAME_URI)[0];
+  ok(innerFrameButton, "Found frame button for inner frame");
+
+  const newRoot = toolbox.getPanel("inspector").once("new-root");
+  info("Switch toolbox to inner frame");
+  innerFrameButton.click();
+  await newRoot;
 }

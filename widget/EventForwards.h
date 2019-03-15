@@ -8,9 +8,8 @@
 
 #include <stdint.h>
 
+#include "nsStringFwd.h"
 #include "nsTArray.h"
-
-class nsCString;
 
 /**
  * XXX Following enums should be in BasicEvents.h.  However, currently, it's
@@ -20,8 +19,7 @@ class nsCString;
 /**
  * Return status for event processors.
  */
-enum nsEventStatus
-{
+enum nsEventStatus {
   // The event is ignored, do default processing
   nsEventStatus_eIgnore,
   // The event is consumed, don't do default processing
@@ -34,14 +32,23 @@ enum nsEventStatus
 
 namespace mozilla {
 
+enum class CanBubble { eYes, eNo };
+
+enum class Cancelable { eYes, eNo };
+
+enum class ChromeOnlyDispatch { eYes, eNo };
+
+enum class Trusted { eYes, eNo };
+
+enum class Composed { eYes, eNo, eDefault };
+
 /**
  * Event messages
  */
 
 typedef uint16_t EventMessageType;
 
-enum EventMessage : EventMessageType
-{
+enum EventMessage : EventMessageType {
 
 #define NS_EVENT_MESSAGE(aMessage) aMessage,
 #define NS_EVENT_MESSAGE_FIRST_LAST(aMessage, aFirst, aLast) \
@@ -64,13 +71,12 @@ const char* ToChar(EventMessage aEventMessage);
 
 typedef uint8_t EventClassIDType;
 
-enum EventClassID : EventClassIDType
-{
-  // The event class name will be:
-  //   eBasicEventClass for WidgetEvent
-  //   eFooEventClass for WidgetFooEvent or InternalFooEvent
-#define NS_ROOT_EVENT_CLASS(aPrefix, aName)   eBasic##aName##Class
-#define NS_EVENT_CLASS(aPrefix, aName)      , e##aName##Class
+enum EventClassID : EventClassIDType {
+// The event class name will be:
+//   eBasicEventClass for WidgetEvent
+//   eFooEventClass for WidgetFooEvent or InternalFooEvent
+#define NS_ROOT_EVENT_CLASS(aPrefix, aName) eBasic##aName##Class
+#define NS_EVENT_CLASS(aPrefix, aName) , e##aName##Class
 
 #include "mozilla/EventClassList.h"
 
@@ -82,12 +88,10 @@ const char* ToChar(EventClassID aEventClassID);
 
 typedef uint16_t Modifiers;
 
-#define NS_DEFINE_KEYNAME(aCPPName, aDOMKeyName) \
-  KEY_NAME_INDEX_##aCPPName,
+#define NS_DEFINE_KEYNAME(aCPPName, aDOMKeyName) KEY_NAME_INDEX_##aCPPName,
 
 typedef uint16_t KeyNameIndexType;
-enum KeyNameIndex : KeyNameIndexType
-{
+enum KeyNameIndex : KeyNameIndexType {
 #include "mozilla/KeyNameList.h"
   // If a DOM keyboard event is synthesized by script, this is used.  Then,
   // specified key name should be stored and use it as .key value.
@@ -102,8 +106,7 @@ const nsCString ToString(KeyNameIndex aKeyNameIndex);
   CODE_NAME_INDEX_##aCPPName,
 
 typedef uint8_t CodeNameIndexType;
-enum CodeNameIndex : CodeNameIndexType
-{
+enum CodeNameIndex : CodeNameIndexType {
 #include "mozilla/PhysicalKeyCodeNameList.h"
   // If a DOM keyboard event is synthesized by script, this is used.  Then,
   // specified code name should be stored and use it as .code value.
@@ -114,18 +117,34 @@ enum CodeNameIndex : CodeNameIndexType
 
 const nsCString ToString(CodeNameIndex aCodeNameIndex);
 
+#define NS_DEFINE_INPUTTYPE(aCPPName, aDOMName) e##aCPPName,
+
+typedef uint8_t EditorInputTypeType;
+enum class EditorInputType : EditorInputTypeType {
+#include "mozilla/InputTypeList.h"
+  // If a DOM input event is synthesized by script, this is used.  Then,
+  // specified input type should be stored as string and use it as .inputType
+  // value.
+  eUnknown,
+};
+
+#undef NS_DEFINE_INPUTTYPE
+
 #define NS_DEFINE_COMMAND(aName, aCommandStr) , Command##aName
+#define NS_DEFINE_COMMAND_NO_EXEC_COMMAND(aName) , Command##aName
 
 typedef int8_t CommandInt;
-enum Command : CommandInt
-{
+enum Command : CommandInt {
   CommandDoNothing
 
 #include "mozilla/CommandList.h"
 };
 #undef NS_DEFINE_COMMAND
+#undef NS_DEFINE_COMMAND_NO_EXEC_COMMAND
 
-} // namespace mozilla
+const char* ToChar(Command aCommand);
+
+}  // namespace mozilla
 
 /**
  * All header files should include this header instead of *Events.h.
@@ -150,6 +169,8 @@ class WidgetEventTime;
 class NativeEventData;
 
 // TextEvents.h
+enum class AccessKeyType;
+
 struct AlternativeCharCode;
 struct ShortcutKeyCandidate;
 
@@ -163,11 +184,12 @@ enum class TextRangeType : RawTextRangeType;
 struct TextRangeStyle;
 struct TextRange;
 
+class EditCommands;
 class TextRangeArray;
 
 // FontRange.h
 struct FontRange;
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_EventForwards_h__
+#endif  // mozilla_EventForwards_h__

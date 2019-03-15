@@ -7,7 +7,6 @@
 
 
 #include "xptcprivate.h"
-#include "xptiprivate.h"
 
 #include <stddef.h>
 #include <stdlib.h>
@@ -26,7 +25,6 @@ PrepareAndDispatch(nsXPTCStubBase* self, uint32_t methodIndex,
   nsXPTCMiniVariant paramBuffer[PARAM_BUFFER_COUNT];
   nsXPTCMiniVariant* dispatchParams = nullptr;
   const nsXPTMethodInfo* info;
-  nsresult result = NS_ERROR_FAILURE;
   uint64_t* iargs = intargs;
   uint64_t* fargs = floatargs;
   uint8_t paramCount;
@@ -48,12 +46,16 @@ PrepareAndDispatch(nsXPTCStubBase* self, uint32_t methodIndex,
   if (! dispatchParams)
       return NS_ERROR_OUT_OF_MEMORY;
 
+  const uint8_t indexOfJSContext = info->IndexOfJSContext();
+
   for(i = 0; i < paramCount; ++i)
   {
     int isfloat = 0;
     const nsXPTParamInfo& param = info->GetParam(i);
     const nsXPTType& type = param.GetType();
     nsXPTCMiniVariant* dp = &dispatchParams[i];
+
+    MOZ_CRASH("NYI: support implicit JSContext*, bug 1475699");
 
     if(param.IsOut() || !type.IsArithmetic())
     {
@@ -118,7 +120,8 @@ PrepareAndDispatch(nsXPTCStubBase* self, uint32_t methodIndex,
     }
   }
 
-  result = self->mOuter->CallMethod((uint16_t) methodIndex, info, dispatchParams);
+  nsresult result = self->mOuter->CallMethod((uint16_t) methodIndex, info,
+                                             dispatchParams);
 
   if(dispatchParams != paramBuffer)
     delete [] dispatchParams;
@@ -148,4 +151,3 @@ nsresult nsXPTCStubBase::Sentinel##n() \
 }
 
 #include "xptcstubsdef.inc"
-

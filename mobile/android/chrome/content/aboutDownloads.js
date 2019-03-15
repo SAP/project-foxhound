@@ -3,24 +3,22 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-var Cu = Components.utils;
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm", this);
-
-XPCOMUtils.defineLazyModuleGetter(this, "Downloads", "resource://gre/modules/Downloads.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "DownloadUtils", "resource://gre/modules/DownloadUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "EventDispatcher", "resource://gre/modules/Messaging.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PluralForm", "resource://gre/modules/PluralForm.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Services", "resource://gre/modules/Services.jsm");
+ChromeUtils.defineModuleGetter(this, "Downloads", "resource://gre/modules/Downloads.jsm");
+ChromeUtils.defineModuleGetter(this, "DownloadUtils", "resource://gre/modules/DownloadUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "EventDispatcher", "resource://gre/modules/Messaging.jsm");
+ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
+ChromeUtils.defineModuleGetter(this, "PluralForm", "resource://gre/modules/PluralForm.jsm");
+ChromeUtils.defineModuleGetter(this, "Services", "resource://gre/modules/Services.jsm");
 
 var gStrings = Services.strings.createBundle("chrome://browser/locale/aboutDownloads.properties");
 XPCOMUtils.defineLazyGetter(this, "strings",
                             () => Services.strings.createBundle("chrome://browser/locale/aboutDownloads.properties"));
 
 function deleteDownload(download) {
-  download.finalize(true).then(null, Cu.reportError);
-  OS.File.remove(download.target.path).then(null, ex => {
+  download.finalize(true).catch(Cu.reportError);
+  OS.File.remove(download.target.path).catch(ex => {
     if (!(ex instanceof OS.File.Error && ex.becauseNoSuchFile)) {
       Cu.reportError(ex);
     }
@@ -31,7 +29,7 @@ var contextMenu = {
   _items: [],
   _targetDownload: null,
 
-  init: function () {
+  init: function() {
     let element = document.getElementById("downloadmenu");
     element.addEventListener("click",
                              event => event.download = this._targetDownload,
@@ -39,44 +37,44 @@ var contextMenu = {
     this._items = [
       new ContextMenuItem("open",
                           download => download.succeeded,
-                          download => download.launch().then(null, Cu.reportError)),
+                          download => download.launch().catch(Cu.reportError)),
       new ContextMenuItem("retry",
                           download => download.error ||
                                       (download.canceled && !download.hasPartialData),
-                          download => download.start().then(null, Cu.reportError)),
+                          download => download.start().catch(Cu.reportError)),
       new ContextMenuItem("remove",
                           download => download.stopped,
                           download => {
                             Downloads.getList(Downloads.ALL)
                                      .then(list => list.remove(download))
-                                     .then(null, Cu.reportError);
+                                     .catch(Cu.reportError);
                             deleteDownload(download);
                           }),
       new ContextMenuItem("pause",
                           download => !download.stopped && download.hasPartialData,
-                          download => download.cancel().then(null, Cu.reportError)),
+                          download => download.cancel().catch(Cu.reportError)),
       new ContextMenuItem("resume",
                           download => download.canceled && download.hasPartialData,
-                          download => download.start().then(null, Cu.reportError)),
+                          download => download.start().catch(Cu.reportError)),
       new ContextMenuItem("cancel",
                           download => !download.stopped ||
                                       (download.canceled && download.hasPartialData),
                           download => {
-                            download.cancel().then(null, Cu.reportError);
-                            download.removePartialData().then(null, Cu.reportError);
+                            download.cancel().catch(Cu.reportError);
+                            download.removePartialData().catch(Cu.reportError);
                           }),
       // following menu item is a global action
       new ContextMenuItem("removeall",
                           () => downloadLists.finished.length > 0,
-                          () => downloadLists.removeFinished())
+                          () => downloadLists.removeFinished()),
     ];
   },
 
-  addContextMenuEventListener: function (element) {
+  addContextMenuEventListener: function(element) {
     element.addEventListener("contextmenu", this.onContextMenu.bind(this));
   },
 
-  onContextMenu: function (event) {
+  onContextMenu: function(event) {
     let target = event.target;
     while (target && !target.download) {
       target = target.parentNode;
@@ -92,7 +90,7 @@ var contextMenu = {
     for (let item of this._items) {
       item.updateVisibility(target.download);
     }
-  }
+  },
 };
 
 function ContextMenuItem(name, isVisible, action) {
@@ -103,9 +101,9 @@ function ContextMenuItem(name, isVisible, action) {
 }
 
 ContextMenuItem.prototype = {
-  updateVisibility: function (download) {
+  updateVisibility: function(download) {
     this.element.hidden = !this.isVisible(download);
-  }
+  },
 };
 
 function DownloadListView(type, listElementId) {
@@ -116,12 +114,12 @@ function DownloadListView(type, listElementId) {
 
   Downloads.getList(type)
            .then(list => list.addView(this))
-           .then(null, Cu.reportError);
+           .catch(Cu.reportError);
 
   window.addEventListener("unload", event => {
     Downloads.getList(type)
              .then(list => list.removeView(this))
-             .then(null, Cu.reportError);
+             .catch(Cu.reportError);
   });
 }
 
@@ -137,11 +135,11 @@ DownloadListView.prototype = {
     return finished;
   },
 
-  insertOrMoveItem: function (item) {
+  insertOrMoveItem: function(item) {
     var compare = (a, b) => {
       // active downloads always before stopped downloads
       if (a.stopped != b.stopped) {
-        return b.stopped ? -1 : 1
+        return b.stopped ? -1 : 1;
       }
       // most recent downloads first
       return b.startTime - a.startTime;
@@ -154,13 +152,13 @@ DownloadListView.prototype = {
     this.listElement.insertBefore(item.element, insertLocation);
   },
 
-  onDownloadAdded: function (download) {
+  onDownloadAdded: function(download) {
     let item = new DownloadItem(download);
     this.items.set(download, item);
     this.insertOrMoveItem(item);
   },
 
-  onDownloadChanged: function (download) {
+  onDownloadChanged: function(download) {
     let item = this.items.get(download);
     if (!item) {
       Cu.reportError("No DownloadItem found for download");
@@ -174,7 +172,7 @@ DownloadListView.prototype = {
     item.onDownloadChanged();
   },
 
-  onDownloadRemoved: function (download) {
+  onDownloadRemoved: function(download) {
     let item = this.items.get(download);
     if (!item) {
       Cu.reportError("No DownloadItem found for download");
@@ -186,13 +184,13 @@ DownloadListView.prototype = {
 
     EventDispatcher.instance.sendRequest({
       type: "Download:Remove",
-      path: download.target.path
+      path: download.target.path,
     });
-  }
+  },
 };
 
 var downloadLists = {
-  init: function () {
+  init: function() {
     this.publicDownloads = new DownloadListView(Downloads.PUBLIC, "public-downloads-list");
     this.privateDownloads = new DownloadListView(Downloads.PRIVATE, "private-downloads-list");
   },
@@ -201,7 +199,7 @@ var downloadLists = {
     return this.publicDownloads.finished.concat(this.privateDownloads.finished);
   },
 
-  removeFinished: function () {
+  removeFinished: function() {
     let finished = this.finished;
     if (finished.length == 0) {
       return;
@@ -215,12 +213,12 @@ var downloadLists = {
       Downloads.getList(Downloads.ALL)
                .then(list => {
                  for (let download of finished) {
-                   list.remove(download).then(null, Cu.reportError);
+                   list.remove(download).catch(Cu.reportError);
                    deleteDownload(download);
                  }
                }, Cu.reportError);
     }
-  }
+  },
 };
 
 function DownloadItem(download) {
@@ -240,11 +238,11 @@ const kDownloadStatePropertyNames = [
   "succeeded",
   "canceled",
   "error",
-  "startTime"
+  "startTime",
 ];
 
 DownloadItem.prototype = {
-  _htmlEscape : function (s) {
+  _htmlEscape: function(s) {
     s = s.replace(/&/g, "&amp;");
     s = s.replace(/>/g, "&gt;");
     s = s.replace(/</g, "&lt;");
@@ -253,7 +251,7 @@ DownloadItem.prototype = {
     return s;
   },
 
-  _updateFromDownload: function () {
+  _updateFromDownload: function() {
     this._state = {};
     kDownloadStatePropertyNames.forEach(
       name => this._state[name] = this._download[name],
@@ -295,7 +293,7 @@ DownloadItem.prototype = {
     return element;
   },
 
-  updateElement: function (element) {
+  updateElement: function(element) {
     element.querySelector(".date").textContent = this.startDate;
     element.querySelector(".domain").textContent = this.domain;
     element.querySelector(".icon").src = this.iconUrl;
@@ -304,13 +302,13 @@ DownloadItem.prototype = {
     element.querySelector(".title").setAttribute("value", this.fileName);
   },
 
-  onClick: function (event) {
+  onClick: function(event) {
     if (this.download.succeeded) {
-      this.download.launch().then(null, Cu.reportError);
+      this.download.launch().catch(Cu.reportError);
     }
   },
 
-  onDownloadChanged: function () {
+  onDownloadChanged: function() {
     this._updateFromDownload();
     this.updateElement(this.element);
   },
@@ -364,10 +362,10 @@ DownloadItem.prototype = {
       return strings.GetStringFromName(name);
     }
     return "";
-  }
+  },
 };
 
 window.addEventListener("DOMContentLoaded", event => {
     contextMenu.init();
-    downloadLists.init()
+    downloadLists.init();
 });

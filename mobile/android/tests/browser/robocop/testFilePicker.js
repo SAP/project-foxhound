@@ -5,9 +5,7 @@
 
 "use strict";
 
-const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
-
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 add_test(function filepicker_open() {
   let chromeWin = Services.wm.getMostRecentWindow("navigator:browser");
@@ -24,9 +22,7 @@ add_test(function filepicker_open() {
       do_print("File: " + fp.file.path);
       is(fp.file.path, "/mnt/sdcard/my-favorite-martian.png", "Retrieve the right martian file!");
 
-      let files = fp.files;
-      while (files.hasMoreElements()) {
-        let file = files.getNext().QueryInterface(Ci.nsIFile);
+      for (let file of fp.files) {
         do_print("File: " + file.path);
         is(file.path, "/mnt/sdcard/my-favorite-martian.png", "Retrieve the right martian file from array!");
       }
@@ -35,11 +31,9 @@ add_test(function filepicker_open() {
       do_print("DOMFile: " + file.mozFullPath);
       is(file.mozFullPath, "/mnt/sdcard/my-favorite-martian.png", "Retrieve the right martian DOM File!");
 
-      let e = fp.domFileOrDirectoryEnumerator;
-      while (e.hasMoreElements()) {
-        let file = e.getNext();
-        do_print("DOMFile: " + file.mozFullPath);
-        is(file.mozFullPath, "/mnt/sdcard/my-favorite-martian.png", "Retrieve the right martian file from domFileOrDirectoryEnumerator array!");
+      for (let domFile of fp.domFileOrDirectoryEnumerator) {
+        do_print("DOMFile: " + domFile.mozFullPath);
+        is(domFile.mozFullPath, "/mnt/sdcard/my-favorite-martian.png", "Retrieve the right martian file from domFileOrDirectoryEnumerator array!");
       }
 
       do_test_finished();
@@ -50,7 +44,7 @@ add_test(function filepicker_open() {
 
   try {
     fp.init(chromeWin, "Open", Ci.nsIFilePicker.modeOpen);
-  } catch(ex) {
+  } catch (ex) {
     ok(false, "Android should support FilePicker.modeOpen: " + ex);
   }
   fp.open(fpCallback);
@@ -61,7 +55,7 @@ add_test(function filepicker_save() {
   let fp = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
   try {
     fp.init(null, "Save", Ci.nsIFilePicker.modeSave);
-  } catch(ex) {
+  } catch (ex) {
     failed = true;
   }
   ok(failed, "Android does not support FilePicker.modeSave");

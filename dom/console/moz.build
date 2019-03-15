@@ -23,11 +23,15 @@ EXPORTS.mozilla += [
 
 EXPORTS.mozilla.dom += [
     'Console.h',
+    'ConsoleInstance.h',
+    'ConsoleUtils.h',
 ]
 
 UNIFIED_SOURCES += [
     'Console.cpp',
+    'ConsoleInstance.cpp',
     'ConsoleReportCollector.cpp',
+    'ConsoleUtils.cpp',
 ]
 
 EXTRA_COMPONENTS += [
@@ -38,11 +42,11 @@ EXTRA_COMPONENTS += [
 LOCAL_INCLUDES += [
     '/docshell/base',
     '/dom/base',
-    '/dom/workers',
     '/js/xpconnect/src',
 ]
 
 MOCHITEST_MANIFESTS += [ 'tests/mochitest.ini' ]
 MOCHITEST_CHROME_MANIFESTS += [ 'tests/chrome.ini' ]
+XPCSHELL_TESTS_MANIFESTS += ['tests/xpcshell/xpcshell.ini']
 
 FINAL_LIBRARY = 'xul'

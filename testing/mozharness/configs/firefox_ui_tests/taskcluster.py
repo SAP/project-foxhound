@@ -1,11 +1,8 @@
 # Config file for firefox ui tests run via TaskCluster.
 
+
 config = {
-    "find_links": [
-        "http://pypi.pub.build.mozilla.org/pub",
-    ],
+    "vcs_share_base": "/builds/hg-shared",
 
-    "pip_index": False,
-
-    "tooltool_cache": "/builds/tooltool_cache",
+    "tooltool_cache": "/builds/worker/tooltool-cache",
 }

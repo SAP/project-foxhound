@@ -33,8 +33,12 @@ import org.json.JSONException;
 import org.json.JSONObject;
 import org.json.JSONArray;
 import org.mozilla.gecko.AppConstants;
+import org.mozilla.gecko.GeckoSharedPrefs;
+import org.mozilla.gecko.search.SearchEngineManager;
 import org.mozilla.gecko.util.HardwareUtils;
+import org.mozilla.gecko.util.IOUtils;
 import org.mozilla.gecko.util.ProxySelector;
+import org.mozilla.gecko.util.ThreadUtils;
 
 import android.content.Context;
 import android.content.pm.PackageManager.NameNotFoundException;
@@ -79,6 +83,7 @@ public class SwitchBoard {
     // Match keys.
     private static final String KEY_APP_ID = "appId";
     private static final String KEY_COUNTRY = "country";
+    private static final String KEY_REGION = "regions";
     private static final String KEY_DEVICE = "device";
     private static final String KEY_LANG = "lang";
     private static final String KEY_MANUFACTURER = "manufacturer";
@@ -95,11 +100,18 @@ public class SwitchBoard {
      * @param c ApplicationContext
      * @param serverUrl Server URL endpoint.
      */
-    static void loadConfig(Context c, @NonNull String serverUrl) {
+    public static void loadConfig(Context c, @NonNull String serverUrl,
+                                  @NonNull final ConfigStatusListener listener) {
         final URL url;
         try {
             url = new URL(serverUrl);
         } catch (MalformedURLException e) {
+            ThreadUtils.postToUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    listener.onExperimentsConfigLoadFailed();
+                }
+            });
             Log.e(TAG, "Exception creating server URL", e);
             return;
         }
@@ -107,11 +119,23 @@ public class SwitchBoard {
         final String result = readFromUrlGET(url);
         if (DEBUG) Log.d(TAG, "Result: " + result);
         if (result == null) {
+            ThreadUtils.postToUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    listener.onExperimentsConfigLoadFailed();
+                }
+            });
             return;
         }
 
         // Cache result locally in shared preferences.
         Preferences.setDynamicConfigJson(c, result);
+        ThreadUtils.postToUiThread(new Runnable() {
+            @Override
+            public void run() {
+                listener.onExperimentsConfigLoaded();
+            }
+        });
     }
 
     public static boolean isInBucket(Context c, int low, int high) {
@@ -138,40 +162,45 @@ public class SwitchBoard {
         }
 
         try {
-            // TODO: cache the array into a mapping so we don't do a loop everytime we are looking for a experiment key
             final JSONArray experiments = new JSONObject(config).getJSONArray(KEY_DATA);
-            JSONObject experiment = null;
 
+            // Allow repeated experiment names. Only return false after we've iterated all experiments and can't find a match.
             for (int i = 0; i < experiments.length(); i++) {
                 JSONObject entry = experiments.getJSONObject(i);
                 final String name = entry.getString(KEY_NAME);
-                if (name.equals(experimentName)) {
-                    experiment = entry;
-                    break;
+                final boolean isTarget = name.equals(experimentName);
+                if (isTarget) {
+                    final boolean isMatch = isMatch(c, entry.optJSONObject(KEY_MATCH));
+                    final JSONObject buckets = entry.getJSONObject(KEY_BUCKETS);
+                    final boolean isInBucket = isInBucket(c, buckets.getInt(KEY_MIN), buckets.getInt(KEY_MAX));
+                    if (isMatch && isInBucket) {
+                        return true;
+                    }
                 }
             }
 
-            if (experiment == null) {
-                return false;
-            }
+            return false;
 
-            if (!isMatch(c, experiment.optJSONObject(KEY_MATCH))) {
-                return false;
-            }
-
-            final JSONObject buckets = experiment.getJSONObject(KEY_BUCKETS);
-            final boolean inExperiment = isInBucket(c, buckets.getInt(KEY_MIN), buckets.getInt(KEY_MAX));
-
-            if (DEBUG) {
-                Log.d(TAG, experimentName + " = " + inExperiment);
-            }
-            return inExperiment;
         } catch (JSONException e) {
             // If the experiment name is not found in the JSON, just return false.
             // There is no need to log an error, since we don't really care if an
             // inactive experiment is missing from the config.
             return false;
         }
+    }
+
+    private static boolean isTargetRegion(JSONArray regions, String region) throws JSONException {
+        if (regions == null || region == null) {
+            return false;
+        }
+        for (int i = 0; i < regions.length(); i++) {
+
+            final String checkingRegion = regions.getString(i);
+            if (checkingRegion.equalsIgnoreCase(region)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static List<String> getExperimentNames(Context c) throws JSONException {
@@ -297,6 +326,25 @@ public class SwitchBoard {
             }
         }
 
+        if (matchKeys.has(KEY_REGION)) {
+            try {
+                final JSONArray regions = matchKeys.getJSONArray(KEY_REGION);
+                if (regions.length() <= 0) {
+                    return true; // If the array is empty then I guess this means there are no region restrictions
+                }
+                final String region = GeckoSharedPrefs.forApp(context).getString(SearchEngineManager.PREF_REGION_KEY, null);
+
+                if (!isTargetRegion(regions, region)) {
+                    return false;
+                }
+            } catch (JSONException e) {
+                // If the JSON is somehow broken (or this version doesn't understand a different format),
+                // just log and continue
+                Log.e(TAG, "Exception matching region", e);
+            }
+        }
+
+
         // Default to return true if no matches failed.
         return true;
     }
@@ -378,27 +426,36 @@ public class SwitchBoard {
      * @return Returns String from server or null when failed.
      */
     @Nullable private static String readFromUrlGET(URL url) {
+        HttpURLConnection connection = null;
+        InputStreamReader inputStreamReader = null;
+        BufferedReader bufferReader = null;
         try {
-            HttpURLConnection connection = (HttpURLConnection) ProxySelector.openConnectionWithProxy(url.toURI());
+            connection = (HttpURLConnection) ProxySelector.openConnectionWithProxy(url.toURI());
             connection.setRequestProperty("User-Agent", HardwareUtils.isTablet() ?
                     AppConstants.USER_AGENT_FENNEC_TABLET :
                     AppConstants.USER_AGENT_FENNEC_MOBILE);
             connection.setRequestMethod("GET");
             connection.setUseCaches(false);
 
-            InputStream is = connection.getInputStream();
-            InputStreamReader inputStreamReader = new InputStreamReader(is);
-            BufferedReader bufferReader = new BufferedReader(inputStreamReader, 8192);
+            // BufferedReader(Reader, int) can throw, hence we need to keep a separate reference
+            // to the InputStreamReader in order to always be able to close it:
+            inputStreamReader = new InputStreamReader(connection.getInputStream());
+            bufferReader = new BufferedReader(inputStreamReader, 8192);
             String line;
             StringBuilder resultContent = new StringBuilder();
             while ((line = bufferReader.readLine()) != null) {
                 resultContent.append(line);
             }
-            bufferReader.close();
 
             return resultContent.toString();
         } catch (IOException | URISyntaxException e) {
             e.printStackTrace();
+        } finally {
+            IOUtils.safeStreamClose(bufferReader);
+            IOUtils.safeStreamClose(inputStreamReader);
+            if (connection != null) {
+                connection.disconnect();
+            }
         }
 
         return null;
@@ -415,5 +472,11 @@ public class SwitchBoard {
         crc.update(uuid.getBytes());
         long checksum = crc.getValue();
         return (int)(checksum % 100L);
+    }
+
+    public interface ConfigStatusListener {
+        void onExperimentsConfigLoaded();
+
+        void onExperimentsConfigLoadFailed();
     }
 }

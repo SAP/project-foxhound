@@ -7,8 +7,8 @@
  * for each marker.
  */
 
-function* spawnTest() {
-  let { target, panel } = yield initPerformance(MARKERS_URL);
+async function spawnTest() {
+  let { target, panel } = await initPerformance(MARKERS_URL);
   let { $, $$, EVENTS, PerformanceController, OverviewView, WaterfallView } = panel.panelWin;
 
   // Hijack the markers massaging part of creating the waterfall view,
@@ -23,25 +23,25 @@ function* spawnTest() {
     "Styles", "Reflow", "ConsoleTime", "TimeStamp"
   ];
 
-  yield startRecording(panel);
+  await startRecording(panel);
   ok(true, "Recording has started.");
 
-  yield waitUntil(() => {
+  await waitUntil(() => {
     // Wait until we get all the different markers.
     let markers = PerformanceController.getCurrentRecording().getMarkers();
     return MARKER_TYPES.every(type => markers.some(m => m.name === type));
   });
 
-  yield stopRecording(panel);
+  await stopRecording(panel);
   ok(true, "Recording has ended.");
 
   info("No need to select everything in the timeline.");
   info("All the markers should be displayed by default.");
 
   let bars = Array.prototype.filter.call($$(".waterfall-marker-bar"),
-             (bar) => MARKER_TYPES.indexOf(bar.getAttribute("type")) !== -1);
+             (bar) => MARKER_TYPES.includes(bar.getAttribute("type")));
   let markers = PerformanceController.getCurrentRecording().getMarkers()
-                .filter(m => MARKER_TYPES.indexOf(m.name) !== -1);
+                .filter(m => MARKER_TYPES.includes(m.name));
 
   info(`Got ${bars.length} bars and ${markers.length} markers.`);
   info("Markers types from datasrc: " + Array.map(markers, e => e.name));
@@ -87,9 +87,6 @@ function* spawnTest() {
     },
     Styles: function (marker) {
       info("Got `Styles` marker with data: " + JSON.stringify(marker));
-      if (marker.restyleHint) {
-        shouldHaveLabel($, "Restyle Hint:", marker.restyleHint.replace(/eRestyle_/g, ""), marker);
-      }
       if (marker.stack) {
         shouldHaveStack($, "stack", marker);
         return true;
@@ -115,7 +112,7 @@ function* spawnTest() {
     EventUtils.sendMouseEvent({ type: "mousedown" }, bar);
 
     if (tests[m.name]) {
-      if (testsDone.indexOf(m.name) === -1) {
+      if (!testsDone.includes(m.name)) {
         let fullTestComplete = tests[m.name](m);
         if (fullTestComplete) {
           testsDone.push(m.name);
@@ -130,7 +127,7 @@ function* spawnTest() {
     }
   }
 
-  yield teardown(panel);
+  await teardown(panel);
   finish();
 }
 

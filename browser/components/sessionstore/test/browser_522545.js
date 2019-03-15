@@ -16,10 +16,10 @@ function test() {
       windows: [{
         tabs: [
           { entries: [{ url: "about:mozilla", triggeringPrincipal_base64 }] },
-          { entries: [], userTypedValue: "example.com", userTypedClear: 0 }
+          { entries: [], userTypedValue: "example.com", userTypedClear: 0 },
         ],
-        selected: 2
-      }]
+        selected: 2,
+      }],
     };
 
     waitForBrowserState(state, function() {
@@ -32,11 +32,27 @@ function test() {
          "We still know that no load is ongoing");
       is(gURLBar.value, "example.com",
          "Address bar's value correctly restored");
-      // Change tabs to make sure address bar value gets updated
-      gBrowser.selectedTab = gBrowser.tabContainer.getItemAtIndex(0);
-      is(gURLBar.value, "about:mozilla",
-         "Address bar's value correctly updated");
-      runNextTest();
+
+      // Change tabs to make sure address bar value gets updated.  If tab is
+      // lazy, wait for SSTabRestored to ensure address bar has time to update.
+      let tabToSelect = gBrowser.tabContainer.getItemAtIndex(0);
+      if (tabToSelect.linkedBrowser.isConnected) {
+        gBrowser.selectedTab = tabToSelect;
+        is(gURLBar.value, "about:mozilla",
+           "Address bar's value correctly updated");
+        runNextTest();
+      } else {
+        gBrowser.tabContainer.addEventListener("SSTabRestored",
+          function SSTabRestored(event) {
+            if (event.target == tabToSelect) {
+              gBrowser.tabContainer.removeEventListener("SSTabRestored", SSTabRestored, true);
+                is(gURLBar.value, "about:mozilla",
+                   "Address bar's value correctly updated");
+              runNextTest();
+            }
+          }, true);
+        gBrowser.selectedTab = tabToSelect;
+      }
     });
   }
 
@@ -48,10 +64,10 @@ function test() {
       windows: [{
         tabs: [
           { entries: [{ url: "about:mozilla", triggeringPrincipal_base64 }] },
-          { entries: [], userTypedValue: "example.org", userTypedClear: 0 }
+          { entries: [], userTypedValue: "example.org", userTypedClear: 0 },
         ],
-        selected: 1
-      }]
+        selected: 1,
+      }],
     };
 
     waitForBrowserState(state, function() {
@@ -60,15 +76,34 @@ function test() {
          "No history entries still sets currentURI to about:blank");
       is(browser.userTypedValue, "example.org",
          "userTypedValue was correctly restored");
-      ok(!browser.didStartLoadSinceLastUserTyping(),
-         "We still know that no load is ongoing");
+      // didStartLoadSinceLastUserTyping does not exist on lazy tabs.
+      if (browser.didStartLoadSinceLastUserTyping) {
+        ok(!browser.didStartLoadSinceLastUserTyping(),
+           "We still know that no load is ongoing");
+      }
       is(gURLBar.value, "about:mozilla",
          "Address bar's value correctly restored");
-      // Change tabs to make sure address bar value gets updated
-      gBrowser.selectedTab = gBrowser.tabContainer.getItemAtIndex(1);
-      is(gURLBar.value, "example.org",
-         "Address bar's value correctly updated");
-      runNextTest();
+
+      // Change tabs to make sure address bar value gets updated.  If tab is
+      // lazy, wait for SSTabRestored to ensure address bar has time to update.
+      let tabToSelect = gBrowser.tabContainer.getItemAtIndex(1);
+      if (tabToSelect.linkedBrowser.isConnected) {
+        gBrowser.selectedTab = tabToSelect;
+        is(gURLBar.value, "example.org",
+           "Address bar's value correctly updated");
+        runNextTest();
+      } else {
+        gBrowser.tabContainer.addEventListener("SSTabRestored",
+          function SSTabRestored(event) {
+            if (event.target == tabToSelect) {
+              gBrowser.tabContainer.removeEventListener("SSTabRestored", SSTabRestored, true);
+                is(gURLBar.value, "example.org",
+                   "Address bar's value correctly updated");
+              runNextTest();
+            }
+          }, true);
+        gBrowser.selectedTab = tabToSelect;
+      }
     });
   }
 
@@ -83,9 +118,9 @@ function test() {
                     { url: "about:config", triggeringPrincipal_base64 }],
           index: 2,
           userTypedValue: "example.com",
-          userTypedClear: 0
-        }]
-      }]
+          userTypedClear: 0,
+        }],
+      }],
     };
 
     waitForBrowserState(state, function() {
@@ -113,9 +148,9 @@ function test() {
                     { url: "about:config", triggeringPrincipal_base64 }],
           index: 1,
           userTypedValue: "example.org",
-          userTypedClear: 0
-        }]
-      }]
+          userTypedClear: 0,
+        }],
+      }],
     };
 
     waitForBrowserState(state, function() {
@@ -145,12 +180,12 @@ function test() {
     // be in a non-userTypedValue case, while others should still have
     // userTypedValue and userTypedClear set.
     gBrowser.addTabsProgressListener({
-      onLocationChange: function (aBrowser) {
+      onLocationChange(aBrowser) {
         if (uris.indexOf(aBrowser.currentURI.spec) > -1) {
           gBrowser.removeTabsProgressListener(this);
           firstLocationChange();
         }
-      }
+      },
     });
 
     function firstLocationChange() {
@@ -172,7 +207,9 @@ function test() {
       runNextTest();
     }
 
-    gBrowser.loadTabs(uris);
+    gBrowser.loadTabs(uris, {
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+    });
   }
 
   // This simulates setting a userTypedValue and ensures that just typing in the
@@ -180,8 +217,8 @@ function test() {
   function test_getBrowserState_userTypedValue() {
     let state = {
       windows: [{
-        tabs: [{ entries: [] }]
-      }]
+        tabs: [{ entries: [] }],
+      }],
     };
 
     waitForBrowserState(state, function() {
@@ -194,9 +231,9 @@ function test() {
       let inputText = "example.org";
       gURLBar.focus();
       gURLBar.value = inputText.slice(0, -1);
-      EventUtils.synthesizeKey(inputText.slice(-1) , {});
+      EventUtils.sendString(inputText.slice(-1));
 
-      executeSoon(function () {
+      executeSoon(function() {
         is(browser.userTypedValue, "example.org",
            "userTypedValue was set when changing URLBar value");
         ok(!browser.didStartLoadSinceLastUserTyping(),
@@ -220,9 +257,9 @@ function test() {
     let state = {
       windows: [{
         tabs: [
-          { entries: [], userTypedValue: "http://example.com", userTypedClear: 2 }
-        ]
-      }]
+          { entries: [], userTypedValue: "http://example.com", userTypedClear: 2 },
+        ],
+      }],
     };
 
     waitForBrowserState(state, function() {
@@ -247,8 +284,8 @@ function test() {
   let originalState = JSON.parse(ss.getBrowserState());
   let state = {
     windows: [{
-      tabs: [{ entries: [{ url: "about:blank", triggeringPrincipal_base64 }] }]
-    }]
+      tabs: [{ entries: [{ url: "about:blank", triggeringPrincipal_base64 }] }],
+    }],
   };
   function runNextTest() {
     if (tests.length) {

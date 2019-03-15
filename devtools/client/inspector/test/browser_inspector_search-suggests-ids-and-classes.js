@@ -17,12 +17,12 @@ const KEY_STATES = [
   ["s", [["span", 1], [".span", 1], ["#span", 1]]],
   ["p", [["span", 1], [".span", 1], ["#span", 1]]],
   ["a", [["span", 1], [".span", 1], ["#span", 1]]],
-  ["n", []],
+  ["n", [["span", 1], [".span", 1], ["#span", 1]]],
   [" ", [["span div", 1]]],
   // mixed tag/class/id suggestions only work for the first word
   ["d", [["span div", 1]]],
   ["VK_BACK_SPACE", [["span div", 1]]],
-  ["VK_BACK_SPACE", []],
+  ["VK_BACK_SPACE", [["span", 1], [".span", 1], ["#span", 1]]],
   ["VK_BACK_SPACE", [["span", 1], [".span", 1], ["#span", 1]]],
   ["VK_BACK_SPACE", [["span", 1], [".span", 1], ["#span", 1]]],
   ["VK_BACK_SPACE", [["span", 1], [".span", 1], ["#span", 1]]],
@@ -37,7 +37,7 @@ const KEY_STATES = [
     [".bb", 1],
     ["#ba", 1],
     ["#bb", 1],
-    ["#bc", 1]
+    ["#bc", 1],
   ]],
 ];
 
@@ -48,37 +48,34 @@ const TEST_URL = `<span class="span" id="span">
                   <button class="bb bc" id="bb"></button>
                   <button class="bc" id="ba"></button>`;
 
-add_task(function* () {
-  let {inspector} = yield openInspectorForURL("data:text/html;charset=utf-8," +
+add_task(async function() {
+  const {inspector} = await openInspectorForURL("data:text/html;charset=utf-8," +
                                               encodeURI(TEST_URL));
 
-  let searchBox = inspector.panelWin.document.getElementById(
+  const searchBox = inspector.panelWin.document.getElementById(
     "inspector-searchbox");
-  let popup = inspector.searchSuggestions.searchPopup;
+  const popup = inspector.searchSuggestions.searchPopup;
 
-  yield focusSearchBoxUsingShortcut(inspector.panelWin);
+  await focusSearchBoxUsingShortcut(inspector.panelWin);
 
-  for (let [key, expectedSuggestions] of KEY_STATES) {
+  for (const [key, expectedSuggestions] of KEY_STATES) {
     info("pressing key " + key + " to get suggestions " +
          JSON.stringify(expectedSuggestions));
 
-    let onCommand = once(searchBox, "input", true);
+    const onCommand = once(searchBox, "input", true);
     EventUtils.synthesizeKey(key, {}, inspector.panelWin);
-    yield onCommand;
+    await onCommand;
 
     info("Waiting for the suggestions to be retrieved");
-    yield inspector.searchSuggestions._lastQuery;
+    await inspector.searchSuggestions._lastQuery;
 
-    let actualSuggestions = popup.getItems();
+    const actualSuggestions = popup.getItems();
     is(popup.isOpen ? actualSuggestions.length : 0, expectedSuggestions.length,
        "There are expected number of suggestions");
-    actualSuggestions.reverse();
 
     for (let i = 0; i < expectedSuggestions.length; i++) {
       is(expectedSuggestions[i][0], actualSuggestions[i].label,
          "The suggestion at " + i + "th index is correct.");
-      is(expectedSuggestions[i][1] || 1, actualSuggestions[i].count,
-         "The count for suggestion at " + i + "th index is correct.");
     }
   }
 });

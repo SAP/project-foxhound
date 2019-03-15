@@ -1,3 +1,5 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,7 +19,7 @@ class AutoStackArena;
 
 // Private helper class for AutoStackArena.
 class StackArena {
-private:
+ private:
   friend class AutoStackArena;
   StackArena();
   ~StackArena();
@@ -61,10 +63,8 @@ private:
 // bytes.
 //
 class MOZ_RAII AutoStackArena {
-public:
-  AutoStackArena()
-    : mOwnsStackArena(false)
-  {
+ public:
+  AutoStackArena() : mOwnsStackArena(false) {
     if (!gStackArena) {
       gStackArena = new StackArena();
       mOwnsStackArena = true;
@@ -80,15 +80,13 @@ public:
     }
   }
 
-  static void* Allocate(size_t aSize) {
-    return gStackArena->Allocate(aSize);
-  }
+  static void* Allocate(size_t aSize) { return gStackArena->Allocate(aSize); }
 
-private:
+ private:
   static StackArena* gStackArena;
   bool mOwnsStackArena;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif

@@ -5,7 +5,6 @@
 
 <window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-<script type="application/javascript" src="chrome://mochikit/content/MochiKit/packed.js"/>
 <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
 
 <body  xmlns="http://www.w3.org/1999/xhtml">
@@ -15,10 +14,7 @@
 
 <script type="application/javascript">
 function getLoadContext() {
-  const Ci = Components.interfaces;
-  return window.QueryInterface(Ci.nsIInterfaceRequestor)
-               .getInterface(Ci.nsIWebNavigation)
-               .QueryInterface(Ci.nsILoadContext);
+  return window.docShell.QueryInterface(Ci.nsILoadContext);
 }
 
 var clipboard = Components.classes["@mozilla.org/widget/clipboard;1"]

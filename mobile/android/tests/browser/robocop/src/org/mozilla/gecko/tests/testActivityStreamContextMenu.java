@@ -17,19 +17,20 @@ import com.robotium.solo.Condition;
 import org.mozilla.gecko.GeckoProfile;
 import org.mozilla.gecko.R;
 import org.mozilla.gecko.activitystream.ActivityStreamTelemetry;
+import org.mozilla.gecko.activitystream.homepanel.model.WebpageModel;
+import org.mozilla.gecko.activitystream.ranking.HighlightCandidateCursorIndices;
 import org.mozilla.gecko.db.BrowserContract;
 import org.mozilla.gecko.db.BrowserDB;
 import org.mozilla.gecko.db.DBUtils;
-import org.mozilla.gecko.home.activitystream.menu.ActivityStreamContextMenu;
-import org.mozilla.gecko.home.activitystream.model.Highlight;
-import org.mozilla.gecko.home.activitystream.model.Item;
-import org.mozilla.gecko.home.activitystream.model.TopSite;
+import org.mozilla.gecko.activitystream.homepanel.menu.ActivityStreamContextMenu;
+import org.mozilla.gecko.activitystream.homepanel.model.Highlight;
+import org.mozilla.gecko.activitystream.homepanel.model.TopSite;
 
 /**
  * This test is unfortunately closely coupled to the current implementation, however it is still
  * useful in that it tests the bookmark/history/pinned state specific menu items for correctness.
  */
-public class testActivityStreamContextMenu extends BaseTest {
+public class testActivityStreamContextMenu extends OldBaseTest {
     private static final String TEST_URL = "http://example.com/test/url";
 
     private BrowserDB db;
@@ -227,10 +228,12 @@ public class testActivityStreamContextMenu extends BaseTest {
      * Test that the menu shows the expected menu items for a given URL, and that these items have
      * the correct state.
      */
-    private void testMenuForItem(Item item, boolean bookmarked, boolean pinned, boolean visited) {
+    private void testMenuForItem(WebpageModel item, boolean bookmarked, boolean pinned, boolean visited) {
         final View anchor = new View(getActivity());
         final ActivityStreamContextMenu menu = ActivityStreamContextMenu.show(
-                getActivity(), anchor, ActivityStreamTelemetry.Extras.builder(), ActivityStreamContextMenu.MenuMode.HIGHLIGHT, item, null, null, 100, 100);
+                anchor, anchor, ActivityStreamTelemetry.Extras.builder(),
+                ActivityStreamContextMenu.MenuMode.HIGHLIGHT, item,
+                false, null, null, 100, 100);
 
         final int expectedBookmarkString;
         if (bookmarked) {
@@ -286,6 +289,7 @@ public class testActivityStreamContextMenu extends BaseTest {
         final Cursor cursor = db.getHighlightCandidates(getActivity().getContentResolver(), 20);
         mAsserter.isnot(cursor, null, "Highlights cursor is not null");
 
+        final HighlightCandidateCursorIndices indices = new HighlightCandidateCursorIndices(cursor);
         try {
             mAsserter.ok(cursor.getCount() > 0, "Highlights cursor has entries", null);
 
@@ -294,7 +298,7 @@ public class testActivityStreamContextMenu extends BaseTest {
             mAsserter.ok(cursor.moveToFirst(), "Move to beginning of cursor", null);
 
             do {
-                final Highlight highlight = Highlight.fromCursor(cursor);
+                final Highlight highlight = Highlight.fromCursor(cursor, indices);
                 if (url.equals(highlight.getUrl())) {
                     return highlight;
                 }

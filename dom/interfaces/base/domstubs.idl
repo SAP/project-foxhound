@@ -13,69 +13,22 @@ class nsWrapperCache;
 
 typedef unsigned long long DOMTimeStamp;
 typedef double DOMHighResTimeStamp;
-
-// Core
-interface nsIDOMAttr;
-interface nsIDOMCDATASection;
-interface nsIDOMCharacterData;
-interface nsIDOMComment;
-interface nsIDOMDOMImplementation;
-interface nsIDOMDocument;
-interface nsIDOMDocumentFragment;
-interface nsIDOMDocumentType;
-interface nsIDOMElement;
-interface nsIDOMNode;
-interface nsIDOMNodeList;
-interface nsIDOMProcessingInstruction;
-interface nsIDOMText;
-interface nsIDOMClientRect;
-interface nsIDOMClientRectList;
+typedef unsigned long long nsViewID;
 
 // Needed for raises() in our IDL
-interface DOMException;
-
-// Style Sheets
-interface nsIDOMStyleSheetList;
-interface nsIDOMStyleSheet;
-interface nsIDOMMediaList;
+%{C++
+namespace mozilla {
+namespace dom {
+class DOMException;
+}
+}
+%}
 
 // Base
 interface nsIDOMWindow;
-interface nsIDOMWindowCollection;
-interface nsIDOMNavigator;
-interface nsIDOMScreen;
 
 // Events
-interface nsIDOMEvent;
-interface nsIDOMEventTarget;
 interface nsIDOMEventListener;
 
 // HTML
-interface nsIDOMHTMLElement;
-interface nsIDOMHTMLFormElement;
-interface nsIDOMHTMLCollection;
 interface nsIDOMHTMLHeadElement;
-
-// CSS
-interface nsIDOMCSSValue;
-interface nsIDOMCSSPrimitiveValue;
-interface nsIDOMCSSRule;
-interface nsIDOMCSSRuleList;
-interface nsIDOMCSSKeyframeRule;
-interface nsIDOMCSSFontFeatureValuesRule;
-interface nsIDOMCSSStyleSheet;
-interface nsIDOMCSSStyleDeclaration;
-interface nsIDOMCounter;
-interface nsIDOMRect;
-interface nsIDOMCSSStyleRule;
-interface nsIDOMCSSStyleRuleCollection;
-
-// Range
-interface nsIDOMRange;
-
-// Crypto
-interface nsIDOMCrypto;
-
-// Used font face (for inspector)
-interface nsIDOMFontFace;
-interface nsIDOMFontFaceList;

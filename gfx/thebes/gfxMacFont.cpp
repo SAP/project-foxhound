@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +7,7 @@
 
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Sprintf.h"
+#include "mozilla/StaticPrefs.h"
 
 #include "gfxCoreTextShaper.h"
 #include <algorithm>
@@ -23,476 +24,383 @@
 using namespace mozilla;
 using namespace mozilla::gfx;
 
-// Simple helper class to automatically release a CFObject when it goes out
-// of scope.
-template<class T>
-class AutoRelease
-{
-public:
-    explicit AutoRelease(T aObject)
-        : mObject(aObject)
-    {
-    }
-
-    ~AutoRelease()
-    {
-        if (mObject) {
-            CFRelease(mObject);
-        }
-    }
-
-    operator T()
-    {
-        return mObject;
-    }
-
-    T forget()
-    {
-        T obj = mObject;
-        mObject = nullptr;
-        return obj;
-    }
-
-private:
-    T mObject;
+template <class T>
+struct TagEquals {
+  bool Equals(const T &aIter, uint32_t aTag) const {
+    return aIter.mTag == aTag;
+  }
 };
 
-static CFDictionaryRef
-CreateVariationDictionaryOrNull(CGFontRef aCGFont,
-                                const nsTArray<gfxFontVariation>& aVariations)
-{
-    // Avoid calling potentially buggy variation APIs on pre-Sierra macOS
-    // versions (see bug 1331683)
-    if (!nsCocoaFeatures::OnSierraOrLater()) {
-        return nullptr;
-    }
-
-    AutoRelease<CTFontRef>
-      ctFont(CTFontCreateWithGraphicsFont(aCGFont, 0, nullptr, nullptr));
-    AutoRelease<CFArrayRef> axes(CTFontCopyVariationAxes(ctFont));
-    if (!axes) {
-        return nullptr;
-    }
-
-    CFIndex axisCount = CFArrayGetCount(axes);
-    AutoRelease<CFMutableDictionaryRef>
-        dict(CFDictionaryCreateMutable(kCFAllocatorDefault, axisCount,
-                                       &kCFTypeDictionaryKeyCallBacks,
-                                       &kCFTypeDictionaryValueCallBacks));
-
-    // Number of variation settings passed in the aVariations parameter.
-    // This will typically be a very low value, so we just linear-search them.
-    uint32_t numVars = aVariations.Length();
-    bool allDefaultValues = true;
-
-    for (CFIndex i = 0; i < axisCount; ++i) {
-        // We sanity-check the axis info found in the CTFont, and bail out
-        // (returning null) if it doesn't have the expected types.
-        CFTypeRef axisInfo = CFArrayGetValueAtIndex(axes, i);
-        if (CFDictionaryGetTypeID() != CFGetTypeID(axisInfo)) {
-            return nullptr;
-        }
-        CFDictionaryRef axis = static_cast<CFDictionaryRef>(axisInfo);
-
-        CFTypeRef axisTag =
-            CFDictionaryGetValue(axis, kCTFontVariationAxisIdentifierKey);
-        if (!axisTag || CFGetTypeID(axisTag) != CFNumberGetTypeID()) {
-            return nullptr;
-        }
-        int64_t tagLong;
-        if (!CFNumberGetValue(static_cast<CFNumberRef>(axisTag),
-                              kCFNumberSInt64Type, &tagLong)) {
-            return nullptr;
-        }
-
-        CFTypeRef axisName =
-            CFDictionaryGetValue(axis, kCTFontVariationAxisNameKey);
-        if (!axisName || CFGetTypeID(axisName) != CFStringGetTypeID()) {
-            return nullptr;
-        }
-
-        // Clamp axis values to the supported range.
-        CFTypeRef min = CFDictionaryGetValue(axis, kCTFontVariationAxisMinimumValueKey);
-        CFTypeRef max = CFDictionaryGetValue(axis, kCTFontVariationAxisMaximumValueKey);
-        CFTypeRef def = CFDictionaryGetValue(axis, kCTFontVariationAxisDefaultValueKey);
-        if (!min || CFGetTypeID(min) != CFNumberGetTypeID() ||
-            !max || CFGetTypeID(max) != CFNumberGetTypeID() ||
-            !def || CFGetTypeID(def) != CFNumberGetTypeID()) {
-            return nullptr;
-        }
-        double minDouble;
-        double maxDouble;
-        double defDouble;
-        if (!CFNumberGetValue(static_cast<CFNumberRef>(min), kCFNumberDoubleType,
-                              &minDouble) ||
-            !CFNumberGetValue(static_cast<CFNumberRef>(max), kCFNumberDoubleType,
-                              &maxDouble) ||
-            !CFNumberGetValue(static_cast<CFNumberRef>(def), kCFNumberDoubleType,
-                              &defDouble)) {
-            return nullptr;
-        }
-
-        double value = defDouble;
-        for (uint32_t j = 0; j < numVars; ++j) {
-            if (aVariations[j].mTag == tagLong) {
-                value = std::min(std::max<double>(aVariations[j].mValue,
-                                                  minDouble),
-                                 maxDouble);
-                if (value != defDouble) {
-                    allDefaultValues = false;
-                }
-                break;
-            }
-        }
-        AutoRelease<CFNumberRef> valueNumber(CFNumberCreate(kCFAllocatorDefault,
-                                                            kCFNumberDoubleType,
-                                                            &value));
-        CFDictionaryAddValue(dict, axisName, valueNumber);
-    }
-
-    if (allDefaultValues) {
-        // We didn't actually set any non-default values, so throw away the
-        // variations dictionary and just use the default rendering.
-        return nullptr;
-    }
-
-    return dict.forget();
-}
-
-gfxMacFont::gfxMacFont(MacOSFontEntry *aFontEntry, const gfxFontStyle *aFontStyle,
-                       bool aNeedsBold)
-    : gfxFont(aFontEntry, aFontStyle),
+gfxMacFont::gfxMacFont(const RefPtr<UnscaledFontMac> &aUnscaledFont,
+                       MacOSFontEntry *aFontEntry,
+                       const gfxFontStyle *aFontStyle)
+    : gfxFont(aUnscaledFont, aFontEntry, aFontStyle),
       mCGFont(nullptr),
       mCTFont(nullptr),
       mFontFace(nullptr),
-      mVariationFont(false)
-{
-    mApplySyntheticBold = aNeedsBold;
+      mFontSmoothingBackgroundColor(aFontStyle->fontSmoothingBackgroundColor),
+      mVariationFont(aFontEntry->HasVariations()) {
+  mApplySyntheticBold = aFontStyle->NeedsSyntheticBold(aFontEntry);
 
-    auto varCount = aFontStyle->variationSettings.Length();
-    if (varCount > 0) {
-        CGFontRef baseFont = aFontEntry->GetFontRef();
-        if (!baseFont) {
-            mIsValid = false;
-            return;
+  if (mVariationFont) {
+    CGFontRef baseFont = aUnscaledFont->GetFont();
+    if (!baseFont) {
+      mIsValid = false;
+      return;
+    }
+
+    // Get the variation settings needed to instantiate the fontEntry
+    // for a particular fontStyle.
+    AutoTArray<gfxFontVariation, 4> vars;
+    aFontEntry->GetVariationsForStyle(vars, *aFontStyle);
+
+    // Because of a Core Text bug, we need to ensure that if the font has
+    // an 'opsz' axis, it is always explicitly set, and NOT to the font's
+    // default value. (See bug 1457417, bug 1478720.)
+    // We record the result of searching the font's axes in the font entry,
+    // so that this only has to be done by the first instance created for
+    // a given font resource.
+    const uint32_t kOpszTag = HB_TAG('o', 'p', 's', 'z');
+    const float kOpszFudgeAmount = 0.01f;
+
+    if (!aFontEntry->mCheckedForOpszAxis) {
+      aFontEntry->mCheckedForOpszAxis = true;
+      AutoTArray<gfxFontVariationAxis, 4> axes;
+      aFontEntry->GetVariationAxes(axes);
+      auto index = axes.IndexOf(kOpszTag, 0, TagEquals<gfxFontVariationAxis>());
+      if (index == axes.NoIndex) {
+        aFontEntry->mHasOpszAxis = false;
+      } else {
+        const auto &axis = axes[index];
+        aFontEntry->mHasOpszAxis = true;
+        aFontEntry->mOpszAxis = axis;
+        // Pick a slightly-adjusted version of the default that we'll
+        // use to work around Core Text's habit of ignoring any attempt
+        // to explicitly set the default value.
+        aFontEntry->mAdjustedDefaultOpsz =
+            axis.mDefaultValue == axis.mMinValue
+                ? axis.mDefaultValue + kOpszFudgeAmount
+                : axis.mDefaultValue - kOpszFudgeAmount;
+      }
+    }
+
+    // Add 'opsz' if not present, or tweak its value if it looks too close
+    // to the default (after clamping to the font's available range).
+    if (aFontEntry->mHasOpszAxis) {
+      auto index = vars.IndexOf(kOpszTag, 0, TagEquals<gfxFontVariation>());
+      if (index == vars.NoIndex) {
+        gfxFontVariation opsz{kOpszTag, aFontEntry->mAdjustedDefaultOpsz};
+        vars.AppendElement(opsz);
+      } else {
+        // Figure out a "safe" value that Core Text won't ignore.
+        auto &value = vars[index].mValue;
+        auto &axis = aFontEntry->mOpszAxis;
+        value = fmin(fmax(value, axis.mMinValue), axis.mMaxValue);
+        if (std::abs(value - axis.mDefaultValue) < kOpszFudgeAmount) {
+          value = aFontEntry->mAdjustedDefaultOpsz;
         }
-        CFDictionaryRef variations =
-            CreateVariationDictionaryOrNull(baseFont, aFontStyle->variationSettings);
-        if (variations) {
-            mCGFont = ::CGFontCreateCopyWithVariations(baseFont, variations);
-            ::CFRelease(variations);
-            mVariationFont = true;
-        } else {
-            ::CFRetain(baseFont);
-            mCGFont = baseFont;
-        }
-    } else {
-        mCGFont = aFontEntry->GetFontRef();
-        if (!mCGFont) {
-            mIsValid = false;
-            return;
-        }
-        ::CFRetain(mCGFont);
+      }
     }
 
-    // InitMetrics will handle the sizeAdjust factor and set mAdjustedSize
-    InitMetrics();
-    if (!mIsValid) {
-        return;
+    mCGFont = UnscaledFontMac::CreateCGFontWithVariations(
+        baseFont, vars.Length(), vars.Elements());
+    if (!mCGFont) {
+      ::CFRetain(baseFont);
+      mCGFont = baseFont;
     }
-
-    mFontFace = cairo_quartz_font_face_create_for_cgfont(mCGFont);
-
-    cairo_status_t cairoerr = cairo_font_face_status(mFontFace);
-    if (cairoerr != CAIRO_STATUS_SUCCESS) {
-        mIsValid = false;
-#ifdef DEBUG
-        char warnBuf[1024];
-        SprintfLiteral(warnBuf,
-                       "Failed to create Cairo font face: %s status: %d",
-                       NS_ConvertUTF16toUTF8(GetName()).get(), cairoerr);
-        NS_WARNING(warnBuf);
-#endif
-        return;
+  } else {
+    mCGFont = aUnscaledFont->GetFont();
+    if (!mCGFont) {
+      mIsValid = false;
+      return;
     }
+    ::CFRetain(mCGFont);
+  }
 
-    cairo_matrix_t sizeMatrix, ctm;
-    cairo_matrix_init_identity(&ctm);
-    cairo_matrix_init_scale(&sizeMatrix, mAdjustedSize, mAdjustedSize);
+  // InitMetrics will handle the sizeAdjust factor and set mAdjustedSize
+  InitMetrics();
+  if (!mIsValid) {
+    return;
+  }
 
-    // synthetic oblique by skewing via the font matrix
-    bool needsOblique = mFontEntry != nullptr &&
-                        mFontEntry->IsUpright() &&
-                        mStyle.style != NS_FONT_STYLE_NORMAL &&
-                        mStyle.allowSyntheticStyle;
+  mFontFace = cairo_quartz_font_face_create_for_cgfont(mCGFont);
 
-    if (needsOblique) {
-        cairo_matrix_t style;
-        cairo_matrix_init(&style,
-                          1,                //xx
-                          0,                //yx
-                          -1 * OBLIQUE_SKEW_FACTOR, //xy
-                          1,                //yy
-                          0,                //x0
-                          0);               //y0
-        cairo_matrix_multiply(&sizeMatrix, &sizeMatrix, &style);
-    }
-
-    cairo_font_options_t *fontOptions = cairo_font_options_create();
-
-    // turn off font anti-aliasing based on user pref setting
-    if (mAdjustedSize <=
-        (gfxFloat)gfxPlatformMac::GetPlatform()->GetAntiAliasingThreshold()) {
-        cairo_font_options_set_antialias(fontOptions, CAIRO_ANTIALIAS_NONE);
-        mAntialiasOption = kAntialiasNone;
-    } else if (mStyle.useGrayscaleAntialiasing) {
-        cairo_font_options_set_antialias(fontOptions, CAIRO_ANTIALIAS_GRAY);
-        mAntialiasOption = kAntialiasGrayscale;
-    }
-
-    mScaledFont = cairo_scaled_font_create(mFontFace, &sizeMatrix, &ctm,
-                                           fontOptions);
-    cairo_font_options_destroy(fontOptions);
-
-    cairoerr = cairo_scaled_font_status(mScaledFont);
-    if (cairoerr != CAIRO_STATUS_SUCCESS) {
-        mIsValid = false;
-#ifdef DEBUG
-        char warnBuf[1024];
-        SprintfLiteral(warnBuf, "Failed to create scaled font: %s status: %d",
-                       NS_ConvertUTF16toUTF8(GetName()).get(), cairoerr);
-        NS_WARNING(warnBuf);
-#endif
-    }
-}
-
-gfxMacFont::~gfxMacFont()
-{
-    if (mCGFont) {
-        ::CFRelease(mCGFont);
-    }
-    if (mCTFont) {
-        ::CFRelease(mCTFont);
-    }
-    if (mScaledFont) {
-        cairo_scaled_font_destroy(mScaledFont);
-    }
-    if (mFontFace) {
-        cairo_font_face_destroy(mFontFace);
-    }
-}
-
-bool
-gfxMacFont::ShapeText(DrawTarget     *aDrawTarget,
-                      const char16_t *aText,
-                      uint32_t        aOffset,
-                      uint32_t        aLength,
-                      Script          aScript,
-                      bool            aVertical,
-                      gfxShapedText  *aShapedText)
-{
-    if (!mIsValid) {
-        NS_WARNING("invalid font! expect incorrect text rendering");
-        return false;
-    }
-
-    // Currently, we don't support vertical shaping via CoreText,
-    // so we ignore RequiresAATLayout if vertical is requested.
-    if (static_cast<MacOSFontEntry*>(GetFontEntry())->RequiresAATLayout() &&
-        !aVertical) {
-        if (!mCoreTextShaper) {
-            mCoreTextShaper = MakeUnique<gfxCoreTextShaper>(this);
-        }
-        if (mCoreTextShaper->ShapeText(aDrawTarget, aText, aOffset, aLength,
-                                       aScript, aVertical, aShapedText)) {
-            PostShapingFixup(aDrawTarget, aText, aOffset,
-                             aLength, aVertical, aShapedText);
-            return true;
-        }
-    }
-
-    return gfxFont::ShapeText(aDrawTarget, aText, aOffset, aLength, aScript,
-                              aVertical, aShapedText);
-}
-
-bool
-gfxMacFont::SetupCairoFont(DrawTarget* aDrawTarget)
-{
-    if (cairo_scaled_font_status(mScaledFont) != CAIRO_STATUS_SUCCESS) {
-        // Don't cairo_set_scaled_font as that would propagate the error to
-        // the cairo_t, precluding any further drawing.
-        return false;
-    }
-    cairo_set_scaled_font(gfxFont::RefCairo(aDrawTarget), mScaledFont);
-    return true;
-}
-
-gfxFont::RunMetrics
-gfxMacFont::Measure(const gfxTextRun *aTextRun,
-                    uint32_t aStart, uint32_t aEnd,
-                    BoundingBoxType aBoundingBoxType,
-                    DrawTarget *aRefDrawTarget,
-                    Spacing *aSpacing,
-                    uint16_t aOrientation)
-{
-    gfxFont::RunMetrics metrics =
-        gfxFont::Measure(aTextRun, aStart, aEnd,
-                         aBoundingBoxType, aRefDrawTarget, aSpacing,
-                         aOrientation);
-
-    // if aBoundingBoxType is not TIGHT_HINTED_OUTLINE_EXTENTS then we need to add
-    // a pixel column each side of the bounding box in case of antialiasing "bleed"
-    if (aBoundingBoxType != TIGHT_HINTED_OUTLINE_EXTENTS &&
-        metrics.mBoundingBox.width > 0) {
-        metrics.mBoundingBox.x -= aTextRun->GetAppUnitsPerDevUnit();
-        metrics.mBoundingBox.width += aTextRun->GetAppUnitsPerDevUnit() * 2;
-    }
-
-    return metrics;
-}
-
-void
-gfxMacFont::InitMetrics()
-{
+  cairo_status_t cairoerr = cairo_font_face_status(mFontFace);
+  if (cairoerr != CAIRO_STATUS_SUCCESS) {
     mIsValid = false;
-    ::memset(&mMetrics, 0, sizeof(mMetrics));
-
-    uint32_t upem = 0;
-
-    // try to get unitsPerEm from sfnt head table, to avoid calling CGFont
-    // if possible (bug 574368) and because CGFontGetUnitsPerEm does not
-    // return the true value for OpenType/CFF fonts (it normalizes to 1000,
-    // which then leads to metrics errors when we read the 'hmtx' table to
-    // get glyph advances for HarfBuzz, see bug 580863)
-    CFDataRef headData =
-        ::CGFontCopyTableForTag(mCGFont, TRUETYPE_TAG('h','e','a','d'));
-    if (headData) {
-        if (size_t(::CFDataGetLength(headData)) >= sizeof(HeadTable)) {
-            const HeadTable *head =
-                reinterpret_cast<const HeadTable*>(::CFDataGetBytePtr(headData));
-            upem = head->unitsPerEm;
-        }
-        ::CFRelease(headData);
-    }
-    if (!upem) {
-        upem = ::CGFontGetUnitsPerEm(mCGFont);
-    }
-
-    if (upem < 16 || upem > 16384) {
-        // See http://www.microsoft.com/typography/otspec/head.htm
 #ifdef DEBUG
-        char warnBuf[1024];
-        SprintfLiteral(warnBuf,
-                       "Bad font metrics for: %s (invalid unitsPerEm value)",
-                       NS_ConvertUTF16toUTF8(mFontEntry->Name()).get());
-        NS_WARNING(warnBuf);
+    char warnBuf[1024];
+    SprintfLiteral(warnBuf, "Failed to create Cairo font face: %s status: %d",
+                   GetName().get(), cairoerr);
+    NS_WARNING(warnBuf);
 #endif
-        return;
-    }
+    return;
+  }
 
-    mAdjustedSize = std::max(mStyle.size, 1.0);
+  cairo_matrix_t sizeMatrix, ctm;
+  cairo_matrix_init_identity(&ctm);
+  cairo_matrix_init_scale(&sizeMatrix, mAdjustedSize, mAdjustedSize);
+
+  cairo_font_options_t *fontOptions = cairo_font_options_create();
+
+  // turn off font anti-aliasing based on user pref setting
+  if ((mAdjustedSize <=
+       (gfxFloat)gfxPlatformMac::GetPlatform()->GetAntiAliasingThreshold()) ||
+      // Turn off AA for Ahem for testing purposes when requested.
+      MOZ_UNLIKELY(StaticPrefs::gfx_font_ahem_antialias_none() &&
+                   mFontEntry->FamilyName().EqualsLiteral("Ahem"))) {
+    cairo_font_options_set_antialias(fontOptions, CAIRO_ANTIALIAS_NONE);
+    mAntialiasOption = kAntialiasNone;
+  } else if (mStyle.useGrayscaleAntialiasing) {
+    cairo_font_options_set_antialias(fontOptions, CAIRO_ANTIALIAS_GRAY);
+    mAntialiasOption = kAntialiasGrayscale;
+  }
+
+  mScaledFont =
+      cairo_scaled_font_create(mFontFace, &sizeMatrix, &ctm, fontOptions);
+  cairo_font_options_destroy(fontOptions);
+
+  cairoerr = cairo_scaled_font_status(mScaledFont);
+  if (cairoerr != CAIRO_STATUS_SUCCESS) {
+    mIsValid = false;
+#ifdef DEBUG
+    char warnBuf[1024];
+    SprintfLiteral(warnBuf, "Failed to create scaled font: %s status: %d",
+                   GetName().get(), cairoerr);
+    NS_WARNING(warnBuf);
+#endif
+  }
+}
+
+gfxMacFont::~gfxMacFont() {
+  if (mCGFont) {
+    ::CFRelease(mCGFont);
+  }
+  if (mCTFont) {
+    ::CFRelease(mCTFont);
+  }
+  if (mScaledFont) {
+    cairo_scaled_font_destroy(mScaledFont);
+  }
+  if (mFontFace) {
+    cairo_font_face_destroy(mFontFace);
+  }
+}
+
+bool gfxMacFont::ShapeText(DrawTarget *aDrawTarget, const char16_t *aText,
+                           uint32_t aOffset, uint32_t aLength, Script aScript,
+                           bool aVertical, RoundingFlags aRounding,
+                           gfxShapedText *aShapedText) {
+  if (!mIsValid) {
+    NS_WARNING("invalid font! expect incorrect text rendering");
+    return false;
+  }
+
+  // Currently, we don't support vertical shaping via CoreText,
+  // so we ignore RequiresAATLayout if vertical is requested.
+  auto macFontEntry = static_cast<MacOSFontEntry *>(GetFontEntry());
+  if (macFontEntry->RequiresAATLayout() && !aVertical) {
+    if (!mCoreTextShaper) {
+      mCoreTextShaper = MakeUnique<gfxCoreTextShaper>(this);
+    }
+    if (mCoreTextShaper->ShapeText(aDrawTarget, aText, aOffset, aLength,
+                                   aScript, aVertical, aRounding,
+                                   aShapedText)) {
+      PostShapingFixup(aDrawTarget, aText, aOffset, aLength, aVertical,
+                       aShapedText);
+
+      if (macFontEntry->HasTrackingTable()) {
+        // Convert font size from device pixels back to CSS px
+        // to use in selecting tracking value
+        float trackSize = GetAdjustedSize() *
+                          aShapedText->GetAppUnitsPerDevUnit() /
+                          AppUnitsPerCSSPixel();
+        float tracking =
+            macFontEntry->TrackingForCSSPx(trackSize) * mFUnitsConvFactor;
+        // Applying tracking is a lot like the adjustment we do for
+        // synthetic bold: we want to apply between clusters, not to
+        // non-spacing glyphs within a cluster. So we can reuse that
+        // helper here.
+        aShapedText->AdjustAdvancesForSyntheticBold(tracking, aOffset, aLength);
+      }
+
+      return true;
+    }
+  }
+
+  return gfxFont::ShapeText(aDrawTarget, aText, aOffset, aLength, aScript,
+                            aVertical, aRounding, aShapedText);
+}
+
+bool gfxMacFont::SetupCairoFont(DrawTarget *aDrawTarget) {
+  if (cairo_scaled_font_status(mScaledFont) != CAIRO_STATUS_SUCCESS) {
+    // Don't cairo_set_scaled_font as that would propagate the error to
+    // the cairo_t, precluding any further drawing.
+    return false;
+  }
+  cairo_set_scaled_font(gfxFont::RefCairo(aDrawTarget), mScaledFont);
+  return true;
+}
+
+gfxFont::RunMetrics gfxMacFont::Measure(const gfxTextRun *aTextRun,
+                                        uint32_t aStart, uint32_t aEnd,
+                                        BoundingBoxType aBoundingBoxType,
+                                        DrawTarget *aRefDrawTarget,
+                                        Spacing *aSpacing,
+                                        gfx::ShapedTextFlags aOrientation) {
+  gfxFont::RunMetrics metrics =
+      gfxFont::Measure(aTextRun, aStart, aEnd, aBoundingBoxType, aRefDrawTarget,
+                       aSpacing, aOrientation);
+
+  // if aBoundingBoxType is not TIGHT_HINTED_OUTLINE_EXTENTS then we need to add
+  // a pixel column each side of the bounding box in case of antialiasing
+  // "bleed"
+  if (aBoundingBoxType != TIGHT_HINTED_OUTLINE_EXTENTS &&
+      metrics.mBoundingBox.width > 0) {
+    metrics.mBoundingBox.x -= aTextRun->GetAppUnitsPerDevUnit();
+    metrics.mBoundingBox.width += aTextRun->GetAppUnitsPerDevUnit() * 2;
+  }
+
+  return metrics;
+}
+
+void gfxMacFont::InitMetrics() {
+  mIsValid = false;
+  ::memset(&mMetrics, 0, sizeof(mMetrics));
+
+  uint32_t upem = 0;
+
+  // try to get unitsPerEm from sfnt head table, to avoid calling CGFont
+  // if possible (bug 574368) and because CGFontGetUnitsPerEm does not
+  // return the true value for OpenType/CFF fonts (it normalizes to 1000,
+  // which then leads to metrics errors when we read the 'hmtx' table to
+  // get glyph advances for HarfBuzz, see bug 580863)
+  CFDataRef headData =
+      ::CGFontCopyTableForTag(mCGFont, TRUETYPE_TAG('h', 'e', 'a', 'd'));
+  if (headData) {
+    if (size_t(::CFDataGetLength(headData)) >= sizeof(HeadTable)) {
+      const HeadTable *head =
+          reinterpret_cast<const HeadTable *>(::CFDataGetBytePtr(headData));
+      upem = head->unitsPerEm;
+    }
+    ::CFRelease(headData);
+  }
+  if (!upem) {
+    upem = ::CGFontGetUnitsPerEm(mCGFont);
+  }
+
+  if (upem < 16 || upem > 16384) {
+    // See http://www.microsoft.com/typography/otspec/head.htm
+#ifdef DEBUG
+    char warnBuf[1024];
+    SprintfLiteral(warnBuf,
+                   "Bad font metrics for: %s (invalid unitsPerEm value)",
+                   mFontEntry->Name().get());
+    NS_WARNING(warnBuf);
+#endif
+    return;
+  }
+
+  mAdjustedSize = std::max(mStyle.size, 1.0);
+  mFUnitsConvFactor = mAdjustedSize / upem;
+
+  // For CFF fonts, when scaling values read from CGFont* APIs, we need to
+  // use CG's idea of unitsPerEm, which may differ from the "true" value in
+  // the head table of the font (see bug 580863)
+  gfxFloat cgConvFactor;
+  if (static_cast<MacOSFontEntry *>(mFontEntry.get())->IsCFF()) {
+    cgConvFactor = mAdjustedSize / ::CGFontGetUnitsPerEm(mCGFont);
+  } else {
+    cgConvFactor = mFUnitsConvFactor;
+  }
+
+  // Try to read 'sfnt' metrics; for local, non-sfnt fonts ONLY, fall back to
+  // platform APIs. The InitMetrics...() functions will set mIsValid on success.
+  if (!InitMetricsFromSfntTables(mMetrics) &&
+      (!mFontEntry->IsUserFont() || mFontEntry->IsLocalUserFont())) {
+    InitMetricsFromPlatform();
+  }
+  if (!mIsValid) {
+    return;
+  }
+
+  if (mMetrics.xHeight == 0.0) {
+    mMetrics.xHeight = ::CGFontGetXHeight(mCGFont) * cgConvFactor;
+  }
+
+  if (mMetrics.capHeight == 0.0) {
+    mMetrics.capHeight = ::CGFontGetCapHeight(mCGFont) * cgConvFactor;
+  }
+
+  if (mStyle.sizeAdjust > 0.0 && mStyle.size > 0.0 && mMetrics.xHeight > 0.0) {
+    // apply font-size-adjust, and recalculate metrics
+    gfxFloat aspect = mMetrics.xHeight / mStyle.size;
+    mAdjustedSize = mStyle.GetAdjustedSize(aspect);
     mFUnitsConvFactor = mAdjustedSize / upem;
-
-    // For CFF fonts, when scaling values read from CGFont* APIs, we need to
-    // use CG's idea of unitsPerEm, which may differ from the "true" value in
-    // the head table of the font (see bug 580863)
-    gfxFloat cgConvFactor;
-    if (static_cast<MacOSFontEntry*>(mFontEntry.get())->IsCFF()) {
-        cgConvFactor = mAdjustedSize / ::CGFontGetUnitsPerEm(mCGFont);
+    if (static_cast<MacOSFontEntry *>(mFontEntry.get())->IsCFF()) {
+      cgConvFactor = mAdjustedSize / ::CGFontGetUnitsPerEm(mCGFont);
     } else {
-        cgConvFactor = mFUnitsConvFactor;
+      cgConvFactor = mFUnitsConvFactor;
     }
-
-    // Try to read 'sfnt' metrics; for local, non-sfnt fonts ONLY, fall back to
-    // platform APIs. The InitMetrics...() functions will set mIsValid on success.
+    mMetrics.xHeight = 0.0;
     if (!InitMetricsFromSfntTables(mMetrics) &&
         (!mFontEntry->IsUserFont() || mFontEntry->IsLocalUserFont())) {
-        InitMetricsFromPlatform();
+      InitMetricsFromPlatform();
     }
     if (!mIsValid) {
-        return;
+      // this shouldn't happen, as we succeeded earlier before applying
+      // the size-adjust factor! But check anyway, for paranoia's sake.
+      return;
     }
-
     if (mMetrics.xHeight == 0.0) {
-        mMetrics.xHeight = ::CGFontGetXHeight(mCGFont) * cgConvFactor;
+      mMetrics.xHeight = ::CGFontGetXHeight(mCGFont) * cgConvFactor;
     }
+  }
 
-    if (mMetrics.capHeight == 0.0) {
-        mMetrics.capHeight = ::CGFontGetCapHeight(mCGFont) * cgConvFactor;
-    }
+  // Once we reach here, we've got basic metrics and set mIsValid = TRUE;
+  // there should be no further points of actual failure in InitMetrics().
+  // (If one is introduced, be sure to reset mIsValid to FALSE!)
 
-    if (mStyle.sizeAdjust > 0.0 && mStyle.size > 0.0 &&
-        mMetrics.xHeight > 0.0) {
-        // apply font-size-adjust, and recalculate metrics
-        gfxFloat aspect = mMetrics.xHeight / mStyle.size;
-        mAdjustedSize = mStyle.GetAdjustedSize(aspect);
-        mFUnitsConvFactor = mAdjustedSize / upem;
-        if (static_cast<MacOSFontEntry*>(mFontEntry.get())->IsCFF()) {
-            cgConvFactor = mAdjustedSize / ::CGFontGetUnitsPerEm(mCGFont);
-        } else {
-            cgConvFactor = mFUnitsConvFactor;
-        }
-        mMetrics.xHeight = 0.0;
-        if (!InitMetricsFromSfntTables(mMetrics) &&
-            (!mFontEntry->IsUserFont() || mFontEntry->IsLocalUserFont())) {
-            InitMetricsFromPlatform();
-        }
-        if (!mIsValid) {
-            // this shouldn't happen, as we succeeded earlier before applying
-            // the size-adjust factor! But check anyway, for paranoia's sake.
-            return;
-        }
-        if (mMetrics.xHeight == 0.0) {
-            mMetrics.xHeight = ::CGFontGetXHeight(mCGFont) * cgConvFactor;
-        }
-    }
+  mMetrics.emHeight = mAdjustedSize;
 
-    // Once we reach here, we've got basic metrics and set mIsValid = TRUE;
-    // there should be no further points of actual failure in InitMetrics().
-    // (If one is introduced, be sure to reset mIsValid to FALSE!)
+  // Measure/calculate additional metrics, independent of whether we used
+  // the tables directly or ATS metrics APIs
 
-    mMetrics.emHeight = mAdjustedSize;
+  CFDataRef cmap =
+      ::CGFontCopyTableForTag(mCGFont, TRUETYPE_TAG('c', 'm', 'a', 'p'));
 
-    // Measure/calculate additional metrics, independent of whether we used
-    // the tables directly or ATS metrics APIs
-
-    CFDataRef cmap =
-        ::CGFontCopyTableForTag(mCGFont, TRUETYPE_TAG('c','m','a','p'));
-
-    uint32_t glyphID;
-    if (mMetrics.aveCharWidth <= 0) {
-        mMetrics.aveCharWidth = GetCharWidth(cmap, 'x', &glyphID,
-                                             cgConvFactor);
-        if (glyphID == 0) {
-            // we didn't find 'x', so use maxAdvance rather than zero
-            mMetrics.aveCharWidth = mMetrics.maxAdvance;
-        }
-    }
-    if (IsSyntheticBold()) {
-        mMetrics.aveCharWidth += GetSyntheticBoldOffset();
-        mMetrics.maxAdvance += GetSyntheticBoldOffset();
-    }
-
-    mMetrics.spaceWidth = GetCharWidth(cmap, ' ', &glyphID, cgConvFactor);
+  uint32_t glyphID;
+  if (mMetrics.aveCharWidth <= 0) {
+    mMetrics.aveCharWidth = GetCharWidth(cmap, 'x', &glyphID, cgConvFactor);
     if (glyphID == 0) {
-        // no space glyph?!
-        mMetrics.spaceWidth = mMetrics.aveCharWidth;
+      // we didn't find 'x', so use maxAdvance rather than zero
+      mMetrics.aveCharWidth = mMetrics.maxAdvance;
     }
-    mSpaceGlyph = glyphID;
+  }
+  if (IsSyntheticBold()) {
+    mMetrics.aveCharWidth += GetSyntheticBoldOffset();
+    mMetrics.maxAdvance += GetSyntheticBoldOffset();
+  }
 
-    mMetrics.zeroOrAveCharWidth = GetCharWidth(cmap, '0', &glyphID,
-                                               cgConvFactor);
-    if (glyphID == 0) {
-        mMetrics.zeroOrAveCharWidth = mMetrics.aveCharWidth;
-    }
+  mMetrics.spaceWidth = GetCharWidth(cmap, ' ', &glyphID, cgConvFactor);
+  if (glyphID == 0) {
+    // no space glyph?!
+    mMetrics.spaceWidth = mMetrics.aveCharWidth;
+  }
+  mSpaceGlyph = glyphID;
 
-    if (cmap) {
-        ::CFRelease(cmap);
-    }
+  mMetrics.zeroOrAveCharWidth = GetCharWidth(cmap, '0', &glyphID, cgConvFactor);
+  if (glyphID == 0) {
+    mMetrics.zeroOrAveCharWidth = mMetrics.aveCharWidth;
+  }
 
-    CalculateDerivedMetrics(mMetrics);
+  if (cmap) {
+    ::CFRelease(cmap);
+  }
 
-    SanitizeMetrics(&mMetrics, mFontEntry->mIsBadUnderlineFont);
+  CalculateDerivedMetrics(mMetrics);
+
+  SanitizeMetrics(&mMetrics, mFontEntry->mIsBadUnderlineFont);
 
 #if 0
     fprintf (stderr, "Font: %p (%s) size: %f\n", this,
@@ -506,84 +414,114 @@ gfxMacFont::InitMetrics()
 #endif
 }
 
-gfxFloat
-gfxMacFont::GetCharWidth(CFDataRef aCmap, char16_t aUniChar,
-                         uint32_t *aGlyphID, gfxFloat aConvFactor)
-{
-    CGGlyph glyph = 0;
-    
-    if (aCmap) {
-        glyph = gfxFontUtils::MapCharToGlyph(::CFDataGetBytePtr(aCmap),
-                                             ::CFDataGetLength(aCmap),
-                                             aUniChar);
-    }
+gfxFloat gfxMacFont::GetCharWidth(CFDataRef aCmap, char16_t aUniChar,
+                                  uint32_t *aGlyphID, gfxFloat aConvFactor) {
+  CGGlyph glyph = 0;
 
-    if (aGlyphID) {
-        *aGlyphID = glyph;
-    }
+  if (aCmap) {
+    glyph = gfxFontUtils::MapCharToGlyph(::CFDataGetBytePtr(aCmap),
+                                         ::CFDataGetLength(aCmap), aUniChar);
+  }
 
-    if (glyph) {
-        int advance;
-        if (::CGFontGetGlyphAdvances(mCGFont, &glyph, 1, &advance)) {
-            return advance * aConvFactor;
-        }
-    }
+  if (aGlyphID) {
+    *aGlyphID = glyph;
+  }
 
-    return 0;
+  if (glyph) {
+    int advance;
+    if (::CGFontGetGlyphAdvances(mCGFont, &glyph, 1, &advance)) {
+      return advance * aConvFactor;
+    }
+  }
+
+  return 0;
 }
 
 /* static */
-CTFontRef
-gfxMacFont::CreateCTFontFromCGFontWithVariations(CGFontRef aCGFont,
-                                                 CGFloat aSize,
-                                                 CTFontDescriptorRef aFontDesc)
-{
-    // Avoid calling potentially buggy variation APIs on pre-Sierra macOS
-    // versions (see bug 1331683)
-    if (!nsCocoaFeatures::OnSierraOrLater()) {
-        return CTFontCreateWithGraphicsFont(aCGFont, aSize, nullptr, aFontDesc);
-    }
+CTFontRef gfxMacFont::CreateCTFontFromCGFontWithVariations(
+    CGFontRef aCGFont, CGFloat aSize, bool aInstalledFont,
+    CTFontDescriptorRef aFontDesc) {
+  // Avoid calling potentially buggy variation APIs on pre-Sierra macOS
+  // versions (see bug 1331683).
+  //
+  // And on HighSierra, CTFontCreateWithGraphicsFont properly carries over
+  // variation settings from the CGFont to CTFont, so we don't need to do
+  // the extra work here -- and this seems to avoid Core Text crashiness
+  // seen in bug 1454094.
+  //
+  // However, for installed fonts it seems we DO need to copy the variations
+  // explicitly even on 10.13, otherwise fonts fail to render (as in bug
+  // 1455494) when non-default values are used. Fortunately, the crash
+  // mentioned above occurs with data fonts, not (AFAICT) with system-
+  // installed fonts.
+  //
+  // So we only need to do this "the hard way" on Sierra, and on HighSierra
+  // for system-installed fonts; in other cases just let the standard CTFont
+  // function do its thing.
+  //
+  // NOTE in case this ever needs further adjustment: there is similar logic
+  // in four places in the tree (sadly):
+  //    CreateCTFontFromCGFontWithVariations in gfxMacFont.cpp
+  //    CreateCTFontFromCGFontWithVariations in ScaledFontMac.cpp
+  //    CreateCTFontFromCGFontWithVariations in cairo-quartz-font.c
+  //    ctfont_create_exact_copy in SkFontHost_mac.cpp
 
+  CTFontRef ctFont;
+  if (nsCocoaFeatures::OnSierraExactly() ||
+      (aInstalledFont && nsCocoaFeatures::OnHighSierraOrLater())) {
     CFDictionaryRef variations = ::CGFontCopyVariations(aCGFont);
-    CTFontRef ctFont;
     if (variations) {
-        CFDictionaryRef varAttr =
-            ::CFDictionaryCreate(nullptr,
-                                 (const void**)&kCTFontVariationAttribute,
-                                 (const void**)&variations, 1,
-                                 &kCFTypeDictionaryKeyCallBacks,
-                                 &kCFTypeDictionaryValueCallBacks);
-        ::CFRelease(variations);
+      CFDictionaryRef varAttr = ::CFDictionaryCreate(
+          nullptr, (const void **)&kCTFontVariationAttribute,
+          (const void **)&variations, 1, &kCFTypeDictionaryKeyCallBacks,
+          &kCFTypeDictionaryValueCallBacks);
+      ::CFRelease(variations);
 
-        CTFontDescriptorRef varDesc = aFontDesc
-            ? ::CTFontDescriptorCreateCopyWithAttributes(aFontDesc, varAttr)
-            : ::CTFontDescriptorCreateWithAttributes(varAttr);
-        ::CFRelease(varAttr);
+      CTFontDescriptorRef varDesc =
+          aFontDesc
+              ? ::CTFontDescriptorCreateCopyWithAttributes(aFontDesc, varAttr)
+              : ::CTFontDescriptorCreateWithAttributes(varAttr);
+      ::CFRelease(varAttr);
 
-        ctFont = ::CTFontCreateWithGraphicsFont(aCGFont, aSize, nullptr, varDesc);
-        ::CFRelease(varDesc);
+      ctFont = ::CTFontCreateWithGraphicsFont(aCGFont, aSize, nullptr, varDesc);
+      ::CFRelease(varDesc);
     } else {
-        ctFont = ::CTFontCreateWithGraphicsFont(aCGFont, aSize, nullptr,
-                                                aFontDesc);
+      ctFont =
+          ::CTFontCreateWithGraphicsFont(aCGFont, aSize, nullptr, aFontDesc);
     }
-    return ctFont;
+  } else {
+    ctFont = ::CTFontCreateWithGraphicsFont(aCGFont, aSize, nullptr, aFontDesc);
+  }
+
+  return ctFont;
 }
 
-int32_t
-gfxMacFont::GetGlyphWidth(DrawTarget& aDrawTarget, uint16_t aGID)
-{
-    if (!mCTFont) {
-        mCTFont = CreateCTFontFromCGFontWithVariations(mCGFont, mAdjustedSize);
-        if (!mCTFont) { // shouldn't happen, but let's be safe
-            NS_WARNING("failed to create CTFontRef to measure glyph width");
-            return 0;
-        }
+int32_t gfxMacFont::GetGlyphWidth(uint16_t aGID) {
+  if (mVariationFont) {
+    // Avoid a potential Core Text crash (bug 1450209) by using
+    // CoreGraphics glyph advance API. This is inferior for 'sbix'
+    // fonts, but those won't have variations, so it's OK.
+    int cgAdvance;
+    if (::CGFontGetGlyphAdvances(mCGFont, &aGID, 1, &cgAdvance)) {
+      return cgAdvance * mFUnitsConvFactor * 0x10000;
     }
+  }
 
-    CGSize advance;
-    ::CTFontGetAdvancesForGlyphs(mCTFont, kCTFontDefaultOrientation, &aGID,
-                                 &advance, 1);
-    return advance.width * 0x10000;
+  if (!mCTFont) {
+    bool isInstalledFont =
+        !mFontEntry->IsUserFont() || mFontEntry->IsLocalUserFont();
+    mCTFont = CreateCTFontFromCGFontWithVariations(mCGFont, mAdjustedSize,
+                                                   isInstalledFont);
+    if (!mCTFont) {  // shouldn't happen, but let's be safe
+      NS_WARNING("failed to create CTFontRef to measure glyph width");
+      return 0;
+    }
+  }
+
+  CGSize advance;
+  ::CTFontGetAdvancesForGlyphs(mCTFont, kCTFontDefaultOrientation, &aGID,
+                               &advance, 1);
+  return advance.width * 0x10000;
 }
 
 // Try to initialize font metrics via platform APIs (CG/CT),
@@ -591,82 +529,69 @@ gfxMacFont::GetGlyphWidth(DrawTarget& aDrawTarget, uint16_t aGID)
 // We ONLY call this for local (platform) fonts that are not sfnt format;
 // for sfnts, including ALL downloadable fonts, we prefer to use
 // InitMetricsFromSfntTables and avoid platform APIs.
-void
-gfxMacFont::InitMetricsFromPlatform()
-{
-    CTFontRef ctFont = ::CTFontCreateWithGraphicsFont(mCGFont,
-                                                      mAdjustedSize,
-                                                      nullptr, nullptr);
-    if (!ctFont) {
-        return;
-    }
+void gfxMacFont::InitMetricsFromPlatform() {
+  CTFontRef ctFont =
+      ::CTFontCreateWithGraphicsFont(mCGFont, mAdjustedSize, nullptr, nullptr);
+  if (!ctFont) {
+    return;
+  }
 
-    mMetrics.underlineOffset = ::CTFontGetUnderlinePosition(ctFont);
-    mMetrics.underlineSize = ::CTFontGetUnderlineThickness(ctFont);
+  mMetrics.underlineOffset = ::CTFontGetUnderlinePosition(ctFont);
+  mMetrics.underlineSize = ::CTFontGetUnderlineThickness(ctFont);
 
-    mMetrics.externalLeading = ::CTFontGetLeading(ctFont);
+  mMetrics.externalLeading = ::CTFontGetLeading(ctFont);
 
-    mMetrics.maxAscent = ::CTFontGetAscent(ctFont);
-    mMetrics.maxDescent = ::CTFontGetDescent(ctFont);
+  mMetrics.maxAscent = ::CTFontGetAscent(ctFont);
+  mMetrics.maxDescent = ::CTFontGetDescent(ctFont);
 
-    // this is not strictly correct, but neither CTFont nor CGFont seems to
-    // provide maxAdvance, unless we were to iterate over all the glyphs
-    // (which isn't worth the cost here)
-    CGRect r = ::CTFontGetBoundingBox(ctFont);
-    mMetrics.maxAdvance = r.size.width;
+  // this is not strictly correct, but neither CTFont nor CGFont seems to
+  // provide maxAdvance, unless we were to iterate over all the glyphs
+  // (which isn't worth the cost here)
+  CGRect r = ::CTFontGetBoundingBox(ctFont);
+  mMetrics.maxAdvance = r.size.width;
 
-    // aveCharWidth is also not provided, so leave it at zero
-    // (fallback code in gfxMacFont::InitMetrics will then try measuring 'x');
-    // this could lead to less-than-"perfect" text field sizing when width is
-    // specified as a number of characters, and the font in use is a non-sfnt
-    // legacy font, but that's a sufficiently obscure edge case that we can
-    // ignore the potential discrepancy.
-    mMetrics.aveCharWidth = 0;
+  // aveCharWidth is also not provided, so leave it at zero
+  // (fallback code in gfxMacFont::InitMetrics will then try measuring 'x');
+  // this could lead to less-than-"perfect" text field sizing when width is
+  // specified as a number of characters, and the font in use is a non-sfnt
+  // legacy font, but that's a sufficiently obscure edge case that we can
+  // ignore the potential discrepancy.
+  mMetrics.aveCharWidth = 0;
 
-    mMetrics.xHeight = ::CTFontGetXHeight(ctFont);
-    mMetrics.capHeight = ::CTFontGetCapHeight(ctFont);
+  mMetrics.xHeight = ::CTFontGetXHeight(ctFont);
+  mMetrics.capHeight = ::CTFontGetCapHeight(ctFont);
 
-    ::CFRelease(ctFont);
+  ::CFRelease(ctFont);
 
-    mIsValid = true;
+  mIsValid = true;
 }
 
-already_AddRefed<ScaledFont>
-gfxMacFont::GetScaledFont(DrawTarget *aTarget)
-{
+already_AddRefed<ScaledFont> gfxMacFont::GetScaledFont(DrawTarget *aTarget) {
   if (!mAzureScaledFont) {
-    NativeFont nativeFont;
-    nativeFont.mType = NativeFontType::MAC_FONT_FACE;
-    nativeFont.mFont = GetCGFontRef();
-    mAzureScaledFont = mozilla::gfx::Factory::CreateScaledFontWithCairo(nativeFont, GetAdjustedSize(), mScaledFont);
+    mAzureScaledFont = Factory::CreateScaledFontForMacFont(
+        GetCGFontRef(), GetUnscaledFont(), GetAdjustedSize(),
+        Color::FromABGR(mFontSmoothingBackgroundColor),
+        !mStyle.useGrayscaleAntialiasing, IsSyntheticBold());
+    if (!mAzureScaledFont) {
+      return nullptr;
+    }
+    InitializeScaledFont();
+    mAzureScaledFont->SetCairoScaledFont(mScaledFont);
   }
 
   RefPtr<ScaledFont> scaledFont(mAzureScaledFont);
   return scaledFont.forget();
 }
 
-already_AddRefed<mozilla::gfx::GlyphRenderingOptions>
-gfxMacFont::GetGlyphRenderingOptions(const TextRunDrawParams* aRunParams)
-{
-    if (aRunParams) {
-        return mozilla::gfx::Factory::CreateCGGlyphRenderingOptions(aRunParams->fontSmoothingBGColor);
-    }
-    return nullptr;
+void gfxMacFont::AddSizeOfExcludingThis(MallocSizeOf aMallocSizeOf,
+                                        FontCacheSizes *aSizes) const {
+  gfxFont::AddSizeOfExcludingThis(aMallocSizeOf, aSizes);
+  // mCGFont is shared with the font entry, so not counted here;
+  // and we don't have APIs to measure the cairo mFontFace object
 }
 
-void
-gfxMacFont::AddSizeOfExcludingThis(MallocSizeOf aMallocSizeOf,
-                                   FontCacheSizes* aSizes) const
-{
-    gfxFont::AddSizeOfExcludingThis(aMallocSizeOf, aSizes);
-    // mCGFont is shared with the font entry, so not counted here;
-    // and we don't have APIs to measure the cairo mFontFace object
-}
-
-void
-gfxMacFont::AddSizeOfIncludingThis(MallocSizeOf aMallocSizeOf,
-                                   FontCacheSizes* aSizes) const
-{
-    aSizes->mFontInstances += aMallocSizeOf(this);
-    AddSizeOfExcludingThis(aMallocSizeOf, aSizes);
+void gfxMacFont::AddSizeOfIncludingThis(MallocSizeOf aMallocSizeOf,
+                                        FontCacheSizes *aSizes) const {
+  aSizes->mFontInstances += aMallocSizeOf(this);
+  AddSizeOfExcludingThis(aMallocSizeOf, aSizes);
 }

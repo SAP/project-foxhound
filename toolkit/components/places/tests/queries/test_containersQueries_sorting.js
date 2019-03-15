@@ -14,17 +14,11 @@
 
 // Globals and Constants
 
-var hs = Cc["@mozilla.org/browser/nav-history-service;1"].
-         getService(Ci.nsINavHistoryService);
-var bh = hs.QueryInterface(Ci.nsIBrowserHistory);
-var tagging = Cc["@mozilla.org/browser/tagging-service;1"].
-              getService(Ci.nsITaggingService);
-
 var resultTypes = [
   {value: Ci.nsINavHistoryQueryOptions.RESULTS_AS_DATE_QUERY, name: "RESULTS_AS_DATE_QUERY"},
   {value: Ci.nsINavHistoryQueryOptions.RESULTS_AS_SITE_QUERY, name: "RESULTS_AS_SITE_QUERY"},
   {value: Ci.nsINavHistoryQueryOptions.RESULTS_AS_DATE_SITE_QUERY, name: "RESULTS_AS_DATE_SITE_QUERY"},
-  {value: Ci.nsINavHistoryQueryOptions.RESULTS_AS_TAG_QUERY, name: "RESULTS_AS_TAG_QUERY"},
+  {value: Ci.nsINavHistoryQueryOptions.RESULTS_AS_TAGS_ROOT, name: "RESULTS_AS_TAGS_ROOT"},
 ];
 
 var sortingModes = [
@@ -140,13 +134,13 @@ function cartProd(aSequences, aCallback) {
  *        array of options we will use to query.
  */
 function test_query_callback(aSequence) {
-  do_check_eq(aSequence.length, 2);
+  Assert.equal(aSequence.length, 2);
   var resultType = aSequence[0];
   var sortingMode = aSequence[1];
   print("\n\n*** Testing default sorting for resultType (" + resultType.name + ") and sortingMode (" + sortingMode.name + ")");
 
   // Skip invalid combinations sorting queries by none.
-  if (resultType.value == Ci.nsINavHistoryQueryOptions.RESULTS_AS_TAG_QUERY &&
+  if (resultType.value == Ci.nsINavHistoryQueryOptions.RESULTS_AS_TAGS_ROOT &&
       (sortingMode.value == Ci.nsINavHistoryQueryOptions.SORT_BY_DATE_ASCENDING ||
        sortingMode.value == Ci.nsINavHistoryQueryOptions.SORT_BY_DATE_DESCENDING)) {
     // This is a bookmark query, we can't sort by visit date.
@@ -199,7 +193,7 @@ function test_query_callback(aSequence) {
     check_children_sorting(innerContainer,
                            Ci.nsINavHistoryQueryOptions.SORT_BY_TITLE_ASCENDING);
     innerContainer.containerOpen = false;
-  } else if (resultType.value == Ci.nsINavHistoryQueryOptions.RESULTS_AS_TAG_QUERY) {
+  } else if (resultType.value == Ci.nsINavHistoryQueryOptions.RESULTS_AS_TAGS_ROOT) {
     // Sorting mode for tag contents is hardcoded for now, to allow for faster
     // duplicates filtering.
     check_children_sorting(container,
@@ -322,36 +316,36 @@ function check_children_sorting(aRootNode, aExpectedSortingMode) {
     case Ci.nsINavHistoryQueryOptions.SORT_BY_NONE:
       comparator = function(a, b) {
         return 0;
-      }
+      };
       break;
     case Ci.nsINavHistoryQueryOptions.SORT_BY_TITLE_ASCENDING:
       comparator = function(a, b) {
         return caseInsensitiveStringComparator(a.title, b.title);
-      }
+      };
       break;
     case Ci.nsINavHistoryQueryOptions.SORT_BY_TITLE_DESCENDING:
       comparator = function(a, b) {
         return -caseInsensitiveStringComparator(a.title, b.title);
-      }
+      };
       break;
     case Ci.nsINavHistoryQueryOptions.SORT_BY_DATE_ASCENDING:
       comparator = function(a, b) {
         return a.time - b.time;
-      }
+      };
       break;
     case Ci.nsINavHistoryQueryOptions.SORT_BY_DATE_DESCENDING:
       comparator = function(a, b) {
         return b.time - a.time;
-      }
+      };
     case Ci.nsINavHistoryQueryOptions.SORT_BY_DATEADDED_ASCENDING:
       comparator = function(a, b) {
         return a.dateAdded - b.dateAdded;
-      }
+      };
       break;
     case Ci.nsINavHistoryQueryOptions.SORT_BY_DATEADDED_DESCENDING:
       comparator = function(a, b) {
         return b.dateAdded - a.dateAdded;
-      }
+      };
       break;
     default:
       do_throw("Unknown sorting type: " + aExpectedSortingMode);
@@ -365,17 +359,13 @@ function check_children_sorting(aRootNode, aExpectedSortingMode) {
     if (sortedResults[i].title != results[i].title)
       print(i + " index wrong, expected " + sortedResults[i].title +
             " found " + results[i].title);
-    do_check_eq(sortedResults[i].title, results[i].title);
+    Assert.equal(sortedResults[i].title, results[i].title);
   }
 }
 
 // Main
 
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* test_containersQueries_sorting() {
+add_task(async function test_containersQueries_sorting() {
   // Add visits, bookmarks and tags to our database.
   var timeInMilliseconds = Date.now();
   var visitCount = 0;
@@ -393,7 +383,7 @@ add_task(function* test_containersQueries_sorting() {
       isTag: true,
       tagArray: tags,
       isInQuery: true }));
-  yield task_populateDB(visits);
+  await task_populateDB(visits);
 
   cartProd([resultTypes, sortingModes], test_query_callback);
 });

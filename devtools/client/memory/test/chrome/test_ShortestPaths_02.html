@@ -23,22 +23,23 @@ Test that the ShortestPaths component renders a suggestion to select a node when
     <pre id="test">
         <script src="head.js" type="application/javascript"></script>
         <script type="application/javascript">
-         window.onload = Task.async(function* () {
+         "use strict";
+         window.onload = async function() {
            try {
              const container = document.getElementById("container");
 
-             yield renderComponent(ShortestPaths(immutableUpdate(TEST_SHORTEST_PATHS_PROPS,
+             await renderComponent(ShortestPaths(immutableUpdate(TEST_SHORTEST_PATHS_PROPS,
                                                                  { graph: null })),
                                    container);
 
-             ok(container.textContent.indexOf(L10N.getStr("shortest-paths.select-node")) !== -1,
+             ok(container.textContent.includes(L10N.getStr("shortest-paths.select-node")),
                 "The node selection prompt is displayed");
-           } catch(e) {
+           } catch (e) {
              ok(false, "Got an error: " + DevToolsUtils.safeErrorString(e));
            } finally {
              SimpleTest.finish();
            }
-         });
+         };
         </script>
     </pre>
 </body>

@@ -7,29 +7,19 @@
   * listed symbols will exposed on import, and only when and where imported.
   */
 
-var EXPORTED_SYMBOLS = ["PlacesItem", "Bookmark", "Separator", "Livemark",
+var EXPORTED_SYMBOLS = ["PlacesItem", "Bookmark", "Separator",
                         "BookmarkFolder", "DumpBookmarks"];
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
+ChromeUtils.import("resource://gre/modules/PlacesBackups.jsm");
+ChromeUtils.import("resource://gre/modules/PlacesSyncUtils.jsm");
+ChromeUtils.import("resource://gre/modules/PlacesUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://tps/logger.jsm");
 
-Cu.import("resource://gre/modules/PlacesBackups.jsm");
-Cu.import("resource://gre/modules/PlacesSyncUtils.jsm");
-Cu.import("resource://gre/modules/PlacesUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://services-common/async.js");
-Cu.import("resource://tps/logger.jsm");
-
-var DumpBookmarks = function TPS_Bookmarks__DumpBookmarks() {
-  let cb = Async.makeSpinningCallback();
-  PlacesBackups.getBookmarksTree().then(result => {
-    let [bookmarks, ] = result;
-    Logger.logInfo("Dumping Bookmarks...\n" + JSON.stringify(bookmarks) + "\n\n");
-    cb(null);
-  }).then(null, error => {
-    cb(error);
-  });
-  cb.wait();
-};
+async function DumpBookmarks() {
+  let [bookmarks ] = await PlacesBackups.getBookmarksTree();
+  Logger.logInfo("Dumping Bookmarks...\n" + JSON.stringify(bookmarks, undefined, 2) + "\n\n");
+}
 
 /**
  * extend, causes a child object to inherit from a parent
@@ -37,32 +27,27 @@ var DumpBookmarks = function TPS_Bookmarks__DumpBookmarks() {
 function extend(child, supertype) {
    child.prototype.__proto__ = supertype.prototype;
 }
-
 /**
  * PlacesItemProps object, holds properties for places items
  */
 function PlacesItemProps(props) {
   this.location = null;
   this.uri = null;
-  this.loadInSidebar = null;
   this.keyword = null;
   this.title = null;
-  this.description = null;
   this.after = null;
   this.before = null;
   this.folder = null;
   this.position = null;
   this.delete = false;
-  this.siteUri = null;
-  this.feedUri = null;
-  this.livemark = null;
   this.tags = null;
   this.last_item_pos = null;
   this.type = null;
 
   for (var prop in props) {
-    if (prop in this)
+    if (prop in this) {
       this[prop] = props[prop];
+    }
   }
 }
 
@@ -71,12 +56,13 @@ function PlacesItemProps(props) {
  */
 function PlacesItem(props) {
   this.props = new PlacesItemProps(props);
-  if (this.props.location == null)
+  if (this.props.location == null) {
     this.props.location = "menu";
-  if ("changes" in props)
+  } if ("changes" in props) {
     this.updateProps = new PlacesItemProps(props.changes);
-  else
+  } else {
     this.updateProps = null;
+  }
 }
 
 /**
@@ -85,23 +71,30 @@ function PlacesItem(props) {
 PlacesItem.prototype = {
   // an array of possible root folders for places items
   _bookmarkFolders: {
-    "places": "placesRoot",
-    "menu": "bookmarksMenuFolder",
-    "tags": "tagFolder",
-    "unfiled": "unfiledBookmarksFolder",
-    "toolbar": "toolbarFolder",
+    "places": PlacesUtils.bookmarks.rootGuid,
+    "menu": PlacesUtils.bookmarks.menuGuid,
+    "tags": PlacesUtils.bookmarks.tagsGuid,
+    "unfiled": PlacesUtils.bookmarks.unfiledGuid,
+    "toolbar": PlacesUtils.bookmarks.toolbarGuid,
+    "mobile": PlacesUtils.bookmarks.mobileGuid,
   },
+
+  _typeMap: new Map([
+    [PlacesUtils.TYPE_X_MOZ_PLACE_CONTAINER, PlacesUtils.bookmarks.TYPE_FOLDER],
+    [PlacesUtils.TYPE_X_MOZ_PLACE_SEPARATOR, PlacesUtils.bookmarks.TYPE_SEPARATOR],
+    [PlacesUtils.TYPE_X_MOZ_PLACE, PlacesUtils.bookmarks.TYPE_BOOKMARK],
+  ]),
 
   toString() {
     var that = this;
-    var props = ["uri", "title", "location", "folder", "feedUri", "siteUri", "livemark"];
+    var props = ["uri", "title", "location", "folder"];
     var string = (this.props.type ? this.props.type + " " : "") +
       "(" +
       (function() {
         var ret = [];
         for (var i in props) {
           if (that.props[props[i]]) {
-            ret.push(props[i] + ": " + that.props[props[i]])
+            ret.push(props[i] + ": " + that.props[props[i]]);
           }
         }
         return ret;
@@ -109,47 +102,40 @@ PlacesItem.prototype = {
     return string;
   },
 
-  GetSyncId() {
-    let guid = Async.promiseSpinningly(PlacesUtils.promiseItemGuid(this.props.item_id));
-    return PlacesSyncUtils.bookmarks.guidToSyncId(guid);
-  },
-
   /**
-   * GetPlacesNodeId
+   * GetPlacesChildGuid
    *
-   * Finds the id of the an item with the specified properties in the places
-   * database.
+   * Finds the guid of the an item with the specified properties in the places
+   * database under the specified parent.
    *
-   * @param folder The id of the folder to search
+   * @param folder The guid of the folder to search
    * @param type The type of the item to find, or null to match any item;
-   *        this is one of the values listed at
-   *        https://developer.mozilla.org/en/nsINavHistoryResultNode#Constants
+   *        this is one of the PlacesUtils.bookmarks.TYPE_* values
    * @param title The title of the item to find, or null to match any title
    * @param uri The uri of the item to find, or null to match any uri
    *
-   * @return the node id if the item was found, otherwise -1
+   * @return the node id if the item was found, otherwise null
    */
-  GetPlacesNodeId(folder, type, title, uri) {
-    let node_id = -1;
-
-    let options = PlacesUtils.history.getNewQueryOptions();
-    let query = PlacesUtils.history.getNewQuery();
-    query.setFolders([folder], 1);
-    let result = PlacesUtils.history.executeQuery(query, options);
-    let rootNode = result.root;
-    rootNode.containerOpen = true;
-
-    for (let j = 0; j < rootNode.childCount; j++) {
-      let node = rootNode.getChild(j);
+  async GetPlacesChildGuid(folder, type, title, uri) {
+    let children = (await PlacesUtils.promiseBookmarksTree(folder)).children;
+    if (!children) {
+      return null;
+    }
+    let guid = null;
+    for (let node of children) {
       if (node.title == title) {
-        if (type == null || type == undefined || node.type == type)
-          if (uri == undefined || uri == null || node.uri.spec == uri.spec)
-            node_id = node.itemId;
+        let nodeType = this._typeMap.get(node.type);
+        if (type == null || type == undefined || nodeType == type) {
+          if (uri == undefined || uri == null || node.uri.spec == uri.spec) {
+            // Note that this is suspect as we return the *last* matching
+            // child, which some tests rely on (ie, an early-return here causes
+            // at least 1 test to fail). But that's a yak for another day.
+            guid = node.guid;
+          }
+        }
       }
     }
-    rootNode.containerOpen = false;
-
-    return node_id;
+    return guid;
   },
 
   /**
@@ -165,13 +151,13 @@ PlacesItem.prototype = {
    * @return true if this object is immediately adjacent to the other object,
    *         otherwise false
    */
-  IsAdjacentTo(itemName, relativePos) {
-    Logger.AssertTrue(this.props.folder_id != -1 && this.props.item_id != -1,
-      "Either folder_id or item_id was invalid");
-    let other_id = this.GetPlacesNodeId(this.props.folder_id, null, itemName);
-    Logger.AssertTrue(other_id != -1, "item " + itemName + " not found");
-    let other_pos = PlacesUtils.bookmarks.getItemIndex(other_id);
-    let this_pos = PlacesUtils.bookmarks.getItemIndex(this.props.item_id);
+  async IsAdjacentTo(itemName, relativePos) {
+    Logger.AssertTrue(this.props.folder_id != -1 && this.props.guid != null,
+      "Either folder_id or guid was invalid");
+    let otherGuid = await this.GetPlacesChildGuid(this.props.parentGuid, null, itemName);
+    Logger.AssertTrue(otherGuid, "item " + itemName + " not found");
+    let other_pos = (await PlacesUtils.bookmarks.fetch(otherGuid)).index;
+    let this_pos = (await PlacesUtils.bookmarks.fetch(this.props.guid)).index;
     if (other_pos + relativePos != this_pos) {
       Logger.logPotentialError("Invalid position - " +
        (this.props.title ? this.props.title : this.props.folder) +
@@ -189,38 +175,39 @@ PlacesItem.prototype = {
    *
    * @return the item index, or -1 if there's an error
    */
-  GetItemIndex() {
-    if (this.props.item_id == -1)
+  async GetItemIndex() {
+    if (this.props.guid == null) {
       return -1;
-    return PlacesUtils.bookmarks.getItemIndex(this.props.item_id);
+    }
+    return (await PlacesUtils.bookmarks.fetch(this.props.guid)).index;
   },
 
   /**
    * GetFolder
    *
-   * Gets the folder id for the specified bookmark folder
+   * Gets the folder guid for the specified bookmark folder
    *
    * @param location The full path of the folder, which must begin
    *        with one of the bookmark root folders
-   * @return the folder id if the folder is found, otherwise -1
+   * @return the folder guid if the folder is found, otherwise null
    */
-  GetFolder(location) {
+  async GetFolder(location) {
     let folder_parts = location.split("/");
     if (!(folder_parts[0] in this._bookmarkFolders)) {
-      return -1;
+      return null;
     }
-    let folder_id = PlacesUtils.bookmarks[this._bookmarkFolders[folder_parts[0]]];
+    let folderGuid = this._bookmarkFolders[folder_parts[0]];
     for (let i = 1; i < folder_parts.length; i++) {
-      let subfolder_id = this.GetPlacesNodeId(
-        folder_id,
-        Ci.nsINavHistoryResultNode.RESULT_TYPE_FOLDER,
+      let guid = await this.GetPlacesChildGuid(
+        folderGuid,
+        PlacesUtils.bookmarks.TYPE_FOLDER,
         folder_parts[i]);
-      if (subfolder_id == -1) {
-        return -1;
+      if (guid == null) {
+        return null;
       }
-      folder_id = subfolder_id;
+      folderGuid = guid;
     }
-    return folder_id;
+    return folderGuid;
   },
 
   /**
@@ -232,25 +219,28 @@ PlacesItem.prototype = {
    *        with one of the bookmark root folders
    * @return the folder id if the folder was created, otherwise -1
    */
-  CreateFolder(location) {
+  async CreateFolder(location) {
     let folder_parts = location.split("/");
     if (!(folder_parts[0] in this._bookmarkFolders)) {
       return -1;
     }
-    let folder_id = PlacesUtils.bookmarks[this._bookmarkFolders[folder_parts[0]]];
+    let folderGuid = this._bookmarkFolders[folder_parts[0]];
     for (let i = 1; i < folder_parts.length; i++) {
-      let subfolder_id = this.GetPlacesNodeId(
-        folder_id,
-        Ci.nsINavHistoryResultNode.RESULT_TYPE_FOLDER,
-        folder_parts[i]);
-      if (subfolder_id == -1) {
-        folder_id = PlacesUtils.bookmarks.createFolder(folder_id,
-                                                 folder_parts[i], -1);
+      let subfolderGuid = await this.GetPlacesChildGuid(
+        folderGuid,
+        PlacesUtils.bookmarks.TYPE_FOLDER,
+        folder_parts[i]
+      );
+      if (subfolderGuid == null) {
+        let {guid} = await PlacesUtils.bookmarks.insert({parentGuid: folderGuid,
+                                                         name: folder_parts[i],
+                                                         type: PlacesUtils.bookmarks.TYPE_FOLDER});
+        folderGuid = guid;
       } else {
-        folder_id = subfolder_id;
+        folderGuid = subfolderGuid;
       }
     }
-    return folder_id;
+    return folderGuid;
   },
 
   /**
@@ -262,40 +252,12 @@ PlacesItem.prototype = {
    *        with one of the bookmark root folders
    * @return the folder id if the folder was found or created, otherwise -1
    */
-  GetOrCreateFolder(location) {
-    let folder_id = this.GetFolder(location);
-    if (folder_id == -1)
-      folder_id = this.CreateFolder(location);
-    return folder_id;
-  },
-
-  /**
-   * CheckDescription
-   *
-   * Compares the description of this places item with an expected
-   * description.
-   *
-   * @param expectedDescription The description this places item is
-   *        expected to have
-   * @return true if the actual and expected descriptions match, or if
-   *         there is no expected description; otherwise false
-   */
-  CheckDescription(expectedDescription) {
-    if (expectedDescription != null) {
-      let description = "";
-      if (PlacesUtils.annotations.itemHasAnnotation(this.props.item_id,
-          "bookmarkProperties/description")) {
-        description = PlacesUtils.annotations.getItemAnnotation(
-          this.props.item_id, "bookmarkProperties/description");
-      }
-      if (description != expectedDescription) {
-        Logger.logPotentialError("Invalid description, expected: " +
-          expectedDescription + ", actual: " + description + " for " +
-          this.toString());
-        return false;
-      }
+  async GetOrCreateFolder(location) {
+    let parentGuid = await this.GetFolder(location);
+    if (parentGuid == null) {
+      parentGuid = await this.CreateFolder(location);
     }
-    return true;
+    return parentGuid;
   },
 
   /**
@@ -311,15 +273,22 @@ PlacesItem.prototype = {
    *        or null if this check should be skipped
    * @return true if this item is in the correct position, otherwise false
    */
-  CheckPosition(before, after, last_item_pos) {
-    if (after)
-      if (!this.IsAdjacentTo(after, 1)) return false;
-    if (before)
-      if (!this.IsAdjacentTo(before, -1)) return false;
+  async CheckPosition(before, after, last_item_pos) {
+    if (after) {
+      if (!(await this.IsAdjacentTo(after, 1))) {
+         return false;
+       }
+    }
+    if (before) {
+      if (!(await this.IsAdjacentTo(before, -1))) {
+         return false;
+       }
+     }
     if (last_item_pos != null && last_item_pos > -1) {
-      if (this.GetItemIndex() != last_item_pos + 1) {
+      let index = await this.GetItemIndex();
+      if (index != last_item_pos + 1) {
         Logger.logPotentialError("Item not found at the expected index, got " +
-          this.GetItemIndex() + ", expected " + (last_item_pos + 1) + " for " +
+          index + ", expected " + (last_item_pos + 1) + " for " +
           this.toString());
         return false;
       }
@@ -337,36 +306,17 @@ PlacesItem.prototype = {
    *        folders; if null, no changes are made
    * @return nothing if successful, otherwise an exception is thrown
    */
-  SetLocation(location) {
+  async SetLocation(location) {
     if (location != null) {
-      let newfolder_id = this.GetOrCreateFolder(location);
-      Logger.AssertTrue(newfolder_id != -1, "Location " + location +
+      let newfolderGuid = await this.GetOrCreateFolder(location);
+      Logger.AssertTrue(newfolderGuid, "Location " + location +
                         " doesn't exist; can't change item's location");
-      PlacesUtils.bookmarks.moveItem(this.props.item_id, newfolder_id, -1);
-      this.props.folder_id = newfolder_id;
-    }
-  },
-
-  /**
-   * SetDescription
-   *
-   * Updates the description for this places item.
-   *
-   * @param description The new description to set; if null, no changes are
-   *        made
-   * @return nothing
-   */
-  SetDescription(description) {
-    if (description != null) {
-      if (description != "")
-        PlacesUtils.annotations.setItemAnnotation(this.props.item_id,
-                                      "bookmarkProperties/description",
-                                      description,
-                                      0,
-                                      PlacesUtils.annotations.EXPIRE_NEVER);
-      else
-        PlacesUtils.annotations.removeItemAnnotation(this.props.item_id,
-                                         "bookmarkProperties/description");
+      await PlacesUtils.bookmarks.update({
+        guid: this.props.guid,
+        parentGuid: newfolderGuid,
+        index: PlacesUtils.bookmarks.DEFAULT_INDEX,
+      });
+      this.props.parentGuid = newfolderGuid;
     }
   },
 
@@ -378,22 +328,26 @@ PlacesItem.prototype = {
    *
    * @param position The new index this item should be moved to; if null,
    *        no changes are made; if -1, this item is moved to the bottom of
-   *        the current folder
+   *        the current folder. Otherwise, must be a string which is the
+   *        title of an existing item in the folder, who's current position
+   *        is used as the index.
    * @return nothing if successful, otherwise an exception is thrown
    */
-  SetPosition(position) {
-    if (position != null) {
-      let newposition = -1;
-      if (position != -1) {
-        newposition = this.GetPlacesNodeId(this.props.folder_id,
-                                           null, position);
-        Logger.AssertTrue(newposition != -1, "position " + position +
-                          " is invalid; unable to change position");
-        newposition = PlacesUtils.bookmarks.getItemIndex(newposition);
-      }
-      PlacesUtils.bookmarks.moveItem(this.props.item_id,
-                               this.props.folder_id, newposition);
+  async SetPosition(position) {
+    if (position == null) {
+      return;
     }
+    let index = -1;
+    if (position != -1) {
+      let existingGuid = await this.GetPlacesChildGuid(this.props.parentGuid,
+                                                       null, position);
+      if (existingGuid) {
+        index = (await PlacesUtils.bookmarks.fetch(existingGuid)).index;
+      }
+      Logger.AssertTrue(index != -1, "position " + position +
+                        " is invalid; unable to change position");
+    }
+    await PlacesUtils.bookmarks.update({guid: this.props.guid, index});
   },
 
   /**
@@ -403,9 +357,9 @@ PlacesItem.prototype = {
    *        are made
    * @return nothing
    */
-  SetTitle(title) {
+  async SetTitle(title) {
     if (title != null) {
-      PlacesUtils.bookmarks.setItemTitle(this.props.item_id, title);
+      await PlacesUtils.bookmarks.update({guid: this.props.guid, title});
     }
   },
 };
@@ -415,8 +369,9 @@ PlacesItem.prototype = {
  */
 function Bookmark(props) {
   PlacesItem.call(this, props);
-  if (this.props.title == null)
+  if (this.props.title == null) {
     this.props.title = this.props.uri;
+  }
   this.props.type = "bookmark";
 }
 
@@ -433,56 +388,15 @@ Bookmark.prototype = {
    *        changes are made
    * @return nothing
    */
-  SetKeyword(keyword) {
+  async SetKeyword(keyword) {
     if (keyword != null) {
       // Mirror logic from PlacesSyncUtils's updateBookmarkMetadata
-      let entry = Async.promiseSpinningly(PlacesUtils.keywords.fetch({
-        url: this.props.uri,
-      }));
+      let entry = await PlacesUtils.keywords.fetch({url: this.props.uri});
       if (entry) {
-        Async.promiseSpinningly(PlacesUtils.keywords.remove(entry));
+        await PlacesUtils.keywords.remove(entry);
       }
-      Async.promiseSpinningly(PlacesUtils.keywords.insert({
-        keyword,
-        url: this.props.uri
-      }));
+      await PlacesUtils.keywords.insert({keyword, url: this.props.uri});
     }
-  },
-
-  /**
-   * SetLoadInSidebar
-   *
-   * Updates this bookmark's loadInSidebar property.
-   *
-   * @param loadInSidebar if true, the loadInSidebar property will be set,
-   *        if false, it will be cleared, and any other value will result
-   *        in no change
-   * @return nothing
-   */
-  SetLoadInSidebar(loadInSidebar) {
-    if (loadInSidebar == true)
-      PlacesUtils.annotations.setItemAnnotation(this.props.item_id,
-                                    "bookmarkProperties/loadInSidebar",
-                                    true,
-                                    0,
-                                    PlacesUtils.annotations.EXPIRE_NEVER);
-    else if (loadInSidebar == false)
-      PlacesUtils.annotations.removeItemAnnotation(this.props.item_id,
-                                       "bookmarkProperties/loadInSidebar");
-  },
-
-  /**
-   * SetTitle
-   *
-   * Updates this bookmark's title.
-   *
-   * @param title The new title to set for this boomark; if null, no changes
-   *        are made
-   * @return nothing
-   */
-  SetTitle(title) {
-    if (title)
-      PlacesUtils.bookmarks.setItemTitle(this.props.item_id, title);
   },
 
   /**
@@ -494,10 +408,10 @@ Bookmark.prototype = {
    *        are made
    * @return nothing
    */
-  SetUri(uri) {
+  async SetUri(uri) {
     if (uri) {
-      let newURI = Services.io.newURI(uri);
-      PlacesUtils.bookmarks.changeBookmarkURI(this.props.item_id, newURI);
+      let url = Services.io.newURI(uri);
+      await PlacesUtils.bookmarks.update({guid: this.props.guid, url});
     }
   },
 
@@ -516,8 +430,9 @@ Bookmark.prototype = {
     if (tags != null) {
       let URI = Services.io.newURI(this.props.uri);
       PlacesUtils.tagging.untagURI(URI, null);
-      if (tags.length > 0)
+      if (tags.length > 0) {
         PlacesUtils.tagging.tagURI(URI, tags);
+      }
     }
   },
 
@@ -528,20 +443,18 @@ Bookmark.prototype = {
    *
    * @return the id of the created bookmark
    */
-  Create() {
-    this.props.folder_id = this.GetOrCreateFolder(this.props.location);
-    Logger.AssertTrue(this.props.folder_id != -1, "Unable to create " +
+  async Create() {
+    this.props.parentGuid = await this.GetOrCreateFolder(this.props.location);
+    Logger.AssertTrue(this.props.parentGuid, "Unable to create " +
       "bookmark, error creating folder " + this.props.location);
     let bookmarkURI = Services.io.newURI(this.props.uri);
-    this.props.item_id = PlacesUtils.bookmarks.insertBookmark(this.props.folder_id,
-                                                        bookmarkURI,
-                                                        -1,
-                                                        this.props.title);
-    this.SetKeyword(this.props.keyword);
-    this.SetDescription(this.props.description);
-    this.SetLoadInSidebar(this.props.loadInSidebar);
-    this.SetTags(this.props.tags);
-    return this.props.item_id;
+    let {guid} = await PlacesUtils.bookmarks.insert({parentGuid: this.props.parentGuid,
+                                                     url: bookmarkURI,
+                                                     title: this.props.title});
+    this.props.guid = guid;
+    await this.SetKeyword(this.props.keyword);
+    await this.SetTags(this.props.tags);
+    return this.props.guid;
   },
 
   /**
@@ -552,17 +465,14 @@ Bookmark.prototype = {
    *
    * @return nothing
    */
-  Update() {
-    Logger.AssertTrue(this.props.item_id != -1 && this.props.item_id != null,
-      "Invalid item_id during Remove");
-    this.SetDescription(this.updateProps.description);
-    this.SetLoadInSidebar(this.updateProps.loadInSidebar);
-    this.SetTitle(this.updateProps.title);
-    this.SetUri(this.updateProps.uri);
-    this.SetKeyword(this.updateProps.keyword);
-    this.SetTags(this.updateProps.tags);
-    this.SetLocation(this.updateProps.location);
-    this.SetPosition(this.updateProps.position);
+  async Update() {
+    Logger.AssertTrue(this.props.guid, "Invalid guid during Update");
+    await this.SetTitle(this.updateProps.title);
+    await this.SetUri(this.updateProps.uri);
+    await this.SetKeyword(this.updateProps.keyword);
+    await this.SetTags(this.updateProps.tags);
+    await this.SetLocation(this.updateProps.location);
+    await this.SetPosition(this.updateProps.position);
   },
 
   /**
@@ -570,49 +480,33 @@ Bookmark.prototype = {
    *
    * Locates the bookmark which corresponds to this object's properties.
    *
-   * @return the bookmark id if the bookmark was found, otherwise -1
+   * @return the bookmark guid if the bookmark was found, otherwise null
    */
-  Find() {
-    this.props.folder_id = this.GetFolder(this.props.location);
-    if (this.props.folder_id == -1) {
+  async Find() {
+    this.props.parentGuid = await this.GetFolder(this.props.location);
+
+    if (this.props.parentGuid == null) {
       Logger.logError("Unable to find folder " + this.props.location);
-      return -1;
+      return null;
     }
     let bookmarkTitle = this.props.title;
-    this.props.item_id = this.GetPlacesNodeId(this.props.folder_id,
-                                              null,
-                                              bookmarkTitle,
-                                              this.props.uri);
+    this.props.guid = await this.GetPlacesChildGuid(this.props.parentGuid,
+                                                    null,
+                                                    bookmarkTitle,
+                                                    this.props.uri);
 
-    if (this.props.item_id == -1) {
+    if (!this.props.guid) {
       Logger.logPotentialError(this.toString() + " not found");
-      return -1;
+      return null;
     }
-    if (!this.CheckDescription(this.props.description))
-      return -1;
     if (this.props.keyword != null) {
-      let { keyword } = Async.promiseSpinningly(
-        PlacesSyncUtils.bookmarks.fetch(this.GetSyncId()));
+      let {keyword} = await PlacesSyncUtils.bookmarks.fetch(this.props.guid);
       if (keyword != this.props.keyword) {
         Logger.logPotentialError("Incorrect keyword - expected: " +
           this.props.keyword + ", actual: " + keyword +
           " for " + this.toString());
-        return -1;
+        return null;
       }
-    }
-    let loadInSidebar = PlacesUtils.annotations.itemHasAnnotation(
-      this.props.item_id,
-      "bookmarkProperties/loadInSidebar");
-    if (loadInSidebar)
-      loadInSidebar = PlacesUtils.annotations.getItemAnnotation(
-        this.props.item_id,
-        "bookmarkProperties/loadInSidebar");
-    if (this.props.loadInSidebar != null &&
-        loadInSidebar != this.props.loadInSidebar) {
-      Logger.logPotentialError("Incorrect loadInSidebar setting - expected: " +
-        this.props.loadInSidebar + ", actual: " + loadInSidebar +
-        " for " + this.toString());
-      return -1;
     }
     if (this.props.tags != null) {
       try {
@@ -624,18 +518,19 @@ Bookmark.prototype = {
           Logger.logPotentialError("Wrong tags - expected: " +
             JSON.stringify(this.props.tags) + ", actual: " +
             JSON.stringify(tags) + " for " + this.toString());
-          return -1;
+          return null;
         }
       } catch (e) {
         Logger.logPotentialError("error processing tags " + e);
-        return -1;
+        return null;
       }
     }
-    if (!this.CheckPosition(this.props.before,
-                            this.props.after,
-                            this.props.last_item_pos))
-      return -1;
-    return this.props.item_id;
+    if (!(await this.CheckPosition(this.props.before,
+                                 this.props.after,
+                                 this.props.last_item_pos))) {
+      return null;
+    }
+    return this.props.guid;
   },
 
   /**
@@ -646,10 +541,9 @@ Bookmark.prototype = {
    *
    * @return nothing
    */
-  Remove() {
-    Logger.AssertTrue(this.props.item_id != -1 && this.props.item_id != null,
-      "Invalid item_id during Remove");
-    PlacesUtils.bookmarks.removeItem(this.props.item_id);
+  async Remove() {
+    Logger.AssertTrue(this.props.guid, "Invalid guid during Remove");
+    await PlacesUtils.bookmarks.remove(this.props.guid);
   },
 };
 
@@ -674,15 +568,17 @@ BookmarkFolder.prototype = {
    *
    * @return the id of the created bookmark folder
    */
-  Create() {
-    this.props.folder_id = this.GetOrCreateFolder(this.props.location);
-    Logger.AssertTrue(this.props.folder_id != -1, "Unable to create " +
+  async Create() {
+    this.props.parentGuid = await this.GetOrCreateFolder(this.props.location);
+    Logger.AssertTrue(this.props.parentGuid, "Unable to create " +
       "folder, error creating parent folder " + this.props.location);
-    this.props.item_id = PlacesUtils.bookmarks.createFolder(this.props.folder_id,
-                                                      this.props.folder,
-                                                      -1);
-    this.SetDescription(this.props.description);
-    return this.props.folder_id;
+    let {guid} = await PlacesUtils.bookmarks.insert({parentGuid: this.props.parentGuid,
+                                                     title: this.props.folder,
+                                                     index: PlacesUtils.bookmarks.DEFAULT_INDEX,
+                                                     type: PlacesUtils.bookmarks.TYPE_FOLDER,
+                                                     });
+    this.props.guid = guid;
+    return this.props.parentGuid;
   },
 
   /**
@@ -691,25 +587,27 @@ BookmarkFolder.prototype = {
    * Locates the bookmark folder which corresponds to this object's
    * properties.
    *
-   * @return the folder id if the folder was found, otherwise -1
+   * @return the folder guid if the folder was found, otherwise null
    */
-  Find() {
-    this.props.folder_id = this.GetFolder(this.props.location);
-    if (this.props.folder_id == -1) {
+  async Find() {
+    this.props.parentGuid = await this.GetFolder(this.props.location);
+    if (this.props.parentGuid == null) {
       Logger.logError("Unable to find folder " + this.props.location);
-      return -1;
+      return null;
     }
-    this.props.item_id = this.GetPlacesNodeId(
-                              this.props.folder_id,
-                              Ci.nsINavHistoryResultNode.RESULT_TYPE_FOLDER,
+    this.props.guid = await this.GetPlacesChildGuid(
+                              this.props.parentGuid,
+                              PlacesUtils.bookmarks.TYPE_FOLDER,
                               this.props.folder);
-    if (!this.CheckDescription(this.props.description))
-      return -1;
-    if (!this.CheckPosition(this.props.before,
-                            this.props.after,
-                            this.props.last_item_pos))
-      return -1;
-    return this.props.item_id;
+    if (this.props.guid == null) {
+      return null;
+    }
+    if (!(await this.CheckPosition(this.props.before,
+                                   this.props.after,
+                                   this.props.last_item_pos))) {
+      return null;
+    }
+    return this.props.guid;
   },
 
   /**
@@ -720,11 +618,9 @@ BookmarkFolder.prototype = {
    *
    * @return nothing
    */
-  Remove() {
-    Logger.AssertTrue(this.props.item_id != -1 && this.props.item_id != null,
-      "Invalid item_id during Remove");
-    PlacesUtils.bookmarks.removeFolderChildren(this.props.item_id);
-    PlacesUtils.bookmarks.removeItem(this.props.item_id);
+  async Remove() {
+    Logger.AssertTrue(this.props.guid, "Invalid guid during Remove");
+    await PlacesUtils.bookmarks.remove(this.props.guid);
   },
 
   /**
@@ -735,154 +631,15 @@ BookmarkFolder.prototype = {
    *
    * @return nothing
    */
-  Update() {
-    Logger.AssertTrue(this.props.item_id != -1 && this.props.item_id != null,
-      "Invalid item_id during Update");
-    this.SetLocation(this.updateProps.location);
-    this.SetPosition(this.updateProps.position);
-    this.SetTitle(this.updateProps.folder);
-    this.SetDescription(this.updateProps.description);
+  async Update() {
+    Logger.AssertTrue(this.props.guid, "Invalid guid during Update");
+    await this.SetLocation(this.updateProps.location);
+    await this.SetPosition(this.updateProps.position);
+    await this.SetTitle(this.updateProps.folder);
   },
 };
 
 extend(BookmarkFolder, PlacesItem);
-
-/**
- * Livemark class constructor. Initialzes instance properties.
- */
-function Livemark(props) {
-  PlacesItem.call(this, props);
-  this.props.type = "livemark";
-}
-
-/**
- * Livemark instance methods
- */
-Livemark.prototype = {
-  /**
-   * Create
-   *
-   * Creates the livemark described by this object's properties.
-   *
-   * @return the id of the created livemark
-   */
-  Create() {
-    this.props.folder_id = this.GetOrCreateFolder(this.props.location);
-    Logger.AssertTrue(this.props.folder_id != -1, "Unable to create " +
-      "folder, error creating parent folder " + this.props.location);
-    let siteURI = null;
-    if (this.props.siteUri != null)
-      siteURI = Services.io.newURI(this.props.siteUri);
-    let livemarkObj = {parentId: this.props.folder_id,
-                       title: this.props.livemark,
-                       siteURI,
-                       feedURI: Services.io.newURI(this.props.feedUri),
-                       index: PlacesUtils.bookmarks.DEFAULT_INDEX};
-
-    // Until this can handle asynchronous creation, we need to spin.
-    let spinningCb = Async.makeSpinningCallback();
-
-    PlacesUtils.livemarks.addLivemark(livemarkObj).then(
-      aLivemark => { spinningCb(null, [Components.results.NS_OK, aLivemark]) },
-      () => { spinningCb(null, [Components.results.NS_ERROR_UNEXPECTED, null]) }
-    );
-
-    let [status, livemark] = spinningCb.wait();
-    if (!Components.isSuccessCode(status)) {
-      throw new Error(status);
-    }
-
-    this.props.item_id = livemark.id;
-    return this.props.item_id;
-  },
-
-  /**
-   * Find
-   *
-   * Locates the livemark which corresponds to this object's
-   * properties.
-   *
-   * @return the item id if the livemark was found, otherwise -1
-   */
-  Find() {
-    this.props.folder_id = this.GetFolder(this.props.location);
-    if (this.props.folder_id == -1) {
-      Logger.logError("Unable to find folder " + this.props.location);
-      return -1;
-    }
-    this.props.item_id = this.GetPlacesNodeId(
-                              this.props.folder_id,
-                              Ci.nsINavHistoryResultNode.RESULT_TYPE_FOLDER,
-                              this.props.livemark);
-    if (!PlacesUtils.annotations
-                    .itemHasAnnotation(this.props.item_id, PlacesUtils.LMANNO_FEEDURI)) {
-      Logger.logPotentialError("livemark folder found, but it's just a regular folder, for " +
-        this.toString());
-      this.props.item_id = -1;
-      return -1;
-    }
-    let feedURI = Services.io.newURI(this.props.feedUri);
-    let lmFeedURISpec =
-      PlacesUtils.annotations.getItemAnnotation(this.props.item_id,
-                                                PlacesUtils.LMANNO_FEEDURI);
-    if (feedURI.spec != lmFeedURISpec) {
-      Logger.logPotentialError("livemark feed uri not correct, expected: " +
-        this.props.feedUri + ", actual: " + lmFeedURISpec +
-        " for " + this.toString());
-      return -1;
-    }
-    if (this.props.siteUri != null) {
-      let siteURI = Services.io.newURI(this.props.siteUri);
-      let lmSiteURISpec =
-        PlacesUtils.annotations.getItemAnnotation(this.props.item_id,
-                                                  PlacesUtils.LMANNO_SITEURI);
-      if (siteURI.spec != lmSiteURISpec) {
-        Logger.logPotentialError("livemark site uri not correct, expected: " +
-        this.props.siteUri + ", actual: " + lmSiteURISpec + " for " +
-        this.toString());
-        return -1;
-      }
-    }
-    if (!this.CheckPosition(this.props.before,
-                            this.props.after,
-                            this.props.last_item_pos))
-      return -1;
-    return this.props.item_id;
-  },
-
-  /**
-   * Update
-   *
-   * Updates this livemark's properties according the properties on this
-   * object's 'updateProps' property.
-   *
-   * @return nothing
-   */
-  Update() {
-    Logger.AssertTrue(this.props.item_id != -1 && this.props.item_id != null,
-      "Invalid item_id during Update");
-    this.SetLocation(this.updateProps.location);
-    this.SetPosition(this.updateProps.position);
-    this.SetTitle(this.updateProps.livemark);
-    return true;
-  },
-
-  /**
-   * Remove
-   *
-   * Removes this livemark.  The livemark should have been located previously
-   * by a call to Find.
-   *
-   * @return nothing
-   */
-  Remove() {
-    Logger.AssertTrue(this.props.item_id != -1 && this.props.item_id != null,
-      "Invalid item_id during Remove");
-    PlacesUtils.bookmarks.removeItem(this.props.item_id);
-  },
-};
-
-extend(Livemark, PlacesItem);
 
 /**
  * Separator class constructor. Initializes instance properties.
@@ -903,13 +660,16 @@ Separator.prototype = {
    *
    * @return the id of the created separator
    */
-  Create() {
-    this.props.folder_id = this.GetOrCreateFolder(this.props.location);
-    Logger.AssertTrue(this.props.folder_id != -1, "Unable to create " +
+  async Create() {
+    this.props.parentGuid = await this.GetOrCreateFolder(this.props.location);
+    Logger.AssertTrue(this.props.parentGuid, "Unable to create " +
       "folder, error creating parent folder " + this.props.location);
-    this.props.item_id = PlacesUtils.bookmarks.insertSeparator(this.props.folder_id,
-                                                         -1);
-    return this.props.item_id;
+    let {guid} = await PlacesUtils.bookmarks.insert({
+      parentGuid: this.props.parentGuid,
+      type: PlacesUtils.bookmarks.TYPE_SEPARATOR,
+    });
+    this.props.guid = guid;
+    return guid;
   },
 
   /**
@@ -918,44 +678,47 @@ Separator.prototype = {
    * Locates the bookmark separator which corresponds to this object's
    * properties.
    *
-   * @return the item id if the separator was found, otherwise -1
+   * @return the item guid if the separator was found, otherwise null
    */
-  Find() {
-    this.props.folder_id = this.GetFolder(this.props.location);
-    if (this.props.folder_id == -1) {
+  async Find() {
+    this.props.parentGuid = await this.GetFolder(this.props.location);
+    if (this.props.parentGuid == null) {
       Logger.logError("Unable to find folder " + this.props.location);
-      return -1;
+      return null;
     }
     if (this.props.before == null && this.props.last_item_pos == null) {
       Logger.logPotentialError("Separator requires 'before' attribute if it's the" +
         "first item in the list");
-      return -1;
+      return null;
     }
     let expected_pos = -1;
     if (this.props.before) {
-      let other_id = this.GetPlacesNodeId(this.props.folder_id,
-                                          null,
-                                          this.props.before);
-      if (other_id == -1) {
+      let otherGuid = this.GetPlacesChildGuid(this.props.parentGuid,
+                                              null,
+                                              this.props.before);
+      if (otherGuid == null) {
         Logger.logPotentialError("Can't find places item " + this.props.before +
           " for locating separator");
-        return -1;
+        return null;
       }
-      expected_pos = PlacesUtils.bookmarks.getItemIndex(other_id) - 1;
+      expected_pos = (await PlacesUtils.bookmarks.fetch(otherGuid)).index - 1;
     } else {
       expected_pos = this.props.last_item_pos + 1;
     }
-    this.props.item_id = PlacesUtils.bookmarks.getIdForItemAt(this.props.folder_id,
-                                                        expected_pos);
-    if (this.props.item_id == -1) {
+    // Note these are IDs instead of GUIDs.
+    let children = await PlacesSyncUtils.bookmarks.fetchChildRecordIds(this.props.parentGuid);
+    this.props.guid = children[expected_pos];
+    if (this.props.guid == null) {
       Logger.logPotentialError("No separator found at position " + expected_pos);
-    } else if (PlacesUtils.bookmarks.getItemType(this.props.item_id) !=
-          PlacesUtils.bookmarks.TYPE_SEPARATOR) {
-        Logger.logPotentialError("Places item at position " + expected_pos +
-          " is not a separator");
-        return -1;
-      }
-    return this.props.item_id;
+      return null;
+    }
+    let info = await PlacesUtils.bookmarks.fetch(this.props.guid);
+    if (info.type != PlacesUtils.bookmarks.TYPE_SEPARATOR) {
+      Logger.logPotentialError("Places item at position " + expected_pos +
+        " is not a separator");
+      return null;
+    }
+    return this.props.guid;
   },
 
   /**
@@ -966,11 +729,10 @@ Separator.prototype = {
    *
    * @return nothing
    */
-  Update() {
-    Logger.AssertTrue(this.props.item_id != -1 && this.props.item_id != null,
-      "Invalid item_id during Update");
-    this.SetLocation(this.updateProps.location);
-    this.SetPosition(this.updateProps.position);
+  async Update() {
+    Logger.AssertTrue(this.props.guid, "Invalid guid during Update");
+    await this.SetLocation(this.updateProps.location);
+    await this.SetPosition(this.updateProps.position);
     return true;
   },
 
@@ -982,10 +744,9 @@ Separator.prototype = {
    *
    * @return nothing
    */
-  Remove() {
-    Logger.AssertTrue(this.props.item_id != -1 && this.props.item_id != null,
-      "Invalid item_id during Update");
-    PlacesUtils.bookmarks.removeItem(this.props.item_id);
+  async Remove() {
+    Logger.AssertTrue(this.props.guid, "Invalid guid during Update");
+    await PlacesUtils.bookmarks.remove(this.props.guid);
   },
 };
 

@@ -8,8 +8,7 @@
  * "last time".
  */
 
-var Cu = Components.utils;
-Cu.import("resource://gre/modules/DownloadUtils.jsm");
+ChromeUtils.import("resource://gre/modules/DownloadUtils.jsm");
 
 function run_test() {
   // Simulate having multiple downloads requesting time left
@@ -21,5 +20,5 @@ function run_test() {
   // using a different "last sec". We need to make sure we get the same time.
   let lastSec = 314;
   for (let [time, text] of Object.entries(downloadTimes))
-    do_check_eq(DownloadUtils.getTimeLeft(time, lastSec)[0], text);
+    Assert.equal(DownloadUtils.getTimeLeft(time, lastSec)[0], text);
 }

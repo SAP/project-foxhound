@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,54 +16,30 @@
 namespace mozilla {
 
 WebGLExtensionDrawBuffers::WebGLExtensionDrawBuffers(WebGLContext* webgl)
-    : WebGLExtensionBase(webgl)
-{
-    MOZ_ASSERT(IsSupported(webgl), "Don't construct extension if unsupported.");
+    : WebGLExtensionBase(webgl) {
+  MOZ_ASSERT(IsSupported(webgl), "Don't construct extension if unsupported.");
 
-    // WEBGL_draw_buffers:
-    // "The value of the MAX_COLOR_ATTACHMENTS_WEBGL parameter must be greater than or
-    //  equal to that of the MAX_DRAW_BUFFERS_WEBGL parameter."
-    webgl->mImplMaxColorAttachments = webgl->mGLMaxColorAttachments;
-    webgl->mImplMaxDrawBuffers = std::min(webgl->mGLMaxDrawBuffers,
-                                          webgl->mImplMaxColorAttachments);
+  webgl->UpdateMaxDrawBuffers();
 }
 
-WebGLExtensionDrawBuffers::~WebGLExtensionDrawBuffers()
-{
+WebGLExtensionDrawBuffers::~WebGLExtensionDrawBuffers() {}
+
+void WebGLExtensionDrawBuffers::DrawBuffersWEBGL(
+    const dom::Sequence<GLenum>& buffers) {
+  if (mIsLost) {
+    mContext->ErrorInvalidOperation("drawBuffersWEBGL: Extension is lost.");
+    return;
+  }
+
+  mContext->DrawBuffers(buffers);
 }
 
-void
-WebGLExtensionDrawBuffers::DrawBuffersWEBGL(const dom::Sequence<GLenum>& buffers)
-{
-    if (mIsLost) {
-        mContext->ErrorInvalidOperation("drawBuffersWEBGL: Extension is lost.");
-        return;
-    }
+bool WebGLExtensionDrawBuffers::IsSupported(const WebGLContext* webgl) {
+  gl::GLContext* gl = webgl->GL();
 
-    mContext->DrawBuffers(buffers);
-}
-
-bool
-WebGLExtensionDrawBuffers::IsSupported(const WebGLContext* webgl)
-{
-    gl::GLContext* gl = webgl->GL();
-
-    if (!gl->IsExtensionSupported(gl::GLContext::ARB_draw_buffers) &&
-        !gl->IsExtensionSupported(gl::GLContext::EXT_draw_buffers))
-    {
-        return false;
-    }
-
-    // WEBGL_draw_buffers requires at least 4 color attachments.
-    if (webgl->mGLMaxDrawBuffers < webgl->kMinMaxDrawBuffers ||
-        webgl->mGLMaxColorAttachments < webgl->kMinMaxColorAttachments)
-    {
-        return false;
-    }
-
-    return true;
+  return gl->IsSupported(gl::GLFeature::draw_buffers);
 }
 
 IMPL_WEBGL_EXTENSION_GOOP(WebGLExtensionDrawBuffers, WEBGL_draw_buffers)
 
-} // namespace mozilla
+}  // namespace mozilla

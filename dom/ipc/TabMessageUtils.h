@@ -8,110 +8,63 @@
 #define TABMESSAGE_UTILS_H
 
 #include "ipc/IPCMessageUtils.h"
-#include "mozilla/dom/AudioChannelBinding.h"
-#include "nsIDOMEvent.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/dom/Event.h"
+#include "nsExceptionHandler.h"
 #include "nsPIDOMWindow.h"
 #include "nsCOMPtr.h"
 
-#ifdef MOZ_CRASHREPORTER
-#include "nsExceptionHandler.h"
-#endif
-
 namespace mozilla {
 namespace dom {
-struct RemoteDOMEvent
-{
+class Event;
+
+struct RemoteDOMEvent {
   // Make sure to set the owner after deserializing.
-  nsCOMPtr<nsIDOMEvent> mEvent;
+  RefPtr<Event> mEvent;
 };
 
 bool ReadRemoteEvent(const IPC::Message* aMsg, PickleIterator* aIter,
                      mozilla::dom::RemoteDOMEvent* aResult);
 
-#ifdef MOZ_CRASHREPORTER
 typedef CrashReporter::ThreadId NativeThreadId;
-#else
-// unused in this case
-typedef int32_t NativeThreadId;
-#endif
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 namespace IPC {
 
-template<>
-struct ParamTraits<mozilla::dom::RemoteDOMEvent>
-{
+template <>
+struct ParamTraits<mozilla::dom::RemoteDOMEvent> {
   typedef mozilla::dom::RemoteDOMEvent paramType;
 
-  static void Write(Message* aMsg, const paramType& aParam)
-  {
+  static void Write(Message* aMsg, const paramType& aParam) {
     aParam.mEvent->Serialize(aMsg, true);
   }
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter, paramType* aResult)
-  {
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   paramType* aResult) {
     return mozilla::dom::ReadRemoteEvent(aMsg, aIter, aResult);
   }
 
-  static void Log(const paramType& aParam, std::wstring* aLog)
-  {
-  }
-};
-
-template<>
-struct ParamTraits<mozilla::dom::AudioChannel>
-{
-  typedef mozilla::dom::AudioChannel paramType;
-
-  static bool IsLegalValue(const paramType &aValue)
-  {
-    return aValue <= mozilla::dom::AudioChannel::Publicnotification;
-  }
-
-  static void Write(Message* aMsg, const paramType& aValue)
-  {
-    MOZ_ASSERT(IsLegalValue(aValue));
-    WriteParam(aMsg, (uint32_t)aValue);
-  }
-
-  static bool Read(const Message* aMsg, PickleIterator* aIter, paramType* aResult)
-  {
-    uint32_t value;
-    if(!ReadParam(aMsg, aIter, &value) ||
-       !IsLegalValue(paramType(value))) {
-      return false;
-    }
-    *aResult = paramType(value);
-    return true;
-  }
-
-  static void Log(const paramType& aParam, std::wstring* aLog)
-  {}
+  static void Log(const paramType& aParam, std::wstring* aLog) {}
 };
 
 template <>
 struct ParamTraits<nsEventStatus>
-  : public ContiguousEnumSerializer<nsEventStatus,
-                                    nsEventStatus_eIgnore,
-                                    nsEventStatus_eSentinel>
-{};
+    : public ContiguousEnumSerializer<nsEventStatus, nsEventStatus_eIgnore,
+                                      nsEventStatus_eSentinel> {};
 
-template<>
+template <>
 struct ParamTraits<nsSizeMode>
-  : public ContiguousEnumSerializer<nsSizeMode,
-                                    nsSizeMode_Normal,
-                                    nsSizeMode_Invalid>
-{};
+    : public ContiguousEnumSerializer<nsSizeMode, nsSizeMode_Normal,
+                                      nsSizeMode_Invalid> {};
 
-template<>
+template <>
 struct ParamTraits<UIStateChangeType>
-  : public ContiguousEnumSerializer<UIStateChangeType,
-                                    UIStateChangeType_NoChange,
-                                    UIStateChangeType_Invalid>
-{ };
+    : public ContiguousEnumSerializer<UIStateChangeType,
+                                      UIStateChangeType_NoChange,
+                                      UIStateChangeType_Invalid> {};
 
-} // namespace IPC
+}  // namespace IPC
 
-#endif // TABMESSAGE_UTILS_H
+#endif  // TABMESSAGE_UTILS_H

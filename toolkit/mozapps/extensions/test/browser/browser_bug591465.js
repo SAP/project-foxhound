@@ -6,13 +6,9 @@
 
 
 var tempScope = {};
-Components.utils.import("resource://gre/modules/LightweightThemeManager.jsm", tempScope);
+ChromeUtils.import("resource://gre/modules/LightweightThemeManager.jsm", tempScope);
 var LightweightThemeManager = tempScope.LightweightThemeManager;
 
-
-const PREF_GETADDONS_GETSEARCHRESULTS = "extensions.getAddons.search.url";
-const SEARCH_URL = TESTROOT + "browser_bug591465.xml";
-const SEARCH_QUERY = "SEARCH";
 
 var gManagerWindow;
 var gProvider;
@@ -25,57 +21,47 @@ var gLWTheme = {
                 author: "Pixel Pusher",
                 homepageURL: "http://mochi.test:8888/data/index.html",
                 headerURL: "http://mochi.test:8888/data/header.png",
-                footerURL: "http://mochi.test:8888/data/footer.png",
                 previewURL: "http://mochi.test:8888/data/preview.png",
-                iconURL: "http://mochi.test:8888/data/icon.png"
+                iconURL: "http://mochi.test:8888/data/icon.png",
               };
 
 
-function test() {
-  waitForExplicitFinish();
-
+add_task(async function setup() {
   gProvider = new MockProvider();
 
   gProvider.createAddons([{
     id: "addon1@tests.mozilla.org",
     name: "addon 1",
-    version: "1.0"
+    version: "1.0",
   }, {
     id: "addon2@tests.mozilla.org",
     name: "addon 2",
     version: "1.0",
-    _userDisabled: true
+    _userDisabled: true,
   }, {
     id: "theme1@tests.mozilla.org",
     name: "theme 1",
     version: "1.0",
-    type: "theme"
+    type: "theme",
   }, {
     id: "theme2@tests.mozilla.org",
     name: "theme 2",
     version: "1.0",
     type: "theme",
-    _userDisabled: true
+    _userDisabled: true,
    }, {
     id: "theme3@tests.mozilla.org",
     name: "theme 3",
     version: "1.0",
     type: "theme",
-    permissions: 0
+    permissions: 0,
   }]);
 
 
-  open_manager("addons://list/extension", function(aWindow) {
-    gManagerWindow = aWindow;
-    gContextMenu = aWindow.document.getElementById("addonitem-popup");
-    run_next_test();
-  });
-}
-
-
-function end_test() {
-  close_manager(gManagerWindow, finish);
-}
+  let aWindow = await open_manager("addons://list/extension");
+  gManagerWindow = aWindow;
+  gContextMenu = aWindow.document.getElementById("addonitem-popup");
+});
 
 
 function check_contextmenu(aIsTheme, aIsEnabled, aIsRemote, aIsDetails, aIsSingleItemCase) {
@@ -148,10 +134,10 @@ add_test(function() {
   EventUtils.synthesizeMouse(el, 4, 4, { type: "contextmenu", button: 2 }, gManagerWindow);
 });
 
-add_test(function() {
+add_test(async function() {
   var el = get_addon_element(gManagerWindow, "addon1@tests.mozilla.org");
   isnot(el, null, "Should have found addon element");
-  el.mAddon.userDisabled = true;
+  await el.mAddon.disable();
 
   gContextMenu.addEventListener("popupshown", function() {
     check_contextmenu(false, false, false, false, false);
@@ -166,10 +152,10 @@ add_test(function() {
   EventUtils.synthesizeMouse(el, 4, 4, { type: "contextmenu", button: 2 }, gManagerWindow);
 });
 
-add_test(function() {
+add_test(async function() {
   var el = get_addon_element(gManagerWindow, "addon1@tests.mozilla.org");
   isnot(el, null, "Should have found addon element");
-  el.mAddon.userDisabled = false;
+  await el.mAddon.enable();
 
   gContextMenu.addEventListener("popupshown", function() {
     check_contextmenu(false, true, false, false, false);
@@ -201,23 +187,22 @@ add_test(function() {
 });
 
 
-add_test(function() {
+add_test(async function() {
   gManagerWindow.loadView("addons://list/theme");
-  wait_for_view_load(gManagerWindow, function() {
-    var el = get_addon_element(gManagerWindow, "theme1@tests.mozilla.org");
+  await wait_for_view_load(gManagerWindow);
+  var el = get_addon_element(gManagerWindow, "theme1@tests.mozilla.org");
 
-    gContextMenu.addEventListener("popupshown", function() {
-      check_contextmenu(true, true, false, false, false);
+  gContextMenu.addEventListener("popupshown", function() {
+    check_contextmenu(true, true, false, false, false);
 
-      gContextMenu.hidePopup();
-      run_next_test();
-    }, {once: true});
+    gContextMenu.hidePopup();
+    run_next_test();
+  }, {once: true});
 
-    info("Opening context menu on enabled theme item");
-    el.parentNode.ensureElementIsVisible(el);
-    EventUtils.synthesizeMouse(el, 4, 4, { }, gManagerWindow);
-    EventUtils.synthesizeMouse(el, 4, 4, { type: "contextmenu", button: 2 }, gManagerWindow);
-  });
+  info("Opening context menu on enabled theme item");
+  el.parentNode.ensureElementIsVisible(el);
+  EventUtils.synthesizeMouse(el, 4, 4, { }, gManagerWindow);
+  EventUtils.synthesizeMouse(el, 4, 4, { type: "contextmenu", button: 2 }, gManagerWindow);
 });
 
 
@@ -276,202 +261,131 @@ add_test(function() {
 });
 
 
-add_test(function() {
+add_test(async function() {
   LightweightThemeManager.currentTheme = gLWTheme;
 
   gManagerWindow.loadView("addons://detail/4@personas.mozilla.org");
-  wait_for_view_load(gManagerWindow, function() {
+  await wait_for_view_load(gManagerWindow);
+  gContextMenu.addEventListener("popupshown", function() {
+    check_contextmenu(true, true, false, true, false);
 
-    gContextMenu.addEventListener("popupshown", function() {
-      check_contextmenu(true, true, false, true, false);
+    gContextMenu.hidePopup();
+    run_next_test();
+  }, {once: true});
 
-      gContextMenu.hidePopup();
-      run_next_test();
-    }, {once: true});
-
-    info("Opening context menu on enabled LW theme, in detail view");
-    var el = gManagerWindow.document.querySelector("#detail-view .detail-view-container");
-    EventUtils.synthesizeMouse(el, 4, 4, { }, gManagerWindow);
-    EventUtils.synthesizeMouse(el, 4, 4, { type: "contextmenu", button: 2 }, gManagerWindow);
-  });
+  info("Opening context menu on enabled LW theme, in detail view");
+  var el = gManagerWindow.document.querySelector("#detail-view .detail-view-container");
+  EventUtils.synthesizeMouse(el, 4, 4, { }, gManagerWindow);
+  EventUtils.synthesizeMouse(el, 4, 4, { type: "contextmenu", button: 2 }, gManagerWindow);
 });
 
 
-add_test(function() {
+add_test(async function() {
   LightweightThemeManager.currentTheme = null;
 
   gManagerWindow.loadView("addons://detail/4@personas.mozilla.org");
-  wait_for_view_load(gManagerWindow, function() {
+  await wait_for_view_load(gManagerWindow);
+  gContextMenu.addEventListener("popupshown", async function() {
+    check_contextmenu(true, false, false, true, false);
 
-    gContextMenu.addEventListener("popupshown", function() {
-      check_contextmenu(true, false, false, true, false);
+    gContextMenu.hidePopup();
 
-      gContextMenu.hidePopup();
+    let aAddon = await AddonManager.getAddonByID("4@personas.mozilla.org");
+    aAddon.uninstall();
+    run_next_test();
+  }, {once: true});
 
-      AddonManager.getAddonByID("4@personas.mozilla.org", function(aAddon) {
-        aAddon.uninstall();
-        run_next_test();
-      });
-    }, {once: true});
-
-    info("Opening context menu on disabled LW theme, in detail view");
-    var el = gManagerWindow.document.querySelector("#detail-view .detail-view-container");
-    EventUtils.synthesizeMouse(el, 4, 4, { }, gManagerWindow);
-    EventUtils.synthesizeMouse(el, 4, 4, { type: "contextmenu", button: 2 }, gManagerWindow);
-  });
+  info("Opening context menu on disabled LW theme, in detail view");
+  var el = gManagerWindow.document.querySelector("#detail-view .detail-view-container");
+  EventUtils.synthesizeMouse(el, 4, 4, { }, gManagerWindow);
+  EventUtils.synthesizeMouse(el, 4, 4, { type: "contextmenu", button: 2 }, gManagerWindow);
 });
 
 
-add_test(function() {
+add_test(async function() {
   gManagerWindow.loadView("addons://detail/addon1@tests.mozilla.org");
-  wait_for_view_load(gManagerWindow, function() {
+  await wait_for_view_load(gManagerWindow);
+  gContextMenu.addEventListener("popupshown", function() {
+    check_contextmenu(false, true, false, true, false);
 
-    gContextMenu.addEventListener("popupshown", function() {
-      check_contextmenu(false, true, false, true, false);
+    gContextMenu.hidePopup();
+    run_next_test();
+  }, {once: true});
 
-      gContextMenu.hidePopup();
-      run_next_test();
-    }, {once: true});
-
-    info("Opening context menu on enabled extension, in detail view");
-    var el = gManagerWindow.document.querySelector("#detail-view .detail-view-container");
-    EventUtils.synthesizeMouse(el, 4, 4, { }, gManagerWindow);
-    EventUtils.synthesizeMouse(el, 4, 4, { type: "contextmenu", button: 2 }, gManagerWindow);
-  });
+  info("Opening context menu on enabled extension, in detail view");
+  var el = gManagerWindow.document.querySelector("#detail-view .detail-view-container");
+  EventUtils.synthesizeMouse(el, 4, 4, { }, gManagerWindow);
+  EventUtils.synthesizeMouse(el, 4, 4, { type: "contextmenu", button: 2 }, gManagerWindow);
 });
 
 
-add_test(function() {
+add_test(async function() {
   gManagerWindow.loadView("addons://detail/addon2@tests.mozilla.org");
-  wait_for_view_load(gManagerWindow, function() {
+  await wait_for_view_load(gManagerWindow);
+  gContextMenu.addEventListener("popupshown", function() {
+    check_contextmenu(false, false, false, true, false);
 
-    gContextMenu.addEventListener("popupshown", function() {
-      check_contextmenu(false, false, false, true, false);
+    gContextMenu.hidePopup();
+    run_next_test();
+  }, {once: true});
 
-      gContextMenu.hidePopup();
-      run_next_test();
-    }, {once: true});
-
-    info("Opening context menu on disabled extension, in detail view");
-    var el = gManagerWindow.document.querySelector("#detail-view .detail-view-container");
-    EventUtils.synthesizeMouse(el, 4, 4, { }, gManagerWindow);
-    EventUtils.synthesizeMouse(el, 4, 4, { type: "contextmenu", button: 2 }, gManagerWindow);
-  });
+  info("Opening context menu on disabled extension, in detail view");
+  var el = gManagerWindow.document.querySelector("#detail-view .detail-view-container");
+  EventUtils.synthesizeMouse(el, 4, 4, { }, gManagerWindow);
+  EventUtils.synthesizeMouse(el, 4, 4, { type: "contextmenu", button: 2 }, gManagerWindow);
 });
 
 
-add_test(function() {
+add_test(async function() {
   gManagerWindow.loadView("addons://detail/theme1@tests.mozilla.org");
-  wait_for_view_load(gManagerWindow, function() {
+  await wait_for_view_load(gManagerWindow);
+  gContextMenu.addEventListener("popupshown", function() {
+    check_contextmenu(true, true, false, true, false);
 
-    gContextMenu.addEventListener("popupshown", function() {
-      check_contextmenu(true, true, false, true, false);
+    gContextMenu.hidePopup();
+    run_next_test();
+  }, {once: true});
 
-      gContextMenu.hidePopup();
-      run_next_test();
-    }, {once: true});
-
-    info("Opening context menu on enabled theme, in detail view");
-    var el = gManagerWindow.document.querySelector("#detail-view .detail-view-container");
-    EventUtils.synthesizeMouse(el, 4, 4, { }, gManagerWindow);
-    EventUtils.synthesizeMouse(el, 4, 4, { type: "contextmenu", button: 2 }, gManagerWindow);
-  });
+  info("Opening context menu on enabled theme, in detail view");
+  var el = gManagerWindow.document.querySelector("#detail-view .detail-view-container");
+  EventUtils.synthesizeMouse(el, 4, 4, { }, gManagerWindow);
+  EventUtils.synthesizeMouse(el, 4, 4, { type: "contextmenu", button: 2 }, gManagerWindow);
 });
 
 
-add_test(function() {
+add_test(async function() {
   gManagerWindow.loadView("addons://detail/theme2@tests.mozilla.org");
-  wait_for_view_load(gManagerWindow, function() {
+  await wait_for_view_load(gManagerWindow);
+  gContextMenu.addEventListener("popupshown", function() {
+    check_contextmenu(true, false, false, true, false);
 
-    gContextMenu.addEventListener("popupshown", function() {
-      check_contextmenu(true, false, false, true, false);
+    gContextMenu.hidePopup();
+    run_next_test();
+  }, {once: true});
 
-      gContextMenu.hidePopup();
-      run_next_test();
-    }, {once: true});
-
-    info("Opening context menu on disabled theme, in detail view");
-    var el = gManagerWindow.document.querySelector("#detail-view .detail-view-container");
-    EventUtils.synthesizeMouse(el, 4, 4, { }, gManagerWindow);
-    EventUtils.synthesizeMouse(el, 4, 4, { type: "contextmenu", button: 2 }, gManagerWindow);
-  });
+  info("Opening context menu on disabled theme, in detail view");
+  var el = gManagerWindow.document.querySelector("#detail-view .detail-view-container");
+  EventUtils.synthesizeMouse(el, 4, 4, { }, gManagerWindow);
+  EventUtils.synthesizeMouse(el, 4, 4, { type: "contextmenu", button: 2 }, gManagerWindow);
 });
 
-add_test(function() {
+add_test(async function() {
   gManagerWindow.loadView("addons://detail/theme3@tests.mozilla.org");
-  wait_for_view_load(gManagerWindow, function() {
+  await wait_for_view_load(gManagerWindow);
+  gContextMenu.addEventListener("popupshown", function() {
+    check_contextmenu(true, true, false, true, true);
 
-    gContextMenu.addEventListener("popupshown", function() {
-      check_contextmenu(true, true, false, true, true);
+    gContextMenu.hidePopup();
+    run_next_test();
+  }, {once: true});
 
-      gContextMenu.hidePopup();
-      run_next_test();
-    }, {once: true});
-
-    info("Opening context menu with single menu item on enabled theme, in detail view");
-    var el = gManagerWindow.document.querySelector("#detail-view .detail-view-container");
-    EventUtils.synthesizeMouse(el, 4, 4, { }, gManagerWindow);
-    EventUtils.synthesizeMouse(el, 4, 4, { type: "contextmenu", button: 2 }, gManagerWindow);
-  });
-});
-
-add_test(function() {
-  info("Searching for remote addons");
-
-  Services.prefs.setCharPref(PREF_GETADDONS_GETSEARCHRESULTS, SEARCH_URL);
-  Services.prefs.setIntPref(PREF_SEARCH_MAXRESULTS, 15);
-
-  var searchBox = gManagerWindow.document.getElementById("header-search");
-  searchBox.value = SEARCH_QUERY;
-
-  EventUtils.synthesizeMouseAtCenter(searchBox, { }, gManagerWindow);
-  EventUtils.synthesizeKey("VK_RETURN", { }, gManagerWindow);
-
-  wait_for_view_load(gManagerWindow, function() {
-    var filter = gManagerWindow.document.getElementById("search-filter-remote");
-    EventUtils.synthesizeMouseAtCenter(filter, { }, gManagerWindow);
-    executeSoon(function() {
-
-      var el = get_addon_element(gManagerWindow, "remote1@tests.mozilla.org");
-
-      gContextMenu.addEventListener("popupshown", function() {
-        check_contextmenu(false, false, true, false, false);
-
-        gContextMenu.hidePopup();
-        run_next_test();
-      }, {once: true});
-
-      info("Opening context menu on remote extension item");
-      el.parentNode.ensureElementIsVisible(el);
-      EventUtils.synthesizeMouse(el, 4, 4, { }, gManagerWindow);
-      EventUtils.synthesizeMouse(el, 4, 4, { type: "contextmenu", button: 2 }, gManagerWindow);
-
-    });
-  });
+  info("Opening context menu with single menu item on enabled theme, in detail view");
+  var el = gManagerWindow.document.querySelector("#detail-view .detail-view-container");
+  EventUtils.synthesizeMouse(el, 4, 4, { }, gManagerWindow);
+  EventUtils.synthesizeMouse(el, 4, 4, { type: "contextmenu", button: 2 }, gManagerWindow);
 });
 
 
-add_test(function() {
-  gManagerWindow.loadView("addons://detail/remote1@tests.mozilla.org");
-  wait_for_view_load(gManagerWindow, function() {
-
-    gContextMenu.addEventListener("popupshown", function() {
-      check_contextmenu(false, false, true, true, false);
-
-      gContextMenu.hidePopup();
-
-      // Delete the created install
-      AddonManager.getAllInstalls(function(aInstalls) {
-        is(aInstalls.length, 1, "Should be one available install");
-        aInstalls[0].cancel();
-
-        run_next_test();
-      });
-    }, {once: true});
-
-    info("Opening context menu on remote extension, in detail view");
-    var el = gManagerWindow.document.querySelector("#detail-view .detail-view-container");
-    EventUtils.synthesizeMouse(el, 4, 4, { }, gManagerWindow);
-    EventUtils.synthesizeMouse(el, 4, 4, { type: "contextmenu", button: 2 }, gManagerWindow);
-  });
+add_task(function end_test() {
+  return close_manager(gManagerWindow, finish);
 });

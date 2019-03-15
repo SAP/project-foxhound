@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include "mozilla/EventForwards.h"
+#include "mozilla/layers/LayersTypes.h"
 #include "mozilla/TimeStamp.h"
 
 #include "nsRegionFwd.h"
@@ -21,8 +22,7 @@ class nsIXULWindow;
 /**
  * sizemode is an adjunct to widget size
  */
-enum nsSizeMode
-{
+enum nsSizeMode {
   nsSizeMode_Normal = 0,
   nsSizeMode_Minimized,
   nsSizeMode_Maximized,
@@ -33,17 +33,14 @@ enum nsSizeMode
 /**
  * different types of (top-level) window z-level positioning
  */
-enum nsWindowZ
-{
-  nsWindowZTop = 0,   // on top
-  nsWindowZBottom,    // on bottom
-  nsWindowZRelative   // just below some specified widget
+enum nsWindowZ {
+  nsWindowZTop = 0,  // on top
+  nsWindowZBottom,   // on bottom
+  nsWindowZRelative  // just below some specified widget
 };
 
-class nsIWidgetListener
-{
-public:
-
+class nsIWidgetListener {
+ public:
   /**
    * If this listener is for an nsIXULWindow, return it. If this is null, then
    * this is likely a listener for a view, which can be determined using
@@ -71,8 +68,8 @@ public:
    * Called when a window is resized to (width, height). Returns true if the
    * notification was handled. Coordinates are outer window screen coordinates.
    */
-  virtual bool WindowResized(nsIWidget* aWidget,
-                             int32_t aWidth, int32_t aHeight);
+  virtual bool WindowResized(nsIWidget* aWidget, int32_t aWidth,
+                             int32_t aHeight);
 
   /**
    * Called when the size mode (minimized, maximized, fullscreen) is changed.
@@ -97,9 +94,19 @@ public:
                              nsIWidget** aActualBelow);
 
   /**
+   * Called when the window will enter or leave the fullscreen state.
+   */
+  virtual void FullscreenWillChange(bool aInFullscreen);
+
+  /**
    * Called when the window entered or left the fullscreen state.
    */
   virtual void FullscreenChanged(bool aInFullscreen);
+
+  /**
+   * Called when the occlusion state is changed.
+   */
+  virtual void OcclusionStateChanged(bool aIsFullyOccluded);
 
   /**
    * Called when the window is activated and focused.
@@ -146,7 +153,7 @@ public:
    */
   virtual void DidPaintWindow();
 
-  virtual void DidCompositeWindow(uint64_t aTransactionId,
+  virtual void DidCompositeWindow(mozilla::layers::TransactionId aTransactionId,
                                   const mozilla::TimeStamp& aCompositeStart,
                                   const mozilla::TimeStamp& aCompositeEnd);
 
@@ -154,6 +161,13 @@ public:
    * Request that layout schedules a repaint on the next refresh driver tick.
    */
   virtual void RequestRepaint();
+
+  /**
+   * Returns true if this is a popup that should not be visible. If this
+   * is a popup that is visible, not a popup or this state is unknown,
+   * returns false.
+   */
+  virtual bool ShouldNotBeVisible();
 
   /**
    * Handle an event.

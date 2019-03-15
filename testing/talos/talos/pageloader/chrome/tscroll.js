@@ -2,8 +2,7 @@
 //       unprivileged code.
 // - Please make sure that any changes apply cleanly to all use cases.
 
-function testScroll(target, stepSize, opt_reportFunc, opt_numSteps)
-{
+function testScroll(target, stepSize, opt_reportFunc, opt_numSteps) {
   var win;
   if (target == "content") {
     target = content.wrappedJSObject;
@@ -32,7 +31,7 @@ function testScroll(target, stepSize, opt_reportFunc, opt_numSteps)
     replyId: 1,
 
     // dispatch an event to the framescript and register the result/callback event
-    exec: function(commandName, arg, callback, opt_custom_window) {
+    exec(commandName, arg, callback, opt_custom_window) {
       let win = opt_custom_window || window;
       let replyEvent = "TalosPowers:ParentExec:ReplyEvent:" + this.replyId++;
       if (callback) {
@@ -49,7 +48,7 @@ function testScroll(target, stepSize, opt_reportFunc, opt_numSteps)
               data: arg,
             },
             listeningTo: replyEvent,
-          }
+          },
         })
       );
     },
@@ -69,11 +68,11 @@ function testScroll(target, stepSize, opt_reportFunc, opt_numSteps)
   function P_setupReportFn() {
     return new Promise(function(resolve) {
       report = opt_reportFunc || win.tpRecordTime;
-      if (report == 'PageLoader:RecordTime') {
+      if (report == "PageLoader:RecordTime") {
         report = function(duration, start, name) {
           var msg = { time: duration, startTime: start, testName: name };
-          sendAsyncMessage('PageLoader:RecordTime', msg);
-        }
+          sendAsyncMessage("PageLoader:RecordTime", msg);
+        };
         resolve();
         return;
       }
@@ -81,13 +80,14 @@ function testScroll(target, stepSize, opt_reportFunc, opt_numSteps)
       // Not part of the test and does nothing if we're within talos.
       // Provides an alternative tpRecordTime (with some stats display) if running in a browser.
       if (!report && document.head) {
-        var imported = document.createElement('script');
+        var imported = document.createElement("script");
         imported.addEventListener("load", function() {
           report = tpRecordTime;
           resolve();
         });
 
-        imported.src = '../../scripts/talos-debug.js?dummy=' + Date.now(); // For some browsers to re-read
+        // eslint-disable-next-line mozilla/avoid-Date-timing
+        imported.src = "../../scripts/talos-debug.js?dummy=" + Date.now(); // For some browsers to re-read
         document.head.appendChild(imported);
         return;
       }
@@ -105,7 +105,7 @@ function testScroll(target, stepSize, opt_reportFunc, opt_numSteps)
   }
 
   function rAF(fn) {
-    return content.requestAnimationFrame(fn);
+    return win.requestAnimationFrame(fn);
   }
 
   function P_rAF() {
@@ -114,18 +114,24 @@ function testScroll(target, stepSize, opt_reportFunc, opt_numSteps)
     });
   }
 
+  function P_MozAfterPaint() {
+    return new Promise(function(resolve) {
+      win.addEventListener("MozAfterPaint", () => resolve(), { once: true});
+    });
+  }
+
   function myNow() {
     return (win.performance && win.performance.now) ?
             win.performance.now() :
-            Date.now();
-  };
+            Date.now(); // eslint-disable-line mozilla/avoid-Date-timing
+  }
 
   var isWindow = target.self === target;
 
   var getPos =       isWindow ? function() { return target.pageYOffset; }
                               : function() { return target.scrollTop; };
 
-  var gotoTop =      isWindow ? function() { target.scroll(0, 0);  ensureScroll(); }
+  var gotoTop =      isWindow ? function() { target.scroll(0, 0); ensureScroll(); }
                               : function() { target.scrollTop = 0; ensureScroll(); };
 
   var doScrollTick = isWindow ? function() { target.scrollBy(0, stepSize); ensureScroll(); }
@@ -165,41 +171,45 @@ function testScroll(target, stepSize, opt_reportFunc, opt_numSteps)
 
         /* stop scrolling if we can't scroll more, or if we've reached requested number of steps */
         if ((getPos() == lastScrollPos) || (opt_numSteps && (durations.length >= (opt_numSteps + 2)))) {
-          if (typeof(Profiler) !== "undefined") {
-            Profiler.pause();
+          let profilerPaused = Promise.resolve();
+          if (typeof(TalosContentProfiler) !== "undefined") {
+            profilerPaused = TalosContentProfiler.pause(testBaseName, true);
           }
 
-          // Note: The first (1-5) intervals WILL be longer than the rest.
-          // First interval might include initial rendering and be extra slow.
-          // Also requestAnimationFrame needs to sync (optimally in 1 frame) after long frames.
-          // Suggested: Ignore the first 5 intervals.
+          profilerPaused.then(() => {
+            // Note: The first (1-5) intervals WILL be longer than the rest.
+            // First interval might include initial rendering and be extra slow.
+            // Also requestAnimationFrame needs to sync (optimally in 1 frame) after long frames.
+            // Suggested: Ignore the first 5 intervals.
 
-          durations.pop(); // Last step was 0.
-          durations.pop(); // and the prev one was shorter and with end-of-page logic, ignore both.
+            durations.pop(); // Last step was 0.
+            durations.pop(); // and the prev one was shorter and with end-of-page logic, ignore both.
 
-          if (win.talosDebug)
-            win.talosDebug.displayData = true; // In a browser: also display all data points.
+            if (win.talosDebug)
+              win.talosDebug.displayData = true; // In a browser: also display all data points.
 
-          // For analysis (otherwise, it's too many data points for talos):
-          var sum = 0;
-          for (var i = 0; i < durations.length; i++)
-            sum += Number(durations[i]);
+            // For analysis (otherwise, it's too many data points for talos):
+            var sum = 0;
+            for (var i = 0; i < durations.length; i++)
+              sum += Number(durations[i]);
 
-          // Report average interval or (failsafe) 0 if no intervls were recorded
-          result.values.push(durations.length ? sum / durations.length : 0);
-          result.names.push(testBaseName);
-          resolve();
+            // Report average interval or (failsafe) 0 if no intervls were recorded
+            result.values.push(durations.length ? sum / durations.length : 0);
+            result.names.push(testBaseName);
+            resolve();
+          });
           return;
         }
 
         lastScrollPos = getPos();
-        rAF(tick);
+        P_MozAfterPaint().then(tick);
       }
 
-      if (typeof(Profiler) !== "undefined") {
-        Profiler.resume();
+      if (typeof(TalosContentProfiler) !== "undefined") {
+        TalosContentProfiler.resume(testBaseName, true).then(() => {
+          rAF(tick);
+        });
       }
-      rAF(tick);
     });
   }
 
@@ -216,7 +226,6 @@ function testScroll(target, stepSize, opt_reportFunc, opt_numSteps)
 
     return new Promise(function(resolve, reject) {
       setSmooth();
-      var startts = Date.now();
 
       var handle = -1;
       startFrameTimeRecording(function(rv) {
@@ -225,12 +234,11 @@ function testScroll(target, stepSize, opt_reportFunc, opt_numSteps)
 
       // Get the measurements after APZ_MEASURE_MS of scrolling
       setTimeout(function() {
-        var endts = Date.now();
 
         stopFrameTimeRecording(handle, function(intervals) {
           function average(arr) {
               var sum = 0;
-              for(var i = 0; i < arr.length; i++)
+              for (var i = 0; i < arr.length; i++)
                 sum += arr[i];
               return arr.length ? sum / arr.length : 0;
           }
@@ -264,7 +272,7 @@ function testScroll(target, stepSize, opt_reportFunc, opt_numSteps)
 try {
   function handleMessageFromChrome(message) {
     var payload = message.data.details;
-    testScroll(payload.target, payload.stepSize, 'PageLoader:RecordTime', payload.opt_numSteps);
+    testScroll(payload.target, payload.stepSize, "PageLoader:RecordTime", payload.opt_numSteps);
   }
 
   addMessageListener("PageLoader:ScrollTest", handleMessageFromChrome);

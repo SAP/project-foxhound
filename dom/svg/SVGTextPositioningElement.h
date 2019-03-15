@@ -13,15 +13,14 @@
 
 namespace mozilla {
 class SVGAnimatedLengthList;
-class DOMSVGAnimatedLengthList;
-class DOMSVGAnimatedNumberList;
 
 namespace dom {
+class DOMSVGAnimatedLengthList;
+class DOMSVGAnimatedNumberList;
 typedef SVGTextContentElement SVGTextPositioningElementBase;
 
-class SVGTextPositioningElement : public SVGTextPositioningElementBase
-{
-public:
+class SVGTextPositioningElement : public SVGTextPositioningElementBase {
+ public:
   // WebIDL
   already_AddRefed<DOMSVGAnimatedLengthList> X();
   already_AddRefed<DOMSVGAnimatedLengthList> Y();
@@ -29,11 +28,10 @@ public:
   already_AddRefed<DOMSVGAnimatedLengthList> Dy();
   already_AddRefed<DOMSVGAnimatedNumberList> Rotate();
 
-protected:
-
-  explicit SVGTextPositioningElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-    : SVGTextPositioningElementBase(aNodeInfo)
-  {}
+ protected:
+  explicit SVGTextPositioningElement(
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+      : SVGTextPositioningElementBase(std::move(aNodeInfo)) {}
 
   virtual LengthListAttributesInfo GetLengthListInfo() override;
   virtual NumberListAttributesInfo GetNumberListInfo() override;
@@ -47,7 +45,7 @@ protected:
   static NumberListInfo sNumberListInfo[1];
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_SVGTextPositioningElement_h
+#endif  // mozilla_dom_SVGTextPositioningElement_h

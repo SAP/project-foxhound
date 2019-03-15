@@ -10,7 +10,7 @@
 #include "sslproto.h"
 
 #include "gtest_utils.h"
-#include "scoped_ptrs.h"
+#include "nss_scoped_ptrs.h"
 #include "tls_connect.h"
 #include "tls_filter.h"
 #include "tls_parser.h"
@@ -79,11 +79,7 @@ TEST_P(TlsConnectGenericPre13, ConnectExtendedMasterSecretResumeWithout) {
 
   Reset();
   server_->EnableExtendedMasterSecret();
-  auto alert_recorder = std::make_shared<TlsAlertRecorder>();
-  server_->SetPacketFilter(alert_recorder);
-  ConnectExpectFail();
-  EXPECT_EQ(kTlsAlertFatal, alert_recorder->level());
-  EXPECT_EQ(kTlsAlertHandshakeFailure, alert_recorder->description());
+  ConnectExpectAlert(server_, kTlsAlertHandshakeFailure);
 }
 
 TEST_P(TlsConnectGenericPre13, ConnectNormalResumeWithExtendedMasterSecret) {

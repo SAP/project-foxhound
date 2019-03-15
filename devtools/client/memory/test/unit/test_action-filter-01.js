@@ -5,14 +5,10 @@
 
 // Test setting the filter string.
 
-let { setFilterString } = require("devtools/client/memory/actions/filter");
+const { setFilterString } = require("devtools/client/memory/actions/filter");
 
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* () {
-  let store = Store();
+add_task(async function() {
+  const store = Store();
   const { getState, dispatch } = store;
 
   equal(getState().filter, null, "no filter by default");

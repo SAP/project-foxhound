@@ -93,24 +93,12 @@
  */
 //#define SK_DEFAULT_IMAGE_CACHE_LIMIT (1024 * 1024)
 
-/*  Define this to provide font subsetter in PDF generation.
- */
-//#define SK_SFNTLY_SUBSETTER "sample/chromium/font_subsetter.h"
-
 /*  Define this to set the upper limit for text to support LCD. Values that
     are very large increase the cost in the font cache and draw slower, without
     improving readability. If this is undefined, Skia will use its default
     value (e.g. 48)
  */
 //#define SK_MAX_SIZE_FOR_LCDTEXT     48
-
-/*  If SK_DEBUG is defined, then you can optionally define SK_SUPPORT_UNITTEST
-    which will run additional self-tests at startup. These can take a long time,
-    so this flag is optional.
- */
-#ifdef SK_DEBUG
-//#define SK_SUPPORT_UNITTEST
-#endif
 
 /*  Change the ordering to work in X windows.
  */
@@ -147,27 +135,30 @@
 
 #define SK_ALLOW_STATIC_GLOBAL_INITIALIZERS 0
 
-#define SK_SUPPORT_LEGACY_GETDEVICE
-#define SK_SUPPORT_LEGACY_GETTOPDEVICE
-
-#define SK_IGNORE_ETC1_SUPPORT
-
 // Don't use __stdcall with SkiaGLGlue - bug 1320644
 #define GR_GL_FUNCTION_TYPE
 
 #define SK_RASTERIZE_EVEN_ROUNDING
 
-#define SK_DISABLE_SCREENSPACE_TESS_AA_PATH_RENDERER
-
 #define SK_DISABLE_SLOW_DEBUG_VALIDATION 1
 
-#define MOZ_SKIA 1
+#define SK_SUPPORT_DEPRECATED_CLIPOPS
 
 #ifndef MOZ_IMPLICIT
 #  ifdef MOZ_CLANG_PLUGIN
 #    define MOZ_IMPLICIT __attribute__((annotate("moz_implicit")))
 #  else
 #    define MOZ_IMPLICIT
+#  endif
+#endif
+
+#define MOZ_SKIA
+
+#ifndef SK_SUPPORT_GPU
+#  ifdef USE_SKIA_GPU
+#    define SK_SUPPORT_GPU 1
+#  else
+#    define SK_SUPPORT_GPU 0
 #  endif
 #endif
 

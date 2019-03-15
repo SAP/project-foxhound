@@ -3,24 +3,24 @@
 
 const gBaseURL = "https://example.com/browser/browser/base/content/test/general/";
 
-add_task(function *() {
-  let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, gBaseURL + "subtst_contextmenu.html");
+add_task(async function() {
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, gBaseURL + "subtst_contextmenu.html");
 
   let contextMenu = document.getElementById("contentAreaContextMenu");
 
   // Get the point of the element with the page menu (test-pagemenu) and
   // synthesize a right mouse click there.
   let popupShownPromise = BrowserTestUtils.waitForEvent(contextMenu, "popupshown");
-  yield BrowserTestUtils.synthesizeMouse("#test-pagemenu", 5, 5, { type : "contextmenu", button : 2 }, tab.linkedBrowser);
-  yield popupShownPromise;
+  await BrowserTestUtils.synthesizeMouse("#test-pagemenu", 5, 5, { type: "contextmenu", button: 2 }, tab.linkedBrowser);
+  await popupShownPromise;
 
   checkMenu(contextMenu);
 
   let popupHiddenPromise = BrowserTestUtils.waitForEvent(contextMenu, "popuphidden");
   contextMenu.hidePopup();
-  yield popupHiddenPromise;
+  await popupHiddenPromise;
 
-  yield BrowserTestUtils.removeTab(tab);
+  BrowserTestUtils.removeTab(tab);
 });
 
 function checkItems(menuitem, arr) {
@@ -32,7 +32,7 @@ function checkItems(menuitem, arr) {
     } else if ("children" in details) {
       is(menuitem.localName, "menu", "submenu");
       is(menuitem.getAttribute("label"), str, str + " label");
-      checkItems(menuitem.firstChild.firstChild, details.children);
+      checkItems(menuitem.firstElementChild.firstElementChild, details.children);
     } else {
       is(menuitem.localName, "menuitem", str + " menuitem");
 
@@ -51,7 +51,7 @@ function checkItems(menuitem, arr) {
         ok(!menuitem.hasAttribute("disabled"), str + " disabled");
     }
 
-    menuitem = menuitem.nextSibling;
+    menuitem = menuitem.nextElementSibling;
   }
 }
 
@@ -74,7 +74,7 @@ function checkMenu(contextMenu) {
                    "Radio2",             {type: "checkbox", icon: "", checked: true, disabled: false},
                    "Radio3",             {type: "checkbox", icon: "", checked: false, disabled: false},
                    "---",                 null,
-                   "Checkbox",           {type: "checkbox", icon: "", checked: false, disabled: false}] }
+                   "Checkbox",           {type: "checkbox", icon: "", checked: false, disabled: false}] },
                ];
-  checkItems(contextMenu.childNodes[2], items);
+  checkItems(contextMenu.children[2], items);
 }

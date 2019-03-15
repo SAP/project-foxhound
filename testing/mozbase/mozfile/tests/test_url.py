@@ -3,6 +3,7 @@
 """
 tests for is_url
 """
+from __future__ import absolute_import
 
 import unittest
 from mozfile import is_url
@@ -18,6 +19,7 @@ class TestIsUrl(unittest.TestCase):
         self.assertFalse(is_url('/usr/bin/mozilla.org'))
         self.assertTrue(is_url('file:///usr/bin/mozilla.org'))
         self.assertFalse(is_url('c:\foo\bar'))
+
 
 if __name__ == '__main__':
     mozunit.main()

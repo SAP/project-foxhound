@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,14 +10,20 @@
 #define nsICSSLoaderObserver_h___
 
 #include "nsISupports.h"
-#include "mozilla/StyleSheet.h"
 
-#define NS_ICSSLOADEROBSERVER_IID \
-{ 0xf51fbf2c, 0xfe4b, 0x4a15, \
-  { 0xaf, 0x7e, 0x5e, 0x20, 0x64, 0x5f, 0xaf, 0x58 } }
+#define NS_ICSSLOADEROBSERVER_IID                    \
+  {                                                  \
+    0xf51fbf2c, 0xfe4b, 0x4a15, {                    \
+      0xaf, 0x7e, 0x5e, 0x20, 0x64, 0x5f, 0xaf, 0x58 \
+    }                                                \
+  }
+
+namespace mozilla {
+class StyleSheet;
+}
 
 class nsICSSLoaderObserver : public nsISupports {
-public:
+ public:
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_ICSSLOADEROBSERVER_IID)
 
   /**
@@ -34,11 +41,10 @@ public:
    *        as CSS, and doesn't indicate anything about the status of any child
    *        sheets of aSheet.
    */
-  NS_IMETHOD StyleSheetLoaded(mozilla::StyleSheet* aSheet,
-                              bool aWasAlternate,
+  NS_IMETHOD StyleSheetLoaded(mozilla::StyleSheet* aSheet, bool aWasAlternate,
                               nsresult aStatus) = 0;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsICSSLoaderObserver, NS_ICSSLOADEROBSERVER_IID)
 
-#endif // nsICSSLoaderObserver_h___
+#endif  // nsICSSLoaderObserver_h___

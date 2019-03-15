@@ -21,22 +21,26 @@ public:
      * Creates a wbmp codec
      * Takes ownership of the stream
      */
-    static SkCodec* NewFromStream(SkStream*);
+    static std::unique_ptr<SkCodec> MakeFromStream(std::unique_ptr<SkStream>, Result*);
 
 protected:
-    SkEncodedFormat onGetEncodedFormat() const override;
+    SkEncodedImageFormat onGetEncodedFormat() const override;
     Result onGetPixels(const SkImageInfo&, void*, size_t,
-                       const Options&, SkPMColor[], int*, int*) override;
+                       const Options&, int*) override;
     bool onRewind() override;
+    bool conversionSupported(const SkImageInfo& dst, bool srcIsOpaque,
+                             bool needsXform) override;
+    // No need to Xform; all pixels are either black or white.
+    bool usesColorXform() const override { return false; }
 private:
     /*
      * Returns a swizzler on success, nullptr on failure
      */
-    SkSwizzler* initializeSwizzler(const SkImageInfo& info, const SkPMColor* ctable,
+    SkSwizzler* initializeSwizzler(const SkImageInfo& info,
                                    const Options& opts);
     SkSampler* getSampler(bool createIfNecessary) override {
         SkASSERT(fSwizzler || !createIfNecessary);
-        return fSwizzler;
+        return fSwizzler.get();
     }
 
     /*
@@ -44,19 +48,18 @@ private:
      */
     bool readRow(uint8_t* row);
 
-    SkWbmpCodec(int width, int height, const SkEncodedInfo&, SkStream*);
+    SkWbmpCodec(SkEncodedInfo&&, std::unique_ptr<SkStream>);
 
-    const size_t                 fSrcRowBytes;
+    const size_t                fSrcRowBytes;
 
     // Used for scanline decodes:
-    SkAutoTDelete<SkSwizzler>    fSwizzler;
-    SkAutoTUnref<SkColorTable>   fColorTable;
-    SkAutoTMalloc<uint8_t>       fSrcBuffer;
+    std::unique_ptr<SkSwizzler> fSwizzler;
+    SkAutoTMalloc<uint8_t>      fSrcBuffer;
 
     int onGetScanlines(void* dst, int count, size_t dstRowBytes) override;
     bool onSkipScanlines(int count) override;
-    Result onStartScanlineDecode(const SkImageInfo& dstInfo, const Options& options,
-            SkPMColor inputColorTable[], int* inputColorCount) override;
+    Result onStartScanlineDecode(const SkImageInfo& dstInfo,
+            const Options& options) override;
 
     typedef SkCodec INHERITED;
 };

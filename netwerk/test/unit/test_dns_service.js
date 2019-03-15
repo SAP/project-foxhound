@@ -3,7 +3,7 @@ var dns = Cc["@mozilla.org/network/dns-service;1"].getService(Ci.nsIDNSService);
 var listener = {
   onLookupComplete: function(inRequest, inRecord, inStatus) {
     var answer = inRecord.getNextAddrAsString();
-    do_check_true(answer == "127.0.0.1" || answer == "::1");
+    Assert.ok(answer == "127.0.0.1" || answer == "::1");
 
     do_test_finished();
   },
@@ -16,10 +16,12 @@ var listener = {
   }
 };
 
+const defaultOriginAttributes = {};
+
 function run_test() {
   var threadManager = Cc["@mozilla.org/thread-manager;1"].getService(Ci.nsIThreadManager);
   var mainThread = threadManager.currentThread;
-  dns.asyncResolve("localhost", 0, listener, mainThread);
+  dns.asyncResolve("localhost", 0, listener, mainThread, defaultOriginAttributes);
 
   do_test_pending();
 }

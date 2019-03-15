@@ -1,8 +1,8 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
-* License, v. 2.0. If a copy of the MPL was not distributed with this
-* file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef ADTS_DEMUXER_H_
 #define ADTS_DEMUXER_H_
@@ -11,39 +11,44 @@
 #include "mozilla/Maybe.h"
 #include "MediaDataDemuxer.h"
 #include "MediaResource.h"
-#include "mp4_demuxer/ByteReader.h"
 
 namespace mozilla {
 
 namespace adts {
 class Frame;
 class FrameParser;
-}
+}  // namespace adts
 
 class ADTSTrackDemuxer;
 
-class ADTSDemuxer : public MediaDataDemuxer
-{
-public:
+DDLoggedTypeDeclNameAndBase(ADTSDemuxer, MediaDataDemuxer);
+
+class ADTSDemuxer : public MediaDataDemuxer,
+                    public DecoderDoctorLifeLogger<ADTSDemuxer> {
+ public:
   // MediaDataDemuxer interface.
   explicit ADTSDemuxer(MediaResource* aSource);
   RefPtr<InitPromise> Init() override;
-  bool HasTrackType(TrackInfo::TrackType aType) const override;
   uint32_t GetNumberTracks(TrackInfo::TrackType aType) const override;
-  already_AddRefed<MediaTrackDemuxer>
-  GetTrackDemuxer(TrackInfo::TrackType aType, uint32_t aTrackNumber) override;
+  already_AddRefed<MediaTrackDemuxer> GetTrackDemuxer(
+      TrackInfo::TrackType aType, uint32_t aTrackNumber) override;
   bool IsSeekable() const override;
 
-private:
+  // Return true if a valid ADTS frame header could be found.
+  static bool ADTSSniffer(const uint8_t* aData, const uint32_t aLength);
+
+ private:
   bool InitInternal();
 
   RefPtr<MediaResource> mSource;
   RefPtr<ADTSTrackDemuxer> mTrackDemuxer;
 };
 
-class ADTSTrackDemuxer : public MediaTrackDemuxer
-{
-public:
+DDLoggedTypeNameAndBase(ADTSTrackDemuxer, MediaTrackDemuxer);
+
+class ADTSTrackDemuxer : public MediaTrackDemuxer,
+                         public DecoderDoctorLifeLogger<ADTSTrackDemuxer> {
+ public:
   explicit ADTSTrackDemuxer(MediaResource* aSource);
 
   // Initializes the track demuxer by reading the first frame for meta data.
@@ -66,18 +71,19 @@ public:
   RefPtr<SamplesPromise> GetSamples(int32_t aNumSamples = 1) override;
   void Reset() override;
   RefPtr<SkipAccessPointPromise> SkipToNextRandomAccessPoint(
-    const media::TimeUnit& aTimeThreshold) override;
+      const media::TimeUnit& aTimeThreshold) override;
   int64_t GetResourceOffset() const override;
   media::TimeIntervals GetBuffered() override;
 
-private:
+ private:
   // Destructor.
   ~ADTSTrackDemuxer();
 
   // Fast approximate seeking to given time.
   media::TimeUnit FastSeek(const media::TimeUnit& aTime);
 
-  // Seeks by scanning the stream up to the given time for more accurate results.
+  // Seeks by scanning the stream up to the given time for more accurate
+  // results.
   media::TimeUnit ScanUntil(const media::TimeUnit& aTime);
 
   // Finds the next valid frame and returns its byte range.
@@ -126,7 +132,8 @@ private:
   // Samples per frame metric derived from frame headers or 0 if none available.
   uint32_t mSamplesPerFrame;
 
-  // Samples per second metric derived from frame headers or 0 if none available.
+  // Samples per second metric derived from frame headers or 0 if none
+  // available.
   uint32_t mSamplesPerSecond;
 
   // Channel count derived from frame headers or 0 if none available.
@@ -136,6 +143,6 @@ private:
   UniquePtr<AudioInfo> mInfo;
 };
 
-} // mozilla
+}  // namespace mozilla
 
-#endif // !ADTS_DEMUXER_H_
+#endif  // !ADTS_DEMUXER_H_

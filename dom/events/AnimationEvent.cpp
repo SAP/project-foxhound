@@ -11,35 +11,22 @@
 namespace mozilla {
 namespace dom {
 
-AnimationEvent::AnimationEvent(EventTarget* aOwner,
-                               nsPresContext* aPresContext,
+AnimationEvent::AnimationEvent(EventTarget* aOwner, nsPresContext* aPresContext,
                                InternalAnimationEvent* aEvent)
-  : Event(aOwner, aPresContext,
-          aEvent ? aEvent : new InternalAnimationEvent(false, eVoidEvent))
-{
+    : Event(aOwner, aPresContext,
+            aEvent ? aEvent : new InternalAnimationEvent(false, eVoidEvent)) {
   if (aEvent) {
     mEventIsInternal = false;
-  }
-  else {
+  } else {
     mEventIsInternal = true;
     mEvent->mTime = PR_Now();
   }
 }
 
-NS_INTERFACE_MAP_BEGIN(AnimationEvent)
-  NS_INTERFACE_MAP_ENTRY(nsIDOMAnimationEvent)
-NS_INTERFACE_MAP_END_INHERITING(Event)
-
-NS_IMPL_ADDREF_INHERITED(AnimationEvent, Event)
-NS_IMPL_RELEASE_INHERITED(AnimationEvent, Event)
-
-//static
-already_AddRefed<AnimationEvent>
-AnimationEvent::Constructor(const GlobalObject& aGlobal,
-                            const nsAString& aType,
-                            const AnimationEventInit& aParam,
-                            ErrorResult& aRv)
-{
+// static
+already_AddRefed<AnimationEvent> AnimationEvent::Constructor(
+    const GlobalObject& aGlobal, const nsAString& aType,
+    const AnimationEventInit& aParam, ErrorResult& aRv) {
   nsCOMPtr<EventTarget> t = do_QueryInterface(aGlobal.GetAsSupports());
   RefPtr<AnimationEvent> e = new AnimationEvent(t, nullptr, nullptr);
   bool trusted = e->Init(t);
@@ -56,45 +43,27 @@ AnimationEvent::Constructor(const GlobalObject& aGlobal,
   return e.forget();
 }
 
-NS_IMETHODIMP
-AnimationEvent::GetAnimationName(nsAString& aAnimationName)
-{
+void AnimationEvent::GetAnimationName(nsAString& aAnimationName) {
   aAnimationName = mEvent->AsAnimationEvent()->mAnimationName;
-  return NS_OK;
 }
 
-NS_IMETHODIMP
-AnimationEvent::GetElapsedTime(float* aElapsedTime)
-{
-  *aElapsedTime = ElapsedTime();
-  return NS_OK;
-}
-
-float
-AnimationEvent::ElapsedTime()
-{
+float AnimationEvent::ElapsedTime() {
   return mEvent->AsAnimationEvent()->mElapsedTime;
 }
 
-NS_IMETHODIMP
-AnimationEvent::GetPseudoElement(nsAString& aPseudoElement)
-{
+void AnimationEvent::GetPseudoElement(nsAString& aPseudoElement) {
   aPseudoElement = mEvent->AsAnimationEvent()->mPseudoElement;
-  return NS_OK;
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 using namespace mozilla;
 using namespace mozilla::dom;
 
-already_AddRefed<AnimationEvent>
-NS_NewDOMAnimationEvent(EventTarget* aOwner,
-                        nsPresContext* aPresContext,
-                        InternalAnimationEvent* aEvent)
-{
-  RefPtr<AnimationEvent> it =
-    new AnimationEvent(aOwner, aPresContext, aEvent);
+already_AddRefed<AnimationEvent> NS_NewDOMAnimationEvent(
+    EventTarget* aOwner, nsPresContext* aPresContext,
+    InternalAnimationEvent* aEvent) {
+  RefPtr<AnimationEvent> it = new AnimationEvent(aOwner, aPresContext, aEvent);
   return it.forget();
 }

@@ -1,10 +1,7 @@
-// |jit-test| test-also-wasm-baseline; exitstatus: 3
+// |jit-test| test-also-wasm-compiler-ion; exitstatus: 3; skip-if: !wasmDebuggingIsSupported()
 // Checking resumption values for 'null' at onEnterFrame.
 
 load(libdir + "asserts.js");
-
-if (!wasmIsSupported())
-     quit(3);
 
 var g = newGlobal('');
 var dbg = new Debugger();

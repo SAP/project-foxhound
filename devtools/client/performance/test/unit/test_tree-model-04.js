@@ -7,19 +7,15 @@
  * while at the same time filtering by duration and content-only frames.
  */
 
-function run_test() {
-  run_next_test();
-}
-
 add_task(function test() {
-  let { ThreadNode } = require("devtools/client/performance/modules/logic/tree-model");
+  const { ThreadNode } = require("devtools/client/performance/modules/logic/tree-model");
 
   // Create a root node from a given samples array, filtering by time.
 
-  let startTime = 5;
-  let endTime = 18;
-  let thread = new ThreadNode(gThread, { startTime, endTime, contentOnly: true });
-  let root = getFrameNodePath(thread, "(root)");
+  const startTime = 5;
+  const endTime = 18;
+  const thread = new ThreadNode(gThread, { startTime, endTime, contentOnly: true });
+  const root = getFrameNodePath(thread, "(root)");
 
   // Test the ThreadNode, only node which should have duration
   equal(thread.duration, endTime - startTime,
@@ -59,8 +55,8 @@ var gThread = synthesizeProfileForTest([{
     { location: "(root)" },
     { location: "http://A" },
     { location: "http://B" },
-    { location: "http://C" }
-  ]
+    { location: "http://C" },
+  ],
 }, {
   time: 5 + 6,
   frames: [
@@ -68,8 +64,8 @@ var gThread = synthesizeProfileForTest([{
     { location: "chrome://A" },
     { location: "resource://B" },
     { location: "jar:file://G" },
-    { location: "http://D" }
-  ]
+    { location: "http://D" },
+  ],
 }, {
   time: 5 + 6 + 7,
   frames: [
@@ -78,7 +74,7 @@ var gThread = synthesizeProfileForTest([{
     { location: "https://E" },
     { location: "file://F" },
     { location: "app://H" },
-  ]
+  ],
 }, {
   time: 5 + 6 + 7 + 8,
   frames: [
@@ -86,6 +82,6 @@ var gThread = synthesizeProfileForTest([{
     { location: "http://A" },
     { location: "http://B" },
     { location: "http://C" },
-    { location: "http://D" }
-  ]
+    { location: "http://D" },
+  ],
 }]);

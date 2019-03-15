@@ -26,6 +26,8 @@
 //! # fn main() {}
 //! ```
 
+#![no_std]
+
 #![doc(html_root_url = "http://alexcrichton.com/cfg-if")]
 #![deny(missing_docs)]
 #![cfg_attr(test, deny(warnings))]
@@ -41,6 +43,19 @@ macro_rules! cfg_if {
             () ;
             $( ( ($($meta),*) ($($it)*) ), )*
             ( () ($($it2)*) ),
+        }
+    };
+    (
+        if #[cfg($($i_met:meta),*)] { $($i_it:item)* }
+        $(
+            else if #[cfg($($e_met:meta),*)] { $($e_it:item)* }
+        )*
+    ) => {
+        __cfg_if_items! {
+            () ;
+            ( ($($i_met),*) ($($i_it)*) ),
+            $( ( ($($e_met),*) ($($e_it)*) ), )*
+            ( () () ),
         }
     }
 }
@@ -67,7 +82,7 @@ macro_rules! __cfg_if_apply {
 mod tests {
     cfg_if! {
         if #[cfg(test)] {
-            use std::option::Option as Option2;
+            use core::option::Option as Option2;
             fn works1() -> Option2<u32> { Some(1) }
         } else {
             fn works1() -> Option<u32> { None }
@@ -92,10 +107,27 @@ mod tests {
         }
     }
 
+    cfg_if! {
+        if #[cfg(test)] {
+            use core::option::Option as Option3;
+            fn works4() -> Option3<u32> { Some(1) }
+        }
+    }
+
+    cfg_if! {
+        if #[cfg(foo)] {
+            fn works5() -> bool { false }
+        } else if #[cfg(test)] {
+            fn works5() -> bool { true }
+        }
+    }
+
     #[test]
     fn it_works() {
         assert!(works1().is_some());
         assert!(works2());
         assert!(works3());
+        assert!(works4().is_some());
+        assert!(works5());
     }
 }

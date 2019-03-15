@@ -50,15 +50,23 @@ public class BrowserContract {
     public static final String PARAM_IS_SYNC = "sync";
     public static final String PARAM_SHOW_DELETED = "show_deleted";
     public static final String PARAM_IS_TEST = "test";
+    public static final String PARAM_OLD_BOOKMARK_PARENT = "old_bookmark_parent";
     public static final String PARAM_INSERT_IF_NEEDED = "insert_if_needed";
     public static final String PARAM_INCREMENT_VISITS = "increment_visits";
     public static final String PARAM_INCREMENT_REMOTE_AGGREGATES = "increment_remote_aggregates";
+    public static final String PARAM_INCREMENT_LOCAL_VERSION_FROM_SYNC = "increment_local_version_from_sync";
+    public static final String PARAM_RESET_VERSIONS_TO_SYNCED = "reset_versions_to_synced";
+    public static final String PARAM_RESET_VERSIONS_FOR_ALL_TYPES = "reset_versions_for_all_types";
     public static final String PARAM_NON_POSITIONED_PINS = "non_positioned_pins";
     public static final String PARAM_EXPIRE_PRIORITY = "priority";
     public static final String PARAM_DATASET_ID = "dataset_id";
     public static final String PARAM_GROUP_BY = "group_by";
 
     public static final String METHOD_INSERT_HISTORY_WITH_VISITS_FROM_SYNC = "insertHistoryWithVisitsSync";
+    public static final String METHOD_UPDATE_SYNC_VERSIONS = "updateSyncVersions";
+    public static final String METHOD_RESET_RECORD_VERSIONS = "resetRecordVersions";
+    public static final String METHOD_REPLACE_REMOTE_CLIENTS = "replaceRemoteClients";
+    public static final String METHOD_UPDATE_BY_GUID_ASSERTING_LOCAL_VERSION = "updateByGuidAssertingLocalVersion";
     public static final String METHOD_RESULT = "methodResult";
     public static final String METHOD_PARAM_OBJECT = "object";
     public static final String METHOD_PARAM_DATA = "data";
@@ -149,6 +157,16 @@ public class BrowserContract {
     }
 
     @RobocopTarget
+    public interface VersionColumns {
+        String LOCAL_VERSION = "localVersion";
+        String SYNC_VERSION = "syncVersion";
+
+        // This is a flag used to indicate that records inserted from sync should start as modified.
+        // That is, their versions will start as (2,1), instead of (1,1).
+        String PARAM_INSERT_FROM_SYNC_AS_MODIFIED = "modifiedBySync";
+    }
+
+    @RobocopTarget
     public interface SyncColumns extends DateSyncColumns {
         public static final String GUID = "guid";
         public static final String IS_DELETED = "deleted";
@@ -233,7 +251,7 @@ public class BrowserContract {
     }
 
     @RobocopTarget
-    public static final class Bookmarks implements CommonColumns, URLColumns, FaviconColumns, SyncColumns {
+    public static final class Bookmarks implements CommonColumns, URLColumns, FaviconColumns, SyncColumns, VersionColumns {
         private Bookmarks() {}
 
         public static final String TABLE_NAME = "bookmarks";
@@ -334,6 +352,7 @@ public class BrowserContract {
 
         public static final String BOOKMARK_ID = "bookmark_id";
         public static final String HISTORY_ID = "history_id";
+        public static final String HISTORY_GUID = "history_guid"; // sync GUID to merge with the PageMetadata table.
 
         public static final String REMOTE_VISITS_COUNT = "remoteVisitCount";
         public static final String REMOTE_DATE_LAST_VISITED = "remoteDateLastVisited";
@@ -458,6 +477,19 @@ public class BrowserContract {
         public static final String LAST_MODIFIED = "last_modified";
 
         public static final String DEVICE_TYPE = "device_type";
+    }
+
+    public static final class RemoteDevices implements CommonColumns, DateSyncColumns {
+        private RemoteDevices() {}
+        public static final String TABLE_NAME = "remote_devices";
+
+        public static final String GUID = "guid"; // FxA device ID
+        public static final String NAME = "name";
+        public static final String TYPE = "type";
+        public static final String IS_CURRENT_DEVICE = "is_current_device";
+        public static final String LAST_ACCESS_TIME = "last_access_time";
+
+        public static final Uri CONTENT_URI = Uri.withAppendedPath(AUTHORITY_URI, "remote_devices");
     }
 
     // Data storage for dynamic panels on about:home
@@ -607,6 +639,7 @@ public class BrowserContract {
         public static final String BOOKMARK_ID = "bookmark_id";
         public static final String HISTORY_ID = "history_id";
         public static final String TYPE = "type";
+        public static final String PAGE_METADATA_JSON = "page_metadata_json";
 
         public static final Uri CONTENT_URI = Uri.withAppendedPath(AUTHORITY_URI, "topsites");
     }

@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,18 +7,20 @@
 #define nsSocketProviderService_h__
 
 #include "nsISocketProviderService.h"
+#include "mozilla/StaticPtr.h"
 
-class nsSocketProviderService : public nsISocketProviderService
-{
-  virtual ~nsSocketProviderService() {}
+class nsSocketProviderService : public nsISocketProviderService {
+  nsSocketProviderService() = default;
+  virtual ~nsSocketProviderService() = default;
 
-public:
+ public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSISOCKETPROVIDERSERVICE
 
-  nsSocketProviderService() {}
+  static already_AddRefed<nsISocketProviderService> GetOrCreate();
 
-  static nsresult Create(nsISupports *, REFNSIID aIID, void **aResult);
+ private:
+  static mozilla::StaticRefPtr<nsSocketProviderService> gSingleton;
 };
 
 #endif /* nsSocketProviderService_h__ */

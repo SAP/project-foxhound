@@ -8,7 +8,6 @@
 #define AudioSinkWrapper_h_
 
 #include "mozilla/AbstractThread.h"
-#include "mozilla/dom/AudioChannelBinding.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
@@ -16,13 +15,10 @@
 #include "MediaSink.h"
 
 namespace mozilla {
-
-class MediaData;
-template <class T> class MediaQueue;
-
-namespace media {
-
 class AudioSink;
+class MediaData;
+template <class T>
+class MediaQueue;
 
 /**
  * A wrapper around AudioSink to provide the interface of MediaSink.
@@ -30,7 +26,7 @@ class AudioSink;
 class AudioSinkWrapper : public MediaSink {
   // An AudioSink factory.
   class Creator {
-  public:
+   public:
     virtual ~Creator() {}
     virtual AudioSink* Create() = 0;
   };
@@ -38,30 +34,34 @@ class AudioSinkWrapper : public MediaSink {
   // Wrap around a function object which creates AudioSinks.
   template <typename Function>
   class CreatorImpl : public Creator {
-  public:
+   public:
     explicit CreatorImpl(const Function& aFunc) : mFunction(aFunc) {}
     AudioSink* Create() override { return mFunction(); }
-  private:
+
+   private:
     Function mFunction;
   };
 
-public:
+ public:
   template <typename Function>
-  AudioSinkWrapper(AbstractThread* aOwnerThread, const Function& aFunc)
-    : mOwnerThread(aOwnerThread)
-    , mCreator(new CreatorImpl<Function>(aFunc))
-    , mIsStarted(false)
-    // Give an insane value to facilitate debug if used before playback starts.
-    , mPlayDuration(INT64_MAX)
-    , mAudioEnded(true)
-  {}
+  AudioSinkWrapper(AbstractThread* aOwnerThread,
+                   const MediaQueue<AudioData>& aAudioQueue,
+                   const Function& aFunc)
+      : mOwnerThread(aOwnerThread),
+        mCreator(new CreatorImpl<Function>(aFunc)),
+        mIsStarted(false),
+        // Give an invalid value to facilitate debug if used before playback
+        // starts.
+        mPlayDuration(media::TimeUnit::Invalid()),
+        mAudioEnded(true),
+        mAudioQueue(aAudioQueue) {}
 
   const PlaybackParams& GetPlaybackParams() const override;
   void SetPlaybackParams(const PlaybackParams& aParams) override;
 
-  RefPtr<GenericPromise> OnEnded(TrackType aType) override;
-  int64_t GetEndTime(TrackType aType) const override;
-  int64_t GetPosition(TimeStamp* aTimeStamp = nullptr) const override;
+  RefPtr<EndedPromise> OnEnded(TrackType aType) override;
+  media::TimeUnit GetEndTime(TrackType aType) const override;
+  media::TimeUnit GetPosition(TimeStamp* aTimeStamp = nullptr) const override;
   bool HasUnplayedFrames(TrackType aType) const override;
 
   void SetVolume(double aVolume) override;
@@ -69,40 +69,46 @@ public:
   void SetPreservesPitch(bool aPreservesPitch) override;
   void SetPlaying(bool aPlaying) override;
 
-  void Start(int64_t aStartTime, const MediaInfo& aInfo) override;
+  nsresult Start(const media::TimeUnit& aStartTime,
+                 const MediaInfo& aInfo) override;
   void Stop() override;
   bool IsStarted() const override;
   bool IsPlaying() const override;
 
   void Shutdown() override;
 
-private:
+  nsCString GetDebugInfo() override;
+
+ private:
   virtual ~AudioSinkWrapper();
 
   void AssertOwnerThread() const {
     MOZ_ASSERT(mOwnerThread->IsCurrentThreadIn());
   }
 
-  int64_t GetVideoPosition(TimeStamp aNow) const;
+  TimeUnit GetVideoPosition(TimeStamp aNow) const;
 
   void OnAudioEnded();
 
+  bool IsAudioSourceEnded(const MediaInfo& aInfo) const;
+
   const RefPtr<AbstractThread> mOwnerThread;
   UniquePtr<Creator> mCreator;
-  RefPtr<AudioSink> mAudioSink;
-  RefPtr<GenericPromise> mEndPromise;
+  UniquePtr<AudioSink> mAudioSink;
+  // Will only exist when media has an audio track.
+  RefPtr<EndedPromise> mEndedPromise;
 
   bool mIsStarted;
   PlaybackParams mParams;
 
   TimeStamp mPlayStartTime;
-  int64_t mPlayDuration;
+  TimeUnit mPlayDuration;
 
   bool mAudioEnded;
-  MozPromiseRequestHolder<GenericPromise> mAudioSinkPromise;
+  MozPromiseRequestHolder<EndedPromise> mAudioSinkEndedPromise;
+  const MediaQueue<AudioData>& mAudioQueue;
 };
 
-} // namespace media
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif //AudioSinkWrapper_h_
+#endif  // AudioSinkWrapper_h_

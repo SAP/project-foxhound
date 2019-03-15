@@ -5,7 +5,12 @@
 @namespace html url(http://www.w3.org/1999/xhtml);
 
 /* These styles affect only the bound element, not other page content. */
-/* Keep any changes to these styles in sync with plugin-doorhanger.inc.css */
+.mainBox {
+ --grey-10: #f9f9fa;
+ --grey-60: #4a4a4f;
+ --grey-70: #38383d;
+}
+
 .mainBox {
   font: message-box;
   font-size: 12px;
@@ -28,24 +33,27 @@
 }
 :-moz-handler-vulnerable-updatable .hoverBox:active,
 :-moz-handler-vulnerable-no-update .hoverBox:active,
-:-moz-handler-clicktoplay .hoverBox:active {
+:host(:-moz-handler-vulnerable-updatable) .hoverBox:active,
+:host(:-moz-handler-vulnerable-no-update) .hoverBox:active {
   background-color: rgb(65, 65, 65);
 }
 
-:-moz-handler-clicktoplay .hoverBox:active .msgTapToPlay,
-:-moz-handler-clicktoplay .hoverBox:active .msgClickToPlay,
-:-moz-handler-vulnerable-updatable .hoverBox:active .msgTapToPlay,
 :-moz-handler-vulnerable-updatable .hoverBox:active .msgClickToPlay,
-:-moz-handler-vulnerable-no-update .hoverBox:active .msgTapToPlay,
-:-moz-handler-vulnerable-no-update .hoverBox:active .msgClickToPlay {
+:-moz-handler-vulnerable-no-update .hoverBox:active .msgClickToPlay,
+:host(:-moz-handler-vulnerable-updatable) .hoverBox:active .msgClickToPlay,
+:host(:-moz-handler-vulnerable-no-update) .hoverBox:active .msgClickToPlay {
   color: red;
 }
 
 :-moz-handler-vulnerable-updatable .hoverBox,
 :-moz-handler-vulnerable-no-update .hoverBox,
 :-moz-handler-blocked .hoverBox,
-:-moz-handler-crashed .hoverBox {
-  background-image: url(chrome://mozapps/skin/plugins/contentPluginStripe.png);
+:-moz-handler-crashed .hoverBox,
+:host(:-moz-handler-vulnerable-updatable) .hoverBox,
+:host(:-moz-handler-vulnerable-no-update) .hoverBox,
+:host(:-moz-handler-blocked) .hoverBox,
+:host(:-moz-handler-crashed) .hoverBox {
+  background-image: url(chrome://global/skin/plugins/contentPluginStripe.png);
 }
 
 html|a {
@@ -57,27 +65,34 @@ html|a {
   height: 48px;
   background-position: center;
   background-repeat: no-repeat;
+  background-size: contain;
   border: none;
   background-color: transparent;
   -moz-user-focus: ignore;
   margin-bottom: 6px;
+  -moz-context-properties: fill;
 }
 
 :-moz-handler-vulnerable-updatable .icon,
-:-moz-handler-vulnerable-no-update .icon {
-  background-image: url(chrome://mozapps/skin/plugins/contentPluginBlocked.png);
+:-moz-handler-vulnerable-no-update .icon,
+:host(:-moz-handler-vulnerable-updatable) .icon,
+:host(:-moz-handler-vulnerable-no-update) .icon {
+  background-image: url(chrome://global/skin/plugins/contentPluginBlocked.png);
   -moz-user-focus: normal;
 }
-:-moz-handler-blocked .icon {
-  background-image: url(chrome://mozapps/skin/plugins/contentPluginBlocked.png);
+:-moz-handler-blocked .icon,
+:host(:-moz-handler-blocked) .icon {
+  background-image: url(chrome://global/skin/plugins/contentPluginBlocked.png);
 }
-a .icon,
-:-moz-handler-clicktoplay .icon {
-  background-image: url(chrome://mozapps/skin/plugins/contentPluginActivate.png);
+:-moz-handler-clicktoplay .icon,
+:host(:-moz-handler-clicktoplay) .icon {
+  background-image: url(chrome://global/skin/plugins/plugin.svg);
+  fill: var(--grey-10);
   -moz-user-focus: normal;
 }
-:-moz-handler-crashed .icon {
-  background-image: url(chrome://mozapps/skin/plugins/contentPluginCrashed.png);
+:-moz-handler-crashed .icon,
+:host(:-moz-handler-crashed) .icon {
+  background-image: url(chrome://global/skin/plugins/contentPluginCrashed.png);
 }
 
 .throbber {
@@ -93,23 +108,10 @@ a .icon,
   }
 }
 
-.msgTapToPlay,
-.msgClickToPlay {
-  text-decoration: underline;
-}
-
-@media not all and (-moz-touch-enabled) {
-  :-moz-handler-clicktoplay .msgTapToPlay,
-  a .msgTapToPlay  {
-    display: none;
-  }
-}
-
-@media (-moz-touch-enabled) {
-    :-moz-handler-clicktoplay .msgClickToPlay,
-    a .msgClickToPlay {
-    display: none;
-  }
+/* on desktop, don't ever show the tap-to-play UI: that is for mobile only */
+:-moz-handler-clicktoplay .msgTapToPlay,
+:host(:-moz-handler-clicktoplay) .msgTapToPlay {
+  display: none;
 }
 
 .submitStatus div {
@@ -156,7 +158,7 @@ a .icon,
   display: inline-block;
   min-width: 16px;
   min-height: 16px;
-  background: url(chrome://mozapps/skin/plugins/pluginHelp-16.png) no-repeat;
+  background: url(chrome://global/skin/plugins/pluginHelp-16.png) no-repeat;
   cursor: pointer;
   float: left;
 }
@@ -167,23 +169,27 @@ a .icon,
 
 .closeIcon {
   display: block;
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   margin-top: 4px;
-  margin-inline-start: -20px;
+  margin-inline-start: -24px;
   margin-inline-end: 4px;
   border: none;
+  border-radius: 2px;
   background-color: transparent;
-  background-image: url("chrome://mozapps/skin/plugins/contentPluginClose.png");
+  background-image: url(chrome://global/skin/icons/close.svg);
   background-repeat: no-repeat;
+  -moz-context-properties: fill, fill-opacity;
+  fill-opacity: 0;
+  fill: var(--grey-10);
 }
 
 .closeIcon:hover {
-  background-position: -16px 0;
+  fill-opacity: .1;
 }
 
 .closeIcon:hover:active {
-  background-position: -32px 0;
+  fill-opacity: .2;
 }
 
 .action-link {
@@ -198,9 +204,72 @@ a .icon,
   background-color: rgb(20, 20, 20);
 }
 
-:-moz-handler-vulnerable-updatable .action-link {
+:-moz-handler-vulnerable-updatable .action-link,
+:host(:-moz-handler-vulnerable-updatable) .action-link {
   background-color: #a81b0c;
 }
-:-moz-handler-vulnerable-updatable .action-link:active {
+:-moz-handler-vulnerable-updatable .action-link:active,
+:host(:-moz-handler-vulnerable-updatable) .action-link:active {
   background-color: #801409;
+}
+
+/* New Photon styling
+ *
+ * At the moment, these rules are written to only override
+ * :-moz-handler-clicktoplay styling. Once we finish the
+ * redesign for all cases, we can change the CSS directly
+ * above instead of writing these super-specific rules.
+ */
+:-moz-handler-clicktoplay .mainBox,
+:host(:-moz-handler-clicktoplay) .mainBox {
+  background-color: var(--grey-70);
+}
+
+:-moz-handler-clicktoplay .msgClickToPlay,
+:host(:-moz-handler-clicktoplay) .msgClickToPlay {
+  font-size: 13px;
+}
+
+:-moz-handler-clicktoplay .mainBox[sizing=blank] .hoverBox,
+:host(:-moz-handler-clicktoplay) .mainBox[sizing=blank] .hoverBox {
+  visibility: hidden;
+}
+
+:-moz-handler-clicktoplay .mainBox[sizing=tiny] .icon,
+:host(:-moz-handler-clicktoplay) .mainBox[sizing=tiny] .icon {
+  width: 16px;
+  height: 16px;
+}
+
+:-moz-handler-clicktoplay .mainBox[sizing=reduced] .icon,
+:host(:-moz-handler-clicktoplay) .mainBox[sizing=reduced] .icon {
+  width: 32px;
+  height: 32px;
+}
+
+:-moz-handler-clicktoplay .mainBox[sizing=blank] .closeIcon,
+:-moz-handler-clicktoplay .mainBox[sizing=tiny] .closeIcon,
+:-moz-handler-clicktoplay .mainBox[sizing=reduced] .closeIcon,
+:host(:-moz-handler-clicktoplay) .mainBox[sizing=blank] .closeIcon,
+:host(:-moz-handler-clicktoplay) .mainBox[sizing=tiny] .closeIcon,
+:host(:-moz-handler-clicktoplay) .mainBox[sizing=reduced] .closeIcon {
+  display: none;
+}
+
+:-moz-handler-clicktoplay .mainBox[notext] .msgClickToPlay,
+:host(:-moz-handler-clicktoplay) .mainBox[notext] .msgClickToPlay {
+  display: none;
+}
+
+:-moz-handler-clicktoplay .mainBox[notext] .icon,
+:host(:-moz-handler-clicktoplay) .mainBox[notext] .icon {
+  /* Override a `margin-bottom: 6px` now that .msgClickToPlay
+   * below the icon is no longer shown, in order to achieve
+   * a perfect vertical centering of the icon.
+   */
+  margin-bottom: 0;
+}
+
+:-moz-handler-clicktoplay .hoverBox:active {
+  background-color: var(--grey-60);
 }

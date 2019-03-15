@@ -6,7 +6,7 @@
 
 "use strict";
 
-(function (root, factory) {
+(function(root, factory) {
   if (typeof define === "function" && define.amd) {
     define(factory);
   } else if (typeof exports === "object") {
@@ -14,7 +14,7 @@
   } else {
     root.workerHelper = factory();
   }
-}(this, function () {
+}(this, function() {
   /**
    * This file is to only be included by ChromeWorkers. This exposes
    * a `createTask` function to workers to register tasks for communication
@@ -72,9 +72,9 @@
    * @return {function}
    */
   function createHandler(self) {
-    return function (e) {
-      let { id, task, data } = e.data;
-      let taskFn = self._tasks[task];
+    return function(e) {
+      const { id, task, data } = e.data;
+      const taskFn = self._tasks[task];
 
       if (!taskFn) {
         self.postMessage({ id, error: `Task "${task}" not found in worker.` });

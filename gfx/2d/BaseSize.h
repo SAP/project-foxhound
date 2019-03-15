@@ -1,5 +1,6 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -32,15 +33,14 @@ struct BaseSize {
   constexpr BaseSize() : width(0), height(0) {}
   constexpr BaseSize(T aWidth, T aHeight) : width(aWidth), height(aHeight) {}
 
-  void SizeTo(T aWidth, T aHeight) { width = aWidth; height = aHeight; }
-
-  bool IsEmpty() const {
-    return width <= 0 || height <= 0;
+  void SizeTo(T aWidth, T aHeight) {
+    width = aWidth;
+    height = aHeight;
   }
 
-  bool IsSquare() const {
-    return width == height;
-  }
+  bool IsEmpty() const { return width <= 0 || height <= 0; }
+
+  bool IsSquare() const { return width == height; }
 
   // Note that '=' isn't defined so we'll get the
   // compiler generated default assignment operator
@@ -75,12 +75,8 @@ struct BaseSize {
     return *static_cast<Sub*>(this);
   }
 
-  Sub operator*(T aScale) const {
-    return Sub(width * aScale, height * aScale);
-  }
-  Sub operator/(T aScale) const {
-    return Sub(width / aScale, height / aScale);
-  }
+  Sub operator*(T aScale) const { return Sub(width * aScale, height * aScale); }
+  Sub operator/(T aScale) const { return Sub(width / aScale, height / aScale); }
   friend Sub operator*(T aScale, const Sub& aSize) {
     return Sub(aScale * aSize.width, aScale * aSize.height);
   }
@@ -97,22 +93,20 @@ struct BaseSize {
   }
 
   friend Sub Min(const Sub& aA, const Sub& aB) {
-    return Sub(std::min(aA.width, aB.width),
-               std::min(aA.height, aB.height));
+    return Sub(std::min(aA.width, aB.width), std::min(aA.height, aB.height));
   }
 
   friend Sub Max(const Sub& aA, const Sub& aB) {
-    return Sub(std::max(aA.width, aB.width),
-               std::max(aA.height, aB.height));
+    return Sub(std::max(aA.width, aB.width), std::max(aA.height, aB.height));
   }
 
   friend std::ostream& operator<<(std::ostream& aStream,
-      const BaseSize<T, Sub>& aSize) {
+                                  const BaseSize<T, Sub>& aSize) {
     return aStream << aSize.width << " x " << aSize.height;
   }
 };
 
-} // namespace gfx
-} // namespace mozilla
+}  // namespace gfx
+}  // namespace mozilla
 
 #endif /* MOZILLA_GFX_BASESIZE_H_ */

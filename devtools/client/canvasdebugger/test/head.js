@@ -1,28 +1,31 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+
+/* eslint no-unused-vars: [2, {"vars": "local"}] */
+/* import-globals-from ../../shared/test/shared-head.js */
+/* import-globals-from ../../debugger/new/test/mochitest/helpers/context.js */
+
 "use strict";
 
-var { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
+// Load the shared-head file first.
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/devtools/client/shared/test/shared-head.js",
+  this);
+
+// Import helpers for the new debugger
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/devtools/client/debugger/new/test/mochitest/helpers/context.js",
+  this);
 
 var { generateUUID } = Cc["@mozilla.org/uuid-generator;1"].getService(Ci.nsIUUIDGenerator);
-var { require } = Cu.import("resource://devtools/shared/Loader.jsm", {});
 
-var Services = require("Services");
-var promise = require("promise");
-var { gDevTools } = require("devtools/client/framework/devtools");
-var { DebuggerClient } = require("devtools/shared/client/main");
+var { DebuggerClient } = require("devtools/shared/client/debugger-client");
 var { DebuggerServer } = require("devtools/server/main");
-var { CallWatcherFront } = require("devtools/shared/fronts/call-watcher");
+var { METHOD_FUNCTION } = require("devtools/shared/fronts/function-call");
 var { CanvasFront } = require("devtools/shared/fronts/canvas");
-var { setTimeout } = require("sdk/timers");
-var DevToolsUtils = require("devtools/shared/DevToolsUtils");
-var flags = require("devtools/shared/flags");
-var { TargetFactory } = require("devtools/client/framework/target");
 var { Toolbox } = require("devtools/client/framework/toolbox");
 var { isWebGLSupported } = require("devtools/client/shared/webgl-utils");
-var mm = null;
 
-const FRAME_SCRIPT_UTILS_URL = "chrome://devtools/content/shared/frame-script-utils.js";
 const EXAMPLE_URL = "http://example.com/browser/devtools/client/canvasdebugger/test/";
 const SET_TIMEOUT_URL = EXAMPLE_URL + "doc_settimeout.html";
 const NO_CANVAS_URL = EXAMPLE_URL + "doc_no-canvas.html";
@@ -42,16 +45,9 @@ const RAF_BEGIN_URL = EXAMPLE_URL + "doc_raf-begin.html";
 var gEnableLogging = Services.prefs.getBoolPref("devtools.debugger.log");
 Services.prefs.setBoolPref("devtools.debugger.log", false);
 
-// All tests are asynchronous.
-waitForExplicitFinish();
-
 var gToolEnabled = Services.prefs.getBoolPref("devtools.canvasdebugger.enabled");
 
-flags.testing = true;
-
 registerCleanupFunction(() => {
-  info("finish() was called, cleaning up...");
-  flags.testing = false;
   Services.prefs.setBoolPref("devtools.debugger.log", gEnableLogging);
   Services.prefs.setBoolPref("devtools.canvasdebugger.enabled", gToolEnabled);
 
@@ -60,52 +56,6 @@ registerCleanupFunction(() => {
   info("Forcing GC after canvas debugger test.");
   Cu.forceGC();
 });
-
-/**
- * Call manually in tests that use frame script utils after initializing
- * the shader editor. Call after init but before navigating to different pages.
- */
-function loadFrameScripts() {
-  mm = gBrowser.selectedBrowser.messageManager;
-  mm.loadFrameScript(FRAME_SCRIPT_UTILS_URL, false);
-}
-
-function addTab(aUrl, aWindow) {
-  info("Adding tab: " + aUrl);
-
-  let deferred = promise.defer();
-  let targetWindow = aWindow || window;
-  let targetBrowser = targetWindow.gBrowser;
-
-  targetWindow.focus();
-  let tab = targetBrowser.selectedTab = targetBrowser.addTab(aUrl);
-  let linkedBrowser = tab.linkedBrowser;
-
-  BrowserTestUtils.browserLoaded(linkedBrowser)
-    .then(function () {
-      info("Tab added and finished loading: " + aUrl);
-      deferred.resolve(tab);
-    });
-
-  return deferred.promise;
-}
-
-function removeTab(aTab, aWindow) {
-  info("Removing tab.");
-
-  let deferred = promise.defer();
-  let targetWindow = aWindow || window;
-  let targetBrowser = targetWindow.gBrowser;
-  let tabContainer = targetBrowser.tabContainer;
-
-  tabContainer.addEventListener("TabClose", function (aEvent) {
-    info("Tab removed and finished closing.");
-    deferred.resolve();
-  }, {once: true});
-
-  targetBrowser.removeTab(aTab);
-  return deferred.promise;
-}
 
 function handleError(aError) {
   ok(false, "Got an error: " + aError.message + "\n" + aError.stack);
@@ -124,9 +74,13 @@ function ifTestingUnsupported() {
   finish();
 }
 
-function test() {
-  let generator = isTestingSupported() ? ifTestingSupported : ifTestingUnsupported;
-  Task.spawn(generator).then(null, handleError);
+async function test() {
+  const generator = isTestingSupported() ? ifTestingSupported : ifTestingUnsupported;
+  try {
+    await generator();
+  } catch (e) {
+    handleError(e);
+  }
 }
 
 function createCanvas() {
@@ -139,40 +93,11 @@ function isTestingSupported() {
     return true;
   }
 
-  let supported = isWebGLSupported(document);
+  const supported = isWebGLSupported(document);
 
   info("This test requires WebGL support.");
   info("Apparently, WebGL is" + (supported ? "" : " not") + " supported.");
   return supported;
-}
-
-function once(aTarget, aEventName, aUseCapture = false) {
-  info("Waiting for event: '" + aEventName + "' on " + aTarget + ".");
-
-  let deferred = promise.defer();
-
-  for (let [add, remove] of [
-    ["on", "off"], // Use event emitter before DOM events for consistency
-    ["addEventListener", "removeEventListener"],
-    ["addListener", "removeListener"]
-  ]) {
-    if ((add in aTarget) && (remove in aTarget)) {
-      aTarget[add](aEventName, function onEvent(...aArgs) {
-        info("Got event: '" + aEventName + "' on " + aTarget + ".");
-        aTarget[remove](aEventName, onEvent, aUseCapture);
-        deferred.resolve(...aArgs);
-      }, aUseCapture);
-      break;
-    }
-  }
-
-  return deferred.promise;
-}
-
-function waitForTick() {
-  let deferred = promise.defer();
-  executeSoon(deferred.resolve);
-  return deferred.promise;
 }
 
 function navigateInHistory(aTarget, aDirection, aWaitForTargetEvent = "navigate") {
@@ -181,7 +106,7 @@ function navigateInHistory(aTarget, aDirection, aWaitForTargetEvent = "navigate"
 }
 
 function navigate(aTarget, aUrl, aWaitForTargetEvent = "navigate") {
-  executeSoon(() => aTarget.activeTab.navigateTo(aUrl));
+  executeSoon(() => aTarget.activeTab.navigateTo({ url: aUrl }));
   return once(aTarget, aWaitForTargetEvent);
 }
 
@@ -191,114 +116,84 @@ function reload(aTarget, aWaitForTargetEvent = "navigate") {
 }
 
 function initServer() {
-  if (!DebuggerServer.initialized) {
-    DebuggerServer.init();
-    DebuggerServer.addBrowserActors();
-  }
+  DebuggerServer.init();
+  DebuggerServer.registerAllActors();
 }
 
 function initCallWatcherBackend(aUrl) {
   info("Initializing a call watcher front.");
   initServer();
 
-  return Task.spawn(function* () {
-    let tab = yield addTab(aUrl);
-    let target = TargetFactory.forTab(tab);
+  return (async function() {
+    const tab = await addTab(aUrl);
 
-    yield target.makeRemote();
+    await registerActorInContentProcess("chrome://mochitests/content/browser/devtools/client/canvasdebugger/test/call-watcher-actor.js", {
+      prefix: "callWatcher",
+      constructor: "CallWatcherActor",
+      type: { target: true },
+    });
 
-    let front = new CallWatcherFront(target.client, target.form);
+    const target = await TargetFactory.forTab(tab);
+    await target.attach();
+
+    // Load the Front module in order to register it and have getFront to find it.
+    require("chrome://mochitests/content/browser/devtools/client/canvasdebugger/test/call-watcher-front.js");
+
+    const front = await target.getFront("call-watcher");
     return { target, front };
-  });
+  })();
 }
 
 function initCanvasDebuggerBackend(aUrl) {
   info("Initializing a canvas debugger front.");
   initServer();
 
-  return Task.spawn(function* () {
-    let tab = yield addTab(aUrl);
-    let target = TargetFactory.forTab(tab);
+  return (async function() {
+    const tab = await addTab(aUrl);
+    const target = await TargetFactory.forTab(tab);
+    await target.attach();
 
-    yield target.makeRemote();
-
-    let front = new CanvasFront(target.client, target.form);
+    const front = new CanvasFront(target.client, target.form);
     return { target, front };
-  });
+  })();
 }
 
 function initCanvasDebuggerFrontend(aUrl) {
   info("Initializing a canvas debugger pane.");
 
-  return Task.spawn(function* () {
-    let tab = yield addTab(aUrl);
-    let target = TargetFactory.forTab(tab);
+  return (async function() {
+    const tab = await addTab(aUrl);
+    const target = await TargetFactory.forTab(tab);
 
-    yield target.makeRemote();
+    await target.attach();
 
     Services.prefs.setBoolPref("devtools.canvasdebugger.enabled", true);
-    let toolbox = yield gDevTools.showToolbox(target, "canvasdebugger");
-    let panel = toolbox.getCurrentPanel();
+    const toolbox = await gDevTools.showToolbox(target, "canvasdebugger");
+    const panel = toolbox.getCurrentPanel();
     return { target, panel };
-  });
+  })();
 }
 
 function teardown({target}) {
   info("Destroying the specified canvas debugger.");
 
-  let {tab} = target;
+  const {tab} = target;
   return gDevTools.closeToolbox(target).then(() => {
     removeTab(tab);
   });
 }
 
-/**
- * Takes a string `script` and evaluates it directly in the content
- * in potentially a different process.
- */
-function evalInDebuggee(script) {
-  let deferred = promise.defer();
-
-  if (!mm) {
-    throw new Error("`loadFrameScripts()` must be called when using MessageManager.");
-  }
-
-  let id = generateUUID().toString();
-  mm.sendAsyncMessage("devtools:test:eval", { script: script, id: id });
-  mm.addMessageListener("devtools:test:eval:response", handler);
-
-  function handler({ data }) {
-    if (id !== data.id) {
-      return;
-    }
-
-    mm.removeMessageListener("devtools:test:eval:response", handler);
-    deferred.resolve(data.value);
-  }
-
-  return deferred.promise;
-}
-
 function getSourceActor(aSources, aURL) {
-  let item = aSources.getItemForAttachment(a => a.source.url === aURL);
+  const item = aSources.getItemForAttachment(a => a.source.url === aURL);
   return item ? item.value : null;
 }
 
-/**
- * Waits until a predicate returns true.
- *
- * @param function predicate
- *        Invoked once in a while until it returns true.
- * @param number interval [optional]
- *        How often the predicate is invoked, in milliseconds.
- */
-function* waitUntil(predicate, interval = 10) {
-  if (yield predicate()) {
-    return Promise.resolve(true);
-  }
-  let deferred = Promise.defer();
-  setTimeout(function () {
-    waitUntil(predicate).then(() => deferred.resolve(true));
-  }, interval);
-  return deferred.promise;
+async function validateDebuggerLocation(dbg, url, line) {
+  const location = dbg.selectors.getSelectedLocation(dbg.getState());
+  const sourceUrl = dbg.selectors.getSelectedSource(dbg.getState()).url;
+
+  is(sourceUrl, url,
+    "The expected source was shown in the debugger.");
+  is(location.line, line,
+    "The expected source line is highlighted in the debugger.");
 }

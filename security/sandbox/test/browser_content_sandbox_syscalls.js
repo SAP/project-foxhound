@@ -1,8 +1,7 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
-
-var prefs = Cc["@mozilla.org/preferences-service;1"]
-            .getService(Ci.nsIPrefBranch);
+ /* import-globals-from browser_content_sandbox_utils.js */
+"use strict";
 
 Services.scriptloader.loadSubScript("chrome://mochitests/content/browser/" +
     "security/sandbox/test/browser_content_sandbox_utils.js", this);
@@ -17,7 +16,7 @@ Services.scriptloader.loadSubScript("chrome://mochitests/content/browser/" +
 // Calls the native execv library function. Include imports so this can be
 // safely serialized and run remotely by ContentTask.spawn.
 function callExec(args) {
-  Components.utils.import("resource://gre/modules/ctypes.jsm");
+  ChromeUtils.import("resource://gre/modules/ctypes.jsm");
   let {lib, cmd} = args;
   let libc = ctypes.open(lib);
   let exec = libc.declare("execv", ctypes.default_abi,
@@ -29,7 +28,7 @@ function callExec(args) {
 
 // Calls the native fork syscall.
 function callFork(args) {
-  Components.utils.import("resource://gre/modules/ctypes.jsm");
+  ChromeUtils.import("resource://gre/modules/ctypes.jsm");
   let {lib} = args;
   let libc = ctypes.open(lib);
   let fork = libc.declare("fork", ctypes.default_abi, ctypes.int);
@@ -38,9 +37,23 @@ function callFork(args) {
   return (rv);
 }
 
+// Calls the native sysctl syscall.
+function callSysctl(args) {
+  ChromeUtils.import("resource://gre/modules/ctypes.jsm");
+  let {lib, name} = args;
+  let libc = ctypes.open(lib);
+  let sysctlbyname = libc.declare("sysctlbyname", ctypes.default_abi,
+                                  ctypes.int, ctypes.char.ptr,
+                                  ctypes.voidptr_t, ctypes.size_t.ptr,
+                                  ctypes.voidptr_t, ctypes.size_t.ptr);
+  let rv = sysctlbyname(name, null, null, null, null);
+  libc.close();
+  return rv;
+}
+
 // Calls the native open/close syscalls.
 function callOpen(args) {
-  Components.utils.import("resource://gre/modules/ctypes.jsm");
+  ChromeUtils.import("resource://gre/modules/ctypes.jsm");
   let {lib, path, flags} = args;
   let libc = ctypes.open(lib);
   let open = libc.declare("open", ctypes.default_abi,
@@ -60,12 +73,11 @@ function openWriteCreateFlags() {
     let O_WRONLY = 0x001;
     let O_CREAT  = 0x200;
     return (O_WRONLY | O_CREAT);
-  } else {
-    // Linux
-    let O_WRONLY = 0x01;
-    let O_CREAT  = 0x40;
-    return (O_WRONLY | O_CREAT);
   }
+  // Linux
+  let O_WRONLY = 0x01;
+  let O_CREAT  = 0x40;
+  return (O_WRONLY | O_CREAT);
 }
 
 // Returns the name of the native library needed for native syscalls
@@ -79,6 +91,7 @@ function getOSLib() {
       return "libc.so.6";
     default:
       Assert.ok(false, "Unknown OS");
+      return 0;
   }
 }
 
@@ -119,7 +132,7 @@ function areContentSyscallsSandboxed(level) {
 // Tests executing OS API calls in the content process. Limited to Mac
 // and Linux calls for now.
 //
-add_task(function*() {
+add_task(async function() {
   // This test is only relevant in e10s
   if (!gMultiProcessBrowser) {
     ok(false, "e10s is enabled");
@@ -134,8 +147,9 @@ add_task(function*() {
   // If the pref isn't set and we're running on Linux on !isNightly(),
   // exit without failing. The Linux content sandbox is only enabled
   // on Nightly at this time.
+  // eslint-disable-next-line mozilla/use-default-preference-values
   try {
-    level = prefs.getIntPref("security.sandbox.content.level");
+    level = Services.prefs.getIntPref("security.sandbox.content.level");
   } catch (e) {
     prefExists = false;
   }
@@ -147,10 +161,6 @@ add_task(function*() {
 
   info(`security.sandbox.content.level=${level}`);
   ok(level > 0, "content sandbox is enabled.");
-  if (level == 0) {
-    info("content sandbox is not enabled, exiting");
-    return;
-  }
 
   let areSyscallsSandboxed = areContentSyscallsSandboxed(level);
 
@@ -169,35 +179,54 @@ add_task(function*() {
   if (isMac()) {
     // exec something harmless, this should fail
     let cmd = getOSExecCmd();
-    let rv = yield ContentTask.spawn(browser, {lib, cmd}, callExec);
+    let rv = await ContentTask.spawn(browser, {lib, cmd}, callExec);
     ok(rv == -1, `exec(${cmd}) is not permitted`);
   }
 
   // use open syscall
-  if (isLinux() || isMac())
-  {
+  if (isLinux() || isMac()) {
     // open a file for writing in $HOME, this should fail
     let path = fileInHomeDir().path;
     let flags = openWriteCreateFlags();
-    let fd = yield ContentTask.spawn(browser, {lib, path, flags}, callOpen);
+    let fd = await ContentTask.spawn(browser, {lib, path, flags}, callOpen);
     ok(fd < 0, "opening a file for writing in home is not permitted");
   }
 
   // use open syscall
-  if (isLinux() || isMac())
-  {
-    // open a file for writing in the content temp dir, this should work
-    // and the open handler in the content process closes the file for us
+  if (isLinux() || isMac()) {
+    // open a file for writing in the content temp dir, this should fail on
+    // macOS and work on Linux. The open handler in the content process closes
+    // the file for us
     let path = fileInTempDir().path;
     let flags = openWriteCreateFlags();
-    let fd = yield ContentTask.spawn(browser, {lib, path, flags}, callOpen);
-    ok(fd >= 0, "opening a file for writing in content temp is permitted");
+    let fd = await ContentTask.spawn(browser, {lib, path, flags}, callOpen);
+    if (isMac()) {
+      ok(fd === -1, "opening a file for writing in content temp is not permitted");
+    } else {
+      ok(fd >= 0, "opening a file for writing in content temp is permitted");
+    }
   }
 
   // use fork syscall
-  if (isLinux() || isMac())
-  {
-    let rv = yield ContentTask.spawn(browser, {lib}, callFork);
+  if (isLinux() || isMac()) {
+    let rv = await ContentTask.spawn(browser, {lib}, callFork);
     ok(rv == -1, "calling fork is not permitted");
+  }
+
+  // On macOS before 10.10 the |sysctl-name| predicate didn't exist for
+  // filtering |sysctl| access. Check the Darwin version before running the
+  // tests (Darwin 14.0.0 is macOS 10.10). This branch can be removed when we
+  // remove support for macOS 10.9.
+  if (isMac() && Services.sysinfo.getProperty("version") >= "14.0.0") {
+    let rv = await ContentTask.spawn(browser, {lib, name: "kern.boottime"},
+                                     callSysctl);
+    ok(rv == -1, "calling sysctl('kern.boottime') is not permitted");
+
+    rv = await ContentTask.spawn(browser, {lib, name: "net.inet.ip.ttl"},
+                                 callSysctl);
+    ok(rv == -1, "calling sysctl('net.inet.ip.ttl') is not permitted");
+
+    rv = await ContentTask.spawn(browser, {lib, name: "hw.ncpu"}, callSysctl);
+    ok(rv == 0, "calling sysctl('hw.ncpu') is permitted");
   }
 });

@@ -4,21 +4,43 @@
 
 "use strict";
 
-add_task(function*() {
-  info("Check history button existence and functionality");
+const TEST_PATH = getRootDirectory(gTestPath).replace("chrome://mochitests/content", "http://example.com");
 
-  yield PanelUI.show();
+add_task(async function() {
+  info("Check history button existence and functionality");
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_PATH + "dummy_history_item.html");
+  BrowserTestUtils.removeTab(tab);
+
+  tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_PATH); // will 404, but we don't care.
+
+  CustomizableUI.addWidgetToArea("history-panelmenu", CustomizableUI.AREA_FIXED_OVERFLOW_PANEL);
+  registerCleanupFunction(() => CustomizableUI.reset());
+
+  await waitForOverflowButtonShown();
+
+  await document.getElementById("nav-bar").overflowable.show();
   info("Menu panel was opened");
 
   let historyButton = document.getElementById("history-panelmenu");
   ok(historyButton, "History button appears in Panel Menu");
 
-  historyButton.click();
   let historyPanel = document.getElementById("PanelUI-history");
-  ok(historyPanel.getAttribute("current"), "History Panel is in view");
+  let promise = BrowserTestUtils.waitForEvent(historyPanel, "ViewShown");
+  historyButton.click();
+  await promise;
+  ok(historyPanel.getAttribute("visible"), "History Panel is in view");
 
-  let panelHiddenPromise = promisePanelHidden(window);
-  PanelUI.hide();
-  yield panelHiddenPromise
+  let browserLoaded = BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+  let panelHiddenPromise = promiseOverflowHidden(window);
+
+  let historyItems = document.getElementById("appMenu_historyMenu");
+  let historyItemForURL = historyItems.querySelector("toolbarbutton.bookmark-item[label='Happy History Hero']");
+  ok(historyItemForURL, "Should have a history item for the history we just made.");
+  EventUtils.synthesizeMouseAtCenter(historyItemForURL, {});
+  await browserLoaded;
+  is(gBrowser.currentURI.spec, TEST_PATH + "dummy_history_item.html", "Should have expected page load");
+
+  await panelHiddenPromise;
+  BrowserTestUtils.removeTab(tab);
   info("Menu panel was closed");
 });

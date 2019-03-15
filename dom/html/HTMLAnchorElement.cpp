@@ -14,25 +14,28 @@
 #include "nsContentUtils.h"
 #include "nsGkAtoms.h"
 #include "nsHTMLDNSPrefetch.h"
-#include "nsIDocument.h"
+#include "nsAttrValueOrString.h"
+#include "mozilla/dom/Document.h"
 #include "nsIPresShell.h"
 #include "nsPresContext.h"
 #include "nsIURI.h"
+#include "nsWindowSizes.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Anchor)
 
 namespace mozilla {
 namespace dom {
 
-#define ANCHOR_ELEMENT_FLAG_BIT(n_) NODE_FLAG_BIT(ELEMENT_TYPE_SPECIFIC_BITS_OFFSET + (n_))
+#define ANCHOR_ELEMENT_FLAG_BIT(n_) \
+  NODE_FLAG_BIT(ELEMENT_TYPE_SPECIFIC_BITS_OFFSET + (n_))
 
 // Anchor element specific bits
 enum {
   // Indicates that a DNS Prefetch has been requested from this Anchor elem
-  HTML_ANCHOR_DNS_PREFETCH_REQUESTED =    ANCHOR_ELEMENT_FLAG_BIT(0),
+  HTML_ANCHOR_DNS_PREFETCH_REQUESTED = ANCHOR_ELEMENT_FLAG_BIT(0),
 
   // Indicates that a DNS Prefetch was added to the deferral queue
-  HTML_ANCHOR_DNS_PREFETCH_DEFERRED =     ANCHOR_ELEMENT_FLAG_BIT(1)
+  HTML_ANCHOR_DNS_PREFETCH_DEFERRED = ANCHOR_ELEMENT_FLAG_BIT(1)
 };
 
 ASSERT_NODE_FLAGS_SPACE(ELEMENT_TYPE_SPECIFIC_BITS_OFFSET + 2);
@@ -41,71 +44,31 @@ ASSERT_NODE_FLAGS_SPACE(ELEMENT_TYPE_SPECIFIC_BITS_OFFSET + 2);
 
 // static
 const DOMTokenListSupportedToken HTMLAnchorElement::sSupportedRelValues[] = {
-  "noreferrer",
-  "noopener",
-  nullptr
-};
+    "noreferrer", "noopener", nullptr};
 
-HTMLAnchorElement::~HTMLAnchorElement()
-{
-}
+HTMLAnchorElement::~HTMLAnchorElement() {}
 
-bool
-HTMLAnchorElement::IsInteractiveHTMLContent(bool aIgnoreTabindex) const
-{
+bool HTMLAnchorElement::IsInteractiveHTMLContent(bool aIgnoreTabindex) const {
   return HasAttr(kNameSpaceID_None, nsGkAtoms::href) ||
          nsGenericHTMLElement::IsInteractiveHTMLContent(aIgnoreTabindex);
 }
 
-NS_INTERFACE_TABLE_HEAD_CYCLE_COLLECTION_INHERITED(HTMLAnchorElement)
-  NS_INTERFACE_TABLE_INHERITED(HTMLAnchorElement,
-                               nsIDOMHTMLAnchorElement,
-                               Link)
-NS_INTERFACE_TABLE_TAIL_INHERITING(nsGenericHTMLElement)
+NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(HTMLAnchorElement,
+                                             nsGenericHTMLElement, Link)
 
-NS_IMPL_ADDREF_INHERITED(HTMLAnchorElement, Element)
-NS_IMPL_RELEASE_INHERITED(HTMLAnchorElement, Element)
-
-NS_IMPL_CYCLE_COLLECTION_CLASS(HTMLAnchorElement)
-
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(HTMLAnchorElement,
-                                                  nsGenericHTMLElement)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mRelList)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(HTMLAnchorElement,
-                                                nsGenericHTMLElement)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mRelList)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+NS_IMPL_CYCLE_COLLECTION_INHERITED(HTMLAnchorElement, nsGenericHTMLElement,
+                                   mRelList)
 
 NS_IMPL_ELEMENT_CLONE(HTMLAnchorElement)
 
-JSObject*
-HTMLAnchorElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return HTMLAnchorElementBinding::Wrap(aCx, this, aGivenProto);
+JSObject* HTMLAnchorElement::WrapNode(JSContext* aCx,
+                                      JS::Handle<JSObject*> aGivenProto) {
+  return HTMLAnchorElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-NS_IMPL_STRING_ATTR(HTMLAnchorElement, Charset, charset)
-NS_IMPL_STRING_ATTR(HTMLAnchorElement, Coords, coords)
-NS_IMPL_URI_ATTR(HTMLAnchorElement, Href, href)
-NS_IMPL_STRING_ATTR(HTMLAnchorElement, Hreflang, hreflang)
-NS_IMPL_STRING_ATTR(HTMLAnchorElement, Name, name)
-NS_IMPL_STRING_ATTR(HTMLAnchorElement, Rel, rel)
-NS_IMPL_STRING_ATTR(HTMLAnchorElement, Rev, rev)
-NS_IMPL_STRING_ATTR(HTMLAnchorElement, Shape, shape)
-NS_IMPL_STRING_ATTR(HTMLAnchorElement, Type, type)
-NS_IMPL_STRING_ATTR(HTMLAnchorElement, Download, download)
+int32_t HTMLAnchorElement::TabIndexDefault() { return 0; }
 
-int32_t
-HTMLAnchorElement::TabIndexDefault()
-{
-  return 0;
-}
-
-bool
-HTMLAnchorElement::Draggable() const
-{
+bool HTMLAnchorElement::Draggable() const {
   // links can be dragged as long as there is an href and the
   // draggable attribute isn't false
   if (!HasAttr(kNameSpaceID_None, nsGkAtoms::href)) {
@@ -117,40 +80,30 @@ HTMLAnchorElement::Draggable() const
                       nsGkAtoms::_false, eIgnoreCase);
 }
 
-void
-HTMLAnchorElement::OnDNSPrefetchRequested()
-{
+void HTMLAnchorElement::OnDNSPrefetchRequested() {
   UnsetFlags(HTML_ANCHOR_DNS_PREFETCH_DEFERRED);
   SetFlags(HTML_ANCHOR_DNS_PREFETCH_REQUESTED);
 }
 
-void
-HTMLAnchorElement::OnDNSPrefetchDeferred()
-{
+void HTMLAnchorElement::OnDNSPrefetchDeferred() {
   UnsetFlags(HTML_ANCHOR_DNS_PREFETCH_REQUESTED);
   SetFlags(HTML_ANCHOR_DNS_PREFETCH_DEFERRED);
 }
 
-bool
-HTMLAnchorElement::HasDeferredDNSPrefetchRequest()
-{
+bool HTMLAnchorElement::HasDeferredDNSPrefetchRequest() {
   return HasFlag(HTML_ANCHOR_DNS_PREFETCH_DEFERRED);
 }
 
-nsresult
-HTMLAnchorElement::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent,
-                              bool aCompileEventHandlers)
-{
+nsresult HTMLAnchorElement::BindToTree(Document* aDocument, nsIContent* aParent,
+                                       nsIContent* aBindingParent) {
   Link::ResetLinkState(false, Link::ElementHasHref());
 
-  nsresult rv = nsGenericHTMLElement::BindToTree(aDocument, aParent,
-                                                 aBindingParent,
-                                                 aCompileEventHandlers);
+  nsresult rv =
+      nsGenericHTMLElement::BindToTree(aDocument, aParent, aBindingParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Prefetch links
-  nsIDocument* doc = GetComposedDoc();
+  Document* doc = GetComposedDoc();
   if (doc) {
     doc->RegisterPendingLinkUpdate(this);
     TryDNSPrefetch();
@@ -159,32 +112,21 @@ HTMLAnchorElement::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
   return rv;
 }
 
-void
-HTMLAnchorElement::UnbindFromTree(bool aDeep, bool aNullParent)
-{
+void HTMLAnchorElement::UnbindFromTree(bool aDeep, bool aNullParent) {
   // Cancel any DNS prefetches
   // Note: Must come before ResetLinkState.  If called after, it will recreate
   // mCachedURI based on data that is invalid - due to a call to GetHostname.
   CancelDNSPrefetch(HTML_ANCHOR_DNS_PREFETCH_DEFERRED,
                     HTML_ANCHOR_DNS_PREFETCH_REQUESTED);
 
-  // If this link is ever reinserted into a document, it might
-  // be under a different xml:base, so forget the cached state now.
+  // Without removing the link state we risk a dangling pointer
+  // in the mStyledLinks hashtable
   Link::ResetLinkState(false, Link::ElementHasHref());
-
-  // Note, we need to use OwnerDoc() here, since GetComposedDoc() might
-  // return null.
-  nsIDocument* doc = OwnerDoc();
-  if (doc) {
-    doc->UnregisterPendingLinkUpdate(this);
-  }
 
   nsGenericHTMLElement::UnbindFromTree(aDeep, aNullParent);
 }
 
-static bool
-IsNodeInEditableRegion(nsINode* aNode)
-{
+static bool IsNodeInEditableRegion(nsINode* aNode) {
   while (aNode) {
     if (aNode->IsEditable()) {
       return true;
@@ -194,24 +136,20 @@ IsNodeInEditableRegion(nsINode* aNode)
   return false;
 }
 
-bool
-HTMLAnchorElement::IsHTMLFocusable(bool aWithMouse,
-                                   bool *aIsFocusable, int32_t *aTabIndex)
-{
-  if (nsGenericHTMLElement::IsHTMLFocusable(aWithMouse, aIsFocusable, aTabIndex)) {
+bool HTMLAnchorElement::IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
+                                        int32_t* aTabIndex) {
+  if (nsGenericHTMLElement::IsHTMLFocusable(aWithMouse, aIsFocusable,
+                                            aTabIndex)) {
     return true;
   }
 
   // cannot focus links if there is no link handler
-  nsIDocument* doc = GetComposedDoc();
+  Document* doc = GetComposedDoc();
   if (doc) {
-    nsIPresShell* presShell = doc->GetShell();
-    if (presShell) {
-      nsPresContext* presContext = presShell->GetPresContext();
-      if (presContext && !presContext->GetLinkHandler()) {
-        *aIsFocusable = false;
-        return false;
-      }
+    nsPresContext* presContext = doc->GetPresContext();
+    if (presContext && !presContext->GetLinkHandler()) {
+      *aIsFocusable = false;
+      return false;
     }
   }
 
@@ -251,118 +189,52 @@ HTMLAnchorElement::IsHTMLFocusable(bool aWithMouse,
   return false;
 }
 
-nsresult
-HTMLAnchorElement::GetEventTargetParent(EventChainPreVisitor& aVisitor)
-{
-  return GetEventTargetParentForAnchors(aVisitor);
+void HTMLAnchorElement::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
+  GetEventTargetParentForAnchors(aVisitor);
 }
 
-nsresult
-HTMLAnchorElement::PostHandleEvent(EventChainPostVisitor& aVisitor)
-{
+nsresult HTMLAnchorElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
   return PostHandleEventForAnchors(aVisitor);
 }
 
-bool
-HTMLAnchorElement::IsLink(nsIURI** aURI) const
-{
-  return IsHTMLLink(aURI);
-}
+bool HTMLAnchorElement::IsLink(nsIURI** aURI) const { return IsHTMLLink(aURI); }
 
-void
-HTMLAnchorElement::GetLinkTarget(nsAString& aTarget)
-{
+void HTMLAnchorElement::GetLinkTarget(nsAString& aTarget) {
   GetAttr(kNameSpaceID_None, nsGkAtoms::target, aTarget);
   if (aTarget.IsEmpty()) {
     GetBaseTarget(aTarget);
   }
 }
 
-NS_IMETHODIMP
-HTMLAnchorElement::GetTarget(nsAString& aValue)
-{
+void HTMLAnchorElement::GetTarget(nsAString& aValue) {
   if (!GetAttr(kNameSpaceID_None, nsGkAtoms::target, aValue)) {
     GetBaseTarget(aValue);
   }
-  return NS_OK;
 }
 
-NS_IMETHODIMP
-HTMLAnchorElement::SetTarget(const nsAString& aValue)
-{
-  return SetAttr(kNameSpaceID_None, nsGkAtoms::target, aValue, true);
-}
-
-nsDOMTokenList*
-HTMLAnchorElement::RelList()
-{
+nsDOMTokenList* HTMLAnchorElement::RelList() {
   if (!mRelList) {
     mRelList = new nsDOMTokenList(this, nsGkAtoms::rel, sSupportedRelValues);
   }
   return mRelList;
 }
 
-#define IMPL_URI_PART(_part)                                 \
-  NS_IMETHODIMP                                              \
-  HTMLAnchorElement::Get##_part(nsAString& a##_part)         \
-  {                                                          \
-    Link::Get##_part(a##_part);                              \
-    return NS_OK;                                            \
-  }                                                          \
-  NS_IMETHODIMP                                              \
-  HTMLAnchorElement::Set##_part(const nsAString& a##_part)   \
-  {                                                          \
-    Link::Set##_part(a##_part);                              \
-    return NS_OK;                                            \
+void HTMLAnchorElement::GetText(nsAString& aText, mozilla::ErrorResult& aRv) {
+  if (NS_WARN_IF(
+          !nsContentUtils::GetNodeTextContent(this, true, aText, fallible))) {
+    aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
   }
-
-IMPL_URI_PART(Protocol)
-IMPL_URI_PART(Host)
-IMPL_URI_PART(Hostname)
-IMPL_URI_PART(Pathname)
-IMPL_URI_PART(Search)
-IMPL_URI_PART(Port)
-IMPL_URI_PART(Hash)
-
-#undef IMPL_URI_PART
-
-NS_IMETHODIMP    
-HTMLAnchorElement::GetText(nsAString& aText)
-{
-  if(!nsContentUtils::GetNodeTextContent(this, true, aText, fallible)) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-  return NS_OK;
 }
 
-NS_IMETHODIMP    
-HTMLAnchorElement::SetText(const nsAString& aText)
-{
-  return nsContentUtils::SetNodeTextContent(this, aText, false);
+void HTMLAnchorElement::SetText(const nsAString& aText, ErrorResult& aRv) {
+  aRv = nsContentUtils::SetNodeTextContent(this, aText, false);
 }
 
-NS_IMETHODIMP
-HTMLAnchorElement::ToString(nsAString& aSource)
-{
+void HTMLAnchorElement::ToString(nsAString& aSource) {
   return GetHref(aSource);
 }
 
-NS_IMETHODIMP
-HTMLAnchorElement::GetPing(nsAString& aValue)
-{
-  GetAttr(kNameSpaceID_None, nsGkAtoms::ping, aValue);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-HTMLAnchorElement::SetPing(const nsAString& aValue)
-{
-  return SetAttr(kNameSpaceID_None, nsGkAtoms::ping, aValue, true);
-}
-
-already_AddRefed<nsIURI>
-HTMLAnchorElement::GetHrefURI() const
-{
+already_AddRefed<nsIURI> HTMLAnchorElement::GetHrefURI() const {
   nsCOMPtr<nsIURI> uri = Link::GetCachedURI();
   if (uri) {
     return uri.forget();
@@ -371,99 +243,47 @@ HTMLAnchorElement::GetHrefURI() const
   return GetHrefURIForAnchors();
 }
 
-nsresult
-HTMLAnchorElement::SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
-                           nsIAtom* aPrefix, const nsAString& aValue,
-                           bool aNotify)
-{
-  bool reset = false;
-  if (aName == nsGkAtoms::href && kNameSpaceID_None == aNameSpaceID) {
-    // If we do not have a cached URI, we have some value here so we must reset
-    // our link state after calling the parent.
-    if (!Link::HasCachedURI()) {
-      reset = true;
-    }
-    // However, if we have a cached URI, we'll want to see if the value changed.
-    else {
-      nsAutoString val;
-      GetHref(val);
-      if (!val.Equals(aValue)) {
-        reset = true;
-      }
-    }
-    if (reset) {
+nsresult HTMLAnchorElement::BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                          const nsAttrValueOrString* aValue,
+                                          bool aNotify) {
+  if (aNamespaceID == kNameSpaceID_None) {
+    if (aName == nsGkAtoms::href) {
       CancelDNSPrefetch(HTML_ANCHOR_DNS_PREFETCH_DEFERRED,
                         HTML_ANCHOR_DNS_PREFETCH_REQUESTED);
     }
   }
 
-  nsresult rv = nsGenericHTMLElement::SetAttr(aNameSpaceID, aName, aPrefix,
-                                              aValue, aNotify);
+  return nsGenericHTMLElement::BeforeSetAttr(aNamespaceID, aName, aValue,
+                                             aNotify);
+}
 
-  // The ordering of the parent class's SetAttr call and Link::ResetLinkState
-  // is important here!  The attribute is not set until SetAttr returns, and
-  // we will need the updated attribute value because notifying the document
-  // that content states have changed will call IntrinsicState, which will try
-  // to get updated information about the visitedness from Link.
-  if (reset) {
-    Link::ResetLinkState(!!aNotify, true);
-    if (IsInComposedDoc()) {
-      TryDNSPrefetch();
+nsresult HTMLAnchorElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                         const nsAttrValue* aValue,
+                                         const nsAttrValue* aOldValue,
+                                         nsIPrincipal* aSubjectPrincipal,
+                                         bool aNotify) {
+  if (aNamespaceID == kNameSpaceID_None) {
+    if (aName == nsGkAtoms::href) {
+      Link::ResetLinkState(aNotify, !!aValue);
+      if (aValue && IsInComposedDoc()) {
+        TryDNSPrefetch();
+      }
     }
   }
 
-  return rv;
+  return nsGenericHTMLElement::AfterSetAttr(
+      aNamespaceID, aName, aValue, aOldValue, aSubjectPrincipal, aNotify);
 }
 
-nsresult
-HTMLAnchorElement::UnsetAttr(int32_t aNameSpaceID, nsIAtom* aAttribute,
-                             bool aNotify)
-{
-  bool href =
-    (aAttribute == nsGkAtoms::href && kNameSpaceID_None == aNameSpaceID);
-
-  if (href) {
-    CancelDNSPrefetch(HTML_ANCHOR_DNS_PREFETCH_DEFERRED,
-                      HTML_ANCHOR_DNS_PREFETCH_REQUESTED);
-  }
-
-  nsresult rv = nsGenericHTMLElement::UnsetAttr(aNameSpaceID, aAttribute,
-                                                aNotify);
-
-  // The ordering of the parent class's UnsetAttr call and Link::ResetLinkState
-  // is important here!  The attribute is not unset until UnsetAttr returns, and
-  // we will need the updated attribute value because notifying the document
-  // that content states have changed will call IntrinsicState, which will try
-  // to get updated information about the visitedness from Link.
-  if (href) {
-    Link::ResetLinkState(!!aNotify, false);
-  }
-
-  return rv;
-}
-
-bool
-HTMLAnchorElement::ParseAttribute(int32_t aNamespaceID,
-                                  nsIAtom* aAttribute,
-                                  const nsAString& aValue,
-                                  nsAttrValue& aResult)
-{
-  return nsGenericHTMLElement::ParseAttribute(aNamespaceID, aAttribute, aValue,
-                                              aResult);
-}
-
-EventStates
-HTMLAnchorElement::IntrinsicState() const
-{
+EventStates HTMLAnchorElement::IntrinsicState() const {
   return Link::LinkState() | nsGenericHTMLElement::IntrinsicState();
 }
 
-size_t
-HTMLAnchorElement::SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
-{
-  return nsGenericHTMLElement::SizeOfExcludingThis(aMallocSizeOf) +
-         Link::SizeOfExcludingThis(aMallocSizeOf);
+void HTMLAnchorElement::AddSizeOfExcludingThis(nsWindowSizes& aSizes,
+                                               size_t* aNodeSize) const {
+  nsGenericHTMLElement::AddSizeOfExcludingThis(aSizes, aNodeSize);
+  *aNodeSize += Link::SizeOfExcludingThis(aSizes.mState);
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

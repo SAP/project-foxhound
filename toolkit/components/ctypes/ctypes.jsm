@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-this.EXPORTED_SYMBOLS = [ "ctypes" ];
+var EXPORTED_SYMBOLS = [ "ctypes" ];
 
 /*
  * This is the js module for ctypes. Import it like so:
@@ -18,6 +18,6 @@ this.EXPORTED_SYMBOLS = [ "ctypes" ];
  */
 
 // Initialize the ctypes object. You do not need to do this yourself.
-const init = Components.classes["@mozilla.org/jsctypes;1"].createInstance();
+const init = Cc["@mozilla.org/jsctypes;1"].createInstance();
 init();
 

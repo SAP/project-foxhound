@@ -1,14 +1,8 @@
-// |jit-test| test-also-wasm-baseline; exitstatus: 3
+// |jit-test| test-also-wasm-compiler-ion; exitstatus: 3; skip-if: !wasmDebuggingIsSupported()
 // Checking in debug frame is initialized properly during stack overflow.
-
-if (!wasmIsSupported())
-    quit(3);
 
 var dbg;
 (function () { dbg = new (newGlobal().Debugger)(this); })();
-
-if (!wasmIsSupported())
-     throw "TestComplete";
 
 var m = new WebAssembly.Module(wasmTextToBinary(`(module
     (import "a" "b" (result f64))

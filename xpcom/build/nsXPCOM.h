@@ -11,15 +11,12 @@
 #include "nsXPCOMCID.h"
 
 #ifdef __cplusplus
-#define DECL_CLASS(c) class c
-#define DECL_STRUCT(c) struct c
+#  define DECL_CLASS(c) class c
+#  define DECL_STRUCT(c) struct c
 #else
-#define DECL_CLASS(c) typedef struct c c
-#define DECL_STRUCT(c) typedef struct c c
+#  define DECL_CLASS(c) typedef struct c c
+#  define DECL_STRUCT(c) typedef struct c c
 #endif
-
-DECL_CLASS(nsAString);
-DECL_CLASS(nsACString);
 
 DECL_CLASS(nsISupports);
 DECL_CLASS(nsIModule);
@@ -27,15 +24,20 @@ DECL_CLASS(nsIComponentManager);
 DECL_CLASS(nsIComponentRegistrar);
 DECL_CLASS(nsIServiceManager);
 DECL_CLASS(nsIFile);
-DECL_CLASS(nsILocalFile);
 DECL_CLASS(nsIDirectoryServiceProvider);
 DECL_CLASS(nsIMemory);
 DECL_CLASS(nsIDebug2);
 
 #ifdef __cplusplus
+extern bool gXPCOMShuttingDown;
+extern bool gXPCOMThreadsShutDown;
+#endif
+
+#ifdef __cplusplus
+#  include "nsStringFwd.h"
 namespace mozilla {
 struct Module;
-} // namespace mozilla
+}  // namespace mozilla
 #endif
 
 /**
@@ -71,8 +73,7 @@ struct Module;
  *         initialisation.
  */
 XPCOM_API(nsresult)
-NS_InitXPCOM2(nsIServiceManager** aResult,
-              nsIFile* aBinDirectory,
+NS_InitXPCOM2(nsIServiceManager** aResult, nsIFile* aBinDirectory,
               nsIDirectoryServiceProvider* aAppFileLocationProvider);
 
 /**
@@ -86,14 +87,13 @@ NS_InitMinimalXPCOM();
  * Shutdown XPCOM. You must call this method after you are finished
  * using xpcom.
  *
- * @param aServMgr          The service manager which was returned by NS_InitXPCOM.
- *                          This will release servMgr.  You may pass null.
+ * @param aServMgr          The service manager which was returned by
+ * NS_InitXPCOM. This will release servMgr.  You may pass null.
  *
  * @return NS_OK for success;
  *         other error codes indicate a failure during initialisation.
  */
 XPCOM_API(nsresult) NS_ShutdownXPCOM(nsIServiceManager* aServMgr);
-
 
 /**
  * Public Method to access to the service manager.
@@ -114,7 +114,6 @@ XPCOM_API(nsresult) NS_GetServiceManager(nsIServiceManager** aResult);
  *         other error codes indicate a failure during initialisation.
  */
 XPCOM_API(nsresult) NS_GetComponentManager(nsIComponentManager** aResult);
-
 
 /**
  * Public Method to access to the component registration manager.
@@ -159,78 +158,27 @@ XPCOM_API(nsresult) NS_GetMemoryManager(nsIMemory** aResult);
 
 #ifdef __cplusplus
 
-XPCOM_API(nsresult) NS_NewLocalFile(const nsAString& aPath,
-                                    bool aFollowLinks,
-                                    nsIFile** aResult);
+XPCOM_API(nsresult)
+NS_NewLocalFile(const nsAString& aPath, bool aFollowLinks, nsIFile** aResult);
 
-XPCOM_API(nsresult) NS_NewNativeLocalFile(const nsACString& aPath,
-                                          bool aFollowLinks,
-                                          nsIFile** aResult);
+XPCOM_API(nsresult)
+NS_NewNativeLocalFile(const nsACString& aPath, bool aFollowLinks,
+                      nsIFile** aResult);
 
 // Use NS_NewLocalFile if you already have a UTF-16 string.
 // Otherwise non-ASCII paths will break on some platforms
 // including Windows.
 class NS_ConvertUTF16toUTF8;
 nsresult NS_NewNativeLocalFile(const NS_ConvertUTF16toUTF8& aPath,
-                               bool aFollowLinks,
-                               nsIFile** aResult) = delete;
+                               bool aFollowLinks, nsIFile** aResult) = delete;
 
-#endif
-
-/**
- * Allocator functions for the standalone glue.
- * Do not use outside the xpcom glue code.
- * Use moz_xmalloc/moz_xrealloc/free, or new/delete instead.
- */
-#ifdef XPCOM_GLUE
-/**
- * Allocates a block of memory of a particular size. If the memory cannot
- * be allocated (because of an out-of-memory condition), the process aborts.
- *
- * @param aSize  The size of the block to allocate
- * @result       The block of memory
- * @note         This function is thread-safe.
- */
-XPCOM_API(void*) NS_Alloc(size_t aSize);
-
-/**
- * Reallocates a block of memory to a new size.
- *
- * @param aPtr    The block of memory to reallocate. This block must originally
-                  have been allocated by NS_Alloc or NS_Realloc
- * @param aSize   The new size. If 0, frees the block like NS_Free
- * @result        The reallocated block of memory
- * @note          This function is thread-safe.
- *
- * If aPtr is null, this function behaves like NS_Alloc.
- * If s is the size of the block to which aPtr points, the first min(s, size)
- * bytes of aPtr's block are copied to the new block. If the allocation
- * succeeds, aPtr is freed and a pointer to the new block is returned. If the
- * allocation fails, the process aborts.
- */
-XPCOM_API(void*) NS_Realloc(void* aPtr, size_t aSize);
-
-/**
- * Frees a block of memory. Null is a permissible value, in which case no
- * action is taken.
- *
- * @param aPtr  The block of memory to free. This block must originally have
- *              been allocated by NS_Alloc or NS_Realloc
- * @note        This function is thread-safe.
- */
-XPCOM_API(void) NS_Free(void* aPtr);
-#else
-#define NS_Alloc moz_xmalloc
-#define NS_Realloc moz_xrealloc
-#define NS_Free free
 #endif
 
 /**
  * Support for warnings, assertions, and debugging breaks.
  */
 
-enum
-{
+enum {
   NS_DEBUG_WARNING = 0,
   NS_DEBUG_ASSERTION = 1,
   NS_DEBUG_BREAK = 2,
@@ -252,9 +200,9 @@ enum
  * @param aFile  The source file containing the assertion (may be null)
  * @param aLine  The source file line number (-1 indicates no line number)
  */
-XPCOM_API(void) NS_DebugBreak(uint32_t aSeverity,
-                              const char* aStr, const char* aExpr,
-                              const char* aFile, int32_t aLine);
+XPCOM_API(void)
+NS_DebugBreak(uint32_t aSeverity, const char* aStr, const char* aExpr,
+              const char* aFile, int32_t aLine);
 
 /**
  * Perform a stack-walk to a debugging log under various
@@ -282,18 +230,11 @@ XPCOM_API(void) NS_LogTerm();
  * NS_LogTerm in its destructor.
  */
 
-class ScopedLogging
-{
-public:
-    ScopedLogging()
-    {
-        NS_LogInit();
-    }
+class ScopedLogging {
+ public:
+  ScopedLogging() { NS_LogInit(); }
 
-    ~ScopedLogging()
-    {
-        NS_LogTerm();
-    }
+  ~ScopedLogging() { NS_LogTerm(); }
 };
 #endif
 
@@ -307,11 +248,11 @@ public:
  * @param aInstanceSize The size of the type
  */
 
-XPCOM_API(void) NS_LogCtor(void* aPtr, const char* aTypeName,
-                           uint32_t aInstanceSize);
+XPCOM_API(void)
+NS_LogCtor(void* aPtr, const char* aTypeName, uint32_t aInstanceSize);
 
-XPCOM_API(void) NS_LogDtor(void* aPtr, const char* aTypeName,
-                           uint32_t aInstanceSize);
+XPCOM_API(void)
+NS_LogDtor(void* aPtr, const char* aTypeName, uint32_t aInstanceSize);
 
 /**
  * Log a stacktrace when an XPCOM object's refcount is incremented or
@@ -323,11 +264,12 @@ XPCOM_API(void) NS_LogDtor(void* aPtr, const char* aTypeName,
  * @param aTypeName     The class name of the type
  * @param aInstanceSize The size of the type
  */
-XPCOM_API(void) NS_LogAddRef(void* aPtr, nsrefcnt aNewRefCnt,
-                             const char* aTypeName, uint32_t aInstanceSize);
+XPCOM_API(void)
+NS_LogAddRef(void* aPtr, nsrefcnt aNewRefCnt, const char* aTypeName,
+             uint32_t aInstanceSize);
 
-XPCOM_API(void) NS_LogRelease(void* aPtr, nsrefcnt aNewRefCnt,
-                              const char* aTypeName);
+XPCOM_API(void)
+NS_LogRelease(void* aPtr, nsrefcnt aNewRefCnt, const char* aTypeName);
 
 /**
  * Log reference counting performed by COMPtrs. Processing tools can
@@ -354,10 +296,16 @@ XPCOM_API(void) NS_LogCOMPtrRelease(void* aCOMPtr, nsISupports* aObject);
 class nsCycleCollectionParticipant;
 class nsCycleCollectingAutoRefCnt;
 
-XPCOM_API(void) NS_CycleCollectorSuspect3(void* aPtr,
-                                          nsCycleCollectionParticipant* aCp,
-                                          nsCycleCollectingAutoRefCnt* aRefCnt,
-                                          bool* aShouldDelete);
+XPCOM_API(void)
+NS_CycleCollectorSuspect3(void* aPtr, nsCycleCollectionParticipant* aCp,
+                          nsCycleCollectingAutoRefCnt* aRefCnt,
+                          bool* aShouldDelete);
+
+XPCOM_API(void)
+NS_CycleCollectorSuspectUsingNursery(void* aPtr,
+                                     nsCycleCollectionParticipant* aCp,
+                                     nsCycleCollectingAutoRefCnt* aRefCnt,
+                                     bool* aShouldDelete);
 
 #endif
 
@@ -381,7 +329,6 @@ XPCOM_API(void) NS_CycleCollectorSuspect3(void* aPtr,
  * the nsIObserver.observe method is called with the "xpcom-startup" topic.
  */
 #define NS_XPCOM_STARTUP_CATEGORY "xpcom-startup"
-
 
 /**
  * Observer topics (in the observer service) used by XPCOM:
@@ -416,8 +363,7 @@ XPCOM_API(void) NS_CycleCollectorSuspect3(void* aPtr,
  * the added entry as an nsISupportsCString, and the data will be the
  * name of the category. The notification will occur on the main thread.
  */
-#define NS_XPCOM_CATEGORY_ENTRY_ADDED_OBSERVER_ID \
-  "xpcom-category-entry-added"
+#define NS_XPCOM_CATEGORY_ENTRY_ADDED_OBSERVER_ID "xpcom-category-entry-added"
 
 /**
  * This topic is notified when an entry was removed from a category in the

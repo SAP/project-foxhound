@@ -16,9 +16,6 @@
   <script type="application/javascript">
   <![CDATA[
 
-  const Cu = Components.utils;
-  const Ci = Components.interfaces;
-
   const TypedArrayThings = [
     'Int8Array',
     'Uint8Array',
@@ -52,10 +49,10 @@
     if (a instanceof File)
       return 'file';
 
-    if (a instanceof Ci.nsIDOMBlob)
+    if (a instanceof Blob)
       return 'blob';
 
-    if (TypedArrayThings.indexOf(a.constructor.name) !== -1)
+    if (TypedArrayThings.includes(a.constructor.name))
       return a.constructor.name;
 
     if (typeof a == 'object')

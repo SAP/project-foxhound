@@ -8,6 +8,7 @@ option('--with-windows-version', nargs=1, default='603',
        help='Windows SDK version to target. Win 8.1 (603) is currently'
             'the minimum supported version.')
 
+
 @depends('--with-windows-version')
 @imports(_from='__builtin__', _import='ValueError')
 def valid_windows_version(value):
@@ -26,6 +27,7 @@ def valid_windows_version(value):
 option(env='WINDOWSSDKDIR', nargs=1,
        help='Directory containing the Windows SDK')
 
+
 @depends('WINDOWSSDKDIR', host)
 def windows_sdk_dir(value, host):
     if value:
@@ -33,9 +35,9 @@ def windows_sdk_dir(value, host):
     if host.kernel != 'WINNT':
         return ()
 
-    return tuple(x[1] for x in get_registry_values(
+    return set(x[1] for x in get_registry_values(
         r'HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows Kits\Installed Roots'
-        r'\KitsRoot*'))
+        r'\KitsRoot*', get_32_and_64_bit=True))
 
 # The Windows SDK 8.1 and 10 have different layouts. The former has
 # $SDK/include/$subdir, while the latter has $SDK/include/$version/$subdir.
@@ -44,6 +46,8 @@ def windows_sdk_dir(value, host):
 # The $SDK/lib directories always have version subdirectories, but while the
 # versions match the one in $SDK/include for SDK 10, it's "winv6.3" for SDK
 # 8.1.
+
+
 @imports('os')
 @imports('re')
 @imports(_from='__builtin__', _import='sorted')
@@ -89,6 +93,7 @@ def valid_windows_sdk_dir_result(value):
     if value:
         return '0x%04x in %s' % (value.version, quote(value.path))
 
+
 @depends(c_compiler, windows_sdk_dir, valid_windows_version, 'WINDOWSSDKDIR')
 @checking('for Windows SDK', valid_windows_sdk_dir_result)
 @imports(_from='__builtin__', _import='sorted')
@@ -115,7 +120,7 @@ def valid_windows_sdk_dir(compiler, windows_sdk_dir, target_version,
                 maxver = result.splitlines()[-1]
                 try:
                     maxver = int(maxver, 0)
-                except:
+                except Exception:
                     pass
                 else:
                     sdks[d] = maxver, sdk
@@ -151,26 +156,18 @@ def valid_windows_sdk_dir(compiler, windows_sdk_dir, target_version,
     )
 
 
-add_old_configure_assignment(
-    'WINDOWSSDKDIR',
-    delayed_getattr(valid_windows_sdk_dir, 'path'))
-add_old_configure_assignment(
-    'MOZ_WINSDK_MAXVER',
-    depends(valid_windows_sdk_dir)(
-        lambda x: '0x%04X0000' % x.version if x else None))
-
-
 @imports(_from='mozbuild.shellutil', _import='quote')
 def valid_ucrt_sdk_dir_result(value):
     if value:
         return '%s in %s' % (value.version, quote(value.path))
 
-@depends(windows_sdk_dir, 'WINDOWSSDKDIR')
+
+@depends(windows_sdk_dir, 'WINDOWSSDKDIR', c_compiler)
 @checking('for Universal CRT SDK', valid_ucrt_sdk_dir_result)
 @imports('os')
 @imports(_from='__builtin__', _import='sorted')
 @imports(_import='mozpack.path', _as='mozpath')
-def valid_ucrt_sdk_dir(windows_sdk_dir, windows_sdk_dir_env):
+def valid_ucrt_sdk_dir(windows_sdk_dir, windows_sdk_dir_env, c_compiler):
     if windows_sdk_dir_env:
         windows_sdk_dir_env = windows_sdk_dir_env[0]
     sdks = {}
@@ -222,6 +219,25 @@ def valid_ucrt_sdk_dir(windows_sdk_dir, windows_sdk_dir_env):
                               'Please install it.')
 
     version, sdk = sdks[valid_sdks[0]]
+    minimum_ucrt_version = Version('10.0.15063.0')
+    if version < minimum_ucrt_version:
+        raise FatalCheckError('Latest Universal CRT SDK version found %s'
+                              ' and minimum required is %s. This or a later'
+                              ' version can be installed using the Visual'
+                              ' Studio installer.'
+                              % (version, minimum_ucrt_version))
+
+    broken_ucrt_version = Version('10.0.16299.0')
+    working_ucrt_version = Version('10.0.17134.0')
+    if (c_compiler.type == 'clang-cl' and version >= broken_ucrt_version and
+            version < working_ucrt_version):
+        raise FatalCheckError('Found SDK version %s but clang-cl builds'
+                              ' currently don\'t work with the SDK version.'
+                              ' You should use a different version, either'
+                              ' by uninstalling version %s or setting a'
+                              ' custom WINDOWSSDKDIR.\n'
+                              'Note: Version %s now works with clang-cl.'
+                              % (version, version, working_ucrt_version))
 
     return namespace(
         path=sdk.path,
@@ -231,16 +247,23 @@ def valid_ucrt_sdk_dir(windows_sdk_dir, windows_sdk_dir_env):
     )
 
 
-@depends(c_compiler)
+@depends(c_compiler, toolchain_search_path)
 @imports('os')
-def vc_path(c_compiler):
-    if c_compiler.type != 'msvc':
+def vc_path(c_compiler, toolchain_search_path):
+    vc_path_env = os.environ.get('VC_PATH')
+    if vc_path_env:
+        return os.path.normpath(vc_path_env)
+
+    if c_compiler.type not in ('msvc', 'clang-cl'):
         return
-    # Normally, we'd start from c_compiler.compiler, but for now, it's not the
-    # ideal full path to the compiler. At least, we're guaranteed find_program
-    # will get us the one we found in toolchain.configure.
-    cl = find_program(c_compiler.compiler)
-    result = os.path.dirname(cl)
+
+    vc_program = c_compiler.compiler
+
+    # In clang-cl builds, we use the headers and libraries from an MSVC installation.
+    if c_compiler.type == 'clang-cl':
+        vc_program = find_program('cl.exe', paths=toolchain_search_path)
+
+    result = os.path.dirname(vc_program)
     while True:
         next, p = os.path.split(result)
         if next == result:
@@ -249,15 +272,23 @@ def vc_path(c_compiler):
         result = next
         if p.lower() == 'bin':
             break
-    return result
+    return os.path.normpath(result)
 
 
 @depends(vc_path)
 @checking('for the Debug Interface Access SDK', lambda x: x or 'not found')
+@imports('os')
 @imports(_from='os.path', _import='isdir')
 def dia_sdk_dir(vc_path):
+    dia_sdk_dir_env = os.environ.get('DIA_SDK_PATH')
+    if dia_sdk_dir_env:
+        return os.path.normpath(dia_sdk_dir_env)
+
     if vc_path:
-        path = os.path.join(os.path.dirname(vc_path), 'DIA SDK')
+        # This would be easier if we had the installationPath that
+        # get_vc_paths works with, since 'DIA SDK' is relative to that.
+        path = os.path.normpath(os.path.join(
+            vc_path, r'..\..\..\..\DIA SDK'))
         if isdir(path):
             return path
 
@@ -296,67 +327,92 @@ def include_path(vc_path, windows_sdk_dir, ucrt_sdk_dir, dia_sdk_dir):
     os.environ['INCLUDE'] = includes
     return includes
 
+
 set_config('INCLUDE', include_path)
 
 
-@depends(target, vc_path, valid_windows_sdk_dir, valid_ucrt_sdk_dir, dia_sdk_dir)
-@imports('os')
-def lib_path(target, vc_path, windows_sdk_dir, ucrt_sdk_dir, dia_sdk_dir):
-    if not vc_path:
-        return
-    vc_target = {
-        'x86': '',
-        'x86_64': 'amd64',
-        'arm': 'arm',
-    }.get(target.cpu)
-    if vc_target is None:
-        return
-    # As vc_target can be '', and os.path.join will happily use the empty
-    # string, leading to a string ending with a backslash, that Make will
-    # interpret as a "string continues on next line" indicator, use variable
-    # args.
-    vc_target = (vc_target,) if vc_target else ()
-    sdk_target = {
-        'x86': 'x86',
-        'x86_64': 'x64',
-        'arm': 'arm',
-    }.get(target.cpu)
+@template
+def lib_path_for(host_or_target):
+    @depends(host_or_target, dependable(host_or_target is host), vc_path,
+             valid_windows_sdk_dir, valid_ucrt_sdk_dir, dia_sdk_dir)
+    @imports('os')
+    def lib_path(target, is_host, vc_path, windows_sdk_dir, ucrt_sdk_dir, dia_sdk_dir):
+        if not vc_path:
+            return
+        sdk_target = {
+            'x86': 'x86',
+            'x86_64': 'x64',
+            'arm': 'arm',
+            'aarch64': 'arm64',
+        }.get(target.cpu)
 
-    atlmfc_dir = os.path.join(vc_path, 'atlmfc', 'lib', *vc_target)
-    if not os.path.isdir(atlmfc_dir):
-        # For Visual Studio 2017
+        old_target = {
+            'x86': '',
+            'x86_64': 'amd64',
+            'arm': 'arm',
+            'aarch64': 'arm64'
+        }.get(target.cpu)
+        if old_target is None:
+            return
+        # As old_target can be '', and os.path.join will happily use the empty
+        # string, leading to a string ending with a backslash, that Make will
+        # interpret as a "string continues on next line" indicator, use variable
+        # args.
+        old_target = (old_target,) if old_target else ()
+
+        # MSVC2017 switched to use the same target naming as the sdk.
         atlmfc_dir = os.path.join(vc_path, 'atlmfc', 'lib', sdk_target)
         if not os.path.isdir(atlmfc_dir):
             die('Cannot find the ATL/MFC libraries in the Visual C++ directory '
                 '(%s). Please install them.' % vc_path)
 
+        libs = []
+        lib_env = os.environ.get('LIB')
+        if lib_env and not is_host:
+            libs.extend(lib_env.split(os.pathsep))
+        libs.extend((
+            os.path.join(vc_path, 'lib', sdk_target),
+            atlmfc_dir,
+            os.path.join(windows_sdk_dir.lib, 'um', sdk_target),
+            os.path.join(ucrt_sdk_dir.lib, 'ucrt', sdk_target),
+        ))
+        if dia_sdk_dir:
+            # For some reason the DIA SDK still uses the old-style targets
+            # even in a newer MSVC.
+            libs.append(os.path.join(dia_sdk_dir, 'lib', *old_target))
+        return libs
 
-    libs = []
-    lib_env = os.environ.get('LIB')
-    if lib_env:
-        libs.append(lib_env)
-    libs.extend((
-        os.path.join(vc_path, 'lib', *vc_target),
-        atlmfc_dir,
-        os.path.join(windows_sdk_dir.lib, 'um', sdk_target),
-        os.path.join(ucrt_sdk_dir.lib, 'ucrt', sdk_target),
-    ))
-    if dia_sdk_dir:
-        libs.append(os.path.join(dia_sdk_dir, 'lib', *vc_target))
+    return lib_path
+
+
+@depends(lib_path_for(target))
+@imports('os')
+def lib_path(libs):
     # Set in the environment for old-configure
     libs = os.pathsep.join(libs)
     os.environ['LIB'] = libs
     return libs
 
+
 set_config('LIB', lib_path)
+
+
+@depends(lib_path_for(host))
+@imports(_from='mozbuild.shellutil', _import='quote')
+def host_linker_libpaths(libs):
+    return ['-LIBPATH:%s' % quote(l) for l in libs]
+
+
+set_config('HOST_LINKER_LIBPATHS', host_linker_libpaths)
 
 
 option(env='MT', nargs=1, help='Path to the Microsoft Manifest Tool')
 
-@depends(valid_windows_sdk_dir)
+
+@depends(valid_windows_sdk_dir, valid_ucrt_sdk_dir)
 @imports(_from='os', _import='environ')
 @imports('platform')
-def sdk_bin_path(valid_windows_sdk_dir):
+def sdk_bin_path(valid_windows_sdk_dir, valid_ucrt_sdk_dir):
     if not valid_windows_sdk_dir:
         return
 
@@ -365,13 +421,16 @@ def sdk_bin_path(valid_windows_sdk_dir):
         'AMD64': 'x64',
     }.get(platform.machine())
 
+    # From version 10.0.15063.0 onwards the bin path contains the version number.
+    versioned_bin = ('bin' if valid_ucrt_sdk_dir.version < '10.0.15063.0'
+                     else os.path.join('bin', str(valid_ucrt_sdk_dir.version)))
     result = [
         environ['PATH'],
-        os.path.join(valid_windows_sdk_dir.path, 'bin', vc_host)
+        os.path.join(valid_windows_sdk_dir.path, versioned_bin, vc_host)
     ]
     if vc_host == 'x64':
         result.append(
-            os.path.join(valid_windows_sdk_dir.path, 'bin', 'x86'))
+            os.path.join(valid_windows_sdk_dir.path, versioned_bin, 'x86'))
     return result
 
 
@@ -390,7 +449,7 @@ def valid_mt(path):
         out = '\n'.join(l for l in out
                         if 'Microsoft (R) Manifest Tool' in l)
         if out:
-              return path
+            return path
     except subprocess.CalledProcessError:
         pass
     raise FatalCheckError('%s is not Microsoft Manifest Tool')
@@ -399,23 +458,59 @@ def valid_mt(path):
 set_config('MSMANIFEST_TOOL', depends(valid_mt)(lambda x: bool(x)))
 
 
-link = check_prog('LINK', ('link.exe',), paths=vc_compiler_path)
+@template
+def linker_progs_for(host_or_target):
+    compiler = {
+        host: host_c_compiler,
+        target: c_compiler,
+    }[host_or_target]
 
-add_old_configure_assignment('LINK', link)
+    @depends(compiler)
+    def linker_progs(compiler):
+        if compiler.type == 'msvc':
+            return ('link', 'lld-link')
+        if compiler.type == 'clang-cl':
+            return ('lld-link', 'link')
+    return linker_progs
 
 
-# Normally, we'd just have CC, etc. set to absolute paths, but the build system
-# doesn't currently handle properly the case where the paths contain spaces.
-# Additionally, there's the issue described in toolchain.configure, in
-# valid_compiler().
-@depends(sdk_bin_path)
-@imports('os')
-def alter_path(sdk_bin_path):
-    path = os.pathsep.join(sdk_bin_path)
-    os.environ['PATH'] = path
-    return path
+link = check_prog('LINKER', linker_progs_for(target),
+                  paths=toolchain_search_path)
 
-set_config('PATH', alter_path)
+host_link = check_prog('HOST_LINKER', linker_progs_for(host),
+                       paths=host_toolchain_search_path)
+
+add_old_configure_assignment('LINKER', link)
+
 
 check_prog('MAKECAB', ('makecab.exe',))
 
+
+@depends(c_compiler, using_sccache)
+def need_showincludes_prefix(info, using_sccache):
+    # sccache does its own -showIncludes prefix checking.
+    # clang-cl uses a gcc-style dependency scheme, see toolchain.configure.
+    if info.type == 'msvc' and not using_sccache:
+        return True
+
+
+@depends(c_compiler, when=need_showincludes_prefix)
+@imports(_from='re', _import='compile', _as='re_compile')
+def msvc_showincludes_prefix(c_compiler):
+    pattern = re_compile(br'^([^:]*:.*[ :] )(.*\\stdio.h)$')
+    output = try_invoke_compiler([c_compiler.compiler], 'C', '#include <stdio.h>\n',
+                                 ['-nologo', '-c', '-Fonul', '-showIncludes'])
+    for line in output.splitlines():
+        if line.endswith(b'\\stdio.h'):
+            m = pattern.match(line)
+            if m:
+                return m.group(1)
+    # We should have found the prefix and returned earlier
+    die('Cannot find cl -showIncludes prefix.')
+
+
+set_config('CL_INCLUDES_PREFIX', msvc_showincludes_prefix)
+
+# Make sure that the build system can handle non-ASCII characters in
+# environment variables to prevent silent breakage on non-English systems.
+set_config('NONASCII', b'\241\241')

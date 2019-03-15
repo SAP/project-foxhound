@@ -30,10 +30,9 @@
   </script>
 </head>
 <body>
-<p id="display"><span><span id="elementf"></span></span>
 <iframe id="unstyledn" src="unstyled.xml" height="10" width="10" onload="load_done()"></iframe>
 <iframe id="unstyledf" src="unstyled-frame.xml" height="10" width="10" onload="load_done()"></iframe>
-</p>
+<p id="display"><span><span id="elementf"></span></span></p>
 <div id="content" style="display: none">
 
 <div><span id="elementn"></span></div>
@@ -46,10 +45,6 @@
 /** Test for computation of values in property database **/
 
 var gBadComputed = {
-  // These values are treated as auto.
-  "page-break-after": [ "avoid" ],
-  "page-break-before": [ "avoid" ],
-
   // This is the only SVG-length property (i.e., length allowing
   // unitless lengths) whose initial value is zero.
   "stroke-dashoffset": [ "0", "-moz-objectValue" ],
@@ -83,11 +78,11 @@ var gBadComputedNoFrame = {
 
 function xfail_value(property, value, is_initial, has_frame) {
   if ((property in gBadComputed) &&
-      gBadComputed[property].indexOf(value) != -1)
+      gBadComputed[property].includes(value))
     return true;
 
   if (!has_frame && (property in gBadComputedNoFrame) &&
-      gBadComputedNoFrame[property].indexOf(value) != -1)
+      gBadComputedNoFrame[property].includes(value))
     return true;
 
   return false;
@@ -97,11 +92,17 @@ var gSwapInitialWhenHaveFrame = {
   // When there's a frame, '-moz-available' works out to the same as
   // 'auto' given the prerequisites of only 'display: block'.
   "width": [ "-moz-available" ],
+  // When there's a frame, these keywords works out to the same as the initial
+  // value, i.e. `auto`, given the prerequisites of only 'display: block'.
+  "height": [ "-moz-max-content", "-moz-min-content", "-moz-fit-content",
+              "-moz-available", "max-content", "min-content" ],
+  "block-size": [ "-moz-max-content", "-moz-min-content", "-moz-fit-content",
+                  "-moz-available", "max-content", "min-content" ],
 };
 
 function swap_when_frame(property, value) {
   return (property in gSwapInitialWhenHaveFrame) &&
-         gSwapInitialWhenHaveFrame[property].indexOf(value) != -1;
+         gSwapInitialWhenHaveFrame[property].includes(value);
 }
 
 var gDisplayTree = document.getElementById("display");
@@ -157,15 +158,20 @@ function test_value(property, val, is_initial)
           "should be testing with values that compute to different things " +
           "for '" + property + "'");
   }
-  // It's important for values that are supposed to compute to the
-  // initial value (given the current design of nsRuleNode) that we're
-  // modifying the most specific rule that matches the element, and that
-  // we've already requested style while that rule was empty.  This
-  // means we'll have a cached aStartStruct from the parent in the rule
-  // tree (caching the "other" value), so we'll make sure we don't get
-  // the initial value from the luck of default-initialization.
-  // This means that it's important that we set the prereqs on
+  // It used to be important for values that are supposed to compute to the
+  // initial value (given the design of the old rule tree, nsRuleNode) that
+  // we're modifying the most specific rule that matches the element, and
+  // that we've already requested style while that rule was empty.  This
+  // means we'd have a cached aStartStruct from the parent in the rule
+  // tree (caching the "other" value), so we'd make sure we don't get the
+  // initial value from the luck of default-initialization.  This means
+  // that it would've been important that we set the prereqs on
   // gRule1.style rather than on gElement.style.
+  //
+  // However, the rule tree no longer stores cached structs, and we only
+  // temporarily cache reset structs during a single restyle.  So the
+  // particular failure mode this was designed to test for isn't as
+  // likely to eventuate.
   gRule2.style.setProperty(property, val, "");
   var val_computed_n = get_computed_value(getComputedStyle(gElementN, ""), property);
   var val_computed_f = get_computed_value(getComputedStyle(gElementF, ""), property);

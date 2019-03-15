@@ -20,6 +20,7 @@ from manifestparser import TestManifest
 from reftest import ReftestManifest
 
 from mozbuild.util import ensureParentDir
+from mozpack.archive import create_tar_gz_from_files
 from mozpack.copier import FileRegistry
 from mozpack.files import ExistingFile, FileFinder
 from mozpack.manifests import InstallManifest
@@ -34,10 +35,12 @@ TEST_HARNESS_BINS = [
     'BadCertServer',
     'GenerateOCSPResponse',
     'OCSPStaplingServer',
+    'SymantecSanctionsServer',
     'SmokeDMD',
     'certutil',
     'crashinject',
     'fileid',
+    'geckodriver',
     'minidumpwriter',
     'pk12util',
     'screenshot',
@@ -103,9 +106,11 @@ ARCHIVE_FILES = {
                 'mochitest/**',
                 'reftest/**',
                 'talos/**',
+                'raptor/**',
                 'awsy/**',
                 'web-platform/**',
                 'xpcshell/**',
+                'updater-dep/**',
             ],
         },
         {
@@ -134,7 +139,7 @@ ARCHIVE_FILES = {
             'base': '',
             'manifests': [
                 'testing/marionette/harness/marionette_harness/tests/unit-tests.ini',
-                'testing/marionette/harness/marionette_harness/tests/webapi-tests.ini',
+                'gfx/tests/marionette/manifest.ini',
             ],
             # We also need the manifests and harness_unit tests
             'pattern': 'testing/marionette/harness/marionette_harness/tests/**',
@@ -149,12 +154,21 @@ ARCHIVE_FILES = {
             'source': buildconfig.topsrcdir,
             'base': 'testing',
             'pattern': 'firefox-ui/**',
+            'ignore': [
+                'firefox-ui/tests',
+            ]
         },
         {
             'source': buildconfig.topsrcdir,
-            'base': 'dom/media/test/external',
-            'pattern': '**',
-            'dest': 'external-media-tests',
+            'base': '',
+            'pattern': 'testing/firefox-ui/tests',
+            'dest': 'firefox-ui/tests',
+        },
+        {
+            'source': buildconfig.topsrcdir,
+            'base': 'toolkit/components/telemetry/tests/marionette',
+            'pattern': '/**',
+            'dest': 'telemetry/marionette',
         },
         {
             'source': buildconfig.topsrcdir,
@@ -165,13 +179,19 @@ ARCHIVE_FILES = {
         {
             'source': buildconfig.topsrcdir,
             'base': 'js/src/tests',
-            'pattern': 'ecma_6/**',
+            'pattern': 'non262/shell.js',
             'dest': 'jit-test/tests',
         },
         {
             'source': buildconfig.topsrcdir,
             'base': 'js/src/tests',
-            'pattern': 'js1_8_5/**',
+            'pattern': 'non262/Math/shell.js',
+            'dest': 'jit-test/tests',
+        },
+        {
+            'source': buildconfig.topsrcdir,
+            'base': 'js/src/tests',
+            'pattern': 'non262/reflect-parse/Match.js',
             'dest': 'jit-test/tests',
         },
         {
@@ -207,6 +227,24 @@ ARCHIVE_FILES = {
             'base': 'testing/web-platform/tests/tools/wptserve',
             'pattern': '**',
             'dest': 'tools/wptserve',
+        },
+        {
+            'source': buildconfig.topsrcdir,
+            'base': 'testing/web-platform/tests/tools/third_party',
+            'pattern': '**',
+            'dest': 'tools/wpt_third_party',
+        },
+        {
+            'source': buildconfig.topsrcdir,
+            'base': 'python/mozterm',
+            'pattern': '**',
+            'dest': 'tools/mozterm',
+        },
+        {
+            'source': buildconfig.topsrcdir,
+            'base': 'third_party/python/six',
+            'pattern': '**',
+            'dest': 'tools/six',
         },
         {
             'source': buildconfig.topobjdir,
@@ -272,7 +310,15 @@ ARCHIVE_FILES = {
             'base': 'build/pgo/certs',
             'pattern': '**',
             'dest': 'certs',
-        }
+        },
+        {
+            'source': buildconfig.topobjdir,
+            'base': 'build/unix/elfhack',
+            'patterns': [
+                'elfhack%s' % buildconfig.substs['BIN_SUFFIX'],
+            ],
+            'dest': 'bin',
+        },
     ],
     'cppunittest': [
         {
@@ -337,7 +383,19 @@ ARCHIVE_FILES = {
             'base': '',
             'pattern': 'mozinfo.json',
             'dest': 'mochitest'
-        }
+        },
+        {
+            'source': buildconfig.topobjdir,
+            'base': 'dist/xpi-stage',
+            'pattern': 'mochijar/**',
+            'dest': 'mochitest'
+        },
+        {
+            'source': buildconfig.topobjdir,
+            'base': 'dist/xpi-stage',
+            'pattern': 'specialpowers/**',
+            'dest': 'mochitest/extensions'
+        },
     ],
     'mozharness': [
         {
@@ -366,13 +424,56 @@ ARCHIVE_FILES = {
                 'testing/crashtest/crashtests.list',
             ],
             'dest': 'reftest/tests',
-        }
+        },
+        {
+            'source': buildconfig.topobjdir,
+            'base': 'dist/xpi-stage',
+            'pattern': 'reftest/**',
+            'dest': 'reftest'
+        },
+        {
+            'source': buildconfig.topobjdir,
+            'base': 'dist/xpi-stage',
+            'pattern': 'specialpowers/**',
+            'dest': 'reftest'
+        },
     ],
     'talos': [
         {
             'source': buildconfig.topsrcdir,
             'base': 'testing',
             'pattern': 'talos/**',
+        },
+        {
+            'source': buildconfig.topsrcdir,
+            'base': 'testing/profiles',
+            'pattern': '**',
+            'dest': 'talos/talos/profile_data',
+        },
+        {
+            'source': buildconfig.topsrcdir,
+            'base': 'third_party/webkit/PerformanceTests',
+            'pattern': '**',
+            'dest': 'talos/talos/tests/webkit/PerformanceTests/',
+        },
+    ],
+    'raptor': [
+        {
+            'source': buildconfig.topsrcdir,
+            'base': 'testing',
+            'pattern': 'raptor/**',
+        },
+        {
+            'source': buildconfig.topsrcdir,
+            'base': 'testing/profiles',
+            'pattern': '**',
+            'dest': 'raptor/raptor/profile_data',
+        },
+        {
+            'source': buildconfig.topsrcdir,
+            'base': 'third_party/webkit/PerformanceTests',
+            'pattern': '**',
+            'dest': 'raptor/raptor/tests/webkit/PerformanceTests/',
         },
     ],
     'awsy': [
@@ -423,7 +524,6 @@ ARCHIVE_FILES = {
                 'node-http2/**',
                 'node-spdy/**',
                 'remotexpcshelltests.py',
-                'runtestsb2g.py',
                 'runxpcshelltests.py',
                 'xpcshellcommandline.py',
             ],
@@ -446,8 +546,60 @@ ARCHIVE_FILES = {
             'pattern': 'automation.py',
             'dest': 'xpcshell',
         },
+        {
+            'source': buildconfig.topsrcdir,
+            'base': 'testing/profiles',
+            'pattern': '**',
+            'dest': 'xpcshell/profile_data',
+        },
+    ],
+    'updater-dep': [
+        {
+            'source': buildconfig.topobjdir,
+            'base': '_tests/updater-dep',
+            'pattern': '**',
+            'dest': 'updater-dep',
+        },
+        # Required by the updater on Linux
+        {
+            'source': buildconfig.topobjdir,
+            'base': 'config/external/sqlite',
+            'pattern': 'libmozsqlite3.so',
+            'dest': 'updater-dep',
+        },
     ],
 }
+
+if buildconfig.substs.get('MOZ_CODE_COVERAGE'):
+    ARCHIVE_FILES['common'].append({
+        'source': buildconfig.topsrcdir,
+        'base': 'python/mozbuild/',
+        'patterns': [
+            'mozpack/**',
+            'mozbuild/codecoverage/**',
+        ],
+    })
+
+
+if buildconfig.substs.get('MOZ_ASAN') and buildconfig.substs.get('CLANG_CL'):
+    asan_dll = {
+        'source': buildconfig.topobjdir,
+        'base': 'dist/bin',
+        'pattern': os.path.basename(buildconfig.substs['MOZ_CLANG_RT_ASAN_LIB_PATH']),
+        'dest': 'bin'
+    }
+    ARCHIVE_FILES['common'].append(asan_dll)
+
+
+if buildconfig.substs.get('commtopsrcdir'):
+    commtopsrcdir = buildconfig.substs.get('commtopsrcdir')
+    mozharness_comm = {
+        'source': commtopsrcdir,
+        'base': 'mozharness',
+        'pattern': '**',
+        'dest': 'mozharness/configs'
+    }
+    ARCHIVE_FILES['mozharness'].append(mozharness_comm)
 
 
 # "common" is our catch all archive and it ignores things from other archives.
@@ -487,7 +639,7 @@ def find_files(archive):
 
     if archive == 'common':
         # Construct entries ensuring all our generated harness files are
-        # packaged in the common tests zip.
+        # packaged in the common tests archive.
         packaged_paths = set()
         for entry in OBJDIR_TEST_FILES.values():
             pat = mozpath.join(entry['base'], entry['pattern'])
@@ -534,7 +686,7 @@ def find_files(archive):
             '**/*.pyc',
         ])
 
-        if archive != 'common' and base.startswith('_tests'):
+        if archive not in ('common', 'updater-dep') and base.startswith('_tests'):
             # We may have generated_harness_files to exclude from this entry.
             for path in generated_harness_files:
                 if path.startswith(base):
@@ -605,22 +757,31 @@ def main(argv):
 
     args = parser.parse_args(argv)
 
-    if not args.outputfile.endswith('.zip'):
-        raise Exception('expected zip output file')
+    out_file = args.outputfile
+    if not out_file.endswith(('.tar.gz', '.zip')):
+        raise Exception('expected tar.gz or zip output file')
 
     file_count = 0
     t_start = time.time()
-    ensureParentDir(args.outputfile)
-    with open(args.outputfile, 'wb') as fh:
+    ensureParentDir(out_file)
+    res = find_files(args.archive)
+    with open(out_file, 'wb') as fh:
         # Experimentation revealed that level 5 is significantly faster and has
         # marginally larger sizes than higher values and is the sweet spot
         # for optimal compression. Read the detailed commit message that
         # introduced this for raw numbers.
-        with JarWriter(fileobj=fh, optimize=False, compress_level=5) as writer:
-            res = find_files(args.archive)
-            for p, f in res:
-                writer.add(p.encode('utf-8'), f.read(), mode=f.mode, skip_duplicates=True)
-                file_count += 1
+        if out_file.endswith('.tar.gz'):
+            files = dict(res)
+            create_tar_gz_from_files(fh, files, compresslevel=5)
+            file_count = len(files)
+        elif out_file.endswith('.zip'):
+            with JarWriter(fileobj=fh, optimize=False, compress_level=5) as writer:
+                for p, f in res:
+                    writer.add(p.encode('utf-8'), f.read(), mode=f.mode,
+                               skip_duplicates=True)
+                    file_count += 1
+        else:
+            raise Exception('unhandled file extension: %s' % out_file)
 
     duration = time.time() - t_start
     zip_size = os.path.getsize(args.outputfile)

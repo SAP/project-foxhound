@@ -13,9 +13,9 @@ function run_test() {
   run_next_test();
 }
 
-add_task(function* test_notification_ack() {
+add_task(async function test_notification_ack() {
   let db = PushServiceWebSocket.newPushDB();
-  do_register_cleanup(() => {return db.drop().then(_ => db.close());});
+  registerCleanupFunction(() => {return db.drop().then(_ => db.close());});
   let records = [{
     channelID: '21668e05-6da8-42c9-b8ab-9cc3f4d5630c',
     pushEndpoint: 'https://example.com/update/1',
@@ -42,7 +42,7 @@ add_task(function* test_notification_ack() {
     systemRecord: true,
   }];
   for (let record of records) {
-    yield db.put(record);
+    await db.put(record);
   }
 
   let notifyCount = 0;
@@ -120,6 +120,6 @@ add_task(function* test_notification_ack() {
     }
   });
 
-  yield notifyPromise;
-  yield ackPromise;
+  await notifyPromise;
+  await ackPromise;
 });

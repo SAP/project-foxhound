@@ -4,7 +4,7 @@
 es6id: 21.1.3.7
 description: >
   Returns true if searchString.length == 0.
-info: >
+info: |
   21.1.3.7 String.prototype.includes ( searchString [ , position ] )
 
   ...
@@ -17,6 +17,7 @@ info: >
   at index j of searchStr, return true; but if there is no such integer k,
   return false.
   ...
+features: [String.prototype.includes]
 ---*/
 
 var str = 'The future is cool!';
@@ -35,4 +36,5 @@ assert(
   str.includes('', Infinity),
   'str.includes("", Infinity) returns true'
 );
+
 reportCompare(0, 0);

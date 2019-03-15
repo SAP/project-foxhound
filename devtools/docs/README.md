@@ -1,41 +1,21 @@
 # Firefox Developer Tools
 
-Hello! This documentation is for developers who want to work on the
-developer tools. If you are looking for general docs about how to use
-the tools, checkout [this MDN
-page](https://developer.mozilla.org/en-US/docs/Tools).
+**NOTE:** This is the documentation *for working on* the Developer Tools. If you are looking for help with *using* the tools, please check out [the end user documentation](https://developer.mozilla.org/en-US/docs/Tools) instead.
 
-These docs explain how the developer tools work at high-level, as well
-as providing links to reference documentation. This is a good starting
-point if you are a new contributor, or want to learn how our protocol,
-a specific tool, or something else works.
+---
 
-If you are looking to **start hacking** on the developer tools, all of
-this information is documented on the
-[Hacking](https://wiki.mozilla.org/DevTools/Hacking) wiki page.
+**Hello!**
 
-A very quick version:
+First of all, **thank you for making it this far!**
 
-```
-$ hg clone https://hg.mozilla.org/integration/mozilla-inbound
-$ ./mach build
-$ ./mach run -P development
-```
+Developer Tools is a complex web application, and learning the code base will take some time, even if you're a very experienced contributor to other projects. 
 
-You can also clone via git from
-`https://github.com/mozilla/gecko-dev.git`. Note that the workflow for
-submitting patches may be a little different if using git.
+Likewise, getting and building the code locally, sending contributions for review, and other essential tasks can take a bit longer and be a bit different from what you're used to seeing.
 
-Please see the [Hacking](https://wiki.mozilla.org/DevTools/Hacking)
-page for a lot more information!
+But there are good news: most of the initial, lengthy tasks don't need to be repeated once your computer is set up. And there's a huge infrastructure in place (both technical and people) to ensure that many commits can land into the Firefox repository with the peace of mind that the code is peer reviewed, can be built and passes the tests, in multiple configurations and operating systems.
 
-All of our **coding standards** are documented on the [Coding
-Standards](https://wiki.mozilla.org/DevTools/CodingStandards) wiki
-page.
+So don't be afraid of committing errors: you will. This is what happens to us all the time.
 
-We use ESLint to enforce coding standards, and if you can run it
-straight from the command like this:
+It's a big system, and no one knows *absolutely everything*. What we do know is that we are not going to break Firefox. If we do something wrong, the system will let us know before we mess things up for real. Users won't ever notice, and you will learn a new thing.
 
-```
-./mach eslint path/to/directory
-```
+[Let's get started](./getting-started/).

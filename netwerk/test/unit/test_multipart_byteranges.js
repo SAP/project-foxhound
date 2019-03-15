@@ -1,5 +1,5 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = null;
 
@@ -48,14 +48,14 @@ var testData =
 
 function responseHandler(request, buffer)
 {
-    do_check_eq(buffer, testData[testNum].data);
-    do_check_eq(request.QueryInterface(Ci.nsIChannel).contentType,
+    Assert.equal(buffer, testData[testNum].data);
+    Assert.equal(request.QueryInterface(Ci.nsIChannel).contentType,
 		testData[testNum].type);
-    do_check_eq(request.QueryInterface(Ci.nsIByteRangeRequest).isByteRangeRequest,
+    Assert.equal(request.QueryInterface(Ci.nsIByteRangeRequest).isByteRangeRequest,
 		testData[testNum].isByteRangeRequest);
-    do_check_eq(request.QueryInterface(Ci.nsIByteRangeRequest).startRange,
+    Assert.equal(request.QueryInterface(Ci.nsIByteRangeRequest).startRange,
 		testData[testNum].startRange);
-    do_check_eq(request.QueryInterface(Ci.nsIByteRangeRequest).endRange,
+    Assert.equal(request.QueryInterface(Ci.nsIByteRangeRequest).endRange,
 		testData[testNum].endRange);
     if (++testNum == numTests)
 	httpserver.stop(do_test_finished);
@@ -65,11 +65,11 @@ var multipartListener = {
   _buffer: "",
 
   QueryInterface: function(iid) {
-    if (iid.equals(Components.interfaces.nsIStreamListener) ||
-        iid.equals(Components.interfaces.nsIRequestObserver) ||
-        iid.equals(Components.interfaces.nsISupports))
+    if (iid.equals(Ci.nsIStreamListener) ||
+        iid.equals(Ci.nsIRequestObserver) ||
+        iid.equals(Ci.nsISupports))
       return this;
-    throw Components.results.NS_ERROR_NO_INTERFACE;
+    throw Cr.NS_ERROR_NO_INTERFACE;
   },
 
   onStartRequest: function(request, context) {

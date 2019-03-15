@@ -10,6 +10,17 @@
 
 #if defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
     #include <mach/mach.h>
+
+    // We've got to teach TSAN that there is a happens-before edge beteween
+    // semaphore_signal() and semaphore_wait().
+    #if __has_feature(thread_sanitizer)
+        extern "C" void AnnotateHappensBefore(const char*, int, void*);
+        extern "C" void AnnotateHappensAfter (const char*, int, void*);
+    #else
+        static void AnnotateHappensBefore(const char*, int, void*) {}
+        static void AnnotateHappensAfter (const char*, int, void*) {}
+    #endif
+
     struct SkBaseSemaphore::OSSemaphore {
         semaphore_t fSemaphore;
 
@@ -18,10 +29,18 @@
         }
         ~OSSemaphore() { semaphore_destroy(mach_task_self(), fSemaphore); }
 
-        void signal(int n) { while (n --> 0) { semaphore_signal(fSemaphore); } }
-        void wait() { semaphore_wait(fSemaphore); }
+        void signal(int n) {
+            while (n --> 0) {
+                AnnotateHappensBefore(__FILE__, __LINE__, &fSemaphore);
+                semaphore_signal(fSemaphore);
+            }
+        }
+        void wait() {
+            semaphore_wait(fSemaphore);
+            AnnotateHappensAfter(__FILE__, __LINE__, &fSemaphore);
+        }
     };
-#elif defined(SK_BUILD_FOR_WIN32)
+#elif defined(SK_BUILD_FOR_WIN)
     struct SkBaseSemaphore::OSSemaphore {
         HANDLE fSemaphore;
 
@@ -70,4 +89,12 @@ void SkBaseSemaphore::osWait() {
 
 void SkBaseSemaphore::cleanup() {
     delete fOSSemaphore;
+}
+
+bool SkBaseSemaphore::try_wait() {
+    int count = fCount.load(std::memory_order_relaxed);
+    if (count > 0) {
+        return fCount.compare_exchange_weak(count, count-1, std::memory_order_acquire);
+    }
+    return false;
 }

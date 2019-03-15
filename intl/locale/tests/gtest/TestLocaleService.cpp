@@ -5,47 +5,88 @@
 
 #include "gtest/gtest.h"
 #include "mozilla/intl/LocaleService.h"
-#include "mozilla/Services.h"
+#include "mozilla/intl/MozLocale.h"
 #include "nsIToolkitChromeRegistry.h"
 
 using namespace mozilla::intl;
 
-
-TEST(Intl_Locale_LocaleService, GetAppLocales) {
+TEST(Intl_Locale_LocaleService, GetAppLocalesAsBCP47) {
   nsTArray<nsCString> appLocales;
-  LocaleService::GetInstance()->GetAppLocales(appLocales);
+  LocaleService::GetInstance()->GetAppLocalesAsBCP47(appLocales);
 
   ASSERT_FALSE(appLocales.IsEmpty());
 }
 
-TEST(Intl_Locale_LocaleService, GetAppLocales_firstMatchesChromeReg) {
+TEST(Intl_Locale_LocaleService, GetAppLocalesAsLangTags) {
   nsTArray<nsCString> appLocales;
-  LocaleService::GetInstance()->GetAppLocales(appLocales);
+  LocaleService::GetInstance()->GetAppLocalesAsLangTags(appLocales);
 
-  nsAutoCString uaLangTag;
-  nsCOMPtr<nsIToolkitChromeRegistry> cr =
-    mozilla::services::GetToolkitChromeRegistryService();
-  if (cr) {
-    cr->GetSelectedLocale(NS_LITERAL_CSTRING("global"), true, uaLangTag);
-  }
-
-  ASSERT_TRUE(appLocales[0].Equals(uaLangTag));
+  ASSERT_FALSE(appLocales.IsEmpty());
 }
 
-TEST(Intl_Locale_LocaleService, GetAppLocales_lastIsEnUS) {
+TEST(Intl_Locale_LocaleService, GetAppLocalesAsLangTags_lastIsEnUS) {
+  nsAutoCString lastFallbackLocale;
+  LocaleService::GetInstance()->GetLastFallbackLocale(lastFallbackLocale);
+
   nsTArray<nsCString> appLocales;
-  LocaleService::GetInstance()->GetAppLocales(appLocales);
+  LocaleService::GetInstance()->GetAppLocalesAsLangTags(appLocales);
 
   int32_t len = appLocales.Length();
-  ASSERT_TRUE(appLocales[len - 1].EqualsLiteral("en-US"));
+  ASSERT_TRUE(appLocales[len - 1].Equals(lastFallbackLocale));
 }
 
-TEST(Intl_Locale_LocaleService, GetAppLocale) {
+TEST(Intl_Locale_LocaleService, GetAppLocaleAsLangTag) {
   nsTArray<nsCString> appLocales;
-  LocaleService::GetInstance()->GetAppLocales(appLocales);
+  LocaleService::GetInstance()->GetAppLocalesAsLangTags(appLocales);
 
   nsAutoCString locale;
-  LocaleService::GetInstance()->GetAppLocale(locale);
+  LocaleService::GetInstance()->GetAppLocaleAsLangTag(locale);
 
   ASSERT_TRUE(appLocales[0] == locale);
+}
+
+TEST(Intl_Locale_LocaleService, GetRegionalPrefsLocales) {
+  nsTArray<nsCString> rpLocales;
+  LocaleService::GetInstance()->GetRegionalPrefsLocales(rpLocales);
+
+  int32_t len = rpLocales.Length();
+  ASSERT_TRUE(len > 0);
+}
+
+TEST(Intl_Locale_LocaleService, GetRequestedLocales) {
+  nsTArray<nsCString> reqLocales;
+  LocaleService::GetInstance()->GetRequestedLocales(reqLocales);
+
+  int32_t len = reqLocales.Length();
+  ASSERT_TRUE(len > 0);
+}
+
+TEST(Intl_Locale_LocaleService, GetAvailableLocales) {
+  nsTArray<nsCString> availableLocales;
+  LocaleService::GetInstance()->GetAvailableLocales(availableLocales);
+
+  int32_t len = availableLocales.Length();
+  ASSERT_TRUE(len > 0);
+}
+
+TEST(Intl_Locale_LocaleService, GetPackagedLocales) {
+  nsTArray<nsCString> packagedLocales;
+  LocaleService::GetInstance()->GetPackagedLocales(packagedLocales);
+
+  int32_t len = packagedLocales.Length();
+  ASSERT_TRUE(len > 0);
+}
+
+TEST(Intl_Locale_LocaleService, GetDefaultLocale) {
+  nsAutoCString locStr;
+  LocaleService::GetInstance()->GetDefaultLocale(locStr);
+
+  ASSERT_FALSE(locStr.IsEmpty());
+  ASSERT_TRUE(Locale(locStr).IsWellFormed());
+}
+
+TEST(Intl_Locale_LocaleService, IsAppLocaleRTL) {
+  // For now we can only test if the method doesn't crash.
+  LocaleService::GetInstance()->IsAppLocaleRTL();
+  ASSERT_TRUE(true);
 }

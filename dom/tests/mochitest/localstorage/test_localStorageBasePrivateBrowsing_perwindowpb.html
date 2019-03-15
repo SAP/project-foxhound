@@ -7,21 +7,15 @@
 
 <script type="text/javascript">
 
-const Ci = Components.interfaces;
 var mainWindow;
 
-var prefBranch = Components.classes["@mozilla.org/preferences-service;1"]
-                           .getService(Components.interfaces.nsIPrefBranch);
+var prefBranch = Cc["@mozilla.org/preferences-service;1"]
+                   .getService(Ci.nsIPrefBranch);
 prefBranch.setIntPref("browser.startup.page", 0);
 prefBranch.setCharPref("browser.startup.homepage_override.mstone", "ignore");
 
 function startTest() {
-  mainWindow = window.QueryInterface(Ci.nsIInterfaceRequestor)
-                      .getInterface(Ci.nsIWebNavigation)
-                      .QueryInterface(Ci.nsIDocShellTreeItem)
-                      .rootTreeItem
-                      .QueryInterface(Ci.nsIInterfaceRequestor)
-                      .getInterface(Ci.nsIDOMWindow);
+  mainWindow = window.docShell.rootTreeItem.domWindow;
 
   doTest();
 }

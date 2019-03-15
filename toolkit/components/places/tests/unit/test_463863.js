@@ -12,14 +12,14 @@
  */
 
 var transitions = [
-  TRANSITION_LINK
-, TRANSITION_TYPED
-, TRANSITION_BOOKMARK
-, TRANSITION_EMBED
-, TRANSITION_FRAMED_LINK
-, TRANSITION_REDIRECT_PERMANENT
-, TRANSITION_REDIRECT_TEMPORARY
-, TRANSITION_DOWNLOAD
+  TRANSITION_LINK,
+  TRANSITION_TYPED,
+  TRANSITION_BOOKMARK,
+  TRANSITION_EMBED,
+  TRANSITION_FRAMED_LINK,
+  TRANSITION_REDIRECT_PERMANENT,
+  TRANSITION_REDIRECT_TEMPORARY,
+  TRANSITION_DOWNLOAD,
 ];
 
 function runQuery(aResultType) {
@@ -29,27 +29,23 @@ function runQuery(aResultType) {
                                               options).root;
   root.containerOpen = true;
   let cc = root.childCount;
-  do_check_eq(cc, transitions.length - 2);
+  Assert.equal(cc, transitions.length - 2);
 
   for (let i = 0; i < cc; i++) {
     let node = root.getChild(i);
     // Check that all transition types but EMBED and FRAMED appear in results
-    do_check_neq(node.uri.substr(6, 1), TRANSITION_EMBED);
-    do_check_neq(node.uri.substr(6, 1), TRANSITION_FRAMED_LINK);
+    Assert.notEqual(node.uri.substr(6, 1), TRANSITION_EMBED);
+    Assert.notEqual(node.uri.substr(6, 1), TRANSITION_FRAMED_LINK);
   }
   root.containerOpen = false;
 }
 
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* test_execute() {
+add_task(async function test_execute() {
   // add visits, one for each transition type
   for (let transition of transitions) {
-    yield PlacesTestUtils.addVisits({
+    await PlacesTestUtils.addVisits({
       uri: uri("http://" + transition + ".mozilla.org/"),
-      transition
+      transition,
     });
   }
 

@@ -30,8 +30,11 @@ function run_test() {
     mimeService.getTypeFromExtension(kTestExtension);
     // The line above should have thrown an exception.
     do_throw("nsIMIMEService.getTypeFromExtension succeeded unexpectedly");
-  } catch (e if (e instanceof Ci.nsIException &&
-                 e.result == Cr.NS_ERROR_NOT_AVAILABLE)) {
+  } catch (e) {
+    if (!(e instanceof Ci.nsIException) ||
+        e.result != Cr.NS_ERROR_NOT_AVAILABLE) {
+      throw e;
+    }
     // This is an expected exception, thrown if the type can't be determined.
     // Any other exception would cause the test to fail.
   }
@@ -42,11 +45,11 @@ function run_test() {
 
   // Check that the mapping is recognized in the simple case.
   var type = mimeService.getTypeFromExtension(kTestExtension);
-  do_check_eq(type, kTestMimeType);
+  Assert.equal(type, kTestMimeType);
 
   // Check that the mapping is recognized even if the extension has mixed case.
   type = mimeService.getTypeFromExtension(kTestExtensionMixedCase);
-  do_check_eq(type, kTestMimeType);
+  Assert.equal(type, kTestMimeType);
 
   // Clean up after ourselves.
   categoryManager.deleteCategoryEntry("ext-to-type-mapping", kTestExtension, false);

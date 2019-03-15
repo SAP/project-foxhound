@@ -6,47 +6,34 @@ html {
   background: -moz-Dialog;
   padding: 0 1em;
   font: message-box;
+  line-height: 1.6em;
 }
 
 body {
-  color: -moz-FieldText;
   position: relative;
   min-width: 330px;
   max-width: 50em;
   margin: 4em auto;
-  border: 1px solid ThreeDShadow;
-  border-radius: 10px;
-  padding: 3em;
   padding-inline-start: 30px;
-  background: -moz-Field;
 }
 
 .aboutPageWideContainer {
   max-width: 80%;
 }
 
-#aboutLogoContainer {
-  border: 1px solid ThreeDLightShadow;
-  width: 300px;
-  margin-bottom: 2em;
+h1 {
+  font-weight: lighter;
+  font-size: 2.4em;
 }
 
 img {
   border: 0;
 }
 
-#version {
-  font-weight: bold;
-  color: #909090;
-  margin: -24px 0 9px 17px;
-  text-align: left; /* Override direction alignment on RTL to make sure that the version will fit well on the background. bug 1325232 */
-}
-
 ul {
   margin: 0;
   margin-inline-start: 1.5em;
   padding: 0;
-  list-style: square;
 }
 
 ul > li {
@@ -55,9 +42,4 @@ ul > li {
 
 th, td {
   padding: 0 5px;
-}
-
-.columns {
-  -moz-column-width: 20em;
-  -moz-column-gap: 3em;
 }

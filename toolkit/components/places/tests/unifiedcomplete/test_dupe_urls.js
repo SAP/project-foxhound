@@ -3,37 +3,43 @@
 
 // Ensure inline autocomplete doesn't return zero frecency pages.
 
-add_task(function* test_dupe_urls() {
-  do_print("Searching for urls with dupes should only show one");
-  yield PlacesTestUtils.addVisits({
+add_task(async function test_dupe_urls() {
+  info("Searching for urls with dupes should only show one");
+  await PlacesTestUtils.addVisits({
     uri: NetUtil.newURI("http://mozilla.org/"),
-    transition: TRANSITION_TYPED
   }, {
-    uri: NetUtil.newURI("http://mozilla.org/?")
+    uri: NetUtil.newURI("http://mozilla.org/?"),
   });
-  yield check_autocomplete({
+  await check_autocomplete({
     search: "moz",
     autofilled: "mozilla.org/",
-    completed:  "mozilla.org/",
-    matches: [ { uri: NetUtil.newURI("http://mozilla.org/"),
-                 title: "mozilla.org",
-                 style: [ "autofill", "heuristic" ] } ]
+    completed:  "http://mozilla.org/",
+    matches: [
+      {
+        value: "mozilla.org/",
+        comment: "mozilla.org",
+        style: ["autofill", "heuristic"],
+      },
+    ],
   });
 });
 
-add_task(function* test_dupe_secure_urls() {
-  yield PlacesTestUtils.addVisits({
+add_task(async function test_dupe_secure_urls() {
+  await PlacesTestUtils.addVisits({
     uri: NetUtil.newURI("https://example.org/"),
-    transition: TRANSITION_TYPED
   }, {
-    uri: NetUtil.newURI("https://example.org/?")
+    uri: NetUtil.newURI("https://example.org/?"),
   });
-  yield check_autocomplete({
+  await check_autocomplete({
     search: "exam",
     autofilled: "example.org/",
     completed: "https://example.org/",
-    matches: [ { uri: NetUtil.newURI("https://example.org/"),
-                 title: "https://example.org",
-                 style: [ "autofill", "heuristic" ] } ]
+    matches: [
+      {
+        value: "example.org/",
+        comment: "https://example.org",
+        style: ["autofill", "heuristic"],
+      },
+    ],
   });
 });

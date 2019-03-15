@@ -4,26 +4,10 @@ mozharness.mozilla.testing package
 Submodules
 ----------
 
-mozharness.mozilla.testing.device module
-----------------------------------------
-
-.. automodule:: mozharness.mozilla.testing.device
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
 mozharness.mozilla.testing.errors module
 ----------------------------------------
 
 .. automodule:: mozharness.mozilla.testing.errors
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
-mozharness.mozilla.testing.mozpool module
------------------------------------------
-
-.. automodule:: mozharness.mozilla.testing.mozpool
     :members:
     :undoc-members:
     :show-inheritance:

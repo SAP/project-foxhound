@@ -21,33 +21,29 @@
 class nsXULWindow;
 
 class nsChromeTreeOwner : public nsIDocShellTreeOwner,
-                          public nsIBaseWindow, 
+                          public nsIBaseWindow,
                           public nsIInterfaceRequestor,
                           public nsIWebProgressListener,
-                          public nsSupportsWeakReference
-{
-friend class nsXULWindow;
+                          public nsSupportsWeakReference {
+  friend class nsXULWindow;
 
-public:
-   NS_DECL_ISUPPORTS
+ public:
+  NS_DECL_ISUPPORTS
 
-   NS_DECL_NSIINTERFACEREQUESTOR
-   NS_DECL_NSIBASEWINDOW
-   NS_DECL_NSIDOCSHELLTREEOWNER
-   NS_DECL_NSIWEBPROGRESSLISTENER
+  NS_DECL_NSIINTERFACEREQUESTOR
+  NS_DECL_NSIBASEWINDOW
+  NS_DECL_NSIDOCSHELLTREEOWNER
+  NS_DECL_NSIWEBPROGRESSLISTENER
 
-   static nsresult InitGlobals();
-   static void     FreeGlobals();
+ protected:
+  nsChromeTreeOwner();
+  virtual ~nsChromeTreeOwner();
 
-protected:
-   nsChromeTreeOwner();
-   virtual ~nsChromeTreeOwner();
+  void XULWindow(nsXULWindow* aXULWindow);
+  nsXULWindow* XULWindow();
 
-   void XULWindow(nsXULWindow* aXULWindow);
-   nsXULWindow* XULWindow();
-
-protected:
-   nsXULWindow*      mXULWindow;
+ protected:
+  nsXULWindow* mXULWindow;
 };
 
 #endif /* nsChromeTreeOwner_h__ */

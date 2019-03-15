@@ -1,6 +1,6 @@
 "use strict";
 
-Components.utils.import("resource://gre/modules/Schemas.jsm");
+ChromeUtils.import("resource://gre/modules/Schemas.jsm");
 
 const global = this;
 
@@ -69,9 +69,9 @@ let schemaJson = [
   },
 ];
 
-add_task(function* testRestrictions() {
+add_task(async function testRestrictions() {
   let url = "data:," + JSON.stringify(schemaJson);
-  yield Schemas.load(url);
+  await Schemas.load(url);
   let results = {};
   let localWrapper = {
     cloneScope: global,

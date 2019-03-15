@@ -6,8 +6,9 @@
 
 "use strict";
 
-const {escapeCSSComment} = require("devtools/shared/css/parsing-utils");
-const {getCssProperties} = require("devtools/shared/fronts/css-properties");
+const { generateUUID } = require("devtools/shared/generate-uuid");
+
+loader.lazyRequireGetter(this, "escapeCSSComment", "devtools/shared/css/parsing-utils", true);
 
 /**
  * TextProperty is responsible for the following:
@@ -36,26 +37,47 @@ const {getCssProperties} = require("devtools/shared/fronts/css-properties");
  */
 function TextProperty(rule, name, value, priority, enabled = true,
                       invisible = false) {
+  this.id = name + "_" + generateUUID().toString();
   this.rule = rule;
   this.name = name;
   this.value = value;
   this.priority = priority;
   this.enabled = !!enabled;
   this.invisible = invisible;
+  this.cssProperties = this.rule.elementStyle.ruleView.cssProperties;
   this.panelDoc = this.rule.elementStyle.ruleView.inspector.panelDoc;
-
-  const toolbox = this.rule.elementStyle.ruleView.inspector.toolbox;
-  this.cssProperties = getCssProperties(toolbox);
 
   this.updateComputed();
 }
 
 TextProperty.prototype = {
+  get computedProperties() {
+    return this.computed
+      .filter(computed => computed.name !== this.name)
+      .map(computed => {
+        return {
+          isOverridden: computed.overridden,
+          name: computed.name,
+          priority: computed.priority,
+          value: computed.value,
+        };
+      });
+  },
+
+  /**
+   * See whether this property's name is known.
+   *
+   * @return {Boolean} true if the property name is known, false otherwise.
+   */
+  get isKnownProperty() {
+    return this.cssProperties.isKnown(this.name);
+  },
+
   /**
    * Update the editor associated with this text property,
    * if any.
    */
-  updateEditor: function () {
+  updateEditor: function() {
     if (this.editor) {
       this.editor.update();
     }
@@ -64,7 +86,7 @@ TextProperty.prototype = {
   /**
    * Update the list of computed properties for this text property.
    */
-  updateComputed: function () {
+  updateComputed: function() {
     if (!this.name) {
       return;
     }
@@ -72,8 +94,8 @@ TextProperty.prototype = {
     // This is a bit funky.  To get the list of computed properties
     // for this text property, we'll set the property on a dummy element
     // and see what the computed style looks like.
-    let dummyElement = this.rule.elementStyle.ruleView.dummyElement;
-    let dummyStyle = dummyElement.style;
+    const dummyElement = this.rule.elementStyle.ruleView.dummyElement;
+    const dummyStyle = dummyElement.style;
     dummyStyle.cssText = "";
     dummyStyle.setProperty(this.name, this.value, this.priority);
 
@@ -82,9 +104,9 @@ TextProperty.prototype = {
     // Manually get all the properties that are set when setting a value on
     // this.name and check the computed style on dummyElement for each one.
     // If we just read dummyStyle, it would skip properties when value === "".
-    let subProps = this.cssProperties.getSubproperties(this.name);
+    const subProps = this.cssProperties.getSubproperties(this.name);
 
-    for (let prop of subProps) {
+    for (const prop of subProps) {
       this.computed.push({
         textProp: this,
         name: prop,
@@ -101,9 +123,9 @@ TextProperty.prototype = {
    * @param {TextProperty} prop
    *        The other TextProperty instance.
    */
-  set: function (prop) {
+  set: function(prop) {
     let changed = false;
-    for (let item of ["name", "value", "priority", "enabled"]) {
+    for (const item of ["name", "value", "priority", "enabled"]) {
       if (this[item] !== prop[item]) {
         this[item] = prop[item];
         changed = true;
@@ -115,53 +137,55 @@ TextProperty.prototype = {
     }
   },
 
-  setValue: function (value, priority, force = false) {
-    let store = this.rule.elementStyle.store;
+  setValue: function(value, priority, force = false) {
+    const store = this.rule.elementStyle.store;
 
     if (this.editor && value !== this.editor.committed.value || force) {
-      store.userProperties.setProperty(this.rule.style, this.name, value);
+      store.userProperties.setProperty(this.rule.domRule, this.name, value);
     }
 
-    this.rule.setPropertyValue(this, value, priority);
-    this.updateEditor();
+    return this.rule.setPropertyValue(this, value, priority)
+      .then(() => this.updateEditor());
   },
 
   /**
    * Called when the property's value has been updated externally, and
-   * the property and editor should update.
+   * the property and editor should update to reflect that value.
+   *
+   * @param {String} value
+   *        Property value
    */
-  noticeNewValue: function (value) {
+  updateValue: function(value) {
     if (value !== this.value) {
       this.value = value;
       this.updateEditor();
     }
   },
 
-  setName: function (name) {
-    let store = this.rule.elementStyle.store;
-
-    if (name !== this.name) {
-      store.userProperties.setProperty(this.rule.style, name,
+  setName: async function(name) {
+    if (name !== this.name && this.editor) {
+      const store = this.rule.elementStyle.store;
+      store.userProperties.setProperty(this.rule.domRule, name,
                                        this.editor.committed.value);
     }
 
-    this.rule.setPropertyName(this, name);
+    await this.rule.setPropertyName(this, name);
     this.updateEditor();
   },
 
-  setEnabled: function (value) {
+  setEnabled: function(value) {
     this.rule.setPropertyEnabled(this, value);
     this.updateEditor();
   },
 
-  remove: function () {
+  remove: function() {
     this.rule.removeProperty(this);
   },
 
   /**
    * Return a string representation of the rule property.
    */
-  stringifyProperty: function () {
+  stringifyProperty: function() {
     // Get the displayed property value
     let declaration = this.name + ": " + this.editor.valueSpan.textContent +
       ";";
@@ -175,30 +199,13 @@ TextProperty.prototype = {
   },
 
   /**
-   * See whether this property's name is known.
-   *
-   * @return {Boolean} true if the property name is known, false otherwise.
-   */
-  isKnownProperty: function () {
-    return this.cssProperties.isKnown(this.name);
-  },
-
-  /**
    * Validate this property. Does it make sense for this value to be assigned
    * to this property name?
    *
-   * @return {Boolean} true if the property value is valid, false otherwise.
+   * @return {Boolean} true if the whole CSS declaration is valid, false otherwise.
    */
-  isValid: function () {
-    // Starting with FF49, StyleRuleActors provide a list of parsed
-    // declarations, with data about their validity, but if we don't have this,
-    // compute validity locally (which might not be correct, but better than
-    // nothing).
-    if (!this.rule.domRule.declarations) {
-      return this.cssProperties.isValidOnClient(this.name, this.value, this.panelDoc);
-    }
-
-    let selfIndex = this.rule.textProps.indexOf(this);
+  isValid: function() {
+    const selfIndex = this.rule.textProps.indexOf(this);
 
     // When adding a new property in the rule-view, the TextProperty object is
     // created right away before the rule gets updated on the server, so we're
@@ -209,7 +216,31 @@ TextProperty.prototype = {
     }
 
     return this.rule.domRule.declarations[selfIndex].isValid;
-  }
+  },
+
+  /**
+   * Validate the name of this property.
+   *
+   * @return {Boolean} true if the property name is valid, false otherwise.
+   */
+  isNameValid: function() {
+    const selfIndex = this.rule.textProps.indexOf(this);
+
+    // When adding a new property in the rule-view, the TextProperty object is
+    // created right away before the rule gets updated on the server, so we're
+    // not going to find the corresponding declaration object yet. Default to
+    // true.
+    if (!this.rule.domRule.declarations[selfIndex]) {
+      return true;
+    }
+
+    // Starting with FF61, StyleRuleActor provides an accessor to signal if the property
+    // name is valid. If we don't have this, assume the name is valid. In use, rely on
+    // isValid() as a guard against false positives.
+    return (this.rule.domRule.declarations[selfIndex].isNameValid !== undefined)
+      ? this.rule.domRule.declarations[selfIndex].isNameValid
+      : true;
+  },
 };
 
-exports.TextProperty = TextProperty;
+module.exports = TextProperty;

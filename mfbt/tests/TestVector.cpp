@@ -8,26 +8,24 @@
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Vector.h"
 
-using mozilla::detail::VectorTesting;
 using mozilla::MakeUnique;
-using mozilla::Move;
 using mozilla::UniquePtr;
 using mozilla::Vector;
+using mozilla::detail::VectorTesting;
 
-struct mozilla::detail::VectorTesting
-{
+struct mozilla::detail::VectorTesting {
   static void testReserved();
   static void testConstRange();
   static void testEmplaceBack();
   static void testReverse();
   static void testExtractRawBuffer();
   static void testExtractOrCopyRawBuffer();
+  static void testReplaceRawBuffer();
   static void testInsert();
+  static void testPodResizeToFit();
 };
 
-void
-mozilla::detail::VectorTesting::testReserved()
-{
+void mozilla::detail::VectorTesting::testReserved() {
 #ifdef DEBUG
   Vector<bool> bv;
   MOZ_RELEASE_ASSERT(bv.reserved() == 0);
@@ -47,7 +45,7 @@ mozilla::detail::VectorTesting::testReserved()
   MOZ_RELEASE_ASSERT(bv.reserve(1));
   MOZ_RELEASE_ASSERT(bv.reserved() == 5);
 
-  Vector<bool> bv2(Move(bv));
+  Vector<bool> bv2(std::move(bv));
   MOZ_RELEASE_ASSERT(bv.reserved() == 0);
   MOZ_RELEASE_ASSERT(bv2.reserved() == 5);
 
@@ -75,7 +73,7 @@ mozilla::detail::VectorTesting::testReserved()
   MOZ_RELEASE_ASSERT(iv.reserve(55));
   MOZ_RELEASE_ASSERT(iv.reserved() == 55);
 
-  Vector<int, 42> iv2(Move(iv));
+  Vector<int, 42> iv2(std::move(iv));
   MOZ_RELEASE_ASSERT(iv.reserved() == 0);
   MOZ_RELEASE_ASSERT(iv2.reserved() == 55);
 
@@ -84,9 +82,7 @@ mozilla::detail::VectorTesting::testReserved()
 #endif
 }
 
-void
-mozilla::detail::VectorTesting::testConstRange()
-{
+void mozilla::detail::VectorTesting::testConstRange() {
 #ifdef DEBUG
   Vector<int> vec;
 
@@ -94,7 +90,7 @@ mozilla::detail::VectorTesting::testConstRange()
     MOZ_RELEASE_ASSERT(vec.append(i));
   }
 
-  const auto &vecRef = vec;
+  const auto& vecRef = vec;
 
   Vector<int>::ConstRange range = vecRef.all();
   for (int i = 0; i < 10; i++) {
@@ -107,9 +103,8 @@ mozilla::detail::VectorTesting::testConstRange()
 
 namespace {
 
-struct S
-{
-  size_t            j;
+struct S {
+  size_t j;
   UniquePtr<size_t> k;
 
   static size_t constructCount;
@@ -122,30 +117,20 @@ struct S
     destructCount = 0;
   }
 
-  S(size_t j, size_t k)
-    : j(j)
-    , k(MakeUnique<size_t>(k))
-  {
-    constructCount++;
-  }
+  S(size_t j, size_t k) : j(j), k(MakeUnique<size_t>(k)) { constructCount++; }
 
-  S(S&& rhs)
-    : j(rhs.j)
-    , k(Move(rhs.k))
-  {
+  S(S&& rhs) : j(rhs.j), k(std::move(rhs.k)) {
     rhs.j = 0;
     rhs.k.reset(0);
     moveCount++;
   }
 
-  ~S() {
-    destructCount++;
-  }
+  ~S() { destructCount++; }
 
   S& operator=(S&& rhs) {
     j = rhs.j;
     rhs.j = 0;
-    k = Move(rhs.k);
+    k = std::move(rhs.k);
     rhs.k.reset();
     moveCount++;
     return *this;
@@ -159,11 +144,9 @@ size_t S::constructCount = 0;
 size_t S::moveCount = 0;
 size_t S::destructCount = 0;
 
-}
+}  // namespace
 
-void
-mozilla::detail::VectorTesting::testEmplaceBack()
-{
+void mozilla::detail::VectorTesting::testEmplaceBack() {
   S::resetCounts();
 
   Vector<S> vec;
@@ -171,7 +154,7 @@ mozilla::detail::VectorTesting::testEmplaceBack()
 
   for (size_t i = 0; i < 10; i++) {
     S s(i, i * i);
-    MOZ_RELEASE_ASSERT(vec.append(Move(s)));
+    MOZ_RELEASE_ASSERT(vec.append(std::move(s)));
   }
 
   MOZ_RELEASE_ASSERT(vec.length() == 10);
@@ -192,9 +175,7 @@ mozilla::detail::VectorTesting::testEmplaceBack()
   }
 }
 
-void
-mozilla::detail::VectorTesting::testReverse()
-{
+void mozilla::detail::VectorTesting::testReverse() {
   // Use UniquePtr to make sure that reverse() can handler move-only types.
   Vector<UniquePtr<uint8_t>, 0> vec;
 
@@ -203,7 +184,7 @@ mozilla::detail::VectorTesting::testReverse()
   for (uint8_t i = 0; i < 5; i++) {
     auto p = MakeUnique<uint8_t>(i);
     MOZ_RELEASE_ASSERT(p);
-    MOZ_RELEASE_ASSERT(vec.append(mozilla::Move(p)));
+    MOZ_RELEASE_ASSERT(vec.append(std::move(p)));
   }
 
   vec.reverse();
@@ -237,7 +218,7 @@ mozilla::detail::VectorTesting::testReverse()
   for (uint8_t i = 0; i < 5; i++) {
     auto p = MakeUnique<uint8_t>(i);
     MOZ_RELEASE_ASSERT(p);
-    MOZ_RELEASE_ASSERT(vec2.append(mozilla::Move(p)));
+    MOZ_RELEASE_ASSERT(vec2.append(std::move(p)));
   }
 
   vec2.reverse();
@@ -249,9 +230,7 @@ mozilla::detail::VectorTesting::testReverse()
   MOZ_RELEASE_ASSERT(*vec2[4] == 0);
 }
 
-void
-mozilla::detail::VectorTesting::testExtractRawBuffer()
-{
+void mozilla::detail::VectorTesting::testExtractRawBuffer() {
   S::resetCounts();
 
   Vector<S, 5> vec;
@@ -299,9 +278,7 @@ mozilla::detail::VectorTesting::testExtractRawBuffer()
   free(buf);
 }
 
-void
-mozilla::detail::VectorTesting::testExtractOrCopyRawBuffer()
-{
+void mozilla::detail::VectorTesting::testExtractOrCopyRawBuffer() {
   S::resetCounts();
 
   Vector<S, 5> vec;
@@ -356,9 +333,72 @@ mozilla::detail::VectorTesting::testExtractOrCopyRawBuffer()
   free(buf);
 }
 
-void
-mozilla::detail::VectorTesting::testInsert()
-{
+void mozilla::detail::VectorTesting::testReplaceRawBuffer() {
+  S::resetCounts();
+
+  S* s = nullptr;
+
+  {
+    Vector<S> v;
+    MOZ_RELEASE_ASSERT(v.reserve(4));
+    v.infallibleEmplaceBack(1, 2);
+    v.infallibleEmplaceBack(3, 4);
+    MOZ_ASSERT(S::constructCount == 2);
+    s = v.extractRawBuffer();
+  }
+
+  MOZ_ASSERT(S::constructCount == 2);
+  MOZ_ASSERT(S::moveCount == 0);
+  MOZ_ASSERT(S::destructCount == 0);
+
+  {
+    Vector<S, 10> v;
+    v.replaceRawBuffer(s, 2);
+    MOZ_ASSERT(v.length() == 2);
+    MOZ_ASSERT(v.reserved() == 2);
+    MOZ_ASSERT(v.capacity() == 10);
+    MOZ_ASSERT(v[0].j == 1);
+    MOZ_ASSERT(v[1].j == 3);
+    MOZ_ASSERT(S::destructCount == 2);
+  }
+
+  MOZ_ASSERT(S::constructCount == 2);
+  MOZ_ASSERT(S::moveCount == 2);
+  MOZ_ASSERT(S::destructCount == 4);
+
+  S::resetCounts();
+
+  {
+    Vector<S, 2> v;
+    MOZ_RELEASE_ASSERT(v.reserve(4));
+    v.infallibleEmplaceBack(9, 10);
+    MOZ_ASSERT(S::constructCount == 1);
+    s = v.extractRawBuffer();
+    MOZ_ASSERT(S::constructCount == 1);
+    MOZ_ASSERT(S::moveCount == 0);
+  }
+
+  MOZ_ASSERT(S::destructCount == 0);
+
+  {
+    Vector<S> v;
+    v.replaceRawBuffer(s, 1, 4);
+    MOZ_ASSERT(v.length() == 1);
+    MOZ_ASSERT(v.reserved() == 4);
+    MOZ_ASSERT(v.capacity() == 4);
+    MOZ_ASSERT(v[0].j == 9);
+    for (size_t i = 0; i < 5; i++) MOZ_RELEASE_ASSERT(v.emplaceBack(i, i));
+    MOZ_ASSERT(v.length() == 6);
+    MOZ_ASSERT(v.reserved() == 6);
+    MOZ_ASSERT(S::constructCount == 6);
+    MOZ_ASSERT(S::moveCount == 4);
+    MOZ_ASSERT(S::destructCount == 4);
+  }
+
+  MOZ_ASSERT(S::destructCount == 10);
+}
+
+void mozilla::detail::VectorTesting::testInsert() {
   S::resetCounts();
 
   Vector<S, 8> vec;
@@ -374,7 +414,7 @@ mozilla::detail::VectorTesting::testInsert()
   MOZ_RELEASE_ASSERT(S::destructCount == 0);
 
   S s(42, 43);
-  MOZ_RELEASE_ASSERT(vec.insert(vec.begin() + 4, Move(s)));
+  MOZ_RELEASE_ASSERT(vec.insert(vec.begin() + 4, std::move(s)));
 
   for (size_t i = 0; i < vec.length(); i++) {
     const S& s = vec[i];
@@ -392,9 +432,35 @@ mozilla::detail::VectorTesting::testInsert()
   MOZ_ASSERT(vec.reserved() == 8);
   MOZ_RELEASE_ASSERT(S::constructCount == 8);
   MOZ_RELEASE_ASSERT(S::moveCount == 1 /* move in insert() call */ +
-                                     1 /* move the back() element */ +
-                                     3 /* elements to shift */);
+                                         1 /* move the back() element */ +
+                                         3 /* elements to shift */);
   MOZ_RELEASE_ASSERT(S::destructCount == 1);
+}
+
+void mozilla::detail::VectorTesting::testPodResizeToFit() {
+  // Vectors not using inline storage realloc capacity to exact length.
+  Vector<int, 0> v1;
+  MOZ_RELEASE_ASSERT(v1.reserve(10));
+  v1.infallibleAppend(1);
+  MOZ_ASSERT(v1.length() == 1);
+  MOZ_ASSERT(v1.reserved() == 10);
+  MOZ_ASSERT(v1.capacity() >= 10);
+  v1.podResizeToFit();
+  MOZ_ASSERT(v1.length() == 1);
+  MOZ_ASSERT(v1.reserved() == 1);
+  MOZ_ASSERT(v1.capacity() == 1);
+
+  // Vectors using inline storage do nothing.
+  Vector<int, 2> v2;
+  MOZ_RELEASE_ASSERT(v2.reserve(2));
+  v2.infallibleAppend(1);
+  MOZ_ASSERT(v2.length() == 1);
+  MOZ_ASSERT(v2.reserved() == 2);
+  MOZ_ASSERT(v2.capacity() == 2);
+  v2.podResizeToFit();
+  MOZ_ASSERT(v2.length() == 1);
+  MOZ_ASSERT(v2.reserved() == 2);
+  MOZ_ASSERT(v2.capacity() == 2);
 }
 
 // Declare but leave (permanently) incomplete.
@@ -410,9 +476,8 @@ static_assert(sizeof(Vector<Incomplete, 0>) > 0,
 // directly relevant to shipping builds, that aren't worth precisely modeling.)
 #ifndef DEBUG
 
-template<typename T>
-struct NoInlineStorageLayout
-{
+template <typename T>
+struct NoInlineStorageLayout {
   T* mBegin;
   size_t mLength;
   struct CRAndStorage {
@@ -434,20 +499,21 @@ static_assert(sizeof(Vector<S, 0>) == sizeof(NoInlineStorageLayout<S>),
               "Vector of S without inline storage shouldn't occupy dead "
               "space for that absence of storage");
 
-static_assert(sizeof(Vector<Incomplete, 0>) == sizeof(NoInlineStorageLayout<Incomplete>),
+static_assert(sizeof(Vector<Incomplete, 0>) ==
+                  sizeof(NoInlineStorageLayout<Incomplete>),
               "Vector of an incomplete class without inline storage shouldn't "
               "occupy dead space for that absence of storage");
 
-#endif // DEBUG
+#endif  // DEBUG
 
-int
-main()
-{
+int main() {
   VectorTesting::testReserved();
   VectorTesting::testConstRange();
   VectorTesting::testEmplaceBack();
   VectorTesting::testReverse();
   VectorTesting::testExtractRawBuffer();
   VectorTesting::testExtractOrCopyRawBuffer();
+  VectorTesting::testReplaceRawBuffer();
   VectorTesting::testInsert();
+  VectorTesting::testPodResizeToFit();
 }

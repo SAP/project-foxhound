@@ -1,32 +1,35 @@
-var Cu = Components.utils;
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-
-Components.utils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {OS} = ChromeUtils.import("resource://gre/modules/osfile.jsm", {});
+ChromeUtils.defineModuleGetter(this, "SessionStartup",
+  "resource:///modules/sessionstore/SessionStartup.jsm");
 
 // Call a function once initialization of SessionStartup is complete
 function afterSessionStartupInitialization(cb) {
-  do_print("Waiting for session startup initialization");
+  info("Waiting for session startup initialization");
   let observer = function() {
     try {
-      do_print("Session startup initialization observed");
+      info("Session startup initialization observed");
       Services.obs.removeObserver(observer, "sessionstore-state-finalized");
       cb();
     } catch (ex) {
       do_throw(ex);
     }
   };
+  Services.obs.addObserver(observer, "sessionstore-state-finalized");
 
   // We need the Crash Monitor initialized for sessionstartup to run
   // successfully.
-  Components.utils.import("resource://gre/modules/CrashMonitor.jsm");
+  ChromeUtils.import("resource://gre/modules/CrashMonitor.jsm");
   CrashMonitor.init();
 
   // Start sessionstartup initialization.
-  let startup = Cc["@mozilla.org/browser/sessionstartup;1"].
-    getService(Ci.nsIObserver);
-  Services.obs.addObserver(startup, "final-ui-startup", false);
-  Services.obs.addObserver(startup, "quit-application", false);
-  Services.obs.notifyObservers(null, "final-ui-startup", "");
-  Services.obs.addObserver(observer, "sessionstore-state-finalized", false);
-};
+  SessionStartup.init();
+}
+
+// Compress the source file using lz4 and put the result to destination file.
+// After that, source file is deleted.
+async function writeCompressedFile(source, destination) {
+  let s = await OS.File.read(source);
+  await OS.File.writeAtomic(destination, s, {compression: "lz4"});
+  await OS.File.remove(source);
+}

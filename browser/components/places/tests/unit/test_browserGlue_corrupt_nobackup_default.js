@@ -9,7 +9,7 @@
  * corrupt, nor a JSON backup nor bookmarks.html are available.
  */
 
-Components.utils.import("resource://gre/modules/AppConstants.jsm");
+ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
 
 function run_test() {
   // Remove bookmarks.html from profile.
@@ -21,9 +21,9 @@ function run_test() {
   run_next_test();
 }
 
-add_task(function* () {
+add_task(async function() {
   // Create a corrupt database.
-  yield createCorruptDB();
+  await createCorruptDB();
 
   // Initialize nsBrowserGlue before Places.
   Cc["@mozilla.org/browser/browserglue;1"].getService(Ci.nsISupports);
@@ -33,23 +33,16 @@ add_task(function* () {
   Assert.equal(PlacesUtils.history.databaseStatus,
                PlacesUtils.history.DATABASE_STATUS_CORRUPT);
 
-  // The test will continue once import has finished and smart bookmarks
-  // have been created.
-  yield promiseTopicObserved("places-browser-init-complete");
-
-  let bm = yield PlacesUtils.bookmarks.fetch({
-    parentGuid: PlacesUtils.bookmarks.toolbarGuid,
-    index: 0
-  });
-  yield checkItemHasAnnotation(bm.guid, SMART_BOOKMARKS_ANNO);
+  // The test will continue once import has finished.
+  await promiseTopicObserved("places-browser-init-complete");
 
   // Check that default bookmarks have been restored.
-  bm = yield PlacesUtils.bookmarks.fetch({
+  let bm = await PlacesUtils.bookmarks.fetch({
     parentGuid: PlacesUtils.bookmarks.toolbarGuid,
-    index: SMART_BOOKMARKS_ON_TOOLBAR
+    index: 0,
   });
 
   // Bug 1283076: Nightly bookmark points to Get Involved page, not Getting Started one
   let chanTitle = AppConstants.NIGHTLY_BUILD ? "Get Involved" : "Getting Started";
-  do_check_eq(bm.title, chanTitle);
+  Assert.equal(bm.title, chanTitle);
 });

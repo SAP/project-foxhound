@@ -1,6 +1,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 #![deny(missing_docs)]
 
@@ -9,7 +9,7 @@
 use time;
 
 /// The `TimerMode` is used to determine what time should the `Timer` return.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 enum TimerMode {
     /// The timer should return a fixed value.
     Test(f64),
@@ -20,7 +20,7 @@ enum TimerMode {
 /// A `Timer` struct that takes care of giving the current time for animations.
 ///
 /// This is needed to be allowed to hook the time in the animations' test-mode.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct Timer {
     mode: TimerMode,
 }
@@ -54,10 +54,10 @@ impl Timer {
     /// Increments the current clock. Panics if the clock is not on test mode.
     pub fn increment(&mut self, by: f64) {
         match self.mode {
-            TimerMode::Test(ref mut val)
-                => *val += by,
-            TimerMode::Current
-                => panic!("Timer::increment called for a non-test mode timer. This is a bug."),
+            TimerMode::Test(ref mut val) => *val += by,
+            TimerMode::Current => {
+                panic!("Timer::increment called for a non-test mode timer. This is a bug.")
+            },
         }
     }
 }

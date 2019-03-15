@@ -10,6 +10,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/GuardObjects.h"
 #include "mozilla/TimeStamp.h"
+#include "nsString.h"
 
 namespace mozilla {
 
@@ -17,11 +18,9 @@ namespace mozilla {
  * Interface for I/O interposer observers. This is separate from the
  * IOInterposer because we have multiple uses for these observations.
  */
-class IOInterposeObserver
-{
-public:
-  enum Operation
-  {
+class IOInterposeObserver {
+ public:
+  enum Operation {
     OpNone = 0,
     OpCreateOrOpen = (1 << 0),
     OpRead = (1 << 1),
@@ -29,16 +28,16 @@ public:
     OpFSync = (1 << 3),
     OpStat = (1 << 4),
     OpClose = (1 << 5),
-    OpNextStage = (1 << 6), // Meta - used when leaving startup, entering shutdown
+    OpNextStage =
+        (1 << 6),  // Meta - used when leaving startup, entering shutdown
     OpWriteFSync = (OpWrite | OpFSync),
     OpAll = (OpCreateOrOpen | OpRead | OpWrite | OpFSync | OpStat | OpClose),
     OpAllWithStaging = (OpAll | OpNextStage)
   };
 
   /** A representation of an I/O observation  */
-  class Observation
-  {
-  protected:
+  class Observation {
+   protected:
     /**
      * This constructor is for use by subclasses that are intended to take
      * timing measurements via RAII. The |aShouldReport| parameter may be
@@ -51,7 +50,7 @@ public:
     Observation(Operation aOperation, const char* aReference,
                 bool aShouldReport = true);
 
-  public:
+   public:
     /**
      * Since this constructor accepts start and end times, it does *not* take
      * its own timings, nor does it report itself.
@@ -94,20 +93,19 @@ public:
      */
     const char* Reference() const { return mReference; }
 
-    /** Request filename associated with the I/O operation, null if unknown */
-    virtual const char16_t* Filename() { return nullptr; }
+    /** Request filename associated with the I/O operation, empty if unknown */
+    virtual void Filename(nsAString& aString) { aString.Truncate(); }
 
     virtual ~Observation() {}
 
-  protected:
-    void
-    Report();
+   protected:
+    void Report();
 
-    Operation   mOperation;
-    TimeStamp   mStart;
-    TimeStamp   mEnd;
-    const char* mReference;     // Identifies the source of the Observation
-    bool        mShouldReport;  // Measure and report if true
+    Operation mOperation;
+    TimeStamp mStart;
+    TimeStamp mEnd;
+    const char* mReference;  // Identifies the source of the Observation
+    bool mShouldReport;      // Measure and report if true
   };
 
   /**
@@ -124,7 +122,7 @@ public:
 
   virtual ~IOInterposeObserver() {}
 
-protected:
+ protected:
   /**
    * We don't use NS_IsMainThread() because we need to be able to determine the
    * main thread outside of XPCOM Initialization. IOInterposer observers should
@@ -253,43 +251,35 @@ void UnregisterCurrentThread();
  */
 void EnteringNextStage();
 
-} // namespace IOInterposer
+}  // namespace IOInterposer
 
-class IOInterposerInit
-{
-public:
-  IOInterposerInit()
-  {
+class IOInterposerInit {
+ public:
+  IOInterposerInit() {
 #if !defined(RELEASE_OR_BETA)
     IOInterposer::Init();
 #endif
   }
 
-  ~IOInterposerInit()
-  {
+  ~IOInterposerInit() {
 #if !defined(RELEASE_OR_BETA)
     IOInterposer::Clear();
 #endif
   }
 };
 
-class MOZ_RAII AutoIOInterposerDisable final
-{
-public:
-  explicit AutoIOInterposerDisable(MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM)
-  {
+class MOZ_RAII AutoIOInterposerDisable final {
+ public:
+  explicit AutoIOInterposerDisable(MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM) {
     MOZ_GUARD_OBJECT_NOTIFIER_INIT;
     IOInterposer::Disable();
   }
-  ~AutoIOInterposerDisable()
-  {
-    IOInterposer::Enable();
-  }
+  ~AutoIOInterposerDisable() { IOInterposer::Enable(); }
 
-private:
+ private:
   MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_IOInterposer_h
+#endif  // mozilla_IOInterposer_h

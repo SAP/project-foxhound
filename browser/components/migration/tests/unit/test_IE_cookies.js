@@ -1,12 +1,12 @@
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetter(this, "ctypes",
-                                  "resource://gre/modules/ctypes.jsm");
+ChromeUtils.defineModuleGetter(this, "ctypes",
+                               "resource://gre/modules/ctypes.jsm");
 
-add_task(function* () {
-  let migrator = MigrationUtils.getMigrator("ie");
+add_task(async function() {
+  let migrator = await MigrationUtils.getMigrator("ie");
   // Sanity check for the source.
-  Assert.ok(migrator.sourceExists);
+  Assert.ok(await migrator.isSourceAvailable());
 
   const BOOL = ctypes.bool;
   const LPCTSTR = ctypes.char16_t.ptr;
@@ -61,12 +61,12 @@ add_task(function* () {
     href: `http://mycookietest.${Math.random()}.com`,
     name: "testcookie",
     value: "testvalue",
-    expiry: new Date(new Date().setDate(date + 2))
+    expiry: new Date(new Date().setDate(date + 2)),
   };
   let data = ctypes.char16_t.array()(256);
   let sizeRef = DWORD(256).address();
 
-  do_register_cleanup(() => {
+  registerCleanupFunction(() => {
     // Remove the cookie.
     try {
       let expired = new Date(new Date().setDate(date - 2));
@@ -91,7 +91,7 @@ add_task(function* () {
   // Sanity check the cookie has been created.
   Assert.ok(getIECookie(COOKIE.href, COOKIE.name, data, sizeRef),
             "Found the added persistent IE cookie");
-  do_print("Found cookie: " + data.readString());
+  info("Found cookie: " + data.readString());
   Assert.equal(data.readString(), `${COOKIE.name}=${COOKIE.value}`,
             "Found the expected cookie");
 
@@ -100,7 +100,7 @@ add_task(function* () {
                "There are no cookies initially");
 
   // Migrate cookies.
-  yield promiseMigration(migrator, MigrationUtils.resourceTypes.COOKIES);
+  await promiseMigration(migrator, MigrationUtils.resourceTypes.COOKIES);
 
   Assert.equal(Services.cookies.countCookiesFromHost(COOKIE.host), 1,
                "Migrated the expected number of cookies");

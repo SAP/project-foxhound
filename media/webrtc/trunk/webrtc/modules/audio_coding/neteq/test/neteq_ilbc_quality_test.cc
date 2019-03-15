@@ -8,16 +8,15 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/safe_conversions.h"
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/modules/audio_coding/codecs/ilbc/audio_encoder_ilbc.h"
-#include "webrtc/modules/audio_coding/neteq/tools/neteq_quality_test.h"
-#include "webrtc/test/testsupport/fileutils.h"
+#include <memory>
 
-using google::RegisterFlagValidator;
-using google::ParseCommandLineFlags;
-using std::string;
+#include "modules/audio_coding/codecs/ilbc/audio_encoder_ilbc.h"
+#include "modules/audio_coding/neteq/tools/neteq_quality_test.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/flags.h"
+#include "rtc_base/numerics/safe_conversions.h"
+#include "test/testsupport/fileutils.h"
+
 using testing::InitGoogleTest;
 
 namespace webrtc {
@@ -26,41 +25,34 @@ namespace {
 static const int kInputSampleRateKhz = 8;
 static const int kOutputSampleRateKhz = 8;
 
-// Define switch for frame size.
-static bool ValidateFrameSize(const char* flagname, int32_t value) {
-  if (value == 20 || value == 30 || value == 40 || value == 60)
-    return true;
-  printf("Invalid frame size, should be 20, 30, 40, or 60 ms.");
-  return false;
-}
-
-DEFINE_int32(frame_size_ms, 20, "Codec frame size (milliseconds).");
-
-static const bool frame_size_dummy =
-    RegisterFlagValidator(&FLAGS_frame_size_ms, &ValidateFrameSize);
+DEFINE_int(frame_size_ms, 20, "Codec frame size (milliseconds).");
 
 }  // namespace
 
 class NetEqIlbcQualityTest : public NetEqQualityTest {
  protected:
   NetEqIlbcQualityTest()
-      : NetEqQualityTest(FLAGS_frame_size_ms,
+      : NetEqQualityTest(FLAG_frame_size_ms,
                          kInputSampleRateKhz,
                          kOutputSampleRateKhz,
-                         NetEqDecoder::kDecoderILBC) {}
+                         NetEqDecoder::kDecoderILBC) {
+    // Flag validation
+    RTC_CHECK(FLAG_frame_size_ms == 20 || FLAG_frame_size_ms == 30 ||
+              FLAG_frame_size_ms == 40 || FLAG_frame_size_ms == 60)
+        << "Invalid frame size, should be 20, 30, 40, or 60 ms.";
+  }
 
   void SetUp() override {
     ASSERT_EQ(1u, channels_) << "iLBC supports only mono audio.";
-    AudioEncoderIlbc::Config config;
-    config.frame_size_ms = FLAGS_frame_size_ms;
-    encoder_.reset(new AudioEncoderIlbc(config));
+    AudioEncoderIlbcConfig config;
+    config.frame_size_ms = FLAG_frame_size_ms;
+    encoder_.reset(new AudioEncoderIlbcImpl(config, 102));
     NetEqQualityTest::SetUp();
   }
 
   int EncodeBlock(int16_t* in_data,
                   size_t block_size_samples,
-                  uint8_t* payload,
-                  size_t max_bytes) override {
+                  rtc::Buffer* payload, size_t max_bytes) override {
     const size_t kFrameSizeSamples = 80;  // Samples per 10 ms.
     size_t encoded_samples = 0;
     uint32_t dummy_timestamp = 0;
@@ -69,14 +61,14 @@ class NetEqIlbcQualityTest : public NetEqQualityTest {
       info = encoder_->Encode(dummy_timestamp,
                               rtc::ArrayView<const int16_t>(
                                   in_data + encoded_samples, kFrameSizeSamples),
-                              max_bytes, payload);
+                              payload);
       encoded_samples += kFrameSizeSamples;
     } while (info.encoded_bytes == 0);
     return rtc::checked_cast<int>(info.encoded_bytes);
   }
 
  private:
-  rtc::scoped_ptr<AudioEncoderIlbc> encoder_;
+  std::unique_ptr<AudioEncoderIlbcImpl> encoder_;
 };
 
 TEST_F(NetEqIlbcQualityTest, Test) {

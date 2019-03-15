@@ -210,7 +210,7 @@ bool SkParsePath::FromSVGString(const char data[], SkPath* result) {
 
 static void write_scalar(SkWStream* stream, SkScalar value) {
     char buffer[64];
-#ifdef SK_BUILD_FOR_WIN32
+#ifdef SK_BUILD_FOR_WIN
     int len = _snprintf(buffer, sizeof(buffer), "%g", value);
 #else
     int len = snprintf(buffer, sizeof(buffer), "%g", value);
@@ -261,7 +261,7 @@ void SkParsePath::ToSVGString(const SkPath& path, SkString* str) {
                 stream.write("Z", 1);
                 break;
             case SkPath::kDone_Verb:
-                str->resize(stream.getOffset());
+                str->resize(stream.bytesWritten());
                 stream.copyTo(str->writable_str());
             return;
         }

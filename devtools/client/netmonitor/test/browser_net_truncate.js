@@ -6,48 +6,39 @@
 /**
  * Verifies that truncated response bodies still have the correct reported size.
  */
+add_task(async function() {
+  const limit = Services.prefs.getIntPref("devtools.netmonitor.responseBodyLimit");
+  const URL = EXAMPLE_URL + "sjs_truncate-test-server.sjs?limit=" + limit;
+  const { monitor, tab } = await initNetMonitor(URL);
 
-function test() {
-  let { L10N } = require("devtools/client/netmonitor/utils/l10n");
-  const { RESPONSE_BODY_LIMIT } = require("devtools/shared/webconsole/network-monitor");
+  info("Starting test... ");
 
-  const URL = EXAMPLE_URL + "sjs_truncate-test-server.sjs?limit=" + RESPONSE_BODY_LIMIT;
+  const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
 
-  // Another slow test on Linux debug.
-  requestLongerTimeout(2);
+  const { document } = monitor.panelWin;
 
-  initNetMonitor(URL).then(({ tab, monitor }) => {
-    info("Starting test... ");
+  const wait = waitForNetworkEvents(monitor, 1);
+  tab.linkedBrowser.reload();
+  await wait;
 
-    let { document, gStore, windowRequire } = monitor.panelWin;
-    let Actions = windowRequire("devtools/client/netmonitor/actions/index");
-    let { EVENTS } = windowRequire("devtools/client/netmonitor/constants");
-    let {
-      getDisplayedRequests,
-      getSortedRequests,
-    } = windowRequire("devtools/client/netmonitor/selectors/index");
+  // Response content will be updated asynchronously, we should make sure data is updated
+  // on DOM before asserting.
+  await waitUntil(() => document.querySelector(".request-list-item"));
+  const item = document.querySelectorAll(".request-list-item")[0];
+  await waitUntil(() => item.querySelector(".requests-list-type").title);
 
-    gStore.dispatch(Actions.batchEnable(false));
+  const type = item.querySelector(".requests-list-type").textContent;
+  const fullMimeType = item.querySelector(".requests-list-type").title;
+  const transferred = item.querySelector(".requests-list-transferred").textContent;
+  const size = item.querySelector(".requests-list-size").textContent;
 
-    waitForNetworkEvents(monitor, 1)
-      .then(() => teardown(monitor))
-      .then(finish);
+  is(type, "plain", "Type should be rendered correctly.");
+  is(fullMimeType, "text/plain; charset=utf-8",
+    "Mimetype should be rendered correctly.");
+  is(transferred, L10N.getFormatStrWithNumbers("networkMenu.sizeMB", 2),
+    "Transferred size should be rendered correctly.");
+  is(size, L10N.getFormatStrWithNumbers("networkMenu.sizeMB", 2),
+    "Size should be rendered correctly.");
 
-    monitor.panelWin.once(EVENTS.RECEIVED_RESPONSE_CONTENT, () => {
-      verifyRequestItemTarget(
-        document,
-        getDisplayedRequests(gStore.getState()),
-        getSortedRequests(gStore.getState()).get(0),
-        "GET", URL,
-        {
-          type: "plain",
-          fullMimeType: "text/plain; charset=utf-8",
-          transferred: L10N.getFormatStrWithNumbers("networkMenu.sizeMB", 2),
-          size: L10N.getFormatStrWithNumbers("networkMenu.sizeMB", 2),
-        }
-      );
-    });
-
-    tab.linkedBrowser.reload();
-  });
-}
+  return teardown(monitor);
+});

@@ -6,13 +6,18 @@
 #include "nsISupports.idl"
 
 %{C++
+#include "nsStringFwd.h"
 #include "nsTArrayForwardDeclare.h"
 template<class T> class nsCOMArray;
-class nsCString;
+namespace mozilla {
+class TimeStamp;
+}
 %}
 [ptr] native StringArray(nsTArray<nsCString>);
 [ref] native StringArrayRef(const nsTArray<nsCString>);
 [ref] native securityMessagesArray(nsCOMArray<nsISecurityConsoleMessage>);
+
+native TimeStamp(mozilla::TimeStamp);
 
 interface nsIAsyncInputStream;
 interface nsIAsyncOutputStream;
@@ -29,9 +34,9 @@ interface nsIURI;
 [scriptable, uuid(5b515449-ab64-4dba-b3cd-da8fc2f83064)]
 interface nsIHttpUpgradeListener : nsISupports
 {
-    void onTransportAvailable(in nsISocketTransport   aTransport,
-                              in nsIAsyncInputStream  aSocketIn,
-                              in nsIAsyncOutputStream aSocketOut);
+    [must_use] void onTransportAvailable(in nsISocketTransport   aTransport,
+                                         in nsIAsyncInputStream  aSocketIn,
+                                         in nsIAsyncOutputStream aSocketOut);
 };
 
 /**
@@ -45,23 +50,26 @@ interface nsIHttpChannelInternal : nsISupports
     /**
      * An http channel can own a reference to the document URI
      */
-    attribute nsIURI documentURI;
+    [must_use] attribute nsIURI documentURI;
 
     /**
      * Get the major/minor version numbers for the request
      */
+    [must_use]
     void getRequestVersion(out unsigned long major, out unsigned long minor);
 
     /**
      * Get the major/minor version numbers for the response
      */
+    [must_use]
     void getResponseVersion(out unsigned long major, out unsigned long minor);
 
     /*
      * Retrieves all security messages from the security message queue
      * and empties the queue after retrieval
      */
-    [noscript] void takeAllSecurityMessages(in securityMessagesArray aMessages);
+    [noscript, must_use]
+    void takeAllSecurityMessages(in securityMessagesArray aMessages);
 
     /**
      * Helper method to set a cookie with a consumer-provided
@@ -71,12 +79,12 @@ interface nsIHttpChannelInternal : nsISupports
      * @param aCookieHeader
      *        The cookie header to be parsed.
      */
-    void setCookie(in string aCookieHeader);
+    [must_use] void setCookie(in string aCookieHeader);
 
     /**
      * Setup this channel as an application cache fallback channel.
      */
-    void setupFallbackChannel(in string aFallbackKey);
+    [must_use] void setupFallbackChannel(in string aFallbackKey);
 
     /**
      * This flag is set to force relevant cookies to be sent with this load
@@ -88,25 +96,25 @@ interface nsIHttpChannelInternal : nsISupports
      * When set, these flags modify the algorithm used to decide whether to
      * send 3rd party cookies for a given channel.
      */
-    attribute unsigned long thirdPartyFlags;
+    [must_use] attribute unsigned long thirdPartyFlags;
 
     /**
      * This attribute was added before the "flags" above and is retained here
      * for compatibility. When set to true, has the same effect as
      * THIRD_PARTY_FORCE_ALLOW, described above.
      */
-    attribute boolean forceAllowThirdPartyCookie;
+    [must_use] attribute boolean forceAllowThirdPartyCookie;
 
     /**
      * True iff the channel has been canceled.
      */
-    readonly attribute boolean canceled;
+    [must_use] readonly attribute boolean canceled;
 
     /**
      * External handlers may set this to true to notify the channel
      * that it is open on behalf of a download.
      */
-    attribute boolean channelIsForDownload;
+    [must_use] attribute boolean channelIsForDownload;
 
     /**
      * The local IP address to which this channel is bound, in the
@@ -118,7 +126,7 @@ interface nsIHttpChannelInternal : nsISupports
      * endpoints are not yet determined, or in any case when
      * nsIHttpActivityObserver.isActive is false. See bugs 534698 and 526207.
      */
-    readonly attribute AUTF8String localAddress;
+    [must_use] readonly attribute AUTF8String localAddress;
 
     /**
      * The local port number to which this channel is bound.
@@ -127,7 +135,7 @@ interface nsIHttpChannelInternal : nsISupports
      * endpoints are not yet determined, or in any case when
      * nsIHttpActivityObserver.isActive is false. See bugs 534698 and 526207.
      */
-    readonly attribute int32_t localPort;
+    [must_use] readonly attribute int32_t localPort;
 
     /**
      * The IP address of the remote host that this channel is
@@ -137,7 +145,7 @@ interface nsIHttpChannelInternal : nsISupports
      * endpoints are not yet determined, or in any case when
      * nsIHttpActivityObserver.isActive is false. See bugs 534698 and 526207.
      */
-    readonly attribute AUTF8String remoteAddress;
+    [must_use] readonly attribute AUTF8String remoteAddress;
 
     /**
      * The remote port number that this channel is connected to.
@@ -146,12 +154,13 @@ interface nsIHttpChannelInternal : nsISupports
      * endpoints are not yet determined, or in any case when
      * nsIHttpActivityObserver.isActive is false. See bugs 534698 and 526207.
      */
-    readonly attribute int32_t remotePort;
+    [must_use] readonly attribute int32_t remotePort;
 
     /**
      * Transfer chain of redirected cache-keys.
      */
-    [noscript] void setCacheKeysRedirectChain(in StringArray cacheKeys);
+    [noscript, must_use]
+    void setCacheKeysRedirectChain(in StringArray cacheKeys);
 
     /**
      * HTTPUpgrade allows for the use of HTTP to bootstrap another protocol
@@ -170,65 +179,86 @@ interface nsIHttpChannelInternal : nsISupports
      * @param aListener
      *        The callback object used to handle a successful upgrade
      */
-    void HTTPUpgrade(in ACString aProtocolName,
-                     in nsIHttpUpgradeListener aListener);
+    [must_use] void HTTPUpgrade(in ACString aProtocolName,
+                                in nsIHttpUpgradeListener aListener);
+
+    /**
+     * Enable only CONNECT to a proxy. Fails if no HTTPUpgrade listener
+     * has been defined. An ALPN header is set using the upgrade protocol.
+     *
+     * Load flags are set with INHIBIT_CACHING, LOAD_ANONYMOUS,
+     * LOAD_BYPASS_CACHE, and LOAD_BYPASS_SERVICE_WORKER.
+     *
+     * Proxy resolve flags are set with RESOLVE_PREFER_HTTPS_PROXY and
+     * RESOLVE_ALWAYS_TUNNEL.
+     */
+    [must_use] void setConnectOnly();
+
+    /**
+     * True iff the channel is CONNECT only.
+     */
+    [must_use] readonly attribute boolean onlyConnect;
 
     /**
      * Enable/Disable Spdy negotiation on per channel basis.
      * The network.http.spdy.enabled preference is still a pre-requisite
      * for starting spdy.
      */
-    attribute boolean allowSpdy;
+    [must_use] attribute boolean allowSpdy;
 
     /**
      * This attribute en/disables the timeout for the first byte of an HTTP
      * response. Enabled by default.
      */
-    attribute boolean responseTimeoutEnabled;
+    [must_use] attribute boolean responseTimeoutEnabled;
 
     /**
      * If the underlying transport supports RWIN manipulation, this is the
      * intiial window value for the channel. HTTP/2 implements this.
      * 0 means no override from system default. Set before opening channel.
      */
-    attribute unsigned long initialRwin;
+    [must_use] attribute unsigned long initialRwin;
 
     /**
      * Get value of the URI passed to nsIHttpChannel.redirectTo() if any.
      * May return null when redirectTo() has not been called.
      */
-    readonly attribute nsIURI apiRedirectToURI;
+    [must_use] readonly attribute nsIURI apiRedirectToURI;
 
     /**
      * Enable/Disable use of Alternate Services with this channel.
      * The network.http.altsvc.enabled preference is still a pre-requisite.
      */
-    attribute boolean allowAltSvc;
+    [must_use] attribute boolean allowAltSvc;
 
     /**
      * If true, do not use newer protocol features that might have interop problems
      * on the Internet. Intended only for use with critical infra like the updater.
      * default is false.
      */
-    attribute boolean beConservative;
-
-    readonly attribute PRTime lastModifiedTime;
+    [must_use] attribute boolean beConservative;
 
     /**
-     * Force a channel that has not been AsyncOpen'ed to skip any check for possible
-     * interception and proceed immediately to open a previously-synthesized cache
-     * entry using the provided ID.
+     * True if channel is used by the internal trusted recursive resolver
+     * This flag places data for the request in a cache segment specific to TRR
      */
-    void forceIntercepted(in uint64_t aInterceptionID);
+    [noscript, must_use] attribute boolean trr;
 
-    readonly attribute boolean responseSynthesized;
+    /**
+     * An opaque flags for non-standard behavior of the TLS system.
+     * It is unlikely this will need to be set outside of telemetry studies
+     * relating to the TLS implementation.
+     */
+    [must_use] attribute unsigned long tlsFlags;
+
+    [must_use] readonly attribute PRTime lastModifiedTime;
 
     /**
      * Set by nsCORSListenerProxy if credentials should be included in
      * cross-origin requests. false indicates "same-origin", users should still
      * check flag LOAD_ANONYMOUS!
      */
-    attribute boolean corsIncludeCredentials;
+    [must_use] attribute boolean corsIncludeCredentials;
 
     const unsigned long CORS_MODE_SAME_ORIGIN = 0;
     const unsigned long CORS_MODE_NO_CORS = 1;
@@ -237,7 +267,7 @@ interface nsIHttpChannelInternal : nsISupports
     /**
      * Set by nsCORSListenerProxy to indicate CORS load type. Defaults to CORS_MODE_NO_CORS.
      */
-    attribute unsigned long corsMode;
+    [must_use] attribute unsigned long corsMode;
 
     const unsigned long REDIRECT_MODE_FOLLOW = 0;
     const unsigned long REDIRECT_MODE_ERROR = 1;
@@ -247,7 +277,7 @@ interface nsIHttpChannelInternal : nsISupports
      * interception. No policy enforcement is performed by the channel for this
      * value.
      */
-    attribute unsigned long redirectMode;
+    [must_use] attribute unsigned long redirectMode;
 
     const unsigned long FETCH_CACHE_MODE_DEFAULT = 0;
     const unsigned long FETCH_CACHE_MODE_NO_STORE = 1;
@@ -260,23 +290,25 @@ interface nsIHttpChannelInternal : nsISupports
      * semantics, and is also used for exposing this value to the Web page
      * during service worker interception.
      */
-    attribute unsigned long fetchCacheMode;
+    [must_use] attribute unsigned long fetchCacheMode;
 
     /**
      * The URI of the top-level window that's associated with this channel.
      */
-    readonly attribute nsIURI topWindowURI;
+    [must_use] readonly attribute nsIURI topWindowURI;
 
     /**
-     * The network interface id that's associated with this channel.
+     * Set top-level window URI to this channel only when the topWindowURI
+     * is null and there is no window associated to this channel.
+     * Note that the current usage of this method is only for xpcshell test.
      */
-    attribute ACString networkInterfaceId;
+    [must_use] void setTopWindowURIIfUnknown(in nsIURI topWindowURI);
 
     /**
      * Read the proxy URI, which, if non-null, will be used to resolve
      * proxies for this channel.
      */
-    readonly attribute nsIURI proxyURI;
+    [must_use] readonly attribute nsIURI proxyURI;
 
     /**
      * Make cross-origin CORS loads happen with a CORS preflight, and specify
@@ -284,6 +316,9 @@ interface nsIHttpChannelInternal : nsISupports
      */
     [noscript, notxpcom, nostdcall]
     void setCorsPreflightParameters(in StringArrayRef unsafeHeaders);
+
+    [noscript, notxpcom, nostdcall]
+    void setAltDataForChild(in boolean aIsForChild);
 
     /**
      * When set to true, the channel will not pop any authentication prompts up
@@ -297,10 +332,41 @@ interface nsIHttpChannelInternal : nsISupports
     /**
      * Set to indicate Request.integrity.
      */
-    attribute AString integrityMetadata;
+    [must_use] attribute AString integrityMetadata;
 
     /**
      * The connection info's hash key. We use it to test connection separation.
      */
-    readonly attribute ACString connectionInfoHashKey;
+    [must_use] readonly attribute ACString connectionInfoHashKey;
+
+    /**
+     * If this channel was created as the result of a redirect, then this
+     * value will reflect the redirect flags passed to the
+     * SetupReplacementChannel() method.
+     */
+    [noscript, infallible]
+    attribute unsigned long lastRedirectFlags;
+
+      // This is use to determine the duration since navigation started.
+    [noscript] attribute TimeStamp navigationStartTimeStamp;
+
+    /**
+     * Cancel a channel because we have determined that it needs to be blocked
+     * for tracking protection.  This is an internal API that is meant to be
+     * called by the channel classifier.  Please DO NOT use this API if you don't
+     * know whether you should be using it.
+     */
+    [noscript] void cancelForTrackingProtection();
+
+    /**
+     * The channel will be loaded over IPv6, disabling IPv4.
+     */
+    [noscript, notxpcom, nostdcall]
+    void setIPv4Disabled();
+
+    /**
+     * The channel will be loaded over IPv4, disabling IPv6.
+     */
+    [noscript, notxpcom, nostdcall]
+    void setIPv6Disabled();
 };

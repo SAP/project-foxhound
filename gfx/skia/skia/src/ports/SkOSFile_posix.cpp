@@ -12,12 +12,17 @@
 #include "SkTypes.h"
 
 #include <dirent.h>
+#include <new>
 #include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+#ifdef SK_BUILD_FOR_IOS
+#include "SkOSFile_ios.h"
+#endif
 
 bool sk_exists(const char *path, SkFILE_Flags flags) {
     int mode = F_OK;
@@ -27,7 +32,16 @@ bool sk_exists(const char *path, SkFILE_Flags flags) {
     if (flags & kWrite_SkFILE_Flag) {
         mode |= W_OK;
     }
+#ifdef SK_BUILD_FOR_IOS
+    // if the default path fails, check the bundle (but only if read-only)
+    if (0 == access(path, mode)) {
+        return true;
+    } else {
+        return (kRead_SkFILE_Flag == flags && ios_get_path_in_bundle(path, nullptr));
+    }
+#else
     return (0 == access(path, mode));
+#endif
 }
 
 typedef struct {
@@ -95,10 +109,22 @@ void* sk_fmmap(FILE* f, size_t* size) {
     return sk_fdmmap(fd, size);
 }
 
+size_t sk_qread(FILE* file, void* buffer, size_t count, size_t offset) {
+    int fd = sk_fileno(file);
+    if (fd < 0) {
+        return SIZE_MAX;
+    }
+    ssize_t bytesRead = pread(fd, buffer, count, offset);
+    if (bytesRead < 0) {
+        return SIZE_MAX;
+    }
+    return bytesRead;
+}
+
 ////////////////////////////////////////////////////////////////////////////
 
 struct SkOSFileIterData {
-    SkOSFileIterData() : fDIR(0) { }
+    SkOSFileIterData() : fDIR(nullptr) { }
     DIR* fDIR;
     SkString fPath, fSuffix;
 };
@@ -123,12 +149,18 @@ void SkOSFile::Iter::reset(const char path[], const char suffix[]) {
     SkOSFileIterData& self = *static_cast<SkOSFileIterData*>(fSelf.get());
     if (self.fDIR) {
         ::closedir(self.fDIR);
-        self.fDIR = 0;
+        self.fDIR = nullptr;
     }
-
     self.fPath.set(path);
+
     if (path) {
         self.fDIR = ::opendir(path);
+#ifdef SK_BUILD_FOR_IOS
+        // check bundle for directory
+        if (!self.fDIR && ios_get_path_in_bundle(path, &self.fPath)) {
+            self.fDIR = ::opendir(self.fPath.c_str());
+        }
+#endif
         self.fSuffix.set(suffix);
     } else {
         self.fSuffix.reset();

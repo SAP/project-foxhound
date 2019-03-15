@@ -2,7 +2,7 @@
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 /* eslint no-unused-vars: [2, {"vars": "local"}] */
-/* import-globals-from ../../../framework/test/shared-head.js */
+/* import-globals-from ../../../shared/test/shared-head.js */
 /* import-globals-from ../../test/head.js */
 "use strict";
 
@@ -27,43 +27,22 @@ registerCleanupFunction(() => {
  * @return {Promise} a promise that resolves when the inspector is updated with the new
  *         node.
  */
-function* selectAndHighlightNode(selectorOrNodeFront, inspector) {
+async function selectAndHighlightNode(selectorOrNodeFront, inspector) {
   info("Highlighting and selecting the node " + selectorOrNodeFront);
 
-  let nodeFront = yield getNodeFront(selectorOrNodeFront, inspector);
-  let updated = inspector.toolbox.once("highlighter-ready");
-  inspector.selection.setNodeFront(nodeFront, "test-highlight");
-  yield updated;
+  const nodeFront = await getNodeFront(selectorOrNodeFront, inspector);
+  const updated = inspector.toolbox.once("highlighter-ready");
+  inspector.selection.setNodeFront(nodeFront, { reason: "test-highlight" });
+  await updated;
 }
 
 /**
- * Open the toolbox, with the inspector tool visible, and the computed view
- * sidebar tab selected to display the box model view.
- *
- * @return {Promise} a promise that resolves when the inspector is ready and the box model
- *         view is visible and ready.
+ * Is the given node visible in the page (rendered in the frame tree).
+ * @param {DOMNode}
+ * @return {Boolean}
  */
-function openBoxModelView() {
-  return openInspectorSidebarTab("computedview").then(data => {
-    // The actual highligher show/hide methods are mocked in box model tests.
-    // The highlighter is tested in devtools/inspector/test.
-    function mockHighlighter({highlighter}) {
-      highlighter.showBoxModel = function () {
-        return promise.resolve();
-      };
-      highlighter.hideBoxModel = function () {
-        return promise.resolve();
-      };
-    }
-    mockHighlighter(data.toolbox);
-
-    return {
-      toolbox: data.toolbox,
-      inspector: data.inspector,
-      view: data.inspector.computedview,
-      testActor: data.testActor
-    };
-  });
+function isNodeVisible(node) {
+  return !!node.getClientRects().length;
 }
 
 /**
@@ -77,7 +56,7 @@ function openBoxModelView() {
  */
 function waitForUpdate(inspector, waitForSelectionUpdate) {
   return new Promise(resolve => {
-    inspector.on("boxmodel-view-updated", function onUpdate(e, reasons) {
+    inspector.on("boxmodel-view-updated", function onUpdate(reasons) {
       // Wait for another update event if we are waiting for a selection related event.
       if (waitForSelectionUpdate && !reasons.includes("new-selection")) {
         return;
@@ -103,15 +82,15 @@ function waitForMarkupLoaded(inspector) {
 
 function getStyle(testActor, selector, propertyName) {
   return testActor.eval(`
-    content.document.querySelector("${selector}")
-                    .style.getPropertyValue("${propertyName}");
+    document.querySelector("${selector}")
+            .style.getPropertyValue("${propertyName}");
   `);
 }
 
 function setStyle(testActor, selector, propertyName, value) {
   return testActor.eval(`
-    content.document.querySelector("${selector}")
-                    .style.${propertyName} = "${value}";
+    document.querySelector("${selector}")
+            .style.${propertyName} = "${value}";
   `);
 }
 
@@ -121,8 +100,8 @@ function setStyle(testActor, selector, propertyName, value) {
  * finished updating. We also need to wait for the "boxmodel-view-updated" event.
  */
 var _selectNode = selectNode;
-selectNode = function* (node, inspector, reason) {
-  let onUpdate = waitForUpdate(inspector, true);
-  yield _selectNode(node, inspector, reason);
-  yield onUpdate;
+selectNode = async function(node, inspector, reason) {
+  const onUpdate = waitForUpdate(inspector, true);
+  await _selectNode(node, inspector, reason);
+  await onUpdate;
 };

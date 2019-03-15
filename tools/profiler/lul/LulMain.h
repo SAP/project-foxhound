@@ -50,25 +50,18 @@
 //   must perform merely in order to get the program to run.  Hence
 //   image addresses are unrelated to either SVMAs or AVMAs.
 
-
 namespace lul {
 
 // A machine word plus validity tag.
 class TaggedUWord {
-public:
+ public:
   // RUNS IN NO-MALLOC CONTEXT
   // Construct a valid one.
-  explicit TaggedUWord(uintptr_t w)
-    : mValue(w)
-    , mValid(true)
-  {}
+  explicit TaggedUWord(uintptr_t w) : mValue(w), mValid(true) {}
 
   // RUNS IN NO-MALLOC CONTEXT
   // Construct an invalid one.
-  TaggedUWord()
-    : mValue(0)
-    , mValid(false)
-  {}
+  TaggedUWord() : mValue(0), mValid(false) {}
 
   // RUNS IN NO-MALLOC CONTEXT
   TaggedUWord operator+(TaggedUWord rhs) const {
@@ -108,8 +101,7 @@ public:
   TaggedUWord operator<<(TaggedUWord rhs) const {
     if (Valid() && rhs.Valid()) {
       uintptr_t shift = rhs.Value();
-      if (shift < 8 * sizeof(uintptr_t))
-        return TaggedUWord(Value() << shift);
+      if (shift < 8 * sizeof(uintptr_t)) return TaggedUWord(Value() << shift);
     }
     return TaggedUWord();
   }
@@ -123,20 +115,19 @@ public:
   // RUNS IN NO-MALLOC CONTEXT
   // Is it word-aligned?
   bool IsAligned() const {
-    return mValid && (mValue & (sizeof(uintptr_t)-1)) == 0;
+    return mValid && (mValue & (sizeof(uintptr_t) - 1)) == 0;
   }
 
   // RUNS IN NO-MALLOC CONTEXT
   uintptr_t Value() const { return mValue; }
 
   // RUNS IN NO-MALLOC CONTEXT
-  bool      Valid() const { return mValid; }
+  bool Valid() const { return mValid; }
 
-private:
+ private:
   uintptr_t mValue;
   bool mValid;
 };
-
 
 // The registers, with validity tags, that will be unwound.
 
@@ -148,70 +139,69 @@ struct UnwindRegs {
   TaggedUWord r13;
   TaggedUWord r14;
   TaggedUWord r15;
+#elif defined(GP_ARCH_arm64)
+  TaggedUWord x29;
+  TaggedUWord x30;
+  TaggedUWord sp;
+  TaggedUWord pc;
 #elif defined(GP_ARCH_amd64) || defined(GP_ARCH_x86)
   TaggedUWord xbp;
   TaggedUWord xsp;
   TaggedUWord xip;
+#elif defined(GP_ARCH_mips64)
+  TaggedUWord sp;
+  TaggedUWord fp;
+  TaggedUWord pc;
 #else
-# error "Unknown plat"
+#  error "Unknown plat"
 #endif
 };
 
-
-// The maximum number of bytes in a stack snapshot.  This can be
-// increased if necessary, but larger values cost performance, since a
-// stack snapshot needs to be copied between sampling and worker
-// threads for each snapshot.  In practice 32k seems to be enough
-// to get good backtraces.
-static const size_t N_STACK_BYTES = 32768;
+// The maximum number of bytes in a stack snapshot.  This value can be increased
+// if necessary, but testing showed that 160k is enough to obtain good
+// backtraces on x86_64 Linux.  Most backtraces fit comfortably into 4-8k of
+// stack space, but we do have some very deep stacks occasionally.  Please see
+// the comments in DoNativeBacktrace as to why it's OK to have this value be so
+// large.
+static const size_t N_STACK_BYTES = 160 * 1024;
 
 // The stack chunk image that will be unwound.
 struct StackImage {
   // [start_avma, +len) specify the address range in the buffer.
   // Obviously we require 0 <= len <= N_STACK_BYTES.
   uintptr_t mStartAvma;
-  size_t    mLen;
-  uint8_t   mContents[N_STACK_BYTES];
+  size_t mLen;
+  uint8_t mContents[N_STACK_BYTES];
 };
 
-
 // Statistics collection for the unwinder.
-template<typename T>
+template <typename T>
 class LULStats {
-public:
-  LULStats()
-    : mContext(0)
-    , mCFI(0)
-    , mScanned(0)
-  {}
+ public:
+  LULStats() : mContext(0), mCFI(0), mFP(0) {}
 
   template <typename S>
   explicit LULStats(const LULStats<S>& aOther)
-    : mContext(aOther.mContext)
-    , mCFI(aOther.mCFI)
-    , mScanned(aOther.mScanned)
-  {}
+      : mContext(aOther.mContext), mCFI(aOther.mCFI), mFP(aOther.mFP) {}
 
   template <typename S>
-  LULStats<T>& operator=(const LULStats<S>& aOther)
-  {
+  LULStats<T>& operator=(const LULStats<S>& aOther) {
     mContext = aOther.mContext;
-    mCFI     = aOther.mCFI;
-    mScanned = aOther.mScanned;
+    mCFI = aOther.mCFI;
+    mFP = aOther.mFP;
     return *this;
   }
 
   template <typename S>
   uint32_t operator-(const LULStats<S>& aOther) {
-    return (mContext - aOther.mContext) +
-           (mCFI - aOther.mCFI) + (mScanned - aOther.mScanned);
+    return (mContext - aOther.mContext) + (mCFI - aOther.mCFI) +
+           (mFP - aOther.mFP);
   }
 
-  T mContext; // Number of context frames
-  T mCFI;     // Number of CFI/EXIDX frames
-  T mScanned; // Number of scanned frames
+  T mContext;  // Number of context frames
+  T mCFI;      // Number of CFI/EXIDX frames
+  T mFP;       // Number of frame-pointer recovered frames
 };
-
 
 // The core unwinder library class.  Just one of these is needed, and
 // it can be shared by multiple unwinder threads.
@@ -244,7 +234,7 @@ class SegArray;
 class UniqueStringUniverse;
 
 class LUL {
-public:
+ public:
   // Create; supply a logging sink.  Sets the object in Admin mode.
   explicit LUL(void (*aLog)(const char*));
 
@@ -267,8 +257,8 @@ public:
   // aMappedImage is non-NULL then it is assumed to point to a
   // called-supplied and caller-managed mapped image of the file.
   // May only be called in Admin mode.
-  void NotifyAfterMap(uintptr_t aRXavma, size_t aSize,
-                      const char* aFileName, const void* aMappedImage);
+  void NotifyAfterMap(uintptr_t aRXavma, size_t aSize, const char* aFileName,
+                      const void* aMappedImage);
 
   // In rare cases we know an executable area exists but don't know
   // what the associated file is.  This call notifies LUL of such
@@ -296,9 +286,7 @@ public:
   // LUL to discard all unwind and executable-area information for the
   // entire address space.
   // May only be called in Admin mode.
-  void NotifyBeforeUnmapAll() {
-    NotifyBeforeUnmap(0, UINTPTR_MAX);
-  }
+  void NotifyBeforeUnmapAll() { NotifyBeforeUnmap(0, UINTPTR_MAX); }
 
   // Returns the number of mappings currently registered.
   // May only be called in Admin mode.
@@ -314,12 +302,6 @@ public:
   // the SP values might be invalid, in which case the value zero will
   // be written in the relevant frameSPs[] slot.
   //
-  // Unwinding may optionally use stack scanning.  The maximum number
-  // of frames that may be recovered by stack scanning is
-  // |aScannedFramesAllowed| and the actual number recovered is
-  // written into *aScannedFramesAcquired.  |aScannedFramesAllowed|
-  // must be less than or equal to |aFramesAvail|.
-  //
   // This function assumes that the SP values increase as it unwinds
   // away from the innermost frame -- that is, that the stack grows
   // down.  It monitors SP values as it unwinds to check they
@@ -330,16 +312,12 @@ public:
   // any Admin calls whilst in Unwind mode.
   // MOZ_CRASHes if the calling thread is not registered for unwinding.
   //
-  // Up to aScannedFramesAllowed stack-scanned frames may be recovered.
-  //
   // The calling thread must previously have been registered via a call to
   // RegisterSampledThread.
-  void Unwind(/*OUT*/uintptr_t* aFramePCs,
-              /*OUT*/uintptr_t* aFrameSPs,
-              /*OUT*/size_t* aFramesUsed,
-              /*OUT*/size_t* aScannedFramesAcquired,
-              size_t aFramesAvail,
-              size_t aScannedFramesAllowed,
+  void Unwind(/*OUT*/ uintptr_t* aFramePCs,
+              /*OUT*/ uintptr_t* aFrameSPs,
+              /*OUT*/ size_t* aFramesUsed,
+              /*OUT*/ size_t* aFramePointerFramesAcquired, size_t aFramesAvail,
               UnwindRegs* aStartRegs, StackImage* aStackImg);
 
   // The logging sink.  Call to send debug strings to the caller-
@@ -356,7 +334,7 @@ public:
 
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf) const;
 
-private:
+ private:
   // The statistics counters at the point where they were last printed.
   LULStats<uint32_t> mStatsPrevious;
 
@@ -387,14 +365,13 @@ private:
   UniqueStringUniverse* mUSU;
 };
 
-
 // Run unit tests on an initialised, loaded-up LUL instance, and print
 // summary results on |aLUL|'s logging sink.  Also return the number
 // of tests run in *aNTests and the number that passed in
 // *aNTestsPassed.
-void
-RunLulUnitTests(/*OUT*/int* aNTests, /*OUT*/int*aNTestsPassed, LUL* aLUL);
+void RunLulUnitTests(/*OUT*/ int* aNTests, /*OUT*/ int* aNTestsPassed,
+                     LUL* aLUL);
 
-} // namespace lul
+}  // namespace lul
 
-#endif // LulMain_h
+#endif  // LulMain_h

@@ -8,51 +8,43 @@
 <?xml-stylesheet href="chrome://browser/content/preferences/siteDataSettings.css" type="text/css"?>
 <?xml-stylesheet href="chrome://browser/skin/preferences/in-content/siteDataSettings.css" type="text/css"?>
 
-<!DOCTYPE dialog SYSTEM "chrome://browser/locale/preferences/siteDataSettings.dtd" >
-
 <dialog id="SiteDataRemoveSelectedDialog"
         windowtype="Browser:SiteDataRemoveSelected"
         width="500"
-        title="&removingDialog.title;"
+        data-l10n-id="site-data-removing-dialog"
+        data-l10n-attrs="title, buttonlabelaccept"
         onload="gSiteDataRemoveSelected.init();"
         ondialogaccept="gSiteDataRemoveSelected.ondialogaccept(); return true;"
         ondialogcancel="gSiteDataRemoveSelected.ondialogcancel(); return true;"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-  <script src="chrome://browser/content/preferences/siteDataRemoveSelected.js"/>
+  <linkset>
+    <link rel="localization" href="browser/preferences/siteDataSettings.ftl"/>
+  </linkset>
 
-  <stringbundle id="bundlePreferences"
-                src="chrome://browser/locale/preferences/preferences.properties"/>
-
-  <vbox id="contentContainer">
-    <hbox flex="1">
-      <vbox>
-        <image class="question-icon"/>
-      </vbox>
-      <vbox flex="1">
-        <!-- Only show this label on OS X because of no dialog title -->
-        <label id="removing-label"
-#ifndef XP_MACOSX
-               hidden="true"
-#endif
-        >&removingDialog.title;</label>
-        <separator class="thin"/>
-        <description id="removing-description">&removingDialog.description;</description>
-      </vbox>
-    </hbox>
-
-    <separator />
-
-    <vbox flex="1">
-      <label>&siteTree.label;</label>
-      <separator class="thin"/>
-      <tree id="sitesTree" flex="1" seltype="single" hidecolumnpicker="true">
-        <treecols>
-          <treecol primary="true" flex="1" hideheader="true"/>
-        </treecols>
-        <treechildren />
-      </tree>
+  <hbox>
+    <vbox>
+      <image class="question-icon"/>
     </vbox>
-  </vbox>
+    <vbox flex="1">
+      <!-- Only show this label on OS X because of no dialog title -->
+      <label id="removing-label"
+             data-l10n-id="site-data-removing-header"
+#ifndef XP_MACOSX
+             hidden="true"
+#endif
+      />
+      <separator class="thin"/>
+      <description id="removing-description" data-l10n-id="site-data-removing-desc"/>
+    </vbox>
+  </hbox>
 
+  <separator/>
+
+  <label data-l10n-id="site-data-removing-table"/>
+  <separator class="thin"/>
+  <richlistbox id="removalList" class="theme-listbox" flex="1"/>
+
+  <!-- Load the script after the elements for layout issues (bug 1501755). -->
+  <script src="chrome://browser/content/preferences/siteDataRemoveSelected.js"/>
 </dialog>

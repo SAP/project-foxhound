@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sts=4 et sw=4 tw=99:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+ * vim: set ts=8 sts=2 et sw=2 tw=80:
  *
  * Copyright 2014 Mozilla Foundation
  *
@@ -21,62 +21,45 @@
 
 #include "mozilla/Attributes.h"
 
-#if defined(XP_DARWIN)
-# include <mach/mach.h>
-#endif
-#include "threading/Thread.h"
-
-struct JSContext;
-struct JSRuntime;
+#include "js/ProfilingFrameIterator.h"
+#include "wasm/WasmProcess.h"
 
 namespace js {
-
-// Force any currently-executing asm.js/ion code to call HandleExecutionInterrupt.
-extern void
-InterruptRunningJitCode(JSContext* cx);
-
 namespace wasm {
 
-// Ensure the given JSRuntime is set up to use signals. Failure to enable signal
-// handlers indicates some catastrophic failure and creation of the runtime must
-// fail.
-MOZ_MUST_USE bool
-EnsureSignalHandlers(JSContext* cx);
+typedef JS::ProfilingFrameIterator::RegisterState RegisterState;
 
-// Return whether signals can be used in this process for interrupts or
-// asm.js/wasm out-of-bounds.
-bool
-HaveSignalHandlers();
+// This function performs the low-overhead signal handler initialization that we
+// want to do eagerly to ensure a more-deterministic global process state. This
+// is especially relevant for signal handlers since handler ordering depends on
+// installation order: the wasm signal handler must run *before* the other crash
+// handlers (ds/MemoryProtectionExceptionHandler.h and breakpad) and since POSIX
+// signal handlers work LIFO, this function needs to be called at the end of the
+// startup process, after the other two handlers have been installed. Currently,
+// this is achieved by having JSRuntime() call this function. There can be
+// multiple JSRuntimes per process so this function can thus be called multiple
+// times, having no effect after the first call.
+void EnsureEagerProcessSignalHandlers();
 
-#if defined(XP_DARWIN)
-// On OSX we are forced to use the lower-level Mach exception mechanism instead
-// of Unix signals. Mach exceptions are not handled on the victim's stack but
-// rather require an extra thread. For simplicity, we create one such thread
-// per JSContext (upon the first use of wasm in the JSContext). This thread
-// and related resources are owned by AsmJSMachExceptionHandler which is owned
-// by JSContext.
-class MachExceptionHandler
-{
-    bool installed_;
-    js::Thread thread_;
-    mach_port_t port_;
+// Assuming EnsureEagerProcessSignalHandlers() has already been called,
+// this function performs the full installation of signal handlers which must
+// be performed per-thread/JSContext. This operation may incur some overhead and
+// so should be done only when needed to use wasm. Currently, this is done in
+// wasm::HasCompilerSupport() which is called when deciding whether to expose
+// the 'WebAssembly' object on the global object.
+bool EnsureFullSignalHandlers(JSContext* cx);
 
-    void uninstall();
+// Return whether, with the given simulator register state, a memory access to
+// 'addr' of size 'numBytes' needs to trap and, if so, where the simulator
+// should redirect pc to.
+bool MemoryAccessTraps(const RegisterState& regs, uint8_t* addr,
+                       uint32_t numBytes, uint8_t** newPC);
 
-  public:
-    MachExceptionHandler();
-    ~MachExceptionHandler() { uninstall(); }
-    mach_port_t port() const { return port_; }
-    bool installed() const { return installed_; }
-    bool install(JSContext* cx);
-};
-#endif
+// Return whether, with the given simulator register state, an illegal
+// instruction fault is expected and, if so, the value of the next PC.
+bool HandleIllegalInstruction(const RegisterState& regs, uint8_t** newPC);
 
-// Test whether the given PC is within the innermost wasm activation. Return
-// false if it is not, or it cannot be determined.
-bool IsPCInWasmCode(void *pc);
+}  // namespace wasm
+}  // namespace js
 
-} // namespace wasm
-} // namespace js
-
-#endif // wasm_signal_handlers_h
+#endif  // wasm_signal_handlers_h

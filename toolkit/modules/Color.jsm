@@ -4,7 +4,7 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["Color"];
+var EXPORTED_SYMBOLS = ["Color"];
 
 /**
  * Color class, which describes a color.
@@ -81,5 +81,5 @@ Color.prototype = {
     // Note: this is a high enough value to be considered as 'high contrast',
     //       but was decided upon empirically.
     return this.contrastRatio(otherColor) > 3;
-  }
+  },
 };

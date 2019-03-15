@@ -4,10 +4,10 @@ function test() {
 
   // this will throw an exception if we are not running with privileges
   try {
-    var prefs = Components.classes["@mozilla.org/preferences-service;1"].
-                getService(Components.interfaces.nsIPrefBranch);
-  }
-  catch (e) {
+    // eslint-disable-next-line no-unused-vars, mozilla/use-services
+    var prefs = Cc["@mozilla.org/preferences-service;1"].
+                getService(Ci.nsIPrefBranch);
+  } catch (e) {
     hasPrivileges = false;
   }
 

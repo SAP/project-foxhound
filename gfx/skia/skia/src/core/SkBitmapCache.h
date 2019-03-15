@@ -19,63 +19,49 @@ uint64_t SkMakeResourceCacheSharedIDForBitmap(uint32_t bitmapGenID);
 void SkNotifyBitmapGenIDIsStale(uint32_t bitmapGenID);
 
 struct SkBitmapCacheDesc {
-    uint32_t    fImageID;
-    int32_t     fWidth;
-    int32_t     fHeight;
-    SkIRect     fBounds;
+    uint32_t    fImageID;       // != 0
+    SkColorType fColorType;
+    uint32_t    fCSXYZHash;
+    uint32_t    fCSTransferFnHash;
+    SkIRect     fSubset;        // always set to a valid rect (entire or subset)
 
-    static SkBitmapCacheDesc Make(const SkBitmap&, int width, int height);
+    void validate() const {
+        SkASSERT(fImageID);
+        SkASSERT(fSubset.fLeft >= 0 && fSubset.fTop >= 0);
+        SkASSERT(fSubset.width() > 0 && fSubset.height() > 0);
+        SkASSERT(kUnknown_SkColorType != fColorType);
+    }
+
     static SkBitmapCacheDesc Make(const SkBitmap&);
-    static SkBitmapCacheDesc Make(const SkImage*, int width, int height);
     static SkBitmapCacheDesc Make(const SkImage*);
+    static SkBitmapCacheDesc Make(uint32_t genID, SkColorType, SkColorSpace*,
+                                  const SkIRect& subset);
 };
 
 class SkBitmapCache {
 public:
     /**
-     * Use this allocator for bitmaps, so they can use ashmem when available.
-     * Returns nullptr if the ResourceCache has not been initialized with a DiscardableFactory.
-     */
-    static SkBitmap::Allocator* GetAllocator();
-
-    /**
      *  Search based on the desc. If found, returns true and
      *  result will be set to the matching bitmap with its pixels already locked.
      */
-    static bool FindWH(const SkBitmapCacheDesc&, SkBitmap* result,
-                       SkResourceCache* localCache = nullptr);
+    static bool Find(const SkBitmapCacheDesc&, SkBitmap* result);
 
-    /*
-     *  result must be marked isImmutable()
-     */
-    static bool AddWH(const SkBitmapCacheDesc&, const SkBitmap& result,
-                      SkResourceCache* localCache = nullptr);
+    class Rec;
+    struct RecDeleter { void operator()(Rec* r) { PrivateDeleteRec(r); } };
+    typedef std::unique_ptr<Rec, RecDeleter> RecPtr;
 
-    /**
-     *  Search based on the bitmap's genID and subset. If found, returns true and
-     *  result will be set to the matching bitmap with its pixels already locked.
-     */
-    static bool Find(uint32_t genID, const SkIRect& subset, SkBitmap* result,
-                     SkResourceCache* localCache = nullptr);
+    static RecPtr Alloc(const SkBitmapCacheDesc&, const SkImageInfo&, SkPixmap*);
+    static void Add(RecPtr, SkBitmap*);
 
-    /**
-     * The width and the height of the provided subset must be the same as the result bitmap ones.
-     * result must be marked isImmutable()
-     */
-    static bool Add(SkPixelRef*, const SkIRect& subset, const SkBitmap& result,
-                    SkResourceCache* localCache = nullptr);
-
-    static bool Find(uint32_t genID, SkBitmap* result, SkResourceCache* localCache = nullptr);
-    // todo: eliminate the need to specify ID, since it should == the bitmap's
-    static void Add(uint32_t genID, const SkBitmap&, SkResourceCache* localCache = nullptr);
+private:
+    static void PrivateDeleteRec(Rec*);
 };
 
 class SkMipMapCache {
 public:
-    static const SkMipMap* FindAndRef(const SkBitmapCacheDesc&, SkSourceGammaTreatment,
+    static const SkMipMap* FindAndRef(const SkBitmapCacheDesc&,
                                       SkResourceCache* localCache = nullptr);
-    static const SkMipMap* AddAndRef(const SkBitmap& src, SkSourceGammaTreatment,
-                                     SkResourceCache* localCache = nullptr);
+    static const SkMipMap* AddAndRef(const SkBitmap& src, SkResourceCache* localCache = nullptr);
 };
 
 #endif

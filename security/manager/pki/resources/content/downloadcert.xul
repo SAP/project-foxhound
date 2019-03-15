@@ -18,8 +18,8 @@
 
 <stringbundle id="pippki_bundle" src="chrome://pippki/locale/pippki.properties"/>
 
-<script type="application/javascript" src="chrome://pippki/content/downloadcert.js"/>
 <script type="application/javascript" src="chrome://pippki/content/pippki.js"/>
+<script type="application/javascript" src="chrome://pippki/content/downloadcert.js"/>
 
 
   <!--  Let 'em know what they're doing -->
@@ -33,7 +33,6 @@
      -  "do you want to?"
      -  * trust for SSL
      -  * trust for email
-     -  * trust for object signing
     -->
   <vbox>
     <description id="trustHeader"/>
@@ -41,8 +40,6 @@
               id="trustSSL"/>
     <checkbox label="&downloadCert.trustEmail;"
               id="trustEmail"/>
-    <checkbox label="&downloadCert.trustObjSign;"
-              id="trustObjSign"/>
   </vbox>
 
   <separator/>
@@ -50,20 +47,12 @@
   <vbox>
     <description>&downloadCert.message3;</description>
     <separator/>
-    <grid>
-      <columns>
-        <column/>
-        <column/>
-      </columns>
-      <rows>
-        <row>
-          <button id="viewC-button"
-                  label="&downloadCert.viewCert.label;"
-                  oncommand="viewCert();"/>
-          <description style="margin: 4px;">&downloadCert.viewCert.text;</description>
-        </row>
-      </rows>
-    </grid>
+    <hbox>
+      <button id="viewC-button"
+              label="&downloadCert.viewCert.label;"
+              oncommand="viewCert();"/>
+      <description style="margin: 4px;">&downloadCert.viewCert.text;</description>
+    </hbox>
   </vbox>
 
 </dialog>

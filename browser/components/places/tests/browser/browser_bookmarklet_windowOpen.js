@@ -1,6 +1,9 @@
 "use strict";
 
-const TEST_URL = "http://example.com/browser/browser/components/places/tests/browser/pageopeningwindow.html";
+let BASE_URL = getRootDirectory(gTestPath).replace("chrome://mochitests/content/",
+                                                   "http://example.com/");
+const TEST_URL = BASE_URL + "pageopeningwindow.html";
+const DUMMY_URL = BASE_URL + "bookmarklet_windowOpen_dummy.html";
 
 function makeBookmarkFor(url, keyword) {
   return Promise.all([
@@ -8,20 +11,20 @@ function makeBookmarkFor(url, keyword) {
                                    title: "bookmarklet",
                                    url }),
     PlacesUtils.keywords.insert({url,
-                                 keyword})
+                                 keyword}),
   ]);
 
 }
 
-add_task(function* openKeywordBookmarkWithWindowOpen() {
+add_task(async function openKeywordBookmarkWithWindowOpen() {
   // This is the current default, but let's not assume that...
-  yield SpecialPowers.pushPrefEnv({"set": [
+  await SpecialPowers.pushPrefEnv({"set": [
     [ "browser.link.open_newwindow", 3 ],
-    [ "dom.disable_open_during_load", true ]
+    [ "dom.disable_open_during_load", true ],
   ]});
 
   let moztab;
-  let tabOpened = BrowserTestUtils.openNewForegroundTab(gBrowser, "about:mozilla")
+  let tabOpened = BrowserTestUtils.openNewForegroundTab(gBrowser, DUMMY_URL)
                     .then((tab) => { moztab = tab; });
   let keywordForBM = "openmeatab";
 
@@ -31,30 +34,30 @@ add_task(function* openKeywordBookmarkWithWindowOpen() {
         .then((values) => {
           bookmarkInfo = values[0];
         });
-  yield Promise.all([tabOpened, bookmarkCreated]);
+  await Promise.all([tabOpened, bookmarkCreated]);
 
   registerCleanupFunction(function() {
     return Promise.all([
       PlacesUtils.bookmarks.remove(bookmarkInfo),
-      PlacesUtils.keywords.remove(keywordForBM)
+      PlacesUtils.keywords.remove(keywordForBM),
     ]);
   });
   gURLBar.value = keywordForBM;
   gURLBar.focus();
 
   let tabCreatedPromise = BrowserTestUtils.waitForEvent(gBrowser.tabContainer, "TabOpen");
-  EventUtils.synthesizeKey("VK_RETURN", {});
+  EventUtils.synthesizeKey("KEY_Enter");
 
   info("Waiting for tab being created");
-  let {target: tab} = yield tabCreatedPromise;
+  let {target: tab} = await tabCreatedPromise;
   info("Got tab");
   let browser = tab.linkedBrowser;
   if (!browser.currentURI || browser.currentURI.spec != TEST_URL) {
     info("Waiting for browser load");
-    yield BrowserTestUtils.browserLoaded(browser);
+    await BrowserTestUtils.browserLoaded(browser, false, TEST_URL);
   }
   is(browser.currentURI && browser.currentURI.spec, TEST_URL, "Tab with expected URL loaded.");
   info("Waiting to remove tab");
-  yield Promise.all([ BrowserTestUtils.removeTab(tab),
-                      BrowserTestUtils.removeTab(moztab) ]);
+  BrowserTestUtils.removeTab(tab);
+  BrowserTestUtils.removeTab(moztab);
 });

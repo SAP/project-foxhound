@@ -8,9 +8,11 @@
 #include "SkTypes.h"
 #if defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
 
-#include "SkCGUtils.h"
 #include "SkBitmap.h"
-#include "SkColorPriv.h"
+#include "SkCGUtils.h"
+#include "SkColorData.h"
+#include "SkMacros.h"
+#include "SkTo.h"
 
 static CGBitmapInfo ComputeCGAlphaInfo_RGBA(SkAlphaType at) {
     CGBitmapInfo info = kCGBitmapByteOrder32Big;
@@ -110,9 +112,10 @@ static SkBitmap* prepareForImageRef(const SkBitmap& bm,
     SkBitmap* copy;
     if (upscaleTo32) {
         copy = new SkBitmap;
-        // here we make a ceep copy of the pixels, since CG won't take our
+        // here we make a deep copy of the pixels, since CG won't take our
         // 565 directly
-        bm.copyTo(copy, kN32_SkColorType);
+        copy->allocPixels(bm.info().makeColorType(kN32_SkColorType));
+        bm.readPixels(copy->info(), copy->getPixels(), copy->rowBytes(), 0, 0);
     } else {
         copy = new SkBitmap(bm);
     }
@@ -131,12 +134,9 @@ CGImageRef SkCreateCGImageRefWithColorspace(const SkBitmap& bm,
 
     const int w = bitmap->width();
     const int h = bitmap->height();
-    const size_t s = bitmap->getSize();
+    const size_t s = bitmap->computeByteSize();
 
     // our provider "owns" the bitmap*, and will take care of deleting it
-    // we initially lock it, so we can access the pixels. The bitmap will be deleted in the release
-    // proc, which will in turn unlock the pixels
-    bitmap->lockPixels();
     CGDataProviderRef dataRef = CGDataProviderCreateWithData(bitmap, bitmap->getPixels(), s,
                                                              SkBitmap_ReleaseInfo);
 
@@ -178,8 +178,32 @@ void SkCGDrawBitmap(CGContextRef cg, const SkBitmap& bm, float x, float y) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-SK_API bool SkCopyPixelsFromCGImage(const SkImageInfo& info, size_t rowBytes, void* pixels,
-                                    CGImageRef image) {
+CGContextRef SkCreateCGContext(const SkPixmap& pmap) {
+    CGBitmapInfo cg_bitmap_info = 0;
+    size_t bitsPerComponent = 0;
+    switch (pmap.colorType()) {
+        case kRGBA_8888_SkColorType:
+            bitsPerComponent = 8;
+            cg_bitmap_info = ComputeCGAlphaInfo_RGBA(pmap.alphaType());
+            break;
+        case kBGRA_8888_SkColorType:
+            bitsPerComponent = 8;
+            cg_bitmap_info = ComputeCGAlphaInfo_BGRA(pmap.alphaType());
+            break;
+        default:
+            return nullptr;   // no other colortypes are supported (for now)
+    }
+
+    size_t rb = pmap.addr() ? pmap.rowBytes() : 0;
+    CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+    CGContextRef cg = CGBitmapContextCreate(pmap.writable_addr(), pmap.width(), pmap.height(),
+                                            bitsPerComponent, rb, cs, cg_bitmap_info);
+    CFRelease(cs);
+    return cg;
+}
+
+bool SkCopyPixelsFromCGImage(const SkImageInfo& info, size_t rowBytes, void* pixels,
+                             CGImageRef image) {
     CGBitmapInfo cg_bitmap_info = 0;
     size_t bitsPerComponent = 0;
     switch (info.colorType()) {
@@ -212,9 +236,9 @@ SK_API bool SkCopyPixelsFromCGImage(const SkImageInfo& info, size_t rowBytes, vo
     return true;
 }
 
-bool SkCreateBitmapFromCGImage(SkBitmap* dst, CGImageRef image, SkISize* scaleToFit) {
-    const int width = scaleToFit ? scaleToFit->width() : SkToInt(CGImageGetWidth(image));
-    const int height = scaleToFit ? scaleToFit->height() : SkToInt(CGImageGetHeight(image));
+bool SkCreateBitmapFromCGImage(SkBitmap* dst, CGImageRef image) {
+    const int width = SkToInt(CGImageGetWidth(image));
+    const int height = SkToInt(CGImageGetHeight(image));
     SkImageInfo info = SkImageInfo::MakeN32Premul(width, height);
 
     SkBitmap tmp;
@@ -243,6 +267,16 @@ bool SkCreateBitmapFromCGImage(SkBitmap* dst, CGImageRef image, SkISize* scaleTo
 
     *dst = tmp;
     return true;
+}
+
+sk_sp<SkImage> SkMakeImageFromCGImage(CGImageRef src) {
+    SkBitmap bm;
+    if (!SkCreateBitmapFromCGImage(&bm, src)) {
+        return nullptr;
+    }
+
+    bm.setImmutable();
+    return SkImage::MakeFromBitmap(bm);
 }
 
 #endif//defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)

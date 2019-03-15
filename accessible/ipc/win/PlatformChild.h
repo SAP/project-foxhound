@@ -7,14 +7,15 @@
 #ifndef mozilla_a11y_PlatformChild_h
 #define mozilla_a11y_PlatformChild_h
 
+#include "mozilla/mscom/ActivationContext.h"
+#include "mozilla/mscom/Ptr.h"
 #include "mozilla/mscom/Registration.h"
 
 namespace mozilla {
 namespace a11y {
 
-class PlatformChild
-{
-public:
+class PlatformChild {
+ public:
   PlatformChild();
 
   PlatformChild(PlatformChild&) = delete;
@@ -22,16 +23,17 @@ public:
   PlatformChild& operator=(PlatformChild&) = delete;
   PlatformChild& operator=(PlatformChild&&) = delete;
 
-private:
+ private:
+  mscom::MTADeletePtr<mozilla::mscom::ActivationContextRegion> mActCtxMTA;
   UniquePtr<mozilla::mscom::RegisteredProxy> mCustomProxy;
   UniquePtr<mozilla::mscom::RegisteredProxy> mIA2Proxy;
+  UniquePtr<mozilla::mscom::RegisteredProxy> mIA2ProxyMTA;
   UniquePtr<mozilla::mscom::RegisteredProxy> mAccTypelib;
   UniquePtr<mozilla::mscom::RegisteredProxy> mMiscTypelib;
   UniquePtr<mozilla::mscom::RegisteredProxy> mSdnTypelib;
 };
 
-} // namespace mozilla
-} // namespace a11y
+}  // namespace a11y
+}  // namespace mozilla
 
-#endif // mozilla_a11y_PlatformChild_h
-
+#endif  // mozilla_a11y_PlatformChild_h

@@ -1,6 +1,3 @@
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-
 // 5 seconds.
 const kExpectedDelay1 = 5;
 // 1 second.
@@ -17,15 +14,15 @@ var observer1 = {
       timer.cancel();
 
       // Actual delay may not be exact, so convert to seconds and round.
-      do_check_eq(Math.round((Date.now() - gStartTime1) / 1000),
-                  kExpectedDelay1);
+      Assert.equal(Math.round((Date.now() - gStartTime1) / 1000),
+                   kExpectedDelay1);
 
       timer = null;
 
-      do_print("1st timer triggered (before being cancelled). Should not have happened!");
-      do_check_true(false);
+      info("1st timer triggered (before being cancelled). Should not have happened!");
+      Assert.ok(false);
     }
-  }
+  },
 };
 
 var observer2 = {
@@ -35,14 +32,14 @@ var observer2 = {
       timer.cancel();
 
       // Actual delay may not be exact, so convert to seconds and round.
-      do_check_eq(Math.round((Date.now() - gStartTime2) / 1000),
-                  kExpectedDelay2);
+      Assert.equal(Math.round((Date.now() - gStartTime2) / 1000),
+                   kExpectedDelay2);
 
       timer = null;
 
       do_test_finished();
     }
-  }
+  },
 };
 
 function run_test() {

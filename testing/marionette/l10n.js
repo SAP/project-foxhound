@@ -7,32 +7,33 @@
 /**
  * An API which allows Marionette to handle localized content.
  *
- * The localization (https://mzl.la/2eUMjyF) of UI elements in Gecko based
- * applications is done via entities and properties. For static values entities
- * are used, which are located in .dtd files. Whereby for dynamically updated
- * content the values come from .property files. Both types of elements can be
- * identifed via a unique id, and the translated content retrieved.
+ * The localization (https://mzl.la/2eUMjyF) of UI elements in Gecko
+ * based applications is done via entities and properties. For static
+ * values entities are used, which are located in .dtd files. Whereby for
+ * dynamically updated content the values come from .property files. Both
+ * types of elements can be identifed via a unique id, and the translated
+ * content retrieved.
  */
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+XPCOMUtils.defineLazyGlobalGetters(this, ["DOMParser"]);
+XPCOMUtils.defineLazyGetter(this, "domParser", () => new DOMParser());
 
-XPCOMUtils.defineLazyServiceGetter(
-    this, "domParser", "@mozilla.org/xmlextras/domparser;1", "nsIDOMParser");
-
-Cu.import("chrome://marionette/content/error.js");
+const {NoSuchElementError} =
+    ChromeUtils.import("chrome://marionette/content/error.js", {});
 
 this.EXPORTED_SYMBOLS = ["l10n"];
 
+/** @namespace */
 this.l10n = {};
 
 /**
  * Retrieve the localized string for the specified entity id.
  *
  * Example:
- *     localizeEntity(["chrome://global/locale/about.dtd"], "about.version")
+ *     localizeEntity(["chrome://branding/locale/brand.dtd"], "brandShortName")
  *
  * @param {Array.<string>} urls
  *     Array of .dtd URLs.
@@ -42,12 +43,12 @@ this.l10n = {};
  * @return {string}
  *     The localized string for the requested entity.
  */
-l10n.localizeEntity = function (urls, id) {
+l10n.localizeEntity = function(urls, id) {
   // Build a string which contains all possible entity locations
   let locations = [];
   urls.forEach((url, index) => {
     locations.push(`<!ENTITY % dtd_${index} SYSTEM "${url}">%dtd_${index};`);
-  })
+  });
 
   // Use the DOM parser to resolve the entity and extract its real value
   let header = `<?xml version="1.0"?><!DOCTYPE elem [${locations.join("")}]>`;
@@ -66,7 +67,9 @@ l10n.localizeEntity = function (urls, id) {
  * Retrieve the localized string for the specified property id.
  *
  * Example:
- *     localizeProperty(["chrome://global/locale/findbar.properties"], "FastFind")
+ *
+ *     localizeProperty(
+ *         ["chrome://global/locale/findbar.properties"], "FastFind");
  *
  * @param {Array.<string>} urls
  *     Array of .properties URLs.
@@ -76,7 +79,7 @@ l10n.localizeEntity = function (urls, id) {
  * @return {string}
  *     The localized string for the requested property.
  */
-l10n.localizeProperty = function (urls, id) {
+l10n.localizeProperty = function(urls, id) {
   let property = null;
 
   for (let url of urls) {
@@ -85,10 +88,11 @@ l10n.localizeProperty = function (urls, id) {
       property = bundle.GetStringFromName(id);
       break;
     } catch (e) {}
-  };
+  }
 
   if (property === null) {
-    throw new NoSuchElementError(`Property with id='${id}' hasn't been found`);
+    throw new NoSuchElementError(
+        `Property with ID '${id}' hasn't been found`);
   }
 
   return property;

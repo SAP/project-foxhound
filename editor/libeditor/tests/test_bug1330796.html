@@ -55,7 +55,7 @@ var tests = [
     "<span>&gt; mailcite<br></span>x<br>" ],
   // No <br> at the end to simulate prior deletion to the end of the quote.
   [ "<span _moz_quote=true>&gt; mailcite</span>", 10,
-    "<span>&gt; mailcite</span><br>x<br>" ]
+    "<span>&gt; mailcite</span><br>x<br>" ],
 ];
 
 /** Test for Bug 1330796 **/
@@ -68,15 +68,15 @@ SimpleTest.waitForFocus(function() {
   var theEdit = document.getElementById("editable");
   makeMailEditor();
 
-  for (i = 0; i < tests.length; i++) {
+  for (let i = 0; i < tests.length; i++) {
     theEdit.innerHTML = tests[i][0];
     theEdit.focus();
     var theText = theEdit.firstChild.firstChild;
     // Position set at the beginning , middle and end of the text.
     sel.collapse(theText, tests[i][1]);
 
-    synthesizeKey("KEY_Enter", { code: "Enter" });
-    synthesizeKey("x", { code: "KeyX" });
+    synthesizeKey("KEY_Enter");
+    sendString("x");
     is(theEdit.innerHTML, tests[i][2], "unexpected HTML for test " + i.toString());
   }
 
@@ -86,11 +86,7 @@ SimpleTest.waitForFocus(function() {
 
 function makeMailEditor() {
   var Ci = SpecialPowers.Ci;
-  var editingSession = SpecialPowers.wrap(window)
-    .QueryInterface(Ci.nsIInterfaceRequestor)
-    .getInterface(Ci.nsIWebNavigation)
-    .QueryInterface(Ci.nsIInterfaceRequestor)
-    .getInterface(Ci.nsIEditingSession);
+  var editingSession = SpecialPowers.wrap(window).docShell.editingSession;
   var editor = editingSession.getEditorForWindow(window);
   editor.flags |= Ci.nsIPlaintextEditor.eEditorMailMask;
 }

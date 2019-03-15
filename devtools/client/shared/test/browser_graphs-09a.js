@@ -25,30 +25,30 @@ const TEST_DATA = [
   { delta: 3580, value: 39 }, { delta: 3680, value: 42 },
   { delta: 3780, value: 49 }, { delta: 3880, value: 55 },
   { delta: 3980, value: 60 }, { delta: 4080, value: 60 },
-  { delta: 4180, value: 60 }
+  { delta: 4180, value: 60 },
 ];
 const LineGraphWidget = require("devtools/client/shared/widgets/LineGraphWidget");
 
-add_task(function* () {
-  yield addTab("about:blank");
-  yield performTest();
+add_task(async function() {
+  await addTab("about:blank");
+  await performTest();
   gBrowser.removeCurrentTab();
 });
 
-function* performTest() {
-  let [host,, doc] = yield createHost();
-  let graph = new LineGraphWidget(doc.body, { metric: "fps" });
+async function performTest() {
+  const [host,, doc] = await createHost();
+  const graph = new LineGraphWidget(doc.body, { metric: "fps" });
 
-  yield testGraph(graph);
+  await testGraph(graph);
 
-  yield graph.destroy();
+  await graph.destroy();
   host.destroy();
 }
 
-function* testGraph(graph) {
+async function testGraph(graph) {
   info("Should be able to set the graph data before waiting for the ready event.");
 
-  yield graph.setDataWhenReady(TEST_DATA);
+  await graph.setDataWhenReady(TEST_DATA);
   ok(graph.hasData(), "Data was set successfully.");
 
   is(graph._gutter.hidden, false,

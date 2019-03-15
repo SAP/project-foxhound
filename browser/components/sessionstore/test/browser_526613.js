@@ -10,9 +10,8 @@ function test() {
 
   function browserWindowsCount(expected) {
     let count = 0;
-    let e = Services.wm.getEnumerator("navigator:browser");
-    while (e.hasMoreElements()) {
-      if (!e.getNext().closed)
+    for (let win of Services.wm.getEnumerator("navigator:browser")) {
+      if (!win.closed)
         ++count;
     }
     is(count, expected,
@@ -35,7 +34,7 @@ function test() {
     ],
     // make sure the first window is focused, otherwise when restoring the
     // old state, the first window is closed and the test harness gets unloaded
-    selectedWindow: 1
+    selectedWindow: 1,
   };
 
   let pass = 1;
@@ -53,19 +52,18 @@ function test() {
         } else {
           info("waiting for the current window to become active");
           setTimeout(pollMostRecentWindow, 0);
-          window.focus(); //XXX Why is this needed?
+          window.focus(); // XXX Why is this needed?
         }
       }
       pollMostRecentWindow();
-    }
-    else {
+    } else {
       browserWindowsCount(1);
       ok(!window.closed, "Restoring the old state should have left this window open");
       Services.obs.removeObserver(observer, "sessionstore-browser-state-restored");
       finish();
     }
   }
-  Services.obs.addObserver(observer, "sessionstore-browser-state-restored", false);
+  Services.obs.addObserver(observer, "sessionstore-browser-state-restored");
 
   // set browser to test state
   ss.setBrowserState(JSON.stringify(testState));

@@ -2,46 +2,60 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-/* import-globals-from in-content/applications.js */
-
-var Cc = Components.classes;
-var Ci = Components.interfaces;
+/* import-globals-from in-content/main.js */
 
 var gAppManagerDialog = {
   _removed: [],
 
-  init: function appManager_init() {
-    this.handlerInfo = window.arguments[0];
+  onLoad() {
+    document.mozSubdialogReady = this.init();
+  },
 
-    var bundle = document.getElementById("appManagerBundle");
-    var contentText;
-    if (this.handlerInfo.type == TYPE_MAYBE_FEED)
-      contentText = bundle.getString("handleWebFeeds");
-    else {
-      var description = gApplicationsPane._describeType(this.handlerInfo);
-      var key =
-        (this.handlerInfo.wrappedHandlerInfo instanceof Ci.nsIMIMEInfo) ? "handleFile"
-                                                                        : "handleProtocol";
-        contentText = bundle.getFormattedString(key, [description]);
+  async init() {
+    this.handlerInfo = window.arguments[0];
+    Services.scriptloader.loadSubScript("chrome://browser/content/preferences/in-content/main.js",
+      window);
+
+    const appDescElem = document.getElementById("appDescription");
+    if (this.handlerInfo.wrappedHandlerInfo instanceof Ci.nsIMIMEInfo) {
+      document.l10n.setAttributes(appDescElem, "app-manager-handle-file", {
+        type: this.handlerInfo.typeDescription,
+      });
+    } else {
+      document.l10n.setAttributes(appDescElem, "app-manager-handle-protocol", {
+        type: this.handlerInfo.typeDescription,
+      });
     }
-    contentText = bundle.getFormattedString("descriptionApplications", [contentText]);
-    document.getElementById("appDescription").textContent = contentText;
 
     var list = document.getElementById("appList");
-    var apps = this.handlerInfo.possibleApplicationHandlers.enumerate();
-    while (apps.hasMoreElements()) {
-      let app = apps.getNext();
-      if (!gApplicationsPane.isValidHandlerApp(app))
+    for (let app of this.handlerInfo.possibleApplicationHandlers.enumerate()) {
+      if (!gMainPane.isValidHandlerApp(app))
         continue;
 
-      app.QueryInterface(Ci.nsIHandlerApp);
-      var item = list.appendItem(app.name);
-      item.setAttribute("image", gApplicationsPane._getIconURLForHandlerApp(app));
-      item.className = "listitem-iconic";
+      // Ensure the XBL binding is created eagerly.
+      // eslint-disable-next-line no-undef
+      list.appendChild(MozXULElement.parseXULToFragment("<richlistitem/>"));
+      var item = list.lastChild;
       item.app = app;
+
+      var image = document.createXULElement("image");
+      image.setAttribute("src", gMainPane._getIconURLForHandlerApp(app));
+      item.appendChild(image);
+
+      var label = document.createXULElement("label");
+      label.setAttribute("value", app.name);
+      item.appendChild(label);
     }
 
+    // Triggers onSelect which populates label
     list.selectedIndex = 0;
+
+    // We want to block on those elements being localized because the
+    // result will impact the size of the subdialog.
+    await document.l10n.translateElements([
+      appDescElem,
+      document.getElementById("appType"),
+    ]);
   },
 
   onOK: function appManager_onOK() {
@@ -64,14 +78,16 @@ var gAppManagerDialog = {
     var list = document.getElementById("appList");
     this._removed.push(list.selectedItem.app);
     var index = list.selectedIndex;
-    list.removeItemAt(index);
-    if (list.getRowCount() == 0) {
+    var element = list.selectedItem;
+    list.removeItemFromSelection(element);
+    element.remove();
+    if (list.itemCount == 0) {
       // The list is now empty, make the bottom part disappear
       document.getElementById("appDetails").hidden = true;
     } else {
       // Select the item at the same index, if we removed the last
       // item of the list, select the previous item
-      if (index == list.getRowCount())
+      if (index == list.itemCount)
         --index;
       list.selectedIndex = index;
     }
@@ -90,12 +106,10 @@ var gAppManagerDialog = {
       address = app.executable.path;
     else if (app instanceof Ci.nsIWebHandlerApp)
       address = app.uriTemplate;
-    else if (app instanceof Ci.nsIWebContentHandlerInfo)
-      address = app.uri;
     document.getElementById("appLocation").value = address;
-    var bundle = document.getElementById("appManagerBundle");
-    var appType = app instanceof Ci.nsILocalHandlerApp ? "descriptionLocalApp"
-                                                       : "descriptionWebApp";
-    document.getElementById("appType").value = bundle.getString(appType);
-  }
+    const l10nId = app instanceof Ci.nsILocalHandlerApp ? "app-manager-local-app-info"
+                                                        : "app-manager-web-app-info";
+    const appTypeElem = document.getElementById("appType");
+    document.l10n.setAttributes(appTypeElem, l10nId);
+  },
 };

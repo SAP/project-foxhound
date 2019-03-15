@@ -2,15 +2,14 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
 
-const { ActorPool, appendExtraActors, createExtraActors } =
-  require("devtools/server/actors/common");
+const { LazyPool, createExtraActors } = require("devtools/shared/protocol/lazy-pool");
 const { RootActor } = require("devtools/server/actors/root");
-const { ThreadActor } = require("devtools/server/actors/script");
+const { ThreadActor } = require("devtools/server/actors/thread");
 const { DebuggerServer } = require("devtools/server/main");
-const promise = require("promise");
+const { ActorRegistry } = require("devtools/server/actors/utils/actor-registry");
 
 var gTestGlobals = [];
-DebuggerServer.addTestGlobal = function (global) {
+DebuggerServer.addTestGlobal = function(global) {
   gTestGlobals.push(global);
 };
 
@@ -26,41 +25,39 @@ function TestTabList(connection) {
 
   // An array of actors for each global added with
   // DebuggerServer.addTestGlobal.
-  this._tabActors = [];
+  this._targetActors = [];
 
   // A pool mapping those actors' names to the actors.
-  this._tabActorPool = new ActorPool(connection);
+  this._targetActorPool = new LazyPool(connection);
 
-  for (let global of gTestGlobals) {
-    let actor = new TestTabActor(connection, global);
+  for (const global of gTestGlobals) {
+    const actor = new TestTargetActor(connection, global);
     actor.selected = false;
-    this._tabActors.push(actor);
-    this._tabActorPool.addActor(actor);
+    this._targetActors.push(actor);
+    this._targetActorPool.manage(actor);
   }
-  if (this._tabActors.length > 0) {
-    this._tabActors[0].selected = true;
+  if (this._targetActors.length > 0) {
+    this._targetActors[0].selected = true;
   }
-
-  connection.addActorPool(this._tabActorPool);
 }
 
 TestTabList.prototype = {
   constructor: TestTabList,
-  getList: function () {
-    return promise.resolve([...this._tabActors]);
-  }
+  getList: function() {
+    return Promise.resolve([...this._targetActors]);
+  },
 };
 
-function createRootActor(connection) {
-  let root = new RootActor(connection, {
+exports.createRootActor = function createRootActor(connection) {
+  const root = new RootActor(connection, {
     tabList: new TestTabList(connection),
-    globalActorFactories: DebuggerServer.globalActorFactories
+    globalActorFactories: ActorRegistry.globalActorFactories,
   });
   root.applicationType = "xpcshell-tests";
   return root;
-}
+};
 
-function TestTabActor(connection, global) {
+function TestTargetActor(connection, global) {
   this.conn = connection;
   this._global = global;
   this._threadActor = new ThreadActor(this, this._global);
@@ -69,9 +66,9 @@ function TestTabActor(connection, global) {
   this._extraActors = {};
 }
 
-TestTabActor.prototype = {
-  constructor: TestTabActor,
-  actorPrefix: "TestTabActor",
+TestTargetActor.prototype = {
+  constructor: TestTargetActor,
+  actorPrefix: "TestTargetActor",
 
   get window() {
     return { wrappedJSObject: this._global };
@@ -81,52 +78,38 @@ TestTabActor.prototype = {
     return this._global.__name;
   },
 
-  form: function () {
-    let response = { actor: this.actorID, title: this._global.__name };
+  form: function() {
+    const response = { actor: this.actorID, title: this._global.__name };
 
-    // Walk over tab actors added by extensions and add them to a new ActorPool.
-    let actorPool = new ActorPool(this.conn);
-    this._createExtraActors(DebuggerServer.tabActorFactories, actorPool);
+    // Walk over target-scoped actors and add them to a new LazyPool.
+    const actorPool = new LazyPool(this.conn);
+    const actors = createExtraActors(
+      ActorRegistry.targetScopedActorFactories,
+      actorPool,
+      this
+    );
     if (!actorPool.isEmpty()) {
-      this._tabActorPool = actorPool;
-      this.conn.addActorPool(this._tabActorPool);
+      this._targetActorPool = actorPool;
     }
 
-    this._appendExtraActors(response);
-
-    return response;
+    return { ...response, ...actors };
   },
 
-  onAttach: function (request) {
+  onAttach: function(request) {
     this._attached = true;
 
-    let response = { type: "tabAttached", threadActor: this._threadActor.actorID };
-    this._appendExtraActors(response);
-
-    return response;
+    return { type: "tabAttached", threadActor: this._threadActor.actorID };
   },
 
-  onDetach: function (request) {
+  onDetach: function(request) {
     if (!this._attached) {
       return { "error": "wrongState" };
     }
     return { type: "detached" };
   },
-
-  /* Support for DebuggerServer.addTabActor. */
-  _createExtraActors: createExtraActors,
-  _appendExtraActors: appendExtraActors
 };
 
-TestTabActor.prototype.requestTypes = {
-  "attach": TestTabActor.prototype.onAttach,
-  "detach": TestTabActor.prototype.onDetach
-};
-
-exports.register = function (handle) {
-  handle.setRootActor(createRootActor);
-};
-
-exports.unregister = function (handle) {
-  handle.setRootActor(null);
+TestTargetActor.prototype.requestTypes = {
+  "attach": TestTargetActor.prototype.onAttach,
+  "detach": TestTargetActor.prototype.onDetach,
 };

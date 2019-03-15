@@ -15,6 +15,7 @@ EXPORTS.mozilla._ipdltest += [
 
 SOURCES += [
     'TestActorPunning.cpp',
+    'TestAsyncReturns.cpp',
     'TestBadActor.cpp',
     'TestCancel.cpp',
     'TestCrashCleanup.cpp',
@@ -34,6 +35,7 @@ SOURCES += [
     'TestManyChildAllocs.cpp',
     'TestMultiMgrs.cpp',
     'TestNestedLoops.cpp',
+    'TestOffMainThreadPainting.cpp',
     'TestRaceDeadlock.cpp',
     'TestRaceDeferral.cpp',
     'TestRacyInterruptReplies.cpp',
@@ -48,6 +50,7 @@ SOURCES += [
     'TestSyncError.cpp',
     'TestSyncHang.cpp',
     'TestSyncWakeup.cpp',
+    'TestUniquePtrIPC.cpp',
     'TestUrgency.cpp',
     'TestUrgentHangs.cpp',
 ]
@@ -62,6 +65,7 @@ IPDL_SOURCES += [
     'PTestActorPunning.ipdl',
     'PTestActorPunningPunned.ipdl',
     'PTestActorPunningSub.ipdl',
+    'PTestAsyncReturns.ipdl',
     'PTestBadActor.ipdl',
     'PTestBadActorSub.ipdl',
     'PTestCancel.ipdl',
@@ -93,6 +97,7 @@ IPDL_SOURCES += [
     'PTestInterruptShutdownRace.ipdl',
     'PTestJSON.ipdl',
     'PTestLatency.ipdl',
+    'PTestLayoutThread.ipdl',
     'PTestManyChildAllocs.ipdl',
     'PTestManyChildAllocsSub.ipdl',
     'PTestMultiMgrs.ipdl',
@@ -100,6 +105,7 @@ IPDL_SOURCES += [
     'PTestMultiMgrsLeft.ipdl',
     'PTestMultiMgrsRight.ipdl',
     'PTestNestedLoops.ipdl',
+    'PTestPaintThread.ipdl',
     'PTestPriority.ipdl',
     'PTestRaceDeadlock.ipdl',
     'PTestRaceDeferral.ipdl',
@@ -118,6 +124,7 @@ IPDL_SOURCES += [
     'PTestSyncError.ipdl',
     'PTestSyncHang.ipdl',
     'PTestSyncWakeup.ipdl',
+    'PTestUniquePtrIPC.ipdl',
     'PTestUrgency.ipdl',
     'PTestUrgentHangs.ipdl',
 ]

@@ -55,8 +55,6 @@ function test() {
     var historyObserver = {
         onBeginUpdateBatch: function() {},
         onEndUpdateBatch: function() {},
-        onVisit: function(aURI, aVisitID, aTime, aSessionId, aReferringId,
-                          aTransitionType, _added) {},
         onTitleChanged: function(aURI, aPageTitle) {},
         onDeleteURI: function(aURI) {},
         onClearHistory: function() {},
@@ -100,11 +98,9 @@ function test() {
             throw Cr.NS_ERROR_NO_INTERFACE;
         }
     };
-    historyService.addObserver(historyObserver, false);
+    historyService.addObserver(historyObserver);
 
     function onPageLoad() {
-      gBrowser.selectedBrowser
-              .removeEventListener("DOMContentLoaded", arguments.callee, true);
       clickLinkIfReady();
     }
 
@@ -115,8 +111,7 @@ function test() {
     ok(!info, "The fragment test page must not have been visited already.");
 
     // Now open the test page in a new tab.
-    gBrowser.selectedTab = gBrowser.addTab();
-    gBrowser.selectedBrowser.addEventListener(
-        "DOMContentLoaded", onPageLoad, true);
-    content.location = pageurl;
+    gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
+    BrowserTestUtils.waitForContentEvent(gBrowser.selectedBrowser, "DOMContentLoaded", true).then(onPageLoad);
+    BrowserTestUtils.loadURI(gBrowser.selectedBrowser, pageurl);
 }

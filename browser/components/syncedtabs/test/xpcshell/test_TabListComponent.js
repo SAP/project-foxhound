@@ -1,9 +1,10 @@
 "use strict";
 
-let { SyncedTabs } = Cu.import("resource://services-sync/SyncedTabs.jsm", {});
-let { TabListComponent } = Cu.import("resource:///modules/syncedtabs/TabListComponent.js", {});
-let { SyncedTabsListStore } = Cu.import("resource:///modules/syncedtabs/SyncedTabsListStore.js", {});
-let { View } = Cu.import("resource:///modules/syncedtabs/TabListView.js", {});
+let { SyncedTabs } = ChromeUtils.import("resource://services-sync/SyncedTabs.jsm", {});
+let { TabListComponent } = ChromeUtils.import("resource:///modules/syncedtabs/TabListComponent.js", {});
+let { SyncedTabsListStore } = ChromeUtils.import("resource:///modules/syncedtabs/SyncedTabsListStore.js", {});
+let { View } = ChromeUtils.import("resource:///modules/syncedtabs/TabListView.js", {});
+let { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm", {});
 
 const ACTION_METHODS = [
   "onSelectRow",
@@ -20,10 +21,11 @@ const ACTION_METHODS = [
   "onFilterBlur",
 ];
 
-add_task(function* testInitUninit() {
+add_task(async function testInitUninit() {
   let store = new SyncedTabsListStore();
   let ViewMock = sinon.stub();
   let view = {render() {}, destroy() {}};
+  let mockWindow = {};
 
   ViewMock.returns(view);
 
@@ -34,7 +36,7 @@ add_task(function* testInitUninit() {
   sinon.stub(store, "getData");
   sinon.stub(store, "focusInput");
 
-  let component = new TabListComponent({window, store, View: ViewMock, SyncedTabs});
+  let component = new TabListComponent({window: mockWindow, store, View: ViewMock, SyncedTabs});
 
   for (let action of ACTION_METHODS) {
     sinon.stub(component, action);
@@ -66,7 +68,7 @@ add_task(function* testInitUninit() {
   Assert.ok(view.destroy.calledOnce, "view is destroyed on uninit");
 });
 
-add_task(function* testActions() {
+add_task(async function testActions() {
   let store = new SyncedTabsListStore();
   let chromeWindowMock = {
     gBrowser: {
@@ -81,13 +83,12 @@ add_task(function* testActions() {
   let windowMock = {
     top: {
       PlacesCommandHook: {
-        bookmarkLink() { return Promise.resolve(); }
+        bookmarkLink() { return Promise.resolve(); },
       },
-      PlacesUtils: { bookmarksMenuFolderId: "id" }
+      PlacesUtils: { bookmarksMenuFolderId: "id" },
     },
-    getBrowserURL() {},
     openDialog() {},
-    openUILinkIn() {}
+    openTrustedLinkIn() {},
   };
   let component = new TabListComponent({
     window: windowMock, store, View: null, SyncedTabs,
@@ -128,20 +129,28 @@ add_task(function* testActions() {
 
   sinon.spy(windowMock.top.PlacesCommandHook, "bookmarkLink");
   component.onBookmarkTab("uri", "title");
-  Assert.equal(windowMock.top.PlacesCommandHook.bookmarkLink.args[0][1], "uri");
-  Assert.equal(windowMock.top.PlacesCommandHook.bookmarkLink.args[0][2], "title");
+  Assert.equal(windowMock.top.PlacesCommandHook.bookmarkLink.args[0][0], "uri");
+  Assert.equal(windowMock.top.PlacesCommandHook.bookmarkLink.args[0][1], "title");
 
-  sinon.spy(windowMock, "openUILinkIn");
+  sinon.spy(windowMock, "openTrustedLinkIn");
   component.onOpenTab("uri", "where", "params");
-  Assert.ok(windowMock.openUILinkIn.calledWith("uri", "where", "params"));
+  Assert.ok(windowMock.openTrustedLinkIn.calledWith("uri", "where", "params"));
 
   sinon.spy(chromeWindowMock.gBrowser, "loadTabs");
   let tabsToOpen = ["uri1", "uri2"];
   component.onOpenTabs(tabsToOpen, "where");
   Assert.ok(getChromeWindowMock.calledWith(windowMock));
-  Assert.ok(chromeWindowMock.gBrowser.loadTabs.calledWith(tabsToOpen, false, false));
+  Assert.ok(chromeWindowMock.gBrowser.loadTabs.calledWith(tabsToOpen, {
+    inBackground: false,
+    replace: false,
+    triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+  }));
   component.onOpenTabs(tabsToOpen, "tabshifted");
-  Assert.ok(chromeWindowMock.gBrowser.loadTabs.calledWith(tabsToOpen, true, false));
+  Assert.ok(chromeWindowMock.gBrowser.loadTabs.calledWith(tabsToOpen, {
+    inBackground: true,
+    replace: false,
+    triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+  }));
 
   sinon.spy(clipboardHelperMock, "copyString");
   component.onCopyTabLocation("uri");

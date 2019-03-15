@@ -14,16 +14,16 @@ const PRETTY_PRINT_PREF = "auto-pretty-print";
 const originalBlackBox = Services.prefs.getBoolPref(BRANCH + BLACK_BOX_PREF);
 const originalPrettyPrint = Services.prefs.getBoolPref(BRANCH + PRETTY_PRINT_PREF);
 
-add_task(function* () {
+add_task(async function() {
   info("Setting a couple of preferences");
   Services.prefs.setBoolPref(BRANCH + BLACK_BOX_PREF, false);
   Services.prefs.setBoolPref(BRANCH + PRETTY_PRINT_PREF, true);
 
   info("Opening a test tab and a toolbox host to create the options view in");
-  yield addTab("about:blank");
-  let [host, win] = yield createHost("bottom", OPTIONS_VIEW_URL);
+  await addTab("about:blank");
+  const [host, win] = await createHost("bottom", OPTIONS_VIEW_URL);
 
-  yield testOptionsView(win);
+  await testOptionsView(win);
 
   info("Closing the host and current tab");
   host.destroy();
@@ -34,17 +34,17 @@ add_task(function* () {
   Services.prefs.setBoolPref(BRANCH + PRETTY_PRINT_PREF, originalPrettyPrint);
 });
 
-function* testOptionsView(win) {
-  let events = [];
-  let options = createOptionsView(win);
-  yield options.initialize();
+async function testOptionsView(win) {
+  const events = [];
+  const options = createOptionsView(win);
+  await options.initialize();
 
-  let $ = win.document.querySelector.bind(win.document);
+  const $ = win.document.querySelector.bind(win.document);
 
-  options.on("pref-changed", (_, pref) => events.push(pref));
+  options.on("pref-changed", pref => events.push(pref));
 
-  let ppEl = $("menuitem[data-pref='auto-pretty-print']");
-  let bbEl = $("menuitem[data-pref='auto-black-box']");
+  const ppEl = $("menuitem[data-pref='auto-pretty-print']");
+  const bbEl = $("menuitem[data-pref='auto-black-box']");
 
   // Test default config
   is(ppEl.getAttribute("checked"), "true", "`true` prefs are checked on start");
@@ -68,12 +68,12 @@ function* testOptionsView(win) {
      "correct pref passed in 'pref-changed' event (auto-black-box)");
 
   // Test buttons update when clicked and preferences are updated
-  yield click(options, win, ppEl);
+  await click(options, win, ppEl);
   is(ppEl.getAttribute("checked"), "true", "menuitems update when clicked");
   is(Services.prefs.getBoolPref(BRANCH + PRETTY_PRINT_PREF),
      true, "preference updated via click");
 
-  yield click(options, win, bbEl);
+  await click(options, win, bbEl);
   is(bbEl.getAttribute("checked"), "", "menuitems update when clicked");
   is(Services.prefs.getBoolPref(BRANCH + BLACK_BOX_PREF),
      false, "preference updated via click");
@@ -85,26 +85,26 @@ function* testOptionsView(win) {
   is(events[3], "auto-black-box",
      "correct pref passed in 'pref-changed' event (auto-black-box)");
 
-  yield options.destroy();
+  await options.destroy();
 }
 
 function createOptionsView(win) {
   return new OptionsView({
     branchName: BRANCH,
-    menupopup: win.document.querySelector("#options-menupopup")
+    menupopup: win.document.querySelector("#options-menupopup"),
   });
 }
 
-function* click(view, win, menuitem) {
-  let opened = view.once("options-shown");
-  let closed = view.once("options-hidden");
+async function click(view, win, menuitem) {
+  const opened = view.once("options-shown");
+  const closed = view.once("options-hidden");
 
-  let button = win.document.querySelector("#options-button");
+  const button = win.document.querySelector("#options-button");
   EventUtils.synthesizeMouseAtCenter(button, {}, win);
-  yield opened;
+  await opened;
   is(button.getAttribute("open"), "true", "button has `open` attribute");
 
   EventUtils.synthesizeMouseAtCenter(menuitem, {}, win);
-  yield closed;
+  await closed;
   ok(!button.hasAttribute("open"), "button does not have `open` attribute");
 }

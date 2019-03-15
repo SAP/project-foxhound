@@ -10,7 +10,9 @@ const consts = {
 
 function task(contentConsts) {
   let resolve;
-  let promise = new Promise(r => { resolve = r; });
+  let promise = new Promise(r => {
+    resolve = r;
+  });
 
   function unexpectedContentEvent(evt) {
     Assert.ok(false, "Received a " + evt.type + " event on content");
@@ -41,7 +43,7 @@ function task(contentConsts) {
   function test_inputAddHandler(evt) {
     removeEventListener(evt.type, test_inputAddHandler, false);
     Assert.equal(evt.target.id, contentConsts.INPUT_ID,
-      evt.type + " event targets correct input element (added password element)");
+                 evt.type + " event targets correct input element (added password element)");
     gDoc.defaultView.setTimeout(test_inputAddOutsideForm, 0);
   }
 
@@ -58,7 +60,7 @@ function task(contentConsts) {
   function test_inputAddOutsideFormHandler(evt) {
     removeEventListener(evt.type, test_inputAddOutsideFormHandler, false);
     Assert.equal(evt.target.id, contentConsts.BODY_INPUT_ID,
-      evt.type + " event targets correct input element (added password element outside form)");
+                 evt.type + " event targets correct input element (added password element outside form)");
     gDoc.defaultView.setTimeout(test_inputChangesType, 0);
   }
 
@@ -71,7 +73,7 @@ function task(contentConsts) {
   function test_inputChangesTypeHandler(evt) {
     removeEventListener(evt.type, test_inputChangesTypeHandler, false);
     Assert.equal(evt.target.id, contentConsts.CHANGE_INPUT_ID,
-      evt.type + " event targets correct input element (changed type)");
+                 evt.type + " event targets correct input element (changed type)");
     gDoc.defaultView.setTimeout(completeTest, 0);
   }
 
@@ -84,16 +86,16 @@ function task(contentConsts) {
   return promise;
 }
 
-add_task(function* () {
-  let tab = gBrowser.selectedTab = gBrowser.addTab();
+add_task(async function() {
+  let tab = gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
   let promise = ContentTask.spawn(tab.linkedBrowser, consts, task);
-  tab.linkedBrowser.loadURI("data:text/html;charset=utf-8," +
-			    "<html><body>" +
-			    "<form id='" + consts.FORM1_ID + "'>" +
+  BrowserTestUtils.loadURI(tab.linkedBrowser, "data:text/html;charset=utf-8," +
+                            "<html><body>" +
+                            "<form id='" + consts.FORM1_ID + "'>" +
                             "<input id='" + consts.CHANGE_INPUT_ID + "'></form>" +
-			    "<form id='" + consts.FORM2_ID + "'></form>" +
-			    "</body></html>");
-  yield promise;
+                            "<form id='" + consts.FORM2_ID + "'></form>" +
+                            "</body></html>");
+  await promise;
   gBrowser.removeCurrentTab();
 });
 

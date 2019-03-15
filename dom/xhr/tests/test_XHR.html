@@ -53,7 +53,7 @@ for (i = 0; i < passFiles.length; ++i) {
   is(xhr.getResponseHeader("Content-Type"), null, "should be null");
   is(xhr.getAllResponseHeaders(), "", "should be empty string");
   is(xhr.responseType, "", "wrong initial responseType");
-  xhr.open(passFiles[i][1], passFiles[i][0], false); 
+  xhr.open(passFiles[i][1], passFiles[i][0], false);
   xhr.send(null);
   is(xhr.status, passFiles[i][2], "wrong status");
   is(xhr.statusText, passFiles[i][3], "wrong statusText");
@@ -79,7 +79,7 @@ for (i = 0; i < failFiles.length; ++i) {
   xhr = new XMLHttpRequest();
   var didthrow = false;
   try {
-    xhr.open(failFiles[i][1], failFiles[i][0], false); 
+    xhr.open(failFiles[i][1], failFiles[i][0], false);
     xhr.send(null);
   }
   catch (e) {
@@ -129,20 +129,18 @@ checkSetResponseType(xhr, "document");
 checkSetResponseType(xhr, "arraybuffer");
 checkSetResponseType(xhr, "blob");
 checkSetResponseType(xhr, "json");
-checkSetResponseType(xhr, "moz-chunked-text");
 checkSetResponseType(xhr, "moz-chunked-arraybuffer");
 checkOpenThrows(xhr, "GET", "file_XHR_pass2.txt", false);
 
 // test response (sync, responseType is not changeable)
 xhr = new XMLHttpRequest();
-xhr.open("GET", 'file_XHR_pass2.txt', false); 
+xhr.open("GET", 'file_XHR_pass2.txt', false);
 checkSetResponseTypeThrows(xhr, "");
 checkSetResponseTypeThrows(xhr, "text");
 checkSetResponseTypeThrows(xhr, "document");
 checkSetResponseTypeThrows(xhr, "arraybuffer");
 checkSetResponseTypeThrows(xhr, "blob");
 checkSetResponseTypeThrows(xhr, "json");
-checkSetResponseTypeThrows(xhr, "moz-chunked-text");
 checkSetResponseTypeThrows(xhr, "moz-chunked-arraybuffer");
 xhr.send(null);
 checkSetResponseTypeThrows(xhr, "document");
@@ -151,7 +149,7 @@ is(xhr.response, "hello pass\n", "wrong response");
 
 // test response (responseType='document')
 xhr = new XMLHttpRequest();
-xhr.open("GET", 'file_XHR_pass1.xml'); 
+xhr.open("GET", 'file_XHR_pass1.xml');
 xhr.responseType = 'document';
 xhr.onloadend = continueTest;
 xhr.send(null);
@@ -165,7 +163,7 @@ is((new XMLSerializer()).serializeToString(xhr.response.documentElement),
 
 // test response (responseType='text')
 xhr = new XMLHttpRequest();
-xhr.open("GET", 'file_XHR_pass2.txt'); 
+xhr.open("GET", 'file_XHR_pass2.txt');
 xhr.responseType = 'text';
 xhr.onloadend = continueTest;
 xhr.send(null);
@@ -184,7 +182,7 @@ function arraybuffer_equals_to(ab, s) {
 
 // with a simple text file
 xhr = new XMLHttpRequest();
-xhr.open("GET", 'file_XHR_pass2.txt'); 
+xhr.open("GET", 'file_XHR_pass2.txt');
 xhr.responseType = 'arraybuffer';
 xhr.onloadend = continueTest;
 xhr.send(null);
@@ -211,7 +209,7 @@ arraybuffer_equals_to(ab2, "\xaa\xee\0\x03\xff\xff\xff\xff\xbb\xbb\xbb\xbb");
 
 // with a binary file
 xhr = new XMLHttpRequest();
-xhr.open("GET", 'file_XHR_binary1.bin'); 
+xhr.open("GET", 'file_XHR_binary1.bin');
 xhr.responseType = 'arraybuffer';
 xhr.onloadend = continueTest;
 xhr.send(null);
@@ -264,7 +262,7 @@ function checkXHRStatus() {
   }
 }
 checkXHRStatus();
-xhr.open("GET", 'file_XHR_binary1.bin'); 
+xhr.open("GET", 'file_XHR_binary1.bin');
 checkXHRStatus();
 xhr.responseType = 'arraybuffer';
 xhr.send(null);
@@ -276,92 +274,88 @@ while (xhr.readyState != 4) {
 checkXHRStatus();
 
 // test response (responseType='blob')
-var responseTypes = ['blob', 'moz-blob'];
-for (var i = 0; i < responseTypes.length; i++) {
-  var t = responseTypes[i];
-  // with a simple text file
-  xhr = new XMLHttpRequest();
-  xhr.open("GET", 'file_XHR_pass2.txt'); 
-  xhr.responseType = t;
-  xhr.onloadend = continueTest;
-  xhr.send(null);
-  yield undefined;
-  is(xhr.status, 200, "wrong status");
-  checkResponseTextAccessThrows(xhr);
-  checkResponseXMLAccessThrows(xhr);
-  var b = xhr.response;
-  ok(b, "should have a non-null blob");
-  ok(b instanceof Blob, "should be a Blob");
-  ok(!(b instanceof File), "should not be a File");
-  is(b.size, "hello pass\n".length, "wrong blob size");
+// with a simple text file
+xhr = new XMLHttpRequest();
+xhr.open("GET", 'file_XHR_pass2.txt');
+xhr.responseType = 'blob';
+xhr.onloadend = continueTest;
+xhr.send(null);
+yield undefined;
+is(xhr.status, 200, "wrong status");
+checkResponseTextAccessThrows(xhr);
+checkResponseXMLAccessThrows(xhr);
+var b = xhr.response;
+ok(b, "should have a non-null blob");
+ok(b instanceof Blob, "should be a Blob");
+ok(!(b instanceof File), "should not be a File");
+is(b.size, "hello pass\n".length, "wrong blob size");
 
-  var fr = new FileReader();
-  fr.onload = continueTest;
-  fr.readAsBinaryString(b);
-  yield undefined;
-  ok(fr.result, "hello pass\n", "wrong values");
+var fr = new FileReader();
+fr.onload = continueTest;
+fr.readAsBinaryString(b);
+yield undefined;
+is(fr.result, "hello pass\n", "wrong values");
 
-  // with a binary file
-  xhr = new XMLHttpRequest();
-  xhr.open("GET", 'file_XHR_binary1.bin', true);
-  xhr.send(null);
-  xhr.onreadystatechange = continueTest;
-  while(xhr.readyState != 2)
-    yield undefined;
-
-  is(xhr.status, 200, "wrong status");
-  xhr.responseType = t;
-
-  while(xhr.readyState != 4)
-    yield undefined;
-  
-  xhr.onreadystatechange = null;
-
-  b = xhr.response;
-  ok(b != null, "should have a non-null blob");
-  is(b.size, 12, "wrong blob size");
-
-  fr = new FileReader();
-  fr.readAsBinaryString(b);
-  xhr = null; // kill the XHR object
-  b = null;
-  SpecialPowers.gc();
-  fr.onload = continueTest;
-  yield undefined;
-  is(fr.result, "\xaa\xee\0\x03\xff\xff\xff\xff\xbb\xbb\xbb\xbb", "wrong values");
-
-  // with a larger binary file
-  xhr = new XMLHttpRequest();
-  xhr.open("GET", 'file_XHR_binary2.bin', true);
-  xhr.responseType = t;
-  xhr.send(null);
-  xhr.onreadystatechange = continueTest;
-
-  while (xhr.readyState != 4)
-    yield undefined;
-
-  xhr.onreadystatechange = null;
-
-  var b = xhr.response;
-  ok(b != null, "should have a non-null blob");
-  is(b.size, 65536, "wrong blob size");
-
-  fr = new FileReader();
-  fr.readAsArrayBuffer(b);
-  fr.onload = continueTest;
-  xhr = null; // kill the XHR object
-  b = null;
-  SpecialPowers.gc();
+// with a binary file
+xhr = new XMLHttpRequest();
+xhr.open("GET", 'file_XHR_binary1.bin', true);
+xhr.send(null);
+xhr.onreadystatechange = continueTest;
+while(xhr.readyState != 2)
   yield undefined;
 
-  var u8 = new Uint8Array(fr.result);
-  for (var i = 0; i < 65536; i++) {
-    if (u8[i] !== (i & 255)) {
-      break;
-    }
+is(xhr.status, 200, "wrong status");
+xhr.responseType = 'blob';
+
+while(xhr.readyState != 4)
+  yield undefined;
+
+xhr.onreadystatechange = null;
+
+b = xhr.response;
+ok(b != null, "should have a non-null blob");
+is(b.size, 12, "wrong blob size");
+
+fr = new FileReader();
+fr.readAsBinaryString(b);
+xhr = null; // kill the XHR object
+b = null;
+SpecialPowers.gc();
+fr.onload = continueTest;
+yield undefined;
+is(fr.result, "\xaa\xee\0\x03\xff\xff\xff\xff\xbb\xbb\xbb\xbb", "wrong values");
+
+// with a larger binary file
+xhr = new XMLHttpRequest();
+xhr.open("GET", 'file_XHR_binary2.bin', true);
+xhr.responseType = 'blob';
+xhr.send(null);
+xhr.onreadystatechange = continueTest;
+
+while (xhr.readyState != 4)
+  yield undefined;
+
+xhr.onreadystatechange = null;
+
+var b = xhr.response;
+ok(b != null, "should have a non-null blob");
+is(b.size, 65536, "wrong blob size");
+
+fr = new FileReader();
+fr.readAsArrayBuffer(b);
+fr.onload = continueTest;
+xhr = null; // kill the XHR object
+b = null;
+SpecialPowers.gc();
+yield undefined;
+
+var u8 = new Uint8Array(fr.result);
+for (var i = 0; i < 65536; i++) {
+  if (u8[i] !== (i & 255)) {
+    break;
   }
-  is(i, 65536, "wrong value at offset " + i);
 }
+is(i, 65536, "wrong value at offset " + i);
 
 var client = new XMLHttpRequest();
 client.open("GET", "file_XHR_pass1.xml", true);

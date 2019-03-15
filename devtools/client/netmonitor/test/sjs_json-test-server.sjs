@@ -18,5 +18,11 @@ function handleRequest(request, response) {
     case "null":
       response.write("{ \"greeting\": null }");
       break;
+    case "nogrip":
+      response.write("{\"obj\": {\"type\": \"string\" }}");
+      break;
+    case "empty":
+      response.write("{}");
+      break;
   }
 }

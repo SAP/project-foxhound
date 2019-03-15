@@ -375,6 +375,7 @@ ParseRFC1485AVA(PLArenaPool* arena, const char** pbp, const char* endptr)
     const char* bp;
     int vt = -1;
     int valLen;
+    PRBool isDottedOid = PR_FALSE;
     SECOidTag kind = SEC_OID_UNKNOWN;
     SECStatus rv = SECFailure;
     SECItem derOid = { 0, NULL, 0 };
@@ -401,8 +402,9 @@ ParseRFC1485AVA(PLArenaPool* arena, const char** pbp, const char* endptr)
     }
 
     /* is this a dotted decimal OID attribute type ? */
-    if (!PL_strncasecmp("oid.", tagBuf, 4)) {
+    if (!PL_strncasecmp("oid.", tagBuf, 4) || isdigit(tagBuf[0])) {
         rv = SEC_StringToOID(arena, &derOid, tagBuf, strlen(tagBuf));
+        isDottedOid = (PRBool)(rv == SECSuccess);
     } else {
         for (n2k = name2kinds; n2k->name; n2k++) {
             SECOidData* oidrec;
@@ -428,8 +430,6 @@ ParseRFC1485AVA(PLArenaPool* arena, const char** pbp, const char* endptr)
             goto loser;
         a = CERT_CreateAVAFromRaw(arena, &derOid, &derVal);
     } else {
-        if (kind == SEC_OID_UNKNOWN)
-            goto loser;
         if (kind == SEC_OID_AVA_COUNTRY_NAME && valLen != 2)
             goto loser;
         if (vt == SEC_ASN1_PRINTABLE_STRING &&
@@ -445,7 +445,11 @@ ParseRFC1485AVA(PLArenaPool* arena, const char** pbp, const char* endptr)
 
         derVal.data = (unsigned char*)valBuf;
         derVal.len = valLen;
-        a = CERT_CreateAVAFromSECItem(arena, kind, vt, &derVal);
+        if (kind == SEC_OID_UNKNOWN && isDottedOid) {
+            a = CERT_CreateAVAFromRaw(arena, &derOid, &derVal);
+        } else {
+            a = CERT_CreateAVAFromSECItem(arena, kind, vt, &derVal);
+        }
     }
     return a;
 
@@ -699,14 +703,19 @@ CERT_GetOidString(const SECItem* oid)
         return NULL;
     }
 
+    /* If the OID has length 1, we bail. */
+    if (oid->len < 2) {
+        return NULL;
+    }
+
     /* first will point to the next sequence of bytes to decode */
     first = (PRUint8*)oid->data;
     /* stop points to one past the legitimate data */
     stop = &first[oid->len];
 
     /*
-   * Check for our pseudo-encoded single-digit OIDs
-   */
+     * Check for our pseudo-encoded single-digit OIDs
+     */
     if ((*first == 0x80) && (2 == oid->len)) {
         /* Funky encoding.  The second byte is the number */
         rvString = PR_smprintf("%lu", (PRUint32)first[1]);
@@ -723,6 +732,10 @@ CERT_GetOidString(const SECItem* oid)
             if (0 == (*last & 0x80)) {
                 break;
             }
+        }
+        /* There's no first bit set, so this isn't valid. Bail.*/
+        if (last == stop) {
+            goto unsupported;
         }
         bytesBeforeLast = (unsigned int)(last - first);
         if (bytesBeforeLast <= 3U) { /* 0-28 bit number */
@@ -744,12 +757,12 @@ CERT_GetOidString(const SECItem* oid)
                 CASE(2, 0x7f);
                 CASE(1, 0x7f);
                 case 0:
-                    n |=
-                        last[0] & 0x7f;
+                    n |= last[0] & 0x7f;
                     break;
             }
-            if (last[0] & 0x80)
+            if (last[0] & 0x80) {
                 goto unsupported;
+            }
 
             if (!rvString) {
                 /* This is the first number.. decompose it */
@@ -1301,8 +1314,7 @@ CERT_GetCertificateEmailAddress(CERTCertificate* cert)
                     }
                 } else if (current->type == certRFC822Name) {
                     rawEmailAddr =
-                        (char*)PORT_ArenaZAlloc(cert->arena, current->name.other.len +
-                                                                 1);
+                        (char*)PORT_ArenaZAlloc(cert->arena, current->name.other.len + 1);
                     if (!rawEmailAddr) {
                         goto finish;
                     }

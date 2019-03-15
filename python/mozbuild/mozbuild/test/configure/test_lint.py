@@ -35,6 +35,10 @@ class TestLint(unittest.TestCase):
                          'moz.configure'): textwrap.dedent(source)
         })
 
+    def test_configure_testcase(self):
+        # Lint python/mozbuild/mozbuild/test/configure/data/moz.configure
+        self.lint_test()
+
     def test_depends_failures(self):
         with self.moz_configure('''
             option('--foo', help='foo')
@@ -43,10 +47,28 @@ class TestLint(unittest.TestCase):
                 return value
 
             @depends('--help', foo)
+            @imports('os')
             def bar(help, foo):
                 return foo
         '''):
             self.lint_test()
+
+        with self.assertRaises(ConfigureError) as e:
+            with self.moz_configure('''
+                option('--foo', help='foo')
+                @depends('--foo')
+                def foo(value):
+                    return value
+
+                @depends('--help', foo)
+                def bar(help, foo):
+                    return foo
+            '''):
+                self.lint_test()
+
+        self.assertEquals(e.exception.message,
+                          "%s:7: The dependency on `--help` is unused."
+                          % mozpath.join(test_data_path, 'moz.configure'))
 
         with self.assertRaises(ConfigureError) as e:
             with self.moz_configure('''
@@ -57,6 +79,7 @@ class TestLint(unittest.TestCase):
                     return value
 
                 @depends('--help', foo)
+                @imports('os')
                 def bar(help, foo):
                     return foo
             '''):
@@ -79,6 +102,7 @@ class TestLint(unittest.TestCase):
                         return value
 
                     @depends('--help', foo)
+                    @imports('os')
                     def bar(help, foo):
                         return foo
                 tmpl()
@@ -142,6 +166,39 @@ class TestLint(unittest.TestCase):
                     return value
 
                 option('--bar', help='bar', when=foo)
+            '''):
+                self.lint_test()
+
+        self.assertEquals(e.exception.message,
+                          "Missing @depends for `foo`: '--help'")
+
+        # This would have failed with "Missing @depends for `foo`: '--help'"
+        # in the past, because of the reference to the builtin False.
+        with self.moz_configure('''
+            option('--foo', help='foo')
+            @depends('--foo')
+            def foo(value):
+                return False or value
+
+            option('--bar', help='bar', when=foo)
+        '''):
+            self.lint_test()
+
+        # However, when something that is normally a builtin is overridden,
+        # we should still want the dependency on --help.
+        with self.assertRaises(ConfigureError) as e:
+            with self.moz_configure('''
+                @template
+                def tmpl():
+                    False = 42
+
+                    option('--foo', help='foo')
+                    @depends('--foo')
+                    def foo(value):
+                        return False
+
+                    option('--bar', help='bar', when=foo)
+                tmpl()
             '''):
                 self.lint_test()
 
@@ -228,6 +285,85 @@ class TestLint(unittest.TestCase):
                           "%s:9: The dependency on `qux` is unused."
                           % mozpath.join(test_data_path, 'moz.configure'))
 
+    def test_default_enable(self):
+        # --enable-* with default=True is not allowed.
+        with self.moz_configure('''
+            option('--enable-foo', default=False, help='foo')
+        '''):
+            self.lint_test()
+        with self.assertRaises(ConfigureError) as e:
+            with self.moz_configure('''
+                option('--enable-foo', default=True, help='foo')
+            '''):
+                self.lint_test()
+        self.assertEquals(e.exception.message,
+                          '--disable-foo should be used instead of '
+                          '--enable-foo with default=True')
+
+    def test_default_disable(self):
+        # --disable-* with default=False is not allowed.
+        with self.moz_configure('''
+            option('--disable-foo', default=True, help='foo')
+        '''):
+            self.lint_test()
+        with self.assertRaises(ConfigureError) as e:
+            with self.moz_configure('''
+                option('--disable-foo', default=False, help='foo')
+            '''):
+                self.lint_test()
+        self.assertEquals(e.exception.message,
+                          '--enable-foo should be used instead of '
+                          '--disable-foo with default=False')
+
+    def test_default_with(self):
+        # --with-* with default=True is not allowed.
+        with self.moz_configure('''
+            option('--with-foo', default=False, help='foo')
+        '''):
+            self.lint_test()
+        with self.assertRaises(ConfigureError) as e:
+            with self.moz_configure('''
+                option('--with-foo', default=True, help='foo')
+            '''):
+                self.lint_test()
+        self.assertEquals(e.exception.message,
+                          '--without-foo should be used instead of '
+                          '--with-foo with default=True')
+
+    def test_default_without(self):
+        # --without-* with default=False is not allowed.
+        with self.moz_configure('''
+            option('--without-foo', default=True, help='foo')
+        '''):
+            self.lint_test()
+        with self.assertRaises(ConfigureError) as e:
+            with self.moz_configure('''
+                option('--without-foo', default=False, help='foo')
+            '''):
+                self.lint_test()
+        self.assertEquals(e.exception.message,
+                          '--with-foo should be used instead of '
+                          '--without-foo with default=False')
+
+    def test_default_func(self):
+        # Help text for an option with variable default should contain
+        # {enable|disable} rule.
+        with self.moz_configure('''
+            option(env='FOO', help='foo')
+            option('--enable-bar', default=depends('FOO')(lambda x: bool(x)),
+                   help='{Enable|Disable} bar')
+        '''):
+            self.lint_test()
+        with self.assertRaises(ConfigureError) as e:
+            with self.moz_configure('''
+                option(env='FOO', help='foo')
+                option('--enable-bar', default=depends('FOO')(lambda x: bool(x)),
+                       help='Enable bar')
+            '''):
+                self.lint_test()
+        self.assertEquals(e.exception.message,
+                          '--enable-bar has a non-constant default. '
+                          'Its help should contain "{Enable|Disable}"')
 
 if __name__ == '__main__':
     main()

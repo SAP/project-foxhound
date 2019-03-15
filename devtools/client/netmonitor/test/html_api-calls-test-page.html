@@ -19,10 +19,10 @@
       "use strict";
 
       function get(address, callback) {
-        let xhr = new XMLHttpRequest();
+        const xhr = new XMLHttpRequest();
         xhr.open("GET", address, true);
 
-        xhr.onreadystatechange = function () {
+        xhr.onreadystatechange = function() {
           if (this.readyState == this.DONE) {
             callback();
           }
@@ -32,11 +32,11 @@
 
       function performRequests() {
         /* eslint-disable max-nested-callbacks */
-        get("/api/fileName.xml", function () {
-          get("/api/file%E2%98%A2.xml", function () {
-            get("/api/ascii/get/", function () {
-              get("/api/unicode/%E2%98%A2/", function () {
-                get("/api/search/?q=search%E2%98%A2", function () {
+        get("/api/fileName.xml", function() {
+          get("/api/file%E2%98%A2.xml", function() {
+            get("/api/ascii/get/", function() {
+              get("/api/unicode/%E2%98%A2/", function() {
+                get("/api/search/?q=search%E2%98%A2", function() {
                   // Done.
                 });
               });

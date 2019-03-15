@@ -1,9 +1,11 @@
+/* eslint-env mozilla/frame-script */
+
 "use strict";
 
-var {classes: Cc, interfaces: Ci, utils: Cu, manager: Cm} = Components;
+var Cm = Components.manager;
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 const { generateUUID } = Cc["@mozilla.org/uuid-generator;1"].getService(Ci.nsIUUIDGenerator);
 
@@ -16,7 +18,7 @@ function AboutPage(aboutHost, chromeURL, uriFlags) {
 }
 
 AboutPage.prototype = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIAboutModule]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIAboutModule]),
   getURIFlags(aURI) { // eslint-disable-line no-unused-vars
     return this.uriFlags;
   },
@@ -49,7 +51,7 @@ AboutPage.prototype = {
   unregister() {
     Cm.QueryInterface(Ci.nsIComponentRegistrar).unregisterFactory(
       this.classID, this);
-  }
+  },
 };
 
 const gRegisteredPages = new Map();

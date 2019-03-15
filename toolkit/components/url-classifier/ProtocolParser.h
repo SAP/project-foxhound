@@ -7,8 +7,7 @@
 #define ProtocolParser_h__
 
 #include "HashStore.h"
-#include "nsICryptoHMAC.h"
-#include "safebrowsing.pb.h"
+#include "chromium/safebrowsing.pb.h"
 
 namespace mozilla {
 namespace safebrowsing {
@@ -17,7 +16,7 @@ namespace safebrowsing {
  * Abstract base class for parsing update data in multiple formats.
  */
 class ProtocolParser {
-public:
+ public:
   struct ForwardedUpdate {
     nsCString table;
     nsCString url;
@@ -28,20 +27,18 @@ public:
 
   nsresult Status() const { return mUpdateStatus; }
 
-  nsresult Init(nsICryptoHash* aHasher);
-
 #ifdef MOZ_SAFEBROWSING_DUMP_FAILED_UPDATES
   virtual nsCString GetRawTableUpdates() const { return mPending; }
 #endif
 
   virtual void SetCurrentTable(const nsACString& aTable) = 0;
 
-  void SetRequestedTables(const nsTArray<nsCString>& aRequestTables)
-  {
+  void SetRequestedTables(const nsTArray<nsCString>& aRequestTables) {
     mRequestedTables = aRequestTables;
   }
 
-  nsresult Begin();
+  nsresult Begin(const nsACString& aTable,
+                 const nsTArray<nsCString>& aUpdateTables);
   virtual nsresult AppendStream(const nsACString& aData) = 0;
 
   uint32_t UpdateWaitSec() { return mUpdateWaitSec; }
@@ -50,46 +47,47 @@ public:
   // parsing is not supported, for example in V4.
   virtual void End() = 0;
 
-  // Forget the table updates that were created by this pass.  It
-  // becomes the caller's responsibility to free them.  This is shitty.
-  TableUpdate *GetTableUpdate(const nsACString& aTable);
+  RefPtr<TableUpdate> GetTableUpdate(const nsACString& aTable);
   void ForgetTableUpdates() { mTableUpdates.Clear(); }
-  nsTArray<TableUpdate*> &GetTableUpdates() { return mTableUpdates; }
+  const TableUpdateArray& GetTableUpdates() { return mTableUpdates; }
 
   // These are only meaningful to V2. Since they were originally public,
   // moving them to ProtocolParserV2 requires a dymamic cast in the call
   // sites. As a result, we will leave them until we remove support
   // for V2 entirely..
-  virtual const nsTArray<ForwardedUpdate> &Forwards() const { return mForwards; }
-  virtual bool ResetRequested() { return false; }
+  virtual const nsTArray<ForwardedUpdate>& Forwards() const {
+    return mForwards;
+  }
+  bool ResetRequested() const { return !mTablesToReset.IsEmpty(); }
+  const nsTArray<nsCString>& TablesToReset() const { return mTablesToReset; }
 
-protected:
-  virtual TableUpdate* CreateTableUpdate(const nsACString& aTableName) const = 0;
+ protected:
+  virtual RefPtr<TableUpdate> CreateTableUpdate(
+      const nsACString& aTableName) const = 0;
 
   nsCString mPending;
   nsresult mUpdateStatus;
 
   // Keep track of updates to apply before passing them to the DBServiceWorkers.
-  nsTArray<TableUpdate*> mTableUpdates;
+  TableUpdateArray mTableUpdates;
 
   nsTArray<ForwardedUpdate> mForwards;
-  nsCOMPtr<nsICryptoHash> mCryptoHash;
 
   // The table names that were requested from the client.
   nsTArray<nsCString> mRequestedTables;
 
+  // The table names that failed to update and need to be reset.
+  nsTArray<nsCString> mTablesToReset;
+
   // How long we should wait until the next update.
   uint32_t mUpdateWaitSec;
-
-private:
-  void CleanupUpdates();
 };
 
 /**
  * Helpers to parse the "shavar", "digest256" and "simple" list formats.
  */
 class ProtocolParserV2 final : public ProtocolParser {
-public:
+ public:
   ProtocolParserV2();
   virtual ~ProtocolParserV2();
 
@@ -98,8 +96,9 @@ public:
   virtual void End() override;
 
   // Update information.
-  virtual const nsTArray<ForwardedUpdate> &Forwards() const override { return mForwards; }
-  virtual bool ResetRequested() override { return mResetRequested; }
+  virtual const nsTArray<ForwardedUpdate>& Forwards() const override {
+    return mForwards;
+  }
 
 #ifdef MOZ_SAFEBROWSING_DUMP_FAILED_UPDATES
   // Unfortunately we have to override to return mRawUpdate which
@@ -107,8 +106,9 @@ public:
   virtual nsCString GetRawTableUpdates() const override { return mRawUpdate; }
 #endif
 
-private:
-  virtual TableUpdate* CreateTableUpdate(const nsACString& aTableName) const override;
+ private:
+  virtual RefPtr<TableUpdate> CreateTableUpdate(
+      const nsACString& aTableName) const override;
 
   nsresult ProcessControl(bool* aDone);
   nsresult ProcessExpirations(const nsCString& aLine);
@@ -124,7 +124,7 @@ private:
   nsresult ProcessHostSub(const Prefix& aDomain, uint8_t aNumEntries,
                           const nsACString& aChunk, uint32_t* aStart);
   nsresult ProcessHostAddComplete(uint8_t aNumEntries, const nsACString& aChunk,
-                                  uint32_t *aStart);
+                                  uint32_t* aStart);
   nsresult ProcessHostSubComplete(uint8_t numEntries, const nsACString& aChunk,
                                   uint32_t* start);
   // Digest chunks are very similar to shavar chunks, except digest chunks
@@ -135,10 +135,7 @@ private:
   nsresult ProcessDigestSub(const nsACString& aChunk);
   bool NextLine(nsACString& aLine);
 
-  enum ParserState {
-    PROTOCOL_STATE_CONTROL,
-    PROTOCOL_STATE_CHUNK
-  };
+  enum ParserState { PROTOCOL_STATE_CONTROL, PROTOCOL_STATE_CHUNK };
   ParserState mState;
 
   enum ChunkType {
@@ -156,40 +153,44 @@ private:
     uint32_t num;
     uint32_t hashSize;
     uint32_t length;
-    void Clear() { num = 0; hashSize = 0; length = 0; }
+    void Clear() {
+      num = 0;
+      hashSize = 0;
+      length = 0;
+    }
   };
   ChunkState mChunkState;
 
-  bool mResetRequested;
-
   // Updates to apply to the current table being parsed.
-  TableUpdateV2 *mTableUpdate;
+  RefPtr<TableUpdateV2> mTableUpdate;
 
 #ifdef MOZ_SAFEBROWSING_DUMP_FAILED_UPDATES
-  nsCString mRawUpdate; // Keep a copy of mPending before it's processed.
+  nsCString mRawUpdate;  // Keep a copy of mPending before it's processed.
 #endif
 };
 
 // Helpers to parse the "proto" list format.
 class ProtocolParserProtobuf final : public ProtocolParser {
-public:
+ public:
   typedef FetchThreatListUpdatesResponse_ListUpdateResponse ListUpdateResponse;
   typedef google::protobuf::RepeatedPtrField<ThreatEntrySet> ThreatEntrySetList;
 
-public:
+ public:
   ProtocolParserProtobuf();
 
   virtual void SetCurrentTable(const nsACString& aTable) override;
   virtual nsresult AppendStream(const nsACString& aData) override;
   virtual void End() override;
 
-private:
+ private:
   virtual ~ProtocolParserProtobuf();
 
-  virtual TableUpdate* CreateTableUpdate(const nsACString& aTableName) const override;
+  virtual RefPtr<TableUpdate> CreateTableUpdate(
+      const nsACString& aTableName) const override;
 
   // For parsing update info.
-  nsresult ProcessOneResponse(const ListUpdateResponse& aResponse);
+  nsresult ProcessOneResponse(const ListUpdateResponse& aResponse,
+                              nsACString& aListName);
 
   nsresult ProcessAdditionOrRemoval(TableUpdateV4& aTableUpdate,
                                     const ThreatEntrySetList& aUpdate,
@@ -208,7 +209,7 @@ private:
                                  const ThreatEntrySet& aRemoval);
 };
 
-} // namespace safebrowsing
-} // namespace mozilla
+}  // namespace safebrowsing
+}  // namespace mozilla
 
 #endif

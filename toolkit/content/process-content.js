@@ -4,13 +4,10 @@
 
 "use strict";
 
-var { classes: Cc, interfaces: Ci, utils: Cu } = Components;
-
 // Creates a new PageListener for this process. This will listen for page loads
 // and for those that match URLs provided by the parent process will set up
 // a dedicated message port and notify the parent process.
-Cu.import("resource://gre/modules/RemotePageManager.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const gInContentProcess = Services.appinfo.processType == Ci.nsIXULRuntime.PROCESS_TYPE_CONTENT;
 
@@ -21,64 +18,69 @@ Services.cpmm.addMessageListener("gmp-plugin-crash", msg => {
   gmpservice.RunPluginCrashCallbacks(msg.data.pluginID, msg.data.pluginName);
 });
 
+let TOPICS = [
+  "chrome-document-global-created",
+  "content-document-global-created",
+];
+
 if (gInContentProcess) {
-  let ProcessObserver = {
-    TOPICS: [
-      "inner-window-destroyed",
-      "xpcom-shutdown",
-    ],
-
-    init() {
-      for (let topic of this.TOPICS) {
-        Services.obs.addObserver(this, topic, false);
-        Services.cpmm.addMessageListener("Memory:GetSummary", this);
-      }
-    },
-
-    uninit() {
-      for (let topic of this.TOPICS) {
-        Services.obs.removeObserver(this, topic);
-        Services.cpmm.removeMessageListener("Memory:GetSummary", this);
-      }
-    },
-
-    receiveMessage(msg) {
-      if (msg.name != "Memory:GetSummary") {
-        return;
-      }
-      let pid = Services.appinfo.processID;
-      let memMgr = Cc["@mozilla.org/memory-reporter-manager;1"]
-                     .getService(Ci.nsIMemoryReporterManager);
-      let rss = memMgr.resident;
-      let uss = memMgr.residentUnique;
-      Services.cpmm.sendAsyncMessage("Memory:Summary", {
-        pid,
-        summary: {
-          uss,
-          rss,
-        }
-      });
-    },
-
-    observe(subject, topic, data) {
-      switch (topic) {
-        case "inner-window-destroyed": {
-          // Forward inner-window-destroyed notifications with the
-          // inner window ID, so that code in the parent that should
-          // do something when content windows go away can do it
-          let innerWindowID =
-            subject.QueryInterface(Ci.nsISupportsPRUint64).data;
-          Services.cpmm.sendAsyncMessage("Toolkit:inner-window-destroyed",
-                                         innerWindowID);
-          break;
-        }
-        case "xpcom-shutdown": {
-          this.uninit();
-          break;
-        }
-      }
-    },
-  };
-
-  ProcessObserver.init();
+  TOPICS.push("inner-window-destroyed");
+  TOPICS.push("xpcom-shutdown");
 }
+
+let ProcessObserver = {
+  init() {
+    for (let topic of TOPICS) {
+      Services.obs.addObserver(this, topic);
+    }
+  },
+
+  uninit() {
+    for (let topic of TOPICS) {
+      Services.obs.removeObserver(this, topic);
+    }
+  },
+
+  observe(subject, topic, data) {
+    switch (topic) {
+      case "chrome-document-global-created":
+      case "content-document-global-created": {
+
+        // Strip the hash from the URL, because it's not part of the origin.
+        let window = subject;
+        let url = window.document.documentURI.replace(/[\#|\?].*$/, "");
+
+        let registeredURLs = Services.cpmm.sharedData.get("RemotePageManager:urls");
+
+        if (!registeredURLs || !registeredURLs.has(url))
+          return;
+
+        // Get the frame message manager for this window so we can associate this
+        // page with a browser element
+        let messageManager = window.docShell.messageManager;
+
+        let { ChildMessagePort } =
+          ChromeUtils.import("resource://gre/modules/remotepagemanager/RemotePageManagerChild.jsm", {});
+        // Set up the child side of the message port
+        new ChildMessagePort(messageManager, window);
+        break;
+      }
+      case "inner-window-destroyed": {
+        // Forward inner-window-destroyed notifications with the
+        // inner window ID, so that code in the parent that should
+        // do something when content windows go away can do it
+        let innerWindowID =
+          subject.QueryInterface(Ci.nsISupportsPRUint64).data;
+        Services.cpmm.sendAsyncMessage("Toolkit:inner-window-destroyed",
+                                       innerWindowID);
+        break;
+      }
+      case "xpcom-shutdown": {
+        this.uninit();
+        break;
+      }
+    }
+  },
+};
+
+ProcessObserver.init();

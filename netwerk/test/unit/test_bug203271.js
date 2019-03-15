@@ -4,8 +4,8 @@
 // specified in RFC 2616 section 14.9.3 by letting max-age
 // take precedence
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 const BUGID = "203271";
 
 var httpserver = new HttpServer();
@@ -99,7 +99,7 @@ function setupChannel(suffix, value) {
         uri: "http://localhost:" + httpserver.identity.primaryPort + suffix,
         loadUsingSystemPrincipal: true
     });
-    var httpChan = chan.QueryInterface(Components.interfaces.nsIHttpChannel);
+    var httpChan = chan.QueryInterface(Ci.nsIHttpChannel);
     httpChan.requestMethod = "GET"; // default value, just being paranoid...
     httpChan.setRequestHeader("x-request", value, false);
     return httpChan;
@@ -112,7 +112,7 @@ function triggerNextTest() {
 
 function checkValueAndTrigger(request, data, ctx) {
     logit(index, data, ctx);
-    do_check_eq(tests[index].expected, data);
+    Assert.equal(tests[index].expected, data);
 
     if (index < tests.length - 1) {
         var delay = tests[index++].delay;

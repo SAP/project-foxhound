@@ -9,9 +9,21 @@ description = "Rust code for libxul"
 bindgen = ["gkrust-shared/bindgen"]
 servo = ["gkrust-shared/servo"]
 quantum_render = ["gkrust-shared/quantum_render"]
+cubeb-remoting = ["gkrust-shared/cubeb-remoting"]
+cubeb_pulse_rust = ["gkrust-shared/cubeb_pulse_rust"]
+gecko_debug = ["gkrust-shared/gecko_debug"]
+simd-accel = ["gkrust-shared/simd-accel"]
+moz_memory = ["gkrust-shared/moz_memory"]
+spidermonkey_rust = ["gkrust-shared/spidermonkey_rust"]
+gecko_profiler = ["gkrust-shared/gecko_profiler"]
+gecko_profiler_parse_elf = ["gkrust-shared/gecko_profiler_parse_elf"]
 
 [dependencies]
 gkrust-shared = { path = "shared" }
+mozilla-central-workspace-hack = { path = "../../../build/workspace-hack" }
+
+[dev-dependencies]
+stylo_tests = { path = "../../../servo/ports/geckolib/tests/" }
 
 [lib]
 path = "lib.rs"
@@ -22,21 +34,3 @@ bench = false
 doc = false
 plugin = false
 harness = false
-
-# Explicitly specify what our profiles use.
-[profile.dev]
-opt-level = 1
-debug = true
-rpath = false
-lto = false
-debug-assertions = true
-codegen-units = 1
-panic = "abort"
-
-[profile.release]
-opt-level = 2
-debug = true
-rpath = false
-lto = true
-debug-assertions = false
-panic = "abort"

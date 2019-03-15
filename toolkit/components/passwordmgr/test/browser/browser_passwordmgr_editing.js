@@ -1,4 +1,4 @@
-const { ContentTaskUtils } = Cu.import("resource://testing-common/ContentTaskUtils.jsm", {});
+const { ContentTaskUtils } = ChromeUtils.import("resource://testing-common/ContentTaskUtils.jsm", {});
 const PWMGR_DLG = "chrome://passwordmgr/content/passwordManager.xul";
 
 var doc;
@@ -22,8 +22,7 @@ function getPassword(row) {
 }
 
 function synthesizeDblClickOnCell(aTree, column, row) {
-  let tbo = aTree.treeBoxObject;
-  let rect = tbo.getCoordsForCellItem(row, aTree.columns[column], "text");
+  let rect = aTree.getCoordsForCellItem(row, aTree.columns[column], "text");
   let x = rect.x + rect.width / 2;
   let y = rect.y + rect.height / 2;
   // Simulate the double click.
@@ -31,24 +30,25 @@ function synthesizeDblClickOnCell(aTree, column, row) {
                              aTree.ownerGlobal);
 }
 
-function* togglePasswords() {
+async function togglePasswords() {
   pwmgrdlg.document.querySelector("#togglePasswords").doCommand();
-  yield new Promise(resolve => waitForFocus(resolve, pwmgrdlg));
+  await new Promise(resolve => waitForFocus(resolve, pwmgrdlg));
+  pwmgrdlg.document.documentElement.clientWidth; // flush to ensure UI up-to-date
 }
 
-function* editUsernamePromises(site, oldUsername, newUsername) {
+async function editUsernamePromises(site, oldUsername, newUsername) {
   is(Services.logins.findLogins({}, site, "", "").length, 1, "Correct login found");
   let login = Services.logins.findLogins({}, site, "", "")[0];
   is(login.username, oldUsername, "Correct username saved");
   is(getUsername(0), oldUsername, "Correct username shown");
+  let focusPromise = BrowserTestUtils.waitForEvent(signonsTree, "focus", true);
   synthesizeDblClickOnCell(signonsTree, 1, 0);
-  yield ContentTaskUtils.waitForCondition(() => signonsTree.getAttribute("editing"),
-                                          "Waiting for editing");
+  await focusPromise;
 
   EventUtils.sendString(newUsername, pwmgrdlg);
   let signonsIntro = doc.querySelector("#signonsIntro");
   EventUtils.sendMouseEvent({type: "click"}, signonsIntro, pwmgrdlg);
-  yield ContentTaskUtils.waitForCondition(() => !signonsTree.getAttribute("editing"),
+  await ContentTaskUtils.waitForCondition(() => !signonsTree.getAttribute("editing"),
                                           "Waiting for editing to stop");
 
   is(Services.logins.findLogins({}, site, "", "").length, 1, "Correct login replaced");
@@ -57,20 +57,20 @@ function* editUsernamePromises(site, oldUsername, newUsername) {
   is(getUsername(0), newUsername, "Correct username shown after the update");
 }
 
-function* editPasswordPromises(site, oldPassword, newPassword) {
+async function editPasswordPromises(site, oldPassword, newPassword) {
   is(Services.logins.findLogins({}, site, "", "").length, 1, "Correct login found");
   let login = Services.logins.findLogins({}, site, "", "")[0];
   is(login.password, oldPassword, "Correct password saved");
   is(getPassword(0), oldPassword, "Correct password shown");
 
+  let focusPromise = BrowserTestUtils.waitForEvent(signonsTree, "focus", true);
   synthesizeDblClickOnCell(signonsTree, 2, 0);
-  yield ContentTaskUtils.waitForCondition(() => signonsTree.getAttribute("editing"),
-                                          "Waiting for editing");
+  await focusPromise;
 
   EventUtils.sendString(newPassword, pwmgrdlg);
   let signonsIntro = doc.querySelector("#signonsIntro");
   EventUtils.sendMouseEvent({type: "click"}, signonsIntro, pwmgrdlg);
-  yield ContentTaskUtils.waitForCondition(() => !signonsTree.getAttribute("editing"),
+  await ContentTaskUtils.waitForCondition(() => !signonsTree.getAttribute("editing"),
                                           "Waiting for editing to stop");
 
   is(Services.logins.findLogins({}, site, "", "").length, 1, "Correct login replaced");
@@ -79,7 +79,7 @@ function* editPasswordPromises(site, oldPassword, newPassword) {
   is(getPassword(0), newPassword, "Correct password shown after the update");
 }
 
-add_task(function* test_setup() {
+add_task(async function test_setup() {
   registerCleanupFunction(function() {
     Services.logins.removeAllLogins();
   });
@@ -88,19 +88,19 @@ add_task(function* test_setup() {
   // Open the password manager dialog.
   pwmgrdlg = window.openDialog(PWMGR_DLG, "Toolkit:PasswordManager", "");
 
-  Services.ww.registerNotification(function(aSubject, aTopic, aData) {
+  Services.ww.registerNotification(function notification(aSubject, aTopic, aData) {
     if (aTopic == "domwindowopened") {
-      let win = aSubject.QueryInterface(Ci.nsIDOMEventTarget);
+      let win = aSubject;
       SimpleTest.waitForFocus(function() {
         EventUtils.sendKey("RETURN", win);
       }, win);
     } else if (aSubject.location == pwmgrdlg.location && aTopic == "domwindowclosed") {
       // Unregister ourself.
-      Services.ww.unregisterNotification(arguments.callee);
+      Services.ww.unregisterNotification(notification);
     }
   });
 
-  yield new Promise((resolve) => {
+  await new Promise((resolve) => {
     SimpleTest.waitForFocus(() => {
       doc = pwmgrdlg.document;
       signonsTree = doc.querySelector("#signonsTree");
@@ -109,18 +109,18 @@ add_task(function* test_setup() {
   });
 });
 
-add_task(function* test_edit_multiple_logins() {
-  function* testLoginChange(site, oldUsername, oldPassword, newUsername, newPassword) {
+add_task(async function test_edit_multiple_logins() {
+  async function testLoginChange(site, oldUsername, oldPassword, newUsername, newPassword) {
     addLogin(site, oldUsername, oldPassword);
-    yield* editUsernamePromises(site, oldUsername, newUsername);
-    yield* togglePasswords();
-    yield* editPasswordPromises(site, oldPassword, newPassword);
-    yield* togglePasswords();
+    await editUsernamePromises(site, oldUsername, newUsername);
+    await togglePasswords();
+    await editPasswordPromises(site, oldPassword, newPassword);
+    await togglePasswords();
   }
 
-  yield* testLoginChange("http://c.tn/", "userC", "passC", "usernameC", "passwordC");
-  yield* testLoginChange("http://b.tn/", "userB", "passB", "usernameB", "passwordB");
-  yield* testLoginChange("http://a.tn/", "userA", "passA", "usernameA", "passwordA");
+  await testLoginChange("http://c.tn/", "userC", "passC", "usernameC", "passwordC");
+  await testLoginChange("http://b.tn/", "userB", "passB", "usernameB", "passwordB");
+  await testLoginChange("http://a.tn/", "userA", "passA", "usernameA", "passwordA");
 
   pwmgrdlg.close();
 });

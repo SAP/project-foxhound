@@ -26,13 +26,25 @@ function waitForDocLoadComplete(aBrowser = gBrowser) {
           resolve();
         }
       },
-      QueryInterface: XPCOMUtils.generateQI([Ci.nsIWebProgressListener,
-                                             Ci.nsISupportsWeakReference])
+      QueryInterface: ChromeUtils.generateQI([Ci.nsIWebProgressListener,
+                                              Ci.nsISupportsWeakReference]),
     };
     aBrowser.addProgressListener(listener);
     waitForDocLoadComplete.listeners.add(listener);
     info("Waiting for browser load");
   });
+}
+
+function setupMockAlertsService() {
+  const alertsService = {
+    showAlertNotification: (image, title, text, clickable, cookie, clickCallback) => {
+      // We are invoking the event handler ourselves directly.
+      clickCallback(null, "alertclickcallback", null);
+    },
+  };
+  const gBrowserGlue = Cc["@mozilla.org/browser/browserglue;1"]
+                     .getService(Ci.nsIObserver);
+  gBrowserGlue.observe({wrappedJSObject: alertsService}, "browser-glue-test", "mock-alerts-service");
 }
 
 // Keep a set of progress listeners for waitForDocLoadComplete() to make sure

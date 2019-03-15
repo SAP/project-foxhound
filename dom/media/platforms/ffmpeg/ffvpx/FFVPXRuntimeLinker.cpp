@@ -7,9 +7,13 @@
 #include "FFVPXRuntimeLinker.h"
 #include "FFmpegLibWrapper.h"
 #include "FFmpegLog.h"
-#include "nsIFile.h"
+#include "mozilla/FileUtils.h"
+#include "nsLocalFile.h"
 #include "prmem.h"
 #include "prlink.h"
+#ifdef XP_WIN
+#  include <windows.h>
+#endif
 
 // We use a known symbol located in lgpllibs to determine its location.
 // soundtouch happens to be always included in lgpllibs
@@ -17,81 +21,84 @@
 
 namespace mozilla {
 
-template <int V> class FFmpegDecoderModule
-{
-public:
+template <int V>
+class FFmpegDecoderModule {
+ public:
   static already_AddRefed<PlatformDecoderModule> Create(FFmpegLibWrapper*);
 };
 
 static FFmpegLibWrapper sFFVPXLib;
 
 FFVPXRuntimeLinker::LinkStatus FFVPXRuntimeLinker::sLinkStatus =
-  LinkStatus_INIT;
+    LinkStatus_INIT;
 
-static PRLibrary*
-MozAVLink(const char* aName)
-{
+static PRLibrary* MozAVLink(nsIFile* aFile) {
   PRLibSpec lspec;
+  PathString path = aFile->NativePath();
+#ifdef XP_WIN
+  lspec.type = PR_LibSpec_PathnameU;
+  lspec.value.pathname_u = path.get();
+#else
   lspec.type = PR_LibSpec_Pathname;
-  lspec.value.pathname = aName;
+  lspec.value.pathname = path.get();
+#endif
+#ifdef MOZ_WIDGET_ANDROID
+  PRLibrary* lib = PR_LoadLibraryWithFlags(lspec, PR_LD_NOW | PR_LD_GLOBAL);
+#else
   PRLibrary* lib = PR_LoadLibraryWithFlags(lspec, PR_LD_NOW | PR_LD_LOCAL);
+#endif
   if (!lib) {
-    FFMPEG_LOG("unable to load library %s", aName);
+    FFMPEG_LOG("unable to load library %s", aFile->HumanReadablePath().get());
   }
   return lib;
 }
 
-/* static */ bool
-FFVPXRuntimeLinker::Init()
-{
+/* static */ bool FFVPXRuntimeLinker::Init() {
   if (sLinkStatus) {
     return sLinkStatus == LinkStatus_SUCCEEDED;
   }
 
+  MOZ_ASSERT(NS_IsMainThread());
   sLinkStatus = LinkStatus_FAILED;
 
   // We retrieve the path of the lgpllibs library as this is where mozavcodec
   // and mozavutil libs are located.
-  char* lgpllibsname = PR_GetLibraryName(nullptr, "lgpllibs");
-  if (!lgpllibsname) {
+  PathString lgpllibsname = GetLibraryName(nullptr, "lgpllibs");
+  if (lgpllibsname.IsEmpty()) {
     return false;
   }
-  char* path =
-    PR_GetLibraryFilePathname(lgpllibsname,
-                              (PRFuncPtr)&soundtouch::SoundTouch::getVersionId);
-  PR_FreeLibraryName(lgpllibsname);
-  if (!path) {
+  PathString path = GetLibraryFilePathname(
+      lgpllibsname.get(), (PRFuncPtr)&soundtouch::SoundTouch::getVersionId);
+  if (path.IsEmpty()) {
     return false;
   }
-  nsCOMPtr<nsIFile> xulFile = do_CreateInstance(NS_LOCAL_FILE_CONTRACTID);
-  if (!xulFile ||
-      NS_FAILED(xulFile->InitWithNativePath(nsDependentCString(path)))) {
-    PR_Free(path);
+  RefPtr<nsLocalFile> xulFile = new nsLocalFile(path);
+  if (xulFile->NativePath().IsEmpty()) {
     return false;
   }
-  PR_Free(path);
 
   nsCOMPtr<nsIFile> rootDir;
   if (NS_FAILED(xulFile->GetParent(getter_AddRefs(rootDir))) || !rootDir) {
     return false;
   }
-  nsAutoCString rootPath;
-  if (NS_FAILED(rootDir->GetNativePath(rootPath))) {
-    return false;
-  }
+  PathString rootPath = rootDir->NativePath();
 
-  char* libname = NULL;
   /* Get the platform-dependent library name of the module */
-  libname = PR_GetLibraryName(rootPath.get(), "mozavutil");
-  if (!libname) {
+  PathString libname = GetLibraryName(rootPath.get(), "mozavutil");
+  if (libname.IsEmpty()) {
     return false;
   }
-  sFFVPXLib.mAVUtilLib = MozAVLink(libname);
-  PR_FreeLibraryName(libname);
-  libname = PR_GetLibraryName(rootPath.get(), "mozavcodec");
-  if (libname) {
-    sFFVPXLib.mAVCodecLib = MozAVLink(libname);
-    PR_FreeLibraryName(libname);
+  RefPtr<nsLocalFile> libFile = new nsLocalFile(libname);
+  if (libFile->NativePath().IsEmpty()) {
+    return false;
+  }
+  sFFVPXLib.mAVUtilLib = MozAVLink(libFile);
+  libname = GetLibraryName(rootPath.get(), "mozavcodec");
+  if (!libname.IsEmpty()) {
+    libFile = new nsLocalFile(libname);
+    if (!libFile->NativePath().IsEmpty()) {
+      sFFVPXLib.mAVCodecLib = MozAVLink(libFile);
+    }
   }
   if (sFFVPXLib.Link() == FFmpegLibWrapper::LinkResult::Success) {
     sLinkStatus = LinkStatus_SUCCEEDED;
@@ -101,12 +108,24 @@ FFVPXRuntimeLinker::Init()
 }
 
 /* static */ already_AddRefed<PlatformDecoderModule>
-FFVPXRuntimeLinker::CreateDecoderModule()
-{
+FFVPXRuntimeLinker::CreateDecoderModule() {
   if (!Init()) {
     return nullptr;
   }
   return FFmpegDecoderModule<FFVPX_VERSION>::Create(&sFFVPXLib);
 }
 
-} // namespace mozilla
+/* static */ void FFVPXRuntimeLinker::GetRDFTFuncs(FFmpegRDFTFuncs* aOutFuncs) {
+  MOZ_ASSERT(sLinkStatus != LinkStatus_INIT);
+  if (sFFVPXLib.av_rdft_init && sFFVPXLib.av_rdft_calc &&
+      sFFVPXLib.av_rdft_end) {
+    aOutFuncs->init = sFFVPXLib.av_rdft_init;
+    aOutFuncs->calc = sFFVPXLib.av_rdft_calc;
+    aOutFuncs->end = sFFVPXLib.av_rdft_end;
+  } else {
+    NS_WARNING("RDFT functions expected but not found");
+    *aOutFuncs = FFmpegRDFTFuncs();  // zero
+  }
+}
+
+}  // namespace mozilla

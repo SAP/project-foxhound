@@ -1,5 +1,6 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -7,10 +8,10 @@
 #define MOZILLA_GFX_CRITICALSECTION_H_
 
 #ifdef WIN32
-#include <windows.h>
+#  include <windows.h>
 #else
-#include <pthread.h>
-#include "mozilla/DebugOnly.h"
+#  include <pthread.h>
+#  include "mozilla/DebugOnly.h"
 #endif
 
 namespace mozilla {
@@ -19,7 +20,7 @@ namespace gfx {
 #ifdef WIN32
 
 class CriticalSection {
-public:
+ public:
   CriticalSection() { ::InitializeCriticalSection(&mCriticalSection); }
 
   ~CriticalSection() { ::DeleteCriticalSection(&mCriticalSection); }
@@ -28,7 +29,7 @@ public:
 
   void Leave() { ::LeaveCriticalSection(&mCriticalSection); }
 
-protected:
+ protected:
   CRITICAL_SECTION mCriticalSection;
 };
 
@@ -37,7 +38,7 @@ protected:
 
 class PosixCondvar;
 class CriticalSection {
-public:
+ public:
   CriticalSection() {
     DebugOnly<int> err = pthread_mutex_init(&mMutex, nullptr);
     MOZ_ASSERT(!err);
@@ -58,7 +59,7 @@ public:
     MOZ_ASSERT(!err);
   }
 
-protected:
+ protected:
   pthread_mutex_t mMutex;
   friend class PosixCondVar;
 };
@@ -67,14 +68,17 @@ protected:
 
 /// RAII helper.
 struct CriticalSectionAutoEnter {
-    explicit CriticalSectionAutoEnter(CriticalSection* aSection) : mSection(aSection) { mSection->Enter(); }
-    ~CriticalSectionAutoEnter() { mSection->Leave(); }
-protected:
-    CriticalSection* mSection;
+  explicit CriticalSectionAutoEnter(CriticalSection* aSection)
+      : mSection(aSection) {
+    mSection->Enter();
+  }
+  ~CriticalSectionAutoEnter() { mSection->Leave(); }
+
+ protected:
+  CriticalSection* mSection;
 };
 
-
-} // namespace
-} // namespace
+}  // namespace gfx
+}  // namespace mozilla
 
 #endif

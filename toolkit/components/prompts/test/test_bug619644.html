@@ -15,7 +15,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=619644
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=619644">Mozilla Bug 619644</a>
 <pre id="test">
 <script class="testbody" type="text/javascript">
-/* import-globals-from prompt_common.js */
 // This is a little yucky, but it works
 // The contents of bug619644_inner.html
 const expectedFinalDoc =
@@ -41,18 +40,18 @@ function runtest(e) {
   window.addEventListener("message", checktest);
 
   let state = {
-      msg         : "Message",
-      iconClass   : "question-icon",
-      titleHidden : true,
-      textHidden  : true,
-      passHidden  : true,
-      checkHidden : true,
-      textValue   : "",
-      passValue   : "",
-      checkMsg    : "",
-      checked     : false,
-      focused     : "button0",
-      defButton   : "button0",
+      msg: "Message",
+      iconClass: "question-icon",
+      titleHidden: true,
+      textHidden: true,
+      passHidden: true,
+      checkHidden: true,
+      textValue: "",
+      passValue: "",
+      checkMsg: "",
+      checked: false,
+      focused: "button0",
+      defButton: "button0",
   };
   let action = {
       buttonClick: "ESC",

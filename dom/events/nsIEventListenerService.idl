@@ -5,19 +5,21 @@
 
 #include "nsISupports.idl"
 
-interface nsIDOMEventListener;
-interface nsIDOMEventTarget;
+webidl EventTarget;
+
 interface nsIArray;
 
 /**
- * Contains an event target along with an array of nsIAtom in form "oneventname"
- * representing changed event listener names.
+ * Contains an event target along with a count of event listener changes
+ * affecting accessibility.
  */
 [scriptable, uuid(07222b02-da12-4cf4-b2f7-761da007a8d8)]
 interface nsIEventListenerChange : nsISupports
 {
-  readonly attribute nsIDOMEventTarget target;
-  readonly attribute nsIArray changedListenerNames;
+  readonly attribute EventTarget target;
+
+  [noscript]
+  readonly attribute uint32_t countOfEventListenerChangesAffectingAccessibility;
 };
 
 [scriptable, function, uuid(aa7c95f6-d3b5-44b3-9597-1d9f19b9c5f2)]
@@ -64,7 +66,7 @@ interface nsIEventListenerService : nsISupports
    * Returns an array of nsIEventListenerInfo objects.
    * If aEventTarget doesn't have any listeners, this returns null.
    */
-  void getListenerInfoFor(in nsIDOMEventTarget aEventTarget,
+  void getListenerInfoFor(in EventTarget aEventTarget,
                           [optional] out unsigned long aCount,
                           [retval, array, size_is(aCount)] out
                             nsIEventListenerInfo aOutArray);
@@ -77,42 +79,46 @@ interface nsIEventListenerService : nsISupports
    * @note Some events, especially 'load', may actually have a shorter
    *       event target chain than what this methods returns.
    */
-  void getEventTargetChainFor(in nsIDOMEventTarget aEventTarget,
+  void getEventTargetChainFor(in EventTarget aEventTarget,
                               in boolean composed,
                               [optional] out unsigned long aCount,
                               [retval, array, size_is(aCount)] out
-                                nsIDOMEventTarget aOutArray);
+                                EventTarget aOutArray);
 
   /**
    * Returns true if a event target has any listener for the given type.
    */
-  boolean hasListenersFor(in nsIDOMEventTarget aEventTarget,
-                          in DOMString aType);
+  boolean hasListenersFor(in EventTarget aEventTarget,
+                          in AString aType);
 
   /**
    * Add a system-group eventlistener to a event target.
    */
-  void addSystemEventListener(in nsIDOMEventTarget target,
-                              in DOMString type,
-                              in nsIDOMEventListener listener,
+  [implicit_jscontext]
+  void addSystemEventListener(in EventTarget target,
+                              in AString type,
+                              in jsval listener,
                               in boolean useCapture);
 
   /**
    * Remove a system-group eventlistener from a event target.
    */
-  void removeSystemEventListener(in nsIDOMEventTarget target,
-                                 in DOMString type,
-                                 in nsIDOMEventListener listener,
+  [implicit_jscontext]
+  void removeSystemEventListener(in EventTarget target,
+                                 in AString type,
+                                 in jsval listener,
                                  in boolean useCapture);
 
-  void addListenerForAllEvents(in nsIDOMEventTarget target,
-                               in nsIDOMEventListener listener,
+  [implicit_jscontext]
+  void addListenerForAllEvents(in EventTarget target,
+                               in jsval listener,
                                [optional] in boolean aUseCapture,
                                [optional] in boolean aWantsUntrusted,
                                [optional] in boolean aSystemEventGroup);
 
-  void removeListenerForAllEvents(in nsIDOMEventTarget target,
-                                  in nsIDOMEventListener listener,
+  [implicit_jscontext]
+  void removeListenerForAllEvents(in EventTarget target,
+                                  in jsval listener,
                                   [optional] in boolean aUseCapture,
                                   [optional] in boolean aSystemEventGroup);
 

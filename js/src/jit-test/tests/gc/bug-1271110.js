@@ -1,5 +1,6 @@
-if (!('oomTest' in this))
-    quit();
+// |jit-test| skip-if: !('oomTest' in this)
+
+gczeal(0);
 
 var x1 = [];
 var x2 = [];

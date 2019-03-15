@@ -2,9 +2,17 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
+from marionette_driver import geckoinstance
 from marionette_driver.errors import JavascriptException
 
-from marionette_harness import MarionetteTestCase
+from marionette_harness import (
+    MarionetteTestCase,
+    run_if_manage_instance,
+    skip_if_desktop,
+    skip_if_mobile
+)
 
 
 class TestPreferences(MarionetteTestCase):
@@ -19,6 +27,43 @@ class TestPreferences(MarionetteTestCase):
             self.marionette.clear_pref(pref)
 
         super(TestPreferences, self).tearDown()
+
+    def test_gecko_instance_preferences(self):
+        required_prefs = geckoinstance.GeckoInstance.required_prefs
+
+        for key, value in required_prefs.iteritems():
+            # The extensions.shield-recipe-client.* prefs branch
+            # is as of Firefox 60 migrated to app.normandy.*.
+            #
+            # This is a workaround that can be removed together
+            # with extensions.shield-recipe-client.api_url.
+            if key == "extensions.shield-recipe-client.api_url":
+                self.assertEqual(self.marionette.get_pref("app.normandy.api_url"), value)
+            else:
+                self.assertEqual(self.marionette.get_pref(key), value,
+                                 "Preference {} hasn't been set to {}".format(key, repr(value)))
+
+    @skip_if_mobile("Only runnable with Firefox")
+    def test_desktop_instance_preferences(self):
+        required_prefs = geckoinstance.DesktopInstance.desktop_prefs
+
+        for key, value in required_prefs.iteritems():
+            if key in ["browser.tabs.remote.autostart"]:
+                return
+
+            self.assertEqual(self.marionette.get_pref(key), value,
+                             "Preference {} hasn't been set to {}".format(key, value))
+
+    @skip_if_desktop("Only runnable with Fennec")
+    def test_fennec_instance_preferences(self):
+        required_prefs = geckoinstance.FennecInstance.required_prefs
+
+        for key, value in required_prefs.iteritems():
+            if key in ["browser.tabs.remote.autostart"]:
+                return
+
+            self.assertEqual(self.marionette.get_pref(key), value,
+                             "Preference {} hasn't been set to {}".format(key, value))
 
     def test_clear_pref(self):
         self.assertIsNone(self.marionette.get_pref(self.prefs["bool"]))

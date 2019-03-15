@@ -12,7 +12,8 @@
     <script type="text/javascript">
     "use strict";
 
-    window.test = function () {
+    /* global test */
+    window.test = function() {
       document.body.expando1 = { cycle: document.body };
       SpecialPowers.Cu.forceCC();
 

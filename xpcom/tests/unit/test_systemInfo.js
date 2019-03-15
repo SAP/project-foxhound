@@ -3,18 +3,18 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 function run_test() {
-  const PROPERTIES = ["name", "host", "arch", "version", "pagesize",
+  const PROPERTIES = ["name", "arch", "version", "pagesize",
                       "pageshift", "memmapalign", "cpucount", "memsize"];
-  let sysInfo = Components.classes["@mozilla.org/system-info;1"].
-                getService(Components.interfaces.nsIPropertyBag2);
+  let sysInfo = Cc["@mozilla.org/system-info;1"].
+                getService(Ci.nsIPropertyBag2);
 
   PROPERTIES.forEach(function(aPropertyName) {
     print("Testing property: " + aPropertyName);
     let value = sysInfo.getProperty(aPropertyName);
-    do_check_true(!!value);
+    Assert.ok(!!value);
   });
 
   // This property must exist, but its value might be zero.
-  print("Testing property: umask")
-  do_check_eq(typeof sysInfo.getProperty("umask"), "number");
+  print("Testing property: umask");
+  Assert.equal(typeof sysInfo.getProperty("umask"), "number");
 }

@@ -13,8 +13,9 @@
 // placebo for compat. An easy way to differentiate this from the real thing
 // is whether the property is read-only or not.
 {
-  let c = Object.getOwnPropertyDescriptor(this, 'Components');
-  if ((!c.value || c.writable) && typeof SpecialPowers === 'object')
+  let c = Object.getOwnPropertyDescriptor(this, "Components");
+  if ((!c || !c.value || c.writable) && typeof SpecialPowers === "object")
+    // eslint-disable-next-line no-global-assign
     Components = SpecialPowers.wrap(SpecialPowers.Components);
 }
 
@@ -23,6 +24,11 @@
  * See http://developer.mozilla.org/en/docs/Writing_xpcshell-based_unit_tests
  * for more information.
  */
+
+/* eslint-disable mozilla/use-cc-etc */
+/* eslint-disable mozilla/use-chromeutils-import */
+/* eslint-disable mozilla/use-chromeutils-generateqi */
+/* eslint-disable mozilla/use-services */
 
 var _quit = false;
 var _tests_pending = 0;
@@ -38,7 +44,7 @@ function _dump(str) {
 // not connected to a network.
 {
   let ios = Components.classes["@mozilla.org/network/io-service;1"]
-             .getService(Components.interfaces.nsIIOService2);
+                      .getService(Components.interfaces.nsIIOService);
   ios.manageOfflineStatus = false;
   ios.offline = false;
 }
@@ -49,8 +55,7 @@ try {
   runningInParent = Components.classes["@mozilla.org/xre/runtime;1"].
                     getService(Components.interfaces.nsIXULRuntime).processType
                     == Components.interfaces.nsIXULRuntime.PROCESS_TYPE_DEFAULT;
-}
-catch (e) { }
+} catch (e) { }
 
 try {
   if (runningInParent) {
@@ -66,8 +71,7 @@ try {
       prefs.setCharPref("network.dns.ipv4OnlyDomains", "localhost");
     }
   }
-}
-catch (e) { }
+} catch (e) { }
 
 // Enable crash reporting, if possible
 // We rely on the Python harness to set MOZ_CRASHREPORTER_NO_REPORT
@@ -85,8 +89,7 @@ try { // nsIXULRuntime is not available in some configurations.
     crashReporter.enabled = true;
     crashReporter.minidumpPath = do_get_cwd();
   }
-}
-catch (e) { }
+} catch (e) { }
 
 /**
  * Date.now() is not necessarily monotonically increasing (insert sob story
@@ -146,11 +149,11 @@ _Timer.prototype = {
     // undershoots.
     var newDelay = this._delay - elapsed;
     do_timeout(newDelay, this._func);
-  }
+  },
 };
 
 function _do_quit() {
-  _dump("TEST-INFO | (xpcshell/head.js) | exiting test\n");
+  _dump("TEST-INFO | (robocop_head.js) | exiting test\n");
 
   _quit = true;
 }
@@ -170,7 +173,7 @@ function _dump_exception_stack(stack) {
   });
 }
 
-/************** Functions to be used from the tests **************/
+/** ************ Functions to be used from the tests **************/
 
 /**
  * Prints a message to the output log.
@@ -199,7 +202,7 @@ function do_execute_soon(callback) {
   var tm = Components.classes["@mozilla.org/thread-manager;1"]
                      .getService(Components.interfaces.nsIThreadManager);
 
-  tm.mainThread.dispatch({
+  tm.dispatchToMainThread({
     run: function() {
       try {
         callback();
@@ -210,22 +213,20 @@ function do_execute_soon(callback) {
         // possible that this will mask an NS_ERROR_ABORT that happens after a
         // do_check failure though.
         if (!_quit || e != Components.results.NS_ERROR_ABORT) {
-          _dump("TEST-UNEXPECTED-FAIL | (xpcshell/head.js) | " + e);
+          _dump("TEST-UNEXPECTED-FAIL | (robocop_head.js) | " + e);
           if (e.stack) {
             dump(" - See following stack:\n");
             _dump_exception_stack(e.stack);
-          }
-          else {
+          } else {
             dump("\n");
           }
           _do_quit();
         }
-      }
-      finally {
+      } finally {
         do_test_finished();
       }
-    }
-  }, Components.interfaces.nsIThread.DISPATCH_NORMAL);
+    },
+  });
 }
 
 function do_throw(text, stack) {
@@ -263,8 +264,9 @@ function do_throw_todo(text, stack) {
 function do_report_unexpected_exception(ex, text) {
   var caller_stack = Components.stack.caller;
   text = text ? text + " - " : "";
+  var caller_filename = caller_stack ? caller_stack.filename : "unknown file";
 
-  _dump("TEST-UNEXPECTED-FAIL | " + caller_stack.filename + " | " + text +
+  _dump("TEST-UNEXPECTED-FAIL | " + caller_filename + " | " + text +
         "Unexpected exception " + ex + ", see following stack:\n" + ex.stack +
         "\n");
 
@@ -291,16 +293,14 @@ function _do_check_neq(left, right, stack, todo) {
       do_throw(text, stack);
     } else {
       _dump("TEST-KNOWN-FAIL | " + stack.filename + " | [" + stack.name +
-            " : " + stack.lineNumber + "] " + text +"\n");
+            " : " + stack.lineNumber + "] " + text + "\n");
     }
-  } else {
-    if (!todo) {
+  } else if (!todo) {
       _dump("TEST-PASS | " + stack.filename + " | [" + stack.name + " : " +
             stack.lineNumber + "] " + text + "\n");
     } else {
       do_throw_todo(text, stack);
     }
-  }
 }
 
 function do_check_neq(left, right, stack) {
@@ -325,14 +325,12 @@ function do_report_result(passed, text, stack, todo) {
       _dump("TEST-PASS | " + stack.filename + " | [" + stack.name + " : " +
             stack.lineNumber + "] " + text + "\n");
     }
-  } else {
-    if (todo) {
+  } else if (todo) {
       _dump("TEST-KNOWN-FAIL | " + stack.filename + " | [" + stack.name +
-            " : " + stack.lineNumber + "] " + text +"\n");
+            " : " + stack.lineNumber + "] " + text + "\n");
     } else {
       do_throw(text, stack);
     }
-  }
 }
 
 /**
@@ -400,11 +398,11 @@ function todo_check_false(condition, stack) {
   todo_check_eq(condition, false, stack);
 }
 
-function do_check_null(condition, stack=Components.stack.caller) {
+function do_check_null(condition, stack = Components.stack.caller) {
   do_check_eq(condition, null, stack);
 }
 
-function todo_check_null(condition, stack=Components.stack.caller) {
+function todo_check_null(condition, stack = Components.stack.caller) {
   todo_check_eq(condition, null, stack);
 }
 
@@ -475,10 +473,10 @@ function todo_check_null(condition, stack=Components.stack.caller) {
  * is ideal. If you do want to be more careful, you can use function
  * patterns to implement more stringent checks.
  */
-function do_check_matches(pattern, value, stack=Components.stack.caller, todo=false) {
+function do_check_matches(pattern, value, stack = Components.stack.caller, todo = false) {
   var matcher = pattern_matcher(pattern);
   var text = "VALUE: " + uneval(value) + "\nPATTERN: " + uneval(pattern) + "\n";
-  var diagnosis = []
+  var diagnosis = [];
   if (matcher(value, diagnosis)) {
     do_report_result(true, "value matches pattern:\n" + text, stack, todo);
   } else {
@@ -490,7 +488,7 @@ function do_check_matches(pattern, value, stack=Components.stack.caller, todo=fa
   }
 }
 
-function todo_check_matches(pattern, value, stack=Components.stack.caller) {
+function todo_check_matches(pattern, value, stack = Components.stack.caller) {
   do_check_matches(pattern, value, stack, true);
 }
 
@@ -518,38 +516,38 @@ function pattern_matcher(pattern) {
     }
     // Kludge: include 'length', if not enumerable. (If it is enumerable,
     // we picked it up in the array comprehension, above.
-    ld = Object.getOwnPropertyDescriptor(pattern, 'length');
+    ld = Object.getOwnPropertyDescriptor(pattern, "length");
     if (ld && !ld.enumerable) {
-      matchers.push(['length', pattern_matcher(pattern.length)])
+      matchers.push(["length", pattern_matcher(pattern.length)]);
     }
-    return function (value, diagnosis) {
+    return function(value, diagnosis) {
       if (!(value && typeof value == "object")) {
         return explain(diagnosis, "value not object");
       }
       for (let [p, m] of matchers) {
         var element_diagnosis = [];
         if (!(p in value && m(value[p], element_diagnosis))) {
-          return explain(diagnosis, { property:p,
-                                      diagnosis:element_diagnosis[0] });
+          return explain(diagnosis, { property: p,
+                                      diagnosis: element_diagnosis[0] });
         }
       }
       return true;
     };
   } else if (pattern === undefined) {
     return function(value) { return true; };
-  } else {
-    return function (value, diagnosis) {
+  }
+    return function(value, diagnosis) {
       if (value !== pattern) {
         return explain(diagnosis, "pattern " + uneval(pattern) + " not === to value " + uneval(value));
       }
       return true;
     };
-  }
+
 }
 
 // Format an explanation for a pattern match failure, as stored in the
 // second argument to a matching function.
-function format_pattern_match_failure(diagnosis, indent="") {
+function format_pattern_match_failure(diagnosis, indent = "") {
   var a;
   if (!diagnosis) {
     a = "Matcher did not explain reason for mismatch.";
@@ -565,12 +563,12 @@ function format_pattern_match_failure(diagnosis, indent="") {
 function do_test_pending() {
   ++_tests_pending;
 
-  _dump("TEST-INFO | (xpcshell/head.js) | test " + _tests_pending +
+  _dump("TEST-INFO | (robocop_head.js) | test " + _tests_pending +
          " pending\n");
 }
 
 function do_test_finished() {
-  _dump("TEST-INFO | (xpcshell/head.js) | test " + _tests_pending +
+  _dump("TEST-INFO | (robocop_head.js) | test " + _tests_pending +
          " finished\n");
 
   if (--_tests_pending == 0) {
@@ -583,7 +581,7 @@ function do_get_file(path, allowNonexistent) {
   try {
     let lf = Components.classes["@mozilla.org/file/directory_service;1"]
       .getService(Components.interfaces.nsIProperties)
-      .get("CurWorkD", Components.interfaces.nsILocalFile);
+      .get("CurWorkD", Components.interfaces.nsIFile);
 
     let bits = path.split("/");
     for (let i = 0; i < bits.length; i++) {
@@ -604,8 +602,7 @@ function do_get_file(path, allowNonexistent) {
     }
 
     return lf;
-  }
-  catch (ex) {
+  } catch (ex) {
     do_throw(ex.toString(), Components.stack.caller);
   }
 
@@ -708,7 +705,7 @@ var _Task;
 function add_task(func) {
   if (!_Task) {
     let ns = {};
-    _Task = Components.utils.import("resource://gre/modules/Task.jsm", ns).Task;
+    _Task = Components.utils.import("resource://testing-common/Task.jsm", ns).Task;
   }
 
   _gTests.push([true, func]);
@@ -719,10 +716,8 @@ function add_task(func) {
  */
 var _gRunningTest = null;
 var _gTestIndex = 0; // The index of the currently running test.
-function run_next_test()
-{
-  function _run_next_test()
-  {
+function run_next_test() {
+  function _run_next_test() {
     if (_gTestIndex < _gTests.length) {
       do_test_pending();
       let _isTask;
@@ -775,7 +770,7 @@ function JavaBridge(obj) {
   this._EventDispatcher.registerListener(this, this._EVENT_TYPE);
 
   this._sendMessage("notify-loaded", []);
-};
+}
 
 JavaBridge.prototype = {
 
@@ -785,7 +780,7 @@ JavaBridge.prototype = {
   _EventDispatcher: Components.utils.import(
     "resource://gre/modules/Messaging.jsm", {}).EventDispatcher.instance,
 
-  _getArgs: function (args) {
+  _getArgs: function(args) {
     let out = {
       length: Math.max(0, args.length - 1),
     };
@@ -795,7 +790,7 @@ JavaBridge.prototype = {
     return out;
   },
 
-  _sendMessage: function (innerType, args) {
+  _sendMessage: function(innerType, args) {
     this._EventDispatcher.dispatch(this._JAVA_EVENT_TYPE, {
       innerType: innerType,
       method: args[0],
@@ -804,7 +799,7 @@ JavaBridge.prototype = {
   },
 
   onEvent: function(event, message, callback) {
-    if (typeof SpecialPowers === 'object') {
+    if (typeof SpecialPowers === "object") {
       message = SpecialPowers.wrap(message);
     }
     if (message.innerType === "sync-reply") {
@@ -828,7 +823,7 @@ JavaBridge.prototype = {
    * Synchronously call a method in Java,
    * given the method name followed by a list of arguments.
    */
-  syncCall: function (methodName /*, ... */) {
+  syncCall: function(methodName /* , ... */) {
     this._sendMessage("sync-call", arguments);
     let thread = this._Services.tm.currentThread;
     let initialReplies = this._repliesNeeded;
@@ -838,23 +833,21 @@ JavaBridge.prototype = {
     // spin the event loop, but here we're in a test and our API
     // specifies a synchronous call, so we spin the loop to wait for
     // the call to finish.
-    while (this._repliesNeeded > initialReplies) {
-      thread.processNextEvent(true);
-    }
+    this._Services.tm.spinEventLoopUntil(() => this._repliesNeeded <= initialReplies);
   },
 
   /**
    * Asynchronously call a method in Java,
    * given the method name followed by a list of arguments.
    */
-  asyncCall: function (methodName /*, ... */) {
+  asyncCall: function(methodName /* , ... */) {
     this._sendMessage("async-call", arguments);
   },
 
   /**
    * Disconnect with Java.
    */
-  disconnect: function () {
+  disconnect: function() {
     this._EventDispatcher.unregisterListener(this, this._EVENT_TYPE);
   },
 };

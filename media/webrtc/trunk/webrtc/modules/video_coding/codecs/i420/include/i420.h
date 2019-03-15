@@ -8,13 +8,14 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_VIDEO_CODING_CODECS_I420_INCLUDE_I420_H_
-#define WEBRTC_MODULES_VIDEO_CODING_CODECS_I420_INCLUDE_I420_H_
+#ifndef MODULES_VIDEO_CODING_CODECS_I420_INCLUDE_I420_H_
+#define MODULES_VIDEO_CODING_CODECS_I420_INCLUDE_I420_H_
 
 #include <vector>
 
-#include "webrtc/modules/video_coding/include/video_codec_interface.h"
-#include "webrtc/typedefs.h"
+#include "modules/video_coding/include/video_codec_interface.h"
+#include "rtc_base/checks.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -65,15 +66,9 @@ class I420Encoder : public VideoEncoder {
   // Return value                : WEBRTC_VIDEO_CODEC_OK if OK, < 0 otherwise.
   int Release() override;
 
-  int SetRates(uint32_t /*newBitRate*/, uint32_t /*frameRate*/) override {
-    return WEBRTC_VIDEO_CODEC_OK;
-  }
-
   int SetChannelParameters(uint32_t /*packetLoss*/, int64_t /*rtt*/) override {
     return WEBRTC_VIDEO_CODEC_OK;
   }
-
-  void OnDroppedFrame() override {}
 
  private:
   static uint8_t* InsertHeader(uint8_t* buffer,
@@ -131,18 +126,11 @@ class I420Decoder : public VideoDecoder {
   //                                  <0 - Error
   int Release() override;
 
-  // Reset decoder state and prepare for a new call.
-  //
-  // Return value         :  WEBRTC_VIDEO_CODEC_OK.
-  //                          <0 - Error
-  int Reset() override;
-
  private:
   static const uint8_t* ExtractHeader(const uint8_t* buffer,
                                       uint16_t* width,
                                       uint16_t* height);
 
-  VideoFrame _decodedImage;
   int _width;
   int _height;
   bool _inited;
@@ -151,4 +139,4 @@ class I420Decoder : public VideoDecoder {
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_VIDEO_CODING_CODECS_I420_INCLUDE_I420_H_
+#endif  // MODULES_VIDEO_CODING_CODECS_I420_INCLUDE_I420_H_

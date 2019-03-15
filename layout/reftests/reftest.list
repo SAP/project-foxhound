@@ -106,6 +106,9 @@ include css-ruby/reftest.list
 # css required
 include css-required/reftest.list
 
+# css shapes
+include css-shapes/reftest.list
+
 # css optional
 include css-optional/reftest.list
 
@@ -120,6 +123,9 @@ include css-submit-invalid/reftest.list
 
 # css text-overflow
 include text-overflow/reftest.list
+
+# css scrollbars
+include css-scrollbars/reftest.list
 
 # css selectors
 include css-selectors/reftest.list
@@ -205,8 +211,14 @@ include font-loading-api/reftest.list
 # font matching
 include font-matching/reftest.list
 
+# font variations
+include font-variations/reftest.list
+
 # forms
 include forms/reftest.list
+
+# frameset
+include frameset/reftest.list
 
 # gfx
 include ../../gfx/tests/reftest/reftest.list
@@ -253,6 +265,9 @@ include margin-collapsing/reftest.list
 # marquee/
 include marquee/reftest.list
 
+# meta viewport
+include meta-viewport/reftest.list
+
 # native-theme/
 # (no XUL theme on Android)
 skip-if(Android) include native-theme/reftest.list
@@ -290,11 +305,11 @@ include ../../dom/plugins/test/reftest/reftest.list
 include position-dynamic-changes/reftest.list
 
 # printing
-include printing/reftest.list
-include pagination/reftest.list
+# SkiaPDF is required for printing tests to control printing to PDF files.
+skip-if(!skiaPdf) include printing/reftest.list
 
-# <style scoped>
-include scoped-style/reftest.list
+# pagination
+include pagination/reftest.list
 
 # scrolling
 include scrolling/reftest.list
@@ -304,6 +319,9 @@ include selection/reftest.list
 
 # sticky positioning
 include position-sticky/reftest.list
+
+# stylesheet cloning
+include stylesheet-cloning/reftest.list
 
 # svg/
 include svg/reftest.list
@@ -360,7 +378,8 @@ include ../../toolkit/themes/osx/reftests/reftest.list
 include ../../toolkit/content/tests/reftests/reftest.list
 
 # -moz-transform/
-include transform/reftest.list
+# skipping on non-e10s windows because of assertion in bug 1401228
+skip-if(winWidget&&!browserIsRemote) include transform/reftest.list
 
 # 3d transforms
 include transform-3d/reftest.list
@@ -372,6 +391,9 @@ include unicode/reftest.list
 include usercss/reftest.list
 
 include view-source/reftest.list
+
+# vr
+include ../../dom/vr/test/reftest/reftest.list
 
 # web-animations
 include web-animations/reftest.list
@@ -426,3 +448,9 @@ include ../../dom/encoding/test/reftest/reftest.list
 
 # APZ/async positioning tests
 include ../../gfx/layers/apz/test/reftest/reftest.list
+
+# Display list building
+include display-list/reftest.list
+
+# Media
+include ../../dom/media/test/reftest/reftest.list

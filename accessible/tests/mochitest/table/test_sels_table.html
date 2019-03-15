@@ -20,9 +20,8 @@
 
   <script type="text/javascript">
 
-    function doTest()
-    {
-      //////////////////////////////////////////////////////////////////////////
+    function doTest() {
+      // ////////////////////////////////////////////////////////////////////////
       // table
 
       var cellsArray =
@@ -30,25 +29,25 @@
         [false, false,       false,       kColSpanned, false, false,       false, false],
         [false, false,       false,       false,       false, false,       false, kRowSpanned],
         [false, false,       kColSpanned, false,       false, false,       false, kRowSpanned],
-        [false, kRowSpanned, kSpanned,    false,       false, kRowSpanned, false, kRowSpanned]
+        [false, kRowSpanned, kSpanned,    false,       false, kRowSpanned, false, kRowSpanned],
       ];
 
       testTableSelection("table", cellsArray);
 
       var rowCount = 4;
-      for (var rowIdx = 0; rowIdx < rowCount; rowIdx++)
+      for (let rowIdx = 0; rowIdx < rowCount; rowIdx++)
         testSelectTableRow("table", rowIdx, cellsArray);
 
-      for (var rowIdx = 0; rowIdx < rowCount; rowIdx++) {
+      for (let rowIdx = 0; rowIdx < rowCount; rowIdx++) {
         testSelectTableRow("table", rowIdx, cellsArray);
         testUnselectTableRow("table", rowIdx, cellsArray);
       }
 
       var columsCount = 8;
-      for (var colIdx = 0; colIdx < columsCount; colIdx++)
+      for (let colIdx = 0; colIdx < columsCount; colIdx++)
         testSelectTableColumn("table", colIdx, cellsArray);
 
-      for (var colIdx = 0; colIdx < columsCount; colIdx++) {
+      for (let colIdx = 0; colIdx < columsCount; colIdx++) {
         testSelectTableColumn("table", colIdx, cellsArray);
         testUnselectTableColumn("table", colIdx, cellsArray);
       }
@@ -56,7 +55,7 @@
       var accTable = getAccessible("table", [nsIAccessibleTable]);
       ok(!accTable.isProbablyForLayout(), "table is not for layout");
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // table instane
 
       cellsArray =
@@ -65,7 +64,7 @@
         [false,       false, false,       -1,          -1],
         [false,       false, kColSpanned, kColSpanned, -1],
         [kRowSpanned, false, false,       -1,          -1],
-        [kRowSpanned, false, kRowSpanned, false,       false]
+        [kRowSpanned, false, kRowSpanned, false,       false],
       ];
 
       testTableSelection("tableinsane", cellsArray);

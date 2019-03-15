@@ -8,6 +8,12 @@ EXPORTS.mozilla.dom += [
     'txMozillaXSLTProcessor.h'
 ]
 
+XPIDL_MODULE = 'dom_xslt'
+
+XPIDL_SOURCES += [
+    'txIEXSLTFunctions.idl',
+]
+
 UNIFIED_SOURCES += [
     'txBufferingHandler.cpp',
     'txCurrentFunctionCall.cpp',
@@ -41,22 +47,19 @@ UNIFIED_SOURCES += [
     'txXSLTProcessor.cpp',
 ]
 
-EXTRA_COMPONENTS += [
-    'txEXSLTRegExFunctions.js',
-    'txEXSLTRegExFunctions.manifest',
+EXTRA_JS_MODULES += [
+    'txEXSLTRegExFunctions.jsm',
 ]
-
-# For nsAutoJSString
-LOCAL_INCLUDES += ["/dom/base"]
 
 LOCAL_INCLUDES += [
     '../base',
     '../xml',
     '../xpath',
     '/dom/base',
+    '/js/xpconnect/src',
 ]
 
 FINAL_LIBRARY = 'xul'
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

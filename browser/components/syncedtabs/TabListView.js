@@ -4,17 +4,18 @@
 
 "use strict";
 
-const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.defineModuleGetter(this, "PrivateBrowsingUtils",
+                               "resource://gre/modules/PrivateBrowsingUtils.jsm");
 
-let { getChromeWindow } = Cu.import("resource:///modules/syncedtabs/util.js", {});
+let { getChromeWindow } = ChromeUtils.import("resource:///modules/syncedtabs/util.js", {});
 
-let log = Cu.import("resource://gre/modules/Log.jsm", {})
+let log = ChromeUtils.import("resource://gre/modules/Log.jsm", {})
             .Log.repository.getLogger("Sync.RemoteTabs");
 
-this.EXPORTED_SYMBOLS = [
-  "TabListView"
+var EXPORTED_SYMBOLS = [
+  "TabListView",
 ];
 
 function getContextMenu(window) {
@@ -46,7 +47,6 @@ function TabListView(window, props) {
   this.tabsFilter = this._doc.querySelector(".tabsFilter");
   this.clearFilter = this._doc.querySelector(".textbox-search-clear");
   this.searchBox = this._doc.querySelector(".search-box");
-  this.searchIcon = this._doc.querySelector(".textbox-search-icon");
 
   this.container = this._doc.createElement("div");
 
@@ -95,8 +95,8 @@ TabListView.prototype = {
         this._renderClient(client);
       }
     }
-    if (this.list.firstChild) {
-      const firstTab = this.list.firstChild.querySelector(".item.tab:first-child .item-title");
+    if (this.list.firstElementChild) {
+      const firstTab = this.list.firstElementChild.querySelector(".item.tab:first-child .item-title");
       if (firstTab) {
         firstTab.setAttribute("tabindex", 2);
       }
@@ -131,10 +131,19 @@ TabListView.prototype = {
     });
   },
 
+  _updateLastSyncTitle(lastModified, itemNode) {
+    let lastSync = new Date(lastModified);
+    let lastSyncTitle = getChromeWindow(this._window).gSync.formatLastSyncDate(lastSync);
+    itemNode.setAttribute("title", lastSyncTitle);
+  },
+
   _renderClient(client) {
     let itemNode = client.tabs.length ?
                     this._createClient(client) :
                     this._createEmptyClient(client);
+
+    itemNode.addEventListener("mouseover", () =>
+      this._updateLastSyncTitle(client.lastModified, itemNode));
 
     this._updateClient(client, itemNode);
 
@@ -154,22 +163,22 @@ TabListView.prototype = {
     return itemNode;
   },
 
-  _createClient(item) {
+  _createClient() {
     return this._doc.importNode(this._clientTemplate.content, true).firstElementChild;
   },
 
-  _createEmptyClient(item) {
+  _createEmptyClient() {
     return this._doc.importNode(this._emptyClientTemplate.content, true).firstElementChild;
   },
 
-  _createTab(item) {
+  _createTab() {
     return this._doc.importNode(this._tabTemplate.content, true).firstElementChild;
   },
 
   _clearChilden(node) {
     let parent = node || this.container;
     while (parent.firstChild) {
-      parent.removeChild(parent.firstChild);
+      parent.firstChild.remove();
     }
   },
 
@@ -179,7 +188,6 @@ TabListView.prototype = {
     this.tabsFilter.addEventListener("focus", this.onFilterFocus.bind(this));
     this.tabsFilter.addEventListener("blur", this.onFilterBlur.bind(this));
     this.clearFilter.addEventListener("click", this.onClearFilter.bind(this));
-    this.searchIcon.addEventListener("click", this.onFilterFocus.bind(this));
   },
 
   // These listeners have to be re-created every time since we re-create the list
@@ -212,9 +220,7 @@ TabListView.prototype = {
    */
   _updateClient(item, itemNode) {
     itemNode.setAttribute("id", "item-" + item.id);
-    let lastSync = new Date(item.lastModified);
-    let lastSyncTitle = getChromeWindow(this._window).gSyncUI.formatLastSyncDate(lastSync);
-    itemNode.setAttribute("title", lastSyncTitle);
+    this._updateLastSyncTitle(item.lastModified, itemNode);
     if (item.closed) {
       itemNode.classList.add("closed");
     } else {
@@ -225,14 +231,10 @@ TabListView.prototype = {
     } else {
       itemNode.classList.remove("selected");
     }
-    if (item.isMobile) {
-      itemNode.classList.add("device-image-mobile");
-    } else {
-      itemNode.classList.add("device-image-desktop");
-    }
     if (item.focused) {
       itemNode.focus();
     }
+    itemNode.setAttribute("clientType", item.clientType);
     itemNode.dataset.id = item.id;
     itemNode.querySelector(".item-title").textContent = item.name;
   },
@@ -519,12 +521,15 @@ TabListView.prototype = {
     let item = this.container.querySelector(".item.selected");
     let showTabOptions = this._isTab(item);
 
-    let el = menu.firstChild;
+    let el = menu.firstElementChild;
 
     while (el) {
       let show = false;
       if (showTabOptions) {
-        if (el.getAttribute("id") != "syncedTabsOpenAllInTabs") {
+        if (el.getAttribute("id") == "syncedTabsOpenSelectedInPrivateWindow") {
+          show = PrivateBrowsingUtils.enabled;
+        } else if (el.getAttribute("id") != "syncedTabsOpenAllInTabs" &&
+                   el.getAttribute("id") != "syncedTabsManageDevices") {
           show = true;
         }
       } else if (el.getAttribute("id") == "syncedTabsOpenAllInTabs") {
@@ -532,10 +537,12 @@ TabListView.prototype = {
         show = tabs.length > 0;
       } else if (el.getAttribute("id") == "syncedTabsRefresh") {
         show = true;
+      } else if (el.getAttribute("id") == "syncedTabsManageDevices") {
+        show = true;
       }
       el.hidden = !show;
 
-      el = el.nextSibling;
+      el = el.nextElementSibling;
     }
   },
 
@@ -582,7 +589,7 @@ TabListView.prototype = {
   },
 
   _indexOfNode(parent, child) {
-    return Array.prototype.indexOf.call(parent.childNodes, child);
+    return Array.prototype.indexOf.call(parent.children, child);
   },
 
   _isTab(item) {
@@ -594,8 +601,8 @@ TabListView.prototype = {
   },
 
   _openAllClientTabs(clientNode, where) {
-    const tabs = clientNode.querySelector(".item-tabs-list").childNodes;
+    const tabs = clientNode.querySelector(".item-tabs-list").children;
     const urls = [...tabs].map(tab => tab.dataset.url);
     this.props.onOpenTabs(urls, where);
-  }
+  },
 };

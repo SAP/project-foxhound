@@ -2,14 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-this.EXPORTED_SYMBOLS = ["Observers"];
+var EXPORTED_SYMBOLS = ["Observers"];
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cr = Components.results;
-var Cu = Components.utils;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 /**
  * A service for adding, removing and notifying observers of notifications.
@@ -17,7 +13,7 @@ Cu.import("resource://gre/modules/XPCOMUtils.jsm");
  *
  * @version 0.2
  */
-this.Observers = {
+var Observers = {
   /**
    * Register the given callback as an observer of the given topic.
    *
@@ -36,7 +32,7 @@ this.Observers = {
   add(topic, callback, thisObject) {
     let observer = new Observer(topic, callback, thisObject);
     this._cache.push(observer);
-    this._service.addObserver(observer, topic, true);
+    Services.obs.addObserver(observer, topic, true);
 
     return observer;
   },
@@ -62,8 +58,10 @@ this.Observers = {
                                              v.callback == callback &&
                                              v.thisObject == thisObject);
     if (observer) {
-      this._service.removeObserver(observer, topic);
+      Services.obs.removeObserver(observer, topic);
       this._cache.splice(this._cache.indexOf(observer), 1);
+    } else {
+      throw new Error("Attempt to remove non-existing observer");
     }
   },
 
@@ -86,11 +84,8 @@ this.Observers = {
   notify(topic, subject, data) {
     subject = (typeof subject == "undefined") ? null : new Subject(subject);
        data = (typeof data == "undefined") ? null : data;
-    this._service.notifyObservers(subject, topic, data);
+    Services.obs.notifyObservers(subject, topic, data);
   },
-
-  _service: Cc["@mozilla.org/observer-service;1"].
-            getService(Ci.nsIObserverService),
 
   /**
    * A cache of observers that have been added.
@@ -102,7 +97,7 @@ this.Observers = {
    * Could we fix that by making this an independent top-level object
    * rather than a property of this object?
    */
-  _cache: []
+  _cache: [],
 };
 
 
@@ -113,7 +108,7 @@ function Observer(topic, callback, thisObject) {
 }
 
 Observer.prototype = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIObserver, Ci.nsISupportsWeakReference]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver, Ci.nsISupportsWeakReference]),
   observe(subject, topic, data) {
     // Extract the wrapped object for subjects that are one of our wrappers
     // around a JS object.  This way we support both wrapped subjects created
@@ -130,8 +125,8 @@ Observer.prototype = {
         this.callback(subject, data);
     } else // typeof this.callback == "object" (nsIObserver)
       this.callback.observe(subject, topic, data);
-  }
-}
+  },
+};
 
 
 function Subject(object) {
@@ -143,7 +138,7 @@ function Subject(object) {
 }
 
 Subject.prototype = {
-  QueryInterface: XPCOMUtils.generateQI([]),
+  QueryInterface: ChromeUtils.generateQI([]),
   getScriptableHelper() {},
-  getInterfaces() {}
+  getInterfaces() {},
 };

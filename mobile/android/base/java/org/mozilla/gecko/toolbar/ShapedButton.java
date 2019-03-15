@@ -31,7 +31,11 @@ public class ShapedButton extends ThemedImageButton
     protected final CanvasDelegate mCanvasDelegate;
 
     public ShapedButton(Context context, AttributeSet attrs) {
-        super(context, attrs);
+        this(context, attrs, 0);
+    }
+
+    public ShapedButton(Context context, AttributeSet attrs, int defStyle) {
+        super(context, attrs, defStyle);
 
         // Path is clipped.
         mPath = new Path();
@@ -40,7 +44,7 @@ public class ShapedButton extends ThemedImageButton
         paint.setAntiAlias(true);
         paint.setColor(ContextCompat.getColor(context, R.color.canvas_delegate_paint));
         paint.setStrokeWidth(0.0f);
-        mCanvasDelegate = new CanvasDelegate(this, Mode.DST_IN, paint);
+        mCanvasDelegate = new CanvasDelegate(this, Mode.DST_OUT, paint);
 
         setWillNotDraw(false);
     }

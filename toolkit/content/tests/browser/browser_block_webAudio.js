@@ -1,30 +1,37 @@
 const PAGE = "https://example.com/browser/toolkit/content/tests/browser/file_webAudio.html";
 
-add_task(function* setup_test_preference() {
-  yield SpecialPowers.pushPrefEnv({"set": [
+// The tab closing code leaves an uncaught rejection. This test has been
+// whitelisted until the issue is fixed.
+if (!gMultiProcessBrowser) {
+  ChromeUtils.import("resource://testing-common/PromiseTestUtils.jsm", this);
+  PromiseTestUtils.expectUncaughtRejection(/is no longer, usable/);
+}
+
+add_task(async function setup_test_preference() {
+  await SpecialPowers.pushPrefEnv({"set": [
     ["media.useAudioChannelService.testing", true],
-    ["media.block-autoplay-until-in-foreground", true]
+    ["media.block-autoplay-until-in-foreground", true],
   ]});
 });
 
-add_task(function* block_web_audio() {
+add_task(async function block_web_audio() {
   info("- open new background tab -");
-  let tab = window.gBrowser.addTab("about:blank");
-  tab.linkedBrowser.loadURI(PAGE);
-  yield BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+  let tab = BrowserTestUtils.addTab(window.gBrowser, "about:blank");
+  BrowserTestUtils.loadURI(tab.linkedBrowser, PAGE);
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
   info("- tab should be blocked -");
-  yield waitForTabBlockEvent(tab, true);
+  await waitForTabBlockEvent(tab, true);
 
   info("- switch tab -");
-  yield BrowserTestUtils.switchTab(window.gBrowser, tab);
+  await BrowserTestUtils.switchTab(window.gBrowser, tab);
 
   info("- tab should be resumed -");
-  yield waitForTabBlockEvent(tab, false);
+  await waitForTabBlockEvent(tab, false);
 
   info("- tab should be audible -");
-  yield waitForTabPlayingEvent(tab, true);
+  await waitForTabPlayingEvent(tab, true);
 
   info("- remove tab -");
-  yield BrowserTestUtils.removeTab(tab);
+  BrowserTestUtils.removeTab(tab);
 });

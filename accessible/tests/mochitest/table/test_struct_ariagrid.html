@@ -17,38 +17,37 @@
           src="../table.js"></script>
 
   <script type="application/javascript">
-    function doTest()
-    {
-      //////////////////////////////////////////////////////////////////////////
+    function doTest() {
+      // ////////////////////////////////////////////////////////////////////////
       // Pure ARIA grid
       var cellsArray = [
         [kColHeaderCell, kColHeaderCell, kColHeaderCell],
         [kRowHeaderCell, kDataCell,      kDataCell],
-        [kRowHeaderCell, kDataCell,      kDataCell]
+        [kRowHeaderCell, kDataCell,      kDataCell],
       ];
 
       testTableStruct("table", cellsArray);
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // HTML table based ARIA grid
       cellsArray = [
         [kColHeaderCell, kColHeaderCell, kColHeaderCell],
         [kDataCell,      kDataCell,      kDataCell],
-        [kDataCell,      kDataCell,      kDataCell]
+        [kDataCell,      kDataCell,      kDataCell],
       ];
 
       testTableStruct("grid", cellsArray);
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // ARIA grid with HTML table elements
       cellsArray = [
         [kColHeaderCell, kColHeaderCell],
-        [kDataCell,      kDataCell]
+        [kDataCell,      kDataCell],
       ];
 
       testTableStruct("grid2", cellsArray);
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // ARIA grid of wrong markup
       cellsArray = [ ];
       testTableStruct("grid3", cellsArray);

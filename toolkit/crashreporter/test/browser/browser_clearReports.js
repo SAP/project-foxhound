@@ -2,41 +2,23 @@
 * License, v. 2.0. If a copy of the MPL was not distributed with this file,
 * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-function clickClearReports(browser) {
-  let doc = content.document;
-
-  let button = doc.getElementById("clear-reports");
-
-  if (!button) {
-    Assert.ok(false, "Button not found");
-    return Promise.resolve();
+function clickClearReports() {
+  const doc = content.document;
+  const reportListUnsubmitted = doc.getElementById("reportListUnsubmitted");
+  const reportListSubmitted = doc.getElementById("reportListSubmitted");
+  if (!reportListUnsubmitted || !reportListSubmitted) {
+    Assert.ok(false, "Report list not found");
   }
 
-  let style = doc.defaultView.getComputedStyle(button);
+  const unsubmittedStyle = doc.defaultView.getComputedStyle(reportListUnsubmitted);
+  const submittedStyle = doc.defaultView.getComputedStyle(reportListSubmitted);
+  Assert.notEqual(unsubmittedStyle.display, "none", "Unsubmitted report list is visible");
+  Assert.notEqual(submittedStyle.display, "none", "Submitted report list is visible");
 
-  Assert.notEqual(style.display, "none", "Clear reports button visible");
-
-  let deferred = {};
-  deferred.promise = new Promise(resolve => deferred.resolve = resolve);
-  var observer = new content.MutationObserver(function(mutations) {
-    for (let mutation of mutations) {
-      if (mutation.type == "attributes" &&
-          mutation.attributeName == "style") {
-        observer.disconnect();
-        Assert.equal(style.display, "none", "Clear reports button hidden");
-        deferred.resolve();
-      }
-    }
-  });
-  observer.observe(button, {
-      attributes: true,
-      childList: true,
-      characterData: true,
-      attributeFilter: ["style"],
-  });
-
-  button.click();
-  return deferred.promise;
+  const clearUnsubmittedButton = doc.getElementById("clearUnsubmittedReports");
+  const clearSubmittedButton = doc.getElementById("clearSubmittedReports");
+  clearUnsubmittedButton.click();
+  clearSubmittedButton.click();
 }
 
 var promptShown = false;
@@ -53,7 +35,7 @@ registerCleanupFunction(function() {
   Services.prompt = oldPrompt;
 });
 
-add_task(function* test() {
+add_task(async function test() {
   let appD = make_fake_appdir();
   let crD = appD.clone();
   crD.append("Crash Reports");
@@ -97,18 +79,21 @@ add_task(function* test() {
     cleanup_fake_appdir();
   });
 
-  yield BrowserTestUtils.withNewTab({ gBrowser, url: "about:crashes" },
-    function* (browser) {
+  await BrowserTestUtils.withNewTab({ gBrowser, url: "about:crashes" },
+    async function(browser) {
       let dirs = [ submitdir, pendingdir, crD ];
       let existing = [ file1.path, file2.path, report1.path, report2.path,
                        report3.path, submitdir.path, pendingdir.path ];
 
-      yield ContentTask.spawn(browser, null, clickClearReports);
+      ContentTask.spawn(browser, null, clickClearReports);
+      await BrowserTestUtils.waitForCondition(() =>
+        content.document.getElementById("reportListUnsubmitted").classList.contains("hidden")
+        && content.document.getElementById("reportListSubmitted").classList.contains("hidden"));
 
       for (let dir of dirs) {
         let entries = dir.directoryEntries;
         while (entries.hasMoreElements()) {
-          let file = entries.getNext().QueryInterface(Ci.nsIFile);
+          let file = entries.nextFile;
           let index = existing.indexOf(file.path);
           isnot(index, -1, file.leafName + " exists");
 

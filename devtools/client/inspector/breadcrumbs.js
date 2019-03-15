@@ -7,19 +7,21 @@
 "use strict";
 
 const promise = require("promise");
-
+const flags = require("devtools/shared/flags");
 const {ELLIPSIS} = require("devtools/shared/l10n");
+const EventEmitter = require("devtools/shared/event-emitter");
+
+loader.lazyRequireGetter(this, "KeyShortcuts", "devtools/client/shared/key-shortcuts");
 
 const MAX_LABEL_LENGTH = 40;
 
 const NS_XHTML = "http://www.w3.org/1999/xhtml";
 const SCROLL_REPEAT_MS = 100;
 
-const EventEmitter = require("devtools/shared/event-emitter");
-const KeyShortcuts = require("devtools/client/shared/key-shortcuts");
-
 // Some margin may be required for visible element detection.
 const SCROLL_MARGIN = 1;
+
+const SHADOW_ROOT_TAGNAME = "#shadow-root";
 
 /**
  * Component to replicate functionality of XUL arrowscrollbox
@@ -45,10 +47,8 @@ ArrowScrollBox.prototype = {
    * Build the HTML, add to the DOM and start listening to
    * events
    */
-  init: function () {
+  init: function() {
     this.constructHtml();
-
-    this.onUnderflow();
 
     this.onScroll = this.onScroll.bind(this);
     this.onStartBtnClick = this.onStartBtnClick.bind(this);
@@ -72,8 +72,8 @@ ArrowScrollBox.prototype = {
   /**
    * Determine whether the current text directionality is RTL
    */
-  isRtl: function () {
-    return this.win.getComputedStyle(this.container).direction === "rtl";
+  isRtl: function() {
+    return this.doc.dir === "rtl";
   },
 
   /**
@@ -81,7 +81,7 @@ ArrowScrollBox.prototype = {
    * @param {Element} element element to scroll
    * @param {String} block desired alignment of element after scrolling
    */
-  scrollToElement: function (element, block) {
+  scrollToElement: function(element, block) {
     element.scrollIntoView({ block: block, behavior: this.scrollBehavior });
   },
 
@@ -90,16 +90,16 @@ ArrowScrollBox.prototype = {
    * while the mouse button is held
    * @param {Function} repeatFn the function to repeat while the button is held
    */
-  clickOrHold: function (repeatFn) {
+  clickOrHold: function(repeatFn) {
     let timer;
-    let container = this.container;
+    const container = this.container;
 
     function handleClick() {
       cancelHold();
       repeatFn();
     }
 
-    let window = this.win;
+    const window = this.win;
     function cancelHold() {
       window.clearTimeout(timer);
       container.removeEventListener("mouseout", cancelHold);
@@ -119,40 +119,40 @@ ArrowScrollBox.prototype = {
   /**
    * When start button is dbl clicked scroll to first element
    */
-  onStartBtnDblClick: function () {
-    let children = this.inner.childNodes;
+  onStartBtnDblClick: function() {
+    const children = this.inner.childNodes;
     if (children.length < 1) {
       return;
     }
 
-    let element = this.inner.childNodes[0];
+    const element = this.inner.childNodes[0];
     this.scrollToElement(element, "start");
   },
 
   /**
    * When end button is dbl clicked scroll to last element
    */
-  onEndBtnDblClick: function () {
-    let children = this.inner.childNodes;
+  onEndBtnDblClick: function() {
+    const children = this.inner.childNodes;
     if (children.length < 1) {
       return;
     }
 
-    let element = children[children.length - 1];
+    const element = children[children.length - 1];
     this.scrollToElement(element, "start");
   },
 
   /**
    * When start arrow button is clicked scroll towards first element
    */
-  onStartBtnClick: function () {
-    let scrollToStart = () => {
-      let element = this.getFirstInvisibleElement();
+  onStartBtnClick: function() {
+    const scrollToStart = () => {
+      const element = this.getFirstInvisibleElement();
       if (!element) {
         return;
       }
 
-      let block = this.isRtl() ? "end" : "start";
+      const block = this.isRtl() ? "end" : "start";
       this.scrollToElement(element, block);
     };
 
@@ -162,14 +162,14 @@ ArrowScrollBox.prototype = {
   /**
    * When end arrow button is clicked scroll towards last element
    */
-  onEndBtnClick: function () {
-    let scrollToEnd = () => {
-      let element = this.getLastInvisibleElement();
+  onEndBtnClick: function() {
+    const scrollToEnd = () => {
+      const element = this.getLastInvisibleElement();
       if (!element) {
         return;
       }
 
-      let block = this.isRtl() ? "start" : "end";
+      const block = this.isRtl() ? "start" : "end";
       this.scrollToElement(element, block);
     };
 
@@ -180,15 +180,15 @@ ArrowScrollBox.prototype = {
    * Event handler for scrolling, update the
    * enabled/disabled status of the arrow buttons
    */
-  onScroll: function () {
-    let first = this.getFirstInvisibleElement();
+  onScroll: function() {
+    const first = this.getFirstInvisibleElement();
     if (!first) {
       this.startBtn.setAttribute("disabled", "true");
     } else {
       this.startBtn.removeAttribute("disabled");
     }
 
-    let last = this.getLastInvisibleElement();
+    const last = this.getLastInvisibleElement();
     if (!last) {
       this.endBtn.setAttribute("disabled", "true");
     } else {
@@ -199,7 +199,7 @@ ArrowScrollBox.prototype = {
   /**
    * On underflow, make the arrow buttons invisible
    */
-  onUnderflow: function () {
+  onUnderflow: function() {
     this.startBtn.style.visibility = "collapse";
     this.endBtn.style.visibility = "collapse";
     this.emit("underflow");
@@ -208,7 +208,7 @@ ArrowScrollBox.prototype = {
   /**
    * On overflow, show the arrow buttons
    */
-  onOverflow: function () {
+  onOverflow: function() {
     this.startBtn.style.visibility = "visible";
     this.endBtn.style.visibility = "visible";
     this.emit("overflow");
@@ -222,7 +222,7 @@ ArrowScrollBox.prototype = {
    * @param {Number} elementLeft the left edge of the element
    * @param {Number} elementRight the right edge of the element
    */
-  elementLeftOfContainer: function (left, right, elementLeft, elementRight) {
+  elementLeftOfContainer: function(left, right, elementLeft, elementRight) {
     return elementLeft < (left - SCROLL_MARGIN)
            && elementRight < (right - SCROLL_MARGIN);
   },
@@ -235,7 +235,7 @@ ArrowScrollBox.prototype = {
    * @param {Number} elementLeft the left edge of the element
    * @param {Number} elementRight the right edge of the element
    */
-  elementRightOfContainer: function (left, right, elementLeft, elementRight) {
+  elementRightOfContainer: function(left, right, elementLeft, elementRight) {
     return elementLeft > (left + SCROLL_MARGIN)
            && elementRight > (right + SCROLL_MARGIN);
   },
@@ -244,10 +244,10 @@ ArrowScrollBox.prototype = {
    * Get the first (i.e. furthest left for LTR)
    * non or partly visible element in the scroll box
    */
-  getFirstInvisibleElement: function () {
-    let elementsList = Array.from(this.inner.childNodes).reverse();
+  getFirstInvisibleElement: function() {
+    const elementsList = Array.from(this.inner.childNodes).reverse();
 
-    let predicate = this.isRtl() ?
+    const predicate = this.isRtl() ?
       this.elementRightOfContainer : this.elementLeftOfContainer;
     return this.findFirstWithBounds(elementsList, predicate);
   },
@@ -256,8 +256,8 @@ ArrowScrollBox.prototype = {
    * Get the last (i.e. furthest right for LTR)
    * non or partly visible element in the scroll box
    */
-  getLastInvisibleElement: function () {
-    let predicate = this.isRtl() ?
+  getLastInvisibleElement: function() {
+    const predicate = this.isRtl() ?
       this.elementLeftOfContainer : this.elementRightOfContainer;
     return this.findFirstWithBounds(this.inner.childNodes, predicate);
   },
@@ -269,12 +269,12 @@ ArrowScrollBox.prototype = {
    * @param {Function} predicate a function to be called with bounds
    * information
    */
-  findFirstWithBounds: function (elements, predicate) {
-    let left = this.inner.scrollLeft;
-    let right = left + this.inner.clientWidth;
-    for (let element of elements) {
-      let elementLeft = element.offsetLeft - element.parentElement.offsetLeft;
-      let elementRight = elementLeft + element.offsetWidth;
+  findFirstWithBounds: function(elements, predicate) {
+    const left = this.inner.scrollLeft;
+    const right = left + this.inner.clientWidth;
+    for (const element of elements) {
+      const elementLeft = element.offsetLeft - element.parentElement.offsetLeft;
+      const elementRight = elementLeft + element.offsetWidth;
 
       // Check that the starting edge of the element is out of the visible area
       // and that the ending edge does not span the whole container
@@ -289,7 +289,7 @@ ArrowScrollBox.prototype = {
   /**
    * Build the HTML for the scroll box and insert it into the DOM
    */
-  constructHtml: function () {
+  constructHtml: function() {
     this.startBtn = this.createElement("div", "scrollbutton-up",
                                        this.container);
     this.createElement("div", "toolbarbutton-icon", this.startBtn);
@@ -314,8 +314,8 @@ ArrowScrollBox.prototype = {
    * @param {DOMNode} parent the parent node to which it should be appended
    * @return {DOMNode} The new element
    */
-  createElement: function (tagName, className, parent) {
-    let el = this.doc.createElementNS(NS_XHTML, tagName);
+  createElement: function(tagName, className, parent) {
+    const el = this.doc.createElementNS(NS_XHTML, tagName);
     el.className = className;
     if (parent) {
       parent.appendChild(el);
@@ -327,7 +327,7 @@ ArrowScrollBox.prototype = {
   /**
    * Remove event handlers and clean up
    */
-  destroy: function () {
+  destroy: function() {
     this.inner.removeEventListener("scroll", this.onScroll);
     this.startBtn.removeEventListener("mousedown",
                                       this.onStartBtnClick);
@@ -370,7 +370,7 @@ HTMLBreadcrumbs.prototype = {
     return this.inspector.walker;
   },
 
-  _init: function () {
+  _init: function() {
     this.outer = this.doc.getElementById("inspector-breadcrumbs");
     this.arrowScrollBox = new ArrowScrollBox(
         this.win,
@@ -385,11 +385,16 @@ HTMLBreadcrumbs.prototype = {
     this.outer.addEventListener("mouseout", this, true);
     this.outer.addEventListener("focus", this, true);
 
-    this.shortcuts = new KeyShortcuts({ window: this.win, target: this.outer });
     this.handleShortcut = this.handleShortcut.bind(this);
 
-    this.shortcuts.on("Right", this.handleShortcut);
-    this.shortcuts.on("Left", this.handleShortcut);
+    if (flags.testing) {
+      // In tests, we start listening immediately to avoid having to simulate a focus.
+      this.initKeyShortcuts();
+    } else {
+      this.outer.addEventListener("focus", () => {
+        this.initKeyShortcuts();
+      }, { once: true });
+    }
 
     // We will save a list of already displayed nodes in this array.
     this.nodeHierarchy = [];
@@ -401,22 +406,28 @@ HTMLBreadcrumbs.prototype = {
     this.breadcrumbsWidgetItemId = 0;
 
     this.update = this.update.bind(this);
+    this.updateWithMutations = this.updateWithMutations.bind(this);
     this.updateSelectors = this.updateSelectors.bind(this);
     this.selection.on("new-node-front", this.update);
     this.selection.on("pseudoclass", this.updateSelectors);
     this.selection.on("attribute-changed", this.updateSelectors);
-    this.inspector.on("markupmutation", this.update);
+    this.inspector.on("markupmutation", this.updateWithMutations);
     this.update();
   },
 
-  /**
+  initKeyShortcuts() {
+    this.shortcuts = new KeyShortcuts({ window: this.win, target: this.outer });
+    this.shortcuts.on("Right", this.handleShortcut);
+    this.shortcuts.on("Left", this.handleShortcut);
+  },
 
+  /**
    * Build a string that represents the node: tagName#id.class1.class2.
    * @param {NodeFront} node The node to pretty-print
    * @return {String}
    */
-  prettyPrintNodeAsText: function (node) {
-    let text = node.displayName;
+  prettyPrintNodeAsText: function(node) {
+    let text = node.isShadowRoot ? SHADOW_ROOT_TAGNAME : node.displayName;
     if (node.isPseudoElement) {
       text = node.isBeforePseudoElement ? "::before" : "::after";
     }
@@ -426,13 +437,13 @@ HTMLBreadcrumbs.prototype = {
     }
 
     if (node.className) {
-      let classList = node.className.split(/\s+/);
+      const classList = node.className.split(/\s+/);
       for (let i = 0; i < classList.length; i++) {
         text += "." + classList[i];
       }
     }
 
-    for (let pseudo of node.pseudoClassLocks) {
+    for (const pseudo of node.pseudoClassLocks) {
       text += pseudo;
     }
 
@@ -447,20 +458,20 @@ HTMLBreadcrumbs.prototype = {
    * @param {NodeFront} node The node to pretty-print
    * @returns {DocumentFragment}
    */
-  prettyPrintNodeAsXHTML: function (node) {
-    let tagLabel = this.doc.createElementNS(NS_XHTML, "span");
+  prettyPrintNodeAsXHTML: function(node) {
+    const tagLabel = this.doc.createElementNS(NS_XHTML, "span");
     tagLabel.className = "breadcrumbs-widget-item-tag plain";
 
-    let idLabel = this.doc.createElementNS(NS_XHTML, "span");
+    const idLabel = this.doc.createElementNS(NS_XHTML, "span");
     idLabel.className = "breadcrumbs-widget-item-id plain";
 
-    let classesLabel = this.doc.createElementNS(NS_XHTML, "span");
+    const classesLabel = this.doc.createElementNS(NS_XHTML, "span");
     classesLabel.className = "breadcrumbs-widget-item-classes plain";
 
-    let pseudosLabel = this.doc.createElementNS(NS_XHTML, "span");
+    const pseudosLabel = this.doc.createElementNS(NS_XHTML, "span");
     pseudosLabel.className = "breadcrumbs-widget-item-pseudo-classes plain";
 
-    let tagText = node.displayName;
+    let tagText = node.isShadowRoot ? SHADOW_ROOT_TAGNAME : node.displayName;
     if (node.isPseudoElement) {
       tagText = node.isBeforePseudoElement ? "::before" : "::after";
     }
@@ -468,7 +479,7 @@ HTMLBreadcrumbs.prototype = {
     let classesText = "";
 
     if (node.className) {
-      let classList = node.className.split(/\s+/);
+      const classList = node.className.split(/\s+/);
       for (let i = 0; i < classList.length; i++) {
         classesText += "." + classList[i];
       }
@@ -477,9 +488,9 @@ HTMLBreadcrumbs.prototype = {
     // Figure out which element (if any) needs ellipsing.
     // Substring for that element, then clear out any extras
     // (except for pseudo elements).
-    let maxTagLength = MAX_LABEL_LENGTH;
-    let maxIdLength = MAX_LABEL_LENGTH - tagText.length;
-    let maxClassLength = MAX_LABEL_LENGTH - tagText.length - idText.length;
+    const maxTagLength = MAX_LABEL_LENGTH;
+    const maxIdLength = MAX_LABEL_LENGTH - tagText.length;
+    const maxClassLength = MAX_LABEL_LENGTH - tagText.length - idText.length;
 
     if (tagText.length > maxTagLength) {
       tagText = tagText.substr(0, maxTagLength) + ELLIPSIS;
@@ -496,7 +507,7 @@ HTMLBreadcrumbs.prototype = {
     classesLabel.textContent = classesText;
     pseudosLabel.textContent = node.pseudoClassLocks.join("");
 
-    let fragment = this.doc.createDocumentFragment();
+    const fragment = this.doc.createDocumentFragment();
     fragment.appendChild(tagLabel);
     fragment.appendChild(idLabel);
     fragment.appendChild(classesLabel);
@@ -509,7 +520,7 @@ HTMLBreadcrumbs.prototype = {
    * Generic event handler.
    * @param {DOMEvent} event.
    */
-  handleEvent: function (event) {
+  handleEvent: function(event) {
     if (event.type == "click" && event.button == 0) {
       this.handleClick(event);
     } else if (event.type == "mouseover") {
@@ -527,10 +538,10 @@ HTMLBreadcrumbs.prototype = {
    * breadcrumb. Ensures that the focus stays on the container at all times.
    * @param {DOMEvent} event.
    */
-  handleFocus: function (event) {
+  handleFocus: function(event) {
     event.stopPropagation();
 
-    let node = this.nodeHierarchy[this.currentIndex];
+    const node = this.nodeHierarchy[this.currentIndex];
     if (node) {
       this.outer.setAttribute("aria-activedescendant", node.button.id);
     } else {
@@ -544,8 +555,8 @@ HTMLBreadcrumbs.prototype = {
    * On click navigate to the correct node.
    * @param {DOMEvent} event.
    */
-  handleClick: function (event) {
-    let target = event.originalTarget;
+  handleClick: function(event) {
+    const target = event.originalTarget;
     if (target.tagName == "button") {
       target.onBreadcrumbsClick();
     }
@@ -555,8 +566,8 @@ HTMLBreadcrumbs.prototype = {
    * On mouse over, highlight the corresponding content DOM Node.
    * @param {DOMEvent} event.
    */
-  handleMouseOver: function (event) {
-    let target = event.originalTarget;
+  handleMouseOver: function(event) {
+    const target = event.originalTarget;
     if (target.tagName == "button") {
       target.onBreadcrumbsHover();
     }
@@ -566,8 +577,8 @@ HTMLBreadcrumbs.prototype = {
    * On mouse out, make sure to unhighlight.
    * @param {DOMEvent} event.
    */
-  handleMouseOut: function (event) {
-    this.inspector.toolbox.highlighterUtils.unhighlight();
+  handleMouseOut: function(event) {
+    this.inspector.highlighter.unhighlight();
   },
 
   /**
@@ -578,7 +589,7 @@ HTMLBreadcrumbs.prototype = {
    * @param {DOMEvent} event
    *        Original event that triggered the shortcut.
    */
-  handleShortcut: function (name, event) {
+  handleShortcut: function(event) {
     if (!this.selection.isElementNode()) {
       return;
     }
@@ -588,33 +599,40 @@ HTMLBreadcrumbs.prototype = {
 
     this.keyPromise = (this.keyPromise || promise.resolve(null)).then(() => {
       let currentnode;
-      if (name === "Left" && this.currentIndex != 0) {
+
+      const isLeft = event.code === "ArrowLeft";
+      const isRight = event.code === "ArrowRight";
+
+      if (isLeft && this.currentIndex != 0) {
         currentnode = this.nodeHierarchy[this.currentIndex - 1];
-      } else if (name === "Right" && this.currentIndex < this.nodeHierarchy.length - 1) {
+      } else if (isRight && this.currentIndex < this.nodeHierarchy.length - 1) {
         currentnode = this.nodeHierarchy[this.currentIndex + 1];
       } else {
         return null;
       }
 
       this.outer.setAttribute("aria-activedescendant", currentnode.button.id);
-      return this.selection.setNodeFront(currentnode.node, "breadcrumbs");
+      return this.selection.setNodeFront(currentnode.node, { reason: "breadcrumbs" });
     });
   },
 
   /**
    * Remove nodes and clean up.
    */
-  destroy: function () {
+  destroy: function() {
     this.selection.off("new-node-front", this.update);
     this.selection.off("pseudoclass", this.updateSelectors);
     this.selection.off("attribute-changed", this.updateSelectors);
-    this.inspector.off("markupmutation", this.update);
+    this.inspector.off("markupmutation", this.updateWithMutations);
 
     this.container.removeEventListener("click", this, true);
     this.container.removeEventListener("mouseover", this, true);
     this.container.removeEventListener("mouseout", this, true);
     this.container.removeEventListener("focus", this, true);
-    this.shortcuts.destroy();
+
+    if (this.shortcuts) {
+      this.shortcuts.destroy();
+    }
 
     this.empty();
 
@@ -631,7 +649,7 @@ HTMLBreadcrumbs.prototype = {
   /**
    * Empty the breadcrumbs container.
    */
-  empty: function () {
+  empty: function() {
     while (this.container.hasChildNodes()) {
       this.container.firstChild.remove();
     }
@@ -641,7 +659,7 @@ HTMLBreadcrumbs.prototype = {
    * Set which button represent the selected node.
    * @param {Number} index Index of the displayed-button to select.
    */
-  setCursor: function (index) {
+  setCursor: function(index) {
     // Unselect the previously selected button
     if (this.currentIndex > -1
         && this.currentIndex < this.nodeHierarchy.length) {
@@ -661,7 +679,7 @@ HTMLBreadcrumbs.prototype = {
    * @param {NodeFront} node.
    * @returns {Number} The index for this node or -1 if not found.
    */
-  indexOf: function (node) {
+  indexOf: function(node) {
     for (let i = this.nodeHierarchy.length - 1; i >= 0; i--) {
       if (this.nodeHierarchy[i].node === node) {
         return i;
@@ -675,9 +693,9 @@ HTMLBreadcrumbs.prototype = {
    * index.
    * @param {Number} index.
    */
-  cutAfter: function (index) {
+  cutAfter: function(index) {
     while (this.nodeHierarchy.length > (index + 1)) {
-      let toRemove = this.nodeHierarchy.pop();
+      const toRemove = this.nodeHierarchy.pop();
       this.container.removeChild(toRemove.button);
     }
   },
@@ -687,8 +705,8 @@ HTMLBreadcrumbs.prototype = {
    * @param {NodeFront} node The node from the page.
    * @return {DOMNode} The <button> for this node.
    */
-  buildButton: function (node) {
-    let button = this.doc.createElementNS(NS_XHTML, "button");
+  buildButton: function(node) {
+    const button = this.doc.createElementNS(NS_XHTML, "button");
     button.appendChild(this.prettyPrintNodeAsXHTML(node));
     button.className = "breadcrumbs-widget-item";
     button.id = "breadcrumbs-widget-item-" + this.breadcrumbsWidgetItemId++;
@@ -701,11 +719,11 @@ HTMLBreadcrumbs.prototype = {
     };
 
     button.onBreadcrumbsClick = () => {
-      this.selection.setNodeFront(node, "breadcrumbs");
+      this.selection.setNodeFront(node, { reason: "breadcrumbs" });
     };
 
     button.onBreadcrumbsHover = () => {
-      this.inspector.toolbox.highlighterUtils.highlightNodeFront(node);
+      this.inspector.highlighter.highlight(node);
     };
 
     return button;
@@ -715,26 +733,26 @@ HTMLBreadcrumbs.prototype = {
    * Connecting the end of the breadcrumbs to a node.
    * @param {NodeFront} node The node to reach.
    */
-  expand: function (node) {
-    let fragment = this.doc.createDocumentFragment();
+  expand: function(node) {
+    const fragment = this.doc.createDocumentFragment();
     let lastButtonInserted = null;
-    let originalLength = this.nodeHierarchy.length;
+    const originalLength = this.nodeHierarchy.length;
     let stopNode = null;
     if (originalLength > 0) {
       stopNode = this.nodeHierarchy[originalLength - 1].node;
     }
     while (node && node != stopNode) {
-      if (node.tagName) {
-        let button = this.buildButton(node);
+      if (node.tagName || node.isShadowRoot) {
+        const button = this.buildButton(node);
         fragment.insertBefore(button, lastButtonInserted);
         lastButtonInserted = button;
         this.nodeHierarchy.splice(originalLength, 0, {
           node,
           button,
-          currentPrettyPrintText: this.prettyPrintNodeAsText(node)
+          currentPrettyPrintText: this.prettyPrintNodeAsText(node),
         });
       }
-      node = node.parentNode();
+      node = node.parentOrHost();
     }
     this.container.appendChild(fragment, this.container.firstChild);
   },
@@ -744,9 +762,9 @@ HTMLBreadcrumbs.prototype = {
    * @param {NodeFront} node.
    * @return {Number} Index of the ancestor in the cache, or -1 if not found.
    */
-  getCommonAncestor: function (node) {
+  getCommonAncestor: function(node) {
     while (node) {
-      let idx = this.indexOf(node);
+      const idx = this.indexOf(node);
       if (idx > -1) {
         return idx;
       }
@@ -758,10 +776,10 @@ HTMLBreadcrumbs.prototype = {
   /**
    * Ensure the selected node is visible.
    */
-  scroll: function () {
+  scroll: function() {
     // FIXME bug 684352: make sure its immediate neighbors are visible too.
     if (!this.isDestroyed) {
-      let element = this.nodeHierarchy[this.currentIndex].button;
+      const element = this.nodeHierarchy[this.currentIndex].button;
       this.arrowScrollBox.scrollToElement(element, "end");
     }
   },
@@ -769,16 +787,16 @@ HTMLBreadcrumbs.prototype = {
   /**
    * Update all button outputs.
    */
-  updateSelectors: function () {
+  updateSelectors: function() {
     if (this.isDestroyed) {
       return;
     }
 
     for (let i = this.nodeHierarchy.length - 1; i >= 0; i--) {
-      let {node, button, currentPrettyPrintText} = this.nodeHierarchy[i];
+      const {node, button, currentPrettyPrintText} = this.nodeHierarchy[i];
 
       // If the output of the node doesn't change, skip the update.
-      let textOutput = this.prettyPrintNodeAsText(node);
+      const textOutput = this.prettyPrintNodeAsText(node);
       if (currentPrettyPrintText === textOutput) {
         continue;
       }
@@ -802,12 +820,12 @@ HTMLBreadcrumbs.prototype = {
    * @param {Array} mutations The mutations array.
    * @return {Boolean}
    */
-  _hasInterestingMutations: function (mutations) {
+  _hasInterestingMutations: function(mutations) {
     if (!mutations || !mutations.length) {
       return false;
     }
 
-    for (let {type, added, removed, target, attributeName} of mutations) {
+    for (const {type, added, removed, target, attributeName} of mutations) {
       if (type === "childList") {
         // Only interested in childList mutations if the added or removed
         // nodes are currently displayed.
@@ -826,17 +844,27 @@ HTMLBreadcrumbs.prototype = {
   },
 
   /**
+   * Update the breadcrumbs display when a new node is selected and there are
+   * mutations.
+   * @param {Array} mutations An array of mutations in case this was called as
+   * the "markupmutation" event listener.
+   */
+  updateWithMutations(mutations) {
+    return this.update("markupmutation", mutations);
+  },
+
+  /**
    * Update the breadcrumbs display when a new node is selected.
    * @param {String} reason The reason for the update, if any.
    * @param {Array} mutations An array of mutations in case this was called as
    * the "markupmutation" event listener.
    */
-  update: function (reason, mutations) {
+  update: function(reason, mutations) {
     if (this.isDestroyed) {
       return;
     }
 
-    let hasInterestingMutations = this._hasInterestingMutations(mutations);
+    const hasInterestingMutations = this._hasInterestingMutations(mutations);
     if (reason === "markupmutation" && !hasInterestingMutations) {
       return;
     }
@@ -850,13 +878,13 @@ HTMLBreadcrumbs.prototype = {
     // If this was an interesting deletion; then trim the breadcrumb trail
     let trimmed = false;
     if (reason === "markupmutation") {
-      for (let {type, removed} of mutations) {
+      for (const {type, removed} of mutations) {
         if (type !== "childList") {
           continue;
         }
 
-        for (let node of removed) {
-          let removedIndex = this.indexOf(node);
+        for (const node of removed) {
+          const removedIndex = this.indexOf(node);
           if (removedIndex > -1) {
             this.cutAfter(removedIndex - 1);
             trimmed = true;
@@ -865,7 +893,7 @@ HTMLBreadcrumbs.prototype = {
       }
     }
 
-    if (!this.selection.isElementNode()) {
+    if (!this.selection.isElementNode() && !this.selection.isShadowRootNode()) {
       // no selection
       this.setCursor(-1);
       if (trimmed) {
@@ -887,8 +915,8 @@ HTMLBreadcrumbs.prototype = {
       if (this.nodeHierarchy.length > 0) {
         // No. We drop all the element that are not direct ancestors
         // of the selection
-        let parent = this.selection.nodeFront.parentNode();
-        let ancestorIdx = this.getCommonAncestor(parent);
+        const parent = this.selection.nodeFront.parentNode();
+        const ancestorIdx = this.getCommonAncestor(parent);
         this.cutAfter(ancestorIdx);
       }
       // we append the missing button between the end of the breadcrumbs display
@@ -900,7 +928,7 @@ HTMLBreadcrumbs.prototype = {
       this.setCursor(idx);
     }
 
-    let doneUpdating = this.inspector.updating("breadcrumbs");
+    const doneUpdating = this.inspector.updating("breadcrumbs");
 
     this.updateSelectors();
 
@@ -917,5 +945,5 @@ HTMLBreadcrumbs.prototype = {
         }
       }
     }, 0);
-  }
+  },
 };

@@ -38,11 +38,12 @@ class OriginAttributes;
 
 interface nsIURI;
 interface nsIContentSecurityPolicy;
-interface nsIDOMDocument;
+
+webidl Document;
 
 [ptr] native JSContext(JSContext);
 [ptr] native JSPrincipals(JSPrincipals);
-[ptr] native PrincipalArray(nsTArray<nsCOMPtr<nsIPrincipal> >);
+[ref] native PrincipalArray(const nsTArray<nsCOMPtr<nsIPrincipal>>);
 [ref] native const_OriginAttributes(const mozilla::OriginAttributes);
 
 [scriptable, builtinclass, uuid(f75f502d-79fd-48be-a079-e5a7b8f80c8b)]
@@ -68,13 +69,13 @@ interface nsIPrincipal : nsISerializable
     /**
      * Returns a hash value for the principal.
      */
-    [noscript] readonly attribute unsigned long hashValue;
+    [notxpcom, nostdcall] readonly attribute unsigned long hashValue;
 
     /**
      * The codebase URI to which this principal pertains.  This is
      * generally the document URI.
      */
-    readonly attribute nsIURI URI;
+    [infallible] readonly attribute nsIURI URI;
 
     /**
      * The domain URI to which this principal pertains.
@@ -151,10 +152,11 @@ interface nsIPrincipal : nsISerializable
 
     /**
      * A Content Security Policy associated with this principal.
-     *
      * Use this function to query the associated CSP with this principal.
+     * Please *only* use this function to *set* a CSP when you know exactly what you are doing.
+     * Most likely you want to call ensureCSP instead of setCSP.
      */
-    [noscript] readonly attribute nsIContentSecurityPolicy csp;
+    [noscript] attribute nsIContentSecurityPolicy csp;
 
     /*
      * Use this function to query a CSP associated with this principal.
@@ -164,7 +166,7 @@ interface nsIPrincipal : nsISerializable
      * Please note if aDocument is null, then setRequestContext on the
      * CSP object is called using the current principal.
      */
-    [noscript] nsIContentSecurityPolicy ensureCSP(in nsIDOMDocument aDocument);
+    [noscript] nsIContentSecurityPolicy ensureCSP(in Document aDocument);
 
     /**
      * A speculative Content Security Policy associated with this
@@ -185,7 +187,7 @@ interface nsIPrincipal : nsISerializable
      * Please note if aDocument is null, then setRequestContext on the
      * speculative CSP object is called using the current principal.
      */
-    [noscript] nsIContentSecurityPolicy ensurePreloadCSP(in nsIDOMDocument aDocument);
+    [noscript] nsIContentSecurityPolicy ensurePreloadCSP(in Document aDocument);
 
     /**
      * The CSP of the principal in JSON notation.
@@ -244,38 +246,25 @@ interface nsIPrincipal : nsISerializable
     readonly attribute AUTF8String originSuffix;
 
     /**
+     * A canonical representation of the site-origin for this principal.
+     * This string has the same format as |origin| (see above). Two principals
+     * with differing |siteOrigin| values will never compare equal, even when
+     * considering domain mutations.
+     *
+     * For most principals, |siteOrigin| matches |origin| precisely. Only
+     * principals which allow mutating |domain|, such as ContentPrincipal,
+     * override the default implementation in BasePrincipal.
+     *
+     * TODO(nika): Use this in DocGroup.
+     */
+    readonly attribute ACString siteOrigin;
+
+    /**
      * The base domain of the codebase URI to which this principal pertains
      * (generally the document URI), handling null principals and
      * non-hierarchical schemes correctly.
      */
     readonly attribute ACString baseDomain;
-
-    const short APP_STATUS_NOT_INSTALLED = 0;
-    const short APP_STATUS_INSTALLED     = 1;
-    const short APP_STATUS_PRIVILEGED    = 2;
-    const short APP_STATUS_CERTIFIED     = 3;
-
-    /**
-     * Gets the principal's app status, which indicates whether the principal
-     * corresponds to "app code", and if it does, how privileged that code is.
-     * This method returns one of the APP_STATUS constants above.
-     *
-     * Note that a principal may have
-     *
-     *   appId != nsIScriptSecurityManager::NO_APP_ID &&
-     *   appId != nsIScriptSecurityManager::UNKNOWN_APP_ID
-     *
-     * and still have appStatus == APP_STATUS_NOT_INSTALLED.  That's because
-     * appId identifies the app that contains this principal, but a window
-     * might be contained in an app and not be running code that the app has
-     * vouched for.  For example, the window might be inside an <iframe
-     * mozbrowser>, or the window's origin might not match the app's origin.
-     *
-     * If you're doing a check to determine "does this principal correspond to
-     * app code?", you must check appStatus; checking appId != NO_APP_ID is not
-     * sufficient.
-     */
-    [infallible] readonly attribute unsigned short appStatus;
 
     /**
      * Gets the id of the app this principal is inside.  If this principal is
@@ -292,9 +281,6 @@ interface nsIPrincipal : nsISerializable
      * inside an app frame; in this case, the content inside the iframe should
      * not have any of the app's permissions, even if the iframe is at the same
      * origin as the app.
-     *
-     * If you're doing a security check based on appId, you must check
-     * appStatus as well.
      */
     [infallible] readonly attribute unsigned long appId;
 
@@ -302,6 +288,8 @@ interface nsIPrincipal : nsISerializable
      * Gets the ID of the add-on this principal belongs to.
      */
     readonly attribute AString addonId;
+
+    readonly attribute nsISupports addonPolicy;
 
     /**
      * Gets the id of the user context this principal is inside.  If this
@@ -327,13 +315,6 @@ interface nsIPrincipal : nsISerializable
     [infallible] readonly attribute boolean isInIsolatedMozBrowserElement;
 
     /**
-     * Returns true if this principal has an unknown appId. This shouldn't
-     * generally be used. We only expose it due to not providing the correct
-     * appId everywhere where we construct principals.
-     */
-    [infallible] readonly attribute boolean unknownAppId;
-
-    /**
      * Returns true iff this is a null principal (corresponding to an
      * unknown, hence assumed minimally privileged, security context).
      */
@@ -350,18 +331,33 @@ interface nsIPrincipal : nsISerializable
     [infallible] readonly attribute boolean isExpandedPrincipal;
 
     /**
-     * Returns true iff this is the system principal.
+     * Returns true iff this is the system principal.  C++ callers should use
+     * IsSystemPrincipal() instead of this scriptable accessor.
      */
-    [infallible] readonly attribute boolean isSystemPrincipal;
+    readonly attribute boolean isSystemPrincipal;
+
+    /**
+     * Faster and nicer version callable from C++.  Callers must include
+     * BasePrincipal.h, where it's implemented.
+     */
+    %{C++
+      inline bool IsSystemPrincipal() const;
+    %}
+
+    /**
+     * Returns true iff the principal is either an addon principal or
+     * an expanded principal, which contains at least one addon principal.
+     */
+    [infallible] readonly attribute boolean isAddonOrExpandedAddonPrincipal;
 };
 
 /**
- * If nsSystemPrincipal is too risky to use, but we want a principal to access
- * more than one origin, nsExpandedPrincipals letting us define an array of
- * principals it subsumes. So script with an nsExpandedPrincipals will gain
+ * If SystemPrincipal is too risky to use, but we want a principal to access
+ * more than one origin, ExpandedPrincipals letting us define an array of
+ * principals it subsumes. So script with an ExpandedPrincipals will gain
  * same origin access when at least one of its principals it contains gained
- * sameorigin acccess. An nsExpandedPrincipal will be subsumed by the system
- * principal, and by another nsExpandedPrincipal that has all its principals.
+ * sameorigin acccess. An ExpandedPrincipal will be subsumed by the system
+ * principal, and by another ExpandedPrincipal that has all its principals.
  * It is added for jetpack content-scripts to let them interact with the
  * content and a well defined set of other domains, without the risk of
  * leaking out a system principal to the content. See: Bug 734891
@@ -371,8 +367,15 @@ interface nsIExpandedPrincipal : nsISupports
 {
   /**
    * An array of principals that the expanded principal subsumes.
+   *
+   * When an expanded principal is used as a triggering principal for a
+   * request that inherits a security context, one of its constitutent
+   * principals is inherited rather than the expanded principal itself. The
+   * last principal in the allowlist is the default principal to inherit.
+   *
    * Note: this list is not reference counted, it is shared, so
    * should not be changed and should only be used ephemerally.
    */
-  [noscript] readonly attribute PrincipalArray whiteList;
+  [noscript, notxpcom, nostdcall]
+  PrincipalArray AllowList();
 };

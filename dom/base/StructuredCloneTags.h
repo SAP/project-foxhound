@@ -60,16 +60,22 @@ enum StructuredCloneTags {
   // This tag is used by both main thread and workers.
   SCTAG_DOM_URLSEARCHPARAMS,
 
+  SCTAG_DOM_INPUTSTREAM,
+
+  SCTAG_DOM_STRUCTURED_CLONE_HOLDER,
+
   // When adding a new tag for IDB, please don't add it to the end of the list!
   // Tags that are supported by IDB must not ever change. See the static assert
   // in IDBObjectStore.cpp, method CommonStructuredCloneReadCallback.
   // Adding to the end of the list would make removing of other tags harder in
   // future.
 
-  SCTAG_DOM_MAX
+  SCTAG_DOM_MAX,
+
+  SCTAG_DOM_STRUCTURED_CLONE_TESTER
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // StructuredCloneTags_h__
+#endif  // StructuredCloneTags_h__

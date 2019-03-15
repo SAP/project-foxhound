@@ -4,18 +4,23 @@
 
 "use strict";
 
-const { PropTypes } = require("devtools/client/shared/vendor/react");
+const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const { createEnum } = require("devtools/client/shared/enum");
 
 // React PropTypes are used to describe the expected "shape" of various common
 // objects that get passed down as props to components.
 
-/* GLOBAL */
+/* ENUMS */
 
 /**
- * The location of the document displayed in the viewport(s).
+ * An enum containing the possible states for loadable things.
  */
-exports.location = PropTypes.string;
+exports.loadableState = createEnum([
+  "INITIALIZED",
+  "LOADING",
+  "LOADED",
+  "ERROR",
+]);
 
 /* DEVICE */
 
@@ -51,16 +56,6 @@ const device = {
 };
 
 /**
- * An enum containing the possible values for the device list state
- */
-exports.deviceListState = createEnum([
-  "INITIALIZED",
-  "LOADING",
-  "LOADED",
-  "ERROR",
-]);
-
-/**
  * A list of devices and their types that can be displayed in the viewport.
  */
 exports.devices = {
@@ -93,7 +88,7 @@ exports.devices = {
   modalOpenedFromViewport: PropTypes.number,
 
   // Device list state, possible values are exported above in an enum
-  listState: PropTypes.oneOf(Object.keys(exports.deviceListState)),
+  listState: PropTypes.oneOf(Object.keys(exports.loadableState)),
 
 };
 
@@ -109,26 +104,6 @@ exports.networkThrottling = {
 
   // Name of the selected throttling profile
   profile: PropTypes.string,
-
-};
-
-/**
- * Device pixel ratio for a given viewport.
- */
-const pixelRatio = exports.pixelRatio = {
-
-  // The device pixel ratio value
-  value: PropTypes.number,
-
-};
-
-/**
- * Touch simulation state for a given viewport.
- */
-exports.touchSimulation = {
-
-  // Whether or not touch simulation is enabled
-  enabled: PropTypes.bool,
 
 };
 
@@ -152,8 +127,12 @@ exports.viewport = {
   // The height of the viewport
   height: PropTypes.number,
 
-  // The devicePixelRatio of the viewport
-  pixelRatio: PropTypes.shape(pixelRatio),
+  // The device pixel ratio of the viewport
+  pixelRatio: PropTypes.number,
+
+  // The user context (container) ID for the viewport
+  // Defaults to 0 meaning the default context
+  userContextId: PropTypes.number,
 
 };
 

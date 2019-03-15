@@ -5,16 +5,9 @@
 
 "use strict";
 
-var Cu = Components.utils;
-var Ci = Components.interfaces;
-var Cc = Components.classes;
-
-var {require, loader} = Cu.import("resource://devtools/shared/Loader.jsm", {});
+var {require} = ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
 const {colorUtils} = require("devtools/shared/css/color");
-
-loader.lazyGetter(this, "DOMUtils", function () {
-  return Cc["@mozilla.org/inspector/dom-utils;1"].getService(Ci.inIDOMUtils);
-});
+const InspectorUtils = require("InspectorUtils");
 
 const OLD_STYLE_TESTS = [
   "rgb(255,0,192)",
@@ -41,21 +34,22 @@ const CSS_COLOR_4_TESTS = [
 ];
 
 function run_test() {
-  for (let test of OLD_STYLE_TESTS) {
-    let ours = colorUtils.colorToRGBA(test, false);
-    let platform = DOMUtils.colorToRGBA(test);
-    deepEqual(ours, platform, "color " + test + " matches DOMUtils");
+  for (const test of OLD_STYLE_TESTS) {
+    const ours = colorUtils.colorToRGBA(test, false);
+    const platform = InspectorUtils.colorToRGBA(test);
+    deepEqual(ours, platform, "color " + test + " matches InspectorUtils");
     ok(ours !== null, "'" + test + "' is a color");
   }
 
-  for (let test of CSS_COLOR_4_TESTS) {
-    let oursOld = colorUtils.colorToRGBA(test, false);
-    let oursNew = colorUtils.colorToRGBA(test, true);
-    let platform = DOMUtils.colorToRGBA(test);
+  for (const test of CSS_COLOR_4_TESTS) {
+    const oursOld = colorUtils.colorToRGBA(test, false);
+    const oursNew = colorUtils.colorToRGBA(test, true);
+    const platform = InspectorUtils.colorToRGBA(test);
     notEqual(oursOld, platform, "old style parser for color " + test +
-             " should not match DOMUtils");
+             " should not match InspectorUtils");
     ok(oursOld === null, "'" + test + "' is not a color with old parser");
-    deepEqual(oursNew, platform, `css-color-4 parser for color ${test} matches DOMUtils`);
+    deepEqual(oursNew, platform,
+              `css-color-4 parser for color ${test} matches InspectorUtils`);
     ok(oursNew !== null, "'" + test + "' is a color with css-color-4 parser");
   }
 }

@@ -13,13 +13,16 @@ DIRS += [
 if not CONFIG['MOZ_SYSTEM_JPEG']:
     external_dirs += ['media/libjpeg']
 
-if CONFIG['MOZ_UPDATER']:
-    if not CONFIG['MOZ_SYSTEM_BZ2']:
-        external_dirs += ['modules/libbz2']
+if CONFIG['MOZ_LIBPRIO']:
+    DIRS += [
+        'prio',
+    ]
 
 # There's no "native" brotli or woff2 yet, but probably in the future...
 external_dirs += ['modules/brotli']
 external_dirs += ['modules/woff2']
+
+external_dirs += ['modules/xz-embedded']
 
 if CONFIG['MOZ_VORBIS']:
     external_dirs += ['media/libvorbis']
@@ -33,17 +36,18 @@ if CONFIG['MOZ_WEBM_ENCODER']:
 if not CONFIG['MOZ_SYSTEM_LIBVPX']:
     external_dirs += ['media/libvpx']
 
+if CONFIG['MOZ_AV1']:
+    external_dirs += ['media/libaom']
+    external_dirs += ['media/libdav1d']
+
 if not CONFIG['MOZ_SYSTEM_PNG']:
     external_dirs += ['media/libpng']
 
-if CONFIG['CPU_ARCH'] == 'arm':
-    external_dirs += ['media/openmax_dl']
+if not CONFIG['MOZ_SYSTEM_WEBP']:
+    external_dirs += ['media/libwebp']
 
-if CONFIG['MOZ_WEBSPEECH_POCKETSPHINX']:
-    external_dirs += [
-        'media/sphinxbase',
-        'media/pocketsphinx',
-    ]
+if CONFIG['CPU_ARCH'] == 'arm':
+    external_dirs += ['media/openmax_dl/dl']
 
 if CONFIG['MOZ_FFVPX']:
     external_dirs += ['media/ffvpx']
@@ -56,12 +60,9 @@ external_dirs += [
     'media/libopus',
     'media/libtheora',
     'media/libspeex_resampler',
-    'media/libstagefright',
     'media/libsoundtouch',
+    'media/mp4parse-rust',
     'media/psshparser'
 ]
-
-if CONFIG['MOZ_LINKER']:
-    external_dirs += ['modules/xz-embedded']
 
 DIRS += ['../../' + i for i in external_dirs]

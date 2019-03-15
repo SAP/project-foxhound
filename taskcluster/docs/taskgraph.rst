@@ -1,6 +1,6 @@
-======================
-TaskGraph Mach Command
-======================
+========
+Overview
+========
 
 The task graph is built by linking different kinds of tasks together, pruning
 out tasks that are not required, then optimizing by replacing subgraphs with
@@ -9,11 +9,10 @@ links to already-completed tasks.
 Concepts
 --------
 
-* *Task Kind* - Tasks are grouped by kind, where tasks of the same kind do not
-  have interdependencies but have substantial similarities, and may depend on
-  tasks of other kinds.  Kinds are the primary means of supporting diversity,
-  in that a developer can add a new kind to do just about anything without
-  impacting other kinds.
+* *Task Kind* - Tasks are grouped by kind, where tasks of the same kind
+  have substantial similarities or share common processing logic. Kinds
+  are the primary means of supporting diversity, in that a developer can
+  add a new kind to do just about anything without impacting other kinds.
 
 * *Task Attributes* - Tasks have string attributes by which can be used for
   filtering.  Attributes are documented in :doc:`attributes`.
@@ -54,7 +53,7 @@ The full list of pre-defined keys in this file is:
 
 Any other keys are subject to interpretation by the kind implementation.
 
-The result is a nice segmentation of implementation so that the more esoteric
+The result is a segmentation of implementation so that the more esoteric
 in-tree projects can do their crazy stuff in an isolated kind without making
 the bread-and-butter build and test configuration more complicated.
 
@@ -96,10 +95,14 @@ Graph generation, as run via ``mach taskgraph decision``, proceeds as follows:
 #. Based on the full task graph, calculate the transitive closure of the target
    task set.  That is, the target tasks and all requirements of those tasks.
    The result is the "target task graph".
-#. Optimize the target task graph based on kind-specific optimization methods.
+#. Optimize the target task graph using task-specific optimization methods.
    The result is the "optimized task graph" with fewer nodes than the target
-   task graph.
-#. Create tasks for all tasks in the optimized task graph.
+   task graph.  See :doc:`optimization`.
+#. Morph the graph. Morphs are like syntactic sugar: they keep the same meaning,
+   but express it in a lower-level way. These generally work around limitations
+   in the TaskCluster platform, such as number of dependencies or routes in
+   a task.
+#. Create tasks for all tasks in the morphed task graph.
 
 Transitive Closure
 ..................
@@ -123,32 +126,6 @@ complete.
 And as you can see, the graph we've built now includes everything we wanted
 (the test jobs) plus everything required to do that (docker images, builds).
 
-Optimization
-------------
-
-The objective of optimization to remove as many tasks from the graph as
-possible, as efficiently as possible, thereby delivering useful results as
-quickly as possible.  For example, ideally if only a test script is modified in
-a push, then the resulting graph contains only the corresponding test suite
-task.
-
-A task is said to be "optimized" when it is either replaced with an equivalent,
-already-existing task, or dropped from the graph entirely.
-
-A task can be optimized if all of its dependencies can be optimized and none of
-its inputs have changed.  For a task on which no other tasks depend (a "leaf
-task"), the optimizer can determine what has changed by looking at the
-version-control history of the push: if the relevant files are not modified in
-the push, then it considers the inputs unchanged.  For tasks on which other
-tasks depend ("non-leaf tasks"), the optimizer must replace the task with
-another, equivalent task, so it generates a hash of all of the inputs and uses
-that to search for a matching, existing task.
-
-In some cases, such as try pushes, tasks in the target task set have been
-explicitly requested and are thus excluded from optimization. In other cases,
-the target task set is almost the entire task graph, so targetted tasks are
-considered for optimization.  This behavior is controlled with the
-``optimize_target_tasks`` parameter.
 
 Action Tasks
 ------------
@@ -160,7 +137,7 @@ Action Tasks are tasks which help you to schedule new jobs via Treeherder's
 task ID of the push and a comma separated list of task labels which need to be
 scheduled.
 
-This task invokes ``mach taskgraph action-task`` which builds up a task graph of
+This task invokes ``mach taskgraph action-callback`` which builds up a task graph of
 the requested tasks. This graph is optimized using the tasks running initially in
 the same push, due to the decision task.
 
@@ -168,39 +145,16 @@ So for instance, if you had already requested a build task in the ``try`` comman
 and you wish to add a test which depends on this build, the original build task
 is re-used.
 
-Action Tasks are currently scheduled by
-[pulse_actions](https://github.com/mozilla/pulse_actions). This feature is only
-present on ``try`` pushes for now.
 
-Mach commands
+Runnable jobs
 -------------
+As part of the execution of the Gecko decision task we generate a
+``public/runnable-jobs.json.gz`` file. It contains a subset of all the data
+contained within the ``full-task-graph.json``.
 
-A number of mach subcommands are available aside from ``mach taskgraph
-decision`` to make this complex system more accesssible to those trying to
-understand or modify it.  They allow you to run portions of the
-graph-generation process and output the results.
+This file has the minimum amount of data needed by Treeherder to show all
+tasks that can be scheduled on a push.
 
-``mach taskgraph tasks``
-   Get the full task set
-
-``mach taskgraph full``
-   Get the full task graph
-
-``mach taskgraph target``
-   Get the target task set
-
-``mach taskgraph target-graph``
-   Get the target task graph
-
-``mach taskgraph optimized``
-   Get the optimized task graph
-
-Each of these commands taskes a ``--parameters`` option giving a file with
-parameters to guide the graph generation.  The decision task helpfully produces
-such a file on every run, and that is generally the easiest way to get a
-parameter file.  The parameter keys and values are described in
-:doc:`parameters`; using that information, you may modify an existing
-``parameters.yml`` or create your own.
 
 Task Parameterization
 ---------------------
@@ -212,7 +166,7 @@ using simple parameterized values, as follows:
 ``{"relative-datestamp": "certain number of seconds/hours/days/years"}``
     Objects of this form will be replaced with an offset from the current time
     just before the ``queue.createTask`` call is made.  For example, an
-    artifact expiration might be specified as ``{"relative-timestamp": "1
+    artifact expiration might be specified as ``{"relative-datestamp": "1
     year"}``.
 
 ``{"task-reference": "string containing <dep-name>"}``
@@ -222,55 +176,33 @@ using simple parameterized values, as follows:
     Multiple labels may be substituted in a single string, and ``<<>`` can be
     used to escape a literal ``<``.
 
-Taskgraph JSON Format
----------------------
+``{"artifact-reference": "..<dep-name/artifact/name>.."}``
+    Similar to a ``task-reference``, but this substitutes a URL to the queue's
+    ``getLatestArtifact`` API method (for which a GET will redirect to the
+    artifact itself).
 
-Task graphs -- both the graph artifacts produced by the decision task and those
-output by the ``--json`` option to the ``mach taskgraph`` commands -- are JSON
-objects, keyed by label, or for optimized task graphs, by taskId.  For
-convenience, the decision task also writes out ``label-to-taskid.json``
-containing a mapping from label to taskId.  Each task in the graph is
-represented as a JSON object.
+.. _taskgraph-graph-config:
 
-Each task has the following properties:
+Graph Configuration
+-------------------
 
-``task_id``
-   The task's taskId (only for optimized task graphs)
+There are several configuration settings that are pertain to the entire
+taskgraph. These are specified in :file:`config.yml` at the root of the
+taskgraph configuration (typically :file:`taskcluster/ci/`). The available
+settings are documented inline in `taskcluster/taskgraph/config.py
+<https://dxr.mozilla.org/mozilla-central/source/taskcluster/taskgraph/config.py>`_.
 
-``label``
-   The task's label
+.. _taskgraph-trust-domain:
 
-``attributes``
-   The task's attributes
+Trust Domain
+------------
 
-``dependencies``
-   The task's in-graph dependencies, represented as an object mapping
-   dependency name to label (or to taskId for optimized task graphs)
-
-``task``
-   The task's TaskCluster task definition.
-
-``kind_implementation``
-   The module and the class name which was used to implement this particular task.
-   It is always of the form ``<module-path>:<object-path>``
-
-The results from each command are in the same format, but with some differences
-in the content:
-
-* The ``tasks`` and ``target`` subcommands both return graphs with no edges.
-  That is, just collections of tasks without any dependencies indicated.
-
-* The ``optimized`` subcommand returns tasks that have been assigned taskIds.
-  The dependencies array, too, contains taskIds instead of labels, with
-  dependencies on optimized tasks omitted.  However, the ``task.dependencies``
-  array is populated with the full list of dependency taskIds.  All task
-  references are resolved in the optimized graph.
-
-The output of the ``mach taskgraph`` commands are suitable for processing with
-the `jq <https://stedolan.github.io/jq/>`_ utility.  For example, to extract all
-tasks' labels and their dependencies:
-
-.. code-block:: shell
-
-    jq 'to_entries | map({label: .value.label, dependencies: .value.dependencies})'
-
+When publishing and signing releases, that tasks verify their definition and
+all upstream tasks come from a decision task based on a trusted tree. (see
+`chain-of-trust verification <https://scriptworker.readthedocs.io/en/latest/chain_of_trust.html>`_).
+Firefox and Thunderbird share the taskgraph code and in particular, they have
+separate taskgraph configurations and in particular distinct decision tasks.
+Although they use identical docker images and toolchains, in order to track the
+province of those artifacts when verifying the chain of trust, they use
+different index paths to cache those artifacts. The ``trust-domain`` graph
+configuration controls the base path for indexing these cached artifacts.

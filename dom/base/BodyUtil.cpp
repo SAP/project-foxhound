@@ -1,3 +1,5 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +9,7 @@
 #include "nsError.h"
 #include "nsString.h"
 #include "nsIGlobalObject.h"
-#include "nsIUnicodeDecoder.h"
+#include "mozilla/Encoding.h"
 
 #include "nsCharSeparatedTokenizer.h"
 #include "nsDOMString.h"
@@ -16,8 +18,8 @@
 #include "nsStreamUtils.h"
 #include "nsStringStream.h"
 
+#include "js/JSON.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/dom/EncodingUtils.h"
 #include "mozilla/dom/Exceptions.h"
 #include "mozilla/dom/FetchUtil.h"
 #include "mozilla/dom/File.h"
@@ -31,60 +33,11 @@ namespace dom {
 
 namespace {
 
-class StreamDecoder final
-{
-  nsCOMPtr<nsIUnicodeDecoder> mDecoder;
-  nsString mDecoded;
-
-public:
-  StreamDecoder()
-    : mDecoder(EncodingUtils::DecoderForEncoding("UTF-8"))
-  {
-    MOZ_ASSERT(mDecoder);
-  }
-
-  nsresult
-  AppendText(const char* aSrcBuffer, uint32_t aSrcBufferLen)
-  {
-    int32_t destBufferLen;
-    nsresult rv =
-      mDecoder->GetMaxLength(aSrcBuffer, aSrcBufferLen, &destBufferLen);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-
-    if (!mDecoded.SetCapacity(mDecoded.Length() + destBufferLen, fallible)) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
-
-    char16_t* destBuffer = mDecoded.BeginWriting() + mDecoded.Length();
-    int32_t totalChars = mDecoded.Length();
-
-    int32_t srcLen = (int32_t) aSrcBufferLen;
-    int32_t outLen = destBufferLen;
-    rv = mDecoder->Convert(aSrcBuffer, &srcLen, destBuffer, &outLen);
-    MOZ_ASSERT(NS_SUCCEEDED(rv));
-
-    totalChars += outLen;
-    mDecoded.SetLength(totalChars);
-
-    return NS_OK;
-  }
-
-  nsString&
-  GetText()
-  {
-    return mDecoded;
-  }
-};
-
 // Reads over a CRLF and positions start after it.
-static bool
-PushOverLine(nsACString::const_iterator& aStart,
-	     const nsACString::const_iterator& aEnd)
-{
+static bool PushOverLine(nsACString::const_iterator& aStart,
+                         const nsACString::const_iterator& aEnd) {
   if (*aStart == nsCRT::CR && (aEnd - aStart > 1) && *(++aStart) == nsCRT::LF) {
-    ++aStart; // advance to after CRLF
+    ++aStart;  // advance to after CRLF
     return true;
   }
 
@@ -92,25 +45,21 @@ PushOverLine(nsACString::const_iterator& aStart,
 }
 
 class MOZ_STACK_CLASS FillFormIterator final
-  : public URLSearchParams::ForEachIterator
-{
-public:
-  explicit FillFormIterator(FormData* aFormData)
-    : mFormData(aFormData)
-  {
+    : public URLParams::ForEachIterator {
+ public:
+  explicit FillFormIterator(FormData* aFormData) : mFormData(aFormData) {
     MOZ_ASSERT(aFormData);
   }
 
-  bool URLParamsIterator(const nsString& aName,
-                         const nsString& aValue) override
-  {
+  bool URLParamsIterator(const nsAString& aName,
+                         const nsAString& aValue) override {
     ErrorResult rv;
     mFormData->Append(aName, aValue, rv);
     MOZ_ASSERT(!rv.Failed());
     return true;
   }
 
-private:
+ private:
   FormData* mFormData;
 };
 
@@ -133,9 +82,8 @@ private:
  * friends to figure out if Fetch ends up copying big blobs to see if this is
  * worth optimizing.
  */
-class MOZ_STACK_CLASS FormDataParser
-{
-private:
+class MOZ_STACK_CLASS FormDataParser {
+ private:
   RefPtr<FormData> mFormData;
   nsCString mMimeType;
   nsCString mData;
@@ -145,8 +93,7 @@ private:
   nsCString mFilename;
   nsCString mContentType;
 
-  enum
-  {
+  enum {
     START_PART,
     PARSE_HEADER,
     PARSE_BODY,
@@ -156,11 +103,9 @@ private:
 
   // Reads over a boundary and sets start to the position after the end of the
   // boundary. Returns false if no boundary is found immediately.
-  bool
-  PushOverBoundary(const nsACString& aBoundaryString,
-                   nsACString::const_iterator& aStart,
-                   nsACString::const_iterator& aEnd)
-  {
+  bool PushOverBoundary(const nsACString& aBoundaryString,
+                        nsACString::const_iterator& aStart,
+                        nsACString::const_iterator& aEnd) {
     // We copy the end iterator to keep the original pointing to the real end
     // of the string.
     nsACString::const_iterator end(aEnd);
@@ -184,14 +129,10 @@ private:
     return false;
   }
 
-  bool
-  ParseHeader(nsACString::const_iterator& aStart,
-              nsACString::const_iterator& aEnd,
-              bool* aWasEmptyHeader)
-  {
+  bool ParseHeader(nsACString::const_iterator& aStart,
+                   nsACString::const_iterator& aEnd, bool* aWasEmptyHeader) {
     nsAutoCString headerName, headerValue;
-    if (!FetchUtil::ExtractHeader(aStart, aEnd,
-                                  headerName, headerValue,
+    if (!FetchUtil::ExtractHeader(aStart, aEnd, headerName, headerValue,
                                   aWasEmptyHeader)) {
       return false;
     }
@@ -243,11 +184,9 @@ private:
   // CRLF is part of the boundary and not the body, but any prior CRLFs are
   // part of the body. This will position the iterator at the beginning of the
   // boundary (after the CRLF).
-  bool
-  ParseBody(const nsACString& aBoundaryString,
-            nsACString::const_iterator& aStart,
-            nsACString::const_iterator& aEnd)
-  {
+  bool ParseBody(const nsACString& aBoundaryString,
+                 nsACString::const_iterator& aStart,
+                 nsACString::const_iterator& aEnd) {
     const char* beginning = aStart.get();
 
     // Find the boundary marking the end of the body.
@@ -269,7 +208,7 @@ private:
     aStart.advance(-2);
 
     // Skip optional hyphens.
-    if (*aStart == '-' && *(aStart.get()+1) == '-') {
+    if (*aStart == '-' && *(aStart.get() + 1) == '-') {
       if (aStart.get() - beginning < 2) {
         return false;
       }
@@ -277,7 +216,7 @@ private:
       aStart.advance(-2);
     }
 
-    if (*aStart != nsCRT::CR || *(aStart.get()+1) != nsCRT::LF) {
+    if (*aStart != nsCRT::CR || *(aStart.get() + 1) != nsCRT::LF) {
       return false;
     }
 
@@ -303,24 +242,19 @@ private:
       // going to free it. We also need fallible alloc, so we can't just use
       // ToNewCString().
       char* copy = static_cast<char*>(moz_xmalloc(body.Length()));
-      if (!copy) {
-        NS_WARNING("Failed to copy File entry body.");
-        return false;
-      }
       nsCString::const_iterator bodyIter, bodyEnd;
       body.BeginReading(bodyIter);
       body.EndReading(bodyEnd);
-      char *p = copy;
+      char* p = copy;
       while (bodyIter != bodyEnd) {
         *p++ = *bodyIter++;
       }
       p = nullptr;
 
-      RefPtr<Blob> file =
-        File::CreateMemoryFile(mParentObject,
-                               reinterpret_cast<void *>(copy), body.Length(),
-                               NS_ConvertUTF8toUTF16(mFilename),
-                               NS_ConvertUTF8toUTF16(mContentType), /* aLastModifiedDate */ 0);
+      RefPtr<Blob> file = File::CreateMemoryFile(
+          mParentObject, reinterpret_cast<void*>(copy), body.Length(),
+          NS_ConvertUTF8toUTF16(mFilename), NS_ConvertUTF8toUTF16(mContentType),
+          /* aLastModifiedDate */ 0);
       Optional<nsAString> dummy;
       ErrorResult rv;
       mFormData->Append(name, *file, dummy, rv);
@@ -333,15 +267,19 @@ private:
     return true;
   }
 
-public:
-  FormDataParser(const nsACString& aMimeType, const nsACString& aData, nsIGlobalObject* aParent)
-    : mMimeType(aMimeType), mData(aData), mState(START_PART), mParentObject(aParent)
-  {
-  }
+ public:
+  FormDataParser(const nsACString& aMimeType, const nsACString& aData,
+                 nsIGlobalObject* aParent)
+      : mMimeType(aMimeType),
+        mData(aData),
+        mState(START_PART),
+        mParentObject(aParent) {}
 
-  bool
-  Parse()
-  {
+  bool Parse() {
+    if (mData.IsEmpty()) {
+      return false;
+    }
+
     // Determine boundary from mimetype.
     const char* boundaryId = nullptr;
     boundaryId = strstr(mMimeType.BeginWriting(), "boundary");
@@ -357,7 +295,7 @@ public:
     // Skip over '='.
     boundaryId++;
 
-    char *attrib = (char *) strchr(boundaryId, ';');
+    char* attrib = (char*)strchr(boundaryId, ';');
     if (attrib) *attrib = '\0';
 
     nsAutoCString boundaryString(boundaryId);
@@ -376,7 +314,7 @@ public:
     mData.EndReading(end);
 
     while (start != end) {
-      switch(mState) {
+      switch (mState) {
         case START_PART:
           mName.SetIsVoid(true);
           mFilename.SetIsVoid(true);
@@ -416,8 +354,9 @@ public:
 
         case PARSE_BODY:
           if (mName.IsVoid()) {
-            NS_WARNING("No content-disposition header with a valid name was "
-                       "found. Failing at body parse.");
+            NS_WARNING(
+                "No content-disposition header with a valid name was "
+                "found. Failing at body parse.");
             return false;
           }
 
@@ -433,27 +372,22 @@ public:
       }
     }
 
-    NS_NOTREACHED("Should never reach here.");
+    MOZ_ASSERT_UNREACHABLE("Should never reach here.");
     return false;
   }
 
-  already_AddRefed<FormData> GetFormData()
-  {
-    return mFormData.forget();
-  }
+  already_AddRefed<FormData> GetFormData() { return mFormData.forget(); }
 };
-}
+}  // namespace
 
 // static
-void
-BodyUtil::ConsumeArrayBuffer(JSContext* aCx,
-                              JS::MutableHandle<JSObject*> aValue,
-                              uint32_t aInputLength, uint8_t* aInput,
-                              ErrorResult& aRv)
-{
+void BodyUtil::ConsumeArrayBuffer(JSContext* aCx,
+                                  JS::MutableHandle<JSObject*> aValue,
+                                  uint32_t aInputLength, uint8_t* aInput,
+                                  ErrorResult& aRv) {
   JS::Rooted<JSObject*> arrayBuffer(aCx);
   arrayBuffer = JS_NewArrayBufferWithContents(aCx, aInputLength,
-    reinterpret_cast<void *>(aInput));
+                                              reinterpret_cast<void*>(aInput));
   if (!arrayBuffer) {
     JS_ClearPendingException(aCx);
     aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
@@ -463,15 +397,13 @@ BodyUtil::ConsumeArrayBuffer(JSContext* aCx,
 }
 
 // static
-already_AddRefed<Blob>
-BodyUtil::ConsumeBlob(nsISupports* aParent, const nsString& aMimeType,
-                       uint32_t aInputLength, uint8_t* aInput,
-                       ErrorResult& aRv)
-{
-  RefPtr<Blob> blob =
-    Blob::CreateMemoryBlob(aParent,
-                           reinterpret_cast<void *>(aInput), aInputLength,
-                           aMimeType);
+already_AddRefed<Blob> BodyUtil::ConsumeBlob(nsISupports* aParent,
+                                             const nsString& aMimeType,
+                                             uint32_t aInputLength,
+                                             uint8_t* aInput,
+                                             ErrorResult& aRv) {
+  RefPtr<Blob> blob = Blob::CreateMemoryBlob(
+      aParent, reinterpret_cast<void*>(aInput), aInputLength, aMimeType);
 
   if (!blob) {
     aRv.Throw(NS_ERROR_DOM_UNKNOWN_ERR);
@@ -481,17 +413,18 @@ BodyUtil::ConsumeBlob(nsISupports* aParent, const nsString& aMimeType,
 }
 
 // static
-already_AddRefed<FormData>
-BodyUtil::ConsumeFormData(nsIGlobalObject* aParent, const nsCString& aMimeType,
-                           const nsCString& aStr, ErrorResult& aRv)
-{
+already_AddRefed<FormData> BodyUtil::ConsumeFormData(nsIGlobalObject* aParent,
+                                                     const nsCString& aMimeType,
+                                                     const nsCString& aStr,
+                                                     ErrorResult& aRv) {
   NS_NAMED_LITERAL_CSTRING(formDataMimeType, "multipart/form-data");
 
-  // Allow semicolon separated boundary/encoding suffix like multipart/form-data; boundary=
-  // but disallow multipart/form-datafoobar.
+  // Allow semicolon separated boundary/encoding suffix like
+  // multipart/form-data; boundary= but disallow multipart/form-datafoobar.
   bool isValidFormDataMimeType = StringBeginsWith(aMimeType, formDataMimeType);
 
-  if (isValidFormDataMimeType && aMimeType.Length() > formDataMimeType.Length()) {
+  if (isValidFormDataMimeType &&
+      aMimeType.Length() > formDataMimeType.Length()) {
     isValidFormDataMimeType = aMimeType[formDataMimeType.Length()] == ';';
   }
 
@@ -507,20 +440,19 @@ BodyUtil::ConsumeFormData(nsIGlobalObject* aParent, const nsCString& aMimeType,
     return fd.forget();
   }
 
-  NS_NAMED_LITERAL_CSTRING(urlDataMimeType, "application/x-www-form-urlencoded");
+  NS_NAMED_LITERAL_CSTRING(urlDataMimeType,
+                           "application/x-www-form-urlencoded");
   bool isValidUrlEncodedMimeType = StringBeginsWith(aMimeType, urlDataMimeType);
 
-  if (isValidUrlEncodedMimeType && aMimeType.Length() > urlDataMimeType.Length()) {
+  if (isValidUrlEncodedMimeType &&
+      aMimeType.Length() > urlDataMimeType.Length()) {
     isValidUrlEncodedMimeType = aMimeType[urlDataMimeType.Length()] == ';';
   }
 
   if (isValidUrlEncodedMimeType) {
-    URLParams params;
-    params.ParseInput(aStr);
-
     RefPtr<FormData> fd = new FormData(aParent);
     FillFormIterator iterator(fd);
-    DebugOnly<bool> status = params.ForEach(iterator);
+    DebugOnly<bool> status = URLParams::Parse(aStr, iterator);
     MOZ_ASSERT(status);
 
     return fd.forget();
@@ -531,25 +463,19 @@ BodyUtil::ConsumeFormData(nsIGlobalObject* aParent, const nsCString& aMimeType,
 }
 
 // static
-nsresult
-BodyUtil::ConsumeText(uint32_t aInputLength, uint8_t* aInput,
-                       nsString& aText)
-{
-  StreamDecoder decoder;
-  nsresult rv = decoder.AppendText(reinterpret_cast<char*>(aInput),
-                                   aInputLength);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
+nsresult BodyUtil::ConsumeText(uint32_t aInputLength, uint8_t* aInput,
+                               nsString& aText) {
+  nsresult rv = UTF_8_ENCODING->DecodeWithBOMRemoval(
+      MakeSpan(aInput, aInputLength), aText);
+  if (NS_FAILED(rv)) {
     return rv;
   }
-  aText = decoder.GetText();
   return NS_OK;
 }
 
 // static
-void
-BodyUtil::ConsumeJson(JSContext* aCx, JS::MutableHandle<JS::Value> aValue,
-                       const nsString& aStr, ErrorResult& aRv)
-{
+void BodyUtil::ConsumeJson(JSContext* aCx, JS::MutableHandle<JS::Value> aValue,
+                           const nsString& aStr, ErrorResult& aRv) {
   aRv.MightThrowJSException();
 
   JS::Rooted<JS::Value> json(aCx);
@@ -571,5 +497,5 @@ BodyUtil::ConsumeJson(JSContext* aCx, JS::MutableHandle<JS::Value> aValue,
   aValue.set(json);
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

@@ -8,6 +8,10 @@
 
 callback PromiseReturner = Promise<any>();
 
+[Pref="dom.expose_test_interfaces"]
+interface WrapperCachedNonISupportsTestInterface {
+};
+
 [Pref="dom.expose_test_interfaces",
  Constructor]
 interface TestFunctions {
@@ -38,4 +42,29 @@ interface TestFunctions {
   // DOMString argument on the C++ side and trying to hand it
   // stringbuffers.  If length not passed, use our full length.
   DOMString getStringDataAsDOMString(optional unsigned long length);
+
+  // Functions that just punch through to mozITestInterfaceJS.idl
+  [Throws]
+  void testThrowNsresult();
+  [Throws]
+  void testThrowNsresultFromNative();
+
+  // Throws an InvalidStateError to auto-create a rejected promise.
+  [Throws]
+  static Promise<any> throwToRejectPromise();
+
+  // Some attributes for the toJSON to work with.
+  readonly attribute long one;
+  [Func="mozilla::dom::TestFunctions::ObjectFromAboutBlank"]
+  readonly attribute long two;
+
+  // Testing for how default toJSON behaves.
+  [Default] object toJSON();
+
+  // This returns a wrappercached non-ISupports object. While this will always
+  // return the same object, no optimization attributes like [Pure] should be
+  // used here because the object should not be held alive from JS by the
+  // bindings. This is needed to test wrapper preservation for weak map keys.
+  // See bug 1351501.
+  readonly attribute WrapperCachedNonISupportsTestInterface wrapperCachedNonISupportsObject;
 };

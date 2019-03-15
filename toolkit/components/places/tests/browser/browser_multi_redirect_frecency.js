@@ -1,140 +1,147 @@
-const REDIRECT_URI = NetUtil.newURI("http://mochi.test:8888/tests/toolkit/components/places/tests/browser/redirect_thrice.sjs");
-const INTERMEDIATE_URI_1 = NetUtil.newURI("http://mochi.test:8888/tests/toolkit/components/places/tests/browser/redirect_twice_perma.sjs");
-const INTERMEDIATE_URI_2 = NetUtil.newURI("http://mochi.test:8888/tests/toolkit/components/places/tests/browser/redirect_once.sjs");
-const TARGET_URI = NetUtil.newURI("http://mochi.test:8888/tests/toolkit/components/places/tests/browser/final.html");
+/* Any copyright is dedicated to the Public Domain.
+ * http://creativecommons.org/publicdomain/zero/1.0/ */
+
+const ROOT_URI = "http://mochi.test:8888/tests/toolkit/components/places/tests/browser/";
+const REDIRECT_URI = Services.io.newURI(ROOT_URI + "redirect_thrice.sjs");
+const INTERMEDIATE_URI_1 = Services.io.newURI(ROOT_URI + "redirect_twice_perma.sjs");
+const INTERMEDIATE_URI_2 = Services.io.newURI(ROOT_URI + "redirect_once.sjs");
+const TARGET_URI = Services.io.newURI(ROOT_URI + "final.html");
 
 const REDIRECT_SOURCE_VISIT_BONUS =
   Services.prefs.getIntPref("places.frecency.redirectSourceVisitBonus");
-// const LINK_VISIT_BONUS =
-//   Services.prefs.getIntPref("places.frecency.linkVisitBonus");
-// const TYPED_VISIT_BONUS =
-//   Services.prefs.getIntPref("places.frecency.typedVisitBonus");
 const PERM_REDIRECT_VISIT_BONUS =
   Services.prefs.getIntPref("places.frecency.permRedirectVisitBonus");
+const TYPED_VISIT_BONUS =
+  Services.prefs.getIntPref("places.frecency.typedVisitBonus");
 
 // Ensure that decay frecency doesn't kick in during tests (as a result
 // of idle-daily).
 Services.prefs.setCharPref("places.frecency.decayRate", "1.0");
 
-registerCleanupFunction(function*() {
+registerCleanupFunction(async function() {
   Services.prefs.clearUserPref("places.frecency.decayRate");
-  yield PlacesTestUtils.clearHistory();
+  await PlacesUtils.history.clear();
 });
 
-function promiseVisitedURIObserver(redirectURI, targetURI, expectedTargetFrecency) {
-  // Create and add history observer.
-  return new Promise(resolve => {
-    let historyObserver = {
-      _redirectNotified: false,
-      onVisit(aURI, aVisitID, aTime, aSessionID, aReferringID,
-                       aTransitionType) {
-       info("Received onVisit: " + aURI.spec);
+async function check_uri(uri, frecency, hidden) {
+  is(await PlacesTestUtils.fieldInDB(uri, "frecency"), frecency,
+    "Frecency of the page is the expected one");
+  is(await PlacesTestUtils.fieldInDB(uri, "hidden"), hidden,
+    "Hidden value of the page is the expected one");
+}
 
-       if (aURI.equals(redirectURI)) {
-         this._redirectNotified = true;
-         // Wait for the target page notification.
-         return;
-       }
+async function waitVisitedNotifications() {
+  let redirectNotified = false;
+  await PlacesTestUtils.waitForNotification("page-visited", visits => {
+    is(visits.length, 1, "Was notified for the right number of visits.");
+    let {url} = visits[0];
+    info("Received 'page-visited': " + url);
+    if (url == REDIRECT_URI.spec) {
+      redirectNotified = true;
+    }
+    return url == TARGET_URI.spec;
+  }, "places");
+  return redirectNotified;
+}
 
-       if (!aURI.equals(targetURI)) {
-         return;
-       }
+let firstRedirectBonus = 0;
+let nextRedirectBonus = 0;
+let targetBonus = 0;
 
-       PlacesUtils.history.removeObserver(historyObserver);
+add_task(async function test_multiple_redirect() {
+  // The redirect source bonus overrides the link bonus.
+  let visitedPromise = waitVisitedNotifications();
+  await BrowserTestUtils.withNewTab({
+    gBrowser,
+    url: REDIRECT_URI.spec,
+  }, async function() {
+    info("Waiting for onVisits");
+    let redirectNotified = await visitedPromise;
+    ok(redirectNotified, "The redirect should have been notified");
 
-       ok(this._redirectNotified, "The redirect should have been notified");
-
-       resolve();
-      },
-      onBeginUpdateBatch() {},
-      onEndUpdateBatch() {},
-      onTitleChanged() {},
-      onDeleteURI() {},
-      onClearHistory() {},
-      onPageChanged() {},
-      onDeleteVisits() {},
-      QueryInterface: XPCOMUtils.generateQI([Ci.nsINavHistoryObserver])
-    };
-    PlacesUtils.history.addObserver(historyObserver, false);
+    firstRedirectBonus += REDIRECT_SOURCE_VISIT_BONUS;
+    await check_uri(REDIRECT_URI, firstRedirectBonus, 1);
+    nextRedirectBonus += REDIRECT_SOURCE_VISIT_BONUS;
+    await check_uri(INTERMEDIATE_URI_1, nextRedirectBonus, 1);
+    await check_uri(INTERMEDIATE_URI_2, nextRedirectBonus, 1);
+    // TODO Bug 487813 - This should be TYPED_VISIT_BONUS, however as we don't
+    // currently track redirects across multiple redirects, we fallback to the
+    // PERM_REDIRECT_VISIT_BONUS.
+    targetBonus += PERM_REDIRECT_VISIT_BONUS;
+    await check_uri(TARGET_URI, targetBonus, 0);
   });
-}
-
-function* testURIFields(url, expectedFrecency, expectedHidden) {
-  let frecency = yield promiseFieldForUrl(url, "frecency");
-  is(frecency, expectedFrecency,
-     `Frecency of the page is the expected one (${url.spec})`);
-
-  let hidden = yield promiseFieldForUrl(url, "hidden");
-  is(hidden, expectedHidden, `The redirecting page should be hidden (${url.spec})`);
-}
-
-let expectedRedirectSourceFrecency = 0;
-let expectedTargetFrecency = 0;
-
-add_task(function* test_multiple_redirect() {
-  // Used to verify the redirect bonus overrides the typed bonus.
-  PlacesUtils.history.markPageAsTyped(REDIRECT_URI);
-
-  expectedRedirectSourceFrecency += REDIRECT_SOURCE_VISIT_BONUS;
-  // TODO Bug 487813 - This should be TYPED_VISIT_BONUS, however as we don't
-  // currently track redirects across multiple redirects, we fallback to the
-  // PERM_REDIRECT_VISIT_BONUS.
-  expectedTargetFrecency += PERM_REDIRECT_VISIT_BONUS;
-
-  let visitedURIPromise = promiseVisitedURIObserver(REDIRECT_URI, TARGET_URI, expectedTargetFrecency);
-
-  let newTabPromise = BrowserTestUtils.openNewForegroundTab(gBrowser, REDIRECT_URI.spec);
-  yield Promise.all([visitedURIPromise, newTabPromise]);
-
-  yield testURIFields(REDIRECT_URI, expectedRedirectSourceFrecency, 1);
-  yield testURIFields(INTERMEDIATE_URI_1, expectedRedirectSourceFrecency, 1);
-  yield testURIFields(INTERMEDIATE_URI_2, expectedRedirectSourceFrecency, 1);
-  yield testURIFields(TARGET_URI, expectedTargetFrecency, 0);
-
-  gBrowser.removeCurrentTab();
 });
 
-add_task(function* redirect_check_second_typed_visit() {
-  // A second visit with a typed url.
+add_task(async function test_multiple_redirect_typed() {
+  // The typed bonus wins because the redirect is permanent.
   PlacesUtils.history.markPageAsTyped(REDIRECT_URI);
+  let visitedPromise = waitVisitedNotifications();
+  await BrowserTestUtils.withNewTab({
+    gBrowser,
+    url: REDIRECT_URI.spec,
+  }, async function() {
+    info("Waiting for onVisits");
+    let redirectNotified = await visitedPromise;
+    ok(redirectNotified, "The redirect should have been notified");
 
-  expectedRedirectSourceFrecency += REDIRECT_SOURCE_VISIT_BONUS;
-  // TODO Bug 487813 - This should be TYPED_VISIT_BONUS, however as we don't
-  // currently track redirects across multiple redirects, we fallback to the
-  // PERM_REDIRECT_VISIT_BONUS.
-  expectedTargetFrecency += PERM_REDIRECT_VISIT_BONUS;
-
-  let visitedURIPromise = promiseVisitedURIObserver(REDIRECT_URI, TARGET_URI, expectedTargetFrecency);
-
-  let newTabPromise = BrowserTestUtils.openNewForegroundTab(gBrowser, REDIRECT_URI.spec);
-  yield Promise.all([visitedURIPromise, newTabPromise]);
-
-  yield testURIFields(REDIRECT_URI, expectedRedirectSourceFrecency, 1);
-  yield testURIFields(INTERMEDIATE_URI_1, expectedRedirectSourceFrecency, 1);
-  yield testURIFields(INTERMEDIATE_URI_2, expectedRedirectSourceFrecency, 1);
-  yield testURIFields(TARGET_URI, expectedTargetFrecency, 0);
-
-  gBrowser.removeCurrentTab();
+    firstRedirectBonus += TYPED_VISIT_BONUS;
+    await check_uri(REDIRECT_URI, firstRedirectBonus, 1);
+    nextRedirectBonus += REDIRECT_SOURCE_VISIT_BONUS;
+    await check_uri(INTERMEDIATE_URI_1, nextRedirectBonus, 1);
+    await check_uri(INTERMEDIATE_URI_2, nextRedirectBonus, 1);
+    // TODO Bug 487813 - This should be TYPED_VISIT_BONUS, however as we don't
+    // currently track redirects across multiple redirects, we fallback to the
+    // PERM_REDIRECT_VISIT_BONUS.
+    targetBonus += PERM_REDIRECT_VISIT_BONUS;
+    await check_uri(TARGET_URI, targetBonus, 0);
+  });
 });
 
+add_task(async function test_second_typed_visit() {
+  // The typed bonus wins because the redirect is permanent.
+  PlacesUtils.history.markPageAsTyped(REDIRECT_URI);
+  let visitedPromise = waitVisitedNotifications();
+  await BrowserTestUtils.withNewTab({
+    gBrowser,
+    url: REDIRECT_URI.spec,
+  }, async function() {
+    info("Waiting for onVisits");
+    let redirectNotified = await visitedPromise;
+    ok(redirectNotified, "The redirect should have been notified");
 
-add_task(function* redirect_check_subsequent_link_visit() {
-  // Another visit, but this time as a visited url.
-  expectedRedirectSourceFrecency += REDIRECT_SOURCE_VISIT_BONUS;
-  // TODO Bug 487813 - This should be LINK_VISIT_BONUS, however as we don't
-  // currently track redirects across multiple redirects, we fallback to the
-  // PERM_REDIRECT_VISIT_BONUS.
-  expectedTargetFrecency += PERM_REDIRECT_VISIT_BONUS;
+    firstRedirectBonus += TYPED_VISIT_BONUS;
+    await check_uri(REDIRECT_URI, firstRedirectBonus, 1);
+    nextRedirectBonus += REDIRECT_SOURCE_VISIT_BONUS;
+    await check_uri(INTERMEDIATE_URI_1, nextRedirectBonus, 1);
+    await check_uri(INTERMEDIATE_URI_2, nextRedirectBonus, 1);
+    // TODO Bug 487813 - This should be TYPED_VISIT_BONUS, however as we don't
+    // currently track redirects across multiple redirects, we fallback to the
+    // PERM_REDIRECT_VISIT_BONUS.
+    targetBonus += PERM_REDIRECT_VISIT_BONUS;
+    await check_uri(TARGET_URI, targetBonus, 0);
+  });
+});
 
-  let visitedURIPromise = promiseVisitedURIObserver(REDIRECT_URI, TARGET_URI, expectedTargetFrecency);
+add_task(async function test_subsequent_link_visit() {
+  // Another non typed visit.
+  let visitedPromise = waitVisitedNotifications();
+  await BrowserTestUtils.withNewTab({
+    gBrowser,
+    url: REDIRECT_URI.spec,
+  }, async function() {
+    info("Waiting for onVisits");
+    let redirectNotified = await visitedPromise;
+    ok(redirectNotified, "The redirect should have been notified");
 
-  let newTabPromise = BrowserTestUtils.openNewForegroundTab(gBrowser, REDIRECT_URI.spec);
-  yield Promise.all([visitedURIPromise, newTabPromise]);
-
-  yield testURIFields(REDIRECT_URI, expectedRedirectSourceFrecency, 1);
-  yield testURIFields(INTERMEDIATE_URI_1, expectedRedirectSourceFrecency, 1);
-  yield testURIFields(INTERMEDIATE_URI_2, expectedRedirectSourceFrecency, 1);
-  yield testURIFields(TARGET_URI, expectedTargetFrecency, 0);
-
-  gBrowser.removeCurrentTab();
+    firstRedirectBonus += REDIRECT_SOURCE_VISIT_BONUS;
+    await check_uri(REDIRECT_URI, firstRedirectBonus, 1);
+    nextRedirectBonus += REDIRECT_SOURCE_VISIT_BONUS;
+    await check_uri(INTERMEDIATE_URI_1, nextRedirectBonus, 1);
+    await check_uri(INTERMEDIATE_URI_2, nextRedirectBonus, 1);
+    // TODO Bug 487813 - This should be TYPED_VISIT_BONUS, however as we don't
+    // currently track redirects across multiple redirects, we fallback to the
+    // PERM_REDIRECT_VISIT_BONUS.
+    targetBonus += PERM_REDIRECT_VISIT_BONUS;
+    await check_uri(TARGET_URI, targetBonus, 0);
+  });
 });

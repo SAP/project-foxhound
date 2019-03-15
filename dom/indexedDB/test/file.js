@@ -3,6 +3,8 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+/* import-globals-from helpers.js */
+
 var bufferCache = [];
 var utils = SpecialPowers.getDOMWindowUtils(window);
 
@@ -18,7 +20,7 @@ function getRandomBuffer(size)
   let buffer = getBuffer(size);
   let view = new Uint8Array(buffer);
   for (let i = 0; i < size; i++) {
-    view[i] = parseInt(Math.random() * 255)
+    view[i] = parseInt(Math.random() * 255);
   }
   return buffer;
 }
@@ -35,7 +37,7 @@ function getRandomView(size)
 {
   let view = getView(size);
   for (let i = 0; i < size; i++) {
-    view[i] = parseInt(Math.random() * 255)
+    view[i] = parseInt(Math.random() * 255);
   }
   return view;
 }
@@ -57,12 +59,12 @@ function compareBuffers(buffer1, buffer2)
 
 function getBlob(type, view)
 {
-  return new Blob([view], {type: type});
+  return new Blob([view], {type});
 }
 
 function getFile(name, type, view)
 {
-  return new File([view], name, {type: type});
+  return new File([view], name, {type});
 }
 
 function getRandomBlob(size)
@@ -107,8 +109,9 @@ function verifyBuffers(buffer1, buffer2)
 
 function verifyBlob(blob1, blob2, fileId, blobReadHandler)
 {
-  is(blob1 instanceof Components.interfaces.nsIDOMBlob, true,
-     "Instance of nsIDOMBlob");
+  // eslint-disable-next-line mozilla/use-cc-etc
+  is(SpecialPowers.wrap(Blob).isInstance(blob1), true,
+     "Instance of Blob");
   is(blob1 instanceof File, blob2 instanceof File,
      "Instance of DOM File");
   is(blob1.size, blob2.size, "Correct size");
@@ -143,7 +146,7 @@ function verifyBlob(blob1, blob2, fileId, blobReadHandler)
           testGenerator.next();
         }
       }
-    }
+    };
   }
 
   let reader = new FileReader();
@@ -159,7 +162,7 @@ function verifyBlob(blob1, blob2, fileId, blobReadHandler)
         testGenerator.next();
       }
     }
-  }
+  };
 }
 
 function verifyBlobArray(blobs1, blobs2, expectedFileIds)
@@ -204,26 +207,21 @@ function verifyView(view1, view2)
 
 function verifyWasmModule(module1, module2)
 {
-  let getGlobalForObject = SpecialPowers.Cu.getGlobalForObject;
-  let testingFunctions = SpecialPowers.Cu.getJSTestingFunctions();
-  let wasmExtractCode = SpecialPowers.unwrap(testingFunctions.wasmExtractCode);
-  let exp1 = wasmExtractCode(module1);
-  let exp2 = wasmExtractCode(module2);
-  let code1 = exp1.code;
-  let code2 = exp2.code;
-  ok(code1 instanceof getGlobalForObject(code1).Uint8Array, "Instance of Uint8Array");
-  ok(code2 instanceof getGlobalForObject(code1).Uint8Array, "Instance of Uint8Array");
-  ok(code1.length == code2.length, "Correct length");
-  verifyBuffers(code1, code2);
+  // We assume the given modules have no imports and export a single function
+  // named 'run'.
+  var instance1 = new WebAssembly.Instance(module1);
+  var instance2 = new WebAssembly.Instance(module2);
+  is(instance1.exports.run(), instance2.exports.run(), "same run() result");
+
   continueToNextStep();
 }
 
 function grabFileUsageAndContinueHandler(request)
 {
-  testGenerator.next(request.fileUsage);
+  testGenerator.next(request.result.fileUsage);
 }
 
-function getUsage(usageHandler)
+function getCurrentUsage(usageHandler)
 {
   let qms = SpecialPowers.Services.qms;
   let principal = SpecialPowers.wrap(document).nodePrincipal;

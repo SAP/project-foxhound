@@ -8,30 +8,7 @@ with Files("**"):
     BUG_COMPONENT = ("Core", "DOM: Events")
 
 XPIDL_SOURCES += [
-    'nsIDOMAnimationEvent.idl',
-    'nsIDOMBeforeUnloadEvent.idl',
-    'nsIDOMClipboardEvent.idl',
-    'nsIDOMCommandEvent.idl',
-    'nsIDOMCustomEvent.idl',
-    'nsIDOMDataContainerEvent.idl',
-    'nsIDOMDataTransfer.idl',
-    'nsIDOMDragEvent.idl',
-    'nsIDOMEvent.idl',
     'nsIDOMEventListener.idl',
-    'nsIDOMEventTarget.idl',
-    'nsIDOMFocusEvent.idl',
-    'nsIDOMKeyEvent.idl',
-    'nsIDOMMouseEvent.idl',
-    'nsIDOMMouseScrollEvent.idl',
-    'nsIDOMMutationEvent.idl',
-    'nsIDOMNotifyPaintEvent.idl',
-    'nsIDOMNSEvent.idl',
-    'nsIDOMPaintRequest.idl',
-    'nsIDOMScrollAreaEvent.idl',
-    'nsIDOMSimpleGestureEvent.idl',
-    'nsIDOMTransitionEvent.idl',
-    'nsIDOMUIEvent.idl',
-    'nsIDOMWheelEvent.idl',
 ]
 
 XPIDL_MODULE = 'dom_events'

@@ -7,10 +7,7 @@ package org.mozilla.gecko.sync.stage;
 import java.net.URISyntaxException;
 
 import org.mozilla.gecko.sync.CryptoRecord;
-import org.mozilla.gecko.sync.middleware.BufferingMiddlewareRepository;
-import org.mozilla.gecko.sync.middleware.storage.MemoryBufferStorage;
 import org.mozilla.gecko.sync.repositories.ConfigurableServer15Repository;
-import org.mozilla.gecko.sync.repositories.NonPersistentRepositoryStateProvider;
 import org.mozilla.gecko.sync.repositories.RecordFactory;
 import org.mozilla.gecko.sync.repositories.Repository;
 import org.mozilla.gecko.sync.repositories.android.FormHistoryRepositorySession;
@@ -75,20 +72,18 @@ public class FormHistoryServerSyncStage extends ServerSyncStage {
             FORM_HISTORY_SORT,
             getAllowedMultipleBatches(),
             getAllowedToUseHighWaterMark(),
-            getRepositoryStateProvider()
+            getRepositoryStateProvider(),
+            false,
+            false
     );
   }
 
   @Override
   protected Repository getLocalRepository() {
-    return new BufferingMiddlewareRepository(
-            session.getSyncDeadline(),
-            new MemoryBufferStorage(),
-            new FormHistoryRepositorySession.FormHistoryRepository()
-    );
+    return new FormHistoryRepositorySession.FormHistoryRepository();
   }
 
-  public class FormHistoryRecordFactory extends RecordFactory {
+  public static final class FormHistoryRecordFactory extends RecordFactory {
 
     @Override
     public Record createRecord(Record record) {

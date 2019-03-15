@@ -11,9 +11,9 @@ This test is using a resumable response.
 
 */
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
@@ -47,6 +47,7 @@ function run_test()
   do_get_profile();
 
   Services.prefs.setIntPref("browser.cache.disk.max_entry_size", 0);
+  Services.prefs.setBoolPref("network.http.rcwn.enabled", false);
 
   httpServer = new HttpServer();
   httpServer.registerPathHandler("/content", contentHandler);
@@ -62,11 +63,11 @@ function run_test()
 
 function firstTimeThrough(request, buffer)
 {
-  do_check_eq(buffer, responseBody);
+  Assert.equal(buffer, responseBody);
 }
 
 function secondTimeThrough(request, buffer)
 {
-  do_check_eq(buffer, responseBody);
+  Assert.equal(buffer, responseBody);
   httpServer.stop(do_test_finished);
 }

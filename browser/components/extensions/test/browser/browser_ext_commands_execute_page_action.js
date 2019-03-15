@@ -2,7 +2,9 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-add_task(function* test_execute_page_action_without_popup() {
+const scriptPage = url => `<html><head><meta charset="utf-8"><script src="${url}"></script></head><body>Test Popup</body></html>`;
+
+add_task(async function test_execute_page_action_without_popup() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       "commands": {
@@ -53,14 +55,12 @@ add_task(function* test_execute_page_action_without_popup() {
     EventUtils.synthesizeKey("3", {altKey: true, shiftKey: true});
   });
 
-  yield extension.startup();
-  yield extension.awaitFinish("page-action-without-popup");
-  yield extension.unload();
+  await extension.startup();
+  await extension.awaitFinish("page-action-without-popup");
+  await extension.unload();
 });
 
-add_task(function* test_execute_page_action_with_popup() {
-  let scriptPage = url => `<html><head><meta charset="utf-8"><script src="${url}"></script></head><body>Test Popup</body></html>`;
-
+add_task(async function test_execute_page_action_with_popup() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       "commands": {
@@ -77,6 +77,7 @@ add_task(function* test_execute_page_action_with_popup() {
       },
       "page_action": {
         "default_popup": "popup.html",
+        "browser_style": true,
       },
     },
 
@@ -127,7 +128,51 @@ add_task(function* test_execute_page_action_with_popup() {
     EventUtils.synthesizeKey("3", {altKey: true, shiftKey: true});
   });
 
-  yield extension.startup();
-  yield extension.awaitFinish("page-action-with-popup");
-  yield extension.unload();
+  await extension.startup();
+  await extension.awaitFinish("page-action-with-popup");
+  await extension.unload();
+});
+
+add_task(async function test_execute_page_action_with_matching() {
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      "commands": {
+        "_execute_page_action": {
+          "suggested_key": {
+            "default": "Alt+Shift+J",
+          },
+        },
+      },
+      "page_action": {
+        "default_popup": "popup.html",
+        "show_matches": ["<all_urls>"],
+        "browser_style": true,
+      },
+    },
+
+    files: {
+      "popup.html": scriptPage("popup.js"),
+      "popup.js": function() {
+        window.addEventListener("load", () => {
+          browser.test.notifyPass("page-action-with-popup");
+        }, {once: true});
+      },
+    },
+  });
+
+  await extension.startup();
+  let tab = await BrowserTestUtils.openNewForegroundTab(window.gBrowser, "http://example.com/");
+  EventUtils.synthesizeKey("j", {altKey: true, shiftKey: true});
+  info("Waiting for pageAction open.");
+  await extension.awaitFinish("page-action-with-popup");
+
+  // Bug 1447796 make sure the key command can close the page action
+  let panel = document.getElementById(`${makeWidgetId(extension.id)}-panel`);
+  let hidden = promisePopupHidden(panel);
+  EventUtils.synthesizeKey("j", {altKey: true, shiftKey: true});
+  info("Waiting for pageAction close.");
+  await hidden;
+
+  await extension.unload();
+  BrowserTestUtils.removeTab(tab);
 });

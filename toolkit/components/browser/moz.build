@@ -4,20 +4,18 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files('**'):
+    BUG_COMPONENT = ('Toolkit', 'General')
+
 DIRS += ['build']
 
 XPIDL_SOURCES += [
-    'nsCWebBrowser.idl',
-    'nsICommandHandler.idl',
     'nsIEmbeddingSiteWindow.idl',
     'nsIWebBrowser.idl',
     'nsIWebBrowserChrome.idl',
     'nsIWebBrowserChrome2.idl',
     'nsIWebBrowserChrome3.idl',
     'nsIWebBrowserChromeFocus.idl',
-    'nsIWebBrowserFocus.idl',
-    'nsIWebBrowserSetup.idl',
-    'nsIWebBrowserStream.idl',
 ]
 
 if CONFIG['NS_PRINTING']:
@@ -29,8 +27,6 @@ if CONFIG['NS_PRINTING']:
 XPIDL_MODULE = 'webBrowser_core'
 
 UNIFIED_SOURCES += [
-    'nsCommandHandler.cpp',
-    'nsEmbedStream.cpp',
     'nsWebBrowser.cpp',
     'nsWebBrowserContentPolicy.cpp',
 ]
@@ -43,9 +39,10 @@ LOCAL_INCLUDES += [
     '/layout/style',
 ]
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
 
 EXPORTS += [
     'nsEmbedCID.h',
+    'nsWebBrowser.h',
 ]

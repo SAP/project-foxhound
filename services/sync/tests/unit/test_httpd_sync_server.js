@@ -1,20 +1,15 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Cu.import("resource://services-sync/util.js");
-
-function run_test() {
-  Log.repository.getLogger("Sync.Test.Server").level = Log.Level.Trace;
-  initTestLogging();
-  run_next_test();
-}
+ChromeUtils.import("resource://services-common/utils.js");
+ChromeUtils.import("resource://services-sync/util.js");
 
 add_test(function test_creation() {
   // Explicit callback for this one.
   let server = new SyncServer({
     __proto__: SyncServerCallback,
   });
-  do_check_true(!!server);       // Just so we have a check.
+  Assert.ok(!!server); // Just so we have a check.
   server.start(null, function() {
     _("Started on " + server.port);
     server.stop(run_next_test);
@@ -27,45 +22,45 @@ add_test(function test_url_parsing() {
   // Check that we can parse a WBO URI.
   let parts = server.pathRE.exec("/1.1/johnsmith/storage/crypto/keys");
   let [all, version, username, first, rest] = parts;
-  do_check_eq(all, "/1.1/johnsmith/storage/crypto/keys");
-  do_check_eq(version, "1.1");
-  do_check_eq(username, "johnsmith");
-  do_check_eq(first, "storage");
-  do_check_eq(rest, "crypto/keys");
-  do_check_eq(null, server.pathRE.exec("/nothing/else"));
+  Assert.equal(all, "/1.1/johnsmith/storage/crypto/keys");
+  Assert.equal(version, "1.1");
+  Assert.equal(username, "johnsmith");
+  Assert.equal(first, "storage");
+  Assert.equal(rest, "crypto/keys");
+  Assert.equal(null, server.pathRE.exec("/nothing/else"));
 
   // Check that we can parse a collection URI.
   parts = server.pathRE.exec("/1.1/johnsmith/storage/crypto");
   [all, version, username, first, rest] = parts;
-  do_check_eq(all, "/1.1/johnsmith/storage/crypto");
-  do_check_eq(version, "1.1");
-  do_check_eq(username, "johnsmith");
-  do_check_eq(first, "storage");
-  do_check_eq(rest, "crypto");
+  Assert.equal(all, "/1.1/johnsmith/storage/crypto");
+  Assert.equal(version, "1.1");
+  Assert.equal(username, "johnsmith");
+  Assert.equal(first, "storage");
+  Assert.equal(rest, "crypto");
 
   // We don't allow trailing slash on storage URI.
   parts = server.pathRE.exec("/1.1/johnsmith/storage/");
-  do_check_eq(parts, undefined);
+  Assert.equal(parts, undefined);
 
   // storage alone is a valid request.
   parts = server.pathRE.exec("/1.1/johnsmith/storage");
   [all, version, username, first, rest] = parts;
-  do_check_eq(all, "/1.1/johnsmith/storage");
-  do_check_eq(version, "1.1");
-  do_check_eq(username, "johnsmith");
-  do_check_eq(first, "storage");
-  do_check_eq(rest, undefined);
+  Assert.equal(all, "/1.1/johnsmith/storage");
+  Assert.equal(version, "1.1");
+  Assert.equal(username, "johnsmith");
+  Assert.equal(first, "storage");
+  Assert.equal(rest, undefined);
 
   parts = server.storageRE.exec("storage");
   let collection;
-  [all, , collection, ] = parts;
-  do_check_eq(all, "storage");
-  do_check_eq(collection, undefined);
+  [all, , collection ] = parts;
+  Assert.equal(all, "storage");
+  Assert.equal(collection, undefined);
 
   run_next_test();
 });
 
-Cu.import("resource://services-common/rest.js");
+ChromeUtils.import("resource://services-common/rest.js");
 function localRequest(server, path) {
   _("localRequest: " + path);
   let url = server.baseURI.substr(0, server.baseURI.length - 1) + path;
@@ -73,77 +68,64 @@ function localRequest(server, path) {
   return new RESTRequest(url);
 }
 
-add_test(function test_basic_http() {
+add_task(async function test_basic_http() {
   let server = new SyncServer();
   server.registerUser("john", "password");
-  do_check_true(server.userExists("john"));
-  server.start(null, function() {
-    _("Started on " + server.port);
-    Utils.nextTick(function() {
-      let req = localRequest(server, "/1.1/john/storage/crypto/keys");
-      _("req is " + req);
-      req.get(function(err) {
-        do_check_eq(null, err);
-        Utils.nextTick(function() {
-          server.stop(run_next_test);
-        });
-      });
-    });
-  });
+  Assert.ok(server.userExists("john"));
+  server.start();
+  _("Started on " + server.port);
+
+  let req = localRequest(server, "/1.1/john/storage/crypto/keys");
+  _("req is " + req);
+  // Shouldn't reject, beyond that we don't care.
+  await req.get();
+
+  await promiseStopServer(server);
 });
 
-add_test(function test_info_collections() {
+add_task(async function test_info_collections() {
   let server = new SyncServer({
-    __proto__: SyncServerCallback
+    __proto__: SyncServerCallback,
   });
   function responseHasCorrectHeaders(r) {
-    do_check_eq(r.status, 200);
-    do_check_eq(r.headers["content-type"], "application/json");
-    do_check_true("x-weave-timestamp" in r.headers);
+    Assert.equal(r.status, 200);
+    Assert.equal(r.headers["content-type"], "application/json");
+    Assert.ok("x-weave-timestamp" in r.headers);
   }
 
   server.registerUser("john", "password");
-  server.start(null, function() {
-    Utils.nextTick(function() {
-      let req = localRequest(server, "/1.1/john/info/collections");
-      req.get(function(err) {
-        // Initial info/collections fetch is empty.
-        do_check_eq(null, err);
-        responseHasCorrectHeaders(this.response);
+  server.start();
 
-        do_check_eq(this.response.body, "{}");
-        Utils.nextTick(function() {
-          // When we PUT something to crypto/keys, "crypto" appears in the response.
-          function cb(err2) {
-            do_check_eq(null, err2);
-            responseHasCorrectHeaders(this.response);
-            let putResponseBody = this.response.body;
-            _("PUT response body: " + JSON.stringify(putResponseBody));
+  let req = localRequest(server, "/1.1/john/info/collections");
+  await req.get();
+  responseHasCorrectHeaders(req.response);
+  Assert.equal(req.response.body, "{}");
 
-            req = localRequest(server, "/1.1/john/info/collections");
-            req.get(function(err3) {
-              do_check_eq(null, err3);
-              responseHasCorrectHeaders(this.response);
-              let expectedColl = server.getCollection("john", "crypto");
-              do_check_true(!!expectedColl);
-              let modified = expectedColl.timestamp;
-              do_check_true(modified > 0);
-              do_check_eq(putResponseBody, modified);
-              do_check_eq(JSON.parse(this.response.body).crypto, modified);
-              Utils.nextTick(function() {
-                server.stop(run_next_test);
-              });
-            });
-          }
-          let payload = JSON.stringify({foo: "bar"});
-          localRequest(server, "/1.1/john/storage/crypto/keys").put(payload, cb);
-        });
-      });
-    });
-  });
+  let putReq = localRequest(server, "/1.1/john/storage/crypto/keys");
+  let payload = JSON.stringify({foo: "bar"});
+  let putResp = await putReq.put(payload);
+
+  responseHasCorrectHeaders(putResp);
+
+  let putResponseBody = putResp.body;
+  _("PUT response body: " + JSON.stringify(putResponseBody));
+
+  // When we PUT something to crypto/keys, "crypto" appears in the response.
+  req = localRequest(server, "/1.1/john/info/collections");
+
+  await req.get();
+  responseHasCorrectHeaders(req.response);
+  let expectedColl = server.getCollection("john", "crypto");
+  Assert.ok(!!expectedColl);
+  let modified = expectedColl.timestamp;
+  Assert.ok(modified > 0);
+  Assert.equal(putResponseBody, modified);
+  Assert.equal(JSON.parse(req.response.body).crypto, modified);
+
+  await promiseStopServer(server);
 });
 
-add_test(function test_storage_request() {
+add_task(async function test_storage_request() {
   let keysURL = "/1.1/john/storage/crypto/keys?foo=bar";
   let foosURL = "/1.1/john/storage/crypto/foos";
   let storageURL = "/1.1/john/storage";
@@ -153,133 +135,122 @@ add_test(function test_storage_request() {
   server.registerUser("john", "password");
 
   server.createContents("john", {
-    crypto: {foos: {foo: "bar"}}
+    crypto: {foos: {foo: "bar"}},
   });
   let coll = server.user("john").collection("crypto");
-  do_check_true(!!coll);
+  Assert.ok(!!coll);
 
   _("We're tracking timestamps.");
-  do_check_true(coll.timestamp >= creation);
+  Assert.ok(coll.timestamp >= creation);
 
-  function retrieveWBONotExists(next) {
+  async function retrieveWBONotExists() {
     let req = localRequest(server, keysURL);
-    req.get(function(err) {
-      _("Body is " + this.response.body);
-      _("Modified is " + this.response.newModified);
-      do_check_eq(null, err);
-      do_check_eq(this.response.status, 404);
-      do_check_eq(this.response.body, "Not found");
-      Utils.nextTick(next);
-    });
+    let response = await req.get();
+    _("Body is " + response.body);
+    _("Modified is " + response.newModified);
+    Assert.equal(response.status, 404);
+    Assert.equal(response.body, "Not found");
   }
-  function retrieveWBOExists(next) {
+
+  async function retrieveWBOExists() {
     let req = localRequest(server, foosURL);
-    req.get(function(err) {
-      _("Body is " + this.response.body);
-      _("Modified is " + this.response.newModified);
-      let parsedBody = JSON.parse(this.response.body);
-      do_check_eq(parsedBody.id, "foos");
-      do_check_eq(parsedBody.modified, coll.wbo("foos").modified);
-      do_check_eq(JSON.parse(parsedBody.payload).foo, "bar");
-      Utils.nextTick(next);
-    });
+    let response = await req.get();
+    _("Body is " + response.body);
+    _("Modified is " + response.newModified);
+    let parsedBody = JSON.parse(response.body);
+    Assert.equal(parsedBody.id, "foos");
+    Assert.equal(parsedBody.modified, coll.wbo("foos").modified);
+    Assert.equal(JSON.parse(parsedBody.payload).foo, "bar");
   }
-  function deleteWBONotExists(next) {
+
+  async function deleteWBONotExists() {
     let req = localRequest(server, keysURL);
     server.callback.onItemDeleted = function(username, collection, wboID) {
       do_throw("onItemDeleted should not have been called.");
     };
 
-    req.delete(function(err) {
-      _("Body is " + this.response.body);
-      _("Modified is " + this.response.newModified);
-      do_check_eq(this.response.status, 200);
-      delete server.callback.onItemDeleted;
-      Utils.nextTick(next);
-    });
+    let response = await req.delete();
+
+    _("Body is " + response.body);
+    _("Modified is " + response.newModified);
+    Assert.equal(response.status, 200);
+    delete server.callback.onItemDeleted;
   }
-  function deleteWBOExists(next) {
+
+  async function deleteWBOExists() {
     let req = localRequest(server, foosURL);
     server.callback.onItemDeleted = function(username, collection, wboID) {
       _("onItemDeleted called for " + collection + "/" + wboID);
       delete server.callback.onItemDeleted;
-      do_check_eq(username, "john");
-      do_check_eq(collection, "crypto");
-      do_check_eq(wboID, "foos");
-      Utils.nextTick(next);
+      Assert.equal(username, "john");
+      Assert.equal(collection, "crypto");
+      Assert.equal(wboID, "foos");
     };
-
-    req.delete(function(err) {
-      _("Body is " + this.response.body);
-      _("Modified is " + this.response.newModified);
-      do_check_eq(this.response.status, 200);
-    });
+    await req.delete();
+    _("Body is " + req.response.body);
+    _("Modified is " + req.response.newModified);
+    Assert.equal(req.response.status, 200);
   }
-  function deleteStorage(next) {
+
+  async function deleteStorage() {
     _("Testing DELETE on /storage.");
     let now = server.timestamp();
     _("Timestamp: " + now);
     let req = localRequest(server, storageURL);
-    req.delete(function(err) {
-      _("Body is " + this.response.body);
-      _("Modified is " + this.response.newModified);
-      let parsedBody = JSON.parse(this.response.body);
-      do_check_true(parsedBody >= now);
-      do_check_empty(server.users["john"].collections);
-      Utils.nextTick(next);
-    });
+    await req.delete();
+
+    _("Body is " + req.response.body);
+    _("Modified is " + req.response.newModified);
+    let parsedBody = JSON.parse(req.response.body);
+    Assert.ok(parsedBody >= now);
+    do_check_empty(server.users.john.collections);
   }
-  function getStorageFails(next) {
+
+  async function getStorageFails() {
     _("Testing that GET on /storage fails.");
     let req = localRequest(server, storageURL);
-    req.get(function(err) {
-      do_check_eq(this.response.status, 405);
-      do_check_eq(this.response.headers["allow"], "DELETE");
-      Utils.nextTick(next);
-    });
+    await req.get();
+    Assert.equal(req.response.status, 405);
+    Assert.equal(req.response.headers.allow, "DELETE");
   }
-  function getMissingCollectionWBO(next) {
+
+  async function getMissingCollectionWBO() {
     _("Testing that fetching a WBO from an on-existent collection 404s.");
     let req = localRequest(server, storageURL + "/foobar/baz");
-    req.get(function(err) {
-      do_check_eq(this.response.status, 404);
-      Utils.nextTick(next);
-    });
+    await req.get();
+    Assert.equal(req.response.status, 404);
   }
 
-  server.start(null,
-    Async.chain(
-      retrieveWBONotExists,
-      retrieveWBOExists,
-      deleteWBOExists,
-      deleteWBONotExists,
-      getStorageFails,
-      getMissingCollectionWBO,
-      deleteStorage,
-      server.stop.bind(server),
-      run_next_test
-    ));
+  server.start(null);
+
+  await retrieveWBONotExists();
+  await retrieveWBOExists();
+  await deleteWBOExists();
+  await deleteWBONotExists();
+  await getStorageFails();
+  await getMissingCollectionWBO();
+  await deleteStorage();
+
+  await promiseStopServer(server);
 });
 
-add_test(function test_x_weave_records() {
+add_task(async function test_x_weave_records() {
   let server = new SyncServer();
   server.registerUser("john", "password");
 
   server.createContents("john", {
     crypto: {foos: {foo: "bar"},
-             bars: {foo: "baz"}}
+             bars: {foo: "baz"}},
   });
-  server.start(null, function() {
-    let wbo = localRequest(server, "/1.1/john/storage/crypto/foos");
-    wbo.get(function(err) {
-      // WBO fetches don't have one.
-      do_check_false("x-weave-records" in this.response.headers);
-      let col = localRequest(server, "/1.1/john/storage/crypto");
-      col.get(function(err2) {
-        // Collection fetches do.
-        do_check_eq(this.response.headers["x-weave-records"], "2");
-        server.stop(run_next_test);
-      });
-    });
-  });
+  server.start();
+
+  let wbo = localRequest(server, "/1.1/john/storage/crypto/foos");
+  await wbo.get();
+  Assert.equal(false, "x-weave-records" in wbo.response.headers);
+  let col = localRequest(server, "/1.1/john/storage/crypto");
+  await col.get();
+  // Collection fetches do.
+  Assert.equal(col.response.headers["x-weave-records"], "2");
+
+  await promiseStopServer(server);
 });

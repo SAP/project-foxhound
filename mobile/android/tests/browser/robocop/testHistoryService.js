@@ -5,10 +5,8 @@
 
 "use strict";
 
-var { classes: Cc, interfaces: Ci, utils: Cu } = Components;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // Make the timer global so it doesn't get GC'd
 var gTimer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
@@ -17,7 +15,7 @@ function sleep(wait) {
   return new Promise((resolve, reject) => {
     do_print("sleep start");
     gTimer.initWithCallback({
-      notify: function () {
+      notify: function() {
         do_print("sleep end");
         resolve();
       },
@@ -25,7 +23,7 @@ function sleep(wait) {
   });
 }
 
-function promiseLoadEvent(browser, url, eventType="load") {
+function promiseLoadEvent(browser, url, eventType = "load") {
   return new Promise((resolve, reject) => {
     do_print("Wait browser event: " + eventType);
 
@@ -59,7 +57,7 @@ function visitObserver(subject, topic, data) {
   let uri = subject.QueryInterface(Ci.nsIURI);
   do_print("Observer: " + uri.spec);
   gVisitURLs.push(uri.spec);
-};
+}
 
 // Track the <browser> where the tests are happening
 var gBrowser;
@@ -73,24 +71,24 @@ add_test(function setup_browser() {
     BrowserApp.closeTab(BrowserApp.getTabForBrowser(gBrowser));
   });
 
-  Services.obs.addObserver(visitObserver, "link-visited", false);
+  Services.obs.addObserver(visitObserver, "link-visited");
 
   // Load a blank page
   let url = "about:blank";
   gBrowser = BrowserApp.addTab(url, { selected: true, parentId: BrowserApp.selectedTab.id }).browser;
   gBrowser.addEventListener("load", function(event) {
-    Services.tm.mainThread.dispatch(run_next_test, Ci.nsIThread.DISPATCH_NORMAL);
+    Services.tm.dispatchToMainThread(run_next_test);
   }, {capture: true, once: true});
 });
 
-add_task(function* () {
+add_task(async function() {
   // Wait for any initial page loads to be saved to history
-  yield sleep(PENDING_VISIT_WAIT);
+  await sleep(PENDING_VISIT_WAIT);
 
   // Load a simple HTML page with no redirects
   gVisitURLs = [];
-  yield promiseLoadEvent(gBrowser, "http://example.org/tests/robocop/robocop_blank_01.html");
-  yield sleep(PENDING_VISIT_WAIT_LONG);
+  await promiseLoadEvent(gBrowser, "http://example.org/tests/robocop/robocop_blank_01.html");
+  await sleep(PENDING_VISIT_WAIT_LONG);
 
   do_print("visit counts: " + gVisitURLs.length);
   ok(gVisitURLs.length == 1, "Simple visit makes 1 history item");
@@ -100,8 +98,8 @@ add_task(function* () {
 
   // Load a simple HTML page via a 301 temporary redirect
   gVisitURLs = [];
-  yield promiseLoadEvent(gBrowser, "http://example.org/tests/robocop/simple_redirect.sjs?http://example.org/tests/robocop/robocop_blank_02.html");
-  yield sleep(PENDING_VISIT_WAIT);
+  await promiseLoadEvent(gBrowser, "http://example.org/tests/robocop/simple_redirect.sjs?http://example.org/tests/robocop/robocop_blank_02.html");
+  await sleep(PENDING_VISIT_WAIT);
 
   do_print("visit counts: " + gVisitURLs.length);
   ok(gVisitURLs.length == 1, "Simple 301 redirect makes 1 history item");
@@ -111,8 +109,8 @@ add_task(function* () {
 
   // Load a simple HTML page via a JavaScript redirect
   gVisitURLs = [];
-  yield promiseLoadEvent(gBrowser, "http://example.org/tests/robocop/javascript_redirect.sjs?http://example.org/tests/robocop/robocop_blank_03.html");
-  yield sleep(PENDING_VISIT_WAIT);
+  await promiseLoadEvent(gBrowser, "http://example.org/tests/robocop/javascript_redirect.sjs?http://example.org/tests/robocop/robocop_blank_03.html");
+  await sleep(PENDING_VISIT_WAIT);
 
   do_print("visit counts: " + gVisitURLs.length);
   ok(gVisitURLs.length == 2, "JavaScript redirect makes 2 history items");

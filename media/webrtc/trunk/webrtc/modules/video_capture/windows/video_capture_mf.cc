@@ -8,15 +8,15 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/video_capture/windows/video_capture_mf.h"
+#include "modules/video_capture/windows/video_capture_mf.h"
 
 namespace webrtc {
 namespace videocapturemodule {
 
-VideoCaptureMF::VideoCaptureMF(const int32_t id) : VideoCaptureImpl(id) {}
+VideoCaptureMF::VideoCaptureMF() {}
 VideoCaptureMF::~VideoCaptureMF() {}
 
-int32_t VideoCaptureMF::Init(const int32_t id, const char* device_id) {
+int32_t VideoCaptureMF::Init(const char* device_id) {
   return 0;
 }
 

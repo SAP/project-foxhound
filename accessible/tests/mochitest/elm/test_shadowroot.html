@@ -8,32 +8,6 @@
   <script type="application/javascript"
           src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 
-  <script type="application/javascript"
-          src="../common.js"></script>
-  <script type="application/javascript"
-          src="../role.js"></script>
-
-  <script type="application/javascript">
-    function doTest()
-    {
-      testElm("component", {
-        role: ROLE_GROUPING,
-        children: [
-        {
-          role: ROLE_PUSHBUTTON,
-        },
-        {
-          role: ROLE_LINK,
-        },
-        ]
-      });
-
-      SimpleTest.finish();
-    }
-
-    SimpleTest.waitForExplicitFinish();
-    addA11yLoadEvent(doTest);
-  </script>
 </head>
 <body>
 
@@ -47,13 +21,15 @@
   <pre id="test">
   </pre>
 
-  <div role="group" id="component"></div>
   <script>
-    var component = document.getElementById('component');
-    var shadow = component.createShadowRoot();
+    SimpleTest.waitForExplicitFinish();
 
-    shadow.innerHTML = '<button>Hello</button>' +
-      '<a href="#"> World</a>';
+    window.onload = () => {
+      var iframe = document.createElement("iframe");
+      iframe.src = "test_shadowroot_subframe.html";
+      document.body.appendChild(iframe);
+    };
+
   </script>
 
 </body>

@@ -5,10 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsISupports.idl"
+#include "nsIContentPolicy.idl"
 
-interface nsIDOMDocument;
 interface nsIInputStream;
 interface nsIOutputStream;
+interface nsIPrincipal;
 interface nsITabParent;
 interface nsIWebBrowserPersistResourceVisitor;
 interface nsIWebBrowserPersistWriteCompletion;
@@ -61,6 +62,7 @@ interface nsIWebBrowserPersistDocument : nsISupports
   readonly attribute AString referrer;
   readonly attribute AString contentDisposition;
   readonly attribute nsIInputStream postData;
+  readonly attribute nsIPrincipal principal;
 
   /**
    * The cache key.  Unlike in nsISHEntry, where it's wrapped in an
@@ -133,9 +135,11 @@ interface nsIWebBrowserPersistResourceVisitor : nsISupports
    *
    * @param aDocument   The document containing the reference.
    * @param aURI        The absolute URI spec for the referenced resource.
+   * @param aContentPolicyType The type of resource.
    */
   void visitResource(in nsIWebBrowserPersistDocument aDocument,
-                     in AUTF8String aURI);
+                     in AUTF8String aURI,
+                     in nsContentPolicyType aContentPolicyType);
   /**
    * Indicates a subdocument resource; e.g., a frame or iframe.
    *
@@ -187,7 +191,10 @@ interface nsIWebBrowserPersistWriteCompletion : nsISupports
  * Asynchronous callback for creating a persistable document from some
  * other object.
  *
- * @see nsIWebBrowserPersistable.
+ * XXXbz This should really be changed to just return a promise that
+ * then gets resolved or rejected...
+ *
+ * @see WebBrowserPersistable in FrameLoader.webidl.
  */
 [scriptable, uuid(321e3174-594f-4036-b7be-791b821bd376)]
 interface nsIWebBrowserPersistDocumentReceiver : nsISupports

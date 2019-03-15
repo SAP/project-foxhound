@@ -3,36 +3,68 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const {Arg, RetVal, generateActorSpec} = require("devtools/shared/protocol");
+const {Arg, RetVal, generateActorSpec, types} = require("devtools/shared/protocol");
+
+types.addDictType("sourceposition", {
+  line: "number",
+  column: "number",
+});
+types.addDictType("nullablesourceposition", {
+  line: "nullable:number",
+  column: "nullable:number",
+});
+types.addDictType("breakpointquery", {
+  start: "nullable:nullablesourceposition",
+  end: "nullable:nullablesourceposition",
+});
 
 const sourceSpec = generateActorSpec({
   typeName: "source",
 
   methods: {
     getExecutableLines: { response: { lines: RetVal("json") } },
+    getBreakpointPositions: {
+      request: {
+        query: Arg(0, "nullable:breakpointquery"),
+      },
+      response: {
+        positions: RetVal("array:sourceposition"),
+      },
+    },
+    getBreakpointPositionsCompressed: {
+      request: {
+        query: Arg(0, "nullable:breakpointquery"),
+      },
+      response: {
+        positions: RetVal("json"),
+      },
+    },
     onSource: {
       request: { type: "source" },
-      response: RetVal("json")
+      response: RetVal("json"),
     },
-    prettyPrint: {
-      request: { indent: Arg(0, "number") },
-      response: RetVal("json")
+    setPausePoints: {
+      request: {
+        pausePoints: Arg(0, "json"),
+      },
     },
-    disablePrettyPrint: {
-      response: RetVal("json")
+    blackbox: {
+      request: { range: Arg(0, "nullable:json") },
+      response: { pausedInSource: RetVal("boolean") },
     },
-    blackbox: { response: { pausedInSource: RetVal("boolean") } },
-    unblackbox: {},
+    unblackbox: {
+      request: { range: Arg(0, "nullable:json") },
+    },
     setBreakpoint: {
       request: {
         location: {
           line: Arg(0, "number"),
-          column: Arg(1, "nullable:number")
+          column: Arg(1, "nullable:number"),
         },
         condition: Arg(2, "nullable:string"),
-        noSliding: Arg(3, "nullable:boolean")
+        noSliding: Arg(3, "nullable:boolean"),
       },
-      response: RetVal("json")
+      response: RetVal("json"),
     },
   },
 });

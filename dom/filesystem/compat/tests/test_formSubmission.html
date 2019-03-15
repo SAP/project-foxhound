@@ -15,10 +15,10 @@
 </form>
 
 <script class="testbody" type="text/javascript">
-
 var form;
 var iframe;
 var input;
+var script;
 var xhr;
 
 function setup_tests() {
@@ -28,7 +28,7 @@ function setup_tests() {
   iframe.onload = function() {
     info("Frame loaded!");
     next();
-  }
+  };
 
   SpecialPowers.pushPrefEnv({"set": [["dom.input.dirpicker", true],
                                      ["dom.webkitBlink.dirPicker.enabled", true],
@@ -37,23 +37,23 @@ function setup_tests() {
 }
 
 function populate_entries(webkitDirectory) {
+  var url = SimpleTest.getTestFileURL("script_entries.js");
+  script = SpecialPowers.loadChromeScript(url);
+
   if (input) {
     form.removeChild(input);
   }
 
-  input = document.createElement('input');
-  input.setAttribute('id', 'input');
-  input.setAttribute('type', 'file');
-  input.setAttribute('name', 'input');
+  input = document.createElement("input");
+  input.setAttribute("id", "input");
+  input.setAttribute("type", "file");
+  input.setAttribute("name", "input");
 
   if (webkitDirectory) {
-    input.setAttribute('webkitdirectory', 'true');
+    input.setAttribute("webkitdirectory", "true");
   }
 
   form.appendChild(input);
-
-  var url = SimpleTest.getTestFileURL("script_entries.js");
-  var script = SpecialPowers.loadChromeScript(url);
 
   function onOpened(message) {
     input.addEventListener("change", function() {
@@ -61,11 +61,18 @@ function populate_entries(webkitDirectory) {
     }, {once: true});
 
     SpecialPowers.wrap(input).mozSetDndFilesAndDirectories([message.data[0]]);
-    script.destroy();
   }
 
   script.addMessageListener("entries.opened", onOpened);
   script.sendAsyncMessage("entries.open");
+}
+
+function delete_entries() {
+  script.sendAsyncMessage("entries.delete");
+  script.addMessageListener("entries.deleted", function() {
+    script.destroy();
+    next();
+  });
 }
 
 function setup_plain() {
@@ -214,6 +221,7 @@ function test_webkit_multipart() {
 
 var tests = [
   setup_tests,
+
   function() { populate_entries(false); },
 
   setup_plain,
@@ -231,6 +239,8 @@ var tests = [
   setup_formData,
   test_multipart,
 
+  delete_entries,
+
   function() { populate_entries(true); },
 
   setup_plain,
@@ -247,6 +257,8 @@ var tests = [
 
   setup_formData,
   test_webkit_multipart,
+
+  delete_entries,
 ];
 
 function next() {

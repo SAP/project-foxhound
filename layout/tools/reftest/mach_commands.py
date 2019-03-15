@@ -20,8 +20,6 @@ from mach.decorators import (
     Command,
 )
 
-import reftestcommandline
-
 
 parser = None
 
@@ -50,7 +48,7 @@ class ReftestRunner(MozbuildObject):
         # reftest imports will happen from the objdir
         sys.path.insert(0, self.reftest_dir)
 
-        if not args.tests:
+        if args.suite != 'jstestbrowser' and not args.tests:
             test_subdir = {
                 "reftest": os.path.join('layout', 'reftests'),
                 "crashtest": os.path.join('layout', 'crashtest'),
@@ -78,6 +76,7 @@ class ReftestRunner(MozbuildObject):
 
         args.extraProfileFiles.append(os.path.join(self.topobjdir, "dist", "plugins"))
         args.symbolsPath = os.path.join(self.topobjdir, "crashreporter-symbols")
+        args.sandboxReadWhitelist.extend([self.topsrcdir, self.topobjdir])
 
         if not args.tests:
             args.tests = [os.path.join(*default_manifest[args.suite])]
@@ -134,12 +133,18 @@ class ReftestRunner(MozbuildObject):
             args.app = self.substs["ANDROID_PACKAGE_NAME"]
         if not args.utilityPath:
             args.utilityPath = args.xrePath
-        args.dm_trans = "adb"
         args.ignoreWindowSize = True
         args.printDeviceInfo = False
 
-        from mozrunner.devices.android_device import grant_runtime_permissions
-        grant_runtime_permissions(self)
+        from mozrunner.devices.android_device import grant_runtime_permissions, get_adb_path
+        grant_runtime_permissions(self, args.app, device_serial=args.deviceSerial)
+
+        if not args.adb_path:
+            args.adb_path = get_adb_path(self)
+
+        if 'geckoview' not in args.app:
+            args.e10s = False
+            print("using e10s=False for non-geckoview app")
 
         # A symlink and some path manipulations are required so that test
         # manifests can be found both locally and remotely (via a url)
@@ -183,6 +188,8 @@ def process_test_objects(kwargs):
 
 
 def get_parser():
+    import reftestcommandline
+
     global parser
     here = os.path.abspath(os.path.dirname(__file__))
     build_obj = MozbuildObject.from_environment(cwd=here)
@@ -223,10 +230,15 @@ class MachCommands(MachCommandBase):
         return self._run_reftest(**kwargs)
 
     def _run_reftest(self, **kwargs):
+        kwargs["topsrcdir"] = self.topsrcdir
         process_test_objects(kwargs)
         reftest = self._spawn(ReftestRunner)
+        # Unstructured logging must be enabled prior to calling
+        # adb which uses an unstructured logger in its constructor.
+        reftest.log_manager.enable_unstructured()
         if conditions.is_android(self):
             from mozrunner.devices.android_device import verify_android_device
-            verify_android_device(self, install=True, xre=True)
+            verify_android_device(self, install=True, xre=True, network=True,
+                                  app=kwargs["app"], device_serial=kwargs["deviceSerial"])
             return reftest.run_android_test(**kwargs)
         return reftest.run_desktop_test(**kwargs)

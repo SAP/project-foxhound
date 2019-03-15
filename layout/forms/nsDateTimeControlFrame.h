@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,26 +24,25 @@
 namespace mozilla {
 namespace dom {
 struct DateTimeValue;
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 class nsDateTimeControlFrame final : public nsContainerFrame,
-                                     public nsIAnonymousContentCreator
-{
+                                     public nsIAnonymousContentCreator {
   typedef mozilla::dom::DateTimeValue DateTimeValue;
 
-  explicit nsDateTimeControlFrame(nsStyleContext* aContext);
+  explicit nsDateTimeControlFrame(ComputedStyle* aStyle);
 
-public:
+ public:
   friend nsIFrame* NS_NewDateTimeControlFrame(nsIPresShell* aPresShell,
-                                              nsStyleContext* aContext);
+                                              ComputedStyle* aStyle);
 
   void ContentStatesChanged(mozilla::EventStates aStates) override;
-  void DestroyFrom(nsIFrame* aDestructRoot) override;
+  void DestroyFrom(nsIFrame* aDestructRoot,
+                   PostDestroyData& aPostDestroyData) override;
 
-  NS_DECL_QUERYFRAME_TARGET(nsDateTimeControlFrame)
   NS_DECL_QUERYFRAME
-  NS_DECL_FRAMEARENA_HELPERS
+  NS_DECL_FRAMEARENA_HELPERS(nsDateTimeControlFrame)
 
 #ifdef DEBUG_FRAME_DUMP
   nsresult GetFrameName(nsAString& aResult) const override {
@@ -50,59 +50,56 @@ public:
   }
 #endif
 
-  nsIAtom* GetType() const override;
-
-  bool IsFrameOfType(uint32_t aFlags) const override
-  {
-    return nsContainerFrame::IsFrameOfType(aFlags &
-      ~(nsIFrame::eReplaced | nsIFrame::eReplacedContainsBlock));
+  bool IsFrameOfType(uint32_t aFlags) const override {
+    return nsContainerFrame::IsFrameOfType(
+        aFlags & ~(nsIFrame::eReplaced | nsIFrame::eReplacedContainsBlock));
   }
 
   // Reflow
-  nscoord GetMinISize(nsRenderingContext* aRenderingContext) override;
+  nscoord GetMinISize(gfxContext* aRenderingContext) override;
 
-  nscoord GetPrefISize(nsRenderingContext* aRenderingContext) override;
+  nscoord GetPrefISize(gfxContext* aRenderingContext) override;
 
-  void Reflow(nsPresContext* aPresContext,
-              ReflowOutput& aDesiredSize,
-              const ReflowInput& aReflowState,
+  void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
+              const ReflowInput& aReflowInput,
               nsReflowStatus& aStatus) override;
+
+  bool IsLeafDynamic() const override;
 
   // nsIAnonymousContentCreator
   nsresult CreateAnonymousContent(nsTArray<ContentInfo>& aElements) override;
   void AppendAnonymousContentTo(nsTArray<nsIContent*>& aElements,
                                 uint32_t aFilter) override;
 
-  nsresult AttributeChanged(int32_t aNameSpaceID, nsIAtom* aAttribute,
+  nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
                             int32_t aModType) override;
 
-  void UpdateInputBoxValue();
-  void SetValueFromPicker(const DateTimeValue& aValue);
+  nsIContent* GetInputAreaContent();
+
+  void OnValueChanged();
+  void OnMinMaxStepAttrChanged();
   void HandleFocusEvent();
   void HandleBlurEvent();
-  void SetPickerState(bool aOpen);
 
-private:
+ private:
   class SyncDisabledStateEvent;
   friend class SyncDisabledStateEvent;
-  class SyncDisabledStateEvent : public mozilla::Runnable
-  {
-  public:
+  class SyncDisabledStateEvent : public mozilla::Runnable {
+   public:
     explicit SyncDisabledStateEvent(nsDateTimeControlFrame* aFrame)
-    : mFrame(aFrame)
-    {}
+        : mozilla::Runnable("nsDateTimeControlFrame::SyncDisabledStateEvent"),
+          mFrame(aFrame) {}
 
-    NS_IMETHOD Run() override
-    {
+    NS_IMETHOD Run() override {
       nsDateTimeControlFrame* frame =
-        static_cast<nsDateTimeControlFrame*>(mFrame.GetFrame());
+          static_cast<nsDateTimeControlFrame*>(mFrame.GetFrame());
       NS_ENSURE_STATE(frame);
 
       frame->SyncDisabledState();
       return NS_OK;
     }
 
-  private:
+   private:
     WeakFrame mFrame;
   };
 
@@ -113,7 +110,7 @@ private:
 
   // Anonymous child which is bound via XBL to an element that wraps the input
   // area and reset button.
-  nsCOMPtr<nsIContent> mInputAreaContent;
+  RefPtr<mozilla::dom::Element> mInputAreaContent;
 };
 
-#endif // nsDateTimeControlFrame_h__
+#endif  // nsDateTimeControlFrame_h__

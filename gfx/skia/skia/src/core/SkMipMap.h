@@ -9,10 +9,11 @@
 #define SkMipMap_DEFINED
 
 #include "SkCachedData.h"
+#include "SkImageInfoPriv.h"
 #include "SkPixmap.h"
 #include "SkScalar.h"
 #include "SkSize.h"
-#include "SkShader.h"
+#include "SkShaderBase.h"
 
 class SkBitmap;
 class SkDiscardableMemory;
@@ -28,13 +29,8 @@ typedef SkDiscardableMemory* (*SkDiscardableFactoryProc)(size_t bytes);
  */
 class SkMipMap : public SkCachedData {
 public:
-    static SkMipMap* Build(const SkPixmap& src, SkSourceGammaTreatment, SkDiscardableFactoryProc);
-    static SkMipMap* Build(const SkBitmap& src, SkSourceGammaTreatment, SkDiscardableFactoryProc);
-
-    static SkSourceGammaTreatment DeduceTreatment(const SkShader::ContextRec& rec) {
-        return (SkShader::ContextRec::kPMColor_DstType == rec.fPreferredDstType) ?
-                SkSourceGammaTreatment::kIgnore : SkSourceGammaTreatment::kRespect;
-    }
+    static SkMipMap* Build(const SkPixmap& src, SkDiscardableFactoryProc);
+    static SkMipMap* Build(const SkBitmap& src, SkDiscardableFactoryProc);
 
     // Determines how many levels a SkMipMap will have without creating that mipmap.
     // This does not include the base mipmap level that the user provided when

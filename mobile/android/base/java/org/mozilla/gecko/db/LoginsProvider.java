@@ -158,8 +158,8 @@ public class LoginsProvider extends SharedBrowserDatabaseProvider {
         switch (match) {
             case LOGINS_ID:
                 trace("Delete on LOGINS_ID: " + uri);
-                selection = DBUtils.concatenateWhere(selection, selectColumn(TABLE_LOGINS, Logins._ID));
-                selectionArgs = DBUtils.appendSelectionArgs(selectionArgs,
+                selection = DatabaseUtils.concatenateWhere(selection, selectColumn(TABLE_LOGINS, Logins._ID));
+                selectionArgs = DatabaseUtils.appendSelectionArgs(selectionArgs,
                         new String[]{Long.toString(ContentUris.parseId(uri))});
                 // Store the deleted client in deleted-logins table.
                 final String guid = getLoginGUIDByID(selection, selectionArgs, db);
@@ -180,8 +180,8 @@ public class LoginsProvider extends SharedBrowserDatabaseProvider {
 
             case DELETED_LOGINS_ID:
                 trace("Delete on DELETED_LOGINS_ID: " + uri);
-                selection = DBUtils.concatenateWhere(selection, selectColumn(TABLE_DELETED_LOGINS, DeletedLogins._ID));
-                selectionArgs = DBUtils.appendSelectionArgs(selectionArgs,
+                selection = DatabaseUtils.concatenateWhere(selection, selectColumn(TABLE_DELETED_LOGINS, DeletedLogins._ID));
+                selectionArgs = DatabaseUtils.appendSelectionArgs(selectionArgs,
                         new String[]{Long.toString(ContentUris.parseId(uri))});
             // fall through
             case DELETED_LOGINS:
@@ -191,8 +191,8 @@ public class LoginsProvider extends SharedBrowserDatabaseProvider {
 
             case DISABLED_HOSTS_HOSTNAME:
                 trace("Delete on DISABLED_HOSTS_HOSTNAME: " + uri);
-                selection = DBUtils.concatenateWhere(selection, selectColumn(TABLE_DISABLED_HOSTS, LoginsDisabledHosts.HOSTNAME));
-                selectionArgs = DBUtils.appendSelectionArgs(selectionArgs,
+                selection = DatabaseUtils.concatenateWhere(selection, selectColumn(TABLE_DISABLED_HOSTS, LoginsDisabledHosts.HOSTNAME));
+                selectionArgs = DatabaseUtils.appendSelectionArgs(selectionArgs,
                         new String[]{uri.getLastPathSegment()});
             // fall through
             case DISABLED_HOSTS:
@@ -221,8 +221,8 @@ public class LoginsProvider extends SharedBrowserDatabaseProvider {
         switch (match) {
             case LOGINS_ID:
                 trace("Update on LOGINS_ID: " + uri);
-                selection = DBUtils.concatenateWhere(selection, selectColumn(TABLE_LOGINS, Logins._ID));
-                selectionArgs = DBUtils.appendSelectionArgs(selectionArgs,
+                selection = DatabaseUtils.concatenateWhere(selection, selectColumn(TABLE_LOGINS, Logins._ID));
+                selectionArgs = DatabaseUtils.appendSelectionArgs(selectionArgs,
                         new String[]{Long.toString(ContentUris.parseId(uri))});
 
             case LOGINS:
@@ -255,8 +255,8 @@ public class LoginsProvider extends SharedBrowserDatabaseProvider {
         switch (match) {
             case LOGINS_ID:
                 trace("Query is on LOGINS_ID: " + uri);
-                selection = DBUtils.concatenateWhere(selection, selectColumn(TABLE_LOGINS, Logins._ID));
-                selectionArgs = DBUtils.appendSelectionArgs(selectionArgs,
+                selection = DatabaseUtils.concatenateWhere(selection, selectColumn(TABLE_LOGINS, Logins._ID));
+                selectionArgs = DatabaseUtils.appendSelectionArgs(selectionArgs,
                         new String[] { Long.toString(ContentUris.parseId(uri)) });
 
             // fall through
@@ -274,8 +274,8 @@ public class LoginsProvider extends SharedBrowserDatabaseProvider {
 
             case DELETED_LOGINS_ID:
                 trace("Query is on DELETED_LOGINS_ID: " + uri);
-                selection = DBUtils.concatenateWhere(selection, selectColumn(TABLE_DELETED_LOGINS, DeletedLogins._ID));
-                selectionArgs = DBUtils.appendSelectionArgs(selectionArgs,
+                selection = DatabaseUtils.concatenateWhere(selection, selectColumn(TABLE_DELETED_LOGINS, DeletedLogins._ID));
+                selectionArgs = DatabaseUtils.appendSelectionArgs(selectionArgs,
                         new String[] { Long.toString(ContentUris.parseId(uri)) });
 
             // fall through
@@ -293,8 +293,8 @@ public class LoginsProvider extends SharedBrowserDatabaseProvider {
 
             case DISABLED_HOSTS_HOSTNAME:
                 trace("Query is on DISABLED_HOSTS_HOSTNAME: " + uri);
-                selection = DBUtils.concatenateWhere(selection, selectColumn(TABLE_DISABLED_HOSTS, LoginsDisabledHosts.HOSTNAME));
-                selectionArgs = DBUtils.appendSelectionArgs(selectionArgs,
+                selection = DatabaseUtils.concatenateWhere(selection, selectColumn(TABLE_DISABLED_HOSTS, LoginsDisabledHosts.HOSTNAME));
+                selectionArgs = DatabaseUtils.appendSelectionArgs(selectionArgs,
                         new String[] { uri.getLastPathSegment() });
 
             // fall through
@@ -498,7 +498,7 @@ public class LoginsProvider extends SharedBrowserDatabaseProvider {
     private String encrypt(@NonNull String initialValue) {
         try {
             final Cipher cipher = getCipher(Cipher.ENCRYPT_MODE);
-            return Base64.encodeToString(cipher.doFinal(initialValue.getBytes("UTF-8")), Base64.URL_SAFE);
+            return Base64.encodeToString(cipher.doFinal(initialValue.getBytes(StringUtils.UTF_8)), Base64.URL_SAFE);
         } catch (Exception e) {
             debug("encryption failed : " + e);
             throw new IllegalStateException("Logins encryption failed", e);
@@ -509,7 +509,7 @@ public class LoginsProvider extends SharedBrowserDatabaseProvider {
         try {
             final Cipher cipher = getCipher(Cipher.DECRYPT_MODE);
             return new String(cipher.doFinal(Base64.decode(
-                    initialValue.getBytes("UTF-8"), Base64.URL_SAFE)), StringUtils.UTF_8);
+                    initialValue.getBytes(StringUtils.UTF_8), Base64.URL_SAFE)), StringUtils.UTF_8);
         } catch (Exception e) {
             debug("Decryption failed : " + e);
             throw new IllegalStateException("Logins decryption failed", e);

@@ -6,11 +6,10 @@
 /* global XPCNativeWrapper */
 
 const {Cu} = require("chrome");
-const events = require("sdk/event/core");
-const promise = require("promise");
+const EventEmitter = require("devtools/shared/event-emitter");
+const defer = require("devtools/shared/defer");
 const protocol = require("devtools/shared/protocol");
 const { ContentObserver } = require("devtools/shared/content-observer");
-const { on, off, emit } = events;
 const {
   shaderSpec,
   programSpec,
@@ -42,7 +41,7 @@ var ShaderActor = protocol.ActorClassWithSpec(shaderSpec, {
    * @param WebGLProxy proxy
    *        The proxy methods for the WebGL context owning this shader.
    */
-  initialize: function (conn, program, shader, proxy) {
+  initialize: function(conn, program, shader, proxy) {
     protocol.Actor.prototype.initialize.call(this, conn);
     this.program = program;
     this.shader = shader;
@@ -53,23 +52,23 @@ var ShaderActor = protocol.ActorClassWithSpec(shaderSpec, {
   /**
    * Gets the source code for this shader.
    */
-  getText: function () {
+  getText: function() {
     return this.text;
   },
 
   /**
    * Sets and compiles new source code for this shader.
    */
-  compile: function (text) {
+  compile: function(text) {
     // Get the shader and corresponding program to change via the WebGL proxy.
-    let { linkedProxy: proxy, shader, program } = this;
+    const { linkedProxy: proxy, shader, program } = this;
 
     // Get the new shader source to inject.
-    let oldText = this.text;
-    let newText = text;
+    const oldText = this.text;
+    const newText = text;
 
     // Overwrite the shader's source.
-    let error = proxy.compileShader(program, shader, this.text = newText);
+    const error = proxy.compileShader(program, shader, this.text = newText);
 
     // If something went wrong, revert to the previous shader.
     if (error.compile || error.link) {
@@ -77,7 +76,7 @@ var ShaderActor = protocol.ActorClassWithSpec(shaderSpec, {
       return error;
     }
     return undefined;
-  }
+  },
 });
 
 /**
@@ -99,7 +98,7 @@ var ProgramActor = protocol.ActorClassWithSpec(programSpec, {
    * @param WebGLProxy proxy
    *        The proxy methods for the WebGL context owning this program.
    */
-  initialize: function (conn, [program, shaders, cache, proxy]) {
+  initialize: function(conn, [program, shaders, cache, proxy]) {
     protocol.Actor.prototype.initialize.call(this, conn);
     this._shaderActorsCache = { vertex: null, fragment: null };
     this.program = program;
@@ -120,7 +119,7 @@ var ProgramActor = protocol.ActorClassWithSpec(programSpec, {
    * Gets the vertex shader linked to this program. This method guarantees
    * a single actor instance per shader.
    */
-  getVertexShader: function () {
+  getVertexShader: function() {
     return this._getShaderActor("vertex");
   },
 
@@ -128,14 +127,14 @@ var ProgramActor = protocol.ActorClassWithSpec(programSpec, {
    * Gets the fragment shader linked to this program. This method guarantees
    * a single actor instance per shader.
    */
-  getFragmentShader: function () {
+  getFragmentShader: function() {
     return this._getShaderActor("fragment");
   },
 
   /**
    * Highlights any geometry rendered using this program.
    */
-  highlight: function (tint) {
+  highlight: function(tint) {
     this.linkedProxy.highlightTint = tint;
     this.linkedCache.setProgramTrait(this.program, PROGRAM_HIGHLIGHT_TRAIT);
   },
@@ -143,21 +142,21 @@ var ProgramActor = protocol.ActorClassWithSpec(programSpec, {
   /**
    * Allows geometry to be rendered normally using this program.
    */
-  unhighlight: function () {
+  unhighlight: function() {
     this.linkedCache.unsetProgramTrait(this.program, PROGRAM_HIGHLIGHT_TRAIT);
   },
 
   /**
    * Prevents any geometry from being rendered using this program.
    */
-  blackbox: function () {
+  blackbox: function() {
     this.linkedCache.setProgramTrait(this.program, PROGRAM_BLACKBOX_TRAIT);
   },
 
   /**
    * Allows geometry to be rendered using this program.
    */
-  unblackbox: function () {
+  unblackbox: function() {
     this.linkedCache.unsetProgramTrait(this.program, PROGRAM_BLACKBOX_TRAIT);
   },
 
@@ -169,16 +168,16 @@ var ProgramActor = protocol.ActorClassWithSpec(programSpec, {
    * @return ShaderActor
    *         The respective shader actor instance.
    */
-  _getShaderActor: function (type) {
+  _getShaderActor: function(type) {
     if (this._shaderActorsCache[type]) {
       return this._shaderActorsCache[type];
     }
-    let proxy = this.linkedProxy;
-    let shader = proxy.getShaderOfType(this.shaders, type);
-    let shaderActor = new ShaderActor(this.conn, this.program, shader, proxy);
+    const proxy = this.linkedProxy;
+    const shader = proxy.getShaderOfType(this.shaders, type);
+    const shaderActor = new ShaderActor(this.conn, this.program, shader, proxy);
     this._shaderActorsCache[type] = shaderActor;
     return this._shaderActorsCache[type];
-  }
+  },
 });
 
 /**
@@ -187,26 +186,26 @@ var ProgramActor = protocol.ActorClassWithSpec(programSpec, {
  * up by calling setup().
  */
 exports.WebGLActor = protocol.ActorClassWithSpec(webGLSpec, {
-  initialize: function (conn, tabActor) {
+  initialize: function(conn, targetActor) {
     protocol.Actor.prototype.initialize.call(this, conn);
-    this.tabActor = tabActor;
+    this.targetActor = targetActor;
     this._onGlobalCreated = this._onGlobalCreated.bind(this);
     this._onGlobalDestroyed = this._onGlobalDestroyed.bind(this);
     this._onProgramLinked = this._onProgramLinked.bind(this);
   },
-  destroy: function (conn) {
+  destroy: function(conn) {
     protocol.Actor.prototype.destroy.call(this, conn);
     this.finalize();
   },
 
   /**
-   * Starts waiting for the current tab actor's document global to be
+   * Starts waiting for the current target actor's document global to be
    * created, in order to instrument the Canvas context and become
    * aware of everything the content does WebGL-wise.
    *
    * See ContentObserver and WebGLInstrumenter for more details.
    */
-  setup: function ({ reload }) {
+  setup: function({ reload }) {
     if (this._initialized) {
       return;
     }
@@ -215,12 +214,12 @@ exports.WebGLActor = protocol.ActorClassWithSpec(webGLSpec, {
     this._programActorsCache = [];
     this._webglObserver = new WebGLObserver();
 
-    on(this.tabActor, "window-ready", this._onGlobalCreated);
-    on(this.tabActor, "window-destroyed", this._onGlobalDestroyed);
-    on(this._webglObserver, "program-linked", this._onProgramLinked);
+    this.targetActor.on("window-ready", this._onGlobalCreated);
+    this.targetActor.on("window-destroyed", this._onGlobalDestroyed);
+    EventEmitter.on(this._webglObserver, "program-linked", this._onProgramLinked);
 
     if (reload) {
-      this.tabActor.window.location.reload();
+      this.targetActor.window.location.reload();
     }
   },
 
@@ -229,15 +228,15 @@ exports.WebGLActor = protocol.ActorClassWithSpec(webGLSpec, {
    * to hibernation. This method is called automatically just before the
    * actor is destroyed.
    */
-  finalize: function () {
+  finalize: function() {
     if (!this._initialized) {
       return;
     }
     this._initialized = false;
 
-    off(this.tabActor, "window-ready", this._onGlobalCreated);
-    off(this.tabActor, "window-destroyed", this._onGlobalDestroyed);
-    off(this._webglObserver, "program-linked", this._onProgramLinked);
+    this.targetActor.off("window-ready", this._onGlobalCreated);
+    this.targetActor.off("window-destroyed", this._onGlobalDestroyed);
+    EventEmitter.off(this._webglObserver, "program-linked", this._onProgramLinked);
 
     this._programActorsCache = null;
     this._contentObserver = null;
@@ -245,21 +244,21 @@ exports.WebGLActor = protocol.ActorClassWithSpec(webGLSpec, {
   },
 
   /**
-   * Gets an array of cached program actors for the current tab actor's window.
+   * Gets an array of cached program actors for the current target actor's window.
    * This is useful for dealing with bfcache, when no new programs are linked.
    */
-  getPrograms: function () {
-    let id = ContentObserver.GetInnerWindowID(this.tabActor.window);
+  getPrograms: function() {
+    const id = ContentObserver.GetInnerWindowID(this.targetActor.window);
     return this._programActorsCache.filter(e => e.ownerWindow == id);
   },
 
   /**
-   * Waits for one frame via `requestAnimationFrame` on the tab actor's window.
+   * Waits for one frame via `requestAnimationFrame` on the target actor's window.
    * Used in tests.
    */
-  waitForFrame: function () {
-    let deferred = promise.defer();
-    this.tabActor.window.requestAnimationFrame(deferred.resolve);
+  waitForFrame: function() {
+    const deferred = defer();
+    this.targetActor.window.requestAnimationFrame(deferred.resolve);
     return deferred.promise;
   },
 
@@ -276,14 +275,14 @@ exports.WebGLActor = protocol.ActorClassWithSpec(webGLSpec, {
    * @return Object
    *        An object containing `r`, `g`, `b`, and `a` properties of the pixel.
    */
-  getPixel: function ({ selector, position }) {
-    let { x, y } = position;
-    let canvas = this.tabActor.window.document.querySelector(selector);
-    let context = XPCNativeWrapper.unwrap(canvas.getContext("webgl"));
-    let { proxy } = this._webglObserver.for(context);
-    let height = canvas.height;
+  getPixel: function({ selector, position }) {
+    const { x, y } = position;
+    const canvas = this.targetActor.window.document.querySelector(selector);
+    const context = XPCNativeWrapper.unwrap(canvas.getContext("webgl"));
+    const { proxy } = this._webglObserver.for(context);
+    const height = canvas.height;
 
-    let buffer = new this.tabActor.window.Uint8Array(4);
+    let buffer = new this.targetActor.window.Uint8Array(4);
     buffer = XPCNativeWrapper.unwrap(buffer);
 
     proxy.readPixels(
@@ -297,39 +296,39 @@ exports.WebGLActor = protocol.ActorClassWithSpec(webGLSpec, {
    * Gets an array of all cached program actors belonging to all windows.
    * This should only be used for tests.
    */
-  _getAllPrograms: function () {
+  _getAllPrograms: function() {
     return this._programActorsCache;
   },
 
   /**
-   * Invoked whenever the current tab actor's document global is created.
+   * Invoked whenever the current target actor's document global is created.
    */
-  _onGlobalCreated: function ({id, window, isTopLevel}) {
+  _onGlobalCreated: function({id, window, isTopLevel}) {
     if (isTopLevel) {
       WebGLInstrumenter.handle(window, this._webglObserver);
-      events.emit(this, "global-created", id);
+      this.emit("global-created", id);
     }
   },
 
   /**
-   * Invoked whenever the current tab actor's inner window is destroyed.
+   * Invoked whenever the current target actor's inner window is destroyed.
    */
-  _onGlobalDestroyed: function ({id, isTopLevel, isFrozen}) {
+  _onGlobalDestroyed: function({id, isTopLevel, isFrozen}) {
     if (isTopLevel && !isFrozen) {
       removeFromArray(this._programActorsCache, e => e.ownerWindow == id);
       this._webglObserver.unregisterContextsForWindow(id);
-      events.emit(this, "global-destroyed", id);
+      this.emit("global-destroyed", id);
     }
   },
 
   /**
    * Invoked whenever an observed WebGL context links a program.
    */
-  _onProgramLinked: function (...args) {
-    let programActor = new ProgramActor(this.conn, args);
+  _onProgramLinked: function(...args) {
+    const programActor = new ProgramActor(this.conn, args);
     this._programActorsCache.push(programActor);
-    events.emit(this, "program-linked", programActor);
-  }
+    this.emit("program-linked", programActor);
+  },
 });
 
 /**
@@ -344,27 +343,27 @@ var WebGLInstrumenter = {
    * @param WebGLObserver observer
    *        The observer watching function calls in the context.
    */
-  handle: function (window, observer) {
-    let self = this;
+  handle: function(window, observer) {
+    const self = this;
 
-    let id = ContentObserver.GetInnerWindowID(window);
-    let canvasElem = XPCNativeWrapper.unwrap(window.HTMLCanvasElement);
-    let canvasPrototype = canvasElem.prototype;
-    let originalGetContext = canvasPrototype.getContext;
+    const id = ContentObserver.GetInnerWindowID(window);
+    const canvasElem = XPCNativeWrapper.unwrap(window.HTMLCanvasElement);
+    const canvasPrototype = canvasElem.prototype;
+    const originalGetContext = canvasPrototype.getContext;
 
     /**
      * Returns a drawing context on the canvas, or null if the context ID is
      * not supported. This override creates an observer for the targeted context
      * type and instruments specific functions in the targeted context instance.
      */
-    canvasPrototype.getContext = function (name, options) {
+    canvasPrototype.getContext = function(name, options) {
       // Make sure a context was able to be created.
-      let context = originalGetContext.call(this, name, options);
+      const context = originalGetContext.call(this, name, options);
       if (!context) {
         return context;
       }
       // Make sure a WebGL (not a 2D) context will be instrumented.
-      if (WEBGL_CONTEXT_NAMES.indexOf(name) == -1) {
+      if (!WEBGL_CONTEXT_NAMES.includes(name)) {
         return context;
       }
       // Repeated calls to 'getContext' return the same instance, no need to
@@ -377,8 +376,8 @@ var WebGLInstrumenter = {
       observer.registerContextForWindow(id, context);
 
       // Link our observer to the new WebGL context methods.
-      for (let { timing, callback, functions } of self._methods) {
-        for (let func of functions) {
+      for (const { timing, callback, functions } of self._methods) {
+        for (const func of functions) {
           self._instrument(observer, context, func, callback, timing);
         }
       }
@@ -407,15 +406,15 @@ var WebGLInstrumenter = {
    *        function call. Availalble values are -1 for "before" (default)
    *        1 for "after" and 0 for "before and after".
    */
-  _instrument: function (observer, context, funcName, callbackName = [], timing = -1) {
-    let { cache, proxy } = observer.for(context);
-    let originalFunc = context[funcName];
-    let beforeFuncName = callbackName[0] || funcName;
-    let afterFuncName = callbackName[1] || callbackName[0] || funcName;
+  _instrument: function(observer, context, funcName, callbackName = [], timing = -1) {
+    const { cache, proxy } = observer.for(context);
+    const originalFunc = context[funcName];
+    const beforeFuncName = callbackName[0] || funcName;
+    const afterFuncName = callbackName[1] || callbackName[0] || funcName;
 
-    context[funcName] = function (...glArgs) {
+    context[funcName] = function(...glArgs) {
       if (timing <= 0 && !observer.suppressHandlers) {
-        let glBreak = observer[beforeFuncName](glArgs, cache, proxy);
+        const glBreak = observer[beforeFuncName](glArgs, cache, proxy);
         if (glBreak) {
           return undefined;
         }
@@ -423,10 +422,10 @@ var WebGLInstrumenter = {
 
       // Invoking .apply on an unxrayed content function doesn't work, because
       // the arguments array is inaccessible to it. Get Xrays back.
-      let glResult = Cu.waiveXrays(Cu.unwaiveXrays(originalFunc).apply(this, glArgs));
+      const glResult = Cu.waiveXrays(Cu.unwaiveXrays(originalFunc).apply(this, glArgs));
 
       if (timing >= 0 && !observer.suppressHandlers) {
-        let glBreak = observer[afterFuncName](glArgs, glResult, cache, proxy);
+        const glBreak = observer[afterFuncName](glArgs, glResult, cache, proxy);
         if (glBreak) {
           return undefined;
         }
@@ -443,59 +442,59 @@ var WebGLInstrumenter = {
     // after
     timing: 1,
     functions: [
-      "linkProgram", "getAttribLocation", "getUniformLocation"
-    ]
+      "linkProgram", "getAttribLocation", "getUniformLocation",
+    ],
   }, {
     // before
     timing: -1,
     callback: [
-      "toggleVertexAttribArray"
+      "toggleVertexAttribArray",
     ],
     functions: [
-      "enableVertexAttribArray", "disableVertexAttribArray"
-    ]
+      "enableVertexAttribArray", "disableVertexAttribArray",
+    ],
   }, {
     // before
     timing: -1,
     callback: [
-      "attribute_"
+      "attribute_",
     ],
     functions: [
       "vertexAttrib1f", "vertexAttrib2f", "vertexAttrib3f", "vertexAttrib4f",
       "vertexAttrib1fv", "vertexAttrib2fv", "vertexAttrib3fv", "vertexAttrib4fv",
-      "vertexAttribPointer"
-    ]
+      "vertexAttribPointer",
+    ],
   }, {
     // before
     timing: -1,
     callback: [
-      "uniform_"
+      "uniform_",
     ],
     functions: [
       "uniform1i", "uniform2i", "uniform3i", "uniform4i",
       "uniform1f", "uniform2f", "uniform3f", "uniform4f",
       "uniform1iv", "uniform2iv", "uniform3iv", "uniform4iv",
       "uniform1fv", "uniform2fv", "uniform3fv", "uniform4fv",
-      "uniformMatrix2fv", "uniformMatrix3fv", "uniformMatrix4fv"
-    ]
+      "uniformMatrix2fv", "uniformMatrix3fv", "uniformMatrix4fv",
+    ],
   }, {
     // before
     timing: -1,
     functions: [
       "useProgram", "enable", "disable", "blendColor",
       "blendEquation", "blendEquationSeparate",
-      "blendFunc", "blendFuncSeparate"
-    ]
+      "blendFunc", "blendFuncSeparate",
+    ],
   }, {
     // before and after
     timing: 0,
     callback: [
-      "beforeDraw_", "afterDraw_"
+      "beforeDraw_", "afterDraw_",
     ],
     functions: [
-      "drawArrays", "drawElements"
-    ]
-  }]
+      "drawArrays", "drawElements",
+    ],
+  }],
   // TODO: It'd be a good idea to handle other functions as well:
   //   - getActiveUniform
   //   - getUniform
@@ -521,15 +520,15 @@ WebGLObserver.prototype = {
    * @param WebGLRenderingContext context
    *        The WebGL context used in the cache and proxy instances.
    */
-  registerContextForWindow: function (id, context) {
-    let cache = new WebGLCache(id, context);
-    let proxy = new WebGLProxy(id, context, cache, this);
+  registerContextForWindow: function(id, context) {
+    const cache = new WebGLCache(id, context);
+    const proxy = new WebGLProxy(id, context, cache, this);
     cache.refreshState(proxy);
 
     this._contexts.set(context, {
       ownerWindow: id,
       cache: cache,
-      proxy: proxy
+      proxy: proxy,
     });
   },
 
@@ -539,7 +538,7 @@ WebGLObserver.prototype = {
    * @param number id
    *        The id of the window containing the WebGL context.
    */
-  unregisterContextsForWindow: function (id) {
+  unregisterContextsForWindow: function(id) {
     removeFromMap(this._contexts, e => e.ownerWindow == id);
   },
 
@@ -551,7 +550,7 @@ WebGLObserver.prototype = {
    * @return object
    *         An object containing the corresponding { cache, proxy } instances.
    */
-  for: function (context) {
+  for: function(context) {
     return this._contexts.get(context);
   },
 
@@ -572,11 +571,11 @@ WebGLObserver.prototype = {
    * @param WebGLProxy proxy
    *        The proxy methods for the WebGL context initiating this call.
    */
-  linkProgram: function (glArgs, glResult, cache, proxy) {
-    let program = glArgs[0];
-    let shaders = proxy.getAttachedShaders(program);
+  linkProgram: function(glArgs, glResult, cache, proxy) {
+    const program = glArgs[0];
+    const shaders = proxy.getAttachedShaders(program);
     cache.addProgram(program, PROGRAM_DEFAULT_TRAITS);
-    emit(this, "program-linked", program, shaders, cache, proxy);
+    EventEmitter.emit(this, "program-linked", program, shaders, cache, proxy);
   },
 
   /**
@@ -589,12 +588,12 @@ WebGLObserver.prototype = {
    * @param WebGLCache cache
    *        The state storage for the WebGL context initiating this call.
    */
-  getAttribLocation: function (glArgs, glResult, cache) {
+  getAttribLocation: function(glArgs, glResult, cache) {
     // Make sure the attribute's value is legal before caching.
     if (glResult < 0) {
       return;
     }
-    let [program, name] = glArgs;
+    const [program, name] = glArgs;
     cache.addAttribute(program, name, glResult);
   },
 
@@ -608,12 +607,12 @@ WebGLObserver.prototype = {
    * @param WebGLCache cache
    *        The state storage for the WebGL context initiating this call.
    */
-  getUniformLocation: function (glArgs, glResult, cache) {
+  getUniformLocation: function(glArgs, glResult, cache) {
     // Make sure the uniform's value is legal before caching.
     if (!glResult) {
       return;
     }
-    let [program, name] = glArgs;
+    const [program, name] = glArgs;
     cache.addUniform(program, name, glResult);
   },
 
@@ -626,7 +625,7 @@ WebGLObserver.prototype = {
    * @param WebGLCache cache
    *        The state storage for the WebGL context initiating this call.
    */
-  toggleVertexAttribArray: function (glArgs, cache) {
+  toggleVertexAttribArray: function(glArgs, cache) {
     glArgs[0] = cache.getCurrentAttributeLocation(glArgs[0]);
     // Return true to break original function call.
     return glArgs[0] < 0;
@@ -640,7 +639,7 @@ WebGLObserver.prototype = {
    * @param WebGLCache cache
    *        The state storage for the WebGL context initiating this call.
    */
-  attribute_: function (glArgs, cache) {
+  attribute_: function(glArgs, cache) {
     glArgs[0] = cache.getCurrentAttributeLocation(glArgs[0]);
     // Return true to break original function call.
     return glArgs[0] < 0;
@@ -654,7 +653,7 @@ WebGLObserver.prototype = {
    * @param WebGLCache cache
    *        The state storage for the WebGL context initiating this call.
    */
-  uniform_: function (glArgs, cache) {
+  uniform_: function(glArgs, cache) {
     glArgs[0] = cache.getCurrentUniformLocation(glArgs[0]);
     // Return true to break original function call.
     return !glArgs[0];
@@ -668,7 +667,7 @@ WebGLObserver.prototype = {
    * @param WebGLCache cache
    *        The state storage for the WebGL context initiating this call.
    */
-  useProgram: function (glArgs, cache) {
+  useProgram: function(glArgs, cache) {
     // Manually keeping a cache and not using gl.getParameter(CURRENT_PROGRAM)
     // because gl.get* functions are slow as potatoes.
     cache.currentProgram = glArgs[0];
@@ -682,7 +681,7 @@ WebGLObserver.prototype = {
    * @param WebGLCache cache
    *        The state storage for the WebGL context initiating this call.
    */
-  enable: function (glArgs, cache) {
+  enable: function(glArgs, cache) {
     cache.currentState[glArgs[0]] = true;
   },
 
@@ -694,7 +693,7 @@ WebGLObserver.prototype = {
    * @param WebGLCache cache
    *        The state storage for the WebGL context initiating this call.
    */
-  disable: function (glArgs, cache) {
+  disable: function(glArgs, cache) {
     cache.currentState[glArgs[0]] = false;
   },
 
@@ -706,8 +705,8 @@ WebGLObserver.prototype = {
    * @param WebGLCache cache
    *        The state storage for the WebGL context initiating this call.
    */
-  blendColor: function (glArgs, cache) {
-    let blendColor = cache.currentState.blendColor;
+  blendColor: function(glArgs, cache) {
+    const blendColor = cache.currentState.blendColor;
     blendColor[0] = glArgs[0];
     blendColor[1] = glArgs[1];
     blendColor[2] = glArgs[2];
@@ -722,8 +721,8 @@ WebGLObserver.prototype = {
    * @param WebGLCache cache
    *        The state storage for the WebGL context initiating this call.
    */
-  blendEquation: function (glArgs, cache) {
-    let state = cache.currentState;
+  blendEquation: function(glArgs, cache) {
+    const state = cache.currentState;
     state.blendEquationRgb = state.blendEquationAlpha = glArgs[0];
   },
 
@@ -735,8 +734,8 @@ WebGLObserver.prototype = {
    * @param WebGLCache cache
    *        The state storage for the WebGL context initiating this call.
    */
-  blendEquationSeparate: function (glArgs, cache) {
-    let state = cache.currentState;
+  blendEquationSeparate: function(glArgs, cache) {
+    const state = cache.currentState;
     state.blendEquationRgb = glArgs[0];
     state.blendEquationAlpha = glArgs[1];
   },
@@ -749,8 +748,8 @@ WebGLObserver.prototype = {
    * @param WebGLCache cache
    *        The state storage for the WebGL context initiating this call.
    */
-  blendFunc: function (glArgs, cache) {
-    let state = cache.currentState;
+  blendFunc: function(glArgs, cache) {
+    const state = cache.currentState;
     state.blendSrcRgb = state.blendSrcAlpha = glArgs[0];
     state.blendDstRgb = state.blendDstAlpha = glArgs[1];
   },
@@ -763,8 +762,8 @@ WebGLObserver.prototype = {
    * @param WebGLCache cache
    *        The state storage for the WebGL context initiating this call.
    */
-  blendFuncSeparate: function (glArgs, cache) {
-    let state = cache.currentState;
+  blendFuncSeparate: function(glArgs, cache) {
+    const state = cache.currentState;
     state.blendSrcRgb = glArgs[0];
     state.blendDstRgb = glArgs[1];
     state.blendSrcAlpha = glArgs[2];
@@ -782,8 +781,8 @@ WebGLObserver.prototype = {
    * @param WebGLProxy proxy
    *        The proxy methods for the WebGL context initiating this call.
    */
-  beforeDraw_: function (glArgs, cache, proxy) {
-    let traits = cache.currentProgramTraits;
+  beforeDraw_: function(glArgs, cache, proxy) {
+    const traits = cache.currentProgramTraits;
 
     // Handle program blackboxing.
     if (traits & PROGRAM_BLACKBOX_TRAIT) {
@@ -811,14 +810,14 @@ WebGLObserver.prototype = {
    * @param WebGLProxy proxy
    *        The proxy methods for the WebGL context initiating this call.
    */
-  afterDraw_: function (glArgs, glResult, cache, proxy) {
-    let traits = cache.currentProgramTraits;
+  afterDraw_: function(glArgs, glResult, cache, proxy) {
+    const traits = cache.currentProgramTraits;
 
     // Handle program highlighting.
     if (traits & PROGRAM_HIGHLIGHT_TRAIT) {
       proxy.disableHighlighting();
     }
-  }
+  },
 };
 
 /**
@@ -866,9 +865,9 @@ WebGLCache.prototype = {
    * @param WebGLProxy proxy
    *        The proxy methods for the WebGL context owning the state.
    */
-  refreshState: function (proxy) {
-    let gl = this._gl;
-    let s = this.currentState;
+  refreshState: function(proxy) {
+    const gl = this._gl;
+    const s = this.currentState;
 
     // Populate only with the necessary parameters. Not all default WebGL
     // state values are required.
@@ -890,13 +889,13 @@ WebGLCache.prototype = {
    * @param number traits
    *        A default properties mask set for the program.
    */
-  addProgram: function (program, traits) {
+  addProgram: function(program, traits) {
     this._programs.set(program, {
       traits: traits,
       // keys are GLints (numbers)
       attributes: [],
       // keys are WebGLUniformLocations (objects)
-      uniforms: new Map()
+      uniforms: new Map(),
     });
   },
 
@@ -909,7 +908,7 @@ WebGLCache.prototype = {
    * @param number trait
    *        The property added to the program.
    */
-  setProgramTrait: function (program, trait) {
+  setProgramTrait: function(program, trait) {
     this._programs.get(program).traits |= trait;
   },
 
@@ -921,7 +920,7 @@ WebGLCache.prototype = {
    * @param number trait
    *        The property removed from the program.
    */
-  unsetProgramTrait: function (program, trait) {
+  unsetProgramTrait: function(program, trait) {
     this._programs.get(program).traits &= ~trait;
   },
 
@@ -930,7 +929,7 @@ WebGLCache.prototype = {
    * @param WebGLProgram program
    */
   set currentProgram(program) {
-    let programInfo = this._programs.get(program);
+    const programInfo = this._programs.get(program);
     if (programInfo == null) {
       return;
     }
@@ -957,10 +956,10 @@ WebGLCache.prototype = {
    * @param GLint value
    *        The attribute value.
    */
-  addAttribute: function (program, name, value) {
+  addAttribute: function(program, name, value) {
     this._programs.get(program).attributes[value] = {
       name: name,
-      value: value
+      value: value,
     };
   },
 
@@ -974,10 +973,10 @@ WebGLCache.prototype = {
    * @param WebGLUniformLocation value
    *        The uniform value.
    */
-  addUniform: function (program, name, value) {
+  addUniform: function(program, name, value) {
     this._programs.get(program).uniforms.set(new XPCNativeWrapper(value), {
       name: name,
-      value: value
+      value: value,
     });
   },
 
@@ -989,9 +988,9 @@ WebGLCache.prototype = {
    * @param WebGLProgram program
    *        The program for which the attributes need updating.
    */
-  updateAttributesForProgram: function (program) {
-    let attributes = this._programs.get(program).attributes;
-    for (let attribute of attributes) {
+  updateAttributesForProgram: function(program) {
+    const attributes = this._programs.get(program).attributes;
+    for (const attribute of attributes) {
       attribute.value = this._gl.getAttribLocation(program, attribute.name);
     }
   },
@@ -1004,9 +1003,9 @@ WebGLCache.prototype = {
    * @param WebGLProgram program
    *        The program for which the uniforms need updating.
    */
-  updateUniformsForProgram: function (program) {
-    let uniforms = this._programs.get(program).uniforms;
-    for (let [, uniform] of uniforms) {
+  updateUniformsForProgram: function(program) {
+    const uniforms = this._programs.get(program).uniforms;
+    for (const [, uniform] of uniforms) {
       uniform.value = this._gl.getUniformLocation(program, uniform.name);
     }
   },
@@ -1022,9 +1021,9 @@ WebGLCache.prototype = {
    *         The current attribute value, or the initial value if it's already
    *         up to date with its corresponding program.
    */
-  getCurrentAttributeLocation: function (initialValue) {
-    let attributes = this._currentAttributesMap;
-    let currentInfo = attributes ? attributes[initialValue] : null;
+  getCurrentAttributeLocation: function(initialValue) {
+    const attributes = this._currentAttributesMap;
+    const currentInfo = attributes ? attributes[initialValue] : null;
     return currentInfo ? currentInfo.value : initialValue;
   },
 
@@ -1039,11 +1038,11 @@ WebGLCache.prototype = {
    *         The current uniform value, or the initial value if it's already
    *         up to date with its corresponding program.
    */
-  getCurrentUniformLocation: function (initialValue) {
-    let uniforms = this._currentUniformsMap;
-    let currentInfo = uniforms ? uniforms.get(initialValue) : null;
+  getCurrentUniformLocation: function(initialValue) {
+    const uniforms = this._currentUniformsMap;
+    const currentInfo = uniforms ? uniforms.get(initialValue) : null;
     return currentInfo ? currentInfo.value : initialValue;
-  }
+  },
 };
 
 /**
@@ -1068,7 +1067,7 @@ function WebGLProxy(id, context, cache, observer) {
   this._cache = cache;
   this._observer = observer;
 
-  let exports = [
+  const exports = [
     "isEnabled",
     "getParameter",
     "getAttachedShaders",
@@ -1077,7 +1076,7 @@ function WebGLProxy(id, context, cache, observer) {
     "compileShader",
     "enableHighlighting",
     "disableHighlighting",
-    "readPixels"
+    "readPixels",
   ];
   exports.forEach(e => {
     this[e] = (...args) => this._call(e, args);
@@ -1105,7 +1104,7 @@ WebGLProxy.prototype = {
    * @return boolean
    *         True if enabled, false otherwise.
    */
-  _isEnabled: function (name) {
+  _isEnabled: function(name) {
     return this._gl.isEnabled(this._gl[name]);
   },
 
@@ -1117,7 +1116,7 @@ WebGLProxy.prototype = {
    * @return any
    *         The corresponding parameter's value.
    */
-  _getParameter: function (name) {
+  _getParameter: function(name) {
     return this._gl.getParameter(this._gl[name]);
   },
 
@@ -1130,11 +1129,11 @@ WebGLProxy.prototype = {
    * @return any
    *         The corresponding parameter's value.
    */
-  _getRenderbufferParameter: function (name) {
+  _getRenderbufferParameter: function(name) {
     if (!this._getParameter("RENDERBUFFER_BINDING")) {
       return null;
     }
-    let gl = this._gl;
+    const gl = this._gl;
     return gl.getRenderbufferParameter(gl.RENDERBUFFER, gl[name]);
   },
 
@@ -1154,7 +1153,7 @@ WebGLProxy.prototype = {
     if (!this._getParameter("FRAMEBUFFER_BINDING")) {
       return null;
     }
-    let gl = this._gl;
+    const gl = this._gl;
     return gl.getFramebufferAttachmentParameter(gl.FRAMEBUFFER, gl[type], gl[name]);
   },
 
@@ -1166,7 +1165,7 @@ WebGLProxy.prototype = {
    * @return array
    *         The attached vertex and fragment shaders.
    */
-  _getAttachedShaders: function (program) {
+  _getAttachedShaders: function(program) {
     return this._gl.getAttachedShaders(program);
   },
 
@@ -1178,7 +1177,7 @@ WebGLProxy.prototype = {
    * @return string
    *         The shader's source code.
    */
-  _getShaderSource: function (shader) {
+  _getShaderSource: function(shader) {
     return this._gl.getShaderSource(shader);
   },
 
@@ -1192,14 +1191,14 @@ WebGLProxy.prototype = {
    * @return WebGLShader | null
    *         The shader of the specified type, or null if nothing is found.
    */
-  _getShaderOfType: function (shaders, type) {
-    let gl = this._gl;
-    let shaderTypeEnum = {
+  _getShaderOfType: function(shaders, type) {
+    const gl = this._gl;
+    const shaderTypeEnum = {
       vertex: gl.VERTEX_SHADER,
-      fragment: gl.FRAGMENT_SHADER
+      fragment: gl.FRAGMENT_SHADER,
     }[type];
 
-    for (let shader of shaders) {
+    for (const shader of shaders) {
       if (gl.getShaderParameter(shader, gl.SHADER_TYPE) == shaderTypeEnum) {
         return shader;
       }
@@ -1219,13 +1218,13 @@ WebGLProxy.prototype = {
    * @return object
    *         An object containing the compilation and linking status.
    */
-  _compileShader: function (program, shader, text) {
-    let gl = this._gl;
+  _compileShader: function(program, shader, text) {
+    const gl = this._gl;
     gl.shaderSource(shader, text);
     gl.compileShader(shader);
     gl.linkProgram(program);
 
-    let error = { compile: "", link: "" };
+    const error = { compile: "", link: "" };
 
     if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
       error.compile = gl.getShaderInfoLog(shader);
@@ -1243,21 +1242,21 @@ WebGLProxy.prototype = {
   /**
    * Enables color blending based on the geometry highlight tint.
    */
-  _enableHighlighting: function () {
-    let gl = this._gl;
+  _enableHighlighting: function() {
+    const gl = this._gl;
 
     // Avoid changing the blending params when "rendering to texture".
 
     // Check drawing to a custom framebuffer bound to the default renderbuffer.
-    let hasFramebuffer = this._getParameter("FRAMEBUFFER_BINDING");
-    let hasRenderbuffer = this._getParameter("RENDERBUFFER_BINDING");
+    const hasFramebuffer = this._getParameter("FRAMEBUFFER_BINDING");
+    const hasRenderbuffer = this._getParameter("RENDERBUFFER_BINDING");
     if (hasFramebuffer && !hasRenderbuffer) {
       return;
     }
 
     // Check drawing to a depth or stencil component of the framebuffer.
-    let writesDepth = this._getFramebufferAttachmentParameter("DEPTH_ATTACHMENT");
-    let writesStencil = this._getFramebufferAttachmentParameter("STENCIL_ATTACHMENT");
+    const writesDepth = this._getFramebufferAttachmentParameter("DEPTH_ATTACHMENT");
+    const writesStencil = this._getFramebufferAttachmentParameter("STENCIL_ATTACHMENT");
     if (writesDepth || writesStencil) {
       return;
     }
@@ -1276,9 +1275,9 @@ WebGLProxy.prototype = {
    * Disables color blending based on the geometry highlight tint, by
    * reverting the corresponding params back to their original values.
    */
-  _disableHighlighting: function () {
-    let gl = this._gl;
-    let s = this._cache.currentState;
+  _disableHighlighting: function() {
+    const gl = this._gl;
+    const s = this._cache.currentState;
 
     gl[s[gl.BLEND] ? "enable" : "disable"](gl.BLEND);
     gl.blendColor.apply(gl, s.blendColor);
@@ -1289,7 +1288,7 @@ WebGLProxy.prototype = {
   /**
    * Returns the pixel values at the position specified on the canvas.
    */
-  _readPixels: function (x, y, w, h, format, type, buffer) {
+  _readPixels: function(x, y, w, h, format, type, buffer) {
     this._gl.readPixels(x, y, w, h, format, type, buffer);
   },
 
@@ -1312,21 +1311,21 @@ WebGLProxy.prototype = {
    * @return any
    *         The called function result.
    */
-  _call: function (funcName, args) {
-    let prevState = this._observer.suppressHandlers;
+  _call: function(funcName, args) {
+    const prevState = this._observer.suppressHandlers;
 
     this._observer.suppressHandlers = true;
-    let result = this["_" + funcName].apply(this, args);
+    const result = this["_" + funcName].apply(this, args);
     this._observer.suppressHandlers = prevState;
 
     return result;
-  }
+  },
 };
 
 // Utility functions.
 
 function removeFromMap(map, predicate) {
-  for (let [key, value] of map) {
+  for (const [key, value] of map) {
     if (predicate(value)) {
       map.delete(key);
     }

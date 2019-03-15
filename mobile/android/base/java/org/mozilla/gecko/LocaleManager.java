@@ -19,11 +19,9 @@ import android.content.res.Resources;
 public interface LocaleManager {
     void initialize(Context context);
 
-    /**
-     * @return true if locale switching is enabled.
-     */
-    boolean isEnabled();
     Locale getCurrentLocale(Context context);
+    Locale getDefaultSystemLocale();
+    boolean isMirroringSystemLocale(Context context);
     String getAndApplyPersistedLocale(Context context);
     void correctLocale(Context context, Resources resources, Configuration newConfig);
     void updateConfiguration(Context context, Locale locale);

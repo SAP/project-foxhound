@@ -43,11 +43,18 @@ public final class HardwareCodecCapabilityUtils {
   {
     "GT-I9300",         // S3 (I9300 / I9300I)
     "SCH-I535",         // S3
+    "SGH-T999",         // S3 (T-Mobile)
+    "SAMSUNG-SGH-T999", // S3 (T-Mobile)
     "SGH-M919",         // S4
     "GT-I9505",         // S4
     "GT-I9515",         // S4
+    "SCH-R970",         // S4
     "SGH-I337",         // S4
-    "SAMSUNG-SGH-I337"  // S4
+    "SPH-L720",         // S4 (Sprint)
+    "SAMSUNG-SGH-I337", // S4
+    "GT-I9195",         // S4 Mini
+    "300E5EV/300E4EV/270E5EV/270E4EV/2470EV/2470EE",
+    "LG-D605"           // LG Optimus L9 II
   };
 
   @WrapForJNI

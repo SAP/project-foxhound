@@ -12,8 +12,11 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1223372
   <script type="application/javascript">
 
 /** Test for Bug 1223372 **/
+ChromeUtils.import("resource://testing-common/TestUtils.jsm");
 
 function go() {
+    SpecialPowers.pushPrefEnv({"set": [["security.allow_eval_with_system_principal",
+                                        true]]});
     SimpleTest.waitForExplicitFinish();
 
     var frame = $('subframe');
@@ -40,21 +43,22 @@ function go() {
             return;
         }
 
+        let winID = w.windowUtils.outerWindowID;
         // Remove the frame. This will nuke the WindowProxy wrapper from our chrome
-        // document's global, so evaluating 'this' in it will return a dead wrapper.
+        // document's global, so evaluating 'this' in it will return a dead wrapper
+        // once the window is destroyed.
         frame.remove();
 
-        SimpleTest.executeSoon(function() {
+        TestUtils.topicObserved("outer-window-nuked", (subject, data) => {
+            let id = subject.QueryInterface(Ci.nsISupportsPRUint64).data;
+            return id == winID;
+        }).then(() => {
             ok(checkDead(), "Expected a dead object wrapper");
 
-            // Wrapping the Window should throw now.
-            var exc;
-            try {
-                Components.utils.getGlobalForObject(getObject());
-            } catch(e) {
-                exc = e;
-            }
-            is(exc.message, "Can't wrap dead object");
+            // Wrapping the Window should return a dead wrapper now.
+            var global = Cu.getGlobalForObject(getObject());
+            ok(Cu.isDeadWrapper(global),
+               "Expected a dead wrapper when requesting the window's global");
 
             SimpleTest.finish();
         });
@@ -66,7 +70,7 @@ function go() {
 <body>
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1223372">Mozilla Bug 1223372</a>
 
-<iframe id="subframe" src="data:text/html," onload="go()"></iframe>
+<iframe id="subframe" src="./file_empty.html" onload="go()"></iframe>
 
 </body>
 </html>

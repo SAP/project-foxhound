@@ -10,41 +10,33 @@
 #include "nsISupports.h"
 #include "nsWrapperCache.h"
 
-#include "nsSVGElement.h"
+#include "SVGElement.h"
 
 namespace mozilla {
 namespace dom {
 
-class SVGAnimatedNumber : public nsISupports
-                        , public nsWrapperCache
-{
-public:
+class SVGAnimatedNumber : public nsISupports, public nsWrapperCache {
+ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(SVGAnimatedNumber)
 
-  nsSVGElement* GetParentObject() const
-  {
-    return mSVGElement;
-  }
+  SVGElement* GetParentObject() const { return mSVGElement; }
 
-  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-    override final;
+  JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) final;
 
   virtual float BaseVal() = 0;
   virtual void SetBaseVal(float aBaseVal) = 0;
   virtual float AnimVal() = 0;
 
-protected:
-  explicit SVGAnimatedNumber(nsSVGElement* aSVGElement)
-    : mSVGElement(aSVGElement)
-  {
-  }
-  virtual ~SVGAnimatedNumber() {};
+ protected:
+  explicit SVGAnimatedNumber(SVGElement* aSVGElement)
+      : mSVGElement(aSVGElement) {}
+  virtual ~SVGAnimatedNumber(){};
 
-  RefPtr<nsSVGElement> mSVGElement;
+  RefPtr<SVGElement> mSVGElement;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_SVGAnimatedNumber_h
+#endif  // mozilla_dom_SVGAnimatedNumber_h

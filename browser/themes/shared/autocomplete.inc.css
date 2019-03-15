@@ -4,6 +4,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 %endif
 
+/* General popup rules */
+
 #PopupAutoComplete > richlistbox > richlistitem {
   height: 20px;
   min-height: 20px;
@@ -26,15 +28,27 @@
   padding: 0;
 }
 
+/* Popup states */
+
+.autocomplete-richlistitem:hover {
+  background-color: var(--arrowpanel-dimmed);
+}
+
+.autocomplete-richlistitem[selected] {
+  background-color: Highlight;
+  color: HighlightText;
+}
 
 /* Login form autocompletion */
 #PopupAutoComplete > richlistbox > richlistitem[originaltype="login"] > .ac-site-icon {
   display: initial;
-  list-style-image: url(chrome://browser/skin/notification-icons.svg#login);
+  list-style-image: url(chrome://browser/skin/notification-icons/login.svg);
+  -moz-context-properties: fill;
+  fill: GrayText;
 }
 
 #PopupAutoComplete > richlistbox > richlistitem[originaltype="login"] > .ac-site-icon[selected] {
-  list-style-image: url(chrome://browser/skin/notification-icons.svg#login-highlighted);
+  fill: HighlightText;
 }
 
 
@@ -61,5 +75,7 @@
 }
 
 #PopupAutoComplete > richlistbox > richlistitem[originaltype="insecureWarning"] > .ac-site-icon {
-  list-style-image: url(chrome://browser/skin/connection-mixed-active-loaded.svg#icon);
+  list-style-image: url(chrome://browser/skin/connection-mixed-active-loaded.svg);
+  -moz-context-properties: fill;
+  fill: GrayText;
 }

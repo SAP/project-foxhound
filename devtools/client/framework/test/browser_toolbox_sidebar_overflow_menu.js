@@ -23,31 +23,31 @@ const testToolDefinition = {
       destroy: () => {},
       panelDoc: iframeWindow.document,
     };
-  }
+  },
 };
 
-add_task(function* () {
-  let tab = yield addTab("about:blank");
-  let target = TargetFactory.forTab(tab);
+add_task(async function() {
+  const tab = await addTab("about:blank");
+  const target = await TargetFactory.forTab(tab);
 
   gDevTools.registerTool(testToolDefinition);
-  let toolbox = yield gDevTools.showToolbox(target, testToolDefinition.id);
+  const toolbox = await gDevTools.showToolbox(target, testToolDefinition.id);
 
-  let toolPanel = toolbox.getPanel(testToolDefinition.id);
-  let tabbox = toolPanel.panelDoc.getElementById("sidebar");
+  const toolPanel = toolbox.getPanel(testToolDefinition.id);
+  const tabbox = toolPanel.panelDoc.getElementById("sidebar");
 
   info("Creating the sidebar widget");
-  let sidebar = new ToolSidebar(tabbox, toolPanel, "bug1101569", {
-    showAllTabsMenu: true
+  const sidebar = new ToolSidebar(tabbox, toolPanel, "bug1101569", {
+    showAllTabsMenu: true,
   });
 
-  let allTabsMenu = toolPanel.panelDoc.querySelector(".devtools-sidebar-alltabs");
+  const allTabsMenu = toolPanel.panelDoc.querySelector(".devtools-sidebar-alltabs");
   ok(allTabsMenu, "The all-tabs menu is available");
   is(allTabsMenu.getAttribute("hidden"), "true", "The menu is hidden for now");
 
   info("Adding 10 tabs to the sidebar widget");
   for (let nb = 0; nb < 10; nb++) {
-    let url = `data:text/html;charset=utf8,<title>tab ${nb}</title><p>Test tab ${nb}</p>`;
+    const url = `data:text/html;charset=utf8,<title>tab ${nb}</title><p>Test tab ${nb}</p>`;
     sidebar.addTab("tab" + nb, url, {selected: nb === 0});
   }
 
@@ -57,10 +57,10 @@ add_task(function* () {
 
   info("Select each tab, one by one");
   for (let nb = 0; nb < 10; nb++) {
-    let id = "tab" + nb;
+    const id = "tab" + nb;
 
     info("Found tab item nb " + nb);
-    let item = allTabsMenu.querySelector("#sidebar-alltabs-item-" + id);
+    const item = allTabsMenu.querySelector("#sidebar-alltabs-item-" + id);
 
     info("Click on the tab");
     EventUtils.sendMouseEvent({type: "click"}, item, toolPanel.panelDoc.defaultView);
@@ -73,8 +73,8 @@ add_task(function* () {
   sidebar._onTabBoxUnderflow();
   is(allTabsMenu.getAttribute("hidden"), "true", "The all-tabs menu is hidden");
 
-  yield sidebar.destroy();
-  yield toolbox.destroy();
+  await sidebar.destroy();
+  await toolbox.destroy();
   gDevTools.unregisterTool(testToolDefinition.id);
   gBrowser.removeCurrentTab();
 });

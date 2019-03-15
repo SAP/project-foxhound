@@ -7,25 +7,25 @@
 requestLongerTimeout(2);
 
 // Test XBL anonymous content in the markupview
-const TEST_URL = "chrome://devtools/content/scratchpad/scratchpad.xul";
+const TEST_URL = URL_ROOT + "doc_markup_anonymous_xul.xul";
 
-add_task(function* () {
-  let {inspector} = yield openInspectorForURL(TEST_URL);
+add_task(async function() {
+  const {inspector} = await openInspectorForURL(TEST_URL);
 
-  let toolbarbutton = yield getNodeFront("toolbarbutton", inspector);
-  let children = yield inspector.walker.children(toolbarbutton);
+  const toolbarbutton = await getNodeFront("toolbarbutton", inspector);
+  const children = await inspector.walker.children(toolbarbutton);
 
-  is(toolbarbutton.numChildren, 3, "Correct number of children");
-  is(children.nodes.length, 3, "Children returned from walker");
+  is(toolbarbutton.numChildren, 4, "Correct number of children");
+  is(children.nodes.length, 4, "Children returned from walker");
 
   is(toolbarbutton.isAnonymous, false, "Toolbarbutton is not anonymous");
-  yield isEditingMenuEnabled(toolbarbutton, inspector);
+  await isEditingMenuEnabled(toolbarbutton, inspector);
 
-  for (let node of children.nodes) {
+  for (const node of children.nodes) {
     ok(node.isAnonymous, "Child is anonymous");
     ok(node._form.isXBLAnonymous, "Child is XBL anonymous");
     ok(!node._form.isShadowAnonymous, "Child is not shadow anonymous");
     ok(!node._form.isNativeAnonymous, "Child is not native anonymous");
-    yield isEditingMenuDisabled(node, inspector);
+    await isEditingMenuDisabled(node, inspector);
   }
 });

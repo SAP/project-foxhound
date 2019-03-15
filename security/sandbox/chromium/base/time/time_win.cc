@@ -33,16 +33,16 @@
 
 #include "base/time/time.h"
 
-#pragma comment(lib, "winmm.lib")
 #include <windows.h>
 #include <mmsystem.h>
 #include <stdint.h>
 
+#include "base/atomicops.h"
 #include "base/bit_cast.h"
 #include "base/cpu.h"
-#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/synchronization/lock.h"
+#include "base/threading/platform_thread.h"
 
 using base::ThreadTicks;
 using base::Time;
@@ -95,18 +95,19 @@ const int kMinTimerIntervalLowResMs = 4;
 bool g_high_res_timer_enabled = false;
 // How many times the high resolution timer has been called.
 uint32_t g_high_res_timer_count = 0;
+// Start time of the high resolution timer usage monitoring. This is needed
+// to calculate the usage as percentage of the total elapsed time.
+TimeTicks g_high_res_timer_usage_start;
+// The cumulative time the high resolution timer has been in use since
+// |g_high_res_timer_usage_start| moment.
+TimeDelta g_high_res_timer_usage;
+// Timestamp of the last activation change of the high resolution timer. This
+// is used to calculate the cumulative usage.
+TimeTicks g_high_res_timer_last_activation;
 // The lock to control access to the above two variables.
-base::LazyInstance<base::Lock>::Leaky g_high_res_lock =
-    LAZY_INSTANCE_INITIALIZER;
-
-// Returns a pointer to the QueryThreadCycleTime() function from Windows.
-// Can't statically link to it because it is not available on XP.
-using QueryThreadCycleTimePtr = decltype(::QueryThreadCycleTime)*;
-QueryThreadCycleTimePtr GetQueryThreadCycleTimeFunction() {
-  static const QueryThreadCycleTimePtr query_thread_cycle_time_fn =
-      reinterpret_cast<QueryThreadCycleTimePtr>(::GetProcAddress(
-          ::GetModuleHandle(L"kernel32.dll"), "QueryThreadCycleTime"));
-  return query_thread_cycle_time_fn;
+base::Lock* GetHighResLock() {
+  static auto* lock = new base::Lock();
+  return lock;
 }
 
 // Returns the current value of the performance counter.
@@ -119,16 +120,15 @@ uint64_t QPCNowRaw() {
   return perf_counter_now.QuadPart;
 }
 
+bool SafeConvertToWord(int in, WORD* out) {
+  base::CheckedNumeric<WORD> result = in;
+  *out = result.ValueOrDefault(std::numeric_limits<WORD>::max());
+  return result.IsValid();
+}
+
 }  // namespace
 
 // Time -----------------------------------------------------------------------
-
-// The internal representation of Time uses FILETIME, whose epoch is 1601-01-01
-// 00:00:00 UTC.  ((1970-1601)*365+89)*24*60*60*1000*1000, where 89 is the
-// number of leap year days between 1601 and 1970: (1970-1601)/4 excluding
-// 1700, 1800, and 1900.
-// static
-const int64_t Time::kTimeTToMicrosecondsOffset = INT64_C(11644473600000000);
 
 // static
 Time Time::Now() {
@@ -194,7 +194,7 @@ FILETIME Time::ToFileTime() const {
 
 // static
 void Time::EnableHighResolutionTimer(bool enable) {
-  base::AutoLock lock(g_high_res_lock.Get());
+  base::AutoLock lock(*GetHighResLock());
   if (g_high_res_timer_enabled == enable)
     return;
   g_high_res_timer_enabled = enable;
@@ -221,59 +221,99 @@ bool Time::ActivateHighResolutionTimer(bool activating) {
   // called.
   const uint32_t max = std::numeric_limits<uint32_t>::max();
 
-  base::AutoLock lock(g_high_res_lock.Get());
+  base::AutoLock lock(*GetHighResLock());
   UINT period = g_high_res_timer_enabled ? kMinTimerIntervalHighResMs
                                          : kMinTimerIntervalLowResMs;
   if (activating) {
     DCHECK_NE(g_high_res_timer_count, max);
     ++g_high_res_timer_count;
-    if (g_high_res_timer_count == 1)
+    if (g_high_res_timer_count == 1) {
+      g_high_res_timer_last_activation = TimeTicks::Now();
       timeBeginPeriod(period);
+    }
   } else {
     DCHECK_NE(g_high_res_timer_count, 0u);
     --g_high_res_timer_count;
-    if (g_high_res_timer_count == 0)
+    if (g_high_res_timer_count == 0) {
+      g_high_res_timer_usage +=
+          TimeTicks::Now() - g_high_res_timer_last_activation;
       timeEndPeriod(period);
+    }
   }
   return (period == kMinTimerIntervalHighResMs);
 }
 
 // static
 bool Time::IsHighResolutionTimerInUse() {
-  base::AutoLock lock(g_high_res_lock.Get());
+  base::AutoLock lock(*GetHighResLock());
   return g_high_res_timer_enabled && g_high_res_timer_count > 0;
 }
 
 // static
-Time Time::FromExploded(bool is_local, const Exploded& exploded) {
+void Time::ResetHighResolutionTimerUsage() {
+  base::AutoLock lock(*GetHighResLock());
+  g_high_res_timer_usage = TimeDelta();
+  g_high_res_timer_usage_start = TimeTicks::Now();
+  if (g_high_res_timer_count > 0)
+    g_high_res_timer_last_activation = g_high_res_timer_usage_start;
+}
+
+// static
+double Time::GetHighResolutionTimerUsage() {
+  base::AutoLock lock(*GetHighResLock());
+  TimeTicks now = TimeTicks::Now();
+  TimeDelta elapsed_time = now - g_high_res_timer_usage_start;
+  if (elapsed_time.is_zero()) {
+    // This is unexpected but possible if TimeTicks resolution is low and
+    // GetHighResolutionTimerUsage() is called promptly after
+    // ResetHighResolutionTimerUsage().
+    return 0.0;
+  }
+  TimeDelta used_time = g_high_res_timer_usage;
+  if (g_high_res_timer_count > 0) {
+    // If currently activated add the remainder of time since the last
+    // activation.
+    used_time += now - g_high_res_timer_last_activation;
+  }
+  return used_time.InMillisecondsF() / elapsed_time.InMillisecondsF() * 100;
+}
+
+// static
+bool Time::FromExploded(bool is_local, const Exploded& exploded, Time* time) {
   // Create the system struct representing our exploded time. It will either be
-  // in local time or UTC.
+  // in local time or UTC.If casting from int to WORD results in overflow,
+  // fail and return Time(0).
   SYSTEMTIME st;
-  st.wYear = static_cast<WORD>(exploded.year);
-  st.wMonth = static_cast<WORD>(exploded.month);
-  st.wDayOfWeek = static_cast<WORD>(exploded.day_of_week);
-  st.wDay = static_cast<WORD>(exploded.day_of_month);
-  st.wHour = static_cast<WORD>(exploded.hour);
-  st.wMinute = static_cast<WORD>(exploded.minute);
-  st.wSecond = static_cast<WORD>(exploded.second);
-  st.wMilliseconds = static_cast<WORD>(exploded.millisecond);
+  if (!SafeConvertToWord(exploded.year, &st.wYear) ||
+      !SafeConvertToWord(exploded.month, &st.wMonth) ||
+      !SafeConvertToWord(exploded.day_of_week, &st.wDayOfWeek) ||
+      !SafeConvertToWord(exploded.day_of_month, &st.wDay) ||
+      !SafeConvertToWord(exploded.hour, &st.wHour) ||
+      !SafeConvertToWord(exploded.minute, &st.wMinute) ||
+      !SafeConvertToWord(exploded.second, &st.wSecond) ||
+      !SafeConvertToWord(exploded.millisecond, &st.wMilliseconds)) {
+    *time = base::Time(0);
+    return false;
+  }
 
   FILETIME ft;
   bool success = true;
   // Ensure that it's in UTC.
   if (is_local) {
     SYSTEMTIME utc_st;
-    success = TzSpecificLocalTimeToSystemTime(NULL, &st, &utc_st) &&
+    success = TzSpecificLocalTimeToSystemTime(nullptr, &st, &utc_st) &&
               SystemTimeToFileTime(&utc_st, &ft);
   } else {
     success = !!SystemTimeToFileTime(&st, &ft);
   }
 
   if (!success) {
-    NOTREACHED() << "Unable to convert time";
-    return Time(0);
+    *time = Time(0);
+    return false;
   }
-  return Time(FileTimeToMicroseconds(ft));
+
+  *time = Time(FileTimeToMicroseconds(ft));
+  return true;
 }
 
 void Time::Explode(bool is_local, Exploded* exploded) const {
@@ -298,7 +338,7 @@ void Time::Explode(bool is_local, Exploded* exploded) const {
     // daylight saving time, it will take daylight saving time into account,
     // even if the time you are converting is in standard time.
     success = FileTimeToSystemTime(&utc_ft, &utc_st) &&
-              SystemTimeToTzSpecificLocalTime(NULL, &utc_st, &st);
+              SystemTimeToTzSpecificLocalTime(nullptr, &utc_st, &st);
   } else {
     success = !!FileTimeToSystemTime(&utc_ft, &st);
   }
@@ -331,34 +371,69 @@ DWORD timeGetTimeWrapper() {
 
 DWORD (*g_tick_function)(void) = &timeGetTimeWrapper;
 
-// Accumulation of time lost due to rollover (in milliseconds).
-int64_t g_rollover_ms = 0;
+// A structure holding the most significant bits of "last seen" and a
+// "rollover" counter.
+union LastTimeAndRolloversState {
+  // The state as a single 32-bit opaque value.
+  base::subtle::Atomic32 as_opaque_32;
 
-// The last timeGetTime value we saw, to detect rollover.
-DWORD g_last_seen_now = 0;
-
-// Lock protecting rollover_ms and last_seen_now.
-// Note: this is a global object, and we usually avoid these. However, the time
-// code is low-level, and we don't want to use Singletons here (it would be too
-// easy to use a Singleton without even knowing it, and that may lead to many
-// gotchas). Its impact on startup time should be negligible due to low-level
-// nature of time code.
-base::Lock g_rollover_lock;
+  // The state as usable values.
+  struct {
+    // The top 8-bits of the "last" time. This is enough to check for rollovers
+    // and the small bit-size means fewer CompareAndSwap operations to store
+    // changes in state, which in turn makes for fewer retries.
+    uint8_t last_8;
+    // A count of the number of detected rollovers. Using this as bits 47-32
+    // of the upper half of a 64-bit value results in a 48-bit tick counter.
+    // This extends the total rollover period from about 49 days to about 8800
+    // years while still allowing it to be stored with last_8 in a single
+    // 32-bit value.
+    uint16_t rollovers;
+  } as_values;
+};
+base::subtle::Atomic32 g_last_time_and_rollovers = 0;
+static_assert(
+    sizeof(LastTimeAndRolloversState) <= sizeof(g_last_time_and_rollovers),
+    "LastTimeAndRolloversState does not fit in a single atomic word");
 
 // We use timeGetTime() to implement TimeTicks::Now().  This can be problematic
 // because it returns the number of milliseconds since Windows has started,
 // which will roll over the 32-bit value every ~49 days.  We try to track
 // rollover ourselves, which works if TimeTicks::Now() is called at least every
-// 49 days.
+// 48.8 days (not 49 days because only changes in the top 8 bits get noticed).
 TimeDelta RolloverProtectedNow() {
-  base::AutoLock locked(g_rollover_lock);
-  // We should hold the lock while calling tick_function to make sure that
-  // we keep last_seen_now stay correctly in sync.
-  DWORD now = g_tick_function();
-  if (now < g_last_seen_now)
-    g_rollover_ms += 0x100000000I64;  // ~49.7 days.
-  g_last_seen_now = now;
-  return TimeDelta::FromMilliseconds(now + g_rollover_ms);
+  LastTimeAndRolloversState state;
+  DWORD now;  // DWORD is always unsigned 32 bits.
+
+  while (true) {
+    // Fetch the "now" and "last" tick values, updating "last" with "now" and
+    // incrementing the "rollovers" counter if the tick-value has wrapped back
+    // around. Atomic operations ensure that both "last" and "rollovers" are
+    // always updated together.
+    int32_t original = base::subtle::Acquire_Load(&g_last_time_and_rollovers);
+    state.as_opaque_32 = original;
+    now = g_tick_function();
+    uint8_t now_8 = static_cast<uint8_t>(now >> 24);
+    if (now_8 < state.as_values.last_8)
+      ++state.as_values.rollovers;
+    state.as_values.last_8 = now_8;
+
+    // If the state hasn't changed, exit the loop.
+    if (state.as_opaque_32 == original)
+      break;
+
+    // Save the changed state. If the existing value is unchanged from the
+    // original, exit the loop.
+    int32_t check = base::subtle::Release_CompareAndSwap(
+        &g_last_time_and_rollovers, original, state.as_opaque_32);
+    if (check == original)
+      break;
+
+    // Another thread has done something in between so retry from the top.
+  }
+
+  return TimeDelta::FromMilliseconds(
+      now + (static_cast<uint64_t>(state.as_values.rollovers) << 32));
 }
 
 // Discussion of tick counter options on Windows:
@@ -491,11 +566,9 @@ TimeDelta InitialNowFunction() {
 // static
 TimeTicks::TickFunctionType TimeTicks::SetMockTickFunction(
     TickFunctionType ticker) {
-  base::AutoLock locked(g_rollover_lock);
   TickFunctionType old = g_tick_function;
   g_tick_function = ticker;
-  g_rollover_ms = 0;
-  g_last_seen_now = 0;
+  base::subtle::NoBarrier_Store(&g_last_time_and_rollovers, 0);
   return old;
 }
 
@@ -512,12 +585,44 @@ bool TimeTicks::IsHighResolution() {
 }
 
 // static
+bool TimeTicks::IsConsistentAcrossProcesses() {
+  // According to Windows documentation [1] QPC is consistent post-Windows
+  // Vista. So if we are using QPC then we are consistent which is the same as
+  // being high resolution.
+  //
+  // [1] https://msdn.microsoft.com/en-us/library/windows/desktop/dn553408(v=vs.85).aspx
+  //
+  // "In general, the performance counter results are consistent across all
+  // processors in multi-core and multi-processor systems, even when measured on
+  // different threads or processes. Here are some exceptions to this rule:
+  // - Pre-Windows Vista operating systems that run on certain processors might
+  // violate this consistency because of one of these reasons:
+  //     1. The hardware processors have a non-invariant TSC and the BIOS
+  //     doesn't indicate this condition correctly.
+  //     2. The TSC synchronization algorithm that was used wasn't suitable for
+  //     systems with large numbers of processors."
+  return IsHighResolution();
+}
+
+// static
+TimeTicks::Clock TimeTicks::GetClock() {
+  return IsHighResolution() ?
+      Clock::WIN_QPC : Clock::WIN_ROLLOVER_PROTECTED_TIME_GET_TIME;
+}
+
+// static
 ThreadTicks ThreadTicks::Now() {
+  return ThreadTicks::GetForThread(PlatformThread::CurrentHandle());
+}
+
+// static
+ThreadTicks ThreadTicks::GetForThread(
+    const base::PlatformThreadHandle& thread_handle) {
   DCHECK(IsSupported());
 
   // Get the number of TSC ticks used by the current thread.
   ULONG64 thread_cycle_time = 0;
-  GetQueryThreadCycleTimeFunction()(::GetCurrentThread(), &thread_cycle_time);
+  ::QueryThreadCycleTime(thread_handle.platform_handle(), &thread_cycle_time);
 
   // Get the frequency of the TSC.
   double tsc_ticks_per_second = TSCTicksPerSecond();
@@ -532,8 +637,7 @@ ThreadTicks ThreadTicks::Now() {
 
 // static
 bool ThreadTicks::IsSupportedWin() {
-  static bool is_supported = GetQueryThreadCycleTimeFunction() &&
-                             base::CPU().has_non_stop_time_stamp_counter() &&
+  static bool is_supported = base::CPU().has_non_stop_time_stamp_counter() &&
                              !IsBuggyAthlon(base::CPU());
   return is_supported;
 }
@@ -543,6 +647,12 @@ void ThreadTicks::WaitUntilInitializedWin() {
   while (TSCTicksPerSecond() == 0)
     ::Sleep(10);
 }
+
+#if defined(_M_ARM64)
+#define ReadCycleCounter() _ReadStatusReg(ARM64_PMCCNTR_EL0)
+#else
+#define ReadCycleCounter() __rdtsc()
+#endif
 
 double ThreadTicks::TSCTicksPerSecond() {
   DCHECK(IsSupported());
@@ -564,12 +674,12 @@ double ThreadTicks::TSCTicksPerSecond() {
 
   // The first time that this function is called, make an initial reading of the
   // TSC and the performance counter.
-  static const uint64_t tsc_initial = __rdtsc();
+  static const uint64_t tsc_initial = ReadCycleCounter();
   static const uint64_t perf_counter_initial = QPCNowRaw();
 
   // Make a another reading of the TSC and the performance counter every time
   // that this function is called.
-  uint64_t tsc_now = __rdtsc();
+  uint64_t tsc_now = ReadCycleCounter();
   uint64_t perf_counter_now = QPCNowRaw();
 
   // Reset the thread priority.
@@ -602,6 +712,8 @@ double ThreadTicks::TSCTicksPerSecond() {
 
   return tsc_ticks_per_second;
 }
+
+#undef ReadCycleCounter
 
 // static
 TimeTicks TimeTicks::FromQPCValue(LONGLONG qpc_value) {

@@ -6,30 +6,30 @@
  */
 
 #include "SkCanvas.h"
+#include "SkCanvasPriv.h"
+#include "SkDrawShadowInfo.h"
+#include "SkPaintPriv.h"
 #include "SkPatchUtils.h"
 #include "SkPictureData.h"
 #include "SkPicturePlayback.h"
 #include "SkPictureRecord.h"
 #include "SkReadBuffer.h"
 #include "SkRSXform.h"
+#include "SkSafeMath.h"
 #include "SkTextBlob.h"
 #include "SkTDArray.h"
 #include "SkTypes.h"
 
 // matches old SkCanvas::SaveFlags
 enum LegacySaveFlags {
-    kHasAlphaLayer_LegacySaveFlags    = 0x04,
     kClipToLayer_LegacySaveFlags      = 0x10,
 };
 
-SkCanvas::SaveLayerFlags SkCanvas::LegacySaveFlagsToSaveLayerFlags(uint32_t flags) {
+SkCanvas::SaveLayerFlags SkCanvasPriv::LegacySaveFlagsToSaveLayerFlags(uint32_t flags) {
     uint32_t layerFlags = 0;
 
     if (0 == (flags & kClipToLayer_LegacySaveFlags)) {
-        layerFlags |= SkCanvas::kDontClipToLayer_PrivateSaveLayerFlag;
-    }
-    if (0 == (flags & kHasAlphaLayer_LegacySaveFlags)) {
-        layerFlags |= kIsOpaque_SaveLayerFlag;
+        layerFlags |= kDontClipToLayer_SaveLayerFlag;
     }
     return layerFlags;
 }
@@ -69,16 +69,32 @@ static const SkRect* get_rect_ptr(SkReadBuffer* reader, SkRect* storage) {
 
 class TextContainer {
 public:
-    size_t length() { return fByteLength; }
-    const void* text() { return (const void*)fText; }
-    size_t fByteLength;
-    const char* fText;
-};
+    TextContainer(SkReadBuffer* reader, const SkPaint* paint) {
+        if (reader->validate(paint != nullptr)) {
+            fByteLength = reader->readInt();
+            fText = (const char*)reader->skip(fByteLength);
+            if (reader->isValid()) {
+                if (fByteLength == 0) {
+                    fCount = 0;
+                } else {
+                    fCount = SkPaintPriv::ValidCountText(fText, fByteLength, paint->getTextEncoding());
+                    reader->validate(fCount > 0);
+                }
+            }
+        }
+    }
 
-void get_text(SkReadBuffer* reader, TextContainer* text) {
-    size_t length = text->fByteLength = reader->readInt();
-    text->fText = (const char*)reader->skip(length);
-}
+    MOZ_IMPLICIT operator bool() const { return fCount >= 0; }
+
+    size_t length() const { return fByteLength; }
+    const void* text() const { return (const void*)fText; }
+    unsigned count() const { return fCount; }
+
+private:
+    size_t fByteLength = 0;
+    const char* fText = nullptr;
+    int fCount = -1;
+};
 
 void SkPicturePlayback::draw(SkCanvas* canvas,
                              SkPicture::AbortCallback* callback,
@@ -86,7 +102,7 @@ void SkPicturePlayback::draw(SkCanvas* canvas,
     AutoResetOpID aroi(this);
     SkASSERT(0 == fCurOffset);
 
-    SkAutoTDelete<SkReadBuffer> reader;
+    std::unique_ptr<SkReadBuffer> reader;
     if (buffer) {
         reader.reset(buffer->clone(fPictureData->opData()->bytes(),
                                    fPictureData->opData()->size()));
@@ -107,12 +123,12 @@ void SkPicturePlayback::draw(SkCanvas* canvas,
 
         fCurOffset = reader->offset();
         uint32_t size;
-        DrawType op = ReadOpAndSize(reader, &size);
+        DrawType op = ReadOpAndSize(reader.get(), &size);
         if (!reader->validate(op > UNUSED && op <= LAST_DRAWTYPE_ENUM)) {
             return;
         }
 
-        this->handleOp(reader, op, size, canvas, initialMatrix);
+        this->handleOp(reader.get(), op, size, canvas, initialMatrix);
     }
 
     // need to propagate invalid state to the parent reader
@@ -121,23 +137,36 @@ void SkPicturePlayback::draw(SkCanvas* canvas,
     }
 }
 
+static void validate_offsetToRestore(SkReadBuffer* reader, size_t offsetToRestore) {
+    if (offsetToRestore) {
+        reader->validate(SkIsAlign4(offsetToRestore) && offsetToRestore >= reader->offset());
+    }
+}
+
 void SkPicturePlayback::handleOp(SkReadBuffer* reader,
                                  DrawType op,
                                  uint32_t size,
                                  SkCanvas* canvas,
                                  const SkMatrix& initialMatrix) {
+#define BREAK_ON_READ_ERROR(r) if (!r->isValid()) { break; }
+
     switch (op) {
         case NOOP: {
             SkASSERT(size >= 4);
             reader->skip(size - 4);
         } break;
+        case FLUSH:
+            canvas->flush();
+            break;
         case CLIP_PATH: {
-            const SkPath& path = fPictureData->getPath(reader); 
-            uint32_t packed = reader->readInt(); 
-            SkCanvas::ClipOp clipOp = ClipParams_unpackRegionOp(packed);
+            const SkPath& path = fPictureData->getPath(reader);
+            uint32_t packed = reader->readInt();
+            SkClipOp clipOp = ClipParams_unpackRegionOp(reader, packed);
             bool doAA = ClipParams_unpackDoAA(packed);
             size_t offsetToRestore = reader->readInt();
-            SkASSERT(!offsetToRestore || offsetToRestore >= reader->offset());
+            validate_offsetToRestore(reader, offsetToRestore);
+            BREAK_ON_READ_ERROR(reader);
+
             canvas->clipPath(path, clipOp, doAA);
             if (canvas->isClipEmpty() && offsetToRestore) {
                 reader->skip(offsetToRestore - reader->offset());
@@ -147,9 +176,11 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             SkRegion region;
             reader->readRegion(&region);
             uint32_t packed = reader->readInt();
-            SkCanvas::ClipOp clipOp = ClipParams_unpackRegionOp(packed);
+            SkClipOp clipOp = ClipParams_unpackRegionOp(reader, packed);
             size_t offsetToRestore = reader->readInt();
-            SkASSERT(!offsetToRestore || offsetToRestore >= reader->offset());
+            validate_offsetToRestore(reader, offsetToRestore);
+            BREAK_ON_READ_ERROR(reader);
+
             canvas->clipRegion(region, clipOp);
             if (canvas->isClipEmpty() && offsetToRestore) {
                 reader->skip(offsetToRestore - reader->offset());
@@ -159,10 +190,12 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             SkRect rect;
             reader->readRect(&rect);
             uint32_t packed = reader->readInt();
-            SkCanvas::ClipOp clipOp = ClipParams_unpackRegionOp(packed);
+            SkClipOp clipOp = ClipParams_unpackRegionOp(reader, packed);
             bool doAA = ClipParams_unpackDoAA(packed);
             size_t offsetToRestore = reader->readInt();
-            SkASSERT(!offsetToRestore || offsetToRestore >= reader->offset());
+            validate_offsetToRestore(reader, offsetToRestore);
+            BREAK_ON_READ_ERROR(reader);
+
             canvas->clipRect(rect, clipOp, doAA);
             if (canvas->isClipEmpty() && offsetToRestore) {
                 reader->skip(offsetToRestore - reader->offset());
@@ -172,10 +205,12 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             SkRRect rrect;
             reader->readRRect(&rrect);
             uint32_t packed = reader->readInt();
-            SkCanvas::ClipOp clipOp = ClipParams_unpackRegionOp(packed);
+            SkClipOp clipOp = ClipParams_unpackRegionOp(reader, packed);
             bool doAA = ClipParams_unpackDoAA(packed);
             size_t offsetToRestore = reader->readInt();
-            SkASSERT(!offsetToRestore || offsetToRestore >= reader->offset());
+            validate_offsetToRestore(reader, offsetToRestore);
+            BREAK_ON_READ_ERROR(reader);
+
             canvas->clipRRect(rrect, clipOp, doAA);
             if (canvas->isClipEmpty() && offsetToRestore) {
                 reader->skip(offsetToRestore - reader->offset());
@@ -186,6 +221,8 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
         case CONCAT: {
             SkMatrix matrix;
             reader->readMatrix(&matrix);
+            BREAK_ON_READ_ERROR(reader);
+
             canvas->concat(matrix);
             break;
         }
@@ -194,7 +231,11 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             reader->readRect(&rect);
             SkString key;
             reader->readString(&key);
-            canvas->drawAnnotation(rect, key.c_str(), reader->readByteArrayAsData().get());
+            sk_sp<SkData> data = reader->readByteArrayAsData();
+            BREAK_ON_READ_ERROR(reader);
+            SkASSERT(data);
+
+            canvas->drawAnnotation(rect, key.c_str(), data.get());
         } break;
         case DRAW_ARC: {
             const SkPaint* paint = fPictureData->getPaint(reader);
@@ -203,6 +244,8 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             SkScalar startAngle = reader->readScalar();
             SkScalar sweepAngle = reader->readScalar();
             int useCenter = reader->readInt();
+            BREAK_ON_READ_ERROR(reader);
+
             if (paint) {
                 canvas->drawArc(rect, startAngle, sweepAngle, SkToBool(useCenter), *paint);
             }
@@ -212,76 +255,46 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             const SkImage* atlas = fPictureData->getImage(reader);
             const uint32_t flags = reader->readUInt();
             const int count = reader->readUInt();
-            const SkRSXform* xform = (const SkRSXform*)reader->skip(count * sizeof(SkRSXform));
-            const SkRect* tex = (const SkRect*)reader->skip(count * sizeof(SkRect));
+            const SkRSXform* xform = (const SkRSXform*)reader->skip(count, sizeof(SkRSXform));
+            const SkRect* tex = (const SkRect*)reader->skip(count, sizeof(SkRect));
             const SkColor* colors = nullptr;
-            SkXfermode::Mode mode = SkXfermode::kDst_Mode;
+            SkBlendMode mode = SkBlendMode::kDst;
             if (flags & DRAW_ATLAS_HAS_COLORS) {
-                colors = (const SkColor*)reader->skip(count * sizeof(SkColor));
-                mode = (SkXfermode::Mode)reader->readUInt();
+                colors = (const SkColor*)reader->skip(count, sizeof(SkColor));
+                mode = (SkBlendMode)reader->readUInt();
             }
             const SkRect* cull = nullptr;
             if (flags & DRAW_ATLAS_HAS_CULL) {
                 cull = (const SkRect*)reader->skip(sizeof(SkRect));
             }
+            BREAK_ON_READ_ERROR(reader);
+
             canvas->drawAtlas(atlas, xform, tex, colors, count, mode, cull, paint);
         } break;
-        case DRAW_BITMAP: {
-            const SkPaint* paint = fPictureData->getPaint(reader);
-            const SkImage* image = fPictureData->getBitmapAsImage(reader);
-            SkPoint loc;
-            reader->readPoint(&loc);
-            canvas->drawImage(image, loc.fX, loc.fY, paint);
-        } break;
-        case DRAW_BITMAP_RECT: {
-            const SkPaint* paint = fPictureData->getPaint(reader);
-            const SkImage* image = fPictureData->getBitmapAsImage(reader);
-            SkRect storage;
-            const SkRect* src = get_rect_ptr(reader, &storage);   // may be null
-            SkRect dst;
-            reader->readRect(&dst);     // required
-            SkCanvas::SrcRectConstraint constraint = (SkCanvas::SrcRectConstraint)reader->readInt();
-            if (src) {
-                canvas->drawImageRect(image, *src, dst, paint, constraint);
-            } else {
-                canvas->drawImageRect(image, dst, paint, constraint);
-            }
-        } break;
-        case DRAW_BITMAP_MATRIX: {
-            const SkPaint* paint = fPictureData->getPaint(reader);
-            const SkImage* image = fPictureData->getBitmapAsImage(reader);
-            SkMatrix matrix;
-            reader->readMatrix(&matrix);
+        case DRAW_CLEAR: {
+            auto c = reader->readInt();
+            BREAK_ON_READ_ERROR(reader);
 
-            SkAutoCanvasRestore acr(canvas, true);
-            canvas->concat(matrix);
-            canvas->drawImage(image, 0, 0, paint);
+            canvas->clear(c);
         } break;
-        case DRAW_BITMAP_NINE: {
-            const SkPaint* paint = fPictureData->getPaint(reader);
-            const SkImage* image = fPictureData->getBitmapAsImage(reader);
-            SkIRect src;
-            reader->readIRect(&src);
-            SkRect dst;
-            reader->readRect(&dst);
-            canvas->drawImageNine(image, src, dst, paint);
-        } break;
-        case DRAW_CLEAR:
-            canvas->clear(reader->readInt());
-            break;
         case DRAW_DATA: {
             // This opcode is now dead, just need to skip it for backwards compatibility
             size_t length = reader->readInt();
             (void)reader->skip(length);
             // skip handles padding the read out to a multiple of 4
         } break;
-        case DRAW_DRAWABLE:
-            canvas->drawDrawable(fPictureData->getDrawable(reader));
-            break;
+        case DRAW_DRAWABLE: {
+            auto* d = fPictureData->getDrawable(reader);
+            BREAK_ON_READ_ERROR(reader);
+
+            canvas->drawDrawable(d);
+        } break;
         case DRAW_DRAWABLE_MATRIX: {
             SkMatrix matrix;
             reader->readMatrix(&matrix);
             SkDrawable* drawable = fPictureData->getDrawable(reader);
+            BREAK_ON_READ_ERROR(reader);
+
             canvas->drawDrawable(drawable, &matrix);
         } break;
         case DRAW_DRRECT: {
@@ -289,50 +302,30 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             SkRRect outer, inner;
             reader->readRRect(&outer);
             reader->readRRect(&inner);
+            BREAK_ON_READ_ERROR(reader);
+
             if (paint) {
                 canvas->drawDRRect(outer, inner, *paint);
             }
         } break;
-        case BEGIN_COMMENT_GROUP: {
-            SkString tmp;
-            reader->readString(&tmp);
-            // deprecated (M44)
-            break;
-        }
-        case COMMENT: {
-            SkString tmp;
-            reader->readString(&tmp);
-            reader->readString(&tmp);
-            // deprecated (M44)
-            break;
-        }
-        case END_COMMENT_GROUP:
-            // deprecated (M44)
-            break;
         case DRAW_IMAGE: {
             const SkPaint* paint = fPictureData->getPaint(reader);
             const SkImage* image = fPictureData->getImage(reader);
             SkPoint loc;
             reader->readPoint(&loc);
+            BREAK_ON_READ_ERROR(reader);
+
             canvas->drawImage(image, loc.fX, loc.fY, paint);
         } break;
         case DRAW_IMAGE_LATTICE: {
             const SkPaint* paint = fPictureData->getPaint(reader);
             const SkImage* image = fPictureData->getImage(reader);
             SkCanvas::Lattice lattice;
-            lattice.fXCount = reader->readInt();
-            lattice.fXDivs = (const int*) reader->skip(lattice.fXCount * sizeof(int32_t));
-            lattice.fYCount = reader->readInt();
-            lattice.fYDivs = (const int*) reader->skip(lattice.fYCount * sizeof(int32_t));
-            int flagCount = reader->readInt();
-            lattice.fFlags = (0 == flagCount) ? nullptr : (const SkCanvas::Lattice::Flags*)
-                    reader->skip(SkAlign4(flagCount * sizeof(SkCanvas::Lattice::Flags)));
-            SkIRect src;
-            reader->readIRect(&src);
-            lattice.fBounds = &src;
-            SkRect dst;
-            reader->readRect(&dst);
-            canvas->drawImageLattice(image, lattice, dst, paint);
+            (void)SkCanvasPriv::ReadLattice(*reader, &lattice);
+            const SkRect* dst = reader->skipT<SkRect>();
+            BREAK_ON_READ_ERROR(reader);
+
+            canvas->drawImageLattice(image, lattice, *dst, paint);
         } break;
         case DRAW_IMAGE_NINE: {
             const SkPaint* paint = fPictureData->getPaint(reader);
@@ -341,9 +334,10 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             reader->readIRect(&center);
             SkRect dst;
             reader->readRect(&dst);
+            BREAK_ON_READ_ERROR(reader);
+
             canvas->drawImageNine(image, center, dst, paint);
         } break;
-        case DRAW_IMAGE_RECT_STRICT:
         case DRAW_IMAGE_RECT: {
             const SkPaint* paint = fPictureData->getPaint(reader);
             const SkImage* image = fPictureData->getImage(reader);
@@ -357,18 +351,24 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
                 // newer op-code stores the constraint explicitly
                 constraint = (SkCanvas::SrcRectConstraint)reader->readInt();
             }
+            BREAK_ON_READ_ERROR(reader);
+
             canvas->legacy_drawImageRect(image, src, dst, paint, constraint);
         } break;
         case DRAW_OVAL: {
             const SkPaint* paint = fPictureData->getPaint(reader);
             SkRect rect;
             reader->readRect(&rect);
+            BREAK_ON_READ_ERROR(reader);
+
             if (paint) {
                 canvas->drawOval(rect, *paint);
             }
         } break;
         case DRAW_PAINT: {
             const SkPaint* paint = fPictureData->getPaint(reader);
+            BREAK_ON_READ_ERROR(reader);
+
             if (paint) {
                 canvas->drawPaint(*paint);
             }
@@ -376,101 +376,119 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
         case DRAW_PATCH: {
             const SkPaint* paint = fPictureData->getPaint(reader);
 
-            const SkPoint* cubics = (const SkPoint*)reader->skip(SkPatchUtils::kNumCtrlPts *
+            const SkPoint* cubics = (const SkPoint*)reader->skip(SkPatchUtils::kNumCtrlPts,
                                                                  sizeof(SkPoint));
             uint32_t flag = reader->readInt();
             const SkColor* colors = nullptr;
             if (flag & DRAW_VERTICES_HAS_COLORS) {
-                colors = (const SkColor*)reader->skip(SkPatchUtils::kNumCorners * sizeof(SkColor));
+                colors = (const SkColor*)reader->skip(SkPatchUtils::kNumCorners, sizeof(SkColor));
             }
             const SkPoint* texCoords = nullptr;
             if (flag & DRAW_VERTICES_HAS_TEXS) {
-                texCoords = (const SkPoint*)reader->skip(SkPatchUtils::kNumCorners *
+                texCoords = (const SkPoint*)reader->skip(SkPatchUtils::kNumCorners,
                                                          sizeof(SkPoint));
             }
-            sk_sp<SkXfermode> xfer;
+            SkBlendMode bmode = SkBlendMode::kModulate;
             if (flag & DRAW_VERTICES_HAS_XFER) {
-                int mode = reader->readInt();
-                if (mode < 0 || mode > SkXfermode::kLastMode) {
-                    mode = SkXfermode::kModulate_Mode;
+                unsigned mode = reader->readInt();
+                if (mode <= (unsigned)SkBlendMode::kLastMode) {
+                    bmode = (SkBlendMode)mode;
                 }
-                xfer = SkXfermode::Make((SkXfermode::Mode)mode);
             }
+            BREAK_ON_READ_ERROR(reader);
+
             if (paint) {
-                canvas->drawPatch(cubics, colors, texCoords, std::move(xfer), *paint);
+                canvas->drawPatch(cubics, colors, texCoords, bmode, *paint);
             }
         } break;
         case DRAW_PATH: {
             const SkPaint* paint = fPictureData->getPaint(reader);
+            const auto& path = fPictureData->getPath(reader);
+            BREAK_ON_READ_ERROR(reader);
+
             if (paint) {
-                canvas->drawPath(fPictureData->getPath(reader), *paint);
+                canvas->drawPath(path, *paint);
             }
         } break;
-        case DRAW_PICTURE:
-            canvas->drawPicture(fPictureData->getPicture(reader));
-            break;
+        case DRAW_PICTURE: {
+            const auto* pic = fPictureData->getPicture(reader);
+            BREAK_ON_READ_ERROR(reader);
+
+            canvas->drawPicture(pic);
+        } break;
         case DRAW_PICTURE_MATRIX_PAINT: {
             const SkPaint* paint = fPictureData->getPaint(reader);
             SkMatrix matrix;
             reader->readMatrix(&matrix);
             const SkPicture* pic = fPictureData->getPicture(reader);
+            BREAK_ON_READ_ERROR(reader);
+
             canvas->drawPicture(pic, &matrix, paint);
         } break;
         case DRAW_POINTS: {
             const SkPaint* paint = fPictureData->getPaint(reader);
             SkCanvas::PointMode mode = (SkCanvas::PointMode)reader->readInt();
             size_t count = reader->readInt();
-            const SkPoint* pts = (const SkPoint*)reader->skip(sizeof(SkPoint)* count);
+            const SkPoint* pts = (const SkPoint*)reader->skip(count, sizeof(SkPoint));
+            BREAK_ON_READ_ERROR(reader);
+
             if (paint) {
                 canvas->drawPoints(mode, count, pts, *paint);
             }
         } break;
         case DRAW_POS_TEXT: {
             const SkPaint* paint = fPictureData->getPaint(reader);
-            TextContainer text;
-            get_text(reader, &text);
+            TextContainer text(reader, paint);
             size_t points = reader->readInt();
-            const SkPoint* pos = (const SkPoint*)reader->skip(points * sizeof(SkPoint));
+            reader->validate(points == text.count());
+            const SkPoint* pos = (const SkPoint*)reader->skip(points, sizeof(SkPoint));
+            BREAK_ON_READ_ERROR(reader);
+
             if (paint && text.text()) {
                 canvas->drawPosText(text.text(), text.length(), pos, *paint);
             }
         } break;
         case DRAW_POS_TEXT_TOP_BOTTOM: {
             const SkPaint* paint = fPictureData->getPaint(reader);
-            TextContainer text;
-            get_text(reader, &text);
+            TextContainer text(reader, paint);
             size_t points = reader->readInt();
-            const SkPoint* pos = (const SkPoint*)reader->skip(points * sizeof(SkPoint));
+            reader->validate(points == text.count());
+            const SkPoint* pos = (const SkPoint*)reader->skip(points, sizeof(SkPoint));
             const SkScalar top = reader->readScalar();
             const SkScalar bottom = reader->readScalar();
-            SkRect clip;
-            canvas->getClipBounds(&clip);
+            BREAK_ON_READ_ERROR(reader);
+
+            SkRect clip = canvas->getLocalClipBounds();
             if (top < clip.fBottom && bottom > clip.fTop && paint && text.text()) {
                 canvas->drawPosText(text.text(), text.length(), pos, *paint);
             }
         } break;
         case DRAW_POS_TEXT_H: {
             const SkPaint* paint = fPictureData->getPaint(reader);
-            TextContainer text;
-            get_text(reader, &text);
+            TextContainer text(reader, paint);
             size_t xCount = reader->readInt();
+            reader->validate(xCount == text.count());
             const SkScalar constY = reader->readScalar();
-            const SkScalar* xpos = (const SkScalar*)reader->skip(xCount * sizeof(SkScalar));
+            const SkScalar* xpos = (const SkScalar*)reader->skip(xCount, sizeof(SkScalar));
+            BREAK_ON_READ_ERROR(reader);
+
             if (paint && text.text()) {
                 canvas->drawPosTextH(text.text(), text.length(), xpos, constY, *paint);
             }
         } break;
         case DRAW_POS_TEXT_H_TOP_BOTTOM: {
             const SkPaint* paint = fPictureData->getPaint(reader);
-            TextContainer text;
-            get_text(reader, &text);
+            TextContainer text(reader, paint);
             size_t xCount = reader->readInt();
-            const SkScalar* xpos = (const SkScalar*)reader->skip((3 + xCount) * sizeof(SkScalar));
+            reader->validate(xCount == text.count());
+            const SkScalar* xpos = (const SkScalar*)reader->skip(SkSafeMath::Add(3, xCount),
+                                                                 sizeof(SkScalar));
+            BREAK_ON_READ_ERROR(reader);
+
             const SkScalar top = *xpos++;
             const SkScalar bottom = *xpos++;
             const SkScalar constY = *xpos++;
-            SkRect clip;
-            canvas->getClipBounds(&clip);
+            SkRect clip = canvas->getLocalClipBounds();
             if (top < clip.fBottom && bottom > clip.fTop && paint && text.text()) {
                 canvas->drawPosTextH(text.text(), text.length(), xpos, constY, *paint);
             }
@@ -479,6 +497,8 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             const SkPaint* paint = fPictureData->getPaint(reader);
             SkRect rect;
             reader->readRect(&rect);
+            BREAK_ON_READ_ERROR(reader);
+
             if (paint) {
                 canvas->drawRect(rect, *paint);
             }
@@ -487,6 +507,8 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             const SkPaint* paint = fPictureData->getPaint(reader);
             SkRegion region;
             reader->readRegion(&region);
+            BREAK_ON_READ_ERROR(reader);
+
             if (paint) {
                 canvas->drawRegion(region, *paint);
             }
@@ -495,23 +517,40 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             const SkPaint* paint = fPictureData->getPaint(reader);
             SkRRect rrect;
             reader->readRRect(&rrect);
+            BREAK_ON_READ_ERROR(reader);
+
             if (paint) {
                 canvas->drawRRect(rrect, *paint);
             }
         } break;
-        case DRAW_SPRITE: {
-            /* const SkPaint* paint = */ fPictureData->getPaint(reader);
-            /* const SkImage* image = */ fPictureData->getBitmapAsImage(reader);
-            /* int left = */ reader->readInt();
-            /* int top = */ reader->readInt();
-            // drawSprite removed dec-2015
+        case DRAW_SHADOW_REC: {
+            const auto& path = fPictureData->getPath(reader);
+            SkDrawShadowRec rec;
+            reader->readPoint3(&rec.fZPlaneParams);
+            reader->readPoint3(&rec.fLightPos);
+            rec.fLightRadius = reader->readScalar();
+            if (reader->isVersionLT(SkReadBuffer::kTwoColorDrawShadow_Version)) {
+                SkScalar ambientAlpha = reader->readScalar();
+                SkScalar spotAlpha = reader->readScalar();
+                SkColor color = reader->read32();
+                rec.fAmbientColor = SkColorSetA(color, SkColorGetA(color)*ambientAlpha);
+                rec.fSpotColor = SkColorSetA(color, SkColorGetA(color)*spotAlpha);
+            } else {
+                rec.fAmbientColor = reader->read32();
+                rec.fSpotColor = reader->read32();
+            }
+            rec.fFlags = reader->read32();
+            BREAK_ON_READ_ERROR(reader);
+
+            canvas->private_draw_shadow_rec(path, rec);
         } break;
         case DRAW_TEXT: {
             const SkPaint* paint = fPictureData->getPaint(reader);
-            TextContainer text;
-            get_text(reader, &text);
+            TextContainer text(reader, paint);
             SkScalar x = reader->readScalar();
             SkScalar y = reader->readScalar();
+            BREAK_ON_READ_ERROR(reader);
+
             if (paint && text.text()) {
                 canvas->drawText(text.text(), text.length(), x, y, *paint);
             }
@@ -521,116 +560,91 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             const SkTextBlob* blob = fPictureData->getTextBlob(reader);
             SkScalar x = reader->readScalar();
             SkScalar y = reader->readScalar();
+            BREAK_ON_READ_ERROR(reader);
+
             if (paint) {
                 canvas->drawTextBlob(blob, x, y, *paint);
             }
         } break;
         case DRAW_TEXT_TOP_BOTTOM: {
             const SkPaint* paint = fPictureData->getPaint(reader);
-            TextContainer text;
-            get_text(reader, &text);
+            TextContainer text(reader, paint);
             const SkScalar* ptr = (const SkScalar*)reader->skip(4 * sizeof(SkScalar));
+            BREAK_ON_READ_ERROR(reader);
+
             // ptr[0] == x
             // ptr[1] == y
             // ptr[2] == top
             // ptr[3] == bottom
-            SkRect clip;
-            canvas->getClipBounds(&clip);
+            SkRect clip = canvas->getLocalClipBounds();
             float top = ptr[2];
             float bottom = ptr[3];
             if (top < clip.fBottom && bottom > clip.fTop && paint && text.text()) {
                 canvas->drawText(text.text(), text.length(), ptr[0], ptr[1], *paint);
             }
         } break;
-        case DRAW_TEXT_ON_PATH: {
+        case DRAW_TEXT_ON_PATH_RETIRED_08_2018_REMOVED_10_2018: {
             const SkPaint* paint = fPictureData->getPaint(reader);
-            TextContainer text;
-            get_text(reader, &text);
-            const SkPath& path = fPictureData->getPath(reader);
+            TextContainer text(reader, paint);
+            /* ignored */ fPictureData->getPath(reader);
             SkMatrix matrix;
             reader->readMatrix(&matrix);
-            if (paint && text.text()) {
-                canvas->drawTextOnPath(text.text(), text.length(), path, &matrix, *paint);
-            }
+            BREAK_ON_READ_ERROR(reader);
+            // no longer supported, so we draw nothing
         } break;
         case DRAW_TEXT_RSXFORM: {
             const SkPaint* paint = fPictureData->getPaint(reader);
-            int count = reader->readInt();
-            uint32_t flags = reader->read32();
-            TextContainer text;
-            get_text(reader, &text);
-            const SkRSXform* xform = (const SkRSXform*)reader->skip(count * sizeof(SkRSXform));
+            uint32_t count = reader->readUInt();
+            uint32_t flags = reader->readUInt();
+            TextContainer text(reader, paint);
+            const SkRSXform* xform = (const SkRSXform*)reader->skip(count, sizeof(SkRSXform));
             const SkRect* cull = nullptr;
             if (flags & DRAW_TEXT_RSXFORM_HAS_CULL) {
                 cull = (const SkRect*)reader->skip(sizeof(SkRect));
             }
+            reader->validate(count == text.count());
+            BREAK_ON_READ_ERROR(reader);
+
             if (text.text()) {
                 canvas->drawTextRSXform(text.text(), text.length(), xform, cull, *paint);
             }
         } break;
-        case DRAW_VERTICES: {
-            sk_sp<SkXfermode> xfer;
+        case DRAW_VERTICES_OBJECT: {
             const SkPaint* paint = fPictureData->getPaint(reader);
-            DrawVertexFlags flags = (DrawVertexFlags)reader->readInt();
-            SkCanvas::VertexMode vmode = (SkCanvas::VertexMode)reader->readInt();
-            int vCount = reader->readInt();
-            const SkPoint* verts = (const SkPoint*)reader->skip(vCount * sizeof(SkPoint));
-            const SkPoint* texs = nullptr;
-            const SkColor* colors = nullptr;
-            const uint16_t* indices = nullptr;
-            int iCount = 0;
-            if (flags & DRAW_VERTICES_HAS_TEXS) {
-                texs = (const SkPoint*)reader->skip(vCount * sizeof(SkPoint));
-            }
-            if (flags & DRAW_VERTICES_HAS_COLORS) {
-                colors = (const SkColor*)reader->skip(vCount * sizeof(SkColor));
-            }
-            if (flags & DRAW_VERTICES_HAS_INDICES) {
-                iCount = reader->readInt();
-                indices = (const uint16_t*)reader->skip(iCount * sizeof(uint16_t));
-            }
-            if (flags & DRAW_VERTICES_HAS_XFER) {
-                int mode = reader->readInt();
-                if (mode < 0 || mode > SkXfermode::kLastMode) {
-                    mode = SkXfermode::kModulate_Mode;
-                }
-                xfer = SkXfermode::Make((SkXfermode::Mode)mode);
-            }
-            if (paint) {
-                canvas->drawVertices(vmode, vCount, verts, texs, colors,
-                                     xfer, indices, iCount, *paint);
+            const SkVertices* vertices = fPictureData->getVertices(reader);
+            const int boneCount = reader->readInt();
+            const SkVertices::Bone* bones = boneCount ?
+                    (const SkVertices::Bone*) reader->skip(boneCount, sizeof(SkVertices::Bone)) :
+                    nullptr;
+            SkBlendMode bmode = reader->read32LE(SkBlendMode::kLastMode);
+            BREAK_ON_READ_ERROR(reader);
+
+            if (paint && vertices) {
+                canvas->drawVertices(vertices, bones, boneCount, bmode, *paint);
             }
         } break;
         case RESTORE:
             canvas->restore();
             break;
-        case ROTATE:
-            canvas->rotate(reader->readScalar());
-            break;
+        case ROTATE: {
+            auto deg = reader->readScalar();
+            canvas->rotate(deg);
+        } break;
         case SAVE:
-            // SKPs with version < 29 also store a SaveFlags param.
-            if (size > 4) {
-                if (reader->validate(8 == size)) {
-                    reader->readInt();
-                }
-            }
             canvas->save();
             break;
         case SAVE_LAYER_SAVEFLAGS_DEPRECATED: {
             SkRect storage;
             const SkRect* boundsPtr = get_rect_ptr(reader, &storage);
             const SkPaint* paint = fPictureData->getPaint(reader);
-            auto flags = SkCanvas::LegacySaveFlagsToSaveLayerFlags(reader->readInt());
+            auto flags = SkCanvasPriv::LegacySaveFlagsToSaveLayerFlags(reader->readInt());
+            BREAK_ON_READ_ERROR(reader);
+
             canvas->saveLayer(SkCanvas::SaveLayerRec(boundsPtr, paint, flags));
         } break;
-        case SAVE_LAYER_SAVELAYERFLAGS_DEPRECATED_JAN_2016: {
-            SkRect storage;
-            const SkRect* boundsPtr = get_rect_ptr(reader, &storage);
-            const SkPaint* paint = fPictureData->getPaint(reader);
-            canvas->saveLayer(SkCanvas::SaveLayerRec(boundsPtr, paint, reader->readInt()));
-        } break;
         case SAVE_LAYER_SAVELAYERREC: {
-            SkCanvas::SaveLayerRec rec(nullptr, nullptr, nullptr, 0);
+            SkCanvas::SaveLayerRec rec(nullptr, nullptr, nullptr, nullptr, nullptr, 0);
+            SkMatrix clipMatrix;
             const uint32_t flatFlags = reader->readInt();
             SkRect bounds;
             if (flatFlags & SAVELAYERREC_HAS_BOUNDS) {
@@ -641,12 +655,22 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
                 rec.fPaint = fPictureData->getPaint(reader);
             }
             if (flatFlags & SAVELAYERREC_HAS_BACKDROP) {
-                const SkPaint* paint = fPictureData->getPaint(reader);
-                rec.fBackdrop = paint->getImageFilter();
+                if (const auto* paint = fPictureData->getPaint(reader)) {
+                    rec.fBackdrop = paint->getImageFilter();
+                }
             }
             if (flatFlags & SAVELAYERREC_HAS_FLAGS) {
                 rec.fSaveLayerFlags = reader->readInt();
             }
+            if (flatFlags & SAVELAYERREC_HAS_CLIPMASK) {
+                rec.fClipMask = fPictureData->getImage(reader);
+            }
+            if (flatFlags & SAVELAYERREC_HAS_CLIPMATRIX) {
+                reader->readMatrix(&clipMatrix);
+                rec.fClipMatrix = &clipMatrix;
+            }
+            BREAK_ON_READ_ERROR(reader);
+
             canvas->saveLayer(rec);
         } break;
         case SCALE: {
@@ -670,13 +694,10 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             SkScalar dy = reader->readScalar();
             canvas->translate(dx, dy);
         } break;
-        case TRANSLATE_Z: {
-#ifdef SK_EXPERIMENTAL_SHADOWING
-            SkScalar dz = reader->readScalar();
-            canvas->translateZ(dz);
-#endif
-        } break;
         default:
-            SkASSERTF(false, "Unknown draw type: %d", op);
+            reader->validate(false);    // unknown op
+            break;
     }
+
+#undef BREAK_ON_READ_ERROR
 }

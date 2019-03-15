@@ -13,9 +13,7 @@
 #include "mozilla/dom/BlobImpl.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsCOMPtr.h"
-#include "nsIDOMBlob.h"
 #include "nsIMutable.h"
-#include "nsIXMLHttpRequest.h"
 #include "nsWrapperCache.h"
 #include "nsWeakReference.h"
 
@@ -28,46 +26,41 @@ struct BlobPropertyBag;
 class File;
 class OwningArrayBufferViewOrArrayBufferOrBlobOrUSVString;
 
-class Blob : public nsIDOMBlob
-           , public nsIXHRSendable
-           , public nsIMutable
-           , public nsSupportsWeakReference
-           , public nsWrapperCache
-{
-public:
-  NS_DECL_NSIDOMBLOB
-  NS_DECL_NSIXHRSENDABLE
+#define NS_DOM_BLOB_IID                              \
+  {                                                  \
+    0x648c2a83, 0xbdb1, 0x4a7d, {                    \
+      0xb5, 0x0a, 0xca, 0xcd, 0x92, 0x87, 0x45, 0xc2 \
+    }                                                \
+  }
+
+class Blob : public nsIMutable,
+             public nsSupportsWeakReference,
+             public nsWrapperCache {
+ public:
   NS_DECL_NSIMUTABLE
 
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(Blob, nsIDOMBlob)
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(Blob, nsIMutable)
+  NS_DECLARE_STATIC_IID_ACCESSOR(NS_DOM_BLOB_IID)
 
   typedef OwningArrayBufferViewOrArrayBufferOrBlobOrUSVString BlobPart;
 
   // This creates a Blob or a File based on the type of BlobImpl.
-  static Blob*
-  Create(nsISupports* aParent, BlobImpl* aImpl);
+  static Blob* Create(nsISupports* aParent, BlobImpl* aImpl);
 
-  static already_AddRefed<Blob>
-  CreateStringBlob(nsISupports* aParent, const nsACString& aData,
-                   const nsAString& aContentType);
+  static already_AddRefed<Blob> CreateStringBlob(nsISupports* aParent,
+                                                 const nsACString& aData,
+                                                 const nsAString& aContentType);
 
   // The returned Blob takes ownership of aMemoryBuffer. aMemoryBuffer will be
   // freed by free so it must be allocated by malloc or something
   // compatible with it.
-  static already_AddRefed<Blob>
-  CreateMemoryBlob(nsISupports* aParent, void* aMemoryBuffer, uint64_t aLength,
-                   const nsAString& aContentType);
+  static already_AddRefed<Blob> CreateMemoryBlob(nsISupports* aParent,
+                                                 void* aMemoryBuffer,
+                                                 uint64_t aLength,
+                                                 const nsAString& aContentType);
 
-  static already_AddRefed<Blob>
-  CreateTemporaryBlob(nsISupports* aParent, PRFileDesc* aFD,
-                      uint64_t aStartPos, uint64_t aLength,
-                      const nsAString& aContentType);
-
-  BlobImpl* Impl() const
-  {
-    return mImpl;
-  }
+  BlobImpl* Impl() const { return mImpl; }
 
   bool IsFile() const;
 
@@ -80,18 +73,15 @@ public:
 
   // This method creates a new File object with the given name and the same
   // BlobImpl.
-  already_AddRefed<File> ToFile(const nsAString& aName,
-                                ErrorResult& aRv) const;
+  already_AddRefed<File> ToFile(const nsAString& aName, ErrorResult& aRv) const;
 
-  already_AddRefed<Blob>
-  CreateSlice(uint64_t aStart, uint64_t aLength, const nsAString& aContentType,
-              ErrorResult& aRv);
+  already_AddRefed<Blob> CreateSlice(uint64_t aStart, uint64_t aLength,
+                                     const nsAString& aContentType,
+                                     ErrorResult& aRv);
 
-  void
-  GetInternalStream(nsIInputStream** aStream, ErrorResult& aRv);
+  void CreateInputStream(nsIInputStream** aStream, ErrorResult& aRv);
 
-  int64_t
-  GetFileId();
+  int64_t GetFileId();
 
   // A utility function that enforces the spec constraints on the type of a
   // blob: no codepoints outside the ASCII range (otherwise type becomes empty)
@@ -99,24 +89,17 @@ public:
   // ASCII-related helpers because we need the "outside ASCII range" check, and
   // we can't use NS_IsAscii because its definition of "ASCII" (chars all <=
   // 0x7E) differs from the file API definition (which excludes control chars).
-  static void
-  MakeValidBlobType(nsAString& aType);
+  static void MakeValidBlobType(nsAString& aType);
 
   // WebIDL methods
-  nsISupports* GetParentObject() const
-  {
-    return mParent;
-  }
+  nsISupports* GetParentObject() const { return mParent; }
 
-  bool
-  IsMemoryFile() const;
+  bool IsMemoryFile() const;
 
   // Blob constructor
-  static already_AddRefed<Blob>
-  Constructor(const GlobalObject& aGlobal,
-              const Optional<Sequence<BlobPart>>& aData,
-              const BlobPropertyBag& aBag,
-              ErrorResult& aRv);
+  static already_AddRefed<Blob> Constructor(
+      const GlobalObject& aGlobal, const Optional<Sequence<BlobPart>>& aData,
+      const BlobPropertyBag& aBag, ErrorResult& aRv);
 
   virtual JSObject* WrapObject(JSContext* aCx,
                                JS::Handle<JSObject*> aGivenProto) override;
@@ -125,12 +108,19 @@ public:
 
   void GetType(nsAString& aType);
 
+  void GetBlobImplType(nsAString& aBlobImplType);
+
   already_AddRefed<Blob> Slice(const Optional<int64_t>& aStart,
                                const Optional<int64_t>& aEnd,
-                               const nsAString& aContentType,
+                               const Optional<nsAString>& aContentType,
                                ErrorResult& aRv);
 
-protected:
+  size_t GetAllocationSize() const;
+
+  nsresult GetSendInfo(nsIInputStream** aBody, uint64_t* aContentLength,
+                       nsACString& aContentType, nsACString& aCharset) const;
+
+ protected:
   // File constructor should never be used directly. Use Blob::Create instead.
   Blob(nsISupports* aParent, BlobImpl* aImpl);
   virtual ~Blob();
@@ -143,11 +133,21 @@ protected:
   // Note: we should not store any other state in this class!
   RefPtr<BlobImpl> mImpl;
 
-private:
+ private:
   nsCOMPtr<nsISupports> mParent;
 };
 
-} // namespace dom
-} // namespace mozilla
+NS_DEFINE_STATIC_IID_ACCESSOR(Blob, NS_DOM_BLOB_IID)
 
-#endif // mozilla_dom_Blob_h
+// Override BindingJSObjectMallocBytes for blobs to tell the JS GC how much
+// memory is held live by the binding object.
+size_t BindingJSObjectMallocBytes(Blob* aBlob);
+
+}  // namespace dom
+}  // namespace mozilla
+
+inline nsISupports* ToSupports(mozilla::dom::Blob* aBlob) {
+  return static_cast<nsIMutable*>(aBlob);
+}
+
+#endif  // mozilla_dom_Blob_h

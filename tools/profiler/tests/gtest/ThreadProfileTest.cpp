@@ -1,3 +1,4 @@
+
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -8,70 +9,46 @@
 #include "ProfileBufferEntry.h"
 #include "ThreadInfo.h"
 
-// Make sure we can initialize our thread profile
-TEST(ThreadProfile, Initialization) {
-  PseudoStack* stack = new PseudoStack();
-  Thread::tid_t tid = 1000;
-  ThreadInfo info("testThread", tid, true, stack, nullptr);
-  info.SetHasProfile();
+// Make sure we can record one entry and read it
+TEST(ThreadProfile, InsertOneEntry) {
+  auto pb = MakeUnique<ProfileBuffer>(10);
+  pb->AddEntry(ProfileBufferEntry::Time(123.1));
+  ASSERT_TRUE(pb->GetEntry(pb->mRangeStart).IsTime());
+  ASSERT_TRUE(pb->GetEntry(pb->mRangeStart).u.mDouble == 123.1);
 }
 
-// Make sure we can record one tag and read it
-TEST(ThreadProfile, InsertOneTag) {
-  PseudoStack* stack = new PseudoStack();
-  Thread::tid_t tid = 1000;
-  ThreadInfo info("testThread", tid, true, stack, nullptr);
-  ProfileBuffer* pb = new ProfileBuffer(10);
-  pb->addTag(ProfileBufferEntry::Time(123.1));
-  ASSERT_TRUE(pb->mEntries != nullptr);
-  ASSERT_TRUE(pb->mEntries[pb->mReadPos].kind() ==
-              ProfileBufferEntry::Kind::Time);
-  ASSERT_TRUE(pb->mEntries[pb->mReadPos].mTagDouble == 123.1);
-}
-
-// See if we can insert some tags
-TEST(ThreadProfile, InsertTagsNoWrap) {
-  PseudoStack* stack = new PseudoStack();
-  Thread::tid_t tid = 1000;
-  ThreadInfo info("testThread", tid, true, stack, nullptr);
-  ProfileBuffer* pb = new ProfileBuffer(100);
+// See if we can insert some entries
+TEST(ThreadProfile, InsertEntriesNoWrap) {
+  auto pb = MakeUnique<ProfileBuffer>(100);
   int test_size = 50;
   for (int i = 0; i < test_size; i++) {
-    pb->addTag(ProfileBufferEntry::Time(i));
+    pb->AddEntry(ProfileBufferEntry::Time(i));
   }
-  ASSERT_TRUE(pb->mEntries != nullptr);
-  int readPos = pb->mReadPos;
-  while (readPos != pb->mWritePos) {
-    ASSERT_TRUE(pb->mEntries[readPos].kind() ==
-                ProfileBufferEntry::Kind::Time);
-    ASSERT_TRUE(pb->mEntries[readPos].mTagDouble == readPos);
-    readPos = (readPos + 1) % pb->mEntrySize;
+  uint64_t readPos = pb->mRangeStart;
+  while (readPos != pb->mRangeEnd) {
+    ASSERT_TRUE(pb->GetEntry(readPos).IsTime());
+    ASSERT_TRUE(pb->GetEntry(readPos).u.mDouble == readPos);
+    readPos++;
   }
 }
 
-// See if wrapping works as it should in the basic case
-TEST(ThreadProfile, InsertTagsWrap) {
-  PseudoStack* stack = new PseudoStack();
-  Thread::tid_t tid = 1000;
-  // we can fit only 24 tags in this buffer because of the empty slot
-  int tags = 24;
-  int buffer_size = tags + 1;
-  ThreadInfo info("testThread", tid, true, stack, nullptr);
-  ProfileBuffer* pb = new ProfileBuffer(buffer_size);
+// See if evicting works as it should in the basic case
+TEST(ThreadProfile, InsertEntriesWrap) {
+  int entries = 32;
+  auto pb = MakeUnique<ProfileBuffer>(entries);
+  ASSERT_TRUE(pb->mRangeStart == 0);
+  ASSERT_TRUE(pb->mRangeEnd == 0);
   int test_size = 43;
   for (int i = 0; i < test_size; i++) {
-    pb->addTag(ProfileBufferEntry::Time(i));
+    pb->AddEntry(ProfileBufferEntry::Time(i));
   }
-  ASSERT_TRUE(pb->mEntries != nullptr);
-  int readPos = pb->mReadPos;
-  int ctr = 0;
-  while (readPos != pb->mWritePos) {
-    ASSERT_TRUE(pb->mEntries[readPos].kind() ==
-                ProfileBufferEntry::Kind::Time);
-    // the first few tags were discarded when we wrapped
-    ASSERT_TRUE(pb->mEntries[readPos].mTagDouble == ctr + (test_size - tags));
-    ctr++;
-    readPos = (readPos + 1) % pb->mEntrySize;
+  // We inserted 11 more entries than fit in the buffer, so the first 11 entries
+  // should have been evicted, and the range start should have increased to 11.
+  ASSERT_TRUE(pb->mRangeStart == 11);
+  uint64_t readPos = pb->mRangeStart;
+  while (readPos != pb->mRangeEnd) {
+    ASSERT_TRUE(pb->GetEntry(readPos).IsTime());
+    ASSERT_TRUE(pb->GetEntry(readPos).u.mDouble == readPos);
+    readPos++;
   }
 }
-

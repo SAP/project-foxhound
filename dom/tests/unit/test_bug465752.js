@@ -2,27 +2,26 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-function run_test()
-{
-  const ios = Components.classes["@mozilla.org/network/io-service;1"]
-                        .getService(Components.interfaces.nsIIOService);
+function run_test() {
   const str = "javascript:10";
-  var uri = ios.newURI(str);
-  var uri2 = ios.newURI(str);
+  var uri = Services.io.newURI(str);
+  var uri2 = Services.io.newURI(str);
   const str2 = "http://example.org";
-  var uri3 = ios.newURI(str2);
-  do_check_true(uri.equals(uri));
-  do_check_true(uri.equals(uri2));
-  do_check_true(uri2.equals(uri));
-  do_check_true(uri2.equals(uri2));
-  do_check_false(uri3.equals(uri2));
-  do_check_false(uri2.equals(uri3));
+  var uri3 = Services.io.newURI(str2);
+  Assert.ok(uri.equals(uri));
+  Assert.ok(uri.equals(uri2));
+  Assert.ok(uri2.equals(uri));
+  Assert.ok(uri2.equals(uri2));
+  Assert.ok(!uri3.equals(uri2));
+  Assert.ok(!uri2.equals(uri3));
 
-  var simple = Components.classes["@mozilla.org/network/simple-uri;1"]
-                         .createInstance(Components.interfaces.nsIURI);
-  simple.spec = str;
-  do_check_eq(simple.spec, uri.spec);
-  do_check_false(simple.equals(uri));
-  do_check_false(uri.equals(simple));
+  var simple = Cc["@mozilla.org/network/simple-uri-mutator;1"]
+                 .createInstance(Ci.nsIURIMutator)
+                 .setSpec(str)
+                 .finalize();
+  Assert.equal(simple.spec, uri.spec);
+  Assert.ok(!simple.equals(uri));
+  Assert.ok(!uri.equals(simple));
 }

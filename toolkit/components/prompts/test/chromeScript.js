@@ -1,8 +1,7 @@
 /* eslint-env mozilla/frame-script */
 
-const { classes: Cc, interfaces: Ci, results: Cr, utils: Cu } = Components;
-Components.utils.import("resource://gre/modules/Services.jsm");
-Components.utils.import("resource://gre/modules/Timer.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
 // Define these to make EventUtils happy.
 let window = this;
@@ -87,8 +86,8 @@ function getPromptState(ui) {
   state.textHidden  = ui.loginContainer.hidden;
   state.passHidden  = ui.password1Container.hidden;
   state.checkHidden = ui.checkboxContainer.hidden;
-  state.checkMsg    = ui.checkbox.label;
-  state.checked     = ui.checkbox.checked;
+  state.checkMsg    = state.checkHidden ? "" : ui.checkbox.label;
+  state.checked     = state.checkHidden ? false : ui.checkbox.checked;
   // tab-modal prompts don't have an infoIcon
   state.iconClass   = ui.infoIcon ? ui.infoIcon.className : null;
   state.textValue   = ui.loginTextbox.getAttribute("value");
@@ -110,9 +109,7 @@ function getPromptState(ui) {
   state.defButton1 = isDefaultButton(ui.button1);
   state.defButton2 = isDefaultButton(ui.button2);
 
-  let fm = Cc["@mozilla.org/focus-manager;1"].
-           getService(Ci.nsIFocusManager);
-  let e = fm.focusedElement;
+  let e = Services.focus.focusedElement;
 
   if (e == null) {
     state.focused = null;
@@ -122,9 +119,9 @@ function getPromptState(ui) {
     state.focused = "button1";
   } else if (ui.button2.isSameNode(e)) {
     state.focused = "button2";
-  } else if (ui.loginTextbox.inputField.isSameNode(e)) {
+  } else if (e.isSameNode(ui.loginTextbox.inputField)) {
     state.focused = "textField";
-  } else if (ui.password1Textbox.inputField.isSameNode(e)) {
+  } else if (e.isSameNode(ui.password1Textbox.inputField)) {
     state.focused = "passField";
   } else if (ui.infoBody.isSameNode(e)) {
     state.focused = "infoBody";
@@ -180,7 +177,7 @@ function dismissPrompt(ui, action) {
     case "ESC":
       // XXX This is assuming tab-modal.
       let browserWin = Services.wm.getMostRecentWindow("navigator:browser");
-      EventUtils.synthesizeKey("KEY_Escape", { code: "Escape" }, browserWin);
+      EventUtils.synthesizeKey("KEY_Escape", {}, browserWin);
       break;
     case "pollOK":
       // Buttons are disabled at the moment, poll until they're reenabled.
@@ -193,6 +190,8 @@ function dismissPrompt(ui, action) {
         clearInterval(interval);
       }, 100);
       break;
+    case "none":
+      break;
 
     default:
       throw "dismissPrompt action listed unknown button.";
@@ -202,27 +201,17 @@ function dismissPrompt(ui, action) {
 function getDialogDoc() {
   // Trudge through all the open windows, until we find the one
   // that has either commonDialog.xul or selectDialog.xul loaded.
-  var wm = Cc["@mozilla.org/appshell/window-mediator;1"].
-           getService(Ci.nsIWindowMediator);
-  // var enumerator = wm.getEnumerator("navigator:browser");
-  var enumerator = wm.getXULWindowEnumerator(null);
-
-  while (enumerator.hasMoreElements()) {
-    var win = enumerator.getNext();
-    var windowDocShell = win.QueryInterface(Ci.nsIXULWindow).docShell;
-
-    var containedDocShells = windowDocShell.getDocShellEnumerator(
-                                      Ci.nsIDocShellTreeItem.typeChrome,
-                                      Ci.nsIDocShell.ENUMERATE_FORWARDS);
-    while (containedDocShells.hasMoreElements()) {
+  // var enumerator = Services.wm.getEnumerator("navigator:browser");
+  for (let {docShell} of Services.wm.getEnumerator(null)) {
+    var containedDocShells = docShell.getDocShellEnumerator(
+                                      docShell.typeChrome,
+                                      docShell.ENUMERATE_FORWARDS);
+    for (let childDocShell of containedDocShells) {
         // Get the corresponding document for this docshell
-        var childDocShell = containedDocShells.getNext();
         // We don't want it if it's not done loading.
         if (childDocShell.busyFlags != Ci.nsIDocShell.BUSY_FLAGS_NONE)
           continue;
-        var childDoc = childDocShell.QueryInterface(Ci.nsIDocShell)
-                                    .contentViewer
-                                    .DOMDocument;
+        var childDoc = childDocShell.contentViewer.DOMDocument;
 
         if (childDoc.location.href != "chrome://global/content/commonDialog.xul" &&
             childDoc.location.href != "chrome://global/content/selectDialog.xul")
@@ -230,9 +219,7 @@ function getDialogDoc() {
 
         // We're expecting the dialog to be focused. If it's not yet, try later.
         // (In particular, this is needed on Linux to reliably check focused elements.)
-        let fm = Cc["@mozilla.org/focus-manager;1"].
-                 getService(Ci.nsIFocusManager);
-        if (fm.focusedWindow != childDoc.defaultView)
+        if (Services.focus.focusedWindow != childDoc.defaultView)
           continue;
 
         return childDoc;

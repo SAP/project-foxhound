@@ -5,9 +5,9 @@
 
 package org.mozilla.gecko;
 
-import android.app.Activity;
 import android.content.Context;
-import android.content.SharedPreferences;
+import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 import android.support.annotation.WorkerThread;
 import android.text.TextUtils;
 import android.util.Log;
@@ -22,7 +22,6 @@ import org.mozilla.gecko.util.FileUtils;
 import org.mozilla.gecko.util.GeckoBundle;
 import org.mozilla.gecko.util.INIParser;
 import org.mozilla.gecko.util.INISection;
-import org.mozilla.gecko.util.IntentUtils;
 
 import java.io.BufferedWriter;
 import java.io.File;
@@ -44,9 +43,11 @@ public final class GeckoProfile {
 
     // The path in the profile to the file containing the client ID.
     private static final String CLIENT_ID_FILE_PATH = "datareporting/state.json";
-    private static final String FHR_CLIENT_ID_FILE_PATH = "healthreport/state.json";
     // In the client ID file, the attribute title in the JSON object containing the client ID value.
     private static final String CLIENT_ID_JSON_ATTR = "clientID";
+    private static final String HAD_CANARY_CLIENT_ID_JSON_ATTR = "wasCanary";
+    // Must match the one from TelemetryUtils.jsm
+    private static final String CANARY_CLIENT_ID = "c0ffeec0-ffee-c0ff-eec0-ffeec0ffeec0";
 
     private static final String TIMES_PATH = "times.json";
     private static final String PROFILE_CREATION_DATE_JSON_ATTR = "created";
@@ -80,6 +81,7 @@ public final class GeckoProfile {
             new ConcurrentHashMap<String, GeckoProfile>(
                     /* capacity */ 4, /* load factor */ 0.75f, /* concurrency */ 2);
     private static String sDefaultProfileName;
+    private static String sIntentArgs;
 
     private final String mName;
     private final File mMozillaDir;
@@ -106,6 +108,10 @@ public final class GeckoProfile {
 
     public static void leaveGuestMode(final Context context) {
         GeckoSharedPrefs.forApp(context).edit().putBoolean(GUEST_MODE_PREF, false).commit();
+    }
+
+    public static void setIntentArgs(final String intentArgs) {
+        sIntentArgs = intentArgs;
     }
 
     public static GeckoProfile initFromArgs(final Context context, final String args) {
@@ -148,7 +154,8 @@ public final class GeckoProfile {
             }
         }
 
-        if (profileName == null && profilePath == null) {
+        if (TextUtils.isEmpty(profileName) && profilePath == null) {
+            informIfCustomProfileIsUnavailable(profileName, false);
             // Get the default profile for the Activity.
             return getDefaultProfile(context);
         }
@@ -206,23 +213,21 @@ public final class GeckoProfile {
         //     No     |    Yes    | Profile with specified name at default dir.
         //     Yes    |    No     | Custom (anonymous) profile with specified dir.
         //     No     |    No     | Profile with specified name at specified dir.
+        //
+        // Empty name?| Null dir? | Returned profile
+        // ------------------------------------------
+        //     Yes    |    Yes    | Active profile or default profile
 
-        if (profileName == null && profileDir == null) {
+        if (TextUtils.isEmpty(profileName) && profileDir == null) {
             // If no profile info was passed in, look for the active profile or a default profile.
             final GeckoProfile profile = GeckoThread.getActiveProfile();
             if (profile != null) {
+                informIfCustomProfileIsUnavailable(profileName, true);
                 return profile;
             }
 
-            final String args;
-            if (context instanceof Activity) {
-                args = IntentUtils.getStringExtraSafe(((Activity) context).getIntent(), "args");
-            } else {
-                args = null;
-            }
-
-            return GeckoProfile.initFromArgs(context, args);
-
+            informIfCustomProfileIsUnavailable(profileName, false);
+            return GeckoProfile.initFromArgs(context, sIntentArgs);
         } else if (profileName == null) {
             // If only profile dir was passed in, use custom (anonymous) profile.
             profileName = CUSTOM_PROFILE;
@@ -275,6 +280,28 @@ public final class GeckoProfile {
         return profile;
     }
 
+    /**
+     * Custom profiles are an edge use case (must be passed in via Intent arguments)<br>
+     * Will inform users if the received arguments are invalid and the app fallbacks to use
+     * the currently active or the default Gecko profile.<br>
+     * Only to be called if other conditions than the profile name are already checked.
+     *
+     * @see <a href="http://google.com">Reasoning behind custom profiles</a>
+     *
+     * @param profileName intended profile name. Will be checked against {{@link #CUSTOM_PROFILE}}
+     *                    to decide if we should inform or not about using the fallback profile.
+     * @param activeOrDefaultProfileFallback true - will fallback to use the currently active Gecko profile
+     *                                       false - will fallback to use the default Gecko profile
+     */
+    private static void informIfCustomProfileIsUnavailable(
+            final String profileName, final boolean activeOrDefaultProfileFallback) {
+        if (CUSTOM_PROFILE.equals(profileName)) {
+            final String fallbackProfileName = activeOrDefaultProfileFallback ? "active" : "default";
+            Log.w(LOGTAG, String.format("Custom profile must have a directory specified! " +
+                    "Reverting to use the %s profile", fallbackProfileName));
+        }
+    }
+
     // Currently unused outside of testing.
     @RobocopTarget
     public static boolean removeProfile(final Context context, final GeckoProfile profile) {
@@ -315,8 +342,6 @@ public final class GeckoProfile {
     private GeckoProfile(Context context, String profileName, File profileDir) throws NoMozillaDirectoryException {
         if (profileName == null) {
             throw new IllegalArgumentException("Unable to create GeckoProfile for empty profile name.");
-        } else if (CUSTOM_PROFILE.equals(profileName) && profileDir == null) {
-            throw new IllegalArgumentException("Custom profile must have a directory");
         }
 
         mName = profileName;
@@ -433,11 +458,11 @@ public final class GeckoProfile {
     }
 
     /**
-     * Retrieves the Gecko client ID from the filesystem. If the client ID does not exist, we attempt to migrate and
-     * persist it from FHR and, if that fails, we attempt to create a new one ourselves.
+     * Retrieves the Gecko client ID from the filesystem. If the client ID does not exist,
+     * we attempt to create a new one ourselves.
      *
      * This method assumes the client ID is located in a file at a hard-coded path within the profile. The format of
-     * this file is a JSONObject which at the bottom level contains a String -> String mapping containing the client ID.
+     * this file is a JSONObject which at the bottom level contains a String -&gt; String mapping containing the client ID.
      *
      * WARNING: the platform provides a JSM to retrieve the client ID [1] and this would be a
      * robust way to access it. However, we don't want to rely on Gecko running in order to get
@@ -453,33 +478,37 @@ public final class GeckoProfile {
     // Mimics ClientID.jsm - _doLoadClientID.
     @WorkerThread
     public String getClientId() throws IOException {
+        String clientId = "";
         try {
-            return getValidClientIdFromDisk(CLIENT_ID_FILE_PATH);
+            clientId = getClientIdFromDisk(CLIENT_ID_FILE_PATH);
         } catch (final IOException e) {
             // Avoid log spam: don't log the full Exception w/ the stack trace.
-            Log.d(LOGTAG, "Could not get client ID - attempting to migrate ID from FHR: " + e.getLocalizedMessage());
+            Log.d(LOGTAG, "Could not get client ID - creating a new one: " + e.getLocalizedMessage());
         }
 
-        String clientIdToWrite;
-        try {
-            clientIdToWrite = getValidClientIdFromDisk(FHR_CLIENT_ID_FILE_PATH);
-        } catch (final IOException e) {
-            // Avoid log spam: don't log the full Exception w/ the stack trace.
-            Log.d(LOGTAG, "Could not migrate client ID from FHR - creating a new one: " + e.getLocalizedMessage());
-            clientIdToWrite = generateNewClientId();
+        if (isClientIdValid(clientId)) {
+            return clientId;
+        } else {
+            String newClientId = generateNewClientId();
+            // There is a possibility Gecko is running and the Gecko telemetry implementation decided it's time to generate
+            // the client ID, writing client ID underneath us. Since it's highly unlikely (e.g. we run in onStart before
+            // Gecko is started), we don't handle that possibility besides writing the ID and then reading from the file
+            // again (rather than just returning the value we generated before writing).
+            //
+            // In the event it does happen, any discrepancy will be resolved after a restart. In the mean time, both this
+            // implementation and the Gecko implementation could upload documents with inconsistent IDs.
+            //
+            // In any case, if we get an exception, intentionally throw - there's nothing more to do here.
+            persistNewClientId(clientId, newClientId);
         }
 
-        // There is a possibility Gecko is running and the Gecko telemetry implementation decided it's time to generate
-        // the client ID, writing client ID underneath us. Since it's highly unlikely (e.g. we run in onStart before
-        // Gecko is started), we don't handle that possibility besides writing the ID and then reading from the file
-        // again (rather than just returning the value we generated before writing).
-        //
-        // In the event it does happen, any discrepancy will be resolved after a restart. In the mean time, both this
-        // implementation and the Gecko implementation could upload documents with inconsistent IDs.
-        //
-        // In any case, if we get an exception, intentionally throw - there's nothing more to do here.
-        persistClientId(clientIdToWrite);
-        return getValidClientIdFromDisk(CLIENT_ID_FILE_PATH);
+        return getClientIdFromDisk(CLIENT_ID_FILE_PATH);
+    }
+
+    @WorkerThread
+    public boolean getIfHadCanaryClientId() throws IOException {
+        final JSONObject obj = readJSONObjectFromFile(CLIENT_ID_FILE_PATH);
+        return obj.optBoolean(HAD_CANARY_CLIENT_ID_JSON_ATTR);
     }
 
     protected static String generateNewClientId() {
@@ -491,43 +520,50 @@ public final class GeckoProfile {
      * @throws IOException if a valid client ID could not be retrieved
      */
     @WorkerThread
-    private String getValidClientIdFromDisk(final String filePath) throws IOException {
+    private String getClientIdFromDisk(final String filePath) throws IOException {
         final JSONObject obj = readJSONObjectFromFile(filePath);
-        final String clientId = obj.optString(CLIENT_ID_JSON_ATTR);
-        if (isClientIdValid(clientId)) {
-            return clientId;
-        }
-        throw new IOException("Received client ID is invalid: " + clientId);
+        return obj.optString(CLIENT_ID_JSON_ATTR);
     }
 
     /**
      * Persists the given client ID to disk. This will overwrite any existing files.
      */
     @WorkerThread
-    private void persistClientId(final String clientId) throws IOException {
+    private void persistNewClientId(@Nullable final String oldClientId,
+                                    @NonNull final String newClientId) throws IOException {
         if (!ensureParentDirs(CLIENT_ID_FILE_PATH)) {
             throw new IOException("Could not create client ID parent directories");
         }
 
         final JSONObject obj = new JSONObject();
         try {
-            obj.put(CLIENT_ID_JSON_ATTR, clientId);
+            obj.put(CLIENT_ID_JSON_ATTR, newClientId);
+            obj.put(HAD_CANARY_CLIENT_ID_JSON_ATTR, isCanaryClientId(oldClientId));
         } catch (final JSONException e) {
             throw new IOException("Could not create client ID JSON object", e);
         }
 
         // ClientID.jsm overwrites the file to store the client ID so it's okay if we do it too.
-        Log.d(LOGTAG, "Attempting to write new client ID");
+        Log.d(LOGTAG, "Attempting to write new client ID properties");
         writeFile(CLIENT_ID_FILE_PATH, obj.toString()); // Logs errors within function: ideally we'd throw.
     }
 
     // From ClientID.jsm - isValidClientID.
-    public static boolean isClientIdValid(final String clientId) {
+    public static boolean isClientIdValid(@Nullable final String clientId) {
         // We could use UUID.fromString but, for consistency, we take the implementation from ClientID.jsm.
         if (TextUtils.isEmpty(clientId)) {
             return false;
         }
+
+        if (CANARY_CLIENT_ID.equals(clientId)) {
+            return false;
+        }
+
         return clientId.matches("(?i:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})");
+    }
+
+    private static boolean isCanaryClientId(@Nullable final String clientId) {
+        return CANARY_CLIENT_ID.equals(clientId);
     }
 
     /**
@@ -813,6 +849,9 @@ public final class GeckoProfile {
 
             final INIParser parser = GeckoProfileDirectories.getProfilesINI(mMozillaDir);
             final Hashtable<String, INISection> sections = parser.getSections();
+            if (sections == null) {
+                return false;
+            }
             for (Enumeration<INISection> e = sections.elements(); e.hasMoreElements();) {
                 final INISection section = e.nextElement();
                 String name = section.getStringProperty("Name");
@@ -966,7 +1005,7 @@ public final class GeckoProfile {
         // Create the client ID file before Gecko starts (we assume this method
         // is called before Gecko starts). If we let Gecko start, the JS telemetry
         // code may try to write to the file at the same time Java does.
-        persistClientId(generateNewClientId());
+        persistNewClientId(null, generateNewClientId());
 
         return profileDir;
     }

@@ -7,7 +7,7 @@
 #ifndef nsXBLProtoImplField_h__
 #define nsXBLProtoImplField_h__
 
-#include "nsIAtom.h"
+#include "nsAtom.h"
 #include "nsString.h"
 #include "jsapi.h"
 #include "nsString.h"
@@ -17,23 +17,20 @@ class nsIObjectInputStream;
 class nsIObjectOutputStream;
 class nsIURI;
 
-class nsXBLProtoImplField
-{
-public:
+class nsXBLProtoImplField {
+ public:
   nsXBLProtoImplField(const char16_t* aName, const char16_t* aReadOnly);
   explicit nsXBLProtoImplField(const bool aIsReadOnly);
   ~nsXBLProtoImplField();
 
   void AppendFieldText(const nsAString& aText);
-  void SetLineNumber(uint32_t aLineNumber) {
-    mLineNumber = aLineNumber;
-  }
-  
+  void SetLineNumber(uint32_t aLineNumber) { mLineNumber = aLineNumber; }
+
   nsXBLProtoImplField* GetNext() const { return mNext; }
   void SetNext(nsXBLProtoImplField* aNext) { mNext = aNext; }
 
   nsresult InstallField(JS::Handle<JSObject*> aBoundNode,
-                        nsIURI* aBindingDocURI,
+                        const nsXBLPrototypeBinding& aProtoBinding,
                         bool* aDidInstall) const;
 
   nsresult InstallAccessors(JSContext* aCx,
@@ -45,13 +42,13 @@ public:
   const char16_t* GetName() const { return mName; }
 
   unsigned AccessorAttributes() const {
-    return JSPROP_SHARED | JSPROP_GETTER | JSPROP_SETTER |
+    return JSPROP_GETTER | JSPROP_SETTER |
            (mJSAttributes & (JSPROP_ENUMERATE | JSPROP_PERMANENT));
   }
 
   bool IsEmpty() const { return mFieldTextLength == 0; }
 
-protected:
+ protected:
   nsXBLProtoImplField* mNext;
   char16_t* mName;
   char16_t* mFieldText;
@@ -60,4 +57,4 @@ protected:
   unsigned mJSAttributes;
 };
 
-#endif // nsXBLProtoImplField_h__
+#endif  // nsXBLProtoImplField_h__

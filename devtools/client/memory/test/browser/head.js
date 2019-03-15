@@ -4,16 +4,18 @@
 "use strict";
 
 // Load the shared test helpers into this compartment.
+/* import-globals-from ../../../shared/test/shared-head.js */
 Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/devtools/client/framework/test/shared-head.js",
+  "chrome://mochitests/content/browser/devtools/client/shared/test/shared-head.js",
   this);
 
 // Load the shared Redux helpers into this compartment.
+/* import-globals-from ../../../shared/test/shared-redux-head.js */
 Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/devtools/client/framework/test/shared-redux-head.js",
+  "chrome://mochitests/content/browser/devtools/client/shared/test/shared-redux-head.js",
   this);
 
-var { censusDisplays, snapshotState: states } = require("devtools/client/memory/constants");
+var { censusDisplays, censusState, snapshotState: states } = require("devtools/client/memory/constants");
 var { L10N } = require("devtools/client/memory/utils");
 
 Services.prefs.setBoolPref("devtools.memory.enabled", true);
@@ -21,25 +23,25 @@ Services.prefs.setBoolPref("devtools.memory.enabled", true);
 /**
  * Open the memory panel for the given tab.
  */
-this.openMemoryPanel = Task.async(function* (tab) {
+this.openMemoryPanel = async function(tab) {
   info("Opening memory panel.");
-  const target = TargetFactory.forTab(tab);
-  const toolbox = yield gDevTools.showToolbox(target, "memory");
+  const target = await TargetFactory.forTab(tab);
+  const toolbox = await gDevTools.showToolbox(target, "memory");
   info("Memory panel shown successfully.");
-  let panel = toolbox.getCurrentPanel();
+  const panel = toolbox.getCurrentPanel();
   return { tab, panel };
-});
+};
 
 /**
  * Close the memory panel for the given tab.
  */
-this.closeMemoryPanel = Task.async(function* (tab) {
+this.closeMemoryPanel = async function(tab) {
   info("Closing memory panel.");
-  const target = TargetFactory.forTab(tab);
+  const target = await TargetFactory.forTab(tab);
   const toolbox = gDevTools.getToolbox(target);
-  yield toolbox.destroy();
+  await toolbox.destroy();
   info("Closed memory panel successfully.");
-});
+};
 
 /**
  * Return a test function that adds a tab with the given url, opens the memory
@@ -48,32 +50,32 @@ this.closeMemoryPanel = Task.async(function* (tab) {
  *
  * Example usage:
  *
- *     this.test = makeMemoryTest(TEST_URL, function* ({ tab, panel }) {
+ *     this.test = makeMemoryTest(TEST_URL, async function ({ tab, panel }) {
  *         // Your tests go here...
  *     });
  */
 function makeMemoryTest(url, generator) {
-  return Task.async(function* () {
+  return async function() {
     waitForExplicitFinish();
 
     // It can take a long time to save a snapshot to disk, read the snapshots
     // back from disk, and finally perform analyses on them.
     requestLongerTimeout(2);
 
-    const tab = yield addTab(url);
-    const results = yield openMemoryPanel(tab);
+    const tab = await addTab(url);
+    const results = await openMemoryPanel(tab);
 
     try {
-      yield* generator(results);
+      await generator(results);
     } catch (err) {
       ok(false, "Got an error: " + DevToolsUtils.safeErrorString(err));
     }
 
-    yield closeMemoryPanel(tab);
-    yield removeTab(tab);
+    await closeMemoryPanel(tab);
+    await removeTab(tab);
 
     finish();
-  });
+  };
 }
 
 function dumpn(msg) {
@@ -92,8 +94,8 @@ function dumpn(msg) {
  * @return {Promise}
  */
 function waitUntilDominatorTreeState(store, expected) {
-  let predicate = () => {
-    let snapshots = store.getState().snapshots;
+  const predicate = () => {
+    const snapshots = store.getState().snapshots;
     return snapshots.length === expected.length &&
             expected.every((state, i) => {
               return snapshots[i].dominatorTree &&
@@ -105,8 +107,8 @@ function waitUntilDominatorTreeState(store, expected) {
 }
 
 function takeSnapshot(window) {
-  let { gStore, document } = window;
-  let snapshotCount = gStore.getState().snapshots.length;
+  const { gStore, document } = window;
+  const snapshotCount = gStore.getState().snapshots.length;
   info("Taking snapshot...");
   document.querySelector(".devtools-toolbar .take-snapshot").click();
   return waitUntilState(gStore,
@@ -114,7 +116,7 @@ function takeSnapshot(window) {
 }
 
 function clearSnapshots(window) {
-  let { gStore, document } = window;
+  const { gStore, document } = window;
   document.querySelector(".devtools-toolbar .clear-snapshots").click();
   return waitUntilState(gStore, () => gStore.getState().snapshots.every(
     (snapshot) => snapshot.state !== states.READ)
@@ -127,7 +129,7 @@ function clearSnapshots(window) {
  */
 function setCensusDisplay(window, display) {
   info(`Setting census display to ${display}...`);
-  let { gStore, gHeapAnalysesClient } = window;
+  const { gStore, gHeapAnalysesClient } = window;
   // XXX: Should handle this via clicking the DOM, but React doesn't
   // fire the onChange event, so just change it in the store.
   // window.document.querySelector(`.select-display`).value = type;
@@ -135,7 +137,7 @@ function setCensusDisplay(window, display) {
                          .setCensusDisplayAndRefresh(gHeapAnalysesClient, display));
 
   return waitUntilState(window.gStore, () => {
-    let selected = window.gStore.getState().snapshots.find(s => s.selected);
+    const selected = window.gStore.getState().snapshots.find(s => s.selected);
     return selected.state === states.READ &&
       selected.census &&
       selected.census.state === censusState.SAVED &&
@@ -160,8 +162,8 @@ function getDisplayedSnapshotStatus(document) {
  * @return {Number}
  */
 function getSelectedSnapshotIndex(store) {
-  let snapshots = store.getState().snapshots;
-  let selectedSnapshot = snapshots.find(s => s.selected);
+  const snapshots = store.getState().snapshots;
+  const selectedSnapshot = snapshots.find(s => s.selected);
   return snapshots.indexOf(selectedSnapshot);
 }
 
@@ -183,15 +185,15 @@ function waitUntilSnapshotSelected(store, snapshotIndex) {
  * @return {Promise}
  */
 function waitUntilCensusState(store, getCensus, expected) {
-  let predicate = () => {
-    let snapshots = store.getState().snapshots;
+  const predicate = () => {
+    const snapshots = store.getState().snapshots;
 
     info("Current census state:" +
              snapshots.map(x => getCensus(x) ? getCensus(x).state : null));
 
     return snapshots.length === expected.length &&
            expected.every((state, i) => {
-             let census = getCensus(snapshots[i]);
+             const census = getCensus(snapshots[i]);
              return (state === "*") ||
                     (!census && !state) ||
                     (census && census.state === state);
@@ -214,17 +216,17 @@ function waitUntilCensusState(store, getCensus, expected) {
  */
 function createRAFMock() {
   let queuedFns = [];
-  let mock = { timesCalled: 0 };
+  const mock = { timesCalled: 0 };
 
-  mock.nextFrame = function () {
-    let thisQueue = queuedFns;
+  mock.nextFrame = function() {
+    const thisQueue = queuedFns;
     queuedFns = [];
     for (let i = 0; i < thisQueue.length; i++) {
       thisQueue[i]();
     }
   };
 
-  mock.raf = function (fn) {
+  mock.raf = function(fn) {
     mock.timesCalled++;
     queuedFns.push(fn);
   };

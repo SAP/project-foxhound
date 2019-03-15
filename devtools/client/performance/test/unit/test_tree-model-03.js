@@ -7,22 +7,18 @@
  * while at the same time filtering by duration.
  */
 
-function run_test() {
-  run_next_test();
-}
-
 add_task(function test() {
-  let { ThreadNode } = require("devtools/client/performance/modules/logic/tree-model");
+  const { ThreadNode } = require("devtools/client/performance/modules/logic/tree-model");
 
   // Create a root node from a given samples array, filtering by time.
   //
   // Filtering from 5 to 18 includes the 2nd and 3rd samples. The 2nd sample
   // starts exactly on 5 and ends at 11. The 3rd sample starts at 11 and ends
   // exactly at 18.
-  let startTime = 5;
-  let endTime = 18;
-  let thread = new ThreadNode(gThread, { startTime, endTime });
-  let root = getFrameNodePath(thread, "(root)");
+  const startTime = 5;
+  const endTime = 18;
+  const thread = new ThreadNode(gThread, { startTime, endTime });
+  const root = getFrameNodePath(thread, "(root)");
 
   // Test the root node.
 
@@ -65,24 +61,24 @@ var gThread = synthesizeProfileForTest([{
     { location: "(root)" },
     { location: "A" },
     { location: "B" },
-    { location: "C" }
-  ]
+    { location: "C" },
+  ],
 }, {
   time: 5 + 6,
   frames: [
     { location: "(root)" },
     { location: "A" },
     { location: "B" },
-    { location: "D" }
-  ]
+    { location: "D" },
+  ],
 }, {
   time: 5 + 6 + 7,
   frames: [
     { location: "(root)" },
     { location: "A" },
     { location: "E" },
-    { location: "F" }
-  ]
+    { location: "F" },
+  ],
 }, {
   time: 5 + 6 + 7 + 8,
   frames: [
@@ -90,6 +86,6 @@ var gThread = synthesizeProfileForTest([{
     { location: "A" },
     { location: "B" },
     { location: "C" },
-    { location: "D" }
-  ]
+    { location: "D" },
+  ],
 }]);

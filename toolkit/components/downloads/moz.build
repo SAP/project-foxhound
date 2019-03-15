@@ -4,63 +4,47 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-with Files('*'):
-    BUG_COMPONENT = ('Toolkit', 'Download Manager')
+XPCSHELL_TESTS_MANIFESTS += ['test/unit/xpcshell.ini']
+BROWSER_CHROME_MANIFESTS += ['test/browser/browser.ini']
 
-with Files('ApplicationReputation.*'):
-    BUG_COMPONENT = ('Toolkit', 'Safe Browsing')
-
-with Files('chromium/*'):
-    BUG_COMPONENT = ('Toolkit', 'Safe Browsing')
-
-with Files('generate_csd.sh'):
-    BUG_COMPONENT = ('Toolkit', 'Safe Browsing')
-
-with Files('nsIApplicationReputation.idl'):
-    BUG_COMPONENT = ('Toolkit', 'Safe Browsing')
-
-TEST_DIRS += ['test']
+TEST_HARNESS_FILES.xpcshell.toolkit.components.downloads.test.data += [
+    'test/data/empty.txt',
+    'test/data/source.txt',
+]
 
 XPIDL_SOURCES += [
-    'nsIApplicationReputation.idl',
-    'nsIDownload.idl',
-    'nsIDownloadManager.idl',
-    'nsIDownloadManagerUI.idl',
-    'nsIDownloadProgressListener.idl',
+    'mozIDownloadPlatform.idl',
 ]
 
 XPIDL_MODULE = 'downloads'
 
-UNIFIED_SOURCES += [
-    'ApplicationReputation.cpp',
-    'chromium/chrome/common/safe_browsing/csd.pb.cc',
-    'nsDownloadManager.cpp'
-]
+CXXFLAGS += CONFIG['TK_CFLAGS']
 
-# SQLFunctions.cpp cannot be built in unified mode because of Windows headers.
 SOURCES += [
-    'SQLFunctions.cpp',
+    'DownloadPlatform.cpp',
 ]
 
-if CONFIG['OS_ARCH'] == 'WINNT':
-    # Can't build unified because we need CreateEvent which some IPC code
-    # included in LoadContext ends up undefining.
-    SOURCES += [
-        'nsDownloadScanner.cpp',
+EXTRA_COMPONENTS += [
+    'DownloadLegacy.js',
+    'Downloads.manifest',
+]
+
+EXTRA_JS_MODULES += [
+    'DownloadCore.jsm',
+    'DownloadIntegration.jsm',
+    'DownloadList.jsm',
+    'DownloadPaths.jsm',
+    'Downloads.jsm',
+    'DownloadStore.jsm',
+    'DownloadUIHelper.jsm',
+]
+
+if CONFIG['MOZ_PLACES']:
+    EXTRA_JS_MODULES += [
+        'DownloadHistory.jsm',
     ]
 
 FINAL_LIBRARY = 'xul'
 
-LOCAL_INCLUDES += [
-    '../protobuf',
-    '/ipc/chromium/src',
-    'chromium'
-]
-
-DEFINES['GOOGLE_PROTOBUF_NO_RTTI'] = True
-DEFINES['GOOGLE_PROTOBUF_NO_STATIC_INITIALIZER'] = True
-
-CXXFLAGS += CONFIG['TK_CFLAGS']
-
-if CONFIG['GNU_CXX']:
-    CXXFLAGS += ['-Wno-shadow']
+with Files('**'):
+    BUG_COMPONENT = ('Toolkit', 'Downloads API')

@@ -2,16 +2,13 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 import json
 
-from marionette_driver.transport import (
-    Command,
-    Proto2Command,
-    Proto2Response,
-    Response,
-)
+from marionette_driver.transport import Command, Response
 
-from marionette_harness import MarionetteTestCase, skip_unless_protocol
+from marionette_harness import MarionetteTestCase
 
 
 get_current_url = ("getCurrentUrl", None)
@@ -32,19 +29,6 @@ class TestMessageSequencing(MarionetteTestCase):
         cmd = Command(self.last_id, name, params)
         self.marionette.client.send(cmd)
         return self.last_id
-
-    @skip_unless_protocol("Skip for level < 3", lambda level: level >= 3)
-    def test_discard_older_messages(self):
-        first = self.send(*get_current_url)
-        second = self.send(*execute_script)
-        resp = self.marionette.client.receive()
-        self.assertEqual(second, resp.id)
-
-    @skip_unless_protocol("Skip for level < 3", lambda level: level >= 3)
-    def test_last_id_incremented(self):
-        before = self.last_id
-        self.send(*get_current_url)
-        self.assertGreater(self.last_id, before)
 
 
 class MessageTestCase(MarionetteTestCase):
@@ -127,46 +111,3 @@ class TestResponse(MessageTestCase):
         self.assertEquals(msg[1], resp.id)
         self.assertEquals(msg[2], resp.error)
         self.assertEquals(msg[3], resp.result)
-
-
-class TestProto2Command(MessageTestCase):
-    def create(self, name="name", params="params"):
-        return Proto2Command(name, params)
-
-    def test_initialise(self):
-        cmd = self.create()
-        self.assert_attr(cmd, "id")
-        self.assert_attr(cmd, "name")
-        self.assert_attr(cmd, "params")
-        self.assertEqual(None, cmd.id)
-        self.assertEqual("name", cmd.name)
-        self.assertEqual("params", cmd.params)
-
-    def test_from_data_unknown(self):
-        with self.assertRaises(ValueError):
-            cmd = Proto2Command.from_data({})
-
-
-class TestProto2Response(MessageTestCase):
-    def create(self, error="error", result="result"):
-        return Proto2Response(error, result)
-
-    def test_initialise(self):
-        resp = self.create()
-        self.assert_attr(resp, "id")
-        self.assert_attr(resp, "error")
-        self.assert_attr(resp, "result")
-        self.assertEqual(None, resp.id)
-        self.assertEqual("error", resp.error)
-        self.assertEqual("result", resp.result)
-
-    def test_from_data_error(self):
-        data = {"error": "error"}
-        resp = Proto2Response.from_data(data)
-        self.assertEqual(data, resp.error)
-        self.assertEqual(None, resp.result)
-
-    def test_from_data_result(self):
-        resp = Proto2Response.from_data("result")
-        self.assertEqual(None, resp.error)
-        self.assertEqual("result", resp.result)

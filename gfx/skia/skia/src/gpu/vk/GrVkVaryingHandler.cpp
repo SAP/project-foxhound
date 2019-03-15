@@ -10,61 +10,86 @@
 /** Returns the number of locations take up by a given GrSLType. We assume that all
     scalar values are 32 bits. */
 static inline int grsltype_to_location_size(GrSLType type) {
-    static const uint32_t kSizes[] = {
-        0,  // kVoid_GrSLType
-        1,  // kFloat_GrSLType
-        1,  // kVec2f_GrSLType
-        1,  // kVec3f_GrSLType
-        1,  // kVec4f_GrSLType
-        2,  // kMat22f_GrSLType
-        3,  // kMat33f_GrSLType
-        4,  // kMat44f_GrSLType
-        0,  // kTexture2DSampler_GrSLType
-        0,  // kTextureExternalSampler_GrSLType
-        0,  // kTexture2DRectSampler_GrSLType
-        0,  // kTextureBufferSampler_GrSLType
-        1,  // kBool_GrSLType
-        1,  // kInt_GrSLType
-        1,  // kUint_GrSLType
-        0,  // kTexture2D_GrSLType
-        0,  // kSampler_GrSLType
-    };
-    return kSizes[type];
-
-    GR_STATIC_ASSERT(0 == kVoid_GrSLType);
-    GR_STATIC_ASSERT(1 == kFloat_GrSLType);
-    GR_STATIC_ASSERT(2 == kVec2f_GrSLType);
-    GR_STATIC_ASSERT(3 == kVec3f_GrSLType);
-    GR_STATIC_ASSERT(4 == kVec4f_GrSLType);
-    GR_STATIC_ASSERT(5 == kMat22f_GrSLType);
-    GR_STATIC_ASSERT(6 == kMat33f_GrSLType);
-    GR_STATIC_ASSERT(7 == kMat44f_GrSLType);
-    GR_STATIC_ASSERT(8 == kTexture2DSampler_GrSLType);
-    GR_STATIC_ASSERT(9 == kTextureExternalSampler_GrSLType);
-    GR_STATIC_ASSERT(10 == kTexture2DRectSampler_GrSLType);
-    GR_STATIC_ASSERT(11 == kTextureBufferSampler_GrSLType);
-    GR_STATIC_ASSERT(12 == kBool_GrSLType);
-    GR_STATIC_ASSERT(13 == kInt_GrSLType);
-    GR_STATIC_ASSERT(14 == kUint_GrSLType);
-    GR_STATIC_ASSERT(15 == kTexture2D_GrSLType);
-    GR_STATIC_ASSERT(16 == kSampler_GrSLType);
-    GR_STATIC_ASSERT(SK_ARRAY_COUNT(kSizes) == kGrSLTypeCount);
+    switch(type) {
+        case kVoid_GrSLType:
+            return 0;
+        case kFloat_GrSLType: // fall through
+        case kHalf_GrSLType:
+            return 1;
+        case kFloat2_GrSLType: // fall through
+        case kHalf2_GrSLType:
+            return 1;
+        case kFloat3_GrSLType:
+        case kHalf3_GrSLType:
+            return 1;
+        case kFloat4_GrSLType:
+        case kHalf4_GrSLType:
+            return 1;
+        case kUint2_GrSLType:
+            return 1;
+        case kInt2_GrSLType:
+        case kShort2_GrSLType:
+        case kUShort2_GrSLType:
+        case kByte2_GrSLType:
+        case kUByte2_GrSLType:
+            return 1;
+        case kInt3_GrSLType:
+        case kShort3_GrSLType:
+        case kUShort3_GrSLType:
+        case kByte3_GrSLType:
+        case kUByte3_GrSLType:
+            return 1;
+        case kInt4_GrSLType:
+        case kShort4_GrSLType:
+        case kUShort4_GrSLType:
+        case kByte4_GrSLType:
+        case kUByte4_GrSLType:
+            return 1;
+        case kFloat2x2_GrSLType:
+        case kHalf2x2_GrSLType:
+            return 2;
+        case kFloat3x3_GrSLType:
+        case kHalf3x3_GrSLType:
+            return 3;
+        case kFloat4x4_GrSLType:
+        case kHalf4x4_GrSLType:
+            return 4;
+        case kTexture2DSampler_GrSLType:
+            return 0;
+        case kTextureExternalSampler_GrSLType:
+             return 0;
+        case kTexture2DRectSampler_GrSLType:
+             return 0;
+        case kBool_GrSLType:
+             return 1;
+        case kInt_GrSLType: // fall through
+        case kShort_GrSLType:
+        case kByte_GrSLType:
+             return 1;
+        case kUint_GrSLType: // fall through
+        case kUShort_GrSLType:
+        case kUByte_GrSLType:
+             return 1;
+    }
+    SK_ABORT("Unexpected type");
+    return -1;
 }
 
 void finalize_helper(GrVkVaryingHandler::VarArray& vars) {
     int locationIndex = 0;
     for (int i = 0; i < vars.count(); ++i) {
-        GrGLSLShaderVar& var = vars[i];
+        GrShaderVar& var = vars[i];
         SkString location;
         location.appendf("location = %d", locationIndex);
-        var.setLayoutQualifier(location.c_str());
+        var.addLayoutQualifier(location.c_str());
 
         int elementSize = grsltype_to_location_size(var.getType());
-        SkASSERT(elementSize);
+        SkASSERT(elementSize > 0);
         int numElements = 1;
-        if (var.isArray()) {
-           numElements = var.getArrayCount();
+        if (var.isArray() && !var.isUnsizedArray()) {
+            numElements = var.getArrayCount();
         }
+        SkASSERT(numElements > 0);
         locationIndex += elementSize * numElements;
     }
     // Vulkan requires at least 64 locations to be supported for both vertex output and fragment

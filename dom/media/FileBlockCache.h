@@ -8,10 +8,12 @@
 #define FILE_BLOCK_CACHE_H_
 
 #include "mozilla/Attributes.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/MozPromise.h"
+#include "mozilla/Mutex.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/AbstractThread.h"
 #include "nsTArray.h"
-#include "MediaCache.h"
+#include "MediaBlockCacheBase.h"
 #include "nsDeque.h"
 #include "nsThreadUtils.h"
 #include <deque>
@@ -50,99 +52,101 @@ namespace mozilla {
 // changes listed in mBlockChanges to file. Read() checks mBlockChanges and
 // determines the current data to return, reading from file or from
 // mBlockChanges as necessary.
-class FileBlockCache : public Runnable {
-public:
-  enum {
-    BLOCK_SIZE = MediaCacheStream::BLOCK_SIZE
-  };
-
+class FileBlockCache : public MediaBlockCacheBase {
+ public:
   FileBlockCache();
 
-protected:
-  ~FileBlockCache();
+ protected:
+  virtual ~FileBlockCache();
 
-public:
-  // Assumes ownership of aFD.
-  nsresult Open(PRFileDesc* aFD);
+ public:
+  // Launch thread and open temporary file.
+  nsresult Init() override;
 
-  // Closes writer, shuts down thread.
-  void Close();
+  // Will discard pending changes if any.
+  void Flush() override;
+
+  // Maximum number of blocks allowed in this block cache.
+  // Calculated from "media.cache_size" pref.
+  int32_t GetMaxBlocks() const override;
 
   // Can be called on any thread. This defers to a non-main thread.
-  nsresult WriteBlock(uint32_t aBlockIndex, const uint8_t* aData);
-
-  // Performs block writes and block moves on its own thread.
-  NS_IMETHOD Run() override;
+  nsresult WriteBlock(uint32_t aBlockIndex, Span<const uint8_t> aData1,
+                      Span<const uint8_t> aData2) override;
 
   // Synchronously reads data from file. May read from file or memory
   // depending on whether written blocks have been flushed to file yet.
   // Not recommended to be called from the main thread, as can cause jank.
-  nsresult Read(int64_t aOffset,
-                uint8_t* aData,
-                int32_t aLength,
-                int32_t* aBytes);
+  nsresult Read(int64_t aOffset, uint8_t* aData, int32_t aLength,
+                int32_t* aBytes) override;
 
   // Moves a block asynchronously. Can be called on any thread.
   // This defers file I/O to a non-main thread.
-  nsresult MoveBlock(int32_t aSourceBlockIndex, int32_t aDestBlockIndex);
+  nsresult MoveBlock(int32_t aSourceBlockIndex,
+                     int32_t aDestBlockIndex) override;
 
   // Represents a change yet to be made to a block in the file. The change
   // is either a write (and the data to be written is stored in this struct)
   // or a move (and the index of the source block is stored instead).
   struct BlockChange final {
-
     NS_INLINE_DECL_THREADSAFE_REFCOUNTING(BlockChange)
 
     // This block is waiting in memory to be written.
     // Stores a copy of the block, so we can write it asynchronously.
-    explicit BlockChange(const uint8_t* aData)
-      : mSourceBlockIndex(-1)
-    {
+    explicit BlockChange(const uint8_t* aData) : mSourceBlockIndex(-1) {
       mData = MakeUnique<uint8_t[]>(BLOCK_SIZE);
       memcpy(mData.get(), aData, BLOCK_SIZE);
+    }
+
+    BlockChange(Span<const uint8_t> aData1, Span<const uint8_t> aData2)
+        : mSourceBlockIndex(-1) {
+      MOZ_ASSERT(aData1.Length() + aData2.Length() == BLOCK_SIZE);
+      mData = MakeUnique<uint8_t[]>(BLOCK_SIZE);
+      memcpy(mData.get(), aData1.Elements(), aData1.Length());
+      memcpy(mData.get() + aData1.Length(), aData2.Elements(), aData2.Length());
     }
 
     // This block's contents are located in another file
     // block, i.e. this block has been moved.
     explicit BlockChange(int32_t aSourceBlockIndex)
-      : mSourceBlockIndex(aSourceBlockIndex) {}
+        : mSourceBlockIndex(aSourceBlockIndex) {}
 
     UniquePtr<uint8_t[]> mData;
     const int32_t mSourceBlockIndex;
 
-    bool IsMove() const {
-      return mSourceBlockIndex != -1;
-    }
+    bool IsMove() const { return mSourceBlockIndex != -1; }
     bool IsWrite() const {
-      return mSourceBlockIndex == -1 &&
-             mData.get() != nullptr;
+      return mSourceBlockIndex == -1 && mData.get() != nullptr;
     }
 
-  private:
+   private:
     // Private destructor, to discourage deletion outside of Release():
-    ~BlockChange()
-    {
-    }
+    ~BlockChange() {}
   };
 
-private:
+ private:
   int64_t BlockIndexToOffset(int32_t aBlockIndex) {
     return static_cast<int64_t>(aBlockIndex) * BLOCK_SIZE;
   }
 
-  // Monitor which controls access to mFD and mFDCurrentPos. Don't hold
-  // mDataMonitor while holding mFileMonitor! mFileMonitor must be owned
+  void SetCacheFile(PRFileDesc* aFD);
+
+  // Close file in thread and terminate thread.
+  void Close();
+
+  // Performs block writes and block moves on its own thread.
+  void PerformBlockIOs();
+
+  // Mutex which controls access to mFD and mFDCurrentPos. Don't hold
+  // mDataMutex while holding mFileMutex! mFileMutex must be owned
   // while accessing any of the following data fields or methods.
-  Monitor mFileMonitor;
+  Mutex mFileMutex;
   // Moves a block already committed to file.
-  nsresult MoveBlockInFile(int32_t aSourceBlockIndex,
-                           int32_t aDestBlockIndex);
+  nsresult MoveBlockInFile(int32_t aSourceBlockIndex, int32_t aDestBlockIndex);
   // Seeks file pointer.
   nsresult Seek(int64_t aOffset);
   // Reads data from file offset.
-  nsresult ReadFromFile(int64_t aOffset,
-                        uint8_t* aDest,
-                        int32_t aBytesToRead,
+  nsresult ReadFromFile(int64_t aOffset, uint8_t* aDest, int32_t aBytesToRead,
                         int32_t& aBytesRead);
   nsresult WriteBlockToFile(int32_t aBlockIndex, const uint8_t* aBlockData);
   // File descriptor we're writing to. This is created externally, but
@@ -151,21 +155,22 @@ private:
   // The current file offset in the file.
   int64_t mFDCurrentPos;
 
-  // Monitor which controls access to all data in this class, except mFD
-  // and mFDCurrentPos. Don't hold mDataMonitor while holding mFileMonitor!
-  // mDataMonitor must be owned while accessing any of the following data
+  // Mutex which controls access to all data in this class, except mFD
+  // and mFDCurrentPos. Don't hold mDataMutex while holding mFileMutex!
+  // mDataMutex must be owned while accessing any of the following data
   // fields or methods.
-  Monitor mDataMonitor;
+  Mutex mDataMutex;
   // Ensures we either are running the event to preform IO, or an event
   // has been dispatched to preform the IO.
-  // mDataMonitor must be owned while calling this.
+  // mDataMutex must be owned while calling this.
   void EnsureWriteScheduled();
-  // Array of block changes to made. If mBlockChanges[offset/BLOCK_SIZE] == nullptr,
-  // then the block has no pending changes to be written, but if
+
+  // Array of block changes to made. If mBlockChanges[offset/BLOCK_SIZE] ==
+  // nullptr, then the block has no pending changes to be written, but if
   // mBlockChanges[offset/BLOCK_SIZE] != nullptr, then either there's a block
   // cached in memory waiting to be written, or this block is the target of a
   // block move.
-  nsTArray< RefPtr<BlockChange> > mBlockChanges;
+  nsTArray<RefPtr<BlockChange> > mBlockChanges;
   // Thread upon which block writes and block moves are performed. This is
   // created upon open, and shutdown (asynchronously) upon close (on the
   // main thread).
@@ -175,10 +180,15 @@ private:
   // True if we've dispatched an event to commit all pending block changes
   // to file on mThread.
   bool mIsWriteScheduled;
-  // True if the writer is ready to write data to file.
-  bool mIsOpen;
+  // True when a read is happening. Pending writes may be postponed, to give
+  // higher priority to reads (which may be blocking the caller).
+  bool mIsReading;
+  // True if we've got a temporary file descriptor. Note: we don't use mFD
+  // directly as that's synchronized via mFileMutex and we need to make
+  // decisions about whether we can write while holding mDataMutex.
+  bool mInitialized = false;
 };
 
-} // End namespace mozilla.
+}  // End namespace mozilla.
 
 #endif /* FILE_BLOCK_CACHE_H_ */

@@ -8,24 +8,21 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/desktop_capture/desktop_capture_options.h"
+#include "modules/desktop_capture/desktop_capture_options.h"
 
 namespace webrtc {
 
-DesktopCaptureOptions::DesktopCaptureOptions()
-    : use_update_notifications_(true),
-      disable_effects_(true) {
-#if defined(USE_X11)
-  // XDamage is often broken, so don't use it by default.
-  use_update_notifications_ = false;
-#endif
-
-#if defined(WEBRTC_WIN)
-  allow_use_magnification_api_ = false;
-#endif
-}
-
+DesktopCaptureOptions::DesktopCaptureOptions() {}
+DesktopCaptureOptions::DesktopCaptureOptions(
+    const DesktopCaptureOptions& options) = default;
+DesktopCaptureOptions::DesktopCaptureOptions(DesktopCaptureOptions&& options) =
+    default;
 DesktopCaptureOptions::~DesktopCaptureOptions() {}
+
+DesktopCaptureOptions& DesktopCaptureOptions::operator=(
+    const DesktopCaptureOptions& options) = default;
+DesktopCaptureOptions& DesktopCaptureOptions::operator=(
+    DesktopCaptureOptions&& options) = default;
 
 // static
 DesktopCaptureOptions DesktopCaptureOptions::CreateDefault() {

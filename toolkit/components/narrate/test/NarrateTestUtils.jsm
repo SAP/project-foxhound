@@ -4,25 +4,24 @@
 
 "use strict";
 
-const Cu = Components.utils;
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Preferences.jsm");
-Cu.import("resource://testing-common/ContentTaskUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Preferences.jsm");
+ChromeUtils.import("resource://testing-common/ContentTaskUtils.jsm");
 
-this.EXPORTED_SYMBOLS = [ "NarrateTestUtils" ];
+var EXPORTED_SYMBOLS = [ "NarrateTestUtils" ];
 
-this.NarrateTestUtils = {
-  TOGGLE: "#narrate-toggle",
-  POPUP: "#narrate-dropdown .dropdown-popup",
-  VOICE_SELECT: "#narrate-voices .select-toggle",
-  VOICE_OPTIONS: "#narrate-voices .options",
-  VOICE_SELECTED: "#narrate-voices .options .option.selected",
-  VOICE_SELECT_LABEL: "#narrate-voices .select-toggle .current-voice",
-  RATE: "#narrate-rate-input",
-  START: "#narrate-dropdown:not(.speaking) #narrate-start-stop",
-  STOP: "#narrate-dropdown.speaking #narrate-start-stop",
-  BACK: "#narrate-skip-previous",
-  FORWARD: "#narrate-skip-next",
+var NarrateTestUtils = {
+  TOGGLE: ".narrate-toggle",
+  POPUP: ".narrate-dropdown .dropdown-popup",
+  VOICE_SELECT: ".narrate-voices .select-toggle",
+  VOICE_OPTIONS: ".narrate-voices .options",
+  VOICE_SELECTED: ".narrate-voices .options .option.selected",
+  VOICE_SELECT_LABEL: ".narrate-voices .select-toggle .current-voice",
+  RATE: ".narrate-rate-input",
+  START: ".narrate-dropdown:not(.speaking) .narrate-start-stop",
+  STOP: ".narrate-dropdown.speaking .narrate-start-stop",
+  BACK: ".narrate-skip-previous",
+  FORWARD: ".narrate-skip-next",
 
   isVisible(element) {
     let style = element.ownerGlobal.getComputedStyle(element);
@@ -68,7 +67,7 @@ this.NarrateTestUtils = {
     }
 
     let voiceOption = window.document.querySelector(
-      `#narrate-voices .option[data-value="${voiceUri}"]`);
+      `.narrate-voices .option[data-value="${voiceUri}"]`);
 
     voiceOption.focus();
     voiceOption.click();
@@ -78,13 +77,13 @@ this.NarrateTestUtils = {
 
   getEventUtils(window) {
     let eventUtils = {
-      "_EU_Ci": Components.interfaces,
-      "_EU_Cc": Components.classes,
+      "_EU_Ci": Ci,
+      "_EU_Cc": Cc,
       window,
       parent: window,
       navigator: window.navigator,
       KeyboardEvent: window.KeyboardEvent,
-      KeyEvent: window.KeyEvent
+      KeyEvent: window.KeyEvent,
     };
     Services.scriptloader.loadSubScript(
       "chrome://mochikit/content/tests/SimpleTest/EventUtils.js", eventUtils);
@@ -103,7 +102,7 @@ this.NarrateTestUtils = {
       if (window.document.body.classList.contains("loaded")) {
         resolve();
       } else {
-        Services.obs.addObserver(observeReady, "AboutReader:Ready", false);
+        Services.obs.addObserver(observeReady, "AboutReader:Ready");
       }
     });
   },
@@ -121,7 +120,7 @@ this.NarrateTestUtils = {
         resolve(Preferences.get(pref));
       }
 
-      Services.prefs.addObserver(pref, observeChange, false);
+      Services.prefs.addObserver(pref, observeChange);
     });
   },
 
@@ -144,5 +143,5 @@ this.NarrateTestUtils = {
         left: Number(node.style.left.replace(/px$/, "")),
         top: Number(node.style.top.replace(/px$/, ""))};
     });
-  }
+  },
 };

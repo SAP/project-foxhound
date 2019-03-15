@@ -7,10 +7,10 @@
 
 const {
   changeNetworkThrottling,
-} = require("devtools/client/responsive.html/actions/network-throttling");
+} = require("devtools/client/shared/components/throttling/actions");
 
-add_task(function* () {
-  let store = Store();
+add_task(async function() {
+  const store = Store();
   const { getState, dispatch } = store;
 
   ok(!getState().networkThrottling.enabled,

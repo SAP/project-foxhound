@@ -13,10 +13,14 @@
   #five, #six {border: thick solid red; border-inline-start-color:green; border-inline-end-color:blue}
   #seven {
     border: 3px solid;
-    -moz-border-top-colors: blue aqua fuchsia;
-    -moz-border-right-colors: aqua blue fuchsia;
-    -moz-border-bottom-colors: blue fuchsia aqua;
-    -moz-border-left-colors: fuchsia blue blue;
+  }
+  #eight {
+    border: 10px solid transparent;
+    border-image: repeating-linear-gradient(45deg, blue, blue 1%, red 1%, red 8%) 10;
+  }
+  #nine {
+    border: 10px solid blue;
+    border-image: none;
   }
 
   /* XXX also test rgba() */
@@ -26,6 +30,7 @@
 <body>
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=58048">Mozilla Bug 58048</a>
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=255411">Mozilla Bug 255411</a>
+<a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1430969">Mozilla Bug 1430969</a>
 <div id="display">
 
 <div id="one">Hello</div>
@@ -35,12 +40,15 @@
 <div id="five" dir="ltr">Hello</div>
 <div id="six" dir="rtl">Hello</div>
 <div id="seven">Hello</div>
+<div id="eight">I have a border-image</div>
+<div id="nine">I do not have a border-image</div>
 
 </div>
 <pre id="test">
 <script class="testbody" type="text/javascript">
 
 SimpleTest.waitForExplicitFinish();
+SimpleTest.requestFlakyTimeout('nsPresContext internally delays applying prefs using an nsITimer');
 
 var cs1 = getComputedStyle(document.getElementById("one"), "");
 var cs2 = getComputedStyle(document.getElementById("two"), "");
@@ -49,8 +57,21 @@ var cs4 = getComputedStyle(document.getElementById("four"), "");
 var cs5 = getComputedStyle(document.getElementById("five"), "");
 var cs6 = getComputedStyle(document.getElementById("six"), "");
 var cs7 = getComputedStyle(document.getElementById("seven"), "");
+var cs8 = getComputedStyle(document.getElementById("eight"), "");
+var cs9 = getComputedStyle(document.getElementById("nine"), "");
 
-SpecialPowers.pushPrefEnv({'set': [['browser.display.document_color_use', 1]]}, part1);
+function pushPrefEnvAndWait(args, cb) {
+  SpecialPowers.pushPrefEnv(args, _ => {
+    // The nsPresContext delays applying a preference change until after a 0ms
+    // nsITimer fires.  The SpecialPowers.pushPrefEnv() uses setTimeout(f, 0)
+    // which may execute as a simple runnable dispatch and fire before the
+    // 0ms nsITimer.  Therefore wait an additional 1ms to allow the nsPresContext
+    // to apply the preferences.
+    setTimeout(cb, 1);
+  });
+}
+
+pushPrefEnvAndWait({'set': [['browser.display.document_color_use', 1]]}, part1);
 
 var transparentBackgroundColor;
 var inputBackgroundColor, inputColor, inputBorderTopColor;
@@ -58,7 +79,6 @@ var inputBorderRightColor, inputBorderLeftColor, inputBorderBottomColor;
 
 function part1()
 {
-
     isnot(cs1.backgroundColor, cs2.backgroundColor, "background-color applies");
     isnot(cs1.color, cs2.color, "color applies");
     isnot(cs1.borderTopColor, cs2.borderTopColor, "border-top-color applies");
@@ -95,14 +115,6 @@ function part1()
           "border-inline-start-color applies");
     isnot(cs6.borderLeftColor, cs2.borderLeftColor,
           "border-inline-end-color applies");
-    isnot(cs7.MozBorderTopColors, cs2.MozBorderTopColors,
-          "-moz-border-top-colors applies");
-    isnot(cs7.MozBorderRightColors, cs2.MozBorderRightColors,
-          "-moz-border-right-colors applies");
-    isnot(cs7.MozBorderBottomColors, cs2.MozBorderBottomColors,
-          "-moz-border-bottom-colors applies");
-    isnot(cs7.MozBorderLeftColors, cs2.MozBorderLeftColors,
-          "-moz-border-left-colors applies");
     is(cs1.color, cs3.color, "color applies");
     is(cs1.backgroundColor, cs3.backgroundColor, "background-color applies");
     isnot(cs3.backgroundColor, cs4.backgroundColor, "background-color applies");
@@ -114,6 +126,7 @@ function part1()
           "border-left-color applies");
     isnot(cs3.borderBottomColor, cs4.borderBottomColor,
           "border-bottom-color applies");
+    isnot(cs8.borderImageSource, cs9.borderImageSource, "border-image-source applies");
     transparentBackgroundColor = cs2.backgroundColor;
     inputBackgroundColor = cs4.backgroundColor;
     inputColor = cs4.color;
@@ -121,7 +134,7 @@ function part1()
     inputBorderRightColor = cs4.borderRightColor;
     inputBorderLeftColor = cs4.borderLeftColor;
     inputBorderBottomColor = cs4.borderBottomColor;
-    SpecialPowers.pushPrefEnv({'set': [['browser.display.document_color_use', 2]]}, part2);
+    pushPrefEnvAndWait({'set': [['browser.display.document_color_use', 2]]}, part2);
 }
 
 function part2()
@@ -142,14 +155,6 @@ function part2()
        "border-inline-start-color is blocked");
     is(cs6.borderLeftColor, cs2.borderLeftColor,
        "border-inline-end-color is blocked");
-    is(cs7.MozBorderTopColors, cs2.MozBorderTopColors,
-       "-moz-border-top-colors is blocked");
-    is(cs7.MozBorderRightColors, cs2.MozBorderRightColors,
-       "-moz-border-right-colors is blocked");
-    is(cs7.MozBorderBottomColors, cs2.MozBorderBottomColors,
-       "-moz-border-bottom-colors is blocked");
-    is(cs7.MozBorderLeftColors, cs2.MozBorderLeftColors,
-       "-moz-border-left-colors is blocked");
     is(cs1.borderBottomColor, cs2.borderBottomColor,
        "border-bottom-color is blocked");
     is(cs1.MozColumnRuleColor, cs2.MozColumnRuleColor,
@@ -176,6 +181,7 @@ function part2()
        "border-left-color not broken on inputs");
     is(cs4.borderBottomColor, inputBorderBottomColor,
        "border-bottom-color not broken on inputs");
+    is(cs8.borderImageSource, cs9.borderImageSource, "border-image-source is blocked");
 
     SimpleTest.finish();
 }

@@ -2,14 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-this.EXPORTED_SYMBOLS = ["Point", "Rect"];
+var EXPORTED_SYMBOLS = ["Point", "Rect"];
 
 /**
  * Simple Point class.
  *
  * Any method that takes an x and y may also take a point.
  */
-this.Point = function Point(x, y) {
+function Point(x, y) {
   this.set(x, y);
 }
 
@@ -58,7 +58,7 @@ Point.prototype = {
 
   isZero() {
     return this.x == 0 && this.y == 0;
-  }
+  },
 };
 
 (function() {
@@ -83,12 +83,12 @@ Point.prototype = {
  * non-positive widths and heights in that case.
  */
 
-this.Rect = function Rect(x, y, w, h) {
+function Rect(x, y, w, h) {
   this.left = x;
   this.top = y;
   this.right = x + w;
   this.bottom = y + h;
-};
+}
 
 Rect.fromRect = function fromRect(r) {
   return new Rect(r.left, r.top, r.right - r.left, r.bottom - r.top);
@@ -330,5 +330,17 @@ Rect.prototype = {
     this.top -= yAdj;
     this.bottom += yAdj;
     return this;
-  }
+  },
+
+  /**
+   * Grows or shrinks the rectangle by fixed amount while keeping the center point.
+   * Accepts single fixed amount
+   */
+  inflateFixed: function inflateFixed(fixed) {
+    this.left -= fixed;
+    this.right += fixed;
+    this.top -= fixed;
+    this.bottom += fixed;
+    return this;
+  },
 };

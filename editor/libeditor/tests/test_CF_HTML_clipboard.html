@@ -27,16 +27,15 @@ function copyCF_HTML(cfhtml, success, failure) {
   const CF_HTML = "application/x-moz-nativehtml";
 
   function getLoadContext() {
-    return SpecialPowers.wrap(window).QueryInterface(Ci.nsIInterfaceRequestor)
-                 .getInterface(Ci.nsIWebNavigation)
+    return SpecialPowers.wrap(window)
+                 .docShell
                  .QueryInterface(Ci.nsILoadContext);
   }
 
-  var cb = Cc["@mozilla.org/widget/clipboard;1"].
-           getService(Ci.nsIClipboard);
+  var cb = SpecialPowers.Services.clipboard;
 
   var counter = 0;
-  function copyCF_HTML_worker(success, failure) {
+  function copyCF_HTML_worker(successFn, failureFn) {
     if (++counter > 50) {
       ok(false, "Timed out while polling clipboard for pasted data");
       failure();
@@ -45,7 +44,7 @@ function copyCF_HTML(cfhtml, success, failure) {
 
     var flavors = [CF_HTML];
     if (!cb.hasDataMatchingFlavors(flavors, flavors.length, cb.kGlobalClipboard)) {
-      setTimeout(function() { copyCF_HTML_worker(success, failure); }, 100);
+      setTimeout(function() { copyCF_HTML_worker(successFn, failureFn); }, 100);
       return;
     }
 
@@ -56,10 +55,10 @@ function copyCF_HTML(cfhtml, success, failure) {
     cb.getData(trans, cb.kGlobalClipboard);
     var data = SpecialPowers.createBlankObject();
     try {
-      trans.getTransferData(CF_HTML, data, {});
+      trans.getTransferData(CF_HTML, data);
       data = SpecialPowers.wrap(data).value.QueryInterface(Ci.nsISupportsCString).data;
     } catch (e) {
-      setTimeout(function() { copyCF_HTML_worker(success, failure); }, 100);
+      setTimeout(function() { copyCF_HTML_worker(successFn, failureFn); }, 100);
       return;
     }
     success();
@@ -82,7 +81,7 @@ function loadCF_HTMLdata(filename) {
   req.open("GET", filename, false);
   req.overrideMimeType("text/plain; charset=x-user-defined");
   req.send(null);
-  ok(req.status, 200, "Could not read the binary file " + filename);
+  is(req.status, 200, "Could not read the binary file " + filename);
   return req.responseText;
 }
 
@@ -138,7 +137,7 @@ function runTest() {
         win.focus();
       }, 0);
     }, {once: true});
-    iframe.src = "data:text/html,";
+    iframe.srcdoc = "foo";
   }, SimpleTest.finish);
 }
 

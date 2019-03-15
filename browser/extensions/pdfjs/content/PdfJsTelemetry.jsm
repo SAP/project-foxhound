@@ -13,16 +13,14 @@
  * limitations under the License.
  */
 /* eslint max-len: ["error", 100] */
-/* globals Components, Services */
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["PdfJsTelemetry"];
+var EXPORTED_SYMBOLS = ["PdfJsTelemetry"];
 
-const Cu = Components.utils;
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-this.PdfJsTelemetry = {
+var PdfJsTelemetry = {
   onViewerIsUsed() {
     let histogram = Services.telemetry.getHistogramById("PDF_VIEWER_USED");
     histogram.add(true);
@@ -66,5 +64,5 @@ this.PdfJsTelemetry = {
   onTimeToView(ms) {
     let histogram = Services.telemetry.getHistogramById("PDF_VIEWER_TIME_TO_VIEW_MS");
     histogram.add(ms);
-  }
+  },
 };

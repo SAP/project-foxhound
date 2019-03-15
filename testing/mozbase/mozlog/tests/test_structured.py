@@ -1,13 +1,16 @@
 # -*- coding: utf-8 -*-
+
+from __future__ import absolute_import
+
 import argparse
 import json
 import optparse
 import os
-import StringIO
 import sys
 import unittest
 import signal
 import xml.etree.ElementTree as ET
+from six import StringIO
 
 import mozunit
 
@@ -20,6 +23,8 @@ from mozlog import (
     handlers,
     formatters,
 )
+import six
+from six import unichr
 
 
 class TestHandler(object):
@@ -59,7 +64,7 @@ class BaseStructuredTest(unittest.TestCase):
         specials = set(["time"])
 
         all_expected.update(expected)
-        for key, value in all_expected.iteritems():
+        for key, value in six.iteritems(all_expected):
             self.assertEqual(actual[key], value)
 
         self.assertEquals(set(all_expected.keys()) |
@@ -105,11 +110,48 @@ class TestStatusHandler(BaseStructuredTest):
         self.assertEqual(2, summary.expected_statuses['OK'])
 
 
+class TestSummaryHandler(BaseStructuredTest):
+
+    def setUp(self):
+        super(TestSummaryHandler, self).setUp()
+        self.handler = handlers.SummaryHandler()
+        self.logger.add_handler(self.handler)
+
+    def test_failure_run(self):
+        self.logger.suite_start([])
+        self.logger.test_start("test1")
+        self.logger.test_status("test1", "sub1", status='PASS')
+        self.logger.test_status("test1", "sub2", status='TIMEOUT')
+        self.logger.assertion_count("test1", 5, 1, 10)
+        self.logger.assertion_count("test1", 5, 10, 15)
+        self.logger.test_end("test1", status='OK')
+        self.logger.suite_end()
+
+        counts = self.handler.current['counts']
+        self.assertIn('timeout', counts['subtest']['unexpected'])
+        self.assertEqual(1, counts['subtest']['unexpected']['timeout'])
+        self.assertIn('pass', counts['subtest']['expected'])
+        self.assertEqual(1, counts['subtest']['expected']['pass'])
+        self.assertIn('ok', counts['test']['expected'])
+        self.assertEqual(1, counts['test']['expected']['ok'])
+        self.assertIn('pass', counts['assert']['unexpected'])
+        self.assertEqual(1, counts['assert']['unexpected']['pass'])
+        self.assertIn('fail', counts['assert']['expected'])
+        self.assertEqual(1, counts['assert']['expected']['fail'])
+
+        logs = self.handler.current['unexpected_logs']
+        self.assertEqual(1, len(logs))
+        self.assertIn('test1', logs)
+        self.assertEqual(1, len(logs['test1']))
+        self.assertEqual('sub2', logs['test1'][0]['subtest'])
+
+
 class TestStructuredLog(BaseStructuredTest):
 
     def test_suite_start(self):
-        self.logger.suite_start(["test"])
+        self.logger.suite_start(["test"], "logtest")
         self.assert_log_equals({"action": "suite_start",
+                                "name": "logtest",
                                 "tests": {"default": ["test"]}})
         self.logger.suite_end()
 
@@ -393,6 +435,45 @@ class TestStructuredLog(BaseStructuredTest):
                                 "level": "INFO",
                                 "message": "line 4"})
 
+    def test_shutdown(self):
+        # explicit shutdown
+        log = structuredlog.StructuredLogger("test 1")
+        log.add_handler(self.handler)
+        log.info("line 1")
+        self.assert_log_equals({"action": "log",
+                                "level": "INFO",
+                                "message": "line 1",
+                                "source": "test 1"})
+        log.shutdown()
+        self.assert_log_equals({"action": "shutdown", "source": "test 1"})
+        with self.assertRaises(structuredlog.LoggerShutdownError):
+            log.info("bad log")
+        with self.assertRaises(structuredlog.LoggerShutdownError):
+            log.log_raw({"action": "log", "level": "info", "message": "bad log"})
+
+        # shutdown still applies to new instances
+        del log
+        log = structuredlog.StructuredLogger("test 1")
+        with self.assertRaises(structuredlog.LoggerShutdownError):
+            log.info("bad log")
+
+        # context manager shutdown
+        with structuredlog.StructuredLogger("test 2") as log:
+            log.add_handler(self.handler)
+            log.info("line 2")
+            self.assert_log_equals({"action": "log",
+                                    "level": "INFO",
+                                    "message": "line 2",
+                                    "source": "test 2"})
+        self.assert_log_equals({"action": "shutdown", "source": "test 2"})
+
+        # shutdown prevents logging across instances
+        log1 = structuredlog.StructuredLogger("test 3")
+        log2 = structuredlog.StructuredLogger("test 3", component="bar")
+        log1.shutdown()
+        with self.assertRaises(structuredlog.LoggerShutdownError):
+            log2.info("line 3")
+
 
 class TestTypeConversions(BaseStructuredTest):
 
@@ -437,6 +518,7 @@ class TestTypeConversions(BaseStructuredTest):
             data = logfile.readlines()[-1].strip()
             self.assertEquals(data, "☺")
             self.logger.suite_end()
+            self.logger.remove_handler(_handler)
 
     def test_arguments(self):
         self.logger.info(message="test")
@@ -444,7 +526,7 @@ class TestTypeConversions(BaseStructuredTest):
                                 "message": "test",
                                 "level": "INFO"})
 
-        self.logger.suite_start([], {})
+        self.logger.suite_start([], run_info={})
         self.assert_log_equals({"action": "suite_start",
                                 "tests": {"default": []},
                                 "run_info": {}})
@@ -555,7 +637,7 @@ class FormatterTest(unittest.TestCase):
         self.position = 0
         self.logger = structuredlog.StructuredLogger(
             "test_%s" % type(self).__name__)
-        self.output_file = StringIO.StringIO()
+        self.output_file = StringIO()
         self.handler = handlers.StreamHandler(
             self.output_file, self.get_formatter())
         self.logger.add_handler(self.handler)
@@ -691,12 +773,14 @@ class TestMachFormatter(FormatterTest):
         self.set_position()
         self.logger.suite_end()
 
-        self.assertIn("Ran 3 tests", self.loglines)
+        self.assertIn("Ran 3 checks (3 tests)", self.loglines)
         self.assertIn("Expected results: 1", self.loglines)
-        self.assertIn(
-            "Unexpected results: 2 (FAIL: 1, PASS: 1)", self.loglines)
+        self.assertIn("""
+Unexpected results: 2
+  test: 2 (1 fail, 1 pass)
+""".strip(), "\n".join(self.loglines))
         self.assertNotIn("test1", self.loglines)
-        self.assertIn("PASS expected TIMEOUT test2", self.loglines)
+        self.assertIn("UNEXPECTED-PASS test2", self.loglines)
         self.assertIn("FAIL test3", self.loglines)
 
     def test_summary_subtests(self):
@@ -715,10 +799,13 @@ class TestMachFormatter(FormatterTest):
         self.set_position()
         self.logger.suite_end()
 
-        self.assertIn("Ran 5 tests (2 parents, 3 subtests)", self.loglines)
+        self.assertIn("Ran 5 checks (2 tests, 3 subtests)", self.loglines)
         self.assertIn("Expected results: 2", self.loglines)
-        self.assertIn(
-            "Unexpected results: 3 (FAIL: 1, TIMEOUT: 2)", self.loglines)
+        self.assertIn("""
+Unexpected results: 3
+  test: 1 (1 timeout)
+  subtest: 2 (1 fail, 1 timeout)
+""".strip(), "\n".join(self.loglines))
 
     def test_summary_ok(self):
         self.logger.suite_start([])
@@ -738,7 +825,7 @@ class TestMachFormatter(FormatterTest):
 
         self.assertIn("OK", self.loglines)
         self.assertIn("Expected results: 5", self.loglines)
-        self.assertIn("Unexpected results: 0", self.loglines)
+        self.assertNotIn("Unexpected results: 0", self.loglines)
 
     def test_process_start(self):
         self.logger.process_start(1234)
@@ -928,7 +1015,7 @@ class TestBuffer(BaseStructuredTest):
         specials = set(["time"])
 
         all_expected.update(expected)
-        for key, value in all_expected.iteritems():
+        for key, value in six.iteritems(all_expected):
             self.assertEqual(actual[key], value)
 
         self.assertEquals(set(all_expected.keys()) |
@@ -1019,7 +1106,7 @@ class TestReader(unittest.TestCase):
 
     def to_file_like(self, obj):
         data_str = "\n".join(json.dumps(item) for item in obj)
-        return StringIO.StringIO(data_str)
+        return StringIO(data_str)
 
     def test_read(self):
         data = [{"action": "action_0", "data": "data_0"},
@@ -1094,6 +1181,7 @@ class TestReader(unittest.TestCase):
 
         self.assertEquals(handler.action_0_count, 1)
         self.assertEquals(handler.action_1_count, 1)
+
 
 if __name__ == "__main__":
     mozunit.main()

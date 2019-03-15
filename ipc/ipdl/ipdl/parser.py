@@ -2,29 +2,36 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import os, sys
+import os
 from ply import lex, yacc
 
 from ipdl.ast import *
 
-##-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 class ParseError(Exception):
     def __init__(self, loc, fmt, *args):
         self.loc = loc
-        self.error = ('%s%s: error: %s'% (
+        self.error = ('%s%s: error: %s' % (
             Parser.includeStackString(), loc, fmt)) % args
+
     def __str__(self):
         return self.error
 
+
 def _safeLinenoValue(t):
     lineno, value = 0, '???'
-    if hasattr(t, 'lineno'): lineno = t.lineno
-    if hasattr(t, 'value'):  value = t.value
+    if hasattr(t, 'lineno'):
+        lineno = t.lineno
+    if hasattr(t, 'value'):
+        value = t.value
     return lineno, value
+
 
 def _error(loc, fmt, *args):
     raise ParseError(loc, fmt, *args)
+
 
 class Parser:
     # when we reach an |include [protocol] foo;| statement, we need to
@@ -33,10 +40,10 @@ class Parser:
     #
     # there is one Parser per file
     current = None
-    parseStack = [ ]
-    parsed = { }
+    parseStack = []
+    parsed = {}
 
-    def __init__(self, type, name, debug=0):
+    def __init__(self, type, name, debug=False):
         assert type and name
         self.type = type
         self.debug = debug
@@ -79,7 +86,7 @@ class Parser:
     def resolveIncludePath(self, filepath):
         '''Return the absolute path from which the possibly partial
 |filepath| should be read, or |None| if |filepath| cannot be located.'''
-        for incdir in self.includedirs +[ '' ]:
+        for incdir in self.includedirs + ['']:
             realpath = os.path.join(incdir, filepath)
             if os.path.isfile(realpath):
                 return os.path.abspath(realpath)
@@ -94,61 +101,69 @@ class Parser:
     def includeStackString():
         s = ''
         for parse in Parser.parseStack[1:]:
-            s += "  in file included from `%s', line %d:\n"% (
+            s += "  in file included from `%s', line %d:\n" % (
                 parse.loc.filename, parse.loc.lineno)
         return s
+
 
 def locFromTok(p, num):
     return Loc(Parser.current.filename, p.lineno(num))
 
 
-##-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 reserved = set((
-        'async',
-        'both',
-        'child',
-        'class',
-        'compress',
-        'compressall',
-        'from',
-        'include',
-        'intr',
-        'manager',
-        'manages',
-        'namespace',
-        'nested',
-        'nullable',
-        'or',
-        'parent',
-        'prio',
-        'protocol',
-        'returns',
-        'struct',
-        'sync',
-        'union',
-        'upto',
-        'using',
-        'verify'))
+    'async',
+    'both',
+    'child',
+    'class',
+    'compress',
+    'compressall',
+    'from',
+    'include',
+    'intr',
+    'manager',
+    'manages',
+    'namespace',
+    'nested',
+    'nullable',
+    'or',
+    'parent',
+    'prio',
+    'protocol',
+    'refcounted',
+    'moveonly',
+    'returns',
+    'struct',
+    'sync',
+    'union',
+    'UniquePtr',
+    'upto',
+    'using',
+    'verify'))
 tokens = [
     'COLONCOLON', 'ID', 'STRING',
-] + [ r.upper() for r in reserved ]
+] + [r.upper() for r in reserved]
 
 t_COLONCOLON = '::'
 
 literals = '(){}[]<>;:,'
 t_ignore = ' \f\t\v'
 
+
 def t_linecomment(t):
     r'//[^\n]*'
+
 
 def t_multilinecomment(t):
     r'/\*(\n|.)*?\*/'
     t.lexer.lineno += t.value.count('\n')
 
+
 def t_NL(t):
     r'(?:\r\n|\n|\n)+'
     t.lexer.lineno += len(t.value)
+
 
 def t_ID(t):
     r'[a-zA-Z_][a-zA-Z0-9_]*'
@@ -156,16 +171,19 @@ def t_ID(t):
         t.type = t.value.upper()
     return t
 
+
 def t_STRING(t):
     r'"[^"\n]*"'
     t.value = t.value[1:-1]
     return t
 
+
 def t_error(t):
     _error(Loc(Parser.current.filename, t.lineno),
            'lexically invalid characters `%s', t.value)
 
-##-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 def p_TranslationUnit(p):
     """TranslationUnit : Preamble NamespacedStuff"""
@@ -210,16 +228,19 @@ def p_TranslationUnit(p):
 
     p[0] = tu
 
-##--------------------
-## Preamble
+# --------------------
+# Preamble
+
+
 def p_Preamble(p):
     """Preamble : Preamble PreambleStmt ';'
                 |"""
     if 1 == len(p):
-        p[0] = [ ]
+        p[0] = []
     else:
         p[1].append(p[2])
         p[0] = p[1]
+
 
 def p_PreambleStmt(p):
     """PreambleStmt : CxxIncludeStmt
@@ -227,9 +248,11 @@ def p_PreambleStmt(p):
                     | UsingStmt"""
     p[0] = p[1]
 
+
 def p_CxxIncludeStmt(p):
     """CxxIncludeStmt : INCLUDE STRING"""
     p[0] = CxxInclude(locFromTok(p, 1), p[2])
+
 
 def p_IncludeStmt(p):
     """IncludeStmt : INCLUDE PROTOCOL ID
@@ -247,34 +270,45 @@ def p_IncludeStmt(p):
 
     path = Parser.current.resolveIncludePath(inc.file)
     if path is None:
-        raise ParseError(loc, "can't locate include file `%s'"% (
-                inc.file))
+        raise ParseError(loc, "can't locate include file `%s'" % (
+            inc.file))
 
     inc.tu = Parser(type, id).parse(open(path).read(), path, Parser.current.includedirs)
     p[0] = inc
 
-def p_UsingStmt(p):
-    """UsingStmt : USING CxxType FROM STRING
-                 | USING CLASS CxxType FROM STRING
-                 | USING STRUCT CxxType FROM STRING"""
-    if 6 == len(p):
-        header = p[5]
-    elif 5 == len(p):
-        header = p[4]
-    else:
-        header = None
-    if 6 == len(p):
-        kind = p[2]
-    else:
-        kind = None
-    if 6 == len(p):
-        cxxtype = p[3]
-    else:
-        cxxtype = p[2]
-    p[0] = UsingStmt(locFromTok(p, 1), cxxtype, header, kind)
 
-##--------------------
-## Namespaced stuff
+def p_UsingKind(p):
+    """UsingKind : CLASS
+                 | STRUCT
+                 |"""
+    p[0] = p[1] if 2 == len(p) else None
+
+
+def p_MaybeRefcounted(p):
+    """MaybeRefcounted : REFCOUNTED
+                       |"""
+    p[0] = 2 == len(p)
+
+
+def p_MaybeMoveOnly(p):
+    """MaybeMoveOnly : MOVEONLY
+                       |"""
+    p[0] = 2 == len(p)
+
+
+def p_UsingStmt(p):
+    """UsingStmt : USING MaybeRefcounted MaybeMoveOnly UsingKind CxxType FROM STRING"""
+    p[0] = UsingStmt(locFromTok(p, 1),
+                     refcounted=p[2],
+                     moveonly=p[3],
+                     kind=p[4],
+                     cxxTypeSpec=p[5],
+                     cxxHeader=p[7])
+
+# --------------------
+# Namespaced stuff
+
+
 def p_NamespacedStuff(p):
     """NamespacedStuff : NamespacedStuff NamespaceThing
                        | NamespaceThing"""
@@ -284,17 +318,19 @@ def p_NamespacedStuff(p):
         p[1].extend(p[2])
         p[0] = p[1]
 
+
 def p_NamespaceThing(p):
     """NamespaceThing : NAMESPACE ID '{' NamespacedStuff '}'
                       | StructDecl
                       | UnionDecl
                       | ProtocolDefn"""
     if 2 == len(p):
-        p[0] = [ p[1] ]
+        p[0] = [p[1]]
     else:
         for thing in p[4]:
             thing.addOuterNamespace(Namespace(locFromTok(p, 1), p[2]))
         p[0] = p[4]
+
 
 def p_StructDecl(p):
     """StructDecl : STRUCT ID '{' StructFields '}' ';'
@@ -302,33 +338,38 @@ def p_StructDecl(p):
     if 7 == len(p):
         p[0] = StructDecl(locFromTok(p, 1), p[2], p[4])
     else:
-        p[0] = StructDecl(locFromTok(p, 1), p[2], [ ])
+        p[0] = StructDecl(locFromTok(p, 1), p[2], [])
+
 
 def p_StructFields(p):
     """StructFields : StructFields StructField ';'
                     | StructField ';'"""
     if 3 == len(p):
-        p[0] = [ p[1] ]
+        p[0] = [p[1]]
     else:
         p[1].append(p[2])
         p[0] = p[1]
+
 
 def p_StructField(p):
     """StructField : Type ID"""
     p[0] = StructField(locFromTok(p, 1), p[1], p[2])
 
+
 def p_UnionDecl(p):
     """UnionDecl : UNION ID '{' ComponentTypes  '}' ';'"""
     p[0] = UnionDecl(locFromTok(p, 1), p[2], p[4])
+
 
 def p_ComponentTypes(p):
     """ComponentTypes : ComponentTypes Type ';'
                       | Type ';'"""
     if 3 == len(p):
-        p[0] = [ p[1] ]
+        p[0] = [p[1]]
     else:
         p[1].append(p[2])
         p[0] = p[1]
+
 
 def p_ProtocolDefn(p):
     """ProtocolDefn : OptionalProtocolSendSemanticsQual PROTOCOL ID '{' ProtocolBody '}' ';'"""
@@ -340,7 +381,8 @@ def p_ProtocolDefn(p):
     p[0] = protocol
 
     if Parser.current.type == 'header':
-        _error(protocol.loc, 'can\'t define a protocol in a header.  Do it in a protocol spec instead.')
+        _error(protocol.loc,
+               'can\'t define a protocol in a header.  Do it in a protocol spec instead.')
 
 
 def p_ProtocolBody(p):
@@ -348,8 +390,8 @@ def p_ProtocolBody(p):
     p[0] = p[1]
 
 
-##--------------------
-## manager/manages stmts
+# --------------------
+# manager/manages stmts
 
 def p_ManagersStmtOpt(p):
     """ManagersStmtOpt : ManagersStmt ManagesStmtsOpt
@@ -360,21 +402,24 @@ def p_ManagersStmtOpt(p):
         p[2].managers = p[1]
         p[0] = p[2]
 
+
 def p_ManagersStmt(p):
     """ManagersStmt : MANAGER ManagerList ';'"""
     if 1 == len(p):
-        p[0] = [ ]
+        p[0] = []
     else:
         p[0] = p[2]
+
 
 def p_ManagerList(p):
     """ManagerList : ID
                    | ManagerList OR ID"""
     if 2 == len(p):
-        p[0] = [ Manager(locFromTok(p, 1), p[1]) ]
+        p[0] = [Manager(locFromTok(p, 1), p[1])]
     else:
         p[1].append(Manager(locFromTok(p, 3), p[3]))
         p[0] = p[1]
+
 
 def p_ManagesStmtsOpt(p):
     """ManagesStmtsOpt : ManagesStmt ManagesStmtsOpt
@@ -385,13 +430,14 @@ def p_ManagesStmtsOpt(p):
         p[2].managesStmts.insert(0, p[1])
         p[0] = p[2]
 
+
 def p_ManagesStmt(p):
     """ManagesStmt : MANAGES ID ';'"""
     p[0] = ManagesStmt(locFromTok(p, 1), p[2])
 
 
-##--------------------
-## Message decls
+# --------------------
+# Message decls
 
 def p_MessageDeclsOpt(p):
     """MessageDeclsOpt : MessageDeclThing MessageDeclsOpt
@@ -403,6 +449,7 @@ def p_MessageDeclsOpt(p):
         p[2].messageDecls.insert(0, p[1])
         p[0] = p[2]
 
+
 def p_MessageDeclThing(p):
     """MessageDeclThing : MessageDirectionLabel ':' MessageDecl ';'
                         | MessageDecl ';'"""
@@ -410,6 +457,7 @@ def p_MessageDeclThing(p):
         p[0] = p[1]
     else:
         p[0] = p[3]
+
 
 def p_MessageDirectionLabel(p):
     """MessageDirectionLabel : PARENT
@@ -424,6 +472,7 @@ def p_MessageDirectionLabel(p):
     else:
         assert 0
 
+
 def p_MessageDecl(p):
     """MessageDecl : SendSemanticsQual MessageBody"""
     msg = p[2]
@@ -437,6 +486,7 @@ def p_MessageDecl(p):
 
     p[0] = msg
 
+
 def p_MessageBody(p):
     """MessageBody : ID MessageInParams MessageOutParams OptionalMessageModifiers"""
     # FIXME/cjones: need better loc info: use one of the quals
@@ -449,38 +499,44 @@ def p_MessageBody(p):
 
     p[0] = msg
 
+
 def p_MessageInParams(p):
     """MessageInParams : '(' ParamList ')'"""
     p[0] = p[2]
+
 
 def p_MessageOutParams(p):
     """MessageOutParams : RETURNS '(' ParamList ')'
                         | """
     if 1 == len(p):
-        p[0] = [ ]
+        p[0] = []
     else:
         p[0] = p[3]
+
 
 def p_OptionalMessageModifiers(p):
     """OptionalMessageModifiers : OptionalMessageModifiers MessageModifier
                                 | MessageModifier
                                 | """
     if 1 == len(p):
-        p[0] = [ ]
+        p[0] = []
     elif 2 == len(p):
-        p[0] = [ p[1] ]
+        p[0] = [p[1]]
     else:
         p[1].append(p[2])
         p[0] = p[1]
+
 
 def p_MessageModifier(p):
     """ MessageModifier : MessageVerify
                         | MessageCompress """
     p[0] = p[1]
 
+
 def p_MessageVerify(p):
     """MessageVerify : VERIFY"""
     p[0] = p[1]
+
 
 def p_MessageCompress(p):
     """MessageCompress : COMPRESS
@@ -488,8 +544,8 @@ def p_MessageCompress(p):
     p[0] = p[1]
 
 
-##--------------------
-## Minor stuff
+# --------------------
+# Minor stuff
 def p_Nested(p):
     """Nested : ID"""
     kinds = {'not': 1,
@@ -498,21 +554,25 @@ def p_Nested(p):
     if p[1] not in kinds:
         _error(locFromTok(p, 1), "Expected not, inside_sync, or inside_cpow for nested()")
 
-    p[0] = { 'nested': kinds[p[1]] }
+    p[0] = {'nested': kinds[p[1]]}
+
 
 def p_Priority(p):
     """Priority : ID"""
     kinds = {'normal': 1,
-             'high': 2}
+             'input': 2,
+             'high': 3}
     if p[1] not in kinds:
         _error(locFromTok(p, 1), "Expected normal or high for prio()")
 
-    p[0] = { 'prio': kinds[p[1]] }
+    p[0] = {'prio': kinds[p[1]]}
+
 
 def p_SendQualifier(p):
     """SendQualifier : NESTED '(' Nested ')'
                      | PRIO '(' Priority ')'"""
     p[0] = p[3]
+
 
 def p_SendQualifierList(p):
     """SendQualifierList : SendQualifier SendQualifierList
@@ -522,6 +582,7 @@ def p_SendQualifierList(p):
         p[0].update(p[2])
     else:
         p[0] = {}
+
 
 def p_SendSemanticsQual(p):
     """SendSemanticsQual : SendQualifierList ASYNC
@@ -534,18 +595,26 @@ def p_SendSemanticsQual(p):
     else:
         mtype = 'intr'
 
-    if mtype == 'async': mtype = ASYNC
-    elif mtype == 'sync': mtype = SYNC
-    elif mtype == 'intr': mtype = INTR
-    else: assert 0
+    if mtype == 'async':
+        mtype = ASYNC
+    elif mtype == 'sync':
+        mtype = SYNC
+    elif mtype == 'intr':
+        mtype = INTR
+    else:
+        assert 0
 
-    p[0] = [ quals.get('nested', NOT_NESTED), quals.get('prio', NORMAL_PRIORITY), mtype ]
+    p[0] = [quals.get('nested', NOT_NESTED), quals.get('prio', NORMAL_PRIORITY), mtype]
+
 
 def p_OptionalProtocolSendSemanticsQual(p):
     """OptionalProtocolSendSemanticsQual : ProtocolSendSemanticsQual
                                          | """
-    if 2 == len(p): p[0] = p[1]
-    else:           p[0] = [ NOT_NESTED, ASYNC ]
+    if 2 == len(p):
+        p[0] = p[1]
+    else:
+        p[0] = [NOT_NESTED, ASYNC]
+
 
 def p_ProtocolSendSemanticsQual(p):
     """ProtocolSendSemanticsQual : ASYNC
@@ -560,28 +629,35 @@ def p_ProtocolSendSemanticsQual(p):
         mtype = p[1]
         nested = NOT_NESTED
 
-    if mtype == 'async': mtype = ASYNC
-    elif mtype == 'sync': mtype = SYNC
-    elif mtype == 'intr': mtype = INTR
-    else: assert 0
+    if mtype == 'async':
+        mtype = ASYNC
+    elif mtype == 'sync':
+        mtype = SYNC
+    elif mtype == 'intr':
+        mtype = INTR
+    else:
+        assert 0
 
-    p[0] = [ nested, mtype ]
+    p[0] = [nested, mtype]
+
 
 def p_ParamList(p):
     """ParamList : ParamList ',' Param
                  | Param
                  | """
     if 1 == len(p):
-        p[0] = [ ]
+        p[0] = []
     elif 2 == len(p):
-        p[0] = [ p[1] ]
+        p[0] = [p[1]]
     else:
         p[1].append(p[3])
         p[0] = p[1]
 
+
 def p_Param(p):
     """Param : Type ID"""
     p[0] = Param(locFromTok(p, 1), p[1], p[2])
+
 
 def p_Type(p):
     """Type : MaybeNullable BasicType"""
@@ -589,25 +665,35 @@ def p_Type(p):
     p[2].nullable = p[1]
     p[0] = p[2]
 
+
 def p_BasicType(p):
     """BasicType : CxxID
-                 | CxxID '[' ']'"""
+                 | CxxID '[' ']'
+                 | CxxUniquePtrInst"""
     # ID == CxxType; we forbid qnames here,
     # in favor of the |using| declaration
     if not isinstance(p[1], TypeSpec):
-        loc, id = p[1]
+        assert (len(p[1]) == 2) or (len(p[1]) == 3)
+        if 2 == len(p[1]):
+            # p[1] is CxxID. isunique = False
+            p[1] = p[1] + (False,)
+        loc, id, isunique = p[1]
         p[1] = TypeSpec(loc, QualifiedId(loc, id))
+        p[1].uniqueptr = isunique
     if 4 == len(p):
-        p[1].array = 1
+        p[1].array = True
     p[0] = p[1]
+
 
 def p_MaybeNullable(p):
     """MaybeNullable : NULLABLE
                      | """
     p[0] = (2 == len(p))
 
-##--------------------
-## C++ stuff
+# --------------------
+# C++ stuff
+
+
 def p_CxxType(p):
     """CxxType : QualifiedID
                | CxxID"""
@@ -616,6 +702,7 @@ def p_CxxType(p):
     else:
         loc, id = p[1]
         p[0] = TypeSpec(loc, QualifiedId(loc, id))
+
 
 def p_QualifiedID(p):
     """QualifiedID : QualifiedID COLONCOLON CxxID
@@ -627,7 +714,8 @@ def p_QualifiedID(p):
     else:
         loc1, id1 = p[1]
         _, id2 = p[3]
-        p[0] = QualifiedId(loc1, id2, [ id1 ])
+        p[0] = QualifiedId(loc1, id2, [id1])
+
 
 def p_CxxID(p):
     """CxxID : ID
@@ -637,9 +725,16 @@ def p_CxxID(p):
     else:
         p[0] = (locFromTok(p, 1), str(p[1]))
 
+
 def p_CxxTemplateInst(p):
     """CxxTemplateInst : ID '<' ID '>'"""
-    p[0] = (locFromTok(p, 1), str(p[1]) +'<'+ str(p[3]) +'>')
+    p[0] = (locFromTok(p, 1), str(p[1]) + '<' + str(p[3]) + '>')
+
+
+def p_CxxUniquePtrInst(p):
+    """CxxUniquePtrInst : UNIQUEPTR '<' ID '>'"""
+    p[0] = (locFromTok(p, 1), str(p[3]), True)
+
 
 def p_error(t):
     lineno, value = _safeLinenoValue(t)

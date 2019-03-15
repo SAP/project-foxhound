@@ -4,7 +4,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "xptcprivate.h"
-#include "xptiprivate.h"
 
 #if (_MIPS_SIM != _ABIN32) && (_MIPS_SIM != _ABI64)
 #error "This code is for MIPS n32/n64 only"
@@ -33,7 +32,6 @@ PrepareAndDispatch(nsXPTCStubBase* self, uint32_t methodIndex, uint64_t* args,
     const nsXPTMethodInfo* info;
     uint8_t paramCount;
     uint8_t i;
-    nsresult result = NS_ERROR_FAILURE;
 
     NS_ASSERTION(self,"no self");
 
@@ -49,6 +47,8 @@ PrepareAndDispatch(nsXPTCStubBase* self, uint32_t methodIndex, uint64_t* args,
         dispatchParams = paramBuffer;
     NS_ASSERTION(dispatchParams,"no place for params");
 
+    const uint8_t indexOfJSContext = info->IndexOfJSContext();
+
     uint64_t* ap = args;
     uint32_t iCount = 0;
     for(i = 0; i < paramCount; i++)
@@ -56,6 +56,13 @@ PrepareAndDispatch(nsXPTCStubBase* self, uint32_t methodIndex, uint64_t* args,
         const nsXPTParamInfo& param = info->GetParam(i);
         const nsXPTType& type = param.GetType();
         nsXPTCMiniVariant* dp = &dispatchParams[i];
+
+        if (i == indexOfJSContext) {
+            if (iCount < PARAM_GPR_COUNT)
+                iCount++;
+            else
+                ap++;
+        }
 
         if(param.IsOut() || !type.IsArithmetic())
         {
@@ -125,10 +132,12 @@ PrepareAndDispatch(nsXPTCStubBase* self, uint32_t methodIndex, uint64_t* args,
              break;
 
         case nsXPTType::T_FLOAT:
+              // the float data formate must not be converted!
+              // Just only copy without conversion.
               if (iCount < PARAM_FPR_COUNT)
-                  dp->val.f  = (double)fprData[iCount++];
+                  dp->val.f  = *(float*)&fprData[iCount++];
               else
-                  dp->val.f  = *((double*)ap++);
+                  dp->val.f  = *((float*)ap++);
               break;
 
         case nsXPTType::T_DOUBLE:
@@ -165,7 +174,8 @@ PrepareAndDispatch(nsXPTCStubBase* self, uint32_t methodIndex, uint64_t* args,
         }
     }
 
-    result = self->mOuter->CallMethod((uint16_t)methodIndex, info, dispatchParams);
+    nsresult result = self->mOuter->CallMethod((uint16_t)methodIndex, info,
+                                               dispatchParams);
 
     if(dispatchParams != paramBuffer)
         delete [] dispatchParams;

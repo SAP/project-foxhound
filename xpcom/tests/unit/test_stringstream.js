@@ -3,21 +3,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cr = Components.results;
-
-function run_test()
-{
+function run_test() {
     var s = Cc["@mozilla.org/io/string-input-stream;1"]
               .createInstance(Ci.nsIStringInputStream);
     var body = "This is a test";
     s.setData(body, body.length);
-    do_check_eq(s.available(), body.length);
+    Assert.equal(s.available(), body.length);
 
     var sis = Cc["@mozilla.org/scriptableinputstream;1"]
                 .createInstance(Ci.nsIScriptableInputStream);
     sis.init(s);
 
-    do_check_eq(sis.read(body.length), body);
+    Assert.equal(sis.read(body.length), body);
 }

@@ -73,18 +73,6 @@
        frameLoader.sendCrossProcessMouseEvent("mouseup", x, y, 0, 1, 0, false);
      }
 
-    function keyPress() {
-       // First focus the remote frame, then dispatch click. This way remote frame gets focus before
-       // mouse event.
-       document.getElementById('page').focus();
-       var frameLoader = document.getElementById('page').QueryInterface(Components.interfaces.nsIFrameLoaderOwner).frameLoader;
-
-       var keyCode = Components.interfaces.nsIDOMKeyEvent.DOM_VK_A;
-       frameLoader.sendCrossProcessKeyEvent("keydown", keyCode, 0, 0);
-       frameLoader.sendCrossProcessKeyEvent("keypress", keyCode, 0, 0);
-       frameLoader.sendCrossProcessKeyEvent("keyup", keyCode, 0, 0);
-     }
-
     function openWindow() {
       window.open('chrome://global/content/test-ipc.xul', '_blank', 'chrome,resizable,width=800,height=800');
     }
@@ -97,11 +85,11 @@
       // 1. Test that loading a script works, and that accessing process level mm and
       //     global mm works.
       var ppm = Components.classes["@mozilla.org/parentprocessmessagemanager;1"]
-                          .getService(Components.interfaces.nsIMessageBroadcaster);
+                          .getService();
       var gm = Components.classes["@mozilla.org/globalmessagemanager;1"]
-                         .getService(Components.interfaces.nsIMessageBroadcaster);
+                         .getService();
       var cpm = Components.classes["@mozilla.org/childprocessmessagemanager;1"]
-                            .getService(Components.interfaces.nsISyncMessageSender);
+                          .getService();
 
       if (ppm.childCount != 2) {
         alert("Should have two child processes!");
@@ -237,8 +225,6 @@
       messageManager.loadFrameScript("data:,addEventListener('MozAfterPaint', function(e) { sendAsyncMessage('MozAfterPaint'); },true);", false);
     }
 
-   var Ci = Components.interfaces;
-   var Cu = Components.utils;
    Cu.import("resource://gre/modules/XPCOMUtils.jsm");
   </script>
 
@@ -250,7 +236,6 @@
   <toolbar>
     <toolbarbutton onclick="restart()" label="Recover"/>
     <toolbarbutton onclick="randomClick()" label="random click"/>
-    <toolbarbutton onclick="keyPress()" label="key press"/>
     <toolbarbutton onclick="messageSpeed()" label="test message handling speed"/>
     <toolbarbutton onclick="listenerAddRemove()" label="test listener add/remove"/>
     <toolbarbutton onclick="enableMozAfterPaint()" label="MozAfterPaint"/>

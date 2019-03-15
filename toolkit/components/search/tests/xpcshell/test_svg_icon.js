@@ -26,7 +26,7 @@ function run_test() {
       resolve();
     });
     srv.start(-1);
-    do_register_cleanup(() => srv.stop(() => {}));
+    registerCleanupFunction(() => srv.stop(() => {}));
 
     url = "http://localhost:" + srv.identity.primaryPort + "/icon.svg";
   });
@@ -34,16 +34,16 @@ function run_test() {
   run_next_test();
 }
 
-add_task(function* test_svg_icon() {
-  yield asyncInit();
+add_task(async function test_svg_icon() {
+  await asyncInit();
 
-  let [engine] = yield addTestEngines([
+  let [engine] = await addTestEngines([
     { name: "SVGIcon", details: [url, "", "SVG icon", "GET",
                                  "http://icon.svg/search?q={searchTerms}"] },
   ]);
 
-  yield requestHandled;
-  yield promiseAfterCache();
+  await requestHandled;
+  await promiseAfterCache();
 
   ok(engine.iconURI, "the engine has an icon");
   ok(engine.iconURI.spec.startsWith("data:image/svg+xml"),

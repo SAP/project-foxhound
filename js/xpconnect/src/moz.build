@@ -6,7 +6,6 @@
 
 EXPORTS += [
     'BackstagePass.h',
-    'qsObjectHelper.h',
     'XPCJSMemoryReporter.h',
     'xpcObjectHelper.h',
     'xpcpublic.h',
@@ -17,11 +16,13 @@ UNIFIED_SOURCES += [
     'nsXPConnect.cpp',
     'Sandbox.cpp',
     'XPCCallContext.cpp',
+    'XPCComponents.cpp',
     'XPCConvert.cpp',
     'XPCDebug.cpp',
     'XPCException.cpp',
     'XPCJSContext.cpp',
     'XPCJSID.cpp',
+    'XPCJSRuntime.cpp',
     'XPCJSWeakReference.cpp',
     'XPCLocale.cpp',
     'XPCLog.cpp',
@@ -34,17 +35,13 @@ UNIFIED_SOURCES += [
     'XPCVariant.cpp',
     'XPCWrappedJS.cpp',
     'XPCWrappedJSClass.cpp',
+    'XPCWrappedJSIterator.cpp',
     'XPCWrappedNative.cpp',
     'XPCWrappedNativeInfo.cpp',
     'XPCWrappedNativeJSOps.cpp',
     'XPCWrappedNativeProto.cpp',
     'XPCWrappedNativeScope.cpp',
     'XPCWrapper.cpp',
-]
-
-# XPCComponents.cpp cannot be built in unified mode because it uses plarena.h.
-SOURCES += [
-    'XPCComponents.cpp',
 ]
 
 include('/ipc/chromium/chromium-config.mozbuild')
@@ -59,11 +56,13 @@ LOCAL_INCLUDES += [
     '/dom/bindings',
     '/dom/html',
     '/dom/svg',
-    '/dom/workers',
     '/layout/base',
     '/layout/style',
-    '/xpcom/reflect/xptinfo',
 ]
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-shadow', '-Werror=format']
+
+if CONFIG['NIGHTLY_BUILD']:
+    DEFINES['ENABLE_WASM_REFTYPES'] = True
+    DEFINES['ENABLE_WASM_GC'] = True

@@ -2,9 +2,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import unicode_literals
+from __future__ import absolute_import, unicode_literals
 
-from ..result import ResultContainer
+from ..result import Issue
 
 
 class TreeherderFormatter(object):
@@ -16,11 +16,11 @@ class TreeherderFormatter(object):
     """
     fmt = "TEST-UNEXPECTED-{level} | {path}:{lineno}{column} | {message} ({rule})"
 
-    def __call__(self, result, **kwargs):
+    def __call__(self, result):
         message = []
-        for path, errors in sorted(result.iteritems()):
+        for path, errors in sorted(result.issues.iteritems()):
             for err in errors:
-                assert isinstance(err, ResultContainer)
+                assert isinstance(err, Issue)
 
                 d = {s: getattr(err, s) for s in err.__slots__}
                 d["column"] = ":%s" % d["column"] if d["column"] else ""
@@ -28,4 +28,6 @@ class TreeherderFormatter(object):
                 d['rule'] = d['rule'] or d['linter']
                 message.append(self.fmt.format(**d))
 
+        if not message:
+            message.append("No lint issues found.")
         return "\n".join(message)

@@ -26,7 +26,7 @@ addLoadEvent(runTest);
 var gMisspeltWords;
 
 function getEdit() {
-  return document.getElementById('edit');
+  return document.getElementById("edit");
 }
 
 function editDoc() {
@@ -34,13 +34,8 @@ function editDoc() {
 }
 
 function getEditor() {
-  var Ci = SpecialPowers.Ci;
   var win = editDoc().defaultView;
-  var editingSession = SpecialPowers.wrap(win)
-    .QueryInterface(Ci.nsIInterfaceRequestor)
-    .getInterface(Ci.nsIWebNavigation)
-    .QueryInterface(Ci.nsIInterfaceRequestor)
-    .getInterface(Ci.nsIEditingSession);
+  var editingSession = SpecialPowers.wrap(win).docShell.editingSession;
   return editingSession.getEditorForWindow(win);
 }
 
@@ -48,8 +43,10 @@ function runTest() {
   editDoc().body.innerHTML = "<div>errror and an other errror</div>";
   gMisspeltWords = ["errror", "errror"];
   editDoc().designMode = "on";
+  editDoc().defaultView.focus();
 
-  SpecialPowers.Cu.import("resource://gre/modules/AsyncSpellCheckTestHelper.jsm")
+  SpecialPowers.Cu.import(
+    "resource://testing-common/AsyncSpellCheckTestHelper.jsm")
                .onSpellCheck(editDoc().documentElement, evalTest);
 }
 

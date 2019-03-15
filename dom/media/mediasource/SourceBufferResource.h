@@ -7,52 +7,45 @@
 #ifndef MOZILLA_SOURCEBUFFERRESOURCE_H_
 #define MOZILLA_SOURCEBUFFERRESOURCE_H_
 
-#include "MediaCache.h"
-#include "MediaResource.h"
-#include "ResourceQueue.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/ReentrantMonitor.h"
-#include "nsCOMPtr.h"
-#include "nsError.h"
-#include "nsIPrincipal.h"
-#include "nsTArray.h"
-#include "nscore.h"
+#include "mozilla/AbstractThread.h"
 #include "mozilla/Logging.h"
+#include "MediaResource.h"
+#include "nsIPrincipal.h"
+#include "ResourceQueue.h"
 
-#define UNIMPLEMENTED() { /* Logging this is too spammy to do by default */ }
-
-class nsIStreamListener;
+#define UNIMPLEMENTED()                               \
+  { /* Logging this is too spammy to do by default */ \
+  }
 
 namespace mozilla {
 
-class MediaDecoder;
 class MediaByteBuffer;
+class AbstractThread;
 
 namespace dom {
 
 class SourceBuffer;
 
-} // namespace dom
+}  // namespace dom
 
-class SourceBufferResource final : public MediaResource
-{
-public:
-  explicit SourceBufferResource(const MediaContainerType& aType);
+DDLoggedTypeDeclNameAndBase(SourceBufferResource, MediaResource);
+
+// SourceBufferResource is not thread safe.
+class SourceBufferResource final
+    : public MediaResource,
+      public DecoderDoctorLifeLogger<SourceBufferResource> {
+ public:
+  SourceBufferResource();
   nsresult Close() override;
-  void Suspend(bool aCloseImmediately) override { UNIMPLEMENTED(); }
-  void Resume() override { UNIMPLEMENTED(); }
-  already_AddRefed<nsIPrincipal> GetCurrentPrincipal() override { UNIMPLEMENTED(); return nullptr; }
-  already_AddRefed<MediaResource> CloneData(MediaResourceCallback*) override { UNIMPLEMENTED(); return nullptr; }
-  void SetReadMode(MediaCacheStream::ReadMode aMode) override { UNIMPLEMENTED(); }
-  void SetPlaybackRate(uint32_t aBytesPerSecond) override { UNIMPLEMENTED(); }
-  nsresult ReadAt(int64_t aOffset, char* aBuffer, uint32_t aCount, uint32_t* aBytes) override;
-  int64_t Tell() override { return mOffset; }
+  nsresult ReadAt(int64_t aOffset, char* aBuffer, uint32_t aCount,
+                  uint32_t* aBytes) override;
+  // Memory-based and no locks, caching discouraged.
+  bool ShouldCacheReads() override { return false; }
   void Pin() override { UNIMPLEMENTED(); }
   void Unpin() override { UNIMPLEMENTED(); }
-  double GetDownloadRate(bool* aIsReliable) override { UNIMPLEMENTED(); *aIsReliable = false; return 0; }
   int64_t GetLength() override { return mInputBuffer.GetLength(); }
   int64_t GetNextCachedData(int64_t aOffset) override {
-    ReentrantMonitorAutoEnter mon(mMonitor);
+    MOZ_ASSERT(OnThread());
     MOZ_ASSERT(aOffset >= 0);
     if (uint64_t(aOffset) < mInputBuffer.GetOffset()) {
       return mInputBuffer.GetOffset();
@@ -61,53 +54,43 @@ public:
     }
     return aOffset;
   }
-  int64_t GetCachedDataEnd(int64_t aOffset) override { UNIMPLEMENTED(); return -1; }
+  int64_t GetCachedDataEnd(int64_t aOffset) override {
+    MOZ_ASSERT(OnThread());
+    MOZ_ASSERT(aOffset >= 0);
+    if (uint64_t(aOffset) < mInputBuffer.GetOffset() ||
+        aOffset >= GetLength()) {
+      // aOffset is outside of the buffered range.
+      return aOffset;
+    }
+    return GetLength();
+  }
   bool IsDataCachedToEndOfResource(int64_t aOffset) override { return false; }
-  bool IsSuspendedByCache() override { UNIMPLEMENTED(); return false; }
-  bool IsSuspended() override { UNIMPLEMENTED(); return false; }
-  nsresult ReadFromCache(char* aBuffer, int64_t aOffset, uint32_t aCount) override;
-  bool IsTransportSeekable() override { UNIMPLEMENTED(); return true; }
-  nsresult Open(nsIStreamListener** aStreamListener) override { UNIMPLEMENTED(); return NS_ERROR_FAILURE; }
+  nsresult ReadFromCache(char* aBuffer, int64_t aOffset,
+                         uint32_t aCount) override;
 
-  nsresult GetCachedRanges(MediaByteRangeSet& aRanges) override
-  {
-    ReentrantMonitorAutoEnter mon(mMonitor);
+  nsresult GetCachedRanges(MediaByteRangeSet& aRanges) override {
+    MOZ_ASSERT(OnThread());
     if (mInputBuffer.GetLength()) {
-      aRanges += MediaByteRange(mInputBuffer.GetOffset(),
-                                mInputBuffer.GetLength());
+      aRanges +=
+          MediaByteRange(mInputBuffer.GetOffset(), mInputBuffer.GetLength());
     }
     return NS_OK;
   }
 
-  const MediaContainerType& GetContentType() const override { return mType; }
-
-  size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const override
-  {
-    ReentrantMonitorAutoEnter mon(mMonitor);
-
-    size_t size = MediaResource::SizeOfExcludingThis(aMallocSizeOf);
-    size += mType.SizeOfExcludingThis(aMallocSizeOf);
-    size += mInputBuffer.SizeOfExcludingThis(aMallocSizeOf);
-
-    return size;
+  size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const {
+    MOZ_ASSERT(OnThread());
+    return mInputBuffer.SizeOfExcludingThis(aMallocSizeOf);
   }
 
-  size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const override
-  {
+  size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const {
     return aMallocSizeOf(this) + SizeOfExcludingThis(aMallocSizeOf);
-  }
-
-  bool IsExpectingMoreData() override
-  {
-    return false;
   }
 
   // Used by SourceBuffer.
   void AppendData(MediaByteBuffer* aData);
   void Ended();
-  bool IsEnded()
-  {
-    ReentrantMonitorAutoEnter mon(mMonitor);
+  bool IsEnded() {
+    MOZ_ASSERT(OnThread());
     return mEnded;
   }
   // Remove data from resource if it holds more than the threshold reduced by
@@ -123,37 +106,34 @@ public:
 
   // Returns the amount of data currently retained by this resource.
   int64_t GetSize() {
-    ReentrantMonitorAutoEnter mon(mMonitor);
+    MOZ_ASSERT(OnThread());
     return mInputBuffer.GetLength() - mInputBuffer.GetOffset();
   }
 
 #if defined(DEBUG)
-  void Dump(const char* aPath) {
-    mInputBuffer.Dump(aPath);
-  }
+  void Dump(const char* aPath) { mInputBuffer.Dump(aPath); }
 #endif
 
-private:
+ private:
   virtual ~SourceBufferResource();
-  nsresult ReadAtInternal(int64_t aOffset, char* aBuffer, uint32_t aCount, uint32_t* aBytes, bool aMayBlock);
+  nsresult ReadAtInternal(int64_t aOffset, char* aBuffer, uint32_t aCount,
+                          uint32_t* aBytes);
 
-  const MediaContainerType mType;
-
-  // Provides synchronization between SourceBuffers and InputAdapters.
-  // Protects all of the member variables below.  Read() will await a
-  // Notify() (from Seek, AppendData, Ended, or Close) when insufficient
-  // data is available in mData.
-  mutable ReentrantMonitor mMonitor;
+#if defined(DEBUG)
+  const RefPtr<AbstractThread> mThread;
+  // TaskQueue methods and objects.
+  const AbstractThread* GetThread() const;
+  bool OnThread() const;
+#endif
 
   // The buffer holding resource data.
   ResourceQueue mInputBuffer;
 
-  uint64_t mOffset;
-  bool mClosed;
-  bool mEnded;
+  bool mClosed = false;
+  bool mEnded = false;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #undef UNIMPLEMENTED
 

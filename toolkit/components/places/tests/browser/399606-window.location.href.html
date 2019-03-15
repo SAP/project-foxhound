@@ -2,7 +2,10 @@
 <head>
 <title>window.location.href</title>
 <script>
-setTimeout("window.location.href = window.location.href", 1000);
+setTimeout(function() {
+  // eslint-disable-next-line no-self-assign
+  window.location.href = window.location.href;
+}, 1000);
 </script>
 </head>
 <body>

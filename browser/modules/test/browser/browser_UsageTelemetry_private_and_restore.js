@@ -1,6 +1,6 @@
 "use strict";
 
-const {Utils} = Cu.import("resource://gre/modules/sessionstore/Utils.jsm", {});
+const {Utils} = ChromeUtils.import("resource://gre/modules/sessionstore/Utils.jsm", {});
 const triggeringPrincipal_base64 = Utils.SERIALIZED_SYSTEMPRINCIPAL;
 
 const MAX_CONCURRENT_TABS = "browser.engagement.max_concurrent_tab_count";
@@ -16,21 +16,22 @@ function promiseBrowserStateRestored() {
      Services.obs.addObserver(function observer(aSubject, aTopic) {
        Services.obs.removeObserver(observer, "sessionstore-browser-state-restored");
        resolve();
-     }, "sessionstore-browser-state-restored", false);
+     }, "sessionstore-browser-state-restored");
   });
 }
 
-add_task(function* test_privateMode() {
+add_task(async function test_privateMode() {
   // Let's reset the counts.
   Services.telemetry.clearScalars();
 
   // Open a private window and load a website in it.
-  let privateWin = yield BrowserTestUtils.openNewBrowserWindow({private: true});
-  yield BrowserTestUtils.loadURI(privateWin.gBrowser.selectedBrowser, "http://example.com/");
-  yield BrowserTestUtils.browserLoaded(privateWin.gBrowser.selectedBrowser);
+  let privateWin = await BrowserTestUtils.openNewBrowserWindow({private: true});
+  await BrowserTestUtils.loadURI(privateWin.gBrowser.selectedBrowser, "http://example.com/");
+  await BrowserTestUtils.browserLoaded(privateWin.gBrowser.selectedBrowser);
 
   // Check that tab and window count is recorded.
-  const scalars = getParentProcessScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN);
+  const scalars = TelemetryTestUtils.getParentProcessScalars(
+    Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN);
 
   ok(!(TOTAL_URI_COUNT in scalars), "We should not track URIs in private mode.");
   ok(!(UNFILTERED_URI_COUNT in scalars), "We should not track URIs in private mode.");
@@ -41,10 +42,10 @@ add_task(function* test_privateMode() {
   is(scalars[MAX_CONCURRENT_WINDOWS], 2, "The maximum window count must match the expected value.");
 
   // Clean up.
-  yield BrowserTestUtils.closeWindow(privateWin);
+  await BrowserTestUtils.closeWindow(privateWin);
 });
 
-add_task(function* test_sessionRestore() {
+add_task(async function test_sessionRestore() {
   const PREF_RESTORE_ON_DEMAND = "browser.sessionstore.restore_on_demand";
   Services.prefs.setBoolPref(PREF_RESTORE_ON_DEMAND, false);
   registerCleanupFunction(() => {
@@ -61,25 +62,26 @@ add_task(function* test_sessionRestore() {
       {
         tabs: [
           { entries: [{ url: "http://example.org", triggeringPrincipal_base64}],
-            extData: { "uniq": 3785 } }
+            extData: { "uniq": 3785 } },
         ],
-        selected: 1
-      }
-    ]
+        selected: 1,
+      },
+    ],
   };
 
   // Save the current session.
   let SessionStore =
-    Cu.import("resource:///modules/sessionstore/SessionStore.jsm", {}).SessionStore;
+    ChromeUtils.import("resource:///modules/sessionstore/SessionStore.jsm", {}).SessionStore;
 
   // Load the custom state and wait for SSTabRestored, as we want to make sure
   // that the URI counting code was hit.
   let tabRestored = BrowserTestUtils.waitForEvent(gBrowser.tabContainer, "SSTabRestored");
   SessionStore.setBrowserState(JSON.stringify(state));
-  yield tabRestored;
+  await tabRestored;
 
   // Check that the URI is not recorded.
-  const scalars = getParentProcessScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN);
+  const scalars = TelemetryTestUtils.getParentProcessScalars(
+    Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN);
 
   ok(!(TOTAL_URI_COUNT in scalars), "We should not track URIs from restored sessions.");
   ok(!(UNFILTERED_URI_COUNT in scalars), "We should not track URIs from restored sessions.");
@@ -88,5 +90,5 @@ add_task(function* test_sessionRestore() {
   // Restore the original session and cleanup.
   let sessionRestored = promiseBrowserStateRestored();
   SessionStore.setBrowserState(JSON.stringify(state));
-  yield sessionRestored;
+  await sessionRestored;
 });

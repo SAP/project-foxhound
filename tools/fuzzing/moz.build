@@ -6,7 +6,17 @@
 
 DIRS += [
   'interface',
+  'registry',
 ]
+
+if not CONFIG['JS_STANDALONE']:
+  DIRS += [
+    'common',
+    'faulty',
+    'messagemanager',
+    'shmem',
+    'ipc',
+  ]
 
 if CONFIG['LIBFUZZER']:
   DIRS += [

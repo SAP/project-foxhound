@@ -8,90 +8,44 @@
 #define mozilla_dom_ElementInlines_h
 
 #include "mozilla/dom/Element.h"
-#include "mozilla/ServoBindings.h"
+#include "mozilla/ServoBindingTypes.h"
 #include "nsIContentInlines.h"
-#include "nsIDocument.h"
+#include "mozilla/dom/Document.h"
 #include "nsIPresShell.h"
 #include "nsIPresShellInlines.h"
 
 namespace mozilla {
 namespace dom {
 
-inline void
-Element::RegisterActivityObserver()
-{
+inline void Element::RegisterActivityObserver() {
   OwnerDoc()->RegisterActivityObserver(this);
 }
 
-inline void
-Element::UnregisterActivityObserver()
-{
+inline void Element::UnregisterActivityObserver() {
   OwnerDoc()->UnregisterActivityObserver(this);
 }
 
-inline Element*
-Element::GetFlattenedTreeParentElement() const
-{
+}  // namespace dom
+}  // namespace mozilla
+
+inline Element* nsINode::GetFlattenedTreeParentElement() const {
   nsINode* parentNode = GetFlattenedTreeParentNode();
-  if MOZ_LIKELY(parentNode && parentNode->IsElement()) {
-    return parentNode->AsElement();
-  }
-
-  return nullptr;
-}
-
-inline Element*
-Element::GetFlattenedTreeParentElementForStyle() const
-{
-  nsINode* parentNode = GetFlattenedTreeParentNodeForStyle();
-  if MOZ_LIKELY(parentNode && parentNode->IsElement()) {
-    return parentNode->AsElement();
-  }
-
-  return nullptr;
-}
-
-inline void
-Element::NoteDirtyDescendantsForServo()
-{
-  if (!HasServoData()) {
-    // The dirty descendants bit only applies to styled elements.
-    return;
-  }
-
-  Element* curr = this;
-  while (curr && !curr->HasDirtyDescendantsForServo()) {
-    curr->SetHasDirtyDescendantsForServo();
-    curr = curr->GetFlattenedTreeParentElementForStyle();
-  }
-
-  if (nsIPresShell* shell = OwnerDoc()->GetShell()) {
-    shell->SetNeedStyleFlush();
-  }
-
-  MOZ_ASSERT(DirtyDescendantsBitIsPropagatedForServo());
-}
-
-#ifdef DEBUG
-inline bool
-Element::DirtyDescendantsBitIsPropagatedForServo()
-{
-  Element* curr = this;
-  while (curr) {
-    if (!curr->HasDirtyDescendantsForServo()) {
-      return false;
+  if
+    MOZ_LIKELY(parentNode && parentNode->IsElement()) {
+      return parentNode->AsElement();
     }
-    nsINode* parentNode = curr->GetParentNode();
-    curr = curr->GetFlattenedTreeParentElementForStyle();
-    MOZ_ASSERT_IF(!curr,
-                  parentNode == OwnerDoc() ||
-                  parentNode == parentNode->OwnerDoc()->GetRootElement());
-  }
-  return true;
+
+  return nullptr;
 }
-#endif
 
-} // namespace dom
-} // namespace mozilla
+inline Element* nsINode::GetFlattenedTreeParentElementForStyle() const {
+  nsINode* parentNode = GetFlattenedTreeParentNodeForStyle();
+  if
+    MOZ_LIKELY(parentNode && parentNode->IsElement()) {
+      return parentNode->AsElement();
+    }
 
-#endif // mozilla_dom_ElementInlines_h
+  return nullptr;
+}
+
+#endif  // mozilla_dom_ElementInlines_h

@@ -1,5 +1,5 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 const VALUE_HDR_NAME = "X-HTTP-VALUE-HEADER";
 const VARY_HDR_NAME = "X-HTTP-VARY-HEADER";
@@ -11,7 +11,7 @@ function make_channel(flags, vary, value) {
   var chan = NetUtil.newChannel({
     uri: "http://localhost:" + httpserver.identity.primaryPort + "/bug633743",
     loadUsingSystemPrincipal: true
-  }).QueryInterface(Components.interfaces.nsIHttpChannel);
+  }).QueryInterface(Ci.nsIHttpChannel);
   return chan.QueryInterface(Ci.nsIHttpChannel);
 }
 
@@ -46,7 +46,7 @@ Test.prototype = {
   },
 
   onStopRequest: function(request, context, status) {
-    do_check_eq(this._buffer, this._expectVal);
+    Assert.equal(this._buffer, this._expectVal);
     do_timeout(0, run_next_test);
   },
 
@@ -150,7 +150,7 @@ function run_next_test()
 function handler(metadata, response) {
 
   // None of the tests above should send an IMS
-  do_check_false(metadata.hasHeader("If-Modified-Since"));
+  Assert.ok(!metadata.hasHeader("If-Modified-Since"));
 
   // Pick up requested value to echo
   var hdr = "default value";

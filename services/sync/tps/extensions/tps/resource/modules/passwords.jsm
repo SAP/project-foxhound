@@ -9,10 +9,8 @@
 
 var EXPORTED_SYMBOLS = ["Password", "DumpPasswords"];
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
-
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://tps/logger.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://tps/logger.jsm");
 
 var nsLoginInfo = new Components.Constructor(
                       "@mozilla.org/login-manager/loginInfo;1",
@@ -45,8 +43,9 @@ function PasswordProps(props) {
   this.delete = false;
 
   for (var prop in props) {
-    if (prop in this)
+    if (prop in this) {
       this[prop] = props[prop];
+    }
   }
 }
 
@@ -57,9 +56,11 @@ function Password(props) {
   this.props = new PasswordProps(props);
   if ("changes" in props) {
     this.updateProps = new PasswordProps(props);
-    for (var prop in props.changes)
-      if (prop in this.updateProps)
+    for (var prop in props.changes) {
+      if (prop in this.updateProps) {
         this.updateProps[prop] = props.changes[prop];
+      }
+    }
   } else {
     this.updateProps = null;
   }

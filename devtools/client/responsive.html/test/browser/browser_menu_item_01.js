@@ -7,56 +7,56 @@
 
 const TEST_URL = "data:text/html;charset=utf-8,";
 
-const tabUtils = require("sdk/tabs/utils");
-const { startup } = require("sdk/window/helpers");
+const { startup } = require("devtools/client/responsive.html/utils/window");
 
 const activateTab = (tab) => new Promise(resolve => {
-  let { tabContainer } = tabUtils.getOwnerWindow(tab).gBrowser;
+  const { gBrowser } = tab.ownerGlobal;
+  const { tabContainer } = gBrowser;
 
   tabContainer.addEventListener("TabSelect", function listener({type}) {
     tabContainer.removeEventListener(type, listener);
     resolve();
   });
 
-  tabUtils.activateTab(tab);
+  gBrowser.selectedTab = tab;
 });
 
 const isMenuChecked = () => {
-  let menu = document.getElementById("menu_responsiveUI");
+  const menu = document.getElementById("menu_responsiveUI");
   return menu.getAttribute("checked") === "true";
 };
 
-add_task(function* () {
-  yield startup(window);
+add_task(async function() {
+  await startup(window);
 
   ok(!isMenuChecked(),
     "RDM menu item is unchecked by default");
 
-  const tab = yield addTab(TEST_URL);
+  const tab = await addTab(TEST_URL);
 
   ok(!isMenuChecked(),
     "RDM menu item is unchecked for new tab");
 
-  yield openRDM(tab);
+  await openRDM(tab);
 
   ok(isMenuChecked(),
     "RDM menu item is checked with RDM open");
 
-  const tab2 = yield addTab(TEST_URL);
+  const tab2 = await addTab(TEST_URL);
 
   ok(!isMenuChecked(),
     "RDM menu item is unchecked for new tab");
 
-  yield activateTab(tab);
+  await activateTab(tab);
 
   ok(isMenuChecked(),
     "RDM menu item is checked for the tab where RDM is open");
 
-  yield closeRDM(tab);
+  await closeRDM(tab);
 
   ok(!isMenuChecked(),
     "RDM menu item is unchecked after RDM is closed");
 
-  yield removeTab(tab);
-  yield removeTab(tab2);
+  await removeTab(tab);
+  await removeTab(tab2);
 });

@@ -6,6 +6,8 @@
 
 SOURCES += [
     'CertDBTest.cpp',
+    'CertListTest.cpp',
+    'CoseTest.cpp',
     'DataStorageTest.cpp',
     'DeserializeCertTest.cpp',
     'MD4Test.cpp',
@@ -16,13 +18,12 @@ SOURCES += [
 LOCAL_INCLUDES += [
     '/security/certverifier',
     '/security/manager/ssl',
-    '/security/pkix/include',
-    '/security/pkix/test/lib',
+    '/third_party/rust/cose-c/include',
 ]
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul-gtest'
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,10 +17,8 @@
 namespace mozilla {
 namespace dom {
 
-class TextClause final : public nsISupports
-                       , public nsWrapperCache
-{
-public:
+class TextClause final : public nsISupports, public nsWrapperCache {
+ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(TextClause)
 
@@ -40,7 +38,7 @@ public:
 
   inline bool IsTargetClause() const { return mIsTargetClause; }
 
-private:
+ private:
   ~TextClause();
   nsCOMPtr<nsPIDOMWindowInner> mOwner;
 
@@ -51,7 +49,7 @@ private:
   bool mIsTargetClause;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_TextClause_h
+#endif  // mozilla_dom_TextClause_h

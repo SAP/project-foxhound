@@ -8,12 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_VIDEO_CODING_JITTER_ESTIMATOR_H_
-#define WEBRTC_MODULES_VIDEO_CODING_JITTER_ESTIMATOR_H_
+#ifndef MODULES_VIDEO_CODING_JITTER_ESTIMATOR_H_
+#define MODULES_VIDEO_CODING_JITTER_ESTIMATOR_H_
 
-#include "webrtc/base/rollingaccumulator.h"
-#include "webrtc/modules/video_coding/rtt_filter.h"
-#include "webrtc/typedefs.h"
+#include "modules/video_coding/rtt_filter.h"
+#include "rtc_base/rollingaccumulator.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -50,7 +50,7 @@ class VCMJitterEstimator {
   //          - rttMultiplier  : RTT param multiplier (when applicable).
   //
   // Return value                   : Jitter estimate in milliseconds
-  int GetJitterEstimate(double rttMultiplier);
+  virtual int GetJitterEstimate(double rttMultiplier);
 
   // Updates the nack counter.
   void FrameNacked();
@@ -167,4 +167,4 @@ class VCMJitterEstimator {
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_VIDEO_CODING_JITTER_ESTIMATOR_H_
+#endif  // MODULES_VIDEO_CODING_JITTER_ESTIMATOR_H_

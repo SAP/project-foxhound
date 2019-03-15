@@ -8,6 +8,7 @@ GeckoSimplePrograms([
     'BadCertServer',
     'GenerateOCSPResponse',
     'OCSPStaplingServer',
+    'SymantecSanctionsServer',
 ], linkage=None)
 
 LOCAL_INCLUDES += [
@@ -15,10 +16,9 @@ LOCAL_INCLUDES += [
 ]
 
 USE_LIBS += [
-    'mozillapkix',
+    'mozpkix',
     'nspr',
     'nss',
-    'pkixtestutil',
     'tlsserver',
 ]
 

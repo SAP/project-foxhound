@@ -13,8 +13,11 @@
 #include "nsString.h"
 
 #include "mozilla/dom/TabGroup.h"
-#include "mozilla/Dispatcher.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/dom/CustomElementRegistry.h"
+#include "mozilla/dom/HTMLSlotElement.h"
+#include "mozilla/PerformanceCounter.h"
+#include "mozilla/PerformanceTypes.h"
 
 namespace mozilla {
 class AbstractThread;
@@ -35,70 +38,88 @@ namespace dom {
 // (through its DocGroups) the documents from one or more tabs related by
 // window.opener. A DocGroup is a member of exactly one TabGroup.
 
-class DocGroup final : public Dispatcher
-{
-public:
-  typedef nsTArray<nsIDocument*>::iterator Iterator;
+class DocGroup final {
+ public:
+  typedef nsTArray<Document*>::iterator Iterator;
   friend class TabGroup;
 
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(DocGroup, override)
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(DocGroup)
 
   // Returns NS_ERROR_FAILURE and sets |aString| to an empty string if the TLD
   // service isn't available. Returns NS_OK on success, but may still set
   // |aString| may still be set to an empty string.
-  static MOZ_MUST_USE nsresult
-  GetKey(nsIPrincipal* aPrincipal, nsACString& aString);
+  static MOZ_MUST_USE nsresult GetKey(nsIPrincipal* aPrincipal,
+                                      nsACString& aString);
 
-  bool MatchesKey(const nsACString& aKey)
-  {
-    return aKey == mKey;
+  bool MatchesKey(const nsACString& aKey) { return aKey == mKey; }
+
+  PerformanceCounter* GetPerformanceCounter() { return mPerformanceCounter; }
+
+  RefPtr<PerformanceInfoPromise> ReportPerformanceInfo();
+
+  TabGroup* GetTabGroup() { return mTabGroup; }
+  mozilla::dom::CustomElementReactionsStack* CustomElementReactionsStack() {
+    MOZ_ASSERT(NS_IsMainThread());
+    if (!mReactionsStack) {
+      mReactionsStack = new mozilla::dom::CustomElementReactionsStack();
+    }
+
+    return mReactionsStack;
   }
-  TabGroup* GetTabGroup()
-  {
-    return mTabGroup;
-  }
-  void RemoveDocument(nsIDocument* aWindow);
+  void RemoveDocument(Document* aWindow);
 
   // Iterators for iterating over every document within the DocGroup
-  Iterator begin()
-  {
+  Iterator begin() {
+    MOZ_ASSERT(NS_IsMainThread());
     return mDocuments.begin();
   }
-  Iterator end()
-  {
+  Iterator end() {
+    MOZ_ASSERT(NS_IsMainThread());
     return mDocuments.end();
   }
 
-  virtual nsresult Dispatch(const char* aName,
-                            TaskCategory aCategory,
-                            already_AddRefed<nsIRunnable>&& aRunnable) override;
+  nsresult Dispatch(TaskCategory aCategory,
+                    already_AddRefed<nsIRunnable>&& aRunnable);
 
-  virtual nsIEventTarget* EventTargetFor(TaskCategory aCategory) const override;
+  nsISerialEventTarget* EventTargetFor(TaskCategory aCategory) const;
+
+  AbstractThread* AbstractMainThreadFor(TaskCategory aCategory);
 
   // Ensure that it's valid to access the DocGroup at this time.
-  void ValidateAccess() const
-  {
-    mTabGroup->ValidateAccess();
-  }
+  void ValidateAccess() const { mTabGroup->ValidateAccess(); }
 
   // Return a pointer that can be continually checked to see if access to this
   // DocGroup is valid. This pointer should live at least as long as the
   // DocGroup.
   bool* GetValidAccessPtr();
 
-private:
-  virtual AbstractThread*
-  AbstractMainThreadForImpl(TaskCategory aCategory) override;
+  // Append aSlot to the list of signal slot list, and queue a mutation observer
+  // microtask.
+  void SignalSlotChange(HTMLSlotElement& aSlot);
 
+  void MoveSignalSlotListTo(nsTArray<RefPtr<HTMLSlotElement>>& aDest);
+
+  // List of DocGroups that has non-empty signal slot list.
+  static AutoTArray<RefPtr<DocGroup>, 2>* sPendingDocGroups;
+
+  // Returns true if any of its documents are active but not in the bfcache.
+  bool IsActive() const;
+
+ private:
   DocGroup(TabGroup* aTabGroup, const nsACString& aKey);
   ~DocGroup();
 
   nsCString mKey;
   RefPtr<TabGroup> mTabGroup;
-  nsTArray<nsIDocument*> mDocuments;
+  nsTArray<Document*> mDocuments;
+  RefPtr<mozilla::dom::CustomElementReactionsStack> mReactionsStack;
+  nsTArray<RefPtr<HTMLSlotElement>> mSignalSlotList;
+  // This pointer will be null if dom.performance.enable_scheduler_timing is
+  // false (default value)
+  RefPtr<mozilla::PerformanceCounter> mPerformanceCounter;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // defined(DocGroup_h)
+#endif  // defined(DocGroup_h)

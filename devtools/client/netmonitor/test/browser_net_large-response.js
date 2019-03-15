@@ -9,55 +9,57 @@
 
 const HTML_LONG_URL = CONTENT_TYPE_SJS + "?fmt=html-long";
 
-add_task(function* () {
-  let { tab, monitor } = yield initNetMonitor(CUSTOM_GET_URL);
+add_task(async function() {
+  const { tab, monitor } = await initNetMonitor(CUSTOM_GET_URL);
   info("Starting test... ");
 
   // This test could potentially be slow because over 100 KB of stuff
   // is going to be requested and displayed in the source editor.
   requestLongerTimeout(2);
 
-  let { document, gStore, windowRequire } = monitor.panelWin;
-  let Actions = windowRequire("devtools/client/netmonitor/actions/index");
-  let {
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
+  const {
     getDisplayedRequests,
     getSortedRequests,
-  } = windowRequire("devtools/client/netmonitor/selectors/index");
+  } = windowRequire("devtools/client/netmonitor/src/selectors/index");
 
-  gStore.dispatch(Actions.batchEnable(false));
+  store.dispatch(Actions.batchEnable(false));
 
   let wait = waitForNetworkEvents(monitor, 1);
-  yield ContentTask.spawn(tab.linkedBrowser, HTML_LONG_URL, function* (url) {
+  await ContentTask.spawn(tab.linkedBrowser, HTML_LONG_URL, async function(url) {
     content.wrappedJSObject.performRequests(1, url);
   });
-  yield wait;
+  await wait;
+
+  const requestItem = document.querySelector(".request-list-item");
+  requestItem.scrollIntoView();
+  const requestsListStatus = requestItem.querySelector(".status-code");
+  EventUtils.sendMouseEvent({ type: "mouseover" }, requestsListStatus);
+  await waitUntil(() => requestsListStatus.title);
 
   verifyRequestItemTarget(
     document,
-    getDisplayedRequests(gStore.getState()),
-    getSortedRequests(gStore.getState()).get(0),
+    getDisplayedRequests(store.getState()),
+    getSortedRequests(store.getState()).get(0),
     "GET",
     CONTENT_TYPE_SJS + "?fmt=html-long",
     {
       status: 200,
-      statusText: "OK"
+      statusText: "OK",
     });
 
-  let waitDOM = waitForDOM(document, "#response-panel .editor-mount iframe");
-  EventUtils.sendMouseEvent({ type: "click" },
-    document.querySelector(".network-details-panel-toggle"));
+  wait = waitForDOM(document, "#response-panel .CodeMirror-code");
+  store.dispatch(Actions.toggleNetworkDetails());
   EventUtils.sendMouseEvent({ type: "click" },
     document.querySelector("#response-tab"));
-  let [editor] = yield waitDOM;
-  yield once(editor, "DOMContentLoaded");
-  yield waitForDOM(editor.contentDocument, ".CodeMirror-code");
+  await wait;
 
-  let text = editor.contentDocument
-        .querySelector(".CodeMirror-line").textContent;
+  const text = document.querySelector(".CodeMirror-line").textContent;
 
   ok(text.match(/^<p>/), "The text shown in the source editor is incorrect.");
 
-  yield teardown(monitor);
+  await teardown(monitor);
 
   // This test uses a lot of memory, so force a GC to help fragmentation.
   info("Forcing GC after netmonitor test.");

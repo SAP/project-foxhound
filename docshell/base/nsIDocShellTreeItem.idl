@@ -6,10 +6,11 @@
 
 #include "nsISupports.idl"
 
+interface mozIDOMWindowProxy;
 interface nsIDocShellTreeOwner;
-interface nsIDocument;
 interface nsPIDOMWindowOuter;
 
+webidl Document;
 
 /**
  * The nsIDocShellTreeItem supplies the methods that are required of any item
@@ -47,7 +48,7 @@ interface nsIDocShellTreeItem : nsISupports
 	/*
 	The type this item is.  
 	*/
-	attribute long itemType;
+	readonly attribute long itemType;
 	[noscript,notxpcom,nostdcall] long ItemType();
 
 	/*
@@ -179,7 +180,12 @@ interface nsIDocShellTreeItem : nsISupports
 	                                      in nsIDocShellTreeItem aRequestor,
 	                                      in nsIDocShellTreeItem aOriginalRequestor);
 
-  [noscript,nostdcall,notxpcom] nsIDocument getDocument();
+  /**
+   * Returns the DOM outer window for the content viewer.
+   */
+  readonly attribute mozIDOMWindowProxy domWindow;
+
+  [noscript,nostdcall,notxpcom] Document getDocument();
   [noscript,nostdcall,notxpcom] nsPIDOMWindowOuter getWindow();
 };
 

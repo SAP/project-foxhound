@@ -15,6 +15,8 @@
 </body>
 <script class="testbody" type="application/javascript">
 <![CDATA[
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+
 SimpleTest.waitForExplicitFinish();
 
 var success = false;
@@ -27,36 +29,38 @@ var testObserver = {
     ok(true, "Observer fired");
     is(topic, "plugin-crashed", "Checking correct topic");
     is(data,  null, "Checking null data");
-    ok((subject instanceof Components.interfaces.nsIPropertyBag2), "got Propbag");
-    ok((subject instanceof Components.interfaces.nsIWritablePropertyBag2),
+    ok((subject instanceof Ci.nsIPropertyBag2), "got Propbag");
+    ok((subject instanceof Ci.nsIWritablePropertyBag2),
 "got writable Propbag");
 
     var id = subject.getPropertyAsAString("pluginDumpID");
     isnot(id, "", "got a non-empty crash id");
     let directoryService =
-      Components.classes["@mozilla.org/file/directory_service;1"].
-      getService(Components.interfaces.nsIProperties);
+      Cc["@mozilla.org/file/directory_service;1"].
+      getService(Ci.nsIProperties);
     let pendingD = directoryService.get("UAppData",
-                                        Components.interfaces.nsIFile);
+                                        Ci.nsIFile);
     pendingD.append("Crash Reports");
     pendingD.append("pending");
-    let dumpFile = pendingD.clone();    
+    let dumpFile = pendingD.clone();
     dumpFile.append(id + ".dmp");
     ok(dumpFile.exists(), "minidump exists");
     let extraFile = pendingD.clone();
     extraFile.append(id + ".extra");
     ok(extraFile.exists(), "extra file exists");
-    // cleanup, to be nice
-    dumpFile.remove(false);
-    extraFile.remove(false);
+    Services.crashmanager.ensureCrashIsPresent(id).then(() => {
+      // cleanup, to be nice, this will execute before SimpleTest.finish()
+      dumpFile.remove(false);
+      extraFile.remove(false);
+    });
   },
 
   QueryInterface: function(iid) {
-    if (iid.equals(Components.interfaces.nsIObserver) ||
-        iid.equals(Components.interfaces.nsISupportsWeakReference) ||
-        iid.equals(Components.interfaces.nsISupports))
+    if (iid.equals(Ci.nsIObserver) ||
+        iid.equals(Ci.nsISupportsWeakReference) ||
+        iid.equals(Ci.nsISupports))
       return this;
-    throw Components.results.NS_NOINTERFACE;
+    throw Cr.NS_NOINTERFACE;
   }
 };
 
@@ -79,32 +83,37 @@ function onPluginCrashed(aEvent) {
   ok("submittedCrashReport" in aEvent, "submittedCrashReport is a property of event");
   is(typeof aEvent.submittedCrashReport, "boolean", "submittedCrashReport is correct type");
 
-  var os = Components.classes["@mozilla.org/observer-service;1"].
-           getService(Components.interfaces.nsIObserverService);
+  var os = Cc["@mozilla.org/observer-service;1"].
+           getService(Ci.nsIObserverService);
   os.removeObserver(testObserver, "plugin-crashed");
 
   // re-set MOZ_CRASHREPORTER_NO_REPORT
-  let env = Components.classes["@mozilla.org/process/environment;1"]
-                      .getService(Components.interfaces.nsIEnvironment);
+  let env = Cc["@mozilla.org/process/environment;1"]
+              .getService(Ci.nsIEnvironment);
   env.set("MOZ_CRASHREPORTER_NO_REPORT", "1");
-  SimpleTest.finish();
+  Services.crashmanager.ensureCrashIsPresent(aEvent.pluginDumpID).then(() => {
+    SimpleTest.finish();
+  });
 }
 
-function runTests() {
+async function runTests() {
   // the test harness will have set MOZ_CRASHREPORTER_NO_REPORT,
   // ensure that we can change the setting and have our minidumps
   // wind up in Crash Reports/pending
-  let env = Components.classes["@mozilla.org/process/environment;1"]
-                      .getService(Components.interfaces.nsIEnvironment);
+  let env = Cc["@mozilla.org/process/environment;1"]
+              .getService(Ci.nsIEnvironment);
   env.set("MOZ_CRASHREPORTER_NO_REPORT", "");
 
-  var os = Components.classes["@mozilla.org/observer-service;1"].
-           getService(Components.interfaces.nsIObserverService);
+  var os = Cc["@mozilla.org/observer-service;1"].
+           getService(Ci.nsIObserverService);
   os.addObserver(testObserver, "plugin-crashed", true);
 
   document.addEventListener("PluginCrashed", onPluginCrashed, false);
 
   var pluginElement = document.getElementById("plugin1");
+  await SimpleTest.promiseWaitForCondition(() => pluginElement.crash !== undefined,
+                                           "Waited too long for plugin to activate");
+
   try {
     pluginElement.crash();
   } catch (e) {

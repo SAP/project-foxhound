@@ -102,18 +102,32 @@ cache_test(function(cache) {
         });
   }, 'Cache.put with an empty response body');
 
-cache_test(function(cache) {
+cache_test(function(cache, test) {
     var request = new Request(test_url);
     var response = new Response('', {
         status: 206,
         headers: [['Content-Type', 'text/plain']]
       });
 
-    return assert_promise_rejects(
-      cache.put(request, response),
+    return promise_rejects(
+      test,
       new TypeError(),
+      cache.put(request, response),
       'Cache.put should reject 206 Responses with a TypeError.');
-  }, 'Cache.put with 206 response');
+  }, 'Cache.put with synthetic 206 response');
+
+cache_test(function(cache, test) {
+    var test_url = new URL('../resources/fetch-status.py?status=206', location.href).href;
+    var request = new Request(test_url);
+    var response;
+    return fetch(test_url)
+      .then(function(fetch_result) {
+          assert_equals(fetch_result.status, 206,
+                        'Test framework error: The status code should be 206.');
+          response = fetch_result.clone();
+          return promise_rejects(test, new TypeError, cache.put(request, fetch_result));
+        });
+  }, 'Cache.put with HTTP 206 response');
 
 cache_test(function(cache) {
     var test_url = new URL('../resources/fetch-status.py?status=500', location.href).href;
@@ -320,5 +334,13 @@ cache_test(function(cache) {
                         'Location header is preserved by Cache API.');
         });
   }, 'Cache.put should store Response.redirect() correctly');
+
+cache_test(async (cache) => {
+    var request = new Request(test_url);
+    var response = new Response(new Blob([test_body]));
+    await cache.put(request, response);
+    var cachedResponse = await cache.match(request);
+    assert_equals(await cachedResponse.text(), test_body);
+  }, 'Cache.put called with simple Request and blob Response');
 
 done();

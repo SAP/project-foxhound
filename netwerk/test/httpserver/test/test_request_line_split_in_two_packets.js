@@ -14,8 +14,7 @@ var srv = createServer();
 srv.start(-1);
 const PORT = srv.identity.primaryPort;
 
-function run_test()
-{
+function run_test() {
   srv.registerPathHandler("/lots-of-leading-blank-lines",
                           lotsOfLeadingBlankLines);
   srv.registerPathHandler("/very-long-request-line",
@@ -25,16 +24,15 @@ function run_test()
 }
 
 
-/***************
+/** *************
  * BEGIN TESTS *
  ***************/
 
-var test, data, str;
+var test, gData, str;
 var tests = [];
 
 
-function veryLongRequestLine(request, response)
-{
+function veryLongRequestLine(request, response) {
   writeDetails(request, response);
   response.setStatusLine(request.httpVersion, 200, "TEST PASSED");
 }
@@ -53,19 +51,18 @@ if (reallyLong.length !== 524288)
 str = "GET /very-long-request-line?" + reallyLong + " HTTP/1.1\r\n" +
       "Host: localhost:" + PORT + "\r\n" +
       "\r\n";
-data = [];
-for (var i = 0; i < str.length; i += 16384)
-  data.push(str.substr(i, 16384));
+gData = [];
+for (let i = 0; i < str.length; i += 16384)
+  gData.push(str.substr(i, 16384));
 
-function checkVeryLongRequestLine(data)
-{
+function checkVeryLongRequestLine(data) {
   var iter = LineIterator(data);
 
   print("data length: " + data.length);
   print("iter object: " + iter);
 
   // Status-Line
-  do_check_eq(iter.next().value, "HTTP/1.1 200 TEST PASSED");
+  Assert.equal(iter.next().value, "HTTP/1.1 200 TEST PASSED");
 
   skipHeaders(iter);
 
@@ -83,36 +80,34 @@ function checkVeryLongRequestLine(data)
 
   expectLines(iter, body);
 }
-test = new RawTest("localhost", PORT, data, checkVeryLongRequestLine),
+test = new RawTest("localhost", PORT, gData, checkVeryLongRequestLine);
 tests.push(test);
 
 
-function lotsOfLeadingBlankLines(request, response)
-{
+function lotsOfLeadingBlankLines(request, response) {
   writeDetails(request, response);
   response.setStatusLine(request.httpVersion, 200, "TEST PASSED");
 }
 
 var blankLines = "\r\n";
-for (var i = 0; i < 14; i++)
+for (let i = 0; i < 14; i++)
   blankLines += blankLines;
 str = blankLines +
       "GET /lots-of-leading-blank-lines HTTP/1.1\r\n" +
       "Host: localhost:" + PORT + "\r\n" +
       "\r\n";
-data = [];
-for (var i = 0; i < str.length; i += 100)
-  data.push(str.substr(i, 100));
+gData = [];
+for (let i = 0; i < str.length; i += 100)
+  gData.push(str.substr(i, 100));
 
-function checkLotsOfLeadingBlankLines(data)
-{
+function checkLotsOfLeadingBlankLines(data) {
   var iter = LineIterator(data);
 
   // Status-Line
   print("data length: " + data.length);
   print("iter object: " + iter);
 
-  do_check_eq(iter.next().value, "HTTP/1.1 200 TEST PASSED");
+  Assert.equal(iter.next().value, "HTTP/1.1 200 TEST PASSED");
 
   skipHeaders(iter);
 
@@ -131,5 +126,5 @@ function checkLotsOfLeadingBlankLines(data)
   expectLines(iter, body);
 }
 
-test = new RawTest("localhost", PORT, data, checkLotsOfLeadingBlankLines),
+test = new RawTest("localhost", PORT, gData, checkLotsOfLeadingBlankLines);
 tests.push(test);

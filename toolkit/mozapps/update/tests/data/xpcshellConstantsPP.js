@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#filter substitution
+
 /* Preprocessed constants used by xpcshell tests */
 
 const INSTALL_LOCALE = "@AB_CD@";
@@ -17,7 +19,11 @@ const MOZ_APP_VENDOR = "";
 
 // MOZ_APP_BASENAME is not optional for tests.
 const MOZ_APP_BASENAME = "@MOZ_APP_BASENAME@";
+#ifdef XP_LINUX
+const APP_BIN_SUFFIX = "-bin";
+#else
 const APP_BIN_SUFFIX = "@BIN_SUFFIX@";
+#endif
 
 const APP_INFO_NAME = "XPCShell";
 const APP_INFO_VENDOR = "Mozilla";

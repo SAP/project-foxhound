@@ -1,5 +1,6 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -12,78 +13,68 @@
 #include "nsFrameLoader.h"
 #include "Units.h"
 
+namespace mozilla {
+namespace layout {
+class RenderFrame;
+}
+}  // namespace mozilla
+
 /******************************************************************************
  * nsSubDocumentFrame
  *****************************************************************************/
-class nsSubDocumentFrame : public nsAtomicContainerFrame,
-                           public nsIReflowCallback
-{
-public:
-  NS_DECL_QUERYFRAME_TARGET(nsSubDocumentFrame)
-  NS_DECL_FRAMEARENA_HELPERS
+class nsSubDocumentFrame final : public nsAtomicContainerFrame,
+                                 public nsIReflowCallback {
+ public:
+  NS_DECL_FRAMEARENA_HELPERS(nsSubDocumentFrame)
 
-  explicit nsSubDocumentFrame(nsStyleContext* aContext);
+  explicit nsSubDocumentFrame(ComputedStyle* aStyle);
 
 #ifdef DEBUG_FRAME_DUMP
-  void List(FILE* out = stderr, const char* aPrefix = "", uint32_t aFlags = 0) const override;
+  void List(FILE* out = stderr, const char* aPrefix = "",
+            uint32_t aFlags = 0) const override;
   nsresult GetFrameName(nsAString& aResult) const override;
 #endif
 
   NS_DECL_QUERYFRAME
 
-  nsIAtom* GetType() const override;
-
-  bool IsFrameOfType(uint32_t aFlags) const override
-  {
-    return nsAtomicContainerFrame::IsFrameOfType(aFlags &
-      ~(nsIFrame::eReplaced |
-        nsIFrame::eReplacedSizing |
-        nsIFrame::eReplacedContainsBlock));
+  bool IsFrameOfType(uint32_t aFlags) const override {
+    return nsAtomicContainerFrame::IsFrameOfType(
+        aFlags & ~(nsIFrame::eReplaced | nsIFrame::eReplacedSizing |
+                   nsIFrame::eReplacedContainsBlock));
   }
 
-  void Init(nsIContent*       aContent,
-            nsContainerFrame* aParent,
-            nsIFrame*         aPrevInFlow) override;
+  void Init(nsIContent* aContent, nsContainerFrame* aParent,
+            nsIFrame* aPrevInFlow) override;
 
-  void DestroyFrom(nsIFrame* aDestructRoot) override;
+  void DestroyFrom(nsIFrame* aDestructRoot,
+                   PostDestroyData& aPostDestroyData) override;
 
-  nscoord GetMinISize(nsRenderingContext *aRenderingContext) override;
-  nscoord GetPrefISize(nsRenderingContext *aRenderingContext) override;
+  nscoord GetMinISize(gfxContext* aRenderingContext) override;
+  nscoord GetPrefISize(gfxContext* aRenderingContext) override;
 
   mozilla::IntrinsicSize GetIntrinsicSize() override;
-  nsSize  GetIntrinsicRatio() override;
+  nsSize GetIntrinsicRatio() override;
 
-  mozilla::LogicalSize
-  ComputeAutoSize(nsRenderingContext*         aRenderingContext,
-                  mozilla::WritingMode        aWritingMode,
-                  const mozilla::LogicalSize& aCBSize,
-                  nscoord                     aAvailableISize,
-                  const mozilla::LogicalSize& aMargin,
-                  const mozilla::LogicalSize& aBorder,
-                  const mozilla::LogicalSize& aPadding,
-                  ComputeSizeFlags            aFlags) override;
+  mozilla::LogicalSize ComputeAutoSize(
+      gfxContext* aRenderingContext, mozilla::WritingMode aWritingMode,
+      const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
+      const mozilla::LogicalSize& aMargin, const mozilla::LogicalSize& aBorder,
+      const mozilla::LogicalSize& aPadding, ComputeSizeFlags aFlags) override;
 
-  mozilla::LogicalSize
-  ComputeSize(nsRenderingContext*         aRenderingContext,
-              mozilla::WritingMode        aWritingMode,
-              const mozilla::LogicalSize& aCBSize,
-              nscoord                     aAvailableISize,
-              const mozilla::LogicalSize& aMargin,
-              const mozilla::LogicalSize& aBorder,
-              const mozilla::LogicalSize& aPadding,
-              ComputeSizeFlags            aFlags) override;
+  mozilla::LogicalSize ComputeSize(
+      gfxContext* aRenderingContext, mozilla::WritingMode aWritingMode,
+      const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
+      const mozilla::LogicalSize& aMargin, const mozilla::LogicalSize& aBorder,
+      const mozilla::LogicalSize& aPadding, ComputeSizeFlags aFlags) override;
 
-  void Reflow(nsPresContext*     aPresContext,
-              ReflowOutput&      aDesiredSize,
+  void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
               const ReflowInput& aReflowInput,
-              nsReflowStatus&    aStatus) override;
+              nsReflowStatus& aStatus) override;
 
-  void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                        const nsRect&           aDirtyRect,
+  void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                         const nsDisplayListSet& aLists) override;
 
-  nsresult AttributeChanged(int32_t aNameSpaceID,
-                            nsIAtom* aAttribute,
+  nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
                             int32_t aModType) override;
 
   // if the content is "visibility:hidden", then just hide the view
@@ -96,14 +87,12 @@ public:
   mozilla::a11y::AccType AccessibleType() override;
 #endif
 
-  nsresult GetDocShell(nsIDocShell **aDocShell);
+  nsIDocShell* GetDocShell();
   nsresult BeginSwapDocShells(nsIFrame* aOther);
   void EndSwapDocShells(nsIFrame* aOther);
   nsView* EnsureInnerView();
   nsIFrame* GetSubdocumentRootFrame();
-  enum {
-    IGNORE_PAINT_SUPPRESSION = 0x1
-  };
+  enum { IGNORE_PAINT_SUPPRESSION = 0x1 };
   nsIPresShell* GetSubdocumentPresShellForPainting(uint32_t aFlags);
   mozilla::ScreenIntSize GetSubdocumentSize();
 
@@ -111,14 +100,7 @@ public:
   bool ReflowFinished() override;
   void ReflowCallbackCanceled() override;
 
-  bool ShouldClipSubdocument()
-  {
-    nsFrameLoader* frameLoader = FrameLoader();
-    return !frameLoader || frameLoader->ShouldClipSubdocument();
-  }
-
-  bool ShouldClampScrollPosition()
-  {
+  bool ShouldClampScrollPosition() {
     nsFrameLoader* frameLoader = FrameLoader();
     return !frameLoader || frameLoader->ShouldClampScrollPosition();
   }
@@ -129,13 +111,21 @@ public:
    */
   bool PassPointerEventsToChildren();
 
-protected:
+  void MaybeShowViewer() {
+    if (!mDidCreateDoc && !mCallingShow) {
+      ShowViewer();
+    }
+  }
+
+  mozilla::layout::RenderFrame* GetRenderFrame() const;
+
+ protected:
   friend class AsyncFrameInit;
 
   // Helper method to look up the HTML marginwidth & marginheight attributes.
   mozilla::CSSIntSize GetMarginAttributes();
 
-  nsFrameLoader* FrameLoader();
+  nsFrameLoader* FrameLoader() const;
 
   bool IsInline() { return mIsInline; }
 
@@ -147,8 +137,10 @@ protected:
   // being reframed.
   void ShowViewer();
 
+  void ClearDisplayItems();
+
   /* Obtains the frame we should use for intrinsic size information if we are
-   * an HTML <object>, <embed> or <applet> (a replaced element - not <iframe>)
+   * an HTML <object> or <embed>  (a replaced element - not <iframe>)
    * and our sub-document has an intrinsic size. The frame returned is the
    * frame for the document element of the document we're embedding.
    *
@@ -157,12 +149,18 @@ protected:
    */
   nsIFrame* ObtainIntrinsicSizeFrame();
 
-  RefPtr<nsFrameLoader> mFrameLoader;
+  nsView* GetViewInternal() const override { return mOuterView; }
+  void SetViewInternal(nsView* aView) override { mOuterView = aView; }
+
+  mutable RefPtr<nsFrameLoader> mFrameLoader;
+
+  nsView* mOuterView;
   nsView* mInnerView;
   bool mIsInline;
   bool mPostedReflowCallback;
   bool mDidCreateDoc;
   bool mCallingShow;
+  WeakFrame mPreviousCaret;
 };
 
 #endif /* NSSUBDOCUMENTFRAME_H_ */

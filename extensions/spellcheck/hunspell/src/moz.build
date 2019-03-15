@@ -8,18 +8,12 @@ UNIFIED_SOURCES += [
     'affentry.cxx',
     'affixmgr.cxx',
     'csutil.cxx',
-    'filemgr.cxx',
     'hashmgr.cxx',
     'hunspell.cxx',
-    'hunzip.cxx',
     'phonet.cxx',
     'replist.cxx',
     'suggestmgr.cxx',
 ]
-
-# This variable is referenced in configure.in.  Make sure to change that file
-# too if you need to change this variable.
-DEFINES['HUNSPELL_STATIC'] = True
 
 FINAL_LIBRARY = 'xul'
 
@@ -28,11 +22,14 @@ LOCAL_INCLUDES += [
 ]
 
 # We allow warnings for third-party code that can be updated from upstream.
-ALLOW_COMPILER_WARNINGS = True
+AllowCompilerWarnings()
 
 include('/ipc/chromium/chromium-config.mozbuild')
+include('../glue/common.mozbuild')
 
-if CONFIG['CLANG_CXX'] or CONFIG['CLANG_CL']:
+HunspellIncludes()
+
+if CONFIG['CC_TYPE'] in ('clang', 'clang-cl'):
     CXXFLAGS += [
         '-Wno-implicit-fallthrough',
     ]

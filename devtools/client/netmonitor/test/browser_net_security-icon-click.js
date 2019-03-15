@@ -7,20 +7,20 @@
  * Test that clicking on the security indicator opens the security details tab.
  */
 
-add_task(function* () {
-  let { tab, monitor } = yield initNetMonitor(CUSTOM_GET_URL);
-  let { document, gStore, windowRequire } = monitor.panelWin;
-  let Actions = windowRequire("devtools/client/netmonitor/actions/index");
+add_task(async function() {
+  const { tab, monitor } = await initNetMonitor(CUSTOM_GET_URL);
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
 
-  gStore.dispatch(Actions.batchEnable(false));
+  store.dispatch(Actions.batchEnable(false));
 
   info("Requesting a resource over HTTPS.");
-  yield performRequestAndWait("https://example.com" + CORS_SJS_PATH + "?request_2");
-  yield performRequestAndWait("https://example.com" + CORS_SJS_PATH + "?request_1");
+  await performRequestAndWait("https://example.com" + CORS_SJS_PATH + "?request_2");
+  await performRequestAndWait("https://example.com" + CORS_SJS_PATH + "?request_1");
 
-  is(gStore.getState().requests.requests.size, 2, "Two events event logged.");
+  is(store.getState().requests.requests.size, 2, "Two events event logged.");
 
-  yield clickAndTestSecurityIcon();
+  await clickAndTestSecurityIcon();
 
   info("Selecting headers panel again.");
   EventUtils.sendMouseEvent({ type: "click" },
@@ -32,23 +32,23 @@ add_task(function* () {
 
   info("Testing that security icon can be clicked after the items were sorted.");
 
-  yield clickAndTestSecurityIcon();
+  await clickAndTestSecurityIcon();
 
   return teardown(monitor);
 
-  function* performRequestAndWait(url) {
-    let wait = waitForNetworkEvents(monitor, 1);
-    yield ContentTask.spawn(tab.linkedBrowser, { url }, function* (args) {
+  async function performRequestAndWait(url) {
+    const wait = waitForNetworkEvents(monitor, 1);
+    await ContentTask.spawn(tab.linkedBrowser, { url }, async function(args) {
       content.wrappedJSObject.performRequests(1, args.url);
     });
     return wait;
   }
 
-  function* clickAndTestSecurityIcon() {
-    let icon = document.querySelector(".requests-security-state-icon");
-
+  async function clickAndTestSecurityIcon() {
+    const icon = document.querySelector(".requests-security-state-icon");
     info("Clicking security icon of the first request and waiting for panel update.");
     EventUtils.synthesizeMouseAtCenter(icon, {}, monitor.panelWin);
+    await waitUntil(() => document.querySelector("#security-panel .security-info-value"));
 
     ok(document.querySelector("#security-tab[aria-selected=true]"),
        "Security tab is selected.");

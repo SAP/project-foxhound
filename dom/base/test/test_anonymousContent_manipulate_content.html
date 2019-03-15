@@ -64,7 +64,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1020244
     { transform: 'translateY(0px)' },
     { transform: 'translateY(-300px)' }
   ], 2000);
-  is(anim.playState, "pending", "Animation should be running");
+  is(anim.playState, "running", "Animation should be running");
   anim.cancel();
   is(anim.playState, "idle", "Animation should have stopped immediately");
 

@@ -9,7 +9,6 @@
 // Keep this in sync with the linux version.
 
 #include "xptcprivate.h"
-#include "xptiprivate.h"
 
 // The Darwin/x86-64 ABI passes the first 6 integer parameters and the
 // first 8 floating point parameters in registers (rdi, rsi, rdx, rcx,
@@ -26,7 +25,7 @@ const uint32_t FPR_COUNT            = 8;
 // - 'args[]' contains the arguments passed on stack
 // - 'gpregs[]' contains the arguments passed in integer registers
 // - 'fpregs[]' contains the arguments passed in floating point registers
-// 
+//
 // The parameters are mapped into an array of type 'nsXPTCMiniVariant'
 // and then the method gets called.
 
@@ -39,7 +38,6 @@ PrepareAndDispatch(nsXPTCStubBase * self, uint32_t methodIndex,
     const nsXPTMethodInfo* info;
     uint32_t paramCount;
     uint32_t i;
-    nsresult result = NS_ERROR_FAILURE;
 
     NS_ASSERTION(self,"no self");
 
@@ -60,6 +58,8 @@ PrepareAndDispatch(nsXPTCStubBase * self, uint32_t methodIndex,
     if (!dispatchParams)
         return NS_ERROR_OUT_OF_MEMORY;
 
+    const uint8_t indexOfJSContext = info->IndexOfJSContext();
+
     uint64_t* ap = args;
     uint32_t nr_gpr = 1;    // skip one GPR register for 'that'
     uint32_t nr_fpr = 0;
@@ -69,7 +69,14 @@ PrepareAndDispatch(nsXPTCStubBase * self, uint32_t methodIndex,
         const nsXPTParamInfo& param = info->GetParam(i);
         const nsXPTType& type = param.GetType();
         nsXPTCMiniVariant* dp = &dispatchParams[i];
-	
+
+        if (i == indexOfJSContext) {
+            if (nr_gpr < GPR_COUNT)
+                nr_gpr++;
+            else
+                ap++;
+        }
+
         if (!param.IsOut() && type == nsXPTType::T_DOUBLE) {
             if (nr_fpr < FPR_COUNT)
                 dp->val.d = fpregs[nr_fpr++];
@@ -119,7 +126,8 @@ PrepareAndDispatch(nsXPTCStubBase * self, uint32_t methodIndex,
         }
     }
 
-    result = self->mOuter->CallMethod((uint16_t) methodIndex, info, dispatchParams);
+    nsresult result = self->mOuter->CallMethod((uint16_t) methodIndex, info,
+                                               dispatchParams);
 
     if (dispatchParams != paramBuffer)
         delete [] dispatchParams;

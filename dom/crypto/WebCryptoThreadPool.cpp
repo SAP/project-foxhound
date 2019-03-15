@@ -1,18 +1,20 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/WebCryptoThreadPool.h"
 
+#include "MainThreadUtils.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
 #include "nsComponentManagerUtils.h"
+#include "nsNSSComponent.h"
 #include "nsXPCOMCIDInternal.h"
 #include "nsXPCOMPrivate.h"
 #include "nsIObserverService.h"
-#include "nsIThreadPool.h"
+#include "nsThreadPool.h"
 
 namespace mozilla {
 namespace dom {
@@ -21,9 +23,7 @@ StaticRefPtr<WebCryptoThreadPool> gInstance;
 
 NS_IMPL_ISUPPORTS(WebCryptoThreadPool, nsIObserver)
 
-/* static */ void
-WebCryptoThreadPool::Initialize()
-{
+/* static */ void WebCryptoThreadPool::Initialize() {
   MOZ_ASSERT(NS_IsMainThread(), "Wrong thread!");
   MOZ_ASSERT(!gInstance, "More than one instance!");
 
@@ -36,9 +36,7 @@ WebCryptoThreadPool::Initialize()
   }
 }
 
-/* static */ nsresult
-WebCryptoThreadPool::Dispatch(nsIRunnable* aRunnable)
-{
+/* static */ nsresult WebCryptoThreadPool::Dispatch(nsIRunnable* aRunnable) {
   if (gInstance) {
     return gInstance->DispatchInternal(aRunnable);
   }
@@ -47,9 +45,7 @@ WebCryptoThreadPool::Dispatch(nsIRunnable* aRunnable)
   return NS_ERROR_FAILURE;
 }
 
-nsresult
-WebCryptoThreadPool::Init()
-{
+nsresult WebCryptoThreadPool::Init() {
   MOZ_ASSERT(NS_IsMainThread(), "Wrong thread!");
 
   nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
@@ -59,16 +55,17 @@ WebCryptoThreadPool::Init()
   return obs->AddObserver(this, NS_XPCOM_SHUTDOWN_THREADS_OBSERVER_ID, false);
 }
 
-nsresult
-WebCryptoThreadPool::DispatchInternal(nsIRunnable* aRunnable)
-{
+nsresult WebCryptoThreadPool::DispatchInternal(nsIRunnable* aRunnable) {
   MutexAutoLock lock(mMutex);
+
+  if (mShutdown) {
+    return NS_ERROR_FAILURE;
+  }
 
   if (!mPool) {
     NS_ENSURE_TRUE(EnsureNSSInitializedChromeOrContent(), NS_ERROR_FAILURE);
 
-    nsCOMPtr<nsIThreadPool> pool(do_CreateInstance(NS_THREADPOOL_CONTRACTID));
-    NS_ENSURE_TRUE(pool, NS_ERROR_FAILURE);
+    nsCOMPtr<nsIThreadPool> pool(new nsThreadPool());
 
     nsresult rv = pool->SetName(NS_LITERAL_CSTRING("SubtleCrypto"));
     NS_ENSURE_SUCCESS(rv, rv);
@@ -79,32 +76,39 @@ WebCryptoThreadPool::DispatchInternal(nsIRunnable* aRunnable)
   return mPool->Dispatch(aRunnable, NS_DISPATCH_NORMAL);
 }
 
-void
-WebCryptoThreadPool::Shutdown()
-{
+void WebCryptoThreadPool::Shutdown() {
   MOZ_ASSERT(NS_IsMainThread(), "Wrong thread!");
-  MutexAutoLock lock(mMutex);
 
-  if (mPool) {
-    mPool->Shutdown();
+  // Limit the scope of locking to avoid deadlocking if DispatchInternal ends
+  // up getting called during shutdown event processing.
+  nsCOMPtr<nsIThreadPool> pool;
+  {
+    MutexAutoLock lock(mMutex);
+    if (mShutdown) {
+      return;
+    }
+    pool = mPool;
+    mShutdown = true;
+  }
+
+  if (pool) {
+    pool->Shutdown();
   }
 
   nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
   NS_WARNING_ASSERTION(obs, "Failed to retrieve observer service!");
 
   if (obs) {
-    if (NS_FAILED(obs->RemoveObserver(this,
-                                      NS_XPCOM_SHUTDOWN_THREADS_OBSERVER_ID))) {
+    if (NS_FAILED(
+            obs->RemoveObserver(this, NS_XPCOM_SHUTDOWN_THREADS_OBSERVER_ID))) {
       NS_WARNING("Failed to remove shutdown observer!");
     }
   }
 }
 
 NS_IMETHODIMP
-WebCryptoThreadPool::Observe(nsISupports* aSubject,
-                             const char* aTopic,
-                             const char16_t* aData)
-{
+WebCryptoThreadPool::Observe(nsISupports* aSubject, const char* aTopic,
+                             const char16_t* aData) {
   MOZ_ASSERT(NS_IsMainThread(), "Wrong thread!");
 
   if (gInstance) {
@@ -115,5 +119,5 @@ WebCryptoThreadPool::Observe(nsISupports* aSubject,
   return NS_OK;
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

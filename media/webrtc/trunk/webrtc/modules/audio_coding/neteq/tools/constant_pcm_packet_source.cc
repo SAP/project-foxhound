@@ -8,13 +8,13 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_coding/neteq/tools/constant_pcm_packet_source.h"
+#include "modules/audio_coding/neteq/tools/constant_pcm_packet_source.h"
 
 #include <algorithm>
 
-#include "webrtc/base/checks.h"
-#include "webrtc/modules/audio_coding/codecs/pcm16b/pcm16b.h"
-#include "webrtc/modules/audio_coding/neteq/tools/packet.h"
+#include "modules/audio_coding/codecs/pcm16b/pcm16b.h"
+#include "modules/audio_coding/neteq/tools/packet.h"
+#include "rtc_base/checks.h"
 
 namespace webrtc {
 namespace test {
@@ -35,7 +35,7 @@ ConstantPcmPacketSource::ConstantPcmPacketSource(size_t payload_len_samples,
   RTC_CHECK_EQ(2U, encoded_len);
 }
 
-Packet* ConstantPcmPacketSource::NextPacket() {
+std::unique_ptr<Packet> ConstantPcmPacketSource::NextPacket() {
   RTC_CHECK_GT(packet_len_bytes_, kHeaderLenBytes);
   uint8_t* packet_memory = new uint8_t[packet_len_bytes_];
   // Fill the payload part of the packet memory with the pre-encoded value.
@@ -43,8 +43,8 @@ Packet* ConstantPcmPacketSource::NextPacket() {
     packet_memory[kHeaderLenBytes + i] = encoded_sample_[i % 2];
   WriteHeader(packet_memory);
   // |packet| assumes ownership of |packet_memory|.
-  Packet* packet =
-      new Packet(packet_memory, packet_len_bytes_, next_arrival_time_ms_);
+  std::unique_ptr<Packet> packet(
+      new Packet(packet_memory, packet_len_bytes_, next_arrival_time_ms_));
   next_arrival_time_ms_ += payload_len_samples_ / samples_per_ms_;
   return packet;
 }

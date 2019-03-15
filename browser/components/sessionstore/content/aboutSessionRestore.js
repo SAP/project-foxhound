@@ -4,12 +4,12 @@
 
 "use strict";
 
-var {classes: Cc, interfaces: Ci, utils: Cu} = Components;
-
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "AppConstants",
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "AppConstants",
   "resource://gre/modules/AppConstants.jsm");
+ChromeUtils.defineModuleGetter(this, "SessionStore",
+  "resource:///modules/sessionstore/SessionStore.jsm");
 
 var gStateObject;
 var gTreeData;
@@ -17,6 +17,17 @@ var gTreeData;
 // Page initialization
 
 window.onload = function() {
+  let toggleTabs = document.getElementById("tabsToggle");
+  if (toggleTabs) {
+    let treeContainer = document.querySelector(".tree-container");
+
+    let toggleHiddenTabs = () => {
+      toggleTabs.classList.toggle("show-tabs");
+      treeContainer.classList.toggle("expanded");
+    };
+    toggleTabs.onclick = toggleHiddenTabs;
+  }
+
   // pages used by this script may have a link that needs to be updated to
   // the in-product link.
   let anchor = document.getElementById("linkMoreTroubleshooting");
@@ -58,22 +69,25 @@ function isTreeViewVisible() {
   return tabList.hasAttribute("available");
 }
 
-function initTreeView() {
+async function initTreeView() {
   // If we aren't visible we initialize as we are made visible (and it's OK
   // to initialize multiple times)
   if (!isTreeViewVisible()) {
     return;
   }
   var tabList = document.getElementById("tabList");
-  var winLabel = tabList.getAttribute("_window_label");
-
+  let l10nIds = [];
+  for (let labelIndex = 0; labelIndex < gStateObject.windows.length; labelIndex++) {
+      l10nIds.push({id: "restore-page-window-label", args: { windowNumber: (labelIndex + 1)}});
+  }
+  let winLabels = await document.l10n.formatValues(l10nIds);
   gTreeData = [];
   gStateObject.windows.forEach(function(aWinData, aIx) {
     var winState = {
-      label: winLabel.replace("%S", (aIx + 1)),
+      label: winLabels[aIx],
       open: true,
       checked: true,
-      ix: aIx
+      ix: aIx,
     };
     winState.tabs = aWinData.tabs.map(function(aTabData) {
       var entry = aTabData.entries[aTabData.index - 1] || { url: "about:blank" };
@@ -85,7 +99,7 @@ function initTreeView() {
         label: entry.title || entry.url,
         checked: true,
         src: iconURL,
-        parent: winState
+        parent: winState,
       };
     });
     gTreeData.push(winState);
@@ -112,7 +126,7 @@ function updateTabListVisibility() {
 }
 
 function restoreSession() {
-  Services.obs.notifyObservers(null, "sessionstore-initiating-manual-restore", "");
+  Services.obs.notifyObservers(null, "sessionstore-initiating-manual-restore");
   document.getElementById("errorTryAgain").disabled = true;
 
   if (isTreeViewVisible()) {
@@ -142,37 +156,37 @@ function restoreSession() {
   }
   var stateString = JSON.stringify(gStateObject);
 
-  var ss = Cc["@mozilla.org/browser/sessionstore;1"].getService(Ci.nsISessionStore);
   var top = getBrowserWindow();
 
   // if there's only this page open, reuse the window for restoring the session
   if (top.gBrowser.tabs.length == 1) {
-    ss.setWindowState(top, stateString, true);
+    SessionStore.setWindowState(top, stateString, true);
     return;
   }
 
   // restore the session into a new window and close the current tab
   var newWindow = top.openDialog(top.location, "_blank", "chrome,dialog=no,all");
 
-  var obs = Cc["@mozilla.org/observer-service;1"].getService(Ci.nsIObserverService);
-  obs.addObserver(function observe(win, topic) {
+  Services.obs.addObserver(function observe(win, topic) {
     if (win != newWindow) {
       return;
     }
 
-    obs.removeObserver(observe, topic);
-    ss.setWindowState(newWindow, stateString, true);
+    Services.obs.removeObserver(observe, topic);
+    SessionStore.setWindowState(newWindow, stateString, true);
 
-    var tabbrowser = top.gBrowser;
-    var tabIndex = tabbrowser.getBrowserIndexForDocument(document);
-    tabbrowser.removeTab(tabbrowser.tabs[tabIndex]);
-  }, "browser-delayed-startup-finished", false);
+    let tabbrowser = top.gBrowser;
+    let browser = window.docShell.chromeEventHandler;
+    let tab = tabbrowser.getTabForBrowser(browser);
+    tabbrowser.removeTab(tab);
+  }, "browser-delayed-startup-finished");
 }
 
 function startNewSession() {
-  var prefBranch = Cc["@mozilla.org/preferences-service;1"].getService(Ci.nsIPrefBranch);
-  if (prefBranch.getIntPref("browser.startup.page") == 0)
-    getBrowserWindow().gBrowser.loadURI("about:blank");
+  if (Services.prefs.getIntPref("browser.startup.page") == 0)
+    getBrowserWindow().gBrowser.loadURI("about:blank", {
+      triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal({}),
+    });
   else
     getBrowserWindow().BrowserHome();
 }
@@ -194,15 +208,13 @@ function onListClick(aEvent) {
         !treeView.isContainer(cell.row)) {
       restoreSingleTab(cell.row, aEvent.shiftKey);
       aEvent.stopPropagation();
-    }
-    else if (cell.col.id == "restore")
+    } else if (cell.col.id == "restore")
       toggleRowChecked(cell.row);
   }
 }
 
 function onListKeyDown(aEvent) {
-  switch (aEvent.keyCode)
-  {
+  switch (aEvent.keyCode) {
   case KeyEvent.DOM_VK_SPACE:
     toggleRowChecked(document.getElementById("tabList").currentIndex);
     // Prevent page from scrolling on the space key.
@@ -219,9 +231,7 @@ function onListKeyDown(aEvent) {
 // Helper functions
 
 function getBrowserWindow() {
-  return window.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIWebNavigation)
-               .QueryInterface(Ci.nsIDocShellTreeItem).rootTreeItem
-               .QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindow);
+  return window.docShell.rootTreeItem.domWindow;
 }
 
 function toggleRowChecked(aIx) {
@@ -239,11 +249,16 @@ function toggleRowChecked(aIx) {
       tab.checked = item.checked;
       treeView.treeBox.invalidateRow(gTreeData.indexOf(tab));
     }
-  }
-  else {
-    // update the window's checkmark as well (0 means "partially checked")
-    item.parent.checked = item.parent.tabs.every(isChecked) ? true :
-                          item.parent.tabs.some(isChecked) ? 0 : false;
+  } else {
+    // Update the window's checkmark as well (0 means "partially checked").
+    let state = false;
+    if (item.parent.tabs.every(isChecked)) {
+      state = true;
+    } else if (item.parent.tabs.some(isChecked)) {
+      state = 0;
+    }
+    item.parent.checked = state;
+
     treeView.treeBox.invalidateRow(gTreeData.indexOf(item.parent));
   }
 
@@ -255,19 +270,17 @@ function toggleRowChecked(aIx) {
 
 function restoreSingleTab(aIx, aShifted) {
   var tabbrowser = getBrowserWindow().gBrowser;
-  var newTab = tabbrowser.addTab();
+  var newTab = tabbrowser.addWebTab();
   var item = gTreeData[aIx];
 
-  var ss = Cc["@mozilla.org/browser/sessionstore;1"].getService(Ci.nsISessionStore);
   var tabState = gStateObject.windows[item.parent.ix]
                              .tabs[aIx - gTreeData.indexOf(item.parent) - 1];
   // ensure tab would be visible on the tabstrip.
   tabState.hidden = false;
-  ss.setTabState(newTab, JSON.stringify(tabState));
+  SessionStore.setTabState(newTab, JSON.stringify(tabState));
 
   // respect the preference as to whether to select the tab (the Shift key inverses)
-  var prefBranch = Cc["@mozilla.org/preferences-service;1"].getService(Ci.nsIPrefBranch);
-  if (prefBranch.getBoolPref("browser.tabs.loadInBackground") != !aShifted)
+  if (Services.prefs.getBoolPref("browser.tabs.loadInBackground") != !aShifted)
     tabbrowser.selectedTab = newTab;
 }
 
@@ -277,20 +290,20 @@ var treeView = {
   treeBox: null,
   selection: null,
 
-  get rowCount()                     { return gTreeData.length; },
-  setTree: function(treeBox)         { this.treeBox = treeBox; },
-  getCellText: function(idx, column) { return gTreeData[idx].label; },
-  isContainer: function(idx)         { return "open" in gTreeData[idx]; },
-  getCellValue: function(idx, column){ return gTreeData[idx].checked; },
-  isContainerOpen: function(idx)     { return gTreeData[idx].open; },
-  isContainerEmpty: function(idx)    { return false; },
-  isSeparator: function(idx)         { return false; },
-  isSorted: function()               { return false; },
-  isEditable: function(idx, column)  { return false; },
-  canDrop: function(idx, orientation, dt) { return false; },
-  getLevel: function(idx)            { return this.isContainer(idx) ? 0 : 1; },
+  get rowCount() { return gTreeData.length; },
+  setTree(treeBox) { this.treeBox = treeBox; },
+  getCellText(idx, column) { return gTreeData[idx].label; },
+  isContainer(idx) { return "open" in gTreeData[idx]; },
+  getCellValue(idx, column) { return gTreeData[idx].checked; },
+  isContainerOpen(idx) { return gTreeData[idx].open; },
+  isContainerEmpty(idx) { return false; },
+  isSeparator(idx) { return false; },
+  isSorted() { return false; },
+  isEditable(idx, column) { return false; },
+  canDrop(idx, orientation, dt) { return false; },
+  getLevel(idx) { return this.isContainer(idx) ? 0 : 1; },
 
-  getParentIndex: function(idx) {
+  getParentIndex(idx) {
     if (!this.isContainer(idx))
       for (var t = idx - 1; t >= 0 ; t--)
         if (this.isContainer(t))
@@ -298,7 +311,7 @@ var treeView = {
     return -1;
   },
 
-  hasNextSibling: function(idx, after) {
+  hasNextSibling(idx, after) {
     var thisLevel = this.getLevel(idx);
     for (var t = after + 1; t < gTreeData.length; t++)
       if (this.getLevel(t) <= thisLevel)
@@ -306,7 +319,7 @@ var treeView = {
     return false;
   },
 
-  toggleOpenState: function(idx) {
+  toggleOpenState(idx) {
     if (!this.isContainer(idx))
       return;
     var item = gTreeData[idx];
@@ -317,8 +330,7 @@ var treeView = {
       var deletecount = t - idx - 1;
       gTreeData.splice(idx + 1, deletecount);
       this.treeBox.rowCountChanged(idx + 1, -deletecount);
-    }
-    else {
+    } else {
       // add this window's tab rows to the view
       var toinsert = gTreeData[idx].tabs;
       for (var i = 0; i < toinsert.length; i++)
@@ -329,7 +341,7 @@ var treeView = {
     this.treeBox.invalidateRow(idx);
   },
 
-  getCellProperties: function(idx, column) {
+  getCellProperties(idx, column) {
     if (column.id == "restore" && this.isContainer(idx) && gTreeData[idx].checked === 0)
       return "partial";
     if (column.id == "title")
@@ -338,7 +350,7 @@ var treeView = {
     return "";
   },
 
-  getRowProperties: function(idx) {
+  getRowProperties(idx) {
     var winState = gTreeData[idx].parent || gTreeData[idx];
     if (winState.ix % 2 != 0)
       return "alternate";
@@ -346,17 +358,16 @@ var treeView = {
     return "";
   },
 
-  getImageSrc: function(idx, column) {
+  getImageSrc(idx, column) {
     if (column.id == "title")
       return gTreeData[idx].src || null;
     return null;
   },
 
-  getProgressMode : function(idx, column) { },
-  cycleHeader: function(column) { },
-  cycleCell: function(idx, column) { },
-  selectionChanged: function() { },
-  performAction: function(action) { },
-  performActionOnCell: function(action, index, column) { },
-  getColumnProperties: function(column) { return ""; }
+  cycleHeader(column) { },
+  cycleCell(idx, column) { },
+  selectionChanged() { },
+  performAction(action) { },
+  performActionOnCell(action, index, column) { },
+  getColumnProperties(column) { return ""; },
 };

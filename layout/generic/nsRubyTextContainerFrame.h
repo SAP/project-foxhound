@@ -1,8 +1,8 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
-/* This Source Code is subject to the terms of the Mozilla Public License
- * version 2.0 (the "License"). You can obtain a copy of the License at
- * http://mozilla.org/MPL/2.0/. */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* rendering object for CSS "display: ruby-text-container" */
 
@@ -16,20 +16,16 @@
  * @return a newly allocated nsRubyTextContainerFrame (infallible)
  */
 nsContainerFrame* NS_NewRubyTextContainerFrame(nsIPresShell* aPresShell,
-                                               nsStyleContext* aContext);
+                                               mozilla::ComputedStyle* aStyle);
 
-class nsRubyTextContainerFrame final : public nsContainerFrame
-{
-public:
-  NS_DECL_FRAMEARENA_HELPERS
-  NS_DECL_QUERYFRAME_TARGET(nsRubyTextContainerFrame)
+class nsRubyTextContainerFrame final : public nsContainerFrame {
+ public:
+  NS_DECL_FRAMEARENA_HELPERS(nsRubyTextContainerFrame)
   NS_DECL_QUERYFRAME
 
   // nsIFrame overrides
-  virtual nsIAtom* GetType() const override;
   virtual bool IsFrameOfType(uint32_t aFlags) const override;
-  virtual void Reflow(nsPresContext* aPresContext,
-                      ReflowOutput& aDesiredSize,
+  virtual void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
                       const ReflowInput& aReflowInput,
                       nsReflowStatus& aStatus) override;
 
@@ -44,21 +40,18 @@ public:
                             nsFrameList& aFrameList) override;
   virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
                             nsFrameList& aFrameList) override;
-  virtual void RemoveFrame(ChildListID aListID,
-                           nsIFrame* aOldFrame) override;
+  virtual void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
 
-  bool IsSpanContainer() const
-  {
+  bool IsSpanContainer() const {
     return GetStateBits() & NS_RUBY_TEXT_CONTAINER_IS_SPAN;
   }
 
-protected:
-  friend nsContainerFrame*
-    NS_NewRubyTextContainerFrame(nsIPresShell* aPresShell,
-                                 nsStyleContext* aContext);
-  explicit nsRubyTextContainerFrame(nsStyleContext* aContext)
-    : nsContainerFrame(aContext)
-    , mISize(0) {}
+ protected:
+  friend nsContainerFrame* NS_NewRubyTextContainerFrame(
+      nsIPresShell* aPresShell, ComputedStyle* aStyle);
+
+  explicit nsRubyTextContainerFrame(ComputedStyle* aStyle)
+      : nsContainerFrame(aStyle, kClassID), mISize(0) {}
 
   void UpdateSpanFlag();
 

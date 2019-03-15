@@ -16,21 +16,19 @@ var gInstall;
 
 const EXTENSION_NAME = "Wunderbar";
 
-function test() {
+async function test() {
   waitForExplicitFinish();
 
   gProvider = new MockProvider();
 
-  open_manager("addons://list/extension", function(aWindow) {
-    gManagerWindow = aWindow;
-    run_next_test();
-  });
+  let aWindow = await open_manager("addons://list/extension");
+  gManagerWindow = aWindow;
+  run_next_test();
 }
 
-function end_test() {
-  close_manager(gManagerWindow, function() {
-    finish();
-  });
+async function end_test() {
+  await close_manager(gManagerWindow);
+  finish();
 }
 
 // Create a MockInstall with a MockAddon payload and add it to the provider,
@@ -40,7 +38,7 @@ add_test(function() {
   let addon = new MockAddon(undefined, EXTENSION_NAME, "extension", true);
   gInstall = new MockInstall(undefined, undefined, addon);
   gInstall.addTestListener({
-    onNewInstall: run_next_test
+    onNewInstall: run_next_test,
   });
   gProvider.addInstall(gInstall);
 });
@@ -64,7 +62,7 @@ add_test(function() {
       }
       ok(false, "Item with correct name was not found");
       run_next_test();
-    }
+    },
   });
   gInstall.install();
 });

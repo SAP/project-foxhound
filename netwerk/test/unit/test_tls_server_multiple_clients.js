@@ -8,10 +8,9 @@ do_get_profile();
 // Ensure PSM is initialized
 Cc["@mozilla.org/psm;1"].getService(Ci.nsISupports);
 
-const { Services } = Cu.import("resource://gre/modules/Services.jsm", {});
-const { NetUtil } = Cu.import("resource://gre/modules/NetUtil.jsm", {});
-const { Promise: promise } =
-  Cu.import("resource://gre/modules/Promise.jsm", {});
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm", {});
+const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm", {});
+const { PromiseUtils } = ChromeUtils.import("resource://gre/modules/PromiseUtils.jsm", {});
 const certService = Cc["@mozilla.org/security/local-cert-service;1"]
                     .getService(Ci.nsILocalCertService);
 const certOverrideService = Cc["@mozilla.org/security/certoverride;1"]
@@ -25,17 +24,17 @@ function run_test() {
 }
 
 function getCert() {
-  let deferred = promise.defer();
-  certService.getOrCreateCert("tls-test", {
-    handleCert: function(c, rv) {
-      if (rv) {
-        deferred.reject(rv);
-        return;
+  return new Promise((resolve, reject) => {
+    certService.getOrCreateCert("tls-test", {
+      handleCert: function(c, rv) {
+        if (rv) {
+          reject(rv);
+          return;
+        }
+        resolve(c);
       }
-      deferred.resolve(c);
-    }
+    });
   });
-  return deferred.promise;
 }
 
 function startServer(cert) {
@@ -48,7 +47,7 @@ function startServer(cert) {
 
   let listener = {
     onSocketAccepted: function(socket, transport) {
-      do_print("Accept TLS client connection");
+      info("Accept TLS client connection");
       let connectionInfo = transport.securityInfo
                            .QueryInterface(Ci.nsITLSServerConnectionInfo);
       connectionInfo.setSecurityObserver(listener);
@@ -56,7 +55,7 @@ function startServer(cert) {
       output = transport.openOutputStream(0, 0, 0);
     },
     onHandshakeDone: function(socket, status) {
-      do_print("TLS handshake done");
+      info("TLS handshake done");
 
       input.asyncWait({
         onInputStreamReady: function(input) {
@@ -67,7 +66,6 @@ function startServer(cert) {
     onStopListening: function() {}
   };
 
-  tlsServer.setSessionCache(true);
   tlsServer.setSessionTickets(false);
 
   tlsServer.asyncListen(listener);
@@ -88,8 +86,8 @@ function startClient(port) {
   let input;
   let output;
 
-  let inputDeferred = promise.defer();
-  let outputDeferred = promise.defer();
+  let inputDeferred = PromiseUtils.defer();
+  let outputDeferred = PromiseUtils.defer();
 
   let handler = {
 
@@ -114,7 +112,7 @@ function startClient(port) {
     onOutputStreamReady: function(output) {
       try {
         output.write("HELLO", 5);
-        do_print("Output to server written");
+        info("Output to server written");
         outputDeferred.resolve();
         input = transport.openInputStream(0, 0, 0);
         input.asyncWait(handler, 0, 0, Services.tm.currentThread);
@@ -128,14 +126,14 @@ function startClient(port) {
   transport.setEventSink(handler, Services.tm.currentThread);
   output = transport.openOutputStream(0, 0, 0);
 
-  return promise.all([inputDeferred.promise, outputDeferred.promise]);
+  return Promise.all([inputDeferred.promise, outputDeferred.promise]);
 }
 
-add_task(function*() {
-  let cert = yield getCert();
+add_task(async function() {
+  let cert = await getCert();
   ok(!!cert, "Got self-signed cert");
   let port = startServer(cert);
   storeCertOverride(port, cert);
-  yield startClient(port);
-  yield startClient(port);
+  await startClient(port);
+  await startClient(port);
 });

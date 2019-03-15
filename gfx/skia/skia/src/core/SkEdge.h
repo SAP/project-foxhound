@@ -5,13 +5,15 @@
  * found in the LICENSE file.
  */
 
-
 #ifndef SkEdge_DEFINED
 #define SkEdge_DEFINED
 
-#include "SkRect.h"
 #include "SkFDot6.h"
 #include "SkMath.h"
+#include "SkRect.h"
+#include "SkTo.h"
+
+#include <utility>
 
 // This correctly favors the lower-pixel when y0 is on a 1/2 pixel boundary
 #define SkEdge_Compute_DY(top, y0)  (SkLeftShift(top, 6) + 32 - (y0))
@@ -68,6 +70,7 @@ struct SkQuadraticEdge : public SkEdge {
     SkFixed fQDDx, fQDDy;
     SkFixed fQLastX, fQLastY;
 
+    bool setQuadraticWithoutUpdate(const SkPoint pts[3], int shiftUp);
     int setQuadratic(const SkPoint pts[3], int shiftUp);
     int updateQuadratic();
 };
@@ -79,6 +82,7 @@ struct SkCubicEdge : public SkEdge {
     SkFixed fCDDDx, fCDDDy;
     SkFixed fCLastX, fCLastY;
 
+    bool setCubicWithoutUpdate(const SkPoint pts[4], int shiftUp, bool sortY = true);
     int setCubic(const SkPoint pts[4], int shiftUp);
     int updateCubic();
 };
@@ -104,8 +108,9 @@ int SkEdge::setLine(const SkPoint& p0, const SkPoint& p1, int shift) {
     int winding = 1;
 
     if (y0 > y1) {
-        SkTSwap(x0, x1);
-        SkTSwap(y0, y1);
+        using std::swap;
+        swap(x0, x1);
+        swap(y0, y1);
         winding = -1;
     }
 
@@ -129,6 +134,5 @@ int SkEdge::setLine(const SkPoint& p0, const SkPoint& p1, int shift) {
     fCurveShift = 0;
     return 1;
 }
-
 
 #endif

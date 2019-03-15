@@ -28,68 +28,69 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsThreadUtils.h"
 
-class nsIDocument;
 class nsIURI;
 class nsIChannel;
 class nsIDocShell;
-class nsIAtom;
+class nsAtom;
 class nsIChannel;
 class nsIContent;
 class nsNodeInfoManager;
-class nsScriptLoader;
 class nsIApplicationCache;
 
 namespace mozilla {
 namespace css {
 class Loader;
-} // namespace css
-} // namespace mozilla
+}  // namespace css
+
+namespace dom {
+class Document;
+class ScriptLoader;
+}  // namespace dom
+}  // namespace mozilla
 
 #ifdef DEBUG
 
 extern mozilla::LazyLogModule gContentSinkLogModuleInfo;
 
-#define SINK_TRACE_CALLS              0x1
-#define SINK_TRACE_REFLOW             0x2
-#define SINK_ALWAYS_REFLOW            0x4
+#  define SINK_TRACE_CALLS 0x1
+#  define SINK_TRACE_REFLOW 0x2
+#  define SINK_ALWAYS_REFLOW 0x4
 
-#define SINK_LOG_TEST(_lm, _bit) (int((_lm)->Level()) & (_bit))
+#  define SINK_LOG_TEST(_lm, _bit) (int((_lm)->Level()) & (_bit))
 
-#define SINK_TRACE(_lm, _bit, _args) \
-  PR_BEGIN_MACRO                     \
-    if (SINK_LOG_TEST(_lm, _bit)) {  \
-      PR_LogPrint _args;             \
-    }                                \
-  PR_END_MACRO
+#  define SINK_TRACE(_lm, _bit, _args) \
+    do {                               \
+      if (SINK_LOG_TEST(_lm, _bit)) {  \
+        printf_stderr _args;           \
+      }                                \
+    } while (0)
 
 #else
-#define SINK_TRACE(_lm, _bit, _args)
+#  define SINK_TRACE(_lm, _bit, _args)
 #endif
 
 #undef SINK_NO_INCREMENTAL
 
 //----------------------------------------------------------------------
 
-// 1/2 second fudge factor for window creation
-#define NS_DELAY_FOR_WINDOW_CREATION  500000
-
 class nsContentSink : public nsICSSLoaderObserver,
                       public nsSupportsWeakReference,
                       public nsStubDocumentObserver,
                       public nsITimerCallback,
-                      public nsINamed
-{
+                      public nsINamed {
+ protected:
+  typedef mozilla::dom::Document Document;
+
+ private:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsContentSink,
-                                           nsICSSLoaderObserver)
-    // nsITimerCallback
+  NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsContentSink, nsICSSLoaderObserver)
+  // nsITimerCallback
   NS_DECL_NSITIMERCALLBACK
 
   NS_DECL_NSINAMED
 
   // nsICSSLoaderObserver
-  NS_IMETHOD StyleSheetLoaded(mozilla::StyleSheet* aSheet,
-                              bool aWasAlternate,
+  NS_IMETHOD StyleSheetLoaded(mozilla::StyleSheet* aSheet, bool aWasAlternate,
                               nsresult aStatus) override;
 
   virtual nsresult ProcessMETATag(nsIContent* aContent);
@@ -113,12 +114,12 @@ class nsContentSink : public nsICSSLoaderObserver,
   virtual void UpdateChildCounts() = 0;
 
   bool IsTimeToNotify();
-  bool LinkContextIsOurDocument(const nsSubstring& aAnchor);
+  bool LinkContextIsOurDocument(const nsAString& aAnchor);
   bool Decode5987Format(nsAString& aEncoded);
 
   static void InitializeStatics();
 
-protected:
+ protected:
   nsContentSink();
   virtual ~nsContentSink();
 
@@ -144,31 +145,33 @@ protected:
     CACHE_SELECTION_RESELECT_WITHOUT_MANIFEST = 3
   };
 
-  nsresult Init(nsIDocument* aDoc, nsIURI* aURI,
-                nsISupports* aContainer, nsIChannel* aChannel);
+  nsresult Init(Document* aDoc, nsIURI* aURI, nsISupports* aContainer,
+                nsIChannel* aChannel);
 
   nsresult ProcessHTTPHeaders(nsIChannel* aChannel);
-  nsresult ProcessHeaderData(nsIAtom* aHeader, const nsAString& aValue,
+  nsresult ProcessHeaderData(nsAtom* aHeader, const nsAString& aValue,
                              nsIContent* aContent = nullptr);
   nsresult ProcessLinkHeader(const nsAString& aLinkData);
-  nsresult ProcessLink(const nsSubstring& aAnchor,
-                       const nsSubstring& aHref, const nsSubstring& aRel,
-                       const nsSubstring& aTitle, const nsSubstring& aType,
-                       const nsSubstring& aMedia, const nsSubstring& aCrossOrigin);
+  nsresult ProcessLinkFromHeader(
+      const nsAString& aAnchor, const nsAString& aHref, const nsAString& aRel,
+      const nsAString& aTitle, const nsAString& aType, const nsAString& aMedia,
+      const nsAString& aCrossOrigin, const nsAString& aReferrerPolicy,
+      const nsAString& aAs);
 
-  virtual nsresult ProcessStyleLink(nsIContent* aElement,
-                                    const nsSubstring& aHref,
-                                    bool aAlternate,
-                                    const nsSubstring& aTitle,
-                                    const nsSubstring& aType,
-                                    const nsSubstring& aMedia);
+  virtual nsresult ProcessStyleLinkFromHeader(const nsAString& aHref,
+                                              bool aAlternate,
+                                              const nsAString& aTitle,
+                                              const nsAString& aType,
+                                              const nsAString& aMedia,
+                                              const nsAString& aReferrerPolicy);
 
-  void PrefetchHref(const nsAString &aHref, nsINode *aSource,
-                    bool aExplicit);
+  void PrefetchPreloadHref(const nsAString& aHref, nsINode* aSource,
+                           uint32_t aLinkTypes, const nsAString& aAs,
+                           const nsAString& aType, const nsAString& aMedia);
 
   // For PrefetchDNS() aHref can either be the usual
   // URI format or of the form "//www.hostname.com" without a scheme.
-  void PrefetchDNS(const nsAString &aHref);
+  void PrefetchDNS(const nsAString& aHref);
 
   // Gets the cache key (used to identify items in a cache) of the channel.
   nsresult GetChannelCacheKey(nsIChannel* aChannel, nsACString& aCacheKey);
@@ -189,10 +192,10 @@ protected:
   // @param aAction
   //        Out parameter, returns the action that should be performed
   //        by the calling function.
-  nsresult SelectDocAppCache(nsIApplicationCache *aLoadApplicationCache,
-                             nsIURI *aManifestURI,
+  nsresult SelectDocAppCache(nsIApplicationCache* aLoadApplicationCache,
+                             nsIURI* aManifestURI,
                              bool aFetchedWithHTTPGetOrEquiv,
-                             CacheSelectionAction *aAction);
+                             CacheSelectionAction* aAction);
 
   // There is no offline cache manifest attribute specified.  Process
   // the cache selection algorithm w/o the manifest. Result is an
@@ -209,11 +212,11 @@ protected:
   // @param aAction
   //        Out parameter, returns the action that should be performed
   //        by the calling function.
-  nsresult SelectDocAppCacheNoManifest(nsIApplicationCache *aLoadApplicationCache,
-                                       nsIURI **aManifestURI,
-                                       CacheSelectionAction *aAction);
+  nsresult SelectDocAppCacheNoManifest(
+      nsIApplicationCache* aLoadApplicationCache, nsIURI** aManifestURI,
+      CacheSelectionAction* aAction);
 
-public:
+ public:
   // Searches for the offline cache manifest attribute and calls one
   // of the above defined methods to select the document's application
   // cache, let it be associated with the document and eventually
@@ -222,15 +225,15 @@ public:
   // when there is no manifest attribute!
   void ProcessOfflineManifest(const nsAString& aManifestSpec);
 
-  // Extracts the manifest attribute from the element if it is the root 
+  // Extracts the manifest attribute from the element if it is the root
   // element and calls the above method.
-  void ProcessOfflineManifest(nsIContent *aElement);
+  void ProcessOfflineManifest(nsIContent* aElement);
 
   // For Preconnect() aHref can either be the usual
   // URI format or of the form "//www.hostname.com" without a scheme.
   void Preconnect(const nsAString& aHref, const nsAString& aCrossOrigin);
 
-protected:
+ protected:
   // Tries to scroll to the URI's named anchor. Once we've successfully
   // done that, further calls to this method will be ignored.
   void ScrollToRef();
@@ -238,17 +241,17 @@ protected:
   // Start layout.  If aIgnorePendingSheets is true, this will happen even if
   // we still have stylesheet loads pending.  Otherwise, we'll wait until the
   // stylesheets are all done loading.
-public:
+ public:
   void StartLayout(bool aIgnorePendingSheets);
 
-  static void NotifyDocElementCreated(nsIDocument* aDoc);
+  static void NotifyDocElementCreated(Document* aDoc);
 
-protected:
-  void
-  FavorPerformanceHint(bool perfOverStarvation, uint32_t starvationDelay);
+  Document* GetDocument() { return mDocument; }
 
-  inline int32_t GetNotificationInterval()
-  {
+ protected:
+  void FavorPerformanceHint(bool perfOverStarvation, uint32_t starvationDelay);
+
+  inline int32_t GetNotificationInterval() {
     if (mDynamicLowerValue) {
       return 1000;
     }
@@ -264,19 +267,16 @@ protected:
 
   void DoProcessLinkHeader();
 
-  void StopDeflecting() {
-    mDeflectedCount = sPerfDeflectCount;
-  }
+  void StopDeflecting() { mDeflectedCount = sPerfDeflectCount; }
 
-protected:
-
-  nsCOMPtr<nsIDocument>         mDocument;
-  RefPtr<nsParserBase>        mParser;
-  nsCOMPtr<nsIURI>              mDocumentURI;
-  nsCOMPtr<nsIDocShell>         mDocShell;
+ protected:
+  RefPtr<Document> mDocument;
+  RefPtr<nsParserBase> mParser;
+  nsCOMPtr<nsIURI> mDocumentURI;
+  nsCOMPtr<nsIDocShell> mDocShell;
   RefPtr<mozilla::css::Loader> mCSSLoader;
-  RefPtr<nsNodeInfoManager>   mNodeInfoManager;
-  RefPtr<nsScriptLoader>      mScriptLoader;
+  RefPtr<nsNodeInfoManager> mNodeInfoManager;
+  RefPtr<mozilla::dom::ScriptLoader> mScriptLoader;
 
   // back off timer notification after count
   int32_t mBackoffCount;
@@ -305,7 +305,9 @@ protected:
   // True if this is parser is a fragment parser or an HTML DOMParser.
   // XML DOMParser leaves this to false for now!
   uint8_t mRunsToCompletion : 1;
-  
+  // True if we are blocking load event.
+  bool mIsBlockingOnload : 1;
+
   //
   // -- Can interrupt parsing members --
   //
@@ -334,7 +336,7 @@ protected:
   uint32_t mPendingSheetCount;
 
   nsRevocableEventPtr<nsRunnableMethod<nsContentSink, void, false> >
-    mProcessLinkHeaderEvent;
+      mProcessLinkHeaderEvent;
 
   // Do we notify based on time?
   static bool sNotifyOnTimer;
@@ -362,4 +364,4 @@ protected:
   static int32_t sEnablePerfMode;
 };
 
-#endif // _nsContentSink_h_
+#endif  // _nsContentSink_h_

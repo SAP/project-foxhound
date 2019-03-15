@@ -7,6 +7,9 @@
 const EventEmitter = require("devtools/shared/event-emitter");
 const KeyShortcuts = require("devtools/client/shared/key-shortcuts");
 const {HTMLTooltip} = require("devtools/client/shared/widgets/tooltip/HTMLTooltip");
+const InlineTooltip = require("devtools/client/shared/widgets/tooltip/InlineTooltip");
+
+const INLINE_TOOLTIP_CLASS = "inline-tooltip-container";
 
 /**
  * Base class for all (color, gradient, ...)-swatch based value editors inside
@@ -16,90 +19,125 @@ const {HTMLTooltip} = require("devtools/client/shared/widgets/tooltip/HTMLToolti
  *        The document to attach the SwatchBasedEditorTooltip. This is either the toolbox
  *        document if the tooltip is a popup tooltip or the panel's document if it is an
  *        inline editor.
+ * @param {Boolean} useInline
+ *        A boolean flag representing whether or not the InlineTooltip should be used.
  */
-function SwatchBasedEditorTooltip(document, stylesheet) {
-  EventEmitter.decorate(this);
-  // Creating a tooltip instance
-  // This one will consume outside clicks as it makes more sense to let the user
-  // close the tooltip by clicking out
-  // It will also close on <escape> and <enter>
-  this.tooltip = new HTMLTooltip(document, {
-    type: "arrow",
-    consumeOutsideClicks: true,
-    useXulWrapper: true,
-    stylesheet
-  });
 
-  // By default, swatch-based editor tooltips revert value change on <esc> and
-  // commit value change on <enter>
-  this.shortcuts = new KeyShortcuts({
-    window: this.tooltip.topWindow
-  });
-  this.shortcuts.on("Escape", (name, event) => {
-    if (!this.tooltip.isVisible()) {
-      return;
+class SwatchBasedEditorTooltip {
+  constructor(document, useInline) {
+    EventEmitter.decorate(this);
+
+    this.useInline = useInline;
+
+    // Creating a tooltip instance
+    if (useInline) {
+      this.tooltip = new InlineTooltip(document);
+    } else {
+      // This one will consume outside clicks as it makes more sense to let the user
+      // close the tooltip by clicking out
+      // It will also close on <escape> and <enter>
+      this.tooltip = new HTMLTooltip(document, {
+        type: "arrow",
+        consumeOutsideClicks: true,
+        useXulWrapper: true,
+      });
     }
-    this.revert();
-    this.hide();
-    event.stopPropagation();
-    event.preventDefault();
-  });
-  this.shortcuts.on("Return", (name, event) => {
-    if (!this.tooltip.isVisible()) {
-      return;
-    }
-    this.commit();
-    this.hide();
-    event.stopPropagation();
-    event.preventDefault();
-  });
 
-  // All target swatches are kept in a map, indexed by swatch DOM elements
-  this.swatches = new Map();
+    // By default, swatch-based editor tooltips revert value change on <esc> and
+    // commit value change on <enter>
+    this.shortcuts = new KeyShortcuts({
+      window: this.tooltip.topWindow,
+    });
+    this.shortcuts.on("Escape", event => {
+      if (!this.tooltip.isVisible()) {
+        return;
+      }
+      this.revert();
+      this.hide();
+      event.stopPropagation();
+      event.preventDefault();
+    });
+    this.shortcuts.on("Return", event => {
+      if (!this.tooltip.isVisible()) {
+        return;
+      }
+      this.commit();
+      this.hide();
+      event.stopPropagation();
+      event.preventDefault();
+    });
 
-  // When a swatch is clicked, and for as long as the tooltip is shown, the
-  // activeSwatch property will hold the reference to the swatch DOM element
-  // that was clicked
-  this.activeSwatch = null;
+    // All target swatches are kept in a map, indexed by swatch DOM elements
+    this.swatches = new Map();
 
-  this._onSwatchClick = this._onSwatchClick.bind(this);
-}
+    // When a swatch is clicked, and for as long as the tooltip is shown, the
+    // activeSwatch property will hold the reference to the swatch DOM element
+    // that was clicked
+    this.activeSwatch = null;
 
-SwatchBasedEditorTooltip.prototype = {
+    this._onSwatchClick = this._onSwatchClick.bind(this);
+  }
+
+ /**
+   * Reports if the tooltip is currently shown
+   *
+   * @return {Boolean} True if the tooltip is displayed.
+   */
+  isVisible() {
+    return this.tooltip.isVisible();
+  }
+
+  /**
+   * Reports if the tooltip is currently editing the targeted value
+   *
+   * @return {Boolean} True if the tooltip is editing.
+   */
+  isEditing() {
+    return this.isVisible();
+  }
+
   /**
    * Show the editor tooltip for the currently active swatch.
    *
    * @return {Promise} a promise that resolves once the editor tooltip is displayed, or
    *         immediately if there is no currently active swatch.
    */
-  show: function () {
-    if (this.activeSwatch) {
-      let onShown = this.tooltip.once("shown");
-      this.tooltip.show(this.activeSwatch, "topcenter bottomleft");
+  show() {
+    const tooltipAnchor = this.useInline ?
+      this.activeSwatch.closest(`.${INLINE_TOOLTIP_CLASS}`) :
+      this.activeSwatch;
 
-      // When the tooltip is closed by clicking outside the panel we want to
-      // commit any changes.
-      this.tooltip.once("hidden", () => {
-        if (!this._reverted && !this.eyedropperOpen) {
-          this.commit();
-        }
-        this._reverted = false;
+    if (tooltipAnchor) {
+      const onShown = this.tooltip.once("shown");
 
-        // Once the tooltip is hidden we need to clean up any remaining objects.
-        if (!this.eyedropperOpen) {
-          this.activeSwatch = null;
-        }
-      });
+      this.tooltip.show(tooltipAnchor);
+      this.tooltip.once("hidden", () => this.onTooltipHidden());
 
       return onShown;
     }
 
     return Promise.resolve();
-  },
+  }
 
-  hide: function () {
+  /**
+   * Can be overridden by subclasses if implementation specific behavior is needed on
+   * tooltip hidden.
+   */
+  onTooltipHidden() {
+    // When the tooltip is closed by clicking outside the panel we want to commit any
+    // changes.
+    if (!this._reverted) {
+      this.commit();
+    }
+    this._reverted = false;
+
+    // Once the tooltip is hidden we need to clean up any remaining objects.
+    this.activeSwatch = null;
+  }
+
+  hide() {
     this.tooltip.hide();
-  },
+  }
 
   /**
    * Add a new swatch DOM element to the list of swatch elements this editor
@@ -118,27 +156,27 @@ SwatchBasedEditorTooltip.prototype = {
    *        - onCommit: will be called when the user presses ENTER or clicks
    *        outside the tooltip.
    */
-  addSwatch: function (swatchEl, callbacks = {}) {
+  addSwatch(swatchEl, callbacks = {}) {
     if (!callbacks.onShow) {
-      callbacks.onShow = function () {};
+      callbacks.onShow = function() {};
     }
     if (!callbacks.onPreview) {
-      callbacks.onPreview = function () {};
+      callbacks.onPreview = function() {};
     }
     if (!callbacks.onRevert) {
-      callbacks.onRevert = function () {};
+      callbacks.onRevert = function() {};
     }
     if (!callbacks.onCommit) {
-      callbacks.onCommit = function () {};
+      callbacks.onCommit = function() {};
     }
 
     this.swatches.set(swatchEl, {
-      callbacks: callbacks
+      callbacks: callbacks,
     });
     swatchEl.addEventListener("click", this._onSwatchClick);
-  },
+  }
 
-  removeSwatch: function (swatchEl) {
+  removeSwatch(swatchEl) {
     if (this.swatches.has(swatchEl)) {
       if (this.activeSwatch === swatchEl) {
         this.hide();
@@ -147,10 +185,10 @@ SwatchBasedEditorTooltip.prototype = {
       swatchEl.removeEventListener("click", this._onSwatchClick);
       this.swatches.delete(swatchEl);
     }
-  },
+  }
 
-  _onSwatchClick: function (event) {
-    let swatch = this.swatches.get(event.target);
+  _onSwatchClick(event) {
+    const swatch = this.swatches.get(event.target);
 
     if (event.shiftKey) {
       event.stopPropagation();
@@ -162,48 +200,48 @@ SwatchBasedEditorTooltip.prototype = {
       swatch.callbacks.onShow();
       event.stopPropagation();
     }
-  },
+  }
 
   /**
    * Not called by this parent class, needs to be taken care of by sub-classes
    */
-  preview: function (value) {
+  preview(value) {
     if (this.activeSwatch) {
-      let swatch = this.swatches.get(this.activeSwatch);
+      const swatch = this.swatches.get(this.activeSwatch);
       swatch.callbacks.onPreview(value);
     }
-  },
+  }
 
   /**
-   * This parent class only calls this on <esc> keypress
+   * This parent class only calls this on <esc> keydown
    */
-  revert: function () {
+  revert() {
     if (this.activeSwatch) {
       this._reverted = true;
-      let swatch = this.swatches.get(this.activeSwatch);
+      const swatch = this.swatches.get(this.activeSwatch);
       this.tooltip.once("hidden", () => {
         swatch.callbacks.onRevert();
       });
     }
-  },
+  }
 
   /**
-   * This parent class only calls this on <enter> keypress
+   * This parent class only calls this on <enter> keydown
    */
-  commit: function () {
+  commit() {
     if (this.activeSwatch) {
-      let swatch = this.swatches.get(this.activeSwatch);
+      const swatch = this.swatches.get(this.activeSwatch);
       swatch.callbacks.onCommit();
     }
-  },
+  }
 
-  destroy: function () {
+  destroy() {
     this.swatches.clear();
     this.activeSwatch = null;
-    this.tooltip.off("keypress", this._onTooltipKeypress);
+    this.tooltip.off("keydown", this._onTooltipKeydown);
     this.tooltip.destroy();
     this.shortcuts.destroy();
   }
-};
+}
 
 module.exports = SwatchBasedEditorTooltip;

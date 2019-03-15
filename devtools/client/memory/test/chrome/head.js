@@ -3,20 +3,17 @@
 
 "use strict";
 
-var { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
-
-var { BrowserLoader } = Cu.import("resource://devtools/client/shared/browser-loader.js", {});
+var { BrowserLoader } = ChromeUtils.import("resource://devtools/client/shared/browser-loader.js", {});
 var { require } = BrowserLoader({
   baseURI: "resource://devtools/client/memory/",
-  window
+  window,
 });
 var { Assert } = require("resource://testing-common/Assert.jsm");
 var Services = require("Services");
-var { Task } = require("devtools/shared/task");
 
 var EXPECTED_DTU_ASSERT_FAILURE_COUNT = 0;
 
-SimpleTest.registerCleanupFunction(function () {
+SimpleTest.registerCleanupFunction(function() {
   if (DevToolsUtils.assertionFailureCount !== EXPECTED_DTU_ASSERT_FAILURE_COUNT) {
     ok(false, "Should have had the expected number of DevToolsUtils.assert() failures." +
       "Expected " + EXPECTED_DTU_ASSERT_FAILURE_COUNT +
@@ -26,8 +23,6 @@ SimpleTest.registerCleanupFunction(function () {
 
 var DevToolsUtils = require("devtools/shared/DevToolsUtils");
 var { immutableUpdate } = DevToolsUtils;
-var flags = require("devtools/shared/flags");
-flags.testing = true;
 
 var constants = require("devtools/client/memory/constants");
 var {
@@ -37,7 +32,7 @@ var {
   dominatorTreeState,
   snapshotState,
   viewState,
-  censusState
+  censusState,
 } = constants;
 
 const {
@@ -48,16 +43,18 @@ var models = require("devtools/client/memory/models");
 
 var Immutable = require("devtools/client/shared/vendor/immutable");
 var React = require("devtools/client/shared/vendor/react");
+const dom = require("devtools/client/shared/vendor/react-dom-factories");
 var ReactDOM = require("devtools/client/shared/vendor/react-dom");
-var Heap = React.createFactory(require("devtools/client/memory/components/heap"));
-var CensusTreeItem = React.createFactory(require("devtools/client/memory/components/census-tree-item"));
-var DominatorTreeComponent = React.createFactory(require("devtools/client/memory/components/dominator-tree"));
-var DominatorTreeItem = React.createFactory(require("devtools/client/memory/components/dominator-tree-item"));
-var ShortestPaths = React.createFactory(require("devtools/client/memory/components/shortest-paths"));
-var TreeMap = React.createFactory(require("devtools/client/memory/components/tree-map"));
-var SnapshotListItem = React.createFactory(require("devtools/client/memory/components/snapshot-list-item"));
-var List = React.createFactory(require("devtools/client/memory/components/list"));
-var Toolbar = React.createFactory(require("devtools/client/memory/components/toolbar"));
+var { createFactory } = React;
+var Heap = createFactory(require("devtools/client/memory/components/Heap"));
+var CensusTreeItem = createFactory(require("devtools/client/memory/components/CensusTreeItem"));
+var DominatorTreeComponent = createFactory(require("devtools/client/memory/components/DominatorTree"));
+var DominatorTreeItem = createFactory(require("devtools/client/memory/components/DominatorTreeItem"));
+var ShortestPaths = createFactory(require("devtools/client/memory/components/ShortestPaths"));
+var TreeMap = createFactory(require("devtools/client/memory/components/TreeMap"));
+var SnapshotListItem = createFactory(require("devtools/client/memory/components/SnapshotListItem"));
+var List = createFactory(require("devtools/client/memory/components/List"));
+var Toolbar = createFactory(require("devtools/client/memory/components/Toolbar"));
 
 // All tests are asynchronous.
 SimpleTest.waitForExplicitFinish();
@@ -78,8 +75,8 @@ var TEST_CENSUS_TREE_ITEM_PROPS = Object.freeze({
         totalBytes: 10,
         totalCount: 1,
         name: "bar",
-      })
-    ]
+      }),
+    ],
   }),
   depth: 0,
   arrow: ">",
@@ -197,7 +194,7 @@ var TEST_SNAPSHOT = Object.freeze({
     filter: null,
     expanded: new Set(),
     focused: null,
-    parentMap: Object.freeze(Object.create(null))
+    parentMap: Object.freeze(Object.create(null)),
   }),
   dominatorTree: TEST_DOMINATOR_TREE,
   error: null,
@@ -217,7 +214,7 @@ var TEST_HEAP_PROPS = Object.freeze({
   onDominatorTreeFocus: noop,
   onViewSourceInDebugger: noop,
   diffing: null,
-  view: { state: viewState.CENSUS, },
+  view: { state: viewState.CENSUS },
   snapshot: TEST_SNAPSHOT,
   sizes: Object.freeze({ shortestPathsSize: .5 }),
   onShortestPathsResize: noop,
@@ -241,7 +238,7 @@ var TEST_TOOLBAR_PROPS = Object.freeze({
   setFilterString: noop,
   diffing: null,
   onToggleDiffing: noop,
-  view: { state: viewState.CENSUS, },
+  view: { state: viewState.CENSUS },
   onViewChange: noop,
   labelDisplays: [
     labelDisplays.coarseType,
@@ -259,7 +256,7 @@ function makeTestCensusNode() {
     totalBytes: 100,
     count: 100,
     totalCount: 100,
-    children: []
+    children: [],
   };
 }
 
@@ -278,7 +275,7 @@ var TEST_TREE_MAP_PROPS = Object.freeze({
           totalBytes: 200,
           count: 0,
           totalCount: 200,
-          children: [ makeTestCensusNode(), makeTestCensusNode() ]
+          children: [ makeTestCensusNode(), makeTestCensusNode() ],
         },
         {
           name: "other",
@@ -287,10 +284,10 @@ var TEST_TREE_MAP_PROPS = Object.freeze({
           count: 0,
           totalCount: 200,
           children: [ makeTestCensusNode(), makeTestCensusNode() ],
-        }
-      ]
-    }
-  })
+        },
+      ],
+    },
+  }),
 });
 
 var TEST_SNAPSHOT_LIST_ITEM_PROPS = Object.freeze({
@@ -314,7 +311,7 @@ function onNextAnimationFrame(fn) {
  */
 function renderComponent(element, container) {
   return new Promise(resolve => {
-    let component = ReactDOM.render(element, container,
+    const component = ReactDOM.render(element, container,
       onNextAnimationFrame(() => {
         dumpn("Rendered = " + container.innerHTML);
         resolve(component);

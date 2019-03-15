@@ -1,13 +1,9 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-use cssparser::Parser;
-use media_queries::CSSErrorReporterTest;
 use parsing::parse;
-use style::parser::ParserContext;
 use style::properties::longhands::transition_timing_function;
-use style::stylesheets::Origin;
 use style_traits::ToCss;
 
 #[test]
@@ -29,9 +25,13 @@ fn test_cubic_bezier() {
 #[test]
 fn test_steps() {
     assert_roundtrip_with_context!(transition_timing_function::parse, "steps(1)");
+    assert_roundtrip_with_context!(transition_timing_function::parse, "steps(  1)", "steps(1)");
+    assert_roundtrip_with_context!(transition_timing_function::parse, "steps(1, start)");
+    assert_roundtrip_with_context!(transition_timing_function::parse, "steps(2, end) ", "steps(2)");
 
     // Step interval value must be an integer greater than 0
     assert!(parse(transition_timing_function::parse, "steps(0)").is_err());
     assert!(parse(transition_timing_function::parse, "steps(0.5)").is_err());
     assert!(parse(transition_timing_function::parse, "steps(-1)").is_err());
+    assert!(parse(transition_timing_function::parse, "steps(1, middle)").is_err());
 }

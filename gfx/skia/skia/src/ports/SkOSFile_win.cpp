@@ -6,13 +6,17 @@
  */
 
 #include "SkTypes.h"
-#if defined(SK_BUILD_FOR_WIN32)
+#if defined(SK_BUILD_FOR_WIN)
 
 #include "SkLeanWindows.h"
+#include "SkMalloc.h"
+#include "SkNoncopyable.h"
 #include "SkOSFile.h"
+#include "SkStringUtils.h"
 #include "SkTFitsIn.h"
 
 #include <io.h>
+#include <new>
 #include <stdio.h>
 #include <sys/stat.h>
 
@@ -124,6 +128,34 @@ void* sk_fmmap(FILE* f, size_t* length) {
     return sk_fdmmap(fileno, length);
 }
 
+size_t sk_qread(FILE* file, void* buffer, size_t count, size_t offset) {
+    int fileno = sk_fileno(file);
+    HANDLE fileHandle = (HANDLE)_get_osfhandle(fileno);
+    if (INVALID_HANDLE_VALUE == file) {
+        return SIZE_MAX;
+    }
+
+    OVERLAPPED overlapped;
+    memset(&overlapped, 0, sizeof(overlapped));
+    ULARGE_INTEGER winOffset;
+    winOffset.QuadPart = offset;
+    overlapped.Offset = winOffset.LowPart;
+    overlapped.OffsetHigh = winOffset.HighPart;
+
+    if (!SkTFitsIn<DWORD>(count)) {
+        count = std::numeric_limits<DWORD>::max();
+    }
+
+    DWORD bytesRead;
+    if (ReadFile(fileHandle, buffer, static_cast<DWORD>(count), &bytesRead, &overlapped)) {
+        return bytesRead;
+    }
+    if (GetLastError() == ERROR_HANDLE_EOF) {
+        return 0;
+    }
+    return SIZE_MAX;
+}
+
 ////////////////////////////////////////////////////////////////////////////
 
 struct SkOSFileIterData {
@@ -221,7 +253,10 @@ static bool get_the_file(HANDLE handle, SkString* name, WIN32_FIND_DATAW* dataPt
     }
     // if we get here, we've found a file/dir
     if (name) {
-        name->setUTF16((uint16_t*)dataPtr->cFileName);
+        const uint16_t* utf16name = (const uint16_t*)dataPtr->cFileName;
+        const uint16_t* ptr = utf16name;
+        while (*ptr != 0) { ++ptr; }
+        *name = SkStringFromUTF16(utf16name, ptr - utf16name);
     }
     return true;
 }
@@ -244,4 +279,4 @@ bool SkOSFile::Iter::next(SkString* name, bool getDir) {
     return self.fHandle != (HANDLE)~0 && get_the_file(self.fHandle, name, dataPtr, getDir);
 }
 
-#endif//defined(SK_BUILD_FOR_WIN32)
+#endif//defined(SK_BUILD_FOR_WIN)

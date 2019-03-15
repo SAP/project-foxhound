@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,18 +10,18 @@
 class nsMenuFrame;
 
 /*
- * nsMenuParent is an interface implemented by nsMenuBarFrame and nsMenuPopupFrame
- * as both serve as parent frames to nsMenuFrame.
+ * nsMenuParent is an interface implemented by nsMenuBarFrame and
+ * nsMenuPopupFrame as both serve as parent frames to nsMenuFrame.
  *
- * Don't implement this interface on other classes unless you also fix up references,
- * as this interface is directly cast to and from nsMenuBarFrame and nsMenuPopupFrame.
+ * Don't implement this interface on other classes unless you also fix up
+ * references, as this interface is directly cast to and from nsMenuBarFrame and
+ * nsMenuPopupFrame.
  */
 
 class nsMenuParent {
-
-public:
+ public:
   // returns the menu frame of the currently active item within the menu
-  virtual nsMenuFrame *GetCurrentMenuItem() = 0;
+  virtual nsMenuFrame* GetCurrentMenuItem() = 0;
   // sets the currently active menu frame.
   NS_IMETHOD SetCurrentMenuItem(nsMenuFrame* aMenuItem) = 0;
   // indicate that the current menu frame is being destroyed, so clear the
@@ -32,13 +33,13 @@ public:
   // select the first item in it. For menupopups, the menu is not opened and
   // the aSelectFirstItem argument is not used. The aFromKey argument indicates
   // that the keyboard was used to navigate to the new menu item.
-  NS_IMETHOD ChangeMenuItem(nsMenuFrame* aMenuItem,
-                            bool aSelectFirstItem,
+  NS_IMETHOD ChangeMenuItem(nsMenuFrame* aMenuItem, bool aSelectFirstItem,
                             bool aFromKey) = 0;
 
   // returns true if the menupopup is open. For menubars, returns false.
   virtual bool IsOpen() = 0;
-  // returns true if the menubar is currently active. For menupopups, returns false.
+  // returns true if the menubar is currently active. For menupopups, returns
+  // false.
   virtual bool IsActive() = 0;
   // returns true if this is a menubar. If false, it is a popup
   virtual bool IsMenuBar() = 0;
@@ -66,4 +67,3 @@ public:
 };
 
 #endif
-

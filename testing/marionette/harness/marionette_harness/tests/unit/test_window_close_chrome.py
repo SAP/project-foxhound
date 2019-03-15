@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 from marionette_harness import MarionetteTestCase, WindowManagerMixin
 
 
@@ -19,31 +21,25 @@ class TestCloseWindow(WindowManagerMixin, MarionetteTestCase):
         super(TestCloseWindow, self).tearDown()
 
     def test_close_chrome_window_for_browser_window(self):
-        win = self.open_window()
-        self.marionette.switch_to_window(win)
+        new_window = self.open_window()
+        self.marionette.switch_to_window(new_window)
 
-        self.assertNotIn(win, self.marionette.window_handles)
+        self.assertNotIn(new_window, self.marionette.window_handles)
         chrome_window_handles = self.marionette.close_chrome_window()
-        self.assertNotIn(win, chrome_window_handles)
+        self.assertNotIn(new_window, chrome_window_handles)
         self.assertListEqual(self.start_windows, chrome_window_handles)
-        self.assertNotIn(win, self.marionette.window_handles)
+        self.assertNotIn(new_window, self.marionette.window_handles)
 
     def test_close_chrome_window_for_non_browser_window(self):
-
-        def open_window_with_js():
-            self.marionette.execute_script("""
-              window.open('chrome://marionette/content/test.xul',
-                          'foo', 'chrome,centerscreen');
-            """)
-
-        win = self.open_window(trigger=open_window_with_js)
+        win = self.open_chrome_window("chrome://marionette/content/test.xul")
         self.marionette.switch_to_window(win)
 
-        self.assertIn(win, self.marionette.window_handles)
+        self.assertIn(win, self.marionette.chrome_window_handles)
+        self.assertNotIn(win, self.marionette.window_handles)
         chrome_window_handles = self.marionette.close_chrome_window()
         self.assertNotIn(win, chrome_window_handles)
         self.assertListEqual(self.start_windows, chrome_window_handles)
-        self.assertNotIn(win, self.marionette.window_handles)
+        self.assertNotIn(win, self.marionette.chrome_window_handles)
 
     def test_close_chrome_window_for_last_open_window(self):
         self.close_all_windows()
@@ -54,20 +50,20 @@ class TestCloseWindow(WindowManagerMixin, MarionetteTestCase):
         self.assertIsNotNone(self.marionette.session)
 
     def test_close_window_for_browser_tab(self):
-        tab = self.open_tab()
-        self.marionette.switch_to_window(tab)
+        new_tab = self.open_tab()
+        self.marionette.switch_to_window(new_tab)
 
         window_handles = self.marionette.close()
-        self.assertNotIn(tab, window_handles)
+        self.assertNotIn(new_tab, window_handles)
         self.assertListEqual(self.start_tabs, window_handles)
 
     def test_close_window_for_browser_window_with_single_tab(self):
-        win = self.open_window()
-        self.marionette.switch_to_window(win)
+        new_window = self.open_window()
+        self.marionette.switch_to_window(new_window)
 
         self.assertEqual(len(self.start_tabs) + 1, len(self.marionette.window_handles))
         window_handles = self.marionette.close()
-        self.assertNotIn(win, window_handles)
+        self.assertNotIn(new_window, window_handles)
         self.assertListEqual(self.start_tabs, window_handles)
         self.assertListEqual(self.start_windows, self.marionette.chrome_window_handles)
 

@@ -6,7 +6,6 @@
 "use strict";
 
 const { Cc, Ci, Cu, Cr } = require("chrome");
-const promise = require("promise");
 const EventEmitter = require("devtools/shared/event-emitter");
 const { CanvasFront } = require("devtools/shared/fronts/canvas");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
@@ -28,31 +27,16 @@ CanvasDebuggerPanel.prototype = {
    * @return object
    *         A promise that is resolved when the Canvas Debugger completes opening.
    */
-  open: function () {
-    let targetPromise;
+  open: async function() {
+    this.panelWin.gToolbox = this._toolbox;
+    this.panelWin.gTarget = this.target;
+    this.panelWin.gFront = await this.target.getFront("canvas");
 
-    // Local debugging needs to make the target remote.
-    if (!this.target.isRemote) {
-      targetPromise = this.target.makeRemote();
-    } else {
-      targetPromise = promise.resolve(this.target);
-    }
+    await this.panelWin.startupCanvasDebugger();
 
-    return targetPromise
-      .then(() => {
-        this.panelWin.gToolbox = this._toolbox;
-        this.panelWin.gTarget = this.target;
-        this.panelWin.gFront = new CanvasFront(this.target.client, this.target.form);
-        return this.panelWin.startupCanvasDebugger();
-      })
-      .then(() => {
-        this.isReady = true;
-        this.emit("ready");
-        return this;
-      })
-      .then(null, function onError(aReason) {
-        DevToolsUtils.reportException("CanvasDebuggerPanel.prototype.open", aReason);
-      });
+    this.isReady = true;
+    this.emit("ready");
+    return this;
   },
 
   // DevToolPanel API
@@ -61,7 +45,7 @@ CanvasDebuggerPanel.prototype = {
     return this._toolbox.target;
   },
 
-  destroy: function () {
+  destroy: function() {
     // Make sure this panel is not already destroyed.
     if (this._destroyer) {
       return this._destroyer;
@@ -72,5 +56,5 @@ CanvasDebuggerPanel.prototype = {
       this.panelWin.gFront.destroy();
       this.emit("destroyed");
     });
-  }
+  },
 };

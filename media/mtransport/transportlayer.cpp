@@ -16,8 +16,7 @@ namespace mozilla {
 MOZ_MTLOG_MODULE("mtransport")
 
 nsresult TransportLayer::Init() {
-  if (state_ != TS_NONE)
-    return state_ == TS_ERROR ? NS_ERROR_FAILURE : NS_OK;
+  if (state_ != TS_NONE) return state_ == TS_ERROR ? NS_ERROR_FAILURE : NS_OK;
 
   nsresult rv = InitInternal();
 
@@ -30,11 +29,11 @@ nsresult TransportLayer::Init() {
   return NS_OK;
 }
 
-void TransportLayer::Inserted(TransportFlow *flow, TransportLayer *downward) {
+void TransportLayer::Chain(TransportLayer *downward) {
   downward_ = downward;
-  flow_id_ = flow->id();
-  MOZ_MTLOG(ML_DEBUG, LAYER_INFO << "Inserted: downward='" <<
-    (downward ? downward->id(): "none") << "'");
+  MOZ_MTLOG(ML_DEBUG, LAYER_INFO << "Inserted: downward='"
+                                 << (downward ? downward->id() : "none")
+                                 << "'");
 
   WasInserted();
 }
@@ -42,11 +41,11 @@ void TransportLayer::Inserted(TransportFlow *flow, TransportLayer *downward) {
 void TransportLayer::SetState(State state, const char *file, unsigned line) {
   if (state != state_) {
     MOZ_MTLOG(state == TS_ERROR ? ML_ERROR : ML_DEBUG,
-              file << ":" << line << ": " <<
-              LAYER_INFO << "state " << state_ << "->" << state);
+              file << ":" << line << ": " << LAYER_INFO << "state " << state_
+                   << "->" << state);
     state_ = state;
     SignalStateChange(this, state);
   }
 }
 
-}  // close namespace
+}  // namespace mozilla

@@ -5,61 +5,61 @@
  * Tests that properties are updated when modifying the VariablesView.
  */
 
-add_task(function* () {
-  let { target, panel } = yield initWebAudioEditor(SIMPLE_CONTEXT_URL);
-  let { panelWin } = panel;
-  let { gFront, $, $$, EVENTS, PropertiesView } = panelWin;
-  let gVars = PropertiesView._propsView;
+add_task(async function() {
+  const { target, panel } = await initWebAudioEditor(SIMPLE_CONTEXT_URL);
+  const { panelWin } = panel;
+  const { gFront, $, $$, EVENTS, PropertiesView } = panelWin;
+  const gVars = PropertiesView._propsView;
 
-  let started = once(gFront, "start-context");
+  const started = once(gFront, "start-context");
 
-  let events = Promise.all([
+  const events = Promise.all([
     get3(gFront, "create-node"),
-    waitForGraphRendered(panelWin, 3, 2)
+    waitForGraphRendered(panelWin, 3, 2),
   ]);
   reload(target);
-  let [actors] = yield events;
-  let nodeIds = actors.map(actor => actor.actorID);
+  const [actors] = await events;
+  const nodeIds = actors.map(actor => actor.actorID);
 
   click(panelWin, findGraphNode(panelWin, nodeIds[1]));
   // Wait for the node to be set as well as the inspector to come fully into the view
-  yield Promise.all([
+  await Promise.all([
     waitForInspectorRender(panelWin, EVENTS),
-    once(panelWin, EVENTS.UI_INSPECTOR_TOGGLED)
+    once(panelWin, EVENTS.UI_INSPECTOR_TOGGLED),
   ]);
 
-  let setAndCheck = setAndCheckVariable(panelWin, gVars);
+  const setAndCheck = setAndCheckVariable(panelWin, gVars);
 
   checkVariableView(gVars, 0, {
     "type": "sine",
     "frequency": 440,
-    "detune": 0
+    "detune": 0,
   }, "default loaded string");
 
   click(panelWin, findGraphNode(panelWin, nodeIds[2]));
-  yield waitForInspectorRender(panelWin, EVENTS),
+  await waitForInspectorRender(panelWin, EVENTS);
   checkVariableView(gVars, 0, {
-    "gain": 0
+    "gain": 0,
   }, "default loaded number");
 
   click(panelWin, findGraphNode(panelWin, nodeIds[1]));
-  yield waitForInspectorRender(panelWin, EVENTS),
-  yield setAndCheck(0, "type", "square", "square", "sets string as string");
+  await waitForInspectorRender(panelWin, EVENTS);
+  await setAndCheck(0, "type", "square", "square", "sets string as string");
 
   click(panelWin, findGraphNode(panelWin, nodeIds[2]));
-  yield waitForInspectorRender(panelWin, EVENTS),
-  yield setAndCheck(0, "gain", "0.005", 0.005, "sets number as number");
-  yield setAndCheck(0, "gain", "0.1", 0.1, "sets float as float");
-  yield setAndCheck(0, "gain", ".2", 0.2, "sets float without leading zero as float");
+  await waitForInspectorRender(panelWin, EVENTS);
+  await setAndCheck(0, "gain", "0.005", 0.005, "sets number as number");
+  await setAndCheck(0, "gain", "0.1", 0.1, "sets float as float");
+  await setAndCheck(0, "gain", ".2", 0.2, "sets float without leading zero as float");
 
-  yield teardown(target);
+  await teardown(target);
 });
 
 function setAndCheckVariable(panelWin, gVars) {
-  return Task.async(function* (varNum, prop, value, expected, desc) {
-    yield modifyVariableView(panelWin, gVars, varNum, prop, value);
+  return async function(varNum, prop, value, expected, desc) {
+    await modifyVariableView(panelWin, gVars, varNum, prop, value);
     var props = {};
     props[prop] = expected;
     checkVariableView(gVars, varNum, props, desc);
-  });
+  };
 }

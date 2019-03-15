@@ -7,7 +7,10 @@
 #include "nsISupports.idl"
 
 interface mozIDOMWindowProxy;
-interface nsIDOMElement;
+
+webidl Element;
+
+[ref] native OriginAttributes(mozilla::OriginAttributes);
 
 %{C++
 #ifdef MOZILLA_INTERNAL_API
@@ -20,7 +23,7 @@ interface nsIDOMElement;
  * can be queried for various information about where the load is
  * happening.
  */
-[scriptable, uuid(2813a7a3-d084-4d00-acd0-f76620315c02)]
+[builtinclass, scriptable, uuid(2813a7a3-d084-4d00-acd0-f76620315c02)]
 interface nsILoadContext : nsISupports
 {
   /**
@@ -50,7 +53,7 @@ interface nsILoadContext : nsISupports
    * Note that topFrameElement may be in chrome even when the nsILoadContext is
    * associated with content.
    */
-  readonly attribute nsIDOMElement topFrameElement;
+  readonly attribute Element topFrameElement;
 
   /**
    * If this LoadContext corresponds to a nested remote iframe, we don't have
@@ -133,16 +136,11 @@ interface nsILoadContext : nsISupports
    * A dictionary of the non-default origin attributes associated with this
    * nsILoadContext.
    */
+  [binaryname(ScriptableOriginAttributes), implicit_jscontext]
   readonly attribute jsval originAttributes;
 
-%{C++
-#ifdef MOZILLA_INTERNAL_API
   /**
    * The C++ getter for origin attributes.
-   *
-   * Defined in LoadContext.cpp
    */
-  bool GetOriginAttributes(mozilla::OriginAttributes& aAttrs);
-#endif
-%}
+  [noscript, notxpcom] void GetOriginAttributes(out OriginAttributes aAttrs);
 };

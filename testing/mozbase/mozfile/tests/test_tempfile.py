@@ -7,12 +7,14 @@
 """
 tests for mozfile.NamedTemporaryFile
 """
+from __future__ import absolute_import
 
 import mozfile
 import os
 import unittest
 
 import mozunit
+import six
 
 
 class TestNamedTemporaryFile(unittest.TestCase):
@@ -25,7 +27,7 @@ class TestNamedTemporaryFile(unittest.TestCase):
             and https://bugzilla.mozilla.org/show_bug.cgi?id=821362
         """
 
-        test_string = "A simple test"
+        test_string = b"A simple test"
         with mozfile.NamedTemporaryFile() as temp:
             # Test we can write to file
             temp.write(test_string)
@@ -33,21 +35,21 @@ class TestNamedTemporaryFile(unittest.TestCase):
             temp.flush()
 
             # Test we can open the file again on all platforms
-            self.assertEqual(open(temp.name).read(), test_string)
+            self.assertEqual(open(temp.name, 'rb').read(), test_string)
 
     def test_iteration(self):
         """ensure the line iterator works"""
 
         # make a file and write to it
         tf = mozfile.NamedTemporaryFile()
-        notes = ['doe', 'rae', 'mi']
+        notes = [b'doe', b'rae', b'mi']
         for note in notes:
-            tf.write('%s\n' % note)
+            tf.write(b'%s\n' % note)
         tf.flush()
 
         # now read from it
         tf.seek(0)
-        lines = [line.rstrip('\n') for line in tf.readlines()]
+        lines = [line.rstrip(b'\n') for line in tf.readlines()]
         self.assertEqual(lines, notes)
 
         # now read from it iteratively
@@ -68,7 +70,7 @@ class TestNamedTemporaryFile(unittest.TestCase):
         path = None
         with mozfile.NamedTemporaryFile(delete=True) as tf:
             path = tf.name
-        self.assertTrue(isinstance(path, basestring))
+        self.assertTrue(isinstance(path, six.string_types))
         self.assertFalse(os.path.exists(path))
 
         # it is also deleted when __del__ is called
@@ -99,6 +101,7 @@ class TestNamedTemporaryFile(unittest.TestCase):
         finally:
             if path and os.path.exists(path):
                 os.remove(path)
+
 
 if __name__ == '__main__':
     mozunit.main()

@@ -14,8 +14,7 @@
           src="../role.js"></script>
 
   <script type="application/javascript">
-    function doTest()
-    {
+    function doTest() {
       var globalIds = [
         "atomic",
         "busy",
@@ -26,13 +25,12 @@
         "flowto",
         "grabbed",
         "haspopup",
-        "hidden",
         "invalid",
         "label",
         "labelledby",
         "live",
         "owns",
-        "relevant"
+        "relevant",
       ];
 
       // Elements having ARIA global state or properties or referred by another
@@ -40,9 +38,9 @@
       ok(isAccessible("pawn"),
          "Must be accessible because referred by another element.");
 
-      for (var idx = 0; idx < globalIds.length; idx++) {
+      for (let idx = 0; idx < globalIds.length; idx++) {
         ok(isAccessible(globalIds[idx]),
-           "Must be accessible becuase of " + "aria-" + globalIds[idx] +
+           "Must be accessible becuase of aria-" + globalIds[idx] +
            " presence");
       }
 
@@ -52,7 +50,7 @@
       ok(!isAccessible("td_nothing", nsIAccessibleTableCell),
          "inherited presentation role takes a place");
 
-      for (var idx = 0; idx < globalIds.length; idx++) {
+      for (let idx = 0; idx < globalIds.length; idx++) {
         ok(isAccessible("td_" + globalIds[idx]),
            "Inherited presentation role must be ignored becuase of " +
            "aria-" + globalIds[idx] + " presence");
@@ -95,7 +93,6 @@
     <span id="flowto" aria-flowto="pawn"></span>
     <span id="grabbed" aria-grabbed="false"></span>
     <span id="haspopup" aria-haspopup="false"></span>
-    <span id="hidden" aria-hidden="true"></span>
     <span id="invalid" aria-invalid="false"></span>
     <span id="label" aria-label="hi"></span>
     <span id="labelledby" aria-labelledby="label"></span>
@@ -116,7 +113,6 @@
       <td id="td_flowto" aria-flowto="pawn"></td>
       <td id="td_grabbed" aria-grabbed="false"></td>
       <td id="td_haspopup" aria-haspopup="false"></td>
-      <td id="td_hidden" aria-hidden="true"></td>
       <td id="td_invalid" aria-invalid="false"></td>
       <td id="td_label" aria-label="hi"></td>
       <td id="td_labelledby" aria-labelledby="label"></td>

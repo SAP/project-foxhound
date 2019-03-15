@@ -9,28 +9,24 @@
 #include "ProfileJSONWriter.h"
 #include "ThreadInfo.h"
 
-ProfilerBacktrace::ProfilerBacktrace(ProfileBuffer* aBuffer,
-                                     ThreadInfo* aThreadInfo)
-  : mBuffer(aBuffer)
-  , mThreadInfo(aThreadInfo)
-{
+ProfilerBacktrace::ProfilerBacktrace(const char* aName, int aThreadId,
+                                     UniquePtr<ProfileBuffer> aBuffer)
+    : mName(strdup(aName)), mThreadId(aThreadId), mBuffer(std::move(aBuffer)) {
   MOZ_COUNT_CTOR(ProfilerBacktrace);
-  MOZ_ASSERT(aThreadInfo && aThreadInfo->HasProfile());
 }
 
-ProfilerBacktrace::~ProfilerBacktrace()
-{
-  MOZ_COUNT_DTOR(ProfilerBacktrace);
-  delete mBuffer;
-  delete mThreadInfo;
-}
+ProfilerBacktrace::~ProfilerBacktrace() { MOZ_COUNT_DTOR(ProfilerBacktrace); }
 
-void
-ProfilerBacktrace::StreamJSON(SpliceableJSONWriter& aWriter,
-                              const TimeStamp& aStartTime,
-                              UniqueStacks& aUniqueStacks)
-{
-  mozilla::MutexAutoLock lock(mThreadInfo->GetMutex());
-  mThreadInfo->StreamSamplesAndMarkers(mBuffer, aWriter, aStartTime,
-                                       /* aSinceTime */ 0, aUniqueStacks);
+void ProfilerBacktrace::StreamJSON(SpliceableJSONWriter& aWriter,
+                                   const TimeStamp& aProcessStartTime,
+                                   UniqueStacks& aUniqueStacks) {
+  // Unlike ProfiledThreadData::StreamJSON, we don't need to call
+  // ProfileBuffer::AddJITInfoForRange because mBuffer does not contain any
+  // JitReturnAddr entries. For synchronous samples, JIT frames get expanded
+  // at sample time.
+  StreamSamplesAndMarkers(mName.get(), mThreadId, *mBuffer.get(), aWriter,
+                          aProcessStartTime,
+                          /* aRegisterTime */ TimeStamp(),
+                          /* aUnregisterTime */ TimeStamp(),
+                          /* aSinceTime */ 0, aUniqueStacks);
 }

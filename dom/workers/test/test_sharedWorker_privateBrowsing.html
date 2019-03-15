@@ -7,8 +7,7 @@
 <body>
 
 <script type="application/javascript">
-
-const Ci = Components.interfaces;
+ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
 var mainWindow;
 
 var contentPage = "http://mochi.test:8888/chrome/dom/workers/test/empty.html";
@@ -18,27 +17,18 @@ function testOnWindow(aIsPrivate, aCallback) {
   win.addEventListener("load", function() {
     win.addEventListener("DOMContentLoaded", function onInnerLoad() {
       if (win.content.location.href != contentPage) {
-        win.gBrowser.loadURI(contentPage);
+        BrowserTestUtils.loadURI(win.gBrowser, contentPage);
         return;
       }
 
       win.removeEventListener("DOMContentLoaded", onInnerLoad, true);
       SimpleTest.executeSoon(function() { aCallback(win); });
     }, true);
-
-    if (!aIsPrivate) {
-      win.gBrowser.loadURI(contentPage);
-    }
   }, {capture: true, once: true});
 }
 
 function setupWindow() {
-  mainWindow = window.QueryInterface(Ci.nsIInterfaceRequestor)
-                     .getInterface(Ci.nsIWebNavigation)
-                     .QueryInterface(Ci.nsIDocShellTreeItem)
-                     .rootTreeItem
-                     .QueryInterface(Ci.nsIInterfaceRequestor)
-                     .getInterface(Ci.nsIDOMWindow);
+  mainWindow = window.docShell.rootTreeItem.domWindow;
   runTest();
 }
 

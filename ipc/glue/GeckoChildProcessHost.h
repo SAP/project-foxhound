@@ -15,47 +15,41 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/ipc/FileDescriptor.h"
 #include "mozilla/Monitor.h"
+#include "mozilla/MozPromise.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/UniquePtr.h"
 
 #include "nsCOMPtr.h"
-#include "nsXULAppAPI.h"        // for GeckoProcessType
+#include "nsXULAppAPI.h"  // for GeckoProcessType
 #include "nsString.h"
 
 #if defined(XP_WIN) && defined(MOZ_SANDBOX)
-#include "sandboxBroker.h"
+#  include "sandboxBroker.h"
 #endif
 
 namespace mozilla {
 namespace ipc {
 
-class GeckoChildProcessHost : public ChildProcessHost
-{
-protected:
+class GeckoChildProcessHost : public ChildProcessHost {
+ protected:
   typedef mozilla::Monitor Monitor;
   typedef std::vector<std::string> StringVector;
 
-public:
-  typedef base::ChildPrivileges ChildPrivileges;
+ public:
   typedef base::ProcessHandle ProcessHandle;
 
-  static ChildPrivileges DefaultChildPrivileges();
-
   explicit GeckoChildProcessHost(GeckoProcessType aProcessType,
-                                 ChildPrivileges aPrivileges=base::PRIVILEGES_DEFAULT);
+                                 bool aIsFileContent = false);
 
   ~GeckoChildProcessHost();
 
-  static nsresult GetArchitecturesForBinary(const char *path, uint32_t *result);
-
-  static uint32_t GetSupportedArchitecturesForProcessType(GeckoProcessType type);
-
   static uint32_t GetUniqueID();
 
-  // Block until the IPC channel for our subprocess is initialized,
-  // but no longer.  The child process may or may not have been
-  // created when this method returns.
-  bool AsyncLaunch(StringVector aExtraOpts=StringVector(),
-                   base::ProcessArchitecture arch=base::GetCurrentProcessArchitecture());
+  // Does not block.  The IPC channel may not be initialized yet, and
+  // the child process may or may not have been created when this
+  // method returns.  This GeckoChildProcessHost must not be destroyed
+  // while the launch is in progress.
+  bool AsyncLaunch(StringVector aExtraOpts = StringVector());
 
   virtual bool WaitUntilConnected(int32_t aTimeoutMs = 0);
 
@@ -71,44 +65,51 @@ public:
   // executable image can be loaded.  On win32, we do know that when
   // we return.  But we don't know if dynamic linking succeeded on
   // either platform.
-  bool LaunchAndWaitForProcessHandle(StringVector aExtraOpts=StringVector());
+  bool LaunchAndWaitForProcessHandle(StringVector aExtraOpts = StringVector());
 
   // Block until the child process has been created and it connects to
   // the IPC channel, meaning it's fully initialized.  (Or until an
   // error occurs.)
-  bool SyncLaunch(StringVector aExtraOpts=StringVector(),
-                  int32_t timeoutMs=0,
-                  base::ProcessArchitecture arch=base::GetCurrentProcessArchitecture());
+  bool SyncLaunch(StringVector aExtraOpts = StringVector(),
+                  int32_t timeoutMs = 0);
 
-  virtual bool PerformAsyncLaunch(StringVector aExtraOpts=StringVector(),
-                                  base::ProcessArchitecture aArch=base::GetCurrentProcessArchitecture());
+  virtual void OnChannelConnected(int32_t peer_pid) override;
+  virtual void OnMessageReceived(IPC::Message&& aMsg) override;
+  virtual void OnChannelError() override;
+  virtual void GetQueuedMessages(std::queue<IPC::Message>& queue) override;
 
-  virtual void OnChannelConnected(int32_t peer_pid);
-  virtual void OnMessageReceived(IPC::Message&& aMsg);
-  virtual void OnChannelError();
-  virtual void GetQueuedMessages(std::queue<IPC::Message>& queue);
+  struct LaunchError {};
+  template <typename T>
+  using LaunchPromise = mozilla::MozPromise<T, LaunchError, /* excl: */ false>;
+  using HandlePromise = LaunchPromise<base::ProcessHandle>;
+
+  // Resolves to the process handle when it's available (see
+  // LaunchAndWaitForProcessHandle); use with AsyncLaunch.
+  RefPtr<HandlePromise> WhenProcessHandleReady();
 
   virtual void InitializeChannel();
 
-  virtual bool CanShutdown() { return true; }
+  virtual bool CanShutdown() override { return true; }
 
-  IPC::Channel* GetChannel() {
-    return channelp();
-  }
+  IPC::Channel* GetChannel() { return channelp(); }
 
   // Returns a "borrowed" handle to the child process - the handle returned
   // by this function must not be closed by the caller.
-  ProcessHandle GetChildProcessHandle() {
-    return mChildProcessHandle;
-  }
+  ProcessHandle GetChildProcessHandle() { return mChildProcessHandle; }
 
-  GeckoProcessType GetProcessType() {
-    return mProcessType;
-  }
+  GeckoProcessType GetProcessType() { return mProcessType; }
 
 #ifdef XP_MACOSX
-  task_t GetChildTask() {
-    return mChildTask;
+  task_t GetChildTask() { return mChildTask; }
+#endif
+
+#ifdef XP_WIN
+  void AddHandleToShare(HANDLE aHandle) {
+    mLaunchOptions->handles_to_inherit.push_back(aHandle);
+  }
+#else
+  void AddFdToRemap(int aSrcFd, int aDstFd) {
+    mLaunchOptions->fds_to_remap.push_back(std::make_pair(aSrcFd, aDstFd));
   }
 #endif
 
@@ -121,13 +122,20 @@ public:
   // For bug 943174: Skip the EnsureProcessTerminated call in the destructor.
   void SetAlreadyDead();
 
-  static void EnableSameExecutableForContentProc() { sRunSelfAsContentProc = true; }
+  static void EnableSameExecutableForContentProc() {
+    sRunSelfAsContentProc = true;
+  }
 
-protected:
+ protected:
   GeckoProcessType mProcessType;
-  ChildPrivileges mPrivileges;
+  bool mIsFileContent;
   Monitor mMonitor;
   FilePath mProcessPath;
+  // GeckoChildProcessHost holds the launch options so they can be set
+  // up on the main thread using main-thread-only APIs like prefs, and
+  // then used for the actual launch on another thread.  This pointer
+  // is set to null to free the options after the child is launched.
+  UniquePtr<base::LaunchOptions> mLaunchOptions;
 
   // This value must be accessed while holding mMonitor.
   enum {
@@ -154,48 +162,41 @@ protected:
   void InitWindowsGroupID();
   nsString mGroupId;
 
-#ifdef MOZ_SANDBOX
+#  ifdef MOZ_SANDBOX
   SandboxBroker mSandboxBroker;
   std::vector<std::wstring> mAllowedFilesRead;
-  std::vector<std::wstring> mAllowedFilesReadWrite;
-  std::vector<std::wstring> mAllowedDirectories;
   bool mEnableSandboxLogging;
   int32_t mSandboxLevel;
-#endif
-#endif // XP_WIN
-
-#if defined(OS_POSIX)
-  base::file_handle_mapping_vector mFileMap;
-#endif
+#  endif
+#endif  // XP_WIN
 
   ProcessHandle mChildProcessHandle;
 #if defined(OS_MACOSX)
   task_t mChildTask;
 #endif
+  RefPtr<HandlePromise::Private> mHandlePromise;
 
   bool OpenPrivilegedHandle(base::ProcessId aPid);
 
-private:
+ private:
   DISALLOW_EVIL_CONSTRUCTORS(GeckoChildProcessHost);
 
   // Does the actual work for AsyncLaunch, on the IO thread.
-  bool PerformAsyncLaunchInternal(std::vector<std::string>& aExtraOpts,
-                                  base::ProcessArchitecture arch);
+  // (TODO, bug 1487287: move this to its own thread(s).)
+  bool PerformAsyncLaunch(StringVector aExtraOpts);
 
-  bool RunPerformAsyncLaunch(StringVector aExtraOpts=StringVector(),
-                             base::ProcessArchitecture aArch=base::GetCurrentProcessArchitecture());
+  // Also called on the I/O thread; creates channel, launches, and
+  // consolidates error handling.
+  bool RunPerformAsyncLaunch(StringVector aExtraOpts);
 
-  enum class BinaryPathType {
-    Self,
-    PluginContainer
-  };
+  enum class BinaryPathType { Self, PluginContainer };
 
-  static BinaryPathType GetPathToBinary(FilePath& exePath, GeckoProcessType processType);
+  static BinaryPathType GetPathToBinary(FilePath& exePath,
+                                        GeckoProcessType processType);
 
   // The buffer is passed to preserve its lifetime until we are done
   // with launching the sub-process.
-  void SetChildLogName(const char* varName, const char* origLogName,
-                       nsACString &buffer);
+  void GetChildLogName(const char* origLogName, nsACString& buffer);
 
   // In between launching the subprocess and handing off its IPC
   // channel, there's a small window of time in which *we* might still
@@ -206,23 +207,21 @@ private:
   // FIXME/cjones: this strongly indicates bad design.  Shame on us.
   std::queue<IPC::Message> mQueue;
 
-  // Remember original env values so we can restore it (there is no other
-  // simple way how to change environment of a child process than to modify
-  // the current environment).
-  nsCString mRestoreOrigNSPRLogName;
-  nsCString mRestoreOrigMozLogName;
+  // Set this up before we're called from a different thread.
+#if defined(OS_LINUX)
+  nsCString mTmpDirName;
+#endif
 
   static uint32_t sNextUniqueID;
 
   static bool sRunSelfAsContentProc;
 
 #if defined(MOZ_WIDGET_ANDROID)
-  void LaunchAndroidService(const char* type,
-                            const std::vector<std::string>& argv,
-                            const base::file_handle_mapping_vector& fds_to_remap,
-                            ProcessHandle* process_handle);
-#endif // defined(MOZ_WIDGET_ANDROID)
-
+  void LaunchAndroidService(
+      const char* type, const std::vector<std::string>& argv,
+      const base::file_handle_mapping_vector& fds_to_remap,
+      ProcessHandle* process_handle);
+#endif  // defined(MOZ_WIDGET_ANDROID)
 };
 
 } /* namespace ipc */

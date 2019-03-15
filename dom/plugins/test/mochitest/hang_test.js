@@ -1,8 +1,5 @@
 
-Components.utils.import("resource://gre/modules/KeyValueParser.jsm");
-
-var Cc = Components.classes;
-var Ci = Components.interfaces;
+ChromeUtils.import("resource://gre/modules/KeyValueParser.jsm");
 
 var success = false;
 var observerFired = false;
@@ -40,16 +37,12 @@ var testObserver = {
 
     ok("additional_minidumps" in extraData, "got field for additional minidumps");
     let additionalDumps = extraData.additional_minidumps.split(',');
-    ok(additionalDumps.indexOf('browser') >= 0, "browser in additional_minidumps");
+    ok(additionalDumps.includes('browser'), "browser in additional_minidumps");
 
-    let additionalDumpFiles = [];
     for (let name of additionalDumps) {
       let file = profD.clone();
       file.append(pluginId + "-" + name + ".dmp");
       ok(file.exists(), "additional dump '"+name+"' exists");
-      if (file.exists()) {
-        additionalDumpFiles.push(file);
-      }
     }
 
     // check cpu usage field
@@ -61,17 +54,6 @@ var testObserver = {
     } else {
       ok(cpuUsage > 0, "plugin cpu usage is >0%");
     }
-
-    // check processor count field
-    ok("NumberOfProcessors" in extraData, "got extra field for processor count");
-    ok(parseInt(extraData["NumberOfProcessors"]) > 0, "number of processors is >0");
-
-    // cleanup, to be nice
-    pluginDumpFile.remove(false);
-    pluginExtraFile.remove(false);
-    for (let file of additionalDumpFiles) {
-      file.remove(false);
-    }
   },
 
   QueryInterface: function(iid) {
@@ -79,7 +61,7 @@ var testObserver = {
         iid.equals(Ci.nsISupportsWeakReference) ||
         iid.equals(Ci.nsISupports))
       return this;
-    throw Components.results.NS_NOINTERFACE;
+    throw Cr.NS_NOINTERFACE;
   }
 };
 

@@ -1,6 +1,4 @@
-const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 const HELPERAPP_DIALOG_CONTRACT = "@mozilla.org/helperapplauncherdialog;1";
 const HELPERAPP_DIALOG_CID =
@@ -14,7 +12,7 @@ HelperAppLauncherDialog.prototype = {
   show: function(aLauncher, aWindowContext, aReason) {
     sendAsyncMessage("suggestedFileName", aLauncher.suggestedFileName);
   },
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIHelperAppLauncherDialog])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIHelperAppLauncherDialog])
 };
 
 var registrar = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);

@@ -5,11 +5,35 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 UNIFIED_SOURCES += [
+    'TestBufferedInputStream.cpp',
+    'TestHeaders.cpp',
     'TestHttpAuthUtils.cpp',
+    'TestIsValidIp.cpp',
+    'TestMIMEInputStream.cpp',
+    'TestMozURL.cpp',
+    'TestPACMan.cpp',
+    'TestPartiallySeekableInputStream.cpp',
     'TestProtocolProxyService.cpp',
+    'TestReadStreamToString.cpp',
+    'TestServerTimingHeader.cpp',
     'TestStandardURL.cpp',
+    'TestURIMutator.cpp',
+]
+
+TEST_DIRS += [
+    'parse-ftp',
+]
+
+LOCAL_INCLUDES += [
+    '/netwerk/base',
+    '/xpcom/tests/gtest',
 ]
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul-gtest'
+
+LOCAL_INCLUDES += [
+    '!/xpcom',
+    '/xpcom/components'
+]

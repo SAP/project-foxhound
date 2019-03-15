@@ -7,31 +7,33 @@
  * Tests if beacons from other tabs are properly ignored.
  */
 
-add_task(function* () {
-  let { tab, monitor } = yield initNetMonitor(SIMPLE_URL);
-  let { gStore, windowRequire } = monitor.panelWin;
-  let Actions = windowRequire("devtools/client/netmonitor/actions/index");
-  let { getSortedRequests } = windowRequire("devtools/client/netmonitor/selectors/index");
+add_task(async function() {
+  const { tab, monitor } = await initNetMonitor(SIMPLE_URL);
+  const { store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
+  const {
+    getSortedRequests,
+  } = windowRequire("devtools/client/netmonitor/src/selectors/index");
 
-  gStore.dispatch(Actions.batchEnable(false));
+  store.dispatch(Actions.batchEnable(false));
 
-  let beaconTab = yield addTab(SEND_BEACON_URL);
+  const beaconTab = await addTab(SEND_BEACON_URL);
   info("Beacon tab added successfully.");
 
-  is(gStore.getState().requests.requests.size, 0, "The requests menu should be empty.");
+  is(store.getState().requests.requests.size, 0, "The requests menu should be empty.");
 
-  let wait = waitForNetworkEvents(monitor, 1);
-  yield ContentTask.spawn(beaconTab.linkedBrowser, {}, function* () {
-    content.wrappedJSObject.performRequest();
+  const wait = waitForNetworkEvents(monitor, 1);
+  await ContentTask.spawn(beaconTab.linkedBrowser, {}, async function() {
+    content.wrappedJSObject.performRequests();
   });
   tab.linkedBrowser.reload();
-  yield wait;
+  await wait;
 
-  is(gStore.getState().requests.requests.size, 1, "Only the reload should be recorded.");
-  let request = getSortedRequests(gStore.getState()).get(0);
+  is(store.getState().requests.requests.size, 1, "Only the reload should be recorded.");
+  const request = getSortedRequests(store.getState()).get(0);
   is(request.method, "GET", "The method is correct.");
   is(request.status, "200", "The status is correct.");
 
-  yield removeTab(beaconTab);
+  await removeTab(beaconTab);
   return teardown(monitor);
 });

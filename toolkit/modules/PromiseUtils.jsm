@@ -2,13 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-"use strict"
+"use strict";
 
-this.EXPORTED_SYMBOLS = ["PromiseUtils"];
+var EXPORTED_SYMBOLS = ["PromiseUtils"];
 
-Components.utils.import("resource://gre/modules/Timer.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
-this.PromiseUtils = {
+var PromiseUtils = {
   /*
    * Creates a new pending Promise and provide methods to resolve and reject this Promise.
    *
@@ -18,7 +19,33 @@ this.PromiseUtils = {
   defer() {
     return new Deferred();
   },
-}
+
+  /**
+   * Requests idle dispatch to the main thread for the given callback,
+   * and returns a promise which resolves to the callback's return value
+   * when it has been executed.
+   *
+   * @param {function} callback
+   * @param {integer} [timeout]
+   *        An optional timeout, after which the callback will be
+   *        executed immediately if idle dispatch has not yet occurred.
+   *
+   * @returns {Promise}
+   */
+  idleDispatch(callback, timeout = 0) {
+    return new Promise((resolve, reject) => {
+      Services.tm.idleDispatchToMainThread(
+        () => {
+          try {
+            resolve(callback());
+          } catch (e) {
+            reject(e);
+          }
+        },
+        timeout);
+    });
+  },
+};
 
 /**
  * The definition of Deferred object which is returned by PromiseUtils.defer(),

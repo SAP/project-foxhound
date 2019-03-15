@@ -12,32 +12,53 @@ const nodeConstants = require("devtools/shared/dom-node-constants");
 function ReadOnlyEditor(container, node) {
   this.container = container;
   this.markup = this.container.markup;
-  this.template = this.markup.template.bind(this.markup);
-  this.elt = null;
-  this.template("generic", this);
+  this.buildMarkup();
 
   if (node.isPseudoElement) {
-    this.tag.classList.add("theme-fg-color5");
+    this.tag.classList.add("theme-fg-color3");
     this.tag.textContent = node.isBeforePseudoElement ? "::before" : "::after";
   } else if (node.nodeType == nodeConstants.DOCUMENT_TYPE_NODE) {
     this.elt.classList.add("comment", "doctype");
     this.tag.textContent = node.doctypeString;
+  } else if (node.isShadowRoot) {
+    this.tag.textContent = `#shadow-root (${node.shadowRootMode})`;
   } else {
     this.tag.textContent = node.nodeName;
   }
+
+  // Make the "tag" part of this editor focusable.
+  this.tag.setAttribute("tabindex", "-1");
 }
 
 ReadOnlyEditor.prototype = {
-  destroy: function () {
+  buildMarkup: function() {
+    const doc = this.markup.doc;
+
+    this.elt = doc.createElement("span");
+    this.elt.classList.add("editor");
+
+    this.tag = doc.createElement("span");
+    this.tag.classList.add("tag");
+    this.elt.appendChild(this.tag);
+  },
+
+  destroy: function() {
+    // We might be already destroyed.
+    if (!this.elt) {
+      return;
+    }
+
     this.elt.remove();
+    this.elt = null;
+    this.tag = null;
   },
 
   /**
    * Stub method for consistency with ElementEditor.
    */
-  getInfoAtNode: function () {
+  getInfoAtNode: function() {
     return null;
-  }
+  },
 };
 
 module.exports = ReadOnlyEditor;

@@ -7,38 +7,33 @@
 #include "mozilla/dom/SVGAnimateElement.h"
 #include "mozilla/dom/SVGAnimateElementBinding.h"
 
-NS_IMPL_NS_NEW_NAMESPACED_SVG_ELEMENT(Animate)
+NS_IMPL_NS_NEW_SVG_ELEMENT(Animate)
 
 namespace mozilla {
 namespace dom {
 
-JSObject*
-SVGAnimateElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return SVGAnimateElementBinding::Wrap(aCx, this, aGivenProto);
+JSObject* SVGAnimateElement::WrapNode(JSContext* aCx,
+                                      JS::Handle<JSObject*> aGivenProto) {
+  return SVGAnimateElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
 //----------------------------------------------------------------------
 // Implementation
 
-SVGAnimateElement::SVGAnimateElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-  : SVGAnimationElement(aNodeInfo)
-{
-}
+SVGAnimateElement::SVGAnimateElement(
+    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : SVGAnimationElement(std::move(aNodeInfo)) {}
 
 //----------------------------------------------------------------------
-// nsIDOMNode methods
+// nsINode methods
 
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGAnimateElement)
 
 //----------------------------------------------------------------------
 
-nsSMILAnimationFunction&
-SVGAnimateElement::AnimationFunction()
-{
+SMILAnimationFunction& SVGAnimateElement::AnimationFunction() {
   return mAnimationFunction;
 }
 
-} // namespace dom
-} // namespace mozilla
-
+}  // namespace dom
+}  // namespace mozilla

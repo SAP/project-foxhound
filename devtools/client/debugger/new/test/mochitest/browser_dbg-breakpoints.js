@@ -2,99 +2,95 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 function toggleBreakpoint(dbg, index) {
-  const bp = findElement(dbg, "breakpointItem", index);
+  const bp = findAllElements(dbg, "breakpointItems")[index];
   const input = bp.querySelector("input");
   input.click();
 }
 
-function removeBreakpoint(dbg, index) {
-  return Task.spawn(function* () {
-    const bp = findElement(dbg, "breakpointItem", index);
-    bp.querySelector(".close-btn").click();
-    yield waitForDispatch(dbg, "REMOVE_BREAKPOINT");
-  });
+async function disableBreakpoint(dbg, index) {
+  const disabled = waitForDispatch(dbg, "DISABLE_BREAKPOINT");
+  toggleBreakpoint(dbg, index);
+  await disabled;
 }
 
-function disableBreakpoint(dbg, index) {
-  return Task.spawn(function* () {
-    toggleBreakpoint(dbg, index);
-    yield waitForDispatch(dbg, "REMOVE_BREAKPOINT");
-  });
+async function enableBreakpoint(dbg, index) {
+  const enabled = waitForDispatch(dbg, "ENABLE_BREAKPOINT");
+  toggleBreakpoint(dbg, index);
+  await enabled;
 }
 
-function enableBreakpoint(dbg, index) {
-  return Task.spawn(function* () {
-    toggleBreakpoint(dbg, index);
-    yield waitForDispatch(dbg, "ADD_BREAKPOINT");
-  });
+function toggleBreakpoints(dbg, count) {
+  clickElement(dbg, "toggleBreakpoints");
 }
 
-function toggleBreakpoints(dbg) {
-  return Task.spawn(function* () {
-    clickElement(dbg, "toggleBreakpoints");
-    yield waitForDispatch(dbg, "TOGGLE_BREAKPOINTS");
-  });
+function disableBreakpoints(dbg, count) {
+  const toggled = waitForDispatch(dbg, "DISABLE_BREAKPOINT", count);
+  toggleBreakpoints(dbg);
+  return toggled;
+}
+
+function enableBreakpoints(dbg, count) {
+  const enabled = waitForDispatch(dbg, "ENABLE_BREAKPOINT", count);
+  toggleBreakpoints(dbg);
+  return enabled;
 }
 
 function findBreakpoint(dbg, url, line) {
-  const { selectors: { getBreakpoint }, getState } = dbg;
+  const {
+    selectors: { getBreakpoint },
+    getState
+  } = dbg;
   const source = findSource(dbg, url);
   return getBreakpoint(getState(), { sourceId: source.id, line });
 }
 
-function findBreakpoints(dbg) {
-  const { selectors: { getBreakpoints }, getState } = dbg;
-  return getBreakpoints(getState());
-}
-
-add_task(function* () {
-  const dbg = yield initDebugger("doc-scripts.html");
+// Test enabling and disabling a breakpoint using the check boxes
+add_task(async function() {
+  const dbg = await initDebugger("doc-scripts.html", "simple2");
 
   // Create two breakpoints
-  yield selectSource(dbg, "simple2");
-  yield addBreakpoint(dbg, "simple2", 3);
-  yield addBreakpoint(dbg, "simple2", 5);
+  await selectSource(dbg, "simple2");
+  await addBreakpoint(dbg, "simple2", 3);
+  await addBreakpoint(dbg, "simple2", 5);
 
   // Disable the first one
-  yield disableBreakpoint(dbg, 1);
+  await disableBreakpoint(dbg, 0);
   let bp1 = findBreakpoint(dbg, "simple2", 3);
   let bp2 = findBreakpoint(dbg, "simple2", 5);
   is(bp1.disabled, true, "first breakpoint is disabled");
   is(bp2.disabled, false, "second breakpoint is enabled");
 
   // Disable and Re-Enable the second one
-  yield disableBreakpoint(dbg, 2);
-  yield enableBreakpoint(dbg, 2);
+  await disableBreakpoint(dbg, 1);
+  await enableBreakpoint(dbg, 1);
   bp2 = findBreakpoint(dbg, "simple2", 5);
   is(bp2.disabled, false, "second breakpoint is enabled");
 });
 
-// toggle all
-add_task(function* () {
-  const dbg = yield initDebugger("doc-scripts.html");
+// Test enabling and disabling a breakpoint using the context menu
+add_task(async function() {
+  const dbg = await initDebugger("doc-scripts.html");
+  await selectSource(dbg, "simple2");
+  await addBreakpoint(dbg, "simple2", 3);
+  await addBreakpoint(dbg, "simple2", 5);
 
-  // Create two breakpoints
-  yield selectSource(dbg, "simple2");
-  yield addBreakpoint(dbg, "simple2", 3);
-  yield addBreakpoint(dbg, "simple2", 5);
+  rightClickElement(dbg, "breakpointItem", 3);
+  const disableBreakpointDispatch = waitForDispatch(dbg, "DISABLE_BREAKPOINT");
+  selectContextMenuItem(dbg, selectors.breakpointContextMenu.disableSelf);
+  await disableBreakpointDispatch;
 
-  // Disable all of the breakpoints
-  yield toggleBreakpoints(dbg);
   let bp1 = findBreakpoint(dbg, "simple2", 3);
   let bp2 = findBreakpoint(dbg, "simple2", 5);
   is(bp1.disabled, true, "first breakpoint is disabled");
-  is(bp2.disabled, true, "second breakpoint is disabled");
+  is(bp2.disabled, false, "second breakpoint is enabled");
 
-  // Enable all of the breakpoints
-  yield toggleBreakpoints(dbg);
+  rightClickElement(dbg, "breakpointItem", 3);
+  const enableBreakpointDispatch = waitForDispatch(dbg, "ENABLE_BREAKPOINT");
+  selectContextMenuItem(dbg, selectors.breakpointContextMenu.enableSelf);
+  await enableBreakpointDispatch;
+
   bp1 = findBreakpoint(dbg, "simple2", 3);
   bp2 = findBreakpoint(dbg, "simple2", 5);
   is(bp1.disabled, false, "first breakpoint is enabled");
   is(bp2.disabled, false, "second breakpoint is enabled");
-
-  // Remove the breakpoints
-  yield removeBreakpoint(dbg, 1);
-  yield removeBreakpoint(dbg, 1);
-  const bps = findBreakpoints(dbg);
-  is(bps.size, 0, "breakpoints are removed");
 });

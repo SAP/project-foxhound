@@ -10,8 +10,6 @@
 
   <script type="application/javascript" src= "chrome://mochikit/content/chrome-harness.js" />
   <script type="text/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/specialpowersAPI.js"/>
-  <script type="text/javascript"
           src="chrome://mochikit/content/tests/SimpleTest/SpecialPowersObserverAPI.js"/>
   <script type="text/javascript"
           src="chrome://mochikit/content/tests/SimpleTest/specialpowers.js"/>
@@ -37,6 +35,11 @@
     //
     function* testIterator()
     {
+      // Disable rcwn to make cache behavior deterministic.
+      var SpecialPowers = window.opener.wrappedJSObject.SpecialPowers;
+      SpecialPowers.pushPrefEnv({"set":[["network.http.rcwn.enabled", false]]}, nextTest);
+      yield undefined;
+
       // Load a test page containing an image referring to the sjs that returns
       // a different redirect every time it's loaded.
       doPageNavigation({

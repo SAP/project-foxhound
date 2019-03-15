@@ -19,7 +19,10 @@ use std::io;
 pub struct StaticStructGenerator;
 
 impl super::Generator for StaticStructGenerator {
-    fn write<W>(&self, registry: &Registry, dest: &mut W) -> io::Result<()> where W: io::Write {
+    fn write<W>(&self, registry: &Registry, dest: &mut W) -> io::Result<()>
+    where
+        W: io::Write,
+    {
         try!(write_header(dest));
         try!(write_type_aliases(registry, dest));
         try!(write_enums(registry, dest));
@@ -32,23 +35,35 @@ impl super::Generator for StaticStructGenerator {
 
 /// Creates a `__gl_imports` module which contains all the external symbols that we need for the
 ///  bindings.
-fn write_header<W>(dest: &mut W) -> io::Result<()> where W: io::Write {
-    writeln!(dest, r#"
+fn write_header<W>(dest: &mut W) -> io::Result<()>
+where
+    W: io::Write,
+{
+    writeln!(
+        dest,
+        r#"
         mod __gl_imports {{
             pub use std::mem;
             pub use std::os::raw;
         }}
-    "#)
+    "#
+    )
 }
 
 /// Creates a `types` module which contains all the type aliases.
 ///
 /// See also `generators::gen_types`.
-fn write_type_aliases<W>(registry: &Registry, dest: &mut W) -> io::Result<()> where W: io::Write {
-    try!(writeln!(dest, r#"
+fn write_type_aliases<W>(registry: &Registry, dest: &mut W) -> io::Result<()>
+where
+    W: io::Write,
+{
+    try!(writeln!(
+        dest,
+        r#"
         pub mod types {{
             #![allow(non_camel_case_types, non_snake_case, dead_code, missing_copy_implementations)]
-    "#));
+    "#
+    ));
 
     try!(super::gen_types(registry.api, dest));
 
@@ -56,7 +71,10 @@ fn write_type_aliases<W>(registry: &Registry, dest: &mut W) -> io::Result<()> wh
 }
 
 /// Creates all the `<enum>` elements at the root of the bindings.
-fn write_enums<W>(registry: &Registry, dest: &mut W) -> io::Result<()> where W: io::Write {
+fn write_enums<W>(registry: &Registry, dest: &mut W) -> io::Result<()>
+where
+    W: io::Write,
+{
     for enm in &registry.enums {
         try!(super::gen_enum_item(enm, "types::", dest));
     }
@@ -67,8 +85,13 @@ fn write_enums<W>(registry: &Registry, dest: &mut W) -> io::Result<()> where W: 
 /// Creates a stub structure.
 ///
 /// The name of the struct corresponds to the namespace.
-fn write_struct<W>(registry: &Registry, dest: &mut W) -> io::Result<()> where W: io::Write {
-    writeln!(dest, "
+fn write_struct<W>(registry: &Registry, dest: &mut W) -> io::Result<()>
+where
+    W: io::Write,
+{
+    writeln!(
+        dest,
+        "
         #[allow(non_camel_case_types, non_snake_case, dead_code)]
         #[derive(Copy, Clone)]
         pub struct {api};",
@@ -77,19 +100,23 @@ fn write_struct<W>(registry: &Registry, dest: &mut W) -> io::Result<()> where W:
 }
 
 /// Creates the `impl` of the structure created by `write_struct`.
-fn write_impl<W>(registry: &Registry, dest: &mut W) -> io::Result<()> where W: io::Write {
+fn write_impl<W>(registry: &Registry, dest: &mut W) -> io::Result<()>
+where
+    W: io::Write,
+{
     try!(writeln!(dest,
         "impl {api} {{
             /// Stub function.
             #[allow(dead_code)]
-            pub fn load_with<F>(mut _loadfn: F) -> {api} where F: FnMut(&str) -> *const __gl_imports::raw::c_void {{
+            pub fn load_with<F>(mut _loadfn: F) -> {api} where F: FnMut(&'static str) -> *const __gl_imports::raw::c_void {{
                 {api}
             }}",
         api = super::gen_struct_name(registry.api),
     ));
 
     for cmd in &registry.cmds {
-        try!(writeln!(dest,
+        try!(writeln!(
+            dest,
             "#[allow(non_snake_case)]
             // #[allow(unused_variables)]
             #[allow(dead_code)]
@@ -110,16 +137,22 @@ fn write_impl<W>(registry: &Registry, dest: &mut W) -> io::Result<()> where W: i
 /// io::Writes all functions corresponding to the GL bindings.
 ///
 /// These are foreign functions, they don't have any content.
-fn write_fns<W>(registry: &Registry, dest: &mut W) -> io::Result<()> where W: io::Write {
-
-    try!(writeln!(dest, "
+fn write_fns<W>(registry: &Registry, dest: &mut W) -> io::Result<()>
+where
+    W: io::Write,
+{
+    try!(writeln!(
+        dest,
+        "
         #[allow(non_snake_case)]
         #[allow(unused_variables)]
         #[allow(dead_code)]
-        extern \"system\" {{"));
+        extern \"system\" {{"
+    ));
 
     for cmd in &registry.cmds {
-        try!(writeln!(dest,
+        try!(writeln!(
+            dest,
             "#[link_name=\"{symbol}\"] fn {name}({params}) -> {return_suffix};",
             symbol = super::gen_symbol_name(registry.api, &cmd.proto.ident),
             name = cmd.proto.ident,

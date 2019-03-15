@@ -5,7 +5,7 @@
 // tests the translation infobar, using a fake 'Translation' implementation.
 
 var tmp = {};
-Cu.import("resource:///modules/translation/Translation.jsm", tmp);
+ChromeUtils.import("resource:///modules/translation/Translation.jsm", tmp);
 var {Translation} = tmp;
 
 const kShowUIPref = "browser.translation.ui.show";
@@ -53,7 +53,7 @@ var TranslationStub = {
     this.showTranslatedContent();
     this.state = Translation.STATE_TRANSLATED;
     this._reset();
-  }
+  },
 };
 
 function showTranslationUI(aDetectedLanguage) {
@@ -75,9 +75,9 @@ function test() {
   waitForExplicitFinish();
 
   Services.prefs.setBoolPref(kShowUIPref, true);
-  let tab = gBrowser.addTab();
+  let tab = BrowserTestUtils.addTab(gBrowser);
   gBrowser.selectedTab = tab;
-  tab.linkedBrowser.addEventListener("load", function() {
+  BrowserTestUtils.browserLoaded(tab.linkedBrowser).then(() => {
     TranslationStub.browser = gBrowser.selectedBrowser;
     registerCleanupFunction(function() {
       gBrowser.removeTab(tab);
@@ -86,9 +86,9 @@ function test() {
     run_tests(() => {
       finish();
     });
-  }, {capture: true, once: true});
+  });
 
-  content.location = "data:text/plain,test page";
+  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "data:text/plain,test page");
 }
 
 function checkURLBarIcon(aExpectTranslated = false) {

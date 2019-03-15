@@ -1,8 +1,8 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
-* License, v. 2.0. If a copy of the MPL was not distributed with this
-* file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GMPService.h"
 #include "GMPTestMonitor.h"
@@ -16,7 +16,6 @@
 #include "GMPService.h"
 #include "GMPUtils.h"
 #include "mozilla/StaticPtr.h"
-#include "MediaPrefs.h"
 
 #define GMP_DIR_NAME NS_LITERAL_STRING("gmp-fakeopenh264")
 #define GMP_OLD_VERSION NS_LITERAL_STRING("1.0")
@@ -29,10 +28,8 @@
 using namespace mozilla;
 using namespace mozilla::gmp;
 
-class GMPRemoveTest : public nsIObserver
-                    , public GMPVideoDecoderCallbackProxy
-{
-public:
+class GMPRemoveTest : public nsIObserver, public GMPVideoDecoderCallbackProxy {
+ public:
   GMPRemoveTest();
 
   NS_DECL_THREADSAFE_ISUPPORTS
@@ -71,13 +68,14 @@ public:
   virtual void Terminated() override;
 
   // Ignored GMPVideoDecoderCallbackProxy members
-  virtual void ReceivedDecodedReferenceFrame(const uint64_t aPictureId) override {}
+  virtual void ReceivedDecodedReferenceFrame(
+      const uint64_t aPictureId) override {}
   virtual void ReceivedDecodedFrame(const uint64_t aPictureId) override {}
   virtual void InputDataExhausted() override {}
   virtual void DrainComplete() override {}
   virtual void ResetComplete() override {}
 
-private:
+ private:
   virtual ~GMPRemoveTest();
 
   void gmp_Decode();
@@ -107,8 +105,7 @@ private:
 /*
  * Simple test that the plugin is deleted when forcibly removed and deleted.
  */
-TEST(GeckoMediaPlugins, RemoveAndDeleteForcedSimple)
-{
+TEST(GeckoMediaPlugins, RemoveAndDeleteForcedSimple) {
   RefPtr<GMPRemoveTest> test(new GMPRemoveTest());
 
   test->Setup();
@@ -119,8 +116,7 @@ TEST(GeckoMediaPlugins, RemoveAndDeleteForcedSimple)
 /*
  * Simple test that the plugin is deleted when deferred deletion is allowed.
  */
-TEST(GeckoMediaPlugins, RemoveAndDeleteDeferredSimple)
-{
+TEST(GeckoMediaPlugins, RemoveAndDeleteDeferredSimple) {
   RefPtr<GMPRemoveTest> test(new GMPRemoveTest());
 
   test->Setup();
@@ -132,8 +128,7 @@ TEST(GeckoMediaPlugins, RemoveAndDeleteDeferredSimple)
  * Test that the plugin is unavailable immediately after a forced
  * RemoveAndDelete, and that the plugin is deleted afterwards.
  */
-TEST(GeckoMediaPlugins, RemoveAndDeleteForcedInUse)
-{
+TEST(GeckoMediaPlugins, RemoveAndDeleteForcedInUse) {
   RefPtr<GMPRemoveTest> test(new GMPRemoveTest());
 
   test->Setup();
@@ -157,8 +152,7 @@ TEST(GeckoMediaPlugins, RemoveAndDeleteForcedInUse)
  * Test that the plugin is still usable after a deferred RemoveAndDelete, and
  * that the plugin is deleted afterwards.
  */
-TEST(GeckoMediaPlugins, RemoveAndDeleteDeferredInUse)
-{
+TEST(GeckoMediaPlugins, RemoveAndDeleteDeferredInUse) {
   RefPtr<GMPRemoveTest> test(new GMPRemoveTest());
 
   test->Setup();
@@ -184,24 +178,20 @@ TEST(GeckoMediaPlugins, RemoveAndDeleteDeferredInUse)
 static StaticRefPtr<GeckoMediaPluginService> gService;
 static StaticRefPtr<GeckoMediaPluginServiceParent> gServiceParent;
 
-static GeckoMediaPluginService*
-GetService()
-{
+static GeckoMediaPluginService* GetService() {
   if (!gService) {
     RefPtr<GeckoMediaPluginService> service =
-      GeckoMediaPluginService::GetGeckoMediaPluginService();
+        GeckoMediaPluginService::GetGeckoMediaPluginService();
     gService = service;
   }
 
   return gService.get();
 }
 
-static GeckoMediaPluginServiceParent*
-GetServiceParent()
-{
+static GeckoMediaPluginServiceParent* GetServiceParent() {
   if (!gServiceParent) {
     RefPtr<GeckoMediaPluginServiceParent> parent =
-      GeckoMediaPluginServiceParent::GetSingleton();
+        GeckoMediaPluginServiceParent::GetSingleton();
     gServiceParent = parent;
   }
 
@@ -211,25 +201,16 @@ GetServiceParent()
 NS_IMPL_ISUPPORTS(GMPRemoveTest, nsIObserver)
 
 GMPRemoveTest::GMPRemoveTest()
-  : mIsTerminated(false)
-  , mDecoder(nullptr)
-  , mHost(nullptr)
-{
-}
+    : mIsTerminated(false), mDecoder(nullptr), mHost(nullptr) {}
 
-GMPRemoveTest::~GMPRemoveTest()
-{
+GMPRemoveTest::~GMPRemoveTest() {
   bool exists;
   EXPECT_TRUE(NS_SUCCEEDED(mTmpDir->Exists(&exists)) && !exists);
 
   EXPECT_OK(GetServiceParent()->AddPluginDirectory(mOriginalPath));
 }
 
-void
-GMPRemoveTest::Setup()
-{
-  // Initialize media preferences.
-  MediaPrefs::GetSingleton();
+void GMPRemoveTest::Setup() {
   GeneratePlugin();
   GetService()->GetThread(getter_AddRefs(mGMPThread));
 
@@ -240,33 +221,31 @@ GMPRemoveTest::Setup()
   RefPtr<AbstractThread> thread(GetServiceParent()->GetAbstractGMPThread());
   EXPECT_TRUE(thread);
   GMPTestMonitor* mon = &mTestMonitor;
-  GetServiceParent()->EnsureInitialized()->Then(thread, __func__,
-    [mon]() { mon->SetFinished(); },
-    [mon]() { mon->SetFinished(); }
-  );
+  GetServiceParent()->EnsureInitialized()->Then(
+      thread, __func__, [mon]() { mon->SetFinished(); },
+      [mon]() { mon->SetFinished(); });
   mTestMonitor.AwaitFinished();
 
   nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
   obs->AddObserver(this, GMP_DELETED_TOPIC, false /* strong ref */);
   EXPECT_OK(GetServiceParent()->RemovePluginDirectory(mOriginalPath));
 
-  GetServiceParent()->AsyncAddPluginDirectory(mTmpPath)->Then(thread, __func__,
-    [mon]() { mon->SetFinished(); },
-    [mon]() { mon->SetFinished(); }
-  );
+  GetServiceParent()->AsyncAddPluginDirectory(mTmpPath)->Then(
+      thread, __func__, [mon]() { mon->SetFinished(); },
+      [mon]() { mon->SetFinished(); });
   mTestMonitor.AwaitFinished();
 }
 
-bool
-GMPRemoveTest::CreateVideoDecoder(nsCString aNodeId)
-{
+bool GMPRemoveTest::CreateVideoDecoder(nsCString aNodeId) {
   GMPVideoHost* host;
   GMPVideoDecoderProxy* decoder = nullptr;
 
   mGMPThread->Dispatch(
-    NewNonOwningRunnableMethod<nsCString, GMPVideoDecoderProxy**, GMPVideoHost**>(
-      this, &GMPRemoveTest::gmp_GetVideoDecoder, aNodeId, &decoder, &host),
-    NS_DISPATCH_NORMAL);
+      NewNonOwningRunnableMethod<nsCString, GMPVideoDecoderProxy**,
+                                 GMPVideoHost**>(
+          "GMPRemoveTest::gmp_GetVideoDecoder", this,
+          &GMPRemoveTest::gmp_GetVideoDecoder, aNodeId, &decoder, &host),
+      NS_DISPATCH_NORMAL);
 
   mTestMonitor.AwaitFinished();
 
@@ -280,10 +259,12 @@ GMPRemoveTest::CreateVideoDecoder(nsCString aNodeId)
 
   nsTArray<uint8_t> empty;
   mGMPThread->Dispatch(
-    NewNonOwningRunnableMethod<const GMPVideoCodec&, const nsTArray<uint8_t>&, GMPVideoDecoderCallbackProxy*, int32_t>(
-      decoder, &GMPVideoDecoderProxy::InitDecode,
-      codec, empty, this, 1 /* core count */),
-    NS_DISPATCH_SYNC);
+      NewNonOwningRunnableMethod<const GMPVideoCodec&, const nsTArray<uint8_t>&,
+                                 GMPVideoDecoderCallbackProxy*, int32_t>(
+          "GMPVideoDecoderProxy::InitDecode", decoder,
+          &GMPVideoDecoderProxy::InitDecode, codec, empty, this,
+          1 /* core count */),
+      NS_DISPATCH_SYNC);
 
   if (mDecoder) {
     CloseVideoDecoder();
@@ -295,118 +276,121 @@ GMPRemoveTest::CreateVideoDecoder(nsCString aNodeId)
   return true;
 }
 
-void
-GMPRemoveTest::gmp_GetVideoDecoder(nsCString aNodeId,
-                                   GMPVideoDecoderProxy** aOutDecoder,
-                                   GMPVideoHost** aOutHost)
-{
+void GMPRemoveTest::gmp_GetVideoDecoder(nsCString aNodeId,
+                                        GMPVideoDecoderProxy** aOutDecoder,
+                                        GMPVideoHost** aOutHost) {
   nsTArray<nsCString> tags;
   tags.AppendElement(NS_LITERAL_CSTRING("h264"));
   tags.AppendElement(NS_LITERAL_CSTRING("fake"));
 
-  class Callback : public GetGMPVideoDecoderCallback
-  {
-  public:
-    Callback(GMPTestMonitor* aMonitor, GMPVideoDecoderProxy** aDecoder, GMPVideoHost** aHost)
-      : mMonitor(aMonitor), mDecoder(aDecoder), mHost(aHost) { }
-    virtual void Done(GMPVideoDecoderProxy* aDecoder, GMPVideoHost* aHost) override {
+  class Callback : public GetGMPVideoDecoderCallback {
+   public:
+    Callback(GMPTestMonitor* aMonitor, GMPVideoDecoderProxy** aDecoder,
+             GMPVideoHost** aHost)
+        : mMonitor(aMonitor), mDecoder(aDecoder), mHost(aHost) {}
+    virtual void Done(GMPVideoDecoderProxy* aDecoder,
+                      GMPVideoHost* aHost) override {
       *mDecoder = aDecoder;
       *mHost = aHost;
       mMonitor->SetFinished();
     }
-  private:
+
+   private:
     GMPTestMonitor* mMonitor;
     GMPVideoDecoderProxy** mDecoder;
     GMPVideoHost** mHost;
   };
 
-  UniquePtr<GetGMPVideoDecoderCallback>
-    cb(new Callback(&mTestMonitor, aOutDecoder, aOutHost));
+  UniquePtr<GetGMPVideoDecoderCallback> cb(
+      new Callback(&mTestMonitor, aOutDecoder, aOutHost));
 
-  if (NS_FAILED(GetService()->GetGMPVideoDecoder(nullptr, &tags, aNodeId, Move(cb)))) {
+  if (NS_FAILED(GetService()->GetGMPVideoDecoder(nullptr, &tags, aNodeId,
+                                                 std::move(cb)))) {
     mTestMonitor.SetFinished();
   }
 }
 
-void
-GMPRemoveTest::CloseVideoDecoder()
-{
+void GMPRemoveTest::CloseVideoDecoder() {
   mGMPThread->Dispatch(
-    NewNonOwningRunnableMethod(mDecoder, &GMPVideoDecoderProxy::Close),
-    NS_DISPATCH_SYNC);
+      NewNonOwningRunnableMethod("GMPVideoDecoderProxy::Close", mDecoder,
+                                 &GMPVideoDecoderProxy::Close),
+      NS_DISPATCH_SYNC);
 
   mDecoder = nullptr;
   mHost = nullptr;
 }
 
-void
-GMPRemoveTest::DeletePluginDirectory(bool aCanDefer)
-{
+void GMPRemoveTest::DeletePluginDirectory(bool aCanDefer) {
   GetServiceParent()->RemoveAndDeletePluginDirectory(mTmpPath, aCanDefer);
 }
 
-GMPErr
-GMPRemoveTest::Decode()
-{
+GMPErr GMPRemoveTest::Decode() {
   mGMPThread->Dispatch(
-    NewNonOwningRunnableMethod(this, &GMPRemoveTest::gmp_Decode),
-    NS_DISPATCH_NORMAL);
+      NewNonOwningRunnableMethod("GMPRemoveTest::gmp_Decode", this,
+                                 &GMPRemoveTest::gmp_Decode),
+      NS_DISPATCH_NORMAL);
 
   mTestMonitor.AwaitFinished();
   return mDecodeResult;
 }
 
-void
-GMPRemoveTest::gmp_Decode()
-{
-  // from gmp-fake.cpp
+void GMPRemoveTest::gmp_Decode() {
+// from gmp-fake.cpp
+#pragma pack(push, 1)
   struct EncodedFrame {
-    uint32_t length_;
-    uint8_t h264_compat_;
-    uint32_t magic_;
-    uint32_t width_;
-    uint32_t height_;
-    uint8_t y_;
-    uint8_t u_;
-    uint8_t v_;
-    uint32_t timestamp_;
+    struct SPSNalu {
+      uint32_t size_;
+      uint8_t payload[14];
+    } sps_nalu;
+    struct PPSNalu {
+      uint32_t size_;
+      uint8_t payload[4];
+    } pps_nalu;
+    struct IDRNalu {
+      uint32_t size_;
+      uint8_t h264_compat_;
+      uint32_t magic_;
+      uint32_t width_;
+      uint32_t height_;
+      uint8_t y_;
+      uint8_t u_;
+      uint8_t v_;
+      uint32_t timestamp_;
+    } idr_nalu;
   };
+#pragma pack(pop)
 
   GMPVideoFrame* absFrame;
   GMPErr err = mHost->CreateFrame(kGMPEncodedVideoFrame, &absFrame);
   EXPECT_EQ(err, GMPNoErr);
 
-  GMPUniquePtr<GMPVideoEncodedFrame>
-    frame(static_cast<GMPVideoEncodedFrame*>(absFrame));
+  GMPUniquePtr<GMPVideoEncodedFrame> frame(
+      static_cast<GMPVideoEncodedFrame*>(absFrame));
   err = frame->CreateEmptyFrame(sizeof(EncodedFrame) /* size */);
   EXPECT_EQ(err, GMPNoErr);
 
   EncodedFrame* frameData = reinterpret_cast<EncodedFrame*>(frame->Buffer());
-  frameData->magic_ = 0x4652414d;
-  frameData->width_ = frameData->height_ = 16;
+  frameData->sps_nalu.size_ = sizeof(EncodedFrame::SPSNalu) - sizeof(uint32_t);
+  frameData->pps_nalu.size_ = sizeof(EncodedFrame::PPSNalu) - sizeof(uint32_t);
+  frameData->idr_nalu.size_ = sizeof(EncodedFrame::IDRNalu) - sizeof(uint32_t);
+  frameData->idr_nalu.h264_compat_ = 5;
+  frameData->idr_nalu.magic_ = 0x004000b8;
+  frameData->idr_nalu.width_ = frameData->idr_nalu.height_ = 16;
 
   nsTArray<uint8_t> empty;
-  nsresult rv = mDecoder->Decode(Move(frame), false /* aMissingFrames */, empty);
+  nsresult rv =
+      mDecoder->Decode(std::move(frame), false /* aMissingFrames */, empty);
   EXPECT_OK(rv);
 }
 
-void
-GMPRemoveTest::Wait()
-{
-  mTestMonitor.AwaitFinished();
-}
+void GMPRemoveTest::Wait() { mTestMonitor.AwaitFinished(); }
 
-bool
-GMPRemoveTest::IsTerminated()
-{
-  return mIsTerminated;
-}
+bool GMPRemoveTest::IsTerminated() { return mIsTerminated; }
 
 // nsIObserver
 NS_IMETHODIMP
 GMPRemoveTest::Observe(nsISupports* aSubject, const char* aTopic,
-                       const char16_t* aData)
-{
+                       const char16_t* aData) {
   EXPECT_TRUE(!strcmp(GMP_DELETED_TOPIC, aTopic));
 
   nsString data(aData);
@@ -420,26 +404,20 @@ GMPRemoveTest::Observe(nsISupports* aSubject, const char* aTopic,
 }
 
 // GMPVideoDecoderCallbackProxy
-void
-GMPRemoveTest::Decoded(GMPVideoi420Frame* aDecodedFrame)
-{
+void GMPRemoveTest::Decoded(GMPVideoi420Frame* aDecodedFrame) {
   aDecodedFrame->Destroy();
   mDecodeResult = GMPNoErr;
   mTestMonitor.SetFinished();
 }
 
 // GMPVideoDecoderCallbackProxy
-void
-GMPRemoveTest::Error(GMPErr aError)
-{
+void GMPRemoveTest::Error(GMPErr aError) {
   mDecodeResult = aError;
   mTestMonitor.SetFinished();
 }
 
 // GMPVideoDecoderCallbackProxy
-void
-GMPRemoveTest::Terminated()
-{
+void GMPRemoveTest::Terminated() {
   mIsTerminated = true;
   if (mDecoder) {
     mDecoder->Close();
@@ -447,16 +425,13 @@ GMPRemoveTest::Terminated()
   }
 }
 
-void
-GMPRemoveTest::GeneratePlugin()
-{
+void GMPRemoveTest::GeneratePlugin() {
   nsresult rv;
   nsCOMPtr<nsIFile> gmpDir;
   nsCOMPtr<nsIFile> origDir;
   nsCOMPtr<nsIFile> tmpDir;
 
-  rv = NS_GetSpecialDirectory(NS_GRE_DIR,
-                              getter_AddRefs(gmpDir));
+  rv = NS_GetSpecialDirectory(NS_GRE_DIR, getter_AddRefs(gmpDir));
   EXPECT_OK(rv);
   rv = gmpDir->Append(GMP_DIR_NAME);
   EXPECT_OK(rv);

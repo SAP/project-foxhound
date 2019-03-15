@@ -7,7 +7,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1216047
   <meta charset="utf-8">
   <title>Test for Bug 1216047</title>
   <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SpawnTask.js"></script>
+  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/AddTask.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://global/skin"/>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
   <script type="application/javascript" src="head.js"></script>
@@ -15,67 +15,96 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1216047
 
   "use strict";
 
-  const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
-
-  Cu.import("resource://gre/modules/Services.jsm");
-  Cu.import("resource://gre/modules/Messaging.jsm");
-  Cu.import("resource://gre/modules/Task.jsm");
+  ChromeUtils.import("resource://gre/modules/Services.jsm");
+  ChromeUtils.import("resource://gre/modules/Messaging.jsm");
 
   // The chrome window
-  let chromeWin;
+  let chromeWin = Services.wm.getMostRecentWindow("navigator:browser");
+  let BrowserApp = chromeWin.BrowserApp;
 
-  // Track the <browser>s where the tests are happening
-  let browserBlank;
-  let browserTest;
+  // Track the tabs where the tests are happening
+  let tabBlank;
+  let tabTest;
+
+  function cleanupTabs() {
+    if (tabBlank) {
+      BrowserApp.closeTab(tabBlank);
+      tabBlank = null;
+    }
+
+    if (tabTest) {
+      BrowserApp.closeTab(tabTest);
+      tabTest = null;
+    }
+  }
+
+  SimpleTest.registerCleanupFunction(function() {
+    cleanupTabs();
+  });
 
   const kTestPage = "http://mochi.test:8888/chrome/mobile/android/tests/browser/chrome/basic_article.html";
 
-  add_task(function* test_selectOrAdd() {
-    chromeWin = Services.wm.getMostRecentWindow("navigator:browser");
-    let BrowserApp = chromeWin.BrowserApp;
-
-    SimpleTest.registerCleanupFunction(function() {
-      BrowserApp.closeTab(BrowserApp.getTabForBrowser(browserBlank));
-      BrowserApp.closeTab(BrowserApp.getTabForBrowser(browserTest));
-    });
-
+  add_task(async function test_selectOrAdd() {
     // Add a new tab with a blank page
-    browserBlank = BrowserApp.addTab("about:blank", { selected: true, parentId: BrowserApp.selectedTab.id }).browser;
+    tabBlank = BrowserApp.addTab("about:blank", { selected: true, parentId: BrowserApp.selectedTab.id });
 
-    // Now, let's force the target browser to be added
-    browserTest = BrowserApp.selectOrAddTab(kTestPage, { selected: true, parentId: BrowserApp.selectedTab.id }).browser;
-    yield promiseBrowserEvent(browserTest, "DOMContentLoaded");
+    // Now, let's force the target tab to be added
+    tabTest = BrowserApp.selectOrAddTab(kTestPage, { selected: true, parentId: BrowserApp.selectedTab.id });
+    await promiseBrowserEvent(tabTest.browser, "DOMContentLoaded");
 
     // Check that basic_article is now selected
-    is(BrowserApp.selectedBrowser, browserTest, "Target browser is selected after being added.");
+    is(BrowserApp.selectedBrowser, tabTest.browser, "Target tab is selected after being added.");
 
     // Switch back to about:blank
-    BrowserApp.selectTab(BrowserApp.getTabForBrowser(browserBlank));
-    yield promiseTabEvent(BrowserApp.deck, "TabSelect");
+    BrowserApp.selectTab(tabBlank);
+    await promiseTabEvent(BrowserApp.deck, "TabSelect");
 
     // Check that about:blank is selected
-    is(BrowserApp.selectedBrowser, browserBlank, "about:blank is selected.");
+    is(BrowserApp.selectedTab, tabBlank, "about:blank is selected.");
 
     // Use selectOrAddTab to select the existing tab
-    BrowserApp.selectOrAddTab(kTestPage, { selected: true, parentId: BrowserApp.selectedTab.id }).browser;
-    yield promiseTabEvent(BrowserApp.deck, "TabSelect");
+    BrowserApp.selectOrAddTab(kTestPage, { selected: true, parentId: BrowserApp.selectedTab.id });
+    await promiseTabEvent(BrowserApp.deck, "TabSelect");
 
     // Check that basic_article is now selected
-    is(BrowserApp.selectedBrowser, browserTest, "Target browser is selected.");
+    is(BrowserApp.selectedTab, tabTest, "Target tab is selected.");
 
     // Switch back to about:blank
-    BrowserApp.selectTab(BrowserApp.getTabForBrowser(browserBlank));
-    yield promiseTabEvent(BrowserApp.deck, "TabSelect");
+    BrowserApp.selectTab(tabBlank);
+    await promiseTabEvent(BrowserApp.deck, "TabSelect");
 
     // Check that about:blank is selected
-    is(BrowserApp.selectedBrowser, browserBlank, "about:blank is selected.");
+    is(BrowserApp.selectedTab, tabBlank, "about:blank is selected.");
 
     // Use selectOrAddTab to select the existing tab using the startsWith flag
-    BrowserApp.selectOrAddTab(kTestPage, { selected: true, parentId: BrowserApp.selectedTab.id }, { startsWith: kTestPage }).browser;
-    yield promiseTabEvent(BrowserApp.deck, "TabSelect");
+    BrowserApp.selectOrAddTab(kTestPage, { selected: true, parentId: BrowserApp.selectedTab.id }, { startsWith: kTestPage });
+    await promiseTabEvent(BrowserApp.deck, "TabSelect");
 
     // Check that basic_article is now selected
-    is(BrowserApp.selectedBrowser, browserTest, "Target browser is selected.");
+    is(BrowserApp.selectedTab, tabTest, "Target tab is selected.");
+
+    // Switch back to about:blank
+    BrowserApp.selectTab(tabBlank);
+    await promiseTabEvent(BrowserApp.deck, "TabSelect");
+
+    // Check that about:blank is selected
+    is(BrowserApp.selectedTab, tabBlank, "about:blank is selected.");
+
+    // Zombify basic_article
+    tabTest.zombify();
+
+    // Check that basic_article is actually zombified
+    ok(tabTest.browser.__SS_restore, "Target tab is set for delay loading.");
+    is(tabTest.browser.currentURI.spec, "about:blank", "Target tab is zombified.");
+
+    // Use selectOrAddTab to select the existing tab
+    BrowserApp.selectOrAddTab(kTestPage, { selected: true, parentId: BrowserApp.selectedTab.id });
+    await promiseTabEvent(BrowserApp.deck, "TabSelect");
+
+    // Check that basic_article is now selected
+    is(BrowserApp.selectedTab, tabTest, "Target tab is selected.");
+
+    cleanupTabs();
   });
 
   </script>

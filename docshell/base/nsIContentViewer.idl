@@ -5,12 +5,10 @@
 #include "nsISupports.idl"
 
 interface nsIDocShell;
-interface nsIDocument;
-interface nsIDOMDocument;
-interface nsIDOMNode;
 interface nsISHEntry;
 interface nsIPrintSettings;
-
+webidl Document;
+webidl Node;
 
 %{ C++
 #include "nsTArray.h"
@@ -21,6 +19,9 @@ class nsIPresShell;
 class nsPresContext;
 class nsView;
 class nsDOMNavigationTiming;
+namespace mozilla {
+class Encoding;
+}
 %}
 
 [ptr] native nsIWidgetPtr(nsIWidget);
@@ -30,6 +31,7 @@ class nsDOMNavigationTiming;
 [ptr] native nsViewPtr(nsView);
 [ptr] native nsDOMNavigationTimingPtr(nsDOMNavigationTiming);
 [ref] native nsIContentViewerTArray(nsTArray<nsCOMPtr<nsIContentViewer> >);
+[ptr] native Encoding(const mozilla::Encoding);
 
 [scriptable, builtinclass, uuid(2da17016-7851-4a45-a7a8-00b360e01595)]
 interface nsIContentViewer : nsISupports
@@ -39,15 +41,42 @@ interface nsIContentViewer : nsISupports
 
   attribute nsIDocShell container;
 
-  [noscript,notxpcom,nostdcall] void loadStart(in nsIDocument aDoc);
+  [noscript,notxpcom,nostdcall] void loadStart(in Document aDoc);
   void loadComplete(in nsresult aStatus);
-  [noscript] readonly attribute boolean loadCompleted;
+  [notxpcom,nostdcall] readonly attribute boolean loadCompleted;
+
+  [notxpcom,nostdcall] readonly attribute boolean isStopped;
+
+  /**
+   * aPermitUnloadFlags are passed to PermitUnload to indicate what action to take
+   * if a beforeunload handler wants to prompt the user.  It is also used by
+   * permitUnloadInternal to ensure we only prompt once.
+   *
+   * ePrompt: Prompt and return the user's choice (default).
+   * eDontPromptAndDontUnload: Don't prompt and return false (unload not permitted)
+   *                           if the document (or its children) asks us to prompt.
+   * eDontPromptAndUnload: Don't prompt and return true (unload permitted) no matter what.
+   */
+  const unsigned long ePrompt = 0;
+  const unsigned long eDontPromptAndDontUnload = 1;
+  const unsigned long eDontPromptAndUnload = 2;
+
+  /**
+   * Overload PermitUnload method for C++ consumers with no aPermitUnloadFlags
+   * argument.
+   */
+  %{C++
+    nsresult PermitUnload(bool* canUnload) {
+      return PermitUnload(ePrompt, canUnload);
+    }
+  %}
 
   /**
    * Checks if the document wants to prevent unloading by firing beforeunload on
-   * the document, and if it does, prompts the user. The result is returned.
+   * the document, and if it does, takes action directed by aPermitUnloadFlags.
+   * The result is returned.
    */
-  boolean permitUnload();
+  boolean permitUnload([optional] in unsigned long aPermitUnloadFlags);
 
   /**
    * Exposes whether we're blocked in a call to permitUnload.
@@ -55,11 +84,11 @@ interface nsIContentViewer : nsISupports
   readonly attribute boolean inPermitUnload;
 
   /**
-   * As above, but this passes around the aShouldPrompt argument to keep
+   * As above, but this passes around the aPermitUnloadFlags argument to keep
    * track of whether the user has responded to a prompt.
    * Used internally by the scriptable version to ensure we only prompt once.
    */
-  [noscript,nostdcall] boolean permitUnloadInternal(inout boolean aShouldPrompt);
+  [noscript,nostdcall] boolean permitUnloadInternal(inout unsigned long aPermitUnloadFlags);
 
   /**
    * Exposes whether we're in the process of firing the beforeunload event.
@@ -95,12 +124,21 @@ interface nsIContentViewer : nsISupports
 
   void stop();
 
-  attribute nsIDOMDocument DOMDocument;
+  /**
+   * Returns the same thing as getDocument(), but for use from script
+   * only.  C++ consumers should use getDocument().
+   */
+  readonly attribute Document DOMDocument;
 
   /**
-   * Returns DOMDocument as nsIDocument and without addrefing.
+   * Returns DOMDocument without addrefing.
    */
-  [noscript,notxpcom] nsIDocument getDocument();
+  [noscript,notxpcom,nostdcall] Document getDocument();
+
+  /**
+   * Allows setting the document.
+   */
+  [noscript,nostdcall] void setDocument(in Document aDocument);
 
   [noscript] void getBounds(in nsIntRectRef aBounds);
   [noscript] void setBounds([const] in nsIntRectRef aBounds);
@@ -115,7 +153,7 @@ interface nsIContentViewer : nsISupports
    * The previous content viewer, which has been |close|d but not
    * |destroy|ed.
    */
-  [noscript] attribute nsIContentViewer previousViewer;
+  [notxpcom,nostdcall] attribute nsIContentViewer previousViewer;
 
   void move(in long aX, in long aY);
 
@@ -176,10 +214,12 @@ interface nsIContentViewer : nsISupports
    */
   attribute boolean isHidden;
 
-  [noscript] readonly attribute nsIPresShellPtr presShell;
-  [noscript] readonly attribute nsPresContextPtr presContext;
+  // presShell can be null.
+  [notxpcom,nostdcall] readonly attribute nsIPresShellPtr presShell;
+  // presContext can be null.
+  [notxpcom,nostdcall] readonly attribute nsPresContextPtr presContext;
   // aDocument must not be null.
-  [noscript] void setDocumentInternal(in nsIDocument aDocument,
+  [noscript] void setDocumentInternal(in Document aDocument,
                                       in boolean aForceReuseInnerWindow);
   /**
    * Find the view to use as the container view for MakeWindow. Returns
@@ -195,13 +235,28 @@ interface nsIContentViewer : nsISupports
   /*
   Scrolls to a given DOM content node. 
   */
-  void scrollToNode(in nsIDOMNode node);
+  void scrollToNode(in Node node);
 
   /** The amount by which to scale all text. Default is 1.0. */
   attribute float textZoom;
 
+  /** The actual text zoom in effect, as modified by the system font scale. */
+  readonly attribute float effectiveTextZoom;
+
   /** The amount by which to scale all lengths. Default is 1.0. */
   attribute float fullZoom;
+
+  /**
+   * The actual full zoom in effect, as modified by the device context.
+   * For a requested full zoom, the device context may choose a slightly
+   * different effectiveFullZoom to accomodate integer rounding of app units
+   * per dev pixel. This property returns the actual zoom amount in use,
+   * though it may not be good user experience to report that a requested zoom
+   * of 90% is actually 89.1%, for example. This value is provided primarily to
+   * support media queries of dppx values, because those queries are matched
+   * against the actual native device pixel ratio and the actual full zoom.
+   */
+  readonly attribute float deviceFullZoom;
 
   /**
    * The value used to override devicePixelRatio and media queries dppx.
@@ -244,9 +299,6 @@ interface nsIContentViewer : nsISupports
   void getContentSizeConstrained(in long maxWidth, in long maxHeight,
                                  out long width, out long height);
 
-  /** The minimum font size  */
-  attribute long minFontSize;
-
   /**
    * Append |this| and all of its descendants to the given array,
    * in depth-first pre-order traversal.
@@ -277,4 +329,9 @@ interface nsIContentViewer : nsISupports
    * Restore the viewer's natural media type
    */
   void stopEmulatingMedium();
+
+  [noscript, notxpcom] Encoding getHintCharset();
+  [noscript, notxpcom] void setHintCharset(in Encoding aEncoding);
+  [noscript, notxpcom] Encoding getForceCharset();
+  [noscript, notxpcom] void setForceCharset(in Encoding aEncoding);
 };

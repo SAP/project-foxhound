@@ -10,17 +10,17 @@
 
 // Unit tests for Expand class.
 
-#include "webrtc/modules/audio_coding/neteq/expand.h"
+#include "modules/audio_coding/neteq/expand.h"
 
-#include "testing/gtest/include/gtest/gtest.h"
-#include "webrtc/base/safe_conversions.h"
-#include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
-#include "webrtc/modules/audio_coding/neteq/background_noise.h"
-#include "webrtc/modules/audio_coding/neteq/random_vector.h"
-#include "webrtc/modules/audio_coding/neteq/statistics_calculator.h"
-#include "webrtc/modules/audio_coding/neteq/sync_buffer.h"
-#include "webrtc/modules/audio_coding/neteq/tools/resample_input_audio_file.h"
-#include "webrtc/test/testsupport/fileutils.h"
+#include "common_audio/signal_processing/include/signal_processing_library.h"
+#include "modules/audio_coding/neteq/background_noise.h"
+#include "modules/audio_coding/neteq/random_vector.h"
+#include "modules/audio_coding/neteq/statistics_calculator.h"
+#include "modules/audio_coding/neteq/sync_buffer.h"
+#include "modules/audio_coding/neteq/tools/resample_input_audio_file.h"
+#include "rtc_base/numerics/safe_conversions.h"
+#include "test/gtest.h"
+#include "test/testsupport/fileutils.h"
 
 namespace webrtc {
 
@@ -88,13 +88,14 @@ class ExpandTest : public ::testing::Test {
   void SetUp() override {
     // Fast-forward the input file until there is speech (about 1.1 second into
     // the file).
-    const size_t speech_start_samples =
-        static_cast<size_t>(test_sample_rate_hz_ * 1.1f);
+    const int speech_start_samples =
+        static_cast<int>(test_sample_rate_hz_ * 1.1f);
     ASSERT_TRUE(input_file_.Seek(speech_start_samples));
 
     // Pre-load the sync buffer with speech data.
-    ASSERT_TRUE(
-        input_file_.Read(sync_buffer_.Size(), &sync_buffer_.Channel(0)[0]));
+    std::unique_ptr<int16_t[]> temp(new int16_t[sync_buffer_.Size()]);
+    ASSERT_TRUE(input_file_.Read(sync_buffer_.Size(), temp.get()));
+    sync_buffer_.Channel(0).OverwriteAt(temp.get(), sync_buffer_.Size(), 0);
     ASSERT_EQ(1u, num_channels_) << "Fix: Must populate all channels.";
   }
 
@@ -167,6 +168,37 @@ TEST_F(ExpandTest, CheckOutageStatsAfterReset) {
   EXPECT_EQ(rtc::checked_cast<int>(sum_output_len_samples /
                                    (test_sample_rate_hz_ / 1000)),
             statistics_.last_outage_duration_ms());
+}
+
+namespace {
+// Runs expand until Muted() returns true. Times out after 1000 calls.
+void ExpandUntilMuted(size_t num_channels, Expand* expand) {
+  EXPECT_FALSE(expand->Muted()) << "Instance is muted from the start";
+  AudioMultiVector output(num_channels);
+  int num_calls = 0;
+  while (!expand->Muted()) {
+    ASSERT_LT(num_calls++, 1000) << "Test timed out";
+    EXPECT_EQ(0, expand->Process(&output));
+  }
+}
+}  // namespace
+
+// Verifies that Muted() returns true after a long expand period. Also verifies
+// that Muted() is reset to false after calling Reset(),
+// SetParametersForMergeAfterExpand() and SetParametersForNormalAfterExpand().
+TEST_F(ExpandTest, Muted) {
+  ExpandUntilMuted(num_channels_, &expand_);
+  expand_.Reset();
+  EXPECT_FALSE(expand_.Muted());  // Should be back to unmuted.
+
+  ExpandUntilMuted(num_channels_, &expand_);
+  expand_.SetParametersForMergeAfterExpand();
+  EXPECT_FALSE(expand_.Muted());  // Should be back to unmuted.
+
+  expand_.Reset();  // Must reset in order to start a new expand period.
+  ExpandUntilMuted(num_channels_, &expand_);
+  expand_.SetParametersForNormalAfterExpand();
+  EXPECT_FALSE(expand_.Muted());  // Should be back to unmuted.
 }
 
 // TODO(hlundin): Write more tests.

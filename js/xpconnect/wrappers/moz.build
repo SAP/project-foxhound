@@ -10,7 +10,6 @@ EXPORTS += [
 
 UNIFIED_SOURCES += [
     'AccessCheck.cpp',
-    'AddonWrapper.cpp',
     'ChromeObjectWrapper.cpp',
     'FilteringWrapper.cpp',
     'WaiveXrayWrapper.cpp',
@@ -23,7 +22,7 @@ SOURCES += [
 ]
 
 # warning C4661 for FilteringWrapper
-if CONFIG['_MSC_VER']:
+if CONFIG['CC_TYPE'] in ('msvc', 'clang-cl'):
     CXXFLAGS += [
         '-wd4661', # no suitable definition provided for explicit template instantiation request
     ]
@@ -35,7 +34,8 @@ FINAL_LIBRARY = 'xul'
 LOCAL_INCLUDES += [
     '../../../dom/base',
     '../src',
+    '/caps',
 ]
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-shadow']

@@ -18,68 +18,68 @@ const TEST_DATA = [
     suggestions: [
       {label: "div"},
       {label: "#d1"},
-      {label: "#d2"}
-    ]
+      {label: "#d2"},
+    ],
   },
   {
     key: "i",
-    suggestions: [{label: "div"}]
+    suggestions: [{label: "div"}],
   },
   {
     key: "v",
-    suggestions: []
+    suggestions: [],
   },
   {
     key: " ",
     suggestions: [
       {label: "div div"},
-      {label: "div span"}
-    ]
+      {label: "div span"},
+    ],
   },
   {
     key: ">",
     suggestions: [
       {label: "div >div"},
-      {label: "div >span"}
-    ]
+      {label: "div >span"},
+    ],
   },
   {
     key: "VK_BACK_SPACE",
     suggestions: [
       {label: "div div"},
-      {label: "div span"}
-    ]
+      {label: "div span"},
+    ],
   },
   {
     key: "+",
-    suggestions: [{label: "div +span"}]
+    suggestions: [{label: "div +span"}],
   },
   {
     key: "VK_BACK_SPACE",
     suggestions: [
       {label: "div div"},
-      {label: "div span"}
-    ]
+      {label: "div span"},
+    ],
   },
   {
     key: "VK_BACK_SPACE",
-    suggestions: []
+    suggestions: [],
   },
   {
     key: "VK_BACK_SPACE",
-    suggestions: [{label: "div"}]
+    suggestions: [{label: "div"}],
   },
   {
     key: "VK_BACK_SPACE",
     suggestions: [
       {label: "div"},
       {label: "#d1"},
-      {label: "#d2"}
-    ]
+      {label: "#d2"},
+    ],
   },
   {
     key: "VK_BACK_SPACE",
-    suggestions: []
+    suggestions: [],
   },
   {
     key: "p",
@@ -88,69 +88,69 @@ const TEST_DATA = [
       {label: "#p1"},
       {label: "#p2"},
       {label: "#p3"},
-    ]
+    ],
   },
   {
     key: " ",
-    suggestions: [{label: "p strong"}]
+    suggestions: [{label: "p strong"}],
   },
   {
     key: "+",
     suggestions: [
       {label: "p +button" },
-      {label: "p +p"}
-    ]
+      {label: "p +p"},
+    ],
   },
   {
     key: "b",
-    suggestions: [{label: "p +button"}]
+    suggestions: [{label: "p +button"}],
   },
   {
     key: "u",
-    suggestions: [{label: "p +button"}]
+    suggestions: [{label: "p +button"}],
   },
   {
     key: "t",
-    suggestions: [{label: "p +button"}]
+    suggestions: [{label: "p +button"}],
   },
   {
     key: "t",
-    suggestions: [{label: "p +button"}]
+    suggestions: [{label: "p +button"}],
   },
   {
     key: "o",
-    suggestions: [{label: "p +button"}]
+    suggestions: [{label: "p +button"}],
   },
   {
     key: "n",
-    suggestions: []
+    suggestions: [],
   },
   {
     key: "+",
-    suggestions: [{label: "p +button+p"}]
-  }
+    suggestions: [{label: "p +button+p"}],
+  },
 ];
 
-add_task(function* () {
-  let { inspector } = yield openInspectorForURL(TEST_URL);
-  let searchBox = inspector.searchBox;
-  let popup = inspector.searchSuggestions.searchPopup;
+add_task(async function() {
+  const { inspector } = await openInspectorForURL(TEST_URL);
+  const searchBox = inspector.searchBox;
+  const popup = inspector.searchSuggestions.searchPopup;
 
-  yield focusSearchBoxUsingShortcut(inspector.panelWin);
+  await focusSearchBoxUsingShortcut(inspector.panelWin);
 
-  for (let { key, suggestions } of TEST_DATA) {
+  for (const { key, suggestions } of TEST_DATA) {
     info("Pressing " + key + " to get " + formatSuggestions(suggestions));
 
-    let command = once(searchBox, "input");
+    const command = once(searchBox, "input");
     EventUtils.synthesizeKey(key, {}, inspector.panelWin);
-    yield command;
+    await command;
 
     info("Waiting for search query to complete");
-    yield inspector.searchSuggestions._lastQuery;
+    await inspector.searchSuggestions._lastQuery;
 
     info("Query completed. Performing checks for input '" + searchBox.value +
       "' - key pressed: " + key);
-    let actualSuggestions = popup.getItems().reverse();
+    const actualSuggestions = popup.getItems();
 
     is(popup.isOpen ? actualSuggestions.length : 0, suggestions.length,
        "There are expected number of suggestions.");

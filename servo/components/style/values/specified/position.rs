@@ -1,613 +1,745 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! CSS handling for the specified value of
 //! [`position`][position]s
 //!
 //! [position]: https://drafts.csswg.org/css-backgrounds-3/#position
 
-use app_units::Au;
-use cssparser::{Parser, Token};
-use parser::{Parse, ParserContext};
-use std::fmt;
-use style_traits::ToCss;
-use values::HasViewportPercentage;
-use values::computed::{self, CalcLengthOrPercentage, Context};
-use values::computed::{LengthOrPercentage as ComputedLengthOrPercentage, ToComputedValue};
-use values::computed::position as computed_position;
-use values::specified::{LengthOrPercentage, Percentage};
+use crate::hash::FxHashMap;
+use crate::parser::{Parse, ParserContext};
+use crate::str::HTML_SPACE_CHARACTERS;
+use crate::values::computed::LengthPercentage as ComputedLengthPercentage;
+use crate::values::computed::{Context, Percentage, ToComputedValue};
+use crate::values::generics::position::Position as GenericPosition;
+use crate::values::generics::position::ZIndex as GenericZIndex;
+use crate::values::specified::transform::OriginComponent;
+use crate::values::specified::{AllowQuirks, Integer, LengthPercentage};
+use crate::values::{Either, None_};
+use cssparser::Parser;
+use selectors::parser::SelectorParseErrorKind;
+use servo_arc::Arc;
+use std::fmt::{self, Write};
+use std::ops::Range;
+use style_traits::{CssWriter, ParseError, StyleParseErrorKind, ToCss};
 
-#[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "servo", derive(HeapSizeOf))]
-/// A [position][pos].
-///
-/// [pos]: https://drafts.csswg.org/css-values/#position
-pub struct Position {
-    /// The horizontal component.
-    pub horizontal: HorizontalPosition,
-    /// The vertical component.
-    pub vertical: VerticalPosition,
+/// The specified value of a CSS `<position>`
+pub type Position = GenericPosition<HorizontalPosition, VerticalPosition>;
+
+/// The specified value of a horizontal position.
+pub type HorizontalPosition = PositionComponent<X>;
+
+/// The specified value of a vertical position.
+pub type VerticalPosition = PositionComponent<Y>;
+
+/// The specified value of a component of a CSS `<position>`.
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss)]
+pub enum PositionComponent<S> {
+    /// `center`
+    Center,
+    /// `<length-percentage>`
+    Length(LengthPercentage),
+    /// `<side> <length-percentage>?`
+    Side(S, Option<LengthPercentage>),
 }
 
-impl ToCss for Position {
-    fn to_css<W>(&self, dest: &mut W) -> fmt::Result where W: fmt::Write {
-        let mut space_present = false;
-        if let Some(horiz_key) = self.horizontal.keyword {
-            try!(horiz_key.to_css(dest));
-            try!(dest.write_str(" "));
-            space_present = true;
-        };
-        if let Some(ref horiz_pos) = self.horizontal.position {
-            try!(horiz_pos.to_css(dest));
-            try!(dest.write_str(" "));
-            space_present = true;
-        };
-        if let Some(vert_key) = self.vertical.keyword {
-            try!(vert_key.to_css(dest));
-            space_present = false;
-        };
-        if let Some(ref vert_pos) = self.vertical.position {
-            if space_present == false {
-                try!(dest.write_str(" "));
-            }
-            try!(vert_pos.to_css(dest));
-        };
-        Ok(())
-    }
+/// A keyword for the X direction.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+)]
+#[allow(missing_docs)]
+pub enum X {
+    Left,
+    Right,
 }
 
-impl HasViewportPercentage for Position {
-    fn has_viewport_percentage(&self) -> bool {
-        self.horizontal.has_viewport_percentage() || self.vertical.has_viewport_percentage()
+/// A keyword for the Y direction.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+)]
+#[allow(missing_docs)]
+pub enum Y {
+    Top,
+    Bottom,
+}
+
+impl Parse for Position {
+    fn parse<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self, ParseError<'i>> {
+        Self::parse_quirky(context, input, AllowQuirks::No)
     }
 }
 
 impl Position {
-    /// Create a new position value.
-    pub fn new(mut first_position: Option<PositionComponent>,
-               mut second_position: Option<PositionComponent>,
-               first_keyword: Option<PositionComponent>,
-               second_keyword: Option<PositionComponent>)
-               -> Result<Position, ()> {
-        // Unwrap for checking if values are at right place.
-        let first_key = first_keyword.clone().unwrap_or(PositionComponent::Keyword(Keyword::Left));
-        let second_key = second_keyword.clone().unwrap_or(PositionComponent::Keyword(Keyword::Top));
-
-        // Check if position specified after center keyword.
-        if let PositionCategory::OtherKeyword = category(&first_key) {
-            if let Some(_) = first_position {
-                return Err(());
+    /// Parses a `<position>`, with quirks.
+    pub fn parse_quirky<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+        allow_quirks: AllowQuirks,
+    ) -> Result<Self, ParseError<'i>> {
+        match input.try(|i| PositionComponent::parse_quirky(context, i, allow_quirks)) {
+            Ok(x_pos @ PositionComponent::Center) => {
+                if let Ok(y_pos) =
+                    input.try(|i| PositionComponent::parse_quirky(context, i, allow_quirks))
+                {
+                    return Ok(Self::new(x_pos, y_pos));
+                }
+                let x_pos = input
+                    .try(|i| PositionComponent::parse_quirky(context, i, allow_quirks))
+                    .unwrap_or(x_pos);
+                let y_pos = PositionComponent::Center;
+                return Ok(Self::new(x_pos, y_pos));
+            },
+            Ok(PositionComponent::Side(x_keyword, lp)) => {
+                if input.try(|i| i.expect_ident_matching("center")).is_ok() {
+                    let x_pos = PositionComponent::Side(x_keyword, lp);
+                    let y_pos = PositionComponent::Center;
+                    return Ok(Self::new(x_pos, y_pos));
+                }
+                if let Ok(y_keyword) = input.try(Y::parse) {
+                    let y_lp = input
+                        .try(|i| LengthPercentage::parse_quirky(context, i, allow_quirks))
+                        .ok();
+                    let x_pos = PositionComponent::Side(x_keyword, lp);
+                    let y_pos = PositionComponent::Side(y_keyword, y_lp);
+                    return Ok(Self::new(x_pos, y_pos));
+                }
+                let x_pos = PositionComponent::Side(x_keyword, None);
+                let y_pos = lp.map_or(PositionComponent::Center, PositionComponent::Length);
+                return Ok(Self::new(x_pos, y_pos));
+            },
+            Ok(x_pos @ PositionComponent::Length(_)) => {
+                if let Ok(y_keyword) = input.try(Y::parse) {
+                    let y_pos = PositionComponent::Side(y_keyword, None);
+                    return Ok(Self::new(x_pos, y_pos));
+                }
+                if let Ok(y_lp) =
+                    input.try(|i| LengthPercentage::parse_quirky(context, i, allow_quirks))
+                {
+                    let y_pos = PositionComponent::Length(y_lp);
+                    return Ok(Self::new(x_pos, y_pos));
+                }
+                let y_pos = PositionComponent::Center;
+                let _ = input.try(|i| i.expect_ident_matching("center"));
+                return Ok(Self::new(x_pos, y_pos));
+            },
+            Err(_) => {},
+        }
+        let y_keyword = Y::parse(input)?;
+        let lp_and_x_pos: Result<_, ParseError> = input.try(|i| {
+            let y_lp = i
+                .try(|i| LengthPercentage::parse_quirky(context, i, allow_quirks))
+                .ok();
+            if let Ok(x_keyword) = i.try(X::parse) {
+                let x_lp = i
+                    .try(|i| LengthPercentage::parse_quirky(context, i, allow_quirks))
+                    .ok();
+                let x_pos = PositionComponent::Side(x_keyword, x_lp);
+                return Ok((y_lp, x_pos));
             };
-        };
-        if let PositionCategory::OtherKeyword = category(&second_key) {
-            if let Some(_) = second_position {
-                return Err(());
-            };
-        };
-
-        // Check first and second keywords for both 2 and 4 value positions.
-        let (horiz_keyword, vert_keyword) = match (category(&first_key), category(&second_key)) {
-            // Don't allow two vertical keywords or two horizontal keywords.
-            // also don't allow length/percentage values in the wrong position
-            (PositionCategory::HorizontalKeyword, PositionCategory::HorizontalKeyword) |
-            (PositionCategory::VerticalKeyword, PositionCategory::VerticalKeyword) |
-            (PositionCategory::LengthOrPercentage, PositionCategory::HorizontalKeyword) |
-            (PositionCategory::VerticalKeyword, PositionCategory::LengthOrPercentage) => return Err(()),
-
-            // FIXME(canaltinova): Allow logical keywords for Position. They are not in current spec yet.
-            (PositionCategory::HorizontalLogicalKeyword, _) |
-            (PositionCategory::VerticalLogicalKeyword, _) |
-            (_, PositionCategory::HorizontalLogicalKeyword) |
-            (_, PositionCategory::VerticalLogicalKeyword) => return Err(()),
-
-            // Swap if both are keywords and vertical precedes horizontal.
-            (PositionCategory::VerticalKeyword, PositionCategory::HorizontalKeyword) |
-            (PositionCategory::VerticalKeyword, PositionCategory::OtherKeyword) |
-            (PositionCategory::OtherKeyword, PositionCategory::HorizontalKeyword) => {
-                let tmp = first_position;
-                first_position = second_position;
-                second_position = tmp;
-
-                (second_keyword, first_keyword)
-            },
-            // By default, horizontal is first.
-            _ => (first_keyword, second_keyword),
-        };
-
-        // Unwrap positions from PositionComponent and wrap with Option
-        let (first_position, second_position) = if let Some(PositionComponent::Length(horiz_pos)) = first_position {
-            if let Some(PositionComponent::Length(vert_pos)) = second_position {
-                (Some(horiz_pos), Some(vert_pos))
-            } else {
-                (Some(horiz_pos), None)
-            }
-        } else {
-            if let Some(PositionComponent::Length(vert_pos)) = second_position {
-                (None, Some(vert_pos))
-            } else {
-                (None, None)
-            }
-        };
-
-        // Unwrap keywords from PositionComponent and wrap with Option.
-        let (horizontal_keyword, vertical_keyword) = if let Some(PositionComponent::Keyword(horiz_key)) =
-                                                     horiz_keyword {
-            if let Some(PositionComponent::Keyword(vert_key)) = vert_keyword {
-                (Some(horiz_key), Some(vert_key))
-            } else {
-                (Some(horiz_key), None)
-            }
-        } else {
-            if let Some(PositionComponent::Keyword(vert_key)) = vert_keyword {
-                (None, Some(vert_key))
-            } else {
-                (None, None)
-            }
-        };
-
-        Ok(Position {
-            horizontal: HorizontalPosition {
-                keyword: horizontal_keyword,
-                position: first_position,
-            },
-            vertical: VerticalPosition {
-                keyword: vertical_keyword,
-                position: second_position,
-            },
-        })
+            i.expect_ident_matching("center")?;
+            let x_pos = PositionComponent::Center;
+            Ok((y_lp, x_pos))
+        });
+        if let Ok((y_lp, x_pos)) = lp_and_x_pos {
+            let y_pos = PositionComponent::Side(y_keyword, y_lp);
+            return Ok(Self::new(x_pos, y_pos));
+        }
+        let x_pos = PositionComponent::Center;
+        let y_pos = PositionComponent::Side(y_keyword, None);
+        Ok(Self::new(x_pos, y_pos))
     }
 
-    /// Returns a "centered" position, as in "center center".
-    pub fn center() -> Position {
-        Position {
-            horizontal: HorizontalPosition {
-                keyword: Some(Keyword::Center),
-                position: None,
+    /// `center center`
+    #[inline]
+    pub fn center() -> Self {
+        Self::new(PositionComponent::Center, PositionComponent::Center)
+    }
+}
+
+impl ToCss for Position {
+    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    where
+        W: Write,
+    {
+        match (&self.horizontal, &self.vertical) {
+            (
+                x_pos @ &PositionComponent::Side(_, Some(_)),
+                &PositionComponent::Length(ref y_lp),
+            ) => {
+                x_pos.to_css(dest)?;
+                dest.write_str(" top ")?;
+                y_lp.to_css(dest)
             },
-            vertical: VerticalPosition {
-                keyword: Some(Keyword::Center),
-                position: None,
+            (
+                &PositionComponent::Length(ref x_lp),
+                y_pos @ &PositionComponent::Side(_, Some(_)),
+            ) => {
+                dest.write_str("left ")?;
+                x_lp.to_css(dest)?;
+                dest.write_str(" ")?;
+                y_pos.to_css(dest)
+            },
+            (x_pos, y_pos) => {
+                x_pos.to_css(dest)?;
+                dest.write_str(" ")?;
+                y_pos.to_css(dest)
             },
         }
     }
 }
 
-impl Parse for Position {
-    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ()> {
-        let first = try!(PositionComponent::parse(context, input));
-        let second = input.try(|i| PositionComponent::parse(context, i))
-            .unwrap_or(PositionComponent::Keyword(Keyword::Center));
+impl<S: Parse> Parse for PositionComponent<S> {
+    fn parse<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self, ParseError<'i>> {
+        Self::parse_quirky(context, input, AllowQuirks::No)
+    }
+}
 
-        // Try to parse third and fourth values
-        if let Ok(third) = input.try(|i| PositionComponent::parse(context, i)) {
-            if let Ok(fourth) = input.try(|i| PositionComponent::parse(context, i)) {
-                // Handle 4 value background position
-                Position::new(Some(second), Some(fourth), Some(first), Some(third))
+impl<S: Parse> PositionComponent<S> {
+    /// Parses a component of a CSS position, with quirks.
+    pub fn parse_quirky<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+        allow_quirks: AllowQuirks,
+    ) -> Result<Self, ParseError<'i>> {
+        if input.try(|i| i.expect_ident_matching("center")).is_ok() {
+            return Ok(PositionComponent::Center);
+        }
+        if let Ok(lp) = input.try(|i| LengthPercentage::parse_quirky(context, i, allow_quirks)) {
+            return Ok(PositionComponent::Length(lp));
+        }
+        let keyword = S::parse(context, input)?;
+        let lp = input
+            .try(|i| LengthPercentage::parse_quirky(context, i, allow_quirks))
+            .ok();
+        Ok(PositionComponent::Side(keyword, lp))
+    }
+}
+
+impl<S> PositionComponent<S> {
+    /// `0%`
+    pub fn zero() -> Self {
+        PositionComponent::Length(LengthPercentage::Percentage(Percentage::zero()))
+    }
+}
+
+impl<S: Side> ToComputedValue for PositionComponent<S> {
+    type ComputedValue = ComputedLengthPercentage;
+
+    fn to_computed_value(&self, context: &Context) -> Self::ComputedValue {
+        match *self {
+            PositionComponent::Center => ComputedLengthPercentage::new_percent(Percentage(0.5)),
+            PositionComponent::Side(ref keyword, None) => {
+                let p = Percentage(if keyword.is_start() { 0. } else { 1. });
+                ComputedLengthPercentage::new_percent(p)
+            },
+            PositionComponent::Side(ref keyword, Some(ref length)) if !keyword.is_start() => {
+                let length = length.to_computed_value(context);
+                let p = Percentage(1. - length.percentage());
+                let l = -length.unclamped_length();
+                // We represent `<end-side> <length>` as `calc(100% - <length>)`.
+                ComputedLengthPercentage::with_clamping_mode(
+                    l,
+                    Some(p),
+                    length.clamping_mode,
+                    /* was_calc = */ true,
+                )
+            },
+            PositionComponent::Side(_, Some(ref length)) |
+            PositionComponent::Length(ref length) => length.to_computed_value(context),
+        }
+    }
+
+    fn from_computed_value(computed: &Self::ComputedValue) -> Self {
+        PositionComponent::Length(ToComputedValue::from_computed_value(computed))
+    }
+}
+
+impl<S: Side> PositionComponent<S> {
+    /// The initial specified value of a position component, i.e. the start side.
+    pub fn initial_specified_value() -> Self {
+        PositionComponent::Side(S::start(), None)
+    }
+}
+
+/// Represents a side, either horizontal or vertical, of a CSS position.
+pub trait Side {
+    /// Returns the start side.
+    fn start() -> Self;
+
+    /// Returns whether this side is the start side.
+    fn is_start(&self) -> bool;
+}
+
+impl Side for X {
+    #[inline]
+    fn start() -> Self {
+        X::Left
+    }
+
+    #[inline]
+    fn is_start(&self) -> bool {
+        *self == X::Left
+    }
+}
+
+impl Side for Y {
+    #[inline]
+    fn start() -> Self {
+        Y::Top
+    }
+
+    #[inline]
+    fn is_start(&self) -> bool {
+        *self == Y::Top
+    }
+}
+
+/// The specified value of a legacy CSS `<position>`
+/// Modern position syntax supports 3 and 4-value syntax. That means:
+/// If three or four values are given, then each <percentage> or <length> represents an offset
+/// and must be preceded by a keyword, which specifies from which edge the offset is given.
+/// For example, `bottom 10px right 20px` represents a `10px` vertical
+/// offset up from the bottom edge and a `20px` horizontal offset leftward from the right edge.
+/// If three values are given, the missing offset is assumed to be zero.
+/// But for some historical reasons we need to keep CSS Level 2 syntax which only supports up to
+/// 2-value. This type represents this 2-value syntax.
+pub type LegacyPosition = GenericPosition<LegacyHPosition, LegacyVPosition>;
+
+/// The specified value of a horizontal position.
+pub type LegacyHPosition = OriginComponent<X>;
+
+/// The specified value of a vertical position.
+pub type LegacyVPosition = OriginComponent<Y>;
+
+impl Parse for LegacyPosition {
+    fn parse<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self, ParseError<'i>> {
+        Self::parse_quirky(context, input, AllowQuirks::No)
+    }
+}
+
+impl LegacyPosition {
+    /// Parses a `<position>`, with quirks.
+    pub fn parse_quirky<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+        allow_quirks: AllowQuirks,
+    ) -> Result<Self, ParseError<'i>> {
+        match input.try(|i| OriginComponent::parse(context, i)) {
+            Ok(x_pos @ OriginComponent::Center) => {
+                if let Ok(y_pos) = input.try(|i| OriginComponent::parse(context, i)) {
+                    return Ok(Self::new(x_pos, y_pos));
+                }
+                let x_pos = input
+                    .try(|i| OriginComponent::parse(context, i))
+                    .unwrap_or(x_pos);
+                let y_pos = OriginComponent::Center;
+                return Ok(Self::new(x_pos, y_pos));
+            },
+            Ok(OriginComponent::Side(x_keyword)) => {
+                if let Ok(y_keyword) = input.try(Y::parse) {
+                    let x_pos = OriginComponent::Side(x_keyword);
+                    let y_pos = OriginComponent::Side(y_keyword);
+                    return Ok(Self::new(x_pos, y_pos));
+                }
+                let x_pos = OriginComponent::Side(x_keyword);
+                if let Ok(y_lp) =
+                    input.try(|i| LengthPercentage::parse_quirky(context, i, allow_quirks))
+                {
+                    return Ok(Self::new(x_pos, OriginComponent::Length(y_lp)));
+                }
+                let _ = input.try(|i| i.expect_ident_matching("center"));
+                return Ok(Self::new(x_pos, OriginComponent::Center));
+            },
+            Ok(x_pos @ OriginComponent::Length(_)) => {
+                if let Ok(y_keyword) = input.try(Y::parse) {
+                    let y_pos = OriginComponent::Side(y_keyword);
+                    return Ok(Self::new(x_pos, y_pos));
+                }
+                if let Ok(y_lp) =
+                    input.try(|i| LengthPercentage::parse_quirky(context, i, allow_quirks))
+                {
+                    let y_pos = OriginComponent::Length(y_lp);
+                    return Ok(Self::new(x_pos, y_pos));
+                }
+                let _ = input.try(|i| i.expect_ident_matching("center"));
+                return Ok(Self::new(x_pos, OriginComponent::Center));
+            },
+            Err(_) => {},
+        }
+        let y_keyword = Y::parse(input)?;
+        let x_pos: Result<_, ParseError> = input.try(|i| {
+            if let Ok(x_keyword) = i.try(X::parse) {
+                let x_pos = OriginComponent::Side(x_keyword);
+                return Ok(x_pos);
+            }
+            i.expect_ident_matching("center")?;
+            Ok(OriginComponent::Center)
+        });
+        if let Ok(x_pos) = x_pos {
+            let y_pos = OriginComponent::Side(y_keyword);
+            return Ok(Self::new(x_pos, y_pos));
+        }
+        let x_pos = OriginComponent::Center;
+        let y_pos = OriginComponent::Side(y_keyword);
+        Ok(Self::new(x_pos, y_pos))
+    }
+
+    /// `center center`
+    #[inline]
+    pub fn center() -> Self {
+        Self::new(OriginComponent::Center, OriginComponent::Center)
+    }
+}
+
+impl ToCss for LegacyPosition {
+    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    where
+        W: Write,
+    {
+        self.horizontal.to_css(dest)?;
+        dest.write_str(" ")?;
+        self.vertical.to_css(dest)
+    }
+}
+
+#[derive(
+    Clone, Copy, Debug, Eq, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss,
+)]
+/// Auto-placement algorithm Option
+pub enum AutoFlow {
+    /// The auto-placement algorithm places items by filling each row in turn,
+    /// adding new rows as necessary.
+    Row,
+    /// The auto-placement algorithm places items by filling each column in turn,
+    /// adding new columns as necessary.
+    Column,
+}
+
+#[derive(
+    Clone, Copy, Debug, Eq, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss,
+)]
+/// Controls how the auto-placement algorithm works
+/// specifying exactly how auto-placed items get flowed into the grid
+pub struct GridAutoFlow {
+    /// Specifiy how auto-placement algorithm fills each `row` or `column` in turn
+    pub autoflow: AutoFlow,
+    /// Specify use `dense` packing algorithm or not
+    #[css(represents_keyword)]
+    pub dense: bool,
+}
+
+impl GridAutoFlow {
+    #[inline]
+    /// Get default `grid-auto-flow` as `row`
+    pub fn row() -> GridAutoFlow {
+        GridAutoFlow {
+            autoflow: AutoFlow::Row,
+            dense: false,
+        }
+    }
+}
+
+impl Parse for GridAutoFlow {
+    /// [ row | column ] || dense
+    fn parse<'i, 't>(
+        _context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<GridAutoFlow, ParseError<'i>> {
+        let mut value = None;
+        let mut dense = false;
+
+        while !input.is_exhausted() {
+            let location = input.current_source_location();
+            let ident = input.expect_ident()?;
+            let success = match_ignore_ascii_case! { &ident,
+                "row" if value.is_none() => {
+                    value = Some(AutoFlow::Row);
+                    true
+                },
+                "column" if value.is_none() => {
+                    value = Some(AutoFlow::Column);
+                    true
+                },
+                "dense" if !dense => {
+                    dense = true;
+                    true
+                },
+                _ => false
+            };
+            if !success {
+                return Err(location
+                    .new_custom_error(SelectorParseErrorKind::UnexpectedIdent(ident.clone())));
+            }
+        }
+
+        if value.is_some() || dense {
+            Ok(GridAutoFlow {
+                autoflow: value.unwrap_or(AutoFlow::Row),
+                dense: dense,
+            })
+        } else {
+            Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
+        }
+    }
+}
+
+#[cfg(feature = "gecko")]
+impl From<u8> for GridAutoFlow {
+    fn from(bits: u8) -> GridAutoFlow {
+        use crate::gecko_bindings::structs;
+
+        GridAutoFlow {
+            autoflow: if bits & structs::NS_STYLE_GRID_AUTO_FLOW_ROW as u8 != 0 {
+                AutoFlow::Row
             } else {
-                // Handle 3 value background position there are several options:
-                if let PositionCategory::LengthOrPercentage = category(&first) {
-                    Err(())
-                } else {
-                    if let PositionCategory::LengthOrPercentage = category(&second) {
-                        if let PositionCategory::LengthOrPercentage = category(&third) {
-                            Err(())
-                        } else {
-                            // "keyword length keyword"
-                            Position::new(Some(second), None, Some(first), Some(third))
-                        }
+                AutoFlow::Column
+            },
+            dense: bits & structs::NS_STYLE_GRID_AUTO_FLOW_DENSE as u8 != 0,
+        }
+    }
+}
+
+#[cfg(feature = "gecko")]
+impl From<GridAutoFlow> for u8 {
+    fn from(v: GridAutoFlow) -> u8 {
+        use crate::gecko_bindings::structs;
+
+        let mut result: u8 = match v.autoflow {
+            AutoFlow::Row => structs::NS_STYLE_GRID_AUTO_FLOW_ROW as u8,
+            AutoFlow::Column => structs::NS_STYLE_GRID_AUTO_FLOW_COLUMN as u8,
+        };
+
+        if v.dense {
+            result |= structs::NS_STYLE_GRID_AUTO_FLOW_DENSE as u8;
+        }
+        result
+    }
+}
+
+#[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
+#[derive(Clone, Debug, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss)]
+/// https://drafts.csswg.org/css-grid/#named-grid-area
+pub struct TemplateAreas {
+    /// `named area` containing for each template area
+    #[css(skip)]
+    pub areas: Box<[NamedArea]>,
+    /// The original CSS string value of each template area
+    #[css(iterable)]
+    pub strings: Box<[Box<str>]>,
+    /// The number of columns of the grid.
+    #[css(skip)]
+    pub width: u32,
+}
+
+impl TemplateAreas {
+    /// Transform `vector` of str into `template area`
+    pub fn from_vec(strings: Vec<Box<str>>) -> Result<TemplateAreas, ()> {
+        if strings.is_empty() {
+            return Err(());
+        }
+        let mut areas: Vec<NamedArea> = vec![];
+        let mut width = 0;
+        {
+            let mut row = 0u32;
+            let mut area_indices = FxHashMap::<&str, usize>::default();
+            for string in &strings {
+                let mut current_area_index: Option<usize> = None;
+                row += 1;
+                let mut column = 0u32;
+                for token in TemplateAreasTokenizer(string) {
+                    column += 1;
+                    let token = if let Some(token) = token? {
+                        token
                     } else {
-                        // "keyword keyword length"
-                        Position::new(None, Some(third), Some(first), Some(second))
+                        if let Some(index) = current_area_index.take() {
+                            if areas[index].columns.end != column {
+                                return Err(());
+                            }
+                        }
+                        continue;
+                    };
+                    if let Some(index) = current_area_index {
+                        if &*areas[index].name == token {
+                            if areas[index].rows.start == row {
+                                areas[index].columns.end += 1;
+                            }
+                            continue;
+                        }
+                        if areas[index].columns.end != column {
+                            return Err(());
+                        }
+                    }
+                    if let Some(index) = area_indices.get(token).cloned() {
+                        if areas[index].columns.start != column || areas[index].rows.end != row {
+                            return Err(());
+                        }
+                        areas[index].rows.end += 1;
+                        current_area_index = Some(index);
+                        continue;
+                    }
+                    let index = areas.len();
+                    areas.push(NamedArea {
+                        name: token.to_owned().into_boxed_str(),
+                        columns: column..(column + 1),
+                        rows: row..(row + 1),
+                    });
+                    assert!(area_indices.insert(token, index).is_none());
+                    current_area_index = Some(index);
+                }
+                if let Some(index) = current_area_index {
+                    if areas[index].columns.end != column + 1 {
+                        assert_ne!(areas[index].rows.start, row);
+                        return Err(());
                     }
                 }
-            }
-        } else {
-            // Handle 2 value background position.
-            if let PositionCategory::LengthOrPercentage = category(&first) {
-                if let PositionCategory::LengthOrPercentage = category(&second) {
-                    Position::new(Some(first), Some(second), None, None)
-                } else {
-                    Position::new(Some(first), None, None, Some(second))
-                }
-            } else {
-                if let PositionCategory::LengthOrPercentage = category(&second) {
-                    Position::new(None, Some(second), Some(first), None)
-                } else {
-                    Position::new(None, None, Some(first), Some(second))
-                }
-            }
-        }
-    }
-}
-
-impl ToComputedValue for Position {
-    type ComputedValue = computed_position::Position;
-
-    #[inline]
-    fn to_computed_value(&self, context: &Context) -> computed_position::Position {
-        computed_position::Position {
-            horizontal: self.horizontal.to_computed_value(context).0,
-            vertical: self.vertical.to_computed_value(context).0,
-        }
-    }
-
-    #[inline]
-    fn from_computed_value(computed: &computed_position::Position) -> Position {
-        Position {
-            horizontal: HorizontalPosition {
-                keyword: None,
-                position: Some(ToComputedValue::from_computed_value(&computed.horizontal)),
-            },
-            vertical: VerticalPosition {
-                keyword: None,
-                position: Some(ToComputedValue::from_computed_value(&computed.vertical)),
-            },
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "servo", derive(HeapSizeOf))]
-#[allow(missing_docs)]
-pub struct HorizontalPosition {
-    pub keyword: Option<Keyword>,
-    pub position: Option<LengthOrPercentage>,
-}
-
-impl HasViewportPercentage for HorizontalPosition {
-    fn has_viewport_percentage(&self) -> bool {
-        self.position.as_ref().map_or(false, |pos| pos.has_viewport_percentage())
-    }
-}
-
-impl ToCss for HorizontalPosition {
-    fn to_css<W>(&self, dest: &mut W) -> fmt::Result where W: fmt::Write {
-        let mut keyword_present = false;
-        if let Some(keyword) = self.keyword {
-            try!(keyword.to_css(dest));
-            keyword_present = true;
-        };
-
-        if let Some(ref position) = self.position {
-            if keyword_present {
-                try!(dest.write_str(" "));
-            }
-            try!(position.to_css(dest));
-        };
-        Ok(())
-    }
-}
-
-impl Parse for HorizontalPosition {
-    #[inline]
-    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ()> {
-        let first = try!(PositionComponent::parse(context, input));
-        let second = input.try(|i| PositionComponent::parse(context, i)).ok();
-
-        let (keyword, position) = if let PositionCategory::LengthOrPercentage = category(&first) {
-            // "length keyword?"
-            (second, Some(first))
-        } else {
-            // "keyword length?"
-            (Some(first), second)
-        };
-
-        // Unwrapping and checking keyword.
-        let keyword = match keyword {
-            Some(PositionComponent::Keyword(key)) => {
-                match category(keyword.as_ref().unwrap()) {
-                    PositionCategory::VerticalKeyword |
-                    PositionCategory::VerticalLogicalKeyword => return Err(()),
-                    _ => Some(key),
-                }
-            },
-            Some(_) => return Err(()),
-            None => None,
-        };
-
-        // Unwrapping and checking position.
-        let position = match position {
-            Some(PositionComponent::Length(pos)) => {
-                // "center <length>" is not allowed
-                if let Some(Keyword::Center) = keyword {
+                if row == 1 {
+                    width = column;
+                } else if width != column {
                     return Err(());
                 }
-                Some(pos)
-            },
-            Some(_) => return Err(()),
-            None => None,
-        };
-
-        Ok(HorizontalPosition {
-            keyword: keyword,
-            position: position,
+            }
+        }
+        Ok(TemplateAreas {
+            areas: areas.into_boxed_slice(),
+            strings: strings.into_boxed_slice(),
+            width: width,
         })
     }
 }
 
-impl ToComputedValue for HorizontalPosition {
-    type ComputedValue = computed_position::HorizontalPosition;
-
-    #[inline]
-    fn to_computed_value(&self, context: &Context) -> computed_position::HorizontalPosition {
-        let keyword = self.keyword.unwrap_or(Keyword::Left);
-
-        // Construct horizontal computed LengthOrPercentage
-        let horizontal = match keyword {
-            // FIXME(canaltinova): Support logical keywords.
-            Keyword::Right | Keyword::XEnd => {
-                if let Some(ref x) = self.position {
-                    let (length, percentage) = match *x {
-                        LengthOrPercentage::Percentage(Percentage(y)) => (Au(0), Some(1.0 - y)),
-                        LengthOrPercentage::Length(ref y) => (-y.to_computed_value(context), Some(1.0)),
-                        _ => (Au(0), None),
-                    };
-                    ComputedLengthOrPercentage::Calc(CalcLengthOrPercentage {
-                        length: length,
-                        percentage: percentage
-                    })
-                } else {
-                    ComputedLengthOrPercentage::Percentage(1.0)
-                }
-            },
-            Keyword::Center => {
-                keyword.to_length_or_percentage().to_computed_value(context)
-            },
-             _ => {
-                let zero = LengthOrPercentage::Percentage(Percentage(0.0));
-                let horiz = self.position.as_ref().unwrap_or(&zero);
-                horiz.to_computed_value(context)
-            },
-        };
-
-        computed_position::HorizontalPosition(horizontal)
-    }
-
-    #[inline]
-    fn from_computed_value(computed: &computed_position::HorizontalPosition) -> HorizontalPosition {
-        HorizontalPosition {
-            keyword: None,
-            position: Some(ToComputedValue::from_computed_value(&computed.0)),
+impl Parse for TemplateAreas {
+    fn parse<'i, 't>(
+        _context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self, ParseError<'i>> {
+        let mut strings = vec![];
+        while let Ok(string) = input.try(|i| i.expect_string().map(|s| s.as_ref().into())) {
+            strings.push(string);
         }
+
+        TemplateAreas::from_vec(strings)
+            .map_err(|()| input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "servo", derive(HeapSizeOf))]
-#[allow(missing_docs)]
-pub struct VerticalPosition {
-    pub keyword: Option<Keyword>,
-    pub position: Option<LengthOrPercentage>,
-}
+/// Arc type for `Arc<TemplateAreas>`
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss)]
+pub struct TemplateAreasArc(#[ignore_malloc_size_of = "Arc"] pub Arc<TemplateAreas>);
 
-impl HasViewportPercentage for VerticalPosition {
-    fn has_viewport_percentage(&self) -> bool {
-        self.position.as_ref().map_or(false, |pos| pos.has_viewport_percentage())
+impl Parse for TemplateAreasArc {
+    fn parse<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self, ParseError<'i>> {
+        let parsed = TemplateAreas::parse(context, input)?;
+
+        Ok(TemplateAreasArc(Arc::new(parsed)))
     }
 }
 
-impl ToCss for VerticalPosition {
-    fn to_css<W>(&self, dest: &mut W) -> fmt::Result where W: fmt::Write {
-        let mut keyword_present = false;
-        if let Some(keyword) = self.keyword {
-            try!(keyword.to_css(dest));
-            keyword_present = true;
-        };
+#[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
+#[derive(Clone, Debug, PartialEq, SpecifiedValueInfo)]
+/// Not associated with any particular grid item, but can
+/// be referenced from the grid-placement properties.
+pub struct NamedArea {
+    /// Name of the `named area`
+    pub name: Box<str>,
+    /// Rows of the `named area`
+    pub rows: Range<u32>,
+    /// Columns of the `named area`
+    pub columns: Range<u32>,
+}
 
-        if let Some(ref position) = self.position {
-            if keyword_present {
-                try!(dest.write_str(" "));
-            }
-            try!(position.to_css(dest));
-        };
-        Ok(())
+/// Tokenize the string into a list of the tokens,
+/// using longest-match semantics
+struct TemplateAreasTokenizer<'a>(&'a str);
+
+impl<'a> Iterator for TemplateAreasTokenizer<'a> {
+    type Item = Result<Option<&'a str>, ()>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let rest = self.0.trim_start_matches(HTML_SPACE_CHARACTERS);
+        if rest.is_empty() {
+            return None;
+        }
+        if rest.starts_with('.') {
+            self.0 = &rest[rest.find(|c| c != '.').unwrap_or(rest.len())..];
+            return Some(Ok(None));
+        }
+        if !rest.starts_with(is_name_code_point) {
+            return Some(Err(()));
+        }
+        let token_len = rest.find(|c| !is_name_code_point(c)).unwrap_or(rest.len());
+        let token = &rest[..token_len];
+        self.0 = &rest[token_len..];
+        Some(Ok(Some(token)))
     }
 }
 
-impl Parse for VerticalPosition {
+fn is_name_code_point(c: char) -> bool {
+    c >= 'A' && c <= 'Z' ||
+        c >= 'a' && c <= 'z' ||
+        c >= '\u{80}' ||
+        c == '_' ||
+        c >= '0' && c <= '9' ||
+        c == '-'
+}
+
+/// This property specifies named grid areas.
+/// The syntax of this property also provides a visualization of
+/// the structure of the grid, making the overall layout of
+/// the grid container easier to understand.
+pub type GridTemplateAreas = Either<TemplateAreasArc, None_>;
+
+impl GridTemplateAreas {
     #[inline]
-    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ()> {
-        let first = try!(PositionComponent::parse(context, input));
-        let second = input.try(|i| PositionComponent::parse(context, i)).ok();
-
-        let (keyword, position) = if let PositionCategory::LengthOrPercentage = category(&first) {
-            // "length keyword?"
-            (second, Some(first))
-        } else {
-            // "keyword length?"
-            (Some(first), second)
-        };
-
-        // Unwrapping and checking keyword.
-        let keyword = match keyword {
-            Some(PositionComponent::Keyword(key)) => {
-                match category(keyword.as_ref().unwrap()) {
-                    PositionCategory::HorizontalKeyword |
-                    PositionCategory::HorizontalLogicalKeyword => return Err(()),
-                    _ => Some(key),
-                }
-            },
-            Some(_) => return Err(()),
-            None => None,
-        };
-
-        // Unwrapping and checking position.
-        let position = match position {
-            Some(PositionComponent::Length(pos)) => {
-                // "center <length>" is not allowed
-                if let Some(Keyword::Center) = keyword {
-                    return Err(());
-                }
-                Some(pos)
-            },
-            Some(_) => return Err(()),
-            None => None,
-        };
-
-        Ok(VerticalPosition {
-            keyword: keyword,
-            position: position,
-        })
+    /// Get default value as `none`
+    pub fn none() -> GridTemplateAreas {
+        Either::Second(None_)
     }
 }
 
-impl ToComputedValue for VerticalPosition {
-    type ComputedValue = computed_position::VerticalPosition;
+/// A specified value for the `z-index` property.
+pub type ZIndex = GenericZIndex<Integer>;
 
-    #[inline]
-    fn to_computed_value(&self, context: &Context) -> computed_position::VerticalPosition {
-        let keyword = self.keyword.unwrap_or(Keyword::Left);
-
-        // Construct vertical computed LengthOrPercentage
-        let vertical = match keyword {
-            // FIXME(canaltinova): Support logical keywords.
-            Keyword::Bottom | Keyword::YEnd => {
-                if let Some(ref x) = self.position {
-                    let (length, percentage) = match *x {
-                        LengthOrPercentage::Percentage(Percentage(y)) => (Au(0), Some(1.0 - y)),
-                        LengthOrPercentage::Length(ref y) => (-y.to_computed_value(context), Some(1.0)),
-                        _ => (Au(0), None),
-                    };
-                    ComputedLengthOrPercentage::Calc(CalcLengthOrPercentage {
-                        length: length,
-                        percentage: percentage
-                    })
-                } else {
-                    ComputedLengthOrPercentage::Percentage(1.0)
-                }
-            },
-            Keyword::Center => {
-                keyword.to_length_or_percentage().to_computed_value(context)
-            },
-             _ => {
-                let zero = LengthOrPercentage::Percentage(Percentage(0.0));
-                let vert = self.position.as_ref().unwrap_or(&zero);
-                vert.to_computed_value(context)
-            },
-        };
-
-        computed_position::VerticalPosition(vertical)
-    }
-
-    #[inline]
-    fn from_computed_value(computed: &computed_position::VerticalPosition) -> VerticalPosition {
-        VerticalPosition {
-            keyword: None,
-            position: Some(ToComputedValue::from_computed_value(&computed.0)),
+impl Parse for ZIndex {
+    fn parse<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self, ParseError<'i>> {
+        if input.try(|i| i.expect_ident_matching("auto")).is_ok() {
+            return Ok(GenericZIndex::Auto);
         }
-    }
-}
-
-define_css_keyword_enum!(Keyword:
-                         "center" => Center,
-                         "left" => Left,
-                         "right" => Right,
-                         "top" => Top,
-                         "bottom" => Bottom,
-                         "x-start" => XStart,
-                         "x-end" => XEnd,
-                         "y-start" => YStart,
-                         "y-end" => YEnd);
-
-impl Keyword {
-    /// Convert the given keyword to a length or a percentage.
-    pub fn to_length_or_percentage(self) -> LengthOrPercentage {
-        match self {
-            Keyword::Center => LengthOrPercentage::Percentage(Percentage(0.5)),
-            Keyword::Left | Keyword::Top => LengthOrPercentage::Percentage(Percentage(0.0)),
-            Keyword::Right | Keyword::Bottom => LengthOrPercentage::Percentage(Percentage(1.0)),
-            // FIXME(canaltinova): Support logical keywords
-            Keyword::XStart | Keyword::YStart => LengthOrPercentage::Percentage(Percentage(0.0)),
-            Keyword::XEnd | Keyword::YEnd => LengthOrPercentage::Percentage(Percentage(1.0)),
-        }
-    }
-}
-
-// Collapse `Position` into a few categories to simplify the above `match` expression.
-enum PositionCategory {
-    HorizontalKeyword,
-    VerticalKeyword,
-    HorizontalLogicalKeyword,
-    VerticalLogicalKeyword,
-    OtherKeyword,
-    LengthOrPercentage,
-}
-
-/// A position component.
-///
-/// http://dev.w3.org/csswg/css2/colors.html#propdef-background-position
-#[derive(Clone, PartialEq)]
-pub enum PositionComponent {
-    /// A `<length>`
-    Length(LengthOrPercentage),
-    /// A position keyword.
-    Keyword(Keyword),
-}
-
-fn category(p: &PositionComponent) -> PositionCategory {
-    if let PositionComponent::Keyword(keyword) = *p {
-        match keyword {
-            Keyword::Left | Keyword::Right =>
-                PositionCategory::HorizontalKeyword,
-            Keyword::Top | Keyword::Bottom =>
-                PositionCategory::VerticalKeyword,
-            Keyword::XStart | Keyword::XEnd =>
-                PositionCategory::HorizontalLogicalKeyword,
-            Keyword::YStart | Keyword::YEnd =>
-                PositionCategory::VerticalLogicalKeyword,
-            Keyword::Center =>
-                PositionCategory::OtherKeyword,
-        }
-    } else {
-        PositionCategory::LengthOrPercentage
-    }
-}
-
-impl HasViewportPercentage for PositionComponent {
-    fn has_viewport_percentage(&self) -> bool {
-        match *self {
-            PositionComponent::Length(ref length) => length.has_viewport_percentage(),
-            _ => false
-        }
-    }
-}
-
-impl PositionComponent {
-    /// Convert the given position component to a length or a percentage.
-    #[inline]
-    pub fn to_length_or_percentage_computed(&self, cx: &Context) -> computed::LengthOrPercentage {
-        match *self {
-            PositionComponent::Length(ref value) => value.to_computed_value(cx),
-            PositionComponent::Keyword(keyword) => {
-                keyword.to_length_or_percentage().to_computed_value(cx)
-            }
-        }
-    }
-}
-
-impl Parse for PositionComponent {
-    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ()> {
-        input.try(|i| LengthOrPercentage::parse(context, i))
-            .map(PositionComponent::Length)
-            .or_else(|()| {
-                match try!(input.next()) {
-                    Token::Ident(value) => {
-                        match_ignore_ascii_case! { &value,
-                            "center" => Ok(PositionComponent::Keyword(Keyword::Center)),
-                            "left" => Ok(PositionComponent::Keyword(Keyword::Left)),
-                            "right" => Ok(PositionComponent::Keyword(Keyword::Right)),
-                            "top" => Ok(PositionComponent::Keyword(Keyword::Top)),
-                            "bottom" => Ok(PositionComponent::Keyword(Keyword::Bottom)),
-                            "x-start" => Ok(PositionComponent::Keyword(Keyword::XStart)),
-                            "x-end" => Ok(PositionComponent::Keyword(Keyword::XEnd)),
-                            "y-start" => Ok(PositionComponent::Keyword(Keyword::YStart)),
-                            "y-end" => Ok(PositionComponent::Keyword(Keyword::YEnd)),
-                            _ => Err(())
-                        }
-                    },
-                    _ => Err(())
-                }
-            })
+        Ok(GenericZIndex::Integer(Integer::parse(context, input)?))
     }
 }

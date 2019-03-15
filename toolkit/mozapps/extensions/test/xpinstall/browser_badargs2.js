@@ -6,10 +6,10 @@ function test() {
 
   var triggers = encodeURIComponent(JSON.stringify({
     "Unsigned XPI": {
-      URL: undefined
-    }
+      URL: undefined,
+    },
   }));
-  gBrowser.selectedTab = gBrowser.addTab();
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
 
   ContentTask.spawn(gBrowser.selectedBrowser, null, function() {
     return new Promise(resolve => {
@@ -25,7 +25,7 @@ function test() {
   if (!gMultiProcessBrowser)
     expectUncaughtException();
 
-  gBrowser.loadURI(TESTROOT + "installtrigger.html?" + triggers);
+  BrowserTestUtils.loadURI(gBrowser, TESTROOT + "installtrigger.html?" + triggers);
 }
 
 function page_loaded(result) {

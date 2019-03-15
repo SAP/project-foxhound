@@ -5,19 +5,13 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = [ "BrowserUtils" ];
+var EXPORTED_SYMBOLS = [ "BrowserUtils" ];
 
-const {interfaces: Ci, utils: Cu, classes: Cc} = Components;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.defineModuleGetter(this, "PlacesUtils",
   "resource://gre/modules/PlacesUtils.jsm");
 
-Cu.importGlobalProperties(["URL"]);
-
-this.BrowserUtils = {
+var BrowserUtils = {
 
   /**
    * Prints arguments separated by a space and appends a new line.
@@ -33,8 +27,6 @@ this.BrowserUtils = {
    * safe mode if it is already in safe mode.
    */
   restartApplication() {
-    let appStartup = Cc["@mozilla.org/toolkit/app-startup;1"]
-                       .getService(Ci.nsIAppStartup);
     let cancelQuit = Cc["@mozilla.org/supports-PRBool;1"]
                        .createInstance(Ci.nsISupportsPRBool);
     Services.obs.notifyObservers(cancelQuit, "quit-application-requested", "restart");
@@ -43,10 +35,10 @@ this.BrowserUtils = {
     }
     // if already in safe mode restart in safe mode
     if (Services.appinfo.inSafeMode) {
-      appStartup.restartInSafeMode(Ci.nsIAppStartup.eAttemptQuit | Ci.nsIAppStartup.eRestart);
+      Services.startup.restartInSafeMode(Ci.nsIAppStartup.eAttemptQuit | Ci.nsIAppStartup.eRestart);
       return undefined;
     }
-    appStartup.quit(Ci.nsIAppStartup.eAttemptQuit | Ci.nsIAppStartup.eRestart);
+    Services.startup.quit(Ci.nsIAppStartup.eAttemptQuit | Ci.nsIAppStartup.eRestart);
     return undefined;
   },
 
@@ -128,17 +120,22 @@ this.BrowserUtils = {
    * @param aOriginCharset The charset of the URI.
    * @param aBaseURI Base URI to resolve aURL, or null.
    * @return an nsIURI object based on aURL.
+   *
+   * @deprecated Use Services.io.newURI directly instead.
    */
   makeURI(aURL, aOriginCharset, aBaseURI) {
     return Services.io.newURI(aURL, aOriginCharset, aBaseURI);
   },
 
+  /**
+   * @deprecated Use Services.io.newFileURI directly instead.
+   */
   makeFileURI(aFile) {
     return Services.io.newFileURI(aFile);
   },
 
   makeURIFromCPOW(aCPOWURI) {
-    return Services.io.newURI(aCPOWURI.spec, aCPOWURI.originCharset);
+    return Services.io.newURI(aCPOWURI.spec);
   },
 
   /**
@@ -182,12 +179,12 @@ this.BrowserUtils = {
       y += win.mozInnerScreenY;
     }
 
-    let fullZoom = win.getInterface(Ci.nsIDOMWindowUtils).fullZoom;
+    let fullZoom = win.windowUtils.fullZoom;
     rect = {
       left: x * fullZoom,
       top: y * fullZoom,
       width: rect.width * fullZoom,
-      height: rect.height * fullZoom
+      height: rect.height * fullZoom,
     };
 
     return rect;
@@ -269,7 +266,7 @@ this.BrowserUtils = {
     // The HTML spec says that rel should be split on spaces before looking
     // for particular rel values.
     let values = rel.split(/[ \t\r\n\f]/);
-    return values.indexOf("noreferrer") != -1;
+    return values.includes("noreferrer");
   },
 
   /**
@@ -293,12 +290,10 @@ this.BrowserUtils = {
    *
    * @param elt
    *        The element that is focused
-   * @param win
-   *        The window that is focused
-   *
    */
-  shouldFastFind(elt, win) {
+  shouldFastFind(elt) {
     if (elt) {
+      let win = elt.ownerGlobal;
       if (elt instanceof win.HTMLInputElement && elt.mozIsTextField(false))
         return false;
 
@@ -316,31 +311,16 @@ this.BrowserUtils = {
   },
 
   /**
-   * Return true if we can FAYT for this window (could be CPOW):
+   * Returns true if we can show a find bar, including FAYT, for the specified
+   * document location. The location must not be in a blacklist of specific
+   * "about:" pages for which find is disabled.
    *
-   * @param win
-   *        The top level window that is focused
-   *
+   * This can be called from the parent process or from content processes.
    */
-  canFastFind(win) {
-    if (!win)
-      return false;
-
-    if (!this.mimeTypeIsTextBased(win.document.contentType))
-      return false;
-
-    // disable FAYT in about:blank to prevent FAYT opening unexpectedly.
-    let loc = win.location;
-    if (loc.href == "about:blank")
-      return false;
-
-    // disable FAYT in documents that ask for it to be disabled.
-    if ((loc.protocol == "about:" || loc.protocol == "chrome:") &&
-        (win.document.documentElement &&
-         win.document.documentElement.getAttribute("disablefastfind") == "true"))
-      return false;
-
-    return true;
+  canFindInPage(location) {
+    return !location.startsWith("about:addons") &&
+           !location.startsWith("about:config") &&
+           !location.startsWith("about:preferences");
   },
 
   _visibleToolbarsMap: new WeakMap(),
@@ -360,6 +340,39 @@ this.BrowserUtils = {
       return false;
     let toolbars = this._visibleToolbarsMap.get(window);
     return !!toolbars && toolbars.has(which);
+  },
+
+  /**
+   * Sets the --toolbarbutton-button-height CSS property on the closest
+   * toolbar to the provided element. Useful if you need to vertically
+   * center a position:absolute element within a toolbar that uses
+   * -moz-pack-align:stretch, and thus a height which is dependant on
+   * the font-size.
+   *
+   * @param element An element within the toolbar whose height is desired.
+   */
+  async setToolbarButtonHeightProperty(element) {
+    let window = element.ownerGlobal;
+    let dwu = window.windowUtils;
+    let toolbarItem = element;
+    let urlBarContainer = element.closest("#urlbar-container");
+    if (urlBarContainer) {
+      // The stop-reload-button, which is contained in #urlbar-container,
+      // needs to use #urlbar-container to calculate the bounds.
+      toolbarItem = urlBarContainer;
+    }
+    if (!toolbarItem) {
+      return;
+    }
+    let bounds = dwu.getBoundsWithoutFlushing(toolbarItem);
+    if (!bounds.height) {
+      await window.promiseDocumentFlushed(() => {
+        bounds = dwu.getBoundsWithoutFlushing(toolbarItem);
+      });
+    }
+    if (bounds.height) {
+      toolbarItem.style.setProperty("--toolbarbutton-height", bounds.height + "px");
+    }
   },
 
   /**
@@ -394,27 +407,74 @@ this.BrowserUtils = {
    * @return {nsIDOMWindow}
    */
   getRootWindow(docShell) {
-    return docShell.QueryInterface(Ci.nsIDocShellTreeItem)
-      .sameTypeRootTreeItem.QueryInterface(Ci.nsIInterfaceRequestor)
-      .getInterface(Ci.nsIDOMWindow);
+    return docShell.sameTypeRootTreeItem.domWindow;
   },
 
-  getSelectionDetails(topWindow, aCharLen) {
-    // selections of more than 150 characters aren't useful
-    const kMaxSelectionLen = 150;
-    const charLen = Math.min(aCharLen || kMaxSelectionLen, kMaxSelectionLen);
+  /**
+   * Trim the selection text to a reasonable size and sanitize it to make it
+   * safe for search query input.
+   *
+   * @param aSelection
+   *        The selection text to trim.
+   * @param aMaxLen
+   *        The maximum string length, defaults to a reasonable size if undefined.
+   * @return The trimmed selection text.
+   */
+  trimSelection(aSelection, aMaxLen) {
+    // Selections of more than 150 characters aren't useful.
+    const maxLen = Math.min(aMaxLen || 150, aSelection.length);
 
+    if (aSelection.length > maxLen) {
+      // only use the first maxLen important chars. see bug 221361
+      let pattern = new RegExp("^(?:\\s*.){0," + maxLen + "}");
+      pattern.test(aSelection);
+      aSelection = RegExp.lastMatch;
+    }
+
+    aSelection = aSelection.trim().replace(/\s+/g, " ");
+
+    if (aSelection.length > maxLen) {
+      aSelection = aSelection.substr(0, maxLen);
+    }
+
+    return aSelection;
+  },
+
+  /**
+   * Retrieve the text selection details for the given window.
+   *
+   * @param  aTopWindow
+   *         The top window of the element containing the selection.
+   * @param  aCharLen
+   *         The maximum string length for the selection text.
+   * @return The selection details containing the full and trimmed selection text
+   *         and link details for link selections.
+   */
+  getSelectionDetails(aTopWindow, aCharLen) {
     let focusedWindow = {};
-    let focusedElement = Services.focus.getFocusedElementForWindow(topWindow, true, focusedWindow);
+    let focusedElement = Services.focus.getFocusedElementForWindow(aTopWindow, true, focusedWindow);
     focusedWindow = focusedWindow.value;
 
     let selection = focusedWindow.getSelection();
     let selectionStr = selection.toString();
-
-    let collapsed = selection.isCollapsed;
+    let fullText;
 
     let url;
     let linkText;
+
+    // try getting a selected text in text input.
+    if (!selectionStr && focusedElement) {
+      // Don't get the selection for password fields. See bug 565717.
+      if (ChromeUtils.getClassName(focusedElement) === "HTMLTextAreaElement" ||
+          (ChromeUtils.getClassName(focusedElement) === "HTMLInputElement" &&
+           focusedElement.mozIsTextField(true))) {
+        selection = focusedElement.editor.selection;
+        selectionStr = selection.toString();
+      }
+    }
+
+    let collapsed = selection.isCollapsed;
+
     if (selectionStr) {
       // Have some text, let's figure out if it looks like a URL that isn't
       // actually a link.
@@ -458,56 +518,34 @@ this.BrowserUtils = {
         }
 
         if (delimitedAtStart && delimitedAtEnd) {
-          let uriFixup = Cc["@mozilla.org/docshell/urifixup;1"]
-                           .getService(Ci.nsIURIFixup);
           try {
-            url = uriFixup.createFixupURI(linkText, uriFixup.FIXUP_FLAG_NONE);
+            url = Services.uriFixup.createFixupURI(linkText, Services.uriFixup.FIXUP_FLAG_NONE);
           } catch (ex) {}
         }
       }
     }
 
-    // try getting a selected text in text input.
-    if (!selectionStr && focusedElement instanceof Ci.nsIDOMNSEditableElement) {
-      // Don't get the selection for password fields. See bug 565717.
-      if (focusedElement instanceof Ci.nsIDOMHTMLTextAreaElement ||
-          (focusedElement instanceof Ci.nsIDOMHTMLInputElement &&
-           focusedElement.mozIsTextField(true))) {
-        selectionStr = focusedElement.editor.selection.toString();
-      }
-    }
-
     if (selectionStr) {
-      if (selectionStr.length > charLen) {
-        // only use the first charLen important chars. see bug 221361
-        var pattern = new RegExp("^(?:\\s*.){0," + charLen + "}");
-        pattern.test(selectionStr);
-        selectionStr = RegExp.lastMatch;
-      }
-
-      selectionStr = selectionStr.trim().replace(/\s+/g, " ");
-
-      if (selectionStr.length > charLen) {
-        selectionStr = selectionStr.substr(0, charLen);
-      }
+      // Pass up to 16K through unmolested.  If an add-on needs more, they will
+      // have to use a content script.
+      fullText = selectionStr.substr(0, 16384);
+      selectionStr = this.trimSelection(selectionStr, aCharLen);
     }
 
     if (url && !url.host) {
       url = null;
     }
 
-    return { text: selectionStr, docSelectionIsCollapsed: collapsed,
+    return { text: selectionStr, docSelectionIsCollapsed: collapsed, fullText,
              linkURL: url ? url.spec : null, linkText: url ? linkText : "" };
   },
 
   // Iterates through every docshell in the window and calls PermitUnload.
   canCloseWindow(window) {
-    let docShell = window.QueryInterface(Ci.nsIInterfaceRequestor)
-                         .getInterface(Ci.nsIWebNavigation);
-    let node = docShell.QueryInterface(Ci.nsIDocShellTreeItem);
-    for (let i = 0; i < node.childCount; ++i) {
-      let docShell = node.getChildAt(i).QueryInterface(Ci.nsIDocShell);
-      let contentViewer = docShell.contentViewer;
+    let docShell = window.docShell;
+    for (let i = 0; i < docShell.childCount; ++i) {
+      let childShell = docShell.getChildAt(i).QueryInterface(Ci.nsIDocShell);
+      let contentViewer = childShell.contentViewer;
       if (contentViewer && !contentViewer.permitUnload()) {
         return false;
       }
@@ -523,8 +561,8 @@ this.BrowserUtils = {
    * @return [url, postData]
    * @throws if nor url nor postData accept a param, but a param was provided.
    */
-  parseUrlAndPostData: Task.async(function* (url, postData, param) {
-    let hasGETParam = /%s/i.test(url)
+  async parseUrlAndPostData(url, postData, param) {
+    let hasGETParam = /%s/i.test(url);
     let decodedPostData = postData ? unescape(postData) : "";
     let hasPOSTParam = /%s/i.test(decodedPostData);
 
@@ -546,7 +584,10 @@ this.BrowserUtils = {
       // Try to fetch a charset from History.
       try {
         // Will return an empty string if character-set is not found.
-        charset = yield PlacesUtils.getCharsetForURI(this.makeURI(url));
+        let pageInfo = await PlacesUtils.history.fetch(url, {includeAnnotations: true});
+        if (pageInfo && pageInfo.annotations.has(PlacesUtils.CHARSET_ANNO)) {
+          charset = pageInfo.annotations.get(PlacesUtils.CHARSET_ANNO);
+        }
       } catch (ex) {
         // makeURI() throws if url is invalid.
         Cu.reportError(ex);
@@ -580,5 +621,71 @@ this.BrowserUtils = {
                                 .replace(/%S/g, param);
     }
     return [url, postData];
-  }),
+  },
+
+  /**
+   * Generate a document fragment for a localized string that has DOM
+   * node replacements. This avoids using getFormattedString followed
+   * by assigning to innerHTML. Fluent can probably replace this when
+   * it is in use everywhere.
+   *
+   * @param {Document} doc
+   * @param {String}   msg
+   *                   The string to put replacements in. Fetch from
+   *                   a stringbundle using getString or GetStringFromName,
+   *                   or even an inserted dtd string.
+   * @param {Node|String} nodesOrStrings
+   *                   The replacement items. Can be a mix of Nodes
+   *                   and Strings. However, for correct behaviour, the
+   *                   number of items provided needs to exactly match
+   *                   the number of replacement strings in the l10n string.
+   * @returns {DocumentFragment}
+   *                   A document fragment. In the trivial case (no
+   *                   replacements), this will simply be a fragment with 1
+   *                   child, a text node containing the localized string.
+   */
+  getLocalizedFragment(doc, msg, ...nodesOrStrings) {
+    // Ensure replacement points are indexed:
+    for (let i = 1; i <= nodesOrStrings.length; i++) {
+      if (!msg.includes("%" + i + "$S")) {
+        msg = msg.replace(/%S/, "%" + i + "$S");
+      }
+    }
+    let numberOfInsertionPoints = msg.match(/%\d+\$S/g).length;
+    if (numberOfInsertionPoints != nodesOrStrings.length) {
+      Cu.reportError(`Message has ${numberOfInsertionPoints} insertion points, ` +
+                     `but got ${nodesOrStrings.length} replacement parameters!`);
+    }
+
+    let fragment = doc.createDocumentFragment();
+    let parts = [msg];
+    let insertionPoint = 1;
+    for (let replacement of nodesOrStrings) {
+      let insertionString = "%" + (insertionPoint++) + "$S";
+      let partIndex = parts.findIndex(part => typeof part == "string" && part.includes(insertionString));
+      if (partIndex == -1) {
+        fragment.appendChild(doc.createTextNode(msg));
+        return fragment;
+      }
+
+      if (typeof replacement == "string") {
+        parts[partIndex] = parts[partIndex].replace(insertionString, replacement);
+      } else {
+        let [firstBit, lastBit] = parts[partIndex].split(insertionString);
+        parts.splice(partIndex, 1, firstBit, replacement, lastBit);
+      }
+    }
+
+    // Put everything in a document fragment:
+    for (let part of parts) {
+      if (typeof part == "string") {
+        if (part) {
+          fragment.appendChild(doc.createTextNode(part));
+        }
+      } else {
+        fragment.appendChild(part);
+      }
+    }
+    return fragment;
+  },
 };

@@ -3,15 +3,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-/* global WebrtcGlobalInformation, document */
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-var Cu = Components.utils;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "FileUtils",
-                                  "resource://gre/modules/FileUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "FileUtils",
+                               "resource://gre/modules/FileUtils.jsm");
 XPCOMUtils.defineLazyServiceGetter(this, "FilePicker",
                                    "@mozilla.org/filepicker;1", "nsIFilePicker");
 XPCOMUtils.defineLazyGetter(this, "strings", () => {
@@ -81,18 +77,13 @@ function onClearStats() {
 
 var ControlSet = {
   render() {
-    let controls = document.createElement("div");
-    let control = document.createElement("div");
-    let message = document.createElement("div");
+    let controls = renderElement("div", null, {className: "controls"});
+    this.controlSection = renderElement("div", null, {className: "control"});
+    this.messageSection = renderElement("div", null, {className: "message"});
 
-    controls.className = "controls";
-    control.className = "control";
-    message.className = "message";
-    controls.appendChild(control);
-    controls.appendChild(message);
+    controls.appendChild(this.controlSection);
+    controls.appendChild(this.messageSection);
 
-    this.controlSection = control;
-    this.messageSection = message;
     return controls;
   },
 
@@ -100,7 +91,7 @@ var ControlSet = {
     let [controlElem, messageElem] = controlObj.render();
     this.controlSection.appendChild(controlElem);
     this.messageSection.appendChild(messageElem);
-  }
+  },
 };
 
 function Control() {
@@ -141,17 +132,19 @@ Control.prototype = {
   update() {
     this.ctrl.textContent = this._label;
 
+    this.msg.textContent = "";
     if (this._message) {
-      this.msg.innerHTML =
-        `<span class="info-label">${this._messageHeader}:</span> ${this._message}`;
-    } else {
-      this.msg.innerHTML = null;
+      this.msg.appendChild(Object.assign(document.createElement("span"), {
+        className: "info-label",
+        textContent: `${this._messageHeader}: `,
+      }));
+      this.msg.appendChild(document.createTextNode(this._message));
     }
   },
 
   onClick(event) {
     return true;
-  }
+  },
 };
 
 function SavePage() {
@@ -172,29 +165,29 @@ SavePage.prototype.onClick = function() {
   FoldEffect.expandAll();
   FilePicker.init(window, getString("save_page_dialog_title"), FilePicker.modeSave);
   FilePicker.defaultString = LOGFILE_NAME_DEFAULT;
-  let rv = FilePicker.show();
+  FilePicker.open(rv => {
+    if (rv == FilePicker.returnOK || rv == FilePicker.returnReplace) {
+      let fout = FileUtils.openAtomicFileOutputStream(
+        FilePicker.file, FileUtils.MODE_WRONLY | FileUtils.MODE_CREATE);
 
-  if (rv == FilePicker.returnOK || rv == FilePicker.returnReplace) {
-    let fout = FileUtils.openAtomicFileOutputStream(
-      FilePicker.file, FileUtils.MODE_WRONLY | FileUtils.MODE_CREATE);
+      let nodes = content.querySelectorAll(".no-print");
+      let noPrintList = [];
+      for (let node of nodes) {
+        noPrintList.push(node);
+        node.style.setProperty("display", "none");
+      }
 
-    let nodes = content.querySelectorAll(".no-print");
-    let noPrintList = [];
-    for (let node of nodes) {
-      noPrintList.push(node);
-      node.style.setProperty("display", "none");
+      fout.write(content.outerHTML, content.outerHTML.length);
+      FileUtils.closeAtomicFileOutputStream(fout);
+
+      for (let node of noPrintList) {
+        node.style.removeProperty("display");
+      }
+
+      this._message = formatString("save_page_msg", [FilePicker.file.path], 1);
+      this.update();
     }
-
-    fout.write(content.outerHTML, content.outerHTML.length);
-    FileUtils.closeAtomicFileOutputStream(fout);
-
-    for (let node of noPrintList) {
-      node.style.removeProperty("display");
-    }
-
-    this._message = formatString("save_page_msg", [FilePicker.file.path], 1);
-    this.update();
-  }
+  });
 };
 
 function DebugMode() {
@@ -262,7 +255,7 @@ AecLogging.prototype.constructor = AecLogging;
 AecLogging.prototype.offState = function() {
   this._label = getString("aec_logging_off_state_label");
   try {
-    let file = Services.prefs.getCharPref("media.webrtc.debug.aec_log_dir");
+    let file = WebrtcGlobalInformation.aecDebugLogDir;
     this._message = formatString("aec_logging_off_state_msg", [file], 1);
   } catch (e) {
     this._message = null;
@@ -303,12 +296,9 @@ var AboutWebRTC = {
     this._setData(data);
 
     if (data.error) {
-      let msg = document.createElement("h3");
-      msg.textContent = getString("cannot_retrieve_log");
-      parent.appendChild(msg);
-      msg = document.createElement("p");
-      msg.innerHTML = `${data.error.name}: ${data.error.message}`;
-      parent.appendChild(msg);
+      parent.appendChild(renderElement("h3", getString("cannot_retrieve_log")));
+      parent.appendChild(
+          renderElement("p", `${data.error.name}: ${data.error.message}`));
       return;
     }
 
@@ -339,20 +329,15 @@ var AboutWebRTC = {
   },
 
   renderPeerConnections() {
-    let connections = document.createElement("div");
-    connections.className = "stats";
+    let connections = renderElement("div", null, {className: "stats"});
 
-    let heading = document.createElement("span");
-    heading.className = "section-heading";
-    let elem = document.createElement("h3");
-    elem.textContent = getString("stats_heading");
-    heading.appendChild(elem);
+    let heading = renderElement("span", null, {className: "section-heading"});
+    heading.appendChild(renderElement("h3", getString("stats_heading")));
 
-    elem = document.createElement("button");
-    elem.textContent = getString("stats_clear");
-    elem.className = "no-print";
-    elem.onclick = this._onClearStats;
-    heading.appendChild(elem);
+    heading.appendChild(renderElement("button", getString("stats_clear"), {
+      className: "no-print",
+      onclick: this._onClearStats,
+    }));
     connections.appendChild(heading);
 
     if (!this._reports || !this._reports.length) {
@@ -370,44 +355,32 @@ var AboutWebRTC = {
   },
 
   renderConnectionLog() {
-    let content = document.createElement("div");
-    content.className = "log";
+    let content = renderElement("div", null, {className: "log"});
 
-    let heading = document.createElement("span");
-    heading.className = "section-heading";
-    let elem = document.createElement("h3");
-    elem.textContent = getString("log_heading");
-    heading.appendChild(elem);
-    elem = document.createElement("button");
-    elem.textContent = getString("log_clear");
-    elem.className = "no-print";
-    elem.onclick = this._onClearLog;
-    heading.appendChild(elem);
+    let heading = renderElement("span", null, {className: "section-heading"});
+    heading.appendChild(renderElement("h3", getString("log_heading")));
+    heading.appendChild(renderElement("button", getString("log_clear"), {
+      className: "no-print",
+      onclick: this._onClearLog,
+    }));
     content.appendChild(heading);
 
     if (!this._log || !this._log.length) {
       return content;
     }
 
-    let div = document.createElement("div");
-    let sectionCtrl = document.createElement("div");
-    sectionCtrl.className = "section-ctrl no-print";
-    let foldEffect = new FoldEffect(div, {
+    let div = new FoldableSection(content, {
       showMsg: getString("log_show_msg"),
-      hideMsg: getString("log_hide_msg")
-    });
-    sectionCtrl.appendChild(foldEffect.render());
-    content.appendChild(sectionCtrl);
+      hideMsg: getString("log_hide_msg"),
+    }).render();
 
     for (let line of this._log) {
-      elem = document.createElement("p");
-      elem.textContent = line;
-      div.appendChild(elem);
+      div.appendChild(renderElement("p", line));
     }
 
     content.appendChild(div);
     return content;
-  }
+  },
 };
 
 function PeerConnection(report) {
@@ -416,16 +389,10 @@ function PeerConnection(report) {
 
 PeerConnection.prototype = {
   render() {
-    let pc = document.createElement("div");
-    pc.className = "peer-connection";
+    let pc = renderElement("div", null, {className: "peer-connection"});
     pc.appendChild(this.renderHeading());
 
-    let div = document.createElement("div");
-    let sectionCtrl = document.createElement("div");
-    sectionCtrl.className = "section-ctrl no-print";
-    let foldEffect = new FoldEffect(div);
-    sectionCtrl.appendChild(foldEffect.render());
-    pc.appendChild(sectionCtrl);
+    let div = new FoldableSection(pc).render();
 
     div.appendChild(this.renderDesc());
     div.appendChild(new ICEStats(this._report).render());
@@ -439,7 +406,7 @@ PeerConnection.prototype = {
   renderHeading() {
     let pcInfo = this.getPCInfo(this._report);
     let heading = document.createElement("h3");
-    let now = new Date(this._report.timestamp).toTimeString();
+    let now = new Date(this._report.timestamp).toString();
     heading.textContent =
       `[ ${pcInfo.id} ] ${pcInfo.url} ${pcInfo.closed ? `(${getString("connection_closed")})` : ""} ${now}`;
     return heading;
@@ -447,16 +414,15 @@ PeerConnection.prototype = {
 
   renderDesc() {
     let info = document.createElement("div");
-    let label = document.createElement("span");
-    let body = document.createElement("span");
 
-    label.className = "info-label";
-    label.textContent = `${getString("peer_connection_id_label")}: `;
-    info.appendChild(label);
+    info.appendChild(
+        renderElement("span", `${getString("peer_connection_id_label")}: `), {
+          className: "info-label",
+        });
 
-    body.className = "info-body";
-    body.textContent = this._report.pcid;
-    info.appendChild(body);
+    info.appendChild(renderElement("span", this._report.pcid, {
+      className: "info-body",
+    }));
 
     return info;
   },
@@ -465,10 +431,21 @@ PeerConnection.prototype = {
     return {
       id: report.pcid.match(/id=(\S+)/)[1],
       url: report.pcid.match(/url=([^)]+)/)[1],
-      closed: report.closed
+      closed: report.closed,
     };
-  }
+  },
 };
+
+function renderElement(elemName, elemText, options = {}) {
+  let elem = document.createElement(elemName);
+  // check for null instead of using elemText || "" so we don't hide
+  // elements with 0 values
+  if (elemText != null) {
+    elem.textContent = elemText;
+  }
+  Object.assign(elem, options);
+  return elem;
+}
 
 function SDPStats(report) {
   this._report = report;
@@ -477,29 +454,23 @@ function SDPStats(report) {
 SDPStats.prototype = {
   render() {
     let div = document.createElement("div");
-    let elem = document.createElement("h4");
+    div.appendChild(renderElement("h4", getString("sdp_heading")));
 
-    elem.textContent = getString("sdp_heading");
-    div.appendChild(elem);
+    let offerLabel = `(${getString("offer")})`;
+    let answerLabel = `(${getString("answer")})`;
+    let localSdpHeading =
+      `${getString("local_sdp_heading")} ${this._report.offerer ? offerLabel : answerLabel}`;
+    let remoteSdpHeading =
+      `${getString("remote_sdp_heading")} ${this._report.offerer ? answerLabel : offerLabel}`;
 
-    elem = document.createElement("h5");
-    elem.textContent = getString("local_sdp_heading");
-    div.appendChild(elem);
+    div.appendChild(renderElement("h5", localSdpHeading));
+    div.appendChild(renderElement("pre", this._report.localSdp));
 
-    elem = document.createElement("pre");
-    elem.textContent = this._report.localSdp;
-    div.appendChild(elem);
-
-    elem = document.createElement("h5");
-    elem.textContent = getString("remote_sdp_heading");
-    div.appendChild(elem);
-
-    elem = document.createElement("pre");
-    elem.textContent = this._report.remoteSdp;
-    div.appendChild(elem);
+    div.appendChild(renderElement("h5", remoteSdpHeading));
+    div.appendChild(renderElement("pre", this._report.remoteSdp));
 
     return div;
-  }
+  },
 };
 
 function RTPStats(report) {
@@ -510,10 +481,7 @@ function RTPStats(report) {
 RTPStats.prototype = {
   render() {
     let div = document.createElement("div");
-    let heading = document.createElement("h4");
-
-    heading.textContent = getString("rtp_stats_heading");
-    div.appendChild(heading);
+    div.appendChild(renderElement("h4", getString("rtp_stats_heading")));
 
     this.generateRTPStats();
 
@@ -549,21 +517,6 @@ RTPStats.prototype = {
     this._stats = rtpStats;
   },
 
-  renderAvStats(stats) {
-    let statsString = "";
-
-    if (stats.mozAvSyncDelay) {
-      statsString += `${getString("av_sync_label")}: ${stats.mozAvSyncDelay} ms `;
-    }
-    if (stats.mozJitterBufferDelay) {
-      statsString += `${getString("jitter_buffer_delay_label")}: ${stats.mozJitterBufferDelay} ms`;
-    }
-
-    let line = document.createElement("p");
-    line.textContent = statsString;
-    return line;
-  },
-
   renderCoderStats(stats) {
     let statsString = "";
     let label;
@@ -594,9 +547,7 @@ RTPStats.prototype = {
       statsString = label + statsString;
     }
 
-    let line = document.createElement("p");
-    line.textContent = statsString;
-    return line;
+    return renderElement("p", statsString);
   },
 
   renderTransportStats(stats, typeLabel) {
@@ -612,8 +563,8 @@ RTPStats.prototype = {
 
       statsString += ` ${getString("lost_label")}: ${stats.packetsLost} ${getString("jitter_label")}: ${stats.jitter}`;
 
-      if (stats.mozRtt) {
-        statsString += ` RTT: ${stats.mozRtt} ms`;
+      if (stats.roundTripTime) {
+        statsString += ` RTT: ${stats.roundTripTime} ms`;
       }
     } else if (stats.packetsSent) {
       statsString += ` ${getString("sent_label")}: ${stats.packetsSent} ${getString("packets")}`;
@@ -622,21 +573,12 @@ RTPStats.prototype = {
       }
     }
 
-    let line = document.createElement("p");
-    line.textContent = statsString;
-    return line;
+    return renderElement("p", statsString);
   },
 
   renderRTPStatSet(stats) {
     let div = document.createElement("div");
-    let heading = document.createElement("h5");
-
-    heading.textContent = stats.id;
-    div.appendChild(heading);
-
-    if (stats.MozAvSyncDelay || stats.mozJitterBufferDelay) {
-      div.appendChild(this.renderAvStats(stats));
-    }
+    div.appendChild(renderElement("h5", stats.id));
 
     div.appendChild(this.renderCoderStats(stats));
     div.appendChild(this.renderTransportStats(stats, getString("typeLocal")));
@@ -655,50 +597,168 @@ function ICEStats(report) {
 
 ICEStats.prototype = {
   render() {
-    let tbody = [];
-    for (let stat of this.generateICEStats()) {
-      tbody.push([
-        stat.localcandidate || "",
-        stat.remotecandidate || "",
-        stat.state || "",
-        stat.priority || "",
-        stat.nominated || "",
-        stat.selected || ""
-      ]);
-    }
-
-    let statsTable = new SimpleTable(
-      [getString("local_candidate"), getString("remote_candidate"), getString("ice_state"),
-       getString("priority"), getString("nominated"), getString("selected")],
-      tbody);
-
     let div = document.createElement("div");
-    let heading = document.createElement("h4");
+    div.appendChild(renderElement("h4", getString("ice_stats_heading")));
 
-    heading.textContent = getString("ice_stats_heading");
-    div.appendChild(heading);
-
-    div.appendChild(statsTable.render());
+    div.appendChild(this.renderICECandidateTable());
+    // add just a bit of vertical space between the restart/rollback
+    // counts and the ICE candidate pair table above.
+    div.appendChild(document.createElement("br"));
     div.appendChild(this.renderIceMetric("ice_restart_count_label",
                                          this._report.iceRestarts));
     div.appendChild(this.renderIceMetric("ice_rollback_count_label",
                                          this._report.iceRollbacks));
 
+    div.appendChild(this.renderRawICECandidateSection());
+
     return div;
+  },
+
+  renderICECandidateTable() {
+    let caption = renderElement("caption", null, {className: "no-print"});
+
+    // This takes the caption message with the replacement token, breaks
+    // it around the token, and builds the spans for each portion of the
+    // caption.  This is to allow localization to put the color name for
+    // the highlight wherever it is appropriate in the translated string
+    // while avoiding innerHTML warnings from eslint.
+    let captionTemplate = getString("trickle_caption_msg2");
+    let [start, end] = captionTemplate.split(/%(?:1\$)?S/);
+
+    // only append span if non-whitespace chars present
+    if (/\S/.test(start)) {
+      caption.appendChild(
+          renderElement("span", `${start}`));
+    }
+    caption.appendChild(
+        renderElement("span", getString("trickle_highlight_color_name2"), {
+          className: "trickled",
+        }));
+    // only append span if non-whitespace chars present
+    if (/\S/.test(end)) {
+      caption.appendChild(
+          renderElement("span", `${end}`));
+    }
+
+    let stats = this.generateICEStats();
+    // don't use |stat.x || ""| here because it hides 0 values
+    let tbody = stats.map(stat => [
+      stat["local-candidate"],
+      stat["remote-candidate"],
+      stat.componentId,
+      stat.state,
+      stat.priority,
+      stat.nominated,
+      stat.selected,
+      stat.bytesSent,
+      stat.bytesReceived,
+    ].map(entry => Object.is(entry, undefined) ? "" : entry));
+
+    let statsTable = new SimpleTable(
+      ["local_candidate", "remote_candidate",
+       "ice_component_id", "ice_state",
+       "priority", "nominated", "selected",
+       "ice_pair_bytes_sent", "ice_pair_bytes_received",
+      ].map(columnName => getString(columnName)),
+      tbody, caption).render();
+
+    // after rendering the table, we need to change the class name for each
+    // candidate pair's local or remote candidate if it was trickled.
+    stats.forEach((stat, index) => {
+      // look at statsTable row index + 1 to skip column headers
+      let rowIndex = index + 1;
+      if (stat["remote-trickled"]) {
+        statsTable.rows[rowIndex].cells[1].className = "trickled";
+      }
+      if (stat["local-trickled"]) {
+        statsTable.rows[rowIndex].cells[0].className = "trickled";
+      }
+    });
+
+    // if the next row's component id changes, mark the bottom of the
+    // current row with a thin, black border to differentiate the
+    // component id grouping.
+    let rowCount = statsTable.rows.length - 1;
+    for (var i = 0; i < rowCount; i++) {
+      if (statsTable.rows[i].cells[2].innerHTML !==
+          statsTable.rows[i + 1].cells[2].innerHTML) {
+        statsTable.rows[i].className = "bottom-border";
+      }
+    }
+
+    return statsTable;
+  },
+
+  renderRawICECandidates() {
+    let div = document.createElement("div");
+
+    let tbody = [];
+    let rows = this.generateRawICECandidates();
+    for (let row of rows) {
+      tbody.push([row.local, row.remote]);
+    }
+
+    let statsTable = new SimpleTable(
+      [getString("raw_local_candidate"), getString("raw_remote_candidate")],
+      tbody).render();
+
+    // we want different formatting on the raw stats table (namely, left-align)
+    statsTable.className = "raw-candidate";
+    div.appendChild(statsTable);
+
+    return div;
+  },
+
+  renderRawICECandidateSection() {
+    let section = document.createElement("div");
+    section.appendChild(
+        renderElement("h4", getString("raw_candidates_heading")));
+
+    let div = new FoldableSection(section, {
+      showMsg: getString("raw_cand_show_msg"),
+      hideMsg: getString("raw_cand_hide_msg"),
+    }).render();
+
+    div.appendChild(this.renderRawICECandidates());
+
+    section.appendChild(div);
+
+    return section;
+  },
+
+  generateRawICECandidates() {
+    let rows = [];
+    let row;
+
+    let rawLocals = this._report.rawLocalCandidates.sort();
+    // add to a Set (to remove duplicates) because some of these come from
+    // candidates in use and some come from the raw trickled candidates
+    // received that may have been dropped because no stream was found or
+    // they were for a component id that was too high.
+    let rawRemotes = [...new Set(this._report.rawRemoteCandidates)].sort();
+    let rowCount = Math.max(rawLocals.length, rawRemotes.length);
+    for (var i = 0; i < rowCount; i++) {
+      let rawLocal = rawLocals[i];
+      let rawRemote = rawRemotes[i];
+      row = {
+        local: rawLocal || "",
+        remote: rawRemote || "",
+      };
+      rows.push(row);
+    }
+    return rows;
   },
 
   renderIceMetric(labelName, value) {
     let info = document.createElement("div");
-    let label = document.createElement("span");
-    let body = document.createElement("span");
 
-    label.className = "info-label";
-    label.textContent = `${getString(labelName)}: `;
-    info.appendChild(label);
+    info.appendChild(
+        renderElement("span", `${getString(labelName)}: `, {
+          className: "info-label",
+        }));
+    info.appendChild(
+        renderElement("span", value, {className: "info-body"}));
 
-    body.className = "info-body";
-    body.textContent = value;
-    info.appendChild(body);
     return info;
   },
 
@@ -711,6 +771,11 @@ ICEStats.prototype = {
       candidates.set(candidate.id, candidate);
     }
 
+    // a method to see if a given candidate id is in the array of tickled
+    // candidates.
+    let isTrickled = id => [...this._report.trickledIceCandidateStats].some(
+      candidate => candidate.id == id);
+
     // A component may have a remote or local candidate address or both.
     // Combine those with both; these will be the peer candidates.
     let matched = {};
@@ -720,35 +785,44 @@ ICEStats.prototype = {
     for (let pair of this._report.iceCandidatePairStats) {
       let local = candidates.get(pair.localCandidateId);
       let remote = candidates.get(pair.remoteCandidateId);
-
       if (local) {
         stat = {
-          localcandidate: this.candidateToString(local),
+          ["local-candidate"]: this.candidateToString(local),
+          componentId: pair.componentId,
           state: pair.state,
           priority: pair.priority,
           nominated: pair.nominated,
-          selected: pair.selected
+          selected: pair.selected,
+          bytesSent: pair.bytesSent,
+          bytesReceived: pair.bytesReceived,
         };
         matched[local.id] = true;
+        if (isTrickled(local.id)) {
+            stat["local-trickled"] = true;
+        }
 
         if (remote) {
-          stat.remotecandidate = this.candidateToString(remote);
+          stat["remote-candidate"] = this.candidateToString(remote);
           matched[remote.id] = true;
+          if (isTrickled(remote.id)) {
+            stat["remote-trickled"] = true;
+          }
         }
         stats.push(stat);
       }
     }
 
-    for (let c of candidates.values()) {
-      if (matched[c.id])
-        continue;
-
-      stat = {};
-      stat[c.type] = this.candidateToString(c);
-      stats.push(stat);
-    }
-
-    return stats.sort((a, b) => (b.priority || 0) - (a.priority || 0));
+    // sort (group by) componentId first, then bytesSent if available, else by
+    // priority
+    return stats.sort((a, b) => {
+        if (a.componentId != b.componentId) {
+          return a.componentId - b.componentId;
+        }
+        return (b.bytesSent ?
+                (b.bytesSent || 0) - (a.bytesSent || 0) :
+                (b.priority || 0) - (a.priority || 0)
+               );
+      });
   },
 
   candidateToString(c) {
@@ -759,26 +833,44 @@ ICEStats.prototype = {
     var type = c.candidateType;
 
     if (c.type == "local-candidate" && c.candidateType == "relayed") {
-      type = `${c.candidateType}-${c.mozLocalTransport}`;
+      type = `${c.candidateType}-${c.relayProtocol}`;
     }
 
-    return `${c.ipAddress}:${c.portNumber}/${c.transport}(${type})`;
-  }
+    return `${c.address}:${c.port}/${c.transport}(${type})`;
+  },
 };
 
-function SimpleTable(heading, data) {
+function FoldableSection(parentElement, options = {}) {
+  this._foldableElement = document.createElement("div");
+  if (parentElement) {
+    let sectionCtrl = renderElement("div", null, {
+      className: "section-ctrl no-print",
+    });
+    let foldEffect = new FoldEffect(this._foldableElement, options);
+    sectionCtrl.appendChild(foldEffect.render());
+    parentElement.appendChild(sectionCtrl);
+  }
+}
+
+FoldableSection.prototype = {
+  render() {
+    return this._foldableElement;
+  },
+};
+
+function SimpleTable(heading, data, caption) {
   this._heading = heading || [];
   this._data = data;
+  this._caption = caption;
 }
 
 SimpleTable.prototype = {
-  renderRow(list) {
+  renderRow(list, header) {
     let row = document.createElement("tr");
+    let elemType = (header ? "th" : "td");
 
     for (let elem of list) {
-      let cell = document.createElement("td");
-      cell.textContent = elem;
-      row.appendChild(cell);
+      row.appendChild(renderElement(elemType, elem));
     }
 
     return row;
@@ -787,8 +879,12 @@ SimpleTable.prototype = {
   render() {
     let table = document.createElement("table");
 
+    if (this._caption) {
+      table.appendChild(this._caption);
+    }
+
     if (this._heading) {
-      table.appendChild(this.renderRow(this._heading));
+      table.appendChild(this.renderRow(this._heading, true));
     }
 
     for (let row of this._data) {
@@ -796,7 +892,7 @@ SimpleTable.prototype = {
     }
 
     return table;
-  }
+  },
 };
 
 function FoldEffect(targetElem, options = {}) {
@@ -813,9 +909,8 @@ FoldEffect.prototype = {
   render() {
     this._target.classList.add("fold-target");
 
-    let ctrl = document.createElement("div");
+    let ctrl = renderElement("div", null, {className: "fold-trigger"});
     this._trigger = ctrl;
-    ctrl.className = "fold-trigger";
     ctrl.addEventListener("click", this.onClick.bind(this));
     this.close();
 
@@ -842,7 +937,7 @@ FoldEffect.prototype = {
     this._target.classList.add("fold-closed");
     this._trigger.setAttribute("title", this._showHint);
     this._trigger.textContent = this._showMsg;
-  }
+  },
 };
 
 FoldEffect._sections = [];

@@ -3,9 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 function createTemporarySaveDirectory() {
-  var saveDir = Cc["@mozilla.org/file/directory_service;1"]
-                  .getService(Ci.nsIProperties)
-                  .get("TmpD", Ci.nsIFile);
+  var saveDir = Services.dirsvc.get("TmpD", Ci.nsIFile);
   saveDir.append("testsavedir");
   if (!saveDir.exists())
     saveDir.create(Ci.nsIFile.DIRECTORY_TYPE, 0o755);
@@ -25,14 +23,11 @@ function promiseNoCacheEntry(filename) {
       },
       onCacheEntryVisitCompleted() {
         resolve();
-      }
+      },
     };
     function Visitor() {}
 
-    let cache = Cc["@mozilla.org/netwerk/cache-storage-service;1"]
-                .getService(Ci.nsICacheStorageService);
-    let {LoadContextInfo} = Cu.import("resource://gre/modules/LoadContextInfo.jsm", null);
-    let storage = cache.diskCacheStorage(LoadContextInfo.default, false);
+    let storage = Services.cache2.diskCacheStorage(Services.loadContextInfo.default, false);
     storage.asyncVisitStorage(new Visitor(), true /* Do walk entries */);
   });
 }
@@ -75,40 +70,36 @@ function promiseImageDownloaded() {
   });
 }
 
-add_task(function* () {
+add_task(async function() {
   let testURI = "http://mochi.test:8888/browser/browser/base/content/test/general/bug792517.html";
-  let privateWindow = yield BrowserTestUtils.openNewBrowserWindow({private: true});
-  let tab = yield BrowserTestUtils.openNewForegroundTab(privateWindow.gBrowser, testURI);
+  let privateWindow = await BrowserTestUtils.openNewBrowserWindow({private: true});
+  let tab = await BrowserTestUtils.openNewForegroundTab(privateWindow.gBrowser, testURI);
 
   let contextMenu = privateWindow.document.getElementById("contentAreaContextMenu");
   let popupShown = BrowserTestUtils.waitForEvent(contextMenu, "popupshown");
   let popupHidden = BrowserTestUtils.waitForEvent(contextMenu, "popuphidden");
-  yield BrowserTestUtils.synthesizeMouseAtCenter("#img", {
+  await BrowserTestUtils.synthesizeMouseAtCenter("#img", {
     type: "contextmenu",
-    button: 2
+    button: 2,
   }, tab.linkedBrowser);
-  yield popupShown;
+  await popupShown;
 
-  let cache = Cc["@mozilla.org/netwerk/cache-storage-service;1"]
-              .getService(Ci.nsICacheStorageService);
-  cache.clear();
+  Services.cache2.clear();
 
   let imageDownloaded = promiseImageDownloaded();
   // Select "Save Image As" option from context menu
   privateWindow.document.getElementById("context-saveimage").doCommand();
 
   contextMenu.hidePopup();
-  yield popupHidden;
+  await popupHidden;
 
   // wait for image download
-  let fileName = yield imageDownloaded;
-  yield promiseNoCacheEntry(fileName);
+  let fileName = await imageDownloaded;
+  await promiseNoCacheEntry(fileName);
 
-  yield BrowserTestUtils.closeWindow(privateWindow);
+  await BrowserTestUtils.closeWindow(privateWindow);
 });
 
 /* import-globals-from ../../../../../toolkit/content/tests/browser/common/mockTransfer.js */
-Cc["@mozilla.org/moz/jssubscript-loader;1"]
-  .getService(Ci.mozIJSSubScriptLoader)
-  .loadSubScript("chrome://mochitests/content/browser/toolkit/content/tests/browser/common/mockTransfer.js",
+Services.scriptloader.loadSubScript("chrome://mochitests/content/browser/toolkit/content/tests/browser/common/mockTransfer.js",
                  this);

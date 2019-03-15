@@ -7,15 +7,20 @@
 #include "gfxPrefs.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/EventForwards.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/TextEventDispatcher.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TextInputProcessor.h"
+#include "mozilla/widget/IMEData.h"
+#include "mozilla/dom/KeyboardEvent.h"
 #include "nsContentUtils.h"
 #include "nsIDocShell.h"
 #include "nsIWidget.h"
 #include "nsPIDOMWindow.h"
 #include "nsPresContext.h"
 
+using mozilla::dom::Event;
+using mozilla::dom::KeyboardEvent;
 using namespace mozilla::widget;
 
 namespace mozilla {
@@ -24,30 +29,230 @@ namespace mozilla {
  * TextInputProcessorNotification
  ******************************************************************************/
 
-class TextInputProcessorNotification final :
-        public nsITextInputProcessorNotification
-{
-public:
+class TextInputProcessorNotification final
+    : public nsITextInputProcessorNotification {
+  typedef IMENotification::SelectionChangeData SelectionChangeData;
+  typedef IMENotification::SelectionChangeDataBase SelectionChangeDataBase;
+  typedef IMENotification::TextChangeData TextChangeData;
+  typedef IMENotification::TextChangeDataBase TextChangeDataBase;
+
+ public:
   explicit TextInputProcessorNotification(const char* aType)
-    : mType(aType)
-  {
+      : mType(aType), mTextChangeData() {}
+
+  explicit TextInputProcessorNotification(
+      const TextChangeDataBase& aTextChangeData)
+      : mType("notify-text-change"), mTextChangeData(aTextChangeData) {}
+
+  explicit TextInputProcessorNotification(
+      const SelectionChangeDataBase& aSelectionChangeData)
+      : mType("notify-selection-change"),
+        mSelectionChangeData(aSelectionChangeData) {
+    // SelectionChangeDataBase::mString still refers nsString instance owned
+    // by aSelectionChangeData.  So, this needs to copy the instance.
+    nsString* string = new nsString(aSelectionChangeData.String());
+    mSelectionChangeData.mString = string;
   }
 
   NS_DECL_ISUPPORTS
 
-  NS_IMETHOD GetType(nsACString& aType) override final
-  {
+  NS_IMETHOD GetType(nsACString& aType) final {
     aType = mType;
     return NS_OK;
   }
 
-protected:
-  ~TextInputProcessorNotification() { }
+  // "notify-text-change" and "notify-selection-change"
+  NS_IMETHOD GetOffset(uint32_t* aOffset) final {
+    if (NS_WARN_IF(!aOffset)) {
+      return NS_ERROR_INVALID_ARG;
+    }
+    if (IsSelectionChange()) {
+      *aOffset = mSelectionChangeData.mOffset;
+      return NS_OK;
+    }
+    if (IsTextChange()) {
+      *aOffset = mTextChangeData.mStartOffset;
+      return NS_OK;
+    }
+    return NS_ERROR_NOT_AVAILABLE;
+  }
 
-private:
+  // "notify-selection-change"
+  NS_IMETHOD GetText(nsAString& aText) final {
+    if (IsSelectionChange()) {
+      aText = mSelectionChangeData.String();
+      return NS_OK;
+    }
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  NS_IMETHOD GetCollapsed(bool* aCollapsed) final {
+    if (NS_WARN_IF(!aCollapsed)) {
+      return NS_ERROR_INVALID_ARG;
+    }
+    if (IsSelectionChange()) {
+      *aCollapsed = mSelectionChangeData.IsCollapsed();
+      return NS_OK;
+    }
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  NS_IMETHOD GetLength(uint32_t* aLength) final {
+    if (NS_WARN_IF(!aLength)) {
+      return NS_ERROR_INVALID_ARG;
+    }
+    if (IsSelectionChange()) {
+      *aLength = mSelectionChangeData.Length();
+      return NS_OK;
+    }
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  NS_IMETHOD GetReversed(bool* aReversed) final {
+    if (NS_WARN_IF(!aReversed)) {
+      return NS_ERROR_INVALID_ARG;
+    }
+    if (IsSelectionChange()) {
+      *aReversed = mSelectionChangeData.mReversed;
+      return NS_OK;
+    }
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  NS_IMETHOD GetWritingMode(nsACString& aWritingMode) final {
+    if (IsSelectionChange()) {
+      WritingMode writingMode = mSelectionChangeData.GetWritingMode();
+      if (!writingMode.IsVertical()) {
+        aWritingMode.AssignLiteral("horizontal-tb");
+      } else if (writingMode.IsVerticalLR()) {
+        aWritingMode.AssignLiteral("vertical-lr");
+      } else {
+        aWritingMode.AssignLiteral("vertical-rl");
+      }
+      return NS_OK;
+    }
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  NS_IMETHOD GetCausedByComposition(bool* aCausedByComposition) final {
+    if (NS_WARN_IF(!aCausedByComposition)) {
+      return NS_ERROR_INVALID_ARG;
+    }
+    if (IsSelectionChange()) {
+      *aCausedByComposition = mSelectionChangeData.mCausedByComposition;
+      return NS_OK;
+    }
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  NS_IMETHOD GetCausedBySelectionEvent(bool* aCausedBySelectionEvent) final {
+    if (NS_WARN_IF(!aCausedBySelectionEvent)) {
+      return NS_ERROR_INVALID_ARG;
+    }
+    if (IsSelectionChange()) {
+      *aCausedBySelectionEvent = mSelectionChangeData.mCausedBySelectionEvent;
+      return NS_OK;
+    }
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  NS_IMETHOD GetOccurredDuringComposition(
+      bool* aOccurredDuringComposition) final {
+    if (NS_WARN_IF(!aOccurredDuringComposition)) {
+      return NS_ERROR_INVALID_ARG;
+    }
+    if (IsSelectionChange()) {
+      *aOccurredDuringComposition =
+          mSelectionChangeData.mOccurredDuringComposition;
+      return NS_OK;
+    }
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  // "notify-text-change"
+  NS_IMETHOD GetRemovedLength(uint32_t* aLength) final {
+    if (NS_WARN_IF(!aLength)) {
+      return NS_ERROR_INVALID_ARG;
+    }
+    if (IsTextChange()) {
+      *aLength = mTextChangeData.OldLength();
+      return NS_OK;
+    }
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  NS_IMETHOD GetAddedLength(uint32_t* aLength) final {
+    if (NS_WARN_IF(!aLength)) {
+      return NS_ERROR_INVALID_ARG;
+    }
+    if (IsTextChange()) {
+      *aLength = mTextChangeData.NewLength();
+      return NS_OK;
+    }
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  NS_IMETHOD GetCausedOnlyByComposition(bool* aCausedOnlyByComposition) final {
+    if (NS_WARN_IF(!aCausedOnlyByComposition)) {
+      return NS_ERROR_INVALID_ARG;
+    }
+    if (IsTextChange()) {
+      *aCausedOnlyByComposition = mTextChangeData.mCausedOnlyByComposition;
+      return NS_OK;
+    }
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  NS_IMETHOD GetIncludingChangesDuringComposition(
+      bool* aIncludingChangesDuringComposition) final {
+    if (NS_WARN_IF(!aIncludingChangesDuringComposition)) {
+      return NS_ERROR_INVALID_ARG;
+    }
+    if (IsTextChange()) {
+      *aIncludingChangesDuringComposition =
+          mTextChangeData.mIncludingChangesDuringComposition;
+      return NS_OK;
+    }
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  NS_IMETHOD GetIncludingChangesWithoutComposition(
+      bool* aIncludingChangesWithoutComposition) final {
+    if (NS_WARN_IF(!aIncludingChangesWithoutComposition)) {
+      return NS_ERROR_INVALID_ARG;
+    }
+    if (IsTextChange()) {
+      *aIncludingChangesWithoutComposition =
+          mTextChangeData.mIncludingChangesWithoutComposition;
+      return NS_OK;
+    }
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+ protected:
+  virtual ~TextInputProcessorNotification() {
+    if (IsSelectionChange()) {
+      delete mSelectionChangeData.mString;
+      mSelectionChangeData.mString = nullptr;
+    }
+  }
+
+  bool IsTextChange() const {
+    return mType.EqualsLiteral("notify-text-change");
+  }
+
+  bool IsSelectionChange() const {
+    return mType.EqualsLiteral("notify-selection-change");
+  }
+
+ private:
   nsAutoCString mType;
+  union {
+    TextChangeDataBase mTextChangeData;
+    SelectionChangeDataBase mSelectionChangeData;
+  };
 
-  TextInputProcessorNotification() { }
+  TextInputProcessorNotification() : mTextChangeData() {}
 };
 
 NS_IMPL_ISUPPORTS(TextInputProcessorNotification,
@@ -57,19 +262,13 @@ NS_IMPL_ISUPPORTS(TextInputProcessorNotification,
  * TextInputProcessor
  ******************************************************************************/
 
-NS_IMPL_ISUPPORTS(TextInputProcessor,
-                  nsITextInputProcessor,
-                  TextEventDispatcherListener,
-                  nsISupportsWeakReference)
+NS_IMPL_ISUPPORTS(TextInputProcessor, nsITextInputProcessor,
+                  TextEventDispatcherListener, nsISupportsWeakReference)
 
 TextInputProcessor::TextInputProcessor()
-  : mDispatcher(nullptr)
-  , mForTests(false)
-{
-}
+    : mDispatcher(nullptr), mForTests(false) {}
 
-TextInputProcessor::~TextInputProcessor()
-{
+TextInputProcessor::~TextInputProcessor() {
   if (mDispatcher && mDispatcher->IsComposing()) {
     // If this is composing and not canceling the composition, nobody can steal
     // the rights of TextEventDispatcher from this instance.  Therefore, this
@@ -82,15 +281,12 @@ TextInputProcessor::~TextInputProcessor()
   }
 }
 
-bool
-TextInputProcessor::IsComposing() const
-{
+bool TextInputProcessor::IsComposing() const {
   return mDispatcher && mDispatcher->IsComposing();
 }
 
 NS_IMETHODIMP
-TextInputProcessor::GetHasComposition(bool* aHasComposition)
-{
+TextInputProcessor::GetHasComposition(bool* aHasComposition) {
   MOZ_RELEASE_ASSERT(aHasComposition, "aHasComposition must not be nullptr");
   MOZ_RELEASE_ASSERT(nsContentUtils::IsCallerChrome());
   *aHasComposition = IsComposing();
@@ -99,10 +295,8 @@ TextInputProcessor::GetHasComposition(bool* aHasComposition)
 
 NS_IMETHODIMP
 TextInputProcessor::BeginInputTransaction(
-                      mozIDOMWindow* aWindow,
-                      nsITextInputProcessorCallback* aCallback,
-                      bool* aSucceeded)
-{
+    mozIDOMWindow* aWindow, nsITextInputProcessorCallback* aCallback,
+    bool* aSucceeded) {
   MOZ_RELEASE_ASSERT(aSucceeded, "aSucceeded must not be nullptr");
   MOZ_RELEASE_ASSERT(nsContentUtils::IsCallerChrome());
   if (NS_WARN_IF(!aCallback)) {
@@ -114,25 +308,25 @@ TextInputProcessor::BeginInputTransaction(
 
 NS_IMETHODIMP
 TextInputProcessor::BeginInputTransactionForTests(
-                      mozIDOMWindow* aWindow,
-                      nsITextInputProcessorCallback* aCallback,
-                      uint8_t aOptionalArgc,
-                      bool* aSucceeded)
-{
+    mozIDOMWindow* aWindow, nsITextInputProcessorCallback* aCallback,
+    uint8_t aOptionalArgc, bool* aSucceeded) {
   MOZ_RELEASE_ASSERT(aSucceeded, "aSucceeded must not be nullptr");
   MOZ_RELEASE_ASSERT(nsContentUtils::IsCallerChrome());
   nsITextInputProcessorCallback* callback =
-    aOptionalArgc >= 1 ? aCallback : nullptr;
+      aOptionalArgc >= 1 ? aCallback : nullptr;
   return BeginInputTransactionInternal(aWindow, callback, true, *aSucceeded);
 }
 
-nsresult
-TextInputProcessor::BeginInputTransactionInternal(
-                      mozIDOMWindow* aWindow,
-                      nsITextInputProcessorCallback* aCallback,
-                      bool aForTests,
-                      bool& aSucceeded)
-{
+nsresult TextInputProcessor::BeginInputTransactionForFuzzing(
+    nsPIDOMWindowInner* aWindow, nsITextInputProcessorCallback* aCallback,
+    bool* aSucceeded) {
+  MOZ_RELEASE_ASSERT(aSucceeded, "aSucceeded must not be nullptr");
+  return BeginInputTransactionInternal(aWindow, aCallback, false, *aSucceeded);
+}
+
+nsresult TextInputProcessor::BeginInputTransactionInternal(
+    mozIDOMWindow* aWindow, nsITextInputProcessorCallback* aCallback,
+    bool aForTests, bool& aSucceeded) {
   aSucceeded = false;
   if (NS_WARN_IF(!aWindow)) {
     return NS_ERROR_INVALID_ARG;
@@ -145,11 +339,7 @@ TextInputProcessor::BeginInputTransactionInternal(
   if (NS_WARN_IF(!docShell)) {
     return NS_ERROR_FAILURE;
   }
-  RefPtr<nsPresContext> presContext;
-  nsresult rv = docShell->GetPresContext(getter_AddRefs(presContext));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
+  RefPtr<nsPresContext> presContext = docShell->GetPresContext();
   if (NS_WARN_IF(!presContext)) {
     return NS_ERROR_FAILURE;
   }
@@ -198,6 +388,7 @@ TextInputProcessor::BeginInputTransactionInternal(
     }
   }
 
+  nsresult rv = NS_OK;
   if (aForTests) {
     bool isAPZAware = gfxPrefs::TestEventsAsyncEnabled();
     rv = dispatcher->BeginTestInputTransaction(this, isAPZAware);
@@ -216,9 +407,7 @@ TextInputProcessor::BeginInputTransactionInternal(
   return NS_OK;
 }
 
-void
-TextInputProcessor::UnlinkFromTextEventDispatcher()
-{
+void TextInputProcessor::UnlinkFromTextEventDispatcher() {
   mDispatcher = nullptr;
   mForTests = false;
   if (mCallback) {
@@ -226,15 +415,13 @@ TextInputProcessor::UnlinkFromTextEventDispatcher()
     mCallback = nullptr;
 
     RefPtr<TextInputProcessorNotification> notification =
-      new TextInputProcessorNotification("notify-end-input-transaction");
+        new TextInputProcessorNotification("notify-end-input-transaction");
     bool result = false;
     callback->OnNotify(this, notification, &result);
   }
 }
 
-nsresult
-TextInputProcessor::IsValidStateForComposition()
-{
+nsresult TextInputProcessor::IsValidStateForComposition() {
   if (NS_WARN_IF(!mDispatcher)) {
     return NS_ERROR_NOT_INITIALIZED;
   }
@@ -247,18 +434,17 @@ TextInputProcessor::IsValidStateForComposition()
   return NS_OK;
 }
 
-bool
-TextInputProcessor::IsValidEventTypeForComposition(
-                      const WidgetKeyboardEvent& aKeyboardEvent) const
-{
-  // The key event type of composition methods must be "" or "keydown".
-  if (aKeyboardEvent.mMessage == eKeyDown) {
+bool TextInputProcessor::IsValidEventTypeForComposition(
+    const WidgetKeyboardEvent& aKeyboardEvent) const {
+  // The key event type of composition methods must be "", "keydown" or "keyup".
+  if (aKeyboardEvent.mMessage == eKeyDown ||
+      aKeyboardEvent.mMessage == eKeyUp) {
     return true;
   }
   if (aKeyboardEvent.mMessage == eUnidentifiedEvent &&
       aKeyboardEvent.mSpecifiedEventType &&
-      nsDependentAtomString(
-        aKeyboardEvent.mSpecifiedEventType).EqualsLiteral("on")) {
+      nsDependentAtomString(aKeyboardEvent.mSpecifiedEventType)
+          .EqualsLiteral("on")) {
     return true;
   }
   return false;
@@ -266,9 +452,7 @@ TextInputProcessor::IsValidEventTypeForComposition(
 
 TextInputProcessor::EventDispatcherResult
 TextInputProcessor::MaybeDispatchKeydownForComposition(
-                      const WidgetKeyboardEvent* aKeyboardEvent,
-                      uint32_t aKeyFlags)
-{
+    const WidgetKeyboardEvent* aKeyboardEvent, uint32_t aKeyFlags) {
   EventDispatcherResult result;
 
   result.mResult = IsValidStateForComposition();
@@ -278,6 +462,12 @@ TextInputProcessor::MaybeDispatchKeydownForComposition(
   }
 
   if (!aKeyboardEvent) {
+    return result;
+  }
+
+  // If the mMessage is eKeyUp, the caller doesn't want TIP to dispatch
+  // eKeyDown event.
+  if (aKeyboardEvent->mMessage == eKeyUp) {
     return result;
   }
 
@@ -291,8 +481,8 @@ TextInputProcessor::MaybeDispatchKeydownForComposition(
 
   uint32_t consumedFlags = 0;
 
-  result.mResult = KeydownInternal(*aKeyboardEvent, aKeyFlags, false,
-                                   consumedFlags);
+  result.mResult =
+      KeydownInternal(*aKeyboardEvent, aKeyFlags, false, consumedFlags);
   result.mDoDefault = !consumedFlags;
   if (NS_WARN_IF(NS_FAILED(result.mResult))) {
     result.mCanContinue = false;
@@ -305,9 +495,7 @@ TextInputProcessor::MaybeDispatchKeydownForComposition(
 
 TextInputProcessor::EventDispatcherResult
 TextInputProcessor::MaybeDispatchKeyupForComposition(
-                      const WidgetKeyboardEvent* aKeyboardEvent,
-                      uint32_t aKeyFlags)
-{
+    const WidgetKeyboardEvent* aKeyboardEvent, uint32_t aKeyFlags) {
   EventDispatcherResult result;
 
   if (!aKeyboardEvent) {
@@ -315,7 +503,7 @@ TextInputProcessor::MaybeDispatchKeyupForComposition(
   }
 
   // If the mMessage is eKeyDown, the caller doesn't want TIP to dispatch
-  // keyup event.
+  // eKeyUp event.
   if (aKeyboardEvent->mMessage == eKeyDown) {
     return result;
   }
@@ -337,18 +525,14 @@ TextInputProcessor::MaybeDispatchKeyupForComposition(
   return result;
 }
 
-nsresult
-TextInputProcessor::PrepareKeyboardEventForComposition(
-                      nsIDOMKeyEvent* aDOMKeyEvent,
-                      uint32_t& aKeyFlags,
-                      uint8_t aOptionalArgc,
-                      WidgetKeyboardEvent*& aKeyboardEvent)
-{
+nsresult TextInputProcessor::PrepareKeyboardEventForComposition(
+    KeyboardEvent* aDOMKeyEvent, uint32_t& aKeyFlags, uint8_t aOptionalArgc,
+    WidgetKeyboardEvent*& aKeyboardEvent) {
   aKeyboardEvent = nullptr;
 
-  aKeyboardEvent =
-    aOptionalArgc && aDOMKeyEvent ?
-      aDOMKeyEvent->AsEvent()->WidgetEventPtr()->AsKeyboardEvent() : nullptr;
+  aKeyboardEvent = aOptionalArgc && aDOMKeyEvent
+                       ? aDOMKeyEvent->WidgetEventPtr()->AsKeyboardEvent()
+                       : nullptr;
   if (!aKeyboardEvent || aOptionalArgc < 2) {
     aKeyFlags = 0;
   }
@@ -365,27 +549,31 @@ TextInputProcessor::PrepareKeyboardEventForComposition(
 }
 
 NS_IMETHODIMP
-TextInputProcessor::StartComposition(nsIDOMKeyEvent* aDOMKeyEvent,
-                                     uint32_t aKeyFlags,
-                                     uint8_t aOptionalArgc,
-                                     bool* aSucceeded)
-{
+TextInputProcessor::StartComposition(Event* aDOMKeyEvent, uint32_t aKeyFlags,
+                                     uint8_t aOptionalArgc, bool* aSucceeded) {
   MOZ_RELEASE_ASSERT(aSucceeded, "aSucceeded must not be nullptr");
   MOZ_RELEASE_ASSERT(nsContentUtils::IsCallerChrome());
   *aSucceeded = false;
 
+  RefPtr<KeyboardEvent> keyEvent;
+  if (aDOMKeyEvent) {
+    keyEvent = aDOMKeyEvent->AsKeyboardEvent();
+    if (NS_WARN_IF(!keyEvent)) {
+      return NS_ERROR_INVALID_ARG;
+    }
+  }
+
   RefPtr<TextEventDispatcher> kungFuDeathGrip(mDispatcher);
 
   WidgetKeyboardEvent* keyboardEvent;
-  nsresult rv =
-    PrepareKeyboardEventForComposition(aDOMKeyEvent, aKeyFlags, aOptionalArgc,
-                                       keyboardEvent);
+  nsresult rv = PrepareKeyboardEventForComposition(
+      keyEvent, aKeyFlags, aOptionalArgc, keyboardEvent);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
   EventDispatcherResult dispatcherResult =
-    MaybeDispatchKeydownForComposition(keyboardEvent, aKeyFlags);
+      MaybeDispatchKeydownForComposition(keyboardEvent, aKeyFlags);
   if (NS_WARN_IF(NS_FAILED(dispatcherResult.mResult)) ||
       !dispatcherResult.mCanContinue) {
     return dispatcherResult.mResult;
@@ -395,7 +583,7 @@ TextInputProcessor::StartComposition(nsIDOMKeyEvent* aDOMKeyEvent,
     nsEventStatus status = nsEventStatus_eIgnore;
     rv = kungFuDeathGrip->StartComposition(status);
     *aSucceeded = status != nsEventStatus_eConsumeNoDefault &&
-                    kungFuDeathGrip && kungFuDeathGrip->IsComposing();
+                  kungFuDeathGrip && kungFuDeathGrip->IsComposing();
   }
 
   MaybeDispatchKeyupForComposition(keyboardEvent, aKeyFlags);
@@ -407,8 +595,7 @@ TextInputProcessor::StartComposition(nsIDOMKeyEvent* aDOMKeyEvent,
 }
 
 NS_IMETHODIMP
-TextInputProcessor::SetPendingCompositionString(const nsAString& aString)
-{
+TextInputProcessor::SetPendingCompositionString(const nsAString& aString) {
   MOZ_RELEASE_ASSERT(nsContentUtils::IsCallerChrome());
   RefPtr<TextEventDispatcher> kungFuDeathGrip(mDispatcher);
   nsresult rv = IsValidStateForComposition();
@@ -420,8 +607,7 @@ TextInputProcessor::SetPendingCompositionString(const nsAString& aString)
 
 NS_IMETHODIMP
 TextInputProcessor::AppendClauseToPendingComposition(uint32_t aLength,
-                                                     uint32_t aAttribute)
-{
+                                                     uint32_t aAttribute) {
   MOZ_RELEASE_ASSERT(nsContentUtils::IsCallerChrome());
   RefPtr<TextEventDispatcher> kungFuDeathGrip(mDispatcher);
   TextRangeType textRangeType;
@@ -439,12 +625,12 @@ TextInputProcessor::AppendClauseToPendingComposition(uint32_t aLength,
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
-  return kungFuDeathGrip->AppendClauseToPendingComposition(aLength, textRangeType);
+  return kungFuDeathGrip->AppendClauseToPendingComposition(aLength,
+                                                           textRangeType);
 }
 
 NS_IMETHODIMP
-TextInputProcessor::SetCaretInPendingComposition(uint32_t aOffset)
-{
+TextInputProcessor::SetCaretInPendingComposition(uint32_t aOffset) {
   MOZ_RELEASE_ASSERT(nsContentUtils::IsCallerChrome());
   RefPtr<TextEventDispatcher> kungFuDeathGrip(mDispatcher);
   nsresult rv = IsValidStateForComposition();
@@ -455,11 +641,10 @@ TextInputProcessor::SetCaretInPendingComposition(uint32_t aOffset)
 }
 
 NS_IMETHODIMP
-TextInputProcessor::FlushPendingComposition(nsIDOMKeyEvent* aDOMKeyEvent,
+TextInputProcessor::FlushPendingComposition(Event* aDOMKeyEvent,
                                             uint32_t aKeyFlags,
                                             uint8_t aOptionalArgc,
-                                            bool* aSucceeded)
-{
+                                            bool* aSucceeded) {
   MOZ_RELEASE_ASSERT(aSucceeded, "aSucceeded must not be nullptr");
   MOZ_RELEASE_ASSERT(nsContentUtils::IsCallerChrome());
 
@@ -471,16 +656,23 @@ TextInputProcessor::FlushPendingComposition(nsIDOMKeyEvent* aDOMKeyEvent,
   RefPtr<TextEventDispatcher> kungFuDeathGrip(mDispatcher);
   bool wasComposing = IsComposing();
 
+  RefPtr<KeyboardEvent> keyEvent;
+  if (aDOMKeyEvent) {
+    keyEvent = aDOMKeyEvent->AsKeyboardEvent();
+    if (NS_WARN_IF(!keyEvent)) {
+      return NS_ERROR_INVALID_ARG;
+    }
+  }
+
   WidgetKeyboardEvent* keyboardEvent;
-  nsresult rv =
-    PrepareKeyboardEventForComposition(aDOMKeyEvent, aKeyFlags, aOptionalArgc,
-                                       keyboardEvent);
+  nsresult rv = PrepareKeyboardEventForComposition(
+      keyEvent, aKeyFlags, aOptionalArgc, keyboardEvent);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
   EventDispatcherResult dispatcherResult =
-    MaybeDispatchKeydownForComposition(keyboardEvent, aKeyFlags);
+      MaybeDispatchKeydownForComposition(keyboardEvent, aKeyFlags);
   if (NS_WARN_IF(NS_FAILED(dispatcherResult.mResult)) ||
       !dispatcherResult.mCanContinue) {
     return dispatcherResult.mResult;
@@ -507,16 +699,21 @@ TextInputProcessor::FlushPendingComposition(nsIDOMKeyEvent* aDOMKeyEvent,
 }
 
 NS_IMETHODIMP
-TextInputProcessor::CommitComposition(nsIDOMKeyEvent* aDOMKeyEvent,
-                                      uint32_t aKeyFlags,
-                                      uint8_t aOptionalArgc)
-{
+TextInputProcessor::CommitComposition(Event* aDOMKeyEvent, uint32_t aKeyFlags,
+                                      uint8_t aOptionalArgc) {
   MOZ_RELEASE_ASSERT(nsContentUtils::IsCallerChrome());
 
+  RefPtr<KeyboardEvent> keyEvent;
+  if (aDOMKeyEvent) {
+    keyEvent = aDOMKeyEvent->AsKeyboardEvent();
+    if (NS_WARN_IF(!keyEvent)) {
+      return NS_ERROR_INVALID_ARG;
+    }
+  }
+
   WidgetKeyboardEvent* keyboardEvent;
-  nsresult rv =
-    PrepareKeyboardEventForComposition(aDOMKeyEvent, aKeyFlags, aOptionalArgc,
-                                       keyboardEvent);
+  nsresult rv = PrepareKeyboardEventForComposition(
+      keyEvent, aKeyFlags, aOptionalArgc, keyboardEvent);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -526,33 +723,35 @@ TextInputProcessor::CommitComposition(nsIDOMKeyEvent* aDOMKeyEvent,
 
 NS_IMETHODIMP
 TextInputProcessor::CommitCompositionWith(const nsAString& aCommitString,
-                                          nsIDOMKeyEvent* aDOMKeyEvent,
+                                          Event* aDOMKeyEvent,
                                           uint32_t aKeyFlags,
                                           uint8_t aOptionalArgc,
-                                          bool* aSucceeded)
-{
+                                          bool* aSucceeded) {
   MOZ_RELEASE_ASSERT(aSucceeded, "aSucceeded must not be nullptr");
   MOZ_RELEASE_ASSERT(nsContentUtils::IsCallerChrome());
 
+  RefPtr<KeyboardEvent> keyEvent;
+  if (aDOMKeyEvent) {
+    keyEvent = aDOMKeyEvent->AsKeyboardEvent();
+    if (NS_WARN_IF(!keyEvent)) {
+      return NS_ERROR_INVALID_ARG;
+    }
+  }
+
   WidgetKeyboardEvent* keyboardEvent;
-  nsresult rv =
-    PrepareKeyboardEventForComposition(aDOMKeyEvent, aKeyFlags, aOptionalArgc,
-                                       keyboardEvent);
+  nsresult rv = PrepareKeyboardEventForComposition(
+      keyEvent, aKeyFlags, aOptionalArgc, keyboardEvent);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
-  return CommitCompositionInternal(keyboardEvent, aKeyFlags,
-                                   &aCommitString, aSucceeded);
+  return CommitCompositionInternal(keyboardEvent, aKeyFlags, &aCommitString,
+                                   aSucceeded);
 }
 
-nsresult
-TextInputProcessor::CommitCompositionInternal(
-                      const WidgetKeyboardEvent* aKeyboardEvent,
-                      uint32_t aKeyFlags,
-                      const nsAString* aCommitString,
-                      bool* aSucceeded)
-{
+nsresult TextInputProcessor::CommitCompositionInternal(
+    const WidgetKeyboardEvent* aKeyboardEvent, uint32_t aKeyFlags,
+    const nsAString* aCommitString, bool* aSucceeded) {
   if (aSucceeded) {
     *aSucceeded = false;
   }
@@ -560,7 +759,7 @@ TextInputProcessor::CommitCompositionInternal(
   bool wasComposing = IsComposing();
 
   EventDispatcherResult dispatcherResult =
-    MaybeDispatchKeydownForComposition(aKeyboardEvent, aKeyFlags);
+      MaybeDispatchKeydownForComposition(aKeyboardEvent, aKeyFlags);
   if (NS_WARN_IF(NS_FAILED(dispatcherResult.mResult)) ||
       !dispatcherResult.mCanContinue) {
     return dispatcherResult.mResult;
@@ -590,16 +789,21 @@ TextInputProcessor::CommitCompositionInternal(
 }
 
 NS_IMETHODIMP
-TextInputProcessor::CancelComposition(nsIDOMKeyEvent* aDOMKeyEvent,
-                                      uint32_t aKeyFlags,
-                                      uint8_t aOptionalArgc)
-{
+TextInputProcessor::CancelComposition(Event* aDOMKeyEvent, uint32_t aKeyFlags,
+                                      uint8_t aOptionalArgc) {
   MOZ_RELEASE_ASSERT(nsContentUtils::IsCallerChrome());
 
+  RefPtr<KeyboardEvent> keyEvent;
+  if (aDOMKeyEvent) {
+    keyEvent = aDOMKeyEvent->AsKeyboardEvent();
+    if (NS_WARN_IF(!keyEvent)) {
+      return NS_ERROR_INVALID_ARG;
+    }
+  }
+
   WidgetKeyboardEvent* keyboardEvent;
-  nsresult rv =
-    PrepareKeyboardEventForComposition(aDOMKeyEvent, aKeyFlags, aOptionalArgc,
-                                       keyboardEvent);
+  nsresult rv = PrepareKeyboardEventForComposition(
+      keyEvent, aKeyFlags, aOptionalArgc, keyboardEvent);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -607,15 +811,12 @@ TextInputProcessor::CancelComposition(nsIDOMKeyEvent* aDOMKeyEvent,
   return CancelCompositionInternal(keyboardEvent, aKeyFlags);
 }
 
-nsresult
-TextInputProcessor::CancelCompositionInternal(
-                      const WidgetKeyboardEvent* aKeyboardEvent,
-                      uint32_t aKeyFlags)
-{
+nsresult TextInputProcessor::CancelCompositionInternal(
+    const WidgetKeyboardEvent* aKeyboardEvent, uint32_t aKeyFlags) {
   RefPtr<TextEventDispatcher> kungFuDeathGrip(mDispatcher);
 
   EventDispatcherResult dispatcherResult =
-    MaybeDispatchKeydownForComposition(aKeyboardEvent, aKeyFlags);
+      MaybeDispatchKeydownForComposition(aKeyboardEvent, aKeyFlags);
   if (NS_WARN_IF(NS_FAILED(dispatcherResult.mResult)) ||
       !dispatcherResult.mCanContinue) {
     return dispatcherResult.mResult;
@@ -634,8 +835,7 @@ TextInputProcessor::CancelCompositionInternal(
 
 NS_IMETHODIMP
 TextInputProcessor::NotifyIME(TextEventDispatcher* aTextEventDispatcher,
-                              const IMENotification& aNotification)
-{
+                              const IMENotification& aNotification) {
   // If This is called while this is being initialized, ignore the call.
   // In such case, this method should return NS_ERROR_NOT_IMPLEMENTED because
   // we can say, TextInputProcessor doesn't implement any handlers of the
@@ -668,6 +868,18 @@ TextInputProcessor::NotifyIME(TextEventDispatcher* aTextEventDispatcher,
       case NOTIFY_IME_OF_BLUR:
         notification = new TextInputProcessorNotification("notify-blur");
         break;
+      case NOTIFY_IME_OF_TEXT_CHANGE:
+        notification =
+            new TextInputProcessorNotification(aNotification.mTextChangeData);
+        break;
+      case NOTIFY_IME_OF_SELECTION_CHANGE:
+        notification = new TextInputProcessorNotification(
+            aNotification.mSelectionChangeData);
+        break;
+      case NOTIFY_IME_OF_POSITION_CHANGE:
+        notification =
+            new TextInputProcessorNotification("notify-position-change");
+        break;
       default:
         return NS_ERROR_NOT_IMPLEMENTED;
     }
@@ -698,9 +910,16 @@ TextInputProcessor::NotifyIME(TextEventDispatcher* aTextEventDispatcher,
   }
 }
 
+NS_IMETHODIMP_(IMENotificationRequests)
+TextInputProcessor::GetIMENotificationRequests() {
+  // TextInputProcessor should support all change notifications.
+  return IMENotificationRequests(
+      IMENotificationRequests::NOTIFY_TEXT_CHANGE |
+      IMENotificationRequests::NOTIFY_POSITION_CHANGE);
+}
+
 NS_IMETHODIMP_(void)
-TextInputProcessor::OnRemovedFrom(TextEventDispatcher* aTextEventDispatcher)
-{
+TextInputProcessor::OnRemovedFrom(TextEventDispatcher* aTextEventDispatcher) {
   // If This is called while this is being initialized, ignore the call.
   if (!mDispatcher) {
     return;
@@ -712,20 +931,15 @@ TextInputProcessor::OnRemovedFrom(TextEventDispatcher* aTextEventDispatcher)
 
 NS_IMETHODIMP_(void)
 TextInputProcessor::WillDispatchKeyboardEvent(
-                      TextEventDispatcher* aTextEventDispatcher,
-                      WidgetKeyboardEvent& aKeyboardEvent,
-                      uint32_t aIndexOfKeypress,
-                      void* aData)
-{
+    TextEventDispatcher* aTextEventDispatcher,
+    WidgetKeyboardEvent& aKeyboardEvent, uint32_t aIndexOfKeypress,
+    void* aData) {
   // TextInputProcessor doesn't set alternative char code nor modify charCode
   // even when Ctrl key is pressed.
 }
 
-nsresult
-TextInputProcessor::PrepareKeyboardEventToDispatch(
-                      WidgetKeyboardEvent& aKeyboardEvent,
-                      uint32_t aKeyFlags)
-{
+nsresult TextInputProcessor::PrepareKeyboardEventToDispatch(
+    WidgetKeyboardEvent& aKeyboardEvent, uint32_t aKeyFlags) {
   if (NS_WARN_IF(aKeyboardEvent.mCodeNameIndex == CODE_NAME_INDEX_USE_STRING)) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -749,8 +963,8 @@ TextInputProcessor::PrepareKeyboardEventToDispatch(
     // If KeyboardEvent.mLocation is 0, it may be uninitialized.  If so, we
     // should compute proper mLocation value from its .code value.
     aKeyboardEvent.mLocation =
-      WidgetKeyboardEvent::ComputeLocationFromCodeValue(
-        aKeyboardEvent.mCodeNameIndex);
+        WidgetKeyboardEvent::ComputeLocationFromCodeValue(
+            aKeyboardEvent.mCodeNameIndex);
   }
 
   if (aKeyFlags & KEY_KEEP_KEYCODE_ZERO) {
@@ -767,21 +981,41 @@ TextInputProcessor::PrepareKeyboardEventToDispatch(
     // be able to decide a good .keyCode value if the .key value is a
     // non-printable key.
     aKeyboardEvent.mKeyCode =
-      WidgetKeyboardEvent::ComputeKeyCodeFromKeyNameIndex(
-        aKeyboardEvent.mKeyNameIndex);
+        WidgetKeyboardEvent::ComputeKeyCodeFromKeyNameIndex(
+            aKeyboardEvent.mKeyNameIndex);
   }
 
-  aKeyboardEvent.mIsSynthesizedByTIP = (mForTests)? false : true;
+  aKeyboardEvent.mIsSynthesizedByTIP = !mForTests;
+
+  // When this emulates real input only in content process, we need to
+  // initialize edit commands with the main process's widget via PuppetWidget
+  // because they are initialized by TabParent before content process treats
+  // them.
+  if (aKeyboardEvent.mIsSynthesizedByTIP && !XRE_IsParentProcess()) {
+    // Note that retrieving edit commands from content process is expensive.
+    // Let's skip it when the keyboard event is inputting text.
+    if (!aKeyboardEvent.IsInputtingText()) {
+      // FYI: WidgetKeyboardEvent::InitAllEditCommands() isn't available here
+      //      since it checks whether it's called in the main process to
+      //      avoid performance issues so that we need to initialize each
+      //      command manually here.
+      aKeyboardEvent.InitEditCommandsFor(
+          nsIWidget::NativeKeyBindingsForSingleLineEditor);
+      aKeyboardEvent.InitEditCommandsFor(
+          nsIWidget::NativeKeyBindingsForMultiLineEditor);
+      aKeyboardEvent.InitEditCommandsFor(
+          nsIWidget::NativeKeyBindingsForRichTextEditor);
+    } else {
+      aKeyboardEvent.PreventNativeKeyBindings();
+    }
+  }
 
   return NS_OK;
 }
 
 NS_IMETHODIMP
-TextInputProcessor::Keydown(nsIDOMKeyEvent* aDOMKeyEvent,
-                            uint32_t aKeyFlags,
-                            uint8_t aOptionalArgc,
-                            uint32_t* aConsumedFlags)
-{
+TextInputProcessor::Keydown(Event* aDOMKeyEvent, uint32_t aKeyFlags,
+                            uint8_t aOptionalArgc, uint32_t* aConsumedFlags) {
   MOZ_RELEASE_ASSERT(aConsumedFlags, "aConsumedFlags must not be nullptr");
   MOZ_RELEASE_ASSERT(nsContentUtils::IsCallerChrome());
   if (!aOptionalArgc) {
@@ -791,19 +1025,24 @@ TextInputProcessor::Keydown(nsIDOMKeyEvent* aDOMKeyEvent,
     return NS_ERROR_INVALID_ARG;
   }
   WidgetKeyboardEvent* originalKeyEvent =
-    aDOMKeyEvent->AsEvent()->WidgetEventPtr()->AsKeyboardEvent();
+      aDOMKeyEvent->WidgetEventPtr()->AsKeyboardEvent();
   if (NS_WARN_IF(!originalKeyEvent)) {
     return NS_ERROR_INVALID_ARG;
   }
   return KeydownInternal(*originalKeyEvent, aKeyFlags, true, *aConsumedFlags);
 }
 
-nsresult
-TextInputProcessor::KeydownInternal(const WidgetKeyboardEvent& aKeyboardEvent,
-                                    uint32_t aKeyFlags,
-                                    bool aAllowToDispatchKeypress,
-                                    uint32_t& aConsumedFlags)
-{
+nsresult TextInputProcessor::Keydown(const WidgetKeyboardEvent& aKeyboardEvent,
+                                     uint32_t aKeyFlags,
+                                     uint32_t* aConsumedFlags) {
+  uint32_t consumedFlags = 0;
+  return KeydownInternal(aKeyboardEvent, aKeyFlags, true,
+                         aConsumedFlags ? *aConsumedFlags : consumedFlags);
+}
+
+nsresult TextInputProcessor::KeydownInternal(
+    const WidgetKeyboardEvent& aKeyboardEvent, uint32_t aKeyFlags,
+    bool aAllowToDispatchKeypress, uint32_t& aConsumedFlags) {
   aConsumedFlags = KEYEVENT_NOT_CONSUMED;
 
   // We shouldn't modify the internal WidgetKeyboardEvent.
@@ -813,8 +1052,8 @@ TextInputProcessor::KeydownInternal(const WidgetKeyboardEvent& aKeyboardEvent,
     return rv;
   }
 
-  aConsumedFlags = (aKeyFlags & KEY_DEFAULT_PREVENTED) ? KEYDOWN_IS_CONSUMED :
-                                                         KEYEVENT_NOT_CONSUMED;
+  aConsumedFlags = (aKeyFlags & KEY_DEFAULT_PREVENTED) ? KEYDOWN_IS_CONSUMED
+                                                       : KEYEVENT_NOT_CONSUMED;
 
   if (WidgetKeyboardEvent::GetModifierForKeyName(keyEvent.mKeyNameIndex)) {
     ModifierKeyData modifierKeyData(keyEvent);
@@ -835,40 +1074,43 @@ TextInputProcessor::KeydownInternal(const WidgetKeyboardEvent& aKeyboardEvent,
   }
   keyEvent.mModifiers = GetActiveModifiers();
 
+  if (!aAllowToDispatchKeypress &&
+      !(aKeyFlags & KEY_DONT_MARK_KEYDOWN_AS_PROCESSED)) {
+    keyEvent.mKeyCode = NS_VK_PROCESSKEY;
+    keyEvent.mKeyNameIndex = KEY_NAME_INDEX_Process;
+  }
+
   RefPtr<TextEventDispatcher> kungFuDeathGrip(mDispatcher);
   rv = IsValidStateForComposition();
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
-  nsEventStatus status = aConsumedFlags ? nsEventStatus_eConsumeNoDefault :
-                                          nsEventStatus_eIgnore;
+  nsEventStatus status =
+      aConsumedFlags ? nsEventStatus_eConsumeNoDefault : nsEventStatus_eIgnore;
   if (!kungFuDeathGrip->DispatchKeyboardEvent(eKeyDown, keyEvent, status)) {
     // If keydown event isn't dispatched, we don't need to dispatch keypress
     // events.
     return NS_OK;
   }
 
-  aConsumedFlags |=
-    (status == nsEventStatus_eConsumeNoDefault) ? KEYDOWN_IS_CONSUMED :
-                                                  KEYEVENT_NOT_CONSUMED;
+  aConsumedFlags |= (status == nsEventStatus_eConsumeNoDefault)
+                        ? KEYDOWN_IS_CONSUMED
+                        : KEYEVENT_NOT_CONSUMED;
 
   if (aAllowToDispatchKeypress &&
       kungFuDeathGrip->MaybeDispatchKeypressEvents(keyEvent, status)) {
-    aConsumedFlags |=
-      (status == nsEventStatus_eConsumeNoDefault) ? KEYPRESS_IS_CONSUMED :
-                                                    KEYEVENT_NOT_CONSUMED;
+    aConsumedFlags |= (status == nsEventStatus_eConsumeNoDefault)
+                          ? KEYPRESS_IS_CONSUMED
+                          : KEYEVENT_NOT_CONSUMED;
   }
 
   return NS_OK;
 }
 
 NS_IMETHODIMP
-TextInputProcessor::Keyup(nsIDOMKeyEvent* aDOMKeyEvent,
-                          uint32_t aKeyFlags,
-                          uint8_t aOptionalArgc,
-                          bool* aDoDefault)
-{
+TextInputProcessor::Keyup(Event* aDOMKeyEvent, uint32_t aKeyFlags,
+                          uint8_t aOptionalArgc, bool* aDoDefault) {
   MOZ_RELEASE_ASSERT(aDoDefault, "aDoDefault must not be nullptr");
   MOZ_RELEASE_ASSERT(nsContentUtils::IsCallerChrome());
   if (!aOptionalArgc) {
@@ -878,18 +1120,23 @@ TextInputProcessor::Keyup(nsIDOMKeyEvent* aDOMKeyEvent,
     return NS_ERROR_INVALID_ARG;
   }
   WidgetKeyboardEvent* originalKeyEvent =
-    aDOMKeyEvent->AsEvent()->WidgetEventPtr()->AsKeyboardEvent();
+      aDOMKeyEvent->WidgetEventPtr()->AsKeyboardEvent();
   if (NS_WARN_IF(!originalKeyEvent)) {
     return NS_ERROR_INVALID_ARG;
   }
   return KeyupInternal(*originalKeyEvent, aKeyFlags, *aDoDefault);
 }
 
-nsresult
-TextInputProcessor::KeyupInternal(const WidgetKeyboardEvent& aKeyboardEvent,
-                                  uint32_t aKeyFlags,
-                                  bool& aDoDefault)
-{
+nsresult TextInputProcessor::Keyup(const WidgetKeyboardEvent& aKeyboardEvent,
+                                   uint32_t aKeyFlags, bool* aDoDefault) {
+  bool doDefault = false;
+  return KeyupInternal(aKeyboardEvent, aKeyFlags,
+                       aDoDefault ? *aDoDefault : doDefault);
+}
+
+nsresult TextInputProcessor::KeyupInternal(
+    const WidgetKeyboardEvent& aKeyboardEvent, uint32_t aKeyFlags,
+    bool& aDoDefault) {
   aDoDefault = false;
 
   // We shouldn't modify the internal WidgetKeyboardEvent.
@@ -915,14 +1162,19 @@ TextInputProcessor::KeyupInternal(const WidgetKeyboardEvent& aKeyboardEvent,
   }
   keyEvent.mModifiers = GetActiveModifiers();
 
+  if (aKeyFlags & KEY_MARK_KEYUP_AS_PROCESSED) {
+    keyEvent.mKeyCode = NS_VK_PROCESSKEY;
+    keyEvent.mKeyNameIndex = KEY_NAME_INDEX_Process;
+  }
+
   RefPtr<TextEventDispatcher> kungFuDeathGrip(mDispatcher);
   rv = IsValidStateForComposition();
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
-  nsEventStatus status = aDoDefault ? nsEventStatus_eIgnore :
-                                      nsEventStatus_eConsumeNoDefault;
+  nsEventStatus status =
+      aDoDefault ? nsEventStatus_eIgnore : nsEventStatus_eConsumeNoDefault;
   kungFuDeathGrip->DispatchKeyboardEvent(eKeyUp, keyEvent, status);
   aDoDefault = (status != nsEventStatus_eConsumeNoDefault);
   return NS_OK;
@@ -930,23 +1182,16 @@ TextInputProcessor::KeyupInternal(const WidgetKeyboardEvent& aKeyboardEvent,
 
 NS_IMETHODIMP
 TextInputProcessor::GetModifierState(const nsAString& aModifierKeyName,
-                                     bool* aActive)
-{
+                                     bool* aActive) {
   MOZ_RELEASE_ASSERT(aActive, "aActive must not be null");
   MOZ_RELEASE_ASSERT(nsContentUtils::IsCallerChrome());
-  if (!mModifierKeyDataArray) {
-    *aActive = false;
-    return NS_OK;
-  }
-  Modifiers activeModifiers = mModifierKeyDataArray->GetActiveModifiers();
   Modifiers modifier = WidgetInputEvent::GetModifier(aModifierKeyName);
-  *aActive = ((activeModifiers & modifier) != 0);
+  *aActive = ((GetActiveModifiers() & modifier) != 0);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-TextInputProcessor::ShareModifierStateOf(nsITextInputProcessor* aOther)
-{
+TextInputProcessor::ShareModifierStateOf(nsITextInputProcessor* aOther) {
   MOZ_RELEASE_ASSERT(nsContentUtils::IsCallerChrome());
   if (!aOther) {
     mModifierKeyDataArray = nullptr;
@@ -960,19 +1205,535 @@ TextInputProcessor::ShareModifierStateOf(nsITextInputProcessor* aOther)
   return NS_OK;
 }
 
+NS_IMETHODIMP
+TextInputProcessor::ComputeCodeValueOfNonPrintableKey(
+    const nsAString& aKeyValue, JS::Handle<JS::Value> aLocation,
+    uint8_t aOptionalArgc, nsAString& aCodeValue) {
+  aCodeValue.Truncate();
+
+  Maybe<uint32_t> location;
+  if (aOptionalArgc) {
+    if (aLocation.isNullOrUndefined()) {
+      // location should be nothing.
+    } else if (aLocation.isInt32()) {
+      location = mozilla::Some(static_cast<uint32_t>(aLocation.toInt32()));
+    } else {
+      NS_WARNING_ASSERTION(aLocation.isNullOrUndefined() || aLocation.isInt32(),
+                           "aLocation must be undefined, null or int");
+      return NS_ERROR_INVALID_ARG;
+    }
+  }
+
+  KeyNameIndex keyNameIndex = WidgetKeyboardEvent::GetKeyNameIndex(aKeyValue);
+  if (keyNameIndex == KEY_NAME_INDEX_Unidentified ||
+      keyNameIndex == KEY_NAME_INDEX_USE_STRING) {
+    return NS_OK;
+  }
+
+  CodeNameIndex codeNameIndex =
+      WidgetKeyboardEvent::ComputeCodeNameIndexFromKeyNameIndex(keyNameIndex,
+                                                                location);
+  if (codeNameIndex == CODE_NAME_INDEX_UNKNOWN) {
+    return NS_OK;
+  }
+  MOZ_ASSERT(codeNameIndex != CODE_NAME_INDEX_USE_STRING);
+  WidgetKeyboardEvent::GetDOMCodeName(codeNameIndex, aCodeValue);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+TextInputProcessor::GuessCodeValueOfPrintableKeyInUSEnglishKeyboardLayout(
+    const nsAString& aKeyValue, JS::Handle<JS::Value> aLocation,
+    uint8_t aOptionalArgc, nsAString& aCodeValue) {
+  aCodeValue.Truncate();
+
+  Maybe<uint32_t> location;
+  if (aOptionalArgc) {
+    if (aLocation.isNullOrUndefined()) {
+      // location should be nothing.
+    } else if (aLocation.isInt32()) {
+      location = mozilla::Some(static_cast<uint32_t>(aLocation.toInt32()));
+    } else {
+      NS_WARNING_ASSERTION(aLocation.isNullOrUndefined() || aLocation.isInt32(),
+                           "aLocation must be undefined, null or int");
+      return NS_ERROR_INVALID_ARG;
+    }
+  }
+  CodeNameIndex codeNameIndex =
+      GuessCodeNameIndexOfPrintableKeyInUSEnglishLayout(aKeyValue, location);
+  if (codeNameIndex == CODE_NAME_INDEX_UNKNOWN) {
+    return NS_OK;
+  }
+  MOZ_ASSERT(codeNameIndex != CODE_NAME_INDEX_USE_STRING);
+  WidgetKeyboardEvent::GetDOMCodeName(codeNameIndex, aCodeValue);
+  return NS_OK;
+}
+
+// static
+CodeNameIndex
+TextInputProcessor::GuessCodeNameIndexOfPrintableKeyInUSEnglishLayout(
+    const nsAString& aKeyValue, const Maybe<uint32_t>& aLocation) {
+  if (aKeyValue.IsEmpty()) {
+    return CODE_NAME_INDEX_UNKNOWN;
+  }
+  // US keyboard layout can input only one character per key.  So, we can
+  // assume that if the key value is 2 or more characters, it's a known
+  // key name or not a usual key emulation.
+  if (aKeyValue.Length() > 1) {
+    return CODE_NAME_INDEX_UNKNOWN;
+  }
+  if (aLocation.isSome() &&
+      aLocation.value() ==
+          dom::KeyboardEvent_Binding::DOM_KEY_LOCATION_NUMPAD) {
+    switch (aKeyValue[0]) {
+      case '+':
+        return CODE_NAME_INDEX_NumpadAdd;
+      case '-':
+        return CODE_NAME_INDEX_NumpadSubtract;
+      case '*':
+        return CODE_NAME_INDEX_NumpadMultiply;
+      case '/':
+        return CODE_NAME_INDEX_NumpadDivide;
+      case '.':
+        return CODE_NAME_INDEX_NumpadDecimal;
+      case '0':
+        return CODE_NAME_INDEX_Numpad0;
+      case '1':
+        return CODE_NAME_INDEX_Numpad1;
+      case '2':
+        return CODE_NAME_INDEX_Numpad2;
+      case '3':
+        return CODE_NAME_INDEX_Numpad3;
+      case '4':
+        return CODE_NAME_INDEX_Numpad4;
+      case '5':
+        return CODE_NAME_INDEX_Numpad5;
+      case '6':
+        return CODE_NAME_INDEX_Numpad6;
+      case '7':
+        return CODE_NAME_INDEX_Numpad7;
+      case '8':
+        return CODE_NAME_INDEX_Numpad8;
+      case '9':
+        return CODE_NAME_INDEX_Numpad9;
+      default:
+        return CODE_NAME_INDEX_UNKNOWN;
+    }
+  }
+
+  if (aLocation.isSome() &&
+      aLocation.value() !=
+          dom::KeyboardEvent_Binding::DOM_KEY_LOCATION_STANDARD) {
+    return CODE_NAME_INDEX_UNKNOWN;
+  }
+
+  // TODO: Support characters inputted with option key on macOS.
+  switch (aKeyValue[0]) {
+    case 'a':
+    case 'A':
+      return CODE_NAME_INDEX_KeyA;
+    case 'b':
+    case 'B':
+      return CODE_NAME_INDEX_KeyB;
+    case 'c':
+    case 'C':
+      return CODE_NAME_INDEX_KeyC;
+    case 'd':
+    case 'D':
+      return CODE_NAME_INDEX_KeyD;
+    case 'e':
+    case 'E':
+      return CODE_NAME_INDEX_KeyE;
+    case 'f':
+    case 'F':
+      return CODE_NAME_INDEX_KeyF;
+    case 'g':
+    case 'G':
+      return CODE_NAME_INDEX_KeyG;
+    case 'h':
+    case 'H':
+      return CODE_NAME_INDEX_KeyH;
+    case 'i':
+    case 'I':
+      return CODE_NAME_INDEX_KeyI;
+    case 'j':
+    case 'J':
+      return CODE_NAME_INDEX_KeyJ;
+    case 'k':
+    case 'K':
+      return CODE_NAME_INDEX_KeyK;
+    case 'l':
+    case 'L':
+      return CODE_NAME_INDEX_KeyL;
+    case 'm':
+    case 'M':
+      return CODE_NAME_INDEX_KeyM;
+    case 'n':
+    case 'N':
+      return CODE_NAME_INDEX_KeyN;
+    case 'o':
+    case 'O':
+      return CODE_NAME_INDEX_KeyO;
+    case 'p':
+    case 'P':
+      return CODE_NAME_INDEX_KeyP;
+    case 'q':
+    case 'Q':
+      return CODE_NAME_INDEX_KeyQ;
+    case 'r':
+    case 'R':
+      return CODE_NAME_INDEX_KeyR;
+    case 's':
+    case 'S':
+      return CODE_NAME_INDEX_KeyS;
+    case 't':
+    case 'T':
+      return CODE_NAME_INDEX_KeyT;
+    case 'u':
+    case 'U':
+      return CODE_NAME_INDEX_KeyU;
+    case 'v':
+    case 'V':
+      return CODE_NAME_INDEX_KeyV;
+    case 'w':
+    case 'W':
+      return CODE_NAME_INDEX_KeyW;
+    case 'x':
+    case 'X':
+      return CODE_NAME_INDEX_KeyX;
+    case 'y':
+    case 'Y':
+      return CODE_NAME_INDEX_KeyY;
+    case 'z':
+    case 'Z':
+      return CODE_NAME_INDEX_KeyZ;
+
+    case '`':
+    case '~':
+      return CODE_NAME_INDEX_Backquote;
+    case '1':
+    case '!':
+      return CODE_NAME_INDEX_Digit1;
+    case '2':
+    case '@':
+      return CODE_NAME_INDEX_Digit2;
+    case '3':
+    case '#':
+      return CODE_NAME_INDEX_Digit3;
+    case '4':
+    case '$':
+      return CODE_NAME_INDEX_Digit4;
+    case '5':
+    case '%':
+      return CODE_NAME_INDEX_Digit5;
+    case '6':
+    case '^':
+      return CODE_NAME_INDEX_Digit6;
+    case '7':
+    case '&':
+      return CODE_NAME_INDEX_Digit7;
+    case '8':
+    case '*':
+      return CODE_NAME_INDEX_Digit8;
+    case '9':
+    case '(':
+      return CODE_NAME_INDEX_Digit9;
+    case '0':
+    case ')':
+      return CODE_NAME_INDEX_Digit0;
+    case '-':
+    case '_':
+      return CODE_NAME_INDEX_Minus;
+    case '=':
+    case '+':
+      return CODE_NAME_INDEX_Equal;
+
+    case '[':
+    case '{':
+      return CODE_NAME_INDEX_BracketLeft;
+    case ']':
+    case '}':
+      return CODE_NAME_INDEX_BracketRight;
+    case '\\':
+    case '|':
+      return CODE_NAME_INDEX_Backslash;
+
+    case ';':
+    case ':':
+      return CODE_NAME_INDEX_Semicolon;
+    case '\'':
+    case '"':
+      return CODE_NAME_INDEX_Quote;
+
+    case ',':
+    case '<':
+      return CODE_NAME_INDEX_Comma;
+    case '.':
+    case '>':
+      return CODE_NAME_INDEX_Period;
+    case '/':
+    case '?':
+      return CODE_NAME_INDEX_Slash;
+
+    case ' ':
+      return CODE_NAME_INDEX_Space;
+
+    default:
+      return CODE_NAME_INDEX_UNKNOWN;
+  }
+}
+
+NS_IMETHODIMP
+TextInputProcessor::GuessKeyCodeValueOfPrintableKeyInUSEnglishKeyboardLayout(
+    const nsAString& aKeyValue, JS::Handle<JS::Value> aLocation,
+    uint8_t aOptionalArgc, uint32_t* aKeyCodeValue) {
+  if (NS_WARN_IF(!aKeyCodeValue)) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  Maybe<uint32_t> location;
+  if (aOptionalArgc) {
+    if (aLocation.isNullOrUndefined()) {
+      // location should be nothing.
+    } else if (aLocation.isInt32()) {
+      location = mozilla::Some(static_cast<uint32_t>(aLocation.toInt32()));
+    } else {
+      NS_WARNING_ASSERTION(aLocation.isNullOrUndefined() || aLocation.isInt32(),
+                           "aLocation must be undefined, null or int");
+      return NS_ERROR_INVALID_ARG;
+    }
+  }
+
+  *aKeyCodeValue =
+      GuessKeyCodeOfPrintableKeyInUSEnglishLayout(aKeyValue, location);
+  return NS_OK;
+}
+
+// static
+uint32_t TextInputProcessor::GuessKeyCodeOfPrintableKeyInUSEnglishLayout(
+    const nsAString& aKeyValue, const Maybe<uint32_t>& aLocation) {
+  if (aKeyValue.IsEmpty()) {
+    return 0;
+  }
+  // US keyboard layout can input only one character per key.  So, we can
+  // assume that if the key value is 2 or more characters, it's a known
+  // key name of a non-printable key or not a usual key emulation.
+  if (aKeyValue.Length() > 1) {
+    return 0;
+  }
+
+  if (aLocation.isSome() &&
+      aLocation.value() ==
+          dom::KeyboardEvent_Binding::DOM_KEY_LOCATION_NUMPAD) {
+    switch (aKeyValue[0]) {
+      case '+':
+        return dom::KeyboardEvent_Binding::DOM_VK_ADD;
+      case '-':
+        return dom::KeyboardEvent_Binding::DOM_VK_SUBTRACT;
+      case '*':
+        return dom::KeyboardEvent_Binding::DOM_VK_MULTIPLY;
+      case '/':
+        return dom::KeyboardEvent_Binding::DOM_VK_DIVIDE;
+      case '.':
+        return dom::KeyboardEvent_Binding::DOM_VK_DECIMAL;
+      case '0':
+        return dom::KeyboardEvent_Binding::DOM_VK_NUMPAD0;
+      case '1':
+        return dom::KeyboardEvent_Binding::DOM_VK_NUMPAD1;
+      case '2':
+        return dom::KeyboardEvent_Binding::DOM_VK_NUMPAD2;
+      case '3':
+        return dom::KeyboardEvent_Binding::DOM_VK_NUMPAD3;
+      case '4':
+        return dom::KeyboardEvent_Binding::DOM_VK_NUMPAD4;
+      case '5':
+        return dom::KeyboardEvent_Binding::DOM_VK_NUMPAD5;
+      case '6':
+        return dom::KeyboardEvent_Binding::DOM_VK_NUMPAD6;
+      case '7':
+        return dom::KeyboardEvent_Binding::DOM_VK_NUMPAD7;
+      case '8':
+        return dom::KeyboardEvent_Binding::DOM_VK_NUMPAD8;
+      case '9':
+        return dom::KeyboardEvent_Binding::DOM_VK_NUMPAD9;
+      default:
+        return 0;
+    }
+  }
+
+  if (aLocation.isSome() &&
+      aLocation.value() !=
+          dom::KeyboardEvent_Binding::DOM_KEY_LOCATION_STANDARD) {
+    return 0;
+  }
+
+  // TODO: Support characters inputted with option key on macOS.
+  switch (aKeyValue[0]) {
+    case 'a':
+    case 'A':
+      return dom::KeyboardEvent_Binding::DOM_VK_A;
+    case 'b':
+    case 'B':
+      return dom::KeyboardEvent_Binding::DOM_VK_B;
+    case 'c':
+    case 'C':
+      return dom::KeyboardEvent_Binding::DOM_VK_C;
+    case 'd':
+    case 'D':
+      return dom::KeyboardEvent_Binding::DOM_VK_D;
+    case 'e':
+    case 'E':
+      return dom::KeyboardEvent_Binding::DOM_VK_E;
+    case 'f':
+    case 'F':
+      return dom::KeyboardEvent_Binding::DOM_VK_F;
+    case 'g':
+    case 'G':
+      return dom::KeyboardEvent_Binding::DOM_VK_G;
+    case 'h':
+    case 'H':
+      return dom::KeyboardEvent_Binding::DOM_VK_H;
+    case 'i':
+    case 'I':
+      return dom::KeyboardEvent_Binding::DOM_VK_I;
+    case 'j':
+    case 'J':
+      return dom::KeyboardEvent_Binding::DOM_VK_J;
+    case 'k':
+    case 'K':
+      return dom::KeyboardEvent_Binding::DOM_VK_K;
+    case 'l':
+    case 'L':
+      return dom::KeyboardEvent_Binding::DOM_VK_L;
+    case 'm':
+    case 'M':
+      return dom::KeyboardEvent_Binding::DOM_VK_M;
+    case 'n':
+    case 'N':
+      return dom::KeyboardEvent_Binding::DOM_VK_N;
+    case 'o':
+    case 'O':
+      return dom::KeyboardEvent_Binding::DOM_VK_O;
+    case 'p':
+    case 'P':
+      return dom::KeyboardEvent_Binding::DOM_VK_P;
+    case 'q':
+    case 'Q':
+      return dom::KeyboardEvent_Binding::DOM_VK_Q;
+    case 'r':
+    case 'R':
+      return dom::KeyboardEvent_Binding::DOM_VK_R;
+    case 's':
+    case 'S':
+      return dom::KeyboardEvent_Binding::DOM_VK_S;
+    case 't':
+    case 'T':
+      return dom::KeyboardEvent_Binding::DOM_VK_T;
+    case 'u':
+    case 'U':
+      return dom::KeyboardEvent_Binding::DOM_VK_U;
+    case 'v':
+    case 'V':
+      return dom::KeyboardEvent_Binding::DOM_VK_V;
+    case 'w':
+    case 'W':
+      return dom::KeyboardEvent_Binding::DOM_VK_W;
+    case 'x':
+    case 'X':
+      return dom::KeyboardEvent_Binding::DOM_VK_X;
+    case 'y':
+    case 'Y':
+      return dom::KeyboardEvent_Binding::DOM_VK_Y;
+    case 'z':
+    case 'Z':
+      return dom::KeyboardEvent_Binding::DOM_VK_Z;
+
+    case '`':
+    case '~':
+      return dom::KeyboardEvent_Binding::DOM_VK_BACK_QUOTE;
+    case '1':
+    case '!':
+      return dom::KeyboardEvent_Binding::DOM_VK_1;
+    case '2':
+    case '@':
+      return dom::KeyboardEvent_Binding::DOM_VK_2;
+    case '3':
+    case '#':
+      return dom::KeyboardEvent_Binding::DOM_VK_3;
+    case '4':
+    case '$':
+      return dom::KeyboardEvent_Binding::DOM_VK_4;
+    case '5':
+    case '%':
+      return dom::KeyboardEvent_Binding::DOM_VK_5;
+    case '6':
+    case '^':
+      return dom::KeyboardEvent_Binding::DOM_VK_6;
+    case '7':
+    case '&':
+      return dom::KeyboardEvent_Binding::DOM_VK_7;
+    case '8':
+    case '*':
+      return dom::KeyboardEvent_Binding::DOM_VK_8;
+    case '9':
+    case '(':
+      return dom::KeyboardEvent_Binding::DOM_VK_9;
+    case '0':
+    case ')':
+      return dom::KeyboardEvent_Binding::DOM_VK_0;
+    case '-':
+    case '_':
+      return dom::KeyboardEvent_Binding::DOM_VK_HYPHEN_MINUS;
+    case '=':
+    case '+':
+      return dom::KeyboardEvent_Binding::DOM_VK_EQUALS;
+
+    case '[':
+    case '{':
+      return dom::KeyboardEvent_Binding::DOM_VK_OPEN_BRACKET;
+    case ']':
+    case '}':
+      return dom::KeyboardEvent_Binding::DOM_VK_CLOSE_BRACKET;
+    case '\\':
+    case '|':
+      return dom::KeyboardEvent_Binding::DOM_VK_BACK_SLASH;
+
+    case ';':
+    case ':':
+      return dom::KeyboardEvent_Binding::DOM_VK_SEMICOLON;
+    case '\'':
+    case '"':
+      return dom::KeyboardEvent_Binding::DOM_VK_QUOTE;
+
+    case ',':
+    case '<':
+      return dom::KeyboardEvent_Binding::DOM_VK_COMMA;
+    case '.':
+    case '>':
+      return dom::KeyboardEvent_Binding::DOM_VK_PERIOD;
+    case '/':
+    case '?':
+      return dom::KeyboardEvent_Binding::DOM_VK_SLASH;
+
+    case ' ':
+      return dom::KeyboardEvent_Binding::DOM_VK_SPACE;
+
+    default:
+      return 0;
+  }
+}
+
 /******************************************************************************
  * TextInputProcessor::AutoPendingCompositionResetter
  ******************************************************************************/
 TextInputProcessor::AutoPendingCompositionResetter::
-  AutoPendingCompositionResetter(TextInputProcessor* aTIP)
-  : mTIP(aTIP)
-{
+    AutoPendingCompositionResetter(TextInputProcessor* aTIP)
+    : mTIP(aTIP) {
   MOZ_RELEASE_ASSERT(mTIP.get(), "mTIP must not be null");
 }
 
 TextInputProcessor::AutoPendingCompositionResetter::
-  ~AutoPendingCompositionResetter()
-{
+    ~AutoPendingCompositionResetter() {
   if (mTIP->mDispatcher) {
     mTIP->mDispatcher->ClearPendingComposition();
   }
@@ -982,10 +1743,9 @@ TextInputProcessor::AutoPendingCompositionResetter::
  * TextInputProcessor::ModifierKeyData
  ******************************************************************************/
 TextInputProcessor::ModifierKeyData::ModifierKeyData(
-  const WidgetKeyboardEvent& aKeyboardEvent)
-  : mKeyNameIndex(aKeyboardEvent.mKeyNameIndex)
-  , mCodeNameIndex(aKeyboardEvent.mCodeNameIndex)
-{
+    const WidgetKeyboardEvent& aKeyboardEvent)
+    : mKeyNameIndex(aKeyboardEvent.mKeyNameIndex),
+      mCodeNameIndex(aKeyboardEvent.mCodeNameIndex) {
   mModifier = WidgetKeyboardEvent::GetModifierForKeyName(mKeyNameIndex);
   MOZ_ASSERT(mModifier, "mKeyNameIndex must be a modifier key name");
 }
@@ -993,9 +1753,7 @@ TextInputProcessor::ModifierKeyData::ModifierKeyData(
 /******************************************************************************
  * TextInputProcessor::ModifierKeyDataArray
  ******************************************************************************/
-Modifiers
-TextInputProcessor::ModifierKeyDataArray::GetActiveModifiers() const
-{
+Modifiers TextInputProcessor::ModifierKeyDataArray::GetActiveModifiers() const {
   Modifiers result = MODIFIER_NONE;
   for (uint32_t i = 0; i < Length(); i++) {
     result |= ElementAt(i).mModifier;
@@ -1003,27 +1761,21 @@ TextInputProcessor::ModifierKeyDataArray::GetActiveModifiers() const
   return result;
 }
 
-void
-TextInputProcessor::ModifierKeyDataArray::ActivateModifierKey(
-  const TextInputProcessor::ModifierKeyData& aModifierKeyData)
-{
+void TextInputProcessor::ModifierKeyDataArray::ActivateModifierKey(
+    const TextInputProcessor::ModifierKeyData& aModifierKeyData) {
   if (Contains(aModifierKeyData)) {
     return;
   }
   AppendElement(aModifierKeyData);
 }
 
-void
-TextInputProcessor::ModifierKeyDataArray::InactivateModifierKey(
-  const TextInputProcessor::ModifierKeyData& aModifierKeyData)
-{
+void TextInputProcessor::ModifierKeyDataArray::InactivateModifierKey(
+    const TextInputProcessor::ModifierKeyData& aModifierKeyData) {
   RemoveElement(aModifierKeyData);
 }
 
-void
-TextInputProcessor::ModifierKeyDataArray::ToggleModifierKey(
-  const TextInputProcessor::ModifierKeyData& aModifierKeyData)
-{
+void TextInputProcessor::ModifierKeyDataArray::ToggleModifierKey(
+    const TextInputProcessor::ModifierKeyData& aModifierKeyData) {
   auto index = IndexOf(aModifierKeyData);
   if (index == NoIndex) {
     AppendElement(aModifierKeyData);
@@ -1032,4 +1784,4 @@ TextInputProcessor::ModifierKeyDataArray::ToggleModifierKey(
   RemoveElementAt(index);
 }
 
-} // namespace mozilla
+}  // namespace mozilla

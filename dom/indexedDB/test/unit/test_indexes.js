@@ -17,13 +17,13 @@ function* testSteps()
     { key: "237-23-7734", value: { name: "Ron", height: 73, weight: 180 } },
     { key: "237-23-7735", value: { name: "Sue", height: 58, weight: 130 } },
     { key: "237-23-7736", value: { name: "Joe", height: 65, weight: 150 } },
-    { key: "237-23-7737", value: { name: "Pat", height: 65 } }
+    { key: "237-23-7737", value: { name: "Pat", height: 65 } },
   ];
 
   const indexData = [
     { name: "name", keyPath: "name", options: { unique: true } },
     { name: "height", keyPath: "height", options: { } },
-    { name: "weight", keyPath: "weight", options: { unique: false } }
+    { name: "weight", keyPath: "weight", options: { unique: false } },
   ];
 
   const objectStoreDataNameSort = [
@@ -32,7 +32,7 @@ function* testSteps()
     { key: "237-23-7736", value: { name: "Joe", height: 65, weight: 150 } },
     { key: "237-23-7737", value: { name: "Pat", height: 65 } },
     { key: "237-23-7734", value: { name: "Ron", height: 73, weight: 180 } },
-    { key: "237-23-7735", value: { name: "Sue", height: 58, weight: 130 } }
+    { key: "237-23-7735", value: { name: "Sue", height: 58, weight: 130 } },
   ];
 
   const objectStoreDataWeightSort = [
@@ -40,7 +40,7 @@ function* testSteps()
     { key: "237-23-7732", value: { name: "Bob", height: 60, weight: 120 } },
     { key: "237-23-7735", value: { name: "Sue", height: 58, weight: 130 } },
     { key: "237-23-7736", value: { name: "Joe", height: 65, weight: 150 } },
-    { key: "237-23-7734", value: { name: "Ron", height: 73, weight: 180 } }
+    { key: "237-23-7734", value: { name: "Ron", height: 73, weight: 180 } },
   ];
 
   const objectStoreDataHeightSort = [
@@ -49,7 +49,7 @@ function* testSteps()
     { key: "237-23-7732", value: { name: "Bob", height: 60, weight: 120 } },
     { key: "237-23-7736", value: { name: "Joe", height: 65, weight: 150 } },
     { key: "237-23-7737", value: { name: "Pat", height: 65 } },
-    { key: "237-23-7734", value: { name: "Ron", height: 73, weight: 180 } }
+    { key: "237-23-7734", value: { name: "Ron", height: 73, weight: 180 } },
   ];
 
   let request = indexedDB.open(name, 1);
@@ -71,7 +71,7 @@ function* testSteps()
       if (++addedData == objectStoreData.length) {
         testGenerator.next(event);
       }
-    }
+    };
   }
   event = yield undefined;
   // Now create the indexes.
@@ -99,8 +99,7 @@ function* testSteps()
     is(index.name, indexData[i].name, "Correct name");
     is(index.objectStore.name, objectStore.name, "Correct store name");
     is(index.keyPath, indexData[i].keyPath, "Correct keyPath");
-    is(index.unique, indexData[i].options.unique ? true : false,
-       "Correct unique value");
+    is(index.unique, !!indexData[i].options.unique, "Correct unique value");
   }
 
   request = objectStore.index("name").getKey("Bob");
@@ -125,7 +124,7 @@ function* testSteps()
 
   request = objectStore.index("name").openKeyCursor();
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataNameSort[keyIndex].value.name,
@@ -147,7 +146,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, objectStoreData.length, "Saw all the expected keys");
@@ -158,7 +157,7 @@ function* testSteps()
 
   request = objectStore.index("weight").openKeyCursor(null, "next");
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataWeightSort[keyIndex].value.weight,
@@ -178,7 +177,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, objectStoreData.length - 1, "Saw all the expected keys");
@@ -198,7 +197,7 @@ function* testSteps()
 
   request = objectStore.index("name").openKeyCursor(null, "prev");
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataNameSort[keyIndex].value.name,
@@ -218,7 +217,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, -1, "Saw all the expected keys");
@@ -230,7 +229,7 @@ function* testSteps()
 
   request = objectStore.index("name").openKeyCursor(keyRange);
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataNameSort[keyIndex].value.name,
@@ -244,7 +243,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, 5, "Saw all the expected keys");
@@ -256,7 +255,7 @@ function* testSteps()
 
   request = objectStore.index("name").openKeyCursor(keyRange);
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataNameSort[keyIndex].value.name,
@@ -270,7 +269,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, 5, "Saw all the expected keys");
@@ -282,7 +281,7 @@ function* testSteps()
 
   request = objectStore.index("name").openKeyCursor(keyRange);
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataNameSort[keyIndex].value.name,
@@ -296,7 +295,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, 4, "Saw all the expected keys");
@@ -308,7 +307,7 @@ function* testSteps()
 
   request = objectStore.index("name").openKeyCursor(keyRange);
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataNameSort[keyIndex].value.name,
@@ -322,7 +321,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, 4, "Saw all the expected keys");
@@ -334,7 +333,7 @@ function* testSteps()
 
   request = objectStore.index("name").openKeyCursor(keyRange);
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataNameSort[keyIndex].value.name,
@@ -348,7 +347,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, objectStoreDataNameSort.length, "Saw all the expected keys");
@@ -360,7 +359,7 @@ function* testSteps()
 
   request = objectStore.index("name").openKeyCursor(keyRange);
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataNameSort[keyIndex].value.name,
@@ -374,7 +373,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, objectStoreDataNameSort.length, "Saw all the expected keys");
@@ -386,7 +385,7 @@ function* testSteps()
 
   request = objectStore.index("name").openKeyCursor(keyRange);
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataNameSort[keyIndex].value.name,
@@ -400,7 +399,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, 3, "Saw all the expected keys");
@@ -412,7 +411,7 @@ function* testSteps()
 
   request = objectStore.index("name").openKeyCursor(keyRange);
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataNameSort[keyIndex].value.name,
@@ -426,7 +425,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, 2, "Saw all the expected keys");
@@ -438,7 +437,7 @@ function* testSteps()
 
   request = objectStore.index("name").openKeyCursor(keyRange);
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataNameSort[keyIndex].value.name,
@@ -452,7 +451,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, 4, "Saw all the expected keys");
@@ -463,7 +462,7 @@ function* testSteps()
 
   request = objectStore.index("name").openCursor();
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataNameSort[keyIndex].value.name,
@@ -503,7 +502,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, objectStoreDataNameSort.length, "Saw all the expected keys");
@@ -514,7 +513,7 @@ function* testSteps()
 
   request = objectStore.index("name").openCursor(null, "prev");
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataNameSort[keyIndex].value.name,
@@ -554,7 +553,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, -1, "Saw all the expected keys");
@@ -566,7 +565,7 @@ function* testSteps()
 
   request = objectStore.index("name").openCursor(keyRange);
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataNameSort[keyIndex].value.name,
@@ -606,7 +605,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, 5, "Saw all the expected keys");
@@ -618,7 +617,7 @@ function* testSteps()
 
   request = objectStore.index("name").openCursor(keyRange);
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataNameSort[keyIndex].value.name,
@@ -658,7 +657,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, 5, "Saw all the expected keys");
@@ -670,7 +669,7 @@ function* testSteps()
 
   request = objectStore.index("name").openCursor(keyRange);
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataNameSort[keyIndex].value.name,
@@ -710,7 +709,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, 4, "Saw all the expected keys");
@@ -722,7 +721,7 @@ function* testSteps()
 
   request = objectStore.index("name").openCursor(keyRange);
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataNameSort[keyIndex].value.name,
@@ -762,7 +761,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, 4, "Saw all the expected keys");
@@ -774,7 +773,7 @@ function* testSteps()
 
   request = objectStore.index("name").openCursor(keyRange, "prev");
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataNameSort[keyIndex].value.name,
@@ -814,7 +813,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, 0, "Saw all the expected keys");
@@ -827,7 +826,7 @@ function* testSteps()
 
   request = objectStore.index("height").openKeyCursor(keyRange, "next");
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataHeightSort[keyIndex].value.height,
@@ -841,7 +840,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, 5, "Saw all the expected keys");
@@ -854,7 +853,7 @@ function* testSteps()
   request = objectStore.index("height").openKeyCursor(keyRange,
                                                       "nextunique");
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataHeightSort[keyIndex].value.height,
@@ -868,7 +867,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, 4, "Saw all the expected keys");
@@ -879,7 +878,7 @@ function* testSteps()
 
   request = objectStore.index("height").openKeyCursor(null, "prev");
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataHeightSort[keyIndex].value.height,
@@ -893,7 +892,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, -1, "Saw all the expected keys");
@@ -905,7 +904,7 @@ function* testSteps()
   request = objectStore.index("height").openKeyCursor(null,
                                                       "prevunique");
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataHeightSort[keyIndex].value.height,
@@ -922,7 +921,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, -1, "Saw all the expected keys");
@@ -934,7 +933,7 @@ function* testSteps()
 
   request = objectStore.index("height").openCursor(keyRange, "next");
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataHeightSort[keyIndex].value.height,
@@ -958,7 +957,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, 5, "Saw all the expected keys");
@@ -971,7 +970,7 @@ function* testSteps()
   request = objectStore.index("height").openCursor(keyRange,
                                                    "nextunique");
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataHeightSort[keyIndex].value.height,
@@ -995,7 +994,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, 4, "Saw all the expected keys");
@@ -1006,7 +1005,7 @@ function* testSteps()
 
   request = objectStore.index("height").openCursor(null, "prev");
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataHeightSort[keyIndex].value.height,
@@ -1030,7 +1029,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, -1, "Saw all the expected keys");
@@ -1042,7 +1041,7 @@ function* testSteps()
   request = objectStore.index("height").openCursor(null,
                                                    "prevunique");
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataHeightSort[keyIndex].value.height,
@@ -1069,7 +1068,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, -1, "Saw all the expected keys");
@@ -1080,7 +1079,7 @@ function* testSteps()
 
   request = objectStore.index("name").openKeyCursor();
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataNameSort[keyIndex].value.name,
@@ -1107,7 +1106,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, objectStoreData.length, "Saw all the expected keys");
@@ -1118,7 +1117,7 @@ function* testSteps()
 
   request = objectStore.index("name").openKeyCursor();
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataNameSort[keyIndex].value.name,
@@ -1140,7 +1139,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, objectStoreData.length, "Saw all the expected keys");
@@ -1151,7 +1150,7 @@ function* testSteps()
 
   request = objectStore.index("name").openCursor();
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataNameSort[keyIndex].value.name,
@@ -1198,7 +1197,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, objectStoreDataNameSort.length, "Saw all the expected keys");
@@ -1209,7 +1208,7 @@ function* testSteps()
 
   request = objectStore.index("name").openCursor();
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
       is(cursor.key, objectStoreDataNameSort[keyIndex].value.name,
@@ -1251,7 +1250,7 @@ function* testSteps()
     else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, objectStoreDataNameSort.length, "Saw all the expected keys");

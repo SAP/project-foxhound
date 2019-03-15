@@ -8,30 +8,31 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/video_coding/timing.h"
+#include "modules/video_coding/timing.h"
 
 #include <algorithm>
 
-#include "webrtc/modules/video_coding/internal_defines.h"
-#include "webrtc/modules/video_coding/jitter_buffer_common.h"
-#include "webrtc/system_wrappers/include/clock.h"
-#include "webrtc/system_wrappers/include/metrics.h"
-#include "webrtc/system_wrappers/include/timestamp_extrapolator.h"
+#include "modules/video_coding/internal_defines.h"
+#include "modules/video_coding/jitter_buffer_common.h"
+#include "system_wrappers/include/clock.h"
+#include "system_wrappers/include/metrics.h"
+#include "system_wrappers/include/timestamp_extrapolator.h"
 
 namespace webrtc {
 
 VCMTiming::VCMTiming(Clock* clock, VCMTiming* master_timing)
-    : crit_sect_(CriticalSectionWrapper::CreateCriticalSection()),
-      clock_(clock),
+    : clock_(clock),
       master_(false),
       ts_extrapolator_(),
-      codec_timer_(),
+      codec_timer_(new VCMCodecTimer()),
       render_delay_ms_(kDefaultRenderDelayMs),
       min_playout_delay_ms_(0),
+      max_playout_delay_ms_(10000),
       jitter_delay_ms_(0),
       current_delay_ms_(0),
       last_decode_ms_(0),
       prev_frame_timestamp_(0),
+      timing_frame_info_(),
       num_decoded_frames_(0),
       num_delayed_decoded_frames_(0),
       first_decoded_frame_ms_(-1),
@@ -49,11 +50,10 @@ VCMTiming::~VCMTiming() {
   if (master_) {
     delete ts_extrapolator_;
   }
-  delete crit_sect_;
 }
 
 void VCMTiming::UpdateHistograms() const {
-  CriticalSectionScoped cs(crit_sect_);
+  rtc::CritScope cs(&crit_sect_);
   if (num_decoded_frames_ == 0) {
     return;
   }
@@ -62,23 +62,23 @@ void VCMTiming::UpdateHistograms() const {
   if (elapsed_sec < metrics::kMinRunTimeInSeconds) {
     return;
   }
-  RTC_HISTOGRAM_COUNTS_SPARSE_100(
+  RTC_HISTOGRAM_COUNTS_100(
       "WebRTC.Video.DecodedFramesPerSecond",
       static_cast<int>((num_decoded_frames_ / elapsed_sec) + 0.5f));
-  RTC_HISTOGRAM_PERCENTAGE_SPARSE(
+  RTC_HISTOGRAM_PERCENTAGE(
       "WebRTC.Video.DelayedFramesToRenderer",
       num_delayed_decoded_frames_ * 100 / num_decoded_frames_);
   if (num_delayed_decoded_frames_ > 0) {
-    RTC_HISTOGRAM_COUNTS_SPARSE_1000(
+    RTC_HISTOGRAM_COUNTS_1000(
         "WebRTC.Video.DelayedFramesToRenderer_AvgDelayInMs",
         sum_missed_render_deadline_ms_ / num_delayed_decoded_frames_);
   }
 }
 
 void VCMTiming::Reset() {
-  CriticalSectionScoped cs(crit_sect_);
+  rtc::CritScope cs(&crit_sect_);
   ts_extrapolator_->Reset(clock_->TimeInMilliseconds());
-  codec_timer_.Reset();
+  codec_timer_.reset(new VCMCodecTimer());
   render_delay_ms_ = kDefaultRenderDelayMs;
   min_playout_delay_ms_ = 0;
   jitter_delay_ms_ = 0;
@@ -87,22 +87,37 @@ void VCMTiming::Reset() {
 }
 
 void VCMTiming::ResetDecodeTime() {
-  CriticalSectionScoped lock(crit_sect_);
-  codec_timer_.Reset();
+  rtc::CritScope cs(&crit_sect_);
+  codec_timer_.reset(new VCMCodecTimer());
 }
 
-void VCMTiming::set_render_delay(uint32_t render_delay_ms) {
-  CriticalSectionScoped cs(crit_sect_);
+void VCMTiming::set_render_delay(int render_delay_ms) {
+  rtc::CritScope cs(&crit_sect_);
   render_delay_ms_ = render_delay_ms;
 }
 
-void VCMTiming::set_min_playout_delay(uint32_t min_playout_delay_ms) {
-  CriticalSectionScoped cs(crit_sect_);
+void VCMTiming::set_min_playout_delay(int min_playout_delay_ms) {
+  rtc::CritScope cs(&crit_sect_);
   min_playout_delay_ms_ = min_playout_delay_ms;
 }
 
-void VCMTiming::SetJitterDelay(uint32_t jitter_delay_ms) {
-  CriticalSectionScoped cs(crit_sect_);
+int VCMTiming::min_playout_delay() {
+  rtc::CritScope cs(&crit_sect_);
+  return min_playout_delay_ms_;
+}
+
+void VCMTiming::set_max_playout_delay(int max_playout_delay_ms) {
+  rtc::CritScope cs(&crit_sect_);
+  max_playout_delay_ms_ = max_playout_delay_ms;
+}
+
+int VCMTiming::max_playout_delay() {
+  rtc::CritScope cs(&crit_sect_);
+  return max_playout_delay_ms_;
+}
+
+void VCMTiming::SetJitterDelay(int jitter_delay_ms) {
+  rtc::CritScope cs(&crit_sect_);
   if (jitter_delay_ms != jitter_delay_ms_) {
     jitter_delay_ms_ = jitter_delay_ms;
     // When in initial state, set current delay to minimum delay.
@@ -113,8 +128,8 @@ void VCMTiming::SetJitterDelay(uint32_t jitter_delay_ms) {
 }
 
 void VCMTiming::UpdateCurrentDelay(uint32_t frame_timestamp) {
-  CriticalSectionScoped cs(crit_sect_);
-  uint32_t target_delay_ms = TargetDelayInternal();
+  rtc::CritScope cs(&crit_sect_);
+  int target_delay_ms = TargetDelayInternal();
 
   if (current_delay_ms_ == 0) {
     // Not initialized, set current delay to target.
@@ -138,6 +153,7 @@ void VCMTiming::UpdateCurrentDelay(uint32_t frame_timestamp) {
       max_change_ms = kDelayMaxChangeMsPerS *
                       (frame_timestamp - prev_frame_timestamp_) / 90000;
     }
+
     if (max_change_ms <= 0) {
       // Any changes less than 1 ms are truncated and
       // will be postponed. Negative change will be due
@@ -147,22 +163,23 @@ void VCMTiming::UpdateCurrentDelay(uint32_t frame_timestamp) {
     delay_diff_ms = std::max(delay_diff_ms, -max_change_ms);
     delay_diff_ms = std::min(delay_diff_ms, max_change_ms);
 
-    current_delay_ms_ = current_delay_ms_ + static_cast<int32_t>(delay_diff_ms);
+    current_delay_ms_ = current_delay_ms_ + delay_diff_ms;
   }
   prev_frame_timestamp_ = frame_timestamp;
 }
 
 void VCMTiming::UpdateCurrentDelay(int64_t render_time_ms,
                                    int64_t actual_decode_time_ms) {
-  CriticalSectionScoped cs(crit_sect_);
+  rtc::CritScope cs(&crit_sect_);
   uint32_t target_delay_ms = TargetDelayInternal();
-  int64_t delayed_ms = actual_decode_time_ms -
-                       (render_time_ms - MaxDecodeTimeMs() - render_delay_ms_);
+  int64_t delayed_ms =
+      actual_decode_time_ms -
+      (render_time_ms - RequiredDecodeTimeMs() - render_delay_ms_);
   if (delayed_ms < 0) {
     return;
   }
   if (current_delay_ms_ + delayed_ms <= target_delay_ms) {
-    current_delay_ms_ += static_cast<uint32_t>(delayed_ms);
+    current_delay_ms_ += delayed_ms;
   } else {
     current_delay_ms_ = target_delay_ms;
   }
@@ -172,8 +189,8 @@ int32_t VCMTiming::StopDecodeTimer(uint32_t time_stamp,
                                    int32_t decode_time_ms,
                                    int64_t now_ms,
                                    int64_t render_time_ms) {
-  CriticalSectionScoped cs(crit_sect_);
-  codec_timer_.MaxFilter(decode_time_ms, now_ms);
+  rtc::CritScope cs(&crit_sect_);
+  codec_timer_->AddTiming(decode_time_ms, now_ms);
   assert(decode_time_ms >= 0);
   last_decode_ms_ = decode_time_ms;
 
@@ -191,13 +208,13 @@ int32_t VCMTiming::StopDecodeTimer(uint32_t time_stamp,
 }
 
 void VCMTiming::IncomingTimestamp(uint32_t time_stamp, int64_t now_ms) {
-  CriticalSectionScoped cs(crit_sect_);
+  rtc::CritScope cs(&crit_sect_);
   ts_extrapolator_->Update(now_ms, time_stamp);
 }
 
 int64_t VCMTiming::RenderTimeMs(uint32_t frame_timestamp,
                                 int64_t now_ms) const {
-  CriticalSectionScoped cs(crit_sect_);
+  rtc::CritScope cs(&crit_sect_);
   const int64_t render_time_ms = RenderTimeMsInternal(frame_timestamp, now_ms);
   return render_time_ms;
 }
@@ -210,25 +227,31 @@ int64_t VCMTiming::RenderTimeMsInternal(uint32_t frame_timestamp,
     estimated_complete_time_ms = now_ms;
   }
 
-  // Make sure that we have at least the playout delay.
-  uint32_t actual_delay = std::max(current_delay_ms_, min_playout_delay_ms_);
+  if (min_playout_delay_ms_ == 0 && max_playout_delay_ms_ == 0) {
+    // Render as soon as possible
+    return now_ms;
+  }
+
+  // Make sure the actual delay stays in the range of |min_playout_delay_ms_|
+  // and |max_playout_delay_ms_|.
+  int actual_delay = std::max(current_delay_ms_, min_playout_delay_ms_);
+  actual_delay = std::min(actual_delay, max_playout_delay_ms_);
   return estimated_complete_time_ms + actual_delay;
 }
 
 // Must be called from inside a critical section.
-int32_t VCMTiming::MaxDecodeTimeMs(
-    FrameType frame_type /*= kVideoFrameDelta*/) const {
-  const int32_t decode_time_ms = codec_timer_.RequiredDecodeTimeMs(frame_type);
+int VCMTiming::RequiredDecodeTimeMs() const {
+  const int decode_time_ms = codec_timer_->RequiredDecodeTimeMs();
   assert(decode_time_ms >= 0);
   return decode_time_ms;
 }
 
 uint32_t VCMTiming::MaxWaitingTime(int64_t render_time_ms,
                                    int64_t now_ms) const {
-  CriticalSectionScoped cs(crit_sect_);
+  rtc::CritScope cs(&crit_sect_);
 
   const int64_t max_wait_time_ms =
-      render_time_ms - now_ms - MaxDecodeTimeMs() - render_delay_ms_;
+      render_time_ms - now_ms - RequiredDecodeTimeMs() - render_delay_ms_;
 
   if (max_wait_time_ms < 0) {
     return 0;
@@ -238,47 +261,58 @@ uint32_t VCMTiming::MaxWaitingTime(int64_t render_time_ms,
 
 bool VCMTiming::EnoughTimeToDecode(
     uint32_t available_processing_time_ms) const {
-  CriticalSectionScoped cs(crit_sect_);
-  int32_t max_decode_time_ms = MaxDecodeTimeMs();
-  if (max_decode_time_ms < 0) {
+  rtc::CritScope cs(&crit_sect_);
+  int64_t required_decode_time_ms = RequiredDecodeTimeMs();
+  if (required_decode_time_ms < 0) {
     // Haven't decoded any frames yet, try decoding one to get an estimate
     // of the decode time.
     return true;
-  } else if (max_decode_time_ms == 0) {
+  } else if (required_decode_time_ms == 0) {
     // Decode time is less than 1, set to 1 for now since
     // we don't have any better precision. Count ticks later?
-    max_decode_time_ms = 1;
+    required_decode_time_ms = 1;
   }
-  return static_cast<int32_t>(available_processing_time_ms) -
-             max_decode_time_ms >
+  return static_cast<int64_t>(available_processing_time_ms) -
+             required_decode_time_ms >
          0;
 }
 
-uint32_t VCMTiming::TargetVideoDelay() const {
-  CriticalSectionScoped cs(crit_sect_);
+int VCMTiming::TargetVideoDelay() const {
+  rtc::CritScope cs(&crit_sect_);
   return TargetDelayInternal();
 }
 
-uint32_t VCMTiming::TargetDelayInternal() const {
+int VCMTiming::TargetDelayInternal() const {
   return std::max(min_playout_delay_ms_,
-                  jitter_delay_ms_ + MaxDecodeTimeMs() + render_delay_ms_);
+                  jitter_delay_ms_ + RequiredDecodeTimeMs() + render_delay_ms_);
 }
 
-void VCMTiming::GetTimings(int* decode_ms,
+bool VCMTiming::GetTimings(int* decode_ms,
                            int* max_decode_ms,
                            int* current_delay_ms,
                            int* target_delay_ms,
                            int* jitter_buffer_ms,
                            int* min_playout_delay_ms,
                            int* render_delay_ms) const {
-  CriticalSectionScoped cs(crit_sect_);
+  rtc::CritScope cs(&crit_sect_);
   *decode_ms = last_decode_ms_;
-  *max_decode_ms = MaxDecodeTimeMs();
+  *max_decode_ms = RequiredDecodeTimeMs();
   *current_delay_ms = current_delay_ms_;
   *target_delay_ms = TargetDelayInternal();
   *jitter_buffer_ms = jitter_delay_ms_;
   *min_playout_delay_ms = min_playout_delay_ms_;
   *render_delay_ms = render_delay_ms_;
+  return (num_decoded_frames_ > 0);
+}
+
+void VCMTiming::SetTimingFrameInfo(const TimingFrameInfo& info) {
+  rtc::CritScope cs(&crit_sect_);
+  timing_frame_info_.emplace(info);
+}
+
+rtc::Optional<TimingFrameInfo> VCMTiming::GetTimingFrameInfo() {
+  rtc::CritScope cs(&crit_sect_);
+  return timing_frame_info_;
 }
 
 }  // namespace webrtc

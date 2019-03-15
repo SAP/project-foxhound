@@ -4,24 +4,16 @@
 
 "use strict";
 
-var Ci = Components.interfaces;
-var Cu = Components.utils;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
 
 XPCOMUtils.defineLazyGetter(window, "gChromeWin", () =>
-  window.QueryInterface(Ci.nsIInterfaceRequestor)
-    .getInterface(Ci.nsIWebNavigation)
-    .QueryInterface(Ci.nsIDocShellTreeItem)
-    .rootTreeItem
-    .QueryInterface(Ci.nsIInterfaceRequestor)
-    .getInterface(Ci.nsIDOMWindow)
+  window.docShell.rootTreeItem.domWindow
     .QueryInterface(Ci.nsIDOMChromeWindow));
 
 document.addEventListener("DOMContentLoaded", function() {
-    let BrowserApp = gChromeWin.BrowserApp;
+    let BrowserApp = window.gChromeWin.BrowserApp;
 
     if (!PrivateBrowsingUtils.isContentWindowPrivate(window)) {
       document.body.setAttribute("class", "normal");

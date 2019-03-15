@@ -13,57 +13,57 @@ const TEST_URL = URL_ROOT + "doc_markup_pagesize_01.html";
 const TEST_DATA = [{
   desc: "Select the last item",
   selector: "#z",
-  expected: "*more*vwxyz"
+  expected: "*more*vwxyz",
 }, {
   desc: "Select the first item",
   selector: "#a",
-  expected: "abcde*more*"
+  expected: "abcde*more*",
 }, {
   desc: "Select the last item",
   selector: "#z",
-  expected: "*more*vwxyz"
+  expected: "*more*vwxyz",
 }, {
   desc: "Select an already-visible item",
   selector: "#v",
   // Because "v" was already visible, we shouldn't have loaded
   // a different page.
-  expected: "*more*vwxyz"
+  expected: "*more*vwxyz",
 }, {
   desc: "Verify childrenDirty reloads the page",
   selector: "#w",
   forceReload: true,
   // But now that we don't already have a loaded page, selecting
   // w should center around w.
-  expected: "*more*uvwxy*more*"
+  expected: "*more*uvwxy*more*",
 }];
 
-add_task(function* () {
-  let {inspector} = yield openInspectorForURL(TEST_URL);
+add_task(async function() {
+  const {inspector} = await openInspectorForURL(TEST_URL);
 
   info("Start iterating through the test data");
-  for (let step of TEST_DATA) {
+  for (const step of TEST_DATA) {
     info("Start test: " + step.desc);
 
     if (step.forceReload) {
-      yield forceReload(inspector);
+      await forceReload(inspector);
     }
     info("Selecting the node that corresponds to " + step.selector);
-    yield selectNode(step.selector, inspector);
+    await selectNode(step.selector, inspector);
 
     info("Checking that the right nodes are shwon");
-    yield assertChildren(step.expected, inspector);
+    await assertChildren(step.expected, inspector);
   }
 
   info("Checking that clicking the more button loads everything");
-  yield clickShowMoreNodes(inspector);
-  yield inspector.markup._waitForChildren();
-  yield assertChildren("abcdefghijklmnopqrstuvwxyz", inspector);
+  await clickShowMoreNodes(inspector);
+  await inspector.markup._waitForChildren();
+  await assertChildren("abcdefghijklmnopqrstuvwxyz", inspector);
 });
 
-function* assertChildren(expected, inspector) {
-  let container = yield getContainerForSelector("body", inspector);
+async function assertChildren(expected, inspector) {
+  const container = await getContainerForSelector("body", inspector);
   let found = "";
-  for (let child of container.children.children) {
+  for (const child of container.children.children) {
     if (child.classList.contains("more-nodes")) {
       found += "*more*";
     } else {
@@ -73,14 +73,14 @@ function* assertChildren(expected, inspector) {
   is(found, expected, "Got the expected children.");
 }
 
-function* forceReload(inspector) {
-  let container = yield getContainerForSelector("body", inspector);
+async function forceReload(inspector) {
+  const container = await getContainerForSelector("body", inspector);
   container.childrenDirty = true;
 }
 
-function* clickShowMoreNodes(inspector) {
-  let container = yield getContainerForSelector("body", inspector);
-  let button = container.elt.querySelector("button");
-  let win = button.ownerDocument.defaultView;
+async function clickShowMoreNodes(inspector) {
+  const container = await getContainerForSelector("body", inspector);
+  const button = container.elt.querySelector("button");
+  const win = button.ownerDocument.defaultView;
   EventUtils.sendMouseEvent({type: "click"}, button, win);
 }

@@ -8,12 +8,13 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/utility/source/process_thread_impl.h"
+#include "modules/utility/source/process_thread_impl.h"
 
-#include "webrtc/base/checks.h"
-#include "webrtc/modules/include/module.h"
-#include "webrtc/system_wrappers/include/logging.h"
-#include "webrtc/system_wrappers/include/tick_util.h"
+#include "modules/include/module.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/task_queue.h"
+#include "rtc_base/timeutils.h"
+#include "rtc_base/trace_event.h"
 
 namespace webrtc {
 namespace {
@@ -36,9 +37,9 @@ int64_t GetNextCallbackTime(Module* module, int64_t time_now) {
 ProcessThread::~ProcessThread() {}
 
 // static
-rtc::scoped_ptr<ProcessThread> ProcessThread::Create(
+std::unique_ptr<ProcessThread> ProcessThread::Create(
     const char* thread_name) {
-  return rtc::scoped_ptr<ProcessThread>(new ProcessThreadImpl(thread_name));
+  return std::unique_ptr<ProcessThread>(new ProcessThreadImpl(thread_name));
 }
 
 ProcessThreadImpl::ProcessThreadImpl(const char* thread_name)
@@ -65,15 +66,8 @@ void ProcessThreadImpl::Start() {
 
   RTC_DCHECK(!stop_);
 
-  {
-    // TODO(tommi): Since DeRegisterModule is currently being called from
-    // different threads in some cases (ChannelOwner), we need to lock access to
-    // the modules_ collection even on the controller thread.
-    // Once we've cleaned up those places, we can remove this lock.
-    rtc::CritScope lock(&lock_);
-    for (ModuleCallback& m : modules_)
-      m.module->ProcessThreadAttached(this);
-  }
+  for (ModuleCallback& m : modules_)
+    m.module->ProcessThreadAttached(this);
 
   thread_.reset(
       new rtc::PlatformThread(&ProcessThreadImpl::Run, this, thread_name_));
@@ -95,13 +89,6 @@ void ProcessThreadImpl::Stop() {
   thread_->Stop();
   stop_ = false;
 
-  // TODO(tommi): Since DeRegisterModule is currently being called from
-  // different threads in some cases (ChannelOwner), we need to lock access to
-  // the modules_ collection even on the controller thread.
-  // Since DeRegisterModule also checks thread_, we also need to hold the
-  // lock for the .reset() operation.
-  // Once we've cleaned up those places, we can remove this lock.
-  rtc::CritScope lock(&lock_);
   thread_.reset();
   for (ModuleCallback& m : modules_)
     m.module->ProcessThreadAttached(nullptr);
@@ -119,7 +106,7 @@ void ProcessThreadImpl::WakeUp(Module* module) {
   wake_up_->Set();
 }
 
-void ProcessThreadImpl::PostTask(rtc::scoped_ptr<ProcessTask> task) {
+void ProcessThreadImpl::PostTask(std::unique_ptr<rtc::QueuedTask> task) {
   // Allowed to be called on any thread.
   {
     rtc::CritScope lock(&lock_);
@@ -128,16 +115,20 @@ void ProcessThreadImpl::PostTask(rtc::scoped_ptr<ProcessTask> task) {
   wake_up_->Set();
 }
 
-void ProcessThreadImpl::RegisterModule(Module* module) {
-  //  RTC_DCHECK(thread_checker_.CalledOnValidThread());
-  RTC_DCHECK(module);
+void ProcessThreadImpl::RegisterModule(Module* module,
+                                       const rtc::Location& from) {
+  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  RTC_DCHECK(module) << from.ToString();
 
-#if (!defined(NDEBUG) || defined(DCHECK_ALWAYS_ON))
+#if RTC_DCHECK_IS_ON
   {
     // Catch programmer error.
     rtc::CritScope lock(&lock_);
-    for (const ModuleCallback& mc : modules_)
-      RTC_DCHECK(mc.module != module);
+    for (const ModuleCallback& mc : modules_) {
+      RTC_DCHECK(mc.module != module)
+          << "Already registered here: " << mc.location.ToString() << "\n"
+          << "Now attempting from here: " << from.ToString();
+    }
   }
 #endif
 
@@ -149,7 +140,7 @@ void ProcessThreadImpl::RegisterModule(Module* module) {
 
   {
     rtc::CritScope lock(&lock_);
-    modules_.push_back(ModuleCallback(module));
+    modules_.push_back(ModuleCallback(module, from));
   }
 
   // Wake the thread calling ProcessThreadImpl::Process() to update the
@@ -159,8 +150,7 @@ void ProcessThreadImpl::RegisterModule(Module* module) {
 }
 
 void ProcessThreadImpl::DeRegisterModule(Module* module) {
-  // Allowed to be called on any thread.
-  // TODO(tommi): Disallow this ^^^
+  RTC_DCHECK(thread_checker_.CalledOnValidThread());
   RTC_DCHECK(module);
 
   {
@@ -168,18 +158,10 @@ void ProcessThreadImpl::DeRegisterModule(Module* module) {
     modules_.remove_if([&module](const ModuleCallback& m) {
         return m.module == module;
       });
-
-    // TODO(tommi): we currently need to hold the lock while calling out to
-    // ProcessThreadAttached.  This is to make sure that the thread hasn't been
-    // destroyed while we attach the module.  Once we can make sure
-    // DeRegisterModule isn't being called on arbitrary threads, we can move the
-    // |if (thread_.get())| check and ProcessThreadAttached() call outside the
-    // lock scope.
-
-    // Notify the module that it's been detached.
-    if (thread_.get())
-      module->ProcessThreadAttached(nullptr);
   }
+
+  // Notify the module that it's been detached.
+  module->ProcessThreadAttached(nullptr);
 }
 
 // static
@@ -188,7 +170,8 @@ bool ProcessThreadImpl::Run(void* obj) {
 }
 
 bool ProcessThreadImpl::Process() {
-  int64_t now = TickTime::MillisecondTimestamp();
+  TRACE_EVENT1("webrtc", "ProcessThreadImpl", "name", thread_name_);
+  int64_t now = rtc::TimeMillis();
   int64_t next_checkpoint = now + (1000 * 60);
 
   {
@@ -205,11 +188,16 @@ bool ProcessThreadImpl::Process() {
 
       if (m.next_callback <= now ||
           m.next_callback == kCallProcessImmediately) {
-        m.module->Process();
+        {
+          TRACE_EVENT2("webrtc", "ModuleProcess", "function",
+                       m.location.function_name(), "file",
+                       m.location.file_and_line());
+          m.module->Process();
+        }
         // Use a new 'now' reference to calculate when the next callback
         // should occur.  We'll continue to use 'now' above for the baseline
         // of calculating how long we should wait, to reduce variance.
-        int64_t new_now = TickTime::MillisecondTimestamp();
+        int64_t new_now = rtc::TimeMillis();
         m.next_callback = GetNextCallbackTime(m.module, new_now);
       }
 
@@ -218,7 +206,7 @@ bool ProcessThreadImpl::Process() {
     }
 
     while (!queue_.empty()) {
-      ProcessTask* task = queue_.front();
+      rtc::QueuedTask* task = queue_.front();
       queue_.pop();
       lock_.Leave();
       task->Run();
@@ -227,7 +215,7 @@ bool ProcessThreadImpl::Process() {
     }
   }
 
-  int64_t time_to_wait = next_checkpoint - TickTime::MillisecondTimestamp();
+  int64_t time_to_wait = next_checkpoint - rtc::TimeMillis();
   if (time_to_wait > 0)
     wake_up_->Wait(static_cast<unsigned long>(time_to_wait));
 

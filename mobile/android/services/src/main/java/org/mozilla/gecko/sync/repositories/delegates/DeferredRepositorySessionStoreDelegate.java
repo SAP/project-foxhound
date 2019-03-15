@@ -18,11 +18,11 @@ public class DeferredRepositorySessionStoreDelegate implements
   }
 
   @Override
-  public void onRecordStoreSucceeded(final String guid) {
+  public void onRecordStoreSucceeded(final int count) {
     executor.execute(new Runnable() {
       @Override
       public void run() {
-        inner.onRecordStoreSucceeded(guid);
+        inner.onRecordStoreSucceeded(count);
       }
     });
   }
@@ -46,11 +46,11 @@ public class DeferredRepositorySessionStoreDelegate implements
   }
 
   @Override
-  public void onStoreCompleted(final long storeEnd) {
+  public void onStoreCompleted() {
     executor.execute(new Runnable() {
       @Override
       public void run() {
-        inner.onStoreCompleted(storeEnd);
+        inner.onStoreCompleted();
       }
     });
   }
@@ -61,6 +61,26 @@ public class DeferredRepositorySessionStoreDelegate implements
       @Override
       public void run() {
         inner.onStoreFailed(e);
+      }
+    });
+  }
+
+  @Override
+  public void onRecordStoreReconciled(final String guid, final String oldGuid, final Integer newVersion) {
+    executor.execute(new Runnable() {
+      @Override
+      public void run() {
+        inner.onRecordStoreReconciled(guid, oldGuid, newVersion);
+      }
+    });
+  }
+
+  @Override
+  public void onBatchCommitted() {
+    executor.execute(new Runnable() {
+      @Override
+      public void run() {
+        inner.onBatchCommitted();
       }
     });
   }

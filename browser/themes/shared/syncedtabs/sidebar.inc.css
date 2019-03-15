@@ -6,13 +6,15 @@
 
 html {
   height: 100%;
+  box-sizing: border-box;
 }
 
 body {
   height: 100%;
   margin: 0;
   font: message-box;
-  color: #333333;
+  background-color: -moz-Field;
+  color: -moz-FieldText;
   -moz-user-select: none;
 }
 
@@ -67,18 +69,33 @@ body {
   white-space: nowrap;
   overflow: hidden;
   outline: none;
-  color: -moz-FieldText;
 }
 
 .item.selected > .item-title-container {
   background-color: -moz-cellhighlight;
   color: -moz-cellhighlighttext;
-  font-weight: bold;
 }
 
 .item.selected:focus > .item-title-container {
   background-color: Highlight;
   color: HighlightText;
+}
+
+.item.client .item-twisty-container {
+  min-width: 8px;
+  height: 8px;
+  background-image: url("chrome://global/skin/icons/twisty-expanded.svg");
+  -moz-context-properties: fill, fill-opacity;
+  fill: currentColor;
+  fill-opacity: 1;
+}
+
+.item.client.closed .item-twisty-container {
+  background-image: url("chrome://global/skin/icons/twisty-collapsed.svg");
+}
+
+.item.client.closed .item-twisty-container:dir(rtl) {
+  background-image: url("chrome://global/skin/icons/twisty-collapsed-rtl.svg");
 }
 
 .client .item.tab > .item-title-container {
@@ -89,30 +106,27 @@ body {
   padding-inline-start: 20px;
 }
 
-.item.client.device-image-desktop > .item-title-container > .item-icon-container {
-  background-image: url("chrome://browser/skin/sync-desktopIcon.svg#icon");
+.item.client[clientType] > .item-title-container > .item-icon-container {
+  -moz-context-properties: fill;
+  fill: currentColor;
 }
 
-.item.client.device-image-desktop.selected:focus > .item-title-container > .item-icon-container {
-  background-image: url("chrome://browser/skin/sync-desktopIcon.svg#icon-inverted");
+.item.client[clientType=phone] > .item-title-container > .item-icon-container {
+  background-image: url("chrome://browser/skin/device-phone.svg");
 }
 
-.item.client.device-image-mobile > .item-title-container > .item-icon-container {
-  background-image: url("chrome://browser/skin/sync-mobileIcon.svg#icon");
+.item.client[clientType=tablet] > .item-title-container > .item-icon-container {
+  background-image: url("chrome://browser/skin/device-tablet.svg");
 }
 
-.item.client.device-image-mobile.selected:focus > .item-title-container > .item-icon-container {
-  background-image: url("chrome://browser/skin/sync-mobileIcon.svg#icon-inverted");
+.item.client[clientType=desktop] > .item-title-container > .item-icon-container {
+  background-image: url("chrome://browser/skin/device-desktop.svg");
 }
 
 .item.tab > .item-title-container > .item-icon-container {
-  background-image: url("chrome://mozapps/skin/places/defaultFavicon.png");
-}
-
-@media (min-resolution: 1.1dppx) {
-.item.tab > .item-title-container > .item-icon-container {
-    background-image: url("chrome://mozapps/skin/places/defaultFavicon@2x.png");
-  }
+  background-image: url("chrome://mozapps/skin/places/defaultFavicon.svg");
+  -moz-context-properties: fill;
+  fill: currentColor;
 }
 
 .item-icon-container {
@@ -133,7 +147,8 @@ body {
   flex-flow: row;
   overflow: hidden;
   flex-grow: 1;
-  padding: 1px 0px 1px 0px;
+  align-items: center;
+  padding: 4px;
 }
 
 .item-title {
@@ -171,7 +186,7 @@ body {
 
 .tabsFilter {
   flex: 1;
-  /* min-width of anything to override the implicit "-moz-min-content" value.
+  /* min-width of anything to override the implicit "min-content" value.
      0px is safe as the sidebar itself has a constrained size meaning we will
      never actually hit this minimum
   */
@@ -181,7 +196,6 @@ body {
 .sync-state > p {
   padding-inline-end: 10px;
   padding-inline-start: 10px;
-  color: #888;
 }
 
 .text-link {
@@ -216,6 +230,59 @@ body {
   opacity: 100;
 }
 
+.deck .syncIllustration,
+.deck .syncIllustrationIssue {
+  height: 91px;
+  margin: 38px 8px 15px;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.deck .syncIllustration {
+  background-image: url(chrome://browser/skin/fxa/sync-illustration.svg);
+}
+
+.deck .syncIllustrationIssue {
+  background-image: url(chrome://browser/skin/fxa/sync-illustration-issue.svg);
+}
+
+.deck .instructions {
+  text-align: center;
+  color: GrayText;
+  padding: 0 11px;
+  max-width: 15em;
+  margin: 0 auto;
+}
+
+body[lwt-sidebar] .deck .instructions {
+  color: inherit;
+  opacity: .6;
+}
+
+.deck .button {
+  display: block;
+  background-color: #0060df;
+  color: white;
+  border: 0;
+  border-radius: 2px;
+  margin: 15px auto;
+  padding: 8px;
+  text-shadow: none;
+  width: calc(100% - 22px);
+  max-width: 200px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.deck .button:hover {
+  background-color: #003eaa;
+}
+
+.deck .button:hover:active {
+  background-color: #002275;
+}
+
 .sidebar-search-container.tabs-container:not(.selected) {
   display: none;
 }
@@ -231,4 +298,30 @@ body {
 
 .filtered .textbox-search-icons .textbox-search-clear {
   display: block;
+}
+
+/* Themed sidebars */
+
+body[lwt-sidebar] {
+  background-color: var(--lwt-sidebar-background-color);
+  color: var(--lwt-sidebar-text-color);
+  scrollbar-color: rgba(204,204,204,.5) rgba(230,230,235,.5);
+}
+
+body[lwt-sidebar-brighttext] {
+  scrollbar-color: rgba(249,249,250,.4) rgba(20,20,25,.3);
+}
+
+body[lwt-sidebar] .item.selected > .item-title-container {
+  background-color: hsla(0,0%,80%,.3);
+  color: inherit;
+}
+
+body[lwt-sidebar-brighttext] .item.selected > .item-title-container {
+  background-color: rgba(249,249,250,.1);
+}
+
+body[lwt-sidebar-highlight] .item.selected:focus > .item-title-container {
+  background-color: var(--lwt-sidebar-highlight-background-color);
+  color: var(--lwt-sidebar-highlight-text-color);
 }

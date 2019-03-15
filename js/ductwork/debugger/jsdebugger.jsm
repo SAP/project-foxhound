@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-this.EXPORTED_SYMBOLS = [ "addDebuggerToGlobal" ];
+var EXPORTED_SYMBOLS = [ "addDebuggerToGlobal", "addSandboxedDebuggerToGlobal" ];
 
 /*
  * This is the js module for Debugger. Import it like so:
@@ -18,11 +18,19 @@ this.EXPORTED_SYMBOLS = [ "addDebuggerToGlobal" ];
  *   https://developer.mozilla.org/en-US/docs/Tools/Debugger-API
  */
 
-const init = Components.classes["@mozilla.org/jsdebugger;1"].createInstance(Components.interfaces.IJSDebugger);
-this.addDebuggerToGlobal = function addDebuggerToGlobal(global) {
+const init = Cc["@mozilla.org/jsdebugger;1"].createInstance(Ci.IJSDebugger);
+function addDebuggerToGlobal(global) {
   init.addClass(global);
   initPromiseDebugging(global);
-};
+}
+
+// Defines the Debugger in a sandbox global in a separate compartment. This
+// ensures the debugger and debuggee are in different compartments.
+function addSandboxedDebuggerToGlobal(global) {
+  var sb = Cu.Sandbox(global, {freshCompartment: true});
+  addDebuggerToGlobal(sb);
+  global.Debugger = sb.Debugger;
+}
 
 function initPromiseDebugging(global) {
   if (global.Debugger.Object.prototype.PromiseDebugging) {

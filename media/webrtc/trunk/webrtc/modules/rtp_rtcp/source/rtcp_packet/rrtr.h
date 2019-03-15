@@ -9,11 +9,11 @@
  *
  */
 
-#ifndef WEBRTC_MODULES_RTP_RTCP_SOURCE_RTCP_PACKET_RRTR_H_
-#define WEBRTC_MODULES_RTP_RTCP_SOURCE_RTCP_PACKET_RRTR_H_
+#ifndef MODULES_RTP_RTCP_SOURCE_RTCP_PACKET_RRTR_H_
+#define MODULES_RTP_RTCP_SOURCE_RTCP_PACKET_RRTR_H_
 
-#include "webrtc/base/basictypes.h"
-#include "webrtc/system_wrappers/include/ntp_time.h"
+#include "rtc_base/basictypes.h"
+#include "system_wrappers/include/ntp_time.h"
 
 namespace webrtc {
 namespace rtcp {
@@ -36,7 +36,7 @@ class Rrtr {
   // Consumes Rrtr::kLength bytes.
   void Create(uint8_t* buffer) const;
 
-  void WithNtp(const NtpTime& ntp) { ntp_ = ntp; }
+  void SetNtp(NtpTime ntp) { ntp_ = ntp; }
 
   NtpTime ntp() const { return ntp_; }
 
@@ -46,4 +46,4 @@ class Rrtr {
 
 }  // namespace rtcp
 }  // namespace webrtc
-#endif  // WEBRTC_MODULES_RTP_RTCP_SOURCE_RTCP_PACKET_RRTR_H_
+#endif  // MODULES_RTP_RTCP_SOURCE_RTCP_PACKET_RRTR_H_

@@ -14,10 +14,24 @@
 #include "nsFrameLoader.h"
 #include "nsGenericHTMLElement.h"
 #include "nsIDOMEventListener.h"
-#include "nsIFrameLoader.h"
+#include "nsIFrameLoaderOwner.h"
 #include "nsIMozBrowserFrame.h"
 
-class nsXULElement;
+namespace mozilla {
+namespace dom {
+template <typename>
+struct Nullable;
+class WindowProxyHolder;
+class XULFrameElement;
+}  // namespace dom
+}  // namespace mozilla
+
+#define NS_GENERICHTMLFRAMEELEMENT_IID               \
+  {                                                  \
+    0x8190db72, 0xdab0, 0x4d72, {                    \
+      0x94, 0x26, 0x87, 0x5f, 0x5a, 0x8a, 0x2a, 0xe5 \
+    }                                                \
+  }
 
 /**
  * A helper class for frame elements
@@ -25,20 +39,18 @@ class nsXULElement;
 class nsGenericHTMLFrameElement : public nsGenericHTMLElement,
                                   public nsIFrameLoaderOwner,
                                   public mozilla::nsBrowserElement,
-                                  public nsIMozBrowserFrame
-{
-public:
-  nsGenericHTMLFrameElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo,
-                            mozilla::dom::FromParser aFromParser)
-    : nsGenericHTMLElement(aNodeInfo)
-    , nsBrowserElement()
-    , mNetworkCreated(aFromParser == mozilla::dom::FROM_PARSER_NETWORK)
-    , mIsPrerendered(false)
-    , mBrowserFrameListenersRegistered(false)
-    , mFrameLoaderCreationDisallowed(false)
-    , mReallyIsBrowser(false)
-  {
-  }
+                                  public nsIMozBrowserFrame {
+ public:
+  nsGenericHTMLFrameElement(
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
+      mozilla::dom::FromParser aFromParser)
+      : nsGenericHTMLElement(std::move(aNodeInfo)),
+        nsBrowserElement(),
+        mSrcLoadHappened(false),
+        mNetworkCreated(aFromParser == mozilla::dom::FROM_PARSER_NETWORK),
+        mBrowserFrameListenersRegistered(false),
+        mFrameLoaderCreationDisallowed(false),
+        mReallyIsBrowser(false) {}
 
   NS_DECL_ISUPPORTS_INHERITED
 
@@ -46,26 +58,15 @@ public:
   NS_DECL_NSIDOMMOZBROWSERFRAME
   NS_DECL_NSIMOZBROWSERFRAME
 
+  NS_DECLARE_STATIC_IID_ACCESSOR(NS_GENERICHTMLFRAMEELEMENT_IID)
+
   // nsIContent
-  virtual bool IsHTMLFocusable(bool aWithMouse, bool *aIsFocusable, int32_t *aTabIndex) override;
-  virtual nsresult BindToTree(nsIDocument* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent,
-                              bool aCompileEventHandlers) override;
+  virtual bool IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
+                               int32_t* aTabIndex) override;
+  virtual nsresult BindToTree(Document* aDocument, nsIContent* aParent,
+                              nsIContent* aBindingParent) override;
   virtual void UnbindFromTree(bool aDeep = true,
                               bool aNullParent = true) override;
-  nsresult SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
-                   const nsAString& aValue, bool aNotify)
-  {
-    return SetAttr(aNameSpaceID, aName, nullptr, aValue, aNotify);
-  }
-  virtual nsresult SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
-                           nsIAtom* aPrefix, const nsAString& aValue,
-                           bool aNotify) override;
-  virtual nsresult UnsetAttr(int32_t aNameSpaceID, nsIAtom* aAttribute,
-                             bool aNotify) override;
-  virtual nsresult AfterSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
-                                const nsAttrValue* aValue,
-                                bool aNotify) override;
   virtual void DestroyContent() override;
 
   nsresult CopyInnerTo(mozilla::dom::Element* aDest);
@@ -80,13 +81,14 @@ public:
   void SwapFrameLoaders(mozilla::dom::HTMLIFrameElement& aOtherLoaderOwner,
                         mozilla::ErrorResult& aError);
 
-  void SwapFrameLoaders(nsXULElement& aOtherLoaderOwner,
+  void SwapFrameLoaders(mozilla::dom::XULFrameElement& aOtherLoaderOwner,
                         mozilla::ErrorResult& aError);
 
   void SwapFrameLoaders(nsIFrameLoaderOwner* aOtherLoaderOwner,
                         mozilla::ErrorResult& rv);
 
-  void PresetOpenerWindow(mozIDOMWindowProxy* aOpenerWindow,
+  void PresetOpenerWindow(const mozilla::dom::Nullable<
+                              mozilla::dom::WindowProxyHolder>& aOpenerWindow,
                           mozilla::ErrorResult& aRv);
 
   static void InitStatics();
@@ -102,19 +104,38 @@ public:
    */
   static int32_t MapScrollingAttribute(const nsAttrValue* aValue);
 
-protected:
+  nsIPrincipal* GetSrcTriggeringPrincipal() const {
+    return mSrcTriggeringPrincipal;
+  }
+
+ protected:
   virtual ~nsGenericHTMLFrameElement();
 
   // This doesn't really ensure a frame loader in all cases, only when
   // it makes sense.
   void EnsureFrameLoader();
-  nsresult LoadSrc();
-  nsIDocument* GetContentDocument(nsIPrincipal& aSubjectPrincipal);
-  nsresult GetContentDocument(nsIDOMDocument** aContentDocument);
-  already_AddRefed<nsPIDOMWindowOuter> GetContentWindow();
+  void LoadSrc();
+  Document* GetContentDocument(nsIPrincipal& aSubjectPrincipal);
+  mozilla::dom::Nullable<mozilla::dom::WindowProxyHolder> GetContentWindow();
+
+  virtual nsresult AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                                const nsAttrValue* aValue,
+                                const nsAttrValue* aOldValue,
+                                nsIPrincipal* aSubjectPrincipal,
+                                bool aNotify) override;
+  virtual nsresult OnAttrSetButNotChanged(int32_t aNamespaceID, nsAtom* aName,
+                                          const nsAttrValueOrString& aValue,
+                                          bool aNotify) override;
 
   RefPtr<nsFrameLoader> mFrameLoader;
-  nsCOMPtr<nsPIDOMWindowOuter> mOpenerWindow;
+  RefPtr<mozilla::dom::BrowsingContext> mOpenerWindow;
+
+  nsCOMPtr<nsIPrincipal> mSrcTriggeringPrincipal;
+
+  /**
+   * True if we have already loaded the frame's original src
+   */
+  bool mSrcLoadHappened;
 
   /**
    * True when the element is created by the parser using the
@@ -123,7 +144,6 @@ protected:
    */
   bool mNetworkCreated;
 
-  bool mIsPrerendered;
   bool mBrowserFrameListenersRegistered;
   bool mFrameLoaderCreationDisallowed;
   bool mReallyIsBrowser;
@@ -133,8 +153,27 @@ protected:
   // do not bloat any struct.
   bool mFullscreenFlag = false;
 
-private:
+ private:
   void GetManifestURL(nsAString& aOut);
+
+  /**
+   * This function is called by AfterSetAttr and OnAttrSetButNotChanged.
+   * It will be called whether the value is being set or unset.
+   *
+   * @param aNamespaceID the namespace of the attr being set
+   * @param aName the localname of the attribute being set
+   * @param aValue the value being set or null if the value is being unset
+   * @param aNotify Whether we plan to notify document observers.
+   */
+  void AfterMaybeChangeAttr(int32_t aNamespaceID, nsAtom* aName,
+                            const nsAttrValueOrString* aValue,
+                            nsIPrincipal* aMaybeScriptedPrincipal,
+                            bool aNotify);
+
+  mozilla::dom::BrowsingContext* GetContentWindowInternal();
 };
 
-#endif // nsGenericHTMLFrameElement_h
+NS_DEFINE_STATIC_IID_ACCESSOR(nsGenericHTMLFrameElement,
+                              NS_GENERICHTMLFRAMEELEMENT_IID)
+
+#endif  // nsGenericHTMLFrameElement_h

@@ -24,7 +24,7 @@ function* testSteps()
   if (this.window) {
     SpecialPowers.pushPrefEnv(
       { "set": [["dom.indexedDB.maxSerializedMsgSize",
-                 kMaxIpcMessageSize * megaBytes ]]
+                 kMaxIpcMessageSize * megaBytes ]],
       },
       continueToNextStep
     );
@@ -40,7 +40,6 @@ function* testSteps()
   let event = yield undefined;
 
   let db = event.target.result;
-  let txn = event.target.transaction;
 
   is(db.objectStoreNames.length, 0, "Correct objectStoreNames list");
 

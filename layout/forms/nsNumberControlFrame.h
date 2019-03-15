@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,18 +22,17 @@ class WidgetEvent;
 class WidgetGUIEvent;
 namespace dom {
 class HTMLInputElement;
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 /**
  * This frame type is used for <input type=number>.
  */
-class nsNumberControlFrame final : public nsContainerFrame
-                                 , public nsIAnonymousContentCreator
-                                 , public nsIFormControlFrame
-{
-  friend nsIFrame*
-  NS_NewNumberControlFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
+class nsNumberControlFrame final : public nsContainerFrame,
+                                   public nsIAnonymousContentCreator,
+                                   public nsIFormControlFrame {
+  friend nsIFrame* NS_NewNumberControlFrame(nsIPresShell* aPresShell,
+                                            ComputedStyle* aStyle);
 
   typedef mozilla::CSSPseudoElementType CSSPseudoElementType;
   typedef mozilla::dom::Element Element;
@@ -40,36 +40,34 @@ class nsNumberControlFrame final : public nsContainerFrame
   typedef mozilla::WidgetEvent WidgetEvent;
   typedef mozilla::WidgetGUIEvent WidgetGUIEvent;
 
-  explicit nsNumberControlFrame(nsStyleContext* aContext);
+  explicit nsNumberControlFrame(ComputedStyle* aStyle);
 
-public:
-  NS_DECL_QUERYFRAME_TARGET(nsNumberControlFrame)
+ public:
   NS_DECL_QUERYFRAME
-  NS_DECL_FRAMEARENA_HELPERS
+  NS_DECL_FRAMEARENA_HELPERS(nsNumberControlFrame)
 
-  virtual void DestroyFrom(nsIFrame* aDestructRoot) override;
+  virtual void DestroyFrom(nsIFrame* aDestructRoot,
+                           PostDestroyData& aPostDestroyData) override;
   virtual void ContentStatesChanged(mozilla::EventStates aStates) override;
-  virtual bool IsLeaf() const override { return true; }
 
 #ifdef ACCESSIBILITY
   virtual mozilla::a11y::AccType AccessibleType() override;
 #endif
 
-  virtual nscoord GetMinISize(nsRenderingContext* aRenderingContext) override;
+  virtual nscoord GetMinISize(gfxContext* aRenderingContext) override;
 
-  virtual nscoord GetPrefISize(nsRenderingContext* aRenderingContext) override;
+  virtual nscoord GetPrefISize(gfxContext* aRenderingContext) override;
 
-  virtual void Reflow(nsPresContext*           aPresContext,
-                      ReflowOutput&     aDesiredSize,
+  virtual void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
                       const ReflowInput& aReflowInput,
-                      nsReflowStatus&          aStatus) override;
+                      nsReflowStatus& aStatus) override;
 
-  virtual nsresult AttributeChanged(int32_t  aNameSpaceID,
-                                    nsIAtom* aAttribute,
-                                    int32_t  aModType) override;
+  virtual nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
+                                    int32_t aModType) override;
 
   // nsIAnonymousContentCreator
-  virtual nsresult CreateAnonymousContent(nsTArray<ContentInfo>& aElements) override;
+  virtual nsresult CreateAnonymousContent(
+      nsTArray<ContentInfo>& aElements) override;
   virtual void AppendAnonymousContentTo(nsTArray<nsIContent*>& aElements,
                                         uint32_t aFilter) override;
 
@@ -79,17 +77,15 @@ public:
   }
 #endif
 
-  virtual nsIAtom* GetType() const override;
-
-  virtual bool IsFrameOfType(uint32_t aFlags) const override
-  {
-    return nsContainerFrame::IsFrameOfType(aFlags &
-      ~(nsIFrame::eReplaced | nsIFrame::eReplacedContainsBlock));
+  virtual bool IsFrameOfType(uint32_t aFlags) const override {
+    return nsContainerFrame::IsFrameOfType(
+        aFlags & ~(nsIFrame::eReplaced | nsIFrame::eReplacedContainsBlock));
   }
 
   // nsIFormControlFrame
   virtual void SetFocus(bool aOn, bool aRepaint) override;
-  virtual nsresult SetFormProperty(nsIAtom* aName, const nsAString& aValue) override;
+  virtual nsresult SetFormProperty(nsAtom* aName,
+                                   const nsAString& aValue) override;
 
   /**
    * This method attempts to localizes aValue and then sets the result as the
@@ -114,8 +110,7 @@ public:
    * Called to notify this frame that its HTMLInputElement is currently
    * processing a DOM 'input' event.
    */
-  void HandlingInputEvent(bool aHandlingEvent)
-  {
+  void HandlingInputEvent(bool aHandlingEvent) {
     mHandlingInputEvent = aHandlingEvent;
   }
 
@@ -125,19 +120,17 @@ public:
    * If the frame is the frame for an nsNumberControlFrame's anonymous text
    * field, returns the nsNumberControlFrame. Else returns nullptr.
    */
-  static nsNumberControlFrame* GetNumberControlFrameForTextField(nsIFrame* aFrame);
+  static nsNumberControlFrame* GetNumberControlFrameForTextField(
+      nsIFrame* aFrame);
 
   /**
    * If the frame is the frame for an nsNumberControlFrame's up or down spin
    * button, returns the nsNumberControlFrame. Else returns nullptr.
    */
-  static nsNumberControlFrame* GetNumberControlFrameForSpinButton(nsIFrame* aFrame);
+  static nsNumberControlFrame* GetNumberControlFrameForSpinButton(
+      nsIFrame* aFrame);
 
-  enum SpinButtonEnum {
-    eSpinButtonNone,
-    eSpinButtonUp,
-    eSpinButtonDown
-  };
+  enum SpinButtonEnum { eSpinButtonNone, eSpinButtonUp, eSpinButtonDown };
 
   /**
    * Returns one of the SpinButtonEnum values to depending on whether the
@@ -158,40 +151,33 @@ public:
   /**
    * Our element had HTMLInputElement::Select() called on it.
    */
-  nsresult HandleSelectCall();
-
-  virtual Element* GetPseudoElement(CSSPseudoElementType aType) override;
+  void HandleSelectCall();
 
   bool ShouldUseNativeStyleForSpinner() const;
 
-private:
-
+ private:
   nsITextControlFrame* GetTextFieldFrame();
-  nsresult MakeAnonymousElement(Element** aResult,
-                                nsTArray<ContentInfo>& aElements,
-                                nsIAtom* aTagName,
-                                CSSPseudoElementType aPseudoType);
+  already_AddRefed<Element> MakeAnonymousElement(
+      Element* aParent, nsAtom* aTagName, CSSPseudoElementType aPseudoType);
 
   class SyncDisabledStateEvent;
   friend class SyncDisabledStateEvent;
-  class SyncDisabledStateEvent : public mozilla::Runnable
-  {
-  public:
+  class SyncDisabledStateEvent : public mozilla::Runnable {
+   public:
     explicit SyncDisabledStateEvent(nsNumberControlFrame* aFrame)
-    : mFrame(aFrame)
-    {}
+        : mozilla::Runnable("nsNumberControlFrame::SyncDisabledStateEvent"),
+          mFrame(aFrame) {}
 
-    NS_IMETHOD Run() override
-    {
+    NS_IMETHOD Run() override {
       nsNumberControlFrame* frame =
-        static_cast<nsNumberControlFrame*>(mFrame.GetFrame());
+          static_cast<nsNumberControlFrame*>(mFrame.GetFrame());
       NS_ENSURE_STATE(frame);
 
       frame->SyncDisabledState();
       return NS_OK;
     }
 
-  private:
+   private:
     WeakFrame mFrame;
   };
 
@@ -212,4 +198,4 @@ private:
   bool mHandlingInputEvent;
 };
 
-#endif // nsNumberControlFrame_h__
+#endif  // nsNumberControlFrame_h__

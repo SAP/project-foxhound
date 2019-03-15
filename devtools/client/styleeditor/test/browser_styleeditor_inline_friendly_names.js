@@ -10,30 +10,30 @@ const FIRST_TEST_PAGE = TEST_BASE_HTTP + "inline-1.html";
 const SECOND_TEST_PAGE = TEST_BASE_HTTP + "inline-2.html";
 const SAVE_PATH = "test.css";
 
-add_task(function* () {
-  let { ui } = yield openStyleEditorForURL(FIRST_TEST_PAGE);
+add_task(async function() {
+  const { ui } = await openStyleEditorForURL(FIRST_TEST_PAGE);
 
   testIndentifierGeneration(ui);
 
-  yield saveFirstInlineStyleSheet(ui);
-  yield testFriendlyNamesAfterSave(ui);
-  yield reloadPageAndWaitForStyleSheets(ui);
-  yield testFriendlyNamesAfterSave(ui);
-  yield navigateToAndWaitForStyleSheets(SECOND_TEST_PAGE, ui);
-  yield testFriendlyNamesAfterNavigation(ui);
+  await saveFirstInlineStyleSheet(ui);
+  await testFriendlyNamesAfterSave(ui);
+  await reloadPageAndWaitForStyleSheets(ui);
+  await testFriendlyNamesAfterSave(ui);
+  await navigateToAndWaitForStyleSheets(SECOND_TEST_PAGE, ui);
+  await testFriendlyNamesAfterNavigation(ui);
 });
 
 function testIndentifierGeneration(ui) {
-  let fakeStyleSheetFile = {
+  const fakeStyleSheetFile = {
     "href": "http://example.com/test.css",
     "nodeHref": "http://example.com/",
-    "styleSheetIndex": 1
+    "styleSheetIndex": 1,
   };
 
-  let fakeInlineStyleSheet = {
+  const fakeInlineStyleSheet = {
     "href": null,
     "nodeHref": "http://example.com/",
-    "styleSheetIndex": 2
+    "styleSheetIndex": 2,
   };
 
   is(ui.getStyleSheetIdentifier(fakeStyleSheetFile),
@@ -46,22 +46,20 @@ function testIndentifierGeneration(ui) {
 }
 
 function saveFirstInlineStyleSheet(ui) {
-  let deferred = defer();
-  let editor = ui.editors[0];
+  return new Promise(resolve => {
+    const editor = ui.editors[0];
+    const destFile = FileUtils.getFile("ProfD", [SAVE_PATH]);
 
-  let destFile = FileUtils.getFile("ProfD", [SAVE_PATH]);
-
-  editor.saveToFile(destFile, function (file) {
-    ok(file, "File was correctly saved.");
-    deferred.resolve();
+    editor.saveToFile(destFile, function(file) {
+      ok(file, "File was correctly saved.");
+      resolve();
+    });
   });
-
-  return deferred.promise;
 }
 
 function testFriendlyNamesAfterSave(ui) {
-  let firstEditor = ui.editors[0];
-  let secondEditor = ui.editors[1];
+  const firstEditor = ui.editors[0];
+  const secondEditor = ui.editors[1];
 
   // The friendly name of first sheet should've been remembered, the second
   // should not be the same (bug 969900).
@@ -74,8 +72,8 @@ function testFriendlyNamesAfterSave(ui) {
 }
 
 function testFriendlyNamesAfterNavigation(ui) {
-  let firstEditor = ui.editors[0];
-  let secondEditor = ui.editors[1];
+  const firstEditor = ui.editors[0];
+  const secondEditor = ui.editors[1];
 
   // Inline style sheets shouldn't have the name of previously saved file as the
   // page is different.

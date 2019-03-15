@@ -4,61 +4,61 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-add_task(function* search_bookmark_by_lastModified_dateDated() {
+add_task(async function search_bookmark_by_lastModified_dateDated() {
   // test search on folder with various sorts and max results
   // see bug #385829 for more details
-  let folder = yield PlacesUtils.bookmarks.insert({
+  let folder = await PlacesUtils.bookmarks.insert({
     parentGuid: PlacesUtils.bookmarks.unfiledGuid,
     type: PlacesUtils.bookmarks.TYPE_FOLDER,
-    title: "bug 385829 test"
+    title: "bug 385829 test",
   });
 
   let now = new Date();
   // ensure some unique values for date added and last modified
   // for date added:    b1 < b2 < b3 < b4
   // for last modified: b1 > b2 > b3 > b4
-  let b1 = yield PlacesUtils.bookmarks.insert({
+  let b1 = await PlacesUtils.bookmarks.insert({
     parentGuid: folder.guid,
     url: "http://a1.com/",
     title: "1 title",
-    dateAdded: new Date(now.getTime() + 1000)
+    dateAdded: new Date(now.getTime() + 1000),
   });
-  let b2 = yield PlacesUtils.bookmarks.insert({
+  let b2 = await PlacesUtils.bookmarks.insert({
     parentGuid: folder.guid,
     url: "http://a2.com/",
     title: "2 title",
-    dateAdded: new Date(now.getTime() + 2000)
+    dateAdded: new Date(now.getTime() + 2000),
   });
-  let b3 = yield PlacesUtils.bookmarks.insert({
+  let b3 = await PlacesUtils.bookmarks.insert({
     parentGuid: folder.guid,
     url: "http://a3.com/",
     title: "3 title",
-    dateAdded: new Date(now.getTime() + 3000)
+    dateAdded: new Date(now.getTime() + 3000),
   });
-  let b4 = yield PlacesUtils.bookmarks.insert({
+  let b4 = await PlacesUtils.bookmarks.insert({
     parentGuid: folder.guid,
     url: "http://a4.com/",
     title: "4 title",
-    dateAdded: new Date(now.getTime() + 4000)
+    dateAdded: new Date(now.getTime() + 4000),
   });
 
   // make sure lastModified is larger than dateAdded
   let modifiedTime = new Date(now.getTime() + 5000);
-  yield PlacesUtils.bookmarks.update({
+  await PlacesUtils.bookmarks.update({
     guid: b1.guid,
-    lastModified: new Date(modifiedTime.getTime() + 4000)
+    lastModified: new Date(modifiedTime.getTime() + 4000),
   });
-  yield PlacesUtils.bookmarks.update({
+  await PlacesUtils.bookmarks.update({
     guid: b2.guid,
-    lastModified: new Date(modifiedTime.getTime() + 3000)
+    lastModified: new Date(modifiedTime.getTime() + 3000),
   });
-  yield PlacesUtils.bookmarks.update({
+  await PlacesUtils.bookmarks.update({
     guid: b3.guid,
-    lastModified: new Date(modifiedTime.getTime() + 2000)
+    lastModified: new Date(modifiedTime.getTime() + 2000),
   });
-  yield PlacesUtils.bookmarks.update({
+  await PlacesUtils.bookmarks.update({
     guid: b4.guid,
-    lastModified: new Date(modifiedTime.getTime() + 1000)
+    lastModified: new Date(modifiedTime.getTime() + 1000),
   });
 
   let hs = PlacesUtils.history;
@@ -66,9 +66,7 @@ add_task(function* search_bookmark_by_lastModified_dateDated() {
   let query = hs.getNewQuery();
   options.queryType = options.QUERY_TYPE_BOOKMARKS;
   options.maxResults = 3;
-  let folderIds = [];
-  folderIds.push(yield PlacesUtils.promiseItemId(folder.guid));
-  query.setFolders(folderIds, 1);
+  query.setParents([folder.guid], 1);
 
   let result = hs.executeQuery(query, options);
   let rootNode = result.root;

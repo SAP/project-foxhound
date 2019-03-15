@@ -18,19 +18,19 @@ exports.MarkerBlueprintUtils = {
    * @param object marker
    * @return boolean
    */
-  shouldDisplayMarker: function (marker, hiddenMarkerNames) {
+  shouldDisplayMarker: function(marker, hiddenMarkerNames) {
     if (!hiddenMarkerNames || hiddenMarkerNames.length == 0) {
       return true;
     }
 
     // If this marker isn't yet defined in the blueprint, simply check if the
     // entire category of "UNKNOWN" markers are supposed to be visible or not.
-    let isUnknown = !(marker.name in TIMELINE_BLUEPRINT);
+    const isUnknown = !(marker.name in TIMELINE_BLUEPRINT);
     if (isUnknown) {
-      return hiddenMarkerNames.indexOf("UNKNOWN") == -1;
+      return !hiddenMarkerNames.includes("UNKNOWN");
     }
 
-    return hiddenMarkerNames.indexOf(marker.name) == -1;
+    return !hiddenMarkerNames.includes(marker.name);
   },
 
   /**
@@ -40,7 +40,7 @@ exports.MarkerBlueprintUtils = {
    * @param object marker
    * @return object
    */
-  getBlueprintFor: function (marker) {
+  getBlueprintFor: function(marker) {
     return TIMELINE_BLUEPRINT[marker.name] || TIMELINE_BLUEPRINT.UNKNOWN;
   },
 
@@ -50,10 +50,10 @@ exports.MarkerBlueprintUtils = {
    * @param object marker
    * @return string
    */
-  getMarkerLabel: function (marker) {
-    let blueprint = this.getBlueprintFor(marker);
-    let dynamic = typeof blueprint.label === "function";
-    let label = dynamic ? blueprint.label(marker) : blueprint.label;
+  getMarkerLabel: function(marker) {
+    const blueprint = this.getBlueprintFor(marker);
+    const dynamic = typeof blueprint.label === "function";
+    const label = dynamic ? blueprint.label(marker) : blueprint.label;
     return label;
   },
 
@@ -64,10 +64,10 @@ exports.MarkerBlueprintUtils = {
    * @param string type
    * @return string
    */
-  getMarkerGenericName: function (markerName) {
-    let blueprint = this.getBlueprintFor({ name: markerName });
-    let dynamic = typeof blueprint.label === "function";
-    let generic = dynamic ? blueprint.label() : blueprint.label;
+  getMarkerGenericName: function(markerName) {
+    const blueprint = this.getBlueprintFor({ name: markerName });
+    const dynamic = typeof blueprint.label === "function";
+    const generic = dynamic ? blueprint.label() : blueprint.label;
 
     // If no class name found, attempt to throw a descriptive error as to
     // how the marker implementor can fix this.
@@ -92,10 +92,10 @@ exports.MarkerBlueprintUtils = {
    * @param object marker
    * @return array<object>
    */
-  getMarkerFields: function (marker) {
-    let blueprint = this.getBlueprintFor(marker);
-    let dynamic = typeof blueprint.fields === "function";
-    let fields = dynamic ? blueprint.fields(marker) : blueprint.fields;
+  getMarkerFields: function(marker) {
+    const blueprint = this.getBlueprintFor(marker);
+    const dynamic = typeof blueprint.fields === "function";
+    const fields = dynamic ? blueprint.fields(marker) : blueprint.fields;
 
     return Object.entries(fields || {})
       .filter(([_, value]) => dynamic ? true : value in marker)

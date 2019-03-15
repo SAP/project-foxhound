@@ -17,34 +17,34 @@ const NEW_RULE = "\n@media (max-width: 600px) { div { color: blue; } }";
 
 waitForExplicitFinish();
 
-add_task(function* () {
-  let { ui } = yield openStyleEditorForURL(TESTCASE_URI);
+add_task(async function() {
+  const { ui } = await openStyleEditorForURL(TESTCASE_URI);
 
   is(ui.editors.length, 2, "correct number of editors");
 
   // Test first plain css editor
-  let plainEditor = ui.editors[0];
-  yield openEditor(plainEditor);
+  const plainEditor = ui.editors[0];
+  await openEditor(plainEditor);
   testPlainEditor(plainEditor);
 
   // Test editor with @media rules
-  let mediaEditor = ui.editors[1];
-  yield openEditor(mediaEditor);
+  const mediaEditor = ui.editors[1];
+  await openEditor(mediaEditor);
   testMediaEditor(mediaEditor);
 
   // Test that sidebar hides when flipping pref
-  yield testShowHide(ui, mediaEditor);
+  await testShowHide(ui, mediaEditor);
 
   // Test adding a rule updates the list
-  yield testMediaRuleAdded(ui, mediaEditor);
+  await testMediaRuleAdded(ui, mediaEditor);
 
   // Test resizing and seeing @media matching state change
-  let originalWidth = window.outerWidth;
-  let originalHeight = window.outerHeight;
+  const originalWidth = window.outerWidth;
+  const originalHeight = window.outerHeight;
 
-  let onMatchesChange = listenForMediaChange(ui);
+  const onMatchesChange = listenForMediaChange(ui);
   window.resizeTo(RESIZE, RESIZE);
-  yield onMatchesChange;
+  await onMatchesChange;
 
   testMediaMatchChanged(mediaEditor);
 
@@ -52,15 +52,15 @@ add_task(function* () {
 });
 
 function testPlainEditor(editor) {
-  let sidebar = editor.details.querySelector(".stylesheet-sidebar");
+  const sidebar = editor.details.querySelector(".stylesheet-sidebar");
   is(sidebar.hidden, true, "sidebar is hidden on editor without @media");
 }
 
 function testMediaEditor(editor) {
-  let sidebar = editor.details.querySelector(".stylesheet-sidebar");
+  const sidebar = editor.details.querySelector(".stylesheet-sidebar");
   is(sidebar.hidden, false, "sidebar is showing on editor with @media");
 
-  let entries = [...sidebar.querySelectorAll(".media-rule-label")];
+  const entries = [...sidebar.querySelectorAll(".media-rule-label")];
   is(entries.length, 4, "four @media rules displayed in sidebar");
 
   testRule(entries[0], LABELS[0], false, LINE_NOS[0]);
@@ -70,55 +70,55 @@ function testMediaEditor(editor) {
 }
 
 function testMediaMatchChanged(editor) {
-  let sidebar = editor.details.querySelector(".stylesheet-sidebar");
+  const sidebar = editor.details.querySelector(".stylesheet-sidebar");
 
-  let cond = sidebar.querySelectorAll(".media-rule-condition")[2];
+  const cond = sidebar.querySelectorAll(".media-rule-condition")[2];
   is(cond.textContent, "(max-width: 400px)",
      "third rule condition text is correct");
   ok(!cond.classList.contains("media-condition-unmatched"),
      "media rule is now matched after resizing");
 }
 
-function* testShowHide(UI, editor) {
+async function testShowHide(UI, editor) {
   let sidebarChange = listenForMediaChange(UI);
   Services.prefs.setBoolPref(MEDIA_PREF, false);
-  yield sidebarChange;
+  await sidebarChange;
 
-  let sidebar = editor.details.querySelector(".stylesheet-sidebar");
+  const sidebar = editor.details.querySelector(".stylesheet-sidebar");
   is(sidebar.hidden, true, "sidebar is hidden after flipping pref");
 
   sidebarChange = listenForMediaChange(UI);
   Services.prefs.clearUserPref(MEDIA_PREF);
-  yield sidebarChange;
+  await sidebarChange;
 
   is(sidebar.hidden, false, "sidebar is showing after flipping pref back");
 }
 
-function* testMediaRuleAdded(UI, editor) {
-  yield editor.getSourceEditor();
+async function testMediaRuleAdded(UI, editor) {
+  await editor.getSourceEditor();
   let text = editor.sourceEditor.getText();
   text += NEW_RULE;
 
-  let listChange = listenForMediaChange(UI);
+  const listChange = listenForMediaChange(UI);
   editor.sourceEditor.setText(text);
-  yield listChange;
+  await listChange;
 
-  let sidebar = editor.details.querySelector(".stylesheet-sidebar");
-  let entries = [...sidebar.querySelectorAll(".media-rule-label")];
+  const sidebar = editor.details.querySelector(".stylesheet-sidebar");
+  const entries = [...sidebar.querySelectorAll(".media-rule-label")];
   is(entries.length, 5, "five @media rules after changing text");
 
   testRule(entries[4], LABELS[4], false, LINE_NOS[4]);
 }
 
 function testRule(rule, text, matches, lineno) {
-  let cond = rule.querySelector(".media-rule-condition");
+  const cond = rule.querySelector(".media-rule-condition");
   is(cond.textContent, text, "media label is correct for " + text);
 
-  let matched = !cond.classList.contains("media-condition-unmatched");
+  const matched = !cond.classList.contains("media-condition-unmatched");
   ok(matches ? matched : !matched,
      "media rule is " + (matches ? "matched" : "unmatched"));
 
-  let line = rule.querySelector(".media-rule-line");
+  const line = rule.querySelector(".media-rule-line");
   is(line.textContent, ":" + lineno, "correct line number shown");
 }
 
@@ -131,11 +131,11 @@ function openEditor(editor) {
 }
 
 function listenForMediaChange(UI) {
-  let deferred = defer();
-  UI.once("media-list-changed", () => {
-    deferred.resolve();
+  return new Promise(resolve => {
+    UI.once("media-list-changed", () => {
+      resolve();
+    });
   });
-  return deferred.promise;
 }
 
 function getLinkFor(editor) {

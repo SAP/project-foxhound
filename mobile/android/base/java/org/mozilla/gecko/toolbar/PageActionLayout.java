@@ -5,20 +5,30 @@
 
 package org.mozilla.gecko.toolbar;
 
+import org.mozilla.gecko.AddonUICache;
 import org.mozilla.gecko.EventDispatcher;
-import org.mozilla.gecko.GeckoAppShell;
+import org.mozilla.gecko.GeckoSharedPrefs;
 import org.mozilla.gecko.R;
+import org.mozilla.gecko.Tab;
+import org.mozilla.gecko.Tabs;
+import org.mozilla.gecko.preferences.GeckoPreferences;
+import org.mozilla.gecko.pwa.PwaUtils;
+import org.mozilla.gecko.util.DrawableUtil;
 import org.mozilla.gecko.util.ResourceDrawableUtils;
-import org.mozilla.gecko.util.BundleEventListener;
-import org.mozilla.gecko.util.EventCallback;
 import org.mozilla.gecko.util.GeckoBundle;
+import org.mozilla.gecko.util.ShortcutUtils;
 import org.mozilla.gecko.util.ThreadUtils;
 import org.mozilla.gecko.widget.GeckoPopupMenu;
+import org.mozilla.gecko.widget.themed.ThemedImageButton;
+import org.mozilla.gecko.widget.themed.ThemedLinearLayout;
 
 import android.content.Context;
+import android.content.SharedPreferences;
+import android.content.res.ColorStateList;
 import android.content.res.Resources;
 import android.graphics.drawable.Drawable;
-import android.os.Bundle;
+import android.support.v4.content.ContextCompat;
+import android.support.v4.view.ViewCompat;
 import android.util.AttributeSet;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -27,52 +37,98 @@ import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.UUID;
 import java.util.ArrayList;
 
-public class PageActionLayout extends LinearLayout implements BundleEventListener,
-                                                              View.OnClickListener,
-                                                              View.OnLongClickListener {
+import static org.mozilla.gecko.toolbar.PageActionLayout.PageAction.UUID_PAGE_ACTION_PWA;
+
+public class PageActionLayout extends ThemedLinearLayout
+        implements View.OnClickListener, View.OnLongClickListener {
     private static final String MENU_BUTTON_KEY = "MENU_BUTTON_KEY";
     private static final int DEFAULT_PAGE_ACTIONS_SHOWN = 2;
+    public static final String PREF_PWA_ONBOARDING = GeckoPreferences.NON_PREF_PREFIX + "pref_pwa_onboarding";
+
+    public interface PageActionLayoutDelegate {
+        void addPageAction(GeckoBundle message);
+        void removePageAction(GeckoBundle message);
+        void setCachedPageActions(List<PageAction> cachedPageActions);
+    }
 
     private final Context mContext;
     private final LinearLayout mLayout;
-    private final List<PageAction> mPageActionList;
+    private List<PageAction> mPageActionList;
 
     private GeckoPopupMenu mPageActionsMenu;
 
     // By default it's two, can be changed by calling setNumberShown(int)
     private int mMaxVisiblePageActions;
+    private PwaConfirm mPwaConfirm;
 
     public PageActionLayout(Context context, AttributeSet attrs) {
         super(context, attrs);
         mContext = context;
         mLayout = this;
-
-        mPageActionList = new ArrayList<PageAction>();
-        setNumberShown(DEFAULT_PAGE_ACTIONS_SHOWN);
-        refreshPageActionIcons();
     }
 
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
 
-        EventDispatcher.getInstance().registerUiThreadListener(this,
-            "PageActions:Add",
-            "PageActions:Remove");
+        // Calling this will cause the AddonUICache to synchronously call addPageAction for all
+        // PageAction messages it received while no PageActionLayout was available.
+        // Processing those messages entails converting a data: URI into a drawable, which can take
+        // a few ms per message and therefore in theory cause some jank.
+        // In practice however, PageAction messages are commonly only generated when tabs (from the
+        // BrowserApp UI) are actually loading, so the AddonUICache's message queueing mechanism
+        // only becomes relevant if the BrowserApp UI has then been backgrounded *and* subsequently
+        // destroyed by the OS while some tabs are still loading. Merely starting up Gecko through a
+        // GeckoView-based activity on the other hand is not enough to queue up PageAction messages.
+        // Therefore, this case should happen rarely enough that we can tolerate it without having
+        // to think about moving the image processing into some asynchronous code path.
+        AddonUICache.getInstance().setPageActionLayoutDelegate(new PageActionLayoutDelegate() {
+            @Override
+            public void addPageAction(final GeckoBundle message) {
+                onAddPageAction(message);
+            }
+
+            @Override
+            public void removePageAction(final GeckoBundle message) {
+                onRemovePageAction(message);
+            }
+
+            @Override
+            public void setCachedPageActions(final List<PageAction> cachedPageActions) {
+                if (cachedPageActions != null) {
+                    mPageActionList = cachedPageActions;
+                } else {
+                    mPageActionList = new ArrayList<>();
+                }
+
+                setNumberShown(DEFAULT_PAGE_ACTIONS_SHOWN);
+                refreshPageActionIcons();
+            }
+        });
     }
 
     @Override
     protected void onDetachedFromWindow() {
-        EventDispatcher.getInstance().unregisterUiThreadListener(this,
-            "PageActions:Add",
-            "PageActions:Remove");
+        AddonUICache.getInstance().removePageActionLayoutDelegate(mPageActionList);
 
         super.onDetachedFromWindow();
+    }
+
+    @Override
+    public void setPrivateMode(boolean isPrivate) {
+        super.setPrivateMode(isPrivate);
+        for (int i = 0; i < getChildCount(); i++) {
+            View child = getChildAt(i);
+            if (child instanceof ThemedImageButton) {
+                ((ThemedImageButton) child).setPrivateMode(isPrivate);
+            }
+        }
     }
 
     private void setNumberShown(int count) {
@@ -87,41 +143,80 @@ public class PageActionLayout extends LinearLayout implements BundleEventListene
         }
     }
 
-    @Override // BundleEventListener
-    public void handleMessage(final String event, final GeckoBundle message,
-                              final EventCallback callback) {
+    private void onAddPageAction(final GeckoBundle message) {
         ThreadUtils.assertOnUiThread();
 
-        if ("PageActions:Add".equals(event)) {
-            final String id = message.getString("id");
-            final String title = message.getString("title");
-            final String imageURL = message.getString("icon");
-            final boolean important = message.getBoolean("important");
+        hidePreviousConfirmPrompt();
 
-            addPageAction(id, title, imageURL, new OnPageActionClickListeners() {
-                @Override
-                public void onClick(final String id) {
-                    final GeckoBundle data = new GeckoBundle(1);
-                    data.putString("id", id);
-                    EventDispatcher.getInstance().dispatch("PageActions:Clicked", data);
+        final String id = message.getString("id");
+
+        if (isPageActionAlreadyAdded(id)) {
+            return;
+        }
+
+        maybeShowPwaOnboarding(id);
+
+        final String title = message.getString("title");
+        final String imageURL = message.getString("icon");
+        final boolean important = message.getBoolean("important");
+        final boolean useTint = message.getBoolean("useTint");
+
+        addPageAction(id, title, imageURL, useTint, new OnPageActionClickListeners() {
+            @Override
+            public void onClick(final String id) {
+                if (UUID_PAGE_ACTION_PWA.equals(id)) {
+                    mPwaConfirm = PwaConfirm.show(getContext());
+                    return;
                 }
+                final GeckoBundle data = new GeckoBundle(1);
+                data.putString("id", id);
+                EventDispatcher.getInstance().dispatch("PageActions:Clicked", data);
+            }
 
-                @Override
-                public boolean onLongClick(String id) {
-                    final GeckoBundle data = new GeckoBundle(1);
-                    data.putString("id", id);
-                    EventDispatcher.getInstance().dispatch("PageActions:LongClicked", data);
-                    return true;
-                }
-            }, important);
+            @Override
+            public boolean onLongClick(String id) {
+                final GeckoBundle data = new GeckoBundle(1);
+                data.putString("id", id);
+                EventDispatcher.getInstance().dispatch("PageActions:LongClicked", data);
+                return true;
+            }
+        }, important);
+    }
 
-        } else if ("PageActions:Remove".equals(event)) {
-            removePageAction(message.getString("id"));
+    private void onRemovePageAction(final GeckoBundle message) {
+        ThreadUtils.assertOnUiThread();
+
+        hidePreviousConfirmPrompt();
+        removePageAction(message.getString("id"));
+    }
+
+    private void maybeShowPwaOnboarding(String id) {
+        // only show pwa at normal mode
+        final Tab selectedTab = Tabs.getInstance().getSelectedTab();
+        if (!PwaUtils.shouldAddPwaShortcut(selectedTab)) {
+            return;
+        }
+        if (UUID_PAGE_ACTION_PWA.equals(id)) {
+            final SharedPreferences prefs = GeckoSharedPrefs.forApp(getContext());
+            final boolean show = prefs.getBoolean(PREF_PWA_ONBOARDING, true);
+            if (show && ShortcutUtils.isPinShortcutSupported()) {
+                PwaOnboarding.show(getContext());
+                prefs.edit().putBoolean(PREF_PWA_ONBOARDING, false).apply();
+            }
         }
     }
 
-    private void addPageAction(final String id, final String title, final String imageData,
-            final OnPageActionClickListeners onPageActionClickListeners, boolean important) {
+    private boolean isPageActionAlreadyAdded(String id) {
+        for (PageAction pageAction : mPageActionList) {
+            if (pageAction.getID() != null && pageAction.getID().equals(id)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void addPageAction(final String id, final String title, final String imageData, final boolean useTint,
+                               final OnPageActionClickListeners onPageActionClickListeners, boolean important) {
         ThreadUtils.assertOnUiThread();
 
         final PageAction pageAction = new PageAction(id, title, null, onPageActionClickListeners, important);
@@ -136,7 +231,15 @@ public class PageActionLayout extends LinearLayout implements BundleEventListene
             @Override
             public void onBitmapFound(final Drawable d) {
                 if (mPageActionList.contains(pageAction)) {
-                    pageAction.setDrawable(d);
+                    final Drawable icon;
+                    if (useTint) {
+                        final ColorStateList colorStateList = ContextCompat.getColorStateList(
+                                getContext(), R.color.page_action_fg);
+                        icon = DrawableUtil.tintDrawableWithStateList(d, colorStateList);
+                    } else {
+                        icon = d;
+                    }
+                    pageAction.setDrawable(icon);
                     refreshPageActionIcons();
                 }
             }
@@ -146,22 +249,16 @@ public class PageActionLayout extends LinearLayout implements BundleEventListene
     private void removePageAction(String id) {
         ThreadUtils.assertOnUiThread();
 
-        final Iterator<PageAction> iter = mPageActionList.iterator();
-        while (iter.hasNext()) {
-            final PageAction pageAction = iter.next();
-            if (pageAction.getID().equals(id)) {
-                iter.remove();
-                refreshPageActionIcons();
-                return;
-            }
+        if (PageAction.removeFromList(mPageActionList, id)) {
+            refreshPageActionIcons();
         }
     }
 
-    private ImageButton createImageButton() {
+    private ThemedImageButton createImageButton() {
         ThreadUtils.assertOnUiThread();
 
+        final ToolbarRoundButton imageButton = new ToolbarRoundButton(mContext, null, R.style.UrlBar_ImageButton);
         final int width = mContext.getResources().getDimensionPixelSize(R.dimen.page_action_button_width);
-        ImageButton imageButton = new ImageButton(mContext, null, R.style.UrlBar_ImageButton);
         imageButton.setLayoutParams(new LayoutParams(width, LayoutParams.MATCH_PARENT));
         imageButton.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         imageButton.setOnClickListener(this);
@@ -171,7 +268,7 @@ public class PageActionLayout extends LinearLayout implements BundleEventListene
 
     @Override
     public void onClick(View v) {
-        String buttonClickedId = (String)v.getTag();
+        String buttonClickedId = (String) v.getTag();
         if (buttonClickedId != null) {
             if (buttonClickedId.equals(MENU_BUTTON_KEY)) {
                 showMenu(v, mPageActionList.size() - mMaxVisiblePageActions + 1);
@@ -183,7 +280,7 @@ public class PageActionLayout extends LinearLayout implements BundleEventListene
 
     @Override
     public boolean onLongClick(View v) {
-        String buttonClickedId = (String)v.getTag();
+        String buttonClickedId = (String) v.getTag();
         if (buttonClickedId.equals(MENU_BUTTON_KEY)) {
             showMenu(v, mPageActionList.size() - mMaxVisiblePageActions + 1);
             return true;
@@ -226,6 +323,10 @@ public class PageActionLayout extends LinearLayout implements BundleEventListene
                 v.setContentDescription(resources.getString(R.string.page_action_dropmarker_description));
             } else {
                 setActionForView(v, pageAction);
+            }
+
+            if (v instanceof ThemedImageButton) {
+                ((ThemedImageButton) v).setPrivateMode(isPrivateMode());
             }
         }
     }
@@ -298,10 +399,22 @@ public class PageActionLayout extends LinearLayout implements BundleEventListene
 
     private static interface OnPageActionClickListeners {
         public void onClick(String id);
+
         public boolean onLongClick(String id);
     }
 
-    private static class PageAction {
+    private void hidePreviousConfirmPrompt() {
+        if (mPwaConfirm != null) {
+            if (ViewCompat.isAttachedToWindow(mPwaConfirm) || mPwaConfirm.getParent() != null) {
+                mPwaConfirm.disappear();
+            }
+            mPwaConfirm = null;
+        }
+    }
+
+    public static class PageAction {
+        public static final String UUID_PAGE_ACTION_PWA = "279c269d-6397-4f86-a6d2-452e26456d4a";
+
         private final OnPageActionClickListeners mOnPageActionClickListeners;
         private Drawable mDrawable;
         private final String mTitle;
@@ -356,6 +469,21 @@ public class PageActionLayout extends LinearLayout implements BundleEventListene
         public boolean onLongClick() {
             if (mOnPageActionClickListeners != null) {
                 return mOnPageActionClickListeners.onLongClick(mId);
+            }
+            return false;
+        }
+
+        /**
+         * @return True if any PageAction was actually removed, false otherwise.
+         */
+        public static boolean removeFromList(Collection<PageAction> pageActionCollection, String id) {
+            final Iterator<PageAction> iter = pageActionCollection.iterator();
+            while (iter.hasNext()) {
+                final PageAction action = iter.next();
+                if (action.getID().equals(id)) {
+                    iter.remove();
+                    return true;
+                }
             }
             return false;
         }

@@ -6,261 +6,227 @@
 
 #include "mozilla/dom/SVGGradientElement.h"
 
+#include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/ArrayUtils.h"
-#include "mozilla/dom/SVGAnimatedTransformList.h"
-#include "mozilla/dom/SVGRadialGradientElementBinding.h"
+#include "mozilla/dom/SVGElement.h"
+#include "mozilla/dom/SVGGradientElementBinding.h"
+#include "mozilla/dom/SVGLengthBinding.h"
 #include "mozilla/dom/SVGLinearGradientElementBinding.h"
-#include "nsCOMPtr.h"
+#include "mozilla/dom/SVGRadialGradientElementBinding.h"
+#include "mozilla/dom/SVGUnitTypesBinding.h"
+#include "DOMSVGAnimatedTransformList.h"
 #include "nsGkAtoms.h"
-#include "nsSVGElement.h"
 
-NS_IMPL_NS_NEW_NAMESPACED_SVG_ELEMENT(LinearGradient)
-NS_IMPL_NS_NEW_NAMESPACED_SVG_ELEMENT(RadialGradient)
+NS_IMPL_NS_NEW_SVG_ELEMENT(LinearGradient)
+NS_IMPL_NS_NEW_SVG_ELEMENT(RadialGradient)
 
 namespace mozilla {
 namespace dom {
 
+using namespace SVGGradientElement_Binding;
+using namespace SVGUnitTypes_Binding;
+
 //--------------------- Gradients------------------------
 
-nsSVGEnumMapping SVGGradientElement::sSpreadMethodMap[] = {
-  {&nsGkAtoms::pad, SVG_SPREADMETHOD_PAD},
-  {&nsGkAtoms::reflect, SVG_SPREADMETHOD_REFLECT},
-  {&nsGkAtoms::repeat, SVG_SPREADMETHOD_REPEAT},
-  {nullptr, 0}
-};
+SVGEnumMapping SVGGradientElement::sSpreadMethodMap[] = {
+    {nsGkAtoms::pad, SVG_SPREADMETHOD_PAD},
+    {nsGkAtoms::reflect, SVG_SPREADMETHOD_REFLECT},
+    {nsGkAtoms::repeat, SVG_SPREADMETHOD_REPEAT},
+    {nullptr, 0}};
 
-nsSVGElement::EnumInfo SVGGradientElement::sEnumInfo[2] =
-{
-  { &nsGkAtoms::gradientUnits,
-    sSVGUnitTypesMap,
-    SVG_UNIT_TYPE_OBJECTBOUNDINGBOX
-  },
-  { &nsGkAtoms::spreadMethod,
-    sSpreadMethodMap,
-    SVG_SPREADMETHOD_PAD
-  }
-};
+SVGElement::EnumInfo SVGGradientElement::sEnumInfo[2] = {
+    {nsGkAtoms::gradientUnits, sSVGUnitTypesMap,
+     SVG_UNIT_TYPE_OBJECTBOUNDINGBOX},
+    {nsGkAtoms::spreadMethod, sSpreadMethodMap, SVG_SPREADMETHOD_PAD}};
 
-nsSVGElement::StringInfo SVGGradientElement::sStringInfo[2] =
-{
-  { &nsGkAtoms::href, kNameSpaceID_None, true },
-  { &nsGkAtoms::href, kNameSpaceID_XLink, true }
-};
+SVGElement::StringInfo SVGGradientElement::sStringInfo[2] = {
+    {nsGkAtoms::href, kNameSpaceID_None, true},
+    {nsGkAtoms::href, kNameSpaceID_XLink, true}};
 
 //----------------------------------------------------------------------
 // Implementation
 
-SVGGradientElement::SVGGradientElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-  : SVGGradientElementBase(aNodeInfo)
-{
-}
+SVGGradientElement::SVGGradientElement(
+    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : SVGGradientElementBase(std::move(aNodeInfo)) {}
 
 //----------------------------------------------------------------------
-// nsSVGElement methods
+// SVGElement methods
 
-nsSVGElement::EnumAttributesInfo
-SVGGradientElement::GetEnumInfo()
-{
-  return EnumAttributesInfo(mEnumAttributes, sEnumInfo,
-                            ArrayLength(sEnumInfo));
+SVGElement::EnumAttributesInfo SVGGradientElement::GetEnumInfo() {
+  return EnumAttributesInfo(mEnumAttributes, sEnumInfo, ArrayLength(sEnumInfo));
 }
 
-nsSVGElement::StringAttributesInfo
-SVGGradientElement::GetStringInfo()
-{
+SVGElement::StringAttributesInfo SVGGradientElement::GetStringInfo() {
   return StringAttributesInfo(mStringAttributes, sStringInfo,
                               ArrayLength(sStringInfo));
 }
 
-already_AddRefed<SVGAnimatedEnumeration>
-SVGGradientElement::GradientUnits()
-{
+already_AddRefed<SVGAnimatedEnumeration> SVGGradientElement::GradientUnits() {
   return mEnumAttributes[GRADIENTUNITS].ToDOMAnimatedEnum(this);
 }
 
-already_AddRefed<SVGAnimatedTransformList>
-SVGGradientElement::GradientTransform()
-{
+already_AddRefed<DOMSVGAnimatedTransformList>
+SVGGradientElement::GradientTransform() {
   // We're creating a DOM wrapper, so we must tell GetAnimatedTransformList
-  // to allocate the SVGAnimatedTransformList if it hasn't already done so:
-  return SVGAnimatedTransformList::GetDOMWrapper(
-           GetAnimatedTransformList(DO_ALLOCATE), this);
+  // to allocate the DOMSVGAnimatedTransformList if it hasn't already done so:
+  return DOMSVGAnimatedTransformList::GetDOMWrapper(
+      GetAnimatedTransformList(DO_ALLOCATE), this);
 }
 
-already_AddRefed<SVGAnimatedEnumeration>
-SVGGradientElement::SpreadMethod()
-{
+already_AddRefed<SVGAnimatedEnumeration> SVGGradientElement::SpreadMethod() {
   return mEnumAttributes[SPREADMETHOD].ToDOMAnimatedEnum(this);
 }
 
-already_AddRefed<SVGAnimatedString>
-SVGGradientElement::Href()
-{
+already_AddRefed<SVGAnimatedString> SVGGradientElement::Href() {
   return mStringAttributes[HREF].IsExplicitlySet()
-         ? mStringAttributes[HREF].ToDOMAnimatedString(this)
-         : mStringAttributes[XLINK_HREF].ToDOMAnimatedString(this);
+             ? mStringAttributes[HREF].ToDOMAnimatedString(this)
+             : mStringAttributes[XLINK_HREF].ToDOMAnimatedString(this);
 }
 
 //----------------------------------------------------------------------
 // nsIContent methods
 
 NS_IMETHODIMP_(bool)
-SVGGradientElement::IsAttributeMapped(const nsIAtom* name) const
-{
-  static const MappedAttributeEntry* const map[] = {
-    sColorMap,
-    sGradientStopMap
-  };
+SVGGradientElement::IsAttributeMapped(const nsAtom* name) const {
+  static const MappedAttributeEntry* const map[] = {sColorMap,
+                                                    sGradientStopMap};
 
   return FindAttributeDependence(name, map) ||
-    SVGGradientElementBase::IsAttributeMapped(name);
+         SVGGradientElementBase::IsAttributeMapped(name);
 }
 
 //---------------------Linear Gradients------------------------
 
-JSObject*
-SVGLinearGradientElement::WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return SVGLinearGradientElementBinding::Wrap(aCx, this, aGivenProto);
+JSObject* SVGLinearGradientElement::WrapNode(
+    JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
+  return SVGLinearGradientElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-nsSVGElement::LengthInfo SVGLinearGradientElement::sLengthInfo[4] =
-{
-  { &nsGkAtoms::x1, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_PERCENTAGE, SVGContentUtils::X },
-  { &nsGkAtoms::y1, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_PERCENTAGE, SVGContentUtils::Y },
-  { &nsGkAtoms::x2, 100, nsIDOMSVGLength::SVG_LENGTHTYPE_PERCENTAGE, SVGContentUtils::X },
-  { &nsGkAtoms::y2, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_PERCENTAGE, SVGContentUtils::Y },
+SVGElement::LengthInfo SVGLinearGradientElement::sLengthInfo[4] = {
+    {nsGkAtoms::x1, 0, SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE,
+     SVGContentUtils::X},
+    {nsGkAtoms::y1, 0, SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE,
+     SVGContentUtils::Y},
+    {nsGkAtoms::x2, 100, SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE,
+     SVGContentUtils::X},
+    {nsGkAtoms::y2, 0, SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE,
+     SVGContentUtils::Y},
 };
 
 //----------------------------------------------------------------------
 // Implementation
 
-SVGLinearGradientElement::SVGLinearGradientElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-  : SVGLinearGradientElementBase(aNodeInfo)
-{
-}
+SVGLinearGradientElement::SVGLinearGradientElement(
+    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : SVGLinearGradientElementBase(std::move(aNodeInfo)) {}
 
 //----------------------------------------------------------------------
-// nsIDOMNode methods
+// nsINode methods
 
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGLinearGradientElement)
 
 //----------------------------------------------------------------------
 
-already_AddRefed<SVGAnimatedLength>
-SVGLinearGradientElement::X1()
-{
+already_AddRefed<SVGAnimatedLength> SVGLinearGradientElement::X1() {
   return mLengthAttributes[ATTR_X1].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedLength>
-SVGLinearGradientElement::Y1()
-{
+already_AddRefed<SVGAnimatedLength> SVGLinearGradientElement::Y1() {
   return mLengthAttributes[ATTR_Y1].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedLength>
-SVGLinearGradientElement::X2()
-{
+already_AddRefed<SVGAnimatedLength> SVGLinearGradientElement::X2() {
   return mLengthAttributes[ATTR_X2].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedLength>
-SVGLinearGradientElement::Y2()
-{
+already_AddRefed<SVGAnimatedLength> SVGLinearGradientElement::Y2() {
   return mLengthAttributes[ATTR_Y2].ToDOMAnimatedLength(this);
 }
 
 //----------------------------------------------------------------------
-// nsSVGElement methods
+// SVGElement methods
 
-nsSVGAnimatedTransformList*
-SVGGradientElement::GetAnimatedTransformList(uint32_t aFlags)
-{
+SVGAnimatedTransformList* SVGGradientElement::GetAnimatedTransformList(
+    uint32_t aFlags) {
   if (!mGradientTransform && (aFlags & DO_ALLOCATE)) {
-    mGradientTransform = new nsSVGAnimatedTransformList();
+    mGradientTransform = new SVGAnimatedTransformList();
   }
   return mGradientTransform;
 }
 
-nsSVGElement::LengthAttributesInfo
-SVGLinearGradientElement::GetLengthInfo()
-{
+SVGElement::LengthAttributesInfo SVGLinearGradientElement::GetLengthInfo() {
   return LengthAttributesInfo(mLengthAttributes, sLengthInfo,
                               ArrayLength(sLengthInfo));
 }
 
 //-------------------------- Radial Gradients ----------------------------
 
-JSObject*
-SVGRadialGradientElement::WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return SVGRadialGradientElementBinding::Wrap(aCx, this, aGivenProto);
+JSObject* SVGRadialGradientElement::WrapNode(
+    JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
+  return SVGRadialGradientElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-nsSVGElement::LengthInfo SVGRadialGradientElement::sLengthInfo[5] =
-{
-  { &nsGkAtoms::cx, 50, nsIDOMSVGLength::SVG_LENGTHTYPE_PERCENTAGE, SVGContentUtils::X },
-  { &nsGkAtoms::cy, 50, nsIDOMSVGLength::SVG_LENGTHTYPE_PERCENTAGE, SVGContentUtils::Y },
-  { &nsGkAtoms::r, 50, nsIDOMSVGLength::SVG_LENGTHTYPE_PERCENTAGE, SVGContentUtils::XY },
-  { &nsGkAtoms::fx, 50, nsIDOMSVGLength::SVG_LENGTHTYPE_PERCENTAGE, SVGContentUtils::X },
-  { &nsGkAtoms::fy, 50, nsIDOMSVGLength::SVG_LENGTHTYPE_PERCENTAGE, SVGContentUtils::Y },
+SVGElement::LengthInfo SVGRadialGradientElement::sLengthInfo[6] = {
+    {nsGkAtoms::cx, 50, SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE,
+     SVGContentUtils::X},
+    {nsGkAtoms::cy, 50, SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE,
+     SVGContentUtils::Y},
+    {nsGkAtoms::r, 50, SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE,
+     SVGContentUtils::XY},
+    {nsGkAtoms::fx, 50, SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE,
+     SVGContentUtils::X},
+    {nsGkAtoms::fy, 50, SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE,
+     SVGContentUtils::Y},
+    {nsGkAtoms::fr, 0, SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE,
+     SVGContentUtils::XY},
 };
 
 //----------------------------------------------------------------------
 // Implementation
 
-SVGRadialGradientElement::SVGRadialGradientElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-  : SVGRadialGradientElementBase(aNodeInfo)
-{
-}
+SVGRadialGradientElement::SVGRadialGradientElement(
+    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : SVGRadialGradientElementBase(std::move(aNodeInfo)) {}
 
 //----------------------------------------------------------------------
-// nsIDOMNode methods
+// nsINode methods
 
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGRadialGradientElement)
 
 //----------------------------------------------------------------------
 
-already_AddRefed<SVGAnimatedLength>
-SVGRadialGradientElement::Cx()
-{
+already_AddRefed<SVGAnimatedLength> SVGRadialGradientElement::Cx() {
   return mLengthAttributes[ATTR_CX].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedLength>
-SVGRadialGradientElement::Cy()
-{
+already_AddRefed<SVGAnimatedLength> SVGRadialGradientElement::Cy() {
   return mLengthAttributes[ATTR_CY].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedLength>
-SVGRadialGradientElement::R()
-{
+already_AddRefed<SVGAnimatedLength> SVGRadialGradientElement::R() {
   return mLengthAttributes[ATTR_R].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedLength>
-SVGRadialGradientElement::Fx()
-{
+already_AddRefed<SVGAnimatedLength> SVGRadialGradientElement::Fx() {
   return mLengthAttributes[ATTR_FX].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedLength>
-SVGRadialGradientElement::Fy()
-{
+already_AddRefed<SVGAnimatedLength> SVGRadialGradientElement::Fy() {
   return mLengthAttributes[ATTR_FY].ToDOMAnimatedLength(this);
 }
 
-//----------------------------------------------------------------------
-// nsSVGElement methods
+already_AddRefed<SVGAnimatedLength> SVGRadialGradientElement::Fr() {
+  return mLengthAttributes[ATTR_FR].ToDOMAnimatedLength(this);
+}
 
-nsSVGElement::LengthAttributesInfo
-SVGRadialGradientElement::GetLengthInfo()
-{
+//----------------------------------------------------------------------
+// SVGElement methods
+
+SVGElement::LengthAttributesInfo SVGRadialGradientElement::GetLengthInfo() {
   return LengthAttributesInfo(mLengthAttributes, sLengthInfo,
                               ArrayLength(sLengthInfo));
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

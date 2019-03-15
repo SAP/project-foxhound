@@ -4,19 +4,20 @@ use std::fmt::{Display, Formatter, Result};
 use std::rc::Rc;
 use std::result::Result as StdResult;
 use std::ffi::{OsStr, OsString};
-
-// Third Party
-use vec_map::{self, VecMap};
+use std::mem;
 
 // Internal
 use Arg;
-use args::{ArgSettings, Base, Valued, ArgKind, AnyArg, DispOrder};
+use args::{AnyArg, ArgSettings, Base, DispOrder, Valued};
+use INTERNAL_ERROR_MSG;
+use map::{self, VecMap};
 
 #[allow(missing_debug_implementations)]
 #[doc(hidden)]
 #[derive(Clone, Default)]
 pub struct PosBuilder<'n, 'e>
-    where 'n: 'e
+where
+    'n: 'e,
 {
     pub b: Base<'n, 'e>,
     pub v: Valued<'n, 'e>,
@@ -32,32 +33,39 @@ impl<'n, 'e> PosBuilder<'n, 'e> {
         }
     }
 
-    pub fn from_arg(a: &Arg<'n, 'e>, idx: u64, reqs: &mut Vec<&'n str>) -> Self {
-        // Create the Positional Argument Builder with each HashSet = None to only
-        // allocate
-        // those that require it
+    pub fn from_arg_ref(a: &Arg<'n, 'e>, idx: u64) -> Self {
         let mut pb = PosBuilder {
             b: Base::from(a),
             v: Valued::from(a),
             index: idx,
         };
-        if a.max_vals.is_some() || a.min_vals.is_some() ||
-           (a.num_vals.is_some() && a.num_vals.unwrap() > 1) {
+        if a.v.max_vals.is_some() || a.v.min_vals.is_some()
+            || (a.v.num_vals.is_some() && a.v.num_vals.unwrap() > 1)
+        {
             pb.b.settings.set(ArgSettings::Multiple);
-        }
-        // If the arg is required, add all it's requirements to master required list
-        if a.is_set(ArgSettings::Required) {
-            if let Some(ref areqs) = a.requires {
-                for name in areqs.iter().filter(|&&(val,_)|val.is_none()).map(|&(_, name)| name) {
-                    reqs.push(name);
-                }
-            }
         }
         pb
     }
 
+    pub fn from_arg(mut a: Arg<'n, 'e>, idx: u64) -> Self {
+        if a.v.max_vals.is_some() || a.v.min_vals.is_some()
+            || (a.v.num_vals.is_some() && a.v.num_vals.unwrap() > 1)
+        {
+            a.b.settings.set(ArgSettings::Multiple);
+        }
+        PosBuilder {
+            b: mem::replace(&mut a.b, Base::default()),
+            v: mem::replace(&mut a.v, Valued::default()),
+            index: idx,
+        }
+    }
+
     pub fn multiple_str(&self) -> &str {
-        if self.b.settings.is_set(ArgSettings::Multiple) && self.v.val_names.is_none() {
+        let mult_vals = self.v
+            .val_names
+            .as_ref()
+            .map_or(true, |names| names.len() < 2);
+        if self.is_set(ArgSettings::Multiple) && mult_vals {
             "..."
         } else {
             ""
@@ -65,12 +73,28 @@ impl<'n, 'e> PosBuilder<'n, 'e> {
     }
 
     pub fn name_no_brackets(&self) -> Cow<str> {
-        if let Some(ref names) = self.v.val_names {
-            Cow::Owned(names.values()
-                .map(|n| format!("<{}>", n))
-                .collect::<Vec<_>>()
-                .join(" "))
+        debugln!("PosBuilder::name_no_brackets;");
+        let mut delim = String::new();
+        delim.push(if self.is_set(ArgSettings::RequireDelimiter) {
+            self.v.val_delim.expect(INTERNAL_ERROR_MSG)
         } else {
+            ' '
+        });
+        if let Some(ref names) = self.v.val_names {
+            debugln!("PosBuilder:name_no_brackets: val_names={:#?}", names);
+            if names.len() > 1 {
+                Cow::Owned(
+                    names
+                        .values()
+                        .map(|n| format!("<{}>", n))
+                        .collect::<Vec<_>>()
+                        .join(&*delim),
+                )
+            } else {
+                Cow::Borrowed(names.values().next().expect(INTERNAL_ERROR_MSG))
+            }
+        } else {
+            debugln!("PosBuilder:name_no_brackets: just name");
             Cow::Borrowed(self.b.name)
         }
     }
@@ -78,18 +102,29 @@ impl<'n, 'e> PosBuilder<'n, 'e> {
 
 impl<'n, 'e> Display for PosBuilder<'n, 'e> {
     fn fmt(&self, f: &mut Formatter) -> Result {
-        if let Some(ref names) = self.v.val_names {
-            try!(write!(f,
-                        "{}",
-                        names.values()
-                            .map(|n| format!("<{}>", n))
-                            .collect::<Vec<_>>()
-                            .join(" ")));
+        let mut delim = String::new();
+        delim.push(if self.is_set(ArgSettings::RequireDelimiter) {
+            self.v.val_delim.expect(INTERNAL_ERROR_MSG)
         } else {
-            try!(write!(f, "<{}>", self.b.name));
+            ' '
+        });
+        if let Some(ref names) = self.v.val_names {
+            write!(
+                f,
+                "{}",
+                names
+                    .values()
+                    .map(|n| format!("<{}>", n))
+                    .collect::<Vec<_>>()
+                    .join(&*delim)
+            )?;
+        } else {
+            write!(f, "<{}>", self.b.name)?;
         }
-        if self.b.settings.is_set(ArgSettings::Multiple) && self.v.val_names.is_none() {
-            try!(write!(f, "..."));
+        if self.b.settings.is_set(ArgSettings::Multiple)
+            && (self.v.val_names.is_none() || self.v.val_names.as_ref().unwrap().len() == 1)
+        {
+            write!(f, "...")?;
         }
 
         Ok(())
@@ -98,10 +133,10 @@ impl<'n, 'e> Display for PosBuilder<'n, 'e> {
 
 impl<'n, 'e> AnyArg<'n, 'e> for PosBuilder<'n, 'e> {
     fn name(&self) -> &'n str { self.b.name }
-    fn id(&self) -> usize { self.b.id }
-    fn kind(&self) -> ArgKind { ArgKind::Pos }
     fn overrides(&self) -> Option<&[&'e str]> { self.b.overrides.as_ref().map(|o| &o[..]) }
-    fn requires(&self) -> Option<&[(Option<&'e str>, &'n str)]> { self.b.requires.as_ref().map(|o| &o[..]) }
+    fn requires(&self) -> Option<&[(Option<&'e str>, &'n str)]> {
+        self.b.requires.as_ref().map(|o| &o[..])
+    }
     fn blacklist(&self) -> Option<&[&'e str]> { self.b.blacklist.as_ref().map(|o| &o[..]) }
     fn required_unless(&self) -> Option<&[&'e str]> { self.b.r_unless.as_ref().map(|o| &o[..]) }
     fn val_names(&self) -> Option<&VecMap<&'e str>> { self.v.val_names.as_ref() }
@@ -124,8 +159,17 @@ impl<'n, 'e> AnyArg<'n, 'e> for PosBuilder<'n, 'e> {
     fn val_delim(&self) -> Option<char> { self.v.val_delim }
     fn takes_value(&self) -> bool { true }
     fn help(&self) -> Option<&'e str> { self.b.help }
-    fn default_vals_ifs(&self) -> Option<vec_map::Values<(&'n str, Option<&'e str>, &'e str)>> { self.v.default_vals_ifs.as_ref().map(|vm| vm.values()) }
-    fn default_val(&self) -> Option<&'n str> { self.v.default_val }
+    fn long_help(&self) -> Option<&'e str> { self.b.long_help }
+    fn default_vals_ifs(&self) -> Option<map::Values<(&'n str, Option<&'e OsStr>, &'e OsStr)>> {
+        self.v.default_vals_ifs.as_ref().map(|vm| vm.values())
+    }
+    fn default_val(&self) -> Option<&'e OsStr> { self.v.default_val }
+    fn env<'s>(&'s self) -> Option<(&'n OsStr, Option<&'s OsString>)> {
+        self.v
+            .env
+            .as_ref()
+            .map(|&(key, ref value)| (key, value.as_ref()))
+    }
     fn longest_filter(&self) -> bool { true }
     fn aliases(&self) -> Option<Vec<&'e str>> { None }
 }
@@ -134,11 +178,15 @@ impl<'n, 'e> DispOrder for PosBuilder<'n, 'e> {
     fn disp_ord(&self) -> usize { self.index as usize }
 }
 
+impl<'n, 'e> PartialEq for PosBuilder<'n, 'e> {
+    fn eq(&self, other: &PosBuilder<'n, 'e>) -> bool { self.b == other.b }
+}
+
 #[cfg(test)]
 mod test {
     use args::settings::ArgSettings;
     use super::PosBuilder;
-    use vec_map::VecMap;
+    use map::VecMap;
 
     #[test]
     fn display_mult() {

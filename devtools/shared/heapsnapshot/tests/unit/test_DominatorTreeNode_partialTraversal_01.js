@@ -1,5 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+"use strict";
 
 // Test that we correctly set `moreChildrenAvailable` when doing a partial
 // traversal of a dominator tree to create the initial incrementally loaded
@@ -23,13 +24,13 @@ const tree = new Map([
   [100, [200, 300, 400]],
   [200, [500, 600, 700]],
   [300, [800, 900]],
-  [400, [1000, 1100, 1200]]
+  [400, [1000, 1100, 1200]],
 ]);
 
 const mockDominatorTree = {
   root: 100,
   getRetainedSize: _ => 10,
-  getImmediatelyDominated: id => (tree.get(id) || []).slice()
+  getImmediatelyDominated: id => (tree.get(id) || []).slice(),
 };
 
 const mockSnapshot = {
@@ -37,8 +38,9 @@ const mockSnapshot = {
     objects: { count: 0, bytes: 0 },
     strings: { count: 0, bytes: 0 },
     scripts: { count: 0, bytes: 0 },
-    other: { SomeType: { count: 1, bytes: 10 } }
-  })
+    other: { SomeType: { count: 1, bytes: 10 } },
+    domNode: { count: 0, bytes: 0 },
+  }),
 };
 
 const breakdown = {
@@ -48,15 +50,16 @@ const breakdown = {
   scripts: { by: "count", count: true, bytes: true },
   other: {
     by: "internalType",
-    then: { by: "count", count: true, bytes: true }
+    then: { by: "count", count: true, bytes: true },
   },
+  domNode: { by: "count", count: true, bytes: true },
 };
 
 const expected = {
   nodeId: 100,
   label: [
     "other",
-    "SomeType"
+    "SomeType",
   ],
   shallowSize: 10,
   retainedSize: 10,
@@ -66,7 +69,7 @@ const expected = {
       nodeId: 200,
       label: [
         "other",
-        "SomeType"
+        "SomeType",
       ],
       shallowSize: 10,
       retainedSize: 10,
@@ -77,36 +80,36 @@ const expected = {
           nodeId: 500,
           label: [
             "other",
-            "SomeType"
+            "SomeType",
           ],
           shallowSize: 10,
           retainedSize: 10,
           parentId: 200,
           moreChildrenAvailable: false,
           shortestPaths: undefined,
-          children: undefined
+          children: undefined,
         },
         {
           nodeId: 600,
           label: [
             "other",
-            "SomeType"
+            "SomeType",
           ],
           shallowSize: 10,
           retainedSize: 10,
           parentId: 200,
           moreChildrenAvailable: false,
           shortestPaths: undefined,
-          children: undefined
-        }
+          children: undefined,
+        },
       ],
-      moreChildrenAvailable: true
+      moreChildrenAvailable: true,
     },
     {
       nodeId: 300,
       label: [
         "other",
-        "SomeType"
+        "SomeType",
       ],
       shallowSize: 10,
       retainedSize: 10,
@@ -117,31 +120,31 @@ const expected = {
           nodeId: 800,
           label: [
             "other",
-            "SomeType"
+            "SomeType",
           ],
           shallowSize: 10,
           retainedSize: 10,
           parentId: 300,
           moreChildrenAvailable: false,
           shortestPaths: undefined,
-          children: undefined
+          children: undefined,
         },
         {
           nodeId: 900,
           label: [
             "other",
-            "SomeType"
+            "SomeType",
           ],
           shallowSize: 10,
           retainedSize: 10,
           parentId: 300,
           moreChildrenAvailable: false,
           shortestPaths: undefined,
-          children: undefined
-        }
+          children: undefined,
+        },
       ],
-      moreChildrenAvailable: false
-    }
+      moreChildrenAvailable: false,
+    },
   ],
   moreChildrenAvailable: true,
   parentId: undefined,
@@ -154,8 +157,10 @@ function run_test() {
   const actual = DominatorTreeNode.partialTraversal(mockDominatorTree,
                                                     mockSnapshot,
                                                     breakdown,
-                                                    /* maxDepth = */ 4,
-                                                    /* siblings = */ 2);
+                                                    // maxDepth
+                                                    4,
+                                                    // siblings
+                                                    2);
 
   dumpn("Expected = " + JSON.stringify(expected, null, 2));
   dumpn("Actual = " + JSON.stringify(actual, null, 2));

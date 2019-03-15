@@ -6,6 +6,7 @@
 
 #include "OffscreenCanvas.h"
 
+#include "mozilla/dom/DOMPrefs.h"
 #include "mozilla/dom/OffscreenCanvasBinding.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerScope.h"
@@ -22,91 +23,72 @@
 namespace mozilla {
 namespace dom {
 
-OffscreenCanvasCloneData::OffscreenCanvasCloneData(layers::AsyncCanvasRenderer* aRenderer,
-                                                   uint32_t aWidth, uint32_t aHeight,
-                                                   layers::LayersBackend aCompositorBackend,
-                                                   bool aNeutered, bool aIsWriteOnly)
-  : mRenderer(aRenderer)
-  , mWidth(aWidth)
-  , mHeight(aHeight)
-  , mCompositorBackendType(aCompositorBackend)
-  , mNeutered(aNeutered)
-  , mIsWriteOnly(aIsWriteOnly)
-{
-}
+OffscreenCanvasCloneData::OffscreenCanvasCloneData(
+    layers::AsyncCanvasRenderer* aRenderer, uint32_t aWidth, uint32_t aHeight,
+    layers::LayersBackend aCompositorBackend, bool aNeutered, bool aIsWriteOnly)
+    : mRenderer(aRenderer),
+      mWidth(aWidth),
+      mHeight(aHeight),
+      mCompositorBackendType(aCompositorBackend),
+      mNeutered(aNeutered),
+      mIsWriteOnly(aIsWriteOnly) {}
 
-OffscreenCanvasCloneData::~OffscreenCanvasCloneData()
-{
-}
+OffscreenCanvasCloneData::~OffscreenCanvasCloneData() {}
 
-OffscreenCanvas::OffscreenCanvas(nsIGlobalObject* aGlobal,
-                                 uint32_t aWidth,
+OffscreenCanvas::OffscreenCanvas(nsIGlobalObject* aGlobal, uint32_t aWidth,
                                  uint32_t aHeight,
                                  layers::LayersBackend aCompositorBackend,
                                  layers::AsyncCanvasRenderer* aRenderer)
-  : DOMEventTargetHelper(aGlobal)
-  , mAttrDirty(false)
-  , mNeutered(false)
-  , mIsWriteOnly(false)
-  , mWidth(aWidth)
-  , mHeight(aHeight)
-  , mCompositorBackendType(aCompositorBackend)
-  , mCanvasRenderer(aRenderer)
-{}
+    : DOMEventTargetHelper(aGlobal),
+      mAttrDirty(false),
+      mNeutered(false),
+      mIsWriteOnly(false),
+      mWidth(aWidth),
+      mHeight(aHeight),
+      mCompositorBackendType(aCompositorBackend),
+      mCanvasRenderer(aRenderer) {}
 
-OffscreenCanvas::~OffscreenCanvas()
-{
-  ClearResources();
+OffscreenCanvas::~OffscreenCanvas() { ClearResources(); }
+
+JSObject* OffscreenCanvas::WrapObject(JSContext* aCx,
+                                      JS::Handle<JSObject*> aGivenProto) {
+  return OffscreenCanvas_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-JSObject*
-OffscreenCanvas::WrapObject(JSContext* aCx,
-                            JS::Handle<JSObject*> aGivenProto)
-{
-  return OffscreenCanvasBinding::Wrap(aCx, this, aGivenProto);
-}
-
-/* static */ already_AddRefed<OffscreenCanvas>
-OffscreenCanvas::Constructor(const GlobalObject& aGlobal,
-                             uint32_t aWidth,
-                             uint32_t aHeight,
-                             ErrorResult& aRv)
-{
+/* static */ already_AddRefed<OffscreenCanvas> OffscreenCanvas::Constructor(
+    const GlobalObject& aGlobal, uint32_t aWidth, uint32_t aHeight,
+    ErrorResult& aRv) {
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
-  RefPtr<OffscreenCanvas> offscreenCanvas =
-    new OffscreenCanvas(global, aWidth, aHeight,
-                        layers::LayersBackend::LAYERS_NONE, nullptr);
+  RefPtr<OffscreenCanvas> offscreenCanvas = new OffscreenCanvas(
+      global, aWidth, aHeight, layers::LayersBackend::LAYERS_NONE, nullptr);
   return offscreenCanvas.forget();
 }
 
-void
-OffscreenCanvas::ClearResources()
-{
+void OffscreenCanvas::ClearResources() {
   if (mCanvasClient) {
     mCanvasClient->Clear();
 
     if (mCanvasRenderer) {
-      nsCOMPtr<nsIThread> activeThread = mCanvasRenderer->GetActiveThread();
-      MOZ_RELEASE_ASSERT(activeThread, "GFX: failed to get active thread.");
+      nsCOMPtr<nsISerialEventTarget> activeTarget =
+          mCanvasRenderer->GetActiveEventTarget();
+      MOZ_RELEASE_ASSERT(activeTarget,
+                         "GFX: failed to get active event target.");
       bool current;
-      activeThread->IsOnCurrentThread(&current);
+      activeTarget->IsOnCurrentThread(&current);
       MOZ_RELEASE_ASSERT(current, "GFX: active thread is not current thread.");
       mCanvasRenderer->SetCanvasClient(nullptr);
       mCanvasRenderer->mContext = nullptr;
       mCanvasRenderer->mGLContext = nullptr;
-      mCanvasRenderer->ResetActiveThread();
+      mCanvasRenderer->ResetActiveEventTarget();
     }
 
     mCanvasClient = nullptr;
   }
 }
 
-already_AddRefed<nsISupports>
-OffscreenCanvas::GetContext(JSContext* aCx,
-                            const nsAString& aContextId,
-                            JS::Handle<JS::Value> aContextOptions,
-                            ErrorResult& aRv)
-{
+already_AddRefed<nsISupports> OffscreenCanvas::GetContext(
+    JSContext* aCx, const nsAString& aContextId,
+    JS::Handle<JS::Value> aContextOptions, ErrorResult& aRv) {
   if (mNeutered) {
     aRv.Throw(NS_ERROR_FAILURE);
     return nullptr;
@@ -121,17 +103,13 @@ OffscreenCanvas::GetContext(JSContext* aCx,
 
   if (!(contextType == CanvasContextType::WebGL1 ||
         contextType == CanvasContextType::WebGL2 ||
-        contextType == CanvasContextType::ImageBitmap))
-  {
+        contextType == CanvasContextType::ImageBitmap)) {
     aRv.Throw(NS_ERROR_NOT_IMPLEMENTED);
     return nullptr;
   }
 
-  already_AddRefed<nsISupports> result =
-    CanvasRenderingContextHelper::GetContext(aCx,
-                                             aContextId,
-                                             aContextOptions,
-                                             aRv);
+  RefPtr<nsISupports> result = CanvasRenderingContextHelper::GetContext(
+      aCx, aContextId, aContextOptions, aRv);
 
   if (!mCurrentContext) {
     return nullptr;
@@ -143,13 +121,16 @@ OffscreenCanvas::GetContext(JSContext* aCx,
       WebGLContext* webGL = static_cast<WebGLContext*>(mCurrentContext.get());
       gl::GLContext* gl = webGL->GL();
       mCanvasRenderer->mContext = mCurrentContext;
-      mCanvasRenderer->SetActiveThread();
+      mCanvasRenderer->SetActiveEventTarget();
       mCanvasRenderer->mGLContext = gl;
-      mCanvasRenderer->SetIsAlphaPremultiplied(webGL->IsPremultAlpha() || !gl->Caps().alpha);
+      mCanvasRenderer->SetIsAlphaPremultiplied(webGL->IsPremultAlpha() ||
+                                               !gl->Caps().alpha);
 
-      if (RefPtr<ImageBridgeChild> imageBridge = ImageBridgeChild::GetSingleton()) {
+      if (RefPtr<ImageBridgeChild> imageBridge =
+              ImageBridgeChild::GetSingleton()) {
         TextureFlags flags = TextureFlags::ORIGIN_BOTTOM_LEFT;
-        mCanvasClient = imageBridge->CreateCanvasClient(CanvasClient::CanvasClientTypeShSurf, flags);
+        mCanvasClient = imageBridge->CreateCanvasClient(
+            CanvasClient::CanvasClientTypeShSurf, flags);
         mCanvasRenderer->SetCanvasClient(mCanvasClient);
 
         gl::GLScreenBuffer* screen = gl->Screen();
@@ -157,30 +138,26 @@ OffscreenCanvas::GetContext(JSContext* aCx,
         auto forwarder = mCanvasClient->GetForwarder();
 
         UniquePtr<gl::SurfaceFactory> factory =
-          gl::GLScreenBuffer::CreateFactory(gl, caps, forwarder, flags);
+            gl::GLScreenBuffer::CreateFactory(gl, caps, forwarder, flags);
 
-        if (factory)
-          screen->Morph(Move(factory));
+        if (factory) screen->Morph(std::move(factory));
       }
     }
   }
 
-  return result;
+  return result.forget();
 }
 
 already_AddRefed<nsICanvasRenderingContextInternal>
-OffscreenCanvas::CreateContext(CanvasContextType aContextType)
-{
+OffscreenCanvas::CreateContext(CanvasContextType aContextType) {
   RefPtr<nsICanvasRenderingContextInternal> ret =
-    CanvasRenderingContextHelper::CreateContext(aContextType);
+      CanvasRenderingContextHelper::CreateContext(aContextType);
 
   ret->SetOffscreenCanvas(this);
   return ret.forget();
 }
 
-void
-OffscreenCanvas::CommitFrameToCompositor()
-{
+void OffscreenCanvas::CommitFrameToCompositor() {
   if (!mCanvasRenderer) {
     // This offscreen canvas doesn't associate to any HTML canvas element.
     // So, just bail out.
@@ -204,42 +181,34 @@ OffscreenCanvas::CommitFrameToCompositor()
 
   if (mCanvasRenderer && mCanvasRenderer->mGLContext) {
     mCanvasRenderer->NotifyElementAboutInvalidation();
-    ImageBridgeChild::GetSingleton()->
-      UpdateAsyncCanvasRenderer(mCanvasRenderer);
+    ImageBridgeChild::GetSingleton()->UpdateAsyncCanvasRenderer(
+        mCanvasRenderer);
   }
 }
 
-OffscreenCanvasCloneData*
-OffscreenCanvas::ToCloneData()
-{
+OffscreenCanvasCloneData* OffscreenCanvas::ToCloneData() {
   return new OffscreenCanvasCloneData(mCanvasRenderer, mWidth, mHeight,
-                                      mCompositorBackendType, mNeutered, mIsWriteOnly);
+                                      mCompositorBackendType, mNeutered,
+                                      mIsWriteOnly);
 }
 
-already_AddRefed<ImageBitmap>
-OffscreenCanvas::TransferToImageBitmap()
-{
-  ErrorResult rv;
+already_AddRefed<ImageBitmap> OffscreenCanvas::TransferToImageBitmap(
+    ErrorResult& aRv) {
   nsCOMPtr<nsIGlobalObject> globalObject = GetGlobalObject();
-  RefPtr<ImageBitmap> result = ImageBitmap::CreateFromOffscreenCanvas(globalObject, *this, rv);
-
-  // Clear the content.
-  if ((mCurrentContextType == CanvasContextType::WebGL1 ||
-       mCurrentContextType == CanvasContextType::WebGL2))
-  {
-    WebGLContext* webGL = static_cast<WebGLContext*>(mCurrentContext.get());
-    webGL->ClearScreen();
+  RefPtr<ImageBitmap> result =
+      ImageBitmap::CreateFromOffscreenCanvas(globalObject, *this, aRv);
+  if (aRv.Failed()) {
+    return nullptr;
   }
 
+  // TODO: Clear the content?
   return result.forget();
 }
 
-already_AddRefed<Promise>
-OffscreenCanvas::ToBlob(JSContext* aCx,
-                        const nsAString& aType,
-                        JS::Handle<JS::Value> aParams,
-                        ErrorResult& aRv)
-{
+already_AddRefed<Promise> OffscreenCanvas::ToBlob(JSContext* aCx,
+                                                  const nsAString& aType,
+                                                  JS::Handle<JS::Value> aParams,
+                                                  ErrorResult& aRv) {
   // do a trust check if this is a write-only canvas
   if (mIsWriteOnly) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
@@ -254,28 +223,14 @@ OffscreenCanvas::ToBlob(JSContext* aCx,
   }
 
   // Encoder callback when encoding is complete.
-  class EncodeCallback : public EncodeCompleteCallback
-  {
-  public:
+  class EncodeCallback : public EncodeCompleteCallback {
+   public:
     EncodeCallback(nsIGlobalObject* aGlobal, Promise* aPromise)
-      : mGlobal(aGlobal)
-      , mPromise(aPromise) {}
+        : mGlobal(aGlobal), mPromise(aPromise) {}
 
     // This is called on main thread.
-    nsresult ReceiveBlob(already_AddRefed<Blob> aBlob)
-    {
+    nsresult ReceiveBlob(already_AddRefed<Blob> aBlob) override {
       RefPtr<Blob> blob = aBlob;
-
-      ErrorResult rv;
-      uint64_t size = blob->GetSize(rv);
-      if (rv.Failed()) {
-        rv.SuppressException();
-      } else {
-        AutoJSAPI jsapi;
-        if (jsapi.Init(mGlobal)) {
-          JS_updateMallocCounter(jsapi.cx(), size);
-        }
-      }
 
       if (mPromise) {
         RefPtr<Blob> newBlob = Blob::Create(mGlobal, blob->Impl());
@@ -285,87 +240,75 @@ OffscreenCanvas::ToBlob(JSContext* aCx,
       mGlobal = nullptr;
       mPromise = nullptr;
 
-      return rv.StealNSResult();
+      return NS_OK;
     }
 
     nsCOMPtr<nsIGlobalObject> mGlobal;
     RefPtr<Promise> mPromise;
   };
 
-  RefPtr<EncodeCompleteCallback> callback =
-    new EncodeCallback(global, promise);
+  RefPtr<EncodeCompleteCallback> callback = new EncodeCallback(global, promise);
 
-  CanvasRenderingContextHelper::ToBlob(aCx, global,
-                                       callback, aType, aParams, aRv);
+  // TODO: Can we obtain the context and document here somehow
+  // so that we can decide when usePlaceholder should be true/false?
+  // See https://trac.torproject.org/18599
+  // For now, we always return a placeholder if fingerprinting resistance is on.
+  bool usePlaceholder = nsContentUtils::ShouldResistFingerprinting();
+  CanvasRenderingContextHelper::ToBlob(aCx, global, callback, aType, aParams,
+                                       usePlaceholder, aRv);
 
   return promise.forget();
 }
 
-already_AddRefed<gfx::SourceSurface>
-OffscreenCanvas::GetSurfaceSnapshot(bool* aPremultAlpha)
-{
+already_AddRefed<gfx::SourceSurface> OffscreenCanvas::GetSurfaceSnapshot(
+    gfxAlphaType* const aOutAlphaType) {
   if (!mCurrentContext) {
     return nullptr;
   }
 
-  return mCurrentContext->GetSurfaceSnapshot(aPremultAlpha);
+  return mCurrentContext->GetSurfaceSnapshot(aOutAlphaType);
 }
 
-nsCOMPtr<nsIGlobalObject>
-OffscreenCanvas::GetGlobalObject()
-{
+nsCOMPtr<nsIGlobalObject> OffscreenCanvas::GetGlobalObject() {
   if (NS_IsMainThread()) {
     return GetParentObject();
   }
 
-  dom::workers::WorkerPrivate* workerPrivate =
-    dom::workers::GetCurrentThreadWorkerPrivate();
+  dom::WorkerPrivate* workerPrivate = dom::GetCurrentThreadWorkerPrivate();
   return workerPrivate->GlobalScope();
 }
 
 /* static */ already_AddRefed<OffscreenCanvas>
-OffscreenCanvas::CreateFromCloneData(nsIGlobalObject* aGlobal, OffscreenCanvasCloneData* aData)
-{
+OffscreenCanvas::CreateFromCloneData(nsIGlobalObject* aGlobal,
+                                     OffscreenCanvasCloneData* aData) {
   MOZ_ASSERT(aData);
   RefPtr<OffscreenCanvas> wc =
-    new OffscreenCanvas(aGlobal, aData->mWidth, aData->mHeight,
-                        aData->mCompositorBackendType, aData->mRenderer);
+      new OffscreenCanvas(aGlobal, aData->mWidth, aData->mHeight,
+                          aData->mCompositorBackendType, aData->mRenderer);
   if (aData->mNeutered) {
     wc->SetNeutered();
   }
   return wc.forget();
 }
 
-/* static */ bool
-OffscreenCanvas::PrefEnabled(JSContext* aCx, JSObject* aObj)
-{
-  if (NS_IsMainThread()) {
-    return Preferences::GetBool("gfx.offscreencanvas.enabled");
-  } else {
-    WorkerPrivate* workerPrivate = GetWorkerPrivateFromContext(aCx);
-    MOZ_ASSERT(workerPrivate);
-    return workerPrivate->OffscreenCanvasEnabled();
-  }
-}
-
-/* static */ bool
-OffscreenCanvas::PrefEnabledOnWorkerThread(JSContext* aCx, JSObject* aObj)
-{
+/* static */ bool OffscreenCanvas::PrefEnabledOnWorkerThread(JSContext* aCx,
+                                                             JSObject* aObj) {
   if (NS_IsMainThread()) {
     return true;
   }
 
-  return PrefEnabled(aCx, aObj);
+  return DOMPrefs::gfx_offscreencanvas_enabled(aCx, aObj);
 }
 
-NS_IMPL_CYCLE_COLLECTION_INHERITED(OffscreenCanvas, DOMEventTargetHelper, mCurrentContext)
+NS_IMPL_CYCLE_COLLECTION_INHERITED(OffscreenCanvas, DOMEventTargetHelper,
+                                   mCurrentContext)
 
 NS_IMPL_ADDREF_INHERITED(OffscreenCanvas, DOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(OffscreenCanvas, DOMEventTargetHelper)
 
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(OffscreenCanvas)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(OffscreenCanvas)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

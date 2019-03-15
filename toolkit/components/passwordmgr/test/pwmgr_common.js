@@ -43,37 +43,43 @@ function checkForm(formNum, val1, val2, val3) {
 
   var numToCheck = arguments.length - 1;
 
-  if (!numToCheck--)
+  if (!numToCheck--) {
     return;
+  }
   e = form.elements[0];
-  if (val1 == null)
+  if (val1 == null) {
     is(e.value, e.defaultValue, "Test default value of field " + e.name +
        " in form " + formNum);
-  else
+  } else {
     is(e.value, val1, "Test value of field " + e.name +
        " in form " + formNum);
+  }
 
 
-  if (!numToCheck--)
+  if (!numToCheck--) {
     return;
+  }
   e = form.elements[1];
-  if (val2 == null)
+  if (val2 == null) {
     is(e.value, e.defaultValue, "Test default value of field " + e.name +
        " in form " + formNum);
-  else
+  } else {
     is(e.value, val2, "Test value of field " + e.name +
        " in form " + formNum);
+  }
 
 
-  if (!numToCheck--)
+  if (!numToCheck--) {
     return;
+  }
   e = form.elements[2];
-  if (val3 == null)
+  if (val3 == null) {
     is(e.value, e.defaultValue, "Test default value of field " + e.name +
        " in form " + formNum);
-  else
+  } else {
     is(e.value, val3, "Test value of field " + e.name +
        " in form " + formNum);
+  }
 }
 
 /**
@@ -90,35 +96,13 @@ function checkUnmodifiedForm(formNum) {
     var ele = form.elements[i];
 
     // No point in checking form submit/reset buttons.
-    if (ele.type == "submit" || ele.type == "reset")
+    if (ele.type == "submit" || ele.type == "reset") {
       continue;
+    }
 
     is(ele.value, ele.defaultValue, "Test to default value of field " +
        ele.name + " in form " + formNum);
   }
-}
-
-/**
- * Mochitest gives us a sendKey(), but it's targeted to a specific element.
- * This basically sends an untargeted key event, to whatever's focused.
- */
-function doKey(aKey, modifier) {
-  var keyName = "DOM_VK_" + aKey.toUpperCase();
-  var key = KeyEvent[keyName];
-
-  // undefined --> null
-  if (!modifier)
-    modifier = null;
-
-  // Window utils for sending fake sey events.
-  var wutils = SpecialPowers.wrap(window).
-               QueryInterface(SpecialPowers.Ci.nsIInterfaceRequestor).
-               getInterface(SpecialPowers.Ci.nsIDOMWindowUtils);
-
-  if (wutils.sendKeyEvent("keydown", key, 0, modifier)) {
-    wutils.sendKeyEvent("keypress", key, 0, modifier);
-  }
-  wutils.sendKeyEvent("keyup", key, 0, modifier);
 }
 
 /**
@@ -128,6 +112,7 @@ function doKey(aKey, modifier) {
  * notifications might be confused by this.
  */
 function commonInit(selfFilling) {
+  // eslint-disable-next-line mozilla/use-services
   var pwmgr = SpecialPowers.Cc["@mozilla.org/login-manager;1"].
               getService(SpecialPowers.Ci.nsILoginManager);
   ok(pwmgr != null, "Access LoginManager");
@@ -138,8 +123,9 @@ function commonInit(selfFilling) {
   var disabledHosts = pwmgr.getAllDisabledHosts();
   if (disabledHosts.length) {
     ok(false, "Warning: wasn't expecting disabled hosts to be present.");
-    for (var host of disabledHosts)
+    for (var host of disabledHosts) {
       pwmgr.setLoginSavingEnabled(host, true);
+    }
   }
 
   // Add a login that's used in multiple tests
@@ -155,8 +141,9 @@ function commonInit(selfFilling) {
   disabledHosts = pwmgr.getAllDisabledHosts();
   is(disabledHosts.length, 0, "Checking for no disabled hosts");
 
-  if (selfFilling)
+  if (selfFilling) {
     return;
+  }
 
   if (this.sendAsyncMessage) {
     sendAsyncMessage("registerRunTests");
@@ -183,9 +170,10 @@ function registerRunTests() {
       form.appendChild(password);
 
       var observer = SpecialPowers.wrapCallback(function(subject, topic, data) {
-        var formLikeRoot = subject.QueryInterface(SpecialPowers.Ci.nsIDOMNode);
-        if (formLikeRoot.id !== "observerforcer")
+        var formLikeRoot = subject;
+        if (formLikeRoot.id !== "observerforcer") {
           return;
+        }
         SpecialPowers.removeObserver(observer, "passwordmgr-processed-form");
         formLikeRoot.remove();
         SimpleTest.executeSoon(() => {
@@ -194,7 +182,7 @@ function registerRunTests() {
           resolve();
         });
       });
-      SpecialPowers.addObserver(observer, "passwordmgr-processed-form", false);
+      SpecialPowers.addObserver(observer, "passwordmgr-processed-form");
 
       document.body.appendChild(form);
     });
@@ -212,33 +200,27 @@ function disableMasterPassword() {
 }
 
 function setMasterPassword(enable) {
-  var oldPW, newPW;
-  if (enable) {
-    oldPW = "";
-    newPW = masterPassword;
-  } else {
-    oldPW = masterPassword;
-    newPW = "";
-  }
-  // Set master password. Note that this does not log you in, so the next
-  // invocation of pwmgr can trigger a MP prompt.
+  chromeScript.sendSyncMessage("setMasterPassword", { enable });
+}
 
-  var pk11db = Cc["@mozilla.org/security/pk11tokendb;1"].getService(Ci.nsIPK11TokenDB);
-  var token = pk11db.getInternalKeyToken();
-  info("MP change from " + oldPW + " to " + newPW);
-  token.changePassword(oldPW, newPW);
+function isLoggedIn() {
+  return chromeScript.sendSyncMessage("isLoggedIn")[0][0];
 }
 
 function logoutMasterPassword() {
-  var sdr = Cc["@mozilla.org/security/sdr;1"].getService(Ci.nsISecretDecoderRing);
-  sdr.logoutAndTeardown();
+  runInParent(function parent_logoutMasterPassword() {
+    const { classes: Cc, interfaces: Ci, results: Cr, utils: Cu } = Components;
+    var sdr = Cc["@mozilla.org/security/sdr;1"].getService(Ci.nsISecretDecoderRing);
+    sdr.logoutAndTeardown();
+  });
 }
 
 function dumpLogins(pwmgr) {
   var logins = pwmgr.getAllLogins();
   ok(true, "----- dumpLogins: have " + logins.length + " logins. -----");
-  for (var i = 0; i < logins.length; i++)
+  for (var i = 0; i < logins.length; i++) {
     dumpLogin("login #" + i + " --- ", logins[i]);
+  }
 }
 
 function dumpLogin(label, login) {
@@ -261,6 +243,7 @@ function dumpLogin(label, login) {
 }
 
 function getRecipeParent() {
+  // eslint-disable-next-line no-shadow
   var { LoginManagerParent } = SpecialPowers.Cu.import("resource://gre/modules/LoginManagerParent.jsm", {});
   if (!LoginManagerParent.recipeParentPromise) {
     return null;
@@ -283,7 +266,7 @@ function promiseFormsProcessed(expectedCount = 1) {
         resolve(SpecialPowers.Cu.waiveXrays(subject), data);
       }
     }
-    SpecialPowers.addObserver(onProcessedForm, "passwordmgr-processed-form", false);
+    SpecialPowers.addObserver(onProcessedForm, "passwordmgr-processed-form");
   });
 }
 
@@ -367,16 +350,15 @@ function runChecksAfterCommonInit(aFunction = null) {
 
 // Code to run when loaded as a chrome script in tests via loadChromeScript
 if (this.addMessageListener) {
-  const { classes: Cc, interfaces: Ci, results: Cr, utils: Cu } = Components;
-  var SpecialPowers = { Cc, Ci, Cr, Cu, };
+  var SpecialPowers = { Cc, Ci, Cr, Cu };
   var ok, is;
   // Ignore ok/is in commonInit since they aren't defined in a chrome script.
-  ok = is = () => {}; // eslint-disable-line no-native-reassign
+  ok = is = () => {};
 
-  Cu.import("resource://gre/modules/LoginHelper.jsm");
-  Cu.import("resource://gre/modules/LoginManagerParent.jsm");
-  Cu.import("resource://gre/modules/Services.jsm");
-  Cu.import("resource://gre/modules/Task.jsm");
+  ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+  ChromeUtils.import("resource://gre/modules/LoginHelper.jsm");
+  ChromeUtils.import("resource://gre/modules/LoginManagerParent.jsm");
+  ChromeUtils.import("resource://gre/modules/Services.jsm");
 
   function onStorageChanged(subject, topic, data) {
     sendAsyncMessage("storageChanged", {
@@ -384,7 +366,7 @@ if (this.addMessageListener) {
       data,
     });
   }
-  Services.obs.addObserver(onStorageChanged, "passwordmgr-storage-changed", false);
+  Services.obs.addObserver(onStorageChanged, "passwordmgr-storage-changed");
 
   function onPrompt(subject, topic, data) {
     sendAsyncMessage("promptShown", {
@@ -392,29 +374,29 @@ if (this.addMessageListener) {
       data,
     });
   }
-  Services.obs.addObserver(onPrompt, "passwordmgr-prompt-change", false);
-  Services.obs.addObserver(onPrompt, "passwordmgr-prompt-save", false);
+  Services.obs.addObserver(onPrompt, "passwordmgr-prompt-change");
+  Services.obs.addObserver(onPrompt, "passwordmgr-prompt-save");
 
   addMessageListener("setupParent", ({selfFilling = false} = {selfFilling: false}) => {
-    // Force LoginManagerParent to init for the tests since it's normally delayed
-    // by apps such as on Android.
-    LoginManagerParent.init();
-
     commonInit(selfFilling);
     sendAsyncMessage("doneSetup");
   });
 
-  addMessageListener("loadRecipes", Task.async(function*(recipes) {
-    var recipeParent = yield LoginManagerParent.recipeParentPromise;
-    yield recipeParent.load(recipes);
-    sendAsyncMessage("loadedRecipes", recipes);
-  }));
+  addMessageListener("loadRecipes", function(recipes) {
+    (async function() {
+      var recipeParent = await LoginManagerParent.recipeParentPromise;
+      await recipeParent.load(recipes);
+      sendAsyncMessage("loadedRecipes", recipes);
+    })();
+  });
 
-  addMessageListener("resetRecipes", Task.async(function*() {
-    let recipeParent = yield LoginManagerParent.recipeParentPromise;
-    yield recipeParent.reset();
-    sendAsyncMessage("recipesReset");
-  }));
+  addMessageListener("resetRecipes", function() {
+    (async function() {
+      let recipeParent = await LoginManagerParent.recipeParentPromise;
+      await recipeParent.reset();
+      sendAsyncMessage("recipesReset");
+    })();
+  });
 
   addMessageListener("proxyLoginManager", msg => {
     // Recreate nsILoginInfo objects from vanilla JS objects.
@@ -429,26 +411,47 @@ if (this.addMessageListener) {
     let rv = Services.logins[msg.methodName](...recreatedArgs);
     if (rv instanceof Ci.nsILoginInfo) {
       rv = LoginHelper.loginToVanillaObject(rv);
+    } else if (Array.isArray(rv) && rv.length > 0 && rv[0] instanceof Ci.nsILoginInfo) {
+      rv = rv.map(login => LoginHelper.loginToVanillaObject(login));
     }
     return rv;
   });
 
-  var globalMM = Cc["@mozilla.org/globalmessagemanager;1"].getService(Ci.nsIMessageListenerManager);
-  globalMM.addMessageListener("RemoteLogins:onFormSubmit", function onFormSubmit(message) {
+  addMessageListener("isLoggedIn", () => {
+    // This can't use the LoginManager proxy below since it's not a method.
+    return Services.logins.isLoggedIn;
+  });
+
+  addMessageListener("setMasterPassword", ({ enable }) => {
+    let oldPW, newPW;
+    if (enable) {
+      oldPW = "";
+      newPW = masterPassword;
+    } else {
+      oldPW = masterPassword;
+      newPW = "";
+    }
+    // Set master password. Note that this logs in the user if no password was
+    // set before. But after logging out the next invocation of pwmgr can
+    // trigger a MP prompt.
+
+    var pk11db = Cc["@mozilla.org/security/pk11tokendb;1"].getService(Ci.nsIPK11TokenDB);
+    var token = pk11db.getInternalKeyToken();
+    dump("MP change from " + oldPW + " to " + newPW + "\n");
+    token.changePassword(oldPW, newPW);
+    token.logoutSimple();
+  });
+
+  Services.mm.addMessageListener("RemoteLogins:onFormSubmit", function onFormSubmit(message) {
     sendAsyncMessage("formSubmissionProcessed", message.data, message.objects);
   });
 } else {
   // Code to only run in the mochitest pages (not in the chrome script).
-  SpecialPowers.pushPrefEnv({"set": [["signon.rememberSignons", true],
-                                     ["signon.autofillForms.http", true],
-                                     ["security.insecure_field_warning.contextual.enabled", false]]
-                           });
   SimpleTest.registerCleanupFunction(() => {
     SpecialPowers.popPrefEnv();
     runInParent(function cleanupParent() {
-      const { classes: Cc, interfaces: Ci, results: Cr, utils: Cu } = Components;
-      Cu.import("resource://gre/modules/Services.jsm");
-      Cu.import("resource://gre/modules/LoginManagerParent.jsm");
+      ChromeUtils.import("resource://gre/modules/Services.jsm");
+      ChromeUtils.import("resource://gre/modules/LoginManagerParent.jsm");
 
       // Remove all logins and disabled hosts
       Services.logins.removeAllLogins();
@@ -472,13 +475,14 @@ if (this.addMessageListener) {
           dump("Removing " + notes.length + " popup notifications.\n");
         }
         for (let note of notes) {
-	  note.remove();
+          note.remove();
         }
       }
     });
   });
 
 
+  // eslint-disable-next-line no-shadow
   let { LoginHelper } = SpecialPowers.Cu.import("resource://gre/modules/LoginHelper.jsm", {});
   /**
    * Proxy for Services.logins (nsILoginManager).

@@ -17,7 +17,7 @@ class TestL10n(PuppeteerMixin, MarionetteTestCase):
         self.l10n = L10n(self.marionette)
 
     def test_dtd_entity_chrome(self):
-        dtds = ['chrome://global/locale/about.dtd',
+        dtds = ['chrome://branding/locale/brand.dtd',
                 'chrome://browser/locale/baseMenuOverlay.dtd']
 
         value = self.l10n.localize_entity(dtds, 'helpSafeMode.label')
@@ -28,15 +28,15 @@ class TestL10n(PuppeteerMixin, MarionetteTestCase):
                           self.l10n.localize_entity, dtds, 'notExistent')
 
     def test_dtd_entity_content(self):
-        dtds = ['chrome://global/locale/about.dtd',
-                'chrome://global/locale/aboutSupport.dtd']
+        dtds = ['chrome://branding/locale/brand.dtd',
+                'chrome://global/locale/aboutRights.dtd']
 
-        value = self.l10n.localize_entity(dtds, 'aboutSupport.pageTitle')
+        value = self.l10n.localize_entity(dtds, 'rights.title')
 
         self.marionette.set_context(self.marionette.CONTEXT_CONTENT)
-        self.marionette.navigate('about:support')
+        self.marionette.navigate('about:rights')
 
-        elm = self.marionette.find_element(By.TAG_NAME, 'title')
+        elm = self.marionette.find_element(By.TAG_NAME, 'h1')
         self.assertEqual(value, elm.text)
 
     def test_properties(self):

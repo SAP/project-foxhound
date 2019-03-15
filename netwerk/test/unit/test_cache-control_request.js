@@ -1,5 +1,6 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var httpserver = new HttpServer();
 httpserver.start(-1);
@@ -85,12 +86,9 @@ function run_test()
 {
   do_get_profile();
 
-  if (!newCacheBackEndUsed()) {
-    do_check_true(true, "This test doesn't run when the old cache back end is used since it depends on the new APIs.");
-    return;
-  }
-
   do_test_pending();
+
+  Services.prefs.setBoolPref("network.http.rcwn.enabled", false);
 
   httpserver.registerPathHandler(resource_age_100, resource_age_100_handler);
   httpserver.registerPathHandler(resource_stale_100, resource_stale_100_handler);
@@ -109,8 +107,8 @@ add_test(() => {
   // Must not create a cache entry
   var ch = make_channel(resource_age_100_url, "no-store");
   ch.asyncOpen2(new ChannelListener(function(request, data) {
-    do_check_true(hit_server);
-    do_check_false(cache.exists(make_uri(resource_age_100_url), ""));
+    Assert.ok(hit_server);
+    Assert.ok(!cache.exists(make_uri(resource_age_100_url), ""));
 
     run_next_test();
   }, null));
@@ -120,8 +118,8 @@ add_test(() => {
   // Prepare state only, cache the entry
   var ch = make_channel(resource_age_100_url);
   ch.asyncOpen2(new ChannelListener(function(request, data) {
-    do_check_true(hit_server);
-    do_check_true(cache.exists(make_uri(resource_age_100_url), ""));
+    Assert.ok(hit_server);
+    Assert.ok(cache.exists(make_uri(resource_age_100_url), ""));
 
     run_next_test();
   }, null));
@@ -131,8 +129,8 @@ add_test(() => {
   // Check the prepared cache entry is used when no special directives are added
   var ch = make_channel(resource_age_100_url);
   ch.asyncOpen2(new ChannelListener(function(request, data) {
-    do_check_false(hit_server);
-    do_check_true(cache.exists(make_uri(resource_age_100_url), ""));
+    Assert.ok(!hit_server);
+    Assert.ok(cache.exists(make_uri(resource_age_100_url), ""));
 
     run_next_test();
   }, null));
@@ -143,8 +141,8 @@ add_test(() => {
   // the channel must not use it, entry should stay in the cache
   var ch = make_channel(resource_age_100_url, "no-store");
   ch.asyncOpen2(new ChannelListener(function(request, data) {
-    do_check_true(hit_server);
-    do_check_true(cache.exists(make_uri(resource_age_100_url), ""));
+    Assert.ok(hit_server);
+    Assert.ok(cache.exists(make_uri(resource_age_100_url), ""));
 
     run_next_test();
   }, null));
@@ -157,8 +155,8 @@ add_test(() => {
   // Check the prepared cache entry is used when no special directives are added
   var ch = make_channel(resource_age_100_url);
   ch.asyncOpen2(new ChannelListener(function(request, data) {
-    do_check_false(hit_server);
-    do_check_true(cache.exists(make_uri(resource_age_100_url), ""));
+    Assert.ok(!hit_server);
+    Assert.ok(cache.exists(make_uri(resource_age_100_url), ""));
 
     run_next_test();
   }, null));
@@ -168,8 +166,8 @@ add_test(() => {
   // The existing entry should be revalidated (we expect a server hit)
   var ch = make_channel(resource_age_100_url, "no-cache");
   ch.asyncOpen2(new ChannelListener(function(request, data) {
-    do_check_true(hit_server);
-    do_check_true(cache.exists(make_uri(resource_age_100_url), ""));
+    Assert.ok(hit_server);
+    Assert.ok(cache.exists(make_uri(resource_age_100_url), ""));
 
     run_next_test();
   }, null));
@@ -182,8 +180,8 @@ add_test(() => {
   // Check the prepared cache entry is used when no special directives are added
   var ch = make_channel(resource_age_100_url);
   ch.asyncOpen2(new ChannelListener(function(request, data) {
-    do_check_false(hit_server);
-    do_check_true(cache.exists(make_uri(resource_age_100_url), ""));
+    Assert.ok(!hit_server);
+    Assert.ok(cache.exists(make_uri(resource_age_100_url), ""));
 
     run_next_test();
   }, null));
@@ -194,8 +192,8 @@ add_test(() => {
   // should hit server
   var ch = make_channel(resource_age_100_url, "max-age=10");
   ch.asyncOpen2(new ChannelListener(function(request, data) {
-    do_check_true(hit_server);
-    do_check_true(cache.exists(make_uri(resource_age_100_url), ""));
+    Assert.ok(hit_server);
+    Assert.ok(cache.exists(make_uri(resource_age_100_url), ""));
 
     run_next_test();
   }, null));
@@ -206,8 +204,8 @@ add_test(() => {
   // but the max-stale directive says to use it when it's fresh enough
   var ch = make_channel(resource_age_100_url, "max-age=10, max-stale=99999");
   ch.asyncOpen2(new ChannelListener(function(request, data) {
-    do_check_false(hit_server);
-    do_check_true(cache.exists(make_uri(resource_age_100_url), ""));
+    Assert.ok(!hit_server);
+    Assert.ok(cache.exists(make_uri(resource_age_100_url), ""));
 
     run_next_test();
   }, null));
@@ -218,8 +216,8 @@ add_test(() => {
   // should go from cache
   var ch = make_channel(resource_age_100_url, "max-age=1000");
   ch.asyncOpen2(new ChannelListener(function(request, data) {
-    do_check_false(hit_server);
-    do_check_true(cache.exists(make_uri(resource_age_100_url), ""));
+    Assert.ok(!hit_server);
+    Assert.ok(cache.exists(make_uri(resource_age_100_url), ""));
 
     run_next_test();
   }, null));
@@ -232,8 +230,8 @@ add_test(() => {
   // Preprate the entry first
   var ch = make_channel(resource_stale_100_url);
   ch.asyncOpen2(new ChannelListener(function(request, data) {
-    do_check_true(hit_server);
-    do_check_true(cache.exists(make_uri(resource_stale_100_url), ""));
+    Assert.ok(hit_server);
+    Assert.ok(cache.exists(make_uri(resource_stale_100_url), ""));
 
     // Must shift the expiration time set on the entry to |now| be in the past
     do_timeout(1500, run_next_test);
@@ -245,8 +243,8 @@ add_test(() => {
   // are provided
   var ch = make_channel(resource_stale_100_url);
   ch.asyncOpen2(new ChannelListener(function(request, data) {
-    do_check_true(hit_server);
-    do_check_true(cache.exists(make_uri(resource_stale_100_url), ""));
+    Assert.ok(hit_server);
+    Assert.ok(cache.exists(make_uri(resource_stale_100_url), ""));
 
     do_timeout(1500, run_next_test);
   }, null));
@@ -256,8 +254,8 @@ add_test(() => {
   // Accept cached responses of any stale time
   var ch = make_channel(resource_stale_100_url, "max-stale");
   ch.asyncOpen2(new ChannelListener(function(request, data) {
-    do_check_false(hit_server);
-    do_check_true(cache.exists(make_uri(resource_stale_100_url), ""));
+    Assert.ok(!hit_server);
+    Assert.ok(cache.exists(make_uri(resource_stale_100_url), ""));
 
     do_timeout(1500, run_next_test);
   }, null));
@@ -267,8 +265,8 @@ add_test(() => {
   // The entry is stale only by 100 seconds, accept it
   var ch = make_channel(resource_stale_100_url, "max-stale=1000");
   ch.asyncOpen2(new ChannelListener(function(request, data) {
-    do_check_false(hit_server);
-    do_check_true(cache.exists(make_uri(resource_stale_100_url), ""));
+    Assert.ok(!hit_server);
+    Assert.ok(cache.exists(make_uri(resource_stale_100_url), ""));
 
     do_timeout(1500, run_next_test);
   }, null));
@@ -279,8 +277,8 @@ add_test(() => {
   // entry, go from server
   var ch = make_channel(resource_stale_100_url, "max-stale=10");
   ch.asyncOpen2(new ChannelListener(function(request, data) {
-    do_check_true(hit_server);
-    do_check_true(cache.exists(make_uri(resource_stale_100_url), ""));
+    Assert.ok(hit_server);
+    Assert.ok(cache.exists(make_uri(resource_stale_100_url), ""));
 
     run_next_test();
   }, null));
@@ -293,8 +291,8 @@ add_test(() => {
   // Preprate the entry first
   var ch = make_channel(resource_fresh_100_url);
   ch.asyncOpen2(new ChannelListener(function(request, data) {
-    do_check_true(hit_server);
-    do_check_true(cache.exists(make_uri(resource_fresh_100_url), ""));
+    Assert.ok(hit_server);
+    Assert.ok(cache.exists(make_uri(resource_fresh_100_url), ""));
 
     run_next_test();
   }, null));
@@ -304,8 +302,8 @@ add_test(() => {
   // Check it's reused when no special directives are provided
   var ch = make_channel(resource_fresh_100_url);
   ch.asyncOpen2(new ChannelListener(function(request, data) {
-    do_check_false(hit_server);
-    do_check_true(cache.exists(make_uri(resource_fresh_100_url), ""));
+    Assert.ok(!hit_server);
+    Assert.ok(cache.exists(make_uri(resource_fresh_100_url), ""));
 
     run_next_test();
   }, null));
@@ -315,8 +313,8 @@ add_test(() => {
   // Entry fresh enough to be served from the cache
   var ch = make_channel(resource_fresh_100_url, "min-fresh=10");
   ch.asyncOpen2(new ChannelListener(function(request, data) {
-    do_check_false(hit_server);
-    do_check_true(cache.exists(make_uri(resource_fresh_100_url), ""));
+    Assert.ok(!hit_server);
+    Assert.ok(cache.exists(make_uri(resource_fresh_100_url), ""));
 
     run_next_test();
   }, null));
@@ -326,8 +324,8 @@ add_test(() => {
   // The entry is not fresh enough
   var ch = make_channel(resource_fresh_100_url, "min-fresh=1000");
   ch.asyncOpen2(new ChannelListener(function(request, data) {
-    do_check_true(hit_server);
-    do_check_true(cache.exists(make_uri(resource_fresh_100_url), ""));
+    Assert.ok(hit_server);
+    Assert.ok(cache.exists(make_uri(resource_fresh_100_url), ""));
 
     run_next_test();
   }, null));
@@ -340,8 +338,8 @@ add_test(() => {
 add_test(() => {
   var ch = make_channel(resource_fresh_100_url, "unknown1,unknown2 = \"a,b\",  min-fresh = 1000 ");
   ch.asyncOpen2(new ChannelListener(function(request, data) {
-    do_check_true(hit_server);
-    do_check_true(cache.exists(make_uri(resource_fresh_100_url), ""));
+    Assert.ok(hit_server);
+    Assert.ok(cache.exists(make_uri(resource_fresh_100_url), ""));
 
     run_next_test();
   }, null));
@@ -350,8 +348,8 @@ add_test(() => {
 add_test(() => {
   var ch = make_channel(resource_fresh_100_url, "no-cache = , min-fresh = 10");
   ch.asyncOpen2(new ChannelListener(function(request, data) {
-    do_check_true(hit_server);
-    do_check_true(cache.exists(make_uri(resource_fresh_100_url), ""));
+    Assert.ok(hit_server);
+    Assert.ok(cache.exists(make_uri(resource_fresh_100_url), ""));
 
     run_next_test();
   }, null));

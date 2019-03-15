@@ -4,10 +4,9 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["LanguageDetector"];
+var EXPORTED_SYMBOLS = ["LanguageDetector"];
 
-Components.utils.import("resource://gre/modules/Timer.jsm");
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
 // Since Emscripten can handle heap growth, but not heap shrinkage, we
 // need to refresh the worker after we've processed a particularly large
@@ -45,7 +44,7 @@ var workerManager = {
         this.flushWorker();
 
       return result;
-    })
+    });
   },
 
   _worker: null,
@@ -95,7 +94,7 @@ var workerManager = {
   },
 };
 
-this.LanguageDetector = {
+var LanguageDetector = {
   /**
    * Detect the language of a given string.
    *

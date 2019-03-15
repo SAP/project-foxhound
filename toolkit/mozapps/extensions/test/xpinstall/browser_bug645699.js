@@ -11,8 +11,8 @@ function test() {
   var pm = Services.perms;
   pm.add(makeURI("http://example.org/"), "install", pm.ALLOW_ACTION);
 
-  gBrowser.selectedTab = gBrowser.addTab();
-  gBrowser.loadURI(TESTROOT + "bug645699.html");
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
+  BrowserTestUtils.loadURI(gBrowser, TESTROOT + "bug645699.html");
 }
 
 function allow_blocked(installInfo) {
@@ -21,7 +21,7 @@ function allow_blocked(installInfo) {
   return false;
 }
 
-function confirm_install(window) {
+function confirm_install(panel) {
   ok(false, "Should not see the install dialog");
   return false;
 }

@@ -28,9 +28,9 @@ function write_and_check(str, data, len)
 
 function write_datafile(status, entry)
 {
-  do_check_eq(status, Cr.NS_OK);
-  var os = entry.openOutputStream(0);
+  Assert.equal(status, Cr.NS_OK);
   var data = gen_1MiB();
+  var os = entry.openOutputStream(0, data.length);
 
   // write 2MiB
   var i;
@@ -51,8 +51,8 @@ function write_datafile(status, entry)
 
 function append_datafile(status, entry)
 {
-  do_check_eq(status, Cr.NS_OK);
-  var os = entry.openOutputStream(entry.dataSize);
+  Assert.equal(status, Cr.NS_OK);
+  var os = entry.openOutputStream(entry.dataSize, -1);
   var data = gen_1MiB();
 
   // append 1MiB

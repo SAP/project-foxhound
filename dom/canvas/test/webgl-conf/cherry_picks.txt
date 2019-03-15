@@ -1,0 +1,22 @@
+
+Cherries picked
+================================================================================
+Merge base from: ups/master
+
+commit 78e2fa62ac3f061bfcc7feeec98dad4ad103ca59
+Merge: 816dbcc8 2bb8be26
+Author: Jeff Gilbert <jdashg@gmail.com>
+Date:   Thu Oct 4 13:53:33 2018 -0700
+
+    Merge pull request #2721 from jdashg/ext-bptc
+    
+    Rename BPTC and RGTC extensions to EXT_.
+
+commit 2bb8be266c718add7e2ccb262c4733fe00ad19f2
+Author: Jeff Gilbert <jgilbert@mozilla.com>
+Date:   Fri Sep 28 12:59:21 2018 -0700
+
+    Rename BPTC and RGTC extensions to EXT_.
+    
+    Also retarget BPTC from the ARB_ ext to the EXT_ one, since EXT_ is the
+    ES version.

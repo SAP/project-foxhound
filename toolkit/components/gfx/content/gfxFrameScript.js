@@ -1,7 +1,7 @@
 /* eslint-env mozilla/frame-script */
 
-var { classes: Cc, interfaces: Ci, utils: Cu } = Components;
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const gfxFrameScript = {
   domUtils: null,
@@ -12,13 +12,12 @@ const gfxFrameScript = {
                        .getInterface(Ci.nsIWebProgress);
     webProgress.addProgressListener(this, Ci.nsIWebProgress.NOTIFY_STATE_WINDOW);
 
-    this.domUtils = content.QueryInterface(Ci.nsIInterfaceRequestor)
-                    .getInterface(Ci.nsIDOMWindowUtils);
+    this.domUtils = content.windowUtils;
 
-    webNav.loadURI("chrome://gfxsanity/content/sanitytest.html",
-                   Ci.nsIWebNavigation.LOAD_FLAGS_NONE,
-                   null, null, null);
-
+    let loadURIOptions = {
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+    };
+    webNav.loadURI("chrome://gfxsanity/content/sanitytest.html", loadURIOptions);
   },
 
   handleEvent(aEvent) {
@@ -55,7 +54,7 @@ const gfxFrameScript = {
   },
 
   // Needed to support web progress listener
-  QueryInterface: XPCOMUtils.generateQI([
+  QueryInterface: ChromeUtils.generateQI([
     Ci.nsIWebProgressListener,
     Ci.nsISupportsWeakReference,
     Ci.nsIObserver,

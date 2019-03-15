@@ -10,37 +10,37 @@ var draggedItem;
  */
 
 // Drop on the palette
-add_task(function*() {
-  draggedItem = document.createElement("toolbarbutton");
+add_task(async function() {
+  draggedItem = document.createXULElement("toolbarbutton");
   draggedItem.id = "test-dragEnd-after-move1";
   draggedItem.setAttribute("label", "Test");
   draggedItem.setAttribute("removable", "true");
   let navbar = document.getElementById("nav-bar");
-  navbar.customizationTarget.appendChild(draggedItem);
-  yield startCustomizing();
+  CustomizableUI.getCustomizationTarget(navbar).appendChild(draggedItem);
+  await startCustomizing();
   simulateItemDrag(draggedItem, gCustomizeMode.visiblePalette);
   is(document.documentElement.hasAttribute("customizing-movingItem"), false,
      "Make sure customizing-movingItem is removed after dragging to the palette");
-  yield endCustomizing();
+  await endCustomizing();
 });
 
 // Drop on a customization target itself
-add_task(function*() {
-  draggedItem = document.createElement("toolbarbutton");
+add_task(async function() {
+  draggedItem = document.createXULElement("toolbarbutton");
   draggedItem.id = "test-dragEnd-after-move2";
   draggedItem.setAttribute("label", "Test");
   draggedItem.setAttribute("removable", "true");
   let dest = createToolbarWithPlacements("test-dragEnd");
   let navbar = document.getElementById("nav-bar");
-  navbar.customizationTarget.appendChild(draggedItem);
-  yield startCustomizing();
-  simulateItemDrag(draggedItem, dest.customizationTarget);
+  CustomizableUI.getCustomizationTarget(navbar).appendChild(draggedItem);
+  await startCustomizing();
+  simulateItemDrag(draggedItem, CustomizableUI.getCustomizationTarget(dest));
   is(document.documentElement.hasAttribute("customizing-movingItem"), false,
      "Make sure customizing-movingItem is removed");
-  yield endCustomizing();
+  await endCustomizing();
 });
 
-add_task(function* asyncCleanup() {
-  yield endCustomizing();
-  yield resetCustomization();
+add_task(async function asyncCleanup() {
+  await endCustomizing();
+  await resetCustomization();
 });

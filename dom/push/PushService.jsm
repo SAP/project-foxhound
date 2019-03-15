@@ -5,31 +5,26 @@
 
 "use strict";
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cu = Components.utils;
-const Cr = Components.results;
-
-Cu.import("resource://gre/modules/AppConstants.jsm");
-Cu.import("resource://gre/modules/Preferences.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Timer.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+ChromeUtils.import("resource://gre/modules/Preferences.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Timer.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 const {
   PushCrypto,
   getCryptoParams,
   CryptoError,
-} = Cu.import("resource://gre/modules/PushCrypto.jsm");
-const {PushDB} = Cu.import("resource://gre/modules/PushDB.jsm");
+} = ChromeUtils.import("resource://gre/modules/PushCrypto.jsm");
+const {PushDB} = ChromeUtils.import("resource://gre/modules/PushDB.jsm");
 
 const CONNECTION_PROTOCOLS = (function() {
   if ('android' != AppConstants.MOZ_WIDGET_TOOLKIT) {
-    const {PushServiceWebSocket} = Cu.import("resource://gre/modules/PushServiceWebSocket.jsm");
-    const {PushServiceHttp2} = Cu.import("resource://gre/modules/PushServiceHttp2.jsm");
+    const {PushServiceWebSocket} = ChromeUtils.import("resource://gre/modules/PushServiceWebSocket.jsm");
+    const {PushServiceHttp2} = ChromeUtils.import("resource://gre/modules/PushServiceHttp2.jsm");
     return [PushServiceWebSocket, PushServiceHttp2];
   } else {
-    const {PushServiceAndroidGCM} = Cu.import("resource://gre/modules/PushServiceAndroidGCM.jsm");
+    const {PushServiceAndroidGCM} = ChromeUtils.import("resource://gre/modules/PushServiceAndroidGCM.jsm");
     return [PushServiceAndroidGCM];
   }
 })();
@@ -37,11 +32,15 @@ const CONNECTION_PROTOCOLS = (function() {
 XPCOMUtils.defineLazyServiceGetter(this, "gPushNotifier",
                                    "@mozilla.org/push/Notifier;1",
                                    "nsIPushNotifier");
+XPCOMUtils.defineLazyServiceGetter(this, "eTLDService",
+                                   "@mozilla.org/network/effective-tld-service;1",
+                                   "nsIEffectiveTLDService");
+ChromeUtils.defineModuleGetter(this, "pushBroadcastService", "resource://gre/modules/PushBroadcastService.jsm");
 
-this.EXPORTED_SYMBOLS = ["PushService"];
+var EXPORTED_SYMBOLS = ["PushService"];
 
 XPCOMUtils.defineLazyGetter(this, "console", () => {
-  let {ConsoleAPI} = Cu.import("resource://gre/modules/Console.jsm", {});
+  let {ConsoleAPI} = ChromeUtils.import("resource://gre/modules/Console.jsm", {});
   return new ConsoleAPI({
     maxLogLevelPref: "dom.push.loglevel",
     prefix: "PushService",
@@ -56,16 +55,6 @@ const PUSH_SERVICE_ACTIVATING = 2;//activating db
 const PUSH_SERVICE_CONNECTION_DISABLE = 3;
 const PUSH_SERVICE_ACTIVE_OFFLINE = 4;
 const PUSH_SERVICE_RUNNING = 5;
-
-// Telemetry failure to send push notification to Service Worker reasons.
-// Key not found in local database.
-const kDROP_NOTIFICATION_REASON_KEY_NOT_FOUND = 0;
-// User cleared history.
-const kDROP_NOTIFICATION_REASON_NO_HISTORY = 1;
-// Version of message received not newer than previous one.
-const kDROP_NOTIFICATION_REASON_NO_VERSION_INCREMENT = 2;
-// Subscription has expired.
-const kDROP_NOTIFICATION_REASON_EXPIRED = 3;
 
 /**
  * State is change only in couple of functions:
@@ -101,38 +90,11 @@ function errorWithResult(message, result = Cr.NS_ERROR_FAILURE) {
 }
 
 /**
- * Copied from ForgetAboutSite.jsm.
- *
- * Returns true if the string passed in is part of the root domain of the
- * current string.  For example, if this is "www.mozilla.org", and we pass in
- * "mozilla.org", this will return true.  It would return false the other way
- * around.
- */
-function hasRootDomain(str, aDomain)
-{
-  let index = str.indexOf(aDomain);
-  // If aDomain is not found, we know we do not have it as a root domain.
-  if (index == -1)
-    return false;
-
-  // If the strings are the same, we obviously have a match.
-  if (str == aDomain)
-    return true;
-
-  // Otherwise, we have aDomain as our root domain iff the index of aDomain is
-  // aDomain.length subtracted from our length and (since we do not have an
-  // exact match) the character before the index is a dot or slash.
-  let prevChar = str[index - 1];
-  return (index == (str.length - aDomain.length)) &&
-         (prevChar == "." || prevChar == "/");
-}
-
-/**
  * The implementation of the push system. It uses WebSockets
  * (PushServiceWebSocket) to communicate with the server and PushDB (IndexedDB)
  * for persistence.
  */
-this.PushService = {
+var PushService = {
   _service: null,
   _state: PUSH_SERVICE_UNINIT,
   _db: null,
@@ -230,13 +192,13 @@ this.PushService = {
     this._state = aNewState;
   },
 
-  _changeStateOfflineEvent: function(offline, calledFromConnEnabledEvent) {
+  async _changeStateOfflineEvent(offline, calledFromConnEnabledEvent) {
     console.debug("changeStateOfflineEvent()", offline);
 
     if (this._state < PUSH_SERVICE_ACTIVE_OFFLINE &&
         this._state != PUSH_SERVICE_ACTIVATING &&
         !calledFromConnEnabledEvent) {
-      return Promise.resolve();
+      return;
     }
 
     if (offline) {
@@ -244,7 +206,7 @@ this.PushService = {
         this._service.disconnect();
       }
       this._setState(PUSH_SERVICE_ACTIVE_OFFLINE);
-      return Promise.resolve();
+      return;
     }
 
     if (this._state == PUSH_SERVICE_RUNNING) {
@@ -253,13 +215,27 @@ this.PushService = {
       // Disconnect first.
       this._service.disconnect();
     }
-    return this.getAllUnexpired().then(records => {
-      this._setState(PUSH_SERVICE_RUNNING);
-      if (records.length > 0) {
-        // if there are request waiting
-        this._service.connect(records);
-      }
-    });
+
+    let records = await this.getAllUnexpired();
+    let broadcastListeners = await pushBroadcastService.getListeners();
+
+    // In principle, a listener could be added to the
+    // pushBroadcastService here, after we have gotten listeners and
+    // before we're RUNNING, but this can't happen in practice because
+    // the only caller that can add listeners is PushBroadcastService,
+    // and it waits on the same promise we are before it can add
+    // listeners. If PushBroadcastService gets woken first, it will
+    // update the value that is eventually returned from
+    // getListeners.
+    this._setState(PUSH_SERVICE_RUNNING);
+
+    if (records.length > 0 || prefs.get("alwaysConnect")) {
+      // Connect if we have existing subscriptions, or if the always-on pref
+      // is set. We gate on the pref to let us do load testing before
+      // turning it on for everyone, but if the user has push
+      // subscriptions, we need to connect them anyhow.
+      this._service.connect(records, broadcastListeners);
+    }
   },
 
   _changeStateConnectionEnabledEvent: function(enabled) {
@@ -320,7 +296,7 @@ this.PushService = {
                                   CHANGING_SERVICE_EVENT)
           );
 
-        } else if (aData == "dom.push.connection.enabled") {
+        } else if (aData == "dom.push.connection.enabled" || aData == "dom.push.alwaysConnect") {
           this._stateChangeProcessEnqueue(_ =>
             this._changeStateConnectionEnabledEvent(prefs.get("connection.enabled"))
           );
@@ -493,18 +469,18 @@ this.PushService = {
     this._setState(PUSH_SERVICE_ACTIVATING);
 
     prefs.observe("serverURL", this);
-    Services.obs.addObserver(this, "quit-application", false);
+    Services.obs.addObserver(this, "quit-application");
 
     if (options.serverURI) {
       // this is use for xpcshell test.
 
-      this._stateChangeProcessEnqueue(_ =>
+      return this._stateChangeProcessEnqueue(_ =>
         this._changeServerURL(options.serverURI, STARTING_SERVICE_EVENT, options));
 
     } else {
       // This is only used for testing. Different tests require connecting to
       // slightly different URLs.
-      this._stateChangeProcessEnqueue(_ =>
+      return this._stateChangeProcessEnqueue(_ =>
         this._changeServerURL(prefs.get("serverURL"), STARTING_SERVICE_EVENT));
     }
   },
@@ -516,22 +492,24 @@ this.PushService = {
       return;
     }
 
-    Services.obs.addObserver(this, "clear-origin-attributes-data", false);
+    Services.obs.addObserver(this, "clear-origin-attributes-data");
 
     // The offline-status-changed event is used to know
     // when to (dis)connect. It may not fire if the underlying OS changes
     // networks; in such a case we rely on timeout.
-    Services.obs.addObserver(this, "network:offline-status-changed", false);
+    Services.obs.addObserver(this, "network:offline-status-changed");
 
     // Used to monitor if the user wishes to disable Push.
     prefs.observe("connection.enabled", this);
+    // Used to load-test the server-side infrastructure for broadcast.
+    prefs.observe("alwaysConnect", this);
 
     // Prunes expired registrations and notifies dormant service workers.
-    Services.obs.addObserver(this, "idle-daily", false);
+    Services.obs.addObserver(this, "idle-daily");
 
     // Prunes registrations for sites for which the user revokes push
     // permissions.
-    Services.obs.addObserver(this, "perm-changed", false);
+    Services.obs.addObserver(this, "perm-changed");
   },
 
   _startService(service, serverURI, options) {
@@ -608,6 +586,7 @@ this.PushService = {
     }
 
     prefs.ignore("connection.enabled", this);
+    prefs.ignore("alwaysConnect", this);
 
     Services.obs.removeObserver(this, "network:offline-status-changed");
     Services.obs.removeObserver(this, "clear-origin-attributes-data");
@@ -660,8 +639,6 @@ this.PushService = {
     if (!record) {
       return;
     }
-
-    Services.telemetry.getHistogramById("PUSH_API_NOTIFY_REGISTRATION_LOST").add();
     gPushNotifier.notifySubscriptionChange(record.scope, record.principal);
   },
 
@@ -735,12 +712,6 @@ this.PushService = {
       });
   },
 
-  _recordDidNotNotify: function(reason) {
-    Services.telemetry.
-      getHistogramById("PUSH_API_NOTIFICATION_RECEIVED_BUT_DID_NOT_NOTIFY").
-      add(reason);
-  },
-
   /**
    * Dispatches an incoming message to a service worker, recalculating the
    * quota for the associated push registration. If the quota is exceeded,
@@ -763,7 +734,6 @@ this.PushService = {
    */
   receivedPushMessage(keyID, messageID, headers, data, updateFunc) {
     console.debug("receivedPushMessage()");
-    Services.telemetry.getHistogramById("PUSH_API_NOTIFICATION_RECEIVED").add();
 
     return this._updateRecordAfterPush(keyID, updateFunc).then(record => {
       if (record.quotaApplies()) {
@@ -786,6 +756,16 @@ this.PushService = {
   },
 
   /**
+   * Dispatches a broadcast notification to the BroadcastService.
+   */
+  receivedBroadcastMessage(message) {
+    pushBroadcastService.receivedBroadcastMessage(message.broadcasts)
+      .catch(e => {
+        console.error(e);
+      });;
+  },
+
+  /**
    * Updates a registration record after receiving a push message.
    *
    * @param {String} keyID The push registration ID.
@@ -796,14 +776,12 @@ this.PushService = {
   _updateRecordAfterPush(keyID, updateFunc) {
     return this.getByKeyID(keyID).then(record => {
       if (!record) {
-        this._recordDidNotNotify(kDROP_NOTIFICATION_REASON_KEY_NOT_FOUND);
         throw new Error("No record for key ID " + keyID);
       }
       return record.getLastVisit().then(lastVisit => {
         // As a special case, don't notify the service worker if the user
         // cleared their history.
         if (!isFinite(lastVisit)) {
-          this._recordDidNotNotify(kDROP_NOTIFICATION_REASON_NO_HISTORY);
           throw new Error("Ignoring message sent to unvisited origin");
         }
         return lastVisit;
@@ -813,7 +791,6 @@ this.PushService = {
         return this._db.update(keyID, record => {
           let newRecord = updateFunc(record);
           if (!newRecord) {
-            this._recordDidNotNotify(kDROP_NOTIFICATION_REASON_NO_VERSION_INCREMENT);
             return null;
           }
           // Because `unregister` is advisory only, we can still receive messages
@@ -877,7 +854,6 @@ this.PushService = {
       return record;
     }).then(record => {
       if (record.isExpired()) {
-        this._recordDidNotNotify(kDROP_NOTIFICATION_REASON_EXPIRED);
         // Drop the registration in the background. If the user returns to the
         // site, the service worker will be notified on the next `idle-daily`
         // event.
@@ -1004,7 +980,6 @@ this.PushService = {
   _registerWithServer: function(aPageRecord) {
     console.debug("registerWithServer()", aPageRecord);
 
-    Services.telemetry.getHistogramById("PUSH_API_SUBSCRIBE_ATTEMPT").add();
     return this._sendRequest("register", aPageRecord)
       .then(record => this._onRegisterSuccess(record),
             err => this._onRegisterError(err))
@@ -1020,14 +995,7 @@ this.PushService = {
   },
 
   _sendUnregister(aRecord, aReason) {
-    Services.telemetry.getHistogramById("PUSH_API_UNSUBSCRIBE_ATTEMPT").add();
-    return this._sendRequest("unregister", aRecord, aReason).then(function(v) {
-      Services.telemetry.getHistogramById("PUSH_API_UNSUBSCRIBE_SUCCEEDED").add();
-      return v;
-    }).catch(function(e) {
-      Services.telemetry.getHistogramById("PUSH_API_UNSUBSCRIBE_FAILED").add();
-      return Promise.reject(e);
-    });
+    return this._sendRequest("unregister", aRecord, aReason);
   },
 
   /**
@@ -1038,12 +1006,7 @@ this.PushService = {
     console.debug("_onRegisterSuccess()");
 
     return this._db.put(aRecord)
-      .then(record => {
-        Services.telemetry.getHistogramById("PUSH_API_SUBSCRIBE_SUCCEEDED").add();
-        return record;
-      })
       .catch(error => {
-        Services.telemetry.getHistogramById("PUSH_API_SUBSCRIBE_FAILED").add()
         // Unable to save. Destroy the subscription in the background.
         this._backgroundUnregister(aRecord,
                                    Ci.nsIPushErrorReporter.UNSUBSCRIBE_MANUAL);
@@ -1057,7 +1020,7 @@ this.PushService = {
    */
   _onRegisterError: function(reply) {
     console.debug("_onRegisterError()");
-    Services.telemetry.getHistogramById("PUSH_API_SUBSCRIBE_FAILED").add()
+
     if (!reply.error) {
       console.warn("onRegisterError: Called without valid error message!",
         reply);
@@ -1120,6 +1083,21 @@ this.PushService = {
     });
   },
 
+  /*
+   * Called only by the PushBroadcastService on the receipt of a new
+   * subscription. Don't call this directly. Go through PushBroadcastService.
+   */
+  async subscribeBroadcast(broadcastId, version) {
+    if (this._state != PUSH_SERVICE_RUNNING) {
+      // Ignore any request to subscribe before we send a hello.
+      // We'll send all the broadcast listeners as part of the hello
+      // anyhow.
+      return;
+    }
+
+    await this._service.sendSubscribeBroadcast(broadcastId, version);
+  },
+
   /**
    * Called on message from the child process.
    *
@@ -1172,7 +1150,7 @@ this.PushService = {
       .then(_ => {
         return this._dropRegistrationsIf(record =>
           info.domain == "*" ||
-          (record.uri && hasRootDomain(record.uri.prePath, info.domain))
+          (record.uri && eTLDService.hasRootDomain(record.uri.prePath, info.domain))
         );
       })
       .catch(e => {

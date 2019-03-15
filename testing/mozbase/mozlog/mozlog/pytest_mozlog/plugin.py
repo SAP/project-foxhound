@@ -2,8 +2,13 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 import mozlog
 import time
+
+import pytest
+import six
 
 
 def pytest_addoption(parser):
@@ -11,10 +16,10 @@ def pytest_addoption(parser):
     # Pytest's parser doesn't have the add_argument_group method Mozlog expects.
     group = parser.getgroup('mozlog')
 
-    for name, (_class, _help) in mozlog.commandline.log_formatters.iteritems():
+    for name, (_class, _help) in six.iteritems(mozlog.commandline.log_formatters):
         group.addoption('--log-{0}'.format(name), action='append', help=_help)
 
-    formatter_options = mozlog.commandline.fmt_options.iteritems()
+    formatter_options = six.iteritems(mozlog.commandline.fmt_options)
     for name, (_class, _help, formatters, action) in formatter_options:
         for formatter in formatters:
             if formatter in mozlog.commandline.log_formatters:
@@ -61,6 +66,7 @@ class MozLog(object):
         '''Called after test collection is completed, just before tests are run (suite start)'''
         self._log_suite_start([item.nodeid for item in session.items])
 
+    @pytest.mark.optionalhook
     def pytest_xdist_node_collection_finished(self, node, ids):
         '''Called after each pytest-xdist node collection is completed'''
         self._log_suite_start(ids)
@@ -78,13 +84,13 @@ class MozLog(object):
         message = stack = None
         if hasattr(report, 'wasxfail'):
             expected = 'FAIL'
-        if report.failed:
+        if report.failed or report.outcome == 'rerun':
             status = 'FAIL' if report.when == 'call' else 'ERROR'
         if report.skipped:
             status = 'SKIP' if not hasattr(report, 'wasxfail') else 'FAIL'
         if report.longrepr is not None:
             longrepr = report.longrepr
-            if isinstance(longrepr, basestring):
+            if isinstance(longrepr, six.string_types):
                 # When using pytest-xdist, longrepr is serialised as a str
                 message = stack = longrepr
                 if longrepr.startswith('[XPASS(strict)]'):
@@ -107,7 +113,7 @@ class MozLog(object):
                                  (longrepr.__class__, dir(longrepr)))
         if status != expected or expected != 'PASS':
             self.results[test] = (status, expected, message, stack)
-        if report.when == 'teardown':
+        if report.outcome == 'rerun' or report.when == 'teardown':
             defaults = ('PASS', 'PASS', None, None)
             status, expected, message, stack = self.results.get(test, defaults)
             self.logger.test_end(test=test, status=status, expected=expected,

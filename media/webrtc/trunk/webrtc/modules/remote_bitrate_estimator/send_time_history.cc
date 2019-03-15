@@ -8,94 +8,82 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include <assert.h>
+#include "modules/remote_bitrate_estimator/include/send_time_history.h"
 
-#include "webrtc/modules/remote_bitrate_estimator/include/send_time_history.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+#include "rtc_base/checks.h"
+#include "system_wrappers/include/clock.h"
 
 namespace webrtc {
 
-SendTimeHistory::SendTimeHistory(Clock* clock, int64_t packet_age_limit)
-    : clock_(clock),
-      packet_age_limit_(packet_age_limit),
-      oldest_sequence_number_(0) {}
+SendTimeHistory::SendTimeHistory(const Clock* clock,
+                                 int64_t packet_age_limit_ms)
+    : clock_(clock), packet_age_limit_ms_(packet_age_limit_ms) {}
 
-SendTimeHistory::~SendTimeHistory() {
-}
+SendTimeHistory::~SendTimeHistory() {}
 
-void SendTimeHistory::Clear() {
-  history_.clear();
-}
+void SendTimeHistory::AddAndRemoveOld(const PacketFeedback& packet) {
+  int64_t now_ms = clock_->TimeInMilliseconds();
+  // Remove old.
+  while (!history_.empty() &&
+         now_ms - history_.begin()->second.creation_time_ms >
+             packet_age_limit_ms_) {
+    // TODO(sprang): Warn if erasing (too many) old items?
+    history_.erase(history_.begin());
+  }
 
-void SendTimeHistory::AddAndRemoveOld(uint16_t sequence_number,
-                                      size_t length,
-                                      bool was_paced) {
-  EraseOld();
-
-  if (history_.empty())
-    oldest_sequence_number_ = sequence_number;
-
-  history_.insert(std::pair<uint16_t, PacketInfo>(
-      sequence_number, PacketInfo(clock_->TimeInMilliseconds(), 0, -1,
-                                  sequence_number, length, was_paced)));
+  // Add new.
+  int64_t unwrapped_seq_num = seq_num_unwrapper_.Unwrap(packet.sequence_number);
+  history_.insert(std::make_pair(unwrapped_seq_num, packet));
 }
 
 bool SendTimeHistory::OnSentPacket(uint16_t sequence_number,
                                    int64_t send_time_ms) {
-  auto it = history_.find(sequence_number);
+  int64_t unwrapped_seq_num = seq_num_unwrapper_.Unwrap(sequence_number);
+  auto it = history_.find(unwrapped_seq_num);
   if (it == history_.end())
     return false;
   it->second.send_time_ms = send_time_ms;
   return true;
 }
 
-void SendTimeHistory::EraseOld() {
-  while (!history_.empty()) {
-    auto it = history_.find(oldest_sequence_number_);
-    assert(it != history_.end());
-
-    if (clock_->TimeInMilliseconds() - it->second.creation_time_ms <=
-        packet_age_limit_) {
-      return;  // Oldest packet within age limit, return.
-    }
-
-    // TODO(sprang): Warn if erasing (too many) old items?
-    history_.erase(it);
-    UpdateOldestSequenceNumber();
-  }
-}
-
-void SendTimeHistory::UpdateOldestSequenceNumber() {
-  // After removing an element from the map, update oldest_sequence_number_ to
-  // the element with the lowest sequence number higher than the previous
-  // value (there might be gaps).
-  if (history_.empty())
-    return;
-  auto it = history_.upper_bound(oldest_sequence_number_);
-  if (it == history_.end()) {
-    // No element with higher sequence number than oldest_sequence_number_
-    // found, check wrap around. Note that history_.upper_bound(0) will not
-    // find 0 even if it is there, need to explicitly check for 0.
-    it = history_.find(0);
-    if (it == history_.end())
-      it = history_.upper_bound(0);
-  }
-  assert(it != history_.end());
-  oldest_sequence_number_ = it->first;
-}
-
-bool SendTimeHistory::GetInfo(PacketInfo* packet, bool remove) {
-  auto it = history_.find(packet->sequence_number);
+bool SendTimeHistory::GetFeedback(PacketFeedback* packet_feedback,
+                                  bool remove) {
+  RTC_DCHECK(packet_feedback);
+  int64_t unwrapped_seq_num =
+      seq_num_unwrapper_.Unwrap(packet_feedback->sequence_number);
+  latest_acked_seq_num_.emplace(
+      std::max(unwrapped_seq_num, latest_acked_seq_num_.value_or(0)));
+  RTC_DCHECK_GE(*latest_acked_seq_num_, 0);
+  auto it = history_.find(unwrapped_seq_num);
   if (it == history_.end())
     return false;
-  int64_t receive_time = packet->arrival_time_ms;
-  *packet = it->second;
-  packet->arrival_time_ms = receive_time;
-  if (remove) {
+
+  // Save arrival_time not to overwrite it.
+  int64_t arrival_time_ms = packet_feedback->arrival_time_ms;
+  *packet_feedback = it->second;
+  packet_feedback->arrival_time_ms = arrival_time_ms;
+
+  if (remove)
     history_.erase(it);
-    if (packet->sequence_number == oldest_sequence_number_)
-      UpdateOldestSequenceNumber();
-  }
   return true;
+}
+
+size_t SendTimeHistory::GetOutstandingBytes(uint16_t local_net_id,
+                                            uint16_t remote_net_id) const {
+  size_t outstanding_bytes = 0;
+  auto unacked_it = history_.begin();
+  if (latest_acked_seq_num_) {
+    unacked_it = history_.lower_bound(*latest_acked_seq_num_);
+  }
+  for (; unacked_it != history_.end(); ++unacked_it) {
+    if (unacked_it->second.local_net_id == local_net_id &&
+        unacked_it->second.remote_net_id == remote_net_id &&
+        unacked_it->second.send_time_ms >= 0) {
+      outstanding_bytes += unacked_it->second.payload_size;
+    }
+  }
+  return outstanding_bytes;
 }
 
 }  // namespace webrtc

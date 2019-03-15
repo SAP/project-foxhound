@@ -8,17 +8,17 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/desktop_capture/win/cursor.h"
+#include "modules/desktop_capture/win/cursor.h"
 
 #include <algorithm>
+#include <memory>
 
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/modules/desktop_capture/win/scoped_gdi_object.h"
-#include "webrtc/modules/desktop_capture/desktop_frame.h"
-#include "webrtc/modules/desktop_capture/desktop_geometry.h"
-#include "webrtc/modules/desktop_capture/mouse_cursor.h"
-#include "webrtc/system_wrappers/include/logging.h"
-#include "webrtc/typedefs.h"
+#include "modules/desktop_capture/desktop_frame.h"
+#include "modules/desktop_capture/desktop_geometry.h"
+#include "modules/desktop_capture/mouse_cursor.h"
+#include "modules/desktop_capture/win/scoped_gdi_object.h"
+#include "rtc_base/logging.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -112,8 +112,8 @@ bool HasAlphaChannel(const uint32_t* data, int stride, int width, int height) {
 MouseCursor* CreateMouseCursorFromHCursor(HDC dc, HCURSOR cursor) {
   ICONINFO iinfo;
   if (!GetIconInfo(cursor, &iinfo)) {
-    LOG_F(LS_ERROR) << "Unable to get cursor icon info. Error = "
-                    << GetLastError();
+    RTC_LOG_F(LS_ERROR) << "Unable to get cursor icon info. Error = "
+                        << GetLastError();
     return NULL;
   }
 
@@ -128,14 +128,14 @@ MouseCursor* CreateMouseCursorFromHCursor(HDC dc, HCURSOR cursor) {
   // Get |scoped_mask| dimensions.
   BITMAP bitmap_info;
   if (!GetObject(scoped_mask, sizeof(bitmap_info), &bitmap_info)) {
-    LOG_F(LS_ERROR) << "Unable to get bitmap info. Error = "
-                    << GetLastError();
+    RTC_LOG_F(LS_ERROR) << "Unable to get bitmap info. Error = "
+                        << GetLastError();
     return NULL;
   }
 
   int width = bitmap_info.bmWidth;
   int height = bitmap_info.bmHeight;
-  rtc::scoped_ptr<uint32_t[]> mask_data(new uint32_t[width * height]);
+  std::unique_ptr<uint32_t[]> mask_data(new uint32_t[width * height]);
 
   // Get pixel data from |scoped_mask| converting it to 32bpp along the way.
   // GetDIBits() sets the alpha component of every pixel to 0.
@@ -156,13 +156,13 @@ MouseCursor* CreateMouseCursorFromHCursor(HDC dc, HCURSOR cursor) {
                  mask_data.get(),
                  reinterpret_cast<BITMAPINFO*>(&bmi),
                  DIB_RGB_COLORS)) {
-    LOG_F(LS_ERROR) << "Unable to get bitmap bits. Error = "
-                    << GetLastError();
+    RTC_LOG_F(LS_ERROR) << "Unable to get bitmap bits. Error = "
+                        << GetLastError();
     return NULL;
   }
 
   uint32_t* mask_plane = mask_data.get();
-  rtc::scoped_ptr<DesktopFrame> image(
+  std::unique_ptr<DesktopFrame> image(
       new BasicDesktopFrame(DesktopSize(width, height)));
   bool has_alpha = false;
 
@@ -176,8 +176,8 @@ MouseCursor* CreateMouseCursorFromHCursor(HDC dc, HCURSOR cursor) {
                    image->data(),
                    reinterpret_cast<BITMAPINFO*>(&bmi),
                    DIB_RGB_COLORS)) {
-      LOG_F(LS_ERROR) << "Unable to get bitmap bits. Error = "
-                      << GetLastError();
+      RTC_LOG_F(LS_ERROR) << "Unable to get bitmap bits. Error = "
+                          << GetLastError();
       return NULL;
     }
 

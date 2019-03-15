@@ -1,4 +1,4 @@
-/* vim: et ts=2 sw=2 tw=80 
+/* vim: et ts=2 sw=2 tw=80
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -11,21 +11,20 @@
 #include "mozilla/net/DNS.h"
 #include "mozilla/Attributes.h"
 
-class nsNetAddr final : public nsINetAddr
-{
-  ~nsNetAddr() {}
+class nsNetAddr final : public nsINetAddr {
+  ~nsNetAddr() = default;
 
-public:
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSINETADDR
 
   explicit nsNetAddr(mozilla::net::NetAddr* addr);
 
-private:
+ private:
   mozilla::net::NetAddr mAddr;
 
-protected:
+ protected:
   /* additional members */
 };
 
-#endif // !nsNetAddr_h__
+#endif  // !nsNetAddr_h__

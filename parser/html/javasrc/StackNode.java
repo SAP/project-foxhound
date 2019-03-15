@@ -2,22 +2,22 @@
  * Copyright (c) 2007 Henri Sivonen
  * Copyright (c) 2007-2011 Mozilla Foundation
  *
- * Permission is hereby granted, free of charge, to any person obtaining a 
- * copy of this software and associated documentation files (the "Software"), 
- * to deal in the Software without restriction, including without limitation 
- * the rights to use, copy, modify, merge, publish, distribute, sublicense, 
- * and/or sell copies of the Software, and to permit persons to whom the 
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
  * Software is furnished to do so, subject to the following conditions:
  *
- * The above copyright notice and this permission notice shall be included in 
+ * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
  *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL 
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER 
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING 
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
 
@@ -28,25 +28,35 @@ import nu.validator.htmlparser.annotation.Local;
 import nu.validator.htmlparser.annotation.NsUri;
 
 final class StackNode<T> {
-    final int flags;
+    // Index where this stack node is stored in the tree builder's list of stack nodes.
+    // A value of -1 indicates that the stack node is not owned by a tree builder and
+    // must delete itself when its refcount reaches 0.
+    final int idxInTreeBuilder;
 
-    final @Local String name;
+    int flags;
 
-    final @Local String popName;
+    @Local String name;
 
-    final @NsUri String ns;
+    @Local String popName;
 
-    final T node;
+    @NsUri String ns;
+
+    T node;
 
     // Only used on the list of formatting elements
     HtmlAttributes attributes;
 
-    private int refcount = 1;
+    private int refcount = 0;
+
+    /*
+     *  Only valid for formatting elements
+     */
+    // CPPONLY: private @HtmlCreator Object htmlCreator;
 
     // [NOCPP[
 
-    private final TaintableLocatorImpl locator;
-    
+    private TaintableLocatorImpl locator;
+
     public TaintableLocatorImpl getLocator() {
         return locator;
     }
@@ -78,18 +88,34 @@ final class StackNode<T> {
     }
 
     // [NOCPP[
-    
+
     public boolean isOptionalEndTag() {
         return (flags & ElementName.OPTIONAL_END_TAG) != 0;
     }
-    
+
     // ]NOCPP]
 
+    StackNode(int idxInTreeBuilder) {
+        this.idxInTreeBuilder = idxInTreeBuilder;
+        this.flags = 0;
+        this.name = null;
+        this.popName = null;
+        // CPPONLY: this.ns = 0;
+        this.node = null;
+        this.attributes = null;
+        this.refcount = 0;
+        // CPPONLY: this.htmlCreator = null;
+    }
+
+    // CPPONLY: public @HtmlCreator Object getHtmlCreator() {
+    // CPPONLY:     return htmlCreator;
+    // CPPONLY: }
+
     /**
-     * Constructor for copying. This doesn't take another <code>StackNode</code>
-     * because in C++ the caller is reponsible for reobtaining the local names
+     * Setter for copying. This doesn't take another <code>StackNode</code>
+     * because in C++ the caller is responsible for reobtaining the local names
      * from another interner.
-     * 
+     *
      * @param flags
      * @param ns
      * @param name
@@ -97,12 +123,14 @@ final class StackNode<T> {
      * @param popName
      * @param attributes
      */
-    StackNode(int flags, @NsUri String ns, @Local String name, T node,
-            @Local String popName, HtmlAttributes attributes
+    void setValues(int flags, @NsUri String ns, @Local String name, T node,
+            @Local String popName, HtmlAttributes attributes,
+            // CPPONLY: @HtmlCreator Object htmlCreator
             // [NOCPP[
-            , TaintableLocatorImpl locator
-    // ]NOCPP]
+            TaintableLocatorImpl locator
+            // ]NOCPP]
     ) {
+        assert isUnused();
         this.flags = flags;
         this.name = name;
         this.popName = popName;
@@ -110,6 +138,10 @@ final class StackNode<T> {
         this.node = node;
         this.attributes = attributes;
         this.refcount = 1;
+        /*
+         * Need to track creator for formatting elements when copying.
+         */
+        // CPPONLY: this.htmlCreator = htmlCreator;
         // [NOCPP[
         this.locator = locator;
         // ]NOCPP]
@@ -117,126 +149,152 @@ final class StackNode<T> {
 
     /**
      * Short hand for well-known HTML elements.
-     * 
+     *
      * @param elementName
      * @param node
      */
-    StackNode(ElementName elementName, T node
-    // [NOCPP[
+    void setValues(ElementName elementName, T node
+            // [NOCPP[
             , TaintableLocatorImpl locator
-    // ]NOCPP]
+            // ]NOCPP]
     ) {
+        assert isUnused();
         this.flags = elementName.getFlags();
-        this.name = elementName.name;
-        this.popName = elementName.name;
+        this.name = elementName.getName();
+        this.popName = elementName.getName();
         this.ns = "http://www.w3.org/1999/xhtml";
         this.node = node;
         this.attributes = null;
         this.refcount = 1;
-        assert !elementName.isCustom() : "Don't use this constructor for custom elements.";
+        assert elementName.isInterned() : "Don't use this constructor for custom elements.";
+        /*
+         * Not used for formatting elements, so no need to track creator.
+         */
+        // CPPONLY: this.htmlCreator = null;
         // [NOCPP[
         this.locator = locator;
         // ]NOCPP]
     }
 
     /**
-     * Constructor for HTML formatting elements.
-     * 
+     * Setter for HTML formatting elements.
+     *
      * @param elementName
      * @param node
      * @param attributes
      */
-    StackNode(ElementName elementName, T node, HtmlAttributes attributes
-    // [NOCPP[
+    void setValues(ElementName elementName, T node, HtmlAttributes attributes
+            // [NOCPP[
             , TaintableLocatorImpl locator
-    // ]NOCPP]
+            // ]NOCPP]
     ) {
+        assert isUnused();
         this.flags = elementName.getFlags();
-        this.name = elementName.name;
-        this.popName = elementName.name;
+        this.name = elementName.getName();
+        this.popName = elementName.getName();
         this.ns = "http://www.w3.org/1999/xhtml";
         this.node = node;
         this.attributes = attributes;
         this.refcount = 1;
-        assert !elementName.isCustom() : "Don't use this constructor for custom elements.";
+        assert elementName.isInterned() : "Don't use this constructor for custom elements.";
+        /*
+         * Need to track creator for formatting elements in order to be able
+         * to clone them.
+         */
+        // CPPONLY: this.htmlCreator = elementName.getHtmlCreator();
         // [NOCPP[
         this.locator = locator;
         // ]NOCPP]
     }
 
     /**
-     * The common-case HTML constructor.
-     * 
+     * The common-case HTML setter.
+     *
      * @param elementName
      * @param node
      * @param popName
      */
-    StackNode(ElementName elementName, T node, @Local String popName
-    // [NOCPP[
+    void setValues(ElementName elementName, T node, @Local String popName
+            // [NOCPP[
             , TaintableLocatorImpl locator
-    // ]NOCPP]
+            // ]NOCPP]
     ) {
+        assert isUnused();
         this.flags = elementName.getFlags();
-        this.name = elementName.name;
+        this.name = elementName.getName();
         this.popName = popName;
         this.ns = "http://www.w3.org/1999/xhtml";
         this.node = node;
         this.attributes = null;
         this.refcount = 1;
+        /*
+         * Not used for formatting elements, so no need to track creator.
+         */
+        // CPPONLY: this.htmlCreator = null;
         // [NOCPP[
         this.locator = locator;
         // ]NOCPP]
     }
 
     /**
-     * Constructor for SVG elements. Note that the order of the arguments is
-     * what distinguishes this from the HTML constructor. This is ugly, but
+     * Setter for SVG elements. Note that the order of the arguments is
+     * what distinguishes this from the HTML setter. This is ugly, but
      * AFAICT the least disruptive way to make this work with Java's generics
      * and without unnecessary branches. :-(
-     * 
+     *
      * @param elementName
      * @param popName
      * @param node
      */
-    StackNode(ElementName elementName, @Local String popName, T node
-    // [NOCPP[
+    void setValues(ElementName elementName, @Local String popName, T node
+            // [NOCPP[
             , TaintableLocatorImpl locator
-    // ]NOCPP]
+            // ]NOCPP]
     ) {
+        assert isUnused();
         this.flags = prepareSvgFlags(elementName.getFlags());
-        this.name = elementName.name;
+        this.name = elementName.getName();
         this.popName = popName;
         this.ns = "http://www.w3.org/2000/svg";
         this.node = node;
         this.attributes = null;
         this.refcount = 1;
+        /*
+         * Not used for formatting elements, so no need to track creator.
+         */
+        // CPPONLY: this.htmlCreator = null;
         // [NOCPP[
         this.locator = locator;
         // ]NOCPP]
     }
 
     /**
-     * Constructor for MathML.
-     * 
+     * Setter for MathML.
+     *
      * @param elementName
      * @param node
      * @param popName
      * @param markAsIntegrationPoint
      */
-    StackNode(ElementName elementName, T node, @Local String popName,
+    void setValues(ElementName elementName, T node, @Local String popName,
             boolean markAsIntegrationPoint
             // [NOCPP[
             , TaintableLocatorImpl locator
-    // ]NOCPP]
+            // ]NOCPP]
     ) {
+        assert isUnused();
         this.flags = prepareMathFlags(elementName.getFlags(),
                 markAsIntegrationPoint);
-        this.name = elementName.name;
+        this.name = elementName.getName();
         this.popName = popName;
         this.ns = "http://www.w3.org/1998/Math/MathML";
         this.node = node;
         this.attributes = null;
         this.refcount = 1;
+        /*
+         * Not used for formatting elements, so no need to track creator.
+         */
+        // CPPONLY: this.htmlCreator = null;
         // [NOCPP[
         this.locator = locator;
         // ]NOCPP]
@@ -265,7 +323,7 @@ final class StackNode<T> {
     }
 
     @SuppressWarnings("unused") private void destructor() {
-        Portability.delete(attributes);
+        // The translator adds refcount debug code here.
     }
 
     public void dropAttributes() {
@@ -286,10 +344,21 @@ final class StackNode<T> {
         refcount++;
     }
 
-    public void release() {
+    public void release(TreeBuilder<T> owningTreeBuilder) {
         refcount--;
+        assert refcount >= 0;
         if (refcount == 0) {
-            Portability.delete(this);
+            Portability.delete(attributes);
+            if (idxInTreeBuilder >= 0) {
+                owningTreeBuilder.notifyUnusedStackNode(idxInTreeBuilder);
+            } else {
+                assert owningTreeBuilder == null;
+                Portability.delete(this);
+            }
         }
+    }
+
+    boolean isUnused() {
+        return refcount == 0;
     }
 }

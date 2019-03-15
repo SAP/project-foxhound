@@ -11,94 +11,43 @@
 #include "nsIFile.h"
 
 #ifdef MOZ_WIDGET_COCOA
-#include <Carbon/Carbon.h>
-#include "nsILocalFileMac.h"
-#include "prenv.h"
+#  include "nsILocalFileMac.h"
+#  include "prenv.h"
 #endif
 
 enum SystemDirectories {
-  OS_DriveDirectory         =   1,
-  OS_TemporaryDirectory     =   2,
-  OS_CurrentProcessDirectory =  3,
-  OS_CurrentWorkingDirectory =  4,
-  XPCOM_CurrentProcessComponentDirectory = 5,
-  XPCOM_CurrentProcessComponentRegistry =  6,
+  OS_TemporaryDirectory = 2,
+  OS_CurrentProcessDirectory = 3,
+  OS_CurrentWorkingDirectory = 4,
 
-  Moz_BinDirectory          =   100 ,
-  Mac_SystemDirectory       =   101,
-  Mac_DesktopDirectory      =   102,
-  Mac_TrashDirectory        =   103,
-  Mac_StartupDirectory      =   104,
-  Mac_ShutdownDirectory     =   105,
-  Mac_AppleMenuDirectory    =   106,
-  Mac_ControlPanelDirectory =   107,
-  Mac_ExtensionDirectory    =   108,
-  Mac_FontsDirectory        =   109,
-  Mac_ClassicPreferencesDirectory =   110,
-  Mac_DocumentsDirectory          =   111,
-  Mac_InternetSearchDirectory     =   112,
-  Mac_DefaultDownloadDirectory    =   113,
-  Mac_UserLibDirectory      =   114,
-  Mac_PreferencesDirectory  =   115,
-
-  Win_SystemDirectory       =   201,
-  Win_WindowsDirectory      =   202,
-  Win_HomeDirectory         =   203,
-  Win_Desktop               =   204,
-  Win_Programs              =   205,
-  Win_Controls              =   206,
-  Win_Printers              =   207,
-  Win_Personal              =   208,
-  Win_Favorites             =   209,
-  Win_Startup               =   210,
-  Win_Recent                =   211,
-  Win_Sendto                =   212,
-  Win_Bitbucket             =   213,
-  Win_Startmenu             =   214,
-  Win_Desktopdirectory      =   215,
-  Win_Drives                =   216,
-  Win_Network               =   217,
-  Win_Nethood               =   218,
-  Win_Fonts                 =   219,
-  Win_Templates             =   220,
-  Win_Common_Startmenu      =   221,
-  Win_Common_Programs       =   222,
-  Win_Common_Startup        =   223,
-  Win_Common_Desktopdirectory = 224,
-  Win_Appdata               =   225,
-  Win_Printhood             =   226,
-  Win_Cookies               =   227,
-  Win_LocalAppdata          =   228,
-  Win_ProgramFiles          =   229,
-  Win_Downloads             =   230,
-  Win_Common_AppData        =   231,
-  Win_Documents             =   232,
-  Win_Pictures              =   233,
-  Win_Music                 =   234,
-  Win_Videos                =   235,
+  Win_SystemDirectory = 201,
+  Win_WindowsDirectory = 202,
+  Win_HomeDirectory = 203,
+  Win_Programs = 205,
+  Win_Favorites = 209,
+  Win_Desktopdirectory = 213,
+  Win_Appdata = 221,
+  Win_Cookies = 223,
+  Win_LocalAppdata = 224,
+  Win_ProgramFiles = 225,
+  Win_Downloads = 226,
+#if defined(MOZ_THUNDERBIRD) || defined(MOZ_SUITE)
+  Win_Documents = 228,
+#endif
 #if defined(MOZ_CONTENT_SANDBOX)
-  Win_LocalAppdataLow       =   236,
+  Win_LocalAppdataLow = 232,
 #endif
 
-  Unix_LocalDirectory       =   301,
-  Unix_LibDirectory         =   302,
-  Unix_HomeDirectory        =   303,
-  Unix_XDG_Desktop          =   304,
-  Unix_XDG_Documents        =   305,
-  Unix_XDG_Download         =   306,
-  Unix_XDG_Music            =   307,
-  Unix_XDG_Pictures         =   308,
-  Unix_XDG_PublicShare      =   309,
-  Unix_XDG_Templates        =   310,
-  Unix_XDG_Videos           =   311
+  Unix_HomeDirectory = 303,
+  Unix_XDG_Desktop = 304,
+  Unix_XDG_Download = 306
 };
 
-nsresult
-GetSpecialSystemDirectory(SystemDirectories aSystemSystemDirectory,
-                          nsIFile** aFile);
+nsresult GetSpecialSystemDirectory(SystemDirectories aSystemSystemDirectory,
+                                   nsIFile** aFile);
 #ifdef MOZ_WIDGET_COCOA
-nsresult
-GetOSXFolderType(short aDomain, OSType aFolderType, nsIFile** aLocalFile);
+nsresult GetOSXFolderType(short aDomain, OSType aFolderType,
+                          nsIFile** aLocalFile);
 #endif
 
 #endif

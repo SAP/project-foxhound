@@ -9,31 +9,36 @@
 
 #include "nsISupports.h"
 #include "nsCOMPtr.h"
+#include "nsStringFwd.h"
 class nsIContent;
-class nsAString;
-class nsIEditor;
 class nsISelectionController;
 class nsFrameSelection;
 class nsTextControlFrame;
 
 namespace mozilla {
+
+class ErrorResult;
+class TextEditor;
+
 namespace dom {
 class Element;
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 // IID for the nsITextControl interface
-#define NS_ITEXTCONTROLELEMENT_IID    \
-{ 0x3df7db6d, 0xa548, 0x4e20, \
- { 0x97, 0xfd, 0x75, 0xa3, 0x31, 0xa2, 0xf3, 0xd4 } }
+#define NS_ITEXTCONTROLELEMENT_IID                   \
+  {                                                  \
+    0x3df7db6d, 0xa548, 0x4e20, {                    \
+      0x97, 0xfd, 0x75, 0xa3, 0x31, 0xa2, 0xf3, 0xd4 \
+    }                                                \
+  }
 
 /**
  * This interface is used for the text control frame to get the editor and
  * selection controller objects, and some helper properties.
  */
 class nsITextControlElement : public nsISupports {
-public:
-
+ public:
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_ITEXTCONTROLELEMENT_IID)
 
   /**
@@ -52,12 +57,6 @@ public:
    * @return whether this is a textarea text control
    */
   NS_IMETHOD_(bool) IsTextArea() const = 0;
-
-  /**
-   * Find out whether this control edits plain text.  (Currently always true.)
-   * @return whether this is a plain text control
-   */
-  NS_IMETHOD_(bool) IsPlainTextControl() const = 0;
 
   /**
    * Find out whether this is a password control (input type=password)
@@ -99,14 +98,19 @@ public:
    * @param aIgnoreWrap whether to ignore the text wrapping behavior specified
    * for the element.
    */
-  NS_IMETHOD_(void) GetTextEditorValue(nsAString& aValue, bool aIgnoreWrap) const = 0;
+  NS_IMETHOD_(void)
+  GetTextEditorValue(nsAString& aValue, bool aIgnoreWrap) const = 0;
 
   /**
    * Get the editor object associated with the text editor.
    * The return value is null if the control does not support an editor
    * (for example, if it is a checkbox.)
+   * Note that GetTextEditor() creates editor if it hasn't been created yet.
+   * If you need editor only when the editor is there, you should use
+   * GetTextEditorWithoutCreation().
    */
-  NS_IMETHOD_(nsIEditor*) GetTextEditor() = 0;
+  NS_IMETHOD_(mozilla::TextEditor*) GetTextEditor() = 0;
+  NS_IMETHOD_(mozilla::TextEditor*) GetTextEditorWithoutCreation() = 0;
 
   /**
    * Get the selection controller object associated with the text editor.
@@ -137,19 +141,24 @@ public:
   NS_IMETHOD CreateEditor() = 0;
 
   /**
-   * Get the anonymous root node for the text control.
+   * Update preview value for the text control.
    */
-  NS_IMETHOD_(mozilla::dom::Element*) GetRootEditorNode() = 0;
+  NS_IMETHOD_(void) SetPreviewValue(const nsAString& aValue) = 0;
 
   /**
-   * Create the placeholder anonymous node for the text control and returns it.
+   * Get the current preview value for text control.
    */
-  NS_IMETHOD_(mozilla::dom::Element*) CreatePlaceholderNode() = 0;
+  NS_IMETHOD_(void) GetPreviewValue(nsAString& aValue) = 0;
 
   /**
-   * Get the placeholder anonymous node for the text control.
+   * Enable preview for text control.
    */
-  NS_IMETHOD_(mozilla::dom::Element*) GetPlaceholderNode() = 0;
+  NS_IMETHOD_(void) EnablePreview() = 0;
+
+  /**
+   * Find out whether this control enables preview for form autofoll.
+   */
+  NS_IMETHOD_(bool) IsPreviewEnabled() = 0;
 
   /**
    * Initialize the keyboard event listeners.
@@ -157,9 +166,10 @@ public:
   NS_IMETHOD_(void) InitializeKeyboardEventListeners() = 0;
 
   /**
-   * Update the placeholder visibility based on the element's state.
+   * Update the visibility of both the placholder and preview text based on the
+   * element's state.
    */
-  NS_IMETHOD_(void) UpdatePlaceholderVisibility(bool aNotify) = 0;
+  NS_IMETHOD_(void) UpdateOverlayTextVisibility(bool aNotify) = 0;
 
   /**
    * Returns the current expected placeholder visibility state.
@@ -167,24 +177,36 @@ public:
   NS_IMETHOD_(bool) GetPlaceholderVisibility() = 0;
 
   /**
+   * Returns the current expected preview visibility state.
+   */
+  NS_IMETHOD_(bool) GetPreviewVisibility() = 0;
+
+  /**
    * Callback called whenever the value is changed.
    */
-  NS_IMETHOD_(void) OnValueChanged(bool aNotify, bool aWasInteractiveUserChange) = 0;
+  NS_IMETHOD_(void)
+  OnValueChanged(bool aNotify, bool aWasInteractiveUserChange) = 0;
+
+  /**
+   * Helpers for value manipulation from SetRangeText.
+   */
+  virtual void GetValueFromSetRangeText(nsAString& aValue) = 0;
+  virtual nsresult SetValueFromSetRangeText(const nsAString& aValue) = 0;
 
   static const int32_t DEFAULT_COLS = 20;
   static const int32_t DEFAULT_ROWS = 1;
   static const int32_t DEFAULT_ROWS_TEXTAREA = 2;
   static const int32_t DEFAULT_UNDO_CAP = 1000;
 
-  // wrap can be one of these three values.  
+  // wrap can be one of these three values.
   typedef enum {
-    eHTMLTextWrap_Off     = 1,    // "off"
-    eHTMLTextWrap_Hard    = 2,    // "hard"
-    eHTMLTextWrap_Soft    = 3     // the default
+    eHTMLTextWrap_Off = 1,   // "off"
+    eHTMLTextWrap_Hard = 2,  // "hard"
+    eHTMLTextWrap_Soft = 3   // the default
   } nsHTMLTextWrap;
 
-  static bool
-  GetWrapPropertyEnum(nsIContent* aContent, nsHTMLTextWrap& aWrapProp);
+  static bool GetWrapPropertyEnum(nsIContent* aContent,
+                                  nsHTMLTextWrap& aWrapProp);
 
   /**
    * Does the editor have a selection cache?
@@ -196,16 +218,8 @@ public:
 
   static already_AddRefed<nsITextControlElement>
   GetTextControlElementFromEditingHost(nsIContent* aHost);
-
-  /**
-   * Get the selection range start and end points.
-   */
-  NS_IMETHOD GetSelectionRange(int32_t* aSelectionStart,
-                               int32_t* aSelectionEnd) = 0;
 };
 
-NS_DEFINE_STATIC_IID_ACCESSOR(nsITextControlElement,
-                              NS_ITEXTCONTROLELEMENT_IID)
+NS_DEFINE_STATIC_IID_ACCESSOR(nsITextControlElement, NS_ITEXTCONTROLELEMENT_IID)
 
-#endif // nsITextControlElement_h___
-
+#endif  // nsITextControlElement_h___

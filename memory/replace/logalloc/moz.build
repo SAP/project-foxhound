@@ -4,34 +4,23 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-SharedLibrary('logalloc')
+ReplaceMalloc('logalloc')
 
 SOURCES += [
     'FdPrintf.cpp',
     'LogAlloc.cpp',
 ]
 
-DISABLE_STL_WRAPPING = True
-USE_STATIC_LIBS = True
+DisableStlWrapping()
+NO_PGO = True
 DEFINES['MOZ_NO_MOZALLOC'] = True
-# Avoid Lock_impl code depending on mozilla::Logger.
-DEFINES['NDEBUG'] = True
-DEFINES['DEBUG'] = False
 
-# Use locking code from the chromium stack.
-if CONFIG['OS_TARGET'] == 'WINNT':
-    SOURCES += [
-        '../../../ipc/chromium/src/base/lock_impl_win.cc',
-    ]
-else:
-    SOURCES += [
-        '../../../ipc/chromium/src/base/lock_impl_posix.cc',
-    ]
-
-include('/ipc/chromium/chromium-config.mozbuild')
+LOCAL_INCLUDES += [
+    '/memory/build',
+]
 
 # Android doesn't have pthread_atfork, but we have our own in mozglue.
-if CONFIG['OS_TARGET'] == 'Android':
+if CONFIG['OS_TARGET'] == 'Android' and FORCE_SHARED_LIB:
     USE_LIBS += [
         'mozglue',
     ]
@@ -39,3 +28,6 @@ if CONFIG['OS_TARGET'] == 'Android':
 DIRS += [
     'replay',
 ]
+
+if CONFIG['CC_TYPE'] == 'clang-cl':
+    AllowCompilerWarnings()  # workaround for bug 1090497

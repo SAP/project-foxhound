@@ -4,6 +4,14 @@
 
 @import "chrome://global/skin/";
 
+#topBar {
+  -moz-window-dragging: drag;
+  border-bottom: 1px solid ThreeDLightShadow;
+  padding-inline-start: 10px;
+  background-color: -moz-Field;
+  color: -moz-FieldText;
+}
+
 /* View buttons */
 #viewGroup {
   padding-inline-start: 10px;
@@ -11,12 +19,10 @@
 
 #viewGroup > radio {
   list-style-image: url("chrome://browser/skin/pageInfo.png");
-  -moz-box-orient: vertical;
-  -moz-box-align: center;
   -moz-appearance: none;
-  padding: 5px 3px 1px 3px;
-  margin: 0 1px;
   min-width: 4.5em;
+  margin: 0;
+  padding: 3px;
 }
 
 #viewGroup > radio:hover {
@@ -29,18 +35,17 @@
   color: black;
 }
 
-#topBar {
-  border-bottom: 2px groove ThreeDFace;
-  padding-inline-start: 10px;
-  background-color: -moz-Field;
-  color: -moz-FieldText;
+#viewGroup > radio > .radio-label-box {
+  margin: 0;
+  padding: 0 6px;
 }
 
 #generalTab {
   -moz-image-region: rect(0px, 32px, 32px, 0px)
 }
 
-#generalTab:hover, #generalTab[selected="true"] {
+#generalTab:hover,
+#generalTab[selected="true"] {
   -moz-image-region: rect(32px, 32px, 64px, 0px)
 }
 
@@ -48,23 +53,17 @@
   -moz-image-region: rect(0px, 64px, 32px, 32px)
 }
 
-#mediaTab:hover, #mediaTab[selected="true"] {
+#mediaTab:hover,
+#mediaTab[selected="true"] {
   -moz-image-region: rect(32px, 64px, 64px, 32px)
-}
-
-#feedTab {
-  -moz-image-region: rect(0px, 96px, 32px, 64px)
-}
-
-#feedTab:hover, #feedTab[selected="true"] {
-  -moz-image-region: rect(32px, 96px, 64px, 64px)
 }
 
 #permTab {
   -moz-image-region: rect(0px, 128px, 32px, 96px)
 }
 
-#permTab:hover, #permTab[selected="true"] {
+#permTab:hover,
+#permTab[selected="true"] {
   -moz-image-region: rect(32px, 128px, 64px, 96px)
 }
 
@@ -72,12 +71,13 @@
   -moz-image-region: rect(0px, 160px, 32px, 128px)
 }
 
-#securityTab:hover, #securityTab[selected="true"] {
+#securityTab:hover,
+#securityTab[selected="true"] {
   -moz-image-region: rect(32px, 160px, 64px, 128px)
 }
 
-deck {
-  padding: 10px 10px 10px 10px;
+#mainDeck {
+  padding: 10px;
 }
 
 /* Misc */
@@ -92,7 +92,7 @@ tree {
 textbox {
   background: transparent !important;
   border: none;
-  padding: 0px;
+  padding: 0;
   margin-top: 1px;
   -moz-appearance: none;
 }
@@ -101,14 +101,11 @@ textbox.header {
   margin-inline-start: 0;
 }
 
-.iframe {
+#imagecontainerbox {
   margin: .5em;
   background: white;
   overflow: auto;
-}
-
-.fixedsize {
-  height: 8.5em;
+  border: 1px solid ThreeDLightShadow;
 }
 
 textbox[disabled] {
@@ -116,30 +113,6 @@ textbox[disabled] {
 }
 
 /* General Tab */
-groupbox.collapsable caption .caption-icon {
-  width: 9px;
-  height: 9px;
-  background-repeat: no-repeat;
-  background-position: center;
-  margin-inline-start: 2px;
-  margin-inline-end: 2px;
-  background-image: url("chrome://global/skin/tree/twisty.svg#open");
-}
-
-groupbox.collapsable[closed="true"] {
-  border: none;
-  margin-bottom: 9px;
-  -moz-appearance: none;
-}
-
-groupbox.collapsable[closed="true"] caption .caption-icon {
-  background-image: url("chrome://global/skin/tree/twisty.svg#clsd");
-}
-
-groupbox tree {
-  margin: 0 3px;
-  border: none;
-}
 
 #securityBox description {
   margin-inline-start: 10px;
@@ -179,56 +152,18 @@ treechildren::-moz-tree-cell-text(broken) {
   color: graytext;
 }
 
-/* Feeds Tab */
-#feedtree {
-  margin-bottom: 0px;
-}
-
-#feedListbox richlistitem {
-  padding-top: 6px;
-  padding-bottom: 6px;
-  padding-inline-start: 7px;
-  padding-inline-end: 7px;
-  min-height: 25px;
-  border-bottom: 1px dotted #C0C0C0;
-}
-
-#feedListbox richlistitem[selected="true"] {
-  background-color: -moz-Dialog;
-  color: -moz-DialogText;
-}
-
-#feedListbox {
-  border: 2px solid;
-  -moz-border-top-colors: ThreeDShadow ThreeDDarkShadow;
-  -moz-border-right-colors: ThreeDHighlight ThreeDLightShadow;
-  -moz-border-bottom-colors: ThreeDHighlight ThreeDLightShadow;
-  -moz-border-left-colors: ThreeDShadow ThreeDDarkShadow;
-}
-
-.feedTitle {
-  font-weight: bold;
-}
-
 /* Permissions Tab */
 #permList {
-  margin-top: .5em;
+  margin: .5em;
   overflow: auto;
-  border: 2px solid;
-  -moz-border-top-colors: ThreeDShadow ThreeDDarkShadow;
-  -moz-border-right-colors: ThreeDHighlight ThreeDLightShadow;
-  -moz-border-bottom-colors: ThreeDHighlight ThreeDLightShadow;
-  -moz-border-left-colors: ThreeDShadow ThreeDDarkShadow;
-  background-color: -moz-field;
+  -moz-appearance: listbox;
+  color: -moz-fieldtext;
 }
 
 .permission {
-  padding-top: 6px;
-  padding-bottom: 6px;
-  padding-inline-start: 7px;
-  padding-inline-end: 7px;
+  padding: 6px 7px;
   min-height: 25px;
-  border-bottom: 1px dotted #C0C0C0;
+  border-bottom: 1px dotted ThreeDShadow;
 }
 
 .permissionLabel {
@@ -237,24 +172,13 @@ treechildren::-moz-tree-cell-text(broken) {
 
 .permission:hover {
   background-color: -moz-dialog;
+  color: -moz-dialogText;
 }
 
 /* Security Tab */
-#securityPanel .caption-icon {
-  display: none;
-}
 
-#securityPanel .header {
-  font-size: 120%;
-}
-
-#securityPanel .fieldLabel {
-  margin: 2px 10px 3px;
-}
-
-#securityPanel .fieldValue {
-  font-weight: bold;
-  margin: 2px 10px 3px;
+#securityPanel grid {
+  margin-bottom: 1em;
 }
 
 #securityPanel row {

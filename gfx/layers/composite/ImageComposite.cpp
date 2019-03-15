@@ -1,12 +1,10 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ImageComposite.h"
-
-// this is also defined in ImageHost.cpp
-#define BIAS_TIME_MS 1.0
 
 namespace mozilla {
 
@@ -14,41 +12,44 @@ using namespace gfx;
 
 namespace layers {
 
+/* static */ const float ImageComposite::BIAS_TIME_MS = 1.0f;
+
 ImageComposite::ImageComposite()
-  : mLastFrameID(-1)
-  , mLastProducerID(-1)
-  , mBias(BIAS_NONE)
-{}
+    : mLastFrameID(-1),
+      mLastProducerID(-1),
+      mBias(BIAS_NONE),
+      mDroppedFrames(0),
+      mLastChosenImageIndex(0) {}
 
-ImageComposite::~ImageComposite()
-{
-}
+ImageComposite::~ImageComposite() {}
 
-static TimeStamp
-GetBiasedTime(const TimeStamp& aInput, ImageComposite::Bias aBias)
-{
-  switch (aBias) {
-  case ImageComposite::BIAS_NEGATIVE:
-    return aInput - TimeDuration::FromMilliseconds(BIAS_TIME_MS);
-  case ImageComposite::BIAS_POSITIVE:
-    return aInput + TimeDuration::FromMilliseconds(BIAS_TIME_MS);
-  default:
-    return aInput;
+TimeStamp ImageComposite::GetBiasedTime(const TimeStamp& aInput) const {
+  switch (mBias) {
+    case ImageComposite::BIAS_NEGATIVE:
+      return aInput - TimeDuration::FromMilliseconds(BIAS_TIME_MS);
+    case ImageComposite::BIAS_POSITIVE:
+      return aInput + TimeDuration::FromMilliseconds(BIAS_TIME_MS);
+    default:
+      return aInput;
   }
 }
 
-/* static */ ImageComposite::Bias
-ImageComposite::UpdateBias(const TimeStamp& aCompositionTime,
-                           const TimeStamp& aCompositedImageTime,
-                           const TimeStamp& aNextImageTime, // may be null
-                           ImageComposite::Bias aBias)
-{
-  if (aCompositedImageTime.IsNull()) {
-    return ImageComposite::BIAS_NONE;
+void ImageComposite::UpdateBias(size_t aImageIndex) {
+  MOZ_ASSERT(aImageIndex < ImagesCount());
+
+  TimeStamp compositionTime = GetCompositionTime();
+  TimeStamp compositedImageTime = mImages[aImageIndex].mTimeStamp;
+  TimeStamp nextImageTime = aImageIndex + 1 < ImagesCount()
+                                ? mImages[aImageIndex + 1].mTimeStamp
+                                : TimeStamp();
+
+  if (compositedImageTime.IsNull()) {
+    mBias = ImageComposite::BIAS_NONE;
+    return;
   }
   TimeDuration threshold = TimeDuration::FromMilliseconds(1.0);
-  if (aCompositionTime - aCompositedImageTime < threshold &&
-      aCompositionTime - aCompositedImageTime > -threshold) {
+  if (compositionTime - compositedImageTime < threshold &&
+      compositionTime - compositedImageTime > -threshold) {
     // The chosen frame's time is very close to the composition time (probably
     // just before the current composition time, but due to previously set
     // negative bias, it could be just after the current composition time too).
@@ -59,11 +60,11 @@ ImageComposite::UpdateBias(const TimeStamp& aCompositionTime,
     // Try to prevent that by adding a negative bias to the frame times during
     // the next composite; that should ensure the next frame's time is treated
     // as falling just before a composite time.
-    return ImageComposite::BIAS_NEGATIVE;
+    mBias = ImageComposite::BIAS_NEGATIVE;
+    return;
   }
-  if (!aNextImageTime.IsNull() &&
-      aNextImageTime - aCompositionTime < threshold &&
-      aNextImageTime - aCompositionTime > -threshold) {
+  if (!nextImageTime.IsNull() && nextImageTime - compositionTime < threshold &&
+      nextImageTime - compositionTime > -threshold) {
     // The next frame's time is very close to our composition time (probably
     // just after the current composition time, but due to previously set
     // positive bias, it could be just before the current composition time too).
@@ -73,14 +74,17 @@ ImageComposite::UpdateBias(const TimeStamp& aCompositionTime,
     // Try to prevent that by adding a negative bias to the frame times during
     // the next composite; that should ensure the next frame's time is treated
     // as falling just before a composite time.
-    return ImageComposite::BIAS_POSITIVE;
+    mBias = ImageComposite::BIAS_POSITIVE;
+    return;
   }
-  return ImageComposite::BIAS_NONE;
+  mBias = ImageComposite::BIAS_NONE;
 }
 
-int
-ImageComposite::ChooseImageIndex() const
-{
+int ImageComposite::ChooseImageIndex() {
+  // ChooseImageIndex is called for all images in the layer when it is visible.
+  // Change to this behaviour would break dropped frames counting calculation:
+  // We rely on this assumption to determine if during successive runs an
+  // image is returned that isn't the one following immediately the previous one
   if (mImages.IsEmpty()) {
     return -1;
   }
@@ -98,27 +102,107 @@ ImageComposite::ChooseImageIndex() const
     return -1;
   }
 
-  uint32_t result = 0;
+  uint32_t result = mLastChosenImageIndex;
   while (result + 1 < mImages.Length() &&
-      GetBiasedTime(mImages[result + 1].mTimeStamp, mBias) <= now) {
+         GetBiasedTime(mImages[result + 1].mTimeStamp) <= now) {
     ++result;
   }
+  if (result - mLastChosenImageIndex > 1) {
+    // We're not returning the same image as the last call to ChooseImageIndex
+    // or the immediately next one. We can assume that the frames not returned
+    // have been dropped as they were too late to be displayed
+    mDroppedFrames += result - mLastChosenImageIndex - 1;
+  }
+  mLastChosenImageIndex = result;
   return result;
 }
 
-const ImageComposite::TimedImage* ImageComposite::ChooseImage() const
-{
+const ImageComposite::TimedImage* ImageComposite::ChooseImage() {
   int index = ChooseImageIndex();
   return index >= 0 ? &mImages[index] : nullptr;
 }
 
-ImageComposite::TimedImage* ImageComposite::ChooseImage()
-{
-  int index = ChooseImageIndex();
-  return index >= 0 ? &mImages[index] : nullptr;
+void ImageComposite::RemoveImagesWithTextureHost(TextureHost* aTexture) {
+  for (int32_t i = mImages.Length() - 1; i >= 0; --i) {
+    if (mImages[i].mTextureHost == aTexture) {
+      aTexture->UnbindTextureSource();
+      mImages.RemoveElementAt(i);
+    }
+  }
 }
 
-} // namespace layers
-} // namespace mozilla
+void ImageComposite::ClearImages() {
+  mImages.Clear();
+  mLastChosenImageIndex = 0;
+}
 
-#undef BIAS_TIME_MS
+uint32_t ImageComposite::ScanForLastFrameIndex(
+    const nsTArray<TimedImage>& aNewImages) {
+  if (mImages.IsEmpty()) {
+    return 0;
+  }
+  uint32_t i = mLastChosenImageIndex;
+  uint32_t newIndex = 0;
+  uint32_t dropped = 0;
+  // See if the new array of images have any images in common with the
+  // previous list that we haven't played yet.
+  uint32_t j = 0;
+  while (i < mImages.Length() && j < aNewImages.Length()) {
+    if (mImages[i].mProducerID != aNewImages[j].mProducerID) {
+      // This is new content, can stop.
+      newIndex = j;
+      break;
+    }
+    int32_t oldFrameID = mImages[i].mFrameID;
+    int32_t newFrameID = aNewImages[j].mFrameID;
+    if (oldFrameID > newFrameID) {
+      // This is an image we have already returned, we don't need to present
+      // it again and can start from this index next time.
+      newIndex = ++j;
+      continue;
+    }
+    if (oldFrameID < mLastFrameID) {
+      // we have already returned that frame previously, ignore.
+      i++;
+      continue;
+    }
+    if (oldFrameID < newFrameID) {
+      // This is a new image, all images prior the new one and not yet
+      // rendered can be considered as dropped. Those images have a FrameID
+      // inferior to the new image.
+      for (++i; i < mImages.Length() && mImages[i].mFrameID < newFrameID &&
+                mImages[i].mProducerID == aNewImages[j].mProducerID;
+           i++) {
+        dropped++;
+      }
+      break;
+    }
+    i++;
+    j++;
+  }
+  if (dropped > 0) {
+    mDroppedFrames += dropped;
+  }
+  if (newIndex >= aNewImages.Length()) {
+    // Somehow none of those images should be rendered (can this happen?)
+    // We will always return the last one for now.
+    newIndex = aNewImages.Length() - 1;
+  }
+  return newIndex;
+}
+
+void ImageComposite::SetImages(nsTArray<TimedImage>&& aNewImages) {
+  mLastChosenImageIndex = ScanForLastFrameIndex(aNewImages);
+  mImages = std::move(aNewImages);
+}
+
+const ImageComposite::TimedImage* ImageComposite::GetImage(
+    size_t aIndex) const {
+  if (aIndex >= mImages.Length()) {
+    return nullptr;
+  }
+  return &mImages[aIndex];
+}
+
+}  // namespace layers
+}  // namespace mozilla

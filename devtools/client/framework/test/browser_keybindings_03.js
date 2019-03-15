@@ -15,39 +15,39 @@ var {Toolbox} = require("devtools/client/framework/toolbox");
 const {LocalizationHelper} = require("devtools/shared/l10n");
 const L10N = new LocalizationHelper("devtools/client/locales/toolbox.properties");
 
-add_task(function* () {
+add_task(async function() {
   info("Create a test tab and open the toolbox");
-  let tab = yield addTab(URL);
-  let target = TargetFactory.forTab(tab);
-  let toolbox = yield gDevTools.showToolbox(target, "webconsole");
+  const tab = await addTab(URL);
+  const target = await TargetFactory.forTab(tab);
+  const toolbox = await gDevTools.showToolbox(target, "webconsole");
 
-  let shortcut = L10N.getStr("toolbox.toggleHost.key");
+  const shortcut = L10N.getStr("toolbox.toggleHost.key");
 
-  let {SIDE, BOTTOM, WINDOW} = Toolbox.HostType;
-  checkHostType(toolbox, BOTTOM, SIDE);
+  const {RIGHT, BOTTOM, WINDOW} = Toolbox.HostType;
+  checkHostType(toolbox, BOTTOM, RIGHT);
 
-  info("Switching from bottom to side");
+  info("Switching from bottom to right");
   let onHostChanged = toolbox.once("host-changed");
   synthesizeKeyShortcut(shortcut, toolbox.win);
-  yield onHostChanged;
-  checkHostType(toolbox, SIDE, BOTTOM);
+  await onHostChanged;
+  checkHostType(toolbox, RIGHT, BOTTOM);
 
-  info("Switching from side to bottom");
+  info("Switching from right to bottom");
   onHostChanged = toolbox.once("host-changed");
   synthesizeKeyShortcut(shortcut, toolbox.win);
-  yield onHostChanged;
-  checkHostType(toolbox, BOTTOM, SIDE);
+  await onHostChanged;
+  checkHostType(toolbox, BOTTOM, RIGHT);
 
   info("Switching to window");
-  yield toolbox.switchHost(WINDOW);
+  await toolbox.switchHost(WINDOW);
   checkHostType(toolbox, WINDOW, BOTTOM);
 
   info("Switching from window to bottom");
   onHostChanged = toolbox.once("host-changed");
   synthesizeKeyShortcut(shortcut, toolbox.win);
-  yield onHostChanged;
+  await onHostChanged;
   checkHostType(toolbox, BOTTOM, WINDOW);
 
-  yield toolbox.destroy();
+  await toolbox.destroy();
   gBrowser.removeCurrentTab();
 });

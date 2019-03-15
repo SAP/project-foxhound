@@ -24,18 +24,14 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=815847
 <script class="testbody" type="application/javascript">
 <![CDATA[
 
-var Cu = Components.utils;
-var Ci = Components.interfaces;
-
-Cu.import('resource://gre/modules/Services.jsm');
+ChromeUtils.import('resource://gre/modules/Services.jsm');
 
 function testWindowlessBrowser(chromePrivileged) {
   var webNav = Services.appShell.createWindowlessBrowser(chromePrivileged);
 
   ok(webNav, "createWindowlessBrowser should return a wevNav");
 
-  let interfaceRequestor = webNav.QueryInterface(Ci.nsIInterfaceRequestor);
-  let docShell = interfaceRequestor.getInterface(Ci.nsIDocShell);
+  let docShell = webNav.docShell;
 
   ok(docShell, "docShell should be defined");
   ok(docShell.contentViewer.DOMDocument.defaultView, "docShell defaultView should be defined");
@@ -47,7 +43,6 @@ function testWindowlessBrowser(chromePrivileged) {
   ok(win.outerWidth == 0, "window.outerWidth should be 0 in a windowless browser");
   ok(win.outerHeight == 0, "window.outerHeight should be 0 in a windowless browser");
   
-  ok(win.sidebar, "window.sidebar should be defined");
   ok(win.external, "window.external should be defined");
   
   var exception;

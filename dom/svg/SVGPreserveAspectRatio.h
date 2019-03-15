@@ -7,63 +7,50 @@
 #ifndef MOZILLA_CONTENT_SVGPRESERVEASPECTRATIO_H_
 #define MOZILLA_CONTENT_SVGPRESERVEASPECTRATIO_H_
 
+#include "mozilla/dom/SVGPreserveAspectRatioBinding.h"
 #include "mozilla/HashFunctions.h"  // for HashGeneric
 
 #include "nsWrapperCache.h"
 #include "nsCycleCollectionParticipant.h"
 #include "mozilla/ErrorResult.h"
-#include "nsSVGElement.h"
+#include "mozilla/dom/SVGElement.h"
 
 namespace mozilla {
-// Alignment Types
-enum SVGAlign : uint8_t {
-  SVG_PRESERVEASPECTRATIO_UNKNOWN = 0,
-  SVG_PRESERVEASPECTRATIO_NONE = 1,
-  SVG_PRESERVEASPECTRATIO_XMINYMIN = 2,
-  SVG_PRESERVEASPECTRATIO_XMIDYMIN = 3,
-  SVG_PRESERVEASPECTRATIO_XMAXYMIN = 4,
-  SVG_PRESERVEASPECTRATIO_XMINYMID = 5,
-  SVG_PRESERVEASPECTRATIO_XMIDYMID = 6,
-  SVG_PRESERVEASPECTRATIO_XMAXYMID = 7,
-  SVG_PRESERVEASPECTRATIO_XMINYMAX = 8,
-  SVG_PRESERVEASPECTRATIO_XMIDYMAX = 9,
-  SVG_PRESERVEASPECTRATIO_XMAXYMAX = 10
-};
 
 // These constants represent the range of valid enum values for the <align>
 // parameter. They exclude the sentinel _UNKNOWN value.
-const uint16_t SVG_ALIGN_MIN_VALID = SVG_PRESERVEASPECTRATIO_NONE;
-const uint16_t SVG_ALIGN_MAX_VALID = SVG_PRESERVEASPECTRATIO_XMAXYMAX;
-
-// Meet-or-slice Types
-enum SVGMeetOrSlice : uint8_t {
-  SVG_MEETORSLICE_UNKNOWN = 0,
-  SVG_MEETORSLICE_MEET = 1,
-  SVG_MEETORSLICE_SLICE = 2
-};
+const uint16_t SVG_ALIGN_MIN_VALID =
+    dom::SVGPreserveAspectRatio_Binding::SVG_PRESERVEASPECTRATIO_NONE;
+const uint16_t SVG_ALIGN_MAX_VALID =
+    dom::SVGPreserveAspectRatio_Binding::SVG_PRESERVEASPECTRATIO_XMAXYMAX;
 
 // These constants represent the range of valid enum values for the
 // <meetOrSlice> parameter. They exclude the sentinel _UNKNOWN value.
-const uint16_t SVG_MEETORSLICE_MIN_VALID = SVG_MEETORSLICE_MEET;
-const uint16_t SVG_MEETORSLICE_MAX_VALID = SVG_MEETORSLICE_SLICE;
+const uint16_t SVG_MEETORSLICE_MIN_VALID =
+    dom::SVGPreserveAspectRatio_Binding::SVG_MEETORSLICE_MEET;
+const uint16_t SVG_MEETORSLICE_MAX_VALID =
+    dom::SVGPreserveAspectRatio_Binding::SVG_MEETORSLICE_SLICE;
 
 class SVGAnimatedPreserveAspectRatio;
 
-class SVGPreserveAspectRatio final
-{
+class SVGPreserveAspectRatio final {
   friend class SVGAnimatedPreserveAspectRatio;
-public:
-  SVGPreserveAspectRatio(SVGAlign aAlign, SVGMeetOrSlice aMeetOrSlice)
-    : mAlign(aAlign)
-    , mMeetOrSlice(aMeetOrSlice)
-  {}
+
+ public:
+  explicit SVGPreserveAspectRatio()
+      : mAlign(dom::SVGPreserveAspectRatio_Binding::
+                   SVG_PRESERVEASPECTRATIO_UNKNOWN),
+        mMeetOrSlice(
+            dom::SVGPreserveAspectRatio_Binding::SVG_MEETORSLICE_UNKNOWN) {}
+
+  SVGPreserveAspectRatio(uint16_t aAlign, uint16_t aMeetOrSlice)
+      : mAlign(aAlign), mMeetOrSlice(aMeetOrSlice) {}
+
+  static nsresult FromString(const nsAString& aString,
+                             SVGPreserveAspectRatio* aValue);
+  void ToString(nsAString& aValueAsString) const;
 
   bool operator==(const SVGPreserveAspectRatio& aOther) const;
-
-  explicit SVGPreserveAspectRatio()
-    : mAlign(SVG_PRESERVEASPECTRATIO_UNKNOWN)
-    , mMeetOrSlice(SVG_MEETORSLICE_UNKNOWN)
-  {}
 
   nsresult SetAlign(uint16_t aAlign) {
     if (aAlign < SVG_ALIGN_MIN_VALID || aAlign > SVG_ALIGN_MAX_VALID)
@@ -72,9 +59,7 @@ public:
     return NS_OK;
   }
 
-  SVGAlign GetAlign() const {
-    return static_cast<SVGAlign>(mAlign);
-  }
+  uint16_t GetAlign() const { return mAlign; }
 
   nsresult SetMeetOrSlice(uint16_t aMeetOrSlice) {
     if (aMeetOrSlice < SVG_MEETORSLICE_MIN_VALID ||
@@ -84,15 +69,11 @@ public:
     return NS_OK;
   }
 
-  SVGMeetOrSlice GetMeetOrSlice() const {
-    return static_cast<SVGMeetOrSlice>(mMeetOrSlice);
-  }
+  uint16_t GetMeetOrSlice() const { return mMeetOrSlice; }
 
-  uint32_t Hash() const {
-    return HashGeneric(mAlign, mMeetOrSlice);
-  }
+  PLDHashNumber Hash() const { return HashGeneric(mAlign, mMeetOrSlice); }
 
-private:
+ private:
   // We can't use enum types here because some compilers fail to pack them.
   uint8_t mAlign;
   uint8_t mMeetOrSlice;
@@ -101,37 +82,35 @@ private:
 namespace dom {
 
 class DOMSVGPreserveAspectRatio final : public nsISupports,
-                                        public nsWrapperCache
-{
-public:
+                                        public nsWrapperCache {
+ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(DOMSVGPreserveAspectRatio)
 
   DOMSVGPreserveAspectRatio(SVGAnimatedPreserveAspectRatio* aVal,
-                            nsSVGElement *aSVGElement,
-                            bool aIsBaseValue)
-    : mVal(aVal), mSVGElement(aSVGElement), mIsBaseValue(aIsBaseValue)
-  {
-  }
+                            SVGElement* aSVGElement, bool aIsBaseValue)
+      : mVal(aVal), mSVGElement(aSVGElement), mIsBaseValue(aIsBaseValue) {}
 
   // WebIDL
-  nsSVGElement* GetParentObject() const { return mSVGElement; }
-  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  SVGElement* GetParentObject() const { return mSVGElement; }
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override;
 
   uint16_t Align();
   void SetAlign(uint16_t aAlign, ErrorResult& rv);
   uint16_t MeetOrSlice();
   void SetMeetOrSlice(uint16_t aMeetOrSlice, ErrorResult& rv);
 
-protected:
+ protected:
   ~DOMSVGPreserveAspectRatio();
 
-  SVGAnimatedPreserveAspectRatio* mVal; // kept alive because it belongs to mSVGElement
-  RefPtr<nsSVGElement> mSVGElement;
+  SVGAnimatedPreserveAspectRatio*
+      mVal;  // kept alive because it belongs to mSVGElement
+  RefPtr<SVGElement> mSVGElement;
   const bool mIsBaseValue;
 };
 
-} //namespace dom
-} //namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // MOZILLA_CONTENT_SVGPRESERVEASPECTRATIO_H_
+#endif  // MOZILLA_CONTENT_SVGPRESERVEASPECTRATIO_H_

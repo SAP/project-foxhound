@@ -20,7 +20,6 @@
 // Boilerplate used to be able to import this module both from the main
 // thread and from worker threads.
 if (typeof Components != "undefined") {
-  Components.utils.importGlobalProperties(["URL"]);
   // Global definition of |exports|, to keep everybody happy.
   // In non-main thread, |exports| is provided by the module
   // loader.
@@ -114,7 +113,7 @@ var normalize = function(path) {
   }
   path.split("/").forEach(function(v) {
     switch (v) {
-    case "":  case ".":// fallthrough
+    case "": case ".":// fallthrough
       break;
     case "..":
       if (stack.length == 0) {
@@ -123,13 +122,11 @@ var normalize = function(path) {
         } else {
           stack.push("..");
         }
-      } else {
-        if (stack[stack.length - 1] == "..") {
+      } else if (stack[stack.length - 1] == "..") {
           stack.push("..");
         } else {
           stack.pop();
         }
-      }
       break;
     default:
       stack.push(v);
@@ -154,7 +151,7 @@ exports.normalize = normalize;
 var split = function(path) {
   return {
     absolute: path.length && path[0] == "/",
-    components: path.split("/")
+    components: path.split("/"),
   };
 };
 exports.split = split;
@@ -163,10 +160,10 @@ exports.split = split;
  * Returns the file:// URI file path of the given local file path.
  */
 // The case of %3b is designed to match Services.io, but fundamentally doesn't matter.
-var toFileURIExtraEncodings = {';': '%3b', '?': '%3F', '#': '%23'};
+var toFileURIExtraEncodings = {";": "%3b", "?": "%3F", "#": "%23"};
 var toFileURI = function toFileURI(path) {
   // Per https://url.spec.whatwg.org we should not encode [] in the path
-  let dontNeedEscaping = {'%5B': '[', '%5D': ']'};
+  let dontNeedEscaping = {"%5B": "[", "%5D": "]"};
   let uri = encodeURI(this.normalize(path)).replace(/%(5B|5D)/gi,
     match => dontNeedEscaping[match]);
 
@@ -184,7 +181,7 @@ exports.toFileURI = toFileURI;
  */
 var fromFileURI = function fromFileURI(uri) {
   let url = new URL(uri);
-  if (url.protocol != 'file:') {
+  if (url.protocol != "file:") {
     throw new Error("fromFileURI expects a file URI");
   }
   let path = this.normalize(decodeURIComponent(url.pathname));
@@ -193,7 +190,7 @@ var fromFileURI = function fromFileURI(uri) {
 exports.fromFileURI = fromFileURI;
 
 
-//////////// Boilerplate
+// ////////// Boilerplate
 if (typeof Components != "undefined") {
   this.EXPORTED_SYMBOLS = EXPORTED_SYMBOLS;
   for (let symbol of EXPORTED_SYMBOLS) {

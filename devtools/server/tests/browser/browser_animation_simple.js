@@ -6,30 +6,32 @@
 
 // Simple checks for the AnimationsActor
 
-add_task(function* () {
-  let {client, walker, animations} = yield initAnimationsFrontForUrl(
+add_task(async function() {
+  const {target, walker, animations} = await initAnimationsFrontForUrl(
     "data:text/html;charset=utf-8,<title>test</title><div></div>");
 
   ok(animations, "The AnimationsFront was created");
   ok(animations.getAnimationPlayersForNode,
      "The getAnimationPlayersForNode method exists");
-  ok(animations.toggleAll, "The toggleAll method exists");
-  ok(animations.playAll, "The playAll method exists");
-  ok(animations.pauseAll, "The pauseAll method exists");
+  ok(animations.pauseSome, "The pauseSome method exists");
+  ok(animations.playSome, "The playSome method exists");
+  ok(animations.setCurrentTimes, "The setCurrentTimes method exists");
+  ok(animations.setPlaybackRates, "The setPlaybackRates method exists");
+  ok(animations.setWalkerActor, "The setWalkerActor method exists");
 
   let didThrow = false;
   try {
-    yield animations.getAnimationPlayersForNode(null);
+    await animations.getAnimationPlayersForNode(null);
   } catch (e) {
     didThrow = true;
   }
   ok(didThrow, "An exception was thrown for a missing NodeActor");
 
-  let invalidNode = yield walker.querySelector(walker.rootNode, "title");
-  let players = yield animations.getAnimationPlayersForNode(invalidNode);
+  const invalidNode = await walker.querySelector(walker.rootNode, "title");
+  const players = await animations.getAnimationPlayersForNode(invalidNode);
   ok(Array.isArray(players), "An array of players was returned");
   is(players.length, 0, "0 players have been returned for the invalid node");
 
-  yield client.close();
+  await target.destroy();
   gBrowser.removeCurrentTab();
 });

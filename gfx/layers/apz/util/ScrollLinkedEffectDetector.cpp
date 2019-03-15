@@ -1,11 +1,12 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ScrollLinkedEffectDetector.h"
 
-#include "nsIDocument.h"
+#include "mozilla/dom/Document.h"
 #include "nsThreadUtils.h"
 
 namespace mozilla {
@@ -14,9 +15,7 @@ namespace layers {
 uint32_t ScrollLinkedEffectDetector::sDepth = 0;
 bool ScrollLinkedEffectDetector::sFoundScrollLinkedEffect = false;
 
-/* static */ void
-ScrollLinkedEffectDetector::PositioningPropertyMutated()
-{
+/* static */ void ScrollLinkedEffectDetector::PositioningPropertyMutated() {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (sDepth > 0) {
@@ -25,15 +24,13 @@ ScrollLinkedEffectDetector::PositioningPropertyMutated()
   }
 }
 
-ScrollLinkedEffectDetector::ScrollLinkedEffectDetector(nsIDocument* aDoc)
-  : mDocument(aDoc)
-{
+ScrollLinkedEffectDetector::ScrollLinkedEffectDetector(dom::Document* aDoc)
+    : mDocument(aDoc) {
   MOZ_ASSERT(NS_IsMainThread());
   sDepth++;
 }
 
-ScrollLinkedEffectDetector::~ScrollLinkedEffectDetector()
-{
+ScrollLinkedEffectDetector::~ScrollLinkedEffectDetector() {
   sDepth--;
   if (sDepth == 0) {
     // We have exited all (possibly-nested) scroll event dispatches,
@@ -45,5 +42,5 @@ ScrollLinkedEffectDetector::~ScrollLinkedEffectDetector()
   }
 }
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla

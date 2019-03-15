@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -19,98 +19,97 @@
 
 class nsDiskCacheMap;
 
-
 class nsDiskCacheDevice final : public nsCacheDevice {
-public:
-    nsDiskCacheDevice();
-    virtual ~nsDiskCacheDevice();
+ public:
+  nsDiskCacheDevice();
+  virtual ~nsDiskCacheDevice();
 
-    virtual nsresult        Init();
-    virtual nsresult        Shutdown();
+  virtual nsresult Init() override;
+  virtual nsresult Shutdown() override;
 
-    virtual const char *    GetDeviceID(void);
-    virtual nsCacheEntry *  FindEntry(nsCString * key, bool *collision);
-    virtual nsresult        DeactivateEntry(nsCacheEntry * entry);
-    virtual nsresult        BindEntry(nsCacheEntry * entry);
-    virtual void            DoomEntry( nsCacheEntry * entry );
+  virtual const char *GetDeviceID(void) override;
+  virtual nsCacheEntry *FindEntry(nsCString *key, bool *collision) override;
+  virtual nsresult DeactivateEntry(nsCacheEntry *entry) override;
+  virtual nsresult BindEntry(nsCacheEntry *entry) override;
+  virtual void DoomEntry(nsCacheEntry *entry) override;
 
-    virtual nsresult OpenInputStreamForEntry(nsCacheEntry *    entry,
-                                             nsCacheAccessMode mode,
-                                             uint32_t          offset,
-                                             nsIInputStream ** result);
+  virtual nsresult OpenInputStreamForEntry(nsCacheEntry *entry,
+                                           nsCacheAccessMode mode,
+                                           uint32_t offset,
+                                           nsIInputStream **result) override;
 
-    virtual nsresult OpenOutputStreamForEntry(nsCacheEntry *     entry,
-                                              nsCacheAccessMode  mode,
-                                              uint32_t           offset,
-                                              nsIOutputStream ** result);
+  virtual nsresult OpenOutputStreamForEntry(nsCacheEntry *entry,
+                                            nsCacheAccessMode mode,
+                                            uint32_t offset,
+                                            nsIOutputStream **result) override;
 
-    virtual nsresult        GetFileForEntry(nsCacheEntry *    entry,
-                                            nsIFile **        result);
+  virtual nsresult GetFileForEntry(nsCacheEntry *entry,
+                                   nsIFile **result) override;
 
-    virtual nsresult        OnDataSizeChange(nsCacheEntry * entry, int32_t deltaSize);
-    
-    virtual nsresult        Visit(nsICacheVisitor * visitor);
+  virtual nsresult OnDataSizeChange(nsCacheEntry *entry,
+                                    int32_t deltaSize) override;
 
-    virtual nsresult        EvictEntries(const char * clientID);
+  virtual nsresult Visit(nsICacheVisitor *visitor) override;
 
-    bool                    EntryIsTooBig(int64_t entrySize);
+  virtual nsresult EvictEntries(const char *clientID) override;
 
-    size_t                 SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf);
+  bool EntryIsTooBig(int64_t entrySize);
 
-    /**
-     * Preference accessors
-     */
-    void                    SetCacheParentDirectory(nsIFile * parentDir);
-    void                    SetCapacity(uint32_t  capacity);
-    void                    SetMaxEntrySize(int32_t  maxSizeInKilobytes);
+  size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf);
 
-/* private: */
+  /**
+   * Preference accessors
+   */
+  void SetCacheParentDirectory(nsIFile *parentDir);
+  void SetCapacity(uint32_t capacity);
+  void SetMaxEntrySize(int32_t maxSizeInKilobytes);
 
-    void                    getCacheDirectory(nsIFile ** result);
-    uint32_t                getCacheCapacity();
-    uint32_t                getCacheSize();
-    uint32_t                getEntryCount();
-    
-    nsDiskCacheMap *        CacheMap()    { return &mCacheMap; }
-    
-private:    
-    friend class nsDiskCacheDeviceDeactivateEntryEvent;
-    friend class nsEvictDiskCacheEntriesEvent;
-    friend class nsDiskCacheMap;
-    /**
-     *  Private methods
-     */
+  /* private: */
 
-    inline bool IsValidBinding(nsDiskCacheBinding *binding)
-    {
-        NS_ASSERTION(binding, "  binding == nullptr");
-        NS_ASSERTION(binding->mDeactivateEvent == nullptr,
-                     "  entry in process of deactivation");
-        return (binding && !binding->mDeactivateEvent);
-    }
+  void getCacheDirectory(nsIFile **result);
+  uint32_t getCacheCapacity();
+  uint32_t getCacheSize();
+  uint32_t getEntryCount();
 
-    bool                    Initialized() { return mInitialized; }
+  nsDiskCacheMap *CacheMap() { return &mCacheMap; }
 
-    nsresult                Shutdown_Private(bool flush);
-    nsresult                DeactivateEntry_Private(nsCacheEntry * entry,
-                                                    nsDiskCacheBinding * binding);
+ private:
+  friend class nsDiskCacheDeviceDeactivateEntryEvent;
+  friend class nsEvictDiskCacheEntriesEvent;
+  friend class nsDiskCacheMap;
+  /**
+   *  Private methods
+   */
 
-    nsresult                OpenDiskCache();
-    nsresult                ClearDiskCache();
+  inline bool IsValidBinding(nsDiskCacheBinding *binding) {
+    NS_ASSERTION(binding, "  binding == nullptr");
+    NS_ASSERTION(binding->mDeactivateEvent == nullptr,
+                 "  entry in process of deactivation");
+    return (binding && !binding->mDeactivateEvent);
+  }
 
-    nsresult                EvictDiskCacheEntries(uint32_t  targetCapacity);
-    
-    /**
-     *  Member variables
-     */
-    nsCOMPtr<nsIFile>       mCacheDirectory;
-    nsDiskCacheBindery      mBindery;
-    uint32_t                mCacheCapacity;     // Unit is KiB's
-    int32_t                 mMaxEntrySize;      // Unit is bytes internally
-    // XXX need soft/hard limits, currentTotal
-    nsDiskCacheMap          mCacheMap;
-    bool                    mInitialized;
-    bool                    mClearingDiskCache;
+  bool Initialized() { return mInitialized; }
+
+  nsresult Shutdown_Private(bool flush);
+  nsresult DeactivateEntry_Private(nsCacheEntry *entry,
+                                   nsDiskCacheBinding *binding);
+
+  nsresult OpenDiskCache();
+  nsresult ClearDiskCache();
+
+  nsresult EvictDiskCacheEntries(uint32_t targetCapacity);
+
+  /**
+   *  Member variables
+   */
+  nsCOMPtr<nsIFile> mCacheDirectory;
+  nsDiskCacheBindery mBindery;
+  uint32_t mCacheCapacity;  // Unit is KiB's
+  int32_t mMaxEntrySize;    // Unit is bytes internally
+  // XXX need soft/hard limits, currentTotal
+  nsDiskCacheMap mCacheMap;
+  bool mInitialized;
+  bool mClearingDiskCache;
 };
 
-#endif // _nsDiskCacheDevice_h_
+#endif  // _nsDiskCacheDevice_h_

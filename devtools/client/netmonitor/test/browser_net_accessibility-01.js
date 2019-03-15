@@ -7,76 +7,70 @@
  * Tests if focus modifiers work for the SideMenuWidget.
  */
 
-add_task(function* () {
-  let { tab, monitor } = yield initNetMonitor(CUSTOM_GET_URL);
+add_task(async function() {
+  const { tab, monitor } = await initNetMonitor(CUSTOM_GET_URL);
   info("Starting test... ");
 
   // It seems that this test may be slow on Ubuntu builds running on ec2.
   requestLongerTimeout(2);
 
-  let { document, gStore, windowRequire } = monitor.panelWin;
-  let Actions = windowRequire("devtools/client/netmonitor/actions/index");
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
 
-  gStore.dispatch(Actions.batchEnable(false));
+  store.dispatch(Actions.batchEnable(false));
 
   let count = 0;
   function check(selectedIndex, panelVisibility) {
     info("Performing check " + (count++) + ".");
 
-    let requestItems = Array.from(document.querySelectorAll(".request-list-item"));
+    const requestItems = Array.from(document.querySelectorAll(".request-list-item"));
     is(requestItems.findIndex((item) => item.matches(".selected")), selectedIndex,
       "The selected item in the requests menu was incorrect.");
     is(!!document.querySelector(".network-details-panel"), panelVisibility,
       "The network details panel should render correctly.");
   }
 
-  let wait = waitForNetworkEvents(monitor, 2);
-  yield ContentTask.spawn(tab.linkedBrowser, {}, function* () {
-    content.wrappedJSObject.performRequests(2);
-  });
-  yield wait;
+  // Execute requests.
+  await performRequests(monitor, tab, 2);
 
   check(-1, false);
 
-  gStore.dispatch(Actions.selectDelta(+Infinity));
+  store.dispatch(Actions.selectDelta(+Infinity));
   check(1, true);
-  gStore.dispatch(Actions.selectDelta(-Infinity));
+  store.dispatch(Actions.selectDelta(-Infinity));
   check(0, true);
 
-  gStore.dispatch(Actions.selectDelta(+1));
+  store.dispatch(Actions.selectDelta(+1));
   check(1, true);
-  gStore.dispatch(Actions.selectDelta(-1));
+  store.dispatch(Actions.selectDelta(-1));
   check(0, true);
 
-  gStore.dispatch(Actions.selectDelta(+10));
+  store.dispatch(Actions.selectDelta(+10));
   check(1, true);
-  gStore.dispatch(Actions.selectDelta(-10));
+  store.dispatch(Actions.selectDelta(-10));
   check(0, true);
 
-  wait = waitForNetworkEvents(monitor, 18);
-  yield ContentTask.spawn(tab.linkedBrowser, {}, function* () {
-    content.wrappedJSObject.performRequests(18);
-  });
-  yield wait;
+  // Execute requests.
+  await performRequests(monitor, tab, 18);
 
-  gStore.dispatch(Actions.selectDelta(+Infinity));
+  store.dispatch(Actions.selectDelta(+Infinity));
   check(19, true);
-  gStore.dispatch(Actions.selectDelta(-Infinity));
+  store.dispatch(Actions.selectDelta(-Infinity));
   check(0, true);
 
-  gStore.dispatch(Actions.selectDelta(+1));
+  store.dispatch(Actions.selectDelta(+1));
   check(1, true);
-  gStore.dispatch(Actions.selectDelta(-1));
+  store.dispatch(Actions.selectDelta(-1));
   check(0, true);
 
-  gStore.dispatch(Actions.selectDelta(+10));
+  store.dispatch(Actions.selectDelta(+10));
   check(10, true);
-  gStore.dispatch(Actions.selectDelta(-10));
+  store.dispatch(Actions.selectDelta(-10));
   check(0, true);
 
-  gStore.dispatch(Actions.selectDelta(+100));
+  store.dispatch(Actions.selectDelta(+100));
   check(19, true);
-  gStore.dispatch(Actions.selectDelta(-100));
+  store.dispatch(Actions.selectDelta(-100));
   check(0, true);
 
   return teardown(monitor);

@@ -80,7 +80,7 @@ function popupShown(event)
 {
   var panel = event.target;
 
-  if (waitSteps > 0 && navigator.platform.indexOf("Linux") >= 0 &&
+  if (waitSteps > 0 && navigator.platform.includes("Linux") &&
       panel.boxObject.screenY == 210) {
     waitSteps--;
     setTimeout(popupShown, 10, event);
@@ -113,12 +113,12 @@ function checkTreeCoords()
   var tree = $("tree");
   var treechildren = $("treechildren");
   tree.currentIndex = 0;
-  tree.treeBoxObject.scrollToRow(0);
-  synthesizeMouse(treechildren, 10, tree.treeBoxObject.rowHeight + 2, { });
+  tree.scrollToRow(0);
+  synthesizeMouse(treechildren, 10, tree.rowHeight + 2, { });
   is(tree.currentIndex, 1, "tree selection");
 
-  tree.treeBoxObject.scrollToRow(2);
-  synthesizeMouse(treechildren, 10, tree.treeBoxObject.rowHeight + 2, { });
+  tree.scrollToRow(2);
+  synthesizeMouse(treechildren, 10, tree.rowHeight + 2, { });
   is(tree.currentIndex, 3, "tree selection after scroll");
 }
 
@@ -193,7 +193,7 @@ var tests = [
     result: function(testname, panel) {
       var panelrect = panel.getBoundingClientRect();
       ok(panelrect.left >= 200 - mozInnerScreenX, testname + "left");
-      if (navigator.platform.indexOf("Linux") < 0) {
+      if (!navigator.platform.includes("Linux")) {
         ok(panelrect.top >= 210 - mozInnerScreenY + 10, testname + "top greater");
       }
       ok(panelrect.top <= 210 - mozInnerScreenY + 32, testname + "top less");
@@ -201,7 +201,7 @@ var tests = [
       is(panelrect.height, 40, testname + "height");
 
       var screenRect = panel.getOuterScreenRect();
-      if (navigator.platform.indexOf("Linux") < 0) {
+      if (!navigator.platform.includes("Linux")) {
         is(screenRect.left, 200, testname + " screen left");
         is(screenRect.top, 210, testname + " screen top");
       }
@@ -228,31 +228,6 @@ var tests = [
       tree.currentIndex = 0;
       panel.appendChild(tree);
       checkTreeCoords();
-    }
-  },
-  {
-    testname: "noautohide panel with backdrag",
-    attrs: { noautohide: true, backdrag: "true" },
-    test: function(panel) {
-      var label = document.createElement("label");
-      label.id = "backdragspot";
-      label.setAttribute("value", "Hello There");
-      panel.appendChild(label);
-      panel.openPopupAtScreen(200, 230);
-    },
-    result: function(testname, panel) {
-      var oldrect = panel.getOuterScreenRect();
-
-      // Linux uses native window moving
-      if (navigator.platform.indexOf("Linux") == -1) {
-        var backdragspot = document.getElementById("backdragspot");
-        synthesizeMouse(backdragspot, 5, 5, { type: "mousedown" });
-        synthesizeMouse(backdragspot, 15, 20, { type: "mousemove" });
-        synthesizeMouse(backdragspot, 15, 20, { type: "mouseup" });
-
-        is(panel.getOuterScreenRect().left, 210, testname + "left");
-        is(panel.getOuterScreenRect().top, 245, testname + "top");
-      }
     }
   },
   {
@@ -285,7 +260,7 @@ var tests = [
       window.moveBy(-50, -50);
     },
     result: function(testname, panel) {
-      if (navigator.platform.indexOf("Linux") >= 0) {
+      if (navigator.platform.includes("Linux")) {
         // The window position doesn't get updated immediately on Linux.
         return;
       }

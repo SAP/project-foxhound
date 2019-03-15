@@ -20,14 +20,14 @@ function test() {
 }
 
 function addTab(aURI, aIndex) {
-  var tab = gBrowser.addTab(aURI);
+  var tab = BrowserTestUtils.addTab(gBrowser, aURI);
   if (aIndex == 0)
     gBrowser.removeTab(gBrowser.tabs[0], {skipPermitUnload: true});
 
-  tab.linkedBrowser.addEventListener("load", function(event) {
+  BrowserTestUtils.browserLoaded(tab.linkedBrowser).then(() => {
     if (++count == URIS.length)
       executeSoon(doTabsTest);
-  }, {capture: true, once: true});
+  });
 }
 
 function doTabsTest() {
@@ -46,7 +46,7 @@ function doTabsTest() {
   gBrowser.removeTab(gBrowser.tabs[0], {skipPermitUnload: true});
   is(gBrowser.tabs.length, 1, "Related tabs are not closed unexpectedly");
 
-  gBrowser.addTab("about:blank");
+  BrowserTestUtils.addTab(gBrowser, "about:blank");
   gBrowser.removeTab(gBrowser.tabs[0], {skipPermitUnload: true});
   finish();
 }

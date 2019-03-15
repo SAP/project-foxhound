@@ -8,29 +8,21 @@
 ////////////////////////////////////////////////////////////////////////////////
 /// Globals
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cu = Components.utils;
-var Cr = Components.results;
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "Promise",
-                                  "resource://gre/modules/Promise.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Services",
-                                  "resource://gre/modules/Services.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Task",
-                                  "resource://gre/modules/Task.jsm");
+ChromeUtils.defineModuleGetter(this, "Services",
+                               "resource://gre/modules/Services.jsm");
+ChromeUtils.defineModuleGetter(this, "Task",
+                               "resource://testing-common/Task.jsm");
 
 /**
  * Returns a promise that will be resolved with the given value, when an event
  * posted on the event loop of the main thread is processed.
  */
 function promiseResolvedLater(aValue) {
-  let deferred = Promise.defer();
-  Services.tm.mainThread.dispatch(() => deferred.resolve(aValue),
-                                  Ci.nsIThread.DISPATCH_NORMAL);
-  return deferred.promise;
+  return new Promise(resolve => {
+    Services.tm.dispatchToMainThread(() => resolve(aValue));
+  });
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -41,56 +33,6 @@ function run_test()
   run_next_test();
 }
 
-add_test(function test_normal()
-{
-  Task.spawn(function () {
-    let result = yield Promise.resolve("Value");
-    for (let i = 0; i < 3; i++) {
-      result += yield promiseResolvedLater("!");
-    }
-    throw new Task.Result("Task result: " + result);
-  }).then(function (result) {
-    do_check_eq("Task result: Value!!!", result);
-    run_next_test();
-  }, function (ex) {
-    do_throw("Unexpected error: " + ex);
-  });
-});
-
-add_test(function test_exceptions()
-{
-  Task.spawn(function () {
-    try {
-      yield Promise.reject("Rejection result by promise.");
-      do_throw("Exception expected because the promise was rejected.");
-    } catch (ex) {
-      // We catch this exception now, we will throw a different one later.
-      do_check_eq("Rejection result by promise.", ex);
-    }
-    throw new Error("Exception uncaught by task.");
-  }).then(function (result) {
-    do_throw("Unexpected success!");
-  }, function (ex) {
-    do_check_eq("Exception uncaught by task.", ex.message);
-    run_next_test();
-  });
-});
-
-add_test(function test_recursion()
-{
-  function task_fibonacci(n) {
-    throw new Task.Result(n < 2 ? n : (yield task_fibonacci(n - 1)) +
-                                      (yield task_fibonacci(n - 2)));
-  };
-
-  Task.spawn(task_fibonacci(6)).then(function (result) {
-    do_check_eq(8, result);
-    run_next_test();
-  }, function (ex) {
-    do_throw("Unexpected error: " + ex);
-  });
-});
-
 add_test(function test_spawn_primitive()
 {
   function fibonacci(n) {
@@ -99,7 +41,7 @@ add_test(function test_spawn_primitive()
 
   // Polymorphism between task and non-task functions (see "test_recursion").
   Task.spawn(fibonacci(6)).then(function (result) {
-    do_check_eq(8, result);
+    Assert.equal(8, result);
     run_next_test();
   }, function (ex) {
     do_throw("Unexpected error: " + ex);
@@ -111,7 +53,7 @@ add_test(function test_spawn_function()
   Task.spawn(function () {
     return "This is not a generator.";
   }).then(function (result) {
-    do_check_eq("This is not a generator.", result);
+    Assert.equal("This is not a generator.", result);
     run_next_test();
   }, function (ex) {
     do_throw("Unexpected error: " + ex);
@@ -126,7 +68,7 @@ add_test(function test_spawn_function_this()
     // Since the task function wasn't defined in strict mode, its "this" object
     // should be the same as the "this" object in this function, i.e. the global
     // object.
-    do_check_eq(result, this);
+    Assert.equal(result, this);
     run_next_test();
   }, function (ex) {
     do_throw("Unexpected error: " + ex);
@@ -141,7 +83,7 @@ add_test(function test_spawn_function_this_strict()
   }).then(function (result) {
     // Since the task function was defined in strict mode, its "this" object
     // should be undefined.
-    do_check_eq(typeof(result), "undefined");
+    Assert.equal(typeof(result), "undefined");
     run_next_test();
   }, function (ex) {
     do_throw("Unexpected error: " + ex);
@@ -153,7 +95,7 @@ add_test(function test_spawn_function_returning_promise()
   Task.spawn(function () {
     return promiseResolvedLater("Resolution value.");
   }).then(function (result) {
-    do_check_eq("Resolution value.", result);
+    Assert.equal("Resolution value.", result);
     run_next_test();
   }, function (ex) {
     do_throw("Unexpected error: " + ex);
@@ -167,7 +109,7 @@ add_test(function test_spawn_function_exceptions()
   }).then(function (result) {
     do_throw("Unexpected success!");
   }, function (ex) {
-    do_check_eq("Exception uncaught by task.", ex.message);
+    Assert.equal("Exception uncaught by task.", ex.message);
     run_next_test();
   });
 });
@@ -177,7 +119,7 @@ add_test(function test_spawn_function_taskresult()
   Task.spawn(function () {
     throw new Task.Result("Task result");
   }).then(function (result) {
-    do_check_eq("Task result", result);
+    Assert.equal("Task result", result);
     run_next_test();
   }, function (ex) {
     do_throw("Unexpected error: " + ex);
@@ -186,11 +128,11 @@ add_test(function test_spawn_function_taskresult()
 
 add_test(function test_yielded_undefined()
 {
-  Task.spawn(function () {
+  Task.spawn(function* () {
     yield;
-    throw new Task.Result("We continued correctly.");
+    return "We continued correctly.";
   }).then(function (result) {
-    do_check_eq("We continued correctly.", result);
+    Assert.equal("We continued correctly.", result);
     run_next_test();
   }, function (ex) {
     do_throw("Unexpected error: " + ex);
@@ -199,10 +141,10 @@ add_test(function test_yielded_undefined()
 
 add_test(function test_yielded_primitive()
 {
-  Task.spawn(function () {
-    throw new Task.Result("Primitive " + (yield "value."));
+  Task.spawn(function* () {
+    return "Primitive " + (yield "value.");
   }).then(function (result) {
-    do_check_eq("Primitive value.", result);
+    Assert.equal("Primitive value.", result);
     run_next_test();
   }, function (ex) {
     do_throw("Unexpected error: " + ex);
@@ -218,7 +160,7 @@ add_test(function test_star_normal()
     }
     return "Task result: " + result;
   }).then(function (result) {
-    do_check_eq("Task result: Value!!!", result);
+    Assert.equal("Task result: Value!!!", result);
     run_next_test();
   }, function (ex) {
     do_throw("Unexpected error: " + ex);
@@ -233,13 +175,13 @@ add_test(function test_star_exceptions()
       do_throw("Exception expected because the promise was rejected.");
     } catch (ex) {
       // We catch this exception now, we will throw a different one later.
-      do_check_eq("Rejection result by promise.", ex);
+      Assert.equal("Rejection result by promise.", ex);
     }
     throw new Error("Exception uncaught by task.");
   }).then(function (result) {
     do_throw("Unexpected success!");
   }, function (ex) {
-    do_check_eq("Exception uncaught by task.", ex.message);
+    Assert.equal("Exception uncaught by task.", ex.message);
     run_next_test();
   });
 });
@@ -252,21 +194,21 @@ add_test(function test_star_recursion()
   };
 
   Task.spawn(task_fibonacci(6)).then(function (result) {
-    do_check_eq(8, result);
+    Assert.equal(8, result);
     run_next_test();
   }, function (ex) {
     do_throw("Unexpected error: " + ex);
   });
 });
 
-add_test(function test_mixed_legacy_and_star()
+add_test(function test_nested_star()
 {
   Task.spawn(function* () {
-    return yield (function() {
-      throw new Task.Result(yield 5);
+    return yield (function* () {
+      return yield 5;
     })();
   }).then(function (result) {
-    do_check_eq(5, result);
+    Assert.equal(5, result);
     run_next_test();
   }, function (ex) {
     do_throw("Unexpected error: " + ex);
@@ -278,16 +220,16 @@ add_test(function test_async_function_from_generator()
   Task.spawn(function* () {
     let object = {
       asyncFunction: Task.async(function* (param) {
-        do_check_eq(this, object);
+        Assert.equal(this, object);
         return param;
       })
     };
 
     // Ensure the async function returns a promise that resolves as expected.
-    do_check_eq((yield object.asyncFunction(1)), 1);
+    Assert.equal((yield object.asyncFunction(1)), 1);
 
     // Ensure a second call to the async function also returns such a promise.
-    do_check_eq((yield object.asyncFunction(3)), 3);
+    Assert.equal((yield object.asyncFunction(3)), 3);
   }).then(function () {
     run_next_test();
   }, function (ex) {
@@ -301,16 +243,16 @@ add_test(function test_async_function_from_function()
     return Task.spawn(function* () {
       let object = {
         asyncFunction: Task.async(function (param) {
-          do_check_eq(this, object);
+          Assert.equal(this, object);
           return param;
         })
       };
 
       // Ensure the async function returns a promise that resolves as expected.
-      do_check_eq((yield object.asyncFunction(5)), 5);
+      Assert.equal((yield object.asyncFunction(5)), 5);
 
       // Ensure a second call to the async function also returns such a promise.
-      do_check_eq((yield object.asyncFunction(7)), 7);
+      Assert.equal((yield object.asyncFunction(7)), 7);
     });
   }).then(function () {
     run_next_test();
@@ -332,7 +274,7 @@ add_test(function test_async_function_that_throws_rejects_promise()
   }).then(function () {
     do_throw("unexpected success calling async function that throws error");
   }, function (ex) {
-    do_check_eq(ex, "Rejected!");
+    Assert.equal(ex, "Rejected!");
     run_next_test();
   });
 });
@@ -351,7 +293,7 @@ add_test(function test_async_return_function()
         return returnValue;
       });
 
-      do_check_eq((yield asyncFunction()), returnValue);
+      Assert.equal((yield asyncFunction()), returnValue);
     });
   }).then(function () {
     run_next_test();
@@ -403,10 +345,10 @@ add_test(function enter_stack_tests() {
  * Ensure that a list of frames appear in a stack, in the right order
  */
 function do_check_rewritten_stack(frames, ex) {
-  do_print("Checking that the expected frames appear in the right order");
-  do_print(frames.join(", "));
+  info("Checking that the expected frames appear in the right order");
+  info(frames.join(", "));
   let stack = ex.stack;
-  do_print(stack);
+  info(stack);
 
   let framesFound = 0;
   let lineNumber = 0;
@@ -415,12 +357,12 @@ function do_check_rewritten_stack(frames, ex) {
   while (framesFound < frames.length && (match = reLine.exec(stack))) {
     let line = match[0];
     let frame = frames[framesFound];
-    do_print("Searching for " + frame + " in line " + line);
-    if (line.indexOf(frame) != -1) {
-      do_print("Found " + frame);
+    info("Searching for " + frame + " in line " + line);
+    if (line.includes(frame)) {
+      info("Found " + frame);
       ++framesFound;
     } else {
-      do_print("Didn't find " + frame);
+      info("Didn't find " + frame);
     }
   }
 
@@ -430,10 +372,10 @@ function do_check_rewritten_stack(frames, ex) {
   do_throw("Did not find: " + frames.slice(framesFound).join(", ") +
            " in " + stack.substr(reLine.lastIndex));
 
-  do_print("Ensuring that we have removed Task.jsm, Promise.jsm");
-  do_check_true(stack.indexOf("Task.jsm") == -1);
-  do_check_true(stack.indexOf("Promise.jsm") == -1);
-  do_check_true(stack.indexOf("Promise-backend.js") == -1);
+  info("Ensuring that we have removed Task.jsm, Promise.jsm");
+  Assert.ok(!stack.includes("Task.jsm"));
+  Assert.ok(!stack.includes("Promise.jsm"));
+  Assert.ok(!stack.includes("Promise-backend.js"));
 }
 
 
@@ -552,7 +494,7 @@ add_test(function test_throw_stack_do_not_capture_the_wrong_task() {
         do_check_rewritten_stack(["task_a",
                                   "test_throw_stack_do_not_capture_the_wrong_task"],
                                   ex);
-        do_check_true(!ex.stack.includes("task_b"));
+        Assert.ok(!ex.stack.includes("task_b"));
         run_next_test();
       });
       Task.spawn(function* task_b() {
@@ -620,15 +562,15 @@ add_test(function test_throw_complex_stack()
 });
 
 add_test(function test_without_maintainStack() {
-  do_print("Calling generateReadableStack without a Task");
+  info("Calling generateReadableStack without a Task");
   Task.Debugging.generateReadableStack(new Error("Not a real error"));
 
   Task.Debugging.maintainStack = false;
 
-  do_print("Calling generateReadableStack with neither a Task nor maintainStack");
+  info("Calling generateReadableStack with neither a Task nor maintainStack");
   Task.Debugging.generateReadableStack(new Error("Not a real error"));
 
-  do_print("Calling generateReadableStack without maintainStack");
+  info("Calling generateReadableStack without maintainStack");
   Task.spawn(function*() {
     Task.Debugging.generateReadableStack(new Error("Not a real error"));
     run_next_test();
@@ -639,4 +581,3 @@ add_test(function exit_stack_tests() {
   Task.Debugging.maintainStack = maintainStack;
   run_next_test();
 });
-

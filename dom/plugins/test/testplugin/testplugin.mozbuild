@@ -18,13 +18,9 @@ if toolkit == 'cocoa':
     UNIFIED_SOURCES += [
         'nptest_macosx.mm'
     ]
-elif toolkit in ('gtk2', 'gtk3'):
+elif toolkit == 'gtk3':
     UNIFIED_SOURCES += [
         'nptest_gtk2.cpp',
-    ]
-elif toolkit == 'android':
-    UNIFIED_SOURCES += [
-        'nptest_droid.cpp',
     ]
 elif toolkit == 'windows':
     UNIFIED_SOURCES += [
@@ -39,17 +35,19 @@ elif toolkit == 'windows':
 USE_STATIC_LIBS = True
 
 # Don't use STL wrappers; nptest isn't Gecko code
-DISABLE_STL_WRAPPING = True
+DisableStlWrapping()
+
+NO_PGO = True
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
     RCFILE  = 'nptest.rc'
     RESFILE = 'nptest.res'
-    DEFFILE = SRCDIR + '/nptest.def'
+    DEFFILE = 'nptest.def'
 
-if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa' and '64' in CONFIG['OS_TEST']:
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa' and CONFIG['TARGET_CPU'] == 'x86_64':
     OS_LIBS += ['-framework Carbon']
 
-if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('gtk2', 'gtk3'):
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk3':
     CXXFLAGS += CONFIG['MOZ_GTK2_CFLAGS']
     CFLAGS += CONFIG['MOZ_GTK2_CFLAGS']
     OS_LIBS += CONFIG['MOZ_GTK2_LIBS']
@@ -57,7 +55,7 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('gtk2', 'gtk3'):
     OS_LIBS += CONFIG['XLIBS']
     OS_LIBS += CONFIG['XEXT_LIBS']
 
-if CONFIG['_MSC_VER']:
+if CONFIG['CC_TYPE'] in ('msvc', 'clang-cl'):
     # This is intended as a temporary hack to support building with VS2015.
     # conversion from 'X' to 'Y' requires a narrowing conversion
     CXXFLAGS += ['-wd4838']
@@ -68,5 +66,8 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
 else:
     FINAL_TARGET = 'dist/plugins'
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
+
+if CONFIG['CC_TYPE'] == 'clang-cl':
+    AllowCompilerWarnings()  # workaround for bug 1090497

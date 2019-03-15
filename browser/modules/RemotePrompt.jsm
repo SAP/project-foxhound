@@ -5,30 +5,22 @@
 
 "use strict";
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cu = Components.utils;
+var EXPORTED_SYMBOLS = [ "RemotePrompt" ];
 
-this.EXPORTED_SYMBOLS = [ "RemotePrompt" ];
-
-Cu.import("resource:///modules/PlacesUIUtils.jsm");
-Cu.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/SharedPromptUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "PromptUtils",
+                               "resource://gre/modules/SharedPromptUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "Services",
+                               "resource://gre/modules/Services.jsm");
 
 var RemotePrompt = {
-  init() {
-    let mm = Cc["@mozilla.org/globalmessagemanager;1"].getService(Ci.nsIMessageListenerManager);
-    mm.addMessageListener("Prompt:Open", this);
-  },
-
+  // Listeners are added in nsBrowserGlue.js
   receiveMessage(message) {
     switch (message.name) {
       case "Prompt:Open":
         if (message.data.uri) {
           this.openModalWindow(message.data, message.target);
         } else {
-          this.openTabPrompt(message.data, message.target)
+          this.openTabPrompt(message.data, message.target);
         }
         break;
     }
@@ -36,7 +28,7 @@ var RemotePrompt = {
 
   openTabPrompt(args, browser) {
     let window = browser.ownerGlobal;
-    let tabPrompt = window.gBrowser.getTabModalPromptBox(browser)
+    let tabPrompt = window.gBrowser.getTabModalPromptBox(browser);
     let newPrompt;
     let needRemove = false;
     let promptId = args._remoteId;
@@ -106,5 +98,5 @@ var RemotePrompt = {
       PromptUtils.fireDialogEvent(window, "DOMModalDialogClosed", browser);
       browser.messageManager.sendAsyncMessage("Prompt:Close", args);
     }
-  }
+  },
 };

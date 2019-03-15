@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,35 +7,33 @@
 // Main header first:
 #include "nsCSSClipPathInstance.h"
 
-#include "gfx2DGlue.h"
-#include "gfxPlatform.h"
-#include "mozilla/dom/SVGSVGElement.h"
+#include "mozilla/dom/SVGElement.h"
+#include "mozilla/dom/SVGPathData.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/PathHelpers.h"
 #include "mozilla/ShapeUtils.h"
+#include "nsSVGUtils.h"
+#include "gfx2DGlue.h"
+#include "gfxContext.h"
+#include "gfxPlatform.h"
 #include "nsCSSRendering.h"
 #include "nsIFrame.h"
-#include "nsRenderingContext.h"
-#include "nsRuleNode.h"
-#include "nsSVGElement.h"
-#include "nsSVGUtils.h"
-#include "nsSVGViewBox.h"
+#include "nsLayoutUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
 using namespace mozilla::gfx;
 
-/* static*/ void
-nsCSSClipPathInstance::ApplyBasicShapeClip(gfxContext& aContext,
-                                           nsIFrame* aFrame)
-{
+/* static*/ void nsCSSClipPathInstance::ApplyBasicShapeOrPathClip(
+    gfxContext& aContext, nsIFrame* aFrame) {
   auto& clipPathStyle = aFrame->StyleSVGReset()->mClipPath;
 
 #ifdef DEBUG
   StyleShapeSourceType type = clipPathStyle.GetType();
   MOZ_ASSERT(type == StyleShapeSourceType::Shape ||
-             type == StyleShapeSourceType::Box,
-             "This function is used with basic-shape and geometry-box only.");
+                 type == StyleShapeSourceType::Box ||
+                 type == StyleShapeSourceType::Path,
+             "This is used with basic-shape, geometry-box, and path() only");
 #endif
 
   nsCSSClipPathInstance instance(aFrame, clipPathStyle);
@@ -45,10 +44,8 @@ nsCSSClipPathInstance::ApplyBasicShapeClip(gfxContext& aContext,
   aContext.Clip();
 }
 
-/* static*/ bool
-nsCSSClipPathInstance::HitTestBasicShapeClip(nsIFrame* aFrame,
-                                             const gfxPoint& aPoint)
-{
+/* static*/ bool nsCSSClipPathInstance::HitTestBasicShapeOrPathClip(
+    nsIFrame* aFrame, const gfxPoint& aPoint) {
   auto& clipPathStyle = aFrame->StyleSVGReset()->mClipPath;
   StyleShapeSourceType type = clipPathStyle.GetType();
   MOZ_ASSERT(type != StyleShapeSourceType::None, "unexpected none value");
@@ -61,19 +58,35 @@ nsCSSClipPathInstance::HitTestBasicShapeClip(nsIFrame* aFrame,
   nsCSSClipPathInstance instance(aFrame, clipPathStyle);
 
   RefPtr<DrawTarget> drawTarget =
-    gfxPlatform::GetPlatform()->ScreenReferenceDrawTarget();
+      gfxPlatform::GetPlatform()->ScreenReferenceDrawTarget();
   RefPtr<Path> path = instance.CreateClipPath(drawTarget);
-  float pixelRatio = float(nsPresContext::AppUnitsPerCSSPixel()) /
+  float pixelRatio = float(AppUnitsPerCSSPixel()) /
                      aFrame->PresContext()->AppUnitsPerDevPixel();
   return path->ContainsPoint(ToPoint(aPoint) * pixelRatio, Matrix());
 }
 
-already_AddRefed<Path>
-nsCSSClipPathInstance::CreateClipPath(DrawTarget* aDrawTarget)
-{
-  nsRect r =
-    nsLayoutUtils::ComputeGeometryBox(mTargetFrame,
-                                      mClipPathStyle.GetReferenceBox());
+/* static */ Rect nsCSSClipPathInstance::GetBoundingRectForBasicShapeOrPathClip(
+    nsIFrame* aFrame, const StyleShapeSource& aClipPathStyle) {
+  MOZ_ASSERT(aClipPathStyle.GetType() == StyleShapeSourceType::Shape ||
+             aClipPathStyle.GetType() == StyleShapeSourceType::Box ||
+             aClipPathStyle.GetType() == StyleShapeSourceType::Path);
+
+  nsCSSClipPathInstance instance(aFrame, aClipPathStyle);
+
+  RefPtr<DrawTarget> drawTarget =
+      gfxPlatform::GetPlatform()->ScreenReferenceDrawTarget();
+  RefPtr<Path> path = instance.CreateClipPath(drawTarget);
+  return path->GetBounds();
+}
+
+already_AddRefed<Path> nsCSSClipPathInstance::CreateClipPath(
+    DrawTarget* aDrawTarget) {
+  if (mClipPathStyle.GetType() == StyleShapeSourceType::Path) {
+    return CreateClipPathPath(aDrawTarget);
+  }
+
+  nsRect r = nsLayoutUtils::ComputeGeometryBox(
+      mTargetFrame, mClipPathStyle.GetReferenceBox());
 
   if (mClipPathStyle.GetType() != StyleShapeSourceType::Shape) {
     // TODO Clip to border-radius/reference box if no shape
@@ -83,11 +96,11 @@ nsCSSClipPathInstance::CreateClipPath(DrawTarget* aDrawTarget)
   }
 
   nscoord appUnitsPerDevPixel =
-    mTargetFrame->PresContext()->AppUnitsPerDevPixel();
+      mTargetFrame->PresContext()->AppUnitsPerDevPixel();
   r = ToAppUnits(r.ToNearestPixels(appUnitsPerDevPixel), appUnitsPerDevPixel);
 
-  StyleBasicShape* basicShape = mClipPathStyle.GetBasicShape();
-  switch (basicShape->GetShapeType()) {
+  const auto& basicShape = mClipPathStyle.BasicShape();
+  switch (basicShape.GetShapeType()) {
     case StyleBasicShapeType::Circle:
       return CreateClipPathCircle(aDrawTarget, r);
     case StyleBasicShapeType::Ellipse:
@@ -105,39 +118,34 @@ nsCSSClipPathInstance::CreateClipPath(DrawTarget* aDrawTarget)
   return builder->Finish();
 }
 
-already_AddRefed<Path>
-nsCSSClipPathInstance::CreateClipPathCircle(DrawTarget* aDrawTarget,
-                                            const nsRect& aRefBox)
-{
-  StyleBasicShape* basicShape = mClipPathStyle.GetBasicShape();
+already_AddRefed<Path> nsCSSClipPathInstance::CreateClipPathCircle(
+    DrawTarget* aDrawTarget, const nsRect& aRefBox) {
+  const auto& basicShape = mClipPathStyle.BasicShape();
 
   RefPtr<PathBuilder> builder = aDrawTarget->CreatePathBuilder();
 
   nsPoint center =
-    ShapeUtils::ComputeCircleOrEllipseCenter(basicShape, aRefBox);
+      ShapeUtils::ComputeCircleOrEllipseCenter(basicShape, aRefBox);
   nscoord r = ShapeUtils::ComputeCircleRadius(basicShape, center, aRefBox);
   nscoord appUnitsPerDevPixel =
-    mTargetFrame->PresContext()->AppUnitsPerDevPixel();
+      mTargetFrame->PresContext()->AppUnitsPerDevPixel();
   builder->Arc(Point(center.x, center.y) / appUnitsPerDevPixel,
-               r / appUnitsPerDevPixel,
-               0, Float(2 * M_PI));
+               r / appUnitsPerDevPixel, 0, Float(2 * M_PI));
   builder->Close();
   return builder->Finish();
 }
 
-already_AddRefed<Path>
-nsCSSClipPathInstance::CreateClipPathEllipse(DrawTarget* aDrawTarget,
-                                             const nsRect& aRefBox)
-{
-  StyleBasicShape* basicShape = mClipPathStyle.GetBasicShape();
+already_AddRefed<Path> nsCSSClipPathInstance::CreateClipPathEllipse(
+    DrawTarget* aDrawTarget, const nsRect& aRefBox) {
+  const auto& basicShape = mClipPathStyle.BasicShape();
 
   RefPtr<PathBuilder> builder = aDrawTarget->CreatePathBuilder();
 
   nsPoint center =
-    ShapeUtils::ComputeCircleOrEllipseCenter(basicShape, aRefBox);
+      ShapeUtils::ComputeCircleOrEllipseCenter(basicShape, aRefBox);
   nsSize radii = ShapeUtils::ComputeEllipseRadii(basicShape, center, aRefBox);
   nscoord appUnitsPerDevPixel =
-    mTargetFrame->PresContext()->AppUnitsPerDevPixel();
+      mTargetFrame->PresContext()->AppUnitsPerDevPixel();
   EllipseToBezier(builder.get(),
                   Point(center.x, center.y) / appUnitsPerDevPixel,
                   Size(radii.width, radii.height) / appUnitsPerDevPixel);
@@ -145,43 +153,39 @@ nsCSSClipPathInstance::CreateClipPathEllipse(DrawTarget* aDrawTarget,
   return builder->Finish();
 }
 
-already_AddRefed<Path>
-nsCSSClipPathInstance::CreateClipPathPolygon(DrawTarget* aDrawTarget,
-                                             const nsRect& aRefBox)
-{
-  StyleBasicShape* basicShape = mClipPathStyle.GetBasicShape();
-  const nsTArray<nsStyleCoord>& coords = basicShape->Coordinates();
-  MOZ_ASSERT(coords.Length() % 2 == 0 &&
-             coords.Length() >= 2, "wrong number of arguments");
-
-  FillRule fillRule = basicShape->GetFillRule() == StyleFillRule::Nonzero ?
-                        FillRule::FILL_WINDING : FillRule::FILL_EVEN_ODD;
+already_AddRefed<Path> nsCSSClipPathInstance::CreateClipPathPolygon(
+    DrawTarget* aDrawTarget, const nsRect& aRefBox) {
+  const auto& basicShape = mClipPathStyle.BasicShape();
+  auto fillRule = basicShape.GetFillRule() == StyleFillRule::Nonzero
+                      ? FillRule::FILL_WINDING
+                      : FillRule::FILL_EVEN_ODD;
   RefPtr<PathBuilder> builder = aDrawTarget->CreatePathBuilder(fillRule);
 
-  nscoord x = nsRuleNode::ComputeCoordPercentCalc(coords[0], aRefBox.width);
-  nscoord y = nsRuleNode::ComputeCoordPercentCalc(coords[1], aRefBox.height);
-  nscoord appUnitsPerDevPixel =
-    mTargetFrame->PresContext()->AppUnitsPerDevPixel();
-  builder->MoveTo(Point(aRefBox.x + x, aRefBox.y + y) / appUnitsPerDevPixel);
-  for (size_t i = 2; i < coords.Length(); i += 2) {
-    x = nsRuleNode::ComputeCoordPercentCalc(coords[i], aRefBox.width);
-    y = nsRuleNode::ComputeCoordPercentCalc(coords[i + 1], aRefBox.height);
-    builder->LineTo(Point(aRefBox.x + x, aRefBox.y + y) / appUnitsPerDevPixel);
+  nsTArray<nsPoint> vertices =
+      ShapeUtils::ComputePolygonVertices(basicShape, aRefBox);
+  if (vertices.IsEmpty()) {
+    MOZ_ASSERT_UNREACHABLE(
+        "ComputePolygonVertices() should've given us some vertices!");
+  } else {
+    nscoord appUnitsPerDevPixel =
+        mTargetFrame->PresContext()->AppUnitsPerDevPixel();
+    builder->MoveTo(NSPointToPoint(vertices[0], appUnitsPerDevPixel));
+    for (size_t i = 1; i < vertices.Length(); ++i) {
+      builder->LineTo(NSPointToPoint(vertices[i], appUnitsPerDevPixel));
+    }
   }
   builder->Close();
   return builder->Finish();
 }
 
-already_AddRefed<Path>
-nsCSSClipPathInstance::CreateClipPathInset(DrawTarget* aDrawTarget,
-                                           const nsRect& aRefBox)
-{
-  StyleBasicShape* basicShape = mClipPathStyle.GetBasicShape();
+already_AddRefed<Path> nsCSSClipPathInstance::CreateClipPathInset(
+    DrawTarget* aDrawTarget, const nsRect& aRefBox) {
+  const auto& basicShape = mClipPathStyle.BasicShape();
 
   RefPtr<PathBuilder> builder = aDrawTarget->CreatePathBuilder();
 
   nscoord appUnitsPerDevPixel =
-    mTargetFrame->PresContext()->AppUnitsPerDevPixel();
+      mTargetFrame->PresContext()->AppUnitsPerDevPixel();
 
   nsRect insetRect = ShapeUtils::ComputeInsetRect(basicShape, aRefBox);
   const Rect insetRectPixels = NSRectToRect(insetRect, appUnitsPerDevPixel);
@@ -190,12 +194,25 @@ nsCSSClipPathInstance::CreateClipPathInset(DrawTarget* aDrawTarget,
   if (ShapeUtils::ComputeInsetRadii(basicShape, insetRect, aRefBox,
                                     appUnitsRadii)) {
     RectCornerRadii corners;
-    nsCSSRendering::ComputePixelRadii(appUnitsRadii,
-                                      appUnitsPerDevPixel, &corners);
+    nsCSSRendering::ComputePixelRadii(appUnitsRadii, appUnitsPerDevPixel,
+                                      &corners);
 
     AppendRoundedRectToPath(builder, insetRectPixels, corners, true);
   } else {
     AppendRectToPath(builder, insetRectPixels, true);
   }
   return builder->Finish();
+}
+
+already_AddRefed<Path> nsCSSClipPathInstance::CreateClipPathPath(
+    DrawTarget* aDrawTarget) {
+  const StyleSVGPath& path = mClipPathStyle.Path();
+
+  RefPtr<PathBuilder> builder = aDrawTarget->CreatePathBuilder(
+      path.FillRule() == StyleFillRule::Nonzero ? FillRule::FILL_WINDING
+                                                : FillRule::FILL_EVEN_ODD);
+  float scale = float(AppUnitsPerCSSPixel()) /
+                mTargetFrame->PresContext()->AppUnitsPerDevPixel();
+  return SVGPathData::BuildPath(path.Path(), builder,
+                                NS_STYLE_STROKE_LINECAP_BUTT, 0.0, scale);
 }

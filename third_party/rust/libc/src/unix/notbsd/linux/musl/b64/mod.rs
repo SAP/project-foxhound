@@ -1,49 +1,35 @@
-pub type wchar_t = i32;
 pub type c_long = i64;
 pub type c_ulong = u64;
-pub type nlink_t = u64;
 
 s! {
-    pub struct stat {
-        pub st_dev: ::dev_t,
-        pub st_ino: ::ino_t,
-        pub st_nlink: ::nlink_t,
-        pub st_mode: ::mode_t,
-        pub st_uid: ::uid_t,
-        pub st_gid: ::gid_t,
-        __pad0: ::c_int,
-        pub st_rdev: ::dev_t,
-        pub st_size: ::off_t,
-        pub st_blksize: ::blksize_t,
-        pub st_blocks: ::blkcnt_t,
-        pub st_atime: ::time_t,
-        pub st_atime_nsec: ::c_long,
-        pub st_mtime: ::time_t,
-        pub st_mtime_nsec: ::c_long,
-        pub st_ctime: ::time_t,
-        pub st_ctime_nsec: ::c_long,
-        __unused: [::c_long; 3],
+    pub struct statfs64 {
+        pub f_type: ::c_ulong,
+        pub f_bsize: ::c_ulong,
+        pub f_blocks: ::fsblkcnt_t,
+        pub f_bfree: ::fsblkcnt_t,
+        pub f_bavail: ::fsblkcnt_t,
+        pub f_files: ::fsfilcnt_t,
+        pub f_ffree: ::fsfilcnt_t,
+        pub f_fsid: ::fsid_t,
+        pub f_namelen: ::c_ulong,
+        pub f_frsize: ::c_ulong,
+        pub f_flags: ::c_ulong,
+        pub f_spare: [::c_ulong; 4],
     }
 
-    pub struct stat64 {
-        pub st_dev: ::dev_t,
-        pub st_ino: ::ino64_t,
-        pub st_nlink: ::nlink_t,
-        pub st_mode: ::mode_t,
-        pub st_uid: ::uid_t,
-        pub st_gid: ::gid_t,
-        __pad0: ::c_int,
-        pub st_rdev: ::dev_t,
-        pub st_size: ::off_t,
-        pub st_blksize: ::blksize_t,
-        pub st_blocks: ::blkcnt64_t,
-        pub st_atime: ::time_t,
-        pub st_atime_nsec: ::c_long,
-        pub st_mtime: ::time_t,
-        pub st_mtime_nsec: ::c_long,
-        pub st_ctime: ::time_t,
-        pub st_ctime_nsec: ::c_long,
-        __reserved: [::c_long; 3],
+    pub struct statvfs64 {
+        pub f_bsize: ::c_ulong,
+        pub f_frsize: ::c_ulong,
+        pub f_blocks: u64,
+        pub f_bfree: u64,
+        pub f_bavail: u64,
+        pub f_files: u64,
+        pub f_ffree: u64,
+        pub f_favail: u64,
+        pub f_fsid: ::c_ulong,
+        pub f_flag: ::c_ulong,
+        pub f_namemax: ::c_ulong,
+        __f_spare: [::c_int; 6],
     }
 
     pub struct stack_t {
@@ -132,18 +118,23 @@ s! {
         pub _pad: [::c_int; 29],
         _align: [usize; 0],
     }
+
+    pub struct termios2 {
+        pub c_iflag: ::tcflag_t,
+        pub c_oflag: ::tcflag_t,
+        pub c_cflag: ::tcflag_t,
+        pub c_lflag: ::tcflag_t,
+        pub c_line: ::cc_t,
+        pub c_cc: [::cc_t; 19],
+        pub c_ispeed: ::speed_t,
+        pub c_ospeed: ::speed_t,
+    }
 }
 
 pub const __SIZEOF_PTHREAD_RWLOCK_T: usize = 56;
 pub const __SIZEOF_PTHREAD_MUTEX_T: usize = 40;
 
-pub const O_DIRECT: ::c_int = 0x4000;
-pub const O_DIRECTORY: ::c_int = 0x10000;
-pub const O_NOFOLLOW: ::c_int = 0x20000;
 pub const O_ASYNC: ::c_int = 0x2000;
-
-pub const FIOCLEX: ::c_int = 0x5451;
-pub const FIONBIO: ::c_int = 0x5421;
 
 pub const RLIMIT_RSS: ::c_int = 5;
 pub const RLIMIT_NOFILE: ::c_int = 7;
@@ -171,7 +162,6 @@ pub const MAP_NORESERVE: ::c_int = 0x04000;
 pub const MAP_POPULATE: ::c_int = 0x08000;
 pub const MAP_NONBLOCK: ::c_int = 0x010000;
 pub const MAP_STACK: ::c_int = 0x020000;
-pub const MAP_32BIT: ::c_int = 0x0040;
 
 pub const SOCK_STREAM: ::c_int = 1;
 pub const SOCK_DGRAM: ::c_int = 2;
@@ -179,7 +169,6 @@ pub const SOCK_SEQPACKET: ::c_int = 5;
 
 pub const SOL_SOCKET: ::c_int = 1;
 
-pub const EDEADLK: ::c_int = 35;
 pub const ENAMETOOLONG: ::c_int = 36;
 pub const ENOLCK: ::c_int = 37;
 pub const ENOSYS: ::c_int = 38;
@@ -201,7 +190,6 @@ pub const EXFULL: ::c_int = 54;
 pub const ENOANO: ::c_int = 55;
 pub const EBADRQC: ::c_int = 56;
 pub const EBADSLT: ::c_int = 57;
-pub const EDEADLOCK: ::c_int = EDEADLK;
 pub const EMULTIHOP: ::c_int = 72;
 pub const EBADMSG: ::c_int = 74;
 pub const EOVERFLOW: ::c_int = 75;
@@ -274,13 +262,16 @@ pub const SO_SNDBUF: ::c_int = 7;
 pub const SO_RCVBUF: ::c_int = 8;
 pub const SO_KEEPALIVE: ::c_int = 9;
 pub const SO_OOBINLINE: ::c_int = 10;
+pub const SO_NO_CHECK: ::c_int = 11;
+pub const SO_PRIORITY: ::c_int = 12;
 pub const SO_LINGER: ::c_int = 13;
+pub const SO_BSDCOMPAT: ::c_int = 14;
 pub const SO_REUSEPORT: ::c_int = 15;
-pub const SO_RCVLOWAT: ::c_int = 18;
-pub const SO_SNDLOWAT: ::c_int = 19;
-pub const SO_RCVTIMEO: ::c_int = 20;
-pub const SO_SNDTIMEO: ::c_int = 21;
 pub const SO_ACCEPTCONN: ::c_int = 30;
+pub const SO_SNDBUFFORCE: ::c_int = 32;
+pub const SO_RCVBUFFORCE: ::c_int = 33;
+pub const SO_PROTOCOL: ::c_int = 38;
+pub const SO_DOMAIN: ::c_int = 39;
 
 pub const SA_ONSTACK: ::c_int = 0x08000000;
 pub const SA_SIGINFO: ::c_int = 0x00000004;
@@ -310,8 +301,6 @@ pub const SIG_SETMASK: ::c_int = 2;
 pub const SIG_BLOCK: ::c_int = 0x000000;
 pub const SIG_UNBLOCK: ::c_int = 0x01;
 
-pub const EXTPROC: ::tcflag_t = 0x00010000;
-
 pub const MAP_HUGETLB: ::c_int = 0x040000;
 
 pub const F_GETLK: ::c_int = 5;
@@ -321,43 +310,6 @@ pub const F_SETLKW: ::c_int = 7;
 pub const F_SETOWN: ::c_int = 8;
 
 pub const VEOF: usize = 4;
-pub const VEOL: usize = 11;
-pub const VEOL2: usize = 16;
-pub const VMIN: usize = 6;
-pub const IEXTEN: ::tcflag_t = 0x00008000;
-pub const TOSTOP: ::tcflag_t = 0x00000100;
-pub const FLUSHO: ::tcflag_t = 0x00001000;
-
-pub const TCGETS: ::c_int = 0x5401;
-pub const TCSETS: ::c_int = 0x5402;
-pub const TCSETSW: ::c_int = 0x5403;
-pub const TCSETSF: ::c_int = 0x5404;
-pub const TCGETA: ::c_int = 0x5405;
-pub const TCSETA: ::c_int = 0x5406;
-pub const TCSETAW: ::c_int = 0x5407;
-pub const TCSETAF: ::c_int = 0x5408;
-pub const TCSBRK: ::c_int = 0x5409;
-pub const TCXONC: ::c_int = 0x540A;
-pub const TCFLSH: ::c_int = 0x540B;
-pub const TIOCGSOFTCAR: ::c_int = 0x5419;
-pub const TIOCSSOFTCAR: ::c_int = 0x541A;
-pub const TIOCLINUX: ::c_int = 0x541C;
-pub const TIOCGSERIAL: ::c_int = 0x541E;
-pub const TIOCEXCL: ::c_int = 0x540C;
-pub const TIOCNXCL: ::c_int = 0x540D;
-pub const TIOCSCTTY: ::c_int = 0x540E;
-pub const TIOCGPGRP: ::c_int = 0x540F;
-pub const TIOCSPGRP: ::c_int = 0x5410;
-pub const TIOCOUTQ: ::c_int = 0x5411;
-pub const TIOCSTI: ::c_int = 0x5412;
-pub const TIOCGWINSZ: ::c_int = 0x5413;
-pub const TIOCSWINSZ: ::c_int = 0x5414;
-pub const TIOCMGET: ::c_int = 0x5415;
-pub const TIOCMBIS: ::c_int = 0x5416;
-pub const TIOCMBIC: ::c_int = 0x5417;
-pub const TIOCMSET: ::c_int = 0x5418;
-pub const FIONREAD: ::c_int = 0x541B;
-pub const TIOCCONS: ::c_int = 0x541D;
 
 pub const POLLWRNORM: ::c_short = 0x100;
 pub const POLLWRBAND: ::c_short = 0x200;

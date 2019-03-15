@@ -4,7 +4,7 @@
 esid: sec-ecmascript-function-objects-call-thisargument-argumentslist
 description: >
     Creation of new variable environment for the function parameters and body
-    (as disinct from that for the function's BindingIdentifier)
+    (as distinct from that for the function's BindingIdentifier)
 info: |
     [...]
     3. Let callerContext be the running execution context.
@@ -21,16 +21,16 @@ info: |
 features: [let]
 ---*/
 
-var name = 'outside';
-var probeBefore = function() { return name; };
+var n = 'outside';
+var probeBefore = function() { return n; };
 var probeInside;
 
 // This test intentionally elides parameter expressions because their presence
 // triggers the creation of an additional LexicalEnvironment dedicated to the
 // function body (see sec-functiondeclarationinstantiation)
-var func = function name() {
-  let name = 'inside';
-  probeInside = function() { return name; };
+var func = function n() {
+  let n = 'inside';
+  probeInside = function() { return n; };
 };
 
 func();

@@ -57,6 +57,7 @@ typedef enum {
     UNSPECIFIED_ERR,
     NOCERTDB_MISUSE_ERR,
     NSS_INITIALIZE_FAILED_ERR,
+    INITPW_FAILED_ERR,
 
     LAST_ERR /* must be last */
 } Error;
@@ -109,8 +110,9 @@ static char *errStrings[] = {
     "ERROR: Failed to change default.\n",
     "ERROR: Unable to read from standard input.\n",
     "ERROR: Unknown error occurred.\n",
-    "ERROR: -nocertdb option can only be used with the -jar command.\n"
-    "ERROR: NSS_Initialize() failed.\n"
+    "ERROR: -nocertdb option can only be used with the -jar command.\n",
+    "ERROR: NSS_Initialize() failed.\n",
+    "ERROR: Unable to set initial password on the database.\n"
 };
 
 typedef enum {
@@ -129,6 +131,7 @@ typedef enum {
     UNDEFAULT_SUCCESS_MSG,
     BROWSER_RUNNING_MSG,
     ABORTING_MSG,
+    P11_KIT_ENABLED_MSG,
 
     LAST_MSG /* must be last */
 } Message;

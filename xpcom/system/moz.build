@@ -6,21 +6,20 @@
 
 XPIDL_SOURCES += [
     'nsIBlocklistService.idl',
+    'nsICrashReporter.idl',
     'nsIDeviceSensors.idl',
     'nsIGConfService.idl',
     'nsIGeolocationProvider.idl',
     'nsIGIOService.idl',
     'nsIGSettingsService.idl',
     'nsIHapticFeedback.idl',
-    'nsIPackageKitService.idl',
     'nsIPlatformInfo.idl',
     'nsIXULAppInfo.idl',
     'nsIXULRuntime.idl',
 ]
 
-if CONFIG['MOZ_CRASHREPORTER']:
-    XPIDL_SOURCES += [
-        'nsICrashReporter.idl',
-    ]
-
 XPIDL_MODULE = 'xpcom_system'
+
+with Files('nsIBlocklistService.idl'):
+    BUG_COMPONENT = ('Toolkit', 'Blocklist Implementation')
+

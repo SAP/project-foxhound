@@ -1,9 +1,9 @@
 /*
-* Copyright 2016 Google Inc.
-*
-* Use of this source code is governed by a BSD-style license that can be
-* found in the LICENSE file.
-*/
+ * Copyright 2016 Google Inc.
+ *
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file.
+ */
 
 #ifndef GrGLGpuCommandBuffer_DEFINED
 #define GrGLGpuCommandBuffer_DEFINED
@@ -11,47 +11,97 @@
 #include "GrGpuCommandBuffer.h"
 
 #include "GrGLGpu.h"
+#include "GrGLRenderTarget.h"
+#include "GrOpFlushState.h"
 
-class GrGLGpuCommandBuffer : public GrGpuCommandBuffer {
+class GrGLGpu;
+class GrGLRenderTarget;
+
+class GrGLGpuTextureCommandBuffer : public GrGpuTextureCommandBuffer {
+public:
+    GrGLGpuTextureCommandBuffer(GrGLGpu* gpu) : fGpu(gpu) {}
+
+    void copy(GrSurface* src, GrSurfaceOrigin srcOrigin, const SkIRect& srcRect,
+              const SkIPoint& dstPoint) override {
+        fGpu->copySurface(fTexture, fOrigin, src, srcOrigin, srcRect, dstPoint);
+    }
+
+    void insertEventMarker(const char* msg) override {
+        fGpu->insertEventMarker(msg);
+    }
+
+    void reset() {
+        fTexture = nullptr;
+    }
+
+private:
+    GrGLGpu* fGpu;
+
+    typedef GrGpuTextureCommandBuffer INHERITED;
+};
+
+class GrGLGpuRTCommandBuffer : public GrGpuRTCommandBuffer {
 /**
  * We do not actually buffer up draws or do any work in the this class for GL. Instead commands
  * are immediately sent to the gpu to execute. Thus all the commands in this class are simply
  * pass through functions to corresponding calls in the GrGLGpu class.
  */
 public:
-    GrGLGpuCommandBuffer(GrGLGpu* gpu) : fGpu(gpu) {}
+    GrGLGpuRTCommandBuffer(GrGLGpu* gpu) : fGpu(gpu) {}
 
-    virtual ~GrGLGpuCommandBuffer() {}
-
+    void begin() override;
     void end() override {}
 
-    void discard(GrRenderTarget* rt) override {}
+    void discard() override { }
+
+    void insertEventMarker(const char* msg) override {
+        fGpu->insertEventMarker(msg);
+    }
+
+    void inlineUpload(GrOpFlushState* state, GrDeferredTextureUploadFn& upload) override {
+        state->doUpload(upload);
+    }
+
+    void copy(GrSurface* src, GrSurfaceOrigin srcOrigin, const SkIRect& srcRect,
+              const SkIPoint& dstPoint) override {
+        fGpu->copySurface(fRenderTarget, fOrigin, src, srcOrigin, srcRect, dstPoint);
+    }
+
+    void set(GrRenderTarget*, GrSurfaceOrigin,
+             const GrGpuRTCommandBuffer::LoadAndStoreInfo&,
+             const GrGpuRTCommandBuffer::StencilLoadAndStoreInfo&);
+
+    void reset() {
+        fRenderTarget = nullptr;
+    }
 
 private:
     GrGpu* gpu() override { return fGpu; }
 
-    void onSubmit(const SkIRect& bounds) override {}
-
-    void onDraw(const GrPipeline& pipeline,
-                const GrPrimitiveProcessor& primProc,
-                const GrMesh* mesh,
-                int meshCount) override {
-        fGpu->draw(pipeline, primProc, mesh, meshCount);
+    void onDraw(const GrPrimitiveProcessor& primProc,
+                const GrPipeline& pipeline,
+                const GrPipeline::FixedDynamicState* fixedDynamicState,
+                const GrPipeline::DynamicStateArrays* dynamicStateArrays,
+                const GrMesh mesh[],
+                int meshCount,
+                const SkRect& bounds) override {
+        SkASSERT(pipeline.renderTarget() == fRenderTarget);
+        fGpu->draw(primProc, pipeline, fixedDynamicState, dynamicStateArrays, mesh, meshCount);
     }
 
-    void onClear(GrRenderTarget* rt, const GrFixedClip& clip, GrColor color) override {
-        fGpu->clear(clip, color, rt);
+    void onClear(const GrFixedClip& clip, GrColor color) override {
+        fGpu->clear(clip, color, fRenderTarget, fOrigin);
     }
 
-    void onClearStencilClip(GrRenderTarget* rt,
-                            const GrFixedClip& clip,
-                            bool insideStencilMask) override {
-        fGpu->clearStencilClip(clip, insideStencilMask, rt);
+    void onClearStencilClip(const GrFixedClip& clip, bool insideStencilMask) override {
+        fGpu->clearStencilClip(clip, insideStencilMask, fRenderTarget, fOrigin);
     }
 
-    GrGLGpu*                    fGpu;
+    GrGLGpu*                                      fGpu;
+    GrGpuRTCommandBuffer::LoadAndStoreInfo        fColorLoadAndStoreInfo;
+    GrGpuRTCommandBuffer::StencilLoadAndStoreInfo fStencilLoadAndStoreInfo;
 
-    typedef GrGpuCommandBuffer INHERITED;
+    typedef GrGpuRTCommandBuffer INHERITED;
 };
 
 #endif

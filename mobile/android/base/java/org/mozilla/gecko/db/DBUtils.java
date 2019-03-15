@@ -33,38 +33,6 @@ public class DBUtils {
         return table + "." + column;
     }
 
-    // This is available in Android >= 11. Implemented locally to be
-    // compatible with older versions.
-    public static String concatenateWhere(String a, String b) {
-        if (TextUtils.isEmpty(a)) {
-            return b;
-        }
-
-        if (TextUtils.isEmpty(b)) {
-            return a;
-        }
-
-        return "(" + a + ") AND (" + b + ")";
-    }
-
-    // This is available in Android >= 11. Implemented locally to be
-    // compatible with older versions.
-    public static String[] appendSelectionArgs(String[] originalValues, String[] newValues) {
-        if (originalValues == null || originalValues.length == 0) {
-            return newValues;
-        }
-
-        if (newValues == null || newValues.length == 0) {
-            return originalValues;
-        }
-
-        String[] result = new String[originalValues.length + newValues.length];
-        System.arraycopy(originalValues, 0, result, 0, originalValues.length);
-        System.arraycopy(newValues, 0, result, originalValues.length, newValues.length);
-
-        return result;
-    }
-
     /**
      * Concatenate multiple lists of selection arguments. <code>values</code> may be <code>null</code>.
      */
@@ -106,8 +74,8 @@ public class DBUtils {
         }
     }
 
-    private static String HISTOGRAM_DATABASE_LOCKED = "DATABASE_LOCKED_EXCEPTION";
-    private static String HISTOGRAM_DATABASE_UNLOCKED = "DATABASE_SUCCESSFUL_UNLOCK";
+    private static final String HISTOGRAM_DATABASE_LOCKED = "DATABASE_LOCKED_EXCEPTION";
+    private static final String HISTOGRAM_DATABASE_UNLOCKED = "DATABASE_SUCCESSFUL_UNLOCK";
     public static void ensureDatabaseIsNotLocked(SQLiteOpenHelper dbHelper, String databasePath) {
         final int maxAttempts = 5;
         int attempt = 0;
